@@ -4,8 +4,9 @@ import { dirname, join, resolve } from 'node:path';
 import { pool } from '../src/db.js';
 
 // migrations 폴더의 0*.sql 을 순서대로 적용. 적용 이력은 _migrations 테이블에 기록.
+// SQL 파일은 백엔드 폴더 안의 migrations/ 에 함께 둔다(refatrix-api/migrations).
 const here = dirname(fileURLToPath(import.meta.url));
-const migDir = resolve(here, '..', '..', 'refatrix-db', 'migrations');
+const migDir = resolve(here, '..', 'migrations');
 
 async function main() {
   await pool.query(`CREATE TABLE IF NOT EXISTS _migrations (
