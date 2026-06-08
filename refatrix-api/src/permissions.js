@@ -1,0 +1,59 @@
+// 권한 판단 + 데이터 최소 전송(민감 필드/항목 제거)
+// 순수 함수로 구현해 단위 테스트 가능. DB 조회 결과(perm)를 받아 판단한다.
+//
+// perm 형태:
+//   { role, scope, curScope,
+//     pages: { [pageKey]: 'registered_only'|'anywhere'|'blocked' },
+//     fields: Set<field_key>,                 // 보임으로 설정된 필드
+//     items: { [item_key]: {depth, resolution} } }
+
+export const ALWAYS_PAGES = new Set(['home']);
+
+// 메뉴 접근 가능 여부 (+ 기기 요구 반영)
+export function pageAllowed(perm, pageKey, isRegisteredDevice) {
+  if (perm.role === 'director') return true;          // 디렉터 전체 허용
+  if (pageKey === 'settings') return false;           // 기준정의는 디렉터 전용
+  if (ALWAYS_PAGES.has(pageKey)) return true;         // 요약은 항상
+  const req = perm.pages?.[pageKey];
+  if (!req || req === 'blocked') return false;
+  if (req === 'registered_only' && !isRegisteredDevice) return false;
+  return true; // 'anywhere' 또는 (registered_only && 등록기기)
+}
+
+// 민감 필드 노출 여부
+export function fieldVisible(perm, fieldKey) {
+  if (perm.role === 'director') return true;
+  return perm.fields?.has(fieldKey) ?? false;
+}
+
+// 민감 항목 열람 깊이
+export function itemDepth(perm, itemKey) {
+  if (perm.role === 'director') return { depth: 'full', resolution: 'day' };
+  return perm.items?.[itemKey] || { depth: 'hidden', resolution: 'month' };
+}
+
+// 제품 응답 최소화: 권한 없는 필드는 객체에서 아예 제거(전송 안 함)
+const PRODUCT_FIELD_GATE = {
+  avg_cost: 'unit_cost',     // 단위원가
+  list_price: 'sale_price',  // 판매 정가
+  discount: 'sale_price',
+};
+export function minimizeProduct(perm, product) {
+  const out = {};
+  for (const [k, v] of Object.entries(product)) {
+    const gate = PRODUCT_FIELD_GATE[k];
+    if (gate && !fieldVisible(perm, gate)) continue; // 권한 없으면 생략
+    out[k] = v;
+  }
+  // 마진은 별도 권한일 때만 계산해 부여
+  if (fieldVisible(perm, 'unit_margin') &&
+      product.list_price != null && product.avg_cost != null) {
+    out.unit_margin = round2(Number(product.list_price) - Number(product.avg_cost));
+    if (fieldVisible(perm, 'margin_rate') && Number(product.list_price) > 0) {
+      out.margin_rate = round2(out.unit_margin / Number(product.list_price) * 100);
+    }
+  }
+  return out;
+}
+
+export function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }

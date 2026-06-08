@@ -1,0 +1,44 @@
+import Fastify from 'fastify';
+import fastifyJwt from '@fastify/jwt';
+import { config } from './config.js';
+import { authGuard, requireDirector } from './middleware/authGuard.js';
+import { query } from './db.js';
+import authRoutes from './routes/authRoutes.js';
+import deviceRoutes from './routes/deviceRoutes.js';
+import productRoutes from './routes/productRoutes.js';
+import importRoutes from './routes/importRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+
+export function buildApp() {
+  const app = Fastify({ logger: true });
+  app.register(fastifyJwt, { secret: config.jwtSecret, sign: { expiresIn: config.tokenTtl } });
+
+  app.get('/health', async () => ({ ok: true }));
+
+  app.register(authRoutes);
+  app.register(deviceRoutes);
+  app.register(productRoutes);
+  app.register(importRoutes);
+  app.register(userRoutes);
+
+  // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
+  app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const rows = (await query(
+      `SELECT a.occurred_at, a.action, a.target, a.result, a.detail,
+              u.name, u.dept, u.role
+         FROM audit_log a LEFT JOIN users u ON u.id=a.user_id
+        ORDER BY a.occurred_at DESC LIMIT $1`, [limit])).rows;
+    return { items: rows };
+  });
+
+  return app;
+}
+
+// 직접 실행 시 서버 기동
+if (process.argv[1] && process.argv[1].endsWith('server.js')) {
+  const app = buildApp();
+  app.listen({ port: config.port, host: '0.0.0.0' })
+    .then((addr) => app.log.info(`Refatrix API on ${addr}`))
+    .catch((err) => { app.log.error(err); process.exit(1); });
+}
