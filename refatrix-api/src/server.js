@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
+import fastifyCors from '@fastify/cors';
 import { config } from './config.js';
 import { authGuard, requireDirector } from './middleware/authGuard.js';
 import { query } from './db.js';
@@ -11,6 +12,14 @@ import userRoutes from './routes/userRoutes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true });
+  // 외부 화면(프로토타입)에서의 요청 허용. 프로토타입 단계에서는 모든 출처 허용 +
+  // 자격증명/기기키 헤더 허용. (운영 단계에서 실제 도메인으로 좁히는 것을 권장)
+  app.register(fastifyCors, {
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-device-key'],
+  });
   app.register(fastifyJwt, { secret: config.jwtSecret, sign: { expiresIn: config.tokenTtl } });
 
   app.get('/health', async () => ({ ok: true }));
