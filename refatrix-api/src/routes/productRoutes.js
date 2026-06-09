@@ -28,4 +28,17 @@ export default async function productRoutes(app) {
     // 각 행을 권한에 맞게 최소화
     return { items: rows.map((p) => minimizeProduct(perm, p)), limit, offset };
   });
+
+  // 제품코드 여러 개로 한 번에 조회 (엑셀 업로드 매칭용).
+  // body: { codes: ['CTR-1001', ...] }  → { found: {코드: {id,code,name}}, missing: [코드...] }
+  app.post('/api/products/lookup', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const codes = Array.isArray(req.body?.codes) ? req.body.codes.map((c) => String(c).trim()).filter(Boolean) : [];
+    if (!codes.length) return { found: {}, missing: [] };
+    const rows = (await query(
+      `SELECT id, code, name FROM products WHERE deleted_at IS NULL AND code = ANY($1)`, [codes])).rows;
+    const found = {};
+    for (const r of rows) found[r.code] = { id: r.id, code: r.code, name: r.name };
+    const missing = [...new Set(codes)].filter((c) => !found[c]);
+    return { found, missing };
+  });
 }
