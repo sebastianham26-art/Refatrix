@@ -19,8 +19,8 @@ export default async function importRoutes(app) {
         [batch_no, import_date, currency, fx_rate, userId, note])).rows[0];
       for (const l of lines) {
         await c.query(
-          `INSERT INTO import_lines (batch_id, product_id, qty, import_price, currency)
-           VALUES ($1,$2,$3,$4,$5)`, [b.id, l.product_id, l.qty, l.import_price, l.currency || currency]);
+          `INSERT INTO import_lines (batch_id, product_id, qty, import_price, currency, invoice_no)
+           VALUES ($1,$2,$3,$4,$5,$6)`, [b.id, l.product_id, l.qty, l.import_price, l.currency || currency, l.invoice_no || null]);
       }
       for (const o of overheads) {
         await c.query(
