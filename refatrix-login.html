@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 로그인</title>
+<style>
+  :root{
+    --paper:#F4F1EA; --brand:#143D34; --ink:#1A1A1A; --muted:#6B6B6B;
+    --line:#E2DDD2; --income:#0F6E56; --expense:#B23A2E; --gold:#9A7B16;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:380px;background:#fff;border:1px solid var(--line);
+    border-radius:16px;box-shadow:0 8px 30px rgba(20,61,52,.08);overflow:hidden}
+  .head{background:var(--brand);color:#fff;padding:22px 24px}
+  .head h1{margin:0;font-size:20px;letter-spacing:.02em}
+  .head p{margin:4px 0 0;font-size:12.5px;color:#cfe0d8}
+  .body{padding:22px 24px 24px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 5px;font-weight:600}
+  input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;
+    font-family:inherit;font-size:15px;background:#fff;color:var(--ink)}
+  input:focus{outline:none;border-color:var(--brand)}
+  .btn{width:100%;margin-top:20px;padding:12px;border:none;border-radius:9px;
+    background:var(--brand);color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.6;cursor:default}
+  .msg{margin-top:14px;font-size:13px;border-radius:9px;padding:10px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:18px;font-size:11px;color:var(--muted)}
+  .api input{font-size:12px;padding:7px 9px;margin-top:4px}
+  .who{margin-top:14px;font-size:13px;line-height:1.6}
+  .who b{color:var(--brand)}
+  .foot{padding:0 24px 18px;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head"><h1>Refatrix ERP</h1><p>로그인 (아이디 + PIN)</p></div>
+    <div class="body">
+      <label for="lid">아이디</label>
+      <input id="lid" type="text" autocomplete="username" placeholder="예: admin" value="admin">
+      <label for="pin">PIN</label>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••">
+      <button class="btn" id="go">로그인</button>
+      <div class="msg" id="msg"></div>
+      <div class="who" id="who"></div>
+
+      <div class="api">
+        서버 주소(API)
+        <input id="api" type="text" value="https://refatrix-production.up.railway.app">
+      </div>
+    </div>
+    <div class="foot">테스트용 화면입니다. 로그인되면 서버에서 받은 사용자 정보가 아래에 표시됩니다.</div>
+  </div>
+
+<script>
+  // 메모리에만 보관 (새로고침하면 사라짐) — 테스트 단계
+  let session = { token: null, user: null };
+  const $ = (id) => document.getElementById(id);
+
+  async function login() {
+    const api = $('api').value.replace(/\/+$/, '');
+    const login_id = $('lid').value.trim();
+    const pin = $('pin').value.trim();
+    const msg = $('msg'); const who = $('who');
+    msg.className = 'msg'; msg.textContent = ''; who.innerHTML = '';
+    if (!login_id || !pin) { msg.className = 'msg err'; msg.textContent = '아이디와 PIN을 입력하세요.'; return; }
+
+    $('go').disabled = true; $('go').textContent = '확인 중…';
+    try {
+      const res = await fetch(api + '/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login_id, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        msg.className = 'msg err';
+        msg.textContent = data.error === 'invalid_credentials'
+          ? '아이디 또는 PIN이 올바르지 않습니다.'
+          : ('로그인 실패: ' + (data.error || res.status));
+        return;
+      }
+      session.token = data.token;
+      session.user = data.user;
+      msg.className = 'msg ok';
+      msg.textContent = '로그인 성공!';
+      who.innerHTML = '<div>환영합니다, <b>' + (data.user?.name || login_id) + '</b> 님</div>'
+        + '<div>역할: <b>' + (data.user?.role || '-') + '</b></div>'
+        + '<div style="color:var(--muted);font-size:11.5px;margin-top:6px">'
+        + '서버 연결·인증이 정상 동작합니다. (토큰을 발급받았습니다)</div>';
+    } catch (e) {
+      msg.className = 'msg err';
+      msg.textContent = '서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';
+    } finally {
+      $('go').disabled = false; $('go').textContent = '로그인';
+    }
+  }
+
+  $('go').addEventListener('click', login);
+  $('pin').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+</script>
+</body>
+</html>

@@ -19,8 +19,8 @@ export default async function importRoutes(app) {
         [batch_no, import_date, currency, fx_rate, userId, note])).rows[0];
       for (const l of lines) {
         await c.query(
-          `INSERT INTO import_lines (batch_id, product_id, qty, import_price)
-           VALUES ($1,$2,$3,$4)`, [b.id, l.product_id, l.qty, l.import_price]);
+          `INSERT INTO import_lines (batch_id, product_id, qty, import_price, currency)
+           VALUES ($1,$2,$3,$4,$5)`, [b.id, l.product_id, l.qty, l.import_price, l.currency || currency]);
       }
       for (const o of overheads) {
         await c.query(
@@ -58,7 +58,7 @@ export default async function importRoutes(app) {
       for (const p of ps) productState[p.id] = { stock_qty: p.stock_qty, avg_cost: p.avg_cost };
 
       const { computedLines, newState } = computeImportCosting({
-        lines, overheads, fxRate: batch.fx_rate, productState,
+        lines, overheads, fxRate: batch.fx_rate, productState, batchCurrency: batch.currency,
       });
 
       // 라인 원가 스냅샷 기록
@@ -103,6 +103,6 @@ async function computeBatch(id) {
     : [];
   const productState = {};
   for (const p of ps) productState[p.id] = { stock_qty: p.stock_qty, avg_cost: p.avg_cost };
-  const { computedLines } = computeImportCosting({ lines, overheads, fxRate: batch.fx_rate, productState });
+  const { computedLines } = computeImportCosting({ lines, overheads, fxRate: batch.fx_rate, productState, batchCurrency: batch.currency });
   return { batch_id: id, status: batch.status, preview: computedLines };
 }

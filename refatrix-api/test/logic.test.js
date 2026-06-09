@@ -44,6 +44,28 @@ function ok(name, cond) { assert.ok(cond, name); console.log('  ✓', name); pas
   ok('1/n 균등배분: Y 단위원가 7', r.computedLines[1].unit_cost_mxn === 7);
 }
 
+// --- 항목별 통화 (입고일 환율 하나로 환산) ---
+{
+  // 수입단가 10 USD, 부대비용 200 USD + 100 MXN, fx 17.40, 수량 100, 재고 0
+  const r = computeImportCosting({
+    lines: [{ product_id: 'C', qty: 100, import_price: 10, currency: 'USD' }],
+    overheads: [{ amount: 200, currency: 'USD' }, { amount: 100, currency: 'MXN' }],
+    fxRate: 17.40, baseCurrency: 'MXN', batchCurrency: 'USD', productState: {},
+  });
+  // 단가 174, 부대비용(3480+100=3580)/100=35.8 → 209.8
+  ok('혼합통화: 단위원가 209.80 (USD단가+USD/MXN부대비용)', r.computedLines[0].unit_cost_mxn === 209.8);
+}
+{
+  // MXN 단가는 환율 미적용
+  const r = computeImportCosting({
+    lines: [{ product_id: 'D', qty: 10, import_price: 100, currency: 'MXN' }],
+    overheads: [{ amount: 50, currency: 'MXN' }],
+    fxRate: 17.40, baseCurrency: 'MXN', batchCurrency: 'MXN', productState: {},
+  });
+  // 단가 100, 부대비용 50/10=5 → 105 (환율 곱하지 않음)
+  ok('MXN 단가는 환율 미적용: 단위원가 105', r.computedLines[0].unit_cost_mxn === 105);
+}
+
 // --- 권한/데이터 최소 전송 ---
 const product = { id: 1, code: 'CTR-1', name: 'parte', list_price: 200, discount: 10, stock_qty: 5, avg_cost: 120 };
 {
