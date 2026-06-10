@@ -45,6 +45,18 @@ export async function getUsdMxnRate() {
   return { rate: DEFAULT_RATE, asOf: null, stale: true, source: 'default' };
 }
 
+// 특정 날짜의 USD→MXN 환율 조회. 그날 캐시가 있으면 그 값, 없으면 그 이전 가장 최근 값, 그것도 없으면 오늘 환율.
+export async function getRateForDate(dateStr) {
+  if (!dateStr) return (await getUsdMxnRate()).rate;
+  const exact = (await query(
+    `SELECT rate FROM fx_rates WHERE base='USD' AND quote='MXN' AND rate_date=$1`, [dateStr])).rows[0];
+  if (exact) return Number(exact.rate);
+  const before = (await query(
+    `SELECT rate FROM fx_rates WHERE base='USD' AND quote='MXN' AND rate_date<=$1 ORDER BY rate_date DESC LIMIT 1`, [dateStr])).rows[0];
+  if (before) return Number(before.rate);
+  return (await getUsdMxnRate()).rate;
+}
+
 // 환율 이력(요약페이지용)
 export async function getFxHistory(limit = 60) {
   const rows = (await query(

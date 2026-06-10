@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { getUsdMxnRate, getFxHistory } from '../fx.js';
+import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -66,9 +66,13 @@ export default async function financeRoutes(app) {
     const status = b.status === 'plan' ? 'plan' : 'actual';
     if (status === 'actual' && !b.account_id) return reply.code(400).send({ error: 'account_required_for_actual' });
     const isDirector = req.ctx.perm.role === 'director';
-    // 환율: MXN=1, USD=입력값 또는 오늘 환율
+    // 환율: MXN=1. USD는 입력값 우선 → (실제)거래일 캐시 → 오늘. 예정은 항상 오늘.
     let fx = 1;
-    if (currency === 'USD') fx = Number(b.fx_rate) > 0 ? Number(b.fx_rate) : (await getUsdMxnRate()).rate;
+    if (currency === 'USD') {
+      if (Number(b.fx_rate) > 0) fx = Number(b.fx_rate);
+      else if (status === 'actual') fx = await getRateForDate(b.txn_date);
+      else fx = (await getUsdMxnRate()).rate;
+    }
     const amountMxn = r2(amount * fx);
     // 승인 규칙: 지출 + 담당자 → 미승인(approved=false). 그 외 → 승인.
     const approved = !(direction === 'out' && !isDirector);
@@ -134,10 +138,14 @@ export default async function financeRoutes(app) {
   });
 
   // ===== 거래 수정/삭제 =====
-  // 공통: 거래 한 건의 amount_mxn 계산
-  async function calcMxn(currency, amount, fxIn) {
+  // amount_mxn 계산: 입력값 우선 → (실제)거래일 캐시 → 오늘. 예정은 오늘.
+  async function calcMxn(currency, amount, fxIn, status, txnDate) {
     let fx = 1;
-    if (currency === 'USD') fx = Number(fxIn) > 0 ? Number(fxIn) : (await getUsdMxnRate()).rate;
+    if (currency === 'USD') {
+      if (Number(fxIn) > 0) fx = Number(fxIn);
+      else if (status === 'actual') fx = await getRateForDate(txnDate);
+      else fx = (await getUsdMxnRate()).rate;
+    }
     return { fx, amountMxn: r2(Number(amount) * fx) };
   }
 
@@ -152,7 +160,8 @@ export default async function financeRoutes(app) {
     const direction = b.direction === 'in' ? 'in' : (b.direction === 'out' ? 'out' : t.direction);
     const currency = ['MXN', 'USD'].includes(b.currency) ? b.currency : t.currency;
     const amount = b.amount != null ? Number(b.amount) : Number(t.amount);
-    const { fx, amountMxn } = await calcMxn(currency, amount, b.fx_rate);
+    const txnDate = b.txn_date || t.txn_date;
+    const { fx, amountMxn } = await calcMxn(currency, amount, b.fx_rate, t.status, txnDate);
     await query(
       `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
          category_code=$8, memo=$9, updated_by=$10 WHERE id=$11`,
@@ -228,7 +237,7 @@ export default async function financeRoutes(app) {
     const direction = p.direction === 'in' ? 'in' : (p.direction === 'out' ? 'out' : t.direction);
     const currency = ['MXN', 'USD'].includes(p.currency) ? p.currency : t.currency;
     const amount = p.amount != null ? Number(p.amount) : Number(t.amount);
-    const { fx, amountMxn } = await calcMxn(currency, amount, p.fx_rate);
+    const { fx, amountMxn } = await calcMxn(currency, amount, p.fx_rate, t.status, p.txn_date || t.txn_date);
     let accName = orig.account_name;
     if (p.account_id != null && p.account_id !== t.account_id) {
       accName = (await query(`SELECT name FROM accounts WHERE id=$1`, [p.account_id])).rows[0]?.name || null;
@@ -256,8 +265,13 @@ export default async function financeRoutes(app) {
         const direction = p.direction === 'in' ? 'in' : (p.direction === 'out' ? 'out' : t.direction);
         const currency = ['MXN', 'USD'].includes(p.currency) ? p.currency : t.currency;
         const amount = p.amount != null ? Number(p.amount) : Number(t.amount);
+        const newDate = p.txn_date || t.txn_date;
         let fx = 1;
-        if (currency === 'USD') fx = Number(p.fx_rate) > 0 ? Number(p.fx_rate) : (await getUsdMxnRate()).rate;
+        if (currency === 'USD') {
+          if (Number(p.fx_rate) > 0) fx = Number(p.fx_rate);
+          else if (t.status === 'actual') fx = await getRateForDate(newDate);
+          else fx = (await getUsdMxnRate()).rate;
+        }
         const amountMxn = r2(amount * fx);
         await c.query(
           `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
