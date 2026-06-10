@@ -137,10 +137,11 @@ export default async function salesRoutes(app) {
   app.get('/api/sales', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
     const rows = (await query(
       `SELECT s.id, s.sat_no, s.inv_date, s.due_date, s.credit_days, s.credit_exception, s.credit_approved,
-              s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, c.code AS customer_code, c.name AS customer_name
+              s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, c.code AS customer_code, c.name AS customer_name,
+              (SELECT COUNT(*) FROM sales_change_requests cr WHERE cr.invoice_id=s.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
         WHERE s.deleted_at IS NULL ORDER BY s.inv_date DESC, s.id DESC LIMIT 100`)).rows;
-    return { items: rows };
+    return { items: rows.map((r) => ({ ...r, edit_count: Number(r.edit_count) })) };
   });
 
   // ---- 매출 상세(라인 포함) ----
