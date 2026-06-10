@@ -207,11 +207,28 @@ export default async function salesRoutes(app) {
     const rows = (await query(
       `SELECT s.id, s.sat_no, s.inv_date, s.due_date, s.credit_days, s.credit_exception, s.credit_approved,
               s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, c.code AS customer_code, c.name AS customer_name,
-              (SELECT COUNT(*) FROM sales_change_requests cr WHERE cr.invoice_id=s.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
+              (SELECT COUNT(*) FROM sales_change_requests cr WHERE cr.invoice_id=s.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count,
+              (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=s.id AND sh.status='open') AS shortage_count,
+              (SELECT COUNT(*) FROM sales_sku_pending sp WHERE sp.sales_invoice_id=s.id AND sp.status='open') AS pending_count
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
         WHERE s.deleted_at IS NULL ORDER BY s.inv_date DESC, s.id DESC LIMIT 100`)).rows;
-    return { items: rows.map((r) => ({ ...r, edit_count: Number(r.edit_count) })) };
+    return { items: rows.map((r) => ({ ...r, edit_count: Number(r.edit_count), shortage_count: Number(r.shortage_count), pending_count: Number(r.pending_count) })) };
   });
+
+  // ---- 인보이스별 부족·보류 내역(세부 펼침용) ----
+  app.get('/api/sales/:id/issues', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const id = Number(req.params.id);
+    const shortages = (await query(
+      `SELECT sh.id, p.code, p.name, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.occurred_at, sh.status
+         FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
+        WHERE sh.sales_invoice_id=$1 ORDER BY sh.id`, [id])).rows;
+    const pending = (await query(
+      `SELECT sp.id, sp.code, sp.qty, sp.occurred_at, sp.status,
+              EXISTS(SELECT 1 FROM products p WHERE p.code=sp.code AND p.deleted_at IS NULL) AS now_registered
+         FROM sales_sku_pending sp WHERE sp.sales_invoice_id=$1 ORDER BY sp.id`, [id])).rows;
+    return { shortages, pending };
+  });
+
 
   // ---- 매출 상세(라인 포함) ----
   app.get('/api/sales/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
