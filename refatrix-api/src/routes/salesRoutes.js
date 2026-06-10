@@ -47,18 +47,43 @@ export default async function salesRoutes(app) {
       const appliedDays = (credit_days == null || credit_days === '') ? baseCreditDays : Number(credit_days);
       const exception = isCreditException(appliedDays, baseCreditDays);
 
-      // 라인 계산 + 재고/원가 확인
-      const computed = [];
+      // 라인 계산 + 재고 확인 (부족 시 있는 만큼만 출고, 부족분은 기록)
+      const r3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1000) / 1000;
+      const allowPartial = req.body?.allow_partial === true;
+      const computed = [];   // 실제 출고(인보이싱)될 라인
+      const shortages = [];  // 부족분 기록 대상
       for (const l of lines) {
         const p = (await c.query(`SELECT id, code, name, list_price, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL`, [l.product_id])).rows[0];
         if (!p) return { error: `product_not_found:${l.product_id}` };
-        if (Number(p.stock_qty) < Number(l.qty)) return { error: `insufficient_stock:${p.code}` };
-        const discRate = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
-        const line = computeLine({ qty: l.qty, listPrice: p.list_price, discountRate: discRate, cost: p.avg_cost });
-        computed.push({ ...line, product_id: p.id, code: p.code });
+        const reqQty = Number(l.qty);
+        const avail = Math.max(Number(p.stock_qty), 0);
+        const fulfill = Math.min(reqQty, avail);
+        const short = r3(reqQty - fulfill);
+        if (short > 0) shortages.push({ product_id: p.id, code: p.code, name: p.name, requested: reqQty, available: avail, shortage: short });
+        if (fulfill > 0) {
+          const discRate = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
+          const line = computeLine({ qty: fulfill, listPrice: p.list_price, discountRate: discRate, cost: p.avg_cost });
+          computed.push({ ...line, product_id: p.id, code: p.code });
+        }
       }
-      const totals = computeInvoiceTotals(computed, 16);
+
+      // 부족이 있는데 영업 확인(allow_partial)을 안 받았으면 막고 부족내역 반환
+      if (shortages.length && !allowPartial) return { error: 'stock_short', shortages };
+
       const due = dueDate(inv_date, appliedDays);
+
+      // 출고분이 하나도 없으면: 인보이스 없이 부족분만 기록
+      if (!computed.length) {
+        for (const s of shortages) {
+          await c.query(
+            `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, occurred_at, created_by)
+             VALUES ($1,$2,NULL,$3,0,$4,$5,$6)`,
+            [s.product_id, customer_id, s.requested, s.shortage, inv_date, userId]);
+        }
+        return { id: null, invoiced: false, shortages, due };
+      }
+
+      const totals = computeInvoiceTotals(computed, 16);
 
       // 헤더
       const inv = (await c.query(
@@ -83,6 +108,14 @@ export default async function salesRoutes(app) {
           [ln.product_id, ln.qty, ln.appliedUnitCost, `sales:${inv.id}`, inv.id, lineRow.id, userId]);
       }
 
+      // 부족분 기록 (인보이스 연결)
+      for (const s of shortages) {
+        await c.query(
+          `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, occurred_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [s.product_id, customer_id, inv.id, s.requested, r3(s.requested - s.shortage), s.shortage, inv_date, userId]);
+      }
+
       // 입금 예정(AR) — transactions plan, 인보이스당 한 건, 총액(IVA 포함)
       const txn = (await c.query(
         `INSERT INTO transactions (txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, sales_invoice_id, memo, created_by)
@@ -90,11 +123,12 @@ export default async function salesRoutes(app) {
         [due, totals.totalMxn, userId, inv.id, `매출 입금예정 (인보이스 #${inv.id})`, userId])).rows[0];
       await c.query(`UPDATE sales_invoices SET txn_id=$1 WHERE id=$2`, [txn.id, inv.id]);
 
-      return { id: inv.id, totals, due, exception };
+      return { id: inv.id, invoiced: true, totals, due, exception, shortages };
     });
 
+    if (out.error === 'stock_short') return reply.code(409).send({ error: 'stock_short', shortages: out.shortages });
     if (out.error) return reply.code(out.error.startsWith('insufficient') ? 409 : 400).send({ error: out.error });
-    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `sales_invoice:${out.id}`, detail: { exception: out.exception } });
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `sales_invoice:${out.id || 'none'}`, detail: { exception: out.exception, shortages: out.shortages?.length || 0 } });
     return out;
   });
 
@@ -156,5 +190,45 @@ export default async function salesRoutes(app) {
     if (out.error) return reply.code(409).send(out);
     await logEvent({ userId, action: 'update', target: `sales_invoice:${id}`, detail: { creditApprove: out.approved } });
     return out;
+  });
+
+  // ---- 부족 기록: 제품별 합계(주문용) ----
+  app.get('/api/shortages/summary', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+    const rows = (await query(
+      `SELECT sh.product_id, p.code, p.name, p.stock_qty,
+              SUM(sh.shortage_qty) AS open_shortage,
+              COUNT(*) AS records,
+              MAX(sh.occurred_at) AS last_occurred
+         FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
+        WHERE sh.status='open'
+        GROUP BY sh.product_id, p.code, p.name, p.stock_qty
+        ORDER BY open_shortage DESC`)).rows;
+    return { items: rows.map((r) => ({ ...r, open_shortage: Number(r.open_shortage), stock_qty: Number(r.stock_qty), records: Number(r.records) })) };
+  });
+
+  // ---- 부족 기록: 원장(영업용, 누가·언제·얼마) ----
+  app.get('/api/shortages', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const status = req.query.status || 'open';
+    const rows = (await query(
+      `SELECT sh.id, sh.occurred_at, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.status,
+              p.code, p.name, c.code AS customer_code, c.name AS customer_name, sh.sales_invoice_id
+         FROM stock_shortages sh
+         JOIN products p ON p.id=sh.product_id
+         LEFT JOIN customers c ON c.id=sh.customer_id
+        WHERE ($1='all' OR sh.status=$1)
+        ORDER BY sh.occurred_at DESC, sh.id DESC LIMIT 200`, [status])).rows;
+    return { items: rows };
+  });
+
+  // ---- 부족 기록 해소/취소(디렉터) ----
+  app.post('/api/shortages/:id/resolve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const status = (req.body?.status === 'cancelled') ? 'cancelled' : 'resolved';
+    const r = await query(
+      `UPDATE stock_shortages SET status=$1, resolved_at=now(), resolved_by=$2 WHERE id=$3 AND status='open' RETURNING id`,
+      [status, req.ctx.perm.userId, id]);
+    if (!r.rows[0]) return reply.code(409).send({ error: 'not_open' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `shortage:${id}`, detail: { status } });
+    return { ok: true, status };
   });
 }
