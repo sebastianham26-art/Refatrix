@@ -86,13 +86,21 @@ export default async function salesRoutes(app) {
 
       const totals = computeInvoiceTotals(computed, 16);
 
+      // SAT 번호 미입력 시 임시번호 자동 부여 (TMP-NNNN)
+      let satNo = (sat_no && String(sat_no).trim()) ? String(sat_no).trim() : null;
+      if (!satNo) {
+        const last = (await c.query(`SELECT sat_no FROM sales_invoices WHERE sat_no LIKE 'TMP-%' ORDER BY sat_no DESC LIMIT 1`)).rows[0];
+        const n = last ? (parseInt(String(last.sat_no).slice(4), 10) || 0) + 1 : 1;
+        satNo = 'TMP-' + String(n).padStart(4, '0');
+      }
+
       // 헤더
       const inv = (await c.query(
         `INSERT INTO sales_invoices
            (sat_no, customer_id, inv_date, credit_days, due_date, credit_exception, credit_memo, credit_approved,
             iva_rate, subtotal_mxn, iva_mxn, total_mxn, status, owner_id, memo, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,16,$9,$10,$11,'posted',$12,$13,$14) RETURNING id`,
-        [sat_no || null, customer_id, inv_date, appliedDays, due, exception, exception ? (credit_memo || null) : null,
+        [satNo, customer_id, inv_date, appliedDays, due, exception, exception ? (credit_memo || null) : null,
          exception ? false : true, totals.subtotalMxn, totals.ivaMxn, totals.totalMxn, userId, memo || null, userId])).rows[0];
 
       // 라인 + 재고 차감 + 원장(out)
@@ -124,7 +132,7 @@ export default async function salesRoutes(app) {
         [due, totals.totalMxn, userId, inv.id, `매출 입금예정 (인보이스 #${inv.id})`, userId])).rows[0];
       await c.query(`UPDATE sales_invoices SET txn_id=$1 WHERE id=$2`, [txn.id, inv.id]);
 
-      return { id: inv.id, invoiced: true, totals, due, exception, shortages };
+      return { id: inv.id, invoiced: true, sat_no: satNo, totals, due, exception, shortages };
     });
 
     if (out.error === 'stock_short') return reply.code(409).send({ error: 'stock_short', shortages: out.shortages });
@@ -134,6 +142,67 @@ export default async function salesRoutes(app) {
   });
 
   // ---- 매출 목록 ----
+  // ---- 엑셀 업로드 미리보기: CTR 코드 조회(정상/미등록) + 고객 할인 ----
+  // body: { customer_id, codes:[...] }
+  app.post('/api/sales/lookup', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const codes = Array.isArray(req.body?.codes) ? req.body.codes.map((x) => String(x).trim()).filter(Boolean) : [];
+    const customerId = req.body?.customer_id;
+    const cust = customerId ? (await query(`SELECT discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0] : null;
+    const found = {};
+    if (codes.length) {
+      const rows = (await query(
+        `SELECT id, code, name, list_price, stock_qty, avg_cost FROM products WHERE deleted_at IS NULL AND code = ANY($1)`, [codes])).rows;
+      for (const r of rows) found[r.code] = { id: r.id, code: r.code, name: r.name, list_price: Number(r.list_price), stock_qty: Number(r.stock_qty) };
+    }
+    const missing = [...new Set(codes)].filter((c) => !found[c]);
+    return { found, missing, customer_discount: cust ? Number(cust.discount) || 0 : 0, customer_credit_days: cust ? Number(cust.credit_days) || 0 : 0 };
+  });
+
+  // ---- SAT 번호 수정(임시번호 → 실제번호) ----
+  app.post('/api/sales/:id/sat-no', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const sat = (req.body?.sat_no && String(req.body.sat_no).trim()) || null;
+    if (!sat) return reply.code(400).send({ error: 'sat_no_required' });
+    try {
+      const r = await query(`UPDATE sales_invoices SET sat_no=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL RETURNING id`, [sat, req.ctx.perm.userId, id]);
+      if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
+      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_invoice:${id}`, detail: { sat_no: sat } });
+      return { ok: true, sat_no: sat };
+    } catch (e) {
+      if (String(e.message).includes('unique') || e.code === '23505') return reply.code(409).send({ error: 'sat_no_duplicate' });
+      throw e;
+    }
+  });
+
+  // ---- 미등록 SKU 보류(pending) 저장 ----
+  // body: { customer_id, intended_sat_no?, sales_invoice_id?, rows:[{code, qty}] }
+  app.post('/api/sales/sku-pending', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    const userId = req.ctx.perm.userId;
+    let n = 0;
+    for (const r of rows) {
+      if (!r.code || !(Number(r.qty) > 0)) continue;
+      await query(
+        `INSERT INTO sales_sku_pending (code, qty, customer_id, intended_sat_no, sales_invoice_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [String(r.code).trim(), Number(r.qty), req.body.customer_id || null, req.body.intended_sat_no || null, req.body.sales_invoice_id || null, userId]);
+      n++;
+    }
+    return { ok: true, saved: n };
+  });
+
+  // ---- 미등록 SKU 보류 목록 ----
+  app.get('/api/sales/sku-pending', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const status = req.query.status || 'open';
+    const rows = (await query(
+      `SELECT sp.id, sp.code, sp.qty, sp.intended_sat_no, sp.occurred_at, sp.status,
+              c.code AS customer_code, c.name AS customer_name,
+              EXISTS(SELECT 1 FROM products p WHERE p.code=sp.code AND p.deleted_at IS NULL) AS now_registered
+         FROM sales_sku_pending sp LEFT JOIN customers c ON c.id=sp.customer_id
+        WHERE ($1='all' OR sp.status=$1) ORDER BY sp.occurred_at DESC, sp.id DESC LIMIT 200`, [status])).rows;
+    return { items: rows };
+  });
+
   app.get('/api/sales', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
     const rows = (await query(
       `SELECT s.id, s.sat_no, s.inv_date, s.due_date, s.credit_days, s.credit_exception, s.credit_approved,
