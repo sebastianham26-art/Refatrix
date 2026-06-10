@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { computeLine, computeInvoiceTotals, dueDate, isCreditException } from '../sales.js';
+import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect } from '../sales.js';
+import { isClosedMonth } from '../importCost.js';
 import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
 
@@ -230,5 +231,189 @@ export default async function salesRoutes(app) {
     if (!r.rows[0]) return reply.code(409).send({ error: 'not_open' });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `shortage:${id}`, detail: { status } });
     return { ok: true, status };
+  });
+
+  // ===== 매출 수정·삭제 승인 워크플로 (원본 격리, 디렉터 승인 시 반영) =====
+
+  // 헬퍼: 원본 인보이스 + 라인 로드, 마감월 판정
+  async function loadInvoiceForChange(c, id) {
+    const inv = (await c.query(`SELECT * FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!inv) return null;
+    const lines = (await c.query(`SELECT * FROM sales_invoice_lines WHERE invoice_id=$1`, [id])).rows;
+    const closed = (await c.query(`SELECT period FROM period_closings`)).rows.map((r) => r.period);
+    inv._closedMonth = isClosedMonth(String(inv.inv_date).slice(0, 10), closed);
+    inv._lines = lines.map((l) => ({ productId: l.product_id, qty: Number(l.qty), appliedUnitCost: Number(l.applied_unit_cost), lineAmountMxn: Number(l.line_amount_mxn) }));
+    return inv;
+  }
+
+  // 수정 요청 (영업/디렉터) — 원본 유지, edit_pending
+  // body: { reason, lines:[{product_id, qty, discount_rate?}], credit_days?, sat_no?, inv_date? }
+  app.post('/api/sales/:id/edit-request', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const { reason, lines, credit_days, sat_no, inv_date } = req.body || {};
+    if (!Array.isArray(lines) || !lines.length) return reply.code(400).send({ error: 'lines_required' });
+    const inv = (await query(`SELECT id, status FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'not_found' });
+    if (inv.status !== 'posted') return reply.code(409).send({ error: 'not_posted' });
+    const payload = { lines, credit_days: credit_days ?? null, sat_no: sat_no ?? null, inv_date: inv_date ?? null };
+    const r = await query(
+      `INSERT INTO sales_change_requests (invoice_id, req_type, payload, reason, requested_by)
+       VALUES ($1,'edit',$2,$3,$4) RETURNING id`, [id, JSON.stringify(payload), reason || null, req.ctx.perm.userId]);
+    await query(`UPDATE sales_invoices SET status='edit_pending' WHERE id=$1`, [id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `sales_change_request:${r.rows[0].id}`, detail: { type: 'edit', invoice: id } });
+    return { id: r.rows[0].id, type: 'edit', status: 'pending' };
+  });
+
+  // 삭제 요청 (영업/디렉터) — 원본 유지, delete_pending
+  app.post('/api/sales/:id/delete-request', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const { reason } = req.body || {};
+    const inv = (await query(`SELECT id, status FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'not_found' });
+    if (inv.status !== 'posted') return reply.code(409).send({ error: 'not_posted' });
+    const r = await query(
+      `INSERT INTO sales_change_requests (invoice_id, req_type, payload, reason, requested_by)
+       VALUES ($1,'delete',NULL,$2,$3) RETURNING id`, [id, reason || null, req.ctx.perm.userId]);
+    await query(`UPDATE sales_invoices SET status='delete_pending' WHERE id=$1`, [id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `sales_change_request:${r.rows[0].id}`, detail: { type: 'delete', invoice: id } });
+    return { id: r.rows[0].id, type: 'delete', status: 'pending' };
+  });
+
+  // 변경요청 대기 목록 (디렉터)
+  app.get('/api/sales/change-requests/pending', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT cr.id, cr.invoice_id, cr.req_type, cr.payload, cr.reason, cr.requested_at,
+              s.sat_no, s.inv_date, s.total_mxn, s.credit_days,
+              c.code AS customer_code, c.name AS customer_name
+         FROM sales_change_requests cr
+         JOIN sales_invoices s ON s.id=cr.invoice_id
+         JOIN customers c ON c.id=s.customer_id
+        WHERE cr.status='pending' ORDER BY cr.requested_at`)).rows;
+    return { items: rows };
+  });
+
+  // 변경요청 반려 (디렉터) — 원본 상태 복귀
+  app.post('/api/sales/change-requests/:reqId/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const reqId = Number(req.params.reqId);
+    const out = await withTx(async (c) => {
+      const cr = (await c.query(`SELECT * FROM sales_change_requests WHERE id=$1`, [reqId])).rows[0];
+      if (!cr || cr.status !== 'pending') return { error: 'not_pending' };
+      await c.query(`UPDATE sales_change_requests SET status='rejected', decided_by=$1, decided_at=now() WHERE id=$2`, [req.ctx.perm.userId, reqId]);
+      await c.query(`UPDATE sales_invoices SET status='posted' WHERE id=$1`, [cr.invoice_id]);
+      return { ok: true };
+    });
+    if (out.error) return reply.code(409).send(out);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_change_request:${reqId}`, detail: { rejected: true } });
+    return out;
+  });
+
+  // 변경요청 승인 (디렉터) — 트랜잭션으로 되돌림+재적용, 마감월 규칙
+  app.post('/api/sales/change-requests/:reqId/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const reqId = Number(req.params.reqId);
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const cr = (await c.query(`SELECT * FROM sales_change_requests WHERE id=$1`, [reqId])).rows[0];
+      if (!cr || cr.status !== 'pending') return { error: 'not_pending' };
+      const inv = await loadInvoiceForChange(c, cr.invoice_id);
+      if (!inv) return { error: 'invoice_not_found' };
+      const closed = inv._closedMonth;
+
+      // 원본 효과 되돌림: 재고 복원(원가 스냅샷으로 'in' 이동), AR 취소
+      async function reverseOriginalStock() {
+        for (const l of inv._lines) {
+          await c.query(`UPDATE products SET stock_qty = stock_qty + $1, updated_by=$2 WHERE id=$3`, [l.qty, userId, l.productId]);
+          await c.query(
+            `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, sales_invoice_id, created_by)
+             VALUES ($1,'in',$2,$3,$4,$5,$6)`,
+            [l.productId, l.qty, l.appliedUnitCost, `sales_reverse:${inv.id}`, inv.id, userId]);
+        }
+      }
+      // 정산차액/소급 정정 기록(기록만, 거래전기는 후속)
+      async function recordVariance(varianceMxn, kind, source) {
+        if (!varianceMxn) return;
+        await c.query(
+          `INSERT INTO cogs_adjustments (doc_id, sales_invoice_id, product_id, sale_date, qty, diff_mxn, kind, source)
+           VALUES (NULL,$1,$2,$3,$4,$5,$6,$7)`,
+          [inv.id, inv._lines[0]?.productId || null, String(inv.inv_date).slice(0, 10), null, round2(varianceMxn), kind, source]);
+      }
+
+      if (cr.req_type === 'delete') {
+        const rev = computeDeleteReversal({ origLines: inv._lines, closedMonth: closed });
+        await reverseOriginalStock();
+        // AR(입금예정) 취소
+        if (inv.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.txn_id]);
+        // 원장 out 무효화 표시는 reverse 'in'으로 상쇄됨. 인보이스 소프트 삭제.
+        await c.query(`UPDATE sales_invoices SET status='deleted', deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.id]);
+        await recordVariance(rev.varianceMxn, 'variance', 'sales_delete');
+        await c.query(`UPDATE sales_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [userId, reqId]);
+        return { ok: true, type: 'delete', mode: rev.mode, variance: rev.varianceMxn };
+      }
+
+      // 수정: 원본 되돌림 + 새 내용 재적용
+      const payload = typeof cr.payload === 'string' ? JSON.parse(cr.payload) : cr.payload;
+      const cust = (await c.query(`SELECT discount, credit_days FROM customers WHERE id=$1`, [inv.customer_id])).rows[0];
+      const custDiscount = Number(cust.discount) || 0;
+      const baseDays = Number(cust.credit_days) || 0;
+
+      // 새 라인 계산(현재 평균원가 스냅샷)
+      const newComputed = [];
+      for (const l of payload.lines) {
+        const p = (await c.query(`SELECT id, code, list_price, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL`, [l.product_id])).rows[0];
+        if (!p) return { error: `product_not_found:${l.product_id}` };
+        const discRate = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
+        const line = computeLine({ qty: l.qty, listPrice: p.list_price, discountRate: discRate, cost: p.avg_cost });
+        newComputed.push({ ...line, product_id: p.id, code: p.code, _stock: Number(p.stock_qty) });
+      }
+      const newLinesForCalc = newComputed.map((l) => ({ productId: l.product_id, qty: l.qty, appliedUnitCost: l.appliedUnitCost, lineAmountMxn: l.lineAmountMxn }));
+      const net = computeEditNetEffect({ origLines: inv._lines, newLines: newLinesForCalc, closedMonth: closed });
+
+      // 재고 가능 여부 점검: 되돌림(+orig) 후 새로 차감(-new). 순변화가 음수이고 재고 부족이면 막음.
+      // 원본 복원분을 먼저 더한 가용재고로 판단.
+      const restore = {};
+      for (const l of inv._lines) restore[l.productId] = (restore[l.productId] || 0) + l.qty;
+      const shortages = [];
+      for (const l of newComputed) {
+        const avail = l._stock + (restore[l.product_id] || 0);
+        if (l.qty > avail) shortages.push({ code: l.code, requested: l.qty, available: avail, shortage: round2(l.qty - avail) });
+      }
+      if (shortages.length) return { error: 'stock_short', shortages };
+
+      // 1) 원본 되돌림(재고 복원)
+      await reverseOriginalStock();
+      // 2) 기존 라인/원장 제거(소프트): 기존 out 이동은 reverse 'in'으로 상쇄됨. 라인 삭제 후 재삽입.
+      await c.query(`DELETE FROM sales_invoice_lines WHERE invoice_id=$1`, [inv.id]);
+      // 3) 새 라인 적용(재고 차감 + 원장 out)
+      const totals = computeInvoiceTotals(newComputed, Number(inv.iva_rate) || 16);
+      for (const ln of newComputed) {
+        const lineRow = (await c.query(
+          `INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, list_price, discount_rate, unit_price, line_amount_mxn, applied_unit_cost, cogs_mxn)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+          [inv.id, ln.product_id, ln.qty, ln.listPrice, ln.discountRate, ln.unitPrice, ln.lineAmountMxn, ln.appliedUnitCost, ln.cogsMxn])).rows[0];
+        await c.query(`UPDATE products SET stock_qty = stock_qty - $1, updated_by=$2 WHERE id=$3`, [ln.qty, userId, ln.product_id]);
+        await c.query(
+          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, sales_invoice_id, sales_invoice_line_id, created_by)
+           VALUES ($1,'out',$2,$3,$4,$5,$6,$7)`,
+          [ln.product_id, ln.qty, ln.appliedUnitCost, `sales:${inv.id}`, inv.id, lineRow.id, userId]);
+      }
+      // 4) 외상일/예외(디렉터 수정승인에 흡수: 예외라도 승인된 것으로 확정)
+      const appliedDays = (payload.credit_days == null || payload.credit_days === '') ? baseDays : Number(payload.credit_days);
+      const exception = isCreditException(appliedDays, baseDays);
+      const due = dueDate(String(payload.inv_date || inv.inv_date).slice(0, 10), appliedDays);
+      await c.query(
+        `UPDATE sales_invoices SET sat_no=COALESCE($1,sat_no), inv_date=COALESCE($2,inv_date),
+           credit_days=$3, due_date=$4, credit_exception=$5, credit_approved=true,
+           subtotal_mxn=$6, iva_mxn=$7, total_mxn=$8, status='posted', updated_by=$9 WHERE id=$10`,
+        [payload.sat_no, payload.inv_date, appliedDays, due, exception, totals.subtotalMxn, totals.ivaMxn, totals.totalMxn, userId, inv.id]);
+      // 5) AR 갱신
+      if (inv.txn_id) await c.query(`UPDATE transactions SET txn_date=$1, amount=$2, amount_mxn=$2, updated_by=$3 WHERE id=$4`, [due, totals.totalMxn, userId, inv.txn_id]);
+      // 6) 정산차액 기록(마감월)
+      await recordVariance(net.varianceMxn, 'variance', 'sales_edit');
+      await c.query(`UPDATE sales_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [userId, reqId]);
+      return { ok: true, type: 'edit', mode: net.mode, totals, due, exception, variance: net.varianceMxn };
+    });
+    if (out.error === 'stock_short') return reply.code(409).send(out);
+    if (out.error) return reply.code(409).send(out);
+    await logEvent({ userId, action: 'update', target: `sales_change_request:${reqId}`, detail: { approved: true, type: out.type } });
+    return out;
   });
 }
