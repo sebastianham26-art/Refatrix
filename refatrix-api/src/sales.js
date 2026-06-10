@@ -36,9 +36,18 @@ export function computeInvoiceTotals(lines, ivaRate = 16) {
   return { subtotalMxn: subtotal, ivaMxn: iva, totalMxn: total, cogsMxn: cogs, grossMarginMxn: grossMargin };
 }
 
-// 예상 입금일 = inv_date + creditDays (YYYY-MM-DD 문자열 입출력)
+// 날짜를 YYYY-MM-DD 문자열로 정규화 (Date 객체·ISO 문자열 모두 처리)
+export function ymd(v) {
+  if (v instanceof Date) {
+    const y = v.getUTCFullYear(), m = String(v.getUTCMonth() + 1).padStart(2, '0'), d = String(v.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(v).slice(0, 10);
+}
+
+// 예상 입금일 = inv_date + creditDays (YYYY-MM-DD 문자열/Date 입력 모두 허용)
 export function dueDate(invDate, creditDays) {
-  const d = new Date(invDate + 'T00:00:00Z');
+  const d = new Date(ymd(invDate) + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + Number(creditDays || 0));
   return d.toISOString().slice(0, 10);
 }

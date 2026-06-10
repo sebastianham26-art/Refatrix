@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect } from '../sales.js';
+import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd } from '../sales.js';
 import { isClosedMonth } from '../importCost.js';
 import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
@@ -181,7 +181,7 @@ export default async function salesRoutes(app) {
       }
       // 반려: 기준 외상일로 되돌림(요청 시) + 입금예정일 재계산
       const baseDays = Number(s.base_days) || 0;
-      const newDue = dueDate(String(s.inv_date).slice(0, 10), baseDays);
+      const newDue = dueDate(s.inv_date, baseDays);
       await c.query(
         `UPDATE sales_invoices SET credit_days=$1, due_date=$2, credit_exception=false, credit_approved=true, credit_approved_by=$3, credit_approved_at=now() WHERE id=$4`,
         [baseDays, newDue, userId, id]);
@@ -310,7 +310,7 @@ export default async function salesRoutes(app) {
 
     const base = {
       reqId, type: cr.req_type, reason: cr.reason, closedMonth,
-      invoice: { id: inv.id, sat_no: inv.sat_no, inv_date: String(inv.inv_date).slice(0, 10), credit_days: inv.credit_days, due_date: inv.due_date ? String(inv.due_date).slice(0, 10) : null, subtotal_mxn: Number(inv.subtotal_mxn), iva_mxn: Number(inv.iva_mxn), total_mxn: Number(inv.total_mxn) },
+      invoice: { id: inv.id, sat_no: inv.sat_no, inv_date: ymd(inv.inv_date), credit_days: inv.credit_days, due_date: inv.due_date ? ymd(inv.due_date) : null, subtotal_mxn: Number(inv.subtotal_mxn), iva_mxn: Number(inv.iva_mxn), total_mxn: Number(inv.total_mxn) },
       customer: { code: cust.code, name: cust.name, base_credit_days: Number(cust.credit_days) || 0 },
       origLines: origRows.map((l) => ({ product_id: l.product_id, code: l.code, name: l.name, qty: Number(l.qty), discount_rate: Number(l.discount_rate), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })),
     };
@@ -326,18 +326,20 @@ export default async function salesRoutes(app) {
     const custDiscount = Number(cust.discount) || 0;
     const baseDays = Number(cust.credit_days) || 0;
     const newLines = [];
+    const linesForTotals = [];
     for (const l of payload.lines) {
       const p = (await query(`SELECT id, code, name, list_price, stock_qty, avg_cost FROM products WHERE id=$1`, [l.product_id])).rows[0];
       if (!p) continue;
       const discRate = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
       const line = computeLine({ qty: l.qty, listPrice: p.list_price, discountRate: discRate, cost: p.avg_cost });
+      linesForTotals.push(line);
       newLines.push({ product_id: p.id, code: p.code, name: p.name, qty: line.qty, discount_rate: line.discountRate, unit_price: line.unitPrice, line_amount_mxn: line.lineAmountMxn, applied_unit_cost: line.appliedUnitCost, cogs_mxn: line.cogsMxn, stock_qty: Number(p.stock_qty) });
     }
-    const newTotals = computeInvoiceTotals(newLines, Number(inv.iva_rate) || 16);
+    const newTotals = computeInvoiceTotals(linesForTotals, Number(inv.iva_rate) || 16);
     const newLinesCalc = newLines.map((l) => ({ productId: l.product_id, qty: l.qty, appliedUnitCost: l.applied_unit_cost, lineAmountMxn: l.line_amount_mxn }));
     const net = computeEditNetEffect({ origLines: origLinesCalc, newLines: newLinesCalc, closedMonth });
     const appliedDays = (payload.credit_days == null || payload.credit_days === '') ? baseDays : Number(payload.credit_days);
-    const due = dueDate(String(payload.inv_date || inv.inv_date).slice(0, 10), appliedDays);
+    const due = dueDate(payload.inv_date || inv.inv_date, appliedDays);
 
     // 재고 가능 여부 사전 점검(되돌림분 포함)
     const restore = {}; for (const l of origLinesCalc) restore[l.productId] = (restore[l.productId] || 0) + l.qty;
@@ -460,7 +462,7 @@ export default async function salesRoutes(app) {
       // 4) 외상일/예외(디렉터 수정승인에 흡수: 예외라도 승인된 것으로 확정)
       const appliedDays = (payload.credit_days == null || payload.credit_days === '') ? baseDays : Number(payload.credit_days);
       const exception = isCreditException(appliedDays, baseDays);
-      const due = dueDate(String(payload.inv_date || inv.inv_date).slice(0, 10), appliedDays);
+      const due = dueDate(payload.inv_date || inv.inv_date, appliedDays);
       await c.query(
         `UPDATE sales_invoices SET sat_no=COALESCE($1,sat_no), inv_date=COALESCE($2,inv_date),
            credit_days=$3, due_date=$4, credit_exception=$5, credit_approved=true,
