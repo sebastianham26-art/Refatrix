@@ -64,6 +64,7 @@ export default async function financeRoutes(app) {
     const amount = Number(b.amount);
     if (!(amount > 0) || !b.txn_date) return reply.code(400).send({ error: 'amount_date_required' });
     const status = b.status === 'plan' ? 'plan' : 'actual';
+    if (status === 'actual' && !b.account_id) return reply.code(400).send({ error: 'account_required_for_actual' });
     const isDirector = req.ctx.perm.role === 'director';
     // 환율: MXN=1, USD=입력값 또는 오늘 환율
     let fx = 1;
