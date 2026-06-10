@@ -444,7 +444,8 @@ export default async function salesRoutes(app) {
 
       // 1) 원본 되돌림(재고 복원)
       await reverseOriginalStock();
-      // 2) 기존 라인/원장 제거(소프트): 기존 out 이동은 reverse 'in'으로 상쇄됨. 라인 삭제 후 재삽입.
+      // 2) 기존 라인 제거 전, 그 라인을 참조하는 재고이동(out)의 line 참조를 끊는다(원장 행은 이력으로 보존).
+      await c.query(`UPDATE stock_movements SET sales_invoice_line_id=NULL WHERE sales_invoice_id=$1 AND sales_invoice_line_id IS NOT NULL`, [inv.id]);
       await c.query(`DELETE FROM sales_invoice_lines WHERE invoice_id=$1`, [inv.id]);
       // 3) 새 라인 적용(재고 차감 + 원장 out)
       const totals = computeInvoiceTotals(newComputed, Number(inv.iva_rate) || 16);
