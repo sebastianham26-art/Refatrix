@@ -92,14 +92,15 @@ export default async function financeRoutes(app) {
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
-              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.sales_invoice_id
+              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.sales_invoice_id,
+              (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
         WHERE ${cond.join(' AND ')}
         ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
     return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
-      editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
+      edit_count: Number(t.edit_count), editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
   });
 
   // 승인 대기(디렉터) — 담당자가 올린 미승인 지출
