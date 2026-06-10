@@ -10,6 +10,7 @@ import productRoutes from './routes/productRoutes.js';
 import importRoutes from './routes/importRoutes.js';
 import importCostRoutes from './routes/importCostRoutes.js';
 import salesRoutes from './routes/salesRoutes.js';
+import financeRoutes from './routes/financeRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 
 export function buildApp() {
@@ -32,6 +33,7 @@ export function buildApp() {
   app.register(importRoutes);
   app.register(importCostRoutes);
   app.register(salesRoutes);
+  app.register(financeRoutes);
   app.register(userRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
