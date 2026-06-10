@@ -292,6 +292,68 @@ export default async function salesRoutes(app) {
     return { items: rows };
   });
 
+  // 변경요청 상세 미리보기 (디렉터) — 전/후 비교 + 예상 정산차액 (DB 변경 없음)
+  app.get('/api/sales/change-requests/:reqId/detail', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const reqId = Number(req.params.reqId);
+    const cr = (await query(`SELECT * FROM sales_change_requests WHERE id=$1`, [reqId])).rows[0];
+    if (!cr) return reply.code(404).send({ error: 'not_found' });
+    const inv = (await query(`SELECT * FROM sales_invoices WHERE id=$1`, [cr.invoice_id])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'invoice_not_found' });
+    const cust = (await query(`SELECT discount, credit_days, code, name FROM customers WHERE id=$1`, [inv.customer_id])).rows[0];
+    const origRows = (await query(
+      `SELECT l.product_id, l.qty, l.list_price, l.discount_rate, l.unit_price, l.line_amount_mxn, l.applied_unit_cost, l.cogs_mxn, p.code, p.name
+         FROM sales_invoice_lines l JOIN products p ON p.id=l.product_id WHERE l.invoice_id=$1 ORDER BY l.id`, [cr.invoice_id])).rows;
+    const closedList = (await query(`SELECT period FROM period_closings`)).rows.map((r) => r.period);
+    const closedMonth = isClosedMonth(String(inv.inv_date).slice(0, 10), closedList);
+
+    const origLinesCalc = origRows.map((l) => ({ productId: l.product_id, qty: Number(l.qty), appliedUnitCost: Number(l.applied_unit_cost), lineAmountMxn: Number(l.line_amount_mxn) }));
+
+    const base = {
+      reqId, type: cr.req_type, reason: cr.reason, closedMonth,
+      invoice: { id: inv.id, sat_no: inv.sat_no, inv_date: String(inv.inv_date).slice(0, 10), credit_days: inv.credit_days, due_date: inv.due_date ? String(inv.due_date).slice(0, 10) : null, subtotal_mxn: Number(inv.subtotal_mxn), iva_mxn: Number(inv.iva_mxn), total_mxn: Number(inv.total_mxn) },
+      customer: { code: cust.code, name: cust.name, base_credit_days: Number(cust.credit_days) || 0 },
+      origLines: origRows.map((l) => ({ product_id: l.product_id, code: l.code, name: l.name, qty: Number(l.qty), discount_rate: Number(l.discount_rate), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })),
+    };
+
+    if (cr.req_type === 'delete') {
+      const rev = computeDeleteReversal({ origLines: origLinesCalc, closedMonth });
+      return { ...base, mode: rev.mode, varianceMxn: rev.varianceMxn,
+        effect: { stockRestore: rev.stockRestore, cogsReversal: rev.cogsReversal, salesReversal: rev.salesReversal } };
+    }
+
+    // edit: 변경 후 라인 계산(현재 평균원가 스냅샷)
+    const payload = typeof cr.payload === 'string' ? JSON.parse(cr.payload) : cr.payload;
+    const custDiscount = Number(cust.discount) || 0;
+    const baseDays = Number(cust.credit_days) || 0;
+    const newLines = [];
+    for (const l of payload.lines) {
+      const p = (await query(`SELECT id, code, name, list_price, stock_qty, avg_cost FROM products WHERE id=$1`, [l.product_id])).rows[0];
+      if (!p) continue;
+      const discRate = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
+      const line = computeLine({ qty: l.qty, listPrice: p.list_price, discountRate: discRate, cost: p.avg_cost });
+      newLines.push({ product_id: p.id, code: p.code, name: p.name, qty: line.qty, discount_rate: line.discountRate, unit_price: line.unitPrice, line_amount_mxn: line.lineAmountMxn, applied_unit_cost: line.appliedUnitCost, cogs_mxn: line.cogsMxn, stock_qty: Number(p.stock_qty) });
+    }
+    const newTotals = computeInvoiceTotals(newLines, Number(inv.iva_rate) || 16);
+    const newLinesCalc = newLines.map((l) => ({ productId: l.product_id, qty: l.qty, appliedUnitCost: l.applied_unit_cost, lineAmountMxn: l.line_amount_mxn }));
+    const net = computeEditNetEffect({ origLines: origLinesCalc, newLines: newLinesCalc, closedMonth });
+    const appliedDays = (payload.credit_days == null || payload.credit_days === '') ? baseDays : Number(payload.credit_days);
+    const due = dueDate(String(payload.inv_date || inv.inv_date).slice(0, 10), appliedDays);
+
+    // 재고 가능 여부 사전 점검(되돌림분 포함)
+    const restore = {}; for (const l of origLinesCalc) restore[l.productId] = (restore[l.productId] || 0) + l.qty;
+    const shortages = [];
+    for (const l of newLines) {
+      const avail = l.stock_qty + (restore[l.product_id] || 0);
+      if (l.qty > avail) shortages.push({ code: l.code, requested: l.qty, available: avail, shortage: round2(l.qty - avail) });
+    }
+
+    return { ...base, mode: net.mode, varianceMxn: net.varianceMxn,
+      newLines: newLines.map((l) => ({ product_id: l.product_id, code: l.code, name: l.name, qty: l.qty, discount_rate: l.discount_rate, unit_price: l.unit_price, line_amount_mxn: l.line_amount_mxn })),
+      newTotals: { subtotal_mxn: newTotals.subtotalMxn, iva_mxn: newTotals.ivaMxn, total_mxn: newTotals.totalMxn },
+      newCreditDays: appliedDays, newDueDate: due,
+      stockOk: shortages.length === 0, shortages };
+  });
+
   // 변경요청 반려 (디렉터) — 원본 상태 복귀
   app.post('/api/sales/change-requests/:reqId/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const reqId = Number(req.params.reqId);
