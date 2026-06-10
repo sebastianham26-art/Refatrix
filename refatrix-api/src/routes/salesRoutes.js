@@ -241,7 +241,7 @@ export default async function salesRoutes(app) {
     if (!inv) return null;
     const lines = (await c.query(`SELECT * FROM sales_invoice_lines WHERE invoice_id=$1`, [id])).rows;
     const closed = (await c.query(`SELECT period FROM period_closings`)).rows.map((r) => r.period);
-    inv._closedMonth = isClosedMonth(String(inv.inv_date).slice(0, 10), closed);
+    inv._closedMonth = isClosedMonth(ymd(inv.inv_date), closed);
     inv._lines = lines.map((l) => ({ productId: l.product_id, qty: Number(l.qty), appliedUnitCost: Number(l.applied_unit_cost), lineAmountMxn: Number(l.line_amount_mxn) }));
     return inv;
   }
@@ -304,7 +304,7 @@ export default async function salesRoutes(app) {
       `SELECT l.product_id, l.qty, l.list_price, l.discount_rate, l.unit_price, l.line_amount_mxn, l.applied_unit_cost, l.cogs_mxn, p.code, p.name
          FROM sales_invoice_lines l JOIN products p ON p.id=l.product_id WHERE l.invoice_id=$1 ORDER BY l.id`, [cr.invoice_id])).rows;
     const closedList = (await query(`SELECT period FROM period_closings`)).rows.map((r) => r.period);
-    const closedMonth = isClosedMonth(String(inv.inv_date).slice(0, 10), closedList);
+    const closedMonth = isClosedMonth(ymd(inv.inv_date), closedList);
 
     const origLinesCalc = origRows.map((l) => ({ productId: l.product_id, qty: Number(l.qty), appliedUnitCost: Number(l.applied_unit_cost), lineAmountMxn: Number(l.line_amount_mxn) }));
 
@@ -398,7 +398,7 @@ export default async function salesRoutes(app) {
         await c.query(
           `INSERT INTO cogs_adjustments (doc_id, sales_invoice_id, product_id, sale_date, qty, diff_mxn, kind, source)
            VALUES (NULL,$1,$2,$3,$4,$5,$6,$7)`,
-          [inv.id, inv._lines[0]?.productId || null, String(inv.inv_date).slice(0, 10), null, round2(varianceMxn), kind, source]);
+          [inv.id, inv._lines[0]?.productId || null, ymd(inv.inv_date), null, round2(varianceMxn), kind, source]);
       }
 
       if (cr.req_type === 'delete') {
