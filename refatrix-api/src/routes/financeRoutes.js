@@ -92,13 +92,14 @@ export default async function financeRoutes(app) {
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
-              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.memo, t.sales_invoice_id
+              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.sales_invoice_id
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
         WHERE ${cond.join(' AND ')}
         ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
-    return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate) })) };
+    return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+      editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
   });
 
   // 승인 대기(디렉터) — 담당자가 올린 미승인 지출
@@ -129,6 +130,161 @@ export default async function financeRoutes(app) {
     if (!r.rows[0]) return reply.code(409).send({ error: 'not_pending' });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { rejected: true } });
     return { ok: true };
+  });
+
+  // ===== 거래 수정/삭제 =====
+  // 공통: 거래 한 건의 amount_mxn 계산
+  async function calcMxn(currency, amount, fxIn) {
+    let fx = 1;
+    if (currency === 'USD') fx = Number(fxIn) > 0 ? Number(fxIn) : (await getUsdMxnRate()).rate;
+    return { fx, amountMxn: r2(Number(amount) * fx) };
+  }
+
+  // 미승인 일반 거래: 등록자/디렉터가 바로 수정 (잔액 영향 없음)
+  app.patch('/api/transactions/:id', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
+    if (t.approved) return reply.code(409).send({ error: 'already_approved_use_request' });
+    const b = req.body || {};
+    const direction = b.direction === 'in' ? 'in' : (b.direction === 'out' ? 'out' : t.direction);
+    const currency = ['MXN', 'USD'].includes(b.currency) ? b.currency : t.currency;
+    const amount = b.amount != null ? Number(b.amount) : Number(t.amount);
+    const { fx, amountMxn } = await calcMxn(currency, amount, b.fx_rate);
+    await query(
+      `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
+         category_code=$8, memo=$9, updated_by=$10 WHERE id=$11`,
+      [b.account_id ?? t.account_id, b.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
+       b.category_code ?? t.category_code, b.memo ?? t.memo, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { direct_edit: true } });
+    return { ok: true };
+  });
+
+  // 승인된 일반 거래: 수정 요청 (원본 유지)
+  app.post('/api/transactions/:id/edit-request', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT id, kind, sales_invoice_id, approved, change_status FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
+    if (!t.approved) return reply.code(409).send({ error: 'not_approved_edit_directly' });
+    if (t.change_status) return reply.code(409).send({ error: 'change_in_progress' });
+    const payload = req.body?.payload || {};
+    const r = await query(
+      `INSERT INTO txn_change_requests (txn_id, req_type, payload, reason, requested_by) VALUES ($1,'edit',$2,$3,$4) RETURNING id`,
+      [id, JSON.stringify(payload), req.body?.reason || null, req.ctx.perm.userId]);
+    await query(`UPDATE transactions SET change_status='edit_pending' WHERE id=$1`, [id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `txn_change_request:${r.rows[0].id}`, detail: { type: 'edit', txn: id } });
+    return { id: r.rows[0].id, status: 'pending' };
+  });
+
+  // 승인된 일반 거래: 삭제 요청
+  app.post('/api/transactions/:id/delete-request', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT id, kind, sales_invoice_id, approved, change_status FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
+    if (!t.approved) return reply.code(409).send({ error: 'not_approved_delete_directly' });
+    if (t.change_status) return reply.code(409).send({ error: 'change_in_progress' });
+    const r = await query(
+      `INSERT INTO txn_change_requests (txn_id, req_type, payload, reason, requested_by) VALUES ($1,'delete',NULL,$2,$3) RETURNING id`,
+      [id, req.body?.reason || null, req.ctx.perm.userId]);
+    await query(`UPDATE transactions SET change_status='delete_pending' WHERE id=$1`, [id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `txn_change_request:${r.rows[0].id}`, detail: { type: 'delete', txn: id } });
+    return { id: r.rows[0].id, status: 'pending' };
+  });
+
+  // 변경요청 대기 목록(디렉터)
+  app.get('/api/transactions/change-requests/pending', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT cr.id, cr.txn_id, cr.req_type, cr.payload, cr.reason, cr.requested_at,
+              t.txn_date, t.direction, t.amount, t.currency, t.amount_mxn, t.category_code, t.account_id, t.memo,
+              a.name AS account_name, cat.name AS category_name, u.name AS requested_by_name
+         FROM txn_change_requests cr
+         JOIN transactions t ON t.id=cr.txn_id
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN users u ON u.id=cr.requested_by
+        WHERE cr.status='pending' ORDER BY cr.requested_at`)).rows;
+    return { items: rows };
+  });
+
+  // 변경요청 상세(전/후 비교)
+  app.get('/api/transactions/change-requests/:id/detail', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const reqId = Number(req.params.id);
+    const cr = (await query(`SELECT * FROM txn_change_requests WHERE id=$1`, [reqId])).rows[0];
+    if (!cr) return reply.code(404).send({ error: 'not_found' });
+    const t = (await query(
+      `SELECT t.*, a.name AS account_name, cat.name AS category_name FROM transactions t
+         LEFT JOIN accounts a ON a.id=t.account_id LEFT JOIN categories cat ON cat.code=t.category_code WHERE t.id=$1`, [cr.txn_id])).rows[0];
+    const orig = {
+      account_id: t.account_id, account_name: t.account_name, txn_date: String(t.txn_date).slice(0, 10), direction: t.direction,
+      amount: Number(t.amount), currency: t.currency, fx_rate: Number(t.fx_rate), amount_mxn: Number(t.amount_mxn),
+      category_code: t.category_code, category_name: t.category_name, memo: t.memo,
+    };
+    if (cr.req_type === 'delete') return { type: 'delete', reason: cr.reason, orig };
+    const p = typeof cr.payload === 'string' ? JSON.parse(cr.payload) : (cr.payload || {});
+    const direction = p.direction === 'in' ? 'in' : (p.direction === 'out' ? 'out' : t.direction);
+    const currency = ['MXN', 'USD'].includes(p.currency) ? p.currency : t.currency;
+    const amount = p.amount != null ? Number(p.amount) : Number(t.amount);
+    const { fx, amountMxn } = await calcMxn(currency, amount, p.fx_rate);
+    let accName = orig.account_name;
+    if (p.account_id != null && p.account_id !== t.account_id) {
+      accName = (await query(`SELECT name FROM accounts WHERE id=$1`, [p.account_id])).rows[0]?.name || null;
+    }
+    const next = {
+      account_id: p.account_id ?? t.account_id, account_name: accName, txn_date: p.txn_date || orig.txn_date, direction,
+      amount, currency, fx_rate: fx, amount_mxn: amountMxn, category_code: p.category_code ?? t.category_code, memo: p.memo ?? t.memo,
+    };
+    return { type: 'edit', reason: cr.reason, orig, next };
+  });
+
+  // 변경요청 승인(디렉터) — 잔액은 거래행에서 자동 재계산되므로 행을 갱신/소프트삭제만
+  app.post('/api/transactions/change-requests/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const reqId = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const cr = (await c.query(`SELECT * FROM txn_change_requests WHERE id=$1`, [reqId])).rows[0];
+      if (!cr || cr.status !== 'pending') return { error: 'not_pending' };
+      const t = (await c.query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [cr.txn_id])).rows[0];
+      if (!t) return { error: 'txn_not_found' };
+      if (cr.req_type === 'delete') {
+        await c.query(`UPDATE transactions SET deleted_at=now(), change_status=NULL, updated_by=$1 WHERE id=$2`, [userId, t.id]);
+      } else {
+        const p = typeof cr.payload === 'string' ? JSON.parse(cr.payload) : (cr.payload || {});
+        const direction = p.direction === 'in' ? 'in' : (p.direction === 'out' ? 'out' : t.direction);
+        const currency = ['MXN', 'USD'].includes(p.currency) ? p.currency : t.currency;
+        const amount = p.amount != null ? Number(p.amount) : Number(t.amount);
+        let fx = 1;
+        if (currency === 'USD') fx = Number(p.fx_rate) > 0 ? Number(p.fx_rate) : (await getUsdMxnRate()).rate;
+        const amountMxn = r2(amount * fx);
+        await c.query(
+          `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
+             category_code=$8, memo=$9, change_status=NULL, updated_by=$10 WHERE id=$11`,
+          [p.account_id ?? t.account_id, p.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
+           p.category_code ?? t.category_code, p.memo ?? t.memo, userId, t.id]);
+      }
+      await c.query(`UPDATE txn_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [userId, reqId]);
+      return { ok: true, type: cr.req_type };
+    });
+    if (out.error) return reply.code(409).send(out);
+    await logEvent({ userId, action: 'update', target: `txn_change_request:${reqId}`, detail: { approved: true, type: out.type } });
+    return out;
+  });
+
+  // 변경요청 반려(디렉터) — 원본 복귀
+  app.post('/api/transactions/change-requests/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const reqId = Number(req.params.id);
+    const out = await withTx(async (c) => {
+      const cr = (await c.query(`SELECT * FROM txn_change_requests WHERE id=$1`, [reqId])).rows[0];
+      if (!cr || cr.status !== 'pending') return { error: 'not_pending' };
+      await c.query(`UPDATE txn_change_requests SET status='rejected', decided_by=$1, decided_at=now() WHERE id=$2`, [req.ctx.perm.userId, reqId]);
+      await c.query(`UPDATE transactions SET change_status=NULL WHERE id=$1`, [cr.txn_id]);
+      return { ok: true };
+    });
+    if (out.error) return reply.code(409).send(out);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `txn_change_request:${reqId}`, detail: { rejected: true } });
+    return out;
   });
 
   // 계정과목 목록(드롭다운용)
