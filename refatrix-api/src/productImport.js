@@ -48,8 +48,8 @@ export function splitSyd(raw) {
 export function parseAppEntry(entryRaw) {
   const app_text = String(entryRaw).trim();
   if (!app_text) return null;
-  // 끝의 대괄호 주석은 모델에 남기되 연식 추출엔 방해되지 않게 처리
-  let s = app_text;
+  // 파싱용 문자열: 대괄호 주석([usa ...] 등) 제거(연식 오인 방지). 원문은 app_text에 보존.
+  let s = app_text.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
   let year_from = null, year_to = null;
   // 마지막 연식 패턴(4자리, 선택적 -4자리)을 찾음
   const yearRe = /(\d{4})(?:\s*-\s*(\d{4}))?/g;

@@ -2,7 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { minimizeProduct } from '../permissions.js';
 import { logPageView, logEvent } from '../audit.js';
-import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications } from '../productImport.js';
+import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd } from '../productImport.js';
 
 export default async function productRoutes(app) {
   // 제품 목록: 검색 + 페이징 (SKU ~5,000 대비, 한 번에 다 보내지 않음)
@@ -110,7 +110,6 @@ export default async function productRoutes(app) {
           created++;
         } else {
           const chFields = Object.keys(d.changes);
-          if (chFields.length === 0 && !d.syd_changed) { unchanged++; continue; }
           if (chFields.length > 0) {
             const sets = []; const vals = [];
             for (const f of chFields) { vals.push(p[f]); sets.push(`${f}=$${vals.length}`); }
@@ -118,9 +117,11 @@ export default async function productRoutes(app) {
             vals.push(ex.id);
             await c.query(`UPDATE products SET ${sets.join(', ')} WHERE id=$${vals.length}`, vals);
           }
-          if (d.syd_changed) await syncSyd(c, ex.id, p.syd_codes);
-          if (d.app_changed) await syncApp(c, ex.id, p.applications);
-          updated++;
+          // 파생 데이터(SyD·적용차종)는 항상 현재 파일 기준으로 재동기화 →
+          // "동일"로 분류돼도 분해 데이터가 비지 않도록 보장.
+          await syncSyd(c, ex.id, p.syd_codes);
+          await syncApp(c, ex.id, p.applications);
+          if (chFields.length > 0 || d.syd_changed || d.app_changed) updated++; else unchanged++;
         }
       }
       return { ok: true };
@@ -158,24 +159,82 @@ export default async function productRoutes(app) {
     return { items: rows };
   });
 
-  // 차종(메이커/모델/연식)으로 부품 역검색
-  // q: 모델/원문 텍스트, maker: 메이커, year: 해당 연식 포함 차종
-  app.get('/api/products/by-vehicle', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
-    const q = String(req.query.q || '').trim();
+  // 차종 드롭다운: 메이커 목록
+  app.get('/api/products/app-makers', { preHandler: [authGuard, requirePage('products')] }, async () => {
+    const rows = (await query(
+      `SELECT DISTINCT maker FROM product_applications WHERE maker IS NOT NULL AND maker <> '' ORDER BY maker`)).rows;
+    return { items: rows.map((r) => r.maker) };
+  });
+
+  // 차종 드롭다운: (메이커별) 모델 목록
+  app.get('/api/products/app-models', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
     const maker = String(req.query.maker || '').trim();
+    const params = []; const conds = [`model IS NOT NULL AND model <> ''`];
+    if (maker) { params.push(maker); conds.push(`maker = $${params.length}`); }
+    const rows = (await query(
+      `SELECT DISTINCT model FROM product_applications WHERE ${conds.join(' AND ')} ORDER BY model`, params)).rows;
+    return { items: rows.map((r) => r.model) };
+  });
+
+  // 차종 드롭다운: (메이커·모델별) 개별 연도 목록(범위를 펼침)
+  app.get('/api/products/app-years', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const maker = String(req.query.maker || '').trim();
+    const model = String(req.query.model || '').trim();
+    const params = []; const conds = [`year_from IS NOT NULL AND year_to IS NOT NULL`];
+    if (maker) { params.push(maker); conds.push(`maker = $${params.length}`); }
+    if (model) { params.push(model); conds.push(`model = $${params.length}`); }
+    const rows = (await query(
+      `SELECT DISTINCT y FROM product_applications, generate_series(year_from, year_to) AS y
+        WHERE ${conds.join(' AND ')} ORDER BY y DESC`, params)).rows;
+    return { items: rows.map((r) => Number(r.y)) };
+  });
+
+  // 차종(메이커/모델/연식)으로 부품 역검색 — 드롭다운 정확매칭, 단계 건너뛰기 허용
+  app.get('/api/products/by-vehicle', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const maker = String(req.query.maker || '').trim();
+    const model = String(req.query.model || '').trim();
+    const q = String(req.query.q || '').trim();
     const year = req.query.year ? Number(req.query.year) : null;
-    if (!q && !maker && !year) return { items: [] };
+    if (!maker && !model && !q && !year) return { items: [] };
     const conds = ['p.deleted_at IS NULL']; const params = [];
+    if (maker) { params.push(maker); conds.push(`a.maker = $${params.length}`); }
+    if (model) { params.push(model); conds.push(`a.model = $${params.length}`); }
     if (q) { params.push(`%${q}%`); conds.push(`(a.app_text ILIKE $${params.length} OR a.model ILIKE $${params.length})`); }
-    if (maker) { params.push(`%${maker}%`); conds.push(`a.maker ILIKE $${params.length}`); }
-    if (year != null && Number.isFinite(year)) { params.push(year); conds.push(`(a.year_from IS NULL OR a.year_from <= $${params.length}) AND (a.year_to IS NULL OR a.year_to >= $${params.length})`); }
+    if (year != null && Number.isFinite(year)) { params.push(year); conds.push(`a.year_from <= $${params.length} AND a.year_to >= $${params.length}`); }
     const rows = (await query(
       `SELECT p.id, p.code, p.name, p.scode, a.app_text, a.maker, a.model, a.year_from, a.year_to
          FROM product_applications a JOIN products p ON p.id=a.product_id
         WHERE ${conds.join(' AND ')}
         ORDER BY p.code, a.year_from
-        LIMIT 200`, params)).rows;
+        LIMIT 300`, params)).rows;
     return { items: rows };
+  });
+
+  // 기존 제품의 파생 데이터(SyD·적용차종) 전체 재생성(디렉터).
+  // 이미 올린 제품들의 분해 데이터를 한 번에 채울 때 사용.
+  app.post('/api/products/resync-derived', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const userId = req.ctx.perm.userId;
+    const prods = (await query(`SELECT id, scode, app FROM products WHERE deleted_at IS NULL`)).rows;
+    let n = 0;
+    for (const pr of prods) {
+      const syd = splitSyd(pr.scode);
+      const apps = parseApplications(pr.app);
+      await withTx(async (c) => {
+        await c.query(`DELETE FROM product_syd_codes WHERE product_id=$1`, [pr.id]);
+        for (const sc of [...new Set(syd.map(String))].filter(Boolean)) {
+          await c.query(`INSERT INTO product_syd_codes (product_id, syd_code) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [pr.id, sc]);
+        }
+        await c.query(`DELETE FROM product_applications WHERE product_id=$1`, [pr.id]);
+        for (const a of apps) {
+          await c.query(
+            `INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [pr.id, a.app_text, a.maker, a.model, a.year_from, a.year_to]);
+        }
+      });
+      n++;
+    }
+    await logEvent({ userId, action: 'update', target: 'product_resync', detail: { products: n } });
+    return { ok: true, products: n };
   });
 }
 
