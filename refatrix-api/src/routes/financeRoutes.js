@@ -767,7 +767,7 @@ export default async function financeRoutes(app) {
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: t.txn_date, plan_date: t.plan_date || t.txn_date,
       plan_amount_mxn: t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : null,
-      category_code: t.category_code, category_name: t.category_name, recurring_rule_id: t.recurring_rule_id,
+      category_code: t.category_code, category_name: t.category_name, recurring_rule_id: t.recurring_rule_id, memo: t.memo,
     })), { filter, from, to });
     return res;
   });
