@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
+import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
@@ -30,6 +31,78 @@ export default async function customerRoutes(app) {
   // 다음 고객코드 자동생성(미리보기). 대소문자 무관, 빈 번호 충돌 회피.
   app.get('/api/customers/next-code', { preHandler: [authGuard, requirePage('customers')] }, async () => {
     return { code: await computeNextCode() };
+  });
+
+  // 업로드 양식 헤더(프런트가 빈 xlsx 양식 생성에 사용)
+  app.get('/api/customers/template', { preHandler: [authGuard, requirePage('customers')] }, async () => {
+    return { headers: CUST_TEMPLATE_HEADERS };
+  });
+
+  async function resolveRefs() {
+    const teams = (await query(`SELECT id, name FROM sales_teams WHERE deleted_at IS NULL AND is_sales=true`)).rows;
+    const owners = (await query(`SELECT id, name FROM users WHERE deleted_at IS NULL AND role IN ('sales','director')`)).rows;
+    const stages = (await query(`SELECT id, name FROM stages WHERE deleted_at IS NULL`)).rows;
+    const existing = (await query(`SELECT code FROM customers WHERE deleted_at IS NULL`)).rows;
+    const teamByName = {}; for (const t of teams) teamByName[t.name.toLowerCase()] = t.id;
+    const ownerByName = {}; for (const o of owners) ownerByName[o.name.toLowerCase()] = o.id;
+    const stageByName = {}; for (const s of stages) stageByName[s.name.toLowerCase()] = s.id;
+    const existingByCode = new Set(existing.map((r) => String(r.code).toLowerCase()));
+    return { teamByName, ownerByName, stageByName, existingByCode };
+  }
+
+  // 엑셀 업로드 미리보기 — body: { rows: [[...]] } (첫 행 헤더)
+  app.post('/api/customers/import/preview', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const all = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!all.length) return reply.code(400).send({ error: 'no_rows' });
+    const idx = buildHeaderIndex(all[0]);
+    if (idx.name == null) return reply.code(400).send({ error: 'missing_name_column' });
+    const parsed = all.slice(1).map((r) => parseCustRow(r, idx)).filter(Boolean);
+    const resolve = await resolveRefs();
+    const preview = buildCustPreview(parsed, resolve);
+    return { ...preview, total: parsed.length };
+  });
+
+  // 커밋 — 신규는 코드 자동생성, 기존(코드 일치)은 갱신. 팀 편집권한 확인.
+  app.post('/api/customers/import/commit', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const all = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!all.length) return reply.code(400).send({ error: 'no_rows' });
+    const idx = buildHeaderIndex(all[0]);
+    const parsed = all.slice(1).map((r) => parseCustRow(r, idx)).filter(Boolean);
+    const resolve = await resolveRefs();
+    const userId = req.ctx.perm.userId;
+    let created = 0, updated = 0, skipped = 0;
+    for (const p of parsed) {
+      if (!p.name || !p.team) { skipped++; continue; }
+      const teamId = resolve.teamByName[p.team.toLowerCase()];
+      if (!teamId || !canEditTeam(req.ctx.perm, teamId)) { skipped++; continue; }
+      const ownerId = p.owner ? (resolve.ownerByName[p.owner.toLowerCase()] || null) : null;
+      const stageId = p.stage ? (resolve.stageByName[p.stage.toLowerCase()] || null) : null;
+      const isUpdate = p.code && resolve.existingByCode.has(p.code.toLowerCase());
+      if (isUpdate) {
+        await query(
+          `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
+             team_id=$7, stage_id=COALESCE($8,stage_id), owner_id=COALESCE($9,owner_id),
+             customer_type=COALESCE($10,customer_type), memo=COALESCE($11,memo), updated_by=$12
+           WHERE lower(code)=lower($13) AND deleted_at IS NULL`,
+          [p.name, p.rfc, p.contact, p.phone, p.discount, p.credit_days, teamId, stageId, ownerId, p.customer_type, p.memo, userId, p.code]);
+        updated++;
+      } else {
+        let code = p.code, ok = false;
+        for (let attempt = 0; attempt < 5 && !ok; attempt++) {
+          if (!code || attempt > 0) code = await computeNextCode();
+          try {
+            await query(
+              `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, stage_since, created_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13)`,
+              [code, p.name, p.rfc, p.contact, p.phone, p.discount, p.credit_days, teamId, stageId, ownerId, p.customer_type, p.memo, userId]);
+            ok = true; resolve.existingByCode.add(String(code).toLowerCase());
+          } catch (e) { if (!String(e.message || '').match(/unique|duplicate/)) throw e; }
+        }
+        if (ok) created++; else skipped++;
+      }
+    }
+    await safeLog({ userId, action: 'create', target: 'customer_import', detail: { created, updated, skipped } });
+    return { ok: true, created, updated, skipped };
   });
 
   // 고객 단계 목록
