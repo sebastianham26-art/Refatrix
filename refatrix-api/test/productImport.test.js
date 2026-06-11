@@ -1,6 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitSyd, buildHeaderIndex, parseRow, diffProduct, buildPreview, COLUMN_MAP } from '../src/productImport.js';
+import { splitSyd, buildHeaderIndex, parseRow, diffProduct, buildPreview, COLUMN_MAP, parseAppEntry, parseApplications } from '../src/productImport.js';
+
+test('parseAppEntry: maker/model/year', () => {
+  assert.deepEqual(parseAppEntry('NISSAN Frontier 4X2 1998-2004'), { app_text: 'NISSAN Frontier 4X2 1998-2004', maker: 'NISSAN', model: 'Frontier 4X2', year_from: 1998, year_to: 2004 });
+  assert.deepEqual(parseAppEntry('DODGE, CHRYSLER 200 2011-2014'), { app_text: 'DODGE, CHRYSLER 200 2011-2014', maker: 'DODGE, CHRYSLER', model: '200', year_from: 2011, year_to: 2014 });
+  // single year, parentheses in model
+  const r = parseAppEntry('DODGE, CHRYSLER Ram 2500 4X2 (Independent Suspension) 1994-1999');
+  assert.equal(r.maker, 'DODGE, CHRYSLER');
+  assert.equal(r.model, 'Ram 2500 4X2 (Independent Suspension)');
+  assert.equal(r.year_from, 1994); assert.equal(r.year_to, 1999);
+  // single year only
+  const s = parseAppEntry('DODGE, CHRYSLER Imperial 1990');
+  assert.equal(s.year_from, 1990); assert.equal(s.year_to, 1990);
+});
+
+test('parseApplications: splits by // ', () => {
+  const a = parseApplications('JEEP Liberty 2002-2007 // JEEP Liberty 4X4 2002-2007');
+  assert.equal(a.length, 2);
+  assert.equal(a[0].model, 'Liberty');
+  assert.equal(a[1].model, 'Liberty 4X4');
+  assert.deepEqual(parseApplications(null), []);
+});
 
 test('splitSyd handles single, multiple, spacing', () => {
   assert.deepEqual(splitSyd('1026018'), ['1026018']);
@@ -74,8 +95,8 @@ test('buildPreview aggregates new/updated/unchanged/errors/duplicates', () => {
     ['NEW1', 'S1', 'app', 'Dup', null, null, 100, null, null, null, null, null, null], // duplicate code
   ].map((r) => parseRow(r, idx));
   const existing = {
-    UPD1: { name: 'Old', scode: 'S2', app: 'app', list_price: 150, syd_codes: ['S2'] },
-    SAME1: { name: 'Same', scode: 'S3', app: 'app', list_price: 300, syd_codes: ['S3'] },
+    UPD1: { name: 'Old', scode: 'S2', app: 'app', list_price: 150, syd_codes: ['S2'], app_texts: ['app'] },
+    SAME1: { name: 'Same', scode: 'S3', app: 'app', list_price: 300, syd_codes: ['S3'], app_texts: ['app'] },
   };
   const pv = buildPreview(rows, existing);
   assert.equal(pv.new_items.length, 1);

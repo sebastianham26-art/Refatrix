@@ -43,6 +43,42 @@ export function splitSyd(raw) {
     .filter((s) => s.length > 0);
 }
 
+// 적용차종 한 항목 파싱: "메이커 모델 연식" → {app_text, maker, model, year_from, year_to}
+// 메이커 = 앞쪽 연속 대문자 토큰(쉼표 허용), 연식 = 끝쪽 4자리(-4자리), 모델 = 나머지.
+export function parseAppEntry(entryRaw) {
+  const app_text = String(entryRaw).trim();
+  if (!app_text) return null;
+  // 끝의 대괄호 주석은 모델에 남기되 연식 추출엔 방해되지 않게 처리
+  let s = app_text;
+  let year_from = null, year_to = null;
+  // 마지막 연식 패턴(4자리, 선택적 -4자리)을 찾음
+  const yearRe = /(\d{4})(?:\s*-\s*(\d{4}))?/g;
+  let ym, last = null;
+  while ((ym = yearRe.exec(s)) !== null) last = ym;
+  let modelPart = s;
+  if (last) {
+    year_from = Number(last[1]);
+    year_to = last[2] ? Number(last[2]) : year_from;
+    modelPart = s.slice(0, last.index).trim();
+  }
+  // 메이커: 앞쪽 연속 대문자 토큰(쉼표/&/. 허용)
+  let maker = '', model = modelPart;
+  const mk = modelPart.match(/^([A-ZÁÉÍÓÚÑ&./]+(?:,\s*[A-ZÁÉÍÓÚÑ&./]+)*)\s+/);
+  if (mk) { maker = mk[1].trim(); model = modelPart.slice(mk[0].length).trim(); }
+  return { app_text, maker: maker || null, model: model || null, year_from, year_to };
+}
+
+// 적용차종 전체(' // ' 구분) → 항목 배열
+export function parseApplications(raw) {
+  if (raw == null) return [];
+  return String(raw)
+    .split(/\s*\/\/\s*/)
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0)
+    .map(parseAppEntry)
+    .filter(Boolean);
+}
+
 // 헤더 배열 → 필드 인덱스 맵
 export function buildHeaderIndex(headerRow) {
   const idx = {};
@@ -65,6 +101,7 @@ export function parseRow(row, headerIdx) {
     obj[f] = NUMERIC_FIELDS.has(f) ? toNum(raw) : clean(raw);
   }
   obj.syd_codes = splitSyd(obj.scode);
+  obj.applications = parseApplications(obj.app);
   return obj;
 }
 
@@ -84,7 +121,7 @@ function eq(a, b, isNum) {
 // 기존 제품(existing: {code->row}) 대비 변경점 계산.
 // 반환: { isNew, changes: { field: {from,to} }, syd_changed }
 export function diffProduct(parsed, existing) {
-  if (!existing) return { isNew: true, changes: {}, syd_changed: parsed.syd_codes.length > 0 };
+  if (!existing) return { isNew: true, changes: {}, syd_changed: parsed.syd_codes.length > 0, app_changed: (parsed.applications || []).length > 0 };
   const changes = {};
   for (const f of UPDATABLE_FIELDS) {
     if (!(f in parsed)) continue; // 파일에 해당 컬럼 없음 → 건드리지 않음
@@ -97,7 +134,11 @@ export function diffProduct(parsed, existing) {
   const cur = new Set((existing.syd_codes || []).map(String));
   const next = new Set(parsed.syd_codes.map(String));
   const syd_changed = cur.size !== next.size || [...next].some((c) => !cur.has(c));
-  return { isNew: false, changes, syd_changed };
+  // 적용차종 원문 집합 비교
+  const curApp = new Set((existing.app_texts || []).map(String));
+  const nextApp = new Set((parsed.applications || []).map((a) => a.app_text));
+  const app_changed = curApp.size !== nextApp.size || [...nextApp].some((a) => !curApp.has(a));
+  return { isNew: false, changes, syd_changed, app_changed };
 }
 
 // 전체 미리보기 집계
@@ -113,9 +154,10 @@ export function buildPreview(parsedRows, existingByCode) {
     const d = diffProduct(p, ex);
     if (d.isNew) {
       result.new_items.push({ code: p.code, name: p.name, list_price: p.list_price ?? null, syd_count: p.syd_codes.length });
-    } else if (Object.keys(d.changes).length > 0 || d.syd_changed) {
+    } else if (Object.keys(d.changes).length > 0 || d.syd_changed || d.app_changed) {
       result.updated.push({ code: p.code, name: p.name, changes: d.changes, syd_changed: d.syd_changed,
-        syd_from: ex.syd_codes || [], syd_to: p.syd_codes });
+        syd_from: ex.syd_codes || [], syd_to: p.syd_codes, app_changed: d.app_changed,
+        app_count: (p.applications || []).length });
     } else {
       result.unchanged += 1;
     }

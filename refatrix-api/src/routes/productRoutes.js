@@ -2,7 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { minimizeProduct } from '../permissions.js';
 import { logPageView, logEvent } from '../audit.js';
-import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS } from '../productImport.js';
+import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications } from '../productImport.js';
 
 export default async function productRoutes(app) {
   // 제품 목록: 검색 + 페이징 (SKU ~5,000 대비, 한 번에 다 보내지 않음)
@@ -57,8 +57,13 @@ export default async function productRoutes(app) {
       [rows.map((r) => r.id)])).rows : [];
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
+    const appRows = rows.length ? (await query(
+      `SELECT product_id, app_text FROM product_applications WHERE product_id = ANY($1)`,
+      [rows.map((r) => r.id)])).rows : [];
+    const appByPid = {};
+    for (const a of appRows) (appByPid[a.product_id] ||= []).push(a.app_text);
     const byCode = {};
-    for (const r of rows) byCode[r.code] = { ...r, syd_codes: sydByPid[r.id] || [] };
+    for (const r of rows) byCode[r.code] = { ...r, syd_codes: sydByPid[r.id] || [], app_texts: appByPid[r.id] || [] };
     return byCode;
   }
 
@@ -101,6 +106,7 @@ export default async function productRoutes(app) {
           const r = (await c.query(
             `INSERT INTO products (${cols.join(',')}, created_by) VALUES (${ph.join(',')}, $${vals.length}) RETURNING id`, vals)).rows[0];
           await syncSyd(c, r.id, p.syd_codes);
+          await syncApp(c, r.id, p.applications);
           created++;
         } else {
           const chFields = Object.keys(d.changes);
@@ -113,6 +119,7 @@ export default async function productRoutes(app) {
             await c.query(`UPDATE products SET ${sets.join(', ')} WHERE id=$${vals.length}`, vals);
           }
           if (d.syd_changed) await syncSyd(c, ex.id, p.syd_codes);
+          if (d.app_changed) await syncApp(c, ex.id, p.applications);
           updated++;
         }
       }
@@ -127,18 +134,47 @@ export default async function productRoutes(app) {
       }
     }
 
+    async function syncApp(c, productId, applications) {
+      await c.query(`DELETE FROM product_applications WHERE product_id=$1`, [productId]);
+      for (const a of (applications || [])) {
+        await c.query(
+          `INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [productId, a.app_text, a.maker, a.model, a.year_from, a.year_to]);
+      }
+    }
+
     await logEvent({ userId, action: 'create', target: 'product_import', detail: { created, updated, unchanged, skipped } });
     return { ok: true, created, updated, unchanged, skipped };
   });
 
-  // SyD(경쟁사) 코드로 CTR 제품 역검색
+  // SyD(경쟁사) 코드로 CTR 제품 역검색 (적용차종 포함)
   app.get('/api/products/by-syd', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
     const code = String(req.query.code || '').trim();
     if (!code) return { items: [] };
     const rows = (await query(
-      `SELECT p.id, p.code, p.name, p.scode, s.syd_code
+      `SELECT p.id, p.code, p.name, p.scode, p.app, s.syd_code
          FROM product_syd_codes s JOIN products p ON p.id=s.product_id AND p.deleted_at IS NULL
         WHERE s.syd_code = $1`, [code])).rows;
+    return { items: rows };
+  });
+
+  // 차종(메이커/모델/연식)으로 부품 역검색
+  // q: 모델/원문 텍스트, maker: 메이커, year: 해당 연식 포함 차종
+  app.get('/api/products/by-vehicle', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const q = String(req.query.q || '').trim();
+    const maker = String(req.query.maker || '').trim();
+    const year = req.query.year ? Number(req.query.year) : null;
+    if (!q && !maker && !year) return { items: [] };
+    const conds = ['p.deleted_at IS NULL']; const params = [];
+    if (q) { params.push(`%${q}%`); conds.push(`(a.app_text ILIKE $${params.length} OR a.model ILIKE $${params.length})`); }
+    if (maker) { params.push(`%${maker}%`); conds.push(`a.maker ILIKE $${params.length}`); }
+    if (year != null && Number.isFinite(year)) { params.push(year); conds.push(`(a.year_from IS NULL OR a.year_from <= $${params.length}) AND (a.year_to IS NULL OR a.year_to >= $${params.length})`); }
+    const rows = (await query(
+      `SELECT p.id, p.code, p.name, p.scode, a.app_text, a.maker, a.model, a.year_from, a.year_to
+         FROM product_applications a JOIN products p ON p.id=a.product_id
+        WHERE ${conds.join(' AND ')}
+        ORDER BY p.code, a.year_from
+        LIMIT 200`, params)).rows;
     return { items: rows };
   });
 }
