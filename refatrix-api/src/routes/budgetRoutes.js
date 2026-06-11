@@ -5,6 +5,11 @@ import { resolvePlanDate, lineAmount, budgetLimit, groupByCategory, periodSummar
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
+// audit 로그는 실패해도 요청을 깨지 않도록 감싼다(허용된 action만 사용)
+async function safeLog(args) {
+  try { await logEvent(args); } catch (_) { /* audit 실패 무시 */ }
+}
+
 export default async function budgetRoutes(app) {
   // ===== 예산 기간 =====
   // 목록(마케팅·디렉터 모두 조회). 페이지 권한 'budget'.
@@ -35,7 +40,7 @@ export default async function budgetRoutes(app) {
       `INSERT INTO marketing_budget_periods (title, start_month, end_month, sales_target, pct, limit_amount, memo, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [b.title, b.start_month, b.end_month, salesTarget, pct, limit, b.memo || null, req.ctx.perm.userId])).rows[0];
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `budget_period:${row.id}` });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `budget_period:${row.id}` });
     return { ok: true, id: row.id, limit_amount: limit };
   });
 
@@ -107,7 +112,7 @@ export default async function budgetRoutes(app) {
       `INSERT INTO marketing_budget_items (period_id, category, name, plan_month, date_unknown, plan_date, qty, unit_price, amount, memo, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
       [periodId, b.category || null, b.name, b.plan_month, dateUnknown, planDate, qty, unitPrice, amount, b.memo || null, req.ctx.perm.userId])).rows[0];
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `budget_item:${row.id}` });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `budget_item:${row.id}` });
     return { ok: true, id: row.id, amount, plan_date: planDate };
   });
 
@@ -169,7 +174,7 @@ export default async function budgetRoutes(app) {
       return reply.code(500).send({ error: 'insert_failed', detail: String(e.message || e) });
     }
     if (result.error) return reply.code(result.error === 'not_found' ? 404 : 409).send(result);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'approve', target: `budget_item:${id}`, detail: { txn_id: result.txn_id } });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_item:${id}`, detail: { approved: true, txn_id: result.txn_id } });
     return result;
   });
 
@@ -196,7 +201,7 @@ export default async function budgetRoutes(app) {
       });
       if (r.ok) count++;
     }
-    await logEvent({ userId: req.ctx.perm.userId, action: 'approve', target: `budget_period:${periodId}`, detail: { approved: count } });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_period:${periodId}`, detail: { approve_all: count } });
     return { ok: true, approved: count };
   });
 
@@ -213,7 +218,7 @@ export default async function budgetRoutes(app) {
     }
     await query(`UPDATE marketing_budget_items SET status='rejected', txn_id=NULL, decided_by=$1, decided_at=now(), updated_by=$1 WHERE id=$2`,
       [req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'reject', target: `budget_item:${id}` });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_item:${id}`, detail: { rejected: true } });
     return { ok: true };
   });
 
