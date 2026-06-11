@@ -45,6 +45,12 @@ export default async function budgetRoutes(app) {
       return reply.code(400).send({ error: 'missing_fields' });
     }
     if (b.end_month < b.start_month) return reply.code(400).send({ error: 'bad_range' });
+    // 기간 중복 차단: 겹치는 기간에 이미 예산이 있으면 막음(기간당 1개)
+    const overlap = (await query(
+      `SELECT id, title FROM marketing_budget_periods
+        WHERE deleted_at IS NULL AND start_month <= $2 AND end_month >= $1 LIMIT 1`,
+      [b.start_month, b.end_month])).rows[0];
+    if (overlap) return reply.code(409).send({ error: 'period_overlap', detail: `이미 겹치는 기간의 예산이 있습니다: ${overlap.title}` });
     const salesTarget = r2(b.sales_target || 0);
     const pct = b.pct != null ? Number(b.pct) : 5;
     const limit = b.limit_amount != null ? r2(b.limit_amount) : budgetLimit(salesTarget, pct);
@@ -73,6 +79,30 @@ export default async function budgetRoutes(app) {
     return { ok: true, limit_amount: limit };
   });
 
+  // 기간 삭제(디렉터): 항목과 승인 시 생성된 계획 거래까지 함께 정리.
+  // 단, 이미 실적으로 집행된 계획이 있으면 삭제 차단(데이터 보호).
+  app.delete('/api/budget/periods/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const p = (await query(`SELECT id FROM marketing_budget_periods WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const result = await withTx(async (c) => {
+      const items = (await c.query(`SELECT id, txn_id FROM marketing_budget_items WHERE period_id=$1 AND deleted_at IS NULL`, [id])).rows;
+      const txnIds = items.map((i) => i.txn_id).filter(Boolean);
+      if (txnIds.length) {
+        const executed = (await c.query(
+          `SELECT COUNT(*)::int AS n FROM transactions WHERE id = ANY($1) AND status='actual' AND deleted_at IS NULL`, [txnIds])).rows[0].n;
+        if (executed > 0) return { error: 'has_executed' };
+        await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id = ANY($2) AND deleted_at IS NULL`, [req.ctx.perm.userId, txnIds]);
+      }
+      await c.query(`UPDATE marketing_budget_items SET deleted_at=now(), updated_by=$1 WHERE period_id=$2 AND deleted_at IS NULL`, [req.ctx.perm.userId, id]);
+      await c.query(`UPDATE marketing_budget_periods SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
+      return { ok: true };
+    });
+    if (result.error) return reply.code(409).send({ error: result.error, detail: result.error === 'has_executed' ? '이미 실적으로 집행된 항목이 있어 삭제할 수 없습니다. 먼저 해당 거래를 정리하세요.' : undefined });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'delete', target: `budget_period:${id}` });
+    return { ok: true };
+  });
+
   // 기간 상세: 항목(카테고리별 묶음) + 한도 집계
   app.get('/api/budget/periods/:id', { preHandler: [authGuard, requirePage('budget')] }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -88,7 +118,7 @@ export default async function budgetRoutes(app) {
     const mapped = items.map((i) => ({
       id: i.id, category: i.category, name: i.name, plan_month: i.plan_month, date_unknown: i.date_unknown,
       plan_date: i.plan_date_str, qty: Number(i.qty), unit_price: Number(i.unit_price), amount: Number(i.amount),
-      category_code: i.category_code, memo: i.memo, status: i.status, txn_id: i.txn_id,
+      category_code: i.category_code, memo: i.memo, status: i.status, txn_id: i.txn_id, over_approved: i.over_approved,
     }));
     const groups = groupByCategory(mapped.map((i) => ({ category: i.category, amount: i.amount, status: i.status })));
     // 묶음에 실제 항목 배열을 붙임
@@ -168,8 +198,19 @@ export default async function budgetRoutes(app) {
         const it = (await c.query(`SELECT *, to_char(plan_date,'YYYY-MM-DD') AS plan_date_str FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
         if (!it) return { error: 'not_found' };
         if (it.status === 'approved') return { error: 'already_approved' };
-        const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
+        // 한도 대비 누적 승인액 체크(승인액 기준). 초과면 allow_over 없이는 승인 차단.
+        const per = (await c.query(`SELECT limit_amount FROM marketing_budget_periods WHERE id=$1`, [it.period_id])).rows[0];
+        const limit = Number(per?.limit_amount || 0);
+        const approvedSum = Number((await c.query(
+          `SELECT COALESCE(SUM(amount),0) AS s FROM marketing_budget_items WHERE period_id=$1 AND status='approved' AND deleted_at IS NULL`, [it.period_id])).rows[0].s);
         const amount = Number(it.amount);
+        const projected = r2(approvedSum + amount);
+        const isOver = limit > 0 && projected > limit;
+        const allowOver = req.body && (req.body.allow_over === true || req.body.allow_over === 'true');
+        if (isOver && !allowOver) {
+          return { error: 'over_budget', limit, approved: r2(approvedSum), amount, projected, over_by: r2(projected - limit) };
+        }
+        const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
         const memo = `[마케팅] ${it.category ? it.category + ' · ' : ''}${it.name}`;
         const txn = (await c.query(
           `INSERT INTO transactions
@@ -177,44 +218,54 @@ export default async function budgetRoutes(app) {
            VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
           [planDate, amount, req.ctx.perm.userId, memo])).rows[0];
         await c.query(
-          `UPDATE marketing_budget_items SET status='approved', txn_id=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
-          [txn.id, req.ctx.perm.userId, id]);
-        return { ok: true, txn_id: txn.id };
+          `UPDATE marketing_budget_items SET status='approved', over_approved=$1, txn_id=$2, decided_by=$3, decided_at=now(), updated_by=$3 WHERE id=$4`,
+          [isOver, txn.id, req.ctx.perm.userId, id]);
+        return { ok: true, txn_id: txn.id, over_approved: isOver };
       });
     } catch (e) {
       req.log?.error?.(e);
       return reply.code(500).send({ error: 'insert_failed', detail: String(e.message || e) });
     }
+    if (result.error === 'over_budget') return reply.code(409).send(result);
     if (result.error) return reply.code(result.error === 'not_found' ? 404 : 409).send(result);
-    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_item:${id}`, detail: { approved: true, txn_id: result.txn_id } });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_item:${id}`, detail: { approved: true, over: result.over_approved, txn_id: result.txn_id } });
     return result;
   });
 
   // 전체 승인(디렉터): 기간 내 pending 항목 모두 승인
   app.post('/api/budget/periods/:id/approve-all', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const periodId = Number(req.params.id);
-    const pend = (await query(`SELECT id FROM marketing_budget_items WHERE period_id=$1 AND status='pending' AND deleted_at IS NULL`, [periodId])).rows;
-    let count = 0;
+    const per = (await query(`SELECT limit_amount FROM marketing_budget_periods WHERE id=$1 AND deleted_at IS NULL`, [periodId])).rows[0];
+    if (!per) return reply.code(404).send({ error: 'not_found' });
+    const limit = Number(per.limit_amount || 0);
+    let approvedSum = Number((await query(
+      `SELECT COALESCE(SUM(amount),0) AS s FROM marketing_budget_items WHERE period_id=$1 AND status='approved' AND deleted_at IS NULL`, [periodId])).rows[0].s);
+    // 대기 항목을 금액 작은 순으로 승인 시도(한도 안에서 최대한 처리), 초과분은 남겨 개별 초과승인 유도
+    const pend = (await query(
+      `SELECT id, amount FROM marketing_budget_items WHERE period_id=$1 AND status='pending' AND deleted_at IS NULL ORDER BY amount ASC`, [periodId])).rows;
+    let count = 0, skippedOver = 0;
     for (const row of pend) {
+      const amount = Number(row.amount);
+      if (limit > 0 && r2(approvedSum + amount) > limit) { skippedOver++; continue; }
       const r = await withTx(async (c) => {
         const it = (await c.query(`SELECT *, to_char(plan_date,'YYYY-MM-DD') AS plan_date_str FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [row.id])).rows[0];
         if (!it || it.status !== 'pending') return { skip: true };
         const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
-        const amount = Number(it.amount);
+        const amt = Number(it.amount);
         const memo = `[마케팅] ${it.category ? it.category + ' · ' : ''}${it.name}`;
         const txn = (await c.query(
           `INSERT INTO transactions
              (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
            VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
-          [planDate, amount, req.ctx.perm.userId, memo])).rows[0];
-        await c.query(`UPDATE marketing_budget_items SET status='approved', txn_id=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
+          [planDate, amt, req.ctx.perm.userId, memo])).rows[0];
+        await c.query(`UPDATE marketing_budget_items SET status='approved', over_approved=false, txn_id=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
           [txn.id, req.ctx.perm.userId, row.id]);
         return { ok: true };
       });
-      if (r.ok) count++;
+      if (r.ok) { count++; approvedSum = r2(approvedSum + amount); }
     }
-    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_period:${periodId}`, detail: { approve_all: count } });
-    return { ok: true, approved: count };
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `budget_period:${periodId}`, detail: { approve_all: count, skipped_over: skippedOver } });
+    return { ok: true, approved: count, skipped_over: skippedOver };
   });
 
   // 반려(디렉터)
