@@ -4,6 +4,7 @@ import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { expandRule, expandBetween } from '../recurring.js';
+import { aggregateCashflow, planVsActual, computeOverdue, latePaymentHistory } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -591,6 +592,117 @@ export default async function financeRoutes(app) {
       return { period: r.period, plan_mxn: r2(plan), actual_mxn: r2(actual), diff_mxn: r2(actual - plan),
         items: Number(r.items), changed_items: Number(r.changed_items) };
     }) };
+  });
+
+  // ===== 예정(plan) 거래 계획 수정 =====
+  // 매출에서 온 AR(sales_invoice_id)은 인보이스와 묶여 수정 불가. 일반 예정만 금액/날짜/메모 수정.
+  app.patch('/api/transactions/:id/plan', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.status !== 'plan') return reply.code(409).send({ error: 'not_plan' });
+    if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
+    const b = req.body || {};
+    const newAmount = b.amount != null ? r2(b.amount) : Number(t.amount);
+    if (!(newAmount > 0)) return reply.code(400).send({ error: 'invalid_amount' });
+    const newDate = b.plan_date || String(t.txn_date).slice(0, 10);
+    let fx = Number(t.fx_rate) || 1;
+    if (t.currency === 'USD') fx = Number(b.fx_rate) > 0 ? Number(b.fx_rate) : (await getUsdMxnRate()).rate;
+    const amountMxn = r2(newAmount * fx);
+    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== String(t.txn_date).slice(0, 10);
+    const memo = b.memo ? String(b.memo).trim() : null;
+    const newCount = Number(t.change_count || 0) + (changed ? 1 : 0);
+    const planMemo = changed && memo
+      ? ((t.plan_memo ? t.plan_memo + ' | ' : '') + `${new Date().toISOString().slice(0, 10)}(계획수정): ${memo}`)
+      : t.plan_memo;
+    // 예정 거래는 계획=현재값이므로 txn_date/amount와 plan_date/plan_amount를 함께 갱신
+    await query(
+      `UPDATE transactions SET txn_date=$1, amount=$2, fx_rate=$3, amount_mxn=$4, plan_amount=$2, plan_date=$1,
+         change_count=$5, plan_memo=$6, updated_by=$7 WHERE id=$8`,
+      [newDate, newAmount, fx, amountMxn, newCount, planMemo, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { plan_edit: true, changed } });
+    return { ok: true, changed, change_count: newCount };
+  });
+
+  // 모든 거래(현금흐름용) 로딩 헬퍼
+  async function loadCashTxns() {
+    return (await query(
+      `SELECT t.id, t.direction, t.status, t.txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
+              t.plan_amount, t.plan_date, t.category_code, t.recurring_rule_id, t.sales_invoice_id, t.memo,
+              (t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_amount_mxn
+         FROM transactions t WHERE t.deleted_at IS NULL`)).rows;
+  }
+  async function openingBalanceMxn() {
+    const usd = (await getUsdMxnRate()).rate;
+    const accs = (await query(`SELECT currency, open_balance FROM accounts WHERE deleted_at IS NULL`)).rows;
+    return accs.reduce((s, a) => s + Number(a.open_balance) * (a.currency === 'USD' ? usd : 1), 0);
+  }
+
+  // 현금흐름 집계: 기간별 유입/유출/순액/누적잔고
+  // query: granularity=month|week, includePlan=0|1
+  app.get('/api/cashflow', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const granularity = req.query.granularity === 'week' ? 'week' : 'month';
+    const includePlan = req.query.includePlan === '1' || req.query.includePlan === 'true';
+    const txns = await loadCashTxns();
+    const opening = await openingBalanceMxn();
+    const rows = aggregateCashflow(txns.map((t) => ({
+      direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
+      txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
+    })), { granularity, includePlan, openingBalance: opening });
+    return { granularity, includePlan, opening_balance: r2(opening), rows };
+  });
+
+  // 계획 대비 실적(수입/지출 분리): query granularity, filter=all|recurring|other
+  app.get('/api/plan-vs-actual', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const granularity = req.query.granularity === 'week' ? 'week' : 'month';
+    const filter = ['all', 'recurring', 'other'].includes(req.query.filter) ? req.query.filter : 'all';
+    const txns = await loadCashTxns();
+    const res = planVsActual(txns.map((t) => ({
+      direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
+      txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
+      plan_amount_mxn: t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : null, recurring_rule_id: t.recurring_rule_id,
+    })), { granularity, filter });
+    return { granularity, filter, ...res };
+  });
+
+  // 연체: 현재 진행 중 연체 + 과거 늦은 입금 이력
+  app.get('/api/overdue', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const invoices = (await query(
+      `SELECT si.id, si.customer_id, c.code AS customer_code, c.name AS customer_name, si.due_date, si.inv_date, si.sat_no,
+              si.total_mxn AS total, COALESCE(SUM(spa.amount),0) AS paid
+         FROM sales_invoices si
+         JOIN customers c ON c.id=si.customer_id
+         LEFT JOIN sales_payment_allocations spa ON spa.invoice_id=si.id
+        WHERE si.status='posted' AND si.deleted_at IS NULL
+        GROUP BY si.id, c.code, c.name`)).rows;
+    const current = computeOverdue(invoices.map((i) => ({
+      id: i.id, customer_id: i.customer_id, customer_code: i.customer_code, customer_name: i.customer_name,
+      due_date: i.due_date, sat_no: i.sat_no, total: Number(i.total), paid: Number(i.paid),
+    })), today);
+    const pays = (await query(
+      `SELECT spa.invoice_id, sp.customer_id, c.code AS customer_code, c.name AS customer_name,
+              si.due_date, sp.pay_date, spa.amount, si.sat_no
+         FROM sales_payment_allocations spa
+         JOIN sales_payments sp ON sp.id=spa.payment_id
+         JOIN sales_invoices si ON si.id=spa.invoice_id
+         JOIN customers c ON c.id=sp.customer_id`)).rows;
+    const lateHist = latePaymentHistory(pays.map((p) => ({
+      invoice_id: p.invoice_id, customer_id: p.customer_id, customer_code: p.customer_code, customer_name: p.customer_name,
+      due_date: p.due_date, pay_date: p.pay_date, amount: Number(p.amount), sat_no: p.sat_no,
+    })));
+    // 고객별 연체 요약
+    const byCustomer = {};
+    for (const o of current) {
+      const k = o.customer_id;
+      if (!byCustomer[k]) byCustomer[k] = { customer_id: k, customer_code: o.customer_code, customer_name: o.customer_name, overdue_amount: 0, count: 0, max_days: 0 };
+      byCustomer[k].overdue_amount = r2(byCustomer[k].overdue_amount + o.outstanding);
+      byCustomer[k].count += 1;
+      byCustomer[k].max_days = Math.max(byCustomer[k].max_days, o.overdue_days);
+    }
+    const totalOverdue = r2(current.reduce((s, o) => s + o.outstanding, 0));
+    return { today, total_overdue: totalOverdue, count: current.length,
+      current, by_customer: Object.values(byCustomer).sort((a, b) => b.max_days - a.max_days), late_history: lateHist };
   });
 
   // 계정과목 목록(드롭다운용)
