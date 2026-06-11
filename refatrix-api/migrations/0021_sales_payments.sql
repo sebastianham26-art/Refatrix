@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_spa_invoice ON sales_payment_allocations (invoice
 CREATE INDEX IF NOT EXISTS idx_spa_payment ON sales_payment_allocations (payment_id);
 CREATE INDEX IF NOT EXISTS idx_sp_customer ON sales_payments (customer_id);
 
--- transactions에 입금/선수금 종류 구분용(없으면 무방, kind 텍스트 컬럼 사용)
+-- transactions에 입금/선수금 종류 구분용(kind 텍스트 컬럼 사용; 제약 확장은 0022에서)
 -- kind: 'general' | 'invoice'(AR예정) | 'payment'(입금배분) | 'advance'(선수금)
 
 -- 선수금 계정과목(부채)
