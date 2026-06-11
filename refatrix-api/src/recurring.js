@@ -68,4 +68,40 @@ export function expandRule(rule, today, horizonMonths) {
   return occ;
 }
 
+// 구간 전개: fromDate(포함) ~ toDate(포함) 사이의 발생일만. 패턴은 rule.start_date 기준.
+// rule: { freq, start_date, day_of_month?, weekday?, end_month? }
+export function expandBetween(rule, fromStr, toStr) {
+  const startD = parseYMD(rule.start_date);
+  let from = parseYMD(fromStr), to = parseYMD(toStr);
+  if (from < startD) from = startD;
+  // end_month 상한
+  if (rule.end_month) {
+    const [ey, em] = rule.end_month.split('-').map(Number);
+    const endMonthLast = new Date(Date.UTC(ey, em, 0));
+    if (endMonthLast < to) to = endMonthLast;
+  }
+  if (from > to) return [];
+  const out = [];
+  if (rule.freq === 'week') {
+    const wday = rule.weekday == null ? startD.getUTCDay() : rule.weekday;
+    let cur = new Date(from.getTime());
+    const diff = (wday - cur.getUTCDay() + 7) % 7;
+    cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + diff));
+    while (cur <= to) {
+      if (cur >= startD) out.push({ date: ymd(cur), period: `W${ymd(cur)}` });
+      cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + 7));
+    }
+  } else {
+    const day = rule.day_of_month || startD.getUTCDate();
+    let y = from.getUTCFullYear(), m = from.getUTCMonth();
+    while (true) {
+      const occ = new Date(Date.UTC(y, m, clampDay(y, m, day)));
+      if (occ > to) break;
+      if (occ >= from && occ >= startD) out.push({ date: ymd(occ), period: `${y}-${String(m + 1).padStart(2, '0')}` });
+      m += 1; if (m > 11) { m = 0; y += 1; }
+    }
+  }
+  return out;
+}
+
 export { ymd, parseYMD, clampDay };

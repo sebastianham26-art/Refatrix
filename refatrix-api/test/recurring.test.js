@@ -58,3 +58,31 @@ test('clampDay basic', () => {
   assert.equal(clampDay(2024, 1, 31), 29); // Feb 2024 leap
   assert.equal(clampDay(2026, 0, 15), 15);
 });
+
+import { expandBetween } from '../src/recurring.js';
+
+test('expandBetween monthly: only within range', () => {
+  const occ = expandBetween({ freq: 'month', start_date: '2026-01-06', day_of_month: 6 }, '2026-06-07', '2026-09-30');
+  assert.deepEqual(occ.map((o) => o.date), ['2026-07-06', '2026-08-06', '2026-09-06']);
+});
+
+test('expandBetween monthly: from before start clamps to start', () => {
+  const occ = expandBetween({ freq: 'month', start_date: '2026-06-06', day_of_month: 6 }, '2026-01-01', '2026-08-31');
+  assert.deepEqual(occ.map((o) => o.date), ['2026-06-06', '2026-07-06', '2026-08-06']);
+});
+
+test('expandBetween weekly: only within range', () => {
+  // Fridays
+  const occ = expandBetween({ freq: 'week', start_date: '2026-01-02', weekday: 5 }, '2026-02-01', '2026-02-28');
+  assert.deepEqual(occ.map((o) => o.date), ['2026-02-06', '2026-02-13', '2026-02-20', '2026-02-27']);
+});
+
+test('expandBetween: end_month caps', () => {
+  const occ = expandBetween({ freq: 'month', start_date: '2026-01-10', day_of_month: 10, end_month: '2026-03' }, '2026-01-01', '2026-12-31');
+  assert.deepEqual(occ.map((o) => o.date), ['2026-01-10', '2026-02-10', '2026-03-10']);
+});
+
+test('expandBetween: empty when from after to', () => {
+  const occ = expandBetween({ freq: 'month', start_date: '2026-01-10', day_of_month: 10 }, '2026-09-01', '2026-06-01');
+  assert.equal(occ.length, 0);
+});

@@ -3,9 +3,16 @@ import { authGuard, requirePage, requireDirector } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
-import { expandRule } from '../recurring.js';
+import { expandRule, expandBetween } from '../recurring.js';
 
-const RECUR_HORIZON_MONTHS = 12;
+const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
+const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
+
+function addMonthsUTC(dateStr, months) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, d));
+  return dt.toISOString().slice(0, 10);
+}
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -419,7 +426,7 @@ export default async function financeRoutes(app) {
   app.get('/api/recurring', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
     const rows = (await query(
       `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
-              r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, r.start_date, r.end_month, r.active, r.memo,
+              r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, r.start_date, r.end_month, r.active, r.memo, r.generated_through,
               (SELECT COUNT(*) FROM transactions t WHERE t.recurring_rule_id=r.id AND t.deleted_at IS NULL) AS generated_count,
               (SELECT COUNT(*) FROM transactions t WHERE t.recurring_rule_id=r.id AND t.status='actual' AND t.deleted_at IS NULL) AS paid_count
          FROM recurring_rules r
@@ -471,45 +478,59 @@ export default async function financeRoutes(app) {
     return { ok: true };
   });
 
-  // 생성: 활성 규칙을 오늘부터 12개월 지평까지 예정거래로 멱등 생성 (버튼 클릭 시에만 · 중복 실행 잠금)
-  app.post('/api/recurring/generate', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
-    if (app.__recurGenerating) return { ok: true, created: 0, skipped: 'in_progress' };
+  // 규칙별 생성/연장: 마지막 생성일 이후부터 months개월만큼 이어서 생성. 오늘+24개월 상한.
+  // body: { months }  (최초 기본 12, 이후 +3/+6/+12 등)
+  app.post('/api/recurring/:id/generate', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (app.__recurGenerating) return reply.code(409).send({ error: 'generation_in_progress' });
     app.__recurGenerating = true;
     try {
-      const userId = req.ctx.perm.userId;
+      const rule = (await query(`SELECT * FROM recurring_rules WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+      if (!rule) return reply.code(404).send({ error: 'not_found' });
+      if (!rule.start_date) return reply.code(400).send({ error: 'no_start_date' });
       const today = new Date().toISOString().slice(0, 10);
-      const usdRate = (await getUsdMxnRate()).rate;
-      const rules = (await query(`SELECT * FROM recurring_rules WHERE active=true AND deleted_at IS NULL`)).rows;
+      const months = Math.min(Math.max(Number(req.body?.months) || RECUR_HORIZON_MONTHS, 1), RECUR_MAX_MONTHS);
+      const cap = addMonthsUTC(today, RECUR_MAX_MONTHS); // 오늘+24개월 상한
+      const gthrough = rule.generated_through ? String(rule.generated_through).slice(0, 10) : null;
+      // 시작 경계: 처음이면 규칙 시작일, 아니면 마지막 생성일 다음날
+      const fromDate = gthrough ? addMonthsUTC(gthrough, 0) : String(rule.start_date).slice(0, 10);
+      const fromExclusive = gthrough ? new Date(new Date(gthrough + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10) : fromDate;
+      // 목표 끝: (기준점 + months), 단 오늘+24개월 상한
+      const base = gthrough && gthrough > today ? gthrough : today;
+      let target = addMonthsUTC(base, months);
+      if (target > cap) target = cap;
+      if (target <= (gthrough || '0000-00-00')) return { ok: true, created: 0, generated_through: gthrough, capped: target >= cap };
+      const occ = expandBetween({
+        freq: rule.freq, start_date: String(rule.start_date).slice(0, 10),
+        day_of_month: rule.day_of_month, weekday: rule.weekday, end_month: rule.end_month,
+      }, fromExclusive, target);
+      const fx = rule.currency === 'USD' ? (await getUsdMxnRate()).rate : 1;
+      const amt = r2(rule.amount); const amountMxn = r2(amt * fx);
       let created = 0;
-      for (const rule of rules) {
-        if (!rule.start_date) continue;
-        const occ = expandRule({
-          freq: rule.freq, start_date: String(rule.start_date).slice(0, 10),
-          day_of_month: rule.day_of_month, weekday: rule.weekday, end_month: rule.end_month,
-        }, today, RECUR_HORIZON_MONTHS);
-        if (!occ.length) continue;
-        const fx = rule.currency === 'USD' ? usdRate : 1;
-        const amt = r2(rule.amount);
-        const amountMxn = r2(amt * fx);
+      if (occ.length) {
+        // 중복 방지: 이미 있는 period 제외
         const existing = new Set((await query(
-          `SELECT recurring_period FROM transactions WHERE recurring_rule_id=$1`, [rule.id])).rows.map((r) => r.recurring_period));
+          `SELECT recurring_period FROM transactions WHERE recurring_rule_id=$1`, [id])).rows.map((r) => r.recurring_period));
         const fresh = occ.filter((o) => !existing.has(o.period));
-        if (!fresh.length) continue;
-        const vals = []; const params = [];
-        let i = 1;
-        for (const o of fresh) {
-          vals.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},'plan','general',true,$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`);
-          params.push(rule.account_id || null, o.date, rule.direction, amt, rule.currency, fx, amountMxn,
-            rule.category_code || null, userId, `[고정비] ${rule.name}`, userId, rule.id, o.period, amt, o.date);
+        if (fresh.length) {
+          const userId = req.ctx.perm.userId;
+          const vals = []; const params = []; let i = 1;
+          for (const o of fresh) {
+            vals.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},'plan','general',true,$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`);
+            params.push(rule.account_id || null, o.date, rule.direction, amt, rule.currency, fx, amountMxn,
+              rule.category_code || null, userId, `[고정비] ${rule.name}`, userId, rule.id, o.period, amt, o.date);
+          }
+          const res = await query(
+            `INSERT INTO transactions
+               (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date)
+             VALUES ${vals.join(',')}
+             ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING`, params);
+          created = res.rowCount || 0;
         }
-        const res = await query(
-          `INSERT INTO transactions
-             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date)
-           VALUES ${vals.join(',')}
-           ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING`, params);
-        created += res.rowCount || 0;
       }
-      return { ok: true, created };
+      // 생성완료일 갱신(종료월이 있으면 그 이전까지만 의미 있음 — target으로 기록)
+      await query(`UPDATE recurring_rules SET generated_through=$1 WHERE id=$2`, [target, id]);
+      return { ok: true, created, generated_through: target, capped: target >= cap };
     } finally {
       app.__recurGenerating = false;
     }
