@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
+import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { expandRule, expandBetween } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown } from '../cashflow.js';
@@ -770,6 +770,40 @@ export default async function financeRoutes(app) {
       category_code: t.category_code, category_name: t.category_name, recurring_rule_id: t.recurring_rule_id,
     })), { filter, from, to });
     return res;
+  });
+
+  // 환율 요약: 지정 기간 추이 + 통계 + USD 거래 요약. query: from, to (YYYY-MM-DD)
+  app.get('/api/fx/summary', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
+    const series = await getFxRange(from, to);
+    const today = await getUsdMxnRate();
+    let stats = null;
+    if (series.length) {
+      const rates = series.map((s) => s.rate);
+      const first = series[0], last = series[series.length - 1];
+      const min = series.reduce((a, b) => (b.rate < a.rate ? b : a));
+      const max = series.reduce((a, b) => (b.rate > a.rate ? b : a));
+      const avg = rates.reduce((s, r) => s + r, 0) / rates.length;
+      const change = r2(last.rate - first.rate);
+      stats = {
+        first: { date: first.rate_date, rate: first.rate }, last: { date: last.rate_date, rate: last.rate },
+        min: { date: min.rate_date, rate: min.rate }, max: { date: max.rate_date, rate: max.rate },
+        avg: Math.round(avg * 10000) / 10000, change, change_pct: first.rate ? Math.round((change / first.rate) * 10000) / 100 : 0,
+        count: series.length,
+      };
+    }
+    // USD 거래 요약(예정/실제)
+    const usdRows = (await query(
+      `SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS usd, COALESCE(SUM(amount_mxn),0) AS mxn,
+              CASE WHEN SUM(amount)>0 THEN SUM(amount_mxn)/SUM(amount) ELSE NULL END AS avg_rate
+         FROM transactions WHERE currency='USD' AND deleted_at IS NULL GROUP BY status`)).rows;
+    const usd = { plan: { cnt: 0, usd: 0, mxn: 0, avg_rate: null }, actual: { cnt: 0, usd: 0, mxn: 0, avg_rate: null } };
+    for (const r of usdRows) {
+      const k = r.status === 'actual' ? 'actual' : 'plan';
+      usd[k] = { cnt: Number(r.cnt), usd: r2(r.usd), mxn: r2(r.mxn), avg_rate: r.avg_rate == null ? null : Math.round(Number(r.avg_rate) * 10000) / 10000 };
+    }
+    return { from, to, today: { rate: today.rate, asOf: today.asOf, source: today.source, stale: today.stale }, series, stats, usd };
   });
 
   // 계정과목 목록(드롭다운용)

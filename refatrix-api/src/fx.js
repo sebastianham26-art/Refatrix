@@ -60,6 +60,17 @@ export async function getRateForDate(dateStr) {
 // 환율 이력(요약페이지용)
 export async function getFxHistory(limit = 60) {
   const rows = (await query(
-    `SELECT rate_date, rate, source, fetched_at FROM fx_rates WHERE base='USD' AND quote='MXN' ORDER BY rate_date DESC LIMIT $1`, [limit])).rows;
-  return rows.map((r) => ({ rate_date: String(r.rate_date).slice(0, 10), rate: Number(r.rate), source: r.source }));
+    `SELECT to_char(rate_date,'YYYY-MM-DD') AS rate_date, rate, source, fetched_at FROM fx_rates WHERE base='USD' AND quote='MXN' ORDER BY rate_date DESC LIMIT $1`, [limit])).rows;
+  return rows.map((r) => ({ rate_date: r.rate_date, rate: Number(r.rate), source: r.source }));
+}
+
+// 기간 환율(요약페이지: 지정 기간 추이). 오름차순(오래된→최신).
+export async function getFxRange(fromStr, toStr) {
+  const cond = ["base='USD'", "quote='MXN'"]; const args = [];
+  if (fromStr) { args.push(fromStr); cond.push(`rate_date>=$${args.length}`); }
+  if (toStr) { args.push(toStr); cond.push(`rate_date<=$${args.length}`); }
+  const rows = (await query(
+    `SELECT to_char(rate_date,'YYYY-MM-DD') AS rate_date, rate, source FROM fx_rates
+      WHERE ${cond.join(' AND ')} ORDER BY rate_date ASC`, args)).rows;
+  return rows.map((r) => ({ rate_date: r.rate_date, rate: Number(r.rate), source: r.source }));
 }
