@@ -121,6 +121,55 @@ export function severityOf(days) {
   return 'low';
 }
 
+// 월별 상세: 실적 섹션 + 예정 섹션(처리됨/미처리/경과) — '오늘' 기준.
+// txns: 그 달 관련 거래. 각 거래는 { id, direction, status, txn_date, amount_mxn, plan_date, plan_amount_mxn, category_code, category_name, memo, sales_invoice_id, recurring_rule_id }
+// monthStr: 'YYYY-MM', today: 'YYYY-MM-DD'
+// 분류:
+//  - 실적 섹션 = status==='actual' 이고 txn_date가 그 달.
+//  - 예정 섹션 = plan_date(없으면 txn_date)가 그 달인 모든 거래.
+//      · processed = 그 항목이 지금 actual (계획이 실적화됨)
+//      · pending   = 아직 plan. 예정일(plan_date)이 오늘 지났으면 overdue, 아니면 upcoming
+export function monthBreakdown(txns, monthStr, today) {
+  const inMonth = (d) => d && String(d).slice(0, 7) === monthStr;
+  const t0 = today;
+  const actualItems = [];
+  const planItems = [];
+  for (const t of txns) {
+    const planDate = t.plan_date ? String(t.plan_date).slice(0, 10) : String(t.txn_date).slice(0, 10);
+    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : Number(t.amount_mxn) || 0;
+    // 실적 섹션
+    if (t.status === 'actual' && inMonth(t.txn_date)) {
+      actualItems.push({ ...t, _amt: Number(t.amount_mxn) || 0, _date: String(t.txn_date).slice(0, 10) });
+    }
+    // 예정 섹션: 계획일이 그 달
+    if (inMonth(planDate)) {
+      let state;
+      if (t.status === 'actual') state = 'processed';
+      else state = (planDate < t0) ? 'overdue' : 'upcoming';
+      planItems.push({ ...t, _planDate: planDate, _planAmt: planAmt,
+        _actualAmt: t.status === 'actual' ? (Number(t.amount_mxn) || 0) : 0, _state: state });
+    }
+  }
+  actualItems.sort((a, b) => (a._date < b._date ? -1 : 1));
+  planItems.sort((a, b) => (a._planDate < b._planDate ? -1 : 1));
+  const sum = (arr, dir, f) => round2(arr.filter((x) => x.direction === dir).reduce((s, x) => s + f(x), 0));
+  // 실적 소계
+  const actualSub = { in: sum(actualItems, 'in', (x) => x._amt), out: sum(actualItems, 'out', (x) => x._amt) };
+  actualSub.net = round2(actualSub.in - actualSub.out);
+  // 예정 요약(계획 기준): 계획총액 / 처리(실적화)액 / 남은예정 / 그중 경과
+  const planSummary = { in: planAggr(planItems, 'in'), out: planAggr(planItems, 'out') };
+  return { month: monthStr, today: t0, actual: { items: actualItems, subtotal: actualSub }, plan: { items: planItems, summary: planSummary } };
+}
+
+function planAggr(items, dir) {
+  const xs = items.filter((x) => x.direction === dir);
+  const planned = round2(xs.reduce((s, x) => s + x._planAmt, 0));
+  const processed = round2(xs.filter((x) => x._state === 'processed').reduce((s, x) => s + x._actualAmt, 0));
+  const remaining = round2(xs.filter((x) => x._state !== 'processed').reduce((s, x) => s + x._planAmt, 0));
+  const overdue = round2(xs.filter((x) => x._state === 'overdue').reduce((s, x) => s + x._planAmt, 0));
+  return { planned, processed, remaining, overdue };
+}
+
 function parseYMD(s) { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); }
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 export { round2 };

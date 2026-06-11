@@ -4,7 +4,7 @@ import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, computeOverdue, latePaymentHistory } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, computeOverdue, latePaymentHistory, monthBreakdown } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -703,6 +703,54 @@ export default async function financeRoutes(app) {
     const totalOverdue = r2(current.reduce((s, o) => s + o.outstanding, 0));
     return { today, total_overdue: totalOverdue, count: current.length,
       current, by_customer: Object.values(byCustomer).sort((a, b) => b.max_days - a.max_days), late_history: lateHist };
+  });
+
+  // 월별 상세: 일자별 집계(달력용) + 실적/예정 섹션
+  // query: month=YYYY-MM
+  app.get('/api/cashflow/month', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const month = /^\d{4}-\d{2}$/.test(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
+    const today = new Date().toISOString().slice(0, 10);
+    const txns = await loadCashTxns();
+    const mapped = txns.map((t) => ({
+      id: t.id, direction: t.direction, status: t.status,
+      txn_date: String(t.txn_date).slice(0, 10), amount_mxn: Number(t.amount_mxn) || 0,
+      plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
+      plan_amount_mxn: t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : null,
+      currency: t.currency, amount: Number(t.amount), category_code: t.category_code, category_name: t.category_name,
+      memo: t.memo, sales_invoice_id: t.sales_invoice_id, recurring_rule_id: t.recurring_rule_id,
+    }));
+    // 일자별 집계 + 누적잔고(기초잔고부터 그 달 시작 직전까지 누적 후 일자별)
+    const opening = await openingBalanceMxn();
+    // 그 달 1일 직전까지의 모든 실적 순액 합 = 기초 + 과거 실적
+    const monthStart = month + '-01';
+    let runBefore = opening;
+    for (const t of mapped) {
+      if (t.status !== 'actual') continue;
+      if (t.txn_date < monthStart) runBefore += (t.direction === 'in' ? 1 : -1) * t.amount_mxn;
+    }
+    // 그 달 일자별
+    const [yy, mm] = month.split('-').map(Number);
+    const daysIn = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    const byDay = {};
+    for (let d = 1; d <= daysIn; d++) byDay[`${month}-${String(d).padStart(2, '0')}`] = { in: 0, out: 0, items: [] };
+    for (const t of mapped) {
+      const date = t.status === 'actual' ? t.txn_date : (t.plan_date || t.txn_date);
+      if (String(date).slice(0, 7) !== month) continue;
+      const cell = byDay[String(date).slice(0, 10)];
+      if (!cell) continue;
+      if (t.direction === 'in') cell.in += t.amount_mxn; else cell.out += t.amount_mxn;
+      cell.items.push(t);
+    }
+    // 누적잔고: 실적만 누적(예정 포함 옵션은 프런트 토글 시 별도 표시)
+    let cumActual = runBefore;
+    const days = Object.keys(byDay).sort().map((ds) => {
+      const c = byDay[ds];
+      const actualNet = c.items.filter((x) => x.status === 'actual').reduce((s, x) => s + (x.direction === 'in' ? 1 : -1) * x.amount_mxn, 0);
+      cumActual += actualNet;
+      return { date: ds, in: r2(c.in), out: r2(c.out), net: r2(c.in - c.out), cumulative: r2(cumActual), items: c.items };
+    });
+    const breakdown = monthBreakdown(mapped, month, today);
+    return { month, today, opening_before_month: r2(runBefore), days, ...breakdown };
   });
 
   // 계정과목 목록(드롭다운용)
