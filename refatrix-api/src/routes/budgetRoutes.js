@@ -145,24 +145,29 @@ export default async function budgetRoutes(app) {
   // 승인(디렉터): 승인 시 마케팅(6070) 계획 거래 생성 + 연결
   app.post('/api/budget/items/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const result = await withTx(async (c) => {
-      const it = (await c.query(`SELECT *, to_char(plan_date,'YYYY-MM-DD') AS plan_date_str FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
-      if (!it) return { error: 'not_found' };
-      if (it.status === 'approved') return { error: 'already_approved' };
-      const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
-      const amount = Number(it.amount);
-      const memo = `[마케팅] ${it.category ? it.category + ' · ' : ''}${it.name}`;
-      // 마케팅 계획 거래(plan, 지출). 계좌 미지정(예정), 승인됨.
-      const txn = (await c.query(
-        `INSERT INTO transactions
-           (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
-         VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
-        [planDate, amount, req.ctx.perm.userId, memo])).rows[0];
-      await c.query(
-        `UPDATE marketing_budget_items SET status='approved', txn_id=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
-        [txn.id, req.ctx.perm.userId, id]);
-      return { ok: true, txn_id: txn.id };
-    });
+    let result;
+    try {
+      result = await withTx(async (c) => {
+        const it = (await c.query(`SELECT *, to_char(plan_date,'YYYY-MM-DD') AS plan_date_str FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+        if (!it) return { error: 'not_found' };
+        if (it.status === 'approved') return { error: 'already_approved' };
+        const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
+        const amount = Number(it.amount);
+        const memo = `[마케팅] ${it.category ? it.category + ' · ' : ''}${it.name}`;
+        const txn = (await c.query(
+          `INSERT INTO transactions
+             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
+           VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
+          [planDate, amount, req.ctx.perm.userId, memo])).rows[0];
+        await c.query(
+          `UPDATE marketing_budget_items SET status='approved', txn_id=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
+          [txn.id, req.ctx.perm.userId, id]);
+        return { ok: true, txn_id: txn.id };
+      });
+    } catch (e) {
+      req.log?.error?.(e);
+      return reply.code(500).send({ error: 'insert_failed', detail: String(e.message || e) });
+    }
     if (result.error) return reply.code(result.error === 'not_found' ? 404 : 409).send(result);
     await logEvent({ userId: req.ctx.perm.userId, action: 'approve', target: `budget_item:${id}`, detail: { txn_id: result.txn_id } });
     return result;
