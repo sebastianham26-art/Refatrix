@@ -627,10 +627,13 @@ export default async function financeRoutes(app) {
   // 모든 거래(현금흐름용) 로딩 헬퍼
   async function loadCashTxns() {
     return (await query(
-      `SELECT t.id, t.direction, t.status, t.txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
-              t.plan_amount, t.plan_date, t.category_code, t.recurring_rule_id, t.sales_invoice_id, t.memo,
+      `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
+              t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
+              t.recurring_rule_id, t.sales_invoice_id, t.memo,
               (t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_amount_mxn
-         FROM transactions t WHERE t.deleted_at IS NULL`)).rows;
+         FROM transactions t
+         LEFT JOIN categories cat ON cat.code=t.category_code
+        WHERE t.deleted_at IS NULL`)).rows;
   }
   async function openingBalanceMxn() {
     const usd = (await getUsdMxnRate()).rate;
@@ -669,7 +672,8 @@ export default async function financeRoutes(app) {
   app.get('/api/overdue', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
     const today = new Date().toISOString().slice(0, 10);
     const invoices = (await query(
-      `SELECT si.id, si.customer_id, c.code AS customer_code, c.name AS customer_name, si.due_date, si.inv_date, si.sat_no,
+      `SELECT si.id, si.customer_id, c.code AS customer_code, c.name AS customer_name,
+              to_char(si.due_date,'YYYY-MM-DD') AS due_date, to_char(si.inv_date,'YYYY-MM-DD') AS inv_date, si.sat_no,
               si.total_mxn AS total, COALESCE(SUM(spa.amount),0) AS paid
          FROM sales_invoices si
          JOIN customers c ON c.id=si.customer_id
@@ -682,7 +686,7 @@ export default async function financeRoutes(app) {
     })), today);
     const pays = (await query(
       `SELECT spa.invoice_id, sp.customer_id, c.code AS customer_code, c.name AS customer_name,
-              si.due_date, sp.pay_date, spa.amount, si.sat_no
+              to_char(si.due_date,'YYYY-MM-DD') AS due_date, to_char(sp.pay_date,'YYYY-MM-DD') AS pay_date, spa.amount, si.sat_no
          FROM sales_payment_allocations spa
          JOIN sales_payments sp ON sp.id=spa.payment_id
          JOIN sales_invoices si ON si.id=spa.invoice_id
