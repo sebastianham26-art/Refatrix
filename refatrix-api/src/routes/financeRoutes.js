@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
+import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -300,6 +301,111 @@ export default async function financeRoutes(app) {
     if (out.error) return reply.code(409).send(out);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `txn_change_request:${reqId}`, detail: { rejected: true } });
     return out;
+  });
+
+  // ===== 매출 AR 반제(입금 배분) =====
+  // 미수 고객 목록(미반제 인보이스가 있는 고객 + 미수 합계 + 선수금)
+  app.get('/api/ar/customers', { preHandler: [authGuard, requirePage('settlement')] }, async () => {
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name,
+              COALESCE(SUM(s.total_mxn),0) - COALESCE(SUM(pa.paid),0) AS outstanding,
+              COALESCE(adv.advance,0) AS advance
+         FROM customers c
+         JOIN sales_invoices s ON s.customer_id=c.id AND s.deleted_at IS NULL AND s.status='posted'
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+         LEFT JOIN (SELECT customer_id, SUM(advance_amount) AS advance FROM sales_payments GROUP BY customer_id) adv ON adv.customer_id=c.id
+        WHERE c.deleted_at IS NULL
+        GROUP BY c.id, c.code, c.name, adv.advance
+       HAVING COALESCE(SUM(s.total_mxn),0) - COALESCE(SUM(pa.paid),0) > 0.01
+        ORDER BY outstanding DESC`)).rows;
+    return { items: rows.map((r) => ({ ...r, outstanding: Number(r.outstanding), advance: Number(r.advance) })) };
+  });
+
+  // 한 고객의 미반제 인보이스(오래된 순) + 미수금
+  app.get('/api/ar/open-invoices', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const customerId = Number(req.query.customer_id);
+    if (!customerId) return { items: [], advance: 0 };
+    const rows = (await query(
+      `SELECT s.id, s.sat_no, s.inv_date, s.due_date, s.total_mxn,
+              COALESCE(pa.paid,0) AS paid, s.total_mxn - COALESCE(pa.paid,0) AS outstanding
+         FROM sales_invoices s
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+        WHERE s.customer_id=$1 AND s.deleted_at IS NULL AND s.status='posted'
+          AND s.total_mxn - COALESCE(pa.paid,0) > 0.01
+        ORDER BY s.inv_date, s.id`, [customerId])).rows;
+    const adv = (await query(`SELECT COALESCE(SUM(advance_amount),0) AS a FROM sales_payments WHERE customer_id=$1`, [customerId])).rows[0];
+    return {
+      items: rows.map((r) => ({ id: r.id, sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date,
+        total_mxn: Number(r.total_mxn), paid: Number(r.paid), outstanding: r2(Number(r.outstanding)) })),
+      advance: Number(adv.a),
+    };
+  });
+
+  // 입금(반제) 생성
+  // body: { customer_id, pay_date, account_id, amount, allocations:[{invoice_id, amount}], memo }
+  app.post('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
+    const b = req.body || {};
+    const customerId = Number(b.customer_id), accountId = Number(b.account_id), amount = r2(b.amount);
+    const allocations = Array.isArray(b.allocations) ? b.allocations.filter((a) => Number(a.amount) > 0).map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(a.amount) })) : [];
+    if (!customerId || !accountId || !b.pay_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      // 현재 미수금 맵(검증용)
+      const inv = (await c.query(
+        `SELECT s.id, s.total_mxn - COALESCE(pa.paid,0) AS outstanding
+           FROM sales_invoices s
+           LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+          WHERE s.customer_id=$1 AND s.deleted_at IS NULL AND s.status='posted'`, [customerId])).rows;
+      const outMap = {}; inv.forEach((r) => { outMap[r.id] = r2(Number(r.outstanding)); });
+      const sumAlloc = r2(allocations.reduce((s, a) => s + a.amount, 0));
+      const advance = r2(amount - sumAlloc);
+      if (advance < -0.001) return { error: 'allocations_exceed_amount' };
+      const v = validateAllocations(amount, allocations, outMap, advance);
+      if (!v.ok) return { error: 'invalid_allocations', detail: v.errors };
+      // 헤더
+      const pay = (await c.query(
+        `INSERT INTO sales_payments (customer_id, pay_date, account_id, amount, advance_amount, memo, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [customerId, b.pay_date, accountId, amount, advance, b.memo || null, userId])).rows[0];
+      // 배분별 실제 입금 거래 + 배분행
+      for (const a of allocations) {
+        const txn = (await c.query(
+          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, sales_invoice_id, memo, created_by)
+           VALUES ($1,$2,'in',$3,'MXN',1,$3,'4010','actual','payment',true,$4,$5,$6,$4) RETURNING id`,
+          [accountId, b.pay_date, a.amount, userId, a.invoice_id, `입금 반제 (인보이스 #${a.invoice_id})`])).rows[0];
+        await c.query(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount, txn_id) VALUES ($1,$2,$3,$4)`, [pay.id, a.invoice_id, a.amount, txn.id]);
+      }
+      // 선수금(과입금)
+      if (advance > 0.001) {
+        const at = (await c.query(
+          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by)
+           VALUES ($1,$2,'in',$3,'MXN',1,$3,'2030','actual','advance',true,$4,$5,$4) RETURNING id`,
+          [accountId, b.pay_date, advance, userId, '선수금(과입금)'])).rows[0];
+        await c.query(`UPDATE sales_payments SET advance_txn_id=$1 WHERE id=$2`, [at.id, pay.id]);
+      }
+      return { id: pay.id, advance, allocated: sumAlloc };
+    });
+    if (out.error) return reply.code(out.error === 'invalid_allocations' ? 409 : 400).send(out);
+    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount, advance: out.advance } });
+    return out;
+  });
+
+  // 입금 이력
+  app.get('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const cond = []; const args = [];
+    if (req.query.customer_id) { args.push(Number(req.query.customer_id)); cond.push(`p.customer_id=$${args.length}`); }
+    const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
+    const rows = (await query(
+      `SELECT p.id, p.pay_date, p.amount, p.advance_amount, p.memo, c.code AS customer_code, c.name AS customer_name,
+              a.name AS account_name,
+              (SELECT json_agg(json_build_object('invoice_id', al.invoice_id, 'amount', al.amount) ORDER BY al.invoice_id)
+                 FROM sales_payment_allocations al WHERE al.payment_id=p.id) AS allocations
+         FROM sales_payments p
+         JOIN customers c ON c.id=p.customer_id
+         JOIN accounts a ON a.id=p.account_id
+         ${where}
+        ORDER BY p.pay_date DESC, p.id DESC LIMIT 100`, args)).rows;
+    return { items: rows.map((r) => ({ ...r, amount: Number(r.amount), advance_amount: Number(r.advance_amount) })) };
   });
 
   // 계정과목 목록(드롭다운용)
