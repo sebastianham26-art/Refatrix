@@ -179,14 +179,21 @@ export function planVsActualByCategory(txns, opts = {}) {
     const planDate = t.plan_date || t.txn_date;
     const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : 0;
     const k = key(t);
-    if (!grp[dir].has(k)) grp[dir].set(k, { code: (t.category_code || '기타'), name: (t.category_name || t.category_code || '기타'), plan: 0, actual: 0 });
+    if (!grp[dir].has(k)) grp[dir].set(k, { code: (t.category_code || '기타'), name: (t.category_name || t.category_code || '기타'), plan: 0, actual: 0, memos: [] });
     const row = grp[dir].get(k);
     if (planAmt && inRange(planDate)) row.plan = round2(row.plan + planAmt);
     if (t.status === 'actual' && inRange(t.txn_date)) row.actual = round2(row.actual + (Number(t.amount_mxn) || 0));
+    // 메모 수집(빈 메모·고정비 자동메모 접두 제거, 기간 내 거래만)
+    const memoDate = t.status === 'actual' ? t.txn_date : planDate;
+    if (inRange(memoDate) && t.memo) {
+      const m = String(t.memo).replace(/^\[고정비\]\s*/, '').trim();
+      if (m && !row.memos.includes(m)) row.memos.push(m);
+    }
   }
   const toRows = (mp) => [...mp.values()].map((r) => ({
     code: r.code, name: r.name, plan: round2(r.plan), actual: round2(r.actual),
     diff: round2(r.actual - r.plan), rate: r.plan > 0 ? Math.round((r.actual / r.plan) * 100) : (r.actual > 0 ? null : 0),
+    memo: r.memos.join(', '),
   })).filter((r) => r.plan !== 0 || r.actual !== 0).sort((a, b) => b.plan - a.plan || b.actual - a.actual);
   const total = (rows) => {
     const plan = round2(rows.reduce((s, r) => s + r.plan, 0));
