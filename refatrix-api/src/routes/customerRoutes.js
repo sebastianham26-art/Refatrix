@@ -7,10 +7,25 @@ function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 
 export default async function customerRoutes(app) {
-  // 팀 목록
+  // 팀 목록(고객 배정·필터용 = 영업팀만)
   app.get('/api/teams', { preHandler: [authGuard, requirePage('customers')] }, async () => {
-    const rows = (await query(`SELECT id, name, sort_order FROM sales_teams WHERE deleted_at IS NULL ORDER BY sort_order, id`)).rows;
+    const rows = (await query(`SELECT id, name, sort_order FROM sales_teams WHERE deleted_at IS NULL AND is_sales=true ORDER BY sort_order, id`)).rows;
     return { items: rows.map((t) => ({ id: t.id, name: t.name })) };
+  });
+
+  // 소속 배정용 전체 팀(director 포함) — 팀 권한 관리 화면
+  app.get('/api/team-admin/teams', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(`SELECT id, name, sort_order, is_sales FROM sales_teams WHERE deleted_at IS NULL ORDER BY sort_order, id`)).rows;
+    return { items: rows.map((t) => ({ id: t.id, name: t.name, is_sales: t.is_sales })) };
+  });
+
+  // 다음 고객코드 자동생성(C-#### 순번)
+  app.get('/api/customers/next-code', { preHandler: [authGuard, requirePage('customers')] }, async () => {
+    const row = (await query(
+      `SELECT COALESCE(MAX((regexp_replace(code,'\\D','','g'))::int),0) AS maxn
+         FROM customers WHERE code ~ '^C-?\\d+$'`)).rows[0];
+    const next = (Number(row.maxn) || 0) + 1;
+    return { code: 'C-' + String(next).padStart(4, '0') };
   });
 
   // 고객 단계 목록
@@ -92,6 +107,12 @@ export default async function customerRoutes(app) {
         WHERE c.id=$1 AND c.deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
     if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    // 연초~현재 누적 매출실적(올해, posted 인보이스 합계)
+    const ytd = (await query(
+      `SELECT COALESCE(SUM(total_mxn),0) AS actual
+         FROM sales_invoices
+        WHERE customer_id=$1 AND status='posted'
+          AND inv_date >= date_trunc('year', CURRENT_DATE)`, [id])).rows[0];
     const invs = (await query(
       `SELECT i.id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.due_date,'YYYY-MM-DD') AS due_date,
               i.total_mxn, COALESCE(p.paid,0) AS paid, (i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
@@ -108,6 +129,11 @@ export default async function customerRoutes(app) {
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
       invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
+      summary: {
+        ytd_actual: r2(ytd.actual),     // 연초~현재 누적 매출실적
+        year_target: null,              // 연말 누적 매출목표(매출 목표 기능 후 연결)
+        year: new Date().getUTCFullYear(),
+      },
     };
   });
 
