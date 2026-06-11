@@ -117,6 +117,11 @@ export default async function customerRoutes(app) {
          FROM sales_invoices
         WHERE customer_id=$1 AND status='posted'
           AND inv_date >= date_trunc('year', CURRENT_DATE)`, [id])).rows[0];
+    // 올해 매출목표(고객 월 목표 합) — 매출 목표 메뉴에서 설정되면 채워짐
+    const tgt = (await query(
+      `SELECT COALESCE(SUM(amount),0) AS yt FROM target_customer_months
+        WHERE customer_id=$1 AND ym LIKE to_char(CURRENT_DATE,'YYYY') || '-%'`, [id])).rows[0];
+    const yearTarget = Number(tgt.yt) > 0 ? r2(tgt.yt) : null;
     const invs = (await query(
       `SELECT i.id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.due_date,'YYYY-MM-DD') AS due_date,
               i.total_mxn, COALESCE(p.paid,0) AS paid, (i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
@@ -135,7 +140,7 @@ export default async function customerRoutes(app) {
       invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
       summary: {
         ytd_actual: r2(ytd.actual),     // 연초~현재 누적 매출실적
-        year_target: null,              // 연말 누적 매출목표(매출 목표 기능 후 연결)
+        year_target: yearTarget,        // 올해 고객 월 목표 합(매출 목표 메뉴에서 설정)
         year: new Date().getUTCFullYear(),
       },
     };
