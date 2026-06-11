@@ -3,6 +3,9 @@ import { authGuard, requirePage, requireDirector } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
+import { expandRule } from '../recurring.js';
+
+const RECUR_HORIZON_MONTHS = 24;
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -406,6 +409,112 @@ export default async function financeRoutes(app) {
          ${where}
         ORDER BY p.pay_date DESC, p.id DESC LIMIT 100`, args)).rows;
     return { items: rows.map((r) => ({ ...r, amount: Number(r.amount), advance_amount: Number(r.advance_amount) })) };
+  });
+
+  // ===== 고정비(반복 규칙) =====
+  app.get('/api/recurring', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
+    const rows = (await query(
+      `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
+              r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, r.start_date, r.end_month, r.active, r.memo,
+              (SELECT COUNT(*) FROM transactions t WHERE t.recurring_rule_id=r.id AND t.deleted_at IS NULL) AS generated_count,
+              (SELECT COUNT(*) FROM transactions t WHERE t.recurring_rule_id=r.id AND t.status='actual' AND t.deleted_at IS NULL) AS paid_count
+         FROM recurring_rules r
+         LEFT JOIN categories cat ON cat.code=r.category_code
+         LEFT JOIN accounts a ON a.id=r.account_id
+        WHERE r.deleted_at IS NULL ORDER BY r.active DESC, r.id`)).rows;
+    return { items: rows.map((r) => ({ ...r, amount: Number(r.amount), generated_count: Number(r.generated_count), paid_count: Number(r.paid_count) })) };
+  });
+
+  app.post('/api/recurring', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const b = req.body || {};
+    const freq = b.freq === 'week' ? 'week' : 'month';
+    const direction = b.direction === 'in' ? 'in' : 'out';
+    const currency = ['MXN', 'USD'].includes(b.currency) ? b.currency : 'MXN';
+    if (!b.name || !(Number(b.amount) > 0) || !b.start_date) return reply.code(400).send({ error: 'missing_fields' });
+    if (freq === 'week' && (b.weekday == null || b.weekday < 0 || b.weekday > 6)) return reply.code(400).send({ error: 'weekday_required' });
+    if (freq === 'month' && !(b.day_of_month >= 1 && b.day_of_month <= 31)) return reply.code(400).send({ error: 'day_of_month_required' });
+    const r = await query(
+      `INSERT INTO recurring_rules (name, category_code, amount, direction, currency, account_id, freq, weekday, day_of_month, start_date, end_month, active, memo, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+      [b.name, b.category_code || null, r2(b.amount), direction, currency, b.account_id || null, freq,
+       freq === 'week' ? b.weekday : null, freq === 'month' ? b.day_of_month : null, b.start_date, b.end_month || null,
+       b.active !== false, b.memo || null, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `recurring_rule:${r.rows[0].id}` });
+    return { id: r.rows[0].id };
+  });
+
+  app.patch('/api/recurring/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id); const b = req.body || {};
+    const r = await query(
+      `UPDATE recurring_rules SET name=COALESCE($1,name), category_code=COALESCE($2,category_code), amount=COALESCE($3,amount),
+         account_id=COALESCE($4,account_id), end_month=$5, active=COALESCE($6,active), memo=COALESCE($7,memo), updated_at=now()
+       WHERE id=$8 AND deleted_at IS NULL RETURNING id`,
+      [b.name ?? null, b.category_code ?? null, (b.amount == null ? null : r2(b.amount)), b.account_id ?? null,
+       b.end_month ?? null, (b.active == null ? null : b.active), b.memo ?? null, id]);
+    if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+
+  // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거
+  app.delete('/api/recurring/:id', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const id = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    await withTx(async (c) => {
+      await c.query(`UPDATE recurring_rules SET deleted_at=now(), active=false WHERE id=$1`, [id]);
+      await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE recurring_rule_id=$2 AND status='plan' AND deleted_at IS NULL`, [userId, id]);
+    });
+    await logEvent({ userId, action: 'delete', target: `recurring_rule:${id}` });
+    return { ok: true };
+  });
+
+  // 생성: 활성 규칙을 오늘부터 24개월 지평까지 예정거래로 멱등 생성
+  app.post('/api/recurring/generate', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const userId = req.ctx.perm.userId;
+    const today = new Date().toISOString().slice(0, 10);
+    const usdRate = (await getUsdMxnRate()).rate;
+    const rules = (await query(`SELECT * FROM recurring_rules WHERE active=true AND deleted_at IS NULL`)).rows;
+    let created = 0;
+    for (const rule of rules) {
+      if (!rule.start_date) continue;
+      const occ = expandRule({
+        freq: rule.freq, start_date: String(rule.start_date).slice(0, 10),
+        day_of_month: rule.day_of_month, weekday: rule.weekday, end_month: rule.end_month,
+      }, today, RECUR_HORIZON_MONTHS);
+      const fx = rule.currency === 'USD' ? usdRate : 1;
+      for (const o of occ) {
+        const amountMxn = r2(Number(rule.amount) * fx);
+        const res = await query(
+          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'plan','general',true,$9,$10,$9,$11,$12)
+           ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING RETURNING id`,
+          [rule.account_id || null, o.date, rule.direction, r2(rule.amount), rule.currency, fx, amountMxn,
+           rule.category_code || null, userId, `[고정비] ${rule.name}`, rule.id, o.period]);
+        if (res.rows[0]) created += 1;
+      }
+    }
+    return { ok: true, created };
+  });
+
+  // 지급 확인: 예정(plan) 거래 → 실제(actual). 고정비는 디렉터 승인 없이 바로 반영.
+  // body: { account_id, pay_date? }
+  app.post('/api/transactions/:id/confirm-pay', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.status !== 'plan') return reply.code(409).send({ error: 'not_plan' });
+    if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
+    const accountId = req.body?.account_id || t.account_id;
+    if (!accountId) return reply.code(400).send({ error: 'account_required' });
+    const payDate = req.body?.pay_date || t.txn_date;
+    // USD면 지급일 기준 환율로 확정(입력값 > 거래일 캐시 > 오늘)
+    let fx = Number(t.fx_rate) || 1;
+    if (t.currency === 'USD') fx = Number(req.body?.fx_rate) > 0 ? Number(req.body.fx_rate) : await getRateForDate(payDate);
+    const amountMxn = r2(Number(t.amount) * fx);
+    await query(
+      `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, fx_rate=$3, amount_mxn=$4, approved=true, updated_by=$5 WHERE id=$6`,
+      [accountId, payDate, fx, amountMxn, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true } });
+    return { ok: true, amount_mxn: amountMxn };
   });
 
   // 계정과목 목록(드롭다운용)
