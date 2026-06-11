@@ -471,7 +471,7 @@ export default async function financeRoutes(app) {
     return { ok: true };
   });
 
-  // 생성: 활성 규칙을 오늘부터 24개월 지평까지 예정거래로 멱등 생성
+  // 생성: 활성 규칙을 오늘부터 24개월 지평까지 예정거래로 멱등 생성 (일괄 INSERT)
   app.post('/api/recurring/generate', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const userId = req.ctx.perm.userId;
     const today = new Date().toISOString().slice(0, 10);
@@ -484,17 +484,29 @@ export default async function financeRoutes(app) {
         freq: rule.freq, start_date: String(rule.start_date).slice(0, 10),
         day_of_month: rule.day_of_month, weekday: rule.weekday, end_month: rule.end_month,
       }, today, RECUR_HORIZON_MONTHS);
+      if (!occ.length) continue;
       const fx = rule.currency === 'USD' ? usdRate : 1;
-      for (const o of occ) {
-        const amountMxn = r2(Number(rule.amount) * fx);
-        const res = await query(
-          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'plan','general',true,$9,$10,$9,$11,$12,$4,$2)
-           ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING RETURNING id`,
-          [rule.account_id || null, o.date, rule.direction, r2(rule.amount), rule.currency, fx, amountMxn,
-           rule.category_code || null, userId, `[고정비] ${rule.name}`, rule.id, o.period]);
-        if (res.rows[0]) created += 1;
+      const amt = r2(rule.amount);
+      const amountMxn = r2(amt * fx);
+      // 이미 생성된 period를 한 번에 조회 → 없는 것만 일괄 INSERT
+      const existing = new Set((await query(
+        `SELECT recurring_period FROM transactions WHERE recurring_rule_id=$1`, [rule.id])).rows.map((r) => r.recurring_period));
+      const fresh = occ.filter((o) => !existing.has(o.period));
+      if (!fresh.length) continue;
+      // 다중행 VALUES 일괄 INSERT
+      const vals = []; const params = [];
+      let i = 1;
+      for (const o of fresh) {
+        vals.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},'plan','general',true,$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`);
+        params.push(rule.account_id || null, o.date, rule.direction, amt, rule.currency, fx, amountMxn,
+          rule.category_code || null, userId, `[고정비] ${rule.name}`, userId, rule.id, o.period, amt, o.date);
       }
+      const res = await query(
+        `INSERT INTO transactions
+           (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date)
+         VALUES ${vals.join(',')}
+         ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING`, params);
+      created += res.rowCount || 0;
     }
     return { ok: true, created };
   });
