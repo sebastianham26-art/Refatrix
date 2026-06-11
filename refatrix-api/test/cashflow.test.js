@@ -173,3 +173,26 @@ test('planVsActualByCategory: date range filters plan by plan_date, actual by tx
   const rent = r.expense.rows.find((x) => x.code === '6020');
   assert.equal(rent.plan, 63000); assert.equal(rent.actual, 0);
 });
+
+test('planVsActualByCategory: direct-actual with no plan does NOT appear in plan', () => {
+  const txns = [
+    // 계획 없이 바로 실적 등록한 마케팅비 (plan_amount_mxn null)
+    { direction: 'out', status: 'actual', txn_date: '2026-06-15', amount_mxn: 10500, plan_date: null, plan_amount_mxn: null, category_code: '6070', category_name: '마케팅' },
+  ];
+  const r = planVsActualByCategory(txns, { filter: 'all' });
+  const mk = r.expense.rows.find((x) => x.code === '6070');
+  assert.equal(mk.plan, 0);       // 계획 0
+  assert.equal(mk.actual, 10500); // 실적만
+  assert.equal(r.expense.total.plan, 0);
+  assert.equal(r.expense.total.actual, 10500);
+});
+
+test('monthBreakdown: direct-actual with no plan stays out of plan section', () => {
+  const txns = [
+    { id: 1, direction: 'out', status: 'actual', txn_date: '2026-06-15', amount_mxn: 10500, plan_date: null, plan_amount_mxn: null, category_code: '6070', category_name: '마케팅' },
+  ];
+  const r = monthBreakdown(txns, '2026-06', '2026-06-20');
+  assert.equal(r.actual.items.length, 1);     // 실적 섹션엔 있음
+  assert.equal(r.plan.items.length, 0);       // 예정 섹션엔 없음
+  assert.equal(r.plan.summary.out.planned, 0);
+});

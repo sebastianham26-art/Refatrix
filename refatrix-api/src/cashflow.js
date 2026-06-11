@@ -65,9 +65,9 @@ export function planVsActual(txns, opts = {}) {
   for (const t of txns) {
     if (!inc(t)) continue;
     const dir = t.direction === 'in' ? 'in' : 'out';
-    // 계획선: plan 값이 있으면 그것, 없으면 거래값(실제거래도 원 계획 시점/금액으로)
+    // 계획선: 계획이 실제로 있었던 것만(계획 없이 바로 실적 등록한 건 계획 0)
     const planDate = t.plan_date || t.txn_date;
-    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : Number(t.amount_mxn) || 0;
+    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : 0;
     if (planAmt) add(plan[dir], bucketKey(planDate, gran), planAmt);
     // 실적선: 실제 전환된 것만
     if (t.status === 'actual') add(actual[dir], bucketKey(t.txn_date, gran), Number(t.amount_mxn) || 0);
@@ -135,14 +135,15 @@ export function monthBreakdown(txns, monthStr, today) {
   const actualItems = [];
   const planItems = [];
   for (const t of txns) {
+    const hasPlan = t.plan_amount_mxn != null; // 계획이 실제로 있었던 거래만 예정 섹션에
     const planDate = t.plan_date ? String(t.plan_date).slice(0, 10) : String(t.txn_date).slice(0, 10);
-    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : Number(t.amount_mxn) || 0;
+    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : 0;
     // 실적 섹션
     if (t.status === 'actual' && inMonth(t.txn_date)) {
       actualItems.push({ ...t, _amt: Number(t.amount_mxn) || 0, _date: String(t.txn_date).slice(0, 10) });
     }
-    // 예정 섹션: 계획일이 그 달
-    if (inMonth(planDate)) {
+    // 예정 섹션: 계획이 있고, 계획일이 그 달
+    if (hasPlan && inMonth(planDate)) {
       let state;
       if (t.status === 'actual') state = 'processed';
       else state = (planDate < t0) ? 'overdue' : 'upcoming';
@@ -176,7 +177,7 @@ export function planVsActualByCategory(txns, opts = {}) {
     if (!inc(t)) continue;
     const dir = t.direction === 'in' ? 'in' : 'out';
     const planDate = t.plan_date || t.txn_date;
-    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : Number(t.amount_mxn) || 0;
+    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : 0;
     const k = key(t);
     if (!grp[dir].has(k)) grp[dir].set(k, { code: (t.category_code || '기타'), name: (t.category_name || t.category_code || '기타'), plan: 0, actual: 0 });
     const row = grp[dir].get(k);
