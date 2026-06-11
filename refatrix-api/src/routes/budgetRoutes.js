@@ -146,10 +146,10 @@ export default async function budgetRoutes(app) {
   app.post('/api/budget/items/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const result = await withTx(async (c) => {
-      const it = (await c.query(`SELECT * FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      const it = (await c.query(`SELECT *, to_char(plan_date,'YYYY-MM-DD') AS plan_date_str FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
       if (!it) return { error: 'not_found' };
       if (it.status === 'approved') return { error: 'already_approved' };
-      const planDate = it.plan_date ? String(it.plan_date).slice(0, 10) : resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
+      const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
       const amount = Number(it.amount);
       const memo = `[마케팅] ${it.category ? it.category + ' · ' : ''}${it.name}`;
       // 마케팅 계획 거래(plan, 지출). 계좌 미지정(예정), 승인됨.
@@ -175,9 +175,9 @@ export default async function budgetRoutes(app) {
     let count = 0;
     for (const row of pend) {
       const r = await withTx(async (c) => {
-        const it = (await c.query(`SELECT * FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [row.id])).rows[0];
+        const it = (await c.query(`SELECT *, to_char(plan_date,'YYYY-MM-DD') AS plan_date_str FROM marketing_budget_items WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [row.id])).rows[0];
         if (!it || it.status !== 'pending') return { skip: true };
-        const planDate = it.plan_date ? String(it.plan_date).slice(0, 10) : resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
+        const planDate = it.plan_date_str || resolvePlanDate({ month: it.plan_month, dateUnknown: it.date_unknown });
         const amount = Number(it.amount);
         const memo = `[마케팅] ${it.category ? it.category + ' · ' : ''}${it.name}`;
         const txn = (await c.query(
