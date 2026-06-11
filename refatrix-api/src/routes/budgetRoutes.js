@@ -16,13 +16,25 @@ export default async function budgetRoutes(app) {
   app.get('/api/budget/periods', { preHandler: [authGuard, requirePage('budget')] }, async () => {
     const rows = (await query(
       `SELECT p.*, to_char(p.created_at,'YYYY-MM-DD') AS created_date,
-              (SELECT COUNT(*) FROM marketing_budget_items i WHERE i.period_id=p.id AND i.deleted_at IS NULL) AS item_count
-         FROM marketing_budget_periods p WHERE p.deleted_at IS NULL
+              COUNT(i.id) FILTER (WHERE i.deleted_at IS NULL) AS item_count,
+              COUNT(i.id) FILTER (WHERE i.deleted_at IS NULL AND i.status='pending') AS pending_count,
+              COUNT(i.id) FILTER (WHERE i.deleted_at IS NULL AND i.status='approved') AS approved_count,
+              COUNT(i.id) FILTER (WHERE i.deleted_at IS NULL AND i.status='rejected') AS rejected_count,
+              COALESCE(SUM(i.amount) FILTER (WHERE i.deleted_at IS NULL AND i.status='approved'),0) AS approved_amount,
+              COALESCE(SUM(i.amount) FILTER (WHERE i.deleted_at IS NULL AND i.status='pending'),0) AS pending_amount
+         FROM marketing_budget_periods p
+         LEFT JOIN marketing_budget_items i ON i.period_id=p.id
+        WHERE p.deleted_at IS NULL
+        GROUP BY p.id
         ORDER BY p.start_month DESC, p.id DESC`)).rows;
     return { items: rows.map((p) => ({
       id: p.id, title: p.title, start_month: p.start_month, end_month: p.end_month,
       sales_target: Number(p.sales_target), pct: Number(p.pct), limit_amount: Number(p.limit_amount),
-      status: p.status, memo: p.memo, item_count: Number(p.item_count), created_date: p.created_date,
+      status: p.status, memo: p.memo, item_count: Number(p.item_count),
+      pending_count: Number(p.pending_count), approved_count: Number(p.approved_count), rejected_count: Number(p.rejected_count),
+      approved_amount: Number(p.approved_amount), pending_amount: Number(p.pending_amount),
+      review_done: Number(p.item_count) > 0 && Number(p.pending_count) === 0,
+      created_date: p.created_date,
     })) };
   });
 
