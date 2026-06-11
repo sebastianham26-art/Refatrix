@@ -478,8 +478,8 @@ export default async function financeRoutes(app) {
     return { ok: true };
   });
 
-  // 규칙별 생성/연장: 마지막 생성일 이후부터 months개월만큼 이어서 생성. 오늘+24개월 상한.
-  // body: { months }  (최초 기본 12, 이후 +3/+6/+12 등)
+  // 규칙별 생성/연장: 마지막 생성일 이후부터 "목표 월(through_month, YYYY-MM)"의 말일까지 생성. 오늘+24개월 상한.
+  // body: { through_month }  (예: '2027-06'). 없으면 오늘+12개월.
   app.post('/api/recurring/:id/generate', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
     if (app.__recurGenerating) return reply.code(409).send({ error: 'generation_in_progress' });
@@ -489,17 +489,23 @@ export default async function financeRoutes(app) {
       if (!rule) return reply.code(404).send({ error: 'not_found' });
       if (!rule.start_date) return reply.code(400).send({ error: 'no_start_date' });
       const today = new Date().toISOString().slice(0, 10);
-      const months = Math.min(Math.max(Number(req.body?.months) || RECUR_HORIZON_MONTHS, 1), RECUR_MAX_MONTHS);
-      const cap = addMonthsUTC(today, RECUR_MAX_MONTHS); // 오늘+24개월 상한
+      const cap = addMonthsUTC(today, RECUR_MAX_MONTHS); // 오늘+24개월 상한(날짜)
+      // 목표 끝 날짜: through_month 말일, 없으면 오늘+12개월
+      let target;
+      if (req.body?.through_month && /^\d{4}-\d{2}$/.test(req.body.through_month)) {
+        const [ty, tm] = req.body.through_month.split('-').map(Number);
+        target = new Date(Date.UTC(ty, tm, 0)).toISOString().slice(0, 10); // 그 달 말일
+      } else {
+        target = addMonthsUTC(today, RECUR_HORIZON_MONTHS);
+      }
+      if (target > cap) target = cap; // 상한 초과 차단
       const gthrough = rule.generated_through ? String(rule.generated_through).slice(0, 10) : null;
-      // 시작 경계: 처음이면 규칙 시작일, 아니면 마지막 생성일 다음날
-      const fromDate = gthrough ? addMonthsUTC(gthrough, 0) : String(rule.start_date).slice(0, 10);
-      const fromExclusive = gthrough ? new Date(new Date(gthrough + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10) : fromDate;
-      // 목표 끝: (기준점 + months), 단 오늘+24개월 상한
-      const base = gthrough && gthrough > today ? gthrough : today;
-      let target = addMonthsUTC(base, months);
-      if (target > cap) target = cap;
-      if (target <= (gthrough || '0000-00-00')) return { ok: true, created: 0, generated_through: gthrough, capped: target >= cap };
+      const fromExclusive = gthrough
+        ? new Date(new Date(gthrough + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)
+        : String(rule.start_date).slice(0, 10);
+      if (gthrough && target <= gthrough) {
+        return { ok: true, created: 0, generated_through: gthrough, capped: target >= cap };
+      }
       const occ = expandBetween({
         freq: rule.freq, start_date: String(rule.start_date).slice(0, 10),
         day_of_month: rule.day_of_month, weekday: rule.weekday, end_month: rule.end_month,
@@ -508,7 +514,6 @@ export default async function financeRoutes(app) {
       const amt = r2(rule.amount); const amountMxn = r2(amt * fx);
       let created = 0;
       if (occ.length) {
-        // 중복 방지: 이미 있는 period 제외
         const existing = new Set((await query(
           `SELECT recurring_period FROM transactions WHERE recurring_rule_id=$1`, [id])).rows.map((r) => r.recurring_period));
         const fresh = occ.filter((o) => !existing.has(o.period));
@@ -528,7 +533,6 @@ export default async function financeRoutes(app) {
           created = res.rowCount || 0;
         }
       }
-      // 생성완료일 갱신(종료월이 있으면 그 이전까지만 의미 있음 — target으로 기록)
       await query(`UPDATE recurring_rules SET generated_through=$1 WHERE id=$2`, [target, id]);
       return { ok: true, created, generated_through: target, capped: target >= cap };
     } finally {
