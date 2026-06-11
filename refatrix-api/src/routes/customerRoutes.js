@@ -19,13 +19,17 @@ export default async function customerRoutes(app) {
     return { items: rows.map((t) => ({ id: t.id, name: t.name, is_sales: t.is_sales })) };
   });
 
-  // 다음 고객코드 자동생성(C-#### 순번)
+  async function computeNextCode() {
+    const rows = (await query(`SELECT code FROM customers WHERE deleted_at IS NULL`)).rows;
+    const used = new Set(); let maxn = 0;
+    for (const r of rows) { const m = String(r.code || '').match(/^c-?(\d+)$/i); if (m) { const n = parseInt(m[1], 10); used.add(n); if (n > maxn) maxn = n; } }
+    let next = maxn + 1; while (used.has(next)) next++;
+    return 'C-' + String(next).padStart(4, '0');
+  }
+
+  // 다음 고객코드 자동생성(미리보기). 대소문자 무관, 빈 번호 충돌 회피.
   app.get('/api/customers/next-code', { preHandler: [authGuard, requirePage('customers')] }, async () => {
-    const row = (await query(
-      `SELECT COALESCE(MAX((regexp_replace(code,'\\D','','g'))::int),0) AS maxn
-         FROM customers WHERE code ~ '^C-?\\d+$'`)).rows[0];
-    const next = (Number(row.maxn) || 0) + 1;
-    return { code: 'C-' + String(next).padStart(4, '0') };
+    return { code: await computeNextCode() };
   });
 
   // 고객 단계 목록
@@ -64,7 +68,7 @@ export default async function customerRoutes(app) {
     }
     if (q) { params.push(`%${q}%`); conds.push(`(c.name ILIKE $${params.length} OR c.code ILIKE $${params.length} OR c.rfc ILIKE $${params.length})`); }
     const rows = (await query(
-      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.discount, c.credit_days,
+      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.discount, c.credit_days, c.customer_type,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
@@ -87,7 +91,7 @@ export default async function customerRoutes(app) {
         ORDER BY c.name LIMIT 300`, params)).rows;
     return { items: rows.map((c) => ({
       id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
-      discount: Number(c.discount), credit_days: c.credit_days,
+      discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
@@ -124,7 +128,7 @@ export default async function customerRoutes(app) {
     return {
       customer: {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
-        discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo,
+        discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
@@ -137,23 +141,29 @@ export default async function customerRoutes(app) {
     };
   });
 
-  // 고객 등록: 팀 지정 필수. 영업은 자기 팀에만, 디렉터는 전체.
+  // 고객 등록: 코드 서버 자동생성(고정), 팀 지정 필수.
   app.post('/api/customers', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
     const b = req.body || {};
-    if (!b.code || !b.name) return reply.code(400).send({ error: 'missing_fields' });
-    // 팀 미지정 시 작성자(영업)의 소속팀으로 자동 지정
+    if (!b.name) return reply.code(400).send({ error: 'missing_fields' });
     const teamId = b.team_id ? Number(b.team_id) : (req.ctx.perm.teamId || null);
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
     if (!canEditTeam(req.ctx.perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
-    const dup = (await query(`SELECT id FROM customers WHERE code=$1 AND deleted_at IS NULL`, [b.code])).rows[0];
-    if (dup) return reply.code(409).send({ error: 'code_exists' });
-    const row = (await query(
-      `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, memo, stage_since, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $12) RETURNING id`,
-      [b.code, b.name, b.rfc || null, b.contact || null, b.phone || null, Number(b.discount) || 0,
-       Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.memo || null, req.ctx.perm.userId])).rows[0];
+    // 코드 충돌 시 재시도(동시 생성 대비)
+    let row, lastErr;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = await computeNextCode();
+      try {
+        row = (await query(
+          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, stage_since, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
+          [code, b.name, b.rfc || null, b.contact || null, b.phone || null, Number(b.discount) || 0,
+           Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.customer_type || null, b.memo || null, req.ctx.perm.userId])).rows[0];
+        break;
+      } catch (e) { lastErr = e; if (!String(e.message || '').includes('unique') && !String(e.message || '').includes('duplicate')) throw e; }
+    }
+    if (!row) return reply.code(409).send({ error: 'code_generation_failed' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `customer:${row.id}` });
-    return { ok: true, id: row.id };
+    return { ok: true, id: row.id, code: row.code };
   });
 
   // 고객 수정
@@ -173,12 +183,13 @@ export default async function customerRoutes(app) {
     const stageChanged = b.stage_id != null && Number(b.stage_id) !== c.stage_id;
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
-         team_id=$7, stage_id=$8, owner_id=$9, memo=$10,
-         stage_since=CASE WHEN $11 THEN CURRENT_DATE ELSE stage_since END, updated_by=$12 WHERE id=$13`,
+         team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11,
+         stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
       [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
        b.phone !== undefined ? b.phone : c.phone, b.discount != null ? Number(b.discount) : c.discount,
        b.credit_days != null ? Number(b.credit_days) : c.credit_days, teamId,
        b.stage_id != null ? Number(b.stage_id) : c.stage_id, b.owner_id !== undefined ? b.owner_id : c.owner_id,
+       b.customer_type !== undefined ? b.customer_type : c.customer_type,
        b.memo !== undefined ? b.memo : c.memo, stageChanged, req.ctx.perm.userId, id]);
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `customer:${id}` });
     return { ok: true };
