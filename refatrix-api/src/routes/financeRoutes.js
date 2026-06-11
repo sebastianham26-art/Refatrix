@@ -82,9 +82,10 @@ export default async function financeRoutes(app) {
     const approved = !(direction === 'out' && !isDirector);
     const r = await query(
       `INSERT INTO transactions
-         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11) RETURNING id`,
-      [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null]);
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14) RETURNING id`,
+      [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
+       status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
   });
@@ -101,6 +102,7 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.sales_invoice_id,
+              t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
               (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
@@ -108,7 +110,9 @@ export default async function financeRoutes(app) {
         WHERE ${cond.join(' AND ')}
         ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
     return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
-      edit_count: Number(t.edit_count), editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
+      plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
+      edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
+      editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
   });
 
   // 승인 대기(디렉터) — 담당자가 올린 미승인 지출
@@ -484,8 +488,8 @@ export default async function financeRoutes(app) {
       for (const o of occ) {
         const amountMxn = r2(Number(rule.amount) * fx);
         const res = await query(
-          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'plan','general',true,$9,$10,$9,$11,$12)
+          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'plan','general',true,$9,$10,$9,$11,$12,$4,$2)
            ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING RETURNING id`,
           [rule.account_id || null, o.date, rule.direction, r2(rule.amount), rule.currency, fx, amountMxn,
            rule.category_code || null, userId, `[고정비] ${rule.name}`, rule.id, o.period]);
@@ -495,8 +499,8 @@ export default async function financeRoutes(app) {
     return { ok: true, created };
   });
 
-  // 지급 확인: 예정(plan) 거래 → 실제(actual). 고정비는 디렉터 승인 없이 바로 반영.
-  // body: { account_id, pay_date? }
+  // 지급/입금 확인: 예정(plan) 거래 → 실제(actual). 날짜·금액 수정 가능(계획과 다를 수 있음).
+  // body: { account_id, pay_date?, amount?, fx_rate?, memo? }
   app.post('/api/transactions/:id/confirm-pay', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
@@ -506,15 +510,46 @@ export default async function financeRoutes(app) {
     const accountId = req.body?.account_id || t.account_id;
     if (!accountId) return reply.code(400).send({ error: 'account_required' });
     const payDate = req.body?.pay_date || t.txn_date;
-    // USD면 지급일 기준 환율로 확정(입력값 > 거래일 캐시 > 오늘)
+    const newAmount = req.body?.amount != null ? r2(req.body.amount) : Number(t.amount);
+    if (!(newAmount > 0)) return reply.code(400).send({ error: 'invalid_amount' });
     let fx = Number(t.fx_rate) || 1;
     if (t.currency === 'USD') fx = Number(req.body?.fx_rate) > 0 ? Number(req.body.fx_rate) : await getRateForDate(payDate);
-    const amountMxn = r2(Number(t.amount) * fx);
+    const amountMxn = r2(newAmount * fx);
+    // 계획 대비 변경 여부
+    const planAmt = t.plan_amount != null ? Number(t.plan_amount) : Number(t.amount);
+    const planDate = t.plan_date ? String(t.plan_date).slice(0, 10) : String(t.txn_date).slice(0, 10);
+    const changed = Math.abs(newAmount - planAmt) > 0.001 || String(payDate).slice(0, 10) !== planDate;
+    const memo = req.body?.memo ? String(req.body.memo).trim() : null;
+    const newChangeCount = Number(t.change_count || 0) + (changed ? 1 : 0);
+    const planMemo = changed && memo
+      ? ((t.plan_memo ? t.plan_memo + ' | ' : '') + `${new Date().toISOString().slice(0, 10)}: ${memo}`)
+      : t.plan_memo;
     await query(
-      `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, fx_rate=$3, amount_mxn=$4, approved=true, updated_by=$5 WHERE id=$6`,
-      [accountId, payDate, fx, amountMxn, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true } });
-    return { ok: true, amount_mxn: amountMxn };
+      `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
+         approved=true, change_count=$6, plan_memo=$7, updated_by=$8 WHERE id=$9`,
+      [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed } });
+    return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount };
+  });
+
+  // 계획 대비 실적(고정비) 차이 리포트: 확정된 고정비 실적을 기간별로 계획 대비 비교
+  app.get('/api/recurring/variance', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const gran = req.query.granularity === 'week' ? 'week' : 'month';
+    const bucket = gran === 'week' ? `to_char(date_trunc('week', t.txn_date), 'IYYY-"W"IW')` : `to_char(t.txn_date, 'YYYY-MM')`;
+    const rows = (await query(
+      `SELECT ${bucket} AS period,
+              SUM(t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_mxn,
+              SUM(t.amount_mxn) AS actual_mxn,
+              COUNT(*) AS items,
+              SUM(CASE WHEN t.change_count>0 THEN 1 ELSE 0 END) AS changed_items
+         FROM transactions t
+        WHERE t.recurring_rule_id IS NOT NULL AND t.status='actual' AND t.deleted_at IS NULL
+        GROUP BY 1 ORDER BY 1 DESC LIMIT 60`)).rows;
+    return { granularity: gran, items: rows.map((r) => {
+      const plan = Number(r.plan_mxn) || 0, actual = Number(r.actual_mxn) || 0;
+      return { period: r.period, plan_mxn: r2(plan), actual_mxn: r2(actual), diff_mxn: r2(actual - plan),
+        items: Number(r.items), changed_items: Number(r.changed_items) };
+    }) };
   });
 
   // 계정과목 목록(드롭다운용)
