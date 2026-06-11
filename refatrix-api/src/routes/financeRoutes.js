@@ -806,6 +806,38 @@ export default async function financeRoutes(app) {
     return { from, to, today: { rate: today.rate, asOf: today.asOf, source: today.source, stale: today.stale }, series, stats, usd };
   });
 
+  // 처리 대기 예정 목록: 이번 달(또는 지정 월) 예정 + 과거에 예정됐으나 미처리(경과)인 것 전부.
+  // query: month=YYYY-MM (기본 이번 달)
+  app.get('/api/transactions/pending-plans', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const month = /^\d{4}-\d{2}$/.test(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = month + '-01';
+    const [yy, mm] = month.split('-').map(Number);
+    const monthEnd = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+    const rows = (await query(
+      `SELECT t.id, t.account_id, a.name AS account_name, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.direction,
+              t.amount, t.currency, t.fx_rate, t.amount_mxn, t.category_code, cat.name AS category_name,
+              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_amount, t.memo, t.sales_invoice_id, t.recurring_rule_id
+         FROM transactions t
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN categories cat ON cat.code=t.category_code
+        WHERE t.status='plan' AND t.deleted_at IS NULL
+          AND (
+            (COALESCE(t.plan_date,t.txn_date) BETWEEN $1 AND $2)   -- 이번 달 예정
+            OR (COALESCE(t.plan_date,t.txn_date) < $3)              -- 과거 미처리(경과) 전부
+          )
+        ORDER BY COALESCE(t.plan_date,t.txn_date) ASC, t.id ASC`,
+      [monthStart, monthEnd, today])).rows;
+    const items = rows.map((t) => {
+      const pdate = t.plan_date || t.txn_date;
+      const overdue = pdate < today;
+      return { ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+        plan_amount: t.plan_amount == null ? null : Number(t.plan_amount), plan_date: pdate, overdue,
+        source: t.sales_invoice_id ? 'sales' : (t.recurring_rule_id ? 'recurring' : 'manual') };
+    });
+    return { month, today, count: items.length, items };
+  });
+
   // 계정과목 목록(드롭다운용)
   app.get('/api/categories', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
     const rows = (await query(`SELECT code, name, group_name FROM categories ORDER BY sort_order, code`)).rows;
