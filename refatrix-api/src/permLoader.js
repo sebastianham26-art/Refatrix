@@ -4,7 +4,7 @@ import { hashDeviceKey } from './auth.js';
 // 사용자 권한 묶음을 DB에서 읽어 perm 객체로 구성
 export async function loadPerm(userId) {
   const u = (await query(
-    `SELECT id, name, dept, role, lang, scope, cur_scope, see_balance, see_process_map
+    `SELECT id, name, dept, role, lang, scope, cur_scope, see_balance, see_process_map, team_id
        FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId])).rows[0];
   if (!u) return null;
 
@@ -23,9 +23,16 @@ export async function loadPerm(userId) {
     `SELECT item_key, depth, resolution FROM user_item_depth WHERE user_id=$1`, [userId])).rows) {
     items[r.item_key] = { depth: r.depth, resolution: r.resolution };
   }
+  // 상대팀 열람 권한(소속팀 외 추가로 볼 수 있는 팀)
+  const teamAccess = [];
+  for (const r of (await query(
+    `SELECT team_id, can_edit FROM user_team_access WHERE user_id=$1`, [userId])).rows) {
+    teamAccess.push({ teamId: Number(r.team_id), canEdit: r.can_edit });
+  }
   return {
     userId: u.id, name: u.name, dept: u.dept, role: u.role, lang: u.lang,
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
+    teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
     pages, fields, items,
   };
 }

@@ -6,30 +6,7 @@ import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
 
 export default async function salesRoutes(app) {
-  // ---- 고객 (매출 전제, 간단 버전) ----
-  app.get('/api/customers', { preHandler: [authGuard, requirePage('customers')] }, async (req) => {
-    const q = (req.query.q || '').trim();
-    const params = [];
-    let where = 'deleted_at IS NULL';
-    if (q) { params.push(`%${q}%`); where += ` AND (code ILIKE $${params.length} OR name ILIKE $${params.length} OR rfc ILIKE $${params.length})`; }
-    const rows = (await query(
-      `SELECT id, code, name, rfc, discount, credit_days, owner_id
-         FROM customers WHERE ${where} ORDER BY code LIMIT 50`, params)).rows;
-    return { items: rows };
-  });
-
-  app.post('/api/customers', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
-    const { code, name, rfc, discount = 0, credit_days = 0, memo } = req.body || {};
-    if (!code || !name) return reply.code(400).send({ error: 'code_and_name_required' });
-    const dup = (await query(`SELECT 1 FROM customers WHERE code=$1`, [code])).rows[0];
-    if (dup) return reply.code(409).send({ error: 'code_taken' });
-    const r = await query(
-      `INSERT INTO customers (code, name, rfc, discount, credit_days, memo, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [code, name, rfc || null, discount, credit_days, memo || null, req.ctx.perm.userId]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `customer:${r.rows[0].id}` });
-    return { id: r.rows[0].id, code, name };
-  });
+  // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
 
   // ---- 매출 인보이스 등록 (즉시 반영, 승인 불필요) ----
   // body: { sat_no?, customer_id, inv_date, credit_days?(예외 시), lines:[{product_id, qty, discount_rate?}], memo? }
