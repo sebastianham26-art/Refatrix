@@ -4,7 +4,7 @@ import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, computeOverdue, latePaymentHistory, monthBreakdown } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -755,6 +755,21 @@ export default async function financeRoutes(app) {
     });
     const breakdown = monthBreakdown(mapped, month, today);
     return { month, today, opening_before_month: r2(runBefore), days, ...breakdown };
+  });
+
+  // 계정과목별 계획 vs 실적(막대 비교): query filter=all|recurring|other, from, to (YYYY-MM-DD)
+  app.get('/api/plan-vs-actual/by-category', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const filter = ['all', 'recurring', 'other'].includes(req.query.filter) ? req.query.filter : 'all';
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
+    const txns = await loadCashTxns();
+    const res = planVsActualByCategory(txns.map((t) => ({
+      direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
+      txn_date: t.txn_date, plan_date: t.plan_date || t.txn_date,
+      plan_amount_mxn: t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : null,
+      category_code: t.category_code, category_name: t.category_name, recurring_rule_id: t.recurring_rule_id,
+    })), { filter, from, to });
+    return res;
   });
 
   // 계정과목 목록(드롭다운용)

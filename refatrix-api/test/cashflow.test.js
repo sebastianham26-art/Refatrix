@@ -131,3 +131,45 @@ test('monthBreakdown: actual section + plan section states', () => {
   assert.equal(r.plan.summary.in.remaining, 5000);
   assert.equal(r.plan.summary.in.overdue, 5000);
 });
+
+import { planVsActualByCategory } from '../src/cashflow.js';
+
+test('planVsActualByCategory: groups by category, plan vs actual, rate', () => {
+  const txns = [
+    // 임차료 plan 63000, actual 60000 (processed)
+    { direction: 'out', status: 'actual', txn_date: '2026-06-06', amount_mxn: 60000, plan_date: '2026-06-06', plan_amount_mxn: 63000, category_code: '6020', category_name: '임차료', recurring_rule_id: 5 },
+    // 급여 plan 8000, not yet actual
+    { direction: 'out', status: 'plan', txn_date: '2026-06-20', amount_mxn: 8000, plan_date: '2026-06-20', plan_amount_mxn: 8000, category_code: '6010', category_name: '급여', recurring_rule_id: 6 },
+    // 제품매출 income plan 5000 actual 4500
+    { direction: 'in', status: 'actual', txn_date: '2026-06-09', amount_mxn: 4500, plan_date: '2026-06-05', plan_amount_mxn: 5000, category_code: '4010', category_name: '제품매출' },
+  ];
+  const r = planVsActualByCategory(txns, { filter: 'all' });
+  // expense rows: 임차료, 급여
+  const rent = r.expense.rows.find((x) => x.code === '6020');
+  assert.equal(rent.plan, 63000); assert.equal(rent.actual, 60000); assert.equal(rent.diff, -3000); assert.equal(rent.rate, 95);
+  const pay = r.expense.rows.find((x) => x.code === '6010');
+  assert.equal(pay.plan, 8000); assert.equal(pay.actual, 0); assert.equal(pay.rate, 0);
+  assert.equal(r.expense.total.plan, 71000); assert.equal(r.expense.total.actual, 60000);
+  // income
+  const sales = r.income.rows.find((x) => x.code === '4010');
+  assert.equal(sales.plan, 5000); assert.equal(sales.actual, 4500); assert.equal(sales.rate, 90);
+});
+
+test('planVsActualByCategory: filter recurring vs other', () => {
+  const txns = [
+    { direction: 'out', status: 'plan', txn_date: '2026-06-06', amount_mxn: 0, plan_date: '2026-06-06', plan_amount_mxn: 500, category_code: '6020', category_name: '임차료', recurring_rule_id: 5 },
+    { direction: 'out', status: 'plan', txn_date: '2026-06-06', amount_mxn: 0, plan_date: '2026-06-06', plan_amount_mxn: 300, category_code: '6070', category_name: '마케팅', recurring_rule_id: null },
+  ];
+  assert.equal(planVsActualByCategory(txns, { filter: 'recurring' }).expense.total.plan, 500);
+  assert.equal(planVsActualByCategory(txns, { filter: 'other' }).expense.total.plan, 300);
+});
+
+test('planVsActualByCategory: date range filters plan by plan_date, actual by txn_date', () => {
+  const txns = [
+    { direction: 'out', status: 'actual', txn_date: '2026-07-06', amount_mxn: 60000, plan_date: '2026-06-06', plan_amount_mxn: 63000, category_code: '6020', category_name: '임차료' },
+  ];
+  // window June only: plan counts (plan_date June), actual excluded (txn_date July)
+  const r = planVsActualByCategory(txns, { from: '2026-06-01', to: '2026-06-30' });
+  const rent = r.expense.rows.find((x) => x.code === '6020');
+  assert.equal(rent.plan, 63000); assert.equal(rent.actual, 0);
+});

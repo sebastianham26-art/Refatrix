@@ -161,6 +161,41 @@ export function monthBreakdown(txns, monthStr, today) {
   return { month: monthStr, today: t0, actual: { items: actualItems, subtotal: actualSub }, plan: { items: planItems, summary: planSummary } };
 }
 
+// 계정과목별 계획 vs 실적 (수입/지출 분리). 막대 비교용.
+// 계획 = plan 값(예정 시점·금액). 실적 = 실제 전환된 거래의 실제 금액.
+// period 필터: from/to (YYYY-MM-DD) 선택 — 계획은 plan_date 기준, 실적은 txn_date 기준.
+// filter: 'all'|'recurring'|'other'
+export function planVsActualByCategory(txns, opts = {}) {
+  const filter = opts.filter || 'all';
+  const inc = (t) => filter === 'all' ? true : filter === 'recurring' ? !!t.recurring_rule_id : !t.recurring_rule_id;
+  const from = opts.from || null, to = opts.to || null;
+  const inRange = (d) => (!from || d >= from) && (!to || d <= to);
+  const grp = { in: new Map(), out: new Map() };
+  const key = (t) => (t.category_code || '기타') + '|' + (t.category_name || t.category_code || '기타');
+  for (const t of txns) {
+    if (!inc(t)) continue;
+    const dir = t.direction === 'in' ? 'in' : 'out';
+    const planDate = t.plan_date || t.txn_date;
+    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : Number(t.amount_mxn) || 0;
+    const k = key(t);
+    if (!grp[dir].has(k)) grp[dir].set(k, { code: (t.category_code || '기타'), name: (t.category_name || t.category_code || '기타'), plan: 0, actual: 0 });
+    const row = grp[dir].get(k);
+    if (planAmt && inRange(planDate)) row.plan = round2(row.plan + planAmt);
+    if (t.status === 'actual' && inRange(t.txn_date)) row.actual = round2(row.actual + (Number(t.amount_mxn) || 0));
+  }
+  const toRows = (mp) => [...mp.values()].map((r) => ({
+    code: r.code, name: r.name, plan: round2(r.plan), actual: round2(r.actual),
+    diff: round2(r.actual - r.plan), rate: r.plan > 0 ? Math.round((r.actual / r.plan) * 100) : (r.actual > 0 ? null : 0),
+  })).filter((r) => r.plan !== 0 || r.actual !== 0).sort((a, b) => b.plan - a.plan || b.actual - a.actual);
+  const total = (rows) => {
+    const plan = round2(rows.reduce((s, r) => s + r.plan, 0));
+    const actual = round2(rows.reduce((s, r) => s + r.actual, 0));
+    return { plan, actual, diff: round2(actual - plan), rate: plan > 0 ? Math.round((actual / plan) * 100) : (actual > 0 ? null : 0) };
+  };
+  const income = toRows(grp.in), expense = toRows(grp.out);
+  return { filter, from, to, income: { rows: income, total: total(income) }, expense: { rows: expense, total: total(expense) } };
+}
+
 function planAggr(items, dir) {
   const xs = items.filter((x) => x.direction === dir);
   const planned = round2(xs.reduce((s, x) => s + x._planAmt, 0));
