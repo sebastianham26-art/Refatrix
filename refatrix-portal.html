@@ -132,9 +132,12 @@
   function canSee(key){ return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
 
   // 화면 열기: 토큰을 URL 해시로 전달(방법 A)
+  // 화면 열기: 세션을 localStorage로 전달(file:// 환경에서 안정적)
   function goScreen(key){
     const s=SCREENS[key];if(!s)return;
     if(!canSee(key)){alert('이 화면의 권한이 없습니다. 디렉터에게 요청하세요.');return;}
+    try{ localStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+    // 해시도 함께(폴백)
     const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
     window.open(s.file+hash,'_blank');
   }

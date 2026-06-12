@@ -89,11 +89,14 @@
   // 포털에서 전달된 토큰(자동 로그인)
   function portalSession(){
     try{
-      const h=location.hash.slice(1); if(!h) return null;
-      const p=new URLSearchParams(h);
-      const token=p.get('token'); if(!token) return null;
-      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
-    }catch(e){return null;}
+      const raw=localStorage.getItem('refatrix_session');
+      if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token, api:o.api||'', user:o.user||{}}; }
+    }catch(e){}
+    try{
+      const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h);
+        const token=p.get('token'); if(token) return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')}; }
+    }catch(e){}
+    return null;
   }
 
   async function login(){
