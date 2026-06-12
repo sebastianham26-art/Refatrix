@@ -226,4 +226,32 @@ export default async function dashboardRoutes(app) {
     }
     return out;
   });
+
+  // 제품·기타 카테고리 표시형 위젯용 요약(한 번에).
+  app.get('/api/dashboard/miscdata', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const out = {};
+    // 제품 수
+    {
+      const r = (await query(`SELECT COUNT(*) AS n FROM products WHERE deleted_at IS NULL`)).rows[0];
+      out.products = { count: Number(r.n) };
+    }
+    // 수입원가 승인 대기 수
+    {
+      const r = (await query(`SELECT COUNT(*) AS n FROM import_cost_docs WHERE status='pending' AND deleted_at IS NULL`)).rows[0];
+      out.import_pending = { count: Number(r.n) };
+    }
+    // 마감 기간 수 + 최신
+    {
+      const rows = (await query(`SELECT period AS p FROM period_closings ORDER BY period DESC`)).rows;
+      out.closed_periods = { count: rows.length, latest: rows[0] ? rows[0].p : null };
+    }
+    // 사용자 현황(디렉터만)
+    if (perm.role === 'director') {
+      const rows = (await query(`SELECT role, COUNT(*) AS n FROM users WHERE deleted_at IS NULL GROUP BY role`)).rows;
+      const byRole = {}; let total = 0; for (const r of rows) { byRole[r.role] = Number(r.n); total += Number(r.n); }
+      out.users = { count: total, by_role: byRole };
+    }
+    return out;
+  });
 }

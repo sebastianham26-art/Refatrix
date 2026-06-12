@@ -101,7 +101,7 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let registry=[], portalSum=null, mktOv=null, salesData=null, curTab='my';
+  let registry=[], portalSum=null, mktOv=null, salesData=null, finData=null, mktCust=null, curTab='my';
   let users=[], cfgUserId=null, cfgState=[];
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -170,6 +170,16 @@
       if(on.some(c=>c.widget_key.startsWith('S0'))){
         try{salesData=await fetch(session.api+'/api/dashboard/salesdata',{headers:auth()}).then(r=>r.json());}catch(e){salesData=null;}
       }
+      // 마케팅/재무(M__/F__) 위젯이 있으면 findata 로드
+      if(on.some(c=>/^(M0|F0)/.test(c.widget_key))){
+        try{finData=await fetch(session.api+'/api/dashboard/findata',{headers:auth()}).then(r=>r.json());}catch(e){finData=null;}
+      }
+      // 마케팅 TOP 위젯이 있으면 고객별 배분 로드
+      if(on.some(c=>c.widget_key==='M03_mkt_top'||c.widget_key==='M02_mkt_budget')){
+        try{const now=new Date();const ym=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
+          if(!mktOv)mktOv=await fetch(session.api+'/api/marketing/overview?start='+ym,{headers:auth()}).then(r=>r.json());
+          mktCust=await fetch(session.api+'/api/marketing/customers?start='+ym,{headers:auth()}).then(r=>r.json());}catch(e){mktCust=null;}
+      }
       renderWidgets(on);
     }catch(e){$('widgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
@@ -185,7 +195,7 @@
     }).join('');
   }
   function widgetHTML(c){
-    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};const sd=salesData||{};
+    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};const sd=salesData||{};const fd=finData||{};
     switch(c.widget_key){
       case 'W01_sales_perf':{
         const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
@@ -256,6 +266,52 @@
         const rate=p.rate==null?0:Math.min(100,p.rate);
         if(s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%"></div></div>`;
         return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div><div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)}</div>`;
+      }
+      case 'M01_mkt_status':{
+        const st=fd.marketing_status||'draft';
+        const lbl={draft:'작성중',submitted:'제출됨',approved:'승인',rejected:'반려'};
+        const col={draft:'#888',submitted:'var(--gold)',approved:'var(--income)',rejected:'var(--expense)'};
+        return `<div class="kpi" style="color:${col[st]||'#888'}">${lbl[st]||st}</div><div class="hint">마케팅 계획 승인 단계</div>`;
+      }
+      case 'M02_mkt_budget':{
+        if(!mktOv)return '<div class="hint">데이터 없음</div>';
+        const months=mktOv.months||[];let bud=0,alloc=0;
+        months.forEach(m=>{bud+=(mktOv.budget&&mktOv.budget[m])||0;alloc+=(mktOv.alloc_sum&&mktOv.alloc_sum[m])||0;});
+        const rate=bud>0?Math.round(alloc/bud*100):0;
+        if(s.amount===false) return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%"></div></div>`;
+        return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(alloc)}</div></div><div class="hint">예산 ${fmt(bud)} · 배분 ${fmt(alloc)} MXN(연간)</div>`;
+      }
+      case 'M03_mkt_top':{
+        const rows=(mktCust&&mktCust.customers)?mktCust.customers.map(c=>({name:c.name,total:Object.values(c.month_cost||{}).reduce((a,b)=>a+Number(b||0),0)})):[];
+        const top=rows.filter(r=>r.total>0).sort((a,b)=>b.total-a.total).slice(0,5);
+        if(!top.length)return '<div class="hint">배분 데이터 없음</div>';
+        return '<table><tbody>'+top.map(t=>`<tr><td style="padding:5px 6px"><b>${t.name}</b></td><td style="padding:5px 6px;text-align:right">${s.amount===false?'':fmt(t.total)+' MXN'}</td></tr>`).join('')+'</tbody></table>';
+      }
+      case 'F01_cashflow':{
+        const cf=fd.cashflow;if(!cf)return '<div class="hint">데이터 없음</div>';
+        if(s.amount===false) return `<div class="hint">민감 항목 — 금액 숨김</div>`;
+        const net=cf.net||0;const col=net>=0?'var(--income)':'var(--expense)';
+        return `<div class="kpi" style="color:${col}">${fmt(net)} <small>순현금(${cf.ym})</small></div><div class="hint">유입 ${fmt(cf.inflow)} · 유출 ${fmt(cf.outflow)} MXN</div>`;
+      }
+      case 'F02_plan_actual':{
+        const pa=fd.plan_vs_actual;if(!pa)return '<div class="hint">데이터 없음</div>';
+        if(s.amount===false) return `<div class="hint">민감 항목 — 금액 숨김</div>`;
+        const rate=pa.plan>0?Math.round(pa.actual/pa.plan*100):0;
+        return `<div class="kpi">${rate}% <small>지출 집행률(${pa.ym})</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(pa.actual)}</div></div><div class="hint">계획 ${fmt(pa.plan)} · 실적 ${fmt(pa.actual)} MXN</div>`;
+      }
+      case 'F03_ar_overdue':{
+        const ar=fd.ar_overdue||{};
+        let html=`<div class="kpi" style="color:var(--expense)">${ar.count||0} <small>연체 건</small></div>`;
+        if(s.amount!==false) html+=`<div class="hint">연체 총액 ${fmt(ar.total||0)} MXN</div>`;
+        return html;
+      }
+      case 'F04_pending':{
+        const n=fd.pending_approvals||0;
+        return `<div class="kpi">${n} <small>승인 대기</small></div><div class="hint">매출 수정/삭제 요청</div>`;
+      }
+      case 'F05_fx':{
+        const fx=fd.fx;if(!fx)return '<div class="hint">환율 데이터 없음</div>';
+        return `<div class="kpi">${Number(fx.rate).toFixed(2)} <small>MXN / USD</small></div><div class="hint">기준일 ${fx.date}</div>`;
       }
       default: return '<div class="hint">—</div>';
     }

@@ -135,6 +135,30 @@ export const WIDGETS = [
     source: 'findata.fx', link: 'finance', need: [],
     fields: [],
   },
+
+  // ===== 제품 카테고리 =====
+  {
+    key: 'P01_product_count', no: 'P-01', name: '제품 현황', cat: '제품',
+    source: 'miscdata.products', link: 'products', need: ['products'],
+    fields: [],
+  },
+
+  // ===== 기타 카테고리 =====
+  {
+    key: 'X01_import_pending', no: 'X-01', name: '수입원가 승인 대기', cat: '기타',
+    source: 'miscdata.import_pending', link: 'importcost', need: ['importcost'],
+    fields: [],
+  },
+  {
+    key: 'X02_closed_periods', no: 'X-02', name: '마감 기간 현황', cat: '기타',
+    source: 'miscdata.closed_periods', link: 'importcost', need: ['importcost'],
+    fields: [],
+  },
+  {
+    key: 'U01_user_status', no: 'U-01', name: '사용자 현황', cat: '기타',
+    source: 'miscdata.users', link: 'users', need: ['users'],
+    fields: [],
+  },
 ];
 
 export const WIDGET_BY_KEY = Object.fromEntries(WIDGETS.map((w) => [w.key, w]));

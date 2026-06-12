@@ -173,6 +173,23 @@
     return null;
   }
 
+
+  async function applyAccessLock(pageKey){
+    try{
+      const a=await fetch(session.api+'/api/me/access',{headers:auth()}).then(r=>r.json());
+      const lvl=(a.access&&a.access[pageKey])||'edit';
+      if(lvl==='view'){
+        document.body.classList.add('ro');
+        const st=document.createElement('style');
+        st.textContent="body.ro input[type=text]:not(#api):not(#lid),body.ro input[type=number],body.ro input[type=month],body.ro input[type=date],body.ro textarea{pointer-events:none;background:#f2f0ea;color:#999}body.ro .btn.gold,body.ro .btn.danger{display:none!important}body.ro button.btn:not(.ghost):not(#go):not(#reloadBtn):not(#portalBtn){display:none!important}";
+        document.head.appendChild(st);
+        const ban=document.createElement('div');ban.textContent='읽기 전용 — 이 화면은 보기 권한만 있습니다(수정 불가).';
+        ban.style.cssText='background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;margin-top:12px;font-size:13px;font-weight:700';
+        const ap=document.getElementById('app'); if(ap) ap.insertBefore(ban, ap.firstChild);
+      }
+    }catch(e){}
+  }
+
   async function login(){
     const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
     const m=$('loginMsg');m.className='msg';
@@ -187,7 +204,7 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
-      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');applyAccessLock('customers');
       if(!isDirector())$('teamTabBtn').classList.add('hidden');
       await loadRefs(); loadCustomers();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
