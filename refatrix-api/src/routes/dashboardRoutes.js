@@ -177,4 +177,53 @@ export default async function dashboardRoutes(app) {
 
     return out;
   });
+
+  // 마케팅·재무 카테고리 표시형 위젯용 요약(한 번에).
+  app.get('/api/dashboard/findata', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const out = {};
+    const ym = new Date().toISOString().slice(0, 7);
+
+    // 이번 달 캐시플로(실현 in/out)
+    {
+      const r = (await query(
+        `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_mxn ELSE 0 END),0) AS inflow,
+                COALESCE(SUM(CASE WHEN direction='out' THEN amount_mxn ELSE 0 END),0) AS outflow
+           FROM transactions WHERE status='actual' AND to_char(txn_date,'YYYY-MM')=$1`, [ym])).rows[0];
+      out.cashflow = { ym, inflow: r2(r.inflow), outflow: r2(r.outflow), net: r2(r.inflow - r.outflow) };
+    }
+    // 계획 대비 실적(이번 달 plan vs actual, 지출 기준)
+    {
+      const r = (await query(
+        `SELECT COALESCE(SUM(CASE WHEN status='plan' AND direction='out' THEN amount_mxn ELSE 0 END),0) AS plan_out,
+                COALESCE(SUM(CASE WHEN status='actual' AND direction='out' THEN amount_mxn ELSE 0 END),0) AS act_out
+           FROM transactions WHERE to_char(txn_date,'YYYY-MM')=$1`, [ym])).rows[0];
+      out.plan_vs_actual = { ym, plan: r2(r.plan_out), actual: r2(r.act_out) };
+    }
+    // AR 연체 총액·건수
+    {
+      const r = (await query(
+        `SELECT COUNT(*) AS n, COALESCE(SUM(i.total_mxn - COALESCE(p.paid,0)),0) AS overdue
+           FROM sales_invoices i
+           LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
+          WHERE i.status='posted' AND i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01`)).rows[0];
+      out.ar_overdue = { count: Number(r.n), total: r2(r.overdue) };
+    }
+    // 승인 대기 거래(plan→actual 등) 수 — pending 성격: change requests
+    {
+      const r = (await query(`SELECT COUNT(*) AS n FROM sales_change_requests WHERE status='pending'`)).rows[0];
+      out.pending_approvals = Number(r.n);
+    }
+    // 최신 환율(USD→MXN)
+    {
+      const r = (await query(`SELECT rate, to_char(rate_date,'YYYY-MM-DD') AS d FROM fx_rates WHERE base='USD' AND quote='MXN' ORDER BY rate_date DESC LIMIT 1`)).rows[0];
+      out.fx = r ? { rate: Number(r.rate), date: r.d } : null;
+    }
+    // 마케팅 상태(승인 단계)
+    {
+      const r = (await query(`SELECT status FROM marketing_plan_status WHERE id=1`)).rows[0];
+      out.marketing_status = r ? r.status : 'draft';
+    }
+    return out;
+  });
 }

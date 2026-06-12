@@ -81,6 +81,60 @@ export const WIDGETS = [
       { key: 'amount', name: '금액 표시', def: true, sensitive: false, note: '끄면 달성률만' },
     ],
   },
+
+  // ===== 마케팅 카테고리 =====
+  {
+    key: 'M01_mkt_status', no: 'M-01', name: '마케팅 계획 상태', cat: '마케팅',
+    source: 'findata.marketing_status', link: 'marketing', need: ['marketing'],
+    fields: [],
+  },
+  {
+    key: 'M02_mkt_budget', no: 'M-02', name: '마케팅 예산 소진', cat: '마케팅',
+    source: 'marketing.overview', link: 'marketing', need: ['marketing'],
+    fields: [
+      { key: 'amount', name: '금액 표시', def: true, sensitive: false, note: '끄면 소진율만' },
+    ],
+  },
+  {
+    key: 'M03_mkt_top', no: 'M-03', name: '마케팅 고객별 배분 TOP', cat: '마케팅',
+    source: 'marketing.customers', link: 'marketing', need: ['marketing'],
+    fields: [
+      { key: 'amount', name: '금액 표시', def: true, sensitive: false },
+    ],
+  },
+
+  // ===== 재무 카테고리 =====
+  {
+    key: 'F01_cashflow', no: 'F-01', name: '이번 달 캐시플로', cat: '재무',
+    source: 'findata.cashflow', link: 'finance', need: ['finance'],
+    fields: [
+      { key: 'amount', name: '금액 표시', def: true, sensitive: true, note: '민감: 끄면 표시 안 함' },
+    ],
+  },
+  {
+    key: 'F02_plan_actual', no: 'F-02', name: '계획 대비 실적(지출)', cat: '재무',
+    source: 'findata.plan_vs_actual', link: 'finance', need: ['finance'],
+    fields: [
+      { key: 'amount', name: '금액 표시', def: true, sensitive: true },
+    ],
+  },
+  {
+    key: 'F03_ar_overdue', no: 'F-03', name: 'AR 연체 현황', cat: '재무',
+    source: 'findata.ar_overdue', link: 'finance', need: ['finance', 'customers'],
+    fields: [
+      { key: 'amount', name: '연체액 표시', def: true, sensitive: false, note: '끄면 건수만' },
+    ],
+  },
+  {
+    key: 'F04_pending', no: 'F-04', name: '승인 대기(매출 변경)', cat: '재무',
+    source: 'findata.pending_approvals', link: 'sales', need: [],
+    fields: [],
+  },
+  {
+    key: 'F05_fx', no: 'F-05', name: '환율 USD→MXN', cat: '재무',
+    source: 'findata.fx', link: 'finance', need: [],
+    fields: [],
+  },
 ];
 
 export const WIDGET_BY_KEY = Object.fromEntries(WIDGETS.map((w) => [w.key, w]));

@@ -156,7 +156,12 @@
           <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
           <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
             <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
-          <td style="max-width:380px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PAGES.map(([k,label])=>`<label class="pg"><input type="checkbox" ${u.pages.includes(k)?'checked':''} style="width:auto" onchange="togglePage(${u.id},'${k}',this.checked)"> ${label}</label>`).join('')}</td>
+          <td style="max-width:460px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PAGES.map(([k,label])=>{
+            const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
+            return `<label class="pg">${label} <select style="padding:3px 5px;font-size:11px" onchange="setPageAccess(${u.id},'${k}',this.value)">
+              <option value="none" ${cur==='none'?'selected':''}>없음</option>
+              <option value="view" ${cur==='view'?'selected':''}>보기</option>
+              <option value="edit" ${cur==='edit'?'selected':''}>수정</option></select></label>`;}).join('')}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
         </tr>`).join('')+'</tbody></table>';
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -165,10 +170,11 @@
   async function setTeam(userId,teamId){
     try{await fetch(session.api+'/api/team-admin/users/'+userId+'/team',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId?Number(teamId):null})});loadUsers();}catch(e){alert('실패');}
   }
-  async function togglePage(userId,pageKey,on){
+  async function setPageAccess(userId,pageKey,level){
     try{
-      if(on)await fetch(session.api+'/api/users/'+userId+'/page-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({page_key:pageKey,device_req:'anywhere'})});
-      else await fetch(session.api+'/api/users/'+userId+'/page-access?page_key='+pageKey,{method:'DELETE',headers:auth()});
+      if(level==='none'){await fetch(session.api+'/api/users/'+userId+'/page-access?page_key='+pageKey,{method:'DELETE',headers:auth()});}
+      else{await fetch(session.api+'/api/users/'+userId+'/page-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({page_key:pageKey,device_req:'anywhere',access:level})});}
+      loadUsers();
     }catch(e){alert('실패');loadUsers();}
   }
   async function resetPin(userId){
