@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 매출 등록</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .lrow{display:flex;gap:8px;margin-top:8px;align-items:flex-end}
+  .lrow>div{flex:1}.lrow .x{flex:0 0 auto}
+  .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+  .suggest{position:absolute;z-index:20;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:230px;overflow:auto;box-shadow:0 8px 20px rgba(0,0,0,.08)}
+  .suggest div{padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3efe6}
+  .suggest div:hover{background:#faf8f3}.suggest .code{font-weight:700;color:var(--brand)}
+  .suggest .meta{font-size:11px;color:var(--muted)}
+  .picked{background:#f0f6f3 !important;border-color:var(--income) !important}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .totals{margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;font-size:14px}
+  .totals b{font-size:18px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .b-warn{background:#fbe9e7;color:var(--expense)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .tabs{display:flex;gap:8px;margin-top:6px}
+  .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출 등록 · 다품목 인보이스 · v2 (세부펼침·SKU찾기)</div></div><div class="who" id="who"></div></div>
+
+  <!-- 로그인 -->
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs">
+      <div class="tab on" id="tabSale">매출 등록</div>
+      <div class="tab" id="tabCust">고객 등록</div>
+      <div class="tab" id="tabList">매출 목록</div>
+      <div class="tab" id="tabShort">부족 / 주문</div>
+      <div class="tab" id="tabApprove">승인 대기</div>
+    </div>
+
+    <!-- 고객 등록 -->
+    <div class="card hidden" id="custCard">
+      <h2>고객 등록 (간단)</h2>
+      <div class="row">
+        <div><label>고객번호</label><input id="c-code" type="text" placeholder="C-0001"></div>
+        <div><label>상호명</label><input id="c-name" type="text" placeholder="고객사 이름"></div>
+        <div><label>RFC(세금번호)</label><input id="c-rfc" type="text"></div>
+      </div>
+      <div class="row">
+        <div><label>기본 할인율 (%)</label><input id="c-disc" type="number" step="0.01" value="0"></div>
+        <div><label>기본 외상일 (일)</label><input id="c-days" type="number" value="30"></div>
+        <div><label>메모</label><input id="c-memo" type="text"></div>
+      </div>
+      <button class="btn" id="c-save" style="margin-top:14px">고객 저장</button>
+      <div class="msg" id="custMsg"></div>
+    </div>
+
+    <!-- 매출 등록 -->
+    <div class="card" id="saleCard">
+      <h2>매출 인보이스 등록</h2>
+      <div class="row">
+        <div style="flex:2"><label>고객</label>
+          <select id="s-cust"></select>
+        </div>
+        <div><label>SAT 번호(선택)</label><input id="s-sat" type="text"></div>
+        <div><label>인보이스일</label><input id="s-date" type="date"></div>
+      </div>
+      <div class="row">
+        <div><label>외상일 (비우면 고객 기준값)</label><input id="s-days" type="number" placeholder="기준값 사용"></div>
+        <div style="flex:2"><label>예외 외상일 사유(기준과 다를 때 메모)</label><input id="s-cmemo" type="text" placeholder="기준 외상일과 다르게 입력하는 경우만"></div>
+        <div><label>예상 입금일</label><input id="s-due" type="text" disabled placeholder="자동 계산"></div>
+      </div>
+      <div class="hint" id="custInfo"></div>
+
+      <div class="linehead"><label style="margin:0">품목 (코드·이름·바코드 검색)</label><button class="btn ghost sm" id="addLine">+ 품목 추가</button></div>
+
+      <div style="border:1px dashed var(--brand);border-radius:10px;padding:12px;margin:8px 0;background:#fbfaf6">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <b style="font-size:13px">엑셀로 품목 일괄 추가</b>
+          <span class="hint" style="margin:0">CTR 코드·수량만 있는 엑셀(.xlsx/.csv)을 올리면 아래 품목 목록에 채워집니다. 고객을 먼저 선택하세요.</span>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn ghost sm" id="xlsTemplate">양식 다운로드 (스페인어)</button>
+          <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
+          <button class="btn ghost sm" id="xlsClear">목록 비우기</button>
+          <span id="xlsMsg" class="hint" style="margin:0"></span>
+        </div>
+        <div id="xlsMissing"></div>
+      </div>
+
+      <div id="lines"></div>
+
+      <div class="totals" id="totals"></div>
+
+      <button class="btn gold" id="submit" style="margin-top:14px">매출 등록 (즉시 반영)</button>
+      <div class="msg" id="saleMsg"></div>
+
+      <!-- 재고 부족 확인 패널 -->
+      <div id="shortConfirm" class="hidden" style="margin-top:14px;border:1px solid #f0c5bf;background:#fdf3f1;border-radius:10px;padding:14px">
+        <div style="font-weight:700;color:var(--expense);margin-bottom:6px">재고가 부족합니다 — 있는 만큼만 발행할까요?</div>
+        <div id="shortConfirmBody" style="font-size:13px"></div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn" id="shortYes">있는 만큼 발행 + 부족분 기록</button>
+          <button class="btn ghost" id="shortNo">취소 (수량 조정)</button>
+        </div>
+        <div class="hint">부족분은 인보이스(SAT)에 포함되지 않고, “부족 / 주문” 탭에 기록되어 주문·재오퍼 근거로 쓰입니다.</div>
+      </div>
+
+      <div class="hint">등록 즉시 재고가 차감되고, 그 시점 평균원가로 매출원가(COGS)가 기록되며, 예상 입금일에 입금 예정이 생성됩니다. 외상일을 고객 기준과 다르게 입력하면 “외상일 미승인” 상태로 표시되고 디렉터 검토를 기다립니다.</div>
+    </div>
+
+    <!-- 매출 목록 -->
+    <div class="card hidden" id="listCard">
+      <h2>매출 목록</h2>
+      <div id="listBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 부족 / 주문 -->
+    <div class="card hidden" id="shortCard">
+      <h2>부족 / 주문 근거</h2>
+      <h2 style="font-size:13px;color:var(--muted);margin-top:4px">제품별 부족 합계 (주문 필요)</h2>
+      <div id="shortSummary"><div class="hint">불러오는 중…</div></div>
+      <h2 style="font-size:13px;color:var(--muted);margin-top:18px">부족 원장 (누가·언제·얼마)</h2>
+      <div id="shortLedger"><div class="hint">불러오는 중…</div></div>
+      <h2 style="font-size:13px;color:var(--muted);margin-top:18px">미등록 SKU 보류 (제품 등록 후 처리)</h2>
+      <div id="skuPending"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 승인 대기 (디렉터) -->
+    <div class="card hidden" id="approveCard">
+      <h2>변경요청 승인 대기 (디렉터)</h2>
+      <div id="approveBody"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="approveMsg"></div>
+      <div class="hint">삭제 승인 시 — 재고가 원가 스냅샷으로 복원되고, 입금 예정(AR)이 취소되며, 인보이스가 삭제 처리됩니다. 인보이스가 마감된 달이면 과거 손익은 고정되고 매출총이익만큼이 “정산차액”으로 기록됩니다. 반려하면 원래 상태로 돌아갑니다.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let customers=[]; let prodCache={};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const H=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      $('s-date').value=new Date().toISOString().slice(0,10);
+      addLine(); await loadCustomers();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ---- 탭 ----
+  function showTab(which){
+    $('tabSale').classList.toggle('on',which==='sale');
+    $('tabCust').classList.toggle('on',which==='cust');
+    $('tabList').classList.toggle('on',which==='list');
+    $('tabShort').classList.toggle('on',which==='short');
+    $('tabApprove').classList.toggle('on',which==='approve');
+    $('saleCard').classList.toggle('hidden',which!=='sale');
+    $('custCard').classList.toggle('hidden',which!=='cust');
+    $('listCard').classList.toggle('hidden',which!=='list');
+    $('shortCard').classList.toggle('hidden',which!=='short');
+    $('approveCard').classList.toggle('hidden',which!=='approve');
+    if(which==='list')loadList();
+    if(which==='short')loadShortages();
+    if(which==='approve')loadApprovals();
+  }
+
+  // ---- 고객 ----
+  async function loadCustomers(){
+    try{
+      const res=await fetch(session.api+'/api/customers',{headers:auth()});
+      const d=await res.json(); customers=d.items||[];
+      const sel=$('s-cust');
+      sel.innerHTML = customers.length
+        ? customers.map(c=>`<option value="${c.id}">${c.code} · ${c.name} (할인 ${c.discount}% · 외상 ${c.credit_days}일)</option>`).join('')
+        : '<option value="">— 등록된 고객이 없습니다. ‘고객 등록’ 탭에서 추가하세요 —</option>';
+      updateCustInfo();
+    }catch(e){}
+  }
+  function selectedCustomer(){ return customers.find(c=>String(c.id)===$('s-cust').value); }
+  function updateCustInfo(){
+    const c=selectedCustomer();
+    if(!c){$('custInfo').textContent='';recalcDue();return;}
+    $('custInfo').innerHTML=`적용 기준 — 할인율 <b>${c.discount}%</b>, 기본 외상일 <b>${c.credit_days}일</b>. (품목 할인을 비우면 이 할인율이 자동 적용됩니다.)`;
+    recalcDue(); renderTotals();
+  }
+  async function saveCustomer(){
+    const m=$('custMsg');m.className='msg';
+    const body={code:$('c-code').value.trim(),name:$('c-name').value.trim(),rfc:$('c-rfc').value.trim()||null,
+      discount:Number($('c-disc').value)||0,credit_days:Number($('c-days').value)||0,memo:$('c-memo').value.trim()||null};
+    if(!body.code||!body.name){m.className='msg err';m.textContent='고객번호와 상호명을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/customers',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='code_taken'?'이미 있는 고객번호입니다.':('저장 실패: '+(d.error||res.status));return;}
+      m.className='msg ok';m.textContent='고객이 저장되었습니다: '+d.code+' · '+d.name;
+      $('c-code').value='';$('c-name').value='';$('c-rfc').value='';$('c-memo').value='';
+      await loadCustomers();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+  }
+
+  // ---- 제품 검색 ----
+  async function searchProducts(q){
+    const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit=8',{headers:auth()});
+    const d=await res.json(); return d.items||[];
+  }
+
+  function addLine(){
+    const row=H(`<div class="lrow" data-pid="">
+      <div style="position:relative;flex:2;min-width:200px">
+        <label>제품</label>
+        <input class="l-search" type="text" placeholder="코드·이름·바코드" autocomplete="off">
+        <div class="suggest hidden"></div>
+      </div>
+      <div style="flex:0 0 70px"><label>수량</label><input class="l-qty" type="number" step="0.001" value="1"></div>
+      <div style="flex:0 0 90px"><label>정가</label><input class="l-list" type="number" step="0.01" value="0" disabled></div>
+      <div style="flex:0 0 80px"><label>할인%</label><input class="l-disc" type="number" step="0.01" placeholder="고객"></div>
+      <div style="flex:0 0 95px"><label>판매단가</label><input class="l-price" type="number" step="0.01" value="0" disabled></div>
+      <div class="x"><button class="btn ghost sm x-del" style="margin-bottom:1px">✕</button></div>
+    </div>`);
+    const search=row.querySelector('.l-search');const box=row.querySelector('.suggest');let timer=null;
+    search.addEventListener('input',()=>{
+      row.dataset.pid='';search.classList.remove('picked');row.querySelector('.l-list').value=0;row.querySelector('.l-price').value=0;
+      clearTimeout(timer);const q=search.value.trim();
+      if(q.length<1){box.classList.add('hidden');return;}
+      timer=setTimeout(async()=>{
+        let items=[];try{items=await searchProducts(q);}catch(e){}
+        if(!items.length){box.innerHTML='<div class="meta">일치하는 제품이 없습니다</div>';box.classList.remove('hidden');return;}
+        box.innerHTML=items.map(p=>`<div data-id="${p.id}"><span class="code">${p.code}</span> · ${p.name||''}<div class="meta">정가 ${fmt(p.list_price)} · 재고 ${Number(p.stock_qty).toLocaleString()}</div></div>`).join('');
+        box.classList.remove('hidden');
+        [...box.children].forEach(el=>{if(!el.dataset.id)return;el.onclick=()=>{
+          const p=items.find(x=>String(x.id)===el.dataset.id);
+          prodCache[p.id]={id:p.id,code:p.code,name:p.name,list_price:p.list_price,stock_qty:p.stock_qty};
+          search.value=p.code+' · '+(p.name||'');search.classList.add('picked');
+          row.dataset.pid=p.id;row.querySelector('.l-list').value=Number(p.list_price);
+          box.classList.add('hidden');recalcLine(row);renderTotals();
+        };});
+      },220);
+    });
+    search.addEventListener('blur',()=>setTimeout(()=>box.classList.add('hidden'),200));
+    row.querySelector('.l-qty').addEventListener('input',()=>{recalcLine(row);renderTotals();});
+    row.querySelector('.l-disc').addEventListener('input',()=>{recalcLine(row);renderTotals();});
+    row.querySelector('.x-del').onclick=()=>{row.remove();renderTotals();};
+    $('lines').appendChild(row);
+  }
+
+  // 엑셀 업로드용: 제품을 채운 품목 줄 추가
+  function addLineWithProduct(p,qty){
+    addLine();
+    const row=$('lines').lastElementChild;
+    prodCache[p.id]={id:p.id,code:p.code,name:p.name,list_price:p.list_price,stock_qty:p.stock_qty};
+    row.dataset.pid=p.id;
+    const s=row.querySelector('.l-search');s.value=p.code+' · '+(p.name||'');s.classList.add('picked');
+    row.querySelector('.l-list').value=Number(p.list_price);
+    row.querySelector('.l-qty').value=qty;
+    recalcLine(row);
+  }
+
+  const TPL_B64="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";
+  function downloadTemplate(){
+    const bin=atob(TPL_B64);const arr=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    const blob=new Blob([arr],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const url=URL.createObjectURL(blob);const a=document.createElement("a");
+    a.href=url;a.download="plantilla_ventas_refatrix.xlsx";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  }
+  let pendingMissing=[]; // 미등록 코드(보류 후보)
+  async function handleExcel(file){
+    const m=$('xlsMsg');m.textContent='';pendingMissing=[];$('xlsMissing').innerHTML='';
+    const c=selectedCustomer();
+    if(!c){m.textContent='먼저 고객을 선택하세요.';m.style.color='var(--expense)';$('xlsFile').value='';return;}
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+      // 헤더 행 스킵: 첫 열이 'CTR'·'코드' 포함이거나 숫자가 아니면 헤더로 간주
+      const parsed=[];
+      for(const r of rows){
+        if(!r||r.length===0)continue;
+        const code=String(r[0]??'').trim();const qty=Number(r[1]);
+        if(!code)continue;
+        if(/코드|code|CTR\s*코드/i.test(code)&&isNaN(qty))continue; // 헤더
+        if(!(qty>0))continue;
+        parsed.push({code,qty});
+      }
+      if(!parsed.length){m.textContent='읽을 데이터가 없습니다. (1열 CTR코드, 2열 수량)';m.style.color='var(--expense)';return;}
+      const codes=[...new Set(parsed.map(p=>p.code))];
+      const res=await fetch(session.api+'/api/sales/lookup',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:c.id,codes})});
+      const d=await res.json();
+      const found=d.found||{};
+      let added=0;
+      for(const row of parsed){
+        if(found[row.code]){addLineWithProduct(found[row.code],row.qty);added++;}
+        else pendingMissing.push({code:row.code,qty:row.qty});
+      }
+      renderTotals();
+      m.style.color='var(--income)';m.textContent=`${added}개 품목을 목록에 추가했습니다.`+(pendingMissing.length?` 미등록 ${pendingMissing.length}개는 아래 경고를 확인하세요.`:'');
+      if(pendingMissing.length)renderMissing();
+    }catch(e){m.style.color='var(--expense)';m.textContent='엑셀을 읽지 못했습니다. (.xlsx/.csv, 1열 코드·2열 수량)';}
+    $('xlsFile').value='';
+  }
+
+  function renderMissing(){
+    $('xlsMissing').innerHTML=`
+      <div style="margin-top:10px;border:1px solid #f0c5bf;background:#fdf3f1;border-radius:8px;padding:10px 12px">
+        <b style="color:var(--expense);font-size:13px">제품마스터에 없는 CTR 코드 (${pendingMissing.length}개)</b>
+        <div class="hint" style="margin:4px 0 8px">이 코드들은 매출에 포함되지 않습니다. 제품을 먼저 등록하거나, 아래에서 “보류로 저장”하면 나중에 처리할 수 있습니다.</div>
+        <table><thead><tr><th>CTR 코드</th><th class="num">수량</th></tr></thead>
+        <tbody>${pendingMissing.map(p=>`<tr><td class="code">${p.code}</td><td class="num">${p.qty}</td></tr>`).join('')}</tbody></table>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px"><input type="checkbox" id="xls-pend" checked> 매출 등록 시 이 미등록 코드들을 “보류(pending)”로 함께 저장</label>
+      </div>`;
+  }
+
+  function lineDiscount(row){
+    const v=row.querySelector('.l-disc').value;
+    if(v!==''&&v!=null)return Number(v);
+    const c=selectedCustomer();return c?Number(c.discount):0;
+  }
+  function recalcLine(row){
+    const list=Number(row.querySelector('.l-list').value)||0;
+    const disc=lineDiscount(row);
+    const price=Math.round(list*(1-disc/100)*100)/100;
+    row.querySelector('.l-price').value=price;
+  }
+  function gatherLines(){
+    return [...document.querySelectorAll('#lines .lrow')].filter(r=>r.dataset.pid).map(r=>{
+      const dv=r.querySelector('.l-disc').value;
+      return {product_id:Number(r.dataset.pid),qty:Number(r.querySelector('.l-qty').value)||0,
+        discount_rate:(dv===''||dv==null)?null:Number(dv),
+        _list:Number(r.querySelector('.l-list').value)||0,_price:Number(r.querySelector('.l-price').value)||0};
+    }).filter(l=>l.qty>0);
+  }
+  function renderTotals(){
+    const lines=gatherLines();
+    let sub=0;lines.forEach(l=>sub+=l._price*l.qty);
+    sub=Math.round(sub*100)/100;const iva=Math.round(sub*16)/100;const tot=Math.round((sub+iva)*100)/100;
+    $('totals').innerHTML = lines.length?`
+      <div>소계: <b>${fmt(sub)}</b></div>
+      <div>IVA 16%: <b>${fmt(iva)}</b></div>
+      <div>총액: <b style="color:var(--income)">${fmt(tot)}</b></div>`:'';
+  }
+  function recalcDue(){
+    const c=selectedCustomer();if(!c){$('s-due').value='';return;}
+    const dv=$('s-days').value;const days=(dv===''||dv==null)?Number(c.credit_days):Number(dv);
+    const base=$('s-date').value;if(!base){$('s-due').value='';return;}
+    const d=new Date(base+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+(days||0));
+    $('s-due').value=d.toISOString().slice(0,10)+(dv!==''&&Number(dv)!==Number(c.credit_days)?'  (예외)':'');
+  }
+
+  let pendingBody=null;
+  async function submitSale(){
+    const m=$('saleMsg');m.className='msg';$('shortConfirm').classList.add('hidden');
+    const c=selectedCustomer();
+    if(!c){m.className='msg err';m.textContent='고객을 선택하세요. (없으면 ‘고객 등록’ 탭에서 추가)';return;}
+    const lines=gatherLines();
+    if(!lines.length){m.className='msg err';m.textContent='품목을 1개 이상 선택하세요.';return;}
+    const dv=$('s-days').value;
+    pendingBody={sat_no:$('s-sat').value.trim()||null,customer_id:c.id,inv_date:$('s-date').value,
+      credit_days:(dv===''||dv==null)?null:Number(dv),
+      lines:lines.map(l=>({product_id:l.product_id,qty:l.qty,discount_rate:l.discount_rate})),
+      credit_memo:$('s-cmemo').value.trim()||null,memo:null};
+    doSubmit(false);
+  }
+
+  async function doSubmit(allowPartial){
+    const m=$('saleMsg');
+    const body={...pendingBody,allow_partial:allowPartial};
+    $('submit').disabled=true;$('submit').textContent='등록 중…';
+    try{
+      const res=await fetch(session.api+'/api/sales',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      // 재고 부족 → 확인 패널 표시
+      if(res.status===409&&d.error==='stock_short'){
+        const rows=(d.shortages||[]).map(s=>`<div>• <b>${s.code}</b> ${s.name||''} — 요청 ${s.requested}, 재고 ${s.available}, <span style="color:var(--expense)">부족 ${s.shortage}</span></div>`).join('');
+        $('shortConfirmBody').innerHTML=rows;$('shortConfirm').classList.remove('hidden');
+        m.className='msg';$('submit').disabled=false;$('submit').textContent='매출 등록 (즉시 반영)';return;
+      }
+      if(!res.ok||d.error){
+        const map={customer_not_found:'고객을 찾을 수 없습니다.',customer_date_lines_required:'고객·일자·품목을 확인하세요.'};
+        let msg=map[d.error]||d.error||('등록 실패: '+res.status);
+        if(String(d.error).startsWith('product_not_found'))msg='제품을 찾을 수 없습니다.';
+        m.className='msg err';m.textContent=msg;return;
+      }
+      $('shortConfirm').classList.add('hidden');
+      let txt;
+      if(d.invoiced===false){
+        txt='재고가 없어 인보이스는 발행되지 않았습니다. 부족분이 ‘부족 / 주문’ 탭에 기록되었습니다.';
+        m.className='msg err';
+      }else{
+        txt='매출 등록 완료! 인보이스 #'+d.id+' · SAT '+(d.sat_no||'—')+' · 총액 '+fmt(d.totals.totalMxn)+' MXN · 예상 입금일 '+d.due;
+        if(d.sat_no&&d.sat_no.startsWith('TMP-'))txt+=' (임시번호 — 나중에 매출 목록 세부에서 실제 SAT 번호로 수정)';
+        if(d.exception)txt+=' · ⚠ 외상일 예외(미승인) — 디렉터 검토 대기';
+        if(d.shortages&&d.shortages.length)txt+=' · 일부 품목 부족분 '+d.shortages.length+'건 기록됨';
+        m.className='msg ok';
+        // 미등록 코드 보류 저장
+        const pend=$('xls-pend');
+        if(d.id&&pendingMissing.length&&pend&&pend.checked){
+          try{await fetch(session.api+'/api/sales/sku-pending',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
+            body:JSON.stringify({customer_id:pendingBody.customer_id,intended_sat_no:d.sat_no,sales_invoice_id:d.id,rows:pendingMissing})});
+            txt+=' · 미등록 '+pendingMissing.length+'개 보류 저장됨';}catch(e){}
+        }
+      }
+      m.textContent=txt;
+      pendingMissing=[];$('xlsMissing').innerHTML='';$('xlsMsg').textContent='';
+      $('lines').innerHTML='';addLine();$('s-sat').value='';$('s-days').value='';$('s-cmemo').value='';renderTotals();recalcDue();pendingBody=null;
+      await loadCustomers();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('submit').disabled=false;$('submit').textContent='매출 등록 (즉시 반영)';}
+  }
+
+  async function loadShortages(){
+    try{
+      const [s1,s2]=await Promise.all([
+        fetch(session.api+'/api/shortages/summary',{headers:auth()}).then(r=>r.json()),
+        fetch(session.api+'/api/shortages?status=open',{headers:auth()}).then(r=>r.json()),
+      ]);
+      const sum=s1.items||[];
+      $('shortSummary').innerHTML = sum.length?`<table><thead><tr><th>코드</th><th>제품</th><th class="num">현재고</th><th class="num">부족 합계</th><th class="num">건수</th><th>최근</th></tr></thead>
+        <tbody>${sum.map(r=>`<tr><td class="code">${r.code}</td><td>${r.name||''}</td><td class="num">${Number(r.stock_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.open_shortage).toLocaleString()}</td><td class="num">${r.records}</td><td>${r.last_occurred?String(r.last_occurred).slice(0,10):''}</td></tr>`).join('')}</tbody></table>`
+        :'<div class="hint">미해소 부족 기록이 없습니다.</div>';
+      const led=s2.items||[];
+      $('shortLedger').innerHTML = led.length?`<table><thead><tr><th>발생일</th><th>코드</th><th>제품</th><th>고객</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>인보이스</th></tr></thead>
+        <tbody>${led.map(r=>`<tr><td>${String(r.occurred_at).slice(0,10)}</td><td class="code">${r.code}</td><td>${r.name||''}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.sales_invoice_id?('#'+r.sales_invoice_id):'미발행'}</td></tr>`).join('')}</tbody></table>`
+        :'<div class="hint">부족 원장이 비어 있습니다.</div>';
+    }catch(e){$('shortSummary').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+    try{
+      const sp=(await fetch(session.api+'/api/sales/sku-pending?status=open',{headers:auth()}).then(r=>r.json())).items||[];
+      $('skuPending').innerHTML = sp.length?`<table><thead><tr><th>보류일</th><th>CTR 코드</th><th class="num">수량</th><th>고객</th><th>의도 SAT</th><th>제품등록</th></tr></thead>
+        <tbody>${sp.map(r=>`<tr><td>${String(r.occurred_at).slice(0,10)}</td><td class="code">${r.code}</td><td class="num">${Number(r.qty).toLocaleString()}</td><td>${r.customer_code?r.customer_code+' · '+r.customer_name:'—'}</td><td>${r.intended_sat_no||'—'}</td><td>${r.now_registered?'<span class="badge" style="background:#e7f3ee;color:var(--income)">등록됨·처리가능</span>':'<span class="badge b-warn">미등록</span>'}</td></tr>`).join('')}</tbody></table>`
+        :'<div class="hint">보류된 미등록 SKU가 없습니다.</div>';
+    }catch(e){$('skuPending').innerHTML='<div class="hint">보류 목록을 불러오지 못했습니다.</div>';}
+  }
+
+  async function loadList(){
+    const b=$('listBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/sales',{headers:auth()});
+      const d=await res.json();const items=d.items||[];
+      if(!items.length){b.innerHTML='<div class="hint">등록된 매출이 없습니다.</div>';return;}
+      // 월별 합계 집계
+      const monthTotal={};
+      items.forEach(s=>{const mk=String(s.inv_date).slice(0,7);monthTotal[mk]=(monthTotal[mk]||0)+Number(s.total_mxn);});
+      // 행 구성 (월이 바뀔 때 월 합계 헤더 삽입)
+      let lastMonth=null;const rowsHtml=[];
+      items.forEach(s=>{
+        const mk=String(s.inv_date).slice(0,7);
+        if(mk!==lastMonth){
+          rowsHtml.push(`<tr class="month-row"><td colspan="7" style="background:#eef2ee;font-weight:700;color:var(--brand);padding:8px 10px">${mk} 매출 합계 <span style="float:right">${fmt(monthTotal[mk])} MXN</span></td></tr>`);
+          lastMonth=mk;
+        }
+        rowsHtml.push(`
+        <tr class="inv-row" data-id="${s.id}" style="cursor:pointer">
+          <td>${s.id}<div style="font-size:11px;color:var(--muted)">${s.sat_no||''} ${s.sat_no&&String(s.sat_no).startsWith('TMP-')?'<span class="badge" style="background:#fde7c9;color:#9a6512">임시번호</span>':''}</div></td><td>${String(s.inv_date).slice(0,10)}</td>
+          <td>${s.customer_code} · ${s.customer_name}</td>
+          <td class="num">${fmt(s.total_mxn)}</td>
+          <td>${s.due_date?String(s.due_date).slice(0,10):'—'}</td>
+          <td>${s.credit_days}일 ${s.credit_exception?(s.credit_approved?'<span class="badge" style="background:#e7f3ee;color:var(--income)">예외·승인</span>':'<span class="badge b-warn">예외·미승인</span>'):''}</td>
+          <td>${statusLabel(s.status)} ${Number(s.edit_count)>0?`<span class="badge" style="background:#ede4f7;color:#6b3fa0">수정 ${s.edit_count}회</span>`:''} ${Number(s.shortage_count)>0?`<span class="badge" style="background:#fde0db;color:#b3402e">부족분 있음</span>`:''} ${Number(s.pending_count)>0?`<span class="badge" style="background:#fde7c9;color:#9a6512">보류 있음</span>`:''}</td>
+        </tr>
+        <tr class="det-row hidden" data-id="${s.id}"><td colspan="7" style="background:#faf8f3;padding:0">
+          <div class="det-body" data-id="${s.id}" data-status="${s.status}" style="padding:14px"></div>
+        </td></tr>`);
+      });
+      b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부 내역이 펼쳐집니다.</div>
+      <table><thead><tr><th>#</th><th>인보이스일</th><th>고객</th><th class="num">총액</th><th>입금예정</th><th>외상</th><th>상태</th></tr></thead>
+      <tbody>${rowsHtml.join('')}</tbody></table>`;
+      [...b.querySelectorAll('.inv-row')].forEach(row=>row.onclick=()=>{
+        const id=row.dataset.id;
+        const det=b.querySelector(`.det-row[data-id="${id}"]`);
+        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderDetail(Number(id),det.querySelector('.det-body'));}
+        else det.classList.add('hidden');
+      });
+    }catch(e){b.innerHTML='<div class="hint">목록을 불러오지 못했습니다.</div>';}
+  }
+  function statusLabel(s){
+    const map={posted:'정상',edit_pending:'<span class="badge b-warn">수정 승인대기</span>',delete_pending:'<span class="badge b-warn">삭제 승인대기</span>',deleted:'삭제됨'};
+    return map[s]||s;
+  }
+
+  // 세부 내역 (읽기 전용) + 정상 건이면 수정/삭제 요청 버튼
+  async function loadIssues(id,box){
+    if(!box)return;
+    try{
+      const d=await fetch(session.api+'/api/sales/'+id+'/issues',{headers:auth()}).then(r=>r.json());
+      const sh=d.shortages||[],pe=d.pending||[];
+      if(!sh.length&&!pe.length){box.innerHTML='';return;}
+      let html='';
+      if(sh.length){
+        html+=`<div style="margin-top:6px;border:1px solid #f0c5bf;background:#fdf3f1;border-radius:8px;padding:10px 12px">
+          <b style="color:var(--expense);font-size:13px">부족분 (${sh.length}건)</b>
+          <table><thead><tr><th>코드</th><th>제품</th><th class="num">요청</th><th class="num">출고</th><th class="num">부족</th><th>상태</th></tr></thead>
+          <tbody>${sh.map(r=>`<tr><td class="code">${r.code}</td><td>${r.name||''}</td><td class="num">${Number(r.requested_qty).toLocaleString()}</td><td class="num">${Number(r.fulfilled_qty).toLocaleString()}</td><td class="num" style="color:var(--expense);font-weight:700">${Number(r.shortage_qty).toLocaleString()}</td><td>${r.status==='open'?'미해소':r.status}</td></tr>`).join('')}</tbody></table>
+        </div>`;
+      }
+      if(pe.length){
+        html+=`<div style="margin-top:6px;border:1px solid #f0d6a8;background:#fdf6ea;border-radius:8px;padding:10px 12px">
+          <b style="color:#9a6512;font-size:13px">미등록 SKU 보류 (${pe.length}건)</b>
+          <table><thead><tr><th>CTR 코드</th><th class="num">수량</th><th>제품등록</th><th>상태</th></tr></thead>
+          <tbody>${pe.map(r=>`<tr><td class="code">${r.code}</td><td class="num">${Number(r.qty).toLocaleString()}</td><td>${r.now_registered?'<span class="badge" style="background:#e7f3ee;color:var(--income)">등록됨</span>':'<span class="badge b-warn">미등록</span>'}</td><td>${r.status==='open'?'보류중':r.status}</td></tr>`).join('')}</tbody></table>
+        </div>`;
+      }
+      box.innerHTML=html;
+    }catch(e){box.innerHTML='';}
+  }
+
+  async function renderDetail(id,container){
+    container.innerHTML='<div class="hint">세부 불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/sales/'+id,{headers:auth()});
+      const d=await res.json();
+      if(d.error){container.innerHTML='<div class="hint">세부를 불러오지 못했습니다.</div>';return;}
+      const inv=d.invoice;const lines=d.lines||[];
+      let html=`<table><thead><tr><th>제품</th><th class="num">수량</th><th class="num">정가</th><th class="num">할인%</th><th class="num">판매단가</th><th class="num">라인금액</th></tr></thead>
+        <tbody>${lines.map(l=>`<tr>
+          <td class="code">${l.code} · ${l.name||''}</td>
+          <td class="num">${Number(l.qty)}</td>
+          <td class="num">${fmt(l.list_price)}</td>
+          <td class="num">${Number(l.discount_rate)}</td>
+          <td class="num">${fmt(l.unit_price)}</td>
+          <td class="num">${fmt(l.line_amount_mxn)}</td>
+        </tr>`).join('')}</tbody></table>
+        <div style="margin-top:8px;font-size:13px;display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end">
+          <div>소계: <b>${fmt(inv.subtotal_mxn)}</b></div>
+          <div>IVA 16%: <b>${fmt(inv.iva_mxn)}</b></div>
+          <div>총액(IVA 포함): <b style="color:var(--income)">${fmt(inv.total_mxn)}</b></div>
+        </div>
+        <div style="margin-top:6px;font-size:13px;color:var(--muted)">입금예정 ${inv.due_date?String(inv.due_date).slice(0,10):'—'} · 외상 ${inv.credit_days}일 ${inv.credit_exception?(inv.credit_approved?'(예외·승인)':'(예외·미승인)'):''}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:13px">SAT 번호: <b>${inv.sat_no||'—'}</b> ${inv.sat_no&&String(inv.sat_no).startsWith('TMP-')?'<span class="badge" style="background:#fde7c9;color:#9a6512">임시</span>':''}</span>
+          <input class="sat-input" type="text" placeholder="실제 SAT 번호 입력" style="width:160px">
+          <button class="btn ghost sm sat-save" data-id="${id}">SAT 번호 저장</button>
+          <span class="sat-msg" style="font-size:12px"></span>
+        </div>
+        <div class="issues-box" style="margin-top:8px"></div>`;
+      if(inv.status==='posted'){
+        html+=`<div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn ghost sm d-edit" data-id="${id}">수정요청</button>
+          <button class="btn ghost sm d-del" data-id="${id}">삭제요청</button>
+        </div>`;
+      }else{
+        html+=`<div class="hint" style="margin-top:10px">${statusLabel(inv.status)} 상태 — 변경요청은 정상 상태에서만 가능합니다.</div>`;
+      }
+      container.innerHTML=html;
+      const ed=container.querySelector('.d-edit'),dl=container.querySelector('.d-del');
+      if(ed)ed.onclick=()=>renderEdit(id,container,inv,lines);
+      if(dl)dl.onclick=()=>deleteRequest(id);
+      loadIssues(id,container.querySelector('.issues-box'));
+      const ss=container.querySelector('.sat-save');
+      if(ss)ss.onclick=async()=>{
+        const val=container.querySelector('.sat-input').value.trim();
+        const sm=container.querySelector('.sat-msg');sm.style.color='';
+        if(!val){sm.style.color='var(--expense)';sm.textContent='번호를 입력하세요.';return;}
+        try{
+          const r=await fetch(session.api+'/api/sales/'+id+'/sat-no',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({sat_no:val})});
+          const dd=await r.json();
+          if(!r.ok||dd.error){sm.style.color='var(--expense)';sm.textContent=dd.error==='sat_no_duplicate'?'이미 쓰인 번호입니다.':'저장 실패';return;}
+          showTab('list');
+        }catch(e){sm.style.color='var(--expense)';sm.textContent='서버 연결 실패';}
+      };
+    }catch(e){container.innerHTML='<div class="hint">세부를 불러오지 못했습니다.</div>';}
+  }
+
+  async function deleteRequest(id){
+    const reason=prompt('삭제 요청 사유를 입력하세요 (디렉터 검토용):','');
+    if(reason===null)return;
+    try{
+      const res=await fetch(session.api+'/api/sales/'+id+'/delete-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+      const d=await res.json();
+      if(!res.ok||d.error){alert('삭제요청 실패: '+(d.error||res.status));return;}
+      showTab('list');
+    }catch(e){alert('서버에 연결할 수 없습니다.');}
+  }
+
+  // 세부 안에서 편집 모드 — 수량·할인 변경, 품목 제거, 외상일 변경 + SKU 검색 점프
+  function renderEdit(id,container,inv,lines){
+    container.innerHTML=`
+      <div style="border:1px solid var(--brand);border-radius:10px;padding:14px;background:#fbfaf6">
+        <h2 style="margin-top:0;font-size:14px">인보이스 #${inv.id} 수정</h2>
+        <div class="row" style="margin-bottom:8px">
+          <div style="flex:2"><label>품목 찾기 (SKU·이름)</label><input class="e-find" type="text" placeholder="코드·이름 입력 시 아래에서 점프·강조"></div>
+        </div>
+        <table><thead><tr><th>제품</th><th class="num">수량</th><th class="num">할인%</th><th class="num">정가</th><th>제거</th></tr></thead>
+        <tbody>${lines.map(l=>`<tr data-pid="${l.product_id}" data-code="${(l.code||'').toLowerCase()}" data-name="${(l.name||'').toLowerCase()}">
+          <td class="code">${l.code} · ${l.name||''}</td>
+          <td class="num"><input class="e-qty" type="number" step="0.001" value="${Number(l.qty)}" style="width:90px;text-align:right"></td>
+          <td class="num"><input class="e-disc" type="number" step="0.01" value="${Number(l.discount_rate)}" style="width:80px;text-align:right"></td>
+          <td class="num">${fmt(l.list_price)}</td>
+          <td><input type="checkbox" class="e-rm"></td>
+        </tr>`).join('')}</tbody></table>
+        <div class="row" style="margin-top:10px">
+          <div style="flex:0 0 170px"><label>외상일 (비우면 현재 ${inv.credit_days}일)</label><input class="e-days" type="number" placeholder="${inv.credit_days}"></div>
+          <div style="flex:2"><label>수정 사유</label><input class="e-reason" type="text" placeholder="디렉터 검토용 사유"></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn e-submit">승인요청 제출</button>
+          <button class="btn ghost e-cancel">취소</button>
+        </div>
+        <div class="msg edit-msg"></div>
+      </div>`;
+    const find=container.querySelector('.e-find');
+    find.oninput=()=>{
+      const q=find.value.trim().toLowerCase();
+      const rows=[...container.querySelectorAll('tr[data-pid]')];
+      rows.forEach(r=>[...r.children].forEach(td=>{td.style.background='';td.style.borderTop='';td.style.borderBottom='';}));
+      if(!q)return;
+      let first=null,count=0;
+      rows.forEach(r=>{
+        if((r.dataset.code||'').includes(q)||(r.dataset.name||'').includes(q)){
+          [...r.children].forEach(td=>{td.style.background='#ffe680';td.style.borderTop='2px solid #d4a017';td.style.borderBottom='2px solid #d4a017';});
+          if(!first)first=r;count++;
+        }
+      });
+      if(first){try{first.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}}
+    };
+    container.querySelector('.e-cancel').onclick=()=>renderDetail(id,container);
+    container.querySelector('.e-submit').onclick=()=>submitEditInline(id,container);
+  }
+
+  async function submitEditInline(id,container){
+    const m=container.querySelector('.edit-msg');m.className='msg edit-msg';m.style.display='none';
+    const rows=[...container.querySelectorAll('tr[data-pid]')];
+    const lines=[];
+    for(const r of rows){
+      if(r.querySelector('.e-rm').checked)continue;
+      const qty=Number(r.querySelector('.e-qty').value)||0;
+      if(qty<=0){m.className='msg edit-msg err';m.style.display='block';m.textContent='수량은 0보다 커야 합니다. (빼려면 “제거”를 체크하세요)';return;}
+      const dv=r.querySelector('.e-disc').value;
+      lines.push({product_id:Number(r.dataset.pid),qty,discount_rate:(dv===''||dv==null)?null:Number(dv)});
+    }
+    if(!lines.length){m.className='msg edit-msg err';m.style.display='block';m.textContent='품목이 하나도 남지 않았습니다. 전부 빼려면 “삭제요청”을 쓰세요.';return;}
+    const dv=container.querySelector('.e-days').value;
+    const body={reason:container.querySelector('.e-reason').value.trim()||null,lines,credit_days:(dv===''||dv==null)?null:Number(dv)};
+    const btn=container.querySelector('.e-submit');btn.disabled=true;btn.textContent='제출 중…';
+    try{
+      const res=await fetch(session.api+'/api/sales/'+id+'/edit-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg edit-msg err';m.style.display='block';m.textContent='수정요청 실패: '+(d.error==='not_posted'?'이 인보이스는 이미 다른 변경요청이 진행 중입니다(승인 대기 확인).':(d.error||res.status));btn.disabled=false;btn.textContent='승인요청 제출';return;}
+      alert('수정요청이 접수되었습니다. “승인 대기” 탭에서 디렉터가 검토·승인합니다.');
+      showTab('list');
+    }catch(e){m.className='msg edit-msg err';m.style.display='block';m.textContent='서버에 연결할 수 없습니다.';btn.disabled=false;btn.textContent='승인요청 제출';}
+  }
+
+  async function loadApprovals(){
+    const b=$('approveBody');b.innerHTML='<div class="hint">불러오는 중…</div>';$('approveMsg').className='msg';
+    try{
+      const [exRes,crRes]=await Promise.all([
+        fetch(session.api+'/api/sales/credit-exceptions/pending',{headers:auth()}),
+        fetch(session.api+'/api/sales/change-requests/pending',{headers:auth()}),
+      ]);
+      if(exRes.status===403||crRes.status===403){b.innerHTML='<div class="hint">디렉터만 볼 수 있습니다.</div>';return;}
+      const ex=(await exRes.json()).items||[];
+      const items=(await crRes.json()).items||[];
+
+      // 섹션 1: 외상일 예외 승인
+      let exHtml='<h2 style="font-size:14px;color:var(--brand);margin:0 0 8px">외상일 예외 승인</h2>';
+      if(!ex.length){exHtml+='<div class="hint" style="margin-bottom:16px">대기 중인 외상일 예외가 없습니다.</div>';}
+      else exHtml+=ex.map(e=>`
+        <div class="cex" data-id="${e.id}" style="border:1px solid #f0c5bf;background:#fdf3f1;border-radius:10px;padding:12px 14px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="badge b-warn">외상일 예외</span>
+            <span>인보이스 #${e.id} · ${String(e.inv_date).slice(0,10)}</span>
+            <span style="color:var(--muted)">${e.customer_code} · ${e.customer_name}</span>
+            <span style="margin-left:auto">총액 ${fmt(e.total_mxn)}</span>
+          </div>
+          <div style="margin-top:8px;font-size:13px;display:flex;gap:18px;flex-wrap:wrap">
+            <div>고객 기준 외상일: <b>${e.base_credit_days}일</b></div>
+            <div>요청 외상일: <b style="color:var(--expense)">${e.credit_days}일</b></div>
+            <div>입금예정: ${e.due_date?String(e.due_date).slice(0,10):'—'}</div>
+          </div>
+          <div style="margin-top:4px;font-size:13px">사유: ${e.credit_memo||'<span style="color:var(--muted)">(메모 없음)</span>'}</div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn ce-ok" data-id="${e.id}">외상일 승인</button>
+            <button class="btn ghost ce-no" data-id="${e.id}">반려 (기준 외상일로 되돌림)</button>
+          </div>
+        </div>`).join('');
+
+      // 섹션 2: 변경요청 승인
+      let crHtml='<h2 style="font-size:14px;color:var(--brand);margin:18px 0 8px">변경요청 승인 (수정·삭제)</h2>';
+      if(!items.length){crHtml+='<div class="hint">대기 중인 변경요청이 없습니다.</div>';}
+      else crHtml+=items.map(r=>`
+        <div class="creq" data-id="${r.id}" style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span>요청 #${r.id}</span>
+            ${r.req_type==='delete'?'<span class="badge b-warn">삭제</span>':'<span class="badge" style="background:#e6f1fb;color:#0c447c">수정</span>'}
+            <span>인보이스 #${r.invoice_id} · ${String(r.inv_date).slice(0,10)}</span>
+            <span style="color:var(--muted)">${r.customer_code} · ${r.customer_name}</span>
+            <span style="margin-left:auto;color:var(--muted)">사유: ${r.reason||'—'}</span>
+          </div>
+          <div class="creq-detail" style="margin-top:10px"><div class="hint">상세 불러오는 중…</div></div>
+        </div>`).join('');
+
+      b.innerHTML=exHtml+crHtml;
+      [...b.querySelectorAll('.ce-ok')].forEach(el=>el.onclick=()=>decideCredit(Number(el.dataset.id),true));
+      [...b.querySelectorAll('.ce-no')].forEach(el=>el.onclick=()=>decideCredit(Number(el.dataset.id),false));
+      [...b.querySelectorAll('.creq')].forEach(el=>loadReqDetail(Number(el.dataset.id),el.querySelector('.creq-detail')));
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function decideCredit(invId,approve){
+    const m=$('approveMsg');m.className='msg';
+    if(!approve&&!confirm('외상일 예외를 반려하면 고객 기준 외상일로 되돌리고 입금예정일을 재계산합니다. 진행할까요?'))return;
+    try{
+      const res=await fetch(session.api+'/api/sales/'+invId+'/credit-approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({approve})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='처리 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';
+      m.textContent=approve?'외상일 예외를 승인했습니다.':`반려 — 기준 외상일 ${d.resetTo}일로 되돌리고 입금예정 ${d.newDue}로 재계산했습니다.`;
+      loadApprovals();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+  }
+
+  const arrow=(a,bv)=> Number(a)===Number(bv)?`${a}`:`<span style="color:var(--muted)">${a}</span> → <b style="color:var(--expense)">${bv}</b>`;
+  const moneyArrow=(before,after)=>{
+    const b=Number(before),a=Number(after);
+    if(b===a)return fmt(b);
+    const diff=Math.round((a-b)*100)/100;
+    const col=diff<0?'var(--expense)':'var(--income)';
+    return `<span style="color:var(--muted)">${fmt(b)}</span> → <b>${fmt(a)}</b> <span style="color:${col};font-size:12px">(차액 ${diff>0?'+':''}${fmt(diff)})</span>`;
+  };
+
+  async function loadReqDetail(reqId,container){
+    try{
+      const res=await fetch(session.api+'/api/sales/change-requests/'+reqId+'/detail',{headers:auth()});
+      const d=await res.json();
+      if(d.error){container.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>';return;}
+      let html='';
+      if(d.type==='delete'){
+        html+=`<table><thead><tr><th>제품</th><th class="num">수량</th><th class="num">라인금액</th></tr></thead><tbody>${
+          d.origLines.map(l=>`<tr><td class="code">${l.code} · ${l.name||''}</td><td class="num">${l.qty}</td><td class="num">${fmt(l.line_amount_mxn)}</td></tr>`).join('')}</tbody></table>`;
+        html+=`<div style="margin-top:8px;font-size:13px">삭제 시 — 재고 복원 + 입금예정(AR) 취소${d.mode==='retro'?` · 과거 매출 ${fmt(d.effect.salesReversal)}·COGS ${fmt(d.effect.cogsReversal)} 소급 취소`:''}.</div>`;
+      }else{
+        // 수정: 전/후 라인 비교 (제품 코드 기준 매칭)
+        const origByPid={};d.origLines.forEach(l=>origByPid[l.product_id]=l);
+        const newByPid={};(d.newLines||[]).forEach(l=>newByPid[l.product_id]=l);
+        const pids=[...new Set([...d.origLines.map(l=>l.product_id),...(d.newLines||[]).map(l=>l.product_id)])];
+        html+=`<table><thead><tr><th>제품</th><th class="num">수량 (전→후)</th><th class="num">할인% (전→후)</th><th class="num">라인금액 (전→후)</th><th>변동</th></tr></thead><tbody>`;
+        for(const pid of pids){
+          const o=origByPid[pid],n=newByPid[pid];const ref=o||n;
+          let tag='',qtyC,discC,amtC;
+          if(o&&!n){tag='<span class="badge b-warn">제거</span>';qtyC=`<span style="color:var(--muted)">${o.qty}</span> → <b>0</b>`;discC=`${o.discount_rate}`;amtC=moneyArrow(o.line_amount_mxn,0);}
+          else if(!o&&n){tag='<span class="badge" style="background:#e7f3ee;color:var(--income)">추가</span>';qtyC=`<b style="color:var(--income)">${n.qty}</b>`;discC=`${n.discount_rate}`;amtC=`<b>${fmt(n.line_amount_mxn)}</b>`;}
+          else{const ch=(o.qty!==n.qty||Number(o.discount_rate)!==Number(n.discount_rate));tag=ch?'<span class="badge" style="background:#fef3da;color:#8a6d1a">변경</span>':'<span style="color:var(--muted)">동일</span>';qtyC=arrow(o.qty,n.qty);discC=arrow(o.discount_rate,n.discount_rate);amtC=moneyArrow(o.line_amount_mxn,n.line_amount_mxn);}
+          html+=`<tr><td class="code">${ref.code} · ${ref.name||''}</td><td class="num">${qtyC}</td><td class="num">${discC}</td><td class="num">${amtC}</td><td>${tag}</td></tr>`;
+        }
+        html+=`</tbody></table>`;
+        html+=`<div style="margin-top:8px;font-size:13px;display:flex;gap:18px;flex-wrap:wrap">
+          <div>외상일: ${arrow(d.invoice.credit_days,d.newCreditDays)}일</div>
+          <div>입금예정: ${arrow(d.invoice.due_date||'—',d.newDueDate)}</div>
+        </div>
+        <div style="margin-top:6px;font-size:13px;display:flex;gap:18px;flex-wrap:wrap">
+          <div>소계(IVA 전): ${moneyArrow(d.invoice.subtotal_mxn,d.newTotals.subtotal_mxn)}</div>
+          <div>IVA 16%: ${moneyArrow(d.invoice.iva_mxn,d.newTotals.iva_mxn)}</div>
+        </div>
+        <div style="margin-top:6px;font-size:14px"><b>총액(IVA 포함): ${moneyArrow(d.invoice.total_mxn,d.newTotals.total_mxn)}</b></div>`;
+        if(!d.stockOk){html+=`<div class="msg err" style="display:block;margin-top:8px">재고 부족 — 승인 불가: ${d.shortages.map(s=>s.code+' 부족 '+s.shortage).join(', ')} (영업이 수량 조정 후 재요청 필요)</div>`;}
+      }
+      // 최종 예상 정산차액(마감월) 특별 표시
+      if(d.closedMonth&&Number(d.varianceMxn)){
+        html+=`<div style="margin-top:10px;border:2px solid var(--gold);background:#fdf8ec;border-radius:8px;padding:10px 12px">
+          <span class="badge gold" style="background:var(--gold);color:#fff">마감월</span>
+          <b style="margin-left:6px">예상 정산차액: ${fmt(d.varianceMxn)} MXN</b>
+          <div class="hint" style="margin-top:4px">이 인보이스는 마감된 달에 속해 과거 손익은 고정됩니다. 위 금액이 현재 시점 “수입원가 정산차액”으로 기록됩니다.</div>
+        </div>`;
+      }else if(d.closedMonth){
+        html+=`<div style="margin-top:8px"><span class="badge gold" style="background:var(--gold);color:#fff">마감월</span> <span class="hint">과거 손익 고정 처리됩니다.</span></div>`;
+      }
+      const canApprove=(d.type==='delete')||d.stockOk;
+      html+=`<div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn cr-ok" data-id="${reqId}" ${canApprove?'':'disabled'}>승인</button>
+        <button class="btn ghost cr-no" data-id="${reqId}">반려</button>
+      </div>`;
+      container.innerHTML=html;
+      const ok=container.querySelector('.cr-ok'),no=container.querySelector('.cr-no');
+      if(ok)ok.onclick=()=>decideRequest(reqId,'approve');
+      if(no)no.onclick=()=>decideRequest(reqId,'reject');
+    }catch(e){container.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>';}
+  }
+
+  async function decideRequest(reqId,action){
+    const m=$('approveMsg');m.className='msg';
+    if(action==='approve'&&!confirm('이 변경요청을 승인하시겠습니까? 재고·원가·입금예정에 반영됩니다.'))return;
+    try{
+      const res=await fetch(session.api+'/api/sales/change-requests/'+reqId+'/'+action,{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        let msg=d.error||res.status;
+        if(d.error==='stock_short'&&d.shortages)msg='재고 부족으로 승인 불가: '+d.shortages.map(s=>s.code+' 부족 '+s.shortage).join(', ');
+        m.className='msg err';m.textContent='처리 실패: '+msg;return;
+      }
+      m.className='msg ok';
+      m.textContent=action==='approve'
+        ? '승인 완료'+(d.type==='delete'?' — 삭제·재고복원·AR취소':'')+(d.mode==='closed'?` (마감월: 정산차액 ${fmt(d.variance)} 기록)`:'')
+        : '반려 완료 — 원래 상태로 복귀';
+      loadApprovals();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('tabSale').addEventListener('click',()=>showTab('sale'));
+  $('tabCust').addEventListener('click',()=>showTab('cust'));
+  $('tabList').addEventListener('click',()=>showTab('list'));
+  $('tabShort').addEventListener('click',()=>showTab('short'));
+  $('tabApprove').addEventListener('click',()=>showTab('approve'));
+  $('shortYes').addEventListener('click',()=>doSubmit(true));
+  $('shortNo').addEventListener('click',()=>{$('shortConfirm').classList.add('hidden');pendingBody=null;});
+  $('c-save').addEventListener('click',saveCustomer);
+  $('addLine').addEventListener('click',addLine);
+  $('submit').addEventListener('click',submitSale);
+  $('s-cust').addEventListener('change',updateCustInfo);
+  $('s-days').addEventListener('input',recalcDue);
+  $('s-date').addEventListener('change',recalcDue);
+  $('xlsTemplate').addEventListener('click',downloadTemplate);
+  $('xlsFile').addEventListener('change',e=>{if(e.target.files[0])handleExcel(e.target.files[0]);});
+  $('xlsClear').addEventListener('click',()=>{$('lines').innerHTML='';addLine();pendingMissing=[];$('xlsMissing').innerHTML='';$('xlsMsg').textContent='';renderTotals();});
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

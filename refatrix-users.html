@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 사용자 · 권한 관리</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.gold{background:var(--gold)}.btn.sm{padding:6px 11px;font-size:12px}.btn.danger{background:var(--expense)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .pg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;margin:2px 8px 2px 0}
+  .pinbox{background:#fff7e0;border:1px solid #ecd9a0;border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">사용자 · 권한 관리 (디렉터)</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 새 사용자 -->
+    <div class="card">
+      <h2>새 사용자 만들기</h2>
+      <div class="hint" style="margin-top:0">영업 계정을 만들고 PIN·소속 팀·페이지 권한을 한 번에 부여합니다. 만든 PIN을 사용자에게 알려주면 그 계정으로 로그인합니다.</div>
+      <div class="row">
+        <div><label>이름</label><input id="n-name" type="text"></div>
+        <div><label>로그인 아이디</label><input id="n-login" type="text" placeholder="예: sales1"></div>
+        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="director">디렉터(director)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="viewer">뷰어</option></select></div>
+        <div><label>PIN(4~8자리, 비우면 자동)</label><input id="n-pin" type="text" inputmode="numeric" placeholder="자동"></div>
+        <div><label>소속 팀</label><select id="n-team"></select></div>
+      </div>
+      <div><label>페이지 권한</label><div id="n-pages"></div></div>
+      <button class="btn gold sm" id="createBtn" style="margin-top:10px">사용자 만들기</button>
+      <div class="msg" id="createMsg"></div>
+      <div id="createResult"></div>
+    </div>
+
+    <!-- 사용자 목록 -->
+    <div class="card">
+      <h2>사용자 목록 · 권한</h2>
+      <div id="userList"><div class="hint">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let teams=[], users=[];
+  // 부여 가능한 페이지(키 → 표시명). 시스템에 맞춰 핵심만.
+  const PAGES=[['customers','고객관리'],['targets','매출목표'],['pipeline','영업활동·단계'],['budget','마케팅예산'],['finance','재무'],['sales','매출등록'],['products','제품마스터']];
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      if(d.user?.role!=='director'){m.className='msg err';m.textContent='이 화면은 디렉터만 사용할 수 있습니다.';return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      await loadTeams(); renderPageChecks(); loadUsers();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadTeams(){
+    try{teams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){teams=[];}
+    $('n-team').innerHTML='<option value="">미지정</option>'+teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  function renderPageChecks(){
+    $('n-pages').innerHTML=PAGES.map(([k,label])=>`<label class="pg"><input type="checkbox" value="${k}" style="width:auto"> ${label}</label>`).join('');
+  }
+
+  async function createUser(){
+    const m=$('createMsg');m.className='msg';m.style.display='none';$('createResult').innerHTML='';
+    const pages=[...document.querySelectorAll('#n-pages input:checked')].map(c=>c.value);
+    const body={name:$('n-name').value.trim(),login_id:$('n-login').value.trim(),role:$('n-role').value,
+      pin:$('n-pin').value.trim()||undefined,team_id:$('n-team').value?Number($('n-team').value):undefined,pages};
+    if(!body.name||!body.login_id){m.className='msg err';m.style.display='block';m.textContent='이름과 로그인 아이디를 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/users',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error==='login_id_taken'?'이미 있는 아이디입니다.':(d.error||res.status));return;}
+      $('createResult').innerHTML=`<div class="pinbox"><b>생성 완료</b> — 아이디 <b>${d.login_id}</b> · PIN <b style="font-size:16px">${d.pin}</b><br><span class="hint" style="margin:0">이 PIN을 사용자에게 통보하세요(서버에는 해시만 저장).</span></div>`;
+      $('n-name').value='';$('n-login').value='';$('n-pin').value='';document.querySelectorAll('#n-pages input').forEach(c=>c.checked=false);
+      loadUsers();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  async function loadUsers(){
+    const b=$('userList');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
+      users=d.items||[];
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>페이지 권한</th><th>PIN</th></tr></thead><tbody>'+
+        users.map(u=>`<tr>
+          <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
+          <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
+            <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
+          <td style="max-width:380px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PAGES.map(([k,label])=>`<label class="pg"><input type="checkbox" ${u.pages.includes(k)?'checked':''} style="width:auto" onchange="togglePage(${u.id},'${k}',this.checked)"> ${label}</label>`).join('')}</td>
+          <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
+        </tr>`).join('')+'</tbody></table>';
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function setTeam(userId,teamId){
+    try{await fetch(session.api+'/api/team-admin/users/'+userId+'/team',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId?Number(teamId):null})});loadUsers();}catch(e){alert('실패');}
+  }
+  async function togglePage(userId,pageKey,on){
+    try{
+      if(on)await fetch(session.api+'/api/users/'+userId+'/page-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({page_key:pageKey,device_req:'anywhere'})});
+      else await fetch(session.api+'/api/users/'+userId+'/page-access?page_key='+pageKey,{method:'DELETE',headers:auth()});
+    }catch(e){alert('실패');loadUsers();}
+  }
+  async function resetPin(userId){
+    const pin=prompt('새 PIN(4~8자리, 비우면 자동 생성):');
+    if(pin===null)return;
+    try{
+      const res=await fetch(session.api+'/api/users/'+userId+'/reset-pin',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({pin:pin.trim()||undefined})});
+      const d=await res.json();
+      alert('새 PIN: '+d.pin+'\n사용자에게 통보하세요.');
+    }catch(e){alert('실패');}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('createBtn').addEventListener('click',createUser);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 마케팅 예산</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:110px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .btn.danger{background:var(--expense)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .catbox{border:1px solid var(--line);border-radius:10px;margin-top:10px;overflow:hidden}
+  .cathead{display:flex;justify-content:space-between;align-items:center;background:#faf8f3;padding:8px 12px;font-weight:700;font-size:13px}
+  .sumcards{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .sumcard{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:96px}
+  .sumcard .k{font-size:11px;color:var(--muted)}
+  .sumcard .v{font-size:16px;font-weight:800}
+  .pstat-open{background:#e7f3ee;color:var(--income)}
+  .pstat-closed{background:#efeae0;color:var(--muted)}
+  .st-approved{background:#e7f3ee;color:var(--income)}
+  .st-pending{background:#fff7e0;color:#9a6512}
+  .st-rejected{background:#fbe9e7;color:var(--expense)}
+  .over{background:#fbe9e7;color:var(--expense)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">마케팅 예산 · 편성 · 승인</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 예산 기간 목록 -->
+    <div class="card" id="listCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">마케팅 예산 기간</h2>
+        <button class="btn sm" id="newPeriodBtn">+ 새 예산 기간</button>
+      </div>
+      <div class="hint" id="roleHint" style="margin-top:4px"></div>
+
+      <!-- 새 기간 폼(디렉터) -->
+      <div id="periodForm" class="hidden" style="border:1px solid var(--brand);border-radius:10px;padding:14px;margin-top:10px;background:#fbfaf6">
+        <div style="font-weight:700;margin-bottom:6px">새 예산 기간 개설</div>
+        <div class="row">
+          <div style="flex:2"><label>제목</label><input id="np-title" type="text" placeholder="예: 2026 상반기 마케팅 예산"></div>
+          <div><label>시작 월</label><input id="np-start" type="month"></div>
+          <div><label>종료 월</label><input id="np-end" type="month"></div>
+        </div>
+        <div class="row">
+          <div><label>매출목표(MXN)</label><input id="np-target" type="number" step="0.01" placeholder="기간 매출목표"></div>
+          <div><label>예산 비율(%)</label><input id="np-pct" type="number" step="0.1" value="5"></div>
+          <div><label>한도(자동=목표×%)</label><input id="np-limit" type="number" step="0.01" placeholder="자동 계산"></div>
+        </div>
+        <div class="row"><div style="flex:3"><label>메모</label><input id="np-memo" type="text"></div></div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn gold sm" id="np-save">개설</button>
+          <button class="btn ghost sm" id="np-cancel">취소</button>
+        </div>
+        <div class="hint" style="margin-top:6px">한도는 매출목표×비율로 자동 계산되며, 필요하면 직접 수정할 수 있습니다. 매출목표 메뉴가 생기면 자동 연동됩니다.</div>
+        <div class="msg" id="np-msg"></div>
+      </div>
+
+      <div id="periodList"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 기간 상세 -->
+    <div class="card hidden" id="detailCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0" id="d-title">예산 상세</h2>
+        <button class="btn ghost sm" id="backBtn">← 목록</button>
+      </div>
+      <div id="d-summary"></div>
+
+      <!-- 항목 추가 -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <div style="font-weight:700;margin-bottom:6px">예산 항목 추가</div>
+        <div id="it-budget-note" class="hint" style="margin-top:0"></div>
+        <div class="row">
+          <div><label>카테고리</label><input id="it-cat" list="catList" placeholder="예: 인쇄물"><datalist id="catList"></datalist></div>
+          <div style="flex:2"><label>항목명</label><input id="it-name" type="text" placeholder="예: 카탈로그 인쇄"></div>
+          <div><label>예정 월</label><input id="it-month" type="month"></div>
+        </div>
+        <div class="row">
+          <div><label>수량</label><input id="it-qty" type="number" step="0.001" value="1"></div>
+          <div><label>단가(MXN)</label><input id="it-price" type="number" step="0.01" placeholder="0.00"></div>
+          <div><label>금액(자동)</label><input id="it-amt" type="number" readonly style="background:#f7f5ef"></div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;justify-content:flex-end">
+            <label style="font-size:11px">날짜 예측불허</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:9px 0"><input id="it-unknown" type="checkbox" style="width:auto"> 미정(말일 워킹데이)</label>
+          </div>
+        </div>
+        <div class="row"><div style="flex:3"><label>메모</label><input id="it-memo" type="text"></div></div>
+        <button class="btn gold sm" id="it-save" style="margin-top:10px">항목 추가</button>
+        <div class="msg" id="it-msg"></div>
+      </div>
+
+      <!-- 카테고리별 항목 + 승인 -->
+      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div style="font-weight:700">항목 (카테고리별)</div>
+          <button class="btn sm" id="approveAllBtn">대기 전체 승인</button>
+        </div>
+        <div id="d-items"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let curPeriod=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const isDirector=()=> session.user && session.user.role==='director';
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      if(!isDirector()){$('newPeriodBtn').classList.add('hidden');$('approveAllBtn').classList.add('hidden');}
+      $('roleHint').textContent=isDirector()?'디렉터: 예산 기간을 개설하고 항목을 승인할 수 있습니다.':'마케팅: 열린 예산 기간에 항목을 작성하면 디렉터 승인 후 계획에 반영됩니다.';
+      loadPeriods();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ===== 기간 목록 =====
+  async function loadPeriods(){
+    const b=$('periodList');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/budget/periods',{headers:auth()}).then(r=>r.json());
+      if(!d.items||!d.items.length){b.innerHTML='<div class="hint">아직 예산 기간이 없습니다.'+(isDirector()?' “새 예산 기간”으로 개설하세요.':'')+'</div>';return;}
+      b.innerHTML=`<table><thead><tr><th>제목</th><th>기간</th><th class="num">매출목표</th><th class="num">한도(5%)</th><th>항목 현황</th><th>검토</th><th>기간</th><th></th></tr></thead>
+        <tbody>${d.items.map(p=>{
+          const reviewBadge=p.item_count===0?'<span class="hint" style="margin:0">항목 없음</span>'
+            :(p.review_done?'<span class="pill st-approved">검토완료</span>':`<span class="pill st-pending">검토중 ${p.pending_count}건</span>`);
+          const breakdown=p.item_count===0?'<span class="hint" style="margin:0">—</span>'
+            :`<span class="hint" style="margin:0">${p.item_count}건</span> · <span style="color:var(--income)">승인 ${p.approved_count}</span>${p.pending_count?` · <span style="color:#9a6512">대기 ${p.pending_count}</span>`:''}${p.rejected_count?` · <span style="color:var(--expense)">반려 ${p.rejected_count}</span>`:''}<br><span class="hint" style="margin:0">승인액 ${fmt(p.approved_amount)}${p.pending_amount?` · 대기액 ${fmt(p.pending_amount)}`:''}</span>`;
+          return `<tr>
+          <td><b>${p.title}</b></td>
+          <td>${p.start_month} ~ ${p.end_month}</td>
+          <td class="num">${fmt(p.sales_target)}</td>
+          <td class="num">${fmt(p.limit_amount)} <span class="hint" style="margin:0">(${p.pct}%)</span></td>
+          <td>${breakdown}</td>
+          <td>${reviewBadge}</td>
+          <td><span class="pill pstat-${p.status}">${p.status==='open'?'진행중':'마감'}</span></td>
+          <td style="white-space:nowrap"><button class="btn ghost sm" onclick="openPeriod(${p.id})">열기</button>${isDirector()?` <button class="btn ghost sm" onclick="delPeriod(${p.id},'${(p.title||'').replace(/'/g,"")}')">삭제</button>`:''}</td>
+        </tr>`;}).join('')}</tbody></table>`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function computeLimit(){
+    const t=Number($('np-target').value)||0,pct=Number($('np-pct').value)||0;
+    if(document.activeElement!==$('np-limit'))$('np-limit').value=Math.round(t*pct)/100;
+  }
+
+  async function savePeriod(){
+    const m=$('np-msg');m.className='msg';m.style.display='none';
+    const body={title:$('np-title').value.trim(),start_month:$('np-start').value,end_month:$('np-end').value,
+      sales_target:Number($('np-target').value)||0,pct:Number($('np-pct').value)||5};
+    if($('np-limit').value!=='')body.limit_amount=Number($('np-limit').value);
+    if($('np-memo').value.trim())body.memo=$('np-memo').value.trim();
+    if(!body.title||!body.start_month||!body.end_month){m.className='msg err';m.style.display='block';m.textContent='제목·기간을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/budget/periods',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';
+        m.textContent=d.error==='period_overlap'?'이미 같은 기간에 편성된 마케팅 예산이 있습니다. 기간당 예산은 하나만 운영됩니다. 기존 예산을 열어 항목을 추가해 주세요.':('실패: '+(d.detail||d.error||res.status));return;}
+      $('periodForm').classList.add('hidden');['np-title','np-target','np-limit','np-memo'].forEach(id=>$(id).value='');
+      loadPeriods();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 기간 상세 =====
+  async function openPeriod(id){
+    $('listCard').classList.add('hidden');$('detailCard').classList.remove('hidden');
+    $('d-summary').innerHTML='<div class="hint">불러오는 중…</div>';$('d-items').innerHTML='';
+    curPeriod=id;
+    try{
+      const d=await fetch(session.api+'/api/budget/periods/'+id,{headers:auth()}).then(r=>r.json());
+      renderDetail(d);
+    }catch(e){$('d-summary').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  let curMin='', curMax='';
+  function renderDetail(d){
+    const p=d.period,s=d.summary;
+    curMin=p.start_month;curMax=p.end_month;
+    itemMap={};(d.groups||[]).forEach(g=>g.items.forEach(it=>{itemMap[it.id]=it;}));
+    $('d-title').textContent=p.title+'  ('+p.start_month+'~'+p.end_month+')';
+    $('it-month').min=p.start_month;$('it-month').max=p.end_month;if(!$('it-month').value)$('it-month').value=p.start_month;
+    // 카테고리 드롭다운
+    $('catList').innerHTML=(d.categories||[]).map(c=>`<option value="${c}">`).join('');
+    // 항목 추가 폼은 진행중일 때만
+    const open=p.status==='open';
+    ['it-cat','it-name','it-month','it-qty','it-price','it-memo','it-unknown','it-save'].forEach(id=>$(id).disabled=!open);
+    // 작성 화면 상단: 한도 잔여/초과 안내
+    const note=$('it-budget-note');
+    if(s.remaining<0){
+      note.innerHTML=`<span class="pill st-rejected">예산 소진</span> 이 기간 마케팅 예산(한도 ${fmt(s.limit)})을 <b style="color:var(--expense)">${fmt(-s.remaining)} 초과</b>한 상태입니다. 작성은 가능하지만, 승인 단계에서 관리자 <b>초과 승인</b>이 필요합니다.`;
+    }else if(s.remaining===0){
+      note.innerHTML=`<span class="pill st-pending">한도 도달</span> 승인액이 한도(${fmt(s.limit)})에 도달했습니다. 추가 항목은 승인 시 <b>초과 승인</b>이 필요합니다.`;
+    }else{
+      note.innerHTML=`한도까지 잔여 <b style="color:var(--income)">${fmt(s.remaining)}</b> (한도 ${fmt(s.limit)} · 승인 ${fmt(s.approved)}). 잔여를 넘는 항목은 승인 시 초과 승인이 필요합니다.`;
+    }
+    $('d-summary').innerHTML=`<div class="sumcards">
+      <div class="sumcard"><div class="k">매출목표</div><div class="v">${fmt(p.sales_target)}</div></div>
+      <div class="sumcard"><div class="k">한도 (${p.pct}%)</div><div class="v">${fmt(s.limit)}</div></div>
+      <div class="sumcard"><div class="k">편성(전체)</div><div class="v">${fmt(s.planned)}</div></div>
+      <div class="sumcard"><div class="k">승인</div><div class="v" style="color:var(--income)">${fmt(s.approved)}</div></div>
+      <div class="sumcard"><div class="k">대기</div><div class="v" style="color:#9a6512">${fmt(s.pending)}</div></div>
+      <div class="sumcard ${s.over_limit?'over':''}"><div class="k">한도 잔여</div><div class="v" style="color:${s.remaining<0?'var(--expense)':'var(--ink)'}">${fmt(s.remaining)}</div></div>
+      <div class="sumcard"><div class="k">한도 집행률</div><div class="v">${s.use_pct==null?'—':s.use_pct+'%'}</div></div>
+    </div>${p.status==='closed'?'<div class="hint">이 기간은 마감되어 항목을 추가/수정할 수 없습니다.</div>':''}
+    ${s.over_limit?'<div class="msg err" style="display:block">승인된 예산이 한도를 초과했습니다.</div>':''}`;
+    // 카테고리별 항목
+    if(!d.groups.length){$('d-items').innerHTML='<div class="hint">아직 항목이 없습니다.</div>';return;}
+    $('d-items').innerHTML=d.groups.map(g=>`
+      <div class="catbox">
+        <div class="cathead"><span>${g.category||'(미분류)'}</span>
+          <span class="hint" style="margin:0">편성 ${fmt(g.total)} · 승인 ${fmt(g.approved)}${g.pending?' · 대기 '+fmt(g.pending):''}</span></div>
+        <table><thead><tr><th>항목명</th><th>메모</th><th>예정월</th><th>예정일</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th>상태</th><th></th></tr></thead>
+        <tbody>${g.items.map(it=>itemRow(it)).join('')}</tbody></table>
+      </div>`).join('');
+  }
+  function itemRow(it){
+    const st=it.status==='approved'?(it.over_approved?'<span class="pill st-rejected">초과 승인</span>':'<span class="pill st-approved">승인</span>'):it.status==='rejected'?'<span class="pill st-rejected">반려</span>':'<span class="pill st-pending">대기</span>';
+    const dateInfo=it.date_unknown?`${it.plan_date} <span class="badge" style="background:#eef1f5;color:#5a6b7b">날짜 미정</span>`:(it.plan_date||'—');
+    const dirBtns=isDirector()?(it.status==='approved'
+      ? `<button class="btn ghost sm" onclick="rejectItem(${it.id})">승인취소</button>`
+      : `<button class="btn sm" onclick="approveItem(${it.id})">승인</button> <button class="btn ghost sm" onclick="rejectItem(${it.id})">반려</button>`):'';
+    const editBtns=(it.status!=='approved')?`<button class="btn ghost sm" onclick="startEdit(${it.id})">수정</button> <button class="btn ghost sm" onclick="delItem(${it.id})">삭제</button>`:'';
+    return `<tr id="row-${it.id}">
+      <td>${it.name}</td>
+      <td style="font-size:11px;color:var(--muted)">${it.memo||''}</td>
+      <td>${it.plan_month}</td><td>${dateInfo}</td>
+      <td class="num">${it.qty}</td><td class="num">${fmt(it.unit_price)}</td>
+      <td class="num"><b>${fmt(it.amount)}</b></td>
+      <td>${st}</td>
+      <td style="white-space:nowrap">${dirBtns} ${editBtns}</td></tr>
+      <tr id="edit-${it.id}" class="hidden"><td colspan="9"></td></tr>`;
+  }
+  // 항목 데이터 보관(수정용)
+  let itemMap={};
+  function startEdit(id){
+    const it=itemMap[id];if(!it)return;
+    const tr=document.getElementById('edit-'+id);
+    if(!tr.classList.contains('hidden')){tr.classList.add('hidden');tr.firstElementChild.innerHTML='';return;}
+    tr.firstElementChild.innerHTML=`<div style="border:1px solid var(--brand);border-radius:8px;padding:10px;background:#fbfaf6">
+      <div class="row">
+        <div><label>카테고리</label><input class="e-cat" list="catList" value="${it.category||''}"></div>
+        <div style="flex:2"><label>항목명</label><input class="e-name" value="${(it.name||'').replace(/"/g,'&quot;')}"></div>
+        <div><label>예정 월</label><input class="e-month" type="month" value="${it.plan_month}" min="${curMin}" max="${curMax}"></div>
+      </div>
+      <div class="row">
+        <div><label>수량</label><input class="e-qty" type="number" step="0.001" value="${it.qty}"></div>
+        <div><label>단가</label><input class="e-price" type="number" step="0.01" value="${it.unit_price}"></div>
+        <div><label>금액(자동)</label><input class="e-amt" type="number" readonly style="background:#f7f5ef" value="${it.amount}"></div>
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;justify-content:flex-end">
+          <label style="font-size:11px">날짜 예측불허</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:9px 0"><input class="e-unknown" type="checkbox" style="width:auto" ${it.date_unknown?'checked':''}> 미정</label>
+        </div>
+      </div>
+      <div class="row"><div style="flex:3"><label>메모</label><input class="e-memo" value="${(it.memo||'').replace(/"/g,'&quot;')}"></div></div>
+      <div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" onclick="saveEdit(${id})">저장</button><button class="btn ghost sm" onclick="startEdit(${id})">닫기</button></div>
+      <div class="msg" id="emsg-${id}"></div></div>`;
+    tr.classList.remove('hidden');
+    const q=tr.querySelector('.e-qty'),p=tr.querySelector('.e-price'),a=tr.querySelector('.e-amt');
+    const calc=()=>{a.value=(Number(q.value)||0)*(Number(p.value)||0);};
+    q.addEventListener('input',calc);p.addEventListener('input',calc);
+  }
+  async function saveEdit(id){
+    const tr=document.getElementById('edit-'+id);const m=document.getElementById('emsg-'+id);m.className='msg';m.style.display='none';
+    const body={category:tr.querySelector('.e-cat').value.trim()||null,name:tr.querySelector('.e-name').value.trim(),
+      plan_month:tr.querySelector('.e-month').value,qty:Number(tr.querySelector('.e-qty').value)||0,
+      unit_price:Number(tr.querySelector('.e-price').value)||0,date_unknown:tr.querySelector('.e-unknown').checked,
+      memo:tr.querySelector('.e-memo').value.trim()||null};
+    if(!body.name||!body.plan_month||!(body.qty*body.unit_price>0)){m.className='msg err';m.style.display='block';m.textContent='항목명·예정월·수량·단가를 확인하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/budget/items/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      openPeriod(curPeriod);
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  async function saveItem(){
+    const m=$('it-msg');m.className='msg';m.style.display='none';
+    const body={category:$('it-cat').value.trim()||null,name:$('it-name').value.trim(),plan_month:$('it-month').value,
+      qty:Number($('it-qty').value)||0,unit_price:Number($('it-price').value)||0,date_unknown:$('it-unknown').checked};
+    if($('it-memo').value.trim())body.memo=$('it-memo').value.trim();
+    if(!body.name||!body.plan_month){m.className='msg err';m.style.display='block';m.textContent='항목명·예정 월을 입력하세요.';return;}
+    if(!(body.qty*body.unit_price>0)){m.className='msg err';m.style.display='block';m.textContent='수량과 단가를 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/budget/periods/'+curPeriod+'/items',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error==='month_out_of_range'?'예정 월이 기간을 벗어났습니다.':(d.error||res.status));return;}
+      ['it-name','it-price','it-memo'].forEach(id=>$(id).value='');$('it-qty').value='1';$('it-amt').value='';$('it-unknown').checked=false;
+      openPeriod(curPeriod);
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+  async function delPeriod(id,title){
+    if(!confirm('“'+title+'” 예산 기간을 삭제하시겠습니까?\n그 안의 모든 항목과 승인으로 생성된 계획도 함께 제거됩니다(이미 집행된 게 있으면 불가).'))return;
+    try{const res=await fetch(session.api+'/api/budget/periods/'+id,{method:'DELETE',headers:auth()});const d=await res.json();
+      if(!res.ok||d.error){alert('삭제 실패: '+(d.detail||d.error||res.status));return;}loadPeriods();}catch(e){alert('서버 연결 실패');}
+  }
+  async function approveItem(id,allowOver){
+    try{
+      const res=await fetch(session.api+'/api/budget/items/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(allowOver?{allow_over:true}:{})});
+      const d=await res.json();
+      if(res.status===409&&d.error==='over_budget'){
+        if(confirm(`이 항목을 승인하면 해당 기간 마케팅 예산을 초과합니다.\n\n예산 한도 ${fmt(d.limit)}\n현재 소진(승인액) ${fmt(d.approved)}\n이 항목 ${fmt(d.amount)}\n승인 후 합계 ${fmt(d.projected)} → 한도 초과 ${fmt(d.over_by)}\n\n한도를 초과하여 “초과 승인”하시겠습니까?`)){
+          return approveItem(id,true);
+        }
+        return;
+      }
+      if(!res.ok||d.error){alert('승인 실패: '+(d.detail||d.error||res.status));return;}
+      openPeriod(curPeriod);
+    }catch(e){alert('서버 연결 실패');}
+  }
+  async function rejectItem(id){
+    if(!confirm('이 항목을 반려(승인 취소)하시겠습니까? 승인 시 생성된 계획도 함께 제거됩니다(이미 집행된 경우 불가).'))return;
+    try{const res=await fetch(session.api+'/api/budget/items/'+id+'/reject',{method:'POST',headers:auth()});const d=await res.json();
+      if(!res.ok||d.error){alert('반려 실패: '+(d.error==='already_executed'?'이미 실적으로 집행되어 취소할 수 없습니다.':(d.error||res.status)));return;}openPeriod(curPeriod);}catch(e){alert('서버 연결 실패');}
+  }
+  async function delItem(id){
+    if(!confirm('이 항목을 삭제하시겠습니까?'))return;
+    try{const res=await fetch(session.api+'/api/budget/items/'+id,{method:'DELETE',headers:auth()});const d=await res.json();
+      if(!res.ok||d.error){alert('삭제 실패: '+(d.error||res.status));return;}openPeriod(curPeriod);}catch(e){alert('서버 연결 실패');}
+  }
+  async function approveAll(){
+    if(!confirm('대기 중인 항목을 모두 승인하시겠습니까? 각 항목이 마케팅 계획으로 생성됩니다.'))return;
+    try{const res=await fetch(session.api+'/api/budget/periods/'+curPeriod+'/approve-all',{method:'POST',headers:auth()});const d=await res.json();
+      if(!res.ok||d.error){alert('실패: '+(d.error||res.status));return;}alert(d.approved+'건 승인되었습니다.'+(d.skipped_over?`\n한도 초과로 ${d.skipped_over}건은 보류되었습니다. 각 항목에서 “승인”을 눌러 초과 승인하세요.`:''));openPeriod(curPeriod);}catch(e){alert('서버 연결 실패');}
+  }
+
+  // 이벤트
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('newPeriodBtn').addEventListener('click',()=>{$('periodForm').classList.toggle('hidden');computeLimit();});
+  $('np-cancel').addEventListener('click',()=>$('periodForm').classList.add('hidden'));
+  $('np-save').addEventListener('click',savePeriod);
+  ['np-target','np-pct'].forEach(id=>$(id).addEventListener('input',computeLimit));
+  $('it-save').addEventListener('click',saveItem);
+  ['it-qty','it-price'].forEach(id=>$(id).addEventListener('input',()=>{$('it-amt').value=(Number($('it-qty').value)||0)*(Number($('it-price').value)||0);}));
+  $('backBtn').addEventListener('click',()=>{$('detailCard').classList.add('hidden');$('listCard').classList.remove('hidden');loadPeriods();});
+  $('approveAllBtn').addEventListener('click',approveAll);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

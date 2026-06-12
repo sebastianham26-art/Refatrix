@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 고객관리</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1040px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:110px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .btn.danger{background:var(--expense)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .code{font-weight:700;color:var(--brand)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .team1{background:#e7eef3;color:#2b5a78}.team2{background:#f1ece0;color:#8a6d2a}
+  .over{color:var(--expense);font-weight:700}
+  .tabs{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+  .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">고객관리 · 영업팀</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs">
+      <div class="tab on" data-tab="list">고객 목록</div>
+      <div class="tab" data-tab="team" id="teamTabBtn">팀 권한 관리</div>
+    </div>
+
+    <!-- 고객 목록 -->
+    <div id="tab-list">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
+          <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
+        </div>
+        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.</div>
+        <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
+          <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
+          <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
+        </div>
+        <div id="upPreview"></div>
+        <div class="msg" id="upMsg"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">고객 목록</h2>
+          <button class="btn sm" id="newCustBtn">+ 새 고객</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div style="flex:3"><label>검색 (이름·코드·RFC)</label><input id="q" type="text" placeholder="비우면 전체"></div>
+          <div><label>팀</label><select id="teamFilter"><option value="">전체</option></select></div>
+          <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="searchBtn">검색</button></div>
+        </div>
+
+        <!-- 새/수정 폼 -->
+        <div id="custForm" class="hidden" style="border:1px solid var(--brand);border-radius:10px;padding:14px;margin-top:12px;background:#fbfaf6">
+          <div style="font-weight:700;margin-bottom:6px" id="formTitle">새 고객 등록</div>
+          <div class="row">
+            <div><label>고객코드</label><input id="f-code" type="text" placeholder="예: C-0001"></div>
+            <div style="flex:2"><label>고객명</label><input id="f-name" type="text"></div>
+            <div><label>팀</label><select id="f-team"></select></div>
+          </div>
+          <div class="row">
+            <div><label>RFC(세금번호)</label><input id="f-rfc" type="text"></div>
+            <div><label>회사 종류</label><select id="f-type"><option value="">미지정</option><option>refraccionaria</option><option>Mayoreo</option><option>Flotia</option><option>taller</option><option>publico</option></select></div>
+            <div><label>담당자</label><select id="f-owner"><option value="">미지정</option></select></div>
+            <div><label>단계</label><select id="f-stage"><option value="">미지정</option></select></div>
+          </div>
+          <div class="row">
+            <div><label>연락처</label><input id="f-contact" type="text"></div>
+            <div><label>전화</label><input id="f-phone" type="text"></div>
+            <div><label>기본 할인(%)</label><input id="f-discount" type="number" step="0.01" value="0"></div>
+            <div><label>외상일(일)</label><input id="f-credit" type="number" value="0"></div>
+          </div>
+          <div class="row"><div style="flex:3"><label>메모</label><input id="f-memo" type="text"></div></div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn gold sm" id="f-save">저장</button>
+            <button class="btn ghost sm" id="f-cancel">취소</button>
+          </div>
+          <div class="msg" id="f-msg"></div>
+        </div>
+
+        <div id="custList"><div class="hint">불러오는 중…</div></div>
+      </div>
+
+      <!-- 고객 상세 -->
+      <div class="card hidden" id="detailCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0" id="d-name">고객 상세</h2>
+          <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
+        </div>
+        <div id="d-info"></div>
+        <div style="font-weight:700;margin-top:12px">미수/연체 인보이스</div>
+        <div id="d-invoices"></div>
+      </div>
+    </div>
+
+    <!-- 팀 권한 관리(디렉터) -->
+    <div id="tab-team" class="hidden">
+      <div class="card">
+        <h2>팀 배정 · 상대팀 열람 권한</h2>
+        <div class="hint" style="margin-top:0">각 사용자의 소속 팀을 정하고, 필요한 경우 상대 팀을 볼 수 있는 권한을 부여합니다. 기본적으로 사용자는 자기 팀의 고객만 봅니다.</div>
+        <div id="teamUsers"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const isDirector=()=> session.user && session.user.role==='director';
+  const teamPill=(name,id)=> name?`<span class="pill ${id%2===1?'team1':'team2'}">${name}</span>`:'<span class="hint" style="margin:0">미지정</span>';
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      if(!isDirector())$('teamTabBtn').classList.add('hidden');
+      await loadRefs(); loadCustomers();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadRefs(){
+    try{teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){teams=[];}
+    try{stages=(await fetch(session.api+'/api/stages',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){stages=[];}
+    try{owners=(await fetch(session.api+'/api/sales-users',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){owners=[];}
+    if(isDirector()){try{adminTeams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){adminTeams=teams;}}
+    $('teamFilter').innerHTML='<option value="">전체 팀</option>'+teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+    $('f-team').innerHTML=teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+    $('f-stage').innerHTML='<option value="">미지정</option>'+stages.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    $('f-owner').innerHTML='<option value="">미지정</option>'+owners.map(o=>`<option value="${o.id}">${o.name}</option>`).join('');
+  }
+
+  async function loadCustomers(){
+    const b=$('custList');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    const params=new URLSearchParams();
+    if($('q').value.trim())params.set('q',$('q').value.trim());
+    if($('teamFilter').value)params.set('team_id',$('teamFilter').value);
+    try{
+      const d=await fetch(session.api+'/api/customers?'+params.toString(),{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){b.innerHTML='<div class="hint">고객이 없습니다.</div>';return;}
+      b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th>팀</th><th>담당</th><th>단계</th><th class="num">미수</th><th class="num">연체</th><th></th></tr></thead>
+        <tbody>${items.map(c=>`<tr>
+          <td class="code">${c.code}</td>
+          <td>${c.name}</td>
+          <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
+          <td>${teamPill(c.team_name,c.team_id)}</td>
+          <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
+          <td>${c.stage_name||'—'}</td>
+          <td class="num">${fmt(c.outstanding)}</td>
+          <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
+          <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
+        </tr>`).join('')}</tbody></table>
+        <div class="hint">${items.length}명 표시. 연체액이 있으면 빨간색입니다.</div>`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function showForm(cust){
+    editingId=cust?cust.id:null;
+    $('formTitle').textContent=cust?'고객 수정':'새 고객 등록';
+    if(cust){$('f-code').value=cust.code;}
+    else{
+      $('f-code').value='자동…';
+      try{const d=await fetch(session.api+'/api/customers/next-code',{headers:auth()}).then(r=>r.json());$('f-code').value=d.code||'';}catch(e){$('f-code').value='';}
+    }
+    $('f-code').readOnly=true;$('f-code').style.background='#f2efe8';
+    $('f-name').value=cust?cust.name:'';
+    $('f-team').value=cust?cust.team_id:(teams[0]?.id||'');
+    $('f-rfc').value=cust?(cust.rfc||''):'';
+    $('f-type').value=cust?(cust.customer_type||''):'';
+    $('f-owner').value=cust?(cust.owner_id||''):'';
+    $('f-stage').value=cust?(cust.stage_id||''):'';
+    $('f-contact').value=cust?(cust.contact||''):'';
+    $('f-phone').value=cust?(cust.phone||''):'';
+    $('f-discount').value=cust?cust.discount:0;
+    $('f-credit').value=cust?cust.credit_days:0;
+    $('f-memo').value=cust?(cust.memo||''):'';
+    $('f-msg').style.display='none';
+    $('custForm').classList.remove('hidden');
+    if($('custForm').scrollIntoView)$('custForm').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+
+  async function saveCustomer(){
+    const m=$('f-msg');m.className='msg';m.style.display='none';
+    const body={name:$('f-name').value.trim(),team_id:Number($('f-team').value)||null,
+      rfc:$('f-rfc').value.trim()||null,customer_type:$('f-type').value||null,owner_id:$('f-owner').value?Number($('f-owner').value):null,
+      stage_id:$('f-stage').value?Number($('f-stage').value):null,contact:$('f-contact').value.trim()||null,
+      phone:$('f-phone').value.trim()||null,discount:Number($('f-discount').value)||0,credit_days:Number($('f-credit').value)||0,
+      memo:$('f-memo').value.trim()||null};
+    if(!body.name){m.className='msg err';m.style.display='block';m.textContent='고객명을 입력하세요.';return;}
+    if(!body.team_id){m.className='msg err';m.style.display='block';m.textContent='팀을 선택하세요.';return;}
+    try{
+      const url=editingId?session.api+'/api/customers/'+editingId:session.api+'/api/customers';
+      const res=await fetch(url,{method:editingId?'PATCH':'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';
+        m.textContent='실패: '+(d.error==='code_exists'?'이미 있는 고객코드입니다.':d.error==='forbidden_team'?'그 팀의 고객을 만들/수정할 권한이 없습니다.':(d.detail||d.error||res.status));return;}
+      $('custForm').classList.add('hidden');loadCustomers();
+      if(editingId)openCustomer(editingId);
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  let curCustomer=null;
+  async function openCustomer(id){
+    $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';
+    if($('detailCard').scrollIntoView)$('detailCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    try{
+      const d=await fetch(session.api+'/api/customers/'+id,{headers:auth()}).then(r=>r.json());
+      if(d.error){$('d-info').innerHTML='<div class="hint">'+(d.error==='forbidden_team'?'다른 팀 고객은 볼 수 없습니다.':'불러오지 못했습니다.')+'</div>';return;}
+      curCustomer=d.customer;const c=d.customer;
+      $('d-name').innerHTML=`${c.name} <span class="hint" style="margin:0">(${c.code})</span> ${teamPill(c.team_name,c.team_id)}`;
+      const totalOut=d.invoices.reduce((s,i)=>s+i.outstanding,0);
+      const totalOver=d.invoices.reduce((s,i)=>s+(i.overdue?i.outstanding:0),0);
+      const sm=d.summary||{};
+      const target=sm.year_target;
+      const actual=sm.ytd_actual||0;
+      const pct=(target!=null&&target>0)?Math.round((actual/target)*100):null;
+      const progressRow= target!=null
+        ? `<tr><th>목표 달성률</th><td colspan="3"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;background:#eee;border-radius:6px;height:14px;overflow:hidden"><div style="height:100%;width:${Math.min(pct||0,100)}%;background:${(pct||0)>=100?'var(--income)':'var(--gold)'}"></div></div><b>${pct==null?'—':pct+'%'}</b></div></td></tr>`
+        : `<tr><th>목표 달성률</th><td colspan="3"><span class="hint" style="margin:0">목표 미설정 (매출 목표 메뉴에서 연결되면 진행률 표시)</span></td></tr>`;
+      $('d-info').innerHTML=`<table>
+        <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${c.stage_name||'—'}</td></tr>
+        <tr><th>회사 종류</th><td>${c.customer_type||'—'}</td><th>RFC</th><td>${c.rfc||'—'}</td></tr>
+        <tr><th>연락처</th><td>${c.contact||'—'} ${c.phone?'· '+c.phone:''}</td><th>기본할인 / 외상일</th><td>${c.discount}% / ${c.credit_days}일</td></tr>
+        <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
+        <tr><th>${sm.year||''} 누적 실적</th><td><b style="color:var(--income)">${fmt(actual)}</b></td><th>연말 매출목표</th><td>${target!=null?fmt(target):'<span class="hint" style="margin:0">미설정</span>'}</td></tr>
+        ${progressRow}
+        ${c.memo?`<tr><th>메모</th><td colspan="3">${c.memo}</td></tr>`:''}
+      </table>`;
+      if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
+      $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
+        <tbody>${d.invoices.map(i=>`<tr>
+          <td>${i.inv_date}</td><td>${i.due_date||'—'}</td>
+          <td class="num">${fmt(i.total_mxn)}</td><td class="num">${fmt(i.paid)}</td>
+          <td class="num">${fmt(i.outstanding)}</td>
+          <td>${i.overdue?'<span class="pill" style="background:#fbe9e7;color:var(--expense)">연체</span>':(i.outstanding>0?'<span class="pill" style="background:#fff7e0;color:#9a6512">미수</span>':'<span class="pill" style="background:#e7f3ee;color:var(--income)">완납</span>')}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }catch(e){$('d-info').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ===== 팀 권한 관리(디렉터) =====
+  async function loadTeamUsers(){
+    const b=$('teamUsers');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/team-admin/users',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      b.innerHTML=`<table><thead><tr><th>이름</th><th>역할</th><th>소속 팀</th><th>상대팀 열람</th></tr></thead>
+        <tbody>${items.map(u=>`<tr>
+          <td><b>${u.name}</b></td><td>${u.role}</td>
+          <td><select onchange="setTeam(${u.id},this.value)" style="width:auto;padding:5px 8px">
+            <option value="">미지정</option>${adminTeams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
+          <td>${adminTeams.filter(t=>t.is_sales!==false).map(t=>{
+            const g=(u.grants||[]).find(x=>x.team_id===t.id);
+            const isOwn=u.team_id===t.id;
+            if(isOwn)return `<span class="hint" style="margin:0">${t.name}(소속) </span>`;
+            return `<label style="font-size:12px;margin-right:8px"><input type="checkbox" style="width:auto" ${g?'checked':''} onchange="toggleGrant(${u.id},${t.id},this.checked)"> ${t.name}</label>`;
+          }).join('')}</td>
+        </tr>`).join('')}</tbody></table>
+        <div class="hint">소속 팀을 정하면 그 팀 고객을 봅니다. 상대팀 체크 시 그 팀도 열람할 수 있습니다(디렉터 부여).</div>`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function setTeam(userId,teamId){
+    try{await fetch(session.api+'/api/team-admin/users/'+userId+'/team',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId?Number(teamId):null})});loadTeamUsers();}catch(e){alert('실패');}
+  }
+  async function toggleGrant(userId,teamId,on){
+    try{
+      if(on)await fetch(session.api+'/api/team-admin/users/'+userId+'/grant',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId})});
+      else await fetch(session.api+'/api/team-admin/users/'+userId+'/grant/'+teamId,{method:'DELETE',headers:auth()});
+      loadTeamUsers();
+    }catch(e){alert('실패');}
+  }
+
+  // 탭 전환
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+    const tab=t.dataset.tab;
+    $('tab-list').classList.toggle('hidden',tab!=='list');
+    $('tab-team').classList.toggle('hidden',tab!=='team');
+    if(tab==='team')loadTeamUsers();
+  }));
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+
+  // ===== 엑셀 일괄 등록 =====
+  let upRows=null;
+  async function downloadTemplate(){
+    let headers=['고객코드','고객명','팀','회사종류','RFC','담당자','단계','연락처','전화','할인율','외상일','메모'];
+    try{const d=await fetch(session.api+'/api/customers/template',{headers:auth()}).then(r=>r.json());if(d.headers)headers=d.headers;}catch(e){}
+    const teamNames=(teams||[]).map(t=>t.name).join(' / ')||'01_Monterrey / 02_Merida';
+    const ws=XLSX.utils.aoa_to_sheet([headers,
+      ['', '예시고객', (teams[0]?.name||'01_Monterrey'), 'Mayoreo','XAXX010101000','', '01_잠재','담당연락','8112345678','5','30','메모예시']]);
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'고객');
+    XLSX.writeFile(wb,'refatrix_고객양식.xlsx');
+  }
+  function handleFile(file){
+    const m=$('upMsg');m.style.display='none';
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        upRows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''}).filter(r=>r.some(c=>String(c).trim()!==''));
+        if(upRows.length<2){m.className='msg err';m.style.display='block';m.textContent='데이터가 없습니다.';return;}
+        const res=await fetch(session.api+'/api/customers/import/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:upRows})});
+        const d=await res.json();
+        if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='미리보기 실패: '+(d.error==='missing_name_column'?'“고객명” 열이 없습니다(양식을 사용하세요).':(d.error||res.status));return;}
+        renderPreview(d);
+      }catch(err){m.className='msg err';m.style.display='block';m.textContent='파일을 읽지 못했습니다.';}
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  function renderPreview(d){
+    const errs=d.errors||[];
+    const ups=d.update||[];
+    const changedUps=ups.filter(u=>!u.unchanged);
+    const sameUps=ups.filter(u=>u.unchanged);
+    let html=`<div style="margin-top:10px;font-size:13px">총 ${d.total}행 — <b style="color:var(--income)">신규 ${d.create.length}</b> · <b style="color:var(--gold)">갱신 ${changedUps.length}</b> · <span class="hint" style="margin:0">변동없음 ${sameUps.length}</span>${errs.length?` · <b style="color:var(--expense)">오류 ${errs.length}</b>`:''}</div>`;
+    // 신규 목록
+    if(d.create.length){
+      html+='<div style="font-weight:700;margin-top:10px;font-size:13px">신규 등록</div><table><thead><tr><th>고객명</th><th>팀</th><th>종류</th></tr></thead><tbody>'+
+        d.create.map(c=>`<tr><td>${c.name}</td><td>${c.team}</td><td>${c.customer_type||'—'}</td></tr>`).join('')+'</tbody></table>';
+    }
+    // 변경되는 기존 고객(필드별 이전→이후)
+    if(changedUps.length){
+      html+='<div style="font-weight:700;margin-top:10px;font-size:13px">기존 고객 변경 내역</div><table><thead><tr><th>고객(코드)</th><th>변경 항목</th></tr></thead><tbody>'+
+        changedUps.map(u=>`<tr><td>${u.name} <span class="hint" style="margin:0">${u.code}</span></td>
+          <td>${u.changes.map(ch=>`<div><b>${ch.field}</b>: <span style="color:var(--muted)">${ch.from??'(빈값)'}</span> → <b>${ch.to??'(빈값)'}</b></div>`).join('')}</td></tr>`).join('')+'</tbody></table>';
+    }
+    if(sameUps.length){
+      html+=`<div class="hint">변동 없는 기존 고객 ${sameUps.length}건은 그대로 둡니다: ${sameUps.map(u=>u.name).join(', ')}</div>`;
+    }
+    if(errs.length){
+      html+='<div style="font-weight:700;margin-top:10px;font-size:13px;color:var(--expense)">오류(반영 제외)</div><table><thead><tr><th>고객명</th><th>코드</th><th>오류</th></tr></thead><tbody>'+
+        errs.map(e=>`<tr><td>${e.name||'—'}</td><td>${e.code||'—'}</td><td class="over">${e.errors.join(', ')}</td></tr>`).join('')+'</tbody></table>';
+    }
+    const willApply=d.create.length+changedUps.length;
+    html+=`<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn gold sm" id="commitBtn" ${willApply?'':'disabled'}>${willApply?`${willApply}건 반영하기`:'반영할 변경 없음'}</button><button class="btn ghost sm" id="cancelUp">취소</button></div>`;
+    $('upPreview').innerHTML=html;
+    if($('commitBtn'))$('commitBtn').onclick=commitUpload;
+    $('cancelUp').onclick=()=>{$('upPreview').innerHTML='';upRows=null;};
+  }
+  async function commitUpload(){
+    const m=$('upMsg');m.className='msg';m.style.display='none';
+    if(!upRows)return;
+    $('commitBtn').disabled=true;$('commitBtn').textContent='반영 중…';
+    try{
+      const res=await fetch(session.api+'/api/customers/import/commit',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:upRows})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='반영 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=`반영 완료 — 신규 ${d.created} · 갱신 ${d.updated}${d.skipped?` · 건너뜀 ${d.skipped}`:''}.`;
+      $('upPreview').innerHTML='';upRows=null;loadCustomers();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('commitBtn')&&($('commitBtn').disabled=false);}
+  }
+  $('tmplBtn').addEventListener('click',downloadTemplate);
+  $('upDrop').addEventListener('click',()=>$('upFile').click());
+  $('upFile').addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
+  $('upDrop').addEventListener('dragover',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--brand)';});
+  $('upDrop').addEventListener('dragleave',()=>$('upDrop').style.borderColor='var(--line)');
+  $('upDrop').addEventListener('drop',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--line)';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+  $('searchBtn').addEventListener('click',loadCustomers);
+  $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
+  $('teamFilter').addEventListener('change',loadCustomers);
+  $('newCustBtn').addEventListener('click',()=>showForm(null));
+  $('f-cancel').addEventListener('click',()=>$('custForm').classList.add('hidden'));
+  $('f-save').addEventListener('click',saveCustomer);
+  $('editBtn').addEventListener('click',()=>{if(curCustomer)showForm(curCustomer);});
+  $('d-back').addEventListener('click',()=>$('detailCard').classList.add('hidden'));
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

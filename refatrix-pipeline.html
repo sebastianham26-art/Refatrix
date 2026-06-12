@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 영업활동 · 단계관리</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1160px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.gold{background:var(--gold)}.btn.sm{padding:6px 11px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .code{font-weight:700;color:var(--brand)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .bottle{background:#fbe9e7;color:var(--expense)}
+  .stale{color:var(--expense);font-weight:700}
+  /* 파이프라인 칸반 */
+  .kanban{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;margin-top:10px}
+  .kcol{flex:0 0 200px;min-width:200px;border:1px solid var(--line);border-radius:12px;background:#faf8f3;display:flex;flex-direction:column}
+  .kcol.bottle{border-color:var(--expense);box-shadow:0 0 0 2px #f6d8d2 inset}
+  .khead{padding:10px;text-align:center;border-bottom:1px solid var(--line);border-radius:12px 12px 0 0}
+  .khead .kname{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fff}
+  .khead .kcount{font-size:22px;font-weight:800;color:#fff;line-height:1.1}
+  .kbody{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:40px}
+  .kcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--c,#bbb);border-radius:8px;padding:8px 10px;cursor:pointer}
+  .kcard:hover{border-color:var(--brand)}
+  .kcard .kc-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .kcard .kc-name{font-weight:700;font-size:13px}
+  .kcard .kc-days{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
+  .kcard .kc-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .dirbadge{display:inline-block;background:var(--expense);color:#fff;font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px;margin-left:4px}
+  .legend{display:flex;gap:14px;justify-content:flex-end;font-size:11px;color:var(--muted);margin-top:8px}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .bottlecard{background:#fff7e0;border:1px solid #ecd9a0;border-radius:10px;padding:12px;margin-top:12px}
+  .teampick{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .teambtn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .teambtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .st-open{background:#fff4d6;color:#8a6512}.st-read{background:#e7eef3;color:#2b5a78}.st-done{background:#e7f3ee;color:var(--income)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">영업활동 · 고객 단계관리 · 병목 분석</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <h2 style="margin:0 0 6px">팀 선택</h2>
+      <div class="teampick" id="teamPick"></div>
+    </div>
+
+    <!-- 파이프라인 칸반 + 병목 -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">고객 개발 현황 (Pipeline)</h2>
+      </div>
+      <div class="hint" style="margin-top:0">단계별로 고객 카드가 쌓입니다. 카드의 경과일 색으로 진행 속도를, 단계 헤더의 인원수로 병목을 봅니다. 카드를 누르면 미팅·지시를 다룹니다.</div>
+      <div id="kanban"></div>
+      <div class="legend"><span><i class="dot" style="background:var(--income)"></i>7일 이하</span><span><i class="dot" style="background:var(--gold)"></i>8–14일</span><span><i class="dot" style="background:var(--expense)"></i>15일 이상</span></div>
+      <div id="bottleneck"></div>
+    </div>
+
+    <!-- 디렉터 지시 현황판 -->
+    <div class="card hidden" id="boardCard">
+      <h2>디렉터 지시 · F/UP 현황</h2>
+      <div id="boardCounts"></div>
+      <div id="board"></div>
+    </div>
+
+    <!-- 미팅 작성 폼(고객 선택 시) -->
+    <div class="card hidden" id="meetCard">
+      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0" id="meetTitle">미팅 기록</h2><button class="btn ghost sm" id="meetClose">닫기</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+        <div><label>미팅 일자</label><input id="m-date" type="date"></div>
+        <div style="flex:1;min-width:220px"><label>미팅 내용</label><textarea id="m-note" rows="2" style="width:100%"></textarea></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+        <div><label><input type="checkbox" id="m-advance" style="width:auto"> 단계 진전</label></div>
+        <div><label>새 단계</label><select id="m-stage" disabled></select></div>
+        <button class="btn gold sm" id="m-save">미팅 저장</button>
+      </div>
+      <div class="msg" id="m-msg"></div>
+      <div style="font-weight:700;margin-top:12px">미팅 이력</div>
+      <div id="m-history"></div>
+
+      <!-- 디렉터 지시 / F/UP -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <div style="font-weight:700">디렉터 지시 · F/UP</div>
+        <div id="dirCompose"></div>
+        <div id="dirList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let teams=[], stages=[], curTeam=null, data=null, curCust=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const isDirector=()=> session.user && session.user.role==='director';
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      $('m-date').value=new Date().toISOString().slice(0,10);
+      await loadTeams(); loadPipeline();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadTeams(){
+    try{teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){teams=[];}
+    $('teamPick').innerHTML=`<div class="teambtn ${curTeam==null?'on':''}" onclick="selectTeam(null)">전체</div>`+
+      teams.map(t=>`<div class="teambtn ${curTeam===t.id?'on':''}" onclick="selectTeam(${t.id})">${t.name}</div>`).join('');
+  }
+  function selectTeam(id){curTeam=id;loadTeams();loadPipeline();}
+
+  async function loadPipeline(){
+    $('kanban').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const url=session.api+'/api/pipeline'+(curTeam?('?team_id='+curTeam):'');
+      data=await fetch(url,{headers:auth()}).then(r=>r.json());
+      stages=data.stages||[];
+      renderKanban();renderBottleneck();
+      if(isDirector())loadBoard();
+    }catch(e){$('kanban').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function dayColor(d){ if(d==null)return '#bbb'; if(d<=7)return 'var(--income)'; if(d<=14)return 'var(--gold)'; return 'var(--expense)'; }
+  function dayPill(d){ if(d==null)return ''; const bg=d<=7?'#e7f3ee':(d<=14?'#fff7e0':'#fbe9e7'); const col=d<=7?'var(--income)':(d<=14?'#9a6512':'var(--expense)'); return `<span class="kc-days" style="background:${bg};color:${col}">${d}일</span>`; }
+
+  function renderKanban(){
+    const pipe=data.pipeline||[];
+    const bottleId=data.bottleneck?String(data.bottleneck.stage_id):null;
+    const byStage={}; (data.customers||[]).forEach(c=>{(byStage[c.stage_id] ||= []).push(c);});
+    $('kanban').innerHTML='<div class="kanban">'+pipe.map(s=>{
+      const isB=String(s.stage_id)===bottleId;
+      const cs=(byStage[s.stage_id]||[]).slice().sort((a,b)=>(b.days_in_stage||0)-(a.days_in_stage||0));
+      const shade=Math.max(0,Math.min(4,Math.round(s.sort_order/15)));
+      const greens=['#cfe0d8','#9cc3b4','#5e9b86','#2f7560','#143D34'];
+      const hbg=greens[shade]||'#143D34';
+      return `<div class="kcol ${isB?'bottle':''}">
+        <div class="khead" style="background:${hbg}"><div class="kname">${s.name.replace(/^\d+_/,'')}${isB?' ⚠':''}</div><div class="kcount">${s.count}</div></div>
+        <div class="kbody">${cs.map(c=>`<div class="kcard" style="--c:${dayColor(c.days_in_stage)}" onclick="openMeet(${c.id})">
+          <div class="kc-top"><span class="kc-name">${c.name}${c.open_directives>0?`<span class="dirbadge">지시 ${c.open_directives}</span>`:''}</span>${dayPill(c.days_in_stage)}</div>
+          <div class="kc-meta">진입 ${c.stage_since?c.stage_since.slice(5):'—'} · ${c.days_in_stage==null?'—':c.days_in_stage+'일 경과'}${c.last_meeting?' · 미팅 '+c.last_meeting.slice(5):''}</div>
+        </div>`).join('')||'<div class="hint" style="margin:4px 0 0;text-align:center">—</div>'}</div>
+      </div>`;
+    }).join('')+'</div>';
+  }
+
+  function renderBottleneck(){
+    const b=data.bottleneck;
+    if(!b){$('bottleneck').innerHTML='';return;}
+    $('bottleneck').innerHTML=`<div class="bottlecard"><b>현재 병목 단계: ${b.name}</b> — 고객 ${b.count}명이 평균 ${b.avg_days}일 머물러 있습니다. 이 단계에서 다음으로 넘기는 것이 지금 가장 개선이 필요한 지점입니다. 빨간 경과일 카드를 우선 미팅·지시 대상으로 잡으세요.</div>`;
+  }
+
+  // 디렉터 지시 현황판
+  async function loadBoard(){
+    $('boardCard').classList.remove('hidden');
+    try{
+      const d=await fetch(session.api+'/api/directives/board',{headers:auth()}).then(r=>r.json());
+      const c=d.counts||{};
+      $('boardCounts').innerHTML=`<div style="display:flex;gap:10px;margin-bottom:8px"><span class="pill st-open">미읽음 ${c.open||0}</span><span class="pill st-read">읽음·진행 ${c.read||0}</span><span class="pill st-done">완료 ${c.done||0}</span></div>`;
+      const items=d.items||[];
+      if(!items.length){$('board').innerHTML='<div class="hint">작성한 지시가 없습니다.</div>';return;}
+      $('board').innerHTML='<table><thead><tr><th>고객</th><th>지시 내용</th><th>상태</th><th>읽음</th><th>완료</th></tr></thead><tbody>'+
+        items.map(x=>`<tr>
+          <td><b>${x.customer_name}</b> <span class="hint" style="margin:0">${x.code} · ${x.team_name||''}</span><br><span class="hint" style="margin:0">작성 ${x.created_at}</span></td>
+          <td style="max-width:280px;white-space:normal">${x.note}${x.done_note?`<br><span class="hint" style="margin:0">완료메모: ${x.done_note}</span>`:''}</td>
+          <td><span class="pill st-${x.status}">${ {open:'미읽음',read:'읽음·진행',done:'완료'}[x.status] }</span></td>
+          <td class="hint" style="margin:0">${x.read_at?`${x.read_at}<br>${x.read_name||''}`:'—'}</td>
+          <td class="hint" style="margin:0">${x.done_at?`${x.done_at}<br>${x.done_name||''}`:'—'}</td>
+        </tr>`).join('')+'</tbody></table>';
+    }catch(e){$('board').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function openMeet(custId){
+    const c=(data.customers||[]).find(x=>x.id===custId);curCust=c||{id:custId};
+    $('meetCard').classList.remove('hidden');
+    $('meetTitle').textContent=`미팅 기록 — ${curCust.name||''} (${curCust.code||''}) · 현재 ${curCust.stage_name||'미지정'}`;
+    $('m-note').value='';$('m-advance').checked=false;$('m-msg').style.display='none';
+    $('m-stage').innerHTML=stages.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    $('m-stage').disabled=true;
+    if(curCust.stage_id)$('m-stage').value=curCust.stage_id;
+    if($('meetCard').scrollIntoView)$('meetCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    loadHistory(custId);
+    loadDirectives(custId);
+  }
+
+  // 지시: 디렉터는 작성 폼, 모두 목록 + 읽음/완료 버튼
+  async function loadDirectives(custId){
+    if(isDirector()){
+      $('dirCompose').innerHTML=`<div style="display:flex;gap:8px;margin-top:6px"><textarea id="d-note" rows="2" style="flex:1" placeholder="이 고객에 대한 지시·피드백을 적으세요"></textarea><button class="btn sm" id="d-send" style="align-self:flex-end">지시 보내기</button></div>`;
+      $('d-send').onclick=()=>sendDirective(custId);
+    } else $('dirCompose').innerHTML='';
+    $('dirList').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/directives?customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){$('dirList').innerHTML='<div class="hint">지시가 없습니다.</div>';return;}
+      $('dirList').innerHTML=items.map(x=>{
+        const stLabel={open:'미읽음',read:'읽음·진행',done:'완료'}[x.status];
+        let actions='';
+        if(!isDirector()){
+          if(x.status==='open')actions=`<button class="btn sm" onclick="readDirective(${x.id})">읽음 확인</button> <button class="btn ghost sm" onclick="doneDirective(${x.id})">완료</button>`;
+          else if(x.status==='read')actions=`<button class="btn gold sm" onclick="doneDirective(${x.id})">F/UP 완료</button>`;
+        }
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="pill st-${x.status}">${stLabel}</span><span class="hint" style="margin:0">${x.by_name||''} · ${x.created_at}</span></div>
+          <div style="margin-top:6px">${x.note}</div>
+          <div class="hint" style="margin-top:6px">${x.read_at?`읽음 ${x.read_at} (${x.read_name||''})`:'아직 안 읽음'}${x.done_at?` · 완료 ${x.done_at} (${x.done_name||''})`:''}${x.done_note?`<br>완료메모: ${x.done_note}`:''}</div>
+          ${actions?`<div style="margin-top:8px">${actions}</div>`:''}
+        </div>`;
+      }).join('');
+    }catch(e){$('dirList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function sendDirective(custId){
+    const note=$('d-note').value.trim();if(!note){alert('지시 내용을 입력하세요.');return;}
+    try{
+      const res=await fetch(session.api+'/api/directives',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:custId,note})});
+      const d=await res.json();
+      if(!res.ok||d.error){alert('실패: '+(d.error||res.status));return;}
+      $('d-note').value='';loadDirectives(custId);loadPipeline();
+    }catch(e){alert('서버 연결 실패');}
+  }
+  async function readDirective(id){
+    try{await fetch(session.api+'/api/directives/'+id+'/read',{method:'POST',headers:auth()});loadDirectives(curCust.id);loadPipeline();}catch(e){alert('실패');}
+  }
+  async function doneDirective(id){
+    const note=prompt('F/UP 완료 메모(선택):')||null;
+    try{await fetch(session.api+'/api/directives/'+id+'/done',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done_note:note})});loadDirectives(curCust.id);loadPipeline();}catch(e){alert('실패');}
+  }
+  async function loadHistory(custId){
+    $('m-history').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/meetings?customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){$('m-history').innerHTML='<div class="hint">미팅 이력이 없습니다.</div>';return;}
+      $('m-history').innerHTML='<table><thead><tr><th>일자</th><th>내용</th><th>단계 변화</th><th>작성</th></tr></thead><tbody>'+
+        items.map(m=>`<tr><td>${m.meeting_date}</td><td>${m.note||'—'}</td>
+          <td>${m.advanced?`${m.stage_before||'—'} → <b>${m.stage_after||'—'}</b>`:'<span class="hint" style="margin:0">유지</span>'}</td>
+          <td>${m.by_name||'—'}</td></tr>`).join('')+'</tbody></table>';
+    }catch(e){$('m-history').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function saveMeet(){
+    const m=$('m-msg');m.className='msg';m.style.display='none';
+    const advance=$('m-advance').checked;
+    const body={customer_id:curCust.id,meeting_date:$('m-date').value,note:$('m-note').value.trim()||null,
+      advance,new_stage_id:advance?Number($('m-stage').value):null};
+    if(!body.meeting_date){m.className='msg err';m.style.display='block';m.textContent='미팅 일자를 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/meetings',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='저장 실패: '+(d.error==='forbidden_team'?'이 팀의 고객을 편집할 권한이 없습니다.':(d.error||res.status));return;}
+      m.className='msg ok';m.style.display='block';m.textContent=d.advanced?'미팅 저장 + 단계가 진전되었습니다.':'미팅을 저장했습니다.';
+      loadHistory(curCust.id);loadPipeline();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('m-advance').addEventListener('change',e=>{$('m-stage').disabled=!e.target.checked;});
+  $('m-save').addEventListener('click',saveMeet);
+  $('meetClose').addEventListener('click',()=>$('meetCard').classList.add('hidden'));
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 포털</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1200px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  /* 프로세스 지도 */
+  .flowlabel{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px}
+  .flow{display:flex;gap:8px;align-items:stretch;overflow-x:auto;padding-bottom:6px}
+  .step{position:relative;flex:1;min-width:128px;border:1px solid var(--line);border-radius:12px;background:#faf8f3;padding:12px 10px 10px;cursor:pointer;transition:border-color .15s}
+  .step:hover{border-color:var(--brand)}
+  .step.locked{opacity:.45;cursor:default}
+  .step .num{font-size:10px;color:var(--muted);font-weight:700}
+  .step .nm{font-size:13px;font-weight:800;color:var(--brand);margin-top:2px}
+  .step .ds{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.35}
+  .arrow{align-self:center;color:#c9c2b2;font-size:16px;flex:0 0 auto}
+  .badge{position:absolute;top:-8px;right:-6px;background:var(--expense);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .badge.gold{background:var(--gold)}
+  /* 위젯 */
+  .widgets{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:16px}
+  .kpi{font-size:26px;font-weight:800;color:var(--brand)}
+  .kpi small{font-size:13px;color:var(--muted);font-weight:600}
+  .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}
+  .bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
+  .pipe{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  .prow{display:flex;align-items:center;gap:8px;font-size:12px}
+  .pname{width:84px;font-weight:600;flex:0 0 auto}
+  .pbar{flex:1;background:#f0ece2;border-radius:5px;height:14px;overflow:hidden}
+  .pbar>div{height:100%;background:var(--brand)}
+  .pn{width:26px;text-align:right;font-weight:700;flex:0 0 auto}
+  .pendlist{margin-top:6px}
+  .pend{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;cursor:pointer;font-size:13px}
+  .pend:hover{border-color:var(--brand)}
+  .pend b.n{color:var(--expense)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">포털 · 업무 프로세스</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+    <div class="hint">각 화면 HTML 파일이 이 포털과 같은 폴더에 있어야 이동이 됩니다.</div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 해야 할 일 (펜딩 요약) -->
+    <div class="card" id="pendCard">
+      <h2>지금 해야 할 일</h2>
+      <div class="pendlist" id="pendList"></div>
+    </div>
+
+    <!-- 프로세스 지도 -->
+    <div class="card">
+      <h2>업무 프로세스 지도 <span class="hint" style="display:inline;margin:0">— 단계를 누르면 해당 화면으로 이동합니다. 빨간 숫자는 처리할 건수.</span></h2>
+
+      <div class="flowlabel">① Customer View — 고객 개발 → 매출 → 수금</div>
+      <div class="flow" id="flowCustomer"></div>
+
+      <div class="flowlabel">② Product View — 제품 → 목표 → 예산 → 비용·실적</div>
+      <div class="flow" id="flowProduct"></div>
+    </div>
+
+    <!-- 위젯 -->
+    <div class="widgets">
+      <div class="card" style="margin-top:0" id="perfCard">
+        <h2>영업 성과 (올해)</h2>
+        <div id="perfBox"><div class="hint">—</div></div>
+      </div>
+      <div class="card" style="margin-top:0" id="pipeCard">
+        <h2>고객 개발 진행 (파이프라인)</h2>
+        <div id="pipeBox"><div class="hint">—</div></div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <h2>일정 · 공지 · Todo</h2>
+        <div class="hint" style="margin-top:0">다음 단계에서 추가됩니다 — 달력, 공지, Tarea/Todo 리스트.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let sum=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+
+  // 화면 정의: key=페이지 권한 키, file=HTML 파일명
+  const SCREENS={
+    products:{file:'refatrix-products.html',name:'제품마스터'},
+    customers:{file:'refatrix-customers.html',name:'고객관리'},
+    targets:{file:'refatrix-targets.html',name:'매출목표'},
+    pipeline:{file:'refatrix-pipeline.html',name:'영업활동'},
+    sales:{file:'refatrix-sales.html',name:'매출등록'},
+    marketing:{file:'refatrix-marketing.html',name:'마케팅배분'},
+    finance:{file:'refatrix-finance.html',name:'재무'},
+    budget:{file:'refatrix-budget.html',name:'예산'},
+    importcost:{file:'refatrix-importcost.html',name:'수입원가'},
+    users:{file:'refatrix-users.html',name:'사용자·권한'},
+  };
+
+  function canSee(key){ return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
+
+  // 화면 열기: 토큰을 URL 해시로 전달(방법 A)
+  function goScreen(key){
+    const s=SCREENS[key];if(!s)return;
+    if(!canSee(key)){alert('이 화면의 권한이 없습니다. 디렉터에게 요청하세요.');return;}
+    const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
+    window.open(s.file+hash,'_blank');
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      await loadSummary();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadSummary(){
+    try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
+    renderFlows();renderPending();renderPerf();renderPipe();
+  }
+
+  function step(num,name,desc,key,badge,badgeGold){
+    const locked=!canSee(key);
+    const b=badge>0?`<span class="badge ${badgeGold?'gold':''}">${badge}</span>`:'';
+    return `<div class="step ${locked?'locked':''}" onclick="goScreen('${key}')">${b}
+      <div class="num">${num}</div><div class="nm">${name}</div><div class="ds">${desc}</div></div>`;
+  }
+  const AR='<div class="arrow">›</div>';
+
+  function renderFlows(){
+    const b=sum?sum.badges||{}:{};
+    // Customer View: 신규발굴 → 파이프라인 → 견적·수주 → 매출 → 수금
+    $('flowCustomer').innerHTML=[
+      step('C1','신규발굴','고객 등록·엑셀 업로드','customers',0),
+      AR,
+      step('C2','파이프라인 개발','칸반·미팅·디렉터 지시','pipeline',(b.directives_unread||0)+(sum&&sum.isDirector?(b.directives_open_all||0):0),false),
+      AR,
+      step('C3','정체 관리','30일+ 정체 고객 집중','pipeline',b.stalled_customers||0,true),
+      AR,
+      step('C4','매출 등록','인보이스·부분출고','sales',b.sales_change_approvals||0),
+      AR,
+      step('C5','수금 관리','AR·연체 추적','customers',b.overdue_customers||0),
+    ].join('');
+    // Product View: 제품 → 목표 → 마케팅예산 → 비용·재무 → 실적
+    $('flowProduct').innerHTML=[
+      step('P1','제품·카탈로그','SKU·차량적용 보완','products',0),
+      AR,
+      step('P2','매출 목표 수립','회사→팀→고객 배분','targets',(b.target_approvals||0)+(b.target_rejected||0)),
+      AR,
+      step('P3','마케팅 배분','메뉴판 수량→비용','marketing',(b.marketing_approvals||0)+(b.marketing_rejected||0)+(b.marketing_over_months||0)),
+      AR,
+      step('P4','비용·재무','거래·캐시플로','finance',0),
+      AR,
+      step('P5','실적 반영','목표 대비 달성률','targets',0),
+    ].join('');
+  }
+
+  function renderPending(){
+    const b=sum?sum.badges||{}:{};
+    const items=[];
+    const add=(n,label,key)=>{if(n>0)items.push({n,label,key});};
+    if(sum&&sum.isDirector){
+      add(b.target_approvals,'매출목표 승인 대기','targets');
+      add(b.marketing_approvals,'마케팅 계획 승인 대기','marketing');
+      add(b.sales_change_approvals,'매출 수정/삭제 승인 대기','sales');
+      add(b.directives_open_all,'지시 미완료(전체)','pipeline');
+    }
+    add(b.directives_unread,'미읽음 디렉터 지시','pipeline');
+    add(b.stalled_customers,'30일 이상 정체 고객','pipeline');
+    add(b.target_rejected,'반려된 매출목표','targets');
+    add(b.marketing_rejected,'반려된 마케팅 계획','marketing');
+    add(b.marketing_over_months,'마케팅 예산 초과 월','marketing');
+    add(b.overdue_customers,'연체 AR 고객','customers');
+    $('pendList').innerHTML=items.length?items.map(i=>`<div class="pend" onclick="goScreen('${i.key}')"><span>${i.label}</span><b class="n">${i.n}건</b></div>`).join('')
+      :'<div class="hint">처리할 건이 없습니다. 모두 정리되어 있습니다 ✓</div>';
+  }
+
+  function renderPerf(){
+    if(!sum||!sum.perf){$('perfCard').classList.add('hidden');return;}
+    const p=sum.perf;const rate=p.rate==null?0:Math.min(100,p.rate);
+    $('perfBox').innerHTML=`<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률 (${p.year})</small></div>
+      <div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div>
+      <div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)} MXN</div>`;
+  }
+  function renderPipe(){
+    if(!sum||!sum.pipeline||!sum.pipeline.length){$('pipeCard').classList.add('hidden');return;}
+    const maxn=Math.max(1,...sum.pipeline.map(p=>p.count));
+    $('pipeBox').innerHTML='<div class="pipe">'+sum.pipeline.map(p=>
+      `<div class="prow"><div class="pname">${p.name.replace(/^\d+_/,'')}</div><div class="pbar"><div style="width:${Math.round(p.count/maxn*100)}%"></div></div><div class="pn">${p.count}</div></div>`).join('')+'</div>';
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+</script>
+</body>
+</html>

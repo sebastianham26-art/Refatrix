@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 매출 등록</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .lrow{display:flex;gap:8px;margin-top:8px;align-items:flex-end}
+  .lrow>div{flex:1}.lrow .x{flex:0 0 auto}
+  .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+  .suggest{position:absolute;z-index:20;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:230px;overflow:auto;box-shadow:0 8px 20px rgba(0,0,0,.08)}
+  .suggest div{padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3efe6}
+  .suggest div:hover{background:#faf8f3}.suggest .code{font-weight:700;color:var(--brand)}
+  .suggest .meta{font-size:11px;color:var(--muted)}
+  .picked{background:#f0f6f3 !important;border-color:var(--income) !important}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .totals{margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end;font-size:14px}
+  .totals b{font-size:18px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .segb{padding:7px 12px;border:none;background:#fff;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer}
+  .segb.on{background:var(--brand);color:#fff}
+  .segb+.segb{border-left:1px solid var(--line)}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal-cell{border:1px solid var(--line);border-radius:6px;min-height:74px;padding:0;font-size:11px;cursor:pointer;background:#fff;overflow:hidden}
+  .cal-cell.empty{background:transparent;border:none;cursor:default}
+  .cal-cell.weekend{background:#f3f1ec}
+  .cal-daynum{font-weight:700;padding:2px 4px;font-size:11px}
+  .cal-slot{display:flex;justify-content:space-between;padding:1px 4px;line-height:1.5;border-top:1px solid #f0ede6}
+  .cal-slot .k{color:var(--muted);font-size:9px}
+  .cal-dow{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:2px}
+  .cal-dow.we{color:var(--expense)}
+  .pp-over{background:#fdf3f2}
+  .usd-sub{font-size:10px;color:var(--muted)}
+  .sec-sum{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:4px 0 8px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .b-warn{background:#fbe9e7;color:var(--expense)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .tabs{display:flex;gap:8px;margin-top:6px}
+  .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">거래 · 계좌 · 고정비 · 1단계(계좌·거래·잔액)</div></div><div class="who" id="who"></div></div>
+
+  <!-- 로그인 -->
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 환율 배너 -->
+    <div id="fxBanner" style="margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--muted)">환율 불러오는 중…</div>
+
+    <div class="tabs">
+      <div class="tab on" id="tabAcc">계좌</div>
+      <div class="tab" id="tabNew">거래 등록</div>
+      <div class="tab" id="tabTxn">거래 목록</div>
+      <div class="tab" id="tabPay">반제(입금)</div>
+      <div class="tab" id="tabFixed">고정비</div>
+      <div class="tab" id="tabCash">현금흐름</div>
+      <div class="tab" id="tabFx">환율</div>
+      <div class="tab" id="tabApprove">승인 대기</div>
+    </div>
+
+    <!-- 계좌 -->
+    <div class="card" id="accCard">
+      <h2>계좌</h2>
+      <div id="accBody"><div class="hint">불러오는 중…</div></div>
+      <div id="accForm" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row">
+          <div style="flex:2"><label>계좌명</label><input id="a-name" type="text" placeholder="예: BBVA 운영계좌"></div>
+          <div><label>유형</label><input id="a-type" type="text" placeholder="은행/현금"></div>
+          <div><label>통화</label><select id="a-cur"><option>MXN</option><option>USD</option></select></div>
+          <div><label>기초잔액</label><input id="a-open" type="number" step="0.01" value="0"></div>
+          <div><label>개설일</label><input id="a-date" type="date"></div>
+        </div>
+        <button class="btn" id="a-save" style="margin-top:10px">계좌 추가</button>
+        <div class="msg" id="accMsg"></div>
+      </div>
+      <button class="btn ghost sm" id="accAddBtn" style="margin-top:12px">+ 계좌 추가 (디렉터)</button>
+    </div>
+
+    <!-- 거래 등록 -->
+    <div class="card hidden" id="newCard">
+      <h2>거래 등록 (계획에 없던 새 거래)</h2>
+      <div class="hint" style="margin-top:0">예정에 이미 있는 건(고정비·매출 수금 등)은 아래 <b>예정 내역</b>에서 “실적 처리”하세요. 계획에 없던 새 거래만 여기에 입력합니다.</div>
+      <div class="row">
+        <div><label>구분</label><select id="t-dir"><option value="out">지출</option><option value="in">수입</option></select></div>
+        <div><label>상태</label><select id="t-status"><option value="actual">실제(완료)</option><option value="plan">예정</option></select></div>
+        <div style="flex:2"><label>계좌</label><select id="t-acc"></select></div>
+        <div><label>거래일</label><input id="t-date" type="date"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label>계정과목</label><select id="t-cat"></select></div>
+        <div><label>통화</label><select id="t-cur"><option>MXN</option><option>USD</option></select></div>
+        <div><label>금액</label><input id="t-amt" type="number" step="0.01" placeholder="0.00"></div>
+        <div><label>환율(USD일 때)</label><input id="t-fx" type="number" step="0.0001" placeholder="오늘 환율"></div>
+      </div>
+      <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div></div>
+      <div id="t-preview" class="hint"></div>
+      <button class="btn gold" id="t-save" style="margin-top:12px">거래 등록</button>
+      <div class="msg" id="newMsg"></div>
+      <div class="hint">지출을 담당자가 등록하면 디렉터 승인 후 잔액에 반영됩니다. 디렉터가 등록하면 바로 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.</div>
+
+      <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">예정 내역 (실적 처리)</h2>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn ghost sm" id="pp-prev">◀</button>
+            <b id="pp-month" style="font-size:13px"></b>
+            <button class="btn ghost sm" id="pp-next">▶</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:4px">선택한 달의 예정과, 과거에 예정됐지만 아직 실적으로 처리 안 된 건(경과)을 함께 보여줍니다. “실적 처리”를 누르면 실제 날짜·금액으로 전환됩니다.</div>
+        <div id="ppBody"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
+    <!-- 거래 목록 -->
+    <div class="card hidden" id="txnCard">
+      <h2>거래 목록</h2>
+      <div class="row" style="margin-bottom:6px">
+        <div><label>상태</label><select id="f-status"><option value="">전체</option><option value="actual">실제</option><option value="plan">예정</option></select></div>
+        <div><label>구분</label><select id="f-dir"><option value="">전체</option><option value="in">수입</option><option value="out">지출</option></select></div>
+        <div style="flex:2"><label>계좌</label><select id="f-acc"><option value="">전체 계좌</option></select></div>
+        <div><label>시작일</label><input id="f-from" type="date"></div>
+        <div><label>종료일</label><input id="f-to" type="date"></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="f-go">조회</button></div>
+      </div>
+      <div id="txnSummary" class="hint" style="margin:0 0 6px"></div>
+      <div id="txnBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 반제(입금) -->
+    <div class="card hidden" id="payCard">
+      <h2>고객별 반제 (입금 배분)</h2>
+      <div class="row">
+        <div style="flex:2"><label>고객 (미수 있는 고객)</label><select id="p-cust"><option value="">고객 선택…</option></select></div>
+        <div><label>입금일</label><input id="p-date" type="date"></div>
+        <div style="flex:2"><label>입금 계좌</label><select id="p-acc"></select></div>
+        <div><label>입금 총액(MXN)</label><input id="p-amt" type="number" step="0.01" placeholder="받은 금액"></div>
+      </div>
+      <div class="row"><div style="flex:3"><label>메모</label><input id="p-memo" type="text"></div>
+        <div style="display:flex;align-items:flex-end;gap:8px"><button class="btn ghost sm" id="p-auto">오래된 순 자동 배분</button><button class="btn ghost sm" id="p-clear">배분 초기화</button></div></div>
+      <div id="p-advinfo" class="hint" style="margin:6px 0"></div>
+      <div id="p-open"><div class="hint">고객을 선택하면 미반제 인보이스가 오래된 순으로 표시됩니다.</div></div>
+      <div id="p-runbar" style="margin-top:10px;font-size:14px;font-weight:600"></div>
+      <button class="btn gold" id="p-save" style="margin-top:10px">입금 반제 저장</button>
+      <div class="msg" id="payMsg"></div>
+      <div id="p-history" style="margin-top:16px"></div>
+    </div>
+
+    <!-- 고정비 -->
+    <div class="card hidden" id="fixedCard">
+      <h2>고정비 (반복 규칙)</h2>
+      <div class="hint" style="margin-top:0">규칙을 등록한 뒤, 목록의 각 규칙에서 <b>목표 월</b>을 골라 “생성”을 누르면 그 달까지 예정 거래가 만들어집니다(기본값은 가장 먼 월). 더 멀리 필요하면 다시 더 먼 월을 골라 “추가 생성”하세요. 오늘 기준 <b>최대 24개월</b>까지 가능합니다. 실제 지급하면 거래 목록에서 “지급 확인”으로 실제 처리하세요.</div>
+      <div id="fixedBody"><div class="hint">불러오는 중…</div></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn ghost sm" id="rxAddBtn">+ 고정비 규칙 추가 (디렉터)</button>
+        <span class="msg" id="rxGenMsg" style="display:none"></span>
+      </div>
+      <div id="rxForm" class="hidden" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row">
+          <div style="flex:2"><label>이름</label><input id="rx-name" type="text" placeholder="예: 사무실 임차료 / 주급-생산팀"></div>
+          <div><label>구분</label><select id="rx-dir"><option value="out">지출</option><option value="in">수입</option></select></div>
+          <div style="flex:2"><label>계정과목</label><select id="rx-cat"></select></div>
+        </div>
+        <div class="row">
+          <div><label>금액</label><input id="rx-amt" type="number" step="0.01"></div>
+          <div><label>통화</label><select id="rx-cur"><option>MXN</option><option>USD</option></select></div>
+          <div style="flex:2"><label>기본 계좌(선택)</label><select id="rx-acc"></select></div>
+        </div>
+        <div class="row">
+          <div><label>주기</label><select id="rx-freq"><option value="month">매월</option><option value="week">매주</option></select></div>
+          <div id="rx-monthbox"><label>매월 며칠</label><input id="rx-dom" type="number" min="1" max="31" placeholder="1~31"></div>
+          <div id="rx-weekbox" class="hidden"><label>매주 요일</label><select id="rx-wday"><option value="0">일</option><option value="1">월</option><option value="2">화</option><option value="3">수</option><option value="4">목</option><option value="5">금</option><option value="6">토</option></select></div>
+          <div><label>시작일</label><input id="rx-start" type="date"></div>
+          <div><label>종료</label><select id="rx-endtype"><option value="none">종료 없음(무기한)</option><option value="month">종료월 지정</option></select></div>
+          <div id="rx-endbox" class="hidden"><label>종료월</label><input id="rx-end" type="month"></div>
+        </div>
+        <div class="row"><div style="flex:3"><label>메모</label><input id="rx-memo" type="text"></div></div>
+        <button class="btn" id="rx-save" style="margin-top:10px">규칙 저장</button>
+        <div class="msg" id="rxMsg"></div>
+      </div>
+
+      <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">계획 대비 실적 (절감/증가)</h2>
+          <div><label style="display:inline">기간 단위 </label>
+            <select id="var-gran" style="width:auto;display:inline-block"><option value="month">월별</option><option value="week">주별</option></select></div>
+        </div>
+        <div class="hint" style="margin-top:4px">지급 확인된 고정비 실적을 계획과 비교합니다. 실적이 계획보다 적으면 <span style="color:var(--income)">절감</span>, 많으면 <span style="color:var(--expense)">증가</span>입니다.</div>
+        <div id="varBody"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
+    <!-- 현금흐름 -->
+    <div class="card hidden" id="cashCard">
+      <h2>현금흐름</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <div class="seg"><button class="segb on" id="cf-actual" data-v="actual">실제만</button><button class="segb" id="cf-plan" data-v="plan">예정 포함</button></div>
+        <div class="seg"><button class="segb on" id="cf-month" data-v="month">월별</button><button class="segb" id="cf-week" data-v="week">주별</button></div>
+        <div class="seg"><button class="segb on" id="cf-table" data-v="table">표</button><button class="segb" id="cf-cal" data-v="cal">월간달력</button><button class="segb" id="cf-wcal" data-v="wcal">주간달력</button></div>
+        <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
+      </div>
+      <div id="cashBody"><div class="hint">불러오는 중…</div></div>
+      <div id="cashChart" style="margin-top:14px"></div>
+
+      <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">계획 대비 실적 (수금·지출)</h2>
+          <div class="seg"><button class="segb on" id="pa-all" data-v="all">전체</button><button class="segb" id="pa-rec" data-v="recurring">고정비</button><button class="segb" id="pa-oth" data-v="other">기타</button></div>
+        </div>
+        <div class="hint" style="margin-top:4px">계획선(예정 시점·금액)과 실적선(실제 시점·금액)이 벌어지는 구간이 “계획대로 안 된” 지점입니다. 수금과 지출을 따로 봅니다.</div>
+        <div id="paBody"><div class="hint">불러오는 중…</div></div>
+      </div>
+
+      <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
+        <h2 style="margin:0 0 4px">연체 미수</h2>
+        <div class="hint" style="margin-top:0">입금예정일이 지났는데 아직 받지 못한 미수입니다. 받을 때까지 매일 남습니다. 연체일수가 큰 순으로 정렬됩니다.</div>
+        <div id="overdueBody"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
+    <!-- 환율 -->
+    <div class="card hidden" id="fxCard">
+      <h2>환율 요약 (USD → MXN)</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+        <div><label>시작일</label><input id="fx-from" type="date" style="width:auto"></div>
+        <div><label>종료일</label><input id="fx-to" type="date" style="width:auto"></div>
+        <div class="seg" style="height:38px"><button class="segb" id="fx-30" data-d="30">최근 30일</button><button class="segb" id="fx-90" data-d="90">90일</button><button class="segb" id="fx-365" data-d="365">1년</button></div>
+        <button class="btn sm" id="fx-go">조회</button>
+      </div>
+      <div id="fxBody"><div class="hint">기간을 선택하고 조회하세요.</div></div>
+    </div>
+
+    <!-- 승인 대기 -->
+    <div class="card hidden" id="apprCard">
+      <h2>지출 승인 대기 (디렉터)</h2>
+      <div id="apprBody"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="apprMsg"></div>
+      <h2 style="margin-top:20px">거래 변경요청 승인 (디렉터)</h2>
+      <div id="crBody"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="crMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let fxRate=null, fxAsOf=null, fxStale=false, accounts=[], cats=[];
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const isDirector=()=> session.user && session.user.role==='director';
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      $('t-date').value=new Date().toISOString().slice(0,10);
+      if(!isDirector())$('accAddBtn').classList.add('hidden');
+      await loadFx(); await loadCats(); await loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadFx(){
+    try{
+      const d=await fetch(session.api+'/api/fx/usd-mxn',{headers:auth()}).then(r=>r.json());
+      fxRate=Number(d.rate);fxAsOf=d.asOf;fxStale=d.stale;
+      const md=fxAsOf?fxAsOf.slice(5).replace('-','/'):'—';
+      $('fxBanner').innerHTML=`오늘 환율 <b style="color:var(--brand)">USD 1 = MXN ${fxRate.toFixed(4)}</b> <span style="color:var(--muted)">(${fxStale?'최신 못 받음·마지막값':'실시간'}, ${md} 기준, 출처 ${d.source||'—'})</span>`;
+    }catch(e){$('fxBanner').textContent='환율을 불러오지 못했습니다.';}
+  }
+
+  async function loadCats(){
+    try{cats=(await fetch(session.api+'/api/categories',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){cats=[];}
+    refreshCatOptions();
+  }
+  function refreshCatOptions(){
+    const dir=$('t-dir').value;
+    // 수입 = '수익' 그룹, 지출 = 그 외(매출원가·판관비·영업외비용)
+    const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
+    $('t-cat').innerHTML='<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}">${c.code} · ${c.name} (${c.group_name})</option>`).join('');
+  }
+
+  async function loadAccounts(){
+    const b=$('accBody');
+    try{
+      accounts=(await fetch(session.api+'/api/accounts',{headers:auth()}).then(r=>r.json())).items||[];
+      if(!accounts.length){b.innerHTML='<div class="hint">등록된 계좌가 없습니다. 아래에서 추가하세요.</div>';}
+      else b.innerHTML=`<table><thead><tr><th>계좌</th><th>유형</th><th>통화</th><th class="num">기초잔액</th><th class="num">현재 잔액</th><th>비고</th></tr></thead>
+        <tbody>${accounts.map(a=>`<tr class="acc-row" data-id="${a.id}" style="cursor:pointer">
+          <td><b>${a.name}</b></td><td>${a.type||'—'}</td><td>${a.currency}</td>
+          <td class="num">${fmt(a.open_balance)}</td>
+          <td class="num"><b>${fmt(a.balance)}</b> ${a.currency}</td>
+          <td>${a.currency==='USD'&&fxRate?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance*fxRate)} (예상환율 ${fxRate.toFixed(2)})</span>`:'<span class="hint" style="margin:0">클릭하면 거래내역</span>'}</td>
+        </tr>`).join('')}</tbody></table>`;
+      // 거래 등록 계좌 드롭다운
+      $('t-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      // 거래목록 계좌 필터 드롭다운
+      const facc=$('f-acc');const cur=facc.value;
+      facc.innerHTML='<option value="">전체 계좌</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      facc.value=cur;
+      // 계좌 행 클릭 → 그 계좌의 거래내역으로
+      [...b.querySelectorAll('.acc-row')].forEach(row=>row.onclick=()=>{
+        $('f-acc').value=row.dataset.id;$('f-status').value='';$('f-dir').value='';
+        showTab('txn');
+      });
+    }catch(e){b.innerHTML='<div class="hint">계좌를 불러오지 못했습니다.</div>';}
+  }
+
+  async function saveAccount(){
+    const m=$('accMsg');m.className='msg';
+    const name=$('a-name').value.trim();
+    if(!name){m.className='msg err';m.textContent='계좌명을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/accounts',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({name,type:$('a-type').value.trim()||null,currency:$('a-cur').value,open_balance:Number($('a-open').value)||0,open_date:$('a-date').value||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='추가 실패: '+(d.error||res.status);return;}
+      $('a-name').value='';$('a-type').value='';$('a-open').value='0';$('a-date').value='';
+      $('accForm').classList.add('hidden');await loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+
+  function previewTxn(){
+    const cur=$('t-cur').value, amt=Number($('t-amt').value)||0, status=$('t-status').value;
+    const p=$('t-preview');
+    if(cur==='MXN'||!amt){p.textContent=cur==='USD'&&!amt?'':'';if(cur==='MXN'){p.textContent='';}else p.textContent='';return;}
+    const fx=Number($('t-fx').value)||fxRate||0;
+    const mxn=amt*fx;
+    if(status==='plan'){
+      p.innerHTML=`USD ${fmt(amt)} → <b>예상 MXN ${fmt(mxn)}</b> <span style="color:var(--muted)">(예상환율 ${fx.toFixed(4)} 반영${fxAsOf?', '+fxAsOf.slice(5).replace('-','/')+' 기준':''})</span>`;
+    }else{
+      p.innerHTML=`USD ${fmt(amt)} → <b>확정 MXN ${fmt(mxn)}</b> <span style="color:var(--muted)">(확정환율 ${fx.toFixed(4)})</span>`;
+    }
+  }
+
+  async function saveTxn(){
+    const m=$('newMsg');m.className='msg';
+    const amt=Number($('t-amt').value)||0;
+    if(!(amt>0)){m.className='msg err';m.textContent='금액을 입력하세요.';return;}
+    if(!$('t-date').value){m.className='msg err';m.textContent='거래일을 입력하세요.';return;}
+    if($('t-status').value==='actual'&&!$('t-acc').value){m.className='msg err';m.textContent='실제(완료) 거래는 계좌를 반드시 선택하세요. (잔액 반영을 위해)';return;}
+    const cur=$('t-cur').value;
+    const body={account_id:$('t-acc').value?Number($('t-acc').value):null,txn_date:$('t-date').value,direction:$('t-dir').value,
+      amount:amt,currency:cur,fx_rate:cur==='USD'?(Number($('t-fx').value)||fxRate):1,
+      category_code:$('t-cat').value||null,status:$('t-status').value,memo:$('t-memo').value.trim()||null};
+    $('t-save').disabled=true;$('t-save').textContent='등록 중…';
+    try{
+      const res=await fetch(session.api+'/api/transactions',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(d.error||res.status));return;}
+      m.className='msg ok';
+      m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
+      $('t-amt').value='';$('t-memo').value='';$('t-fx').value='';previewTxn();
+      await loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+    finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
+  }
+
+  let txnMap={};
+  async function loadTxns(){
+    const b=$('txnBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    const p=new URLSearchParams();
+    if($('f-status').value)p.set('status',$('f-status').value);
+    if($('f-dir').value)p.set('direction',$('f-dir').value);
+    if($('f-acc').value)p.set('account_id',$('f-acc').value);
+    if($('f-from').value)p.set('from',$('f-from').value);
+    if($('f-to').value)p.set('to',$('f-to').value);
+    try{
+      const items=(await fetch(session.api+'/api/transactions?'+p.toString(),{headers:auth()}).then(r=>r.json())).items||[];
+      // 요약: 예정/실적 × 수입/지출 합계(MXN)
+      let pin=0,pout=0,ain=0,aout=0;
+      items.forEach(t=>{const mxn=t.currency==='USD'&&t.status==='plan'?t.amount*(fxRate||t.fx_rate):t.amount_mxn;
+        if(t.status==='plan'){t.direction==='in'?pin+=mxn:pout+=mxn;}else{t.direction==='in'?ain+=mxn:aout+=mxn;}});
+      const accName=$('f-acc').value?(accounts.find(a=>String(a.id)===$('f-acc').value)||{}).name:'전체 계좌';
+      $('txnSummary').innerHTML=`<b>${accName}</b> · 실적 수입 <span style="color:var(--income)">${fmt(ain)}</span> / 지출 <span style="color:var(--expense)">${fmt(aout)}</span> · 예정 수입 <span style="color:var(--income)">${fmt(pin)}</span> / 지출 <span style="color:var(--expense)">${fmt(pout)}</span> (MXN)`;
+      if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';return;}
+      txnMap={};items.forEach(t=>txnMap[t.id]=t);
+      b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색</div>
+        <table><thead><tr><th>일자</th><th>구분</th><th>계좌</th><th>계정과목</th><th class="num">금액 (MXN)</th><th>상태</th><th>승인</th><th>메모</th></tr></thead>
+        <tbody>${items.map(t=>{
+          const usd=t.currency==='USD';
+          const amtColor=t.direction==='in'?'var(--income)':'var(--expense)';
+          const sign=t.direction==='in'?'+':'−';
+          const planUsd=usd&&t.status==='plan';
+          const mxnVal=planUsd?t.amount*(fxRate||t.fx_rate):t.amount_mxn;
+          // MXN 거래: MXN 하나. USD 거래: 원금액 USD + 환산 MXN(예정=오늘환율, 실제=거래일환율) 병기.
+          const amtCell=usd
+            ? `<div style="color:${amtColor};font-weight:700">${sign}${fmt(t.amount)} USD</div><div class="hint" style="margin:0">${sign}MXN ${fmt(mxnVal)} <span>(${planUsd?'예상 '+(fxRate||t.fx_rate).toFixed(2):'확정 '+Number(t.fx_rate).toFixed(2)})</span></div>`
+            : `<span style="color:${amtColor};font-weight:700">${sign}${fmt(t.amount_mxn)} MXN</span>`;
+          const chg=t.change_status==='edit_pending'?'<span class="badge b-warn">수정 승인대기</span>':(t.change_status==='delete_pending'?'<span class="badge b-warn">삭제 승인대기</span>':'');
+          const editBadge=Number(t.edit_count)>0?`<span class="badge" style="background:#ede4f7;color:#6b3fa0">수정 ${t.edit_count}회</span>`:'';
+          const planBadge=Number(t.change_count)>0?`<span class="badge" style="background:#fff0d6;color:#9a6512" title="${(t.plan_memo||'').replace(/"/g,'&quot;')}">계획대비 변경 ${t.change_count}</span>`:'';
+          const bg=t.status==='actual'?'background:#f4f2ec':'background:#fff';
+          return `<tr class="txn-row" data-id="${t.id}" style="cursor:pointer;${bg}">
+            <td>${String(t.txn_date).slice(0,10)}</td>
+            <td>${t.direction==='in'?'<span class="badge" style="background:#e7f3ee;color:var(--income)">수입</span>':'<span class="badge" style="background:#fde0db;color:var(--expense)">지출</span>'}</td>
+            <td>${t.account_name||'—'}</td>
+            <td>${t.category_code?t.category_code+' · '+(t.category_name||''):'—'}</td>
+            <td class="num">${amtCell}</td>
+            <td>${t.status==='actual'?'실제':'예정'}${t.sales_invoice_id?' · <span class="badge" style="background:#e6f1fb;color:#0c447c">매출#'+t.sales_invoice_id+'</span>':''} ${chg} ${editBadge} ${planBadge}</td>
+            <td>${t.approved?'<span class="badge" style="background:#e7f3ee;color:var(--income)">승인</span>':'<span class="badge b-warn">미승인</span>'}</td>
+            <td>${t.memo||''}</td>
+          </tr>
+          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="8" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
+      [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
+        const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
+        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));}
+        else det.classList.add('hidden');
+      });
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function catOptionsFor(dir,sel){
+    const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
+    return '<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}" ${c.code===sel?'selected':''}>${c.code} · ${c.name}</option>`).join('');
+  }
+  function accOptions(sel){
+    return '<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}" ${String(a.id)===String(sel)?'selected':''}>${a.name} (${a.currency})</option>`).join('');
+  }
+
+  function renderTxnDetail(id,box){
+    const t=txnMap[id];if(!t){box.innerHTML='';return;}
+    if(t.sales_invoice_id){
+      box.innerHTML=`<div class="hint">이 거래는 매출 인보이스 #${t.sales_invoice_id}에서 자동 생성된 항목입니다. 수정·삭제는 매출 화면에서 인보이스를 통해 관리됩니다. (여기서는 변경 불가)</div>`;return;
+    }
+    // 예정 거래: 지급/입금 확인(실제 전환) UI — 날짜·금액 수정 가능
+    if(t.status==='plan'){
+      const isRecur=String(t.memo||'').startsWith('[고정비]');
+      box.innerHTML=`
+        <div style="border:1px solid var(--brand);border-radius:10px;padding:14px;background:#fbfaf6">
+          <div style="font-weight:700;margin-bottom:6px">${t.direction==='in'?'입금 확인':'지급 확인'} (예정 → 실제)</div>
+          <div class="hint" style="margin-top:0">${isRecur?'고정비 예정 항목입니다. ':''}실제 ${t.direction==='in'?'입금':'지급'}의 날짜·금액이 계획과 다르면 수정하세요. 계획값: ${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency} · ${t.plan_date?String(t.plan_date).slice(0,10):String(t.txn_date).slice(0,10)}</div>
+          <div class="row" style="margin-top:8px">
+            <div style="flex:2"><label>계좌</label><select class="cf-acc">${accOptions(t.account_id)}</select></div>
+            <div><label>${t.direction==='in'?'입금':'지급'}일</label><input class="cf-date" type="date" value="${String(t.txn_date).slice(0,10)}"></div>
+            <div><label>실제 금액</label><input class="cf-amt" type="number" step="0.01" value="${t.amount}"></div>
+            ${t.currency==='USD'?'<div><label>환율(USD)</label><input class="cf-fx" type="number" step="0.0001" placeholder="지급일 환율"></div>':''}
+          </div>
+          <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="cf-memo" type="text" placeholder="예: 임대료 인상분 반영"></div></div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn cf-go">${t.direction==='in'?'입금':'지급'} 확인 (실제 반영)</button>
+            <button class="btn ghost cf-planedit">계획 수정</button>
+            <button class="btn ghost cf-cancel">닫기</button>
+          </div>
+          <div class="planedit hidden" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
+            <div class="hint" style="margin-top:0">아직 실제로 전환되지 않은 예정의 <b>계획 금액·날짜</b>를 직접 수정합니다(현금흐름 계획선에 반영). 매출에서 온 수금 계획은 인보이스에 묶여 수정할 수 없습니다.</div>
+            <div class="row" style="margin-top:6px">
+              <div><label>계획일</label><input class="pe-date" type="date" value="${(t.plan_date?String(t.plan_date):String(t.txn_date)).slice(0,10)}"></div>
+              <div><label>계획 금액</label><input class="pe-amt" type="number" step="0.01" value="${t.plan_amount!=null?t.plan_amount:t.amount}"></div>
+              ${t.currency==='USD'?'<div><label>환율(USD)</label><input class="pe-fx" type="number" step="0.0001" placeholder="오늘 환율"></div>':''}
+              <div style="flex:2"><label>수정 사유</label><input class="pe-memo" type="text" placeholder="예: 수금 예정일 연기"></div>
+            </div>
+            <button class="btn sm pe-save" style="margin-top:8px">계획 저장</button>
+          </div>
+          <div class="msg cf-msg"></div>
+        </div>`;
+      box.querySelector('.cf-cancel').onclick=()=>{box.closest('.txn-det').classList.add('hidden');};
+      box.querySelector('.cf-go').onclick=()=>confirmPay(t.id,box);
+      box.querySelector('.cf-planedit').onclick=()=>{box.querySelector('.planedit').classList.toggle('hidden');};
+      box.querySelector('.pe-save').onclick=()=>savePlanEdit(t.id,box);
+      return;
+    }
+    if(!t.editable){box.innerHTML='<div class="hint">이 거래는 여기서 수정할 수 없습니다.</div>';return;}
+    if(t.change_status){box.innerHTML=`<div class="hint">${t.change_status==='edit_pending'?'수정':'삭제'} 승인 대기 중입니다. 디렉터 승인/반려 후 다시 변경할 수 있습니다.</div>`;return;}
+    const directEdit=!t.approved; // 미승인은 바로 수정, 승인된 것은 요청
+    box.innerHTML=`
+      <div style="border:1px solid var(--brand);border-radius:10px;padding:14px;background:#fbfaf6">
+        <div style="font-weight:700;margin-bottom:6px">${directEdit?'거래 수정 (미승인 — 바로 반영)':'거래 수정요청 (승인 후 반영)'}</div>
+        <div class="row">
+          <div><label>구분</label><select class="e-dir"><option value="out" ${t.direction==='out'?'selected':''}>지출</option><option value="in" ${t.direction==='in'?'selected':''}>수입</option></select></div>
+          <div style="flex:2"><label>계좌</label><select class="e-acc">${accOptions(t.account_id)}</select></div>
+          <div><label>거래일</label><input class="e-date" type="date" value="${String(t.txn_date).slice(0,10)}"></div>
+        </div>
+        <div class="row">
+          <div style="flex:2"><label>계정과목</label><select class="e-cat">${catOptionsFor(t.direction,t.category_code)}</select></div>
+          <div><label>통화</label><select class="e-cur"><option ${t.currency==='MXN'?'selected':''}>MXN</option><option ${t.currency==='USD'?'selected':''}>USD</option></select></div>
+          <div><label>금액</label><input class="e-amt" type="number" step="0.01" value="${t.amount}"></div>
+          <div><label>환율(USD)</label><input class="e-fx" type="number" step="0.0001" value="${t.currency==='USD'?t.fx_rate:''}" placeholder="오늘 환율"></div>
+        </div>
+        <div class="row"><div style="flex:3"><label>메모</label><input class="e-memo" type="text" value="${t.memo||''}"></div>
+          ${directEdit?'':'<div style="flex:2"><label>변경 사유</label><input class="e-reason" type="text" placeholder="디렉터 검토용"></div>'}</div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn e-submit">${directEdit?'수정 저장':'수정요청 제출'}</button>
+          ${directEdit?'':'<button class="btn ghost e-del">삭제요청</button>'}
+          <button class="btn ghost e-cancel">닫기</button>
+        </div>
+        <div class="msg e-msg"></div>
+      </div>`;
+    box.querySelector('.e-dir').addEventListener('change',e=>{box.querySelector('.e-cat').innerHTML=catOptionsFor(e.target.value,'');});
+    box.querySelector('.e-cancel').onclick=()=>{box.closest('.txn-det').classList.add('hidden');};
+    box.querySelector('.e-submit').onclick=()=>submitTxnEdit(id,box,directEdit);
+    const del=box.querySelector('.e-del');if(del)del.onclick=()=>deleteTxnRequest(id);
+  }
+
+  async function submitTxnEdit(id,box,directEdit){
+    const m=box.querySelector('.e-msg');m.className='msg e-msg';m.style.display='none';
+    const cur=box.querySelector('.e-cur').value;
+    const payload={account_id:box.querySelector('.e-acc').value?Number(box.querySelector('.e-acc').value):null,
+      txn_date:box.querySelector('.e-date').value,direction:box.querySelector('.e-dir').value,
+      currency:cur,amount:Number(box.querySelector('.e-amt').value)||0,
+      fx_rate:cur==='USD'?(Number(box.querySelector('.e-fx').value)||fxRate):1,
+      category_code:box.querySelector('.e-cat').value||null,memo:box.querySelector('.e-memo').value.trim()||null};
+    if(!(payload.amount>0)){m.className='msg e-msg err';m.style.display='block';m.textContent='금액을 확인하세요.';return;}
+    try{
+      let res;
+      if(directEdit){
+        res=await fetch(session.api+'/api/transactions/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(payload)});
+      }else{
+        const reason=box.querySelector('.e-reason').value.trim()||null;
+        res=await fetch(session.api+'/api/transactions/'+id+'/edit-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({payload,reason})});
+      }
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg e-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      if(directEdit){alert('수정되었습니다.');}else{alert('수정요청이 접수되었습니다. 승인 대기 탭에서 디렉터가 검토·승인합니다.');}
+      loadTxns();loadAccounts();
+    }catch(e){m.className='msg e-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  async function deleteTxnRequest(id){
+    const reason=prompt('삭제 요청 사유를 입력하세요 (디렉터 검토용):','');
+    if(reason===null)return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/delete-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+      const d=await res.json();
+      if(!res.ok||d.error){alert('삭제요청 실패: '+(d.error||res.status));return;}
+      alert('삭제요청이 접수되었습니다. 승인 대기 탭에서 디렉터가 검토·승인합니다.');loadTxns();
+    }catch(e){alert('서버 연결 실패');}
+  }
+
+  async function loadApprovals(){
+    const b=$('apprBody');b.innerHTML='<div class="hint">불러오는 중…</div>';$('apprMsg').className='msg';
+    try{
+      const res=await fetch(session.api+'/api/transactions/pending-approval',{headers:auth()});
+      if(res.status===403){b.innerHTML='<div class="hint">디렉터만 볼 수 있습니다.</div>';return;}
+      const items=(await res.json()).items||[];
+      if(!items.length){b.innerHTML='<div class="hint">승인 대기 중인 지출이 없습니다.</div>';return;}
+      b.innerHTML=`<table><thead><tr><th>일자</th><th>계좌</th><th>계정과목</th><th class="num">금액</th><th class="num">MXN</th><th>등록자</th><th>메모</th><th>작업</th></tr></thead>
+        <tbody>${items.map(t=>`<tr>
+          <td>${String(t.txn_date).slice(0,10)}</td>
+          <td>${t.account_name||'—'}</td>
+          <td>${t.category_code?t.category_code+' · '+(t.category_name||''):'—'}</td>
+          <td class="num">${fmt(t.amount)} ${t.currency}</td>
+          <td class="num">${fmt(t.amount_mxn)}</td>
+          <td>${t.created_by_name||'—'}</td>
+          <td>${t.memo||''}</td>
+          <td style="white-space:nowrap"><button class="btn sm ap-ok" data-id="${t.id}">승인</button> <button class="btn ghost sm ap-no" data-id="${t.id}">반려</button></td>
+        </tr>`).join('')}</tbody></table>`;
+      [...b.querySelectorAll('.ap-ok')].forEach(el=>el.onclick=()=>decide(Number(el.dataset.id),'approve'));
+      [...b.querySelectorAll('.ap-no')].forEach(el=>el.onclick=()=>decide(Number(el.dataset.id),'reject'));
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function decide(id,action){
+    const m=$('apprMsg');m.className='msg';
+    if(action==='reject'&&!confirm('이 지출을 반려(삭제)하시겠습니까?'))return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/'+action,{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='처리 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent=action==='approve'?'승인 완료 — 잔액에 반영됩니다.':'반려 완료';
+      loadApprovals();loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 거래 변경요청 승인 =====
+  function moneyArrow(a,b){
+    if(a===b)return `${a}`;
+    return `<span style="text-decoration:line-through;color:var(--muted)">${a}</span> → <b style="color:var(--brand)">${b}</b>`;
+  }
+  function fldRow(label,a,b){
+    const changed=String(a)!==String(b);
+    return `<tr><td style="color:var(--muted);width:120px">${label}</td><td>${changed?moneyArrow(a,b):a}</td></tr>`;
+  }
+  async function loadChangeReqs(){
+    const b=$('crBody');b.innerHTML='<div class="hint">불러오는 중…</div>';$('crMsg').className='msg';
+    try{
+      const res=await fetch(session.api+'/api/transactions/change-requests/pending',{headers:auth()});
+      if(res.status===403){b.innerHTML='<div class="hint">디렉터만 볼 수 있습니다.</div>';return;}
+      const items=(await res.json()).items||[];
+      if(!items.length){b.innerHTML='<div class="hint">대기 중인 변경요청이 없습니다.</div>';return;}
+      b.innerHTML=items.map(cr=>`
+        <div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div><b>거래 #${cr.txn_id}</b> · ${cr.req_type==='delete'?'<span class="badge" style="background:#fde0db;color:var(--expense)">삭제요청</span>':'<span class="badge b-warn">수정요청</span>'}
+              <span class="hint" style="margin:0"> · 요청자 ${cr.requested_by_name||'—'} · ${String(cr.requested_at).slice(0,10)}</span></div>
+            <button class="btn ghost sm cr-open" data-id="${cr.id}">전/후 보기</button>
+          </div>
+          ${cr.reason?`<div class="hint">사유: ${cr.reason}</div>`:''}
+          <div class="cr-detail hidden" data-id="${cr.id}" style="margin-top:8px"></div>
+        </div>`).join('');
+      [...b.querySelectorAll('.cr-open')].forEach(el=>el.onclick=()=>{
+        const det=b.querySelector(`.cr-detail[data-id="${el.dataset.id}"]`);
+        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderCrDetail(Number(el.dataset.id),det);el.textContent='접기';}
+        else{det.classList.add('hidden');el.textContent='전/후 보기';}
+      });
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function renderCrDetail(id,box){
+    box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/transactions/change-requests/'+id+'/detail',{headers:auth()}).then(r=>r.json());
+      const o=d.orig;
+      const dirL=x=>x==='in'?'수입':'지출';
+      const money=(amt,cur,mxn)=>`${fmt(amt)} ${cur}${cur==='USD'?` (MXN ${fmt(mxn)})`:''}`;
+      let rows='';
+      if(d.type==='delete'){
+        rows=`<table>
+          <tr><td style="color:var(--muted);width:120px">구분</td><td>${dirL(o.direction)}</td></tr>
+          <tr><td style="color:var(--muted)">계좌</td><td>${o.account_name||'—'}</td></tr>
+          <tr><td style="color:var(--muted)">거래일</td><td>${o.txn_date}</td></tr>
+          <tr><td style="color:var(--muted)">계정과목</td><td>${o.category_code||'—'} ${o.category_name||''}</td></tr>
+          <tr><td style="color:var(--muted)">금액</td><td>${money(o.amount,o.currency,o.amount_mxn)}</td></tr>
+          <tr><td style="color:var(--muted)">메모</td><td>${o.memo||''}</td></tr></table>
+          <div class="hint" style="color:var(--expense)">승인하면 이 거래가 삭제되고 계좌 잔액에서 빠집니다.</div>`;
+      }else{
+        const n=d.next;
+        rows=`<table>
+          ${fldRow('구분',dirL(o.direction),dirL(n.direction))}
+          ${fldRow('계좌',o.account_name||'—',n.account_name||'—')}
+          ${fldRow('거래일',o.txn_date,n.txn_date)}
+          ${fldRow('계정과목',(o.category_code||'—')+' '+(o.category_name||''),(n.category_code||'—'))}
+          ${fldRow('금액',money(o.amount,o.currency,o.amount_mxn),money(n.amount,n.currency,n.amount_mxn))}
+          ${fldRow('메모',o.memo||'',n.memo||'')}</table>
+          <div class="hint">승인하면 변경 내용이 거래에 반영되고 계좌 잔액이 재계산됩니다.</div>`;
+      }
+      box.innerHTML=`${rows}
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="btn cr-ok" data-id="${id}">승인</button>
+          <button class="btn ghost cr-no" data-id="${id}">반려</button>
+        </div>`;
+      box.querySelector('.cr-ok').onclick=()=>decideCr(id,'approve');
+      box.querySelector('.cr-no').onclick=()=>decideCr(id,'reject');
+    }catch(e){box.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>';}
+  }
+  async function decideCr(id,action){
+    const m=$('crMsg');m.className='msg';
+    if(action==='reject'&&!confirm('이 변경요청을 반려하시겠습니까?'))return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/change-requests/'+id+'/'+action,{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='처리 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent=action==='approve'?'승인 완료 — 거래·잔액에 반영되었습니다.':'반려 완료 — 원본이 유지됩니다.';
+      loadChangeReqs();loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 반제(입금 배분) =====
+  let openInvoices=[], custAdvance=0;
+  async function loadArCustomers(){
+    try{
+      const items=(await fetch(session.api+'/api/ar/customers',{headers:auth()}).then(r=>r.json())).items||[];
+      const sel=$('p-cust');const cur=sel.value;
+      sel.innerHTML='<option value="">고객 선택…</option>'+items.map(c=>`<option value="${c.id}">${c.code} · ${c.name} — 미수 ${fmt(c.outstanding)}${c.advance>0?' · 선수금 '+fmt(c.advance):''}</option>`).join('');
+      sel.value=cur;
+      $('p-acc').innerHTML=accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      loadPayHistory();
+    }catch(e){}
+  }
+  async function loadOpenInvoices(){
+    const cid=$('p-cust').value;const box=$('p-open');
+    if(!cid){box.innerHTML='<div class="hint">고객을 선택하세요.</div>';openInvoices=[];renderRunbar();return;}
+    box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/ar/open-invoices?customer_id='+cid,{headers:auth()}).then(r=>r.json());
+      openInvoices=d.items||[];custAdvance=Number(d.advance)||0;
+      $('p-advinfo').innerHTML=custAdvance>0?`이 고객의 기존 선수금: <b>${fmt(custAdvance)} MXN</b> (이번 입금과 별개로 보관 중)`:'';
+      if(!openInvoices.length){box.innerHTML='<div class="hint">미반제 인보이스가 없습니다.</div>';renderRunbar();return;}
+      box.innerHTML=`<table><thead><tr><th>인보이스</th><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">기납입</th><th class="num">미수금</th><th class="num" style="width:140px">배분액</th></tr></thead>
+        <tbody>${openInvoices.map(s=>`<tr>
+          <td>#${s.id} ${s.sat_no?'<span class="hint" style="margin:0">'+s.sat_no+'</span>':''}</td>
+          <td>${String(s.inv_date).slice(0,10)}</td>
+          <td>${s.due_date?String(s.due_date).slice(0,10):'—'}${overdueBadge(s.due_date,s.outstanding)}</td>
+          <td class="num">${fmt(s.total_mxn)}</td>
+          <td class="num">${fmt(s.paid)}</td>
+          <td class="num"><b>${fmt(s.outstanding)}</b></td>
+          <td class="num"><input type="number" step="0.01" class="p-alloc" data-id="${s.id}" data-out="${s.outstanding}" style="width:130px;text-align:right" placeholder="0.00"></td>
+        </tr>`).join('')}</tbody></table>`;
+      [...box.querySelectorAll('.p-alloc')].forEach(el=>el.addEventListener('input',renderRunbar));
+      renderRunbar();
+    }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function overdueBadge(due,outstanding){
+    if(!due||!(Number(outstanding)>0.009))return '';
+    const d=new Date(String(due).slice(0,10)+'T00:00:00Z');const today=new Date(new Date().toISOString().slice(0,10)+'T00:00:00Z');
+    if(d>=today)return '';
+    const days=Math.floor((today-d)/86400000);
+    const sev=days>=31?'high':(days>=8?'mid':'low');
+    const sv=SEV[sev];
+    return ` <span class="badge" style="background:${sv.bg};color:${sv.fg}">연체 ${days}일</span>`;
+  }
+  function allocInputs(){return [...document.querySelectorAll('.p-alloc')];}
+  function sumAlloc(){return allocInputs().reduce((s,el)=>s+(Number(el.value)||0),0);}
+  function renderRunbar(){
+    const total=Number($('p-amt').value)||0;
+    const sum=Math.round((sumAlloc()+Number.EPSILON)*100)/100;
+    const remain=Math.round((total-sum+Number.EPSILON)*100)/100;
+    const bar=$('p-runbar');
+    let advNote='';
+    if(remain<0){bar.style.color='var(--expense)';bar.innerHTML=`입금 총액 ${fmt(total)} · 배분 합계 ${fmt(sum)} · <b>초과 ${fmt(-remain)}</b> — 배분이 입금액을 넘습니다.`;return;}
+    // 남은 배분가능액이 있으나 더 채울 미수가 없으면 선수금
+    const totalOut=openInvoices.reduce((s,i)=>s+i.outstanding,0);
+    const canStillAllocate=Math.max(0,totalOut-sum);
+    if(remain>0 && canStillAllocate<=0.001) advNote=` · <span style="color:#9a6512">선수금 처리될 금액 ${fmt(remain)}</span>`;
+    else if(remain>0) advNote=` · 남은 배분가능액 <b>${fmt(remain)}</b>`;
+    else advNote=` · <span style="color:var(--income)">전액 배분 완료</span>`;
+    bar.style.color='#2a2a2a';
+    bar.innerHTML=`입금 총액 ${fmt(total)} · 배분 합계 ${fmt(sum)}${advNote}`;
+  }
+  function autoAllocate(){
+    let remaining=Number($('p-amt').value)||0;
+    if(!(remaining>0)){alert('먼저 입금 총액을 입력하세요.');return;}
+    allocInputs().forEach(el=>{
+      const out=Number(el.dataset.out)||0;
+      if(remaining<=0){el.value='';return;}
+      const amt=remaining>=out?out:remaining;
+      el.value=amt.toFixed(2);remaining=Math.round((remaining-amt+Number.EPSILON)*100)/100;
+    });
+    renderRunbar();
+  }
+  function clearAlloc(){allocInputs().forEach(el=>el.value='');renderRunbar();}
+  async function savePayment(){
+    const m=$('payMsg');m.className='msg';
+    const cid=$('p-cust').value, acc=$('p-acc').value, date=$('p-date').value, total=Number($('p-amt').value)||0;
+    if(!cid){m.className='msg err';m.textContent='고객을 선택하세요.';return;}
+    if(!acc){m.className='msg err';m.textContent='입금 계좌를 선택하세요.';return;}
+    if(!date){m.className='msg err';m.textContent='입금일을 입력하세요.';return;}
+    if(!(total>0)){m.className='msg err';m.textContent='입금 총액을 입력하세요.';return;}
+    const allocations=allocInputs().map(el=>({invoice_id:Number(el.dataset.id),amount:Number(el.value)||0})).filter(a=>a.amount>0);
+    const sum=Math.round((allocations.reduce((s,a)=>s+a.amount,0)+Number.EPSILON)*100)/100;
+    if(sum-total>0.001){m.className='msg err';m.textContent='배분 합계가 입금 총액을 초과합니다.';return;}
+    // 미수금 초과 체크
+    for(const el of allocInputs()){const v=Number(el.value)||0;const out=Number(el.dataset.out)||0;if(v-out>0.001){m.className='msg err';m.textContent='인보이스 #'+el.dataset.id+' 배분액이 미수금을 초과합니다.';return;}}
+    const advance=Math.round((total-sum+Number.EPSILON)*100)/100;
+    let confirmMsg='입금 '+fmt(total)+' MXN을 저장합니다.';
+    if(advance>0.001)confirmMsg+='\n배분되지 않은 '+fmt(advance)+' MXN은 선수금으로 기록됩니다.';
+    if(!confirm(confirmMsg))return;
+    $('p-save').disabled=true;$('p-save').textContent='저장 중…';
+    try{
+      const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({customer_id:Number(cid),pay_date:date,account_id:Number(acc),amount:total,allocations,memo:$('p-memo').value.trim()||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent='입금 반제 완료! 배분 '+fmt(d.allocated)+' MXN'+(d.advance>0?(' · 선수금 '+fmt(d.advance)+' MXN'):'');
+      $('p-amt').value='';$('p-memo').value='';
+      await loadOpenInvoices();await loadArCustomers();await loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+    finally{$('p-save').disabled=false;$('p-save').textContent='입금 반제 저장';}
+  }
+  async function loadPayHistory(){
+    const cid=$('p-cust').value;if(!cid){$('p-history').innerHTML='';return;}
+    try{
+      const items=(await fetch(session.api+'/api/ar/payments?customer_id='+cid,{headers:auth()}).then(r=>r.json())).items||[];
+      if(!items.length){$('p-history').innerHTML='<div class="hint">입금 이력이 없습니다.</div>';return;}
+      $('p-history').innerHTML=`<h2 style="font-size:13px;color:var(--muted)">입금 이력</h2>
+        <table><thead><tr><th>입금일</th><th>계좌</th><th class="num">입금액</th><th class="num">선수금</th><th>배분</th><th>메모</th></tr></thead>
+        <tbody>${items.map(p=>`<tr>
+          <td>${String(p.pay_date).slice(0,10)}</td><td>${p.account_name}</td>
+          <td class="num">${fmt(p.amount)}</td><td class="num">${p.advance_amount>0?fmt(p.advance_amount):'—'}</td>
+          <td>${(p.allocations||[]).map(a=>'#'+a.invoice_id+' '+fmt(a.amount)).join(', ')||'—'}</td>
+          <td>${p.memo||''}</td></tr>`).join('')}</tbody></table>`;
+    }catch(e){$('p-history').innerHTML='';}
+  }
+
+  // ===== 고정비(반복 규칙) =====
+  const WDAY=['일','월','화','수','목','금','토'];
+  async function loadFixed(){
+    const b=$('fixedBody');
+    try{
+      const items=(await fetch(session.api+'/api/recurring',{headers:auth()}).then(r=>r.json())).items||[];
+      $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
+      $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      if(!items.length){b.innerHTML='<div class="hint">등록된 고정비 규칙이 없습니다. 아래에서 추가하세요.</div>';return;}
+      b.innerHTML=`<table><thead><tr><th>이름</th><th>구분</th><th>계정과목</th><th class="num">금액</th><th>주기</th><th>시작</th><th>종료</th><th>상태</th><th>생성/지급</th><th>목표 월까지 생성</th><th></th></tr></thead>
+        <tbody>${items.map(r=>{
+          const cycle=r.freq==='week'?('매주 '+WDAY[r.weekday]+'요일'):('매월 '+r.day_of_month+'일');
+          const through=r.generated_through?String(r.generated_through).slice(0,10):null;
+          const opts=monthTargetOptions(through);
+          const genCell=`${through?`<div style="font-size:11px;color:var(--muted);margin-bottom:3px">~${through}까지 생성됨</div>`:''}
+               ${opts.length?`<select class="rx-mon" data-id="${r.id}" style="width:auto;display:inline-block">${opts}</select>
+               <button class="btn ${through?'ghost ':''}sm rx-gen" data-id="${r.id}">${through?'추가 생성':'생성'}</button>`
+               :'<span class="hint" style="margin:0">최대(24개월)까지 생성됨</span>'}`;
+          return `<tr style="${r.active?'':'opacity:.5'}">
+            <td><b>${r.name}</b></td>
+            <td>${r.direction==='in'?'수입':'지출'}</td>
+            <td>${r.category_code?r.category_code+' · '+(r.category_name||''):'—'}</td>
+            <td class="num">${fmt(r.amount)} ${r.currency}</td>
+            <td>${cycle}</td>
+            <td>${r.start_date?String(r.start_date).slice(0,10):'—'}</td>
+            <td>${r.end_month||'무기한'}</td>
+            <td>${r.active?'<span class="badge" style="background:#e7f3ee;color:var(--income)">활성</span>':'<span class="badge" style="background:#eee;color:#888">중지</span>'}</td>
+            <td>${r.generated_count}건 / ${r.paid_count}지급</td>
+            <td style="white-space:nowrap">${genCell}</td>
+            <td style="white-space:nowrap"><button class="btn ghost sm rx-toggle" data-id="${r.id}" data-active="${r.active?1:0}">${r.active?'중지':'재개'}</button> <button class="btn ghost sm rx-del" data-id="${r.id}">삭제</button></td>
+          </tr>`;}).join('')}</tbody></table>`;
+      [...b.querySelectorAll('.rx-toggle')].forEach(el=>el.onclick=()=>toggleRule(Number(el.dataset.id),el.dataset.active!=='1'));
+      [...b.querySelectorAll('.rx-del')].forEach(el=>el.onclick=()=>delRule(Number(el.dataset.id)));
+      [...b.querySelectorAll('.rx-gen')].forEach(el=>el.onclick=()=>{
+        const id=Number(el.dataset.id);
+        const sel=b.querySelector('.rx-mon[data-id="'+id+'"]');
+        generateRule(id,sel?sel.value:null,el);
+      });
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function saveRule(){
+    const m=$('rxMsg');m.className='msg';
+    const name=$('rx-name').value.trim(),amt=Number($('rx-amt').value)||0,freq=$('rx-freq').value,start=$('rx-start').value;
+    if(!name){m.className='msg err';m.textContent='이름을 입력하세요.';return;}
+    if(!(amt>0)){m.className='msg err';m.textContent='금액을 입력하세요.';return;}
+    if(!start){m.className='msg err';m.textContent='시작일을 입력하세요.';return;}
+    const body={name,direction:$('rx-dir').value,category_code:$('rx-cat').value||null,amount:amt,currency:$('rx-cur').value,
+      account_id:$('rx-acc').value?Number($('rx-acc').value):null,freq,start_date:start,
+      end_month:$('rx-endtype').value==='month'?($('rx-end').value||null):null,memo:$('rx-memo').value.trim()||null};
+    if(freq==='month')body.day_of_month=Number($('rx-dom').value)||0;
+    else body.weekday=Number($('rx-wday').value);
+    if(freq==='month'&&!(body.day_of_month>=1&&body.day_of_month<=31)){m.className='msg err';m.textContent='매월 며칠(1~31)을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/recurring',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);alert('규칙 저장 실패: '+(d.error||('HTTP '+res.status))+'\n3단계 백엔드가 배포·마이그레이트되었는지 확인하세요.');return;}
+      // 저장 완료 — 폼 닫고 목록 갱신(생성은 백그라운드)
+      $('rx-name').value='';$('rx-amt').value='';$('rx-memo').value='';$('rxForm').classList.add('hidden');
+      m.className='msg ok';m.textContent='규칙이 저장되었습니다. 아래 목록에서 이 규칙의 목표 월을 골라 “생성”을 누르세요.';
+      await loadFixed();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';alert('서버 연결 실패 — 서버 주소와 배포 상태를 확인하세요.');}
+  }
+  async function toggleRule(id,active){
+    try{await fetch(session.api+'/api/recurring/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({active})});
+      loadFixed();}catch(e){}
+  }
+  async function delRule(id){
+    if(!confirm('이 고정비 규칙을 삭제하시겠습니까? 아직 지급되지 않은 미래 예정분도 함께 제거됩니다.'))return;
+    try{await fetch(session.api+'/api/recurring/'+id,{method:'DELETE',headers:auth()});loadFixed();loadAccounts();}catch(e){}
+  }
+  // 목표 월 드롭다운 옵션: 오늘 기준 3개월 간격, 오늘+24개월 상한까지. 이미 생성된(through) 이후만. 기본=가장 먼 월.
+  function monthTargetOptions(through){
+    const now=new Date();
+    const opts=[];
+    const throughYM=through?through.slice(0,7):null;
+    for(let k=3;k<=24;k+=3){
+      const d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+k,1));
+      const ym=d.toISOString().slice(0,7);
+      if(throughYM && ym<=throughYM) continue; // 이미 생성된 구간 이하는 제외
+      opts.push(ym);
+    }
+    if(!opts.length)return '';
+    // 기본값 = 가장 먼 월(마지막)
+    return opts.map((ym,idx)=>`<option value="${ym}" ${idx===opts.length-1?'selected':''}>${ym}까지</option>`).join('');
+  }
+
+  let rxGenerating=false;
+  async function generateRule(id,throughMonth,btnEl){
+    if(rxGenerating)return;
+    rxGenerating=true;
+    const orig=btnEl?btnEl.textContent:'';if(btnEl){btnEl.disabled=true;btnEl.textContent='생성 중…';}
+    const m=$('rxGenMsg');m.style.display='inline-block';m.className='msg';m.textContent='';
+    try{
+      const res=await fetch(session.api+'/api/recurring/'+id+'/generate',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({through_month:throughMonth})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='생성 실패: '+(d.error==='generation_in_progress'?'다른 생성이 진행 중입니다. 잠시 후 다시 시도하세요.':(d.error||res.status));return;}
+      m.className='msg ok';m.textContent=`${d.created}건 생성됨 (~${d.generated_through?String(d.generated_through).slice(0,10):''}까지)`+(d.capped?' · 최대 24개월 상한':'');
+      await loadFixed();await loadAccounts();await loadVariance();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+    finally{rxGenerating=false;if(btnEl){btnEl.disabled=false;btnEl.textContent=orig;}}
+  }
+
+  async function savePlanEdit(id,box){
+    const m=box.querySelector('.cf-msg');m.className='msg cf-msg';m.style.display='none';
+    const body={plan_date:box.querySelector('.pe-date').value,amount:Number(box.querySelector('.pe-amt').value)||0};
+    const memoEl=box.querySelector('.pe-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
+    const fxEl=box.querySelector('.pe-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    if(!(body.amount>0)){m.className='msg cf-msg err';m.style.display='block';m.textContent='계획 금액을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/plan',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='sales_linked'?'매출에서 온 계획은 수정할 수 없습니다.':(d.error||res.status));return;}
+      alert('계획이 수정되었습니다. 현금흐름 계획선에 반영됩니다.');
+      loadTxns();
+    }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  async function confirmPay(id,box){
+    const m=box.querySelector('.cf-msg');m.className='msg cf-msg';m.style.display='none';
+    const acc=box.querySelector('.cf-acc').value;
+    if(!acc){m.className='msg cf-msg err';m.style.display='block';m.textContent='계좌를 선택하세요.';return;}
+    const body={account_id:Number(acc),pay_date:box.querySelector('.cf-date').value};
+    const amtEl=box.querySelector('.cf-amt');if(amtEl&&Number(amtEl.value)>0)body.amount=Number(amtEl.value);
+    const memoEl=box.querySelector('.cf-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
+    const fxEl=box.querySelector('.cf-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='account_required'?'계좌가 필요합니다.':(d.error||res.status));return;}
+      alert(d.changed?'실제로 반영되었습니다. 계획과 달라 "계획대비 변경"으로 표시됩니다.':'실제로 반영되었습니다. 계좌 잔액에 적용됩니다.');
+      loadTxns();loadAccounts();
+    }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  async function loadVariance(){
+    const b=$('varBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    const gran=$('var-gran').value;
+    try{
+      const d=await fetch(session.api+'/api/recurring/variance?granularity='+gran,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){b.innerHTML='<div class="hint">아직 지급 확인된 고정비 실적이 없습니다. 거래 목록에서 고정비 예정을 "지급 확인"하면 여기에 계획 대비 실적이 쌓입니다.</div>';return;}
+      let tPlan=0,tAct=0;items.forEach(r=>{tPlan+=r.plan_mxn;tAct+=r.actual_mxn;});
+      const tDiff=tAct-tPlan;
+      b.innerHTML=`<table><thead><tr><th>${gran==='week'?'주':'월'}</th><th class="num">계획</th><th class="num">실적</th><th class="num">차이</th><th>결과</th><th class="num">변경건수</th></tr></thead>
+        <tbody>${items.map(r=>{
+          const saved=r.diff_mxn<0; const eq=Math.abs(r.diff_mxn)<0.01;
+          const col=eq?'var(--muted)':(saved?'var(--income)':'var(--expense)');
+          const label=eq?'동일':(saved?'절감':'증가');
+          return `<tr><td>${r.period}</td>
+            <td class="num">${fmt(r.plan_mxn)}</td>
+            <td class="num">${fmt(r.actual_mxn)}</td>
+            <td class="num" style="color:${col};font-weight:700">${r.diff_mxn>0?'+':''}${fmt(r.diff_mxn)}</td>
+            <td style="color:${col};font-weight:600">${label}</td>
+            <td class="num">${r.changed_items>0?r.changed_items+'건':'—'}</td></tr>`;}).join('')}
+          <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td>
+            <td class="num">${fmt(tPlan)}</td><td class="num">${fmt(tAct)}</td>
+            <td class="num" style="color:${Math.abs(tDiff)<0.01?'var(--muted)':(tDiff<0?'var(--income)':'var(--expense)')}">${tDiff>0?'+':''}${fmt(tDiff)}</td>
+            <td style="color:${tDiff<0?'var(--income)':'var(--expense)'}">${Math.abs(tDiff)<0.01?'동일':(tDiff<0?'절감':'증가')}</td><td></td></tr>
+        </tbody></table>`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ===== 현금흐름 =====
+  const cfState={mode:'actual',gran:'month',view:'table'};
+  const paState={filter:'all'};
+  function fmtSigned(n){return (n>0?'+':'')+fmt(n);}
+  function netColor(n){return n>0?'var(--income)':(n<0?'var(--expense)':'var(--muted)');}
+
+  // 간단 SVG 선그래프: series=[{name,color,points:[{x_label,value}]}], 공통 x축(labels)
+  function svgLineChart(labels,series,opts={}){
+    const W=opts.width||720,H=opts.height||220,padL=54,padR=14,padT=14,padB=30;
+    const n=labels.length; if(!n)return '<div class="hint">데이터가 없습니다.</div>';
+    const all=series.flatMap(s=>s.points.map(p=>p.value));
+    let mn=Math.min(0,...all),mx=Math.max(0,...all); if(mn===mx){mx=mn+1;}
+    const x=i=>padL+(n===1?0:(W-padL-padR)*i/(n-1));
+    const y=v=>padT+(H-padT-padB)*(1-(v-mn)/(mx-mn));
+    const grid=[];const steps=4;
+    for(let k=0;k<=steps;k++){const v=mn+(mx-mn)*k/steps;const yy=y(v);grid.push(`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#eee"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="10" fill="#999">${fmt(Math.round(v))}</text>`);}
+    const zeroY=y(0);const zero=`<line x1="${padL}" y1="${zeroY}" x2="${W-padR}" y2="${zeroY}" stroke="#ccc" stroke-dasharray="3 3"/>`;
+    const xlabels=labels.map((l,i)=>(n<=14||i%Math.ceil(n/12)===0)?`<text x="${x(i)}" y="${H-10}" text-anchor="middle" font-size="9" fill="#999">${l}</text>`:'').join('');
+    const paths=series.map(s=>{
+      const pts=s.points.map((p,i)=>`${x(i)},${y(p.value)}`).join(' ');
+      const dots=s.points.map((p,i)=>`<circle cx="${x(i)}" cy="${y(p.value)}" r="2.5" fill="${s.color}"/>`).join('');
+      return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2"/>${dots}`;
+    }).join('');
+    const legend=series.map((s,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:12px"><span style="width:14px;height:3px;background:${s.color};display:inline-block"></span>${s.name}</span>`).join('');
+    return `<div>${legend?`<div style="margin-bottom:6px">${legend}</div>`:''}<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px">${grid.join('')}${zero}${paths}${xlabels}</svg></div>`;
+  }
+
+  async function loadCashflow(){
+    const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const url=`${session.api}/api/cashflow?granularity=${cfState.gran}&includePlan=${cfState.mode==='plan'?1:0}`;
+      const d=await fetch(url,{headers:auth()}).then(r=>r.json());
+      cfLast=d;
+      $('cf-open').textContent=`기초 잔고(개설) ${fmt(d.opening_balance)} MXN`;
+      if(cfState.view==='table')renderCashTable(d);
+      else if(cfState.view==='cal')renderMonthCal(d);
+      else renderWeekCal(d);
+      // 선그래프: 순액 + 누적잔고
+      $('cashChart').innerHTML=svgLineChart(d.rows.map(r=>r.period),[
+        {name:'순현금흐름',color:'#2f8f5b',points:d.rows.map(r=>({value:r.net}))},
+        {name:'누적 잔고',color:'#0c447c',points:d.rows.map(r=>({value:r.cumulative}))}
+      ]);
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  let cfLast=null;
+  function renderCashTable(d){
+    if(!d.rows.length){$('cashBody').innerHTML='<div class="hint">표시할 거래가 없습니다.</div>';return;}
+    $('cashBody').innerHTML=`<table><thead><tr><th>${cfState.gran==='week'?'주':'월'}</th><th class="num">유입</th><th class="num">유출</th><th class="num">순액</th><th class="num">누적 잔고</th></tr></thead>
+      <tbody>${d.rows.map(r=>`<tr>
+        <td>${r.period}</td>
+        <td class="num" style="color:var(--income)">${fmt(r.inflow)}</td>
+        <td class="num" style="color:var(--expense)">${fmt(r.outflow)}</td>
+        <td class="num" style="color:${netColor(r.net)};font-weight:700">${fmtSigned(r.net)}</td>
+        <td class="num" style="font-weight:700">${fmt(r.cumulative)}</td></tr>`).join('')}</tbody></table>`;
+  }
+  function renderMonthCal(d){ renderMonthFromApi(); }
+  function renderWeekCal(d){ renderWeekFromApi(); }
+
+  // 월간달력: 일요일 시작·주말 음영·AR/AP/잔고 3칸 + 하단 실적/예정 섹션
+  let calMonth=new Date().toISOString().slice(0,7);
+  async function renderMonthFromApi(){
+    const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(`${session.api}/api/cashflow/month?month=${calMonth}`,{headers:auth()});
+      if(!res.ok){b.innerHTML=`<div class="hint">월간달력을 불러오지 못했습니다 (HTTP ${res.status}).${res.status===404?' 최신 백엔드(현금흐름 월별 API)가 배포되었는지 확인하세요.':''}</div>`;return;}
+      const d=await res.json();
+      const dayMap={};d.days.forEach(x=>dayMap[x.date]=x);
+      const [y,m]=calMonth.split('-').map(Number);
+      const first=new Date(Date.UTC(y,m-1,1));
+      const startDow=first.getUTCDay(); // 0=일요일 시작
+      const days=new Date(Date.UTC(y,m,0)).getUTCDate();
+      const dows=['일','월','화','수','목','금','토'];
+      let cells='';
+      for(let i=0;i<startDow;i++)cells+='<div class="cal-cell empty"></div>';
+      for(let dd=1;dd<=days;dd++){
+        const ds=`${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+        const v=dayMap[ds];const dow=new Date(Date.UTC(y,m-1,dd)).getUTCDay();
+        const we=(dow===0||dow===6)?' weekend':'';
+        const hasV=v&&(v.in||v.out||v.items.length);
+        cells+=`<div class="cal-cell${we}" data-day="${ds}">
+          <div class="cal-daynum">${dd}</div>
+          <div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.in?'+'+fmt(v.in):''}</span></div>
+          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.out?'-'+fmt(v.out):''}</span></div>
+          <div class="cal-slot"><span class="k">잔고</span><span style="font-weight:700">${v?fmt(v.cumulative):''}</span></div>
+        </div>`;
+      }
+      b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
+        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · 잔고=그날까지 누적(실적)</span></div>
+        <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
+        <div id="calDetail" style="margin-top:10px"></div>
+        ${renderMonthSections(d)}`;
+      $('cal-prev').onclick=()=>{const dt=new Date(Date.UTC(y,m-2,1));calMonth=dt.toISOString().slice(0,7);renderMonthFromApi();};
+      $('cal-next').onclick=()=>{const dt=new Date(Date.UTC(y,m,1));calMonth=dt.toISOString().slice(0,7);renderMonthFromApi();};
+      [...b.querySelectorAll('.cal-cell[data-day]')].forEach(el=>el.onclick=()=>showDayDetail(el.dataset.day,dayMap[el.dataset.day]));
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function dirItemRow(t){
+    const amt=Number(t.amount_mxn)||0;
+    return `<tr><td>${(t.status==='actual'?t.txn_date:(t.plan_date||t.txn_date)||'').slice(0,10)}</td>
+      <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
+      <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(amt)}</td></tr>`;
+  }
+  function renderMonthSections(d){
+    const a=d.actual,p=d.plan;
+    const aSub=`<div class="sec-sum"><span>수입 <b style="color:var(--income)">+${fmt(a.subtotal.in)}</b></span><span>지출 <b style="color:var(--expense)">-${fmt(a.subtotal.out)}</b></span><span>순액 <b style="color:${netColor(a.subtotal.net)}">${fmtSigned(a.subtotal.net)}</b></span></div>`;
+    const actualTbl=a.items.length?`<table><tbody>${a.items.map(dirItemRow).join('')}</tbody></table>`:'<div class="hint">실적 없음</div>';
+    // 예정 섹션: 처리됨/미처리(경과)/미처리(예정)
+    const stBadge=(s)=>s==='processed'?'<span class="pill" style="background:#e7f3ee;color:var(--income)">처리됨</span>'
+      :s==='overdue'?'<span class="pill" style="background:#fde2e0;color:#c0392b">경과</span>'
+      :'<span class="pill" style="background:#eef1f5;color:#5a6b7b">미처리</span>';
+    const planRow=(t)=>`<tr>
+      <td>${t._planDate}</td><td>${stBadge(t._state)}</td>
+      <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,26)}</td>
+      <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t._planAmt)}</td></tr>`;
+    const planTbl=p.items.length?`<table><thead><tr><th>계획일</th><th>상태</th><th>계정과목</th><th>메모</th><th class="num">계획액</th></tr></thead><tbody>${p.items.map(planRow).join('')}</tbody></table>`:'<div class="hint">계획 없음</div>';
+    const sumLine=(lbl,o)=>`<span>${lbl} 계획 <b>${fmt(o.planned)}</b> = 처리 <b style="color:var(--income)">${fmt(o.processed)}</b> + 남은예정 <b>${fmt(o.remaining)}</b>${o.overdue>0?` <span style="color:#c0392b">(경과 ${fmt(o.overdue)})</span>`:''}</span>`;
+    const pSum=`<div class="sec-sum" style="flex-direction:column;gap:4px">${sumLine('수입(수금)',p.summary.in)}${sumLine('지출',p.summary.out)}</div>`;
+    return `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+      <div style="font-weight:700;margin-bottom:2px">${d.month} 실적</div>${aSub}${actualTbl}
+      <div style="font-weight:700;margin:16px 0 2px">${d.month} 예정 (오늘 ${d.today} 기준)</div>${pSum}${planTbl}</div>`;
+  }
+
+  // 주간달력: 해당 주(일~토)만. 각 일자에 AR/AP/잔고 + 항목 내용. (월별 API 재사용해 누적잔고 정확)
+  let calWeekStart=null;
+  let weekSummaryOnly=false;
+  async function renderWeekFromApi(){
+    const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    if(!calWeekStart){const t=new Date();const dow=t.getUTCDay();calWeekStart=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),t.getUTCDate()-dow));}
+    const days=[];for(let i=0;i<7;i++)days.push(new Date(calWeekStart.getTime()+i*86400000).toISOString().slice(0,10));
+    try{
+      const months=[...new Set(days.map(d=>d.slice(0,7)))];
+      const dayMap={};
+      for(const mo of months){
+        const res=await fetch(`${session.api}/api/cashflow/month?month=${mo}`,{headers:auth()});
+        if(!res.ok){b.innerHTML=`<div class="hint">주간달력을 불러오지 못했습니다 (HTTP ${res.status}).</div>`;return;}
+        const d=await res.json();d.days.forEach(x=>dayMap[x.date]=x);
+      }
+      const dows=['일','월','화','수','목','금','토'];
+      let wIn=0,wOut=0;days.forEach(ds=>{const v=dayMap[ds];if(v){wIn+=v.in;wOut+=v.out;}});
+      const body=days.map((ds,i)=>{
+        const v=dayMap[ds];const we=(i===0||i===6);const net=v?v.net:0;
+        const arItems=v?v.items.filter(t=>t.direction==='in'):[];
+        const apItems=v?v.items.filter(t=>t.direction==='out'):[];
+        const itemLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
+          <span>${t.status==='actual'?'':'<span class="hint" style="margin:0">[예정] </span>'}${t.category_name||t.category_code||''}${t.memo?' · '+t.memo.slice(0,22):''}</span>
+          <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
+        const detail=weekSummaryOnly?'':`
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AR (수입)</div>${arItems.length?arItems.map(itemLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지출)</div>${apItems.length?apItems.map(itemLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`;
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;background:${we?'#f3f1ec':'#fff'}">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <b style="${we?'color:var(--expense)':''}">${dows[i]} ${ds}</b>
+            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.in:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.out:0)}</b> · 잔고 <b>${v?fmt(v.cumulative):'—'}</b></span>
+          </div>${detail}</div>`;
+      }).join('');
+      b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="wk-prev">◀ 지난주</button><b>${days[0]} ~ ${days[6]}</b><button class="btn ghost sm" id="wk-next">다음주 ▶</button>
+        <label style="margin-left:auto;font-size:13px"><input type="checkbox" id="wk-sum" ${weekSummaryOnly?'checked':''}> 요약만 보기</label>
+        <span style="font-size:12px">주합계 AR <span style="color:var(--income)">+${fmt(wIn)}</span> · AP <span style="color:var(--expense)">-${fmt(wOut)}</span> · 순 <b style="color:${netColor(wIn-wOut)}">${fmtSigned(wIn-wOut)}</b></span></div>
+        ${body}`;
+      $('wk-prev').onclick=()=>{calWeekStart=new Date(calWeekStart.getTime()-7*86400000);renderWeekFromApi();};
+      $('wk-next').onclick=()=>{calWeekStart=new Date(calWeekStart.getTime()+7*86400000);renderWeekFromApi();};
+      $('wk-sum').onchange=(e)=>{weekSummaryOnly=e.target.checked;renderWeekFromApi();};
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function showDayDetail(ds,v){
+    const dt=$('calDetail');if(!dt)return;
+    if(!v||!v.items||!v.items.length){dt.innerHTML=`<div class="hint">${ds}: 거래 없음</div>`;return;}
+    dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${ds}</b>
+      <table style="margin-top:6px"><tbody>${v.items.map(t=>`<tr>
+        <td>${t.status==='actual'?'실제':'예정'}</td>
+        <td>${t.category_name||t.category_code||''}</td>
+        <td>${(t.memo||'').slice(0,30)}</td>
+        <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // 계정과목별 계획 vs 실적 막대(편성=회색, 집행=초록, 초과집행=빨강)
+  function svgBarCompare(rows,opts={}){
+    if(!rows.length)return '<div class="hint">데이터가 없습니다.</div>';
+    const W=opts.width||720,H=240,padT=14,padB=54,padL=46,padR=10;
+    const max=Math.max(1,...rows.flatMap(r=>[r.plan,r.actual]));
+    const n=rows.length,bw=Math.min(46,(W-padL-padR)/n-14),group=(W-padL-padR)/n;
+    const y=v=>padT+(H-padT-padB)*(1-v/max);
+    const grid=[];for(let k=0;k<=4;k++){const v=max*k/4,yy=y(v);grid.push(`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#eee"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9" fill="#999">${fmt(Math.round(v))}</text>`);}
+    const bars=rows.map((r,i)=>{
+      const cx=padL+group*i+group/2;const over=r.actual>r.plan;
+      const planX=cx-bw-2,actX=cx+2;
+      const pH=y(0)-y(r.plan),aH=y(0)-y(r.actual);
+      const actColor=over?'var(--expense)':'var(--income)';
+      const rate=r.rate==null?'—':r.rate+'%';
+      return `<rect x="${planX}" y="${y(r.plan)}" width="${bw}" height="${Math.max(0,pH)}" fill="#cfc9bb" rx="2"/>
+        <rect x="${actX}" y="${y(r.actual)}" width="${bw}" height="${Math.max(0,aH)}" fill="${actColor}" rx="2"/>
+        <text x="${cx}" y="${H-padB+14}" text-anchor="middle" font-size="9" fill="#555">${(r.name||'').slice(0,8)}</text>
+        <text x="${cx}" y="${H-padB+26}" text-anchor="middle" font-size="9" font-weight="700" fill="${over?'var(--expense)':'#777'}">${rate}</text>`;
+    }).join('');
+    const legend=`<div style="margin-bottom:4px;font-size:12px">
+      <span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:10px;background:#cfc9bb;display:inline-block"></span>계획</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px"><span style="width:12px;height:10px;background:var(--income);display:inline-block"></span>실적</span>
+      <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:10px;background:var(--expense);display:inline-block"></span>초과</span></div>`;
+    return `${legend}<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px">${grid.join('')}${bars}</svg>`;
+  }
+  function paTable(rows,total){
+    const rateCell=(r)=>{const v=r.rate;const over=v!=null&&v>100;return `<span class="pill" style="background:${v==null?'#eee':(over?'#fde2e0':'#e7f3ee')};color:${v==null?'#888':(over?'#c0392b':'var(--income)')}">${v==null?'—':v+'%'}</span>`;};
+    return `<table><thead><tr><th>계정과목</th><th>메모</th><th class="num">계획</th><th class="num">실적</th><th class="num">차이</th><th class="num">집행률</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        <td>${r.name}</td>
+        <td style="font-size:11px;color:var(--muted)">${(r.memo||'').slice(0,60)}</td>
+        <td class="num">${fmt(r.plan)}</td>
+        <td class="num" style="color:${r.actual>r.plan?'var(--expense)':'var(--ink)'}">${fmt(r.actual)}</td>
+        <td class="num" style="color:${netColor(r.diff)}">${fmtSigned(r.diff)}</td>
+        <td class="num">${rateCell(r)}</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td><td></td>
+        <td class="num">${fmt(total.plan)}</td><td class="num">${fmt(total.actual)}</td>
+        <td class="num" style="color:${netColor(total.diff)}">${fmtSigned(total.diff)}</td>
+        <td class="num">${rateCell(total)}</td></tr></tbody></table>`;
+  }
+  async function loadPlanActual(){
+    const b=$('paBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(`${session.api}/api/plan-vs-actual/by-category?filter=${paState.filter}`,{headers:auth()}).then(r=>r.json());
+      const incEmpty=!d.income.rows.length,expEmpty=!d.expense.rows.length;
+      b.innerHTML=`
+        <div style="font-weight:700;margin:4px 0 6px">수금 (계정과목별 계획 vs 실적)</div>
+        ${incEmpty?'<div class="hint">수금 계획/실적이 없습니다.</div>':svgBarCompare(d.income.rows)+paTable(d.income.rows,d.income.total)}
+        <div style="font-weight:700;margin:18px 0 6px">지출 (계정과목별 계획 vs 실적)</div>
+        ${expEmpty?'<div class="hint">지출 계획/실적이 없습니다.</div>':svgBarCompare(d.expense.rows)+paTable(d.expense.rows,d.expense.total)}`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  const SEV={low:{bg:'#fff7e0',fg:'#9a6512',label:'1~7일'},mid:{bg:'#ffe9d6',fg:'#b8540a',label:'8~30일'},high:{bg:'#fde2e0',fg:'#c0392b',label:'30일+'}};
+  async function loadOverdue(){
+    const b=$('overdueBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(`${session.api}/api/overdue`,{headers:auth()}).then(r=>r.json());
+      if(!d.current.length&&!d.late_history.length){b.innerHTML='<div class="hint">연체 미수가 없습니다. 👍</div>';return;}
+      const cur=d.current.length?`<div style="font-weight:700;margin-bottom:4px">진행 중 연체 — 합계 ${fmt(d.total_overdue)} MXN · ${d.count}건</div>
+        <table><thead><tr><th>고객</th><th>인보이스</th><th>예정일</th><th class="num">미수금</th><th class="num">연체일</th></tr></thead>
+        <tbody>${d.current.map(o=>{const sv=SEV[o.severity];return `<tr>
+          <td>${o.customer_code||''} ${o.customer_name||''}</td>
+          <td>#${o.id}${o.sat_no?' · '+o.sat_no:''}</td>
+          <td>${String(o.due_date).slice(0,10)}</td>
+          <td class="num" style="font-weight:700">${fmt(o.outstanding)}</td>
+          <td class="num"><span class="badge" style="background:${sv.bg};color:${sv.fg}">${o.overdue_days}일</span></td></tr>`;}).join('')}</tbody></table>`:'<div class="hint">진행 중 연체 없음.</div>';
+      const byc=d.by_customer.length?`<div style="font-weight:700;margin:14px 0 4px">고객별 연체</div>
+        <table><thead><tr><th>고객</th><th class="num">연체 합계</th><th class="num">건수</th><th class="num">최대 연체일</th></tr></thead>
+        <tbody>${d.by_customer.map(c=>`<tr><td>${c.customer_code||''} ${c.customer_name||''}</td>
+          <td class="num" style="font-weight:700">${fmt(c.overdue_amount)}</td><td class="num">${c.count}</td>
+          <td class="num">${c.max_days}일</td></tr>`).join('')}</tbody></table>`:'';
+      const hist=d.late_history.length?`<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700">과거 늦은 입금 이력 (${d.late_history.length}건)</summary>
+        <table style="margin-top:6px"><thead><tr><th>고객</th><th>인보이스</th><th>예정일</th><th>입금일</th><th class="num">금액</th><th class="num">지연일</th></tr></thead>
+        <tbody>${d.late_history.map(h=>{const sv=SEV[h.severity];return `<tr><td>${h.customer_code||''} ${h.customer_name||''}</td>
+          <td>#${h.invoice_id}${h.sat_no?' · '+h.sat_no:''}</td><td>${String(h.due_date).slice(0,10)}</td><td>${String(h.pay_date).slice(0,10)}</td>
+          <td class="num">${fmt(h.amount)}</td><td class="num"><span class="badge" style="background:${sv.bg};color:${sv.fg}">${h.late_days}일</span></td></tr>`;}).join('')}</tbody></table></details>`:'';
+      b.innerHTML=cur+byc+hist;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function loadCashAll(){loadCashflow();loadPlanActual();loadOverdue();}
+
+  // ===== 환율 요약 =====
+  const fmtRate=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:4,maximumFractionDigits:4});
+  function fxDefaultRange(days){
+    const to=new Date();const from=new Date(to.getTime()-days*86400000);
+    $('fx-to').value=to.toISOString().slice(0,10);$('fx-from').value=from.toISOString().slice(0,10);
+  }
+  async function loadFxSummary(){
+    const b=$('fxBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    const from=$('fx-from').value,to=$('fx-to').value;
+    try{
+      const d=await fetch(`${session.api}/api/fx/summary?from=${from}&to=${to}`,{headers:auth()}).then(r=>r.json());
+      const s=d.stats;
+      const today=`<div style="display:inline-block;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px">
+        <div class="hint" style="margin:0">오늘 환율</div><div style="font-size:20px;font-weight:800;color:var(--brand)">USD 1 = MXN ${fmtRate(d.today.rate)}</div>
+        <div class="hint" style="margin:0">${d.today.asOf||''} · ${d.today.source||''}${d.today.stale?' · 최신 못받음':''}</div></div>`;
+      if(!s){b.innerHTML=today+'<div class="hint">선택한 기간에 기록된 환율이 없습니다. (환율은 시스템을 사용한 날 기록됩니다)</div>';return;}
+      const up=s.change>0,dn=s.change<0;const chCol=up?'var(--expense)':(dn?'var(--income)':'var(--muted)');
+      const stat=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        ${statCard('기간 변화',`${up?'▲':dn?'▼':''} ${fmtRate(Math.abs(s.change))}`,`${s.change_pct>0?'+':''}${s.change_pct}%`,chCol)}
+        ${statCard('시작',fmtRate(s.first.rate),s.first.date)}
+        ${statCard('최신',fmtRate(s.last.rate),s.last.date)}
+        ${statCard('최저',fmtRate(s.min.rate),s.min.date,'var(--income)')}
+        ${statCard('최고',fmtRate(s.max.rate),s.max.date,'var(--expense)')}
+        ${statCard('평균',fmtRate(s.avg),`${s.count}일 기록`)}</div>`;
+      const chart=svgFxChart(d.series);
+      const tbl=`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">일자별 환율 (${d.series.length}일)</summary>
+        <table style="margin-top:6px"><thead><tr><th>날짜</th><th class="num">USD→MXN</th><th class="num">전일 대비</th></tr></thead>
+        <tbody>${d.series.map((r,i)=>{const prev=i>0?d.series[i-1].rate:null;const ch=prev==null?null:Math.round((r.rate-prev)*10000)/10000;
+          return `<tr><td>${r.rate_date}</td><td class="num">${fmtRate(r.rate)}</td>
+          <td class="num" style="color:${ch==null?'var(--muted)':(ch>0?'var(--expense)':ch<0?'var(--income)':'var(--muted)')}">${ch==null?'—':(ch>0?'+':'')+fmtRate(ch)}</td></tr>`;}).reverse().join('')}</tbody></table></details>`;
+      const usd=renderUsdSummary(d.usd);
+      b.innerHTML=today+stat+chart+usd+tbl;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function statCard(label,big,sub,col){
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:96px">
+      <div class="hint" style="margin:0">${label}</div>
+      <div style="font-size:16px;font-weight:800;color:${col||'var(--ink)'}">${big}</div>
+      <div class="hint" style="margin:0">${sub||''}</div></div>`;
+  }
+  function svgFxChart(series){
+    if(!series.length)return '';
+    const W=720,H=200,padL=54,padR=12,padT=12,padB=28,n=series.length;
+    const rates=series.map(s=>s.rate);let mn=Math.min(...rates),mx=Math.max(...rates);
+    if(mn===mx){mn-=0.1;mx+=0.1;}else{const pad=(mx-mn)*0.1;mn-=pad;mx+=pad;}
+    const x=i=>padL+(n===1?0:(W-padL-padR)*i/(n-1));
+    const y=v=>padT+(H-padT-padB)*(1-(v-mn)/(mx-mn));
+    const grid=[];for(let k=0;k<=4;k++){const v=mn+(mx-mn)*k/4,yy=y(v);grid.push(`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#eee"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9" fill="#999">${v.toFixed(2)}</text>`);}
+    const pts=series.map((s,i)=>`${x(i)},${y(s.rate)}`).join(' ');
+    const area=`${padL},${y(mn)} ${pts} ${x(n-1)},${y(mn)}`;
+    const dots=series.map((s,i)=>n<=40?`<circle cx="${x(i)}" cy="${y(s.rate)}" r="2" fill="var(--brand)"/>`:'').join('');
+    const xl=series.map((s,i)=>(n<=12||i%Math.ceil(n/8)===0)?`<text x="${x(i)}" y="${H-9}" text-anchor="middle" font-size="8" fill="#999">${s.rate_date.slice(5)}</text>`:'').join('');
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px"><polygon points="${area}" fill="rgba(20,61,52,.06)"/>${grid.join('')}<polyline points="${pts}" fill="none" stroke="var(--brand)" stroke-width="2"/>${dots}${xl}</svg>`;
+  }
+  function renderUsdSummary(u){
+    if(!u||(u.plan.cnt===0&&u.actual.cnt===0))return '';
+    const row=(lbl,o,note)=>`<tr><td>${lbl}</td><td class="num">${o.cnt}</td>
+      <td class="num">$${fmt(o.usd)}</td><td class="num">${fmt(o.mxn)}</td>
+      <td class="num">${o.avg_rate==null?'—':fmtRate(o.avg_rate)}</td></tr>`;
+    return `<div style="margin-top:16px"><div style="font-weight:700;margin-bottom:4px">USD 거래 요약</div>
+      <div class="hint" style="margin-top:0">예정은 예상환율(오늘 기준), 실제는 거래 시점 확정환율로 MXN 환산됩니다.</div>
+      <table><thead><tr><th>구분</th><th class="num">건수</th><th class="num">USD 합계</th><th class="num">MXN 환산</th><th class="num">평균환율</th></tr></thead>
+      <tbody>${row('예정(예상)',u.plan)}${row('실제(확정)',u.actual)}</tbody></table></div>`;
+  }
+
+  // ===== 거래 등록 탭: 예정 내역(실적 처리) =====
+  let ppMonth=new Date().toISOString().slice(0,7);
+  async function loadPendingPlans(){
+    const b=$('ppBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    $('pp-month').textContent=ppMonth;
+    try{
+      const d=await fetch(`${session.api}/api/transactions/pending-plans?month=${ppMonth}`,{headers:auth()}).then(r=>r.json());
+      if(!d.items.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';return;}
+      const srcLabel=(s)=>s==='sales'?'<span class="badge" style="background:#e6f1fb;color:#0c447c">매출</span>':s==='recurring'?'<span class="badge" style="background:#efeee9;color:#6b6b6b">고정비</span>':'<span class="badge" style="background:#f0ece4;color:#8a6d1a">수동</span>';
+      b.innerHTML=`<table><thead><tr><th>예정일</th><th>구분</th><th>출처</th><th>계정과목</th><th>메모</th><th class="num">계획액</th><th></th></tr></thead>
+        <tbody>${d.items.map(t=>{
+          const isSales=t.source==='sales';
+          return `<tr class="${t.overdue?'pp-over':''}" data-id="${t.id}">
+            <td>${t.plan_date}${t.overdue?' <span class="badge" style="background:#fde2e0;color:#c0392b">경과</span>':''}</td>
+            <td>${t.direction==='in'?'수입':'지출'}</td>
+            <td>${srcLabel(t.source)}</td>
+            <td>${t.category_name||t.category_code||''}</td>
+            <td style="font-size:11px;color:var(--muted)">${(t.memo||'').replace(/^\[고정비\]\s*/,'').slice(0,30)}</td>
+            <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency}</td>
+            <td>${isSales?'<span class="hint" style="margin:0">매출(반제)에서 처리</span>':`<button class="btn sm pp-do" data-id="${t.id}">실적 처리</button>`}</td>
+          </tr>${isSales?'':`<tr class="pp-form hidden" data-form="${t.id}"><td colspan="7"></td></tr>`}`;
+        }).join('')}</tbody></table>`;
+      // 데이터 보관
+      ppMap={};d.items.forEach(t=>ppMap[t.id]=t);
+      [...b.querySelectorAll('.pp-do')].forEach(el=>el.onclick=()=>togglePpForm(Number(el.dataset.id)));
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  let ppMap={};
+  function togglePpForm(id){
+    const tr=document.querySelector(`.pp-form[data-form="${id}"]`);if(!tr)return;
+    if(!tr.classList.contains('hidden')){tr.classList.add('hidden');tr.firstElementChild.innerHTML='';return;}
+    const t=ppMap[id];
+    tr.firstElementChild.innerHTML=`<div style="border:1px solid var(--brand);border-radius:8px;padding:10px;background:#fbfaf6">
+      <div style="font-weight:700;margin-bottom:4px">${t.direction==='in'?'입금':'지급'} 확인 — ${t.category_name||''} (계획 ${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency} · ${t.plan_date})</div>
+      <div class="row">
+        <div style="flex:2"><label>계좌</label><select class="pp-acc">${accOptions(t.account_id)}</select></div>
+        <div><label>${t.direction==='in'?'입금':'지급'}일</label><input class="pp-date" type="date" value="${t.txn_date}"></div>
+        <div><label>실제 금액</label><input class="pp-amt" type="number" step="0.01" value="${t.amount}"></div>
+        ${t.currency==='USD'?'<div><label>환율</label><input class="pp-fx" type="number" step="0.0001" placeholder="지급일 환율"></div>':''}
+      </div>
+      <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="pp-memo" type="text"></div></div>
+      <div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm pp-go">실적 반영</button><button class="btn ghost sm pp-cancel">닫기</button></div>
+      <div class="msg pp-msg"></div></div>`;
+    tr.classList.remove('hidden');
+    tr.querySelector('.pp-cancel').onclick=()=>togglePpForm(id);
+    tr.querySelector('.pp-go').onclick=()=>doPpConfirm(id,tr);
+  }
+  async function doPpConfirm(id,tr){
+    const m=tr.querySelector('.pp-msg');m.className='msg pp-msg';m.style.display='none';
+    const acc=tr.querySelector('.pp-acc').value;
+    if(!acc){m.className='msg pp-msg err';m.style.display='block';m.textContent='계좌를 선택하세요.';return;}
+    const body={account_id:Number(acc),pay_date:tr.querySelector('.pp-date').value};
+    const amtEl=tr.querySelector('.pp-amt');if(amtEl&&Number(amtEl.value)>0)body.amount=Number(amtEl.value);
+    const memoEl=tr.querySelector('.pp-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
+    const fxEl=tr.querySelector('.pp-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg pp-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      alert(d.changed?'실적으로 반영되었습니다(계획과 달라 "계획대비 변경" 표시).':'실적으로 반영되었습니다.');
+      loadPendingPlans();loadAccounts();
+    }catch(e){m.className='msg pp-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  function showTab(w){
+    ['Acc','New','Txn','Pay','Fixed','Cash','Fx','Approve'].forEach(x=>$('tab'+x).classList.toggle('on',x.toLowerCase()===w));
+    $('accCard').classList.toggle('hidden',w!=='acc');
+    $('newCard').classList.toggle('hidden',w!=='new');
+    $('txnCard').classList.toggle('hidden',w!=='txn');
+    $('payCard').classList.toggle('hidden',w!=='pay');
+    $('fixedCard').classList.toggle('hidden',w!=='fixed');
+    $('cashCard').classList.toggle('hidden',w!=='cash');
+    $('fxCard').classList.toggle('hidden',w!=='fx');
+    $('apprCard').classList.toggle('hidden',w!=='approve');
+    if(w==='new'){loadPendingPlans();}
+    if(w==='txn')loadTxns();
+    if(w==='pay'){if(!$('p-date').value)$('p-date').value=new Date().toISOString().slice(0,10);loadArCustomers();}
+    if(w==='fixed'){loadFixed();loadVariance();}
+    if(w==='cash'){loadCashAll();}
+    if(w==='fx'){if(!$('fx-from').value){fxDefaultRange(90);}loadFxSummary();}
+    if(w==='approve'){loadApprovals();loadChangeReqs();}
+    if(w==='acc')loadAccounts();
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('tabAcc').addEventListener('click',()=>showTab('acc'));
+  $('pp-prev').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);loadPendingPlans();});
+  $('pp-next').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);loadPendingPlans();});
+  $('tabNew').addEventListener('click',()=>showTab('new'));
+  $('tabTxn').addEventListener('click',()=>showTab('txn'));
+  $('tabPay').addEventListener('click',()=>showTab('pay'));
+  $('tabFixed').addEventListener('click',()=>showTab('fixed'));
+  $('tabCash').addEventListener('click',()=>showTab('cash'));
+  $('tabFx').addEventListener('click',()=>showTab('fx'));
+  $('tabApprove').addEventListener('click',()=>showTab('approve'));
+  $('fx-go').addEventListener('click',loadFxSummary);
+  ['fx-30','fx-90','fx-365'].forEach(id=>$(id).addEventListener('click',()=>{
+    ['fx-30','fx-90','fx-365'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');
+    fxDefaultRange(Number($(id).dataset.d));loadFxSummary();}));
+  // 현금흐름 토글
+  function cfSeg(ids,key,after){ids.forEach(id=>$(id).addEventListener('click',()=>{
+    ids.forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');cfState[key]=$(id).dataset.v;after();}));}
+  cfSeg(['cf-actual','cf-plan'],'mode',()=>loadCashAll());
+  cfSeg(['cf-month','cf-week'],'gran',()=>loadCashAll());
+  cfSeg(['cf-table','cf-cal','cf-wcal'],'view',()=>loadCashflow());
+  ['pa-all','pa-rec','pa-oth'].forEach(id=>$(id).addEventListener('click',()=>{
+    ['pa-all','pa-rec','pa-oth'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');paState.filter=$(id).dataset.v;loadPlanActual();}));
+  $('rxAddBtn').addEventListener('click',async ()=>{
+    $('rxForm').classList.toggle('hidden');
+    if(!accounts||!accounts.length){await loadAccounts();}
+    $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
+    $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+  });
+  $('rx-save').addEventListener('click',saveRule);
+  $('rx-dir').addEventListener('change',()=>{$('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');});
+  $('rx-freq').addEventListener('change',()=>{const w=$('rx-freq').value==='week';$('rx-weekbox').classList.toggle('hidden',!w);$('rx-monthbox').classList.toggle('hidden',w);});
+  $('rx-endtype').addEventListener('change',()=>{$('rx-endbox').classList.toggle('hidden',$('rx-endtype').value!=='month');});
+  $('var-gran').addEventListener('change',loadVariance);
+  $('p-cust').addEventListener('change',()=>{loadOpenInvoices();loadPayHistory();});
+  $('p-amt').addEventListener('input',renderRunbar);
+  $('p-auto').addEventListener('click',autoAllocate);
+  $('p-clear').addEventListener('click',clearAlloc);
+  $('p-save').addEventListener('click',savePayment);
+  $('accAddBtn').addEventListener('click',()=>$('accForm').classList.toggle('hidden'));
+  $('a-save').addEventListener('click',saveAccount);
+  $('t-save').addEventListener('click',saveTxn);
+  $('f-go').addEventListener('click',loadTxns);
+  $('f-acc').addEventListener('change',loadTxns);
+  $('f-status').addEventListener('change',loadTxns);
+  $('f-dir').addEventListener('change',loadTxns);
+  ['t-cur','t-amt','t-fx','t-status'].forEach(id=>$(id).addEventListener('input',previewTxn));
+  $('t-dir').addEventListener('change',refreshCatOptions);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

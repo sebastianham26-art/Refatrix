@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 매출 목표</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1280px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}.btn.danger{background:var(--expense)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .scroll{overflow-x:auto}
+  table.grid{border-collapse:collapse;font-size:12px;white-space:nowrap}
+  table.grid th,table.grid td{border:1px solid var(--line);padding:5px 7px;text-align:right}
+  table.grid th.lbl,table.grid td.lbl{text-align:left;position:sticky;left:0;background:#faf8f3;z-index:1;min-width:200px}
+  table.grid thead th{background:#f0ece2;color:var(--muted);font-weight:700;font-size:11px}
+  table.grid td.num{font-variant-numeric:tabular-nums}
+  table.grid input{width:96px;text-align:right;padding:4px 6px;font-size:12px;border:1px solid var(--line);border-radius:6px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .st-draft{background:#eee;color:#555}.st-submitted{background:#fff4d6;color:#8a6512}.st-approved{background:#e7f3ee;color:var(--income)}.st-rejected{background:#fbe9e7;color:var(--expense)}
+  .short{color:var(--expense);font-weight:700}.over{color:var(--gold);font-weight:700}.okrow{color:var(--income)}
+  .csum{font-weight:700}
+  .teampick{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .teambtn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .teambtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .smallnote{font-size:11px;color:var(--muted);white-space:normal}
+  .custmeta{font-size:10.5px;color:var(--muted);white-space:normal;max-width:230px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출 목표 · 전체 → 팀 → 고객 (미래 12개월)</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">기간</h2>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="margin:0">시작 월</label><input id="startYm" type="month">
+          <button class="btn sm ghost" id="reloadBtn">불러오기</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:6px">시작 월부터 12개월을 한 화면에서 편집합니다. 위에서 아래로 전체 → 팀 → 고객 순으로 숫자가 이어집니다.</div>
+    </div>
+
+    <!-- ① 전체 + 팀 목표 -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">① 전체 월 목표 · 팀 배분 <span class="smallnote" id="dirOnly"></span></h2>
+        <button class="btn gold sm hidden" id="saveTopBtn">전체·팀 목표 저장</button>
+      </div>
+      <div class="scroll"><div id="topGrid"><div class="hint">불러오는 중…</div></div></div>
+      <div class="msg" id="topMsg"></div>
+    </div>
+
+    <!-- ② 팀 선택 + 고객 할당 -->
+    <div class="card">
+      <h2 style="margin:0 0 6px">② 고객별 목표 배분</h2>
+      <div class="teampick" id="teamPick"></div>
+      <div id="teamStatusBar" style="margin-top:10px"></div>
+      <div class="scroll" style="margin-top:10px"><div id="custGrid"><div class="hint">팀을 선택하세요.</div></div></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="custActions"></div>
+      <div class="msg" id="custMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let startYm='', months=[], overview=null, curTeam=null, teamData=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const isDirector=()=> session.user && session.user.role==='director';
+  const n0=(v)=> (v==null||v==='')?0:Number(v);
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const ymLabel=(ym)=>{const [y,m]=ym.split('-');return y.slice(2)+'.'+m;};
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      if(isDirector()){$('saveTopBtn').classList.remove('hidden');$('dirOnly').textContent='(디렉터 편집)';}
+      else $('dirOnly').textContent='(보기 전용 · 디렉터가 설정)';
+      const now=new Date();startYm=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
+      $('startYm').value=startYm;
+      loadOverview();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadOverview(){
+    startYm=$('startYm').value||startYm;
+    $('topGrid').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      overview=await fetch(session.api+'/api/targets/overview?start='+startYm,{headers:auth()}).then(r=>r.json());
+      months=overview.months;
+      renderTop();
+      renderTeamPick();
+      if(curTeam)selectTeam(curTeam);
+    }catch(e){$('topGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function renderTop(){
+    const dir=isDirector();
+    const comp=overview.company||{}, check=overview.check||{};
+    // 헤더
+    let head='<tr><th class="lbl">구분</th>'+months.map(m=>`<th>${ymLabel(m)}</th>`).join('')+'<th>합계</th></tr>';
+    // 전체 목표 행
+    let compSum=0;
+    let compRow='<tr><td class="lbl"><b>전체 목표</b></td>'+months.map(m=>{
+      const v=comp[m]||0;compSum+=v;
+      return dir?`<td><input data-comp="${m}" type="number" value="${v||''}" oninput="onTopInput()"></td>`:`<td class="num">${fmt(v)}</td>`;
+    }).join('')+`<td class="num"><b id="compSum">${fmt(compSum)}</b></td></tr>`;
+    // 팀 목표 행들
+    let teamRows=(overview.teams||[]).map(t=>{
+      let ts=0;
+      const cells=months.map(m=>{
+        const v=(t.months&&t.months[m])||0;ts+=v;
+        return dir?`<td><input data-team="${t.id}" data-ym="${m}" type="number" value="${v||''}" oninput="onTopInput()"></td>`:`<td class="num">${fmt(v)}</td>`;
+      }).join('');
+      return `<tr><td class="lbl">${t.name} <span class="pill st-${t.status}">${stLabel(t.status)}</span></td>${cells}<td class="num" data-teamsum="${t.id}">${fmt(ts)}</td></tr>`;
+    }).join('');
+    // 팀 합 vs 전체(부족/초과) 행
+    let diffRow='<tr><td class="lbl smallnote">전체−팀합 (부족/초과)</td>'+months.map(m=>{
+      const c=check[m]||{};
+      const txt=c.shortfall>0?`<span class="short">−${fmt(c.shortfall)}</span>`:(c.over>0?`<span class="over">+${fmt(c.over)}</span>`:'<span class="okrow">0</span>');
+      return `<td class="num" data-diff="${m}">${txt}</td>`;
+    }).join('')+'<td></td></tr>';
+    $('topGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${compRow}${teamRows}${diffRow}</tbody></table>`;
+  }
+
+  function stLabel(s){return {draft:'작성중',submitted:'제출됨',approved:'승인',rejected:'반려'}[s]||s;}
+
+  // 전체/팀 입력 시 합계·차이 실시간 갱신
+  function onTopInput(){
+    const comp={};document.querySelectorAll('[data-comp]').forEach(i=>comp[i.dataset.comp]=n0(i.value));
+    const teamByMonth={};
+    document.querySelectorAll('[data-team]').forEach(i=>{const m=i.dataset.ym;teamByMonth[m]=(teamByMonth[m]||0)+n0(i.value);});
+    // 전체 합
+    let cs=0;Object.values(comp).forEach(v=>cs+=v);$('compSum').textContent=fmt(cs);
+    // 팀별 합
+    (overview.teams||[]).forEach(t=>{
+      let s=0;document.querySelectorAll(`[data-team="${t.id}"]`).forEach(i=>s+=n0(i.value));
+      const el=document.querySelector(`[data-teamsum="${t.id}"]`);if(el)el.textContent=fmt(s);
+    });
+    // 차이
+    months.forEach(m=>{
+      const diff=(comp[m]||0)-(teamByMonth[m]||0);
+      const el=document.querySelector(`[data-diff="${m}"]`);
+      if(el)el.innerHTML=diff>0?`<span class="short">−${fmt(diff)}</span>`:(diff<0?`<span class="over">+${fmt(-diff)}</span>`:'<span class="okrow">0</span>');
+    });
+  }
+
+  async function saveTop(){
+    const m=$('topMsg');m.className='msg';m.style.display='none';
+    const compMonths=[];document.querySelectorAll('[data-comp]').forEach(i=>compMonths.push({ym:i.dataset.comp,amount:n0(i.value)}));
+    try{
+      await fetch(session.api+'/api/targets/company',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({months:compMonths})});
+      for(const t of (overview.teams||[])){
+        const tm=[];document.querySelectorAll(`[data-team="${t.id}"]`).forEach(i=>tm.push({ym:i.dataset.ym,amount:n0(i.value)}));
+        await fetch(session.api+'/api/targets/team/'+t.id,{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({months:tm})});
+      }
+      m.className='msg ok';m.style.display='block';m.textContent='전체·팀 목표를 저장했습니다.';
+      loadOverview();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='저장 실패';}
+  }
+
+  function renderTeamPick(){
+    const pick=$('teamPick');
+    pick.innerHTML=(overview.teams||[]).map(t=>`<div class="teambtn ${curTeam===t.id?'on':''}" onclick="selectTeam(${t.id})">${t.name} <span class="pill st-${t.status}">${stLabel(t.status)}</span></div>`).join('');
+  }
+
+  async function selectTeam(teamId){
+    curTeam=teamId;
+    renderTeamPick();
+    $('custGrid').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      teamData=await fetch(session.api+'/api/targets/team/'+teamId+'?start='+startYm,{headers:auth()}).then(r=>r.json());
+      if(teamData.error){$('custGrid').innerHTML='<div class="hint">'+(teamData.error==='forbidden_team'?'이 팀을 볼 권한이 없습니다.':'불러오지 못했습니다.')+'</div>';return;}
+      renderCust();
+    }catch(e){$('custGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function renderCust(){
+    const canEdit=teamData.can_edit;
+    const tmon=teamData.team_months||{};
+    // 헤더: 고객요약 | 12개월
+    let head='<tr><th class="lbl">고객 (종류·단계·미수·할인·메모)</th>'+months.map(m=>`<th>${ymLabel(m)}</th>`).join('')+'<th>합계</th></tr>';
+    // 팀 목표 행(참고)
+    let tsum=0;
+    let teamRow='<tr><td class="lbl"><b>팀 목표</b></td>'+months.map(m=>{const v=tmon[m]||0;tsum+=v;return `<td class="num">${fmt(v)}</td>`;}).join('')+`<td class="num"><b>${fmt(tsum)}</b></td></tr>`;
+    // 고객 행
+    let custRows=(teamData.customers||[]).map(c=>{
+      const meta=`<div class="custmeta">${[c.customer_type||'—',c.stage_name||'—',(c.overdue>0?'연체 '+fmt(c.overdue):(c.outstanding>0?'미수 '+fmt(c.outstanding):'미수 없음')),'할인 '+c.discount+'%'].join(' · ')}${c.memo?'<br>메모: '+c.memo:''}</div>`;
+      let rsum=0;
+      const cells=months.map(m=>{
+        const v=(c.alloc&&c.alloc[m])||0;rsum+=v;
+        const act=(c.actual&&c.actual[m])||0;
+        const actTxt=act?`<div class="smallnote" style="text-align:right">실적 ${fmt(act)}</div>`:'';
+        return canEdit?`<td><input data-cust="${c.id}" data-ym="${m}" type="number" value="${v||''}" oninput="onCustInput()">${actTxt}</td>`:`<td class="num">${fmt(v)}${actTxt}</td>`;
+      }).join('');
+      return `<tr><td class="lbl"><b>${c.name}</b> <span class="smallnote">${c.code}</span>${meta}</td>${cells}<td class="num csum" data-custsum="${c.id}">${fmt(rsum)}</td></tr>`;
+    }).join('');
+    // 고객 합 행
+    let allocRow='<tr><td class="lbl smallnote">고객 배분 합</td>'+months.map(m=>`<td class="num" data-allocsum="${m}">${fmt(teamData.cust_sum&&teamData.cust_sum[m]||0)}</td>`).join('')+'<td></td></tr>';
+    // 부족/초과 행
+    let shRow='<tr><td class="lbl smallnote">팀목표−배분 (부족/초과)</td>'+months.map(m=>{
+      const s=(teamData.shortfall&&teamData.shortfall[m])||{};
+      const txt=s.shortfall>0?`<span class="short">부족 ${fmt(s.shortfall)}</span>`:(s.over>0?`<span class="over">초과 ${fmt(s.over)}</span>`:'<span class="okrow">0</span>');
+      return `<td class="num" data-sh="${m}">${txt}</td>`;
+    }).join('')+'<td></td></tr>';
+    $('custGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${teamRow}${custRows}${allocRow}${shRow}</tbody></table>`;
+    if(!(teamData.customers||[]).length)$('custGrid').innerHTML+='<div class="hint">이 팀에 등록된 고객이 없습니다. 고객관리에서 먼저 고객을 추가하세요.</div>';
+    renderStatusBar();
+    renderCustActions();
+  }
+
+  function renderStatusBar(){
+    const s=teamData.status||'draft';
+    $('teamStatusBar').innerHTML=`상태: <span class="pill st-${s}">${stLabel(s)}</span>${teamData.note?` <span class="smallnote">· 메모: ${teamData.note}</span>`:''}`;
+  }
+
+  // 고객 입력 시 합/부족 실시간
+  function onCustInput(){
+    const sumByM={};
+    (teamData.customers||[]).forEach(c=>{
+      let rs=0;document.querySelectorAll(`[data-cust="${c.id}"]`).forEach(i=>{rs+=n0(i.value);const m=i.dataset.ym;sumByM[m]=(sumByM[m]||0)+n0(i.value);});
+      const el=document.querySelector(`[data-custsum="${c.id}"]`);if(el)el.textContent=fmt(rs);
+    });
+    months.forEach(m=>{
+      const as=sumByM[m]||0;const el=document.querySelector(`[data-allocsum="${m}"]`);if(el)el.textContent=fmt(as);
+      const tgt=(teamData.team_months&&teamData.team_months[m])||0;const diff=tgt-as;
+      const sh=document.querySelector(`[data-sh="${m}"]`);
+      if(sh)sh.innerHTML=diff>0?`<span class="short">부족 ${fmt(diff)}</span>`:(diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:'<span class="okrow">0</span>');
+    });
+  }
+
+  function renderCustActions(){
+    const box=$('custActions');box.innerHTML='';
+    if(teamData.can_edit){
+      const save=document.createElement('button');save.className='btn gold sm';save.textContent='고객 배분 저장';save.onclick=saveCust;box.appendChild(save);
+      const sub=document.createElement('button');sub.className='btn sm';sub.textContent='제출(디렉터 승인 요청)';sub.onclick=submitTeam;box.appendChild(sub);
+    }
+    if(isDirector()){
+      const ap=document.createElement('button');ap.className='btn sm';ap.style.background='var(--income)';ap.textContent='승인';ap.onclick=()=>decide(true);box.appendChild(ap);
+      const rj=document.createElement('button');rj.className='btn danger sm';rj.textContent='반려';rj.onclick=()=>decide(false);box.appendChild(rj);
+    }
+  }
+
+  async function saveCust(){
+    const m=$('custMsg');m.className='msg';m.style.display='none';
+    const allocations=[];
+    document.querySelectorAll('[data-cust]').forEach(i=>allocations.push({customer_id:Number(i.dataset.cust),ym:i.dataset.ym,amount:n0(i.value)}));
+    try{
+      const res=await fetch(session.api+'/api/targets/customers',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:curTeam,allocations})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='저장 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent='고객 배분을 저장했습니다. (상태: 작성중으로 변경 — 제출 필요)';
+      selectTeam(curTeam);loadOverview();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  async function submitTeam(){
+    const m=$('custMsg');m.className='msg';m.style.display='none';
+    try{
+      const res=await fetch(session.api+'/api/targets/team/'+curTeam+'/submit',{method:'POST',headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='제출 실패: '+(d.error==='forbidden_team'?'이 팀을 편집할 권한이 없습니다.':(d.error||('HTTP '+res.status)));return;}
+      m.className='msg ok';m.style.display='block';m.textContent='제출했습니다. 디렉터 승인을 기다립니다.';
+      selectTeam(curTeam);loadOverview();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='제출 실패: 서버 연결 실패';}
+  }
+
+  async function decide(approve){
+    const m=$('custMsg');m.className='msg';m.style.display='none';
+    let note=null;if(!approve){note=prompt('반려 사유(선택):')||null;}
+    try{
+      const res=await fetch(session.api+'/api/targets/team/'+curTeam+'/decide',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({approve,note})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='처리 실패: '+(d.error||('HTTP '+res.status));return;}
+      m.className='msg ok';m.style.display='block';m.textContent=approve?'승인했습니다.':'반려했습니다.';
+      selectTeam(curTeam);loadOverview();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='처리 실패: 서버 연결 실패';}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('reloadBtn').addEventListener('click',loadOverview);
+  $('saveTopBtn').addEventListener('click',saveTop);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

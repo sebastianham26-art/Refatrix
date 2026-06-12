@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 제품 조회</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:920px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .code{font-weight:700;color:var(--brand)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .lowstock{color:var(--expense);font-weight:700}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .pvcards{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .pvcard{border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:90px}
+  .pvcard .k{font-size:11px;color:var(--muted)}.pvcard .v{font-size:18px;font-weight:800}
+  .pvcard.new .v{color:var(--income)}.pvcard.upd .v{color:var(--gold)}.pvcard.err .v{color:var(--expense)}
+  .chg{font-size:11px;color:var(--muted)}
+  .chg b{color:var(--ink)}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#faf8f3}
+  .drop:hover{border-color:var(--brand);color:var(--brand)}
+  .tag{display:inline-block;background:#eef1f5;color:#5a6b7b;border-radius:6px;padding:1px 6px;font-size:11px;margin:1px}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">제품 조회 · 재고 · 평균원가</div></div><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="searchCard">
+    <h2>제품 검색</h2>
+    <div class="row">
+      <div style="flex:3"><label>코드 · 이름 · 바코드</label><input id="q" type="text" placeholder="예: CTR-1001 · 브레이크 · 바코드 (비우면 전체)"></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
+    </div>
+    <div id="result"></div>
+    <div class="hint">평균원가(이동평균)는 수입 입고·부대비용 승인 시 갱신되고, <b>매출로는 바뀌지 않습니다</b>. 매출 등록 후 재고만 줄고 평균원가는 그대로면 정상입니다. 역할에 따라 원가·정가가 보이지 않을 수 있습니다(권한 최소화).</div>
+  </div>
+
+  <!-- 제품 마스터 업로드 (디렉터) -->
+  <div class="card hidden" id="upCard">
+    <h2>제품 마스터 업로드</h2>
+    <div class="hint" style="margin-top:0">엑셀 파일(.xlsx)을 올리면 <b>Clave CTR</b> 기준으로 신규는 추가, 기존은 <b>변경된 항목만</b> 덮어씁니다. <b>재고수량·평균원가는 절대 바뀌지 않습니다.</b> Clave SyD는 ' // '로 여러 경쟁사 코드를 넣을 수 있고, 검색용으로 분해 저장됩니다. 먼저 미리보기로 확인 후 반영하세요.</div>
+    <div class="drop" id="drop" style="margin-top:12px">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)<br><span style="font-size:11px">필수 컬럼: Clave CTR · Nombre del producto</span></div>
+    <input type="file" id="upFile" accept=".xlsx,.xls" class="hidden">
+    <div class="msg" id="upMsg"></div>
+
+    <div id="preview" class="hidden">
+      <div class="pvcards">
+        <div class="pvcard"><div class="k">총 행</div><div class="v" id="pv-total">0</div></div>
+        <div class="pvcard new"><div class="k">신규</div><div class="v" id="pv-new">0</div></div>
+        <div class="pvcard upd"><div class="k">변경</div><div class="v" id="pv-upd">0</div></div>
+        <div class="pvcard"><div class="k">동일</div><div class="v" id="pv-same">0</div></div>
+        <div class="pvcard err"><div class="k">오류</div><div class="v" id="pv-err">0</div></div>
+        <div class="pvcard"><div class="k">중복코드</div><div class="v" id="pv-dup">0</div></div>
+      </div>
+      <div id="pv-detail"></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn gold" id="commitBtn">반영하기</button>
+        <button class="btn ghost" id="cancelBtn">취소</button>
+      </div>
+    </div>
+    <div class="msg" id="commitMsg"></div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div class="hint" style="margin-top:0">이미 올린 제품들의 경쟁사 코드·적용차종 분해 데이터를 다시 만들려면 아래를 누르세요(검색이 비어 나올 때).</div>
+      <button class="btn ghost sm" id="resyncBtn" style="margin-top:6px">분해 데이터 전체 재동기화</button>
+      <div class="msg" id="resyncMsg"></div>
+    </div>
+  </div>
+
+  <!-- SyD 역검색 -->
+  <div class="card hidden" id="sydCard">
+    <h2>경쟁사(SyD) 코드로 제품 찾기</h2>
+    <div class="row">
+      <div style="flex:3"><label>SyD 코드</label><input id="sydq" type="text" placeholder="예: 48530-3S125"></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="sydBtn">찾기</button></div>
+    </div>
+    <div id="sydResult"></div>
+  </div>
+
+  <!-- 차종 역검색 -->
+  <div class="card hidden" id="vehCard">
+    <h2>차종으로 제품 찾기</h2>
+    <div class="hint" style="margin-top:0">메이커 → 모델 → 연식 순으로 좁혀 적용 가능한 부품을 찾습니다. 단계는 건너뛸 수 있습니다(예: 메이커만 선택). 연식은 “1994-2005”처럼 범위로 적용되며 그 사이 모든 연도가 포함됩니다.</div>
+    <div class="row">
+      <div><label>메이커</label><select id="veh-maker"><option value="">전체</option></select></div>
+      <div style="flex:2"><label>모델</label><select id="veh-model"><option value="">전체</option></select></div>
+      <div><label>연식</label><select id="veh-year"><option value="">전체</option></select></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="vehBtn">찾기</button></div>
+    </div>
+    <div id="vehResult"></div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'<span style="color:#bbb">—</span>':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const qty=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const h=location.hash.slice(1); if(!h) return null;
+      const p=new URLSearchParams(h);
+      const token=p.get('token'); if(!token) return null;
+      return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+    }catch(e){return null;}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('searchCard').classList.remove('hidden');
+      $('sydCard').classList.remove('hidden');
+      $('vehCard').classList.remove('hidden');
+      loadMakers();
+      if(session.user&&session.user.role==='director')$('upCard').classList.remove('hidden');
+      doSearch();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function doSearch(){
+    const q=$('q').value.trim();const r=$('result');r.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit=50',{headers:auth()});
+      const d=await res.json();const items=d.items||[];
+      if(!items.length){r.innerHTML='<div class="hint">일치하는 제품이 없습니다.</div>';return;}
+      const hasCost = items.some(p=>'avg_cost' in p);
+      const hasList = items.some(p=>'list_price' in p);
+      r.innerHTML='<table><thead><tr>'
+        +'<th>코드</th><th>제품명</th><th>바코드</th><th class="num">재고</th>'
+        +(hasList?'<th class="num">정가</th>':'')
+        +(hasCost?'<th class="num">평균원가</th>':'')
+        +(hasCost?'<th class="num">재고 평가액</th>':'')
+        +'</tr></thead><tbody>'+items.map(function(p){
+          var stock=Number(p.stock_qty);
+          var val=('avg_cost' in p)&&p.avg_cost!=null?Number(p.avg_cost)*stock:null;
+          return '<tr>'
+            +'<td class="code">'+p.code+'</td><td>'+(p.name||'')+'</td><td>'+(p.ean||'—')+'</td>'
+            +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
+            +(hasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
+            +(hasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
+            +(hasCost?'<td class="num">'+fmt(val)+'</td>':'')
+            +'</tr>';
+        }).join('')+'</tbody></table>'
+        +'<div class="hint">'+items.length+'개 표시. 재고가 0 이하면 빨간색으로 표시됩니다.</div>';
+    }catch(e){r.innerHTML='<div class="hint">조회에 실패했습니다.</div>';}
+  }
+
+  // ===== 제품 마스터 업로드 =====
+  // 파일 컬럼 라벨(표시용) — 시스템 필드 → 파일 컬럼명
+  const FIELD_LABEL={scode:'Clave SyD',app:'Aplicacion',name:'Nombre del producto',sat_code:'Clave SAT',origin:'Origen',list_price:'List Price',iva_rate:'IVA',ean:'Barcode',location:'Fast Movement Location',list_price_syd:'List Price de SYD',price_customer_syd:'Precio Cliente de SYD',price_customer_ctr:'Precio Cliente de CTR'};
+  let parsedPayload=null;
+
+  async function handleFile(file){
+    const m=$('upMsg');m.className='msg';m.style.display='none';
+    $('commitMsg').style.display='none';$('preview').classList.add('hidden');
+    if(!file){return;}
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
+      if(!aoa.length){m.className='msg err';m.style.display='block';m.textContent='빈 파일입니다.';return;}
+      const header=(aoa[0]||[]).slice(0,13).map(h=>h==null?'':String(h));
+      const rows=aoa.slice(1).filter(r=>r&&r.some(c=>c!=null&&c!=='')).map(r=>r.slice(0,13));
+      if(!header.includes('Clave CTR')){m.className='msg err';m.style.display='block';m.textContent='“Clave CTR” 컬럼을 찾을 수 없습니다. 헤더 행을 확인하세요.';return;}
+      parsedPayload={header,rows};
+      m.className='msg ok';m.style.display='block';m.textContent=file.name+' — '+rows.length+'행 읽음. 미리보기를 불러옵니다…';
+      await loadPreview();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='파일을 읽지 못했습니다: '+e.message;}
+  }
+
+  async function loadPreview(){
+    const m=$('upMsg');
+    try{
+      const res=await fetch(session.api+'/api/products/import/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(parsedPayload)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='미리보기 실패: '+(d.detail||d.error||res.status);return;}
+      $('pv-total').textContent=d.total;$('pv-new').textContent=d.new_items.length;$('pv-upd').textContent=d.updated.length;
+      $('pv-same').textContent=d.unchanged;$('pv-err').textContent=d.errors.length;$('pv-dup').textContent=d.duplicates.length;
+      let html='';
+      if(d.updated.length){
+        html+='<div style="font-weight:700;margin-top:8px">변경되는 제품 (최대 50개 표시)</div>';
+        html+='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th>변경 내용</th></tr></thead><tbody>'+
+          d.updated.slice(0,50).map(u=>{
+            const parts=Object.keys(u.changes).map(f=>`<div class="chg">${FIELD_LABEL[f]||f}: <span style="color:var(--expense)">${fmtv(u.changes[f].from)}</span> → <b>${fmtv(u.changes[f].to)}</b></div>`);
+            if(u.syd_changed)parts.push(`<div class="chg">Clave SyD: <span style="color:var(--expense)">${(u.syd_from||[]).join(' // ')||'—'}</span> → <b>${(u.syd_to||[]).join(' // ')||'—'}</b></div>`);
+            return `<tr><td class="code">${u.code}</td><td>${u.name||''}</td><td>${parts.join('')}</td></tr>`;
+          }).join('')+'</tbody></table>';
+        if(d.updated.length>50)html+=`<div class="hint">외 ${d.updated.length-50}개 더 변경됩니다.</div>`;
+      }
+      if(d.new_items.length){
+        html+='<div style="font-weight:700;margin-top:8px">신규 제품 (최대 30개 표시)</div>';
+        html+='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th class="num">List Price</th><th>SyD수</th></tr></thead><tbody>'+
+          d.new_items.slice(0,30).map(n=>`<tr><td class="code">${n.code}</td><td>${n.name||''}</td><td class="num">${fmt(n.list_price)}</td><td>${n.syd_count}</td></tr>`).join('')+'</tbody></table>';
+        if(d.new_items.length>30)html+=`<div class="hint">외 ${d.new_items.length-30}개 더 추가됩니다.</div>`;
+      }
+      if(d.errors.length){
+        html+='<div style="font-weight:700;margin-top:8px;color:var(--expense)">오류 (반영되지 않음)</div>';
+        html+='<table><thead><tr><th>Clave CTR</th><th>사유</th></tr></thead><tbody>'+
+          d.errors.map(e=>`<tr><td class="code">${e.code}</td><td>${e.reason==='name_missing'?'제품명(Nombre del producto) 누락':e.reason}</td></tr>`).join('')+'</tbody></table>';
+      }
+      if(d.duplicates.length){html+=`<div class="hint" style="color:var(--expense)">파일 내 중복 코드(첫 항목만 반영): ${d.duplicates.map(c=>'<span class="tag">'+c+'</span>').join('')}</div>`;}
+      $('pv-detail').innerHTML=html;
+      $('preview').classList.remove('hidden');
+      m.style.display='none';
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+  const fmtv=(v)=> v==null||v===''?'—':(typeof v==='number'?Number(v).toLocaleString('es-MX'):String(v));
+
+  async function commit(){
+    const m=$('commitMsg');m.className='msg';m.style.display='none';
+    $('commitBtn').disabled=true;$('commitBtn').textContent='반영 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/import/commit',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(parsedPayload)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='반영 실패: '+(d.detail||d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=`반영 완료 — 신규 ${d.created} · 변경 ${d.updated} · 동일 ${d.unchanged}${d.skipped?' · 건너뜀 '+d.skipped:''}.`;
+      $('preview').classList.add('hidden');parsedPayload=null;
+      doSearch();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('commitBtn').disabled=false;$('commitBtn').textContent='반영하기';}
+  }
+
+  async function sydSearch(){
+    const code=$('sydq').value.trim();const r=$('sydResult');
+    if(!code){r.innerHTML='';return;}
+    r.innerHTML='<div class="hint">찾는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/products/by-syd?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
+      const items=d.items||[];
+      if(!items.length){r.innerHTML='<div class="hint">해당 SyD 코드에 대응하는 제품이 없습니다.</div>';return;}
+      r.innerHTML='<table><thead><tr><th>매칭 SyD</th><th>Clave CTR</th><th>제품명</th><th>적용차종</th></tr></thead><tbody>'+
+        items.map(p=>`<tr><td class="code">${p.syd_code}</td><td class="code">${p.code}</td><td>${p.name||''}</td><td class="hint" style="margin:0">${appCell(p.app)}</td></tr>`).join('')+'</tbody></table>';
+    }catch(e){r.innerHTML='<div class="hint">검색 실패.</div>';}
+  }
+
+  // 적용차종 원문을 ' // ' 단위로 칩처럼 표시(너무 많으면 일부만)
+  function appCell(app){
+    if(!app)return '—';
+    const parts=String(app).split(/\s*\/\/\s*/).filter(Boolean);
+    const shown=parts.slice(0,6).map(p=>'<span class="tag">'+p+'</span>').join(' ');
+    return shown+(parts.length>6?` <span class="hint" style="margin:0">외 ${parts.length-6}건</span>`:'');
+  }
+
+  // 차종 드롭다운: 메이커→모델→연도 단계 로딩
+  function fillSelect(sel,items,allLabel){
+    sel.innerHTML='<option value="">'+allLabel+'</option>'+items.map(v=>`<option value="${String(v).replace(/"/g,'&quot;')}">${v}</option>`).join('');
+  }
+  async function loadMakers(){
+    try{const d=await fetch(session.api+'/api/products/app-makers',{headers:auth()}).then(x=>x.json());fillSelect($('veh-maker'),d.items||[],'전체');}catch(e){}
+  }
+  async function loadModels(){
+    const maker=$('veh-maker').value;
+    try{const d=await fetch(session.api+'/api/products/app-models?maker='+encodeURIComponent(maker),{headers:auth()}).then(x=>x.json());fillSelect($('veh-model'),d.items||[],'전체 모델');}catch(e){}
+    await loadYears();
+  }
+  async function loadYears(){
+    const maker=$('veh-maker').value,model=$('veh-model').value;
+    try{const d=await fetch(session.api+'/api/products/app-years?maker='+encodeURIComponent(maker)+'&model='+encodeURIComponent(model),{headers:auth()}).then(x=>x.json());fillSelect($('veh-year'),d.items||[],'전체 연식');}catch(e){}
+  }
+
+  async function vehSearch(){
+    const maker=$('veh-maker').value,model=$('veh-model').value,year=$('veh-year').value;
+    const r=$('vehResult');
+    if(!maker&&!model&&!year){r.innerHTML='<div class="hint">메이커·모델·연식 중 하나 이상 선택하세요.</div>';return;}
+    r.innerHTML='<div class="hint">찾는 중…</div>';
+    const params=new URLSearchParams();
+    if(maker)params.set('maker',maker);if(model)params.set('model',model);if(year)params.set('year',year);
+    try{
+      const d=await fetch(session.api+'/api/products/by-vehicle?'+params.toString(),{headers:auth()}).then(x=>x.json());
+      const items=d.items||[];
+      if(!items.length){r.innerHTML='<div class="hint">조건에 맞는 제품이 없습니다.</div>';return;}
+      const byCode={};
+      items.forEach(it=>{(byCode[it.code] ||= {code:it.code,name:it.name,apps:[]}).apps.push(it);});
+      const groups=Object.values(byCode);
+      r.innerHTML='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th>매칭된 적용차종</th></tr></thead><tbody>'+
+        groups.map(g=>`<tr><td class="code">${g.code}</td><td>${g.name||''}</td><td class="hint" style="margin:0">${g.apps.map(a=>'<span class="tag">'+(a.app_text||'')+'</span>').join(' ')}</td></tr>`).join('')+'</tbody></table>'
+        +`<div class="hint">${groups.length}개 제품 매칭${items.length>=300?' (300건 제한, 더 좁혀주세요)':''}.</div>`;
+    }catch(e){r.innerHTML='<div class="hint">검색 실패.</div>';}
+  }
+
+  async function resyncDerived(){
+    const m=$('resyncMsg');m.className='msg';m.style.display='none';
+    if(!confirm('모든 제품의 경쟁사 코드·적용차종 분해 데이터를 다시 생성합니다. 제품 수가 많으면 시간이 걸릴 수 있습니다. 진행할까요?'))return;
+    $('resyncBtn').disabled=true;$('resyncBtn').textContent='재동기화 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/resync-derived',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.detail||d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=`${d.products}개 제품의 분해 데이터를 재생성했습니다.`;
+      loadMakers();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('resyncBtn').disabled=false;$('resyncBtn').textContent='분해 데이터 전체 재동기화';}
+  }
+
+  async function sydSearchTail(){}
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
+  $('search').addEventListener('click',doSearch);
+  $('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
+  $('drop').addEventListener('click',()=>$('upFile').click());
+  $('upFile').addEventListener('change',e=>handleFile(e.target.files[0]));
+  $('drop').addEventListener('dragover',e=>{e.preventDefault();$('drop').style.borderColor='var(--brand)';});
+  $('drop').addEventListener('dragleave',()=>$('drop').style.borderColor='');
+  $('drop').addEventListener('drop',e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+  $('commitBtn').addEventListener('click',commit);
+  $('cancelBtn').addEventListener('click',()=>{$('preview').classList.add('hidden');parsedPayload=null;$('upMsg').style.display='none';});
+  $('sydBtn').addEventListener('click',sydSearch);
+  $('sydq').addEventListener('keydown',function(e){if(e.key==='Enter')sydSearch();});
+  $('vehBtn').addEventListener('click',vehSearch);
+  $('veh-maker').addEventListener('change',loadModels);
+  $('veh-model').addEventListener('change',loadYears);
+  $('resyncBtn').addEventListener('click',resyncDerived);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>
