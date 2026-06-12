@@ -17,6 +17,7 @@ import targetRoutes from './routes/targetRoutes.js';
 import meetingRoutes from './routes/meetingRoutes.js';
 import marketingRoutes from './routes/marketingRoutes.js';
 import portalRoutes from './routes/portalRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 
 export function buildApp() {
@@ -46,6 +47,7 @@ export function buildApp() {
   app.register(meetingRoutes);
   app.register(marketingRoutes);
   app.register(portalRoutes);
+  app.register(dashboardRoutes);
   app.register(userRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
