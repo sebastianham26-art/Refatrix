@@ -124,7 +124,7 @@ export default async function targetRoutes(app) {
     const ids = [...new Set(rows.map((r) => Number(r.customer_id)))];
     if (ids.length) {
       const ok = (await query(`SELECT id FROM customers WHERE id = ANY($1) AND team_id=$2 AND deleted_at IS NULL`, [ids, teamId])).rows;
-      const okSet = new Set(ok.map((r) => r.id));
+      const okSet = new Set(ok.map((r) => Number(r.id)));   // pg bigint→string 이므로 Number로 통일
       for (const r of rows) {
         if (!okSet.has(Number(r.customer_id)) || !/^\d{4}-\d{2}$/.test(r.ym || '')) continue;
         await query(

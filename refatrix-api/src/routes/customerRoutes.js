@@ -42,12 +42,15 @@ export default async function customerRoutes(app) {
     const teams = (await query(`SELECT id, name FROM sales_teams WHERE deleted_at IS NULL AND is_sales=true`)).rows;
     const owners = (await query(`SELECT id, name FROM users WHERE deleted_at IS NULL AND role IN ('sales','director')`)).rows;
     const stages = (await query(`SELECT id, name FROM stages WHERE deleted_at IS NULL`)).rows;
-    const existing = (await query(`SELECT code FROM customers WHERE deleted_at IS NULL`)).rows;
+    const existing = (await query(
+      `SELECT c.code, c.name, c.rfc, c.customer_type, c.contact, c.phone, c.discount, c.credit_days, c.memo, c.team_id, t.name AS team_name
+         FROM customers c LEFT JOIN sales_teams t ON t.id=c.team_id WHERE c.deleted_at IS NULL`)).rows;
     const teamByName = {}; for (const t of teams) teamByName[t.name.toLowerCase()] = t.id;
     const ownerByName = {}; for (const o of owners) ownerByName[o.name.toLowerCase()] = o.id;
     const stageByName = {}; for (const s of stages) stageByName[s.name.toLowerCase()] = s.id;
     const existingByCode = new Set(existing.map((r) => String(r.code).toLowerCase()));
-    return { teamByName, ownerByName, stageByName, existingByCode };
+    const existingByCodeData = {}; for (const r of existing) existingByCodeData[String(r.code).toLowerCase()] = r;
+    return { teamByName, ownerByName, stageByName, existingByCode, existingByCodeData };
   }
 
   // 엑셀 업로드 미리보기 — body: { rows: [[...]] } (첫 행 헤더)

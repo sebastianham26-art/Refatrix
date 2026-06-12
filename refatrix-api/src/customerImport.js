@@ -65,11 +65,15 @@ export function validateCustRow(obj) {
 
 // 미리보기 집계
 export function buildCustPreview(parsedRows, resolve) {
-  // resolve: { teamByName:{}, ownerByName:{}, stageByName:{}, existingByCode:Set }
+  // resolve: { teamByName:{}, ownerByName:{}, stageByName:{}, existingByCode:Set, existingByCodeData:{} }
   const result = { create: [], update: [], errors: [] };
+  const existData = resolve.existingByCodeData || {};
+  const CMP = [
+    ['name', '고객명'], ['rfc', 'RFC'], ['customer_type', '회사종류'],
+    ['contact', '연락처'], ['phone', '전화'], ['discount', '할인율'], ['credit_days', '외상일'], ['memo', '메모'],
+  ];
   for (const p of parsedRows) {
     const errs = validateCustRow(p);
-    // 팀 해석
     let teamId = null;
     if (p.team) { teamId = resolve.teamByName[p.team.toLowerCase()] ?? null; if (!teamId) errs.push('팀 이름 매칭 안됨: ' + p.team); }
     else errs.push('팀 누락');
@@ -77,7 +81,22 @@ export function buildCustPreview(parsedRows, resolve) {
     if (p.stage && !(p.stage.toLowerCase() in resolve.stageByName)) errs.push('단계 매칭 안됨: ' + p.stage);
     if (errs.length) { result.errors.push({ name: p.name, code: p.code, errors: errs }); continue; }
     const isUpdate = p.code && resolve.existingByCode.has(p.code.toLowerCase());
-    (isUpdate ? result.update : result.create).push({ code: p.code, name: p.name, team: p.team, customer_type: p.customer_type });
+    if (isUpdate) {
+      const cur = existData[p.code.toLowerCase()] || {};
+      const changes = [];
+      for (const [k, label] of CMP) {
+        let nv = p[k]; let ov = cur[k];
+        if (k === 'discount') { nv = Number(nv) || 0; ov = Number(ov) || 0; }
+        else if (k === 'credit_days') { nv = parseInt(nv, 10) || 0; ov = parseInt(ov, 10) || 0; }
+        else { nv = (nv == null || nv === '') ? null : String(nv); ov = (ov == null || ov === '') ? null : String(ov); }
+        if (String(nv ?? '') !== String(ov ?? '')) changes.push({ field: label, from: ov, to: nv });
+      }
+      // 팀 변경
+      if (cur.team_id != null && Number(cur.team_id) !== Number(teamId)) changes.push({ field: '팀', from: cur.team_name, to: p.team });
+      result.update.push({ code: p.code, name: p.name, team: p.team, customer_type: p.customer_type, changes, unchanged: changes.length === 0 });
+    } else {
+      result.create.push({ code: p.code, name: p.name, team: p.team, customer_type: p.customer_type });
+    }
   }
   return result;
 }

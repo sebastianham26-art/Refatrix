@@ -56,6 +56,91 @@ export default async function meetingRoutes(app) {
     return { items: rows.map((m) => ({ ...m, advanced: m.stage_before !== m.stage_after })) };
   });
 
+  // ===== 디렉터 지시·피드백 → 읽음확인 → 완료(F/UP) =====
+
+  app.post('/api/directives', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const b = req.body || {};
+    const customerId = Number(b.customer_id);
+    if (!customerId || !b.note || !String(b.note).trim()) return reply.code(400).send({ error: 'missing_fields' });
+    const c = (await query(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    const row = (await query(
+      `INSERT INTO customer_directives (customer_id, note, created_by) VALUES ($1,$2,$3) RETURNING id`,
+      [customerId, String(b.note).trim(), req.ctx.perm.userId])).rows[0];
+    await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `directive:${row.id}` });
+    return { ok: true, id: row.id };
+  });
+
+  app.get('/api/directives', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    const customerId = Number(req.query.customer_id);
+    if (!customerId) return reply.code(400).send({ error: 'customer_required' });
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const rows = (await query(
+      `SELECT d.id, d.note, d.status, d.done_note,
+              to_char(d.created_at,'YYYY-MM-DD HH24:MI') AS created_at, cu.name AS by_name,
+              to_char(d.read_at,'YYYY-MM-DD HH24:MI') AS read_at, ru.name AS read_name,
+              to_char(d.done_at,'YYYY-MM-DD HH24:MI') AS done_at, du.name AS done_name
+         FROM customer_directives d
+         LEFT JOIN users cu ON cu.id=d.created_by
+         LEFT JOIN users ru ON ru.id=d.read_by
+         LEFT JOIN users du ON du.id=d.done_by
+        WHERE d.customer_id=$1 ORDER BY d.created_at DESC, d.id DESC`, [customerId])).rows;
+    return { items: rows };
+  });
+
+  app.post('/api/directives/:id/read', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const d = (await query(
+      `SELECT d.id, d.status, c.team_id FROM customer_directives d JOIN customers c ON c.id=d.customer_id WHERE d.id=$1`, [id])).rows[0];
+    if (!d) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(req.ctx.perm, d.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    if (d.status === 'open') {
+      await query(`UPDATE customer_directives SET status='read', read_by=$1, read_at=now() WHERE id=$2`, [req.ctx.perm.userId, id]);
+    }
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `directive_read:${id}` });
+    return { ok: true };
+  });
+
+  app.post('/api/directives/:id/done', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const d = (await query(
+      `SELECT d.id, d.status, d.read_at, c.team_id FROM customer_directives d JOIN customers c ON c.id=d.customer_id WHERE d.id=$1`, [id])).rows[0];
+    if (!d) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(req.ctx.perm, d.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const uid = req.ctx.perm.userId;
+    await query(
+      `UPDATE customer_directives
+          SET status='done', done_by=$1, done_at=now(), done_note=$2,
+              read_by=COALESCE(read_by,$1), read_at=COALESCE(read_at,now())
+        WHERE id=$3`, [uid, req.body?.done_note || null, id]);
+    await safeLog({ userId: uid, action: 'update', target: `directive_done:${id}` });
+    return { ok: true };
+  });
+
+  app.get('/api/directives/board', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const rows = (await query(
+      `SELECT d.id, d.status, d.note,
+              c.id AS customer_id, c.code, c.name AS customer_name, t.name AS team_name,
+              to_char(d.created_at,'YYYY-MM-DD HH24:MI') AS created_at, cu.name AS by_name,
+              to_char(d.read_at,'YYYY-MM-DD HH24:MI') AS read_at, ru.name AS read_name,
+              to_char(d.done_at,'YYYY-MM-DD HH24:MI') AS done_at, du.name AS done_name, d.done_note
+         FROM customer_directives d
+         JOIN customers c ON c.id=d.customer_id
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN users cu ON cu.id=d.created_by
+         LEFT JOIN users ru ON ru.id=d.read_by
+         LEFT JOIN users du ON du.id=d.done_by
+        ORDER BY (d.status='done'), (d.status='read'), d.created_at DESC
+        LIMIT 300`)).rows;
+    const counts = { open: 0, read: 0, done: 0 };
+    for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+    return { items: rows, counts };
+  });
+
   // 파이프라인·병목 분석(팀 가시성). team_id 옵션
   app.get('/api/pipeline', { preHandler: [authGuard, requirePage('pipeline')] }, async (req) => {
     const vis = visibleTeamIds(req.ctx.perm);
@@ -71,7 +156,8 @@ export default async function meetingRoutes(app) {
     const custs = (await query(
       `SELECT c.id, c.code, c.name, c.customer_type, c.stage_id, to_char(c.stage_since,'YYYY-MM-DD') AS stage_since,
               t.name AS team_name, s.name AS stage_name,
-              (SELECT to_char(MAX(meeting_date),'YYYY-MM-DD') FROM customer_meetings mm WHERE mm.customer_id=c.id) AS last_meeting
+              (SELECT to_char(MAX(meeting_date),'YYYY-MM-DD') FROM customer_meetings mm WHERE mm.customer_id=c.id) AS last_meeting,
+              (SELECT COUNT(*) FROM customer_directives dd WHERE dd.customer_id=c.id AND dd.status<>'done') AS open_directives
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN stages s ON s.id=c.stage_id
@@ -90,6 +176,7 @@ export default async function meetingRoutes(app) {
         id: c.id, code: c.code, name: c.name, customer_type: c.customer_type,
         stage_id: c.stage_id, stage_name: c.stage_name, stage_since: c.stage_since,
         team_name: c.team_name, last_meeting: c.last_meeting,
+        open_directives: Number(c.open_directives) || 0,
         days_in_stage: c.stage_since ? Math.max(0, Math.round((new Date(today) - new Date(c.stage_since)) / 86400000)) : null,
       })),
     };

@@ -30,15 +30,16 @@ test('validateCustRow flags missing name + bad type', () => {
   assert.deepEqual(validateCustRow({ name: 'A', customer_type: 'taller' }), []);
 });
 
-test('buildCustPreview splits create/update/errors', () => {
+test('buildCustPreview splits create/update/errors + diff', () => {
   const resolve = {
     teamByName: { '01_monterrey': 1, '02_merida': 2 },
     ownerByName: { '김철수': 5 },
     stageByName: { '01_잠재': 2 },
     existingByCode: new Set(['c-0001']),
+    existingByCodeData: { 'c-0001': { code: 'C-0001', name: '기존', discount: 3, credit_days: 30, customer_type: 'taller', team_id: 1, team_name: '01_Monterrey' } },
   };
   const rows = [
-    { code: 'C-0001', name: '기존', team: '01_Monterrey', customer_type: null },     // update
+    { code: 'C-0001', name: '기존변경', team: '01_Monterrey', customer_type: 'taller', discount: 5, credit_days: 30 }, // update w/ changes
     { code: null, name: '신규', team: '02_Merida', customer_type: 'Mayoreo' },        // create
     { code: null, name: '팀없음', team: '없는팀', customer_type: null },              // error
     { code: null, name: '', team: '01_Monterrey', customer_type: null },             // error (name)
@@ -47,4 +48,9 @@ test('buildCustPreview splits create/update/errors', () => {
   assert.equal(r.update.length, 1);
   assert.equal(r.create.length, 1);
   assert.equal(r.errors.length, 2);
+  // 변경 필드: 고객명(기존→기존변경), 할인율(3→5)
+  const fields = r.update[0].changes.map((c) => c.field);
+  assert.ok(fields.includes('고객명'));
+  assert.ok(fields.includes('할인율'));
+  assert.equal(r.update[0].unchanged, false);
 });
