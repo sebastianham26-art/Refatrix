@@ -75,7 +75,7 @@
   <div class="hidden" id="app">
     <!-- 해야 할 일 (펜딩 요약) -->
     <div class="card" id="pendCard">
-      <h2>지금 해야 할 일</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
       <div class="pendlist" id="pendList"></div>
     </div>
 
@@ -127,9 +127,10 @@
     budget:{file:'refatrix-budget.html',name:'예산'},
     importcost:{file:'refatrix-importcost.html',name:'수입원가'},
     users:{file:'refatrix-users.html',name:'사용자·권한'},
+    dashboard:{file:'refatrix-dashboard.html',name:'대시보드'},
   };
 
-  function canSee(key){ return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
+  function canSee(key){ if(key==='dashboard')return true; return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
 
   // 세션 복원(뒤로가기로 포털에 돌아올 때 재로그인 불필요)
   function portalSession(){

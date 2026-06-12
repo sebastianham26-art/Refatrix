@@ -1,8 +1,10 @@
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { visibleTeamIds } from '../teams.js';
 import { WIDGETS, WIDGET_BY_KEY, ROLE_DEFAULTS, defaultSettings } from '../widgetRegistry.js';
 
+function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 
 // 유저의 위젯 구성을 해석(없으면 역할 기본값으로 시드 형태 반환)
@@ -100,5 +102,66 @@ export default async function dashboardRoutes(app) {
   app.get('/api/dashboard/requests/count', { preHandler: [authGuard, requireDirector] }, async () => {
     const n = (await query(`SELECT COUNT(*) AS n FROM dashboard_requests WHERE status='open'`)).rows[0].n;
     return { open: Number(n) };
+  });
+
+  // 영업 카테고리 표시형 위젯용 요약(한 번에). 팀 가시성 적용.
+  app.get('/api/dashboard/salesdata', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const vis = visibleTeamIds(perm);
+    const teamArr = vis === null ? null : (vis.length ? vis : [-1]);
+    const out = {};
+
+    // 고객 현황: 고객 수 / 연체 고객 수 / 총 미수금
+    {
+      let q = `SELECT COUNT(DISTINCT c.id) AS cust_n,
+                      COUNT(DISTINCT CASE WHEN i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01 THEN c.id END) AS overdue_n,
+                      COALESCE(SUM(CASE WHEN i.status='posted' THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END),0) AS outstanding
+                 FROM customers c
+                 LEFT JOIN sales_invoices i ON i.customer_id=c.id AND i.status='posted'
+                 LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
+                WHERE c.deleted_at IS NULL`;
+      const params = [];
+      if (teamArr) { params.push(teamArr); q += ` AND c.team_id = ANY($1)`; }
+      const r = (await query(q, params)).rows[0];
+      out.customers = { count: Number(r.cust_n), overdue: Number(r.overdue_n), outstanding: r2(r.outstanding) };
+    }
+
+    // 매출목표 승인 현황: 팀별 상태
+    {
+      let q = `SELECT t.name AS team, COALESCE(s.status,'draft') AS status
+                 FROM sales_teams t LEFT JOIN target_team_status s ON s.team_id=t.id
+                WHERE t.deleted_at IS NULL AND t.is_sales=true`;
+      const params = [];
+      if (teamArr) { params.push(teamArr); q += ` AND t.id = ANY($1)`; }
+      q += ` ORDER BY t.sort_order, t.id`;
+      out.target_status = (await query(q, params)).rows;
+    }
+
+    // 최근 미팅 활동(팀 가시성) 최신 6건
+    {
+      let q = `SELECT to_char(m.meeting_date,'YYYY-MM-DD') AS d, c.name AS customer, sa.name AS stage_after,
+                      (m.stage_before IS DISTINCT FROM m.stage_after) AS advanced
+                 FROM customer_meetings m JOIN customers c ON c.id=m.customer_id
+                 LEFT JOIN stages sa ON sa.id=m.stage_after
+                WHERE c.deleted_at IS NULL`;
+      const params = [];
+      if (teamArr) { params.push(teamArr); q += ` AND c.team_id = ANY($1)`; }
+      q += ` ORDER BY m.meeting_date DESC, m.id DESC LIMIT 6`;
+      out.recent_meetings = (await query(q, params)).rows;
+    }
+
+    // 디렉터 지시 현황(전체 카운트) — 디렉터만, 그 외엔 내 미읽음만
+    if (perm.role === 'director') {
+      const r = (await query(`SELECT status, COUNT(*) AS n FROM customer_directives GROUP BY status`)).rows;
+      const c = { open: 0, read: 0, done: 0 }; for (const x of r) c[x.status] = Number(x.n);
+      out.directives = c;
+    } else {
+      let q = `SELECT COUNT(*) AS n FROM customer_directives d JOIN customers c ON c.id=d.customer_id WHERE d.status='open' AND c.deleted_at IS NULL`;
+      const params = [];
+      if (teamArr) { params.push(teamArr); q += ` AND c.team_id = ANY($1)`; }
+      out.directives = { unread: Number((await query(q, params)).rows[0].n) };
+    }
+
+    return out;
   });
 }

@@ -40,6 +40,47 @@ export const WIDGETS = [
     source: 'portal.badges', need: [],
     fields: [],
   },
+
+  // ===== 영업 카테고리 표시형 위젯(클릭 시 해당 화면으로 이동) =====
+  {
+    key: 'S01_customer_status', no: 'S-01', name: '고객 현황 요약', cat: '영업',
+    source: 'salesdata.customers', link: 'customers', need: ['customers'],
+    fields: [
+      { key: 'outstanding', name: '총 미수금 표시', def: true, sensitive: false, note: '끄면 고객수·연체수만' },
+    ],
+  },
+  {
+    key: 'S02_target_status', no: 'S-02', name: '매출목표 승인 현황', cat: '영업',
+    source: 'salesdata.target_status', link: 'targets', need: ['targets'],
+    fields: [],
+  },
+  {
+    key: 'S03_pipeline_kanban', no: 'S-03', name: '파이프라인 칸반 요약', cat: '영업',
+    source: 'portal.pipeline', link: 'pipeline', need: ['pipeline'],
+    fields: [],
+  },
+  {
+    key: 'S04_bottleneck', no: 'S-04', name: '파이프라인 병목', cat: '영업',
+    source: 'portal.badges', link: 'pipeline', need: ['pipeline'],
+    fields: [],
+  },
+  {
+    key: 'S05_recent_meetings', no: 'S-05', name: '최근 미팅 활동', cat: '영업',
+    source: 'salesdata.recent_meetings', link: 'pipeline', need: ['pipeline'],
+    fields: [],
+  },
+  {
+    key: 'S06_directives', no: 'S-06', name: '디렉터 지시 현황', cat: '영업',
+    source: 'salesdata.directives', link: 'pipeline', need: ['pipeline'],
+    fields: [],
+  },
+  {
+    key: 'S07_target_detail', no: 'S-07', name: '매출목표 요약(회사)', cat: '영업',
+    source: 'portal.perf', link: 'targets', need: ['targets'],
+    fields: [
+      { key: 'amount', name: '금액 표시', def: true, sensitive: false, note: '끄면 달성률만' },
+    ],
+  },
 ];
 
 export const WIDGET_BY_KEY = Object.fromEntries(WIDGETS.map((w) => [w.key, w]));

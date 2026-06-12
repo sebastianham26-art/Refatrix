@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 대시보드</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1200px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{font-size:13px;text-align:right}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .tabs{display:flex;gap:8px;margin-top:14px}
+  .tab{padding:8px 14px;border:1px solid var(--line);border-radius:8px 8px 0 0;background:#efeae0;cursor:pointer;font-size:13px;font-weight:700;color:var(--muted)}
+  .tab.on{background:#fff;color:var(--brand);border-bottom-color:#fff}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.gold{background:var(--gold)}.btn.sm{padding:6px 11px;font-size:12px}.btn.danger{background:var(--expense)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  /* 위젯 그리드 */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:16px}
+  .w{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}
+  .w .wh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .w .wt{font-size:14px;font-weight:800;color:var(--brand)}
+  .w .wno{font-size:10px;color:var(--muted);font-weight:700}
+  .kpi{font-size:26px;font-weight:800;color:var(--brand)}.kpi small{font-size:13px;color:var(--muted);font-weight:600}
+  .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}.bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
+  .pipe{display:flex;flex-direction:column;gap:5px;margin-top:4px}.prow{display:flex;align-items:center;gap:8px;font-size:12px}.pname{width:74px;font-weight:600;flex:0 0 auto}.pbar{flex:1;background:#f0ece2;border-radius:5px;height:13px;overflow:hidden}.pbar>div{height:100%;background:var(--brand)}.pn{width:24px;text-align:right;font-weight:700}
+  .pend{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px;font-size:13px}.pend b{color:var(--expense)}
+  table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:11.5px;background:#faf8f3}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .st-open{background:#fff4d6;color:#8a6512}.st-approved{background:#e7f3ee;color:var(--income)}.st-rejected{background:#fbe9e7;color:var(--expense)}
+  /* 구성 편집기 */
+  .wedit{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px}
+  .wedit .top{display:flex;align-items:center;gap:8px}
+  .wedit .fld{display:inline-flex;align-items:center;gap:4px;font-size:12px;margin:4px 10px 0 0}
+  .order{display:flex;gap:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">대시보드 · 위젯</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs" id="tabs"></div>
+
+    <!-- 내 대시보드 -->
+    <div id="tab-my">
+      <div class="grid" id="widgetGrid"></div>
+      <div class="card">
+        <h2>대시보드 조정 요청</h2>
+        <div class="hint" style="margin-top:0">원하는 변경(위젯 추가/제거 등)을 적어 보내면 디렉터가 검토해 반영합니다.</div>
+        <div style="display:flex;gap:8px;margin-top:8px"><input id="reqNote" style="flex:1" placeholder="예: 마케팅 예산 위젯을 추가하고 싶어요"><button class="btn sm" id="reqSend">요청 보내기</button></div>
+        <div class="msg" id="reqMsg"></div>
+      </div>
+    </div>
+
+    <!-- 디렉터: 유저별 구성 -->
+    <div id="tab-config" class="hidden">
+      <div class="card">
+        <h2>유저별 위젯 구성</h2>
+        <div class="hint" style="margin-top:0">유저를 고르고 보여줄 위젯을 켜세요. 위젯 안의 세부 항목(필드)도 유저별로 켜고 끌 수 있습니다.</div>
+        <label>유저</label><select id="cfgUser" style="min-width:220px"></select>
+        <div id="cfgEditor" style="margin-top:10px"></div>
+        <button class="btn gold sm" id="cfgSave" style="margin-top:10px">이 유저 구성 저장</button>
+        <div class="msg" id="cfgMsg"></div>
+      </div>
+    </div>
+
+    <!-- 디렉터: 요청함 -->
+    <div id="tab-requests" class="hidden">
+      <div class="card">
+        <h2>조정 요청함</h2>
+        <div id="reqList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let registry=[], portalSum=null, mktOv=null, curTab='my';
+  let users=[], cfgUserId=null, cfgState=[];
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const isDirector=()=> session.user && session.user.role==='director';
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      renderTabs(); await loadRegistry(); loadMyDashboard();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function renderTabs(){
+    const tabs=[['my','내 대시보드']];
+    if(isDirector()){tabs.push(['config','유저별 위젯 구성']);tabs.push(['requests','조정 요청함']);}
+    $('tabs').innerHTML=tabs.map(([k,n])=>`<div class="tab ${curTab===k?'on':''}" onclick="switchTab('${k}')">${n}</div>`).join('');
+  }
+  function switchTab(k){
+    curTab=k;renderTabs();
+    ['my','config','requests'].forEach(t=>$('tab-'+t).classList.toggle('hidden',t!==k));
+    if(k==='config')loadConfigUsers();
+    if(k==='requests')loadRequests();
+    if(k==='my')loadMyDashboard();
+  }
+
+  async function loadRegistry(){
+    try{registry=(await fetch(session.api+'/api/dashboard/registry',{headers:auth()}).then(r=>r.json())).widgets||[];}catch(e){registry=[];}
+  }
+  function regOf(key){return registry.find(w=>w.key===key);}
+
+  // ===== 내 대시보드 =====
+  async function loadMyDashboard(){
+    $('widgetGrid').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const [cfg,sum]=await Promise.all([
+        fetch(session.api+'/api/dashboard/config',{headers:auth()}).then(r=>r.json()),
+        fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json()),
+      ]);
+      portalSum=sum;
+      // 마케팅 위젯이 구성에 있으면 마케팅 개요도 로드
+      if((cfg.config||[]).some(c=>c.widget_key==='W08_mkt_budget'&&c.enabled)){
+        try{const now=new Date();const ym=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
+          mktOv=await fetch(session.api+'/api/marketing/overview?start='+ym,{headers:auth()}).then(r=>r.json());}catch(e){mktOv=null;}
+      }
+      renderWidgets((cfg.config||[]).filter(c=>c.enabled));
+    }catch(e){$('widgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderWidgets(list){
+    if(!list.length){$('widgetGrid').innerHTML='<div class="hint">표시할 위젯이 없습니다. 디렉터에게 구성을 요청하세요.</div>';return;}
+    $('widgetGrid').innerHTML=list.map(c=>{
+      const r=regOf(c.widget_key);if(!r)return '';
+      return `<div class="w"><div class="wh"><span class="wt">${r.name}</span><span class="wno">${r.no}</span></div><div id="wbody-${c.widget_key}">${widgetHTML(c)}</div></div>`;
+    }).join('');
+  }
+  function widgetHTML(c){
+    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};
+    switch(c.widget_key){
+      case 'W01_sales_perf':{
+        const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
+        const rate=p.rate==null?0:Math.min(100,p.rate);
+        if(s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률(${p.year})</small></div><div class="bar"><div style="width:${rate}%"></div></div>`;
+        return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률(${p.year})</small></div><div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div><div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)} MXN</div>`;
+      }
+      case 'W02_pipeline':{
+        const pp=portalSum&&portalSum.pipeline;if(!pp||!pp.length)return '<div class="hint">데이터 없음</div>';
+        const mx=Math.max(1,...pp.map(x=>x.count));
+        return '<div class="pipe">'+pp.map(x=>`<div class="prow"><div class="pname">${x.name.replace(/^\d+_/,'')}</div><div class="pbar"><div style="width:${Math.round(x.count/mx*100)}%"></div></div><div class="pn">${x.count}</div></div>`).join('')+'</div>';
+      }
+      case 'W03_pending':{
+        const items=[];const add=(n,l)=>{if(n>0)items.push([n,l]);};
+        if(portalSum&&portalSum.isDirector){add(b.target_approvals,'매출목표 승인 대기');add(b.marketing_approvals,'마케팅 승인 대기');add(b.sales_change_approvals,'매출 수정 승인 대기');add(b.directives_open_all,'지시 미완료');}
+        add(b.directives_unread,'미읽음 지시');add(b.stalled_customers,'30일+ 정체 고객');add(b.target_rejected,'반려 매출목표');add(b.marketing_rejected,'반려 마케팅');add(b.overdue_customers,'연체 AR 고객');
+        return items.length?items.map(([n,l])=>`<div class="pend"><span>${l}</span><b>${n}건</b></div>`).join(''):'<div class="hint">처리할 건이 없습니다 ✓</div>';
+      }
+      case 'W09_stalled':{
+        const n=b.stalled_customers||0;
+        let html=`<div class="kpi">${n} <small>명 정체(30일+)</small></div>`;
+        if(s.ar) html+=`<div class="hint">연체 AR 고객: ${b.overdue_customers||0}명</div>`;
+        return html;
+      }
+      case 'W08_mkt_budget':{
+        if(!mktOv)return '<div class="hint">데이터 없음</div>';
+        const months=mktOv.months||[];let bud=0,alloc=0;
+        months.forEach(m=>{bud+=(mktOv.budget&&mktOv.budget[m])||0;alloc+=(mktOv.alloc_sum&&mktOv.alloc_sum[m])||0;});
+        const rate=bud>0?Math.round(alloc/bud*100):0;
+        if(s.amount===false) return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%"></div></div>`;
+        return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(alloc)}</div></div><div class="hint">예산 ${fmt(bud)} · 배분 ${fmt(alloc)} MXN (연간)</div>`;
+      }
+      case 'W10_process':{
+        return `<div class="hint" style="margin-top:0">프로세스 지도는 포털에서 봅니다.</div><a class="btn ghost sm" href="refatrix-portal.html" style="margin-top:6px;display:inline-block">포털 열기</a>`;
+      }
+      default: return '<div class="hint">—</div>';
+    }
+  }
+
+  async function sendRequest(){
+    const m=$('reqMsg');m.className='msg';m.style.display='none';
+    const note=$('reqNote').value.trim();if(!note){m.className='msg err';m.style.display='block';m.textContent='요청 내용을 입력하세요.';return;}
+    try{const res=await fetch(session.api+'/api/dashboard/request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({note})});
+      const d=await res.json();if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent='요청을 보냈습니다. 디렉터 검토 후 반영됩니다.';$('reqNote').value='';
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 디렉터: 유저별 구성 =====
+  async function loadConfigUsers(){
+    if(!users.length){try{users=(await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){users=[];}}
+    $('cfgUser').innerHTML=users.map(u=>`<option value="${u.id}">${u.name} (${u.login_id||u.role})</option>`).join('');
+    if(users.length){cfgUserId=users[0].id;loadUserConfig(users[0].id);}
+    $('cfgUser').onchange=()=>{cfgUserId=Number($('cfgUser').value);loadUserConfig(cfgUserId);};
+  }
+  async function loadUserConfig(uid){
+    try{
+      const cfg=(await fetch(session.api+'/api/dashboard/config?user_id='+uid,{headers:auth()}).then(r=>r.json())).config||[];
+      // 현재 켜진 위젯 맵
+      const onMap={};cfg.forEach(c=>onMap[c.widget_key]={enabled:c.enabled,settings:c.settings||{}});
+      // 전체 위젯을 나열하되, 현재 구성 순서 우선
+      const ordered=[...cfg.map(c=>c.widget_key), ...registry.map(w=>w.key).filter(k=>!cfg.find(c=>c.widget_key===k))];
+      cfgState=ordered.map(k=>({widget_key:k,enabled:onMap[k]?onMap[k].enabled:false,settings:onMap[k]?onMap[k].settings:{}}));
+      renderEditor();
+    }catch(e){$('cfgEditor').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderEditor(){
+    $('cfgEditor').innerHTML=cfgState.map((c,i)=>{
+      const r=regOf(c.widget_key);if(!r)return '';
+      const flds=(r.fields||[]).map(f=>`<label class="fld"><input type="checkbox" ${ (c.settings[f.key]!=null?c.settings[f.key]:f.def)?'checked':''} onchange="toggleField(${i},'${f.key}',this.checked)"> ${f.name}${f.note?` <span class="hint" style="margin:0">(${f.note})</span>`:''}</label>`).join('');
+      return `<div class="wedit"><div class="top">
+        <label class="fld" style="margin:0"><input type="checkbox" ${c.enabled?'checked':''} onchange="toggleWidget(${i},this.checked)"> <b>${r.no} ${r.name}</b></label>
+        <span class="hint" style="margin:0 0 0 6px">${r.cat}</span>
+        <span class="order" style="margin-left:auto"><button class="btn ghost sm" onclick="move(${i},-1)">▲</button><button class="btn ghost sm" onclick="move(${i},1)">▼</button></span>
+      </div>${flds?`<div style="margin-top:4px">${flds}</div>`:''}</div>`;
+    }).join('');
+  }
+  function toggleWidget(i,on){cfgState[i].enabled=on;}
+  function toggleField(i,k,on){cfgState[i].settings={...cfgState[i].settings,[k]:on};}
+  function move(i,dir){const j=i+dir;if(j<0||j>=cfgState.length)return;const t=cfgState[i];cfgState[i]=cfgState[j];cfgState[j]=t;renderEditor();}
+  async function saveConfig(){
+    const m=$('cfgMsg');m.className='msg';m.style.display='none';
+    const widgets=cfgState.filter(c=>c.enabled).map(c=>({widget_key:c.widget_key,enabled:true,settings:c.settings}));
+    try{const res=await fetch(session.api+'/api/dashboard/config',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:cfgUserId,widgets})});
+      const d=await res.json();if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='저장 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent='구성을 저장했습니다.';
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 디렉터: 요청함 =====
+  async function loadRequests(){
+    $('reqList').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/dashboard/requests',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){$('reqList').innerHTML='<div class="hint">요청이 없습니다.</div>';return;}
+      $('reqList').innerHTML='<table><thead><tr><th>유저</th><th>요청 내용</th><th>상태</th><th>처리</th></tr></thead><tbody>'+
+        items.map(r=>`<tr><td><b>${r.user_name}</b> <span class="hint" style="margin:0">${r.user_role}</span><br><span class="hint" style="margin:0">${r.created_at}</span></td>
+          <td style="max-width:320px;white-space:normal">${r.note}</td>
+          <td><span class="pill st-${r.status}">${ {open:'대기',approved:'승인',rejected:'반려'}[r.status] }</span></td>
+          <td>${r.status==='open'?`<button class="btn sm" onclick="decideReq(${r.id},true)">승인</button> <button class="btn danger sm" onclick="decideReq(${r.id},false)">반려</button>`:(r.decided_at||'')}</td></tr>`).join('')+'</tbody></table>'+
+        '<div class="hint">승인 후 “유저별 위젯 구성”에서 실제 위젯을 반영하세요.</div>';
+    }catch(e){$('reqList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function decideReq(id,approve){
+    try{await fetch(session.api+'/api/dashboard/requests/'+id+'/decide',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({approve})});loadRequests();}catch(e){alert('실패');}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('reqSend').addEventListener('click',sendRequest);
+  $('cfgSave').addEventListener('click',saveConfig);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>
