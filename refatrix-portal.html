@@ -131,15 +131,22 @@
 
   function canSee(key){ return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
 
+  // 세션 복원(뒤로가기로 포털에 돌아올 때 재로그인 불필요)
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    return null;
+  }
+
   // 화면 열기: 토큰을 URL 해시로 전달(방법 A)
-  // 화면 열기: 세션을 localStorage로 전달(file:// 환경에서 안정적)
+  // 화면 열기(B방식): 같은 탭에서 이동 + sessionStorage로 세션 전달
+  // file:// 은 탭마다 보안 격리되므로, 같은 탭 안에서 유지되는 sessionStorage를 사용.
   function goScreen(key){
     const s=SCREENS[key];if(!s)return;
     if(!canSee(key)){alert('이 화면의 권한이 없습니다. 디렉터에게 요청하세요.');return;}
-    try{ localStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
     // 해시도 함께(폴백)
     const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
-    window.open(s.file+hash,'_blank');
+    location.href=s.file+hash;   // 같은 탭에서 이동
   }
 
   async function login(){
@@ -152,6 +159,7 @@
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
       session={token:d.token,user:d.user,api};
+      try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       await loadSummary();
@@ -235,6 +243,18 @@
   }
 
   $('go').addEventListener('click',login);
+
+  // 포털 자동 복원: 세션이 있으면 로그인 화면 건너뛰고 바로 포털 표시
+  (function(){
+    const ps=portalSession();
+    if(ps&&ps.token){
+      session={token:ps.token,user:ps.user||{},api:ps.api||''};
+      $('who').innerHTML='<b>'+(session.user.name||'')+'</b><br>역할: '+(session.user.role||'-')+' · <a href="#" id="logoutLink">로그아웃</a>';
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      loadSummary();
+      const ll=$('logoutLink'); if(ll) ll.onclick=(e)=>{e.preventDefault();try{sessionStorage.removeItem('refatrix_session');}catch(_){}location.reload();};
+    }
+  })();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 </script>
 </body>

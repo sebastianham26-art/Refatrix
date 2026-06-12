@@ -55,7 +55,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출 등록 · 다품목 인보이스 · v2 (세부펼침·SKU찾기)</div></div><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출 등록 · 다품목 인보이스 · v2 (세부펼침·SKU찾기)</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
 
   <!-- 로그인 -->
   <div class="card" id="loginCard">
@@ -188,12 +188,14 @@
   // 포털에서 전달된 토큰(자동 로그인)
   function portalSession(){
     try{
-      const raw=localStorage.getItem('refatrix_session');
+      const raw=sessionStorage.getItem('refatrix_session');
       if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token, api:o.api||'', user:o.user||{}}; }
     }catch(e){}
     try{
       const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h);
-        const token=p.get('token'); if(token) return {token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')}; }
+        const token=p.get('token'); if(token){ const o={token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+          try{ sessionStorage.setItem('refatrix_session', JSON.stringify(o)); }catch(e){}
+          return o; } }
     }catch(e){}
     return null;
   }
