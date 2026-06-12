@@ -12,10 +12,11 @@ export default async function userRoutes(app) {
       `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, t.name AS team_name
          FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
         WHERE u.deleted_at IS NULL ORDER BY u.role, u.name`)).rows;
-    const pages = (await query(`SELECT user_id, page_key FROM user_page_access`)).rows;
+    const pages = (await query(`SELECT user_id, page_key, access FROM user_page_access`)).rows;
     const pagesByUser = {};
-    for (const p of pages) (pagesByUser[p.user_id] ||= []).push(p.page_key);
-    return { items: users.map((u) => ({ ...u, pages: pagesByUser[u.id] || [] })) };
+    const accessByUser = {};
+    for (const p of pages) { (pagesByUser[p.user_id] ||= []).push(p.page_key); (accessByUser[p.user_id] ||= {})[p.page_key] = p.access || 'edit'; }
+    return { items: users.map((u) => ({ ...u, pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {} })) };
   });
 
   // 사용자 생성(디렉터). PIN 지정 가능(미지정 시 자동), 팀·페이지 권한 일괄 부여.
@@ -57,12 +58,13 @@ export default async function userRoutes(app) {
   // 메뉴 접근/기기요구 설정(디렉터) — 권한 변경은 감사 로그에 남김
   app.put('/api/users/:id/page-access', { preHandler: [authGuard, requireDirector] }, async (req) => {
     const id = Number(req.params.id);
-    const { page_key, device_req } = req.body || {};
+    const { page_key, device_req, access } = req.body || {};
+    const acc = (access === 'view' || access === 'edit') ? access : 'edit';
     await query(
-      `INSERT INTO user_page_access (user_id, page_key, device_req) VALUES ($1,$2,$3)
-       ON CONFLICT (user_id, page_key) DO UPDATE SET device_req=EXCLUDED.device_req`,
-      [id, page_key, device_req]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { page_key, device_req } });
+      `INSERT INTO user_page_access (user_id, page_key, device_req, access) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (user_id, page_key) DO UPDATE SET device_req=EXCLUDED.device_req, access=EXCLUDED.access`,
+      [id, page_key, device_req || 'anywhere', acc]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { page_key, access: acc } });
     return { ok: true };
   });
 

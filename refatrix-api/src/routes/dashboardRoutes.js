@@ -23,6 +23,19 @@ async function resolveConfig(userId, role) {
 }
 
 export default async function dashboardRoutes(app) {
+  // 로그인 유저의 화면별 권한(none/view/edit) — 화면이 읽기전용 잠금 판단에 사용
+  app.get('/api/me/access', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const KNOWN = ['customers', 'targets', 'pipeline', 'marketing', 'sales', 'products', 'finance', 'budget', 'importcost', 'users'];
+    const access = {};
+    for (const k of KNOWN) {
+      if (perm.role === 'director') { access[k] = 'edit'; continue; }
+      if (perm.pages && perm.pages[k] != null) access[k] = (perm.pageAccess && perm.pageAccess[k]) || 'edit';
+      else access[k] = 'none';
+    }
+    return { role: perm.role, isDirector: perm.role === 'director', access };
+  });
+
   // 위젯 카탈로그(레지스트리) — 구성 화면이 사용
   app.get('/api/dashboard/registry', { preHandler: [authGuard] }, async () => {
     return { widgets: WIDGETS };

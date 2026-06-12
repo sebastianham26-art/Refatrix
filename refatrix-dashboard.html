@@ -101,7 +101,7 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let registry=[], portalSum=null, mktOv=null, curTab='my';
+  let registry=[], portalSum=null, mktOv=null, salesData=null, curTab='my';
   let users=[], cfgUserId=null, cfgState=[];
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -160,23 +160,32 @@
         fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json()),
       ]);
       portalSum=sum;
-      // 마케팅 위젯이 구성에 있으면 마케팅 개요도 로드
-      if((cfg.config||[]).some(c=>c.widget_key==='W08_mkt_budget'&&c.enabled)){
+      const on=(cfg.config||[]).filter(c=>c.enabled);
+      // 마케팅 위젯이 있으면 마케팅 개요 로드
+      if(on.some(c=>c.widget_key==='W08_mkt_budget')){
         try{const now=new Date();const ym=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
           mktOv=await fetch(session.api+'/api/marketing/overview?start='+ym,{headers:auth()}).then(r=>r.json());}catch(e){mktOv=null;}
       }
-      renderWidgets((cfg.config||[]).filter(c=>c.enabled));
+      // 영업(S__) 위젯이 있으면 salesdata 로드
+      if(on.some(c=>c.widget_key.startsWith('S0'))){
+        try{salesData=await fetch(session.api+'/api/dashboard/salesdata',{headers:auth()}).then(r=>r.json());}catch(e){salesData=null;}
+      }
+      renderWidgets(on);
     }catch(e){$('widgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+  const SCREEN_FILE={customers:'refatrix-customers.html',targets:'refatrix-targets.html',pipeline:'refatrix-pipeline.html',marketing:'refatrix-marketing.html',products:'refatrix-products.html',finance:'refatrix-finance.html',sales:'refatrix-sales.html'};
+  function gotoScreen(link){ if(SCREEN_FILE[link]) location.href=SCREEN_FILE[link]; }
+
   function renderWidgets(list){
     if(!list.length){$('widgetGrid').innerHTML='<div class="hint">표시할 위젯이 없습니다. 디렉터에게 구성을 요청하세요.</div>';return;}
     $('widgetGrid').innerHTML=list.map(c=>{
       const r=regOf(c.widget_key);if(!r)return '';
-      return `<div class="w"><div class="wh"><span class="wt">${r.name}</span><span class="wno">${r.no}</span></div><div id="wbody-${c.widget_key}">${widgetHTML(c)}</div></div>`;
+      const linkBtn=r.link?`<a class="btn ghost sm" style="padding:3px 9px;font-size:11px" href="${SCREEN_FILE[r.link]||'#'}">열기 →</a>`:'';
+      return `<div class="w"><div class="wh"><span class="wt">${r.name}</span><span style="display:flex;gap:6px;align-items:center">${linkBtn}<span class="wno">${r.no}</span></span></div><div id="wbody-${c.widget_key}">${widgetHTML(c)}</div></div>`;
     }).join('');
   }
   function widgetHTML(c){
-    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};
+    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};const sd=salesData||{};
     switch(c.widget_key){
       case 'W01_sales_perf':{
         const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
@@ -211,6 +220,42 @@
       }
       case 'W10_process':{
         return `<div class="hint" style="margin-top:0">프로세스 지도는 포털에서 봅니다.</div><a class="btn ghost sm" href="refatrix-portal.html" style="margin-top:6px;display:inline-block">포털 열기</a>`;
+      }
+      case 'S01_customer_status':{
+        const cu=sd.customers||{};
+        let html=`<div class="kpi">${cu.count||0} <small>고객</small></div><div class="hint">연체 고객 ${cu.overdue||0}명</div>`;
+        if(s.outstanding!==false) html+=`<div class="hint">총 미수금 ${fmt(cu.outstanding||0)} MXN</div>`;
+        return html;
+      }
+      case 'S02_target_status':{
+        const ts=sd.target_status||[];if(!ts.length)return '<div class="hint">데이터 없음</div>';
+        const lbl={draft:'작성중',submitted:'제출됨',approved:'승인',rejected:'반려'};
+        const col={draft:'#888',submitted:'var(--gold)',approved:'var(--income)',rejected:'var(--expense)'};
+        return ts.map(t=>`<div class="pend"><span>${t.team}</span><b style="color:${col[t.status]||'#888'}">${lbl[t.status]||t.status}</b></div>`).join('');
+      }
+      case 'S03_pipeline_kanban':{
+        const pp=portalSum&&portalSum.pipeline;if(!pp||!pp.length)return '<div class="hint">데이터 없음</div>';
+        const mx=Math.max(1,...pp.map(x=>x.count));
+        return '<div class="pipe">'+pp.map(x=>`<div class="prow"><div class="pname">${x.name.replace(/^\d+_/,'')}</div><div class="pbar"><div style="width:${Math.round(x.count/mx*100)}%"></div></div><div class="pn">${x.count}</div></div>`).join('')+'</div>';
+      }
+      case 'S04_bottleneck':{
+        const n=b.stalled_customers||0;
+        return `<div class="kpi">${n} <small>정체(30일+)</small></div><div class="hint">병목 단계는 파이프라인 화면에서 확인하세요.</div>`;
+      }
+      case 'S05_recent_meetings':{
+        const rm=sd.recent_meetings||[];if(!rm.length)return '<div class="hint">최근 미팅이 없습니다.</div>';
+        return '<table><tbody>'+rm.map(m=>`<tr><td style="padding:5px 6px">${m.d}</td><td style="padding:5px 6px"><b>${m.customer}</b></td><td style="padding:5px 6px">${m.advanced?`→ ${m.stage_after||''}`:'<span class="hint" style="margin:0">유지</span>'}</td></tr>`).join('')+'</tbody></table>';
+      }
+      case 'S06_directives':{
+        const d=sd.directives||{};
+        if(d.unread!=null) return `<div class="kpi">${d.unread} <small>미읽음 지시</small></div>`;
+        return `<div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill st-open">미읽음 ${d.open||0}</span><span class="pill" style="background:#e7eef3;color:#2b5a78">진행 ${d.read||0}</span><span class="pill st-approved">완료 ${d.done||0}</span></div>`;
+      }
+      case 'S07_target_detail':{
+        const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
+        const rate=p.rate==null?0:Math.min(100,p.rate);
+        if(s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%"></div></div>`;
+        return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div><div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)}</div>`;
       }
       default: return '<div class="hint">—</div>';
     }

@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { pipelineByStage, detectBottleneck, stalledCustomers } from '../pipeline.js';
@@ -10,7 +10,7 @@ function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 export default async function meetingRoutes(app) {
   // 미팅 기록(+ 단계 진전 시 단계 변경 및 이력 갱신)
   // body: { customer_id, meeting_date, note, advance:bool, new_stage_id? }
-  app.post('/api/meetings', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+  app.post('/api/meetings', { preHandler: [authGuard, requirePageEdit('pipeline')] }, async (req, reply) => {
     const b = req.body || {};
     const customerId = Number(b.customer_id);
     if (!customerId || !b.meeting_date) return reply.code(400).send({ error: 'missing_fields' });
@@ -91,7 +91,7 @@ export default async function meetingRoutes(app) {
     return { items: rows };
   });
 
-  app.post('/api/directives/:id/read', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+  app.post('/api/directives/:id/read', { preHandler: [authGuard, requirePageEdit('pipeline')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const d = (await query(
       `SELECT d.id, d.status, c.team_id FROM customer_directives d JOIN customers c ON c.id=d.customer_id WHERE d.id=$1`, [id])).rows[0];
@@ -104,7 +104,7 @@ export default async function meetingRoutes(app) {
     return { ok: true };
   });
 
-  app.post('/api/directives/:id/done', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+  app.post('/api/directives/:id/done', { preHandler: [authGuard, requirePageEdit('pipeline')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const d = (await query(
       `SELECT d.id, d.status, d.read_at, c.team_id FROM customer_directives d JOIN customers c ON c.id=d.customer_id WHERE d.id=$1`, [id])).rows[0];

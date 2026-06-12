@@ -19,13 +19,26 @@ export async function authGuard(req, reply) {
   req.ctx = { perm, deviceId: dev.deviceId, isRegistered: dev.registered };
 }
 
-// 특정 메뉴(page) 접근을 요구하는 가드 (기기 요구 포함)
+// 특정 메뉴(page) 접근을 요구하는 가드 (기기 요구 포함) — 읽기 허용(view/edit 모두)
 export function requirePage(pageKey) {
   return async (req, reply) => {
     const { perm, isRegistered } = req.ctx;
     if (!pageAllowed(perm, pageKey, isRegistered)) {
       return reply.code(403).send({ error: 'forbidden', page: pageKey });
     }
+  };
+}
+
+// 쓰기(저장/수정/삭제/승인)를 요구하는 가드 — 'edit' 권한 필요. 디렉터는 통과.
+export function requirePageEdit(pageKey) {
+  return async (req, reply) => {
+    const { perm, isRegistered } = req.ctx;
+    if (!pageAllowed(perm, pageKey, isRegistered)) {
+      return reply.code(403).send({ error: 'forbidden', page: pageKey });
+    }
+    if (perm.role === 'director') return;
+    const lvl = (perm.pageAccess && perm.pageAccess[pageKey]) || 'edit';
+    if (lvl !== 'edit') return reply.code(403).send({ error: 'read_only', page: pageKey });
   };
 }
 

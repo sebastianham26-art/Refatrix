@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
@@ -54,7 +54,7 @@ export default async function customerRoutes(app) {
   }
 
   // 엑셀 업로드 미리보기 — body: { rows: [[...]] } (첫 행 헤더)
-  app.post('/api/customers/import/preview', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+  app.post('/api/customers/import/preview', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const all = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (!all.length) return reply.code(400).send({ error: 'no_rows' });
     const idx = buildHeaderIndex(all[0]);
@@ -66,7 +66,7 @@ export default async function customerRoutes(app) {
   });
 
   // 커밋 — 신규는 코드 자동생성, 기존(코드 일치)은 갱신. 팀 편집권한 확인.
-  app.post('/api/customers/import/commit', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+  app.post('/api/customers/import/commit', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const all = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (!all.length) return reply.code(400).send({ error: 'no_rows' });
     const idx = buildHeaderIndex(all[0]);
@@ -223,7 +223,7 @@ export default async function customerRoutes(app) {
   });
 
   // 고객 등록: 코드 서버 자동생성(고정), 팀 지정 필수.
-  app.post('/api/customers', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+  app.post('/api/customers', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const b = req.body || {};
     if (!b.name) return reply.code(400).send({ error: 'missing_fields' });
     const teamId = b.team_id ? Number(b.team_id) : (req.ctx.perm.teamId || null);
@@ -248,7 +248,7 @@ export default async function customerRoutes(app) {
   });
 
   // 고객 수정
-  app.patch('/api/customers/:id', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+  app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });

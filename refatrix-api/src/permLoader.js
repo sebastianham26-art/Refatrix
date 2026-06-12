@@ -9,9 +9,11 @@ export async function loadPerm(userId) {
   if (!u) return null;
 
   const pages = {};
+  const pageAccess = {};
   for (const r of (await query(
-    `SELECT page_key, device_req FROM user_page_access WHERE user_id=$1`, [userId])).rows) {
+    `SELECT page_key, device_req, access FROM user_page_access WHERE user_id=$1`, [userId])).rows) {
     pages[r.page_key] = r.device_req;
+    pageAccess[r.page_key] = r.access || 'edit';
   }
   const fields = new Set();
   for (const r of (await query(
@@ -33,7 +35,7 @@ export async function loadPerm(userId) {
     userId: u.id, name: u.name, dept: u.dept, role: u.role, lang: u.lang,
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
     teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
-    pages, fields, items,
+    pages, pageAccess, fields, items,
   };
 }
 

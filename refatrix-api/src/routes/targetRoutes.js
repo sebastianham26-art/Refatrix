@@ -1,5 +1,5 @@
 import { query } from '../db.js';
-import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { monthsHorizon, currentYm, sumByMonth, shortfallByMonth, companyVsTeams, r2 } from '../salesTarget.js';
@@ -115,7 +115,7 @@ export default async function targetRoutes(app) {
   });
 
   // 고객 월 목표 저장(담당자/디렉터). 저장 시 팀 상태 draft로(재승인 필요)
-  app.post('/api/targets/customers', { preHandler: [authGuard, requirePage('targets')] }, async (req, reply) => {
+  app.post('/api/targets/customers', { preHandler: [authGuard, requirePageEdit('targets')] }, async (req, reply) => {
     const teamId = Number(req.body?.team_id);
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
     if (!canEditTeam(req.ctx.perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
@@ -142,7 +142,7 @@ export default async function targetRoutes(app) {
   });
 
   // 팀 계획 제출(담당자) → submitted
-  app.post('/api/targets/team/:teamId/submit', { preHandler: [authGuard, requirePage('targets')] }, async (req, reply) => {
+  app.post('/api/targets/team/:teamId/submit', { preHandler: [authGuard, requirePageEdit('targets')] }, async (req, reply) => {
     const teamId = Number(req.params.teamId);
     if (!canEditTeam(req.ctx.perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
     await query(

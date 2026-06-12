@@ -1,5 +1,5 @@
 import { query } from '../db.js';
-import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { monthsHorizon, currentYm, allocSumByMonth, allocByCustomerMonth, budgetVsAlloc, allocCost, r2 } from '../marketingAlloc.js';
@@ -16,7 +16,7 @@ export default async function marketingRoutes(app) {
   });
 
   // 메뉴 항목 작성/수정/삭제 — 마케팅·디렉터
-  app.post('/api/marketing/menu', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+  app.post('/api/marketing/menu', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const b = req.body || {};
     if (!b.name) return reply.code(400).send({ error: 'name_required' });
@@ -26,7 +26,7 @@ export default async function marketingRoutes(app) {
     await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `menu:${row.id}` });
     return { ok: true, id: row.id };
   });
-  app.patch('/api/marketing/menu/:id', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+  app.patch('/api/marketing/menu/:id', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const id = Number(req.params.id); const b = req.body || {};
     await query(`UPDATE activity_catalog SET name=COALESCE($1,name), category=COALESCE($2,category), unit_budget=COALESCE($3,unit_budget), unit=COALESCE($4,unit) WHERE id=$5`,
@@ -34,7 +34,7 @@ export default async function marketingRoutes(app) {
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `menu:${id}` });
     return { ok: true };
   });
-  app.delete('/api/marketing/menu/:id', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+  app.delete('/api/marketing/menu/:id', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const id = Number(req.params.id);
     await query(`UPDATE activity_catalog SET deleted_at=now() WHERE id=$1`, [id]);
@@ -61,7 +61,7 @@ export default async function marketingRoutes(app) {
   });
 
   // 전체 마케팅 월 예산 저장 — 마케팅·디렉터
-  app.post('/api/marketing/budget', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+  app.post('/api/marketing/budget', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const rows = Array.isArray(req.body?.months) ? req.body.months : [];
     for (const r of rows) {
@@ -118,7 +118,7 @@ export default async function marketingRoutes(app) {
   });
 
   // 고객 월별 활동 수량 저장 — 마케팅·디렉터. 저장 시 승인상태 draft로.
-  app.post('/api/marketing/alloc', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+  app.post('/api/marketing/alloc', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const b = req.body || {};
     const customerId = Number(b.customer_id);
@@ -145,7 +145,7 @@ export default async function marketingRoutes(app) {
   });
 
   // 제출(마케팅) → submitted
-  app.post('/api/marketing/submit', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+  app.post('/api/marketing/submit', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     await query(`UPDATE marketing_plan_status SET status='submitted', submitted_by=$1, submitted_at=now(), updated_at=now() WHERE id=1`, [req.ctx.perm.userId]);
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: 'marketing_submit' });
