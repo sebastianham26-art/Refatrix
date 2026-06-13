@@ -45,6 +45,12 @@
   .catcount{font-size:11px;color:var(--muted);font-weight:700}
   .catbar{height:2px;border-radius:2px;background:var(--catc,#ddd);opacity:.35;margin-top:4px}
   .catchip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--catbg,#eee);color:var(--catc,#555)}
+  /* 상단 영역 바로가기 바 (고정) */
+  .catnav{position:sticky;top:0;z-index:30;display:flex;gap:7px;flex-wrap:wrap;padding:10px 2px;margin-top:8px;background:var(--paper);border-bottom:1px solid var(--line)}
+  .catnav button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--catc,#ccc);background:#fff;color:var(--catc,#444);font-size:12px;font-weight:700;padding:6px 12px;border-radius:999px;cursor:pointer;font-family:inherit}
+  .catnav button:hover{background:var(--catbg,#f0f0f0)}
+  .catnav button .nd{width:9px;height:9px;border-radius:3px;background:var(--catc,#888)}
+  .catnav button .nc{font-size:10px;color:var(--muted);font-weight:700}
   .kpi{font-size:26px;font-weight:800;color:var(--brand)}.kpi small{font-size:13px;color:var(--muted);font-weight:600}
   .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}.bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
   .pipe{display:flex;flex-direction:column;gap:5px;margin-top:4px}.prow{display:flex;align-items:center;gap:8px;font-size:12px}.pname{width:74px;font-weight:600;flex:0 0 auto}.pbar{flex:1;background:#f0ece2;border-radius:5px;height:13px;overflow:hidden}.pbar>div{height:100%;background:var(--brand)}.pn{width:24px;text-align:right;font-weight:700}
@@ -76,7 +82,8 @@
 
     <!-- 내 대시보드 -->
     <div id="tab-my">
-      <div class="grid" id="widgetGrid"></div>
+      <div id="catNav" class="catnav"></div>
+      <div id="widgetGrid"></div>
       <div class="card">
         <h2>대시보드 조정 요청</h2>
         <div class="hint" style="margin-top:0">원하는 변경(위젯 추가/제거 등)을 적어 보내면 디렉터가 검토해 반영합니다.</div>
@@ -190,7 +197,7 @@
       renderWidgets(on);
     }catch(e){$('widgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  const SCREEN_FILE={customers:'refatrix-customers.html',targets:'refatrix-targets.html',pipeline:'refatrix-pipeline.html',marketing:'refatrix-marketing.html',products:'refatrix-products.html',finance:'refatrix-finance.html',sales:'refatrix-sales.html',importcost:'refatrix-importcost.html',users:'refatrix-users.html',budget:'refatrix-budget.html'};
+  const SCREEN_FILE={portal:'refatrix-portal.html',customers:'refatrix-customers.html',targets:'refatrix-targets.html',pipeline:'refatrix-pipeline.html',marketing:'refatrix-marketing.html',products:'refatrix-products.html',finance:'refatrix-finance.html',sales:'refatrix-sales.html',importcost:'refatrix-importcost.html',users:'refatrix-users.html',budget:'refatrix-budget.html'};
   function gotoScreen(link){ if(SCREEN_FILE[link]) location.href=SCREEN_FILE[link]; }
 
   // 카테고리 색상·순서 (영역 구분)
@@ -205,12 +212,20 @@
   };
   function catColor(cat){return CAT_COLOR[cat]||{c:'#5B6770',bg:'#e9ecee'};}
 
+  function catId(cat){return 'catsec-'+CAT_ORDER.indexOf(cat);}
+  function scrollToCat(cat){const el=document.getElementById(catId(cat));if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
+
   function renderWidgets(list){
-    if(!list.length){$('widgetGrid').innerHTML='<div class="hint">표시할 위젯이 없습니다. 디렉터에게 구성을 요청하세요.</div>';return;}
+    const nav=$('catNav');
+    if(!list.length){$('widgetGrid').innerHTML='<div class="hint">표시할 위젯이 없습니다. 디렉터에게 구성을 요청하세요.</div>';if(nav)nav.innerHTML='';return;}
     // 카테고리별로 그룹화(원래 순서 유지)
     const groups={};
     list.forEach(c=>{const r=regOf(c.widget_key);if(!r)return;(groups[r.cat]||=[]).push(c);});
     const cats=Object.keys(groups).sort((a,b)=>{const ia=CAT_ORDER.indexOf(a),ib=CAT_ORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
+    // 상단 바로가기 바
+    if(nav) nav.innerHTML=cats.map(cat=>{const col=catColor(cat);
+      return `<button style="--catc:${col.c};--catbg:${col.bg}" onclick="scrollToCat('${cat}')"><span class="nd"></span>${cat}<span class="nc">${groups[cat].length}</span></button>`;}).join('');
+    // 영역별 위젯
     $('widgetGrid').innerHTML=cats.map(cat=>{
       const col=catColor(cat);
       const cards=groups[cat].map(c=>{
@@ -218,7 +233,7 @@
         const linkBtn=r.link?`<a class="btn ghost sm" style="padding:3px 9px;font-size:11px" href="${SCREEN_FILE[r.link]||'#'}">열기 →</a>`:'';
         return `<div class="w" style="--catc:${col.c}"><div class="wh"><span class="wt">${r.name}</span><span style="display:flex;gap:6px;align-items:center">${linkBtn}<span class="wno">${r.no}</span></span></div><div id="wbody-${c.widget_key}">${widgetHTML(c)}</div></div>`;
       }).join('');
-      return `<div class="catsec" style="--catc:${col.c};--catbg:${col.bg}">
+      return `<div class="catsec" id="${catId(cat)}" style="--catc:${col.c};--catbg:${col.bg}">
         <div class="cathead"><span class="catdot"></span><span class="catname">${cat}</span><span class="catcount">위젯 ${groups[cat].length}</span></div>
         <div class="catbar"></div>
         <div class="grid">${cards}</div>
@@ -260,7 +275,7 @@
         return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(alloc)}</div></div><div class="hint">예산 ${fmt(bud)} · 배분 ${fmt(alloc)} MXN (연간)</div>`;
       }
       case 'W10_process':{
-        return `<div class="hint" style="margin-top:0">프로세스 지도는 포털에서 봅니다.</div><a class="btn ghost sm" href="refatrix-portal.html" style="margin-top:6px;display:inline-block">포털 열기</a>`;
+        return `<div class="hint" style="margin-top:0">업무 프로세스 지도(고객뷰·제품뷰)를 포털에서 단계별로 봅니다. 우측 상단 "열기 →"로 이동.</div>`;
       }
       case 'S01_customer_status':{
         const cu=sd.customers||{};
