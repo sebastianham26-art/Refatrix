@@ -92,13 +92,10 @@
 
     <!-- 위젯 -->
     <div class="widgets">
-      <div class="card" style="margin-top:0" id="perfCard">
-        <h2>영업 성과 (올해)</h2>
-        <div id="perfBox"><div class="hint">—</div></div>
-      </div>
-      <div class="card" style="margin-top:0" id="pipeCard">
-        <h2>고객 개발 진행 (파이프라인)</h2>
-        <div id="pipeBox"><div class="hint">—</div></div>
+      <div class="card" style="margin-top:0;grid-column:1/-1;background:linear-gradient(135deg,#143D34,#1E5247);color:#fff;cursor:pointer" onclick="goScreen('salesperf')">
+        <h2 style="color:#fff">영업 대시보드 — 매출목표 vs 주간성과 →</h2>
+        <div style="font-size:13px;color:#cfe0d8;margin-top:4px">월별·주차별 매출목표와 주간 실적(워터폴), 고객 파이프라인, 마케팅 성과를 한 화면에서 봅니다.</div>
+        <div id="perfMini" style="margin-top:10px;font-size:13px;color:#eaf2ee"></div>
       </div>
       <div class="card" style="margin-top:0">
         <h2>일정 · 공지 · Todo</h2>
@@ -128,9 +125,10 @@
     importcost:{file:'refatrix-importcost.html',name:'수입원가'},
     users:{file:'refatrix-users.html',name:'사용자·권한'},
     dashboard:{file:'refatrix-dashboard.html',name:'대시보드'},
+    salesperf:{file:'refatrix-salesperf.html',name:'영업 대시보드'},
   };
 
-  function canSee(key){ if(key==='dashboard')return true; return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
+  function canSee(key){ if(key==='dashboard'||key==='salesperf')return true; return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
 
   // 세션 복원(뒤로가기로 포털에 돌아올 때 재로그인 불필요)
   function portalSession(){
@@ -230,18 +228,13 @@
   }
 
   function renderPerf(){
-    if(!sum||!sum.perf){$('perfCard').classList.add('hidden');return;}
-    const p=sum.perf;const rate=p.rate==null?0:Math.min(100,p.rate);
-    $('perfBox').innerHTML=`<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률 (${p.year})</small></div>
-      <div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div>
-      <div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)} MXN</div>`;
+    const el=$('perfMini');if(!el)return;
+    if(!sum||!sum.perf){el.textContent='';return;}
+    const p=sum.perf;
+    if(p.locked){ el.innerHTML='올해 달성률 <b>'+(p.rate==null?'—':p.rate+'%')+'</b>'; return; }
+    el.innerHTML='올해 달성률 <b>'+(p.rate==null?'—':p.rate+'%')+'</b> · 목표 '+fmt(p.target)+' · 실적 '+fmt(p.actual)+' MXN';
   }
-  function renderPipe(){
-    if(!sum||!sum.pipeline||!sum.pipeline.length){$('pipeCard').classList.add('hidden');return;}
-    const maxn=Math.max(1,...sum.pipeline.map(p=>p.count));
-    $('pipeBox').innerHTML='<div class="pipe">'+sum.pipeline.map(p=>
-      `<div class="prow"><div class="pname">${p.name.replace(/^\d+_/,'')}</div><div class="pbar"><div style="width:${Math.round(p.count/maxn*100)}%"></div></div><div class="pn">${p.count}</div></div>`).join('')+'</div>';
-  }
+  function renderPipe(){ /* 파이프라인 요약은 영업 대시보드로 이동 */ }
 
   $('go').addEventListener('click',login);
 

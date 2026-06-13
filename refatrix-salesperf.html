@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 영업 대시보드</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .card-h .src{font-size:11px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  /* 월 이동 */
+  .period{display:flex;align-items:center;gap:10px;justify-content:center;margin-top:4px}
+  .period button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer;color:var(--brand)}
+  .period .lab{font-size:18px;font-weight:800;color:var(--brand);min-width:120px;text-align:center}
+  /* 3박스 */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+  @media(max-width:720px){.stats{grid-template-columns:1fr}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;box-shadow:var(--shadow)}
+  .stat .k{font-size:11.5px;color:var(--muted);margin-bottom:7px}
+  .stat .v{font-size:24px;font-weight:800;letter-spacing:-.02em;color:var(--brand)}
+  .stat .v small{font-size:13px;font-weight:500;color:var(--muted)}
+  .stat.accent .v{color:var(--income)}
+  /* 워터폴 */
+  .wf{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  .wf th,.wf td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line)}
+  .wf th:first-child,.wf td:first-child{text-align:left}
+  .wf th{font-size:11.5px;color:var(--muted);background:#faf8f3;font-weight:700}
+  .wf .wk{font-weight:700;color:var(--brand)}
+  .wf .amt-in{color:var(--income);font-weight:700}.wf .amt-out{color:var(--expense)}
+  .wf tfoot td{font-weight:800;background:#faf8f3;border-top:2px solid var(--line)}
+  .chart{margin-top:10px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;background:#fff}
+  .barrow{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12px}
+  .barrow .bl{width:42px;font-weight:700;color:var(--brand);flex:0 0 auto}
+  .barrow .track{flex:1;background:#f0ece2;border-radius:6px;height:22px;position:relative;overflow:hidden}
+  .barrow .tgt{position:absolute;top:0;bottom:0;border-right:2px dashed var(--gold)}
+  .barrow .act{height:100%;border-radius:6px;background:var(--income);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;color:#fff;font-size:11px;font-weight:700;min-width:2px}
+  .barrow .act.over{background:var(--brand)}
+  .barrow .pct{width:54px;text-align:right;font-weight:700;flex:0 0 auto}
+  .barrow .pct.good{color:var(--income)}.barrow .pct.bad{color:var(--expense)}
+  .lockbox{background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">영업 대시보드 · 매출목표 vs 주간성과</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 월 이동 -->
+    <div class="card">
+      <div class="period"><button id="prevM">‹</button><div class="lab" id="ymLabel">—</div><button id="nextM">›</button></div>
+    </div>
+    <!-- 3박스 -->
+    <div class="stats" id="statBoxes"></div>
+    <!-- 주차별 워터폴 -->
+    <div class="card">
+      <div class="card-h">주차별 매출목표 vs 실적 <span class="src" id="wfSrc"></span></div>
+      <div id="wfBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+    <div class="hint" style="margin-top:10px">※ 다음 단계: 고객 파이프라인 + 고객 클릭 시 상세(기본정보·결제·영업성과·매출이력·마케팅), 그리고 마케팅 성과(비용 대비 목표 진척 상관관계)가 이 아래에 추가됩니다.</div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let ym=new Date().toISOString().slice(0,7);
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      load();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function shiftMonth(delta){
+    const [y,mm]=ym.split('-').map(Number);
+    const d=new Date(Date.UTC(y,mm-1+delta,1));
+    ym=d.toISOString().slice(0,7);
+    load();
+  }
+  function ymLabel(){const [y,mm]=ym.split('-');return y+'년 '+Number(mm)+'월';}
+
+  async function load(){
+    $('ymLabel').textContent=ymLabel();
+    try{
+      const [mo,wk]=await Promise.all([
+        fetch(session.api+'/api/salesperf/monthly?ym='+ym,{headers:auth()}).then(r=>r.json()),
+        fetch(session.api+'/api/salesperf/weekly?ym='+ym,{headers:auth()}).then(r=>r.json()),
+      ]);
+      renderStats(mo);renderWaterfall(wk);
+    }catch(e){$('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function renderStats(mo){
+    const prog=mo.progress==null?'—':mo.progress+'%';
+    if(mo.locked){
+      $('statBoxes').innerHTML=
+        `<div class="stat"><div class="k">매출 목표</div><div class="v">🔒</div></div>
+         <div class="stat"><div class="k">실적</div><div class="v">🔒</div></div>
+         <div class="stat accent"><div class="k">달성률</div><div class="v">${prog}</div></div>`;
+      return;
+    }
+    $('statBoxes').innerHTML=
+      `<div class="stat"><div class="k">매출 목표 (${ymLabel()})</div><div class="v">${fmt(mo.target)} <small>MXN</small></div></div>
+       <div class="stat"><div class="k">실적</div><div class="v">${fmt(mo.actual)} <small>MXN</small></div></div>
+       <div class="stat accent"><div class="k">달성률</div><div class="v">${prog}</div></div>`;
+  }
+
+  function renderWaterfall(wk){
+    $('wfSrc').textContent=wk.monthTarget!=null?('월 목표 '+fmt(wk.monthTarget)+' MXN · 주 균등 배분'):'';
+    if(wk.locked){
+      $('wfBody').innerHTML='<div class="lockbox">🔒 금액 표시 권한이 없습니다. 달성률만 표시됩니다.</div>'+barChart(wk.weeks,true);
+      return;
+    }
+    // 표
+    const rows=wk.weeks.map(w=>`<tr>
+      <td class="wk">${w.label}</td>
+      <td class="hint" style="text-align:left">${w.start.slice(5)}~${w.end.slice(5)}</td>
+      <td>${fmt(w.target)}</td>
+      <td class="amt-in">${fmt(w.actual)}</td>
+      <td>${fmt(w.cumActual)}</td>
+      <td class="${(w.cumProgress||0)>=100?'amt-in':''}">${w.cumProgress==null?'—':w.cumProgress+'%'}</td>
+    </tr>`).join('');
+    const last=wk.weeks[wk.weeks.length-1]||{};
+    $('wfBody').innerHTML=`
+      <table class="wf">
+        <thead><tr><th>주차</th><th>기간</th><th>주 목표</th><th>주 실적</th><th>누적 실적</th><th>누적 달성</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2">합계</td><td>${fmt(wk.monthTarget)}</td><td class="amt-in">${fmt(last.cumActual)}</td><td>${fmt(last.cumActual)}</td><td>${last.cumProgress==null?'—':last.cumProgress+'%'}</td></tr></tfoot>
+      </table>
+      ${barChart(wk.weeks,false)}`;
+  }
+
+  // 주차별 막대(목표 점선 + 실적 채움)
+  function barChart(weeks,locked){
+    const maxv=Math.max(1,...weeks.map(w=>Math.max(w.target||0,w.actual||0)));
+    const rows=weeks.map(w=>{
+      const tgtPct=locked?0:Math.min(100,(w.target||0)/maxv*100);
+      const actPct=locked?Math.min(100,w.progress||0):Math.min(100,(w.actual||0)/maxv*100);
+      const over=(w.progress||0)>=100;
+      const pctTxt=w.progress==null?'—':w.progress+'%';
+      return `<div class="barrow">
+        <div class="bl">${w.label}</div>
+        <div class="track">${locked?'':`<div class="tgt" style="left:${tgtPct}%"></div>`}<div class="act ${over?'over':''}" style="width:${actPct}%"></div></div>
+        <div class="pct ${over?'good':((w.progress||0)<70?'bad':'')}">${pctTxt}</div>
+      </div>`;
+    }).join('');
+    return `<div class="chart"><div class="hint" style="margin-bottom:6px">막대=주간 실적 · 점선=주 목표선 · % = 주 목표 대비 달성</div>${rows}</div>`;
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('prevM').addEventListener('click',()=>shiftMonth(-1));
+  $('nextM').addEventListener('click',()=>shiftMonth(1));
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>
