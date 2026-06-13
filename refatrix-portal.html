@@ -73,6 +73,15 @@
   </div>
 
   <div class="hidden" id="app">
+    <!-- 공통 KPI: 당월 매출목표 대비 실적 + 월별 그래프 -->
+    <div class="card" id="kpiCard">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">매출 목표 대비 실적 <span class="hint" style="display:inline;margin:0">— 전사 기준</span></h2>
+        <span class="hint" id="kpiMonthLbl"></span>
+      </div>
+      <div id="kpiBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+    </div>
+
     <!-- 해야 할 일 (펜딩 요약) -->
     <div class="card" id="pendCard">
       <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
@@ -170,7 +179,75 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPerf();renderPipe();loadBoardMini();
+    renderFlows();renderPending();renderPerf();renderPipe();loadBoardMini();loadKpi();
+  }
+  function kfmt(n){ return n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0}); }
+  async function loadKpi(){
+    const body=$('kpiBody'); if(!body)return;
+    try{
+      const k=await fetch(session.api+'/api/portal/kpi?months=12',{headers:auth()}).then(r=>r.json());
+      $('kpiMonthLbl').textContent=k.month?k.month.ym+' 기준':'';
+      renderKpi(k);
+    }catch(e){ body.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function renderKpi(k){
+    const m=k.month||{}; const prog=m.progress;
+    const pct=(prog==null)?0:Math.max(0,Math.min(prog,100));
+    const progColor = prog==null?'#888780':(prog>=100?'#0F6E56':(prog>=70?'#B8893B':'#B23A2E'));
+    // 당월 진행률 박스
+    let box='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:14px 16px">'
+      +'<div style="min-width:120px"><div class="hint" style="margin:0">당월 달성률</div>'
+      +'<div style="font-size:30px;font-weight:800;color:'+progColor+'">'+(prog==null?'—':prog+'%')+'</div></div>'
+      +'<div style="flex:1;min-width:200px">'
+      +'<div style="height:14px;background:#e8e3d8;border-radius:999px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+progColor+'"></div></div>';
+    if(k.seeAmount){
+      box+='<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--muted)">'
+        +'<span>실적 <b style="color:var(--ink)">'+kfmt(m.actual)+'</b></span>'
+        +'<span>목표 '+kfmt(m.target)+'</span>'
+        +(m.remaining!=null&&m.remaining>0?'<span>남은 목표 '+kfmt(m.remaining)+'</span>':'<span style="color:var(--income)">목표 달성 ✓</span>')
+        +'</div>';
+    } else {
+      box+='<div style="margin-top:6px;font-size:12px;color:var(--muted)">금액은 권한이 있는 경우에만 표시됩니다.</div>';
+    }
+    box+='</div></div>';
+    // 월별 그래프
+    box+='<div style="margin-top:14px">'+kpiChart(k.series||[],k.seeAmount)+'</div>';
+    $('kpiBody').innerHTML=box;
+  }
+  function kpiChart(series,seeAmount){
+    if(!series.length)return '<div class="hint">데이터가 없습니다.</div>';
+    const W=720,H=180,padL=44,padR=12,padT=12,padB=28;
+    const n=series.length, gw=(W-padL-padR)/n;
+    let maxV;
+    if(seeAmount){ maxV=Math.max(1,...series.map(s=>Math.max(s.target||0,s.actual||0))); }
+    else { maxV=Math.max(100,...series.map(s=>s.progress||0)); }
+    const y=(v)=>padT+(H-padT-padB)*(1-(v/maxV));
+    const barW=Math.min(gw*0.34,22);
+    let svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;font-family:inherit">';
+    // 가로 기준선 (0,50%,100% of max)
+    for(let i=0;i<=2;i++){ const v=maxV*i/2; const yy=y(v); svg+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#e6e1d6"/>'; svg+='<text x="'+(padL-6)+'" y="'+(yy+3)+'" text-anchor="end" font-size="9" fill="#6F6A60">'+(seeAmount?kfmt(v):Math.round(v)+'%')+'</text>'; }
+    series.forEach((s,i)=>{
+      const cx=padL+gw*i+gw/2;
+      if(seeAmount){
+        const ta=s.target||0, ac=s.actual||0;
+        // 목표(연한 회색) 뒤, 실적(색) 앞 - 그룹 막대
+        const x1=cx-barW-2, x2=cx+2;
+        svg+='<rect x="'+x1+'" y="'+y(ta)+'" width="'+barW+'" height="'+(H-padB-y(ta))+'" fill="#cfc8b8" rx="2"/>';
+        const acColor=(ta>0&&ac>=ta)?'#0F6E56':'#1F6FB2';
+        svg+='<rect x="'+x2+'" y="'+y(ac)+'" width="'+barW+'" height="'+(H-padB-y(ac))+'" fill="'+acColor+'" rx="2"/>';
+      } else {
+        const pv=s.progress||0; const yy=y(Math.min(pv,maxV));
+        const c=pv>=100?'#0F6E56':(pv>=70?'#B8893B':'#B23A2E');
+        svg+='<rect x="'+(cx-barW/2)+'" y="'+yy+'" width="'+barW+'" height="'+(H-padB-yy)+'" fill="'+c+'" rx="2"/>';
+        if(s.progress!=null) svg+='<text x="'+cx+'" y="'+(yy-3)+'" text-anchor="middle" font-size="9" fill="#6F6A60">'+pv+'%</text>';
+      }
+      svg+='<text x="'+cx+'" y="'+(H-padB+13)+'" text-anchor="middle" font-size="9" fill="#6F6A60">'+s.ym.slice(5)+'월</text>';
+    });
+    svg+='</svg>';
+    const legend=seeAmount
+      ? '<div class="hint" style="margin-top:2px"><span style="display:inline-block;width:10px;height:10px;background:#cfc8b8;border-radius:2px;vertical-align:middle"></span> 목표 &nbsp; <span style="display:inline-block;width:10px;height:10px;background:#1F6FB2;border-radius:2px;vertical-align:middle"></span> 실적 (달성 시 초록)</div>'
+      : '<div class="hint" style="margin-top:2px">막대 = 월별 달성률(%)</div>';
+    return svg+legend;
   }
   async function loadBoardMini(){
     const el=document.getElementById('boardMini');if(!el)return;

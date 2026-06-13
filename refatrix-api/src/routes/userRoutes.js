@@ -2,6 +2,7 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { hashPin } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { ROLE_DEFAULTS, SCREEN_PAGE_KEY, applyRoleDefaults } from '../roleDefaults.js';
 
 function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
 
@@ -30,11 +31,15 @@ export default async function userRoutes(app) {
       `INSERT INTO users (name, dept, role, login_id, pin_hash, lang, team_id, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [name, dept || null, role, login_id, hashPin(pin), lang, team_id || null, req.ctx.perm.userId])).rows[0];
-    for (const pk of (Array.isArray(pages) ? pages : [])) {
+    const explicitPages = Array.isArray(pages) ? pages : [];
+    for (const pk of explicitPages) {
       await query(`INSERT INTO user_page_access (user_id, page_key, device_req) VALUES ($1,$2,'anywhere') ON CONFLICT (user_id, page_key) DO NOTHING`, [u.id, pk]);
     }
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `user:${u.id}` });
-    return { id: u.id, login_id, pin, note: '이 PIN을 사용자에게 통보하세요. 서버에는 해시만 저장됩니다.' };
+    // 명시 페이지가 없으면 역할 기본 권한 자동 부여
+    let applied = null;
+    if (!explicitPages.length) applied = await applyRoleDefaults(u.id, role);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `user:${u.id}`, detail: applied ? { role_defaults: applied } : undefined });
+    return { id: u.id, login_id, pin, applied, note: '이 PIN을 사용자에게 통보하세요. 서버에는 해시만 저장됩니다.' };
   });
 
   // PIN 재발급(디렉터). 지정 가능.
@@ -78,5 +83,20 @@ export default async function userRoutes(app) {
       [id, field_key, !!visible]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { field_key, visible } });
     return { ok: true };
+  });
+
+  // 기존 사용자에게 역할 기본 권한 적용(디렉터). 수동 설정은 보존하고 누락분만 추가.
+  app.post('/api/users/:id/apply-role-defaults', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const u = (await query(`SELECT role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const applied = await applyRoleDefaults(id, u.role);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { apply_role_defaults: u.role, applied } });
+    return { ok: true, role: u.role, applied };
+  });
+
+  // 역할별 기본 권한 표(디렉터)
+  app.get('/api/role-defaults', { preHandler: [authGuard, requireDirector] }, async () => {
+    return { roleDefaults: ROLE_DEFAULTS, screenPageKey: SCREEN_PAGE_KEY };
   });
 }
