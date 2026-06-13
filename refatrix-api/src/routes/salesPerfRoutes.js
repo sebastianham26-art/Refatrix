@@ -114,24 +114,33 @@ export default async function salesPerfRoutes(app) {
   // 주차별 매출 워터폴(일요일 시작, ex-IVA)
   app.get('/api/salesperf/weekly', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
-    const ym = String(req.query.ym || new Date().toISOString().slice(0, 7));
+    const yms = String(req.query.ym || new Date().toISOString().slice(0, 7)).split(',').map((s) => s.trim()).filter(Boolean).sort();
     const ta = teamArrOf(perm);
     const seeSales = fieldVisible(perm, 'sales_amount');
-    const monthTarget = await monthTargetOf(perm, ym);
-    const weeks = weeksOfMonth(ym);
+    const multi = yms.length > 1;
+
+    let monthTarget = 0;
     const rows = []; let cum = 0;
-    for (const w of weeks) {
-      let q = `SELECT COALESCE(SUM(i.subtotal_mxn),0) AS a FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
-                WHERE i.status='posted' AND i.inv_date >= $1 AND i.inv_date <= $2 AND c.deleted_at IS NULL`;
-      const p = [w.start, w.end];
-      if (ta) { p.push(ta); q += ` AND c.team_id = ANY($3)`; }
-      const actual = Number((await query(q, p)).rows[0].a);
-      cum += actual;
-      rows.push({ label: w.label, start: w.start, end: w.end,
-        actual: seeSales ? r2(actual) : null, cumActual: seeSales ? r2(cum) : null });
+    for (const ym of yms) {
+      monthTarget += await monthTargetOf(perm, ym);
+      const mLbl = Number(ym.split('-')[1]) + '월';
+      const weeks = weeksOfMonth(ym);
+      for (const w of weeks) {
+        let q = `SELECT COALESCE(SUM(i.subtotal_mxn),0) AS a FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+                  WHERE i.status='posted' AND i.inv_date >= $1 AND i.inv_date <= $2 AND c.deleted_at IS NULL`;
+        const p = [w.start, w.end];
+        if (ta) { p.push(ta); q += ` AND c.team_id = ANY($3)`; }
+        const actual = Number((await query(q, p)).rows[0].a);
+        cum += actual;
+        rows.push({
+          label: multi ? (mLbl + ' ' + w.label) : w.label,
+          start: w.start, end: w.end,
+          actual: seeSales ? r2(actual) : null, cumActual: seeSales ? r2(cum) : null,
+        });
+      }
     }
     const progress = monthTarget > 0 ? r2(cum / monthTarget * 100) : null;
-    return { ym, weeks: rows, monthTarget: seeSales ? r2(monthTarget) : null, cumActual: seeSales ? r2(cum) : null, progress, locked: !seeSales };
+    return { yms, multi, weeks: rows, monthTarget: seeSales ? r2(monthTarget) : null, cumActual: seeSales ? r2(cum) : null, progress, locked: !seeSales };
   });
 
   // 고객 파이프라인 보드(6단계, 고객 카드)

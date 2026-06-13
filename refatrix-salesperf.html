@@ -33,13 +33,16 @@
   .mrow .ml{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px}
   .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
   .mbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
-  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;align-items:stretch}
   @media(max-width:860px){.cards{grid-template-columns:1fr}}
-  .bigv{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--brand);margin-top:2px}
+  .cards .card{display:flex;flex-direction:column}
+  .cardbody{display:flex;flex-direction:column;flex:1}
+  .bigv{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--brand)}
   .bigv small{font-size:13px;font-weight:500;color:var(--muted)}
-  .mom{font-size:12.5px;font-weight:700;margin-top:4px}
+  .mom{font-size:12.5px;font-weight:700;margin-top:4px;min-height:18px}
   .mom.up{color:var(--income)}.mom.down{color:var(--expense)}.mom.flat{color:var(--muted)}
   .goal{font-size:12px;color:var(--muted);margin-top:6px}
+  .cardfoot{margin-top:auto;padding-top:8px}
   .pbar{background:#f0ece2;border-radius:7px;height:9px;overflow:hidden;margin-top:6px}
   .pbar>div{height:100%;background:var(--income)}
   .devboxes{display:flex;gap:8px;margin-top:8px}
@@ -102,21 +105,42 @@
         <span class="lnk" onclick="document.getElementById('pipeBody').classList.toggle('hidden')">숨기기</span></div>
       <div id="pipeBody"><div class="hint">불러오는 중…</div></div>
     </div>
+
+    <div class="card">
+      <div class="card-h">마케팅 성과 — 비용 ↔ 매출목표 진척 상관 <span class="src">올해 누적</span></div>
+      <div id="corrBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 고객 상세 드릴다운 -->
+<div id="custModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:720px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)">
+      <div id="cmTitle" style="font-size:16px;font-weight:800;color:var(--brand)">고객 상세</div>
+      <button onclick="closeCust()" style="margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;cursor:pointer;font-size:13px">닫기 ✕</button>
+    </div>
+    <div id="cmBody" style="padding:18px 20px"><div class="hint">불러오는 중…</div></div>
   </div>
 </div>
 
 <script>
   let session={token:null,user:null,api:''};
   const now=new Date();
-  let topYm=now.toISOString().slice(0,7);
-  let wfYm=topYm;
+  let topYms=[now.toISOString().slice(0,7)];   // 다중 선택 가능
+  let wfYm=now.toISOString().slice(0,7);
   const YEAR=2026;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
   const fmtK=(n)=>{ n=Number(n||0); if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+'M'; if(n>=1e3)return Math.round(n/1e3)+'K'; return String(Math.round(n)); };
   const SCREEN={sales:'refatrix-sales.html',finance:'refatrix-finance.html',pipeline:'refatrix-pipeline.html',customers:'refatrix-customers.html'};
-  function go(s){ if(SCREEN[s]) location.href=SCREEN[s]; }
+  function go(s){
+    if(!SCREEN[s])return;
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+    const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
+    location.href=SCREEN[s]+hash;
+  }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -138,48 +162,59 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      renderMonthBtns();loadCards();loadWaterfall();loadPipeline();
+      renderMonthBtns();loadCards();loadWaterfall();loadPipeline();loadCorrelation();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
   function renderMonthBtns(){
-    const mk=(sel,which)=>Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
-      return '<button class="mbtn '+(sel===ym?'on':'')+'" onclick="pickMonth(\''+which+'\',\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
-    $('topMonths').innerHTML=mk(topYm,'top');
-    $('wfMonths').innerHTML=mk(wfYm,'wf');
+    const top=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
+      return '<button class="mbtn '+(topYms.includes(ym)?'on':'')+'" onclick="pickTop(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    const wf=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
+      return '<button class="mbtn '+(wfYm===ym?'on':'')+'" onclick="pickWf(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    $('topMonths').innerHTML=top;
+    $('wfMonths').innerHTML=wf;
   }
-  function pickMonth(which,ym){
-    if(which==='top'){topYm=ym;renderMonthBtns();loadCards();}
-    else{wfYm=ym;renderMonthBtns();loadWaterfall();}
+  function pickTop(ym){
+    // 토글: 이미 선택된 달이면 해제(최소 1개 유지), 아니면 추가
+    if(topYms.includes(ym)){ if(topYms.length>1) topYms=topYms.filter(x=>x!==ym); }
+    else topYms=[...topYms,ym].sort();
+    renderMonthBtns();loadCards();
   }
+  function pickWf(ym){ wfYm=ym;renderMonthBtns();loadWaterfall(); }
   function ymLabel(ym){const p=ym.split('-');return Number(p[1])+'월';}
+  function topLabel(){ return topYms.map(ymLabel).join('·'); }
 
   async function loadCards(){
-    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYm,{headers:auth()}).then(r=>r.json());renderCards(su);}
+    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());renderCards(su);}
     catch(e){$('cards').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function renderCards(su){
     const s=su.sales||{}, c=su.collection||{}, d=su.pipeline_dev||{};
+    const lbl=topLabel();
     let momHtml='';
-    if(s.momPct==null) momHtml='<div class="mom flat">전월 대비 —</div>';
+    if(su.multi) momHtml='<div class="mom flat">여러 달 합산</div>';
+    else if(s.momPct==null) momHtml='<div class="mom flat">전월 대비 —</div>';
     else{const up=s.momPct>=0;momHtml='<div class="mom '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(s.momPct)+'% 전월 대비</div>';}
+    // 카드1 매출
     const c1=s.locked
-      ? '<div class="bigv">🔒</div><div class="goal">달성률 '+(s.progress==null?'—':s.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
-      : '<div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
+      ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(s.progress==null?'—':s.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div></div>'
+      : '<div class="cardbody"><div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
         +'<div class="goal">목표/계획 MX$'+fmt(s.target)+' · 달성 '+(s.progress==null?'—':s.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
-        +'<div class="hint" style="margin-top:7px">전사 목표 대비 매출 실적(ex-IVA 소계 기준)</div>';
+        +'<div class="cardfoot hint">전사 목표 대비 매출 실적(ex-IVA 소계 기준) · '+lbl+'</div></div>';
+    // 카드2 수금 (mom 자리 비워 정렬 맞춤)
     const c2=c.locked
-      ? '<div class="bigv">🔒</div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div>'
-      : '<div class="bigv">MX$'+fmt(c.actual)+'</div>'
+      ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div></div>'
+      : '<div class="cardbody"><div class="bigv">MX$'+fmt(c.actual)+'</div><div class="mom flat"></div>'
         +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
-        +'<div class="hint" style="margin-top:7px">해당 월 수금예상(인보이스 외상일 기준) 대비 실제 수금(실현)</div>';
-    const c3='<div class="bigv">'+(d.total||0)+'<small> 곳</small></div>'
+        +'<div class="cardfoot hint">수금예상(인보이스 외상일 기준) 대비 실제 수금(실현) · '+lbl+'</div></div>';
+    // 카드3 고객개발
+    const c3='<div class="cardbody"><div class="bigv">'+(d.total||0)+'<small> 곳</small></div><div class="mom flat"></div>'
       +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.proposal||0)+'</div><div class="l">제안(견적)</div></div>'
       +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div></div></div>'
-      +'<div class="hint" style="margin-top:7px">제안 이후·수주 직전 단계 — 막판 전환을 밀어줄 후보입니다.</div>';
+      +'<div class="cardfoot hint">제안 이후·수주 직전 — 막판 전환을 밀어줄 후보입니다.</div></div>';
     $('cards').innerHTML=
       '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적 <a class="lnk" onclick="go(\'sales\')">매출 목록 보기 →</a></div>'+c1+'</div>'
       +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적 <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a></div>'+c2+'</div>'
@@ -234,7 +269,7 @@
         const dot=dayDot(c.days_in_stage);
         const sinceTxt=c.stage_since?('진입 '+c.stage_since.slice(5)+(c.days_in_stage!=null?' · '+c.days_in_stage+'일 경과':'')):'';
         const actTxt=c.activity_days==null?'활동 없음':('👆 '+c.activity_days+'일');
-        return '<div class="pcard" style="--dot:'+dot+'" onclick="go(\'customers\')"><div class="nm">'+c.name+'</div>'
+        return '<div class="pcard" style="--dot:'+dot+'" onclick="openCust('+c.id+',\''+c.name.replace(/'/g,"")+'\')"><div class="nm">'+c.name+'</div>'
           +'<div class="meta"><span>'+sinceTxt+'</span><span class="act">'+actTxt+'</span></div></div>';
       }).join('')||'<div class="pempty">—</div>';
       return '<div class="pcol"><div class="pcolh" style="background:'+col+'">'+label+'<span class="cnt">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
@@ -246,7 +281,96 @@
       +'<span class="hint">· 카드 클릭 → 고객 화면 · 👆 = 마지막 활동 후 경과일</span></div>';
   }
 
-  $('go').addEventListener('click',login);
+  // ===== 고객 상세 드릴다운 =====
+  async function openCust(id,name){
+    $('cmTitle').textContent=name||'고객 상세';
+    $('cmBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    $('custModal').style.display='flex';
+    try{const d=await fetch(session.api+'/api/salesperf/customer/'+id,{headers:auth()}).then(r=>r.json());
+      if(d.error){$('cmBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';return;}
+      renderCust(d);
+    }catch(e){$('cmBody').innerHTML='<div class="hint">서버 연결 실패</div>';}
+  }
+  function closeCust(){ $('custModal').style.display='none'; }
+  function row(k,v){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #f0ece2;font-size:13px"><span style="color:var(--muted)">'+k+'</span><span style="font-weight:600">'+(v==null||v===''?'—':v)+'</span></div>'; }
+  function sec(title){ return '<div style="font-size:13px;font-weight:800;color:var(--brand);margin:16px 0 6px">'+title+'</div>'; }
+  function renderCust(d){
+    const b=d.basic||{}, p=d.payment||{}, pf=d.performance||{}, mk=d.marketing||{};
+    let html='';
+    // 기본정보
+    html+=sec('기본정보')
+      +row('고객번호', b.code)+row('상호', b.name)+row('RFC(세금번호)', b.rfc)
+      +row('담당자', b.contact)+row('전화', b.phone)+row('기본 할인율', (b.discount||0)+'%')
+      +row('단계', b.stage)+row('팀', b.team)+row('단계 진입일', b.since);
+    // 결제정보
+    html+=sec('결제정보');
+    if(p.locked) html+=row('미수 잔액','🔒 권한 없음');
+    else html+=row('외상일(기본)', (p.credit_days||0)+'일')+row('미수 잔액', 'MX$'+fmt(p.outstanding))+row('연체액', 'MX$'+fmt(p.overdue));
+    // 영업성과
+    html+=sec('영업성과 ('+pf.year+')');
+    if(pf.locked) html+=row('달성률', (pf.progress==null?'—':pf.progress+'%'))+'<div class="hint">🔒 금액 권한 없음</div>';
+    else{ const rate=pf.progress==null?0:Math.min(100,pf.progress);
+      html+=row('목표', 'MX$'+fmt(pf.target))+row('실적(ex-IVA)', 'MX$'+fmt(pf.actual))+row('달성률', (pf.progress==null?'—':pf.progress+'%'))
+        +'<div class="pbar"><div style="width:'+rate+'%"></div></div>'; }
+    // 매출이력
+    html+=sec('매출이력 (최근)');
+    if((d.history||[]).length){ html+='<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr><th style="text-align:left;color:var(--muted);padding:5px 4px">일자</th><th style="text-align:right;color:var(--muted)">소계(ex-IVA)</th><th style="text-align:right;color:var(--muted)">총액</th><th style="text-align:right;color:var(--muted)">입금예정</th></tr></thead><tbody>'
+      +d.history.map(h=>'<tr><td style="padding:5px 4px">'+h.date+'</td><td style="text-align:right">'+(h.locked?'🔒':fmt(h.subtotal))+'</td><td style="text-align:right">'+(h.locked?'🔒':fmt(h.total))+'</td><td style="text-align:right;color:var(--muted)">'+(h.due||'—')+'</td></tr>').join('')
+      +'</tbody></table>'; }
+    else html+='<div class="hint">매출 이력이 없습니다.</div>';
+    // 마케팅 활동
+    html+=sec('마케팅 활동 (올해)');
+    if(mk.locked) html+='<div class="hint">🔒 마케팅 금액 권한 없음</div>';
+    else if((mk.items||[]).length){ html+='<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr><th style="text-align:left;color:var(--muted);padding:5px 4px">활동</th><th style="text-align:right;color:var(--muted)">수량</th><th style="text-align:right;color:var(--muted)">비용</th></tr></thead><tbody>'
+      +mk.items.map(m=>'<tr><td style="padding:5px 4px">'+m.activity+'</td><td style="text-align:right">'+m.qty+'</td><td style="text-align:right">'+(m.cost==null?'🔒':'MX$'+fmt(m.cost))+'</td></tr>').join('')
+      +'</tbody></table><div class="hint" style="margin-top:6px">총 마케팅 비용 MX$'+fmt(mk.total)+'</div>'; }
+    else html+='<div class="hint">마케팅 활동이 없습니다.</div>';
+    $('cmBody').innerHTML=html;
+  }
+
+  // ===== 마케팅 성과 상관 =====
+  async function loadCorrelation(){
+    try{const d=await fetch(session.api+'/api/salesperf/marketing-correlation',{headers:auth()}).then(r=>r.json());renderCorrelation(d);}
+    catch(e){$('corrBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderCorrelation(d){
+    const pts=d.points||[];
+    if(!pts.length){$('corrBody').innerHTML='<div class="hint">마케팅 비용과 목표가 함께 있는 고객이 없습니다. (마케팅 배분·목표 입력 후 표시됩니다.)</div>';return;}
+    const rTxt=d.correlation==null?'산출 불가(표본 부족 또는 변동 없음)':d.correlation;
+    let interp='';
+    if(d.correlation!=null){ const r=d.correlation;
+      interp = r>=0.6?'강한 양의 상관 — 마케팅 비용이 높은 고객일수록 목표 진척이 높습니다.'
+        : r>=0.3?'약한 양의 상관 — 어느 정도 비용↑ → 진척↑ 경향.'
+        : r>-0.3?'뚜렷한 상관 없음 — 비용과 진척의 직접 관계가 약합니다.'
+        : '음의 상관 — 비용을 써도 진척이 낮은 고객이 있어 점검이 필요합니다.'; }
+    // 산점도(SVG): x=비용, y=진척%
+    const locked=d.locked;
+    let scatter='';
+    if(!locked){
+      const W=560,H=240,pad=40;
+      const maxX=Math.max(1,...pts.map(p=>p.cost)), maxY=Math.max(100,...pts.map(p=>p.progress));
+      const px=v=>pad+(v/maxX)*(W-pad-10), py=v=>H-pad-(v/maxY)*(H-pad-10);
+      const dots=pts.map(p=>'<circle cx="'+px(p.cost).toFixed(1)+'" cy="'+py(p.progress).toFixed(1)+'" r="5" fill="var(--income)"><title>'+p.name+' · 비용 '+fmt(p.cost)+' · 진척 '+p.progress+'%</title></circle>').join('');
+      const gx=[0,.5,1].map(f=>'<text x="'+px(maxX*f)+'" y="'+(H-pad+14)+'" font-size="9" fill="#888" text-anchor="middle">'+fmtK(maxX*f)+'</text>').join('');
+      const gy=[0,.5,1].map(f=>'<text x="'+(pad-6)+'" y="'+(py(maxY*f)+3)+'" font-size="9" fill="#888" text-anchor="end">'+Math.round(maxY*f)+'%</text>').join('');
+      scatter='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;border:1px solid var(--line);border-radius:8px;background:#fff">'
+        +'<line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-10)+'" y2="'+(H-pad)+'" stroke="#ddd"/><line x1="'+pad+'" y1="10" x2="'+pad+'" y2="'+(H-pad)+'" stroke="#ddd"/>'
+        +gx+gy+dots
+        +'<text x="'+(W/2)+'" y="'+(H-6)+'" font-size="10" fill="#888" text-anchor="middle">마케팅 비용 (MXN) →</text>'
+        +'<text x="14" y="'+(H/2)+'" font-size="10" fill="#888" text-anchor="middle" transform="rotate(-90,14,'+(H/2)+')">목표 진척률 →</text>'
+        +'</svg>';
+    }
+    const list='<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px"><thead><tr>'
+      +'<th style="text-align:left;color:var(--muted);padding:5px 4px">고객</th>'+(locked?'':'<th style="text-align:right;color:var(--muted)">마케팅 비용</th>')+'<th style="text-align:right;color:var(--muted)">목표 진척</th></tr></thead><tbody>'
+      +pts.slice().sort((a,b)=>b.progress-a.progress).map(p=>'<tr><td style="padding:5px 4px">'+p.name+'</td>'+(locked?'':'<td style="text-align:right">MX$'+fmt(p.cost)+'</td>')+'<td style="text-align:right;font-weight:700;color:'+(p.progress>=100?'var(--income)':(p.progress<50?'var(--expense)':'var(--ink)'))+'">'+p.progress+'%</td></tr>').join('')
+      +'</tbody></table>';
+    $('corrBody').innerHTML='<div style="font-size:13px;margin-bottom:8px">상관계수(r) = <b style="color:var(--brand)">'+rTxt+'</b> <span class="hint">· 고객 '+d.count+'곳 기준</span></div>'
+      +(interp?'<div class="hint" style="margin-bottom:10px">'+interp+'</div>':'')
+      +scatter+list
+      +(locked?'<div class="hint" style="margin-top:8px">🔒 마케팅 금액 권한이 없어 진척률만 표시됩니다.</div>':'');
+  }
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
