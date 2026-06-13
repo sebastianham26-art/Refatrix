@@ -2,6 +2,7 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds } from '../teams.js';
+import { fieldVisible } from '../permissions.js';
 import { WIDGETS, WIDGET_BY_KEY, ROLE_DEFAULTS, defaultSettings } from '../widgetRegistry.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
@@ -52,7 +53,29 @@ export default async function dashboardRoutes(app) {
       role = u.role;
     }
     const config = await resolveConfig(userId, role);
-    return { user_id: userId, config, is_default: !(await query(`SELECT 1 FROM dashboard_widgets WHERE user_id=$1 LIMIT 1`, [userId])).rows.length };
+    // 대시보드 민감 필드 부여 상태
+    const fkeys = ['fin_amount', 'ar_amount', 'mkt_amount', 'sales_amount'];
+    const granted = {};
+    if (role === 'director') { for (const k of fkeys) granted[k] = true; }
+    else {
+      for (const k of fkeys) granted[k] = false;
+      for (const r of (await query(`SELECT field_key FROM user_field_access WHERE user_id=$1 AND visible=true AND field_key = ANY($2)`, [userId, fkeys])).rows) granted[r.field_key] = true;
+    }
+    return { user_id: userId, config, sensitive: granted, is_default: !(await query(`SELECT 1 FROM dashboard_widgets WHERE user_id=$1 LIMIT 1`, [userId])).rows.length };
+  });
+
+  // 대시보드 민감 필드 부여(디렉터)
+  app.post('/api/dashboard/sensitive', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const userId = Number(req.body?.user_id);
+    const fkeys = ['fin_amount', 'ar_amount', 'mkt_amount', 'sales_amount'];
+    const key = req.body?.field_key;
+    if (!userId || !fkeys.includes(key)) return reply.code(400).send({ error: 'bad_request' });
+    await query(
+      `INSERT INTO user_field_access (user_id, field_key, visible) VALUES ($1,$2,$3)
+       ON CONFLICT (user_id, field_key) DO UPDATE SET visible=EXCLUDED.visible`,
+      [userId, key, req.body?.visible === true]);
+    await safeLog({ userId: req.ctx.perm.userId, action: 'permission_change', target: `dash_sensitive:${userId}` });
+    return { ok: true };
   });
 
   // 유저 구성 저장(디렉터). widgets:[{widget_key,enabled,settings}] 순서대로 sort_order 부여.
@@ -122,9 +145,10 @@ export default async function dashboardRoutes(app) {
     const perm = req.ctx.perm;
     const vis = visibleTeamIds(perm);
     const teamArr = vis === null ? null : (vis.length ? vis : [-1]);
+    const seeAr = fieldVisible(perm, 'ar_amount');
     const out = {};
 
-    // 고객 현황: 고객 수 / 연체 고객 수 / 총 미수금
+    // 고객 현황: 고객 수 / 연체 고객 수 / 총 미수금(민감)
     {
       let q = `SELECT COUNT(DISTINCT c.id) AS cust_n,
                       COUNT(DISTINCT CASE WHEN i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01 THEN c.id END) AS overdue_n,
@@ -136,7 +160,7 @@ export default async function dashboardRoutes(app) {
       const params = [];
       if (teamArr) { params.push(teamArr); q += ` AND c.team_id = ANY($1)`; }
       const r = (await query(q, params)).rows[0];
-      out.customers = { count: Number(r.cust_n), overdue: Number(r.overdue_n), outstanding: r2(r.outstanding) };
+      out.customers = { count: Number(r.cust_n), overdue: Number(r.overdue_n), outstanding: seeAr ? r2(r.outstanding) : null, locked: !seeAr };
     }
 
     // 매출목표 승인 현황: 팀별 상태
@@ -181,49 +205,78 @@ export default async function dashboardRoutes(app) {
   // 마케팅·재무 카테고리 표시형 위젯용 요약(한 번에).
   app.get('/api/dashboard/findata', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
+    const seeFin = fieldVisible(perm, 'fin_amount');
+    const seeAr = fieldVisible(perm, 'ar_amount');
+    const seeMkt = fieldVisible(perm, 'mkt_amount');
     const out = {};
     const ym = new Date().toISOString().slice(0, 7);
 
-    // 이번 달 캐시플로(실현 in/out)
+    // 이번 달 캐시플로(실현 in/out) — 민감(fin_amount)
     {
       const r = (await query(
         `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_mxn ELSE 0 END),0) AS inflow,
                 COALESCE(SUM(CASE WHEN direction='out' THEN amount_mxn ELSE 0 END),0) AS outflow
            FROM transactions WHERE status='actual' AND to_char(txn_date,'YYYY-MM')=$1`, [ym])).rows[0];
-      out.cashflow = { ym, inflow: r2(r.inflow), outflow: r2(r.outflow), net: r2(r.inflow - r.outflow) };
+      out.cashflow = seeFin
+        ? { ym, inflow: r2(r.inflow), outflow: r2(r.outflow), net: r2(r.inflow - r.outflow), locked: false }
+        : { ym, locked: true };
     }
-    // 계획 대비 실적(이번 달 plan vs actual, 지출 기준)
+    // 계획 대비 실적(이번 달 지출) — 민감(fin_amount). 비율은 비민감으로 노출.
     {
       const r = (await query(
         `SELECT COALESCE(SUM(CASE WHEN status='plan' AND direction='out' THEN amount_mxn ELSE 0 END),0) AS plan_out,
                 COALESCE(SUM(CASE WHEN status='actual' AND direction='out' THEN amount_mxn ELSE 0 END),0) AS act_out
            FROM transactions WHERE to_char(txn_date,'YYYY-MM')=$1`, [ym])).rows[0];
-      out.plan_vs_actual = { ym, plan: r2(r.plan_out), actual: r2(r.act_out) };
+      const plan = Number(r.plan_out), act = Number(r.act_out);
+      const rate = plan > 0 ? r2(act / plan * 100) : null;
+      out.plan_vs_actual = seeFin
+        ? { ym, plan: r2(plan), actual: r2(act), rate, locked: false }
+        : { ym, rate, locked: true };
     }
-    // AR 연체 총액·건수
+    // AR 연체 총액·건수 — 건수는 비민감, 금액은 민감(ar_amount)
     {
       const r = (await query(
         `SELECT COUNT(*) AS n, COALESCE(SUM(i.total_mxn - COALESCE(p.paid,0)),0) AS overdue
            FROM sales_invoices i
            LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
           WHERE i.status='posted' AND i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01`)).rows[0];
-      out.ar_overdue = { count: Number(r.n), total: r2(r.overdue) };
+      out.ar_overdue = { count: Number(r.n), total: seeAr ? r2(r.overdue) : null, locked: !seeAr };
     }
-    // 승인 대기 거래(plan→actual 등) 수 — pending 성격: change requests
+    // 승인 대기 거래 수 — 비민감
     {
       const r = (await query(`SELECT COUNT(*) AS n FROM sales_change_requests WHERE status='pending'`)).rows[0];
       out.pending_approvals = Number(r.n);
     }
-    // 최신 환율(USD→MXN)
+    // 최신 환율 — 비민감
     {
       const r = (await query(`SELECT rate, to_char(rate_date,'YYYY-MM-DD') AS d FROM fx_rates WHERE base='USD' AND quote='MXN' ORDER BY rate_date DESC LIMIT 1`)).rows[0];
       out.fx = r ? { rate: Number(r.rate), date: r.d } : null;
     }
-    // 마케팅 상태(승인 단계)
+    // 마케팅 상태 — 비민감
     {
       const r = (await query(`SELECT status FROM marketing_plan_status WHERE id=1`)).rows[0];
       out.marketing_status = r ? r.status : 'draft';
     }
+    // 마케팅 예산/배분(연간) + 고객 TOP — 금액 민감(mkt_amount), 소진율은 비민감
+    {
+      const months = [];
+      const base = new Date();
+      for (let i = 0; i < 12; i++) { const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + i, 1)); months.push(d.toISOString().slice(0, 7)); }
+      const bud = (await query(`SELECT COALESCE(SUM(amount),0) AS s FROM marketing_budget_months WHERE ym = ANY($1)`, [months])).rows[0];
+      const al = (await query(`SELECT COALESCE(SUM(qty*unit_budget),0) AS s FROM marketing_alloc WHERE ym = ANY($1)`, [months])).rows[0];
+      const budget = Number(bud.s), alloc = Number(al.s);
+      const rate = budget > 0 ? r2(alloc / budget * 100) : 0;
+      const top = (await query(
+        `SELECT c.name, COALESCE(SUM(a.qty*a.unit_budget),0) AS total
+           FROM marketing_alloc a JOIN customers c ON c.id=a.customer_id
+          WHERE a.ym = ANY($1) AND c.deleted_at IS NULL
+          GROUP BY c.id, c.name HAVING COALESCE(SUM(a.qty*a.unit_budget),0) > 0
+          ORDER BY total DESC LIMIT 5`, [months])).rows;
+      out.marketing = seeMkt
+        ? { budget: r2(budget), alloc: r2(alloc), rate, top: top.map((t) => ({ name: t.name, total: r2(t.total) })), locked: false }
+        : { rate, top: top.map((t) => ({ name: t.name })), locked: true };
+    }
+    out._see = { fin: seeFin, ar: seeAr, mkt: seeMkt };
     return out;
   });
 

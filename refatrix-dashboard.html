@@ -101,7 +101,7 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let registry=[], portalSum=null, mktOv=null, salesData=null, finData=null, mktCust=null, curTab='my';
+  let registry=[], portalSum=null, mktOv=null, salesData=null, finData=null, mktCust=null, miscData=null, curTab='my';
   let users=[], cfgUserId=null, cfgState=[];
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -174,6 +174,10 @@
       if(on.some(c=>/^(M0|F0)/.test(c.widget_key))){
         try{finData=await fetch(session.api+'/api/dashboard/findata',{headers:auth()}).then(r=>r.json());}catch(e){finData=null;}
       }
+      // 제품/기타(P__/X__/U__) 위젯이 있으면 miscdata 로드
+      if(on.some(c=>/^(P0|X0|U0)/.test(c.widget_key))){
+        try{miscData=await fetch(session.api+'/api/dashboard/miscdata',{headers:auth()}).then(r=>r.json());}catch(e){miscData=null;}
+      }
       // 마케팅 TOP 위젯이 있으면 고객별 배분 로드
       if(on.some(c=>c.widget_key==='M03_mkt_top'||c.widget_key==='M02_mkt_budget')){
         try{const now=new Date();const ym=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
@@ -183,7 +187,7 @@
       renderWidgets(on);
     }catch(e){$('widgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  const SCREEN_FILE={customers:'refatrix-customers.html',targets:'refatrix-targets.html',pipeline:'refatrix-pipeline.html',marketing:'refatrix-marketing.html',products:'refatrix-products.html',finance:'refatrix-finance.html',sales:'refatrix-sales.html'};
+  const SCREEN_FILE={customers:'refatrix-customers.html',targets:'refatrix-targets.html',pipeline:'refatrix-pipeline.html',marketing:'refatrix-marketing.html',products:'refatrix-products.html',finance:'refatrix-finance.html',sales:'refatrix-sales.html',importcost:'refatrix-importcost.html',users:'refatrix-users.html',budget:'refatrix-budget.html'};
   function gotoScreen(link){ if(SCREEN_FILE[link]) location.href=SCREEN_FILE[link]; }
 
   function renderWidgets(list){
@@ -195,7 +199,7 @@
     }).join('');
   }
   function widgetHTML(c){
-    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};const sd=salesData||{};const fd=finData||{};
+    const s=c.settings||{};const b=portalSum?portalSum.badges||{}:{};const sd=salesData||{};const fd=finData||{};const md=miscData||{};
     switch(c.widget_key){
       case 'W01_sales_perf':{
         const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
@@ -312,6 +316,24 @@
       case 'F05_fx':{
         const fx=fd.fx;if(!fx)return '<div class="hint">환율 데이터 없음</div>';
         return `<div class="kpi">${Number(fx.rate).toFixed(2)} <small>MXN / USD</small></div><div class="hint">기준일 ${fx.date}</div>`;
+      }
+      case 'P01_product_count':{
+        const p=md.products||{};
+        return `<div class="kpi">${p.count||0} <small>제품(SKU)</small></div><div class="hint">제품마스터에서 차량적용·SyD 관리</div>`;
+      }
+      case 'X01_import_pending':{
+        const ip=md.import_pending||{};
+        return `<div class="kpi" style="color:${(ip.count||0)>0?'var(--gold)':'var(--brand)'}">${ip.count||0} <small>건 승인 대기</small></div><div class="hint">수입원가 배분 승인</div>`;
+      }
+      case 'X02_closed_periods':{
+        const cp=md.closed_periods||{};
+        return `<div class="kpi">${cp.count||0} <small>마감 기간</small></div><div class="hint">최근 마감: ${cp.latest||'없음'}</div>`;
+      }
+      case 'U01_user_status':{
+        const u=md.users;if(!u)return '<div class="hint">디렉터만 볼 수 있습니다.</div>';
+        const roleLbl={director:'디렉터',treasury:'재무',marketing:'마케팅',ops:'운영',sales:'영업',viewer:'열람'};
+        const chips=Object.entries(u.by_role||{}).map(([r,n])=>`<span class="pill" style="background:#eef0ea;color:#444">${roleLbl[r]||r} ${n}</span>`).join(' ');
+        return `<div class="kpi">${u.count||0} <small>사용자</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${chips}</div>`;
       }
       default: return '<div class="hint">—</div>';
     }

@@ -1,6 +1,7 @@
 import { query } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
+import { fieldVisible } from '../permissions.js';
 import { monthsHorizon, currentYm } from './../salesTarget.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
@@ -87,7 +88,10 @@ export default async function portalRoutes(app) {
       if (vis !== null) { params.push(vis.length ? vis : [-1]); tq += ` AND c.team_id = ANY($3)`; aq += ` AND c.team_id = ANY($3)`; }
       const target = Number((await query(tq, params)).rows[0].s);
       const actual = Number((await query(aq, params)).rows[0].s);
-      out.perf = { year, target: r2(target), actual: r2(actual), rate: target > 0 ? r2(actual / target * 100) : null };
+      const rate = target > 0 ? r2(actual / target * 100) : null;
+      out.perf = fieldVisible(perm, 'sales_amount')
+        ? { year, target: r2(target), actual: r2(actual), rate, locked: false }
+        : { year, rate, locked: true };
     }
 
     // ---------- 파이프라인 요약: 단계별 고객 수(팀 가시성) ----------
