@@ -78,6 +78,28 @@
   .plegend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:10px;align-items:center;flex-wrap:wrap}
   .plegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
   .lockbox{background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;font-size:13px}
+  /* 주간 캘린더(일~토) */
+  .calnav{display:flex;align-items:center;gap:8px;margin:14px 0 8px}
+  .calnav button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--brand);font-size:14px}
+  .calnav .clab{font-size:13px;font-weight:700;color:var(--brand)}
+  .calnav .ctoday{margin-left:auto;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 14px;cursor:pointer;color:var(--brand-soft);transition:background .15s}
+  .calnav .ctoday:hover{background:var(--income-bg);border-color:var(--income);color:var(--income)}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .caldow{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:3px 0}
+  .caldow.sun{color:var(--expense)}.caldow.sat{color:#2f6db2}
+  .calcell{min-height:96px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+  .calcell.out{background:#faf8f3;opacity:.5}
+  .calcell.today{border-color:var(--income);box-shadow:0 0 0 1px var(--income) inset}
+  .calcell .dnum{font-size:11px;font-weight:700;color:var(--muted)}
+  .calcell.today .dnum{color:var(--income)}
+  .calcell .daytot{font-size:10.5px;font-weight:800;color:var(--brand)}
+  .calitem{font-size:10px;line-height:1.3;background:var(--income-bg);border-radius:4px;padding:2px 4px;color:var(--brand)}
+  .calitem .ci-c{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .calitem .ci-a{display:block;color:var(--income);font-weight:700}
+  .calmore{font-size:9.5px;color:var(--brand-soft);font-weight:700;cursor:pointer;text-decoration:underline}
+  .calmore:hover{color:var(--income)}
+  .calcell.clickable{cursor:pointer}.calcell.clickable:hover{border-color:var(--income)}
+  @media(max-width:720px){.calcell{min-height:70px}.calitem{font-size:9px}}
 </style>
 </head>
 <body>
@@ -99,6 +121,17 @@
       <div class="card-h" id="wfTitle">주차별 매출 (워터폴)</div>
       <div class="mrow" style="margin-bottom:6px"><span class="ml">차트 월</span><span id="wfMonths"></span></div>
       <div id="wfBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">주간 매출 캘린더 <span class="src">일~토 · 그날 고객·매출</span></div>
+      <div class="calnav">
+        <button id="calPrev">‹</button>
+        <span class="clab" id="calLabel">—</span>
+        <button id="calNext">›</button>
+        <button class="ctoday" id="calToday">이번 주</button>
+      </div>
+      <div id="calBody"><div class="hint">불러오는 중…</div></div>
     </div>
     <div class="card">
       <div class="card-h">고객 파이프라인 (Pipeline) <span class="src" id="pipeCount"></span>
@@ -162,7 +195,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      renderMonthBtns();loadCards();loadWaterfall();loadPipeline();loadCorrelation();
+      renderMonthBtns();loadCards();loadWaterfall();loadPipeline();loadCorrelation();loadCalendar();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -376,7 +409,61 @@
       +scatter+list
       +(locked?'<div class="hint" style="margin-top:8px">🔒 마케팅 금액 권한이 없어 진척률만 표시됩니다.</div>':'');
   }
+
+  // ===== 주간 매출 캘린더 (일~토) =====
+  let calWeekStart=null;
+  function sundayOf(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
+  function ymd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+  function addDaysD(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  async function loadCalendar(){
+    if(!calWeekStart) calWeekStart=sundayOf(new Date());
+    const start=calWeekStart, end=addDaysD(start,6);
+    $('calLabel').textContent=(start.getMonth()+1)+'/'+start.getDate()+' – '+(end.getMonth()+1)+'/'+end.getDate();
+    try{
+      const d=await fetch(session.api+'/api/salesperf/daily?start='+ymd(start)+'&end='+ymd(end),{headers:auth()}).then(r=>r.json());
+      renderCalendar(start,d);
+    }catch(e){$('calBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  let calData=null;
+  function renderCalendar(start,d){
+    calData=d;
+    if(d.locked){$('calBody').innerHTML='<div class="lockbox">🔒 매출 금액 표시 권한이 없습니다.</div>';return;}
+    const DOW=['일','월','화','수','목','금','토'];
+    const today=ymd(new Date());
+    const head=DOW.map((w,i)=>'<div class="caldow '+(i===0?'sun':(i===6?'sat':''))+'">'+w+'</div>').join('');
+    let cells='';
+    for(let i=0;i<7;i++){
+      const day=addDaysD(start,i), key=ymd(day);
+      const items=(d.days&&d.days[key])||[];
+      const tot=items.reduce((s,x)=>s+(x.amount||0),0);
+      const isToday=key===today, has=items.length>0;
+      let inner='<div style="display:flex;justify-content:space-between;align-items:baseline"><span class="dnum">'+day.getDate()+'</span>'+(tot>0?'<span class="daytot">'+fmtK(tot)+'</span>':'')+'</div>';
+      inner+=items.slice(0,3).map(x=>'<div class="calitem"><span class="ci-c">'+x.customer+'</span><span class="ci-a">MX$'+fmt(x.amount)+'</span></div>').join('');
+      if(items.length>3) inner+='<div class="calmore" onclick="event.stopPropagation();openDay(\''+key+'\')">+'+(items.length-3)+'건 더 보기</div>';
+      cells+='<div class="calcell '+(isToday?'today':'')+(has?' clickable':'')+'"'+(has?' onclick="openDay(\''+key+'\')"':'')+'>'+inner+'</div>';
+    }
+    $('calBody').innerHTML='<div class="calgrid">'+head+cells+'</div>';
+  }
+  function openDay(key){
+    const items=(calData&&calData.days&&calData.days[key])||[];
+    const [y,m,dd]=key.split('-');
+    const DOW=['일','월','화','수','목','금','토'];
+    const wd=DOW[new Date(key+'T00:00:00').getDay()];
+    $('cmTitle').textContent=Number(m)+'월 '+Number(dd)+'일('+wd+') 매출';
+    const tot=items.reduce((s,x)=>s+(x.amount||0),0);
+    let html='<table style="width:100%;border-collapse:collapse;font-size:13px">'
+      +'<thead><tr><th style="text-align:left;color:var(--muted);padding:6px 4px">고객</th><th style="text-align:right;color:var(--muted)">매출액(ex-IVA)</th></tr></thead><tbody>'
+      +items.map(x=>'<tr><td style="padding:6px 4px;border-bottom:1px solid #f0ece2">'+x.customer+'</td><td style="text-align:right;border-bottom:1px solid #f0ece2;font-weight:600">MX$'+fmt(x.amount)+'</td></tr>').join('')
+      +'</tbody><tfoot><tr><td style="padding:8px 4px;font-weight:800;color:var(--brand)">합계 ('+items.length+'건)</td><td style="text-align:right;font-weight:800;color:var(--brand)">MX$'+fmt(tot)+'</td></tr></tfoot></table>';
+    $('cmBody').innerHTML=html;
+    $('custModal').style.display='flex';
+  }
+
+  $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('calPrev').addEventListener('click',()=>{ calWeekStart=addDaysD(calWeekStart||sundayOf(new Date()),-7); loadCalendar(); });
+  $('calNext').addEventListener('click',()=>{ calWeekStart=addDaysD(calWeekStart||sundayOf(new Date()),7); loadCalendar(); });
+  $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 </body>

@@ -19,6 +19,7 @@ import marketingRoutes from './routes/marketingRoutes.js';
 import portalRoutes from './routes/portalRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import salesPerfRoutes from './routes/salesPerfRoutes.js';
+import settlementVarianceRoutes from './routes/settlementVarianceRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 
 export function buildApp() {
@@ -50,6 +51,7 @@ export function buildApp() {
   app.register(portalRoutes);
   app.register(dashboardRoutes);
   app.register(salesPerfRoutes);
+  app.register(settlementVarianceRoutes);
   app.register(userRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
