@@ -71,7 +71,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">거래 · 계좌 · 고정비 · 1단계(계좌·거래·잔액)</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">거래 · 계좌 · 고정비 · 1단계(계좌·거래·잔액)</div></div><a href="#" id="settleBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto" onclick="goSettlement();return false;">정산차액 →</a><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:8px">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
 
   <!-- 로그인 -->
   <div class="card" id="loginCard">
@@ -289,6 +289,11 @@
   let fxRate=null, fxAsOf=null, fxStale=false, accounts=[], cats=[];
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
+  function goSettlement(){
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{}})); }catch(e){}
+    const hash='#token='+encodeURIComponent(session.token||'')+'&api='+encodeURIComponent(session.api||'')+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
+    location.href='refatrix-settlement.html'+hash;
+  }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const isDirector=()=> session.user && session.user.role==='director';
 
