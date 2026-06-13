@@ -190,8 +190,9 @@
   }
 
   // ===== 자동완성 =====
-  let acItems=[], acSel=-1, acTimer=null;
+  let acItems=[], acSel=-1, acTimer=null, pickedProduct=null;
   function onCodeInput(){
+    pickedProduct=null; // 직접 타이핑하면 이전 선택 해제
     const q=$('inCode').value.trim();
     clearTimeout(acTimer);
     if(q.length<1){ hideAc(); return; }
@@ -216,9 +217,10 @@
   function hideAc(){ $('acBox').classList.add('hidden'); acItems=[]; acSel=-1; }
   function pickAc(i){
     const it=acItems[i]; if(!it)return;
-    const qty=Number($('inQty').value)||1;
-    lines.push({code:it.ctr_code,product_id:it.product_id,qty});
-    $('inCode').value=''; $('inQty').value='1'; hideAc(); $('inCode').focus(); recalc();
+    pickedProduct=it;                       // 선택만 해두고 추가는 '추가' 버튼에서
+    $('inCode').value=it.ctr_code;
+    hideAc();
+    $('inQty').focus(); $('inQty').select(); // 바로 수량 입력
   }
   function codeKey(e){
     if($('acBox').classList.contains('hidden')){ if(e.key==='Enter')addLine(); return; }
@@ -400,6 +402,13 @@
     const m=$('lineMsg'); m.className='msg';
     if(!code){m.className='msg err';m.textContent='코드를 입력하세요.';return;}
     if(qty<=0){m.className='msg err';m.textContent='수량을 입력하세요.';return;}
+    // 자동완성에서 고른 제품이 있고 코드가 그대로면 그 제품으로 바로 추가
+    if(pickedProduct && pickedProduct.ctr_code===code){
+      lines.push({code,product_id:pickedProduct.product_id,qty});
+      pickedProduct=null;
+      $('inCode').value='';$('inQty').value='1';hideAc();$('inCode').focus();
+      recalc(); return;
+    }
     // 코드 해석: 다중매칭이면 후보 선택
     try{
       const r=await fetch(session.api+'/api/quotes/resolve-code?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
