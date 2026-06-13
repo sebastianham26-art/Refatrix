@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 일정 · 공지 · 할 일</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:980px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:8px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;width:100%}
+  textarea{min-height:54px;resize:vertical}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.sm{padding:6px 11px;font-size:12px}.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.danger{background:#fff;color:var(--expense);border:1px solid #e7b6af}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}.msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .tabs{display:flex;gap:6px;margin-top:16px}
+  .tab{padding:9px 16px;border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;background:#faf8f3;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .tab.on{background:#fff;color:var(--brand);border-color:var(--line)}
+  .tab .b{display:inline-block;min-width:16px;padding:0 5px;margin-left:5px;background:var(--expense);color:#fff;border-radius:999px;font-size:10px;text-align:center}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{flex:1;min-width:120px}
+  .item{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:9px;display:flex;gap:12px;align-items:flex-start}
+  .item .when{font-size:12px;font-weight:800;color:var(--brand);white-space:nowrap;min-width:96px}
+  .item .when .tm{display:block;color:var(--gold);font-size:13px}
+  .item .body{flex:1}
+  .item .body .t{font-size:13.5px;font-weight:700}
+  .item .body .d{font-size:12px;color:var(--muted);margin-top:2px}
+  .item .body .meta{font-size:11px;color:var(--muted);margin-top:4px}
+  .pill{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;background:#eee;color:#555}
+  .pill.company{background:var(--income-bg);color:var(--income)}.pill.team{background:#e6f1fb;color:#0c447c}.pill.personal{background:#f0ece2;color:#6b6354}
+  .pill.pin{background:#fdf8ec;color:#8a6512}
+  .pill.over{background:var(--expense-bg);color:var(--expense)}
+  .item.done{opacity:.6}.item.done .t{text-decoration:line-through}
+  .chk{width:20px;height:20px;border:2px solid var(--line);border-radius:6px;cursor:pointer;flex:0 0 auto;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff}
+  .chk.on{background:var(--income);border-color:var(--income)}
+  .roster{font-size:11.5px;color:var(--muted);margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">일정 · 공지 · 할 일</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div style="flex:0 0 auto"><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div style="flex:0 0 auto"><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs">
+      <div class="tab on" id="tabCal" onclick="showTab('cal')">일정</div>
+      <div class="tab" id="tabNotice" onclick="showTab('notice')">공지<span class="b hidden" id="noticeBadge"></span></div>
+      <div class="tab" id="tabTodo" onclick="showTab('todo')">할 일<span class="b hidden" id="todoBadge"></span></div>
+    </div>
+
+    <!-- 일정 -->
+    <div class="card" id="paneCal">
+      <div id="calForm"></div>
+      <div id="calList"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 공지 -->
+    <div class="card hidden" id="paneNotice">
+      <div id="noticeForm"></div>
+      <div id="noticeList"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 할 일 -->
+    <div class="card hidden" id="paneTodo">
+      <div id="todoForm"></div>
+      <div id="todoList"><div class="hint">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let isDirector=false, users=[], teams=[];
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const ROLE={director:'디렉터',treasury:'재무',marketing:'마케팅',ops:'운영',sales:'영업',viewer:'뷰어'};
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      isDirector=(d.user&&d.user.role==='director');
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      if(isDirector){ try{ users=(await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){users=[];}
+        try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){teams=[];} }
+      renderForms();loadCal();loadNotices();loadTodos();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function showTab(t){
+    ['cal','notice','todo'].forEach(x=>{
+      $('tab'+x.charAt(0).toUpperCase()+x.slice(1)).classList.toggle('on',x===t);
+      $('pane'+x.charAt(0).toUpperCase()+x.slice(1)).classList.toggle('hidden',x!==t);
+    });
+  }
+
+  function renderForms(){
+    // 일정 폼: 날짜 + 시간 칸 + 내용 칸 (+ 대상; 전사·팀은 디렉터)
+    const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
+    const scopeOpts=isDirector
+      ? '<option value="company">전사</option><option value="team">팀</option><option value="personal">개인(내)</option>'
+      : '<option value="personal">개인(내)</option>';
+    $('calForm').innerHTML=
+      '<div class="card-h">일정 추가</div>'
+      +'<div class="row">'
+      +'<div style="flex:0 0 150px"><label>날짜</label><input id="cf-date" type="date"></div>'
+      +'<div style="flex:0 0 110px"><label>시간</label><input id="cf-time" type="text" placeholder="예: 14:30"></div>'
+      +'<div style="flex:2"><label>내용</label><input id="cf-content" type="text" placeholder="일정 내용"></div>'
+      +'<div style="flex:0 0 130px"><label>대상</label><select id="cf-scope" onchange="calScopeChange()">'+scopeOpts+'</select></div>'
+      +'<div style="flex:0 0 150px" id="cf-teamWrap" class="hidden"><label>팀</label><select id="cf-team">'+teamOpts+'</select></div>'
+      +'<div><button class="btn" onclick="addCal()">추가</button></div>'
+      +'</div><div class="msg" id="cf-msg"></div>'
+      +'<div class="hint" style="margin-top:6px">시간 칸은 비워두면 종일로 표시됩니다.</div>';
+
+    // 공지 폼(디렉터만)
+    if(isDirector){
+      $('noticeForm').innerHTML=
+        '<div class="card-h">공지 작성</div>'
+        +'<div class="row">'
+        +'<div style="flex:2"><label>제목</label><input id="nf-title" type="text"></div>'
+        +'<div style="flex:0 0 130px"><label>대상</label><select id="nf-aud" onchange="noticeAudChange()"><option value="all">전체</option><option value="role">역할</option><option value="team">팀</option></select></div>'
+        +'<div style="flex:0 0 130px" id="nf-roleWrap" class="hidden"><label>역할</label><select id="nf-role"><option value="sales">영업</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="viewer">뷰어</option></select></div>'
+        +'<div style="flex:0 0 150px" id="nf-teamWrap" class="hidden"><label>팀</label><select id="nf-team">'+teamOpts+'</select></div>'
+        +'</div>'
+        +'<label>내용</label><textarea id="nf-body"></textarea>'
+        +'<div style="margin-top:8px;display:flex;align-items:center;gap:10px"><label style="margin:0"><input type="checkbox" id="nf-pin" style="width:auto"> 상단 고정</label>'
+        +'<button class="btn" onclick="addNotice()">공지 등록</button></div>'
+        +'<div class="msg" id="nf-msg"></div>';
+    } else $('noticeForm').innerHTML='';
+
+    // 할 일 폼(디렉터만 배정)
+    if(isDirector){
+      const userOpts=users.map(u=>'<option value="'+u.id+'">'+esc(u.name)+' ('+(ROLE[u.role]||u.role)+')</option>').join('');
+      $('todoForm').innerHTML=
+        '<div class="card-h">할 일 배정</div>'
+        +'<div class="row">'
+        +'<div style="flex:2"><label>할 일</label><input id="tf-title" type="text"></div>'
+        +'<div style="flex:0 0 170px"><label>담당자</label><select id="tf-assignee">'+userOpts+'</select></div>'
+        +'<div style="flex:0 0 150px"><label>마감일</label><input id="tf-due" type="date"></div>'
+        +'<div><button class="btn" onclick="addTodo()">배정</button></div>'
+        +'</div>'
+        +'<label>상세(선택)</label><input id="tf-detail" type="text" placeholder="추가 설명">'
+        +'<div class="msg" id="tf-msg"></div>';
+    } else $('todoForm').innerHTML='<div class="hint">디렉터가 배정한 할 일이 아래에 표시됩니다. 완료하면 체크하세요.</div>';
+  }
+  function calScopeChange(){ $('cf-teamWrap').classList.toggle('hidden',$('cf-scope').value!=='team'); }
+  function noticeAudChange(){ const a=$('nf-aud').value; $('nf-roleWrap').classList.toggle('hidden',a!=='role'); $('nf-teamWrap').classList.toggle('hidden',a!=='team'); }
+
+  // ===== 일정 =====
+  async function loadCal(){
+    const today=new Date(); const from=today.toISOString().slice(0,10);
+    const end=new Date(today); end.setMonth(end.getMonth()+3); const to=end.toISOString().slice(0,10);
+    try{
+      const d=await fetch(session.api+'/api/calendar?from='+from+'&to='+to,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){$('calList').innerHTML='<div class="hint" style="margin-top:10px">다가오는 일정이 없습니다.</div>';return;}
+      $('calList').innerHTML=items.map(e=>{
+        const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
+        const canDel=isDirector;
+        return '<div class="item"><div class="when">'+e.date+(e.time?'<span class="tm">'+esc(e.time)+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div>'
+          +'<div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'
+          +(canDel?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+      }).join('');
+    }catch(e){$('calList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function addCal(){
+    const m=$('cf-msg');m.className='msg';
+    const body={event_date:$('cf-date').value,event_time:$('cf-time').value.trim(),content:$('cf-content').value.trim(),scope:$('cf-scope').value};
+    if(body.scope==='team')body.team_id=$('cf-team').value;
+    if(!body.event_date){m.className='msg err';m.textContent='날짜를 입력하세요.';return;}
+    if(!body.content){m.className='msg err';m.textContent='내용을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/calendar',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='추가 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent='일정을 추가했습니다.';
+      $('cf-content').value='';$('cf-time').value='';
+      loadCal();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+  async function delCal(id){
+    if(!confirm('이 일정을 삭제할까요?'))return;
+    await fetch(session.api+'/api/calendar/'+id,{method:'DELETE',headers:auth()});loadCal();
+  }
+
+  // ===== 공지 =====
+  async function loadNotices(){
+    try{
+      const d=await fetch(session.api+'/api/notices',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      const badge=$('noticeBadge');
+      if(d.unread>0){badge.textContent=d.unread;badge.classList.remove('hidden');}else badge.classList.add('hidden');
+      if(!items.length){$('noticeList').innerHTML='<div class="hint" style="margin-top:10px">공지가 없습니다.</div>';return;}
+      $('noticeList').innerHTML=items.map(n=>{
+        const audLbl={all:'전체',role:'역할 · '+(ROLE[n.audience_role]||n.audience_role),team:'팀 · '+esc(n.team_name||'')}[n.audience]||n.audience;
+        const when=n.created_at?new Date(n.created_at).toLocaleString('ko-KR'):'';
+        const readInfo=n.read?('<span style="color:var(--income)">✓ 확인 '+new Date(n.my_read_at).toLocaleString('ko-KR')+'</span>'):'<span style="color:var(--expense)">● 미확인</span>';
+        return '<div class="item" id="notice-'+n.id+'"><div class="body">'
+          +'<div class="t">'+(n.pinned?'<span class="pill pin">고정</span> ':'')+esc(n.title)+'</div>'
+          +(n.body?'<div class="d">'+esc(n.body)+'</div>':'')
+          +'<div class="meta"><span class="pill">'+audLbl+'</span> · '+esc(n.author||'')+' · '+when+' · '+readInfo+'</div>'
+          +(isDirector?'<div class="roster" id="roster-'+n.id+'"><a style="cursor:pointer;color:var(--brand-soft);font-weight:700" onclick="loadRoster('+n.id+')">읽음 현황 보기</a></div>':'')
+          +'</div>'
+          +(!n.read?'<button class="btn ghost sm" onclick="readNotice('+n.id+')">확인</button>':'')
+          +(isDirector?'<button class="btn danger sm" onclick="delNotice('+n.id+')">삭제</button>':'')
+          +'</div>';
+      }).join('');
+    }catch(e){$('noticeList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function readNotice(id){
+    await fetch(session.api+'/api/notices/'+id+'/read',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+    loadNotices();
+  }
+  async function loadRoster(id){
+    const box=$('roster-'+id);box.innerHTML='불러오는 중…';
+    try{
+      const d=await fetch(session.api+'/api/notices/'+id+'/reads',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      box.innerHTML='읽음 '+items.length+'명: '+(items.length?items.map(x=>esc(x.name)+' ('+new Date(x.read_at).toLocaleString('ko-KR')+')').join(', '):'아직 없음');
+    }catch(e){box.innerHTML='현황을 불러오지 못했습니다.';}
+  }
+  async function addNotice(){
+    const m=$('nf-msg');m.className='msg';
+    const body={title:$('nf-title').value.trim(),body:$('nf-body').value,audience:$('nf-aud').value,pinned:$('nf-pin').checked};
+    if(body.audience==='role')body.audience_role=$('nf-role').value;
+    if(body.audience==='team')body.team_id=$('nf-team').value;
+    if(!body.title){m.className='msg err';m.textContent='제목을 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/notices',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent='공지를 등록했습니다.';$('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;
+      loadNotices();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+  async function delNotice(id){ if(!confirm('이 공지를 삭제할까요?'))return; await fetch(session.api+'/api/notices/'+id,{method:'DELETE',headers:auth()});loadNotices(); }
+
+  // ===== 할 일 =====
+  async function loadTodos(){
+    try{
+      const d=await fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      const openCount=items.filter(t=>t.status==='open').length;
+      const badge=$('todoBadge');
+      if(openCount>0){badge.textContent=openCount;badge.classList.remove('hidden');}else badge.classList.add('hidden');
+      if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">할 일이 없습니다.</div>';return;}
+      $('todoList').innerHTML=items.map(t=>{
+        const done=t.status==='done';
+        return '<div class="item '+(done?'done':'')+'">'
+          +'<div class="chk '+(done?'on':'')+'" onclick="toggleTodo('+t.id+','+(!done)+')">'+(done?'✓':'')+'</div>'
+          +'<div class="body"><div class="t">'+esc(t.title)+'</div>'
+          +(t.detail?'<div class="d">'+esc(t.detail)+'</div>':'')
+          +'<div class="meta">'+(t.due_date?'마감 '+t.due_date+' ':'')
+          +(t.overdue?'<span class="pill over">지남</span> ':'')
+          +'· 담당 '+esc(t.assignee_name||'')+(isDirector?' · 배정 '+esc(t.created_by_name||''):'')
+          +(done&&t.done_at?' · 완료 '+new Date(t.done_at).toLocaleString('ko-KR'):'')
+          +(done&&t.done_note?' · "'+esc(t.done_note)+'"':'')+'</div></div>'
+          +(isDirector?'<button class="btn danger sm" onclick="delTodo('+t.id+')">삭제</button>':'')+'</div>';
+      }).join('');
+    }catch(e){$('todoList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function addTodo(){
+    const m=$('tf-msg');m.className='msg';
+    const body={title:$('tf-title').value.trim(),assignee_id:$('tf-assignee').value,due_date:$('tf-due').value,detail:$('tf-detail').value.trim()};
+    if(!body.title){m.className='msg err';m.textContent='할 일을 입력하세요.';return;}
+    if(!body.assignee_id){m.className='msg err';m.textContent='담당자를 선택하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/todos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='배정 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent='할 일을 배정했습니다.';$('tf-title').value='';$('tf-detail').value='';
+      loadTodos();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+  async function toggleTodo(id,done){
+    let note=null;
+    if(done){ note=prompt('완료 코멘트(선택):')||null; }
+    await fetch(session.api+'/api/todos/'+id+'/done',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done,note})});
+    loadTodos();
+  }
+  async function delTodo(id){ if(!confirm('이 할 일을 삭제할까요?'))return; await fetch(session.api+'/api/todos/'+id,{method:'DELETE',headers:auth()});loadTodos(); }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>
