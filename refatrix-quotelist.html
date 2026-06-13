@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 견적 목록</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}.msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  .chip{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted);position:relative}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .chip .n{display:inline-block;margin-left:5px;background:var(--expense);color:#fff;border-radius:999px;font-size:10px;padding:0 5px;min-width:16px;text-align:center}
+  .chip.on .n{background:#fff;color:var(--expense)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}
+  th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.r,th.r{text-align:right}
+  .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .st.draft{background:#eef0f2;color:#555}.st.confirmed{background:#fdf3e3;color:#9a6512}
+  .st.converted{background:var(--income-bg);color:var(--income)}.st.cancelled{background:var(--expense-bg);color:var(--expense)}
+  .guest{font-size:10px;font-weight:700;color:#7a4ea0;background:#f1ebf7;padding:1px 6px;border-radius:999px;margin-left:4px}
+  .arrow{color:var(--income);font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">견적 목록 · 매출 추적</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <div class="filters">
+        <div><label>시작일</label><input id="from" type="date"></div>
+        <div><label>종료일</label><input id="to" type="date"></div>
+        <div><button class="btn" onclick="load()">조회</button></div>
+        <div style="margin-left:auto"><a href="refatrix-quote.html" style="text-decoration:none"><button class="btn ghost">＋ 새 견적</button></a></div>
+      </div>
+      <div class="chips" id="chips" style="margin-top:12px"></div>
+      <div class="msg" id="msg"></div>
+      <div id="listWrap" style="overflow-x:auto"><div class="hint" style="margin-top:12px">조회를 누르세요.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let filter='all', counts={open:0,guest_pending:0};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      const today=new Date(); const first=new Date(today.getFullYear(),today.getMonth(),1);
+      $('from').value=first.toISOString().slice(0,10); $('to').value=today.toISOString().slice(0,10);
+      load();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function setFilter(f){ filter=f; renderChips(); load(); }
+  function renderChips(){
+    const defs=[['all','전체'],['open','견적후 미결'],['guest','불특정 미등록'],['converted','매출 전환됨']];
+    $('chips').innerHTML=defs.map(([k,label])=>{
+      let n=''; if(k==='open'&&counts.open)n='<span class="n">'+counts.open+'</span>';
+      if(k==='guest'&&counts.guest_pending)n='<span class="n">'+counts.guest_pending+'</span>';
+      return '<div class="chip'+(filter===k?' on':'')+'" onclick="setFilter(\''+k+'\')">'+label+n+'</div>';
+    }).join('');
+  }
+
+  async function loadCounts(){
+    try{ counts=await fetch(session.api+'/api/quotes/open-count',{headers:auth()}).then(r=>r.json()); }catch(e){ counts={open:0,guest_pending:0}; }
+    renderChips();
+  }
+
+  async function load(){
+    await loadCounts();
+    const m=$('msg');m.className='msg';
+    let qs='from='+($('from').value||'')+'&to='+($('to').value||'');
+    if(filter==='open')qs+='&open=1';
+    else if(filter==='guest')qs+='&guest=1';
+    else if(filter==='converted')qs+='&status=converted';
+    try{
+      const d=await fetch(session.api+'/api/quotes?'+qs,{headers:auth()}).then(r=>r.json());
+      render(d.items||[]);
+    }catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  function render(items){
+    if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
+    const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소'};
+    let html='<table><thead><tr>'
+      +'<th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th>'
+      +'</tr></thead><tbody>';
+    items.forEach(q=>{
+      const conv=q.status==='converted';
+      html+='<tr>'
+        +'<td><b>'+esc(q.quote_no||'')+'</b></td>'
+        +'<td>'+esc(q.quote_date||'')+'</td>'
+        +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+'</td>'
+        +'<td class="r">'+(q.sku_count||0)+'</td>'
+        +'<td class="r">'+fmtq(q.total_qty)+'</td>'
+        +'<td class="r">'+fmt(q.total_mxn)+'</td>'
+        +'<td><span class="st '+q.status+'">'+(stLbl[q.status]||q.status)+'</span></td>'
+        +'<td>'+(conv?('<span class="arrow">→ '+esc(q.sale_date||'')+'</span>'+(q.sale_sat_no?'<br><span class="hint">'+esc(q.sale_sat_no)+'</span>':'')):'<span class="hint">미전환</span>')+'</td>'
+        +'</tr>';
+    });
+    html+='</tbody></table>';
+    html+='<div class="hint" style="margin-top:8px">총 '+items.length+'건 · 견적일과 매출일(전환일)을 함께 표시합니다. SAT가 TMP-로 시작하면 임시 번호입니다(나중에 실제 SAT 입력).</div>';
+    $('listWrap').innerHTML=html;
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

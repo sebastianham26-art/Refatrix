@@ -113,8 +113,13 @@ export default async function quoteRoutes(app) {
   // 견적 줄 계산 미리보기 (저장 없이): body { customer_id, lines:[{code, product_id?, qty}] }
   app.post('/api/quotes/preview', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
     const b = req.body || {};
-    const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [Number(b.customer_id)])).rows[0];
-    const discountRate = cust ? Number(cust.discount) || 0 : 0;
+    let discountRate = 0;
+    if (b.customer_id) {
+      const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [Number(b.customer_id)])).rows[0];
+      discountRate = cust ? Number(cust.discount) || 0 : 0;
+    } else if (b.discount_rate != null && b.discount_rate !== '') {
+      discountRate = Number(b.discount_rate) || 0;   // 불특정 고객: 수동 할인율
+    }
     const ivaRate = 16;
     const out = [];
     for (const ln of (Array.isArray(b.lines) ? b.lines : [])) {
@@ -190,11 +195,20 @@ export default async function quoteRoutes(app) {
 
   app.post('/api/quotes', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const b = req.body || {};
-    const customerId = Number(b.customer_id);
-    if (!customerId) return reply.code(400).send({ error: 'customer_required' });
-    const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
-    if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
-    const discountRate = Number(cust.discount) || 0;
+    const isGuest = !b.customer_id && (b.guest_name || b.guest === true || b.discount_rate != null);
+    let customerId = null, guestName = null, discountRate = 0;
+    if (isGuest) {
+      guestName = String(b.guest_name || '').trim();
+      if (!guestName) return reply.code(400).send({ error: 'guest_name_required' });
+      if (b.discount_rate == null || b.discount_rate === '') return reply.code(400).send({ error: 'discount_required' });
+      discountRate = Number(b.discount_rate) || 0;
+    } else {
+      customerId = Number(b.customer_id);
+      if (!customerId) return reply.code(400).send({ error: 'customer_required' });
+      const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+      if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
+      discountRate = Number(cust.discount) || 0;
+    }
     const ivaRate = 16;
     const result = await withTx(async (c) => {
       const year = (b.quote_date ? String(b.quote_date).slice(0, 4) : String(new Date().getFullYear()));
@@ -202,9 +216,9 @@ export default async function quoteRoutes(app) {
       const lines = await buildLines(discountRate, ivaRate, Array.isArray(b.lines) ? b.lines : []);
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       const q = (await c.query(
-        `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by)
-         VALUES ($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12) RETURNING id, quote_no`,
-        [quoteNo, customerId, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
+        `INSERT INTO quotes (quote_no, customer_id, guest_name, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by)
+         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13) RETURNING id, quote_no`,
+        [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
       for (const l of lines) {
         await c.query(
           `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag)
@@ -265,21 +279,48 @@ export default async function quoteRoutes(app) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { args.push(from); conds.push(`q.quote_date >= $${args.length}`); }
     if (/^\d{4}-\d{2}-\d{2}$/.test(to)) { args.push(to); conds.push(`q.quote_date <= $${args.length}`); }
     if (['draft', 'confirmed', 'converted', 'cancelled'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
+    if (req.query.open === '1') conds.push(`q.status IN ('draft','confirmed')`);          // 견적후 미결
+    if (req.query.guest === '1') conds.push(`q.customer_id IS NULL AND q.status IN ('draft','confirmed')`); // 불특정·미등록
     const rows = (await query(
-      `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count, q.invoice_id,
-              c.name AS customer_name
-         FROM quotes q JOIN customers c ON c.id=q.customer_id
+      `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
+              q.invoice_id, q.guest_name, q.customer_id,
+              c.name AS customer_name,
+              i.inv_date AS sale_date, i.sat_no AS sale_sat_no
+         FROM quotes q
+         LEFT JOIN customers c ON c.id=q.customer_id
+         LEFT JOIN sales_invoices i ON i.id=q.invoice_id
         WHERE ${conds.join(' AND ')}
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
-    return { items: rows.map((r) => ({ ...r, quote_date: d10(r.quote_date), total_mxn: Number(r.total_mxn), total_qty: Number(r.total_qty) })) };
+    return {
+      items: rows.map((r) => ({
+        id: r.id, quote_no: r.quote_no, quote_date: d10(r.quote_date), status: r.status,
+        total_mxn: Number(r.total_mxn), total_qty: Number(r.total_qty), sku_count: r.sku_count,
+        invoice_id: r.invoice_id, sale_date: r.sale_date ? d10(r.sale_date) : null, sale_sat_no: r.sale_sat_no || null,
+        is_guest: r.customer_id == null,
+        party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
+        open: ['draft', 'confirmed'].includes(r.status),
+      })),
+    };
+  });
+
+  // 미결/불특정 카운트 (배지용)
+  app.get('/api/quotes/open-count', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+    const r = (await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status IN ('draft','confirmed'))::int AS open,
+         COUNT(*) FILTER (WHERE status IN ('draft','confirmed') AND customer_id IS NULL)::int AS guest_pending
+       FROM quotes WHERE deleted_at IS NULL`)).rows[0];
+    return { open: r.open || 0, guest_pending: r.guest_pending || 0 };
   });
 
   app.get('/api/quotes/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(
       `SELECT q.*, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone
-         FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
+         FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
+    q.is_guest = q.customer_id == null;
+    q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;
     const lines = (await query(`SELECT * FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [id])).rows;
     return {
       quote: {
@@ -371,11 +412,18 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
+    // 불특정 고객 견적은 고객을 지정해야 전환 가능 (고객등록 유도)
+    let customerId = q.customer_id;
+    if (customerId == null) {
+      customerId = Number(req.body?.customer_id) || null;
+      if (!customerId) return reply.code(409).send({ error: 'guest_needs_customer', note: '불특정 고객 견적입니다. 고객을 먼저 등록·지정한 뒤 전환하세요.' });
+      const cu = (await query(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+      if (!cu) return reply.code(404).send({ error: 'customer_not_found' });
+    }
     const lines = (await query(`SELECT product_id, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id])).rows;
     if (!lines.length) return reply.code(400).send({ error: 'no_valid_lines' });
-    // 매출 등록은 salesRoutes의 핵심 로직을 직접 호출하지 않고, 동일 페이로드로 내부 호출
     const payload = {
-      customer_id: q.customer_id,
+      customer_id: customerId,
       inv_date: req.body?.inv_date || d10(new Date()),
       lines: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty) })),
       memo: `견적 ${q.quote_no} 전환`,
@@ -388,7 +436,7 @@ export default async function quoteRoutes(app) {
     if (res.statusCode !== 200) return reply.code(res.statusCode).send({ error: 'sale_failed', detail: res.json() });
     const sale = res.json();
     const invoiceId = sale.id || (sale.invoice && sale.invoice.id);
-    await query(`UPDATE quotes SET status='converted', invoice_id=$1, updated_by=$2, updated_at=now() WHERE id=$3`, [invoiceId || null, req.ctx.perm.userId, id]);
+    await query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`, [invoiceId || null, customerId, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId } });
     return { ok: true, invoice_id: invoiceId, sale };
   });

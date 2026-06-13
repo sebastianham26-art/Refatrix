@@ -172,6 +172,7 @@
     pipeline:{file:'refatrix-pipeline.html',name:'영업활동'},
     sales:{file:'refatrix-sales.html',name:'매출등록'},
     quote:{file:'refatrix-quote.html',name:'견적(수주)'},
+    quotelist:{file:'refatrix-quotelist.html',name:'견적 목록'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅배분'},
     finance:{file:'refatrix-finance.html',name:'재무'},
     budget:{file:'refatrix-budget.html',name:'예산'},
@@ -185,7 +186,7 @@
   };
 
   // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
-  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
+  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
   function canSee(key){
     const pk=SCREEN_PAGEKEY[key];
     if(pk===null||pk===undefined&&(key==='dashboard'||key==='salesperf'||key==='board')) return true;
@@ -232,13 +233,21 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();
+  }
+  async function loadQuoteBadge(){
+    try{
+      if(!canSee('quotelist')) return;
+      const d=await fetch(session.api+'/api/quotes/open-count',{headers:auth()}).then(r=>r.json());
+      window.__quoteOpen=(d&&d.open)||0;
+      if(typeof renderTabs==='function') renderTabs();
+    }catch(e){}
   }
 
   // 탭바 + 트리: 6개 분야
   const MENU_GROUPS=[
     {key:'common', title:'공통', color:'#143D34', screens:['salesperf','dashboard']},
-    {key:'sales', title:'영업', color:'#1F6FB2', screens:['quote','sales','pipeline','customers','targets']},
+    {key:'sales', title:'영업', color:'#1F6FB2', screens:['quote','quotelist','sales','pipeline','customers','targets']},
     {key:'finance', title:'재무', color:'#B23A2E', screens:['finance','settlement','budget','importcost']},
     {key:'pm', title:'제품·마케팅', color:'#6B4FB0', screens:['products','marketing']},
     {key:'admin', title:'관리', color:'#5B6770', screens:['users','company']},
@@ -246,7 +255,7 @@
   ];
   const SCREEN_DESC={
     board:'달력·공지·내 할 일', dashboard:'위젯 대시보드',
-    salesperf:'매출·수금·파이프라인', sales:'인보이스 등록·승인', quote:'견적 작성·매출전환', pipeline:'칸반·미팅', customers:'고객·외상 추적', targets:'목표 대비 달성',
+    salesperf:'매출·수금·파이프라인', sales:'인보이스 등록·승인', quote:'견적 작성·매출전환', quotelist:'견적·매출 추적', pipeline:'칸반·미팅', customers:'고객·외상 추적', targets:'목표 대비 달성',
     finance:'거래·수금·캐시플로', settlement:'정산차액(비현금)', budget:'예산 계획', importcost:'수입 부대비용·원가',
     products:'제품마스터·재고', marketing:'마케팅 예산·배분', users:'사용자·권한', company:'로고·회사정보·계좌',
   };
@@ -258,6 +267,7 @@
     if(key==='marketing') return (b.marketing_approvals||0)+(b.marketing_rejected||0)+(b.marketing_over_months||0);
     if(key==='pipeline') return (b.directives_unread||0)+(sum&&sum.isDirector?(b.directives_open_all||0):0)+(b.stalled_customers||0);
     if(key==='board') return (window.__boardOpen||0)+(window.__noticeUnread||0);
+    if(key==='quotelist') return (window.__quoteOpen||0);
     return 0;
   }
   function groupVisible(g){ return g.screens.some(k=>SCREENS[k]&&canSee(k)); }

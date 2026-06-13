@@ -81,10 +81,11 @@
       <div class="inrow">
         <div style="flex:1;min-width:200px"><label>고객</label>
           <select id="custSel" onchange="onCustChange()" style="width:100%"></select></div>
+        <div id="guestNameWrap" class="hidden"><label>불특정 고객명 (견적서 표시)</label><input id="guestName" type="text" placeholder="예: Taller López" style="width:180px"></div>
         <div><label>견적일</label><input id="qDate" type="date"></div>
-        <div style="min-width:90px"><label>할인율</label><input id="discShow" type="text" readonly style="width:90px;background:#faf8f3"></div>
+        <div style="min-width:90px"><label>할인율</label><input id="discShow" type="text" readonly style="width:90px;background:#faf8f3" oninput="onDiscInput()"></div>
       </div>
-      <div class="hint" style="margin-top:6px" id="custHint">고객을 선택하면 할인율이 자동 적용됩니다.</div>
+      <div class="hint" style="margin-top:6px" id="custHint">고객을 선택하면 할인율이 자동 적용됩니다. 불특정 고객은 할인율을 직접 입력합니다.</div>
     </div>
 
     <!-- 품목 입력 -->
@@ -145,6 +146,7 @@
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function partyName(){ return isGuest ? ($('guestName').value.trim()||'불특정 고객') : (($('custSel').selectedOptions[0]||{}).text||''); }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
 
@@ -178,14 +180,32 @@
     try{
       const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json());
       customers=d.items||[];
-      $('custSel').innerHTML='<option value="">— 고객 선택 —</option>'+customers.map(c=>'<option value="'+c.id+'" data-disc="'+(c.discount||0)+'">'+esc(c.name)+'</option>').join('');
+      $('custSel').innerHTML='<option value="">— 고객 선택 —</option>'
+        +'<option value="__guest__">★ 불특정 고객 (직접 입력)</option>'
+        +customers.map(c=>'<option value="'+c.id+'" data-disc="'+(c.discount||0)+'">'+esc(c.name)+'</option>').join('');
     }catch(e){ $('custHint').textContent='고객 목록을 불러오지 못했습니다.'; }
   }
+  let isGuest=false;
   function onCustChange(){
-    const opt=$('custSel').selectedOptions[0];
-    curDisc=opt?Number(opt.getAttribute('data-disc'))||0:0;
-    $('discShow').value=curDisc+'%';
-    $('custHint').textContent=opt&&opt.value?('할인율 '+curDisc+'%가 모든 품목에 자동 적용됩니다.'):'고객을 선택하면 할인율이 자동 적용됩니다.';
+    const sel=$('custSel');
+    isGuest = sel.value==='__guest__';
+    $('guestNameWrap').classList.toggle('hidden',!isGuest);
+    if(isGuest){
+      $('discShow').removeAttribute('readonly'); $('discShow').style.background='#fff'; $('discShow').placeholder='예: 12';
+      curDisc=Number(($('discShow').value||'').replace('%',''))||0;
+      $('custHint').textContent='불특정 고객 — 고객명과 할인율을 직접 입력하세요(할인율 필수).';
+    } else {
+      $('discShow').setAttribute('readonly','readonly'); $('discShow').style.background='#faf8f3';
+      const opt=sel.selectedOptions[0];
+      curDisc=opt?Number(opt.getAttribute('data-disc'))||0:0;
+      $('discShow').value=sel.value?(curDisc+'%'):'';
+      $('custHint').textContent=sel.value?('할인율 '+curDisc+'%가 모든 품목에 자동 적용됩니다.'):'고객을 선택하면 할인율이 자동 적용됩니다. 불특정 고객은 할인율을 직접 입력합니다.';
+    }
+    if(lines.length) recalc();
+  }
+  function onDiscInput(){
+    if(!isGuest)return;
+    curDisc=Number(($('discShow').value||'').replace('%',''))||0;
     if(lines.length) recalc();
   }
 
@@ -243,7 +263,7 @@
     if(!lastPreview||!(lastPreview.lines||[]).length){ m.className='msg err';m.textContent='먼저 품목을 추가하세요.';return; }
     const cid=$('custSel').value;
     if(!cid){ m.className='msg err';m.textContent='고객을 선택하세요.';return; }
-    const custName=($('custSel').selectedOptions[0]||{}).text||'';
+    const custName=partyName();
     const date=$('qDate').value||'';
     const co=await getCompany();
     const L=lastPreview.lines.filter(l=>!l.ambiguous);
@@ -351,7 +371,7 @@
   function exportExcel(){
     const m=$('saveMsg');m.className='msg';
     if(!lastPreview||!(lastPreview.lines||[]).length){ m.className='msg err';m.textContent='먼저 품목을 추가하세요.';return; }
-    const custName=($('custSel').selectedOptions[0]||{}).text||'';
+    const custName=partyName();
     const date=$('qDate').value||'';
     const rows=[];
     rows.push(['Refatrix — Cotización']);
@@ -412,12 +432,13 @@
     // 코드 해석: 다중매칭이면 후보 선택
     try{
       const r=await fetch(session.api+'/api/quotes/resolve-code?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
-      if(r.source==='none'||!r.matches.length){
+      const matches=(r&&r.matches)||[];
+      if(!matches.length){
         lines.push({code,qty}); // 미매칭(not_found) 줄로 추가됨
-      } else if(r.matches.length===1){
-        lines.push({code,product_id:r.matches[0].product_id,qty});
+      } else if(matches.length===1){
+        lines.push({code,product_id:matches[0].product_id,qty});
       } else {
-        openCand(code,qty,r.matches); return; // 후보 선택 후 push
+        openCand(code,qty,matches); return; // 후보 선택 후 push
       }
       $('inCode').value='';$('inQty').value='1';$('inCode').focus();
       recalc();
@@ -448,8 +469,9 @@
     if(!lines.length){ $('linesWrap').innerHTML='<div class="hint">품목을 추가하세요.</div>'; return; }
     const cid=$('custSel').value;
     if(!cid){ $('linesWrap').innerHTML='<div class="hint" style="color:var(--expense)">먼저 고객을 선택하세요(할인율 적용).</div>'; return; }
+    const body=isGuest ? {discount_rate:curDisc,lines} : {customer_id:Number(cid),lines};
     try{
-      const d=await fetch(session.api+'/api/quotes/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:Number(cid),lines})}).then(r=>r.json());
+      const d=await fetch(session.api+'/api/quotes/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
       renderLines(d);
     }catch(e){ $('linesWrap').innerHTML='<div class="hint">계산 실패</div>'; }
   }
@@ -543,16 +565,21 @@
     const m=$('saveMsg');m.className='msg';
     const cid=$('custSel').value;
     if(!cid){m.className='msg err';m.textContent='고객을 선택하세요.';return;}
+    if(isGuest){
+      if(!$('guestName').value.trim()){m.className='msg err';m.textContent='불특정 고객명을 입력하세요.';return;}
+      if(($('discShow').value||'').trim()===''){m.className='msg err';m.textContent='할인율을 입력하세요(불특정 고객은 필수).';return;}
+    }
     const valid=lines.filter(l=>l.product_id||l.code);
     if(!valid.length){m.className='msg err';m.textContent='품목을 추가하세요.';return;}
-    // ambiguous(다중매칭, product_id 없는데 코드가 여러 매칭) 줄 경고
     $('saveBtn').disabled=true;
     try{
-      const body={customer_id:Number(cid),quote_date:$('qDate').value||null,lines};
+      const body=isGuest
+        ? {guest:true,guest_name:$('guestName').value.trim(),discount_rate:curDisc,quote_date:$('qDate').value||null,lines}
+        : {customer_id:Number(cid),quote_date:$('qDate').value||null,lines};
       const res=await fetch(session.api+'/api/quotes',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='저장됨: '+d.quote_no+' (목록·인쇄는 다음 단계에서 연결됩니다)';
+      m.className='msg ok';m.textContent='저장됨: '+d.quote_no+(isGuest?' (불특정 고객 — 견적 목록에서 추적)':'');
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}
   }
