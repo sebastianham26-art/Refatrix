@@ -12,58 +12,74 @@
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
     font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
-  .wrap{max-width:1100px;margin:0 auto}
+  .wrap{max-width:1140px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
   .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
   .who{font-size:13px;text-align:right;margin-left:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
-  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .card-h .src{font-size:11px;color:var(--muted);font-weight:500}
+  .card-h .lnk{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--brand-soft);text-decoration:none;border:1px solid var(--line);padding:4px 9px;border-radius:7px;cursor:pointer}
   label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
   input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
   .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
-  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
   .btn.sm{padding:6px 11px;font-size:12px}
   .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
   .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
   .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
-  /* 월 이동 */
-  .period{display:flex;align-items:center;gap:10px;justify-content:center;margin-top:4px}
-  .period button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer;color:var(--brand)}
-  .period .lab{font-size:18px;font-weight:800;color:var(--brand);min-width:120px;text-align:center}
-  /* 3박스 */
-  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
-  @media(max-width:720px){.stats{grid-template-columns:1fr}}
-  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;box-shadow:var(--shadow)}
-  .stat .k{font-size:11.5px;color:var(--muted);margin-bottom:7px}
-  .stat .v{font-size:24px;font-weight:800;letter-spacing:-.02em;color:var(--brand)}
-  .stat .v small{font-size:13px;font-weight:500;color:var(--muted)}
-  .stat.accent .v{color:var(--income)}
-  /* 워터폴 */
-  .wf{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
-  .wf th,.wf td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line)}
-  .wf th:first-child,.wf td:first-child{text-align:left}
-  .wf th{font-size:11.5px;color:var(--muted);background:#faf8f3;font-weight:700}
-  .wf .wk{font-weight:700;color:var(--brand)}
-  .wf .amt-in{color:var(--income);font-weight:700}.wf .amt-out{color:var(--expense)}
-  .wf tfoot td{font-weight:800;background:#faf8f3;border-top:2px solid var(--line)}
-  .chart{margin-top:10px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;background:#fff}
-  .barrow{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12px}
-  .barrow .bl{width:42px;font-weight:700;color:var(--brand);flex:0 0 auto}
-  .barrow .track{flex:1;background:#f0ece2;border-radius:6px;height:22px;position:relative;overflow:hidden}
-  .barrow .tgt{position:absolute;top:0;bottom:0;border-right:2px dashed var(--gold)}
-  .barrow .act{height:100%;border-radius:6px;background:var(--income);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;color:#fff;font-size:11px;font-weight:700;min-width:2px}
-  .barrow .act.over{background:var(--brand)}
-  .barrow .pct{width:54px;text-align:right;font-weight:700;flex:0 0 auto}
-  .barrow .pct.good{color:var(--income)}.barrow .pct.bad{color:var(--expense)}
+  .mrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .mrow .ml{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px}
+  .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .mbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}
+  @media(max-width:860px){.cards{grid-template-columns:1fr}}
+  .bigv{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--brand);margin-top:2px}
+  .bigv small{font-size:13px;font-weight:500;color:var(--muted)}
+  .mom{font-size:12.5px;font-weight:700;margin-top:4px}
+  .mom.up{color:var(--income)}.mom.down{color:var(--expense)}.mom.flat{color:var(--muted)}
+  .goal{font-size:12px;color:var(--muted);margin-top:6px}
+  .pbar{background:#f0ece2;border-radius:7px;height:9px;overflow:hidden;margin-top:6px}
+  .pbar>div{height:100%;background:var(--income)}
+  .devboxes{display:flex;gap:8px;margin-top:8px}
+  .devbox{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;text-align:center}
+  .devbox .n{font-size:18px;font-weight:800;color:var(--brand)}.devbox .l{font-size:11px;color:var(--muted)}
+  .wfwrap{display:flex;align-items:flex-end;gap:10px;height:240px;margin-top:24px;padding:0 6px;position:relative;border-bottom:2px solid var(--line)}
+  .wfaxis{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+  .axisline{position:absolute;left:0;right:0;border-top:1px dashed #ece6da}
+  .axisline span{position:absolute;left:0;top:-7px;font-size:10px;color:var(--muted);background:var(--paper);padding-right:4px}
+  .goalline{position:absolute;left:0;right:0;border-top:2px solid var(--gold);z-index:3}
+  .goalline span{position:absolute;right:0;top:-15px;font-size:10.5px;font-weight:700;color:var(--gold);background:var(--paper);padding:0 4px}
+  .wfcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;z-index:2;position:relative}
+  .wfseg{width:78%;background:var(--income);border-radius:4px 4px 0 0;position:relative;min-height:1px}
+  .wfseg.zero{background:transparent;border-top:2px dashed #cfc8b8;border-radius:0}
+  .wflabel{font-size:10.5px;font-weight:700;color:var(--brand);position:absolute;top:-16px;width:80px;text-align:center;left:50%;transform:translateX(-50%)}
+  .wffoot{display:flex;gap:10px;margin-top:6px;padding:0 6px}
+  .wffoot .wff{flex:1;text-align:center;font-size:10.5px;color:var(--muted)}
+  .wffoot .wff b{display:block;color:var(--brand);font-size:11px}
+  .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:12px;align-items:center}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+  .wfsum{font-size:12.5px;color:var(--muted);margin-top:10px}.wfsum b{color:var(--brand)}
+  .pipeboard{display:flex;gap:8px;overflow-x:auto;margin-top:10px;padding-bottom:6px}
+  .pcol{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:0 0 8px}
+  .pcolh{padding:9px 10px;border-radius:10px 10px 0 0;color:#fff;font-size:12px;font-weight:800;display:flex;justify-content:space-between;align-items:center}
+  .pcolh .cnt{background:rgba(255,255,255,.25);border-radius:999px;padding:1px 8px;font-size:11px}
+  .pcards{padding:8px;display:flex;flex-direction:column;gap:7px}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 9px;cursor:pointer;border-left:3px solid var(--dot,#ccc)}
+  .pcard:hover{border-color:var(--brand)}
+  .pcard .nm{font-size:12.5px;font-weight:700;color:var(--ink)}
+  .pcard .meta{font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:6px}
+  .pcard .act{font-size:10.5px;font-weight:700;color:var(--dot,#666)}
+  .pempty{font-size:11px;color:#bbb;text-align:center;padding:10px 0}
+  .plegend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:10px;align-items:center;flex-wrap:wrap}
+  .plegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
   .lockbox{background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;font-size:13px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">영업 대시보드 · 매출목표 vs 주간성과</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">영업 대시보드</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -74,27 +90,33 @@
   </div>
 
   <div class="hidden" id="app">
-    <!-- 월 이동 -->
+    <div class="card"><div class="mrow"><span class="ml">조회 월 (2026)</span><span id="topMonths"></span></div></div>
+    <div class="cards" id="cards"></div>
     <div class="card">
-      <div class="period"><button id="prevM">‹</button><div class="lab" id="ymLabel">—</div><button id="nextM">›</button></div>
-    </div>
-    <!-- 3박스 -->
-    <div class="stats" id="statBoxes"></div>
-    <!-- 주차별 워터폴 -->
-    <div class="card">
-      <div class="card-h">주차별 매출목표 vs 실적 <span class="src" id="wfSrc"></span></div>
+      <div class="card-h" id="wfTitle">주차별 매출 (워터폴)</div>
+      <div class="mrow" style="margin-bottom:6px"><span class="ml">차트 월</span><span id="wfMonths"></span></div>
       <div id="wfBody"><div class="hint">불러오는 중…</div></div>
     </div>
-    <div class="hint" style="margin-top:10px">※ 다음 단계: 고객 파이프라인 + 고객 클릭 시 상세(기본정보·결제·영업성과·매출이력·마케팅), 그리고 마케팅 성과(비용 대비 목표 진척 상관관계)가 이 아래에 추가됩니다.</div>
+    <div class="card">
+      <div class="card-h">고객 파이프라인 (Pipeline) <span class="src" id="pipeCount"></span>
+        <span class="lnk" onclick="document.getElementById('pipeBody').classList.toggle('hidden')">숨기기</span></div>
+      <div id="pipeBody"><div class="hint">불러오는 중…</div></div>
+    </div>
   </div>
 </div>
 
 <script>
   let session={token:null,user:null,api:''};
-  let ym=new Date().toISOString().slice(0,7);
+  const now=new Date();
+  let topYm=now.toISOString().slice(0,7);
+  let wfYm=topYm;
+  const YEAR=2026;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const fmtK=(n)=>{ n=Number(n||0); if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+'M'; if(n>=1e3)return Math.round(n/1e3)+'K'; return String(Math.round(n)); };
+  const SCREEN={sales:'refatrix-sales.html',finance:'refatrix-finance.html',pipeline:'refatrix-pipeline.html',customers:'refatrix-customers.html'};
+  function go(s){ if(SCREEN[s]) location.href=SCREEN[s]; }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -116,91 +138,116 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      load();
+      renderMonthBtns();loadCards();loadWaterfall();loadPipeline();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  function shiftMonth(delta){
-    const [y,mm]=ym.split('-').map(Number);
-    const d=new Date(Date.UTC(y,mm-1+delta,1));
-    ym=d.toISOString().slice(0,7);
-    load();
+  function renderMonthBtns(){
+    const mk=(sel,which)=>Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
+      return '<button class="mbtn '+(sel===ym?'on':'')+'" onclick="pickMonth(\''+which+'\',\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    $('topMonths').innerHTML=mk(topYm,'top');
+    $('wfMonths').innerHTML=mk(wfYm,'wf');
   }
-  function ymLabel(){const [y,mm]=ym.split('-');return y+'년 '+Number(mm)+'월';}
+  function pickMonth(which,ym){
+    if(which==='top'){topYm=ym;renderMonthBtns();loadCards();}
+    else{wfYm=ym;renderMonthBtns();loadWaterfall();}
+  }
+  function ymLabel(ym){const p=ym.split('-');return Number(p[1])+'월';}
 
-  async function load(){
-    $('ymLabel').textContent=ymLabel();
-    try{
-      const [mo,wk]=await Promise.all([
-        fetch(session.api+'/api/salesperf/monthly?ym='+ym,{headers:auth()}).then(r=>r.json()),
-        fetch(session.api+'/api/salesperf/weekly?ym='+ym,{headers:auth()}).then(r=>r.json()),
-      ]);
-      renderStats(mo);renderWaterfall(wk);
-    }catch(e){$('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  async function loadCards(){
+    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYm,{headers:auth()}).then(r=>r.json());renderCards(su);}
+    catch(e){$('cards').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderCards(su){
+    const s=su.sales||{}, c=su.collection||{}, d=su.pipeline_dev||{};
+    let momHtml='';
+    if(s.momPct==null) momHtml='<div class="mom flat">전월 대비 —</div>';
+    else{const up=s.momPct>=0;momHtml='<div class="mom '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(s.momPct)+'% 전월 대비</div>';}
+    const c1=s.locked
+      ? '<div class="bigv">🔒</div><div class="goal">달성률 '+(s.progress==null?'—':s.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
+      : '<div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
+        +'<div class="goal">목표/계획 MX$'+fmt(s.target)+' · 달성 '+(s.progress==null?'—':s.progress+'%')+'</div>'
+        +'<div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
+        +'<div class="hint" style="margin-top:7px">전사 목표 대비 매출 실적(ex-IVA 소계 기준)</div>';
+    const c2=c.locked
+      ? '<div class="bigv">🔒</div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div>'
+      : '<div class="bigv">MX$'+fmt(c.actual)+'</div>'
+        +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
+        +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
+        +'<div class="hint" style="margin-top:7px">해당 월 수금예상(인보이스 외상일 기준) 대비 실제 수금(실현)</div>';
+    const c3='<div class="bigv">'+(d.total||0)+'<small> 곳</small></div>'
+      +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.proposal||0)+'</div><div class="l">제안(견적)</div></div>'
+      +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div></div></div>'
+      +'<div class="hint" style="margin-top:7px">제안 이후·수주 직전 단계 — 막판 전환을 밀어줄 후보입니다.</div>';
+    $('cards').innerHTML=
+      '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적 <a class="lnk" onclick="go(\'sales\')">매출 목록 보기 →</a></div>'+c1+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적 <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a></div>'+c2+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 제안→수주 직전 <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a></div>'+c3+'</div>';
   }
 
-  function renderStats(mo){
-    const prog=mo.progress==null?'—':mo.progress+'%';
-    if(mo.locked){
-      $('statBoxes').innerHTML=
-        `<div class="stat"><div class="k">매출 목표</div><div class="v">🔒</div></div>
-         <div class="stat"><div class="k">실적</div><div class="v">🔒</div></div>
-         <div class="stat accent"><div class="k">달성률</div><div class="v">${prog}</div></div>`;
-      return;
-    }
-    $('statBoxes').innerHTML=
-      `<div class="stat"><div class="k">매출 목표 (${ymLabel()})</div><div class="v">${fmt(mo.target)} <small>MXN</small></div></div>
-       <div class="stat"><div class="k">실적</div><div class="v">${fmt(mo.actual)} <small>MXN</small></div></div>
-       <div class="stat accent"><div class="k">달성률</div><div class="v">${prog}</div></div>`;
+  async function loadWaterfall(){
+    $('wfTitle').textContent=ymLabel(wfYm)+' 주차별 매출 (워터폴)';
+    try{const wk=await fetch(session.api+'/api/salesperf/weekly?ym='+wfYm,{headers:auth()}).then(r=>r.json());renderWaterfall(wk);}
+    catch(e){$('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-
   function renderWaterfall(wk){
-    $('wfSrc').textContent=wk.monthTarget!=null?('월 목표 '+fmt(wk.monthTarget)+' MXN · 주 균등 배분'):'';
-    if(wk.locked){
-      $('wfBody').innerHTML='<div class="lockbox">🔒 금액 표시 권한이 없습니다. 달성률만 표시됩니다.</div>'+barChart(wk.weeks,true);
-      return;
-    }
-    // 표
-    const rows=wk.weeks.map(w=>`<tr>
-      <td class="wk">${w.label}</td>
-      <td class="hint" style="text-align:left">${w.start.slice(5)}~${w.end.slice(5)}</td>
-      <td>${fmt(w.target)}</td>
-      <td class="amt-in">${fmt(w.actual)}</td>
-      <td>${fmt(w.cumActual)}</td>
-      <td class="${(w.cumProgress||0)>=100?'amt-in':''}">${w.cumProgress==null?'—':w.cumProgress+'%'}</td>
-    </tr>`).join('');
-    const last=wk.weeks[wk.weeks.length-1]||{};
-    $('wfBody').innerHTML=`
-      <table class="wf">
-        <thead><tr><th>주차</th><th>기간</th><th>주 목표</th><th>주 실적</th><th>누적 실적</th><th>누적 달성</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="2">합계</td><td>${fmt(wk.monthTarget)}</td><td class="amt-in">${fmt(last.cumActual)}</td><td>${fmt(last.cumActual)}</td><td>${last.cumProgress==null?'—':last.cumProgress+'%'}</td></tr></tfoot>
-      </table>
-      ${barChart(wk.weeks,false)}`;
+    if(wk.locked){$('wfBody').innerHTML='<div class="lockbox">🔒 금액 표시 권한이 없습니다.</div>';return;}
+    const weeks=wk.weeks||[];
+    const target=wk.monthTarget||0;
+    const scaleMax=Math.max(target, wk.cumActual||0, 1);
+    const ticks=[0,.25,.5,.75,1].map(f=>({f:f,val:scaleMax*f}));
+    const axis=ticks.map(t=>'<div class="axisline" style="bottom:'+(t.f*100)+'%"><span>'+fmtK(t.val)+'</span></div>').join('');
+    const goalPct=scaleMax>0?Math.min(100,target/scaleMax*100):0;
+    const goalLine=target>0?'<div class="goalline" style="bottom:'+goalPct+'%"><span>목표 '+fmtK(target)+'</span></div>':'';
+    let cum=0;
+    const cols=weeks.map(w=>{
+      const a=w.actual||0; const base=cum; cum+=a;
+      const baseH=scaleMax>0?base/scaleMax*100:0;
+      const segH=scaleMax>0?a/scaleMax*100:0;
+      const zero=a<=0;
+      return '<div class="wfcol"><div style="height:'+baseH+'%"></div>'
+        +'<div class="wfseg '+(zero?'zero':'')+'" style="height:'+(zero?0:segH)+'%"><div class="wflabel">'+(zero?'·':fmtK(a))+'</div></div></div>';
+    }).join('');
+    const foot=weeks.map(w=>'<div class="wff"><b>'+w.label+'</b>'+w.start.slice(5)+'–'+w.end.slice(5)+'</div>').join('');
+    $('wfBody').innerHTML=
+      '<div class="wfwrap"><div class="wfaxis">'+axis+goalLine+'</div>'+cols+'</div>'
+      +'<div class="wffoot">'+foot+'</div>'
+      +'<div class="legend"><span><i style="background:var(--income)"></i>매출 실적</span><span><i style="background:var(--gold)"></i>월 목표</span></div>'
+      +'<div class="wfsum">누적 실적 <b>MX$'+fmt(wk.cumActual)+'</b> / 목표 <b>MX$'+fmt(target)+'</b> ('+(wk.progress==null?'—':wk.progress+'%')+')</div>';
   }
 
-  // 주차별 막대(목표 점선 + 실적 채움)
-  function barChart(weeks,locked){
-    const maxv=Math.max(1,...weeks.map(w=>Math.max(w.target||0,w.actual||0)));
-    const rows=weeks.map(w=>{
-      const tgtPct=locked?0:Math.min(100,(w.target||0)/maxv*100);
-      const actPct=locked?Math.min(100,w.progress||0):Math.min(100,(w.actual||0)/maxv*100);
-      const over=(w.progress||0)>=100;
-      const pctTxt=w.progress==null?'—':w.progress+'%';
-      return `<div class="barrow">
-        <div class="bl">${w.label}</div>
-        <div class="track">${locked?'':`<div class="tgt" style="left:${tgtPct}%"></div>`}<div class="act ${over?'over':''}" style="width:${actPct}%"></div></div>
-        <div class="pct ${over?'good':((w.progress||0)<70?'bad':'')}">${pctTxt}</div>
-      </div>`;
+  const STAGE_COLOR=['#9CB7AD','#6FA08E','#4C8B76','#2E7259','#1E5247','#143D34'];
+  const STAGE_LABEL={10:'잠재발굴',20:'접촉',30:'제안',40:'협상',50:'수주',60:'거래중'};
+  function dayDot(days){ if(days==null)return '#bbb'; if(days<=7)return 'var(--income)'; if(days<=14)return '#C99A2E'; return 'var(--expense)'; }
+  async function loadPipeline(){
+    try{const pp=await fetch(session.api+'/api/salesperf/pipeline',{headers:auth()}).then(r=>r.json());renderPipeline(pp);}
+    catch(e){$('pipeBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderPipeline(pp){
+    $('pipeCount').textContent='· 전체 '+(pp.total||0)+'곳';
+    const stages=(pp.stages||[]).filter(s=>s.sort_order>=10&&s.sort_order<=60);
+    const cols=stages.map((s,i)=>{
+      const col=STAGE_COLOR[i]||'#143D34';
+      const label=STAGE_LABEL[s.sort_order]||s.name.replace(/^\d+_/,'');
+      const cards=(s.customers||[]).map(c=>{
+        const dot=dayDot(c.days_in_stage);
+        const sinceTxt=c.stage_since?('진입 '+c.stage_since.slice(5)+(c.days_in_stage!=null?' · '+c.days_in_stage+'일 경과':'')):'';
+        const actTxt=c.activity_days==null?'활동 없음':('👆 '+c.activity_days+'일');
+        return '<div class="pcard" style="--dot:'+dot+'" onclick="go(\'customers\')"><div class="nm">'+c.name+'</div>'
+          +'<div class="meta"><span>'+sinceTxt+'</span><span class="act">'+actTxt+'</span></div></div>';
+      }).join('')||'<div class="pempty">—</div>';
+      return '<div class="pcol"><div class="pcolh" style="background:'+col+'">'+label+'<span class="cnt">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
     }).join('');
-    return `<div class="chart"><div class="hint" style="margin-bottom:6px">막대=주간 실적 · 점선=주 목표선 · % = 주 목표 대비 달성</div>${rows}</div>`;
+    $('pipeBody').innerHTML='<div class="pipeboard">'+cols+'</div>'
+      +'<div class="plegend"><span><i style="background:var(--income)"></i>7일 이내</span>'
+      +'<span><i style="background:#C99A2E"></i>8–14일</span>'
+      +'<span><i style="background:var(--expense)"></i>15일 이상</span>'
+      +'<span class="hint">· 카드 클릭 → 고객 화면 · 👆 = 마지막 활동 후 경과일</span></div>';
   }
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
-  $('prevM').addEventListener('click',()=>shiftMonth(-1));
-  $('nextM').addEventListener('click',()=>shiftMonth(1));
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 </body>
