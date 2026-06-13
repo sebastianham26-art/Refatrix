@@ -106,7 +106,11 @@
         <span class="ctitle" id="calTitle">—</span>
         <button class="navb" id="calNext">›</button>
         <button class="today" id="calToday">오늘</button>
-        <span class="seg"><button id="calMonthBtn" class="on" onclick="setCalView('month')">월간</button><button id="calWeekBtn" onclick="setCalView('week')">주간</button></span>
+        <span class="seg"><button id="calDayBtn" onclick="setCalView('day')">일</button><button id="calWeekBtn" onclick="setCalView('week')">주</button><button id="calMonthBtn" class="on" onclick="setCalView('month')">월</button></span>
+      </div>
+      <div class="calbar" style="margin-top:-4px">
+        <span class="seg" id="calDaysSeg"><button id="cal7Btn" class="on" onclick="setCalDays(7)">7일</button><button id="cal5Btn" onclick="setCalDays(5)">평일</button></span>
+        <span class="seg"><button id="calAllBtn" class="on" onclick="setCalMine(false)">모두의 일정</button><button id="calMineBtn" onclick="setCalMine(true)">내 일정만</button></span>
       </div>
       <div id="calGrid"><div class="hint">불러오는 중…</div></div>
       <div class="hint" style="margin-top:8px"><span class="chip ev" style="display:inline-block">초록</span> 일정 · <span class="chip td" style="display:inline-block">파랑</span> 할 일(마감) · 날짜 칸을 누르면 그날 상세·추가</div>
@@ -217,20 +221,33 @@
   let calView='month';
   let calCursor=new Date(); calCursor.setHours(0,0,0,0);
   let calEvents=[], calTodos=[];
+  let calDays=7;     // 7=일~토, 5=평일(월~금)
+  let calMine=false; // false=모두, true=내 일정만
   const DOW=['일','월','화','수','목','금','토'];
   function cYmd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
   function cAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
   function cSunday(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
 
-  function setCalView(v){ calView=v; $('calMonthBtn').classList.toggle('on',v==='month'); $('calWeekBtn').classList.toggle('on',v==='week'); loadCal(); }
+  function setCalView(v){ calView=v;
+    $('calDayBtn').classList.toggle('on',v==='day');
+    $('calWeekBtn').classList.toggle('on',v==='week');
+    $('calMonthBtn').classList.toggle('on',v==='month');
+    // 일 보기에서는 평일/7일 구분 의미 없음 → 비활성 표시
+    $('calDaysSeg').style.opacity=(v==='day')?'0.4':'1';
+    loadCal();
+  }
+  function setCalDays(n){ calDays=n; $('cal7Btn').classList.toggle('on',n===7); $('cal5Btn').classList.toggle('on',n===5); loadCal(); }
+  function setCalMine(m){ calMine=m; $('calAllBtn').classList.toggle('on',!m); $('calMineBtn').classList.toggle('on',m); loadCal(); }
   function calShift(dir){
     if(calView==='month') calCursor=new Date(calCursor.getFullYear(),calCursor.getMonth()+dir,1);
-    else calCursor=cAddDays(calCursor,dir*7);
+    else if(calView==='week') calCursor=cAddDays(calCursor,dir*7);
+    else calCursor=cAddDays(calCursor,dir); // 일 보기: 하루씩
     loadCal();
   }
   function calGoToday(){ calCursor=new Date(); calCursor.setHours(0,0,0,0); loadCal(); }
 
   function calRange(){
+    if(calView==='day'){ const d=new Date(calCursor); return { from:d, to:d }; }
     if(calView==='month'){
       const first=new Date(calCursor.getFullYear(),calCursor.getMonth(),1);
       const last=new Date(calCursor.getFullYear(),calCursor.getMonth()+1,0);
@@ -238,27 +255,43 @@
     }
     const from=cSunday(calCursor); return { from, to:cAddDays(from,6) };
   }
+  // 평일 모드에서 토/일 제외
+  function dayVisible(d){ if(calDays===7||calView==='day') return true; const w=d.getDay(); return w>=1&&w<=5; }
+
   async function loadCal(){
     const {from,to}=calRange();
-    $('calTitle').textContent = calView==='month'
-      ? (calCursor.getFullYear()+'년 '+(calCursor.getMonth()+1)+'월')
-      : ((from.getMonth()+1)+'/'+from.getDate()+' – '+(to.getMonth()+1)+'/'+to.getDate());
+    if(calView==='day'){
+      const wd=DOW[calCursor.getDay()];
+      $('calTitle').textContent=(calCursor.getMonth()+1)+'월 '+calCursor.getDate()+'일('+wd+')';
+    } else if(calView==='month'){
+      $('calTitle').textContent=calCursor.getFullYear()+'년 '+(calCursor.getMonth()+1)+'월';
+    } else {
+      $('calTitle').textContent=(from.getMonth()+1)+'/'+from.getDate()+' – '+(to.getMonth()+1)+'/'+to.getDate();
+    }
+    const mineQ=calMine?'&mine=1':'';
     try{
       const [cal,td]=await Promise.all([
-        fetch(session.api+'/api/calendar?from='+cYmd(from)+'&to='+cYmd(to),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        fetch(session.api+'/api/calendar?from='+cYmd(from)+'&to='+cYmd(to)+mineQ,{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
       calEvents=cal.items||[];
-      calTodos=(td.items||[]).filter(t=>t.due_date);
+      // 할 일은 본인것/전체 구분: 내 일정만 보기면 내게 배정된 것만(디렉터는 created_by 정보 없음 → assignee 기준)
+      let tds=(td.items||[]).filter(t=>t.due_date);
+      if(calMine){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||t.assignee_name===me); }
+      calTodos=tds;
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function eventsOn(key){ return calEvents.filter(e=>e.date===key); }
   function todosOn(key){ return calTodos.filter(t=>t.due_date===key); }
+
   function renderCal(from,to){
     const today=cYmd(new Date());
-    const head=DOW.map((w,i)=>'<div class="cgdow '+(i===0?'sun':(i===6?'sat':''))+'">'+w+'</div>').join('');
-    const days=[]; for(let d=new Date(from); d<=to; d=cAddDays(d,1)) days.push(new Date(d));
+    if(calView==='day'){ renderDayView(); return; }
+    // 표시할 요일 인덱스(7일=0~6, 평일=1~5)
+    const dows=(calDays===5)?[1,2,3,4,5]:[0,1,2,3,4,5,6];
+    const head=dows.map(i=>'<div class="cgdow '+(i===0?'sun':(i===6?'sat':''))+'">'+DOW[i]+'</div>').join('');
+    const days=[]; for(let d=new Date(from); d<=to; d=cAddDays(d,1)){ if(dayVisible(d)) days.push(new Date(d)); }
     const week=(calView==='week');
     const maxChips=week?8:3;
     const cells=days.map(day=>{
@@ -276,7 +309,28 @@
       return '<div class="cgcell'+(week?' week':'')+(out?' out':'')+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
         +'<div class="dn">'+day.getDate()+'</div>'+chips+'</div>';
     }).join('');
-    $('calGrid').innerHTML='<div class="calgrid">'+head+cells+'</div>';
+    $('calGrid').style.gridTemplateColumns='';
+    $('calGrid').innerHTML='<div class="calgrid" style="grid-template-columns:repeat('+dows.length+',1fr)">'+head+cells+'</div>';
+  }
+
+  // 일 보기: 하루를 큰 목록으로
+  function renderDayView(){
+    const key=cYmd(calCursor);
+    const evs=eventsOn(key), tds=todosOn(key);
+    let html='<div style="border:1px solid var(--line);border-radius:10px;padding:14px 16px">';
+    html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정</div>';
+    if(evs.length) html+=evs.map(e=>{
+      const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
+      return '<div class="item" style="margin-top:6px"><div class="when">'+(e.time?'<span class="tm">'+esc(e.time)+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+    }).join('');
+    else html+='<div class="hint">일정 없음</div>';
+    if(tds.length){
+      html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 6px">이 날 마감 할 일</div>';
+      html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
+    }
+    html+='<div style="margin-top:12px"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button></div>';
+    html+='</div>';
+    $('calGrid').innerHTML=html;
   }
 
   // 날짜 상세/추가 모달
