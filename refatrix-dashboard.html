@@ -32,11 +32,19 @@
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
   .hidden{display:none}
   /* 위젯 그리드 */
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:16px}
-  .w{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:10px}
+  .w{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;border-top:3px solid var(--catc, var(--brand))}
   .w .wh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .w .wt{font-size:14px;font-weight:800;color:var(--brand)}
   .w .wno{font-size:10px;color:var(--muted);font-weight:700}
+  /* 카테고리 구역 */
+  .catsec{margin-top:22px}
+  .cathead{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+  .catdot{width:11px;height:11px;border-radius:3px;background:var(--catc,#888)}
+  .catname{font-size:13px;font-weight:800;letter-spacing:.02em;color:var(--catc,#444)}
+  .catcount{font-size:11px;color:var(--muted);font-weight:700}
+  .catbar{height:2px;border-radius:2px;background:var(--catc,#ddd);opacity:.35;margin-top:4px}
+  .catchip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--catbg,#eee);color:var(--catc,#555)}
   .kpi{font-size:26px;font-weight:800;color:var(--brand)}.kpi small{font-size:13px;color:var(--muted);font-weight:600}
   .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}.bar>div{height:100%;background:var(--income);color:#fff;font-size:11px;display:flex;align-items:center;padding-left:8px;white-space:nowrap}
   .pipe{display:flex;flex-direction:column;gap:5px;margin-top:4px}.prow{display:flex;align-items:center;gap:8px;font-size:12px}.pname{width:74px;font-weight:600;flex:0 0 auto}.pbar{flex:1;background:#f0ece2;border-radius:5px;height:13px;overflow:hidden}.pbar>div{height:100%;background:var(--brand)}.pn{width:24px;text-align:right;font-weight:700}
@@ -84,6 +92,7 @@
         <div class="hint" style="margin-top:0">유저를 고르고 보여줄 위젯을 켜세요. 위젯 안의 세부 항목(필드)도 유저별로 켜고 끌 수 있습니다.</div>
         <label>유저</label><select id="cfgUser" style="min-width:220px"></select>
         <div id="cfgEditor" style="margin-top:10px"></div>
+        <div id="cfgSensitive" style="margin-top:14px"></div>
         <button class="btn gold sm" id="cfgSave" style="margin-top:10px">이 유저 구성 저장</button>
         <div class="msg" id="cfgMsg"></div>
       </div>
@@ -178,24 +187,42 @@
       if(on.some(c=>/^(P0|X0|U0)/.test(c.widget_key))){
         try{miscData=await fetch(session.api+'/api/dashboard/miscdata',{headers:auth()}).then(r=>r.json());}catch(e){miscData=null;}
       }
-      // 마케팅 TOP 위젯이 있으면 고객별 배분 로드
-      if(on.some(c=>c.widget_key==='M03_mkt_top'||c.widget_key==='M02_mkt_budget')){
-        try{const now=new Date();const ym=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
-          if(!mktOv)mktOv=await fetch(session.api+'/api/marketing/overview?start='+ym,{headers:auth()}).then(r=>r.json());
-          mktCust=await fetch(session.api+'/api/marketing/customers?start='+ym,{headers:auth()}).then(r=>r.json());}catch(e){mktCust=null;}
-      }
       renderWidgets(on);
     }catch(e){$('widgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   const SCREEN_FILE={customers:'refatrix-customers.html',targets:'refatrix-targets.html',pipeline:'refatrix-pipeline.html',marketing:'refatrix-marketing.html',products:'refatrix-products.html',finance:'refatrix-finance.html',sales:'refatrix-sales.html',importcost:'refatrix-importcost.html',users:'refatrix-users.html',budget:'refatrix-budget.html'};
   function gotoScreen(link){ if(SCREEN_FILE[link]) location.href=SCREEN_FILE[link]; }
 
+  // 카테고리 색상·순서 (영역 구분)
+  const CAT_ORDER=['공통','영업','마케팅','재무','제품','기타'];
+  const CAT_COLOR={
+    '공통':{c:'#143D34',bg:'#e3ece8'},
+    '영업':{c:'#1F6FB2',bg:'#e2eef7'},
+    '마케팅':{c:'#9A4FB0',bg:'#f0e6f4'},
+    '재무':{c:'#B23A2E',bg:'#f8e5e2'},
+    '제품':{c:'#9A7B16',bg:'#f4edd9'},
+    '기타':{c:'#5B6770',bg:'#e9ecee'},
+  };
+  function catColor(cat){return CAT_COLOR[cat]||{c:'#5B6770',bg:'#e9ecee'};}
+
   function renderWidgets(list){
     if(!list.length){$('widgetGrid').innerHTML='<div class="hint">표시할 위젯이 없습니다. 디렉터에게 구성을 요청하세요.</div>';return;}
-    $('widgetGrid').innerHTML=list.map(c=>{
-      const r=regOf(c.widget_key);if(!r)return '';
-      const linkBtn=r.link?`<a class="btn ghost sm" style="padding:3px 9px;font-size:11px" href="${SCREEN_FILE[r.link]||'#'}">열기 →</a>`:'';
-      return `<div class="w"><div class="wh"><span class="wt">${r.name}</span><span style="display:flex;gap:6px;align-items:center">${linkBtn}<span class="wno">${r.no}</span></span></div><div id="wbody-${c.widget_key}">${widgetHTML(c)}</div></div>`;
+    // 카테고리별로 그룹화(원래 순서 유지)
+    const groups={};
+    list.forEach(c=>{const r=regOf(c.widget_key);if(!r)return;(groups[r.cat]||=[]).push(c);});
+    const cats=Object.keys(groups).sort((a,b)=>{const ia=CAT_ORDER.indexOf(a),ib=CAT_ORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
+    $('widgetGrid').innerHTML=cats.map(cat=>{
+      const col=catColor(cat);
+      const cards=groups[cat].map(c=>{
+        const r=regOf(c.widget_key);
+        const linkBtn=r.link?`<a class="btn ghost sm" style="padding:3px 9px;font-size:11px" href="${SCREEN_FILE[r.link]||'#'}">열기 →</a>`:'';
+        return `<div class="w" style="--catc:${col.c}"><div class="wh"><span class="wt">${r.name}</span><span style="display:flex;gap:6px;align-items:center">${linkBtn}<span class="wno">${r.no}</span></span></div><div id="wbody-${c.widget_key}">${widgetHTML(c)}</div></div>`;
+      }).join('');
+      return `<div class="catsec" style="--catc:${col.c};--catbg:${col.bg}">
+        <div class="cathead"><span class="catdot"></span><span class="catname">${cat}</span><span class="catcount">위젯 ${groups[cat].length}</span></div>
+        <div class="catbar"></div>
+        <div class="grid">${cards}</div>
+      </div>`;
     }).join('');
   }
   function widgetHTML(c){
@@ -204,7 +231,7 @@
       case 'W01_sales_perf':{
         const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
         const rate=p.rate==null?0:Math.min(100,p.rate);
-        if(s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률(${p.year})</small></div><div class="bar"><div style="width:${rate}%"></div></div>`;
+        if(p.locked||s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률(${p.year})</small></div><div class="bar"><div style="width:${rate}%"></div></div>${p.locked?'<div class="hint">🔒 금액 권한 없음</div>':''}`;
         return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률(${p.year})</small></div><div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div><div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)} MXN</div>`;
       }
       case 'W02_pipeline':{
@@ -238,7 +265,8 @@
       case 'S01_customer_status':{
         const cu=sd.customers||{};
         let html=`<div class="kpi">${cu.count||0} <small>고객</small></div><div class="hint">연체 고객 ${cu.overdue||0}명</div>`;
-        if(s.outstanding!==false) html+=`<div class="hint">총 미수금 ${fmt(cu.outstanding||0)} MXN</div>`;
+        if(cu.locked) html+=`<div class="hint">🔒 미수금 권한 없음</div>`;
+        else if(s.outstanding!==false) html+=`<div class="hint">총 미수금 ${fmt(cu.outstanding||0)} MXN</div>`;
         return html;
       }
       case 'S02_target_status':{
@@ -268,7 +296,7 @@
       case 'S07_target_detail':{
         const p=portalSum&&portalSum.perf;if(!p)return '<div class="hint">데이터 없음</div>';
         const rate=p.rate==null?0:Math.min(100,p.rate);
-        if(s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%"></div></div>`;
+        if(p.locked||s.amount===false) return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%"></div></div>${p.locked?'<div class="hint">🔒 금액 권한 없음</div>':''}`;
         return `<div class="kpi">${p.rate==null?'—':p.rate+'%'} <small>달성률</small></div><div class="bar"><div style="width:${rate}%">${fmt(p.actual)}</div></div><div class="hint">목표 ${fmt(p.target)} · 실적 ${fmt(p.actual)}</div>`;
       }
       case 'M01_mkt_status':{
@@ -278,35 +306,34 @@
         return `<div class="kpi" style="color:${col[st]||'#888'}">${lbl[st]||st}</div><div class="hint">마케팅 계획 승인 단계</div>`;
       }
       case 'M02_mkt_budget':{
-        if(!mktOv)return '<div class="hint">데이터 없음</div>';
-        const months=mktOv.months||[];let bud=0,alloc=0;
-        months.forEach(m=>{bud+=(mktOv.budget&&mktOv.budget[m])||0;alloc+=(mktOv.alloc_sum&&mktOv.alloc_sum[m])||0;});
-        const rate=bud>0?Math.round(alloc/bud*100):0;
-        if(s.amount===false) return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%"></div></div>`;
-        return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(alloc)}</div></div><div class="hint">예산 ${fmt(bud)} · 배분 ${fmt(alloc)} MXN(연간)</div>`;
+        const mk=fd.marketing;if(!mk)return '<div class="hint">데이터 없음</div>';
+        const rate=mk.rate||0;
+        if(mk.locked||s.amount===false) return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%"></div></div>${mk.locked?'<div class="hint">🔒 금액 권한 없음</div>':''}`;
+        return `<div class="kpi">${rate}% <small>소진율</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(mk.alloc)}</div></div><div class="hint">예산 ${fmt(mk.budget)} · 배분 ${fmt(mk.alloc)} MXN(연간)</div>`;
       }
       case 'M03_mkt_top':{
-        const rows=(mktCust&&mktCust.customers)?mktCust.customers.map(c=>({name:c.name,total:Object.values(c.month_cost||{}).reduce((a,b)=>a+Number(b||0),0)})):[];
-        const top=rows.filter(r=>r.total>0).sort((a,b)=>b.total-a.total).slice(0,5);
+        const mk=fd.marketing;const top=(mk&&mk.top)||[];
         if(!top.length)return '<div class="hint">배분 데이터 없음</div>';
-        return '<table><tbody>'+top.map(t=>`<tr><td style="padding:5px 6px"><b>${t.name}</b></td><td style="padding:5px 6px;text-align:right">${s.amount===false?'':fmt(t.total)+' MXN'}</td></tr>`).join('')+'</tbody></table>';
+        return '<table><tbody>'+top.map(t=>`<tr><td style="padding:5px 6px"><b>${t.name}</b></td><td style="padding:5px 6px;text-align:right">${(mk.locked||s.amount===false)?(mk.locked?'🔒':''):fmt(t.total)+' MXN'}</td></tr>`).join('')+'</tbody></table>';
       }
       case 'F01_cashflow':{
         const cf=fd.cashflow;if(!cf)return '<div class="hint">데이터 없음</div>';
-        if(s.amount===false) return `<div class="hint">민감 항목 — 금액 숨김</div>`;
+        if(cf.locked) return `<div class="hint">🔒 재무 금액 권한 없음</div>`;
+        if(s.amount===false) return `<div class="hint">금액 숨김(표시 끔)</div>`;
         const net=cf.net||0;const col=net>=0?'var(--income)':'var(--expense)';
         return `<div class="kpi" style="color:${col}">${fmt(net)} <small>순현금(${cf.ym})</small></div><div class="hint">유입 ${fmt(cf.inflow)} · 유출 ${fmt(cf.outflow)} MXN</div>`;
       }
       case 'F02_plan_actual':{
         const pa=fd.plan_vs_actual;if(!pa)return '<div class="hint">데이터 없음</div>';
-        if(s.amount===false) return `<div class="hint">민감 항목 — 금액 숨김</div>`;
-        const rate=pa.plan>0?Math.round(pa.actual/pa.plan*100):0;
-        return `<div class="kpi">${rate}% <small>지출 집행률(${pa.ym})</small></div><div class="bar"><div style="width:${Math.min(100,rate)}%">${fmt(pa.actual)}</div></div><div class="hint">계획 ${fmt(pa.plan)} · 실적 ${fmt(pa.actual)} MXN</div>`;
+        const rate=pa.rate==null?0:Math.min(100,pa.rate);
+        if(pa.locked||s.amount===false) return `<div class="kpi">${pa.rate==null?'—':pa.rate+'%'} <small>지출 집행률(${pa.ym})</small></div><div class="bar"><div style="width:${rate}%"></div></div>${pa.locked?'<div class="hint">🔒 금액 권한 없음</div>':''}`;
+        return `<div class="kpi">${pa.rate==null?'—':pa.rate+'%'} <small>지출 집행률(${pa.ym})</small></div><div class="bar"><div style="width:${rate}%">${fmt(pa.actual)}</div></div><div class="hint">계획 ${fmt(pa.plan)} · 실적 ${fmt(pa.actual)} MXN</div>`;
       }
       case 'F03_ar_overdue':{
         const ar=fd.ar_overdue||{};
         let html=`<div class="kpi" style="color:var(--expense)">${ar.count||0} <small>연체 건</small></div>`;
-        if(s.amount!==false) html+=`<div class="hint">연체 총액 ${fmt(ar.total||0)} MXN</div>`;
+        if(ar.locked) html+=`<div class="hint">🔒 연체액 권한 없음</div>`;
+        else if(s.amount!==false) html+=`<div class="hint">연체 총액 ${fmt(ar.total||0)} MXN</div>`;
         return html;
       }
       case 'F04_pending':{
@@ -357,22 +384,36 @@
   }
   async function loadUserConfig(uid){
     try{
-      const cfg=(await fetch(session.api+'/api/dashboard/config?user_id='+uid,{headers:auth()}).then(r=>r.json())).config||[];
+      const full=await fetch(session.api+'/api/dashboard/config?user_id='+uid,{headers:auth()}).then(r=>r.json());
+      const cfg=full.config||[];
       // 현재 켜진 위젯 맵
       const onMap={};cfg.forEach(c=>onMap[c.widget_key]={enabled:c.enabled,settings:c.settings||{}});
       // 전체 위젯을 나열하되, 현재 구성 순서 우선
       const ordered=[...cfg.map(c=>c.widget_key), ...registry.map(w=>w.key).filter(k=>!cfg.find(c=>c.widget_key===k))];
       cfgState=ordered.map(k=>({widget_key:k,enabled:onMap[k]?onMap[k].enabled:false,settings:onMap[k]?onMap[k].settings:{}}));
       renderEditor();
+      renderSensitive(uid, full.sensitive||{});
     }catch(e){$('cfgEditor').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderSensitive(uid, granted){
+    const KEYS=[['fin_amount','재무 금액(캐시플로·집행)'],['ar_amount','미수·연체 금액'],['mkt_amount','마케팅 배분 금액'],['sales_amount','영업 목표·실적 금액']];
+    const u=users.find(x=>String(x.id)===String(uid));
+    if(u&&u.role==='director'){$('cfgSensitive').innerHTML='<div class="hint">디렉터는 모든 민감 금액을 볼 수 있습니다.</div>';return;}
+    $('cfgSensitive').innerHTML='<div style="border-top:1px solid var(--line);padding-top:10px"><b style="font-size:13px;color:var(--brand)">🔒 민감 금액 표시 권한</b>'+
+      '<div class="hint" style="margin:4px 0 8px">끄면 서버가 금액을 아예 내려보내지 않습니다(개발자도구로도 못 봄). 비율·건수는 그대로 보입니다.</div>'+
+      KEYS.map(([k,label])=>`<label class="fld"><input type="checkbox" ${granted[k]?'checked':''} onchange="toggleSensitive(${uid},'${k}',this.checked)"> ${label}</label>`).join('')+'</div>';
+  }
+  async function toggleSensitive(uid,key,on){
+    try{await fetch(session.api+'/api/dashboard/sensitive',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:uid,field_key:key,visible:on})});}catch(e){alert('실패');}
   }
   function renderEditor(){
     $('cfgEditor').innerHTML=cfgState.map((c,i)=>{
       const r=regOf(c.widget_key);if(!r)return '';
+      const col=catColor(r.cat);
       const flds=(r.fields||[]).map(f=>`<label class="fld"><input type="checkbox" ${ (c.settings[f.key]!=null?c.settings[f.key]:f.def)?'checked':''} onchange="toggleField(${i},'${f.key}',this.checked)"> ${f.name}${f.note?` <span class="hint" style="margin:0">(${f.note})</span>`:''}</label>`).join('');
-      return `<div class="wedit"><div class="top">
+      return `<div class="wedit" style="--catc:${col.c};--catbg:${col.bg};border-left:3px solid ${col.c}"><div class="top">
         <label class="fld" style="margin:0"><input type="checkbox" ${c.enabled?'checked':''} onchange="toggleWidget(${i},this.checked)"> <b>${r.no} ${r.name}</b></label>
-        <span class="hint" style="margin:0 0 0 6px">${r.cat}</span>
+        <span class="catchip" style="margin-left:6px">${r.cat}</span>
         <span class="order" style="margin-left:auto"><button class="btn ghost sm" onclick="move(${i},-1)">▲</button><button class="btn ghost sm" onclick="move(${i},1)">▼</button></span>
       </div>${flds?`<div style="margin-top:4px">${flds}</div>`:''}</div>`;
     }).join('');

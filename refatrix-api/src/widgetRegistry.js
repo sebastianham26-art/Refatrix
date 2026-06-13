@@ -6,38 +6,38 @@
 export const WIDGETS = [
   {
     key: 'W01_sales_perf', no: 'W-01', name: '영업 성과(목표 대비)', cat: '영업',
-    source: 'portal.perf', need: ['targets', 'sales'],
+    source: 'portal.perf', link: 'targets', need: ['targets', 'sales'],
     fields: [
       { key: 'amount', name: '금액 표시', def: true, sensitive: false, note: '끄면 달성률(%)만 표시' },
     ],
   },
   {
     key: 'W02_pipeline', no: 'W-02', name: '파이프라인 요약', cat: '영업',
-    source: 'portal.pipeline', need: ['pipeline'],
+    source: 'portal.pipeline', link: 'pipeline', need: ['pipeline'],
     fields: [],
   },
   {
     key: 'W03_pending', no: 'W-03', name: '펜딩 · 할 일', cat: '공통',
-    source: 'portal.badges', need: [],
+    source: 'portal.badges', link: 'portal', need: [],
     fields: [],
   },
   {
     key: 'W09_stalled', no: 'W-09', name: '정체 고객(30일+)', cat: '영업',
-    source: 'portal.badges', need: ['pipeline'],
+    source: 'portal.badges', link: 'pipeline', need: ['pipeline'],
     fields: [
       { key: 'ar', name: '연체액 표시', def: false, sensitive: false },
     ],
   },
   {
     key: 'W08_mkt_budget', no: 'W-08', name: '마케팅 예산 현황', cat: '마케팅',
-    source: 'marketing.overview', need: ['marketing'],
+    source: 'marketing.overview', link: 'marketing', need: ['marketing'],
     fields: [
       { key: 'amount', name: '금액 표시', def: true, sensitive: false, note: '끄면 소진율(%)만 표시' },
     ],
   },
   {
     key: 'W10_process', no: 'W-10', name: '업무 프로세스 지도', cat: '공통',
-    source: 'portal.badges', need: [],
+    source: 'portal.badges', link: 'portal', need: [],
     fields: [],
   },
 
