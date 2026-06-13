@@ -32,12 +32,15 @@
   .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}.msg.ok{display:block;background:var(--income-bg);color:var(--income)}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
   .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
-  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
-  th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;table-layout:fixed}
+  th,td{padding:5px 5px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   th:first-child,td:first-child,th.l,td.l{text-align:left}
-  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  th{font-size:10px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.prod{max-width:150px;white-space:normal;line-height:1.25;cursor:pointer}
+  td.prod:hover{color:var(--brand);text-decoration:underline}
+  td.prod .ap{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
   tfoot td{font-weight:800;background:#faf8f3;border-top:2px solid var(--line)}
-  .flag{font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px}
+  .flag{font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:999px}
   .flag.ok{background:var(--income-bg);color:var(--income)}
   .flag.low_stock{background:#fdf3e3;color:#9a6512}
   .flag.not_found{background:var(--expense-bg);color:var(--expense)}
@@ -120,6 +123,14 @@
   <div class="box">
     <div class="hd"><span style="font-size:15px;font-weight:800;color:var(--brand)">제품 선택 <span class="hint" id="candFor"></span></span><button class="btn ghost sm" style="margin-left:auto" onclick="closeCand()">닫기 ✕</button></div>
     <div class="bd" id="candBody"></div>
+  </div>
+</div>
+
+<!-- 고객 구매 실적 모달 -->
+<div class="modal" id="histModal">
+  <div class="box">
+    <div class="hd"><span style="font-size:15px;font-weight:800;color:var(--brand)" id="histTitle">구매 실적</span><button class="btn ghost sm" style="margin-left:auto" onclick="document.getElementById('histModal').style.display='none'">닫기 ✕</button></div>
+    <div class="bd" id="histBody"></div>
   </div>
 </div>
 
@@ -318,19 +329,22 @@
   function renderLines(d){
     lastPreview=d;
     const L=d.lines||[];
-    let html='<table><thead><tr>'
-      +'<th class="l">CTR</th><th class="l">경쟁사(SYD)</th><th class="l">제품/적용</th><th>수량</th><th>List</th><th>할인</th><th>단가</th><th>IVA</th><th>합계(IVA포함)</th><th>가용재고</th><th>상태</th><th></th></tr></thead><tbody>';
+    let html='<table><colgroup>'
+      +'<col style="width:74px"><col style="width:74px"><col style="width:150px"><col style="width:46px"><col style="width:68px"><col style="width:42px"><col style="width:68px"><col style="width:62px"><col style="width:78px"><col style="width:52px"><col style="width:56px"><col style="width:28px">'
+      +'</colgroup><thead><tr>'
+      +'<th class="l">CTR</th><th class="l">SYD</th><th class="l">제품/적용</th><th>수량</th><th>List</th><th>할인</th><th>단가</th><th>IVA</th><th>합계(IVA)</th><th>가용</th><th>상태</th><th></th></tr></thead><tbody>';
     L.forEach((l,i)=>{
       if(l.ambiguous){
-        html+='<tr><td class="l" colspan="11" style="color:#9a6512">"'+esc(l.input_code)+'" — 여러 제품과 매칭됩니다. 삭제 후 다시 입력해 후보에서 고르세요.</td><td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
+        html+='<tr><td class="l" colspan="11" style="color:#9a6512;white-space:normal">"'+esc(l.input_code)+'" — 여러 제품과 매칭됩니다. 삭제 후 다시 입력해 후보에서 고르세요.</td><td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
         return;
       }
       const flag=l.stock_flag||'ok';
       const flagLbl={ok:'정상',low_stock:'재고부족',not_found:'제품없음'}[flag];
+      const clickable=l.matched&&l.product_id;
       html+='<tr>'
-        +'<td class="l">'+esc(l.ctr_code||'—')+'</td>'
-        +'<td class="l">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
-        +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<div class="hint" style="margin:0">'+esc(l.app_text)+'</div>':'')+'</td>'
+        +'<td class="l" title="'+esc(l.ctr_code||'')+'">'+esc(l.ctr_code||'—')+'</td>'
+        +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
+        +'<td class="prod'+(clickable?'':'" style="cursor:default;text-decoration:none')+'" '+(clickable?'onclick="showHistory('+l.product_id+',\''+esc(l.ctr_code)+'\')"':'')+' title="'+esc(l.product_name||'')+'">'+esc(l.product_name||'')+(l.app_text?'<span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td>'+fmtq(l.qty)+'</td>'
         +'<td>'+(l.matched?fmt(l.list_price):'—')+'</td>'
         +'<td>'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'
@@ -343,10 +357,9 @@
     });
     html+='</tbody>';
     const t=d.totals||{};
-    html+='<tfoot><tr><td class="l" colspan="3">합계</td><td>'+fmtq(t.totalQty||0)+'</td><td colspan="4"></td><td>'+fmt(t.total||0)+'</td><td colspan="3"></td></tr>'
-      +'<tr><td class="l" colspan="3" style="font-weight:600;background:#fff">소계(IVA 제외) '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+'</td><td colspan="9" style="background:#fff"></td></tr></tfoot>';
+    html+='<tfoot><tr><td class="l" colspan="3">합계</td><td>'+fmtq(t.totalQty||0)+'</td><td colspan="4"></td><td>'+fmt(t.total||0)+'</td><td colspan="3"></td></tr></tfoot>';
     html+='</table>';
-    html+='<div class="hint" style="margin-top:6px">품목수(SKU) '+(t.skuCount||0)+' · 총수량 '+fmtq(t.totalQty||0)+' · IVA 포함 총액 <b>'+fmt(t.total||0)+'</b></div>';
+    html+='<div class="hint" style="margin-top:6px">품목수(SKU) <b>'+(t.skuCount||0)+'</b> · 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 소계 '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+' · <b>IVA 포함 총액 '+fmt(t.total||0)+'</b> &nbsp;·&nbsp; <span style="color:var(--muted)">제품명을 클릭하면 이 고객의 구매 실적을 봅니다</span></div>';
     $('linesWrap').innerHTML=html;
   }
 
@@ -375,6 +388,28 @@
       ev.target.value='';
       recalc();
     }catch(e){ m.className='msg err';m.textContent='엑셀을 읽지 못했습니다. (첫 열=코드, 둘째 열=수량)'; }
+  }
+
+  // ===== 고객 구매 실적 (최근 3년) =====
+  async function showHistory(productId, ctrCode){
+    const cid=$('custSel').value;
+    if(!cid){ return; }
+    const custName=($('custSel').selectedOptions[0]||{}).text||'';
+    $('histTitle').textContent=ctrCode+' — '+custName+' 구매 실적';
+    $('histBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    $('histModal').style.display='flex';
+    try{
+      const d=await fetch(session.api+'/api/quotes/customer-sku-history?customer_id='+encodeURIComponent(cid)+'&product_id='+encodeURIComponent(productId),{headers:auth()}).then(r=>r.json());
+      const years=d.years||[];
+      if(!years.length){ $('histBody').innerHTML='<div class="hint">최근 3년 구매 기록이 없습니다.</div>'; return; }
+      let h='<table style="table-layout:auto"><thead><tr><th class="l">연도</th><th>구매 수량</th><th>그 해 비중</th></tr></thead><tbody>';
+      years.forEach(y=>{
+        h+='<tr><td class="l">'+y.year+'년</td><td>'+fmtq(y.qty)+'</td><td>'+(y.pct==null?'—':y.pct+'%')+'</td></tr>';
+      });
+      h+='</tbody><tfoot><tr><td class="l">3년 합계</td><td>'+fmtq(d.total3y)+'</td><td>'+(d.totalPct==null?'—':d.totalPct+'%')+'</td></tr></tfoot></table>';
+      h+='<div class="hint" style="margin-top:10px">· <b>그 해 비중</b> = 그 해 이 고객 전체 구매 수량 중 이 SKU의 비율<br>· <b>3년 합계 비중</b> = 최근 3년 누적 기준 ('+fmtq(d.total3y)+' / '+fmtq(d.totalAll3y)+')<br>· 확정·등록된 매출 기준(수량)</div>';
+      $('histBody').innerHTML=h;
+    }catch(e){ $('histBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
 
   async function saveQuote(){
