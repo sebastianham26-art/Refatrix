@@ -8,31 +8,41 @@ function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOStri
 export default async function quoteRoutes(app) {
   // ============ 회사 설정 / 로고 ============
   app.get('/api/company', { preHandler: [authGuard] }, async () => {
-    const r = (await query(`SELECT emisor, domicilio, homepage, rfc, phone, email, logo_data FROM company_settings WHERE id=1`)).rows[0];
+    const r = (await query(`SELECT emisor, domicilio, homepage, rfc, phone, email, logo_data,
+                                   bank_name, bank_account, bank_clabe, bank_holder, whatsapp_qr
+                              FROM company_settings WHERE id=1`)).rows[0];
     return r || {};
   });
 
   app.put('/api/company', { preHandler: [authGuard, requireDirector] }, async (req) => {
     const b = req.body || {};
     await query(
-      `UPDATE company_settings SET emisor=$1, domicilio=$2, homepage=$3, rfc=$4, phone=$5, email=$6, updated_by=$7, updated_at=now() WHERE id=1`,
-      [b.emisor || null, b.domicilio || null, b.homepage || null, b.rfc || null, b.phone || null, b.email || null, req.ctx.perm.userId]);
+      `UPDATE company_settings SET emisor=$1, domicilio=$2, homepage=$3, rfc=$4, phone=$5, email=$6,
+              bank_name=$7, bank_account=$8, bank_clabe=$9, bank_holder=$10, updated_by=$11, updated_at=now() WHERE id=1`,
+      [b.emisor || null, b.domicilio || null, b.homepage || null, b.rfc || null, b.phone || null, b.email || null,
+       b.bank_name || null, b.bank_account || null, b.bank_clabe || null, b.bank_holder || null, req.ctx.perm.userId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'company_settings' });
     return { ok: true };
   });
 
-  // 로고 업로드: body { logo_data: 'data:image/png;base64,...' }
-  app.put('/api/company/logo', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
-    const data = String(req.body?.logo_data || '');
+  // 이미지 업로드 공통: kind = 'logo' | 'whatsapp'
+  async function saveImage(req, reply, col) {
+    const data = String(req.body?.image || req.body?.logo_data || '');
     if (!data.startsWith('data:image/')) return reply.code(400).send({ error: 'invalid_image' });
     if (data.length > 1500000) return reply.code(413).send({ error: 'image_too_large', note: '약 1MB 이하 이미지를 사용하세요.' });
-    await query(`UPDATE company_settings SET logo_data=$1, updated_by=$2, updated_at=now() WHERE id=1`, [data, req.ctx.perm.userId]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'company_logo' });
+    await query(`UPDATE company_settings SET ${col}=$1, updated_by=$2, updated_at=now() WHERE id=1`, [data, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `company_${col}` });
     return { ok: true };
-  });
+  }
 
+  app.put('/api/company/logo', { preHandler: [authGuard, requireDirector] }, async (req, reply) => saveImage(req, reply, 'logo_data'));
   app.delete('/api/company/logo', { preHandler: [authGuard, requireDirector] }, async (req) => {
     await query(`UPDATE company_settings SET logo_data=NULL, updated_by=$1, updated_at=now() WHERE id=1`, [req.ctx.perm.userId]);
+    return { ok: true };
+  });
+  app.put('/api/company/whatsapp', { preHandler: [authGuard, requireDirector] }, async (req, reply) => saveImage(req, reply, 'whatsapp_qr'));
+  app.delete('/api/company/whatsapp', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    await query(`UPDATE company_settings SET whatsapp_qr=NULL, updated_by=$1, updated_at=now() WHERE id=1`, [req.ctx.perm.userId]);
     return { ok: true };
   });
 
@@ -289,7 +299,48 @@ export default async function quoteRoutes(app) {
     return { ok: true };
   });
 
-  // ============ 매출 전환 ============
+  // ============ 고객-SKU 구매 실적 (최근 3년, 수량 기준) ============
+  // GET /api/quotes/customer-sku-history?customer_id=&product_id=
+  // 반환: years[{year, qty, pct}], total3y, totalPct(전체 누적 비중)
+  app.get('/api/quotes/customer-sku-history', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const customerId = Number(req.query.customer_id);
+    const productId = Number(req.query.product_id);
+    if (!customerId || !productId) return { years: [], total3y: 0, totalPct: null };
+    const curYear = new Date().getFullYear();
+    const y0 = curYear - 2; // 최근 3년: y0 .. curYear
+
+    // 이 고객의 연도별 SKU 구매 수량(최근 3년)
+    const skuByYear = (await query(
+      `SELECT EXTRACT(YEAR FROM i.inv_date)::int AS yr, COALESCE(SUM(l.qty),0) AS q
+         FROM sales_invoices i JOIN sales_invoice_lines l ON l.invoice_id=i.id
+        WHERE i.customer_id=$1 AND l.product_id=$2 AND i.status='posted'
+          AND EXTRACT(YEAR FROM i.inv_date) >= $3
+        GROUP BY yr`, [customerId, productId, y0])).rows;
+    const skuMap = {}; for (const r of skuByYear) skuMap[r.yr] = Number(r.q);
+
+    // 이 고객의 연도별 전체 구매 수량(최근 3년) — 비중 분모
+    const allByYear = (await query(
+      `SELECT EXTRACT(YEAR FROM i.inv_date)::int AS yr, COALESCE(SUM(l.qty),0) AS q
+         FROM sales_invoices i JOIN sales_invoice_lines l ON l.invoice_id=i.id
+        WHERE i.customer_id=$1 AND i.status='posted'
+          AND EXTRACT(YEAR FROM i.inv_date) >= $2
+        GROUP BY yr`, [customerId, y0])).rows;
+    const allMap = {}; for (const r of allByYear) allMap[r.yr] = Number(r.q);
+
+    const years = [];
+    let sku3y = 0, all3y = 0;
+    for (let y = y0; y <= curYear; y++) {
+      const q = skuMap[y] || 0; const tot = allMap[y] || 0;
+      sku3y += q; all3y += tot;
+      years.push({ year: y, qty: round2(q), pct: tot > 0 ? round2(q / tot * 100) : null });
+    }
+    return {
+      years,
+      total3y: round2(sku3y),
+      totalAll3y: round2(all3y),
+      totalPct: all3y > 0 ? round2(sku3y / all3y * 100) : null,
+    };
+  });
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.
   app.post('/api/quotes/:id/convert', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
