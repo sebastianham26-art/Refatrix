@@ -13,14 +13,18 @@ export default async function portalBoardRoutes(app) {
     const perm = req.ctx.perm;
     const from = String(req.query.from || '');
     const to = String(req.query.to || '');
+    const mine = String(req.query.mine || '') === '1';
     const vis = visibleTeamIds(perm); // null=전체(디렉터)
     const conds = [`e.deleted_at IS NULL`];
     const args = [];
     if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { args.push(from); conds.push(`e.event_date >= $${args.length}`); }
     if (/^\d{4}-\d{2}-\d{2}$/.test(to)) { args.push(to); conds.push(`e.event_date <= $${args.length}`); }
 
-    // 가시성
-    if (vis === null) {
+    if (mine) {
+      // 내 일정만: 내가 대상(개인)이거나 내가 만든 것
+      args.push(perm.userId); const meIdx = args.length;
+      conds.push(`(e.owner_id=$${meIdx} OR e.created_by=$${meIdx})`);
+    } else if (vis === null) {
       // 디렉터: 전부
     } else {
       const myTeams = vis.length ? vis : [-1];

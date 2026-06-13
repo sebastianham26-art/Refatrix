@@ -50,6 +50,34 @@
   .chk{width:20px;height:20px;border:2px solid var(--line);border-radius:6px;cursor:pointer;flex:0 0 auto;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff}
   .chk.on{background:var(--income);border-color:var(--income)}
   .roster{font-size:11.5px;color:var(--muted);margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
+  /* 달력 */
+  .calbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .calbar .navb{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--brand);font-size:14px}
+  .calbar .ctitle{font-size:16px;font-weight:800;color:var(--brand);min-width:130px;text-align:center}
+  .calbar .today{font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 13px;cursor:pointer;color:var(--brand-soft)}
+  .calbar .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:auto}
+  .calbar .seg button{border:none;background:#fff;padding:6px 13px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .calbar .seg button.on{background:var(--brand);color:#fff}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+  .cgdow{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:3px 0}
+  .cgdow.sun{color:var(--expense)}.cgdow.sat{color:#2f6db2}
+  .cgcell{min-height:78px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 5px;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+  .cgcell:hover{border-color:var(--brand)}
+  .cgcell.out{background:#faf8f3;opacity:.5}
+  .cgcell.today{border-color:var(--income);box-shadow:0 0 0 1px var(--income) inset}
+  .cgcell.week{min-height:150px}
+  .cgcell .dn{font-size:11px;font-weight:700;color:var(--muted)}
+  .cgcell.today .dn{color:var(--income)}
+  .chip{font-size:10px;line-height:1.3;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip.ev{background:var(--income-bg);color:var(--brand)}
+  .chip.td{background:#e6f1fb;color:#0c447c}
+  .chip .tm{font-weight:700;color:var(--gold)}
+  .cgmore{font-size:9.5px;color:var(--muted)}
+  .daymodal{position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+  .daymodal .box{background:#fff;border-radius:14px;max-width:520px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  .daymodal .hd{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .daymodal .hd .t{font-size:15px;font-weight:800;color:var(--brand)}
+  .daymodal .bd{padding:16px 18px}
 </style>
 </head>
 <body>
@@ -71,10 +99,17 @@
       <div class="tab" id="tabTodo" onclick="showTab('todo')">할 일<span class="b hidden" id="todoBadge"></span></div>
     </div>
 
-    <!-- 일정 -->
+    <!-- 일정 (달력) -->
     <div class="card" id="paneCal">
-      <div id="calForm"></div>
-      <div id="calList"><div class="hint">불러오는 중…</div></div>
+      <div class="calbar">
+        <button class="navb" id="calPrev">‹</button>
+        <span class="ctitle" id="calTitle">—</span>
+        <button class="navb" id="calNext">›</button>
+        <button class="today" id="calToday">오늘</button>
+        <span class="seg"><button id="calMonthBtn" class="on" onclick="setCalView('month')">월간</button><button id="calWeekBtn" onclick="setCalView('week')">주간</button></span>
+      </div>
+      <div id="calGrid"><div class="hint">불러오는 중…</div></div>
+      <div class="hint" style="margin-top:8px"><span class="chip ev" style="display:inline-block">초록</span> 일정 · <span class="chip td" style="display:inline-block">파랑</span> 할 일(마감) · 날짜 칸을 누르면 그날 상세·추가</div>
     </div>
 
     <!-- 공지 -->
@@ -88,6 +123,14 @@
       <div id="todoForm"></div>
       <div id="todoList"><div class="hint">불러오는 중…</div></div>
     </div>
+  </div>
+</div>
+
+<!-- 날짜 상세/추가 모달 -->
+<div class="daymodal" id="dayModal">
+  <div class="box">
+    <div class="hd"><span class="t" id="dmTitle">날짜</span><button class="btn ghost sm" style="margin-left:auto" onclick="closeDay()">닫기 ✕</button></div>
+    <div class="bd" id="dmBody"></div>
   </div>
 </div>
 
@@ -135,22 +178,7 @@
   }
 
   function renderForms(){
-    // 일정 폼: 날짜 + 시간 칸 + 내용 칸 (+ 대상; 전사·팀은 디렉터)
     const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
-    const scopeOpts=isDirector
-      ? '<option value="company">전사</option><option value="team">팀</option><option value="personal">개인(내)</option>'
-      : '<option value="personal">개인(내)</option>';
-    $('calForm').innerHTML=
-      '<div class="card-h">일정 추가</div>'
-      +'<div class="row">'
-      +'<div style="flex:0 0 150px"><label>날짜</label><input id="cf-date" type="date"></div>'
-      +'<div style="flex:0 0 110px"><label>시간</label><input id="cf-time" type="text" placeholder="예: 14:30"></div>'
-      +'<div style="flex:2"><label>내용</label><input id="cf-content" type="text" placeholder="일정 내용"></div>'
-      +'<div style="flex:0 0 130px"><label>대상</label><select id="cf-scope" onchange="calScopeChange()">'+scopeOpts+'</select></div>'
-      +'<div style="flex:0 0 150px" id="cf-teamWrap" class="hidden"><label>팀</label><select id="cf-team">'+teamOpts+'</select></div>'
-      +'<div><button class="btn" onclick="addCal()">추가</button></div>'
-      +'</div><div class="msg" id="cf-msg"></div>'
-      +'<div class="hint" style="margin-top:6px">시간 칸은 비워두면 종일로 표시됩니다.</div>';
 
     // 공지 폼(디렉터만)
     if(isDirector){
@@ -183,44 +211,131 @@
         +'<div class="msg" id="tf-msg"></div>';
     } else $('todoForm').innerHTML='<div class="hint">디렉터가 배정한 할 일이 아래에 표시됩니다. 완료하면 체크하세요.</div>';
   }
-  function calScopeChange(){ $('cf-teamWrap').classList.toggle('hidden',$('cf-scope').value!=='team'); }
   function noticeAudChange(){ const a=$('nf-aud').value; $('nf-roleWrap').classList.toggle('hidden',a!=='role'); $('nf-teamWrap').classList.toggle('hidden',a!=='team'); }
 
-  // ===== 일정 =====
-  async function loadCal(){
-    const today=new Date(); const from=today.toISOString().slice(0,10);
-    const end=new Date(today); end.setMonth(end.getMonth()+3); const to=end.toISOString().slice(0,10);
-    try{
-      const d=await fetch(session.api+'/api/calendar?from='+from+'&to='+to,{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
-      if(!items.length){$('calList').innerHTML='<div class="hint" style="margin-top:10px">다가오는 일정이 없습니다.</div>';return;}
-      $('calList').innerHTML=items.map(e=>{
-        const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
-        const canDel=isDirector;
-        return '<div class="item"><div class="when">'+e.date+(e.time?'<span class="tm">'+esc(e.time)+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div>'
-          +'<div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'
-          +(canDel?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
-      }).join('');
-    }catch(e){$('calList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  // ===== 일정 (월간/주간 달력) =====
+  let calView='month';
+  let calCursor=new Date(); calCursor.setHours(0,0,0,0);
+  let calEvents=[], calTodos=[];
+  const DOW=['일','월','화','수','목','금','토'];
+  function cYmd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+  function cAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  function cSunday(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
+
+  function setCalView(v){ calView=v; $('calMonthBtn').classList.toggle('on',v==='month'); $('calWeekBtn').classList.toggle('on',v==='week'); loadCal(); }
+  function calShift(dir){
+    if(calView==='month') calCursor=new Date(calCursor.getFullYear(),calCursor.getMonth()+dir,1);
+    else calCursor=cAddDays(calCursor,dir*7);
+    loadCal();
   }
-  async function addCal(){
-    const m=$('cf-msg');m.className='msg';
-    const body={event_date:$('cf-date').value,event_time:$('cf-time').value.trim(),content:$('cf-content').value.trim(),scope:$('cf-scope').value};
-    if(body.scope==='team')body.team_id=$('cf-team').value;
-    if(!body.event_date){m.className='msg err';m.textContent='날짜를 입력하세요.';return;}
+  function calGoToday(){ calCursor=new Date(); calCursor.setHours(0,0,0,0); loadCal(); }
+
+  function calRange(){
+    if(calView==='month'){
+      const first=new Date(calCursor.getFullYear(),calCursor.getMonth(),1);
+      const last=new Date(calCursor.getFullYear(),calCursor.getMonth()+1,0);
+      return { from:cSunday(first), to:cAddDays(cSunday(last),6) };
+    }
+    const from=cSunday(calCursor); return { from, to:cAddDays(from,6) };
+  }
+  async function loadCal(){
+    const {from,to}=calRange();
+    $('calTitle').textContent = calView==='month'
+      ? (calCursor.getFullYear()+'년 '+(calCursor.getMonth()+1)+'월')
+      : ((from.getMonth()+1)+'/'+from.getDate()+' – '+(to.getMonth()+1)+'/'+to.getDate());
+    try{
+      const [cal,td]=await Promise.all([
+        fetch(session.api+'/api/calendar?from='+cYmd(from)+'&to='+cYmd(to),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+      ]);
+      calEvents=cal.items||[];
+      calTodos=(td.items||[]).filter(t=>t.due_date);
+      renderCal(from,to);
+    }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function eventsOn(key){ return calEvents.filter(e=>e.date===key); }
+  function todosOn(key){ return calTodos.filter(t=>t.due_date===key); }
+  function renderCal(from,to){
+    const today=cYmd(new Date());
+    const head=DOW.map((w,i)=>'<div class="cgdow '+(i===0?'sun':(i===6?'sat':''))+'">'+w+'</div>').join('');
+    const days=[]; for(let d=new Date(from); d<=to; d=cAddDays(d,1)) days.push(new Date(d));
+    const week=(calView==='week');
+    const maxChips=week?8:3;
+    const cells=days.map(day=>{
+      const key=cYmd(day);
+      const evs=eventsOn(key), tds=todosOn(key);
+      const out=(calView==='month'&&day.getMonth()!==calCursor.getMonth());
+      const isToday=key===today;
+      let chips='';
+      const all=[...evs.map(e=>({type:'ev',e})),...tds.map(t=>({type:'td',t}))];
+      all.slice(0,maxChips).forEach(x=>{
+        if(x.type==='ev') chips+='<div class="chip ev">'+(x.e.time?'<span class="tm">'+esc(x.e.time)+'</span> ':'')+esc(x.e.content)+'</div>';
+        else chips+='<div class="chip td">▪ '+esc(x.t.title)+'</div>';
+      });
+      if(all.length>maxChips) chips+='<div class="cgmore">+'+(all.length-maxChips)+' 더</div>';
+      return '<div class="cgcell'+(week?' week':'')+(out?' out':'')+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
+        +'<div class="dn">'+day.getDate()+'</div>'+chips+'</div>';
+    }).join('');
+    $('calGrid').innerHTML='<div class="calgrid">'+head+cells+'</div>';
+  }
+
+  // 날짜 상세/추가 모달
+  let dmDate=null;
+  function openDay(key){
+    dmDate=key;
+    const [y,m,d]=key.split('-'); const wd=DOW[new Date(key+'T00:00:00').getDay()];
+    $('dmTitle').textContent=Number(m)+'월 '+Number(d)+'일('+wd+')';
+    const evs=eventsOn(key), tds=todosOn(key);
+    let html='';
+    // 일정 목록
+    html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:4px">일정</div>';
+    if(evs.length) html+=evs.map(e=>{
+      const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
+      return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(e.time?'<span style="color:var(--gold)">'+esc(e.time)+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+    }).join('');
+    else html+='<div class="hint">일정 없음</div>';
+    // 할 일(마감)
+    if(tds.length){
+      html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 4px">이 날 마감 할 일</div>';
+      html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
+    }
+    // 일정 추가 폼
+    const scopeOpts=isDirector
+      ? '<option value="personal">개인(내)</option><option value="company">전사</option><option value="team">팀</option>'
+      : '<option value="personal">개인(내)</option>';
+    const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
+    html+='<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
+      +'<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정 추가</div>'
+      +'<div class="row">'
+      +'<div style="flex:0 0 110px"><label>시간</label><input id="dm-time" type="text" placeholder="예: 14:30"></div>'
+      +'<div style="flex:2"><label>내용</label><input id="dm-content" type="text" placeholder="일정 내용"></div>'
+      +'<div style="flex:0 0 120px"><label>대상</label><select id="dm-scope" onchange="dmScopeChange()">'+scopeOpts+'</select></div>'
+      +'<div style="flex:0 0 140px" id="dm-teamWrap" class="hidden"><label>팀</label><select id="dm-team">'+teamOpts+'</select></div>'
+      +'</div>'
+      +'<div style="margin-top:8px"><button class="btn" onclick="addCalDay()">추가</button></div>'
+      +'<div class="msg" id="dm-msg"></div>'
+      +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다.</div></div>';
+    $('dmBody').innerHTML=html;
+    $('dayModal').style.display='flex';
+  }
+  function closeDay(){ $('dayModal').style.display='none'; }
+  function dmScopeChange(){ $('dm-teamWrap').classList.toggle('hidden',$('dm-scope').value!=='team'); }
+  async function addCalDay(){
+    const m=$('dm-msg');m.className='msg';
+    const body={event_date:dmDate,event_time:$('dm-time').value.trim(),content:$('dm-content').value.trim(),scope:$('dm-scope').value};
+    if(body.scope==='team')body.team_id=$('dm-team').value;
     if(!body.content){m.className='msg err';m.textContent='내용을 입력하세요.';return;}
     try{
       const res=await fetch(session.api+'/api/calendar',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='추가 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='일정을 추가했습니다.';
-      $('cf-content').value='';$('cf-time').value='';
-      loadCal();
+      closeDay();loadCal();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
   async function delCal(id){
     if(!confirm('이 일정을 삭제할까요?'))return;
-    await fetch(session.api+'/api/calendar/'+id,{method:'DELETE',headers:auth()});loadCal();
+    await fetch(session.api+'/api/calendar/'+id,{method:'DELETE',headers:auth()});
+    closeDay();loadCal();
   }
 
   // ===== 공지 =====
@@ -322,6 +437,9 @@
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('calPrev').addEventListener('click',()=>calShift(-1));
+  $('calNext').addEventListener('click',()=>calShift(1));
+  $('calToday').addEventListener('click',()=>calGoToday());
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 </body>
