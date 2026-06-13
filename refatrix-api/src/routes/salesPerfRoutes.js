@@ -262,4 +262,28 @@ export default async function salesPerfRoutes(app) {
       locked: !seeMkt,
     };
   });
+
+  // 주간 캘린더용: 한 주(또는 한 달)의 일자별 매출 상세(고객명+금액)
+  app.get('/api/salesperf/daily', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const ta = teamArrOf(perm);
+    const seeSales = fieldVisible(perm, 'sales_amount');
+    const start = String(req.query.start || '');
+    const end = String(req.query.end || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { start, end, days: {}, locked: !seeSales };
+
+    let q = `SELECT to_char(i.inv_date,'YYYY-MM-DD') AS d, c.name AS customer, i.subtotal_mxn AS amt, i.id
+               FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+              WHERE i.status='posted' AND i.inv_date >= $1 AND i.inv_date <= $2 AND c.deleted_at IS NULL`;
+    const p = [start, end];
+    if (ta) { p.push(ta); q += ` AND c.team_id = ANY($3)`; }
+    q += ` ORDER BY i.inv_date, i.id`;
+    const rows = (await query(q, p)).rows;
+
+    const days = {};
+    for (const r of rows) {
+      (days[r.d] ||= []).push({ customer: r.customer, amount: seeSales ? r2(r.amt) : null });
+    }
+    return { start, end, days, locked: !seeSales };
+  });
 }
