@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 수입 입고</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:980px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+  .lrow{display:flex;gap:8px;margin-top:8px;align-items:flex-end}
+  .lrow>div{flex:1}.lrow .x{flex:0 0 auto}
+  .suggest{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid var(--line);
+    border-radius:8px;box-shadow:0 6px 20px rgba(20,61,52,.12);max-height:220px;overflow:auto;margin-top:2px}
+  .suggest div{padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid #f0ece3}
+  .suggest div:hover{background:#f3f8f5}
+  .suggest .code{font-weight:700;color:var(--brand)}
+  .suggest .meta{color:var(--muted);font-size:11.5px}
+  .picked{border-color:var(--income)!important;background:#f4fbf8}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .badge{display:inline-block;background:var(--gold);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수입 입고 (이동평균)</div></div><div class="who" id="who"></div></div>
+
+  <!-- 로그인 -->
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+    <div class="hint">디렉터(admin)로 로그인하면 입고 작성과 승인을 모두 할 수 있습니다.</div>
+  </div>
+
+  <!-- 선택 제품 현재 상태 -->
+  <div class="card hidden" id="stateCard">
+    <h2>선택한 제품의 현재 상태 (재고 · 평균원가)</h2>
+    <div id="stateTable"><div class="hint">아래에서 제품을 검색해 선택하면 여기에 현재 재고·평균원가가 표시됩니다.</div></div>
+  </div>
+
+  <!-- 입고 작성 -->
+  <div class="card hidden" id="formCard">
+    <h2>수입 입고 작성</h2>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <span style="font-size:12.5px;color:var(--muted);font-weight:600">엑셀로 대량 입력:</span>
+      <button class="btn ghost sm" id="dlTpl">① 빈 양식 내려받기</button>
+      <button class="btn ghost sm" id="upBtn">② 채운 엑셀 올리기</button>
+      <input type="file" id="upFile" accept=".xlsx,.xls" class="hidden">
+      <span style="font-size:11px;color:var(--muted)">제품코드 기준으로 매칭됩니다. 통화는 USD/MXN.</span>
+    </div>
+
+    <div class="row">
+      <div><label>입고일</label><input id="idate" type="date"></div>
+      <div><label>기본 통화</label><select id="cur"><option>USD</option><option>MXN</option></select></div>
+      <div><label>환율 (USD→MXN)</label><input id="fx" type="number" step="0.0001" value="17.40"></div>
+    </div>
+
+    <div class="linehead"><label style="margin:0">입고 라인 (SKU별) — 코드·이름·바코드로 검색</label><button class="btn ghost sm" id="addLine">+ 줄 추가</button></div>
+    <div id="lines"></div>
+
+    <div class="linehead" style="margin-top:14px"><label style="margin:0">부대비용 (명목 · 금액 · 통화 · 인보이스)</label><button class="btn ghost sm" id="addOh">+ 줄 추가</button></div>
+    <div id="ohs"></div>
+
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn" id="preview">① 입고 작성 + 미리보기</button>
+      <button class="btn gold" id="approve" disabled>② 디렉터 승인 (재고·평균원가 반영)</button>
+    </div>
+    <div class="msg" id="formMsg"></div>
+    <div id="previewTable"></div>
+    <div class="hint">각 항목의 <b>통화</b>에 따라 입고일 환율로 MXN 환산됩니다 — <b>USD는 ×환율</b>, <b>MXN은 그대로</b>(환율 미적용). 부대비용 합계(MXN)는 선적 총수량으로 <b>1/n 균등 배분</b>되어 단위원가에 더해집니다. 승인을 눌러야 재고와 평균원가가 실제로 바뀝니다.</div>
+  </div>
+</div>
+
+<script>
+  let session = { token:null, user:null, api:'' };
+  let prodCache = {};         // id -> {id, code, name, stock_qty, avg_cost}
+  let currentBatchId = null;
+  const $ = (id)=>document.getElementById(id);
+  const fmt = (n)=> n==null ? '—' : Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const H = (h)=>{ const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
+  const auth = ()=>({'Authorization':'Bearer '+session.token});
+
+  // ---- 로그인 ----
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');
+      $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
+      $('idate').value=new Date().toISOString().slice(0,10);
+      addLine(); addOh();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ---- 제품 검색 (코드·이름·바코드) ----
+  async function searchProducts(q){
+    const res=await fetch(session.api+'/api/products?limit=8&q='+encodeURIComponent(q),{headers:auth()});
+    const d=await res.json(); return d.items||[];
+  }
+
+  function curSel(cls,val){return `<select class="${cls}"><option ${val==='USD'?'selected':''}>USD</option><option ${val==='MXN'?'selected':''}>MXN</option></select>`;}
+
+  // ---- 입고 라인 (타이핑 검색) ----
+  // preset: {id, code, name, qty, price, currency, invoice_no} (엑셀 업로드 시)
+  function addLine(preset){
+    const row=H(`<div class="lrow" data-pid="">
+      <div style="position:relative;flex:2;min-width:220px">
+        <label>제품 (코드·이름·바코드 검색)</label>
+        <input class="l-search" type="text" placeholder="예: CTR-10 · 브레이크 · 바코드" autocomplete="off">
+        <div class="suggest hidden"></div>
+      </div>
+      <div style="flex:0 0 70px"><label>수량</label><input class="l-qty" type="number" step="0.001" value="100"></div>
+      <div style="flex:0 0 90px"><label>수입단가</label><input class="l-price" type="number" step="0.01" value="10"></div>
+      <div style="flex:0 0 72px"><label>통화</label>${curSel('l-cur','USD')}</div>
+      <div style="flex:0 0 120px"><label>인보이스</label><input class="l-inv" type="text" placeholder="INV-..."></div>
+      <div class="x"><button class="btn ghost sm x-del" style="margin-bottom:1px">✕</button></div>
+    </div>`);
+    const search=row.querySelector('.l-search');
+    const box=row.querySelector('.suggest');
+    let timer=null;
+    search.addEventListener('input',()=>{
+      row.dataset.pid=''; search.classList.remove('picked');   // 다시 입력하면 선택 해제
+      clearTimeout(timer);
+      const q=search.value.trim();
+      if(q.length<1){box.classList.add('hidden');box.innerHTML='';return;}
+      timer=setTimeout(async()=>{
+        let items=[];
+        try{items=await searchProducts(q);}catch(e){}
+        if(!items.length){box.innerHTML='<div class="meta">일치하는 제품이 없습니다</div>';box.classList.remove('hidden');return;}
+        box.innerHTML=items.map(p=>`<div data-id="${p.id}"><span class="code">${p.code}</span> · ${p.name||''}<div class="meta">바코드 ${p.ean||'-'} · 재고 ${Number(p.stock_qty).toLocaleString()}</div></div>`).join('');
+        box.classList.remove('hidden');
+        [...box.children].forEach(el=>{
+          if(!el.dataset.id)return;
+          el.onclick=()=>{
+            const p=items.find(x=>String(x.id)===el.dataset.id);
+            prodCache[p.id]={id:p.id,code:p.code,name:p.name,stock_qty:p.stock_qty,avg_cost:('avg_cost' in p?p.avg_cost:null)};
+            search.value=p.code+' · '+(p.name||'');
+            search.classList.add('picked');
+            row.dataset.pid=p.id;
+            box.classList.add('hidden');box.innerHTML='';
+            renderState();
+          };
+        });
+      },250);
+    });
+    search.addEventListener('blur',()=>setTimeout(()=>box.classList.add('hidden'),200));
+    row.querySelector('.x-del').onclick=()=>row.remove();
+    $('lines').appendChild(row);
+
+    if(preset){
+      search.value=preset.code+' · '+(preset.name||'');
+      search.classList.add('picked');
+      row.dataset.pid=preset.id;
+      row.querySelector('.l-qty').value=preset.qty;
+      row.querySelector('.l-price').value=preset.price;
+      row.querySelector('.l-cur').value=(preset.currency==='MXN'?'MXN':'USD');
+      row.querySelector('.l-inv').value=preset.invoice_no||'';
+      prodCache[preset.id]={id:preset.id,code:preset.code,name:preset.name,stock_qty:preset.stock_qty??0,avg_cost:preset.avg_cost??null};
+    }
+    return row;
+  }
+
+  function addOh(preset){
+    const row=H(`<div class="lrow">
+      <div><label>명목</label><input class="o-label" type="text" placeholder="예: 해상운임" value="해상운임"></div>
+      <div style="flex:0 0 100px"><label>금액</label><input class="o-amt" type="number" step="0.01" value="200"></div>
+      <div style="flex:0 0 72px"><label>통화</label>${curSel('o-cur','USD')}</div>
+      <div style="flex:0 0 120px"><label>인보이스 번호</label><input class="o-inv" type="text" placeholder="INV-..."></div>
+      <div class="x"><button class="btn ghost sm x-del" style="margin-bottom:1px">✕</button></div>
+    </div>`);
+    row.querySelector('.x-del').onclick=()=>row.remove();
+    $('ohs').appendChild(row);
+    if(preset){
+      row.querySelector('.o-label').value=preset.label||'부대비용';
+      row.querySelector('.o-amt').value=preset.amount;
+      row.querySelector('.o-cur').value=(preset.currency==='MXN'?'MXN':'USD');
+      row.querySelector('.o-inv').value=preset.invoice_no||'';
+    }
+    return row;
+  }
+
+  // ---- 엑셀 양식 다운로드 / 업로드 ----
+  function downloadTemplate(){
+    const wsLine=XLSX.utils.json_to_sheet([
+      {'제품코드':'CTR-1001','제품명(참고·선택)':'브레이크 패드 전륜','수량':100,'수입단가':10,'통화(USD/MXN)':'USD','매입인보이스':'INV-001'}
+    ]);
+    const wsOh=XLSX.utils.json_to_sheet([
+      {'명목':'해상운임','금액':200,'통화(USD/MXN)':'USD','인보이스번호':'INV-OH-1'}
+    ]);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,wsLine,'입고라인');
+    XLSX.utils.book_append_sheet(wb,wsOh,'부대비용');
+    XLSX.writeFile(wb,'Refatrix_수입양식.xlsx');
+  }
+
+  const pick=(r,keys)=>{ for(const k of keys){ if(r[k]!==undefined && r[k]!=='') return r[k]; } return ''; };
+  const normCur=(v)=> String(v).trim().toUpperCase()==='MXN' ? 'MXN' : 'USD';
+
+  async function importExcel(file){
+    const m=$('formMsg'); m.className='msg';
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const lineSheet=wb.Sheets['입고라인']||wb.Sheets[wb.SheetNames[0]];
+      const ohSheet=wb.Sheets['부대비용']||wb.Sheets[wb.SheetNames[1]];
+      const lineRows=lineSheet?XLSX.utils.sheet_to_json(lineSheet,{defval:''}):[];
+      const ohRows=ohSheet?XLSX.utils.sheet_to_json(ohSheet,{defval:''}):[];
+
+      const parsed=lineRows.map(r=>({
+        code:String(pick(r,['제품코드','코드','code'])).trim(),
+        qty:Number(pick(r,['수량','qty'])||0),
+        price:Number(pick(r,['수입단가','단가','import_price'])||0),
+        currency:normCur(pick(r,['통화(USD/MXN)','통화','currency'])),
+        invoice_no:String(pick(r,['매입인보이스','인보이스','invoice_no'])||'').trim(),
+      })).filter(x=>x.code);
+      if(!parsed.length){m.className='msg err';m.textContent='엑셀 "입고라인" 시트에서 제품코드가 있는 행을 찾지 못했습니다.';return;}
+
+      const codes=[...new Set(parsed.map(p=>p.code))];
+      const res=await fetch(session.api+'/api/products/lookup',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes})});
+      const d=await res.json();
+      const found=d.found||{}, missing=d.missing||[];
+
+      $('lines').innerHTML='';
+      let added=0;
+      for(const p of parsed){
+        const f=found[p.code];
+        if(!f) continue;
+        addLine({id:f.id,code:f.code,name:f.name,qty:p.qty,price:p.price,currency:p.currency,invoice_no:p.invoice_no});
+        added++;
+      }
+      if(!added) addLine();
+
+      $('ohs').innerHTML='';
+      const ohParsed=ohRows.map(r=>({
+        label:String(pick(r,['명목','label'])||'').trim(),
+        amount:Number(pick(r,['금액','amount'])||0),
+        currency:normCur(pick(r,['통화(USD/MXN)','통화','currency'])),
+        invoice_no:String(pick(r,['인보이스번호','인보이스','invoice_no'])||'').trim(),
+      })).filter(o=>o.amount>0||o.label);
+      for(const o of ohParsed) addOh(o);
+      if(!ohParsed.length) addOh();
+
+      renderState();
+      if(missing.length){ m.className='msg err';
+        m.innerHTML='입고라인 '+added+'건을 불러왔습니다. <b>다음 제품코드는 DB에서 찾지 못해 제외</b>되었습니다: '+missing.join(', ')+' (제품 마스터 등록 후 다시 시도하세요)';
+      }else{ m.className='msg ok'; m.textContent='엑셀에서 입고라인 '+added+'건, 부대비용 '+ohParsed.length+'건을 불러왔습니다. 내용을 확인하고 ①작성+미리보기를 누르세요.'; }
+    }catch(e){ m.className='msg err'; m.textContent='엑셀을 읽지 못했습니다. 양식을 확인하세요.'; }
+  }
+
+  function gatherLines(){
+    const rows=[...document.querySelectorAll('#lines .lrow')];
+    const out=[], missing=[];
+    rows.forEach((r,i)=>{
+      const qty=Number(r.querySelector('.l-qty').value);
+      const pid=r.dataset.pid;
+      const hasText=r.querySelector('.l-search').value.trim().length>0;
+      if(!pid){ if(hasText||qty>0) missing.push(i+1); return; }
+      if(qty>0) out.push({
+        product_id:Number(pid), qty,
+        import_price:Number(r.querySelector('.l-price').value),
+        currency:r.querySelector('.l-cur').value,
+        invoice_no:r.querySelector('.l-inv').value.trim()||null,
+      });
+    });
+    return {lines:out, missing};
+  }
+  function gatherOhs(){
+    return [...document.querySelectorAll('#ohs .lrow')].map(r=>({
+      label:r.querySelector('.o-label').value.trim()||'부대비용',
+      amount:Number(r.querySelector('.o-amt').value)||0,
+      currency:r.querySelector('.o-cur').value,
+      invoice_no:r.querySelector('.o-inv').value.trim()||null,
+    })).filter(o=>o.amount>0);
+  }
+
+  function renderState(){
+    const ids=Object.keys(prodCache);
+    if(!ids.length){$('stateTable').innerHTML='<div class="hint">아래에서 제품을 검색해 선택하면 여기에 현재 재고·평균원가가 표시됩니다.</div>';return;}
+    $('stateTable').innerHTML=`<table><thead><tr><th>코드</th><th>제품명</th><th class="num">재고</th><th class="num">평균원가(MXN)</th></tr></thead>
+      <tbody>${ids.map(id=>{const p=prodCache[id];return `<tr><td>${p.code}</td><td>${p.name||''}</td><td class="num">${Number(p.stock_qty).toLocaleString()}</td><td class="num">${p.avg_cost==null?'🔒':fmt(p.avg_cost)}</td></tr>`;}).join('')}</tbody></table>`;
+  }
+
+  async function refreshSelected(){
+    // 승인 후 선택 제품들의 최신 재고·평균원가를 다시 가져와 갱신
+    for(const id of Object.keys(prodCache)){
+      const code=prodCache[id].code;
+      try{
+        const items=await searchProducts(code);
+        const p=items.find(x=>String(x.id)===String(id));
+        if(p) prodCache[id]={id:p.id,code:p.code,name:p.name,stock_qty:p.stock_qty,avg_cost:('avg_cost' in p?p.avg_cost:null)};
+      }catch(e){}
+    }
+    renderState();
+  }
+
+  // ---- 작성 + 미리보기 ----
+  async function createAndPreview(){
+    const m=$('formMsg'); m.className='msg'; $('previewTable').innerHTML='';
+    const {lines,missing}=gatherLines();
+    if(missing.length){m.className='msg err';m.textContent=missing.length+'번째 줄: 검색 후 목록에서 제품을 선택하세요(타이핑만으로는 안 됩니다).';return;}
+    if(!lines.length){m.className='msg err';m.textContent='입고 라인을 1개 이상 입력하세요.';return;}
+    const body={import_date:$('idate').value,currency:$('cur').value,fx_rate:Number($('fx').value),lines,overheads:gatherOhs(),batch_no:'TEST-'+Date.now()};
+    $('preview').disabled=true;$('preview').textContent='작성 중…';
+    try{
+      const res=await fetch(session.api+'/api/imports',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='작성 실패: '+(d.error||res.status);return;}
+      currentBatchId=d.id;
+      const pv=await fetch(session.api+'/api/imports/'+d.id+'/preview',{headers:auth()});
+      const pd=await pv.json();
+      if(pd.error){m.className='msg err';m.textContent='미리보기 실패: '+pd.error;return;}
+      renderPreview(pd.preview||[]);
+      m.className='msg ok'; m.innerHTML='입고 건이 작성되었습니다 <span class="badge">승인 대기</span> (배치 #'+d.id+'). 아래 예상 원가를 확인하고 ②승인을 누르면 반영됩니다.';
+      $('approve').disabled=false;
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('preview').disabled=false;$('preview').textContent='① 입고 작성 + 미리보기';}
+  }
+
+  function pname(id){const p=prodCache[id];return p?(p.code+' · '+(p.name||'')):('#'+id);}
+  function renderPreview(rows){
+    $('previewTable').innerHTML=`<table><thead><tr><th>제품</th><th class="num">수량</th><th class="num">입고 단위원가(MXN)</th><th class="num">배분 부대비용</th><th class="num">예상 평균원가</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${pname(r.product_id)}</td><td class="num">${Number(r.qty).toLocaleString()}</td><td class="num">${fmt(r.unit_cost_mxn)}</td><td class="num">${fmt(r.alloc_overhead)}</td><td class="num"><b>${fmt(r.avg_cost_after)}</b></td></tr>`).join('')}</tbody></table>`;
+  }
+
+  // ---- 승인 ----
+  async function approve(){
+    if(!currentBatchId)return;
+    const m=$('formMsg');
+    $('approve').disabled=true;$('approve').textContent='반영 중…';
+    try{
+      const res=await fetch(session.api+'/api/imports/'+currentBatchId+'/approve',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='승인 실패: '+(d.error||res.status);$('approve').disabled=false;$('approve').textContent='② 디렉터 승인 (재고·평균원가 반영)';return;}
+      m.className='msg ok'; m.textContent='승인 완료! 재고와 평균원가가 갱신되었습니다. 위 "선택한 제품의 현재 상태" 표가 새 값으로 바뀐 것을 확인하세요.';
+      currentBatchId=null;$('approve').textContent='② 디렉터 승인 (재고·평균원가 반영)';
+      await refreshSelected();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';$('approve').disabled=false;}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('addLine').addEventListener('click',()=>addLine());
+  $('addOh').addEventListener('click',()=>addOh());
+  $('preview').addEventListener('click',createAndPreview);
+  $('approve').addEventListener('click',approve);
+  $('dlTpl').addEventListener('click',downloadTemplate);
+  $('upBtn').addEventListener('click',()=>$('upFile').click());
+  $('upFile').addEventListener('change',e=>{ if(e.target.files[0]) importExcel(e.target.files[0]); e.target.value=''; });
+</script>
+</body>
+</html>

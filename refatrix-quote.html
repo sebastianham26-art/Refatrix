@@ -2,6 +2,9 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix ERP · 견적 (수주관리)</title>
 <style>
@@ -104,6 +107,7 @@
 
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn" id="saveBtn" onclick="saveQuote()">견적 저장</button>
+        <button class="btn ghost" onclick="exportExcel()">엑셀 다운로드</button>
         <button class="btn ghost" onclick="clearLines()">전체 비우기</button>
         <span id="saveMsg" class="msg" style="margin:0"></span>
       </div>
@@ -123,6 +127,7 @@
 <script>
   let session={token:null,user:null,api:''};
   let customers=[], curDisc=0, lines=[]; // lines: {code, product_id?, qty, _calc?}
+  let lastPreview=null; // 마지막 계산 결과(엑셀 다운로드용)
   let pendingCand=null; // {code, qty, candidates}
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -211,6 +216,43 @@
   }
   document.addEventListener('click',(e)=>{ if(!e.target.closest('#inCode')&&!e.target.closest('#acBox')) hideAc(); });
 
+  // ===== 작성 중 견적 → 엑셀 다운로드 =====
+  function exportExcel(){
+    const m=$('saveMsg');m.className='msg';
+    if(!lastPreview||!(lastPreview.lines||[]).length){ m.className='msg err';m.textContent='먼저 품목을 추가하세요.';return; }
+    const custName=($('custSel').selectedOptions[0]||{}).text||'';
+    const date=$('qDate').value||'';
+    const rows=[];
+    rows.push(['Refatrix — Cotización']);
+    rows.push(['Cliente', custName, '', 'Fecha', date]);
+    rows.push([]);
+    rows.push(['CTR','SYD','Producto / Aplicación','Cantidad','List','Desc%','P.Unit','IVA','Total c/IVA','Stock','Estado']);
+    const flagLbl={ok:'OK',low_stock:'Stock bajo',not_found:'No encontrado'};
+    (lastPreview.lines||[]).forEach(l=>{
+      if(l.ambiguous){ rows.push([l.input_code,'','(múltiples coincidencias)',l.qty]); return; }
+      rows.push([
+        l.ctr_code||'', (l.syd_codes||[]).join(' / '),
+        (l.product_name||'')+(l.app_text?' · '+l.app_text:''),
+        Number(l.qty)||0,
+        l.matched?Number(l.list_price):'', l.matched?Number(l.discount_rate):'',
+        l.matched?Number(l.final_price):'', l.matched?Number(l.line_iva):'',
+        l.matched?Number(l.line_total):'',
+        l.avail_stock==null?'':Number(l.avail_stock), flagLbl[l.stock_flag||'ok'],
+      ]);
+    });
+    const t=lastPreview.totals||{};
+    rows.push([]);
+    rows.push(['','','TOTAL', Number(t.totalQty)||0,'','','', Number(t.iva)||0, Number(t.total)||0]);
+    rows.push(['','','SKU', t.skuCount||0,'','','','Subtotal', Number(t.subtotal)||0]);
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:9},{wch:11},{wch:7},{wch:11},{wch:11},{wch:13},{wch:9},{wch:12}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Cotizacion');
+    const safe=(custName||'cotizacion').replace(/[^\w가-힣]+/g,'_').slice(0,30);
+    XLSX.writeFile(wb,'cotizacion_'+safe+'.xlsx');
+    m.className='msg ok';m.textContent='엑셀을 다운로드했습니다.';
+  }
+
   // ===== 엑셀 양식 다운로드 =====
   function downloadTemplate(){
     const ws=XLSX.utils.aoa_to_sheet([
@@ -274,6 +316,7 @@
     }catch(e){ $('linesWrap').innerHTML='<div class="hint">계산 실패</div>'; }
   }
   function renderLines(d){
+    lastPreview=d;
     const L=d.lines||[];
     let html='<table><thead><tr>'
       +'<th class="l">CTR</th><th class="l">경쟁사(SYD)</th><th class="l">제품/적용</th><th>수량</th><th>List</th><th>할인</th><th>단가</th><th>IVA</th><th>합계(IVA포함)</th><th>가용재고</th><th>상태</th><th></th></tr></thead><tbody>';
