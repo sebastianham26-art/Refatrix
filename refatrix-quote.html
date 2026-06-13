@@ -100,6 +100,7 @@
         <div style="margin-left:auto"><label>엑셀</label>
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
+            <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
         </div>
@@ -110,6 +111,7 @@
 
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn" id="saveBtn" onclick="saveQuote()">견적 저장</button>
+        <button class="btn ghost" onclick="printQuote()">견적서 인쇄</button>
         <button class="btn ghost" onclick="exportExcel()">엑셀 다운로드</button>
         <button class="btn ghost" onclick="clearLines()">전체 비우기</button>
         <span id="saveMsg" class="msg" style="margin:0"></span>
@@ -226,6 +228,122 @@
     else if(e.key==='Escape'){ hideAc(); }
   }
   document.addEventListener('click',(e)=>{ if(!e.target.closest('#inCode')&&!e.target.closest('#acBox')) hideAc(); });
+
+  // ===== 견적서 인쇄 =====
+  let companyCache=null;
+  async function getCompany(){
+    if(companyCache)return companyCache;
+    try{ companyCache=await fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()); }catch(e){ companyCache={}; }
+    return companyCache;
+  }
+  async function printQuote(){
+    const m=$('saveMsg');m.className='msg';
+    if(!lastPreview||!(lastPreview.lines||[]).length){ m.className='msg err';m.textContent='먼저 품목을 추가하세요.';return; }
+    const cid=$('custSel').value;
+    if(!cid){ m.className='msg err';m.textContent='고객을 선택하세요.';return; }
+    const custName=($('custSel').selectedOptions[0]||{}).text||'';
+    const date=$('qDate').value||'';
+    const co=await getCompany();
+    const L=lastPreview.lines.filter(l=>!l.ambiguous);
+    const t=lastPreview.totals||{};
+    const rowsHtml=L.map(l=>{
+      const flag={ok:'',low_stock:'재고부족',not_found:'제품없음'}[l.stock_flag||'ok'];
+      return '<tr>'
+        +'<td>'+esc(l.ctr_code||'—')+'</td>'
+        +'<td>'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
+        +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+        +'<td class="r">'+fmtq(l.qty)+'</td>'
+        +'<td class="r">'+(l.matched?fmt(l.list_price):'—')+'</td>'
+        +'<td class="r">'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'
+        +'<td class="r">'+(l.matched?fmt(l.final_price):'—')+'</td>'
+        +'<td class="r">'+(l.matched?fmt(l.line_iva):'—')+'</td>'
+        +'<td class="r">'+(l.matched?fmt(l.line_total):'—')+'</td>'
+        +'<td class="r">'+(l.avail_stock==null?'—':fmtq(l.avail_stock))+(flag?' <span class="warn">'+flag+'</span>':'')+'</td>'
+        +'</tr>';
+    }).join('');
+    const bankParts=[];
+    if(co.bank_name)bankParts.push('Banco: '+esc(co.bank_name));
+    if(co.bank_account)bankParts.push('Cuenta: '+esc(co.bank_account));
+    if(co.bank_clabe)bankParts.push('CLABE: '+esc(co.bank_clabe));
+    if(co.bank_holder)bankParts.push('Beneficiario: '+esc(co.bank_holder));
+    const logo=co.logo_data?'<img src="'+co.logo_data+'" style="max-height:64px;max-width:220px">':'<div class="emisor-name">'+esc(co.emisor||'Refatrix')+'</div>';
+    const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cotización</title><style>'
+      +'body{font-family:Arial,system-ui,sans-serif;color:#1c1b19;padding:26px;font-size:12px}'
+      +'.head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #143D34;padding-bottom:12px}'
+      +'.emisor-name{font-size:22px;font-weight:800;color:#143D34}'
+      +'.co{font-size:11px;color:#444;line-height:1.5;margin-top:6px}'
+      +'.title{text-align:right}.title h2{margin:0;color:#143D34;font-size:20px}'
+      +'.meta{margin:14px 0;font-size:12px;line-height:1.6}'
+      +'table{width:100%;border-collapse:collapse;margin-top:8px}'
+      +'th,td{border:1px solid #ccc;padding:5px 6px;font-size:11px}'
+      +'th{background:#143D34;color:#fff;font-weight:600}'
+      +'td.l{text-align:left}td.r{text-align:right}th{text-align:center}'
+      +'.ap{color:#777;font-size:10px}.warn{color:#B23A2E;font-weight:700}'
+      +'tfoot td{font-weight:800;background:#f3f1ea}'
+      +'.totbox{margin-top:14px;display:flex;justify-content:flex-end}'
+      +'.totbox table{width:auto}.totbox td{border:none;padding:3px 10px}'
+      +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#faf8f3}'
+      +'.bank b{color:#143D34}'
+      +'.foot{margin-top:18px;font-size:10px;color:#888;text-align:center}'
+      +'@media print{.noprint{display:none}}'
+      +'</style></head><body>'
+      +'<div class="head"><div>'+logo+'<div class="co">'+(co.emisor&&co.logo_data?'<b>'+esc(co.emisor)+'</b><br>':'')+(co.domicilio?esc(co.domicilio)+'<br>':'')+(co.phone?'Tel: '+esc(co.phone)+' · ':'')+(co.homepage?esc(co.homepage):'')+'</div></div>'
+      +'<div class="title"><h2>COTIZACIÓN</h2></div></div>'
+      +'<div class="meta"><b>Cliente:</b> '+esc(custName)+' &nbsp;&nbsp; <b>Fecha:</b> '+esc(date)+'</div>'
+      +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th><th>List</th><th>Desc.</th><th>P.Unit</th><th>IVA</th><th>Total c/IVA</th><th>Existencia</th></tr></thead>'
+      +'<tbody>'+rowsHtml+'</tbody></table>'
+      +'<div class="totbox"><table>'
+      +'<tr><td>Total piezas:</td><td class="r">'+fmtq(t.totalQty||0)+'</td></tr>'
+      +'<tr><td>SKU:</td><td class="r">'+(t.skuCount||0)+'</td></tr>'
+      +'<tr><td>Subtotal:</td><td class="r">'+fmt(t.subtotal||0)+'</td></tr>'
+      +'<tr><td>IVA (16%):</td><td class="r">'+fmt(t.iva||0)+'</td></tr>'
+      +'<tr><td><b>Total c/IVA:</b></td><td class="r"><b>'+fmt(t.total||0)+'</b></td></tr>'
+      +'</table></div>'
+      +(bankParts.length?'<div class="bank"><b>Datos bancarios</b><br>'+bankParts.join(' &nbsp;·&nbsp; ')+'</div>':'')
+      +'<div class="foot">'+esc(co.emisor||'Refatrix')+(co.homepage?' · '+esc(co.homepage):'')+'</div>'
+      +'<div class="noprint" style="margin-top:18px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;background:#143D34;color:#fff;border:none;border-radius:6px;cursor:pointer">인쇄 / PDF 저장</button></div>'
+      +'</body></html>';
+    const win=window.open('','_blank');
+    if(!win){ m.className='msg err';m.textContent='팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.';return; }
+    win.document.open();win.document.write(html);win.document.close();
+    m.className='msg ok';m.textContent='인쇄 창을 열었습니다.';
+  }
+
+  // ===== 전체 SKU 가격표 다운로드 =====
+  async function downloadPriceList(){
+    const m=$('lineMsg');m.className='msg';
+    const cid=$('custSel').value;
+    const custName=cid?(($('custSel').selectedOptions[0]||{}).text||''):'';
+    try{
+      m.className='msg ok';m.textContent='가격표를 불러오는 중…';
+      const url=session.api+'/api/quotes/price-list'+(cid?('?customer_id='+encodeURIComponent(cid)):'');
+      const d=await fetch(url,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ m.className='msg err';m.textContent='제품이 없습니다.';return; }
+      const disc=d.discountRate; // null=미등록
+      const rows=[];
+      rows.push(['Refatrix — Lista de precios']);
+      rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
+      rows.push([]);
+      rows.push(['CTR Code','SYD Code','Application','List Price','Descuento','Precio c/desc','Existencia']);
+      items.forEach(it=>{
+        const discCell = disc==null ? 'a definir' : (disc+'%');
+        const finalCell = disc==null ? 'a definir' : Math.round(it.list_price*(1-disc/100)*100)/100;
+        rows.push([
+          it.ctr_code||'', it.syd_codes||'', it.app||'',
+          Number(it.list_price)||0, discCell, finalCell,
+          it.stock_qty==null?'':Number(it.stock_qty),
+        ]);
+      });
+      const ws=XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols']=[{wch:14},{wch:20},{wch:30},{wch:12},{wch:10},{wch:13},{wch:11}];
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'Lista');
+      const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
+      XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
+      m.className='msg ok';m.textContent=items.length+'개 제품 가격표를 다운로드했습니다.'+(disc==null?' (할인률 미등록 → a definir)':'');
+    }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
+  }
 
   // ===== 작성 중 견적 → 엑셀 다운로드 =====
   function exportExcel(){
