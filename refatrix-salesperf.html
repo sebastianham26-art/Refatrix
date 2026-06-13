@@ -57,7 +57,7 @@
   .wfcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;z-index:2;position:relative}
   .wfseg{width:78%;background:var(--income);border-radius:4px 4px 0 0;position:relative;min-height:1px}
   .wfseg.zero{background:transparent;border-top:2px dashed #cfc8b8;border-radius:0}
-  .wflabel{font-size:10.5px;font-weight:700;color:var(--brand);position:absolute;top:-16px;width:80px;text-align:center;left:50%;transform:translateX(-50%)}
+  .wflabel{font-size:9.5px;font-weight:700;color:var(--brand);position:absolute;top:-15px;width:52px;text-align:center;left:50%;transform:translateX(-50%)}
   .wffoot{display:flex;gap:10px;margin-top:6px;padding:0 6px}
   .wffoot .wff{flex:1;text-align:center;font-size:10.5px;color:var(--muted)}
   .wffoot .wff b{display:block;color:var(--brand);font-size:11px}
@@ -127,8 +127,8 @@
 <script>
   let session={token:null,user:null,api:''};
   const now=new Date();
-  let topYms=[now.toISOString().slice(0,7)];   // 다중 선택 가능
-  let wfYm=now.toISOString().slice(0,7);
+  let topYms=[now.toISOString().slice(0,7)];   // 카드 다중 선택
+  let wfYms=[now.toISOString().slice(0,7)];     // 워터폴 다중 선택
   const YEAR=2026;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -171,7 +171,7 @@
     const top=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
       return '<button class="mbtn '+(topYms.includes(ym)?'on':'')+'" onclick="pickTop(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
     const wf=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
-      return '<button class="mbtn '+(wfYm===ym?'on':'')+'" onclick="pickWf(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+      return '<button class="mbtn '+(wfYms.includes(ym)?'on':'')+'" onclick="pickWf(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
     $('topMonths').innerHTML=top;
     $('wfMonths').innerHTML=wf;
   }
@@ -181,9 +181,14 @@
     else topYms=[...topYms,ym].sort();
     renderMonthBtns();loadCards();
   }
-  function pickWf(ym){ wfYm=ym;renderMonthBtns();loadWaterfall(); }
+  function pickWf(ym){
+    if(wfYms.includes(ym)){ if(wfYms.length>1) wfYms=wfYms.filter(x=>x!==ym); }
+    else wfYms=[...wfYms,ym].sort();
+    renderMonthBtns();loadWaterfall();
+  }
   function ymLabel(ym){const p=ym.split('-');return Number(p[1])+'월';}
   function topLabel(){ return topYms.map(ymLabel).join('·'); }
+  function wfLabel(){ return wfYms.map(ymLabel).join('·'); }
 
   async function loadCards(){
     try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());renderCards(su);}
@@ -222,8 +227,8 @@
   }
 
   async function loadWaterfall(){
-    $('wfTitle').textContent=ymLabel(wfYm)+' 주차별 매출 (워터폴)';
-    try{const wk=await fetch(session.api+'/api/salesperf/weekly?ym='+wfYm,{headers:auth()}).then(r=>r.json());renderWaterfall(wk);}
+    $('wfTitle').textContent=wfLabel()+' 주차별 매출 (워터폴)';
+    try{const wk=await fetch(session.api+'/api/salesperf/weekly?ym='+wfYms.join(','),{headers:auth()}).then(r=>r.json());renderWaterfall(wk);}
     catch(e){$('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function renderWaterfall(wk){
