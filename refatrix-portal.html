@@ -36,10 +36,43 @@
   .step .nm{font-size:13px;font-weight:800;color:var(--brand);margin-top:2px}
   .step .ds{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.35}
   .arrow{align-self:center;color:#c9c2b2;font-size:16px;flex:0 0 auto}
-  .badge{position:absolute;top:-8px;right:-6px;background:var(--expense);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .badge{position:absolute;top:7px;right:7px;background:var(--expense);color:#fff;font-size:10px;font-weight:800;border-radius:999px;min-width:17px;height:17px;padding:0 5px;display:flex;align-items:center;justify-content:center;line-height:1}
   .badge.gold{background:var(--gold)}
   /* 위젯 */
   .widgets{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:16px}
+  .mgroup{margin-top:12px}
+  .mgroup:first-child{margin-top:0}
+  .mglabel{font-size:12px;font-weight:800;color:#fff;display:inline-block;padding:2px 10px;border-radius:999px;margin-bottom:8px}
+  .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:9px}
+  .mcard{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff;transition:border-color .15s,box-shadow .15s}
+  .mcard:hover{box-shadow:0 4px 14px rgba(28,27,25,.08)}
+  .mcard .mn{font-size:13.5px;font-weight:700;color:var(--ink)}
+  .mcard .md{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.35}
+  .mcard .mbadge{position:absolute;top:8px;right:8px;min-width:17px;height:17px;padding:0 5px;background:#B23A2E;color:#fff;border-radius:999px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  /* 상단 고정 탭바 */
+  .navfixed{position:fixed;top:0;left:0;right:0;z-index:200;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.07)}
+  .navfixed-inner{max-width:1200px;margin:0 auto;padding:9px 24px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  body.has-navbar{padding-top:62px}
+  @media(max-width:600px){ body.has-navbar{padding-top:96px} }
+  .tabbtn{position:relative;border:1px solid var(--line);background:#faf8f3;border-radius:999px;padding:7px 15px;font-size:13px;font-weight:700;color:var(--brand);cursor:pointer;font-family:inherit}
+  .tabbtn.on{color:#fff}
+  .tabbtn .tbadge{position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;padding:0 4px;background:var(--expense);color:#fff;border-radius:999px;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
+  /* 트리 패널 카드 그리드 (mgrid/mcard 재사용) */
+  /* 포털 달력 */
+  .navb{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--brand);font-size:14px}
+  .pcalgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .pcdow{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:2px 0}
+  .pcdow.sun{color:var(--expense)}.pcdow.sat{color:#2f6db2}
+  .pccell{min-height:62px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:3px 4px;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+  .pccell:hover{border-color:var(--brand)}
+  .pccell.out{background:#faf8f3;opacity:.5}
+  .pccell.today{border-color:var(--income);box-shadow:0 0 0 1px var(--income) inset}
+  .pccell .pcn{font-size:10.5px;font-weight:700;color:var(--muted)}
+  .pccell.today .pcn{color:var(--income)}
+  .cgchip{font-size:9.5px;line-height:1.3;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block}
+  .cgchip.ev{background:#E4F0EB;color:#143D34}
+  .cgchip.td{background:#e6f1fb;color:#0c447c}
+  .pcmore{font-size:9px;color:var(--muted)}
   .kpi{font-size:26px;font-weight:800;color:var(--brand)}
   .kpi small{font-size:13px;color:var(--muted);font-weight:600}
   .bar{background:#f0ece2;border-radius:8px;height:18px;overflow:hidden;margin-top:8px}
@@ -57,6 +90,7 @@
 </style>
 </head>
 <body>
+<div class="navfixed hidden" id="navFixed"><div class="navfixed-inner" id="tabBar"></div></div>
 <div class="wrap">
   <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">포털 · 업무 프로세스</div></div><div class="who" id="who"></div></div>
 
@@ -73,10 +107,10 @@
   </div>
 
   <div class="hidden" id="app">
-    <!-- 공통 KPI: 당월 매출목표 대비 실적 + 월별 그래프 -->
-    <div class="card" id="kpiCard">
+    <!-- 공통 KPI: 당월 매출목표 대비 실적 (클릭 → 영업 대시보드) -->
+    <div class="card" id="kpiCard" style="cursor:pointer" onclick="goScreen('salesperf')">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-        <h2 style="margin:0">매출 목표 대비 실적 <span class="hint" style="display:inline;margin:0">— 전사 기준</span></h2>
+        <h2 style="margin:0">매출 목표 대비 실적 <span class="hint" style="display:inline;margin:0">— 전사 기준 · 클릭하면 영업 대시보드(매출목표 vs 주간성과)</span></h2>
         <span class="hint" id="kpiMonthLbl"></span>
       </div>
       <div id="kpiBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
@@ -86,6 +120,12 @@
     <div class="card" id="pendCard">
       <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
       <div class="pendlist" id="pendList"></div>
+    </div>
+
+    <!-- 트리 패널 (탭은 상단 고정 바) -->
+    <div class="card" id="menuCard">
+      <h2 id="treeTitle" style="margin:0 0 10px">내 메뉴 <span class="hint" style="display:inline;margin:0">— 위 탭을 누르면 해당 분야 화면이 펼쳐집니다.</span></h2>
+      <div id="treePanel"><div class="hint">불러오는 중…</div></div>
     </div>
 
     <!-- 프로세스 지도 -->
@@ -99,17 +139,17 @@
       <div class="flow" id="flowProduct"></div>
     </div>
 
-    <!-- 위젯 -->
-    <div class="widgets">
-      <div class="card" style="margin-top:0;grid-column:1/-1;background:linear-gradient(135deg,#143D34,#1E5247);color:#fff;cursor:pointer" onclick="goScreen('salesperf')">
-        <h2 style="color:#fff">영업 대시보드 — 매출목표 vs 주간성과 →</h2>
-        <div style="font-size:13px;color:#cfe0d8;margin-top:4px">월별·주차별 매출목표와 주간 실적(워터폴), 고객 파이프라인, 마케팅 성과를 한 화면에서 봅니다.</div>
-        <div id="perfMini" style="margin-top:10px;font-size:13px;color:#eaf2ee"></div>
+    <!-- 일정 달력 (이번 달 미리보기) -->
+    <div class="card" id="calCard">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">일정 달력</h2>
+        <button class="navb" id="pcalPrev" type="button">‹</button>
+        <span id="pcalTitle" style="font-weight:800;color:var(--brand);min-width:110px;text-align:center"></span>
+        <button class="navb" id="pcalNext" type="button">›</button>
+        <button class="btn" style="margin-left:auto;padding:7px 13px;font-size:12px" onclick="goScreen('board')">일정·공지·할 일 열기 →</button>
       </div>
-      <div class="card" style="margin-top:0;cursor:pointer" onclick="goScreen('board')">
-        <h2>일정 · 공지 · 할 일 →</h2>
-        <div id="boardMini" class="hint" style="margin-top:4px">다가오는 일정, 공지, 내 할 일을 확인합니다.</div>
-      </div>
+      <div id="pcalGrid" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+      <div class="hint" style="margin-top:8px"><span class="cgchip ev">초록</span> 일정 · <span class="cgchip td">파랑</span> 할 일(마감) · 날짜를 누르면 일정 화면으로 이동</div>
     </div>
   </div>
 </div>
@@ -139,7 +179,15 @@
     salesperf:{file:'refatrix-salesperf.html',name:'영업 대시보드'},
   };
 
-  function canSee(key){ if(key==='dashboard'||key==='salesperf'||key==='board')return true; return sum && (sum.isDirector || (sum.pages||[]).includes(key)); }
+  // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
+  const SCREEN_PAGEKEY={ sales:'sales', pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', dashboard:null, board:null, salesperf:null };
+  function canSee(key){
+    const pk=SCREEN_PAGEKEY[key];
+    if(pk===null||pk===undefined&&(key==='dashboard'||key==='salesperf'||key==='board')) return true;
+    if(pk==='__director__') return !!(sum&&sum.isDirector);
+    if(pk===undefined) return true;
+    return sum && (sum.isDirector || (sum.pages||[]).includes(pk));
+  }
 
   // 세션 복원(뒤로가기로 포털에 돌아올 때 재로그인 불필요)
   function portalSession(){
@@ -171,7 +219,7 @@
       session={token:d.token,user:d.user,api};
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
-      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       await loadSummary();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -179,8 +227,103 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPerf();renderPipe();loadBoardMini();loadKpi();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();
   }
+
+  // 탭바 + 트리: 6개 분야
+  const MENU_GROUPS=[
+    {key:'common', title:'공통', color:'#143D34', screens:['salesperf','dashboard']},
+    {key:'sales', title:'영업', color:'#1F6FB2', screens:['sales','pipeline','customers','targets']},
+    {key:'finance', title:'재무', color:'#B23A2E', screens:['finance','settlement','budget','importcost']},
+    {key:'pm', title:'제품·마케팅', color:'#6B4FB0', screens:['products','marketing']},
+    {key:'admin', title:'관리', color:'#5B6770', screens:['users']},
+    {key:'cal', title:'일정', color:'#0F6E56', screens:['board']},
+  ];
+  const SCREEN_DESC={
+    board:'달력·공지·내 할 일', dashboard:'위젯 대시보드',
+    salesperf:'매출·수금·파이프라인', sales:'인보이스 등록·승인', pipeline:'칸반·미팅', customers:'고객·외상 추적', targets:'목표 대비 달성',
+    finance:'거래·수금·캐시플로', settlement:'정산차액(비현금)', budget:'예산 계획', importcost:'수입 부대비용·원가',
+    products:'제품마스터·재고', marketing:'마케팅 예산·배분', users:'사용자·권한',
+  };
+  let openTab='common';
+  function menuBadge(key){
+    const b=sum?sum.badges||{}:{};
+    if(key==='sales') return b.sales_change_approvals||0;
+    if(key==='targets') return (b.target_approvals||0)+(b.target_rejected||0);
+    if(key==='marketing') return (b.marketing_approvals||0)+(b.marketing_rejected||0)+(b.marketing_over_months||0);
+    if(key==='pipeline') return (b.directives_unread||0)+(sum&&sum.isDirector?(b.directives_open_all||0):0)+(b.stalled_customers||0);
+    if(key==='board') return (window.__boardOpen||0)+(window.__noticeUnread||0);
+    return 0;
+  }
+  function groupVisible(g){ return g.screens.some(k=>SCREENS[k]&&canSee(k)); }
+  function groupBadge(g){ return g.screens.reduce((s,k)=>s+menuBadge(k),0); }
+  function renderTabs(){
+    const bar=$('tabBar'); if(!bar)return;
+    const vis=MENU_GROUPS.filter(groupVisible);
+    if(vis.length&&!vis.some(g=>g.key===openTab)) openTab=vis[0].key;
+    bar.innerHTML=vis.map(g=>{
+      const n=groupBadge(g);
+      const on=g.key===openTab;
+      return '<button type="button" class="tabbtn'+(on?' on':'')+'" style="'+(on?'background:'+g.color+';border-color:'+g.color:'')+'" onclick="selectTab(\''+g.key+'\')">'+g.title
+        +(n>0?'<span class="tbadge">'+n+'</span>':'')+'</button>';
+    }).join('');
+    renderTree();
+  }
+  function selectTab(k){ openTab=k; renderTabs(); }
+  function renderTree(){
+    const panel=$('treePanel'); if(!panel)return;
+    const g=MENU_GROUPS.find(x=>x.key===openTab);
+    if(!g){panel.innerHTML='';return;}
+    const visible=g.screens.filter(k=>SCREENS[k]&&canSee(k));
+    if(!visible.length){panel.innerHTML='<div class="hint">이 분야에 접근 가능한 화면이 없습니다.</div>';return;}
+    panel.innerHTML='<div class="mgrid">'+visible.map(k=>{
+      const n=menuBadge(k);
+      return '<div class="mcard" style="border-left-color:'+g.color+'" onclick="goScreen(\''+k+'\')">'
+        +(n>0?'<span class="mbadge">'+n+'</span>':'')
+        +'<div class="mn">'+SCREENS[k].name+'</div><div class="md">'+(SCREEN_DESC[k]||'')+'</div></div>';
+    }).join('')+'</div>';
+  }
+
+  // 포털 일정 달력 (이번 달 미리보기)
+  let pcalCursor=new Date(); pcalCursor.setHours(0,0,0,0);
+  let pcalEvents=[], pcalTodos=[];
+  const PDOW=['일','월','화','수','목','금','토'];
+  function pYmd(d){const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');}
+  function pAdd(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+  function pSun(d){const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-x.getDay());return x;}
+  async function loadPortalCal(){
+    const first=new Date(pcalCursor.getFullYear(),pcalCursor.getMonth(),1);
+    const last=new Date(pcalCursor.getFullYear(),pcalCursor.getMonth()+1,0);
+    const from=pSun(first), to=pAdd(pSun(last),6);
+    $('pcalTitle').textContent=pcalCursor.getFullYear()+'년 '+(pcalCursor.getMonth()+1)+'월';
+    try{
+      const [cal,td]=await Promise.all([
+        fetch(session.api+'/api/calendar?from='+pYmd(from)+'&to='+pYmd(to),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+      ]);
+      pcalEvents=cal.items||[]; pcalTodos=(td.items||[]).filter(t=>t.due_date);
+      renderPortalCal(from,to);
+    }catch(e){ $('pcalGrid').innerHTML='<div class="hint">달력을 불러오지 못했습니다.</div>'; }
+  }
+  function renderPortalCal(from,to){
+    const today=pYmd(new Date());
+    const head=PDOW.map((w,i)=>'<div class="pcdow '+(i===0?'sun':(i===6?'sat':''))+'">'+w+'</div>').join('');
+    const days=[]; for(let d=new Date(from);d<=to;d=pAdd(d,1))days.push(new Date(d));
+    const cells=days.map(day=>{
+      const key=pYmd(day);
+      const evs=pcalEvents.filter(e=>e.date===key), tds=pcalTodos.filter(t=>t.due_date===key);
+      const out=day.getMonth()!==pcalCursor.getMonth();
+      const isT=key===today;
+      const all=[...evs.map(e=>({t:'ev',v:e})),...tds.map(t=>({t:'td',v:t}))];
+      let chips=all.slice(0,2).map(x=> x.t==='ev'
+        ? '<span class="cgchip ev">'+(x.v.time?x.v.time+' ':'')+escp(x.v.content)+'</span>'
+        : '<span class="cgchip td">▪ '+escp(x.v.title)+'</span>').join('');
+      if(all.length>2)chips+='<span class="pcmore">+'+(all.length-2)+'</span>';
+      return '<div class="pccell'+(out?' out':'')+(isT?' today':'')+'" onclick="goScreen(\'board\')"><div class="pcn">'+day.getDate()+'</div>'+chips+'</div>';
+    }).join('');
+    $('pcalGrid').innerHTML='<div class="pcalgrid">'+head+cells+'</div>';
+  }
+  function escp(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
   function kfmt(n){ return n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0}); }
   async function loadKpi(){
     const body=$('kpiBody'); if(!body)return;
@@ -210,8 +353,6 @@
       box+='<div style="margin-top:6px;font-size:12px;color:var(--muted)">금액은 권한이 있는 경우에만 표시됩니다.</div>';
     }
     box+='</div></div>';
-    // 월별 그래프
-    box+='<div style="margin-top:14px">'+kpiChart(k.series||[],k.seeAmount)+'</div>';
     $('kpiBody').innerHTML=box;
   }
   function kpiChart(series,seeAmount){
@@ -250,17 +391,13 @@
     return svg+legend;
   }
   async function loadBoardMini(){
-    const el=document.getElementById('boardMini');if(!el)return;
     try{
       const [nt,td]=await Promise.all([
         fetch(session.api+'/api/notices',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=open',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
-      const unread=nt.unread||0, open=(td.items||[]).length;
-      const parts=[];
-      if(open>0)parts.push('내 할 일 <b>'+open+'</b>건');
-      if(unread>0)parts.push('안 읽은 공지 <b>'+unread+'</b>건');
-      el.innerHTML=parts.length?parts.join(' · '):'다가오는 일정, 공지, 내 할 일을 확인합니다.';
+      window.__boardOpen=(td.items||[]).length; window.__noticeUnread=nt.unread||0;
+      if(typeof renderTabs==='function') renderTabs();
     }catch(e){}
   }
 
@@ -330,6 +467,8 @@
   function renderPipe(){ /* 파이프라인 요약은 영업 대시보드로 이동 */ }
 
   $('go').addEventListener('click',login);
+  $('pcalPrev').addEventListener('click',()=>{ pcalCursor=new Date(pcalCursor.getFullYear(),pcalCursor.getMonth()-1,1); loadPortalCal(); });
+  $('pcalNext').addEventListener('click',()=>{ pcalCursor=new Date(pcalCursor.getFullYear(),pcalCursor.getMonth()+1,1); loadPortalCal(); });
 
   // 포털 자동 복원: 세션이 있으면 로그인 화면 건너뛰고 바로 포털 표시
   (function(){
@@ -337,7 +476,7 @@
     if(ps&&ps.token){
       session={token:ps.token,user:ps.user||{},api:ps.api||''};
       $('who').innerHTML='<b>'+(session.user.name||'')+'</b><br>역할: '+(session.user.role||'-')+' · <a href="#" id="logoutLink">로그아웃</a>';
-      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       loadSummary();
       const ll=$('logoutLink'); if(ll) ll.onclick=(e)=>{e.preventDefault();try{sessionStorage.removeItem('refatrix_session');}catch(_){}location.reload();};
     }
