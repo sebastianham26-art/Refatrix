@@ -341,6 +341,30 @@ export default async function quoteRoutes(app) {
       totalPct: all3y > 0 ? round2(sku3y / all3y * 100) : null,
     };
   });
+  // ============ 전체 SKU 가격표 (엑셀 다운로드용) ============
+  app.get('/api/quotes/price-list', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    let discountRate = null;
+    if (req.query.customer_id) {
+      const c = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [Number(req.query.customer_id)])).rows[0];
+      if (c) discountRate = Number(c.discount) || 0;
+    }
+    const prods = (await query(
+      `SELECT id, code, scode, app, list_price, stock_qty
+         FROM products WHERE deleted_at IS NULL ORDER BY code`)).rows;
+    const ids = prods.map((p) => p.id);
+    const sydRows = ids.length ? (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows : [];
+    const sydByPid = {};
+    for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
+    const items = prods.map((p) => ({
+      ctr_code: p.code,
+      syd_codes: p.scode || (sydByPid[p.id] || []).join(' / '),
+      app: p.app || '',
+      list_price: Number(p.list_price) || 0,
+      stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
+    }));
+    return { discountRate, count: items.length, items };
+  });
+
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.
   app.post('/api/quotes/:id/convert', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
