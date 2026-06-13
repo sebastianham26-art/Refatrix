@@ -73,6 +73,33 @@ export default async function quoteRoutes(app) {
     return await resolveCode(req.query.code);
   });
 
+  // 자동완성: CTR 코드 또는 SYD 코드 부분일치 검색 (영업 권한)
+  app.get('/api/quotes/search-code', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 1) return { items: [] };
+    const like = `%${q}%`;
+    // CTR(code/name) 일치 + SYD 일치를 합쳐 제품 id 수집
+    const rows = (await query(
+      `SELECT DISTINCT p.id, p.code, p.name, p.app, p.list_price
+         FROM products p
+         LEFT JOIN product_syd_codes s ON s.product_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND (p.code ILIKE $1 OR p.name ILIKE $1 OR s.syd_code ILIKE $1)
+        ORDER BY p.code
+        LIMIT 12`, [like])).rows;
+    if (!rows.length) return { items: [] };
+    const ids = rows.map((r) => r.id);
+    const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
+    const sydByPid = {};
+    for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
+    return {
+      items: rows.map((r) => ({
+        product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
+        list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
+      })),
+    };
+  });
+
   // 견적 줄 계산 미리보기 (저장 없이): body { customer_id, lines:[{code, product_id?, qty}] }
   app.post('/api/quotes/preview', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
     const b = req.body || {};

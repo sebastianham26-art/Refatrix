@@ -47,6 +47,13 @@
   .cand{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
   .cand:hover{border-color:var(--brand);background:#faf8f3}
   .delx{color:var(--expense);cursor:pointer;font-weight:800;border:none;background:none;font-size:15px}
+  .acbox{position:absolute;top:100%;left:0;right:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);margin-top:3px;max-height:280px;overflow:auto}
+  .acitem{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
+  .acitem:last-child{border-bottom:none}
+  .acitem.sel,.acitem:hover{background:#f0f5f2}
+  .acitem .c{font-weight:700;color:var(--brand);font-size:13px}
+  .acitem .s{font-size:11px;color:var(--muted)}
+  .acitem .lp{font-size:12px;color:var(--ink);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -78,10 +85,18 @@
     <div class="card">
       <div class="card-h">품목 입력 <span class="hint" style="font-weight:500">— CTR 코드 또는 경쟁사(SYD) 코드 중 하나 + 수량</span></div>
       <div class="inrow">
-        <div style="flex:1;min-width:160px"><label>코드 (CTR 또는 SYD)</label><input id="inCode" type="text" placeholder="예: CTR-1001 또는 SYD-AAA" onkeydown="if(event.key==='Enter')addLine()"></div>
+        <div style="flex:1;min-width:160px;position:relative"><label>코드 (CTR 또는 SYD) — 입력하면 자동완성</label>
+          <input id="inCode" type="text" autocomplete="off" placeholder="예: CTR 또는 SYD 일부 입력" oninput="onCodeInput()" onkeydown="codeKey(event)">
+          <div id="acBox" class="acbox hidden"></div>
+        </div>
         <div style="min-width:90px"><label>수량</label><input id="inQty" type="number" min="0" step="1" value="1" style="width:90px" onkeydown="if(event.key==='Enter')addLine()"></div>
         <div><button class="btn" onclick="addLine()">＋ 추가</button></div>
-        <div style="margin-left:auto"><label>엑셀 업로드 (코드, 수량)</label><input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px"></div>
+        <div style="margin-left:auto"><label>엑셀</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
+            <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
+          </div>
+        </div>
       </div>
       <div class="msg" id="lineMsg"></div>
 
@@ -154,6 +169,59 @@
     $('discShow').value=curDisc+'%';
     $('custHint').textContent=opt&&opt.value?('할인율 '+curDisc+'%가 모든 품목에 자동 적용됩니다.'):'고객을 선택하면 할인율이 자동 적용됩니다.';
     if(lines.length) recalc();
+  }
+
+  // ===== 자동완성 =====
+  let acItems=[], acSel=-1, acTimer=null;
+  function onCodeInput(){
+    const q=$('inCode').value.trim();
+    clearTimeout(acTimer);
+    if(q.length<1){ hideAc(); return; }
+    acTimer=setTimeout(async()=>{
+      try{
+        const d=await fetch(session.api+'/api/quotes/search-code?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json());
+        acItems=d.items||[]; acSel=-1; renderAc();
+      }catch(e){ hideAc(); }
+    },180);
+  }
+  function renderAc(){
+    if(!acItems.length){ hideAc(); return; }
+    $('acBox').innerHTML=acItems.map((it,i)=>
+      '<div class="acitem'+(i===acSel?' sel':'')+'" onmousedown="event.preventDefault()" onclick="pickAc('+i+')">'
+      +'<div><span class="c">'+esc(it.ctr_code)+'</span>'
+      +(it.syd_codes&&it.syd_codes.length?' <span class="s">· SYD '+esc(it.syd_codes.join(' / '))+'</span>':'')
+      +'<div class="s">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div></div>'
+      +'<div class="lp">List '+fmt(it.list_price)+'</div></div>'
+    ).join('');
+    $('acBox').classList.remove('hidden');
+  }
+  function hideAc(){ $('acBox').classList.add('hidden'); acItems=[]; acSel=-1; }
+  function pickAc(i){
+    const it=acItems[i]; if(!it)return;
+    const qty=Number($('inQty').value)||1;
+    lines.push({code:it.ctr_code,product_id:it.product_id,qty});
+    $('inCode').value=''; $('inQty').value='1'; hideAc(); $('inCode').focus(); recalc();
+  }
+  function codeKey(e){
+    if($('acBox').classList.contains('hidden')){ if(e.key==='Enter')addLine(); return; }
+    if(e.key==='ArrowDown'){ e.preventDefault(); acSel=Math.min(acSel+1,acItems.length-1); renderAc(); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); acSel=Math.max(acSel-1,0); renderAc(); }
+    else if(e.key==='Enter'){ e.preventDefault(); if(acSel>=0)pickAc(acSel); else addLine(); }
+    else if(e.key==='Escape'){ hideAc(); }
+  }
+  document.addEventListener('click',(e)=>{ if(!e.target.closest('#inCode')&&!e.target.closest('#acBox')) hideAc(); });
+
+  // ===== 엑셀 양식 다운로드 =====
+  function downloadTemplate(){
+    const ws=XLSX.utils.aoa_to_sheet([
+      ['Codigo (CTR o SYD)','Cantidad'],
+      ['CTR-1001',10],
+      ['SYD-AAA',5],
+    ]);
+    ws['!cols']=[{wch:22},{wch:12}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Cotizacion');
+    XLSX.writeFile(wb,'plantilla_cotizacion.xlsx');
   }
 
   async function addLine(){
