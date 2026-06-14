@@ -25,6 +25,12 @@ export const ROLE_DEFAULTS = {
     pages: [['sales', 'edit'], ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view']],
     fields: ['sales_amount'],
   },
+  sales_support: {
+    // 영업과 동일하되: 파이프라인은 열람만, AR(settlement)·수입원가(inventory) 추가
+    pages: [['sales', 'edit'], ['pipeline', 'view'], ['customers', 'edit'], ['targets', 'view'],
+            ['settlement', 'edit'], ['inventory', 'edit']],
+    fields: ['sales_amount', 'ar_amount'],
+  },
   treasury: {
     pages: [['transactions', 'edit'], ['settlement', 'view'], ['budget', 'edit'], ['inventory', 'view']],
     fields: ['sales_amount', 'ar_amount'],

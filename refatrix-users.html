@@ -62,7 +62,7 @@
       <div class="row">
         <div><label>이름</label><input id="n-name" type="text"></div>
         <div><label>로그인 아이디</label><input id="n-login" type="text" placeholder="예: sales1"></div>
-        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="director">디렉터(director)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="viewer">뷰어</option></select></div>
+        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="sales_support">영업지원(sales_support)</option><option value="director">디렉터(director)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="viewer">뷰어</option></select></div>
         <div><label>PIN(4~8자리, 비우면 자동)</label><input id="n-pin" type="text" inputmode="numeric" placeholder="자동"></div>
         <div><label>소속 팀</label><select id="n-team"></select></div>
       </div>
@@ -84,7 +84,7 @@
   let session={token:null,user:null,api:''};
   let teams=[], users=[];
   // 부여 가능한 페이지(키 → 표시명). 시스템에 맞춰 핵심만.
-  const PAGES=[['customers','고객관리'],['targets','매출목표'],['pipeline','영업활동·단계'],['budget','마케팅예산'],['finance','재무'],['sales','매출등록'],['products','제품마스터']];
+  const PAGES=[['customers','고객관리'],['targets','매출목표'],['pipeline','영업활동·단계'],['budget','마케팅예산'],['finance','재무'],['settlement','수금(AR)'],['inventory','수입원가'],['sales','매출등록'],['products','제품마스터']];
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
 

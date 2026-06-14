@@ -210,6 +210,7 @@ export default async function customerRoutes(app) {
       customer: {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
         discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
+        constancia_fiscal: c.constancia_fiscal || null,
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
@@ -264,14 +265,15 @@ export default async function customerRoutes(app) {
     const stageChanged = b.stage_id != null && Number(b.stage_id) !== c.stage_id;
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
-         team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11,
+         team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15,
          stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
       [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
        b.phone !== undefined ? b.phone : c.phone, b.discount != null ? Number(b.discount) : c.discount,
        b.credit_days != null ? Number(b.credit_days) : c.credit_days, teamId,
        b.stage_id != null ? Number(b.stage_id) : c.stage_id, b.owner_id !== undefined ? b.owner_id : c.owner_id,
        b.customer_type !== undefined ? b.customer_type : c.customer_type,
-       b.memo !== undefined ? b.memo : c.memo, stageChanged, req.ctx.perm.userId, id]);
+       b.memo !== undefined ? b.memo : c.memo, stageChanged, req.ctx.perm.userId, id,
+       b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal]);
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `customer:${id}` });
     return { ok: true };
   });
@@ -327,6 +329,72 @@ export default async function customerRoutes(app) {
     const id = Number(req.params.id), teamId = Number(req.params.teamId);
     await query(`DELETE FROM user_team_access WHERE user_id=$1 AND team_id=$2`, [id, teamId]);
     await safeLog({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user_team_revoke:${id}`, detail: { team_id: teamId } });
+    return { ok: true };
+  });
+
+  // ===== 고객 증빙서류 (PDF·JPEG 등) — DB 저장 =====
+  const ALLOWED_DOC_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  const MAX_DOC_BYTES = 5 * 1024 * 1024; // 5MB
+
+  // 목록 (본문 제외)
+  app.get('/api/customers/:id/documents', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const rows = (await query(
+      `SELECT d.id, d.doc_type, d.file_name, d.mime_type, d.byte_size, to_char(d.uploaded_at,'YYYY-MM-DD') AS uploaded_at, u.name AS uploaded_by_name
+         FROM customer_documents d LEFT JOIN users u ON u.id=d.uploaded_by
+        WHERE d.customer_id=$1 AND d.deleted_at IS NULL ORDER BY d.uploaded_at DESC, d.id DESC`, [id])).rows;
+    return { items: rows.map((r) => ({ ...r, byte_size: Number(r.byte_size) })) };
+  });
+
+  // 업로드: { doc_type?, file_name, mime_type, data_base64 }
+  app.post('/api/customers/:id/documents', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const b = req.body || {};
+    const fileName = String(b.file_name || '').trim();
+    const mime = String(b.mime_type || '').trim();
+    const b64 = String(b.data_base64 || '');
+    if (!fileName || !mime || !b64) return reply.code(400).send({ error: 'missing_fields' });
+    if (!ALLOWED_DOC_MIME.includes(mime)) return reply.code(400).send({ error: 'unsupported_type', note: 'PDF·JPEG·PNG·WEBP만 업로드할 수 있습니다.' });
+    let buf;
+    try { buf = Buffer.from(b64, 'base64'); } catch (e) { return reply.code(400).send({ error: 'bad_base64' }); }
+    if (!buf.length) return reply.code(400).send({ error: 'empty_file' });
+    if (buf.length > MAX_DOC_BYTES) return reply.code(400).send({ error: 'too_large', note: '파일은 5MB 이하만 가능합니다.' });
+    const row = (await query(
+      `INSERT INTO customer_documents (customer_id, doc_type, file_name, mime_type, byte_size, content, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [id, b.doc_type || null, fileName, mime, buf.length, buf, req.ctx.perm.userId])).rows[0];
+    await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `customer_doc:${row.id}`, detail: { customer_id: id, file_name: fileName } });
+    return { ok: true, id: row.id };
+  });
+
+  // 다운로드(본문) — 바이너리 반환
+  app.get('/api/customers/:id/documents/:docId', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id), docId = Number(req.params.docId);
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const d = (await query(`SELECT file_name, mime_type, content FROM customer_documents WHERE id=$1 AND customer_id=$2 AND deleted_at IS NULL`, [docId, id])).rows[0];
+    if (!d) return reply.code(404).send({ error: 'not_found' });
+    reply.header('Content-Type', d.mime_type);
+    reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(d.file_name)}"`);
+    return reply.send(d.content);
+  });
+
+  // 삭제(soft)
+  app.delete('/api/customers/:id/documents/:docId', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id), docId = Number(req.params.docId);
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const r = (await query(`UPDATE customer_documents SET deleted_at=now() WHERE id=$1 AND customer_id=$2 AND deleted_at IS NULL RETURNING id`, [docId, id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'delete', target: `customer_doc:${docId}` });
     return { ok: true };
   });
 }

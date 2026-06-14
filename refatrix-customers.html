@@ -117,6 +117,7 @@
             <div><label>외상일(일)</label><input id="f-credit" type="number" value="0"></div>
           </div>
           <div class="row"><div style="flex:3"><label>메모</label><input id="f-memo" type="text"></div></div>
+          <div class="row"><div style="flex:3"><label>Constancia de Situación Fiscal (세무 등록상태 — 영업지원 입력)</label><input id="f-constancia" type="text" placeholder="예: RFC · Régimen · 등록상태"></div></div>
           <div style="margin-top:10px;display:flex;gap:8px">
             <button class="btn gold sm" id="f-save">저장</button>
             <button class="btn ghost sm" id="f-cancel">취소</button>
@@ -134,7 +135,15 @@
           <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
         </div>
         <div id="d-info"></div>
-        <div style="font-weight:700;margin-top:12px">미수/연체 인보이스</div>
+        <div style="font-weight:700;margin-top:14px">증빙서류 (Constancia·세무증명 등 · PDF/JPEG/PNG, 5MB 이하)</div>
+        <div id="d-docs"><div class="hint">불러오는 중…</div></div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="docFile" accept="application/pdf,image/jpeg,image/png,image/webp" style="font-size:12px">
+          <select id="docType" style="font-size:12px;padding:6px"><option value="constancia">Constancia Fiscal</option><option value="other">기타</option></select>
+          <button class="btn gold sm" id="docUpload">업로드</button>
+          <span class="msg" id="docMsg" style="margin:0"></span>
+        </div>
+        <div style="font-weight:700;margin-top:14px">미수/연체 인보이스</div>
         <div id="d-invoices"></div>
       </div>
     </div>
@@ -156,6 +165,48 @@
   let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let curDocCustomer=null;
+  function fmtBytes(n){ n=Number(n||0); return n<1024?n+' B':n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB'; }
+  async function loadDocs(cid){
+    curDocCustomer=cid;
+    try{ const d=await fetch(session.api+'/api/customers/'+cid+'/documents',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ $('d-docs').innerHTML='<div class="hint" style="margin:4px 0">등록된 서류가 없습니다.</div>'; return; }
+      $('d-docs').innerHTML='<table style="margin-top:4px"><thead><tr><th>종류</th><th>파일명</th><th class="num">크기</th><th>업로드일</th><th>등록자</th><th></th></tr></thead><tbody>'+
+        items.map(x=>`<tr><td>${esc(x.doc_type||'—')}</td><td>${esc(x.file_name)}</td><td class="num">${fmtBytes(x.byte_size)}</td><td>${esc(x.uploaded_at||'')}</td><td>${esc(x.uploaded_by_name||'—')}</td>
+          <td style="white-space:nowrap"><button class="btn ghost sm" onclick="viewDoc(${x.id})">보기</button> <button class="btn ghost sm" onclick="delDoc(${x.id})">삭제</button></td></tr>`).join('')+'</tbody></table>';
+    }catch(e){ $('d-docs').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  async function viewDoc(docId){
+    // 인증 헤더로 받아서 새 탭에 표시
+    try{ const res=await fetch(session.api+'/api/customers/'+curDocCustomer+'/documents/'+docId,{headers:auth()});
+      const blob=await res.blob(); const url=URL.createObjectURL(blob); window.open(url,'_blank');
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alert('파일을 열 수 없습니다.'); }
+  }
+  async function delDoc(docId){
+    if(!confirm('이 서류를 삭제할까요?')) return;
+    try{ await fetch(session.api+'/api/customers/'+curDocCustomer+'/documents/'+docId,{method:'DELETE',headers:auth()}); loadDocs(curDocCustomer); }
+    catch(e){ alert('삭제 실패'); }
+  }
+  async function uploadDoc(){
+    const m=$('docMsg'); m.className='msg'; m.style.display='none';
+    const f=$('docFile').files[0];
+    if(!f){ m.className='msg err';m.style.display='block';m.textContent='파일을 선택하세요.'; return; }
+    if(f.size>5*1024*1024){ m.className='msg err';m.style.display='block';m.textContent='5MB 이하만 가능합니다.'; return; }
+    const okTypes=['application/pdf','image/jpeg','image/png','image/webp'];
+    if(!okTypes.includes(f.type)){ m.className='msg err';m.style.display='block';m.textContent='PDF·JPEG·PNG·WEBP만 가능합니다.'; return; }
+    $('docUpload').disabled=true;
+    try{
+      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
+      const res=await fetch(session.api+'/api/customers/'+curDocCustomer+'/documents',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({doc_type:$('docType').value,file_name:f.name,mime_type:f.type,data_base64:b64})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.note||d.error||res.status); return; }
+      $('docFile').value=''; loadDocs(curDocCustomer);
+    }catch(e){ m.className='msg err';m.style.display='block';m.textContent='업로드 실패'; }
+    finally{ $('docUpload').disabled=false; }
+  }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const isDirector=()=> session.user && session.user.role==='director';
   const teamPill=(name,id)=> name?`<span class="pill ${id%2===1?'team1':'team2'}">${name}</span>`:'<span class="hint" style="margin:0">미지정</span>';
@@ -270,6 +321,7 @@
     $('f-discount').value=cust?cust.discount:0;
     $('f-credit').value=cust?cust.credit_days:0;
     $('f-memo').value=cust?(cust.memo||''):'';
+    $('f-constancia').value=cust?(cust.constancia_fiscal||''):'';
     $('f-msg').style.display='none';
     $('custForm').classList.remove('hidden');
     if($('custForm').scrollIntoView)$('custForm').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -281,7 +333,7 @@
       rfc:$('f-rfc').value.trim()||null,customer_type:$('f-type').value||null,owner_id:$('f-owner').value?Number($('f-owner').value):null,
       stage_id:$('f-stage').value?Number($('f-stage').value):null,contact:$('f-contact').value.trim()||null,
       phone:$('f-phone').value.trim()||null,discount:Number($('f-discount').value)||0,credit_days:Number($('f-credit').value)||0,
-      memo:$('f-memo').value.trim()||null};
+      memo:$('f-memo').value.trim()||null,constancia_fiscal:$('f-constancia').value.trim()||null};
     if(!body.name){m.className='msg err';m.style.display='block';m.textContent='고객명을 입력하세요.';return;}
     if(!body.team_id){m.className='msg err';m.style.display='block';m.textContent='팀을 선택하세요.';return;}
     try{
@@ -320,8 +372,10 @@
         <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
         <tr><th>${sm.year||''} 누적 실적</th><td><b style="color:var(--income)">${fmt(actual)}</b></td><th>연말 매출목표</th><td>${target!=null?fmt(target):'<span class="hint" style="margin:0">미설정</span>'}</td></tr>
         ${progressRow}
+        ${c.constancia_fiscal?`<tr><th>Constancia Fiscal</th><td colspan="3">${esc(c.constancia_fiscal)}</td></tr>`:''}
         ${c.memo?`<tr><th>메모</th><td colspan="3">${c.memo}</td></tr>`:''}
       </table>`;
+      loadDocs(c.id);
       if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
       $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
         <tbody>${d.invoices.map(i=>`<tr>
@@ -449,6 +503,7 @@
     finally{$('commitBtn')&&($('commitBtn').disabled=false);}
   }
   $('tmplBtn').addEventListener('click',downloadTemplate);
+  $('docUpload').addEventListener('click',uploadDoc);
   $('upDrop').addEventListener('click',()=>$('upFile').click());
   $('upFile').addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
   $('upDrop').addEventListener('dragover',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--brand)';});

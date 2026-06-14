@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 업무 프로세스 & R&R</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--blue:#1F6FB2;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto}
+  .topbar{background:var(--brand);color:#fff;padding:16px 20px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:20px}.topbar .sub{font-size:12.5px;color:#cfe0d8;margin-top:3px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:18px}
+  h2{font-size:16px;color:var(--brand);margin:0 0 4px}
+  h3{font-size:13px;color:var(--muted);margin:0 0 14px;font-weight:600}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  /* 스윔레인 */
+  .flow{overflow-x:auto;padding-bottom:8px}
+  .lane{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:stretch;margin-top:10px;min-width:880px}
+  .lanehead{display:flex;align-items:center;justify-content:flex-end;text-align:right;padding-right:8px;font-size:12px;font-weight:800;border-right:3px solid var(--lc,#ccc);color:var(--lc,#333)}
+  .track{display:flex;gap:0;align-items:center}
+  .stbox{flex:1;min-width:128px;border:1.5px solid var(--c,var(--brand));border-radius:10px;padding:9px 11px;background:#fff;position:relative}
+  .stbox .n{font-size:9.5px;font-weight:800;color:var(--c,var(--brand));letter-spacing:.03em}
+  .stbox .t{font-size:12.5px;font-weight:800;margin-top:2px}
+  .stbox .d{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.35}
+  .stbox.gate{border-style:dashed;border-color:var(--expense);background:#fdf2f0}
+  .stbox.gate .n{color:var(--expense)}
+  .ho{flex:0 0 116px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 4px}
+  .ho .arr{font-size:18px;color:#b9b2a2;line-height:1}
+  .ho .who{font-size:9.5px;font-weight:800;color:#fff;background:var(--brand);border-radius:999px;padding:2px 7px;margin-top:3px;white-space:nowrap}
+  .ho .lbl{font-size:9px;color:var(--muted);margin-top:2px;text-align:center;line-height:1.2}
+  .spacer{flex:0 0 12px}
+  /* R&R 표 */
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  .role{font-weight:800;white-space:nowrap}
+  .tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;color:#fff;display:inline-block}
+  ul{margin:4px 0;padding-left:16px}li{margin:2px 0}
+  .note{background:#faf8f3;border-left:3px solid var(--gold);border-radius:6px;padding:10px 13px;font-size:12px;margin-top:12px}
+  .gatebox{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .gatecard{flex:1;min-width:220px;border:1px dashed var(--expense);border-radius:10px;padding:11px 13px;background:#fdf2f0}
+  .gatecard b{color:var(--expense)}
+  @media print{body{padding:0;background:#fff}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>Refatrix ERP · 업무 프로세스 & 역할별 R&R</h1>
+    <div class="sub">5개 관점(고객·제품·재무/예산/실적·재고입고·현금흐름)의 단계별 흐름 · 단계 전환 시 핸드오프 담당자 명시 · 디렉터 승인 게이트</div>
+  </div>
+
+  <div class="card">
+    <h2>역할(레인) 색상</h2>
+    <div class="legend">
+      <span><span class="dot" style="background:#1F6FB2"></span> 영업 / 영업지원</span>
+      <span><span class="dot" style="background:#6B4FB0"></span> 제품·운영(ops) · 마케팅</span>
+      <span><span class="dot" style="background:#B23A2E"></span> 재무</span>
+      <span><span class="dot" style="background:#143D34"></span> 디렉터</span>
+      <span><span class="dot" style="background:#fdf2f0;border:1px dashed #B23A2E"></span> 승인 게이트(디렉터)</span>
+    </div>
+    <div class="note">읽는 법: 박스 = 업무 단계, 박스 사이의 <b>둥근 라벨</b> = 다음 단계로 넘길 때의 <b>핸드오프 담당자</b>. 점선 빨강 박스 = 디렉터 승인이 필요한 게이트.</div>
+  </div>
+
+  <!-- ===== 고객 관점 ===== -->
+  <div class="card">
+    <h2>① 고객 관점 (Customer Point of View)</h2>
+    <h3>신규 발굴 → 파이프라인 → 수주·견적 → 매출 → 발주근거 → 수금</h3>
+    <div class="flow">
+
+      <!-- 영업 레인 -->
+      <div class="lane" style="--lc:#1F6FB2">
+        <div class="lanehead">영업 /<br>영업지원</div>
+        <div class="track">
+          <div class="stbox" style="--c:#1F6FB2"><div class="n">C1</div><div class="t">신규 발굴</div><div class="d">고객 등록·엑셀 업로드 (customers)</div></div>
+          <div class="ho"><div class="arr">›</div><div class="who">영업</div><div class="lbl">발굴→파이프라인 등록</div></div>
+          <div class="stbox" style="--c:#1F6FB2"><div class="n">C2</div><div class="t">파이프라인 개발</div><div class="d">칸반·미팅·디렉터 지시 (pipeline)</div></div>
+          <div class="ho"><div class="arr">›</div><div class="who">영업/영업지원</div><div class="lbl">수주 발생→견적 작성</div></div>
+          <div class="stbox" style="--c:#1F6FB2"><div class="n">C3</div><div class="t">수주·견적 입력</div><div class="d">멀티 SKU 견적 → 3갈래 자동분류 (quote)</div></div>
+          <div class="ho"><div class="arr">›</div><div class="who">영업</div><div class="lbl">재고충분분 전환</div></div>
+          <div class="stbox" style="--c:#1F6FB2"><div class="n">C4</div><div class="t">매출 등록(①즉시)</div><div class="d">가용분 인보이스·부분출고 · 경과일 팔로업 (sales)</div></div>
+          <div class="spacer"></div>
+        </div>
+      </div>
+
+      <!-- 제품·운영 레인 (부족분/발주 근거) -->
+      <div class="lane" style="--lc:#6B4FB0">
+        <div class="lanehead">제품·운영<br>(ops)</div>
+        <div class="track">
+          <div class="stbox" style="--c:#6B4FB0;visibility:hidden"></div>
+          <div class="ho" style="visibility:hidden"></div>
+          <div class="stbox" style="--c:#6B4FB0;visibility:hidden"></div>
+          <div class="ho"><div class="arr">↘</div><div class="who" style="background:#6B4FB0">영업→제품</div><div class="lbl">②부족분 집계</div></div>
+          <div class="stbox" style="--c:#6B4FB0"><div class="n">C5</div><div class="t">발주 근거</div><div class="d">SKU별 부족분 집계 → 발주(PO) (shortage)</div></div>
+          <div class="spacer"></div>
+        </div>
+      </div>
+
+      <!-- 재무 레인 (수금) -->
+      <div class="lane" style="--lc:#B23A2E">
+        <div class="lanehead">재무</div>
+        <div class="track">
+          <div class="stbox" style="--c:#B23A2E;visibility:hidden"></div>
+          <div class="ho" style="visibility:hidden"></div>
+          <div class="stbox" style="--c:#B23A2E;visibility:hidden"></div>
+          <div class="ho" style="visibility:hidden"></div>
+          <div class="stbox" style="--c:#B23A2E;visibility:hidden"></div>
+          <div class="ho"><div class="arr">›</div><div class="who" style="background:#B23A2E">영업→재무</div><div class="lbl">인보이스 발행→AR</div></div>
+          <div class="stbox" style="--c:#B23A2E"><div class="n">C6</div><div class="t">수금 관리</div><div class="d">AR·연체 추적·입금 확인 (customers/finance)</div></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note">승인 게이트(디렉터): <b>견적 삭제</b>(사유 메모 → 디렉터 승인, 승인 전 집계 제외) · <b>매출 수정/삭제</b> · <b>외상일 예외</b>. 영업은 요청, 디렉터가 승인/반려.</div>
+  </div>
+
+  <!-- ===== 제품 관점 ===== -->
+  <div class="card">
+    <h2>② 제품 관점 (Product Point of View)</h2>
+    <h3>카탈로그 → ③개발필요 접수 → 검토 → 공장요청 → 개발완료 → (목표·마케팅·실적)</h3>
+
+    <div class="flow"><div style="min-width:880px">
+      <!-- 개발 프로젝트 4단계 (접수=영업, 검토·공장·완료=제품·마케팅) -->
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="stbox" style="--c:#1F6FB2;flex:1;min-width:150px"><div class="n">P0 · 영업</div><div class="t">개발필요 발생</div><div class="d">견적/수주에서 미등록 코드 발견 (quote)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#1F6FB2">영업</div><div class="lbl">개발요청 접수</div></div>
+        <div class="stbox" style="--c:#1F6FB2;flex:1;min-width:150px"><div class="n">P1 · 영업</div><div class="t">① 오더 접수</div><div class="d">경쟁사코드·고객·수량 등록 (devrequest)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#6B4FB0">영업→제품·마케팅</div><div class="lbl">검토 알림(todo)</div></div>
+        <div class="stbox" style="--c:#6B4FB0;flex:1;min-width:150px"><div class="n">P2 · 제품·마케팅</div><div class="t">② 개발 검토</div><div class="d">SYD·application·List·메모 입력 → '검토완료'</div></div>
+      </div>
+      <div style="display:flex;justify-content:center;margin:4px 0"><span style="font-size:16px;color:#b9b2a2">↓</span></div>
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="stbox" style="--c:#6B4FB0;flex:1;min-width:150px"><div class="n">P3 · 제품·마케팅</div><div class="t">③ 공장 요청</div><div class="d">공장 개발요청일 기록</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#6B4FB0">제품·마케팅</div><div class="lbl">CTR 생성·완료</div></div>
+        <div class="stbox" style="--c:#6B4FB0;flex:1;min-width:150px"><div class="n">P4 · 제품·마케팅</div><div class="t">④ 개발 완료</div><div class="d">CTR 입력 → SYD 자동매핑 (단계별 소요일 KPI)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#143D34">제품→영업·디렉터</div><div class="lbl">완료 알림(todo)</div></div>
+        <div class="stbox" style="--c:#143D34;flex:1;min-width:150px"><div class="n">P5 · 디렉터·마케팅</div><div class="t">목표·마케팅·실적</div><div class="d">매출목표 수립·승인 → 마케팅 배분 → 실적 (targets/marketing)</div></div>
+      </div>
+    </div></div>
+
+    <div class="note">개발 단계는 모두 <b>일자 기록 → KPI</b>(접수→검토→공장→완료 단계별 소요일, 당월 신규개발 수). 완료 시 <b>경쟁사 SYD → 신규 CTR 자동 매핑</b> + 담당영업·디렉터 알림. <b>접수=영업, 검토·공장·완료=제품·마케팅</b>이 명확히 분리됩니다.</div>
+  </div>
+
+  <!-- ===== R&R 요약 ===== -->
+  <div class="card">
+    <h2>역할별 R&R 요약</h2>
+    <table>
+      <thead><tr><th>역할</th><th>주요 책임 (R&R)</th><th>받는 핸드오프 →</th><th>넘기는 핸드오프 →</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="role"><span class="tag" style="background:#1F6FB2">영업/영업지원</span></td>
+          <td><ul><li>고객 발굴·파이프라인 관리</li><li>견적 작성(3갈래 자동분류)·매출 전환</li><li>발행가능 견적 팔로업(경과일)</li><li>개발필요 접수, 견적 삭제 요청</li></ul></td>
+          <td>디렉터 지시 / 제품 개발완료 알림</td>
+          <td>→제품·마케팅(개발검토)<br>→재무(인보이스·AR)<br>→디렉터(삭제·수정 승인)</td>
+        </tr>
+        <tr>
+          <td class="role"><span class="tag" style="background:#6B4FB0">제품·운영(ops)</span></td>
+          <td><ul><li>제품 카탈로그·재고 이동 관리</li><li>수입 입고 등록(배치 수량·기본가)</li><li>개발 검토·공장요청·완료 입력</li><li>부족분 발주 근거 관리</li></ul></td>
+          <td>영업의 개발요청(todo) / 영업의 부족분</td>
+          <td>→영업·디렉터(개발완료 알림)<br>→발주(PO)</td>
+        </tr>
+        <tr>
+          <td class="role"><span class="tag" style="background:#6B4FB0">마케팅</span></td>
+          <td><ul><li>마케팅 메뉴판 선택(고객목표·파이프라인 단계 기반)</li><li>수량·단가로 마케팅 예산 수립</li><li>제품 개발 검토 참여</li></ul></td>
+          <td>디렉터 목표 / 개발요청 / 고객별 목표</td>
+          <td>→디렉터(마케팅 예산 승인)</td>
+        </tr>
+        <tr>
+          <td class="role"><span class="tag" style="background:#B23A2E">재무</span></td>
+          <td><ul><li>거래 실행기록·고정비(정기거래)·예산 계획거래</li><li>수입 부대비용 분배(수량비율) → 수입원가</li><li>매출→AR 전기, 수금계획(신용일 due), 연체 추적</li><li>현금흐름: 오늘 기준 계획 vs 실적</li></ul></td>
+          <td>영업의 인보이스(AR) / 제품의 입고</td>
+          <td>→디렉터(수입원가·예산 승인 요청)</td>
+        </tr>
+        <tr>
+          <td class="role"><span class="tag" style="background:#143D34">디렉터</span></td>
+          <td><ul><li>전 영역 열람·승인 권한</li><li>월별 매출목표 수립·팀 할당, 파이프라인 지시</li><li>승인: 견적삭제·매출수정/삭제·외상예외·<b>마케팅예산</b>·<b>수입원가</b>·<b>월마감</b></li><li>실적·KPI 검토(달성률·매출 대비 마케팅비)</li></ul></td>
+          <td>각 팀의 승인 요청 / 개발·실적 보고</td>
+          <td>→영업(목표·지시)<br>→각 팀(승인/반려)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== 재무·예산·실적 관점 ===== -->
+  <div class="card">
+    <h2>③ 재무·예산·실적 관점 (Finance / Budget / Performance)</h2>
+    <h3>목표 캐스케이드 → 마케팅 예산 → 실적·KPI</h3>
+
+    <div class="flow"><div style="min-width:880px">
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="stbox" style="--c:#143D34;flex:1;min-width:150px"><div class="n">F1 · 디렉터</div><div class="t">월별 매출목표 구성</div><div class="d">전사 월목표 수립 (targets)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#143D34">디렉터</div><div class="lbl">팀별 할당</div></div>
+        <div class="stbox" style="--c:#143D34;flex:1;min-width:150px"><div class="n">F2 · 디렉터</div><div class="t">영업팀별 할당</div><div class="d">팀 월목표 배분 (target_team_months)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#1F6FB2">디렉터→영업</div><div class="lbl">고객목표 수립 위임</div></div>
+        <div class="stbox" style="--c:#1F6FB2;flex:1;min-width:150px"><div class="n">F3 · 영업담당</div><div class="t">고객별 목표금액</div><div class="d">월목표 달성 위한 고객별 금액 (target_customer_months)</div></div>
+      </div>
+      <div style="display:flex;justify-content:center;margin:4px 0"><span style="font-size:16px;color:#b9b2a2">↓</span></div>
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="stbox" style="--c:#6B4FB0;flex:1;min-width:150px"><div class="n">F4 · 제품·마케팅</div><div class="t">마케팅 활동 계획</div><div class="d">고객목표+파이프라인 개발단계에 맞춰 <b>마케팅 메뉴판</b> 선택 (marketing)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#6B4FB0">제품·마케팅</div><div class="lbl">수량·단가→예산</div></div>
+        <div class="stbox gate" style="flex:1;min-width:150px"><div class="n">F5 · 디렉터 승인</div><div class="t">마케팅 예산 승인</div><div class="d">매출목표 5% 한도, 항목별 승인 → 계획거래 생성 (budget)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#143D34">디렉터→실적</div><div class="lbl">집행·실적 집계</div></div>
+        <div class="stbox" style="--c:#143D34;flex:1;min-width:150px"><div class="n">F6 · 디렉터·영업</div><div class="t">실적·KPI 산출</div><div class="d"><b>매출목표 달성률</b> + <b>매출 대비 마케팅비 %</b> (targets/salesperf)</div></div>
+      </div>
+    </div></div>
+
+    <div class="note"><b>KPI 흐름:</b> 매출목표(F1~F3) ↔ 실제 매출등록(고객 관점 C4) 비교로 <b>달성률</b>, 마케팅 예산(F4~F5) 집행액 ÷ 매출액으로 <b>매출 대비 마케팅비</b>를 산출합니다. 모든 단계가 월(ym) 단위로 연결됩니다.</div>
+  </div>
+
+  <!-- ===== 재고 입고 (수입원가) ===== -->
+  <div class="card">
+    <h2>④ 재고 입고 · 수입원가 (Inventory In / Landed Cost)</h2>
+    <h3>입고 → 부대비용 분배 → 디렉터 승인 → 원가·COGS 반영 → 월마감</h3>
+
+    <div class="flow"><div style="min-width:880px">
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="stbox" style="--c:#6B4FB0;flex:1;min-width:140px"><div class="n">I1 · 제품·운영</div><div class="t">입고 등록</div><div class="d">수입 배치(import batch) 수량·기본가 (import)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#B23A2E">제품→재무</div><div class="lbl">부대비용 입력</div></div>
+        <div class="stbox" style="--c:#B23A2E;flex:1;min-width:140px"><div class="n">I2 · 재무</div><div class="t">부대비용 분배</div><div class="d">운임·관세 등 → 입고건에 <b>수량비율 분배</b> (importcost)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#143D34">재무→디렉터</div><div class="lbl">정산 승인</div></div>
+        <div class="stbox gate" style="flex:1;min-width:140px"><div class="n">I3 · 디렉터 승인</div><div class="t">수입원가 승인</div><div class="d">제품별 원가 반영분 확정</div></div>
+      </div>
+      <div style="display:flex;justify-content:center;margin:4px 0"><span style="font-size:16px;color:#b9b2a2">↓</span></div>
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="stbox" style="--c:#143D34;flex:1;min-width:140px"><div class="n">I4 · 시스템</div><div class="t">원가·COGS 반영</div><div class="d">평균원가 갱신 → 매출 시 COGS 스냅샷·정정(cogs_adjustments)</div></div>
+        <div class="ho"><div class="arr">›</div><div class="who" style="background:#143D34">디렉터</div><div class="lbl">기간 잠금</div></div>
+        <div class="stbox gate" style="flex:1;min-width:140px"><div class="n">I5 · 디렉터</div><div class="t">월 마감</div><div class="d">마감 후 늦은 부대비용 → 잔여재고/정산차액 분리 (period_closings)</div></div>
+        <div class="stbox" style="--c:#143D34;flex:1;min-width:140px;visibility:hidden"></div>
+        <div class="ho" style="visibility:hidden"></div>
+        <div class="stbox" style="visibility:hidden;flex:1;min-width:140px"></div>
+      </div>
+    </div></div>
+
+    <div class="note"><b>원가 개념:</b> 입고 기본가만이 아니라 <b>부대비용(운임·관세 등)을 수량비율로 분배</b>해 실제 도착원가(landed cost)를 만듭니다. 이 원가가 재고 평균원가 → 매출원가(COGS) → 매출총이익으로 이어집니다. 마감월 이후 늦게 들어온 비용은 잔여재고분과 당기 정산차액으로 나눠 처리합니다.</div>
+  </div>
+
+  <!-- ===== 현금흐름 (오늘 기준 계획 vs 실적) ===== -->
+  <div class="card">
+    <h2>⑤ 자금·현금흐름 (Cash Flow · 오늘 기준 계획 vs 실적)</h2>
+    <h3>실행기록 + 고정비 + 예산 → 자금 추정 / 매출목표·실제매출 → 수금계획 → 미래 현금흐름</h3>
+
+    <div class="flow"><div style="min-width:880px">
+      <!-- 유출(지출) 추정 -->
+      <div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px">
+        <div class="lanehead" style="flex:0 0 96px;--lc:#B23A2E;border-right:3px solid #B23A2E;font-size:11px">지출 추정<br>(유출)</div>
+        <div style="flex:1;display:flex;align-items:stretch;gap:0;margin-left:10px">
+          <div class="stbox" style="--c:#B23A2E;flex:1;min-width:130px"><div class="n">재무</div><div class="t">거래 실행기록</div><div class="d">실제 수입·지출 기록 (transactions)</div></div>
+          <div class="ho"><div class="arr">+</div><div class="who" style="background:#B23A2E">재무</div></div>
+          <div class="stbox" style="--c:#B23A2E;flex:1;min-width:130px"><div class="n">디렉터·재무</div><div class="t">고정비(정기거래)</div><div class="d">월 반복 고정비 자동생성 (recurring)</div></div>
+          <div class="ho"><div class="arr">+</div><div class="who" style="background:#6B4FB0">마케팅·재무</div></div>
+          <div class="stbox" style="--c:#6B4FB0;flex:1;min-width:130px"><div class="n">예산계획</div><div class="t">예산 계획거래</div><div class="d">승인된 마케팅·예산 plan (budget)</div></div>
+        </div>
+      </div>
+      <!-- 유입(수금) 추정 -->
+      <div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px">
+        <div class="lanehead" style="flex:0 0 96px;--lc:#0F6E56;border-right:3px solid #0F6E56;font-size:11px">수입 추정<br>(유입)</div>
+        <div style="flex:1;display:flex;align-items:stretch;gap:0;margin-left:10px">
+          <div class="stbox" style="--c:#143D34;flex:1;min-width:130px"><div class="n">디렉터·영업</div><div class="t">매출목표</div><div class="d">월별 목표(③) = 미래 매출 추정</div></div>
+          <div class="ho"><div class="arr">+</div><div class="who" style="background:#1F6FB2">영업</div></div>
+          <div class="stbox" style="--c:#1F6FB2;flex:1;min-width:130px"><div class="n">영업</div><div class="t">실제 매출등록</div><div class="d">인보이스 발행 (sales)</div></div>
+          <div class="ho"><div class="arr">›</div><div class="who" style="background:#B23A2E">영업→재무</div><div class="lbl">수금계획</div></div>
+          <div class="stbox" style="--c:#B23A2E;flex:1;min-width:130px"><div class="n">재무</div><div class="t">수금 계획(AR)</div><div class="d">신용일 기준 입금예정일 (due_date)</div></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:center;margin:4px 0"><span style="font-size:16px;color:#b9b2a2">↓ 합산</span></div>
+      <!-- 결과 -->
+      <div style="display:flex;align-items:stretch;gap:0">
+        <div class="lanehead" style="flex:0 0 96px;--lc:#143D34;border-right:3px solid #143D34;font-size:11px">현금흐름<br>조회</div>
+        <div style="flex:1;display:flex;align-items:stretch;gap:0;margin-left:10px">
+          <div class="stbox" style="--c:#143D34;flex:2;min-width:280px;border-width:2px"><div class="n">재무·디렉터 · cashflow</div><div class="t">현금흐름: 오늘 기준 계획 vs 실적</div><div class="d"><b>오늘 이전</b> = 실적(실제 거래) · <b>오늘 이후</b> = 계획(목표·고정비·예산·수금예정). 유입·유출·순액·누적잔고를 한 화면에서 — 자금 부족 구간을 미리 파악.</div></div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="note"><b>핵심:</b> 과거는 <b>실제 기록(actual)</b>, 미래는 <b>계획(plan: 매출목표·고정비·예산·수금예정)</b>으로 채워 <b>오늘을 경계로</b> 끊어 봅니다. 그래서 "지금까지 어땠나"와 "앞으로 자금이 충분한가"를 같은 그래프에서 확인합니다.</div>
+  </div>
+
+  <!-- ===== 승인 게이트 ===== -->
+  <div class="card">
+    <h2>디렉터 승인 게이트 (핸드오프가 멈추는 지점)</h2>
+    <div class="gatebox">
+      <div class="gatecard"><b>견적 삭제</b><br>영업 요청(사유 메모) → 디렉터 승인. <b>승인 전까지 집계 제외</b>, 반려 시 복구.</div>
+      <div class="gatecard"><b>매출 수정·삭제</b><br>영업 요청 → 디렉터 승인(원본 격리, 마감월 규칙).</div>
+      <div class="gatecard"><b>외상일 예외</b><br>신용일 초과 매출 → 디렉터 승인.</div>
+      <div class="gatecard"><b>매출 목표 / 마케팅 계획</b><br>팀 수립 → 디렉터 승인/반려.</div>
+      <div class="gatecard"><b>수입원가 정산</b><br>오버헤드 배분 → 디렉터 승인.</div>
+    </div>
+    <div class="note">핵심: 위 지점에서는 <b>담당자가 임의로 진행하지 못하고</b>, 반드시 디렉터를 거쳐 다음 단계로 넘어갑니다. 이로써 매출·재고·집계 데이터의 일관성이 유지됩니다.</div>
+  </div>
+
+</div>
+</body>
+</html>
