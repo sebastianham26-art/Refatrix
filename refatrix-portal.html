@@ -266,7 +266,7 @@
     $('funnelMonths').innerHTML=opts.map(m=>'<span class="fmchip'+(funnelMonths.includes(m)?' on':'')+'" onclick="toggleFunnelMonth(\''+m+'\')">'+m+'</span>').join('');
     $('funnelCard').classList.remove('hidden');
     loadFunnel();
-    fetch(session.api+'/api/dev-requests/kpi',{headers:auth()}).then(r=>r.json()).then(d=>{ window.__devOpen=(d&&d.open)||0; if(typeof renderFlows==='function') renderFlows(); }).catch(()=>{});
+    fetch(session.api+'/api/dev-requests/kpi',{headers:auth()}).then(r=>r.json()).then(d=>{ window.__devOpen=(d&&d.open)||0; window.__devReceived=(d&&d.open_received)||0; window.__devProgress=(d&&d.open_in_progress)||0; if(typeof renderFlows==='function') renderFlows(); }).catch(()=>{});
   }
   function toggleFunnelMonth(m){
     const i=funnelMonths.indexOf(m);
@@ -479,11 +479,12 @@
     }catch(e){}
   }
 
-  function step(num,name,desc,key,badge,badgeGold){
+  function step(num,name,desc,key,badge,badgeGold,subnote){
     const locked=!canSee(key);
     const b=badge>0?`<span class="badge ${badgeGold?'gold':''}">${badge}</span>`:'';
+    const sn=subnote?`<div class="ds" style="color:var(--expense);font-weight:700;margin-top:2px">${subnote}</div>`:'';
     return `<div class="step ${locked?'locked':''}" onclick="goScreen('${key}')">${b}
-      <div class="num">${num}</div><div class="nm">${name}</div><div class="ds">${desc}</div></div>`;
+      <div class="num">${num}</div><div class="nm">${name}</div><div class="ds">${desc}</div>${sn}</div>`;
   }
   const AR='<div class="arrow">›</div>';
 
@@ -507,7 +508,8 @@
     $('flowProduct').innerHTML=[
       step('P1','제품·카탈로그','SKU·차량적용 보완','products',0),
       AR,
-      step('P2','③ 제품 개발','경쟁사 대응 · 검토→의뢰→완료','devrequest',(window.__devOpen||0),false),
+      step('P2','③ 제품 개발','경쟁사 대응 · 검토→의뢰→완료','devrequest',(window.__devOpen||0),false,
+        ((window.__devReceived||0)+(window.__devProgress||0))>0 ? ('미검토 '+(window.__devReceived||0)+' · 진행 '+(window.__devProgress||0)) : ''),
       AR,
       step('P3','매출 목표 수립','회사→팀→고객 배분','targets',(b.target_approvals||0)+(b.target_rejected||0)),
       AR,

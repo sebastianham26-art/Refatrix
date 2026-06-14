@@ -190,8 +190,18 @@ export default async function devRequestRoutes(app) {
               COUNT(*) FILTER (WHERE status IN ('received','reviewed','factory_requested'))::int AS open_all
          FROM product_dev_requests
         WHERE deleted_at IS NULL AND to_char(developed_at,'YYYY-MM')=$1`, [ym])).rows[0];
-    const openAll = (await query(`SELECT COUNT(*)::int AS n FROM product_dev_requests WHERE deleted_at IS NULL AND status IN ('received','reviewed','factory_requested')`)).rows[0].n;
-    return { ym, completed: r.completed || 0, avg_days: r.avg_days != null ? Math.round(Number(r.avg_days)) : null, open: openAll || 0 };
+    const openBreak = (await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status='received')::int AS received,
+         COUNT(*) FILTER (WHERE status IN ('reviewed','factory_requested'))::int AS in_progress,
+         COUNT(*) FILTER (WHERE status IN ('received','reviewed','factory_requested'))::int AS open_all
+       FROM product_dev_requests WHERE deleted_at IS NULL`)).rows[0];
+    return {
+      ym, completed: r.completed || 0, avg_days: r.avg_days != null ? Math.round(Number(r.avg_days)) : null,
+      open: openBreak.open_all || 0,
+      open_received: openBreak.received || 0,     // 미접수(미검토)
+      open_in_progress: openBreak.in_progress || 0, // 진행 중(검토~공장요청)
+    };
   });
 
   // 당월 개발된 아이템 목록(위젯 클릭)
