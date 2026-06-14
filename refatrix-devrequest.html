@@ -114,6 +114,13 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const dd=(n)=> n==null?'–':(n+'일');
+  // application "메이커 차종 연식..." → {maker, model, year}
+  function splitApp(app){
+    const s=String(app||'').trim();
+    if(!s) return {maker:'',model:'',year:''};
+    const p=s.split(/\s+/);
+    return { maker:p[0]||'', model:p[1]||'', year:p.slice(2).join(' ')||'' };
+  }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -179,7 +186,8 @@
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:10px">개발요청이 없습니다.</div>'; return; }
     let html='<table><thead><tr><th>경쟁사코드</th><th>고객</th><th class="r">수량</th><th>진행</th><th>상태</th><th>차량(메이커/차종/연식)</th><th>접수일</th><th>완료일</th><th class="r">소요(전체)</th><th>결과코드</th><th>작업</th></tr></thead><tbody>';
     items.forEach(r=>{
-      const veh=[r.review_maker,r.review_model,r.review_year].filter(Boolean).join(' / ');
+      const v=splitApp(r.review_app);
+      const veh=[v.maker,v.model,v.year].filter(Boolean).join(' / ');
       html+='<tr>'
         +'<td><b>'+esc(r.input_code||'')+'</b></td>'
         +'<td>'+esc(r.customer_name||'-')+'</td>'
@@ -220,20 +228,19 @@
       +'</tbody></table></div>';
     if(r.status==='cancelled'){ $('dBody').innerHTML=h+'<div class="hint" style="margin-top:10px">취소된 요청입니다.</div>'; return; }
     if(r.status==='developed'){
-      h+='<div class="seg"><h4>개발 결과</h4><div class="hint">경쟁사 <b>'+esc(r.review_syd_code||r.input_code||'')+'</b> → 신규 <b>'+esc(r.result_ctr_code||'')+'</b> (자동 매핑 완료)<br>차량: '+esc([r.review_maker,r.review_model,r.review_year].filter(Boolean).join(' / ')||'-')+'<br>App: '+esc(r.review_app||'-')+' · List: '+(r.review_list_price==null?'-':r.review_list_price)+'</div></div>';
+      const vv=splitApp(r.review_app);
+      h+='<div class="seg"><h4>개발 결과</h4><div class="hint">경쟁사 <b>'+esc(r.review_syd_code||r.input_code||'')+'</b> → 신규 <b>'+esc(r.result_ctr_code||'')+'</b> (자동 매핑 완료)<br>메이커 <b>'+esc(vv.maker||'-')+'</b> · 차종 <b>'+esc(vv.model||'-')+'</b> · 연식 <b>'+esc(vv.year||'-')+'</b><br>App: '+esc(r.review_app||'-')+' · List: '+(r.review_list_price==null?'-':r.review_list_price)+'</div></div>';
       $('dBody').innerHTML=h; return;
     }
     // ② 검토완료 입력 (제품·마케팅)
     h+='<div class="seg"><h4>② 검토완료 입력 (제품·마케팅)</h4>'
       +'<div class="grid2">'
       +'<div><label>SYD 코드 *</label><input id="rSyd" type="text" value="'+esc(r.review_syd_code||'')+'"></div>'
-      +'<div><label>Application</label><input id="rApp" type="text" value="'+esc(r.review_app||'')+'"></div>'
-      +'<div><label>메이커</label><input id="rMaker" type="text" placeholder="예: Nissan" value="'+esc(r.review_maker||'')+'"></div>'
-      +'<div><label>차종</label><input id="rModel" type="text" placeholder="예: Tsuru" value="'+esc(r.review_model||'')+'"></div>'
-      +'<div><label>연식</label><input id="rYear" type="text" placeholder="예: 2010-2015" value="'+esc(r.review_year||'')+'"></div>'
+      +'<div><label>Application (메이커 차종 연식)</label><input id="rApp" type="text" placeholder="예: kia soul 2005-2010" value="'+esc(r.review_app||'')+'"></div>'
       +'<div><label>List price *</label><input id="rList" type="number" step="0.01" value="'+(r.review_list_price==null?'':r.review_list_price)+'"></div>'
       +'<div><label>검토완료일</label><input id="rDate" type="date" value="'+esc(r.reviewed_at||'')+'"></div>'
       +'</div>'
+      +'<div class="hint" style="margin-top:6px">Application은 <b>메이커 차종 연식</b> 순서로 공백 구분 입력 (예: <b>kia soul 2005-2010</b>) → 목록에 자동으로 메이커·차종·연식으로 나뉘어 표시됩니다.</div>'
       +'<label style="margin-top:8px">메모 (시장 판매수량 등)</label><textarea id="rMemo" rows="2">'+esc(r.review_memo||'')+'</textarea>'
       +'<button class="btn sm" style="margin-top:8px" onclick="doReview()">검토완료 저장</button>'
       +'<span class="hint"> SYD·List price 입력 시 검토완료로 표시됩니다.</span>'
@@ -253,7 +260,7 @@
   function mErr(msg){ const m=$('mMsg'); if(m){m.className='msg err';m.textContent=msg;} }
   function mOk(msg){ const m=$('mMsg'); if(m){m.className='msg ok';m.textContent=msg;} }
   async function doReview(){
-    const body={review_syd_code:$('rSyd').value.trim(),review_app:$('rApp').value.trim(),review_list_price:$('rList').value,review_memo:$('rMemo').value.trim(),review_maker:$('rMaker').value.trim(),review_model:$('rModel').value.trim(),review_year:$('rYear').value.trim(),reviewed_at:$('rDate').value||null};
+    const body={review_syd_code:$('rSyd').value.trim(),review_app:$('rApp').value.trim(),review_list_price:$('rList').value,review_memo:$('rMemo').value.trim(),reviewed_at:$('rDate').value||null};
     if(!body.review_syd_code||body.review_list_price===''){mErr('SYD 코드와 List price는 필수입니다.');return;}
     const {ok,d}=await call('/api/dev-requests/'+cur.id+'/review',body);
     if(!ok||d.error){mErr('저장 실패: '+(d.note||d.error));return;}
