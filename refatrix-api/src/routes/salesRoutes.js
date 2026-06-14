@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEdit } from '../middleware/authGuard.js';
 import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd } from '../sales.js';
 import { isClosedMonth } from '../importCost.js';
 import { round2 } from '../permissions.js';
@@ -10,7 +10,7 @@ export default async function salesRoutes(app) {
 
   // ---- 매출 인보이스 등록 (즉시 반영, 승인 불필요) ----
   // body: { sat_no?, customer_id, inv_date, credit_days?(예외 시), lines:[{product_id, qty, discount_rate?}], memo? }
-  app.post('/api/sales', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/sales', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
     const { sat_no, customer_id, inv_date, credit_days, lines = [], memo, credit_memo } = req.body || {};
     if (!customer_id || !inv_date || !lines.length) {
       return reply.code(400).send({ error: 'customer_date_lines_required' });
@@ -136,7 +136,7 @@ export default async function salesRoutes(app) {
   });
 
   // ---- SAT 번호 수정(임시번호 → 실제번호) ----
-  app.post('/api/sales/:id/sat-no', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/sales/:id/sat-no', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const sat = (req.body?.sat_no && String(req.body.sat_no).trim()) || null;
     if (!sat) return reply.code(400).send({ error: 'sat_no_required' });
@@ -258,7 +258,7 @@ export default async function salesRoutes(app) {
   });
 
   // ---- 부족 기록: 제품별 합계(주문용) ----
-  app.get('/api/shortages/summary', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+  app.get('/api/shortages/summary', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async () => {
     const rows = (await query(
       `SELECT sh.product_id, p.code, p.name, p.stock_qty,
               SUM(sh.shortage_qty) AS open_shortage,
@@ -272,7 +272,7 @@ export default async function salesRoutes(app) {
   });
 
   // ---- 부족 기록: 원장(영업용, 누가·언제·얼마) ----
-  app.get('/api/shortages', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/shortages', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async (req) => {
     const status = req.query.status || 'open';
     const rows = (await query(
       `SELECT sh.id, sh.occurred_at, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.status,
@@ -312,7 +312,7 @@ export default async function salesRoutes(app) {
 
   // 수정 요청 (영업/디렉터) — 원본 유지, edit_pending
   // body: { reason, lines:[{product_id, qty, discount_rate?}], credit_days?, sat_no?, inv_date? }
-  app.post('/api/sales/:id/edit-request', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/sales/:id/edit-request', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const { reason, lines, credit_days, sat_no, inv_date } = req.body || {};
     if (!Array.isArray(lines) || !lines.length) return reply.code(400).send({ error: 'lines_required' });
@@ -329,7 +329,7 @@ export default async function salesRoutes(app) {
   });
 
   // 삭제 요청 (영업/디렉터) — 원본 유지, delete_pending
-  app.post('/api/sales/:id/delete-request', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/sales/:id/delete-request', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const { reason } = req.body || {};
     const inv = (await query(`SELECT id, status FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];

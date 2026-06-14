@@ -84,7 +84,13 @@
   let session={token:null,user:null,api:''};
   let teams=[], users=[];
   // 부여 가능한 페이지(키 → 표시명). 시스템에 맞춰 핵심만.
-  const PAGES=[['customers','고객관리'],['targets','매출목표'],['pipeline','영업활동·단계'],['budget','마케팅예산'],['finance','재무'],['settlement','수금(AR)'],['inventory','수입원가'],['sales','매출등록'],['products','제품마스터']];
+  // 화면 단위 권한 키 (없음/열람/수정). 그룹으로 묶어 표시.
+  const PERM_GROUPS=[
+    ['영업', [['quote','견적(작성·목록)'],['sales','매출 등록'],['stock','재고 이동'],['shortage','부족분'],['devrequest','개발 요청'],['pipeline','영업활동(파이프라인)'],['customers','고객'],['targets','매출목표']]],
+    ['재무', [['transactions','재무(거래·캐시플로)'],['settlement','수금/정산(AR)'],['budget','예산'],['inventory','수입원가·입고']]],
+    ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
+  ];
+  const PAGES=PERM_GROUPS.flatMap(([,arr])=>arr);
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
 
@@ -159,12 +165,14 @@
           <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
           <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
             <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
-          <td style="max-width:460px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PAGES.map(([k,label])=>{
-            const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
-            return `<label class="pg">${label} <select style="padding:3px 5px;font-size:11px" onchange="setPageAccess(${u.id},'${k}',this.value)">
-              <option value="none" ${cur==='none'?'selected':''}>없음</option>
-              <option value="view" ${cur==='view'?'selected':''}>보기</option>
-              <option value="edit" ${cur==='edit'?'selected':''}>수정</option></select></label>`;}).join('')}</td>
+          <td style="max-width:560px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PERM_GROUPS.map(([gname,arr])=>{
+            return `<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:800;color:#888;margin-bottom:2px">${gname}</div>`+arr.map(([k,label])=>{
+              const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
+              const col=cur==='edit'?'#0F6E56':cur==='view'?'#B8893B':'#bbb';
+              return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px">${label} <select style="padding:3px 5px;font-size:11px" onchange="setPageAccess(${u.id},'${k}',this.value)">
+                <option value="none" ${cur==='none'?'selected':''}>없음</option>
+                <option value="view" ${cur==='view'?'selected':''}>열람</option>
+                <option value="edit" ${cur==='edit'?'selected':''}>수정·기록</option></select></label>`;}).join('')+`</div>`;}).join('')}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
         </tr>`).join('')+'</tbody></table>';
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -197,5 +205,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
+<script src="refatrix-nav.js"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
@@ -26,7 +26,7 @@ async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, 
 
 export default async function stockRoutes(app) {
   // 부족분 SKU별 집계 (발주 근거) — open 상태 shortage 합산 + 요약(부족/발주)
-  app.get('/api/shortages/by-sku', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+  app.get('/api/shortages/by-sku', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async () => {
     const rows = (await query(
       `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
               SUM(sh.shortage_qty)::numeric AS total_shortage,
@@ -59,7 +59,7 @@ export default async function stockRoutes(app) {
   });
 
   // 수동 이동 등록 (입고/출고/조정). 참조번호 필수.
-  app.post('/api/stock/movements', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/stock/movements', { preHandler: [authGuard, requirePageEditAny(['stock','sales'])] }, async (req, reply) => {
     const b = req.body || {};
     const productId = Number(b.product_id);
     const moveType = String(b.move_type || '');
@@ -78,7 +78,7 @@ export default async function stockRoutes(app) {
   });
 
   // 엑셀 일괄 등록: { rows: [{code|product_id, move_type, qty, ref, note}] }
-  app.post('/api/stock/movements/bulk', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/stock/movements/bulk', { preHandler: [authGuard, requirePageEditAny(['stock','sales'])] }, async (req, reply) => {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (!rows.length) return reply.code(400).send({ error: 'no_rows' });
     const out = await withTx(async (c) => {
@@ -114,7 +114,7 @@ export default async function stockRoutes(app) {
   });
 
   // 이동 내역 목록 (전체: 수동 + 매출/수입 자동). 필터: product_id, move_type, from, to, source
-  app.get('/api/stock/movements', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/stock/movements', { preHandler: [authGuard, requirePageAny(['stock','sales'])] }, async (req) => {
     const conds = []; const args = [];
     if (req.query.product_id) { args.push(Number(req.query.product_id)); conds.push(`m.product_id=$${args.length}`); }
     if (['in', 'out', 'adjust'].includes(String(req.query.move_type))) { args.push(req.query.move_type); conds.push(`m.move_type=$${args.length}`); }

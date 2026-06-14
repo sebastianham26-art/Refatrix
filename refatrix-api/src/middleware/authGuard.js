@@ -42,6 +42,28 @@ export function requirePageEdit(pageKey) {
   };
 }
 
+// 여러 화면키 중 하나라도 열람 가능하면 통과 (화면키 세분화 + 레거시 'sales' 하위호환)
+export function requirePageAny(pageKeys) {
+  return async (req, reply) => {
+    const { perm, isRegistered } = req.ctx;
+    if (perm.role === 'director') return;
+    const ok = pageKeys.some((k) => pageAllowed(perm, k, isRegistered));
+    if (!ok) return reply.code(403).send({ error: 'forbidden', page: pageKeys[0] });
+  };
+}
+
+// 여러 화면키 중 하나라도 'edit'이면 쓰기 통과 (하위호환)
+export function requirePageEditAny(pageKeys) {
+  return async (req, reply) => {
+    const { perm, isRegistered } = req.ctx;
+    if (perm.role === 'director') return;
+    const anyAllowed = pageKeys.some((k) => pageAllowed(perm, k, isRegistered));
+    if (!anyAllowed) return reply.code(403).send({ error: 'forbidden', page: pageKeys[0] });
+    const anyEdit = pageKeys.some((k) => pageAllowed(perm, k, isRegistered) && ((perm.pageAccess && perm.pageAccess[k]) || 'edit') === 'edit');
+    if (!anyEdit) return reply.code(403).send({ error: 'read_only', page: pageKeys[0] });
+  };
+}
+
 export function requireDirector(req, reply, done) {
   if (req.ctx.perm.role !== 'director') {
     return reply.code(403).send({ error: 'director_only' });

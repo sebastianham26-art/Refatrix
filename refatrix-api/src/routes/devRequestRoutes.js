@@ -14,7 +14,7 @@ function daysBetween(a, b) {
 function requireDevAccess() {
   return async (req, reply) => {
     const { perm, isRegistered } = req.ctx;
-    const ok = ['sales', 'products', 'marketing'].some((k) => pageAllowed(perm, k, isRegistered));
+    const ok = ['devrequest', 'quote', 'sales', 'products', 'marketing'].some((k) => pageAllowed(perm, k, isRegistered));
     if (!ok) return reply.code(403).send({ error: 'forbidden' });
   };
 }

@@ -324,7 +324,8 @@
       +(bankParts.length?'<div class="bank"><b>Datos bancarios</b><br>'+bankParts.join(' &nbsp;·&nbsp; ')+'</div>':'')
       +'<div class="foot">'+esc(co.emisor||'Refatrix')+(co.homepage?' · '+esc(co.homepage):'')+'</div>'
       +'<div class="noprint" style="margin-top:18px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;background:#143D34;color:#fff;border:none;border-radius:6px;cursor:pointer">인쇄 / PDF 저장</button></div>'
-      +'</body></html>';
+      +'<script src="refatrix-nav.js"></script>
+</body></html>';
     const win=window.open('','_blank');
     if(!win){ m.className='msg err';m.textContent='팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.';return; }
     win.document.open();win.document.write(html);win.document.close();

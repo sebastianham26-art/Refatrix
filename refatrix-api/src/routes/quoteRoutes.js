@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
@@ -80,12 +80,12 @@ export default async function quoteRoutes(app) {
   }
 
   // 단건 코드 조회 (화면에서 SYD 다중매칭 후보 표시용)
-  app.get('/api/quotes/resolve-code', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/quotes/resolve-code', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     return await resolveCode(req.query.code);
   });
 
   // 자동완성: CTR 코드 또는 SYD 코드 부분일치 검색 (영업 권한)
-  app.get('/api/quotes/search-code', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/quotes/search-code', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     const q = String(req.query.q || '').trim();
     if (q.length < 1) return { items: [] };
     const like = `%${q}%`;
@@ -112,7 +112,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 견적 줄 계산 미리보기 (저장 없이): body { customer_id, lines:[{code, product_id?, qty}] }
-  app.post('/api/quotes/preview', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.post('/api/quotes/preview', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req) => {
     const b = req.body || {};
     let discountRate = 0;
     if (b.customer_id) {
@@ -194,7 +194,7 @@ export default async function quoteRoutes(app) {
     return rows;
   }
 
-  app.post('/api/quotes', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/quotes', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const b = req.body || {};
     const isGuest = !b.customer_id && (b.guest_name || b.guest === true || b.discount_rate != null);
     let customerId = null, guestName = null, discountRate = 0;
@@ -233,7 +233,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 견적 수정(draft/confirmed만) — 라인 전체 교체
-  app.put('/api/quotes/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.put('/api/quotes/:id', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const b = req.body || {};
     const q = (await query(`SELECT status, customer_id FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
@@ -261,7 +261,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 견적 상태 변경: confirmed / cancelled / draft
-  app.post('/api/quotes/:id/status', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/quotes/:id/status', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const st = String(req.body?.status || '');
     if (!['draft', 'confirmed', 'cancelled'].includes(st)) return reply.code(400).send({ error: 'bad_status' });
@@ -273,7 +273,7 @@ export default async function quoteRoutes(app) {
   });
 
   // ============ 목록 / 상세 ============
-  app.get('/api/quotes', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/quotes', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     const from = String(req.query.from || ''); const to = String(req.query.to || '');
     const status = String(req.query.status || '');
     const conds = [`q.deleted_at IS NULL`]; const args = [];
@@ -305,7 +305,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 미결/불특정 카운트 (배지용)
-  app.get('/api/quotes/open-count', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+  app.get('/api/quotes/open-count', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async () => {
     const r = (await query(
       `SELECT
          COUNT(*) FILTER (WHERE status IN ('draft','confirmed'))::int AS open,
@@ -315,7 +315,7 @@ export default async function quoteRoutes(app) {
     return { open: r.open || 0, guest_pending: r.guest_pending || 0, delete_pending: r.delete_pending || 0 };
   });
 
-  app.get('/api/quotes/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.get('/api/quotes/:id', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(
       `SELECT q.*, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone
@@ -338,7 +338,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 삭제 요청 (영업) — 즉시 삭제하지 않고 디렉터 승인 대기. 승인 전까지 집계 제외.
-  app.post('/api/quotes/:id/delete-request', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/quotes/:id/delete-request', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const reason = String(req.body?.reason || '').trim();
     if (!reason) return reply.code(400).send({ error: 'reason_required', note: '삭제 사유를 입력하세요.' });
@@ -379,7 +379,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 삭제 승인 대기 목록 (디렉터 배지/검토용)
-  app.get('/api/quotes/delete-pending', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+  app.get('/api/quotes/delete-pending', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async () => {
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.total_mxn, q.total_qty, q.sku_count, q.del_reason, q.del_requested_at,
               c.name AS customer_name, q.customer_id, q.guest_name, u.name AS requested_by_name
@@ -400,7 +400,7 @@ export default async function quoteRoutes(app) {
   // ============ 고객-SKU 구매 실적 (최근 3년, 수량 기준) ============
   // GET /api/quotes/customer-sku-history?customer_id=&product_id=
   // 반환: years[{year, qty, pct}], total3y, totalPct(전체 누적 비중)
-  app.get('/api/quotes/customer-sku-history', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/quotes/customer-sku-history', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     const customerId = Number(req.query.customer_id);
     const productId = Number(req.query.product_id);
     if (!customerId || !productId) return { years: [], total3y: 0, totalPct: null };
@@ -440,7 +440,7 @@ export default async function quoteRoutes(app) {
     };
   });
   // 견적 전환 미리보기: 3갈래 분류 (즉시매출 / 부족(발주) / 미등록(개발요청))
-  app.get('/api/quotes/:id/convert-preview', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.get('/api/quotes/:id/convert-preview', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
@@ -465,7 +465,7 @@ export default async function quoteRoutes(app) {
   });
 
   // ============ 전체 SKU 가격표 (엑셀 다운로드용) ============
-  app.get('/api/quotes/price-list', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/quotes/price-list', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     let discountRate = null;
     if (req.query.customer_id) {
       const c = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [Number(req.query.customer_id)])).rows[0];
@@ -489,7 +489,7 @@ export default async function quoteRoutes(app) {
   });
 
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.
-  app.post('/api/quotes/:id/convert', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+  app.post('/api/quotes/:id/convert', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
