@@ -120,7 +120,7 @@
     </div>
 
     <!-- 당월 신규 개발 위젯 -->
-    <div class="card hidden" id="devCard" style="cursor:pointer" onclick="goScreen('devrequest')">
+    <div class="card hidden" id="devCard" style="cursor:pointer" onclick="goScreen('devrequest','view=developed')">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div style="background:#f1ebf7;color:#6B4FB0;border-radius:10px;padding:10px 16px;text-align:center;min-width:90px">
           <div style="font-size:26px;font-weight:800" id="devCount">–</div>
@@ -222,12 +222,12 @@
   // 화면 열기: 토큰을 URL 해시로 전달(방법 A)
   // 화면 열기(B방식): 같은 탭에서 이동 + sessionStorage로 세션 전달
   // file:// 은 탭마다 보안 격리되므로, 같은 탭 안에서 유지되는 sessionStorage를 사용.
-  function goScreen(key){
+  function goScreen(key,extra){
     const s=SCREENS[key];if(!s)return;
     if(!canSee(key)){alert('이 화면의 권한이 없습니다. 디렉터에게 요청하세요.');return;}
     try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
-    // 해시도 함께(폴백)
-    const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
+    let hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
+    if(extra) hash+='&'+extra;
     location.href=s.file+hash;   // 같은 탭에서 이동
   }
 
@@ -258,8 +258,10 @@
       if(!canSee('devrequest')) return;
       const d=await fetch(session.api+'/api/dev-requests/kpi',{headers:auth()}).then(r=>r.json());
       $('devCount').textContent=d.completed||0;
-      $('devSub').textContent='이번 달 개발완료 '+(d.completed||0)+'건'+(d.avg_days!=null?(' · 평균 '+d.avg_days+'일'):'')+(d.open?(' · 진행중 '+d.open+'건'):'')+' — 클릭하면 개발요청 화면';
+      window.__devOpen=d.open||0;
+      $('devSub').textContent='이번 달 개발완료 '+(d.completed||0)+'건'+(d.avg_days!=null?(' · 평균 '+d.avg_days+'일'):'')+(d.open?(' · 진행중 '+d.open+'건'):'')+' — 클릭하면 개발 리스트';
       $('devCard').classList.remove('hidden');
+      if(typeof renderFlows==='function') renderFlows();
     }catch(e){}
   }
   async function loadQuoteBadge(){
@@ -459,21 +461,23 @@
       AR,
       step('C2','파이프라인 개발','칸반·미팅·디렉터 지시','pipeline',(b.directives_unread||0)+(sum&&sum.isDirector?(b.directives_open_all||0):0),false),
       AR,
-      step('C3','정체 관리','30일+ 정체 고객 집중','pipeline',b.stalled_customers||0,true),
+      step('C3','수주·견적 입력','영업/영업지원 · 3갈래 자동분류','quotelist',(window.__quoteOpen||0)),
       AR,
-      step('C4','매출 등록','인보이스·부분출고','sales',b.sales_change_approvals||0),
+      step('C4','매출 등록','① 즉시매출 (가용분 인보이스)','sales',b.sales_change_approvals||0),
       AR,
-      step('C5','수금 관리','AR·연체 추적','customers',b.overdue_customers||0),
+      step('C5','발주 근거','② 부족분 SKU 집계','shortage',0),
+      AR,
+      step('C6','수금 관리','AR·연체 추적','customers',b.overdue_customers||0),
     ].join('');
-    // Product View: 제품 → 목표 → 마케팅예산 → 비용·재무 → 실적
+    // Product View: 제품 → 개발요청 → 목표 → 마케팅예산 → 비용·재무 → 실적
     $('flowProduct').innerHTML=[
       step('P1','제품·카탈로그','SKU·차량적용 보완','products',0),
       AR,
-      step('P2','매출 목표 수립','회사→팀→고객 배분','targets',(b.target_approvals||0)+(b.target_rejected||0)),
+      step('P2','③ 제품 개발','경쟁사 대응 · 검토→의뢰→완료','devrequest',(window.__devOpen||0),false),
       AR,
-      step('P3','마케팅 배분','메뉴판 수량→비용','marketing',(b.marketing_approvals||0)+(b.marketing_rejected||0)+(b.marketing_over_months||0)),
+      step('P3','매출 목표 수립','회사→팀→고객 배분','targets',(b.target_approvals||0)+(b.target_rejected||0)),
       AR,
-      step('P4','비용·재무','거래·캐시플로','finance',0),
+      step('P4','마케팅 배분','메뉴판 수량→비용','marketing',(b.marketing_approvals||0)+(b.marketing_rejected||0)+(b.marketing_over_months||0)),
       AR,
       step('P5','실적 반영','목표 대비 달성률','targets',0),
     ].join('');

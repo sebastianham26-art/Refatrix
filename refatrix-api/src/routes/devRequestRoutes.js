@@ -33,16 +33,48 @@ function withDurations(r) {
   };
 }
 
+// 제품·마케팅 담당(역할 marketing/ops 또는 products/marketing 페이지 권한) 알림 todo 생성
+export async function notifyProductMarketing(c, { title, detail, createdBy }) {
+  const rows = (await c.query(
+    `SELECT DISTINCT u.id FROM users u
+       LEFT JOIN user_page_access pa ON pa.user_id=u.id AND pa.page_key IN ('products','marketing') AND COALESCE(pa.device_req,'') <> 'blocked'
+      WHERE u.deleted_at IS NULL AND (u.role IN ('marketing','ops') OR pa.user_id IS NOT NULL)`)).rows;
+  let recipients = rows.map((r) => Number(r.id));
+  if (!recipients.length) {
+    // 폴백: 담당자가 없으면 디렉터에게
+    const dirs = (await c.query(`SELECT id FROM users WHERE role='director' AND deleted_at IS NULL`)).rows;
+    recipients = dirs.map((r) => Number(r.id));
+  }
+  const ids = [];
+  for (const uid of recipients) {
+    const t = (await c.query(
+      `INSERT INTO todos (title, detail, assignee_id, due_date, kind, created_by) VALUES ($1,$2,$3,CURRENT_DATE,'dev_review',$4) RETURNING id`,
+      [title, detail, uid, createdBy])).rows[0];
+    ids.push(t.id);
+  }
+  return ids;
+}
+
 export default async function devRequestRoutes(app) {
-  // 생성(오더 접수) — 영업
+  // 생성(오더 접수) — 영업. 생성 즉시 제품·마케팅 담당에게 검토 알림(todo)
   app.post('/api/dev-requests', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const b = req.body || {};
-    const r = (await query(
-      `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, created_by)
-       VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7) RETURNING id`,
-      [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, req.ctx.perm.userId])).rows[0];
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `dev_request:${r.id}` });
-    return { id: r.id };
+    const result = await withTx(async (c) => {
+      const r = (await c.query(
+        `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, created_by)
+         VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7) RETURNING id`,
+        [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, req.ctx.perm.userId])).rows[0];
+      let custName = '';
+      if (b.customer_id) custName = (await c.query(`SELECT name FROM customers WHERE id=$1`, [b.customer_id])).rows[0]?.name || '';
+      const todos = await notifyProductMarketing(c, {
+        title: `개발검토 요청: ${b.input_code || ''}`,
+        detail: `${custName ? custName + ' 고객 ' : ''}경쟁사 코드 ${b.input_code || '-'} 개발 검토가 필요합니다. (요청수량 ${b.requested_qty || '-'})`,
+        createdBy: req.ctx.perm.userId,
+      });
+      return { id: r.id, todos: todos.length };
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `dev_request:${result.id}`, detail: { notified: result.todos } });
+    return result;
   });
 
   // 목록 + 소요기간
@@ -77,9 +109,12 @@ export default async function devRequestRoutes(app) {
     if (!r) return reply.code(404).send({ error: 'not_found' });
     await query(
       `UPDATE product_dev_requests SET review_syd_code=$1, review_app=$2, review_list_price=$3, review_memo=$4,
-              reviewed_at=COALESCE($5, reviewed_at, CURRENT_DATE), status=CASE WHEN status='received' THEN 'reviewed' ELSE status END,
-              updated_by=$6, updated_at=now() WHERE id=$7`,
-      [b.review_syd_code, b.review_app || null, Number(b.review_list_price), b.review_memo || null, b.reviewed_at || null, req.ctx.perm.userId, id]);
+              review_maker=$5, review_model=$6, review_year=$7,
+              reviewed_at=COALESCE($8, reviewed_at, CURRENT_DATE), status=CASE WHEN status='received' THEN 'reviewed' ELSE status END,
+              updated_by=$9, updated_at=now() WHERE id=$10`,
+      [b.review_syd_code, b.review_app || null, Number(b.review_list_price), b.review_memo || null,
+       b.review_maker || null, b.review_model || null, b.review_year || null,
+       b.reviewed_at || null, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'review' } });
     return { ok: true };
   });

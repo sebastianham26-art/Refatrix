@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
+import { notifyProductMarketing } from './devRequestRoutes.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -468,14 +469,24 @@ export default async function quoteRoutes(app) {
       sale = res.json();
       invoiceId = sale.id || (sale.invoice && sale.invoice.id);
     }
-    // 케이스 3: 미등록 코드 → 제품개발요청 생성
+    // 케이스 3: 미등록 코드 → 제품개발요청 생성 + 제품·마케팅 담당 검토 알림
     const devIds = [];
-    for (const u of unmatched) {
-      const r = (await query(
-        `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
-         VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
-        [u.input_code || null, customerId, Number(u.qty) || null, invDate, id, req.ctx.perm.userId])).rows[0];
-      devIds.push(r.id);
+    if (unmatched.length) {
+      const custName = (await query(`SELECT name FROM customers WHERE id=$1`, [customerId])).rows[0]?.name || '';
+      await withTx(async (c) => {
+        for (const u of unmatched) {
+          const r = (await c.query(
+            `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
+             VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
+            [u.input_code || null, customerId, Number(u.qty) || null, invDate, id, req.ctx.perm.userId])).rows[0];
+          devIds.push(r.id);
+          await notifyProductMarketing(c, {
+            title: `개발검토 요청: ${u.input_code || ''}`,
+            detail: `${custName ? custName + ' 고객 ' : ''}견적 ${q.quote_no}에서 미등록 코드 ${u.input_code || '-'} 개발 검토가 필요합니다.`,
+            createdBy: req.ctx.perm.userId,
+          });
+        }
+      });
     }
     await query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`, [invoiceId || null, customerId, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, dev_requests: devIds.length } });
