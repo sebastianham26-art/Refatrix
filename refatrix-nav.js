@@ -43,13 +43,13 @@
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
-    {key:'common', title:'공통', color:'#143D34', screens:['portal','salesperf','dashboard','rnr']},
-    {key:'sales', title:'영업', color:'#1F6FB2', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
-    {key:'support', title:'영업지원', color:'#4A86C0', screens:['sales','stock','shortage','settlement','importcost','import']},
-    {key:'finance', title:'재무', color:'#B23A2E', screens:['finance','settlement','budget','importcost']},
-    {key:'pm', title:'제품·마케팅', color:'#6B4FB0', screens:['products','devrequest','marketing']},
-    {key:'cal', title:'일정', color:'#0F6E56', screens:['board']},
-    {key:'admin', title:'관리', color:'#5B6770', screens:['users','company']}
+    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','importcost','import']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget','importcost']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
+    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board']},
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company']}
   ];
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
@@ -86,18 +86,22 @@
 
   function styles(){
     var css=''+
-    '#rnav{position:sticky;top:0;z-index:9000;background:#143D34;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.18)}'+
-    '#rnav .rbar{display:flex;align-items:center;gap:4px;padding:6px 10px;overflow-x:auto;white-space:nowrap}'+
-    '#rnav .rlogo{color:#fff;font-weight:800;font-size:13px;margin-right:8px;flex:0 0 auto}'+
-    '#rnav .rg{flex:0 0 auto;padding:6px 11px;border-radius:8px;font-size:12.5px;font-weight:700;color:#cfe0d8;background:transparent;border:none;cursor:pointer}'+
-    '#rnav .rg:hover{background:rgba(255,255,255,.12);color:#fff}'+
-    '#rnav .rg.on{color:#fff}'+
-    '#rnav .rsub{display:none;background:#0e2f28;padding:8px 10px;gap:6px;flex-wrap:wrap}'+
+    '#rnav{position:sticky;top:0;z-index:9000;font-family:inherit;background:linear-gradient(180deg,#12221d 0%,#0d1a16 100%);border-bottom:1px solid rgba(201,167,92,.28);box-shadow:0 6px 22px -10px rgba(0,0,0,.55)}'+
+    '#rnav .rbar{display:flex;align-items:center;gap:2px;padding:0 16px;height:46px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}'+
+    '#rnav .rbar::-webkit-scrollbar{display:none}'+
+    '#rnav .rlogo{display:flex;align-items:center;gap:7px;color:#F3ECDD;font-weight:800;font-size:14px;letter-spacing:.04em;margin-right:16px;flex:0 0 auto}'+
+    '#rnav .rlogo .dot{width:7px;height:7px;border-radius:50%;background:#C9A75C;box-shadow:0 0 8px rgba(201,167,92,.7)}'+
+    '#rnav .rg{position:relative;flex:0 0 auto;padding:14px 14px;font-size:13px;font-weight:600;color:#9fb0a8;background:transparent;border:none;cursor:pointer;letter-spacing:.02em;transition:color .15s}'+
+    '#rnav .rg:hover{color:#F3ECDD}'+
+    '#rnav .rg.on{color:#F3ECDD;font-weight:700}'+
+    '#rnav .rg.on:after{content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;border-radius:2px 2px 0 0;background:var(--ac,#C9A75C);box-shadow:0 0 10px var(--ac,#C9A75C)}'+
+    '#rnav .rsub{display:none;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 16px;background:rgba(255,255,255,.035);border-top:1px solid rgba(255,255,255,.06)}'+
     '#rnav .rsub.show{display:flex}'+
-    '#rnav .rs{flex:0 0 auto;padding:6px 10px;border-radius:7px;font-size:12px;color:#dfeae4;background:rgba(255,255,255,.07);cursor:pointer;border:1px solid transparent}'+
-    '#rnav .rs:hover{background:rgba(255,255,255,.18);color:#fff}'+
-    '#rnav .rs.cur{background:#fff;color:#143D34;font-weight:800}'+
-    '#rnav .rwho{margin-left:auto;flex:0 0 auto;color:#9fc2b6;font-size:11px;padding-left:10px}';
+    '#rnav .rs{flex:0 0 auto;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;color:#c7d2cc;background:rgba(255,255,255,.05);cursor:pointer;border:1px solid rgba(255,255,255,.07);transition:all .14s}'+
+    '#rnav .rs:hover{background:rgba(201,167,92,.16);border-color:rgba(201,167,92,.4);color:#F3ECDD}'+
+    '#rnav .rs.cur{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;font-weight:800;border-color:transparent;box-shadow:0 2px 8px -2px rgba(201,167,92,.6)}'+
+    '#rnav .rwho{margin-left:auto;flex:0 0 auto;color:#7f928a;font-size:11px;font-weight:500;padding-left:14px;letter-spacing:.02em}'+
+    '#rnav .rwho b{color:#bcae8e;font-weight:700}';
     var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   }
   function groupVisible(g){
@@ -111,10 +115,10 @@
     var cur=curScreen();
     // 현재 화면이 속한 그룹 자동 오픈
     if(openGroup===null){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ openGroup=vis[i].key; break; } } if(openGroup===null&&vis[0]) openGroup=vis[0].key; }
-    var bar='<div class="rbar"><span class="rlogo">Refatrix</span>';
-    vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="'+(g.key===openGroup?'background:'+g.color:'')+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
+    var bar='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span>';
+    vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
-    bar+='<span class="rwho">'+(who?who+' · ':'')+(sum?(sum.role||''):'')+'</span></div>';
+    bar+='<span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span></div>';
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
     var sub='';

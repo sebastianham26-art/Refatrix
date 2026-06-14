@@ -71,10 +71,11 @@
   .mcard .md{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.35}
   .mcard .mbadge{position:absolute;top:8px;right:8px;min-width:17px;height:17px;padding:0 5px;background:#B23A2E;color:#fff;border-radius:999px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
   /* 상단 고정 탭바 */
-  .navfixed{position:fixed;top:0;left:0;right:0;z-index:200;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.07)}
-  .navfixed-inner{max-width:1200px;margin:0 auto;padding:9px 24px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .navfixed{position:static;background:transparent;border-bottom:none;box-shadow:none}
+  .navfixed-inner{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  body.has-navbar{padding-top:0}
   body.has-navbar{padding-top:62px}
-  @media(max-width:600px){ body.has-navbar{padding-top:96px} }
+  @media(max-width:600px){ body.has-navbar{padding-top:0} }
   .tabbtn{position:relative;border:1px solid var(--line);background:#faf8f3;border-radius:999px;padding:7px 15px;font-size:13px;font-weight:700;color:var(--brand);cursor:pointer;font-family:inherit}
   .tabbtn.on{color:#fff}
   .tabbtn .tbadge{position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;padding:0 4px;background:var(--expense);color:#fff;border-radius:999px;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
@@ -111,7 +112,7 @@
 </style>
 </head>
 <body>
-<div class="navfixed hidden" id="navFixed"><div class="navfixed-inner" id="tabBar"></div></div>
+<div class="navfixed hidden" id="navFixed" style="display:none"><div class="navfixed-inner" id="tabBar"></div></div>
 <div class="wrap">
   <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">포털 · 업무 프로세스</div></div><div class="who" id="who"></div></div>
 
@@ -155,7 +156,7 @@
 
     <!-- 트리 패널 (탭은 상단 고정 바) -->
     <div class="card" id="menuCard">
-      <h2 id="treeTitle" style="margin:0 0 10px">내 메뉴 <span class="hint" style="display:inline;margin:0">— 위 탭을 누르면 해당 분야 화면이 펼쳐집니다.</span></h2>
+      <h2 id="treeTitle" style="margin:0 0 14px">내 메뉴 <span class="hint" style="display:inline;margin:0">— 권한이 있는 모든 화면입니다. 상단 트리로도 이동할 수 있습니다.</span></h2>
       <div id="treePanel"><div class="hint">불러오는 중…</div></div>
     </div>
 
@@ -339,13 +340,13 @@
 
   // 탭바 + 트리: 6개 분야
   const MENU_GROUPS=[
-    {key:'common', title:'공통', color:'#143D34', screens:['salesperf','dashboard']},
-    {key:'sales', title:'영업', color:'#1F6FB2', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
-    {key:'support', title:'영업지원', color:'#4A86C0', screens:['sales','stock','shortage','settlement','importcost','import']},
-    {key:'finance', title:'재무', color:'#B23A2E', screens:['finance','settlement','budget','importcost']},
-    {key:'pm', title:'제품·마케팅', color:'#6B4FB0', screens:['products','devrequest','marketing']},
-    {key:'admin', title:'관리', color:'#5B6770', screens:['users','company']},
-    {key:'cal', title:'일정', color:'#0F6E56', screens:['board']},
+    {key:'common', title:'공통', color:'#C9A75C', screens:['salesperf','dashboard']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','importcost','import']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget','importcost']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company']},
+    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board']},
   ];
   const SCREEN_DESC={
     board:'달력·공지·내 할 일', dashboard:'위젯 대시보드',
@@ -381,16 +382,27 @@
   function selectTab(k){ openTab=k; renderTabs(); }
   function renderTree(){
     const panel=$('treePanel'); if(!panel)return;
-    const g=MENU_GROUPS.find(x=>x.key===openTab);
-    if(!g){panel.innerHTML='';return;}
-    const visible=g.screens.filter(k=>SCREENS[k]&&canSee(k));
-    if(!visible.length){panel.innerHTML='<div class="hint">이 분야에 접근 가능한 화면이 없습니다.</div>';return;}
-    panel.innerHTML='<div class="mgrid">'+visible.map(k=>{
-      const n=menuBadge(k);
-      return '<div class="mcard" style="border-left-color:'+g.color+'" onclick="goScreen(\''+k+'\')">'
-        +(n>0?'<span class="mbadge">'+n+'</span>':'')
-        +'<div class="mn">'+SCREENS[k].name+'</div><div class="md">'+(SCREEN_DESC[k]||'')+'</div></div>';
-    }).join('')+'</div>';
+    const seen={};
+    const groups=MENU_GROUPS.filter(groupVisible);
+    let html='';
+    groups.forEach(g=>{
+      const visible=g.screens.filter(k=>SCREENS[k]&&canSee(k)&&!seen[k]);
+      visible.forEach(k=>seen[k]=1);
+      if(!visible.length) return;
+      html+='<div style="margin-bottom:16px">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin:0 0 8px">'
+          +'<span style="width:10px;height:10px;border-radius:3px;background:'+g.color+'"></span>'
+          +'<span style="font-size:13px;font-weight:800;color:var(--brand);letter-spacing:.02em">'+g.title+'</span>'
+        +'</div>'
+        +'<div class="mgrid">'+visible.map(k=>{
+          const n=menuBadge(k);
+          return '<div class="mcard" style="border-left-color:'+g.color+'" onclick="goScreen(\''+k+'\')">'
+            +(n>0?'<span class="mbadge">'+n+'</span>':'')
+            +'<div class="mn">'+SCREENS[k].name+'</div><div class="md">'+(SCREEN_DESC[k]||'')+'</div></div>';
+        }).join('')+'</div>'
+      +'</div>';
+    });
+    panel.innerHTML=html||'<div class="hint">접근 가능한 화면이 없습니다.</div>';
   }
 
   // 포털 일정 달력 (이번 달 미리보기)
@@ -596,5 +608,6 @@
   })();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 </script>
+<script src="refatrix-nav.js"></script>
 </body>
 </html>
