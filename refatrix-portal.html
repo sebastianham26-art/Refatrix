@@ -28,12 +28,31 @@
   .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
-  .fmchip{padding:5px 11px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted)}
-  .fmchip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
-  .frow{display:flex;align-items:center;gap:10px;padding:7px 0;flex-wrap:wrap}
-  .frow .fl{font-weight:700;min-width:180px}.frow .fv{font-size:13px}
-  .fbranch{border-left:3px solid var(--line);padding-left:14px;margin:4px 0 4px 6px}
-  .finner{font-size:12px;color:var(--muted);padding:2px 0 8px 14px}
+  /* 수주 흐름 위젯 */
+  .fmonths{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:fit-content;max-width:100%}
+  .fmonth{padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted);border-right:1px solid var(--line);white-space:nowrap;text-align:center;transition:background .12s}
+  .fmonth:last-child{border-right:none}
+  .fmonth .yy{display:block;font-size:9px;opacity:.65;font-weight:600}
+  .fmonth.on{background:var(--brand);color:#fff}
+  .fmonth:hover:not(.on){background:#f0f5f2}
+  .freq{display:flex;justify-content:space-between;align-items:center;gap:12px;background:linear-gradient(90deg,#eef3f0,#f8faf9);border:1px solid #d8e3dd;border-radius:12px;padding:13px 18px}
+  .freq .lbl{font-size:13px;font-weight:800;color:var(--brand)}
+  .freq .lbl small{display:block;font-size:10.5px;color:var(--muted);font-weight:600;margin-top:2px}
+  .fstats{display:flex;gap:20px}
+  .fstat{text-align:right}
+  .fstat .n{font-size:26px;font-weight:800;line-height:1;color:var(--brand)}
+  .fstat .u{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.04em}
+  .fcards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+  @media(max-width:640px){.fcards{grid-template-columns:1fr}}
+  .fcard{border:1px solid var(--line);border-top:3px solid var(--c);border-radius:12px;padding:13px 14px;cursor:pointer;transition:box-shadow .12s,transform .12s}
+  .fcard:hover{box-shadow:0 6px 18px rgba(0,0,0,.08);transform:translateY(-1px)}
+  .fcard .ttl{font-size:12.5px;font-weight:800;color:var(--c);display:flex;align-items:center;gap:6px}
+  .fcard .big{display:flex;gap:16px;margin-top:9px}
+  .fcard .big .n{font-size:24px;font-weight:800;line-height:1;color:var(--ink)}
+  .fcard .big .u{font-size:9.5px;color:var(--muted);font-weight:700}
+  .fcard .ft{margin-top:10px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px;line-height:1.5}
+  .fcard .ft b{color:var(--ink)}
+  .fbadge{font-size:9px;font-weight:800;color:#fff;background:var(--c);border-radius:999px;padding:1px 7px}
   .hidden{display:none}
   /* 프로세스 지도 */
   .flowlabel{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px}
@@ -257,13 +276,16 @@
   }
   // ===== 수주 흐름 종합 대시보드 =====
   let funnelMonths=[];  // 선택된 'YYYY-MM' 배열 (다중)
-  function ymList(n){ const arr=[]; const d=new Date(); for(let i=0;i<n;i++){ arr.push(new Date(d.getFullYear(),d.getMonth()-i,1).toISOString().slice(0,7)); } return arr; }
+  function ymList(n){ const arr=[]; const d=new Date(); for(let i=n-1;i>=0;i--){ arr.push(new Date(d.getFullYear(),d.getMonth()-i,1).toISOString().slice(0,7)); } return arr; } // 과거→현재(좌→우)
   function initFunnel(){
     if(!canSee('devrequest')){ return; }
     const cur=new Date().toISOString().slice(0,7);
     if(!funnelMonths.length) funnelMonths=[cur];
     const opts=ymList(6);
-    $('funnelMonths').innerHTML=opts.map(m=>'<span class="fmchip'+(funnelMonths.includes(m)?' on':'')+'" onclick="toggleFunnelMonth(\''+m+'\')">'+m+'</span>').join('');
+    $('funnelMonths').innerHTML='<div class="fmonths">'+opts.map(m=>{
+      const [y,mo]=m.split('-');
+      return '<div class="fmonth'+(funnelMonths.includes(m)?' on':'')+'" onclick="toggleFunnelMonth(\''+m+'\')"><span class="yy">'+y+'</span>'+Number(mo)+'월</div>';
+    }).join('')+'</div>';
     $('funnelCard').classList.remove('hidden');
     loadFunnel();
     fetch(session.api+'/api/dev-requests/kpi',{headers:auth()}).then(r=>r.json()).then(d=>{ window.__devOpen=(d&&d.open)||0; window.__devReceived=(d&&d.open_received)||0; window.__devProgress=(d&&d.open_in_progress)||0; if(typeof renderFlows==='function') renderFlows(); }).catch(()=>{});
@@ -280,22 +302,31 @@
       renderFunnel(d);
     }catch(e){ $('funnelBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
-  function fline(label,o,color,sub){
-    const c=color||'var(--brand)';
-    return '<div class="frow"><span class="fl">'+label+'</span><span class="fv" style="color:'+c+'">SKU <b>'+(o.sku||0)+'</b> · 수량 <b>'+(o.qty||0).toLocaleString('es-MX')+'</b></span>'+(sub?'<span class="fsub">'+sub+'</span>':'')+'</div>';
-  }
+  const nf=(n)=>Number(n||0).toLocaleString('es-MX');
   function renderFunnel(d){
-    $('funnelMonthLbl').textContent=(d.months||[]).join(', ')+' 합산';
-    let h='';
-    h+=fline('견적 요청 (고객 최초 요청)',d.requested,'var(--brand)');
-    h+='<div class="fbranch">';
-    h+=fline('① 즉시 매출 가능',d.immediate,'#0F6E56');
-    h+=fline('② 부족 (발주 필요)',d.shortage,'#9a6512');
-    h+='<div class="finner">→ 발주 발행됨 <b>SKU '+(d.ordered.sku||0)+' · '+(d.ordered.qty||0).toLocaleString('es-MX')+'</b> · 미발주 <b style="color:#B23A2E">'+(d.shortage_open.qty||0).toLocaleString('es-MX')+'</b></div>';
-    h+=fline('③ 개발 필요 (미등록)',d.dev_needed,'#6B4FB0');
-    h+='<div class="finner">→ 개발요청 <b>SKU '+(d.dev_total.sku||0)+' · '+(d.dev_total.qty||0).toLocaleString('es-MX')+'</b> · 개발완료 <b style="color:#0F6E56">SKU '+(d.dev_done.sku||0)+' · '+(d.dev_done.qty||0).toLocaleString('es-MX')+'</b></div>';
+    $('funnelMonthLbl').textContent=(d.months||[]).length+'개월 선택';
+    // 견적 요청 배너
+    let h='<div class="freq"><div class="lbl">견적 요청<small>고객이 최초 요청한 라인 기준</small></div>'
+      +'<div class="fstats"><div class="fstat"><div class="n">'+nf(d.requested.sku)+'</div><div class="u">SKU</div></div>'
+      +'<div class="fstat"><div class="n">'+nf(d.requested.qty)+'</div><div class="u">수량</div></div></div></div>';
+    // 3갈래 카드
+    h+='<div class="fcards">';
+    // ① 즉시매출
+    h+='<div class="fcard" style="--c:#0F6E56" onclick="goScreen(\'sales\')">'
+      +'<div class="ttl"><span class="fbadge">①</span> 즉시 매출 가능</div>'
+      +'<div class="big"><div><div class="n">'+nf(d.immediate.sku)+'</div><div class="u">SKU</div></div><div><div class="n">'+nf(d.immediate.qty)+'</div><div class="u">수량</div></div></div>'
+      +'<div class="ft">재고 충분 → 바로 인보이스</div></div>';
+    // ② 부족·발주
+    h+='<div class="fcard" style="--c:#B8893B" onclick="goScreen(\'shortage\')">'
+      +'<div class="ttl"><span class="fbadge">②</span> 부족 (발주 필요)</div>'
+      +'<div class="big"><div><div class="n">'+nf(d.shortage.sku)+'</div><div class="u">SKU</div></div><div><div class="n">'+nf(d.shortage.qty)+'</div><div class="u">수량</div></div></div>'
+      +'<div class="ft">발주됨 <b>'+nf(d.ordered.qty)+'</b> · 미발주 <b style="color:#B23A2E">'+nf(d.shortage_open.qty)+'</b></div></div>';
+    // ③ 개발
+    h+='<div class="fcard" style="--c:#6B4FB0" onclick="goScreen(\'devrequest\',\'view=developed\')">'
+      +'<div class="ttl"><span class="fbadge">③</span> 개발 필요 (미등록)</div>'
+      +'<div class="big"><div><div class="n">'+nf(d.dev_needed.sku)+'</div><div class="u">SKU</div></div><div><div class="n">'+nf(d.dev_needed.qty)+'</div><div class="u">수량</div></div></div>'
+      +'<div class="ft">개발요청 <b>'+nf(d.dev_total.sku)+'건</b> · 완료 <b style="color:#0F6E56">'+nf(d.dev_done.sku)+'건</b></div></div>';
     h+='</div>';
-    h+='<div class="hint" style="margin-top:8px">SKU=견적 요청 라인 수, 수량=요청 수량. 발주는 부족분 해소(resolved) 기준, 개발은 개발요청 기준. <span style="color:#6B4FB0;cursor:pointer" onclick="goScreen(\'devrequest\',\'view=developed\')">개발 리스트 →</span> · <span style="color:#9a6512;cursor:pointer" onclick="goScreen(\'shortage\')">부족분 집계 →</span></div>';
     $('funnelBody').innerHTML=h;
   }
   async function loadQuoteBadge(){
