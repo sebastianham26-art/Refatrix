@@ -203,4 +203,49 @@ export default async function devRequestRoutes(app) {
         ORDER BY d.developed_at DESC, d.id DESC`, [ym])).rows;
     return { ym, items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
   });
+
+  // ===== 수주 이후 흐름 종합 지표 (견적요청 → 즉시매출 / 부족·발주 / 개발) =====
+  // GET /api/dashboard/order-funnel?months=2026-06,2026-05  (여러 월 합산)
+  app.get('/api/dashboard/order-funnel', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const raw = String(req.query.months || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+    const months = raw.length ? raw : [new Date().toISOString().slice(0, 7)];
+
+    // ① 견적 라인 분류 (요청 시점 stock_flag 기준) — SKU=라인수, qty=수량
+    const ql = (await query(
+      `SELECT ql.stock_flag AS flag, COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty
+         FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+        WHERE q.deleted_at IS NULL AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        GROUP BY ql.stock_flag`, [months])).rows;
+    const flag = { ok: { sku: 0, qty: 0 }, low_stock: { sku: 0, qty: 0 }, not_found: { sku: 0, qty: 0 } };
+    let reqSku = 0, reqQty = 0;
+    for (const r of ql) { const f = flag[r.flag] || (flag[r.flag] = { sku: 0, qty: 0 }); f.sku = r.sku; f.qty = Number(r.qty); reqSku += r.sku; reqQty += Number(r.qty); }
+
+    // ② 부족분 → 발주됨(resolved) / 미발주(open) (occurred_at 월)
+    const sh = (await query(
+      `SELECT COUNT(DISTINCT product_id) FILTER (WHERE status='resolved')::int AS ord_sku,
+              COALESCE(SUM(shortage_qty) FILTER (WHERE status='resolved'),0)::numeric AS ord_qty,
+              COUNT(DISTINCT product_id) FILTER (WHERE status='open')::int AS open_sku,
+              COALESCE(SUM(shortage_qty) FILTER (WHERE status='open'),0)::numeric AS open_qty
+         FROM stock_shortages WHERE to_char(occurred_at,'YYYY-MM') = ANY($1)`, [months])).rows[0];
+
+    // ③ 개발요청 → 개발완료 (requested_at 월)
+    const dv = (await query(
+      `SELECT COUNT(*)::int AS total_sku, COALESCE(SUM(requested_qty),0)::numeric AS total_qty,
+              COUNT(*) FILTER (WHERE status='developed')::int AS done_sku,
+              COALESCE(SUM(requested_qty) FILTER (WHERE status='developed'),0)::numeric AS done_qty
+         FROM product_dev_requests
+        WHERE deleted_at IS NULL AND status<>'cancelled' AND to_char(requested_at,'YYYY-MM') = ANY($1)`, [months])).rows[0];
+
+    return {
+      months,
+      requested: { sku: reqSku, qty: reqQty },
+      immediate: { sku: flag.ok.sku, qty: flag.ok.qty },
+      shortage: { sku: flag.low_stock.sku, qty: flag.low_stock.qty },
+      ordered: { sku: sh.ord_sku || 0, qty: Number(sh.ord_qty) || 0 },
+      shortage_open: { sku: sh.open_sku || 0, qty: Number(sh.open_qty) || 0 },
+      dev_needed: { sku: flag.not_found.sku, qty: flag.not_found.qty },
+      dev_total: { sku: dv.total_sku || 0, qty: Number(dv.total_qty) || 0 },
+      dev_done: { sku: dv.done_sku || 0, qty: Number(dv.done_qty) || 0 },
+    };
+  });
 }

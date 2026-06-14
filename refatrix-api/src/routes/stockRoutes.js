@@ -25,7 +25,7 @@ async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, 
 }
 
 export default async function stockRoutes(app) {
-  // 부족분 SKU별 집계 (발주 근거) — open 상태 shortage 합산
+  // 부족분 SKU별 집계 (발주 근거) — open 상태 shortage 합산 + 요약(부족/발주)
   app.get('/api/shortages/by-sku', { preHandler: [authGuard, requirePage('sales')] }, async () => {
     const rows = (await query(
       `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
@@ -36,7 +36,19 @@ export default async function stockRoutes(app) {
         WHERE sh.status='open'
         GROUP BY sh.product_id, p.code, p.name, p.stock_qty
         ORDER BY total_shortage DESC`)).rows;
+    // 요약: 미발주(open) vs 발주됨(resolved)
+    const sm = (await query(
+      `SELECT
+         COUNT(DISTINCT product_id) FILTER (WHERE status='open')::int AS open_sku,
+         COALESCE(SUM(shortage_qty) FILTER (WHERE status='open'),0)::numeric AS open_qty,
+         COUNT(DISTINCT product_id) FILTER (WHERE status='resolved')::int AS ordered_sku,
+         COALESCE(SUM(shortage_qty) FILTER (WHERE status='resolved'),0)::numeric AS ordered_qty
+       FROM stock_shortages`)).rows[0];
     return {
+      summary: {
+        open_sku: sm.open_sku || 0, open_qty: Number(sm.open_qty) || 0,
+        ordered_sku: sm.ordered_sku || 0, ordered_qty: Number(sm.ordered_qty) || 0,
+      },
       items: rows.map((r) => ({
         product_id: r.product_id, ctr_code: r.ctr_code, product_name: r.product_name,
         stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null,
