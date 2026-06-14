@@ -75,6 +75,17 @@
   </div>
 </div>
 
+<!-- 견적 상세 / 편집 모달 -->
+<div id="dtModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <span style="font-size:15px;font-weight:800;color:var(--brand)" id="dtTitle">견적 상세</span>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="closeDetail()">닫기 ✕</button>
+    </div>
+    <div style="padding:16px 18px" id="dtBody"></div>
+  </div>
+</div>
+
 <!-- 매출 전환 모달 -->
 <div id="cvModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:50px 16px">
   <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
@@ -174,12 +185,11 @@
     items.forEach(q=>{
       const conv=q.status==='converted';
       const canConvert = q.status==='draft' || q.status==='confirmed';
-      let action='';
-      if(canConvert) action='<button class="btn sm" onclick=\'openConvert('+JSON.stringify(q.id)+','+JSON.stringify(q.is_guest)+','+JSON.stringify(q.party_name||'')+')\'>매출 전환</button>';
-      else if(conv) action='<span class="hint">전환완료</span>';
-      else action='<span class="hint">—</span>';
+      let action='<button class="btn ghost sm" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>상세</button>';
+      if(canConvert) action+=' <button class="btn sm" onclick=\'openConvert('+JSON.stringify(q.id)+','+JSON.stringify(q.is_guest)+','+JSON.stringify(q.party_name||'')+')\'>매출 전환</button>';
+      else if(conv) action+=' <span class="hint">전환완료</span>';
       html+='<tr>'
-        +'<td><b>'+esc(q.quote_no||'')+'</b></td>'
+        +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b></td>'
         +'<td>'+esc(q.quote_date||'')+'</td>'
         +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+'</td>'
         +'<td class="r">'+(q.sku_count||0)+'</td>'
@@ -193,6 +203,100 @@
     html+='</tbody></table>';
     html+='<div class="hint" style="margin-top:8px">총 '+items.length+'건 · 견적일과 매출일(전환일)을 함께 표시합니다. SAT가 TMP-로 시작하면 임시 번호입니다(나중에 실제 SAT 입력).</div>';
     $('listWrap').innerHTML=html;
+  }
+
+  // ===== 견적 상세 / 편집 =====
+  let dtId=null, dtData=null, dtEdit=false;
+  const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소'};
+  async function openDetail(id){
+    dtId=id; dtEdit=false;
+    $('dtBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    $('dtModal').style.display='flex';
+    try{ dtData=await fetch(session.api+'/api/quotes/'+id,{headers:auth()}).then(r=>r.json()); renderDetail(); }
+    catch(e){ $('dtBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function closeDetail(){ $('dtModal').style.display='none'; dtId=null; dtData=null; dtEdit=false; }
+  const flagLbl={ok:'<span style="color:var(--income);font-weight:700">즉시</span>',low_stock:'<span style="color:#9a6512;font-weight:700">부족</span>',not_found:'<span style="color:#6B4FB0;font-weight:700">개발</span>'};
+  function renderDetail(){
+    const q=dtData.quote, lines=dtData.lines||[];
+    $('dtTitle').textContent='견적 '+(q.quote_no||'')+' · '+(stLblFull[q.status]||q.status);
+    const editable = q.status==='draft' || q.status==='confirmed';
+    if(dtEdit){ renderEdit(); return; }
+    let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+'</div>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
+    lines.forEach(l=>{
+      h+='<tr>'
+        +'<td>'+esc(l.ctr_code||l.input_code||'')+(l.syd_codes?'<br><span class="hint">'+esc(l.syd_codes)+'</span>':'')+'</td>'
+        +'<td>'+esc(l.product_name||'(미등록)')+(l.app_text?'<br><span class="hint">'+esc(l.app_text)+'</span>':'')+'</td>'
+        +'<td class="r">'+fmtq(l.qty)+'</td>'
+        +'<td class="r">'+fmt(l.list_price)+'</td>'
+        +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
+        +'<td class="r">'+fmt(l.line_total)+'</td>'
+        +'<td>'+(flagLbl[l.stock_flag]||l.stock_flag||'')+'</td>'
+        +'</tr>';
+    });
+    h+='</tbody></table></div>';
+    h+='<div style="text-align:right;margin-top:10px;font-size:13px">소계 <b>'+fmt(q.subtotal_mxn)+'</b> · IVA <b>'+fmt(q.iva_mxn)+'</b> · <span style="font-size:15px;color:var(--brand)">총액 <b>'+fmt(q.total_mxn)+'</b></span></div>';
+    h+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
+    if(editable) h+='<button class="btn" onclick="startEdit()">✎ 편집</button>';
+    else h+='<span class="hint">전환·취소된 견적은 편집할 수 없습니다 (보기 전용).</span>';
+    h+='<button class="btn ghost" onclick="closeDetail()">닫기</button></div>';
+    $('dtBody').innerHTML=h;
+  }
+  function startEdit(){ dtEdit=true; renderDetail(); }
+  function renderEdit(){
+    const q=dtData.quote;
+    // 편집 라인 작업본
+    if(!dtData._edit){ dtData._edit=(dtData.lines||[]).map(l=>({ input_code:(l.ctr_code||l.input_code||''), qty:Number(l.qty)||0, _name:l.product_name||'', _flag:l.stock_flag })); }
+    const el=dtData._edit;
+    let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b> · 코드/수량을 수정하거나 줄을 추가·삭제한 뒤 저장하세요. 단가·할인·재고분류는 저장 시 자동 재계산됩니다.</div>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">코드(CTR/SYD)</th><th style="text-align:left">품명</th><th class="r">수량</th><th></th></tr></thead><tbody id="edRows">';
+    el.forEach((l,i)=>{
+      h+='<tr>'
+        +'<td><input type="text" value="'+esc(l.input_code)+'" style="width:140px" onchange="edSet('+i+',\'input_code\',this.value)"></td>'
+        +'<td>'+esc(l._name||'')+(l._flag?' '+(flagLbl[l._flag]||''):'')+'</td>'
+        +'<td class="r"><input type="number" step="1" value="'+l.qty+'" style="width:80px;text-align:right" onchange="edSet('+i+',\'qty\',this.value)"></td>'
+        +'<td class="r"><button class="btn ghost sm" onclick="edDel('+i+')">✕</button></td>'
+        +'</tr>';
+    });
+    h+='</tbody></table></div>';
+    h+='<div style="margin-top:8px"><button class="btn ghost sm" onclick="edAdd()">+ 줄 추가</button> <button class="btn ghost sm" onclick="edRecalc()">미리보기 재계산</button></div>';
+    h+='<label style="margin-top:10px">메모</label><input id="edMemo" type="text" value="'+esc(q.memo||'')+'" style="width:100%">';
+    h+='<div id="edPreview" class="hint" style="margin-top:8px"></div>';
+    h+='<div class="msg" id="edMsg"></div>';
+    h+='<div style="display:flex;gap:8px;margin-top:14px"><button class="btn" onclick="saveEdit()">저장</button><button class="btn ghost" onclick="cancelEdit()">취소</button></div>';
+    $('dtBody').innerHTML=h;
+  }
+  function edSet(i,k,v){ dtData._edit[i][k]= k==='qty'?(Number(v)||0):v; }
+  function edDel(i){ dtData._edit.splice(i,1); renderEdit(); }
+  function edAdd(){ dtData._edit.push({input_code:'',qty:1,_name:'',_flag:null}); renderEdit(); }
+  function cancelEdit(){ dtData._edit=null; dtEdit=false; renderDetail(); }
+  async function edRecalc(){
+    const lines=(dtData._edit||[]).filter(l=>l.input_code&&l.qty>0).map(l=>({code:l.input_code,qty:l.qty}));
+    if(!lines.length){ $('edPreview').textContent='유효한 줄이 없습니다.'; return; }
+    try{
+      const body={customer_id:dtData.quote.customer_id||null,lines};
+      const d=await fetch(session.api+'/api/quotes/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
+      if(d&&d.lines){ dtData._edit.forEach(e=>{ const m=d.lines.find(x=>(x.ctr_code===e.input_code||x.input_code===e.input_code)); if(m){ e._name=m.product_name||'(미등록)'; e._flag=m.stock_flag; } });
+        const t=d.totals||{}; const memo=$('edMemo')?$('edMemo').value:''; renderEdit(); if($('edMemo'))$('edMemo').value=memo;
+        $('edPreview').innerHTML='재계산: 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 총액 <b>'+fmt(t.total||0)+'</b>'; }
+    }catch(e){ $('edPreview').textContent='재계산 실패'; }
+  }
+  async function saveEdit(){
+    const m=$('edMsg'); m.className='msg';
+    const lines=(dtData._edit||[]).filter(l=>l.input_code&&l.qty>0).map(l=>({code:l.input_code,qty:l.qty}));
+    if(!lines.length){ m.className='msg err'; m.textContent='최소 한 줄 이상 입력하세요.'; return; }
+    try{
+      const body={customer_id:dtData.quote.customer_id||null,memo:($('edMemo')?$('edMemo').value:'')||null,lines};
+      const res=await fetch(session.api+'/api/quotes/'+dtId,{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.error==='already_converted'?'이미 매출 전환된 견적입니다':(d.error||res.status)); return; }
+      m.className='msg ok'; m.textContent='저장되었습니다.';
+      dtData._edit=null; dtEdit=false;
+      dtData=await fetch(session.api+'/api/quotes/'+dtId,{headers:auth()}).then(r=>r.json());
+      renderDetail(); load();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
 
   let cvId=null, cvGuest=false, custCache=null;
