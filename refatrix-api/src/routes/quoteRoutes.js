@@ -309,9 +309,10 @@ export default async function quoteRoutes(app) {
     const r = (await query(
       `SELECT
          COUNT(*) FILTER (WHERE status IN ('draft','confirmed'))::int AS open,
-         COUNT(*) FILTER (WHERE status IN ('draft','confirmed') AND customer_id IS NULL)::int AS guest_pending
+         COUNT(*) FILTER (WHERE status IN ('draft','confirmed') AND customer_id IS NULL)::int AS guest_pending,
+         COUNT(*) FILTER (WHERE status='delete_pending')::int AS delete_pending
        FROM quotes WHERE deleted_at IS NULL`)).rows[0];
-    return { open: r.open || 0, guest_pending: r.guest_pending || 0 };
+    return { open: r.open || 0, guest_pending: r.guest_pending || 0, delete_pending: r.delete_pending || 0 };
   });
 
   app.get('/api/quotes/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
@@ -336,9 +337,64 @@ export default async function quoteRoutes(app) {
     };
   });
 
-  app.delete('/api/quotes/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
-    await query(`UPDATE quotes SET deleted_at=now() WHERE id=$1`, [Number(req.params.id)]);
+  // 삭제 요청 (영업) — 즉시 삭제하지 않고 디렉터 승인 대기. 승인 전까지 집계 제외.
+  app.post('/api/quotes/:id/delete-request', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return reply.code(400).send({ error: 'reason_required', note: '삭제 사유를 입력하세요.' });
+    const q = (await query(`SELECT status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', note: '매출 전환된 견적은 삭제 요청할 수 없습니다.' });
+    if (q.status === 'delete_pending') return reply.code(409).send({ error: 'already_requested' });
+    await query(
+      `UPDATE quotes SET del_prev_status=status, status='delete_pending', del_reason=$1, del_requested_by=$2, del_requested_at=now(), updated_by=$2, updated_at=now() WHERE id=$3`,
+      [reason, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete_request', target: `quote:${id}`, detail: { reason } });
     return { ok: true };
+  });
+
+  // 삭제 승인 (디렉터) → soft-delete
+  app.post('/api/quotes/:id/delete-approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(`SELECT status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    if (q.status !== 'delete_pending') return reply.code(409).send({ error: 'not_pending' });
+    await query(`UPDATE quotes SET deleted_at=now(), updated_by=$1, updated_at=now() WHERE id=$2`, [req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete_approve', target: `quote:${id}` });
+    return { ok: true };
+  });
+
+  // 삭제 반려 (디렉터) → 직전 상태로 복귀
+  app.post('/api/quotes/:id/delete-reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(`SELECT status, del_prev_status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    if (q.status !== 'delete_pending') return reply.code(409).send({ error: 'not_pending' });
+    const back = ['draft', 'confirmed'].includes(q.del_prev_status) ? q.del_prev_status : 'draft';
+    await query(
+      `UPDATE quotes SET status=$1, del_reason=NULL, del_requested_by=NULL, del_requested_at=NULL, del_prev_status=NULL, updated_by=$2, updated_at=now() WHERE id=$3`,
+      [back, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete_reject', target: `quote:${id}` });
+    return { ok: true, status: back };
+  });
+
+  // 삭제 승인 대기 목록 (디렉터 배지/검토용)
+  app.get('/api/quotes/delete-pending', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+    const rows = (await query(
+      `SELECT q.id, q.quote_no, q.quote_date, q.total_mxn, q.total_qty, q.sku_count, q.del_reason, q.del_requested_at,
+              c.name AS customer_name, q.customer_id, q.guest_name, u.name AS requested_by_name
+         FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id LEFT JOIN users u ON u.id=q.del_requested_by
+        WHERE q.status='delete_pending' AND q.deleted_at IS NULL
+        ORDER BY q.del_requested_at DESC`)).rows;
+    return {
+      items: rows.map((r) => ({
+        id: r.id, quote_no: r.quote_no, quote_date: d10(r.quote_date),
+        total_mxn: Number(r.total_mxn), total_qty: Number(r.total_qty), sku_count: r.sku_count,
+        del_reason: r.del_reason, del_requested_at: r.del_requested_at ? d10(r.del_requested_at) : null,
+        party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
+        requested_by_name: r.requested_by_name,
+      })),
+    };
   });
 
   // ============ 고객-SKU 구매 실적 (최근 3년, 수량 기준) ============

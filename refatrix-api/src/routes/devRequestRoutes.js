@@ -224,7 +224,7 @@ export default async function devRequestRoutes(app) {
     const ql = (await query(
       `SELECT ql.stock_flag AS flag, COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty
          FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
-        WHERE q.deleted_at IS NULL AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
         GROUP BY ql.stock_flag`, [months])).rows;
     const flag = { ok: { sku: 0, qty: 0 }, low_stock: { sku: 0, qty: 0 }, not_found: { sku: 0, qty: 0 } };
     let reqSku = 0, reqQty = 0;
@@ -281,7 +281,7 @@ export default async function devRequestRoutes(app) {
            FROM quotes q
            JOIN quote_lines ql ON ql.quote_id=q.id
            LEFT JOIN customers c ON c.id=q.customer_id
-          WHERE q.deleted_at IS NULL
+          WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending'
           GROUP BY q.id, q.quote_no, q.quote_date, c.name
           ORDER BY q.quote_date DESC, q.id DESC
           LIMIT $1`, [n])).rows;
@@ -305,7 +305,7 @@ export default async function devRequestRoutes(app) {
       `SELECT to_char(q.quote_date,'YYYY-MM') AS ym, ql.stock_flag AS flag,
               COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty
          FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
-        WHERE q.deleted_at IS NULL AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
         GROUP BY 1,2`, [months])).rows;
     const map = {};
     for (const m of months) map[m] = { ym: m, label: m, req_sku: 0, req_qty: 0, ok_sku: 0, ok_qty: 0, short_sku: 0, short_qty: 0, dev_sku: 0, dev_qty: 0 };

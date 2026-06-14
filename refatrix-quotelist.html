@@ -40,6 +40,7 @@
   .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
   .st.draft{background:#eef0f2;color:#555}.st.confirmed{background:#fdf3e3;color:#9a6512}
   .st.converted{background:var(--income-bg);color:var(--income)}.st.cancelled{background:var(--expense-bg);color:var(--expense)}
+  .st.delete_pending{background:#fbe7e2;color:var(--expense);border:1px dashed #e7a99f}
   .guest{font-size:10px;font-weight:700;color:#7a4ea0;background:#f1ebf7;padding:1px 6px;border-radius:999px;margin-left:4px}
   .arrow{color:var(--income);font-weight:700}
   .pvrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
@@ -115,6 +116,7 @@
 
 <script>
   let session={token:null,user:null,api:''};
+  let isDirector=false;
   let filter='all', counts={open:0,guest_pending:0};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -138,6 +140,7 @@
       else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
       if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
       session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      isDirector=(d.user?.role==='director');
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
@@ -150,10 +153,11 @@
 
   function setFilter(f){ filter=f; renderChips(); load(); }
   function renderChips(){
-    const defs=[['all','전체'],['open','견적후 미결'],['guest','불특정 미등록'],['converted','매출 전환됨']];
+    const defs=[['all','전체'],['open','견적후 미결'],['guest','불특정 미등록'],['delpend','🗑 삭제대기'],['converted','매출 전환됨']];
     $('chips').innerHTML=defs.map(([k,label])=>{
       let n=''; if(k==='open'&&counts.open)n='<span class="n">'+counts.open+'</span>';
       if(k==='guest'&&counts.guest_pending)n='<span class="n">'+counts.guest_pending+'</span>';
+      if(k==='delpend'&&counts.delete_pending)n='<span class="n">'+counts.delete_pending+'</span>';
       return '<div class="chip'+(filter===k?' on':'')+'" onclick="setFilter(\''+k+'\')">'+label+n+'</div>';
     }).join('');
   }
@@ -170,6 +174,7 @@
     if(filter==='open')qs+='&open=1';
     else if(filter==='guest')qs+='&guest=1';
     else if(filter==='converted')qs+='&status=converted';
+    else if(filter==='delpend')qs+='&status=delete_pending';
     try{
       const d=await fetch(session.api+'/api/quotes?'+qs,{headers:auth()}).then(r=>r.json());
       render(d.items||[]);
@@ -178,7 +183,7 @@
 
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
-    const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소'};
+    const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기'};
     let html='<table><thead><tr>'
       +'<th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
@@ -207,7 +212,7 @@
 
   // ===== 견적 상세 / 편집 =====
   let dtId=null, dtData=null, dtEdit=false;
-  const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소'};
+  const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'삭제 승인대기'};
   async function openDetail(id){
     dtId=id; dtEdit=false;
     $('dtBody').innerHTML='<div class="hint">불러오는 중…</div>';
@@ -239,30 +244,38 @@
     h+='</tbody></table></div>';
     h+='<div style="text-align:right;margin-top:10px;font-size:13px">소계 <b>'+fmt(q.subtotal_mxn)+'</b> · IVA <b>'+fmt(q.iva_mxn)+'</b> · <span style="font-size:15px;color:var(--brand)">총액 <b>'+fmt(q.total_mxn)+'</b></span></div>';
     h+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
-    if(editable) h+='<button class="btn" onclick="startEdit()">✎ 편집</button>';
-    else h+='<span class="hint">전환·취소된 견적은 편집할 수 없습니다 (보기 전용).</span>';
+    if(editable){
+      h+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
+      h+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
+    } else if(q.status==='delete_pending'){
+      h+='<span class="hint" style="color:#9a6512">🗑 삭제 승인 대기 중'+(q.del_reason?(' — 사유: '+esc(q.del_reason)):'')+'. 디렉터 승인 전까지 집계에서 제외됩니다.</span>';
+      if(isDirector){ h+='<button class="btn" onclick="approveDelete()">삭제 승인</button><button class="btn ghost" onclick="rejectDelete()">반려</button>'; }
+    } else h+='<span class="hint">전환·취소된 견적은 편집·삭제할 수 없습니다 (보기 전용).</span>';
     h+='<button class="btn ghost" onclick="closeDetail()">닫기</button></div>';
+    h+='<div id="delForm" style="margin-top:12px"></div>';
     $('dtBody').innerHTML=h;
   }
   function startEdit(){ dtEdit=true; renderDetail(); }
   function renderEdit(){
     const q=dtData.quote;
-    // 편집 라인 작업본
-    if(!dtData._edit){ dtData._edit=(dtData.lines||[]).map(l=>({ input_code:(l.ctr_code||l.input_code||''), qty:Number(l.qty)||0, _name:l.product_name||'', _flag:l.stock_flag })); }
+    if(!dtData._edit){ dtData._edit=(dtData.lines||[]).map(l=>({ input_code:(l.ctr_code||l.input_code||''), qty:Number(l.qty)||0, _name:l.product_name||'', _flag:l.stock_flag, _existing:true })); }
     const el=dtData._edit;
-    let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b> · 코드/수량을 수정하거나 줄을 추가·삭제한 뒤 저장하세요. 단가·할인·재고분류는 저장 시 자동 재계산됩니다.</div>';
-    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">코드(CTR/SYD)</th><th style="text-align:left">품명</th><th class="r">수량</th><th></th></tr></thead><tbody id="edRows">';
+    let h='<div class="hint" style="margin-bottom:8px">이 견적에서는 <b>SKU 추가·삭제</b>와 <b>각 SKU 수량 조절</b>만 가능합니다. 단가·할인·고객 등 다른 변경이 필요하면 <b>신규 견적</b>으로 진행하세요. (저장 시 재고분류 자동 재계산)</div>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th class="r">수량</th><th></th></tr></thead><tbody id="edRows">';
     el.forEach((l,i)=>{
+      // 기존 라인: 코드 고정(읽기전용) · 수량만 조절. 신규 줄: 코드 입력 가능.
+      const codeCell = l._existing
+        ? '<b>'+esc(l.input_code)+'</b>'
+        : '<input type="text" value="'+esc(l.input_code)+'" placeholder="CTR 또는 SYD" style="width:140px" onchange="edSet('+i+',\'input_code\',this.value)">';
       h+='<tr>'
-        +'<td><input type="text" value="'+esc(l.input_code)+'" style="width:140px" onchange="edSet('+i+',\'input_code\',this.value)"></td>'
-        +'<td>'+esc(l._name||'')+(l._flag?' '+(flagLbl[l._flag]||''):'')+'</td>'
-        +'<td class="r"><input type="number" step="1" value="'+l.qty+'" style="width:80px;text-align:right" onchange="edSet('+i+',\'qty\',this.value)"></td>'
-        +'<td class="r"><button class="btn ghost sm" onclick="edDel('+i+')">✕</button></td>'
+        +'<td>'+codeCell+'</td>'
+        +'<td>'+esc(l._name||(l._existing?'':'(추가 후 재계산)'))+(l._flag?' '+(flagLbl[l._flag]||''):'')+'</td>'
+        +'<td class="r"><input type="number" step="1" min="0" value="'+l.qty+'" style="width:80px;text-align:right" onchange="edSet('+i+',\'qty\',this.value)"></td>'
+        +'<td class="r"><button class="btn ghost sm" onclick="edDel('+i+')" title="이 SKU 삭제">✕</button></td>'
         +'</tr>';
     });
     h+='</tbody></table></div>';
-    h+='<div style="margin-top:8px"><button class="btn ghost sm" onclick="edAdd()">+ 줄 추가</button> <button class="btn ghost sm" onclick="edRecalc()">미리보기 재계산</button></div>';
-    h+='<label style="margin-top:10px">메모</label><input id="edMemo" type="text" value="'+esc(q.memo||'')+'" style="width:100%">';
+    h+='<div style="margin-top:8px"><button class="btn ghost sm" onclick="edAdd()">+ SKU 추가</button> <button class="btn ghost sm" onclick="edRecalc()">미리보기 재계산</button></div>';
     h+='<div id="edPreview" class="hint" style="margin-top:8px"></div>';
     h+='<div class="msg" id="edMsg"></div>';
     h+='<div style="display:flex;gap:8px;margin-top:14px"><button class="btn" onclick="saveEdit()">저장</button><button class="btn ghost" onclick="cancelEdit()">취소</button></div>';
@@ -270,7 +283,7 @@
   }
   function edSet(i,k,v){ dtData._edit[i][k]= k==='qty'?(Number(v)||0):v; }
   function edDel(i){ dtData._edit.splice(i,1); renderEdit(); }
-  function edAdd(){ dtData._edit.push({input_code:'',qty:1,_name:'',_flag:null}); renderEdit(); }
+  function edAdd(){ dtData._edit.push({input_code:'',qty:1,_name:'',_flag:null,_existing:false}); renderEdit(); }
   function cancelEdit(){ dtData._edit=null; dtEdit=false; renderDetail(); }
   async function edRecalc(){
     const lines=(dtData._edit||[]).filter(l=>l.input_code&&l.qty>0).map(l=>({code:l.input_code,qty:l.qty}));
@@ -279,7 +292,7 @@
       const body={customer_id:dtData.quote.customer_id||null,lines};
       const d=await fetch(session.api+'/api/quotes/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
       if(d&&d.lines){ dtData._edit.forEach(e=>{ const m=d.lines.find(x=>(x.ctr_code===e.input_code||x.input_code===e.input_code)); if(m){ e._name=m.product_name||'(미등록)'; e._flag=m.stock_flag; } });
-        const t=d.totals||{}; const memo=$('edMemo')?$('edMemo').value:''; renderEdit(); if($('edMemo'))$('edMemo').value=memo;
+        const t=d.totals||{}; renderEdit();
         $('edPreview').innerHTML='재계산: 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 총액 <b>'+fmt(t.total||0)+'</b>'; }
     }catch(e){ $('edPreview').textContent='재계산 실패'; }
   }
@@ -288,7 +301,7 @@
     const lines=(dtData._edit||[]).filter(l=>l.input_code&&l.qty>0).map(l=>({code:l.input_code,qty:l.qty}));
     if(!lines.length){ m.className='msg err'; m.textContent='최소 한 줄 이상 입력하세요.'; return; }
     try{
-      const body={customer_id:dtData.quote.customer_id||null,memo:($('edMemo')?$('edMemo').value:'')||null,lines};
+      const body={customer_id:dtData.quote.customer_id||null,memo:dtData.quote.memo||null,lines};
       const res=await fetch(session.api+'/api/quotes/'+dtId,{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.error==='already_converted'?'이미 매출 전환된 견적입니다':(d.error||res.status)); return; }
@@ -297,6 +310,39 @@
       dtData=await fetch(session.api+'/api/quotes/'+dtId,{headers:auth()}).then(r=>r.json());
       renderDetail(); load();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  function askDelete(){
+    $('delForm').innerHTML='<div style="border:1px solid #e7b6af;border-radius:10px;padding:12px;background:#fbf0ee">'
+      +'<label style="color:var(--expense)">삭제 사유 (디렉터 승인용) *</label>'
+      +'<textarea id="delReason" rows="2" style="width:100%" placeholder="예: 고객 취소 / 중복 견적 / 오입력"></textarea>'
+      +'<div class="msg" id="delMsg"></div>'
+      +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn" style="background:var(--expense)" onclick="submitDelete()">삭제 요청 보내기</button><button class="btn ghost" onclick="document.getElementById(\'delForm\').innerHTML=\'\'">취소</button></div>'
+      +'<div class="hint" style="margin-top:6px">삭제 요청 즉시 집계(지표·추이)에서 제외되고, 디렉터 승인 시 완전 삭제됩니다. 반려되면 원래대로 복구됩니다.</div>'
+      +'</div>';
+  }
+  async function submitDelete(){
+    const m=$('delMsg'); m.className='msg';
+    const reason=($('delReason')?$('delReason').value:'').trim();
+    if(!reason){ m.className='msg err'; m.textContent='삭제 사유를 입력하세요.'; return; }
+    try{
+      const res=await fetch(session.api+'/api/quotes/'+dtId+'/delete-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='요청 실패: '+(d.note||d.error||res.status); return; }
+      closeDetail(); load();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function approveDelete(){
+    try{ const res=await fetch(session.api+'/api/quotes/'+dtId+'/delete-approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json(); if(!res.ok||d.error){ alert('승인 실패: '+(d.error||res.status)); return; }
+      closeDetail(); load();
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+  async function rejectDelete(){
+    try{ const res=await fetch(session.api+'/api/quotes/'+dtId+'/delete-reject',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json(); if(!res.ok||d.error){ alert('반려 실패: '+(d.error||res.status)); return; }
+      closeDetail(); load();
+    }catch(e){ alert('서버 연결 실패'); }
   }
 
   let cvId=null, cvGuest=false, custCache=null;
