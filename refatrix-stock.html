@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 재고이동</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}.msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .inrow{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .inrow>div{display:flex;flex-direction:column}
+  .acwrap{position:relative}
+  .acbox{position:absolute;top:100%;left:0;right:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);margin-top:3px;max-height:260px;overflow:auto}
+  .acitem{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line);font-size:13px}
+  .acitem:last-child{border-bottom:none}.acitem.sel,.acitem:hover{background:#f0f5f2}
+  .acitem .c{font-weight:700;color:var(--brand)}.acitem .s{font-size:11px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}
+  th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.r,th.r{text-align:right}
+  .mv{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .mv.in{background:var(--income-bg);color:var(--income)}.mv.out{background:var(--expense-bg);color:var(--expense)}.mv.adjust{background:#eef0f2;color:#555}
+  .org{font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:#f1ebf7;color:#7a4ea0}
+  .org.매출{background:var(--expense-bg);color:var(--expense)}.org.수입{background:var(--income-bg);color:var(--income)}.org.수동{background:#fdf3e3;color:#9a6512}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">재고이동 (입고·출고·조정)</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 등록 -->
+    <div class="card">
+      <div class="card-h">이동 등록 <span class="hint" style="font-weight:500">— 참조번호 필수 (수입인보이스 / 샘플사유 등). 입고·출고·조정 모두 평균원가는 변경하지 않습니다.</span></div>
+      <div class="inrow">
+        <div style="min-width:120px"><label>유형</label>
+          <select id="mtype" style="width:120px" onchange="onTypeChange()">
+            <option value="in">입고 (+)</option>
+            <option value="out">출고 (−)</option>
+            <option value="adjust">조정 (±)</option>
+          </select></div>
+        <div class="acwrap" style="flex:1;min-width:200px"><label>제품 (CTR/SYD 검색)</label>
+          <input id="prod" type="text" autocomplete="off" placeholder="코드/이름 입력" oninput="onProdInput()" onkeydown="prodKey(event)">
+          <div id="acBox" class="acbox hidden"></div>
+          <div class="hint" id="prodPick" style="margin-top:3px"></div>
+        </div>
+        <div style="min-width:100px"><label id="qtyLbl">수량</label><input id="qty" type="number" step="1" value="1" style="width:100px"></div>
+        <div style="min-width:160px"><label>참조번호 *</label><input id="ref" type="text" placeholder="예: IMP-INV-2026-001" style="width:180px"></div>
+        <div style="min-width:140px"><label>사유(선택)</label><input id="note" type="text" placeholder="예: 무료샘플" style="width:150px"></div>
+        <div><button class="btn" id="saveBtn" onclick="saveMove()">등록</button></div>
+        <div style="margin-left:auto"><label>엑셀 일괄</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn ghost sm" onclick="downloadTemplate()">양식</button>
+            <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
+          </div>
+        </div>
+      </div>
+      <div class="msg" id="saveMsg"></div>
+    </div>
+
+    <!-- 내역 -->
+    <div class="card">
+      <div class="card-h">이동 내역</div>
+      <div class="filters">
+        <div><label>유형</label><select id="fType" onchange="loadList()"><option value="">전체</option><option value="in">입고</option><option value="out">출고</option><option value="adjust">조정</option></select></div>
+        <div><label>출처</label><select id="fSrc" onchange="loadList()"><option value="">전체</option><option value="manual">수동만</option></select></div>
+        <div><label>시작일</label><input id="fFrom" type="date" onchange="loadList()"></div>
+        <div><label>종료일</label><input id="fTo" type="date" onchange="loadList()"></div>
+        <div><button class="btn ghost sm" onclick="loadList()">새로고침</button></div>
+      </div>
+      <div id="listWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  let picked=null, acItems=[], acSel=-1, acTimer=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      loadList();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function onTypeChange(){
+    const t=$('mtype').value;
+    $('qtyLbl').textContent = t==='adjust' ? '수량 (±, 감소는 음수)' : '수량';
+  }
+
+  // 자동완성
+  function onProdInput(){
+    picked=null;$('prodPick').textContent='';
+    const q=$('prod').value.trim(); clearTimeout(acTimer);
+    if(q.length<1){hideAc();return;}
+    acTimer=setTimeout(async()=>{
+      try{ const d=await fetch(session.api+'/api/quotes/search-code?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json()); acItems=d.items||[]; acSel=-1; renderAc(); }catch(e){ hideAc(); }
+    },180);
+  }
+  function renderAc(){
+    if(!acItems.length){hideAc();return;}
+    $('acBox').innerHTML=acItems.map((it,i)=>'<div class="acitem'+(i===acSel?' sel':'')+'" onmousedown="event.preventDefault()" onclick="pickProd('+i+')"><span class="c">'+esc(it.ctr_code)+'</span> <span class="s">'+esc(it.name||'')+(it.syd_codes&&it.syd_codes.length?' · SYD '+esc(it.syd_codes.join(' / ')):'')+'</span></div>').join('');
+    $('acBox').classList.remove('hidden');
+  }
+  function hideAc(){$('acBox').classList.add('hidden');acItems=[];acSel=-1;}
+  function pickProd(i){ const it=acItems[i]; if(!it)return; picked=it; $('prod').value=it.ctr_code; $('prodPick').innerHTML='선택됨: <b>'+esc(it.ctr_code)+'</b> '+esc(it.name||''); hideAc(); $('qty').focus(); }
+  function prodKey(e){
+    if($('acBox').classList.contains('hidden'))return;
+    if(e.key==='ArrowDown'){e.preventDefault();acSel=Math.min(acSel+1,acItems.length-1);renderAc();}
+    else if(e.key==='ArrowUp'){e.preventDefault();acSel=Math.max(acSel-1,0);renderAc();}
+    else if(e.key==='Enter'){e.preventDefault();if(acSel>=0)pickProd(acSel);}
+    else if(e.key==='Escape')hideAc();
+  }
+  document.addEventListener('click',(e)=>{ if(!e.target.closest('#prod')&&!e.target.closest('#acBox')) hideAc(); });
+
+  async function saveMove(){
+    const m=$('saveMsg');m.className='msg';
+    if(!picked){m.className='msg err';m.textContent='제품을 검색해서 선택하세요.';return;}
+    const type=$('mtype').value, qty=Number($('qty').value), ref=$('ref').value.trim();
+    if(!ref){m.className='msg err';m.textContent='참조번호를 입력하세요.';return;}
+    if(type!=='adjust' && (!qty||qty<=0)){m.className='msg err';m.textContent='수량을 입력하세요(양수).';return;}
+    if(type==='adjust' && !qty){m.className='msg err';m.textContent='조정 수량을 입력하세요(증가 +, 감소 −).';return;}
+    $('saveBtn').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/stock/movements',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({product_id:picked.product_id,move_type:type,qty,ref,note:$('note').value.trim()})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        let msg=d.error;
+        if(d.error==='would_go_negative')msg='재고 부족: '+d.code+' 현재 '+d.current+', 요청 '+d.requested;
+        if(d.error==='ref_required')msg='참조번호는 필수입니다.';
+        m.className='msg err';m.textContent='등록 실패: '+msg;return;
+      }
+      m.className='msg ok';m.textContent='등록됨: '+d.code+' '+d.before+'→'+d.after;
+      $('prod').value='';$('qty').value='1';$('ref').value='';$('note').value='';picked=null;$('prodPick').textContent='';
+      loadList();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+    finally{$('saveBtn').disabled=false;}
+  }
+
+  async function loadList(){
+    const w=$('listWrap');
+    let qs='limit=300';
+    if($('fType').value)qs+='&move_type='+$('fType').value;
+    if($('fSrc').value)qs+='&source='+$('fSrc').value;
+    if($('fFrom').value)qs+='&from='+$('fFrom').value;
+    if($('fTo').value)qs+='&to='+$('fTo').value;
+    try{
+      const d=await fetch(session.api+'/api/stock/movements?'+qs,{headers:auth()}).then(r=>r.json());
+      render(d.items||[]);
+    }catch(e){ w.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function render(items){
+    if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:10px">이동 내역이 없습니다.</div>'; return; }
+    const tl={in:'입고',out:'출고',adjust:'조정'};
+    let html='<table><thead><tr><th>일시</th><th>유형</th><th>제품</th><th class="r">수량</th><th>출처</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
+    items.forEach(m=>{
+      const dt=new Date(m.moved_at); const ds=isNaN(dt)?'':(dt.toISOString().slice(0,10)+' '+dt.toTimeString().slice(0,5));
+      html+='<tr>'
+        +'<td>'+esc(ds)+'</td>'
+        +'<td><span class="mv '+m.move_type+'">'+tl[m.move_type]+'</span></td>'
+        +'<td><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
+        +'<td class="r">'+(m.move_type==='out'?'−':(m.move_type==='in'?'+':''))+fmtq(Math.abs(m.qty))+'</td>'
+        +'<td><span class="org '+esc(m.origin)+'">'+esc(m.origin)+'</span></td>'
+        +'<td>'+esc(m.ref||'')+'</td>'
+        +'<td>'+esc(m.note||'')+'</td>'
+        +'<td class="hint">'+esc(m.created_by_name||'')+'</td>'
+        +'</tr>';
+    });
+    html+='</tbody></table><div class="hint" style="margin-top:8px">최근 '+items.length+'건 · 매출 출고는 자동 기록됩니다.</div>';
+    $('listWrap').innerHTML=html;
+  }
+
+  function downloadTemplate(){
+    const ws=XLSX.utils.aoa_to_sheet([['Codigo','Tipo (in/out/adjust)','Cantidad','Referencia','Nota'],['CTR-1001','in',50,'IMP-INV-2026-001',''],['CTR-1002','out',2,'SAMPLE-Cliente','무료샘플']]);
+    ws['!cols']=[{wch:14},{wch:20},{wch:10},{wch:22},{wch:16}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Movimientos');
+    XLSX.writeFile(wb,'plantilla_movimientos.xlsx');
+  }
+  async function onXlsx(ev){
+    const file=ev.target.files[0]; if(!file)return; const m=$('saveMsg');m.className='msg';
+    try{
+      const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+      const payload=[];
+      for(const r of rows){
+        if(!r||!r.length)continue;
+        const code=String(r[0]==null?'':r[0]).trim();
+        if(!code||/codigo|code|sku|코드/i.test(code))continue;
+        payload.push({code,move_type:String(r[1]||'').trim(),qty:Number(r[2])||0,ref:String(r[3]||'').trim(),note:String(r[4]||'').trim()});
+      }
+      if(!payload.length){m.className='msg err';m.textContent='등록할 행이 없습니다.';ev.target.value='';return;}
+      const res=await fetch(session.api+'/api/stock/movements/bulk',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:payload})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        const bad=(d.results||[]).filter(x=>x.error).map(x=>'행'+x.row+':'+x.error).slice(0,5).join(', ');
+        m.className='msg err';m.textContent='일괄 실패(전체 취소): '+(bad||d.error);
+      } else {
+        m.className='msg ok';m.textContent=d.count+'건 일괄 등록 완료.';
+        loadList();
+      }
+      ev.target.value='';
+    }catch(e){ m.className='msg err';m.textContent='엑셀을 읽지 못했습니다.'; }
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+</body>
+</html>

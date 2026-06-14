@@ -23,6 +23,7 @@ import settlementVarianceRoutes from './routes/settlementVarianceRoutes.js';
 import portalBoardRoutes from './routes/portalBoardRoutes.js';
 import portalKpiRoutes from './routes/portalKpiRoutes.js';
 import quoteRoutes from './routes/quoteRoutes.js';
+import stockRoutes from './routes/stockRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 
 export function buildApp() {
@@ -58,6 +59,7 @@ export function buildApp() {
   app.register(portalBoardRoutes);
   app.register(portalKpiRoutes);
   app.register(quoteRoutes);
+  app.register(stockRoutes);
   app.register(userRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
