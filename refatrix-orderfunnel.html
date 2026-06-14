@@ -79,7 +79,7 @@
         </div>
       </div>
       <div id="chartWrap" style="margin-top:6px"></div>
-      <div class="hint" style="margin-top:4px;text-align:center">선 = 전체 요청 수량 · <span style="color:var(--income)">음영</span> = 즉시매출 가능 수량. <b>음영(즉시매출)이 점점 두꺼워지는 것이 목표</b>입니다.</div>
+      <div class="hint" id="chartCap" style="margin-top:4px;text-align:center">선 = 전체 요청 수량 · <span style="color:var(--income)">음영</span> = 즉시매출 가능 수량. <b>음영(즉시매출)이 점점 두꺼워지는 것이 목표</b>입니다.</div>
       <div id="trendWrap" style="margin-top:14px"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
       <div class="hint" style="margin-top:10px">막대: <span class="okpct">■</span> 즉시매출 · <span style="color:var(--gold)">■</span> 부족 · <span style="color:var(--purple)">■</span> 개발필요 (수량 비중). SKU·수량과 각 %를 함께 표시합니다.</div>
     </div>
@@ -138,6 +138,15 @@
   // 전체 수량 선 + 즉시매출 영역 음영 SVG
   function drawChart(rows){
     if(!rows.length){ $('chartWrap').innerHTML=''; return; }
+    window.__chartRows=rows;
+    // 1개만 보면 라인 추이가 무의미 → 도넛(파이)만 표시
+    if(rows.length===1){
+      $('chartWrap').innerHTML='<div id="donutWrap"></div>';
+      const cap=$('chartCap'); if(cap) cap.innerHTML='선택한 '+(viewBy==='month'?'달':'오더')+'의 구성(즉시/부족/개발)을 도넛으로 표시합니다. 가운데 숫자가 <b>즉시매출 비중</b>입니다.';
+      showDonut(0);
+      return;
+    }
+    const cap=$('chartCap'); if(cap) cap.innerHTML='선 = 전체 요청 수량 · <span style="color:var(--income)">음영</span> = 즉시매출 가능 수량. <b>음영(즉시매출)이 점점 두꺼워지는 것이 목표</b>입니다.';
     const W=Math.max(620, rows.length*Math.max(46, Math.min(90, 700/rows.length))), H=240;
     const padL=46, padR=14, padT=16, padB=40;
     const iw=W-padL-padR, ih=H-padT-padB;
