@@ -258,4 +258,43 @@ export default async function devRequestRoutes(app) {
       dev_done: { sku: dv.done_sku || 0, qty: Number(dv.done_qty) || 0 },
     };
   });
+
+  // ===== 월별 추이 (즉시매출 비중 KPI 추적용) =====
+  // GET /api/dashboard/order-funnel/trend?n=12  (최근 n개월, 과거→현재)
+  app.get('/api/dashboard/order-funnel/trend', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const n = Math.min(Math.max(Number(req.query.n) || 12, 1), 36);
+    // 최근 n개월 목록 (과거→현재)
+    const months = [];
+    const now = new Date();
+    for (let i = n - 1; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1).toISOString().slice(0, 7));
+
+    // 견적 라인 분류 (월별)
+    const ql = (await query(
+      `SELECT to_char(q.quote_date,'YYYY-MM') AS ym, ql.stock_flag AS flag,
+              COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty
+         FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+        WHERE q.deleted_at IS NULL AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        GROUP BY 1,2`, [months])).rows;
+    const map = {};
+    for (const m of months) map[m] = { ym: m, req_sku: 0, req_qty: 0, ok_sku: 0, ok_qty: 0, short_sku: 0, short_qty: 0, dev_sku: 0, dev_qty: 0 };
+    for (const r of ql) {
+      const o = map[r.ym]; if (!o) continue;
+      const sku = r.sku, qty = Number(r.qty);
+      o.req_sku += sku; o.req_qty += qty;
+      if (r.flag === 'ok') { o.ok_sku += sku; o.ok_qty += qty; }
+      else if (r.flag === 'low_stock') { o.short_sku += sku; o.short_qty += qty; }
+      else if (r.flag === 'not_found') { o.dev_sku += sku; o.dev_qty += qty; }
+    }
+    const rows = months.map((m) => {
+      const o = map[m];
+      const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
+      return {
+        ...o,
+        ok_sku_pct: pct(o.ok_sku, o.req_sku), ok_qty_pct: pct(o.ok_qty, o.req_qty),
+        short_sku_pct: pct(o.short_sku, o.req_sku), short_qty_pct: pct(o.short_qty, o.req_qty),
+        dev_sku_pct: pct(o.dev_sku, o.req_sku), dev_qty_pct: pct(o.dev_qty, o.req_qty),
+      };
+    });
+    return { months, rows };
+  });
 }

@@ -29,30 +29,23 @@
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
   /* 수주 흐름 위젯 */
-  .fmonths{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:fit-content;max-width:100%}
-  .fmonth{padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted);border-right:1px solid var(--line);white-space:nowrap;text-align:center;transition:background .12s}
-  .fmonth:last-child{border-right:none}
-  .fmonth .yy{display:block;font-size:9px;opacity:.65;font-weight:600}
-  .fmonth.on{background:var(--brand);color:#fff}
-  .fmonth:hover:not(.on){background:#f0f5f2}
-  .freq{display:flex;justify-content:space-between;align-items:center;gap:12px;background:linear-gradient(90deg,#eef3f0,#f8faf9);border:1px solid #d8e3dd;border-radius:12px;padding:13px 18px}
-  .freq .lbl{font-size:13px;font-weight:800;color:var(--brand)}
-  .freq .lbl small{display:block;font-size:10.5px;color:var(--muted);font-weight:600;margin-top:2px}
-  .fstats{display:flex;gap:20px}
-  .fstat{text-align:right}
-  .fstat .n{font-size:26px;font-weight:800;line-height:1;color:var(--brand)}
-  .fstat .u{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.04em}
-  .fcards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
-  @media(max-width:640px){.fcards{grid-template-columns:1fr}}
-  .fcard{border:1px solid var(--line);border-top:3px solid var(--c);border-radius:12px;padding:13px 14px;cursor:pointer;transition:box-shadow .12s,transform .12s}
-  .fcard:hover{box-shadow:0 6px 18px rgba(0,0,0,.08);transform:translateY(-1px)}
-  .fcard .ttl{font-size:12.5px;font-weight:800;color:var(--c);display:flex;align-items:center;gap:6px}
-  .fcard .big{display:flex;gap:16px;margin-top:9px}
-  .fcard .big .n{font-size:24px;font-weight:800;line-height:1;color:var(--ink)}
-  .fcard .big .u{font-size:9.5px;color:var(--muted);font-weight:700}
-  .fcard .ft{margin-top:10px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px;line-height:1.5}
-  .fcard .ft b{color:var(--ink)}
-  .fbadge{font-size:9px;font-weight:800;color:#fff;background:var(--c);border-radius:999px;padding:1px 7px}
+  .mrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .mrow .ml{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px}
+  .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .mbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:680px){.fgrid{grid-template-columns:repeat(2,1fr)}}
+  .fcell{border:1px solid var(--line);border-top:3px solid var(--c);border-radius:12px;padding:13px 14px;background:#fff}
+  .fcell.click{cursor:pointer;transition:box-shadow .12s,transform .12s}
+  .fcell.click:hover{box-shadow:0 6px 18px rgba(0,0,0,.08);transform:translateY(-1px)}
+  .fcell .fch{font-size:12.5px;font-weight:800;color:var(--c);display:flex;align-items:center;gap:5px;min-height:18px}
+  .fcell .fmetric{display:flex;align-items:baseline;gap:7px;margin-top:9px}
+  .fcell .fn{font-size:23px;font-weight:800;line-height:1;color:var(--ink)}
+  .fcell .fpu{font-size:10px;color:var(--muted);font-weight:700}
+  .fcell .fpct{font-size:12px;color:var(--c)}
+  .fcell .fft{margin-top:10px;font-size:10.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:7px;line-height:1.4}
+  .fbadge{font-size:9px;font-weight:800;color:#fff;background:var(--c);border-radius:999px;padding:1px 6px}
+  .finsight{margin-top:13px;background:#f6f3ec;border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:8px;padding:10px 13px;font-size:12.5px;line-height:1.6}
   .hidden{display:none}
   /* 프로세스 지도 */
   .flowlabel{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px}
@@ -147,10 +140,10 @@
     <!-- 수주 이후 흐름 종합 대시보드 -->
     <div class="card hidden" id="funnelCard">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-        <h2 style="margin:0">수주 이후 흐름 <span class="hint" style="display:inline;margin:0">— 견적 요청 → 즉시매출 / 부족·발주 / 개발</span></h2>
-        <span class="hint" id="funnelMonthLbl"></span>
+        <h2 style="margin:0">수주 이후 흐름 <span class="hint" style="display:inline;margin:0">— 견적 요청 대비 즉시매출 비중을 높이는 게 KPI</span></h2>
+        <span class="hint" id="funnelTrendLink" style="cursor:pointer;color:var(--brand);font-weight:700">월별 추이 보기 →</span>
       </div>
-      <div id="funnelMonths" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0"></div>
+      <div class="mrow" id="funnelMonths" style="margin:12px 0"></div>
       <div id="funnelBody"><div class="hint">불러오는 중…</div></div>
     </div>
 
@@ -209,6 +202,7 @@
     stock:{file:'refatrix-stock.html',name:'재고이동'},
     shortage:{file:'refatrix-shortage.html',name:'부족분 집계'},
     devrequest:{file:'refatrix-devrequest.html',name:'제품개발요청'},
+    orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이'},
     quote:{file:'refatrix-quote.html',name:'견적(수주)'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적 목록'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅배분'},
@@ -224,7 +218,7 @@
   };
 
   // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
-  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', stock:'sales', shortage:['sales','products'], devrequest:['sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
+  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', stock:'sales', shortage:['sales','products'], devrequest:['sales','products','marketing'], orderfunnel:['sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
   function canSee(key){
     const pk=SCREEN_PAGEKEY[key];
     if(Array.isArray(pk)) return !!(sum && (sum.isDirector || pk.some(k=>(sum.pages||[]).includes(k))));
@@ -276,17 +270,16 @@
   }
   // ===== 수주 흐름 종합 대시보드 =====
   let funnelMonths=[];  // 선택된 'YYYY-MM' 배열 (다중)
-  function ymList(n){ const arr=[]; const d=new Date(); for(let i=n-1;i>=0;i--){ arr.push(new Date(d.getFullYear(),d.getMonth()-i,1).toISOString().slice(0,7)); } return arr; } // 과거→현재(좌→우)
+  const FYEAR=new Date().getFullYear();
   function initFunnel(){
     if(!canSee('devrequest')){ return; }
     const cur=new Date().toISOString().slice(0,7);
     if(!funnelMonths.length) funnelMonths=[cur];
-    const opts=ymList(6);
-    $('funnelMonths').innerHTML='<div class="fmonths">'+opts.map(m=>{
-      const [y,mo]=m.split('-');
-      return '<div class="fmonth'+(funnelMonths.includes(m)?' on':'')+'" onclick="toggleFunnelMonth(\''+m+'\')"><span class="yy">'+y+'</span>'+Number(mo)+'월</div>';
-    }).join('')+'</div>';
+    const btns=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=FYEAR+'-'+mm;
+      return '<button class="mbtn '+(funnelMonths.includes(ym)?'on':'')+'" onclick="toggleFunnelMonth(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    $('funnelMonths').innerHTML='<span class="ml">조회 월 ('+FYEAR+')</span>'+btns;
     $('funnelCard').classList.remove('hidden');
+    const tl=$('funnelTrendLink'); if(tl) tl.onclick=()=>goScreen('orderfunnel');
     loadFunnel();
     fetch(session.api+'/api/dev-requests/kpi',{headers:auth()}).then(r=>r.json()).then(d=>{ window.__devOpen=(d&&d.open)||0; window.__devReceived=(d&&d.open_received)||0; window.__devProgress=(d&&d.open_in_progress)||0; if(typeof renderFlows==='function') renderFlows(); }).catch(()=>{});
   }
@@ -303,30 +296,32 @@
     }catch(e){ $('funnelBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   const nf=(n)=>Number(n||0).toLocaleString('es-MX');
+  const pct=(a,b)=> b>0 ? (Math.round((a/b)*1000)/10) : 0;
+  // 한 칸(균등 4분할): 제목 / SKU수(%) / 수량(%)
+  function fcell(o,base,opt){
+    opt=opt||{};
+    const skuP=base?pct(o.sku,base.sku):null, qtyP=base?pct(o.qty,base.qty):null;
+    return '<div class="fcell'+(opt.onclick?' click':'')+'" style="--c:'+(opt.color||'var(--brand)')+'"'+(opt.onclick?' onclick="'+opt.onclick+'"':'')+'>'
+      +'<div class="fch">'+(opt.tag?'<span class="fbadge">'+opt.tag+'</span> ':'')+opt.title+'</div>'
+      +'<div class="fmetric"><div class="fn">'+nf(o.sku)+'</div><div class="fpu">SKU'+(skuP!=null?' <b class="fpct">'+skuP+'%</b>':'')+'</div></div>'
+      +'<div class="fmetric"><div class="fn">'+nf(o.qty)+'</div><div class="fpu">수량'+(qtyP!=null?' <b class="fpct">'+qtyP+'%</b>':'')+'</div></div>'
+      +(opt.foot?'<div class="fft">'+opt.foot+'</div>':'')
+      +'</div>';
+  }
   function renderFunnel(d){
-    $('funnelMonthLbl').textContent=(d.months||[]).length+'개월 선택';
-    // 견적 요청 배너
-    let h='<div class="freq"><div class="lbl">견적 요청<small>고객이 최초 요청한 라인 기준</small></div>'
-      +'<div class="fstats"><div class="fstat"><div class="n">'+nf(d.requested.sku)+'</div><div class="u">SKU</div></div>'
-      +'<div class="fstat"><div class="n">'+nf(d.requested.qty)+'</div><div class="u">수량</div></div></div></div>';
-    // 3갈래 카드
-    h+='<div class="fcards">';
-    // ① 즉시매출
-    h+='<div class="fcard" style="--c:#0F6E56" onclick="goScreen(\'sales\')">'
-      +'<div class="ttl"><span class="fbadge">①</span> 즉시 매출 가능</div>'
-      +'<div class="big"><div><div class="n">'+nf(d.immediate.sku)+'</div><div class="u">SKU</div></div><div><div class="n">'+nf(d.immediate.qty)+'</div><div class="u">수량</div></div></div>'
-      +'<div class="ft">재고 충분 → 바로 인보이스</div></div>';
-    // ② 부족·발주
-    h+='<div class="fcard" style="--c:#B8893B" onclick="goScreen(\'shortage\')">'
-      +'<div class="ttl"><span class="fbadge">②</span> 부족 (발주 필요)</div>'
-      +'<div class="big"><div><div class="n">'+nf(d.shortage.sku)+'</div><div class="u">SKU</div></div><div><div class="n">'+nf(d.shortage.qty)+'</div><div class="u">수량</div></div></div>'
-      +'<div class="ft">발주됨 <b>'+nf(d.ordered.qty)+'</b> · 미발주 <b style="color:#B23A2E">'+nf(d.shortage_open.qty)+'</b></div></div>';
-    // ③ 개발
-    h+='<div class="fcard" style="--c:#6B4FB0" onclick="goScreen(\'devrequest\',\'view=developed\')">'
-      +'<div class="ttl"><span class="fbadge">③</span> 개발 필요 (미등록)</div>'
-      +'<div class="big"><div><div class="n">'+nf(d.dev_needed.sku)+'</div><div class="u">SKU</div></div><div><div class="n">'+nf(d.dev_needed.qty)+'</div><div class="u">수량</div></div></div>'
-      +'<div class="ft">개발요청 <b>'+nf(d.dev_total.sku)+'건</b> · 완료 <b style="color:#0F6E56">'+nf(d.dev_done.sku)+'건</b></div></div>';
+    const base=d.requested;
+    const okP=pct(d.immediate.sku,base.sku);
+    let h='<div class="fgrid">';
+    h+=fcell(d.requested,null,{title:'견적 요청',color:'var(--brand)',foot:'고객 최초 요청 (기준 100%)'});
+    h+=fcell(d.immediate,base,{title:'즉시 매출',tag:'①',color:'#0F6E56',onclick:"goScreen('sales')",foot:'재고 충분'});
+    h+=fcell(d.shortage,base,{title:'부족·발주',tag:'②',color:'#B8893B',onclick:"goScreen('shortage')",foot:'발주 '+nf(d.ordered.qty)+' · 미발주 '+nf(d.shortage_open.qty)});
+    h+=fcell(d.dev_needed,base,{title:'개발 필요',tag:'③',color:'#6B4FB0',onclick:"goScreen('devrequest','view=developed')",foot:'완료 '+nf(d.dev_done.sku)+'/'+nf(d.dev_total.sku)+'건'});
     h+='</div>';
+    // 인사이트 한 줄
+    const lossP=Math.round((100-okP)*10)/10;
+    h+='<div class="finsight">'
+      +'<b>즉시 매출 비중 '+okP+'%</b> — 나머지 <b style="color:#B23A2E">'+lossP+'%</b>는 재고 부족·미개발로 즉시 못 파는 기회손실입니다. 이 비중을 낮출수록(즉시매출 %↑) 매출이 늘어납니다.'
+      +'</div>';
     $('funnelBody').innerHTML=h;
   }
   async function loadQuoteBadge(){
