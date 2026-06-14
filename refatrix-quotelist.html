@@ -71,6 +71,32 @@
   </div>
 </div>
 
+<!-- 매출 전환 모달 -->
+<div id="cvModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:50px 16px">
+  <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <span style="font-size:15px;font-weight:800;color:var(--brand)">매출 전환</span>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="closeConvert()">닫기 ✕</button>
+    </div>
+    <div style="padding:16px 18px">
+      <div id="cvInfo" class="hint" style="margin-bottom:10px"></div>
+      <div id="cvGuestWrap" class="hidden">
+        <label>고객 지정 (불특정 견적 → 등록 고객 선택)</label>
+        <select id="cvCustomer" style="width:100%"></select>
+        <div class="hint" style="margin:4px 0 10px">불특정 고객 견적은 등록된 고객을 지정해야 매출로 전환됩니다.</div>
+      </div>
+      <label>매출일 (인보이스 기록일)</label>
+      <input id="cvDate" type="date" style="width:170px">
+      <div class="hint" style="margin-top:8px">전환하면 재고가 차감되고, 임시 SAT 번호(TMP-)가 부여됩니다. 실제 SAT는 나중에 입력할 수 있습니다.</div>
+      <div class="msg" id="cvMsg"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" id="cvBtn" onclick="doConvert()">전환 실행</button>
+        <button class="btn ghost" onclick="closeConvert()">취소</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   let session={token:null,user:null,api:''};
   let filter='all', counts={open:0,guest_pending:0};
@@ -138,10 +164,15 @@
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소'};
     let html='<table><thead><tr>'
-      +'<th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th>'
+      +'<th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       const conv=q.status==='converted';
+      const canConvert = q.status==='draft' || q.status==='confirmed';
+      let action='';
+      if(canConvert) action='<button class="btn sm" onclick=\'openConvert('+JSON.stringify(q.id)+','+JSON.stringify(q.is_guest)+','+JSON.stringify(q.party_name||'')+')\'>매출 전환</button>';
+      else if(conv) action='<span class="hint">전환완료</span>';
+      else action='<span class="hint">—</span>';
       html+='<tr>'
         +'<td><b>'+esc(q.quote_no||'')+'</b></td>'
         +'<td>'+esc(q.quote_date||'')+'</td>'
@@ -151,11 +182,57 @@
         +'<td class="r">'+fmt(q.total_mxn)+'</td>'
         +'<td><span class="st '+q.status+'">'+(stLbl[q.status]||q.status)+'</span></td>'
         +'<td>'+(conv?('<span class="arrow">→ '+esc(q.sale_date||'')+'</span>'+(q.sale_sat_no?'<br><span class="hint">'+esc(q.sale_sat_no)+'</span>':'')):'<span class="hint">미전환</span>')+'</td>'
+        +'<td>'+action+'</td>'
         +'</tr>';
     });
     html+='</tbody></table>';
     html+='<div class="hint" style="margin-top:8px">총 '+items.length+'건 · 견적일과 매출일(전환일)을 함께 표시합니다. SAT가 TMP-로 시작하면 임시 번호입니다(나중에 실제 SAT 입력).</div>';
     $('listWrap').innerHTML=html;
+  }
+
+  let cvId=null, cvGuest=false, custCache=null;
+  async function loadCustomersOnce(){
+    if(custCache)return custCache;
+    try{ const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json()); custCache=d.items||[]; }catch(e){ custCache=[]; }
+    return custCache;
+  }
+  async function openConvert(id,isGuest,party){
+    cvId=id; cvGuest=!!isGuest;
+    $('cvMsg').className='msg';
+    $('cvInfo').innerHTML='견적: <b>'+esc(party||'')+'</b>'+(isGuest?' <span class="guest">불특정</span>':'');
+    $('cvDate').value=new Date().toISOString().slice(0,10);
+    $('cvGuestWrap').classList.toggle('hidden',!cvGuest);
+    if(cvGuest){
+      const cs=await loadCustomersOnce();
+      $('cvCustomer').innerHTML='<option value="">— 고객 선택 —</option>'+cs.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
+    }
+    $('cvModal').style.display='flex';
+  }
+  function closeConvert(){ $('cvModal').style.display='none'; cvId=null; }
+  async function doConvert(){
+    const m=$('cvMsg');m.className='msg';
+    const body={inv_date:$('cvDate').value||null};
+    if(cvGuest){
+      const cid=$('cvCustomer').value;
+      if(!cid){m.className='msg err';m.textContent='고객을 지정하세요(불특정 견적).';return;}
+      body.customer_id=Number(cid);
+    }
+    $('cvBtn').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/quotes/'+cvId+'/convert',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        let msg=d.error;
+        if(d.error==='guest_needs_customer')msg='불특정 견적입니다. 고객을 지정하세요.';
+        else if(d.error==='no_valid_lines')msg='전환할 유효한 품목이 없습니다(매칭된 제품 필요).';
+        else if(d.error==='already_converted')msg='이미 전환된 견적입니다.';
+        else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
+        m.className='msg err';m.textContent='전환 실패: '+msg;return;
+      }
+      m.className='msg ok';m.textContent='매출로 전환되었습니다. (인보이스 #'+d.invoice_id+')';
+      setTimeout(()=>{ closeConvert(); load(); },900);
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+    finally{$('cvBtn').disabled=false;}
   }
 
   $('go').addEventListener('click',login);
