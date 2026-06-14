@@ -1,0 +1,171 @@
+import { query, withTx } from '../db.js';
+import { authGuard } from '../middleware/authGuard.js';
+import { pageAllowed } from '../permissions.js';
+import { logEvent } from '../audit.js';
+
+function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
+function daysBetween(a, b) {
+  if (!a || !b) return null;
+  const da = new Date(a), db = new Date(b);
+  return Math.round((db - da) / 86400000);
+}
+
+// sales/products/marketing 중 하나라도 허용되면 통과 (디렉터 전체 허용)
+function requireDevAccess() {
+  return async (req, reply) => {
+    const { perm, isRegistered } = req.ctx;
+    const ok = ['sales', 'products', 'marketing'].some((k) => pageAllowed(perm, k, isRegistered));
+    if (!ok) return reply.code(403).send({ error: 'forbidden' });
+  };
+}
+
+function withDurations(r) {
+  return {
+    ...r,
+    requested_at: d10(r.requested_at), reviewed_at: d10(r.reviewed_at),
+    factory_requested_at: d10(r.factory_requested_at), developed_at: d10(r.developed_at),
+    review_list_price: r.review_list_price != null ? Number(r.review_list_price) : null,
+    requested_qty: r.requested_qty != null ? Number(r.requested_qty) : null,
+    dur_review: daysBetween(r.requested_at, r.reviewed_at),          // 접수→검토
+    dur_factory: daysBetween(r.reviewed_at, r.factory_requested_at), // 검토→공장요청
+    dur_develop: daysBetween(r.factory_requested_at, r.developed_at),// 공장요청→완료
+    dur_total: daysBetween(r.requested_at, r.developed_at),          // 전체
+  };
+}
+
+export default async function devRequestRoutes(app) {
+  // 생성(오더 접수) — 영업
+  app.post('/api/dev-requests', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const b = req.body || {};
+    const r = (await query(
+      `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, created_by)
+       VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7) RETURNING id`,
+      [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, req.ctx.perm.userId])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `dev_request:${r.id}` });
+    return { id: r.id };
+  });
+
+  // 목록 + 소요기간
+  app.get('/api/dev-requests', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const conds = ['d.deleted_at IS NULL']; const args = [];
+    if (['received', 'reviewed', 'factory_requested', 'developed', 'cancelled'].includes(String(req.query.status))) { args.push(req.query.status); conds.push(`d.status=$${args.length}`); }
+    if (req.query.open === '1') conds.push(`d.status IN ('received','reviewed','factory_requested')`);
+    const rows = (await query(
+      `SELECT d.*, c.name AS customer_name, c.owner_id AS customer_owner_id, p.code AS result_code_live
+         FROM product_dev_requests d
+         LEFT JOIN customers c ON c.id=d.customer_id
+         LEFT JOIN products p ON p.id=d.result_product_id
+        WHERE ${conds.join(' AND ')}
+        ORDER BY d.requested_at DESC, d.id DESC`, args)).rows;
+    return { items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
+  });
+
+  app.get('/api/dev-requests/:id', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const r = (await query(
+      `SELECT d.*, c.name AS customer_name FROM product_dev_requests d LEFT JOIN customers c ON c.id=d.customer_id WHERE d.id=$1 AND d.deleted_at IS NULL`, [Number(req.params.id)])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return withDurations(r);
+  });
+
+  // ② 검토완료 — 제품·마케팅 담당: syd_code/app/list_price/memo 입력 필수
+  app.put('/api/dev-requests/:id/review', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const id = Number(req.params.id); const b = req.body || {};
+    if (!b.review_syd_code || b.review_list_price == null || b.review_list_price === '') {
+      return reply.code(400).send({ error: 'review_fields_required', note: 'SYD 코드와 List price는 필수입니다.' });
+    }
+    const r = (await query(`SELECT status FROM product_dev_requests WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await query(
+      `UPDATE product_dev_requests SET review_syd_code=$1, review_app=$2, review_list_price=$3, review_memo=$4,
+              reviewed_at=COALESCE($5, reviewed_at, CURRENT_DATE), status=CASE WHEN status='received' THEN 'reviewed' ELSE status END,
+              updated_by=$6, updated_at=now() WHERE id=$7`,
+      [b.review_syd_code, b.review_app || null, Number(b.review_list_price), b.review_memo || null, b.reviewed_at || null, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'review' } });
+    return { ok: true };
+  });
+
+  // ③ 공장 개발요청일
+  app.put('/api/dev-requests/:id/factory', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const id = Number(req.params.id); const b = req.body || {};
+    const r = (await query(`SELECT status FROM product_dev_requests WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await query(
+      `UPDATE product_dev_requests SET factory_requested_at=COALESCE($1, factory_requested_at, CURRENT_DATE),
+              status=CASE WHEN status IN ('received','reviewed') THEN 'factory_requested' ELSE status END,
+              updated_by=$2, updated_at=now() WHERE id=$3`,
+      [b.factory_requested_at || null, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'factory' } });
+    return { ok: true };
+  });
+
+  // ④ 개발완료 — CTR 코드 입력 → SYD 자동매핑 + 담당영업·디렉터 할 일 생성
+  app.put('/api/dev-requests/:id/develop', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const id = Number(req.params.id); const b = req.body || {};
+    const ctr = String(b.result_ctr_code || '').trim();
+    if (!ctr) return reply.code(400).send({ error: 'ctr_code_required' });
+    const d = (await query(
+      `SELECT d.*, c.owner_id AS owner_id FROM product_dev_requests d LEFT JOIN customers c ON c.id=d.customer_id WHERE d.id=$1 AND d.deleted_at IS NULL`, [id])).rows[0];
+    if (!d) return reply.code(404).send({ error: 'not_found' });
+    if (d.status === 'developed') return reply.code(409).send({ error: 'already_developed' });
+    // CTR 제품이 제품마스터에 있어야 매핑 가능
+    const prod = (await query(`SELECT id, code FROM products WHERE code=$1 AND deleted_at IS NULL`, [ctr])).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'product_not_found', note: `제품마스터에 ${ctr} 가 없습니다. 먼저 제품을 등록하세요.` });
+
+    const todos = [];
+    await withTx(async (c) => {
+      await c.query(
+        `UPDATE product_dev_requests SET developed_at=COALESCE($1, developed_at, CURRENT_DATE), result_product_id=$2, result_ctr_code=$3, status='developed', updated_by=$4, updated_at=now() WHERE id=$5`,
+        [b.developed_at || null, prod.id, prod.code, req.ctx.perm.userId, id]);
+      // SYD(경쟁사) 코드 → 신규 CTR 제품 자동 매핑
+      const syd = (d.review_syd_code || d.input_code || '').trim();
+      if (syd) {
+        await c.query(`INSERT INTO product_syd_codes (product_id, syd_code) VALUES ($1,$2) ON CONFLICT (product_id, syd_code) DO NOTHING`, [prod.id, syd]);
+      }
+      // 알림 대상: 고객 담당영업(owner_id) + 디렉터들
+      const recipients = new Set();
+      if (d.owner_id) recipients.add(Number(d.owner_id));
+      const dirs = (await c.query(`SELECT id FROM users WHERE role='director' AND deleted_at IS NULL`)).rows;
+      for (const u of dirs) recipients.add(Number(u.id));
+      const custName = d.customer_id ? ((await c.query(`SELECT name FROM customers WHERE id=$1`, [d.customer_id])).rows[0]?.name || '') : '';
+      const title = `개발완료: ${syd || d.input_code || ''} → ${prod.code}`;
+      const detail = `${custName ? custName + ' 고객에게 ' : ''}개발완료를 안내하세요. (경쟁사 ${syd || d.input_code || '-'} → 신규 ${prod.code})`;
+      for (const uid of recipients) {
+        const t = (await c.query(
+          `INSERT INTO todos (title, detail, assignee_id, due_date, kind, created_by) VALUES ($1,$2,$3,CURRENT_DATE,'dev_complete',$4) RETURNING id`,
+          [title, detail, uid, req.ctx.perm.userId])).rows[0];
+        todos.push(t.id);
+      }
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'developed', ctr: prod.code, todos: todos.length } });
+    return { ok: true, mapped_to: prod.code, todos_created: todos.length };
+  });
+
+  app.put('/api/dev-requests/:id/cancel', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    await query(`UPDATE product_dev_requests SET status='cancelled', updated_by=$1, updated_at=now() WHERE id=$2 AND deleted_at IS NULL`, [req.ctx.perm.userId, id]);
+    return { ok: true };
+  });
+
+  // KPI: 당월(또는 ym) 신규 개발 완료 건수 + 평균 소요일
+  app.get('/api/dev-requests/kpi', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? req.query.ym : new Date().toISOString().slice(0, 7);
+    const r = (await query(
+      `SELECT COUNT(*)::int AS completed,
+              AVG(developed_at - requested_at) AS avg_days,
+              COUNT(*) FILTER (WHERE status IN ('received','reviewed','factory_requested'))::int AS open_all
+         FROM product_dev_requests
+        WHERE deleted_at IS NULL AND to_char(developed_at,'YYYY-MM')=$1`, [ym])).rows[0];
+    const openAll = (await query(`SELECT COUNT(*)::int AS n FROM product_dev_requests WHERE deleted_at IS NULL AND status IN ('received','reviewed','factory_requested')`)).rows[0].n;
+    return { ym, completed: r.completed || 0, avg_days: r.avg_days != null ? Math.round(Number(r.avg_days)) : null, open: openAll || 0 };
+  });
+
+  // 당월 개발된 아이템 목록(위젯 클릭)
+  app.get('/api/dev-requests/monthly', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? req.query.ym : new Date().toISOString().slice(0, 7);
+    const rows = (await query(
+      `SELECT d.*, c.name AS customer_name FROM product_dev_requests d LEFT JOIN customers c ON c.id=d.customer_id
+        WHERE d.deleted_at IS NULL AND to_char(d.developed_at,'YYYY-MM')=$1
+        ORDER BY d.developed_at DESC, d.id DESC`, [ym])).rows;
+    return { ym, items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
+  });
+}

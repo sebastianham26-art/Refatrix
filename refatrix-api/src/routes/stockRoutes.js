@@ -25,6 +25,27 @@ async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, 
 }
 
 export default async function stockRoutes(app) {
+  // 부족분 SKU별 집계 (발주 근거) — open 상태 shortage 합산
+  app.get('/api/shortages/by-sku', { preHandler: [authGuard, requirePage('sales')] }, async () => {
+    const rows = (await query(
+      `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
+              SUM(sh.shortage_qty)::numeric AS total_shortage,
+              COUNT(*)::int AS cnt,
+              MIN(sh.occurred_at) AS first_at, MAX(sh.occurred_at) AS last_at
+         FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
+        WHERE sh.status='open'
+        GROUP BY sh.product_id, p.code, p.name, p.stock_qty
+        ORDER BY total_shortage DESC`)).rows;
+    return {
+      items: rows.map((r) => ({
+        product_id: r.product_id, ctr_code: r.ctr_code, product_name: r.product_name,
+        stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null,
+        total_shortage: Number(r.total_shortage), cnt: r.cnt,
+        first_at: r.first_at ? d10(r.first_at) : null, last_at: r.last_at ? d10(r.last_at) : null,
+      })),
+    };
+  });
+
   // 수동 이동 등록 (입고/출고/조정). 참조번호 필수.
   app.post('/api/stock/movements', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const b = req.body || {};

@@ -42,6 +42,10 @@
   .st.converted{background:var(--income-bg);color:var(--income)}.st.cancelled{background:var(--expense-bg);color:var(--expense)}
   .guest{font-size:10px;font-weight:700;color:#7a4ea0;background:#f1ebf7;padding:1px 6px;border-radius:999px;margin-left:4px}
   .arrow{color:var(--income);font-weight:700}
+  .pvrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .pvtag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .pvtag.ok{background:var(--income-bg);color:var(--income)}.pvtag.warn{background:#fdf3e3;color:#9a6512}.pvtag.dev{background:#f1ebf7;color:#7a4ea0}
+  .pvseg{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -80,6 +84,7 @@
     </div>
     <div style="padding:16px 18px">
       <div id="cvInfo" class="hint" style="margin-bottom:10px"></div>
+      <div id="cvPreview" style="margin-bottom:12px"></div>
       <div id="cvGuestWrap" class="hidden">
         <label>고객 지정 (불특정 견적 → 등록 고객 선택)</label>
         <select id="cvCustomer" style="width:100%"></select>
@@ -206,7 +211,22 @@
       const cs=await loadCustomersOnce();
       $('cvCustomer').innerHTML='<option value="">— 고객 선택 —</option>'+cs.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
     }
+    $('cvPreview').innerHTML='<div class="hint">분류 미리보기 불러오는 중…</div>';
     $('cvModal').style.display='flex';
+    try{
+      const pv=await fetch(session.api+'/api/quotes/'+id+'/convert-preview',{headers:auth()}).then(r=>r.json());
+      renderPreview(pv);
+    }catch(e){ $('cvPreview').innerHTML='<div class="hint">미리보기를 불러오지 못했습니다.</div>'; }
+  }
+  function renderPreview(pv){
+    const c=pv.counts||{};
+    let h='<div style="font-weight:700;color:var(--brand);margin-bottom:6px">전환 미리보기 (3갈래 분류)</div>';
+    h+='<div class="pvrow"><span class="pvtag ok">① 즉시 매출 '+c.in_stock+'</span> <span class="pvtag warn">② 부족(발주) '+c.shortage+'</span> <span class="pvtag dev">③ 개발요청 '+c.new_dev+'</span></div>';
+    if((pv.in_stock||[]).length) h+='<div class="pvseg"><b>① 즉시 매출</b><br>'+pv.in_stock.map(x=>esc(x.ctr_code)+' ×'+x.qty+' (재고 '+x.avail+')').join('<br>')+'</div>';
+    if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
+    if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
+    if(!(pv.in_stock||[]).length && !(pv.shortage||[]).length && !(pv.new_dev||[]).length) h+='<div class="hint">전환할 품목이 없습니다.</div>';
+    $('cvPreview').innerHTML=h;
   }
   function closeConvert(){ $('cvModal').style.display='none'; cvId=null; }
   async function doConvert(){
@@ -229,8 +249,13 @@
         else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
         m.className='msg err';m.textContent='전환 실패: '+msg;return;
       }
-      m.className='msg ok';m.textContent='매출로 전환되었습니다. (인보이스 #'+d.invoice_id+')';
-      setTimeout(()=>{ closeConvert(); load(); },900);
+      m.className='msg ok';
+      let parts=[];
+      if(d.invoice_id) parts.push('인보이스 #'+d.invoice_id);
+      if(d.shortages&&d.shortages.length) parts.push('부족 '+d.shortages.length+'건 기록');
+      if(d.dev_requests) parts.push('개발요청 '+d.dev_requests+'건 생성');
+      m.textContent='전환 완료 — '+(parts.join(' · ')||'처리됨');
+      setTimeout(()=>{ closeConvert(); load(); },1400);
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('cvBtn').disabled=false;}
   }

@@ -382,6 +382,31 @@ export default async function quoteRoutes(app) {
       totalPct: all3y > 0 ? round2(sku3y / all3y * 100) : null,
     };
   });
+  // 견적 전환 미리보기: 3갈래 분류 (즉시매출 / 부족(발주) / 미등록(개발요청))
+  app.get('/api/quotes/:id/convert-preview', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    const lines = (await query(`SELECT * FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [id])).rows;
+    const inStock = [], shortage = [], newDev = [];
+    for (const l of lines) {
+      const qty = Number(l.qty) || 0;
+      if (!l.product_id) { newDev.push({ input_code: l.input_code, qty }); continue; }
+      const p = (await query(`SELECT stock_qty FROM products WHERE id=$1`, [l.product_id])).rows[0];
+      const avail = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
+      if (avail >= qty) inStock.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail });
+      else {
+        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail, fulfill: Math.max(avail, 0), short: qty - Math.max(avail, 0) });
+      }
+    }
+    return {
+      is_guest: q.customer_id == null,
+      already: q.status === 'converted',
+      counts: { in_stock: inStock.length, shortage: shortage.length, new_dev: newDev.length },
+      in_stock: inStock, shortage, new_dev: newDev,
+    };
+  });
+
   // ============ 전체 SKU 가격표 (엑셀 다운로드용) ============
   app.get('/api/quotes/price-list', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
     let discountRate = null;
@@ -420,24 +445,46 @@ export default async function quoteRoutes(app) {
       const cu = (await query(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
       if (!cu) return reply.code(404).send({ error: 'customer_not_found' });
     }
-    const lines = (await query(`SELECT product_id, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id])).rows;
-    if (!lines.length) return reply.code(400).send({ error: 'no_valid_lines' });
-    const payload = {
-      customer_id: customerId,
-      inv_date: req.body?.inv_date || d10(new Date()),
-      lines: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty) })),
-      memo: `견적 ${q.quote_no} 전환`,
-    };
-    const res = await app.inject({
-      method: 'POST', url: '/api/sales',
-      headers: { authorization: req.headers.authorization, 'content-type': 'application/json' },
-      payload: JSON.stringify(payload),
-    });
-    if (res.statusCode !== 200) return reply.code(res.statusCode).send({ error: 'sale_failed', detail: res.json() });
-    const sale = res.json();
-    const invoiceId = sale.id || (sale.invoice && sale.invoice.id);
+    // 매칭된 줄(케이스 1·2) + 미매칭 줄(케이스 3) 분리
+    const matched = (await query(`SELECT product_id, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id])).rows;
+    const unmatched = (await query(`SELECT input_code, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NULL`, [id])).rows;
+    if (!matched.length && !unmatched.length) return reply.code(400).send({ error: 'no_valid_lines' });
+
+    let invoiceId = null, sale = null;
+    const invDate = req.body?.inv_date || d10(new Date());
+    if (matched.length) {
+      // allow_partial: 재고 있는 만큼 매출 + 부족분은 stock_shortages 자동 기록(케이스 2)
+      const payload = {
+        customer_id: customerId, inv_date: invDate, allow_partial: true,
+        lines: matched.map((l) => ({ product_id: l.product_id, qty: Number(l.qty) })),
+        memo: `견적 ${q.quote_no} 전환`,
+      };
+      const res = await app.inject({
+        method: 'POST', url: '/api/sales',
+        headers: { authorization: req.headers.authorization, 'content-type': 'application/json' },
+        payload: JSON.stringify(payload),
+      });
+      if (res.statusCode !== 200) return reply.code(res.statusCode).send({ error: 'sale_failed', detail: res.json() });
+      sale = res.json();
+      invoiceId = sale.id || (sale.invoice && sale.invoice.id);
+    }
+    // 케이스 3: 미등록 코드 → 제품개발요청 생성
+    const devIds = [];
+    for (const u of unmatched) {
+      const r = (await query(
+        `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
+        [u.input_code || null, customerId, Number(u.qty) || null, invDate, id, req.ctx.perm.userId])).rows[0];
+      devIds.push(r.id);
+    }
     await query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`, [invoiceId || null, customerId, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId } });
-    return { ok: true, invoice_id: invoiceId, sale };
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, dev_requests: devIds.length } });
+    return {
+      ok: true, invoice_id: invoiceId,
+      invoiced: sale ? (sale.invoiced !== false) : false,
+      shortages: (sale && sale.shortages) || [],
+      dev_requests: devIds.length,
+      sale,
+    };
   });
 }

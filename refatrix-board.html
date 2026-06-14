@@ -50,6 +50,7 @@
   .pill.pin{background:#fdf8ec;color:#8a6512}
   .pill.over{background:var(--expense-bg);color:var(--expense)}
   .item.done{opacity:.6}.item.done .t{text-decoration:line-through}
+  .item.kind-dev{background:#f5f0fb;border-color:#d9c9ef;border-left:4px solid #6B4FB0}
   .chk{width:20px;height:20px;border:2px solid var(--line);border-radius:6px;cursor:pointer;flex:0 0 auto;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff}
   .chk.on{background:var(--income);border-color:var(--income)}
   .roster{font-size:11.5px;color:var(--muted);margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
@@ -458,9 +459,10 @@
       if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">할 일이 없습니다.</div>';return;}
       $('todoList').innerHTML=items.map(t=>{
         const done=t.status==='done';
-        return '<div class="item '+(done?'done':'')+'">'
+        const kindCls=t.kind==='dev_complete'?' kind-dev':'';
+        return '<div class="item '+(done?'done':'')+kindCls+'">'
           +'<div class="chk '+(done?'on':'')+'" onclick="toggleTodo('+t.id+','+(!done)+')">'+(done?'✓':'')+'</div>'
-          +'<div class="body"><div class="t">'+esc(t.title)+'</div>'
+          +'<div class="body"><div class="t">'+(t.kind==='dev_complete'?'🆕 ':'')+esc(t.title)+'</div>'
           +(t.detail?'<div class="d">'+esc(t.detail)+'</div>':'')
           +'<div class="meta">'+(t.due_date?'마감 '+t.due_date+' ':'')
           +(t.overdue?'<span class="pill over">지남</span> ':'')

@@ -169,7 +169,7 @@ export default async function portalBoardRoutes(app) {
     else if (req.query.assignee_id) { args.push(Number(req.query.assignee_id)); conds.push(`t.assignee_id=$${args.length}`); }
     if (status) { args.push(status); conds.push(`t.status=$${args.length}`); }
     const rows = (await query(
-      `SELECT t.id, t.title, t.detail, t.assignee_id, t.due_date, t.status, t.done_at, t.done_note, t.created_at,
+      `SELECT t.id, t.title, t.detail, t.assignee_id, t.due_date, t.status, t.done_at, t.done_note, t.created_at, t.kind,
               a.name AS assignee_name, c.name AS created_by_name
          FROM todos t
          LEFT JOIN users a ON a.id=t.assignee_id
@@ -180,7 +180,7 @@ export default async function portalBoardRoutes(app) {
     return {
       items: rows.map((r) => ({
         id: r.id, title: r.title, detail: r.detail, assignee_id: r.assignee_id, assignee_name: r.assignee_name,
-        due_date: d10(r.due_date), status: r.status, done_at: isoTs(r.done_at), done_note: r.done_note,
+        due_date: d10(r.due_date), status: r.status, done_at: isoTs(r.done_at), done_note: r.done_note, kind: r.kind || null,
         created_by_name: r.created_by_name, overdue: r.status === 'open' && r.due_date && d10(r.due_date) < today,
       })),
     };

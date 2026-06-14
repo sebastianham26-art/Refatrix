@@ -119,6 +119,20 @@
       <div id="kpiBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
     </div>
 
+    <!-- 당월 신규 개발 위젯 -->
+    <div class="card hidden" id="devCard" style="cursor:pointer" onclick="goScreen('devrequest')">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="background:#f1ebf7;color:#6B4FB0;border-radius:10px;padding:10px 16px;text-align:center;min-width:90px">
+          <div style="font-size:26px;font-weight:800" id="devCount">–</div>
+          <div style="font-size:11px">당월 개발완료</div>
+        </div>
+        <div style="flex:1;min-width:160px">
+          <h2 style="margin:0">신규 제품 개발 <span class="hint" style="display:inline;margin:0">— 경쟁사 코드 대응</span></h2>
+          <div class="hint" id="devSub" style="margin-top:4px">이번 달 개발완료된 신규 제품입니다. 클릭하면 개발요청 화면으로 이동합니다.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- 해야 할 일 (펜딩 요약) -->
     <div class="card" id="pendCard">
       <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
@@ -172,6 +186,8 @@
     pipeline:{file:'refatrix-pipeline.html',name:'영업활동'},
     sales:{file:'refatrix-sales.html',name:'매출등록'},
     stock:{file:'refatrix-stock.html',name:'재고이동'},
+    shortage:{file:'refatrix-shortage.html',name:'부족분 집계'},
+    devrequest:{file:'refatrix-devrequest.html',name:'제품개발요청'},
     quote:{file:'refatrix-quote.html',name:'견적(수주)'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적 목록'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅배분'},
@@ -187,9 +203,10 @@
   };
 
   // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
-  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', stock:'sales', pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
+  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', stock:'sales', shortage:['sales','products'], devrequest:['sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
   function canSee(key){
     const pk=SCREEN_PAGEKEY[key];
+    if(Array.isArray(pk)) return !!(sum && (sum.isDirector || pk.some(k=>(sum.pages||[]).includes(k))));
     if(pk===null||pk===undefined&&(key==='dashboard'||key==='salesperf'||key==='board')) return true;
     if(pk==='__director__') return !!(sum&&sum.isDirector);
     if(pk===undefined) return true;
@@ -234,7 +251,16 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();loadDevWidget();
+  }
+  async function loadDevWidget(){
+    try{
+      if(!canSee('devrequest')) return;
+      const d=await fetch(session.api+'/api/dev-requests/kpi',{headers:auth()}).then(r=>r.json());
+      $('devCount').textContent=d.completed||0;
+      $('devSub').textContent='이번 달 개발완료 '+(d.completed||0)+'건'+(d.avg_days!=null?(' · 평균 '+d.avg_days+'일'):'')+(d.open?(' · 진행중 '+d.open+'건'):'')+' — 클릭하면 개발요청 화면';
+      $('devCard').classList.remove('hidden');
+    }catch(e){}
   }
   async function loadQuoteBadge(){
     try{
@@ -248,15 +274,15 @@
   // 탭바 + 트리: 6개 분야
   const MENU_GROUPS=[
     {key:'common', title:'공통', color:'#143D34', screens:['salesperf','dashboard']},
-    {key:'sales', title:'영업', color:'#1F6FB2', screens:['quote','quotelist','sales','stock','pipeline','customers','targets']},
+    {key:'sales', title:'영업', color:'#1F6FB2', screens:['quote','quotelist','sales','stock','shortage','devrequest','pipeline','customers','targets']},
     {key:'finance', title:'재무', color:'#B23A2E', screens:['finance','settlement','budget','importcost']},
-    {key:'pm', title:'제품·마케팅', color:'#6B4FB0', screens:['products','marketing']},
+    {key:'pm', title:'제품·마케팅', color:'#6B4FB0', screens:['products','devrequest','marketing']},
     {key:'admin', title:'관리', color:'#5B6770', screens:['users','company']},
     {key:'cal', title:'일정', color:'#0F6E56', screens:['board']},
   ];
   const SCREEN_DESC={
     board:'달력·공지·내 할 일', dashboard:'위젯 대시보드',
-    salesperf:'매출·수금·파이프라인', sales:'인보이스 등록·승인', stock:'입고·출고·조정', quote:'견적 작성·매출전환', quotelist:'견적·매출 추적', pipeline:'칸반·미팅', customers:'고객·외상 추적', targets:'목표 대비 달성',
+    salesperf:'매출·수금·파이프라인', sales:'인보이스 등록·승인', stock:'입고·출고·조정', shortage:'부족분 집계(발주근거)', devrequest:'경쟁사코드 대응 개발', quote:'견적 작성·매출전환', quotelist:'견적·매출 추적', pipeline:'칸반·미팅', customers:'고객·외상 추적', targets:'목표 대비 달성',
     finance:'거래·수금·캐시플로', settlement:'정산차액(비현금)', budget:'예산 계획', importcost:'수입 부대비용·원가',
     products:'제품마스터·재고', marketing:'마케팅 예산·배분', users:'사용자·권한', company:'로고·회사정보·계좌',
   };
