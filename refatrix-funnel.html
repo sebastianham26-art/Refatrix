@@ -175,8 +175,14 @@
     const able=d.able||[], done=d.done||[];
     let h='<div class="grp">인보이스 발행 가능 (재고 충분·미전환 견적)</div>';
     if(!able.length) h+='<div class="hint">발행 가능한 미전환 견적이 없습니다.</div>';
-    else{ h+='<table><thead><tr><th>견적번호</th><th>견적일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
-      able.forEach(a=>{ h+='<tr><td><b>'+esc(a.quote_no||'')+'</b></td><td>'+esc(a.qdate||'')+'</td><td>'+esc(a.customer_name||'')+'</td><td class="r">'+a.ok_sku+'</td><td class="r okv">'+nf(a.ok_qty)+'</td></tr>'; });
+    else{ h+='<div class="hint">견적 후 경과일이 길수록 팔로업이 시급합니다 (오래된 순). <span style="color:var(--expense);font-weight:700">7일↑ 주의 · 14일↑ 위험</span></div>';
+      h+='<table><thead><tr><th>견적번호</th><th>견적일</th><th class="r">경과일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
+      able.forEach(a=>{
+        const age=a.age_days==null?null:Number(a.age_days);
+        let ageCell='-';
+        if(age!=null){ const col = age>=14?'var(--expense)':(age>=7?'#9a6512':'var(--muted)'); const warn = age>=14?' ⚠':(age>=7?' ⚑':''); ageCell='<b style="color:'+col+'">'+age+'일'+warn+'</b>'; }
+        h+='<tr><td><b>'+esc(a.quote_no||'')+'</b></td><td>'+esc(a.qdate||'')+'</td><td class="r">'+ageCell+'</td><td>'+esc(a.customer_name||'')+'</td><td class="r">'+a.ok_sku+'</td><td class="r okv">'+nf(a.ok_qty)+'</td></tr>';
+      });
       h+='</tbody></table>'; }
     h+='<div class="grp" style="margin-top:16px">이미 발행 (인보이스 생성됨)</div>';
     if(!done.length) h+='<div class="hint">발행된 인보이스가 없습니다.</div>';

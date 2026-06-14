@@ -379,16 +379,18 @@ export default async function devRequestRoutes(app) {
   // ② 즉시매출 드릴다운: 발행가능(미전환·재고충분 견적) + 이미발행(전환된 견적)
   app.get('/api/dashboard/funnel/immediate', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const months = parseMonths(req);
-    // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적
+    // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적 (+ 견적 후 경과일)
     const able = (await query(
-      `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate, c.name AS customer_name, q.guest_name, q.customer_id,
+      `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate,
+              (CURRENT_DATE - q.quote_date)::int AS age_days,
+              c.name AS customer_name, q.guest_name, q.customer_id,
               COUNT(*) FILTER (WHERE ql.stock_flag='ok')::int AS ok_sku,
               COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_qty
          FROM quotes q JOIN quote_lines ql ON ql.quote_id=q.id LEFT JOIN customers c ON c.id=q.customer_id
         WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed') AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
         GROUP BY q.id, q.quote_no, q.quote_date, c.name, q.guest_name, q.customer_id
         HAVING COUNT(*) FILTER (WHERE ql.stock_flag='ok') > 0
-        ORDER BY q.quote_date DESC`, [months])).rows;
+        ORDER BY q.quote_date ASC`, [months])).rows;   // 오래된 것 먼저(팔로업 우선)
     // 이미 발행: 전환된(인보이스 생성) 견적
     const done = (await query(
       `SELECT q.id, q.quote_no, q.invoice_id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, i.sat_no, c.name AS customer_name, q.guest_name, q.customer_id,
@@ -400,7 +402,7 @@ export default async function devRequestRoutes(app) {
         ORDER BY q.quote_date DESC`, [months])).rows;
     return {
       months,
-      able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
+      able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
       done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
     };
   });
