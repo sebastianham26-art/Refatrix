@@ -328,4 +328,130 @@ export default async function devRequestRoutes(app) {
     });
     return { by, months, rows };
   });
+
+  // ===== 드릴다운: 기간(months) 파라미터 공통 =====
+  function parseMonths(req) {
+    const raw = String(req.query.months || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+    return raw.length ? raw : [new Date().toISOString().slice(0, 7)];
+  }
+  const pctOf = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
+
+  // ① 견적 요청 드릴다운: 견적 목록 + 각 견적 SKU 라인
+  app.get('/api/dashboard/funnel/quotes', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const months = parseMonths(req);
+    const qs = (await query(
+      `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate, q.invoice_id,
+              c.name AS customer_name, q.guest_name, q.customer_id,
+              COUNT(ql.*)::int AS req_sku, COALESCE(SUM(ql.qty),0)::numeric AS req_qty,
+              COUNT(*) FILTER (WHERE ql.stock_flag='ok')::int AS ok_sku,
+              COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_qty,
+              COUNT(*) FILTER (WHERE ql.stock_flag='low_stock')::int AS short_sku,
+              COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='low_stock'),0)::numeric AS short_qty,
+              COUNT(*) FILTER (WHERE ql.stock_flag='not_found')::int AS dev_sku,
+              COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='not_found'),0)::numeric AS dev_qty
+         FROM quotes q JOIN quote_lines ql ON ql.quote_id=q.id
+         LEFT JOIN customers c ON c.id=q.customer_id
+        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        GROUP BY q.id, q.quote_no, q.quote_date, q.invoice_id, c.name, q.guest_name, q.customer_id
+        ORDER BY q.quote_date DESC, q.id DESC`, [months])).rows;
+    return {
+      months,
+      items: qs.map((o) => ({
+        id: o.id, quote_no: o.quote_no, qdate: o.qdate, converted: o.invoice_id != null,
+        customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name,
+        req_sku: o.req_sku, req_qty: Number(o.req_qty),
+        ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty), short_sku: o.short_sku, short_qty: Number(o.short_qty), dev_sku: o.dev_sku, dev_qty: Number(o.dev_qty),
+        ok_qty_pct: pctOf(Number(o.ok_qty), Number(o.req_qty)), short_qty_pct: pctOf(Number(o.short_qty), Number(o.req_qty)), dev_qty_pct: pctOf(Number(o.dev_qty), Number(o.req_qty)),
+      })),
+    };
+  });
+
+  // 견적 1건의 SKU 라인 (2단계)
+  app.get('/api/dashboard/funnel/quote-lines', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const id = Number(req.query.quote_id);
+    if (!id) return reply.code(400).send({ error: 'quote_id_required' });
+    const lines = (await query(
+      `SELECT ql.input_code, ql.ctr_code, ql.product_name, ql.qty, ql.stock_flag, ql.avail_stock, ql.line_total
+         FROM quote_lines ql WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
+    return { items: lines.map((l) => ({ ...l, qty: Number(l.qty), avail_stock: l.avail_stock != null ? Number(l.avail_stock) : null, line_total: Number(l.line_total) })) };
+  });
+
+  // ② 즉시매출 드릴다운: 발행가능(미전환·재고충분 견적) + 이미발행(전환된 견적)
+  app.get('/api/dashboard/funnel/immediate', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const months = parseMonths(req);
+    // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적
+    const able = (await query(
+      `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate, c.name AS customer_name, q.guest_name, q.customer_id,
+              COUNT(*) FILTER (WHERE ql.stock_flag='ok')::int AS ok_sku,
+              COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_qty
+         FROM quotes q JOIN quote_lines ql ON ql.quote_id=q.id LEFT JOIN customers c ON c.id=q.customer_id
+        WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed') AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        GROUP BY q.id, q.quote_no, q.quote_date, c.name, q.guest_name, q.customer_id
+        HAVING COUNT(*) FILTER (WHERE ql.stock_flag='ok') > 0
+        ORDER BY q.quote_date DESC`, [months])).rows;
+    // 이미 발행: 전환된(인보이스 생성) 견적
+    const done = (await query(
+      `SELECT q.id, q.quote_no, q.invoice_id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, i.sat_no, c.name AS customer_name, q.guest_name, q.customer_id,
+              i.total_mxn,
+              (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_sku,
+              (SELECT COALESCE(SUM(sl.qty),0)::numeric FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_qty
+         FROM quotes q JOIN sales_invoices i ON i.id=q.invoice_id LEFT JOIN customers c ON c.id=q.customer_id
+        WHERE q.deleted_at IS NULL AND q.status='converted' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        ORDER BY q.quote_date DESC`, [months])).rows;
+    return {
+      months,
+      able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
+      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
+    };
+  });
+
+  // 인보이스 1건의 SKU 라인 (2단계)
+  app.get('/api/dashboard/funnel/invoice-lines', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const id = Number(req.query.invoice_id);
+    if (!id) return reply.code(400).send({ error: 'invoice_id_required' });
+    const lines = (await query(
+      `SELECT p.code AS ctr_code, p.name AS product_name, sl.qty, sl.unit_price, sl.line_amount_mxn
+         FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
+    return { items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })) };
+  });
+
+  // ③ 부족·발주 드릴다운: SKU별 부족·발주 (occurred_at 월)
+  app.get('/api/dashboard/funnel/shortage', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const months = parseMonths(req);
+    const rows = (await query(
+      `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
+              COALESCE(SUM(sh.shortage_qty) FILTER (WHERE sh.status='open'),0)::numeric AS open_qty,
+              COALESCE(SUM(sh.shortage_qty) FILTER (WHERE sh.status='resolved'),0)::numeric AS ordered_qty,
+              COUNT(*) FILTER (WHERE sh.status='open')::int AS open_cnt,
+              COUNT(*) FILTER (WHERE sh.status='resolved')::int AS ordered_cnt
+         FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
+        WHERE sh.status<>'cancelled' AND to_char(sh.occurred_at,'YYYY-MM') = ANY($1)
+        GROUP BY sh.product_id, p.code, p.name, p.stock_qty
+        ORDER BY open_qty DESC, ordered_qty DESC`, [months])).rows;
+    return { months, items: rows.map((r) => ({ product_id: r.product_id, ctr_code: r.ctr_code, product_name: r.product_name, stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null, open_qty: Number(r.open_qty), ordered_qty: Number(r.ordered_qty), open_cnt: r.open_cnt, ordered_cnt: r.ordered_cnt })) };
+  });
+
+  // SKU 1개의 부족 발생 내역 (2단계: 어느 고객·매출에서)
+  app.get('/api/dashboard/funnel/shortage-detail', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const pid = Number(req.query.product_id);
+    if (!pid) return reply.code(400).send({ error: 'product_id_required' });
+    const months = parseMonths(req);
+    const rows = (await query(
+      `SELECT sh.id, to_char(sh.occurred_at,'YYYY-MM-DD') AS occurred_at, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.status,
+              c.name AS customer_name, sh.sales_invoice_id
+         FROM stock_shortages sh LEFT JOIN customers c ON c.id=sh.customer_id
+        WHERE sh.product_id=$1 AND sh.status<>'cancelled' AND to_char(sh.occurred_at,'YYYY-MM') = ANY($2)
+        ORDER BY sh.occurred_at DESC, sh.id DESC`, [pid, months])).rows;
+    return { items: rows.map((r) => ({ ...r, requested_qty: Number(r.requested_qty), fulfilled_qty: Number(r.fulfilled_qty), shortage_qty: Number(r.shortage_qty) })) };
+  });
+
+  // ④ 개발 필요 드릴다운: 개발요청 목록 + 단계 (requested_at 월)
+  app.get('/api/dashboard/funnel/dev', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const months = parseMonths(req);
+    const rows = (await query(
+      `SELECT d.*, c.name AS customer_name FROM product_dev_requests d LEFT JOIN customers c ON c.id=d.customer_id
+        WHERE d.deleted_at IS NULL AND d.status<>'cancelled' AND to_char(d.requested_at,'YYYY-MM') = ANY($1)
+        ORDER BY d.requested_at DESC, d.id DESC`, [months])).rows;
+    return { months, items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
+  });
 }

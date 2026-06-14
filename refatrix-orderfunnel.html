@@ -157,10 +157,12 @@
     // 격자/축 눈금 (4단계)
     let grid='';
     for(let g=0;g<=4;g++){ const v=niceMax*g/4, yy=y(v); grid+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#e6e1d6" stroke-width="1"/>'+'<text x="'+(padL-6)+'" y="'+(yy+3)+'" font-size="9" fill="#9b958a" text-anchor="end">'+nf(Math.round(v))+'</text>'; }
-    // x 라벨 + 포인트
+    // x 라벨 + 포인트 + 클릭 영역(도넛)
     let xl='', pts='';
     rows.forEach((r,i)=>{ xl+='<text x="'+x(i)+'" y="'+(H-padB+16)+'" font-size="9" fill="#6F6A60" text-anchor="middle"'+(rows.length>14?(' transform="rotate(40 '+x(i)+' '+(H-padB+16)+')"'):'')+'>'+esc(labelOf(r))+'</text>';
-      pts+='<circle cx="'+x(i)+'" cy="'+y(r.req_qty)+'" r="2.5" fill="#143D34"/>'+'<circle cx="'+x(i)+'" cy="'+y(r.ok_qty)+'" r="2.5" fill="#0F6E56"/>'; });
+      pts+='<circle cx="'+x(i)+'" cy="'+y(r.req_qty)+'" r="2.5" fill="#143D34"/>'+'<circle cx="'+x(i)+'" cy="'+y(r.ok_qty)+'" r="2.5" fill="#0F6E56"/>'
+        +'<circle cx="'+x(i)+'" cy="'+y(r.req_qty)+'" r="11" fill="transparent" style="cursor:pointer" onclick="showDonut('+i+')"><title>'+esc(labelOf(r))+' 클릭 → 구성 도넛</title></circle>'; });
+    window.__chartRows=rows;
     const svg='<div style="overflow-x:auto" class="chartbox"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'
       +'<defs><linearGradient id="okg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0F6E56" stop-opacity="0.45"/><stop offset="1" stop-color="#0F6E56" stop-opacity="0.08"/></linearGradient></defs>'
       +grid
@@ -168,8 +170,34 @@
       +'<path d="'+okline+'" fill="none" stroke="#0F6E56" stroke-width="2"/>'
       +'<path d="'+line+'" fill="none" stroke="#143D34" stroke-width="2" stroke-dasharray="0"/>'
       +pts+xl
-      +'</svg></div>';
+      +'</svg></div><div class="hint" style="margin-top:4px;text-align:center">그래프의 점을 클릭하면 그 '+(viewBy==='month'?'달':'오더')+'의 구성 도넛이 아래에 나타납니다.</div><div id="donutWrap"></div>';
     $('chartWrap').innerHTML=svg;
+  }
+
+  // 월/오더 클릭 → 도넛 (즉시/부족/개발 구성, 가운데 즉시%)
+  function showDonut(i){
+    const rows=window.__chartRows||[]; const r=rows[i]; if(!r){ return; }
+    const lab = viewBy==='month' ? (r.ym||r.label) : (r.label||'');
+    const ok=Number(r.ok_qty)||0, ss=Number(r.short_qty)||0, dv=Number(r.dev_qty)||0;
+    const tot=ok+ss+dv;
+    if(tot<=0){ $('donutWrap').innerHTML='<div class="hint" style="text-align:center;margin-top:8px">'+esc(lab)+' : 데이터 없음</div>'; return; }
+    const okPct=Math.round(ok/tot*1000)/10;
+    const cx=110, cy=110, rO=80, rI=50, C=2*Math.PI;
+    const segs=[['#0F6E56',ok,'즉시'],['#B8893B',ss,'부족'],['#6B4FB0',dv,'개발']];
+    let acc=0, arcs='';
+    segs.forEach(([col,val])=>{ if(val<=0) return; const frac=val/tot; const a0=acc*C-Math.PI/2, a1=(acc+frac)*C-Math.PI/2; acc+=frac;
+      const large=frac>0.5?1:0;
+      const x0=cx+rO*Math.cos(a0), y0=cy+rO*Math.sin(a0), x1=cx+rO*Math.cos(a1), y1=cy+rO*Math.sin(a1);
+      const xi1=cx+rI*Math.cos(a1), yi1=cy+rI*Math.sin(a1), xi0=cx+rI*Math.cos(a0), yi0=cy+rI*Math.sin(a0);
+      arcs+='<path d="M '+x0+' '+y0+' A '+rO+' '+rO+' 0 '+large+' 1 '+x1+' '+y1+' L '+xi1+' '+yi1+' A '+rI+' '+rI+' 0 '+large+' 0 '+xi0+' '+yi0+' Z" fill="'+col+'"/>';
+    });
+    const legend=segs.map(([col,val,nm])=>'<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px"><span style="width:10px;height:10px;background:'+col+';display:inline-block;border-radius:2px"></span>'+nm+' '+nf(val)+' ('+(tot>0?Math.round(val/tot*1000)/10:0)+'%)</span>').join('');
+    $('donutWrap').innerHTML='<div style="text-align:center;margin-top:10px"><div style="font-weight:800;color:var(--brand);margin-bottom:4px">'+esc(lab)+' 구성</div>'
+      +'<svg width="220" height="220" viewBox="0 0 220 220">'+arcs
+      +'<text x="110" y="104" text-anchor="middle" font-size="26" font-weight="800" fill="#0F6E56">'+okPct+'%</text>'
+      +'<text x="110" y="124" text-anchor="middle" font-size="11" fill="#6F6A60">즉시매출</text></svg>'
+      +'<div style="font-size:12px;margin-top:4px">'+legend+'</div></div>';
+    setTimeout(()=>{ const dw=$('donutWrap'); if(dw) dw.scrollIntoView({behavior:'smooth',block:'nearest'}); },50);
   }
 
   function render(rows){

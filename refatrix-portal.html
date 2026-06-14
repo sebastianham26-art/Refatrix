@@ -203,6 +203,7 @@
     shortage:{file:'refatrix-shortage.html',name:'부족분 집계'},
     devrequest:{file:'refatrix-devrequest.html',name:'제품개발요청'},
     orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이'},
+    funnel:{file:'refatrix-funnel.html',name:'수주 흐름 세부'},
     quote:{file:'refatrix-quote.html',name:'견적(수주)'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적 목록'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅배분'},
@@ -218,7 +219,7 @@
   };
 
   // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
-  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', stock:'sales', shortage:['sales','products'], devrequest:['sales','products','marketing'], orderfunnel:['sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
+  const SCREEN_PAGEKEY={ sales:'sales', quote:'sales', quotelist:'sales', stock:'sales', shortage:['sales','products'], devrequest:['sales','products','marketing'], orderfunnel:['sales','products','marketing'], funnel:['sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null };
   function canSee(key){
     const pk=SCREEN_PAGEKEY[key];
     if(Array.isArray(pk)) return !!(sum && (sum.isDirector || pk.some(k=>(sum.pages||[]).includes(k))));
@@ -311,16 +312,17 @@
   function renderFunnel(d){
     const base=d.requested;
     const okP=pct(d.immediate.sku,base.sku);
+    const mq=encodeURIComponent(funnelMonths.join(','));
+    const go=(cat)=>"goScreen('funnel','cat="+cat+"&months="+mq+"')";
     let h='<div class="fgrid">';
-    h+=fcell(d.requested,null,{title:'견적 요청',color:'var(--brand)',foot:'고객 최초 요청 (기준 100%)'});
-    h+=fcell(d.immediate,base,{title:'즉시 매출',tag:'①',color:'#0F6E56',onclick:"goScreen('sales')",foot:'재고 충분'});
-    h+=fcell(d.shortage,base,{title:'부족·발주',tag:'②',color:'#B8893B',onclick:"goScreen('shortage')",foot:'발주 '+nf(d.ordered.qty)+' · 미발주 '+nf(d.shortage_open.qty)});
-    h+=fcell(d.dev_needed,base,{title:'개발 필요',tag:'③',color:'#6B4FB0',onclick:"goScreen('devrequest','view=developed')",foot:'완료 '+nf(d.dev_done.sku)+'/'+nf(d.dev_total.sku)+'건'});
+    h+=fcell(d.requested,null,{title:'견적 요청',color:'var(--brand)',onclick:go('quotes'),foot:'고객 최초 요청 (기준 100%)'});
+    h+=fcell(d.immediate,base,{title:'즉시 매출',tag:'①',color:'#0F6E56',onclick:go('immediate'),foot:'재고 충분'});
+    h+=fcell(d.shortage,base,{title:'부족·발주',tag:'②',color:'#B8893B',onclick:go('shortage'),foot:'발주 '+nf(d.ordered.qty)+' · 미발주 '+nf(d.shortage_open.qty)});
+    h+=fcell(d.dev_needed,base,{title:'개발 필요',tag:'③',color:'#6B4FB0',onclick:go('dev'),foot:'완료 '+nf(d.dev_done.sku)+'/'+nf(d.dev_total.sku)+'건'});
     h+='</div>';
-    // 인사이트 한 줄
     const lossP=Math.round((100-okP)*10)/10;
     h+='<div class="finsight">'
-      +'<b>즉시 매출 비중 '+okP+'%</b> — 나머지 <b style="color:#B23A2E">'+lossP+'%</b>는 재고 부족·미개발로 즉시 못 파는 기회손실입니다. 이 비중을 낮출수록(즉시매출 %↑) 매출이 늘어납니다.'
+      +'<b>즉시 매출 비중 '+okP+'%</b> — 나머지 <b style="color:#B23A2E">'+lossP+'%</b>는 재고 부족·미개발로 즉시 못 파는 기회손실입니다. 이 비중을 낮출수록(즉시매출 %↑) 매출이 늘어납니다. <span class="hint" style="display:inline">각 박스를 누르면 세부 내역으로 들어갑니다.</span>'
       +'</div>';
     $('funnelBody').innerHTML=h;
   }
