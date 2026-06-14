@@ -41,6 +41,11 @@
   .seg{display:inline-flex;height:16px;border-radius:3px;overflow:hidden;width:130px;vertical-align:middle;margin-right:8px;border:1px solid var(--line)}
   .seg i{display:block;height:100%}
   .si{background:var(--income)}.ss{background:var(--gold)}.sd{background:var(--purple)}
+  .tg{display:inline-flex;align-items:center;gap:4px}
+  .tgl{font-size:11px;font-weight:700;color:var(--muted);margin-right:2px}
+  .tgb{padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .tgb.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .chartbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:8px 6px 4px}
 </style>
 </head>
 <body>
@@ -63,8 +68,19 @@
     </div>
 
     <div class="card">
-      <div class="card-h">월별 추이 <span class="hint" style="font-weight:500">— 최근 12개월 (수량 기준 비중)</span></div>
-      <div id="trendWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+      <div class="card-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span id="trendTitle">월별 추이</span>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <div class="tg"><span class="tgl">보기</span>
+            <button class="tgb on" id="byMonth" onclick="setBy('month')">월별</button>
+            <button class="tgb" id="byOrder" onclick="setBy('order')">오더별</button>
+          </div>
+          <div class="tg" id="periodTg"><span class="tgl">기간</span></div>
+        </div>
+      </div>
+      <div id="chartWrap" style="margin-top:6px"></div>
+      <div class="hint" style="margin-top:4px;text-align:center">선 = 전체 요청 수량 · <span style="color:var(--income)">음영</span> = 즉시매출 가능 수량. <b>음영(즉시매출)이 점점 두꺼워지는 것이 목표</b>입니다.</div>
+      <div id="trendWrap" style="margin-top:14px"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
       <div class="hint" style="margin-top:10px">막대: <span class="okpct">■</span> 즉시매출 · <span style="color:var(--gold)">■</span> 부족 · <span style="color:var(--purple)">■</span> 개발필요 (수량 비중). SKU·수량과 각 %를 함께 표시합니다.</div>
     </div>
   </div>
@@ -97,43 +113,94 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      load();
+      renderPeriod(); load();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  async function load(){
-    try{ const d=await fetch(session.api+'/api/dashboard/order-funnel/trend?n=12',{headers:auth()}).then(r=>r.json()); render(d.rows||[]); }
-    catch(e){ $('trendWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  let viewBy='month';            // 'month' | 'order'
+  let period={month:12, order:20}; // 표시 개월수 / 오더 건수
+  const PERIOD_OPTS={ month:[6,12,24], order:[10,20,50] };
+
+  function setBy(b){ viewBy=b; $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
+  function setPeriod(n){ period[viewBy]=n; renderPeriod(); load(); }
+  function renderPeriod(){
+    const opts=PERIOD_OPTS[viewBy], unit=(viewBy==='month'?'개월':'건');
+    $('periodTg').innerHTML='<span class="tgl">기간</span>'+opts.map(n=>'<button class="tgb'+(period[viewBy]===n?' on':'')+'" onclick="setPeriod('+n+')">'+n+unit+'</button>').join('');
   }
+
+  async function load(){
+    const n=period[viewBy];
+    try{ const d=await fetch(session.api+'/api/dashboard/order-funnel/trend?by='+viewBy+'&n='+n,{headers:auth()}).then(r=>r.json()); render(d.rows||[]); }
+    catch(e){ $('trendWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; $('chartWrap').innerHTML=''; }
+  }
+
+  // 전체 수량 선 + 즉시매출 영역 음영 SVG
+  function drawChart(rows){
+    if(!rows.length){ $('chartWrap').innerHTML=''; return; }
+    const W=Math.max(620, rows.length*Math.max(46, Math.min(90, 700/rows.length))), H=240;
+    const padL=46, padR=14, padT=16, padB=40;
+    const iw=W-padL-padR, ih=H-padT-padB;
+    const maxQ=Math.max(...rows.map(r=>r.req_qty),1);
+    const niceMax=Math.ceil(maxQ/ (maxQ>50?50:10))*(maxQ>50?50:10) || maxQ;
+    const x=(i)=> padL + (rows.length===1? iw/2 : (i*iw/(rows.length-1)));
+    const y=(v)=> padT + ih - (v/niceMax)*ih;
+    const labelOf=(r)=> viewBy==='month' ? (r.ym? r.ym.slice(2).replace('-',''):'') : (r.label||'').replace(/^Q-?/,'').slice(-6);
+    // 영역(즉시매출) path
+    let area='M '+x(0)+' '+y(0);
+    rows.forEach((r,i)=> area+=' L '+x(i)+' '+y(r.ok_qty));
+    area+=' L '+x(rows.length-1)+' '+y(0)+' Z';
+    // 전체 수량 선
+    let line=''; rows.forEach((r,i)=> line+=(i?' L ':'M ')+x(i)+' '+y(r.req_qty));
+    // 즉시매출 선(영역 상단 강조)
+    let okline=''; rows.forEach((r,i)=> okline+=(i?' L ':'M ')+x(i)+' '+y(r.ok_qty));
+    // 격자/축 눈금 (4단계)
+    let grid='';
+    for(let g=0;g<=4;g++){ const v=niceMax*g/4, yy=y(v); grid+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#e6e1d6" stroke-width="1"/>'+'<text x="'+(padL-6)+'" y="'+(yy+3)+'" font-size="9" fill="#9b958a" text-anchor="end">'+nf(Math.round(v))+'</text>'; }
+    // x 라벨 + 포인트
+    let xl='', pts='';
+    rows.forEach((r,i)=>{ xl+='<text x="'+x(i)+'" y="'+(H-padB+16)+'" font-size="9" fill="#6F6A60" text-anchor="middle"'+(rows.length>14?(' transform="rotate(40 '+x(i)+' '+(H-padB+16)+')"'):'')+'>'+esc(labelOf(r))+'</text>';
+      pts+='<circle cx="'+x(i)+'" cy="'+y(r.req_qty)+'" r="2.5" fill="#143D34"/>'+'<circle cx="'+x(i)+'" cy="'+y(r.ok_qty)+'" r="2.5" fill="#0F6E56"/>'; });
+    const svg='<div style="overflow-x:auto" class="chartbox"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'
+      +'<defs><linearGradient id="okg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0F6E56" stop-opacity="0.45"/><stop offset="1" stop-color="#0F6E56" stop-opacity="0.08"/></linearGradient></defs>'
+      +grid
+      +'<path d="'+area+'" fill="url(#okg)" stroke="none"/>'
+      +'<path d="'+okline+'" fill="none" stroke="#0F6E56" stroke-width="2"/>'
+      +'<path d="'+line+'" fill="none" stroke="#143D34" stroke-width="2" stroke-dasharray="0"/>'
+      +pts+xl
+      +'</svg></div>';
+    $('chartWrap').innerHTML=svg;
+  }
+
   function render(rows){
-    // 데이터 있는 달만 (요청>0)
     const withData=rows.filter(r=>r.req_qty>0);
-    // KPI: 최신 달 즉시매출% + 전월 대비
+    drawChart(withData);
+    // KPI: 최신 즉시매출% + 직전 대비
     const last=withData[withData.length-1], prev=withData[withData.length-2];
+    const unitLbl=(viewBy==='month'?'월':'오더');
     let kpi='';
     if(last){
       const cur=last.ok_qty_pct;
       let delta='';
       if(prev){ const dv=Math.round((cur-prev.ok_qty_pct)*10)/10; delta='<span class="delta '+(dv>=0?'up':'down')+'">'+(dv>=0?'▲ +':'▼ ')+dv+'%p</span>'; }
-      kpi+='<div class="kpibox"><div class="v">'+cur+'%</div><div class="l">최근('+last.ym+') 즉시매출 비중(수량) '+delta+'</div></div>';
-      // 평균
+      kpi+='<div class="kpibox"><div class="v">'+cur+'%</div><div class="l">최근 '+unitLbl+'('+esc(last.label||last.ym||'')+') 즉시매출 비중(수량) '+delta+'</div></div>';
       const avg=Math.round(withData.reduce((a,b)=>a+b.ok_qty_pct,0)/withData.length*10)/10;
       kpi+='<div class="kpibox"><div class="v" style="color:var(--brand)">'+avg+'%</div><div class="l">기간 평균 즉시매출 비중</div></div>';
-      // 부족+개발 (기회손실)
       const loss=Math.round((100-cur)*10)/10;
       kpi+='<div class="kpibox"><div class="v" style="color:var(--expense)">'+loss+'%</div><div class="l">최근 즉시 못판 비중(부족+개발)</div></div>';
     } else { kpi='<div class="hint">데이터가 아직 없습니다.</div>'; }
     $('kpibar').innerHTML=kpi;
 
-    if(!withData.length){ $('trendWrap').innerHTML='<div class="hint" style="margin-top:10px">견적 데이터가 있는 달이 없습니다.</div>'; return; }
+    if(!withData.length){ $('trendWrap').innerHTML='<div class="hint" style="margin-top:10px">'+(viewBy==='month'?'견적 데이터가 있는 달이 없습니다.':'견적(오더)이 없습니다.')+'</div>'; return; }
+    const col1=(viewBy==='month'?'월':'견적(오더)');
     let h='<div style="overflow-x:auto"><table><thead><tr>'
-      +'<th>월</th><th>요청 SKU</th><th>요청 수량</th><th>구성 (수량 비중)</th>'
+      +'<th>'+col1+'</th>'+(viewBy==='order'?'<th>고객</th><th>일자</th>':'')+'<th>요청 SKU</th><th>요청 수량</th><th>구성 (수량 비중)</th>'
       +'<th>즉시 %</th><th>부족 %</th><th>개발 %</th></tr></thead><tbody>';
     withData.forEach(r=>{
       const oi=r.ok_qty_pct, ss=r.short_qty_pct, dd=r.dev_qty_pct;
       h+='<tr>'
-        +'<td><b>'+esc(r.ym)+'</b></td>'
+        +'<td><b>'+esc(r.label||r.ym||'')+'</b></td>'
+        +(viewBy==='order'?'<td>'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td>':'')
         +'<td>'+nf(r.req_sku)+'</td>'
         +'<td>'+nf(r.req_qty)+'</td>'
         +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span></td>'
