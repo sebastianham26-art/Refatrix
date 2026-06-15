@@ -86,16 +86,19 @@
 
   function styles(){
     var css=''+
-    '#rnav{position:sticky;top:0;z-index:9000;font-family:inherit;background:linear-gradient(180deg,#12221d 0%,#0d1a16 100%);border-bottom:1px solid rgba(201,167,92,.28);box-shadow:0 6px 22px -10px rgba(0,0,0,.55)}'+
+    '.topbar{display:none!important}'+ /* 화면별 두 번째 헤더 제거 — 상단 트리로 통일 */
+    '#rnav{position:fixed;top:0;left:0;right:0;z-index:9000;font-family:inherit;background:linear-gradient(180deg,#12221d 0%,#0d1a16 100%);border-bottom:1px solid rgba(201,167,92,.28);box-shadow:0 6px 22px -10px rgba(0,0,0,.55)}'+
     '#rnav .rbar{display:flex;align-items:center;gap:2px;padding:0 16px;height:46px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}'+
     '#rnav .rbar::-webkit-scrollbar{display:none}'+
-    '#rnav .rlogo{display:flex;align-items:center;gap:7px;color:#F3ECDD;font-weight:800;font-size:14px;letter-spacing:.04em;margin-right:16px;flex:0 0 auto}'+
+    '#rnav .rhome{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:6px;border-radius:8px;color:#C9A75C;background:rgba(201,167,92,.1);border:1px solid rgba(201,167,92,.3);cursor:pointer;font-size:15px;transition:all .14s}'+
+    '#rnav .rhome:hover{background:rgba(201,167,92,.22);color:#F3ECDD}'+
+    '#rnav .rlogo{display:flex;align-items:center;gap:7px;color:#F3ECDD;font-weight:800;font-size:14px;letter-spacing:.04em;margin-right:14px;flex:0 0 auto}'+
     '#rnav .rlogo .dot{width:7px;height:7px;border-radius:50%;background:#C9A75C;box-shadow:0 0 8px rgba(201,167,92,.7)}'+
     '#rnav .rg{position:relative;flex:0 0 auto;padding:14px 14px;font-size:13px;font-weight:600;color:#9fb0a8;background:transparent;border:none;cursor:pointer;letter-spacing:.02em;transition:color .15s}'+
     '#rnav .rg:hover{color:#F3ECDD}'+
     '#rnav .rg.on{color:#F3ECDD;font-weight:700}'+
     '#rnav .rg.on:after{content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;border-radius:2px 2px 0 0;background:var(--ac,#C9A75C);box-shadow:0 0 10px var(--ac,#C9A75C)}'+
-    '#rnav .rsub{display:none;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 16px;background:rgba(255,255,255,.035);border-top:1px solid rgba(255,255,255,.06)}'+
+    '#rnav .rsub{display:none;position:absolute;left:0;right:0;top:46px;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 16px;background:linear-gradient(180deg,#0e1c18,#0c1714);border-bottom:1px solid rgba(201,167,92,.18);box-shadow:0 10px 24px -12px rgba(0,0,0,.6)}'+
     '#rnav .rsub.show{display:flex}'+
     '#rnav .rs{flex:0 0 auto;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;color:#c7d2cc;background:rgba(255,255,255,.05);cursor:pointer;border:1px solid rgba(255,255,255,.07);transition:all .14s}'+
     '#rnav .rs:hover{background:rgba(201,167,92,.16);border-color:rgba(201,167,92,.4);color:#F3ECDD}'+
@@ -115,7 +118,7 @@
     var cur=curScreen();
     // 현재 화면이 속한 그룹 자동 오픈
     if(openGroup===null){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ openGroup=vis[i].key; break; } } if(openGroup===null&&vis[0]) openGroup=vis[0].key; }
-    var bar='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span>';
+    var bar='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
     bar+='<span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span></div>';
@@ -134,10 +137,13 @@
 
   function mount(){
     styles();
+    // 고정 헤더가 콘텐츠를 가리지 않도록 본문을 46px 밀어내는 스페이서
+    var spacer=document.createElement('div'); spacer.id='rnav-spacer'; spacer.style.height='46px';
+    document.body.insertBefore(spacer, document.body.firstChild);
     var nv=document.createElement('div'); nv.id='rnav';
     document.body.insertBefore(nv, document.body.firstChild);
     sess=getSession();
-    if(!sess||!sess.token){ nv.innerHTML='<div class="rbar"><span class="rlogo">Refatrix</span><span class="rwho">로그인 필요</span></div>'; return; }
+    if(!sess||!sess.token){ nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; return; }
     var api=(sess.api||'').replace(/\/+$/,'');
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){return r.json();}).then(function(d){
       sum=d||{pages:[],isDirector:false}; render();
