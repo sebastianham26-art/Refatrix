@@ -46,14 +46,14 @@
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','importcost','import']},
-    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget','importcost']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company']}
   ];
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
-  var SHARED={devrequest:1, orderfunnel:1, funnel:1, settlement:1, importcost:1, import:1};
+  var SHARED={devrequest:1, orderfunnel:1, funnel:1, import:1, importcost:1};
 
   var sess=null, sum=null, openGroup=null;
   function getSession(){
@@ -76,10 +76,11 @@
     for(var k in SCREENS){ if(SCREENS[k].file.toLowerCase()===f) return k; }
     return null;
   }
-  function nav(key){
+  function nav(key, fromGroup){
     var s=SCREENS[key]; if(!s) return;
     try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
-    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}));
+    var g=fromGroup||openGroup||'';
+    var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g='+encodeURIComponent(g);
     location.href=s.file+hash;
   }
   window.__rnav=nav;
@@ -98,7 +99,7 @@
     '#rnav .rg:hover{color:#F3ECDD}'+
     '#rnav .rg.on{color:#F3ECDD;font-weight:700}'+
     '#rnav .rg.on:after{content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;border-radius:2px 2px 0 0;background:var(--ac,#C9A75C);box-shadow:0 0 10px var(--ac,#C9A75C)}'+
-    '#rnav .rsub{display:none;position:absolute;left:0;right:0;top:46px;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 16px;background:linear-gradient(180deg,#0e1c18,#0c1714);border-bottom:1px solid rgba(201,167,92,.18);box-shadow:0 10px 24px -12px rgba(0,0,0,.6)}'+
+    '#rnav .rsub{display:none;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 16px;background:linear-gradient(180deg,#0e1c18,#0c1714);border-top:1px solid rgba(255,255,255,.05)}'+
     '#rnav .rsub.show{display:flex}'+
     '#rnav .rs{flex:0 0 auto;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;color:#c7d2cc;background:rgba(255,255,255,.05);cursor:pointer;border:1px solid rgba(255,255,255,.07);transition:all .14s}'+
     '#rnav .rs:hover{background:rgba(201,167,92,.16);border-color:rgba(201,167,92,.4);color:#F3ECDD}'+
@@ -116,8 +117,13 @@
   function render(){
     var vis=GROUPS.filter(groupVisible);
     var cur=curScreen();
-    // 현재 화면이 속한 그룹 자동 오픈
-    if(openGroup===null){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ openGroup=vis[i].key; break; } } if(openGroup===null&&vis[0]) openGroup=vis[0].key; }
+    // 현재 화면이 속한 그룹 자동 오픈 — 단, 트리에서 넘어올 때 지정한 그룹(g)을 우선
+    if(openGroup===null){
+      var hintG=null; try{ var hp=new URLSearchParams(location.hash.slice(1)); hintG=hp.get('g')||null; }catch(e){}
+      if(hintG && vis.some(function(v){return v.key===hintG && v.screens.indexOf(cur)>=0;})) openGroup=hintG;
+      if(openGroup===null){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ openGroup=vis[i].key; break; } } }
+      if(openGroup===null&&vis[0]) openGroup=vis[0].key;
+    }
     var bar='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
@@ -128,22 +134,37 @@
     if(g){ var scr=g.screens.filter(function(k){return SCREENS[k]&&canSee(k);});
       // 중복 제거
       var seen={}; scr=scr.filter(function(k){ if(seen[k])return false; seen[k]=1; return true; });
-      sub='<div class="rsub show">'+scr.map(function(k){ return '<span class="rs'+(k===cur?' cur':'')+'" onclick="__rnav(\''+k+'\')" title="'+(SCREENS[k].desc||'')+'">'+SCREENS[k].name+'</span>'; }).join('')+'</div>';
+      sub='<div class="rsub show">'+scr.map(function(k){ return '<span class="rs'+(k===cur?' cur':'')+'" onclick="__rnav(\''+k+'\',\''+openGroup+'\')" title="'+(SCREENS[k].desc||'')+'">'+SCREENS[k].name+'</span>'; }).join('')+'</div>';
     }
     var el=document.getElementById('rnav');
     el.innerHTML=bar+sub;
+    syncOffset();
   }
-  window.__rnavGroup=function(k){ openGroup=k; render(); };
+  // 고정 헤더(바+하위메뉴)의 실제 높이만큼 본문을 내려 가림 방지
+  function syncOffset(){
+    var el=document.getElementById('rnav'); if(!el) return;
+    var h=el.offsetHeight||46;
+    var base=(window.__rnavBaseTop!==undefined)?window.__rnavBaseTop:0;
+    document.body.style.paddingTop=(base+h)+'px';
+  }
+  window.addEventListener('resize', function(){ syncOffset(); });
+  // 그룹 클릭 → 해당 그룹의 첫 번째(접근 가능) 화면으로 이동. 현재 그룹이면 토글만.
+  window.__rnavGroup=function(k){
+    var g=null; for(var i=0;i<GROUPS.length;i++){ if(GROUPS[i].key===k){ g=GROUPS[i]; break; } }
+    if(!g){ openGroup=k; render(); return; }
+    var first=null; for(var j=0;j<g.screens.length;j++){ var sk=g.screens[j]; if(SCREENS[sk]&&canSee(sk)){ first=sk; break; } }
+    if(first && first!==curScreen()){ nav(first, k); return; }   // 첫 화면으로 이동(그 그룹 컨텍스트 유지)
+    openGroup=k; render();                                        // 이미 그 화면이면 펼치기만
+  };
 
   function mount(){
     styles();
-    // 고정 헤더가 콘텐츠를 가리지 않도록 본문을 46px 밀어내는 스페이서
-    var spacer=document.createElement('div'); spacer.id='rnav-spacer'; spacer.style.height='46px';
-    document.body.insertBefore(spacer, document.body.firstChild);
+    // 헤더 삽입 전, 화면 고유의 본문 상단 여백을 저장(가림 방지 + 원래 여백 유지)
+    try{ window.__rnavBaseTop=parseInt(getComputedStyle(document.body).paddingTop,10)||0; }catch(e){ window.__rnavBaseTop=0; }
     var nv=document.createElement('div'); nv.id='rnav';
     document.body.insertBefore(nv, document.body.firstChild);
     sess=getSession();
-    if(!sess||!sess.token){ nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; return; }
+    if(!sess||!sess.token){ nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; syncOffset(); return; }
     var api=(sess.api||'').replace(/\/+$/,'');
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){return r.json();}).then(function(d){
       sum=d||{pages:[],isDirector:false}; render();

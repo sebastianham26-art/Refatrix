@@ -343,7 +343,7 @@
     {key:'common', title:'공통', color:'#C9A75C', screens:['salesperf','dashboard']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','importcost','import']},
-    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget','importcost']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board']},
@@ -396,7 +396,7 @@
         +'</div>'
         +'<div class="mgrid">'+visible.map(k=>{
           const n=menuBadge(k);
-          return '<div class="mcard" style="border-left-color:'+g.color+'" onclick="goScreen(\''+k+'\')">'
+          return '<div class="mcard" style="border-left-color:'+g.color+'" onclick="goScreen(\''+k+'\',\'g='+g.key+'\')">'
             +(n>0?'<span class="mbadge">'+n+'</span>':'')
             +'<div class="mn">'+SCREENS[k].name+'</div><div class="md">'+(SCREEN_DESC[k]||'')+'</div></div>';
         }).join('')+'</div>'

@@ -391,6 +391,22 @@
   $('dlTpl').addEventListener('click',downloadTemplate);
   $('upBtn').addEventListener('click',()=>$('upFile').click());
   $('upFile').addEventListener('change',e=>{ if(e.target.files[0]) importExcel(e.target.files[0]); e.target.value=''; });
+
+  // 포털/트리에서 넘어온 세션 자동 로그인
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  (function(){ try{ const ps=portalSession(); if(ps&&ps.token){
+    const apiEl=document.getElementById('api');
+    session={token:ps.token,user:ps.user||{},api:(ps.api||(apiEl?apiEl.value:'')||'https://refatrix-production.up.railway.app').replace(/\/+$/,'')};
+    const who=document.getElementById('who'); if(who) who.innerHTML='<b>'+((ps.user&&ps.user.name)||'')+'</b><br>역할: '+((ps.user&&ps.user.role)||'-');
+    $('loginCard').classList.add('hidden');
+    $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
+    $('idate').value=new Date().toISOString().slice(0,10);
+    addLine(); addOh();
+  } }catch(e){ console.error('auto-login',e); } })();
 </script>
 <script src="refatrix-nav.js"></script>
 </body>

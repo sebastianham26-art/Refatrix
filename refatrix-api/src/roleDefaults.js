@@ -34,7 +34,7 @@ export const ROLE_DEFAULTS = {
     fields: ['sales_amount', 'ar_amount'],
   },
   treasury: {
-    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['budget', 'edit'], ['inventory', 'view']],
+    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['budget', 'edit']],
     fields: ['sales_amount', 'ar_amount'],
   },
   marketing: {
