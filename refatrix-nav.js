@@ -88,6 +88,8 @@
   function styles(){
     var css=''+
     '.topbar{display:none!important}'+ /* 화면별 두 번째 헤더 제거 — 상단 트리로 통일 */
+    /* 모달/오버레이는 고정 헤더(z-index:9000)보다 위로 — 닫기 버튼 가림 방지 */
+    '.daymodal,.modal,.overlay,[id$="Modal"],[id$="modal"]{z-index:10001!important}'+
     '#rnav{position:fixed;top:0;left:0;right:0;z-index:9000;font-family:inherit;background:linear-gradient(180deg,#12221d 0%,#0d1a16 100%);border-bottom:1px solid rgba(201,167,92,.28);box-shadow:0 6px 22px -10px rgba(0,0,0,.55)}'+
     '#rnav .rbar{display:flex;align-items:center;gap:2px;padding:0 16px;height:46px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}'+
     '#rnav .rbar::-webkit-scrollbar{display:none}'+

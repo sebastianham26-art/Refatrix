@@ -160,64 +160,162 @@ export default async function portalBoardRoutes(app) {
 
   // =================== 할 일 (Todo) ===================
   // 디렉터: 전체 / 일반: 내게 배정된 것
+  // 할 일 배정용 사용자 목록(로그인 누구나 — 협조 요청 대상 선택)
+  app.get('/api/todo-users', { preHandler: [authGuard] }, async () => {
+    const rows = (await query(
+      `SELECT id, name, role FROM users WHERE deleted_at IS NULL ORDER BY name`)).rows;
+    return { items: rows.map((r) => ({ id: r.id, name: r.name, role: r.role })) };
+  });
+
   app.get('/api/todos', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     const status = req.query.status === 'done' ? 'done' : (req.query.status === 'all' ? null : 'open');
     const conds = [`t.deleted_at IS NULL`];
     const args = [];
-    if (perm.role !== 'director') { args.push(perm.userId); conds.push(`t.assignee_id=$${args.length}`); }
-    else if (req.query.assignee_id) { args.push(Number(req.query.assignee_id)); conds.push(`t.assignee_id=$${args.length}`); }
+    // 가시성: 디렉터=전체 / 그 외=내게 배정 OR 전체(all) OR 내가 만든 것
+    if (perm.role !== 'director') {
+      args.push(perm.userId);
+      conds.push(`(t.assignee_id=$${args.length} OR t.scope='all' OR t.created_by=$${args.length})`);
+    } else if (req.query.assignee_id) {
+      args.push(Number(req.query.assignee_id));
+      conds.push(`(t.assignee_id=$${args.length})`);
+    }
     if (status) { args.push(status); conds.push(`t.status=$${args.length}`); }
     const rows = (await query(
-      `SELECT t.id, t.title, t.detail, t.assignee_id, t.due_date, t.status, t.done_at, t.done_note, t.created_at, t.kind,
-              a.name AS assignee_name, c.name AS created_by_name
+      `SELECT t.id, t.title, t.detail, t.assignee_id, t.due_date, t.due_pending, t.scope, t.level,
+              t.status, t.done_at, t.done_note, t.created_at, t.created_by, t.kind,
+              a.name AS assignee_name, c.name AS created_by_name,
+              (SELECT COUNT(*) FROM todo_memos m WHERE m.todo_id=t.id AND m.deleted_at IS NULL) AS memo_count
          FROM todos t
          LEFT JOIN users a ON a.id=t.assignee_id
          LEFT JOIN users c ON c.id=t.created_by
         WHERE ${conds.join(' AND ')}
-        ORDER BY t.status, t.due_date NULLS LAST, t.id DESC`, args)).rows;
+        ORDER BY t.status, (t.due_date IS NULL), t.due_date, t.id DESC`, args)).rows;
     const today = new Date().toISOString().slice(0, 10);
+    const todayMs = new Date(today).getTime();
     return {
-      items: rows.map((r) => ({
-        id: r.id, title: r.title, detail: r.detail, assignee_id: r.assignee_id, assignee_name: r.assignee_name,
-        due_date: d10(r.due_date), status: r.status, done_at: isoTs(r.done_at), done_note: r.done_note, kind: r.kind || null,
-        created_by_name: r.created_by_name, overdue: r.status === 'open' && r.due_date && d10(r.due_date) < today,
-      })),
+      items: rows.map((r) => {
+        const due = d10(r.due_date);
+        const created = d10(r.created_at);
+        const daysSince = created ? Math.max(0, Math.round((todayMs - new Date(created).getTime()) / 86400000)) : null;
+        return {
+          id: r.id, title: r.title, detail: r.detail,
+          assignee_id: r.assignee_id, assignee_name: r.assignee_name,
+          scope: r.scope || 'user', level: r.level || 'assigned',
+          due_date: due, due_pending: !!r.due_pending,
+          status: r.status, done_at: isoTs(r.done_at), done_note: r.done_note, kind: r.kind || null,
+          created_by: r.created_by, created_by_name: r.created_by_name,
+          created_at: isoTs(r.created_at), days_since: daysSince,
+          memo_count: Number(r.memo_count) || 0,
+          overdue: r.status === 'open' && due && due < today,
+        };
+      }),
     };
   });
 
-  // 배정(디렉터만)
-  app.post('/api/todos', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  // 생성: 디렉터=지시/전체, 비디렉터=자가('self')/협조('coop')
+  app.post('/api/todos', { preHandler: [authGuard] }, async (req, reply) => {
     const perm = req.ctx.perm;
     const b = req.body || {};
     if (!b.title || !String(b.title).trim()) return reply.code(400).send({ error: 'title_required' });
-    const assignee = Number(b.assignee_id);
-    if (!assignee) return reply.code(400).send({ error: 'assignee_required' });
-    const due = (b.due_date && /^\d{4}-\d{2}-\d{2}$/.test(String(b.due_date))) ? b.due_date : null;
+    const isDir = perm.role === 'director';
+    let scope = (b.scope === 'all') ? 'all' : 'user';
+    let level = b.level;
+    let assignee = b.assignee_id ? Number(b.assignee_id) : null;
+
+    if (isDir) {
+      // 디렉터: 전체 또는 특정 담당자에게 지시
+      if (scope === 'all') { assignee = null; level = level || 'assigned'; }
+      else {
+        if (!assignee) return reply.code(400).send({ error: 'assignee_required' });
+        level = level || 'assigned';
+      }
+    } else {
+      // 비디렉터: 전체 배정 불가
+      scope = 'user';
+      const me = Number(perm.userId);
+      if (assignee && assignee !== me) {
+        level = 'coop';   // 타 팀원에게 협조 요청
+      } else {
+        level = 'self';   // 자가 작성
+        assignee = me;
+      }
+    }
+    // 마감: 미정이면 due_pending, 아니면 날짜
+    const duePending = b.due_pending === true || b.due_date === 'pending';
+    const due = (!duePending && b.due_date && /^\d{4}-\d{2}-\d{2}$/.test(String(b.due_date))) ? b.due_date : null;
+
     const r = (await query(
-      `INSERT INTO todos (title, detail, assignee_id, due_date, created_by)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [String(b.title).trim(), b.detail ? String(b.detail) : null, assignee, due, perm.userId])).rows[0];
-    await logEvent({ userId: perm.userId, action: 'create', target: `todo:${r.id}`, detail: { assignee } });
+      `INSERT INTO todos (title, detail, assignee_id, due_date, due_pending, scope, level, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [String(b.title).trim(), b.detail ? String(b.detail) : null, assignee, due, duePending, scope, level, perm.userId])).rows[0];
+    await logEvent({ userId: perm.userId, action: 'create', target: `todo:${r.id}`, detail: { assignee, scope, level } });
     return { id: r.id };
   });
 
-  // 완료 토글(담당자 본인 또는 디렉터)
+  // 마감일 확정(미정이었던 건 — 담당자/생성자/디렉터)
+  app.patch('/api/todos/:id/due', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const t = (await query(`SELECT assignee_id, created_by, scope FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    const mine = perm.role === 'director' || Number(t.assignee_id) === Number(perm.userId) || Number(t.created_by) === Number(perm.userId) || t.scope === 'all';
+    if (!mine) return reply.code(403).send({ error: 'forbidden' });
+    if (!b.due_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.due_date))) return reply.code(400).send({ error: 'bad_date' });
+    await query(`UPDATE todos SET due_date=$2, due_pending=false, updated_at=now() WHERE id=$1`, [id, b.due_date]);
+    return { ok: true, due_date: b.due_date };
+  });
+
+  // 릴레이 메모 목록
+  app.get('/api/todos/:id/memos', { preHandler: [authGuard] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const rows = (await query(
+      `SELECT m.id, m.body, m.author_id, m.created_at, u.name AS author_name, u.role AS author_role
+         FROM todo_memos m LEFT JOIN users u ON u.id=m.author_id
+        WHERE m.todo_id=$1 AND m.deleted_at IS NULL ORDER BY m.created_at, m.id`, [id])).rows;
+    return { items: rows.map((r) => ({ id: r.id, body: r.body, author_id: r.author_id, author_name: r.author_name, author_role: r.author_role, created_at: isoTs(r.created_at) })) };
+  });
+
+  // 릴레이 메모 작성 (참여자: 담당자/생성자/디렉터, 전체건은 누구나)
+  app.post('/api/todos/:id/memos', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const body = String(b.body || '').trim();
+    if (!body) return reply.code(400).send({ error: 'body_required' });
+    const t = (await query(`SELECT assignee_id, created_by, scope FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    const allowed = perm.role === 'director' || t.scope === 'all' || Number(t.assignee_id) === Number(perm.userId) || Number(t.created_by) === Number(perm.userId);
+    if (!allowed) return reply.code(403).send({ error: 'forbidden' });
+    const r = (await query(`INSERT INTO todo_memos (todo_id, author_id, body) VALUES ($1,$2,$3) RETURNING id, created_at`, [id, perm.userId, body])).rows[0];
+    await query(`UPDATE todos SET updated_at=now() WHERE id=$1`, [id]);
+    return { ok: true, id: r.id, created_at: isoTs(r.created_at) };
+  });
+
+  // 완료 토글 (담당자/생성자/디렉터, 전체건은 디렉터/생성자)
   app.post('/api/todos/:id/done', { preHandler: [authGuard] }, async (req, reply) => {
     const perm = req.ctx.perm;
     const id = Number(req.params.id);
     const b = req.body || {};
-    const t = (await query(`SELECT assignee_id, status FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const t = (await query(`SELECT assignee_id, created_by, scope, status FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
-    if (perm.role !== 'director' && Number(t.assignee_id) !== perm.userId) return reply.code(403).send({ error: 'forbidden' });
-    const done = b.done !== false; // 기본 완료, done:false면 되돌리기
-    if (done) await query(`UPDATE todos SET status='done', done_at=now(), done_note=$2 WHERE id=$1`, [id, b.note ? String(b.note) : null]);
-    else await query(`UPDATE todos SET status='open', done_at=NULL, done_note=NULL WHERE id=$1`, [id]);
+    const allowed = perm.role === 'director' || Number(t.assignee_id) === Number(perm.userId) || Number(t.created_by) === Number(perm.userId);
+    if (!allowed) return reply.code(403).send({ error: 'forbidden' });
+    const done = b.done !== false;
+    if (done) await query(`UPDATE todos SET status='done', done_at=now(), done_note=$2, updated_at=now() WHERE id=$1`, [id, b.note ? String(b.note) : null]);
+    else await query(`UPDATE todos SET status='open', done_at=NULL, done_note=NULL, updated_at=now() WHERE id=$1`, [id]);
     return { ok: true, status: done ? 'done' : 'open' };
   });
 
-  app.delete('/api/todos/:id', { preHandler: [authGuard, requireDirector] }, async (req) => {
-    await query(`UPDATE todos SET deleted_at=now() WHERE id=$1`, [Number(req.params.id)]);
+  // 삭제 (생성자 또는 디렉터)
+  app.delete('/api/todos/:id', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT created_by FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (perm.role !== 'director' && Number(t.created_by) !== Number(perm.userId)) return reply.code(403).send({ error: 'forbidden' });
+    await query(`UPDATE todos SET deleted_at=now() WHERE id=$1`, [id]);
     return { ok: true };
   });
 }

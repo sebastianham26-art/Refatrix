@@ -84,6 +84,50 @@
   .daymodal .hd{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
   .daymodal .hd .t{font-size:15px;font-weight:800;color:var(--brand)}
   .daymodal .bd{padding:16px 18px}
+  /* ===== 할 일(Tarea) 고도화 ===== */
+  .tdgroup{margin-bottom:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .tdghead{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:#faf8f3;user-select:none}
+  .tdghead:hover{background:#f3efe6}
+  .tdghead .nm{font-weight:800;color:var(--brand);font-size:13.5px}
+  .tdghead .cnt{font-size:11px;color:var(--muted)}
+  .tdghead .arr{margin-left:auto;transition:transform .15s;color:var(--muted)}
+  .tdgroup.collapsed .arr{transform:rotate(-90deg)}
+  .tdgroup.collapsed .tdgbody{display:none}
+  .tdgbody{padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+  .tdcard{border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:10px 12px;background:#fff}
+  .tdcard.lv-assigned{border-left-color:#B23A2E}
+  .tdcard.lv-self{border-left-color:#1F6FB2}
+  .tdcard.lv-coop{border-left-color:#6B4FB0}
+  .tdcard.done{opacity:.62;background:#f6f5f1}
+  .tdcard.overdue{box-shadow:0 0 0 2px rgba(178,58,46,.18) inset}
+  .tdtop{display:flex;align-items:flex-start;gap:9px}
+  .tdchk{flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:2px solid #c9c2b2;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:#fff;margin-top:1px}
+  .tdchk.on{background:var(--income);border-color:var(--income)}
+  .tdttl{font-weight:700;font-size:13.5px;color:var(--ink)}
+  .tdcard.done .tdttl{text-decoration:line-through}
+  .lvbadge{font-size:9.5px;font-weight:800;padding:1px 7px;border-radius:999px;color:#fff;vertical-align:middle;margin-right:6px}
+  .lvbadge.assigned{background:#B23A2E}.lvbadge.self{background:#1F6FB2}.lvbadge.coop{background:#6B4FB0}
+  .lvbadge.all{background:#0F6E56}
+  .tdmeta{font-size:11px;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .tdpill{font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:#eee;color:#555}
+  .tdpill.days{background:#eef3ee;color:#2f6f54}
+  .tdpill.over{background:#fbe9e7;color:#B23A2E}
+  .tdpill.due{background:#eef2f7;color:#2c5a86}
+  .tdpill.pending{background:#fff3e0;color:#9a6a1a}
+  .tddue-set{display:flex;gap:5px;align-items:center;margin-top:6px}
+  .tddue-set input{padding:4px 6px;font-size:11px;border:1px solid var(--line);border-radius:6px}
+  .tdmemos{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+  .memo{display:flex;flex-direction:column;max-width:88%;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.4}
+  .memo.dir{align-self:flex-end;background:#eef2f7;border:1px solid #d7e2ee}
+  .memo.other{align-self:flex-start;background:#f4f1ea;border:1px solid #e6e0d3}
+  .memo .ma{font-size:10px;font-weight:700;color:var(--brand);margin-bottom:1px}
+  .memo .mt{font-size:9.5px;color:#999;margin-top:2px}
+  .memoadd{display:flex;gap:6px;margin-top:7px}
+  .memoadd input{flex:1;padding:6px 9px;font-size:12px;border:1px solid var(--line);border-radius:8px}
+  .memoadd button{padding:6px 12px;font-size:12px}
+  .seg-recv{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg-recv button{border:none;background:#fff;padding:7px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .seg-recv button.on{background:var(--brand);color:#fff}
 </style>
 </head>
 <body>
@@ -173,8 +217,9 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      if(isDirector){ try{ users=(await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){users=[];}
-        try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){teams=[];} }
+      // 할 일 배정/협조용 사용자 목록(누구나)
+      try{ users=(await fetch(session.api+'/api/todo-users',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){users=[];}
+      if(isDirector){ try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){teams=[];} }
       renderForms();loadCal();loadNotices();loadTodos();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -206,20 +251,34 @@
         +'<div class="msg" id="nf-msg"></div>';
     } else $('noticeForm').innerHTML='';
 
-    // 할 일 폼(디렉터만 배정)
-    if(isDirector){
+    // 할 일 폼 — 누구나 작성(디렉터=지시/전체, 그 외=자가/협조)
+    {
       const userOpts=users.map(u=>'<option value="'+u.id+'">'+esc(u.name)+' ('+(ROLE[u.role]||u.role)+')</option>').join('');
+      const recv = isDirector
+        ? '<div class="seg-recv" id="tf-recvseg">'
+            +'<button type="button" class="on" id="tf-recv-user" onclick="tfRecv(\'user\')">개인 지정</button>'
+            +'<button type="button" id="tf-recv-all" onclick="tfRecv(\'all\')">전체 공통</button></div>'
+        : '<div class="seg-recv" id="tf-recvseg">'
+            +'<button type="button" class="on" id="tf-recv-self" onclick="tfRecv(\'self\')">내 업무</button>'
+            +'<button type="button" id="tf-recv-coop" onclick="tfRecv(\'coop\')">협조 요청</button></div>';
       $('todoForm').innerHTML=
-        '<div class="card-h">할 일 배정</div>'
-        +'<div class="row">'
-        +'<div style="flex:2"><label>할 일</label><input id="tf-title" type="text"></div>'
-        +'<div style="flex:0 0 170px"><label>담당자</label><select id="tf-assignee">'+userOpts+'</select></div>'
-        +'<div style="flex:0 0 150px"><label>마감일</label><input id="tf-due" type="date"></div>'
-        +'<div><button class="btn" onclick="addTodo()">배정</button></div>'
+        '<div class="card-h">'+(isDirector?'할 일 배정 (Tarea)':'할 일 작성 (Tarea)')+'</div>'
+        +'<div class="row" style="align-items:flex-end">'
+        +'<div><label>수신자</label>'+recv+'</div>'
+        +'<div style="flex:0 0 180px" id="tf-assignWrap"><label>'+(isDirector?'담당자':'협조 받을 사람')+'</label><select id="tf-assignee">'+userOpts+'</select></div>'
+        +'<div style="flex:0 0 170px"><label>마감일</label>'
+          +'<div style="display:flex;gap:6px;align-items:center">'
+          +'<input id="tf-due" type="date" style="flex:1">'
+          +'<label style="display:flex;align-items:center;gap:3px;font-size:11px;white-space:nowrap;margin:0"><input type="checkbox" id="tf-due-pending" onchange="tfDuePending()" style="width:auto;margin:0"> 미정</label>'
+          +'</div></div>'
+        +'<div><button class="btn" onclick="addTodo()">'+(isDirector?'배정':'등록')+'</button></div>'
         +'</div>'
-        +'<label>상세(선택)</label><input id="tf-detail" type="text" placeholder="추가 설명">'
+        +'<div class="row"><div style="flex:2"><label>할 일 제목</label><input id="tf-title" type="text" placeholder="무엇을 해야 하나요?"></div>'
+        +'<div style="flex:3"><label>상세(선택)</label><input id="tf-detail" type="text" placeholder="추가 설명"></div></div>'
+        +'<div class="hint" style="margin-top:4px">마감을 <b>미정</b>으로 두면 담당자가 직접 마감일을 정합니다. 완료 체크 전까지 메모로 진행상황·피드백을 주고받습니다.</div>'
         +'<div class="msg" id="tf-msg"></div>';
-    } else $('todoForm').innerHTML='<div class="hint">디렉터가 배정한 할 일이 아래에 표시됩니다. 완료하면 체크하세요.</div>';
+      window.__tfRecv=isDirector?'user':'self';
+    }
   }
   function noticeAudChange(){ const a=$('nf-aud').value; $('nf-roleWrap').classList.toggle('hidden',a!=='role'); $('nf-teamWrap').classList.toggle('hidden',a!=='team'); }
 
@@ -451,6 +510,21 @@
   async function delNotice(id){ if(!confirm('이 공지를 삭제할까요?'))return; await fetch(session.api+'/api/notices/'+id,{method:'DELETE',headers:auth()});loadNotices(); }
 
   // ===== 할 일 =====
+  // 수신자 토글
+  function tfRecv(v){
+    window.__tfRecv=v;
+    const aw=$('tf-assignWrap');
+    ['user','all','self','coop'].forEach(k=>{ const b=$('tf-recv-'+k); if(b) b.classList.toggle('on',k===v); });
+    // 전체/내 업무 → 담당자 선택 숨김. 개인지정/협조 → 표시
+    if(aw) aw.style.display=(v==='all'||v==='self')?'none':'';
+  }
+  function tfDuePending(){ const c=$('tf-due-pending'); const d=$('tf-due'); if(d){ d.disabled=c.checked; if(c.checked) d.value=''; } }
+
+  const LV={assigned:['지시','assigned'],self:['자가','self'],coop:['협조','coop']};
+  let todoCollapse={}; // assignee_name → collapsed?
+  function toggleGroup(key){ todoCollapse[key]=!todoCollapse[key]; const el=document.getElementById('tdg-'+cssId(key)); if(el) el.classList.toggle('collapsed',todoCollapse[key]); }
+  function cssId(s){ return String(s).replace(/[^a-zA-Z0-9]/g,'_'); }
+
   async function loadTodos(){
     try{
       const d=await fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json());
@@ -459,33 +533,114 @@
       const badge=$('todoBadge');
       if(openCount>0){badge.textContent=openCount;badge.classList.remove('hidden');}else badge.classList.add('hidden');
       if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">할 일이 없습니다.</div>';return;}
-      $('todoList').innerHTML=items.map(t=>{
-        const done=t.status==='done';
-        const kindCls=t.kind==='dev_complete'?' kind-dev':(t.kind==='dev_review'?' kind-review':'');
-        const kindIcon=t.kind==='dev_complete'?'🆕 ':(t.kind==='dev_review'?'🔍 ':'');
-        return '<div class="item '+(done?'done':'')+kindCls+'">'
-          +'<div class="chk '+(done?'on':'')+'" onclick="toggleTodo('+t.id+','+(!done)+')">'+(done?'✓':'')+'</div>'
-          +'<div class="body"><div class="t">'+kindIcon+esc(t.title)+'</div>'
-          +(t.detail?'<div class="d">'+esc(t.detail)+'</div>':'')
-          +'<div class="meta">'+(t.due_date?'마감 '+t.due_date+' ':'')
-          +(t.overdue?'<span class="pill over">지남</span> ':'')
-          +'· 담당 '+esc(t.assignee_name||'')+(isDirector?' · 배정 '+esc(t.created_by_name||''):'')
-          +(done&&t.done_at?' · 완료 '+new Date(t.done_at).toLocaleString('ko-KR'):'')
-          +(done&&t.done_note?' · "'+esc(t.done_note)+'"':'')+'</div></div>'
-          +(isDirector?'<button class="btn danger sm" onclick="delTodo('+t.id+')">삭제</button>':'')+'</div>';
+      // 담당자별 그룹화 (전체 공통은 별도 그룹)
+      const groups={}; const order=[];
+      items.forEach(t=>{
+        const key=(t.scope==='all')?'＊ 전체 공통':(t.assignee_name||'(미지정)');
+        if(!groups[key]){groups[key]=[];order.push(key);}
+        groups[key].push(t);
+      });
+      // 전체 공통을 맨 위로
+      order.sort((a,b)=>(a.startsWith('＊')?-1:0)-(b.startsWith('＊')?-1:0));
+      $('todoList').innerHTML=order.map(key=>{
+        const arr=groups[key];
+        const openN=arr.filter(t=>t.status==='open').length;
+        const overN=arr.filter(t=>t.overdue).length;
+        const collapsed=!!todoCollapse[key];
+        return '<div class="tdgroup'+(collapsed?' collapsed':'')+'" id="tdg-'+cssId(key)+'">'
+          +'<div class="tdghead" onclick="toggleGroup(\''+key.replace(/'/g,"\\'")+'\')">'
+            +'<span class="nm">'+esc(key)+'</span>'
+            +'<span class="cnt">진행 '+openN+'건'+(overN>0?' · <span style="color:#B23A2E;font-weight:700">지남 '+overN+'</span>':'')+' / 총 '+arr.length+'</span>'
+            +'<span class="arr">▾</span>'
+          +'</div>'
+          +'<div class="tdgbody">'+arr.map(renderTodoCard).join('')+'</div>'
+        +'</div>';
       }).join('');
+      // 열려있는 항목의 메모 자동 로드
+      items.filter(t=>t.status==='open').forEach(t=>loadMemos(t.id));
     }catch(e){$('todoList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+
+  function renderTodoCard(t){
+    const done=t.status==='done';
+    const lv=LV[t.level]||LV.assigned;
+    const lvb='<span class="lvbadge '+lv[1]+'">'+lv[0]+'</span>';
+    const allb=(t.scope==='all')?'<span class="lvbadge all">전체</span>':'';
+    const days=(t.days_since!=null)?'<span class="tdpill days">배당 '+t.days_since+'일 경과</span>':'';
+    let dueChip='';
+    if(t.due_pending) dueChip='<span class="tdpill pending">마감 미정</span>';
+    else if(t.due_date) dueChip='<span class="tdpill '+(t.overdue?'over':'due')+'">마감 '+t.due_date+(t.overdue?' · 지남 ⚠':'')+'</span>';
+    // 마감 미정 → 담당자/디렉터가 직접 설정하는 입력
+    const dueSet=(t.due_pending && !done)?'<div class="tddue-set"><span style="font-size:11px;color:#9a6a1a">마감일 직접 설정:</span><input type="date" id="due-'+t.id+'"><button class="btn sm" onclick="setDue('+t.id+')">설정</button></div>':'';
+    const meta='<div class="tdmeta">'+days+dueChip
+      +(t.scope!=='all'?'<span class="tdpill">담당 '+esc(t.assignee_name||'-')+'</span>':'')
+      +(t.created_by_name?'<span class="tdpill">작성 '+esc(t.created_by_name)+'</span>':'')
+      +(done&&t.done_at?'<span class="tdpill" style="background:#e8f3ee;color:#2f6f54">완료 '+new Date(t.done_at).toLocaleDateString('ko-KR')+'</span>':'')
+      +'</div>';
+    const memos='<div class="tdmemos" id="memos-'+t.id+'"></div>'
+      +(!done?'<div class="memoadd"><input type="text" id="memoin-'+t.id+'" placeholder="진행상황·피드백 메모 작성..." onkeydown="if(event.key===\'Enter\')addMemo('+t.id+')"><button class="btn sm" onclick="addMemo('+t.id+')">전송</button></div>':'');
+    return '<div class="tdcard lv-'+lv[1]+(done?' done':'')+(t.overdue?' overdue':'')+'" id="td-'+t.id+'">'
+      +'<div class="tdtop">'
+        +'<div class="tdchk '+(done?'on':'')+'" onclick="toggleTodo('+t.id+','+(!done)+')">'+(done?'✓':'')+'</div>'
+        +'<div style="flex:1">'
+          +'<div class="tdttl">'+lvb+allb+esc(t.title)+'</div>'
+          +(t.detail?'<div style="font-size:12px;color:#6f6a60;margin-top:2px">'+esc(t.detail)+'</div>':'')
+          +meta+dueSet
+        +'</div>'
+        +'<button class="btn ghost sm" onclick="delTodo('+t.id+')" title="삭제" style="flex:0 0 auto">✕</button>'
+      +'</div>'
+      +memos
+    +'</div>';
+  }
+
+  async function loadMemos(id){
+    try{
+      const d=await fetch(session.api+'/api/todos/'+id+'/memos',{headers:auth()}).then(r=>r.json());
+      const box=$('memos-'+id); if(!box) return;
+      const items=d.items||[];
+      if(!items.length){ box.innerHTML='<div style="font-size:11px;color:#aaa">아직 메모가 없습니다. 진행상황을 기록해 보세요.</div>'; return; }
+      box.innerHTML=items.map(m=>{
+        const isDir=m.author_role==='director';
+        return '<div class="memo '+(isDir?'dir':'other')+'"><div class="ma">'+esc(m.author_name||'')+(isDir?' (디렉터)':'')+'</div>'
+          +'<div>'+esc(m.body)+'</div>'
+          +'<div class="mt">'+new Date(m.created_at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})+'</div></div>';
+      }).join('');
+    }catch(e){}
+  }
+  async function addMemo(id){
+    const inp=$('memoin-'+id); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+    inp.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/todos/'+id+'/memos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
+      if(res.ok){ inp.value=''; await loadMemos(id); }
+    }catch(e){}
+    inp.disabled=false; inp.focus();
+  }
+  async function setDue(id){
+    const inp=$('due-'+id); if(!inp||!inp.value){alert('마감일을 선택하세요.');return;}
+    const res=await fetch(session.api+'/api/todos/'+id+'/due',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({due_date:inp.value})});
+    if(res.ok) loadTodos(); else alert('설정 실패');
+  }
+
   async function addTodo(){
     const m=$('tf-msg');m.className='msg';
-    const body={title:$('tf-title').value.trim(),assignee_id:$('tf-assignee').value,due_date:$('tf-due').value,detail:$('tf-detail').value.trim()};
-    if(!body.title){m.className='msg err';m.textContent='할 일을 입력하세요.';return;}
-    if(!body.assignee_id){m.className='msg err';m.textContent='담당자를 선택하세요.';return;}
+    const recv=window.__tfRecv||'user';
+    const title=$('tf-title').value.trim();
+    if(!title){m.className='msg err';m.textContent='할 일 제목을 입력하세요.';return;}
+    const body={title, detail:$('tf-detail').value.trim()};
+    if($('tf-due-pending').checked) body.due_date='pending'; else if($('tf-due').value) body.due_date=$('tf-due').value;
+    if(recv==='all'){ body.scope='all'; }
+    else if(recv==='self'){ /* assignee 자동 본인 */ }
+    else { // user(디렉터 지정) 또는 coop(협조)
+      body.assignee_id=$('tf-assignee').value;
+      if(!body.assignee_id){m.className='msg err';m.textContent=(isDirector?'담당자':'협조 받을 사람')+'를 선택하세요.';return;}
+    }
     try{
       const res=await fetch(session.api+'/api/todos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='배정 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='할 일을 배정했습니다.';$('tf-title').value='';$('tf-detail').value='';
+      if(!res.ok||d.error){m.className='msg err';m.textContent='실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent=(isDirector?'할 일을 배정했습니다.':'할 일을 등록했습니다.');
+      $('tf-title').value='';$('tf-detail').value='';$('tf-due').value='';$('tf-due-pending').checked=false;tfDuePending();
       loadTodos();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
