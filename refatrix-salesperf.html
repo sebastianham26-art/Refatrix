@@ -282,8 +282,12 @@
       const baseH=scaleMax>0?base/scaleMax*100:0;
       const segH=scaleMax>0?a/scaleMax*100:0;
       const zero=a<=0;
-      return '<div class="wfcol"><div style="height:'+baseH+'%"></div>'
-        +'<div class="wfseg '+(zero?'zero':'')+'" style="height:'+(zero?0:segH)+'%"><div class="wflabel">'+(zero?'·':fmtK(a))+'</div></div></div>';
+      // 워터폴: 막대(seg)가 누적값(base) 높이부터 시작하도록, 아래에 base 높이만큼의 빈 여백을 둠
+      // (flex-end 컬럼이므로 DOM 순서: 막대 → 베이스여백 = 화면상 막대가 위, 여백이 아래)
+      return '<div class="wfcol">'
+        +'<div class="wfseg '+(zero?'zero':'')+'" style="height:'+(zero?0:segH)+'%"><div class="wflabel">'+(zero?'·':fmtK(a))+'</div></div>'
+        +'<div style="height:'+baseH+'%;flex:0 0 auto"></div>'
+        +'</div>';
     }).join('');
     const foot=weeks.map(w=>'<div class="wff"><b>'+w.label+'</b>'+w.start.slice(5)+'–'+w.end.slice(5)+'</div>').join('');
     $('wfBody').innerHTML=

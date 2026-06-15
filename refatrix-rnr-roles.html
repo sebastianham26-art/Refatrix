@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 담당 포지션별 R&R</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--blue:#1F6FB2;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto}
+  .topbar{background:var(--brand);color:#fff;padding:16px 20px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:20px}.topbar .sub{font-size:12.5px;color:#cfe0d8;margin-top:3px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:0;margin-top:18px;overflow:hidden}
+  .phead{padding:13px 18px;color:#fff;display:flex;align-items:center;gap:10px}
+  .phead h2{margin:0;font-size:16px}.phead .pdesc{font-size:11.5px;opacity:.9;margin-left:auto;text-align:right}
+  .pbody{padding:6px 18px 16px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  .pv{font-weight:800;white-space:nowrap;font-size:11.5px}
+  .pv .c{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  ul{margin:3px 0;padding-left:15px}li{margin:2px 0}
+  .ho{font-size:11px;color:var(--muted)}
+  .ho b{color:var(--ink)}
+  .gate{display:inline-block;font-size:10px;font-weight:700;color:#fff;background:var(--expense);border-radius:999px;padding:1px 7px;margin-left:4px}
+  .legend{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;margin-top:18px;font-size:12px}
+  .legend .row{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
+  .legend .row span{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .none{color:var(--muted);font-style:italic}
+  @media print{body{padding:0;background:#fff}.card{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>Refatrix ERP · 담당 포지션별 R&R</h1>
+    <div class="sub">6개 포지션 × 관점(고객 · 제품 · 재무/예산/실적 · 재고입고 · 현금흐름)별 책임과 핸드오프</div>
+  </div>
+
+  <div class="legend">
+    <b>관점 색상</b>
+    <div class="row">
+      <span><span class="dot" style="background:#1F6FB2"></span> 고객(수주~수금)</span>
+      <span><span class="dot" style="background:#6B4FB0"></span> 제품(개발)</span>
+      <span><span class="dot" style="background:#143D34"></span> 재무·예산·실적(목표·KPI)</span>
+      <span><span class="dot" style="background:#B8893B"></span> 재고입고(수입원가)</span>
+      <span><span class="dot" style="background:#0F6E56"></span> 현금흐름</span>
+    </div>
+    <div style="margin-top:8px;font-size:11.5px;color:var(--muted)"><span class="gate">승인</span> = 디렉터 승인 게이트 / "→" = 다음 단계로 넘기는 핸드오프 담당</div>
+  </div>
+
+  <!-- 디렉터 -->
+  <div class="card">
+    <div class="phead" style="background:#143D34"><h2>디렉터 (관리)</h2><div class="pdesc">전 영역 열람·승인 · 목표 수립 · 자금 총괄</div></div>
+    <div class="pbody">
+      <table>
+        <thead><tr><th style="width:150px">관점</th><th>책임 (R&R)</th><th style="width:230px">핸드오프</th></tr></thead>
+        <tbody>
+          <tr><td class="pv"><span class="c" style="background:#1F6FB2"></span>고객</td>
+            <td><ul><li>파이프라인 전략·지시</li><li>승인<span class="gate">승인</span>: 견적 삭제 · 매출 수정/삭제 · 외상일 예외</li></ul></td>
+            <td class="ho">받음: 영업의 승인요청<br>넘김: <b>→영업</b> 승인/반려·지시</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#6B4FB0"></span>제품</td>
+            <td><ul><li>개발완료 알림 수신, 신규개발 진행·소요일 KPI 검토</li></ul></td>
+            <td class="ho">받음: 제품·마케팅의 완료 알림</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#143D34"></span>재무·예산·실적</td>
+            <td><ul><li><b>월별 매출목표 구성 → 영업팀별 할당</b></li><li>마케팅 예산 승인<span class="gate">승인</span> (매출목표 5% 한도)</li><li>달성률·매출 대비 마케팅비 KPI 검토</li></ul></td>
+            <td class="ho">넘김: <b>→영업</b> 팀목표 할당<br>받음: 마케팅의 예산안</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#B8893B"></span>재고입고</td>
+            <td><ul><li>수입원가 정산 승인<span class="gate">승인</span></li><li>월 마감(기간 잠금)<span class="gate">승인</span></li></ul></td>
+            <td class="ho">받음: 재무의 정산안</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#0F6E56"></span>현금흐름</td>
+            <td><ul><li>고정비(정기거래) 등록·관리</li><li>현금흐름(오늘 기준 계획 vs 실적) 검토 → 자금 의사결정</li></ul></td>
+            <td class="ho">받음: 재무의 현금흐름 보고</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 영업담당 -->
+  <div class="card">
+    <div class="phead" style="background:#1F6FB2"><h2>영업담당</h2><div class="pdesc">담당 고객 소유(owner) · 수주~목표 책임</div></div>
+    <div class="pbody">
+      <table>
+        <thead><tr><th style="width:150px">관점</th><th>책임 (R&R)</th><th style="width:230px">핸드오프</th></tr></thead>
+        <tbody>
+          <tr><td class="pv"><span class="c" style="background:#1F6FB2"></span>고객</td>
+            <td><ul><li>신규 발굴 · 파이프라인 개발(담당 고객)</li><li>수주·견적 작성 → 매출 전환</li><li>발행 가능 견적 팔로업(경과일), 수금 모니터링</li></ul></td>
+            <td class="ho">받음: 디렉터 지시<br>넘김: <b>→재무</b> 인보이스(AR) · <b>→디렉터</b> 삭제/수정 승인요청</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#6B4FB0"></span>제품</td>
+            <td><ul><li>담당 고객 견적의 개발필요 건 접수(① 오더접수)</li><li>개발완료 알림 수신 → 고객 회신</li></ul></td>
+            <td class="ho">넘김: <b>→제품·마케팅</b> 개발검토 요청<br>받음: 개발완료 알림</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#143D34"></span>재무·예산·실적</td>
+            <td><ul><li><b>고객별 목표금액 수립</b>(팀 월목표 달성 위해)</li><li>목표 대비 실적 관리</li></ul></td>
+            <td class="ho">받음: 디렉터의 팀목표<br>넘김: <b>→제품·마케팅</b> 고객목표·파이프라인 단계 공유</td></tr>
+          <tr><td class="pv none" colspan="2" style="color:var(--muted)">재고입고 · 현금흐름 — 직접 담당 없음 (수금 실적은 재무와 연계)</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 영업지원 -->
+  <div class="card">
+    <div class="phead" style="background:#4A86C0"><h2>영업지원</h2><div class="pdesc">견적 입력·인보이싱·부족분 등 운영 지원</div></div>
+    <div class="pbody">
+      <table>
+        <thead><tr><th style="width:150px">관점</th><th>책임 (R&R)</th><th style="width:230px">핸드오프</th></tr></thead>
+        <tbody>
+          <tr><td class="pv"><span class="c" style="background:#1F6FB2"></span>고객</td>
+            <td><ul><li>멀티 SKU 견적 입력·수정(SKU·수량) 지원</li><li>매출 등록(인보이스 발행)·부분출고 처리</li><li>발행 가능 리스트 팔로업, 부족분 집계 관리</li></ul></td>
+            <td class="ho">받음: 영업담당의 수주<br>넘김: <b>→재무</b> 인보이스 전달 · <b>→제품</b> 부족분</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#6B4FB0"></span>제품</td>
+            <td><ul><li>개발필요 건 접수 입력 보조(경쟁사코드·수량)</li></ul></td>
+            <td class="ho">넘김: <b>→제품·마케팅</b> 개발검토 요청</td></tr>
+          <tr><td class="pv none" colspan="2" style="color:var(--muted)">재무·예산·실적 · 재고입고 · 현금흐름 — 직접 담당 없음 (목표·수금은 영업담당·재무 주관)</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 제품/마케팅 -->
+  <div class="card">
+    <div class="phead" style="background:#6B4FB0"><h2>제품 / 마케팅</h2><div class="pdesc">제품 개발 · 입고 · 마케팅 예산</div></div>
+    <div class="pbody">
+      <table>
+        <thead><tr><th style="width:150px">관점</th><th>책임 (R&R)</th><th style="width:230px">핸드오프</th></tr></thead>
+        <tbody>
+          <tr><td class="pv"><span class="c" style="background:#6B4FB0"></span>제품</td>
+            <td><ul><li>제품 카탈로그·재고 이동 관리</li><li>개발 ② 검토 → ③ 공장요청 → ④ 완료(CTR 입력→SYD 자동매핑)</li></ul></td>
+            <td class="ho">받음: 영업의 개발요청(todo)<br>넘김: <b>→영업·디렉터</b> 개발완료 알림</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#143D34"></span>재무·예산·실적</td>
+            <td><ul><li>고객목표·파이프라인 개발단계에 맞춰 <b>마케팅 메뉴판 선택</b></li><li>수량·단가로 마케팅 활동 계획·예산 수립</li></ul></td>
+            <td class="ho">받음: 영업의 고객목표<br>넘김: <b>→디렉터</b> 마케팅 예산 승인요청</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#B8893B"></span>재고입고</td>
+            <td><ul><li>수입 입고 등록(배치 수량·기본가)</li></ul></td>
+            <td class="ho">넘김: <b>→재무</b> 부대비용 분배 요청</td></tr>
+          <tr><td class="pv none" colspan="2" style="color:var(--muted)">현금흐름 — 직접 담당 없음 (예산안이 현금흐름 계획에 반영됨)</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 재무 -->
+  <div class="card">
+    <div class="phead" style="background:#B23A2E"><h2>재무</h2><div class="pdesc">거래·예산·수입원가·수금·현금흐름</div></div>
+    <div class="pbody">
+      <table>
+        <thead><tr><th style="width:150px">관점</th><th>책임 (R&R)</th><th style="width:230px">핸드오프</th></tr></thead>
+        <tbody>
+          <tr><td class="pv"><span class="c" style="background:#1F6FB2"></span>고객</td>
+            <td><ul><li>매출 인보이스 → AR 전기</li><li>수금·연체 추적, 입금 확인</li></ul></td>
+            <td class="ho">받음: 영업의 인보이스</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#B8893B"></span>재고입고</td>
+            <td><ul><li>수입 부대비용(운임·관세) 입력 → <b>수량비율 분배</b></li><li>수입원가 정산안 작성</li></ul></td>
+            <td class="ho">받음: 제품의 입고<br>넘김: <b>→디렉터</b> 수입원가 승인요청</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#143D34"></span>재무·예산·실적</td>
+            <td><ul><li>거래 실행기록, 예산 계획거래 관리</li><li>매출 대비 마케팅비 등 실적 데이터 산출 지원</li></ul></td>
+            <td class="ho">받음: 승인된 마케팅·예산 plan</td></tr>
+          <tr><td class="pv"><span class="c" style="background:#0F6E56"></span>현금흐름</td>
+            <td><ul><li>실행기록 + 고정비 + 예산으로 <b>자금 수입·지출 추정</b></li><li>매출목표·실제매출 → <b>수금계획(신용일 due)</b></li><li>미래 현금흐름 + 실적을 <b>오늘 기준</b>으로 조회·보고</li></ul></td>
+            <td class="ho">받음: 영업의 매출·수금<br>넘김: <b>→디렉터</b> 현금흐름 보고</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 뷰어 -->
+  <div class="card">
+    <div class="phead" style="background:#6F6A60"><h2>뷰어</h2><div class="pdesc">열람 전용 · 입력·승인 권한 없음</div></div>
+    <div class="pbody">
+      <table>
+        <thead><tr><th style="width:150px">관점</th><th>책임 (R&R)</th><th style="width:230px">핸드오프</th></tr></thead>
+        <tbody>
+          <tr><td class="pv">공통 열람</td>
+            <td><ul><li>대시보드 · 일정(보드) · 영업 대시보드 조회</li><li>데이터 입력·수정·승인 불가</li></ul></td>
+            <td class="ho none">핸드오프 없음 (관찰자)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="legend" style="border-left:3px solid var(--gold)">
+    <b>읽는 법</b> — 한 포지션이 여러 관점에 걸쳐 일합니다. 각 행의 "핸드오프"가 <b>그 일을 끝낸 뒤 누구에게 넘기는지/누구에게 받는지</b>를 보여줍니다. 디렉터의 <span class="gate">승인</span> 게이트를 거쳐야 다음 단계로 넘어가는 항목은 빨간 배지로 표시했습니다.
+  </div>
+
+</div>
+</body>
+</html>
