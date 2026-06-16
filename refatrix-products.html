@@ -68,18 +68,29 @@
     <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
   </div>
 
-  <div class="card hidden" id="searchCard">
-    <h2>제품 검색</h2>
+  <div class="card hidden" id="vehCard">
+    <h2>차종으로 제품 찾기</h2>
+    <div class="hint" style="margin-top:0">메이커 → 모델 → 연식 순으로 좁혀 적용 가능한 부품을 찾습니다. 단계는 건너뛸 수 있습니다(예: 메이커만 선택). 연식은 “1994-2005”처럼 범위로 적용되며 그 사이 모든 연도가 포함됩니다.</div>
     <div class="row">
-      <div style="flex:3"><label>코드 · 이름 · 바코드</label><input id="q" type="text" placeholder="예: CTR-1001 · 브레이크 · 바코드 (비우면 전체)"></div>
+      <div><label>메이커</label><select id="veh-maker"><option value="">전체</option></select></div>
+      <div style="flex:2"><label>모델</label><select id="veh-model"><option value="">전체</option></select></div>
+      <div><label>연식</label><select id="veh-year"><option value="">전체</option></select></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="vehBtn">찾기</button></div>
+    </div>
+    <div id="vehResult"></div>
+  </div>
+
+<div class="card hidden" id="searchCard">
+    <h2>제품 검색 (코드·경쟁사코드·차종 통합)</h2>
+    <div class="row">
+      <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
       <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
     </div>
     <div id="result"></div>
-    <div class="hint">평균원가(이동평균)는 수입 입고·부대비용 승인 시 갱신되고, <b>매출로는 바뀌지 않습니다</b>. 매출 등록 후 재고만 줄고 평균원가는 그대로면 정상입니다. 역할에 따라 원가·정가가 보이지 않을 수 있습니다(권한 최소화).</div>
+    <div class="hint">경쟁사(SyD) 코드나 적용차종으로도 검색됩니다(중복 매칭 포함). 평균원가(이동평균)는 수입 입고·부대비용 승인 시 갱신되고, <b>매출로는 바뀌지 않습니다</b>. 매출 등록 후 재고만 줄고 평균원가는 그대로면 정상입니다. 역할에 따라 원가·정가가 보이지 않을 수 있습니다(권한 최소화).</div>
   </div>
 
-  <!-- 제품 마스터 업로드 (디렉터) -->
-  <div class="card hidden" id="upCard">
+<div class="card hidden" id="upCard">
     <h2>제품 마스터 업로드</h2>
     <div class="hint" style="margin-top:0">엑셀 파일(.xlsx)을 올리면 <b>Clave CTR</b> 기준으로 신규는 추가, 기존은 <b>변경된 항목만</b> 덮어씁니다. <b>재고수량·평균원가는 절대 바뀌지 않습니다.</b> Clave SyD는 ' // '로 여러 경쟁사 코드를 넣을 수 있고, 검색용으로 분해 저장됩니다. 먼저 미리보기로 확인 후 반영하세요.</div>
     <div class="drop" id="drop" style="margin-top:12px">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)<br><span style="font-size:11px">필수 컬럼: Clave CTR · Nombre del producto</span></div>
@@ -109,28 +120,15 @@
     </div>
   </div>
 
+
+  <!-- 제품 마스터 업로드 (디렉터) -->
+  
+
   <!-- SyD 역검색 -->
-  <div class="card hidden" id="sydCard">
-    <h2>경쟁사(SyD) 코드로 제품 찾기</h2>
-    <div class="row">
-      <div style="flex:3"><label>SyD 코드</label><input id="sydq" type="text" placeholder="예: 48530-3S125"></div>
-      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="sydBtn">찾기</button></div>
-    </div>
-    <div id="sydResult"></div>
-  </div>
+  
 
   <!-- 차종 역검색 -->
-  <div class="card hidden" id="vehCard">
-    <h2>차종으로 제품 찾기</h2>
-    <div class="hint" style="margin-top:0">메이커 → 모델 → 연식 순으로 좁혀 적용 가능한 부품을 찾습니다. 단계는 건너뛸 수 있습니다(예: 메이커만 선택). 연식은 “1994-2005”처럼 범위로 적용되며 그 사이 모든 연도가 포함됩니다.</div>
-    <div class="row">
-      <div><label>메이커</label><select id="veh-maker"><option value="">전체</option></select></div>
-      <div style="flex:2"><label>모델</label><select id="veh-model"><option value="">전체</option></select></div>
-      <div><label>연식</label><select id="veh-year"><option value="">전체</option></select></div>
-      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="vehBtn">찾기</button></div>
-    </div>
-    <div id="vehResult"></div>
-  </div>
+  
 </div>
 
 <script>
@@ -182,12 +180,11 @@
   function showTab(which){
     var isFind = which!=='upload';
     $('searchCard').classList.toggle('hidden',!isFind);
-    $('sydCard').classList.toggle('hidden',!isFind);
     $('vehCard').classList.toggle('hidden',!isFind);
     var isDir = session && session.user && session.user.role==='director';
     $('upCard').classList.toggle('hidden', !(which==='upload' && isDir));
     if(which==='upload' && !isDir){ // 권한 없으면 찾기로
-      $('searchCard').classList.remove('hidden');$('sydCard').classList.remove('hidden');$('vehCard').classList.remove('hidden');
+      $('searchCard').classList.remove('hidden');$('vehCard').classList.remove('hidden');
     }
   }
   function applyHashTab(){
@@ -205,22 +202,29 @@
       const hasCost = items.some(p=>'avg_cost' in p);
       const hasList = items.some(p=>'list_price' in p);
       r.innerHTML='<table><thead><tr>'
-        +'<th>코드</th><th>제품명</th><th>바코드</th><th class="num">재고</th>'
+        +'<th>코드</th><th>제품명</th><th>경쟁사(SyD)</th><th>적용차종</th><th>바코드</th><th class="num">재고</th>'
         +(hasList?'<th class="num">정가</th>':'')
         +(hasCost?'<th class="num">평균원가</th>':'')
         +(hasCost?'<th class="num">재고 평가액</th>':'')
         +'</tr></thead><tbody>'+items.map(function(p){
           var stock=Number(p.stock_qty);
           var val=('avg_cost' in p)&&p.avg_cost!=null?Number(p.avg_cost)*stock:null;
+          var syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · ');
+          var app=(p.app||'').toString();
+          if(syd.length>40)syd=syd.slice(0,40)+'…';
+          if(app.length>40)app=app.slice(0,40)+'…';
           return '<tr>'
-            +'<td class="code">'+p.code+'</td><td>'+(p.name||'')+'</td><td>'+(p.ean||'—')+'</td>'
+            +'<td class="code">'+p.code+'</td><td>'+(p.name||'')+'</td>'
+            +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
+            +'<td style="font-size:11px;color:#6f6a60">'+(app||'—')+'</td>'
+            +'<td>'+(p.ean||'—')+'</td>'
             +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
             +(hasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
             +(hasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
             +(hasCost?'<td class="num">'+fmt(val)+'</td>':'')
             +'</tr>';
         }).join('')+'</tbody></table>'
-        +'<div class="hint">'+items.length+'개 표시. 재고가 0 이하면 빨간색으로 표시됩니다.</div>';
+        +'<div class="hint">'+items.length+'개 표시. 코드·경쟁사코드·적용차종·바코드·이름으로 검색됩니다. 재고 0 이하는 빨간색.</div>';
     }catch(e){r.innerHTML='<div class="hint">조회에 실패했습니다.</div>';}
   }
 
@@ -377,6 +381,9 @@
   $('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
   $('search').addEventListener('click',doSearch);
   $('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
+  // 실시간 검색 — 타이핑하면 디바운스(250ms) 후 자동 조회
+  var _qTimer=null;
+  $('q').addEventListener('input',function(){ clearTimeout(_qTimer); _qTimer=setTimeout(doSearch,250); });
   $('drop').addEventListener('click',()=>$('upFile').click());
   $('upFile').addEventListener('change',e=>handleFile(e.target.files[0]));
   $('drop').addEventListener('dragover',e=>{e.preventDefault();$('drop').style.borderColor='var(--brand)';});
@@ -384,8 +391,6 @@
   $('drop').addEventListener('drop',e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
   $('commitBtn').addEventListener('click',commit);
   $('cancelBtn').addEventListener('click',()=>{$('preview').classList.add('hidden');parsedPayload=null;$('upMsg').style.display='none';});
-  $('sydBtn').addEventListener('click',sydSearch);
-  $('sydq').addEventListener('keydown',function(e){if(e.key==='Enter')sydSearch();});
   $('vehBtn').addEventListener('click',vehSearch);
   $('veh-maker').addEventListener('change',loadModels);
   $('veh-model').addEventListener('change',loadYears);

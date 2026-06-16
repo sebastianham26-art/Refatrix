@@ -14,16 +14,20 @@ export default async function productRoutes(app) {
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
     const params = [];
-    let where = 'deleted_at IS NULL';
+    let where = 'p.deleted_at IS NULL';
     if (q) {
       params.push(`%${q}%`);
-      where += ` AND (code ILIKE $${params.length} OR ean ILIKE $${params.length} OR name ILIKE $${params.length})`;
+      const i = params.length;
+      where += ` AND (p.code ILIKE $${i} OR p.ean ILIKE $${i} OR p.name ILIKE $${i}
+                   OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
+                   OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
+                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
     }
     params.push(limit, offset);
     const rows = (await query(
-      `SELECT id, code, scode, app, ean, name, list_price, discount, iva_rate, stock_qty, avg_cost
-         FROM products WHERE ${where}
-         ORDER BY code LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+      `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate, p.stock_qty, p.avg_cost
+         FROM products p WHERE ${where}
+         ORDER BY p.code LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
 
     await logPageView(perm.userId, 'products');
     // 각 행을 권한에 맞게 최소화

@@ -116,6 +116,7 @@
         <button class="btn ghost" onclick="printQuote()">견적서 인쇄</button>
         <button class="btn ghost" onclick="exportExcel()">엑셀 다운로드</button>
         <button class="btn ghost" onclick="clearLines()">전체 비우기</button>
+        <button class="btn ghost" onclick="goQuoteList()" title="견적·매출 추적 화면으로 이동">견적 목록 보기</button>
         <span id="saveMsg" class="msg" style="margin:0"></span>
       </div>
     </div>
@@ -560,6 +561,15 @@
       h+='<div class="hint" style="margin-top:10px">· <b>그 해 비중</b> = 그 해 이 고객 전체 구매 수량 중 이 SKU의 비율<br>· <b>3년 합계 비중</b> = 최근 3년 누적 기준 ('+fmtq(d.total3y)+' / '+fmtq(d.totalAll3y)+')<br>· 확정·등록된 매출 기준(수량)</div>';
       $('histBody').innerHTML=h;
     }catch(e){ $('histBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  // 견적 목록 보기 → 견적·매출 추적 화면(세션 해시 전달)
+  function goQuoteList(){
+    try{
+      var s=session||{};
+      var hash='#token='+encodeURIComponent(s.token||'')+'&api='+encodeURIComponent(s.api||'')+'&user='+encodeURIComponent(JSON.stringify(s.user||{}));
+      location.href='refatrix-quotelist.html'+hash;
+    }catch(e){ location.href='refatrix-quotelist.html'; }
   }
 
   async function saveQuote(){

@@ -229,17 +229,18 @@
     const editable = q.status==='draft' || q.status==='confirmed';
     if(dtEdit){ renderEdit(); return; }
     let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+'</div>';
-    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+    h+='<div><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">'
+      +'<colgroup><col style="width:17%"><col style="width:30%"><col style="width:9%"><col style="width:12%"><col style="width:9%"><col style="width:14%"><col style="width:9%"></colgroup>'
       +'<thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
     lines.forEach(l=>{
-      h+='<tr>'
-        +'<td>'+esc(l.ctr_code||l.input_code||'')+(l.syd_codes?'<br><span class="hint">'+esc(l.syd_codes)+'</span>':'')+'</td>'
-        +'<td>'+esc(l.product_name||'(미등록)')+(l.app_text?'<br><span class="hint">'+esc(l.app_text)+'</span>':'')+'</td>'
+      h+='<tr style="vertical-align:top">'
+        +'<td style="word-break:break-word">'+esc(l.ctr_code||l.input_code||'')+(l.syd_codes?'<br><span class="hint" style="font-size:10px">'+esc(l.syd_codes)+'</span>':'')+'</td>'
+        +'<td style="word-break:break-word">'+esc(l.product_name||'(미등록)')+(l.app_text?'<br><span class="hint" style="font-size:10px">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td class="r">'+fmtq(l.qty)+'</td>'
         +'<td class="r">'+fmt(l.list_price)+'</td>'
         +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
         +'<td class="r">'+fmt(l.line_total)+'</td>'
-        +'<td>'+(flagLbl[l.stock_flag]||l.stock_flag||'')+'</td>'
+        +'<td style="word-break:break-word">'+(flagLbl[l.stock_flag]||l.stock_flag||'')+'</td>'
         +'</tr>';
     });
     h+='</tbody></table></div>';
