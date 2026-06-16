@@ -115,6 +115,15 @@
   }
   window.__rnav=nav;
 
+  // 로그아웃: 세션 정리(브리지가 복원하는 localStorage 포함) 후 로그인 화면으로
+  function rnavLogout(){
+    try{ sessionStorage.removeItem('refatrix_session'); }catch(e){}
+    try{ localStorage.removeItem('refatrix_session'); }catch(e){}
+    try{ if(window.location.hash) history.replaceState(null,'',location.pathname); }catch(e){}
+    location.href='refatrix-portal.html';
+  }
+  window.__rnavLogout=rnavLogout;
+
   function styles(){
     var css=''+
     '.topbar{display:none!important}'+ /* 화면별 두 번째 헤더 제거 — 상단 트리로 통일 */
@@ -137,7 +146,9 @@
     '#rnav .rs:hover{background:rgba(201,167,92,.16);border-color:rgba(201,167,92,.4);color:#F3ECDD}'+
     '#rnav .rs.cur{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;font-weight:800;border-color:transparent;box-shadow:0 2px 8px -2px rgba(201,167,92,.6)}'+
     '#rnav .rwho{margin-left:auto;flex:0 0 auto;color:#7f928a;font-size:11px;font-weight:500;padding-left:14px;letter-spacing:.02em}'+
-    '#rnav .rwho b{color:#bcae8e;font-weight:700}';
+    '#rnav .rwho b{color:#bcae8e;font-weight:700}'+
+    '#rnav .rlogout{flex:0 0 auto;margin-left:12px;padding:5px 12px;border-radius:8px;border:1px solid rgba(208,140,110,.45);background:rgba(208,140,110,.12);color:#e3b6a3;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit}'+
+    '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}';
     var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   }
   function groupVisible(g){
@@ -159,7 +170,8 @@
     var bar='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
-    bar+='<span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span></div>';
+    bar+='<span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
+    bar+='<button type="button" class="rlogout" title="로그아웃" onclick="__rnavLogout()">로그아웃</button></div>';
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
     var sub='';
