@@ -130,8 +130,10 @@
     /* 모달/오버레이는 고정 헤더(z-index:9000)보다 위로 — 닫기 버튼 가림 방지 */
     '.daymodal,.modal,.overlay,[id$="Modal"],[id$="modal"]{z-index:10001!important}'+
     '#rnav{position:fixed;top:0;left:0;right:0;z-index:9000;font-family:inherit;background:linear-gradient(180deg,#12221d 0%,#0d1a16 100%);border-bottom:1px solid rgba(201,167,92,.28);box-shadow:0 6px 22px -10px rgba(0,0,0,.55)}'+
-    '#rnav .rbar{display:flex;align-items:center;gap:2px;padding:0 16px;height:46px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}'+
-    '#rnav .rbar::-webkit-scrollbar{display:none}'+
+    '#rnav .rbar{display:flex;align-items:center;padding:0 16px;height:46px}'+
+    '#rnav .rbarscroll{display:flex;align-items:center;gap:2px;flex:1 1 auto;min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:none}'+
+    '#rnav .rbarscroll::-webkit-scrollbar{display:none}'+
+    '#rnav .rbarright{flex:0 0 auto;display:flex;align-items:center;white-space:nowrap;padding-left:10px}'+
     '#rnav .rhome{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:6px;border-radius:8px;color:#C9A75C;background:rgba(201,167,92,.1);border:1px solid rgba(201,167,92,.3);cursor:pointer;font-size:15px;transition:all .14s}'+
     '#rnav .rhome:hover{background:rgba(201,167,92,.22);color:#F3ECDD}'+
     '#rnav .rlogo{display:flex;align-items:center;gap:7px;color:#F3ECDD;font-weight:800;font-size:14px;letter-spacing:.04em;margin-right:14px;flex:0 0 auto}'+
@@ -145,7 +147,7 @@
     '#rnav .rs{flex:0 0 auto;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;color:#c7d2cc;background:rgba(255,255,255,.05);cursor:pointer;border:1px solid rgba(255,255,255,.07);transition:all .14s}'+
     '#rnav .rs:hover{background:rgba(201,167,92,.16);border-color:rgba(201,167,92,.4);color:#F3ECDD}'+
     '#rnav .rs.cur{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;font-weight:800;border-color:transparent;box-shadow:0 2px 8px -2px rgba(201,167,92,.6)}'+
-    '#rnav .rwho{margin-left:auto;flex:0 0 auto;color:#7f928a;font-size:11px;font-weight:500;padding-left:14px;letter-spacing:.02em}'+
+    '#rnav .rwho{flex:0 0 auto;color:#7f928a;font-size:11px;font-weight:500;padding-left:14px;letter-spacing:.02em}'+
     '#rnav .rwho b{color:#bcae8e;font-weight:700}'+
     '#rnav .rlogout{flex:0 0 auto;margin-left:12px;padding:5px 12px;border-radius:8px;border:1px solid rgba(208,140,110,.45);background:rgba(208,140,110,.12);color:#e3b6a3;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit}'+
     '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}';
@@ -167,11 +169,11 @@
       if(openGroup===null){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ openGroup=vis[i].key; break; } } }
       if(openGroup===null&&vis[0]) openGroup=vis[0].key;
     }
-    var bar='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
+    var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
-    bar+='<span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
-    bar+='<button type="button" class="rlogout" title="로그아웃" onclick="__rnavLogout()">로그아웃</button></div>';
+    bar+='</div><div class="rbarright"><span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
+    bar+='<button type="button" class="rlogout" title="로그아웃" onclick="__rnavLogout()">로그아웃</button></div></div>';
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
     var sub='';
