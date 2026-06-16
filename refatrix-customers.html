@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객관리</title>
+<title>Refatrix ERP · 고객 등록</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -51,7 +51,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">고객관리 · 영업팀</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">고객 등록</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
 
   <div class="card" id="loginCard">
     <h2>로그인</h2>
@@ -68,6 +68,7 @@
     <div class="tabs">
       <div class="tab on" data-tab="list">고객 목록</div>
       <div class="tab" data-tab="team" id="teamTabBtn">팀 권한 관리</div>
+      <div class="tab" data-tab="approve" id="approveTabBtn">수정 승인 대기<span id="approveBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
     </div>
 
     <!-- 고객 목록 -->
@@ -88,8 +89,8 @@
 
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <h2 style="margin:0">고객 목록</h2>
-          <button class="btn sm" id="newCustBtn">+ 새 고객</button>
+          <h2 style="margin:0">고객 등록 · 목록</h2>
+          <button class="btn sm" id="newCustBtn">+ 고객 등록</button>
         </div>
         <div class="row" style="margin-top:8px">
           <div style="flex:3"><label>검색 (이름·코드·RFC)</label><input id="q" type="text" placeholder="비우면 전체"></div>
@@ -97,33 +98,10 @@
           <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="searchBtn">검색</button></div>
         </div>
 
-        <!-- 새/수정 폼 -->
+        <!-- 새/수정 폼 (공유 모듈) -->
         <div id="custForm" class="hidden" style="border:1px solid var(--brand);border-radius:10px;padding:14px;margin-top:12px;background:#fbfaf6">
-          <div style="font-weight:700;margin-bottom:6px" id="formTitle">새 고객 등록</div>
-          <div class="row">
-            <div><label>고객코드</label><input id="f-code" type="text" placeholder="예: C-0001"></div>
-            <div style="flex:2"><label>고객명</label><input id="f-name" type="text"></div>
-            <div><label>팀</label><select id="f-team"></select></div>
-          </div>
-          <div class="row">
-            <div><label>RFC(세금번호)</label><input id="f-rfc" type="text"></div>
-            <div><label>회사 종류</label><select id="f-type"><option value="">미지정</option><option>refraccionaria</option><option>Mayoreo</option><option>Flotia</option><option>taller</option><option>publico</option></select></div>
-            <div><label>담당자</label><select id="f-owner"><option value="">미지정</option></select></div>
-            <div><label>단계</label><select id="f-stage"><option value="">미지정</option></select></div>
-          </div>
-          <div class="row">
-            <div><label>연락처</label><input id="f-contact" type="text"></div>
-            <div><label>전화</label><input id="f-phone" type="text"></div>
-            <div><label>기본 할인(%)</label><input id="f-discount" type="number" step="0.01" value="0"></div>
-            <div><label>외상일(일)</label><input id="f-credit" type="number" value="0"></div>
-          </div>
-          <div class="row"><div style="flex:3"><label>메모</label><input id="f-memo" type="text"></div></div>
-          <div class="row"><div style="flex:3"><label>Constancia de Situación Fiscal (세무 등록상태 — 영업지원 입력)</label><input id="f-constancia" type="text" placeholder="예: RFC · Régimen · 등록상태"></div></div>
-          <div style="margin-top:10px;display:flex;gap:8px">
-            <button class="btn gold sm" id="f-save">저장</button>
-            <button class="btn ghost sm" id="f-cancel">취소</button>
-          </div>
-          <div class="msg" id="f-msg"></div>
+          <div style="font-weight:700;margin-bottom:8px" id="formTitle">새 고객 등록</div>
+          <div id="custFormHost"></div>
         </div>
 
         <div id="custList"><div class="hint">불러오는 중…</div></div>
@@ -146,6 +124,15 @@
         </div>
         <div style="font-weight:700;margin-top:14px">미수/연체 인보이스</div>
         <div id="d-invoices"></div>
+      </div>
+    </div>
+
+    <!-- 고객 수정 승인 대기(디렉터) -->
+    <div id="tab-approve" class="hidden">
+      <div class="card">
+        <h2 style="margin:0 0 4px">고객 수정 승인 대기</h2>
+        <div class="hint" style="margin-top:0">영업·영업지원이 요청한 고객 정보 수정입니다. 승인하면 반영되고, 반려하면 폐기됩니다.</div>
+        <div id="approveList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
 
@@ -260,8 +247,12 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');applyAccessLock('customers');
-      if(!isDirector())$('teamTabBtn').classList.add('hidden');
-      await loadRefs(); loadCustomers();
+      if(!isDirector()){$('teamTabBtn').classList.add('hidden');$('approveTabBtn').classList.add('hidden');}
+      else { loadApproveBadge(); }
+      await loadRefs();
+      RefCustForm.init({ api:session.api, token:session.token, isDirector:isDirector(), onSaved:function(d,wasEdit){ hideForm(); loadCustomers(); if(wasEdit&&!d.pending&&curCustomer)openCustomer(curCustomer.id); } });
+      await RefCustForm.mount('custFormHost',{ onCancel:hideForm });
+      loadCustomers();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -272,9 +263,6 @@
     try{owners=(await fetch(session.api+'/api/sales-users',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){owners=[];}
     if(isDirector()){try{adminTeams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){adminTeams=teams;}}
     $('teamFilter').innerHTML='<option value="">전체 팀</option>'+teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
-    $('f-team').innerHTML=teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
-    $('f-stage').innerHTML='<option value="">미지정</option>'+stages.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
-    $('f-owner').innerHTML='<option value="">미지정</option>'+owners.map(o=>`<option value="${o.id}">${o.name}</option>`).join('');
   }
 
   async function loadCustomers(){
@@ -304,48 +292,55 @@
 
   async function showForm(cust){
     editingId=cust?cust.id:null;
-    $('formTitle').textContent=cust?'고객 수정':'새 고객 등록';
-    if(cust){$('f-code').value=cust.code;}
-    else{
-      $('f-code').value='자동…';
-      try{const d=await fetch(session.api+'/api/customers/next-code',{headers:auth()}).then(r=>r.json());$('f-code').value=d.code||'';}catch(e){$('f-code').value='';}
-    }
-    $('f-code').readOnly=true;$('f-code').style.background='#f2efe8';
-    $('f-name').value=cust?cust.name:'';
-    $('f-team').value=cust?cust.team_id:(teams[0]?.id||'');
-    $('f-rfc').value=cust?(cust.rfc||''):'';
-    $('f-type').value=cust?(cust.customer_type||''):'';
-    $('f-owner').value=cust?(cust.owner_id||''):'';
-    $('f-stage').value=cust?(cust.stage_id||''):'';
-    $('f-contact').value=cust?(cust.contact||''):'';
-    $('f-phone').value=cust?(cust.phone||''):'';
-    $('f-discount').value=cust?cust.discount:0;
-    $('f-credit').value=cust?cust.credit_days:0;
-    $('f-memo').value=cust?(cust.memo||''):'';
-    $('f-constancia').value=cust?(cust.constancia_fiscal||''):'';
-    $('f-msg').style.display='none';
+    $('formTitle').textContent=cust?'고객 수정':'고객 등록';
+    if(cust) RefCustForm.editCustomer(cust); else await RefCustForm.newCustomer();
     $('custForm').classList.remove('hidden');
     if($('custForm').scrollIntoView)$('custForm').scrollIntoView({behavior:'smooth',block:'nearest'});
   }
+  function hideForm(){ $('custForm').classList.add('hidden'); }
 
-  async function saveCustomer(){
-    const m=$('f-msg');m.className='msg';m.style.display='none';
-    const body={name:$('f-name').value.trim(),team_id:Number($('f-team').value)||null,
-      rfc:$('f-rfc').value.trim()||null,customer_type:$('f-type').value||null,owner_id:$('f-owner').value?Number($('f-owner').value):null,
-      stage_id:$('f-stage').value?Number($('f-stage').value):null,contact:$('f-contact').value.trim()||null,
-      phone:$('f-phone').value.trim()||null,discount:Number($('f-discount').value)||0,credit_days:Number($('f-credit').value)||0,
-      memo:$('f-memo').value.trim()||null,constancia_fiscal:$('f-constancia').value.trim()||null};
-    if(!body.name){m.className='msg err';m.style.display='block';m.textContent='고객명을 입력하세요.';return;}
-    if(!body.team_id){m.className='msg err';m.style.display='block';m.textContent='팀을 선택하세요.';return;}
+  // ===== 고객 수정 승인 대기(디렉터) =====
+  async function loadApproveBadge(){
     try{
-      const url=editingId?session.api+'/api/customers/'+editingId:session.api+'/api/customers';
-      const res=await fetch(url,{method:editingId?'PATCH':'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
-      const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.style.display='block';
-        m.textContent='실패: '+(d.error==='code_exists'?'이미 있는 고객코드입니다.':d.error==='forbidden_team'?'그 팀의 고객을 만들/수정할 권한이 없습니다.':(d.detail||d.error||res.status));return;}
-      $('custForm').classList.add('hidden');loadCustomers();
-      if(editingId)openCustomer(editingId);
-    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+      const d=await fetch(session.api+'/api/customer-change-requests?status=pending',{headers:auth()}).then(r=>r.json());
+      const n=(d.items||[]).length; const b=$('approveBadge');
+      if(n>0){b.textContent=n;b.classList.remove('hidden');}else b.classList.add('hidden');
+    }catch(e){}
+  }
+  const FIELD_LABELS={name:'고객명',rfc:'RFC',contact:'연락처',phone:'전화',discount:'할인(%)',credit_days:'외상일',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록'};
+  async function loadApprovals(){
+    const box=$('approveList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customer-change-requests?status=pending',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){box.innerHTML='<div class="hint">승인 대기중인 수정 요청이 없습니다.</div>';return;}
+      box.innerHTML=items.map(r=>{
+        const p=r.proposed||{};
+        const rows=Object.keys(FIELD_LABELS).filter(k=>p[k]!==undefined&&p[k]!==null&&p[k]!=='').map(k=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:2px 10px 2px 0">${FIELD_LABELS[k]}</th><td>${esc(String(p[k]))}</td></tr>`).join('');
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <b>${esc(r.customer_name)}</b> <span class="hint" style="margin:0">(${esc(r.customer_code)})</span>
+            <span class="hint" style="margin:0">· 요청: ${esc(r.requested_by_name||'-')}</span>
+          </div>
+          <table style="margin:8px 0;font-size:13px"><tbody>${rows||'<tr><td class="hint">변경 항목 없음</td></tr>'}</tbody></table>
+          <div style="display:flex;gap:8px">
+            <button class="btn sm" onclick="approveChange(${r.id})">승인</button>
+            <button class="btn ghost sm" onclick="rejectChange(${r.id})">반려</button>
+          </div>
+        </div>`;
+      }).join('');
+    }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function approveChange(id){
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
+    if(res.ok){ loadApprovals(); loadApproveBadge(); loadCustomers(); }
+    else alert('승인 실패');
+  }
+  async function rejectChange(id){
+    const reason=prompt('반려 사유(선택):')||null;
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/reject',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+    if(res.ok){ loadApprovals(); loadApproveBadge(); }
+    else alert('반려 실패');
   }
 
   let curCustomer=null;
@@ -426,7 +421,9 @@
     const tab=t.dataset.tab;
     $('tab-list').classList.toggle('hidden',tab!=='list');
     $('tab-team').classList.toggle('hidden',tab!=='team');
+    $('tab-approve').classList.toggle('hidden',tab!=='approve');
     if(tab==='team')loadTeamUsers();
+    if(tab==='approve')loadApprovals();
   }));
 
   $('go').addEventListener('click',login);
@@ -514,14 +511,13 @@
   $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
   $('teamFilter').addEventListener('change',loadCustomers);
   $('newCustBtn').addEventListener('click',()=>showForm(null));
-  $('f-cancel').addEventListener('click',()=>$('custForm').classList.add('hidden'));
-  $('f-save').addEventListener('click',saveCustomer);
   $('editBtn').addEventListener('click',()=>{if(curCustomer)showForm(curCustomer);});
   $('d-back').addEventListener('click',()=>$('detailCard').classList.add('hidden'));
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
+<script src="refatrix-custform.js?v=20260615b"></script>
 <script src="refatrix-nav.js?v=20260615b"></script>
 </body>
 </html>

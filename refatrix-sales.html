@@ -82,21 +82,10 @@
       <div class="tab" id="tabApprove">승인 대기</div>
     </div>
 
-    <!-- 고객 등록 -->
+    <!-- 고객 등록 (공유 모듈 — 영업 화면과 동일 UX) -->
     <div class="card hidden" id="custCard">
-      <h2>고객 등록 (간단)</h2>
-      <div class="row">
-        <div><label>고객번호</label><input id="c-code" type="text" placeholder="C-0001"></div>
-        <div><label>상호명</label><input id="c-name" type="text" placeholder="고객사 이름"></div>
-        <div><label>RFC(세금번호)</label><input id="c-rfc" type="text"></div>
-      </div>
-      <div class="row">
-        <div><label>기본 할인율 (%)</label><input id="c-disc" type="number" step="0.01" value="0"></div>
-        <div><label>기본 외상일 (일)</label><input id="c-days" type="number" value="30"></div>
-        <div><label>메모</label><input id="c-memo" type="text"></div>
-      </div>
-      <button class="btn" id="c-save" style="margin-top:14px">고객 저장</button>
-      <div class="msg" id="custMsg"></div>
+      <h2>고객 등록</h2>
+      <div id="custFormHost"></div>
     </div>
 
     <!-- 매출 등록 -->
@@ -220,6 +209,9 @@
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       $('s-date').value=new Date().toISOString().slice(0,10);
+      const isDir = (d.user&&d.user.role==='director');
+      RefCustForm.init({ api:session.api, token:session.token, isDirector:isDir, onSaved:function(){ loadCustomers(); } });
+      RefCustForm.mount('custFormHost');
       addLine(); await loadCustomers();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -261,20 +253,7 @@
     $('custInfo').innerHTML=`적용 기준 — 할인율 <b>${c.discount}%</b>, 기본 외상일 <b>${c.credit_days}일</b>. (품목 할인을 비우면 이 할인율이 자동 적용됩니다.)`;
     recalcDue(); renderTotals();
   }
-  async function saveCustomer(){
-    const m=$('custMsg');m.className='msg';
-    const body={code:$('c-code').value.trim(),name:$('c-name').value.trim(),rfc:$('c-rfc').value.trim()||null,
-      discount:Number($('c-disc').value)||0,credit_days:Number($('c-days').value)||0,memo:$('c-memo').value.trim()||null};
-    if(!body.code||!body.name){m.className='msg err';m.textContent='고객번호와 상호명을 입력하세요.';return;}
-    try{
-      const res=await fetch(session.api+'/api/customers',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
-      const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='code_taken'?'이미 있는 고객번호입니다.':('저장 실패: '+(d.error||res.status));return;}
-      m.className='msg ok';m.textContent='고객이 저장되었습니다: '+d.code+' · '+d.name;
-      $('c-code').value='';$('c-name').value='';$('c-rfc').value='';$('c-memo').value='';
-      await loadCustomers();
-    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
-  }
+  // 고객 등록/수정은 공유 모듈(RefCustForm)이 처리합니다.
 
   // ---- 제품 검색 ----
   async function searchProducts(q){
@@ -881,7 +860,6 @@
   $('tabApprove').addEventListener('click',()=>showTab('approve'));
   $('shortYes').addEventListener('click',()=>doSubmit(true));
   $('shortNo').addEventListener('click',()=>{$('shortConfirm').classList.add('hidden');pendingBody=null;});
-  $('c-save').addEventListener('click',saveCustomer);
   $('addLine').addEventListener('click',addLine);
   $('submit').addEventListener('click',submitSale);
   $('s-cust').addEventListener('change',updateCustInfo);
@@ -894,6 +872,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
+<script src="refatrix-custform.js?v=20260615b"></script>
 <script src="refatrix-nav.js?v=20260615b"></script>
 </body>
 </html>

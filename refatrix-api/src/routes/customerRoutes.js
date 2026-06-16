@@ -249,19 +249,10 @@ export default async function customerRoutes(app) {
   });
 
   // 고객 수정
-  app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
-    const id = Number(req.params.id);
-    const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
-    if (!c) return reply.code(404).send({ error: 'not_found' });
-    if (!canEditTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
-    const b = req.body || {};
-    // 팀 이동은 디렉터만(또는 양쪽 팀 편집 권한)
+  // 고객 수정에 적용할 필드를 customers에 반영(헬퍼) — 승인 시 재사용
+  async function applyCustomerUpdate(id, c, b, userId) {
     let teamId = c.team_id;
-    if (b.team_id != null && Number(b.team_id) !== c.team_id) {
-      const newTeam = Number(b.team_id);
-      if (!canEditTeam(req.ctx.perm, newTeam)) return reply.code(403).send({ error: 'forbidden_team_move' });
-      teamId = newTeam;
-    }
+    if (b.team_id != null && Number(b.team_id) !== c.team_id) teamId = Number(b.team_id);
     const stageChanged = b.stage_id != null && Number(b.stage_id) !== c.stage_id;
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
@@ -272,9 +263,85 @@ export default async function customerRoutes(app) {
        b.credit_days != null ? Number(b.credit_days) : c.credit_days, teamId,
        b.stage_id != null ? Number(b.stage_id) : c.stage_id, b.owner_id !== undefined ? b.owner_id : c.owner_id,
        b.customer_type !== undefined ? b.customer_type : c.customer_type,
-       b.memo !== undefined ? b.memo : c.memo, stageChanged, req.ctx.perm.userId, id,
+       b.memo !== undefined ? b.memo : c.memo, stageChanged, userId, id,
        b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal]);
-    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `customer:${id}` });
+  }
+
+  app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const b = req.body || {};
+    // 팀 이동 권한 체크(디렉터/양팀 편집권)
+    if (b.team_id != null && Number(b.team_id) !== c.team_id) {
+      if (!canEditTeam(perm, Number(b.team_id))) return reply.code(403).send({ error: 'forbidden_team_move' });
+    }
+    // 디렉터: 즉시 반영 / 그 외: 디렉터 승인 대기로 보관
+    if (perm.role === 'director') {
+      await applyCustomerUpdate(id, c, b, perm.userId);
+      await safeLog({ userId: perm.userId, action: 'update', target: `customer:${id}` });
+      return { ok: true };
+    }
+    // 같은 고객에 이미 대기중인 요청이 있으면 갱신(최신으로 덮어씀)
+    const proposed = {
+      name: b.name, rfc: b.rfc, contact: b.contact, phone: b.phone, discount: b.discount,
+      credit_days: b.credit_days, team_id: b.team_id, stage_id: b.stage_id, owner_id: b.owner_id,
+      customer_type: b.customer_type, memo: b.memo, constancia_fiscal: b.constancia_fiscal,
+    };
+    const existing = (await query(`SELECT id FROM customer_change_requests WHERE customer_id=$1 AND status='pending'`, [id])).rows[0];
+    if (existing) {
+      await query(`UPDATE customer_change_requests SET proposed=$1, requested_by=$2, reason=$3, created_at=now() WHERE id=$4`,
+        [JSON.stringify(proposed), perm.userId, b.reason || null, existing.id]);
+    } else {
+      await query(`INSERT INTO customer_change_requests (customer_id, proposed, requested_by, reason) VALUES ($1,$2,$3,$4)`,
+        [id, JSON.stringify(proposed), perm.userId, b.reason || null]);
+    }
+    await safeLog({ userId: perm.userId, action: 'change_request', target: `customer:${id}` });
+    return { ok: true, pending: true };
+  });
+
+  // 고객 수정 승인 대기 목록(디렉터)
+  app.get('/api/customer-change-requests', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
+    const rows = (await query(
+      `SELECT r.id, r.customer_id, r.proposed, r.status, r.reason, r.created_at,
+              c.code AS customer_code, c.name AS customer_name,
+              u.name AS requested_by_name
+         FROM customer_change_requests r
+         JOIN customers c ON c.id=r.customer_id
+         LEFT JOIN users u ON u.id=r.requested_by
+        WHERE r.status=$1 ORDER BY r.created_at DESC`, [status])).rows;
+    return {
+      items: rows.map((r) => ({
+        id: r.id, customer_id: r.customer_id, customer_code: r.customer_code, customer_name: r.customer_name,
+        proposed: r.proposed, status: r.status, reason: r.reason,
+        requested_by_name: r.requested_by_name, created_at: r.created_at,
+      })),
+    };
+  });
+
+  // 승인 → customers에 반영(디렉터)
+  app.post('/api/customer-change-requests/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const r = (await query(`SELECT * FROM customer_change_requests WHERE id=$1 AND status='pending'`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [r.customer_id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'customer_gone' });
+    await applyCustomerUpdate(r.customer_id, c, r.proposed, req.ctx.perm.userId);
+    await query(`UPDATE customer_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [req.ctx.perm.userId, id]);
+    await safeLog({ userId: req.ctx.perm.userId, action: 'approve_change', target: `customer:${r.customer_id}` });
+    return { ok: true };
+  });
+
+  // 반려(디렉터)
+  app.post('/api/customer-change-requests/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const r = (await query(`SELECT id FROM customer_change_requests WHERE id=$1 AND status='pending'`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE customer_change_requests SET status='rejected', decided_by=$1, decided_at=now(), reject_reason=$2 WHERE id=$3`,
+      [req.ctx.perm.userId, (req.body && req.body.reason) ? String(req.body.reason) : null, id]);
     return { ok: true };
   });
 
