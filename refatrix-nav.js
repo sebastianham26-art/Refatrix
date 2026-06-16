@@ -12,7 +12,10 @@
     quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
     orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이',desc:'즉시매출 KPI'},
     funnel:{file:'refatrix-funnel.html',name:'수주 흐름 세부',desc:'드릴다운'},
-    sales:{file:'refatrix-sales.html',name:'매출 등록',desc:'인보이스'},
+    sales:{file:'refatrix-sales.html',name:'매출 등록',desc:'인보이스',tab:'sale'},
+    saleslist:{file:'refatrix-sales.html',name:'매출 목록',desc:'발행 내역',tab:'list'},
+    salesshort:{file:'refatrix-sales.html',name:'부족 / 주문',desc:'부족·발주 근거',tab:'short'},
+    salesapprove:{file:'refatrix-sales.html',name:'매출 승인 대기',desc:'수정·삭제 승인',tab:'approve'},
     stock:{file:'refatrix-stock.html',name:'재고 이동',desc:'입출고·조정'},
     shortage:{file:'refatrix-shortage.html',name:'부족분',desc:'발주 근거'},
     devrequest:{file:'refatrix-devrequest.html',name:'개발 요청',desc:'경쟁사코드 대응'},
@@ -35,7 +38,8 @@
   var PAGEKEY={
     salesperf:null, dashboard:null, board:null, portal:null, rnr:null,
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
-    sales:'sales', stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
+    sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
+    stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
     pipeline:'pipeline', customers:'customers', targets:'targets',
     finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', import:'inventory',
     products:'products', marketing:'marketing',
@@ -45,7 +49,7 @@
   var GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
-    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','importcost','import']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','saleslist','salesshort','salesapprove','customers','stock','shortage','settlement','importcost','import']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board']},
@@ -53,7 +57,7 @@
   ];
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
-  var SHARED={devrequest:1, orderfunnel:1, funnel:1, import:1, importcost:1};
+  var SHARED={devrequest:1, orderfunnel:1, funnel:1, import:1, importcost:1, customers:1, settlement:1};
 
   var sess=null, sum=null, openGroup=null;
   function getSession(){
@@ -73,6 +77,12 @@
   }
   function curScreen(){
     var f=(location.pathname.split('/').pop()||'').toLowerCase();
+    // 같은 파일을 공유하는 탭-화면은 해시의 tab 으로 구분(매출 등록/목록/부족/승인)
+    if(f==='refatrix-sales.html'){
+      var tab='sale'; try{ var hp=new URLSearchParams(location.hash.slice(1)); tab=hp.get('tab')||'sale'; }catch(e){}
+      for(var sk in SCREENS){ if(SCREENS[sk].file.toLowerCase()===f && (SCREENS[sk].tab||'sale')===tab) return sk; }
+      return 'sales';
+    }
     for(var k in SCREENS){ if(SCREENS[k].file.toLowerCase()===f) return k; }
     return null;
   }
@@ -81,6 +91,7 @@
     try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:sess.token,api:sess.api,user:(sess.user||{}),ts:Date.now()})); }catch(e){}
     var g=fromGroup||openGroup||'';
     var hash='#token='+encodeURIComponent(sess.token)+'&api='+encodeURIComponent(sess.api||'')+'&user='+encodeURIComponent(JSON.stringify(sess.user||{}))+'&g='+encodeURIComponent(g);
+    if(s.tab) hash+='&tab='+encodeURIComponent(s.tab);
     location.href=s.file+hash;
   }
   window.__rnav=nav;

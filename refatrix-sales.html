@@ -74,19 +74,14 @@
   </div>
 
   <div class="hidden" id="app">
-    <div class="tabs">
+    <div class="tabs" style="display:none">
       <div class="tab on" id="tabSale">매출 등록</div>
-      <div class="tab" id="tabCust">고객 등록</div>
       <div class="tab" id="tabList">매출 목록</div>
       <div class="tab" id="tabShort">부족 / 주문</div>
       <div class="tab" id="tabApprove">승인 대기</div>
     </div>
 
-    <!-- 고객 등록 (공유 모듈 — 영업 화면과 동일 UX) -->
-    <div class="card hidden" id="custCard">
-      <h2>고객 등록</h2>
-      <div id="custFormHost"></div>
-    </div>
+    <!-- 고객 등록은 '고객 등록' 화면(customers.html)으로 이동 — 헤더 영업지원 그룹 -->
 
     <!-- 매출 등록 -->
     <div class="card" id="saleCard">
@@ -209,10 +204,8 @@
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       $('s-date').value=new Date().toISOString().slice(0,10);
-      const isDir = (d.user&&d.user.role==='director');
-      RefCustForm.init({ api:session.api, token:session.token, isDirector:isDir, onSaved:function(){ loadCustomers(); } });
-      RefCustForm.mount('custFormHost');
       addLine(); await loadCustomers();
+      applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -220,12 +213,10 @@
   // ---- 탭 ----
   function showTab(which){
     $('tabSale').classList.toggle('on',which==='sale');
-    $('tabCust').classList.toggle('on',which==='cust');
     $('tabList').classList.toggle('on',which==='list');
     $('tabShort').classList.toggle('on',which==='short');
     $('tabApprove').classList.toggle('on',which==='approve');
     $('saleCard').classList.toggle('hidden',which!=='sale');
-    $('custCard').classList.toggle('hidden',which!=='cust');
     $('listCard').classList.toggle('hidden',which!=='list');
     $('shortCard').classList.toggle('hidden',which!=='short');
     $('approveCard').classList.toggle('hidden',which!=='approve');
@@ -233,6 +224,13 @@
     if(which==='short')loadShortages();
     if(which==='approve')loadApprovals();
   }
+  // 헤더(트리) 딥링크: #tab=list/short/approve 로 들어오면 해당 탭 열기
+  function applyHashTab(){
+    var t='sale'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'sale'; }catch(e){}
+    var map={sale:'sale',list:'list',short:'short',approve:'approve'};
+    showTab(map[t]||'sale');
+  }
+  window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')) applyHashTab(); });
 
   // ---- 고객 ----
   async function loadCustomers(){
@@ -854,7 +852,6 @@
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('tabSale').addEventListener('click',()=>showTab('sale'));
-  $('tabCust').addEventListener('click',()=>showTab('cust'));
   $('tabList').addEventListener('click',()=>showTab('list'));
   $('tabShort').addEventListener('click',()=>showTab('short'));
   $('tabApprove').addEventListener('click',()=>showTab('approve'));
@@ -872,7 +869,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260615b"></script>
 <script src="refatrix-nav.js?v=20260615b"></script>
 </body>
 </html>
