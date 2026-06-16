@@ -2,6 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
+  try{ console.log('[refatrix-nav] v20260615h loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -198,6 +199,8 @@
   window.addEventListener('resize', function(){ syncOffset(); });
   // 같은 파일 내 탭 전환은 해시만 바뀌므로(페이지 미reload), 헤더를 다시 그려 현재 화면 강조(노란색)를 갱신
   window.addEventListener('hashchange', function(){ if(document.getElementById('rnav')) render(); });
+  // 탭 화면이 내부 탭 전환 후 직접 호출 → 현재 화면 강조 즉시 갱신(hashchange 미발생/캐시 대비 안전장치)
+  window.__rnavRefresh=function(){ if(document.getElementById('rnav')) render(); };
   // 그룹 클릭 → 해당 그룹의 첫 번째(접근 가능) 화면으로 이동. 현재 그룹이면 토글만.
   window.__rnavGroup=function(k){
     var g=null; for(var i=0;i<GROUPS.length;i++){ if(GROUPS[i].key===k){ g=GROUPS[i]; break; } }

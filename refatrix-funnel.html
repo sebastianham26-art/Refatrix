@@ -129,7 +129,7 @@
     $('months').innerHTML='<span class="ml">조회 월 ('+FYEAR+')</span>'+btns;
   }
   function toggleMonth(ym){ const i=months.indexOf(ym); if(i>=0){ if(months.length>1) months.splice(i,1); } else months.push(ym); renderMonths(); load(); }
-  function setCat(c,skipReset){ cat=c; ['quotes','immediate','shortage','dev'].forEach(k=>$('t-'+k).classList.toggle('on',k===c)); openRows={}; load(); }
+  function setCat(c,skipReset){ cat=c; ['quotes','immediate','shortage','dev'].forEach(k=>$('t-'+k).classList.toggle('on',k===c)); openRows={}; load(); if(window.__rnavRefresh)window.__rnavRefresh(); }
   const mq=()=>encodeURIComponent(months.join(','));
 
   async function load(){
@@ -269,6 +269,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260615g"></script>
+<script src="refatrix-nav.js?v=20260615h"></script>
 </body>
 </html>

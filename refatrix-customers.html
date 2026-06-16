@@ -426,8 +426,9 @@
     if(tab==='team')loadTeamUsers();
     if(tab==='approve')loadApprovals();
   }));
+  if(window.__rnavRefresh)window.__rnavRefresh();
   // 헤더(트리) 딥링크: #tab=list/team/approve
-  function applyCustHashTab(){
+  function applyCustHashTab(){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
     let tab='list'; try{ const p=new URLSearchParams(location.hash.slice(1)); tab=p.get('tab')||'list'; }catch(e){}
     if(['list','team','approve'].indexOf(tab)<0)tab='list';
     document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));
@@ -531,6 +532,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260615b"></script>
-<script src="refatrix-nav.js?v=20260615g"></script>
+<script src="refatrix-nav.js?v=20260615h"></script>
 </body>
 </html>
