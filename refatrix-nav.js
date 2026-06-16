@@ -14,7 +14,7 @@
     quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
     orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이',desc:'즉시매출 KPI'},
     funnel:{file:'refatrix-funnel.html',name:'견적 요청',desc:'요청 SKU',tab:'quotes'},
-    funnelImm:{file:'refatrix-funnel.html',name:'즉시 매출',desc:'발행 가능',tab:'immediate'},
+    funnelImm:{file:'refatrix-funnel.html',name:'매출 확정 목록',desc:'발행 가능·확정',tab:'immediate'},
     funnelShort:{file:'refatrix-funnel.html',name:'부족·발주',desc:'SKU 부족',tab:'shortage'},
     funnelDev:{file:'refatrix-funnel.html',name:'개발 필요',desc:'개발요청',tab:'dev'},
     sales:{file:'refatrix-sales.html',name:'매출 등록',desc:'인보이스',tab:'sale'},
@@ -25,7 +25,7 @@
     shortage:{file:'refatrix-shortage.html',name:'부족분',desc:'발주 근거'},
     devrequest:{file:'refatrix-devrequest.html',name:'개발 요청',desc:'경쟁사코드 대응'},
     pipeline:{file:'refatrix-pipeline.html',name:'영업활동',desc:'칸반·미팅'},
-    customers:{file:'refatrix-customers.html',name:'고객',desc:'고객·외상',tab:'list'},
+    customers:{file:'refatrix-customers.html',name:'고객 등록 및 목록',desc:'고객·외상·서류',tab:'list'},
     custTeam:{file:'refatrix-customers.html',name:'고객 팀권한',desc:'팀 가시성',tab:'team'},
     custApprove:{file:'refatrix-customers.html',name:'고객 수정 승인',desc:'수정 승인',tab:'approve'},
     targets:{file:'refatrix-targets.html',name:'매출목표',desc:'목표·달성'},
@@ -67,7 +67,7 @@
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr']},
-    {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','funnelImm','funnelShort','funnelDev','pipeline','customers','targets','devrequest']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','quote','quotelist','funnel','orderfunnel','funnelShort','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','saleslist','salesshort','salesapprove','customers','stock','shortage','settlement','importcost','import']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},

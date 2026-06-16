@@ -50,6 +50,10 @@
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .seg{border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px}
   .seg h4{margin:0 0 8px;font-size:12.5px;color:var(--brand)}
+  .mrow{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+  .mrow .ml{font-size:12px;color:#6f6a60;font-weight:600;margin-right:4px}
+  .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line,#e0dccb);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:#8a8676;cursor:pointer}
+  .mbtn.on{background:var(--brand,#143D34);color:#fff;border-color:var(--brand,#143D34)}
 </style>
 </head>
 <body>
@@ -91,6 +95,7 @@
     <!-- 목록 -->
     <div class="card">
       <div class="card-h">개발요청 목록</div>
+      <div class="mrow" id="months" style="margin:4px 0 10px"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <select id="fStatus" onchange="load()"><option value="">전체</option><option value="received">접수</option><option value="reviewed">검토완료</option><option value="factory_requested">공장요청</option><option value="developed">개발완료</option><option value="cancelled">취소</option></select>
         <button class="btn ghost sm" onclick="load()">새로고침</button>
@@ -143,7 +148,7 @@
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       try{ const p=new URLSearchParams(location.hash.slice(1)); if(p.get('view')==='developed'){ $('fStatus').value='developed'; } }catch(e){}
-      loadCustomers(); loadKpi(); load();
+      loadCustomers(); renderMonths(); loadKpi(); load();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -173,8 +178,18 @@
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
 
+  let devMonths=[], DEV_FYEAR=new Date().getFullYear();
+  function renderMonths(){
+    const btns=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=DEV_FYEAR+'-'+mm;
+      return '<button class="mbtn '+(devMonths.includes(ym)?'on':'')+'" onclick="toggleMonth(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    $('months').innerHTML='<span class="ml">조회 월 ('+DEV_FYEAR+', 복수 선택 · 전체는 모두 해제)</span>'+btns;
+  }
+  function toggleMonth(ym){ const i=devMonths.indexOf(ym); if(i>=0)devMonths.splice(i,1); else devMonths.push(ym); renderMonths(); load(); }
+
   async function load(){
-    let qs=''; if($('fStatus').value)qs='?status='+$('fStatus').value;
+    const params=[]; if($('fStatus').value)params.push('status='+$('fStatus').value);
+    if(devMonths.length)params.push('months='+encodeURIComponent(devMonths.join(',')));
+    const qs=params.length?('?'+params.join('&')):'';
     try{ const d=await fetch(session.api+'/api/dev-requests'+qs,{headers:auth()}).then(r=>r.json()); render(d.items||[]); }
     catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
@@ -289,6 +304,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260615e"></script>
+<script src="refatrix-nav.js?v=20260615f"></script>
 </body>
 </html>

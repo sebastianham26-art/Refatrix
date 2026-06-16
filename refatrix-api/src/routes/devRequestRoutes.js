@@ -82,6 +82,9 @@ export default async function devRequestRoutes(app) {
     const conds = ['d.deleted_at IS NULL']; const args = [];
     if (['received', 'reviewed', 'factory_requested', 'developed', 'cancelled'].includes(String(req.query.status))) { args.push(req.query.status); conds.push(`d.status=$${args.length}`); }
     if (req.query.open === '1') conds.push(`d.status IN ('received','reviewed','factory_requested')`);
+    // 월 다중 필터(YYYY-MM,YYYY-MM …) — 접수월(requested_at) 기준
+    const months = String(req.query.months || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+    if (months.length) { args.push(months); conds.push(`to_char(d.requested_at,'YYYY-MM') = ANY($${args.length})`); }
     const rows = (await query(
       `SELECT d.*, c.name AS customer_name, c.owner_id AS customer_owner_id, p.code AS result_code_live
          FROM product_dev_requests d
