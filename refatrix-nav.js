@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260615i loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260615k loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -47,13 +47,14 @@
     prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
     rnr:{file:'refatrix-rnr.html',name:'업무 프로세스',desc:'R&R 안내'},
+    coverage:{file:'mx_parts_coverage_dashboard.html',name:'Coverage',desc:'부품 커버리지 대시보드'},
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'}
   };
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
   var PAGEKEY={
-    salesperf:null, dashboard:null, board:null, portal:null, rnr:null,
+    salesperf:null, dashboard:null, board:null, portal:null, rnr:null, coverage:null,
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
@@ -67,9 +68,9 @@
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
-    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr']},
-    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','quote','quotelist','funnel','orderfunnel','funnelShort','funnelImm','funnelDev','devrequest']},
-    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','saleslist','salesshort','salesapprove','customers','stock','shortage','settlement','importcost','import']},
+    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr','coverage']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','import','importcost','stock']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo']},
@@ -77,7 +78,7 @@
   ];
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
-  var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1};
+  var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
 
   var sess=null, sum=null, openGroup=null;
   function getSession(){

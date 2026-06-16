@@ -186,7 +186,7 @@
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기'};
     let html='<table><thead><tr>'
-      +'<th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
+      +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       const conv=q.status==='converted';
@@ -198,6 +198,7 @@
         +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b></td>'
         +'<td>'+esc(q.quote_date||'')+'</td>'
         +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+'</td>'
+        +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.sku_count||0)+'</td>'
         +'<td class="r">'+fmtq(q.total_qty)+'</td>'
         +'<td class="r">'+fmt(q.total_mxn)+'</td>'
@@ -416,6 +417,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260615i"></script>
+<script src="refatrix-nav.js?v=20260615k"></script>
 </body>
 </html>
