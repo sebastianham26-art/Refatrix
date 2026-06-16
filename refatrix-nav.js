@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260615k loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260615l loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -222,8 +222,23 @@
     try{ window.__rnavBaseTop=parseInt(getComputedStyle(document.body).paddingTop,10)||0; }catch(e){ window.__rnavBaseTop=0; }
     var nv=document.createElement('div'); nv.id='rnav';
     document.body.insertBefore(nv, document.body.firstChild);
+    boot();
+  }
+  // 세션을 읽어 헤더를 그린다. 세션이 없으면 잠시 후 로그인되는지 감시(포털 첫 로그인 대응).
+  function boot(){
+    var nv=document.getElementById('rnav'); if(!nv) return;
     sess=getSession();
-    if(!sess||!sess.token){ nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; syncOffset(); return; }
+    if(!sess||!sess.token){
+      nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; syncOffset();
+      if(!window.__rnavWatch){
+        window.__rnavWatch=setInterval(function(){
+          var s=getSession();
+          if(s&&s.token){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; boot(); }
+        }, 400);
+      }
+      return;
+    }
+    if(window.__rnavWatch){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; }
     var api=(sess.api||'').replace(/\/+$/,'');
     var authFailed=false;
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
@@ -240,5 +255,6 @@
       sum=d||{pages:[],isDirector:false}; render();
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
+  window.__rnavReload=boot;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount); else mount();
 })();
