@@ -41,7 +41,9 @@
     budget:{file:'refatrix-budget.html',name:'예산',desc:'예산 계획'},
     importcost:{file:'refatrix-importcost.html',name:'수입원가',desc:'부대비용·원가'},
     import:{file:'refatrix-import.html',name:'수입 입고',desc:'배치 등록'},
-    products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고'},
+    products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
+    prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
+    prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
     rnr:{file:'refatrix-rnr.html',name:'업무 프로세스',desc:'R&R 안내'},
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
@@ -59,7 +61,7 @@
     boardNotice:null, boardTodo:null,
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', budget:'budget', importcost:'inventory', import:'inventory',
-    products:'products', marketing:'marketing',
+    products:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing',
     users:'__director__', company:'__director__'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
@@ -68,7 +70,7 @@
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','funnelImm','funnelShort','funnelDev','pipeline','customers','targets','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','saleslist','salesshort','salesapprove','customers','stock','shortage','settlement','importcost','import']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove']}
   ];
@@ -93,7 +95,7 @@
     return have.indexOf(pk)>=0;
   }
   // 같은 파일을 공유하는 탭-화면들의 기본 탭(해시 tab 없을 때)
-  var FILE_DEFAULT_TAB={'refatrix-sales.html':'sale','refatrix-finance.html':'acc','refatrix-board.html':'cal','refatrix-funnel.html':'quotes','refatrix-customers.html':'list'};
+  var FILE_DEFAULT_TAB={'refatrix-sales.html':'sale','refatrix-finance.html':'acc','refatrix-board.html':'cal','refatrix-funnel.html':'quotes','refatrix-customers.html':'list','refatrix-products.html':'find'};
   function curScreen(){
     var f=(location.pathname.split('/').pop()||'').toLowerCase();
     if(FILE_DEFAULT_TAB[f]){

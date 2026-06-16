@@ -170,15 +170,31 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
-      $('loginCard').classList.add('hidden');$('searchCard').classList.remove('hidden');
-      $('sydCard').classList.remove('hidden');
-      $('vehCard').classList.remove('hidden');
+      $('loginCard').classList.add('hidden');
       loadMakers();
-      if(session.user&&session.user.role==='director')$('upCard').classList.remove('hidden');
+      applyHashTab();
       doSearch();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
+
+  // 탭: 제품 찾기(검색+경쟁사코드+차종) / 제품 마스터 업로드
+  function showTab(which){
+    var isFind = which!=='upload';
+    $('searchCard').classList.toggle('hidden',!isFind);
+    $('sydCard').classList.toggle('hidden',!isFind);
+    $('vehCard').classList.toggle('hidden',!isFind);
+    var isDir = session && session.user && session.user.role==='director';
+    $('upCard').classList.toggle('hidden', !(which==='upload' && isDir));
+    if(which==='upload' && !isDir){ // 권한 없으면 찾기로
+      $('searchCard').classList.remove('hidden');$('sydCard').classList.remove('hidden');$('vehCard').classList.remove('hidden');
+    }
+  }
+  function applyHashTab(){
+    var t='find'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'find'; }catch(e){}
+    showTab(t==='upload'?'upload':'find');
+  }
+  window.addEventListener('hashchange',function(){ if($('loginCard').classList.contains('hidden')) applyHashTab(); });
 
   async function doSearch(){
     const q=$('q').value.trim();const r=$('result');r.innerHTML='<div class="hint">불러오는 중…</div>';
@@ -378,6 +394,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260615d"></script>
+<script src="refatrix-nav.js?v=20260615e"></script>
 </body>
 </html>
