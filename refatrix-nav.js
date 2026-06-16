@@ -168,9 +168,20 @@
     sess=getSession();
     if(!sess||!sess.token){ nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; syncOffset(); return; }
     var api=(sess.api||'').replace(/\/+$/,'');
-    fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){return r.json();}).then(function(d){
+    var authFailed=false;
+    fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
+      if(r.status===401||r.status===403){
+        authFailed=true;
+        try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
+        var nv2=document.getElementById('rnav');
+        if(nv2) nv2.innerHTML='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">세션 만료 — 새로고침 후 다시 로그인하세요</span></div>';
+        syncOffset();
+        throw new Error('unauthorized');
+      }
+      return r.json();
+    }).then(function(d){
       sum=d||{pages:[],isDirector:false}; render();
-    }).catch(function(){ sum={pages:[],isDirector:false}; render(); });
+    }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount); else mount();
 })();
