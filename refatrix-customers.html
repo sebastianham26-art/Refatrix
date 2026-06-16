@@ -65,7 +65,7 @@
   </div>
 
   <div class="hidden" id="app">
-    <div class="tabs">
+    <div class="tabs" style="display:none">
       <div class="tab on" data-tab="list">고객 목록</div>
       <div class="tab" data-tab="team" id="teamTabBtn">팀 권한 관리</div>
       <div class="tab" data-tab="approve" id="approveTabBtn">수정 승인 대기<span id="approveBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
@@ -253,6 +253,7 @@
       RefCustForm.init({ api:session.api, token:session.token, isDirector:isDirector(), onSaved:function(d,wasEdit){ hideForm(); loadCustomers(); if(wasEdit&&!d.pending&&curCustomer)openCustomer(curCustomer.id); } });
       await RefCustForm.mount('custFormHost',{ onCancel:hideForm });
       loadCustomers();
+      applyCustHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -425,6 +426,18 @@
     if(tab==='team')loadTeamUsers();
     if(tab==='approve')loadApprovals();
   }));
+  // 헤더(트리) 딥링크: #tab=list/team/approve
+  function applyCustHashTab(){
+    let tab='list'; try{ const p=new URLSearchParams(location.hash.slice(1)); tab=p.get('tab')||'list'; }catch(e){}
+    if(['list','team','approve'].indexOf(tab)<0)tab='list';
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));
+    $('tab-list').classList.toggle('hidden',tab!=='list');
+    $('tab-team').classList.toggle('hidden',tab!=='team');
+    $('tab-approve').classList.toggle('hidden',tab!=='approve');
+    if(tab==='team')loadTeamUsers();
+    if(tab==='approve')loadApprovals();
+  }
+  window.addEventListener('hashchange',()=>{ if(!$('app').classList.contains('hidden'))applyCustHashTab(); });
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

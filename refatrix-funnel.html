@@ -67,7 +67,7 @@
   <div class="hidden" id="app">
     <div class="card">
       <div class="mrow" id="months" style="margin-bottom:10px"></div>
-      <div class="tabs">
+      <div class="tabs" style="display:none">
         <div class="tab quotes" id="t-quotes" onclick="setCat('quotes')">견적 요청</div>
         <div class="tab immediate" id="t-immediate" onclick="setCat('immediate')">① 즉시 매출</div>
         <div class="tab shortage" id="t-shortage" onclick="setCat('shortage')">② 부족·발주</div>
@@ -114,7 +114,11 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      parseHash(); renderMonths(); setCat(cat,true);
+      parseHash(); renderMonths();
+      var _ht='quotes'; try{ var _p=new URLSearchParams(location.hash.slice(1)); _ht=_p.get('tab')||'quotes'; }catch(e){}
+      if(['quotes','immediate','shortage','dev'].indexOf(_ht)<0)_ht='quotes';
+      setCat(_ht,true);
+      window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')){ var t='quotes'; try{var p=new URLSearchParams(location.hash.slice(1));t=p.get('tab')||'quotes';}catch(e){} if(['quotes','immediate','shortage','dev'].indexOf(t)>=0)setCat(t,true);} });
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }

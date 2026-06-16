@@ -7,11 +7,16 @@
   var SCREENS={
     salesperf:{file:'refatrix-salesperf.html',name:'영업 대시보드',desc:'매출·수금·파이프라인'},
     dashboard:{file:'refatrix-dashboard.html',name:'대시보드',desc:'위젯'},
-    board:{file:'refatrix-board.html',name:'일정·공지·할 일',desc:'달력·공지'},
+    board:{file:'refatrix-board.html',name:'일정',desc:'달력',tab:'cal'},
+    boardNotice:{file:'refatrix-board.html',name:'공지',desc:'공지사항',tab:'notice'},
+    boardTodo:{file:'refatrix-board.html',name:'할 일',desc:'todo',tab:'todo'},
     quote:{file:'refatrix-quote.html',name:'견적 작성',desc:'견적·매출전환'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
     orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이',desc:'즉시매출 KPI'},
-    funnel:{file:'refatrix-funnel.html',name:'수주 흐름 세부',desc:'드릴다운'},
+    funnel:{file:'refatrix-funnel.html',name:'견적 요청',desc:'요청 SKU',tab:'quotes'},
+    funnelImm:{file:'refatrix-funnel.html',name:'즉시 매출',desc:'발행 가능',tab:'immediate'},
+    funnelShort:{file:'refatrix-funnel.html',name:'부족·발주',desc:'SKU 부족',tab:'shortage'},
+    funnelDev:{file:'refatrix-funnel.html',name:'개발 필요',desc:'개발요청',tab:'dev'},
     sales:{file:'refatrix-sales.html',name:'매출 등록',desc:'인보이스',tab:'sale'},
     saleslist:{file:'refatrix-sales.html',name:'매출 목록',desc:'발행 내역',tab:'list'},
     salesshort:{file:'refatrix-sales.html',name:'부족 / 주문',desc:'부족·발주 근거',tab:'short'},
@@ -20,9 +25,18 @@
     shortage:{file:'refatrix-shortage.html',name:'부족분',desc:'발주 근거'},
     devrequest:{file:'refatrix-devrequest.html',name:'개발 요청',desc:'경쟁사코드 대응'},
     pipeline:{file:'refatrix-pipeline.html',name:'영업활동',desc:'칸반·미팅'},
-    customers:{file:'refatrix-customers.html',name:'고객',desc:'고객·외상'},
+    customers:{file:'refatrix-customers.html',name:'고객',desc:'고객·외상',tab:'list'},
+    custTeam:{file:'refatrix-customers.html',name:'고객 팀권한',desc:'팀 가시성',tab:'team'},
+    custApprove:{file:'refatrix-customers.html',name:'고객 수정 승인',desc:'수정 승인',tab:'approve'},
     targets:{file:'refatrix-targets.html',name:'매출목표',desc:'목표·달성'},
-    finance:{file:'refatrix-finance.html',name:'재무',desc:'거래·캐시플로'},
+    finance:{file:'refatrix-finance.html',name:'재무 · 계좌',desc:'계좌·잔액',tab:'acc'},
+    finNew:{file:'refatrix-finance.html',name:'거래 등록',desc:'수입·지출',tab:'new'},
+    finTxn:{file:'refatrix-finance.html',name:'거래 목록',desc:'내역·수정',tab:'txn'},
+    finPay:{file:'refatrix-finance.html',name:'반제(입금)',desc:'AR 수금',tab:'pay'},
+    finFixed:{file:'refatrix-finance.html',name:'고정비',desc:'정기거래',tab:'fixed'},
+    finCash:{file:'refatrix-finance.html',name:'현금흐름',desc:'계획vs실적',tab:'cash'},
+    finFx:{file:'refatrix-finance.html',name:'환율',desc:'USD→MXN',tab:'fx'},
+    finApprove:{file:'refatrix-finance.html',name:'재무 승인 대기',desc:'거래 승인',tab:'approve'},
     settlement:{file:'refatrix-settlement.html',name:'수금/정산',desc:'AR·정산차액'},
     budget:{file:'refatrix-budget.html',name:'예산',desc:'예산 계획'},
     importcost:{file:'refatrix-importcost.html',name:'수입원가',desc:'부대비용·원가'},
@@ -40,24 +54,27 @@
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
-    pipeline:'pipeline', customers:'customers', targets:'targets',
-    finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', import:'inventory',
+    pipeline:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
+    finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions',
+    boardNotice:null, boardTodo:null,
+    funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
+    settlement:'settlement', budget:'budget', importcost:'inventory', import:'inventory',
     products:'products', marketing:'marketing',
     users:'__director__', company:'__director__'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr']},
-    {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','funnelImm','funnelShort','funnelDev','pipeline','customers','targets','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','saleslist','salesshort','salesapprove','customers','stock','shortage','settlement','importcost','import']},
-    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget']},
+    {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
-    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company']}
+    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo']},
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove']}
   ];
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
-  var SHARED={devrequest:1, orderfunnel:1, funnel:1, import:1, importcost:1, customers:1, settlement:1};
+  var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1};
 
   var sess=null, sum=null, openGroup=null;
   function getSession(){
@@ -75,13 +92,15 @@
     if(Array.isArray(pk)) return pk.some(function(k){return have.indexOf(k)>=0;});
     return have.indexOf(pk)>=0;
   }
+  // 같은 파일을 공유하는 탭-화면들의 기본 탭(해시 tab 없을 때)
+  var FILE_DEFAULT_TAB={'refatrix-sales.html':'sale','refatrix-finance.html':'acc','refatrix-board.html':'cal','refatrix-funnel.html':'quotes','refatrix-customers.html':'list'};
   function curScreen(){
     var f=(location.pathname.split('/').pop()||'').toLowerCase();
-    // 같은 파일을 공유하는 탭-화면은 해시의 tab 으로 구분(매출 등록/목록/부족/승인)
-    if(f==='refatrix-sales.html'){
-      var tab='sale'; try{ var hp=new URLSearchParams(location.hash.slice(1)); tab=hp.get('tab')||'sale'; }catch(e){}
-      for(var sk in SCREENS){ if(SCREENS[sk].file.toLowerCase()===f && (SCREENS[sk].tab||'sale')===tab) return sk; }
-      return 'sales';
+    if(FILE_DEFAULT_TAB[f]){
+      var tab=FILE_DEFAULT_TAB[f]; try{ var hp=new URLSearchParams(location.hash.slice(1)); tab=hp.get('tab')||FILE_DEFAULT_TAB[f]; }catch(e){}
+      for(var sk in SCREENS){ if(SCREENS[sk].file.toLowerCase()===f && (SCREENS[sk].tab||FILE_DEFAULT_TAB[f])===tab) return sk; }
+      // 폴백: 그 파일의 첫 화면 키
+      for(var sk2 in SCREENS){ if(SCREENS[sk2].file.toLowerCase()===f) return sk2; }
     }
     for(var k in SCREENS){ if(SCREENS[k].file.toLowerCase()===f) return k; }
     return null;

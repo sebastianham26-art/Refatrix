@@ -143,7 +143,7 @@
   </div>
 
   <div class="hidden" id="app">
-    <div class="tabs">
+    <div class="tabs" style="display:none">
       <div class="tab on" id="tabCal" onclick="showTab('cal')">일정</div>
       <div class="tab" id="tabNotice" onclick="showTab('notice')">공지<span class="b hidden" id="noticeBadge"></span></div>
       <div class="tab" id="tabTodo" onclick="showTab('todo')">할 일<span class="b hidden" id="todoBadge"></span></div>
@@ -221,6 +221,7 @@
       try{ users=(await fetch(session.api+'/api/todo-users',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){users=[];}
       if(isDirector){ try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){teams=[];} }
       renderForms();loadCal();loadNotices();loadTodos();
+      applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -231,6 +232,12 @@
       $('pane'+x.charAt(0).toUpperCase()+x.slice(1)).classList.toggle('hidden',x!==t);
     });
   }
+  // 헤더(트리) 딥링크: #tab=cal/notice/todo
+  function applyHashTab(){
+    var t='cal'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'cal'; }catch(e){}
+    showTab(['cal','notice','todo'].indexOf(t)>=0?t:'cal');
+  }
+  window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')) applyHashTab(); });
 
   function renderForms(){
     const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');

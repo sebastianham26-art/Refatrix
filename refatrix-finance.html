@@ -93,7 +93,7 @@
     <!-- 환율 배너 -->
     <div id="fxBanner" style="margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13px;color:var(--muted)">환율 불러오는 중…</div>
 
-    <div class="tabs">
+    <div class="tabs" style="display:none">
       <div class="tab on" id="tabAcc">계좌</div>
       <div class="tab" id="tabNew">거래 등록</div>
       <div class="tab" id="tabTxn">거래 목록</div>
@@ -335,6 +335,7 @@
       $('t-date').value=new Date().toISOString().slice(0,10);
       if(!isDirector())$('accAddBtn').classList.add('hidden');
       await loadFx(); await loadCats(); await loadAccounts();
+      applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -1411,6 +1412,13 @@
     if(w==='approve'){loadApprovals();loadChangeReqs();}
     if(w==='acc')loadAccounts();
   }
+  // 헤더(트리) 딥링크: #tab=acc/new/txn/pay/fixed/cash/fx/approve
+  function applyHashTab(){
+    var t='acc'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'acc'; }catch(e){}
+    var valid=['acc','new','txn','pay','fixed','cash','fx','approve'];
+    showTab(valid.indexOf(t)>=0?t:'acc');
+  }
+  window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')) applyHashTab(); });
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
