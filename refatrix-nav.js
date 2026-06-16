@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260615h loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260615i loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -165,12 +165,17 @@
   function render(){
     var vis=GROUPS.filter(groupVisible);
     var cur=curScreen();
-    // 현재 화면이 속한 그룹 자동 오픈 — 단, 트리에서 넘어올 때 지정한 그룹(g)을 우선
-    if(openGroup===null){
-      var hintG=null; try{ var hp=new URLSearchParams(location.hash.slice(1)); hintG=hp.get('g')||null; }catch(e){}
-      if(hintG && vis.some(function(v){return v.key===hintG && v.screens.indexOf(cur)>=0;})) openGroup=hintG;
-      if(openGroup===null){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ openGroup=vis[i].key; break; } } }
-      if(openGroup===null&&vis[0]) openGroup=vis[0].key;
+    // 현재 화면이 속한 그룹을 항상 연다(트리 g 힌트 우선). 현재 openGroup이 cur를 포함 안 하면 교정.
+    var hintG=null; try{ var hp=new URLSearchParams(location.hash.slice(1)); hintG=hp.get('g')||null; }catch(e){}
+    var resolved=null;
+    if(cur){
+      if(hintG && vis.some(function(v){return v.key===hintG && v.screens.indexOf(cur)>=0;})) resolved=hintG;
+      if(!resolved){ for(var i=0;i<vis.length;i++){ if(vis[i].screens.indexOf(cur)>=0){ resolved=vis[i].key; break; } } }
+    }
+    if(resolved) openGroup=resolved;                       // 현재 화면의 그룹으로 강제(공통 오작동 방지)
+    else if(openGroup===null){                              // 현재 화면을 못 찾을 때만 폴백
+      if(hintG && vis.some(function(v){return v.key===hintG;})) openGroup=hintG;
+      else if(vis[0]) openGroup=vis[0].key;
     }
     var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
