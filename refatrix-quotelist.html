@@ -186,7 +186,7 @@
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기'};
     let html='<table><thead><tr>'
-      +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">IVA포함 총액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
+      +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">견적액 / 실매출액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       const conv=q.status==='converted';
@@ -201,7 +201,15 @@
         +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.sku_count||0)+'</td>'
         +'<td class="r">'+fmtq(q.total_qty)+'</td>'
-        +'<td class="r">'+fmt(q.total_mxn)+'</td>'
+        +'<td class="r">'+fmt(q.total_mxn)
+          +(q.status==='converted' ? (function(){
+              var rz=Number(q.sale_total||0);
+              if(rz<=0) return '<br><span style="font-size:11px;color:var(--expense);font-weight:700">실매출 0 · 재고부족</span>';
+              if(rz < Number(q.total_mxn)-0.5) return '<br><span style="font-size:11px;color:#9a6a1a;font-weight:700">실매출 '+fmt(rz)+' · 부분</span>';
+              return '<br><span style="font-size:11px;color:var(--income);font-weight:700">실매출 '+fmt(rz)+'</span>';
+            })() : '')
+          +(q.shortage_cnt>0 ? '<br><span class="hint" style="color:var(--expense)">부족 '+q.shortage_cnt+'건 기록</span>' : '')
+          +'</td>'
         +'<td><span class="st '+q.status+'">'+(stLbl[q.status]||q.status)+'</span></td>'
         +'<td>'+(conv?('<span class="arrow">→ '+esc(q.sale_date||'')+'</span>'+(q.sale_sat_no?'<br><span class="hint">'+esc(q.sale_sat_no)+'</span>':'')):'<span class="hint">미전환</span>')+'</td>'
         +'<td>'+action+'</td>'

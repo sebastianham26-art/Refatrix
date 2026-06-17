@@ -284,11 +284,14 @@ export default async function quoteRoutes(app) {
     if (req.query.guest === '1') conds.push(`q.customer_id IS NULL AND q.status IN ('draft','confirmed')`); // 불특정·미등록
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
-              q.invoice_id, q.guest_name, q.customer_id,
+              q.invoice_id, q.guest_name, q.customer_id, q.created_by,
               c.name AS customer_name,
-              i.inv_date AS sale_date, i.sat_no AS sale_sat_no
+              uc.name AS creator_name,
+              i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
+              (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
+         LEFT JOIN users uc ON uc.id=q.created_by
          LEFT JOIN sales_invoices i ON i.id=q.invoice_id
         WHERE ${conds.join(' AND ')}
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
@@ -297,8 +300,11 @@ export default async function quoteRoutes(app) {
         id: r.id, quote_no: r.quote_no, quote_date: d10(r.quote_date), status: r.status,
         total_mxn: Number(r.total_mxn), total_qty: Number(r.total_qty), sku_count: r.sku_count,
         invoice_id: r.invoice_id, sale_date: r.sale_date ? d10(r.sale_date) : null, sale_sat_no: r.sale_sat_no || null,
+        sale_total: (r.status === 'converted') ? Number(r.sale_total || 0) : null,
+        shortage_cnt: Number(r.shortage_cnt || 0),
         is_guest: r.customer_id == null,
         party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
+        creator_name: r.creator_name || null,
         open: ['draft', 'confirmed'].includes(r.status),
       })),
     };

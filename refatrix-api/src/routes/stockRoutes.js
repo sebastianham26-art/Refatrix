@@ -26,16 +26,20 @@ async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, 
 
 export default async function stockRoutes(app) {
   // 부족분 SKU별 집계 (발주 근거) — open 상태 shortage 합산 + 요약(부족/발주)
-  app.get('/api/shortages/by-sku', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async () => {
+  app.get('/api/shortages/by-sku', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async (req) => {
+    const months = String((req.query && req.query.months) || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+    const _a = [];
+    let monthCond = '';
+    if (months.length) { _a.push(months); monthCond = ` AND to_char(sh.occurred_at,'YYYY-MM') = ANY($${_a.length})`; }
     const rows = (await query(
       `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
               SUM(sh.shortage_qty)::numeric AS total_shortage,
               COUNT(*)::int AS cnt,
               MIN(sh.occurred_at) AS first_at, MAX(sh.occurred_at) AS last_at
          FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
-        WHERE sh.status='open'
+        WHERE sh.status='open'${monthCond}
         GROUP BY sh.product_id, p.code, p.name, p.stock_qty
-        ORDER BY total_shortage DESC`)).rows;
+        ORDER BY total_shortage DESC`, _a)).rows;
     // 요약: 미발주(open) vs 발주됨(resolved)
     const sm = (await query(
       `SELECT
