@@ -38,16 +38,24 @@ function teamArrOf(perm) { const vis = visibleTeamIds(perm); return vis === null
 // 월 매출목표(전사 또는 팀 가시성 고객목표 합)
 async function monthTargetOf(perm, ym) {
   const vis = visibleTeamIds(perm);
+  // 회사 전체 월목표(monthly_targets)가 설정돼 있으면 우선 사용
   if (vis === null) {
-    const r = (await query(`SELECT COALESCE(amount,0) AS a FROM monthly_targets WHERE ym=$1`, [ym])).rows[0];
-    let t = r ? Number(r.a) : 0;
-    if (!t) t = Number((await query(`SELECT COALESCE(SUM(amount),0) AS a FROM target_customer_months WHERE ym=$1`, [ym])).rows[0].a);
-    return t;
+    const comp = Number((await query(`SELECT COALESCE(amount,0) AS a FROM monthly_targets WHERE ym=$1`, [ym])).rows[0]?.a || 0);
+    if (comp) return comp;
   }
-  const ta = vis.length ? vis : [-1];
-  return Number((await query(
-    `SELECT COALESCE(SUM(m.amount),0) AS a FROM target_customer_months m JOIN customers c ON c.id=m.customer_id
-      WHERE m.ym=$1 AND c.deleted_at IS NULL AND c.team_id = ANY($2)`, [ym, ta])).rows[0].a);
+  // 팀별 합산: 각 팀의 팀목표(target_team_months), 없으면 그 팀 고객목표(target_customer_months) 합
+  const args = [ym]; let teamFilter = '';
+  if (vis !== null) { args.push(vis.length ? vis : [-1]); teamFilter = ' AND t.id = ANY($2)'; }
+  const r = await query(
+    `SELECT COALESCE(SUM(
+        COALESCE(tt.amount,
+          (SELECT COALESCE(SUM(m.amount),0) FROM target_customer_months m JOIN customers c ON c.id=m.customer_id
+             WHERE m.ym=$1 AND c.team_id=t.id AND c.deleted_at IS NULL))
+      ),0) AS a
+       FROM sales_teams t
+       LEFT JOIN target_team_months tt ON tt.team_id=t.id AND tt.ym=$1
+      WHERE COALESCE(t.is_sales,true)=true${teamFilter}`, args);
+  return Number(r.rows[0].a);
 }
 // 월 매출 실적(ex-IVA 소계, posted)
 async function monthSalesActual(perm, ym) {
@@ -135,6 +143,20 @@ export default async function salesPerfRoutes(app) {
     if (ta) { dp.push(ta); dq += ` AND c.team_id = ANY($1)`; }
     const dr = (await query(dq, dp)).rows[0] || {};
     const devQuote = Number(dr.quote_total) || 0, devNeg = Number(dr.negotiation) || 0, devWon = Number(dr.won) || 0;
+    // 지난 7일 단계 변동(진입−이탈) — 영업활동의 고객 단계변화일(customer_stage_history) 기준
+    let hq = `SELECT s.sort_order,
+                COUNT(*) FILTER (WHERE h.entered_at >= CURRENT_DATE - INTERVAL '7 days')::int AS entered,
+                COUNT(*) FILTER (WHERE h.left_at IS NOT NULL AND h.left_at >= CURRENT_DATE - INTERVAL '7 days')::int AS left_cnt
+              FROM stages s
+              JOIN customer_stage_history h ON h.stage_id=s.id
+              JOIN customers c ON c.id=h.customer_id AND c.deleted_at IS NULL
+              WHERE s.sort_order IN (30,40,50)`;
+    const hp = [];
+    if (ta) { hp.push(ta); hq += ` AND c.team_id = ANY($1)`; }
+    hq += ` GROUP BY s.sort_order`;
+    const hRows = (await query(hq, hp)).rows;
+    const delta = { 30: 0, 40: 0, 50: 0 };
+    for (const r of hRows) delta[Number(r.sort_order)] = (Number(r.entered) || 0) - (Number(r.left_cnt) || 0);
 
     return {
       yms, multi,
@@ -142,7 +164,7 @@ export default async function salesPerfRoutes(app) {
                       : { progress, momPct, locked: true },
       collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false }
                         : { progress: collectProgress, locked: true },
-      pipeline_dev: { quote: devQuote, negotiation: devNeg, won: devWon, total: devQuote },
+      pipeline_dev: { quote: devQuote, negotiation: devNeg, won: devWon, total: devQuote, delta: { quote: delta[30], negotiation: delta[40], won: delta[50] } },
       drilldown: perm.role === 'director' ? true : (perm.dashDrilldown !== false),
     };
   });

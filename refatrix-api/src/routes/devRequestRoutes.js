@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { pageAllowed } from '../permissions.js';
+import { visibleTeamIds } from '../teams.js';
 import { logEvent } from '../audit.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
@@ -382,6 +383,12 @@ export default async function devRequestRoutes(app) {
   // ② 즉시매출 드릴다운: 발행가능(미전환·재고충분 견적) + 이미발행(전환된 견적)
   app.get('/api/dashboard/funnel/immediate', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const months = parseMonths(req);
+    const perm = req.ctx.perm;
+    const isDirector = perm.role === 'director' || visibleTeamIds(perm) === null;
+    // 권한: 디렉터/상위는 owner/team 필터 자유, 영업담당자는 본인 매출만
+    let ownerId = req.query.owner_id ? Number(req.query.owner_id) : null;
+    let teamId = req.query.team_id ? Number(req.query.team_id) : null;
+    if (!isDirector) { ownerId = Number(perm.userId); teamId = null; }
     // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적 (+ 견적 후 경과일)
     const able = (await query(
       `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate,
@@ -394,19 +401,33 @@ export default async function devRequestRoutes(app) {
         GROUP BY q.id, q.quote_no, q.quote_date, c.name, q.guest_name, q.customer_id
         HAVING COUNT(*) FILTER (WHERE ql.stock_flag='ok') > 0
         ORDER BY q.quote_date ASC`, [months])).rows;   // 오래된 것 먼저(팔로업 우선)
-    // 이미 발행: 전환된(인보이스 생성) 견적
+    // 이미 발행: 전환된(인보이스 생성) 견적 — 담당자/팀 필터 적용
+    const dargs = [months]; const dconds = [];
+    if (ownerId) { dargs.push(ownerId); dconds.push(`i.owner_id = $${dargs.length}`); }
+    if (teamId) { dargs.push(teamId); dconds.push(`c.team_id = $${dargs.length}`); }
     const done = (await query(
       `SELECT q.id, q.quote_no, q.invoice_id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, i.sat_no, c.name AS customer_name, q.guest_name, q.customer_id,
-              i.total_mxn,
+              i.total_mxn, u.name AS owner_name,
               (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_sku,
               (SELECT COALESCE(SUM(sl.qty),0)::numeric FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_qty
          FROM quotes q JOIN sales_invoices i ON i.id=q.invoice_id LEFT JOIN customers c ON c.id=q.customer_id
+              LEFT JOIN users u ON u.id=i.owner_id
         WHERE q.deleted_at IS NULL AND q.status='converted' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
-        ORDER BY q.quote_date DESC`, [months])).rows;
+              ${dconds.length ? 'AND ' + dconds.join(' AND ') : ''}
+        ORDER BY q.quote_date DESC`, dargs)).rows;
+    // 디렉터용 필터 옵션(팀·담당자)
+    let filterOpts = null;
+    if (isDirector) {
+      const teams = (await query(`SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true ORDER BY sort_order, id`)).rows;
+      const owners = (await query(
+        `SELECT DISTINCT u.id, u.name FROM users u JOIN sales_invoices i ON i.owner_id=u.id
+          WHERE u.deleted_at IS NULL ORDER BY u.name`)).rows;
+      filterOpts = { teams: teams.map((t) => ({ id: Number(t.id), name: t.name })), owners: owners.map((o) => ({ id: Number(o.id), name: o.name })) };
+    }
     return {
-      months,
+      months, can_filter: isDirector, applied: { owner_id: ownerId, team_id: teamId }, filters: filterOpts,
       able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
-      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
+      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, owner_name: o.owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
     };
   });
 

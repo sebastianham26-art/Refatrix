@@ -227,7 +227,7 @@ export default async function stockRoutes(app) {
         LIMIT ${limit}`, args)).rows;
     return {
       items: rows.map((r) => ({
-        id: r.id, product_id: r.product_id, event_no: r.event_no, ctr_code: r.ctr_code, product_name: r.product_name,
+        id: Number(r.id), product_id: r.product_id, event_no: r.event_no == null ? null : Number(r.event_no), ctr_code: r.ctr_code, product_name: r.product_name,
         move_type: r.move_type, qty: Number(r.qty), unit_cost_mxn: r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null,
         ref: r.ref, note: r.note, moved_at: r.moved_at,
         origin: r.sales_invoice_id ? '매출' : (r.batch_id ? '수입' : (r.source === 'manual' ? '수동' : '기타')),

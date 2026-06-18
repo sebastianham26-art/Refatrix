@@ -91,6 +91,7 @@
   let cat='quotes', months=[], FYEAR=new Date().getFullYear();
   let openRows={};
   let invCache={};
+  let immOwner='', immTeam='';
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -185,9 +186,25 @@
 
   // ② 즉시 매출 → 발행가능 / 이미발행
   async function loadImmediate(){
-    const d=await fetch(session.api+'/api/dashboard/funnel/immediate?months='+mq(),{headers:auth()}).then(r=>r.json());
+    const qp='months='+mq()+(immTeam?('&team_id='+immTeam):'')+(immOwner?('&owner_id='+immOwner):'');
+    const d=await fetch(session.api+'/api/dashboard/funnel/immediate?'+qp,{headers:auth()}).then(r=>r.json());
     const able=d.able||[], done=d.done||[];
-    let h='<div class="grp">인보이스 발행 가능 (재고 충분·미전환 견적)</div>';
+    let h='';
+    // 디렉터/상위: 팀·담당자 필터
+    if(d.can_filter && d.filters){
+      const fo=d.filters;
+      let tsel='<select onchange="setImmFilter(\'team\',this.value)" style="font-size:12px;padding:4px 6px"><option value="">전체 팀</option>';
+      (fo.teams||[]).forEach(t=>{ tsel+='<option value="'+t.id+'"'+(String(immTeam)===String(t.id)?' selected':'')+'>'+esc(t.name)+'</option>'; });
+      tsel+='</select>';
+      let osel='<select onchange="setImmFilter(\'owner\',this.value)" style="font-size:12px;padding:4px 6px"><option value="">전체 담당자</option>';
+      (fo.owners||[]).forEach(o=>{ osel+='<option value="'+o.id+'"'+(String(immOwner)===String(o.id)?' selected':'')+'>'+esc(o.name)+'</option>'; });
+      osel+='</select>';
+      h+='<div class="hint" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">매출 확정 목록 필터: '+tsel+' '+osel
+        +(immTeam||immOwner?' <a class="lnk" onclick="setImmFilter(\'clear\')">필터 해제</a>':'')+'</div>';
+    } else if(d.can_filter===false){
+      h+='<div class="hint" style="margin-bottom:8px">본인 담당 매출만 표시됩니다.</div>';
+    }
+    h+='<div class="grp">인보이스 발행 가능 (재고 충분·미전환 견적)</div>';
     if(!able.length) h+='<div class="hint">발행 가능한 미전환 견적이 없습니다.</div>';
     else{ h+='<div class="hint">견적 후 경과일이 길수록 팔로업이 시급합니다 (오래된 순). <span style="color:var(--expense);font-weight:700">7일↑ 주의 · 14일↑ 위험</span></div>';
       h+='<table><thead><tr><th>견적번호</th><th>견적일</th><th class="r">경과일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
@@ -200,12 +217,18 @@
       h+='</tbody></table>'; }
     h+='<div class="grp" style="margin-top:16px">이미 발행 (인보이스 생성됨)</div>';
     if(!done.length) h+='<div class="hint">발행된 인보이스가 없습니다.</div>';
-    else{ h+='<div class="hint">인보이스를 클릭하면 SKU별 라인을 펼칩니다.</div><table><thead><tr><th>견적</th><th>인보이스일</th><th>SAT</th><th>고객</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
-      done.forEach(o=>{ h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+esc(o.inv_date||'')+'</td><td>'+esc(o.sat_no||'')+'</td><td>'+esc(o.customer_name||'')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
-        if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="7">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
+    else{ h+='<div class="hint">인보이스를 클릭하면 SKU별 라인을 펼칩니다.</div><table><thead><tr><th>견적</th><th>인보이스일</th><th>SAT</th><th>고객</th><th>담당</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
+      done.forEach(o=>{ h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+esc(o.inv_date||'')+'</td><td>'+esc(o.sat_no||'')+'</td><td>'+esc(o.customer_name||'')+'</td><td class="hint">'+esc(o.owner_name||'')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
+        if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="8">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
       });
       h+='</tbody></table>'; }
     $('body').innerHTML=h;
+  }
+  function setImmFilter(kind,val){
+    if(kind==='clear'){ immTeam=''; immOwner=''; }
+    else if(kind==='team'){ immTeam=val||''; }
+    else if(kind==='owner'){ immOwner=val||''; }
+    loadImmediate();
   }
   async function toggleInvoice(id){
     if(openRows['i'+id]){ delete openRows['i'+id]; return loadImmediate(); }
@@ -369,6 +392,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618u"></script>
+<script src="refatrix-nav.js?v=20260618v"></script>
 </body>
 </html>

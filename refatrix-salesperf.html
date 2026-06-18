@@ -181,6 +181,11 @@
     const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
     location.href=SCREEN[s]+hash;
   }
+  function goFunnelImmediate(){
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+    const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}))+'&tab=immediate';
+    location.href='refatrix-funnel.html'+hash;
+  }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -284,13 +289,15 @@
         +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
         +'<div class="cardfoot hint">수금예상(인보이스 외상일 기준, IVA 포함) 대비 실제 수금(실현) · '+lbl+'</div></div>';
-    // 카드3 고객개발 — 당월 견적/협상/수주
+    // 카드3 고객개발 — 당월 견적/협상/수주 + 지난주 변동
+    const dd=d.delta||{};
+    const dchip=(n)=>{ if(n==null||n===0) return '<div class="l" style="color:var(--muted)">±0 (지난주)</div>'; const up=n>0; return '<div class="l" style="color:'+(up?'var(--income)':'var(--expense)')+'">'+(up?'+':'')+n+' (지난주)</div>'; };
     const c3='<div class="cardbody"><div class="bigv">'+(d.quote||0)+'<small> 건</small></div><div class="mom flat"></div>'
-      +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.quote||0)+'</div><div class="l">견적</div></div>'
-      +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div></div>'
-      +'<div class="devbox"><div class="n">'+(d.won||0)+'</div><div class="l">수주</div></div></div>'
-      +'<div class="cardfoot hint">당월 견적 기준 · 견적 → 협상(미결) → 수주(전환)</div></div>';
-    const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="go(\'sales\')">매출 목록 보기 →</a>';
+      +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.quote||0)+'</div><div class="l">견적</div>'+dchip(dd.quote)+'</div>'
+      +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div>'+dchip(dd.negotiation)+'</div>'
+      +'<div class="devbox"><div class="n">'+(d.won||0)+'</div><div class="l">수주</div>'+dchip(dd.won)+'</div></div>'
+      +'<div class="cardfoot hint">당월 견적 기준 · 작은 숫자는 지난 7일 단계 변동(영업활동 고객 단계변화일)</div></div>';
+    const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="goFunnelImmediate()">매출 확정 목록 보기 →</a>';
     const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a>';
     const lnkPipe  = noDrill ? '' : ' <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a>';
     $('cards').innerHTML=
@@ -511,6 +518,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618u"></script>
+<script src="refatrix-nav.js?v=20260618v"></script>
 </body>
 </html>
