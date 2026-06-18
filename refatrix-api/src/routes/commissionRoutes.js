@@ -14,15 +14,21 @@ function nextMonth15(ym) {
 
 export default async function commissionRoutes(app) {
   // ── 커미션 대상 영업사원 + 기본률 목록 (디렉터) ──
-  app.get('/api/commission/agents', { preHandler: [authGuard, requireDirector] }, async () => {
-    const rows = (await query(
-      `SELECT u.id AS user_id, u.name, u.role, t.name AS team_name,
-              ca.default_rate, ca.active, ca.note
-         FROM users u
-         LEFT JOIN sales_teams t ON t.id=u.team_id
-         LEFT JOIN commission_agents ca ON ca.user_id=u.id
-        WHERE u.deleted_at IS NULL AND u.role IN ('sales','sales_support')
-        ORDER BY t.sort_order NULLS LAST, u.name`)).rows;
+  app.get('/api/commission/agents', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT u.id AS user_id, u.name, u.role, t.name AS team_name,
+                ca.default_rate, ca.active, ca.note
+           FROM users u
+           LEFT JOIN sales_teams t ON t.id=u.team_id
+           LEFT JOIN commission_agents ca ON ca.user_id=u.id
+          WHERE u.deleted_at IS NULL AND u.role IN ('sales','sales_support')
+          ORDER BY t.sort_order NULLS LAST, u.name`)).rows;
+    } catch (e) {
+      if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: '커미션 테이블이 없습니다. 서버에서 마이그레이션(npm run migrate · 0055)을 실행하세요.' });
+      throw e;
+    }
     return {
       items: rows.map((r) => ({
         user_id: r.user_id, name: r.name, role: r.role, team_name: r.team_name,
@@ -87,8 +93,10 @@ export default async function commissionRoutes(app) {
     if (!isDir) { args.push(Number(perm.userId)); ownerCond = ` AND i.owner_id=$${args.length}`; }
     else if (req.query.agent_id) { args.push(Number(req.query.agent_id)); ownerCond = ` AND i.owner_id=$${args.length}`; }
 
-    const rows = (await query(
-      `SELECT i.id AS invoice_id, i.sat_no, i.inv_date, i.subtotal_mxn, i.total_mxn,
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT i.id AS invoice_id, i.sat_no, i.inv_date, i.subtotal_mxn, i.total_mxn,
               i.owner_id, ag.name AS agent_name,
               c.id AS customer_id, c.name AS customer_name, c.code AS customer_code,
               ca.default_rate, ccr.rate AS cust_rate,
@@ -107,6 +115,10 @@ export default async function commissionRoutes(app) {
          LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
         WHERE i.status <> 'deleted'${ownerCond}
         ORDER BY i.inv_date DESC, i.id DESC`, args)).rows;
+    } catch (e) {
+      if (e && e.code === '42P01') return { view, is_director: isDir, agent_id: null, not_migrated: true, summary: { invoice_count: 0, total_base: 0, total_expected: 0, total_confirmed: 0, total_paid: 0, total_unpaid: 0 }, groups: [], by_agent: null };
+      throw e;
+    }
 
     // 인보이스별 커미션 계산
     const lines = rows.map((r) => {
