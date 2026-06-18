@@ -74,6 +74,7 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const fmtm=(n)=> '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -122,24 +123,26 @@
         +'</div>';
     }
     if(!rows.length){ $('listWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">미해소 부족분이 없습니다.</div>'; return; }
-    let html=head+'<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">부족분 합계</th><th class="r">건수</th><th>최근 발생</th></tr></thead><tbody>';
+    let html=head+'<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">부족분 합계</th><th class="r">매출 불가 금액</th><th class="r">건수</th><th>최근 발생</th></tr></thead><tbody>';
     rows.forEach((r,i)=>{
       html+='<tr style="cursor:pointer" onclick="toggle('+i+','+r.product_id+')">'
         +'<td><b>'+esc(r.ctr_code||'')+'</b></td>'
         +'<td>'+esc(r.product_name||'')+'</td>'
         +'<td class="r">'+fmtq(r.stock_qty)+'</td>'
         +'<td class="r short">'+fmtq(r.total_shortage)+'</td>'
+        +'<td class="r" style="color:var(--expense);font-weight:700">'+fmtm(r.total_amount_mxn)+'</td>'
         +'<td class="r">'+r.cnt+'</td>'
         +'<td>'+esc(r.last_at||'')+'</td>'
         +'</tr>';
       if(openDetail[r.product_id]){
         const dets=openDetail[r.product_id];
-        html+='<tr class="detail"><td colspan="6">'+(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+' ('+esc(x.occurred_at||'')+')').join('<br>'):'세부 내역 불러오는 중…')+'</td></tr>';
+        html+='<tr class="detail"><td colspan="7">'+(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+' ('+esc(x.occurred_at||'')+')').join('<br>'):'세부 내역 불러오는 중…')+'</td></tr>';
       }
     });
     html+='</tbody></table>';
     const total=rows.reduce((a,b)=>a+Number(b.total_shortage),0);
-    html+='<div class="hint" style="margin-top:8px">SKU '+rows.length+'종 · 총 부족 '+fmtq(total)+'개. 행 클릭 시 요청 고객 내역 표시.</div>';
+    const totalAmt=rows.reduce((a,b)=>a+Number(b.total_amount_mxn||0),0);
+    html+='<div class="hint" style="margin-top:8px">SKU '+rows.length+'종 · 총 부족 '+fmtq(total)+'개 · 매출 불가 금액 합계 '+fmtm(totalAmt)+'. 행 클릭 시 요청 고객 내역 표시.</div>';
     $('listWrap').innerHTML=html;
   }
   async function toggle(i,pid){

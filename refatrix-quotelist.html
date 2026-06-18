@@ -412,11 +412,16 @@
       }
       m.className='msg ok';
       let parts=[];
-      if(d.invoice_id) parts.push('인보이스 #'+d.invoice_id);
-      if(d.shortages&&d.shortages.length) parts.push('부족 '+d.shortages.length+'건 기록');
-      if(d.dev_requests) parts.push('개발요청 '+d.dev_requests+'건 생성');
-      m.textContent='전환 완료 — '+(parts.join(' · ')||'처리됨');
-      setTimeout(()=>{ closeConvert(); load(); },1400);
+      if(d.invoice_id) parts.push('인보이스 #'+d.invoice_id+' 발행(가용재고분)');
+      else parts.push('가용재고 없음 — 매출 0');
+      if(d.shortages&&d.shortages.length){
+        const amt=Number(d.shortage_amount||0);
+        parts.push('부족 '+d.shortages.length+'건 기록'+(amt>0?(' · 매출 불가 $'+amt.toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})):''));
+      }
+      if(d.dev_requests) parts.push('개발요청 '+d.dev_requests+'건');
+      if(!d.invoice_id) m.className='msg err';
+      m.textContent='견적 종료 — '+parts.join(' · ');
+      setTimeout(()=>{ closeConvert(); load(); }, d.invoice_id?1600:2400);
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('cvBtn').disabled=false;}
   }

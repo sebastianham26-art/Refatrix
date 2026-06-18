@@ -37,7 +37,13 @@ export default async function salesRoutes(app) {
         const avail = Math.max(Number(p.stock_qty), 0);
         const fulfill = Math.min(reqQty, avail);
         const short = r3(reqQty - fulfill);
-        if (short > 0) shortages.push({ product_id: p.id, code: p.code, name: p.name, requested: reqQty, available: avail, shortage: short });
+        if (short > 0) {
+          // 매출 불가 금액(IVA 포함): 부족 수량 × 단가(할인반영) × 1.16
+          const discRateS = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
+          const shLine = computeLine({ qty: short, listPrice: p.list_price, discountRate: discRateS });
+          const shAmount = round2(Number(shLine.lineAmountMxn) * 1.16);
+          shortages.push({ product_id: p.id, code: p.code, name: p.name, requested: reqQty, available: avail, shortage: short, amount_mxn: shAmount });
+        }
         if (fulfill > 0) {
           const discRate = (l.discount_rate == null || l.discount_rate === '') ? custDiscount : Number(l.discount_rate);
           const line = computeLine({ qty: fulfill, listPrice: p.list_price, discountRate: discRate, cost: p.avg_cost });
@@ -54,9 +60,9 @@ export default async function salesRoutes(app) {
       if (!computed.length) {
         for (const s of shortages) {
           await c.query(
-            `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, occurred_at, created_by)
-             VALUES ($1,$2,NULL,$3,0,$4,$5,$6)`,
-            [s.product_id, customer_id, s.requested, s.shortage, inv_date, userId]);
+            `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, shortage_amount_mxn, occurred_at, created_by)
+             VALUES ($1,$2,NULL,$3,0,$4,$5,$6,$7)`,
+            [s.product_id, customer_id, s.requested, s.shortage, s.amount_mxn || 0, inv_date, userId]);
         }
         return { id: null, invoiced: false, shortages, due };
       }
@@ -97,9 +103,9 @@ export default async function salesRoutes(app) {
       // 부족분 기록 (인보이스 연결)
       for (const s of shortages) {
         await c.query(
-          `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, occurred_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [s.product_id, customer_id, inv.id, s.requested, r3(s.requested - s.shortage), s.shortage, inv_date, userId]);
+          `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, shortage_amount_mxn, occurred_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [s.product_id, customer_id, inv.id, s.requested, r3(s.requested - s.shortage), s.shortage, s.amount_mxn || 0, inv_date, userId]);
       }
 
       // 입금 예정(AR) — transactions plan, 인보이스당 한 건, 총액(IVA 포함)

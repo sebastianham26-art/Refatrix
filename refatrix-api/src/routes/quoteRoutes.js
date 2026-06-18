@@ -555,25 +555,17 @@ export default async function quoteRoutes(app) {
         }
       });
     }
-    // 전량 재고부족(매칭 제품은 있으나 출고분 0) → 매출 0이므로 '전환'하지 않고 미결 유지
-    //   부족분은 이미 기록됨(stock_shortages). 입고 후 다시 전환 가능.
-    const fullyShort = matched.length > 0 && !invoiceId;
-    if (fullyShort) {
-      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { fully_short: true, dev_requests: devIds.length } });
-      return {
-        ok: true, converted: false, fully_short: true, invoice_id: null, invoiced: false,
-        shortages: (sale && sale.shortages) || [],
-        dev_requests: devIds.length,
-        note: '재고가 전혀 없어 매출이 0입니다. 부족분이 기록되었으니 입고 후 다시 매출 전환하세요. (견적은 미결 상태로 유지됩니다)',
-        sale,
-      };
-    }
+    // 가용재고만 매출 확정, 부족분은 금액과 함께 기록. 견적은 종료(converted).
+    //   - 일부 재고: 가용분 인보이스 + 나머지 부족분 기록 + 종료
+    //   - 재고 전무: 인보이스 없음(매출 0) + 전량 부족분 기록 + 종료
+    const sShort = (sale && sale.shortages) || [];
     await query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`, [invoiceId || null, customerId, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, dev_requests: devIds.length } });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, shortages: sShort.length, dev_requests: devIds.length } });
     return {
       ok: true, converted: true, invoice_id: invoiceId,
-      invoiced: sale ? (sale.invoiced !== false) : false,
-      shortages: (sale && sale.shortages) || [],
+      invoiced: !!invoiceId,
+      shortages: sShort,
+      shortage_amount: sShort.reduce((s, x) => s + (Number(x.amount_mxn) || 0), 0),
       dev_requests: devIds.length,
       sale,
     };

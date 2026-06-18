@@ -34,6 +34,7 @@ export default async function stockRoutes(app) {
     const rows = (await query(
       `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
               SUM(sh.shortage_qty)::numeric AS total_shortage,
+              SUM(sh.shortage_amount_mxn)::numeric AS total_amount_mxn,
               COUNT(*)::int AS cnt,
               MIN(sh.occurred_at) AS first_at, MAX(sh.occurred_at) AS last_at
          FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
@@ -56,7 +57,7 @@ export default async function stockRoutes(app) {
       items: rows.map((r) => ({
         product_id: r.product_id, ctr_code: r.ctr_code, product_name: r.product_name,
         stock_qty: r.stock_qty != null ? Number(r.stock_qty) : null,
-        total_shortage: Number(r.total_shortage), cnt: r.cnt,
+        total_shortage: Number(r.total_shortage), total_amount_mxn: Number(r.total_amount_mxn || 0), cnt: r.cnt,
         first_at: r.first_at ? d10(r.first_at) : null, last_at: r.last_at ? d10(r.last_at) : null,
       })),
     };
