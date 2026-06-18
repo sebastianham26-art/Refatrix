@@ -84,11 +84,13 @@
 </div>
 
 <!-- 대상·지급률 설정(디렉터) -->
-<div class="card hidden" id="rateModal" style="position:fixed;inset:auto 24px 24px auto;max-width:560px;width:92%;z-index:50;box-shadow:0 12px 40px rgba(0,0,0,.25);max-height:80vh;overflow:auto">
+<div class="hidden" id="rateBackdrop" onclick="closeRates()" style="position:fixed;inset:0;background:rgba(20,20,18,.45);z-index:60"></div>
+<div class="card hidden" id="rateModal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);max-width:620px;width:94%;z-index:61;box-shadow:0 18px 50px rgba(0,0,0,.3);max-height:84vh;overflow:auto">
   <div class="card-h">커미션 대상 영업사원 · 기본 지급률(%) <span class="hint" style="float:right;cursor:pointer" onclick="closeRates()">닫기 ✕</span></div>
-  <div class="hint" style="margin-bottom:8px">대상 체크 + 기본률을 입력하고 저장하세요. 고객별 예외율은 추후 연결합니다.</div>
+  <div class="hint" style="margin-bottom:8px">대상에 체크하고 기본률(%)을 입력한 뒤 각 행의 <b>저장</b>을 누르세요. 고객별 예외율은 추후 연결합니다.</div>
   <div id="rateList"><div class="hint">불러오는 중…</div></div>
 </div>
+
 
 <script>
   let session={token:null,user:null,api:''};
@@ -126,12 +128,15 @@
 
   async function loadAgents(){
     try{
-      const d=await fetch(session.api+'/api/commission/agents',{headers:auth()}).then(r=>r.json());
+      const res=await fetch(session.api+'/api/commission/agents',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ window.__agents=[]; window.__agentsErr='목록 조회 실패: '+(d.error||res.status); return; }
+      window.__agentsErr=null;
       const opts=['<option value="">전체 (영업사원별 요약)</option>']
         .concat((d.items||[]).filter(a=>a.is_agent&&a.active).map(a=>'<option value="'+a.user_id+'">'+esc(a.name)+(a.team_name?(' · '+esc(a.team_name)):'')+' ('+a.default_rate+'%)</option>'));
       $('agentSel').innerHTML=opts.join('');
       window.__agents=d.items||[];
-    }catch(e){}
+    }catch(e){ window.__agents=[]; window.__agentsErr='서버에 연결할 수 없습니다.'; }
   }
 
   async function loadOverview(){
@@ -199,10 +204,17 @@
   }
 
   // 대상·지급률 설정(디렉터)
-  function openRates(){ $('rateModal').classList.remove('hidden'); renderRates(); }
-  function closeRates(){ $('rateModal').classList.add('hidden'); }
+  async function openRates(){
+    $('rateBackdrop').classList.remove('hidden');
+    $('rateModal').classList.remove('hidden');
+    $('rateList').innerHTML='<div class="hint">불러오는 중…</div>';
+    await loadAgents();   // 열 때 최신 목록 재조회(초기 실패 대비)
+    renderRates();
+  }
+  function closeRates(){ $('rateBackdrop').classList.add('hidden'); $('rateModal').classList.add('hidden'); }
   function renderRates(){
     const ags=window.__agents||[];
+    if(!ags.length){ $('rateList').innerHTML='<div class="hint">'+(window.__agentsErr||'커미션 대상이 될 영업사원(역할 sales/sales_support)이 없습니다. 사용자 관리에서 역할을 확인하세요.')+'</div>'; return; }
     $('rateList').innerHTML='<table><thead><tr><th>영업사원</th><th>팀</th><th>대상</th><th>기본률(%)</th><th></th></tr></thead><tbody>'
       +ags.map(a=>'<tr data-uid="'+a.user_id+'"><td>'+esc(a.name)+'</td><td class="hint">'+esc(a.team_name||'-')+'</td>'
         +'<td><input type="checkbox" class="r-on" '+(a.is_agent&&a.active?'checked':'')+'></td>'
