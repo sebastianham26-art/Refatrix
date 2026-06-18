@@ -102,7 +102,7 @@
 
     <!-- 내역 -->
     <div class="card">
-      <div class="card-h">이동 내역</div>
+      <div class="card-h">이동 내역 <button class="btn ghost sm" style="float:right;font-size:11.5px;padding:3px 10px" onclick="openValueAudit()">재고금액 검토</button></div>
       <div id="stockSummary" class="stock-sum"><span class="hint">재고 요약 불러오는 중…</span></div>
       <div class="filters">
         <div><label>유형</label><select id="fType" onchange="loadList()"><option value="">전체</option><option value="in">입고</option><option value="out">출고</option><option value="adjust">조정</option></select></div>
@@ -116,7 +116,26 @@
   </div>
 </div>
 
-<!-- 수동입고 수정 모달 -->
+<!-- 재고금액 검토 모달 -->
+<div id="vaModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:200;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);max-height:calc(100vh - 80px);display:flex;flex-direction:column">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--line,#e6e1d6);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:800;color:var(--brand);font-size:15px">재고금액 검토</div>
+      <button class="btn ghost sm" onclick="closeValueAudit()">닫기 ✕</button>
+    </div>
+    <div style="padding:14px 18px;overflow:auto;flex:1">
+      <div id="vaSummary" class="hint">불러오는 중…</div>
+      <div id="vaList" style="margin-top:10px"></div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--line,#e6e1d6);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span id="vaMsg" style="font-size:12px;margin-right:auto"></span>
+      <button class="btn ghost sm" id="vaZeroUnsup" onclick="resetValue('unsupported')">근거 없는 원가 0으로</button>
+      <button class="btn ghost sm" id="vaZeroAll" onclick="resetValue('all')" style="border-color:var(--expense);color:var(--expense)">전체 0으로</button>
+    </div>
+  </div>
+</div>
+
+<!-- 수동입고 수정 모달 (이전) -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:200;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:18px 20px">
     <div style="font-weight:800;color:var(--brand);font-size:15px;margin-bottom:4px">이벤트 일괄 수정</div>
@@ -358,6 +377,36 @@
     }
   }
   let editEventNo=null;
+  async function openValueAudit(){
+    $('vaModal').style.display='flex'; $('vaMsg').textContent=''; $('vaSummary').textContent='불러오는 중…'; $('vaList').innerHTML='';
+    try{
+      const d=await fetch(session.api+'/api/stock/value-audit',{headers:auth()}).then(r=>r.json());
+      $('vaSummary').innerHTML='재고금액 합계 <b style="color:var(--brand)">$'+fmt(d.total)+'</b> · '
+        +'근거 있음(수입 입고) <b style="color:var(--income)">$'+fmt(d.supported)+'</b> · '
+        +'근거 없음 <b style="color:var(--expense)">$'+fmt(d.unsupported)+'</b>';
+      if(!d.items.length){ $('vaList').innerHTML='<div class="hint" style="margin-top:8px">재고금액이 있는 제품이 없습니다.</div>'; return; }
+      let h='<div style="max-height:340px;overflow:auto;border:1px solid var(--line,#e6e1d6);border-radius:8px"><table style="margin:0;font-size:12px"><thead><tr><th>제품</th><th class="r">재고수량</th><th class="r">평균원가</th><th class="r">재고금액</th><th>근거</th></tr></thead><tbody>';
+      d.items.forEach(p=>{ h+='<tr><td><b>'+esc(p.code)+'</b> <span class="hint">'+esc(p.name||'')+'</span></td>'
+        +'<td class="r">'+fmtq(p.stock_qty)+'</td><td class="r">'+fmt(p.avg_cost)+'</td><td class="r"><b>'+fmt(p.value)+'</b></td>'
+        +'<td>'+(p.has_import?'<span style="color:var(--income)">수입 입고</span>':'<span style="color:var(--expense)">근거 없음</span>')+'</td></tr>'; });
+      h+='</tbody></table></div><div class="hint" style="margin-top:6px">평균원가는 수입 입고 시에만 설정됩니다. 수입 이력이 없는 제품의 재고금액은 근거가 없으므로 0으로 처리할 수 있습니다.</div>';
+      $('vaList').innerHTML=h;
+    }catch(e){ $('vaSummary').textContent='불러오지 못했습니다.'; }
+  }
+  function closeValueAudit(){ $('vaModal').style.display='none'; }
+  async function resetValue(scope){
+    const msg=$('vaMsg'); msg.style.color='';
+    const label = scope==='all' ? '모든 제품의 평균원가를 0으로 만들어 재고금액을 0으로 합니다.' : '수입 이력이 없는(근거 없는) 제품의 평균원가만 0으로 만듭니다.';
+    if(!confirm(label+'\n\n진행할까요? (되돌리려면 다시 수입 입고를 해야 합니다)')) return;
+    $('vaZeroUnsup').disabled=true; $('vaZeroAll').disabled=true;
+    try{
+      const r=await fetch(session.api+'/api/stock/value-audit/reset',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({scope})});
+      const d=await r.json();
+      if(!r.ok||d.error){ msg.style.color='var(--expense)';msg.textContent='처리 실패'; }
+      else { await openValueAudit(); loadSummary(); msg.style.color='var(--income)';msg.textContent=d.zeroed+'개 제품의 평균원가를 0으로 처리했습니다.'; }
+    }catch(e){ msg.style.color='var(--expense)';msg.textContent='서버 연결 실패'; }
+    finally{ $('vaZeroUnsup').disabled=false; $('vaZeroAll').disabled=false; }
+  }
   function editEvent(evNo){
     const arr=curItems.filter(x=>x.event_no===evNo);
     if(!arr.length)return;
@@ -390,6 +439,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618t"></script>
+<script src="refatrix-nav.js?v=20260618u"></script>
 </body>
 </html>

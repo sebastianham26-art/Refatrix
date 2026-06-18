@@ -61,6 +61,37 @@ async function monthSalesActual(perm, ym) {
 
 export default async function salesPerfRoutes(app) {
   // 상단 요약 3카드 (ym는 콤마구분 다중 월 가능: 합산)
+  // 팀별 × 월별 실적(ex-IVA)·목표 — 매출목표 카드 아래 표시
+  app.get('/api/salesperf/team-monthly', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const yms = String(req.query.ym || new Date().toISOString().slice(0, 7)).split(',').map((s) => s.trim()).filter(Boolean);
+    if (!fieldVisible(perm, 'sales_amount')) return { months: yms, teams: [], locked: true };
+    const vis = visibleTeamIds(perm); // null = 전체
+    let teamsQ = `SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true`;
+    const teamsArgs = [];
+    if (vis !== null) { teamsArgs.push(vis.length ? vis : [-1]); teamsQ += ` AND id = ANY($1)`; }
+    teamsQ += ` ORDER BY sort_order, id`;
+    const teams = (await query(teamsQ, teamsArgs)).rows;
+    const result = [];
+    for (const t of teams) {
+      const byMonth = {}; let tA = 0, tT = 0;
+      for (const ym of yms) {
+        const actual = Number((await query(
+          `SELECT COALESCE(SUM(i.subtotal_mxn),0) a FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+            WHERE i.status='posted' AND to_char(i.inv_date,'YYYY-MM')=$1 AND c.team_id=$2 AND c.deleted_at IS NULL`, [ym, t.id])).rows[0].a);
+        let target = Number((await query(`SELECT COALESCE(amount,0) a FROM target_team_months WHERE team_id=$1 AND ym=$2`, [t.id, ym])).rows[0]?.a || 0);
+        if (!target) target = Number((await query(
+          `SELECT COALESCE(SUM(m.amount),0) a FROM target_customer_months m JOIN customers c ON c.id=m.customer_id
+            WHERE m.ym=$1 AND c.team_id=$2 AND c.deleted_at IS NULL`, [ym, t.id])).rows[0].a);
+        byMonth[ym] = { actual: r2(actual), target: r2(target) };
+        tA += actual; tT += target;
+      }
+      result.push({ team_id: t.id, name: t.name, byMonth, total: { actual: r2(tA), target: r2(tT) } });
+    }
+    return { months: yms, teams: result };
+  });
+
+  // 팀별 월별 실적·목표 끝
   app.get('/api/salesperf/summary', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     const yms = String(req.query.ym || new Date().toISOString().slice(0, 7)).split(',').map((s) => s.trim()).filter(Boolean);

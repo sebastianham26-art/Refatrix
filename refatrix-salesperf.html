@@ -121,6 +121,7 @@
   <div class="hidden" id="app">
     <div class="card"><div class="mrow"><span class="ml">조회 월 (2026)</span><span id="topMonths"></span></div></div>
     <div class="cards" id="cards"></div>
+    <div class="card" id="teamMonthlyCard" style="display:none"><div class="card-h">팀별 월별 실적·목표 <span class="hint" style="font-weight:500">— 매출 실적(IVA 불포함) · 목표</span></div><div id="teamMonthly"></div></div>
     <div class="card">
       <div class="card-h" id="wfTitle">주차별 매출 (워터폴)</div>
       <div class="mrow" style="margin-bottom:6px"><span class="ml">차트 월</span><span id="wfMonths"></span></div>
@@ -171,6 +172,7 @@
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtK=(n)=>{ n=Number(n||0); if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+'M'; if(n>=1e3)return Math.round(n/1e3)+'K'; return String(Math.round(n)); };
   const SCREEN={sales:'refatrix-sales.html',finance:'refatrix-finance.html',pipeline:'refatrix-pipeline.html',customers:'refatrix-customers.html'};
   function go(s){
@@ -231,6 +233,35 @@
   async function loadCards(){
     try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());noDrill=(su.drilldown===false);renderCards(su);}
     catch(e){$('cards').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+    loadTeamMonthly();
+  }
+  async function loadTeamMonthly(){
+    try{
+      const d=await fetch(session.api+'/api/salesperf/team-monthly?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());
+      if(d.locked || !d.teams || !d.teams.length){ $('teamMonthlyCard').style.display='none'; return; }
+      const months=d.months||[];
+      let h='<div style="overflow:auto"><table style="min-width:'+(160+months.length*150)+'px"><thead>';
+      h+='<tr><th rowspan="2" style="text-align:left;vertical-align:bottom">팀</th>';
+      months.forEach(ym=>{ h+='<th colspan="3" style="text-align:center;border-left:1px solid var(--line)">'+ymLabel(ym)+'</th>'; });
+      h+='</tr><tr>';
+      months.forEach(()=>{ h+='<th class="r" style="border-left:1px solid var(--line)">실적</th><th class="r">목표</th><th class="r">달성</th>'; });
+      h+='</tr></thead><tbody>';
+      const tot={}; months.forEach(ym=>tot[ym]={actual:0,target:0});
+      d.teams.forEach(t=>{
+        h+='<tr><td style="font-weight:700">'+esc(t.name)+'</td>';
+        months.forEach(ym=>{ const c=t.byMonth[ym]||{actual:0,target:0}; tot[ym].actual+=c.actual; tot[ym].target+=c.target;
+          const pct=c.target>0?Math.round(c.actual/c.target*100):null;
+          const pcol=pct==null?'var(--muted)':(pct>=100?'var(--income)':(pct>=70?'#9a6512':'var(--expense)'));
+          h+='<td class="r" style="border-left:1px solid var(--line)">'+fmt(c.actual)+'</td><td class="r" style="color:var(--muted)">'+fmt(c.target)+'</td><td class="r" style="color:'+pcol+'">'+(pct==null?'—':pct+'%')+'</td>'; });
+        h+='</tr>';
+      });
+      // 합계 행
+      h+='<tr style="border-top:2px solid var(--brand);font-weight:800"><td>전체</td>';
+      months.forEach(ym=>{ const a=tot[ym].actual,tg=tot[ym].target; const pct=tg>0?Math.round(a/tg*100):null;
+        h+='<td class="r" style="border-left:1px solid var(--line)">'+fmt(a)+'</td><td class="r">'+fmt(tg)+'</td><td class="r">'+(pct==null?'—':pct+'%')+'</td>'; });
+      h+='</tr></tbody></table></div>';
+      $('teamMonthly').innerHTML=h; $('teamMonthlyCard').style.display='';
+    }catch(e){ $('teamMonthlyCard').style.display='none'; }
   }
   function renderCards(su){
     const s=su.sales||{}, c=su.collection||{}, d=su.pipeline_dev||{};
@@ -480,6 +511,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618t"></script>
+<script src="refatrix-nav.js?v=20260618u"></script>
 </body>
 </html>

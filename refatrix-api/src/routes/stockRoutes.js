@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageAny, requirePageEditAny, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
@@ -166,6 +166,43 @@ export default async function stockRoutes(app) {
     const r = await query(`UPDATE stock_movements SET ${sets.join(', ')} WHERE event_no=$${args.length} RETURNING id`, args);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `stock_event:${eventNo}`, detail: { moved_at: b.moved_at, ref: b.ref, note: b.note, rows: r.rows.length } });
     return { ok: true, event_no: eventNo, updated: r.rows.length };
+  });
+
+  // 재고금액 검토: 제품별 재고금액과 근거(수입 입고 이력) 여부. 근거=stock_movements에 batch_id 존재.
+  app.get('/api/stock/value-audit', { preHandler: [authGuard, requirePageAny(['stock', 'sales'])] }, async () => {
+    const rows = (await query(
+      `SELECT p.id, p.code, p.name, p.stock_qty, p.avg_cost,
+              (COALESCE(p.stock_qty,0)*COALESCE(p.avg_cost,0)) AS value,
+              EXISTS(SELECT 1 FROM stock_movements m WHERE m.product_id=p.id AND m.batch_id IS NOT NULL) AS has_import
+         FROM products p
+        WHERE p.deleted_at IS NULL AND COALESCE(p.stock_qty,0)<>0 AND COALESCE(p.avg_cost,0)<>0
+        ORDER BY (COALESCE(p.stock_qty,0)*COALESCE(p.avg_cost,0)) DESC`)).rows;
+    let supported = 0, unsupported = 0;
+    const items = rows.map((r) => {
+      const v = Math.round(Number(r.value) * 100) / 100;
+      if (r.has_import) supported += v; else unsupported += v;
+      return { id: r.id, code: r.code, name: r.name, stock_qty: Number(r.stock_qty), avg_cost: Number(r.avg_cost), value: v, has_import: r.has_import };
+    });
+    return {
+      items,
+      total: Math.round((supported + unsupported) * 100) / 100,
+      supported: Math.round(supported * 100) / 100,
+      unsupported: Math.round(unsupported * 100) / 100,
+    };
+  });
+
+  // 재고금액 근거 없는 항목(수입 이력 없음)의 평균원가를 0으로. scope='all'이면 전체 0.
+  app.post('/api/stock/value-audit/reset', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const all = req.body && req.body.scope === 'all';
+    const q = all
+      ? `UPDATE products SET avg_cost=0 WHERE deleted_at IS NULL AND COALESCE(avg_cost,0)<>0 RETURNING id`
+      : `UPDATE products p SET avg_cost=0
+           WHERE p.deleted_at IS NULL AND COALESCE(p.avg_cost,0)<>0
+             AND NOT EXISTS(SELECT 1 FROM stock_movements m WHERE m.product_id=p.id AND m.batch_id IS NOT NULL)
+         RETURNING id`;
+    const r = await query(q);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'stock_value_audit', detail: { scope: all ? 'all' : 'unsupported', zeroed: r.rows.length } });
+    return { ok: true, zeroed: r.rows.length };
   });
 
   app.get('/api/stock/movements', { preHandler: [authGuard, requirePageAny(['stock','sales'])] }, async (req) => {
