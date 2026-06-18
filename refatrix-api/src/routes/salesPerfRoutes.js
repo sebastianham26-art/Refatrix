@@ -108,6 +108,7 @@ export default async function salesPerfRoutes(app) {
       collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false }
                         : { progress: collectProgress, locked: true },
       pipeline_dev: { proposal, negotiation, total: proposal + negotiation },
+      drilldown: perm.role === 'director' ? true : (perm.dashDrilldown !== false),
     };
   });
 
@@ -181,6 +182,10 @@ export default async function salesPerfRoutes(app) {
   // 고객 상세 드릴다운: 기본정보·결제·영업성과·매출이력·마케팅활동
   app.get('/api/salesperf/customer/:id', { preHandler: [authGuard] }, async (req, reply) => {
     const perm = req.ctx.perm;
+    // 드릴다운 비활성 사용자는 고객 상세 차단(디렉터는 항상 허용)
+    if (perm.role !== 'director' && perm.dashDrilldown === false) {
+      return reply.code(403).send({ error: 'drilldown_disabled' });
+    }
     const id = Number(req.params.id);
     const ta = teamArrOf(perm);
     const seeSales = fieldVisible(perm, 'sales_amount');

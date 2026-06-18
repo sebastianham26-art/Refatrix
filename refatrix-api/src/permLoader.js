@@ -4,7 +4,7 @@ import { hashDeviceKey } from './auth.js';
 // 사용자 권한 묶음을 DB에서 읽어 perm 객체로 구성
 export async function loadPerm(userId) {
   const u = (await query(
-    `SELECT id, name, dept, role, lang, scope, cur_scope, see_balance, see_process_map, team_id
+    `SELECT id, name, dept, role, lang, scope, cur_scope, see_balance, see_process_map, team_id, dash_drilldown
        FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId])).rows[0];
   if (!u) return null;
 
@@ -35,6 +35,7 @@ export async function loadPerm(userId) {
     userId: u.id, name: u.name, dept: u.dept, role: u.role, lang: u.lang,
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
     teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
+    dashDrilldown: u.dash_drilldown !== false,
     pages, pageAccess, fields, items,
   };
 }

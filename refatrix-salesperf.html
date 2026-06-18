@@ -166,6 +166,7 @@
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 카드 다중 선택
   let wfYms=[now.toISOString().slice(0,7)];     // 워터폴 다중 선택
+  let noDrill=false;                            // 대시보드 드릴다운 비활성(사용자별)
   const YEAR=2026;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -228,7 +229,7 @@
   function wfLabel(){ return wfYms.map(ymLabel).join('·'); }
 
   async function loadCards(){
-    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());renderCards(su);}
+    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());noDrill=(su.drilldown===false);renderCards(su);}
     catch(e){$('cards').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function renderCards(su){
@@ -257,10 +258,13 @@
       +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.proposal||0)+'</div><div class="l">제안(견적)</div></div>'
       +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div></div></div>'
       +'<div class="cardfoot hint">제안 이후·수주 직전 — 막판 전환을 밀어줄 후보입니다.</div></div>';
+    const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="go(\'sales\')">매출 목록 보기 →</a>';
+    const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a>';
+    const lnkPipe  = noDrill ? '' : ' <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a>';
     $('cards').innerHTML=
-      '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적 <a class="lnk" onclick="go(\'sales\')">매출 목록 보기 →</a></div>'+c1+'</div>'
-      +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적 <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a></div>'+c2+'</div>'
-      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 제안→수주 직전 <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a></div>'+c3+'</div>';
+      '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적'+lnkSales+'</div>'+c1+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적'+lnkFin+'</div>'+c2+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 제안→수주 직전'+lnkPipe+'</div>'+c3+'</div>';
   }
 
   async function loadWaterfall(){
@@ -315,7 +319,7 @@
         const dot=dayDot(c.days_in_stage);
         const sinceTxt=c.stage_since?('진입 '+c.stage_since.slice(5)+(c.days_in_stage!=null?' · '+c.days_in_stage+'일 경과':'')):'';
         const actTxt=c.activity_days==null?'활동 없음':('👆 '+c.activity_days+'일');
-        return '<div class="pcard" style="--dot:'+dot+'" onclick="openCust('+c.id+',\''+c.name.replace(/'/g,"")+'\')"><div class="nm">'+c.name+'</div>'
+        return '<div class="pcard" style="--dot:'+dot+(noDrill?';cursor:default':'')+'"'+(noDrill?'':' onclick="openCust('+c.id+',\''+c.name.replace(/'/g,"")+'\')"')+'><div class="nm">'+c.name+'</div>'
           +'<div class="meta"><span>'+sinceTxt+'</span><span class="act">'+actTxt+'</span></div></div>';
       }).join('')||'<div class="pempty">—</div>';
       return '<div class="pcol"><div class="pcolh" style="background:'+col+'">'+label+'<span class="cnt">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
@@ -329,6 +333,7 @@
 
   // ===== 고객 상세 드릴다운 =====
   async function openCust(id,name){
+    if(noDrill) return;   // 드릴다운 비활성 사용자: 고객 상세 열지 않음
     $('cmTitle').textContent=name||'고객 상세';
     $('cmBody').innerHTML='<div class="hint">불러오는 중…</div>';
     $('custModal').style.display='flex';
