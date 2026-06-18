@@ -44,6 +44,8 @@
   .clamp2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;max-height:2.6em;overflow:hidden;word-break:break-word;overflow-wrap:anywhere;line-height:1.3}
   .inv-scroll{max-height:300px;overflow:auto;border:1px solid var(--line,#e6e1d6);border-radius:8px;background:#fff}
   .inv-scroll thead th{position:sticky;top:0;background:#f4f1ea;z-index:1}
+  .inv-scroll td,.inv-scroll th{word-break:break-word;overflow-wrap:anywhere;overflow:hidden}
+  .inv-scroll .inv-code{display:block;word-break:break-all}
   .inv-totals{position:sticky;bottom:0;background:#fff;border-top:2px solid var(--brand);padding:8px 6px;display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;align-items:center;font-size:12.5px}
   .inv-code{font-weight:700;color:var(--brand)}
   .seg{display:inline-flex;height:14px;border-radius:3px;overflow:hidden;width:110px;vertical-align:middle;border:1px solid var(--line)}
@@ -211,7 +213,9 @@
     try{ const d=await fetch(session.api+'/api/dashboard/funnel/invoice-lines?invoice_id='+id,{headers:auth()}).then(r=>r.json());
       invCache[id]=d;
       const inv=d.invoice||{}; const items=d.items||[]; const IVA=0.16;
-      let t='<div class="inv-scroll"><table style="margin:0"><thead><tr>'
+      let t='<div class="inv-scroll"><table style="margin:0;width:100%;table-layout:fixed">'
+        +'<colgroup><col style="width:16%"><col style="width:30%"><col style="width:8%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>'
+        +'<thead><tr>'
         +'<th>CTR Code / SYD</th><th>품명 / 적용(application)</th><th class="r">수량</th><th class="r">단가</th><th class="r">총계</th><th class="r">IVA</th><th class="r">총계(IVA 포함)</th></tr></thead><tbody>';
       items.forEach(l=>{
         const sub=Number(l.line_amount_mxn)||0; const iva=Math.round(sub*IVA*100)/100, tot=Math.round(sub*(1+IVA)*100)/100;
@@ -331,6 +335,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618o"></script>
+<script src="refatrix-nav.js?v=20260618p"></script>
 </body>
 </html>
