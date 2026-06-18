@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260615m loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260615n loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -214,7 +214,11 @@
     if(!g){ openGroup=k; render(); return; }
     var first=null; for(var j=0;j<g.screens.length;j++){ var sk=g.screens[j]; if(SCREENS[sk]&&canSee(sk)){ first=sk; break; } }
     if(first && first!==curScreen()){ nav(first, k); return; }   // 첫 화면으로 이동(그 그룹 컨텍스트 유지)
-    openGroup=k; render();                                        // 이미 그 화면이면 펼치기만
+    // 이미 그 화면(여러 그룹이 공유하는 화면 등)이면 이동 없이 그룹만 전환.
+    // render()가 g 힌트로 이전 그룹을 되돌리지 않도록 URL의 g도 새 그룹으로 갱신.
+    openGroup=k;
+    try{ var hp=new URLSearchParams(location.hash.slice(1)); hp.set('g',k); history.replaceState(null,'',location.pathname+'#'+hp.toString()); }catch(e){}
+    render();
   };
 
   function mount(){
