@@ -537,6 +537,11 @@ export default async function quoteRoutes(app) {
       const custName = (await query(`SELECT name FROM customers WHERE id=$1`, [customerId])).rows[0]?.name || '';
       await withTx(async (c) => {
         for (const u of unmatched) {
+          // 재전환 시 동일 견적·코드의 개발요청 중복 생성 방지
+          const dup = (await c.query(
+            `SELECT 1 FROM product_dev_requests WHERE source_quote_id=$1 AND input_code IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
+            [id, u.input_code || null])).rows[0];
+          if (dup) continue;
           const r = (await c.query(
             `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
              VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
@@ -550,10 +555,23 @@ export default async function quoteRoutes(app) {
         }
       });
     }
+    // 전량 재고부족(매칭 제품은 있으나 출고분 0) → 매출 0이므로 '전환'하지 않고 미결 유지
+    //   부족분은 이미 기록됨(stock_shortages). 입고 후 다시 전환 가능.
+    const fullyShort = matched.length > 0 && !invoiceId;
+    if (fullyShort) {
+      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { fully_short: true, dev_requests: devIds.length } });
+      return {
+        ok: true, converted: false, fully_short: true, invoice_id: null, invoiced: false,
+        shortages: (sale && sale.shortages) || [],
+        dev_requests: devIds.length,
+        note: '재고가 전혀 없어 매출이 0입니다. 부족분이 기록되었으니 입고 후 다시 매출 전환하세요. (견적은 미결 상태로 유지됩니다)',
+        sale,
+      };
+    }
     await query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`, [invoiceId || null, customerId, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, dev_requests: devIds.length } });
     return {
-      ok: true, invoice_id: invoiceId,
+      ok: true, converted: true, invoice_id: invoiceId,
       invoiced: sale ? (sale.invoiced !== false) : false,
       shortages: (sale && sale.shortages) || [],
       dev_requests: devIds.length,
