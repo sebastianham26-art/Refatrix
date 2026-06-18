@@ -9,11 +9,17 @@ async function safeLog(args) { try { await logEvent(args); } catch (_) { /* igno
 export default async function targetRoutes(app) {
   // 목표 페이지 개요: 전체 월 목표 + 팀별 월 목표 + 팀 합 검증 (디렉터 중심, 영업은 자기 팀만)
   app.get('/api/targets/overview', { preHandler: [authGuard, requirePage('targets')] }, async (req) => {
+    const vis = visibleTeamIds(req.ctx.perm);   // null = 전체(디렉터·영업지원)
+    const seeAll = (vis === null);
     const start = String(req.query.start || currentYm());
     const months = monthsHorizon(start, 12);
     const company = (await query(`SELECT ym, amount FROM monthly_targets WHERE ym = ANY($1)`, [months])).rows;
-    const teams = (await query(`SELECT id, name, is_sales FROM sales_teams WHERE deleted_at IS NULL AND is_sales=true ORDER BY sort_order, id`)).rows;
-    const teamMonths = (await query(`SELECT team_id, ym, amount FROM target_team_months WHERE ym = ANY($1)`, [months])).rows;
+    let teams = (await query(`SELECT id, name, is_sales FROM sales_teams WHERE deleted_at IS NULL AND is_sales=true ORDER BY sort_order, id`)).rows;
+    // 자기 가시 팀만 (영업 담당은 소속팀만 — 타 팀 목표 비공개)
+    if (!seeAll) teams = teams.filter((t) => vis.includes(Number(t.id)));
+    const visibleTeamSet = new Set(teams.map((t) => Number(t.id)));
+    const teamMonthsAll = (await query(`SELECT team_id, ym, amount FROM target_team_months WHERE ym = ANY($1)`, [months])).rows;
+    const teamMonths = teamMonthsAll.filter((r) => visibleTeamSet.has(Number(r.team_id)));
     const teamSum = sumByMonth(teamMonths.map((r) => ({ ym: r.ym, amount: r.amount })));
     const companyByMonth = sumByMonth(company.map((r) => ({ ym: r.ym, amount: r.amount })));
     const teamByMonthByTeam = {};
@@ -23,9 +29,10 @@ export default async function targetRoutes(app) {
     const statusByTeam = {}; for (const s of statuses) statusByTeam[s.team_id] = s.status;
     return {
       months,
-      company: companyByMonth,
+      // 회사 합계·검증은 전체 팀이 보일 때만(타 팀 금액 역산 방지)
+      company: seeAll ? companyByMonth : {},
       teams: teams.map((t) => ({ id: t.id, name: t.name, months: teamByMonthByTeam[t.id] || {}, status: statusByTeam[t.id] || 'draft' })),
-      check: companyVsTeams(months, companyByMonth, teamSum),
+      check: seeAll ? companyVsTeams(months, companyByMonth, teamSum) : [],
     };
   });
 
