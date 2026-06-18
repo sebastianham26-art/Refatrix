@@ -146,4 +146,5 @@
     editCustomer:function(c){ fillEdit(c); },
     reloadRefs:loadRefs,
   };
+  try{ console.log('[refatrix-custform] v20260618f loaded (이름 포함 수정 가능)'); }catch(e){}
 })();
