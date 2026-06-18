@@ -237,6 +237,17 @@
         +'<input id="sat-in-'+id+'" type="text" placeholder="SAT 번호 입력/수정" style="font-size:12px;padding:5px 8px;width:170px" value="'+(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?esc(inv.sat_no):'')+'">'
         +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveSatF('+id+')">SAT 번호 저장</button>'
         +'<span id="sat-msg-'+id+'" style="font-size:12px"></span></div>';
+      if(inv.can_adjust){
+        t+='<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--gold,#d4a017);border-radius:10px;background:#fffaf0">'
+          +'<div style="font-weight:800;color:#9a6512;font-size:12.5px;margin-bottom:6px">매출액 수정 (디렉터 · 당월) — 총계와 IVA를 입력하면 단가가 자동 역산됩니다</div>'
+          +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
+          +'<label style="font-size:11.5px;color:var(--muted)">총계(IVA 포함)<br><input id="adj-tot-'+id+'" type="number" step="0.01" min="0" style="font-size:13px;padding:5px 8px;width:130px" value="'+(Number(inv.total_mxn)||0)+'" oninput="adjPreview('+id+')"></label>'
+          +'<label style="font-size:11.5px;color:var(--muted)">IVA<br><input id="adj-iva-'+id+'" type="number" step="0.01" min="0" style="font-size:13px;padding:5px 8px;width:120px" value="'+(Number(inv.iva_mxn)||0)+'" oninput="adjPreview('+id+')"></label>'
+          +'<div style="font-size:12px">→ 총계(IVA 미포함): <b id="adj-sub-'+id+'">'+money(inv.subtotal_mxn)+'</b></div>'
+          +'<button class="btn" style="border:1px solid var(--gold,#d4a017);background:var(--gold,#d4a017);color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700" onclick="adjustTotalF('+id+')">매출액 적용</button>'
+          +'<span id="adj-msg-'+id+'" style="font-size:12px"></span></div>'
+          +'<div class="hint" style="margin-top:6px">적용 시 모든 라인의 단가가 새 총계에 비례하여 다시 계산되고, 입금예정(미수금) 금액도 함께 수정됩니다.</div></div>';
+      }
       openRows['i'+id]=t; loadImmediate();
     }catch(e){ openRows['i'+id]='불러오지 못했습니다.'; loadImmediate(); }
   }
@@ -273,8 +284,31 @@
       delete openRows['i'+id]; delete invCache[id]; loadImmediate();
     }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
-
-  // ③ 부족·발주 → SKU별, 클릭 시 발생 내역
+  function adjPreview(id){
+    const tot=Number((document.getElementById('adj-tot-'+id)||{}).value)||0;
+    const iva=Number((document.getElementById('adj-iva-'+id)||{}).value)||0;
+    const sub=Math.round((tot-iva)*100)/100;
+    const el=document.getElementById('adj-sub-'+id); if(el){ el.textContent=money(sub); el.style.color=sub<0?'var(--expense)':''; }
+  }
+  async function adjustTotalF(id){
+    const msg=document.getElementById('adj-msg-'+id);
+    const tot=Math.round((Number((document.getElementById('adj-tot-'+id)||{}).value)||0)*100)/100;
+    const iva=Math.round((Number((document.getElementById('adj-iva-'+id)||{}).value)||0)*100)/100;
+    if(msg){msg.style.color='';}
+    if(iva>tot){ if(msg){msg.style.color='var(--expense)';msg.textContent='IVA가 총액보다 큽니다.';} return; }
+    const sub=Math.round((tot-iva)*100)/100;
+    if(!confirm('이 인보이스의 매출액을 다음으로 수정합니다.\n\n총계(IVA 미포함): '+money(sub)+'\nIVA: '+money(iva)+'\n총계(IVA 포함): '+money(tot)+'\n\n모든 라인 단가가 비례 재계산되고 입금예정 금액도 함께 수정됩니다. 진행할까요?')) return;
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id+'/adjust-total',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({total_mxn:tot,iva_mxn:iva})});
+      const dd=await r.json();
+      if(!r.ok||dd.error){
+        const m=dd.note||(dd.error==='not_current_month'?'당월 매출만 수정할 수 있습니다.':(dd.error==='cannot_scale'?'기존 매출액이 0이라 조정할 수 없습니다.':(dd.error==='iva_gt_total'?'IVA가 총액보다 큽니다.':'수정 실패')));
+        if(msg){msg.style.color='var(--expense)';msg.textContent=m;} return;
+      }
+      if(msg){msg.style.color='var(--income)';msg.textContent='수정됨';}
+      delete openRows['i'+id]; delete invCache[id]; await loadImmediate(); toggleInvoice(id);
+    }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
+  }
   async function loadShortage(){
     const d=await fetch(session.api+'/api/dashboard/funnel/shortage?months='+mq(),{headers:auth()}).then(r=>r.json());
     const items=d.items||[];
@@ -335,6 +369,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618p"></script>
+<script src="refatrix-nav.js?v=20260618q"></script>
 </body>
 </html>

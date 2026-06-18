@@ -416,6 +416,7 @@ export default async function devRequestRoutes(app) {
     if (!id) return reply.code(400).send({ error: 'invoice_id_required' });
     const inv = (await query(
       `SELECT s.id, s.sat_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status,
+              to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
               c.code AS customer_code, c.name AS customer_name
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id WHERE s.id=$1`, [id])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
@@ -423,11 +424,13 @@ export default async function devRequestRoutes(app) {
       `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
          FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
+    const canAdjust = (req.ctx.perm.role === 'director') && (inv.inv_ym === inv.now_ym);
     return {
       invoice: {
         id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, status: inv.status,
         customer_code: inv.customer_code, customer_name: inv.customer_name,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
+        can_adjust: canAdjust,
       },
       items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })),
     };

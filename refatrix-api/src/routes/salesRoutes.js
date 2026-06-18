@@ -157,6 +157,60 @@ export default async function salesRoutes(app) {
     }
   });
 
+  // ---- 디렉터: 당월 매출 총액/IVA 직접 조정 (단가 비례 역산) ----
+  // body: { total_mxn (IVA 포함 총액), iva_mxn } → subtotal = total - iva, 라인 단가를 비례로 역산
+  app.post('/api/sales/:id/adjust-total', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    const targetTotal = round2(Number(req.body?.total_mxn));
+    const targetIva = round2(Number(req.body?.iva_mxn));
+    if (!Number.isFinite(targetTotal) || !Number.isFinite(targetIva) || targetTotal < 0 || targetIva < 0)
+      return reply.code(400).send({ error: 'invalid_amounts' });
+    if (targetIva > targetTotal) return reply.code(400).send({ error: 'iva_gt_total', note: 'IVA가 총액보다 클 수 없습니다.' });
+    const targetSubtotal = round2(targetTotal - targetIva);
+
+    const out = await withTx(async (c) => {
+      const inv = (await c.query(
+        `SELECT *, to_char(inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym
+           FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+      if (!inv) return { error: 'not_found', code: 404 };
+      // 당월 매출만 수정 가능
+      if (inv.inv_ym !== inv.now_ym) return { error: 'not_current_month', code: 409, note: '당월에 발행된 매출만 수정할 수 있습니다.' };
+      const lines = (await c.query(`SELECT id, qty, line_amount_mxn FROM sales_invoice_lines WHERE invoice_id=$1 ORDER BY id`, [id])).rows;
+      if (!lines.length) return { error: 'no_lines', code: 409 };
+      const oldSub = round2(lines.reduce((s, l) => s + Number(l.line_amount_mxn), 0));
+      if (!(oldSub > 0)) return { error: 'cannot_scale', code: 409, note: '기존 매출액이 0이라 비례 조정할 수 없습니다.' };
+      const scale = targetSubtotal / oldSub;
+      // 라인 금액을 비례 계산하고, 반올림 잔차는 가장 큰 라인에 흡수해 합계를 정확히 맞춤
+      const newAmts = lines.map((l) => round2(Number(l.line_amount_mxn) * scale));
+      const sumNew = round2(newAmts.reduce((s, v) => s + v, 0));
+      const residual = round2(targetSubtotal - sumNew);
+      if (residual !== 0) {
+        let bi = 0; for (let i = 1; i < newAmts.length; i++) if (newAmts[i] > newAmts[bi]) bi = i;
+        newAmts[bi] = round2(newAmts[bi] + residual);
+      }
+      for (let i = 0; i < lines.length; i++) {
+        const qty = Number(lines[i].qty) || 0;
+        const amt = newAmts[i];
+        const unit = qty > 0 ? round2(amt / qty) : 0;
+        await c.query(`UPDATE sales_invoice_lines SET unit_price=$1, line_amount_mxn=$2 WHERE id=$3`, [unit, amt, lines[i].id]);
+      }
+      await c.query(`UPDATE sales_invoices SET subtotal_mxn=$1, iva_mxn=$2, total_mxn=$3, updated_by=$4 WHERE id=$5`,
+        [targetSubtotal, targetIva, targetTotal, userId, id]);
+      // 연결된 입금예정(AR) 금액도 새 총액으로 동기화
+      if (inv.txn_id) await c.query(`UPDATE transactions SET amount=$1, amount_mxn=$1, updated_by=$2 WHERE id=$3`, [targetTotal, userId, inv.txn_id]);
+      return {
+        ok: true,
+        before: { subtotal: Number(inv.subtotal_mxn), iva: Number(inv.iva_mxn), total: Number(inv.total_mxn) },
+        after: { subtotal: targetSubtotal, iva: targetIva, total: targetTotal },
+        lines: lines.length,
+      };
+    });
+    if (out.error) return reply.code(out.code || 409).send(out);
+    await logEvent({ userId, action: 'update', target: `sales_invoice:${id}`, detail: { adjustTotal: out.after, before: out.before } });
+    return out;
+  });
+
   // ---- 미등록 SKU 보류(pending) 저장 ----
   // body: { customer_id, intended_sat_no?, sales_invoice_id?, rows:[{code, qty}] }
   app.post('/api/sales/sku-pending', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
