@@ -75,9 +75,9 @@ export default async function importRoutes(app) {
           [cl.alloc_overhead, cl.unit_cost_mxn, cl.avg_cost_after, id, cl.product_id]);
         // 입출고 원장(입고)
         await c.query(
-          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, created_by)
-           VALUES ($1,'in',$2,$3,$4,$5)`,
-          [cl.product_id, cl.qty, cl.unit_cost_mxn, `batch:${id}`, userId]);
+          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, created_by)
+           VALUES ($1,'in',$2,$3,$4,$5,$6)`,
+          [cl.product_id, cl.qty, cl.unit_cost_mxn, `batch:${id}`, id, userId]);
       }
       // 제품 재고·평균원가 갱신
       for (const [pid, st] of Object.entries(newState)) {

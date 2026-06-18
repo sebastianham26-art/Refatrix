@@ -288,9 +288,10 @@
         html+='<div class="evrow" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
         html+='<div class="evdetail" id="'+id+'">';
         if(allManual && evNo!=null)
-          html+='<div style="padding:6px 4px"><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px" onclick="editEvent('+evNo+')">✎ 이벤트 #'+evNo+' 일괄 수정 (날짜·참조·사유)</button></div>';
+          html+='<div style="padding:6px 4px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px" onclick="editEvent('+evNo+')">✎ 이벤트 #'+evNo+' 일괄 수정 (날짜·참조·사유)</button>'
+            +'<button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px;border-color:var(--expense);color:var(--expense)" onclick="deleteEvent('+evNo+')">🗑 이벤트 #'+evNo+' 삭제</button></div>';
         else
-          html+='<div class="hint" style="padding:6px 4px">자동 기록(매출·수입) 이벤트는 수정할 수 없습니다.</div>';
+          html+='<div class="hint" style="padding:6px 4px">자동 기록(매출·수입) 이벤트는 수정·삭제할 수 없습니다.</div>';
         html+='<table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
         arr.forEach(m=>{ const dt=new Date(m.moved_at); const ts=isNaN(dt)?'':dt.toTimeString().slice(0,5);
           const sign=m.move_type==='out'?'−':(m.move_type==='in'?'+':'');
@@ -421,6 +422,18 @@
     $('editModal').style.display='flex';
   }
   function closeEdit(){ $('editModal').style.display='none'; editEventNo=null; }
+  async function deleteEvent(evNo){
+    evNo=Number(evNo);
+    const arr=curItems.filter(x=>Number(x.event_no)===evNo);
+    const n=arr.length;
+    if(!confirm('이벤트 #'+evNo+' ('+n+'건)을 삭제합니다.\n입고는 재고에서 차감, 출고는 재고로 복원됩니다.\n되돌릴 수 없습니다. 진행할까요?')) return;
+    try{
+      const r=await fetch(session.api+'/api/stock/events/'+evNo,{method:'DELETE',headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ alert(d.note||(d.error==='linked'?'매출·수입 연동 이벤트는 삭제할 수 없습니다.':'삭제 실패')); return; }
+      loadList();
+    }catch(e){ alert('서버 연결 실패'); }
+  }
   async function saveMoveEdit(){
     if(editEventNo==null)return; const msg=$('emMsg');msg.style.color='';
     const moved_at=$('emDate').value, ref=$('emRef').value.trim(), note=$('emNote').value.trim();
@@ -440,6 +453,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618w"></script>
+<script src="refatrix-nav.js?v=20260618x"></script>
 </body>
 </html>

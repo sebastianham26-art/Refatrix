@@ -413,6 +413,7 @@ export default async function devRequestRoutes(app) {
          FROM quotes q JOIN sales_invoices i ON i.id=q.invoice_id LEFT JOIN customers c ON c.id=q.customer_id
               LEFT JOIN users u ON u.id=i.owner_id
         WHERE q.deleted_at IS NULL AND q.status='converted' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+              AND i.sat_no IS NOT NULL AND i.sat_no <> '' AND i.sat_no NOT LIKE 'TMP-%'
               ${dconds.length ? 'AND ' + dconds.join(' AND ') : ''}
         ORDER BY q.quote_date DESC`, dargs)).rows;
     // 디렉터용 필터 옵션(팀·담당자)

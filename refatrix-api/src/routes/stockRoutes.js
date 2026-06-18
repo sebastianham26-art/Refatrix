@@ -205,6 +205,39 @@ export default async function stockRoutes(app) {
     return { ok: true, zeroed: r.rows.length };
   });
 
+  // 이벤트 삭제: 매출/수입 연동이 없는 수동·기타 이벤트만. 재고를 역산(입고→차감, 출고→복원)하고 행 삭제.
+  app.delete('/api/stock/events/:eventNo', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const eventNo = Number(req.params.eventNo);
+    if (!eventNo) return reply.code(400).send({ error: 'bad_event' });
+    const result = await withTx(async (c) => {
+      const rows = (await c.query(
+        `SELECT id, product_id, move_type, qty, sales_invoice_id, batch_id FROM stock_movements WHERE event_no=$1 FOR UPDATE`, [eventNo])).rows;
+      if (!rows.length) return { error: 'not_found' };
+      if (rows.some((r) => r.sales_invoice_id || r.batch_id)) return { error: 'linked', note: '매출·수입에 연동된 이벤트는 삭제할 수 없습니다.' };
+      let affected = 0;
+      for (const r of rows) {
+        const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [r.product_id])).rows[0];
+        if (!p) continue;
+        const qty = Number(r.qty) || 0;
+        let delta; // 원래 이동이 재고에 더한 양
+        if (r.move_type === 'in') delta = Math.abs(qty);
+        else if (r.move_type === 'out') delta = -Math.abs(qty);
+        else delta = qty; // adjust: 저장된 부호 그대로
+        const next = (Number(p.stock_qty) || 0) - delta; // 역산
+        await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, req.ctx.perm.userId, r.product_id]);
+        affected++;
+      }
+      await c.query(`DELETE FROM stock_movements WHERE event_no=$1`, [eventNo]);
+      return { ok: true, deleted: rows.length, products: affected };
+    });
+    if (result.error) {
+      const code = result.error === 'not_found' ? 404 : (result.error === 'linked' ? 409 : 400);
+      return reply.code(code).send(result);
+    }
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `stock_event:${eventNo}`, detail: { deleted: result.deleted } });
+    return result;
+  });
+
   app.get('/api/stock/movements', { preHandler: [authGuard, requirePageAny(['stock','sales'])] }, async (req) => {
     const conds = []; const args = [];
     if (req.query.product_id) { args.push(Number(req.query.product_id)); conds.push(`m.product_id=$${args.length}`); }
