@@ -17,7 +17,10 @@ export default async function userRoutes(app) {
     const pagesByUser = {};
     const accessByUser = {};
     for (const p of pages) { (pagesByUser[p.user_id] ||= []).push(p.page_key); (accessByUser[p.user_id] ||= {})[p.page_key] = p.access || 'edit'; }
-    return { items: users.map((u) => ({ ...u, pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {} })) };
+    const grants = (await query(`SELECT user_id, team_id FROM user_team_access`)).rows;
+    const teamAccessByUser = {};
+    for (const g of grants) (teamAccessByUser[g.user_id] ||= []).push(Number(g.team_id));
+    return { items: users.map((u) => ({ ...u, pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {}, team_access: teamAccessByUser[u.id] || [] })) };
   });
 
   // 사용자 생성(디렉터). PIN 지정 가능(미지정 시 자동), 팀·페이지 권한 일괄 부여.

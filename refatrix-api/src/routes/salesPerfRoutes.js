@@ -123,10 +123,13 @@ export default async function salesPerfRoutes(app) {
                  WHERE i.status='posted' AND to_char(i.due_date,'YYYY-MM')=$1 AND c.deleted_at IS NULL`;
       const pp = [ym]; if (ta) { pp.push(ta); pq += ` AND c.team_id = ANY($2)`; }
       collectPlan += Number((await query(pq, pp)).rows[0].a);
-      const cq = `SELECT COALESCE(SUM(t.amount_mxn),0) AS a FROM transactions t
-                   WHERE t.status='actual' AND t.direction='in' AND to_char(t.txn_date,'YYYY-MM')=$1
-                     AND (t.kind IN ('sales','invoice') OR t.sales_invoice_id IS NOT NULL)`;
-      collectActual += Number((await query(cq, [ym])).rows[0].a);
+      let cq = `SELECT COALESCE(SUM(t.amount_mxn),0) AS a FROM transactions t
+                  LEFT JOIN sales_invoices i ON i.id=t.sales_invoice_id
+                  LEFT JOIN customers c ON c.id=i.customer_id
+                 WHERE t.status='actual' AND t.direction='in' AND to_char(t.txn_date,'YYYY-MM')=$1
+                   AND (t.kind IN ('sales','invoice') OR t.sales_invoice_id IS NOT NULL)`;
+      const cp = [ym]; if (ta) { cp.push(ta); cq += ` AND c.team_id = ANY($2)`; }
+      collectActual += Number((await query(cq, cp)).rows[0].a);
     }
     const collectProgress = collectPlan > 0 ? r2(collectActual / collectPlan * 100) : null;
 

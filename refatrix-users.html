@@ -161,11 +161,16 @@
     try{
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>페이지 권한</th><th>PIN</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th>페이지 권한</th><th>PIN</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
           <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
           <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
             <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
+          <td style="white-space:normal;max-width:240px">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':teams.map(t=>{
+            const granted=(u.team_access||[]).includes(t.id); const own=u.team_id===t.id;
+            if(own) return `<span class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;background:#eef0f2;color:#888">${t.name} (소속)</span>`;
+            return `<label class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${granted?'#0F6E56':'#ccc'};background:${granted?'#e6f3ee':'#fff'};color:${granted?'#0F6E56':'#666'}"><input type="checkbox" ${granted?'checked':''} onchange="toggleTeamAccess(${u.id},${t.id},this.checked)" style="vertical-align:middle;margin-right:3px">${t.name}</label>`;
+          }).join('')}</td>
           <td style="max-width:560px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PERM_GROUPS.map(([gname,arr])=>{
             return `<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:800;color:#888;margin-bottom:2px">${gname}</div>`+arr.map(([k,label])=>{
               const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
@@ -181,6 +186,13 @@
 
   async function setTeam(userId,teamId){
     try{await fetch(session.api+'/api/team-admin/users/'+userId+'/team',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId?Number(teamId):null})});loadUsers();}catch(e){alert('실패');}
+  }
+  async function toggleTeamAccess(userId,teamId,grant){
+    try{
+      if(grant){ await fetch(session.api+'/api/team-admin/users/'+userId+'/grant',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId,can_edit:false})}); }
+      else { await fetch(session.api+'/api/team-admin/users/'+userId+'/grant/'+teamId,{method:'DELETE',headers:auth()}); }
+      loadUsers();
+    }catch(e){alert('실패');loadUsers();}
   }
   async function setPageAccess(userId,pageKey,level){
     try{
@@ -206,6 +218,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618v"></script>
+<script src="refatrix-nav.js?v=20260618w"></script>
 </body>
 </html>
