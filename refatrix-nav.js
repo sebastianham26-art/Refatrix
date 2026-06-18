@@ -2,11 +2,12 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260615n loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260618c loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
     salesperf:{file:'refatrix-salesperf.html',name:'영업 대시보드',desc:'매출·수금·파이프라인'},
+    commission:{file:'refatrix-commission.html',name:'커미션',desc:'기대·확정·지급'},
     dashboard:{file:'refatrix-dashboard.html',name:'대시보드',desc:'위젯'},
     board:{file:'refatrix-board.html',name:'일정',desc:'달력',tab:'cal'},
     boardNotice:{file:'refatrix-board.html',name:'공지',desc:'공지사항',tab:'notice'},
@@ -56,6 +57,7 @@
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
   var PAGEKEY={
     salesperf:null, dashboard:null, board:null, portal:null, rnr:null, coverage:null, devmap:null,
+    commission:'commission',
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
@@ -69,7 +71,7 @@
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
-    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','dashboard','rnr','coverage','devmap']},
+    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','dashboard','rnr','coverage','devmap']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','import','importcost','stock']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','budget']},

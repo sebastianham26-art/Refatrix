@@ -23,7 +23,7 @@ export const ROLE_DEFAULTS = {
   director: { pages: 'ALL', fields: ['sales_amount', 'ar_amount', 'mkt_amount'] },
   sales: {
     pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'edit'],
-            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view'], ['transactions', 'view']],
+            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view'], ['transactions', 'view'], ['commission', 'view']],
     fields: ['sales_amount'],
   },
   sales_support: {

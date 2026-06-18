@@ -26,6 +26,7 @@ import quoteRoutes from './routes/quoteRoutes.js';
 import stockRoutes from './routes/stockRoutes.js';
 import devRequestRoutes from './routes/devRequestRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import commissionRoutes from './routes/commissionRoutes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 }); // 12MB (증빙서류 5MB base64 대비)
@@ -63,6 +64,7 @@ export function buildApp() {
   app.register(stockRoutes);
   app.register(devRequestRoutes);
   app.register(userRoutes);
+  app.register(commissionRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {

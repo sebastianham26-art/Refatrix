@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 커미션</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#C9A75C;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .btn.gold{background:var(--gold);color:#3a2e12}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.r,th.r{text-align:right}
+  .exp{font-weight:700;color:var(--brand)}.conf{font-weight:800;color:var(--income)}
+  .gsum{background:#faf8f3;font-weight:700}
+  .badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:#eee;color:#555}
+  .badge.paid{background:var(--income-bg);color:var(--income)}.badge.wait{background:#FBEFD6;color:#8a6d1f}.badge.exp{background:#eef;color:#5560a0}
+  .toggle{display:inline-flex;gap:4px;background:#f0ece2;border-radius:9px;padding:3px}
+  .toggle button{border:none;background:transparent;padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:700;color:#8a8676;cursor:pointer}
+  .toggle button.on{background:#fff;color:var(--brand);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .sb{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .agentbar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <div class="card-h">커미션 내역
+        <span class="hint" style="font-weight:400">· 매출액(ex-IVA) 기준 · 반제 완료 시 확정 · 반제월 익월 15일 지급</span>
+      </div>
+      <div class="agentbar">
+        <div class="toggle" id="viewToggle">
+          <button data-v="customer" class="on">고객별</button>
+          <button data-v="month">월별</button>
+          <button data-v="all">전체</button>
+        </div>
+        <div id="agentPick" class="hidden"><label>영업사원</label>
+          <select id="agentSel"><option value="">전체 (영업사원별 요약)</option></select>
+        </div>
+        <button class="btn ghost sm" onclick="loadOverview()" style="margin-left:auto">새로고침</button>
+        <button class="btn ghost sm hidden" id="rateBtn" onclick="openRates()">대상·지급률 설정</button>
+      </div>
+      <div class="msg" id="msg"></div>
+      <div class="sbrow" id="summary"></div>
+      <div id="agentSummary"></div>
+      <div id="body"><div class="hint" style="margin-top:12px">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 대상·지급률 설정(디렉터) -->
+<div class="card hidden" id="rateModal" style="position:fixed;inset:auto 24px 24px auto;max-width:560px;width:92%;z-index:50;box-shadow:0 12px 40px rgba(0,0,0,.25);max-height:80vh;overflow:auto">
+  <div class="card-h">커미션 대상 영업사원 · 기본 지급률(%) <span class="hint" style="float:right;cursor:pointer" onclick="closeRates()">닫기 ✕</span></div>
+  <div class="hint" style="margin-bottom:8px">대상 체크 + 기본률을 입력하고 저장하세요. 고객별 예외율은 추후 연결합니다.</div>
+  <div id="rateList"><div class="hint">불러오는 중…</div></div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let view='customer', isDir=false, agentId='', data=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtm=(n)=> '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      isDir=(d.user?.role==='director');
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      if(isDir){ $('agentPick').classList.remove('hidden'); $('rateBtn').classList.remove('hidden'); await loadAgents(); }
+      loadOverview();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadAgents(){
+    try{
+      const d=await fetch(session.api+'/api/commission/agents',{headers:auth()}).then(r=>r.json());
+      const opts=['<option value="">전체 (영업사원별 요약)</option>']
+        .concat((d.items||[]).filter(a=>a.is_agent&&a.active).map(a=>'<option value="'+a.user_id+'">'+esc(a.name)+(a.team_name?(' · '+esc(a.team_name)):'')+' ('+a.default_rate+'%)</option>'));
+      $('agentSel').innerHTML=opts.join('');
+      window.__agents=d.items||[];
+    }catch(e){}
+  }
+
+  async function loadOverview(){
+    $('body').innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    const qs='?view='+view+(agentId?('&agent_id='+agentId):'');
+    try{
+      data=await fetch(session.api+'/api/commission/overview'+qs,{headers:auth()}).then(r=>r.json());
+      render();
+    }catch(e){ $('body').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  function render(){
+    if(!data){return;}
+    const s=data.summary||{};
+    $('summary').innerHTML=
+      sb(s.invoice_count||0,'인보이스 건수')
+      +sb(fmtm(s.total_base),'매출 합계(ex-IVA)')
+      +sb(fmtm(s.total_expected),'기대 커미션')
+      +sb(fmtm(s.total_confirmed),'확정 커미션(반제분)')
+      +sb(fmtm(s.total_unpaid),'미지급 확정');
+
+    // 디렉터 전체 보기: 영업사원별 요약
+    if(data.by_agent && data.by_agent.length){
+      $('agentSummary').innerHTML='<div class="card" style="margin-top:12px;background:#faf8f3"><div class="card-h">영업사원별 요약</div>'
+        +'<table><thead><tr><th>영업사원</th><th class="r">건수</th><th class="r">기대 커미션</th><th class="r">확정 커미션</th><th class="r">지급완료</th><th class="r">미지급</th></tr></thead><tbody>'
+        +data.by_agent.map(a=>'<tr><td><b>'+esc(a.agent_name)+'</b></td><td class="r">'+a.invoice_count+'</td><td class="r exp">'+fmtm(a.expected)+'</td><td class="r conf">'+fmtm(a.confirmed)+'</td><td class="r">'+fmtm(a.paid)+'</td><td class="r short">'+fmtm(a.unpaid)+'</td></tr>').join('')
+        +'</tbody></table></div>';
+    } else { $('agentSummary').innerHTML=''; }
+
+    const groups=data.groups||[];
+    if(!groups.length){ $('body').innerHTML='<div class="hint" style="margin-top:12px">표시할 커미션 내역이 없습니다. (디렉터가 커미션 대상·지급률을 먼저 지정해야 합니다)</div>'; return; }
+    let html='';
+    for(const g of groups){
+      html+='<div class="card" style="margin-top:12px"><div class="card-h">'+esc(g.label)
+        +' <span class="hint" style="font-weight:400">· 건수 '+g.invoice_count+' · 매출 '+fmtm(g.base)+' · 기대 '+fmtm(g.expected)+' · 확정 '+fmtm(g.confirmed)+'</span></div>';
+      html+='<table><thead><tr><th>인보이스</th><th>일자</th>'+(view==='customer'?'':'<th>고객</th>')+(isDir&&!agentId?'<th>영업사원</th>':'')
+        +'<th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">기대</th><th class="r">확정</th><th>지급예상일</th><th>상태</th>'+(isDir?'<th></th>':'')+'</tr></thead><tbody>';
+      for(const l of g.lines){
+        const st = l.paid ? '<span class="badge paid">지급완료'+(l.paid_date?(' '+l.paid_date):'')+'</span>'
+                  : (l.fully_paid ? '<span class="badge wait">확정·미지급</span>' : '<span class="badge exp">기대(반제 전)</span>');
+        const act = isDir ? '<td class="r">'+(l.fully_paid&&!l.paid?'<button class="btn gold sm" onclick="payCommission('+l.invoice_id+')">지급</button>':'')+'</td>' : '';
+        html+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+'</td><td>'+l.inv_date+'</td>'
+          +(view==='customer'?'':'<td>'+esc(l.customer_name)+'</td>')
+          +(isDir&&!agentId?'<td>'+esc(l.agent_name)+'</td>':'')
+          +'<td class="r">'+fmtm(l.base)+'</td><td class="r">'+l.rate+'%</td>'
+          +'<td class="r exp">'+fmtm(l.expected)+'</td><td class="r conf">'+(l.confirmed?fmtm(l.confirmed):'—')+'</td>'
+          +'<td>'+(l.due_date||'—')+'</td><td>'+st+'</td>'+act+'</tr>';
+      }
+      html+='</tbody></table></div>';
+    }
+    $('body').innerHTML=html;
+  }
+  function sb(v,l){ return '<div class="sb"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+
+  async function payCommission(invoiceId){
+    if(!confirm('인보이스 #'+invoiceId+'의 확정 커미션을 지급 처리할까요?'))return;
+    const m=$('msg');
+    try{
+      const res=await fetch(session.api+'/api/commission/payout/'+invoiceId+'/pay',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='지급 처리 실패: '+(d.note||d.error||res.status);return;}
+      m.className='msg ok';m.textContent='지급 처리 완료 — '+fmtm(d.amount);
+      loadOverview();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+  }
+
+  // 대상·지급률 설정(디렉터)
+  function openRates(){ $('rateModal').classList.remove('hidden'); renderRates(); }
+  function closeRates(){ $('rateModal').classList.add('hidden'); }
+  function renderRates(){
+    const ags=window.__agents||[];
+    $('rateList').innerHTML='<table><thead><tr><th>영업사원</th><th>팀</th><th>대상</th><th>기본률(%)</th><th></th></tr></thead><tbody>'
+      +ags.map(a=>'<tr data-uid="'+a.user_id+'"><td>'+esc(a.name)+'</td><td class="hint">'+esc(a.team_name||'-')+'</td>'
+        +'<td><input type="checkbox" class="r-on" '+(a.is_agent&&a.active?'checked':'')+'></td>'
+        +'<td><input type="number" step="0.001" class="r-rate" value="'+(a.default_rate!=null?a.default_rate:'')+'" style="width:80px"></td>'
+        +'<td><button class="btn sm" onclick="saveRate('+a.user_id+')">저장</button></td></tr>').join('')
+      +'</tbody></table>';
+  }
+  async function saveRate(uid){
+    const tr=document.querySelector('#rateList tr[data-uid="'+uid+'"]');
+    const active=tr.querySelector('.r-on').checked;
+    const rate=Number(tr.querySelector('.r-rate').value)||0;
+    try{
+      const res=await fetch(session.api+'/api/commission/agents',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:uid,default_rate:rate,active})});
+      const d=await res.json();
+      const m=$('msg');
+      if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent='저장되었습니다.';
+      await loadAgents(); renderRates(); loadOverview();
+    }catch(e){}
+  }
+
+  // 토글
+  document.querySelectorAll('#viewToggle button').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('#viewToggle button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); view=b.dataset.v; loadOverview();
+  }));
+  document.addEventListener('change',e=>{ if(e.target&&e.target.id==='agentSel'){ agentId=e.target.value; loadOverview(); }});
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260618c"></script>
+</body>
+</html>
