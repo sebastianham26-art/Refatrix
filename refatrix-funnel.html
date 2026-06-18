@@ -41,6 +41,11 @@
   td.r,th.r{text-align:right}
   tr.click{cursor:pointer}tr.click:hover{background:#faf8f3}
   tr.sub td{background:#faf8f3;font-size:11.5px}
+  .clamp2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;max-height:2.6em;overflow:hidden;word-break:break-word;overflow-wrap:anywhere;line-height:1.3}
+  .inv-scroll{max-height:300px;overflow:auto;border:1px solid var(--line,#e6e1d6);border-radius:8px;background:#fff}
+  .inv-scroll thead th{position:sticky;top:0;background:#f4f1ea;z-index:1}
+  .inv-totals{position:sticky;bottom:0;background:#fff;border-top:2px solid var(--brand);padding:8px 6px;display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;align-items:center;font-size:12.5px}
+  .inv-code{font-weight:700;color:var(--brand)}
   .seg{display:inline-flex;height:14px;border-radius:3px;overflow:hidden;width:110px;vertical-align:middle;border:1px solid var(--line)}
   .seg i{display:block;height:100%}.si{background:var(--income)}.ss{background:var(--gold)}.sd{background:var(--purple)}
   .pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px}
@@ -78,10 +83,12 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
   let session={token:null,user:null,api:''};
   let cat='quotes', months=[], FYEAR=new Date().getFullYear();
   let openRows={};
+  let invCache={};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -202,10 +209,65 @@
     if(openRows['i'+id]){ delete openRows['i'+id]; return loadImmediate(); }
     openRows['i'+id]='loading'; await loadImmediate();
     try{ const d=await fetch(session.api+'/api/dashboard/funnel/invoice-lines?invoice_id='+id,{headers:auth()}).then(r=>r.json());
-      let t='<table style="margin:0"><thead><tr><th>코드</th><th>품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">라인금액</th></tr></thead><tbody>';
-      (d.items||[]).forEach(l=>{ t+='<tr><td>'+esc(l.ctr_code||'')+'</td><td>'+esc(l.product_name||'')+'</td><td class="r">'+nf(l.qty)+'</td><td class="r">'+money(l.unit_price)+'</td><td class="r">'+money(l.line_amount_mxn)+'</td></tr>'; });
-      t+='</tbody></table>'; openRows['i'+id]=t; loadImmediate();
+      invCache[id]=d;
+      const inv=d.invoice||{}; const items=d.items||[]; const IVA=0.16;
+      let t='<div class="inv-scroll"><table style="margin:0"><thead><tr>'
+        +'<th>CTR Code / SYD</th><th>품명 / 적용(application)</th><th class="r">수량</th><th class="r">단가</th><th class="r">총계</th><th class="r">IVA</th><th class="r">총계(IVA 포함)</th></tr></thead><tbody>';
+      items.forEach(l=>{
+        const sub=Number(l.line_amount_mxn)||0; const iva=Math.round(sub*IVA*100)/100, tot=Math.round(sub*(1+IVA)*100)/100;
+        const syd=l.syd_codes?('<div style="font-size:10px;color:var(--muted)">'+esc(l.syd_codes)+'</div>'):'';
+        const appx=l.app?('<div class="clamp2" style="font-size:10.5px;color:var(--muted);margin-top:2px" title="'+esc(l.app)+'">'+esc(l.app)+'</div>'):'';
+        t+='<tr><td><span class="inv-code">'+esc(l.ctr_code||'')+'</span>'+syd+'</td>'
+          +'<td><div class="clamp2" title="'+esc(l.product_name||'')+'">'+esc(l.product_name||'')+'</div>'+appx+'</td>'
+          +'<td class="r">'+nf(l.qty)+'</td><td class="r">'+money(l.unit_price)+'</td>'
+          +'<td class="r">'+money(sub)+'</td><td class="r">'+money(iva)+'</td><td class="r"><b>'+money(tot)+'</b></td></tr>';
+      });
+      t+='</tbody></table>'
+        +'<div class="inv-totals">'
+        +'<button class="btn ghost sm" style="margin-right:auto;border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="downloadInvoiceF('+id+')">⬇ 엑셀 다운로드</button>'
+        +'<span>총계(IVA 미포함): <b>'+money(inv.subtotal_mxn)+'</b></span>'
+        +'<span>IVA 16%: <b>'+money(inv.iva_mxn)+'</b></span>'
+        +'<span>총계(IVA 포함): <b style="color:var(--income)">'+money(inv.total_mxn)+'</b></span></div></div>'
+        +'<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        +'<span style="font-size:12.5px">SAT 번호: <b>'+esc(inv.sat_no||'—')+'</b> '+(inv.sat_no&&String(inv.sat_no).startsWith('TMP-')?'<span style="background:#fde7c9;color:#9a6512;border-radius:999px;padding:1px 7px;font-size:10px">임시</span>':'')+'</span>'
+        +'<input id="sat-in-'+id+'" type="text" placeholder="SAT 번호 입력/수정" style="font-size:12px;padding:5px 8px;width:170px" value="'+(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?esc(inv.sat_no):'')+'">'
+        +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveSatF('+id+')">SAT 번호 저장</button>'
+        +'<span id="sat-msg-'+id+'" style="font-size:12px"></span></div>';
+      openRows['i'+id]=t; loadImmediate();
     }catch(e){ openRows['i'+id]='불러오지 못했습니다.'; loadImmediate(); }
+  }
+  function downloadInvoiceF(id){
+    const d=invCache[id]; if(!d||!window.XLSX){ alert('다운로드할 내역이 없습니다.'); return; }
+    const inv=d.invoice||{}; const items=d.items||[]; const IVA=0.16;
+    const aoa=[];
+    aoa.push(['Refatrix — Factura / 인보이스']);
+    aoa.push(['SAT', inv.sat_no||'—', '', 'Cliente', (inv.customer_code?inv.customer_code+' · ':'')+(inv.customer_name||'')]);
+    aoa.push(['Fecha', inv.inv_date?String(inv.inv_date).slice(0,10):'']);
+    aoa.push([]);
+    aoa.push(['CTR Code','SYD','Producto','Application','Cant.','Precio unit.','Total (sin IVA)','IVA','Total (con IVA)']);
+    items.forEach(l=>{ const sub=Number(l.line_amount_mxn)||0; const iva=Math.round(sub*IVA*100)/100, tot=Math.round(sub*(1+IVA)*100)/100;
+      aoa.push([l.ctr_code||'', l.syd_codes||'', l.product_name||'', l.app||'', Number(l.qty)||0, Number(l.unit_price)||0, sub, iva, tot]); });
+    aoa.push([]);
+    aoa.push(['','','','','','Total sin IVA', Number(inv.subtotal_mxn)||0]);
+    aoa.push(['','','','','','IVA 16%', Number(inv.iva_mxn)||0]);
+    aoa.push(['','','','','','Total con IVA', Number(inv.total_mxn)||0]);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:14},{wch:18},{wch:28},{wch:30},{wch:7},{wch:12},{wch:14},{wch:12},{wch:14}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Factura');
+    const safe=String(inv.sat_no||('inv_'+id)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
+    XLSX.writeFile(wb,'factura_'+safe+'.xlsx');
+  }
+  async function saveSatF(id){
+    const el=document.getElementById('sat-in-'+id), msg=document.getElementById('sat-msg-'+id);
+    const val=(el?el.value:'').trim(); if(msg){msg.style.color='';}
+    if(!val){ if(msg){msg.style.color='var(--expense)';msg.textContent='번호를 입력하세요.';} return; }
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id+'/sat-no',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({sat_no:val})});
+      const dd=await r.json();
+      if(!r.ok||dd.error){ if(msg){msg.style.color='var(--expense)';msg.textContent=dd.error==='sat_no_duplicate'?'이미 쓰인 번호입니다.':'저장 실패';} return; }
+      if(msg){msg.style.color='var(--income)';msg.textContent='저장됨';}
+      delete openRows['i'+id]; delete invCache[id]; loadImmediate();
+    }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
 
   // ③ 부족·발주 → SKU별, 클릭 시 발생 내역
@@ -269,6 +331,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618n"></script>
+<script src="refatrix-nav.js?v=20260618o"></script>
 </body>
 </html>
