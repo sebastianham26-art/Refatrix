@@ -30,7 +30,9 @@ export default async function importRoutes(app) {
       return b.id;
     });
     await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `import_batch:${result}` });
-    return { id: result, status: 'pending' };
+    const skuCount = new Set(lines.map((l) => l.product_id)).size;
+    const totalQty = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    return { id: result, status: 'pending', sku_count: skuCount, total_qty: totalQty };
   });
 
   // 미리보기: 승인 시 적용될 단위원가·평균원가를 계산해서 보여줌(반영 없음)

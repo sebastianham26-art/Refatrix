@@ -108,12 +108,20 @@
     <div id="previewTable"></div>
     <div class="hint">각 항목의 <b>통화</b>에 따라 입고일 환율로 MXN 환산됩니다 — <b>USD는 ×환율</b>, <b>MXN은 그대로</b>(환율 미적용). 부대비용 합계(MXN)는 선적 총수량으로 <b>1/n 균등 배분</b>되어 단위원가에 더해집니다. 승인을 눌러야 재고와 평균원가가 실제로 바뀝니다.</div>
   </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="linehead"><label style="margin:0">승인 대기 입고 <span class="hint" id="pendRole"></span></label><button class="btn ghost sm" id="reloadPend">새로고침</button></div>
+    <div class="hint" style="margin:4px 0 10px">업로드하면 여기 <b>승인 대기</b>로 올라옵니다. 디렉터가 승인해야 재고·평균원가에 반영됩니다.</div>
+    <div id="pendList"><div class="hint">불러오는 중…</div></div>
+  </div>
 </div>
+
 
 <script>
   let session = { token:null, user:null, api:'' };
   let prodCache = {};         // id -> {id, code, name, stock_qty, avg_cost}
   let currentBatchId = null;
+  let isDirector = false;
   const $ = (id)=>document.getElementById(id);
   const fmt = (n)=> n==null ? '—' : Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const H = (h)=>{ const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
@@ -135,6 +143,9 @@
       $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
       $('idate').value=new Date().toISOString().slice(0,10);
       addLine(); addOh();
+      isDirector=(d.user?.role==='director');
+      $('pendRole').textContent=isDirector?'(디렉터 — 승인 가능)':'(디렉터 승인 대기 — 보기 전용)';
+      loadPending();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -339,6 +350,36 @@
     renderState();
   }
 
+  // ---- 승인 대기 입고 목록 ----
+  async function loadPending(){
+    try{
+      const d=await fetch(session.api+'/api/import-batches?status=pending',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ $('pendList').innerHTML='<div class="hint">승인 대기 중인 입고가 없습니다.</div>'; return; }
+      $('pendList').innerHTML='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">전체 수량</th><th>제품코드</th><th></th></tr></thead><tbody>'
+        +items.map(b=>{
+          const codes=(b.product_codes||'').length>60?(b.product_codes.slice(0,60)+'…'):(b.product_codes||'-');
+          const act=isDirector
+            ? '<button class="btn gold sm" onclick="approveBatch('+b.id+')">승인</button>'
+            : '<span class="badge">승인 대기</span>';
+          return '<tr><td>'+(b.import_date||'').slice(0,10)+'</td><td>'+(b.created_by_name||'-')+'</td>'
+            +'<td class="num">'+(b.sku_count||0)+'종</td><td class="num"><b>'+Number(b.total_qty||0).toLocaleString()+'</b></td>'
+            +'<td><span class="hint">'+codes+'</span></td><td class="num">'+act+'</td></tr>';
+        }).join('')+'</tbody></table>';
+    }catch(e){ $('pendList').innerHTML='<div class="hint">목록을 불러오지 못했습니다.</div>'; }
+  }
+  async function approveBatch(id){
+    if(!confirm('배치 #'+id+'를 승인하면 재고와 평균원가에 반영됩니다. 진행할까요?'))return;
+    const m=$('formMsg');
+    try{
+      const res=await fetch(session.api+'/api/imports/'+id+'/approve',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='승인 실패: '+(d.error||res.status); return; }
+      m.className='msg ok'; m.textContent='배치 #'+id+' 승인 완료 — 재고·평균원가가 반영되었습니다.';
+      loadPending(); refreshSelected();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+  }
+
   // ---- 작성 + 미리보기 ----
   async function createAndPreview(){
     const m=$('formMsg'); m.className='msg'; $('previewTable').innerHTML='';
@@ -356,8 +397,11 @@
       const pd=await pv.json();
       if(pd.error){m.className='msg err';m.textContent='미리보기 실패: '+pd.error;return;}
       renderPreview(pd.preview||[]);
-      m.className='msg ok'; m.innerHTML='입고 건이 작성되었습니다 <span class="badge">승인 대기</span> (배치 #'+d.id+'). 아래 예상 원가를 확인하고 ②승인을 누르면 반영됩니다.';
-      $('approve').disabled=false;
+      const skuN=d.sku_count!=null?d.sku_count:lines.length;
+      const totQ=d.total_qty!=null?d.total_qty:lines.reduce((s,l)=>s+Number(l.qty||0),0);
+      m.className='msg ok'; m.innerHTML='입고 요청 등록됨 <span class="badge">승인 대기</span> (배치 #'+d.id+') — <b>SKU '+skuN+'종 · 전체 수량 '+Number(totQ).toLocaleString()+'개</b>. 디렉터 승인 후 재고에 반영됩니다.';
+      $('approve').disabled=!isDirector;
+      loadPending();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('preview').disabled=false;$('preview').textContent='① 입고 작성 + 미리보기';}
   }
@@ -388,6 +432,7 @@
   $('addLine').addEventListener('click',()=>addLine());
   $('addOh').addEventListener('click',()=>addOh());
   $('preview').addEventListener('click',createAndPreview);
+  $('reloadPend').addEventListener('click',loadPending);
   $('approve').addEventListener('click',approve);
   $('dlTpl').addEventListener('click',downloadTemplate);
   $('upBtn').addEventListener('click',()=>$('upFile').click());

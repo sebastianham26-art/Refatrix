@@ -66,15 +66,18 @@ export default async function importCostRoutes(app) {
   app.get('/api/import-batches', { preHandler: [authGuard, requirePage('inventory')] }, async (req) => {
     const status = (req.query.status || 'approved');
     const rows = (await query(
-      `SELECT b.id, b.batch_no, b.import_date, b.status,
+      `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by,
+              u.name AS created_by_name,
               COALESCE(SUM(il.qty),0) AS total_qty,
+              COUNT(DISTINCT il.product_id) AS sku_count,
               STRING_AGG(DISTINCT p.code, ', ') AS product_codes
          FROM import_batches b
          LEFT JOIN import_lines il ON il.batch_id=b.id
          LEFT JOIN products p ON p.id=il.product_id
+         LEFT JOIN users u ON u.id=b.created_by
         WHERE b.deleted_at IS NULL AND b.status=$1
-        GROUP BY b.id ORDER BY b.import_date DESC, b.id DESC LIMIT 200`, [status])).rows;
-    return { items: rows.map((r) => ({ ...r, total_qty: Number(r.total_qty) })) };
+        GROUP BY b.id, u.name ORDER BY b.import_date DESC, b.id DESC LIMIT 200`, [status])).rows;
+    return { items: rows.map((r) => ({ ...r, total_qty: Number(r.total_qty), sku_count: Number(r.sku_count) })) };
   });
 
   // 부대비용 문서 작성(+명세 +분배). 작성 시점엔 원가 미반영(pending).
