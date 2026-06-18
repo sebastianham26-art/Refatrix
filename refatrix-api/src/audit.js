@@ -1,12 +1,16 @@
 import { query } from './db.js';
 
-// 민감 행동: 건별 상세 기록
+// 민감 행동: 건별 상세 기록 (감사 로그 실패가 실제 작업을 깨지 않도록 방어적으로)
 export async function logEvent({ userId, deviceId = null, action, target = null, detail = null, result = 'success' }) {
-  await query(
-    `INSERT INTO audit_log (user_id, device_id, action, target, detail, result)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [userId, deviceId, action, target, detail ? JSON.stringify(detail) : null, result]
-  );
+  try {
+    await query(
+      `INSERT INTO audit_log (user_id, device_id, action, target, detail, result)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [userId, deviceId, action, target, detail ? JSON.stringify(detail) : null, result]
+    );
+  } catch (e) {
+    try { console.error('[audit] logEvent failed:', action, e.message); } catch (_) {}
+  }
 }
 
 // 페이지 열람: 유저별·날짜별 요약(가볍게). 같은 날 같은 페이지는 카운트 증가.

@@ -351,7 +351,12 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT status FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', note: '매출 전환된 견적은 삭제 요청할 수 없습니다.' });
-    if (q.status === 'delete_pending') return reply.code(409).send({ error: 'already_requested' });
+    if (q.status === 'delete_pending') {
+      // 이미 삭제 대기 — 오류 대신 사유만 최신화하고 정상 처리(멱등)
+      await query(`UPDATE quotes SET del_reason=$1, del_requested_by=$2, del_requested_at=now(), updated_at=now() WHERE id=$3`,
+        [reason, req.ctx.perm.userId, id]);
+      return { ok: true, already_pending: true, note: '이미 삭제 요청이 접수되어 디렉터 승인 대기 중입니다.' };
+    }
     await query(
       `UPDATE quotes SET del_prev_status=status, status='delete_pending', del_reason=$1, del_requested_by=$2, del_requested_at=now(), updated_by=$2, updated_at=now() WHERE id=$3`,
       [reason, req.ctx.perm.userId, id]);

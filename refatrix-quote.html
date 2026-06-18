@@ -486,9 +486,9 @@
     lastPreview=d;
     const L=d.lines||[];
     let html='<table><colgroup>'
-      +'<col style="width:74px"><col style="width:74px"><col style="width:150px"><col style="width:46px"><col style="width:68px"><col style="width:42px"><col style="width:68px"><col style="width:62px"><col style="width:78px"><col style="width:52px"><col style="width:56px"><col style="width:28px">'
+      +'<col style="width:72px"><col style="width:72px"><col style="width:140px"><col style="width:44px"><col style="width:64px"><col style="width:40px"><col style="width:64px"><col style="width:78px"><col style="width:78px"><col style="width:48px"><col style="width:52px"><col style="width:26px">'
       +'</colgroup><thead><tr>'
-      +'<th class="l">CTR</th><th class="l">SYD</th><th class="l">제품/적용</th><th>수량</th><th>List</th><th>할인</th><th>단가</th><th>IVA</th><th>합계(IVA)</th><th>가용</th><th>상태</th><th></th></tr></thead><tbody>';
+      +'<th class="l">CTR</th><th class="l">SYD</th><th class="l">제품/적용</th><th>수량</th><th>List</th><th>할인%</th><th>단가</th><th>총계<br>(IVA 미포함)</th><th>총계<br>(IVA 포함)</th><th>가용</th><th>상태</th><th></th></tr></thead><tbody>';
     L.forEach((l,i)=>{
       if(l.ambiguous){
         html+='<tr><td class="l" colspan="11" style="color:#9a6512;white-space:normal">"'+esc(l.input_code)+'" — 여러 제품과 매칭됩니다. 삭제 후 다시 입력해 후보에서 고르세요.</td><td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
@@ -497,6 +497,7 @@
       const flag=l.stock_flag||'ok';
       const flagLbl={ok:'정상',low_stock:'재고부족',not_found:'제품없음'}[flag];
       const clickable=l.matched&&l.product_id;
+      const sub = l.line_subtotal!=null ? l.line_subtotal : (l.matched? (Number(l.final_price)||0)*(Number(l.qty)||0) : null);
       html+='<tr>'
         +'<td class="l" title="'+esc(l.ctr_code||'')+'">'+esc(l.ctr_code||'—')+'</td>'
         +'<td class="l" title="'+esc((l.syd_codes||[]).join(' / '))+'">'+esc((l.syd_codes||[]).join(' / ')||'—')+'</td>'
@@ -505,7 +506,7 @@
         +'<td>'+(l.matched?fmt(l.list_price):'—')+'</td>'
         +'<td>'+(l.matched?(l.discount_rate+'%'):'—')+'</td>'
         +'<td>'+(l.matched?fmt(l.final_price):'—')+'</td>'
-        +'<td>'+(l.matched?fmt(l.line_iva):'—')+'</td>'
+        +'<td>'+(l.matched?fmt(sub):'—')+'</td>'
         +'<td><b>'+(l.matched?fmt(l.line_total):'—')+'</b></td>'
         +'<td>'+(l.avail_stock==null?'—':fmtq(l.avail_stock))+'</td>'
         +'<td><span class="flag '+flag+'">'+flagLbl+'</span></td>'
@@ -513,9 +514,9 @@
     });
     html+='</tbody>';
     const t=d.totals||{};
-    html+='<tfoot><tr><td class="l" colspan="3">합계</td><td>'+fmtq(t.totalQty||0)+'</td><td colspan="4"></td><td>'+fmt(t.total||0)+'</td><td colspan="3"></td></tr></tfoot>';
+    html+='<tfoot><tr><td class="l" colspan="3">합계</td><td>'+fmtq(t.totalQty||0)+'</td><td colspan="3"></td><td>'+fmt(t.subtotal||0)+'</td><td><b>'+fmt(t.total||0)+'</b></td><td colspan="3"></td></tr></tfoot>';
     html+='</table>';
-    html+='<div class="hint" style="margin-top:6px">품목수(SKU) <b>'+(t.skuCount||0)+'</b> · 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 소계 '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+' · <b>IVA 포함 총액 '+fmt(t.total||0)+'</b> &nbsp;·&nbsp; <span style="color:var(--muted)">제품명을 클릭하면 이 고객의 구매 실적을 봅니다</span></div>';
+    html+='<div class="hint" style="margin-top:6px">품목수(SKU) <b>'+(t.skuCount||0)+'</b> · 총수량 <b>'+fmtq(t.totalQty||0)+'</b> · 총계(IVA 미포함) '+fmt(t.subtotal||0)+' · IVA '+fmt(t.iva||0)+' · <b>총계(IVA 포함) '+fmt(t.total||0)+'</b> &nbsp;·&nbsp; <span style="color:var(--muted)">제품명을 클릭하면 이 고객의 구매 실적을 봅니다</span></div>';
     $('linesWrap').innerHTML=html;
   }
 
@@ -526,24 +527,39 @@
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
-      let added=0;
-      for(const row of rows){
-        if(!row||!row.length)continue;
-        const code=String(row[0]==null?'':row[0]).trim();
-        const qty=Number(row[1])||0;
-        if(!code||/codigo|code|sku|코드/i.test(code))continue; // 헤더 스킵
-        if(qty<=0)continue;
-        // 해석은 저장 시 서버가 처리하되, 다중매칭은 일단 코드로 넣고 저장 단계에서 안내
-        const r=await fetch(session.api+'/api/quotes/resolve-code?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
-        if(r.matches.length===1) lines.push({code,product_id:r.matches[0].product_id,qty});
-        else lines.push({code,qty}); // 0개=미매칭, 2개+=ambiguous로 표시됨
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false});
+      if(!rows.length){ m.className='msg err';m.textContent='빈 파일입니다.';return; }
+      // 헤더 행 탐지: '수량' 류 헤더 단어로만 확정(제품코드엔 안 나타남 → 데이터 행 오인 방지)
+      const codeRe=/codigo|código|sku|clave|parte|품번|코드|\bcode\b/i;
+      const qtyRe=/cant|cantidad|qty|수량|piezas|pzas|unidad/i;
+      let codeCol=0, qtyCol=1, headerIdx=-1;
+      for(let i=0;i<Math.min(rows.length,6);i++){
+        const r=rows[i]||[]; let qc=-1, cc=-1;
+        r.forEach((cell,idx)=>{ const s=String(cell==null?'':cell); if(qc<0&&qtyRe.test(s))qc=idx; if(cc<0&&codeRe.test(s))cc=idx; });
+        if(qc>=0){ headerIdx=i; qtyCol=qc; if(cc>=0)codeCol=cc; break; }   // 수량 헤더가 있어야 헤더행 확정
+      }
+      const dataRows = headerIdx>=0 ? rows.slice(headerIdx+1) : rows;
+      let added=0, skipped=0, noQty=0;
+      for(const row of dataRows){
+        if(!row||!row.length){ continue; }
+        const code=String(row[codeCol]==null?'':row[codeCol]).trim();
+        if(!code){ skipped++; continue; }   // 빈 코드만 제외(헤더 행은 위에서 이미 제거)
+        let qty=Number(String(row[qtyCol]==null?'':row[qtyCol]).replace(/[^\d.\-]/g,''));
+        if(!qty||qty<=0){ qty=1; noQty++; }   // 수량 누락 → 1로 (행을 버리지 않음)
+        try{
+          const r=await fetch(session.api+'/api/quotes/resolve-code?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
+          if(r&&Array.isArray(r.matches)&&r.matches.length===1) lines.push({code,product_id:r.matches[0].product_id,qty});
+          else lines.push({code,qty}); // 0개=미매칭, 2개+=ambiguous (표에서 안내)
+        }catch(e){ lines.push({code,qty}); } // 조회 실패해도 행 유지(미매칭으로 표시)
         added++;
       }
-      m.className='msg ok';m.textContent=added+'개 품목을 추가했습니다. (다중매칭/미매칭 줄은 표에서 확인하세요)';
       ev.target.value='';
       recalc();
-    }catch(e){ m.className='msg err';m.textContent='엑셀을 읽지 못했습니다. (첫 열=코드, 둘째 열=수량)'; }
+      let msg=added+'개 품목을 추가했습니다 (총 '+lines.length+'줄).';
+      if(noQty) msg+=' 수량이 없던 '+noQty+'줄은 1로 넣었습니다.';
+      if(skipped) msg+=' 빈/헤더 '+skipped+'줄 제외.';
+      m.className='msg ok';m.textContent=msg+' (다중매칭/미매칭 줄은 표에서 확인하세요)';
+    }catch(e){ m.className='msg err';m.textContent='엑셀을 읽지 못했습니다. (코드 열 + 수량 열 형식 확인)'; }
   }
 
   // ===== 고객 구매 실적 (최근 3년) =====
@@ -604,6 +620,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618f"></script>
+<script src="refatrix-nav.js?v=20260618g"></script>
 </body>
 </html>
