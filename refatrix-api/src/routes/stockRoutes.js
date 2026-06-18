@@ -119,6 +119,20 @@ export default async function stockRoutes(app) {
   });
 
   // 이동 내역 목록 (전체: 수동 + 매출/수입 자동). 필터: product_id, move_type, from, to, source
+  // 현재 재고 총괄(고정 요약): SKU 수 · 총수량 · 재고금액(MXN)
+  app.get('/api/stock/summary', { preHandler: [authGuard, requirePageAny(['stock', 'sales'])] }, async () => {
+    const r = (await query(
+      `SELECT COUNT(*) FILTER (WHERE COALESCE(stock_qty,0) <> 0)::int AS sku_count,
+              COALESCE(SUM(stock_qty),0) AS total_qty,
+              COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(avg_cost,0)),0) AS stock_value_mxn
+         FROM products WHERE deleted_at IS NULL`)).rows[0];
+    return {
+      sku_count: Number(r.sku_count) || 0,
+      total_qty: Number(r.total_qty) || 0,
+      stock_value_mxn: Math.round((Number(r.stock_value_mxn) || 0) * 100) / 100,
+    };
+  });
+
   app.get('/api/stock/movements', { preHandler: [authGuard, requirePageAny(['stock','sales'])] }, async (req) => {
     const conds = []; const args = [];
     if (req.query.product_id) { args.push(Number(req.query.product_id)); conds.push(`m.product_id=$${args.length}`); }

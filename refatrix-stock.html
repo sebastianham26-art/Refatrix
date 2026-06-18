@@ -45,6 +45,14 @@
   .mv.in{background:var(--income-bg);color:var(--income)}.mv.out{background:var(--expense-bg);color:var(--expense)}.mv.adjust{background:#eef0f2;color:#555}
   .org{font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:#f1ebf7;color:#7a4ea0}
   .org.매출{background:var(--expense-bg);color:var(--expense)}.org.수입{background:var(--income-bg);color:var(--income)}.org.수동{background:#fdf3e3;color:#9a6512}
+  .stock-sum{position:sticky;top:0;z-index:5;display:flex;gap:10px;flex-wrap:wrap;background:#fff;border-bottom:2px solid var(--brand);padding:10px 2px;margin-bottom:8px}
+  .stock-sum .sb{flex:1;min-width:120px;background:#faf8f3;border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:9px 13px}
+  .stock-sum .sb .v{font-size:19px;font-weight:800;color:var(--brand)}.stock-sum .sb .l{font-size:11px;color:var(--muted)}
+  .daygrp{border:1px solid var(--line,#E6E1D6);border-radius:10px;margin-top:8px;overflow:hidden}
+  .dayhd{background:#f4f1ea;padding:8px 12px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center}
+  .evrow{padding:8px 12px;border-top:1px solid var(--line,#eee);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .evrow:hover{background:#faf8f3}.evrow .caret{transition:transform .15s}.evrow.open .caret{transform:rotate(90deg)}
+  .evdetail{display:none;background:#fcfbf8;padding:0 12px 8px}.evdetail.open{display:block}
   .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
 </style>
 </head>
@@ -93,6 +101,7 @@
     <!-- 내역 -->
     <div class="card">
       <div class="card-h">이동 내역</div>
+      <div id="stockSummary" class="stock-sum"><span class="hint">재고 요약 불러오는 중…</span></div>
       <div class="filters">
         <div><label>유형</label><select id="fType" onchange="loadList()"><option value="">전체</option><option value="in">입고</option><option value="out">출고</option><option value="adjust">조정</option></select></div>
         <div><label>출처</label><select id="fSrc" onchange="loadList()"><option value="">전체</option><option value="manual">수동만</option></select></div>
@@ -113,6 +122,7 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -202,27 +212,53 @@
     try{
       const d=await fetch(session.api+'/api/stock/movements?'+qs,{headers:auth()}).then(r=>r.json());
       render(d.items||[]);
+      loadSummary();
     }catch(e){ w.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:10px">이동 내역이 없습니다.</div>'; return; }
     const tl={in:'입고',out:'출고',adjust:'조정'};
-    let html='<table><thead><tr><th>일시</th><th>유형</th><th>제품</th><th class="r">수량</th><th>출처</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
-    items.forEach(m=>{
-      const dt=new Date(m.moved_at); const ds=isNaN(dt)?'':(dt.toISOString().slice(0,10)+' '+dt.toTimeString().slice(0,5));
-      html+='<tr>'
-        +'<td>'+esc(ds)+'</td>'
-        +'<td><span class="mv '+m.move_type+'">'+tl[m.move_type]+'</span></td>'
-        +'<td><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
-        +'<td class="r">'+(m.move_type==='out'?'−':(m.move_type==='in'?'+':''))+fmtq(Math.abs(m.qty))+'</td>'
-        +'<td><span class="org '+esc(m.origin)+'">'+esc(m.origin)+'</span></td>'
-        +'<td>'+esc(m.ref||'')+'</td>'
-        +'<td>'+esc(m.note||'')+'</td>'
-        +'<td class="hint">'+esc(m.created_by_name||'')+'</td>'
-        +'</tr>';
+    // 사유 로직: 매출 출고→"매출", 수입 입고→"수입", 그 외→직접 입력 사유(note)
+    const reasonOf=(m)=> m.origin==='매출' ? '매출' : (m.origin==='수입' ? '수입' : (m.note||''));
+    const evLabel=(m)=> m.origin==='매출' ? '매출 출고' : (m.origin==='수입' ? '수입 입고' : ((m.origin||'기타')+' '+(tl[m.move_type]||'')));
+    // 날짜별 → 이벤트별 그룹화
+    const byDate={};
+    items.forEach(m=>{ const dt=new Date(m.moved_at); const day=isNaN(dt)?'(날짜미상)':dt.toISOString().slice(0,10);
+      (byDate[day]=byDate[day]||{}); const ev=evLabel(m); (byDate[day][ev]=byDate[day][ev]||[]).push(m); });
+    const days=Object.keys(byDate).sort().reverse();
+    let html=''; let gid=0;
+    days.forEach(day=>{
+      const evs=byDate[day]; const evKeys=Object.keys(evs);
+      const dayCount=evKeys.reduce((s,k)=>s+evs[k].length,0);
+      html+='<div class="daygrp"><div class="dayhd"><span>'+esc(day)+'</span><span class="hint">'+dayCount+'건</span></div>';
+      evKeys.forEach(ev=>{
+        const arr=evs[ev]; const id='ev'+(gid++);
+        const inQ=arr.filter(m=>m.move_type==='in').reduce((s,m)=>s+Math.abs(m.qty),0);
+        const outQ=arr.filter(m=>m.move_type==='out').reduce((s,m)=>s+Math.abs(m.qty),0);
+        const adjQ=arr.filter(m=>m.move_type==='adjust').reduce((s,m)=>s+Math.abs(m.qty),0);
+        const qp=[]; if(inQ)qp.push('+'+fmtq(inQ)); if(outQ)qp.push('−'+fmtq(outQ)); if(adjQ)qp.push('조정 '+fmtq(adjQ));
+        html+='<div class="evrow" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+esc(ev)+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
+        html+='<div class="evdetail" id="'+id+'"><table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
+        arr.forEach(m=>{ const dt=new Date(m.moved_at); const ts=isNaN(dt)?'':dt.toTimeString().slice(0,5);
+          const sign=m.move_type==='out'?'−':(m.move_type==='in'?'+':'');
+          html+='<tr><td>'+ts+'</td><td><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
+            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td>'+esc(m.ref||'')+'</td><td>'+esc(reasonOf(m))+'</td><td class="hint">'+esc(m.created_by_name||'')+'</td></tr>'; });
+        html+='</tbody></table></div>';
+      });
+      html+='</div>';
     });
-    html+='</tbody></table><div class="hint" style="margin-top:8px">최근 '+items.length+'건 · 매출 출고는 자동 기록됩니다.</div>';
+    html+='<div class="hint" style="margin-top:8px">최근 '+items.length+'건 · 날짜→이벤트를 클릭하면 내역이 펼쳐집니다. 매출 출고·수입 입고는 자동 기록됩니다.</div>';
     $('listWrap').innerHTML=html;
+  }
+  function toggleEv(id){ const d=document.getElementById(id); if(!d)return; d.classList.toggle('open'); const row=d.previousElementSibling; if(row)row.classList.toggle('open'); }
+  async function loadSummary(){
+    try{
+      const s=await fetch(session.api+'/api/stock/summary',{headers:auth()}).then(r=>r.json());
+      $('stockSummary').innerHTML=''
+        +'<div class="sb"><div class="v">'+fmtq(s.sku_count)+'</div><div class="l">현재 SKU 수</div></div>'
+        +'<div class="sb"><div class="v">'+fmtq(s.total_qty)+'</div><div class="l">총 수량</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_value_mxn)+'</div><div class="l">재고 금액(MXN)</div></div>';
+    }catch(e){ $('stockSummary').innerHTML='<span class="hint">재고 요약을 불러오지 못했습니다.</span>'; }
   }
 
   function downloadTemplate(){
@@ -261,6 +297,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618m"></script>
+<script src="refatrix-nav.js?v=20260618n"></script>
 </body>
 </html>
