@@ -336,20 +336,25 @@
   // ===== 전체 SKU 가격표 다운로드 =====
   async function downloadPriceList(){
     const m=$('lineMsg');m.className='msg';
-    const cid=$('custSel').value;
-    const custName=cid?(($('custSel').selectedOptions[0]||{}).text||''):'';
+    const guest = isGuest;
+    const custName = partyName();              // 불특정=입력 고객명, 등록=선택 고객명
+    if(guest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='불특정 고객명을 먼저 입력하세요.';return; }
     try{
       m.className='msg ok';m.textContent='가격표를 불러오는 중…';
-      const url=session.api+'/api/quotes/price-list'+(cid?('?customer_id='+encodeURIComponent(cid)):'');
+      const cid=$('custSel').value;
+      // 불특정 고객은 기본 가격표를 받아 입력 할인률을 적용. 등록 고객만 customer_id 전달.
+      let url=session.api+'/api/quotes/price-list';
+      if(!guest && cid && cid!=='__guest__') url+='?customer_id='+encodeURIComponent(cid);
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
       if(!items.length){ m.className='msg err';m.textContent='제품이 없습니다.';return; }
-      const disc=d.discountRate; // null=미등록
+      // 할인률: 불특정=입력값(curDisc), 등록=서버 등록 할인률(null=미등록)
+      const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : d.discountRate;
       const rows=[];
-      rows.push(['Refatrix — Lista de precios']);
+      rows.push(['Refatrix — Lista de precios (precios SIN IVA)']);
       rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
       rows.push([]);
-      rows.push(['CTR Code','SYD Code','Application','List Price','Descuento','Precio c/desc','Existencia']);
+      rows.push(['CTR Code','SYD Code','Application','List Price (sin IVA)','Descuento','Precio c/desc (sin IVA)','Existencia']);
       items.forEach(it=>{
         const discCell = disc==null ? 'a definir' : (disc+'%');
         const finalCell = disc==null ? 'a definir' : Math.round(it.list_price*(1-disc/100)*100)/100;
@@ -360,12 +365,12 @@
         ]);
       });
       const ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:14},{wch:20},{wch:30},{wch:12},{wch:10},{wch:13},{wch:11}];
+      ws['!cols']=[{wch:14},{wch:20},{wch:30},{wch:16},{wch:10},{wch:18},{wch:11}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent=items.length+'개 제품 가격표를 다운로드했습니다.'+(disc==null?' (할인률 미등록 → a definir)':'');
+      m.className='msg ok';m.textContent=items.length+'개 제품 가격표를 다운로드했습니다 (IVA 미포함).'+(disc==null?' (할인률 미등록 → a definir)':(' · 할인 '+disc+'%'));
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
