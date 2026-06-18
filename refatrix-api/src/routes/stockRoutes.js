@@ -133,6 +133,35 @@ export default async function stockRoutes(app) {
     };
   });
 
+  // 수동 이동 편집: 날짜(moved_at)·참조(ref)·사유(note) 수정. 자동기록(매출/수입)·수량은 불가.
+  app.patch('/api/stock/movements/:id', { preHandler: [authGuard, requirePageEditAny(['stock', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const mv = (await query(`SELECT id, source, sales_invoice_id, batch_id FROM stock_movements WHERE id=$1`, [id])).rows[0];
+    if (!mv) return reply.code(404).send({ error: 'not_found' });
+    if (mv.source !== 'manual' || mv.sales_invoice_id || mv.batch_id) {
+      return reply.code(409).send({ error: 'not_manual', note: '자동 기록(매출·수입)은 수정할 수 없습니다.' });
+    }
+    const sets = [], args = [];
+    if (b.moved_at !== undefined) {
+      const d = String(b.moved_at || '').trim();
+      if (!d) return reply.code(400).send({ error: 'date_required', note: '입고 날짜는 필수입니다.' });
+      if (!/^\d{4}-\d{2}-\d{2}/.test(d)) return reply.code(400).send({ error: 'bad_date' });
+      args.push(d); sets.push(`moved_at=$${args.length}`);
+    }
+    if (b.ref !== undefined) {
+      const ref = String(b.ref || '').trim();
+      if (!ref) return reply.code(400).send({ error: 'ref_required' });
+      args.push(ref); sets.push(`ref=$${args.length}`);
+    }
+    if (b.note !== undefined) { args.push(String(b.note || '').trim() || null); sets.push(`note=$${args.length}`); }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    args.push(id);
+    await query(`UPDATE stock_movements SET ${sets.join(', ')} WHERE id=$${args.length}`, args);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `stock_movement:${id}`, detail: { moved_at: b.moved_at, ref: b.ref, note: b.note } });
+    return { ok: true, id };
+  });
+
   app.get('/api/stock/movements', { preHandler: [authGuard, requirePageAny(['stock','sales'])] }, async (req) => {
     const conds = []; const args = [];
     if (req.query.product_id) { args.push(Number(req.query.product_id)); conds.push(`m.product_id=$${args.length}`); }

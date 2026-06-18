@@ -91,15 +91,19 @@ export default async function salesPerfRoutes(app) {
     }
     const collectProgress = collectPlan > 0 ? r2(collectActual / collectPlan * 100) : null;
 
-    // 카드3 고객 개발(제안=견적 / 협상) — 시점 기준(월 무관)
-    let stq = `SELECT s.sort_order, COUNT(c.id) AS n
-                 FROM stages s LEFT JOIN customers c ON c.stage_id=s.id AND c.deleted_at IS NULL`;
-    const sp = [];
-    if (ta) { sp.push(ta); stq += ` AND c.team_id = ANY($1)`; }
-    stq += ` WHERE s.deleted_at IS NULL AND s.sort_order IN (30,40) GROUP BY s.sort_order`;
-    const stRows = (await query(stq, sp)).rows;
-    let proposal = 0, negotiation = 0;
-    for (const r of stRows) { if (Number(r.sort_order) === 30) proposal = Number(r.n); else if (Number(r.sort_order) === 40) negotiation = Number(r.n); }
+    // 카드3 고객 개발 — 당월 견적/협상/수주 건수 (quotes 기준)
+    //  · 견적 = 당월 생성된 견적(취소 제외) · 협상 = 그 중 미결(draft/confirmed) · 수주 = 그 중 전환(converted)
+    let dq = `SELECT
+        COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed','converted'))::int AS quote_total,
+        COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed'))::int AS negotiation,
+        COUNT(*) FILTER (WHERE q.status = 'converted')::int AS won
+      FROM quotes q JOIN customers c ON c.id=q.customer_id
+      WHERE q.deleted_at IS NULL AND c.deleted_at IS NULL
+        AND to_char(q.quote_date,'YYYY-MM') = to_char(now(),'YYYY-MM')`;
+    const dp = [];
+    if (ta) { dp.push(ta); dq += ` AND c.team_id = ANY($1)`; }
+    const dr = (await query(dq, dp)).rows[0] || {};
+    const devQuote = Number(dr.quote_total) || 0, devNeg = Number(dr.negotiation) || 0, devWon = Number(dr.won) || 0;
 
     return {
       yms, multi,
@@ -107,7 +111,7 @@ export default async function salesPerfRoutes(app) {
                       : { progress, momPct, locked: true },
       collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false }
                         : { progress: collectProgress, locked: true },
-      pipeline_dev: { proposal, negotiation, total: proposal + negotiation },
+      pipeline_dev: { quote: devQuote, negotiation: devNeg, won: devWon, total: devQuote },
       drilldown: perm.role === 'director' ? true : (perm.dashDrilldown !== false),
     };
   });

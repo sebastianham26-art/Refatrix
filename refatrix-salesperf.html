@@ -245,26 +245,27 @@
       : '<div class="cardbody"><div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
         +'<div class="goal">목표/계획 MX$'+fmt(s.target)+' · 달성 '+(s.progress==null?'—':s.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
-        +'<div class="cardfoot hint">전사 목표 대비 매출 실적(ex-IVA 소계 기준) · '+lbl+'</div></div>';
+        +'<div class="cardfoot hint">전사 목표 대비 매출 실적(IVA 불포함) · '+lbl+'</div></div>';
     // 카드2 수금 (mom 자리 비워 정렬 맞춤)
     const c2=c.locked
       ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div></div>'
       : '<div class="cardbody"><div class="bigv">MX$'+fmt(c.actual)+'</div><div class="mom flat"></div>'
         +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
-        +'<div class="cardfoot hint">수금예상(인보이스 외상일 기준) 대비 실제 수금(실현) · '+lbl+'</div></div>';
-    // 카드3 고객개발
-    const c3='<div class="cardbody"><div class="bigv">'+(d.total||0)+'<small> 곳</small></div><div class="mom flat"></div>'
-      +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.proposal||0)+'</div><div class="l">제안(견적)</div></div>'
-      +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div></div></div>'
-      +'<div class="cardfoot hint">제안 이후·수주 직전 — 막판 전환을 밀어줄 후보입니다.</div></div>';
+        +'<div class="cardfoot hint">수금예상(인보이스 외상일 기준, IVA 포함) 대비 실제 수금(실현) · '+lbl+'</div></div>';
+    // 카드3 고객개발 — 당월 견적/협상/수주
+    const c3='<div class="cardbody"><div class="bigv">'+(d.quote||0)+'<small> 건</small></div><div class="mom flat"></div>'
+      +'<div class="devboxes"><div class="devbox"><div class="n">'+(d.quote||0)+'</div><div class="l">견적</div></div>'
+      +'<div class="devbox"><div class="n">'+(d.negotiation||0)+'</div><div class="l">협상</div></div>'
+      +'<div class="devbox"><div class="n">'+(d.won||0)+'</div><div class="l">수주</div></div></div>'
+      +'<div class="cardfoot hint">당월 견적 기준 · 견적 → 협상(미결) → 수주(전환)</div></div>';
     const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="go(\'sales\')">매출 목록 보기 →</a>';
     const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a>';
     const lnkPipe  = noDrill ? '' : ' <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a>';
     $('cards').innerHTML=
       '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적'+lnkSales+'</div>'+c1+'</div>'
       +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적'+lnkFin+'</div>'+c2+'</div>'
-      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 제안→수주 직전'+lnkPipe+'</div>'+c3+'</div>';
+      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 당월 견적·협상·수주'+lnkPipe+'</div>'+c3+'</div>';
   }
 
   async function loadWaterfall(){
@@ -479,6 +480,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618q"></script>
+<script src="refatrix-nav.js?v=20260618s"></script>
 </body>
 </html>

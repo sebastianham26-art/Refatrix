@@ -87,6 +87,7 @@
         <div style="min-width:100px"><label id="qtyLbl">수량</label><input id="qty" type="number" step="1" value="1" style="width:100px"></div>
         <div style="min-width:160px"><label>참조번호 *</label><input id="ref" type="text" placeholder="예: IMP-INV-2026-001" style="width:180px"></div>
         <div style="min-width:140px"><label>사유(선택)</label><input id="note" type="text" placeholder="예: 무료샘플" style="width:150px"></div>
+        <div style="min-width:140px"><label>입고날짜 *</label><input id="mdate" type="date" style="width:150px"></div>
         <div><button class="btn" id="saveBtn" onclick="saveMove()">등록</button></div>
         <div style="margin-left:auto"><label>엑셀 일괄</label>
           <div style="display:flex;gap:6px;align-items:center">
@@ -96,6 +97,7 @@
         </div>
       </div>
       <div class="msg" id="saveMsg"></div>
+      <div id="bulkPreview"></div>
     </div>
 
     <!-- 내역 -->
@@ -110,6 +112,24 @@
         <div><button class="btn ghost sm" onclick="loadList()">새로고침</button></div>
       </div>
       <div id="listWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 수동입고 수정 모달 -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:18px 20px">
+    <div style="font-weight:800;color:var(--brand);font-size:15px;margin-bottom:4px">수동 이동 수정</div>
+    <div class="hint" id="emInfo" style="margin-bottom:10px"></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div><label style="font-size:12px;color:var(--muted)">입고 날짜 *</label><br><input id="emDate" type="date" style="width:100%;padding:7px 9px"></div>
+      <div><label style="font-size:12px;color:var(--muted)">참조번호 *</label><br><input id="emRef" type="text" style="width:100%;padding:7px 9px"></div>
+      <div><label style="font-size:12px;color:var(--muted)">사유(이름)</label><br><input id="emNote" type="text" placeholder="예: Luemi #1" style="width:100%;padding:7px 9px"></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+      <span id="emMsg" style="font-size:12px;margin-right:auto"></span>
+      <button class="btn ghost sm" onclick="closeEdit()">취소</button>
+      <button class="btn" id="emSave" onclick="saveMoveEdit()">저장</button>
     </div>
   </div>
 </div>
@@ -143,6 +163,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      if($('mdate') && !$('mdate').value) $('mdate').value=new Date().toISOString().slice(0,10);
       loadList();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -182,12 +203,14 @@
     const m=$('saveMsg');m.className='msg';
     if(!picked){m.className='msg err';m.textContent='제품을 검색해서 선택하세요.';return;}
     const type=$('mtype').value, qty=Number($('qty').value), ref=$('ref').value.trim();
+    const mdate=$('mdate').value;
     if(!ref){m.className='msg err';m.textContent='참조번호를 입력하세요.';return;}
+    if(!mdate){m.className='msg err';m.textContent='입고 날짜를 입력하세요.';$('mdate').focus();return;}
     if(type!=='adjust' && (!qty||qty<=0)){m.className='msg err';m.textContent='수량을 입력하세요(양수).';return;}
     if(type==='adjust' && !qty){m.className='msg err';m.textContent='조정 수량을 입력하세요(증가 +, 감소 −).';return;}
     $('saveBtn').disabled=true;
     try{
-      const res=await fetch(session.api+'/api/stock/movements',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({product_id:picked.product_id,move_type:type,qty,ref,note:$('note').value.trim()})});
+      const res=await fetch(session.api+'/api/stock/movements',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({product_id:picked.product_id,move_type:type,qty,ref,note:$('note').value.trim(),moved_at:mdate})});
       const d=await res.json();
       if(!res.ok||d.error){
         let msg=d.error;
@@ -215,7 +238,9 @@
       loadSummary();
     }catch(e){ w.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
+  let curItems=[];
   function render(items){
+    curItems=items||[];
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:10px">이동 내역이 없습니다.</div>'; return; }
     const tl={in:'입고',out:'출고',adjust:'조정'};
     // 사유 로직: 매출 출고→"매출", 수입 입고→"수입", 그 외→직접 입력 사유(note)
@@ -238,11 +263,13 @@
         const adjQ=arr.filter(m=>m.move_type==='adjust').reduce((s,m)=>s+Math.abs(m.qty),0);
         const qp=[]; if(inQ)qp.push('+'+fmtq(inQ)); if(outQ)qp.push('−'+fmtq(outQ)); if(adjQ)qp.push('조정 '+fmtq(adjQ));
         html+='<div class="evrow" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+esc(ev)+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
-        html+='<div class="evdetail" id="'+id+'"><table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
+        html+='<div class="evdetail" id="'+id+'"><table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th><th>수정</th></tr></thead><tbody>';
         arr.forEach(m=>{ const dt=new Date(m.moved_at); const ts=isNaN(dt)?'':dt.toTimeString().slice(0,5);
           const sign=m.move_type==='out'?'−':(m.move_type==='in'?'+':'');
+          const canEdit=(m.origin!=='매출'&&m.origin!=='수입');
+          const editBtn=canEdit?'<button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="editMove('+m.id+')">수정</button>':'<span class="hint">자동</span>';
           html+='<tr><td>'+ts+'</td><td><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
-            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td>'+esc(m.ref||'')+'</td><td>'+esc(reasonOf(m))+'</td><td class="hint">'+esc(m.created_by_name||'')+'</td></tr>'; });
+            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td>'+esc(m.ref||'')+'</td><td>'+esc(reasonOf(m))+'</td><td class="hint">'+esc(m.created_by_name||'')+'</td><td>'+editBtn+'</td></tr>'; });
         html+='</tbody></table></div>';
       });
       html+='</div>';
@@ -262,41 +289,96 @@
   }
 
   function downloadTemplate(){
-    const ws=XLSX.utils.aoa_to_sheet([['Codigo','Tipo (in/out/adjust)','Cantidad','Referencia','Nota'],['CTR-1001','in',50,'IMP-INV-2026-001',''],['CTR-1002','out',2,'SAMPLE-Cliente','무료샘플']]);
-    ws['!cols']=[{wch:14},{wch:20},{wch:10},{wch:22},{wch:16}];
+    const ws=XLSX.utils.aoa_to_sheet([['Codigo','Tipo (in/out/adjust)','Cantidad','Referencia','Nota','Fecha (YYYY-MM-DD)'],['CTR-1001','in',50,'IMP-INV-2026-001','','2026-04-01'],['CTR-1002','out',2,'SAMPLE-Cliente','무료샘플','2026-04-01']]);
+    ws['!cols']=[{wch:14},{wch:20},{wch:10},{wch:22},{wch:16},{wch:18}];
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Movimientos');
     XLSX.writeFile(wb,'plantilla_movimientos.xlsx');
   }
+  let bulkRows=null;
   async function onXlsx(ev){
     const file=ev.target.files[0]; if(!file)return; const m=$('saveMsg');m.className='msg';
     try{
       const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
       const payload=[];
+      const xdate=(v)=>{ // 엑셀 날짜(문자열/숫자) → YYYY-MM-DD
+        if(v==null||v==='')return '';
+        if(typeof v==='number'){ const d=XLSX.SSF?XLSX.SSF.parse_date_code(v):null; if(d)return String(d.y)+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0'); }
+        const s=String(v).trim(); const mm=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/); if(mm)return mm[1]+'-'+mm[2].padStart(2,'0')+'-'+mm[3].padStart(2,'0'); return s;
+      };
       for(const r of rows){
         if(!r||!r.length)continue;
         const code=String(r[0]==null?'':r[0]).trim();
         if(!code||/codigo|code|sku|코드/i.test(code))continue;
-        payload.push({code,move_type:String(r[1]||'').trim(),qty:Number(r[2])||0,ref:String(r[3]||'').trim(),note:String(r[4]||'').trim()});
-      }
-      if(!payload.length){m.className='msg err';m.textContent='등록할 행이 없습니다.';ev.target.value='';return;}
-      const res=await fetch(session.api+'/api/stock/movements/bulk',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:payload})});
-      const d=await res.json();
-      if(!res.ok||d.error){
-        const bad=(d.results||[]).filter(x=>x.error).map(x=>'행'+x.row+':'+x.error).slice(0,5).join(', ');
-        m.className='msg err';m.textContent='일괄 실패(전체 취소): '+(bad||d.error);
-      } else {
-        m.className='msg ok';m.textContent=d.count+'건 일괄 등록 완료.';
-        loadList();
+        payload.push({code,move_type:String(r[1]||'').trim(),qty:Number(r[2])||0,ref:String(r[3]||'').trim(),note:String(r[4]||'').trim(),moved_at:xdate(r[5])});
       }
       ev.target.value='';
-    }catch(e){ m.className='msg err';m.textContent='엑셀을 읽지 못했습니다.'; }
+      if(!payload.length){m.className='msg err';m.textContent='등록할 행이 없습니다.';$('bulkPreview').innerHTML='';return;}
+      // 미리보기 렌더 (확인 후 저장)
+      bulkRows=payload;
+      const tl={in:'입고',out:'출고',adjust:'조정'};
+      let h='<div style="margin-top:10px;border:1px solid var(--gold,#d4a017);border-radius:10px;background:#fffaf0;padding:10px 12px">'
+        +'<div style="font-weight:800;color:#9a6512;font-size:13px;margin-bottom:6px">업로드 미리보기 — '+payload.length+'건 · 내용을 확인하고 [입고 저장]을 누르세요</div>'
+        +'<div style="max-height:260px;overflow:auto;border:1px solid var(--line,#e6e1d6);border-radius:8px;background:#fff">'
+        +'<table style="margin:0;font-size:12px"><thead><tr><th>#</th><th>코드</th><th>유형</th><th class="r">수량</th><th>참조</th><th>사유</th><th>입고날짜</th></tr></thead><tbody>';
+      payload.forEach((p,i)=>{ const noDate=!p.moved_at; const badType=!['in','out','adjust'].includes(p.move_type); const badQty=!p.qty;
+        h+='<tr><td>'+(i+1)+'</td><td><b>'+esc(p.code)+'</b></td>'
+          +'<td>'+(badType?'<span style="color:var(--expense)">'+esc(p.move_type||'(없음)')+'</span>':(tl[p.move_type]||p.move_type))+'</td>'
+          +'<td class="r">'+(badQty?'<span style="color:var(--expense)">0</span>':fmtq(p.qty))+'</td>'
+          +'<td>'+esc(p.ref||'')+(p.ref?'':' <span style="color:var(--expense)">(참조 필요)</span>')+'</td>'
+          +'<td>'+esc(p.note||'')+'</td>'
+          +'<td>'+(noDate?'<span style="color:#9a6512">오늘로 기록</span>':esc(p.moved_at))+'</td></tr>';
+      });
+      h+='</tbody></table></div>'
+        +'<div style="margin-top:8px;display:flex;gap:8px;align-items:center">'
+        +'<button class="btn" onclick="confirmBulk()">입고 저장 ('+payload.length+'건)</button>'
+        +'<button class="btn ghost sm" onclick="cancelBulk()">취소</button>'
+        +'<span class="hint">참조번호가 없거나 유형/수량이 잘못된 행이 있으면 저장 시 전체가 취소됩니다.</span></div></div>';
+      $('bulkPreview').innerHTML=h; m.className='msg';m.textContent='';
+    }catch(e){ m.className='msg err';m.textContent='엑셀을 읽지 못했습니다.';$('bulkPreview').innerHTML=''; }
+  }
+  function cancelBulk(){ bulkRows=null; $('bulkPreview').innerHTML=''; }
+  async function confirmBulk(){
+    if(!bulkRows||!bulkRows.length)return; const m=$('saveMsg');m.className='msg';
+    const res=await fetch(session.api+'/api/stock/movements/bulk',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:bulkRows})});
+    const d=await res.json();
+    if(!res.ok||d.error){
+      const bad=(d.results||[]).filter(x=>x.error).map(x=>'행'+x.row+':'+x.error).slice(0,5).join(', ');
+      m.className='msg err';m.textContent='일괄 실패(전체 취소): '+(bad||d.error);
+    } else {
+      m.className='msg ok';m.textContent=d.count+'건 일괄 입고 저장 완료.';
+      bulkRows=null;$('bulkPreview').innerHTML='';loadList();
+    }
+  }
+  let editId=null;
+  function editMove(id){
+    const m=curItems.find(x=>x.id===id); if(!m)return;
+    editId=id;
+    $('emInfo').textContent=(m.ctr_code||'')+' · '+(m.product_name||'')+' · '+(m.move_type==='out'?'출고':(m.move_type==='in'?'입고':'조정'))+' '+fmtq(Math.abs(m.qty));
+    const dt=new Date(m.moved_at); $('emDate').value=isNaN(dt)?'':dt.toISOString().slice(0,10);
+    $('emRef').value=m.ref||''; $('emNote').value=m.note||''; $('emMsg').textContent='';
+    $('editModal').style.display='flex';
+  }
+  function closeEdit(){ $('editModal').style.display='none'; editId=null; }
+  async function saveMoveEdit(){
+    if(!editId)return; const msg=$('emMsg');msg.style.color='';
+    const moved_at=$('emDate').value, ref=$('emRef').value.trim(), note=$('emNote').value.trim();
+    if(!moved_at){msg.style.color='var(--expense)';msg.textContent='입고 날짜를 입력하세요.';return;}
+    if(!ref){msg.style.color='var(--expense)';msg.textContent='참조번호를 입력하세요.';return;}
+    $('emSave').disabled=true;
+    try{
+      const r=await fetch(session.api+'/api/stock/movements/'+editId,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({moved_at,ref,note})});
+      const d=await r.json();
+      if(!r.ok||d.error){ msg.style.color='var(--expense)';msg.textContent=d.note||(d.error==='not_manual'?'자동 기록은 수정할 수 없습니다.':'수정 실패'); $('emSave').disabled=false; return; }
+      closeEdit(); loadList();
+    }catch(e){ msg.style.color='var(--expense)';msg.textContent='서버 연결 실패'; }
+    finally{ $('emSave').disabled=false; }
   }
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618q"></script>
+<script src="refatrix-nav.js?v=20260618s"></script>
 </body>
 </html>
