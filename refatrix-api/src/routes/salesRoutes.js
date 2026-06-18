@@ -221,7 +221,9 @@ export default async function salesRoutes(app) {
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id WHERE s.id=$1`, [id])).rows[0];
     if (!head) return reply.code(404).send({ error: 'not_found' });
     const lines = (await query(
-      `SELECT l.*, p.code, p.name FROM sales_invoice_lines l JOIN products p ON p.id=l.product_id WHERE l.invoice_id=$1 ORDER BY l.id`, [id])).rows;
+      `SELECT l.*, p.code, p.name, p.app,
+              (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
+         FROM sales_invoice_lines l JOIN products p ON p.id=l.product_id WHERE l.invoice_id=$1 ORDER BY l.id`, [id])).rows;
     return { invoice: head, lines };
   });
 
