@@ -49,7 +49,7 @@
   .pvrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
   .pvtag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
   .pvtag.ok{background:var(--income-bg);color:var(--income)}.pvtag.warn{background:#fdf3e3;color:#9a6512}.pvtag.dev{background:#f1ebf7;color:#7a4ea0}
-  .pvseg{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6}
+  .pvseg{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6;max-height:150px;overflow:auto}
 </style>
 </head>
 <body>
@@ -91,13 +91,13 @@
 </div>
 
 <!-- 매출 전환 모달 -->
-<div id="cvModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:50px 16px">
-  <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+<div id="cvModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:50px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:460px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);max-height:calc(100vh - 100px);display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)">
       <span style="font-size:15px;font-weight:800;color:var(--brand)">매출 전환</span>
       <button class="btn ghost sm" style="margin-left:auto" onclick="closeConvert()">닫기 ✕</button>
     </div>
-    <div style="padding:16px 18px">
+    <div style="padding:16px 18px;overflow:auto;flex:1">
       <div id="cvInfo" class="hint" style="margin-bottom:10px"></div>
       <div id="cvPreview" style="margin-bottom:12px"></div>
       <div id="cvGuestWrap" class="hidden">
@@ -383,8 +383,11 @@
   }
   function renderPreview(pv){
     const c=pv.counts||{};
+    const sumQty=(arr)=>(arr||[]).reduce((s,x)=>s+(Number(x.qty)||0),0);
+    const inSku=(pv.in_stock||[]).length, inQty=sumQty(pv.in_stock);
+    const shSku=(pv.shortage||[]).length, devSku=(pv.new_dev||[]).length;
     let h='<div style="font-weight:700;color:var(--brand);margin-bottom:6px">전환 미리보기 (3갈래 분류)</div>';
-    h+='<div class="pvrow"><span class="pvtag ok">① 즉시 매출 '+c.in_stock+'</span> <span class="pvtag warn">② 부족(발주) '+c.shortage+'</span> <span class="pvtag dev">③ 개발요청 '+c.new_dev+'</span></div>';
+    h+='<div class="pvrow"><span class="pvtag ok">① 즉시 매출 SKU '+inSku+'개 · 총수량 '+inQty+'개</span> <span class="pvtag warn">② 부족(발주) SKU '+shSku+'개</span> <span class="pvtag dev">③ 개발요청 SKU '+devSku+'개</span></div>';
     if((pv.in_stock||[]).length) h+='<div class="pvseg"><b>① 즉시 매출</b><br>'+pv.in_stock.map(x=>esc(x.ctr_code)+' ×'+x.qty+' (재고 '+x.avail+')').join('<br>')+'</div>';
     if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
     if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
@@ -432,6 +435,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618i"></script>
+<script src="refatrix-nav.js?v=20260618j"></script>
 </body>
 </html>
