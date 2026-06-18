@@ -385,9 +385,14 @@
     const c=pv.counts||{};
     const sumQty=(arr)=>(arr||[]).reduce((s,x)=>s+(Number(x.qty)||0),0);
     const inSku=(pv.in_stock||[]).length, inQty=sumQty(pv.in_stock);
-    const shSku=(pv.shortage||[]).length, devSku=(pv.new_dev||[]).length;
+    const shSku=(pv.shortage||[]).length, shQty=sumQty(pv.shortage);
+    const shShort=(pv.shortage||[]).reduce((s,x)=>s+(Number(x.short)||0),0);
+    const devSku=(pv.new_dev||[]).length, devQty=sumQty(pv.new_dev);
     let h='<div style="font-weight:700;color:var(--brand);margin-bottom:6px">전환 미리보기 (3갈래 분류)</div>';
-    h+='<div class="pvrow"><span class="pvtag ok">① 즉시 매출 SKU '+inSku+'개 · 총수량 '+inQty+'개</span> <span class="pvtag warn">② 부족(발주) SKU '+shSku+'개</span> <span class="pvtag dev">③ 개발요청 SKU '+devSku+'개</span></div>';
+    h+='<div class="pvrow">'
+      +'<span class="pvtag ok">① 즉시 매출 SKU '+inSku+'개 · 총수량 '+inQty+'개</span> '
+      +'<span class="pvtag warn">② 부족(발주) SKU '+shSku+'개 · 총수량 '+shQty+'개 (부족 '+shShort+'개)</span> '
+      +'<span class="pvtag dev">③ 개발요청(미등록) SKU '+devSku+'개 · 총수량 '+devQty+'개</span></div>';
     if((pv.in_stock||[]).length) h+='<div class="pvseg"><b>① 즉시 매출</b><br>'+pv.in_stock.map(x=>esc(x.ctr_code)+' ×'+x.qty+' (재고 '+x.avail+')').join('<br>')+'</div>';
     if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
     if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
@@ -435,6 +440,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618j"></script>
+<script src="refatrix-nav.js?v=20260618k"></script>
 </body>
 </html>
