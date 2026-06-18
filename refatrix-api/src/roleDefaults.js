@@ -23,14 +23,14 @@ export const ROLE_DEFAULTS = {
   director: { pages: 'ALL', fields: ['sales_amount', 'ar_amount', 'mkt_amount'] },
   sales: {
     pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'edit'],
-            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view']],
+            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view'], ['transactions', 'view']],
     fields: ['sales_amount'],
   },
   sales_support: {
     // 영업과 동일하되: 파이프라인은 열람만, AR(settlement)·수입원가(inventory) 추가
     pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'view'],
             ['pipeline', 'view'], ['customers', 'edit'], ['targets', 'view'],
-            ['settlement', 'edit'], ['inventory', 'edit']],
+            ['settlement', 'edit'], ['inventory', 'edit'], ['transactions', 'view']],
     fields: ['sales_amount', 'ar_amount'],
   },
   treasury: {
@@ -38,7 +38,8 @@ export const ROLE_DEFAULTS = {
     fields: ['sales_amount', 'ar_amount'],
   },
   marketing: {
-    pages: [['marketing', 'edit'], ['devrequest', 'view'], ['targets', 'view'], ['customers', 'view']],
+    pages: [['marketing', 'edit'], ['devrequest', 'view'], ['targets', 'view'], ['customers', 'view'],
+            ['sales', 'view'], ['transactions', 'view']],
     fields: ['mkt_amount'],
   },
   ops: {

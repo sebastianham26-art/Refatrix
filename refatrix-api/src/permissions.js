@@ -23,6 +23,9 @@ export function pageAllowed(perm, pageKey, isRegisteredDevice) {
 // 민감 필드 노출 여부
 export function fieldVisible(perm, fieldKey) {
   if (perm.role === 'director') return true;
+  // 영업 대시보드 핵심 지표는 전 직원 공개(디렉터 외 모두):
+  //   매출 금액(매출목표 대비 실적·주차별 워터폴·주간 캘린더), 수금/외상 금액(수금계획 대비 실적)
+  if (fieldKey === 'sales_amount' || fieldKey === 'ar_amount') return true;
   return perm.fields?.has(fieldKey) ?? false;
 }
 
