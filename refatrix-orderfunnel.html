@@ -194,13 +194,23 @@
     const okPct=Math.round(ok/tot*1000)/10;
     const cx=110, cy=110, rO=80, rI=50, C=2*Math.PI;
     const segs=[['#0F6E56',ok,'즉시'],['#B8893B',ss,'부족'],['#6B4FB0',dv,'개발']];
-    let acc=0, arcs='';
-    segs.forEach(([col,val])=>{ if(val<=0) return; const frac=val/tot; const a0=acc*C-Math.PI/2, a1=(acc+frac)*C-Math.PI/2; acc+=frac;
-      const large=frac>0.5?1:0;
-      const x0=cx+rO*Math.cos(a0), y0=cy+rO*Math.sin(a0), x1=cx+rO*Math.cos(a1), y1=cy+rO*Math.sin(a1);
-      const xi1=cx+rI*Math.cos(a1), yi1=cy+rI*Math.sin(a1), xi0=cx+rI*Math.cos(a0), yi0=cy+rI*Math.sin(a0);
-      arcs+='<path d="M '+x0+' '+y0+' A '+rO+' '+rO+' 0 '+large+' 1 '+x1+' '+y1+' L '+xi1+' '+yi1+' A '+rI+' '+rI+' 0 '+large+' 0 '+xi0+' '+yi0+' Z" fill="'+col+'"/>';
-    });
+    const nonZero=segs.filter(([,v])=>v>0);
+    let arcs='';
+    if(nonZero.length===1){
+      // 한 항목이 100% → 360° 호는 시작=끝이라 안 그려짐 → 완전한 링(도넛)으로 그림
+      const col=nonZero[0][0];
+      arcs='<path fill-rule="evenodd" fill="'+col+'" d="'
+        +'M '+(cx+rO)+' '+cy+' A '+rO+' '+rO+' 0 1 1 '+(cx-rO)+' '+cy+' A '+rO+' '+rO+' 0 1 1 '+(cx+rO)+' '+cy+' Z '
+        +'M '+(cx+rI)+' '+cy+' A '+rI+' '+rI+' 0 1 0 '+(cx-rI)+' '+cy+' A '+rI+' '+rI+' 0 1 0 '+(cx+rI)+' '+cy+' Z"/>';
+    } else {
+      let acc=0;
+      segs.forEach(([col,val])=>{ if(val<=0) return; const frac=val/tot; const a0=acc*C-Math.PI/2, a1=(acc+frac)*C-Math.PI/2; acc+=frac;
+        const large=frac>0.5?1:0;
+        const x0=cx+rO*Math.cos(a0), y0=cy+rO*Math.sin(a0), x1=cx+rO*Math.cos(a1), y1=cy+rO*Math.sin(a1);
+        const xi1=cx+rI*Math.cos(a1), yi1=cy+rI*Math.sin(a1), xi0=cx+rI*Math.cos(a0), yi0=cy+rI*Math.sin(a0);
+        arcs+='<path d="M '+x0+' '+y0+' A '+rO+' '+rO+' 0 '+large+' 1 '+x1+' '+y1+' L '+xi1+' '+yi1+' A '+rI+' '+rI+' 0 '+large+' 0 '+xi0+' '+yi0+' Z" fill="'+col+'"/>';
+      });
+    }
     const legend=segs.map(([col,val,nm])=>'<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px"><span style="width:10px;height:10px;background:'+col+';display:inline-block;border-radius:2px"></span>'+nm+' '+nf(val)+' ('+(tot>0?Math.round(val/tot*1000)/10:0)+'%)</span>').join('');
     $('donutWrap').innerHTML='<div style="text-align:center;margin-top:10px"><div style="font-weight:800;color:var(--brand);margin-bottom:4px">'+esc(lab)+' 구성</div>'
       +'<svg width="220" height="220" viewBox="0 0 220 220">'+arcs
@@ -255,6 +265,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618k"></script>
+<script src="refatrix-nav.js?v=20260618l"></script>
 </body>
 </html>
