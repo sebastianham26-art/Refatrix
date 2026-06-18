@@ -36,6 +36,9 @@
   th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
   th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap}
+  .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:20px;font-weight:800;color:var(--brand,#143D34)}.sb .l{font-size:11px;color:var(--muted,#6F6A60);margin-top:2px}
   .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
   .lrow{display:flex;gap:8px;margin-top:8px;align-items:flex-end}
   .lrow>div{flex:1}.lrow .x{flex:0 0 auto}
@@ -352,21 +355,35 @@
 
   // ---- 승인 대기 입고 목록 ----
   async function loadPending(){
+    $('pendList').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const d=await fetch(session.api+'/api/import-batches?status=pending',{headers:auth()}).then(r=>r.json());
+      const res=await fetch(session.api+'/api/import-batches?status=pending',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('pendList').innerHTML='<div class="msg err" style="display:block">목록 조회 실패: '+(d.note||d.error||res.status)+'</div>'; return; }
       const items=d.items||[];
       if(!items.length){ $('pendList').innerHTML='<div class="hint">승인 대기 중인 입고가 없습니다.</div>'; return; }
-      $('pendList').innerHTML='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">전체 수량</th><th>제품코드</th><th></th></tr></thead><tbody>'
+      const tSku=items.reduce((s,b)=>s+Number(b.sku_count||0),0);
+      const tQty=items.reduce((s,b)=>s+Number(b.total_qty||0),0);
+      const tVal=items.reduce((s,b)=>s+Number(b.stock_value_mxn||0),0);
+      const money=(n)=>'$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+      const sum='<div class="sbrow" style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 10px">'
+        +'<div class="sb"><div class="v">'+items.length+'</div><div class="l">승인 대기 건수</div></div>'
+        +'<div class="sb"><div class="v">'+tSku+'</div><div class="l">전체 SKU(종)</div></div>'
+        +'<div class="sb"><div class="v">'+tQty.toLocaleString()+'</div><div class="l">총 수량</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--brand)">'+money(tVal)+'</div><div class="l">총 재고 금액(MXN)</div></div></div>';
+      const body='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">총 재고 금액</th><th>제품코드</th><th></th></tr></thead><tbody>'
         +items.map(b=>{
-          const codes=(b.product_codes||'').length>60?(b.product_codes.slice(0,60)+'…'):(b.product_codes||'-');
+          const codes=(b.product_codes||'').length>50?(b.product_codes.slice(0,50)+'…'):(b.product_codes||'-');
           const act=isDirector
             ? '<button class="btn gold sm" onclick="approveBatch('+b.id+')">승인</button>'
             : '<span class="badge">승인 대기</span>';
           return '<tr><td>'+(b.import_date||'').slice(0,10)+'</td><td>'+(b.created_by_name||'-')+'</td>'
             +'<td class="num">'+(b.sku_count||0)+'종</td><td class="num"><b>'+Number(b.total_qty||0).toLocaleString()+'</b></td>'
+            +'<td class="num" style="color:var(--brand);font-weight:700">'+money(b.stock_value_mxn)+'</td>'
             +'<td><span class="hint">'+codes+'</span></td><td class="num">'+act+'</td></tr>';
         }).join('')+'</tbody></table>';
-    }catch(e){ $('pendList').innerHTML='<div class="hint">목록을 불러오지 못했습니다.</div>'; }
+      $('pendList').innerHTML=sum+body;
+    }catch(e){ $('pendList').innerHTML='<div class="hint">목록을 불러오지 못했습니다. (서버 연결 확인)</div>'; }
   }
   async function approveBatch(id){
     if(!confirm('배치 #'+id+'를 승인하면 재고와 평균원가에 반영됩니다. 진행할까요?'))return;
@@ -399,7 +416,8 @@
       renderPreview(pd.preview||[]);
       const skuN=d.sku_count!=null?d.sku_count:lines.length;
       const totQ=d.total_qty!=null?d.total_qty:lines.reduce((s,l)=>s+Number(l.qty||0),0);
-      m.className='msg ok'; m.innerHTML='입고 요청 등록됨 <span class="badge">승인 대기</span> (배치 #'+d.id+') — <b>SKU '+skuN+'종 · 전체 수량 '+Number(totQ).toLocaleString()+'개</b>. 디렉터 승인 후 재고에 반영됩니다.';
+      const val=d.stock_value_mxn!=null?d.stock_value_mxn:0;
+      m.className='msg ok'; m.innerHTML='입고 <b>승인 요청 완료</b> <span class="badge">승인 대기</span> (배치 #'+d.id+')<br>— 전체 <b>SKU '+skuN+'종</b> · 총 수량 <b>'+Number(totQ).toLocaleString()+'개</b> · 총 재고 금액 <b>$'+Number(val).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})+'</b><br>디렉터 승인 후 재고·평균원가에 반영됩니다.';
       $('approve').disabled=!isDirector;
       loadPending();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
@@ -454,6 +472,6 @@
     addLine(); addOh();
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618c"></script>
+<script src="refatrix-nav.js?v=20260618d"></script>
 </body>
 </html>

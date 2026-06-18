@@ -66,10 +66,13 @@ export default async function importCostRoutes(app) {
   app.get('/api/import-batches', { preHandler: [authGuard, requirePage('inventory')] }, async (req) => {
     const status = (req.query.status || 'approved');
     const rows = (await query(
-      `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by,
+      `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by, b.currency, b.fx_rate,
               u.name AS created_by_name,
               COALESCE(SUM(il.qty),0) AS total_qty,
               COUNT(DISTINCT il.product_id) AS sku_count,
+              COALESCE(SUM(il.qty * il.import_price),0) AS base_amount_cur,
+              COALESCE((SELECT SUM(CASE WHEN o.currency='USD' THEN o.amount*b.fx_rate ELSE o.amount END)
+                          FROM import_overheads o WHERE o.batch_id=b.id),0) AS overhead_mxn,
               STRING_AGG(DISTINCT p.code, ', ') AS product_codes
          FROM import_batches b
          LEFT JOIN import_lines il ON il.batch_id=b.id
@@ -77,7 +80,13 @@ export default async function importCostRoutes(app) {
          LEFT JOIN users u ON u.id=b.created_by
         WHERE b.deleted_at IS NULL AND b.status=$1
         GROUP BY b.id, u.name ORDER BY b.import_date DESC, b.id DESC LIMIT 200`, [status])).rows;
-    return { items: rows.map((r) => ({ ...r, total_qty: Number(r.total_qty), sku_count: Number(r.sku_count) })) };
+    return { items: rows.map((r) => {
+      const fx = Number(r.fx_rate) || 1;
+      const baseMxn = Number(r.base_amount_cur) * (r.currency === 'USD' ? fx : 1);
+      const stockValueMxn = Math.round((baseMxn + Number(r.overhead_mxn)) * 100) / 100;
+      return { ...r, total_qty: Number(r.total_qty), sku_count: Number(r.sku_count),
+        stock_value_mxn: stockValueMxn, currency: r.currency, fx_rate: fx };
+    }) };
   });
 
   // 부대비용 문서 작성(+명세 +분배). 작성 시점엔 원가 미반영(pending).
