@@ -359,6 +359,7 @@
   function menuBadge(key){
     const b=sum?sum.badges||{}:{};
     if(key==='sales') return b.sales_change_approvals||0;
+    if(key==='import') return b.import_pending||0;
     if(key==='targets') return (b.target_approvals||0)+(b.target_rejected||0);
     if(key==='marketing') return (b.marketing_approvals||0)+(b.marketing_rejected||0)+(b.marketing_over_months||0);
     if(key==='pipeline') return (b.directives_unread||0)+(sum&&sum.isDirector?(b.directives_open_all||0):0)+(b.stalled_customers||0);
@@ -571,6 +572,7 @@
       add(b.target_approvals,'매출목표 승인 대기','targets');
       add(b.marketing_approvals,'마케팅 계획 승인 대기','marketing');
       add(b.sales_change_approvals,'매출 수정/삭제 승인 대기','sales');
+      add(b.import_pending,'수입입고 승인 대기','import');
       add(b.directives_open_all,'지시 미완료(전체)','pipeline');
     }
     add(b.directives_unread,'미읽음 디렉터 지시','pipeline');
@@ -609,6 +611,6 @@
   })();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 </script>
-<script src="refatrix-nav.js?v=20260618d"></script>
+<script src="refatrix-nav.js?v=20260618e"></script>
 </body>
 </html>

@@ -64,6 +64,7 @@ async function computeDoc(c, docId) {
 export default async function importCostRoutes(app) {
   // 승인된 입고 건 목록(부대비용 분배 대상 선택용)
   app.get('/api/import-batches', { preHandler: [authGuard, requirePage('inventory')] }, async (req) => {
+    const canApprove = req.ctx.perm.role === 'director';
     const status = (req.query.status || 'approved');
     const rows = (await query(
       `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by, b.currency, b.fx_rate,
@@ -80,13 +81,19 @@ export default async function importCostRoutes(app) {
          LEFT JOIN users u ON u.id=b.created_by
         WHERE b.deleted_at IS NULL AND b.status=$1
         GROUP BY b.id, u.name ORDER BY b.import_date DESC, b.id DESC LIMIT 200`, [status])).rows;
-    return { items: rows.map((r) => {
+    return { can_approve: canApprove, items: rows.map((r) => {
       const fx = Number(r.fx_rate) || 1;
       const baseMxn = Number(r.base_amount_cur) * (r.currency === 'USD' ? fx : 1);
       const stockValueMxn = Math.round((baseMxn + Number(r.overhead_mxn)) * 100) / 100;
       return { ...r, total_qty: Number(r.total_qty), sku_count: Number(r.sku_count),
         stock_value_mxn: stockValueMxn, currency: r.currency, fx_rate: fx };
     }) };
+  });
+
+  // 승인 대기 입고 건수(포털 배지용)
+  app.get('/api/import-batches/pending-count', { preHandler: [authGuard, requirePage('inventory')] }, async () => {
+    const n = (await query(`SELECT COUNT(*)::int AS n FROM import_batches WHERE deleted_at IS NULL AND status='pending'`)).rows[0].n;
+    return { pending: n };
   });
 
   // 부대비용 문서 작성(+명세 +분배). 작성 시점엔 원가 미반영(pending).

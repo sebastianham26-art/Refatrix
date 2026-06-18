@@ -28,6 +28,8 @@ export default async function portalRoutes(app) {
       out.badges.marketing_approvals = Number(m.n);
       const s = (await query(`SELECT COUNT(*) AS n FROM sales_change_requests WHERE status='pending'`)).rows[0];
       out.badges.sales_change_approvals = Number(s.n);
+      const imp = (await query(`SELECT COUNT(*) AS n FROM import_batches WHERE deleted_at IS NULL AND status='pending'`)).rows[0];
+      out.badges.import_pending = Number(imp.n);
       const d = (await query(`SELECT COUNT(*) AS n FROM customer_directives WHERE status<>'done'`)).rows[0];
       out.badges.directives_open_all = Number(d.n);
     }

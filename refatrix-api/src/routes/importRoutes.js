@@ -95,6 +95,21 @@ export default async function importRoutes(app) {
     await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: `import_batch:${id}`, detail: { approved: true } });
     return out;
   });
+
+  // 반려(승인거절) — 재고 변동 없음, 거절 기록만
+  app.post('/api/imports/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    const reason = (req.body && req.body.reason) ? String(req.body.reason).slice(0, 500) : null;
+    const batch = (await query(`SELECT id, status FROM import_batches WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!batch) return reply.code(404).send({ error: 'not_found' });
+    if (batch.status !== 'pending') return reply.code(409).send({ error: 'not_pending' });
+    await query(
+      `UPDATE import_batches SET status='rejected', rejected_by=$1, rejected_at=now(), reject_reason=$2 WHERE id=$3`,
+      [userId, reason, id]);
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: `import_batch:${id}`, detail: { rejected: true, reason } });
+    return { ok: true, status: 'rejected' };
+  });
 }
 
 // 미리보기 계산(읽기 전용)

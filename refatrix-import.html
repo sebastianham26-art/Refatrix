@@ -361,6 +361,7 @@
       const d=await res.json();
       if(!res.ok||d.error){ $('pendList').innerHTML='<div class="msg err" style="display:block">목록 조회 실패: '+(d.note||d.error||res.status)+'</div>'; return; }
       const items=d.items||[];
+      const canApprove = (d.can_approve===true) || isDirector;   // 서버 플래그 우선
       if(!items.length){ $('pendList').innerHTML='<div class="hint">승인 대기 중인 입고가 없습니다.</div>'; return; }
       const tSku=items.reduce((s,b)=>s+Number(b.sku_count||0),0);
       const tQty=items.reduce((s,b)=>s+Number(b.total_qty||0),0);
@@ -371,16 +372,16 @@
         +'<div class="sb"><div class="v">'+tSku+'</div><div class="l">전체 SKU(종)</div></div>'
         +'<div class="sb"><div class="v">'+tQty.toLocaleString()+'</div><div class="l">총 수량</div></div>'
         +'<div class="sb"><div class="v" style="color:var(--brand)">'+money(tVal)+'</div><div class="l">총 재고 금액(MXN)</div></div></div>';
-      const body='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">총 재고 금액</th><th>제품코드</th><th></th></tr></thead><tbody>'
+      const body='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">총 재고 금액</th><th>제품코드</th><th style="text-align:right">처리</th></tr></thead><tbody>'
         +items.map(b=>{
           const codes=(b.product_codes||'').length>50?(b.product_codes.slice(0,50)+'…'):(b.product_codes||'-');
-          const act=isDirector
-            ? '<button class="btn gold sm" onclick="approveBatch('+b.id+')">승인</button>'
+          const act=canApprove
+            ? '<button class="btn gold sm" onclick="approveBatch('+b.id+')">승인</button> <button class="btn ghost sm" style="border-color:var(--expense);color:var(--expense)" onclick="rejectBatch('+b.id+')">반려</button>'
             : '<span class="badge">승인 대기</span>';
           return '<tr><td>'+(b.import_date||'').slice(0,10)+'</td><td>'+(b.created_by_name||'-')+'</td>'
             +'<td class="num">'+(b.sku_count||0)+'종</td><td class="num"><b>'+Number(b.total_qty||0).toLocaleString()+'</b></td>'
             +'<td class="num" style="color:var(--brand);font-weight:700">'+money(b.stock_value_mxn)+'</td>'
-            +'<td><span class="hint">'+codes+'</span></td><td class="num">'+act+'</td></tr>';
+            +'<td><span class="hint">'+codes+'</span></td><td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
         }).join('')+'</tbody></table>';
       $('pendList').innerHTML=sum+body;
     }catch(e){ $('pendList').innerHTML='<div class="hint">목록을 불러오지 못했습니다. (서버 연결 확인)</div>'; }
@@ -394,6 +395,18 @@
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='승인 실패: '+(d.error||res.status); return; }
       m.className='msg ok'; m.textContent='배치 #'+id+' 승인 완료 — 재고·평균원가가 반영되었습니다.';
       loadPending(); refreshSelected();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+  }
+  async function rejectBatch(id){
+    const reason=prompt('배치 #'+id+' 반려 사유를 입력하세요. (승인거절로 기록되며 재고는 변동되지 않습니다)');
+    if(reason===null)return;   // 취소
+    const m=$('formMsg');
+    try{
+      const res=await fetch(session.api+'/api/imports/'+id+'/reject',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason:reason||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='반려 실패: '+(d.error||res.status); return; }
+      m.className='msg ok'; m.textContent='배치 #'+id+' 반려(승인거절) 처리되었습니다.';
+      loadPending();
     }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
   }
 
@@ -475,6 +488,6 @@
     loadPending();
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618d"></script>
+<script src="refatrix-nav.js?v=20260618e"></script>
 </body>
 </html>
