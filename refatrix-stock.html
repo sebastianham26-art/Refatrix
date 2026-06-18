@@ -119,7 +119,7 @@
 <!-- 수동입고 수정 모달 -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:200;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:18px 20px">
-    <div style="font-weight:800;color:var(--brand);font-size:15px;margin-bottom:4px">수동 이동 수정</div>
+    <div style="font-weight:800;color:var(--brand);font-size:15px;margin-bottom:4px">이벤트 일괄 수정</div>
     <div class="hint" id="emInfo" style="margin-bottom:10px"></div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <div><label style="font-size:12px;color:var(--muted)">입고 날짜 *</label><br><input id="emDate" type="date" style="width:100%;padding:7px 9px"></div>
@@ -246,35 +246,42 @@
     // 사유 로직: 매출 출고→"매출", 수입 입고→"수입", 그 외→직접 입력 사유(note)
     const reasonOf=(m)=> m.origin==='매출' ? '매출' : (m.origin==='수입' ? '수입' : (m.note||''));
     const evLabel=(m)=> m.origin==='매출' ? '매출 출고' : (m.origin==='수입' ? '수입 입고' : ((m.origin||'기타')+' '+(tl[m.move_type]||'')));
-    // 날짜별 → 이벤트별 그룹화
+    // 날짜별 → 이벤트(event_no)별 그룹화
     const byDate={};
     items.forEach(m=>{ const dt=new Date(m.moved_at); const day=isNaN(dt)?'(날짜미상)':dt.toISOString().slice(0,10);
-      (byDate[day]=byDate[day]||{}); const ev=evLabel(m); (byDate[day][ev]=byDate[day][ev]||[]).push(m); });
+      (byDate[day]=byDate[day]||{}); const ek=(m.event_no!=null?('E'+m.event_no):('x'+evLabel(m)+'|'+(m.id||Math.random()))); (byDate[day][ek]=byDate[day][ek]||[]).push(m); });
     const days=Object.keys(byDate).sort().reverse();
     let html=''; let gid=0;
     days.forEach(day=>{
-      const evs=byDate[day]; const evKeys=Object.keys(evs);
+      const evs=byDate[day]; let evKeys=Object.keys(evs);
       const dayCount=evKeys.reduce((s,k)=>s+evs[k].length,0);
       html+='<div class="daygrp"><div class="dayhd"><span>'+esc(day)+'</span><span class="hint">'+dayCount+'건</span></div>';
-      evKeys.forEach(ev=>{
-        const arr=evs[ev]; const id='ev'+(gid++);
+      evKeys.sort((a,b)=>(evs[b][0].event_no||0)-(evs[a][0].event_no||0));
+      evKeys.forEach(ek=>{
+        const arr=evs[ek]; const id='ev'+(gid++); const evNo=arr[0].event_no;
         const inQ=arr.filter(m=>m.move_type==='in').reduce((s,m)=>s+Math.abs(m.qty),0);
         const outQ=arr.filter(m=>m.move_type==='out').reduce((s,m)=>s+Math.abs(m.qty),0);
         const adjQ=arr.filter(m=>m.move_type==='adjust').reduce((s,m)=>s+Math.abs(m.qty),0);
         const qp=[]; if(inQ)qp.push('+'+fmtq(inQ)); if(outQ)qp.push('−'+fmtq(outQ)); if(adjQ)qp.push('조정 '+fmtq(adjQ));
-        html+='<div class="evrow" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+esc(ev)+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
-        html+='<div class="evdetail" id="'+id+'"><table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th><th>수정</th></tr></thead><tbody>';
+        const label=evLabel(arr[0]);
+        const evTitle=(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+esc(label);
+        const allManual=arr.every(m=>m.origin!=='매출'&&m.origin!=='수입');
+        html+='<div class="evrow" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
+        html+='<div class="evdetail" id="'+id+'">';
+        if(allManual && evNo!=null)
+          html+='<div style="padding:6px 4px"><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px" onclick="editEvent('+evNo+')">✎ 이벤트 #'+evNo+' 일괄 수정 (날짜·참조·사유)</button></div>';
+        else
+          html+='<div class="hint" style="padding:6px 4px">자동 기록(매출·수입) 이벤트는 수정할 수 없습니다.</div>';
+        html+='<table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
         arr.forEach(m=>{ const dt=new Date(m.moved_at); const ts=isNaN(dt)?'':dt.toTimeString().slice(0,5);
           const sign=m.move_type==='out'?'−':(m.move_type==='in'?'+':'');
-          const canEdit=(m.origin!=='매출'&&m.origin!=='수입');
-          const editBtn=canEdit?'<button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="editMove('+m.id+')">수정</button>':'<span class="hint">자동</span>';
           html+='<tr><td>'+ts+'</td><td><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
-            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td>'+esc(m.ref||'')+'</td><td>'+esc(reasonOf(m))+'</td><td class="hint">'+esc(m.created_by_name||'')+'</td><td>'+editBtn+'</td></tr>'; });
+            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td>'+esc(m.ref||'')+'</td><td>'+esc(reasonOf(m))+'</td><td class="hint">'+esc(m.created_by_name||'')+'</td></tr>'; });
         html+='</tbody></table></div>';
       });
       html+='</div>';
     });
-    html+='<div class="hint" style="margin-top:8px">최근 '+items.length+'건 · 날짜→이벤트를 클릭하면 내역이 펼쳐집니다. 매출 출고·수입 입고는 자동 기록됩니다.</div>';
+    html+='<div class="hint" style="margin-top:8px">최근 '+items.length+'건 · 날짜→이벤트를 클릭하면 내역이 펼쳐집니다. 이벤트마다 번호가 부여되며, 수동 이벤트는 [일괄 수정]으로 날짜·참조·사유를 한 번에 바꿀 수 있습니다.</div>';
     $('listWrap').innerHTML=html;
   }
   function toggleEv(id){ const d=document.getElementById(id); if(!d)return; d.classList.toggle('open'); const row=d.previousElementSibling; if(row)row.classList.toggle('open'); }
@@ -350,26 +357,30 @@
       bulkRows=null;$('bulkPreview').innerHTML='';loadList();
     }
   }
-  let editId=null;
-  function editMove(id){
-    const m=curItems.find(x=>x.id===id); if(!m)return;
-    editId=id;
-    $('emInfo').textContent=(m.ctr_code||'')+' · '+(m.product_name||'')+' · '+(m.move_type==='out'?'출고':(m.move_type==='in'?'입고':'조정'))+' '+fmtq(Math.abs(m.qty));
-    const dt=new Date(m.moved_at); $('emDate').value=isNaN(dt)?'':dt.toISOString().slice(0,10);
-    $('emRef').value=m.ref||''; $('emNote').value=m.note||''; $('emMsg').textContent='';
+  let editEventNo=null;
+  function editEvent(evNo){
+    const arr=curItems.filter(x=>x.event_no===evNo);
+    if(!arr.length)return;
+    editEventNo=evNo;
+    const codes=arr.map(m=>m.ctr_code).filter(Boolean);
+    const codeList=codes.slice(0,4).join(', ')+(codes.length>4?(' 외 '+(codes.length-4)+'건'):'');
+    $('emInfo').textContent='이벤트 #'+evNo+' · '+arr.length+'건 ('+codeList+') — 날짜·참조·사유를 한 번에 변경합니다.';
+    const m0=arr[0]; const dt=new Date(m0.moved_at);
+    $('emDate').value=isNaN(dt)?'':dt.toISOString().slice(0,10);
+    $('emRef').value=m0.ref||''; $('emNote').value=m0.note||''; $('emMsg').textContent='';
     $('editModal').style.display='flex';
   }
-  function closeEdit(){ $('editModal').style.display='none'; editId=null; }
+  function closeEdit(){ $('editModal').style.display='none'; editEventNo=null; }
   async function saveMoveEdit(){
-    if(!editId)return; const msg=$('emMsg');msg.style.color='';
+    if(editEventNo==null)return; const msg=$('emMsg');msg.style.color='';
     const moved_at=$('emDate').value, ref=$('emRef').value.trim(), note=$('emNote').value.trim();
     if(!moved_at){msg.style.color='var(--expense)';msg.textContent='입고 날짜를 입력하세요.';return;}
     if(!ref){msg.style.color='var(--expense)';msg.textContent='참조번호를 입력하세요.';return;}
     $('emSave').disabled=true;
     try{
-      const r=await fetch(session.api+'/api/stock/movements/'+editId,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({moved_at,ref,note})});
+      const r=await fetch(session.api+'/api/stock/events/'+editEventNo,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({moved_at,ref,note})});
       const d=await r.json();
-      if(!r.ok||d.error){ msg.style.color='var(--expense)';msg.textContent=d.note||(d.error==='not_manual'?'자동 기록은 수정할 수 없습니다.':'수정 실패'); $('emSave').disabled=false; return; }
+      if(!r.ok||d.error){ msg.style.color='var(--expense)';msg.textContent=d.note||(d.error==='not_manual'?'자동 기록 이벤트는 수정할 수 없습니다.':'수정 실패'); $('emSave').disabled=false; return; }
       closeEdit(); loadList();
     }catch(e){ msg.style.color='var(--expense)';msg.textContent='서버 연결 실패'; }
     finally{ $('emSave').disabled=false; }
@@ -379,6 +390,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618s"></script>
+<script src="refatrix-nav.js?v=20260618t"></script>
 </body>
 </html>

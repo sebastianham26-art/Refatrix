@@ -5,7 +5,7 @@ import { logEvent } from '../audit.js';
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
 // 한 건의 수동 이동을 트랜잭션 안에서 적용 (재고 갱신 + 원장 기록). 평균원가는 건드리지 않음.
-async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, userId }) {
+async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, eventNo, userId }) {
   const p = (await c.query(`SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [productId])).rows[0];
   if (!p) return { error: 'product_not_found' };
   const cur = Number(p.stock_qty) || 0;
@@ -18,9 +18,9 @@ async function applyMovement(c, { productId, moveType, qty, ref, note, movedAt, 
   await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, userId, productId]);
   const storeQty = moveType === 'adjust' ? qty : Math.abs(qty);
   await c.query(
-    `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, note, source, moved_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,'manual',COALESCE($7, now()),$8)`,
-    [productId, moveType, storeQty, p.avg_cost || null, ref || null, note || null, movedAt || null, userId]);
+    `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, note, source, moved_at, event_no, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,'manual',COALESCE($7, now()),$8,$9)`,
+    [productId, moveType, storeQty, p.avg_cost || null, ref || null, note || null, movedAt || null, eventNo || null, userId]);
   return { ok: true, code: p.code, name: p.name, before: cur, after: next };
 }
 
@@ -74,9 +74,12 @@ export default async function stockRoutes(app) {
     if (!['in', 'out', 'adjust'].includes(moveType)) return reply.code(400).send({ error: 'bad_move_type' });
     if (!qty || (moveType !== 'adjust' && qty <= 0)) return reply.code(400).send({ error: 'bad_qty' });
     if (!ref) return reply.code(400).send({ error: 'ref_required', note: '참조번호(수입인보이스/사유 등)는 필수입니다.' });
-    const result = await withTx(async (c) => applyMovement(c, {
-      productId, moveType, qty, ref, note: b.note, movedAt: b.moved_at || null, userId: req.ctx.perm.userId,
-    }));
+    const result = await withTx(async (c) => {
+      const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
+      return applyMovement(c, {
+        productId, moveType, qty, ref, note: b.note, movedAt: b.moved_at || null, eventNo, userId: req.ctx.perm.userId,
+      });
+    });
     if (result.error) return reply.code(409).send(result);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `stock_movement:${result.code}`, detail: { moveType, qty, ref } });
     return result;
@@ -88,6 +91,7 @@ export default async function stockRoutes(app) {
     if (!rows.length) return reply.code(400).send({ error: 'no_rows' });
     const out = await withTx(async (c) => {
       const results = [];
+      const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
         const moveType = String(r.move_type || '').trim();
@@ -105,7 +109,7 @@ export default async function stockRoutes(app) {
         if (!['in', 'out', 'adjust'].includes(moveType)) { results.push({ row: i + 1, error: 'bad_move_type' }); continue; }
         if (!qty || (moveType !== 'adjust' && qty <= 0)) { results.push({ row: i + 1, error: 'bad_qty' }); continue; }
         if (!ref) { results.push({ row: i + 1, error: 'ref_required' }); continue; }
-        const res = await applyMovement(c, { productId, moveType, qty, ref, note: r.note, movedAt: r.moved_at || null, userId: req.ctx.perm.userId });
+        const res = await applyMovement(c, { productId, moveType, qty, ref, note: r.note, movedAt: r.moved_at || null, eventNo, userId: req.ctx.perm.userId });
         if (res.error) { results.push({ row: i + 1, ...res }); continue; } // 트랜잭션 전체 롤백을 원하면 throw
         results.push({ row: i + 1, ok: true, code: res.code, before: res.before, after: res.after });
       }
@@ -133,14 +137,16 @@ export default async function stockRoutes(app) {
     };
   });
 
-  // 수동 이동 편집: 날짜(moved_at)·참조(ref)·사유(note) 수정. 자동기록(매출/수입)·수량은 불가.
-  app.patch('/api/stock/movements/:id', { preHandler: [authGuard, requirePageEditAny(['stock', 'sales'])] }, async (req, reply) => {
-    const id = Number(req.params.id);
+  // 이벤트 단위 일괄 수정: 같은 event_no(함께 등록된 입·출고)의 날짜·참조·사유를 한 번에 변경
+  app.patch('/api/stock/events/:eventNo', { preHandler: [authGuard, requirePageEditAny(['stock', 'sales'])] }, async (req, reply) => {
+    const eventNo = Number(req.params.eventNo);
+    if (!eventNo) return reply.code(400).send({ error: 'bad_event' });
     const b = req.body || {};
-    const mv = (await query(`SELECT id, source, sales_invoice_id, batch_id FROM stock_movements WHERE id=$1`, [id])).rows[0];
-    if (!mv) return reply.code(404).send({ error: 'not_found' });
-    if (mv.source !== 'manual' || mv.sales_invoice_id || mv.batch_id) {
-      return reply.code(409).send({ error: 'not_manual', note: '자동 기록(매출·수입)은 수정할 수 없습니다.' });
+    const rows = (await query(`SELECT id, source, sales_invoice_id, batch_id FROM stock_movements WHERE event_no=$1`, [eventNo])).rows;
+    if (!rows.length) return reply.code(404).send({ error: 'not_found' });
+    // 자동기록(매출/수입)이 하나라도 포함되면 거부
+    if (rows.some((r) => r.source !== 'manual' || r.sales_invoice_id || r.batch_id)) {
+      return reply.code(409).send({ error: 'not_manual', note: '자동 기록(매출·수입) 이벤트는 수정할 수 없습니다.' });
     }
     const sets = [], args = [];
     if (b.moved_at !== undefined) {
@@ -156,10 +162,10 @@ export default async function stockRoutes(app) {
     }
     if (b.note !== undefined) { args.push(String(b.note || '').trim() || null); sets.push(`note=$${args.length}`); }
     if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
-    args.push(id);
-    await query(`UPDATE stock_movements SET ${sets.join(', ')} WHERE id=$${args.length}`, args);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `stock_movement:${id}`, detail: { moved_at: b.moved_at, ref: b.ref, note: b.note } });
-    return { ok: true, id };
+    args.push(eventNo);
+    const r = await query(`UPDATE stock_movements SET ${sets.join(', ')} WHERE event_no=$${args.length} RETURNING id`, args);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `stock_event:${eventNo}`, detail: { moved_at: b.moved_at, ref: b.ref, note: b.note, rows: r.rows.length } });
+    return { ok: true, event_no: eventNo, updated: r.rows.length };
   });
 
   app.get('/api/stock/movements', { preHandler: [authGuard, requirePageAny(['stock','sales'])] }, async (req) => {
@@ -173,7 +179,7 @@ export default async function stockRoutes(app) {
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
     const rows = (await query(
       `SELECT m.id, m.product_id, m.move_type, m.qty, m.unit_cost_mxn, m.ref, m.note, m.source, m.moved_at,
-              m.sales_invoice_id, m.batch_id,
+              m.sales_invoice_id, m.batch_id, m.event_no,
               p.code AS ctr_code, p.name AS product_name,
               u.name AS created_by_name
          FROM stock_movements m
@@ -184,7 +190,7 @@ export default async function stockRoutes(app) {
         LIMIT ${limit}`, args)).rows;
     return {
       items: rows.map((r) => ({
-        id: r.id, product_id: r.product_id, ctr_code: r.ctr_code, product_name: r.product_name,
+        id: r.id, product_id: r.product_id, event_no: r.event_no, ctr_code: r.ctr_code, product_name: r.product_name,
         move_type: r.move_type, qty: Number(r.qty), unit_cost_mxn: r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null,
         ref: r.ref, note: r.note, moved_at: r.moved_at,
         origin: r.sales_invoice_id ? '매출' : (r.batch_id ? '수입' : (r.source === 'manual' ? '수동' : '기타')),
