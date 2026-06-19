@@ -69,16 +69,20 @@ export default async function importRoutes(app) {
 
       // 라인 원가 스냅샷 기록
       const evNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
+      // 참조(referencia): 라인별 매입 인보이스 번호 → 없으면 batch_no → 없으면 batch:#
+      const invByProduct = {};
+      for (const l of lines) { if (l.invoice_no && String(l.invoice_no).trim()) invByProduct[l.product_id] = String(l.invoice_no).trim(); }
+      const refFallback = (batch.batch_no && String(batch.batch_no).trim()) ? String(batch.batch_no).trim() : `batch:${id}`;
       for (const cl of computedLines) {
         await c.query(
           `UPDATE import_lines SET alloc_overhead=$1, unit_cost_mxn=$2, avg_cost_after=$3
              WHERE batch_id=$4 AND product_id=$5`,
           [cl.alloc_overhead, cl.unit_cost_mxn, cl.avg_cost_after, id, cl.product_id]);
-        // 입출고 원장(입고) — 배치 전체가 하나의 이벤트
+        // 입출고 원장(입고) — 배치 전체가 하나의 이벤트. 날짜는 지정한 import_date(재고 등재일), 참조는 인보이스 번호.
         await c.query(
-          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, event_no, created_by)
-           VALUES ($1,'in',$2,$3,$4,$5,$6,$7)`,
-          [cl.product_id, cl.qty, cl.unit_cost_mxn, `batch:${id}`, id, evNo, userId]);
+          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, event_no, moved_at, created_by)
+           VALUES ($1,'in',$2,$3,$4,$5,$6,$7,$8)`,
+          [cl.product_id, cl.qty, cl.unit_cost_mxn, invByProduct[cl.product_id] || refFallback, id, evNo, batch.import_date, userId]);
       }
       // 제품 재고·평균원가 갱신
       for (const [pid, st] of Object.entries(newState)) {

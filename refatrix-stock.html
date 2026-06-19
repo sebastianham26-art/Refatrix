@@ -292,7 +292,7 @@
     const tl={in:'입고',out:'출고',adjust:'조정'};
     // 사유 로직: 매출 출고→"매출", 수입 입고→"수입", 그 외→직접 입력 사유(note)
     const reasonOf=(m)=> m.origin==='매출' ? '매출' : (m.origin==='수입' ? '수입' : (m.note||''));
-    const evLabel=(m)=> m.origin==='매출' ? '매출 출고' : (m.origin==='수입' ? '수입 입고' : ((m.origin||'기타')+' '+(tl[m.move_type]||'')));
+    const evLabel=(m)=> m.origin==='매출' ? '매출출고' : (m.origin==='수입' ? '수입입고' : ((m.origin||'기타')+' '+(tl[m.move_type]||'')));
     // 월(月)별 → 이벤트(event_no)별 그룹화
     const dayKey=(m)=>{ const dt=new Date(m.moved_at); return isNaN(dt)?'(날짜미상)':dt.toISOString().slice(0,10); };
     const monKey=(m)=>{ const dt=new Date(m.moved_at); return isNaN(dt)?'(날짜미상)':dt.toISOString().slice(0,7); };
@@ -327,8 +327,11 @@
         const qp=[]; if(inQ)qp.push('+'+fmtq(inQ)); if(outQ)qp.push('−'+fmtq(outQ)); if(adjQ)qp.push('조정 '+fmtq(adjQ));
         const label=evLabel(arr[0]);
         const isImport=arr[0].origin==='수입'&&batchId!=null;
+        // 이벤트 참조(referencia): 매입 인보이스 번호 등. 레거시 'batch:#'는 제외.
+        const refs=[...new Set(arr.map(m=>m.ref).filter(r=>r&&!/^batch:\d+$/.test(String(r))))];
+        const refStr=refs.length?refs.join(' / '):'';
         const dlabel=dayKey(arr[0]); const dshort=(dlabel.length===10?dlabel.slice(5):dlabel); // MM-DD
-        const evTitle='<span class="evdate">'+esc(dshort)+'</span>'+(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+(isImport?'<b>수입 batch:'+batchId+'</b> · ':'')+esc(label);
+        const evTitle='<span class="evdate">'+esc(dshort)+'</span>'+(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+'<b>'+esc(label)+'</b>'+(refStr?' · 참조 '+esc(refStr):(isImport&&batchId!=null?' · <span class="hint">batch:'+batchId+'</span>':''));
         const allManual=arr.every(m=>m.origin!=='매출'&&m.origin!=='수입');
         html+='<div class="evrow" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
         html+='<div class="evdetail" id="'+id+'" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'">';
