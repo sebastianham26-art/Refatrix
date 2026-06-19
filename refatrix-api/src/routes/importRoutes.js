@@ -68,16 +68,17 @@ export default async function importRoutes(app) {
       });
 
       // 라인 원가 스냅샷 기록
+      const evNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
       for (const cl of computedLines) {
         await c.query(
           `UPDATE import_lines SET alloc_overhead=$1, unit_cost_mxn=$2, avg_cost_after=$3
              WHERE batch_id=$4 AND product_id=$5`,
           [cl.alloc_overhead, cl.unit_cost_mxn, cl.avg_cost_after, id, cl.product_id]);
-        // 입출고 원장(입고)
+        // 입출고 원장(입고) — 배치 전체가 하나의 이벤트
         await c.query(
-          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, created_by)
-           VALUES ($1,'in',$2,$3,$4,$5,$6)`,
-          [cl.product_id, cl.qty, cl.unit_cost_mxn, `batch:${id}`, id, userId]);
+          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, event_no, created_by)
+           VALUES ($1,'in',$2,$3,$4,$5,$6,$7)`,
+          [cl.product_id, cl.qty, cl.unit_cost_mxn, `batch:${id}`, id, evNo, userId]);
       }
       // 제품 재고·평균원가 갱신
       for (const [pid, st] of Object.entries(newState)) {

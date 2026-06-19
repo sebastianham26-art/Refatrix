@@ -205,6 +205,32 @@ export default async function stockRoutes(app) {
     return { ok: true, zeroed: r.rows.length };
   });
 
+  // 수입 배치 통째 삭제: 같은 batch_id의 입고 이동을 모두 삭제하고 재고를 역산(입고분 차감).
+  app.delete('/api/stock/batches/:batchId', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return reply.code(400).send({ error: 'bad_batch' });
+    const result = await withTx(async (c) => {
+      const rows = (await c.query(
+        `SELECT id, product_id, move_type, qty FROM stock_movements WHERE batch_id=$1 FOR UPDATE`, [batchId])).rows;
+      if (!rows.length) return { error: 'not_found' };
+      for (const r of rows) {
+        const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [r.product_id])).rows[0];
+        if (!p) continue;
+        const qty = Number(r.qty) || 0;
+        let delta;
+        if (r.move_type === 'in') delta = Math.abs(qty);
+        else if (r.move_type === 'out') delta = -Math.abs(qty);
+        else delta = qty;
+        await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [(Number(p.stock_qty) || 0) - delta, req.ctx.perm.userId, r.product_id]);
+      }
+      await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
+      return { ok: true, deleted: rows.length };
+    });
+    if (result.error) return reply.code(result.error === 'not_found' ? 404 : 400).send(result);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `stock_batch:${batchId}`, detail: { deleted: result.deleted } });
+    return result;
+  });
+
   // 이벤트 삭제: 매출/수입 연동이 없는 수동·기타 이벤트만. 재고를 역산(입고→차감, 출고→복원)하고 행 삭제.
   app.delete('/api/stock/events/:eventNo', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const eventNo = Number(req.params.eventNo);
@@ -266,7 +292,9 @@ export default async function stockRoutes(app) {
     return {
       limit, capped: rows.length >= limit,
       items: rows.map((r) => ({
-        id: Number(r.id), product_id: r.product_id, event_no: r.event_no == null ? null : Number(r.event_no), ctr_code: r.ctr_code, product_name: r.product_name,
+        id: Number(r.id), product_id: r.product_id, event_no: r.event_no == null ? null : Number(r.event_no),
+        batch_id: r.batch_id == null ? null : Number(r.batch_id), sales_invoice_id: r.sales_invoice_id == null ? null : Number(r.sales_invoice_id),
+        ctr_code: r.ctr_code, product_name: r.product_name,
         move_type: r.move_type, qty: Number(r.qty), unit_cost_mxn: r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null,
         ref: r.ref, note: r.note, moved_at: r.moved_at,
         origin: r.sales_invoice_id ? '매출' : (r.batch_id ? '수입' : (r.source === 'manual' ? '수동' : '기타')),

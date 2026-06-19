@@ -54,6 +54,10 @@
   .evrow:hover{background:#faf8f3}.evrow .caret{transition:transform .15s}.evrow.open .caret{transform:rotate(90deg)}
   .evdetail{display:none;background:#fcfbf8;padding:0 12px 8px}.evdetail.open{display:block}
   .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .mchip{display:inline-block;padding:3px 10px;margin:2px;border-radius:999px;border:1px solid #ccc;background:#fff;color:#555;font-size:12px;cursor:pointer}
+  .mchip.on{border-color:var(--brand);background:#e6f3ee;color:var(--brand);font-weight:700}
+  .evhi{animation:evflash 2.4s ease-out}
+  @keyframes evflash{0%{background:#fff6d6;box-shadow:0 0 0 3px #f0c419}40%{background:#fff6d6}100%{background:transparent;box-shadow:none}}
 </style>
 </head>
 <body>
@@ -105,6 +109,10 @@
       <div class="card-h">이동 내역 <button class="btn ghost sm" style="float:right;font-size:11.5px;padding:3px 10px" onclick="openValueAudit()">재고금액 검토</button></div>
       <div id="stockSummary" class="stock-sum"><span class="hint">재고 요약 불러오는 중…</span></div>
       <div class="filters">
+        <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="hint" style="margin:0">빠른 이동:</span><span id="monthChips"></span>
+          <span style="margin-left:8px"><input id="evJump" type="text" inputmode="numeric" placeholder="이벤트 번호" style="width:110px" onkeydown="if(event.key==='Enter')jumpEvent()"> <button class="btn ghost sm" onclick="jumpEvent()">이벤트로 이동</button></span>
+        </div>
         <div><label>유형</label><select id="fType" onchange="loadList()"><option value="">전체</option><option value="in">입고</option><option value="out">출고</option><option value="adjust">조정</option></select></div>
         <div><label>출처</label><select id="fSrc" onchange="loadList()"><option value="">전체</option><option value="manual">수동만</option></select></div>
         <div><label>시작일</label><input id="fFrom" type="date" onchange="loadList()"></div>
@@ -255,14 +263,17 @@
     if($('fFrom').value)qs+='&from='+$('fFrom').value;
     if($('fTo').value)qs+='&to='+$('fTo').value;
     const sv=($('fSearch')?$('fSearch').value.trim():'');
+    let focusEv=null;
     if(sv){
-      const m=sv.match(/^#?\s*(\d+)$/); // 숫자만 → 이벤트 번호
-      if(m) qs+='&event_no='+m[1];
+      const m=sv.match(/^(?:이벤트\s*)?#?\s*(\d+)$/); // "3","#3","이벤트 3" → 이벤트 번호
+      if(m){ qs+='&event_no='+m[1]; focusEv=Number(m[1]); }
       else qs+='&q='+encodeURIComponent(sv);
     }
+    if(window.__focusEv){ focusEv=window.__focusEv; window.__focusEv=null; }
     try{
       const d=await fetch(session.api+'/api/stock/movements?'+qs,{headers:auth()}).then(r=>r.json());
-      render(d.items||[], {capped:d.capped, searched:!!sv});
+      render(d.items||[], {capped:d.capped, searched:!!sv, focusEv});
+      renderMonthChips();
       loadSummary();
     }catch(e){ w.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
@@ -278,7 +289,12 @@
     // 날짜별 → 이벤트(event_no)별 그룹화
     const byDate={};
     items.forEach(m=>{ const dt=new Date(m.moved_at); const day=isNaN(dt)?'(날짜미상)':dt.toISOString().slice(0,10);
-      (byDate[day]=byDate[day]||{}); const ek=(m.event_no!=null?('E'+m.event_no):('x'+evLabel(m)+'|'+(m.id||Math.random()))); (byDate[day][ek]=byDate[day][ek]||[]).push(m); });
+      (byDate[day]=byDate[day]||{});
+      const ek = m.event_no!=null ? ('E'+m.event_no)
+               : m.batch_id!=null ? ('B'+m.batch_id)
+               : m.sales_invoice_id!=null ? ('S'+m.sales_invoice_id)
+               : ('x'+evLabel(m)+'|'+(m.id||Math.random()));
+      (byDate[day][ek]=byDate[day][ek]||[]).push(m); });
     const days=Object.keys(byDate).sort().reverse();
     let html=''; let gid=0;
     days.forEach(day=>{
@@ -288,20 +304,25 @@
       evKeys.sort((a,b)=>(evs[b][0].event_no||0)-(evs[a][0].event_no||0));
       evKeys.forEach(ek=>{
         const arr=evs[ek]; const id='ev'+(gid++); const evNo=arr[0].event_no;
+        const batchId=arr[0].batch_id;
         const inQ=arr.filter(m=>m.move_type==='in').reduce((s,m)=>s+Math.abs(m.qty),0);
         const outQ=arr.filter(m=>m.move_type==='out').reduce((s,m)=>s+Math.abs(m.qty),0);
         const adjQ=arr.filter(m=>m.move_type==='adjust').reduce((s,m)=>s+Math.abs(m.qty),0);
         const qp=[]; if(inQ)qp.push('+'+fmtq(inQ)); if(outQ)qp.push('−'+fmtq(outQ)); if(adjQ)qp.push('조정 '+fmtq(adjQ));
         const label=evLabel(arr[0]);
-        const evTitle=(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+esc(label);
+        const isImport=arr[0].origin==='수입'&&batchId!=null;
+        const isSales=arr[0].origin==='매출';
+        const evTitle=(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+(isImport?'<b>수입 batch:'+batchId+'</b> · ':'')+esc(label);
         const allManual=arr.every(m=>m.origin!=='매출'&&m.origin!=='수입');
-        html+='<div class="evrow" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
-        html+='<div class="evdetail" id="'+id+'">';
+        html+='<div class="evrow" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
+        html+='<div class="evdetail" id="'+id+'" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'">';
         if(allManual && evNo!=null)
           html+='<div style="padding:6px 4px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px" onclick="editEvent('+evNo+')">✎ 이벤트 #'+evNo+' 일괄 수정 (날짜·참조·사유)</button>'
             +'<button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px;border-color:var(--expense);color:var(--expense)" onclick="deleteEvent('+evNo+')">🗑 이벤트 #'+evNo+' 삭제</button></div>';
+        else if(isImport)
+          html+='<div style="padding:6px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="hint" style="margin:0">수입 입고 배치 (자동 기록)</span><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px;border-color:var(--expense);color:var(--expense)" onclick="deleteBatch('+batchId+')">🗑 수입 batch:'+batchId+' 전체 삭제</button></div>';
         else
-          html+='<div class="hint" style="padding:6px 4px">자동 기록(매출·수입) 이벤트는 수정·삭제할 수 없습니다.</div>';
+          html+='<div class="hint" style="padding:6px 4px">자동 기록(매출) 이벤트는 수정·삭제할 수 없습니다.</div>';
         html+='<table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
         arr.forEach(m=>{ const dt=new Date(m.moved_at); const ts=isNaN(dt)?'':dt.toTimeString().slice(0,5);
           const sign=m.move_type==='out'?'−':(m.move_type==='in'?'+':'');
@@ -315,6 +336,35 @@
     $('listWrap').innerHTML=html;
     // 검색 시 자동으로 모든 이벤트 펼치기 (바로 보이도록)
     if(meta.searched){ document.querySelectorAll('.evdetail').forEach(d=>{ d.classList.add('open'); const row=d.previousElementSibling; if(row)row.classList.add('open'); }); }
+    // 특정 이벤트로 이동: 펼치고 스크롤 + 강조
+    if(meta.focusEv!=null){
+      const row=document.querySelector('.evrow[data-ev="'+meta.focusEv+'"]');
+      const det=document.querySelector('.evdetail[data-ev="'+meta.focusEv+'"]');
+      if(det){ det.classList.add('open'); if(row)row.classList.add('open'); }
+      const tgt=row||det;
+      if(tgt){ tgt.scrollIntoView({behavior:'smooth',block:'center'}); tgt.classList.add('evhi'); setTimeout(()=>tgt.classList.remove('evhi'),2500); }
+    }
+  }
+  function renderMonthChips(){
+    const el=$('monthChips'); if(!el)return;
+    const now=new Date(); const cur=$('fFrom').value? $('fFrom').value.slice(0,7):'';
+    let h='<span class="mchip'+(cur===''&&!$('fTo').value?' on':'')+'" onclick="setMonth(\'\')">전체</span>';
+    for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const ym=d.toISOString().slice(0,7); const lbl=(d.getMonth()+1)+'월';
+      h+='<span class="mchip'+(cur===ym?' on':'')+'" onclick="setMonth(\''+ym+'\')">'+d.getFullYear()+'·'+lbl+'</span>'; }
+    el.innerHTML=h;
+  }
+  function setMonth(ym){
+    if(!ym){ $('fFrom').value=''; $('fTo').value=''; }
+    else { const [y,mm]=ym.split('-').map(Number); const first=ym+'-01'; const last=new Date(y,mm,0).toISOString().slice(0,10); $('fFrom').value=first; $('fTo').value=last; }
+    loadList();
+  }
+  function jumpEvent(){
+    const v=($('evJump')?$('evJump').value:'').replace(/[^0-9]/g,'');
+    if(!v){ return; }
+    // 검색창에도 반영하고 해당 이벤트만 조회 → 자동 펼침·스크롤
+    if($('fSearch')) $('fSearch').value=v;
+    window.__focusEv=Number(v);
+    loadList();
   }
   function toggleEv(id){ const d=document.getElementById(id); if(!d)return; d.classList.toggle('open'); const row=d.previousElementSibling; if(row)row.classList.toggle('open'); }
   async function loadSummary(){
@@ -434,6 +484,18 @@
     $('editModal').style.display='flex';
   }
   function closeEdit(){ $('editModal').style.display='none'; editEventNo=null; }
+  async function deleteBatch(batchId){
+    batchId=Number(batchId);
+    const arr=curItems.filter(x=>Number(x.batch_id)===batchId);
+    const n=arr.length;
+    if(!confirm('수입 batch:'+batchId+' ('+n+'건)을 모두 삭제합니다.\n입고된 수량이 재고에서 차감됩니다.\n되돌릴 수 없습니다. 진행할까요?')) return;
+    try{
+      const r=await fetch(session.api+'/api/stock/batches/'+batchId,{method:'DELETE',headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ alert(d.note||'삭제 실패'); return; }
+      loadList();
+    }catch(e){ alert('서버 연결 실패'); }
+  }
   async function deleteEvent(evNo){
     evNo=Number(evNo);
     const arr=curItems.filter(x=>Number(x.event_no)===evNo);
@@ -465,6 +527,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618y"></script>
+<script src="refatrix-nav.js?v=20260618z"></script>
 </body>
 </html>

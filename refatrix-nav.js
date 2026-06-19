@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260618y loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260618z loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
