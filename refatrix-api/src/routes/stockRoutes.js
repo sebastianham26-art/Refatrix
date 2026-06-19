@@ -245,6 +245,11 @@ export default async function stockRoutes(app) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || ''))) { args.push(req.query.from); conds.push(`m.moved_at >= $${args.length}`); }
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || ''))) { args.push(req.query.to); conds.push(`m.moved_at < ($${args.length}::date + 1)`); }
     if (req.query.source === 'manual') conds.push(`m.source='manual'`);
+    if (req.query.event_no && /^\d+$/.test(String(req.query.event_no))) { args.push(Number(req.query.event_no)); conds.push(`m.event_no=$${args.length}`); }
+    if (req.query.q && String(req.query.q).trim()) {
+      args.push('%' + String(req.query.q).trim() + '%');
+      conds.push(`(m.ref ILIKE $${args.length} OR m.note ILIKE $${args.length} OR p.code ILIKE $${args.length} OR p.name ILIKE $${args.length})`);
+    }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
     const rows = (await query(
@@ -259,6 +264,7 @@ export default async function stockRoutes(app) {
         ORDER BY m.moved_at DESC, m.id DESC
         LIMIT ${limit}`, args)).rows;
     return {
+      limit, capped: rows.length >= limit,
       items: rows.map((r) => ({
         id: Number(r.id), product_id: r.product_id, event_no: r.event_no == null ? null : Number(r.event_no), ctr_code: r.ctr_code, product_name: r.product_name,
         move_type: r.move_type, qty: Number(r.qty), unit_cost_mxn: r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null,

@@ -109,6 +109,8 @@
         <div><label>출처</label><select id="fSrc" onchange="loadList()"><option value="">전체</option><option value="manual">수동만</option></select></div>
         <div><label>시작일</label><input id="fFrom" type="date" onchange="loadList()"></div>
         <div><label>종료일</label><input id="fTo" type="date" onchange="loadList()"></div>
+        <div style="flex:1;min-width:200px"><label>검색 (이벤트#3 · 참조 · 코드 · 품명)</label><input id="fSearch" type="text" placeholder="예: 3  또는  batch:2  또는  CTR-1001" onkeydown="if(event.key==='Enter')loadList()" style="width:100%"></div>
+        <div style="align-self:flex-end"><button class="btn ghost sm" onclick="loadList()">검색</button> <button class="btn ghost sm" onclick="clearFilters()">초기화</button></div>
         <div><button class="btn ghost sm" onclick="loadList()">새로고침</button></div>
       </div>
       <div id="listWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
@@ -244,23 +246,31 @@
     finally{$('saveBtn').disabled=false;}
   }
 
+  function clearFilters(){ ['fType','fSrc','fFrom','fTo','fSearch'].forEach(id=>{ const el=$(id); if(el)el.value=''; }); loadList(); }
   async function loadList(){
     const w=$('listWrap');
-    let qs='limit=300';
+    let qs='limit=500';
     if($('fType').value)qs+='&move_type='+$('fType').value;
     if($('fSrc').value)qs+='&source='+$('fSrc').value;
     if($('fFrom').value)qs+='&from='+$('fFrom').value;
     if($('fTo').value)qs+='&to='+$('fTo').value;
+    const sv=($('fSearch')?$('fSearch').value.trim():'');
+    if(sv){
+      const m=sv.match(/^#?\s*(\d+)$/); // 숫자만 → 이벤트 번호
+      if(m) qs+='&event_no='+m[1];
+      else qs+='&q='+encodeURIComponent(sv);
+    }
     try{
       const d=await fetch(session.api+'/api/stock/movements?'+qs,{headers:auth()}).then(r=>r.json());
-      render(d.items||[]);
+      render(d.items||[], {capped:d.capped, searched:!!sv});
       loadSummary();
     }catch(e){ w.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   let curItems=[];
-  function render(items){
+  function render(items, meta){
+    meta=meta||{};
     curItems=items||[];
-    if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:10px">이동 내역이 없습니다.</div>'; return; }
+    if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:10px">'+(meta.searched?'검색 결과가 없습니다. 이벤트 번호·참조·코드를 확인하세요.':'이동 내역이 없습니다.')+'</div>'; return; }
     const tl={in:'입고',out:'출고',adjust:'조정'};
     // 사유 로직: 매출 출고→"매출", 수입 입고→"수입", 그 외→직접 입력 사유(note)
     const reasonOf=(m)=> m.origin==='매출' ? '매출' : (m.origin==='수입' ? '수입' : (m.note||''));
@@ -301,8 +311,10 @@
       });
       html+='</div>';
     });
-    html+='<div class="hint" style="margin-top:8px">최근 '+items.length+'건 · 날짜→이벤트를 클릭하면 내역이 펼쳐집니다. 이벤트마다 번호가 부여되며, 수동 이벤트는 [일괄 수정]으로 날짜·참조·사유를 한 번에 바꿀 수 있습니다.</div>';
+    html+='<div class="hint" style="margin-top:8px">'+(meta.capped?'<span style="color:var(--expense);font-weight:700">⚠ 최근 '+items.length+'건만 표시됩니다.</span> 4월 등 과거 내역이 안 보이면 시작일·종료일을 지정하거나 위 검색창에 <b>이벤트 번호(예: 3)</b> 또는 참조/코드를 입력하세요. ':'최근 '+items.length+'건 · ')+'날짜→이벤트를 클릭하면 내역이 펼쳐집니다. 이벤트마다 번호가 부여되며, 수동 이벤트는 [일괄 수정]·[삭제]가 가능합니다.</div>';
     $('listWrap').innerHTML=html;
+    // 검색 시 자동으로 모든 이벤트 펼치기 (바로 보이도록)
+    if(meta.searched){ document.querySelectorAll('.evdetail').forEach(d=>{ d.classList.add('open'); const row=d.previousElementSibling; if(row)row.classList.add('open'); }); }
   }
   function toggleEv(id){ const d=document.getElementById(id); if(!d)return; d.classList.toggle('open'); const row=d.previousElementSibling; if(row)row.classList.toggle('open'); }
   async function loadSummary(){
@@ -453,6 +465,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618x"></script>
+<script src="refatrix-nav.js?v=20260618y"></script>
 </body>
 </html>
