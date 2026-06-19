@@ -120,6 +120,7 @@
 
   <div class="hidden" id="app">
     <div class="card"><div class="mrow"><span class="ml">조회 월 (2026)</span><span id="topMonths"></span></div></div>
+    <div id="teamToggle" style="margin-top:12px"></div>
     <div class="cards" id="cards"></div>
     <div class="card" id="teamMonthlyCard" style="display:none"><div class="card-h">팀별 월별 실적·목표 <span class="hint" style="font-weight:500">— 매출 실적(IVA 불포함) · 목표</span></div><div id="teamMonthly"></div></div>
     <div class="card">
@@ -168,6 +169,7 @@
   let topYms=[now.toISOString().slice(0,7)];   // 카드 다중 선택
   let wfYms=[now.toISOString().slice(0,7)];     // 워터폴 다중 선택
   let noDrill=false;                            // 대시보드 드릴다운 비활성(사용자별)
+  let selTeam='total';                          // 팀 토글: 'total' 또는 team_id
   const YEAR=2026;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -236,10 +238,21 @@
   function wfLabel(){ return wfYms.map(ymLabel).join('·'); }
 
   async function loadCards(){
-    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());noDrill=(su.drilldown===false);renderCards(su);}
+    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(',')+'&carry=1&team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());noDrill=(su.drilldown===false);renderTeamToggle(su);renderCards(su);}
     catch(e){$('cards').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
     loadTeamMonthly();
   }
+  function renderTeamToggle(su){
+    const el=$('teamToggle'); if(!el) return;
+    const teams=su.teams||[];
+    if(teams.length<2){ el.innerHTML=''; return; } // 팀이 1개 이하면 토글 불필요
+    const sel=String(su.selectedTeam||'total');
+    let h='<span class="ml" style="margin-right:8px">팀</span>';
+    h+='<button class="mbtn '+(sel==='total'?'on':'')+'" onclick="pickTeam(\'total\')">Total</button> ';
+    h+=teams.map(t=>'<button class="mbtn '+(sel===String(t.id)?'on':'')+'" onclick="pickTeam(\''+t.id+'\')">'+esc(t.name)+'</button>').join(' ');
+    el.innerHTML='<div class="card" style="margin:0;padding:10px 14px"><div class="mrow">'+h+'</div></div>';
+  }
+  function pickTeam(t){ selTeam=String(t); loadCards(); }
   async function loadTeamMonthly(){
     try{
       const d=await fetch(session.api+'/api/salesperf/team-monthly?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());
@@ -271,6 +284,8 @@
   function renderCards(su){
     const s=su.sales||{}, c=su.collection||{}, d=su.pipeline_dev||{};
     const lbl=topLabel();
+    const selT=String(su.selectedTeam||'total');
+    const teamLbl=selT==='total'?'Total(전 팀 합산)':((su.teams||[]).find(t=>String(t.id)===selT)||{}).name||'팀';
     let momHtml='';
     if(su.multi) momHtml='<div class="mom flat">여러 달 합산</div>';
     else if(s.momPct==null) momHtml='<div class="mom flat">전월 대비 —</div>';
@@ -281,14 +296,14 @@
       : '<div class="cardbody"><div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
         +'<div class="goal">목표/계획 MX$'+fmt(s.target)+' · 달성 '+(s.progress==null?'—':s.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
-        +'<div class="cardfoot hint">전사 목표 대비 매출 실적(IVA 불포함) · '+lbl+'</div></div>';
+        +'<div class="cardfoot hint">'+esc(teamLbl)+' 매출목표(미달분 이월 포함) 대비 실적(IVA 불포함) · '+lbl+'</div></div>';
     // 카드2 수금 (mom 자리 비워 정렬 맞춤)
     const c2=c.locked
       ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div></div>'
       : '<div class="cardbody"><div class="bigv">MX$'+fmt(c.actual)+'</div><div class="mom flat"></div>'
         +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
-        +'<div class="cardfoot hint">수금예상(인보이스 외상일 기준, IVA 포함) 대비 실제 수금(실현) · '+lbl+'</div></div>';
+        +'<div class="cardfoot hint">'+esc(teamLbl)+' 수금목표(만기액+미수금 이월) 대비 실제 수금 · '+lbl+'</div></div>';
     // 카드3 고객개발 — 당월 견적/협상/수주 + 지난주 변동
     const dd=d.delta||{};
     const dchip=(n)=>{ if(n==null||n===0) return '<div class="l" style="color:var(--muted)">±0 (지난주)</div>'; const up=n>0; return '<div class="l" style="color:'+(up?'var(--income)':'var(--expense)')+'">'+(up?'+':'')+n+' (지난주)</div>'; };

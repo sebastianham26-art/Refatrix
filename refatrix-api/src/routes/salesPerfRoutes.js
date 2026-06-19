@@ -2,6 +2,7 @@ import { query } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
+import { effectiveTargetFor, aggregateCarryover } from '../salesTarget.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function pearson(xs, ys) {
@@ -67,6 +68,72 @@ async function monthSalesActual(perm, ym) {
   return Number((await query(q, p)).rows[0].a);
 }
 
+// ===== 팀별 이월(carryover) 지원 헬퍼 =====
+// team 파라미터('total'/'all'/'' = 가시 전체, 또는 특정 team_id) → 가시성 내 포함할 팀 목록/범위
+async function resolveTeamScope(perm, teamParam) {
+  const vis = visibleTeamIds(perm); // null = 전체
+  let q = `SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true`;
+  const args = [];
+  if (vis !== null) { args.push(vis.length ? vis : [-1]); q += ` AND id = ANY($1)`; }
+  q += ` ORDER BY sort_order, id`;
+  const teamList = (await query(q, args)).rows.map((t) => ({ id: Number(t.id), name: t.name }));
+  const tp = String(teamParam || '').trim().toLowerCase();
+  let scopeIds, selected;
+  if (tp && tp !== 'total' && tp !== 'all' && /^\d+$/.test(tp)) {
+    const one = teamList.filter((t) => t.id === Number(tp));
+    scopeIds = one.map((t) => t.id); selected = String(Number(tp));
+  } else { scopeIds = teamList.map((t) => t.id); selected = 'total'; }
+  return { teamList, scopeIds, selected };
+}
+// 선택월들에 대해 그 해 1월부터 필요한 모든 'YYYY-MM' (이월 replay용)
+function neededMonths(yms) {
+  const set = new Set();
+  for (const ym of yms) {
+    const [y, m] = String(ym).split('-').map(Number);
+    for (let i = 1; i <= m; i++) set.add(`${y}-${String(i).padStart(2, '0')}`);
+  }
+  return [...set].sort();
+}
+// {team_id:{ym:value}} 맵 빌더
+function emptyMap(ids) { const o = {}; for (const id of ids) o[id] = {}; return o; }
+// 매출: 기본목표(팀월목표, 없으면 그 팀 고객목표 합)·실적(posted ex-IVA, inv_date)
+async function salesBaseActual(scopeIds, months) {
+  const base = emptyMap(scopeIds), actual = emptyMap(scopeIds);
+  if (!scopeIds.length || !months.length) return { base, actual };
+  const tt = (await query(`SELECT team_id, ym, amount FROM target_team_months WHERE team_id=ANY($1) AND ym=ANY($2)`, [scopeIds, months])).rows;
+  const ttSet = new Set(); for (const r of tt) { base[r.team_id][r.ym] = Number(r.amount); ttSet.add(r.team_id + '|' + r.ym); }
+  const ct = (await query(
+    `SELECT c.team_id, m.ym, COALESCE(SUM(m.amount),0) AS amt FROM target_customer_months m JOIN customers c ON c.id=m.customer_id
+      WHERE c.team_id=ANY($1) AND m.ym=ANY($2) AND c.deleted_at IS NULL GROUP BY c.team_id, m.ym`, [scopeIds, months])).rows;
+  for (const r of ct) { if (!ttSet.has(r.team_id + '|' + r.ym)) base[r.team_id][r.ym] = Number(r.amt); } // 팀월목표 없을 때만 고객합 사용
+  const ac = (await query(
+    `SELECT c.team_id, to_char(i.inv_date,'YYYY-MM') AS ym, COALESCE(SUM(i.subtotal_mxn),0) AS a
+       FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+      WHERE i.status='posted' AND c.team_id=ANY($1) AND to_char(i.inv_date,'YYYY-MM')=ANY($2) AND c.deleted_at IS NULL
+      GROUP BY c.team_id, to_char(i.inv_date,'YYYY-MM')`, [scopeIds, months])).rows;
+  for (const r of ac) actual[r.team_id][r.ym] = Number(r.a);
+  return { base, actual };
+}
+// 수금: 기본목표(그달 만기 인보이스 total_mxn, due_date)·실적(그달 입금 in-transactions)
+async function collectBaseActual(scopeIds, months) {
+  const base = emptyMap(scopeIds), actual = emptyMap(scopeIds);
+  if (!scopeIds.length || !months.length) return { base, actual };
+  const bd = (await query(
+    `SELECT c.team_id, to_char(i.due_date,'YYYY-MM') AS ym, COALESCE(SUM(i.total_mxn),0) AS a
+       FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+      WHERE i.status='posted' AND c.team_id=ANY($1) AND to_char(i.due_date,'YYYY-MM')=ANY($2) AND c.deleted_at IS NULL
+      GROUP BY c.team_id, to_char(i.due_date,'YYYY-MM')`, [scopeIds, months])).rows;
+  for (const r of bd) base[r.team_id][r.ym] = Number(r.a);
+  const ad = (await query(
+    `SELECT c.team_id, to_char(t.txn_date,'YYYY-MM') AS ym, COALESCE(SUM(t.amount_mxn),0) AS a
+       FROM transactions t JOIN sales_invoices i ON i.id=t.sales_invoice_id JOIN customers c ON c.id=i.customer_id
+      WHERE t.status='actual' AND t.direction='in' AND c.team_id=ANY($1) AND to_char(t.txn_date,'YYYY-MM')=ANY($2)
+        AND (t.kind IN ('sales','invoice') OR t.sales_invoice_id IS NOT NULL)
+      GROUP BY c.team_id, to_char(t.txn_date,'YYYY-MM')`, [scopeIds, months])).rows;
+  for (const r of ad) actual[r.team_id][r.ym] = Number(r.a);
+  return { base, actual };
+}
+
 export default async function salesPerfRoutes(app) {
   // 상단 요약 3카드 (ym는 콤마구분 다중 월 가능: 합산)
   // 팀별 × 월별 실적(ex-IVA)·목표 — 매출목표 카드 아래 표시
@@ -108,29 +175,47 @@ export default async function salesPerfRoutes(app) {
     const seeAr = fieldVisible(perm, 'ar_amount');
     const multi = yms.length > 1;
 
-    // 카드1 매출목표 대비 실적(ex-IVA) — 선택 월 합산
+    // 카드1 매출목표 / 카드2 수금 — carry=1이면 팀 토글 + 미달분 이월 적용, 아니면 종전 동작
+    const carryMode = String(req.query.carry || '') === '1';
+    let teamList = [], selectedTeam = 'total';
     let target = 0, actual = 0, prevActual = 0;
-    for (const ym of yms) { target += await monthTargetOf(perm, ym); actual += await monthSalesActual(perm, ym); }
-    // 전월 대비는 단일 월일 때만
-    if (!multi) prevActual = await monthSalesActual(perm, prevYm(yms[0]));
+    let collectPlan = 0, collectActual = 0;
+
+    if (carryMode) {
+      const scope = await resolveTeamScope(perm, req.query.team);
+      teamList = scope.teamList; selectedTeam = scope.selected;
+      const months = neededMonths(yms);
+      const sba = await salesBaseActual(scope.scopeIds, months);
+      const sAgg = aggregateCarryover(scope.scopeIds, sba.base, sba.actual, yms);
+      target = sAgg.target; actual = sAgg.actual;
+      const cba = await collectBaseActual(scope.scopeIds, months);
+      const cAgg = aggregateCarryover(scope.scopeIds, cba.base, cba.actual, yms);
+      collectPlan = cAgg.target; collectActual = cAgg.actual;
+      if (!multi) {
+        const pYm = prevYm(yms[0]);
+        if (String(pYm).slice(0, 4) === String(yms[0]).slice(0, 4)) {
+          for (const tid of scope.scopeIds) prevActual = r2(prevActual + (sba.actual[tid]?.[pYm] || 0));
+        }
+      }
+    } else {
+      for (const ym of yms) { target += await monthTargetOf(perm, ym); actual += await monthSalesActual(perm, ym); }
+      if (!multi) prevActual = await monthSalesActual(perm, prevYm(yms[0]));
+      for (const ym of yms) {
+        let pq = `SELECT COALESCE(SUM(i.total_mxn),0) AS a FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+                   WHERE i.status='posted' AND to_char(i.due_date,'YYYY-MM')=$1 AND c.deleted_at IS NULL`;
+        const pp = [ym]; if (ta) { pp.push(ta); pq += ` AND c.team_id = ANY($2)`; }
+        collectPlan += Number((await query(pq, pp)).rows[0].a);
+        let cq = `SELECT COALESCE(SUM(t.amount_mxn),0) AS a FROM transactions t
+                    LEFT JOIN sales_invoices i ON i.id=t.sales_invoice_id
+                    LEFT JOIN customers c ON c.id=i.customer_id
+                   WHERE t.status='actual' AND t.direction='in' AND to_char(t.txn_date,'YYYY-MM')=$1
+                     AND (t.kind IN ('sales','invoice') OR t.sales_invoice_id IS NOT NULL)`;
+        const cp = [ym]; if (ta) { cp.push(ta); cq += ` AND c.team_id = ANY($2)`; }
+        collectActual += Number((await query(cq, cp)).rows[0].a);
+      }
+    }
     const progress = target > 0 ? r2(actual / target * 100) : null;
     const momPct = multi ? null : (prevActual > 0 ? r2((actual - prevActual) / prevActual * 100) : (actual > 0 ? null : 0));
-
-    // 카드2 수금: 선택 월들의 due/실적 합
-    let collectPlan = 0, collectActual = 0;
-    for (const ym of yms) {
-      let pq = `SELECT COALESCE(SUM(i.total_mxn),0) AS a FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
-                 WHERE i.status='posted' AND to_char(i.due_date,'YYYY-MM')=$1 AND c.deleted_at IS NULL`;
-      const pp = [ym]; if (ta) { pp.push(ta); pq += ` AND c.team_id = ANY($2)`; }
-      collectPlan += Number((await query(pq, pp)).rows[0].a);
-      let cq = `SELECT COALESCE(SUM(t.amount_mxn),0) AS a FROM transactions t
-                  LEFT JOIN sales_invoices i ON i.id=t.sales_invoice_id
-                  LEFT JOIN customers c ON c.id=i.customer_id
-                 WHERE t.status='actual' AND t.direction='in' AND to_char(t.txn_date,'YYYY-MM')=$1
-                   AND (t.kind IN ('sales','invoice') OR t.sales_invoice_id IS NOT NULL)`;
-      const cp = [ym]; if (ta) { cp.push(ta); cq += ` AND c.team_id = ANY($2)`; }
-      collectActual += Number((await query(cq, cp)).rows[0].a);
-    }
     const collectProgress = collectPlan > 0 ? r2(collectActual / collectPlan * 100) : null;
 
     // 카드3 고객 개발 — 당월 견적/협상/수주 건수 (quotes 기준)
@@ -163,6 +248,7 @@ export default async function salesPerfRoutes(app) {
 
     return {
       yms, multi,
+      carry: carryMode, teams: teamList, selectedTeam,
       sales: seeSales ? { actual: r2(actual), target: r2(target), progress, prevActual: r2(prevActual), momPct, locked: false }
                       : { progress, momPct, locked: true },
       collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false }
