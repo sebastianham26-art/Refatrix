@@ -282,10 +282,13 @@ export default async function stockRoutes(app) {
       `SELECT m.id, m.product_id, m.move_type, m.qty, m.unit_cost_mxn, m.ref, m.note, m.source, m.moved_at,
               m.sales_invoice_id, m.batch_id, m.event_no,
               p.code AS ctr_code, p.name AS product_name,
-              u.name AS created_by_name
+              u.name AS created_by_name,
+              cu.name AS customer_name, si.sat_no AS sat_no
          FROM stock_movements m
          JOIN products p ON p.id=m.product_id
          LEFT JOIN users u ON u.id=m.created_by
+         LEFT JOIN sales_invoices si ON si.id=m.sales_invoice_id
+         LEFT JOIN customers cu ON cu.id=si.customer_id
          ${where}
         ORDER BY m.moved_at DESC, m.id DESC
         LIMIT ${limit}`, args)).rows;
@@ -299,6 +302,7 @@ export default async function stockRoutes(app) {
         ref: r.ref, note: r.note, moved_at: r.moved_at,
         origin: r.sales_invoice_id ? '매출' : (r.batch_id ? '수입' : (r.source === 'manual' ? '수동' : '기타')),
         created_by_name: r.created_by_name || null,
+        customer_name: r.customer_name || null, sat_no: r.sat_no || null,
       })),
     };
   });

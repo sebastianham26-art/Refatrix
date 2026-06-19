@@ -252,7 +252,7 @@
     h+=teams.map(t=>'<button class="mbtn '+(sel===String(t.id)?'on':'')+'" onclick="pickTeam(\''+t.id+'\')">'+esc(t.name)+'</button>').join(' ');
     el.innerHTML='<div class="card" style="margin:0;padding:10px 14px"><div class="mrow">'+h+'</div></div>';
   }
-  function pickTeam(t){ selTeam=String(t); loadCards(); }
+  function pickTeam(t){ selTeam=String(t); loadCards(); loadWaterfall(); loadPipeline(); loadCalendar(); }
   async function loadTeamMonthly(){
     try{
       const d=await fetch(session.api+'/api/salesperf/team-monthly?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());
@@ -323,7 +323,7 @@
 
   async function loadWaterfall(){
     $('wfTitle').textContent=wfLabel()+' 주차별 매출 (워터폴)';
-    try{const wk=await fetch(session.api+'/api/salesperf/weekly?ym='+wfYms.join(','),{headers:auth()}).then(r=>r.json());renderWaterfall(wk);}
+    try{const wk=await fetch(session.api+'/api/salesperf/weekly?ym='+wfYms.join(',')+'&carry=1&team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());renderWaterfall(wk);}
     catch(e){$('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function renderWaterfall(wk){
@@ -360,7 +360,7 @@
   const STAGE_LABEL={10:'잠재발굴',20:'접촉',30:'제안',40:'협상',50:'수주',60:'거래중'};
   function dayDot(days){ if(days==null)return '#bbb'; if(days<=7)return 'var(--income)'; if(days<=14)return '#C99A2E'; return 'var(--expense)'; }
   async function loadPipeline(){
-    try{const pp=await fetch(session.api+'/api/salesperf/pipeline',{headers:auth()}).then(r=>r.json());renderPipeline(pp);}
+    try{const pp=await fetch(session.api+'/api/salesperf/pipeline?team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());renderPipeline(pp);}
     catch(e){$('pipeBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function renderPipeline(pp){
@@ -487,7 +487,7 @@
     const start=calWeekStart, end=addDaysD(start,6);
     $('calLabel').textContent=(start.getMonth()+1)+'/'+start.getDate()+' – '+(end.getMonth()+1)+'/'+end.getDate();
     try{
-      const d=await fetch(session.api+'/api/salesperf/daily?start='+ymd(start)+'&end='+ymd(end),{headers:auth()}).then(r=>r.json());
+      const d=await fetch(session.api+'/api/salesperf/daily?start='+ymd(start)+'&end='+ymd(end)+'&team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());
       renderCalendar(start,d);
     }catch(e){$('calBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }

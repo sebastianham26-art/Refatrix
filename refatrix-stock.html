@@ -331,7 +331,8 @@
         const refs=[...new Set(arr.map(m=>m.ref).filter(r=>r&&!/^batch:\d+$/.test(String(r))))];
         const refStr=refs.length?refs.join(' / '):'';
         const dlabel=dayKey(arr[0]); const dshort=(dlabel.length===10?dlabel.slice(5):dlabel); // MM-DD
-        const evTitle='<span class="evdate">'+esc(dshort)+'</span>'+(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+'<b>'+esc(label)+'</b>'+(refStr?' · 참조 '+esc(refStr):(isImport&&batchId!=null?' · <span class="hint">batch:'+batchId+'</span>':''));
+        const cust=arr[0].origin==='매출'?(arr[0].customer_name||''):'';
+        const evTitle='<span class="evdate">'+esc(dshort)+'</span>'+(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+'<b>'+esc(label)+'</b>'+(cust?' · '+esc(cust):'')+(refStr?' · 참조 '+esc(refStr):(isImport&&batchId!=null?' · <span class="hint">batch:'+batchId+'</span>':''));
         const allManual=arr.every(m=>m.origin!=='매출'&&m.origin!=='수입');
         html+='<div class="evrow" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
         html+='<div class="evdetail" id="'+id+'" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'">';

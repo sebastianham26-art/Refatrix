@@ -35,6 +35,15 @@ function prevYm(ym) { const [y, m] = ym.split('-').map(Number); return new Date(
 
 // 팀 가시성 조건
 function teamArrOf(perm) { const vis = visibleTeamIds(perm); return vis === null ? null : (vis.length ? vis : [-1]); }
+// team 파라미터를 가시 범위와 교차해 적용 (토글이 모든 섹션에 작동하도록). 'total'/'' → 가시 전체
+function effectiveTeamArr(perm, teamParam) {
+  const ta = teamArrOf(perm); // null = 전체 가시
+  const tp = String(teamParam || '').trim().toLowerCase();
+  if (!tp || tp === 'total' || tp === 'all' || !/^\d+$/.test(tp)) return ta;
+  const id = Number(tp);
+  if (ta === null) return [id];
+  return ta.includes(id) ? [id] : [-1];
+}
 
 // 월 매출목표(전사 또는 팀 가시성 고객목표 합)
 async function monthTargetOf(perm, ym) {
@@ -262,14 +271,22 @@ export default async function salesPerfRoutes(app) {
   app.get('/api/salesperf/weekly', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     const yms = String(req.query.ym || new Date().toISOString().slice(0, 7)).split(',').map((s) => s.trim()).filter(Boolean).sort();
-    const ta = teamArrOf(perm);
+    const ta = effectiveTeamArr(perm, req.query.team);
     const seeSales = fieldVisible(perm, 'sales_amount');
     const multi = yms.length > 1;
+    const carryMode = String(req.query.carry || '') === '1';
 
     let monthTarget = 0;
+    if (carryMode) {
+      const scope = await resolveTeamScope(perm, req.query.team);
+      const months = neededMonths(yms);
+      const sba = await salesBaseActual(scope.scopeIds, months);
+      monthTarget = aggregateCarryover(scope.scopeIds, sba.base, sba.actual, yms).target;
+    } else {
+      for (const ym of yms) monthTarget += await monthTargetOf(perm, ym);
+    }
     const rows = []; let cum = 0;
     for (const ym of yms) {
-      monthTarget += await monthTargetOf(perm, ym);
       const mLbl = Number(ym.split('-')[1]) + '월';
       const weeks = weeksOfMonth(ym);
       for (const w of weeks) {
@@ -293,7 +310,7 @@ export default async function salesPerfRoutes(app) {
   // 고객 파이프라인 보드(6단계, 고객 카드)
   app.get('/api/salesperf/pipeline', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
-    const ta = teamArrOf(perm);
+    const ta = effectiveTeamArr(perm, req.query.team);
     // 단계(미지정 제외)
     const stages = (await query(`SELECT id, name, sort_order FROM stages WHERE deleted_at IS NULL AND sort_order > 0 ORDER BY sort_order`)).rows;
     // 고객 + 마지막 활동일(미팅 최신)
@@ -417,7 +434,7 @@ export default async function salesPerfRoutes(app) {
   // 주간 캘린더용: 한 주(또는 한 달)의 일자별 매출 상세(고객명+금액)
   app.get('/api/salesperf/daily', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
-    const ta = teamArrOf(perm);
+    const ta = effectiveTeamArr(perm, req.query.team);
     const seeSales = fieldVisible(perm, 'sales_amount');
     const start = String(req.query.start || '');
     const end = String(req.query.end || '');
