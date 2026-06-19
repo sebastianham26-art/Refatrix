@@ -48,6 +48,8 @@
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg button{border:none;background:#fff;padding:6px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
   .seg button.on{background:var(--brand);color:#fff}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d5}
+  tr.ovd td{background:var(--expense-bg)}
 </style>
 </head>
 <body>
@@ -80,6 +82,18 @@
       <div class="card-h">상세 내역</div>
       <div id="itemBody"><div class="hint">불러오는 중…</div></div>
     </div>
+
+    <!-- 수금 상세 (오픈 인보이스 / AR) -->
+    <div class="card">
+      <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
+        <span style="margin-left:auto"><span class="seg" id="arSeg"></span></span>
+      </div>
+      <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고, 고객별 <b>PDF 명세서</b>를 뽑을 수 있어요.</div>
+      <div class="stats" id="arStats"></div>
+      <div id="arGroupBox" style="margin-top:12px"></div>
+      <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="arMsg"></div>
+    </div>
   </div>
 </div>
 
@@ -110,7 +124,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      renderYearSeg();load();
+      renderYearSeg();load();loadAr();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -159,10 +173,146 @@
   }
   function sum(arr,k){ return arr.reduce((s,x)=>s+(Number(x[k])||0),0); }
 
+  // ===== 수금 상세 (오픈 인보이스 / AR) =====
+  let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null;
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  async function loadAr(){
+    try{
+      const [d,acc]=await Promise.all([
+        fetch(session.api+'/api/ar/open-list',{headers:auth()}).then(r=>r.json()),
+        fetch(session.api+'/api/accounts',{headers:auth()}).then(r=>r.json()).catch(()=>({items:[]})),
+      ]);
+      arItems=(d&&d.items)||[]; arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
+      arAccounts=(acc&&acc.items)||[];
+      renderArSeg(); renderAr();
+    }catch(e){ $('arListBox').innerHTML='<div class="hint">미수금 목록을 불러오지 못했습니다.</div>'; }
+  }
+  function renderArSeg(){
+    const opts=[['company','회사 전체'],['team','팀별'],['owner','영업담당자별'],['customer','고객별']];
+    $('arSeg').innerHTML=opts.map(o=>'<button class="'+(arGroup===o[0]?'on':'')+'" onclick="setArGroup(\''+o[0]+'\')">'+o[1]+'</button>').join('');
+  }
+  function setArGroup(g){ arGroup=g; arFilter=null; arOpenRepay=null; renderArSeg(); renderAr(); }
+  function arKeyOf(it){
+    if(arGroup==='team') return {key:'t'+(it.team_id||0), label: it.team_name||'(팀 미지정)'};
+    if(arGroup==='owner') return {key:'o'+(it.owner_id||0), label: it.owner_name||'(담당자 미지정)'};
+    if(arGroup==='customer') return {key:'c'+it.customer_id, label: it.customer_name+' ('+it.customer_code+')'};
+    return {key:'all', label:'회사 전체'};
+  }
+  function arDueText(it){
+    if(it.day_diff==null) return '<span class="hint">기일 없음</span>';
+    if(it.day_diff>0) return '<b style="color:var(--expense)">연체 '+it.day_diff+'일</b>';
+    if(it.day_diff===0) return '<b style="color:var(--gold)">오늘 만기</b>';
+    return '<span class="hint">D-'+(-it.day_diff)+'</span>';
+  }
+  function renderAr(){
+    if(!arItems.length){ $('arStats').innerHTML=''; $('arGroupBox').innerHTML=''; $('arListBox').innerHTML='<div class="hint">미수금(오픈 인보이스)이 없습니다.</div>'; return; }
+    const groups={};
+    arItems.forEach(it=>{ const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0}; const g=groups[k.key]; g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
+    const list=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
+    const sCount=list.length, sOut=list.reduce((s,x)=>s+x.outstanding,0), sOvd=list.reduce((s,x)=>s+(x.overdue?x.outstanding:0),0);
+    const scope = arFilter ? (groups[arFilter]?groups[arFilter].label:'') : '전체';
+    $('arStats').innerHTML=
+      '<div class="stat tot"><div class="k">총 잔액 ('+esc(scope)+')</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
+      +'<div class="stat"><div class="k">오픈 인보이스</div><div class="v">'+sCount+'건</div></div>'
+      +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:var(--expense)">MX$'+fmt(sOvd)+'</div></div>'
+      +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+list.filter(x=>x.overdue).length+'건</div></div>';
+    if(arGroup==='company'){ $('arGroupBox').innerHTML=''; }
+    else {
+      const gk=Object.keys(groups).sort((a,b)=>groups[b].outstanding-groups[a].outstanding);
+      const head = arGroup==='team'?'팀':(arGroup==='owner'?'영업담당자':'고객');
+      let h='<table><thead><tr><th>'+head+'</th><th>건수</th><th>총 잔액</th><th>연체 잔액</th></tr></thead><tbody>';
+      gk.forEach(k=>{ const g=groups[k]; const on=arFilter===k; h+='<tr style="cursor:pointer'+(on?';background:#eef4f1':'')+'" onclick="pickArFilter(\''+k+'\')"><td>'+(on?'▸ ':'')+esc(g.label)+'</td><td>'+g.count+'</td><td><b>'+fmt(g.outstanding)+'</b></td><td style="color:var(--expense)">'+fmt(g.overdue)+'</td></tr>'; });
+      h+='</tbody></table><div class="hint" style="margin-top:4px">행을 누르면 아래 목록이 해당 '+head+'(으)로 좁혀집니다.'+(arFilter?' · <a href="#" onclick="pickArFilter(null);return false">전체 보기</a>':'')+'</div>';
+      $('arGroupBox').innerHTML=h;
+    }
+    let h='<table><thead><tr><th>고객</th><th>인보이스</th><th>발행일</th><th>만기일</th><th>청구액</th><th>입금</th><th>잔액</th><th>상태</th><th></th></tr></thead><tbody>';
+    list.forEach(it=>{
+      h+='<tr'+(it.overdue?' class="ovd"':'')+'>'
+        +'<td><b>'+esc(it.customer_name)+'</b> <span class="hint">'+esc(it.customer_code)+'</span></td>'
+        +'<td>'+esc(it.sat_no||('#'+it.id))+'</td>'
+        +'<td>'+esc(it.inv_date||'—')+'</td>'
+        +'<td>'+esc(it.due_date||'—')+'</td>'
+        +'<td>'+fmt(it.total_mxn)+'</td>'
+        +'<td>'+fmt(it.paid)+'</td>'
+        +'<td><b>'+fmt(it.outstanding)+'</b></td>'
+        +'<td>'+arDueText(it)+'</td>'
+        +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">반제</button> '
+        +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="customerPdf('+it.customer_id+')">명세서</button></td>'
+        +'</tr>';
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
+    });
+    h+='</tbody></table>';
+    $('arListBox').innerHTML=h;
+  }
+  function pickArFilter(k){ arFilter=k; arOpenRepay=null; renderAr(); }
+  function repayForm(it){
+    const accOpts=arAccounts.map(a=>'<option value="'+a.id+'">'+esc(a.name)+'</option>').join('');
+    return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div><label>반제 금액 (잔액 MX$'+fmt(it.outstanding)+')</label><input id="rpAmt" type="number" step="0.01" value="'+it.outstanding+'" style="width:140px"></div>'
+      +'<div><label>입금 계좌</label><select id="rpAcc" style="width:170px">'+(accOpts||'<option value="">(계좌 없음)</option>')+'</select></div>'
+      +'<div><label>입금일</label><input id="rpDate" type="date" value="'+arToday+'" style="width:150px"></div>'
+      +'<div><button class="btn" onclick="submitRepay('+it.id+')">저장</button></div>'
+      +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="openRepay(null)">취소</button></div>'
+      +'</div><div class="hint" style="margin-top:6px">잔액보다 작게 넣으면 부분수금(반제)으로 기록됩니다. 입금은 통장 거래로도 반영돼요.</div>';
+  }
+  function openRepay(id){ arOpenRepay=id; renderAr(); }
+  async function submitRepay(invId){
+    const it=arItems.find(x=>x.id===invId); if(!it)return;
+    const m=$('arMsg'); m.className='msg';
+    const amt=Number($('rpAmt').value), acc=Number($('rpAcc').value), date=$('rpDate').value;
+    if(!(amt>0)){ m.className='msg err'; m.textContent='반제 금액을 입력하세요(양수).'; return; }
+    if(amt>it.outstanding+0.01){ m.className='msg err'; m.textContent='반제 금액이 잔액보다 큽니다.'; return; }
+    if(!acc){ m.className='msg err'; m.textContent='입금 계좌를 선택하세요.'; return; }
+    if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
+    try{
+      const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:it.customer_id,pay_date:date,account_id:acc,amount:amt,allocations:[{invoice_id:invId,amount:amt}],memo:'수금 상세 반제'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='반제 실패: '+(d.detail?JSON.stringify(d.detail):(d.error||res.status)); return; }
+      m.className='msg ok'; m.textContent='반제 저장 완료: '+it.customer_name+' MX$'+fmt(amt)+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'');
+      arOpenRepay=null; loadAr();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  function customerPdf(customerId){
+    const rows=arItems.filter(x=>x.customer_id===customerId); if(!rows.length)return;
+    const c=rows[0]; const m=$('arMsg');
+    const J=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
+    if(!J){ m.className='msg err'; m.textContent='PDF 모듈을 불러오지 못했습니다(인터넷 연결 확인).'; return; }
+    const doc=new J({unit:'pt',format:'a4'});
+    let y=54;
+    doc.setFontSize(16); doc.text('Estado de cuenta', 40, y);
+    doc.setFontSize(10); doc.setTextColor(110);
+    doc.text('Refatrix · CTR Autopartes', 40, y+16);
+    doc.text('Fecha: '+arToday, 460, y+16);
+    y+=44; doc.setTextColor(20); doc.setFontSize(11);
+    doc.text('Cliente: '+(c.customer_name||''), 40, y); y+=15;
+    doc.setFontSize(9); doc.setTextColor(110);
+    if(c.customer_rfc){ doc.text('RFC: '+c.customer_rfc, 40, y); }
+    if(c.customer_phone){ doc.text('Tel: '+c.customer_phone, 220, y); }
+    y+=20; doc.setTextColor(20); doc.setFontSize(9);
+    doc.setFillColor(245,243,237); doc.rect(40,y-11,515,16,'F');
+    doc.text('Factura',46,y); doc.text('Emision',170,y); doc.text('Vencimiento',250,y); doc.text('Saldo (MXN)',430,y,{align:'right'}); doc.text('Dias',548,y,{align:'right'});
+    y+=6;
+    let total=0;
+    rows.forEach(r=>{ y+=15; if(y>790){doc.addPage();y=54;}
+      doc.text(String(r.sat_no||('#'+r.id)).slice(0,20),46,y);
+      doc.text(String(r.inv_date||'—'),170,y);
+      doc.text(String(r.due_date||'—'),250,y);
+      doc.text(fmt(r.outstanding),430,y,{align:'right'});
+      doc.text(r.day_diff>0?String(r.day_diff):(r.day_diff==null?'—':('D'+r.day_diff)),548,y,{align:'right'});
+      total+=r.outstanding;
+    });
+    y+=12; doc.setDrawColor(150); doc.line(40,y,555,y); y+=18;
+    doc.setFontSize(11); doc.text('Total adeudado:',430,y,{align:'right'}); doc.text('MX$ '+fmt(total),548,y,{align:'right'});
+    doc.save('estado_cuenta_'+(c.customer_code||c.customer_id)+'.pdf');
+  }
+
+
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="refatrix-nav.js?v=20260619ab"></script>
 </body>
 </html>
