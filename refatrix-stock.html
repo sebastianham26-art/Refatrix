@@ -80,7 +80,7 @@
   <div class="hidden" id="app">
     <!-- 등록 -->
     <div class="card">
-      <div class="card-h">이동 등록 <span class="hint" style="font-weight:500">— 참조번호 필수 (수입인보이스 / 샘플사유 등). 입고·출고·조정 모두 평균원가는 변경하지 않습니다.</span></div>
+      <div class="card-h">이동 등록 <span class="hint" style="font-weight:500">— 참조번호 필수. <b>여러 SKU를 "담기"로 추가해 한 번에 등록</b>할 수 있어요(유형은 SKU별로 섞어도 됩니다). 참조·사유·날짜는 공통.</span></div>
       <div class="inrow">
         <div style="min-width:120px"><label>유형</label>
           <select id="mtype" style="width:120px" onchange="onTypeChange()">
@@ -94,10 +94,11 @@
           <div class="hint" id="prodPick" style="margin-top:3px"></div>
         </div>
         <div style="min-width:100px"><label id="qtyLbl">수량</label><input id="qty" type="number" step="1" value="1" style="width:100px"></div>
+        <div><label>&nbsp;</label><button class="btn ghost" id="addBtn" onclick="addToCart()" title="이 제품을 목록에 담기">＋ 담기</button></div>
         <div style="min-width:160px"><label>참조번호 *</label><input id="ref" type="text" placeholder="예: IMP-INV-2026-001" style="width:180px"></div>
         <div style="min-width:140px"><label>사유(선택)</label><input id="note" type="text" placeholder="예: 무료샘플" style="width:150px"></div>
         <div style="min-width:140px"><label>입고날짜 *</label><input id="mdate" type="date" style="width:150px"></div>
-        <div><button class="btn" id="saveBtn" onclick="saveMove()">등록</button></div>
+        <div><label>&nbsp;</label><button class="btn" id="saveBtn" onclick="submitMoves()">등록</button></div>
         <div style="margin-left:auto"><label>엑셀 일괄</label>
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn ghost sm" onclick="downloadTemplate()">양식</button>
@@ -105,6 +106,7 @@
           </div>
         </div>
       </div>
+      <div id="cartBox" style="margin-top:8px"></div>
       <div class="msg" id="saveMsg"></div>
       <div id="bulkPreview"></div>
     </div>
@@ -234,27 +236,52 @@
   }
   document.addEventListener('click',(e)=>{ if(!e.target.closest('#prod')&&!e.target.closest('#acBox')) hideAc(); });
 
-  async function saveMove(){
+  // ── 다중 SKU 장바구니 등록 ──
+  let cart=[];
+  function addToCart(){
     const m=$('saveMsg');m.className='msg';
     if(!picked){m.className='msg err';m.textContent='제품을 검색해서 선택하세요.';return;}
-    const type=$('mtype').value, qty=Number($('qty').value), ref=$('ref').value.trim();
-    const mdate=$('mdate').value;
-    if(!ref){m.className='msg err';m.textContent='참조번호를 입력하세요.';return;}
-    if(!mdate){m.className='msg err';m.textContent='입고 날짜를 입력하세요.';$('mdate').focus();return;}
+    const type=$('mtype').value, qty=Number($('qty').value);
     if(type!=='adjust' && (!qty||qty<=0)){m.className='msg err';m.textContent='수량을 입력하세요(양수).';return;}
     if(type==='adjust' && !qty){m.className='msg err';m.textContent='조정 수량을 입력하세요(증가 +, 감소 −).';return;}
+    cart.push({code:picked.ctr_code, name:picked.name||'', move_type:type, qty:qty});
+    renderCart();
+    $('prod').value='';$('qty').value='1';picked=null;$('prodPick').textContent='';$('prod').focus();
+    m.className='msg ok';m.textContent='담김 — 대기 '+cart.length+'개 SKU. 계속 담거나 [등록]을 누르세요.';
+  }
+  function removeFromCart(i){ cart.splice(i,1); renderCart(); }
+  function renderCart(){
+    const box=$('cartBox'); if(!box)return;
+    if(!cart.length){ box.innerHTML=''; return; }
+    const tlm={in:'입고 (+)',out:'출고 (−)',adjust:'조정 (±)'};
+    let h='<div style="border:1px solid var(--line,#e6e1d6);border-radius:8px;overflow:hidden">';
+    h+='<div style="padding:6px 10px;background:var(--bg2,#f7f4ee);font-size:12px;font-weight:600">담은 SKU '+cart.length+'개 — [등록] 시 공통 참조·사유·날짜로 한 번에 처리됩니다</div>';
+    h+='<table style="margin:0;font-size:12.5px;width:100%"><thead><tr><th>제품</th><th>유형</th><th class="r">수량</th><th></th></tr></thead><tbody>';
+    cart.forEach((c,i)=>{ h+='<tr><td><b>'+esc(c.code)+'</b> <span class="hint">'+esc(c.name)+'</span></td><td>'+(tlm[c.move_type]||c.move_type)+'</td><td class="r">'+fmtq(c.qty)+'</td><td class="r"><button class="btn ghost sm" style="padding:2px 8px;color:var(--expense);border-color:var(--expense)" onclick="removeFromCart('+i+')">삭제</button></td></tr>'; });
+    h+='</tbody></table></div>';
+    box.innerHTML=h;
+  }
+  async function submitMoves(){
+    const m=$('saveMsg');m.className='msg';
+    // 입력칸에 선택된 제품이 남아 있으면 자동으로 담아서 함께 등록
+    if(picked){ const qty=Number($('qty').value), type=$('mtype').value;
+      if((type==='adjust'&&qty)||(type!=='adjust'&&qty>0)){ cart.push({code:picked.ctr_code,name:picked.name||'',move_type:type,qty:qty}); picked=null;$('prod').value='';$('prodPick').textContent='';$('qty').value='1'; renderCart(); }
+    }
+    if(!cart.length){m.className='msg err';m.textContent='담은 SKU가 없습니다. 제품을 선택해 [＋ 담기] 하거나 입력 후 [등록]을 누르세요.';return;}
+    const ref=$('ref').value.trim(), note=$('note').value.trim(), mdate=$('mdate').value;
+    if(!ref){m.className='msg err';m.textContent='참조번호를 입력하세요.';$('ref').focus();return;}
+    if(!mdate){m.className='msg err';m.textContent='입고 날짜를 입력하세요.';$('mdate').focus();return;}
+    const rows=cart.map(c=>({code:c.code,move_type:c.move_type,qty:c.qty,ref,note,moved_at:mdate}));
     $('saveBtn').disabled=true;
     try{
-      const res=await fetch(session.api+'/api/stock/movements',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({product_id:picked.product_id,move_type:type,qty,ref,note:$('note').value.trim(),moved_at:mdate})});
+      const res=await fetch(session.api+'/api/stock/movements/bulk',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows})});
       const d=await res.json();
       if(!res.ok||d.error){
-        let msg=d.error;
-        if(d.error==='would_go_negative')msg='재고 부족: '+d.code+' 현재 '+d.current+', 요청 '+d.requested;
-        if(d.error==='ref_required')msg='참조번호는 필수입니다.';
-        m.className='msg err';m.textContent='등록 실패: '+msg;return;
+        const bad=(d.results||[]).filter(x=>x.error).map(x=>'행'+x.row+':'+(x.error==='would_go_negative'?('재고부족('+(x.code||'')+')'):x.error)).slice(0,6).join(', ');
+        m.className='msg err';m.textContent='등록 실패(전체 취소): '+(bad||d.error);return;
       }
-      m.className='msg ok';m.textContent='등록됨: '+d.code+' '+d.before+'→'+d.after;
-      $('prod').value='';$('qty').value='1';$('ref').value='';$('note').value='';picked=null;$('prodPick').textContent='';
+      m.className='msg ok';m.textContent=(d.count||rows.length)+'개 SKU 등록 완료.';
+      cart=[];renderCart();$('prod').value='';$('ref').value='';$('note').value='';picked=null;$('prodPick').textContent='';
       loadList();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}
