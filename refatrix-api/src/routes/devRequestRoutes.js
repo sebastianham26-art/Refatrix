@@ -403,7 +403,7 @@ export default async function devRequestRoutes(app) {
         ORDER BY q.quote_date ASC`, [months])).rows;   // 오래된 것 먼저(팔로업 우선)
     // 이미 발행: 전환된(인보이스 생성) 견적 — 담당자/팀 필터 적용
     const dargs = [months]; const dconds = [];
-    if (ownerId) { dargs.push(ownerId); dconds.push(`i.owner_id = $${dargs.length}`); }
+    if (ownerId) { dargs.push(ownerId); dconds.push(`c.owner_id = $${dargs.length}`); }
     if (teamId) { dargs.push(teamId); dconds.push(`c.team_id = $${dargs.length}`); }
     const done = (await query(
       `SELECT q.id, q.quote_no, q.invoice_id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, i.sat_no, c.name AS customer_name, q.guest_name, q.customer_id,
@@ -422,8 +422,10 @@ export default async function devRequestRoutes(app) {
     if (isDirector) {
       const teams = (await query(`SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true ORDER BY sort_order, id`)).rows;
       const owners = (await query(
-        `SELECT DISTINCT u.id, u.name FROM users u JOIN sales_invoices i ON i.owner_id=u.id
-          WHERE u.deleted_at IS NULL ORDER BY u.name`)).rows;
+        `SELECT DISTINCT u.id, u.name
+           FROM users u JOIN customers c ON c.owner_id=u.id
+          WHERE u.deleted_at IS NULL AND c.deleted_at IS NULL
+          ORDER BY u.name`)).rows;
       filterOpts = { teams: teams.map((t) => ({ id: Number(t.id), name: t.name })), owners: owners.map((o) => ({ id: Number(o.id), name: o.name })) };
     }
     return {
