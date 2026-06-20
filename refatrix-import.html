@@ -53,6 +53,7 @@
   .hidden{display:none}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
   .badge{display:inline-block;background:var(--gold);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  body.emp .cost-only{display:none !important}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -100,8 +101,8 @@
     <div class="linehead"><label style="margin:0">입고 라인 (SKU별) — 코드·이름·바코드로 검색</label><button class="btn ghost sm" id="addLine">+ 줄 추가</button></div>
     <div id="lines"></div>
 
-    <div class="linehead" style="margin-top:14px"><label style="margin:0">부대비용 (명목 · 금액 · 통화 · 인보이스)</label><button class="btn ghost sm" id="addOh">+ 줄 추가</button></div>
-    <div id="ohs"></div>
+    <div class="linehead cost-only" style="margin-top:14px"><label style="margin:0">부대비용 (명목 · 금액 · 통화 · 인보이스)</label><button class="btn ghost sm" id="addOh">+ 줄 추가</button></div>
+    <div id="ohs" class="cost-only"></div>
 
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn" id="preview">① 입고 작성 + 미리보기</button>
@@ -109,7 +110,7 @@
     </div>
     <div class="msg" id="formMsg"></div>
     <div id="previewTable"></div>
-    <div class="hint">각 항목의 <b>통화</b>에 따라 입고일 환율로 MXN 환산됩니다 — <b>USD는 ×환율</b>, <b>MXN은 그대로</b>(환율 미적용). 부대비용 합계(MXN)는 선적 총수량으로 <b>1/n 균등 배분</b>되어 단위원가에 더해집니다. 승인을 눌러야 재고와 평균원가가 실제로 바뀝니다.</div>
+    <div class="hint cost-only">각 항목의 <b>통화</b>에 따라 입고일 환율로 MXN 환산됩니다 — <b>USD는 ×환율</b>, <b>MXN은 그대로</b>(환율 미적용). 부대비용 합계(MXN)는 선적 총수량으로 <b>1/n 균등 배분</b>되어 단위원가에 더해집니다. 승인을 눌러야 재고와 평균원가가 실제로 바뀝니다.</div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -146,7 +147,7 @@
       $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
       $('idate').value=new Date().toISOString().slice(0,10);
       addLine(); addOh();
-      isDirector=(d.user?.role==='director');
+      isDirector=(d.user?.role==='director'); document.body.classList.toggle('emp', !isDirector);
       $('pendRole').textContent=isDirector?'(디렉터 — 승인 가능)':'(디렉터 승인 대기 — 보기 전용)';
       loadPending();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
@@ -171,7 +172,7 @@
         <div class="suggest hidden"></div>
       </div>
       <div style="flex:0 0 70px"><label>수량</label><input class="l-qty" type="number" step="0.001" value="100"></div>
-      <div style="flex:0 0 90px"><label>수입단가</label><input class="l-price" type="number" step="0.01" value="10"></div>
+      <div style="flex:0 0 90px" class="cost-only"><label>수입단가</label><input class="l-price" type="number" step="0.01" value="10"></div>
       <div style="flex:0 0 72px"><label>통화</label>${curSel('l-cur','USD')}</div>
       <div style="flex:0 0 120px"><label>인보이스</label><input class="l-inv" type="text" placeholder="INV-..."></div>
       <div class="x"><button class="btn ghost sm x-del" style="margin-bottom:1px">✕</button></div>
@@ -336,8 +337,8 @@
   function renderState(){
     const ids=Object.keys(prodCache);
     if(!ids.length){$('stateTable').innerHTML='<div class="hint">아래에서 제품을 검색해 선택하면 여기에 현재 재고·평균원가가 표시됩니다.</div>';return;}
-    $('stateTable').innerHTML=`<table><thead><tr><th>코드</th><th>제품명</th><th class="num">재고</th><th class="num">평균원가(MXN)</th></tr></thead>
-      <tbody>${ids.map(id=>{const p=prodCache[id];return `<tr><td>${p.code}</td><td>${p.name||''}</td><td class="num">${Number(p.stock_qty).toLocaleString()}</td><td class="num">${p.avg_cost==null?'🔒':fmt(p.avg_cost)}</td></tr>`;}).join('')}</tbody></table>`;
+    $('stateTable').innerHTML=`<table><thead><tr><th>코드</th><th>제품명</th><th class="num">재고</th>${isDirector?'<th class="num">평균원가(MXN)</th>':''}</tr></thead>
+      <tbody>${ids.map(id=>{const p=prodCache[id];return `<tr><td>${p.code}</td><td>${p.name||''}</td><td class="num">${Number(p.stock_qty).toLocaleString()}</td>${isDirector?`<td class="num">${p.avg_cost==null?'🔒':fmt(p.avg_cost)}</td>`:''}</tr>`;}).join('')}</tbody></table>`;
   }
 
   async function refreshSelected(){
@@ -371,8 +372,8 @@
         +'<div class="sb"><div class="v">'+items.length+'</div><div class="l">승인 대기 건수</div></div>'
         +'<div class="sb"><div class="v">'+tSku+'</div><div class="l">전체 SKU(종)</div></div>'
         +'<div class="sb"><div class="v">'+tQty.toLocaleString()+'</div><div class="l">총 수량</div></div>'
-        +'<div class="sb"><div class="v" style="color:var(--brand)">'+money(tVal)+'</div><div class="l">총 재고 금액(MXN)</div></div></div>';
-      const body='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">총 재고 금액</th><th>제품코드</th><th style="text-align:right">처리</th></tr></thead><tbody>'
+        +(isDirector?('<div class="sb"><div class="v" style="color:var(--brand)">'+money(tVal)+'</div><div class="l">총 재고 금액(MXN)</div></div>'):'')+'</div>';
+      const body='<table><thead><tr><th>입고일</th><th>작성자</th><th class="num">SKU</th><th class="num">총 수량</th>'+(isDirector?'<th class="num">총 재고 금액</th>':'')+'<th>제품코드</th><th style="text-align:right">처리</th></tr></thead><tbody>'
         +items.map(b=>{
           const codes=(b.product_codes||'').length>50?(b.product_codes.slice(0,50)+'…'):(b.product_codes||'-');
           const act=canApprove
@@ -380,7 +381,7 @@
             : '<span class="badge">승인 대기</span>';
           return '<tr><td>'+(b.import_date||'').slice(0,10)+'</td><td>'+(b.created_by_name||'-')+'</td>'
             +'<td class="num">'+(b.sku_count||0)+'종</td><td class="num"><b>'+Number(b.total_qty||0).toLocaleString()+'</b></td>'
-            +'<td class="num" style="color:var(--brand);font-weight:700">'+money(b.stock_value_mxn)+'</td>'
+            +(isDirector?('<td class="num" style="color:var(--brand);font-weight:700">'+money(b.stock_value_mxn)+'</td>'):'')
             +'<td><span class="hint">'+codes+'</span></td><td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
         }).join('')+'</tbody></table>';
       $('pendList').innerHTML=sum+body;
@@ -430,7 +431,8 @@
       const skuN=d.sku_count!=null?d.sku_count:lines.length;
       const totQ=d.total_qty!=null?d.total_qty:lines.reduce((s,l)=>s+Number(l.qty||0),0);
       const val=d.stock_value_mxn!=null?d.stock_value_mxn:0;
-      m.className='msg ok'; m.innerHTML='입고 <b>승인 요청 완료</b> <span class="badge">승인 대기</span> (배치 #'+d.id+')<br>— 전체 <b>SKU '+skuN+'종</b> · 총 수량 <b>'+Number(totQ).toLocaleString()+'개</b> · 총 재고 금액 <b>$'+Number(val).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})+'</b><br>디렉터 승인 후 재고·평균원가에 반영됩니다.';
+      const valPart = isDirector ? (' · 총 재고 금액 <b>$'+Number(val).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})+'</b>') : '';
+      m.className='msg ok'; m.innerHTML='입고 <b>승인 요청 완료</b> <span class="badge">승인 대기</span> (배치 #'+d.id+')<br>— 전체 <b>SKU '+skuN+'종</b> · 총 수량 <b>'+Number(totQ).toLocaleString()+'개</b>'+valPart+'<br>디렉터 승인 후 재고·평균원가에 반영됩니다.';
       $('approve').disabled=!isDirector;
       loadPending();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
@@ -439,8 +441,9 @@
 
   function pname(id){const p=prodCache[id];return p?(p.code+' · '+(p.name||'')):('#'+id);}
   function renderPreview(rows){
-    $('previewTable').innerHTML=`<table><thead><tr><th>제품</th><th class="num">수량</th><th class="num">입고 단위원가(MXN)</th><th class="num">배분 부대비용</th><th class="num">예상 평균원가</th></tr></thead>
-      <tbody>${rows.map(r=>`<tr><td>${pname(r.product_id)}</td><td class="num">${Number(r.qty).toLocaleString()}</td><td class="num">${fmt(r.unit_cost_mxn)}</td><td class="num">${fmt(r.alloc_overhead)}</td><td class="num"><b>${fmt(r.avg_cost_after)}</b></td></tr>`).join('')}</tbody></table>`;
+    const c=isDirector;
+    $('previewTable').innerHTML=`<table><thead><tr><th>제품</th><th class="num">수량</th>${c?'<th class="num">입고 단위원가(MXN)</th><th class="num">배분 부대비용</th><th class="num">예상 평균원가</th>':''}</tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${pname(r.product_id)}</td><td class="num">${Number(r.qty).toLocaleString()}</td>${c?`<td class="num">${fmt(r.unit_cost_mxn)}</td><td class="num">${fmt(r.alloc_overhead)}</td><td class="num"><b>${fmt(r.avg_cost_after)}</b></td>`:''}</tr>`).join('')}</tbody></table>`;
   }
 
   // ---- 승인 ----
@@ -483,11 +486,11 @@
     $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
     $('idate').value=new Date().toISOString().slice(0,10);
     addLine(); addOh();
-    isDirector=((ps.user&&ps.user.role)==='director');
+    isDirector=((ps.user&&ps.user.role)==='director'); document.body.classList.toggle('emp', !isDirector);
     var pr=document.getElementById('pendRole'); if(pr) pr.textContent=isDirector?'(디렉터 — 승인 가능)':'(디렉터 승인 대기 — 보기 전용)';
     loadPending();
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260620ac"></script>
 </body>
 </html>

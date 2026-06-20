@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { costDocTotalMxn, allocateByQty, applyClosedMonth, isClosedMonth, toMxn } from '../importCost.js';
-import { round2 } from '../permissions.js';
+import { round2, fieldVisible } from '../permissions.js';
 import { logEvent } from '../audit.js';
 
 // 한 입고 건의 총수량 (분배 비율 기준)
@@ -65,6 +65,7 @@ export default async function importCostRoutes(app) {
   // 승인된 입고 건 목록(부대비용 분배 대상 선택용)
   app.get('/api/import-batches', { preHandler: [authGuard, requirePage('inventory')] }, async (req) => {
     const canApprove = req.ctx.perm.role === 'director';
+    const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
     const status = (req.query.status || 'approved');
     const rows = (await query(
       `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by, b.currency, b.fx_rate,
@@ -85,8 +86,15 @@ export default async function importCostRoutes(app) {
       const fx = Number(r.fx_rate) || 1;
       const baseMxn = Number(r.base_amount_cur) * (r.currency === 'USD' ? fx : 1);
       const stockValueMxn = Math.round((baseMxn + Number(r.overhead_mxn)) * 100) / 100;
-      return { ...r, total_qty: Number(r.total_qty), sku_count: Number(r.sku_count),
-        stock_value_mxn: stockValueMxn, currency: r.currency, fx_rate: fx };
+      // 원가 구성요소(base_amount_cur·overhead_mxn 등)는 직원에게 전송하지 않음
+      const out = {
+        id: r.id, batch_no: r.batch_no, import_date: r.import_date, status: r.status, note: r.note,
+        created_by: r.created_by, created_by_name: r.created_by_name, product_codes: r.product_codes,
+        total_qty: Number(r.total_qty), sku_count: Number(r.sku_count),
+        stock_value_mxn: seeCost ? stockValueMxn : null,
+      };
+      if (seeCost) { out.currency = r.currency; out.fx_rate = fx; }
+      return out;
     }) };
   });
 

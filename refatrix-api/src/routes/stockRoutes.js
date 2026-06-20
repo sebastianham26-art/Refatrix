@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageAny, requirePageEditAny, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { fieldVisible } from '../permissions.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -124,7 +125,8 @@ export default async function stockRoutes(app) {
 
   // 이동 내역 목록 (전체: 수동 + 매출/수입 자동). 필터: product_id, move_type, from, to, source
   // 현재 재고 총괄(고정 요약): SKU 수 · 총수량 · 재고금액(MXN)
-  app.get('/api/stock/summary', { preHandler: [authGuard, requirePageAny(['stock', 'sales'])] }, async () => {
+  app.get('/api/stock/summary', { preHandler: [authGuard, requirePageAny(['stock', 'sales'])] }, async (req) => {
+    const seeCost = fieldVisible(req.ctx.perm, 'unit_cost'); // 원가(재고금액)는 디렉터/원가권한자만
     const r = (await query(
       `SELECT COUNT(*) FILTER (WHERE COALESCE(stock_qty,0) <> 0)::int AS sku_count,
               COALESCE(SUM(stock_qty),0) AS total_qty,
@@ -145,7 +147,7 @@ export default async function stockRoutes(app) {
     return {
       sku_count: Number(r.sku_count) || 0,
       total_qty: totalQty,
-      stock_value_mxn: Math.round((Number(r.stock_value_mxn) || 0) * 100) / 100,
+      stock_value_mxn: seeCost ? Math.round((Number(r.stock_value_mxn) || 0) * 100) / 100 : null,
       // P/S/N 당월·전월 비교 (수량)
       psn: {
         purchase: { cur: q3(p.p_cur), prev: q3(p.p_prev) },

@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { computeImportCosting } from '../cost.js';
 import { logEvent } from '../audit.js';
+import { fieldVisible } from '../permissions.js';
 
 export default async function importRoutes(app) {
   // 수입 입고 작성(영업지원). 라인(SKU별) + 부대비용(명목·인보이스별).
@@ -36,12 +37,18 @@ export default async function importRoutes(app) {
     const baseCur = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.import_price) || 0), 0);
     const ohMxn = (overheads || []).reduce((s, o) => s + ((o.currency === 'USD' ? Number(o.amount || 0) * fx : Number(o.amount || 0))), 0);
     const stockValueMxn = Math.round((baseCur * (currency === 'USD' ? fx : 1) + ohMxn) * 100) / 100;
-    return { id: result, status: 'pending', sku_count: skuCount, total_qty: totalQty, stock_value_mxn: stockValueMxn };
+    const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
+    return { id: result, status: 'pending', sku_count: skuCount, total_qty: totalQty, stock_value_mxn: seeCost ? stockValueMxn : null };
   });
 
   // 미리보기: 승인 시 적용될 단위원가·평균원가를 계산해서 보여줌(반영 없음)
   app.get('/api/imports/:id/preview', { preHandler: [authGuard, requirePage('inventory')] }, async (req) => {
-    return computeBatch(Number(req.params.id));
+    const r = await computeBatch(Number(req.params.id));
+    // 원가 권한 없는 직원에겐 단위원가/부대비용/평균원가 필드를 제거(데이터 자체를 안 보냄)
+    if (r && Array.isArray(r.preview) && !fieldVisible(req.ctx.perm, 'unit_cost')) {
+      r.preview = r.preview.map((cl) => ({ product_id: cl.product_id, qty: cl.qty }));
+    }
+    return r;
   });
 
   // 디렉터 승인 → 이동평균 갱신, 재고 증가, 원장 기록 (트랜잭션)

@@ -55,8 +55,12 @@
   .stock-sum .psncap{flex-basis:100%;font-size:11px;color:var(--muted);font-weight:700;margin:2px 0 -2px}
   .daygrp{border:1px solid var(--line,#E6E1D6);border-radius:10px;margin-top:8px;overflow:hidden}
   .dayhd{background:#f4f1ea;padding:8px 12px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center}
-  .evrow{padding:8px 12px;border-top:1px solid var(--line,#eee);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .evrow{display:grid;grid-template-columns:18px 50px 58px 84px 168px minmax(120px,1fr) 44px auto;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line,#eee);cursor:pointer}
   .evrow:hover{background:#faf8f3}.evrow .caret{transition:transform .15s}.evrow.open .caret{transform:rotate(90deg)}
+  .evrow .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .evrow .rt{text-align:right;white-space:nowrap}
+  .evtbl{table-layout:fixed}
+  .evtbl td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .evdetail{display:none;background:#fcfbf8;padding:0 12px 8px}.evdetail.open{display:block}
   .mongrp{border:1px solid var(--line,#E6E1D6);border-radius:10px;margin-top:10px;overflow:hidden}
   .monhd{background:#eef2ee;padding:11px 14px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:8px;font-size:14px}
@@ -366,7 +370,17 @@
         const cust=arr[0].origin==='매출'?(arr[0].customer_name||''):'';
         const evTitle='<span class="evdate">'+esc(dshort)+'</span>'+(evNo!=null?'<b>이벤트 #'+evNo+'</b> · ':'')+'<b>'+esc(label)+'</b>'+(cust?' · '+esc(cust):'')+(refStr?' · 참조 '+esc(refStr):(isImport&&batchId!=null?' · <span class="hint">batch:'+batchId+'</span>':''));
         const allManual=arr.every(m=>m.origin!=='매출'&&m.origin!=='수입');
-        html+='<div class="evrow" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'" onclick="toggleEv(\''+id+'\')"><span><span class="caret">▶</span> '+evTitle+' <span class="hint">'+arr.length+'건</span></span><span class="hint">'+qp.join(' · ')+'</span></div>';
+        const evRefCell = refStr ? ('참조 '+esc(refStr)) : (isImport&&batchId!=null?('batch:'+batchId):'');
+        html+='<div class="evrow" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'" onclick="toggleEv(\''+id+'\')">'
+          +'<span class="caret">▶</span>'
+          +'<span class="evdate">'+esc(dshort)+'</span>'
+          +'<span class="ell">'+(evNo!=null?('<b>#'+evNo+'</b>'):'')+'</span>'
+          +'<span class="ell"><b>'+esc(label)+'</b></span>'
+          +'<span class="ell" title="'+esc(cust)+'">'+(cust?esc(cust):'<span class="hint">—</span>')+'</span>'
+          +'<span class="ell hint" title="'+esc(refStr||(isImport&&batchId!=null?('batch:'+batchId):''))+'">'+evRefCell+'</span>'
+          +'<span class="rt hint">'+arr.length+'건</span>'
+          +'<span class="rt hint">'+qp.join(' · ')+'</span>'
+          +'</div>';
         html+='<div class="evdetail" id="'+id+'" data-ev="'+(evNo!=null?evNo:'')+'" data-batch="'+(batchId!=null?batchId:'')+'">';
         if(allManual && evNo!=null)
           html+='<div style="padding:6px 4px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px" onclick="editEvent('+evNo+')">✎ 이벤트 #'+evNo+' 일괄 수정 (날짜·참조·사유)</button>'
@@ -375,11 +389,11 @@
           html+='<div style="padding:6px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="hint" style="margin:0">수입 입고 배치 (자동 기록)</span><button class="btn ghost sm" style="padding:3px 10px;font-size:11.5px;border-color:var(--expense);color:var(--expense)" onclick="deleteBatch('+batchId+')">🗑 수입 batch:'+batchId+' 전체 삭제</button></div>';
         else
           html+='<div class="hint" style="padding:6px 4px">자동 기록(매출) 이벤트는 수정·삭제할 수 없습니다.</div>';
-        html+='<table><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
+        html+='<table class="evtbl"><colgroup><col style="width:9%"><col style="width:34%"><col style="width:9%"><col style="width:20%"><col style="width:16%"><col style="width:12%"></colgroup><thead><tr><th>시각</th><th>제품</th><th class="r">수량</th><th>참조</th><th>사유</th><th>담당</th></tr></thead><tbody>';
         arr.forEach(m=>{ const dt=new Date(m.moved_at); const ts=isNaN(dt)?'':dt.toTimeString().slice(0,5);
           const sign=m.move_type==='out'?'−':(m.move_type==='in'?'+':'');
-          html+='<tr><td>'+ts+'</td><td><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
-            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td>'+esc(m.ref||'')+'</td><td>'+esc(reasonOf(m))+'</td><td class="hint">'+esc(m.created_by_name||'')+'</td></tr>'; });
+          html+='<tr><td>'+ts+'</td><td title="'+esc((m.ctr_code||'')+' '+(m.product_name||''))+'"><b>'+esc(m.ctr_code||'')+'</b> <span class="hint">'+esc(m.product_name||'')+'</span></td>'
+            +'<td class="r">'+sign+fmtq(Math.abs(m.qty))+'</td><td title="'+esc(m.ref||'')+'">'+esc(m.ref||'')+'</td><td title="'+esc(reasonOf(m))+'">'+esc(reasonOf(m))+'</td><td class="hint" title="'+esc(m.created_by_name||'')+'">'+esc(m.created_by_name||'')+'</td></tr>'; });
         html+='</tbody></table></div>';
       });
       html+='</div></div>';
@@ -455,7 +469,7 @@
       let h=''
         +'<div class="sb"><div class="v">'+fmtq(s.sku_count)+'</div><div class="l">현재 SKU 수</div></div>'
         +'<div class="sb"><div class="v">'+fmtq(s.total_qty)+'</div><div class="l">총 수량</div></div>'
-        +'<div class="sb"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_value_mxn)+'</div><div class="l">재고 금액(MXN)</div></div>';
+        +(s.stock_value_mxn!=null?('<div class="sb"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_value_mxn)+'</div><div class="l">재고 금액(MXN)</div></div>'):'');
       if(s.psn){
         h+='<div class="psnbreak"></div>'
           +'<div class="psncap">월별 비교 — 구매(P) / 판매(S) / 재고(N) · 당월(굵게) vs 전월</div>'
@@ -617,6 +631,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620aa"></script>
+<script src="refatrix-nav.js?v=20260620ac"></script>
 </body>
 </html>
