@@ -407,11 +407,12 @@ export default async function devRequestRoutes(app) {
     if (teamId) { dargs.push(teamId); dconds.push(`c.team_id = $${dargs.length}`); }
     const done = (await query(
       `SELECT q.id, q.quote_no, q.invoice_id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, i.sat_no, c.name AS customer_name, q.guest_name, q.customer_id,
-              i.total_mxn, u.name AS owner_name,
+              i.total_mxn, u.name AS owner_name, cu.name AS cust_owner_name,
               (SELECT COUNT(*)::int FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_sku,
               (SELECT COALESCE(SUM(sl.qty),0)::numeric FROM sales_invoice_lines sl WHERE sl.invoice_id=i.id) AS inv_qty
          FROM quotes q JOIN sales_invoices i ON i.id=q.invoice_id LEFT JOIN customers c ON c.id=q.customer_id
               LEFT JOIN users u ON u.id=i.owner_id
+              LEFT JOIN users cu ON cu.id=c.owner_id
         WHERE q.deleted_at IS NULL AND q.status='converted' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
               AND i.sat_no IS NOT NULL AND i.sat_no <> '' AND i.sat_no NOT LIKE 'TMP-%'
               ${dconds.length ? 'AND ' + dconds.join(' AND ') : ''}
@@ -428,7 +429,7 @@ export default async function devRequestRoutes(app) {
     return {
       months, can_filter: isDirector, applied: { owner_id: ownerId, team_id: teamId }, filters: filterOpts,
       able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
-      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, owner_name: o.owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
+      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, owner_name: o.cust_owner_name || o.owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
     };
   });
 
@@ -437,22 +438,28 @@ export default async function devRequestRoutes(app) {
     const id = Number(req.query.invoice_id);
     if (!id) return reply.code(400).send({ error: 'invoice_id_required' });
     const inv = (await query(
-      `SELECT s.id, s.sat_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status,
+      `SELECT s.id, s.sat_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, s.credit_days,
               to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
-              c.code AS customer_code, c.name AS customer_name
-         FROM sales_invoices s JOIN customers c ON c.id=s.customer_id WHERE s.id=$1`, [id])).rows[0];
+              to_char(s.inv_date,'YYYY-MM-DD') AS inv_date_str, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
+              c.code AS customer_code, c.name AS customer_name, c.owner_id AS owner_id, cu.name AS owner_name
+         FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
+              LEFT JOIN users cu ON cu.id=c.owner_id
+        WHERE s.id=$1`, [id])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     const lines = (await query(
       `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
          FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
+    const isDirector = (req.ctx.perm.role === 'director') || visibleTeamIds(req.ctx.perm) === null;
     const canAdjust = (req.ctx.perm.role === 'director') && (inv.inv_ym === inv.now_ym);
     return {
       invoice: {
-        id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, status: inv.status,
+        id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
+        credit_days: inv.credit_days == null ? 0 : Number(inv.credit_days),
         customer_code: inv.customer_code, customer_name: inv.customer_name,
+        owner_id: inv.owner_id == null ? null : Number(inv.owner_id), owner_name: inv.owner_name || null,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
-        can_adjust: canAdjust,
+        can_adjust: canAdjust, is_director: isDirector,
       },
       items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })),
     };

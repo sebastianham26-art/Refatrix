@@ -157,7 +157,34 @@ export default async function salesRoutes(app) {
     }
   });
 
-  // ---- 디렉터: 당월 매출 총액/IVA 직접 조정 (단가 비례 역산) ----
+  // ---- 디렉터: 인보이스 일자(inv_date) 변경 → 만기일(due_date) 자동 재계산 + 담당(영업담당) 동기화 ----
+  // body: { inv_date: 'YYYY-MM-DD' }. due_date = inv_date + credit_days. owner_id는 고객의 영업담당으로 자동 반영.
+  app.post('/api/sales/:id/inv-date', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const invDate = String(req.body?.inv_date || '').slice(0, 10);
+    if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(invDate)) return reply.code(400).send({ error: 'invalid_inv_date' });
+    const inv = (await query(
+      `SELECT s.id, s.status, s.credit_days, s.customer_id, c.owner_id AS cust_owner_id
+         FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
+        WHERE s.id=$1 AND s.deleted_at IS NULL`, [id])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'not_found' });
+    if (inv.status !== 'posted') return reply.code(409).send({ error: 'not_posted', note: '게시된 인보이스만 일자를 수정할 수 있습니다.' });
+    const days = Number(inv.credit_days) || 0;
+    const due = dueDate(invDate, days);
+    // 담당은 고객의 영업담당으로 자동 반영(있을 때만)
+    await query(
+      `UPDATE sales_invoices SET inv_date=$1, due_date=$2,
+              owner_id=COALESCE($3, owner_id), updated_by=$4
+        WHERE id=$5 AND deleted_at IS NULL`,
+      [invDate, due, inv.cust_owner_id || null, req.ctx.perm.userId, id]);
+    const owner = inv.cust_owner_id
+      ? (await query(`SELECT name FROM users WHERE id=$1`, [inv.cust_owner_id])).rows[0]?.name || null
+      : null;
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_invoice:${id}`, detail: { inv_date: invDate, due_date: due } });
+    return { ok: true, inv_date: invDate, due_date: due, credit_days: days, owner_name: owner };
+  });
+
+
   // body: { total_mxn (IVA 포함 총액), iva_mxn } → subtotal = total - iva, 라인 단가를 비례로 역산
   app.post('/api/sales/:id/adjust-total', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);

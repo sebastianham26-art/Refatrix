@@ -218,7 +218,7 @@
     h+='<div class="grp" style="margin-top:16px">이미 발행 (인보이스 생성됨)</div>';
     if(!done.length) h+='<div class="hint">발행된 인보이스가 없습니다.</div>';
     else{ h+='<div class="hint">인보이스를 클릭하면 SKU별 라인을 펼칩니다.</div><table><thead><tr><th>견적</th><th>인보이스일</th><th>SAT</th><th>고객</th><th>담당</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
-      done.forEach(o=>{ h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+esc(o.inv_date||'')+'</td><td>'+esc(o.sat_no||'')+'</td><td>'+esc(o.customer_name||'')+'</td><td class="hint">'+esc(o.owner_name||'')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
+      done.forEach(o=>{ h+='<tr class="click" onclick="toggleInvoice('+o.invoice_id+')"><td><b>'+esc(o.quote_no||'')+'</b></td><td>'+esc(o.inv_date||'')+'</td><td>'+esc(o.sat_no||'')+'</td><td>'+esc(o.customer_name||'')+'</td><td>'+(o.owner_name?('<b>'+esc(o.owner_name)+'</b>'):'<span class="hint">미지정</span>')+'</td><td class="r">'+o.inv_sku+'</td><td class="r">'+nf(o.inv_qty)+'</td><td class="r">'+money(o.total_mxn)+'</td></tr>';
         if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="8">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
       });
       h+='</tbody></table>'; }
@@ -260,6 +260,19 @@
         +'<input id="sat-in-'+id+'" type="text" placeholder="SAT 번호 입력/수정" style="font-size:12px;padding:5px 8px;width:170px" value="'+(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?esc(inv.sat_no):'')+'">'
         +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveSatF('+id+')">SAT 번호 저장</button>'
         +'<span id="sat-msg-'+id+'" style="font-size:12px"></span></div>';
+      // 영업담당 + 인보이스일 + 만기일 (+ 디렉터: 일자 편집)
+      t+='<div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fafafa">'
+        +'<span style="font-size:12.5px">영업담당: <b>'+(inv.owner_name?esc(inv.owner_name):'<span style="color:var(--expense)">미지정</span>')+'</b></span>'
+        +'<span style="font-size:12.5px">인보이스일: <b>'+esc(inv.inv_date_str||inv.inv_date||'')+'</b></span>'
+        +'<span style="font-size:12.5px">만기일: <b id="due-'+id+'">'+esc(inv.due_date||'—')+'</b>'+(inv.credit_days!=null?(' <span class="hint">(여신 '+inv.credit_days+'일)</span>'):'')+'</span>';
+      if(inv.is_director){
+        t+='<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
+          +'<span class="hint">일자 변경(디렉터):</span>'
+          +'<input id="invd-'+id+'" type="date" value="'+esc(inv.inv_date_str||'')+'" style="font-size:12px;padding:5px 8px">'
+          +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveInvDateF('+id+')">일자 저장</button>'
+          +'<span id="invd-msg-'+id+'" style="font-size:12px"></span></span>';
+      }
+      t+='</div>';
       if(inv.can_adjust){
         t+='<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--gold,#d4a017);border-radius:10px;background:#fffaf0">'
           +'<div style="font-weight:800;color:#9a6512;font-size:12.5px;margin-bottom:6px">매출액 수정 (디렉터 · 당월) — 총계와 IVA를 입력하면 단가가 자동 역산됩니다</div>'
@@ -294,6 +307,19 @@
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Factura');
     const safe=String(inv.sat_no||('inv_'+id)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
     XLSX.writeFile(wb,'factura_'+safe+'.xlsx');
+  }
+  async function saveInvDateF(id){
+    const el=document.getElementById('invd-'+id), msg=document.getElementById('invd-msg-'+id);
+    const val=(el?el.value:'').trim(); if(msg){msg.style.color='';}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(val)){ if(msg){msg.style.color='var(--expense)';msg.textContent='날짜를 선택하세요.';} return; }
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id+'/inv-date',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({inv_date:val})});
+      const dd=await r.json();
+      if(!r.ok||dd.error){ if(msg){msg.style.color='var(--expense)';msg.textContent=dd.error==='not_posted'?'게시된 인보이스만 수정 가능':(dd.error==='invalid_inv_date'?'날짜 형식 오류':'저장 실패');} return; }
+      if(msg){msg.style.color='var(--income)';msg.textContent='저장됨 · 만기 '+dd.due_date;}
+      const due=document.getElementById('due-'+id); if(due)due.textContent=dd.due_date;
+      delete openRows['i'+id]; delete invCache[id]; await loadImmediate(); toggleInvoice(id);
+    }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
   async function saveSatF(id){
     const el=document.getElementById('sat-in-'+id), msg=document.getElementById('sat-msg-'+id);
@@ -392,6 +418,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260619ad"></script>
 </body>
 </html>
