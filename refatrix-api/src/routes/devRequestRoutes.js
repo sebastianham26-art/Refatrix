@@ -429,7 +429,7 @@ export default async function devRequestRoutes(app) {
     return {
       months, can_filter: isDirector, applied: { owner_id: ownerId, team_id: teamId }, filters: filterOpts,
       able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
-      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, owner_name: o.cust_owner_name || o.owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
+      done: done.map((o) => ({ id: o.id, quote_no: o.quote_no, invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, owner_name: o.cust_owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
     };
   });
 
