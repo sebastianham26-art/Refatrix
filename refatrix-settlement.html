@@ -174,17 +174,18 @@
   function sum(arr,k){ return arr.reduce((s,x)=>s+(Number(x[k])||0),0); }
 
   // ===== 수금 상세 (오픈 인보이스 / AR) =====
-  let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null;
+  let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   async function loadAr(){
     try{
-      const [d,acc]=await Promise.all([
+      const [d,acc,co]=await Promise.all([
         fetch(session.api+'/api/ar/open-list',{headers:auth()}).then(r=>r.json()),
         fetch(session.api+'/api/accounts',{headers:auth()}).then(r=>r.json()).catch(()=>({items:[]})),
+        fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
       arItems=(d&&d.items)||[]; arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
-      arAccounts=(acc&&acc.items)||[];
+      arAccounts=(acc&&acc.items)||[]; arCompany=co||{};
       renderArSeg(); renderAr();
     }catch(e){ $('arListBox').innerHTML='<div class="hint">미수금 목록을 불러오지 못했습니다.</div>'; }
   }
@@ -278,32 +279,55 @@
     const c=rows[0]; const m=$('arMsg');
     const J=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
     if(!J){ m.className='msg err'; m.textContent='PDF 모듈을 불러오지 못했습니다(인터넷 연결 확인).'; return; }
+    const co=arCompany||{};
     const doc=new J({unit:'pt',format:'a4'});
-    let y=54;
-    doc.setFontSize(16); doc.text('Estado de cuenta', 40, y);
-    doc.setFontSize(10); doc.setTextColor(110);
-    doc.text('Refatrix · CTR Autopartes', 40, y+16);
-    doc.text('Fecha: '+arToday, 460, y+16);
-    y+=44; doc.setTextColor(20); doc.setFontSize(11);
-    doc.text('Cliente: '+(c.customer_name||''), 40, y); y+=15;
+    // 회사 로고(있으면)
+    let leftY=44;
+    if(co.logo_data){
+      try{
+        const pr=doc.getImageProperties(co.logo_data);
+        const maxW=150, maxH=52, sc=Math.min(maxW/pr.width, maxH/pr.height);
+        const w=pr.width*sc, h=pr.height*sc;
+        const ft=((co.logo_data.match(/^data:image\/(\w+)/)||[])[1]||'png').toUpperCase();
+        doc.addImage(co.logo_data, ft==='JPG'?'JPEG':ft, 40, 36, w, h);
+        leftY=36+h+14;
+      }catch(e){ leftY=44; }
+    }
+    // 제목(우)
+    doc.setFontSize(16); doc.setTextColor(20); doc.text('Estado de cuenta', 555, 50, {align:'right'});
+    doc.setFontSize(9); doc.setTextColor(110); doc.text('Fecha: '+arToday, 555, 66, {align:'right'});
+    // 회사 정보(좌)
+    let y=leftY; doc.setTextColor(20);
+    if(co.emisor){ doc.setFontSize(11); doc.text(String(co.emisor), 40, y); y+=14; }
+    doc.setFontSize(8.5); doc.setTextColor(110);
+    if(co.domicilio){ doc.text(String(co.domicilio).slice(0,90), 40, y); y+=12; }
+    const coLine=[co.rfc?('RFC: '+co.rfc):'', co.phone?('Tel: '+co.phone):'', co.email?String(co.email):''].filter(Boolean).join('   ');
+    if(coLine){ doc.text(coLine, 40, y); y+=12; }
+    // 구분선
+    y=Math.max(y, 100)+6; doc.setDrawColor(210); doc.line(40,y,555,y); y+=20;
+    // 고객
+    doc.setTextColor(20); doc.setFontSize(11); doc.text('Cliente: '+(c.customer_name||''), 40, y); y+=15;
     doc.setFontSize(9); doc.setTextColor(110);
-    if(c.customer_rfc){ doc.text('RFC: '+c.customer_rfc, 40, y); }
-    if(c.customer_phone){ doc.text('Tel: '+c.customer_phone, 220, y); }
-    y+=20; doc.setTextColor(20); doc.setFontSize(9);
-    doc.setFillColor(245,243,237); doc.rect(40,y-11,515,16,'F');
-    doc.text('Factura',46,y); doc.text('Emision',170,y); doc.text('Vencimiento',250,y); doc.text('Saldo (MXN)',430,y,{align:'right'}); doc.text('Dias',548,y,{align:'right'});
+    const cuLine=[c.customer_rfc?('RFC: '+c.customer_rfc):'', c.customer_phone?('Tel: '+c.customer_phone):''].filter(Boolean).join('   ');
+    if(cuLine){ doc.text(cuLine, 40, y); y+=4; }
+    y+=16;
+    // 표 헤더 (Factura 칸을 넓게)
+    doc.setTextColor(20); doc.setFontSize(9); doc.setFillColor(245,243,237); doc.rect(40,y-11,515,16,'F');
+    doc.text('Factura',46,y); doc.text('Emision',296,y); doc.text('Vencimiento',372,y); doc.text('Saldo (MXN)',500,y,{align:'right'}); doc.text('Dias',555,y,{align:'right'});
     y+=6;
+    // 인보이스 번호가 칸보다 길면 폰트를 줄여서 잘리지 않게 전부 표시
+    const drawFit=(text,x,yy,maxW)=>{ let s=9; doc.setFontSize(s); while(doc.getTextWidth(text)>maxW && s>5){ s-=0.5; doc.setFontSize(s); } doc.text(text,x,yy); doc.setFontSize(9); };
     let total=0;
     rows.forEach(r=>{ y+=15; if(y>790){doc.addPage();y=54;}
-      doc.text(String(r.sat_no||('#'+r.id)).slice(0,20),46,y);
-      doc.text(String(r.inv_date||'—'),170,y);
-      doc.text(String(r.due_date||'—'),250,y);
-      doc.text(fmt(r.outstanding),430,y,{align:'right'});
-      doc.text(r.day_diff>0?String(r.day_diff):(r.day_diff==null?'—':('D'+r.day_diff)),548,y,{align:'right'});
+      drawFit(String(r.sat_no||('#'+r.id)), 46, y, 244);   // Factura 46~290
+      doc.text(String(r.inv_date||'—'),296,y);
+      doc.text(String(r.due_date||'—'),372,y);
+      doc.text(fmt(r.outstanding),500,y,{align:'right'});
+      doc.text(r.day_diff>0?String(r.day_diff):(r.day_diff==null?'—':('D'+r.day_diff)),555,y,{align:'right'});
       total+=r.outstanding;
     });
     y+=12; doc.setDrawColor(150); doc.line(40,y,555,y); y+=18;
-    doc.setFontSize(11); doc.text('Total adeudado:',430,y,{align:'right'}); doc.text('MX$ '+fmt(total),548,y,{align:'right'});
+    doc.setFontSize(11); doc.setTextColor(20); doc.text('Total adeudado:',500,y,{align:'right'}); doc.text('MX$ '+fmt(total),555,y,{align:'right'});
     doc.save('estado_cuenta_'+(c.customer_code||c.customer_id)+'.pdf');
   }
 
@@ -313,6 +337,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260619ab"></script>
+<script src="refatrix-nav.js?v=20260619ac"></script>
 </body>
 </html>
