@@ -48,6 +48,11 @@
   .stock-sum{position:sticky;top:0;z-index:5;display:flex;gap:10px;flex-wrap:wrap;background:#fff;border-bottom:2px solid var(--brand);padding:10px 2px;margin-bottom:8px}
   .stock-sum .sb{flex:1;min-width:120px;background:#faf8f3;border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:9px 13px}
   .stock-sum .sb .v{font-size:19px;font-weight:800;color:var(--brand)}.stock-sum .sb .l{font-size:11px;color:var(--muted)}
+  .stock-sum .sb .prev{font-size:12px;color:var(--muted);font-weight:600}
+  .stock-sum .sb .delta{font-size:11px;font-weight:700;margin-top:2px}
+  .stock-sum .sb .delta.up{color:var(--income,#0F6E56)}.stock-sum .sb .delta.down{color:var(--expense,#B23A2E)}.stock-sum .sb .delta.flat{color:var(--muted)}
+  .stock-sum .psnbreak{flex-basis:100%;height:0;margin:0}
+  .stock-sum .psncap{flex-basis:100%;font-size:11px;color:var(--muted);font-weight:700;margin:2px 0 -2px}
   .daygrp{border:1px solid var(--line,#E6E1D6);border-radius:10px;margin-top:8px;overflow:hidden}
   .dayhd{background:#f4f1ea;padding:8px 12px;font-weight:800;color:var(--brand);display:flex;justify-content:space-between;align-items:center}
   .evrow{padding:8px 12px;border-top:1px solid var(--line,#eee);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -435,13 +440,30 @@
   }
   function toggleEv(id){ const d=document.getElementById(id); if(!d)return; d.classList.toggle('open'); const row=d.previousElementSibling; if(row)row.classList.toggle('open'); }
   function toggleMon(id){ const b=document.getElementById(id); if(!b)return; b.classList.toggle('open'); const h=b.previousElementSibling; if(h)h.classList.toggle('open'); }
+  function psnBox(label, o){
+    const cur=Number(o&&o.cur)||0, prev=Number(o&&o.prev)||0, d=Math.round((cur-prev)*1000)/1000;
+    const cls=d>0?'up':(d<0?'down':'flat'), arrow=d>0?'▲':(d<0?'▼':'–');
+    const pctStr = prev!==0 ? (Math.round(d/Math.abs(prev)*1000)/10+'%') : (cur!==0?'신규':'0%');
+    return '<div class="sb"><div class="l">'+label+'</div>'
+      +'<div style="display:flex;align-items:baseline;gap:8px;margin-top:1px">'
+      +'<div class="v">'+fmtq(cur)+'</div><div class="prev">전월 '+fmtq(prev)+'</div></div>'
+      +'<div class="delta '+cls+'">'+arrow+' '+fmtq(Math.abs(d))+' ('+pctStr+')</div></div>';
+  }
   async function loadSummary(){
     try{
       const s=await fetch(session.api+'/api/stock/summary',{headers:auth()}).then(r=>r.json());
-      $('stockSummary').innerHTML=''
+      let h=''
         +'<div class="sb"><div class="v">'+fmtq(s.sku_count)+'</div><div class="l">현재 SKU 수</div></div>'
         +'<div class="sb"><div class="v">'+fmtq(s.total_qty)+'</div><div class="l">총 수량</div></div>'
         +'<div class="sb"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_value_mxn)+'</div><div class="l">재고 금액(MXN)</div></div>';
+      if(s.psn){
+        h+='<div class="psnbreak"></div>'
+          +'<div class="psncap">월별 비교 — 구매(P) / 판매(S) / 재고(N) · 당월(굵게) vs 전월</div>'
+          +psnBox('구매 P · 입고 수량(당월)', s.psn.purchase)
+          +psnBox('판매 S · 출고 수량(당월)', s.psn.sales)
+          +psnBox('재고 N · 현재 수량', s.psn.inventory);
+      }
+      $('stockSummary').innerHTML=h;
     }catch(e){ $('stockSummary').innerHTML='<span class="hint">재고 요약을 불러오지 못했습니다.</span>'; }
   }
 
@@ -595,6 +617,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260620aa"></script>
 </body>
 </html>

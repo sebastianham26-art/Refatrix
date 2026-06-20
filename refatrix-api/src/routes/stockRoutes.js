@@ -130,10 +130,28 @@ export default async function stockRoutes(app) {
               COALESCE(SUM(stock_qty),0) AS total_qty,
               COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(avg_cost,0)),0) AS stock_value_mxn
          FROM products WHERE deleted_at IS NULL`)).rows[0];
+    // PSN: 구매(수입입고) · 판매(매출출고) 당월/전월 수량 + 당월 순증감(재고 롤백용)
+    const p = (await query(
+      `SELECT
+         COALESCE(SUM(qty) FILTER (WHERE batch_id IS NOT NULL AND move_type='in' AND moved_at >= date_trunc('month', now())),0) AS p_cur,
+         COALESCE(SUM(qty) FILTER (WHERE batch_id IS NOT NULL AND move_type='in' AND moved_at >= date_trunc('month', now()) - interval '1 month' AND moved_at < date_trunc('month', now())),0) AS p_prev,
+         COALESCE(SUM(qty) FILTER (WHERE sales_invoice_id IS NOT NULL AND move_type='out' AND moved_at >= date_trunc('month', now())),0) AS s_cur,
+         COALESCE(SUM(qty) FILTER (WHERE sales_invoice_id IS NOT NULL AND move_type='out' AND moved_at >= date_trunc('month', now()) - interval '1 month' AND moved_at < date_trunc('month', now())),0) AS s_prev,
+         COALESCE(SUM(CASE WHEN move_type='in' THEN qty WHEN move_type='out' THEN -qty ELSE qty END) FILTER (WHERE moved_at >= date_trunc('month', now())),0) AS net_cur
+       FROM stock_movements`)).rows[0];
+    const q3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+    const totalQty = q3(r.total_qty);
+    const netCur = q3(p.net_cur);
     return {
       sku_count: Number(r.sku_count) || 0,
-      total_qty: Number(r.total_qty) || 0,
+      total_qty: totalQty,
       stock_value_mxn: Math.round((Number(r.stock_value_mxn) || 0) * 100) / 100,
+      // P/S/N 당월·전월 비교 (수량)
+      psn: {
+        purchase: { cur: q3(p.p_cur), prev: q3(p.p_prev) },
+        sales: { cur: q3(p.s_cur), prev: q3(p.s_prev) },
+        inventory: { cur: totalQty, prev: q3(totalQty - netCur) },  // 전월말 재고 = 현재고 − 당월 순증감
+      },
     };
   });
 
