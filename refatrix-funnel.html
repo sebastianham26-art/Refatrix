@@ -373,10 +373,11 @@
       +'<th style="padding:6px;text-align:right">IVA</th>'
       +'<th style="padding:6px;text-align:right">총계(IVA 포함)</th></tr></thead><tbody>';
     items.forEach((l,i)=>{ const sub=Number(l.line_amount_mxn)||0,iva=Math.round(sub*IVA*100)/100,tot=Math.round(sub*(1+IVA)*100)/100;
+      const appS=l.app?(String(l.app).length>46?String(l.app).slice(0,46)+'…':String(l.app)):'';
       h+='<tr style="border-bottom:1px solid #eee">'
         +'<td style="padding:5px 6px;text-align:right;color:#888">'+(i+1)+'</td>'
         +'<td style="padding:5px 6px;text-align:left;word-break:break-all;overflow-wrap:anywhere"><b>'+esc(l.ctr_code||'')+'</b>'+(l.syd_codes?('<div style="font-size:10px;color:#999">'+esc(l.syd_codes)+'</div>'):'')+'</td>'
-        +'<td style="padding:5px 6px;text-align:left;word-break:break-word;overflow-wrap:anywhere">'+esc(l.product_name||'')+(l.app?('<div style="font-size:10px;color:#999">'+esc(l.app)+'</div>'):'')+'</td>'
+        +'<td style="padding:5px 6px;text-align:left;word-break:break-word;overflow-wrap:anywhere">'+esc(l.product_name||'')+(appS?('<div title="'+esc(l.app)+'" style="font-size:10px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(appS)+'</div>'):'')+'</td>'
         +'<td style="padding:5px 6px;text-align:right">'+nf(l.qty)+'</td>'
         +'<td style="padding:5px 6px;text-align:right">'+money(l.unit_price)+'</td>'
         +'<td style="padding:5px 6px;text-align:right">'+money(sub)+'</td>'
@@ -414,6 +415,11 @@
         if(page>0) doc.addPage();
         doc.addImage(imgData,'PNG',margin,margin-rendered,iw,ih);
         rendered+=pageContent; page++; if(page>40) break;
+      }
+      const totalPages=doc.internal.getNumberOfPages();
+      for(let pi=1; pi<=totalPages; pi++){
+        doc.setPage(pi); doc.setFontSize(9); doc.setTextColor(120);
+        doc.text(pi+' / '+totalPages, pw/2, ph-12, {align:'center'});
       }
       const inv=(invCache[stmtInvId]&&invCache[stmtInvId].invoice)||{};
       const safe=String(inv.sat_no||('inv_'+stmtInvId)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
@@ -531,6 +537,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620ad"></script>
+<script src="refatrix-nav.js?v=20260620ae"></script>
 </body>
 </html>
