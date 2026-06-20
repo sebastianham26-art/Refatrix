@@ -97,6 +97,20 @@
   </div>
 </div>
 
+<!-- 명세서 미리보기 모달 -->
+<div id="stmtModal" class="hidden" style="position:fixed;inset:0;background:rgba(20,27,25,.5);z-index:60;align-items:flex-start;justify-content:center;padding:24px;overflow:auto">
+  <div style="background:#fff;max-width:760px;width:100%;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.32);margin:auto">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)">
+      <b style="color:var(--brand);font-size:14px">명세서 미리보기 (Estado de cuenta)</b>
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn" onclick="downloadStatement()">PDF 다운로드</button>
+        <button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="closeStatement()">닫기</button>
+      </span>
+    </div>
+    <div id="stmtBody" style="padding:24px 26px;font-size:13px;color:#1C1B19"></div>
+  </div>
+</div>
+
 <script>
   let session={token:null,user:null,api:''};
   let year=String(new Date().getFullYear());
@@ -239,7 +253,7 @@
         +'<td><b>'+fmt(it.outstanding)+'</b></td>'
         +'<td>'+arDueText(it)+'</td>'
         +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">반제</button> '
-        +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="customerPdf('+it.customer_id+')">명세서</button></td>'
+        +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="openStatement('+it.customer_id+')">명세서</button></td>'
         +'</tr>';
       if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
     });
@@ -274,14 +288,50 @@
       arOpenRepay=null; loadAr();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
-  function customerPdf(customerId){
+  // 명세서: 화면 미리보기 → [PDF 다운로드]
+  let stmtCustomer=null;
+  function stmtDias(r){ return r.day_diff==null?'—':(r.day_diff>0?(r.day_diff+'일 연체'):(r.day_diff===0?'오늘':('D-'+(-r.day_diff)))); }
+  function openStatement(customerId){
+    const rows=arItems.filter(x=>x.customer_id===customerId); if(!rows.length)return;
+    stmtCustomer=customerId;
+    const c=rows[0], co=arCompany||{};
+    const total=rows.reduce((s,r)=>s+r.outstanding,0);
+    let h='';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px">';
+    h+='<div>'
+      +(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:56px;max-width:170px;object-fit:contain;display:block;margin-bottom:8px">'):'')
+      +(co.emisor?('<div style="font-weight:800;font-size:15px;color:var(--brand)">'+esc(co.emisor)+'</div>'):'')
+      +(co.domicilio?('<div style="color:var(--muted);font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
+      +('<div style="color:var(--muted);font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>')
+      +'</div>';
+    h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:19px;font-weight:800">Estado de cuenta</div><div style="color:var(--muted);font-size:12px;margin-top:4px">Fecha: '+esc(arToday)+'</div></div>';
+    h+='</div>';
+    h+='<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">';
+    h+='<div style="font-size:14px"><b>Cliente:</b> '+esc(c.customer_name||'')+'</div>';
+    const cuLine=[c.customer_rfc?('RFC: '+esc(c.customer_rfc)):'',c.customer_phone?('Tel: '+esc(c.customer_phone)):''].filter(Boolean).join(' · ');
+    if(cuLine) h+='<div style="color:var(--muted);font-size:12px;margin-top:2px">'+cuLine+'</div>';
+    h+='<table style="margin-top:14px"><thead><tr><th style="text-align:left">Factura</th><th style="text-align:left">Emisión</th><th style="text-align:left">Vencimiento</th><th>Saldo (MXN)</th><th>Estado</th></tr></thead><tbody>';
+    rows.forEach(r=>{ h+='<tr'+(r.overdue?' class="ovd"':'')+'>'
+      +'<td style="text-align:left;word-break:break-all;max-width:280px">'+esc(r.sat_no||('#'+r.id))+'</td>'
+      +'<td style="text-align:left">'+esc(r.inv_date||'—')+'</td>'
+      +'<td style="text-align:left">'+esc(r.due_date||'—')+'</td>'
+      +'<td><b>'+fmt(r.outstanding)+'</b></td>'
+      +'<td'+(r.day_diff>0?' style="color:var(--expense);font-weight:700"':'')+'>'+esc(stmtDias(r))+'</td></tr>'; });
+    h+='</tbody><tfoot><tr><td colspan="3" style="text-align:right;font-weight:800">Total adeudado</td><td style="font-weight:800">MX$ '+fmt(total)+'</td><td></td></tr></tfoot></table>';
+    h+='<div class="hint" style="margin-top:10px">아래 <b>PDF 다운로드</b>를 누르면 이 명세서가 PDF로 저장됩니다.</div>';
+    $('stmtBody').innerHTML=h;
+    $('stmtModal').classList.remove('hidden'); $('stmtModal').style.display='flex';
+  }
+  function closeStatement(){ $('stmtModal').style.display='none'; }
+  function downloadStatement(){ if(stmtCustomer!=null) buildStatementPdf(stmtCustomer); }
+
+  function buildStatementPdf(customerId){
     const rows=arItems.filter(x=>x.customer_id===customerId); if(!rows.length)return;
     const c=rows[0]; const m=$('arMsg');
     const J=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
     if(!J){ m.className='msg err'; m.textContent='PDF 모듈을 불러오지 못했습니다(인터넷 연결 확인).'; return; }
     const co=arCompany||{};
     const doc=new J({unit:'pt',format:'a4'});
-    // 회사 로고(있으면)
     let leftY=44;
     if(co.logo_data){
       try{
@@ -293,33 +343,27 @@
         leftY=36+h+14;
       }catch(e){ leftY=44; }
     }
-    // 제목(우)
     doc.setFontSize(16); doc.setTextColor(20); doc.text('Estado de cuenta', 555, 50, {align:'right'});
     doc.setFontSize(9); doc.setTextColor(110); doc.text('Fecha: '+arToday, 555, 66, {align:'right'});
-    // 회사 정보(좌)
     let y=leftY; doc.setTextColor(20);
     if(co.emisor){ doc.setFontSize(11); doc.text(String(co.emisor), 40, y); y+=14; }
     doc.setFontSize(8.5); doc.setTextColor(110);
     if(co.domicilio){ doc.text(String(co.domicilio).slice(0,90), 40, y); y+=12; }
     const coLine=[co.rfc?('RFC: '+co.rfc):'', co.phone?('Tel: '+co.phone):'', co.email?String(co.email):''].filter(Boolean).join('   ');
     if(coLine){ doc.text(coLine, 40, y); y+=12; }
-    // 구분선
     y=Math.max(y, 100)+6; doc.setDrawColor(210); doc.line(40,y,555,y); y+=20;
-    // 고객
     doc.setTextColor(20); doc.setFontSize(11); doc.text('Cliente: '+(c.customer_name||''), 40, y); y+=15;
     doc.setFontSize(9); doc.setTextColor(110);
     const cuLine=[c.customer_rfc?('RFC: '+c.customer_rfc):'', c.customer_phone?('Tel: '+c.customer_phone):''].filter(Boolean).join('   ');
     if(cuLine){ doc.text(cuLine, 40, y); y+=4; }
     y+=16;
-    // 표 헤더 (Factura 칸을 넓게)
     doc.setTextColor(20); doc.setFontSize(9); doc.setFillColor(245,243,237); doc.rect(40,y-11,515,16,'F');
     doc.text('Factura',46,y); doc.text('Emision',296,y); doc.text('Vencimiento',372,y); doc.text('Saldo (MXN)',500,y,{align:'right'}); doc.text('Dias',555,y,{align:'right'});
     y+=6;
-    // 인보이스 번호가 칸보다 길면 폰트를 줄여서 잘리지 않게 전부 표시
     const drawFit=(text,x,yy,maxW)=>{ let s=9; doc.setFontSize(s); while(doc.getTextWidth(text)>maxW && s>5){ s-=0.5; doc.setFontSize(s); } doc.text(text,x,yy); doc.setFontSize(9); };
     let total=0;
     rows.forEach(r=>{ y+=15; if(y>790){doc.addPage();y=54;}
-      drawFit(String(r.sat_no||('#'+r.id)), 46, y, 244);   // Factura 46~290
+      drawFit(String(r.sat_no||('#'+r.id)), 46, y, 244);
       doc.text(String(r.inv_date||'—'),296,y);
       doc.text(String(r.due_date||'—'),372,y);
       doc.text(fmt(r.outstanding),500,y,{align:'right'});
@@ -327,7 +371,9 @@
       total+=r.outstanding;
     });
     y+=12; doc.setDrawColor(150); doc.line(40,y,555,y); y+=18;
-    doc.setFontSize(11); doc.setTextColor(20); doc.text('Total adeudado:',500,y,{align:'right'}); doc.text('MX$ '+fmt(total),555,y,{align:'right'});
+    doc.setFontSize(11); doc.setTextColor(20);
+    doc.text('Total adeudado:', 340, y);
+    doc.text('MX$ '+fmt(total), 555, y, {align:'right'});
     doc.save('estado_cuenta_'+(c.customer_code||c.customer_id)+'.pdf');
   }
 
@@ -337,6 +383,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260619ac"></script>
+<script src="refatrix-nav.js?v=20260619ad"></script>
 </body>
 </html>
