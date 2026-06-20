@@ -445,7 +445,8 @@ export default async function devRequestRoutes(app) {
       `SELECT s.id, s.sat_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, s.credit_days,
               to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date_str, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
-              c.code AS customer_code, c.name AS customer_name, c.owner_id AS owner_id, cu.name AS owner_name
+              c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
+              c.owner_id AS owner_id, cu.name AS owner_name
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
               LEFT JOIN users cu ON cu.id=c.owner_id
         WHERE s.id=$1`, [id])).rows[0];
@@ -461,6 +462,7 @@ export default async function devRequestRoutes(app) {
         id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
         credit_days: inv.credit_days == null ? 0 : Number(inv.credit_days),
         customer_code: inv.customer_code, customer_name: inv.customer_name,
+        customer_rfc: inv.customer_rfc || null, customer_phone: inv.customer_phone || null,
         owner_id: inv.owner_id == null ? null : Number(inv.owner_id), owner_name: inv.owner_name || null,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
         can_adjust: canAdjust, is_director: isDirector,
