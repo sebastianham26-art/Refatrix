@@ -555,12 +555,60 @@ export default async function quoteRoutes(app) {
     return { discountRate, count: items.length, items };
   });
 
+  // ============ 포장작업지시서(서명 스캔본) — 업로드 / 메타 / 보기 ============
+  // 메타 조회: 업로드 여부 + 파일명/시각 (데이터 미포함; 모달 진입 시 게이트 판단용)
+  app.get('/api/quotes/:id/packing-doc', { preHandler: [authGuard, requirePageAny(['quote', 'sales'])] }, async (req) => {
+    const id = Number(req.params.id);
+    const r = (await query(
+      `SELECT d.file_name, d.mime_type, d.uploaded_at, u.name AS uploaded_by_name
+         FROM quote_packing_docs d LEFT JOIN users u ON u.id=d.uploaded_by
+        WHERE d.quote_id=$1`, [id])).rows[0];
+    if (!r) return { has: false };
+    return { has: true, file_name: r.file_name, mime_type: r.mime_type, uploaded_at: r.uploaded_at, uploaded_by_name: r.uploaded_by_name || null };
+  });
+
+  // 파일 데이터 조회 (보기 버튼)
+  app.get('/api/quotes/:id/packing-doc/file', { preHandler: [authGuard, requirePageAny(['quote', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const r = (await query(`SELECT file_name, mime_type, file_data FROM quote_packing_docs WHERE quote_id=$1`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'no_packing_doc' });
+    return { file_name: r.file_name, mime_type: r.mime_type, file_data: r.file_data };
+  });
+
+  // 업로드(교체) — 이미지/PDF, 약 5MB 이하 base64 data URL
+  app.post('/api/quotes/:id/packing-doc', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(`SELECT id FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    const data = String(req.body?.data || '');
+    const name = (req.body?.file_name || '').toString().slice(0, 200) || null;
+    const mime = (req.body?.mime_type || '').toString().slice(0, 100) || null;
+    if (!/^data:(image\/|application\/pdf)/.test(data)) return reply.code(400).send({ error: 'invalid_file', note: '이미지(JPG/PNG) 또는 PDF만 업로드할 수 있습니다.' });
+    if (data.length > 7000000) return reply.code(413).send({ error: 'file_too_large', note: '약 5MB 이하 파일을 사용하세요.' });
+    await query(
+      `INSERT INTO quote_packing_docs (quote_id, file_name, mime_type, file_data, uploaded_by, uploaded_at)
+       VALUES ($1,$2,$3,$4,$5, now())
+       ON CONFLICT (quote_id) DO UPDATE SET file_name=EXCLUDED.file_name, mime_type=EXCLUDED.mime_type,
+         file_data=EXCLUDED.file_data, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
+      [id, name, mime, data, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { packing_doc_uploaded: name || true } });
+    return { ok: true };
+  });
+
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.
   app.post('/api/quotes/:id/convert', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
+    // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
+    const pickable = (await query(
+      `SELECT 1 FROM quote_lines ql JOIN products p ON p.id=ql.product_id
+        WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty LIMIT 1`, [id])).rows[0];
+    if (pickable) {
+      const pd = (await query(`SELECT 1 FROM quote_packing_docs WHERE quote_id=$1`, [id])).rows[0];
+      if (!pd) return reply.code(409).send({ error: 'packing_doc_required', note: '포장작업지시서 서명 스캔본을 먼저 업로드해야 매출로 전환할 수 있습니다.' });
+    }
     // 불특정 고객 견적은 고객을 지정해야 전환 가능 (고객등록 유도)
     let customerId = q.customer_id;
     if (customerId == null) {

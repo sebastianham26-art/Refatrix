@@ -109,6 +109,14 @@
     <div style="padding:16px 18px;overflow:auto;flex:1">
       <div id="cvInfo" class="hint" style="margin-bottom:10px"></div>
       <div id="cvPreview" style="margin-bottom:12px"></div>
+      <div id="cvPackBox" class="hidden" style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#faf8f3">
+        <input type="file" id="cvScanFile" accept="image/*,application/pdf" style="display:none">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn ghost" id="cvUploadBtn" type="button" onclick="triggerScanUpload()">📤 포장작업지시서 작업완료 스캔문서 업로드</button>
+          <button class="btn ghost" id="cvViewBtn" type="button" onclick="viewPackingDoc()" style="display:none">👁 업로드 파일 보기</button>
+        </div>
+        <div id="cvDocStatus" class="hint" style="margin-top:8px"></div>
+      </div>
       <div id="cvGuestWrap" class="hidden">
         <label>고객 지정 (불특정 견적 → 등록 고객 선택)</label>
         <select id="cvCustomer" style="width:100%"></select>
@@ -118,6 +126,7 @@
       <input id="cvDate" type="date" style="width:170px">
       <div class="hint" style="margin-top:8px">전환하면 재고가 차감되고, 임시 SAT 번호(TMP-)가 부여됩니다. 실제 SAT는 나중에 입력할 수 있습니다.</div>
       <div class="msg" id="cvMsg"></div>
+      <div id="cvGateHint" class="hint" style="display:none;color:#9a6512;margin-top:8px"></div>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn" id="cvBtn" onclick="doConvert()">전환 실행</button>
         <button class="btn ghost" onclick="closeConvert()">취소</button>
@@ -131,6 +140,7 @@
   let isDirector=false;
   let filter='all', counts={open:0,guest_pending:0};
   let cvPreviewData=null, qRowsById={};
+  let cvPrinted=false, cvHasDoc=false, cvDocMeta=null;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -504,7 +514,13 @@
   }
   async function openConvert(id,isGuest,party){
     cvId=id; cvGuest=!!isGuest;
+    cvPrinted=false; cvHasDoc=false; cvDocMeta=null;
     $('cvMsg').className='msg';
+    $('cvBtn').disabled=true;
+    $('cvPackBox').classList.add('hidden');
+    $('cvGateHint').style.display='none';
+    $('cvViewBtn').style.display='none';
+    $('cvDocStatus').textContent='';
     $('cvInfo').innerHTML='견적: <b>'+esc(party||'')+'</b>'+(isGuest?' <span class="guest">불특정</span>':'');
     $('cvDate').value=new Date().toISOString().slice(0,10);
     $('cvGuestWrap').classList.toggle('hidden',!cvGuest);
@@ -518,7 +534,74 @@
       const pv=await fetch(session.api+'/api/quotes/'+id+'/convert-preview',{headers:auth()}).then(r=>r.json());
       cvPreviewData=pv;
       renderPreview(pv);
+      const pickable=(pv.in_stock||[]).length>0;
+      $('cvPackBox').classList.toggle('hidden', !pickable);
+      await refreshPackingDoc();   // 서버에 기존 스캔본 있으면 반영
+      updateCvGate();
     }catch(e){ $('cvPreview').innerHTML='<div class="hint">미리보기를 불러오지 못했습니다.</div>'; }
+  }
+
+  // 포장 게이트: 피킹 대상이 있으면 스캔본 업로드 전까지 전환 실행 비활성
+  function updateCvGate(){
+    const pickable=!!(cvPreviewData && (cvPreviewData.in_stock||[]).length>0);
+    const ok = !pickable || cvHasDoc;
+    $('cvBtn').disabled = !ok;
+    const g=$('cvGateHint');
+    if(ok){ g.style.display='none'; g.textContent=''; }
+    else { g.style.display='block'; g.textContent='전환하려면 ① 포장작업지시서를 PDF로 출력 → ② 서명 → ③ 스캔본 업로드를 완료하세요.'; }
+    $('cvUploadBtn').disabled = !(cvPrinted || cvHasDoc);
+    $('cvUploadBtn').title = (cvPrinted||cvHasDoc) ? '' : '먼저 포장작업지시서를 PDF로 출력하세요.';
+  }
+
+  // 서버의 스캔본 메타 조회 → 상태/보기버튼/플래그 갱신
+  async function refreshPackingDoc(){
+    cvHasDoc=false; cvDocMeta=null;
+    try{
+      const m=await fetch(session.api+'/api/quotes/'+cvId+'/packing-doc',{headers:auth()}).then(r=>r.json());
+      if(m && m.has){ cvHasDoc=true; cvDocMeta=m; }
+    }catch(e){}
+    const st=$('cvDocStatus'), vb=$('cvViewBtn');
+    if(cvHasDoc){
+      const when=cvDocMeta.uploaded_at?(' · '+esc(String(cvDocMeta.uploaded_at).slice(0,16).replace('T',' '))):'';
+      const who=cvDocMeta.uploaded_by_name?(' · '+esc(cvDocMeta.uploaded_by_name)):'';
+      st.innerHTML='<span style="color:var(--income);font-weight:700">✅ 업로드됨</span> · '+esc(cvDocMeta.file_name||'스캔문서')+when+who;
+      vb.style.display='';
+    } else {
+      st.textContent='서명한 포장작업지시서 스캔본(PDF/이미지)을 업로드하면 전환 실행이 활성화됩니다.';
+      vb.style.display='none';
+    }
+  }
+
+  function triggerScanUpload(){ const f=$('cvScanFile'); f.value=''; f.click(); }
+  async function onScanFilePicked(e){
+    const f=e.target.files && e.target.files[0]; if(!f) return;
+    if(!/^image\//.test(f.type) && f.type!=='application/pdf'){ alert('이미지(JPG/PNG) 또는 PDF만 업로드할 수 있습니다.'); return; }
+    if(f.size > 5*1024*1024){ alert('5MB 이하 파일만 업로드할 수 있습니다.'); return; }
+    const st=$('cvDocStatus'); st.textContent='업로드 중…';
+    let data;
+    try{ data=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('read')); r.readAsDataURL(f); }); }
+    catch(_){ st.textContent='파일을 읽지 못했습니다.'; return; }
+    try{
+      const res=await fetch(session.api+'/api/quotes/'+cvId+'/packing-doc',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({file_name:f.name,mime_type:f.type,data})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok || d.error){ st.textContent='업로드 실패: '+(d.note||d.error||('HTTP '+res.status)); return; }
+      cvPrinted=true;                 // 업로드했다면 출력·서명 과정을 거친 것으로 간주
+      await refreshPackingDoc();
+      updateCvGate();
+    }catch(e){ st.textContent='업로드 실패(서버 연결).'; }
+  }
+
+  async function viewPackingDoc(){
+    try{
+      const d=await fetch(session.api+'/api/quotes/'+cvId+'/packing-doc/file',{headers:auth()}).then(r=>r.json());
+      if(!d || !d.file_data){ alert('업로드된 파일이 없습니다.'); return; }
+      const comma=d.file_data.indexOf(','); const meta=d.file_data.slice(0,comma); const b64=d.file_data.slice(comma+1);
+      const mime=(meta.match(/data:([^;]+)/)||[])[1] || d.mime_type || 'application/octet-stream';
+      const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      const w=window.open(url,'_blank'); if(!w) alert('팝업이 차단되었습니다. 팝업을 허용하세요.');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    }catch(e){ alert('파일을 불러오지 못했습니다.'); }
   }
   function renderPreview(pv){
     const c=pv.counts||{};
@@ -541,7 +624,7 @@
       +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다.</span></div>';
     $('cvPreview').innerHTML=h;
   }
-  function closeConvert(){ $('cvModal').style.display='none'; cvId=null; cvPreviewData=null; }
+  function closeConvert(){ $('cvModal').style.display='none'; cvId=null; cvPreviewData=null; cvPrinted=false; cvHasDoc=false; cvDocMeta=null; }
 
   // ===== 포장 작업 지시서 (피킹/패킹) 출력 — ① 즉시 매출 SKU =====
   async function printPickList(){
@@ -687,6 +770,7 @@
     const win=window.open('','_blank');
     if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
     win.document.open(); win.document.write(html); win.document.close();
+    cvPrinted=true; updateCvGate();   // 출력 완료 → 스캔 업로드 단계 활성화
   }
   async function doConvert(){
     const m=$('cvMsg');m.className='msg';
@@ -705,6 +789,7 @@
         if(d.error==='guest_needs_customer')msg='불특정 견적입니다. 고객을 지정하세요.';
         else if(d.error==='no_valid_lines')msg='전환할 유효한 품목이 없습니다(매칭된 제품 필요).';
         else if(d.error==='already_converted')msg='이미 전환된 견적입니다.';
+        else if(d.error==='packing_doc_required')msg='포장작업지시서 서명 스캔본을 먼저 업로드하세요.';
         else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
         m.className='msg err';m.textContent='전환 실패: '+msg;return;
       }
@@ -725,9 +810,10 @@
   }
 
   $('go').addEventListener('click',login);
+  $('cvScanFile').addEventListener('change',onScanFilePicked);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621g"></script>
+<script src="refatrix-nav.js?v=20260621h"></script>
 </body>
 </html>
