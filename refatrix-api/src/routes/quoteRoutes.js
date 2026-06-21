@@ -1,5 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
+import { teamArr } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
@@ -338,6 +339,13 @@ export default async function quoteRoutes(app) {
     if (['draft', 'confirmed', 'converted', 'cancelled', 'pricelist'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
     if (req.query.open === '1') conds.push(`q.status IN ('draft','confirmed')`);          // 견적후 미결
     if (req.query.guest === '1') conds.push(`q.customer_id IS NULL AND q.status IN ('draft','confirmed')`); // 불특정·미등록
+    // 팀 가시성: 디렉터/영업지원=전체. 그 외=자기 팀 고객 견적 + 본인이 만든 불특정 견적만.
+    const ta = teamArr(req.ctx.perm);
+    if (ta) {
+      args.push(ta); const ti = args.length;
+      args.push(req.ctx.perm.userId); const ui = args.length;
+      conds.push(`(c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`);
+    }
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
               q.invoice_id, q.guest_name, q.customer_id, q.created_by,
@@ -367,13 +375,21 @@ export default async function quoteRoutes(app) {
   });
 
   // 미결/불특정 카운트 (배지용)
-  app.get('/api/quotes/open-count', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async () => {
+  app.get('/api/quotes/open-count', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
+    const conds = [`q.deleted_at IS NULL`]; const args = [];
+    const ta = teamArr(req.ctx.perm);
+    if (ta) {
+      args.push(ta); const ti = args.length;
+      args.push(req.ctx.perm.userId); const ui = args.length;
+      conds.push(`(c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`);
+    }
     const r = (await query(
       `SELECT
-         COUNT(*) FILTER (WHERE status IN ('draft','confirmed'))::int AS open,
-         COUNT(*) FILTER (WHERE status IN ('draft','confirmed') AND customer_id IS NULL)::int AS guest_pending,
-         COUNT(*) FILTER (WHERE status='delete_pending')::int AS delete_pending
-       FROM quotes WHERE deleted_at IS NULL`)).rows[0];
+         COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed'))::int AS open,
+         COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed') AND q.customer_id IS NULL)::int AS guest_pending,
+         COUNT(*) FILTER (WHERE q.status='delete_pending')::int AS delete_pending
+       FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+       WHERE ${conds.join(' AND ')}`, args)).rows[0];
     return { open: r.open || 0, guest_pending: r.guest_pending || 0, delete_pending: r.delete_pending || 0 };
   });
 
