@@ -149,6 +149,14 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function partyName(){ return isGuest ? ($('guestName').value.trim()||'Cliente no registrado') : (($('custSel').selectedOptions[0]||{}).text||''); }
+  // 견적서 발행자(작성자) = 로그인 사용자 이름 (+ 로그인ID). 누가 견적서를 발행했는지 추적용.
+  function issuerLabel(){
+    const u=(session&&session.user)||{};
+    const name=(u.name||'').trim();
+    const lid=(u.login_id||'').trim();
+    if(name&&lid) return name+' ('+lid+')';
+    return name||lid||'-';
+  }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
 
@@ -313,7 +321,7 @@
       +'</style></head><body>'
       +'<div class="head"><div>'+logo+'<div class="co">'+(co.emisor&&co.logo_data?'<b>'+esc(co.emisor)+'</b><br>':'')+(co.domicilio?esc(co.domicilio)+'<br>':'')+(co.phone?'Tel: '+esc(co.phone)+' · ':'')+(co.homepage?esc(co.homepage):'')+'</div></div>'
       +'<div class="title"><h2>COTIZACIÓN</h2></div></div>'
-      +'<div class="meta"><b>Cliente:</b> '+esc(custName)+' &nbsp;&nbsp; <b>Fecha:</b> '+esc(date)+'</div>'
+      +'<div class="meta"><b>Cliente:</b> '+esc(custName)+' &nbsp;&nbsp; <b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel())+'</div>'
       +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th><th>List</th><th>Desc.</th><th>P.Unit</th><th>IVA</th><th>Total c/IVA</th><th>Existencia</th></tr></thead>'
       +'<tbody>'+rowsHtml+'</tbody></table>'
       +'<div class="totbox"><table>'
@@ -412,7 +420,7 @@
     const date=$('qDate').value||'';
     const rows=[];
     rows.push(['Refatrix — Cotización']);
-    rows.push(['Cliente', custName, '', 'Fecha', date]);
+    rows.push(['Cliente', custName, '', 'Fecha', date, '', 'Atendió', issuerLabel()]);
     rows.push([]);
     rows.push(['CTR','SYD','Producto / Aplicación','Cantidad','List','Desc%','P.Unit','IVA','Total c/IVA','Stock','Estado']);
     const flagLbl={ok:'OK',low_stock:'Stock bajo',not_found:'No encontrado'};
@@ -653,6 +661,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620az"></script>
+<script src="refatrix-nav.js?v=20260621a"></script>
 </body>
 </html>
