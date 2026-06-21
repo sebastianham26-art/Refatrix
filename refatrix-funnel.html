@@ -57,6 +57,17 @@
   .st.received{background:#eef0f2;color:#555}.st.reviewed{background:#fdf3e3;color:#9a6512}.st.factory_requested{background:#e8eefb;color:#2f5db2}.st.developed{background:var(--income-bg);color:var(--income)}
   .grp{font-size:13px;font-weight:800;color:var(--brand);margin:14px 0 4px}
   .okv{color:var(--income);font-weight:700}.lowv{color:var(--gold);font-weight:700}.nfv{color:var(--purple);font-weight:700}
+  /* 매출 확정 요약(고정 박스) */
+  .sumcap{font-size:12px;font-weight:700;color:var(--brand);margin:2px 0 6px}
+  .sumcap span{color:var(--muted);font-weight:600}
+  .sumbox{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:0 0 16px}
+  .sumcell{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px;min-width:0}
+  .sumcell .k{font-size:11.5px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sumcell .v{font-size:19px;font-weight:800;color:var(--brand);margin-top:3px;line-height:1.15;overflow-wrap:anywhere}
+  .sumcell .d{font-size:10.5px;margin-top:5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sumcell .d.up{color:var(--income)} .sumcell .d.dn{color:var(--expense)} .sumcell .d.fl{color:var(--muted)}
+  @media(max-width:900px){.sumbox{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:560px){.sumbox{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -200,11 +211,35 @@
   function flagPill(f){ return f==='ok'?'<span class="pill ok">즉시</span>':f==='low_stock'?'<span class="pill low">부족</span>':'<span class="pill nf">개발</span>'; }
 
   // ② 즉시 매출 → 발행가능 / 이미발행
+  // 매출 확정 요약 박스: 영역은 고정, 숫자만 변함 + 전월(직전 동기간) 대비 작은 글씨
+  function summaryBox(s){
+    if(!s||!s.cur) return '';
+    const c=s.cur, dl=s.delta||{}, pc=s.pct||{};
+    const cell=(label,curv,key,isMoney)=>{
+      const delta=Number(dl[key]||0), pct=pc[key];
+      const cls=delta>0?'up':(delta<0?'dn':'fl');
+      const arrow=delta>0?'▲':(delta<0?'▼':'–');
+      const dabs=isMoney?('MX$'+money(Math.abs(delta))):nf(Math.abs(delta));
+      const sign=delta>0?'+':(delta<0?'−':'');
+      const pctTxt=(pct==null)?(delta>0?'신규':'—'):(sign+Math.abs(pct)+'%');
+      return '<div class="sumcell"><div class="k">'+label+'</div><div class="v">'+curv+'</div>'
+        +'<div class="d '+cls+'" title="'+esc(s.label)+'">'+arrow+' '+sign+dabs+' · '+pctTxt+'</div></div>';
+    };
+    return '<div class="sumcap">매출 확정 요약 <span>· '+esc(s.label)+'</span></div>'
+      +'<div class="sumbox">'
+      + cell('SKU 수', nf(c.sku), 'sku', false)
+      + cell('총 수량', nf(c.qty), 'qty', false)
+      + cell('총 금액', 'MX$'+money(c.amount), 'amount', true)
+      + cell('인보이스 수', nf(c.invoices)+'건', 'invoices', false)
+      + cell('고객 수', nf(c.customers)+'곳', 'customers', false)
+      + '</div>';
+  }
   async function loadImmediate(){
     const qp='months='+mq()+(immTeam?('&team_id='+immTeam):'')+(immOwner?('&owner_id='+immOwner):'');
     const d=await fetch(session.api+'/api/dashboard/funnel/immediate?'+qp,{headers:auth()}).then(r=>r.json());
     const able=d.able||[], done=d.done||[];
     let h='';
+    h+=summaryBox(d.summary);
     // 디렉터/상위: 팀·담당자 필터
     if(d.can_filter && d.filters){
       const fo=d.filters;
@@ -621,6 +656,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620ag"></script>
+<script src="refatrix-nav.js?v=20260620au"></script>
 </body>
 </html>

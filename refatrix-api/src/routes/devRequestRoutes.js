@@ -340,6 +340,30 @@ export default async function devRequestRoutes(app) {
   }
   const pctOf = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
 
+  // 매출 확정 요약: 선택 월(들) 직전 동기간 월 목록
+  function prevMonthWindow(monthsArr) {
+    const sorted = [...new Set(monthsArr)].sort();
+    const n = sorted.length || 1;
+    let [yy, mm] = sorted[0].split('-').map(Number);
+    const out = [];
+    for (let k = 0; k < n; k++) { mm--; if (mm === 0) { mm = 12; yy--; } out.push(yy + '-' + String(mm).padStart(2, '0')); }
+    return out.reverse();
+  }
+  // 매출 확정 요약 5개 지표 (선택 월 합계, owner/team 필터 동일 적용)
+  async function salesSummaryMetrics(ms, ownerId, teamId) {
+    const args = [ms]; const conds = [];
+    if (ownerId) { args.push(ownerId); conds.push(`c.owner_id = $${args.length}`); }
+    if (teamId) { args.push(teamId); conds.push(`c.team_id = $${args.length}`); }
+    const w = `i.deleted_at IS NULL AND i.status='posted' AND to_char(i.inv_date,'YYYY-MM') = ANY($1)` + (conds.length ? ' AND ' + conds.join(' AND ') : '');
+    const hdr = (await query(
+      `SELECT COUNT(*)::int AS invoices, COUNT(DISTINCT i.customer_id)::int AS customers, COALESCE(SUM(i.total_mxn),0)::numeric AS amount
+         FROM sales_invoices i JOIN customers c ON c.id=i.customer_id WHERE ${w}`, args)).rows[0];
+    const ln = (await query(
+      `SELECT COUNT(DISTINCT sl.product_id)::int AS sku, COALESCE(SUM(sl.qty),0)::numeric AS qty
+         FROM sales_invoice_lines sl JOIN sales_invoices i ON i.id=sl.invoice_id JOIN customers c ON c.id=i.customer_id WHERE ${w}`, args)).rows[0];
+    return { sku: ln.sku || 0, qty: Number(ln.qty) || 0, amount: Number(hdr.amount) || 0, invoices: hdr.invoices || 0, customers: hdr.customers || 0 };
+  }
+
   // ① 견적 요청 드릴다운: 견적 목록 + 각 견적 SKU 라인
   app.get('/api/dashboard/funnel/quotes', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const months = parseMonths(req);
@@ -430,8 +454,19 @@ export default async function devRequestRoutes(app) {
           ORDER BY u.name`)).rows;
       filterOpts = { teams: teams.map((t) => ({ id: Number(t.id), name: t.name })), owners: owners.map((o) => ({ id: Number(o.id), name: o.name })) };
     }
+    // 매출 확정 요약(고정 박스용) — 선택 월 합계 + 직전 동기간 비교
+    const curM = await salesSummaryMetrics(months, ownerId, teamId);
+    const prevMonths = prevMonthWindow(months);
+    const prevM = await salesSummaryMetrics(prevMonths, ownerId, teamId);
+    const SK = ['sku', 'qty', 'amount', 'invoices', 'customers'];
+    const sdelta = {}, spct = {};
+    for (const k of SK) {
+      sdelta[k] = Math.round((curM[k] - prevM[k]) * 100) / 100;
+      spct[k] = prevM[k] > 0 ? Math.round(((curM[k] - prevM[k]) / prevM[k]) * 1000) / 10 : null;
+    }
+    const summary = { label: months.length === 1 ? '전월 대비' : ('직전 ' + months.length + '개월 대비'), cur: curM, prev: prevM, delta: sdelta, pct: spct, prev_months: prevMonths };
     return {
-      months, can_filter: isDirector, applied: { owner_id: ownerId, team_id: teamId }, filters: filterOpts,
+      months, can_filter: isDirector, applied: { owner_id: ownerId, team_id: teamId }, filters: filterOpts, summary,
       able: able.map((o) => ({ id: o.id, quote_no: o.quote_no, qdate: o.qdate, age_days: o.age_days, customer_name: o.customer_id == null ? (o.guest_name || '불특정 고객') : o.customer_name, ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty) })),
       done: done.map((o) => ({ id: o.invoice_id, quote_no: o.quote_no || '(직접)', invoice_id: o.invoice_id, inv_date: o.inv_date, sat_no: o.sat_no || '', temp_sat: !!o.temp_sat, customer_name: o.customer_name, owner_name: o.cust_owner_name || '', total_mxn: Number(o.total_mxn), inv_sku: o.inv_sku, inv_qty: Number(o.inv_qty) })),
     };
