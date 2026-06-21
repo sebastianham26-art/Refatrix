@@ -12,6 +12,13 @@ export function visibleTeamIds(perm) {
   return [...ids];
 }
 
+// 견적/매출 쿼리 팀 필터용: null = 전체(필터 없음, 디렉터·영업지원),
+// 배열 = 그 팀들만. 가시 팀이 없으면 [-1](아무 팀도 매칭 안 됨).
+export function teamArr(perm) {
+  const vis = visibleTeamIds(perm);
+  return vis === null ? null : (vis.length ? vis : [-1]);
+}
+
 // 특정 팀을 볼 수 있나
 export function canViewTeam(perm, teamId) {
   const vis = visibleTeamIds(perm);

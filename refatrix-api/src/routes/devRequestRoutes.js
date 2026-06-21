@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { pageAllowed, allowPastMonthSalesEdit } from '../permissions.js';
-import { visibleTeamIds } from '../teams.js';
+import { visibleTeamIds, teamArr } from '../teams.js';
 import { logEvent } from '../audit.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
@@ -272,6 +272,7 @@ export default async function devRequestRoutes(app) {
     if (by === 'order') {
       // 오더(견적)별: 최근 n건, 과거→현재
       const n = Math.min(Math.max(Number(req.query.n) || 20, 1), 100);
+      const oargs = [n]; const otc = teamFilterClause(req.ctx.perm, oargs);
       const qs = (await query(
         `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate,
                 c.name AS customer_name,
@@ -285,10 +286,10 @@ export default async function devRequestRoutes(app) {
            FROM quotes q
            JOIN quote_lines ql ON ql.quote_id=q.id
            LEFT JOIN customers c ON c.id=q.customer_id
-          WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending'
+          WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending'${otc}
           GROUP BY q.id, q.quote_no, q.quote_date, c.name
           ORDER BY q.quote_date DESC, q.id DESC
-          LIMIT $1`, [n])).rows;
+          LIMIT $1`, oargs)).rows;
       const rows = qs.reverse().map((o) => ({
         label: o.quote_no || ('#' + o.id), quote_no: o.quote_no, qdate: o.qdate, customer_name: o.customer_name,
         req_sku: o.req_sku, req_qty: Number(o.req_qty),
@@ -305,12 +306,14 @@ export default async function devRequestRoutes(app) {
     const months = [];
     const now = new Date();
     for (let i = n - 1; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1).toISOString().slice(0, 7));
+    const margs = [months]; const mtc = teamFilterClause(req.ctx.perm, margs);
     const ql = (await query(
       `SELECT to_char(q.quote_date,'YYYY-MM') AS ym, ql.stock_flag AS flag,
               COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty
          FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
-        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
-        GROUP BY 1,2`, [months])).rows;
+         LEFT JOIN customers c ON c.id=q.customer_id
+        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${mtc}
+        GROUP BY 1,2`, margs)).rows;
     const map = {};
     for (const m of months) map[m] = { ym: m, label: m, req_sku: 0, req_qty: 0, ok_sku: 0, ok_qty: 0, short_sku: 0, short_qty: 0, dev_sku: 0, dev_qty: 0 };
     for (const r of ql) {
@@ -332,6 +335,16 @@ export default async function devRequestRoutes(app) {
     });
     return { by, months, rows };
   });
+
+  // 견적 팀 필터 절: 디렉터/영업지원=전체(''), 그 외=자기 팀 고객 견적 + 본인이 만든 불특정 견적.
+  // args 배열에 파라미터를 push 하고, WHERE 에 붙일 ' AND (...)' 문자열을 반환(없으면 '').
+  function teamFilterClause(perm, args) {
+    const ta = teamArr(perm);
+    if (!ta) return '';
+    args.push(ta); const ti = args.length;
+    args.push(perm.userId); const ui = args.length;
+    return ` AND (c.team_id = ANY($${ti}) OR (q.customer_id IS NULL AND q.created_by = $${ui}))`;
+  }
 
   // ===== 드릴다운: 기간(months) 파라미터 공통 =====
   function parseMonths(req) {
@@ -367,6 +380,7 @@ export default async function devRequestRoutes(app) {
   // ① 견적 요청 드릴다운: 견적 목록 + 각 견적 SKU 라인
   app.get('/api/dashboard/funnel/quotes', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const months = parseMonths(req);
+    const fargs = [months]; const ftc = teamFilterClause(req.ctx.perm, fargs);
     const qs = (await query(
       `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate, q.invoice_id,
               c.name AS customer_name, q.guest_name, q.customer_id,
@@ -379,9 +393,9 @@ export default async function devRequestRoutes(app) {
               COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='not_found'),0)::numeric AS dev_qty
          FROM quotes q JOIN quote_lines ql ON ql.quote_id=q.id
          LEFT JOIN customers c ON c.id=q.customer_id
-        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${ftc}
         GROUP BY q.id, q.quote_no, q.quote_date, q.invoice_id, c.name, q.guest_name, q.customer_id
-        ORDER BY q.quote_date DESC, q.id DESC`, [months])).rows;
+        ORDER BY q.quote_date DESC, q.id DESC`, fargs)).rows;
     return {
       months,
       items: qs.map((o) => ({
