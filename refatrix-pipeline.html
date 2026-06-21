@@ -146,10 +146,12 @@
 <script>
   let session={token:null,user:null,api:''};
   let teams=[], stages=[], curTeam=null, data=null, curCust=null;
-  // 7단계(0~6) 색상 — 고객관리와 동일 팔레트(헤더 배경=짙은 색, 흰 글자)
-  const STAGE_FG=['#5b6b73','#2f6db5','#1f6fc4','#0f7a5f','#9a6512','#b4561f','#9a1f1f'];
+  // 7단계(0~6) 색상 — 고객관리와 100% 동일(연한 배경 + 짙은 글자)
+  const STAGE_PAL=[
+    {bg:'#eceff1',fg:'#5b6b73'},{bg:'#eef4fb',fg:'#2f6db5'},{bg:'#e3effb',fg:'#1f6fc4'},
+    {bg:'#e2f3ef',fg:'#0f7a5f'},{bg:'#fdf3e0',fg:'#9a6512'},{bg:'#fbece1',fg:'#b4561f'},{bg:'#f8dcdc',fg:'#9a1f1f'}];
   function stageIdx(name){ const m=String(name||'').match(/^(\d+)_/); return m?Math.max(0,Math.min(6,parseInt(m[1],10))):0; }
-  function stageHeadColor(name){ return STAGE_FG[stageIdx(name)]; }
+  function stageMeta(name){ return STAGE_PAL[stageIdx(name)]; }
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const isDirector=()=> session.user && session.user.role==='director';
@@ -239,9 +241,9 @@
     $('kanban').innerHTML='<div class="kanban">'+pipe.map(s=>{
       const isB=String(s.stage_id)===bottleId;
       const cs=(byStage[s.stage_id]||[]).slice().sort((a,b)=>(b.days_in_stage||0)-(a.days_in_stage||0));
-      const hbg=stageHeadColor(s.name);
+      const meta=stageMeta(s.name);
       return `<div class="kcol ${isB?'bottle':''}">
-        <div class="khead" style="background:${hbg}"><div class="kname">${s.name.replace(/^\d+_/,'')}${isB?' ⚠':''}</div><div class="kcount">${s.count}</div></div>
+        <div class="khead" style="background:${meta.bg}"><div class="kname" style="color:${meta.fg}">${s.name.replace(/^\d+_/,'')}${isB?' ⚠':''}</div><div class="kcount" style="color:${meta.fg}">${s.count}</div></div>
         <div class="kbody">${cs.map(c=>`<div class="kcard" style="--c:${dayColor(c.days_in_stage)}" onclick="openMeet(${c.id})">
           <div class="kc-top"><span class="kc-name">${c.name}${c.open_directives>0?`<span class="dirbadge">지시 ${c.open_directives}</span>`:''}</span>${dayPill(c.days_in_stage)}</div>
           <div class="kc-meta">진입 ${c.stage_since?c.stage_since.slice(5):'—'} · ${c.days_in_stage==null?'—':c.days_in_stage+'일 경과'}${c.last_meeting?' · 미팅 '+c.last_meeting.slice(5):''}</div>
@@ -391,6 +393,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620bd"></script>
+<script src="refatrix-nav.js?v=20260620be"></script>
 </body>
 </html>

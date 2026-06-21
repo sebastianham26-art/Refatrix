@@ -352,7 +352,7 @@
     // 카드3 고객개발 — 당월 견적/협상/수주 + 지난주 변동
     const dd=d.delta||{};
     const dchip=(n)=>{ if(n==null||n===0) return '<div class="l" style="color:var(--muted)">±0 (지난주)</div>'; const up=n>0; return '<div class="l" style="color:'+(up?'var(--income)':'var(--expense)')+'">'+(up?'+':'')+n+' (지난주)</div>'; };
-    const devbox=(val,label,so,chip)=>{ const p=STAGE_PAIR_BY_SORT[so]; return '<div class="devbox" style="background:'+p.bg+';border-color:'+p.bg+'"><div class="n" style="color:'+p.fg+'">'+(val||0)+'</div><div class="l" style="color:'+p.fg+';font-weight:700">'+label+'</div>'+chip+'</div>'; };
+    const devbox=(val,label,so,chip)=>{ const p=STAGE_PAIR_ALL[so]; return '<div class="devbox" style="background:'+p.bg+';border-color:'+p.bg+'"><div class="n" style="color:'+p.fg+'">'+(val||0)+'</div><div class="l" style="color:'+p.fg+';font-weight:700">'+label+'</div>'+chip+'</div>'; };
     const c3='<div class="cardbody"><div class="bigv">'+(d.quote||0)+'<small> 건</small></div><div class="mom flat"></div>'
       +'<div class="devboxes">'+devbox(d.quote,'견적',30,dchip(dd.quote))+devbox(d.negotiation,'협상',40,dchip(dd.negotiation))+devbox(d.won,'수주',50,dchip(dd.won))+'</div>'
       +'<div class="cardfoot hint">당월 견적 기준 · 작은 숫자는 지난 7일 단계 변동(영업활동 고객 단계변화일)</div></div>';
@@ -401,9 +401,8 @@
   }
 
   const STAGE_COLOR=['#9CB7AD','#6FA08E','#4C8B76','#2E7259','#1E5247','#143D34'];
-  // 7단계(0~6) 색상 — 고객관리와 동일 팔레트
-  const STAGE_FG_BY_SORT={0:'#5b6b73',10:'#2f6db5',20:'#1f6fc4',30:'#0f7a5f',40:'#9a6512',50:'#b4561f',60:'#9a1f1f'};
-  const STAGE_PAIR_BY_SORT={30:{bg:'#e2f3ef',fg:'#0f7a5f'},40:{bg:'#fdf3e0',fg:'#9a6512'},50:{bg:'#fbece1',fg:'#b4561f'}};
+  // 7단계(0~6) 색상 — 고객관리와 100% 동일(연한 배경 + 짙은 글자)
+  const STAGE_PAIR_ALL={0:{bg:'#eceff1',fg:'#5b6b73'},10:{bg:'#eef4fb',fg:'#2f6db5'},20:{bg:'#e3effb',fg:'#1f6fc4'},30:{bg:'#e2f3ef',fg:'#0f7a5f'},40:{bg:'#fdf3e0',fg:'#9a6512'},50:{bg:'#fbece1',fg:'#b4561f'},60:{bg:'#f8dcdc',fg:'#9a1f1f'}};
   const STAGE_LABEL={10:'잠재발굴',20:'접촉',30:'제안',40:'협상',50:'수주',60:'거래중'};
   function dayDot(days){ if(days==null)return '#bbb'; if(days<=7)return 'var(--income)'; if(days<=14)return '#C99A2E'; return 'var(--expense)'; }
   async function loadPipeline(){
@@ -414,7 +413,7 @@
     $('pipeCount').textContent='· 전체 '+(pp.total||0)+'곳';
     const stages=(pp.stages||[]).filter(s=>s.sort_order>=10&&s.sort_order<=60);
     const cols=stages.map((s,i)=>{
-      const col=STAGE_FG_BY_SORT[s.sort_order]||'#143D34';
+      const pair=STAGE_PAIR_ALL[s.sort_order]||{bg:'#eceff1',fg:'#5b6b73'};
       const label=STAGE_LABEL[s.sort_order]||s.name.replace(/^\d+_/,'');
       const cards=(s.customers||[]).map(c=>{
         const dot=dayDot(c.days_in_stage);
@@ -423,7 +422,7 @@
         return '<div class="pcard" style="--dot:'+dot+(noDrill?';cursor:default':'')+'"'+(noDrill?'':' onclick="openCust('+c.id+',\''+c.name.replace(/'/g,"")+'\')"')+'><div class="nm">'+c.name+'</div>'
           +'<div class="meta"><span>'+sinceTxt+'</span><span class="act">'+actTxt+'</span></div></div>';
       }).join('')||'<div class="pempty">—</div>';
-      return '<div class="pcol"><div class="pcolh" style="background:'+col+'"><span class="lbl">'+label+'</span><span class="cnt">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
+      return '<div class="pcol"><div class="pcolh" style="background:'+pair.bg+';color:'+pair.fg+'"><span class="lbl">'+label+'</span><span class="cnt" style="background:rgba(0,0,0,.06);color:'+pair.fg+'">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
     }).join('');
     $('pipeBody').innerHTML='<div class="pipeboard">'+cols+'</div>'
       +'<div class="plegend"><span><i style="background:var(--income)"></i>7일 이내</span>'
@@ -676,6 +675,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620bd"></script>
+<script src="refatrix-nav.js?v=20260620be"></script>
 </body>
 </html>
