@@ -155,7 +155,7 @@ export default async function customerRoutes(app) {
     }
     if (q) { params.push(`%${q}%`); conds.push(`(c.name ILIKE $${params.length} OR c.code ILIKE $${params.length} OR c.rfc ILIKE $${params.length})`); }
     const rows = (await query(
-      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.discount, c.credit_days, c.customer_type,
+      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.discount, c.credit_days, c.customer_type, c.branch_count,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
@@ -179,6 +179,7 @@ export default async function customerRoutes(app) {
     return { items: rows.map((c) => ({
       id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
       discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
+      branch_count: c.branch_count == null ? null : Number(c.branch_count),
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
@@ -222,6 +223,7 @@ export default async function customerRoutes(app) {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
         discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
         constancia_fiscal: c.constancia_fiscal || null,
+        branch_count: c.branch_count == null ? null : Number(c.branch_count),
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
@@ -247,10 +249,11 @@ export default async function customerRoutes(app) {
       const code = await computeNextCode();
       try {
         row = (await query(
-          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, stage_since, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
+          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, branch_count, stage_since, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
           [code, b.name, b.rfc || null, b.contact || null, b.phone || null, Number(b.discount) || 0,
-           Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.customer_type || null, b.memo || null, req.ctx.perm.userId])).rows[0];
+           Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.customer_type || null, b.memo || null, req.ctx.perm.userId,
+           (b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count)])).rows[0];
         break;
       } catch (e) { lastErr = e; if (!String(e.message || '').includes('unique') && !String(e.message || '').includes('duplicate')) throw e; }
     }
@@ -267,7 +270,7 @@ export default async function customerRoutes(app) {
     const stageChanged = b.stage_id != null && Number(b.stage_id) !== c.stage_id;
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
-         team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15,
+         team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15, branch_count=$16,
          stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
       [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
        b.phone !== undefined ? b.phone : c.phone, b.discount != null ? Number(b.discount) : c.discount,
@@ -275,7 +278,8 @@ export default async function customerRoutes(app) {
        b.stage_id != null ? Number(b.stage_id) : c.stage_id, b.owner_id !== undefined ? b.owner_id : c.owner_id,
        b.customer_type !== undefined ? b.customer_type : c.customer_type,
        b.memo !== undefined ? b.memo : c.memo, stageChanged, userId, id,
-       b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal]);
+       b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal,
+       b.branch_count !== undefined ? ((b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count)) : c.branch_count]);
   }
 
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {

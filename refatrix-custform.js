@@ -32,6 +32,7 @@
       +'<div class="rcf-f"><label>전화</label><input id="rcf-phone" type="text"></div>'
       +'<div class="rcf-f"><label>기본 할인(%)</label><input id="rcf-discount" type="number" step="0.01" value="0"></div>'
       +'<div class="rcf-f"><label>외상일(일)</label><input id="rcf-credit" type="number" value="0"></div>'
+      +'<div class="rcf-f"><label>지점 수</label><input id="rcf-branches" type="number" min="0" placeholder="예: 3"></div>'
     +'</div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>메모</label><input id="rcf-memo" type="text"></div></div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>Constancia de Situación Fiscal (세무 등록상태)</label><input id="rcf-constancia" type="text" placeholder="예: RFC · Régimen · 등록상태"></div></div>'
@@ -76,6 +77,7 @@
     if($('rcf-team')) $('rcf-team').value=(teams[0]&&teams[0].id)||'';
     if($('rcf-type')) $('rcf-type').value=''; if($('rcf-owner')) $('rcf-owner').value=''; if($('rcf-stage')) $('rcf-stage').value='';
     if($('rcf-discount')) $('rcf-discount').value=0; if($('rcf-credit')) $('rcf-credit').value=0;
+    if($('rcf-branches')) $('rcf-branches').value='';
     $('rcf-save').textContent='고객 등록';
     if($('rcf-cancel')) $('rcf-cancel').style.display='none';
     setMsg('','');
@@ -89,6 +91,7 @@
     if($('rcf-owner')) $('rcf-owner').value=c.owner_id||''; if($('rcf-stage')) $('rcf-stage').value=c.stage_id||'';
     if($('rcf-discount')) $('rcf-discount').value=(c.discount!=null?c.discount:0);
     if($('rcf-credit')) $('rcf-credit').value=(c.credit_days!=null?c.credit_days:0);
+    if($('rcf-branches')) $('rcf-branches').value=(c.branch_count!=null?c.branch_count:'');
     $('rcf-save').textContent=cfg.isDirector?'수정 저장':'수정 요청(디렉터 승인)';
     if($('rcf-cancel')) $('rcf-cancel').style.display='';
     setMsg('','');
@@ -103,6 +106,7 @@
       stage_id:$('rcf-stage').value?Number($('rcf-stage').value):null,
       contact:$('rcf-contact').value.trim()||null, phone:$('rcf-phone').value.trim()||null,
       discount:Number($('rcf-discount').value)||0, credit_days:Number($('rcf-credit').value)||0,
+      branch_count:($('rcf-branches')&&$('rcf-branches').value!=='')?Number($('rcf-branches').value):null,
       memo:$('rcf-memo').value.trim()||null, constancia_fiscal:$('rcf-constancia').value.trim()||null,
     };
   }
