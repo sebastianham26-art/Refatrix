@@ -4,6 +4,7 @@ import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeD
 import { isClosedMonth } from '../importCost.js';
 import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
+import { autoStage } from '../stageAuto.js';
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -121,6 +122,14 @@ export default async function salesRoutes(app) {
     if (out.error === 'stock_short') return reply.code(409).send({ error: 'stock_short', shortages: out.shortages });
     if (out.error) return reply.code(out.error.startsWith('insufficient') ? 409 : 400).send({ error: out.error });
     await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `sales_invoice:${out.id || 'none'}`, detail: { exception: out.exception, shortages: out.shortages?.length || 0 } });
+    if (out.invoiced && out.id) {
+      // 매출 확정 → 단계 거래중(60) 자동 전진(전진만) + 미팅기록에 매출내역 표기(전진 없어도 기록)
+      try {
+        const label = (out.sat_no && !String(out.sat_no).startsWith('TMP-')) ? out.sat_no : `#${out.id}(임시)`;
+        const amt = Number(out.totals?.totalMxn || 0);
+        await autoStage({ customerId: customer_id, targetSort: 60, onDate: inv_date, userId, note: `자동: 매출 확정 (${label}) · MX$${amt.toLocaleString('en-US')} · 거래중`, alwaysLog: true });
+      } catch (_) { /* best-effort */ }
+    }
     return out;
   });
 

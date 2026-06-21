@@ -62,6 +62,13 @@
   .teambtn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
   .teambtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .st-open{background:#fff4d6;color:#8a6512}.st-read{background:#e7eef3;color:#2b5a78}.st-done{background:#e7f3ee;color:var(--income)}
+  /* 미팅 패널 매출 요약 박스 */
+  .msum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:6px}
+  .msum .mcell{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+  .msum .mk{font-size:10.5px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msum .mv{font-size:15px;font-weight:800;color:var(--brand);margin-top:2px;overflow-wrap:anywhere;line-height:1.15}
+  .msum .mv.sm{font-size:13px}
+  @media(max-width:680px){.msum{grid-template-columns:repeat(2,1fr)}}
   /* 좁은 화면(폰): 단계가 많으면 너무 좁아 → 가로 스와이프 허용 */
   @media(max-width:640px){
     .kanban{grid-auto-columns:minmax(170px,1fr);overflow-x:auto;scroll-snap-type:x proximity}
@@ -111,6 +118,7 @@
     <!-- 미팅 작성 폼(고객 선택 시) -->
     <div class="card hidden" id="meetCard">
       <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0" id="meetTitle">미팅 기록</h2><button class="btn ghost sm" id="meetClose">닫기</button></div>
+      <div id="m-sales" style="margin-top:10px"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
         <div><label>미팅 일자</label><input id="m-date" type="date"></div>
         <div style="flex:1;min-width:220px"><label>미팅 내용</label><textarea id="m-note" rows="2" style="width:100%"></textarea></div>
@@ -141,6 +149,8 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const isDirector=()=> session.user && session.user.role==='director';
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const nfq=(n)=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const moneyMX=(n)=>'MX$'+Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:0});
 
   
   // 포털에서 전달된 토큰(자동 로그인)
@@ -272,6 +282,7 @@
     $('m-stage').disabled=true;
     if(curCust.stage_id)$('m-stage').value=curCust.stage_id;
     if($('meetCard').scrollIntoView)$('meetCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    loadSalesSummary(custId);
     loadHistory(custId);
     loadDirectives(custId);
   }
@@ -319,6 +330,26 @@
     const note=prompt('F/UP 완료 메모(선택):')||null;
     try{await fetch(session.api+'/api/directives/'+id+'/done',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done_note:note})});loadDirectives(curCust.id);loadPipeline();}catch(e){alert('실패');}
   }
+  async function loadSalesSummary(custId){
+    $('m-sales').innerHTML='<div class="hint" style="margin-top:4px">매출 요약 불러오는 중…</div>';
+    try{
+      const s=await fetch(session.api+'/api/meetings/sales-summary?customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      if(!s||s.error){ $('m-sales').innerHTML=''; return; }
+      if(!s.inv_count){ $('m-sales').innerHTML='<div class="hint" style="margin-top:4px">아직 확정된 매출이 없습니다.</div>'; return; }
+      const cell=(k,v,sm)=>`<div class="mcell"><div class="mk">${k}</div><div class="mv${sm?' sm':''}">${v}</div></div>`;
+      $('m-sales').innerHTML='<div style="font-weight:700;margin-top:6px;color:var(--brand)">매출 요약 (누적)</div>'
+        +'<div class="msum">'
+        + cell('누적 SKU 수', nfq(s.sku)+'종')
+        + cell('총 수량', nfq(s.qty))
+        + cell('총 구매액 (IVA 포함)', moneyMX(s.amount_total))
+        + cell('첫 거래일', s.first_trade||'—', true)
+        + cell('인보이스 수', fmt(s.inv_count)+'건')
+        + cell('오픈 인보이스', fmt(s.open_count)+'건')
+        + cell('오픈 금액', s.open_amount==null?'—':moneyMX(s.open_amount))
+        + cell('누적 수금액', s.collected==null?'—':moneyMX(s.collected))
+        +'</div>';
+    }catch(e){ $('m-sales').innerHTML=''; }
+  }
   async function loadHistory(custId){
     $('m-history').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
@@ -356,6 +387,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620av"></script>
+<script src="refatrix-nav.js?v=20260620aw"></script>
 </body>
 </html>

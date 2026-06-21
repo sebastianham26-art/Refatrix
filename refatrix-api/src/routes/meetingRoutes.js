@@ -56,6 +56,39 @@ export default async function meetingRoutes(app) {
     return { items: rows.map((m) => ({ ...m, advanced: m.stage_before !== m.stage_after })) };
   });
 
+  // 고객 매출 요약(누적) — 미팅 패널 박스용
+  app.get('/api/meetings/sales-summary', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    const customerId = Number(req.query.customer_id);
+    if (!customerId) return reply.code(400).send({ error: 'customer_required' });
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const hdr = (await query(
+      `SELECT COUNT(*)::int AS inv_count, COALESCE(SUM(i.total_mxn),0)::numeric AS amount_total,
+              to_char(MIN(i.inv_date),'YYYY-MM-DD') AS first_trade
+         FROM sales_invoices i WHERE i.customer_id=$1 AND i.status='posted' AND i.deleted_at IS NULL`, [customerId])).rows[0];
+    const ln = (await query(
+      `SELECT COUNT(DISTINCT sl.product_id)::int AS sku, COALESCE(SUM(sl.qty),0)::numeric AS qty
+         FROM sales_invoice_lines sl JOIN sales_invoices i ON i.id=sl.invoice_id
+        WHERE i.customer_id=$1 AND i.status='posted' AND i.deleted_at IS NULL`, [customerId])).rows[0];
+    const pay = (await query(
+      `SELECT COALESCE(SUM(spa.amount),0)::numeric AS collected
+         FROM sales_payment_allocations spa JOIN sales_invoices i ON i.id=spa.invoice_id
+        WHERE i.customer_id=$1 AND i.status='posted' AND i.deleted_at IS NULL`, [customerId])).rows[0];
+    const open = (await query(
+      `SELECT COUNT(*)::int AS open_count, COALESCE(SUM(outstanding),0)::numeric AS open_amount FROM (
+         SELECT i.id, i.total_mxn - COALESCE(p.paid,0) AS outstanding
+           FROM sales_invoices i
+           LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
+          WHERE i.customer_id=$1 AND i.status='posted' AND i.deleted_at IS NULL
+       ) t WHERE outstanding > 0.005`, [customerId])).rows[0];
+    return {
+      sku: ln.sku || 0, qty: Number(ln.qty) || 0, amount_total: Number(hdr.amount_total) || 0,
+      inv_count: hdr.inv_count || 0, first_trade: hdr.first_trade || null,
+      open_count: open.open_count || 0, open_amount: r2(open.open_amount), collected: r2(pay.collected),
+    };
+  });
+
   // ===== 디렉터 지시·피드백 → 읽음확인 → 완료(F/UP) =====
 
   app.post('/api/directives', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {

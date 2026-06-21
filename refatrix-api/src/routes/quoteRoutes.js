@@ -3,6 +3,7 @@ import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEdi
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
+import { autoStage } from '../stageAuto.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -229,6 +230,10 @@ export default async function quoteRoutes(app) {
       return q;
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}` });
+    if (customerId) {
+      // 등록 고객 견적 작성 → 단계 견적(30) 자동 전진(전진만) + 이력/미팅 로그
+      try { await autoStage({ customerId, targetSort: 30, onDate: b.quote_date || null, userId: req.ctx.perm.userId, note: `자동: 견적서 작성 (${result.quote_no}) · 견적 단계` }); } catch (_) { /* best-effort */ }
+    }
     return { id: result.id, quote_no: result.quote_no };
   });
 
