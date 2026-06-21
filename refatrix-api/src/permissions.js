@@ -63,10 +63,16 @@ export function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100
 
 // ── 마이그레이션 기간 한정 토글 ─────────────────────────────────────────────
 // 디렉터가 "지난 달(과거)" 매출의 총액·IVA도 수정할 수 있게 허용하는 스위치.
-// Railway 환경변수 ALLOW_PAST_MONTH_SALES_EDIT 를 1/true/yes/on 으로 두면 켜짐.
-// 변수를 지우거나 0/false 로 두면 기본값(당월만 수정)으로 돌아감 → 재배포 불필요(서비스 재시작만).
+//
+// ⚠️ 현재 기본값 = ON (마이그레이션 기간). 별도 설정 없이 과거 달 수정이 켜져 있음.
+// 시스템 안정 후 "당월만 수정"으로 되돌리는 방법 (둘 중 하나):
+//   (A) Railway 환경변수 ALLOW_PAST_MONTH_SALES_EDIT = 0  → 재배포 없이 즉시 OFF.
+//   (B) 아래 MIGRATION_DEFAULT_ON 을 false 로 바꿔 재배포.
+// 환경변수를 1/true/yes/on 으로 두면 강제 ON, 0/false/no/off 로 두면 강제 OFF.
+const MIGRATION_DEFAULT_ON = true;
 export function allowPastMonthSalesEdit() {
-  return ['1', 'true', 'yes', 'on'].includes(
-    String(process.env.ALLOW_PAST_MONTH_SALES_EDIT || '').trim().toLowerCase()
-  );
+  const env = String(process.env.ALLOW_PAST_MONTH_SALES_EDIT || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(env)) return true;    // 명시적 ON
+  if (['0', 'false', 'no', 'off'].includes(env)) return false;  // 명시적 OFF
+  return MIGRATION_DEFAULT_ON;                                    // 변수 없을 때의 기본값
 }
