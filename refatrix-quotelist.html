@@ -52,6 +52,7 @@
   .pvtag.ok{background:var(--income-bg);color:var(--income)}.pvtag.warn{background:#fdf3e3;color:#9a6512}.pvtag.dev{background:#f1ebf7;color:#7a4ea0}
   .pvseg{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6;max-height:150px;overflow:auto}
 </style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
@@ -814,6 +815,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621h"></script>
+<script src="refatrix-nav.js?v=20260621j"></script>
 </body>
 </html>

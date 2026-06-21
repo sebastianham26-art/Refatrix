@@ -48,6 +48,7 @@
   .tgb.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .chartbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:8px 6px 4px}
 </style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
@@ -265,6 +266,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260621j"></script>
 </body>
 </html>

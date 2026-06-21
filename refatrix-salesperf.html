@@ -111,6 +111,7 @@
   .calcell.clickable{cursor:pointer}.calcell.clickable:hover{border-color:var(--income)}
   @media(max-width:720px){.calcell{min-height:70px}.calitem{font-size:9px}}
 </style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
@@ -675,6 +676,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620be"></script>
+<script src="refatrix-nav.js?v=20260621j"></script>
 </body>
 </html>

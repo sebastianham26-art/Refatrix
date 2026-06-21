@@ -62,6 +62,7 @@
   .acitem .s{font-size:11px;color:var(--muted)}
   .acitem .lp{font-size:12px;color:var(--ink);white-space:nowrap}
 </style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
@@ -661,6 +662,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621a"></script>
+<script src="refatrix-nav.js?v=20260621j"></script>
 </body>
 </html>

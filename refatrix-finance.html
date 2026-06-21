@@ -72,6 +72,7 @@
   .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
   .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
 </style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
@@ -1473,6 +1474,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260621j"></script>
 </body>
 </html>

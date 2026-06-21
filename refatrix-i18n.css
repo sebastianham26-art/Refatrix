@@ -1,0 +1,23 @@
+/* refatrix-i18n.css
+   크롬/엣지 자동번역(스페인어) 시 표·열 정렬 유지용 공용 스타일.
+   모든 refatrix-*.html 화면에서 페이지 자체 <style> 뒤에 로드되어 우선 적용됨.
+   한국어 화면도 안전: 글자가 길어질 때만 머리글/텍스트가 줄바꿈됨.
+   숫자·날짜·코드는 공백이 없어 줄바꿈되지 않고 그대로 한 줄 유지됨. */
+
+/* 1) 표 머리글: 길어지면 가로로 넘치지 말고 세로로 줄바꿈 → 열 폭/정렬 유지 */
+th{
+  white-space: normal !important;
+  word-break: keep-all;       /* 단어(스페인어/한글)는 통째로 유지 */
+  overflow-wrap: anywhere;    /* 아주 긴 단어만 강제 줄바꿈 */
+  line-height: 1.2;
+  vertical-align: bottom;
+}
+
+/* 2) 데이터 셀: 여러 단어 텍스트는 줄바꿈 허용.
+      (overflow-wrap을 일부러 안 줌 → "$84,210" "2026-06-21" "CTR-123" 처럼
+       공백 없는 값은 끊기지 않고 한 줄로 유지됨)
+      인라인 style="white-space:nowrap"(버튼 셀 등)은 그대로 우선 적용됨. */
+td{
+  white-space: normal;
+  word-break: keep-all;
+}

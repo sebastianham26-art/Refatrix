@@ -39,6 +39,7 @@
   .pg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;margin:2px 8px 2px 0}
   .pinbox{background:#fff7e0;border:1px solid #ecd9a0;border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
 </style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
@@ -218,6 +219,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260621j"></script>
 </body>
 </html>
