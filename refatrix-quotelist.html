@@ -69,8 +69,15 @@
     <div class="card">
       <div class="filters" style="align-items:flex-end">
         <div style="flex:1;min-width:240px">
-          <label>월 선택 <span class="hint" style="font-weight:500">— 여러 개 중복 선택 가능 · 모두 해제하면 전체기간</span></label>
-          <div class="chips" id="monthChips" style="margin-top:6px"></div>
+          <label>기간 선택 <span class="hint" style="font-weight:500">— 연도·월 각각 중복 선택 가능 · 모두 해제하면 전체기간</span></label>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+            <span class="hint" style="min-width:30px;font-weight:700">연도</span>
+            <div class="chips" id="yearChips" style="margin:0"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <span class="hint" style="min-width:30px;font-weight:700">월</span>
+            <div class="chips" id="monthChips" style="margin:0"></div>
+          </div>
         </div>
         <div style="margin-left:auto"><a href="refatrix-quote.html" style="text-decoration:none"><button class="btn ghost">＋ 새 견적</button></a></div>
       </div>
@@ -166,36 +173,40 @@
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  // ===== 월 선택 토글 (중복 선택 가능) =====
-  let allMonths=[];                 // 표시할 월 목록(최근→과거)
-  let selMonths=new Set();          // 선택된 'YYYY-MM'
-  function ymOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-  function monthLabel(ym){ const [y,m]=ym.split('-'); return y+'년 '+Number(m)+'월'; }
+  // ===== 연도 · 월 토글 (각각 중복 선택 가능 · 교차 조합) =====
+  let allYears=[];
+  let selYears=new Set();   // 선택된 연도(숫자)
+  let selMonths=new Set();  // 선택된 월(1~12)
   function initMonths(){
-    const today=new Date(); allMonths=[];
-    // 최근 12개월(이번 달 → 11개월 전)
-    for(let i=0;i<12;i++){ const d=new Date(today.getFullYear(),today.getMonth()-i,1); allMonths.push(ymOf(d)); }
-    selMonths=new Set([ymOf(today)]);   // 기본: 이번 달
-    renderMonthChips();
+    const y=new Date().getFullYear();
+    allYears=[y-2,y-1,y];                            // 최근 3개 연도
+    selYears=new Set([y]);                           // 기본: 올해
+    selMonths=new Set([new Date().getMonth()+1]);    // 기본: 이번 달
+    renderPeriodChips();
   }
-  function renderMonthChips(){
-    $('monthChips').innerHTML=allMonths.map(ym=>{
-      const on=selMonths.has(ym);
-      return '<div class="chip'+(on?' on':'')+'" onclick="toggleMonth(\''+ym+'\')">'+monthLabel(ym)+'</div>';
-    }).join('')
-    +'<div class="chip" style="border-style:dashed" onclick="clearMonths()" title="전체 기간 보기">전체기간</div>';
+  function renderPeriodChips(){
+    $('yearChips').innerHTML=allYears.map(y=>
+      '<div class="chip'+(selYears.has(y)?' on':'')+'" onclick="toggleYear('+y+')">'+y+'년</div>').join('')
+      +'<div class="chip" style="border-style:dashed" onclick="clearPeriod()" title="전체 기간 보기">전체기간</div>';
+    $('monthChips').innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>
+      '<div class="chip'+(selMonths.has(m)?' on':'')+'" onclick="toggleMonth('+m+')">'+m+'월</div>').join('');
   }
-  function toggleMonth(ym){ if(selMonths.has(ym))selMonths.delete(ym); else selMonths.add(ym); renderMonthChips(); load(); }
-  function clearMonths(){ selMonths.clear(); renderMonthChips(); load(); }
+  function toggleYear(y){ if(selYears.has(y))selYears.delete(y); else selYears.add(y); renderPeriodChips(); load(); }
+  function toggleMonth(m){ if(selMonths.has(m))selMonths.delete(m); else selMonths.add(m); renderPeriodChips(); load(); }
+  function clearPeriod(){ selYears.clear(); selMonths.clear(); renderPeriodChips(); load(); }
+  function effectiveYMs(){
+    if(!selYears.size || !selMonths.size) return null;   // 전체기간
+    const set=new Set();
+    for(const y of selYears) for(const m of selMonths) set.add(y+'-'+String(m).padStart(2,'0'));
+    return set;
+  }
   function monthRange(){
-    if(!selMonths.size) return null;                 // 전체기간
-    const ms=[...selMonths].sort();
+    const set=effectiveYMs(); if(!set) return null;      // 전체기간
+    const ms=[...set].sort();
     const minYm=ms[0], maxYm=ms[ms.length-1];
-    const from=minYm+'-01';
     const [my,mm]=maxYm.split('-').map(Number);
-    const last=new Date(my,mm,0).getDate();           // 그 달의 마지막 날
-    const to=maxYm+'-'+String(last).padStart(2,'0');
-    return {from,to};
+    const last=new Date(my,mm,0).getDate();              // 그 달의 마지막 날
+    return { from:minYm+'-01', to:maxYm+'-'+String(last).padStart(2,'0') };
   }
 
   function setFilter(f){ filter=f; renderChips(); load(); }
@@ -227,8 +238,9 @@
     try{
       const d=await fetch(session.api+'/api/quotes?'+qs,{headers:auth()}).then(r=>r.json());
       let items=d.items||[];
-      // 선택 월이 비연속(예: 1월+3월)일 수 있으므로, 선택된 월만 정확히 남김
-      if(selMonths.size) items=items.filter(q=>selMonths.has(String(q.quote_date||'').slice(0,7)));
+      // 선택된 연도×월 조합만 정확히 남김(비연속·다년 조합 지원)
+      const eff=effectiveYMs();
+      if(eff) items=items.filter(q=>eff.has(String(q.quote_date||'').slice(0,7)));
       render(items);
     }catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
@@ -564,6 +576,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621b"></script>
+<script src="refatrix-nav.js?v=20260621d"></script>
 </body>
 </html>
