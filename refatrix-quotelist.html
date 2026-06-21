@@ -67,10 +67,11 @@
 
   <div class="hidden" id="app">
     <div class="card">
-      <div class="filters">
-        <div><label>시작일</label><input id="from" type="date"></div>
-        <div><label>종료일</label><input id="to" type="date"></div>
-        <div><button class="btn" onclick="load()">조회</button></div>
+      <div class="filters" style="align-items:flex-end">
+        <div style="flex:1;min-width:240px">
+          <label>월 선택 <span class="hint" style="font-weight:500">— 여러 개 중복 선택 가능 · 모두 해제하면 전체기간</span></label>
+          <div class="chips" id="monthChips" style="margin-top:6px"></div>
+        </div>
         <div style="margin-left:auto"><a href="refatrix-quote.html" style="text-decoration:none"><button class="btn ghost">＋ 새 견적</button></a></div>
       </div>
       <div class="chips" id="chips" style="margin-top:12px"></div>
@@ -127,6 +128,17 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  let companyCache=null;
+  async function getCompany(){
+    if(companyCache)return companyCache;
+    try{ companyCache=await fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()); }catch(e){ companyCache={}; }
+    return companyCache;
+  }
+  function issuerLabel(q){
+    const name=(q&&q.creator_name||'').trim(), lid=(q&&q.creator_login_id||'').trim();
+    if(name&&lid) return name+' ('+lid+')';
+    return name||lid||'-';
+  }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -148,11 +160,42 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      const today=new Date(); const first=new Date(today.getFullYear(),today.getMonth(),1);
-      $('from').value=first.toISOString().slice(0,10); $('to').value=today.toISOString().slice(0,10);
+      initMonths();
       load();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ===== 월 선택 토글 (중복 선택 가능) =====
+  let allMonths=[];                 // 표시할 월 목록(최근→과거)
+  let selMonths=new Set();          // 선택된 'YYYY-MM'
+  function ymOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  function monthLabel(ym){ const [y,m]=ym.split('-'); return y+'년 '+Number(m)+'월'; }
+  function initMonths(){
+    const today=new Date(); allMonths=[];
+    // 최근 12개월(이번 달 → 11개월 전)
+    for(let i=0;i<12;i++){ const d=new Date(today.getFullYear(),today.getMonth()-i,1); allMonths.push(ymOf(d)); }
+    selMonths=new Set([ymOf(today)]);   // 기본: 이번 달
+    renderMonthChips();
+  }
+  function renderMonthChips(){
+    $('monthChips').innerHTML=allMonths.map(ym=>{
+      const on=selMonths.has(ym);
+      return '<div class="chip'+(on?' on':'')+'" onclick="toggleMonth(\''+ym+'\')">'+monthLabel(ym)+'</div>';
+    }).join('')
+    +'<div class="chip" style="border-style:dashed" onclick="clearMonths()" title="전체 기간 보기">전체기간</div>';
+  }
+  function toggleMonth(ym){ if(selMonths.has(ym))selMonths.delete(ym); else selMonths.add(ym); renderMonthChips(); load(); }
+  function clearMonths(){ selMonths.clear(); renderMonthChips(); load(); }
+  function monthRange(){
+    if(!selMonths.size) return null;                 // 전체기간
+    const ms=[...selMonths].sort();
+    const minYm=ms[0], maxYm=ms[ms.length-1];
+    const from=minYm+'-01';
+    const [my,mm]=maxYm.split('-').map(Number);
+    const last=new Date(my,mm,0).getDate();           // 그 달의 마지막 날
+    const to=maxYm+'-'+String(last).padStart(2,'0');
+    return {from,to};
   }
 
   function setFilter(f){ filter=f; renderChips(); load(); }
@@ -174,7 +217,8 @@
   async function load(){
     await loadCounts();
     const m=$('msg');m.className='msg';
-    let qs='from='+($('from').value||'')+'&to='+($('to').value||'');
+    const rng=monthRange();                          // null = 전체기간
+    let qs='from='+(rng?rng.from:'')+'&to='+(rng?rng.to:'');
     if(filter==='open')qs+='&open=1';
     else if(filter==='guest')qs+='&guest=1';
     else if(filter==='converted')qs+='&status=converted';
@@ -182,7 +226,10 @@
     else if(filter==='delpend')qs+='&status=delete_pending';
     try{
       const d=await fetch(session.api+'/api/quotes?'+qs,{headers:auth()}).then(r=>r.json());
-      render(d.items||[]);
+      let items=d.items||[];
+      // 선택 월이 비연속(예: 1월+3월)일 수 있으므로, 선택된 월만 정확히 남김
+      if(selMonths.size) items=items.filter(q=>selMonths.has(String(q.quote_date||'').slice(0,7)));
+      render(items);
     }catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
 
@@ -235,6 +282,80 @@
     catch(e){ $('dtBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   function closeDetail(){ $('dtModal').style.display='none'; dtId=null; dtData=null; dtEdit=false; }
+
+  // ===== 견적서 출력 (PDF) — 드릴다운 상세에서 =====
+  async function printQuotePdf(){
+    if(!dtData||!dtData.quote){ return; }
+    const q=dtData.quote, lines=(dtData.lines||[]);
+    const co=await getCompany();
+    const custName=q.party_name||'';
+    const date=q.quote_date||'';
+    const isMatched=(l)=> !!(l.product_name) && Number(l.final_price)>0;
+    const rowsHtml=lines.map(l=>{
+      const fl={ok:'',low_stock:'재고부족',not_found:'개발'}[l.stock_flag||'ok'];
+      const mt=isMatched(l);
+      return '<tr>'
+        +'<td>'+esc(l.ctr_code||l.input_code||'—')+'</td>'
+        +'<td>'+esc(l.syd_codes||'—')+'</td>'
+        +'<td class="l">'+esc(l.product_name||'(미등록)')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+        +'<td class="r">'+fmtq(l.qty)+'</td>'
+        +'<td class="r">'+(mt?fmt(l.list_price):'—')+'</td>'
+        +'<td class="r">'+(mt?((Number(l.discount_rate)||0)+'%'):'—')+'</td>'
+        +'<td class="r">'+(mt?fmt(l.final_price):'—')+'</td>'
+        +'<td class="r">'+(mt?fmt(l.line_iva):'—')+'</td>'
+        +'<td class="r">'+(mt?fmt(l.line_total):'—')+'</td>'
+        +'<td class="r">'+(l.avail_stock==null?'—':fmtq(l.avail_stock))+(fl?' <span class="warn">'+fl+'</span>':'')+'</td>'
+        +'</tr>';
+    }).join('');
+    const bankParts=[];
+    if(co.bank_name)bankParts.push('Banco: '+esc(co.bank_name));
+    if(co.bank_account)bankParts.push('Cuenta: '+esc(co.bank_account));
+    if(co.bank_clabe)bankParts.push('CLABE: '+esc(co.bank_clabe));
+    if(co.bank_holder)bankParts.push('Beneficiario: '+esc(co.bank_holder));
+    const logo=co.logo_data?'<img src="'+co.logo_data+'" style="max-height:64px;max-width:220px">':'<div class="emisor-name">'+esc(co.emisor||'Refatrix')+'</div>';
+    const custMeta=[];
+    if(q.customer_rfc)custMeta.push('RFC: '+esc(q.customer_rfc));
+    if(q.customer_phone)custMeta.push('Tel: '+esc(q.customer_phone));
+    const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cotización '+esc(q.quote_no||'')+'</title><style>'
+      +'body{font-family:Arial,system-ui,sans-serif;color:#1c1b19;padding:26px;font-size:12px}'
+      +'.head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #143D34;padding-bottom:12px}'
+      +'.emisor-name{font-size:22px;font-weight:800;color:#143D34}'
+      +'.co{font-size:11px;color:#444;line-height:1.5;margin-top:6px}'
+      +'.title{text-align:right}.title h2{margin:0;color:#143D34;font-size:20px}.title .qn{font-size:12px;color:#444;margin-top:4px}'
+      +'.meta{margin:14px 0;font-size:12px;line-height:1.7}'
+      +'table{width:100%;border-collapse:collapse;margin-top:8px}'
+      +'th,td{border:1px solid #ccc;padding:5px 6px;font-size:11px}'
+      +'th{background:#143D34;color:#fff;font-weight:600}'
+      +'td.l{text-align:left}td.r{text-align:right}th{text-align:center}'
+      +'.ap{color:#777;font-size:10px}.warn{color:#B23A2E;font-weight:700}'
+      +'.totbox{margin-top:14px;display:flex;justify-content:flex-end}'
+      +'.totbox table{width:auto}.totbox td{border:none;padding:3px 10px}'
+      +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#faf8f3}'
+      +'.bank b{color:#143D34}'
+      +'.foot{margin-top:18px;font-size:10px;color:#888;text-align:center}'
+      +'@media print{.noprint{display:none}}'
+      +'</style></head><body>'
+      +'<div class="head"><div>'+logo+'<div class="co">'+(co.emisor&&co.logo_data?'<b>'+esc(co.emisor)+'</b><br>':'')+(co.domicilio?esc(co.domicilio)+'<br>':'')+(co.rfc?'RFC: '+esc(co.rfc)+'<br>':'')+(co.phone?'Tel: '+esc(co.phone)+' · ':'')+(co.homepage?esc(co.homepage):'')+'</div></div>'
+      +'<div class="title"><h2>COTIZACIÓN</h2><div class="qn">No. '+esc(q.quote_no||'')+'</div></div></div>'
+      +'<div class="meta"><b>Cliente:</b> '+esc(custName)+(custMeta.length?' &nbsp; <span style="color:#666">('+custMeta.join(' · ')+')</span>':'')+'<br>'
+      +'<b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel(q))+'</div>'
+      +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th><th>List</th><th>Desc.</th><th>P.Unit</th><th>IVA</th><th>Total c/IVA</th><th>Existencia</th></tr></thead>'
+      +'<tbody>'+rowsHtml+'</tbody></table>'
+      +'<div class="totbox"><table>'
+      +'<tr><td>Total piezas:</td><td class="r">'+fmtq(q.total_qty||0)+'</td></tr>'
+      +'<tr><td>SKU:</td><td class="r">'+(q.sku_count||0)+'</td></tr>'
+      +'<tr><td>Subtotal:</td><td class="r">'+fmt(q.subtotal_mxn||0)+'</td></tr>'
+      +'<tr><td>IVA (16%):</td><td class="r">'+fmt(q.iva_mxn||0)+'</td></tr>'
+      +'<tr><td><b>Total c/IVA:</b></td><td class="r"><b>'+fmt(q.total_mxn||0)+'</b></td></tr>'
+      +'</table></div>'
+      +(bankParts.length?'<div class="bank"><b>Datos bancarios</b><br>'+bankParts.join(' &nbsp;·&nbsp; ')+'</div>':'')
+      +'<div class="foot">'+esc(co.emisor||'Refatrix')+(co.homepage?' · '+esc(co.homepage):'')+'</div>'
+      +'<div class="noprint" style="margin-top:18px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;background:#143D34;color:#fff;border:none;border-radius:6px;cursor:pointer">인쇄 / PDF 저장</button></div>'
+      +'</body></html>';
+    const win=window.open('','_blank');
+    if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+    win.document.open();win.document.write(html);win.document.close();
+  }
   const flagLbl={ok:'<span style="color:var(--income);font-weight:700">즉시</span>',low_stock:'<span style="color:#9a6512;font-weight:700">부족</span>',not_found:'<span style="color:#6B4FB0;font-weight:700">개발</span>'};
   function renderDetail(){
     const q=dtData.quote, lines=dtData.lines||[];
@@ -259,6 +380,7 @@
     h+='</tbody></table></div>';
     h+='<div style="text-align:right;margin-top:10px;font-size:13px">소계 <b>'+fmt(q.subtotal_mxn)+'</b> · IVA <b>'+fmt(q.iva_mxn)+'</b> · <span style="font-size:15px;color:var(--brand)">총액 <b>'+fmt(q.total_mxn)+'</b></span></div>';
     h+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
+    h+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
     if(editable){
       h+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
       h+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
@@ -442,6 +564,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620az"></script>
+<script src="refatrix-nav.js?v=20260621b"></script>
 </body>
 </html>
