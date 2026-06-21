@@ -490,8 +490,11 @@ export default async function devRequestRoutes(app) {
       `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
          FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
-    const isDirector = (req.ctx.perm.role === 'director') || visibleTeamIds(req.ctx.perm) === null;
-    const canAdjust = (req.ctx.perm.role === 'director') && (allowPastMonthSalesEdit() || inv.inv_ym === inv.now_ym);
+    // 삭제/일자변경/매출액수정 버튼 노출용 플래그.
+    // 반드시 실제 디렉터(role==='director')만 true — 전체 팀 조회권(sales_support 등)은 제외.
+    // 백엔드 실제 동작(requireDirector)과 동일 기준으로 맞춰 버튼이 새지 않게 함.
+    const isDirector = (req.ctx.perm.role === 'director');
+    const canAdjust = isDirector && (allowPastMonthSalesEdit() || inv.inv_ym === inv.now_ym);
     return {
       invoice: {
         id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
