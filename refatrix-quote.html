@@ -351,26 +351,49 @@
       // 할인률: 불특정=입력값(curDisc), 등록=서버 등록 할인률(null=미등록)
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : d.discountRate;
       const rows=[];
-      rows.push(['Refatrix — Lista de precios (precios SIN IVA)']);
+      rows.push(['Refatrix — Lista de precios / Cotización por sucursal (precios SIN IVA)']);
       rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
+      rows.push(['Ingrese las cantidades por sucursal (Suc 1–5). El importe por SKU y los totales se calculan automáticamente.']);
       rows.push([]);
-      rows.push(['CTR Code','SYD Code','Application','List Price (sin IVA)','Descuento','Precio c/desc (sin IVA)','Existencia']);
-      items.forEach(it=>{
-        const discCell = disc==null ? 'a definir' : (disc+'%');
-        const finalCell = disc==null ? 'a definir' : Math.round(it.list_price*(1-disc/100)*100)/100;
-        rows.push([
-          it.ctr_code||'', it.syd_codes||'', it.app||'',
-          Number(it.list_price)||0, discCell, finalCell,
-          it.stock_qty==null?'':Number(it.stock_qty),
-        ]);
+      rows.push(['#','CTR Code','SYD Code','Application','Existencia','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)']);
+      const headerRow=rows.length, firstData=headerRow+1;
+      items.forEach((it,idx)=>{
+        const unit=(disc==null)?(Number(it.list_price)||0):(Math.round((Number(it.list_price)||0)*(1-disc/100)*100)/100);
+        rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.app||'',
+          it.stock_qty==null?'':Number(it.stock_qty), unit, null,null,null,null,null, null, null ]);
       });
+      const lastData=rows.length;
+      rows.push([]);
+      rows.push(['','','','Cantidad por sucursal →','','',null,null,null,null,null,null,'']); const qtyRow=rows.length;
+      rows.push(['','','','Importe por sucursal (sin IVA) →','','',null,null,null,null,null,'',null]); const amtRow=rows.length;
+      rows.push([]);
+      rows.push(['','','','','','','','','','','','Subtotal (sin IVA)',null]); const subRow=rows.length;
+      rows.push(['','','','','','','','','','','','IVA 16%',null]); const ivaRow=rows.length;
+      rows.push(['','','','','','','','','','','','Total (con IVA)',null]); const totRow=rows.length;
+
       const ws=XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols']=[{wch:14},{wch:20},{wch:30},{wch:16},{wch:10},{wch:18},{wch:11}];
+      // SKU별 수식: 지점 합계(Cant. total) + 금액(Importe = precio × cant)
+      for(let r=firstData;r<=lastData;r++){
+        ws['L'+r]={t:'n',f:'SUM(G'+r+':K'+r+')'};
+        ws['M'+r]={t:'n',z:'#,##0.00',f:'F'+r+'*L'+r};
+        if(ws['F'+r]) ws['F'+r].z='#,##0.00';
+      }
+      // 지점별 수량 합계 + 전체 수량
+      ['G','H','I','J','K'].forEach(c=>{ ws[c+qtyRow]={t:'n',f:'SUM('+c+firstData+':'+c+lastData+')'}; });
+      ws['L'+qtyRow]={t:'n',f:'SUM(L'+firstData+':L'+lastData+')'};
+      // 지점별 금액 합계 = SUMPRODUCT(precio, 지점수량)
+      ['G','H','I','J','K'].forEach(c=>{ ws[c+amtRow]={t:'n',z:'#,##0.00',f:'SUMPRODUCT($F$'+firstData+':$F$'+lastData+','+c+firstData+':'+c+lastData+')'}; });
+      // 총 금액(소계·IVA·총계)
+      ws['M'+subRow]={t:'n',z:'#,##0.00',f:'SUM(M'+firstData+':M'+lastData+')'};
+      ws['M'+ivaRow]={t:'n',z:'#,##0.00',f:'M'+subRow+'*0.16'};
+      ws['M'+totRow]={t:'n',z:'#,##0.00',f:'M'+subRow+'+M'+ivaRow};
+
+      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:28},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent=items.length+'개 제품 가격표를 다운로드했습니다 (IVA 미포함).'+(disc==null?' (할인률 미등록 → a definir)':(' · 할인 '+disc+'%'));
+      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
@@ -622,6 +645,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260620ae"></script>
 </body>
 </html>
