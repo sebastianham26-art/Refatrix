@@ -163,6 +163,45 @@
   </div>
 </div>
 
+<!-- 담당고객 오픈 인보이스(수금 상세) 드릴다운 -->
+<style>
+  #arModal .artoggle{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  #arModal .archip{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:#4a5a52;background:#eef2ef;border:1px solid #dde5e0;cursor:pointer;transition:all .12s}
+  #arModal .archip:hover{background:#e2ebe5}
+  #arModal .archip.on{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;border-color:transparent}
+  #arModal .arsum{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#4a5a52}
+  #arModal .arsum .b{font-weight:800;color:var(--brand)}
+  #arModal .armonth{margin:10px 0 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  #arModal .armonth-h{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f6f3ec;cursor:pointer;font-weight:700;font-size:13px}
+  #arModal .armonth-h:hover{background:#f1ece1}
+  #arModal .artable{width:100%;border-collapse:collapse;font-size:12.5px}
+  #arModal .artable th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  #arModal .artable td{padding:6px 8px;border-bottom:1px solid #f0ece2;vertical-align:top}
+  #arModal .artable tr.inv{cursor:pointer}
+  #arModal .artable tr.inv:hover{background:#faf8f2}
+  #arModal .artable tr.od td{background:#fdf1ec}
+  #arModal .badge-od{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#f3d6cb;color:#b3502f;white-space:nowrap}
+  #arModal .badge-due{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#e6efe9;color:#3e6b54;white-space:nowrap}
+  #arModal .badge-paid{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#e8eef3;color:#46668a;white-space:nowrap}
+  #arModal .alloc td{background:#fbfaf6}
+  #arModal .alloc .ar{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dotted #e6e0d2;font-size:12px;color:#4a5a52}
+  #arModal .alloc .ar:last-child{border-bottom:none}
+</style>
+<div id="arModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:940px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">담당고객 오픈 인보이스 · 수금 상세</div>
+      <button onclick="closeAR()" style="margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;cursor:pointer;font-size:13px">닫기 ✕</button>
+    </div>
+    <div style="padding:14px 20px 6px">
+      <div id="arCustToggle" class="artoggle"></div>
+      <div id="arPeriodToggle" class="artoggle" style="margin-top:8px"></div>
+      <div id="arSummary" style="margin-top:12px"></div>
+    </div>
+    <div id="arBody" style="padding:4px 20px 20px"><div class="hint">불러오는 중…</div></div>
+  </div>
+</div>
+
 <script>
   let session={token:null,user:null,api:''};
   const now=new Date();
@@ -313,7 +352,7 @@
       +'<div class="devbox"><div class="n">'+(d.won||0)+'</div><div class="l">수주</div>'+dchip(dd.won)+'</div></div>'
       +'<div class="cardfoot hint">당월 견적 기준 · 작은 숫자는 지난 7일 단계 변동(영업활동 고객 단계변화일)</div></div>';
     const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="goFunnelImmediate()">매출 확정 목록 보기 →</a>';
-    const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="go(\'finance\')">수금 계획 보기 →</a>';
+    const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="openAR()">담당고객 오픈 인보이스 →</a>';
     const lnkPipe  = noDrill ? '' : ' <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a>';
     $('cards').innerHTML=
       '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적'+lnkSales+'</div>'+c1+'</div>'
@@ -397,6 +436,102 @@
     }catch(e){$('cmBody').innerHTML='<div class="hint">서버 연결 실패</div>';}
   }
   function closeCust(){ $('custModal').style.display='none'; }
+
+  // ===== 담당고객 오픈 인보이스(수금 상세) =====
+  let arPeriod='month';   // 'month'(만기월별) | 'all'(전체기간)
+  let arCust=null;        // null=전체 또는 customer_id
+  let arData=null;
+  let arOpenMonths={};    // 펼친 만기월
+  let arOpenInv={};       // 펼친 인보이스(반제내역)
+  function openAR(){
+    if(noDrill) return;
+    arPeriod='month'; arCust=null; arOpenMonths={}; arOpenInv={};
+    $('arModal').style.display='flex'; loadAR();
+  }
+  function closeAR(){ $('arModal').style.display='none'; }
+  function setArPeriod(p){ arPeriod=p; arOpenMonths={}; arOpenInv={}; loadAR(); }
+  function setArCust(id){ arCust=id; arOpenMonths={}; arOpenInv={}; loadAR(); }
+  function toggleArMonth(ym){ arOpenMonths[ym]=!arOpenMonths[ym]; renderAR(); }
+  function toggleArInv(id){ arOpenInv[id]=!arOpenInv[id]; renderAR(); }
+  async function loadAR(){
+    $('arBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const qs='period='+arPeriod+(arCust?('&customer_id='+arCust):'');
+      const d=await fetch(session.api+'/api/salesperf/open-invoices?'+qs,{headers:auth()}).then(r=>r.json());
+      arData=d; renderAR();
+    }catch(e){ $('arBody').innerHTML='<div class="hint">서버 연결 실패</div>'; }
+  }
+  function arStatusBadge(v){
+    if(v.outstanding!=null && v.outstanding<=0.005) return '<span class="badge-paid">완납</span>';
+    if(v.overdue) return '<span class="badge-od">연체 '+v.overdue_days+'일</span>';
+    if(v.days_to_due!=null) return '<span class="badge-due">'+(v.days_to_due===0?'오늘 만기':'D-'+v.days_to_due)+'</span>';
+    return '—';
+  }
+  function arInvRow(v){
+    const sat = v.temp_sat ? ('<span style="color:#b3792f">임시</span> #'+v.id) : (v.sat_no||('#'+v.id));
+    const custCol = arCust? '' : '<td>'+esc(v.customer_name)+'</td>';
+    const main='<tr class="inv'+(v.overdue?' od':'')+'" onclick="toggleArInv('+v.id+')">'
+      +custCol
+      +'<td>'+(arOpenInv[v.id]?'▾ ':'▸ ')+sat+'</td>'
+      +'<td>'+(v.inv_date||'—')+'</td>'
+      +'<td>'+(v.due_date||'—')+'</td>'
+      +'<td style="text-align:right">'+(v.total==null?'🔒':fmt(v.total))+'</td>'
+      +'<td style="text-align:right">'+(v.paid==null?'—':fmt(v.paid))+'</td>'
+      +'<td style="text-align:right;font-weight:700">'+(v.outstanding==null?'🔒':fmt(v.outstanding))+'</td>'
+      +'<td>'+arStatusBadge(v)+'</td></tr>';
+    let detail='';
+    if(arOpenInv[v.id]){
+      const allocs=v.allocations||[];
+      const inner=allocs.length
+        ? allocs.map(a=>'<div class="ar"><span>📅 수금일 '+a.pay_date+(a.memo?(' · '+esc(a.memo)):'')+'</span><span>MX$'+(a.amount==null?'🔒':fmt(a.amount))+'</span></div>').join('')
+        : '<div class="hint" style="padding:3px 0">아직 반제(수금) 내역이 없습니다.</div>';
+      const cols = arCust?7:8;
+      detail='<tr class="alloc"><td colspan="'+cols+'"><div style="font-weight:700;margin:2px 0 5px;color:var(--brand)">반제내역 — 수금일·금액</div>'+inner+'</div></td></tr>';
+    }
+    return main+detail;
+  }
+  function arInvTable(list){
+    if(!list.length) return '<div class="hint" style="padding:8px 0">표시할 인보이스가 없습니다.</div>';
+    const head='<tr>'+(arCust?'':'<th>고객</th>')+'<th>SAT/번호</th><th>발행일</th><th>만기일</th><th style="text-align:right">청구액</th><th style="text-align:right">입금</th><th style="text-align:right">잔액(미수)</th><th>상태</th></tr>';
+    return '<table class="artable"><thead>'+head+'</thead><tbody>'+list.map(arInvRow).join('')+'</tbody></table>';
+  }
+  function renderAR(){
+    const d=arData||{};
+    // 담당고객 토글
+    const custs=d.customers||[];
+    const ct='<span class="hint" style="margin-right:4px">담당고객</span>'
+      +'<span class="archip'+(arCust==null?' on':'')+'" onclick="setArCust(null)">전체</span>'
+      +custs.map(c=>'<span class="archip'+(String(arCust)===String(c.id)?' on':'')+'" onclick="setArCust('+c.id+')">'+esc(c.name)+'</span>').join('');
+    $('arCustToggle').innerHTML=ct;
+    // 기간 토글
+    $('arPeriodToggle').innerHTML='<span class="hint" style="margin-right:4px">기간</span>'
+      +'<span class="archip'+(arPeriod==='month'?' on':'')+'" onclick="setArPeriod(\'month\')">월별 (만기월)</span>'
+      +'<span class="archip'+(arPeriod==='all'?' on':'')+'" onclick="setArPeriod(\'all\')">전체기간</span>';
+    // 요약(항상 오픈/미수 기준)
+    const s=d.summary||{open_count:0};
+    $('arSummary').innerHTML='<div class="arsum">'
+      +'<span>미수 건수 <span class="b">'+(s.open_count||0)+'</span></span>'
+      +'<span>총 미수 <span class="b">'+(s.outstanding==null?'🔒':'MX$'+fmt(s.outstanding))+'</span></span>'
+      +'<span>연체 <span class="b" style="color:var(--expense)">'+(s.overdue==null?'🔒':'MX$'+fmt(s.overdue))+'</span></span></div>';
+    if(d.locked){ $('arBody').innerHTML='<div class="lockbox">🔒 금액 표시 권한이 없습니다.</div>'; return; }
+    const invs=d.invoices||[];
+    if(arPeriod==='all'){
+      $('arBody').innerHTML='<div style="margin:4px 0 2px" class="hint">발행된 모든 인보이스 · 행을 누르면 반제(수금) 내역이 펼쳐집니다.</div>'+arInvTable(invs);
+      return;
+    }
+    // 월별: 만기월 버킷 → 펼치면 그 달 미수 인보이스
+    const months=d.months||[];
+    if(!months.length){ $('arBody').innerHTML='<div class="hint" style="padding:10px 0">미수(오픈) 인보이스가 없습니다. 🎉</div>'; return; }
+    $('arBody').innerHTML=months.map(m=>{
+      const open=!!arOpenMonths[m.ym];
+      const list=invs.filter(v=>String(v.due_date||'').slice(0,7)===m.ym);
+      const odTxt=m.overdue>0?(' · 연체 <b style="color:var(--expense)">MX$'+fmt(m.overdue)+'</b>'):'';
+      return '<div class="armonth"><div class="armonth-h" onclick="toggleArMonth(\''+m.ym+'\')">'
+        +'<span>'+(open?'▾':'▸')+' '+m.ym+' 만기</span>'
+        +'<span class="hint" style="margin-left:auto">'+m.count+'건 · 미수 MX$'+fmt(m.outstanding)+odTxt+'</span></div>'
+        +(open?('<div style="padding:4px 8px 8px">'+arInvTable(list)+'</div>'):'')+'</div>';
+    }).join('');
+  }
   function row(k,v){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #f0ece2;font-size:13px"><span style="color:var(--muted)">'+k+'</span><span style="font-weight:600">'+(v==null||v===''?'—':v)+'</span></div>'; }
   function sec(title){ return '<div style="font-size:13px;font-weight:800;color:var(--brand);margin:16px 0 6px">'+title+'</div>'; }
   function renderCust(d){
@@ -533,6 +668,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260620ar"></script>
 </body>
 </html>

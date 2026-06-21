@@ -22,8 +22,9 @@ export const SCREEN_PAGE_KEY = {
 export const ROLE_DEFAULTS = {
   director: { pages: 'ALL', fields: ['sales_amount', 'ar_amount', 'mkt_amount'] },
   sales: {
+    // 재무탭(transactions)은 영업에게 미부여 — 수금 현황은 영업 대시보드의 담당고객 오픈 인보이스로 확인.
     pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'edit'],
-            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view'], ['transactions', 'view'], ['commission', 'view']],
+            ['pipeline', 'edit'], ['customers', 'edit'], ['targets', 'view'], ['commission', 'view']],
     fields: ['sales_amount'],
   },
   sales_support: {

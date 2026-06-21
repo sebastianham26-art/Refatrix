@@ -3,6 +3,7 @@ import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
 import { effectiveTargetFor, aggregateCarryover } from '../salesTarget.js';
+import { arInvoiceStatus, bucketByDueMonth, arSummary } from '../ar.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function pearson(xs, ys) {
@@ -453,5 +454,88 @@ export default async function salesPerfRoutes(app) {
       (days[r.d] ||= []).push({ customer: r.customer, amount: seeSales ? r2(r.amt) : null });
     }
     return { start, end, days, locked: !seeSales };
+  });
+
+  // ===== 담당고객 오픈 인보이스(수금 상세) — 영업 대시보드 수금카드 드릴다운 =====
+  // 재무 권한 불필요(authGuard만). 비디렉터는 자기 담당고객(owner_id=본인)만.
+  //  query: period=month|all, customer_id?(고객 토글), owner_id?(디렉터 전용)
+  app.get('/api/salesperf/open-invoices', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const isDir = perm.role === 'director';
+    const seeAr = fieldVisible(perm, 'ar_amount');
+    const period = String(req.query.period || 'month').toLowerCase() === 'all' ? 'all' : 'month';
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 스코프: 비디렉터=자기 담당고객. 디렉터=전체(+owner_id 필터 가능)
+    let ownerId = null;
+    if (!isDir) ownerId = perm.userId;
+    else if (req.query.owner_id && /^\d+$/.test(String(req.query.owner_id))) ownerId = Number(req.query.owner_id);
+    let custId = null;
+    if (req.query.customer_id && /^\d+$/.test(String(req.query.customer_id))) custId = Number(req.query.customer_id);
+
+    // 토글용 담당고객 목록(게시 인보이스 보유 고객; custId 필터와 무관)
+    const cConds = [`i.status='posted'`, `i.deleted_at IS NULL`, `c.deleted_at IS NULL`];
+    const cArgs = [];
+    if (ownerId != null) { cArgs.push(ownerId); cConds.push(`c.owner_id = $${cArgs.length}`); }
+    const customers = (await query(
+      `SELECT c.id, c.name FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+        WHERE ${cConds.join(' AND ')} GROUP BY c.id, c.name ORDER BY c.name`, cArgs)).rows
+      .map((r) => ({ id: Number(r.id), name: r.name }));
+
+    // 인보이스 본 목록
+    const conds = [`i.status='posted'`, `i.deleted_at IS NULL`, `c.deleted_at IS NULL`];
+    const args = [];
+    if (ownerId != null) { args.push(ownerId); conds.push(`c.owner_id = $${args.length}`); }
+    if (custId != null) { args.push(custId); conds.push(`c.id = $${args.length}`); }
+    const rows = (await query(
+      `SELECT i.id, i.sat_no, c.id AS customer_id, c.name AS customer_name,
+              to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.due_date,'YYYY-MM-DD') AS due_date,
+              i.total_mxn AS total, COALESCE(p.paid,0) AS paid
+         FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p
+                ON p.invoice_id=i.id
+        WHERE ${conds.join(' AND ')}
+        ORDER BY i.due_date DESC NULLS LAST, i.id DESC`, args)).rows;
+
+    // 반제내역(수금일+금액) — 표시 인보이스만
+    const ids = rows.map((r) => Number(r.id));
+    const allocByInv = {};
+    if (ids.length) {
+      const al = (await query(
+        `SELECT spa.invoice_id, to_char(sp.pay_date,'YYYY-MM-DD') AS pay_date, spa.amount, sp.memo
+           FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
+          WHERE spa.invoice_id = ANY($1) ORDER BY sp.pay_date, spa.id`, [ids])).rows;
+      for (const a of al) (allocByInv[a.invoice_id] ||= []).push({ pay_date: a.pay_date, amount: seeAr ? r2(a.amount) : null, memo: a.memo || '' });
+    }
+
+    // 상태 계산
+    const enriched = rows.map((r) => {
+      const st = arInvoiceStatus({ total: r.total, paid: r.paid, due_date: r.due_date }, today);
+      const tempSat = !r.sat_no || r.sat_no === '' || String(r.sat_no).startsWith('TMP-');
+      return {
+        id: Number(r.id), sat_no: r.sat_no || '', temp_sat: tempSat,
+        customer_id: Number(r.customer_id), customer_name: r.customer_name,
+        inv_date: r.inv_date, due_date: r.due_date,
+        total: seeAr ? st.total : null, paid: seeAr ? st.paid : null, outstanding: seeAr ? st.outstanding : null,
+        open: st.open, overdue: st.overdue, overdue_days: st.overdue_days, days_to_due: st.days_to_due,
+        allocations: allocByInv[r.id] || [],
+      };
+    });
+
+    // 요약/월버킷은 항상 '오픈(미수)' 기준
+    const openSet = enriched.filter((v) => v.open)
+      .map((v) => ({ due_date: v.due_date, outstanding: arInvoiceStatus({ total: v.total, paid: v.paid, due_date: v.due_date }, today).outstanding, overdue: v.overdue }));
+    const months = bucketByDueMonth(openSet);
+    const sumRaw = arSummary(openSet);
+    const summary = seeAr ? sumRaw : { open_count: sumRaw.open_count, outstanding: null, overdue: null };
+
+    // period=month → 미수만 / period=all → 전체 게시
+    const invoices = period === 'month' ? enriched.filter((v) => v.open) : enriched;
+
+    return {
+      period, scope: isDir ? (ownerId != null ? 'owner' : 'all') : 'mine',
+      selectedCustomer: custId, customers, summary, months, invoices,
+      locked: !seeAr,
+    };
   });
 }
