@@ -356,6 +356,14 @@ export default async function financeRoutes(app) {
     };
   });
 
+  // 반제용 계좌 목록(최소 정보: 이름·통화) — 잔액(balance/open_balance) 미노출.
+  // /api/accounts 는 잔액까지 주므로 transactions 권한이 필요. 반제만 하는 사용자(settlement)는 이걸 사용.
+  app.get('/api/ar/accounts', { preHandler: [authGuard, requirePage('settlement')] }, async () => {
+    const rows = (await query(
+      `SELECT id, name, currency FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
+    return { items: rows };
+  });
+
   // 입금(반제) 생성
   // body: { customer_id, pay_date, account_id, amount, allocations:[{invoice_id, amount}], memo }
   app.post('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {

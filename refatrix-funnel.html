@@ -238,6 +238,7 @@
     const d=await fetch(session.api+'/api/dashboard/funnel/immediate?'+qp,{headers:auth()}).then(r=>r.json());
     const able=d.able||[], done=d.done||[];
     let h='';
+    h+=await creditPendingCard();
     h+=summaryBox(d.summary);
     // 디렉터/상위: 팀·담당자 필터
     if(d.can_filter && d.filters){
@@ -344,6 +345,30 @@
           +'<div class="hint" style="margin-bottom:8px">이 매출확정(인보이스)을 삭제하면 <b>재고가 복원</b>되고, <b>입금예정(미수금)이 취소</b>되며, 연결된 견적은 <b>‘미전환(확정)’</b>으로 되돌아갑니다. 되돌릴 수 없습니다. (이미 수금되었거나 커미션이 지급된 매출은 삭제할 수 없습니다.)</div>'
           +'<button class="btn" style="border:1px solid var(--expense);background:var(--expense);color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700" onclick="deleteSaleF('+id+')">🗑 이 매출 삭제</button>'
           +'<span id="del-msg-'+id+'" style="font-size:12px;margin-left:8px"></span></div>';
+      }
+      // 외상일(여신) 변경 — 마스터 기본값 표시 + 인보이스별 수정(직원=요청, 디렉터=즉시) · 디렉터 승인
+      {
+        const baseCd=(inv.base_credit_days==null?0:inv.base_credit_days);
+        const curCd=(inv.credit_days==null?0:inv.credit_days);
+        const reqCd=inv.credit_days_req;
+        t+='<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fafafa">'
+          +'<div style="font-weight:800;color:var(--brand);font-size:12.5px;margin-bottom:6px">외상일(여신) 조건</div>'
+          +'<div class="hint" style="margin-bottom:6px">고객 마스터 기본 <b>'+baseCd+'일</b> · 현재 적용 <b>'+curCd+'일</b>'+(inv.due_date?(' · 만기 <b>'+esc(inv.due_date)+'</b>'):'')+'</div>';
+        if(reqCd!=null){
+          t+='<div style="margin-bottom:6px;font-size:12px"><span class="pill low">승인 대기</span> 요청 <b>'+reqCd+'일</b>'
+            +(inv.credit_req_by_name?(' · '+esc(inv.credit_req_by_name)):'')+(inv.credit_req_memo?(' · '+esc(inv.credit_req_memo)):'')+'</div>';
+          if(inv.is_director){
+            t+='<div style="display:flex;gap:6px;align-items:center"><button class="btn ghost sm" style="border:1px solid var(--income);color:var(--income);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer" onclick="creditApproveF('+id+',true)">승인(적용)</button>'
+              +'<button class="btn ghost sm" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer" onclick="creditApproveF('+id+',false)">반려</button>'
+              +'<span id="cdap-msg-'+id+'" style="font-size:12px;margin-left:4px"></span></div>';
+          } else { t+='<div class="hint">디렉터 승인 후 적용됩니다.</div>'; }
+        }
+        t+='<div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap">'
+          +'<input id="cd-in-'+id+'" type="number" min="0" step="1" value="'+curCd+'" style="width:84px;font-size:12px;padding:5px 8px"><span class="hint">일</span>'
+          +'<input id="cd-memo-'+id+'" type="text" placeholder="사유(선택)" style="font-size:12px;padding:5px 8px;flex:1;min-width:120px">'
+          +'<button class="btn ghost sm" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer" onclick="creditReqF('+id+')">'+(inv.is_director?'외상일 적용':'변경 요청')+'</button>'
+          +'<span id="cd-msg-'+id+'" style="font-size:12px"></span></div>';
+        t+='</div>';
       }
       openRows['i'+id]=t; loadImmediate();
     }catch(e){ openRows['i'+id]='불러오지 못했습니다.'; loadImmediate(); }
@@ -596,6 +621,49 @@
       delete openRows['i'+id]; delete invCache[id]; loadImmediate();
     }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
+  async function creditPendingCard(){
+    if(!(session.user && session.user.role==='director')) return '';
+    let items=[];
+    try{ const d=await fetch(session.api+'/api/sales/credit-days/pending',{headers:auth()}).then(r=>r.json()); items=(d&&d.items)||[]; }catch(e){ return ''; }
+    if(!items.length) return '';
+    let h='<div class="card" style="margin:0 0 14px;border:1px solid var(--gold,#d4a017);background:#fffaf0">'
+      +'<div class="grp" style="margin:0 0 6px">외상일(여신) 변경 승인 대기 ('+items.length+')</div>'
+      +'<table><thead><tr><th>고객</th><th>인보이스/SAT</th><th class="r">현재</th><th class="r">요청</th><th class="r">기본</th><th>요청자</th><th>사유</th><th>처리</th></tr></thead><tbody>';
+    items.forEach(it=>{
+      h+='<tr><td>'+esc(it.customer_name||'')+'</td><td>'+esc(it.sat_no||('#'+it.id))+'</td>'
+        +'<td class="r">'+it.credit_days+'일</td><td class="r"><b>'+it.credit_days_req+'일</b></td><td class="r"><span class="hint">'+it.base_credit_days+'일</span></td>'
+        +'<td>'+esc(it.req_by_name||'')+'</td><td>'+esc(it.credit_req_memo||'')+'</td>'
+        +'<td style="white-space:nowrap"><button class="btn ghost sm" style="border:1px solid var(--income);color:var(--income);background:#fff;border-radius:7px;padding:4px 9px;cursor:pointer" onclick="creditApproveF('+it.id+',true)">승인</button> '
+        +'<button class="btn ghost sm" style="border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 9px;cursor:pointer" onclick="creditApproveF('+it.id+',false)">반려</button>'
+        +'<div id="cdap-msg-'+it.id+'" style="font-size:11px"></div></td></tr>';
+    });
+    h+='</tbody></table></div>';
+    return h;
+  }
+  async function creditReqF(id){
+    const el=document.getElementById('cd-in-'+id), memoEl=document.getElementById('cd-memo-'+id), msg=document.getElementById('cd-msg-'+id);
+    const days=Number(el?el.value:NaN);
+    if(!(days>=0)){ if(msg){msg.style.color='var(--expense)';msg.textContent='올바른 일수를 입력하세요.';} return; }
+    if(msg){msg.style.color='var(--muted)';msg.textContent='처리 중…';}
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id+'/credit-days-request',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({credit_days:days,memo:memoEl?memoEl.value:''})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){ if(msg){msg.style.color='var(--expense)';msg.textContent='실패: '+(d.error||r.status);} return; }
+      const wasOpen=!!openRows['i'+id]; delete openRows['i'+id]; delete invCache[id];
+      await loadImmediate(); if(wasOpen) toggleInvoice(id);
+    }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
+  }
+  async function creditApproveF(id,ok){
+    const msg=document.getElementById('cdap-msg-'+id);
+    if(msg){msg.style.color='var(--muted)';msg.textContent=ok?'승인 중…':'반려 중…';}
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id+'/credit-days-approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({approve:ok})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){ if(msg){msg.style.color='var(--expense)';msg.textContent='실패: '+(d.error||r.status);} return; }
+      const wasOpen=!!openRows['i'+id]; delete openRows['i'+id]; delete invCache[id];
+      await loadImmediate(); if(wasOpen) toggleInvoice(id);
+    }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
+  }
   function adjPreview(id){
     const tot=Number((document.getElementById('adj-tot-'+id)||{}).value)||0;
     const iva=Number((document.getElementById('adj-iva-'+id)||{}).value)||0;
@@ -681,6 +749,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260621k"></script>
 </body>
 </html>

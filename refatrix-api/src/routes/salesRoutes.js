@@ -355,6 +355,84 @@ export default async function salesRoutes(app) {
     return out;
   });
 
+  // ---- 외상일(여신) 변경: 매출확정 단계에서 인보이스별 외상일을 마스터와 다르게 ----
+  // 직원(매출 편집권한): 요청만 저장 — 활성 credit_days/due_date 는 그대로(승인 전엔 마스터값 유지).
+  // 디렉터: 즉시 적용(요청 단계 없이 바로 반영하고 만기일·입금예정일 재계산).
+  // body: { credit_days, memo? }
+  app.post('/api/sales/:id/credit-days-request', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const raw = Number(req.body?.credit_days);
+    if (!Number.isFinite(raw) || raw < 0) return reply.code(400).send({ error: 'bad_days' });
+    const days = Math.round(raw);
+    const memo = (req.body?.memo == null ? '' : String(req.body.memo)).trim().slice(0, 300) || null;
+    const userId = req.ctx.perm.userId;
+    const isDir = req.ctx.perm.role === 'director';
+    const out = await withTx(async (c) => {
+      const s = (await c.query(`SELECT id, inv_date, status, credit_days, txn_id FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.status !== 'posted') return { error: 'not_posted' };
+      if (isDir) {
+        const newDue = dueDate(s.inv_date, days);
+        await c.query(
+          `UPDATE sales_invoices SET credit_days=$1, due_date=$2,
+             credit_days_req=NULL, credit_req_by=NULL, credit_req_at=NULL, credit_req_memo=NULL, updated_by=$3
+           WHERE id=$4`, [days, newDue, userId, id]);
+        if (s.txn_id) await c.query(`UPDATE transactions SET txn_date=$1 WHERE id=$2`, [newDue, s.txn_id]);
+        return { ok: true, applied: true, credit_days: days, due_date: newDue };
+      }
+      await c.query(
+        `UPDATE sales_invoices SET credit_days_req=$1, credit_req_by=$2, credit_req_at=now(), credit_req_memo=$3 WHERE id=$4`,
+        [days, userId, memo, id]);
+      return { ok: true, applied: false, requested: days };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 409).send(out);
+    await logEvent({ userId, action: 'update', target: `sales_invoice:${id}`, detail: { creditDaysReq: days, applied: out.applied } });
+    return out;
+  });
+
+  // ---- 외상일 변경 요청 승인/반려(디렉터) ----  body: { approve: true|false }
+  app.post('/api/sales/:id/credit-days-approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const approve = req.body?.approve !== false;
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const s = (await c.query(`SELECT id, inv_date, status, credit_days, credit_days_req, txn_id FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.credit_days_req == null) return { error: 'no_request' };
+      if (!approve) {
+        await c.query(`UPDATE sales_invoices SET credit_days_req=NULL, credit_req_by=NULL, credit_req_at=NULL, credit_req_memo=NULL, updated_by=$1 WHERE id=$2`, [userId, id]);
+        return { ok: true, approved: false };
+      }
+      const days = Number(s.credit_days_req) || 0;
+      const newDue = dueDate(s.inv_date, days);
+      await c.query(
+        `UPDATE sales_invoices SET credit_days=$1, due_date=$2,
+           credit_days_req=NULL, credit_req_by=NULL, credit_req_at=NULL, credit_req_memo=NULL, updated_by=$3
+         WHERE id=$4`, [days, newDue, userId, id]);
+      if (s.txn_id) await c.query(`UPDATE transactions SET txn_date=$1 WHERE id=$2`, [newDue, s.txn_id]);
+      return { ok: true, approved: true, credit_days: days, due_date: newDue };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 409).send(out);
+    await logEvent({ userId, action: 'update', target: `sales_invoice:${id}`, detail: { creditDaysApprove: out.approved } });
+    return out;
+  });
+
+  // ---- 외상일 변경 요청 승인 대기 목록(디렉터) ----
+  app.get('/api/sales/credit-days/pending', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT s.id, s.sat_no, to_char(s.inv_date,'YYYY-MM-DD') AS inv_date, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
+              s.credit_days, s.credit_days_req, s.credit_req_memo, to_char(s.credit_req_at,'YYYY-MM-DD HH24:MI') AS req_at,
+              c.code AS customer_code, c.name AS customer_name, c.credit_days AS base_credit_days,
+              u.name AS req_by_name, s.total_mxn
+         FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
+              LEFT JOIN users u ON u.id=s.credit_req_by
+        WHERE s.credit_days_req IS NOT NULL AND s.deleted_at IS NULL
+        ORDER BY s.credit_req_at DESC NULLS LAST, s.id DESC`)).rows;
+    return { items: rows.map((r) => ({ ...r,
+      credit_days: Number(r.credit_days) || 0, credit_days_req: Number(r.credit_days_req) || 0,
+      base_credit_days: Number(r.base_credit_days) || 0, total_mxn: Number(r.total_mxn) || 0 })) };
+  });
+
   // ---- 부족 기록: 제품별 합계(주문용) ----
   app.get('/api/shortages/summary', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async () => {
     const rows = (await query(

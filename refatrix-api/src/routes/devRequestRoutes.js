@@ -481,9 +481,11 @@ export default async function devRequestRoutes(app) {
               to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date_str, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
-              c.owner_id AS owner_id, cu.name AS owner_name
+              c.owner_id AS owner_id, cu.name AS owner_name,
+              c.credit_days AS base_credit_days, s.credit_days_req, s.credit_req_memo, ru.name AS credit_req_by_name
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
               LEFT JOIN users cu ON cu.id=c.owner_id
+              LEFT JOIN users ru ON ru.id=s.credit_req_by
         WHERE s.id=$1`, [id])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     const lines = (await query(
@@ -499,6 +501,10 @@ export default async function devRequestRoutes(app) {
       invoice: {
         id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
         credit_days: inv.credit_days == null ? 0 : Number(inv.credit_days),
+        base_credit_days: inv.base_credit_days == null ? 0 : Number(inv.base_credit_days),
+        credit_days_req: inv.credit_days_req == null ? null : Number(inv.credit_days_req),
+        credit_req_memo: inv.credit_req_memo || null,
+        credit_req_by_name: inv.credit_req_by_name || null,
         customer_code: inv.customer_code, customer_name: inv.customer_name,
         customer_rfc: inv.customer_rfc || null, customer_phone: inv.customer_phone || null,
         owner_id: inv.owner_id == null ? null : Number(inv.owner_id), owner_name: inv.owner_name || null,
