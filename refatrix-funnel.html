@@ -330,7 +330,7 @@
       t+='</div>';
       if(inv.can_adjust){
         t+='<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--gold,#d4a017);border-radius:10px;background:#fffaf0">'
-          +'<div style="font-weight:800;color:#9a6512;font-size:12.5px;margin-bottom:6px">매출액 수정 (디렉터 · 당월) — 총계와 IVA를 입력하면 단가가 자동 역산됩니다</div>'
+          +'<div style="font-weight:800;color:#9a6512;font-size:12.5px;margin-bottom:6px">매출액 수정 (디렉터 · '+(inv.past_edit_enabled?'<span style="color:#b8860b">마이그레이션: 과거 달 포함</span>':'당월')+') — 총계와 IVA를 입력하면 단가가 자동 역산됩니다</div>'
           +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
           +'<label style="font-size:11.5px;color:var(--muted)">총계(IVA 포함)<br><input id="adj-tot-'+id+'" type="number" step="0.01" min="0" style="font-size:13px;padding:5px 8px;width:130px" value="'+(Number(inv.total_mxn)||0)+'" oninput="adjPreview('+id+')"></label>'
           +'<label style="font-size:11.5px;color:var(--muted)">IVA<br><input id="adj-iva-'+id+'" type="number" step="0.01" min="0" style="font-size:13px;padding:5px 8px;width:120px" value="'+(Number(inv.iva_mxn)||0)+'" oninput="adjPreview('+id+')"></label>'
@@ -656,6 +656,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620au"></script>
+<script src="refatrix-nav.js?v=20260621a"></script>
 </body>
 </html>

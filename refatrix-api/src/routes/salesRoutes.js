@@ -2,7 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEdit } from '../middleware/authGuard.js';
 import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd } from '../sales.js';
 import { isClosedMonth } from '../importCost.js';
-import { round2 } from '../permissions.js';
+import { round2, allowPastMonthSalesEdit } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { autoStage } from '../stageAuto.js';
 
@@ -210,8 +210,8 @@ export default async function salesRoutes(app) {
         `SELECT *, to_char(inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym
            FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
       if (!inv) return { error: 'not_found', code: 404 };
-      // 당월 매출만 수정 가능
-      if (inv.inv_ym !== inv.now_ym) return { error: 'not_current_month', code: 409, note: '당월에 발행된 매출만 수정할 수 있습니다.' };
+      // 당월 매출만 수정 가능 (마이그레이션 기간엔 ALLOW_PAST_MONTH_SALES_EDIT=1 로 과거 달도 허용)
+      if (!allowPastMonthSalesEdit() && inv.inv_ym !== inv.now_ym) return { error: 'not_current_month', code: 409, note: '당월에 발행된 매출만 수정할 수 있습니다.' };
       const lines = (await c.query(`SELECT id, qty, line_amount_mxn FROM sales_invoice_lines WHERE invoice_id=$1 ORDER BY id`, [id])).rows;
       if (!lines.length) return { error: 'no_lines', code: 409 };
       const oldSub = round2(lines.reduce((s, l) => s + Number(l.line_amount_mxn), 0));

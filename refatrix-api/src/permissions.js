@@ -60,3 +60,13 @@ export function minimizeProduct(perm, product) {
 }
 
 export function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
+
+// ── 마이그레이션 기간 한정 토글 ─────────────────────────────────────────────
+// 디렉터가 "지난 달(과거)" 매출의 총액·IVA도 수정할 수 있게 허용하는 스위치.
+// Railway 환경변수 ALLOW_PAST_MONTH_SALES_EDIT 를 1/true/yes/on 으로 두면 켜짐.
+// 변수를 지우거나 0/false 로 두면 기본값(당월만 수정)으로 돌아감 → 재배포 불필요(서비스 재시작만).
+export function allowPastMonthSalesEdit() {
+  return ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.ALLOW_PAST_MONTH_SALES_EDIT || '').trim().toLowerCase()
+  );
+}

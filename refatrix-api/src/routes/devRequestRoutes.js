@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
-import { pageAllowed } from '../permissions.js';
+import { pageAllowed, allowPastMonthSalesEdit } from '../permissions.js';
 import { visibleTeamIds } from '../teams.js';
 import { logEvent } from '../audit.js';
 
@@ -491,7 +491,7 @@ export default async function devRequestRoutes(app) {
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
          FROM sales_invoice_lines sl JOIN products p ON p.id=sl.product_id WHERE sl.invoice_id=$1 ORDER BY sl.id`, [id])).rows;
     const isDirector = (req.ctx.perm.role === 'director') || visibleTeamIds(req.ctx.perm) === null;
-    const canAdjust = (req.ctx.perm.role === 'director') && (inv.inv_ym === inv.now_ym);
+    const canAdjust = (req.ctx.perm.role === 'director') && (allowPastMonthSalesEdit() || inv.inv_ym === inv.now_ym);
     return {
       invoice: {
         id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
@@ -500,7 +500,7 @@ export default async function devRequestRoutes(app) {
         customer_rfc: inv.customer_rfc || null, customer_phone: inv.customer_phone || null,
         owner_id: inv.owner_id == null ? null : Number(inv.owner_id), owner_name: inv.owner_name || null,
         subtotal_mxn: Number(inv.subtotal_mxn) || 0, iva_mxn: Number(inv.iva_mxn) || 0, total_mxn: Number(inv.total_mxn) || 0,
-        can_adjust: canAdjust, is_director: isDirector,
+        can_adjust: canAdjust, is_director: isDirector, past_edit_enabled: allowPastMonthSalesEdit(),
       },
       items: lines.map((l) => ({ ...l, qty: Number(l.qty), unit_price: Number(l.unit_price), line_amount_mxn: Number(l.line_amount_mxn) })),
     };
