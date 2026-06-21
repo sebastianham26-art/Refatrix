@@ -441,6 +441,57 @@ export default async function salesRoutes(app) {
     return { id: r.rows[0].id, type: 'delete', status: 'pending' };
   });
 
+  // 매출(인보이스) 직접 삭제 (디렉터 전용) — 재고복원 + AR취소 + 견적 미전환 되돌림 + 소프트삭제
+  // 가드: 수금(반제) 있음 / 커미션 지급됨 / 게시(posted) 아님 → 거부
+  app.delete('/api/sales/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const inv = await loadInvoiceForChange(c, id);
+      if (!inv) return { error: 'not_found', code: 404 };
+      if (inv.status !== 'posted') return { error: 'not_posted', code: 409 };
+
+      // 가드 ① 수금(반제)이 잡혀 있으면 삭제 불가
+      const paid = Number((await c.query(
+        `SELECT COALESCE(SUM(amount),0) AS s FROM sales_payment_allocations WHERE invoice_id=$1`, [id])).rows[0].s) || 0;
+      if (paid > 0) return { error: 'has_payments', code: 409, paid };
+      // 가드 ② 커미션이 이미 지급된 매출이면 삭제 불가
+      const commPaid = (await c.query(
+        `SELECT 1 FROM commission_payouts WHERE invoice_id=$1 AND paid=true`, [id])).rows[0];
+      if (commPaid) return { error: 'commission_paid', code: 409 };
+
+      // 재고 복원: 라인 수량만큼 +복원하고, 원가 스냅샷으로 'in' 보정 이동 기록(이력 보존)
+      for (const l of inv._lines) {
+        await c.query(`UPDATE products SET stock_qty = stock_qty + $1, updated_by=$2 WHERE id=$3`, [l.qty, userId, l.productId]);
+        await c.query(
+          `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, sales_invoice_id, created_by)
+           VALUES ($1,'in',$2,$3,$4,$5,$6)`,
+          [l.productId, l.qty, l.appliedUnitCost, `sales_reverse:${inv.id}`, inv.id, userId]);
+      }
+      // 입금예정(AR) 취소
+      if (inv.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.txn_id]);
+      // 이 인보이스에 연결된 부족분 기록 / 미지급 커미션 정리
+      await c.query(`DELETE FROM stock_shortages WHERE sales_invoice_id=$1`, [id]);
+      await c.query(`DELETE FROM commission_payouts WHERE invoice_id=$1 AND paid=false`, [id]);
+      // 연결된 견적 → 미전환(확정)으로 되돌림 (재전환 가능)
+      await c.query(`UPDATE quotes SET status='confirmed', invoice_id=NULL, updated_by=$1, updated_at=now() WHERE invoice_id=$2 AND status='converted'`, [userId, inv.id]);
+      // 인보이스 소프트 삭제
+      await c.query(`UPDATE sales_invoices SET status='deleted', deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.id]);
+      // 정산차액 기록(마감월 등 회계 보정)
+      const rev = computeDeleteReversal({ origLines: inv._lines, closedMonth: inv._closedMonth });
+      if (rev.varianceMxn) {
+        await c.query(
+          `INSERT INTO cogs_adjustments (doc_id, sales_invoice_id, product_id, sale_date, qty, diff_mxn, kind, source)
+           VALUES (NULL,$1,$2,$3,$4,$5,$6,$7)`,
+          [inv.id, inv._lines[0]?.productId || null, ymd(inv.inv_date), null, round2(rev.varianceMxn), 'variance', 'sales_delete']);
+      }
+      return { ok: true, id, restored: inv._lines.length };
+    });
+    if (out.error) return reply.code(out.code || 400).send({ error: out.error, paid: out.paid });
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'delete', target: `sales_invoice:${id}`, detail: { restored: out.restored } });
+    return out;
+  });
+
   // 변경요청 대기 목록 (디렉터)
   app.get('/api/sales/change-requests/pending', { preHandler: [authGuard, requireDirector] }, async () => {
     const rows = (await query(
