@@ -408,18 +408,23 @@
       const canvas=await html2canvas(body,{scale:2,backgroundColor:'#ffffff',useCORS:true});
       const doc=new J({unit:'pt',format:'a4'});
       const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
-      const margin=24, iw=pw-margin*2, ih=canvas.height*(iw/canvas.width);
-      const imgData=canvas.toDataURL('image/png');
-      const pageContent=ph-margin*2; let rendered=0, page=0;
-      while(rendered<ih){
-        if(page>0) doc.addPage();
-        doc.addImage(imgData,'PNG',margin,margin-rendered,iw,ih);
-        rendered+=pageContent; page++; if(page>40) break;
-      }
-      const totalPages=doc.internal.getNumberOfPages();
-      for(let pi=1; pi<=totalPages; pi++){
-        doc.setPage(pi); doc.setFontSize(9); doc.setTextColor(120);
-        doc.text(pi+' / '+totalPages, pw/2, ph-12, {align:'center'});
+      const mX=28, mTop=30, mBot=64;          // 좌우·상·하 여백 (하단을 넉넉히 → 종이 아래 여유)
+      const contentW=pw-mX*2;
+      const contentH=ph-mTop-mBot;            // 한 장에 들어갈 내용 높이(pt)
+      const scale=contentW/canvas.width;      // 캔버스 px → pt
+      const slicePx=Math.max(1, Math.floor(contentH/scale)); // 한 장에 들어갈 원본 픽셀 높이
+      const totalPages=Math.max(1, Math.ceil(canvas.height/slicePx));
+      for(let pi=0; pi<totalPages; pi++){
+        if(pi>0) doc.addPage();
+        const sy=pi*slicePx, sh=Math.min(slicePx, canvas.height-sy);
+        const tmp=document.createElement('canvas');
+        tmp.width=canvas.width; tmp.height=sh;
+        const ctx=tmp.getContext('2d');
+        ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,tmp.width,tmp.height);
+        ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+        doc.addImage(tmp.toDataURL('image/png'),'PNG', mX, mTop, contentW, sh*scale);
+        doc.setFontSize(9); doc.setTextColor(120);
+        doc.text((pi+1)+' / '+totalPages, pw/2, ph-mBot/2, {align:'center'}); // 하단 여백 안에 페이지번호
       }
       const inv=(invCache[stmtInvId]&&invCache[stmtInvId].invoice)||{};
       const safe=String(inv.sat_no||('inv_'+stmtInvId)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
@@ -537,6 +542,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620ae"></script>
+<script src="refatrix-nav.js?v=20260620af"></script>
 </body>
 </html>
