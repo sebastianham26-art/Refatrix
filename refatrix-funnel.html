@@ -399,38 +399,117 @@
     $('invModal').classList.remove('hidden'); $('invModal').style.display='flex';
   }
   function closeInvoiceStatement(){ $('invModal').style.display='none'; $('invModal').classList.add('hidden'); }
+  // 행 단위 페이지 분할(행이 장 사이에서 잘리지 않게). 1페이지는 전체헤더, 2페이지+는 반복헤더 예산.
+  function paginateRows(rowHs, maxDomPx, fullHeaderH, repHeaderH, theadH, totalsH){
+    const pages=[]; let cur=[], used=0;
+    const budgetFor=first=>maxDomPx-(first?fullHeaderH:repHeaderH)-theadH;
+    let budget=budgetFor(true);
+    for(let i=0;i<rowHs.length;i++){
+      const rh=rowHs[i]||24;
+      if(cur.length && used+rh>budget){ pages.push(cur); cur=[]; used=0; budget=budgetFor(false); }
+      cur.push(i); used+=rh;
+    }
+    if(cur.length) pages.push(cur);
+    if(!pages.length) pages.push([]);
+    const lastFirst=(pages.length===1);
+    const lastBudget=maxDomPx-(lastFirst?fullHeaderH:repHeaderH)-theadH;
+    const lastUsed=pages[pages.length-1].reduce((s,i)=>s+(rowHs[i]||24),0);
+    return { pages, totalsOnNewPage: (lastUsed+totalsH>lastBudget) };
+  }
+
   async function downloadInvoicePdf(){
-    const btn=$('invPdfBtn'), body=$('invStmtBody');
+    const btn=$('invPdfBtn');
     const J=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
-    if(!J||!window.html2canvas||!body){ alert('PDF 모듈을 불러오지 못했습니다(인터넷 연결 확인).'); return; }
+    const d=invCache[stmtInvId];
+    if(!J||!window.html2canvas||!d||!d.invoice){ alert('PDF 모듈/데이터를 불러오지 못했습니다(인터넷 연결 확인).'); return; }
     if(btn){ btn.disabled=true; btn.textContent='생성 중…'; }
+    const old=document.getElementById('__invMeas'); if(old&&old.parentNode) old.parentNode.removeChild(old);
+    const meas=document.createElement('div'); meas.id='__invMeas';
     try{
-      const canvas=await html2canvas(body,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+      const inv=d.invoice, items=d.items||[], co=invCompany||{}, IVA=0.16;
+      const W=720, capScale=2;
       const doc=new J({unit:'pt',format:'a4'});
       const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
-      const mX=28, mTop=30, mBot=64;          // 좌우·상·하 여백 (하단을 넉넉히 → 종이 아래 여유)
-      const contentW=pw-mX*2;
-      const contentH=ph-mTop-mBot;            // 한 장에 들어갈 내용 높이(pt)
-      const scale=contentW/canvas.width;      // 캔버스 px → pt
-      const slicePx=Math.max(1, Math.floor(contentH/scale)); // 한 장에 들어갈 원본 픽셀 높이
-      const totalPages=Math.max(1, Math.ceil(canvas.height/slicePx));
-      for(let pi=0; pi<totalPages; pi++){
-        if(pi>0) doc.addPage();
-        const sy=pi*slicePx, sh=Math.min(slicePx, canvas.height-sy);
-        const tmp=document.createElement('canvas');
-        tmp.width=canvas.width; tmp.height=sh;
-        const ctx=tmp.getContext('2d');
-        ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,tmp.width,tmp.height);
-        ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
-        doc.addImage(tmp.toDataURL('image/png'),'PNG', mX, mTop, contentW, sh*scale);
-        doc.setFontSize(9); doc.setTextColor(120);
-        doc.text((pi+1)+' / '+totalPages, pw/2, ph-mBot/2, {align:'center'}); // 하단 여백 안에 페이지번호
+      const mX=28,mTop=30,mBot=64, contentW=pw-mX*2, contentH=ph-mTop-mBot;
+      const maxDomPx=Math.floor(contentH*W/contentW); // 한 장에 들어갈 DOM 높이(px)
+
+      const colgroup='<colgroup><col style="width:5%"><col style="width:15%"><col style="width:25%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>';
+      const thead='<thead><tr style="background:#f4f2ec;color:#333">'
+        +'<th style="padding:6px;text-align:right">#</th><th style="padding:6px;text-align:left">CTR / SYD</th><th style="padding:6px;text-align:left">품명 / 적용</th>'
+        +'<th style="padding:6px;text-align:right">수량</th><th style="padding:6px;text-align:right">단가</th><th style="padding:6px;text-align:right">총계</th><th style="padding:6px;text-align:right">IVA</th><th style="padding:6px;text-align:right">총계(IVA 포함)</th></tr></thead>';
+      const tableStyle='width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed';
+      const rowHtml=(l,i)=>{ const sub=Number(l.line_amount_mxn)||0,iva=Math.round(sub*IVA*100)/100,tot=Math.round(sub*(1+IVA)*100)/100;
+        const appS=l.app?(String(l.app).length>46?String(l.app).slice(0,46)+'…':String(l.app)):'';
+        return '<tr style="border-bottom:1px solid #eee">'
+          +'<td style="padding:5px 6px;text-align:right;color:#888">'+(i+1)+'</td>'
+          +'<td style="padding:5px 6px;text-align:left;word-break:break-all;overflow-wrap:anywhere"><b>'+esc(l.ctr_code||'')+'</b>'+(l.syd_codes?('<div style="font-size:10px;color:#999">'+esc(l.syd_codes)+'</div>'):'')+'</td>'
+          +'<td style="padding:5px 6px;text-align:left;word-break:break-word;overflow-wrap:anywhere">'+esc(l.product_name||'')+(appS?('<div title="'+esc(l.app)+'" style="font-size:10px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(appS)+'</div>'):'')+'</td>'
+          +'<td style="padding:5px 6px;text-align:right">'+nf(l.qty)+'</td>'
+          +'<td style="padding:5px 6px;text-align:right">'+money(l.unit_price)+'</td>'
+          +'<td style="padding:5px 6px;text-align:right">'+money(sub)+'</td>'
+          +'<td style="padding:5px 6px;text-align:right">'+money(iva)+'</td>'
+          +'<td style="padding:5px 6px;text-align:right;font-weight:700">'+money(tot)+'</td></tr>'; };
+
+      const fullHeader=(function(){
+        let h='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px">';
+        h+='<div>'+(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:58px;max-width:180px;object-fit:contain;display:block;margin-bottom:8px">'):'')
+          +(co.emisor?('<div style="font-weight:800;font-size:15px;color:#1f6b50">'+esc(co.emisor)+'</div>'):'')
+          +(co.domicilio?('<div style="color:#777;font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
+          +('<div style="color:#777;font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>')+'</div>';
+        h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:20px;font-weight:800;color:#222">Factura</div>'
+          +'<div style="color:#555;font-size:12px;margin-top:4px">SAT: <b>'+esc(inv.sat_no||'—')+'</b></div>'
+          +'<div style="color:#777;font-size:12px">Fecha: '+esc(inv.inv_date_str||inv.inv_date||'')+'</div></div></div>';
+        h+='<hr style="border:none;border-top:1px solid #e3e3e3;margin:12px 0">';
+        h+='<div style="font-size:14px;color:#222"><b>Cliente:</b> '+esc(inv.customer_name||'')+(inv.customer_code?(' <span style="color:#888">('+esc(inv.customer_code)+')</span>'):'')+'</div>';
+        const cu=[inv.customer_rfc?('RFC: '+esc(inv.customer_rfc)):'',inv.customer_phone?('Tel: '+esc(inv.customer_phone)):''].filter(Boolean).join(' · ');
+        if(cu) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+cu+'</div>';
+        const meta=[inv.owner_name?('영업담당: '+esc(inv.owner_name)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
+        if(meta) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+meta+'</div>';
+        h+='<div style="height:8px"></div>'; return h;
+      })();
+      const repHeader='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1f6b50;padding-bottom:6px;margin-bottom:8px">'
+        +'<div style="font-weight:800;font-size:14px;color:#1f6b50">'+esc(co.emisor||'Refatrix')+'</div>'
+        +'<div style="font-size:12px;color:#555">Factura · SAT: <b>'+esc(inv.sat_no||'—')+'</b></div></div>';
+      const totalsHtml=(function(){
+        const totQty=items.reduce((s,l)=>s+(Number(l.qty)||0),0), skuN=items.length;
+        let h='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;gap:18px;flex-wrap:wrap">';
+        h+='<div style="font-size:12px;color:#444;border:1px solid #e3e3e3;border-radius:8px;padding:8px 12px"><div>SKU 종수: <b>'+skuN+' 종</b></div><div>수량 총계: <b>'+nf(totQty)+'</b></div></div>';
+        h+='<div style="font-size:13px;text-align:right;min-width:240px"><div style="color:#555">총계(IVA 미포함): <b>'+money(inv.subtotal_mxn)+'</b></div><div style="color:#555;margin-top:3px">IVA 16%: <b>'+money(inv.iva_mxn)+'</b></div><div style="margin-top:5px;font-size:15px">총계(IVA 포함): <b style="color:#1f6b50">'+money(inv.total_mxn)+'</b></div></div></div>';
+        const bank=[co.bank_name?('은행(Banco): '+esc(co.bank_name)):'',co.bank_holder?('예금주(Titular): '+esc(co.bank_holder)):'',co.bank_account?('계좌(Cuenta): '+esc(co.bank_account)):'',co.bank_clabe?('CLABE: '+esc(co.bank_clabe)):''].filter(Boolean);
+        if(bank.length) h+='<div style="margin-top:14px;padding:10px 12px;border:1px solid #e3e3e3;border-radius:8px;background:#fafafa;font-size:12px;color:#333"><b style="color:#1f6b50">은행정보 (Datos bancarios)</b><br>'+bank.join('<br>')+'</div>';
+        return h;
+      })();
+
+      meas.style.cssText='position:absolute;left:-99999px;top:0;width:'+W+'px;background:#fff';
+      document.body.appendChild(meas);
+      const measureH=(html)=>{ meas.innerHTML='<div style="width:'+W+'px;background:#fff">'+html+'</div>'; return meas.firstChild.offsetHeight; };
+      const fullHeaderH=measureH(fullHeader), repHeaderH=measureH(repHeader);
+      meas.innerHTML='<table style="'+tableStyle+'">'+colgroup+thead+'<tbody>'+items.map(rowHtml).join('')+'</tbody></table>';
+      const tbl=meas.firstChild, theadH=(tbl.tHead?tbl.tHead.offsetHeight:28);
+      const rowHs=[].map.call(tbl.tBodies[0]?tbl.tBodies[0].rows:[], tr=>tr.offsetHeight);
+      const totalsH=measureH(totalsHtml);
+
+      const { pages, totalsOnNewPage } = paginateRows(rowHs, maxDomPx, fullHeaderH, repHeaderH, theadH, totalsH);
+      const totalPages=pages.length+(totalsOnNewPage?1:0);
+
+      const renderCanvas=async(html)=>{ meas.innerHTML='<div style="width:'+W+'px;background:#fff;color:#222">'+html+'</div>'; return html2canvas(meas.firstChild,{scale:capScale,backgroundColor:'#ffffff',useCORS:true}); };
+      const place=(canvas,pageNo)=>{ if(pageNo>1) doc.addPage(); const hPt=canvas.height*contentW/canvas.width;
+        doc.addImage(canvas.toDataURL('image/png'),'PNG',mX,mTop,contentW,Math.min(hPt,contentH));
+        doc.setFontSize(9); doc.setTextColor(120); doc.text(pageNo+' / '+totalPages, pw/2, ph-mBot/2, {align:'center'}); };
+
+      let pageNo=0;
+      for(let p=0;p<pages.length;p++){
+        const head=(p===0)?fullHeader:repHeader;
+        const body='<table style="'+tableStyle+'">'+colgroup+thead+'<tbody>'+pages[p].map(i=>rowHtml(items[i],i)).join('')+'</tbody></table>';
+        const tail=(p===pages.length-1 && !totalsOnNewPage)?totalsHtml:'';
+        pageNo++; place(await renderCanvas(head+body+tail), pageNo);
       }
-      const inv=(invCache[stmtInvId]&&invCache[stmtInvId].invoice)||{};
+      if(totalsOnNewPage){ pageNo++; place(await renderCanvas(repHeader+totalsHtml), pageNo); }
+
       const safe=String(inv.sat_no||('inv_'+stmtInvId)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
       doc.save('factura_'+safe+'.pdf');
     }catch(e){ alert('PDF 생성 실패: '+(e&&e.message?e.message:e)); }
-    finally{ if(btn){ btn.disabled=false; btn.textContent='PDF 다운로드'; } }
+    finally{ if(meas&&meas.parentNode) meas.parentNode.removeChild(meas); if(btn){ btn.disabled=false; btn.textContent='PDF 다운로드'; } }
   }
   async function saveInvDateF(id){
     const el=document.getElementById('invd-'+id), msg=document.getElementById('invd-msg-'+id);
@@ -542,6 +621,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620af"></script>
+<script src="refatrix-nav.js?v=20260620ag"></script>
 </body>
 </html>
