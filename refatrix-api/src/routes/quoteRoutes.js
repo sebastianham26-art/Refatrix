@@ -311,6 +311,8 @@ export default async function quoteRoutes(app) {
       if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
       discountRate = Number(cust.discount) || 0;
     }
+    // 전체 가격표 제공 → 파이프라인 단계 접촉(20)으로 자동 전진(전진만) + 이력/미팅 로그
+    try { await autoStage({ customerId, targetSort: 20, onDate: null, userId: req.ctx.perm.userId, note: '자동: 전체 가격표 제공 → 접촉' }); } catch (_) { /* best-effort */ }
     // 같은 고객·당일 pricelist 기록이 이미 있으면 재사용(중복 방지)
     const dup = (await query(
       `SELECT id, quote_no FROM quotes WHERE customer_id=$1 AND status='pricelist' AND quote_date=CURRENT_DATE AND deleted_at IS NULL ORDER BY id DESC LIMIT 1`, [customerId])).rows[0];
