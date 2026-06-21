@@ -110,6 +110,25 @@
   .calmore:hover{color:var(--income)}
   .calcell.clickable{cursor:pointer}.calcell.clickable:hover{border-color:var(--income)}
   @media(max-width:720px){.calcell{min-height:70px}.calitem{font-size:9px}}
+  /* 팀별 월별 실적·목표 표 */
+  #teamMonthly .tm-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  #teamMonthly table.tm{border-collapse:collapse;width:100%;font-size:12px}
+  #teamMonthly table.tm th,#teamMonthly table.tm td{padding:8px 11px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+  #teamMonthly table.tm .gl{border-left:1px solid var(--line)}
+  #teamMonthly .mhdr th{background:#f4f1ea;color:var(--brand);font-weight:800;text-align:center;padding:8px 11px}
+  #teamMonthly .shdr th{background:#faf8f3;color:var(--muted);font-weight:700;font-size:11px;padding:6px 11px}
+  #teamMonthly .tname{position:sticky;left:0;z-index:2;text-align:left;font-weight:700;background:#fff;border-right:1px solid var(--line)}
+  #teamMonthly thead .tname{z-index:3;background:#f4f1ea;vertical-align:bottom}
+  #teamMonthly tbody td{font-variant-numeric:tabular-nums}
+  #teamMonthly tbody tr:not(.tot):nth-child(even) td{background:#fcfbf8}
+  #teamMonthly tbody tr:hover td{background:#f0f5f2}
+  #teamMonthly td.tg{color:var(--muted)}
+  #teamMonthly td.ach{font-weight:700}
+  #teamMonthly td.ach.good{color:var(--income);background:var(--income-bg)}
+  #teamMonthly td.ach.mid{color:#9a6512;background:#fbf3e3}
+  #teamMonthly td.ach.low{color:var(--expense);background:var(--expense-bg)}
+  #teamMonthly td.ach.na{color:var(--muted)}
+  #teamMonthly tbody tr.tot td{border-top:2px solid var(--brand);font-weight:800;background:#f1ede3}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -304,25 +323,25 @@
       const d=await fetch(session.api+'/api/salesperf/team-monthly?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());
       if(d.locked || !d.teams || !d.teams.length){ $('teamMonthlyCard').style.display='none'; return; }
       const months=d.months||[];
-      let h='<div style="overflow:auto"><table style="min-width:'+(160+months.length*150)+'px"><thead>';
-      h+='<tr><th rowspan="2" style="text-align:left;vertical-align:bottom">팀</th>';
-      months.forEach(ym=>{ h+='<th colspan="3" style="text-align:center;border-left:1px solid var(--line)">'+ymLabel(ym)+'</th>'; });
-      h+='</tr><tr>';
-      months.forEach(()=>{ h+='<th class="r" style="border-left:1px solid var(--line)">실적</th><th class="r">목표</th><th class="r">달성</th>'; });
+      const achCls=(p)=> p==null?'na':(p>=100?'good':(p>=70?'mid':'low'));
+      let h='<div class="tm-wrap"><table class="tm" style="min-width:'+(180+months.length*150)+'px"><thead>';
+      h+='<tr class="mhdr"><th class="tname" rowspan="2">팀</th>';
+      months.forEach(ym=>{ h+='<th class="gl" colspan="3">'+ymLabel(ym)+'</th>'; });
+      h+='</tr><tr class="shdr">';
+      months.forEach(()=>{ h+='<th class="gl">실적</th><th>목표</th><th>달성</th>'; });
       h+='</tr></thead><tbody>';
       const tot={}; months.forEach(ym=>tot[ym]={actual:0,target:0});
       d.teams.forEach(t=>{
-        h+='<tr><td style="font-weight:700">'+esc(t.name)+'</td>';
+        h+='<tr><td class="tname">'+esc(t.name)+'</td>';
         months.forEach(ym=>{ const c=t.byMonth[ym]||{actual:0,target:0}; tot[ym].actual+=c.actual; tot[ym].target+=c.target;
           const pct=c.target>0?Math.round(c.actual/c.target*100):null;
-          const pcol=pct==null?'var(--muted)':(pct>=100?'var(--income)':(pct>=70?'#9a6512':'var(--expense)'));
-          h+='<td class="r" style="border-left:1px solid var(--line)">'+fmt(c.actual)+'</td><td class="r" style="color:var(--muted)">'+fmt(c.target)+'</td><td class="r" style="color:'+pcol+'">'+(pct==null?'—':pct+'%')+'</td>'; });
+          h+='<td class="num gl">'+fmt(c.actual)+'</td><td class="num tg">'+fmt(c.target)+'</td><td class="ach '+achCls(pct)+'">'+(pct==null?'—':pct+'%')+'</td>'; });
         h+='</tr>';
       });
       // 합계 행
-      h+='<tr style="border-top:2px solid var(--brand);font-weight:800"><td>전체</td>';
+      h+='<tr class="tot"><td class="tname">전체</td>';
       months.forEach(ym=>{ const a=tot[ym].actual,tg=tot[ym].target; const pct=tg>0?Math.round(a/tg*100):null;
-        h+='<td class="r" style="border-left:1px solid var(--line)">'+fmt(a)+'</td><td class="r">'+fmt(tg)+'</td><td class="r">'+(pct==null?'—':pct+'%')+'</td>'; });
+        h+='<td class="num gl">'+fmt(a)+'</td><td class="num tg">'+fmt(tg)+'</td><td class="ach '+achCls(pct)+'">'+(pct==null?'—':pct+'%')+'</td>'; });
       h+='</tr></tbody></table></div>';
       $('teamMonthly').innerHTML=h; $('teamMonthlyCard').style.display='';
     }catch(e){ $('teamMonthlyCard').style.display='none'; }
@@ -676,6 +695,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260621k"></script>
 </body>
 </html>
