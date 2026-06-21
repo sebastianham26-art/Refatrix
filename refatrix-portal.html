@@ -84,6 +84,7 @@
   /* 포털 달력 */
   .navb{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--brand);font-size:14px}
   .pcalgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .pcalgrid.wd5{grid-template-columns:repeat(5,1fr)}
   .pcdow{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:2px 0}
   .pcdow.sun{color:var(--expense)}.pcdow.sat{color:#2f6db2}
   .pccell{min-height:62px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:3px 4px;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
@@ -151,7 +152,7 @@
 
     <!-- 해야 할 일 (펜딩 요약) -->
     <div class="card" id="pendCard">
-      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" id="pendDashBtn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
       <div class="pendlist" id="pendList"></div>
     </div>
 
@@ -224,7 +225,13 @@
 
   // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
   const SCREEN_PAGEKEY={ sales:'sales', quote:['quote','sales'], quotelist:['quote','sales'], stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', import:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null, rnr:null };
+  // oscar·armando·maria 전용 포털홈 변형 여부(매출목표 우선 + 평일 달력 + 대시보드 제외)
+  function isSlimPortalUser(){
+    const n=String(session&&session.user&&session.user.name||'').trim().toLowerCase();
+    return ['oscar','armando','maria'].some(x=>n.startsWith(x));
+  }
   function canSee(key){
+    if(key==='dashboard' && isSlimPortalUser()) return false;
     const pk=SCREEN_PAGEKEY[key];
     if(Array.isArray(pk)) return !!(sum && (sum.isDirector || pk.some(k=>(sum.pages||[]).includes(k))));
     if(pk===null||pk===undefined&&(key==='dashboard'||key==='salesperf'||key==='board')) return true;
@@ -308,7 +315,14 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();applySlimPortal();
+  }
+  // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
+  function applySlimPortal(){
+    if(!isSlimPortalUser()) return;
+    const kpi=$('kpiCard'), cal=$('calCard');
+    if(kpi&&cal&&kpi.parentNode){ kpi.parentNode.insertBefore(cal, kpi.nextSibling); }
+    const db=$('pendDashBtn'); if(db) db.style.display='none';
   }
   // ===== 수주 흐름 종합 대시보드 =====
   let funnelMonths=[];  // 선택된 'YYYY-MM' 배열 (다중)
@@ -467,8 +481,10 @@
   }
   function renderPortalCal(from,to){
     const today=pYmd(new Date());
-    const head=PDOW.map((w,i)=>'<div class="pcdow '+(i===0?'sun':(i===6?'sat':''))+'">'+w+'</div>').join('');
-    const days=[]; for(let d=new Date(from);d<=to;d=pAdd(d,1))days.push(new Date(d));
+    const slim=isSlimPortalUser();            // 평일(월~금)만 표시
+    const dows=slim?[1,2,3,4,5]:[0,1,2,3,4,5,6];
+    const head=dows.map(i=>'<div class="pcdow '+(i===0?'sun':(i===6?'sat':''))+'">'+PDOW[i]+'</div>').join('');
+    const days=[]; for(let d=new Date(from);d<=to;d=pAdd(d,1)){ if(slim){const wd=d.getDay(); if(wd===0||wd===6) continue;} days.push(new Date(d)); }
     const cells=days.map(day=>{
       const key=pYmd(day);
       const evs=pcalEvents.filter(e=>e.date===key), tds=pcalTodos.filter(t=>t.due_date===key);
@@ -481,7 +497,7 @@
       if(all.length>2)chips+='<span class="pcmore">+'+(all.length-2)+'</span>';
       return '<div class="pccell'+(out?' out':'')+(isT?' today':'')+'" onclick="goScreen(\'board\')"><div class="pcn">'+day.getDate()+'</div>'+chips+'</div>';
     }).join('');
-    $('pcalGrid').innerHTML='<div class="pcalgrid">'+head+cells+'</div>';
+    $('pcalGrid').innerHTML='<div class="pcalgrid'+(slim?' wd5':'')+'">'+head+cells+'</div>';
   }
   function escp(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
   function kfmt(n){ return n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0}); }
@@ -682,6 +698,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260620ba"></script>
+<script src="refatrix-nav.js?v=20260620bf"></script>
 </body>
 </html>
