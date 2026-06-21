@@ -339,8 +339,40 @@
           +'<span id="adj-msg-'+id+'" style="font-size:12px"></span></div>'
           +'<div class="hint" style="margin-top:6px">적용 시 모든 라인의 단가가 새 총계에 비례하여 다시 계산되고, 입금예정(미수금) 금액도 함께 수정됩니다.</div></div>';
       }
+      if(inv.is_director){
+        t+='<div style="margin-top:10px;padding:10px 12px;border:1px solid #e7b6af;border-radius:10px;background:#fdf3f1">'
+          +'<div style="font-weight:800;color:var(--expense);font-size:12.5px;margin-bottom:6px">⚠ 매출 삭제 (디렉터 전용)</div>'
+          +'<div class="hint" style="margin-bottom:8px">이 매출확정(인보이스)을 삭제하면 <b>재고가 복원</b>되고, <b>입금예정(미수금)이 취소</b>되며, 연결된 견적은 <b>‘미전환(확정)’</b>으로 되돌아갑니다. 되돌릴 수 없습니다. (이미 수금되었거나 커미션이 지급된 매출은 삭제할 수 없습니다.)</div>'
+          +'<button class="btn" style="border:1px solid var(--expense);background:var(--expense);color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:700" onclick="deleteSaleF('+id+')">🗑 이 매출 삭제</button>'
+          +'<span id="del-msg-'+id+'" style="font-size:12px;margin-left:8px"></span></div>';
+      }
       openRows['i'+id]=t; loadImmediate();
     }catch(e){ openRows['i'+id]='불러오지 못했습니다.'; loadImmediate(); }
+  }
+  async function deleteSaleF(id){
+    const inv=(invCache[id]&&invCache[id].invoice)||{};
+    const label=inv.sat_no||('#'+id);
+    if(!confirm('정말 이 매출을 삭제할까요?\n\nSAT/번호: '+label+'\n총액(IVA 포함): '+money(inv.total_mxn)+'\n\n재고가 복원되고 입금예정(미수금)이 취소되며, 연결된 견적은 미전환으로 돌아갑니다.\n되돌릴 수 없습니다.')) return;
+    const msg=document.getElementById('del-msg-'+id);
+    if(msg){ msg.textContent='삭제 중…'; msg.style.color='var(--muted)'; }
+    try{
+      const r=await fetch(session.api+'/api/sales/'+id,{method:'DELETE',headers:auth()});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.error){
+        let m='삭제 실패';
+        if(d.error==='has_payments') m='이미 수금(반제)이 잡힌 매출입니다. 먼저 수금을 취소한 뒤 삭제하세요. (수금액 '+money(d.paid)+')';
+        else if(d.error==='commission_paid') m='이미 커미션이 지급된 매출이라 삭제할 수 없습니다.';
+        else if(d.error==='not_posted') m='이미 삭제되었거나 게시(posted) 상태가 아닙니다.';
+        else if(d.error==='not_found') m='매출을 찾을 수 없습니다.';
+        else m='삭제 실패: '+(d.error||r.status);
+        if(msg){ msg.textContent=m; msg.style.color='var(--expense)'; } else alert(m);
+        return;
+      }
+      // 성공: 드릴다운 닫고 목록 새로고침
+      delete openRows['i'+id]; delete invCache[id];
+      loadImmediate();
+      if(window.__rnavRefresh)window.__rnavRefresh();
+    }catch(e){ if(msg){ msg.textContent='서버 연결 실패'; msg.style.color='var(--expense)'; } else alert('서버 연결 실패'); }
   }
   function downloadInvoiceF(id){
     const d=invCache[id]; if(!d||!window.XLSX){ alert('다운로드할 내역이 없습니다.'); return; }
@@ -656,6 +688,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621a"></script>
+<script src="refatrix-nav.js?v=20260621c"></script>
 </body>
 </html>
