@@ -130,6 +130,7 @@
   let session={token:null,user:null,api:''};
   let isDirector=false;
   let filter='all', counts={open:0,guest_pending:0};
+  let cvPreviewData=null, qRowsById={};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -252,6 +253,7 @@
       +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">견적액 / 실매출액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
+      qRowsById[q.id]=q;
       const conv=q.status==='converted';
       const canConvert = q.status==='draft' || q.status==='confirmed';
       let action='<button class="btn ghost sm" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>상세</button>';
@@ -514,6 +516,7 @@
     $('cvModal').style.display='flex';
     try{
       const pv=await fetch(session.api+'/api/quotes/'+id+'/convert-preview',{headers:auth()}).then(r=>r.json());
+      cvPreviewData=pv;
       renderPreview(pv);
     }catch(e){ $('cvPreview').innerHTML='<div class="hint">미리보기를 불러오지 못했습니다.</div>'; }
   }
@@ -533,9 +536,146 @@
     if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
     if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
     if(!(pv.in_stock||[]).length && !(pv.shortage||[]).length && !(pv.new_dev||[]).length) h+='<div class="hint">전환할 품목이 없습니다.</div>';
+    if((pv.in_stock||[]).length) h+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'
+      +'<button class="btn" type="button" onclick="printPickList()">📦 포장작업지시서 출력 (PDF)</button> '
+      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다.</span></div>';
     $('cvPreview').innerHTML=h;
   }
-  function closeConvert(){ $('cvModal').style.display='none'; cvId=null; }
+  function closeConvert(){ $('cvModal').style.display='none'; cvId=null; cvPreviewData=null; }
+
+  // ===== 포장 작업 지시서 (피킹/패킹) 출력 — ① 즉시 매출 SKU =====
+  async function printPickList(){
+    const pv=cvPreviewData;
+    if(!pv || !(pv.in_stock||[]).length){ alert('즉시 매출 가능한 SKU가 없습니다.'); return; }
+    const items=pv.in_stock;
+    const row=qRowsById[cvId]||{};
+    const co=await getCompany();
+
+    // 고객명: 불특정 견적이면 선택한 고객, 아니면 견적 고객명
+    let custDisplay=row.party_name||'—';
+    if(cvGuest){ const sel=$('cvCustomer'); if(sel&&sel.value){ custDisplay=sel.options[sel.selectedIndex].text; } }
+    const issuer=issuerLabel(row);
+    const quoteNo=row.quote_no||'';
+    const now=new Date(); const pad=n=>String(n).padStart(2,'0');
+    const dateStr=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+    const timeStr=pad(now.getHours())+':'+pad(now.getMinutes());
+    const skuCount=items.length;
+    const totalQty=items.reduce((s,x)=>s+(Number(x.qty)||0),0);
+    const qfmt=n=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
+
+    const logo=co.logo_data
+      ? '<img src="'+co.logo_data+'" style="max-height:52px;max-width:200px">'
+      : '<div style="font-size:20px;font-weight:800;color:#143D34">'+esc(co.emisor||'Refatrix')+'</div>';
+
+    const PER_PAGE=18;
+    const pageCount=Math.max(1, Math.ceil(items.length/PER_PAGE));
+
+    // 헤더(페이지마다 반복 고정)
+    const headerHtml=
+      '<div class="pk-head">'
+      +'<div class="pk-brand">'+logo+'<div class="pk-co">'+(co.rfc?'RFC: '+esc(co.rfc)+(co.phone?' · ':''):'')+(co.phone?'Tel: '+esc(co.phone):'')+'</div></div>'
+      +'<div class="pk-title"><h1>포장 작업 지시서</h1><div class="pk-sub">ORDEN DE SURTIDO Y EMPAQUE'+(quoteNo?(' · 견적 '+esc(quoteNo)):'')+'</div></div>'
+      +'</div>'
+      +'<div class="pk-sum">'
+        +'<div class="pk-cell big"><span class="k">고객</span><span class="v">'+esc(custDisplay)+'</span></div>'
+        +'<div class="pk-cell"><span class="k">견적담당자</span><span class="v">'+esc(issuer)+'</span></div>'
+        +'<div class="pk-cell"><span class="k">날짜</span><span class="v">'+dateStr+'</span></div>'
+        +'<div class="pk-cell"><span class="k">출력시각</span><span class="v">'+timeStr+'</span></div>'
+        +'<div class="pk-cell big accent"><span class="k">SKU 수</span><span class="v">'+skuCount+'</span></div>'
+        +'<div class="pk-cell big accent"><span class="k">총 수량</span><span class="v">'+qfmt(totalQty)+'</span></div>'
+      +'</div>';
+
+    const colHead='<thead><tr>'
+      +'<th class="c-no">#</th><th class="c-sku">SKU 번호</th><th class="c-name">제품명</th>'
+      +'<th class="c-qty">수량</th><th class="c-rack">창고 랙 위치</th><th class="c-chk">피킹</th>'
+      +'</tr></thead>';
+
+    // 하단 폼(페이지마다 반복 고정): 작업자 이름·서명·날짜·시각 + 페이지번호
+    const footHtml=(n)=>
+      '<div class="pk-foot">'
+      +'<div class="pk-sign">'
+        +'<div class="sg"><span class="lbl">작업자 이름</span><span class="ln"></span></div>'
+        +'<div class="sg"><span class="lbl">서명</span><span class="ln"></span></div>'
+        +'<div class="sg sm"><span class="lbl">날짜</span><span class="ln"></span></div>'
+        +'<div class="sg sm"><span class="lbl">시각</span><span class="ln"></span></div>'
+      +'</div>'
+      +'<div class="pk-note">위 SKU를 모두 피킹·포장 완료 후 서명하면 포장 완료 증빙이 됩니다.'
+        +'<span class="pk-pg">전체 '+pageCount+'장 중 <b>'+n+'</b> / '+pageCount+'</span></div>'
+      +'</div>';
+
+    let pagesHtml='';
+    for(let p=0;p<pageCount;p++){
+      const slice=items.slice(p*PER_PAGE,(p+1)*PER_PAGE);
+      let rows='';
+      slice.forEach((x,i)=>{
+        const seq=p*PER_PAGE+i+1;
+        const rack=esc(x.rack_location||x.rack||x.location||'');   // 지금은 빈칸 → 제품마스터 추가 시 자동 표시
+        rows+='<tr>'
+          +'<td class="c-no">'+seq+'</td>'
+          +'<td class="c-sku">'+esc(x.ctr_code||'—')+'</td>'
+          +'<td class="c-name">'+esc(x.product_name||'(미등록)')+'</td>'
+          +'<td class="c-qty">'+qfmt(x.qty)+'</td>'
+          +'<td class="c-rack">'+rack+'</td>'
+          +'<td class="c-chk"><span class="chk"></span></td>'
+          +'</tr>';
+      });
+      pagesHtml+='<div class="page">'+headerHtml
+        +'<div class="pk-body"><table class="pk-tbl">'+colHead+'<tbody>'+rows+'</tbody></table></div>'
+        +footHtml(p+1)+'</div>';
+    }
+
+    const css=
+      '*{box-sizing:border-box}'
+      +'body{margin:0;background:#6b7069;font-family:Arial,system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#1c1b19}'
+      +'.bar{position:sticky;top:0;background:#143D34;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:14px;font-size:13px;z-index:5}'
+      +'.bar button{padding:8px 18px;font-size:13px;background:#B8893B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700}'
+      +'.page{width:210mm;min-height:297mm;background:#fff;margin:12px auto;padding:12mm 12mm 9mm;display:flex;flex-direction:column;box-shadow:0 6px 24px rgba(0,0,0,.35)}'
+      +'.pk-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #143D34;padding-bottom:8px}'
+      +'.pk-co{font-size:10px;color:#555;margin-top:4px}'
+      +'.pk-title{text-align:right}.pk-title h1{margin:0;font-size:22px;color:#143D34;letter-spacing:1px}'
+      +'.pk-sub{font-size:11px;color:#666;margin-top:3px}'
+      +'.pk-sum{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 6px}'
+      +'.pk-cell{flex:1 1 120px;border:1px solid #d8d3c7;border-radius:8px;padding:7px 10px;background:#faf8f3}'
+      +'.pk-cell .k{display:block;font-size:10px;color:#777;letter-spacing:.5px}'
+      +'.pk-cell .v{display:block;font-size:14px;font-weight:700;color:#1c1b19;margin-top:2px;word-break:break-word}'
+      +'.pk-cell.big{flex:1 1 150px}.pk-cell.big .v{font-size:18px}'
+      +'.pk-cell.accent{background:#E4F0EB;border-color:#7fb8a4}.pk-cell.accent .v{color:#0F6E56}'
+      +'.pk-body{flex:1}'
+      +'.pk-tbl{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:6px}'
+      +'.pk-tbl th,.pk-tbl td{border:1px solid #bbb;padding:6px 7px;font-size:12px;vertical-align:middle}'
+      +'.pk-tbl th{background:#143D34;color:#fff;font-weight:600;font-size:11px}'
+      +'.pk-tbl .c-no{width:8%;text-align:center}'
+      +'.pk-tbl .c-sku{width:20%;text-align:left;word-break:break-word;font-weight:700}'
+      +'.pk-tbl .c-name{width:34%;text-align:left;word-break:break-word}'
+      +'.pk-tbl .c-qty{width:11%;text-align:right;font-weight:700}'
+      +'.pk-tbl .c-rack{width:16%;text-align:center;color:#999}'
+      +'.pk-tbl .c-chk{width:11%;text-align:center}'
+      +'.chk{display:inline-block;width:5mm;height:5mm;border:1.5px solid #333;border-radius:1px}'
+      +'.pk-foot{margin-top:auto;padding-top:8px;border-top:1.5px solid #143D34}'
+      +'.pk-sign{display:flex;gap:14px;align-items:flex-end}'
+      +'.sg{flex:1}.sg.sm{flex:.6}'
+      +'.sg .lbl{display:block;font-size:10px;color:#666;margin-bottom:14px}'
+      +'.sg .ln{display:block;border-bottom:1.4px solid #333;height:1px}'
+      +'.pk-note{margin-top:8px;font-size:10px;color:#888;display:flex;justify-content:space-between;align-items:center}'
+      +'.pk-pg{font-size:11px;color:#444}.pk-pg b{color:#143D34;font-size:13px}'
+      +'@media print{'
+        +'body{background:#fff}'
+        +'.noprint{display:none!important}'
+        +'.page{margin:0;box-shadow:none;width:auto;min-height:auto}'
+        +'.page:not(:last-child){page-break-after:always}'
+      +'}'
+      +'@page{size:A4;margin:0}';
+
+    const html='<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>포장작업지시서 '
+      +esc(quoteNo||custDisplay)+'</title><style>'+css+'</style></head><body>'
+      +'<div class="bar noprint"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button>'
+      +'<span>창고 피킹·포장 작업 지시서 · 즉시 매출 '+skuCount+' SKU · 총 '+qfmt(totalQty)+'개 · '+pageCount+'장</span></div>'
+      +pagesHtml+'</body></html>';
+
+    const win=window.open('','_blank');
+    if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+    win.document.open(); win.document.write(html); win.document.close();
+  }
   async function doConvert(){
     const m=$('cvMsg');m.className='msg';
     const body={inv_date:$('cvDate').value||null};
@@ -576,6 +716,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621d"></script>
+<script src="refatrix-nav.js?v=20260621e"></script>
 </body>
 </html>
