@@ -68,19 +68,25 @@
   .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:12px;align-items:center}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
   .wfsum{font-size:12.5px;color:var(--muted);margin-top:10px}.wfsum b{color:var(--brand)}
-  .pipeboard{display:flex;gap:8px;overflow-x:auto;margin-top:10px;padding-bottom:6px}
-  .pcol{flex:1;min-width:150px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:0 0 8px}
-  .pcolh{padding:9px 10px;border-radius:10px 10px 0 0;color:#fff;font-size:12px;font-weight:800;display:flex;justify-content:space-between;align-items:center}
-  .pcolh .cnt{background:rgba(255,255,255,.25);border-radius:999px;padding:1px 8px;font-size:11px}
-  .pcards{padding:8px;display:flex;flex-direction:column;gap:7px}
-  .pcard{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 9px;cursor:pointer;border-left:3px solid var(--dot,#ccc)}
+  .pipeboard{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;margin-top:10px}
+  .pcol{min-width:0;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:0 0 8px}
+  .pcolh{padding:8px 9px;border-radius:10px 10px 0 0;color:#fff;font-size:12px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:4px}
+  .pcolh .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .pcolh .cnt{background:rgba(255,255,255,.25);border-radius:999px;padding:1px 8px;font-size:11px;flex:none}
+  .pcards{padding:7px;display:flex;flex-direction:column;gap:7px}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 8px;cursor:pointer;border-left:3px solid var(--dot,#ccc)}
   .pcard:hover{border-color:var(--brand)}
-  .pcard .nm{font-size:12.5px;font-weight:700;color:var(--ink)}
-  .pcard .meta{font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:6px}
+  .pcard .nm{font-size:12px;font-weight:700;color:var(--ink);overflow-wrap:anywhere;line-height:1.25}
+  .pcard .meta{font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap}
   .pcard .act{font-size:10.5px;font-weight:700;color:var(--dot,#666)}
   .pempty{font-size:11px;color:#bbb;text-align:center;padding:10px 0}
   .plegend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:10px;align-items:center;flex-wrap:wrap}
   .plegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+  /* 좁은 화면(폰): 6단계를 다 욱여넣으면 너무 좁아 → 가로 스와이프 허용 */
+  @media(max-width:640px){
+    .pipeboard{grid-auto-columns:minmax(140px,1fr);overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity}
+    .pcol{scroll-snap-align:start}
+  }
   .lockbox{background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;font-size:13px}
   /* 주간 캘린더(일~토) */
   .calnav{display:flex;align-items:center;gap:8px;margin:14px 0 8px}
@@ -415,7 +421,7 @@
         return '<div class="pcard" style="--dot:'+dot+(noDrill?';cursor:default':'')+'"'+(noDrill?'':' onclick="openCust('+c.id+',\''+c.name.replace(/'/g,"")+'\')"')+'><div class="nm">'+c.name+'</div>'
           +'<div class="meta"><span>'+sinceTxt+'</span><span class="act">'+actTxt+'</span></div></div>';
       }).join('')||'<div class="pempty">—</div>';
-      return '<div class="pcol"><div class="pcolh" style="background:'+col+'">'+label+'<span class="cnt">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
+      return '<div class="pcol"><div class="pcolh" style="background:'+col+'"><span class="lbl">'+label+'</span><span class="cnt">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
     }).join('');
     $('pipeBody').innerHTML='<div class="pipeboard">'+cols+'</div>'
       +'<div class="plegend"><span><i style="background:var(--income)"></i>7일 이내</span>'
@@ -668,6 +674,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620ar"></script>
+<script src="refatrix-nav.js?v=20260620at"></script>
 </body>
 </html>
