@@ -581,35 +581,35 @@
     const headerHtml=
       '<div class="pk-head">'
       +'<div class="pk-brand">'+logo+'<div class="pk-co">'+(co.rfc?'RFC: '+esc(co.rfc)+(co.phone?' · ':''):'')+(co.phone?'Tel: '+esc(co.phone):'')+'</div></div>'
-      +'<div class="pk-title"><h1>포장 작업 지시서</h1><div class="pk-sub">ORDEN DE SURTIDO Y EMPAQUE'+(quoteNo?(' · 견적 '+esc(quoteNo)):'')+'</div></div>'
+      +'<div class="pk-title"><h1>ORDEN DE SURTIDO Y EMPAQUE</h1><div class="pk-sub">Lista de surtido y empaque'+(quoteNo?(' · Cotización '+esc(quoteNo)):'')+'</div></div>'
       +'</div>'
       +'<div class="pk-sum">'
-        +'<div class="pk-cell big"><span class="k">고객</span><span class="v">'+esc(custDisplay)+'</span></div>'
-        +'<div class="pk-cell"><span class="k">견적담당자</span><span class="v">'+esc(issuer)+'</span></div>'
-        +'<div class="pk-cell"><span class="k">날짜</span><span class="v">'+dateStr+'</span></div>'
-        +'<div class="pk-cell"><span class="k">출력시각</span><span class="v">'+timeStr+'</span></div>'
+        +'<div class="pk-cell big"><span class="k">Cliente</span><span class="v">'+esc(custDisplay)+'</span></div>'
+        +'<div class="pk-cell"><span class="k">Vendedor</span><span class="v">'+esc(issuer)+'</span></div>'
+        +'<div class="pk-cell"><span class="k">Fecha</span><span class="v">'+dateStr+'</span></div>'
+        +'<div class="pk-cell"><span class="k">Hora de impresión</span><span class="v">'+timeStr+'</span></div>'
       +'</div>'
       +'<div class="pk-sum">'
-        +'<div class="pk-cell big accent"><span class="k">SKU 수</span><span class="v">'+skuCount+'</span></div>'
-        +'<div class="pk-cell big accent"><span class="k">총 수량</span><span class="v">'+qfmt(totalQty)+'</span></div>'
+        +'<div class="pk-cell big accent"><span class="k">No. de SKU</span><span class="v">'+skuCount+'</span></div>'
+        +'<div class="pk-cell big accent"><span class="k">Piezas totales</span><span class="v">'+qfmt(totalQty)+'</span></div>'
       +'</div>';
 
     const colHead='<thead><tr>'
-      +'<th class="c-no">#</th><th class="c-sku">SKU 번호</th><th class="c-syd">SYD 코드</th><th class="c-name">제품명</th>'
-      +'<th class="c-qty">수량</th><th class="c-rack">창고 랙 위치</th><th class="c-chk">피킹</th>'
+      +'<th class="c-no">#</th><th class="c-sku">Clave SKU</th><th class="c-syd">Clave SYD</th><th class="c-name">Producto</th>'
+      +'<th class="c-qty">Cantidad</th><th class="c-rack">Ubicación rack</th><th class="c-chk">Surtido</th>'
       +'</tr></thead>';
 
     // 하단 폼(페이지마다 반복 고정): 작업자 이름·서명·날짜·시각 + 페이지번호
     const footHtml=(n)=>
       '<div class="pk-foot">'
       +'<div class="pk-sign">'
-        +'<div class="sg"><span class="lbl">작업자 이름</span><span class="ln"></span></div>'
-        +'<div class="sg"><span class="lbl">서명</span><span class="ln"></span></div>'
-        +'<div class="sg sm"><span class="lbl">날짜</span><span class="ln"></span></div>'
-        +'<div class="sg sm"><span class="lbl">시각</span><span class="ln"></span></div>'
+        +'<div class="sg"><span class="lbl">Nombre del operador</span><span class="ln"></span></div>'
+        +'<div class="sg"><span class="lbl">Firma</span><span class="ln"></span></div>'
+        +'<div class="sg sm"><span class="lbl">Fecha</span><span class="ln"></span></div>'
+        +'<div class="sg sm"><span class="lbl">Hora</span><span class="ln"></span></div>'
       +'</div>'
-      +'<div class="pk-note">위 SKU를 모두 피킹·포장 완료 후 서명하면 포장 완료 증빙이 됩니다.'
-        +'<span class="pk-pg">전체 '+pageCount+'장 중 <b>'+n+'</b> / '+pageCount+'</span></div>'
+      +'<div class="pk-note">Una vez surtidos y empacados todos los SKU, la firma sirve como comprobante de empaque terminado.'
+        +'<span class="pk-pg">Página <b>'+n+'</b> de '+pageCount+'</span></div>'
       +'</div>';
 
     let pagesHtml='';
@@ -678,10 +678,10 @@
       +'}'
       +'@page{size:A4;margin:0}';
 
-    const html='<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>포장작업지시서 '
+    const html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Orden de surtido '
       +esc(quoteNo||custDisplay)+'</title><style>'+css+'</style></head><body>'
-      +'<div class="bar noprint"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button>'
-      +'<span>창고 피킹·포장 작업 지시서 · 즉시 매출 '+skuCount+' SKU · 총 '+qfmt(totalQty)+'개 · '+pageCount+'장</span></div>'
+      +'<div class="bar noprint"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button>'
+      +'<span>Orden de surtido y empaque · '+skuCount+' SKU disponibles · '+qfmt(totalQty)+' piezas · '+pageCount+' hoja(s)</span></div>'
       +pagesHtml+'</body></html>';
 
     const win=window.open('','_blank');
@@ -728,6 +728,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621f"></script>
+<script src="refatrix-nav.js?v=20260621g"></script>
 </body>
 </html>
