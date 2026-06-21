@@ -169,7 +169,7 @@
     {key:'quote',  label:'견적',  bg:'#e2f3ef', fg:'#0f7a5f'},
     {key:'nego',   label:'협상',  bg:'#fdf3e0', fg:'#9a6512'},
     {key:'won',    label:'수주',  bg:'#fbece1', fg:'#b4561f'},
-    {key:'active', label:'거래중', bg:'#e7f3ea', fg:'#2e7d46'},
+    {key:'active', label:'거래중', bg:'#f8dcdc', fg:'#9a1f1f'},
   ];
   function stageIdx(stageName){ const m=String(stageName||'').match(/^(\d+)_/); return m?Math.max(0,Math.min(6,parseInt(m[1],10))):0; }
   function stagePill(stageName){
@@ -615,6 +615,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260620ay"></script>
-<script src="refatrix-nav.js?v=20260620bb"></script>
+<script src="refatrix-nav.js?v=20260620bc"></script>
 </body>
 </html>
