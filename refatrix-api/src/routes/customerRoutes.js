@@ -325,12 +325,15 @@ export default async function customerRoutes(app) {
     const vis = visibleTeamIds(perm);
     const conds = ['c.deleted_at IS NULL']; const params = [];
     if (vis !== null) {
-      if (!vis.length) return { teams: [], total: { total: 0, quote: 0, nego: 0, won: 0, active: 0 } };
+      if (!vis.length) return { teams: [], total: { total: 0, unset: 0, latent: 0, contact: 0, quote: 0, nego: 0, won: 0, active: 0 } };
       params.push(vis); conds.push(`c.team_id = ANY($${params.length})`);
     }
     const rows = (await query(
       `SELECT c.team_id, t.name AS team_name, t.sort_order AS team_sort,
               COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE s.sort_order IS NULL OR s.sort_order=0)::int AS unset,
+              COUNT(*) FILTER (WHERE s.sort_order=10)::int AS latent,
+              COUNT(*) FILTER (WHERE s.sort_order=20)::int AS contact,
               COUNT(*) FILTER (WHERE s.sort_order=30)::int AS quote,
               COUNT(*) FILTER (WHERE s.sort_order=40)::int AS nego,
               COUNT(*) FILTER (WHERE s.sort_order=50)::int AS won,
@@ -343,11 +346,13 @@ export default async function customerRoutes(app) {
         ORDER BY t.sort_order NULLS LAST, t.name`, params)).rows;
     const teams = rows.map((r) => ({
       team_id: r.team_id, team_name: r.team_name || '(미지정)',
-      total: Number(r.total), quote: Number(r.quote), nego: Number(r.nego), won: Number(r.won), active: Number(r.active),
+      total: Number(r.total), unset: Number(r.unset), latent: Number(r.latent), contact: Number(r.contact),
+      quote: Number(r.quote), nego: Number(r.nego), won: Number(r.won), active: Number(r.active),
     }));
     const total = teams.reduce((a, t) => ({
-      total: a.total + t.total, quote: a.quote + t.quote, nego: a.nego + t.nego, won: a.won + t.won, active: a.active + t.active,
-    }), { total: 0, quote: 0, nego: 0, won: 0, active: 0 });
+      total: a.total + t.total, unset: a.unset + t.unset, latent: a.latent + t.latent, contact: a.contact + t.contact,
+      quote: a.quote + t.quote, nego: a.nego + t.nego, won: a.won + t.won, active: a.active + t.active,
+    }), { total: 0, unset: 0, latent: 0, contact: 0, quote: 0, nego: 0, won: 0, active: 0 });
     return { teams, total };
   });
 

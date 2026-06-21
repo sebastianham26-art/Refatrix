@@ -27,6 +27,14 @@
   .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
   .btn:disabled{opacity:.5;cursor:default}
   .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .sumgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+  .sumbox{border-radius:10px;padding:8px 6px;text-align:center}
+  .sumbox .sk{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sumbox .sv{font-size:20px;font-weight:800;margin-top:2px;line-height:1.1}
+  .teamtoggle{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+  .teamtoggle .ttg{padding:6px 16px;border:1px solid var(--line);background:#fff;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .teamtoggle .ttg.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  @media(max-width:760px){.sumgrid{grid-template-columns:repeat(4,1fr)}}
   .btn.gold{background:var(--gold)}
   .btn.sm{padding:6px 10px;font-size:12px}
   .btn.danger{background:var(--expense)}
@@ -94,7 +102,6 @@
         </div>
         <div class="row" style="margin-top:8px">
           <div style="flex:3"><label>검색 (이름·코드·RFC)</label><input id="q" type="text" placeholder="비우면 전체"></div>
-          <div><label>팀</label><select id="teamFilter"><option value="">전체</option></select></div>
           <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="searchBtn">검색</button></div>
         </div>
 
@@ -153,6 +160,23 @@
 <script>
   let session={token:null,user:null,api:''};
   let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
+  let selectedTeam='', summaryData=null;
+  // 7단계(0~6) 색상 — 가독성용
+  const STAGE_META=[
+    {key:'unset',  label:'미지정', bg:'#eceff1', fg:'#5b6b73'},
+    {key:'latent', label:'잠재',  bg:'#eef4fb', fg:'#2f6db5'},
+    {key:'contact',label:'접촉',  bg:'#e3effb', fg:'#1f6fc4'},
+    {key:'quote',  label:'견적',  bg:'#e2f3ef', fg:'#0f7a5f'},
+    {key:'nego',   label:'협상',  bg:'#fdf3e0', fg:'#9a6512'},
+    {key:'won',    label:'수주',  bg:'#fbece1', fg:'#b4561f'},
+    {key:'active', label:'거래중', bg:'#e7f3ea', fg:'#2e7d46'},
+  ];
+  function stageIdx(stageName){ const m=String(stageName||'').match(/^(\d+)_/); return m?Math.max(0,Math.min(6,parseInt(m[1],10))):0; }
+  function stagePill(stageName){
+    const meta=STAGE_META[stageIdx(stageName)];
+    const label=stageName?String(stageName).replace(/^\d+_/,''):'미지정';
+    return '<span style="background:'+meta.bg+';color:'+meta.fg+';padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap">'+esc(label)+'</span>';
+  }
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -265,27 +289,34 @@
     try{stages=(await fetch(session.api+'/api/stages',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){stages=[];}
     try{owners=(await fetch(session.api+'/api/sales-users',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){owners=[];}
     if(isDirector()){try{adminTeams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){adminTeams=teams;}}
-    $('teamFilter').innerHTML='<option value="">전체 팀</option>'+teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   }
 
-  // 단계별 고객수 요약(팀별 + 합계)
+  // 단계별 고객수 요약(7단계, 색상) + 팀 토글(전체/팀별)
   async function loadStageSummary(){
     const box=$('stageSummary'); if(!box) return;
     try{
-      const d=await fetch(session.api+'/api/customers/stage-summary',{headers:auth()}).then(r=>r.json());
-      const teams=d.teams||[]; const tot=d.total||{total:0,quote:0,nego:0,won:0,active:0};
-      const cell=(v)=>`<td class="num">${v||0}</td>`;
-      const rowHtml=(label,r,bold)=>`<tr${bold?' style="font-weight:800;background:#f6f3ec"':''}><td>${esc(label)}</td>`
-        +cell(r.total)+cell(r.quote)+cell(r.nego)+cell(r.won)+cell(r.active)+'</tr>';
-      let html='<div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#fbfaf6">'
-        +'<div style="font-weight:700;margin-bottom:6px">단계별 고객 현황</div>'
-        +'<table style="width:100%"><thead><tr><th style="text-align:left">팀</th><th class="num">총 고객수</th><th class="num">견적</th><th class="num">협상</th><th class="num">수주</th><th class="num">거래중</th></tr></thead><tbody>';
-      teams.forEach(t=>{ html+=rowHtml(t.team_name,t); });
-      if(teams.length!==1) html+=rowHtml('합계',tot,true);
-      html+='</tbody></table></div>';
-      box.innerHTML=html;
+      summaryData=await fetch(session.api+'/api/customers/stage-summary',{headers:auth()}).then(r=>r.json());
+      renderStageSummary();
     }catch(e){ box.innerHTML=''; }
   }
+  function renderStageSummary(){
+    const box=$('stageSummary'); if(!box||!summaryData) return;
+    const sumTeams=summaryData.teams||[];
+    const scope = selectedTeam==='' ? (summaryData.total||{}) : (sumTeams.find(t=>String(t.team_id)===String(selectedTeam))||{});
+    const totalBox='<div class="sumbox" style="background:var(--brand);color:#fff"><div class="sk">총 고객수</div><div class="sv">'+(scope.total||0)+'</div></div>';
+    const stageBoxes=STAGE_META.map(m=>'<div class="sumbox" style="background:'+m.bg+';color:'+m.fg+'"><div class="sk">'+m.label+'</div><div class="sv">'+(scope[m.key]||0)+'</div></div>').join('');
+    const tgTeams=(teams&&teams.length)?teams:sumTeams.map(t=>({id:t.team_id,name:t.team_name}));
+    const toggle='<div class="teamtoggle">'
+      +'<button class="ttg'+(selectedTeam===''?' on':'')+'" onclick="setTeamScope(\'\')">전체</button>'
+      +tgTeams.map(t=>'<button class="ttg'+(String(selectedTeam)===String(t.id)?' on':'')+'" onclick="setTeamScope(\''+t.id+'\')">'+esc(t.name)+'</button>').join('')
+      +'</div>';
+    box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfaf6">'
+      +'<div style="font-weight:700;margin-bottom:8px">단계별 고객 현황</div>'
+      +'<div class="sumgrid">'+totalBox+stageBoxes+'</div>'
+      +toggle
+      +'</div>';
+  }
+  function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
 
   // 상세 드릴다운: 승인 대기 변경내역 + 승인/반려(디렉터)
   async function loadDetailApproval(custId){
@@ -322,20 +353,19 @@
     const b=$('custList');b.innerHTML='<div class="hint">불러오는 중…</div>';
     const params=new URLSearchParams();
     if($('q').value.trim())params.set('q',$('q').value.trim());
-    if($('teamFilter').value)params.set('team_id',$('teamFilter').value);
+    if(selectedTeam)params.set('team_id',selectedTeam);
     try{
       const d=await fetch(session.api+'/api/customers?'+params.toString(),{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
       if(!items.length){b.innerHTML='<div class="hint">고객이 없습니다.</div>';return;}
-      b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th class="num">지점</th><th>팀</th><th>담당</th><th>단계</th><th class="num">오픈인보이스 금액</th><th class="num">연체</th><th></th></tr></thead>
+      b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th class="num">지점</th><th>담당</th><th>단계</th><th class="num">오픈인보이스 금액</th><th class="num">연체</th><th></th></tr></thead>
         <tbody>${items.map(c=>`<tr>
           <td class="code">${c.code}</td>
           <td>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}</td>
           <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
-          <td>${teamPill(c.team_name,c.team_id)}</td>
           <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
-          <td>${c.stage_name||'—'}</td>
+          <td>${stagePill(c.stage_name)}</td>
           <td class="num">${fmt(c.outstanding)}</td>
           <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
           <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
@@ -416,7 +446,7 @@
         ? `<tr><th>목표 달성률</th><td colspan="3"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;background:#eee;border-radius:6px;height:14px;overflow:hidden"><div style="height:100%;width:${Math.min(pct||0,100)}%;background:${(pct||0)>=100?'var(--income)':'var(--gold)'}"></div></div><b>${pct==null?'—':pct+'%'}</b></div></td></tr>`
         : `<tr><th>목표 달성률</th><td colspan="3"><span class="hint" style="margin:0">목표 미설정 (매출 목표 메뉴에서 연결되면 진행률 표시)</span></td></tr>`;
       $('d-info').innerHTML=`<table>
-        <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${c.stage_name||'—'}</td></tr>
+        <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
         <tr><th>회사 종류</th><td>${c.customer_type||'—'}</td><th>RFC</th><td>${c.rfc||'—'}</td></tr>
         <tr><th>연락처</th><td>${c.contact||'—'} ${c.phone?'· '+c.phone:''}</td><th>기본할인 / 외상일</th><td>${c.discount}% / ${c.credit_days}일${c.branch_count!=null?(" · 지점 "+c.branch_count):""}</td></tr>
         <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
@@ -577,7 +607,6 @@
   $('upDrop').addEventListener('drop',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--line)';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
   $('searchBtn').addEventListener('click',loadCustomers);
   $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
-  $('teamFilter').addEventListener('change',loadCustomers);
   $('newCustBtn').addEventListener('click',()=>showForm(null));
   $('editBtn').addEventListener('click',()=>{if(curCustomer)showForm(curCustomer);});
   $('d-back').addEventListener('click',()=>$('detailCard').classList.add('hidden'));
@@ -586,6 +615,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260620ay"></script>
-<script src="refatrix-nav.js?v=20260620ba"></script>
+<script src="refatrix-nav.js?v=20260620bb"></script>
 </body>
 </html>
