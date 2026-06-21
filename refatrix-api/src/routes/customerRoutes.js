@@ -159,7 +159,8 @@ export default async function customerRoutes(app) {
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
-              COALESCE(ar.overdue,0) AS overdue
+              COALESCE(ar.overdue,0) AS overdue,
+              (EXISTS (SELECT 1 FROM customer_change_requests rr WHERE rr.customer_id=c.id AND rr.status='pending')) AS has_pending
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN stages s ON s.id=c.stage_id
@@ -183,6 +184,7 @@ export default async function customerRoutes(app) {
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
+      pending_change: !!c.has_pending,
     })) };
   });
 
@@ -317,9 +319,42 @@ export default async function customerRoutes(app) {
     return { ok: true, pending: true };
   });
 
+  // 단계별 고객수 요약(팀별 + 합계) — 견적30/협상40/수주50/거래중60
+  app.get('/api/customers/stage-summary', { preHandler: [authGuard, requirePage('customers')] }, async (req) => {
+    const { perm } = req.ctx;
+    const vis = visibleTeamIds(perm);
+    const conds = ['c.deleted_at IS NULL']; const params = [];
+    if (vis !== null) {
+      if (!vis.length) return { teams: [], total: { total: 0, quote: 0, nego: 0, won: 0, active: 0 } };
+      params.push(vis); conds.push(`c.team_id = ANY($${params.length})`);
+    }
+    const rows = (await query(
+      `SELECT c.team_id, t.name AS team_name, t.sort_order AS team_sort,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE s.sort_order=30)::int AS quote,
+              COUNT(*) FILTER (WHERE s.sort_order=40)::int AS nego,
+              COUNT(*) FILTER (WHERE s.sort_order=50)::int AS won,
+              COUNT(*) FILTER (WHERE s.sort_order=60)::int AS active
+         FROM customers c
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN stages s ON s.id=c.stage_id
+        WHERE ${conds.join(' AND ')}
+        GROUP BY c.team_id, t.name, t.sort_order
+        ORDER BY t.sort_order NULLS LAST, t.name`, params)).rows;
+    const teams = rows.map((r) => ({
+      team_id: r.team_id, team_name: r.team_name || '(미지정)',
+      total: Number(r.total), quote: Number(r.quote), nego: Number(r.nego), won: Number(r.won), active: Number(r.active),
+    }));
+    const total = teams.reduce((a, t) => ({
+      total: a.total + t.total, quote: a.quote + t.quote, nego: a.nego + t.nego, won: a.won + t.won, active: a.active + t.active,
+    }), { total: 0, quote: 0, nego: 0, won: 0, active: 0 });
+    return { teams, total };
+  });
+
   // 고객 수정 승인 대기 목록(디렉터)
   app.get('/api/customer-change-requests', { preHandler: [authGuard, requireDirector] }, async (req) => {
     const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
+    const cid = req.query.customer_id ? Number(req.query.customer_id) : null;
     const rows = (await query(
       `SELECT r.id, r.customer_id, r.proposed, r.status, r.reason, r.created_at,
               c.code AS customer_code, c.name AS customer_name,
@@ -327,7 +362,7 @@ export default async function customerRoutes(app) {
          FROM customer_change_requests r
          JOIN customers c ON c.id=r.customer_id
          LEFT JOIN users u ON u.id=r.requested_by
-        WHERE r.status=$1 ORDER BY r.created_at DESC`, [status])).rows;
+        WHERE r.status=$1 AND ($2::bigint IS NULL OR r.customer_id=$2) ORDER BY r.created_at DESC`, [status, cid])).rows;
     return {
       items: rows.map((r) => ({
         id: r.id, customer_id: r.customer_id, customer_code: r.customer_code, customer_name: r.customer_name,

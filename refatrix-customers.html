@@ -104,6 +104,7 @@
           <div id="custFormHost"></div>
         </div>
 
+        <div id="stageSummary" style="margin-top:10px"></div>
         <div id="custList"><div class="hint">불러오는 중…</div></div>
       </div>
 
@@ -114,6 +115,7 @@
           <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
         </div>
         <div id="d-info"></div>
+        <div id="d-approval"></div>
         <div style="font-weight:700;margin-top:14px">증빙서류 (Constancia·세무증명 등 · PDF/JPEG/PNG, 5MB 이하)</div>
         <div id="d-docs"><div class="hint">불러오는 중…</div></div>
         <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -266,7 +268,57 @@
     $('teamFilter').innerHTML='<option value="">전체 팀</option>'+teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
   }
 
+  // 단계별 고객수 요약(팀별 + 합계)
+  async function loadStageSummary(){
+    const box=$('stageSummary'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/customers/stage-summary',{headers:auth()}).then(r=>r.json());
+      const teams=d.teams||[]; const tot=d.total||{total:0,quote:0,nego:0,won:0,active:0};
+      const cell=(v)=>`<td class="num">${v||0}</td>`;
+      const rowHtml=(label,r,bold)=>`<tr${bold?' style="font-weight:800;background:#f6f3ec"':''}><td>${esc(label)}</td>`
+        +cell(r.total)+cell(r.quote)+cell(r.nego)+cell(r.won)+cell(r.active)+'</tr>';
+      let html='<div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#fbfaf6">'
+        +'<div style="font-weight:700;margin-bottom:6px">단계별 고객 현황</div>'
+        +'<table style="width:100%"><thead><tr><th style="text-align:left">팀</th><th class="num">총 고객수</th><th class="num">견적</th><th class="num">협상</th><th class="num">수주</th><th class="num">거래중</th></tr></thead><tbody>';
+      teams.forEach(t=>{ html+=rowHtml(t.team_name,t); });
+      if(teams.length!==1) html+=rowHtml('합계',tot,true);
+      html+='</tbody></table></div>';
+      box.innerHTML=html;
+    }catch(e){ box.innerHTML=''; }
+  }
+
+  // 상세 드릴다운: 승인 대기 변경내역 + 승인/반려(디렉터)
+  async function loadDetailApproval(custId){
+    const box=$('d-approval'); if(!box) return; box.innerHTML='';
+    if(!isDirector()) return;
+    try{
+      const d=await fetch(session.api+'/api/customer-change-requests?status=pending&customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      const r=(d.items||[])[0]; if(!r){ box.innerHTML=''; return; }
+      const p=r.proposed||{};
+      const rows=Object.keys(FIELD_LABELS).filter(k=>p[k]!==undefined&&p[k]!==null&&p[k]!=='')
+        .map(k=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:2px 10px 2px 0">${FIELD_LABELS[k]}</th><td>${esc(String(p[k]))}</td></tr>`).join('');
+      box.innerHTML=`<div style="border:1px solid var(--gold);border-radius:10px;padding:12px;margin-top:12px;background:#fffaf0">
+        <div style="font-weight:800;color:#9a6512;margin-bottom:6px">⚠ 승인 필요 — 고객 수정 요청${r.requested_by_name?(' ('+esc(r.requested_by_name)+')'):''}</div>
+        <table>${rows||'<tr><td class="hint">변경 내용 없음</td></tr>'}</table>
+        ${r.reason?`<div class="hint" style="margin-top:6px">요청 메모: ${esc(r.reason)}</div>`:''}
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn sm" onclick="approveChangeDetail(${r.id},${custId})">승인</button>
+          <button class="btn ghost sm" onclick="rejectChangeDetail(${r.id},${custId})">반려</button>
+        </div></div>`;
+    }catch(e){ box.innerHTML=''; }
+  }
+  async function approveChangeDetail(id,custId){
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
+    if(res.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('승인 실패');
+  }
+  async function rejectChangeDetail(id,custId){
+    const reason=prompt('반려 사유(선택):')||null;
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/reject',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+    if(res.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('반려 실패');
+  }
+
   async function loadCustomers(){
+    loadStageSummary();
     const b=$('custList');b.innerHTML='<div class="hint">불러오는 중…</div>';
     const params=new URLSearchParams();
     if($('q').value.trim())params.set('q',$('q').value.trim());
@@ -278,7 +330,7 @@
       b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th class="num">지점</th><th>팀</th><th>담당</th><th>단계</th><th class="num">오픈인보이스 금액</th><th class="num">연체</th><th></th></tr></thead>
         <tbody>${items.map(c=>`<tr>
           <td class="code">${c.code}</td>
-          <td>${c.name}</td>
+          <td>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}</td>
           <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
           <td>${teamPill(c.team_name,c.team_id)}</td>
@@ -374,6 +426,7 @@
         ${c.memo?`<tr><th>메모</th><td colspan="3">${c.memo}</td></tr>`:''}
       </table>`;
       loadDocs(c.id);
+      loadDetailApproval(c.id);
       if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
       $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
         <tbody>${d.invoices.map(i=>`<tr>
@@ -533,6 +586,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260620ay"></script>
-<script src="refatrix-nav.js?v=20260620ay"></script>
+<script src="refatrix-nav.js?v=20260620ba"></script>
 </body>
 </html>
