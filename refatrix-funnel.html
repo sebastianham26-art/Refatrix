@@ -109,8 +109,6 @@
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
   let session={token:null,user:null,api:''};
   let cat='quotes', months=[], FYEAR=new Date().getFullYear();
@@ -485,98 +483,92 @@
   }
 
   async function downloadInvoicePdf(){
-    const btn=$('invPdfBtn');
-    const J=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
     const d=invCache[stmtInvId];
-    if(!J||!window.html2canvas||!d||!d.invoice){ alert('PDF 모듈/데이터를 불러오지 못했습니다(인터넷 연결 확인).'); return; }
-    if(btn){ btn.disabled=true; btn.textContent='생성 중…'; }
-    const old=document.getElementById('__invMeas'); if(old&&old.parentNode) old.parentNode.removeChild(old);
-    const meas=document.createElement('div'); meas.id='__invMeas';
-    try{
-      const inv=d.invoice, items=d.items||[], co=invCompany||{}, IVA=0.16;
-      const W=720, capScale=2;
-      const doc=new J({unit:'pt',format:'a4'});
-      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
-      const mX=28,mTop=30,mBot=64, contentW=pw-mX*2, contentH=ph-mTop-mBot;
-      const maxDomPx=Math.floor(contentH*W/contentW); // 한 장에 들어갈 DOM 높이(px)
+    if(!d||!d.invoice){ alert('인보이스 데이터를 불러오지 못했습니다.'); return; }
+    const inv=d.invoice, items=d.items||[], co=invCompany||{}, IVA=0.16;
 
-      const colgroup='<colgroup><col style="width:5%"><col style="width:15%"><col style="width:25%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>';
-      const thead='<thead><tr style="background:#f4f2ec;color:#333">'
-        +'<th style="padding:6px;text-align:right">#</th><th style="padding:6px;text-align:left">CTR / SYD</th><th style="padding:6px;text-align:left">품명 / 적용</th>'
-        +'<th style="padding:6px;text-align:right">수량</th><th style="padding:6px;text-align:right">단가</th><th style="padding:6px;text-align:right">총계</th><th style="padding:6px;text-align:right">IVA</th><th style="padding:6px;text-align:right">총계(IVA 포함)</th></tr></thead>';
-      const tableStyle='width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed';
-      const rowHtml=(l,i)=>{ const sub=Number(l.line_amount_mxn)||0,iva=Math.round(sub*IVA*100)/100,tot=Math.round(sub*(1+IVA)*100)/100;
-        const appS=l.app?(String(l.app).length>46?String(l.app).slice(0,46)+'…':String(l.app)):'';
-        return '<tr style="border-bottom:1px solid #eee">'
-          +'<td style="padding:5px 6px;text-align:right;color:#888">'+(i+1)+'</td>'
-          +'<td style="padding:5px 6px;text-align:left;word-break:break-all;overflow-wrap:anywhere"><b>'+esc(l.ctr_code||'')+'</b>'+(l.syd_codes?('<div style="font-size:10px;color:#999">'+esc(l.syd_codes)+'</div>'):'')+'</td>'
-          +'<td style="padding:5px 6px;text-align:left;word-break:break-word;overflow-wrap:anywhere">'+esc(l.product_name||'')+(appS?('<div title="'+esc(l.app)+'" style="font-size:10px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(appS)+'</div>'):'')+'</td>'
-          +'<td style="padding:5px 6px;text-align:right">'+nf(l.qty)+'</td>'
-          +'<td style="padding:5px 6px;text-align:right">'+money(l.unit_price)+'</td>'
-          +'<td style="padding:5px 6px;text-align:right">'+money(sub)+'</td>'
-          +'<td style="padding:5px 6px;text-align:right">'+money(iva)+'</td>'
-          +'<td style="padding:5px 6px;text-align:right;font-weight:700">'+money(tot)+'</td></tr>'; };
+    const rowHtml=(l,i)=>{ const sub=Number(l.line_amount_mxn)||0,iva=Math.round(sub*IVA*100)/100,tot=Math.round(sub*(1+IVA)*100)/100;
+      const appS=l.app?(String(l.app).length>46?String(l.app).slice(0,46)+'…':String(l.app)):'';
+      return '<tr>'
+        +'<td class="r muted">'+(i+1)+'</td>'
+        +'<td class="l brk"><b>'+esc(l.ctr_code||'')+'</b>'+(l.syd_codes?('<div class="sub">'+esc(l.syd_codes)+'</div>'):'')+'</td>'
+        +'<td class="l brk">'+esc(l.product_name||'')+(appS?('<div class="sub ell" title="'+esc(l.app)+'">'+esc(appS)+'</div>'):'')+'</td>'
+        +'<td class="r">'+nf(l.qty)+'</td>'
+        +'<td class="r">'+money(l.unit_price)+'</td>'
+        +'<td class="r">'+money(sub)+'</td>'
+        +'<td class="r">'+money(iva)+'</td>'
+        +'<td class="r b">'+money(tot)+'</td></tr>'; };
 
-      const fullHeader=(function(){
-        let h='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px">';
-        h+='<div>'+(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:58px;max-width:180px;object-fit:contain;display:block;margin-bottom:8px">'):'')
-          +(co.emisor?('<div style="font-weight:800;font-size:15px;color:#1f6b50">'+esc(co.emisor)+'</div>'):'')
-          +(co.domicilio?('<div style="color:#777;font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
-          +('<div style="color:#777;font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>')+'</div>';
-        h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:20px;font-weight:800;color:#222">Factura</div>'
-          +'<div style="color:#555;font-size:12px;margin-top:4px">SAT: <b>'+esc(inv.sat_no||'—')+'</b></div>'
-          +'<div style="color:#777;font-size:12px">Fecha: '+esc(inv.inv_date_str||inv.inv_date||'')+'</div></div></div>';
-        h+='<hr style="border:none;border-top:1px solid #e3e3e3;margin:12px 0">';
-        h+='<div style="font-size:14px;color:#222"><b>Cliente:</b> '+esc(inv.customer_name||'')+(inv.customer_code?(' <span style="color:#888">('+esc(inv.customer_code)+')</span>'):'')+'</div>';
-        const cu=[inv.customer_rfc?('RFC: '+esc(inv.customer_rfc)):'',inv.customer_phone?('Tel: '+esc(inv.customer_phone)):''].filter(Boolean).join(' · ');
-        if(cu) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+cu+'</div>';
-        const meta=[inv.owner_name?('영업담당: '+esc(inv.owner_name)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
-        if(meta) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+meta+'</div>';
-        h+='<div style="height:8px"></div>'; return h;
-      })();
-      const repHeader='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1f6b50;padding-bottom:6px;margin-bottom:8px">'
-        +'<div style="font-weight:800;font-size:14px;color:#1f6b50">'+esc(co.emisor||'Refatrix')+'</div>'
-        +'<div style="font-size:12px;color:#555">Factura · SAT: <b>'+esc(inv.sat_no||'—')+'</b></div></div>';
-      const totalsHtml=(function(){
-        const totQty=items.reduce((s,l)=>s+(Number(l.qty)||0),0), skuN=items.length;
-        let h='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;gap:18px;flex-wrap:wrap">';
-        h+='<div style="font-size:12px;color:#444;border:1px solid #e3e3e3;border-radius:8px;padding:8px 12px"><div>SKU 종수: <b>'+skuN+' 종</b></div><div>수량 총계: <b>'+nf(totQty)+'</b></div></div>';
-        h+='<div style="font-size:13px;text-align:right;min-width:240px"><div style="color:#555">총계(IVA 미포함): <b>'+money(inv.subtotal_mxn)+'</b></div><div style="color:#555;margin-top:3px">IVA 16%: <b>'+money(inv.iva_mxn)+'</b></div><div style="margin-top:5px;font-size:15px">총계(IVA 포함): <b style="color:#1f6b50">'+money(inv.total_mxn)+'</b></div></div></div>';
-        const bank=[co.bank_name?('은행(Banco): '+esc(co.bank_name)):'',co.bank_holder?('예금주(Titular): '+esc(co.bank_holder)):'',co.bank_account?('계좌(Cuenta): '+esc(co.bank_account)):'',co.bank_clabe?('CLABE: '+esc(co.bank_clabe)):''].filter(Boolean);
-        if(bank.length) h+='<div style="margin-top:14px;padding:10px 12px;border:1px solid #e3e3e3;border-radius:8px;background:#fafafa;font-size:12px;color:#333"><b style="color:#1f6b50">은행정보 (Datos bancarios)</b><br>'+bank.join('<br>')+'</div>';
-        return h;
-      })();
+    const fullHeader=(function(){
+      let h='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px">';
+      h+='<div>'+(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:58px;max-width:180px;object-fit:contain;display:block;margin-bottom:8px">'):'')
+        +(co.emisor?('<div style="font-weight:800;font-size:15px;color:#1f6b50">'+esc(co.emisor)+'</div>'):'')
+        +(co.domicilio?('<div style="color:#777;font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
+        +('<div style="color:#777;font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>')+'</div>';
+      h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:20px;font-weight:800;color:#222">Factura</div>'
+        +'<div style="color:#555;font-size:12px;margin-top:4px">SAT: <b>'+esc(inv.sat_no||'—')+'</b></div>'
+        +'<div style="color:#777;font-size:12px">Fecha: '+esc(inv.inv_date_str||inv.inv_date||'')+'</div></div></div>';
+      h+='<hr style="border:none;border-top:1px solid #e3e3e3;margin:12px 0">';
+      h+='<div style="font-size:14px;color:#222"><b>Cliente:</b> '+esc(inv.customer_name||'')+(inv.customer_code?(' <span style="color:#888">('+esc(inv.customer_code)+')</span>'):'')+'</div>';
+      const cu=[inv.customer_rfc?('RFC: '+esc(inv.customer_rfc)):'',inv.customer_phone?('Tel: '+esc(inv.customer_phone)):''].filter(Boolean).join(' · ');
+      if(cu) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+cu+'</div>';
+      const meta=[inv.owner_name?('영업담당: '+esc(inv.owner_name)):'',inv.due_date?('만기일: '+esc(inv.due_date)):''].filter(Boolean).join(' · ');
+      if(meta) h+='<div style="color:#777;font-size:12px;margin-top:2px">'+meta+'</div>';
+      h+='<div style="height:10px"></div>'; return h;
+    })();
 
-      meas.style.cssText='position:absolute;left:-99999px;top:0;width:'+W+'px;background:#fff';
-      document.body.appendChild(meas);
-      const measureH=(html)=>{ meas.innerHTML='<div style="width:'+W+'px;background:#fff">'+html+'</div>'; return meas.firstChild.offsetHeight; };
-      const fullHeaderH=measureH(fullHeader), repHeaderH=measureH(repHeader);
-      meas.innerHTML='<table style="'+tableStyle+'">'+colgroup+thead+'<tbody>'+items.map(rowHtml).join('')+'</tbody></table>';
-      const tbl=meas.firstChild, theadH=(tbl.tHead?tbl.tHead.offsetHeight:28);
-      const rowHs=[].map.call(tbl.tBodies[0]?tbl.tBodies[0].rows:[], tr=>tr.offsetHeight);
-      const totalsH=measureH(totalsHtml);
+    const totalsHtml=(function(){
+      const totQty=items.reduce((s,l)=>s+(Number(l.qty)||0),0), skuN=items.length;
+      let h='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;gap:18px;flex-wrap:wrap">';
+      h+='<div style="font-size:12px;color:#444;border:1px solid #e3e3e3;border-radius:8px;padding:8px 12px"><div>SKU 종수: <b>'+skuN+' 종</b></div><div>수량 총계: <b>'+nf(totQty)+'</b></div></div>';
+      h+='<div style="font-size:13px;text-align:right;min-width:240px"><div style="color:#555">총계(IVA 미포함): <b>'+money(inv.subtotal_mxn)+'</b></div><div style="color:#555;margin-top:3px">IVA 16%: <b>'+money(inv.iva_mxn)+'</b></div><div style="margin-top:5px;font-size:15px">총계(IVA 포함): <b style="color:#1f6b50">'+money(inv.total_mxn)+'</b></div></div></div>';
+      const bank=[co.bank_name?('은행(Banco): '+esc(co.bank_name)):'',co.bank_holder?('예금주(Titular): '+esc(co.bank_holder)):'',co.bank_account?('계좌(Cuenta): '+esc(co.bank_account)):'',co.bank_clabe?('CLABE: '+esc(co.bank_clabe)):''].filter(Boolean);
+      if(bank.length) h+='<div style="margin-top:14px;padding:10px 12px;border:1px solid #e3e3e3;border-radius:8px;background:#fafafa;font-size:12px;color:#333"><b style="color:#1f6b50">은행정보 (Datos bancarios)</b><br>'+bank.join('<br>')+'</div>';
+      return h;
+    })();
 
-      const { pages, totalsOnNewPage } = paginateRows(rowHs, maxDomPx, fullHeaderH, repHeaderH, theadH, totalsH);
-      const totalPages=pages.length+(totalsOnNewPage?1:0);
+    const colgroup='<colgroup><col style="width:5%"><col style="width:15%"><col style="width:25%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>';
+    const thead='<thead>'
+      +'<tr class="band"><td colspan="8"><div class="bandflex"><span class="emi">'+esc(co.emisor||'Refatrix')+'</span><span class="fac">Factura · SAT: <b>'+esc(inv.sat_no||'—')+'</b></span></div></td></tr>'
+      +'<tr class="cols"><th class="r">#</th><th class="l">CTR / SYD</th><th class="l">품명 / 적용</th><th class="r">수량</th><th class="r">단가</th><th class="r">총계</th><th class="r">IVA</th><th class="r">총계(IVA 포함)</th></tr>'
+      +'</thead>';
 
-      const renderCanvas=async(html)=>{ meas.innerHTML='<div style="width:'+W+'px;background:#fff;color:#222">'+html+'</div>'; return html2canvas(meas.firstChild,{scale:capScale,backgroundColor:'#ffffff',useCORS:true}); };
-      const place=(canvas,pageNo)=>{ if(pageNo>1) doc.addPage(); const hPt=canvas.height*contentW/canvas.width;
-        doc.addImage(canvas.toDataURL('image/png'),'PNG',mX,mTop,contentW,Math.min(hPt,contentH));
-        doc.setFontSize(9); doc.setTextColor(120); doc.text(pageNo+' / '+totalPages, pw/2, ph-mBot/2, {align:'center'}); };
+    const css=
+      '@page{size:A4;margin:12mm 11mm 14mm}'
+      +'@page{@bottom-center{content:counter(page) " / " counter(pages);font-size:9pt;color:#888}}'
+      +'*{box-sizing:border-box}'
+      +'body{margin:0;background:#6b7069;font-family:Arial,system-ui,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;color:#222}'
+      +'.bar{position:sticky;top:0;background:#1f6b50;color:#fff;padding:10px 16px;display:flex;gap:14px;align-items:center;font-size:13px;z-index:5}'
+      +'.bar button{padding:8px 18px;background:#B8893B;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}'
+      +'.doc{background:#fff;width:200mm;max-width:96vw;margin:12px auto;padding:13mm 11mm;box-shadow:0 6px 24px rgba(0,0,0,.3);font-size:11.5px}'
+      +'table{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed;margin-top:4px}'
+      +'thead{display:table-header-group}'
+      +'tr{break-inside:avoid;page-break-inside:avoid}'
+      +'th,td{padding:5px 6px;vertical-align:top}'
+      +'.cols th{background:#f4f2ec;color:#333}'
+      +'.band td{padding:6px 0;border-bottom:2px solid #1f6b50}'
+      +'.bandflex{display:flex;justify-content:space-between;align-items:center}'
+      +'.emi{font-weight:800;font-size:13px;color:#1f6b50}.fac{font-size:12px;color:#555}'
+      +'td.l,th.l{text-align:left}td.r,th.r{text-align:right}'
+      +'.brk{word-break:break-word;overflow-wrap:anywhere}'
+      +'.sub{font-size:10px;color:#999}.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+      +'.muted{color:#888}.b{font-weight:700}'
+      +'tbody tr{border-bottom:1px solid #eee}'
+      +'.totwrap{break-inside:avoid;page-break-inside:avoid}'
+      +'@media print{body{background:#fff}.noprint{display:none!important}.doc{width:auto;max-width:none;margin:0;padding:0;box-shadow:none}}';
 
-      let pageNo=0;
-      for(let p=0;p<pages.length;p++){
-        const head=(p===0)?fullHeader:repHeader;
-        const body='<table style="'+tableStyle+'">'+colgroup+thead+'<tbody>'+pages[p].map(i=>rowHtml(items[i],i)).join('')+'</tbody></table>';
-        const tail=(p===pages.length-1 && !totalsOnNewPage)?totalsHtml:'';
-        pageNo++; place(await renderCanvas(head+body+tail), pageNo);
-      }
-      if(totalsOnNewPage){ pageNo++; place(await renderCanvas(repHeader+totalsHtml), pageNo); }
+    const safe=String(inv.sat_no||('inv_'+stmtInvId)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
+    const html='<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>Factura '+esc(safe)+'</title><style>'+css+'</style></head><body>'
+      +'<div class="bar noprint"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button>'
+      +'<span>Factura · SAT '+esc(inv.sat_no||'—')+' · '+items.length+' SKU · 인쇄 대화상자에서 “PDF로 저장”</span></div>'
+      +'<div class="doc">'+fullHeader
+      +'<table>'+colgroup+thead+'<tbody>'+items.map(rowHtml).join('')+'</tbody></table>'
+      +'<div class="totwrap">'+totalsHtml+'</div>'
+      +'</div></body></html>';
 
-      const safe=String(inv.sat_no||('inv_'+stmtInvId)).replace(/[^\w가-힣\-]+/g,'_').slice(0,40);
-      doc.save('factura_'+safe+'.pdf');
-    }catch(e){ alert('PDF 생성 실패: '+(e&&e.message?e.message:e)); }
-    finally{ if(meas&&meas.parentNode) meas.parentNode.removeChild(meas); if(btn){ btn.disabled=false; btn.textContent='PDF 다운로드'; } }
+    const win=window.open('','_blank');
+    if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+    win.document.open(); win.document.write(html); win.document.close();
   }
   async function saveInvDateF(id){
     const el=document.getElementById('invd-'+id), msg=document.getElementById('invd-msg-'+id);
@@ -688,6 +680,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621c"></script>
+<script src="refatrix-nav.js?v=20260621i"></script>
 </body>
 </html>
