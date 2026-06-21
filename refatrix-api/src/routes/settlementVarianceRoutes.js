@@ -1,5 +1,5 @@
 import { query } from '../db.js';
-import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { authGuard } from '../middleware/authGuard.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 const SRC_LABEL = { sales_edit: '매출 수정', sales_delete: '매출 삭제', import_cost: '수입 부대비용' };
@@ -12,7 +12,11 @@ const SRC_LABEL = { sales_edit: '매출 수정', sales_delete: '매출 삭제', 
  * 인식 시점 = 조정이 기록된 달(created_at). 현금흐름과는 분리.
  */
 export default async function settlementVarianceRoutes(app) {
-  app.get('/api/settlement/variances', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+  app.get('/api/settlement/variances', { preHandler: [authGuard] }, async (req, reply) => {
+    // 정산차액(비현금 원가조정)은 재무(treasury)·디렉터 전용
+    if (!['director', 'treasury'].includes(req.ctx.perm.role)) {
+      return reply.code(403).send({ error: 'finance_only' });
+    }
     const year = req.query.year ? String(req.query.year) : null;
     const yArg = year ? [year] : [];
 

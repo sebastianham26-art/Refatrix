@@ -65,6 +65,7 @@
   </div>
 
   <div class="hidden" id="app">
+    <div id="varSection">
     <div class="card">
       <div class="card-h">정산차액 집계 <span class="src">비현금 손익 조정 · 현금흐름과 분리</span>
         <span style="margin-left:auto"><span class="seg" id="yearSeg"></span></span>
@@ -82,6 +83,8 @@
       <div class="card-h">상세 내역</div>
       <div id="itemBody"><div class="hint">불러오는 중…</div></div>
     </div>
+
+    </div><!-- /varSection · 정산차액(재무·디렉터 전용) -->
 
     <!-- 수금 상세 (오픈 인보이스 / AR) -->
     <div class="card">
@@ -138,7 +141,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      renderYearSeg();load();loadAr();
+      initApp();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -150,6 +153,20 @@
       +'<button class="'+(year===''?'on':'')+'" onclick="pickYear(\'\')">전체</button>';
   }
   function pickYear(y){ year=String(y);renderYearSeg();load(); }
+
+  // 정산차액(비현금 원가조정)은 재무·디렉터만. 수금 상세(AR)는 이 화면을 보는 모두에게 표시.
+  async function initApp(){
+    let isFin=false;
+    try{
+      const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());
+      isFin = !!(su&&su.isDirector) || ['director','treasury'].includes((su&&su.role)||'');
+    }catch(e){
+      isFin = ['director','treasury'].includes((session.user&&session.user.role)||'');
+    }
+    if(isFin){ $('varSection').classList.remove('hidden'); renderYearSeg(); load(); }
+    else { $('varSection').classList.add('hidden'); }
+    loadAr();
+  }
 
   const SRC_BADGE={sales_edit:'b-edit',sales_delete:'b-del',import_cost:'b-imp'};
 
@@ -383,6 +400,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260619ad"></script>
+<script src="refatrix-nav.js?v=20260620as"></script>
 </body>
 </html>
