@@ -43,6 +43,7 @@
   .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
   .st.draft{background:#eef0f2;color:#555}.st.confirmed{background:#fdf3e3;color:#9a6512}
   .st.converted{background:var(--income-bg);color:var(--income)}.st.cancelled{background:var(--expense-bg);color:var(--expense)}
+  .st.pricelist{background:#eaf1f7;color:#2b5a78}.st.delete_pending{background:#f3e9e9;color:#9a3a3a}
   .st.delete_pending{background:#fbe7e2;color:var(--expense);border:1px dashed #e7a99f}
   .guest{font-size:10px;font-weight:700;color:#7a4ea0;background:#f1ebf7;padding:1px 6px;border-radius:999px;margin-left:4px}
   .arrow{color:var(--income);font-weight:700}
@@ -156,7 +157,7 @@
 
   function setFilter(f){ filter=f; renderChips(); load(); }
   function renderChips(){
-    const defs=[['all','전체'],['open','견적후 미결'],['guest','불특정 미등록'],['delpend','🗑 삭제대기'],['converted','매출 전환됨']];
+    const defs=[['all','전체'],['open','견적후 미결'],['guest','불특정 미등록'],['pricelist','가용재고 및 견적'],['delpend','🗑 삭제대기'],['converted','매출 전환됨']];
     $('chips').innerHTML=defs.map(([k,label])=>{
       let n=''; if(k==='open'&&counts.open)n='<span class="n">'+counts.open+'</span>';
       if(k==='guest'&&counts.guest_pending)n='<span class="n">'+counts.guest_pending+'</span>';
@@ -177,6 +178,7 @@
     if(filter==='open')qs+='&open=1';
     else if(filter==='guest')qs+='&guest=1';
     else if(filter==='converted')qs+='&status=converted';
+    else if(filter==='pricelist')qs+='&status=pricelist';
     else if(filter==='delpend')qs+='&status=delete_pending';
     try{
       const d=await fetch(session.api+'/api/quotes?'+qs,{headers:auth()}).then(r=>r.json());
@@ -186,7 +188,7 @@
 
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
-    const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기'};
+    const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적'};
     let html='<table><thead><tr>'
       +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">견적액 / 실매출액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
@@ -201,16 +203,16 @@
         +'<td>'+esc(q.quote_date||'')+'</td>'
         +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+'</td>'
         +'<td>'+esc(q.creator_name||'—')+'</td>'
-        +'<td class="r">'+(q.sku_count||0)+'</td>'
-        +'<td class="r">'+fmtq(q.total_qty)+'</td>'
-        +'<td class="r">'+fmt(q.total_mxn)
+        +'<td class="r">'+(q.status==='pricelist'?'—':(q.sku_count||0))+'</td>'
+        +'<td class="r">'+(q.status==='pricelist'?'—':fmtq(q.total_qty))+'</td>'
+        +'<td class="r">'+(q.status==='pricelist'?'—':fmt(q.total_mxn)
           +(q.status==='converted' ? (function(){
               var rz=Number(q.sale_total||0);
               if(rz<=0) return '<br><span style="font-size:11px;color:var(--expense);font-weight:700">실매출 0 · 재고부족</span>';
               if(rz < Number(q.total_mxn)-0.5) return '<br><span style="font-size:11px;color:#9a6a1a;font-weight:700">실매출 '+fmt(rz)+' · 부분</span>';
               return '<br><span style="font-size:11px;color:var(--income);font-weight:700">실매출 '+fmt(rz)+'</span>';
             })() : '')
-          +(q.shortage_cnt>0 ? '<br><span class="hint" style="color:var(--expense)">부족 '+q.shortage_cnt+'건 기록</span>' : '')
+          +(q.shortage_cnt>0 ? '<br><span class="hint" style="color:var(--expense)">부족 '+q.shortage_cnt+'건 기록</span>' : ''))
           +'</td>'
         +'<td><span class="st '+q.status+'">'+(stLbl[q.status]||q.status)+'</span></td>'
         +'<td>'+(conv?('<span class="arrow">→ '+esc(q.sale_date||'')+'</span>'+(q.sale_sat_no?'<br><span class="hint">'+esc(q.sale_sat_no)+'</span>':'')):'<span class="hint">미전환</span>')+'</td>'
@@ -224,7 +226,7 @@
 
   // ===== 견적 상세 / 편집 =====
   let dtId=null, dtData=null, dtEdit=false;
-  const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'삭제 승인대기'};
+  const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'삭제 승인대기',pricelist:'가용재고 및 견적'};
   async function openDetail(id){
     dtId=id; dtEdit=false;
     $('dtBody').innerHTML='<div class="hint">불러오는 중…</div>';
@@ -440,6 +442,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<script src="refatrix-nav.js?v=20260620az"></script>
 </body>
 </html>

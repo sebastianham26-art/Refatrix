@@ -118,6 +118,7 @@
     <!-- 미팅 작성 폼(고객 선택 시) -->
     <div class="card hidden" id="meetCard">
       <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0" id="meetTitle">미팅 기록</h2><button class="btn ghost sm" id="meetClose">닫기</button></div>
+      <div id="m-custname" style="font-size:16px;font-weight:800;color:var(--brand);margin-top:8px"></div>
       <div id="m-sales" style="margin-top:10px"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
         <div><label>미팅 일자</label><input id="m-date" type="date"></div>
@@ -277,6 +278,7 @@
     const c=(data.customers||[]).find(x=>x.id===custId);curCust=c||{id:custId};
     $('meetCard').classList.remove('hidden');
     $('meetTitle').textContent=`미팅 기록 — ${curCust.name||''} (${curCust.code||''}) · 현재 ${curCust.stage_name||'미지정'}`;
+    $('m-custname').textContent=curCust.name?(curCust.name+(curCust.code?(' ('+curCust.code+')'):'')):'';
     $('m-note').value='';$('m-advance').checked=false;$('m-msg').style.display='none';
     $('m-stage').innerHTML=stages.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
     $('m-stage').disabled=true;
@@ -387,6 +389,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620aw"></script>
+<script src="refatrix-nav.js?v=20260620az"></script>
 </body>
 </html>

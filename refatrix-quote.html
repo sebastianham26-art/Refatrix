@@ -394,6 +394,13 @@
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
       m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
+      // 견적 목록에 '가용재고 및 견적'으로 기록 (SKU·총수량·금액은 빈칸)
+      try{
+        const pbody=(!guest && cid && cid!=='__guest__') ? {customer_id:Number(cid)} : {guest_name:$('guestName').value.trim(), discount_rate:(disc==null?0:disc)};
+        const pr=await fetch(session.api+'/api/quotes/pricelist',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(pbody)});
+        const pd=await pr.json();
+        if(pr.ok&&pd.quote_no) m.textContent+=' · 견적목록 기록: '+pd.quote_no+' (가용재고 및 견적)';
+      }catch(e){ /* 기록 실패는 다운로드에 영향 주지 않음 */ }
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
@@ -646,6 +653,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620ax"></script>
+<script src="refatrix-nav.js?v=20260620az"></script>
 </body>
 </html>

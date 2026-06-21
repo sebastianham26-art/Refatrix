@@ -290,13 +290,50 @@ export default async function quoteRoutes(app) {
   });
 
   // ============ 목록 / 상세 ============
+  // 전체 가격표 다운로드 → 견적 목록에 '가용재고 및 견적'(pricelist)로 기록.
+  //  집계(SKU/총수량/금액)는 0으로 저장하고 목록에서 빈칸 표시. 같은 고객·당일 기록은 재사용.
+  app.post('/api/quotes/pricelist', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
+    const b = req.body || {};
+    let customerId = null, discountRate = 0;
+    const isGuest = !b.customer_id && (b.guest_name || b.discount_rate != null);
+    if (isGuest) {
+      const gname = String(b.guest_name || '').trim();
+      if (!gname) return reply.code(400).send({ error: 'guest_name_required' });
+      discountRate = Number(b.discount_rate) || 0;
+      const fc = await findOrCreateCustomerByName({ name: gname, discount: discountRate, teamId: req.ctx.perm.teamId, userId: req.ctx.perm.userId });
+      if (!fc) return reply.code(500).send({ error: 'customer_autocreate_failed' });
+      customerId = fc.id;
+      if (!fc.created) { const cd = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0]; if (cd) discountRate = Number(cd.discount) || 0; }
+    } else {
+      customerId = Number(b.customer_id);
+      if (!customerId) return reply.code(400).send({ error: 'customer_required' });
+      const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+      if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
+      discountRate = Number(cust.discount) || 0;
+    }
+    // 같은 고객·당일 pricelist 기록이 이미 있으면 재사용(중복 방지)
+    const dup = (await query(
+      `SELECT id, quote_no FROM quotes WHERE customer_id=$1 AND status='pricelist' AND quote_date=CURRENT_DATE AND deleted_at IS NULL ORDER BY id DESC LIMIT 1`, [customerId])).rows[0];
+    if (dup) return { id: dup.id, quote_no: dup.quote_no, customer_id: customerId, reused: true };
+    const result = await withTx(async (c) => {
+      const year = String(new Date().getFullYear());
+      const quoteNo = await nextQuoteNo(c, year);
+      return (await c.query(
+        `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by)
+         VALUES ($1,$2,CURRENT_DATE,$3,16,'pricelist',0,0,0,0,0,$4) RETURNING id, quote_no`,
+        [quoteNo, customerId, discountRate, req.ctx.perm.userId])).rows[0];
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote_pricelist:${result.id}` });
+    return { id: result.id, quote_no: result.quote_no, customer_id: customerId };
+  });
+
   app.get('/api/quotes', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
     const from = String(req.query.from || ''); const to = String(req.query.to || '');
     const status = String(req.query.status || '');
     const conds = [`q.deleted_at IS NULL`]; const args = [];
     if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { args.push(from); conds.push(`q.quote_date >= $${args.length}`); }
     if (/^\d{4}-\d{2}-\d{2}$/.test(to)) { args.push(to); conds.push(`q.quote_date <= $${args.length}`); }
-    if (['draft', 'confirmed', 'converted', 'cancelled'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
+    if (['draft', 'confirmed', 'converted', 'cancelled', 'pricelist'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
     if (req.query.open === '1') conds.push(`q.status IN ('draft','confirmed')`);          // 견적후 미결
     if (req.query.guest === '1') conds.push(`q.customer_id IS NULL AND q.status IN ('draft','confirmed')`); // 불특정·미등록
     const rows = (await query(
