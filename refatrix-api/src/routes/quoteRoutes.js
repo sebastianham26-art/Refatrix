@@ -4,6 +4,7 @@ import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
+import { findOrCreateCustomerByName } from '../customerAuto.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -199,11 +200,22 @@ export default async function quoteRoutes(app) {
     const b = req.body || {};
     const isGuest = !b.customer_id && (b.guest_name || b.guest === true || b.discount_rate != null);
     let customerId = null, guestName = null, discountRate = 0;
+    let autoCustomer = null;   // 자동 등록된(또는 재사용된) 고객
     if (isGuest) {
-      guestName = String(b.guest_name || '').trim();
-      if (!guestName) return reply.code(400).send({ error: 'guest_name_required' });
+      const gname = String(b.guest_name || '').trim();
+      if (!gname) return reply.code(400).send({ error: 'guest_name_required' });
       if (b.discount_rate == null || b.discount_rate === '') return reply.code(400).send({ error: 'discount_required' });
       discountRate = Number(b.discount_rate) || 0;
+      // 불특정 고객명+할인율 → 고객 자동등록(같은 이름 재사용) 후 견적을 그 고객에 연결
+      const fc = await findOrCreateCustomerByName({ name: gname, discount: discountRate, teamId: req.ctx.perm.teamId, userId: req.ctx.perm.userId });
+      if (!fc) return reply.code(500).send({ error: 'customer_autocreate_failed' });
+      customerId = fc.id;
+      guestName = null;                 // 더 이상 불특정 아님 — 고객에 연결
+      autoCustomer = { id: fc.id, name: gname, created: fc.created };
+      if (!fc.created) {                // 기존 고객 재사용 시 등록 할인율 사용(일관성)
+        const cd = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0];
+        if (cd) discountRate = Number(cd.discount) || 0;
+      }
     } else {
       customerId = Number(b.customer_id);
       if (!customerId) return reply.code(400).send({ error: 'customer_required' });
@@ -234,7 +246,7 @@ export default async function quoteRoutes(app) {
       // 등록 고객 견적 작성 → 단계 견적(30) 자동 전진(전진만) + 이력/미팅 로그
       try { await autoStage({ customerId, targetSort: 30, onDate: b.quote_date || null, userId: req.ctx.perm.userId, note: `자동: 견적서 작성 (${result.quote_no}) · 견적 단계` }); } catch (_) { /* best-effort */ }
     }
-    return { id: result.id, quote_no: result.quote_no };
+    return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer };
   });
 
   // 견적 수정(draft/confirmed만) — 라인 전체 교체

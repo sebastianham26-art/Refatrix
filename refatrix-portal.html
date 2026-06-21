@@ -251,6 +251,22 @@
     location.href=s.file+hash;   // 같은 탭에서 이동
   }
 
+  // Constancia 미입력 알림(Maria 전용) — 로그인 시마다, 임시 닫기 가능, 모두 입력되면 안 뜸
+  async function checkConstancia(){
+    try{ if(sessionStorage.getItem('const_nag_dismissed')==='1'){ return; } }catch(e){}
+    try{
+      const d=await fetch(session.api+'/api/customers/missing-constancia',{headers:auth()}).then(r=>r.json());
+      if(!d||!d.nag||!(d.items&&d.items.length)){ $('constModal').style.display='none'; return; }
+      $('constList').innerHTML=d.items.map(c=>
+        '<div style="padding:9px 12px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        +'<b>'+escp(c.name)+'</b> <span style="color:var(--muted);font-size:11.5px">('+escp(c.code)+')</span>'
+        +'<div style="color:var(--muted);font-size:11.5px;margin-top:1px">'+escp(c.name)+' 고객의 Constancia를 입력해주세요.</div></div>'
+      ).join('');
+      $('constModal').style.display='flex';
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  function dismissConst(){ try{ sessionStorage.setItem('const_nag_dismissed','1'); }catch(e){} $('constModal').style.display='none'; }
+
   async function login(){
     const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
     const m=$('loginMsg');m.className='msg';
@@ -261,6 +277,7 @@
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
       session={token:d.token,user:d.user,api};
+      try{ sessionStorage.removeItem('const_nag_dismissed'); }catch(e){}
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
@@ -271,7 +288,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();
   }
   // ===== 수주 흐름 종합 대시보드 =====
   let funnelMonths=[];  // 선택된 'YYYY-MM' 배열 (다중)
@@ -611,6 +628,23 @@
   })();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
 </script>
-<script src="refatrix-nav.js?v=20260618aa"></script>
+<!-- Constancia 미입력 알림(Maria) -->
+<div id="constModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:200;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.32)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">📋 Constancia 입력 요청</div>
+    </div>
+    <div style="padding:16px 20px">
+      <div style="font-size:13.5px;color:var(--ink);line-height:1.6;margin-bottom:10px">아래 고객들의 <b>Constancia(세무등록)</b>가 아직 입력되지 않았습니다. 각 고객의 Constancia를 입력해 주세요.</div>
+      <div id="constList" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    </div>
+    <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissConst()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
+      <button onclick="goScreen('customers')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">고객관리로 가기 →</button>
+    </div>
+  </div>
+</div>
+
+<script src="refatrix-nav.js?v=20260620ax"></script>
 </body>
 </html>

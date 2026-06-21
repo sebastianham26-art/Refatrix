@@ -82,7 +82,7 @@
       <div class="inrow">
         <div style="flex:1;min-width:200px"><label>고객</label>
           <select id="custSel" onchange="onCustChange()" style="width:100%"></select></div>
-        <div id="guestNameWrap" class="hidden"><label>불특정 고객명 (견적서 표시)</label><input id="guestName" type="text" placeholder="예: Taller López" style="width:180px"></div>
+        <div id="guestNameWrap" class="hidden"><label>Nombre del cliente (mostrar en cotización)</label><input id="guestName" type="text" placeholder="Ej: Taller López" style="width:180px"></div>
         <div><label>견적일</label><input id="qDate" type="date"></div>
         <div style="min-width:90px"><label>할인율</label><input id="discShow" type="text" readonly style="width:90px;background:#faf8f3" oninput="onDiscInput()"></div>
       </div>
@@ -148,7 +148,7 @@
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  function partyName(){ return isGuest ? ($('guestName').value.trim()||'불특정 고객') : (($('custSel').selectedOptions[0]||{}).text||''); }
+  function partyName(){ return isGuest ? ($('guestName').value.trim()||'Cliente no registrado') : (($('custSel').selectedOptions[0]||{}).text||''); }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
 
@@ -183,7 +183,7 @@
       const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json());
       customers=d.items||[];
       $('custSel').innerHTML='<option value="">— 고객 선택 —</option>'
-        +'<option value="__guest__">★ 불특정 고객 (직접 입력)</option>'
+        +'<option value="__guest__">★ Cliente no registrado (entrada directa)</option>'
         +customers.map(c=>'<option value="'+c.id+'" data-disc="'+(c.discount||0)+'">'+esc(c.name)+'</option>').join('');
     }catch(e){ $('custHint').textContent='고객 목록을 불러오지 못했습니다.'; }
   }
@@ -193,9 +193,9 @@
     isGuest = sel.value==='__guest__';
     $('guestNameWrap').classList.toggle('hidden',!isGuest);
     if(isGuest){
-      $('discShow').removeAttribute('readonly'); $('discShow').style.background='#fff'; $('discShow').placeholder='예: 12';
+      $('discShow').removeAttribute('readonly'); $('discShow').style.background='#fff'; $('discShow').placeholder='Ej: 12';
       curDisc=Number(($('discShow').value||'').replace('%',''))||0;
-      $('custHint').textContent='불특정 고객 — 고객명과 할인율을 직접 입력하세요(할인율 필수).';
+      $('custHint').textContent='Cliente no registrado — escriba el nombre y el descuento (obligatorio). Se registrará automáticamente como cliente.';
     } else {
       $('discShow').setAttribute('readonly','readonly'); $('discShow').style.background='#faf8f3';
       const opt=sel.selectedOptions[0];
@@ -338,7 +338,7 @@
     const m=$('lineMsg');m.className='msg';
     const guest = isGuest;
     const custName = partyName();              // 불특정=입력 고객명, 등록=선택 고객명
-    if(guest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='불특정 고객명을 먼저 입력하세요.';return; }
+    if(guest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='Escriba primero el nombre del cliente.';return; }
     try{
       m.className='msg ok';m.textContent='가격표를 불러오는 중…';
       const cid=$('custSel').value;
@@ -619,8 +619,8 @@
     const cid=$('custSel').value;
     if(!cid){m.className='msg err';m.textContent='고객을 선택하세요.';return;}
     if(isGuest){
-      if(!$('guestName').value.trim()){m.className='msg err';m.textContent='불특정 고객명을 입력하세요.';return;}
-      if(($('discShow').value||'').trim()===''){m.className='msg err';m.textContent='할인율을 입력하세요(불특정 고객은 필수).';return;}
+      if(!$('guestName').value.trim()){m.className='msg err';m.textContent='Escriba el nombre del cliente.';return;}
+      if(($('discShow').value||'').trim()===''){m.className='msg err';m.textContent='Escriba el descuento (obligatorio para cliente no registrado).';return;}
     }
     const valid=lines.filter(l=>l.product_id||l.code);
     if(!valid.length){m.className='msg err';m.textContent='품목을 추가하세요.';return;}
@@ -636,7 +636,8 @@
       const matched=LP.filter(l=>l.matched).length;
       const unmatched=LP.length-matched;
       m.className='msg ok';
-      m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(isGuest?' · 불특정 고객':'');
+      m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · '+(d.auto_customer.created?'고객 자동등록':'기존 고객 연결')+': '+esc(d.auto_customer.name)):'');
+      if(d.auto_customer){ loadCustomers(); }
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}
   }
@@ -645,6 +646,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260620ae"></script>
+<script src="refatrix-nav.js?v=20260620ax"></script>
 </body>
 </html>

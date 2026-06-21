@@ -33,6 +33,17 @@ export default async function customerRoutes(app) {
     return { code: await computeNextCode() };
   });
 
+  // Constancia(세무등록) 미입력 고객 알림 — 이름이 Maria인 사용자에게만 nag.
+  app.get('/api/customers/missing-constancia', { preHandler: [authGuard] }, async (req) => {
+    const isMaria = String(req.ctx.perm.name || '').trim().toLowerCase().startsWith('maria');
+    const rows = (await query(
+      `SELECT id, code, name FROM customers
+        WHERE deleted_at IS NULL AND (constancia_fiscal IS NULL OR btrim(constancia_fiscal) = '')
+        ORDER BY created_at DESC, id DESC`)).rows;
+    const items = rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name }));
+    return { is_target: isMaria, nag: isMaria && items.length > 0, count: items.length, items: isMaria ? items : [] };
+  });
+
   // 업로드 양식 헤더(프런트가 빈 xlsx 양식 생성에 사용)
   app.get('/api/customers/template', { preHandler: [authGuard, requirePage('customers')] }, async () => {
     return { headers: CUST_TEMPLATE_HEADERS };
