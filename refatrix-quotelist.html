@@ -551,6 +551,13 @@
     const row=qRowsById[cvId]||{};
     const co=await getCompany();
 
+    // CTR 코드 → SYD 코드 매핑 (견적 상세에서; convert-preview가 syd를 주면 그걸 우선 사용)
+    let sydMap={};
+    try{
+      const qd=await fetch(session.api+'/api/quotes/'+cvId,{headers:auth()}).then(r=>r.json());
+      (qd.lines||[]).forEach(l=>{ const c=(l.ctr_code||l.input_code||'').trim(); if(c) sydMap[c]=l.syd_codes||''; });
+    }catch(e){}
+
     // 고객명: 불특정 견적이면 선택한 고객, 아니면 견적 고객명
     let custDisplay=row.party_name||'—';
     if(cvGuest){ const sel=$('cvCustomer'); if(sel&&sel.value){ custDisplay=sel.options[sel.selectedIndex].text; } }
@@ -581,12 +588,14 @@
         +'<div class="pk-cell"><span class="k">견적담당자</span><span class="v">'+esc(issuer)+'</span></div>'
         +'<div class="pk-cell"><span class="k">날짜</span><span class="v">'+dateStr+'</span></div>'
         +'<div class="pk-cell"><span class="k">출력시각</span><span class="v">'+timeStr+'</span></div>'
+      +'</div>'
+      +'<div class="pk-sum">'
         +'<div class="pk-cell big accent"><span class="k">SKU 수</span><span class="v">'+skuCount+'</span></div>'
         +'<div class="pk-cell big accent"><span class="k">총 수량</span><span class="v">'+qfmt(totalQty)+'</span></div>'
       +'</div>';
 
     const colHead='<thead><tr>'
-      +'<th class="c-no">#</th><th class="c-sku">SKU 번호</th><th class="c-name">제품명</th>'
+      +'<th class="c-no">#</th><th class="c-sku">SKU 번호</th><th class="c-syd">SYD 코드</th><th class="c-name">제품명</th>'
       +'<th class="c-qty">수량</th><th class="c-rack">창고 랙 위치</th><th class="c-chk">피킹</th>'
       +'</tr></thead>';
 
@@ -613,6 +622,7 @@
         rows+='<tr>'
           +'<td class="c-no">'+seq+'</td>'
           +'<td class="c-sku">'+esc(x.ctr_code||'—')+'</td>'
+          +'<td class="c-syd">'+esc(x.syd_codes||sydMap[(x.ctr_code||'').trim()]||'')+'</td>'
           +'<td class="c-name">'+esc(x.product_name||'(미등록)')+'</td>'
           +'<td class="c-qty">'+qfmt(x.qty)+'</td>'
           +'<td class="c-rack">'+rack+'</td>'
@@ -634,22 +644,24 @@
       +'.pk-co{font-size:10px;color:#555;margin-top:4px}'
       +'.pk-title{text-align:right}.pk-title h1{margin:0;font-size:22px;color:#143D34;letter-spacing:1px}'
       +'.pk-sub{font-size:11px;color:#666;margin-top:3px}'
-      +'.pk-sum{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 6px}'
+      +'.pk-sum{display:flex;flex-wrap:wrap;gap:8px}'
+      +'.pk-head + .pk-sum{margin-top:12px}.pk-sum + .pk-sum{margin-top:8px}'
       +'.pk-cell{flex:1 1 120px;border:1px solid #d8d3c7;border-radius:8px;padding:7px 10px;background:#faf8f3}'
       +'.pk-cell .k{display:block;font-size:10px;color:#777;letter-spacing:.5px}'
       +'.pk-cell .v{display:block;font-size:14px;font-weight:700;color:#1c1b19;margin-top:2px;word-break:break-word}'
       +'.pk-cell.big{flex:1 1 150px}.pk-cell.big .v{font-size:18px}'
       +'.pk-cell.accent{background:#E4F0EB;border-color:#7fb8a4}.pk-cell.accent .v{color:#0F6E56}'
-      +'.pk-body{flex:1}'
+      +'.pk-body{flex:1;margin-top:8px}'
       +'.pk-tbl{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:6px}'
       +'.pk-tbl th,.pk-tbl td{border:1px solid #bbb;padding:6px 7px;font-size:12px;vertical-align:middle}'
       +'.pk-tbl th{background:#143D34;color:#fff;font-weight:600;font-size:11px}'
-      +'.pk-tbl .c-no{width:8%;text-align:center}'
-      +'.pk-tbl .c-sku{width:20%;text-align:left;word-break:break-word;font-weight:700}'
-      +'.pk-tbl .c-name{width:34%;text-align:left;word-break:break-word}'
-      +'.pk-tbl .c-qty{width:11%;text-align:right;font-weight:700}'
-      +'.pk-tbl .c-rack{width:16%;text-align:center;color:#999}'
-      +'.pk-tbl .c-chk{width:11%;text-align:center}'
+      +'.pk-tbl .c-no{width:6%;text-align:center}'
+      +'.pk-tbl .c-sku{width:16%;text-align:left;word-break:break-word;font-weight:700}'
+      +'.pk-tbl .c-syd{width:16%;text-align:left;word-break:break-word;color:#555}'
+      +'.pk-tbl .c-name{width:28%;text-align:left;word-break:break-word}'
+      +'.pk-tbl .c-qty{width:10%;text-align:right;font-weight:700}'
+      +'.pk-tbl .c-rack{width:14%;text-align:center;color:#999}'
+      +'.pk-tbl .c-chk{width:10%;text-align:center}'
       +'.chk{display:inline-block;width:5mm;height:5mm;border:1.5px solid #333;border-radius:1px}'
       +'.pk-foot{margin-top:auto;padding-top:8px;border-top:1.5px solid #143D34}'
       +'.pk-sign{display:flex;gap:14px;align-items:flex-end}'
@@ -716,6 +728,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621e"></script>
+<script src="refatrix-nav.js?v=20260621f"></script>
 </body>
 </html>
