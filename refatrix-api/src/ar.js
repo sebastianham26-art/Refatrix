@@ -43,6 +43,22 @@ export function bucketByDueMonth(invoices) {
   return Object.values(map).sort((a, b) => (a.ym < b.ym ? 1 : a.ym > b.ym ? -1 : 0));
 }
 
+// 입금증(증빙) data URL 검증 — 순수 함수(단위 테스트 가능).
+//  허용: image/*  또는 application/pdf, base64 인코딩만.
+//  반환: { ok:true, mime, bytes } 또는 { ok:false, error }
+export function validateReceiptDataUrl(dataUrl, maxBytes = 8 * 1024 * 1024) {
+  if (typeof dataUrl !== 'string' || !dataUrl) return { ok: false, error: 'empty' };
+  const m = dataUrl.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/);
+  if (!m) return { ok: false, error: 'bad_format' };
+  const mime = m[1].toLowerCase();
+  if (!(mime.startsWith('image/') || mime === 'application/pdf')) return { ok: false, error: 'bad_mime' };
+  const b64 = m[2].replace(/\s+/g, '');
+  if (!b64) return { ok: false, error: 'empty_data' };
+  const bytes = Math.floor((b64.length * 3) / 4);
+  if (bytes > maxBytes) return { ok: false, error: 'too_large' };
+  return { ok: true, mime, bytes };
+}
+
 // 오픈 인보이스 요약(건수·총 미수·연체 미수).
 export function arSummary(openInvoices) {
   return openInvoices.reduce((s, v) => {

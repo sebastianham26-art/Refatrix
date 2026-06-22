@@ -3,6 +3,7 @@ import { authGuard, requirePage, requireDirector } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
+import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown } from '../cashflow.js';
 
@@ -371,6 +372,13 @@ export default async function financeRoutes(app) {
     const customerId = Number(b.customer_id), accountId = Number(b.account_id), amount = r2(b.amount);
     const allocations = Array.isArray(b.allocations) ? b.allocations.filter((a) => Number(a.amount) > 0).map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(a.amount) })) : [];
     if (!customerId || !accountId || !b.pay_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    // 입금증(은행 입금증 등) 첨부 — 선택. 있으면 형식·크기 검증 후 입금건에 함께 저장.
+    let receipt = null;
+    if (b.receipt) {
+      const rv = validateReceiptDataUrl(b.receipt);
+      if (!rv.ok) return reply.code(400).send({ error: 'invalid_receipt', detail: rv.error });
+      receipt = { data: b.receipt, name: b.receipt_name || null, mime: rv.mime };
+    }
     const userId = req.ctx.perm.userId;
     const out = await withTx(async (c) => {
       // 현재 미수금 맵(검증용)
@@ -406,10 +414,17 @@ export default async function financeRoutes(app) {
           [accountId, b.pay_date, advance, userId, '선수금(과입금)'])).rows[0];
         await c.query(`UPDATE sales_payments SET advance_txn_id=$1 WHERE id=$2`, [at.id, pay.id]);
       }
-      return { id: pay.id, advance, allocated: sumAlloc };
+      // 입금증 저장(있으면)
+      if (receipt) {
+        await c.query(
+          `INSERT INTO sales_payment_docs (payment_id, file_name, mime_type, file_data, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [pay.id, receipt.name, receipt.mime, receipt.data, userId]);
+      }
+      return { id: pay.id, advance, allocated: sumAlloc, receipt: !!receipt };
     });
     if (out.error) return reply.code(out.error === 'invalid_allocations' ? 409 : 400).send(out);
-    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount, advance: out.advance } });
+    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount, advance: out.advance, receipt: out.receipt } });
     return out;
   });
 
@@ -459,12 +474,125 @@ export default async function financeRoutes(app) {
       items: rows.map((r) => ({
         id: Number(r.id), sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date,
         total_mxn: r2(Number(r.total_mxn)), paid: r2(Number(r.paid)), outstanding: r2(Number(r.outstanding)),
+        paid_full: r2(Number(r.outstanding)) <= 0.005,
         overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
         customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,
         customer_rfc: r.customer_rfc || null, customer_phone: r.customer_phone || null,
         team_id: r.team_id == null ? null : Number(r.team_id), team_name: r.team_name || null,
         owner_id: r.owner_id == null ? null : Number(r.owner_id), owner_name: r.owner_name || null,
       })),
+    };
+  });
+
+  // 한 인보이스의 수금(반제) 내역 + 요약 — 드릴다운용.
+  //   각 행: 입금일·금액(배분)·계좌·메모·등록자 + 입금증 첨부 여부.
+  app.get('/api/ar/invoice/:id/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
+    const invId = Number(req.params.id);
+    if (!invId) return reply.code(400).send({ error: 'bad_id' });
+    const inv = (await query(
+      `SELECT s.id, s.sat_no, to_char(s.inv_date,'YYYY-MM-DD') AS inv_date, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
+              s.total_mxn, COALESCE(pa.paid,0) AS paid,
+              c.id AS customer_id, c.code AS customer_code, c.name AS customer_name
+         FROM sales_invoices s
+         JOIN customers c ON c.id=s.customer_id
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+        WHERE s.id=$1 AND s.deleted_at IS NULL`, [invId])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'not_found' });
+    const rows = (await query(
+      `SELECT al.id AS alloc_id, al.amount, p.id AS payment_id,
+              to_char(p.pay_date,'YYYY-MM-DD') AS pay_date, p.memo,
+              a.name AS account_name, u.name AS created_by_name,
+              (d.payment_id IS NOT NULL) AS has_receipt, d.file_name AS receipt_name, d.mime_type AS receipt_mime
+         FROM sales_payment_allocations al
+         JOIN sales_payments p ON p.id=al.payment_id
+         LEFT JOIN accounts a ON a.id=p.account_id
+         LEFT JOIN users u ON u.id=p.created_by
+         LEFT JOIN sales_payment_docs d ON d.payment_id=p.id
+        WHERE al.invoice_id=$1
+        ORDER BY p.pay_date, al.id`, [invId])).rows;
+    const total = r2(Number(inv.total_mxn)), paid = r2(Number(inv.paid)), outstanding = r2(total - paid);
+    return {
+      invoice: {
+        id: Number(inv.id), sat_no: inv.sat_no, inv_date: inv.inv_date, due_date: inv.due_date,
+        total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
+        customer_id: Number(inv.customer_id), customer_code: inv.customer_code, customer_name: inv.customer_name,
+      },
+      payments: rows.map((r) => ({
+        alloc_id: Number(r.alloc_id), payment_id: Number(r.payment_id), amount: r2(Number(r.amount)),
+        pay_date: r.pay_date, memo: r.memo || null, account_name: r.account_name || null,
+        created_by_name: r.created_by_name || null,
+        has_receipt: !!r.has_receipt, receipt_name: r.receipt_name || null, receipt_mime: r.receipt_mime || null,
+      })),
+    };
+  });
+
+  // 입금증 파일 보기(데이터 URL 반환)
+  app.get('/api/ar/payments/:id/receipt/file', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
+    const pid = Number(req.params.id);
+    const row = (await query(`SELECT file_data, file_name, mime_type FROM sales_payment_docs WHERE payment_id=$1`, [pid])).rows[0];
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    return { file_data: row.file_data, file_name: row.file_name || null, mime_type: row.mime_type || null };
+  });
+
+  // 기존 입금건에 입금증 부착(나중에 업로드/교체)
+  app.post('/api/ar/payments/:id/receipt', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
+    const pid = Number(req.params.id);
+    const b = req.body || {};
+    const v = validateReceiptDataUrl(b.receipt);
+    if (!v.ok) return reply.code(400).send({ error: 'invalid_receipt', detail: v.error });
+    const exists = (await query(`SELECT id FROM sales_payments WHERE id=$1`, [pid])).rows[0];
+    if (!exists) return reply.code(404).send({ error: 'not_found' });
+    await query(
+      `INSERT INTO sales_payment_docs (payment_id, file_name, mime_type, file_data, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (payment_id) DO UPDATE
+         SET file_name=EXCLUDED.file_name, mime_type=EXCLUDED.mime_type, file_data=EXCLUDED.file_data,
+             uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
+      [pid, b.receipt_name || null, v.mime, b.receipt, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_payment:${pid}`, detail: { receipt: true } });
+    return { ok: true };
+  });
+
+  // SAT 번호(또는 고객명/코드)로 인보이스 검색 — 완납 인보이스 포함.
+  //   open-list와 같은 행 모양 + paid_full 플래그를 주어 같은 화면 렌더 재사용.
+  app.get('/api/ar/search', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const q = String(req.query.q || '').trim();
+    if (q.length < 1) return { today, items: [] };
+    const like = '%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%';
+    const rows = (await query(
+      `SELECT s.id, s.sat_no,
+              to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
+              to_char(s.due_date,'YYYY-MM-DD') AS due_date,
+              s.total_mxn, COALESCE(pa.paid,0) AS paid,
+              (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
+              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
+              CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
+              c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
+              c.team_id, t.name AS team_name, c.owner_id, u.name AS owner_name
+         FROM sales_invoices s
+         JOIN customers c ON c.id=s.customer_id AND c.deleted_at IS NULL
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN users u ON u.id=c.owner_id
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+        WHERE s.deleted_at IS NULL AND s.status='posted'
+          AND (s.sat_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\' OR c.code ILIKE $1 ESCAPE '\\')
+        ORDER BY s.inv_date DESC, s.id DESC
+        LIMIT 80`, [like])).rows;
+    return {
+      today,
+      items: rows.map((r) => {
+        const total = r2(Number(r.total_mxn)), paid = r2(Number(r.paid)), outstanding = r2(Number(r.outstanding));
+        return {
+          id: Number(r.id), sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date,
+          total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
+          overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
+          customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,
+          customer_rfc: r.customer_rfc || null, customer_phone: r.customer_phone || null,
+          team_id: r.team_id == null ? null : Number(r.team_id), team_name: r.team_name || null,
+          owner_id: r.owner_id == null ? null : Number(r.owner_id), owner_name: r.owner_name || null,
+        };
+      }),
     };
   });
 

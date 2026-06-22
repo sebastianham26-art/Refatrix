@@ -50,6 +50,16 @@
   .seg button.on{background:var(--brand);color:#fff}
   .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d5}
   tr.ovd td{background:var(--expense-bg)}
+  .chip{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;white-space:nowrap}
+  .chip-paid{background:var(--income-bg);color:var(--income)}
+  .chip-part{background:#fdf8ec;color:#8a6512}
+  .histbox{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:2px 0}
+  .histbox table{margin-top:6px}
+  .histbox th,.histbox td{padding:6px 8px}
+  .lnk{color:#0c447c;cursor:pointer;text-decoration:underline;font-size:12px;background:none;border:none;padding:0;font-family:inherit}
+  .searchbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 2px}
+  .searchbar input{width:300px;max-width:60vw}
+  .nores{font-size:13px;color:var(--muted);padding:8px 2px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -92,7 +102,13 @@
       <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
         <span style="margin-left:auto"><span class="seg" id="arSeg"></span></span>
       </div>
-      <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고, 고객별 <b>PDF 명세서</b>를 뽑을 수 있어요.</div>
+      <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고(은행 입금증 첨부 가능), <b>수금내역</b>으로 인보이스별 수금 이력을 봅니다.</div>
+      <div class="searchbar">
+        <input id="arSearchQ" placeholder="SAT 번호 또는 고객명·코드로 인보이스 검색" onkeydown="if(event.key==='Enter')doArSearch()">
+        <button class="btn" onclick="doArSearch()">🔍 검색</button>
+        <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
+        <span id="arSearchInfo" class="hint"></span>
+      </div>
       <div class="stats" id="arStats"></div>
       <div id="arGroupBox" style="margin-top:12px"></div>
       <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
@@ -207,6 +223,7 @@
 
   // ===== 수금 상세 (오픈 인보이스 / AR) =====
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
+  let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   async function loadAr(){
@@ -218,6 +235,7 @@
       ]);
       arItems=(d&&d.items)||[]; arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
       arAccounts=(acc&&acc.items)||[]; arCompany=co||{};
+      arHistData={};
       renderArSeg(); renderAr();
     }catch(e){ $('arListBox').innerHTML='<div class="hint">미수금 목록을 불러오지 못했습니다.</div>'; }
   }
@@ -238,7 +256,46 @@
     if(it.day_diff===0) return '<b style="color:var(--gold)">오늘 만기</b>';
     return '<span class="hint">D-'+(-it.day_diff)+'</span>';
   }
+  function arStatusChip(it){
+    if(it.paid_full) return '<span class="chip chip-paid">완납</span>';
+    return arDueText(it);
+  }
+  function arListTableHtml(list){
+    let h='<table><thead><tr><th>고객</th><th>인보이스(SAT)</th><th>발행일</th><th>만기일</th><th>청구액</th><th>입금</th><th>잔액</th><th>상태</th><th></th></tr></thead><tbody>';
+    list.forEach(it=>{
+      h+='<tr'+(it.overdue?' class="ovd"':'')+'>'
+        +'<td><b>'+esc(it.customer_name)+'</b> <span class="hint">'+esc(it.customer_code)+'</span></td>'
+        +'<td>'+esc(it.sat_no||('#'+it.id))+'</td>'
+        +'<td>'+esc(it.inv_date||'—')+'</td>'
+        +'<td>'+esc(it.due_date||'—')+'</td>'
+        +'<td>'+fmt(it.total_mxn)+'</td>'
+        +'<td>'+fmt(it.paid)+'</td>'
+        +'<td><b>'+fmt(it.outstanding)+'</b></td>'
+        +'<td>'+arStatusChip(it)+'</td>'
+        +'<td style="white-space:nowrap">'
+        +(it.paid_full?'':'<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">반제</button> ')
+        +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
+        +'</tr>';
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
+      if(arHistOpen===it.id){ h+='<tr><td colspan="9">'+histInnerHtml(it)+'</td></tr>'; }
+    });
+    h+='</tbody></table>';
+    return h;
+  }
   function renderAr(){
+    $('arSearchClear').style.display = arSearchMode ? '' : 'none';
+    if(arSearchMode){
+      $('arGroupBox').innerHTML='';
+      const list=arSearchItems;
+      const sOut=list.reduce((s,x)=>s+x.outstanding,0);
+      $('arStats').innerHTML=
+        '<div class="stat tot"><div class="k">검색 결과</div><div class="v">'+list.length+'건</div></div>'
+        +'<div class="stat"><div class="k">미수 합계</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
+        +'<div class="stat"><div class="k">완납</div><div class="v" style="color:var(--income)">'+list.filter(x=>x.paid_full).length+'건</div></div>'
+        +'<div class="stat"><div class="k">연체</div><div class="v" style="color:var(--expense)">'+list.filter(x=>x.overdue).length+'건</div></div>';
+      $('arListBox').innerHTML = list.length ? arListTableHtml(list) : '<div class="nores">검색 결과가 없습니다.</div>';
+      return;
+    }
     if(!arItems.length){ $('arStats').innerHTML=''; $('arGroupBox').innerHTML=''; $('arListBox').innerHTML='<div class="hint">미수금(오픈 인보이스)이 없습니다.</div>'; return; }
     const groups={};
     arItems.forEach(it=>{ const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0}; const g=groups[k.key]; g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
@@ -254,29 +311,12 @@
     else {
       const gk=Object.keys(groups).sort((a,b)=>groups[b].outstanding-groups[a].outstanding);
       const head = arGroup==='team'?'팀':(arGroup==='owner'?'영업담당자':'고객');
-      let h='<table><thead><tr><th>'+head+'</th><th>건수</th><th>총 잔액</th><th>연체 잔액</th></tr></thead><tbody>';
-      gk.forEach(k=>{ const g=groups[k]; const on=arFilter===k; h+='<tr style="cursor:pointer'+(on?';background:#eef4f1':'')+'" onclick="pickArFilter(\''+k+'\')"><td>'+(on?'▸ ':'')+esc(g.label)+'</td><td>'+g.count+'</td><td><b>'+fmt(g.outstanding)+'</b></td><td style="color:var(--expense)">'+fmt(g.overdue)+'</td></tr>'; });
-      h+='</tbody></table><div class="hint" style="margin-top:4px">행을 누르면 아래 목록이 해당 '+head+'(으)로 좁혀집니다.'+(arFilter?' · <a href="#" onclick="pickArFilter(null);return false">전체 보기</a>':'')+'</div>';
-      $('arGroupBox').innerHTML=h;
+      let hg='<table><thead><tr><th>'+head+'</th><th>건수</th><th>총 잔액</th><th>연체 잔액</th></tr></thead><tbody>';
+      gk.forEach(k=>{ const g=groups[k]; const on=arFilter===k; hg+='<tr style="cursor:pointer'+(on?';background:#eef4f1':'')+'" onclick="pickArFilter(\''+k+'\')"><td>'+(on?'▸ ':'')+esc(g.label)+'</td><td>'+g.count+'</td><td><b>'+fmt(g.outstanding)+'</b></td><td style="color:var(--expense)">'+fmt(g.overdue)+'</td></tr>'; });
+      hg+='</tbody></table><div class="hint" style="margin-top:4px">행을 누르면 아래 목록이 해당 '+head+'(으)로 좁혀집니다.'+(arFilter?' · <a href="#" onclick="pickArFilter(null);return false">전체 보기</a>':'')+'</div>';
+      $('arGroupBox').innerHTML=hg;
     }
-    let h='<table><thead><tr><th>고객</th><th>인보이스</th><th>발행일</th><th>만기일</th><th>청구액</th><th>입금</th><th>잔액</th><th>상태</th><th></th></tr></thead><tbody>';
-    list.forEach(it=>{
-      h+='<tr'+(it.overdue?' class="ovd"':'')+'>'
-        +'<td><b>'+esc(it.customer_name)+'</b> <span class="hint">'+esc(it.customer_code)+'</span></td>'
-        +'<td>'+esc(it.sat_no||('#'+it.id))+'</td>'
-        +'<td>'+esc(it.inv_date||'—')+'</td>'
-        +'<td>'+esc(it.due_date||'—')+'</td>'
-        +'<td>'+fmt(it.total_mxn)+'</td>'
-        +'<td>'+fmt(it.paid)+'</td>'
-        +'<td><b>'+fmt(it.outstanding)+'</b></td>'
-        +'<td>'+arDueText(it)+'</td>'
-        +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">반제</button> '
-        +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="openStatement('+it.customer_id+')">명세서</button></td>'
-        +'</tr>';
-      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
-    });
-    h+='</tbody></table>';
-    $('arListBox').innerHTML=h;
+    $('arListBox').innerHTML=arListTableHtml(list);
   }
   function pickArFilter(k){ arFilter=k; arOpenRepay=null; renderAr(); }
   function repayForm(it){
@@ -285,13 +325,25 @@
       +'<div><label>반제 금액 (잔액 MX$'+fmt(it.outstanding)+')</label><input id="rpAmt" type="number" step="0.01" value="'+it.outstanding+'" style="width:140px"></div>'
       +'<div><label>입금 계좌</label><select id="rpAcc" style="width:170px">'+(accOpts||'<option value="">(계좌 없음)</option>')+'</select></div>'
       +'<div><label>입금일</label><input id="rpDate" type="date" value="'+arToday+'" style="width:150px"></div>'
+      +'<div><label>은행 입금증(선택)</label>'
+        +'<input id="rpFile" type="file" accept="image/*,application/pdf" style="display:none" onchange="onReceiptPicked(event)">'
+        +'<button class="btn" style="background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="document.getElementById(\'rpFile\').click()">📎 파일 선택</button>'
+        +' <span id="rpFileName" class="hint">'+(arRepayReceipt?esc(arRepayReceiptName||'선택됨'):'미첨부')+'</span></div>'
       +'<div><button class="btn" onclick="submitRepay('+it.id+')">저장</button></div>'
       +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="openRepay(null)">취소</button></div>'
-      +'</div><div class="hint" style="margin-top:6px">잔액보다 작게 넣으면 부분수금(반제)으로 기록됩니다. 입금은 통장 거래로도 반영돼요.</div>';
+      +'</div><div class="hint" style="margin-top:6px">잔액보다 작게 넣으면 부분수금(반제)으로 기록됩니다. 입금은 통장 거래로도 반영돼요. 입금증(이미지·PDF, 8MB 이하)을 첨부하면 <b>수금내역</b>에서 다시 볼 수 있습니다.</div>';
   }
-  function openRepay(id){ arOpenRepay=id; renderAr(); }
+  function onReceiptPicked(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    if(f.size>8*1024*1024){ const m=$('arMsg'); m.className='msg err'; m.textContent='입금증 파일이 너무 큽니다(8MB 이하).'; ev.target.value=''; return; }
+    const rd=new FileReader();
+    rd.onload=()=>{ arRepayReceipt=rd.result; arRepayReceiptName=f.name; const el=$('rpFileName'); if(el)el.textContent=f.name; };
+    rd.onerror=()=>{ const m=$('arMsg'); m.className='msg err'; m.textContent='파일을 읽지 못했습니다.'; };
+    rd.readAsDataURL(f);
+  }
+  function openRepay(id){ arOpenRepay=id; if(id) arHistOpen=null; arRepayReceipt=null; arRepayReceiptName=null; renderAr(); }
   async function submitRepay(invId){
-    const it=arItems.find(x=>x.id===invId); if(!it)return;
+    const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
     const m=$('arMsg'); m.className='msg';
     const amt=Number($('rpAmt').value), acc=Number($('rpAcc').value), date=$('rpDate').value;
     if(!(amt>0)){ m.className='msg err'; m.textContent='반제 금액을 입력하세요(양수).'; return; }
@@ -299,12 +351,89 @@
     if(!acc){ m.className='msg err'; m.textContent='입금 계좌를 선택하세요.'; return; }
     if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
     try{
-      const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:it.customer_id,pay_date:date,account_id:acc,amount:amt,allocations:[{invoice_id:invId,amount:amt}],memo:'수금 상세 반제'})});
+      const body={customer_id:it.customer_id,pay_date:date,account_id:acc,amount:amt,allocations:[{invoice_id:invId,amount:amt}],memo:'수금 상세 반제'};
+      if(arRepayReceipt){ body.receipt=arRepayReceipt; body.receipt_name=arRepayReceiptName; }
+      const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='반제 실패: '+(d.detail?JSON.stringify(d.detail):(d.error||res.status)); return; }
-      m.className='msg ok'; m.textContent='반제 저장 완료: '+it.customer_name+' MX$'+fmt(amt)+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'');
-      arOpenRepay=null; loadAr();
+      m.className='msg ok'; m.textContent='반제 저장 완료: '+it.customer_name+' MX$'+fmt(amt)+(d.receipt?' · 입금증 첨부됨':'')+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'');
+      arOpenRepay=null; arRepayReceipt=null; arRepayReceiptName=null; delete arHistData[invId];
+      if(arSearchMode){ await doArSearch(); } else { loadAr(); }
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  // ===== 인보이스별 수금내역 드릴다운 =====
+  async function toggleHist(invId){
+    if(arHistOpen===invId){ arHistOpen=null; renderAr(); return; }
+    arHistOpen=invId; arOpenRepay=null; renderAr();
+    if(!arHistData[invId]){
+      try{
+        const r=await fetch(session.api+'/api/ar/invoice/'+invId+'/payments',{headers:auth()});
+        const d=await r.json();
+        arHistData[invId]=(d&&!d.error)?d:{error:(d&&d.error)||'load_fail'};
+      }catch(e){ arHistData[invId]={error:'네트워크 오류'}; }
+      if(arHistOpen===invId) renderAr();
+    }
+  }
+  function histInnerHtml(it){
+    const d=arHistData[it.id];
+    if(!d) return '<div class="histbox"><div class="hint">수금내역 불러오는 중…</div></div>';
+    if(d.error) return '<div class="histbox"><div class="hint">수금내역을 불러오지 못했습니다 ('+esc(d.error)+').</div></div>';
+    const inv=d.invoice||{}, pays=d.payments||[];
+    let h='<div class="histbox">';
+    h+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:2px">'
+      +'<b style="color:var(--brand)">수금내역 · '+esc(inv.sat_no||('#'+it.id))+'</b>'
+      +(inv.paid_full?'<span class="chip chip-paid">완납(100%)</span>':'<span class="chip chip-part">미수 MX$'+fmt(inv.outstanding)+'</span>')
+      +'<span class="hint">청구 MX$'+fmt(inv.total_mxn)+' · 입금 MX$'+fmt(inv.paid)+' · 잔액 MX$'+fmt(inv.outstanding)+'</span>'
+      +'</div>';
+    if(!pays.length){ h+='<div class="hint">아직 수금(반제) 기록이 없습니다.</div>'; }
+    else{
+      h+='<table><thead><tr><th style="text-align:left">입금일</th><th>금액</th><th style="text-align:left">계좌</th><th style="text-align:left">메모</th><th style="text-align:left">등록자</th><th>입금증</th></tr></thead><tbody>';
+      pays.forEach(p=>{
+        h+='<tr><td style="text-align:left">'+esc(p.pay_date||'—')+'</td>'
+          +'<td><b>'+fmt(p.amount)+'</b></td>'
+          +'<td style="text-align:left">'+esc(p.account_name||'—')+'</td>'
+          +'<td style="text-align:left">'+esc(p.memo||'—')+'</td>'
+          +'<td style="text-align:left">'+esc(p.created_by_name||'—')+'</td>'
+          +'<td>'+(p.has_receipt?'<button class="lnk" onclick="viewReceipt('+p.payment_id+')">👁 보기</button>':'<span class="hint">—</span>')+'</td></tr>';
+      });
+      h+='</tbody></table>';
+    }
+    h+='<div style="margin-top:8px"><button class="lnk" onclick="openStatement('+it.customer_id+')">📄 이 고객 전체 미수 명세서(PDF)</button></div>';
+    h+='</div>';
+    return h;
+  }
+  async function viewReceipt(paymentId){
+    const m=$('arMsg'); m.className='msg';
+    try{
+      const r=await fetch(session.api+'/api/ar/payments/'+paymentId+'/receipt/file',{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error||!d.file_data){ m.className='msg err'; m.textContent='입금증을 불러오지 못했습니다.'; return; }
+      const parts=String(d.file_data).split(','); const meta=parts[0]||''; const b64=parts[1]||'';
+      const mime=(meta.match(/data:([^;]+)/)||[])[1]||(d.mime_type||'application/octet-stream');
+      const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      const w=window.open(url,'_blank'); if(!w){ m.className='msg err'; m.textContent='팝업이 차단되었습니다. 팝업을 허용해 주세요.'; }
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ m.className='msg err'; m.textContent='입금증 보기 실패(네트워크).'; }
+  }
+  // ===== SAT/고객 검색 (완납 포함) =====
+  async function doArSearch(){
+    const q=($('arSearchQ').value||'').trim();
+    if(!q){ clearArSearch(); return; }
+    $('arSearchInfo').textContent='검색 중…';
+    try{
+      const r=await fetch(session.api+'/api/ar/search?q='+encodeURIComponent(q),{headers:auth()});
+      const d=await r.json();
+      arSearchItems=(d&&d.items)||[]; arToday=(d&&d.today)||arToday;
+      arSearchMode=true; arHistOpen=null; arOpenRepay=null;
+      $('arSearchInfo').textContent='"'+q+'" 결과 '+arSearchItems.length+'건 (완납 포함)';
+      renderAr();
+    }catch(e){ $('arSearchInfo').textContent='검색 실패(네트워크).'; }
+  }
+  function clearArSearch(){
+    arSearchMode=false; arSearchItems=[]; arHistOpen=null; arOpenRepay=null;
+    $('arSearchQ').value=''; $('arSearchInfo').textContent='';
+    renderAr();
   }
   // 명세서: 화면 미리보기 → [PDF 다운로드]
   let stmtCustomer=null;
@@ -401,6 +530,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260621k"></script>
+<script src="refatrix-nav.js?v=20260622a"></script>
 </body>
 </html>
