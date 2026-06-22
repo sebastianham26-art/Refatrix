@@ -217,6 +217,7 @@
     import:{file:'refatrix-import.html',name:'수입 입고'},
     rnr:{file:'refatrix-rnr.html',name:'업무 프로세스'},
     settlement:{file:'refatrix-settlement.html',name:'정산차액'},
+    recost:{file:'refatrix-recost.html',name:'수입 원가 정정'},
     board:{file:'refatrix-board.html',name:'일정·공지·할 일'},
     users:{file:'refatrix-users.html',name:'사용자·권한'},
     company:{file:'refatrix-company.html',name:'회사설정'},
@@ -225,7 +226,7 @@
   };
 
   // 화면 → 실제 권한 키 (null=공통 누구나, '__director__'=디렉터 전용)
-  const SCREEN_PAGEKEY={ sales:'sales', quote:['quote','sales'], quotelist:['quote','sales'], stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', budget:'budget', importcost:'inventory', import:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null, rnr:null };
+  const SCREEN_PAGEKEY={ sales:'sales', quote:['quote','sales'], quotelist:['quote','sales'], stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'], pipeline:'pipeline', customers:'customers', targets:'targets', marketing:'marketing', finance:'transactions', settlement:'settlement', recost:'__director__', budget:'budget', importcost:'inventory', import:'inventory', products:'products', users:'__director__', company:'__director__', dashboard:null, board:null, salesperf:null, rnr:null };
   // oscar·armando·maria 전용 포털홈 변형 여부(매출목표 우선 + 평일 달력 + 대시보드 제외)
   function isSlimPortalUser(){
     const n=String(session&&session.user&&session.user.name||'').trim().toLowerCase();
@@ -395,7 +396,7 @@
   const MENU_GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['salesperf','dashboard']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['quote','quotelist','orderfunnel','funnel','pipeline','customers','targets','devrequest']},
-    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','importcost','import']},
+    {key:'support', title:'영업지원', color:'#7FB5C9', screens:['sales','stock','shortage','settlement','recost','importcost','import']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','settlement','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company']},
@@ -404,7 +405,7 @@
   const SCREEN_DESC={
     board:'달력·공지·내 할 일', dashboard:'위젯 대시보드',
     salesperf:'매출·수금·파이프라인', sales:'인보이스 등록·승인', stock:'입고·출고·조정', shortage:'부족분 집계(발주근거)', devrequest:'경쟁사코드 대응 개발', quote:'견적 작성·매출전환', quotelist:'견적·매출 추적', pipeline:'칸반·미팅', customers:'고객·외상 추적', targets:'목표 대비 달성',
-    finance:'거래·수금·캐시플로', settlement:'정산차액(비현금)', budget:'예산 계획', importcost:'수입 부대비용·원가',
+    finance:'거래·수금·캐시플로', settlement:'정산차액(비현금)', recost:'수입 단가·부대비용 소급 정정', budget:'예산 계획', importcost:'수입 부대비용·원가',
     products:'제품마스터·재고', marketing:'마케팅 예산·배분', users:'사용자·권한', company:'로고·회사정보·계좌', import:'수입 배치 등록',
   };
   let openTab='common';
@@ -699,6 +700,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260622a"></script>
 </body>
 </html>

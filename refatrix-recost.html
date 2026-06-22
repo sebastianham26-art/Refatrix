@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 수입 원가 정정</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--gold:#B8893B;--purple:#6B4FB0;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:4px}
+  .step{font-size:12px;font-weight:800;color:#fff;background:var(--brand);border-radius:999px;padding:2px 9px;margin-right:6px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#F6E7E4;color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d5}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.n,th.n{font-variant-numeric:tabular-nums}
+  .ovlist{margin-top:8px}
+  .ovrow{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .pill{font-size:11px;font-weight:700;background:#faf8f3;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .warn{background:#fdf4e3;border:1px solid #e7c98b;color:#8a6512;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-top:10px}
+  .tot{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+  .totbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:170px}
+  .totbox .v{font-size:22px;font-weight:800}.totbox .l{font-size:11px;color:var(--muted);margin-top:2px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260622a">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수입 원가 정정 · 단가 입력 + 부대비용 1/n + 소급 매출원가</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card" id="notDir" style="display:none"><div class="warn">이 화면은 <b>디렉터 전용</b>입니다.</div></div>
+
+    <div id="dirApp" style="display:none">
+      <div class="card">
+        <div class="card-h"><span class="step">1</span>단가 템플릿 다운로드</div>
+        <div class="hint">등록된 모든 수입 라인(배치번호 · SKU · 수량)을 엑셀로 받습니다. <b>단가입력(MXN)</b> 열에 단가를 채워 2단계에서 업로드하세요. <code>_batch_id · _product_id</code> 열은 매칭용이니 수정하지 마세요.</div>
+        <button class="btn" id="dlBtn" style="margin-top:12px">⬇ 엑셀 다운로드</button>
+        <span class="hint" id="dlInfo" style="margin-left:8px"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><span class="step">2</span>단가 업로드 + 부대비용(배치별 1/n)</div>
+        <div class="hint">단가를 채운 엑셀을 올리고, 필요하면 배치별 부대비용(운임·통관 등)을 입력하세요. 부대비용은 그 배치 <b>수량 비율(1/n)</b>로 원가에 얹습니다.</div>
+        <div style="margin-top:12px"><label>① 정정 엑셀 업로드</label>
+          <input id="upFile" type="file" accept=".xlsx,.xls" onchange="onUpload(event)">
+          <span class="hint" id="upInfo"></span>
+        </div>
+        <div style="margin-top:14px"><label>② 배치별 부대비용 (선택)</label>
+          <div class="ovrow">
+            <select id="ovBatch" style="min-width:240px"></select>
+            <input id="ovAmt" type="number" step="0.01" placeholder="금액 (MXN)" style="width:150px">
+            <button class="btn sm ghost" onclick="addOverhead()">+ 추가</button>
+          </div>
+          <div class="ovlist" id="ovList"></div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="pvBtn" onclick="doPreview()" disabled>미리보기</button>
+          <button class="btn" id="apBtn" onclick="doApply()" disabled style="background:var(--gold)">적용</button>
+        </div>
+        <div class="msg" id="msg"></div>
+      </div>
+
+      <div class="card hidden" id="pvCard">
+        <div class="card-h"><span class="step">3</span>미리보기 — 적용 결과</div>
+        <div class="warn">⚠ <b>적용하면 이미 팔린 분의 매출원가 차액이 이번 달 정산차액(소급 COGS)으로 기장</b>됩니다. 지나간(마감) 달의 손익은 건드리지 않습니다. 되돌리려면 정산차액에서 별도 처리해야 하니 미리보기를 꼭 확인하세요.</div>
+        <div class="tot" id="pvTot"></div>
+        <div style="overflow-x:auto"><div id="pvBody"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const nf=(n)=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:2});
+  let isDirector=false, uploadedLines=[], overheads=[], batches=[];
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      initApp();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function initApp(){
+    isDirector=(session.user&&session.user.role==='director');
+    if(!isDirector){ try{ const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json()); isDirector=!!(su&&su.isDirector)||((su&&su.role)==='director'); }catch(e){} }
+    if(!isDirector){ $('notDir').style.display=''; return; }
+    $('dirApp').style.display='';
+    loadBatches();
+  }
+
+  async function loadBatches(){
+    try{
+      const d=await fetch(session.api+'/api/import-batches?status=approved',{headers:auth()}).then(r=>r.json());
+      batches=(d&&d.items)||[];
+      $('ovBatch').innerHTML='<option value="">배치 선택…</option>'+batches.map(b=>'<option value="'+b.id+'">'+esc(b.batch_no||('#'+b.id))+' · '+esc(b.import_date||'')+' · '+nf(b.total_qty)+'개</option>').join('');
+    }catch(e){ $('ovBatch').innerHTML='<option value="">(배치 불러오기 실패)</option>'; }
+  }
+
+  // === 1단계: 템플릿 엑셀 다운로드 ===
+  $('dlBtn')?.addEventListener('click', async ()=>{
+    $('dlInfo').textContent='준비 중…';
+    try{
+      const d=await fetch(session.api+'/api/import-recost/lines',{headers:auth()}).then(r=>r.json());
+      const lines=(d&&d.lines)||[];
+      if(!lines.length){ $('dlInfo').textContent='수입 라인이 없습니다.'; return; }
+      const header=['Lote(배치)','SKU','품명','수량','현재단가(MXN)','단가입력(MXN)','_batch_id','_product_id'];
+      const aoa=[header].concat(lines.map(l=>[l.batch_no, l.code, l.name, l.qty, l.current_unit_cost, '', l.batch_id, l.product_id]));
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:8},{wch:14},{wch:14},{wch:10},{wch:11}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'단가입력');
+      XLSX.writeFile(wb,'refatrix_import_unit_prices.xlsx');
+      $('dlInfo').textContent=lines.length+'개 라인 다운로드 완료.';
+    }catch(e){ $('dlInfo').textContent='다운로드 실패(네트워크).'; }
+  });
+
+  // === 2단계: 업로드 파싱 ===
+  function onUpload(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const wb=XLSX.read(rd.result,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+        const out=[];
+        rows.forEach(r=>{
+          const bid=Number(r['_batch_id']), pid=Number(r['_product_id']);
+          const price=r['단가입력(MXN)'];
+          if(!bid||!pid) return;
+          if(price===''||price==null) return;
+          const v=Number(price); if(!(v>=0)) return;
+          out.push({batch_id:bid, product_id:pid, unit_price_mxn:v});
+        });
+        uploadedLines=out;
+        $('upInfo').textContent=' 단가 입력 '+out.length+'개 라인 인식됨.';
+        refreshButtons();
+      }catch(e){ $('upInfo').textContent=' 엑셀을 읽지 못했습니다.'; }
+    };
+    rd.readAsArrayBuffer(f);
+  }
+
+  function addOverhead(){
+    const bid=Number($('ovBatch').value), amt=Number($('ovAmt').value);
+    if(!bid){ flash('배치를 선택하세요.'); return; }
+    if(!(amt>0)){ flash('부대비용 금액을 입력하세요.'); return; }
+    const b=batches.find(x=>Number(x.id)===bid);
+    overheads=overheads.filter(o=>o.batch_id!==bid); // 같은 배치는 교체
+    overheads.push({batch_id:bid, amount_mxn:amt, label:(b?(b.batch_no||('#'+bid)):('#'+bid))});
+    $('ovAmt').value='';
+    renderOverheads(); refreshButtons();
+  }
+  function removeOverhead(bid){ overheads=overheads.filter(o=>o.batch_id!==bid); renderOverheads(); refreshButtons(); }
+  function renderOverheads(){
+    $('ovList').innerHTML = overheads.length? overheads.map(o=>'<span class="pill">'+esc(o.label)+' · MX$'+nf(o.amount_mxn)+' <a href="#" onclick="removeOverhead('+o.batch_id+');return false" style="color:var(--expense);text-decoration:none;font-weight:800">×</a></span>').join(' ') : '<span class="hint">부대비용 없음(선택).</span>';
+  }
+  function refreshButtons(){
+    const has = uploadedLines.length>0 || overheads.length>0;
+    $('pvBtn').disabled=!has; $('apBtn').disabled=true; // 적용은 미리보기 후 활성
+  }
+  function flash(t){ const m=$('msg'); m.className='msg err'; m.textContent=t; }
+
+  // === 미리보기 / 적용 ===
+  async function doPreview(){
+    const m=$('msg'); m.className='msg';
+    try{
+      const d=await fetch(session.api+'/api/import-recost/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({lines:uploadedLines,overheads})}).then(r=>r.json());
+      if(d.error){ flash('미리보기 실패: '+d.error); return; }
+      renderPreview(d);
+      $('pvCard').classList.remove('hidden');
+      $('apBtn').disabled=!(d.items&&d.items.length);
+      $('pvCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    }catch(e){ flash('미리보기 실패(네트워크).'); }
+  }
+  function renderPreview(d){
+    const items=d.items||[];
+    $('pvTot').innerHTML=
+      '<div class="totbox"><div class="l">대상 제품</div><div class="v">'+items.length+'개</div></div>'
+      +'<div class="totbox"><div class="l">재고 가산액(재고금액↑)</div><div class="v" style="color:var(--income)">MX$'+nf(d.totalStockAddedMxn)+'</div></div>'
+      +'<div class="totbox"><div class="l">소급 매출원가(이번 달 정산차액)</div><div class="v" style="color:var(--expense)">MX$'+nf(d.totalRetroCogsMxn)+'</div></div>';
+    if(!items.length){ $('pvBody').innerHTML='<div class="hint" style="margin-top:10px">변경될 제품이 없습니다. 단가/부대비용을 확인하세요.</div>'; return; }
+    let h='<table><thead><tr><th>SKU</th><th>품명</th><th class="n">총수입수량</th><th class="n">판매수량</th><th class="n">재고수량</th><th class="n">기존원가</th><th class="n">새 원가</th><th class="n">재고가산</th><th class="n">소급 COGS</th></tr></thead><tbody>';
+    items.forEach(it=>{
+      h+='<tr><td><b>'+esc(it.code||'-')+'</b></td><td>'+esc(it.name||'-')+'</td>'
+        +'<td class="n">'+nf(it.total_qty)+'</td><td class="n">'+nf(it.sold_qty)+'</td><td class="n">'+nf(it.remaining_qty)+'</td>'
+        +'<td class="n">'+nf(it.avg_before)+'</td><td class="n"><b>'+nf(it.new_avg)+'</b></td>'
+        +'<td class="n">'+nf(it.stock_added_mxn)+'</td><td class="n" style="color:var(--expense)">'+nf(it.retro_cogs_mxn)+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    $('pvBody').innerHTML=h;
+  }
+  async function doApply(){
+    const m=$('msg'); m.className='msg';
+    if(!window.confirm('적용하면 제품 평균원가가 갱신되고, 이미 팔린 분의 매출원가 차액이 이번 달 정산차액으로 기장됩니다. 진행할까요?')) return;
+    $('apBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({lines:uploadedLines,overheads})}).then(r=>r.json());
+      if(d.error){ flash('적용 실패: '+d.error); $('apBtn').disabled=false; return; }
+      m.className='msg ok'; m.textContent='적용 완료 · 제품 '+d.products+'개 / 정산차액 '+d.adjustments+'건 · 소급 매출원가 MX$'+nf(d.totalRetroCogsMxn)+' (재고가산 MX$'+nf(d.totalStockAddedMxn)+'). 정산차액은 수금/정산 화면에서 확인하세요.';
+    }catch(e){ flash('적용 실패(네트워크).'); $('apBtn').disabled=false; }
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260622a"></script>
+</body>
+</html>

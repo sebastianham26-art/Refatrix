@@ -2,7 +2,7 @@ import { query } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-const SRC_LABEL = { sales_edit: '매출 수정', sales_delete: '매출 삭제', import_cost: '수입 부대비용' };
+const SRC_LABEL = { sales_edit: '매출 수정', sales_delete: '매출 삭제', import_cost: '수입 부대비용', import_recost: '수입 단가 정정' };
 
 /**
  * 정산차액(수입원가 정산차액) 집계 — 비현금 손익 조정.

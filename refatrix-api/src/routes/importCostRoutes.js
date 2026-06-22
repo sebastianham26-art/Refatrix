@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { costDocTotalMxn, allocateByQty, applyClosedMonth, isClosedMonth, toMxn } from '../importCost.js';
 import { round2, fieldVisible } from '../permissions.js';
+import { computeRecost } from '../recost.js';
 import { logEvent } from '../audit.js';
 
 // 한 입고 건의 총수량 (분배 비율 기준)
@@ -103,6 +104,126 @@ export default async function importCostRoutes(app) {
     const n = (await query(`SELECT COUNT(*)::int AS n FROM import_batches WHERE deleted_at IS NULL AND status='pending'`)).rows[0].n;
     return { pending: n };
   });
+
+  // =====================================================================
+  // 수입 원가 정정(재가) — 디렉터 전용
+  //   ① 단가 템플릿(모든 수입 라인) 엑셀 다운로드용 데이터
+  //   ② 정정 단가 + 배치별 부대비용(1/n) 미리보기
+  //   ③ 적용: 제품 평균원가·라인/재고이동 원가 갱신 + 팔린 분 소급 COGS(이번 달 정산차액)
+  // =====================================================================
+  app.get('/api/import-recost/lines', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT il.batch_id, b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.fx_rate,
+              il.product_id, p.code, p.name, il.qty, il.unit_cost_mxn
+         FROM import_lines il
+         JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
+         JOIN products p ON p.id=il.product_id
+        ORDER BY b.import_date, b.id, p.code`)).rows;
+    return { lines: rows.map((r) => ({
+      batch_id: Number(r.batch_id), batch_no: r.batch_no || ('#' + r.batch_id), import_date: r.import_date,
+      fx_rate: Number(r.fx_rate || 1), product_id: Number(r.product_id), code: r.code, name: r.name,
+      qty: Number(r.qty), current_unit_cost: Number(r.unit_cost_mxn || 0),
+    })) };
+  });
+
+  // 정정 입력으로부터 계산 입력 데이터 준비(미리보기/적용 공용)
+  async function prepareRecost(c, body) {
+    const upl = Array.isArray(body.lines) ? body.lines : [];
+    const ovl = Array.isArray(body.overheads) ? body.overheads : [];
+    const priceMap = {};
+    for (const l of upl) {
+      if (l.unit_price_mxn == null || l.unit_price_mxn === '') continue;
+      priceMap[Number(l.batch_id) + ':' + Number(l.product_id)] = Number(l.unit_price_mxn);
+    }
+    const batchOverhead = {};
+    for (const o of ovl) { if (o.amount_mxn != null && Number(o.amount_mxn) > 0) batchOverhead[Number(o.batch_id)] = round2(Number(o.amount_mxn)); }
+    // 영향 제품 = 업로드 라인 제품 ∪ 부대비용 배치의 제품
+    const prodSet = new Set(upl.map((l) => Number(l.product_id)));
+    const seedBatches = [...new Set([...upl.map((l) => Number(l.batch_id)), ...Object.keys(batchOverhead).map(Number)])];
+    if (seedBatches.length) {
+      const rs = (await c.query(`SELECT DISTINCT product_id FROM import_lines WHERE batch_id = ANY($1)`, [seedBatches])).rows;
+      rs.forEach((r) => prodSet.add(Number(r.product_id)));
+    }
+    const productIds = [...prodSet].filter(Boolean);
+    if (!productIds.length) return { empty: true, productLines: {}, batchOverhead, batchTotalQty: {}, productState: {}, soldQty: {} };
+    // 영향 제품의 모든 수입 라인(모든 배치)
+    const ilRows = (await c.query(
+      `SELECT il.batch_id, il.product_id, il.qty, il.unit_cost_mxn
+         FROM import_lines il JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
+        WHERE il.product_id = ANY($1)`, [productIds])).rows;
+    const productLines = {}; const allBatches = new Set();
+    for (const r of ilRows) {
+      const pid = Number(r.product_id), bid = Number(r.batch_id);
+      allBatches.add(bid);
+      const k = bid + ':' + pid;
+      const price = (k in priceMap) ? priceMap[k] : Number(r.unit_cost_mxn || 0); // 업로드 우선, 없으면 현재값
+      (productLines[pid] = productLines[pid] || []).push({ batch_id: bid, qty: Number(r.qty), unit_price_mxn: price });
+    }
+    const btqRows = (await c.query(`SELECT batch_id, COALESCE(SUM(qty),0) AS q FROM import_lines WHERE batch_id = ANY($1) GROUP BY batch_id`, [[...allBatches]])).rows;
+    const batchTotalQty = {}; btqRows.forEach((r) => { batchTotalQty[Number(r.batch_id)] = Number(r.q); });
+    const pRows = (await c.query(`SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id = ANY($1)`, [productIds])).rows;
+    const productState = {}; pRows.forEach((p) => { productState[p.id] = { stock_qty: Number(p.stock_qty), avg_cost: Number(p.avg_cost), code: p.code, name: p.name }; });
+    const sRows = (await c.query(
+      `SELECT sil.product_id, COALESCE(SUM(sil.qty),0) AS q
+         FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id
+        WHERE sil.product_id = ANY($1) AND si.status='posted' AND si.deleted_at IS NULL
+        GROUP BY sil.product_id`, [productIds])).rows;
+    const soldQty = {}; sRows.forEach((r) => { soldQty[Number(r.product_id)] = Number(r.q); });
+    return { productLines, batchOverhead, batchTotalQty, productState, soldQty };
+  }
+
+  app.post('/api/import-recost/preview', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const data = await prepareRecost(/* read-only */ { query: (q, a) => query(q, a) }, req.body || {});
+    if (data.empty) return { items: [], totalStockAddedMxn: 0, totalRetroCogsMxn: 0 };
+    const res = computeRecost(data);
+    const items = Object.values(res.perProduct).map((p) => ({
+      product_id: p.product_id, code: p.code, name: p.name, total_qty: p.totalQty,
+      sold_qty: p.soldQty, remaining_qty: p.remainingQty, avg_before: p.avgBefore, new_avg: p.newAvg,
+      stock_added_mxn: p.stockAddedMxn, retro_cogs_mxn: p.retroCogsMxn,
+    })).sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+    return { items, totalStockAddedMxn: res.totalStockAddedMxn, totalRetroCogsMxn: res.totalRetroCogsMxn };
+  });
+
+  app.post('/api/import-recost/apply', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const data = await prepareRecost(c, req.body || {});
+      if (data.empty) return { ok: true, products: 0, adjustments: 0, totalRetroCogsMxn: 0, totalStockAddedMxn: 0 };
+      const res = computeRecost(data);
+      let nProd = 0, nAdj = 0;
+      for (const pid of Object.keys(res.perProduct)) {
+        const p = res.perProduct[pid];
+        await c.query(`UPDATE products SET avg_cost=$1, updated_by=$2 WHERE id=$3`, [p.newAvg, userId, pid]);
+        for (const le of p.lineEff) {
+          await c.query(`UPDATE import_lines SET unit_cost_mxn=$1, avg_cost_after=$2, alloc_overhead=$3 WHERE batch_id=$4 AND product_id=$5`,
+            [le.eff, p.newAvg, round2(le.perUnitOv * le.qty), le.batch_id, pid]);
+          await c.query(`UPDATE stock_movements SET unit_cost_mxn=$1 WHERE batch_id=$2 AND product_id=$3 AND move_type='in'`,
+            [le.eff, le.batch_id, pid]);
+        }
+        nProd++;
+        // 팔린 분 → 이번 달 정산차액(소급 COGS). shift 기준이라 재적용 시 0(멱등).
+        if (Math.abs(p.shift) > 0.005 && p.soldQty > 0) {
+          const sls = (await c.query(
+            `SELECT sil.invoice_id, sil.qty, sil.applied_unit_cost, si.inv_date
+               FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id
+              WHERE sil.product_id=$1 AND si.status='posted' AND si.deleted_at IS NULL`, [pid])).rows;
+          for (const s of sls) {
+            const diff = round2(Number(s.qty) * p.shift);
+            if (Math.abs(diff) < 0.005) continue;
+            await c.query(
+              `INSERT INTO cogs_adjustments (doc_id, sales_invoice_id, product_id, sale_date, qty, unit_cost_before, unit_cost_after, diff_mxn, kind, source)
+               VALUES (NULL,$1,$2,$3,$4,$5,$6,$7,'variance','import_recost')`,
+              [s.invoice_id, pid, s.inv_date, Number(s.qty), p.avgBefore, p.newAvg, diff]);
+            nAdj++;
+          }
+        }
+      }
+      return { ok: true, products: nProd, adjustments: nAdj, totalRetroCogsMxn: res.totalRetroCogsMxn, totalStockAddedMxn: res.totalStockAddedMxn };
+    });
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: 'import_recost', detail: { products: out.products, adjustments: out.adjustments, retro: out.totalRetroCogsMxn } });
+    return out;
+  });
+
 
   // 부대비용 문서 작성(+명세 +분배). 작성 시점엔 원가 미반영(pending).
   app.post('/api/import-costs', { preHandler: [authGuard, requirePage('inventory')] }, async (req, reply) => {
