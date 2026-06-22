@@ -130,16 +130,26 @@ test('계좌 필터: 권한 계좌만 조회(IN 동등 — 프로덕션은 ANY($
   assert.deepEqual(rows.map((r) => Number(r.id)), [10, 12]);
 });
 
-test('account-access PUT: 전체 교체(DELETE 후 INSERT) + operate UPSERT', () => {
+test('account-access PUT: 전체 교체(DELETE 후 plain INSERT) — UNIQUE 제약과 무관', () => {
   const db = freshDb();
   // 초기: 사용자2 에 계좌10 열람만
   db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,10,false)`);
-  // PUT: 사용자2 권한을 [10 operate, 11 view] 로 교체
+  // PUT: 사용자2 권한을 [10 operate, 11 view] 로 교체 (DELETE 후 plain INSERT)
   db.public.none(`DELETE FROM user_account_access WHERE user_id=2`);
-  db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,10,true)
-                  ON CONFLICT (user_id, account_id) DO UPDATE SET can_operate=EXCLUDED.can_operate`);
-  db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,11,false)
-                  ON CONFLICT (user_id, account_id) DO UPDATE SET can_operate=EXCLUDED.can_operate`);
+  db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,10,true)`);
+  db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,11,false)`);
   const rows = db.public.many(`SELECT account_id, can_operate FROM user_account_access WHERE user_id=2 ORDER BY account_id`);
   assert.deepEqual(rows.map((r) => [Number(r.account_id), r.can_operate]), [[10, true], [11, false]]);
+});
+
+test('account-access PUT: UNIQUE 제약이 없는 테이블에서도 500 없이 동작(회귀)', () => {
+  // 프로덕션처럼 UNIQUE(user_id, account_id) 제약이 빠진 테이블 재현
+  const db = newDb();
+  db.public.none(`CREATE TABLE user_account_access (id SERIAL PRIMARY KEY, user_id INT, account_id INT, can_operate BOOLEAN)`);
+  db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,10,false)`);
+  // PUT 경로: DELETE 후 plain INSERT — ON CONFLICT 없으므로 제약과 무관하게 성공해야 함
+  db.public.none(`DELETE FROM user_account_access WHERE user_id=2`);
+  db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,10,true)`);
+  const r = db.public.one(`SELECT can_operate FROM user_account_access WHERE user_id=2 AND account_id=10`);
+  assert.equal(r.can_operate, true);
 });

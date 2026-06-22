@@ -119,12 +119,16 @@ export default async function userRoutes(app) {
     const isDirector = u.role === 'director';
     return {
       user_id: id, is_director: isDirector,
-      items: accs.map((a) => ({
-        account_id: a.id, name: a.name, type: a.type, currency: a.currency,
-        // 디렉터는 항상 전체 열람/운영(테이블과 무관) — UI 표시용.
-        view: isDirector ? true : !!granted[a.id],
-        operate: isDirector ? true : !!(granted[a.id] && granted[a.id].operate),
-      })),
+      items: accs.map((a) => {
+        const aid = Number(a.id);
+        const g = granted[aid];
+        return {
+          account_id: aid, name: a.name, type: a.type, currency: a.currency,
+          // 디렉터는 항상 전체 열람/운영(테이블과 무관) — UI 표시용.
+          view: isDirector ? true : !!g,
+          operate: isDirector ? true : !!(g && g.operate),
+        };
+      }),
     };
   });
 
@@ -144,9 +148,9 @@ export default async function userRoutes(app) {
     await withTx(async (c) => {
       await c.query(`DELETE FROM user_account_access WHERE user_id=$1`, [id]);
       for (const it of keep) {
+        // DELETE 후 삽입이라 충돌 없음 → ON CONFLICT 불필요(UNIQUE 제약 유무와 무관하게 동작).
         await c.query(
-          `INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES ($1,$2,$3)
-           ON CONFLICT (user_id, account_id) DO UPDATE SET can_operate=EXCLUDED.can_operate`,
+          `INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES ($1,$2,$3)`,
           [id, it.account_id, it.operate]);
       }
     });
