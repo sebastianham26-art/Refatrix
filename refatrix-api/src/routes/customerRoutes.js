@@ -267,21 +267,35 @@ export default async function customerRoutes(app) {
   // 고객 수정
   // 고객 수정에 적용할 필드를 customers에 반영(헬퍼) — 승인 시 재사용
   async function applyCustomerUpdate(id, c, b, userId) {
-    let teamId = c.team_id;
-    if (b.team_id != null && Number(b.team_id) !== c.team_id) teamId = Number(b.team_id);
-    const stageChanged = b.stage_id != null && Number(b.stage_id) !== c.stage_id;
+    // 빈문자열/무효값이 숫자·FK 컬럼(owner_id, stage_id, team_id, credit_days 등)에 들어가
+    // "invalid input syntax for type bigint" 류 오류로 승인이 실패하던 문제 방지.
+    // (요청 생성 시엔 proposed JSON 저장만 하므로 통과, 실제 검증은 승인 UPDATE 시점에 발생)
+    // 필수/NOT NULL 숫자(team_id·stage_id·discount·credit_days): 빈값·무효 → 현재값 유지.
+    const keepNum = (v, cur) => {
+      if (v === undefined || v === '' || v === null) return cur;
+      const n = Number(v); return Number.isFinite(n) ? n : cur;
+    };
+    // nullable FK/숫자(owner_id·branch_count): 빈값 → null(명시적 비움 허용), 무효 → 현재값.
+    const nullNum = (v, cur) => {
+      if (v === undefined) return cur;
+      if (v === '' || v === null) return null;
+      const n = Number(v); return Number.isFinite(n) ? n : cur;
+    };
+    const teamId = keepNum(b.team_id, c.team_id);
+    const stageId = keepNum(b.stage_id, c.stage_id);
+    const stageChanged = Number(stageId) !== Number(c.stage_id);
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
          team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15, branch_count=$16,
          stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
       [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
-       b.phone !== undefined ? b.phone : c.phone, b.discount != null ? Number(b.discount) : c.discount,
-       b.credit_days != null ? Number(b.credit_days) : c.credit_days, teamId,
-       b.stage_id != null ? Number(b.stage_id) : c.stage_id, b.owner_id !== undefined ? b.owner_id : c.owner_id,
+       b.phone !== undefined ? b.phone : c.phone, keepNum(b.discount, c.discount),
+       keepNum(b.credit_days, c.credit_days), teamId,
+       stageId, nullNum(b.owner_id, c.owner_id),
        b.customer_type !== undefined ? b.customer_type : c.customer_type,
        b.memo !== undefined ? b.memo : c.memo, stageChanged, userId, id,
        b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal,
-       b.branch_count !== undefined ? ((b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count)) : c.branch_count]);
+       nullNum(b.branch_count, c.branch_count)]);
   }
 
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
