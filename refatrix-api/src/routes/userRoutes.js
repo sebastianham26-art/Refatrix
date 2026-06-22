@@ -23,9 +23,12 @@ export default async function userRoutes(app) {
     // 계좌 목록 + 사용자별 계좌권한(인라인 선택용)
     const accountsRows = (await query(`SELECT id, name, currency FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
     const accounts = accountsRows.map((a) => ({ id: Number(a.id), name: a.name, currency: a.currency }));
-    const aaRows = (await query(`SELECT user_id, account_id, can_operate FROM user_account_access`)).rows;
+    const aaRows = (await query(`SELECT user_id, account_id, can_operate, can_detail FROM user_account_access`)).rows;
     const aaByUser = {};
-    for (const r of aaRows) { (aaByUser[r.user_id] ||= {})[Number(r.account_id)] = r.can_operate === true ? 'operate' : 'view'; }
+    for (const r of aaRows) {
+      const lvl = r.can_operate === true ? 'operate' : (r.can_detail === false ? 'balance' : 'view');
+      (aaByUser[r.user_id] ||= {})[Number(r.account_id)] = lvl;
+    }
     return {
       accounts,
       items: users.map((u) => ({
@@ -124,16 +127,19 @@ export default async function userRoutes(app) {
     const accountId = Number(req.body?.account_id);
     const level = req.body?.level;
     if (!Number.isInteger(accountId)) return reply.code(400).send({ error: 'bad_account_id', got: String(req.body?.account_id) });
-    if (!['none', 'view', 'operate'].includes(level)) return reply.code(400).send({ error: 'bad_level' });
+    if (!['none', 'balance', 'view', 'operate'].includes(level)) return reply.code(400).send({ error: 'bad_level' });
     const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!u) return reply.code(404).send({ error: 'not_found' });
     if (u.role === 'director') return reply.code(400).send({ error: 'director_sees_all' });
     // ON CONFLICT 미사용(제약 유무와 무관): 항상 DELETE 후 필요한 경우만 INSERT.
+    //   잔액만 = can_detail false / 열람 = detail true / 운영 = detail+operate true
     await withTx(async (c) => {
       await c.query(`DELETE FROM user_account_access WHERE user_id=$1 AND account_id=$2`, [id, accountId]);
       if (level !== 'none') {
-        await c.query(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES ($1,$2,$3)`,
-          [id, accountId, level === 'operate']);
+        const op = level === 'operate';
+        const detail = level === 'view' || level === 'operate';
+        await c.query(`INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail) VALUES ($1,$2,$3,$4)`,
+          [id, accountId, op, detail]);
       }
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`,

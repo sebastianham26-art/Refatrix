@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { allowedAccountIds, canViewAccount, canOperateAccount } from '../accountScope.js';
+import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canOperateAccount } from '../accountScope.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
@@ -120,8 +120,8 @@ export default async function financeRoutes(app) {
   app.get('/api/transactions', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const q = req.query || {};
     const cond = ['t.deleted_at IS NULL']; const args = [];
-    // 비디렉터: 열람 권한 있는 계좌의 거래만(계좌 미지정 거래는 디렉터 전용).
-    const allow = allowedAccountIds(req.ctx.perm);
+    // 비디렉터: 거래내역 열람 권한(can_detail) 있는 계좌의 거래만. "잔액만" 계좌는 거래내역 숨김.
+    const allow = allowedDetailAccountIds(req.ctx.perm);
     if (allow !== null) {
       if (allow.length === 0) return { items: [] };
       args.push(allow); cond.push(`t.account_id = ANY($${args.length})`);
@@ -1009,7 +1009,7 @@ export default async function financeRoutes(app) {
   // 모든 거래(현금흐름용) 로딩 헬퍼 — 권한 계좌로 필터(잔고·AP용).
   // AR(수금예정)은 account_id=NULL 인 plan·in 거래라 비디렉터에선 자동 제외되고, 별도(전사)로 계산한다.
   async function loadCashTxns(perm) {
-    const allow = allowedAccountIds(perm);   // null = 전체(디렉터)
+    const allow = allowedDetailAccountIds(perm);   // null = 전체(디렉터). "잔액만" 계좌 제외.
     const args = [];
     let cond = 't.deleted_at IS NULL';
     if (allow !== null) {
@@ -1028,7 +1028,7 @@ export default async function financeRoutes(app) {
   }
   async function openingBalanceMxn(perm) {
     const usd = (await getUsdMxnRate()).rate;
-    const allow = allowedAccountIds(perm);
+    const allow = allowedDetailAccountIds(perm);
     const args = [];
     let cond = 'deleted_at IS NULL';
     if (allow !== null) {

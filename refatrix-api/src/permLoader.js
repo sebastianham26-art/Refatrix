@@ -34,7 +34,7 @@ export async function loadPerm(userId) {
   }
   // 계좌별 열람/운영 권한 (디렉터는 buildAccountAccess 안에서 all:true 처리)
   const accRows = (await query(
-    `SELECT account_id, can_operate FROM user_account_access WHERE user_id=$1`, [userId])).rows;
+    `SELECT account_id, can_operate, can_detail FROM user_account_access WHERE user_id=$1`, [userId])).rows;
   const accountAccess = buildAccountAccess(u.role, accRows);
   return {
     userId: u.id, name: u.name, dept: u.dept, role: u.role, lang: u.lang,

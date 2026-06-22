@@ -77,6 +77,7 @@
     <!-- 사용자 목록 -->
     <div class="card">
       <h2>사용자 목록 · 권한</h2>
+      <div class="hint" style="margin-top:0">계좌 권한: <b>없음</b>=계좌 안 보임 · <b>잔액만</b>=계좌·잔액만 보이고 거래내역 숨김 · <b>열람(내역)</b>=거래내역까지 · <b>운영(등록)</b>=거래 등록까지. 선택 즉시 저장됩니다.</div>
       <div id="userList"><div class="hint">불러오는 중…</div></div>
     </div>
   </div>
@@ -183,11 +184,12 @@
                 <option value="edit" ${cur==='edit'?'selected':''}>수정·기록</option></select></label>`;}).join('')+`</div>`;}).join('')}</td>
           <td style="max-width:240px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">전체 접근</span>':(accountsList.length?accountsList.map(a=>{
             const cur=(u.account_access&&u.account_access[a.id])||'none';
-            const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':'#bbb';
+            const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#bbb';
             return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px;display:block;margin-bottom:3px">${a.name} <span class="hint" style="margin:0">${a.currency||''}</span>
               <select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)" style="padding:3px 5px;font-size:11px">
                 <option value="none" ${cur==='none'?'selected':''}>없음</option>
-                <option value="view" ${cur==='view'?'selected':''}>열람</option>
+                <option value="balance" ${cur==='balance'?'selected':''}>잔액만</option>
+                <option value="view" ${cur==='view'?'selected':''}>열람(내역)</option>
                 <option value="operate" ${cur==='operate'?'selected':''}>운영(등록)</option>
               </select></label>`;}).join(''):'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
@@ -242,7 +244,7 @@
       return;
     }
     // 색상 갱신(저장 성공 표시)
-    if(lab) lab.style.borderLeftColor=level==='operate'?'#0F6E56':level==='view'?'#B8893B':'#bbb';
+    if(lab) lab.style.borderLeftColor=level==='operate'?'#0F6E56':level==='view'?'#B8893B':level==='balance'?'#6b8cae':'#bbb';
     // 로컬 상태도 갱신(재렌더 없이)
     const u=users.find(x=>Number(x.id)===uid); if(u){ u.account_access=u.account_access||{}; if(level==='none') delete u.account_access[acc]; else u.account_access[acc]=level; }
   }
@@ -264,6 +266,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622e"></script>
+<script src="refatrix-nav.js?v=20260622f"></script>
 </body>
 </html>

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newDb } from 'pg-mem';
 import {
-  buildAccountAccess, allowedAccountIds, canViewAccount, canOperateAccount, hasAnyOperate,
+  buildAccountAccess, allowedAccountIds, allowedDetailAccountIds,
+  canViewAccount, canViewDetail, canOperateAccount, hasAnyOperate,
 } from '../src/accountScope.js';
 import { calendarArApByDay } from '../src/cashflow.js';
 
@@ -16,22 +17,35 @@ test('buildAccountAccess: 디렉터는 all=true(전체)', () => {
   assert.equal(hasAnyOperate({ accountAccess: a }), true);
 });
 
-test('buildAccountAccess: 비디렉터는 부여된 계좌만, operate는 부분집합', () => {
+test('buildAccountAccess: 비디렉터 — view/detail/operate 3계층', () => {
   const a = buildAccountAccess('treasury', [
-    { account_id: 1, can_operate: true },
-    { account_id: 2, can_operate: false },
-    { account_id: '3', can_operate: 't' },   // 문자열 형태도 허용
+    { account_id: 1, can_operate: true,  can_detail: true },   // 운영
+    { account_id: 2, can_operate: false, can_detail: true },   // 열람
+    { account_id: 3, can_operate: false, can_detail: false },  // 잔액만
   ]);
   assert.equal(a.all, false);
   const perm = { accountAccess: a };
+  // 잔액(존재) 열람: 1,2,3 모두
   assert.deepEqual([...allowedAccountIds(perm)].sort(), [1, 2, 3]);
-  assert.equal(canViewAccount(perm, 2), true);
-  assert.equal(canViewAccount(perm, 9), false);
-  assert.equal(canViewAccount(perm, null), false);
+  // 거래내역(detail): 1,2 (3은 잔액만 → 제외)
+  assert.deepEqual([...allowedDetailAccountIds(perm)].sort(), [1, 2]);
+  assert.equal(canViewAccount(perm, 3), true);     // 잔액만 계좌도 존재/잔액은 보임
+  assert.equal(canViewDetail(perm, 3), false);     // 거래내역은 안 보임
+  assert.equal(canViewDetail(perm, 2), true);
   assert.equal(canOperateAccount(perm, 1), true);
-  assert.equal(canOperateAccount(perm, 3), true);
-  assert.equal(canOperateAccount(perm, 2), false);   // 열람만
-  assert.equal(hasAnyOperate(perm), true);
+  assert.equal(canOperateAccount(perm, 2), false);
+});
+
+test('buildAccountAccess: 디렉터는 all=true(전체 detail 포함)', () => {
+  const perm = { accountAccess: buildAccountAccess('director', []) };
+  assert.equal(allowedAccountIds(perm), null);
+  assert.equal(allowedDetailAccountIds(perm), null);
+  assert.equal(canViewDetail(perm, 99), true);
+});
+
+test('buildAccountAccess: can_detail 없던 과거행은 detail=true 로 간주', () => {
+  const perm = { accountAccess: buildAccountAccess('ops', [{ account_id: 5, can_operate: false }]) };
+  assert.equal(canViewDetail(perm, 5), true);   // 하위호환
 });
 
 test('buildAccountAccess: 권한 없는 사용자', () => {
@@ -152,4 +166,38 @@ test('account-access PUT: UNIQUE 제약이 없는 테이블에서도 500 없이 
   db.public.none(`INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES (2,10,true)`);
   const r = db.public.one(`SELECT can_operate FROM user_account_access WHERE user_id=2 AND account_id=10`);
   assert.equal(r.can_operate, true);
+});
+
+// PATCH 레벨 → 플래그 저장 매핑(잔액만=can_detail false) 검증 + 해석 일관성
+test('account-access PATCH: 레벨별 플래그 저장(none/balance/view/operate)', async () => {
+  const db = newDb();
+  db.public.none(`CREATE TABLE user_account_access (
+    id SERIAL PRIMARY KEY, user_id INT, account_id INT,
+    can_operate BOOLEAN DEFAULT false, can_detail BOOLEAN NOT NULL DEFAULT true);`);
+  const { Pool } = db.adapters.createPg(); const pool = new Pool();
+  // PATCH 로직과 동일: DELETE 후 (none 아니면) INSERT
+  async function setLevel(uid, acc, level) {
+    await pool.query(`DELETE FROM user_account_access WHERE user_id=$1 AND account_id=$2`, [uid, acc]);
+    if (level !== 'none') {
+      const op = level === 'operate';
+      const detail = level === 'view' || level === 'operate';
+      await pool.query(`INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail) VALUES ($1,$2,$3,$4)`,
+        [uid, acc, op, detail]);
+    }
+  }
+  await setLevel(1, 10, 'operate');
+  await setLevel(1, 11, 'view');
+  await setLevel(1, 12, 'balance');
+  await setLevel(1, 13, 'none');
+  const rows = (await pool.query(`SELECT account_id, can_operate, can_detail FROM user_account_access WHERE user_id=1 ORDER BY account_id`)).rows;
+  // 13(none)은 행 없음
+  assert.deepEqual(rows.map((r) => Number(r.account_id)), [10, 11, 12]);
+  const byId = Object.fromEntries(rows.map((r) => [Number(r.account_id), r]));
+  assert.equal(byId[10].can_operate, true);  assert.equal(byId[10].can_detail, true);   // 운영
+  assert.equal(byId[11].can_operate, false); assert.equal(byId[11].can_detail, true);   // 열람
+  assert.equal(byId[12].can_operate, false); assert.equal(byId[12].can_detail, false);  // 잔액만
+  // 해석 일관성: buildAccountAccess 가 같은 결론
+  const perm = { accountAccess: buildAccountAccess('ops', rows) };
+  assert.deepEqual([...allowedAccountIds(perm)].sort(), [10, 11, 12]);   // 잔액 보임
+  assert.deepEqual([...allowedDetailAccountIds(perm)].sort(), [10, 11]); // 12(잔액만) 거래내역 제외
 });
