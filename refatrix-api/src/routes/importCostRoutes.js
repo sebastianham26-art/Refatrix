@@ -3,6 +3,7 @@ import { authGuard, requirePage, requireDirector } from '../middleware/authGuard
 import { costDocTotalMxn, allocateByQty, applyClosedMonth, isClosedMonth, toMxn } from '../importCost.js';
 import { round2, fieldVisible } from '../permissions.js';
 import { computeRecost } from '../recost.js';
+import { getRateForDate } from '../fx.js';
 import { logEvent } from '../audit.js';
 
 // 한 입고 건의 총수량 (분배 비율 기준)
@@ -111,53 +112,93 @@ export default async function importCostRoutes(app) {
   //   ② 정정 단가 + 배치별 부대비용(1/n) 미리보기
   //   ③ 적용: 제품 평균원가·라인/재고이동 원가 갱신 + 팔린 분 소급 COGS(이번 달 정산차액)
   // =====================================================================
+  // 배치별 적용환율(USD→MXN). 통화가 USD면 fx_rates의 그 일자 환율, MXN이면 1. (일자별 캐시)
+  async function ratesForBatches(metaList) {
+    const cache = {}; const out = {};
+    for (const m of metaList) {
+      const cur = (m.currency || 'USD').toUpperCase();
+      if (cur !== 'USD') { out[m.batch_id] = { currency: cur, import_date: m.import_date, rate: 1 }; continue; }
+      const d = m.import_date || null;
+      if (cache[d] == null) cache[d] = await getRateForDate(d);
+      out[m.batch_id] = { currency: 'USD', import_date: m.import_date, rate: Number(cache[d]) };
+    }
+    return out;
+  }
+
   app.get('/api/import-recost/lines', { preHandler: [authGuard, requireDirector] }, async () => {
     const rows = (await query(
-      `SELECT il.batch_id, b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.fx_rate,
+      `SELECT il.batch_id, b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency,
               il.product_id, p.code, p.name, il.qty, il.unit_cost_mxn
          FROM import_lines il
          JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
          JOIN products p ON p.id=il.product_id
         ORDER BY b.import_date, b.id, p.code`)).rows;
-    return { lines: rows.map((r) => ({
-      batch_id: Number(r.batch_id), batch_no: r.batch_no || ('#' + r.batch_id), import_date: r.import_date,
-      fx_rate: Number(r.fx_rate || 1), product_id: Number(r.product_id), code: r.code, name: r.name,
-      qty: Number(r.qty), current_unit_cost: Number(r.unit_cost_mxn || 0),
-    })) };
+    // 배치별 적용환율
+    const metaList = [...new Map(rows.map((r) => [Number(r.batch_id), { batch_id: Number(r.batch_id), currency: r.currency, import_date: r.import_date }])).values()];
+    const rates = await ratesForBatches(metaList);
+    return { lines: rows.map((r) => {
+      const bid = Number(r.batch_id); const rt = rates[bid] || { currency: 'USD', rate: 1 };
+      return {
+        batch_id: bid, batch_no: r.batch_no || ('#' + bid), import_date: r.import_date,
+        currency: rt.currency, fx_rate: rt.rate, product_id: Number(r.product_id), code: r.code, name: r.name,
+        qty: Number(r.qty), current_unit_cost: Number(r.unit_cost_mxn || 0),
+      };
+    }) };
   });
 
-  // 정정 입력으로부터 계산 입력 데이터 준비(미리보기/적용 공용)
+  // 정정 입력으로부터 계산 입력 데이터 준비(미리보기/적용 공용). 입력단가는 배치 통화 → MXN 환산.
   async function prepareRecost(c, body) {
     const upl = Array.isArray(body.lines) ? body.lines : [];
     const ovl = Array.isArray(body.overheads) ? body.overheads : [];
-    const priceMap = {};
+    // 업로드 단가(배치 통화 기준, 환산 전)
+    const priceRaw = {};
     for (const l of upl) {
-      if (l.unit_price_mxn == null || l.unit_price_mxn === '') continue;
-      priceMap[Number(l.batch_id) + ':' + Number(l.product_id)] = Number(l.unit_price_mxn);
+      const v = (l.unit_price != null && l.unit_price !== '') ? l.unit_price : l.unit_price_mxn; // 신/구 키 호환
+      if (v == null || v === '') continue;
+      priceRaw[Number(l.batch_id) + ':' + Number(l.product_id)] = Number(v);
     }
-    const batchOverhead = {};
-    for (const o of ovl) { if (o.amount_mxn != null && Number(o.amount_mxn) > 0) batchOverhead[Number(o.batch_id)] = round2(Number(o.amount_mxn)); }
+    // 부대비용(배치 통화 또는 명시 통화)
+    const ovRaw = {};
+    for (const o of ovl) {
+      const amt = (o.amount != null && o.amount !== '') ? Number(o.amount) : Number(o.amount_mxn);
+      if (!(amt > 0)) continue;
+      ovRaw[Number(o.batch_id)] = { amount: amt, currency: o.currency ? String(o.currency).toUpperCase() : null };
+    }
     // 영향 제품 = 업로드 라인 제품 ∪ 부대비용 배치의 제품
     const prodSet = new Set(upl.map((l) => Number(l.product_id)));
-    const seedBatches = [...new Set([...upl.map((l) => Number(l.batch_id)), ...Object.keys(batchOverhead).map(Number)])];
+    const seedBatches = [...new Set([...upl.map((l) => Number(l.batch_id)), ...Object.keys(ovRaw).map(Number)])];
     if (seedBatches.length) {
       const rs = (await c.query(`SELECT DISTINCT product_id FROM import_lines WHERE batch_id = ANY($1)`, [seedBatches])).rows;
       rs.forEach((r) => prodSet.add(Number(r.product_id)));
     }
     const productIds = [...prodSet].filter(Boolean);
-    if (!productIds.length) return { empty: true, productLines: {}, batchOverhead, batchTotalQty: {}, productState: {}, soldQty: {} };
-    // 영향 제품의 모든 수입 라인(모든 배치)
+    if (!productIds.length) return { empty: true, productLines: {}, batchOverhead: {}, batchTotalQty: {}, productState: {}, soldQty: {}, rates: {} };
+    // 영향 제품의 모든 수입 라인(모든 배치) + 배치 통화·일자
     const ilRows = (await c.query(
-      `SELECT il.batch_id, il.product_id, il.qty, il.unit_cost_mxn
+      `SELECT il.batch_id, il.product_id, il.qty, il.unit_cost_mxn,
+              b.currency, to_char(b.import_date,'YYYY-MM-DD') AS import_date
          FROM import_lines il JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
         WHERE il.product_id = ANY($1)`, [productIds])).rows;
+    // 배치별 적용환율
+    const metaMap = new Map();
+    for (const r of ilRows) { const bid = Number(r.batch_id); if (!metaMap.has(bid)) metaMap.set(bid, { batch_id: bid, currency: r.currency, import_date: r.import_date }); }
+    const rates = await ratesForBatches([...metaMap.values()]);
     const productLines = {}; const allBatches = new Set();
     for (const r of ilRows) {
       const pid = Number(r.product_id), bid = Number(r.batch_id);
       allBatches.add(bid);
       const k = bid + ':' + pid;
-      const price = (k in priceMap) ? priceMap[k] : Number(r.unit_cost_mxn || 0); // 업로드 우선, 없으면 현재값
-      (productLines[pid] = productLines[pid] || []).push({ batch_id: bid, qty: Number(r.qty), unit_price_mxn: price });
+      const rt = (rates[bid] || { rate: 1 }).rate;
+      // 업로드 단가(배치 통화) → MXN, 없으면 현재 MXN 원가 유지
+      const priceMxn = (k in priceRaw) ? round2(priceRaw[k] * rt) : Number(r.unit_cost_mxn || 0);
+      (productLines[pid] = productLines[pid] || []).push({ batch_id: bid, qty: Number(r.qty), unit_price_mxn: priceMxn });
+    }
+    // 부대비용 → MXN (통화 미지정 시 배치 통화 기준)
+    const batchOverhead = {};
+    for (const [bidStr, o] of Object.entries(ovRaw)) {
+      const bid = Number(bidStr); const meta = rates[bid] || { currency: 'USD', rate: 1 };
+      const cur = o.currency || meta.currency || 'USD';
+      batchOverhead[bid] = round2(cur === 'USD' ? o.amount * meta.rate : o.amount);
     }
     const btqRows = (await c.query(`SELECT batch_id, COALESCE(SUM(qty),0) AS q FROM import_lines WHERE batch_id = ANY($1) GROUP BY batch_id`, [[...allBatches]])).rows;
     const batchTotalQty = {}; btqRows.forEach((r) => { batchTotalQty[Number(r.batch_id)] = Number(r.q); });
@@ -169,7 +210,7 @@ export default async function importCostRoutes(app) {
         WHERE sil.product_id = ANY($1) AND si.status='posted' AND si.deleted_at IS NULL
         GROUP BY sil.product_id`, [productIds])).rows;
     const soldQty = {}; sRows.forEach((r) => { soldQty[Number(r.product_id)] = Number(r.q); });
-    return { productLines, batchOverhead, batchTotalQty, productState, soldQty };
+    return { productLines, batchOverhead, batchTotalQty, productState, soldQty, rates };
   }
 
   app.post('/api/import-recost/preview', { preHandler: [authGuard, requireDirector] }, async (req) => {
@@ -181,7 +222,9 @@ export default async function importCostRoutes(app) {
       sold_qty: p.soldQty, remaining_qty: p.remainingQty, avg_before: p.avgBefore, new_avg: p.newAvg,
       stock_added_mxn: p.stockAddedMxn, retro_cogs_mxn: p.retroCogsMxn,
     })).sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
-    return { items, totalStockAddedMxn: res.totalStockAddedMxn, totalRetroCogsMxn: res.totalRetroCogsMxn };
+    const rates = Object.entries(data.rates || {}).filter(([, v]) => (v.currency || 'USD') === 'USD')
+      .map(([bid, v]) => ({ batch_id: Number(bid), import_date: v.import_date, rate: v.rate }));
+    return { items, totalStockAddedMxn: res.totalStockAddedMxn, totalRetroCogsMxn: res.totalRetroCogsMxn, rates };
   });
 
   app.post('/api/import-recost/apply', { preHandler: [authGuard, requireDirector] }, async (req) => {

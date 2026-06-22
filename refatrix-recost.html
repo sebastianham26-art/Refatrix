@@ -63,14 +63,14 @@
     <div id="dirApp" style="display:none">
       <div class="card">
         <div class="card-h"><span class="step">1</span>단가 템플릿 다운로드</div>
-        <div class="hint">등록된 모든 수입 라인(배치번호 · SKU · 수량)을 엑셀로 받습니다. <b>단가입력(MXN)</b> 열에 단가를 채워 2단계에서 업로드하세요. <code>_batch_id · _product_id</code> 열은 매칭용이니 수정하지 마세요.</div>
+        <div class="hint">등록된 모든 수입 라인(배치번호 · SKU · 수량 · <b>통화</b> · 적용환율)을 엑셀로 받습니다. <b>입력단가(원통화)</b> 열에 그 배치 통화 기준 단가를 채워 2단계에서 업로드하세요(USD 배치는 USD로 입력 → 입고일 환율로 자동 MXN 환산). <code>_batch_id · _product_id</code> 열은 매칭용이니 수정하지 마세요.</div>
         <button class="btn" id="dlBtn" style="margin-top:12px">⬇ 엑셀 다운로드</button>
         <span class="hint" id="dlInfo" style="margin-left:8px"></span>
       </div>
 
       <div class="card">
         <div class="card-h"><span class="step">2</span>단가 업로드 + 부대비용(배치별 1/n)</div>
-        <div class="hint">단가를 채운 엑셀을 올리고, 필요하면 배치별 부대비용(운임·통관 등)을 입력하세요. 부대비용은 그 배치 <b>수량 비율(1/n)</b>로 원가에 얹습니다.</div>
+        <div class="hint">단가를 채운 엑셀을 올리고, 필요하면 배치별 부대비용(운임·통관 등)을 입력하세요. <b>USD 배치는 입고일자 환율(재무&gt;환율)로 자동 MXN 환산</b>되며, 부대비용은 그 배치 <b>수량 비율(1/n)</b>로 원가에 얹습니다.</div>
         <div style="margin-top:12px"><label>① 정정 엑셀 업로드</label>
           <input id="upFile" type="file" accept=".xlsx,.xls" onchange="onUpload(event)">
           <span class="hint" id="upInfo"></span>
@@ -78,7 +78,8 @@
         <div style="margin-top:14px"><label>② 배치별 부대비용 (선택)</label>
           <div class="ovrow">
             <select id="ovBatch" style="min-width:240px"></select>
-            <input id="ovAmt" type="number" step="0.01" placeholder="금액 (MXN)" style="width:150px">
+            <input id="ovAmt" type="number" step="0.01" placeholder="금액" style="width:130px">
+            <select id="ovCur" style="width:90px"><option value="USD">USD</option><option value="MXN">MXN</option></select>
             <button class="btn sm ghost" onclick="addOverhead()">+ 추가</button>
           </div>
           <div class="ovlist" id="ovList"></div>
@@ -156,10 +157,10 @@
       const d=await fetch(session.api+'/api/import-recost/lines',{headers:auth()}).then(r=>r.json());
       const lines=(d&&d.lines)||[];
       if(!lines.length){ $('dlInfo').textContent='수입 라인이 없습니다.'; return; }
-      const header=['Lote(배치)','SKU','품명','수량','현재단가(MXN)','단가입력(MXN)','_batch_id','_product_id'];
-      const aoa=[header].concat(lines.map(l=>[l.batch_no, l.code, l.name, l.qty, l.current_unit_cost, '', l.batch_id, l.product_id]));
+      const header=['Lote(배치)','SKU','품명','수량','통화','적용환율(USD→MXN)','현재단가(MXN)','입력단가(원통화)','_batch_id','_product_id'];
+      const aoa=[header].concat(lines.map(l=>[l.batch_no, l.code, l.name, l.qty, l.currency, l.fx_rate, l.current_unit_cost, '', l.batch_id, l.product_id]));
       const ws=XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:8},{wch:14},{wch:14},{wch:10},{wch:11}];
+      ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:8},{wch:7},{wch:16},{wch:14},{wch:16},{wch:10},{wch:11}];
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'단가입력');
       XLSX.writeFile(wb,'refatrix_import_unit_prices.xlsx');
       $('dlInfo').textContent=lines.length+'개 라인 다운로드 완료.';
@@ -178,11 +179,11 @@
         const out=[];
         rows.forEach(r=>{
           const bid=Number(r['_batch_id']), pid=Number(r['_product_id']);
-          const price=r['단가입력(MXN)'];
+          const price=r['입력단가(원통화)'];
           if(!bid||!pid) return;
           if(price===''||price==null) return;
           const v=Number(price); if(!(v>=0)) return;
-          out.push({batch_id:bid, product_id:pid, unit_price_mxn:v});
+          out.push({batch_id:bid, product_id:pid, unit_price:v});
         });
         uploadedLines=out;
         $('upInfo').textContent=' 단가 입력 '+out.length+'개 라인 인식됨.';
@@ -193,18 +194,18 @@
   }
 
   function addOverhead(){
-    const bid=Number($('ovBatch').value), amt=Number($('ovAmt').value);
+    const bid=Number($('ovBatch').value), amt=Number($('ovAmt').value), cur=$('ovCur').value||'USD';
     if(!bid){ flash('배치를 선택하세요.'); return; }
     if(!(amt>0)){ flash('부대비용 금액을 입력하세요.'); return; }
     const b=batches.find(x=>Number(x.id)===bid);
     overheads=overheads.filter(o=>o.batch_id!==bid); // 같은 배치는 교체
-    overheads.push({batch_id:bid, amount_mxn:amt, label:(b?(b.batch_no||('#'+bid)):('#'+bid))});
+    overheads.push({batch_id:bid, amount:amt, currency:cur, label:(b?(b.batch_no||('#'+bid)):('#'+bid))});
     $('ovAmt').value='';
     renderOverheads(); refreshButtons();
   }
   function removeOverhead(bid){ overheads=overheads.filter(o=>o.batch_id!==bid); renderOverheads(); refreshButtons(); }
   function renderOverheads(){
-    $('ovList').innerHTML = overheads.length? overheads.map(o=>'<span class="pill">'+esc(o.label)+' · MX$'+nf(o.amount_mxn)+' <a href="#" onclick="removeOverhead('+o.batch_id+');return false" style="color:var(--expense);text-decoration:none;font-weight:800">×</a></span>').join(' ') : '<span class="hint">부대비용 없음(선택).</span>';
+    $('ovList').innerHTML = overheads.length? overheads.map(o=>'<span class="pill">'+esc(o.label)+' · '+esc(o.currency)+' '+nf(o.amount)+' <a href="#" onclick="removeOverhead('+o.batch_id+');return false" style="color:var(--expense);text-decoration:none;font-weight:800">×</a></span>').join(' ') : '<span class="hint">부대비용 없음(선택).</span>';
   }
   function refreshButtons(){
     const has = uploadedLines.length>0 || overheads.length>0;
@@ -226,12 +227,16 @@
   }
   function renderPreview(d){
     const items=d.items||[];
+    const rates=d.rates||[];
     $('pvTot').innerHTML=
       '<div class="totbox"><div class="l">대상 제품</div><div class="v">'+items.length+'개</div></div>'
       +'<div class="totbox"><div class="l">재고 가산액(재고금액↑)</div><div class="v" style="color:var(--income)">MX$'+nf(d.totalStockAddedMxn)+'</div></div>'
       +'<div class="totbox"><div class="l">소급 매출원가(이번 달 정산차액)</div><div class="v" style="color:var(--expense)">MX$'+nf(d.totalRetroCogsMxn)+'</div></div>';
-    if(!items.length){ $('pvBody').innerHTML='<div class="hint" style="margin-top:10px">변경될 제품이 없습니다. 단가/부대비용을 확인하세요.</div>'; return; }
-    let h='<table><thead><tr><th>SKU</th><th>품명</th><th class="n">총수입수량</th><th class="n">판매수량</th><th class="n">재고수량</th><th class="n">기존원가</th><th class="n">새 원가</th><th class="n">재고가산</th><th class="n">소급 COGS</th></tr></thead><tbody>';
+    const rateHtml = rates.length
+      ? '<div class="hint" style="margin-top:10px"><b>적용환율(USD→MXN)</b> · '+rates.map(r=>esc((batches.find(b=>Number(b.id)===r.batch_id)||{}).batch_no||('#'+r.batch_id))+' ('+esc(r.import_date||'')+') = '+nf(r.rate)).join(' · ')+' — 재무&gt;환율 기준일 값</div>'
+      : '<div class="hint" style="margin-top:10px">USD 환산 대상 배치 없음(모두 MXN 입력).</div>';
+    if(!items.length){ $('pvBody').innerHTML=rateHtml+'<div class="hint" style="margin-top:10px">변경될 제품이 없습니다. 단가/부대비용을 확인하세요.</div>'; return; }
+    let h=rateHtml+'<table><thead><tr><th>SKU</th><th>품명</th><th class="n">총수입수량</th><th class="n">판매수량</th><th class="n">재고수량</th><th class="n">기존원가</th><th class="n">새 원가(MXN)</th><th class="n">재고가산</th><th class="n">소급 COGS</th></tr></thead><tbody>';
     items.forEach(it=>{
       h+='<tr><td><b>'+esc(it.code||'-')+'</b></td><td>'+esc(it.name||'-')+'</td>'
         +'<td class="n">'+nf(it.total_qty)+'</td><td class="n">'+nf(it.sold_qty)+'</td><td class="n">'+nf(it.remaining_qty)+'</td>'
