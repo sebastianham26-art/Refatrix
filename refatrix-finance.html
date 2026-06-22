@@ -176,21 +176,14 @@
 
     <!-- 반제(입금) -->
     <div class="card hidden" id="payCard">
-      <h2>고객별 반제 (입금 배분)</h2>
-      <div class="row">
-        <div style="flex:2"><label>고객 (미수 있는 고객)</label><select id="p-cust"><option value="">고객 선택…</option></select></div>
-        <div><label>입금일</label><input id="p-date" type="date"></div>
-        <div style="flex:2"><label>입금 계좌</label><select id="p-acc"></select></div>
-        <div><label>입금 총액(MXN)</label><input id="p-amt" type="number" step="0.01" placeholder="받은 금액"></div>
+      <h2>수금 현황 (보기 전용)</h2>
+      <div class="hint" style="margin-top:0">반제(입금) 입력은 <b>영업지원의 수금/정산</b> 화면에서 처리합니다. 여기서는 처리된 수금 결과를 확인만 합니다.</div>
+      <div id="arvSummary" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <div class="seg"><button class="segb on" id="arv-list" data-v="list">목록</button><button class="segb" id="arv-cal" data-v="cal">달력</button></div>
+        <span class="hint" style="margin:0 0 0 auto" id="arv-monthlbl"></span>
       </div>
-      <div class="row"><div style="flex:3"><label>메모</label><input id="p-memo" type="text"></div>
-        <div style="display:flex;align-items:flex-end;gap:8px"><button class="btn ghost sm" id="p-auto">오래된 순 자동 배분</button><button class="btn ghost sm" id="p-clear">배분 초기화</button></div></div>
-      <div id="p-advinfo" class="hint" style="margin:6px 0"></div>
-      <div id="p-open"><div class="hint">고객을 선택하면 미반제 인보이스가 오래된 순으로 표시됩니다.</div></div>
-      <div id="p-runbar" style="margin-top:10px;font-size:14px;font-weight:600"></div>
-      <button class="btn gold" id="p-save" style="margin-top:10px">입금 반제 저장</button>
-      <div class="msg" id="payMsg"></div>
-      <div id="p-history" style="margin-top:16px"></div>
+      <div id="arvBody"><div class="hint">불러오는 중…</div></div>
     </div>
 
     <!-- 고정비 -->
@@ -725,121 +718,67 @@
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
 
-  // ===== 반제(입금 배분) =====
-  let openInvoices=[], custAdvance=0;
-  async function loadArCustomers(){
+  // ===== 수금 현황 (보기 전용) — 영업지원이 처리한 반제 결과를 재무에서 열람만 =====
+  let arvView='list';
+  let arvMonth=new Date().toISOString().slice(0,7);
+  async function loadArView(){
+    // 요약
     try{
-      const items=(await fetch(session.api+'/api/ar/customers',{headers:auth()}).then(r=>r.json())).items||[];
-      const sel=$('p-cust');const cur=sel.value;
-      sel.innerHTML='<option value="">고객 선택…</option>'+items.map(c=>`<option value="${c.id}">${c.code} · ${c.name} — 미수 ${fmt(c.outstanding)}${c.advance>0?' · 선수금 '+fmt(c.advance):''}</option>`).join('');
-      sel.value=cur;
-      $('p-acc').innerHTML=accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
-      loadPayHistory();
-    }catch(e){}
+      const s=await fetch(session.api+'/api/ar/view/summary',{headers:auth()}).then(r=>r.json());
+      const card=(k,v,col)=>`<div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+        <div class="hint" style="margin:0${col?';color:'+col:''}">${k}</div><div style="font-size:20px;font-weight:800${col?';color:'+col:''}">${v}</div></div>`;
+      $('arvSummary').innerHTML=card('미수 건수', (s.open_count||0))+card('총 미수(잔액)', fmt(s.outstanding||0))+card('연체 잔액', fmt(s.overdue||0), 'var(--expense)');
+    }catch(e){$('arvSummary').innerHTML='<div class="hint">요약을 불러오지 못했습니다.</div>';}
+    if(arvView==='cal')renderArvCalendar(); else renderArvList();
   }
-  async function loadOpenInvoices(){
-    const cid=$('p-cust').value;const box=$('p-open');
-    if(!cid){box.innerHTML='<div class="hint">고객을 선택하세요.</div>';openInvoices=[];renderRunbar();return;}
-    box.innerHTML='<div class="hint">불러오는 중…</div>';
+  async function renderArvList(){
+    const b=$('arvBody');b.innerHTML='<div class="hint">불러오는 중…</div>';$('arv-monthlbl').textContent='';
     try{
-      const d=await fetch(session.api+'/api/ar/open-invoices?customer_id='+cid,{headers:auth()}).then(r=>r.json());
-      openInvoices=d.items||[];custAdvance=Number(d.advance)||0;
-      $('p-advinfo').innerHTML=custAdvance>0?`이 고객의 기존 선수금: <b>${fmt(custAdvance)} MXN</b> (이번 입금과 별개로 보관 중)`:'';
-      if(!openInvoices.length){box.innerHTML='<div class="hint">미반제 인보이스가 없습니다.</div>';renderRunbar();return;}
-      box.innerHTML=`<table><thead><tr><th>인보이스</th><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">기납입</th><th class="num">미수금</th><th class="num" style="width:140px">배분액</th></tr></thead>
-        <tbody>${openInvoices.map(s=>`<tr>
-          <td>#${s.id} ${s.sat_no?'<span class="hint" style="margin:0">'+s.sat_no+'</span>':''}</td>
-          <td>${String(s.inv_date).slice(0,10)}</td>
-          <td>${s.due_date?String(s.due_date).slice(0,10):'—'}${overdueBadge(s.due_date,s.outstanding)}</td>
-          <td class="num">${fmt(s.total_mxn)}</td>
-          <td class="num">${fmt(s.paid)}</td>
-          <td class="num"><b>${fmt(s.outstanding)}</b></td>
-          <td class="num"><input type="number" step="0.01" class="p-alloc" data-id="${s.id}" data-out="${s.outstanding}" style="width:130px;text-align:right" placeholder="0.00"></td>
-        </tr>`).join('')}</tbody></table>`;
-      [...box.querySelectorAll('.p-alloc')].forEach(el=>el.addEventListener('input',renderRunbar));
-      renderRunbar();
-    }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
-  }
-  function overdueBadge(due,outstanding){
-    if(!due||!(Number(outstanding)>0.009))return '';
-    const d=new Date(String(due).slice(0,10)+'T00:00:00Z');const today=new Date(new Date().toISOString().slice(0,10)+'T00:00:00Z');
-    if(d>=today)return '';
-    const days=Math.floor((today-d)/86400000);
-    const sev=days>=31?'high':(days>=8?'mid':'low');
-    const sv=SEV[sev];
-    return ` <span class="badge" style="background:${sv.bg};color:${sv.fg}">연체 ${days}일</span>`;
-  }
-  function allocInputs(){return [...document.querySelectorAll('.p-alloc')];}
-  function sumAlloc(){return allocInputs().reduce((s,el)=>s+(Number(el.value)||0),0);}
-  function renderRunbar(){
-    const total=Number($('p-amt').value)||0;
-    const sum=Math.round((sumAlloc()+Number.EPSILON)*100)/100;
-    const remain=Math.round((total-sum+Number.EPSILON)*100)/100;
-    const bar=$('p-runbar');
-    let advNote='';
-    if(remain<0){bar.style.color='var(--expense)';bar.innerHTML=`입금 총액 ${fmt(total)} · 배분 합계 ${fmt(sum)} · <b>초과 ${fmt(-remain)}</b> — 배분이 입금액을 넘습니다.`;return;}
-    // 남은 배분가능액이 있으나 더 채울 미수가 없으면 선수금
-    const totalOut=openInvoices.reduce((s,i)=>s+i.outstanding,0);
-    const canStillAllocate=Math.max(0,totalOut-sum);
-    if(remain>0 && canStillAllocate<=0.001) advNote=` · <span style="color:#9a6512">선수금 처리될 금액 ${fmt(remain)}</span>`;
-    else if(remain>0) advNote=` · 남은 배분가능액 <b>${fmt(remain)}</b>`;
-    else advNote=` · <span style="color:var(--income)">전액 배분 완료</span>`;
-    bar.style.color='#2a2a2a';
-    bar.innerHTML=`입금 총액 ${fmt(total)} · 배분 합계 ${fmt(sum)}${advNote}`;
-  }
-  function autoAllocate(){
-    let remaining=Number($('p-amt').value)||0;
-    if(!(remaining>0)){alert('먼저 입금 총액을 입력하세요.');return;}
-    allocInputs().forEach(el=>{
-      const out=Number(el.dataset.out)||0;
-      if(remaining<=0){el.value='';return;}
-      const amt=remaining>=out?out:remaining;
-      el.value=amt.toFixed(2);remaining=Math.round((remaining-amt+Number.EPSILON)*100)/100;
-    });
-    renderRunbar();
-  }
-  function clearAlloc(){allocInputs().forEach(el=>el.value='');renderRunbar();}
-  async function savePayment(){
-    const m=$('payMsg');m.className='msg';
-    const cid=$('p-cust').value, acc=$('p-acc').value, date=$('p-date').value, total=Number($('p-amt').value)||0;
-    if(!cid){m.className='msg err';m.textContent='고객을 선택하세요.';return;}
-    if(!acc){m.className='msg err';m.textContent='입금 계좌를 선택하세요.';return;}
-    if(!date){m.className='msg err';m.textContent='입금일을 입력하세요.';return;}
-    if(!(total>0)){m.className='msg err';m.textContent='입금 총액을 입력하세요.';return;}
-    const allocations=allocInputs().map(el=>({invoice_id:Number(el.dataset.id),amount:Number(el.value)||0})).filter(a=>a.amount>0);
-    const sum=Math.round((allocations.reduce((s,a)=>s+a.amount,0)+Number.EPSILON)*100)/100;
-    if(sum-total>0.001){m.className='msg err';m.textContent='배분 합계가 입금 총액을 초과합니다.';return;}
-    // 미수금 초과 체크
-    for(const el of allocInputs()){const v=Number(el.value)||0;const out=Number(el.dataset.out)||0;if(v-out>0.001){m.className='msg err';m.textContent='인보이스 #'+el.dataset.id+' 배분액이 미수금을 초과합니다.';return;}}
-    const advance=Math.round((total-sum+Number.EPSILON)*100)/100;
-    let confirmMsg='입금 '+fmt(total)+' MXN을 저장합니다.';
-    if(advance>0.001)confirmMsg+='\n배분되지 않은 '+fmt(advance)+' MXN은 선수금으로 기록됩니다.';
-    if(!confirm(confirmMsg))return;
-    $('p-save').disabled=true;$('p-save').textContent='저장 중…';
-    try{
-      const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
-        body:JSON.stringify({customer_id:Number(cid),pay_date:date,account_id:Number(acc),amount:total,allocations,memo:$('p-memo').value.trim()||null})});
-      const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='입금 반제 완료! 배분 '+fmt(d.allocated)+' MXN'+(d.advance>0?(' · 선수금 '+fmt(d.advance)+' MXN'):'');
-      $('p-amt').value='';$('p-memo').value='';
-      await loadOpenInvoices();await loadArCustomers();await loadAccounts();
-    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
-    finally{$('p-save').disabled=false;$('p-save').textContent='입금 반제 저장';}
-  }
-  async function loadPayHistory(){
-    const cid=$('p-cust').value;if(!cid){$('p-history').innerHTML='';return;}
-    try{
-      const items=(await fetch(session.api+'/api/ar/payments?customer_id='+cid,{headers:auth()}).then(r=>r.json())).items||[];
-      if(!items.length){$('p-history').innerHTML='<div class="hint">입금 이력이 없습니다.</div>';return;}
-      $('p-history').innerHTML=`<h2 style="font-size:13px;color:var(--muted)">입금 이력</h2>
-        <table><thead><tr><th>입금일</th><th>계좌</th><th class="num">입금액</th><th class="num">선수금</th><th>배분</th><th>메모</th></tr></thead>
+      const items=(await fetch(session.api+'/api/ar/view/recent?limit=100',{headers:auth()}).then(r=>r.json())).items||[];
+      if(!items.length){b.innerHTML='<div class="hint">수금(반제) 내역이 없습니다.</div>';return;}
+      b.innerHTML=`<table><thead><tr><th>입금일</th><th>고객</th><th>계좌</th><th>인보이스(SAT)</th><th>처리자</th><th class="num">입금액</th></tr></thead>
         <tbody>${items.map(p=>`<tr>
-          <td>${String(p.pay_date).slice(0,10)}</td><td>${p.account_name}</td>
-          <td class="num">${fmt(p.amount)}</td><td class="num">${p.advance_amount>0?fmt(p.advance_amount):'—'}</td>
-          <td>${(p.allocations||[]).map(a=>'#'+a.invoice_id+' '+fmt(a.amount)).join(', ')||'—'}</td>
-          <td>${p.memo||''}</td></tr>`).join('')}</tbody></table>`;
-    }catch(e){$('p-history').innerHTML='';}
+          <td>${p.pay_date}</td>
+          <td>${p.customer_name}${p.customer_code?' <span class="hint" style="margin:0">'+p.customer_code+'</span>':''}</td>
+          <td>${p.account_label||'—'}</td>
+          <td>${p.sat_list||'—'}</td>
+          <td>${p.by_name||'—'}</td>
+          <td class="num" style="color:var(--income)">+${fmt(p.amount)}</td></tr>`).join('')}</tbody></table>`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function renderArvCalendar(){
+    const b=$('arvBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/ar/view/calendar?month='+arvMonth,{headers:auth()}).then(r=>r.json());
+      const dayMap=d.days||{};
+      const [y,m]=arvMonth.split('-').map(Number);
+      const first=new Date(Date.UTC(y,m-1,1));const startDow=first.getUTCDay();
+      const days=new Date(Date.UTC(y,m,0)).getUTCDate();
+      const dows=['일','월','화','수','목','금','토'];
+      let cells='';for(let i=0;i<startDow;i++)cells+='<div class="cal-cell empty"></div>';
+      for(let dd=1;dd<=days;dd++){
+        const ds=`${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+        const v=dayMap[ds];const dow=new Date(Date.UTC(y,m-1,dd)).getUTCDay();const we=(dow===0||dow===6)?' weekend':'';
+        cells+=`<div class="cal-cell${we}" data-arvday="${ds}">
+          <div class="cal-daynum">${dd}</div>
+          <div class="cal-slot"><span class="k">수금</span><span style="color:var(--income);font-weight:700">${v?'+'+fmt(v.sum):''}</span></div>
+          ${v?`<div class="hint" style="margin:0;font-size:10px">${v.items.length}건</div>`:''}
+        </div>`;
+      }
+      b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <button class="btn ghost sm" id="arv-prev">◀</button><b>${arvMonth}</b><button class="btn ghost sm" id="arv-next">▶</button></div>
+        <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
+        <div id="arvDetail" style="margin-top:10px"></div>`;
+      $('arv-prev').onclick=()=>{const dt=new Date(Date.UTC(y,m-2,1));arvMonth=dt.toISOString().slice(0,7);renderArvCalendar();};
+      $('arv-next').onclick=()=>{const dt=new Date(Date.UTC(y,m,1));arvMonth=dt.toISOString().slice(0,7);renderArvCalendar();};
+      [...b.querySelectorAll('.cal-cell[data-arvday]')].forEach(el=>el.onclick=()=>{
+        const v=dayMap[el.dataset.arvday];const dt=$('arvDetail');
+        if(!v){dt.innerHTML=`<div class="hint">${el.dataset.arvday}: 수금 없음</div>`;return;}
+        dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${el.dataset.arvday}</b> · 합계 +${fmt(v.sum)}
+          <table style="margin-top:6px"><thead><tr><th>고객</th><th>계좌</th><th class="num">입금액</th></tr></thead><tbody>${v.items.map(x=>`<tr>
+            <td>${x.customer_name}</td><td>${x.account_label||'—'}</td><td class="num" style="color:var(--income)">+${fmt(x.amount)}</td></tr>`).join('')}</tbody></table></div>`;
+      });
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
 
   // ===== 고정비(반복 규칙) =====
@@ -1082,17 +1021,17 @@
         const ds=`${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
         const v=dayMap[ds];const dow=new Date(Date.UTC(y,m-1,dd)).getUTCDay();
         const we=(dow===0||dow===6)?' weekend':'';
-        const hasV=v&&(v.in||v.out||v.items.length);
+        const hasV=v&&(v.ar||v.ap||(v.items&&v.items.length));
         cells+=`<div class="cal-cell${we}" data-day="${ds}">
           <div class="cal-daynum">${dd}</div>
-          <div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.in?'+'+fmt(v.in):''}</span></div>
-          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.out?'-'+fmt(v.out):''}</span></div>
-          <div class="cal-slot"><span class="k">잔고</span><span style="font-weight:700">${v?fmt(v.cumulative):''}</span></div>
+          <div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
+          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
+          <div class="cal-slot"><span class="k">잔고</span><span style="font-weight:700">${v?fmt(v.balance!=null?v.balance:v.cumulative):''}</span></div>
         </div>`;
       }
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
-        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · 잔고=그날까지 누적(실적)</span></div>
+        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 잔고=누적(실적)</span></div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
         ${renderMonthSections(d)}`;
@@ -1143,21 +1082,24 @@
         const d=await res.json();d.days.forEach(x=>dayMap[x.date]=x);
       }
       const dows=['일','월','화','수','목','금','토'];
-      let wIn=0,wOut=0;days.forEach(ds=>{const v=dayMap[ds];if(v){wIn+=v.in;wOut+=v.out;}});
+      let wIn=0,wOut=0;days.forEach(ds=>{const v=dayMap[ds];if(v){wIn+=(v.ar||0);wOut+=(v.ap||0);}});
       const body=days.map((ds,i)=>{
-        const v=dayMap[ds];const we=(i===0||i===6);const net=v?v.net:0;
-        const arItems=v?v.items.filter(t=>t.direction==='in'):[];
-        const apItems=v?v.items.filter(t=>t.direction==='out'):[];
-        const itemLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
-          <span>${t.status==='actual'?'':'<span class="hint" style="margin:0">[예정] </span>'}${t.category_name||t.category_code||''}${t.memo?' · '+t.memo.slice(0,22):''}</span>
-          <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
+        const v=dayMap[ds];const we=(i===0||i===6);
+        const arItems=(v&&v.ar_items)||[];
+        const apItems=(v&&v.ap_items)||[];
+        const arLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
+          <span>${x.customer_name||''}${x.sat_no?' · '+x.sat_no:''}</span>
+          <span style="color:var(--income)">+${fmt(x.amount_mxn)}</span></div>`;
+        const apLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
+          <span>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}</span>
+          <span style="color:var(--expense)">-${fmt(x.amount_mxn)}</span></div>`;
         const detail=weekSummaryOnly?'':`
-          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AR (수입)</div>${arItems.length?arItems.map(itemLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
-          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지출)</div>${apItems.length?apItems.map(itemLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`;
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AR (수금예정)</div>${arItems.length?arItems.map(arLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지급예정)</div>${apItems.length?apItems.map(apLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`;
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;background:${we?'#f3f1ec':'#fff'}">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <b style="${we?'color:var(--expense)':''}">${dows[i]} ${ds}</b>
-            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.in:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.out:0)}</b> · 잔고 <b>${v?fmt(v.cumulative):'—'}</b></span>
+            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · 잔고 <b>${v?fmt(v.balance!=null?v.balance:v.cumulative):'—'}</b></span>
           </div>${detail}</div>`;
       }).join('');
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
@@ -1173,14 +1115,21 @@
 
   function showDayDetail(ds,v){
     const dt=$('calDetail');if(!dt)return;
-    if(!v||!v.items||!v.items.length){dt.innerHTML=`<div class="hint">${ds}: 거래 없음</div>`;return;}
-    dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${ds}</b>
-      <table style="margin-top:6px"><tbody>${v.items.map(t=>`<tr>
-        <td>${t.status==='actual'?'실제':'예정'}</td>
-        <td>${t.category_name||t.category_code||''}</td>
-        <td>${(t.memo||'').slice(0,30)}</td>
-        <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</td>
-      </tr>`).join('')}</tbody></table></div>`;
+    const ar=(v&&v.ar_items)||[], ap=(v&&v.ap_items)||[], cash=((v&&v.items)||[]).filter(t=>t.status==='actual');
+    if(!ar.length&&!ap.length&&!cash.length){dt.innerHTML=`<div class="hint">${ds}: 내역 없음</div>`;return;}
+    const arTbl=ar.length?`<div style="font-weight:700;margin:6px 0 2px;color:var(--income)">수금예정 (AR) · 합계 +${fmt(v.ar)}</div>
+      <table><thead><tr><th>고객</th><th>SAT</th><th class="num">금액</th></tr></thead><tbody>${ar.map(x=>`<tr>
+        <td>${x.customer_name||''}</td><td>${x.sat_no||''}</td>
+        <td class="num" style="color:var(--income)">+${fmt(x.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
+    const apTbl=ap.length?`<div style="font-weight:700;margin:10px 0 2px;color:var(--expense)">지급예정 (AP) · 합계 -${fmt(v.ap)}</div>
+      <table><thead><tr><th>계좌</th><th>계정과목</th><th>메모</th><th class="num">금액</th></tr></thead><tbody>${ap.map(x=>`<tr>
+        <td>${x.account_name||''}</td><td>${x.category_name||''}</td><td>${(x.memo||'').slice(0,26)}</td>
+        <td class="num" style="color:var(--expense)">-${fmt(x.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
+    const cashTbl=cash.length?`<div style="font-weight:700;margin:10px 0 2px">실적 (현금)</div>
+      <table><tbody>${cash.map(t=>`<tr>
+        <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
+        <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
+    dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${ds}</b>${arTbl}${apTbl}${cashTbl}</div>`;
   }
 
   // 계정과목별 계획 vs 실적 막대(편성=회색, 집행=초록, 초과집행=빨강)
@@ -1406,7 +1355,7 @@
     $('apprCard').classList.toggle('hidden',w!=='approve');
     if(w==='new'){loadPendingPlans();}
     if(w==='txn')loadTxns();
-    if(w==='pay'){if(!$('p-date').value)$('p-date').value=new Date().toISOString().slice(0,10);loadArCustomers();}
+    if(w==='pay'){loadArView();}
     if(w==='fixed'){loadFixed();loadVariance();}
     if(w==='cash'){loadCashAll();}
     if(w==='fx'){if(!$('fx-from').value){fxDefaultRange(90);}loadFxSummary();}
@@ -1456,11 +1405,12 @@
   $('rx-freq').addEventListener('change',()=>{const w=$('rx-freq').value==='week';$('rx-weekbox').classList.toggle('hidden',!w);$('rx-monthbox').classList.toggle('hidden',w);});
   $('rx-endtype').addEventListener('change',()=>{$('rx-endbox').classList.toggle('hidden',$('rx-endtype').value!=='month');});
   $('var-gran').addEventListener('change',loadVariance);
-  $('p-cust').addEventListener('change',()=>{loadOpenInvoices();loadPayHistory();});
-  $('p-amt').addEventListener('input',renderRunbar);
-  $('p-auto').addEventListener('click',autoAllocate);
-  $('p-clear').addEventListener('click',clearAlloc);
-  $('p-save').addEventListener('click',savePayment);
+  // 수금 현황(보기 전용) 목록/달력 토글
+  document.querySelectorAll('#arv-list,#arv-cal').forEach(btn=>btn.addEventListener('click',()=>{
+    arvView=btn.dataset.v;
+    document.querySelectorAll('#arv-list,#arv-cal').forEach(b=>b.classList.toggle('on',b===btn));
+    if(arvView==='cal')renderArvCalendar(); else renderArvList();
+  }));
   $('accAddBtn').addEventListener('click',()=>$('accForm').classList.toggle('hidden'));
   $('a-save').addEventListener('click',saveAccount);
   $('t-save').addEventListener('click',saveTxn);
@@ -1474,6 +1424,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260622b"></script>
 </body>
 </html>

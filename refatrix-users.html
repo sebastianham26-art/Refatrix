@@ -82,6 +82,27 @@
   </div>
 </div>
 
+<!-- 계좌 권한 모달 -->
+<div id="accModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:86vh;overflow:auto;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;gap:8px">
+      <h2 style="margin:0;flex:1">계좌 권한 · <span id="accUserName"></span></h2>
+      <button class="btn ghost sm" onclick="closeAccAccess()">닫기</button>
+    </div>
+    <div class="hint" style="margin-top:6px">열람 = 잔고·거래·현금흐름 보기. 운영 = 거래 등록·확정까지(체크 시 열람 자동 포함). 지출 등록은 등록 후 디렉터 승인 대기입니다.</div>
+    <div style="margin:10px 0 6px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="accBulk('viewAll')">전체 열람</button>
+      <button class="btn ghost sm" onclick="accBulk('opAll')">전체 운영</button>
+      <button class="btn ghost sm" onclick="accBulk('none')">전체 해제</button>
+    </div>
+    <div id="accBody"><div class="hint">불러오는 중…</div></div>
+    <div id="accMsg" class="msg" style="display:none"></div>
+    <div style="margin-top:12px;text-align:right">
+      <button class="btn gold" id="accSave" onclick="saveAccAccess()">저장</button>
+    </div>
+  </div>
+</div>
+
 <script>
   let session={token:null,user:null,api:''};
   let teams=[], users=[];
@@ -162,7 +183,7 @@
     try{
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th>페이지 권한</th><th>PIN</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th>페이지 권한</th><th>계좌 권한</th><th>PIN</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
           <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
           <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
@@ -180,6 +201,7 @@
                 <option value="none" ${cur==='none'?'selected':''}>없음</option>
                 <option value="view" ${cur==='view'?'selected':''}>열람</option>
                 <option value="edit" ${cur==='edit'?'selected':''}>수정·기록</option></select></label>`;}).join('')+`</div>`;}).join('')}</td>
+          <td>${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':`<button class="btn ghost sm" onclick="openAccAccess(${u.id},'${(u.name||'').replace(/'/g,"\\'")}')">계좌 권한</button>`}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
         </tr>`).join('')+'</tbody></table>';
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -202,6 +224,54 @@
       loadUsers();
     }catch(e){alert('실패');loadUsers();}
   }
+
+  // ===== 계좌 권한 모달 =====
+  let accUserId=null, accRows=[];
+  async function openAccAccess(userId,name){
+    accUserId=userId; $('accUserName').textContent=name||('#'+userId);
+    $('accMsg').style.display='none'; $('accBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    $('accModal').classList.remove('hidden');
+    try{
+      const d=await fetch(session.api+'/api/users/'+userId+'/account-access',{headers:auth()}).then(r=>r.json());
+      accRows=(d.items||[]).map(a=>({account_id:a.account_id,name:a.name,type:a.type,currency:a.currency,view:!!a.view,operate:!!a.operate}));
+      renderAccRows();
+    }catch(e){$('accBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderAccRows(){
+    if(!accRows.length){$('accBody').innerHTML='<div class="hint">등록된 계좌가 없습니다.</div>';return;}
+    $('accBody').innerHTML='<table style="width:100%;font-size:13px"><thead><tr>'
+      +'<th style="text-align:left">계좌</th><th>통화</th><th>열람</th><th>운영(등록)</th></tr></thead><tbody>'
+      +accRows.map((a,i)=>`<tr>
+        <td style="text-align:left"><b>${a.name}</b>${a.type?` <span class="hint" style="margin:0">${a.type}</span>`:''}</td>
+        <td style="text-align:center">${a.currency||''}</td>
+        <td style="text-align:center"><input type="checkbox" ${a.view?'checked':''} onchange="accToggle(${i},'view',this.checked)"></td>
+        <td style="text-align:center"><input type="checkbox" ${a.operate?'checked':''} onchange="accToggle(${i},'operate',this.checked)"></td>
+      </tr>`).join('')+'</tbody></table>';
+  }
+  function accToggle(i,field,val){
+    const a=accRows[i];
+    if(field==='operate'){ a.operate=val; if(val) a.view=true; }      // 운영이면 열람 자동 포함
+    else { a.view=val; if(!val) a.operate=false; }                     // 열람 해제면 운영도 해제
+    renderAccRows();
+  }
+  function accBulk(mode){
+    accRows.forEach(a=>{ if(mode==='viewAll'){a.view=true;} else if(mode==='opAll'){a.view=true;a.operate=true;} else {a.view=false;a.operate=false;} });
+    renderAccRows();
+  }
+  async function saveAccAccess(){
+    const m=$('accMsg'); m.style.display='none'; $('accSave').disabled=true; $('accSave').textContent='저장 중…';
+    try{
+      const items=accRows.filter(a=>a.view||a.operate).map(a=>({account_id:a.account_id,view:a.view,operate:a.operate}));
+      const res=await fetch(session.api+'/api/users/'+accUserId+'/account-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({items})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent='저장 완료 ('+d.count+'개 계좌 권한).';
+      setTimeout(()=>closeAccAccess(),700);
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('accSave').disabled=false;$('accSave').textContent='저장';}
+  }
+  function closeAccAccess(){ $('accModal').classList.add('hidden'); accUserId=null; accRows=[]; }
+
   async function resetPin(userId){
     const pin=prompt('새 PIN(4~8자리, 비우면 자동 생성):');
     if(pin===null)return;
@@ -219,6 +289,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260622b"></script>
 </body>
 </html>
