@@ -227,15 +227,33 @@
 
   // ===== 계좌 권한 모달 =====
   let accUserId=null, accRows=[];
+  // 절대 멈추지 않는 fetch: 타임아웃 + 상태/본문 노출
+  async function fetchJsonHard(url,opts,timeoutMs){
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),timeoutMs||15000);
+    try{
+      const res=await fetch(url,{...(opts||{}),signal:ctrl.signal});
+      const txt=await res.text();
+      let data=null; try{ data=txt?JSON.parse(txt):{}; }catch(_){ data={__raw:txt}; }
+      return {ok:res.ok,status:res.status,data,raw:txt};
+    }catch(e){
+      return {ok:false,status:0,data:null,raw:'',err:(e&&e.name==='AbortError')?'시간 초과(timeout)':(e&&e.message)||'network'};
+    }finally{ clearTimeout(tid); }
+  }
   async function openAccAccess(userId,name){
     accUserId=userId; $('accUserName').textContent=name||('#'+userId);
     $('accMsg').style.display='none'; $('accBody').innerHTML='<div class="hint">불러오는 중…</div>';
     $('accModal').classList.remove('hidden');
-    try{
-      const d=await fetch(session.api+'/api/users/'+userId+'/account-access',{headers:auth()}).then(r=>r.json());
-      accRows=(d.items||[]).map(a=>({account_id:a.account_id,name:a.name,type:a.type,currency:a.currency,view:!!a.view,operate:!!a.operate}));
-      renderAccRows();
-    }catch(e){$('accBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/account-access',{headers:auth()},15000);
+    if(!r.ok){
+      const detail=r.err?r.err:((r.data&&(r.data.error||r.data.message))||(r.raw||'').slice(0,200)||('HTTP '+r.status));
+      $('accBody').innerHTML='<div class="msg err" style="display:block">불러오지 못했습니다 — HTTP '+r.status+' · '+detail
+        +(r.status===404?'<br><span class="hint" style="margin:4px 0 0">최신 백엔드가 배포됐는지 확인하세요(계좌권한 API).</span>':'')+'</div>';
+      return;
+    }
+    const items=(r.data&&r.data.items)||[];
+    accRows=items.map(a=>({account_id:a.account_id,name:a.name,type:a.type,currency:a.currency,view:!!a.view,operate:!!a.operate}));
+    renderAccRows();
   }
   function renderAccRows(){
     if(!accRows.length){$('accBody').innerHTML='<div class="hint">등록된 계좌가 없습니다.</div>';return;}
@@ -262,13 +280,14 @@
     const m=$('accMsg'); m.style.display='none'; $('accSave').disabled=true; $('accSave').textContent='저장 중…';
     try{
       const items=accRows.filter(a=>a.view||a.operate).map(a=>({account_id:a.account_id,view:a.view,operate:a.operate}));
-      const res=await fetch(session.api+'/api/users/'+accUserId+'/account-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({items})});
-      const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.style.display='block';m.textContent='저장 완료 ('+d.count+'개 계좌 권한).';
+      const r=await fetchJsonHard(session.api+'/api/users/'+accUserId+'/account-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({items})},15000);
+      if(!r.ok){
+        const detail=r.err?r.err:((r.data&&(r.data.error||r.data.message))||(r.raw||'').slice(0,200)||('HTTP '+r.status));
+        m.className='msg err';m.style.display='block';m.textContent='실패 — HTTP '+r.status+' · '+detail;return;
+      }
+      m.className='msg ok';m.style.display='block';m.textContent='저장 완료 ('+((r.data&&r.data.count)||0)+'개 계좌 권한).';
       setTimeout(()=>closeAccAccess(),700);
-    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
-    finally{$('accSave').disabled=false;$('accSave').textContent='저장';}
+    }finally{$('accSave').disabled=false;$('accSave').textContent='저장';}
   }
   function closeAccAccess(){ $('accModal').classList.add('hidden'); accUserId=null; accRows=[]; }
 
@@ -289,6 +308,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622b"></script>
+<script src="refatrix-nav.js?v=20260622c"></script>
 </body>
 </html>
