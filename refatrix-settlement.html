@@ -454,17 +454,18 @@
     h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:19px;font-weight:800">Estado de cuenta</div><div style="color:var(--muted);font-size:12px;margin-top:4px">Fecha: '+esc(arToday)+'</div></div>';
     h+='</div>';
     h+='<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">';
-    h+='<div style="font-size:14px"><b>Cliente:</b> '+esc(c.customer_name||'')+'</div>';
+    h+='<div style="font-size:14px"><b>Cliente:</b> '+esc(c.customer_name||('#'+c.customer_id))+(c.customer_code?(' <span style="color:var(--muted);font-weight:600">('+esc(c.customer_code)+')</span>'):'')+'</div>';
     const cuLine=[c.customer_rfc?('RFC: '+esc(c.customer_rfc)):'',c.customer_phone?('Tel: '+esc(c.customer_phone)):''].filter(Boolean).join(' · ');
     if(cuLine) h+='<div style="color:var(--muted);font-size:12px;margin-top:2px">'+cuLine+'</div>';
-    h+='<table style="margin-top:14px"><thead><tr><th style="text-align:left">Factura</th><th style="text-align:left">Emisión</th><th style="text-align:left">Vencimiento</th><th>Saldo (MXN)</th><th>Estado</th></tr></thead><tbody>';
-    rows.forEach(r=>{ h+='<tr'+(r.overdue?' class="ovd"':'')+'>'
-      +'<td style="text-align:left;word-break:break-all;max-width:280px">'+esc(r.sat_no||('#'+r.id))+'</td>'
+    h+='<table style="margin-top:14px"><thead><tr><th style="text-align:left">#</th><th style="text-align:left">Factura</th><th style="text-align:left">Emisión</th><th style="text-align:left">Vencimiento</th><th>Saldo (MXN)</th><th>Estado</th></tr></thead><tbody>';
+    rows.forEach((r,idx)=>{ h+='<tr'+(r.overdue?' class="ovd"':'')+'>'
+      +'<td style="text-align:left;font-weight:700">#'+(idx+1)+'</td>'
+      +'<td style="text-align:left;word-break:break-all;max-width:260px">'+esc(r.sat_no||('#'+r.id))+'</td>'
       +'<td style="text-align:left">'+esc(r.inv_date||'—')+'</td>'
       +'<td style="text-align:left">'+esc(r.due_date||'—')+'</td>'
       +'<td><b>'+fmt(r.outstanding)+'</b></td>'
       +'<td'+(r.day_diff>0?' style="color:var(--expense);font-weight:700"':'')+'>'+esc(stmtDias(r))+'</td></tr>'; });
-    h+='</tbody><tfoot><tr><td colspan="3" style="text-align:right;font-weight:800">Total adeudado</td><td style="font-weight:800">MX$ '+fmt(total)+'</td><td></td></tr></tfoot></table>';
+    h+='</tbody><tfoot><tr><td colspan="4" style="text-align:right;font-weight:800">Total adeudado</td><td style="font-weight:800">MX$ '+fmt(total)+'</td><td></td></tr></tfoot></table>';
     h+='<div class="hint" style="margin-top:10px">아래 <b>PDF 다운로드</b>를 누르면 이 명세서가 PDF로 저장됩니다.</div>';
     $('stmtBody').innerHTML=h;
     $('stmtModal').classList.remove('hidden'); $('stmtModal').style.display='flex';
@@ -499,18 +500,19 @@
     const coLine=[co.rfc?('RFC: '+co.rfc):'', co.phone?('Tel: '+co.phone):'', co.email?String(co.email):''].filter(Boolean).join('   ');
     if(coLine){ doc.text(coLine, 40, y); y+=12; }
     y=Math.max(y, 100)+6; doc.setDrawColor(210); doc.line(40,y,555,y); y+=20;
-    doc.setTextColor(20); doc.setFontSize(11); doc.text('Cliente: '+(c.customer_name||''), 40, y); y+=15;
+    doc.setTextColor(20); doc.setFontSize(11); doc.text('Cliente: '+(c.customer_name||('#'+c.customer_id))+(c.customer_code?(' ('+c.customer_code+')'):''), 40, y); y+=15;
     doc.setFontSize(9); doc.setTextColor(110);
     const cuLine=[c.customer_rfc?('RFC: '+c.customer_rfc):'', c.customer_phone?('Tel: '+c.customer_phone):''].filter(Boolean).join('   ');
     if(cuLine){ doc.text(cuLine, 40, y); y+=4; }
     y+=16;
     doc.setTextColor(20); doc.setFontSize(9); doc.setFillColor(245,243,237); doc.rect(40,y-11,515,16,'F');
-    doc.text('Factura',46,y); doc.text('Emision',296,y); doc.text('Vencimiento',372,y); doc.text('Saldo (MXN)',500,y,{align:'right'}); doc.text('Dias',555,y,{align:'right'});
+    doc.text('#',46,y); doc.text('Factura',72,y); doc.text('Emision',296,y); doc.text('Vencimiento',372,y); doc.text('Saldo (MXN)',500,y,{align:'right'}); doc.text('Dias',555,y,{align:'right'});
     y+=6;
     const drawFit=(text,x,yy,maxW)=>{ let s=9; doc.setFontSize(s); while(doc.getTextWidth(text)>maxW && s>5){ s-=0.5; doc.setFontSize(s); } doc.text(text,x,yy); doc.setFontSize(9); };
     let total=0;
-    rows.forEach(r=>{ y+=15; if(y>790){doc.addPage();y=54;}
-      drawFit(String(r.sat_no||('#'+r.id)), 46, y, 244);
+    rows.forEach((r,idx)=>{ y+=15; if(y>790){doc.addPage();y=54;}
+      doc.text('#'+(idx+1),46,y);
+      drawFit(String(r.sat_no||('#'+r.id)), 72, y, 218);
       doc.text(String(r.inv_date||'—'),296,y);
       doc.text(String(r.due_date||'—'),372,y);
       doc.text(fmt(r.outstanding),500,y,{align:'right'});
@@ -530,6 +532,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260622a"></script>
+<script src="refatrix-nav.js?v=20260622b"></script>
 </body>
 </html>
