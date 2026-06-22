@@ -1,5 +1,6 @@
 import { query } from './db.js';
 import { hashDeviceKey } from './auth.js';
+import { buildAccountAccess } from './accountScope.js';
 
 // 사용자 권한 묶음을 DB에서 읽어 perm 객체로 구성
 export async function loadPerm(userId) {
@@ -31,12 +32,16 @@ export async function loadPerm(userId) {
     `SELECT team_id, can_edit FROM user_team_access WHERE user_id=$1`, [userId])).rows) {
     teamAccess.push({ teamId: Number(r.team_id), canEdit: r.can_edit });
   }
+  // 계좌별 열람/운영 권한 (디렉터는 buildAccountAccess 안에서 all:true 처리)
+  const accRows = (await query(
+    `SELECT account_id, can_operate FROM user_account_access WHERE user_id=$1`, [userId])).rows;
+  const accountAccess = buildAccountAccess(u.role, accRows);
   return {
     userId: u.id, name: u.name, dept: u.dept, role: u.role, lang: u.lang,
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
     teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
     dashDrilldown: u.dash_drilldown !== false,
-    pages, pageAccess, fields, items,
+    pages, pageAccess, fields, items, accountAccess,
   };
 }
 

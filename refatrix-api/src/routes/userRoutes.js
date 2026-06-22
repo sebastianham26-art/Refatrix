@@ -1,4 +1,4 @@
-import { query } from '../db.js';
+import { query, withTx } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { hashPin } from '../auth.js';
 import { logEvent } from '../audit.js';
@@ -101,5 +101,57 @@ export default async function userRoutes(app) {
   // 역할별 기본 권한 표(디렉터)
   app.get('/api/role-defaults', { preHandler: [authGuard, requireDirector] }, async () => {
     return { roleDefaults: ROLE_DEFAULTS, screenPageKey: SCREEN_PAGE_KEY };
+  });
+
+  // ===== 사용자×계좌 권한(디렉터) =====
+  // 한 사용자에 대해 전체 계좌 + 그 사용자의 열람/운영 여부를 함께 반환.
+  app.get('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const accs = (await query(
+      `SELECT id, name, type, currency FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
+    const granted = {};
+    for (const r of (await query(
+      `SELECT account_id, can_operate FROM user_account_access WHERE user_id=$1`, [id])).rows) {
+      granted[Number(r.account_id)] = { view: true, operate: r.can_operate === true };
+    }
+    const isDirector = u.role === 'director';
+    return {
+      user_id: id, is_director: isDirector,
+      items: accs.map((a) => ({
+        account_id: a.id, name: a.name, type: a.type, currency: a.currency,
+        // 디렉터는 항상 전체 열람/운영(테이블과 무관) — UI 표시용.
+        view: isDirector ? true : !!granted[a.id],
+        operate: isDirector ? true : !!(granted[a.id] && granted[a.id].operate),
+      })),
+    };
+  });
+
+  // 한 사용자의 계좌 권한 전체 교체. body: { items: [{ account_id, view, operate }] }
+  // view=false 면 해당 계좌 권한 제거. operate=true 는 view=true 를 함의한다.
+  app.put('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    if (u.role === 'director') return reply.code(400).send({ error: 'director_sees_all' });
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    // 유효 계좌만 반영(존재·미삭제).
+    const validIds = new Set((await query(`SELECT id FROM accounts WHERE deleted_at IS NULL`)).rows.map((r) => Number(r.id)));
+    const keep = items
+      .map((it) => ({ account_id: Number(it.account_id), operate: !!it.operate, view: it.view !== false }))
+      .filter((it) => validIds.has(it.account_id) && (it.view || it.operate));
+    await withTx(async (c) => {
+      await c.query(`DELETE FROM user_account_access WHERE user_id=$1`, [id]);
+      for (const it of keep) {
+        await c.query(
+          `INSERT INTO user_account_access (user_id, account_id, can_operate) VALUES ($1,$2,$3)
+           ON CONFLICT (user_id, account_id) DO UPDATE SET can_operate=EXCLUDED.can_operate`,
+          [id, it.account_id, it.operate]);
+      }
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`,
+      detail: { account_access: keep.map((k) => ({ a: k.account_id, op: k.operate })) } });
+    return { ok: true, count: keep.length };
   });
 }

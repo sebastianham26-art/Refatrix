@@ -216,3 +216,30 @@ function planAggr(items, dir) {
 function parseYMD(s) { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); }
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 export { round2 };
+
+// 현금흐름 달력용 AR(수금예정)/AP(지급예정) 일자별 집계 (순수 함수)
+//   invoices : 전사 미수 인보이스 [{ id, customer_name, sat_no, due_date:'YYYY-MM-DD', outstanding }]
+//   planOut  : 권한계좌의 예정 지출 거래 [{ id, plan_date|txn_date, amount_mxn, account_name, category_name, memo }]
+//   month    : 'YYYY-MM'
+// 반환: { ar: { [date]: {sum, items[]} }, ap: { [date]: {sum, items[]} } }
+export function calendarArApByDay(invoices, planOut, month) {
+  const ar = {}; const ap = {};
+  for (const iv of invoices || []) {
+    const d = String(iv.due_date).slice(0, 10);
+    if (d.slice(0, 7) !== month) continue;
+    const out = Number(iv.outstanding);
+    if (!(out > 0)) continue;
+    if (!ar[d]) ar[d] = { sum: 0, items: [] };
+    ar[d].sum = round2(ar[d].sum + out);
+    ar[d].items.push({ id: iv.id, customer_name: iv.customer_name, sat_no: iv.sat_no, amount_mxn: round2(out) });
+  }
+  for (const t of planOut || []) {
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (d.slice(0, 7) !== month) continue;
+    const amt = Number(t.amount_mxn) || 0;
+    if (!ap[d]) ap[d] = { sum: 0, items: [] };
+    ap[d].sum = round2(ap[d].sum + amt);
+    ap[d].items.push({ id: t.id, account_name: t.account_name || null, category_name: t.category_name || null, memo: t.memo || null, amount_mxn: round2(amt) });
+  }
+  return { ar, ap };
+}
