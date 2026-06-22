@@ -246,7 +246,7 @@
     $('accModal').classList.remove('hidden');
     const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/account-access',{headers:auth()},15000);
     if(!r.ok){
-      const detail=r.err?r.err:((r.data&&(r.data.error||r.data.message))||(r.raw||'').slice(0,200)||('HTTP '+r.status));
+      const detail=r.err?r.err:((r.data&&(r.data.message||r.data.error))||(r.raw||'').slice(0,200)||('HTTP '+r.status));
       $('accBody').innerHTML='<div class="msg err" style="display:block">불러오지 못했습니다 — HTTP '+r.status+' · '+detail
         +(r.status===404?'<br><span class="hint" style="margin:4px 0 0">최신 백엔드가 배포됐는지 확인하세요(계좌권한 API).</span>':'')+'</div>';
       return;
@@ -282,7 +282,7 @@
       const items=accRows.filter(a=>a.view||a.operate).map(a=>({account_id:a.account_id,view:a.view,operate:a.operate}));
       const r=await fetchJsonHard(session.api+'/api/users/'+accUserId+'/account-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({items})},15000);
       if(!r.ok){
-        const detail=r.err?r.err:((r.data&&(r.data.error||r.data.message))||(r.raw||'').slice(0,200)||('HTTP '+r.status));
+        const detail=r.err?r.err:((r.data&&(r.data.message||r.data.error))||(r.raw||'').slice(0,200)||('HTTP '+r.status));
         m.className='msg err';m.style.display='block';m.textContent='실패 — HTTP '+r.status+' · '+detail;return;
       }
       m.className='msg ok';m.style.display='block';m.textContent='저장 완료 ('+((r.data&&r.data.count)||0)+'개 계좌 권한).';
@@ -308,6 +308,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622c"></script>
+<script src="refatrix-nav.js?v=20260622d"></script>
 </body>
 </html>

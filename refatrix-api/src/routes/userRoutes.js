@@ -107,6 +107,7 @@ export default async function userRoutes(app) {
   // 한 사용자에 대해 전체 계좌 + 그 사용자의 열람/운영 여부를 함께 반환.
   app.get('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
     const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!u) return reply.code(404).send({ error: 'not_found' });
     const accs = (await query(
@@ -136,6 +137,7 @@ export default async function userRoutes(app) {
   // view=false 면 해당 계좌 권한 제거. operate=true 는 view=true 를 함의한다.
   app.put('/api/users/:id/account-access', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
     const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!u) return reply.code(404).send({ error: 'not_found' });
     if (u.role === 'director') return reply.code(400).send({ error: 'director_sees_all' });
