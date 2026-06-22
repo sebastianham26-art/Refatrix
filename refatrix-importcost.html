@@ -179,11 +179,14 @@
             <input type="checkbox" class="b-chk" value="${b.id}">
             <div style="flex:1">
               <div><b>${b.batch_no||('입고 #'+b.id)}</b> · ${b.import_date?String(b.import_date).slice(0,10):''}</div>
-              <div class="meta">SKU ${Number(b.sku_count||0)}종 · 총수량 ${Number(b.total_qty).toLocaleString()} · <a href="#" onclick="toggleBatchLines(event,${b.id})" style="color:var(--brand,#143D34);font-weight:700;text-decoration:none">▸ 내역</a></div>
+              <div class="meta">SKU ${Number(b.sku_count||0)}종 · 총수량 ${Number(b.total_qty).toLocaleString()} · <a href="#" class="bl-toggle" data-bid="${b.id}" style="color:var(--brand,#143D34);font-weight:700;text-decoration:none">▸ 내역</a></div>
             </div>
           </label>
           <div id="bl-${b.id}" style="display:none;margin:2px 0 8px 30px"></div>
         </div>`).join('');
+      $('batches').querySelectorAll('.bl-toggle').forEach(a=>{
+        a.addEventListener('click',(e)=>{ e.preventDefault(); e.stopPropagation(); toggleBatchLines(null, Number(a.getAttribute('data-bid'))); });
+      });
     }catch(e){$('batches').innerHTML='<div class="hint">입고 건을 불러오지 못했습니다.</div>';}
   }
   const batchLinesCache={};
@@ -278,6 +281,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622a"></script>
+<script src="refatrix-nav.js?v=20260622b"></script>
 </body>
 </html>

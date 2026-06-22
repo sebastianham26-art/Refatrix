@@ -159,17 +159,25 @@
   }
   function renderBatchList(){
     if(!batches.length){ $('batchList').innerHTML='<div class="hint">등록된 배치가 없습니다.</div>'; return; }
-    let h='<div class="hint" style="margin-bottom:6px">배치번호를 클릭하면 SKU·수량과 <b>삭제 안전성</b>(재고/판매)을 봅니다. <span style="color:var(--income);font-weight:700">안전</span>=그 배치 분이 재고에 남아있어 지워도 판매이력에 영향 없음 · <span style="color:var(--expense);font-weight:700">위험</span>=판매로 소진되어 지우면 재고 음수.</div>';
+    let h='<div class="hint" style="margin-bottom:6px">배치 행을 클릭하면 SKU·수량과 <b>삭제 안전성</b>(재고/판매)을 봅니다. <span style="color:var(--income);font-weight:700">안전</span>=그 배치 분이 재고에 남아있어 지워도 판매이력에 영향 없음 · <span style="color:var(--expense);font-weight:700">위험</span>=판매로 소진되어 지우면 재고 음수.</div>';
     h+='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th class="n">수량</th><th class="n">SKU</th><th>삭제</th></tr></thead><tbody>';
     batches.forEach(b=>{
       const open = batchOpen===b.id;
-      h+='<tr><td><a href="#" onclick="toggleBatchDetail(event,'+b.id+')" style="color:var(--brand);font-weight:800;text-decoration:none">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+'</a></td>'
+      h+='<tr class="brow" data-bid="'+b.id+'" style="cursor:pointer">'
+        +'<td style="color:var(--brand);font-weight:800">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+'</td>'
         +'<td>'+esc(b.import_date||'')+'</td><td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count!=null?b.sku_count:'')+'</td>'
-        +'<td><button class="btn sm" style="background:var(--expense);padding:4px 10px;font-size:11.5px" onclick="deleteBatch('+b.id+',\''+esc(String(b.batch_no||('#'+b.id)).replace(/'/g,"")) +'\')">🗑 삭제</button></td></tr>';
+        +'<td><button type="button" class="bdel btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--expense);padding:4px 10px;font-size:11.5px">🗑 삭제</button></td></tr>';
       if(open){ h+='<tr><td colspan="5" style="padding:0;background:#faf8f3">'+batchDetailHtml(b.id)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     $('batchList').innerHTML=h;
+    // inline onclick 의존 제거 → 직접 바인딩
+    $('batchList').querySelectorAll('.brow').forEach(tr=>{
+      tr.addEventListener('click', ()=>toggleBatchDetail(null, Number(tr.getAttribute('data-bid'))));
+    });
+    $('batchList').querySelectorAll('.bdel').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''); });
+    });
   }
   function batchDetailHtml(id){
     const d=batchLines[id];
@@ -334,6 +342,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622d"></script>
+<script src="refatrix-nav.js?v=20260622e"></script>
 </body>
 </html>
