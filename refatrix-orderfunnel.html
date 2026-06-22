@@ -123,8 +123,9 @@
   let viewBy='month';            // 'month' | 'order'
   let period={month:12, order:20}; // 표시 개월수 / 오더 건수
   const PERIOD_OPTS={ month:[6,12,24], order:[10,20,50] };
+  let ofOpen=null, ofLines={}, lastRows=[];
 
-  function setBy(b){ viewBy=b; $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
+  function setBy(b){ viewBy=b; ofOpen=null; $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
   function setPeriod(n){ period[viewBy]=n; renderPeriod(); load(); }
   function renderPeriod(){
     const opts=PERIOD_OPTS[viewBy], unit=(viewBy==='month'?'개월':'건');
@@ -132,9 +133,45 @@
   }
 
   async function load(){
-    const n=period[viewBy];
+    const n=period[viewBy]; ofOpen=null;
     try{ const d=await fetch(session.api+'/api/dashboard/order-funnel/trend?by='+viewBy+'&n='+n,{headers:auth()}).then(r=>r.json()); render(d.rows||[]); }
     catch(e){ $('trendWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; $('chartWrap').innerHTML=''; }
+  }
+
+  // 오더(견적) 클릭 → 아이템 드릴다운(최초 수량 + 매출가능/부족/개발필요)
+  function reRender(){ render(lastRows); }
+  async function toggleOrder(qid){
+    if(ofOpen===qid){ ofOpen=null; reRender(); return; }
+    ofOpen=qid; reRender();
+    if(!ofLines[qid]){
+      try{ const d=await fetch(session.api+'/api/dashboard/funnel/quote-lines?quote_id='+qid,{headers:auth()}).then(r=>r.json());
+        ofLines[qid]=(d&&!d.error)?d:{error:1}; }
+      catch(e){ ofLines[qid]={error:1}; }
+      if(ofOpen===qid) reRender();
+    }
+  }
+  function ofFlag(f){
+    if(f==='ok') return '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#e7f3ee;color:var(--income)">매출가능</span>';
+    if(f==='low_stock') return '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#fdf4e3;color:var(--gold)">부족</span>';
+    return '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#f1ecf8;color:var(--purple)">개발필요</span>';
+  }
+  function ofLinesHtml(qid){
+    const d=ofLines[qid];
+    if(!d) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">아이템 불러오는 중…</div>';
+    if(d.error) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">아이템을 불러오지 못했습니다.</div>';
+    const items=d.items||[];
+    if(!items.length) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">아이템이 없습니다.</div>';
+    let h='<div style="padding:8px 12px 12px"><table style="margin-top:4px"><thead><tr>'
+      +'<th style="text-align:left">제품(SKU)</th><th style="text-align:left">품명</th><th>최초 수량</th><th>가용재고</th><th style="text-align:left">현황</th></tr></thead><tbody>';
+    items.forEach(it=>{
+      h+='<tr><td style="text-align:left"><b>'+esc(it.ctr_code||it.input_code||'-')+'</b></td>'
+        +'<td style="text-align:left">'+esc(it.product_name||'-')+'</td>'
+        +'<td>'+nf(it.qty)+'</td>'
+        +'<td>'+(it.avail_stock==null?'—':nf(it.avail_stock))+'</td>'
+        +'<td style="text-align:left">'+ofFlag(it.stock_flag)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    return h;
   }
 
   // 전체 수량 선 + 즉시매출 영역 음영 SVG
@@ -222,6 +259,7 @@
   }
 
   function render(rows){
+    lastRows=rows;
     const withData=rows.filter(r=>r.req_qty>0);
     drawChart(withData);
     // KPI: 최신 즉시매출% + 직전 대비
@@ -247,9 +285,11 @@
       +'<th>즉시 %</th><th>부족 %</th><th>개발 %</th></tr></thead><tbody>';
     withData.forEach(r=>{
       const oi=r.ok_qty_pct, ss=r.short_qty_pct, dd=r.dev_qty_pct;
-      h+='<tr>'
-        +'<td><b>'+esc(r.label||r.ym||'')+'</b></td>'
-        +(viewBy==='order'?'<td>'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td>':'')
+      const clickable = viewBy==='order' && r.quote_id;
+      const open = clickable && ofOpen===r.quote_id;
+      h+='<tr'+(clickable?' style="cursor:pointer"'+(open?' class="oopen"':'')+' onclick="toggleOrder('+r.quote_id+')"':'')+'>'
+        +'<td style="text-align:left"><b>'+(clickable?(open?'▾ ':'▸ '):'')+esc(r.label||r.ym||'')+'</b></td>'
+        +(viewBy==='order'?'<td style="text-align:left">'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td>':'')
         +'<td>'+nf(r.req_sku)+'</td>'
         +'<td>'+nf(r.req_qty)+'</td>'
         +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span></td>'
@@ -257,15 +297,17 @@
         +'<td style="color:var(--gold)">'+ss+'%</td>'
         +'<td style="color:var(--purple)">'+dd+'%</td>'
         +'</tr>';
+      if(open){ h+='<tr><td colspan="9" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     $('trendWrap').innerHTML=h;
+    if(viewBy==='order'){ $('trendWrap').insertAdjacentHTML('afterbegin','<div class="hint" style="margin-bottom:6px">오더(견적) 행을 클릭하면 아이템 목록(최초 수량 · 매출가능/부족/개발필요)을 펼칩니다.</div>'); }
   }
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260622a"></script>
 </body>
 </html>

@@ -60,6 +60,8 @@
   .searchbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 2px}
   .searchbar input{width:300px;max-width:60vw}
   .nores{font-size:13px;color:var(--muted);padding:8px 2px}
+  .inv-no{font-size:11px;color:var(--muted);white-space:nowrap;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.2px}
+  td.n,th.n{font-variant-numeric:tabular-nums}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -104,7 +106,7 @@
       </div>
       <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고(은행 입금증 첨부 가능), <b>수금내역</b>으로 인보이스별 수금 이력을 봅니다.</div>
       <div class="searchbar">
-        <input id="arSearchQ" placeholder="SAT 번호 또는 고객명·코드로 인보이스 검색" onkeydown="if(event.key==='Enter')doArSearch()">
+        <input id="arSearchQ" placeholder="SAT 번호 또는 고객명·코드로 인보이스 검색" oninput="onArSearchInput()" onkeydown="if(event.key==='Enter')doArSearch()">
         <button class="btn" onclick="doArSearch()">🔍 검색</button>
         <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
         <span id="arSearchInfo" class="hint"></span>
@@ -265,25 +267,24 @@
     return arDueText(it);
   }
   function arListTableHtml(list){
-    let h='<table><thead><tr><th>고객</th><th>인보이스(SAT)</th><th>발행일</th><th>만기일</th><th>청구액</th><th>입금</th><th>잔액</th><th>상태</th><th></th></tr></thead><tbody>';
+    let h='<div style="overflow-x:auto"><table><thead><tr><th>고객 · 인보이스</th><th style="text-align:left">발행일</th><th style="text-align:left">만기일</th><th style="text-align:left">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th><th></th></tr></thead><tbody>';
     list.forEach(it=>{
       h+='<tr'+(it.overdue?' class="ovd"':'')+'>'
-        +'<td><b>'+esc(it.customer_name)+'</b> <span class="hint">'+esc(it.customer_code)+'</span></td>'
-        +'<td>'+esc(it.sat_no||('#'+it.id))+'</td>'
-        +'<td>'+esc(it.inv_date||'—')+'</td>'
-        +'<td>'+esc(it.due_date||'—')+'</td>'
-        +'<td>'+fmt(it.total_mxn)+'</td>'
-        +'<td>'+fmt(it.paid)+'</td>'
-        +'<td><b>'+fmt(it.outstanding)+'</b></td>'
-        +'<td>'+arStatusChip(it)+'</td>'
+        +'<td><b>'+esc(it.customer_name)+'</b><div class="inv-no">'+esc(it.sat_no||('#'+it.id))+'</div></td>'
+        +'<td style="text-align:left;white-space:nowrap">'+esc(it.inv_date||'—')+'</td>'
+        +'<td style="text-align:left;white-space:nowrap">'+esc(it.due_date||'—')+'</td>'
+        +'<td style="text-align:left;white-space:nowrap">'+arStatusChip(it)+'</td>'
+        +'<td class="n">'+fmt(it.total_mxn)+'</td>'
+        +'<td class="n">'+fmt(it.paid)+'</td>'
+        +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td>'
         +'<td style="white-space:nowrap">'
         +(it.paid_full?'':'<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">반제</button> ')
         +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
         +'</tr>';
-      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
-      if(arHistOpen===it.id){ h+='<tr><td colspan="9">'+histInnerHtml(it)+'</td></tr>'; }
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="8" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
+      if(arHistOpen===it.id){ h+='<tr><td colspan="8">'+histInnerHtml(it)+'</td></tr>'; }
     });
-    h+='</tbody></table>';
+    h+='</tbody></table></div>';
     return h;
   }
   function renderAr(){
@@ -483,6 +484,13 @@
     renderAr();
   }
   // ===== SAT/고객 검색 (완납 포함) =====
+  let arSearchTimer=null;
+  function onArSearchInput(){
+    const q=($('arSearchQ').value||'').trim();
+    clearTimeout(arSearchTimer);
+    if(!q){ if(arSearchMode) clearArSearch(); return; }
+    arSearchTimer=setTimeout(doArSearch, 220);
+  }
   async function doArSearch(){
     const q=($('arSearchQ').value||'').trim();
     if(!q){ clearArSearch(); return; }
@@ -598,6 +606,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260622d"></script>
+<script src="refatrix-nav.js?v=20260622e"></script>
 </body>
 </html>

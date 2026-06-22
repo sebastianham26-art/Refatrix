@@ -291,6 +291,7 @@ export default async function devRequestRoutes(app) {
           ORDER BY q.quote_date DESC, q.id DESC
           LIMIT $1`, oargs)).rows;
       const rows = qs.reverse().map((o) => ({
+        quote_id: Number(o.id),
         label: o.quote_no || ('#' + o.id), quote_no: o.quote_no, qdate: o.qdate, customer_name: o.customer_name,
         req_sku: o.req_sku, req_qty: Number(o.req_qty),
         ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty), short_sku: o.short_sku, short_qty: Number(o.short_qty), dev_sku: o.dev_sku, dev_qty: Number(o.dev_qty),
