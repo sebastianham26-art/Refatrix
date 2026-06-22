@@ -227,6 +227,7 @@
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
   let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
   let isDirector=false;
+  let arEditAlloc=null;
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   async function loadAr(){
@@ -366,6 +367,7 @@
   }
   // ===== 인보이스별 수금내역 드릴다운 =====
   async function toggleHist(invId){
+    arEditAlloc=null;
     if(arHistOpen===invId){ arHistOpen=null; renderAr(); return; }
     arHistOpen=invId; arOpenRepay=null; renderAr();
     if(!arHistData[invId]){
@@ -398,8 +400,22 @@
           +'<td style="text-align:left">'+esc(p.memo||'—')+'</td>'
           +'<td style="text-align:left">'+esc(p.created_by_name||'—')+'</td>'
           +'<td>'+(p.has_receipt?'<button class="lnk" onclick="viewReceipt('+p.payment_id+')">👁 보기</button>':'<span class="hint">—</span>')+'</td>'
-          +(isDirector?('<td><button class="lnk" style="color:var(--expense)" onclick="cancelPayment('+p.payment_id+','+it.id+')">취소</button></td>'):'')
+          +(isDirector?('<td style="white-space:nowrap">'
+              +(p.editable!==false?('<button class="lnk" onclick="startEditAlloc('+p.alloc_id+','+it.id+')">수정</button> '):'')
+              +'<button class="lnk" style="color:var(--expense)" onclick="deleteAlloc('+p.alloc_id+','+it.id+')">삭제</button></td>'):'')
           +'</tr>';
+        if(isDirector && arEditAlloc===p.alloc_id){
+          const accOpts=arAccounts.map(a=>'<option value="'+a.id+'"'+(Number(a.id)===Number(p.account_id)?' selected':'')+'>'+esc(a.name)+'</option>').join('');
+          h+='<tr><td colspan="7" style="background:#fff7ef">'
+            +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+            +'<div><label>금액</label><input id="edAmt" type="number" step="0.01" value="'+p.amount+'" style="width:120px"></div>'
+            +'<div><label>입금일</label><input id="edDate" type="date" value="'+esc(p.pay_date||'')+'" style="width:150px"></div>'
+            +'<div><label>계좌</label><select id="edAcc" style="width:160px">'+(accOpts||'<option value="">(계좌 없음)</option>')+'</select></div>'
+            +'<div><label>메모</label><input id="edMemo" type="text" value="'+esc(p.memo||'')+'" style="width:180px"></div>'
+            +'<div><button class="btn" onclick="submitEditAlloc('+p.alloc_id+','+it.id+')">저장</button></div>'
+            +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="cancelEditAlloc()">취소</button></div>'
+            +'</div></td></tr>';
+        }
       });
       h+='</tbody></table>';
     }
@@ -421,17 +437,38 @@
       setTimeout(()=>URL.revokeObjectURL(url),60000);
     }catch(e){ m.className='msg err'; m.textContent='입금증 보기 실패(네트워크).'; }
   }
-  // 수금(반제) 취소 — 디렉터 전용
-  async function cancelPayment(paymentId, invId){
+  // 수금내역 건별 수정/삭제 — 디렉터 전용
+  function startEditAlloc(allocId, invId){ if(!isDirector) return; arEditAlloc=allocId; renderAr(); }
+  function cancelEditAlloc(){ arEditAlloc=null; renderAr(); }
+  async function submitEditAlloc(allocId, invId){
+    const m=$('arMsg'); m.className='msg';
+    const amt=Number($('edAmt').value), date=$('edDate').value, acc=Number($('edAcc').value), memo=$('edMemo').value;
+    if(!(amt>0)){ m.className='msg err'; m.textContent='금액을 입력하세요(양수).'; return; }
+    if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
+    if(!acc){ m.className='msg err'; m.textContent='계좌를 선택하세요.'; return; }
+    try{
+      const r=await fetch(session.api+'/api/ar/allocations/'+allocId,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({amount:amt,pay_date:date,account_id:acc,memo})});
+      const d=await r.json();
+      if(!r.ok||d.error){
+        const map={multi_allocation:'여러 인보이스에 배분된 입금이라 건별 수정이 불가합니다. 삭제 후 다시 입력하세요.',amount_exceeds_outstanding:'금액이 인보이스 한도를 초과합니다'+(d.max!=null?(' (최대 MX$'+fmt(d.max)+')'):'')+'.',not_found:'대상을 찾을 수 없습니다.'};
+        m.className='msg err'; m.textContent='수정 실패: '+(map[d.error]||d.error||r.status); return;
+      }
+      m.className='msg ok'; m.textContent='수금 건 수정 완료 · MX$'+fmt(d.amount);
+      arEditAlloc=null; arHistData={};
+      if(arSearchMode){ await doArSearch(); } else { await loadAr(); }
+      await reloadHistIfOpen();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function deleteAlloc(allocId, invId){
     if(!isDirector) return;
-    if(!window.confirm('이 수금(반제)을 취소할까요?\n· 인보이스 미수 잔액이 복구됩니다.\n· 통장 입금 거래도 함께 취소됩니다.\n· 첨부한 입금증도 삭제됩니다.\n되돌릴 수 없습니다.')) return;
+    if(!window.confirm('이 수금 건을 삭제할까요?\n· 인보이스 미수 잔액이 이 금액만큼 복구됩니다.\n· 통장 입금 거래도 함께 취소됩니다.\n되돌릴 수 없습니다.')) return;
     const m=$('arMsg'); m.className='msg';
     try{
-      const r=await fetch(session.api+'/api/ar/payments/'+paymentId,{method:'DELETE',headers:auth()});
+      const r=await fetch(session.api+'/api/ar/allocations/'+allocId,{method:'DELETE',headers:auth()});
       const d=await r.json();
-      if(!r.ok||d.error){ m.className='msg err'; m.textContent='수금 취소 실패: '+(d.error==='not_found'?'대상을 찾을 수 없음':(d.error||r.status)); return; }
-      m.className='msg ok'; m.textContent='수금(반제) 취소 완료 · 미수 복구 MX$'+fmt(d.amount)+((d.restored&&d.restored.length>1)?(' ('+d.restored.length+'개 인보이스)'):'');
-      arHistData={}; // 다중 배분 가능성 → 모든 드릴다운 캐시 무효화
+      if(!r.ok||d.error){ m.className='msg err'; m.textContent='삭제 실패: '+(d.error==='not_found'?'대상을 찾을 수 없음':(d.error||r.status)); return; }
+      m.className='msg ok'; m.textContent='수금 건 삭제 완료 · 미수 복구 MX$'+fmt(d.amount);
+      arEditAlloc=null; arHistData={};
       if(arSearchMode){ await doArSearch(); } else { await loadAr(); }
       await reloadHistIfOpen();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
@@ -454,13 +491,13 @@
       const r=await fetch(session.api+'/api/ar/search?q='+encodeURIComponent(q),{headers:auth()});
       const d=await r.json();
       arSearchItems=(d&&d.items)||[]; arToday=(d&&d.today)||arToday;
-      arSearchMode=true; arHistOpen=null; arOpenRepay=null;
+      arSearchMode=true; arHistOpen=null; arOpenRepay=null; arEditAlloc=null;
       $('arSearchInfo').textContent='"'+q+'" 결과 '+arSearchItems.length+'건 (완납 포함)';
       renderAr();
     }catch(e){ $('arSearchInfo').textContent='검색 실패(네트워크).'; }
   }
   function clearArSearch(){
-    arSearchMode=false; arSearchItems=[]; arHistOpen=null; arOpenRepay=null;
+    arSearchMode=false; arSearchItems=[]; arHistOpen=null; arOpenRepay=null; arEditAlloc=null;
     $('arSearchQ').value=''; $('arSearchInfo').textContent='';
     renderAr();
   }
@@ -561,6 +598,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260622c"></script>
+<script src="refatrix-nav.js?v=20260622d"></script>
 </body>
 </html>

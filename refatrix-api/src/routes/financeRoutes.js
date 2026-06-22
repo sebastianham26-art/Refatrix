@@ -499,15 +499,17 @@ export default async function financeRoutes(app) {
         WHERE s.id=$1 AND s.deleted_at IS NULL`, [invId])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     const rows = (await query(
-      `SELECT al.id AS alloc_id, al.amount, p.id AS payment_id,
+      `SELECT al.id AS alloc_id, al.amount, p.id AS payment_id, p.account_id,
               to_char(p.pay_date,'YYYY-MM-DD') AS pay_date, p.memo,
               a.name AS account_name, u.name AS created_by_name,
-              (d.payment_id IS NOT NULL) AS has_receipt, d.file_name AS receipt_name, d.mime_type AS receipt_mime
+              (d.payment_id IS NOT NULL) AS has_receipt, d.file_name AS receipt_name, d.mime_type AS receipt_mime,
+              (p.advance_amount = 0 AND ac.cnt = 1) AS editable
          FROM sales_payment_allocations al
          JOIN sales_payments p ON p.id=al.payment_id
          LEFT JOIN accounts a ON a.id=p.account_id
          LEFT JOIN users u ON u.id=p.created_by
          LEFT JOIN sales_payment_docs d ON d.payment_id=p.id
+         LEFT JOIN (SELECT payment_id, COUNT(*) AS cnt FROM sales_payment_allocations GROUP BY payment_id) ac ON ac.payment_id=p.id
         WHERE al.invoice_id=$1
         ORDER BY p.pay_date, al.id`, [invId])).rows;
     const total = r2(Number(inv.total_mxn)), paid = r2(Number(inv.paid)), outstanding = r2(total - paid);
@@ -519,8 +521,9 @@ export default async function financeRoutes(app) {
       },
       payments: rows.map((r) => ({
         alloc_id: Number(r.alloc_id), payment_id: Number(r.payment_id), amount: r2(Number(r.amount)),
-        pay_date: r.pay_date, memo: r.memo || null, account_name: r.account_name || null,
-        created_by_name: r.created_by_name || null,
+        pay_date: r.pay_date, memo: r.memo || null,
+        account_id: r.account_id == null ? null : Number(r.account_id), account_name: r.account_name || null,
+        created_by_name: r.created_by_name || null, editable: !!r.editable,
         has_receipt: !!r.has_receipt, receipt_name: r.receipt_name || null, receipt_mime: r.receipt_mime || null,
       })),
     };
@@ -579,6 +582,85 @@ export default async function financeRoutes(app) {
     });
     if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
     await logEvent({ userId, action: 'delete', target: `sales_payment:${pid}`, detail: { amount: out.amount, advance: out.advance, restored: out.restored } });
+    return out;
+  });
+
+  // 수금내역 건별(배분 1건) 삭제 — 디렉터 전용.
+  //   해당 배분만 삭제 → 그 인보이스 미수 복구 / 배분 거래 소프트취소 / 헤더 금액 차감.
+  //   배분을 빼고 남은 게 없고 선수금도 0이면 입금 헤더·증빙까지 삭제.
+  app.delete('/api/ar/allocations/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const aid = Number(req.params.id);
+    if (!aid) return reply.code(400).send({ error: 'bad_id' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const al = (await c.query(
+        `SELECT al.id, al.payment_id, al.invoice_id, al.amount, al.txn_id,
+                p.advance_amount, p.advance_txn_id
+           FROM sales_payment_allocations al JOIN sales_payments p ON p.id=al.payment_id
+          WHERE al.id=$1`, [aid])).rows[0];
+      if (!al) return { error: 'not_found' };
+      if (al.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, al.txn_id]);
+      await c.query(`DELETE FROM sales_payment_allocations WHERE id=$1`, [aid]);
+      const remain = Number((await c.query(`SELECT COUNT(*) AS n FROM sales_payment_allocations WHERE payment_id=$1`, [al.payment_id])).rows[0].n);
+      let payment_deleted = false;
+      if (remain === 0 && r2(Number(al.advance_amount || 0)) === 0) {
+        if (al.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, al.advance_txn_id]);
+        await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [al.payment_id]);
+        await c.query(`DELETE FROM sales_payments WHERE id=$1`, [al.payment_id]);
+        payment_deleted = true;
+      } else {
+        await c.query(`UPDATE sales_payments SET amount = amount - $1 WHERE id=$2`, [r2(Number(al.amount)), al.payment_id]);
+      }
+      return { ok: true, invoice_id: Number(al.invoice_id), amount: r2(Number(al.amount)), payment_deleted };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
+    await logEvent({ userId, action: 'delete', target: `sales_payment_allocation:${aid}`, detail: { invoice_id: out.invoice_id, amount: out.amount, payment_deleted: out.payment_deleted } });
+    return out;
+  });
+
+  // 수금내역 건별 수정 — 디렉터 전용. (입금 1건=배분 1건인 경우만; 다배분/선수금 동반 입금은 불가)
+  //   수정 항목: 금액·입금일·계좌·메모. 금액은 인보이스 미수 한도 내에서만.
+  app.patch('/api/ar/allocations/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const aid = Number(req.params.id);
+    if (!aid) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const al = (await c.query(
+        `SELECT al.id, al.payment_id, al.invoice_id, al.amount, al.txn_id,
+                p.advance_amount, p.account_id, p.pay_date, p.memo,
+                (SELECT COUNT(*) FROM sales_payment_allocations x WHERE x.payment_id=al.payment_id) AS cnt,
+                s.total_mxn
+           FROM sales_payment_allocations al
+           JOIN sales_payments p ON p.id=al.payment_id
+           JOIN sales_invoices s ON s.id=al.invoice_id
+          WHERE al.id=$1`, [aid])).rows[0];
+      if (!al) return { error: 'not_found' };
+      if (Number(al.cnt) !== 1 || r2(Number(al.advance_amount || 0)) !== 0) return { error: 'multi_allocation' };
+      // 새 값(미지정이면 기존 유지)
+      const newAmount = b.amount != null ? r2(b.amount) : r2(Number(al.amount));
+      const newDate = b.pay_date || (al.pay_date instanceof Date ? al.pay_date.toISOString().slice(0, 10) : al.pay_date);
+      const newAcc = b.account_id != null ? Number(b.account_id) : Number(al.account_id);
+      const newMemo = b.memo !== undefined ? (b.memo || null) : (al.memo || null);
+      if (!(newAmount > 0)) return { error: 'bad_amount' };
+      if (!newAcc) return { error: 'bad_account' };
+      if (!newDate) return { error: 'bad_date' };
+      // 금액 한도: 인보이스 총액 − (이 배분 제외 다른 배분 합)
+      const paidOthers = Number((await c.query(
+        `SELECT COALESCE(SUM(amount),0) AS s FROM sales_payment_allocations WHERE invoice_id=$1 AND id<>$2`, [al.invoice_id, aid])).rows[0].s) || 0;
+      const maxAmount = r2(Number(al.total_mxn) - paidOthers);
+      if (newAmount > maxAmount + 0.005) return { error: 'amount_exceeds_outstanding', max: maxAmount };
+      // 배분 · 거래 · 헤더 갱신
+      await c.query(`UPDATE sales_payment_allocations SET amount=$1 WHERE id=$2`, [newAmount, aid]);
+      if (al.txn_id) await c.query(`UPDATE transactions SET amount=$1, amount_mxn=$1, txn_date=$2, account_id=$3, updated_by=$4 WHERE id=$5`, [newAmount, newDate, newAcc, userId, al.txn_id]);
+      await c.query(`UPDATE sales_payments SET amount=$1, pay_date=$2, account_id=$3, memo=$4 WHERE id=$5`, [newAmount, newDate, newAcc, newMemo, al.payment_id]);
+      return { ok: true, invoice_id: Number(al.invoice_id), amount: newAmount };
+    });
+    if (out.error) {
+      const code = out.error === 'not_found' ? 404 : (out.error === 'multi_allocation' || out.error === 'amount_exceeds_outstanding' ? 409 : 400);
+      return reply.code(code).send(out);
+    }
+    await logEvent({ userId, action: 'update', target: `sales_payment_allocation:${aid}`, detail: { invoice_id: out.invoice_id, amount: out.amount } });
     return out;
   });
 
