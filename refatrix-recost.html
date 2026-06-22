@@ -152,7 +152,7 @@
   async function loadBatches(){
     try{
       const d=await fetch(session.api+'/api/import-batches?status=approved',{headers:auth()}).then(r=>r.json());
-      batches=(d&&d.items)||[];
+      batches=((d&&d.items)||[]).map(b=>({...b, id:Number(b.id)}));
       $('ovBatch').innerHTML='<option value="">배치 선택…</option>'+batches.map(b=>'<option value="'+b.id+'">'+esc(b.batch_no||('#'+b.id))+' · '+esc(b.import_date||'')+' · '+nf(b.total_qty)+'개</option>').join('');
       renderBatchList();
     }catch(e){ $('ovBatch').innerHTML='<option value="">(배치 불러오기 실패)</option>'; $('batchList').innerHTML='<div class="hint">배치 목록을 불러오지 못했습니다.</div>'; }
@@ -162,7 +162,7 @@
     let h='<div class="hint" style="margin-bottom:6px">배치 행을 클릭하면 SKU·수량과 <b>삭제 안전성</b>(재고/판매)을 봅니다. <span style="color:var(--income);font-weight:700">안전</span>=그 배치 분이 재고에 남아있어 지워도 판매이력에 영향 없음 · <span style="color:var(--expense);font-weight:700">위험</span>=판매로 소진되어 지우면 재고 음수.</div>';
     h+='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th class="n">수량</th><th class="n">SKU</th><th>삭제</th></tr></thead><tbody>';
     batches.forEach(b=>{
-      const open = batchOpen===b.id;
+      const open = Number(batchOpen)===Number(b.id);
       h+='<tr class="brow" data-bid="'+b.id+'" style="cursor:pointer">'
         +'<td style="color:var(--brand);font-weight:800">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+'</td>'
         +'<td>'+esc(b.import_date||'')+'</td><td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count!=null?b.sku_count:'')+'</td>'
@@ -342,6 +342,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622e"></script>
+<script src="refatrix-nav.js?v=20260622f"></script>
 </body>
 </html>
