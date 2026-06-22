@@ -553,6 +553,35 @@ export default async function financeRoutes(app) {
     return { ok: true };
   });
 
+  // 수금(반제) 취소 — 디렉터 전용. 입금건 전체 되돌리기:
+  //   배분(allocations) 삭제 → 인보이스 미수 자동 복구 / 통장 입금 거래 소프트취소(잔액 복구)
+  //   / 선수금 거래 소프트취소 / 입금증·헤더 삭제. 거래는 deleted_at로 이력 보존.
+  app.delete('/api/ar/payments/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const pid = Number(req.params.id);
+    if (!pid) return reply.code(400).send({ error: 'bad_id' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const pay = (await c.query(`SELECT id, customer_id, amount, advance_amount, advance_txn_id FROM sales_payments WHERE id=$1`, [pid])).rows[0];
+      if (!pay) return { error: 'not_found' };
+      const allocs = (await c.query(`SELECT id, invoice_id, amount, txn_id FROM sales_payment_allocations WHERE payment_id=$1`, [pid])).rows;
+      for (const a of allocs) {
+        if (a.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, a.txn_id]);
+      }
+      if (pay.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, pay.advance_txn_id]);
+      await c.query(`DELETE FROM sales_payment_allocations WHERE payment_id=$1`, [pid]);
+      await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [pid]);
+      await c.query(`DELETE FROM sales_payments WHERE id=$1`, [pid]);
+      return {
+        ok: true, customer_id: Number(pay.customer_id), amount: r2(Number(pay.amount)),
+        advance: r2(Number(pay.advance_amount || 0)),
+        restored: allocs.map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(Number(a.amount)) })),
+      };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
+    await logEvent({ userId, action: 'delete', target: `sales_payment:${pid}`, detail: { amount: out.amount, advance: out.advance, restored: out.restored } });
+    return out;
+  });
+
   // SAT 번호(또는 고객명/코드)로 인보이스 검색 — 완납 인보이스 포함.
   //   open-list와 같은 행 모양 + paid_full 플래그를 주어 같은 화면 렌더 재사용.
   app.get('/api/ar/search', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {

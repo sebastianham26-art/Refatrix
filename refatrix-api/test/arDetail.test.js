@@ -155,3 +155,53 @@ test('입금증 UPSERT: 기존 입금건에 부착/교체', () => {
   let r = pub.many(`SELECT file_name FROM sales_payment_docs WHERE payment_id=9002`)[0];
   assert.equal(r.file_name, 'nuevo.pdf');
 });
+
+// ---------- 통합: 수금(반제) 취소 되돌리기 (pg-mem) ----------
+import { newDb as newDb2 } from 'pg-mem';
+function seedCancel() {
+  const db = newDb2();
+  db.public.registerFunction({ name: 'now', returns: 'timestamptz', implementation: () => new Date() });
+  db.public.none(`
+    CREATE TABLE users (id INT PRIMARY KEY, name TEXT);
+    CREATE TABLE accounts (id INT PRIMARY KEY, name TEXT);
+    CREATE TABLE sales_invoices (id INT PRIMARY KEY, total_mxn NUMERIC, status TEXT, deleted_at TIMESTAMPTZ);
+    CREATE TABLE transactions (id INT PRIMARY KEY, amount NUMERIC, deleted_at TIMESTAMPTZ, updated_by INT);
+    CREATE TABLE sales_payments (id INT PRIMARY KEY, customer_id INT, amount NUMERIC, advance_amount NUMERIC DEFAULT 0, advance_txn_id INT);
+    CREATE TABLE sales_payment_allocations (id INT PRIMARY KEY, payment_id INT, invoice_id INT, amount NUMERIC, txn_id INT);
+    CREATE TABLE sales_payment_docs (payment_id INT PRIMARY KEY, file_data TEXT NOT NULL);
+  `);
+  db.public.none(`
+    INSERT INTO users (id,name) VALUES (100,'Dir');
+    INSERT INTO accounts (id,name) VALUES (1,'BBVA');
+    INSERT INTO sales_invoices (id,total_mxn,status) VALUES (501,1000,'posted');
+    INSERT INTO transactions (id,amount) VALUES (7001,400);   -- 반제 입금 거래
+    INSERT INTO sales_payments (id,customer_id,amount,advance_amount) VALUES (9001,1,400,0);
+    INSERT INTO sales_payment_allocations (id,payment_id,invoice_id,amount,txn_id) VALUES (1,9001,501,400,7001);
+    INSERT INTO sales_payment_docs (payment_id,file_data) VALUES (9001,'data:image/png;base64,iVB');
+  `);
+  return db.public;
+}
+
+test('수금 취소: 미수 복구 + 거래 소프트취소 + 배분/증빙/헤더 삭제', () => {
+  const pub = seedCancel();
+  const userId = 100, pid = 9001;
+  // 취소 전: 미수 = 1000 - 400 = 600
+  let paid = Number(pub.many(`SELECT COALESCE(SUM(amount),0) AS s FROM sales_payment_allocations WHERE invoice_id=501`)[0].s);
+  assert.equal(1000 - paid, 600);
+  // 취소 실행(엔드포인트 로직 재현)
+  const allocs = pub.many(`SELECT id, invoice_id, amount, txn_id FROM sales_payment_allocations WHERE payment_id=${pid}`);
+  for (const a of allocs) if (a.txn_id) pub.none(`UPDATE transactions SET deleted_at=now(), updated_by=${userId} WHERE id=${a.txn_id} AND deleted_at IS NULL`);
+  pub.none(`DELETE FROM sales_payment_allocations WHERE payment_id=${pid}`);
+  pub.none(`DELETE FROM sales_payment_docs WHERE payment_id=${pid}`);
+  pub.none(`DELETE FROM sales_payments WHERE id=${pid}`);
+  // 취소 후: 미수 = 1000 (전액 복구)
+  paid = Number(pub.many(`SELECT COALESCE(SUM(amount),0) AS s FROM sales_payment_allocations WHERE invoice_id=501`)[0].s);
+  assert.equal(1000 - paid, 1000, '미수 전액 복구');
+  // 거래 소프트취소(삭제 아님, 이력 보존)
+  const txn = pub.many(`SELECT deleted_at FROM transactions WHERE id=7001`)[0];
+  assert.ok(txn.deleted_at != null, '입금 거래 소프트취소됨');
+  // 배분/증빙/헤더 삭제
+  assert.equal(pub.many(`SELECT id FROM sales_payment_allocations WHERE payment_id=${pid}`).length, 0, '배분 삭제');
+  assert.equal(pub.many(`SELECT payment_id FROM sales_payment_docs WHERE payment_id=${pid}`).length, 0, '증빙 삭제');
+  assert.equal(pub.many(`SELECT id FROM sales_payments WHERE id=${pid}`).length, 0, '헤더 삭제');
+});

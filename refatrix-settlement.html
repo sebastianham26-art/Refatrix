@@ -177,8 +177,10 @@
     try{
       const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());
       isFin = !!(su&&su.isDirector) || ['director','treasury'].includes((su&&su.role)||'');
+      isDirector = !!(su&&su.isDirector) || ((su&&su.role)==='director');
     }catch(e){
       isFin = ['director','treasury'].includes((session.user&&session.user.role)||'');
+      isDirector = ((session.user&&session.user.role)==='director');
     }
     if(isFin){ $('varSection').classList.remove('hidden'); renderYearSeg(); load(); }
     else { $('varSection').classList.add('hidden'); }
@@ -224,6 +226,7 @@
   // ===== 수금 상세 (오픈 인보이스 / AR) =====
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
   let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
+  let isDirector=false;
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   async function loadAr(){
@@ -387,14 +390,16 @@
       +'</div>';
     if(!pays.length){ h+='<div class="hint">아직 수금(반제) 기록이 없습니다.</div>'; }
     else{
-      h+='<table><thead><tr><th style="text-align:left">입금일</th><th>금액</th><th style="text-align:left">계좌</th><th style="text-align:left">메모</th><th style="text-align:left">등록자</th><th>입금증</th></tr></thead><tbody>';
+      h+='<table><thead><tr><th style="text-align:left">입금일</th><th>금액</th><th style="text-align:left">계좌</th><th style="text-align:left">메모</th><th style="text-align:left">등록자</th><th>입금증</th>'+(isDirector?'<th>관리</th>':'')+'</tr></thead><tbody>';
       pays.forEach(p=>{
         h+='<tr><td style="text-align:left">'+esc(p.pay_date||'—')+'</td>'
           +'<td><b>'+fmt(p.amount)+'</b></td>'
           +'<td style="text-align:left">'+esc(p.account_name||'—')+'</td>'
           +'<td style="text-align:left">'+esc(p.memo||'—')+'</td>'
           +'<td style="text-align:left">'+esc(p.created_by_name||'—')+'</td>'
-          +'<td>'+(p.has_receipt?'<button class="lnk" onclick="viewReceipt('+p.payment_id+')">👁 보기</button>':'<span class="hint">—</span>')+'</td></tr>';
+          +'<td>'+(p.has_receipt?'<button class="lnk" onclick="viewReceipt('+p.payment_id+')">👁 보기</button>':'<span class="hint">—</span>')+'</td>'
+          +(isDirector?('<td><button class="lnk" style="color:var(--expense)" onclick="cancelPayment('+p.payment_id+','+it.id+')">취소</button></td>'):'')
+          +'</tr>';
       });
       h+='</tbody></table>';
     }
@@ -415,6 +420,30 @@
       const w=window.open(url,'_blank'); if(!w){ m.className='msg err'; m.textContent='팝업이 차단되었습니다. 팝업을 허용해 주세요.'; }
       setTimeout(()=>URL.revokeObjectURL(url),60000);
     }catch(e){ m.className='msg err'; m.textContent='입금증 보기 실패(네트워크).'; }
+  }
+  // 수금(반제) 취소 — 디렉터 전용
+  async function cancelPayment(paymentId, invId){
+    if(!isDirector) return;
+    if(!window.confirm('이 수금(반제)을 취소할까요?\n· 인보이스 미수 잔액이 복구됩니다.\n· 통장 입금 거래도 함께 취소됩니다.\n· 첨부한 입금증도 삭제됩니다.\n되돌릴 수 없습니다.')) return;
+    const m=$('arMsg'); m.className='msg';
+    try{
+      const r=await fetch(session.api+'/api/ar/payments/'+paymentId,{method:'DELETE',headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ m.className='msg err'; m.textContent='수금 취소 실패: '+(d.error==='not_found'?'대상을 찾을 수 없음':(d.error||r.status)); return; }
+      m.className='msg ok'; m.textContent='수금(반제) 취소 완료 · 미수 복구 MX$'+fmt(d.amount)+((d.restored&&d.restored.length>1)?(' ('+d.restored.length+'개 인보이스)'):'');
+      arHistData={}; // 다중 배분 가능성 → 모든 드릴다운 캐시 무효화
+      if(arSearchMode){ await doArSearch(); } else { await loadAr(); }
+      await reloadHistIfOpen();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function reloadHistIfOpen(){
+    if(arHistOpen==null) return;
+    try{
+      const r=await fetch(session.api+'/api/ar/invoice/'+arHistOpen+'/payments',{headers:auth()});
+      const d=await r.json();
+      arHistData[arHistOpen]=(d&&!d.error)?d:{error:(d&&d.error)||'load_fail'};
+    }catch(e){ arHistData[arHistOpen]={error:'네트워크 오류'}; }
+    renderAr();
   }
   // ===== SAT/고객 검색 (완납 포함) =====
   async function doArSearch(){
@@ -532,6 +561,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260622b"></script>
+<script src="refatrix-nav.js?v=20260622c"></script>
 </body>
 </html>
