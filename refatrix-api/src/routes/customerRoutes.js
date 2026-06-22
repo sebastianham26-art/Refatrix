@@ -377,18 +377,74 @@ export default async function customerRoutes(app) {
     const rows = (await query(
       `SELECT r.id, r.customer_id, r.proposed, r.status, r.reason, r.created_at,
               c.code AS customer_code, c.name AS customer_name,
+              c.name AS cur_name, c.rfc AS cur_rfc, c.contact AS cur_contact, c.phone AS cur_phone,
+              c.discount AS cur_discount, c.credit_days AS cur_credit_days, c.branch_count AS cur_branch_count,
+              c.team_id AS cur_team_id, c.stage_id AS cur_stage_id, c.owner_id AS cur_owner_id,
+              c.customer_type AS cur_customer_type, c.memo AS cur_memo, c.constancia_fiscal AS cur_constancia_fiscal,
               u.name AS requested_by_name
          FROM customer_change_requests r
          JOIN customers c ON c.id=r.customer_id
          LEFT JOIN users u ON u.id=r.requested_by
         WHERE r.status=$1 AND ($2::bigint IS NULL OR r.customer_id=$2) ORDER BY r.created_at DESC`, [status, cid])).rows;
-    return {
-      items: rows.map((r) => ({
+
+    // 팀/단계/담당자 id → 이름 매핑(현재값·제안값 모두 모아서 한 번에 조회)
+    const teamIds = new Set(), stageIds = new Set(), ownerIds = new Set();
+    for (const r of rows) {
+      const p = r.proposed || {};
+      [r.cur_team_id, p.team_id].forEach((v) => { if (v != null && v !== '') teamIds.add(Number(v)); });
+      [r.cur_stage_id, p.stage_id].forEach((v) => { if (v != null && v !== '') stageIds.add(Number(v)); });
+      [r.cur_owner_id, p.owner_id].forEach((v) => { if (v != null && v !== '') ownerIds.add(Number(v)); });
+    }
+    const nameMap = async (table, ids) => {
+      if (!ids.size) return {};
+      const rs = (await query(`SELECT id, name FROM ${table} WHERE id = ANY($1)`, [[...ids]])).rows;
+      const m = {}; rs.forEach((x) => { m[Number(x.id)] = x.name; }); return m;
+    };
+    const teamNames = await nameMap('sales_teams', teamIds);
+    const stageNames = await nameMap('stages', stageIds);
+    const ownerNames = await nameMap('users', ownerIds);
+
+    const LABELS = { name: '고객명', rfc: 'RFC', contact: '연락처', phone: '전화', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)' };
+    const NUMERIC = new Set(['discount', 'credit_days', 'branch_count', 'team_id', 'stage_id', 'owner_id']);
+    const isEmpty = (v) => v == null || v === '';
+    const disp = (field, val) => {
+      if (isEmpty(val)) return '(미지정)';
+      if (field === 'team_id') return teamNames[Number(val)] || `팀 #${val}`;
+      if (field === 'stage_id') return stageNames[Number(val)] || `단계 #${val}`;
+      if (field === 'owner_id') return ownerNames[Number(val)] || `사용자 #${val}`;
+      if (field === 'discount') return `${val}%`;
+      if (field === 'credit_days') return `${val}일`;
+      return String(val);
+    };
+
+    const items = rows.map((r) => {
+      const p = r.proposed || {};
+      const cur = {
+        name: r.cur_name, rfc: r.cur_rfc, contact: r.cur_contact, phone: r.cur_phone,
+        discount: r.cur_discount, credit_days: r.cur_credit_days, branch_count: r.cur_branch_count,
+        team_id: r.cur_team_id, stage_id: r.cur_stage_id, owner_id: r.cur_owner_id,
+        customer_type: r.cur_customer_type, memo: r.cur_memo, constancia_fiscal: r.cur_constancia_fiscal,
+      };
+      const changes = [];
+      for (const f of Object.keys(LABELS)) {
+        if (!(f in p)) continue;                       // 요청에 포함된 필드만
+        const pv = p[f]; const cv = cur[f];
+        let same;
+        if (NUMERIC.has(f)) {
+          if (isEmpty(cv) && isEmpty(pv)) same = true;
+          else if (isEmpty(cv) || isEmpty(pv)) same = false;
+          else same = Number(cv) === Number(pv);
+        } else { same = String(cv == null ? '' : cv) === String(pv == null ? '' : pv); }
+        if (same) continue;                            // 실제로 바뀐 것만
+        changes.push({ field: f, label: LABELS[f], from: disp(f, cv), to: disp(f, pv) });
+      }
+      return {
         id: r.id, customer_id: r.customer_id, customer_code: r.customer_code, customer_name: r.customer_name,
         proposed: r.proposed, status: r.status, reason: r.reason,
-        requested_by_name: r.requested_by_name, created_at: r.created_at,
-      })),
-    };
+        requested_by_name: r.requested_by_name, created_at: r.created_at, changes,
+      };
+    });
+    return { items };
   });
 
   // 승인 → customers에 반영(디렉터)

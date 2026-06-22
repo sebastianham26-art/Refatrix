@@ -327,8 +327,7 @@
       const d=await fetch(session.api+'/api/customer-change-requests?status=pending&customer_id='+custId,{headers:auth()}).then(r=>r.json());
       const r=(d.items||[])[0]; if(!r){ box.innerHTML=''; return; }
       const p=r.proposed||{};
-      const rows=Object.keys(FIELD_LABELS).filter(k=>p[k]!==undefined&&p[k]!==null&&p[k]!=='')
-        .map(k=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:2px 10px 2px 0">${FIELD_LABELS[k]}</th><td>${esc(String(p[k]))}</td></tr>`).join('');
+      const rows=renderChanges(r);
       box.innerHTML=`<div style="border:1px solid var(--gold);border-radius:10px;padding:12px;margin-top:12px;background:#fffaf0">
         <div style="font-weight:800;color:#9a6512;margin-bottom:6px">⚠ 승인 필요 — 고객 수정 요청${r.requested_by_name?(' ('+esc(r.requested_by_name)+')'):''}</div>
         <table>${rows||'<tr><td class="hint">변경 내용 없음</td></tr>'}</table>
@@ -393,6 +392,17 @@
     }catch(e){}
   }
   const FIELD_LABELS={name:'고객명',rfc:'RFC',contact:'연락처',phone:'전화',discount:'할인(%)',credit_days:'외상일',branch_count:'지점 수',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록'};
+  // 변경 요청을 "현재 → 변경" 형태로 친절하게 렌더(서버가 이름까지 풀어서 changes로 내려줌)
+  function renderChanges(r){
+    const ch=r.changes;
+    if(Array.isArray(ch)){
+      if(!ch.length) return '<tr><td class="hint" style="padding:3px 0">실제로 바뀐 항목이 없습니다.</td></tr>';
+      return ch.map(x=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">${esc(x.label)}</th><td style="padding:3px 0"><span class="hint" style="margin:0">${esc(x.from)}</span> <span style="color:#9a6512;font-weight:700">→</span> <b>${esc(x.to)}</b></td></tr>`).join('');
+    }
+    // 폴백(구버전 서버: changes 미제공)
+    const p=r.proposed||{};
+    return Object.keys(FIELD_LABELS).filter(k=>p[k]!==undefined&&p[k]!==null&&p[k]!=='').map(k=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:2px 10px 2px 0">${FIELD_LABELS[k]}</th><td>${esc(String(p[k]))}</td></tr>`).join('')||'<tr><td class="hint">변경 내용 없음</td></tr>';
+  }
   async function loadApprovals(){
     const box=$('approveList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
@@ -401,7 +411,7 @@
       if(!items.length){box.innerHTML='<div class="hint">승인 대기중인 수정 요청이 없습니다.</div>';return;}
       box.innerHTML=items.map(r=>{
         const p=r.proposed||{};
-        const rows=Object.keys(FIELD_LABELS).filter(k=>p[k]!==undefined&&p[k]!==null&&p[k]!=='').map(k=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:2px 10px 2px 0">${FIELD_LABELS[k]}</th><td>${esc(String(p[k]))}</td></tr>`).join('');
+        const rows=renderChanges(r);
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <b>${esc(r.customer_name)}</b> <span class="hint" style="margin:0">(${esc(r.customer_code)})</span>
@@ -616,6 +626,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260620ay"></script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260621k"></script>
 </body>
 </html>
