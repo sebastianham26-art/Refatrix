@@ -106,6 +106,28 @@ export default async function importCostRoutes(app) {
     return { pending: n };
   });
 
+  // 배치별 라인(SKU·수량) + 삭제 안전성. 드릴다운/배치정리 공용.
+  //   판매는 특정 배치에 묶이지 않음(가중평균 단일 재고풀) → "삭제해도 판매이력에 영향 없음"의 기준은
+  //   '그 배치 수량을 빼도 재고가 음수가 안 됨'(safe = current_stock >= batch_qty). 음수면 그 배치 분이 판매로 소진된 것.
+  app.get('/api/import-batches/:id/lines', { preHandler: [authGuard, requirePage('inventory')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_batch' });
+    const rows = (await query(
+      `SELECT il.product_id, p.code, p.name, il.qty AS batch_qty, p.stock_qty AS current_stock,
+              COALESCE((SELECT SUM(sil.qty) FROM sales_invoice_lines sil
+                          JOIN sales_invoices si ON si.id=sil.invoice_id
+                         WHERE sil.product_id=il.product_id AND si.status='posted' AND si.deleted_at IS NULL),0) AS sold_qty
+         FROM import_lines il JOIN products p ON p.id=il.product_id
+        WHERE il.batch_id=$1
+        ORDER BY p.code, p.name`, [id])).rows;
+    const lines = rows.map((r) => ({
+      product_id: Number(r.product_id), code: r.code, name: r.name,
+      batch_qty: Number(r.batch_qty), current_stock: Number(r.current_stock), sold_qty: Number(r.sold_qty),
+      safe: Number(r.current_stock) >= Number(r.batch_qty),
+    }));
+    return { lines, safe: lines.every((l) => l.safe) };
+  });
+
   // =====================================================================
   // 수입 원가 정정(재가) — 디렉터 전용
   //   ① 단가 템플릿(모든 수입 라인) 엑셀 다운로드용 데이터
@@ -264,6 +286,35 @@ export default async function importCostRoutes(app) {
       return { ok: true, products: nProd, adjustments: nAdj, totalRetroCogsMxn: res.totalRetroCogsMxn, totalStockAddedMxn: res.totalStockAddedMxn };
     });
     await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: 'import_recost', detail: { products: out.products, adjustments: out.adjustments, retro: out.totalRetroCogsMxn } });
+    return out;
+  });
+
+  // 수입 배치 완전 삭제(디렉터) — 남은 재고이동 역산 + 배치 기록 soft-delete(deleted_at).
+  //   재고화면 "배치 삭제"는 재고만 역산하고 기록은 남겨, 목록·정정 엑셀에 계속 나옴 → 이걸로 기록까지 제거.
+  //   이동이 이미 지워진(재고만 삭제했던) 배치도 기록만 정리 가능.
+  app.delete('/api/import-batches/:batchId', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return reply.code(400).send({ error: 'bad_batch' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const b = (await c.query(`SELECT id, batch_no FROM import_batches WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [batchId])).rows[0];
+      if (!b) return { error: 'not_found' };
+      // 남은 재고이동 역산(있으면) 후 삭제
+      const mv = (await c.query(`SELECT product_id, move_type, qty FROM stock_movements WHERE batch_id=$1 FOR UPDATE`, [batchId])).rows;
+      for (const r of mv) {
+        const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [r.product_id])).rows[0];
+        if (!p) continue;
+        const qty = Number(r.qty) || 0;
+        const delta = r.move_type === 'in' ? Math.abs(qty) : (r.move_type === 'out' ? -Math.abs(qty) : qty);
+        await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [(Number(p.stock_qty) || 0) - delta, userId, r.product_id]);
+      }
+      if (mv.length) await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
+      // 배치 기록 soft-delete → 목록·정정 엑셀에서 제외(import_lines 는 비삭제 배치 조인이라 자동 숨김)
+      await c.query(`UPDATE import_batches SET deleted_at=now() WHERE id=$1`, [batchId]);
+      return { ok: true, batch_no: b.batch_no, movements_reversed: mv.length };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'delete', target: `import_batch:${batchId}`, detail: { batch_no: out.batch_no, movements_reversed: out.movements_reversed } });
     return out;
   });
 

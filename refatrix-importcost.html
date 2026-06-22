@@ -174,15 +174,43 @@
       const d=await res.json(); batchList=d.items||[];
       if(!batchList.length){$('batches').innerHTML='<div class="hint">승인된 입고 건이 없습니다. 먼저 수입 입고 화면에서 입고 건을 승인하세요.</div>';return;}
       $('batches').innerHTML=batchList.map(b=>`
-        <label class="batch">
-          <input type="checkbox" class="b-chk" value="${b.id}">
-          <div style="flex:1">
-            <div><b>${b.batch_no||('입고 #'+b.id)}</b> · ${b.import_date?String(b.import_date).slice(0,10):''}</div>
-            <div class="meta">제품: ${b.product_codes||'-'} · 총수량 ${Number(b.total_qty).toLocaleString()}</div>
-          </div>
-        </label>`).join('');
+        <div class="batch-wrap">
+          <label class="batch">
+            <input type="checkbox" class="b-chk" value="${b.id}">
+            <div style="flex:1">
+              <div><b>${b.batch_no||('입고 #'+b.id)}</b> · ${b.import_date?String(b.import_date).slice(0,10):''}</div>
+              <div class="meta">SKU ${Number(b.sku_count||0)}종 · 총수량 ${Number(b.total_qty).toLocaleString()} · <a href="#" onclick="toggleBatchLines(event,${b.id})" style="color:var(--brand,#143D34);font-weight:700;text-decoration:none">▸ 내역</a></div>
+            </div>
+          </label>
+          <div id="bl-${b.id}" style="display:none;margin:2px 0 8px 30px"></div>
+        </div>`).join('');
     }catch(e){$('batches').innerHTML='<div class="hint">입고 건을 불러오지 못했습니다.</div>';}
   }
+  const batchLinesCache={};
+  async function toggleBatchLines(ev,id){
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+    const box=$('bl-'+id); if(!box) return;
+    if(box.style.display!=='none'){ box.style.display='none'; return; }
+    box.style.display='';
+    if(box.dataset.loaded){ return; }
+    box.innerHTML='<div class="hint" style="margin:4px 0">불러오는 중…</div>';
+    try{
+      const d=batchLinesCache[id]||await fetch(session.api+'/api/import-batches/'+id+'/lines',{headers:auth()}).then(r=>r.json());
+      batchLinesCache[id]=d;
+      const lines=(d&&d.lines)||[];
+      if(!lines.length){ box.innerHTML='<div class="hint" style="margin:4px 0">라인이 없습니다.</div>'; box.dataset.loaded='1'; return; }
+      let h='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+        +'<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--line,#E6E1D6);color:var(--muted,#6F6A60)">SKU</th>'
+        +'<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--line,#E6E1D6);color:var(--muted,#6F6A60)">품명</th>'
+        +'<th style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--line,#E6E1D6);color:var(--muted,#6F6A60)">수량</th></tr></thead><tbody>';
+      lines.forEach(l=>{ h+='<tr><td style="padding:4px 8px;border-bottom:1px solid #f0ece2"><b>'+escH(l.code||'-')+'</b></td>'
+        +'<td style="padding:4px 8px;border-bottom:1px solid #f0ece2">'+escH(l.name||'-')+'</td>'
+        +'<td style="padding:4px 8px;border-bottom:1px solid #f0ece2;text-align:right;font-variant-numeric:tabular-nums">'+Number(l.batch_qty).toLocaleString()+'</td></tr>'; });
+      h+='</tbody></table>';
+      box.innerHTML=h; box.dataset.loaded='1';
+    }catch(e){ box.innerHTML='<div class="hint" style="margin:4px 0">내역을 불러오지 못했습니다.</div>'; }
+  }
+  function escH(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function selectedBatchIds(){ return [...document.querySelectorAll('.b-chk:checked')].map(c=>Number(c.value)); }
 
   async function createAndPreview(){
@@ -250,6 +278,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260621j"></script>
+<script src="refatrix-nav.js?v=20260622a"></script>
 </body>
 </html>
