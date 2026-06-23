@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260622g loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260622h loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -84,6 +84,8 @@
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
   var ROLE_ONLY_GROUPS={ treasury:['finance'] };
+  // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
+  var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 } };
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
   var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
@@ -95,6 +97,10 @@
     return null;
   }
   function canSee(key){
+    if(sum && !sum.isDirector){
+      var hide=ROLE_HIDE_SCREENS[sum.role];
+      if(hide && hide[key]) return false;          // 역할별 숨김 탭
+    }
     var pk=PAGEKEY[key];
     if(pk===null||pk===undefined) return true;
     if(!sum) return false;
@@ -170,8 +176,9 @@
     if(!sum || sum.isDirector) return false;
     var only=ROLE_ONLY_GROUPS[sum.role];
     if(!only) return false;
+    var hide=ROLE_HIDE_SCREENS[sum.role]||{};
     var allowed={};
-    GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ allowed[k]=1; }); });
+    GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ if(!hide[k]) allowed[k]=1; }); });
     var cur=curScreen();
     if(cur && allowed[cur]) return false;     // 허용된 화면이면 통과(재무 탭들)
     if(sess && sess.token){ nav('finance'); return true; }  // 그 외(미허용·미인식) → 재무/계좌
