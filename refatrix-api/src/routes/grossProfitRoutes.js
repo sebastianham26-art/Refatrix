@@ -101,14 +101,21 @@ export default async function grossProfitRoutes(app) {
     // 곡선용(판매된 SKU만, 이익률 높은→낮은 순) — 프런트는 이걸 그대로 그려 우하향 곡선을 만든다.
     const sold = items.filter((x) => x.margin_pct != null)
       .sort((a, b) => b.margin_pct - a.margin_pct || b.profit - a.profit);
-    // "중요한 아이템" = 매출총이익(금액) 기여 상위 — 사업을 실제로 움직이는 SKU.
-    const importantIds = sold.slice().sort((a, b) => b.profit - a.profit)
-      .slice(0, Math.min(8, sold.length)).map((x) => x.id);
-    const importantSet = new Set(importantIds);
 
     const totalRevenue = r2(items.reduce((s, x) => s + x.revenue, 0));
     const totalCogs = r2(items.reduce((s, x) => s + x.cogs, 0));
     const totalProfit = r2(totalRevenue - totalCogs);
+
+    // ★ 중요 = 파레토 상위 20%: 판매 SKU를 매출총이익(금액) 내림차순으로 정렬해 상위 20%(개수).
+    //   = 전체 매출총이익에서 가장 큰 비율을 차지하는 "핵심 소수(vital few)".
+    const PARETO_FRACTION = 0.20;
+    const byProfit = sold.slice().sort((a, b) => b.profit - a.profit);
+    const cut = byProfit.length ? Math.max(1, Math.ceil(byProfit.length * PARETO_FRACTION)) : 0;
+    const importantArr = byProfit.slice(0, cut);
+    const importantIds = importantArr.map((x) => x.id);
+    const importantSet = new Set(importantIds);
+    const importantProfit = r2(importantArr.reduce((s, x) => s + x.profit, 0));
+    const paretoSharePct = totalProfit > 0 ? r2(importantProfit / totalProfit * 100) : null;
 
     await logPageView(perm.userId, 'grossprofit');
     return {
@@ -117,6 +124,15 @@ export default async function grossProfitRoutes(app) {
       summary,
       tiers: GP_TIERS.map((t) => ({ key: t.key, label: t.label })),
       important_ids: importantIds,
+      // 파레토 요약: 상위 20% SKU 개수 + 그들이 전체 매출총이익에서 차지하는 비율
+      pareto: {
+        fraction_pct: Math.round(PARETO_FRACTION * 100),
+        count: cut,
+        sku_total: sold.length,
+        profit: importantProfit,
+        total_profit: totalProfit,
+        share_pct: paretoSharePct,
+      },
       curve: sold.map((x, i) => ({
         rank: i + 1, id: x.id, code: x.code, name: x.name,
         margin_pct: x.margin_pct, profit: x.profit, revenue: x.revenue,

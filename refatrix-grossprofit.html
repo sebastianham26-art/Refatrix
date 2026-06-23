@@ -129,7 +129,7 @@
         </div>
         <div class="tiers" id="tierCards"></div>
         <div class="totline" id="totLine"></div>
-        <div class="hint" style="margin-top:8px">카드를 클릭하면 SKU별 매출총이익률 곡선(높은 이익 → 낮은 이익, 우하향)이 열립니다. ★ = 매출총이익 금액 기여 상위(중요) 아이템.</div>
+        <div class="hint" style="margin-top:8px">카드를 클릭하면 SKU별 매출총이익률 곡선(높은 이익 → 낮은 이익, 우하향)이 열립니다. <b style="color:var(--gold)">★ = 파레토 상위 20%</b> — 매출총이익 금액 기준 상위 20% SKU(전체 이익의 대부분을 차지하는 핵심 소수).</div>
       </div>
 
       <!-- 자재내역 -->
@@ -305,13 +305,20 @@
   }
   function renderTotals(){
     const t=DATA.totals||{}; const ns=(DATA.summary&&DATA.summary.no_sales)||0;
-    $('totLine').innerHTML=
-      '판매 SKU <b>'+(DATA.sold_count||0)+'</b>개'
+    const pr=DATA.pareto||{};
+    let h='판매 SKU <b>'+(DATA.sold_count||0)+'</b>개'
       +' · 판매 없음 <b>'+ns+'</b>개'
       +' · 총매출 <b>MX$'+fmt(t.revenue)+'</b>'
       +' · 총매출원가 <b>MX$'+fmt(t.cogs)+'</b>'
       +' · 총매출총이익 <b>MX$'+fmt(t.profit)+'</b>'
       +' · 전체 이익률 <b>'+pct(t.margin_pct)+'</b>';
+    if(pr.count){
+      h+='<br><span style="color:var(--gold)">★ 파레토 상위 20% — 매출총이익 금액 상위 <b>'+pr.count+'</b>개 SKU'
+        +'('+(pr.sku_total?Math.round(pr.count/pr.sku_total*100):20)+'%)가 '
+        +'전체 매출총이익의 <b>'+(pr.share_pct==null?'—':Number(pr.share_pct).toFixed(1)+'%')+'</b>를 차지'
+        +(pr.share_pct!=null&&pr.share_pct>100?' (손실 SKU가 있어 100% 초과)':'')+'.</span>';
+    }
+    $('totLine').innerHTML=h;
   }
 
   // ── 자재내역 토글/렌더 ──
@@ -352,7 +359,7 @@
       let app=(p.app||'').toString(); if(app.length>34)app=app.slice(0,34)+'…';
       const imp=impSet.has(p.id);
       h+='<tr class="'+(tk?('r-'+tk):'')+'">'
-        +'<td class="l"><span class="code">'+esc(p.code)+'</span>'+(imp?'<span class="chip chip-imp">★ 중요</span>':'')+'</td>'
+        +'<td class="l"><span class="code">'+esc(p.code)+'</span>'+(imp?'<span class="chip chip-imp" title="파레토 상위 20%: 매출총이익 금액 상위 20% SKU">★ 상위20%</span>':'')+'</td>'
         +'<td class="l" style="font-size:11px;color:var(--muted)">'+(syd||'—')+'</td>'
         +'<td class="l" style="font-size:11px;color:var(--muted)">'+(app||'—')+'</td>'
         +'<td class="n">'+fmt(p.stock_qty)+'</td>'
@@ -444,11 +451,11 @@
     if(svgEl){ svgEl.addEventListener('mousemove',onChartMove); svgEl.addEventListener('mouseleave',hideChartTip); }
     // 범례 + 안내
     $('chartLegend').innerHTML=TIERS.map(tt=>'<span class="lk"><span class="sw" style="background:'+TIER_COLOR[tt.key]+'"></span>'+tt.label+'</span>').join('')
-      +'<span class="lk"><span class="sw" style="background:var(--gold)"></span>★ 중요(이익 금액 상위)</span>';
+      +'<span class="lk"><span class="sw" style="background:var(--gold)"></span>★ 파레토 상위 20%(매출총이익 금액)</span>';
     // 중요 SKU 목록(겹침 없이 별도 표기) — 칩에 마우스를 올리면 차트의 해당 점이 강조됨
     const impArr=points.filter(p=>p.important).slice().sort((a,b)=>b.profit-a.profit);
     $('impList').innerHTML=impArr.length
-      ? '<b style="color:var(--gold)">★ 중요 SKU</b>'+impArr.map(p=>'<span class="impchip" data-rank="'+p.rank+'">'+esc(p.code)+' <span class="m">'+Number(p.margin_pct).toFixed(1)+'%</span></span>').join('')
+      ? '<b style="color:var(--gold)">★ 파레토 상위 20%</b> <span style="color:var(--muted)">('+impArr.length+'개 · 전체 매출총이익의 '+((DATA.pareto&&DATA.pareto.share_pct!=null)?Number(DATA.pareto.share_pct).toFixed(1)+'%':'—')+' 차지)</span> '+impArr.map(p=>'<span class="impchip" data-rank="'+p.rank+'">'+esc(p.code)+' <span class="m">'+Number(p.margin_pct).toFixed(1)+'%</span></span>').join('')
       : '';
     $('impList').querySelectorAll('.impchip').forEach(ch=>{
       ch.addEventListener('mouseenter',()=>{ const r=Number(ch.getAttribute('data-rank')); const q=chartPts.find(x=>x.p.rank===r); if(q) highlightPoint(q); });
