@@ -127,8 +127,14 @@
       <div id="stockSummary" class="stock-sum"><span class="hint">재고 요약 불러오는 중…</span></div>
       <div class="filters">
         <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span class="hint" style="margin:0">빠른 이동:</span><span id="monthChips"></span>
-          <span style="margin-left:8px"><input id="evJump" type="text" inputmode="numeric" placeholder="이벤트 번호" style="width:110px" onkeydown="if(event.key==='Enter')jumpEvent()"> <button class="btn ghost sm" onclick="jumpEvent()">이벤트로 이동</button></span>
+          <span class="hint" style="margin:0;min-width:36px">연도</span><span id="yearToggle"></span>
+        </div>
+        <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
+          <span class="hint" style="margin:0;min-width:36px">월</span><span id="monthToggle"></span>
+          <span class="mchip" onclick="pickAll()" style="margin-left:6px">전체</span>
+        </div>
+        <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">
+          <span style="margin-left:0"><input id="evJump" type="text" inputmode="numeric" placeholder="이벤트 번호" style="width:110px" onkeydown="if(event.key==='Enter')jumpEvent()"> <button class="btn ghost sm" onclick="jumpEvent()">이벤트로 이동</button></span>
         </div>
         <div><label>유형</label><select id="fType" onchange="loadList()"><option value="">전체</option><option value="in">입고</option><option value="out">출고</option><option value="adjust">조정</option></select></div>
         <div><label>출처</label><select id="fSrc" onchange="loadList()"><option value="">전체</option><option value="manual">수동만</option></select></div>
@@ -430,20 +436,47 @@
       +'<b style="color:#9a6512">🔎 필터 적용 중:</b> '+tags.map(t=>'<span style="background:#fff;border:1px solid #e6d9a8;border-radius:999px;padding:2px 9px">'+esc(t)+'</span>').join(' ')
       +' <button class="btn ghost sm" style="margin-left:auto;padding:2px 10px" onclick="clearFilters()">전체 보기 (필터 해제)</button></div>';
   }
+  let selYear=null, selMonth=null; // 선택된 연도/월(월은 1~12)
   function renderMonthChips(){
-    const el=$('monthChips'); if(!el)return;
-    const now=new Date(); const cur=$('fFrom').value? $('fFrom').value.slice(0,7):'';
-    let h='<span class="mchip'+(cur===''&&!$('fTo').value?' on':'')+'" onclick="setMonth(\'\')">전체</span>';
-    for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const ym=d.toISOString().slice(0,7); const lbl=(d.getMonth()+1)+'월';
-      h+='<span class="mchip'+(cur===ym?' on':'')+'" onclick="setMonth(\''+ym+'\')">'+d.getFullYear()+'·'+lbl+'</span>'; }
-    el.innerHTML=h;
+    // 현재 필터(fFrom)에서 연/월 역추출해 토글 상태 동기화
+    const ff=$('fFrom')?$('fFrom').value:''; const ft=$('fTo')?$('fTo').value:'';
+    if(ff&&ft){ const [y,m]=ff.split('-').map(Number);
+      selYear=y;
+      // 그 해 전체(1/1~12/31)면 월 미선택, 아니면 해당 월
+      selMonth = (ff.endsWith('-01-01') && ft.endsWith('-12-31')) ? null : m;
+    } else { selYear=null; selMonth=null; }
+    const yEl=$('yearToggle'); const mEl=$('monthToggle');
+    if(yEl){
+      const now=new Date(); const yNow=now.getFullYear();
+      let yh='';
+      for(let y=yNow-2;y<=yNow;y++){ yh+='<span class="mchip'+(selYear===y?' on':'')+'" onclick="pickYear('+y+')">'+y+'</span>'; }
+      yEl.innerHTML=yh;
+    }
+    if(mEl){
+      let mh='';
+      for(let m=1;m<=12;m++){ mh+='<span class="mchip'+(selMonth===m?' on':'')+'" onclick="pickMonth('+m+')">'+m+'월</span>'; }
+      mEl.innerHTML=mh;
+    }
   }
-  function setMonth(ym){
+  function applyYM(){
     if($('evJump')) $('evJump').value='';
-    if($('fSearch')) $('fSearch').value='';      // 월 이동 시 검색어 해제(검색 잔존으로 일부만 보이는 문제 방지)
-    if(!ym){ $('fFrom').value=''; $('fTo').value=''; if($('fType'))$('fType').value=''; if($('fSrc'))$('fSrc').value=''; } // 전체 = 완전 초기화
-    else { const [y,mm]=ym.split('-').map(Number); const first=ym+'-01'; const last=new Date(y,mm,0).toISOString().slice(0,10); $('fFrom').value=first; $('fTo').value=last; }
+    if($('fSearch')) $('fSearch').value=''; // 이동 시 검색 해제(잔존 검색으로 일부만 보이는 문제 방지)
+    const y=selYear, m=selMonth;
+    if(!y){ $('fFrom').value=''; $('fTo').value=''; }
+    else if(!m){ $('fFrom').value=y+'-01-01'; $('fTo').value=y+'-12-31'; } // 연 전체
+    else { const mm=String(m).padStart(2,'0'); const last=new Date(y,m,0).getDate();
+      $('fFrom').value=y+'-'+mm+'-01'; $('fTo').value=y+'-'+mm+'-'+String(last).padStart(2,'0'); }
     loadList();
+  }
+  function pickYear(y){ selYear=(selYear===y?null:y); applyYM(); }
+  function pickMonth(m){
+    if(selMonth===m){ selMonth=null; }       // 같은 월 다시 누르면 해제(연 전체)
+    else { selMonth=m; if(!selYear) selYear=new Date().getFullYear(); } // 월만 누르면 올해로
+    applyYM();
+  }
+  function pickAll(){ selYear=null; selMonth=null;
+    if($('fType'))$('fType').value=''; if($('fSrc'))$('fSrc').value='';
+    applyYM();
   }
   function jumpEvent(){
     const v=($('evJump')?$('evJump').value:'').replace(/[^0-9]/g,'');
@@ -632,6 +665,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622g"></script>
+<script src="refatrix-nav.js?v=20260622h"></script>
 </body>
 </html>
