@@ -382,6 +382,39 @@
     win.document.open();win.document.write(html);win.document.close();
   }
   const flagLbl={ok:'<span style="color:var(--income);font-weight:700">즉시</span>',low_stock:'<span style="color:#9a6512;font-weight:700">부족</span>',not_found:'<span style="color:#6B4FB0;font-weight:700">개발</span>'};
+  // CTR/SYD 코드 분리 규칙: CTR 코드가 없는 라인은 입력코드를 SYD 열에 표기
+  function codePair(l){
+    const ctr=String(l.ctr_code||'').trim();
+    let syd=String(l.syd_codes||'').trim();
+    if(!ctr && !syd) syd=String(l.input_code||'').trim(); // CTR 없음 → SYD 열로
+    return { ctr, syd };
+  }
+
+  // ===== 엑셀 다운로드 (현재 재고 있는 항목만) — 상세 모달 =====
+  function downloadStockExcel(){
+    if(!dtData||!dtData.quote){ return; }
+    if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
+    const q=dtData.quote;
+    const rows=(dtData.lines||[]).filter(l=> Number(l.avail_stock)>0);
+    if(!rows.length){ alert('현재 재고가 있는 항목이 없습니다.'); return; }
+    const aoa=[['#','CTR','SYD','품명','적용차종','수량','List Price','할인%','적용단가','라인합계(미포함)','IVA','라인합계(포함)','재고']];
+    let tQty=0,tSub=0,tIva=0,tTot=0;
+    rows.forEach((l,i)=>{
+      const cp=codePair(l);
+      const qty=Number(l.qty)||0, sub=Number(l.line_subtotal)||0, iva=Number(l.line_iva)||0, tot=Number(l.line_total)||0;
+      tQty+=qty; tSub+=sub; tIva+=iva; tTot+=tot;
+      aoa.push([ i+1, cp.ctr||'', cp.syd||'', l.product_name||'', l.app_text||'', qty,
+        Number(l.list_price)||0, Number(l.discount_rate)||0, Number(l.final_price)||0,
+        sub, iva, tot, Number(l.avail_stock)||0 ]);
+    });
+    aoa.push(['','','','합계','', tQty,'','','', tSub, tIva, tTot, '']);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:4},{wch:16},{wch:16},{wch:30},{wch:24},{wch:8},{wch:12},{wch:7},{wch:12},{wch:15},{wch:12},{wch:15},{wch:9}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'En stock');
+    const safe=String(q.quote_no||q.id||'cotizacion').replace(/[^\w\-]+/g,'_');
+    XLSX.writeFile(wb,'cotizacion_'+safe+'_en_stock.xlsx');
+  }
   function renderDetail(){
     const q=dtData.quote, lines=dtData.lines||[];
     $('dtTitle').textContent='견적 '+(q.quote_no||'')+' · '+(stLblFull[q.status]||q.status);
@@ -389,11 +422,13 @@
     if(dtEdit){ renderEdit(); return; }
     let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+'</div>';
     h+='<div><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">'
-      +'<colgroup><col style="width:17%"><col style="width:30%"><col style="width:9%"><col style="width:12%"><col style="width:9%"><col style="width:14%"><col style="width:9%"></colgroup>'
-      +'<thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
+      +'<colgroup><col style="width:11%"><col style="width:12%"><col style="width:26%"><col style="width:9%"><col style="width:11%"><col style="width:8%"><col style="width:14%"><col style="width:9%"></colgroup>'
+      +'<thead><tr><th style="text-align:left">CTR</th><th style="text-align:left">SYD</th><th style="text-align:left">품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
     lines.forEach(l=>{
+      const cp=codePair(l);
       h+='<tr style="vertical-align:top">'
-        +'<td style="word-break:break-word"><span class="clamp1" title="'+esc(l.ctr_code||l.input_code||'')+'">'+esc(l.ctr_code||l.input_code||'')+'</span>'+(l.syd_codes?'<span class="hint clamp1" style="font-size:10px" title="'+esc(l.syd_codes)+'">'+esc(l.syd_codes)+'</span>':'')+'</td>'
+        +'<td style="word-break:break-word"><span class="clamp2" title="'+esc(cp.ctr)+'">'+esc(cp.ctr||'—')+'</span></td>'
+        +'<td style="word-break:break-word"><span class="clamp2" style="color:#555" title="'+esc(cp.syd)+'">'+esc(cp.syd||'—')+'</span></td>'
         +'<td style="word-break:break-word"><span class="clamp2" title="'+esc(l.product_name||'(미등록)')+'">'+esc(l.product_name||'(미등록)')+'</span>'+(l.app_text?'<span class="hint clamp2" style="font-size:10px;margin-top:2px" title="'+esc(l.app_text)+'">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td class="r">'+fmtq(l.qty)+'</td>'
         +'<td class="r">'+fmt(l.list_price)+'</td>'
@@ -406,6 +441,7 @@
     h+='<div style="text-align:right;margin-top:10px;font-size:13px">소계 <b>'+fmt(q.subtotal_mxn)+'</b> · IVA <b>'+fmt(q.iva_mxn)+'</b> · <span style="font-size:15px;color:var(--brand)">총액 <b>'+fmt(q.total_mxn)+'</b></span></div>';
     h+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
     h+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
+    h+='<button class="btn ghost" onclick="downloadStockExcel()" title="현재 재고가 있는 항목만 엑셀로 다운로드">📥 엑셀 (재고분)</button>';
     if(editable){
       h+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
       h+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
@@ -815,6 +851,7 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="refatrix-nav.js?v=20260622g"></script>
 </body>
 </html>
