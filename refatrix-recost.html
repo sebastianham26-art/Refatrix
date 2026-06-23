@@ -132,6 +132,19 @@
         <div id="avgResult" style="margin-top:10px"></div>
         <div class="msg" id="avgMsg"></div>
       </div>
+
+      <div class="card">
+        <div class="card-h">매출원가(COGS) 재계산 — 과거 매출의 동결 원가를 현재 평균원가로 보정</div>
+        <div class="hint">평균원가가 ≈0이던 시절에 판 매출은 <b>매출원가가 0으로 박제</b>돼 매출총이익이 비현실적으로 큽니다(이익률 ~100%). 여기서 게시·미삭제 매출 라인의 <b>적용원가 = 현재 평균원가</b>, 매출원가 = 수량×평균원가로 다시 계산합니다. <b>⚠ 과거 매출의 매출원가·매출총이익(과거 손익)이 바뀝니다</b> — 의도된 보정입니다. 보통 <b>평균원가 재설정을 먼저</b> 끝낸 뒤 실행하세요.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <input id="cogsCodes" type="text" placeholder="제품코드(쉼표로 여러 개) 예: CL0477" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted)"><input type="checkbox" id="cogsAll"> 전체 SKU</label>
+          <button class="btn" id="cogsPrevBtn">미리보기</button>
+          <button class="btn" id="cogsApplyBtn" disabled>적용</button>
+        </div>
+        <div id="cogsResult" style="margin-top:10px"></div>
+        <div class="msg" id="cogsMsg"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -584,12 +597,78 @@
   $('avgCodes')?.addEventListener('keydown', e=>{ if(e.key==='Enter') avgPreview(); });
   $('avgAll')?.addEventListener('change', ()=>{ $('avgCodes').disabled=$('avgAll').checked; });
 
+  // ── 매출원가(COGS) 재계산 ──
+  let cogsScopeCache=null;
+  function cogsScopeBody(){
+    if($('cogsAll').checked) return {all:true};
+    return {codes:$('cogsCodes').value.split(',').map(s=>s.trim()).filter(Boolean)};
+  }
+  function cogsFlash(t,ok){ const m=$('cogsMsg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; }
+  function cogsCell(n){ return n==null?'<span style="color:#bbb">—</span>':nf(n); }
+  function pctCell(n){ return n==null?'—':(nf(n)+'%'); }
+  async function cogsPreview(){
+    const body=cogsScopeBody();
+    if(!body.all && (!body.codes||!body.codes.length)){ cogsFlash('제품코드를 입력하거나 "전체 SKU"를 선택하세요.'); return; }
+    $('cogsResult').innerHTML='<div class="hint">불러오는 중…</div>'; $('cogsMsg').className='msg'; $('cogsApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/cogs-restate/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
+      if(d.error){ cogsFlash('미리보기 실패: '+d.error); $('cogsResult').innerHTML=''; return; }
+      const items=d.items||[];
+      if(!items.length){ $('cogsResult').innerHTML='<div class="hint">대상이 없습니다(게시된 매출이 있고 평균원가가 설정된 코드인지 확인하세요).</div>'; return; }
+      let h='<table><thead><tr>'
+        +'<th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>판매수량</th><th>매출</th><th>매출원가(전→후)</th><th>이익률(전→후)</th>'
+        +'</tr></thead><tbody>';
+      items.forEach(function(x){
+        const chg=x.changed;
+        h+='<tr style="'+(chg?'':'opacity:.5')+'">'
+          +'<td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td>'
+          +'<td style="text-align:left">'+esc(x.name||'')+'</td>'
+          +'<td>'+nf(x.qty)+'</td>'
+          +'<td>'+cogsCell(x.revenue)+'</td>'
+          +'<td>'+cogsCell(x.cogs_before)+' → <b>'+cogsCell(x.cogs_after)+'</b></td>'
+          +'<td>'+pctCell(x.margin_before)+' → <b>'+pctCell(x.margin_after)+'</b></td>'
+          +'</tr>';
+      });
+      h+='</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)">'
+        +'<td colspan="4" style="text-align:left">합계 (대상 '+items.length+'개 · 변경 '+d.changed+'개)</td>'
+        +'<td>'+nf(d.total_cogs_before)+' → '+nf(d.total_cogs_after)+'</td>'
+        +'<td>이익 '+nf(d.total_profit_before)+' → '+nf(d.total_profit_after)+'</td></tr></tfoot></table>';
+      h+='<div class="hint" style="margin-top:6px">적용하면 변경 '+d.changed+'개 제품의 <b>과거 매출원가·매출총이익이 보정</b>됩니다.</div>';
+      $('cogsResult').innerHTML=h;
+      cogsScopeCache=body;
+      $('cogsApplyBtn').disabled=(d.changed||0)===0;
+      if((d.changed||0)===0) cogsFlash('이미 매출원가가 평균원가와 일치합니다. 바꿀 것이 없습니다.', true);
+    }catch(e){ cogsFlash('미리보기 실패(네트워크).'); $('cogsResult').innerHTML=''; }
+  }
+  async function cogsApply(){
+    if(!cogsScopeCache){ cogsFlash('먼저 미리보기를 실행하세요.'); return; }
+    if(!confirm('과거 매출의 매출원가를 현재 평균원가로 다시 계산합니다.\n과거 매출총이익(손익)이 바뀝니다. 진행할까요?')) return;
+    $('cogsApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/cogs-restate/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(cogsScopeCache)}).then(r=>r.json());
+      if(d.error){ cogsFlash('적용 실패: '+d.error); $('cogsApplyBtn').disabled=false; return; }
+      cogsFlash('완료: '+(d.applied||0)+'개 제품 매출원가 보정됨.', true);
+      const res=d.results||[];
+      if(res.length){
+        let h='<table><thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>판매수량</th><th>매출원가(전→후)</th><th>이익률(전→후)</th></tr></thead><tbody>'
+          +res.map(x=>'<tr><td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td><td style="text-align:left">'+esc(x.name||'')+'</td><td>'+nf(x.qty)+'</td><td>'+cogsCell(x.cogs_before)+' → <b>'+cogsCell(x.cogs_after)+'</b></td><td>'+pctCell(x.margin_before)+' → <b>'+pctCell(x.margin_after)+'</b></td></tr>').join('')
+          +'</tbody></table>';
+        $('cogsResult').innerHTML=h;
+      }
+      cogsScopeCache=null;
+    }catch(e){ cogsFlash('적용 실패(네트워크).'); $('cogsApplyBtn').disabled=false; }
+  }
+  $('cogsPrevBtn')?.addEventListener('click', cogsPreview);
+  $('cogsApplyBtn')?.addEventListener('click', cogsApply);
+  $('cogsCodes')?.addEventListener('keydown', e=>{ if(e.key==='Enter') cogsPreview(); });
+  $('cogsAll')?.addEventListener('change', ()=>{ $('cogsCodes').disabled=$('cogsAll').checked; });
+
   $('dupBtn')?.addEventListener('click', loadDupAnalysis);
   $('delBtn')?.addEventListener('click', loadDeleted);
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260623a"></script>
+<script src="refatrix-nav.js?v=20260623b"></script>
 </body>
 </html>
