@@ -93,7 +93,9 @@
     </div>
 
     <div class="card">
-      <div class="card-h">상세 내역</div>
+      <div class="card-h">상세 내역
+        <span style="margin-left:auto"><button id="itemToggle" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)">감추기</button></span>
+      </div>
       <div id="itemBody"><div class="hint">불러오는 중…</div></div>
     </div>
 
@@ -224,6 +226,14 @@
       +'</tbody></table>';
   }
   function sum(arr,k){ return arr.reduce((s,x)=>s+(Number(x[k])||0),0); }
+  // 상세 내역 감추기/보기 토글 (재렌더돼도 #itemBody의 display는 유지됨)
+  let itemHidden=false;
+  function toggleItemBody(){
+    itemHidden=!itemHidden;
+    const b=$('itemBody'), t=$('itemToggle');
+    if(b) b.style.display = itemHidden ? 'none' : '';
+    if(t) t.textContent = itemHidden ? '보기' : '감추기';
+  }
 
   // ===== 수금 상세 (오픈 인보이스 / AR) =====
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
@@ -647,9 +657,10 @@
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  { const _it=$('itemToggle'); if(_it) _it.addEventListener('click',toggleItemBody); }
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260623c"></script>
+<script src="refatrix-nav.js?v=20260623d"></script>
 </body>
 </html>
