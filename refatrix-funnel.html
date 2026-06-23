@@ -228,7 +228,7 @@
       +'<div class="sumbox">'
       + cell('SKU 수', nf(c.sku), 'sku', false)
       + cell('총 수량', nf(c.qty), 'qty', false)
-      + cell('총 금액', 'MX$'+money(c.amount), 'amount', true)
+      + cell('총 금액 <span style="font-weight:600;font-size:.8em;color:var(--muted)">(IVA 포함)</span>', 'MX$'+money(c.amount), 'amount', true)
       + cell('인보이스 수', nf(c.invoices)+'건', 'invoices', false)
       + cell('고객 수', nf(c.customers)+'곳', 'customers', false)
       + '</div>';
@@ -749,6 +749,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622g"></script>
+<script src="refatrix-nav.js?v=20260623d"></script>
 </body>
 </html>
