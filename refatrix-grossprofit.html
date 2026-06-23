@@ -79,7 +79,14 @@
   .modal-h h2{margin:0;font-size:16px;color:var(--brand)}
   .modal-h .x{margin-left:auto;border:none;background:#f1ede4;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px;color:var(--muted)}
   .modal-b{padding:16px 20px}
-  .chartwrap{width:100%;overflow-x:auto}
+  .chartwrap{width:100%;overflow-x:auto;position:relative}
+  .gptip{position:fixed;z-index:10005;background:#1C1B19;color:#fff;font-size:11.5px;line-height:1.55;padding:7px 10px;border-radius:8px;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.35);max-width:230px}
+  .gptip .nm{color:#cfc8ba}.gptip .cl{color:#f0a99c}
+  .impchips{margin-top:10px;font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+  .impchip{display:inline-flex;align-items:center;gap:5px;background:#fbf3df;border:1px solid #ecd9a0;color:#6a4e12;
+    padding:2px 9px;border-radius:999px;font-weight:700;cursor:default}
+  .impchip .m{color:#9A6A12;font-weight:600}
+  .impchip:hover{background:#f7e9c2}
   svg .grid{stroke:var(--line);stroke-width:1}
   svg .gridlab{fill:var(--muted);font-size:10px}
   svg .axis{stroke:#cfc8ba;stroke-width:1}
@@ -158,7 +165,8 @@
     </div>
     <div class="modal-b">
       <div id="chartHint" class="hint" style="margin-bottom:8px"></div>
-      <div class="chartwrap"><div id="chartSvg"></div></div>
+      <div class="chartwrap"><div id="chartSvg"></div><div id="gpTip" class="gptip hidden"></div></div>
+      <div class="impchips" id="impList"></div>
       <div class="legend" id="chartLegend"></div>
       <div class="tip">x축 = 이익률 내림차순 정렬한 SKU 순번 · y축 = 매출총이익률(%) · 점 위에 마우스를 올리면 코드·품명·이익률을 볼 수 있습니다.</div>
     </div>
@@ -172,6 +180,7 @@
   let DATA=null;               // 서버 응답 캐시
   let listOpen=false, listSort='margin', listDir='desc', listQ='';
   let chartScope='all', chartTier=null;
+  let chartPts=[], chartW=0, chartH=0;
 
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -408,19 +417,10 @@
         svg+='<circle class="dot'+dim+'" cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="2.4" fill="'+col+'">'+ttl+'</circle>';
       }
     });
-    // 중요 아이템(★) — 별표는 곡선 위, 코드 라벨은 겹치지 않게 위로 사다리식 배치 + 연결선
-    const imps=g.xy.filter(q=>q.p.important).slice().sort((a,b)=>a.x-b.x);
-    const placed=[];
-    imps.forEach(q=>{
+    // 중요 아이템(★) — 별표만 곡선 위에. 코드 라벨은 겹치므로 아래 목록/호버 툴팁으로 분리.
+    g.xy.filter(q=>q.p.important).forEach(q=>{
       const dim=(chartScope==='all'&&chartTier&&q.p.tier!==chartTier)?' dim':'';
       svg+=starPath(q.x,q.y,5.5,dim,q.p);
-      const w=esc(q.p.code).length*6+6;
-      let ly=q.y-13, guard=0;
-      while(guard<12 && placed.some(pl=>!(q.x+w/2<pl.x1||q.x-w/2>pl.x2)&&Math.abs(pl.y-ly)<11)){ ly-=11; guard++; }
-      if(ly<g.padT+9) ly=g.padT+9;
-      placed.push({x1:q.x-w/2,x2:q.x+w/2,y:ly});
-      if(q.y-ly>8) svg+='<line x1="'+q.x.toFixed(1)+'" y1="'+(q.y-6).toFixed(1)+'" x2="'+q.x.toFixed(1)+'" y2="'+(ly+2).toFixed(1)+'" stroke="var(--gold)" stroke-width=".8" opacity=".45"/>';
-      svg+='<text class="implab'+dim+'" x="'+q.x.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle">'+esc(q.p.code)+'</text>';
     });
     // x축 + SKU 번호 눈금
     const axY=H-g.padB;
@@ -432,11 +432,28 @@
     svg+='<text class="gridlab" x="'+g.padL+'" y="'+(axY+32)+'">← 이익률 높음</text>';
     svg+='<text class="gridlab" x="'+((g.padL+(W-g.padR))/2)+'" y="'+(axY+32)+'" text-anchor="middle">SKU 번호(이익률 내림차순 순번)</text>';
     svg+='<text class="gridlab" x="'+(W-g.padR)+'" y="'+(axY+32)+'" text-anchor="end">낮음 →</text>';
+    // 호버 하이라이트(가까운 점)
+    svg+='<line id="gpGuide" stroke="#143D34" stroke-width="1" stroke-dasharray="3 3" opacity="0" x1="0" y1="'+g.padT+'" x2="0" y2="'+axY+'"/>';
+    svg+='<circle id="gpHover" r="5.5" fill="none" stroke="#143D34" stroke-width="2" opacity="0"/>';
     svg+='</svg>';
     $('chartSvg').innerHTML=svg;
+    // 호버용 점 데이터 저장 + 핸들러 바인딩(점 근처 어디서든 가장 가까운 점을 잡는다)
+    chartPts=g.xy.map(q=>({x:q.x,y:q.y,clamped:q.clamped,p:q.p}));
+    chartW=W; chartH=H;
+    const svgEl=$('chartSvg').querySelector('svg');
+    if(svgEl){ svgEl.addEventListener('mousemove',onChartMove); svgEl.addEventListener('mouseleave',hideChartTip); }
     // 범례 + 안내
     $('chartLegend').innerHTML=TIERS.map(tt=>'<span class="lk"><span class="sw" style="background:'+TIER_COLOR[tt.key]+'"></span>'+tt.label+'</span>').join('')
       +'<span class="lk"><span class="sw" style="background:var(--gold)"></span>★ 중요(이익 금액 상위)</span>';
+    // 중요 SKU 목록(겹침 없이 별도 표기) — 칩에 마우스를 올리면 차트의 해당 점이 강조됨
+    const impArr=points.filter(p=>p.important).slice().sort((a,b)=>b.profit-a.profit);
+    $('impList').innerHTML=impArr.length
+      ? '<b style="color:var(--gold)">★ 중요 SKU</b>'+impArr.map(p=>'<span class="impchip" data-rank="'+p.rank+'">'+esc(p.code)+' <span class="m">'+Number(p.margin_pct).toFixed(1)+'%</span></span>').join('')
+      : '';
+    $('impList').querySelectorAll('.impchip').forEach(ch=>{
+      ch.addEventListener('mouseenter',()=>{ const r=Number(ch.getAttribute('data-rank')); const q=chartPts.find(x=>x.p.rank===r); if(q) highlightPoint(q); });
+      ch.addEventListener('mouseleave',hideChartTip);
+    });
     const cnt=points.length;
     $('chartHint').innerHTML=(chartScope==='tier'
       ? '이 구간 SKU <b>'+cnt+'</b>개만 이익률 내림차순으로 표시합니다.'
@@ -447,6 +464,46 @@
   function starPath(cx,cy,r,dim,p){
     let pts=''; for(let i=0;i<10;i++){ const rr=(i%2===0)?r:r*0.45; const a=Math.PI/5*i-Math.PI/2; pts+=(cx+rr*Math.cos(a)).toFixed(1)+','+(cy+rr*Math.sin(a)).toFixed(1)+' '; }
     return '<polygon class="impmark'+dim+'" points="'+pts.trim()+'"><title>★ 중요 · '+esc(p.code)+(p.name?(' · '+esc(p.name)):'')+'\n이익률 '+Number(p.margin_pct).toFixed(1)+'% · 이익 MX$'+fmt(p.profit)+'</title></polygon>';
+  }
+  // x 기준 가장 가까운 점(순수함수)
+  function nearestByX(pts, x){ let best=null,bd=Infinity; for(const q of pts){ const d=Math.abs(q.x-x); if(d<bd){bd=d;best=q;} } return best; }
+  // 마우스 좌표 → SVG 뷰박스 좌표
+  function svgPointFromEvent(svgEl, e){
+    try{ const ctm=svgEl.getScreenCTM(); if(ctm){ const pt=svgEl.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const loc=pt.matrixTransform(ctm.inverse()); return {x:loc.x,y:loc.y}; } }catch(_){}
+    const r=svgEl.getBoundingClientRect(); const sx=r.width?chartW/r.width:1, sy=r.height?chartH/r.height:1;
+    return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy};
+  }
+  function onChartMove(e){
+    if(!chartPts.length) return;
+    const svgEl=$('chartSvg').querySelector('svg'); if(!svgEl) return;
+    const loc=svgPointFromEvent(svgEl,e);
+    const q=nearestByX(chartPts, loc.x); if(!q) return;
+    highlightPoint(q, e.clientX, e.clientY);
+  }
+  function highlightPoint(q, clientX, clientY){
+    const svgEl=$('chartSvg').querySelector('svg'); if(!svgEl) return;
+    const gd=svgEl.querySelector('#gpGuide'), hv=svgEl.querySelector('#gpHover');
+    if(gd){ gd.setAttribute('x1',q.x.toFixed(1)); gd.setAttribute('x2',q.x.toFixed(1)); gd.setAttribute('opacity','.5'); }
+    if(hv){ hv.setAttribute('cx',q.x.toFixed(1)); hv.setAttribute('cy',q.y.toFixed(1)); hv.setAttribute('opacity','1'); }
+    const tip=$('gpTip');
+    tip.innerHTML='<b>#'+q.p.rank+' · '+esc(q.p.code)+'</b>'+(q.p.name?('<br><span class="nm">'+esc(q.p.name)+'</span>'):'')
+      +'<br>이익률 <b>'+Number(q.p.margin_pct).toFixed(1)+'%</b> · 이익 MX$'+fmt(q.p.profit)
+      +(q.clamped?'<br><span class="cl">※ 축 하한 아래(실제값 표시)</span>':'');
+    tip.classList.remove('hidden');
+    // 위치(고정 좌표). 마우스 좌표가 없으면(칩 호버) 점의 화면 좌표로.
+    let cx=clientX, cy=clientY;
+    if(cx==null){ try{ const ctm=svgEl.getScreenCTM(); if(ctm){ const pt=svgEl.createSVGPoint(); pt.x=q.x; pt.y=q.y; const scr=pt.matrixTransform(ctm); cx=scr.x; cy=scr.y; } }catch(_){} }
+    if(cx!=null){
+      let left=cx+14, top=cy+14;
+      const tw=tip.offsetWidth||180, th=tip.offsetHeight||52;
+      if(left+tw>window.innerWidth) left=cx-tw-14;
+      if(top+th>window.innerHeight) top=cy-th-14;
+      tip.style.left=Math.max(4,left)+'px'; tip.style.top=Math.max(4,top)+'px';
+    }
+  }
+  function hideChartTip(){
+    const tip=$('gpTip'); if(tip) tip.classList.add('hidden');
+    const svgEl=$('chartSvg').querySelector('svg'); if(svgEl){ const gd=svgEl.querySelector('#gpGuide'),hv=svgEl.querySelector('#gpHover'); if(gd)gd.setAttribute('opacity','0'); if(hv)hv.setAttribute('opacity','0'); }
   }
 
   // 이벤트 바인딩
@@ -469,9 +526,10 @@
 
   // 테스트 노출(jsdom) — 순수 로직 + 내부 렌더 훅
   if(typeof window!=='undefined'){
-    window.__gp={tierOf,filterCurve,chartGeo,TIERS};
+    window.__gp={tierOf,filterCurve,chartGeo,TIERS,nearestByX};
     window.__gpTest={ setData:(d)=>{DATA=d;}, renderTiers, renderTotals, toggleList,
-      openChart, drawChart, setScope:(s)=>{chartScope=s;}, renderList, setSort:(k,d)=>{listSort=k;listDir=d;} };
+      openChart, drawChart, setScope:(s)=>{chartScope=s;}, renderList, setSort:(k,d)=>{listSort=k;listDir=d;},
+      highlightPoint, hideChartTip, getPts:()=>chartPts };
   }
 </script>
 <script src="refatrix-nav.js?v=20260623a"></script>
