@@ -205,13 +205,13 @@
     const box=(k,label)=>'<div class="stat"><div class="k">'+label+'</div><div class="v">MX$'+fmt(srcMap[k]?srcMap[k].amount:0)+'</div></div>';
     $('statBoxes').innerHTML=
       '<div class="stat tot"><div class="k">정산차액 합계 ('+(year||'전체')+')</div><div class="v">MX$'+fmt(d.total)+'</div></div>'
-      +box('sales_edit','매출 수정')+box('sales_delete','매출 삭제')+box('import_cost','수입 부대비용');
+      +box('sales_edit','매출 수정')+box('sales_delete','매출 삭제')+box('import_cost','수입 부대비용')+box('import_recost','수입 단가 정정');
     // 월별
     const mrows=(d.byMonth||[]);
     if(!mrows.length){ $('monthBody').innerHTML='<div class="hint">정산차액이 없습니다. (마감월에 매출 수정·삭제나 수입 부대비용이 발생하면 여기에 집계됩니다.)</div>'; }
-    else $('monthBody').innerHTML='<table><thead><tr><th>월</th><th>매출 수정</th><th>매출 삭제</th><th>수입 부대비용</th><th>합계</th></tr></thead><tbody>'
-      +mrows.map(m=>'<tr><td>'+m.ym+'</td><td>'+fmt(m.sales_edit)+'</td><td>'+fmt(m.sales_delete)+'</td><td>'+fmt(m.import_cost)+'</td><td><b>'+fmt(m.total)+'</b></td></tr>').join('')
-      +'</tbody><tfoot><tr><td>합계</td><td>'+fmt(sum(mrows,'sales_edit'))+'</td><td>'+fmt(sum(mrows,'sales_delete'))+'</td><td>'+fmt(sum(mrows,'import_cost'))+'</td><td>'+fmt(d.total)+'</td></tr></tfoot></table>';
+    else $('monthBody').innerHTML='<table><thead><tr><th>월</th><th>매출 수정</th><th>매출 삭제</th><th>수입 부대비용</th><th>수입 단가 정정</th><th>합계</th></tr></thead><tbody>'
+      +mrows.map(m=>'<tr><td>'+m.ym+'</td><td>'+fmt(m.sales_edit||0)+'</td><td>'+fmt(m.sales_delete||0)+'</td><td>'+fmt(m.import_cost||0)+'</td><td>'+fmt(m.import_recost||0)+'</td><td><b>'+fmt(m.total)+'</b></td></tr>').join('')
+      +'</tbody><tfoot><tr><td>합계</td><td>'+fmt(sum(mrows,'sales_edit'))+'</td><td>'+fmt(sum(mrows,'sales_delete'))+'</td><td>'+fmt(sum(mrows,'import_cost'))+'</td><td>'+fmt(sum(mrows,'import_recost'))+'</td><td>'+fmt(d.total)+'</td></tr></tfoot></table>';
     // 상세
     const items=(d.items||[]);
     if(!items.length){ $('itemBody').innerHTML='<div class="hint">상세 내역이 없습니다.</div>'; }
@@ -650,6 +650,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260622j"></script>
+<script src="refatrix-nav.js?v=20260623c"></script>
 </body>
 </html>
