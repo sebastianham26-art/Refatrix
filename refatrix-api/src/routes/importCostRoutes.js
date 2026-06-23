@@ -387,6 +387,61 @@ export default async function importCostRoutes(app) {
     return out;
   });
 
+  // 삭제된(soft-delete) 배치 목록 — 복원용(디렉터)
+  app.get('/api/import-batches/deleted', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT b.id, b.batch_no, b.import_date, b.deleted_at,
+              COUNT(DISTINCT il.product_id)::int AS sku_count, COALESCE(SUM(il.qty),0) AS total_qty
+         FROM import_batches b LEFT JOIN import_lines il ON il.batch_id=b.id
+        WHERE b.deleted_at IS NOT NULL
+        GROUP BY b.id, b.batch_no, b.import_date, b.deleted_at
+        ORDER BY b.deleted_at DESC NULLS LAST, b.id DESC`)).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), batch_no: r.batch_no, import_date: r.import_date ? String(r.import_date).slice(0, 10) : '', deleted_at: r.deleted_at, sku_count: Number(r.sku_count), total_qty: Number(r.total_qty) })) };
+  });
+
+  // 배치 복원(디렉터) — 안전삭제/전체삭제 되돌리기.
+  //   import_lines에서 'in' 이동기록을 재생성하고, 영향 제품의 재고를 이동원장 합계로 재계산 → 삭제 전 값 복원.
+  app.post('/api/import-batches/:batchId/restore', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return reply.code(400).send({ error: 'bad_batch' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const b = (await c.query(`SELECT id, batch_no, import_date FROM import_batches WHERE id=$1 AND deleted_at IS NOT NULL FOR UPDATE`, [batchId])).rows[0];
+      if (!b) return { error: 'not_deleted' };
+      const lines = (await c.query(`SELECT product_id, qty, unit_cost_mxn FROM import_lines WHERE batch_id=$1`, [batchId])).rows;
+      if (!lines.length) return { error: 'no_lines' };
+      // 이미 이동이 남아있으면 중복 재생성 방지
+      const have = Number((await c.query(`SELECT COUNT(*)::int AS n FROM stock_movements WHERE batch_id=$1`, [batchId])).rows[0].n);
+      if (!have) {
+        const evNo = Number((await c.query(`SELECT COALESCE(MAX(event_no),0)+1 AS ev FROM stock_movements`)).rows[0].ev);
+        for (const l of lines) {
+          await c.query(
+            `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, event_no, moved_at, created_by)
+             VALUES ($1,'in',$2,$3,$4,$5,$6,$7,$8)`,
+            [Number(l.product_id), Math.abs(Number(l.qty) || 0), l.unit_cost_mxn, `restore:${batchId}`, batchId, evNo, b.import_date || new Date(), userId]);
+        }
+      }
+      await c.query(`UPDATE import_batches SET deleted_at=NULL WHERE id=$1`, [batchId]);
+      // 영향 제품 재고 = 이동원장 합계로 재계산(in − out)
+      const pids = [...new Set(lines.map((l) => Number(l.product_id)))];
+      const products = [];
+      for (const pid of pids) {
+        const pr = (await c.query(`SELECT code, name, stock_qty FROM products WHERE id=$1 FOR UPDATE`, [pid])).rows[0];
+        if (!pr) continue;
+        const before = Number(pr.stock_qty) || 0;
+        const sum = Number((await c.query(
+          `SELECT COALESCE(SUM(CASE WHEN move_type='in' THEN qty WHEN move_type='out' THEN -qty ELSE qty END),0) AS s
+             FROM stock_movements WHERE product_id=$1`, [pid])).rows[0].s);
+        await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [sum, userId, pid]);
+        products.push({ product_id: pid, code: pr.code, name: pr.name, before, after: sum });
+      }
+      return { ok: true, batch_no: b.batch_no, restored_movements: have ? 0 : lines.length, products };
+    });
+    if (out.error) return reply.code(out.error === 'not_deleted' ? 404 : 400).send(out);
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: `import_batch:${batchId}`, detail: { batch_no: out.batch_no, mode: 'restore', products: out.products.length } });
+    return out;
+  });
+
   // 수입 배치 안전 삭제(디렉터) — 재고를 0에서 멈추도록만 역산(음수 금지) + 배치 기록 soft-delete.
   //   가짜(중복) 배치 정리용. 이미 팔려나간 분(=현재고를 넘는 배치수량)은 빼지 않고 '잔여'로 보고.
   //   판매/COGS 기록은 건드리지 않음(출고는 배치에 안 묶여 있음).

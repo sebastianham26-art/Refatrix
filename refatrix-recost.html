@@ -111,6 +111,14 @@
         <div id="batchList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
         <div class="msg" id="batchMsg"></div>
       </div>
+
+      <div class="card">
+        <div class="card-h">삭제된 배치 복원 — 안전삭제/전체삭제 되돌리기</div>
+        <div class="hint">삭제(soft-delete)된 배치를 되살립니다. 이동기록을 재생성하고 재고를 <b>이동원장 합계로 재계산</b>해 삭제 전 값으로 복원합니다(0이 된 재고도 원래대로).</div>
+        <button class="btn" id="delBtn" style="margin-top:8px">↩ 삭제된 배치 보기</button>
+        <div id="delList" style="margin-top:10px"></div>
+        <div class="msg" id="delMsg"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -188,6 +196,45 @@
       });
       box.innerHTML=h;
     }catch(e){ box.innerHTML='<div class="hint">분석을 불러오지 못했습니다.</div>'; }
+  }
+  async function loadDeleted(){
+    const box=$('delList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/import-batches/deleted',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length){ box.innerHTML='<div class="hint">삭제된 배치가 없습니다.</div>'; return; }
+      let h='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th>삭제시각</th><th class="n">수량</th><th class="n">SKU</th><th>복원</th></tr></thead><tbody>';
+      items.forEach(b=>{
+        h+='<tr><td><b>'+esc(b.batch_no||('#'+b.id))+'</b></td><td>'+esc(b.import_date||'')+'</td>'
+          +'<td>'+esc(b.deleted_at?String(b.deleted_at).slice(0,16).replace('T',' '):'')+'</td>'
+          +'<td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count)+'</td>'
+          +'<td><button type="button" class="brestore btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--income);padding:4px 10px;font-size:11.5px">↩ 복원</button></td></tr>';
+      });
+      h+='</tbody></table></div>';
+      box.innerHTML=h;
+      box.querySelectorAll('.brestore').forEach(btn=>{
+        btn.addEventListener('click', ()=>restoreBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''));
+      });
+    }catch(e){ box.innerHTML='<div class="hint">목록을 불러오지 못했습니다.</div>'; }
+  }
+  async function restoreBatch(id, label){
+    const m=$('delMsg'); m.className='msg';
+    if(!window.confirm('배치 "'+label+'"를 복원합니다.\n이동기록을 재생성하고 재고를 삭제 전 값으로 되돌립니다.\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/restore',{method:'POST',headers:auth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='복원 실패: '+d.error; return; }
+      let msg='복원 완료 · '+esc(d.batch_no||label)+' · 제품 '+nf(d.products?d.products.length:0)+'종 재고 재계산';
+      if(d.products&&d.products.length){
+        const changed=d.products.filter(p=>Number(p.before)!==Number(p.after));
+        if(changed.length){
+          msg+='<div style="margin-top:8px"><b>재고 변경:</b><table style="margin-top:4px"><thead><tr><th>SKU</th><th class="n">전</th><th class="n">후</th></tr></thead><tbody>'
+            +changed.slice(0,60).map(p=>'<tr><td><b>'+esc(p.code)+'</b></td><td class="n">'+nf(p.before)+'</td><td class="n" style="color:var(--income);font-weight:700">'+nf(p.after)+'</td></tr>').join('')
+            +'</tbody></table>'+(changed.length>60?('<div class="hint">외 '+(changed.length-60)+'종</div>'):'')+'</div>';
+        }
+      }
+      m.className='msg ok'; m.innerHTML=msg;
+      loadDeleted(); loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='복원 실패(네트워크).'; }
   }
   async function loadBatches(){
     try{
@@ -403,10 +450,11 @@
   }
 
   $('dupBtn')?.addEventListener('click', loadDupAnalysis);
+  $('delBtn')?.addEventListener('click', loadDeleted);
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622j"></script>
+<script src="refatrix-nav.js?v=20260622k"></script>
 </body>
 </html>
