@@ -76,3 +76,16 @@ export function allowPastMonthSalesEdit() {
   if (['0', 'false', 'no', 'off'].includes(env)) return false;  // 명시적 OFF
   return MIGRATION_DEFAULT_ON;                                    // 변수 없을 때의 기본값
 }
+
+// 평균원가 산정 방식.
+//   기본(ON) = 단순가중평균: 입고 승인 시 제품 평균원가를 "현재 살아있는(삭제·원가제외 아님) 배치들의
+//              Σ(수입수량×입고단가) ÷ Σ수입수량" 으로 다시 설정. 중간에 삭제된 배치는 자동으로 무시되고,
+//              판매 타이밍에 영향받지 않음(이동평균 아님).
+//   끄기  = 기존 이동평균 방식 유지. 환경변수 MOVING_AVG_COST 를 1/true/yes/on 으로 두면 강제 OFF(이동평균).
+const FLAT_AVG_COST_DEFAULT_ON = true;
+export function flatAvgCostEnabled() {
+  const env = String(process.env.MOVING_AVG_COST || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(env)) return false;   // 이동평균 강제(평준화 끔)
+  if (['0', 'false', 'no', 'off'].includes(env)) return true;   // 단순평균 강제
+  return FLAT_AVG_COST_DEFAULT_ON;
+}

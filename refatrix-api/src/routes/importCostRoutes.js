@@ -600,4 +600,78 @@ export default async function importCostRoutes(app) {
     const rows = (await query(`SELECT period, closed_at FROM period_closings ORDER BY period`)).rows;
     return { items: rows };
   });
+
+  // ── 평균원가 재설정(단순가중평균) ──────────────────────────────────────────
+  //   stored avg_cost 가 이동평균/삭제·유령 배치 영향으로 어긋난 제품을,
+  //   "현재 살아있는 배치들의 Σ(수량×입고단가)÷Σ수량" 으로 다시 맞춘다.
+  //   - 과거 매출 COGS(판매 스냅샷)는 건드리지 않음 → 과거 손익 불변.
+  //   - 바뀌는 것: products.avg_cost(=재고평가액·향후 매출원가 기준)뿐.
+  //   - 범위: codes(쉼표구분 코드들) 지정, 또는 all=1(전체).
+
+  // 대상 제품의 현재/재설정 평균원가를 묶어 반환하는 공통 조회.
+  async function avgResetRows(client, { codes, all }) {
+    const params = [];
+    let codeCond = '';
+    if (!all) {
+      const list = (codes || []).map((s) => String(s).trim()).filter(Boolean);
+      if (!list.length) return [];
+      params.push(list);
+      codeCond = ` AND p.code = ANY($${params.length})`;
+    }
+    // 살아있는 배치 합계와 제품을 묶음(살아있는 배치가 있는 제품만 대상)
+    const rows = (await client.query(
+      `SELECT p.id, p.code, p.name, p.stock_qty, p.avg_cost,
+              fa.qty AS batch_qty, fa.amount AS batch_amount
+         FROM products p
+         JOIN ( SELECT il.product_id,
+                       SUM(il.qty)                    AS qty,
+                       SUM(il.qty * il.unit_cost_mxn) AS amount
+                  FROM import_lines il
+                  JOIN import_batches b ON b.id = il.batch_id
+                 WHERE b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
+                 GROUP BY il.product_id ) fa ON fa.product_id = p.id
+        WHERE p.deleted_at IS NULL AND fa.qty > 0${codeCond}
+        ORDER BY p.code`, params)).rows;
+    return rows.map((r) => {
+      const stock = Number(r.stock_qty) || 0;
+      const cur = r.avg_cost != null ? Number(r.avg_cost) : null;
+      const bq = Number(r.batch_qty);
+      const newAvg = round2(Number(r.batch_amount) / bq);
+      return {
+        product_id: Number(r.id), code: r.code, name: r.name, stock_qty: stock,
+        current_avg: cur, new_avg: newAvg,
+        diff: cur != null ? round2(newAvg - cur) : null,
+        batch_qty: bq, batch_amount: round2(Number(r.batch_amount)),
+        stock_value_before: cur != null ? round2(stock * cur) : null,
+        stock_value_after: round2(stock * newAvg),
+        changed: cur == null || Math.abs(newAvg - cur) > 0.005,
+      };
+    });
+  }
+
+  app.post('/api/import-recost/avg-reset/preview', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const body = req.body || {};
+    const items = await avgResetRows({ query: (q, a) => query(q, a) }, { codes: body.codes, all: !!body.all });
+    const totalBefore = round2(items.reduce((s, x) => s + (x.stock_value_before || 0), 0));
+    const totalAfter = round2(items.reduce((s, x) => s + (x.stock_value_after || 0), 0));
+    return { items, count: items.length, changed: items.filter((x) => x.changed).length,
+      total_stock_value_before: totalBefore, total_stock_value_after: totalAfter };
+  });
+
+  app.post('/api/import-recost/avg-reset/apply', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const userId = req.ctx.perm.userId;
+    const body = req.body || {};
+    const out = await withTx(async (c) => {
+      const items = await avgResetRows(c, { codes: body.codes, all: !!body.all });
+      const changed = items.filter((x) => x.changed);
+      for (const it of changed) {
+        await c.query(`UPDATE products SET avg_cost=$1, updated_by=$2 WHERE id=$3`, [it.new_avg, userId, it.product_id]);
+      }
+      return { applied: changed.length, total: items.length,
+        results: changed.map((x) => ({ code: x.code, name: x.name, before: x.current_avg, after: x.new_avg, stock_qty: x.stock_qty })) };
+    });
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: 'avg_cost_reset',
+      detail: { applied: out.applied, scope: body.all ? 'all' : (body.codes || []) } });
+    return out;
+  });
 }

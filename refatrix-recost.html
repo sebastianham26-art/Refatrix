@@ -119,6 +119,19 @@
         <div id="delList" style="margin-top:10px"></div>
         <div class="msg" id="delMsg"></div>
       </div>
+
+      <div class="card">
+        <div class="card-h">평균원가 재설정 — 이동평균/유령배치로 어긋난 평균원가를 단순가중평균으로 교정</div>
+        <div class="hint">현재 살아있는(삭제·원가제외 아님) 배치들의 <b>Σ(수입수량 × 입고단가) ÷ Σ수입수량</b> 으로 제품 평균원가를 다시 맞춥니다. 중간에 삭제된 배치는 무시되고, 판매 타이밍에 영향받지 않습니다(이동평균 아님). <b>과거 매출의 매출원가(COGS)는 그대로</b>이고, 재고평가액·앞으로의 매출원가만 바뀝니다.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <input id="avgCodes" type="text" placeholder="제품코드(쉼표로 여러 개) 예: CL0477" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted)"><input type="checkbox" id="avgAll"> 전체 SKU</label>
+          <button class="btn" id="avgPrevBtn">미리보기</button>
+          <button class="btn" id="avgApplyBtn" disabled>적용</button>
+        </div>
+        <div id="avgResult" style="margin-top:10px"></div>
+        <div class="msg" id="avgMsg"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -502,12 +515,81 @@
     }catch(e){ flash('적용 실패(네트워크).'); $('apBtn').disabled=false; }
   }
 
+  // ── 평균원가 재설정(단순가중평균) ──
+  let avgScopeCache=null;
+  function avgScopeBody(){
+    const all=$('avgAll').checked;
+    if(all) return {all:true};
+    const codes=$('avgCodes').value.split(',').map(s=>s.trim()).filter(Boolean);
+    return {codes};
+  }
+  function avgFlash(t,ok){ const m=$('avgMsg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; }
+  function avgCell(n){ return n==null?'<span style="color:#bbb">—</span>':nf(n); }
+  async function avgPreview(){
+    const body=avgScopeBody();
+    if(!body.all && (!body.codes||!body.codes.length)){ avgFlash('제품코드를 입력하거나 "전체 SKU"를 선택하세요.'); return; }
+    $('avgResult').innerHTML='<div class="hint">불러오는 중…</div>'; $('avgMsg').className='msg';
+    $('avgApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/avg-reset/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
+      if(d.error){ avgFlash('미리보기 실패: '+d.error); $('avgResult').innerHTML=''; return; }
+      const items=d.items||[];
+      if(!items.length){ $('avgResult').innerHTML='<div class="hint">대상 제품이 없습니다(살아있는 수입 배치가 있는 코드인지 확인하세요).</div>'; return; }
+      let h='<table><thead><tr>'
+        +'<th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>재고</th><th>현재 평균원가</th><th>재설정 평균원가</th><th>차이</th><th>재고평가(전→후)</th>'
+        +'</tr></thead><tbody>';
+      items.forEach(function(x){
+        const chg=x.changed;
+        h+='<tr style="'+(chg?'':'opacity:.5')+'">'
+          +'<td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td>'
+          +'<td style="text-align:left">'+esc(x.name||'')+'</td>'
+          +'<td>'+nf(x.stock_qty)+'</td>'
+          +'<td>'+avgCell(x.current_avg)+'</td>'
+          +'<td style="font-weight:700">'+avgCell(x.new_avg)+'</td>'
+          +'<td style="color:'+((x.diff||0)>=0?'var(--income)':'var(--expense)')+'">'+(x.diff==null?'—':((x.diff>=0?'+':'')+nf(x.diff)))+'</td>'
+          +'<td>'+avgCell(x.stock_value_before)+' → <b>'+avgCell(x.stock_value_after)+'</b></td>'
+          +'</tr>';
+      });
+      h+='</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)">'
+        +'<td colspan="6" style="text-align:left">재고평가 합계 (대상 '+items.length+'개 · 변경 '+d.changed+'개)</td>'
+        +'<td>'+nf(d.total_stock_value_before)+' → '+nf(d.total_stock_value_after)+'</td></tr></tfoot></table>';
+      h+='<div class="hint" style="margin-top:6px">위 값으로 <b>적용</b>하면 변경 '+d.changed+'개 제품의 평균원가가 재설정됩니다. 과거 매출원가는 바뀌지 않습니다.</div>';
+      $('avgResult').innerHTML=h;
+      avgScopeCache=body;
+      $('avgApplyBtn').disabled=(d.changed||0)===0;
+      if((d.changed||0)===0) avgFlash('이미 모두 단순가중평균과 일치합니다. 바꿀 것이 없습니다.', true);
+    }catch(e){ avgFlash('미리보기 실패(네트워크).'); $('avgResult').innerHTML=''; }
+  }
+  async function avgApply(){
+    if(!avgScopeCache){ avgFlash('먼저 미리보기를 실행하세요.'); return; }
+    if(!confirm('미리보기한 제품들의 평균원가를 단순가중평균으로 재설정합니다. 진행할까요?\n(과거 매출원가는 그대로, 재고평가액·앞으로의 매출원가만 바뀝니다.)')) return;
+    $('avgApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/avg-reset/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(avgScopeCache)}).then(r=>r.json());
+      if(d.error){ avgFlash('적용 실패: '+d.error); $('avgApplyBtn').disabled=false; return; }
+      avgFlash('완료: '+(d.applied||0)+'개 제품 평균원가 재설정됨.', true);
+      // 결과 before→after 표
+      const res=d.results||[];
+      if(res.length){
+        let h='<table><thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>재고</th><th>이전</th><th>이후</th></tr></thead><tbody>'
+          +res.map(x=>'<tr><td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td><td style="text-align:left">'+esc(x.name||'')+'</td><td>'+nf(x.stock_qty)+'</td><td>'+avgCell(x.before)+'</td><td style="font-weight:700">'+avgCell(x.after)+'</td></tr>').join('')
+          +'</tbody></table>';
+        $('avgResult').innerHTML=h;
+      }
+      avgScopeCache=null;
+    }catch(e){ avgFlash('적용 실패(네트워크).'); $('avgApplyBtn').disabled=false; }
+  }
+  $('avgPrevBtn')?.addEventListener('click', avgPreview);
+  $('avgApplyBtn')?.addEventListener('click', avgApply);
+  $('avgCodes')?.addEventListener('keydown', e=>{ if(e.key==='Enter') avgPreview(); });
+  $('avgAll')?.addEventListener('change', ()=>{ $('avgCodes').disabled=$('avgAll').checked; });
+
   $('dupBtn')?.addEventListener('click', loadDupAnalysis);
   $('delBtn')?.addEventListener('click', loadDeleted);
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622m"></script>
+<script src="refatrix-nav.js?v=20260623a"></script>
 </body>
 </html>

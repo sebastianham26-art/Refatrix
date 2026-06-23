@@ -2,7 +2,8 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { computeImportCosting } from '../cost.js';
 import { logEvent } from '../audit.js';
-import { fieldVisible } from '../permissions.js';
+import { fieldVisible, flatAvgCostEnabled } from '../permissions.js';
+import { flatAvgCost } from '../flatAvgCost.js';
 
 export default async function importRoutes(app) {
   // 수입 입고 작성(영업지원). 라인(SKU별) + 부대비용(명목·인보이스별).
@@ -92,10 +93,17 @@ export default async function importRoutes(app) {
           [cl.product_id, cl.qty, cl.unit_cost_mxn, invByProduct[cl.product_id] || refFallback, id, evNo, batch.import_date, userId]);
       }
       // 제품 재고·평균원가 갱신
+      //   기본(단순가중평균 모드): 평균원가 = 현재 살아있는 배치들의 Σ(수량×입고단가)÷Σ수량.
+      //   이동평균 모드(MOVING_AVG_COST=1): 기존 newState.avg_cost(이동평균) 사용.
+      let flatAvg = {};
+      if (flatAvgCostEnabled()) {
+        flatAvg = await flatAvgCost(c, pids);  // 방금 승인한 배치의 라인이 포함됨(deleted_at NULL·exclude false)
+      }
       for (const [pid, st] of Object.entries(newState)) {
+        const avg = (flatAvg[Number(pid)] != null) ? flatAvg[Number(pid)] : st.avg_cost;
         await c.query(
           `UPDATE products SET stock_qty=$1, avg_cost=$2, updated_by=$3 WHERE id=$4`,
-          [st.stock_qty, st.avg_cost, userId, pid]);
+          [st.stock_qty, avg, userId, pid]);
       }
       await c.query(
         `UPDATE import_batches SET status='approved', approved_by=$1, approved_at=now() WHERE id=$2`,
