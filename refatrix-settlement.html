@@ -512,13 +512,11 @@
   // 명세서: 화면 미리보기 → [PDF 다운로드]
   let stmtCustomer=null;
   function stmtDias(r){ return r.day_diff==null?'—':(r.day_diff>0?(r.day_diff+'일 연체'):(r.day_diff===0?'오늘':('D-'+(-r.day_diff)))); }
-  // 긴 인보이스 번호(UUID)를 가운데 하이픈에서 두 줄로 분할
-  function splitInv(s){ s=String(s||''); if(s.length<=22) return [s];
-    const mid=Math.floor(s.length/2); let best=-1,bd=1e9;
-    for(let i=0;i<s.length;i++){ if(s[i]==='-'){ const d=Math.abs(i-mid); if(d<bd){bd=d;best=i;} } }
-    if(best>0 && best<s.length-1) return [s.slice(0,best+1), s.slice(best+1)];
-    return [s.slice(0,mid), s.slice(mid)]; }
-  function invHtml(s){ const p=splitInv(s); return p.map(esc).join('<br>'); }
+  // Folio: UUID면 마지막 8자리를 굵게 + 전체를 작은 회색으로
+  function isUuidStr(s){ return String(s||'').replace(/[^A-Za-z0-9]/g,'').length>=20; }
+  function folioHtml(s){ s=String(s||''); if(!isUuidStr(s)) return '<b>'+esc(s)+'</b>';
+    return '<b style="font-size:12px;letter-spacing:.5px">'+esc(s.slice(-12).toUpperCase())+'</b>'
+      +'<div style="font-family:monospace;font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:0">'+esc(s)+'</div>'; }
   function openStatement(customerId){
     const rows=arItems.filter(x=>x.customer_id===customerId); if(!rows.length)return;
     stmtCustomer=customerId;
@@ -548,9 +546,9 @@
       +'<th style="text-align:right">Saldo<br><span style="font-weight:600;color:var(--muted)">잔액</span></th>'
       +'<th style="text-align:right">Días<br><span style="font-weight:600;color:var(--muted)">미수일</span></th>'
       +'</tr></thead><tbody>';
-    rows.forEach((r,idx)=>{ const ovd=(r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':'')+'>'
+    rows.forEach((r,idx)=>{ const ovd=(r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(idx%2===1?' style="background:#faf9f6"':''))+'>'
       +'<td style="text-align:left;font-weight:700">'+(ovd?'<span style="color:var(--expense)">●</span> ':'')+'#'+(idx+1)+'</td>'
-      +'<td style="text-align:left;font-family:monospace;font-size:11px;line-height:1.3;white-space:nowrap">'+invHtml(r.sat_no||('#'+r.id))+'</td>'
+      +'<td style="text-align:left;white-space:nowrap;padding-right:14px">'+folioHtml(r.sat_no||('#'+r.id))+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.inv_date||'—')+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.due_date||'—')+'</td>'
       +'<td style="text-align:right">'+fmt(r.total_mxn)+'</td>'
@@ -598,39 +596,43 @@
     const cuLine=[c.customer_rfc?('RFC: '+c.customer_rfc):'', c.customer_phone?('Tel: '+c.customer_phone):''].filter(Boolean).join('   ');
     if(cuLine){ doc.text(cuLine, 40, y); y+=4; }
     y+=16;
-    // 컬럼 좌표(A4 pt, 좌40~우555). 인보이스를 좁혀(2줄) Importe/Pagado/Saldo/Días 확보.
-    const X={hash:42, inv:58, emi:158, ven:214, imp:345, pag:420, sal:495, dia:555};
-    const invFit=(t,x,yy,maxW)=>{ let s=8; doc.setFontSize(s); while(doc.getTextWidth(String(t))>maxW && s>5){ s-=0.5; doc.setFontSize(s); } doc.text(String(t),x,yy); doc.setFontSize(8); };
-    function drawHead(yy){ doc.setTextColor(20); doc.setFontSize(8); doc.setFillColor(245,243,237); doc.rect(40,yy-11,515,16,'F');
-      doc.text('#',X.hash,yy); doc.text('Factura',X.inv,yy); doc.text('Emisión',X.emi,yy); doc.text('Vencim.',X.ven,yy);
-      doc.text('Importe',X.imp,yy,{align:'right'}); doc.text('Pagado',X.pag,yy,{align:'right'});
-      doc.text('Saldo',X.sal,yy,{align:'right'}); doc.text('Días',X.dia,yy,{align:'right'}); }
-    const ROWH=20; let total=0;
-    drawHead(y); y+=4;
+    // 컬럼 좌표(A4 pt, 좌40~우555). Folio는 '마지막 8자리(굵게)'+전체 UUID(회색)로 간결화.
+    const X={hash:44, fol:64, emi:215, ven:275, imp:380, pag:450, sal:525, dia:555};
+    const isUuid=(s)=>String(s||'').replace(/[^A-Za-z0-9]/g,'').length>=20;
+    const shortRef=(s)=>{ s=String(s||''); return isUuid(s)? s.slice(-12).toUpperCase() : s; };
+    const fit=(t,x,yy,maxW,base)=>{ let s=base; doc.setFontSize(s); while(doc.getTextWidth(String(t))>maxW && s>5){ s-=0.3; doc.setFontSize(s);} doc.text(String(t),x,yy); };
+    function drawHead(yy){ doc.setFillColor(243,241,236); doc.rect(40,yy-12,515,18,'F');
+      doc.setTextColor(95); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+      doc.text('#',X.hash,yy); doc.text('FACTURA',X.fol,yy); doc.text('EMISIÓN',X.emi,yy); doc.text('VENCIM.',X.ven,yy);
+      doc.text('IMPORTE',X.imp,yy,{align:'right'}); doc.text('PAGADO',X.pag,yy,{align:'right'});
+      doc.text('SALDO',X.sal,yy,{align:'right'}); doc.text('DÍAS',X.dia,yy,{align:'right'});
+      doc.setFont('helvetica','normal'); }
+    const ROWH=24; let total=0;
+    drawHead(y); y+=10;
     rows.forEach((r,idx)=>{
-      if(y+ROWH>800){ doc.addPage(); y=54; drawHead(y); y+=4; }
-      const top=y+12, mid=top+4.5;
+      if(y+ROWH>800){ doc.addPage(); y=54; drawHead(y); y+=10; }
+      const top=y, mid=top+9, sub=top+18;
       const overdue=(r.day_diff!=null && Number(r.day_diff)>0);
-      if(overdue){ doc.setFillColor(253,232,232); doc.rect(40,top-11,515,ROWH,'F'); doc.setFillColor(214,40,40); doc.rect(40,top-11,2.5,ROWH,'F'); }
-      doc.setTextColor(40); doc.setFontSize(8);
-      doc.text('#'+(idx+1),X.hash,mid);
-      const parts=splitInv(r.sat_no||('#'+r.id));
-      invFit(parts[0],X.inv,(parts[1]!==undefined?top:mid),92);
-      if(parts[1]!==undefined) invFit(parts[1],X.inv,top+9,92);
-      doc.setFontSize(8);
+      if(overdue){ doc.setFillColor(252,233,233); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(208,46,46); doc.rect(40,top-4,3,ROWH,'F'); }
+      else if(idx%2===1){ doc.setFillColor(249,249,247); doc.rect(40,top-4,515,ROWH,'F'); }
+      doc.setTextColor(125); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.text(String(idx+1),X.hash,mid);
+      const full=String(r.sat_no||('#'+r.id)), sref=shortRef(full);
+      doc.setTextColor(25); doc.setFont('helvetica','bold'); fit(sref,X.fol,mid,145,9.5);
+      if(isUuid(full)){ doc.setFont('courier','normal'); doc.setFontSize(6.5); doc.setTextColor(155); doc.text(full,X.fol,sub); }
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(70);
       doc.text(String(r.inv_date||'—'),X.emi,mid);
       doc.text(String(r.due_date||'—'),X.ven,mid);
       doc.text(fmt(Number(r.total_mxn)||0),X.imp,mid,{align:'right'});
-      doc.text(fmt(Number(r.paid)||0),X.pag,mid,{align:'right'});
-      doc.setFont(undefined,'bold'); doc.text(fmt(Number(r.outstanding)||0),X.sal,mid,{align:'right'}); doc.setFont(undefined,'normal');
+      doc.setTextColor(135); doc.text(fmt(Number(r.paid)||0),X.pag,mid,{align:'right'});
+      doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.text(fmt(Number(r.outstanding)||0),X.sal,mid,{align:'right'}); doc.setFont('helvetica','normal');
       const dd=(r.day_diff==null?null:Number(r.day_diff));
       const dstr=dd==null?'—':(dd>0?('+'+dd):(dd===0?'0':String(dd)));
-      if(overdue){ doc.setTextColor(196,30,30); doc.setFont(undefined,'bold'); }
+      if(overdue){ doc.setTextColor(200,40,40); doc.setFont('helvetica','bold'); } else { doc.setTextColor(130); }
       doc.text(dstr,X.dia,mid,{align:'right'});
-      doc.setFont(undefined,'normal'); doc.setTextColor(40);
+      doc.setFont('helvetica','normal'); doc.setTextColor(20);
       y+=ROWH; total+=Number(r.outstanding)||0;
     });
-    y+=8; doc.setDrawColor(150); doc.line(40,y,555,y); y+=16;
+    y+=4; doc.setDrawColor(150); doc.line(40,y,555,y); y+=16;
     doc.setFontSize(11); doc.setTextColor(20);
     doc.text('Total adeudado:', 380, y);
     doc.text('MX$ '+fmt(total), 555, y, {align:'right'});
@@ -648,6 +650,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260622h"></script>
+<script src="refatrix-nav.js?v=20260622j"></script>
 </body>
 </html>
