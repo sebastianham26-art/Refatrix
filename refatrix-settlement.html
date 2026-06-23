@@ -90,6 +90,7 @@
         <button class="btn" onclick="doArSearch()">🔍 검색</button>
         <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
         <span id="arSearchInfo" class="hint"></span>
+        <button class="btn" id="arClosedToggle" style="margin-left:auto;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleClosed()" title="100% 반제(완납)되어 마감된 인보이스도 목록에 표시">완납(closing) 포함: 끔</button>
       </div>
       <div class="stats" id="arStats"></div>
       <div id="arGroupBox" style="margin-top:12px"></div>
@@ -239,6 +240,7 @@
   // ===== 수금 상세 (오픈 인보이스 / AR) =====
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
   let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
+  let arIncludeClosed=false;
   let isDirector=false;
   let arEditAlloc=null;
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -246,7 +248,7 @@
   async function loadAr(){
     try{
       const [d,acc,co]=await Promise.all([
-        fetch(session.api+'/api/ar/open-list',{headers:auth()}).then(r=>r.json()),
+        fetch(session.api+'/api/ar/open-list'+(arIncludeClosed?'?closed=1':''),{headers:auth()}).then(r=>r.json()),
         fetch(session.api+'/api/ar/accounts',{headers:auth()}).then(r=>r.json()).catch(()=>({items:[]})),
         fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
@@ -261,6 +263,13 @@
     $('arSeg').innerHTML=opts.map(o=>'<button class="'+(arGroup===o[0]?'on':'')+'" onclick="setArGroup(\''+o[0]+'\')">'+o[1]+'</button>').join('');
   }
   function setArGroup(g){ arGroup=g; arFilter=null; arOpenRepay=null; renderArSeg(); renderAr(); }
+  function syncClosedToggleBtn(){
+    const b=$('arClosedToggle'); if(!b)return;
+    b.textContent='완납(closing) 포함: '+(arIncludeClosed?'켬':'끔');
+    if(arIncludeClosed){ b.style.background='var(--brand)'; b.style.color='#fff'; b.style.borderColor='var(--brand)'; }
+    else { b.style.background='#fff'; b.style.color='var(--muted)'; b.style.borderColor='var(--line)'; }
+  }
+  function toggleClosed(){ arIncludeClosed=!arIncludeClosed; arFilter=null; arOpenRepay=null; arHistOpen=null; syncClosedToggleBtn(); loadAr(); }
   function arKeyOf(it){
     if(arGroup==='team') return {key:'t'+(it.team_id||0), label: it.team_name||'(팀 미지정)'};
     if(arGroup==='owner') return {key:'o'+(it.owner_id||0), label: it.owner_name||'(담당자 미지정)'};
@@ -280,7 +289,7 @@
   function arListTableHtml(list){
     let h='<div style="overflow-x:auto"><table><thead><tr><th>고객 · 인보이스</th><th style="text-align:left">발행일</th><th style="text-align:left">만기일</th><th style="text-align:left">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th><th></th></tr></thead><tbody>';
     list.forEach(it=>{
-      h+='<tr'+(it.overdue?' class="ovd"':'')+'>'
+      h+='<tr'+(it.overdue?' class="ovd"':'')+(it.paid_full?' style="background:#f4f7f4;color:var(--muted)"':'')+'>'
         +'<td><b>'+esc(it.customer_name)+'</b><div class="inv-no">'+esc(it.sat_no||('#'+it.id))+'</div></td>'
         +'<td style="text-align:left;white-space:nowrap">'+esc(it.inv_date||'—')+'</td>'
         +'<td style="text-align:left;white-space:nowrap">'+esc(it.due_date||'—')+'</td>'
@@ -314,15 +323,20 @@
     }
     if(!arItems.length){ $('arStats').innerHTML=''; $('arGroupBox').innerHTML=''; $('arListBox').innerHTML='<div class="hint">미수금(오픈 인보이스)이 없습니다.</div>'; return; }
     const groups={};
-    arItems.forEach(it=>{ const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0}; const g=groups[k.key]; g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
-    const list=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
-    const sCount=list.length, sOut=list.reduce((s,x)=>s+x.outstanding,0), sOvd=list.reduce((s,x)=>s+(x.overdue?x.outstanding:0),0);
+    // 그룹 집계(건수·잔액·연체)는 미수(오픈) 건만 대상 — 완납 건은 제외.
+    arItems.forEach(it=>{ if(it.paid_full)return; const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0}; const g=groups[k.key]; g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
+    // 목록: 그룹 필터 적용 후, 미수 → 완납 순으로 정렬(완납을 아래로).
+    const list=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter)
+      .slice().sort((a,b)=>(a.paid_full?1:0)-(b.paid_full?1:0));
+    const openList=list.filter(x=>!x.paid_full), closedCount=list.length-openList.length;
+    const sCount=openList.length, sOut=openList.reduce((s,x)=>s+x.outstanding,0), sOvd=openList.reduce((s,x)=>s+(x.overdue?x.outstanding:0),0);
     const scope = arFilter ? (groups[arFilter]?groups[arFilter].label:'') : '전체';
     $('arStats').innerHTML=
       '<div class="stat tot"><div class="k">총 잔액 ('+esc(scope)+')</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
       +'<div class="stat"><div class="k">오픈 인보이스</div><div class="v">'+sCount+'건</div></div>'
       +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:var(--expense)">MX$'+fmt(sOvd)+'</div></div>'
-      +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+list.filter(x=>x.overdue).length+'건</div></div>';
+      +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+openList.filter(x=>x.overdue).length+'건</div></div>'
+      +(arIncludeClosed?'<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:var(--income)">'+closedCount+'건</div></div>':'');
     if(arGroup==='company'){ $('arGroupBox').innerHTML=''; }
     else {
       const gk=Object.keys(groups).sort((a,b)=>groups[b].outstanding-groups[a].outstanding);
@@ -662,6 +676,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260623e"></script>
+<script src="refatrix-nav.js?v=20260623f"></script>
 </body>
 </html>

@@ -481,7 +481,8 @@ export default async function financeRoutes(app) {
 
   // 수금 상세: 오픈 인보이스 전체 목록(회사/팀/영업담당자/고객 토글은 프런트에서 그룹·필터)
   // 각 행: 고객·팀·담당자 + 청구액(total_mxn)·입금(반제합)·잔액(outstanding) + 연체여부/일수
-  app.get('/api/ar/open-list', { preHandler: [authGuard, requirePage('settlement')] }, async () => {
+  app.get('/api/ar/open-list', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const includeClosed = ['1', 'true', 'yes', 'on'].includes(String((req.query && req.query.closed) || '').toLowerCase());
     const rows = (await query(
       `SELECT s.id, s.sat_no,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
@@ -489,7 +490,7 @@ export default async function financeRoutes(app) {
               s.total_mxn,
               COALESCE(pa.paid,0) AS paid,
               (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
-              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE) AS is_overdue,
+              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
               CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
               c.team_id, t.name AS team_name,
@@ -500,8 +501,8 @@ export default async function financeRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'
-          AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01
-        ORDER BY s.due_date NULLS LAST, s.inv_date, s.id`)).rows;
+          ${includeClosed ? '' : 'AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01'}
+        ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) <= 0.005), s.due_date NULLS LAST, s.inv_date, s.id`)).rows;
     return {
       today: new Date().toISOString().slice(0, 10),
       items: rows.map((r) => ({
