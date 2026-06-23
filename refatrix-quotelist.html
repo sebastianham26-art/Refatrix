@@ -390,30 +390,77 @@
     return { ctr, syd };
   }
 
-  // ===== 엑셀 다운로드 (현재 재고 있는 항목만) — 상세 모달 =====
+  // ===== 엑셀 다운로드 (스페인어 견적양식 · 현재 재고 있는 항목만 · 수식) — 상세 모달 =====
+  // 고객이 Cantidad(수량)를 입력하면 Importe=Precio×Cantidad, Subtotal/IVA/Total이 자동 재계산.
+  // 가용재고(Existencia)는 음영으로 강조. (스타일 지원: xlsx-js-style)
   function downloadStockExcel(){
     if(!dtData||!dtData.quote){ return; }
     if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
     const q=dtData.quote;
     const rows=(dtData.lines||[]).filter(l=> Number(l.avail_stock)>0);
     if(!rows.length){ alert('현재 재고가 있는 항목이 없습니다.'); return; }
-    const aoa=[['#','CTR','SYD','품명','적용차종','수량','List Price','할인%','적용단가','라인합계(미포함)','IVA','라인합계(포함)','재고']];
-    let tQty=0,tSub=0,tIva=0,tTot=0;
-    rows.forEach((l,i)=>{
-      const cp=codePair(l);
-      const qty=Number(l.qty)||0, sub=Number(l.line_subtotal)||0, iva=Number(l.line_iva)||0, tot=Number(l.line_total)||0;
-      tQty+=qty; tSub+=sub; tIva+=iva; tTot+=tot;
-      aoa.push([ i+1, cp.ctr||'', cp.syd||'', l.product_name||'', l.app_text||'', qty,
-        Number(l.list_price)||0, Number(l.discount_rate)||0, Number(l.final_price)||0,
-        sub, iva, tot, Number(l.avail_stock)||0 ]);
+
+    // ----- 스타일 -----
+    const bd={style:'thin',color:{rgb:'C9C2B4'}}; const border={top:bd,bottom:bd,left:bd,right:bd};
+    const fHead={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:'143D34'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
+    const fHeadExist={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:'0F6E56'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
+    const fHeadQty={font:{bold:true,color:{rgb:'5A4A12'},sz:10},fill:{fgColor:{rgb:'F2C14E'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
+    const cL={alignment:{horizontal:'left',vertical:'center',wrapText:true},border,font:{sz:10}};
+    const cC={alignment:{horizontal:'center',vertical:'center'},border,font:{sz:10}};
+    const cMoney={alignment:{horizontal:'right',vertical:'center'},border,font:{sz:10},numFmt:'#,##0.00'};
+    const cExist={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'E4F0EB'}},font:{bold:true,color:{rgb:'0F6E56'},sz:10}};
+    const cQty={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'FFF6DA'}},font:{bold:true,sz:10}};
+    const cTotLbl={alignment:{horizontal:'right',vertical:'center'},font:{bold:true,sz:11}};
+    const cTotVal={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0.00',font:{bold:true,sz:11}};
+    const cTotBig={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0.00',font:{bold:true,sz:12,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}};
+    const cTitle={font:{bold:true,sz:16,color:{rgb:'143D34'}},alignment:{horizontal:'left',vertical:'center'}};
+    const cMeta={font:{sz:10,color:{rgb:'444444'}},alignment:{horizontal:'left',vertical:'center'}};
+    const cNote={font:{italic:true,sz:9,color:{rgb:'0F6E56'}},alignment:{horizontal:'left',vertical:'center'}};
+
+    const ws={}; const NCOL=9; const cols=['A','B','C','D','E','F','G','H','I'];
+    const set=(addr,v,s,f)=>{ const c={t:(typeof v==='number')?'n':'s',v}; if(f)c.f=f; if(s)c.s=s; ws[addr]=c; };
+
+    // 제목/메타 (스페인어)
+    set('A1','COTIZACIÓN',cTitle);
+    set('A2','Cliente: '+(q.party_name||''),cMeta);
+    set('A3','Fecha: '+(q.quote_date||'')+'    No.: '+(q.quote_no||''),cMeta);
+    set('A4','Capture la Cantidad; el Importe, IVA y Total se calculan automáticamente. Columna Existencia = stock disponible.',cNote);
+
+    // 표 헤더 (행 6)
+    const HR=6;
+    const headers=['#','Clave CTR','Clave SYD','Producto','Aplicación','Existencia','Precio unit. (sin IVA)','Cantidad','Importe (sin IVA)'];
+    headers.forEach((h,i)=>{ let s=fHead; if(i===5)s=fHeadExist; if(i===7)s=fHeadQty; set(cols[i]+HR,h,s); });
+
+    // 데이터 (Cantidad 기본 1, Importe = Precio×Cantidad 수식)
+    const first=HR+1;
+    rows.forEach((l,idx)=>{
+      const r=first+idx; const cp=codePair(l);
+      set('A'+r, idx+1, cC);
+      set('B'+r, cp.ctr||'', cL);
+      set('C'+r, cp.syd||'', cL);
+      set('D'+r, l.product_name||'', cL);
+      set('E'+r, l.app_text||'', cL);
+      set('F'+r, Number(l.avail_stock)||0, cExist);   // 가용재고 (음영)
+      set('G'+r, Number(l.final_price)||0, cMoney);    // 단가 (할인 반영, IVA 미포함)
+      set('H'+r, 1, cQty);                              // 수량 입력칸 (기본 1)
+      set('I'+r, 0, cMoney, 'G'+r+'*H'+r);             // Importe = Precio × Cantidad
     });
-    aoa.push(['','','','합계','', tQty,'','','', tSub, tIva, tTot, '']);
-    const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[{wch:4},{wch:16},{wch:16},{wch:30},{wch:24},{wch:8},{wch:12},{wch:7},{wch:12},{wch:15},{wch:12},{wch:15},{wch:9}];
+    const last=first+rows.length-1;
+
+    // 합계 수식
+    const rSub=last+2, rIva=last+3, rTot=last+4;
+    set('H'+rSub,'Subtotal (sin IVA)',cTotLbl); set('I'+rSub,0,cTotVal,'SUM(I'+first+':I'+last+')');
+    set('H'+rIva,'IVA (16%)',cTotLbl);          set('I'+rIva,0,cTotVal,'I'+rSub+'*0.16');
+    set('H'+rTot,'Total (con IVA)',cTotLbl);    set('I'+rTot,0,cTotBig,'I'+rSub+'+I'+rIva);
+
+    ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rTot-1,c:NCOL-1}});
+    ws['!cols']=[{wch:4},{wch:16},{wch:16},{wch:30},{wch:24},{wch:11},{wch:14},{wch:10},{wch:16}];
+    ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:NCOL-1}},{s:{r:3,c:0},e:{r:3,c:NCOL-1}}];
+
     const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'En stock');
+    XLSX.utils.book_append_sheet(wb,ws,'Cotización');
     const safe=String(q.quote_no||q.id||'cotizacion').replace(/[^\w\-]+/g,'_');
-    XLSX.writeFile(wb,'cotizacion_'+safe+'_en_stock.xlsx');
+    XLSX.writeFile(wb,'cotizacion_'+safe+'.xlsx');
   }
   function renderDetail(){
     const q=dtData.quote, lines=dtData.lines||[];
@@ -851,7 +898,7 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="refatrix-nav.js?v=20260622g"></script>
 </body>
 </html>
