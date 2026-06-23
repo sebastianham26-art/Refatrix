@@ -72,6 +72,60 @@ test('pg-mem: SKU별 매출/원가 집계가 posted·미삭제 인보이스만 �
   assert.deepEqual(summarizeTiers(items), { t1: 1, t2: 0, t3: 1, t4: 0, no_sales: 1 });
 });
 
+test('pg-mem: SKU 드릴다운 — 판매처(고객)별 매출/원가/이익 집계(posted·미삭제, 매출 내림차순)', () => {
+  const db = newDb();
+  db.public.none(`
+    CREATE TABLE products(id int primary key, code text, scode text, app text, name text, stock_qty numeric, deleted_at timestamptz);
+    CREATE TABLE customers(id int primary key, name text);
+    CREATE TABLE sales_invoices(id int primary key, status text, deleted_at timestamptz, inv_date date, customer_id int);
+    CREATE TABLE sales_invoice_lines(id int primary key, invoice_id int, product_id int, qty numeric, line_amount_mxn numeric, cogs_mxn numeric, applied_unit_cost numeric);
+    INSERT INTO products VALUES (1,'A','SyD-1','Tsuru 1992-2017 // Sentra','A',10,null);
+    INSERT INTO customers VALUES (10,'Cliente Norte'),(20,'Cliente Sur');
+    INSERT INTO sales_invoices VALUES
+      (100,'posted',null,'2026-04-10',10),
+      (101,'posted',null,'2026-05-10',20),
+      (102,'posted',null,'2026-05-15',10),
+      (103,'deleted',null,'2026-05-16',20),
+      (104,'draft', null,'2026-05-17',10);
+    INSERT INTO sales_invoice_lines VALUES
+      (1,100,1,5,500,300,60),
+      (2,101,1,3,450,330,110),
+      (3,102,1,2,200,140,70),
+      (4,103,1,99,9999,1,1),
+      (5,104,1,99,9999,1,1);
+  `);
+  const rows = db.public.many(`
+    SELECT cu.name AS customer_name,
+           SUM(sil.qty) AS qty,
+           SUM(sil.line_amount_mxn) AS revenue,
+           SUM(COALESCE(sil.cogs_mxn, sil.qty*sil.applied_unit_cost,0)) AS cogs
+      FROM sales_invoice_lines sil
+      JOIN sales_invoices si ON si.id=sil.invoice_id
+      JOIN customers cu ON cu.id=si.customer_id
+     WHERE sil.product_id=1 AND si.status='posted' AND si.deleted_at IS NULL
+     GROUP BY cu.id, cu.name
+     ORDER BY SUM(sil.line_amount_mxn) DESC, cu.name ASC`);
+  const r2 = (n) => Math.round(Number(n) * 100) / 100;
+  const by = rows.map((c) => {
+    const qty = Number(c.qty), rev = r2(c.revenue), cogs = r2(c.cogs), profit = r2(rev - cogs);
+    return { customer_name: c.customer_name, qty, revenue: rev, cogs, profit, margin_pct: rev > 0 ? r2(profit / rev * 100) : null };
+  });
+  // 삭제(103)·미게시(104) 제외. 고객 2명. Norte = 100+102 합산(매출 700), Sur = 450.
+  assert.equal(by.length, 2);
+  assert.equal(by[0].customer_name, 'Cliente Norte'); // 매출 큰 순
+  assert.equal(by[0].qty, 7);
+  assert.equal(by[0].revenue, 700);
+  assert.equal(by[0].cogs, 440);
+  assert.equal(by[0].profit, 260);
+  assert.equal(by[1].customer_name, 'Cliente Sur');
+  assert.equal(by[1].revenue, 450);
+  // 합계
+  const tRev = r2(by.reduce((s, x) => s + x.revenue, 0));
+  const tProfit = r2(by.reduce((s, x) => s + x.profit, 0));
+  assert.equal(tRev, 1150);
+  assert.equal(tProfit, 380);
+});
+
 test('파레토 상위 20%: 개수 = ceil(판매SKU수 × 0.2), 이익 금액 내림차순', () => {
   const sold = [];
   for (let i = 0; i < 10; i++) sold.push({ id: i + 1, profit: 100 - i * 10 });

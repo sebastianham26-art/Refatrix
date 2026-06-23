@@ -134,12 +134,81 @@ export default async function grossProfitRoutes(app) {
         share_pct: paretoSharePct,
       },
       curve: sold.map((x, i) => ({
-        rank: i + 1, id: x.id, code: x.code, name: x.name,
+        rank: i + 1, id: x.id, code: x.code, name: x.name, app: x.app, scode: x.scode,
         margin_pct: x.margin_pct, profit: x.profit, revenue: x.revenue,
         tier: tierOf(x.margin_pct), important: importantSet.has(x.id),
       })),
       totals: { revenue: totalRevenue, cogs: totalCogs, profit: totalProfit,
         margin_pct: totalRevenue > 0 ? r2(totalProfit / totalRevenue * 100) : null },
+    };
+  });
+
+  // ── SKU 드릴다운(자재내역 행 펼치기) — 디렉터 전용 ─────────────────────────────
+  // 한 SKU의 ① 적용차종(전체) ② 판매처(고객)별 매출/원가/매출총이익/이익률을 반환.
+  // 기간(from/to)은 자재내역 화면의 연도 토글과 동일하게 inv_date 기준으로 한정.
+  app.get('/api/gross-profit/sku/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_product' });
+
+    const prod = (await query(
+      `SELECT id, code, scode, app, name, stock_qty FROM products WHERE id=$1 AND deleted_at IS NULL`, [id]
+    )).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'not_found' });
+
+    // 기간 필터 — 첫 파라미터가 product_id($1)이므로 날짜는 $2부터.
+    const params = [id];
+    const dateConds = [];
+    const from = (req.query.from || '').trim();
+    const to = (req.query.to || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { params.push(from); dateConds.push(`si.inv_date >= $${params.length}`); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to))   { params.push(to);   dateConds.push(`si.inv_date <= $${params.length}`); }
+    const dateWhere = dateConds.length ? ' AND ' + dateConds.join(' AND ') : '';
+
+    // 판매처(고객)별 — 게시·미삭제 인보이스만. 매출원가는 판매 시점 동결 스냅샷.
+    const rows = (await query(
+      `SELECT cu.name AS customer_name,
+              SUM(sil.qty)                                                    AS qty,
+              COUNT(DISTINCT si.id)                                           AS inv_count,
+              SUM(sil.line_amount_mxn)                                        AS revenue,
+              SUM(COALESCE(sil.cogs_mxn, sil.qty * sil.applied_unit_cost, 0)) AS cogs,
+              MAX(si.inv_date)                                                AS last_date
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id = sil.invoice_id
+         JOIN customers cu ON cu.id = si.customer_id
+        WHERE sil.product_id = $1 AND si.status = 'posted' AND si.deleted_at IS NULL${dateWhere}
+        GROUP BY cu.id, cu.name
+        ORDER BY SUM(sil.line_amount_mxn) DESC, cu.name ASC`, params)).rows;
+
+    const byCustomer = rows.map((c) => {
+      const qty = Number(c.qty), revenue = r2(Number(c.revenue)), cogs = r2(Number(c.cogs));
+      const profit = r2(revenue - cogs);
+      return {
+        customer_name: c.customer_name,
+        qty, inv_count: Number(c.inv_count || 0),
+        revenue, cogs, profit,
+        margin_pct: revenue > 0 ? r2(profit / revenue * 100) : null,
+        avg_price: qty > 0 ? r2(revenue / qty) : null,
+        last_date: c.last_date ? String(c.last_date).slice(0, 10) : null,
+      };
+    });
+
+    const tQty = byCustomer.reduce((s, x) => s + x.qty, 0);
+    const tRev = r2(byCustomer.reduce((s, x) => s + x.revenue, 0));
+    const tCogs = r2(byCustomer.reduce((s, x) => s + x.cogs, 0));
+    const tProfit = r2(tRev - tCogs);
+
+    return {
+      product: {
+        id: Number(prod.id), code: prod.code, scode: prod.scode || null,
+        app: prod.app || null, name: prod.name, stock_qty: Number(prod.stock_qty || 0),
+      },
+      by_customer: byCustomer,
+      customer_count: byCustomer.length,
+      total: {
+        qty: tQty, revenue: tRev, cogs: tCogs, profit: tProfit,
+        margin_pct: tRev > 0 ? r2(tProfit / tRev * 100) : null,
+      },
+      note: '매출원가(COGS)는 판매 시점에 동결된 적용원가 기준입니다.',
     };
   });
 }
