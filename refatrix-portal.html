@@ -260,6 +260,18 @@
     location.href=s.file+hash;   // 같은 탭에서 이동
   }
 
+  // 재무담당(treasury) 등 제한 역할은 포털 대신 재무/계좌로 즉시 이동(접근 차단 + 첫 화면).
+  function roleLandingRedirect(){
+    var role=session.user&&session.user.role;
+    if(role==='treasury'){
+      try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+      var hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api||'')+'&user='+encodeURIComponent(JSON.stringify(session.user||{}))+'&g=finance&tab=acc';
+      location.href='refatrix-finance.html'+hash;
+      return true;
+    }
+    return false;
+  }
+
   // Constancia 미입력 알림(Maria 전용) — 로그인 시마다, 임시 닫기 가능, 모두 입력되면 안 뜸
   async function checkConstancia(){
     try{ if(sessionStorage.getItem('const_nag_dismissed')==='1'){ return; } }catch(e){}
@@ -308,6 +320,7 @@
       try{ sessionStorage.removeItem('const_nag_dismissed'); }catch(e){}
       try{ sessionStorage.removeItem('appr_nag_dismissed'); }catch(e){}
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
+      if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       await loadSummary();
@@ -658,6 +671,7 @@
     const ps=portalSession();
     if(ps&&ps.token){
       session={token:ps.token,user:ps.user||{},api:ps.api||''};
+      if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
       $('who').innerHTML='<b>'+(session.user.name||'')+'</b><br>역할: '+(session.user.role||'-')+' · <a href="#" id="logoutLink">로그아웃</a>';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       loadSummary();
@@ -700,6 +714,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260622b"></script>
+<script src="refatrix-nav.js?v=20260622g"></script>
 </body>
 </html>

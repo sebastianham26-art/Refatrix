@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260622b loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260622g loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -81,6 +81,9 @@
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove']}
   ];
+
+  // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
+  var ROLE_ONLY_GROUPS={ treasury:['finance'] };
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
   var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
@@ -162,7 +165,24 @@
     '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}';
     var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   }
+  // 제한 역할(예: treasury)이 허용되지 않은 화면에 있으면 재무/계좌로 되돌림(직접 URL 접근 차단).
+  function enforceRoleAccess(){
+    if(!sum || sum.isDirector) return false;
+    var only=ROLE_ONLY_GROUPS[sum.role];
+    if(!only) return false;
+    var allowed={};
+    GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ allowed[k]=1; }); });
+    var cur=curScreen();
+    if(cur && allowed[cur]) return false;     // 허용된 화면이면 통과(재무 탭들)
+    if(sess && sess.token){ nav('finance'); return true; }  // 그 외(미허용·미인식) → 재무/계좌
+    return false;
+  }
   function groupVisible(g){
+    // 역할 제한: 비디렉터 + 제한 역할이면, 허용 목록에 없는 그룹은 숨김(공통·일정 등).
+    if(sum && !sum.isDirector){
+      var only=ROLE_ONLY_GROUPS[sum.role];
+      if(only && only.indexOf(g.key)<0) return false;
+    }
     // 공유 화면을 제외한 '앵커' 화면 중 하나라도 볼 수 있으면 그룹 노출
     var anchors=g.screens.filter(function(k){return !SHARED[k];});
     if(!anchors.length) anchors=g.screens;
@@ -261,7 +281,9 @@
       }
       return r.json();
     }).then(function(d){
-      sum=d||{pages:[],isDirector:false}; render();
+      sum=d||{pages:[],isDirector:false};
+      if(enforceRoleAccess()) return;   // 차단·리다이렉트 시 렌더 생략
+      render();
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   window.__rnavReload=boot;
