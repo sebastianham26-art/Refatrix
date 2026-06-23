@@ -81,3 +81,28 @@ test('flatAvgCostEnabled: 기본 ON, MOVING_AVG_COST=1 이면 OFF', ()=>{
   process.env.MOVING_AVG_COST='0'; assert.equal(flatAvgCostEnabled(),true,'단순평균 강제');
   if(save===undefined) delete process.env.MOVING_AVG_COST; else process.env.MOVING_AVG_COST=save;
 });
+
+// ── COGS 재계산(과거 매출원가를 현재 평균원가로) ──
+function cogsRestateRow(avg_cost, qty, revenue, cogs_before){
+  const avg=Number(avg_cost), q=Number(qty), rev=round2(Number(revenue)), cb=round2(Number(cogs_before));
+  const ca=round2(q*avg), pb=round2(rev-cb), pa=round2(rev-ca);
+  return {avg_cost:round2(avg), qty:q, revenue:rev, cogs_before:cb, cogs_after:ca,
+    profit_before:pb, profit_after:pa,
+    margin_before:rev>0?round2(pb/rev*100):null, margin_after:rev>0?round2(pa/rev*100):null,
+    changed:Math.abs(ca-cb)>0.005};
+}
+test('COGS 재계산: 0으로 박제된 과거 원가를 현재 평균원가로 보정', ()=>{
+  // CL0477 예: 평균 139.74, 판매 20개, 매출 3735.31, 동결 COGS 3.50(거의 0)
+  const r=cogsRestateRow(139.74, 20, 3735.31, 3.50);
+  assert.equal(r.cogs_after, 2794.80, '20*139.74');
+  assert.equal(r.changed, true);
+  assert.equal(r.profit_after, 940.51, '3735.31-2794.80');
+  assert.equal(r.margin_after, 25.18, '940.51/3735.31');
+  // 보정 전 이익률은 거의 100%였음(비현실적)
+  assert.equal(r.margin_before, 99.91);
+});
+test('COGS 재계산: 이미 평균과 일치하면 changed=false', ()=>{
+  const r=cogsRestateRow(100, 10, 2000, 1000); // 10*100=1000=cogs_before
+  assert.equal(r.cogs_after, 1000);
+  assert.equal(r.changed, false);
+});

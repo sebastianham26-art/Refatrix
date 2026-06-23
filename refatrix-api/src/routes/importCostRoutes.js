@@ -674,4 +674,84 @@ export default async function importCostRoutes(app) {
       detail: { applied: out.applied, scope: body.all ? 'all' : (body.codes || []) } });
     return out;
   });
+
+  // ── 매출원가(COGS) 재계산 — 과거 매출 라인의 동결 원가를 현재 평균원가로 다시 계산 ───────────
+  //   증상: 평균원가가 ≈0이던 시절에 판 매출은 COGS 스냅샷이 0으로 박제됨 → 매출총이익이 비현실적(이익률 ~100%).
+  //   해결: 게시·미삭제 매출 라인의 applied_unit_cost = 현재 products.avg_cost, cogs_mxn = round2(수량×평균원가).
+  //   ⚠ 과거 매출의 매출원가/매출총이익(과거 손익)이 바뀐다 — 의도된 보정. 미리보기 후 적용.
+  async function cogsRestateRows(client, { codes, all }) {
+    const params = [];
+    let codeCond = '';
+    if (!all) {
+      const list = (codes || []).map((s) => String(s).trim()).filter(Boolean);
+      if (!list.length) return [];
+      params.push(list);
+      codeCond = ` AND p.code = ANY($${params.length})`;
+    }
+    const rows = (await client.query(
+      `SELECT p.id, p.code, p.name, p.avg_cost,
+              COALESCE(SUM(sil.qty),0)             AS qty,
+              COALESCE(SUM(sil.line_amount_mxn),0) AS revenue,
+              COALESCE(SUM(COALESCE(sil.cogs_mxn, sil.qty*sil.applied_unit_cost, 0)),0) AS cogs_before
+         FROM products p
+         JOIN sales_invoice_lines sil ON sil.product_id = p.id
+         JOIN sales_invoices si ON si.id = sil.invoice_id
+        WHERE si.status='posted' AND si.deleted_at IS NULL AND p.deleted_at IS NULL
+          AND p.avg_cost IS NOT NULL${codeCond}
+        GROUP BY p.id, p.code, p.name, p.avg_cost
+        ORDER BY p.code`, params)).rows;
+    return rows.map((r) => {
+      const avg = Number(r.avg_cost);
+      const qty = Number(r.qty);
+      const revenue = round2(Number(r.revenue));
+      const cogsBefore = round2(Number(r.cogs_before));
+      const cogsAfter = round2(qty * avg);
+      const profitBefore = round2(revenue - cogsBefore);
+      const profitAfter = round2(revenue - cogsAfter);
+      return {
+        product_id: Number(r.id), code: r.code, name: r.name, avg_cost: round2(avg), qty, revenue,
+        cogs_before: cogsBefore, cogs_after: cogsAfter,
+        profit_before: profitBefore, profit_after: profitAfter,
+        margin_before: revenue > 0 ? round2(profitBefore / revenue * 100) : null,
+        margin_after: revenue > 0 ? round2(profitAfter / revenue * 100) : null,
+        changed: Math.abs(cogsAfter - cogsBefore) > 0.005,
+      };
+    });
+  }
+
+  app.post('/api/import-recost/cogs-restate/preview', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const body = req.body || {};
+    const items = await cogsRestateRows({ query: (q, a) => query(q, a) }, { codes: body.codes, all: !!body.all });
+    return {
+      items, count: items.length, changed: items.filter((x) => x.changed).length,
+      total_cogs_before: round2(items.reduce((s, x) => s + x.cogs_before, 0)),
+      total_cogs_after: round2(items.reduce((s, x) => s + x.cogs_after, 0)),
+      total_profit_before: round2(items.reduce((s, x) => s + x.profit_before, 0)),
+      total_profit_after: round2(items.reduce((s, x) => s + x.profit_after, 0)),
+    };
+  });
+
+  app.post('/api/import-recost/cogs-restate/apply', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const userId = req.ctx.perm.userId;
+    const body = req.body || {};
+    const out = await withTx(async (c) => {
+      const items = await cogsRestateRows(c, { codes: body.codes, all: !!body.all });
+      const changed = items.filter((x) => x.changed);
+      for (const it of changed) {
+        await c.query(
+          `UPDATE sales_invoice_lines sil
+              SET applied_unit_cost = $1, cogs_mxn = ROUND($1 * sil.qty, 2)
+             FROM sales_invoices si
+            WHERE si.id = sil.invoice_id AND sil.product_id = $2
+              AND si.status='posted' AND si.deleted_at IS NULL`,
+          [it.avg_cost, it.product_id]);
+      }
+      return { applied: changed.length, total: items.length,
+        results: changed.map((x) => ({ code: x.code, name: x.name, qty: x.qty,
+          cogs_before: x.cogs_before, cogs_after: x.cogs_after, margin_before: x.margin_before, margin_after: x.margin_after })) };
+    });
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: 'cogs_restate',
+      detail: { applied: out.applied, scope: body.all ? 'all' : (body.codes || []) } });
+    return out;
+  });
 }
