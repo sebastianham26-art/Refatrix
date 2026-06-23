@@ -241,6 +241,7 @@
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
   let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
   let arIncludeClosed=false;
+  let arSort=null; // {key, dir:'asc'|'desc'} — null이면 기본 정렬(미수→완납)
   let isDirector=false;
   let arEditAlloc=null;
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -286,8 +287,54 @@
     if(it.paid_full) return '<span class="chip chip-paid">완납</span>';
     return arDueText(it);
   }
+  // ===== 헤더 클릭 정렬 =====
+  // 컬럼 메타: 정렬키 → {타입, 값추출, 첫클릭방향}
+  const AR_COLS={
+    customer:{type:'text', get:it=>(it.customer_name||'')+'\u0001'+(it.sat_no||''), firstDesc:false},
+    inv_date:{type:'text', get:it=>it.inv_date||'', firstDesc:true},
+    due_date:{type:'text', get:it=>it.due_date||'', firstDesc:false},
+    day_diff:{type:'num',  get:it=>it.paid_full?-1e9:(it.day_diff==null?-1e8:it.day_diff), firstDesc:true},
+    total_mxn:{type:'num', get:it=>Number(it.total_mxn)||0, firstDesc:true},
+    paid:{type:'num',      get:it=>Number(it.paid)||0, firstDesc:true},
+    outstanding:{type:'num',get:it=>Number(it.outstanding)||0, firstDesc:true},
+  };
+  function arCmp(a,b,type){
+    if(type==='num') return (a-b);
+    const x=(a==null?'':String(a)), y=(b==null?'':String(b));
+    if(x===''&&y!=='')return 1; if(y===''&&x!=='')return -1;
+    return x<y?-1:(x>y?1:0);
+  }
+  function arSortList(list){
+    if(!arSort||!AR_COLS[arSort.key]) return list;
+    const col=AR_COLS[arSort.key], dir=arSort.dir==='desc'?-1:1;
+    return list.slice().sort((a,b)=> dir*arCmp(col.get(a),col.get(b),col.type));
+  }
+  function setArSort(key){
+    const col=AR_COLS[key]; if(!col)return;
+    const first=col.firstDesc?'desc':'asc', second=col.firstDesc?'asc':'desc';
+    if(!arSort||arSort.key!==key) arSort={key,dir:first};
+    else if(arSort.dir===first) arSort.dir=second;
+    else arSort=null; // 3번째 클릭 → 기본 정렬로 복귀
+    renderAr();
+  }
+  function arTh(key,label,kind){
+    const active=arSort&&arSort.key===key;
+    const arrow=active?(arSort.dir==='desc'?'▼':'▲'):'<span style="opacity:.28">⇅</span>';
+    const cls=kind==='n'?' class="n"':'';
+    const align=kind==='left'?'text-align:left;':'';
+    return '<th'+cls+' onclick="setArSort(\''+key+'\')" style="'+align+'cursor:pointer;user-select:none;white-space:nowrap"'
+      +(active?' data-on="1"':'')+' title="클릭하여 정렬(다시 누르면 방향 전환·3번째는 기본)">'+esc(label)+' '+arrow+'</th>';
+  }
   function arListTableHtml(list){
-    let h='<div style="overflow-x:auto"><table><thead><tr><th>고객 · 인보이스</th><th style="text-align:left">발행일</th><th style="text-align:left">만기일</th><th style="text-align:left">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th><th></th></tr></thead><tbody>';
+    let h='<div style="overflow-x:auto"><table><thead><tr>'
+      +arTh('customer','고객 · 인보이스','left')
+      +arTh('inv_date','발행일','left')
+      +arTh('due_date','만기일','left')
+      +arTh('day_diff','상태','left')
+      +arTh('total_mxn','청구액','n')
+      +arTh('paid','입금','n')
+      +arTh('outstanding','잔액','n')
+      +'<th></th></tr></thead><tbody>';
     list.forEach(it=>{
       h+='<tr'+(it.overdue?' class="ovd"':'')+(it.paid_full?' style="background:#f4f7f4;color:var(--muted)"':'')+'>'
         +'<td><b>'+esc(it.customer_name)+'</b><div class="inv-no">'+esc(it.sat_no||('#'+it.id))+'</div></td>'
@@ -311,7 +358,7 @@
     $('arSearchClear').style.display = arSearchMode ? '' : 'none';
     if(arSearchMode){
       $('arGroupBox').innerHTML='';
-      const list=arSearchItems;
+      const list=arSortList(arSearchItems);
       const sOut=list.reduce((s,x)=>s+x.outstanding,0);
       $('arStats').innerHTML=
         '<div class="stat tot"><div class="k">검색 결과</div><div class="v">'+list.length+'건</div></div>'
@@ -326,8 +373,10 @@
     // 그룹 집계(건수·잔액·연체)는 미수(오픈) 건만 대상 — 완납 건은 제외.
     arItems.forEach(it=>{ if(it.paid_full)return; const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0}; const g=groups[k.key]; g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
     // 목록: 그룹 필터 적용 후, 미수 → 완납 순으로 정렬(완납을 아래로).
-    const list=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter)
-      .slice().sort((a,b)=>(a.paid_full?1:0)-(b.paid_full?1:0));
+    const filtered=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
+    // 정렬 헤더가 활성화되면 그 기준으로, 아니면 기본(미수→완납).
+    const list = arSort ? arSortList(filtered)
+      : filtered.slice().sort((a,b)=>(a.paid_full?1:0)-(b.paid_full?1:0));
     const openList=list.filter(x=>!x.paid_full), closedCount=list.length-openList.length;
     const sCount=openList.length, sOut=openList.reduce((s,x)=>s+x.outstanding,0), sOvd=openList.reduce((s,x)=>s+(x.overdue?x.outstanding:0),0);
     const scope = arFilter ? (groups[arFilter]?groups[arFilter].label:'') : '전체';
@@ -676,6 +725,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260623f"></script>
+<script src="refatrix-nav.js?v=20260623g"></script>
 </body>
 </html>
