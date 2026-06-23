@@ -13,6 +13,20 @@ export default async function productRoutes(app) {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
+    // 정렬: 헤더 클릭 정렬(서버측, 전체 데이터 기준 — 현재 페이지만이 아님).
+    //   stock=재고, sold=누적판매수량, avgcost=평균원가, stockval=재고 평가액, code=코드(기본).
+    //   원가 기반 정렬(avgcost·stockval)은 unit_cost 권한이 있을 때만 허용(없으면 코드 정렬로 폴백).
+    const dir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const canCost = fieldVisible(perm, 'unit_cost');
+    const SORTS = {
+      stock:    `p.stock_qty ${dir} NULLS LAST, p.code`,
+      sold:     `COALESCE(sold.qty,0) ${dir}, p.code`,
+      avgcost:  canCost ? `p.avg_cost ${dir} NULLS LAST, p.code` : null,
+      stockval: canCost ? `(p.stock_qty * COALESCE(p.avg_cost,0)) ${dir}, p.code` : null,
+    };
+    const sortKey = String(req.query.sort || '').toLowerCase();
+    const orderBy = SORTS[sortKey] || 'p.code ASC';
+
     const params = [];
     let where = 'p.deleted_at IS NULL';
     if (q) {
@@ -24,10 +38,22 @@ export default async function productRoutes(app) {
                    OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
     }
     params.push(limit, offset);
+    // 누적 판매수량(게시·미삭제 인보이스 기준)을 제품별로 합산해 LEFT JOIN. 파라미터 없음(인덱스 영향 없음).
     const rows = (await query(
-      `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate, p.stock_qty, p.avg_cost
-         FROM products p WHERE ${where}
-         ORDER BY p.code LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+      `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
+              p.stock_qty, p.avg_cost, p.rack_location,
+              COALESCE(sold.qty, 0) AS sold_qty
+         FROM products p
+         LEFT JOIN (
+           SELECT sil.product_id, SUM(sil.qty) AS qty
+             FROM sales_invoice_lines sil
+             JOIN sales_invoices si ON si.id = sil.invoice_id
+            WHERE si.status = 'posted' AND si.deleted_at IS NULL
+            GROUP BY sil.product_id
+         ) sold ON sold.product_id = p.id
+        WHERE ${where}
+        ORDER BY ${orderBy}
+        LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
     // 전체 건수(검색 조건 동일) — limit/offset 인자는 제외하고 카운트
     const countParams = params.slice(0, params.length - 2);
     const total = Number((await query(`SELECT COUNT(*)::int AS n FROM products p WHERE ${where}`, countParams)).rows[0].n);
@@ -66,16 +92,35 @@ export default async function productRoutes(app) {
     // ② 원가 근거(수식) — unit_cost 권한 있을 때만
     if (fieldVisible(perm, 'unit_cost')) {
       const costRows = (await query(
-        `SELECT b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency,
-                il.qty, il.unit_cost_mxn
+        `SELECT b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency, b.fx_rate,
+                il.qty, il.import_price, il.unit_cost_mxn
            FROM import_lines il
            JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
           WHERE il.product_id=$1
           ORDER BY b.import_date, b.id`, [id])).rows;
-      const lines = costRows.map((r) => ({
-        batch_no: r.batch_no, import_date: r.import_date, currency: r.currency,
-        qty: Number(r.qty), unit_cost_mxn: r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null,
-      }));
+      const r2 = (n) => Math.round(n * 100) / 100;
+      const lines = costRows.map((r) => {
+        const qty = Number(r.qty);
+        const importPrice = r.import_price != null ? Number(r.import_price) : null; // 원통화 수입단가
+        const fx = (r.currency === 'USD' && r.fx_rate != null) ? Number(r.fx_rate) : 1; // USD만 환율 적용
+        const unitCostMxn = r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null;
+        // 수입금액(원통화) = 수입수량 × 수입단가
+        const baseAmountCur = importPrice != null ? r2(qty * importPrice) : null;
+        // 기본원가(MXN) = 수입금액(원통화) × 환율
+        const baseAmountMxn = baseAmountCur != null ? r2(baseAmountCur * fx) : null;
+        // 라인 총원가(MXN) = 수입수량 × 입고단가(MXN, 부대비용 1/n 반영 후 단가)
+        const lineTotalMxn = unitCostMxn != null ? r2(qty * unitCostMxn) : null;
+        // 배분 부대비용(MXN, 이 라인 몫) = 라인총원가 − 기본원가  (음수면 0으로)
+        const overheadMxn = (lineTotalMxn != null && baseAmountMxn != null)
+          ? Math.max(0, r2(lineTotalMxn - baseAmountMxn)) : null;
+        return {
+          batch_no: r.batch_no, import_date: r.import_date, currency: r.currency,
+          qty, import_price: importPrice, fx_rate: fx,
+          base_amount_cur: baseAmountCur, base_amount_mxn: baseAmountMxn,
+          overhead_mxn: overheadMxn, line_total_mxn: lineTotalMxn,
+          unit_cost_mxn: unitCostMxn,
+        };
+      });
       const sumQty = lines.reduce((s, l) => s + l.qty, 0);
       const sumAmount = lines.reduce((s, l) => s + l.qty * (l.unit_cost_mxn || 0), 0);
       const computedAvg = sumQty > 0 ? sumAmount / sumQty : 0;

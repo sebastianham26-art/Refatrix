@@ -48,3 +48,58 @@ test('원가 가중평균 수식', ()=>{
   assert.equal(c.sumQty,200); assert.equal(c.sumAmount,19000);
   assert.equal(c.computed,95,'(100*90+100*100)/200=95');
 });
+
+// ── 입고단가 브레이크다운(수입금액 → 환율 → 기본원가 + 배분부대비용) ──
+function lineBreakdown(qty, importPrice, currency, fx, unitCostMxn){
+  const r2=(n)=>Math.round(n*100)/100;
+  const f=(currency==='USD'&&fx!=null)?Number(fx):1;
+  const baseCur=importPrice!=null?r2(qty*importPrice):null;
+  const baseMxn=baseCur!=null?r2(baseCur*f):null;
+  const lineTotal=unitCostMxn!=null?r2(qty*unitCostMxn):null;
+  const overhead=(lineTotal!=null&&baseMxn!=null)?Math.max(0,r2(lineTotal-baseMxn)):null;
+  return {base_amount_cur:baseCur, fx_rate:f, base_amount_mxn:baseMxn, overhead_mxn:overhead, line_total_mxn:lineTotal};
+}
+test('입고단가 브레이크다운: USD 환율 적용 + 배분부대비용 = 라인총원가 − 기본원가', ()=>{
+  // 16개 × USD 8.50, 환율 16, 저장 입고단가 136.79 MXN/개 → 라인총 2188.64
+  const b=lineBreakdown(16, 8.50, 'USD', 16, 136.79);
+  assert.equal(b.base_amount_cur, 136.00, '수입금액(USD)=16×8.50');
+  assert.equal(b.fx_rate, 16);
+  assert.equal(b.base_amount_mxn, 2176.00, '기본원가(MXN)=136×16');
+  assert.equal(b.line_total_mxn, 2188.64, '라인총원가=16×136.79');
+  assert.equal(b.overhead_mxn, 12.64, '배분부대비용=2188.64−2176.00');
+});
+test('입고단가 브레이크다운: MXN 통화는 환율 1, 부대비용 음수면 0', ()=>{
+  const b=lineBreakdown(10, 100, 'MXN', null, 100); // 기본=라인총 → 부대비용 0
+  assert.equal(b.fx_rate, 1);
+  assert.equal(b.base_amount_mxn, 1000);
+  assert.equal(b.overhead_mxn, 0);
+  const c=lineBreakdown(10, 100, 'MXN', null, 95); // 단가가 기본보다 작음(음수 방지)
+  assert.equal(c.overhead_mxn, 0, '음수 부대비용은 0으로 클램프');
+});
+
+// ── 누적 판매수량 집계 + 정렬(재고/판매/평가액) ──
+function soldByProduct(pub){
+  const rows=pub.many(`SELECT sil.product_id AS pid, sil.qty AS qty, si.status AS st, si.deleted_at AS del
+    FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id`);
+  const m={};
+  rows.forEach(r=>{ if(r.st==='posted'&&!r.del){ m[r.pid]=(m[r.pid]||0)+Number(r.qty); } });
+  return m;
+}
+test('누적 판매수량: 게시·미삭제만 합산(삭제 인보이스 제외)', ()=>{
+  const pub=seed();
+  const m=soldByProduct(pub);
+  assert.equal(m[1], 22, '10+5+7 (삭제건 99 제외)');
+});
+test('정렬 키: 재고/판매/평가액 내림차순 비교가 의도대로', ()=>{
+  const items=[
+    {code:'A', stock:5,  sold:30, avg:10},
+    {code:'B', stock:50, sold:2,  avg:3},
+    {code:'C', stock:20, sold:2,  avg:100},
+  ].map(p=>({...p, val:p.stock*p.avg}));
+  const byStock=[...items].sort((a,b)=>b.stock-a.stock).map(x=>x.code);
+  const bySold =[...items].sort((a,b)=>b.sold-a.sold).map(x=>x.code);
+  const byVal  =[...items].sort((a,b)=>b.val-a.val).map(x=>x.code);
+  assert.deepEqual(byStock, ['B','C','A']);
+  assert.deepEqual(bySold,  ['A','B','C']); // B,C 동률은 안정 정렬
+  assert.deepEqual(byVal,   ['C','B','A']); // 20*100=2000 > 50*3=150 > 5*10=50
+});
