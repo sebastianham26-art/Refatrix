@@ -161,7 +161,10 @@
 
     <!-- 거래 목록 -->
     <div class="card hidden" id="txnCard">
-      <h2>거래 목록</h2>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="txnBackAcc" title="계좌 목록으로 돌아가기">← 계좌 목록</button>
+        <h2 style="margin:0">거래 목록</h2>
+      </div>
       <div class="row" style="margin-bottom:6px">
         <div><label>상태</label><select id="f-status"><option value="">전체</option><option value="actual">실제</option><option value="plan">예정</option></select></div>
         <div><label>구분</label><select id="f-dir"><option value="">전체</option><option value="in">수입</option><option value="out">지출</option></select></div>
@@ -1373,6 +1376,7 @@
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('tabAcc').addEventListener('click',()=>showTab('acc'));
+  $('txnBackAcc').addEventListener('click',()=>{ $('f-acc').value=''; $('f-status').value=''; $('f-dir').value=''; showTab('acc'); });
   $('pp-prev').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);loadPendingPlans();});
   $('pp-next').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);loadPendingPlans();});
   $('tabNew').addEventListener('click',()=>showTab('new'));
