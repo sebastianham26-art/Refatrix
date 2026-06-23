@@ -85,9 +85,10 @@
     <h2>제품 검색 (코드·경쟁사코드·차종 통합)</h2>
     <div class="row">
       <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
-      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end;gap:8px"><button class="btn" id="search">검색</button><button class="btn gold" id="dlxls" title="검색 결과 전체를 엑셀로 내려받기">⬇ 엑셀</button></div>
     </div>
     <div id="result"></div>
+    <div class="msg" id="dlMsg"></div>
     <div class="hint">경쟁사(SyD) 코드나 적용차종으로도 검색됩니다(중복 매칭 포함). 평균원가(이동평균)는 수입 입고·부대비용 승인 시 갱신되고, <b>매출로는 바뀌지 않습니다</b>. 매출 등록 후 재고만 줄고 평균원가는 그대로면 정상입니다. 역할에 따라 원가·정가가 보이지 않을 수 있습니다(권한 최소화).</div>
   </div>
 
@@ -227,6 +228,69 @@
         }).join('')+'</tbody></table>'
         +'<div class="hint">'+items.length+'개 표시. 코드·경쟁사코드·적용차종·바코드·이름으로 검색됩니다. 재고 0 이하는 빨간색.</div>';
     }catch(e){r.innerHTML='<div class="hint">조회에 실패했습니다.</div>';}
+  }
+
+  // ===== 검색 결과 엑셀 다운로드 =====
+  // 화면은 50개만 표시하지만, 엑셀은 검색어에 해당하는 전체 결과를 페이징으로 모두 받아 내보냅니다.
+  // 같은 /api/products 엔드포인트를 재사용하므로 원가·정가 권한 게이팅(minimizeProduct)이 그대로 적용됩니다.
+  async function exportProductsExcel(){
+    const btn=$('dlxls');const m=$('dlMsg');m.className='msg';m.style.display='none';
+    const q=$('q').value.trim();
+    btn.disabled=true;const orig=btn.textContent;btn.textContent='내보내는 중…';
+    try{
+      const PAGE=200,MAX_ROWS=20000;let offset=0;const all=[];
+      while(offset<MAX_ROWS){
+        const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit='+PAGE+'&offset='+offset,{headers:auth()});
+        if(!res.ok)throw new Error('HTTP '+res.status);
+        const d=await res.json();const items=d.items||[];
+        for(let i=0;i<items.length;i++)all.push(items[i]);
+        m.className='msg ok';m.style.display='block';m.textContent=all.length+'개 불러오는 중…';
+        if(items.length<PAGE)break;
+        offset+=PAGE;
+      }
+      if(!all.length){m.className='msg err';m.style.display='block';m.textContent='내보낼 제품이 없습니다.';return;}
+      const hasCost=all.some(p=>'avg_cost' in p);
+      const hasList=all.some(p=>'list_price' in p);
+      const r2=(n)=> n==null||n===''?null:Math.round(Number(n)*100)/100;
+      const header=['코드','제품명','경쟁사(SyD)코드','적용차종','바코드','재고'];
+      if(hasList)header.push('정가');
+      if(hasCost)header.push('평균원가','재고 평가액');
+      const aoa=[header];
+      all.forEach(function(p){
+        const stock=p.stock_qty==null||p.stock_qty===''?null:Number(p.stock_qty);
+        const row=[p.code||'',p.name||'',(p.scode||'').toString(),(p.app||'').toString(),p.ean||'',stock];
+        if(hasList)row.push(r2(p.list_price));
+        if(hasCost){const ac=r2(p.avg_cost);row.push(ac);row.push((ac!=null&&stock!=null)?r2(ac*stock):null);}
+        aoa.push(row);
+      });
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      // 열 너비
+      const cols=[{wch:14},{wch:34},{wch:26},{wch:30},{wch:16},{wch:10}];
+      if(hasList)cols.push({wch:12});
+      if(hasCost)cols.push({wch:12},{wch:14});
+      ws['!cols']=cols;
+      // 숫자 표시형식: 재고(소수3자리까지), 금액열(천단위·소수2자리)
+      const range=XLSX.utils.decode_range(ws['!ref']);
+      const stockCol=5; // '재고' 0-base 인덱스
+      const moneyCols=[];let ci=6;
+      if(hasList){moneyCols.push(ci++);}              // 정가
+      if(hasCost){moneyCols.push(ci++);moneyCols.push(ci++);} // 평균원가·재고평가액
+      for(let R=1;R<=range.e.r;R++){
+        const sc=XLSX.utils.encode_cell({r:R,c:stockCol});
+        if(ws[sc]&&ws[sc].t==='n')ws[sc].z='#,##0.###';
+        moneyCols.forEach(function(c){
+          const a=XLSX.utils.encode_cell({r:R,c:c});
+          if(ws[a]&&ws[a].t==='n')ws[a].z='#,##0.00';
+        });
+      }
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'Productos');
+      const now=new Date(),p2=(n)=>String(n).padStart(2,'0');
+      const fn='refatrix-products-'+now.getFullYear()+p2(now.getMonth()+1)+p2(now.getDate())+'-'+p2(now.getHours())+p2(now.getMinutes())+'.xlsx';
+      XLSX.writeFile(wb,fn);
+      m.className='msg ok';m.style.display='block';m.textContent=all.length+'개 제품을 엑셀로 내려받았습니다 ('+fn+').';
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='엑셀 내보내기 실패: '+(e&&e.message?e.message:e);}
+    finally{btn.disabled=false;btn.textContent=orig;}
   }
 
   // ===== 제품 마스터 업로드 =====
@@ -381,6 +445,7 @@
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
   $('search').addEventListener('click',doSearch);
+  $('dlxls').addEventListener('click',exportProductsExcel);
   $('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
   // 실시간 검색 — 타이핑하면 디바운스(250ms) 후 자동 조회
   var _qTimer=null;
@@ -400,6 +465,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622g"></script>
+<script src="refatrix-nav.js?v=20260622n"></script>
 </body>
 </html>
