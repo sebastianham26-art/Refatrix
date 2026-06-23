@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { minimizeProduct } from '../permissions.js';
+import { minimizeProduct, fieldVisible } from '../permissions.js';
 import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd } from '../productImport.js';
 
@@ -28,10 +28,67 @@ export default async function productRoutes(app) {
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate, p.stock_qty, p.avg_cost
          FROM products p WHERE ${where}
          ORDER BY p.code LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+    // 전체 건수(검색 조건 동일) — limit/offset 인자는 제외하고 카운트
+    const countParams = params.slice(0, params.length - 2);
+    const total = Number((await query(`SELECT COUNT(*)::int AS n FROM products p WHERE ${where}`, countParams)).rows[0].n);
 
     await logPageView(perm.userId, 'products');
     // 각 행을 권한에 맞게 최소화
-    return { items: rows.map((p) => minimizeProduct(perm, p)), limit, offset };
+    return { items: rows.map((p) => minimizeProduct(perm, p)), limit, offset, total };
+  });
+
+  // 제품 드릴다운: ① 지금까지 판매한 고객별 수량 ② 원가(평균원가) 계산 근거(수식).
+  //   원가 근거는 unit_cost 권한 있는 경우(디렉터 등)만 포함.
+  app.get('/api/products/:id/drilldown', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_product' });
+    const prod = (await query(`SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'not_found' });
+
+    // ① 판매 고객별 수량(게시된 인보이스 기준)
+    const salesRows = (await query(
+      `SELECT cu.name AS customer_name, COALESCE(SUM(sil.qty),0) AS qty, COUNT(DISTINCT si.id) AS inv_count
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id=sil.invoice_id
+         JOIN customers cu ON cu.id=si.customer_id
+        WHERE sil.product_id=$1 AND si.status='posted' AND si.deleted_at IS NULL
+        GROUP BY cu.id, cu.name
+        ORDER BY SUM(sil.qty) DESC, cu.name`, [id])).rows;
+    const sales = salesRows.map((r) => ({ customer_name: r.customer_name, qty: Number(r.qty), inv_count: Number(r.inv_count) }));
+    const totalSold = sales.reduce((s, r) => s + r.qty, 0);
+
+    const out = {
+      product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty || 0) },
+      sales, total_sold: totalSold, customer_count: sales.length,
+    };
+
+    // ② 원가 근거(수식) — unit_cost 권한 있을 때만
+    if (fieldVisible(perm, 'unit_cost')) {
+      const costRows = (await query(
+        `SELECT b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency,
+                il.qty, il.unit_cost_mxn
+           FROM import_lines il
+           JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
+          WHERE il.product_id=$1
+          ORDER BY b.import_date, b.id`, [id])).rows;
+      const lines = costRows.map((r) => ({
+        batch_no: r.batch_no, import_date: r.import_date, currency: r.currency,
+        qty: Number(r.qty), unit_cost_mxn: r.unit_cost_mxn != null ? Number(r.unit_cost_mxn) : null,
+      }));
+      const sumQty = lines.reduce((s, l) => s + l.qty, 0);
+      const sumAmount = lines.reduce((s, l) => s + l.qty * (l.unit_cost_mxn || 0), 0);
+      const computedAvg = sumQty > 0 ? sumAmount / sumQty : 0;
+      out.cost = {
+        stored_avg_cost: prod.avg_cost != null ? Number(prod.avg_cost) : null,
+        lines, sum_qty: sumQty, sum_amount: Math.round(sumAmount * 100) / 100,
+        computed_avg: Math.round(computedAvg * 100) / 100,
+        // 수식: 평균원가 = Σ(수입수량 × 입고단가MXN) / Σ수입수량
+        formula: '평균원가 = Σ(수입수량 × 입고단가) ÷ Σ수입수량',
+        note: '입고단가는 통화별 입고가에 입고일 환율과 분배 부대비용(1/n)을 반영한 MXN 단가입니다.',
+      };
+    }
+    return out;
   });
 
   // 제품코드 여러 개로 한 번에 조회 (엑셀 업로드 매칭용).
