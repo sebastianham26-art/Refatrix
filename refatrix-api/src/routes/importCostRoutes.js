@@ -387,8 +387,43 @@ export default async function importCostRoutes(app) {
     return out;
   });
 
+  // 수입 배치 안전 삭제(디렉터) — 재고를 0에서 멈추도록만 역산(음수 금지) + 배치 기록 soft-delete.
+  //   가짜(중복) 배치 정리용. 이미 팔려나간 분(=현재고를 넘는 배치수량)은 빼지 않고 '잔여'로 보고.
+  //   판매/COGS 기록은 건드리지 않음(출고는 배치에 안 묶여 있음).
+  app.post('/api/import-batches/:batchId/safe-delete', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return reply.code(400).send({ error: 'bad_batch' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const b = (await c.query(`SELECT id, batch_no FROM import_batches WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [batchId])).rows[0];
+      if (!b) return { error: 'not_found' };
+      const mv = (await c.query(
+        `SELECT sm.product_id, sm.move_type, sm.qty, p.code, p.name
+           FROM stock_movements sm JOIN products p ON p.id=sm.product_id
+          WHERE sm.batch_id=$1 ORDER BY p.code FOR UPDATE OF sm`, [batchId])).rows;
+      const lines = [];
+      for (const r of mv) {
+        if (r.move_type !== 'in') continue; // 입고만 안전 역산(수입 배치는 'in'만 가짐)
+        const pr = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [r.product_id])).rows[0];
+        if (!pr) continue;
+        const Q = Math.abs(Number(r.qty) || 0);
+        const S = Number(pr.stock_qty) || 0;
+        const removed = Math.max(0, Math.min(Q, S)); // 0에서 멈춤(음수 금지)
+        if (removed > 0) await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [S - removed, userId, r.product_id]);
+        lines.push({ product_id: Number(r.product_id), code: r.code, name: r.name, batch_qty: Q, removed, remaining: Q - removed });
+      }
+      if (mv.length) await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
+      await c.query(`UPDATE import_batches SET deleted_at=now() WHERE id=$1`, [batchId]);
+      const removedTotal = lines.reduce((s, l) => s + l.removed, 0);
+      const remainingTotal = lines.reduce((s, l) => s + l.remaining, 0);
+      const stuckLines = lines.filter((l) => l.remaining > 0);
+      return { ok: true, batch_no: b.batch_no, sku_count: lines.length, removed_total: removedTotal, remaining_total: remainingTotal, stuck_lines: stuckLines };
+    });
+    if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'delete', target: `import_batch:${batchId}`, detail: { batch_no: out.batch_no, mode: 'safe', removed: out.removed_total, remaining: out.remaining_total } });
+    return out;
+  });
 
-  // 부대비용 문서 작성(+명세 +분배). 작성 시점엔 원가 미반영(pending).
   app.post('/api/import-costs', { preHandler: [authGuard, requirePage('inventory')] }, async (req, reply) => {
     const { doc_no, cost_date, fx_rate, lines = [], batch_ids = [], note } = req.body || {};
     if (!cost_date || !fx_rate || !lines.length || !batch_ids.length) {

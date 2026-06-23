@@ -206,7 +206,8 @@
       h+='<tr class="brow" data-bid="'+b.id+'" style="cursor:pointer">'
         +'<td style="color:var(--brand);font-weight:800">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+'</td>'
         +'<td>'+esc(b.import_date||'')+'</td><td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count!=null?b.sku_count:'')+'</td>'
-        +'<td><button type="button" class="bdel btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--expense);padding:4px 10px;font-size:11.5px">🗑 삭제</button></td></tr>';
+        +'<td><button type="button" class="bsafe btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--brand);padding:4px 10px;font-size:11.5px;margin-right:4px">🧹 안전삭제</button>'
+        +'<button type="button" class="bdel btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--expense);padding:4px 10px;font-size:11.5px">🗑 전체삭제</button></td></tr>';
       if(open){ h+='<tr><td colspan="5" style="padding:0;background:#faf8f3">'+batchDetailHtml(b.id)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
@@ -218,6 +219,29 @@
     $('batchList').querySelectorAll('.bdel').forEach(btn=>{
       btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''); });
     });
+    $('batchList').querySelectorAll('.bsafe').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); safeDeleteBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''); });
+    });
+  }
+  async function safeDeleteBatch(id, label){
+    const m=$('batchMsg'); m.className='msg';
+    if(!window.confirm('배치 "'+label+'"를 안전 삭제합니다.\n\n재고를 0에서 멈추도록만 빼므로 음수가 안 됩니다(이미 팔린 만큼은 그대로 둠).\n판매·매출원가 기록은 건드리지 않습니다.\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/safe-delete',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth())}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='삭제 실패: '+d.error; return; }
+      let msg='안전 삭제 완료 · '+esc(d.batch_no||label)+' · SKU '+nf(d.sku_count)+'종, 재고에서 '+nf(d.removed_total)+'개 제거';
+      if(d.remaining_total>0){
+        msg+=' · ⚠ 잔여 '+nf(d.remaining_total)+'개(이미 팔려 못 뺌)';
+        if(d.stuck_lines&&d.stuck_lines.length){
+          msg+='<div style="margin-top:8px"><b>잔여 목록(나중에 확인):</b><table style="margin-top:4px"><thead><tr><th>SKU</th><th>품명</th><th class="n">잔여</th></tr></thead><tbody>'
+            +d.stuck_lines.map(l=>'<tr><td><b>'+esc(l.code)+'</b></td><td>'+esc(l.name||'')+'</td><td class="n" style="color:var(--expense);font-weight:700">'+nf(l.remaining)+'</td></tr>').join('')
+            +'</tbody></table></div>';
+        }
+      }
+      m.className='msg ok'; m.innerHTML=msg;
+      batchOpen=null; delete batchLines[id];
+      loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='삭제 실패(네트워크).'; }
   }
   function batchDetailHtml(id){
     const d=batchLines[id];
@@ -383,6 +407,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622g"></script>
+<script src="refatrix-nav.js?v=20260622i"></script>
 </body>
 </html>
