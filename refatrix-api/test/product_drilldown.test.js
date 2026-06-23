@@ -103,3 +103,40 @@ test('정렬 키: 재고/판매/평가액 내림차순 비교가 의도대로', 
   assert.deepEqual(bySold,  ['A','B','C']); // B,C 동률은 안정 정렬
   assert.deepEqual(byVal,   ['C','B','A']); // 20*100=2000 > 50*3=150 > 5*10=50
 });
+
+// ── 매출총이익(고객별 + 총) ──
+function grossFromRows(rows){
+  const r2=(n)=>Math.round(n*100)/100;
+  const by=rows.map(r=>{
+    const qty=Number(r.qty), revenue=r2(Number(r.revenue)), cogs=r2(Number(r.cogs));
+    const profit=r2(revenue-cogs);
+    return {customer_name:r.customer_name, qty, revenue, cogs, profit,
+      margin_pct:revenue>0?r2(profit/revenue*100):null,
+      avg_price:qty>0?r2(revenue/qty):null, avg_cost:qty>0?r2(cogs/qty):null};
+  });
+  const tQty=by.reduce((s,x)=>s+x.qty,0), tRev=r2(by.reduce((s,x)=>s+x.revenue,0)), tCogs=r2(by.reduce((s,x)=>s+x.cogs,0));
+  const tProfit=r2(tRev-tCogs);
+  return {by, total:{qty:tQty, revenue:tRev, cogs:tCogs, profit:tProfit,
+    margin_pct:tRev>0?r2(tProfit/tRev*100):null, avg_price:tQty>0?r2(tRev/tQty):null, avg_cost:tQty>0?r2(tCogs/tQty):null}};
+}
+test('매출총이익: 고객별 매출−원가=이익, 이익률, 평균단가/원가', ()=>{
+  // A: 10개, 매출 2000, 원가 1300 / B: 5개, 매출 900, 원가 700
+  const rows=[
+    {customer_name:'A', qty:10, revenue:2000, cogs:1300},
+    {customer_name:'B', qty:5,  revenue:900,  cogs:700},
+  ];
+  const g=grossFromRows(rows);
+  assert.equal(g.by[0].profit,700); assert.equal(g.by[0].margin_pct,35); // 700/2000
+  assert.equal(g.by[0].avg_price,200); assert.equal(g.by[0].avg_cost,130);
+  assert.equal(g.by[1].profit,200); assert.equal(g.by[1].margin_pct,22.22); // 200/900
+  // 총
+  assert.equal(g.total.qty,15);
+  assert.equal(g.total.revenue,2900); assert.equal(g.total.cogs,2000); assert.equal(g.total.profit,900);
+  assert.equal(g.total.margin_pct,31.03); // 900/2900
+  assert.equal(g.total.avg_price,193.33); assert.equal(g.total.avg_cost,133.33);
+});
+test('매출총이익: 매출 0이면 이익률 null(0 나눗셈 방지)', ()=>{
+  const g=grossFromRows([{customer_name:'X', qty:0, revenue:0, cogs:0}]);
+  assert.equal(g.by[0].margin_pct,null);
+  assert.equal(g.total.margin_pct,null);
+});

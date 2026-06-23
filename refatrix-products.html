@@ -50,6 +50,15 @@
   .cbk .ln{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
   .cbk .ln .lk{color:var(--muted)}
   .cbk .tot{border-top:1px solid var(--line);margin-top:5px;padding-top:5px}
+  /* 드릴다운 2분할(원가분석 | 매출총이익) */
+  .dcols{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .dcol{flex:1 1 320px;min-width:300px}
+  .dh{font-weight:800;color:var(--brand);margin-bottom:6px;font-size:13px;border-bottom:2px solid var(--line);padding-bottom:3px}
+  .pos{color:var(--income)} .neg{color:var(--expense)}
+  .gpf{border:1px solid var(--line);border-radius:10px;background:#fff;padding:8px 12px;margin-top:8px;font-size:12px}
+  .gpf .ln{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
+  .gpf .ln .lk{color:var(--muted)}
+  .gpf .tot{border-top:1px solid var(--line);margin-top:5px;padding-top:5px;font-weight:700}
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
   .hidden{display:none}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
@@ -286,24 +295,13 @@
     }catch(e){ dr.firstChild.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>'; }
   }
   function drillHtml(d){
-    let h='';
-    // ① 판매 고객별 수량
-    const s=(d&&d.sales)||[];
-    h+='<div style="font-weight:800;color:var(--brand,#143D34);margin-bottom:4px">판매 고객 ('+(d.customer_count||0)+'곳 · 총 '+qty(d.total_sold||0)+')</div>';
-    if(!s.length){ h+='<div class="hint" style="margin:2px 0 10px">판매 이력이 없습니다.</div>'; }
-    else{
-      h+='<table style="margin-bottom:12px"><thead><tr><th>고객</th><th class="num">판매수량</th><th class="num">건수</th></tr></thead><tbody>'
-        +s.map(x=>'<tr><td>'+escP(x.customer_name)+'</td><td class="num">'+qty(x.qty)+'</td><td class="num">'+x.inv_count+'</td></tr>').join('')
-        +'</tbody></table>';
-    }
-    // ② 원가 계산 근거(권한 있을 때만 내려옴)
-    if(d&&d.cost){
-      const c=d.cost;
-      h+='<div style="font-weight:800;color:var(--brand,#143D34);margin-bottom:4px">원가 계산 근거</div>';
-      h+='<div class="hint" style="margin:2px 0 6px"><b>'+escP(c.formula)+'</b><br>'+escP(c.note||'')+'</div>';
+    const fc=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const pct=(n)=> n==null?'—':(Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})+'%');
+
+    // ── 원가 분석 패널(좌) ──
+    function costPanel(c){
+      let h='<div class="hint" style="margin:0 0 6px"><b>'+escP(c.formula)+'</b><br>'+escP(c.note||'')+'</div>';
       if(c.lines&&c.lines.length){
-        // 배치별 입고단가 브레이크다운: 수입금액(원통화) → 환율 → 기본원가(MXN) + 부대비용(1/n 배분) = 입고단가
-        const fc=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
         h+='<div class="cbk">'+c.lines.map(function(l){
           const isUsd=(l.currency==='USD');
           let k='<div class="card2"><div class="bh">'+escP(l.batch_no||'(배치)')+' · '+escP(l.import_date||'')+' · '+escP(l.currency||'')+'</div>';
@@ -316,10 +314,57 @@
         }).join('')+'</div>';
         h+='<div class="hint" style="margin:2px 0">합계 수입수량 <b>'+qty(c.sum_qty)+'</b> · 합계 금액 <b>MXN '+fmt(c.sum_amount)+'</b></div>';
         h+='<div class="hint" style="margin:2px 0">평균원가 = '+fmt(c.sum_amount)+' ÷ '+qty(c.sum_qty)+' = <b>'+fmt(c.computed_avg)+'</b> MXN'
-          +(c.stored_avg_cost!=null&&Math.abs(c.stored_avg_cost-c.computed_avg)>0.01?(' · (현재 저장된 평균원가: '+fmt(c.stored_avg_cost)+' — 입고 이력의 이동평균/수동 보정으로 다를 수 있음)'):'')+'</div>';
+          +(c.stored_avg_cost!=null&&Math.abs(c.stored_avg_cost-c.computed_avg)>0.01?(' · (현재 저장된 평균원가: '+fmt(c.stored_avg_cost)+')'):'')+'</div>';
       }else{
         h+='<div class="hint" style="margin:2px 0">수입 입고 이력이 없어 원가 근거가 없습니다.'+(c.stored_avg_cost!=null?(' 저장된 평균원가: '+fmt(c.stored_avg_cost)):'')+'</div>';
       }
+      return h;
+    }
+
+    // ── 매출총이익 패널(우) ──
+    function grossPanel(g){
+      const by=(g&&g.by_customer)||[], t=(g&&g.total)||{};
+      let h='';
+      if(!by.length){ return '<div class="hint" style="margin:2px 0">판매 이력이 없습니다.</div>'; }
+      h+='<table style="margin-bottom:8px"><thead><tr><th>고객</th><th class="num">판매수량</th><th class="num">매출</th><th class="num">매출원가</th><th class="num">매출총이익</th><th class="num">이익률</th></tr></thead><tbody>'
+        +by.map(function(x){
+          const cls=(x.profit||0)>=0?'pos':'neg';
+          return '<tr><td>'+escP(x.customer_name)+'</td><td class="num">'+qty(x.qty)+'</td>'
+            +'<td class="num">'+fc(x.revenue)+'</td><td class="num">'+fc(x.cogs)+'</td>'
+            +'<td class="num '+cls+'">'+fc(x.profit)+'</td><td class="num '+cls+'">'+pct(x.margin_pct)+'</td></tr>';
+        }).join('')
+        +'</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)">'
+        +'<td>합계</td><td class="num">'+qty(t.qty)+'</td><td class="num">'+fc(t.revenue)+'</td><td class="num">'+fc(t.cogs)+'</td>'
+        +'<td class="num '+((t.profit||0)>=0?'pos':'neg')+'">'+fc(t.profit)+'</td><td class="num '+((t.profit||0)>=0?'pos':'neg')+'">'+pct(t.margin_pct)+'</td></tr></tfoot></table>';
+      // 총 매출총이익 식 브레이크다운
+      h+='<div class="gpf">'
+        +'<div class="ln"><span class="lk">매출 (ex-IVA)</span><span><b>MXN '+fc(t.revenue)+'</b></span></div>'
+        +'<div class="ln"><span class="lk">− 매출원가 (COGS)</span><span>MXN '+fc(t.cogs)+'</span></div>'
+        +'<div class="ln tot"><span class="lk">= 매출총이익</span><span class="'+((t.profit||0)>=0?'pos':'neg')+'">MXN '+fc(t.profit)+' · 이익률 '+pct(t.margin_pct)+'</span></div>'
+        +'<div class="ln" style="margin-top:4px"><span class="lk">개당 평균</span><span>판매단가 MXN '+fc(t.avg_price)+' · 적용원가 MXN '+fc(t.avg_cost)+'</span></div>'
+        +'</div>';
+      h+='<div class="hint" style="margin:4px 0 0">'+escP(g.note||'')+'</div>';
+      return h;
+    }
+
+    // ── 레이아웃 ──
+    // 권한(원가) 있으면 좌(원가분석)/우(매출총이익) 2분할. 없으면 판매 고객 수량만 단순 표시.
+    if(d&&d.cost){
+      let h='<div style="font-weight:800;color:var(--brand);margin-bottom:8px">판매 고객 '+(d.customer_count||0)+'곳 · 총 판매 '+qty(d.total_sold||0)+'</div>';
+      h+='<div class="dcols">'
+        +'<div class="dcol"><div class="dh">원가 분석</div>'+costPanel(d.cost)+'</div>'
+        +'<div class="dcol"><div class="dh">매출총이익</div>'+grossPanel(d.gross)+'</div>'
+        +'</div>';
+      return h;
+    }
+    // 권한 없음(직원): 판매 고객별 수량만
+    const s=(d&&d.sales)||[];
+    let h='<div style="font-weight:800;color:var(--brand);margin-bottom:4px">판매 고객 ('+(d.customer_count||0)+'곳 · 총 '+qty(d.total_sold||0)+')</div>';
+    if(!s.length){ h+='<div class="hint" style="margin:2px 0 10px">판매 이력이 없습니다.</div>'; }
+    else{
+      h+='<table style="margin-bottom:12px"><thead><tr><th>고객</th><th class="num">판매수량</th><th class="num">건수</th></tr></thead><tbody>'
+        +s.map(x=>'<tr><td>'+escP(x.customer_name)+'</td><td class="num">'+qty(x.qty)+'</td><td class="num">'+x.inv_count+'</td></tr>').join('')
+        +'</tbody></table>';
     }
     return h;
   }
@@ -495,6 +540,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260623a"></script>
+<script src="refatrix-nav.js?v=20260623b"></script>
 </body>
 </html>

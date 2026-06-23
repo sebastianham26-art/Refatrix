@@ -72,9 +72,13 @@ export default async function productRoutes(app) {
     const prod = (await query(`SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!prod) return reply.code(404).send({ error: 'not_found' });
 
-    // ① 판매 고객별 수량(게시된 인보이스 기준)
+    // ① 판매 고객별 수량 + (권한 시) 매출·매출원가(게시된 인보이스 기준)
     const salesRows = (await query(
-      `SELECT cu.name AS customer_name, COALESCE(SUM(sil.qty),0) AS qty, COUNT(DISTINCT si.id) AS inv_count
+      `SELECT cu.name AS customer_name,
+              COALESCE(SUM(sil.qty),0) AS qty,
+              COUNT(DISTINCT si.id) AS inv_count,
+              COALESCE(SUM(sil.line_amount_mxn),0) AS revenue,
+              COALESCE(SUM(COALESCE(sil.cogs_mxn, sil.qty * sil.applied_unit_cost, 0)),0) AS cogs
          FROM sales_invoice_lines sil
          JOIN sales_invoices si ON si.id=sil.invoice_id
          JOIN customers cu ON cu.id=si.customer_id
@@ -88,6 +92,33 @@ export default async function productRoutes(app) {
       product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty || 0) },
       sales, total_sold: totalSold, customer_count: sales.length,
     };
+
+    // ②-매출총이익 — unit_cost 권한 있을 때만(원가가 노출되므로). 매출원가는 판매 시점 스냅샷(applied_unit_cost) 기준.
+    if (fieldVisible(perm, 'unit_cost')) {
+      const r2 = (n) => Math.round(n * 100) / 100;
+      const byCustomer = salesRows.map((r) => {
+        const qty = Number(r.qty), revenue = r2(Number(r.revenue)), cogs = r2(Number(r.cogs));
+        const profit = r2(revenue - cogs);
+        return {
+          customer_name: r.customer_name, qty, inv_count: Number(r.inv_count),
+          revenue, cogs, profit, margin_pct: revenue > 0 ? r2(profit / revenue * 100) : null,
+          avg_price: qty > 0 ? r2(revenue / qty) : null, avg_cost: qty > 0 ? r2(cogs / qty) : null,
+        };
+      });
+      const tQty = byCustomer.reduce((s, x) => s + x.qty, 0);
+      const tRev = r2(byCustomer.reduce((s, x) => s + x.revenue, 0));
+      const tCogs = r2(byCustomer.reduce((s, x) => s + x.cogs, 0));
+      const tProfit = r2(tRev - tCogs);
+      out.gross = {
+        by_customer: byCustomer,
+        total: {
+          qty: tQty, revenue: tRev, cogs: tCogs, profit: tProfit,
+          margin_pct: tRev > 0 ? r2(tProfit / tRev * 100) : null,
+          avg_price: tQty > 0 ? r2(tRev / tQty) : null, avg_cost: tQty > 0 ? r2(tCogs / tQty) : null,
+        },
+        note: '매출원가(COGS)는 판매 시점에 동결된 적용원가 기준입니다 — 이후 평균원가를 바꿔도 과거 매출총이익은 변하지 않습니다.',
+      };
+    }
 
     // ② 원가 근거(수식) — unit_cost 권한 있을 때만
     if (fieldVisible(perm, 'unit_cost')) {
