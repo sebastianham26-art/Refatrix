@@ -35,6 +35,12 @@
   th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
   th:first-child,td:first-child{text-align:left}
   th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700;position:sticky;top:0}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--brand)}
+  th .sind{font-size:9px;opacity:.45;margin-left:3px}
+  th.sortable:hover .sind{opacity:.8}
+  th.acts{color:var(--brand)}
+  th.acts .sind{opacity:1;color:var(--brand)}
   .barcell{position:relative;min-width:160px}
   .bar{height:18px;border-radius:4px;background:var(--income);display:inline-block;vertical-align:middle}
   .bartrack{background:#eee;border-radius:4px;height:18px;width:120px;display:inline-block;vertical-align:middle;overflow:hidden;margin-right:8px}
@@ -124,8 +130,9 @@
   let period={month:12, order:20}; // 표시 개월수 / 오더 건수
   const PERIOD_OPTS={ month:[6,12,24], order:[10,20,50] };
   let ofOpen=null, ofLines={}, lastRows=[];
+  let sortKey=null, sortDir=1;   // 헤더 클릭 정렬(테이블 전용)
 
-  function setBy(b){ viewBy=b; ofOpen=null; $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
+  function setBy(b){ viewBy=b; ofOpen=null; sortKey=null; $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
   function setPeriod(n){ period[viewBy]=n; renderPeriod(); load(); }
   function renderPeriod(){
     const opts=PERIOD_OPTS[viewBy], unit=(viewBy==='month'?'개월':'건');
@@ -258,6 +265,39 @@
     setTimeout(()=>{ const dw=$('donutWrap'); if(dw) dw.scrollIntoView({behavior:'smooth',block:'nearest'}); },50);
   }
 
+  // ===== 헤더 클릭 정렬 (테이블만 정렬 · 차트/KPI는 시간순 유지) =====
+  const SORT_NUM={req_sku:1,req_qty:1,ok_qty_pct:1,short_qty_pct:1,dev_qty_pct:1};
+  function sortVal(r,key){ return key==='__label' ? (r.label||r.ym||'') : r[key]; }
+  function setSort(key){
+    if(!key) return;
+    if(sortKey===key){ sortDir=-sortDir; } else { sortKey=key; sortDir=SORT_NUM[key]?-1:1; } // 숫자 첫클릭=내림차순, 문자=오름차순
+    reRender();
+  }
+  function applySort(arr){
+    if(!sortKey) return arr;
+    const num=!!SORT_NUM[sortKey];
+    const a=arr.slice();
+    a.sort((x,y)=>{
+      const vx=sortVal(x,sortKey), vy=sortVal(y,sortKey);
+      if(num) return ((Number(vx)||0)-(Number(vy)||0))*sortDir;
+      return String(vx==null?'':vx).localeCompare(String(vy==null?'':vy),'es',{numeric:true})*sortDir;
+    });
+    return a;
+  }
+  function thS(label,key,left){
+    const al=left?' style="text-align:left"':'';
+    if(!key) return '<th'+al+'>'+esc(label)+'</th>';
+    const on=sortKey===key, ind=on?(sortDir>0?'▲':'▼'):'⇅';
+    return '<th class="sortable'+(on?' acts':'')+'"'+al+' onclick="setSort(\''+key+'\')" title="클릭하여 정렬">'+esc(label)+'<span class="sind">'+ind+'</span></th>';
+  }
+  function sortableHead(col1){
+    let s=thS(col1,'__label',true);
+    if(viewBy==='order'){ s+=thS('고객','customer_name',true)+thS('일자','qdate',false); }
+    s+=thS('요청 SKU','req_sku',false)+thS('요청 수량','req_qty',false)+thS('구성 (수량 비중)',null,false);
+    s+=thS('즉시 %','ok_qty_pct',false)+thS('부족 %','short_qty_pct',false)+thS('개발 %','dev_qty_pct',false);
+    return s;
+  }
+
   function render(rows){
     lastRows=rows;
     const withData=rows.filter(r=>r.req_qty>0);
@@ -280,10 +320,8 @@
 
     if(!withData.length){ $('trendWrap').innerHTML='<div class="hint" style="margin-top:10px">'+(viewBy==='month'?'견적 데이터가 있는 달이 없습니다.':'견적(오더)이 없습니다.')+'</div>'; return; }
     const col1=(viewBy==='month'?'월':'견적(오더)');
-    let h='<div style="overflow-x:auto"><table><thead><tr>'
-      +'<th>'+col1+'</th>'+(viewBy==='order'?'<th>고객</th><th>일자</th>':'')+'<th>요청 SKU</th><th>요청 수량</th><th>구성 (수량 비중)</th>'
-      +'<th>즉시 %</th><th>부족 %</th><th>개발 %</th></tr></thead><tbody>';
-    withData.forEach(r=>{
+    let h='<div style="overflow-x:auto"><table><thead><tr>'+sortableHead(col1)+'</tr></thead><tbody>';
+    applySort(withData).forEach(r=>{
       const oi=r.ok_qty_pct, ss=r.short_qty_pct, dd=r.dev_qty_pct;
       const clickable = viewBy==='order' && r.quote_id;
       const open = clickable && ofOpen===r.quote_id;
