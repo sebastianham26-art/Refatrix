@@ -128,6 +128,69 @@ export default async function importCostRoutes(app) {
     return { lines, safe: lines.every((l) => l.safe) };
   });
 
+  // 중복 배치 정리 분석(읽기 전용, 디렉터). 같은 SKU·수량 구성의 배치를 자동으로 묶어
+  //   그룹·제품별로 유령(중복)수량 · 현재고 · 판매 · 음수없이 제거가능량 · 막힌유령(실입고 누락)을 계산.
+  app.get('/api/import-recost/duplicate-analysis', { preHandler: [authGuard, requireDirector] }, async () => {
+    // 1) 승인·미삭제 배치의 라인 전부
+    const rows = (await query(
+      `SELECT b.id AS batch_id, b.batch_no, b.import_date, il.product_id, il.qty, p.code, p.name
+         FROM import_batches b
+         JOIN import_lines il ON il.batch_id=b.id
+         JOIN products p ON p.id=il.product_id
+        WHERE b.deleted_at IS NULL AND b.status='approved'
+        ORDER BY b.id, p.code`)).rows;
+    // 2) 배치별 구성(서명) 만들기
+    const byBatch = new Map();
+    for (const r of rows) {
+      const bid = Number(r.batch_id);
+      if (!byBatch.has(bid)) byBatch.set(bid, { batch_id: bid, batch_no: r.batch_no, import_date: r.import_date ? String(r.import_date).slice(0, 10) : '', lines: [] });
+      byBatch.get(bid).lines.push({ product_id: Number(r.product_id), code: r.code, name: r.name, qty: Number(r.qty) });
+    }
+    const sig = (b) => b.lines.slice().sort((a, c) => a.product_id - c.product_id).map((l) => l.product_id + ':' + l.qty).join('|');
+    // 3) 서명으로 그룹핑 → 2개 이상만 중복 그룹
+    const groups = new Map();
+    for (const b of byBatch.values()) { const s = sig(b); if (!groups.has(s)) groups.set(s, []); groups.get(s).push(b); }
+    const dupGroups = [...groups.values()].filter((arr) => arr.length >= 2);
+    if (!dupGroups.length) return { groups: [], product_count: 0 };
+    // 4) 관련 제품의 현재고 + 총판매
+    const pidSet = new Set();
+    dupGroups.forEach((arr) => arr[0].lines.forEach((l) => pidSet.add(l.product_id)));
+    const pids = [...pidSet];
+    const stockRows = (await query(`SELECT id, stock_qty FROM products WHERE id = ANY($1)`, [pids])).rows;
+    const stockBy = {}; stockRows.forEach((r) => { stockBy[Number(r.id)] = Number(r.stock_qty); });
+    const soldRows = (await query(
+      `SELECT sil.product_id, COALESCE(SUM(sil.qty),0) AS sold
+         FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id
+        WHERE si.status='posted' AND si.deleted_at IS NULL AND sil.product_id = ANY($1)
+        GROUP BY sil.product_id`, [pids])).rows;
+    const soldBy = {}; soldRows.forEach((r) => { soldBy[Number(r.product_id)] = Number(r.sold); });
+    // 5) 그룹별 정리
+    const out = dupGroups.map((arr) => {
+      const sorted = arr.slice().sort((a, c) => String(a.import_date).localeCompare(String(c.import_date)) || a.batch_id - c.batch_id);
+      const keep = sorted[0]; const phantoms = sorted.slice(1); // 가장 오래된 배치 보존 제안
+      const dupCount = arr.length;
+      const products = keep.lines.map((l) => {
+        const perBatch = l.qty;
+        const phantomQty = perBatch * (dupCount - 1);
+        const cur = stockBy[l.product_id] != null ? stockBy[l.product_id] : 0;
+        const sold = soldBy[l.product_id] || 0;
+        const removableSafe = Math.max(0, Math.min(phantomQty, cur));
+        const stuck = Math.max(0, phantomQty - cur);
+        return { product_id: l.product_id, code: l.code, name: l.name, per_batch_qty: perBatch, dup_count: dupCount, phantom_qty: phantomQty, current_stock: cur, sold_qty: sold, removable_safe: removableSafe, stuck_phantom: stuck };
+      });
+      const stuckTotal = products.reduce((s, p) => s + p.stuck_phantom, 0);
+      return {
+        signature: sig(keep),
+        dup_count: dupCount,
+        keep_batch: { batch_id: keep.batch_id, batch_no: keep.batch_no, import_date: keep.import_date },
+        phantom_batches: phantoms.map((b) => ({ batch_id: b.batch_id, batch_no: b.batch_no, import_date: b.import_date })),
+        products,
+        all_removable: stuckTotal === 0,
+      };
+    });
+    return { groups: out, product_count: pids.length };
+  });
+
   // =====================================================================
   // 수입 원가 정정(재가) — 디렉터 전용
   //   ① 단가 템플릿(모든 수입 라인) 엑셀 다운로드용 데이터

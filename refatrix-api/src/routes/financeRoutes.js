@@ -1,12 +1,11 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canOperateAccount } from '../accountScope.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -31,15 +30,7 @@ export default async function financeRoutes(app) {
 
   // ===== 계좌 =====
   // 목록 + 잔액(계좌 통화 기준: 기초잔액 + 승인된 실제거래 합)
-  app.get('/api/accounts', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
-    const allow = allowedAccountIds(req.ctx.perm);   // null = 전체(디렉터)
-    const args = [];
-    let acccond = '';
-    if (allow !== null) {
-      if (allow.length === 0) return { items: [] };   // 권한 계좌 없음
-      args.push(allow);
-      acccond = ` AND a.id = ANY($${args.length})`;
-    }
+  app.get('/api/accounts', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
     const rows = (await query(
       `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date,
               a.open_balance + COALESCE((
@@ -47,7 +38,7 @@ export default async function financeRoutes(app) {
                   FROM transactions t
                  WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL
               ),0) AS balance
-         FROM accounts a WHERE a.deleted_at IS NULL${acccond} ORDER BY a.id`, args)).rows;
+         FROM accounts a WHERE a.deleted_at IS NULL ORDER BY a.id`)).rows;
     return { items: rows.map((a) => ({ ...a, open_balance: Number(a.open_balance), balance: Number(a.balance) })) };
   });
 
@@ -88,14 +79,6 @@ export default async function financeRoutes(app) {
     const status = b.status === 'plan' ? 'plan' : 'actual';
     if (status === 'actual' && !b.account_id) return reply.code(400).send({ error: 'account_required_for_actual' });
     const isDirector = req.ctx.perm.role === 'director';
-    // 계좌 운영권한: 실제/예정 모두 지정 계좌에 운영 권한이 있어야 등록 가능(디렉터는 통과).
-    if (b.account_id != null && !canOperateAccount(req.ctx.perm, b.account_id)) {
-      return reply.code(403).send({ error: 'account_not_operable' });
-    }
-    if (b.account_id == null && !isDirector) {
-      // 계좌 미지정 거래는 디렉터만(비디렉터는 운영 계좌를 명시해야 함).
-      return reply.code(403).send({ error: 'account_required' });
-    }
     // 환율: MXN=1. USD는 입력값 우선 → (실제)거래일 캐시 → 오늘. 예정은 항상 오늘.
     let fx = 1;
     if (currency === 'USD') {
@@ -120,12 +103,6 @@ export default async function financeRoutes(app) {
   app.get('/api/transactions', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const q = req.query || {};
     const cond = ['t.deleted_at IS NULL']; const args = [];
-    // 비디렉터: 거래내역 열람 권한(can_detail) 있는 계좌의 거래만. "잔액만" 계좌는 거래내역 숨김.
-    const allow = allowedDetailAccountIds(req.ctx.perm);
-    if (allow !== null) {
-      if (allow.length === 0) return { items: [] };
-      args.push(allow); cond.push(`t.account_id = ANY($${args.length})`);
-    }
     if (q.status) { args.push(q.status); cond.push(`t.status=$${args.length}`); }
     if (q.direction) { args.push(q.direction); cond.push(`t.direction=$${args.length}`); }
     if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
@@ -196,17 +173,7 @@ export default async function financeRoutes(app) {
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
     if (t.approved) return reply.code(409).send({ error: 'already_approved_use_request' });
-    const isDir = req.ctx.perm.role === 'director';
-    // 미승인 거래의 직접 수정은 등록 본인 또는 디렉터만(승인된 건은 수정요청 경로 사용).
-    if (!isDir && Number(t.created_by) !== Number(req.ctx.perm.userId)) {
-      return reply.code(403).send({ error: 'not_owner' });
-    }
     const b = req.body || {};
-    // 옮길/현재 계좌 모두 운영권한 필요.
-    const targetAcc = b.account_id ?? t.account_id;
-    if (!canOperateAccount(req.ctx.perm, t.account_id) || (targetAcc != null && !canOperateAccount(req.ctx.perm, targetAcc))) {
-      return reply.code(403).send({ error: 'account_not_operable' });
-    }
     const direction = b.direction === 'in' ? 'in' : (b.direction === 'out' ? 'out' : t.direction);
     const currency = ['MXN', 'USD'].includes(b.currency) ? b.currency : t.currency;
     const amount = b.amount != null ? Number(b.amount) : Number(t.amount);
@@ -740,63 +707,6 @@ export default async function financeRoutes(app) {
     };
   });
 
-  // ===== 수금 보기 전용(재무탭) — 영업지원이 처리한 반제 결과를 재무에서 "열람만" =====
-  // settlement(입력) 권한 없이 transactions(재무) 권한만으로 볼 수 있는 읽기 전용 엔드포인트.
-  // 미수 요약(전사).
-  app.get('/api/ar/view/summary', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const rows = (await query(
-      `SELECT (si.total_mxn - COALESCE(SUM(spa.amount),0)) AS outstanding,
-              to_char(si.due_date,'YYYY-MM-DD') AS due_date
-         FROM sales_invoices si
-         LEFT JOIN sales_payment_allocations spa ON spa.invoice_id=si.id
-        WHERE si.status='posted' AND si.deleted_at IS NULL
-        GROUP BY si.id`)).rows;
-    let open = 0, outstanding = 0, overdue = 0;
-    for (const r of rows) {
-      const o = Number(r.outstanding);
-      if (o > 0.005) { open += 1; outstanding += o; if (r.due_date < today) overdue += o; }
-    }
-    return { today, open_count: open, outstanding: r2(outstanding), overdue: r2(overdue) };
-  });
-
-  // 최근 반제(입금) 내역 — 영업지원이 기록한 수금 활동(읽기 전용).
-  app.get('/api/ar/view/recent', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
-    const limit = Math.min(Number(req.query.limit) || 50, 200);
-    const rows = (await query(
-      `SELECT sp.id, to_char(sp.pay_date,'YYYY-MM-DD') AS pay_date, sp.amount, acc.name AS account_label,
-              c.name AS customer_name, c.code AS customer_code, u.name AS by_name,
-              (SELECT string_agg(si.sat_no, ', ') FROM sales_payment_allocations spa
-                 JOIN sales_invoices si ON si.id=spa.invoice_id WHERE spa.payment_id=sp.id) AS sat_list
-         FROM sales_payments sp
-         JOIN customers c ON c.id=sp.customer_id
-         LEFT JOIN accounts acc ON acc.id=sp.account_id
-         LEFT JOIN users u ON u.id=sp.created_by
-        ORDER BY sp.pay_date DESC, sp.id DESC LIMIT $1`, [limit])).rows;
-    return { items: rows.map((r) => ({ ...r, amount: Number(r.amount) })) };
-  });
-
-  // 월별 수금(반제) 달력용 — 일자별 입금 합계 + 건별(읽기 전용).
-  app.get('/api/ar/view/calendar', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
-    const month = /^\d{4}-\d{2}$/.test(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
-    const rows = (await query(
-      `SELECT sp.id, to_char(sp.pay_date,'YYYY-MM-DD') AS pay_date, sp.amount, acc.name AS account_label,
-              c.name AS customer_name
-         FROM sales_payments sp
-         JOIN customers c ON c.id=sp.customer_id
-         LEFT JOIN accounts acc ON acc.id=sp.account_id
-        WHERE to_char(sp.pay_date,'YYYY-MM')=$1
-        ORDER BY sp.pay_date, sp.id`, [month])).rows;
-    const byDay = {};
-    for (const r of rows) {
-      const d = r.pay_date;
-      if (!byDay[d]) byDay[d] = { sum: 0, items: [] };
-      byDay[d].sum = r2(byDay[d].sum + Number(r.amount));
-      byDay[d].items.push({ id: r.id, customer_name: r.customer_name, account_label: r.account_label, amount: Number(r.amount) });
-    }
-    return { month, days: byDay };
-  });
-
   // ===== 고정비(반복 규칙) =====
   app.get('/api/recurring', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
     const rows = (await query(
@@ -925,10 +835,6 @@ export default async function financeRoutes(app) {
     if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
     const accountId = req.body?.account_id || t.account_id;
     if (!accountId) return reply.code(400).send({ error: 'account_required' });
-    // 확정 대상 계좌에 운영권한 필요(원래 계좌도 확인).
-    if (!canOperateAccount(req.ctx.perm, accountId) || (t.account_id != null && !canOperateAccount(req.ctx.perm, t.account_id))) {
-      return reply.code(403).send({ error: 'account_not_operable' });
-    }
     const payDate = req.body?.pay_date || t.txn_date;
     const newAmount = req.body?.amount != null ? r2(req.body.amount) : Number(t.amount);
     if (!(newAmount > 0)) return reply.code(400).send({ error: 'invalid_amount' });
@@ -944,15 +850,12 @@ export default async function financeRoutes(app) {
     const planMemo = changed && memo
       ? ((t.plan_memo ? t.plan_memo + ' | ' : '') + `${new Date().toISOString().slice(0, 10)}: ${memo}`)
       : t.plan_memo;
-    // 지출(out)을 비디렉터가 확정하면 실적이지만 디렉터 승인 전까지 미반영(approved=false).
-    const isDir = req.ctx.perm.role === 'director';
-    const approved = !(t.direction === 'out' && !isDir);
     await query(
       `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
-         approved=$10, change_count=$6, plan_memo=$7, updated_by=$8 WHERE id=$9`,
-      [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved } });
-    return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved };
+         approved=true, change_count=$6, plan_memo=$7, updated_by=$8 WHERE id=$9`,
+      [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed } });
+    return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount };
   });
 
   // 계획 대비 실적(고정비) 차이 리포트: 확정된 고정비 실적을 기간별로 계획 대비 비교
@@ -983,7 +886,6 @@ export default async function financeRoutes(app) {
     if (!t) return reply.code(404).send({ error: 'not_found' });
     if (t.status !== 'plan') return reply.code(409).send({ error: 'not_plan' });
     if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
-    if (!canOperateAccount(req.ctx.perm, t.account_id)) return reply.code(403).send({ error: 'account_not_operable' });
     const b = req.body || {};
     const newAmount = b.amount != null ? r2(b.amount) : Number(t.amount);
     if (!(newAmount > 0)) return reply.code(400).send({ error: 'invalid_amount' });
@@ -1006,36 +908,20 @@ export default async function financeRoutes(app) {
     return { ok: true, changed, change_count: newCount };
   });
 
-  // 모든 거래(현금흐름용) 로딩 헬퍼 — 권한 계좌로 필터(잔고·AP용).
-  // AR(수금예정)은 account_id=NULL 인 plan·in 거래라 비디렉터에선 자동 제외되고, 별도(전사)로 계산한다.
-  async function loadCashTxns(perm) {
-    const allow = allowedDetailAccountIds(perm);   // null = 전체(디렉터). "잔액만" 계좌 제외.
-    const args = [];
-    let cond = 't.deleted_at IS NULL';
-    if (allow !== null) {
-      if (allow.length === 0) return [];
-      args.push(allow); cond += ` AND t.account_id = ANY($${args.length})`;
-    }
+  // 모든 거래(현금흐름용) 로딩 헬퍼
+  async function loadCashTxns() {
     return (await query(
       `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
               t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
-              t.recurring_rule_id, t.sales_invoice_id, t.account_id, a.name AS account_name, t.memo, t.approved,
+              t.recurring_rule_id, t.sales_invoice_id, t.memo,
               (t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_amount_mxn
          FROM transactions t
          LEFT JOIN categories cat ON cat.code=t.category_code
-         LEFT JOIN accounts a ON a.id=t.account_id
-        WHERE ${cond}`, args)).rows;
+        WHERE t.deleted_at IS NULL`)).rows;
   }
-  async function openingBalanceMxn(perm) {
+  async function openingBalanceMxn() {
     const usd = (await getUsdMxnRate()).rate;
-    const allow = allowedDetailAccountIds(perm);
-    const args = [];
-    let cond = 'deleted_at IS NULL';
-    if (allow !== null) {
-      if (allow.length === 0) return 0;
-      args.push(allow); cond += ` AND id = ANY($${args.length})`;
-    }
-    const accs = (await query(`SELECT currency, open_balance FROM accounts WHERE ${cond}`, args)).rows;
+    const accs = (await query(`SELECT currency, open_balance FROM accounts WHERE deleted_at IS NULL`)).rows;
     return accs.reduce((s, a) => s + Number(a.open_balance) * (a.currency === 'USD' ? usd : 1), 0);
   }
 
@@ -1044,8 +930,8 @@ export default async function financeRoutes(app) {
   app.get('/api/cashflow', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const granularity = req.query.granularity === 'week' ? 'week' : 'month';
     const includePlan = req.query.includePlan === '1' || req.query.includePlan === 'true';
-    const txns = await loadCashTxns(req.ctx.perm);
-    const opening = await openingBalanceMxn(req.ctx.perm);
+    const txns = await loadCashTxns();
+    const opening = await openingBalanceMxn();
     const rows = aggregateCashflow(txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
@@ -1057,7 +943,7 @@ export default async function financeRoutes(app) {
   app.get('/api/plan-vs-actual', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const granularity = req.query.granularity === 'week' ? 'week' : 'month';
     const filter = ['all', 'recurring', 'other'].includes(req.query.filter) ? req.query.filter : 'all';
-    const txns = await loadCashTxns(req.ctx.perm);
+    const txns = await loadCashTxns();
     const res = planVsActual(txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
@@ -1112,7 +998,7 @@ export default async function financeRoutes(app) {
   app.get('/api/cashflow/month', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const month = /^\d{4}-\d{2}$/.test(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
     const today = new Date().toISOString().slice(0, 10);
-    const txns = await loadCashTxns(req.ctx.perm);
+    const txns = await loadCashTxns();
     const mapped = txns.map((t) => ({
       id: t.id, direction: t.direction, status: t.status,
       txn_date: String(t.txn_date).slice(0, 10), amount_mxn: Number(t.amount_mxn) || 0,
@@ -1120,25 +1006,9 @@ export default async function financeRoutes(app) {
       plan_amount_mxn: t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : null,
       currency: t.currency, amount: Number(t.amount), category_code: t.category_code, category_name: t.category_name,
       memo: t.memo, sales_invoice_id: t.sales_invoice_id, recurring_rule_id: t.recurring_rule_id,
-      account_id: t.account_id, account_name: t.account_name,
     }));
-    // AR(수금예정): 전사 미수 인보이스(만기 due_date 기준) — 권한 계좌와 무관(재무 열람자는 전 팀 고객의 수금계획을 봄).
-    const invRows = (await query(
-      `SELECT si.id, c.name AS customer_name, si.sat_no,
-              to_char(si.due_date,'YYYY-MM-DD') AS due_date,
-              (si.total_mxn - COALESCE(SUM(spa.amount),0)) AS outstanding
-         FROM sales_invoices si
-         JOIN customers c ON c.id=si.customer_id
-         LEFT JOIN sales_payment_allocations spa ON spa.invoice_id=si.id
-        WHERE si.status='posted' AND si.deleted_at IS NULL
-          AND to_char(si.due_date,'YYYY-MM')=$1
-        GROUP BY si.id, c.name`, [month])).rows
-      .map((r) => ({ ...r, outstanding: Number(r.outstanding) }));
-    // AP(지급예정): 권한 계좌의 예정(plan)·지출(out) 거래(plan_date 기준).
-    const planOut = mapped.filter((t) => t.status === 'plan' && t.direction === 'out');
-    const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month);
     // 일자별 집계 + 누적잔고(기초잔고부터 그 달 시작 직전까지 누적 후 일자별)
-    const opening = await openingBalanceMxn(req.ctx.perm);
+    const opening = await openingBalanceMxn();
     // 그 달 1일 직전까지의 모든 실적 순액 합 = 기초 + 과거 실적
     const monthStart = month + '-01';
     let runBefore = opening;
@@ -1165,10 +1035,7 @@ export default async function financeRoutes(app) {
       const c = byDay[ds];
       const actualNet = c.items.filter((x) => x.status === 'actual').reduce((s, x) => s + (x.direction === 'in' ? 1 : -1) * x.amount_mxn, 0);
       cumActual += actualNet;
-      const arc = arByDay[ds] || { sum: 0, items: [] };
-      const apc = apByDay[ds] || { sum: 0, items: [] };
-      return { date: ds, in: r2(c.in), out: r2(c.out), net: r2(c.in - c.out), cumulative: r2(cumActual), items: c.items,
-        ar: r2(arc.sum), ap: r2(apc.sum), ar_items: arc.items, ap_items: apc.items, balance: r2(cumActual) };
+      return { date: ds, in: r2(c.in), out: r2(c.out), net: r2(c.in - c.out), cumulative: r2(cumActual), items: c.items };
     });
     const breakdown = monthBreakdown(mapped, month, today);
     return { month, today, opening_before_month: r2(runBefore), days, ...breakdown };
@@ -1179,7 +1046,7 @@ export default async function financeRoutes(app) {
     const filter = ['all', 'recurring', 'other'].includes(req.query.filter) ? req.query.filter : 'all';
     const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
     const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
-    const txns = await loadCashTxns(req.ctx.perm);
+    const txns = await loadCashTxns();
     const res = planVsActualByCategory(txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: t.txn_date, plan_date: t.plan_date || t.txn_date,

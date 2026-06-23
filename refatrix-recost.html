@@ -99,6 +99,13 @@
       </div>
 
       <div class="card">
+        <div class="card-h">중복 정리 분석 — 같은 SKU·수량 배치 자동 묶기</div>
+        <div class="hint">같은 SKU·수량 구성의 배치를 <b>중복 그룹</b>으로 묶어, 제품별 <b>유령(중복)수량 · 현재고 · 판매 · 음수 없이 제거 가능한 양 · 막힌 유령(실입고 누락 의심)</b>을 보여줍니다. 읽기 전용이라 아무것도 바꾸지 않습니다.</div>
+        <button class="btn" id="dupBtn" style="margin-top:8px">🔍 중복 분석 실행</button>
+        <div id="dupResult" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
         <div class="card-h">배치 정리 — 잘못 등록·테스트 배치 삭제</div>
         <div class="hint">재고 화면의 "배치 삭제"는 재고만 역산하고 배치 기록은 남아, 위 목록·정정 엑셀에 계속 나타납니다. 여기서 삭제하면 <b>남은 재고를 역산하고 배치 기록까지 완전히 제거</b>합니다(목록·엑셀에서 사라짐). 디렉터 전용 · 되돌릴 수 없습니다.</div>
         <div id="batchList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
@@ -149,6 +156,35 @@
     loadBatches();
   }
 
+  async function loadDupAnalysis(){
+    const box=$('dupResult'); box.innerHTML='<div class="hint">분석 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/import-recost/duplicate-analysis',{headers:auth()}).then(r=>r.json());
+      const groups=(d&&d.groups)||[];
+      if(!groups.length){ box.innerHTML='<div class="hint">동일 SKU·수량 구성의 중복 배치가 없습니다.</div>'; return; }
+      let h='<div class="hint" style="margin-bottom:8px"><b>'+groups.length+'개 중복 그룹</b> 발견. <span style="color:var(--income);font-weight:700">안전제거</span>=음수 없이 뺄 수 있는 유령 · <span style="color:var(--expense);font-weight:700">막힌유령</span>=이미 팔려나가 빼면 음수(실입고 누락 의심).</div>';
+      groups.forEach((g,gi)=>{
+        const verdict = g.all_removable
+          ? '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#e7f3ee;color:var(--income)">유령 전부 안전 제거 가능</span>'
+          : '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#fdece9;color:var(--expense)">일부 막힘 — 실입고 누락/판매 확인 필요</span>';
+        const phantomList=g.phantom_batches.map(b=>esc(b.batch_no||('#'+b.batch_id))+(b.import_date?(' ('+b.import_date+')'):'')).join(', ');
+        h+='<div style="border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+          +'<div><b>그룹 '+(gi+1)+'</b> · 동일 구성 배치 '+g.dup_count+'개</div>'+verdict+'</div>'
+          +'<div class="hint" style="margin-bottom:6px">보존 제안(가장 오래됨): <b>'+esc(g.keep_batch.batch_no||('#'+g.keep_batch.batch_id))+'</b>'+(g.keep_batch.import_date?(' ('+g.keep_batch.import_date+')'):'')+' · 유령 후보: '+esc(phantomList||'-')+'</div>'
+          +'<table style="margin-top:2px"><thead><tr><th>SKU</th><th>품명</th><th class="n">배치당</th><th class="n">유령수량</th><th class="n">현재고</th><th class="n">판매</th><th class="n">안전제거</th><th class="n">막힌유령</th></tr></thead><tbody>';
+        g.products.forEach(p=>{
+          h+='<tr><td><b>'+esc(p.code||'-')+'</b></td><td>'+esc(p.name||'-')+'</td>'
+            +'<td class="n">'+nf(p.per_batch_qty)+'</td><td class="n">'+nf(p.phantom_qty)+'</td>'
+            +'<td class="n">'+nf(p.current_stock)+'</td><td class="n">'+nf(p.sold_qty)+'</td>'
+            +'<td class="n" style="color:var(--income);font-weight:700">'+nf(p.removable_safe)+'</td>'
+            +'<td class="n" style="'+(p.stuck_phantom>0?'color:var(--expense);font-weight:700':'')+'">'+nf(p.stuck_phantom)+'</td></tr>';
+        });
+        h+='</tbody></table></div>';
+      });
+      box.innerHTML=h;
+    }catch(e){ box.innerHTML='<div class="hint">분석을 불러오지 못했습니다.</div>'; }
+  }
   async function loadBatches(){
     try{
       const d=await fetch(session.api+'/api/import-batches?status=approved',{headers:auth()}).then(r=>r.json());
@@ -338,10 +374,11 @@
     }catch(e){ flash('적용 실패(네트워크).'); $('apBtn').disabled=false; }
   }
 
+  $('dupBtn')?.addEventListener('click', loadDupAnalysis);
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622f"></script>
+<script src="refatrix-nav.js?v=20260622g"></script>
 </body>
 </html>
