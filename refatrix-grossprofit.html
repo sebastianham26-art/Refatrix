@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 매출총이익</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --t1:#0F6E56;--t1bg:#E4F0EB;--t2:#2563A8;--t2bg:#E7EFF8;--t3:#9A6A12;--t3bg:#FBF1DC;--t4:#B23A2E;--t4bg:#F6E7E4;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;padding-top:64px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .card-h .src{font-size:11px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--line)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:6px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--brand);color:#fff}
+  /* 4단계 카드 */
+  .tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:6px}
+  @media(max-width:760px){.tiers{grid-template-columns:repeat(2,1fr)}}
+  .tier{border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px 15px;cursor:pointer;position:relative;
+    transition:transform .12s,box-shadow .12s,border-color .12s;background:var(--card)}
+  .tier:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .tier .lab{font-size:12px;font-weight:800;display:flex;align-items:center;gap:7px}
+  .tier .lab .swatch{width:10px;height:10px;border-radius:3px}
+  .tier .cnt{font-size:30px;font-weight:800;line-height:1.1;margin-top:8px}
+  .tier .unit{font-size:13px;font-weight:600;color:var(--muted);margin-left:3px}
+  .tier .go{position:absolute;right:12px;bottom:11px;font-size:11px;color:var(--muted)}
+  .tier.t1{border-top:3px solid var(--t1)} .tier.t1 .cnt{color:var(--t1)} .tier.t1 .swatch{background:var(--t1)}
+  .tier.t2{border-top:3px solid var(--t2)} .tier.t2 .cnt{color:var(--t2)} .tier.t2 .swatch{background:var(--t2)}
+  .tier.t3{border-top:3px solid var(--t3)} .tier.t3 .cnt{color:var(--t3)} .tier.t3 .swatch{background:var(--t3)}
+  .tier.t4{border-top:3px solid var(--t4)} .tier.t4 .cnt{color:var(--t4)} .tier.t4 .swatch{background:var(--t4)}
+  .totline{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;font-size:12.5px;color:var(--muted)}
+  .totline b{color:var(--ink);font-weight:800}
+  /* 자재내역 */
+  .listhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .searchbar input{width:280px;max-width:60vw}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child,th.l,td.l{text-align:left}
+  th{font-size:11.5px;color:var(--muted);background:#faf8f3;font-weight:700;cursor:pointer;user-select:none}
+  th .ar{font-size:9px;margin-left:3px}
+  td.n,th.n{font-variant-numeric:tabular-nums}
+  tr.r-t1 td.mg{color:var(--t1);font-weight:800}
+  tr.r-t4 td.mg{color:var(--t4);font-weight:800}
+  tr.r-t4{background:#fdf4f2}
+  .star{color:var(--gold)}
+  .chip{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:5px}
+  .chip-imp{background:#fbf3df;color:#8a6512;border:1px solid #ecd9a0}
+  .nores{font-size:13px;color:var(--muted);padding:8px 2px}
+  .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  /* 모달 */
+  .overlay{position:fixed;inset:0;background:rgba(20,18,16,.5);display:flex;align-items:flex-start;justify-content:center;
+    padding:40px 16px;z-index:10001;overflow:auto}
+  .modal{background:var(--card);border-radius:var(--radius);max-width:980px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .modal-h h2{margin:0;font-size:16px;color:var(--brand)}
+  .modal-h .x{margin-left:auto;border:none;background:#f1ede4;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px;color:var(--muted)}
+  .modal-b{padding:16px 20px}
+  .chartwrap{width:100%;overflow-x:auto}
+  svg .grid{stroke:var(--line);stroke-width:1}
+  svg .gridlab{fill:var(--muted);font-size:10px}
+  svg .axis{stroke:#cfc8ba;stroke-width:1}
+  svg .curve{fill:none;stroke:#b9b2a4;stroke-width:1.6}
+  svg .curve.active{stroke:var(--brand);stroke-width:2.4}
+  svg .dot{stroke:#fff;stroke-width:.6}
+  svg .dim{opacity:.28}
+  svg .impmark{fill:var(--gold);stroke:#fff;stroke-width:1}
+  svg .implab{fill:#6a4e12;font-size:9.5px;font-weight:700}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:11.5px;color:var(--muted)}
+  .legend .lk{display:inline-flex;align-items:center;gap:6px}
+  .legend .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .tip{font-size:11.5px;color:var(--muted);margin-top:6px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260623a">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출총이익 · SKU별</div></div>
+    <a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 디렉터 아닐 때 -->
+    <div class="card hidden" id="denyCard"><div class="card-h">접근 권한 없음</div>
+      <div class="hint">매출총이익 화면은 <b>디렉터 전용</b>입니다. 원가·매출총이익이 노출되므로 다른 역할에는 표시되지 않습니다.</div></div>
+
+    <div id="gpSection" class="hidden">
+      <!-- 요약 + 기간 -->
+      <div class="card">
+        <div class="card-h">매출총이익 4단계 요약 <span class="src">매출원가는 판매 시점 동결 스냅샷 · ex-IVA 매출 기준</span>
+          <span style="margin-left:auto"><span class="seg" id="yearSeg"></span></span>
+        </div>
+        <div class="tiers" id="tierCards"></div>
+        <div class="totline" id="totLine"></div>
+        <div class="hint" style="margin-top:8px">카드를 클릭하면 SKU별 매출총이익률 곡선(높은 이익 → 낮은 이익, 우하향)이 열립니다. ★ = 매출총이익 금액 기여 상위(중요) 아이템.</div>
+      </div>
+
+      <!-- 자재내역 -->
+      <div class="card">
+        <div class="card-h">자재내역 (전체 SKU)
+          <span style="margin-left:auto"><button class="btn ghost sm" id="toggleList">▸ 펼치기</button></span>
+        </div>
+        <div id="listBox" class="hidden">
+          <div class="listhead searchbar">
+            <input id="q" type="text" placeholder="코드 · 경쟁사코드 · 품명 검색">
+            <button class="btn sm" id="searchBtn">검색</button>
+            <button class="btn ghost sm" id="clearBtn">해제</button>
+            <span class="hint" id="listMeta"></span>
+          </div>
+          <div id="listResult"></div>
+        </div>
+      </div>
+    </div>
+    <div class="msg" id="errMsg"></div>
+  </div>
+</div>
+
+<!-- 드릴다운 모달 -->
+<div class="overlay hidden" id="chartOverlay">
+  <div class="modal">
+    <div class="modal-h">
+      <h2 id="chartTitle">SKU별 매출총이익률</h2>
+      <span class="seg" id="scopeSeg" style="margin-left:14px">
+        <button data-scope="all" class="on">전체</button>
+        <button data-scope="tier">이 카드만</button>
+      </span>
+      <button class="x" id="chartClose">✕</button>
+    </div>
+    <div class="modal-b">
+      <div id="chartHint" class="hint" style="margin-bottom:8px"></div>
+      <div class="chartwrap"><div id="chartSvg"></div></div>
+      <div class="legend" id="chartLegend"></div>
+      <div class="tip">x축 = 이익률 내림차순 정렬한 SKU 순번 · y축 = 매출총이익률(%) · 점 위에 마우스를 올리면 코드·품명·이익률을 볼 수 있습니다.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let year='';                 // ''=전체, 'YYYY'=해당 연도
+  let isDirector=false;
+  let DATA=null;               // 서버 응답 캐시
+  let listOpen=false, listSort='margin', listDir='desc', listQ='';
+  let chartScope='all', chartTier=null;
+
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const pct=(n)=> n==null?'—':(Number(n).toLocaleString('es-MX',{minimumFractionDigits:1,maximumFractionDigits:1})+'%');
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // ── 구간 정의(백엔드 GP_TIERS와 동일하게 유지) ──
+  const TIERS=[
+    {key:'t1',label:'21% 이상',min:21,max:Infinity},
+    {key:'t2',label:'10%~20%',min:10,max:21},
+    {key:'t3',label:'0%~9%',min:0,max:10},
+    {key:'t4',label:'0% 미만',min:-Infinity,max:0},
+  ];
+  const TIER_DESC={t1:'우수',t2:'양호',t3:'주의',t4:'손실'};
+  function tierOf(m){ if(m==null)return null; for(const t of TIERS) if(m>=t.min&&m<t.max)return t.key; return null; }
+
+  // ── 곡선 필터(테스트 대상 순수함수) ──
+  function filterCurve(curve, tierKey){
+    if(!tierKey) return curve.map((p,i)=>({...p,rank:i+1}));
+    return curve.filter(p=>p.tier===tierKey).map((p,i)=>({...p,rank:i+1}));
+  }
+  // ── 차트 좌표 계산(테스트 대상 순수함수) ──
+  function chartGeo(points, W, H){
+    const padL=46,padR=16,padT=14,padB=34;
+    const plotW=W-padL-padR, plotH=H-padT-padB;
+    const ms=points.map(p=>p.margin_pct);
+    let lo=Math.min(0, ...ms), hi=Math.max(25, ...ms);
+    // 0,10,21 기준선이 보이도록 약간의 여백
+    lo=Math.floor(lo/5)*5-2; hi=Math.ceil(hi/5)*5+2;
+    if(hi<=lo) hi=lo+10;
+    const n=points.length;
+    const xOf=(rank)=> n<=1 ? padL+plotW/2 : padL + (rank-1)/(n-1)*plotW;
+    const yOf=(m)=> padT + (hi-m)/(hi-lo)*plotH;
+    const xy=points.map(p=>({x:xOf(p.rank),y:yOf(p.margin_pct),p}));
+    // y 눈금: 손익 기준선(21,10,0) + lo/hi
+    const guides=[21,10,0].filter(g=>g>lo&&g<hi);
+    const yTicks=[hi,...guides,lo].filter((v,i,a)=>a.indexOf(v)===i).map(v=>({v,y:yOf(v)}));
+    return {padL,padR,padT,padB,plotW,plotH,lo,hi,xy,yTicks,xOf,yOf};
+  }
+  const TIER_COLOR={t1:'#0F6E56',t2:'#2563A8',t3:'#9A6A12',t4:'#B23A2E'};
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      initApp();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function renderYearSeg(){
+    const cur=new Date().getFullYear();
+    const years=[cur-2,cur-1,cur];
+    $('yearSeg').innerHTML=
+      '<button class="'+(year===''?'on':'')+'" onclick="pickYear(\'\')">전체</button>'
+      +years.map(y=>'<button class="'+(String(y)===year?'on':'')+'" onclick="pickYear(\''+y+'\')">'+y+'</button>').join('');
+  }
+  function pickYear(y){ year=String(y); renderYearSeg(); load(); }
+  window.pickYear=pickYear;
+
+  async function initApp(){
+    try{
+      const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());
+      isDirector=!!(su&&su.isDirector)||((su&&su.role)==='director');
+    }catch(e){ isDirector=((session.user&&session.user.role)==='director'); }
+    if(!isDirector){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
+    $('denyCard').classList.add('hidden'); $('gpSection').classList.remove('hidden');
+    renderYearSeg(); load();
+  }
+
+  async function load(){
+    const err=$('errMsg'); err.className='msg';
+    try{
+      let qs='';
+      if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const d=await fetch(session.api+'/api/gross-profit'+qs,{headers:auth()}).then(r=>r.json());
+      if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
+      DATA=d;
+      renderTiers(); renderTotals(); if(listOpen) renderList();
+    }catch(e){ err.className='msg err'; err.textContent='서버에 연결할 수 없습니다.'; }
+  }
+
+  function renderTiers(){
+    const s=DATA.summary||{};
+    const html=TIERS.map(t=>{
+      const n=s[t.key]||0;
+      return '<div class="tier '+t.key+'" data-tier="'+t.key+'">'
+        +'<div class="lab"><span class="swatch"></span>'+t.label+' <span style="color:var(--muted);font-weight:600">· '+TIER_DESC[t.key]+'</span></div>'
+        +'<div class="cnt">'+n+'<span class="unit">개</span></div>'
+        +'<div class="go">클릭 → 곡선 ▸</div></div>';
+    }).join('');
+    $('tierCards').innerHTML=html;
+    $('tierCards').querySelectorAll('.tier').forEach(el=>{
+      el.addEventListener('click',()=>openChart(el.getAttribute('data-tier')));
+    });
+  }
+  function renderTotals(){
+    const t=DATA.totals||{}; const ns=(DATA.summary&&DATA.summary.no_sales)||0;
+    $('totLine').innerHTML=
+      '판매 SKU <b>'+(DATA.sold_count||0)+'</b>개'
+      +' · 판매 없음 <b>'+ns+'</b>개'
+      +' · 총매출 <b>MX$'+fmt(t.revenue)+'</b>'
+      +' · 총매출원가 <b>MX$'+fmt(t.cogs)+'</b>'
+      +' · 총매출총이익 <b>MX$'+fmt(t.profit)+'</b>'
+      +' · 전체 이익률 <b>'+pct(t.margin_pct)+'</b>';
+  }
+
+  // ── 자재내역 토글/렌더 ──
+  function toggleList(){
+    listOpen=!listOpen;
+    $('listBox').classList.toggle('hidden',!listOpen);
+    $('toggleList').textContent=listOpen?'▾ 숨기기':'▸ 펼치기';
+    if(listOpen&&DATA) renderList();
+  }
+  function sortedItems(){
+    let items=(DATA.items||[]).slice();
+    if(listQ){ const q=listQ.toLowerCase();
+      items=items.filter(p=>(p.code||'').toLowerCase().includes(q)||(p.scode||'').toLowerCase().includes(q)||(p.name||'').toLowerCase().includes(q)||(p.app||'').toLowerCase().includes(q));
+    }
+    const dir=listDir==='asc'?1:-1;
+    const keyf={
+      code:(a,b)=>(a.code>b.code?1:a.code<b.code?-1:0),
+      margin:(a,b)=>((a.margin_pct==null?-1e9:a.margin_pct)-(b.margin_pct==null?-1e9:b.margin_pct)),
+      profit:(a,b)=>a.profit-b.profit, revenue:(a,b)=>a.revenue-b.revenue,
+      sold:(a,b)=>a.sold_qty-b.sold_qty,
+    }[listSort]||((a,b)=>0);
+    items.sort((a,b)=>{ const r=keyf(a,b); return listSort==='code'? r*dir : (r*dir); });
+    return items;
+  }
+  function renderList(){
+    const impSet=new Set(DATA.important_ids||[]);
+    const items=sortedItems();
+    const sh=(k,l)=>'<th class="n" data-sort="'+k+'">'+l+(listSort===k?('<span class="ar">'+(listDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
+    let h='<table><thead><tr>'
+      +'<th class="l" data-sort="code">코드'+(listSort==='code'?('<span class="ar">'+(listDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>'
+      +'<th class="l">경쟁사(SyD)</th><th class="l">적용차종</th>'
+      +'<th class="n">재고</th>'+sh('sold','누적판매')+sh('revenue','매출(ex-IVA)')
+      +'<th class="n">매출원가</th>'+sh('profit','매출총이익')+sh('margin','이익률')
+      +'</tr></thead><tbody>';
+    items.forEach(p=>{
+      const tk=tierOf(p.margin_pct);
+      let syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · '); if(syd.length>34)syd=syd.slice(0,34)+'…';
+      let app=(p.app||'').toString(); if(app.length>34)app=app.slice(0,34)+'…';
+      const imp=impSet.has(p.id);
+      h+='<tr class="'+(tk?('r-'+tk):'')+'">'
+        +'<td class="l"><span class="code">'+esc(p.code)+'</span>'+(imp?'<span class="chip chip-imp">★ 중요</span>':'')+'</td>'
+        +'<td class="l" style="font-size:11px;color:var(--muted)">'+(syd||'—')+'</td>'
+        +'<td class="l" style="font-size:11px;color:var(--muted)">'+(app||'—')+'</td>'
+        +'<td class="n">'+fmt(p.stock_qty)+'</td>'
+        +'<td class="n">'+fmt(p.sold_qty)+'</td>'
+        +'<td class="n">'+fmt(p.revenue)+'</td>'
+        +'<td class="n">'+fmt(p.cogs)+'</td>'
+        +'<td class="n">'+fmt(p.profit)+'</td>'
+        +'<td class="n mg">'+(p.margin_pct==null?'<span style="color:var(--muted)">판매없음</span>':pct(p.margin_pct))+'</td>'
+        +'</tr>';
+    });
+    h+='</tbody></table>';
+    $('listResult').innerHTML=items.length?h:'<div class="nores">일치하는 SKU가 없습니다.</div>';
+    $('listMeta').textContent='표시 '+items.length+'개 / 전체 '+((DATA.items||[]).length)+'개';
+    $('listResult').querySelectorAll('th[data-sort]').forEach(th=>{
+      th.addEventListener('click',()=>{ const k=th.getAttribute('data-sort');
+        if(listSort===k) listDir=(listDir==='asc'?'desc':'asc'); else { listSort=k; listDir=(k==='code'?'asc':'desc'); }
+        renderList();
+      });
+    });
+  }
+
+  // ── 드릴다운 차트 ──
+  function openChart(tierKey){
+    chartTier=tierKey; chartScope='all';
+    $('scopeSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-scope')==='all'));
+    $('chartOverlay').classList.remove('hidden');
+    drawChart();
+  }
+  function closeChart(){ $('chartOverlay').classList.add('hidden'); }
+  function drawChart(){
+    const t=TIERS.find(x=>x.key===chartTier);
+    $('chartTitle').textContent='SKU별 매출총이익률 — '+(t?t.label+' ('+TIER_DESC[t.key]+')':'전체');
+    const all=DATA.curve||[];
+    const points=(chartScope==='tier')? filterCurve(all,chartTier) : filterCurve(all,null);
+    if(!points.length){ $('chartSvg').innerHTML='<div class="nores">이 구간에 해당하는 판매 SKU가 없습니다.</div>'; $('chartLegend').innerHTML=''; $('chartHint').textContent=''; return; }
+    const W=Math.max(720, Math.min(1800, points.length*9+120)), H=380;
+    const g=chartGeo(points,W,H);
+    let svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" xmlns="http://www.w3.org/2000/svg" font-family="inherit">';
+    // y 기준선 + 라벨
+    g.yTicks.forEach(tk=>{
+      const isKey=(tk.v===0||tk.v===10||tk.v===21);
+      svg+='<line class="grid" x1="'+g.padL+'" y1="'+tk.y.toFixed(1)+'" x2="'+(W-g.padR)+'" y2="'+tk.y.toFixed(1)+'"'+(isKey?' stroke-dasharray="4 3"':'')+'/>';
+      svg+='<text class="gridlab" x="'+(g.padL-6)+'" y="'+(tk.y+3).toFixed(1)+'" text-anchor="end">'+tk.v+'%</text>';
+    });
+    // 곡선(전체) — active tier 구간만 강조, 나머지 흐리게
+    // 전체 polyline
+    const pathAll=g.xy.map((q,i)=>(i?'L':'M')+q.x.toFixed(1)+' '+q.y.toFixed(1)).join(' ');
+    svg+='<path class="curve'+(chartScope==='tier'?' active':'')+'" d="'+pathAll+'"/>';
+    if(chartScope==='all' && chartTier){
+      const seg=g.xy.filter(q=>q.p.tier===chartTier);
+      if(seg.length>1){ const ap=seg.map((q,i)=>(i?'L':'M')+q.x.toFixed(1)+' '+q.y.toFixed(1)).join(' ');
+        svg+='<path class="curve active" d="'+ap+'"/>'; }
+    }
+    // 점들
+    g.xy.forEach(q=>{
+      const inTier=(!chartTier)|| (q.p.tier===chartTier) || (chartScope==='tier');
+      const col=TIER_COLOR[q.p.tier]||'#888';
+      const dim=(chartScope==='all'&&chartTier&&q.p.tier!==chartTier)?' dim':'';
+      const r=q.p.important?0:2.4;
+      if(r>0) svg+='<circle class="dot'+dim+'" cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="'+r+'" fill="'+col+'"><title>'+esc(q.p.code)+(q.p.name?(' · '+esc(q.p.name)):'')+'\n이익률 '+Number(q.p.margin_pct).toFixed(1)+'% · 이익 MX$'+fmt(q.p.profit)+'</title></circle>';
+    });
+    // 중요 아이템(★) — 별표 마커 + 코드 라벨
+    g.xy.filter(q=>q.p.important).forEach(q=>{
+      const dim=(chartScope==='all'&&chartTier&&q.p.tier!==chartTier)?' dim':'';
+      svg+=starPath(q.x,q.y,5.5,dim,q.p);
+      svg+='<text class="implab'+dim+'" x="'+q.x.toFixed(1)+'" y="'+(q.y-9).toFixed(1)+'" text-anchor="middle">'+esc(q.p.code)+'</text>';
+    });
+    // x축
+    svg+='<line class="axis" x1="'+g.padL+'" y1="'+(H-g.padB)+'" x2="'+(W-g.padR)+'" y2="'+(H-g.padB)+'"/>';
+    svg+='<text class="gridlab" x="'+g.padL+'" y="'+(H-g.padB+16)+'">SKU 1 (이익률 높음)</text>';
+    svg+='<text class="gridlab" x="'+(W-g.padR)+'" y="'+(H-g.padB+16)+'" text-anchor="end">SKU '+points.length+' (낮음)</text>';
+    svg+='</svg>';
+    $('chartSvg').innerHTML=svg;
+    // 범례 + 안내
+    $('chartLegend').innerHTML=TIERS.map(tt=>'<span class="lk"><span class="sw" style="background:'+TIER_COLOR[tt.key]+'"></span>'+tt.label+'</span>').join('')
+      +'<span class="lk"><span class="sw" style="background:var(--gold)"></span>★ 중요(이익 금액 상위)</span>';
+    const cnt=points.length;
+    $('chartHint').innerHTML=(chartScope==='tier'
+      ? '이 구간 SKU <b>'+cnt+'</b>개만 이익률 내림차순으로 표시합니다.'
+      : '전체 판매 SKU <b>'+cnt+'</b>개를 이익률 내림차순으로 표시하고, <b>'+(t?t.label:'')+'</b> 구간을 강조했습니다.')
+      +' 곡선이 우하향할수록 고이익 SKU에 매출이 집중돼 있다는 뜻입니다.';
+  }
+  function starPath(cx,cy,r,dim,p){
+    let pts=''; for(let i=0;i<10;i++){ const rr=(i%2===0)?r:r*0.45; const a=Math.PI/5*i-Math.PI/2; pts+=(cx+rr*Math.cos(a)).toFixed(1)+','+(cy+rr*Math.sin(a)).toFixed(1)+' '; }
+    return '<polygon class="impmark'+dim+'" points="'+pts.trim()+'"><title>★ 중요 · '+esc(p.code)+(p.name?(' · '+esc(p.name)):'')+'\n이익률 '+Number(p.margin_pct).toFixed(1)+'% · 이익 MX$'+fmt(p.profit)+'</title></polygon>';
+  }
+
+  // 이벤트 바인딩
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('toggleList').addEventListener('click',toggleList);
+  $('searchBtn').addEventListener('click',()=>{ listQ=$('q').value.trim(); renderList(); });
+  $('clearBtn').addEventListener('click',()=>{ listQ=''; $('q').value=''; renderList(); });
+  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ listQ=$('q').value.trim(); renderList(); } });
+  $('chartClose').addEventListener('click',closeChart);
+  $('chartOverlay').addEventListener('click',e=>{ if(e.target.id==='chartOverlay') closeChart(); });
+  $('scopeSeg').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    chartScope=b.getAttribute('data-scope');
+    $('scopeSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    drawChart();
+  }));
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('chartOverlay').classList.contains('hidden')) closeChart(); });
+
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+
+  // 테스트 노출(jsdom) — 순수 로직 + 내부 렌더 훅
+  if(typeof window!=='undefined'){
+    window.__gp={tierOf,filterCurve,chartGeo,TIERS};
+    window.__gpTest={ setData:(d)=>{DATA=d;}, renderTiers, renderTotals, toggleList,
+      openChart, drawChart, setScope:(s)=>{chartScope=s;}, renderList, setSort:(k,d)=>{listSort=k;listDir=d;} };
+  }
+</script>
+<script src="refatrix-nav.js?v=20260623a"></script>
+</body>
+</html>

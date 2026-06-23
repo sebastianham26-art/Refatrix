@@ -1,0 +1,129 @@
+import { query } from '../db.js';
+import { authGuard, requireDirector } from '../middleware/authGuard.js';
+import { logPageView } from '../audit.js';
+
+// ── 매출총이익(SKU별) — 디렉터 전용 ────────────────────────────────────────────
+// 가중평균 단일 풀 모델에서, 매출원가(COGS)는 판매 시점 스냅샷(sales_invoice_lines.cogs_mxn /
+// applied_unit_cost)으로 동결돼 있다. 따라서 SKU별 매출총이익은 게시(posted)·미삭제 인보이스
+// 라인을 제품별로 합산해 산출한다 — 이후 평균원가를 바꿔도 과거 매출총이익은 변하지 않는다.
+//   매출(ex-IVA)  = Σ sil.line_amount_mxn
+//   매출원가      = Σ COALESCE(sil.cogs_mxn, sil.qty*sil.applied_unit_cost, 0)
+//   매출총이익    = 매출 − 매출원가
+//   매출총이익률  = 매출총이익 / 매출 × 100   (매출 0이면 null = 판매없음)
+
+const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+// 4단계 고정 구간 (모든 "판매된" SKU가 빠짐없이 정확히 한 구간에 들어가도록 구성).
+//   t1 우수: ≥21% / t2 양호: 10~20%(10≤m<21) / t3 주의: 0~9%(0≤m<10) / t4 손실: <0%
+// (스펙의 "-1% 미만"은 -1~0% 구간이 비어 합계가 안 맞으므로 손실 구간을 0% 미만으로 닫음.)
+export const GP_TIERS = [
+  { key: 't1', label: '21% 이상',  min: 21,        max: Infinity },
+  { key: 't2', label: '10%~20%',   min: 10,        max: 21 },
+  { key: 't3', label: '0%~9%',     min: 0,         max: 10 },
+  { key: 't4', label: '0% 미만',   min: -Infinity, max: 0 },
+];
+export function tierOf(marginPct) {
+  if (marginPct == null) return null;               // 판매 없음 → 어느 카드에도 안 들어감
+  for (const t of GP_TIERS) if (marginPct >= t.min && marginPct < t.max) return t.key;
+  return null;
+}
+
+// 행 목록 → 4단계 카운트 + 판매없음 카운트
+export function summarizeTiers(items) {
+  const counts = { t1: 0, t2: 0, t3: 0, t4: 0, no_sales: 0 };
+  for (const it of items) {
+    if (it.margin_pct == null) { counts.no_sales++; continue; }
+    const k = tierOf(it.margin_pct);
+    if (k) counts[k]++;
+  }
+  return counts;
+}
+
+export default async function grossProfitRoutes(app) {
+  // SKU별 매출총이익 전체(자재내역) + 4단계 요약 + (정렬된) 곡선 데이터.
+  // 옵션: ?from=YYYY-MM-DD&to=YYYY-MM-DD (inv_date 기준 기간 한정). 미지정 시 전체 기간.
+  app.get('/api/gross-profit', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const { perm } = req.ctx;
+    const from = (req.query.from || '').trim();
+    const to = (req.query.to || '').trim();
+
+    const dateConds = [];
+    const params = [];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { params.push(from); dateConds.push(`si.inv_date >= $${params.length}`); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to))   { params.push(to);   dateConds.push(`si.inv_date <= $${params.length}`); }
+    const dateWhere = dateConds.length ? ' AND ' + dateConds.join(' AND ') : '';
+
+    // 모든 제품을 가져오되(자재내역 전부), 판매 집계는 LEFT JOIN(판매 없는 SKU도 표시).
+    const rows = (await query(
+      `SELECT p.id, p.code, p.scode, p.app, p.name, p.stock_qty,
+              COALESCE(s.qty, 0)      AS sold_qty,
+              COALESCE(s.revenue, 0)  AS revenue,
+              COALESCE(s.cogs, 0)     AS cogs,
+              COALESCE(s.inv_count,0) AS inv_count
+         FROM products p
+         LEFT JOIN (
+           SELECT sil.product_id,
+                  SUM(sil.qty)                                                     AS qty,
+                  SUM(sil.line_amount_mxn)                                         AS revenue,
+                  SUM(COALESCE(sil.cogs_mxn, sil.qty * sil.applied_unit_cost, 0))  AS cogs,
+                  COUNT(DISTINCT si.id)                                            AS inv_count
+             FROM sales_invoice_lines sil
+             JOIN sales_invoices si ON si.id = sil.invoice_id
+            WHERE si.status = 'posted' AND si.deleted_at IS NULL${dateWhere}
+            GROUP BY sil.product_id
+         ) s ON s.product_id = p.id
+        WHERE p.deleted_at IS NULL
+        ORDER BY p.code ASC`, params)).rows;
+
+    // node-pg는 NUMERIC/BIGINT를 문자열로 반환 → 모두 Number()로 정규화.
+    const items = rows.map((p) => {
+      const sold = Number(p.sold_qty);
+      const revenue = r2(Number(p.revenue));
+      const cogs = r2(Number(p.cogs));
+      const profit = r2(revenue - cogs);
+      const hasSale = sold > 0 && revenue > 0;
+      return {
+        id: Number(p.id),
+        code: p.code,
+        scode: p.scode || null,
+        app: p.app || null,
+        name: p.name,
+        stock_qty: Number(p.stock_qty || 0),
+        sold_qty: sold,
+        inv_count: Number(p.inv_count || 0),
+        revenue, cogs, profit,
+        margin_pct: hasSale ? r2(profit / revenue * 100) : null,
+      };
+    });
+
+    const summary = summarizeTiers(items);
+
+    // 곡선용(판매된 SKU만, 이익률 높은→낮은 순) — 프런트는 이걸 그대로 그려 우하향 곡선을 만든다.
+    const sold = items.filter((x) => x.margin_pct != null)
+      .sort((a, b) => b.margin_pct - a.margin_pct || b.profit - a.profit);
+    // "중요한 아이템" = 매출총이익(금액) 기여 상위 — 사업을 실제로 움직이는 SKU.
+    const importantIds = sold.slice().sort((a, b) => b.profit - a.profit)
+      .slice(0, Math.min(8, sold.length)).map((x) => x.id);
+    const importantSet = new Set(importantIds);
+
+    const totalRevenue = r2(items.reduce((s, x) => s + x.revenue, 0));
+    const totalCogs = r2(items.reduce((s, x) => s + x.cogs, 0));
+    const totalProfit = r2(totalRevenue - totalCogs);
+
+    await logPageView(perm.userId, 'grossprofit');
+    return {
+      items,
+      sold_count: sold.length,
+      summary,
+      tiers: GP_TIERS.map((t) => ({ key: t.key, label: t.label })),
+      important_ids: importantIds,
+      curve: sold.map((x, i) => ({
+        rank: i + 1, id: x.id, code: x.code, name: x.name,
+        margin_pct: x.margin_pct, profit: x.profit, revenue: x.revenue,
+        tier: tierOf(x.margin_pct), important: importantSet.has(x.id),
+      })),
+      totals: { revenue: totalRevenue, cogs: totalCogs, profit: totalProfit,
+        margin_pct: totalRevenue > 0 ? r2(totalProfit / totalRevenue * 100) : null },
+    };
+  });
+}

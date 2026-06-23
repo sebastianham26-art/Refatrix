@@ -11,6 +11,7 @@ import importRoutes from './routes/importRoutes.js';
 import importCostRoutes from './routes/importCostRoutes.js';
 import salesRoutes from './routes/salesRoutes.js';
 import financeRoutes from './routes/financeRoutes.js';
+import grossProfitRoutes from './routes/grossProfitRoutes.js';
 import budgetRoutes from './routes/budgetRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 import targetRoutes from './routes/targetRoutes.js';
@@ -49,6 +50,7 @@ export function buildApp() {
   app.register(importCostRoutes);
   app.register(salesRoutes);
   app.register(financeRoutes);
+  app.register(grossProfitRoutes);
   app.register(budgetRoutes);
   app.register(customerRoutes);
   app.register(targetRoutes);
