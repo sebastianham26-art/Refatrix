@@ -69,7 +69,7 @@ export default async function productRoutes(app) {
         `SELECT b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency,
                 il.qty, il.unit_cost_mxn
            FROM import_lines il
-           JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
+           JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
           WHERE il.product_id=$1
           ORDER BY b.import_date, b.id`, [id])).rows;
       const lines = costRows.map((r) => ({

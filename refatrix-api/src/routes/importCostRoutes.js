@@ -70,7 +70,7 @@ export default async function importCostRoutes(app) {
     const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
     const status = (req.query.status || 'approved');
     const rows = (await query(
-      `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by, b.currency, b.fx_rate,
+      `SELECT b.id, b.batch_no, b.import_date, b.status, b.note, b.created_by, b.currency, b.fx_rate, b.exclude_from_cost,
               u.name AS created_by_name,
               COALESCE(SUM(il.qty),0) AS total_qty,
               COUNT(DISTINCT il.product_id) AS sku_count,
@@ -93,6 +93,7 @@ export default async function importCostRoutes(app) {
         id: r.id, batch_no: r.batch_no, import_date: r.import_date, status: r.status, note: r.note,
         created_by: r.created_by, created_by_name: r.created_by_name, product_codes: r.product_codes,
         total_qty: Number(r.total_qty), sku_count: Number(r.sku_count),
+        exclude_from_cost: r.exclude_from_cost === true,
         stock_value_mxn: seeCost ? stockValueMxn : null,
       };
       if (seeCost) { out.currency = r.currency; out.fx_rate = fx; }
@@ -104,6 +105,17 @@ export default async function importCostRoutes(app) {
   app.get('/api/import-batches/pending-count', { preHandler: [authGuard, requirePage('inventory')] }, async () => {
     const n = (await query(`SELECT COUNT(*)::int AS n FROM import_batches WHERE deleted_at IS NULL AND status='pending'`)).rows[0].n;
     return { pending: n };
+  });
+
+  // 배치 원가제외 토글(디렉터) — exclude=true면 그 배치 수입을 평균원가·정정·원가근거에서 제외(재고 미변경).
+  app.post('/api/import-batches/:batchId/exclude-cost', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return reply.code(400).send({ error: 'bad_batch' });
+    const exclude = !!(req.body && req.body.exclude);
+    const r = await query(`UPDATE import_batches SET exclude_from_cost=$1 WHERE id=$2 AND deleted_at IS NULL RETURNING batch_no`, [exclude, batchId]);
+    if (!r.rows.length) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'update', target: `import_batch:${batchId}`, detail: { exclude_from_cost: exclude } });
+    return { ok: true, batch_no: r.rows[0].batch_no, exclude_from_cost: exclude };
   });
 
   // 배치별 라인(SKU·수량) + 삭제 안전성. 드릴다운/배치정리 공용.
@@ -221,7 +233,7 @@ export default async function importCostRoutes(app) {
       `SELECT il.batch_id, b.batch_no, to_char(b.import_date,'YYYY-MM-DD') AS import_date, b.currency,
               il.product_id, p.code, p.name, il.qty, il.unit_cost_mxn
          FROM import_lines il
-         JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
+         JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
          JOIN products p ON p.id=il.product_id
         ORDER BY b.import_date, b.id, p.code`)).rows;
     // 배치별 적용환율
@@ -269,7 +281,7 @@ export default async function importCostRoutes(app) {
       `SELECT il.batch_id, il.product_id, il.qty, il.unit_cost_mxn,
               b.currency, to_char(b.import_date,'YYYY-MM-DD') AS import_date
          FROM import_lines il JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
-        WHERE il.product_id = ANY($1)`, [productIds])).rows;
+        WHERE il.product_id = ANY($1) AND b.exclude_from_cost IS NOT TRUE`, [productIds])).rows;
     // 배치별 적용환율
     const metaMap = new Map();
     for (const r of ilRows) { const bid = Number(r.batch_id); if (!metaMap.has(bid)) metaMap.set(bid, { batch_id: bid, currency: r.currency, import_date: r.import_date }); }

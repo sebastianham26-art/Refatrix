@@ -250,10 +250,11 @@
     h+='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th class="n">수량</th><th class="n">SKU</th><th>삭제</th></tr></thead><tbody>';
     batches.forEach(b=>{
       const open = Number(batchOpen)===Number(b.id);
-      h+='<tr class="brow" data-bid="'+b.id+'" style="cursor:pointer">'
-        +'<td style="color:var(--brand);font-weight:800">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+'</td>'
+      h+='<tr class="brow" data-bid="'+b.id+'" style="cursor:pointer'+(b.exclude_from_cost?';opacity:.6':'')+'">'
+        +'<td style="color:var(--brand);font-weight:800">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+(b.exclude_from_cost?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;background:#eee;color:#777">원가제외</span>':'')+'</td>'
         +'<td>'+esc(b.import_date||'')+'</td><td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count!=null?b.sku_count:'')+'</td>'
-        +'<td><button type="button" class="bsafe btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--brand);padding:4px 10px;font-size:11.5px;margin-right:4px">🧹 안전삭제</button>'
+        +'<td><button type="button" class="bexc btn sm" data-bid="'+b.id+'" data-exc="'+(b.exclude_from_cost?1:0)+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:'+(b.exclude_from_cost?'var(--income)':'#8a8a8a')+';padding:4px 10px;font-size:11.5px;margin-right:4px">'+(b.exclude_from_cost?'↺ 원가포함':'⊘ 원가제외')+'</button>'
+        +'<button type="button" class="bsafe btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--brand);padding:4px 10px;font-size:11.5px;margin-right:4px">🧹 안전삭제</button>'
         +'<button type="button" class="bdel btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--expense);padding:4px 10px;font-size:11.5px">🗑 전체삭제</button></td></tr>';
       if(open){ h+='<tr><td colspan="5" style="padding:0;background:#faf8f3">'+batchDetailHtml(b.id)+'</td></tr>'; }
     });
@@ -269,6 +270,20 @@
     $('batchList').querySelectorAll('.bsafe').forEach(btn=>{
       btn.addEventListener('click', (e)=>{ e.stopPropagation(); safeDeleteBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''); });
     });
+    $('batchList').querySelectorAll('.bexc').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleExcludeCost(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-exc')==='1', btn.getAttribute('data-label')||''); });
+    });
+  }
+  async function toggleExcludeCost(id, currentlyExcluded, label){
+    const m=$('batchMsg'); m.className='msg';
+    const next=!currentlyExcluded;
+    if(!window.confirm('배치 "'+label+'"를 '+(next?'원가 계산에서 제외':'원가 계산에 다시 포함')+'합니다.\n(재고 수량은 바뀌지 않고, 평균원가·정정·원가근거에만 반영)\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/exclude-cost',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({exclude:next})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='변경 실패: '+d.error; return; }
+      m.className='msg ok'; m.textContent=esc(d.batch_no||label)+' · '+(next?'원가제외 설정됨':'원가포함으로 복귀');
+      loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='변경 실패(네트워크).'; }
   }
   async function safeDeleteBatch(id, label){
     const m=$('batchMsg'); m.className='msg';
@@ -493,6 +508,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622l"></script>
+<script src="refatrix-nav.js?v=20260622m"></script>
 </body>
 </html>
