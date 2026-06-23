@@ -78,6 +78,25 @@
   </div>
 
   <div class="hidden" id="app">
+
+    <!-- 수금 상세 (오픈 인보이스 / AR) — 최상단 -->
+    <div class="card">
+      <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
+        <span style="margin-left:auto"><span class="seg" id="arSeg"></span></span>
+      </div>
+      <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고(은행 입금증 첨부 가능), <b>수금내역</b>으로 인보이스별 수금 이력을 봅니다.</div>
+      <div class="searchbar">
+        <input id="arSearchQ" placeholder="SAT 번호 또는 고객명·코드로 인보이스 검색" oninput="onArSearchInput()" onkeydown="if(event.key==='Enter')doArSearch()">
+        <button class="btn" onclick="doArSearch()">🔍 검색</button>
+        <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
+        <span id="arSearchInfo" class="hint"></span>
+      </div>
+      <div class="stats" id="arStats"></div>
+      <div id="arGroupBox" style="margin-top:12px"></div>
+      <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="arMsg"></div>
+    </div>
+
     <div id="varSection">
     <div class="card">
       <div class="card-h">정산차액 집계 <span class="src">비현금 손익 조정 · 현금흐름과 분리</span>
@@ -100,24 +119,6 @@
     </div>
 
     </div><!-- /varSection · 정산차액(재무·디렉터 전용) -->
-
-    <!-- 수금 상세 (오픈 인보이스 / AR) -->
-    <div class="card">
-      <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
-        <span style="margin-left:auto"><span class="seg" id="arSeg"></span></span>
-      </div>
-      <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고(은행 입금증 첨부 가능), <b>수금내역</b>으로 인보이스별 수금 이력을 봅니다.</div>
-      <div class="searchbar">
-        <input id="arSearchQ" placeholder="SAT 번호 또는 고객명·코드로 인보이스 검색" oninput="onArSearchInput()" onkeydown="if(event.key==='Enter')doArSearch()">
-        <button class="btn" onclick="doArSearch()">🔍 검색</button>
-        <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
-        <span id="arSearchInfo" class="hint"></span>
-      </div>
-      <div class="stats" id="arStats"></div>
-      <div id="arGroupBox" style="margin-top:12px"></div>
-      <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
-      <div class="msg" id="arMsg"></div>
-    </div>
   </div>
 </div>
 
@@ -661,6 +662,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260623d"></script>
+<script src="refatrix-nav.js?v=20260623e"></script>
 </body>
 </html>
