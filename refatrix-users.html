@@ -89,8 +89,9 @@
   // 부여 가능한 페이지(키 → 표시명). 시스템에 맞춰 핵심만.
   // 화면 단위 권한 키 (없음/열람/수정). 그룹으로 묶어 표시.
   const PERM_GROUPS=[
-    ['영업', [['quote','견적(작성·목록)'],['sales','매출 등록'],['stock','재고 이동'],['shortage','부족분'],['devrequest','개발 요청'],['pipeline','영업활동(파이프라인)'],['customers','고객'],['targets','매출목표']]],
-    ['재무', [['transactions','재무(거래·캐시플로)'],['settlement','수금/정산(AR)'],['budget','예산'],['inventory','수입원가·입고']]],
+    ['영업', [['quote','견적(작성·목록)'],['sales','매출 등록'],['devrequest','개발 요청'],['pipeline','영업활동(파이프라인)'],['customers','고객'],['targets','매출목표']]],
+    ['영업지원', [['settlement','수금/정산(AR)'],['stock','재고 이동'],['shortage','부족분'],['inventory','수입원가·입고']]],
+    ['재무', [['transactions','재무(거래·캐시플로)'],['budget','예산']]],
     ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
   ];
   const PAGES=PERM_GROUPS.flatMap(([,arr])=>arr);
@@ -178,7 +179,7 @@
             return `<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:800;color:#888;margin-bottom:2px">${gname}</div>`+arr.map(([k,label])=>{
               const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
               const col=cur==='edit'?'#0F6E56':cur==='view'?'#B8893B':'#bbb';
-              return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px">${label} <select style="padding:3px 5px;font-size:11px" onchange="setPageAccess(${u.id},'${k}',this.value)">
+              return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px">${label} <select data-uid="${u.id}" data-page="${k}" style="padding:3px 5px;font-size:11px" onchange="setPageAccess(this)">
                 <option value="none" ${cur==='none'?'selected':''}>없음</option>
                 <option value="view" ${cur==='view'?'selected':''}>열람</option>
                 <option value="edit" ${cur==='edit'?'selected':''}>수정·기록</option></select></label>`;}).join('')+`</div>`;}).join('')}</td>
@@ -207,12 +208,32 @@
       loadUsers();
     }catch(e){alert('실패');loadUsers();}
   }
-  async function setPageAccess(userId,pageKey,level){
-    try{
-      if(level==='none'){await fetch(session.api+'/api/users/'+userId+'/page-access?page_key='+pageKey,{method:'DELETE',headers:auth()});}
-      else{await fetch(session.api+'/api/users/'+userId+'/page-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({page_key:pageKey,device_req:'anywhere',access:level})});}
-      loadUsers();
-    }catch(e){alert('실패');loadUsers();}
+  // 페이지 권한 저장 — 계좌 권한과 동일하게 '그 자리에서' 갱신(전체 재렌더 안 함 → 스크롤 안 튐)
+  async function setPageAccess(el){
+    const uid=Number(el.dataset.uid), pageKey=el.dataset.page, level=el.value;
+    if(!Number.isInteger(uid)||!pageKey){ alert('사용자/페이지 식별 오류(uid='+el.dataset.uid+', page='+el.dataset.page+')'); return; }
+    const lab=el.closest('label'); el.disabled=true;
+    let r;
+    if(level==='none'){
+      r=await fetchJsonHard(session.api+'/api/users/'+uid+'/page-access?page_key='+encodeURIComponent(pageKey),{method:'DELETE',headers:auth()},15000);
+    }else{
+      r=await fetchJsonHard(session.api+'/api/users/'+uid+'/page-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({page_key:pageKey,device_req:'anywhere',access:level})},15000);
+    }
+    el.disabled=false;
+    if(!r.ok){
+      const detail=r.err?r.err:((r.data&&(r.data.message||r.data.error))||('HTTP '+r.status));
+      alert('페이지 권한 저장 실패: '+detail);
+      return;
+    }
+    // 로컬 상태 갱신(재렌더 없이)
+    const u=users.find(x=>Number(x.id)===uid);
+    if(u){
+      u.pages=u.pages||[]; u.page_access=u.page_access||{};
+      if(level==='none'){ u.pages=u.pages.filter(p=>p!==pageKey); delete u.page_access[pageKey]; }
+      else{ if(u.pages.indexOf(pageKey)<0) u.pages.push(pageKey); u.page_access[pageKey]=level; }
+    }
+    // 색상 갱신(저장 성공 표시)
+    if(lab) lab.style.borderLeftColor = level==='edit'?'#0F6E56':level==='view'?'#B8893B':'#bbb';
   }
 
   // ===== 계좌 권한 (인라인) =====
@@ -266,6 +287,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622g"></script>
+<script src="refatrix-nav.js?v=20260623c"></script>
 </body>
 </html>

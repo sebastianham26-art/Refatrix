@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260623a loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260623c loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -90,6 +90,12 @@
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
   var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
+
+  // 그룹 노출용 명시 앵커(SHARED 자동필터 대신 사용). 영업지원은 자체 비공유 화면이
+  // recost(디렉터 전용)뿐이라 비디렉터에게 영영 안 떴음 → 권한 받은 핵심 화면을 앵커로 지정.
+  // settlement(수금/정산)·inventory(import/importcost)는 영업담당 기본권한이 아니라
+  // 영업지원·재무 담당에게만 부여되므로, 영업 직원 메뉴를 어지럽히지 않음.
+  var GROUP_ANCHOR_KEYS={ support:['settlement','import','importcost'] };
 
   var sess=null, sum=null, openGroup=null;
   function getSession(){
@@ -191,9 +197,9 @@
       var only=ROLE_ONLY_GROUPS[sum.role];
       if(only && only.indexOf(g.key)<0) return false;
     }
-    // 공유 화면을 제외한 '앵커' 화면 중 하나라도 볼 수 있으면 그룹 노출
-    var anchors=g.screens.filter(function(k){return !SHARED[k];});
-    if(!anchors.length) anchors=g.screens;
+    // 그룹별 명시 앵커가 있으면 그것을, 없으면 공유 화면 제외 '앵커' 중 하나라도 볼 수 있으면 그룹 노출
+    var anchors=GROUP_ANCHOR_KEYS[g.key];
+    if(!anchors){ anchors=g.screens.filter(function(k){return !SHARED[k];}); if(!anchors.length) anchors=g.screens; }
     return anchors.some(function(k){return SCREENS[k]&&canSee(k);});
   }
   function render(){
