@@ -29,10 +29,27 @@
   .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
   .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
   table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
-  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th,td{text-align:left;padding:8px 7px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{padding-left:2px}
   th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-  .code{font-weight:700;color:var(--brand)}
+  th.nowrap,td.nowrap{white-space:nowrap}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--brand)}
+  th.sortable .ar{font-size:9px;opacity:.5;margin-left:2px}
+  th.sortable.active{color:var(--brand)}
+  th.sortable.active .ar{opacity:1}
+  .code{font-weight:700;color:var(--brand);white-space:nowrap}
+  .code .tri{display:inline-block;width:13px;color:var(--gold);transition:transform .15s}
+  tr.prow.open .code .tri{transform:rotate(90deg)}
+  .rack{font-size:11px;color:#6f6a60}
+  /* 입고단가 브레이크다운 카드 */
+  .cbk{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 6px}
+  .cbk .card2{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:248px;background:#fff;font-size:12px}
+  .cbk .bh{font-weight:700;color:var(--brand);margin-bottom:5px;font-size:11.5px}
+  .cbk .ln{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
+  .cbk .ln .lk{color:var(--muted)}
+  .cbk .tot{border-top:1px solid var(--line);margin-top:5px;padding-top:5px}
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
   .hidden{display:none}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
@@ -195,32 +212,41 @@
   window.addEventListener('hashchange',function(){ if($('loginCard').classList.contains('hidden')) applyHashTab(); });
 
   let prodOffset=0, prodQ='', prodLimit=50, prodTotal=0, prodHasList=false, prodHasCost=false;
+  let prodSort='', prodDir='desc';  // 헤더 클릭 정렬(서버측 전체 기준). ''=코드순 기본.
   function escP(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function doSearch(){ prodOffset=0; prodQ=$('q').value.trim(); loadProducts(); }
   async function loadProducts(){
     const r=$('result'); r.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset,{headers:auth()});
+      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):''),{headers:auth()});
       const d=await res.json(); const items=d.items||[];
       prodTotal=Number(d.total||items.length);
       if(!items.length){ r.innerHTML='<div class="hint">일치하는 제품이 없습니다.</div>'; return; }
       prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
-      const colN=6+(prodHasList?1:0)+(prodHasCost?2:0);
+      const colN=7+(prodHasList?1:0)+(prodHasCost?2:0);
+      const sh=(key,label)=>'<th class="num nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'">'+label
+        +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
       let h='<table><thead><tr>'
-        +'<th>코드</th><th>제품명</th><th>경쟁사(SyD)</th><th>적용차종</th><th>바코드</th><th class="num">재고</th>'
-        +(prodHasList?'<th class="num">정가</th>':'')+(prodHasCost?'<th class="num">평균원가</th>':'')+(prodHasCost?'<th class="num">재고 평가액</th>':'')
+        +'<th class="nowrap">코드</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th><th class="nowrap">랙</th>'
+        +sh('stock','재고')+sh('sold','누적판매')
+        +(prodHasList?'<th class="num nowrap">List Price</th>':'')
+        +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
         +'</tr></thead><tbody>';
       items.forEach(function(p){
         var stock=Number(p.stock_qty);
         var val=('avg_cost' in p)&&p.avg_cost!=null?Number(p.avg_cost)*stock:null;
         var syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · '); var app=(p.app||'').toString();
         if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
+        var sold=Number(p.sold_qty||0);
+        var rack=escP(p.rack_location||'');
         h+='<tr class="prow" data-pid="'+p.id+'" style="cursor:pointer">'
-          +'<td class="code">▸ '+escP(p.code)+'</td><td>'+escP(p.name||'')+'</td>'
+          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(app||'—')+'</td>'
-          +'<td>'+(escP(p.ean)||'—')+'</td>'
+          +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
+          +'<td class="rack nowrap">'+(rack||'—')+'</td>'
           +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
+          +'<td class="num">'+qty(sold)+'</td>'
           +(prodHasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(val)+'</td>':'')
@@ -239,11 +265,18 @@
       if(np) np.addEventListener('click',()=>{ if(prodOffset+prodLimit<prodTotal){ prodOffset+=prodLimit; loadProducts(); }});
       if(pp) pp.addEventListener('click',()=>{ if(prodOffset>0){ prodOffset=Math.max(0,prodOffset-prodLimit); loadProducts(); }});
       r.querySelectorAll('.prow').forEach(tr=>{ tr.addEventListener('click',()=>toggleDrill(tr, Number(tr.getAttribute('data-pid')), colN)); });
+      r.querySelectorAll('th.sortable').forEach(th=>{ th.addEventListener('click',()=>{
+        const key=th.getAttribute('data-sort');
+        if(prodSort===key){ prodDir=(prodDir==='asc'?'desc':'asc'); }   // 같은 열 재클릭 → 오름/내림 토글
+        else { prodSort=key; prodDir='desc'; }                          // 새 열 → 많은 순부터
+        prodOffset=0; loadProducts();
+      }); });
     }catch(e){ r.innerHTML='<div class="hint">조회에 실패했습니다.</div>'; }
   }
   async function toggleDrill(tr, pid, colN){
     const next=tr.nextElementSibling;
-    if(next&&next.classList.contains('pdrill')){ next.remove(); return; }
+    if(next&&next.classList.contains('pdrill')){ next.remove(); tr.classList.remove('open'); return; }
+    tr.classList.add('open');
     const dr=document.createElement('tr'); dr.className='pdrill';
     dr.innerHTML='<td colspan="'+colN+'" style="background:#faf8f3;padding:10px 14px"><div class="hint">불러오는 중…</div></td>';
     tr.parentNode.insertBefore(dr, tr.nextSibling);
@@ -269,12 +302,19 @@
       h+='<div style="font-weight:800;color:var(--brand,#143D34);margin-bottom:4px">원가 계산 근거</div>';
       h+='<div class="hint" style="margin:2px 0 6px"><b>'+escP(c.formula)+'</b><br>'+escP(c.note||'')+'</div>';
       if(c.lines&&c.lines.length){
-        h+='<table style="margin-bottom:6px"><thead><tr><th>배치</th><th>입고일</th><th>통화</th><th class="num">수입수량</th><th class="num">입고단가(MXN)</th><th class="num">금액(MXN)</th></tr></thead><tbody>'
-          +c.lines.map(l=>'<tr><td>'+escP(l.batch_no||'')+'</td><td>'+escP(l.import_date||'')+'</td><td>'+escP(l.currency||'')+'</td>'
-            +'<td class="num">'+qty(l.qty)+'</td><td class="num">'+(l.unit_cost_mxn!=null?fmt(l.unit_cost_mxn):'—')+'</td>'
-            +'<td class="num">'+fmt(l.qty*(l.unit_cost_mxn||0))+'</td></tr>').join('')
-          +'<tr style="font-weight:700;border-top:2px solid var(--line,#e6e1d6)"><td colspan="3">합계</td><td class="num">'+qty(c.sum_qty)+'</td><td></td><td class="num">'+fmt(c.sum_amount)+'</td></tr>'
-          +'</tbody></table>';
+        // 배치별 입고단가 브레이크다운: 수입금액(원통화) → 환율 → 기본원가(MXN) + 부대비용(1/n 배분) = 입고단가
+        const fc=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+        h+='<div class="cbk">'+c.lines.map(function(l){
+          const isUsd=(l.currency==='USD');
+          let k='<div class="card2"><div class="bh">'+escP(l.batch_no||'(배치)')+' · '+escP(l.import_date||'')+' · '+escP(l.currency||'')+'</div>';
+          k+='<div class="ln"><span class="lk">수입금액</span><span>'+qty(l.qty)+' × '+fc(l.import_price)+' = <b>'+escP(l.currency||'')+' '+fc(l.base_amount_cur)+'</b></span></div>';
+          if(isUsd) k+='<div class="ln"><span class="lk">환율(USD→MXN)</span><span>× '+fc(l.fx_rate)+' → 기본원가 <b>MXN '+fc(l.base_amount_mxn)+'</b></span></div>';
+          else      k+='<div class="ln"><span class="lk">기본원가</span><span><b>MXN '+fc(l.base_amount_mxn)+'</b></span></div>';
+          k+='<div class="ln"><span class="lk">부대비용(1/n 배분)</span><span>+ MXN '+fc(l.overhead_mxn)+'</span></div>';
+          k+='<div class="ln tot"><span class="lk">입고단가</span><span>MXN '+fc(l.line_total_mxn)+' ÷ '+qty(l.qty)+' = <b>MXN '+fc(l.unit_cost_mxn)+'</b></span></div>';
+          return k+'</div>';
+        }).join('')+'</div>';
+        h+='<div class="hint" style="margin:2px 0">합계 수입수량 <b>'+qty(c.sum_qty)+'</b> · 합계 금액 <b>MXN '+fmt(c.sum_amount)+'</b></div>';
         h+='<div class="hint" style="margin:2px 0">평균원가 = '+fmt(c.sum_amount)+' ÷ '+qty(c.sum_qty)+' = <b>'+fmt(c.computed_avg)+'</b> MXN'
           +(c.stored_avg_cost!=null&&Math.abs(c.stored_avg_cost-c.computed_avg)>0.01?(' · (현재 저장된 평균원가: '+fmt(c.stored_avg_cost)+' — 입고 이력의 이동평균/수동 보정으로 다를 수 있음)'):'')+'</div>';
       }else{
@@ -455,6 +495,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622h"></script>
+<script src="refatrix-nav.js?v=20260623a"></script>
 </body>
 </html>
