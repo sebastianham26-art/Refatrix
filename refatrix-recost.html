@@ -227,7 +227,7 @@
     const m=$('batchMsg'); m.className='msg';
     if(!window.confirm('배치 "'+label+'"를 안전 삭제합니다.\n\n재고를 0에서 멈추도록만 빼므로 음수가 안 됩니다(이미 팔린 만큼은 그대로 둠).\n판매·매출원가 기록은 건드리지 않습니다.\n\n진행할까요?')) return;
     try{
-      const d=await fetch(session.api+'/api/import-batches/'+id+'/safe-delete',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth())}).then(r=>r.json());
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/safe-delete',{method:'POST',headers:auth()}).then(r=>r.json());
       if(d.error){ m.className='msg err'; m.textContent='삭제 실패: '+d.error; return; }
       let msg='안전 삭제 완료 · '+esc(d.batch_no||label)+' · SKU '+nf(d.sku_count)+'종, 재고에서 '+nf(d.removed_total)+'개 제거';
       if(d.remaining_total>0){
@@ -407,6 +407,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622i"></script>
+<script src="refatrix-nav.js?v=20260622j"></script>
 </body>
 </html>
