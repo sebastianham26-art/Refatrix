@@ -130,7 +130,7 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const nf=(n)=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:2});
-  let isDirector=false, uploadedLines=[], overheads=[], batches=[], batchOpen=null, batchLines={};
+  let isDirector=false, uploadedLines=[], overheads=[], batches=[], batchOpen=null, batchLines={}, templateMap={};
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -349,6 +349,9 @@
       const d=await fetch(session.api+'/api/import-recost/lines',{headers:auth()}).then(r=>r.json());
       const lines=(d&&d.lines)||[];
       if(!lines.length){ $('dlInfo').textContent='수입 라인이 없습니다.'; return; }
+      // _batch_id 열이 지워져도 복구할 수 있게 (배치명|SKU)→ID 매핑 저장
+      templateMap={};
+      lines.forEach(l=>{ templateMap[String(l.batch_no).trim()+'|'+String(l.code).trim()]={batch_id:Number(l.batch_id), product_id:Number(l.product_id)}; });
       const header=['Lote(배치)','SKU','품명','수량','통화','적용환율(USD→MXN)','현재단가(MXN)','입력단가(원통화)','_batch_id','_product_id'];
       const aoa=[header].concat(lines.map(l=>[l.batch_no, l.code, l.name, l.qty, l.currency, l.fx_rate, l.current_unit_cost, '', l.batch_id, l.product_id]));
       const ws=XLSX.utils.aoa_to_sheet(aoa);
@@ -360,6 +363,21 @@
   });
 
   // === 2단계: 업로드 파싱 ===
+  // 헤더 공백·표기 차이에 견고하게: 행 객체에서 조건에 맞는 키의 값을 찾음
+  function pick(row, exact, contains){
+    const keys=Object.keys(row);
+    for(const k of keys){ if(k.trim()===exact) return row[k]; }
+    if(contains){ for(const k of keys){ if(k.replace(/\s/g,'').includes(contains)) return row[k]; } }
+    return undefined;
+  }
+  function num(v){ // 소수점 콤마·통화기호·천단위 콤마 처리
+    if(v==null||v==='') return NaN;
+    if(typeof v==='number') return v;
+    let s=String(v).trim().replace(/[^\d.,-]/g,'');
+    if(s.indexOf(',')>=0 && s.indexOf('.')<0) s=s.replace(',', '.'); // "5,5"→"5.5"
+    else s=s.replace(/,/g,''); // "1,234.5"→"1234.5"
+    return Number(s);
+  }
   function onUpload(ev){
     const f=ev.target.files&&ev.target.files[0]; if(!f) return;
     const rd=new FileReader();
@@ -368,17 +386,37 @@
         const wb=XLSX.read(rd.result,{type:'array'});
         const ws=wb.Sheets[wb.SheetNames[0]];
         const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-        const out=[];
+        const out=[]; let withPrice=0, withId=0, fallbackUsed=0;
         rows.forEach(r=>{
-          const bid=Number(r['_batch_id']), pid=Number(r['_product_id']);
-          const price=r['입력단가(원통화)'];
+          const priceRaw=pick(r,'입력단가(원통화)','입력단가');
+          const v=num(priceRaw);
+          const hasPrice=(priceRaw!==''&&priceRaw!=null&&!isNaN(v)&&v>=0);
+          if(hasPrice) withPrice++;
+          let bid=Number(pick(r,'_batch_id'));
+          let pid=Number(pick(r,'_product_id'));
+          if((!bid||!pid)){ // ID 열이 비었으면 배치명+SKU로 복구
+            const lote=String(pick(r,'Lote(배치)','Lote')||'').trim();
+            const sku=String(pick(r,'SKU','SKU')||'').trim();
+            const m=templateMap[lote+'|'+sku];
+            if(m){ bid=bid||m.batch_id; pid=pid||m.product_id; fallbackUsed++; }
+          }
+          if(bid&&pid) withId++;
           if(!bid||!pid) return;
-          if(price===''||price==null) return;
-          const v=Number(price); if(!(v>=0)) return;
+          if(!hasPrice) return;
           out.push({batch_id:bid, product_id:pid, unit_price:v});
         });
         uploadedLines=out;
-        $('upInfo').textContent=' 단가 입력 '+out.length+'개 라인 인식됨.';
+        if(out.length){
+          $('upInfo').textContent=' 단가 입력 '+out.length+'개 라인 인식됨.'+(fallbackUsed?(' (SKU 매칭 '+fallbackUsed+'건)'):'');
+        }else{
+          // 0개일 때 원인 안내
+          let why;
+          if(!rows.length) why='행을 못 읽었습니다(시트가 비었거나 형식 문제).';
+          else if(withPrice===0) why='입력단가(원통화) 열에 숫자가 없습니다. 그 열에 단가를 입력했는지, 열 제목을 바꾸지 않았는지 확인하세요.';
+          else if(withId===0) why='_batch_id·_product_id 열이 비었고 SKU 매칭도 실패했습니다. 그 열을 지우지 말고, 1단계에서 받은 그대로 업로드하세요(같은 세션에서 다운로드→업로드 권장).';
+          else why='가격과 ID가 같은 행에서 안 맞습니다. 1단계 템플릿 그대로 사용하세요.';
+          $('upInfo').textContent=' 단가 입력 0개 라인 인식됨 — '+why+' (총 '+rows.length+'행, 가격 '+withPrice+'행, ID '+withId+'행)';
+        }
         refreshButtons();
       }catch(e){ $('upInfo').textContent=' 엑셀을 읽지 못했습니다.'; }
     };
@@ -455,6 +493,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622k"></script>
+<script src="refatrix-nav.js?v=20260622l"></script>
 </body>
 </html>
