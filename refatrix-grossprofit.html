@@ -33,7 +33,7 @@
   .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
   .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
-  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .hidden{display:none!important}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg button{border:none;background:#fff;padding:6px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
   .seg button.on{background:var(--brand);color:#fff}
@@ -196,21 +196,30 @@
   }
   // ── 차트 좌표 계산(테스트 대상 순수함수) ──
   function chartGeo(points, W, H){
-    const padL=46,padR=16,padT=14,padB=34;
+    const padL=46,padR=18,padT=16,padB=52;
     const plotW=W-padL-padR, plotH=H-padT-padB;
-    const ms=points.map(p=>p.margin_pct);
-    let lo=Math.min(0, ...ms), hi=Math.max(25, ...ms);
-    // 0,10,21 기준선이 보이도록 약간의 여백
+    const n=points.length;
+    const sorted=points.map(p=>p.margin_pct).slice().sort((a,b)=>a-b);
+    const dataMin=sorted[0], dataMax=sorted[sorted.length-1];
+    // 아웃라이어(예: -87%) 한두 개가 y축을 과하게 늘려 곡선이 납작해지지 않도록,
+    // 하한을 5퍼센타일로 클램프한다(0%는 항상 보이게). 하한 아래 값은 바닥선에 고정 + 표식.
+    const p5=sorted[Math.floor(sorted.length*0.05)];
+    let lo=Math.min(0, (p5==null?dataMin:p5));
+    let hi=Math.max(25, dataMax);
     lo=Math.floor(lo/5)*5-2; hi=Math.ceil(hi/5)*5+2;
     if(hi<=lo) hi=lo+10;
-    const n=points.length;
+    const clampedFloor = dataMin < lo;
     const xOf=(rank)=> n<=1 ? padL+plotW/2 : padL + (rank-1)/(n-1)*plotW;
-    const yOf=(m)=> padT + (hi-m)/(hi-lo)*plotH;
-    const xy=points.map(p=>({x:xOf(p.rank),y:yOf(p.margin_pct),p}));
-    // y 눈금: 손익 기준선(21,10,0) + lo/hi
+    const yOf=(m)=> padT + (hi-Math.max(Math.min(m,hi),lo))/(hi-lo)*plotH; // 범위 밖은 가장자리에 고정
+    const xy=points.map(p=>({x:xOf(p.rank),y:yOf(p.margin_pct),clamped:p.margin_pct<lo,p}));
     const guides=[21,10,0].filter(g=>g>lo&&g<hi);
     const yTicks=[hi,...guides,lo].filter((v,i,a)=>a.indexOf(v)===i).map(v=>({v,y:yOf(v)}));
-    return {padL,padR,padT,padB,plotW,plotH,lo,hi,xy,yTicks,xOf,yOf};
+    // x 눈금(SKU 번호) — 1과 n 포함, 최대 ~12개
+    const step=Math.max(1,Math.ceil(n/12));
+    const ranks=[]; for(let r=1;r<=n;r+=step) ranks.push(r);
+    if(ranks[ranks.length-1]!==n) ranks.push(n);
+    const xTicks=ranks.map(r=>({rank:r,x:xOf(r)}));
+    return {padL,padR,padT,padB,plotW,plotH,lo,hi,xy,yTicks,xTicks,xOf,yOf,clampedFloor,dataMin,n};
   }
   const TIER_COLOR={t1:'#0F6E56',t2:'#2563A8',t3:'#9A6A12',t4:'#B23A2E'};
 
@@ -390,22 +399,39 @@
     }
     // 점들
     g.xy.forEach(q=>{
-      const inTier=(!chartTier)|| (q.p.tier===chartTier) || (chartScope==='tier');
       const col=TIER_COLOR[q.p.tier]||'#888';
       const dim=(chartScope==='all'&&chartTier&&q.p.tier!==chartTier)?' dim':'';
-      const r=q.p.important?0:2.4;
-      if(r>0) svg+='<circle class="dot'+dim+'" cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="'+r+'" fill="'+col+'"><title>'+esc(q.p.code)+(q.p.name?(' · '+esc(q.p.name)):'')+'\n이익률 '+Number(q.p.margin_pct).toFixed(1)+'% · 이익 MX$'+fmt(q.p.profit)+'</title></circle>';
+      const ttl='<title>'+esc(q.p.code)+(q.p.name?(' · '+esc(q.p.name)):'')+'\nSKU 번호 #'+q.p.rank+' · 이익률 '+Number(q.p.margin_pct).toFixed(1)+'% · 이익 MX$'+fmt(q.p.profit)+(q.clamped?(' (실제 '+Number(q.p.margin_pct).toFixed(1)+'%, 축 하한 아래)'):'')+'</title>';
+      if(q.clamped){ // 하한 아래 아웃라이어 → 바닥에 ▼ 표식
+        svg+='<polygon class="dot'+dim+'" points="'+(q.x-3.2).toFixed(1)+','+(q.y-3).toFixed(1)+' '+(q.x+3.2).toFixed(1)+','+(q.y-3).toFixed(1)+' '+q.x.toFixed(1)+','+(q.y+3).toFixed(1)+'" fill="'+col+'">'+ttl+'</polygon>';
+      }else if(!q.p.important){
+        svg+='<circle class="dot'+dim+'" cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="2.4" fill="'+col+'">'+ttl+'</circle>';
+      }
     });
-    // 중요 아이템(★) — 별표 마커 + 코드 라벨
-    g.xy.filter(q=>q.p.important).forEach(q=>{
+    // 중요 아이템(★) — 별표는 곡선 위, 코드 라벨은 겹치지 않게 위로 사다리식 배치 + 연결선
+    const imps=g.xy.filter(q=>q.p.important).slice().sort((a,b)=>a.x-b.x);
+    const placed=[];
+    imps.forEach(q=>{
       const dim=(chartScope==='all'&&chartTier&&q.p.tier!==chartTier)?' dim':'';
       svg+=starPath(q.x,q.y,5.5,dim,q.p);
-      svg+='<text class="implab'+dim+'" x="'+q.x.toFixed(1)+'" y="'+(q.y-9).toFixed(1)+'" text-anchor="middle">'+esc(q.p.code)+'</text>';
+      const w=esc(q.p.code).length*6+6;
+      let ly=q.y-13, guard=0;
+      while(guard<12 && placed.some(pl=>!(q.x+w/2<pl.x1||q.x-w/2>pl.x2)&&Math.abs(pl.y-ly)<11)){ ly-=11; guard++; }
+      if(ly<g.padT+9) ly=g.padT+9;
+      placed.push({x1:q.x-w/2,x2:q.x+w/2,y:ly});
+      if(q.y-ly>8) svg+='<line x1="'+q.x.toFixed(1)+'" y1="'+(q.y-6).toFixed(1)+'" x2="'+q.x.toFixed(1)+'" y2="'+(ly+2).toFixed(1)+'" stroke="var(--gold)" stroke-width=".8" opacity=".45"/>';
+      svg+='<text class="implab'+dim+'" x="'+q.x.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle">'+esc(q.p.code)+'</text>';
     });
-    // x축
-    svg+='<line class="axis" x1="'+g.padL+'" y1="'+(H-g.padB)+'" x2="'+(W-g.padR)+'" y2="'+(H-g.padB)+'"/>';
-    svg+='<text class="gridlab" x="'+g.padL+'" y="'+(H-g.padB+16)+'">SKU 1 (이익률 높음)</text>';
-    svg+='<text class="gridlab" x="'+(W-g.padR)+'" y="'+(H-g.padB+16)+'" text-anchor="end">SKU '+points.length+' (낮음)</text>';
+    // x축 + SKU 번호 눈금
+    const axY=H-g.padB;
+    svg+='<line class="axis" x1="'+g.padL+'" y1="'+axY+'" x2="'+(W-g.padR)+'" y2="'+axY+'"/>';
+    g.xTicks.forEach(tk=>{
+      svg+='<line class="axis" x1="'+tk.x.toFixed(1)+'" y1="'+axY+'" x2="'+tk.x.toFixed(1)+'" y2="'+(axY+4)+'"/>';
+      svg+='<text class="gridlab" x="'+tk.x.toFixed(1)+'" y="'+(axY+16)+'" text-anchor="middle">'+tk.rank+'</text>';
+    });
+    svg+='<text class="gridlab" x="'+g.padL+'" y="'+(axY+32)+'">← 이익률 높음</text>';
+    svg+='<text class="gridlab" x="'+((g.padL+(W-g.padR))/2)+'" y="'+(axY+32)+'" text-anchor="middle">SKU 번호(이익률 내림차순 순번)</text>';
+    svg+='<text class="gridlab" x="'+(W-g.padR)+'" y="'+(axY+32)+'" text-anchor="end">낮음 →</text>';
     svg+='</svg>';
     $('chartSvg').innerHTML=svg;
     // 범례 + 안내
@@ -415,7 +441,8 @@
     $('chartHint').innerHTML=(chartScope==='tier'
       ? '이 구간 SKU <b>'+cnt+'</b>개만 이익률 내림차순으로 표시합니다.'
       : '전체 판매 SKU <b>'+cnt+'</b>개를 이익률 내림차순으로 표시하고, <b>'+(t?t.label:'')+'</b> 구간을 강조했습니다.')
-      +' 곡선이 우하향할수록 고이익 SKU에 매출이 집중돼 있다는 뜻입니다.';
+      +' 곡선이 우하향할수록 고이익 SKU에 매출이 집중돼 있다는 뜻입니다.'
+      +(g.clampedFloor?(' <span style="color:var(--t4)">· 최저 '+Number(g.dataMin).toFixed(1)+'% 등 일부 손실 SKU는 축 하한(▼)에 모아 표시했습니다(점에 마우스를 올리면 실제값 확인).</span>'):'');
   }
   function starPath(cx,cy,r,dim,p){
     let pts=''; for(let i=0;i<10;i++){ const rr=(i%2===0)?r:r*0.45; const a=Math.PI/5*i-Math.PI/2; pts+=(cx+rr*Math.cos(a)).toFixed(1)+','+(cy+rr*Math.sin(a)).toFixed(1)+' '; }
