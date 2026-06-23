@@ -131,20 +131,21 @@ export default async function importCostRoutes(app) {
   // 중복 배치 정리 분석(읽기 전용, 디렉터). 같은 SKU·수량 구성의 배치를 자동으로 묶어
   //   그룹·제품별로 유령(중복)수량 · 현재고 · 판매 · 음수없이 제거가능량 · 막힌유령(실입고 누락)을 계산.
   app.get('/api/import-recost/duplicate-analysis', { preHandler: [authGuard, requireDirector] }, async () => {
-    // 1) 승인·미삭제 배치의 라인 전부
+    // 1) 승인·미삭제 배치의 라인 전부 (+송장번호)
     const rows = (await query(
-      `SELECT b.id AS batch_id, b.batch_no, b.import_date, il.product_id, il.qty, p.code, p.name
+      `SELECT b.id AS batch_id, b.batch_no, b.import_date, il.product_id, il.qty, il.invoice_no, p.code, p.name
          FROM import_batches b
          JOIN import_lines il ON il.batch_id=b.id
          JOIN products p ON p.id=il.product_id
         WHERE b.deleted_at IS NULL AND b.status='approved'
         ORDER BY b.id, p.code`)).rows;
-    // 2) 배치별 구성(서명) 만들기
+    // 2) 배치별 구성(서명) 만들기 (+송장번호 집합)
     const byBatch = new Map();
     for (const r of rows) {
       const bid = Number(r.batch_id);
-      if (!byBatch.has(bid)) byBatch.set(bid, { batch_id: bid, batch_no: r.batch_no, import_date: r.import_date ? String(r.import_date).slice(0, 10) : '', lines: [] });
+      if (!byBatch.has(bid)) byBatch.set(bid, { batch_id: bid, batch_no: r.batch_no, import_date: r.import_date ? String(r.import_date).slice(0, 10) : '', lines: [], invoices: new Set() });
       byBatch.get(bid).lines.push({ product_id: Number(r.product_id), code: r.code, name: r.name, qty: Number(r.qty) });
+      if (r.invoice_no) byBatch.get(bid).invoices.add(String(r.invoice_no));
     }
     const sig = (b) => b.lines.slice().sort((a, c) => a.product_id - c.product_id).map((l) => l.product_id + ':' + l.qty).join('|');
     // 3) 서명으로 그룹핑 → 2개 이상만 중복 그룹
@@ -169,6 +170,10 @@ export default async function importCostRoutes(app) {
       const sorted = arr.slice().sort((a, c) => String(a.import_date).localeCompare(String(c.import_date)) || a.batch_id - c.batch_id);
       const keep = sorted[0]; const phantoms = sorted.slice(1); // 가장 오래된 배치 보존 제안
       const dupCount = arr.length;
+      const batchMeta = (b) => ({ batch_id: b.batch_id, batch_no: b.batch_no, import_date: b.import_date, invoice_nos: [...b.invoices].sort() });
+      // 송장/입고일 신호: 모든 배치가 같은 (입고일 + 송장집합)이면 진짜 중복 의심, 다르면 정상 재입고 의심
+      const docKey = (b) => b.import_date + '#' + [...b.invoices].sort().join(',');
+      const sameDoc = sorted.every((b) => docKey(b) === docKey(keep));
       const products = keep.lines.map((l) => {
         const perBatch = l.qty;
         const phantomQty = perBatch * (dupCount - 1);
@@ -182,8 +187,9 @@ export default async function importCostRoutes(app) {
       return {
         signature: sig(keep),
         dup_count: dupCount,
-        keep_batch: { batch_id: keep.batch_id, batch_no: keep.batch_no, import_date: keep.import_date },
-        phantom_batches: phantoms.map((b) => ({ batch_id: b.batch_id, batch_no: b.batch_no, import_date: b.import_date })),
+        keep_batch: batchMeta(keep),
+        phantom_batches: phantoms.map(batchMeta),
+        same_doc: sameDoc,          // true=같은 송장/일자(진짜 중복 의심) / false=다른 송장/일자(정상 재입고 의심)
         products,
         all_removable: stuckTotal === 0,
       };
