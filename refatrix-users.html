@@ -77,7 +77,7 @@
     <!-- 사용자 목록 -->
     <div class="card">
       <h2>사용자 목록 · 권한</h2>
-      <div class="hint" style="margin-top:0">계좌 권한: <b>없음</b>=계좌 안 보임 · <b>잔액만</b>=계좌·잔액만 보이고 거래내역 숨김 · <b>열람(내역)</b>=거래내역까지 · <b>운영(등록)</b>=거래 등록까지. 선택 즉시 저장됩니다.</div>
+      <div class="hint" style="margin-top:0">계좌 권한: <b>없음</b>=계좌 안 보임 · <b>잔액만</b>=계좌·잔액만 보이고 거래내역 숨김 · <b>열람(내역)</b>=거래내역까지 · <b>운영(등록)</b>=거래 등록까지. 선택 즉시 저장됩니다.<br><b>디렉터</b>는 계좌별로 <b>세부 열람</b>(드릴다운 가능) / <b>잔액만</b>(드릴다운·거래내역·현금흐름 차단) 중 선택합니다. 새 계좌는 자동으로 목록에 나타납니다.</div>
       <div id="userList"><div class="hint">불러오는 중…</div></div>
     </div>
   </div>
@@ -183,7 +183,14 @@
                 <option value="none" ${cur==='none'?'selected':''}>없음</option>
                 <option value="view" ${cur==='view'?'selected':''}>열람</option>
                 <option value="edit" ${cur==='edit'?'selected':''}>수정·기록</option></select></label>`;}).join('')+`</div>`;}).join('')}</td>
-          <td style="max-width:240px;white-space:normal">${u.role==='director'?('<span class="hint" style="margin:0">전체 접근</span><br><label style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;font-size:11px;cursor:pointer;color:#6b8cae"><input type="checkbox" '+(u.restrict_cash_detail?'checked':'')+' onchange="setRestrictCash('+u.id+',this.checked)" style="width:auto;margin:0">현금·불공제는 잔액만(세부 숨김)</label>'):(accountsList.length?accountsList.map(a=>{
+          <td style="max-width:240px;white-space:normal">${u.role==='director'?(accountsList.length?accountsList.map(a=>{
+            const cur=(u.account_access&&u.account_access[a.id])==='balance'?'balance':'view';
+            const col=cur==='balance'?'#6b8cae':'#B8893B';
+            return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px;display:block;margin-bottom:3px">${a.name} <span class="hint" style="margin:0">${a.currency||''}</span>
+              <select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)" style="padding:3px 5px;font-size:11px">
+                <option value="view" ${cur==='view'?'selected':''}>세부 열람</option>
+                <option value="balance" ${cur==='balance'?'selected':''}>잔액만(드릴다운 차단)</option>
+              </select></label>`;}).join(''):'<span class="hint" style="margin:0">계좌 없음</span>'):(accountsList.length?accountsList.map(a=>{
             const cur=(u.account_access&&u.account_access[a.id])||'none';
             const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#bbb';
             return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px;display:block;margin-bottom:3px">${a.name} <span class="hint" style="margin:0">${a.currency||''}</span>
@@ -281,17 +288,6 @@
     }catch(e){alert('실패');}
   }
 
-  // 현금·불공제 세부 차단 토글(디렉터 대상). 잔액은 계속 보이되 거래내역/현금흐름이 막힘.
-  async function setRestrictCash(userId,value){
-    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/restrict-cash-detail',
-      {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({value:!!value})},15000);
-    if(!r.ok){
-      const detail=r.err?r.err:((r.data&&(r.data.message||r.data.error))||('HTTP '+r.status));
-      alert('설정 저장 실패: '+detail); loadUsers(); return;
-    }
-    const u=users.find(x=>Number(x.id)===Number(userId)); if(u) u.restrict_cash_detail=!!value;
-  }
-
   // 계정 복제 — 권한 동일한 새 계정 생성(새 로그인 아이디·PIN).
   async function cloneUser(userId){
     const u=users.find(x=>Number(x.id)===Number(userId)); if(!u){alert('사용자를 찾을 수 없습니다.');return;}
@@ -332,6 +328,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624a"></script>
+<script src="refatrix-nav.js?v=20260624b"></script>
 </body>
 </html>

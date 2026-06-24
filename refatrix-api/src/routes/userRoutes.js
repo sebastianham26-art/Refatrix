@@ -213,7 +213,20 @@ export default async function userRoutes(app) {
     if (!['none', 'balance', 'view', 'operate'].includes(level)) return reply.code(400).send({ error: 'bad_level' });
     const u = (await query(`SELECT id, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!u) return reply.code(404).send({ error: 'not_found' });
-    if (u.role === 'director') return reply.code(400).send({ error: 'director_sees_all' });
+    if (u.role === 'director') {
+      // 디렉터: 계좌별 '세부 열람'(view/operate=행 삭제, 전체 접근) 또는 '잔액만'(balance=can_detail false 행).
+      //   잔액은 항상 보이고, '잔액만'이면 거래내역·현금흐름·드릴다운·운영이 막힌다.
+      await withTx(async (c) => {
+        await c.query(`DELETE FROM user_account_access WHERE user_id=$1 AND account_id=$2`, [id, accountId]);
+        if (level === 'balance') {
+          await c.query(`INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail) VALUES ($1,$2,false,false)`,
+            [id, accountId]);
+        }
+      });
+      await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`,
+        detail: { account_id: accountId, level: level === 'balance' ? 'balance' : 'view', director: true } });
+      return { ok: true, account_id: accountId, level: level === 'balance' ? 'balance' : 'view' };
+    }
     // ON CONFLICT 미사용(제약 유무와 무관): 항상 DELETE 후 필요한 경우만 INSERT.
     //   잔액만 = can_detail false / 열람 = detail true / 운영 = detail+operate true
     await withTx(async (c) => {

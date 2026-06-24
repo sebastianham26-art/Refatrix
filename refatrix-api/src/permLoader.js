@@ -32,24 +32,22 @@ export async function loadPerm(userId) {
     `SELECT team_id, can_edit FROM user_team_access WHERE user_id=$1`, [userId])).rows) {
     teamAccess.push({ teamId: Number(r.team_id), canEdit: r.can_edit });
   }
-  // 계좌별 열람/운영 권한 (디렉터는 buildAccountAccess 안에서 all:true 처리)
+  // 계좌별 열람/운영 권한.
   const accRows = (await query(
     `SELECT account_id, can_operate, can_detail FROM user_account_access WHERE user_id=$1`, [userId])).rows;
-  // 현금·불공제 세부 차단(restrict_cash_detail): 디렉터여도 해당 계좌는 잔액만 노출.
-  //   현금 = accounts.type 에 '현금' 포함(또는 'cash'), 불공제 = non_deductible=true.
+  // 디렉터: 기본은 전체. 단, 관리자 페이지에서 계좌별로 '잔액만'(can_detail=false)으로 지정한 계좌는
+  //   디렉터여도 세부내역(거래목록·현금흐름·드릴다운)·운영이 막힌다(잔액은 계속 보임).
+  //   비디렉터는 buildAccountAccess 가 기존대로(없음/잔액만/열람/운영) 처리.
   let blockIds = [];
-  if (u.restrict_cash_detail === true) {
-    blockIds = (await query(
-      `SELECT id FROM accounts
-        WHERE deleted_at IS NULL
-          AND (non_deductible = true OR type ILIKE '%현금%' OR type ILIKE '%cash%')`)).rows.map((r) => Number(r.id));
+  if (u.role === 'director') {
+    blockIds = accRows.filter((r) => r.can_detail === false).map((r) => Number(r.account_id));
   }
   const accountAccess = buildAccountAccess(u.role, accRows, blockIds);
   return {
     userId: u.id, name: u.name, dept: u.dept, role: u.role, lang: u.lang,
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
     teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
-    dashDrilldown: u.dash_drilldown !== false, restrictCashDetail: u.restrict_cash_detail === true,
+    dashDrilldown: u.dash_drilldown !== false,
     pages, pageAccess, fields, items, accountAccess,
   };
 }

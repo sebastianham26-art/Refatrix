@@ -116,7 +116,6 @@
           <div><label>통화</label><select id="a-cur"><option>MXN</option><option>USD</option></select></div>
           <div><label>기초잔액</label><input id="a-open" type="number" step="0.01" value="0"></div>
           <div><label>개설일</label><input id="a-date" type="date"></div>
-          <div><label>불공제</label><label style="display:inline-flex;align-items:center;gap:5px;font-weight:400;font-size:13px;padding-top:7px"><input id="a-nondeduct" type="checkbox" style="width:auto;margin:0">불공제 계좌</label></div>
         </div>
         <button class="btn" id="a-save" style="margin-top:10px">계좌 추가</button>
         <div class="msg" id="accMsg"></div>
@@ -390,23 +389,12 @@
     if(!name){m.className='msg err';m.textContent='계좌명을 입력하세요.';return;}
     try{
       const res=await fetch(session.api+'/api/accounts',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
-        body:JSON.stringify({name,type:$('a-type').value.trim()||null,currency:$('a-cur').value,open_balance:Number($('a-open').value)||0,open_date:$('a-date').value||null,non_deductible:$('a-nondeduct').checked})});
+        body:JSON.stringify({name,type:$('a-type').value.trim()||null,currency:$('a-cur').value,open_balance:Number($('a-open').value)||0,open_date:$('a-date').value||null})});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='추가 실패: '+(d.error||res.status);return;}
-      $('a-name').value='';$('a-type').value='';$('a-open').value='0';$('a-date').value='';$('a-nondeduct').checked=false;
+      $('a-name').value='';$('a-type').value='';$('a-open').value='0';$('a-date').value='';
       $('accForm').classList.add('hidden');await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
-  }
-
-  // 계좌 불공제 표시 토글(디렉터). 현금·불공제 세부차단 사용자에게 즉시 반영됨.
-  async function setNonDeductible(accId,value){
-    try{
-      const res=await fetch(session.api+'/api/accounts/'+accId,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},
-        body:JSON.stringify({non_deductible:!!value})});
-      const d=await res.json().catch(()=>({}));
-      if(!res.ok||d.error){alert('불공제 설정 실패: '+(d.error||res.status));await loadAccounts();return;}
-      const a=accounts.find(x=>Number(x.id)===Number(accId)); if(a) a.non_deductible=!!value;
-    }catch(e){alert('서버 연결 실패');await loadAccounts();}
   }
 
   function previewTxn(){
@@ -1440,6 +1428,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624a"></script>
+<script src="refatrix-nav.js?v=20260624b"></script>
 </body>
 </html>
