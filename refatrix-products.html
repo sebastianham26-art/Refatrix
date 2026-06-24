@@ -232,11 +232,11 @@
       prodTotal=Number(d.total||items.length);
       if(!items.length){ r.innerHTML='<div class="hint">일치하는 제품이 없습니다.</div>'; return; }
       prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
-      const colN=7+(prodHasList?1:0)+(prodHasCost?2:0);
+      const colN=8+(prodHasList?1:0)+(prodHasCost?2:0);
       const sh=(key,label)=>'<th class="num nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'">'+label
         +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
       let h='<table><thead><tr>'
-        +'<th class="nowrap">코드</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th><th class="nowrap">랙</th>'
+        +'<th class="nowrap">코드</th><th>경쟁사(SyD)</th><th class="num nowrap" title="멕시코 시장 등록대수(VIO) 순위 — 적용차종 중 가장 높은(숫자가 작은) 순위">VIO</th><th>적용차종</th><th class="nowrap">바코드</th><th class="nowrap">랙</th>'
         +sh('stock','재고')+sh('sold','누적판매')
         +(prodHasList?'<th class="num nowrap">List Price</th>':'')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
@@ -248,9 +248,11 @@
         if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
         var sold=Number(p.sold_qty||0);
         var rack=escP(p.rack_location||'');
+        var vrank=(p.vio_rank==null)?null:Number(p.vio_rank);
         h+='<tr class="prow" data-pid="'+p.id+'" style="cursor:pointer">'
           +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
+          +'<td class="num" style="font-weight:700;font-size:12px"'+(vrank!=null?' title="멕시코 시장(VIO) '+vrank+'위 차종에 적용"':'')+'>'+(vrank!=null?vrank:'<span style="font-weight:400;color:#c4bfb4">—</span>')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(app||'—')+'</td>'
           +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
           +'<td class="rack nowrap">'+(rack||'—')+'</td>'
