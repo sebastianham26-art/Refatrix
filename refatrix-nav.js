@@ -268,6 +268,48 @@
     boot();
   }
   // 세션을 읽어 헤더를 그린다. 세션이 없으면 잠시 후 로그인되는지 감시(포털 첫 로그인 대응).
+  // ===== 지속 공지 팝업 — popup_persist=true 공지를 모든 화면에서 확인 전까지 표시 =====
+  function rnavEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];}); }
+  function rnavConfirmNotice(){
+    var ids=window.__rnavNoticeIds||[]; if(!sess||!sess.token) return;
+    var api=(sess.api||'').replace(/\/+$/,'');
+    var ok=document.getElementById('rnavNoticeOk'); if(ok){ ok.disabled=true; ok.textContent='처리 중…'; }
+    Promise.all(ids.map(function(id){ return fetch(api+'/api/notices/'+id+'/read',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sess.token},body:'{}'}).catch(function(){}); }))
+      .then(function(){ var m=document.getElementById('rnavNoticePop'); if(m) m.style.display='none'; window.__rnavNoticeIds=[]; if(ok){ ok.disabled=false; ok.textContent='확인'; } });
+  }
+  function rnavPersistPopup(){
+    if(!sess||!sess.token) return;
+    var api=(sess.api||'').replace(/\/+$/,'');
+    fetch(api+'/api/notices/popup',{headers:{'Authorization':'Bearer '+sess.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        var items=(((d&&d.items)||[])).filter(function(n){ return n.popup_persist; });
+        var m=document.getElementById('rnavNoticePop');
+        if(!items.length){ if(m) m.style.display='none'; return; }
+        if(!m){
+          m=document.createElement('div');
+          m.id='rnavNoticePop';
+          m.style.cssText='position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto';
+          m.innerHTML='<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">'
+            +'<div style="padding:16px 20px;border-bottom:1px solid #e7e2d6;font-size:16px;font-weight:800;color:#1f6f50">📢 <span id="rnavNoticeCount">공지</span></div>'
+            +'<div id="rnavNoticeList" style="max-height:60vh;overflow:auto"></div>'
+            +'<div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">'
+            +'<button id="rnavNoticeOk" type="button" style="border:none;background:#1f6f50;color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button></div></div>';
+          document.body.appendChild(m);
+          m.querySelector('#rnavNoticeOk').addEventListener('click',function(){ rnavConfirmNotice(); });
+        }
+        window.__rnavNoticeIds=items.map(function(n){ return n.id; });
+        m.querySelector('#rnavNoticeCount').textContent=items.length>1?('공지 '+items.length+'건'):'공지';
+        m.querySelector('#rnavNoticeList').innerHTML=items.map(function(n){
+          return '<div style="padding:12px 14px;border-bottom:1px solid #f0ece2">'
+            +'<div style="font-size:14px;font-weight:800;color:#222">'+(n.pinned?'📌 ':'📢 ')+rnavEsc(n.title)+'</div>'
+            +(n.body?'<div style="font-size:13px;color:#222;line-height:1.6;margin-top:5px;white-space:pre-wrap">'+rnavEsc(n.body)+'</div>':'')
+            +'<div style="font-size:11.5px;color:#888;margin-top:6px">'+rnavEsc(n.author||'')+(n.created_at?' · '+new Date(n.created_at).toLocaleString('ko-KR'):'')+'</div></div>';
+        }).join('');
+        m.style.display='flex';
+      }).catch(function(){});
+  }
+
   function boot(){
     var nv=document.getElementById('rnav'); if(!nv) return;
     sess=getSession();
@@ -298,6 +340,7 @@
       sum=d||{pages:[],isDirector:false};
       if(enforceRoleAccess()) return;   // 차단·리다이렉트 시 렌더 생략
       render();
+      rnavPersistPopup();               // 지속 공지 팝업(모든 화면)
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   window.__rnavReload=boot;

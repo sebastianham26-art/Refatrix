@@ -119,7 +119,7 @@ export default async function portalBoardRoutes(app) {
                  OR (n.audience='users' AND n.id IN (SELECT notice_id FROM notice_targets WHERE user_id=$${meIdx})))`);
     }
     const rows = (await query(
-      `SELECT n.id, n.title, n.body, n.audience, n.audience_role, n.team_id, n.pinned, n.is_popup, n.created_at,
+      `SELECT n.id, n.title, n.body, n.audience, n.audience_role, n.team_id, n.pinned, n.is_popup, n.popup_persist, n.created_at,
               u.name AS author, t.name AS team_name,
               nr.read_at AS my_read_at
          FROM notices n
@@ -133,7 +133,7 @@ export default async function portalBoardRoutes(app) {
     return {
       items: rows.map((r) => ({
         id: r.id, title: r.title, body: r.body, audience: r.audience, audience_role: r.audience_role,
-        team_id: r.team_id, team_name: r.team_name, pinned: r.pinned, is_popup: !!r.is_popup, author: r.author,
+        team_id: r.team_id, team_name: r.team_name, pinned: r.pinned, is_popup: !!r.is_popup, popup_persist: !!r.popup_persist, author: r.author,
         target_names: tgt.names[r.id] || [], target_ids: tgt.ids[r.id] || [],
         created_at: isoTs(r.created_at), my_read_at: isoTs(r.my_read_at), read: !!r.my_read_at,
       })),
@@ -163,7 +163,7 @@ export default async function portalBoardRoutes(app) {
                  OR (n.audience='users' AND n.id IN (SELECT notice_id FROM notice_targets WHERE user_id=$${meIdx})))`);
     }
     const rows = (await query(
-      `SELECT n.id, n.title, n.body, n.pinned, n.created_at, u.name AS author
+      `SELECT n.id, n.title, n.body, n.pinned, n.popup_persist, n.created_at, u.name AS author
          FROM notices n
          LEFT JOIN users u ON u.id=n.created_by
          LEFT JOIN notice_reads nr ON nr.notice_id=n.id AND nr.user_id=$${meIdx}
@@ -171,7 +171,7 @@ export default async function portalBoardRoutes(app) {
         ORDER BY n.pinned DESC, n.created_at DESC`, args)).rows;
     return {
       items: rows.map((r) => ({
-        id: r.id, title: r.title, body: r.body, pinned: r.pinned,
+        id: r.id, title: r.title, body: r.body, pinned: r.pinned, popup_persist: !!r.popup_persist,
         author: r.author, created_at: isoTs(r.created_at),
       })),
     };
@@ -195,10 +195,11 @@ export default async function portalBoardRoutes(app) {
       if (!targetIds.length) return reply.code(400).send({ error: 'targets_required' });
     }
     const isPopup = b.is_popup === undefined ? true : !!b.is_popup; // 기본 ON
+    const popupPersist = !!b.popup_persist;
     const r = (await query(
-      `INSERT INTO notices (title, body, audience, audience_role, team_id, pinned, is_popup, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [String(b.title).trim(), b.body ? String(b.body) : null, audience, audienceRole, teamId, !!b.pinned, isPopup, perm.userId])).rows[0];
+      `INSERT INTO notices (title, body, audience, audience_role, team_id, pinned, is_popup, popup_persist, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [String(b.title).trim(), b.body ? String(b.body) : null, audience, audienceRole, teamId, !!b.pinned, isPopup, popupPersist, perm.userId])).rows[0];
     if (audience === 'users' && targetIds.length) {
       // 존재하는 유저만 INSERT (FK 위반 방지) — 한 건씩, 중복은 UNIQUE 로 무시
       for (const uid of targetIds) {
@@ -256,10 +257,11 @@ export default async function portalBoardRoutes(app) {
       if (!targetIds.length) return reply.code(400).send({ error: 'targets_required' });
     }
     const isPopup = b.is_popup === undefined ? true : !!b.is_popup;
+    const popupPersist = !!b.popup_persist;
     await query(
-      `UPDATE notices SET title=$1, body=$2, audience=$3, audience_role=$4, team_id=$5, pinned=$6, is_popup=$7
-        WHERE id=$8`,
-      [String(b.title).trim(), b.body ? String(b.body) : null, audience, audienceRole, teamId, !!b.pinned, isPopup, id]);
+      `UPDATE notices SET title=$1, body=$2, audience=$3, audience_role=$4, team_id=$5, pinned=$6, is_popup=$7, popup_persist=$8
+        WHERE id=$9`,
+      [String(b.title).trim(), b.body ? String(b.body) : null, audience, audienceRole, teamId, !!b.pinned, isPopup, popupPersist, id]);
     // 대상 재동기화: 모두 비우고, 'users' 면 재삽입
     await query(`DELETE FROM notice_targets WHERE notice_id=$1`, [id]);
     if (audience === 'users' && targetIds.length) {

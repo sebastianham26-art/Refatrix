@@ -259,6 +259,7 @@
         +'<label>내용</label><textarea id="nf-body"></textarea>'
         +'<div style="margin-top:8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><label style="margin:0"><input type="checkbox" id="nf-pin" style="width:auto"> 상단 고정</label>'
         +'<label style="margin:0"><input type="checkbox" id="nf-popup" style="width:auto" checked> 로그인 팝업으로 표시</label>'
+        +'<label style="margin:0"><input type="checkbox" id="nf-persist" style="width:auto"> 확인 전까지 모든 화면에서 계속 표시(지속)</label>'
         +'<button class="btn" id="nf-submit" onclick="addNotice()">공지 등록</button>'
         +'<button class="btn ghost hidden" id="nf-cancel" onclick="cancelNoticeEdit()">취소</button></div>'
         +'<div class="msg" id="nf-msg"></div>';
@@ -503,12 +504,13 @@
       $('noticeList').innerHTML=items.map(n=>{
         const audLbl={all:'전체',role:'역할 · '+(ROLE[n.audience_role]||n.audience_role),team:'팀 · '+esc(n.team_name||''),users:'대상 · '+esc((n.target_names||[]).join(', ')||'지정')}[n.audience]||n.audience;
         const popupLbl=n.is_popup?' <span class="pill" style="background:#eef4f1;color:var(--brand)">팝업</span>':'';
+        const persistLbl=n.popup_persist?' <span class="pill" style="background:#fbeee6;color:#B8893B">지속</span>':'';
         const when=n.created_at?new Date(n.created_at).toLocaleString('ko-KR'):'';
         const readInfo=n.read?('<span style="color:var(--income)">✓ 확인 '+new Date(n.my_read_at).toLocaleString('ko-KR')+'</span>'):'<span style="color:var(--expense)">● 미확인</span>';
         return '<div class="item" id="notice-'+n.id+'"><div class="body">'
           +'<div class="t">'+(n.pinned?'<span class="pill pin">고정</span> ':'')+esc(n.title)+'</div>'
           +(n.body?'<div class="d">'+esc(n.body)+'</div>':'')
-          +'<div class="meta"><span class="pill">'+audLbl+'</span>'+popupLbl+' · '+esc(n.author||'')+' · '+when+' · '+readInfo+'</div>'
+          +'<div class="meta"><span class="pill">'+audLbl+'</span>'+popupLbl+persistLbl+' · '+esc(n.author||'')+' · '+when+' · '+readInfo+'</div>'
           +(isDirector?'<div class="roster" id="roster-'+n.id+'"><a style="cursor:pointer;color:var(--brand-soft);font-weight:700" onclick="loadRoster('+n.id+')">읽음 현황 보기</a></div>':'')
           +'</div>'
           +(!n.read?'<button class="btn ghost sm" onclick="readNotice('+n.id+')">확인</button>':'')
@@ -533,7 +535,7 @@
   async function addNotice(){
     const m=$('nf-msg');m.className='msg';
     const aud=$('nf-aud').value;
-    const body={title:$('nf-title').value.trim(),body:$('nf-body').value,audience:aud,pinned:$('nf-pin').checked,is_popup:$('nf-popup').checked};
+    const body={title:$('nf-title').value.trim(),body:$('nf-body').value,audience:aud,pinned:$('nf-pin').checked,is_popup:$('nf-popup').checked,popup_persist:$('nf-persist').checked};
     if(aud==='role')body.audience_role=$('nf-role').value;
     if(aud==='team')body.team_id=$('nf-team').value;
     if(aud==='users'){
@@ -551,7 +553,7 @@
       editingNoticeId=null;
       const btn=$('nf-submit'); if(btn) btn.textContent='공지 등록';
       const cx=$('nf-cancel'); if(cx) cx.classList.add('hidden');
-      $('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;
+      $('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;$('nf-persist').checked=false;
       $('nf-aud').value='all';noticeAudChange();
       document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=false);
       loadNotices();
@@ -561,7 +563,7 @@
     const n=(noticeItems||[]).find(x=>x.id===id); if(!n) return;
     editingNoticeId=id;
     $('nf-title').value=n.title||''; $('nf-body').value=n.body||'';
-    $('nf-pin').checked=!!n.pinned; $('nf-popup').checked=!!n.is_popup;
+    $('nf-pin').checked=!!n.pinned; $('nf-popup').checked=!!n.is_popup; $('nf-persist').checked=!!n.popup_persist;
     $('nf-aud').value=n.audience||'all';
     $('nf-roleWrap').classList.toggle('hidden',n.audience!=='role');
     $('nf-teamWrap').classList.toggle('hidden',n.audience!=='team');
@@ -580,7 +582,7 @@
   }
   function cancelNoticeEdit(){
     editingNoticeId=null;
-    $('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;
+    $('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;$('nf-persist').checked=false;
     $('nf-aud').value='all'; noticeAudChange();
     document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=false);
     const btn=$('nf-submit'); if(btn) btn.textContent='공지 등록';
