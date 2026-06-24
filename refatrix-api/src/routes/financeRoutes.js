@@ -2,7 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
 import { logEvent } from '../audit.js';
-import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
+import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
@@ -23,6 +23,9 @@ export default async function financeRoutes(app) {
   // ===== 환율 =====
   app.get('/api/fx/usd-mxn', { preHandler: [authGuard] }, async () => {
     return await getUsdMxnRate();
+  });
+  app.get('/api/fx/krw', { preHandler: [authGuard] }, async () => {
+    return await getUsdKrwRate();   // USD→KRW (MXN→KRW는 프런트에서 USD→KRW ÷ USD→MXN로 산출)
   });
   app.get('/api/fx/history', { preHandler: [authGuard] }, async (req) => {
     const limit = Math.min(Number(req.query.limit) || 60, 365);
