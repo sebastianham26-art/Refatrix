@@ -10,7 +10,7 @@ export default async function userRoutes(app) {
   // 사용자 목록(디렉터): 역할·팀·페이지 권한
   app.get('/api/users', { preHandler: [authGuard, requireDirector] }, async () => {
     const users = (await query(
-      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, t.name AS team_name
+      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, u.restrict_cash_detail, t.name AS team_name
          FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
         WHERE u.deleted_at IS NULL ORDER BY u.role, u.name`)).rows;
     const pages = (await query(`SELECT user_id, page_key, access FROM user_page_access`)).rows;
@@ -32,7 +32,7 @@ export default async function userRoutes(app) {
     return {
       accounts,
       items: users.map((u) => ({
-        ...u, id: Number(u.id),
+        ...u, id: Number(u.id), restrict_cash_detail: u.restrict_cash_detail === true,
         pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {},
         team_access: teamAccessByUser[u.id] || [],
         account_access: aaByUser[u.id] || {},
@@ -69,6 +69,89 @@ export default async function userRoutes(app) {
     await query(`UPDATE users SET pin_hash=$1, updated_by=$2 WHERE id=$3`, [hashPin(pin), req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'pin_reset', target: `user:${id}` });
     return { id, pin };
+  });
+
+  // 현금·불공제 세부 차단 토글(디렉터). value=true 면 이 사용자는 디렉터여도
+  //   현금·불공제 계좌의 거래내역/현금흐름이 막히고 잔액만 보인다. (잔액은 계속 보임)
+  app.patch('/api/users/:id/restrict-cash-detail', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const value = req.body?.value === true;
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE users SET restrict_cash_detail=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { restrict_cash_detail: value } });
+    return { ok: true, id, restrict_cash_detail: value };
+  });
+
+  // 계정 삭제(디렉터, 소프트 삭제). login_id 를 NULL 로 비워 같은 아이디를 재사용 가능하게 한다.
+  //   - 자기 자신은 삭제 불가(잠금 방지). 마지막 디렉터 삭제 불가.
+  //   - deleted_at 이 채워지면 로그인·목록·권한로딩에서 모두 제외된다(기존 deleted_at IS NULL 필터).
+  app.delete('/api/users/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    if (id === Number(req.ctx.perm.userId)) return reply.code(400).send({ error: 'cannot_delete_self' });
+    const u = (await query(`SELECT id, role, login_id, name FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    if (u.role === 'director') {
+      const dirCount = Number((await query(
+        `SELECT COUNT(*) AS c FROM users WHERE role='director' AND deleted_at IS NULL`)).rows[0].c);
+      if (dirCount <= 1) return reply.code(400).send({ error: 'cannot_delete_last_director' });
+    }
+    await query(
+      `UPDATE users SET deleted_at=now(), login_id=NULL, updated_by=$1 WHERE id=$2`,
+      [req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `user:${id}`,
+      detail: { name: u.name, login_id: u.login_id } });
+    return { ok: true, id, freed_login_id: u.login_id };
+  });
+
+  // 계정 복제(디렉터): 권한이 동일한 사용자를 새 로그인 아이디로 생성.
+  //   role/dept/team_id/lang/restrict_cash_detail + 페이지·필드·항목깊이·팀교차·계좌 권한 전부 복사.
+  //   PIN 은 새로 발급(미지정 시 자동). body: { name, login_id, pin? }
+  app.post('/api/users/:id/clone', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const srcId = Number(req.params.id);
+    if (!Number.isInteger(srcId)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const { name, login_id, pin: pinReq } = req.body || {};
+    if (!name || !login_id) return reply.code(400).send({ error: 'name_login_id_required' });
+    const src = (await query(
+      `SELECT id, role, dept, team_id, lang, restrict_cash_detail
+         FROM users WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];
+    if (!src) return reply.code(404).send({ error: 'source_not_found' });
+    const dup = (await query(`SELECT 1 FROM users WHERE login_id=$1`, [login_id])).rows[0];
+    if (dup) return reply.code(409).send({ error: 'login_id_taken' });
+    const pin = (pinReq && /^\d{4,8}$/.test(String(pinReq))) ? String(pinReq) : genPin();
+    let newId = null;
+    await withTx(async (c) => {
+      const u = (await c.query(
+        `INSERT INTO users (name, dept, role, login_id, pin_hash, lang, team_id, restrict_cash_detail, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        [name, src.dept || null, src.role, login_id, hashPin(pin), src.lang || 'ko',
+         src.team_id || null, src.restrict_cash_detail === true, req.ctx.perm.userId])).rows[0];
+      newId = u.id;
+      // 페이지 권한
+      await c.query(
+        `INSERT INTO user_page_access (user_id, page_key, device_req, access)
+           SELECT $1, page_key, device_req, access FROM user_page_access WHERE user_id=$2`, [newId, srcId]);
+      // 민감 필드
+      await c.query(
+        `INSERT INTO user_field_access (user_id, field_key, visible)
+           SELECT $1, field_key, visible FROM user_field_access WHERE user_id=$2`, [newId, srcId]);
+      // 항목 열람 깊이
+      await c.query(
+        `INSERT INTO user_item_depth (user_id, item_key, depth, resolution)
+           SELECT $1, item_key, depth, resolution FROM user_item_depth WHERE user_id=$2`, [newId, srcId]);
+      // 팀 교차 접근
+      await c.query(
+        `INSERT INTO user_team_access (user_id, team_id, can_edit, created_by)
+           SELECT $1, team_id, can_edit, $3 FROM user_team_access WHERE user_id=$2`, [newId, srcId, req.ctx.perm.userId]);
+      // 계좌별 권한
+      await c.query(
+        `INSERT INTO user_account_access (user_id, account_id, can_operate, can_detail)
+           SELECT $1, account_id, can_operate, can_detail FROM user_account_access WHERE user_id=$2`, [newId, srcId]);
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `user:${newId}`, detail: { cloned_from: srcId } });
+    return { id: newId, login_id, pin, cloned_from: srcId, note: '권한이 원본과 동일하게 복사되었습니다. 이 PIN을 사용자에게 통보하세요(서버에는 해시만 저장).' };
   });
 
   // 페이지 권한 회수(디렉터)
