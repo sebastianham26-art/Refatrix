@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canOperateAccount } from '../accountScope.js';
+import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
@@ -41,24 +41,24 @@ export default async function financeRoutes(app) {
       acccond = ` AND a.id = ANY($${args.length})`;
     }
     const rows = (await query(
-      `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date,
+      `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date, a.non_deductible,
               a.open_balance + COALESCE((
                 SELECT SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END)
                   FROM transactions t
                  WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL
               ),0) AS balance
          FROM accounts a WHERE a.deleted_at IS NULL${acccond} ORDER BY a.id`, args)).rows;
-    return { items: rows.map((a) => ({ ...a, open_balance: Number(a.open_balance), balance: Number(a.balance) })) };
+    return { items: rows.map((a) => ({ ...a, non_deductible: a.non_deductible === true, can_detail: canViewDetail(req.ctx.perm, a.id), open_balance: Number(a.open_balance), balance: Number(a.balance) })) };
   });
 
   // 계좌 생성(디렉터)
   app.post('/api/accounts', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
-    const { name, type, currency = 'MXN', open_balance = 0, open_date } = req.body || {};
+    const { name, type, currency = 'MXN', open_balance = 0, open_date, non_deductible } = req.body || {};
     if (!name || !['MXN', 'USD'].includes(currency)) return reply.code(400).send({ error: 'name_currency_required' });
     const r = await query(
-      `INSERT INTO accounts (name, type, currency, open_balance, open_date, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [name, type || null, currency, r2(open_balance), open_date || null, req.ctx.perm.userId]);
+      `INSERT INTO accounts (name, type, currency, open_balance, open_date, non_deductible, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [name, type || null, currency, r2(open_balance), open_date || null, non_deductible === true, req.ctx.perm.userId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `account:${r.rows[0].id}` });
     return { id: r.rows[0].id };
   });
@@ -66,12 +66,14 @@ export default async function financeRoutes(app) {
   // 계좌 수정(디렉터)
   app.patch('/api/accounts/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const { name, type, open_balance, open_date } = req.body || {};
+    const { name, type, open_balance, open_date, non_deductible } = req.body || {};
     const r = await query(
       `UPDATE accounts SET name=COALESCE($1,name), type=COALESCE($2,type),
-         open_balance=COALESCE($3,open_balance), open_date=COALESCE($4,open_date), updated_by=$5
-       WHERE id=$6 AND deleted_at IS NULL RETURNING id`,
-      [name ?? null, type ?? null, (open_balance == null ? null : r2(open_balance)), open_date ?? null, req.ctx.perm.userId, id]);
+         open_balance=COALESCE($3,open_balance), open_date=COALESCE($4,open_date),
+         non_deductible=COALESCE($5,non_deductible), updated_by=$6
+       WHERE id=$7 AND deleted_at IS NULL RETURNING id`,
+      [name ?? null, type ?? null, (open_balance == null ? null : r2(open_balance)), open_date ?? null,
+       (typeof non_deductible === 'boolean' ? non_deductible : null), req.ctx.perm.userId, id]);
     if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
     return { ok: true };
   });
@@ -126,6 +128,9 @@ export default async function financeRoutes(app) {
       if (allow.length === 0) return { items: [] };
       args.push(allow); cond.push(`t.account_id = ANY($${args.length})`);
     }
+    // 현금·불공제 세부 차단(디렉터 포함): 해당 계좌 거래는 목록에서 숨김.
+    const block = blockedDetailAccountIds(req.ctx.perm);
+    if (block.length) { args.push(block); cond.push(`(t.account_id IS NULL OR t.account_id <> ALL($${args.length}))`); }
     if (q.status) { args.push(q.status); cond.push(`t.status=$${args.length}`); }
     if (q.direction) { args.push(q.direction); cond.push(`t.direction=$${args.length}`); }
     if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
@@ -481,7 +486,8 @@ export default async function financeRoutes(app) {
 
   // 수금 상세: 오픈 인보이스 전체 목록(회사/팀/영업담당자/고객 토글은 프런트에서 그룹·필터)
   // 각 행: 고객·팀·담당자 + 청구액(total_mxn)·입금(반제합)·잔액(outstanding) + 연체여부/일수
-  app.get('/api/ar/open-list', { preHandler: [authGuard, requirePage('settlement')] }, async () => {
+  app.get('/api/ar/open-list', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const includeClosed = ['1', 'true', 'yes', 'on'].includes(String((req.query && req.query.closed) || '').toLowerCase());
     const rows = (await query(
       `SELECT s.id, s.sat_no,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
@@ -489,7 +495,7 @@ export default async function financeRoutes(app) {
               s.total_mxn,
               COALESCE(pa.paid,0) AS paid,
               (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
-              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE) AS is_overdue,
+              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
               CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
               c.team_id, t.name AS team_name,
@@ -500,8 +506,8 @@ export default async function financeRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'
-          AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01
-        ORDER BY s.due_date NULLS LAST, s.inv_date, s.id`)).rows;
+          ${includeClosed ? '' : 'AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01'}
+        ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) <= 0.005), s.due_date NULLS LAST, s.inv_date, s.id`)).rows;
     return {
       today: new Date().toISOString().slice(0, 10),
       items: rows.map((r) => ({
@@ -1016,6 +1022,9 @@ export default async function financeRoutes(app) {
       if (allow.length === 0) return [];
       args.push(allow); cond += ` AND t.account_id = ANY($${args.length})`;
     }
+    // 현금·불공제 세부 차단(디렉터 포함): 현금흐름에서도 제외. (account_id NULL = AR 예정은 유지)
+    const block = blockedDetailAccountIds(perm);
+    if (block.length) { args.push(block); cond += ` AND (t.account_id IS NULL OR t.account_id <> ALL($${args.length}))`; }
     return (await query(
       `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
               t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
@@ -1035,6 +1044,9 @@ export default async function financeRoutes(app) {
       if (allow.length === 0) return 0;
       args.push(allow); cond += ` AND id = ANY($${args.length})`;
     }
+    // 현금·불공제 세부 차단(디렉터 포함): 현금흐름 기초잔고 계산에서도 제외(거래내역과 일관).
+    const block = blockedDetailAccountIds(perm);
+    if (block.length) { args.push(block); cond += ` AND id <> ALL($${args.length})`; }
     const accs = (await query(`SELECT currency, open_balance FROM accounts WHERE ${cond}`, args)).rows;
     return accs.reduce((s, a) => s + Number(a.open_balance) * (a.currency === 'USD' ? usd : 1), 0);
   }
@@ -1234,10 +1246,13 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.direction,
               t.amount, t.currency, t.fx_rate, t.amount_mxn, t.category_code, cat.name AS category_name,
-              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_amount, t.memo, t.sales_invoice_id, t.recurring_rule_id
+              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_amount, t.memo, t.sales_invoice_id, t.recurring_rule_id,
+              si.sat_no AS sat_no, c.name AS customer_name
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
+         LEFT JOIN customers c ON c.id=si.customer_id
         WHERE t.status='plan' AND t.deleted_at IS NULL
           AND (
             (COALESCE(t.plan_date,t.txn_date) BETWEEN $1 AND $2)   -- 이번 달 예정
