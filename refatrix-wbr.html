@@ -201,6 +201,7 @@
     {key:'mgmt',   name:'경영총괄', color:'#C9A75C'}
   ];
   let board={issues:{},memo:''};   // 영속 상태(서버 저장)
+  let canEdit=true;                 // 'wbr' 수정 권한 여부(서버 can_edit). 열람 전용이면 입력 차단
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -225,7 +226,7 @@
       renderMonthBtns();
       loadBoard();
       refreshAll();
-    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. (WBR은 디렉터 전용)';}
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
@@ -413,18 +414,28 @@
     try{
       const d=await fetch(session.api+'/api/wbr/board',{headers:auth()}).then(r=>r.json());
       board=normalizeBoard(d&&d.data);
+      canEdit=(d&&d.can_edit!==false);          // 서버가 내려준 수정 권한(없으면 보수적으로 열람 전용)
     }catch(e){ board=normalizeBoard({}); }
+    applyReadOnly();
     renderIssues();
     $('memo').textContent=board.memo||'';
+  }
+  // 열람 전용 상태 반영: 메모 편집 잠금 + 안내 표시(이슈 입력/삭제는 renderIssues 에서 제어)
+  function applyReadOnly(){
+    const memo=$('memo'); if(memo){ memo.setAttribute('contenteditable', canEdit?'true':'false'); }
+    [$('issueSave'),$('memoSave')].forEach(el=>{ if(el && !canEdit){ el.className='saveind'; el.style.color='var(--muted)'; el.textContent='열람 전용'; }});
   }
   function renderIssues(){
     const wkcol=(tk,wk,title,pillN)=>{
       const arr=board.issues[tk][wk]||[];
+      const delBtn=(i)=> canEdit ? '<button class="del" data-t="'+tk+'" data-w="'+wk+'" data-i="'+i+'" title="삭제">✕</button>' : '';
       const items=arr.length
-        ? '<ul class="bullets">'+arr.map((x,i)=>'<li><span class="bx">•</span><span class="btxt">'+esc(x)+'</span><button class="del" data-t="'+tk+'" data-w="'+wk+'" data-i="'+i+'" title="삭제">✕</button></li>').join('')+'</ul>'
+        ? '<ul class="bullets">'+arr.map((x,i)=>'<li><span class="bx">•</span><span class="btxt">'+esc(x)+'</span>'+delBtn(i)+'</li>').join('')+'</ul>'
         : '<div class="bempty">— 항목 없음 —</div>';
-      return '<div class="wkcol"><div class="wkh">'+title+' <span class="pill">'+arr.length+'</span></div>'+items
-        +'<div class="addrow no-print"><input type="text" placeholder="새 이슈 입력 후 Enter" data-t="'+tk+'" data-w="'+wk+'"><button data-t="'+tk+'" data-w="'+wk+'">추가</button></div></div>';
+      const addrow= canEdit
+        ? '<div class="addrow no-print"><input type="text" placeholder="새 이슈 입력 후 Enter" data-t="'+tk+'" data-w="'+wk+'"><button data-t="'+tk+'" data-w="'+wk+'">추가</button></div>'
+        : '';
+      return '<div class="wkcol"><div class="wkh">'+title+' <span class="pill">'+arr.length+'</span></div>'+items+addrow+'</div>';
     };
     $('issueGrid').innerHTML=ORG.map(t=>
       '<div class="teamblock"><div class="teamhead" style="background:'+t.color+'"><span class="tdot"></span>'+esc(t.name)+'</div>'
@@ -454,11 +465,13 @@
     [$('issueSave'),$('memoSave')].forEach(el=>{ el.className='saveind ok'; el.textContent='저장됨 '+hh; });
   }
   function saveBoard(which){
+    if(!canEdit) return;                         // 열람 전용이면 저장 시도 안 함
     markSaving(which);
     clearTimeout(saveTimer);
     saveTimer=setTimeout(async()=>{
       try{
         const r=await fetch(session.api+'/api/wbr/board',{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({data:board})});
+        if(r.status===403){ canEdit=false; applyReadOnly(); renderIssues(); return; }  // 권한 변경됨 → 열람 전용 전환
         if(!r.ok) throw new Error('save '+r.status);
         markSaved();
       }catch(e){ [$('issueSave'),$('memoSave')].forEach(el=>{ el.className='saveind'; el.style.color='var(--expense)'; el.textContent='저장 실패 — 재시도'; }); }
@@ -483,6 +496,6 @@
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624a"></script>
+<script src="refatrix-nav.js?v=20260624j"></script>
 </body>
 </html>

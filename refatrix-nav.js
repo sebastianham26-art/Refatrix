@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260624a loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260624j loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -66,7 +66,7 @@
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
     pipeline:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions',
-    boardNotice:null, boardTodo:null, wbr:'__director__',
+    boardNotice:null, boardTodo:null, wbr:'wbr',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'__director__', budget:'budget', importcost:'inventory', import:'inventory',
     recost:'__director__',
