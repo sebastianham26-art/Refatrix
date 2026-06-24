@@ -237,9 +237,9 @@
     <div class="card hidden" id="cashCard">
       <h2>현금흐름</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-        <div class="seg"><button class="segb on" id="cf-actual" data-v="actual">실제만</button><button class="segb" id="cf-plan" data-v="plan">예정 포함</button></div>
+        <div class="seg"><button class="segb" id="cf-actual" data-v="actual">실제만</button><button class="segb on" id="cf-plan" data-v="plan">예정 포함</button></div>
         <div class="seg"><button class="segb on" id="cf-month" data-v="month">월별</button><button class="segb" id="cf-week" data-v="week">주별</button></div>
-        <div class="seg"><button class="segb on" id="cf-table" data-v="table">표</button><button class="segb" id="cf-cal" data-v="cal">월간달력</button><button class="segb" id="cf-wcal" data-v="wcal">주간달력</button></div>
+        <div class="seg"><button class="segb" id="cf-table" data-v="table">표</button><button class="segb on" id="cf-cal" data-v="cal">월간달력</button><button class="segb" id="cf-wcal" data-v="wcal">주간달력</button></div>
         <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
       </div>
       <div id="cashBody"><div class="hint">불러오는 중…</div></div>
@@ -948,7 +948,7 @@
   }
 
   // ===== 현금흐름 =====
-  const cfState={mode:'actual',gran:'month',view:'table'};
+  const cfState={mode:'plan',gran:'month',view:'cal'};
   const paState={filter:'all'};
   function fmtSigned(n){return (n>0?'+':'')+fmt(n);}
   function netColor(n){return n>0?'var(--income)':(n<0?'var(--expense)':'var(--muted)');}
@@ -1429,6 +1429,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624d"></script>
+<script src="refatrix-nav.js?v=20260624e"></script>
 </body>
 </html>
