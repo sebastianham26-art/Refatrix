@@ -2,7 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
 import { logEvent } from '../audit.js';
-import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
+import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
@@ -27,6 +27,10 @@ export default async function financeRoutes(app) {
   app.get('/api/fx/history', { preHandler: [authGuard] }, async (req) => {
     const limit = Math.min(Number(req.query.limit) || 60, 365);
     return { items: await getFxHistory(limit) };
+  });
+  // 오늘자 USD→KRW (MXN→KRW는 프런트에서 usdKrw ÷ usdMxn 으로 산출)
+  app.get('/api/fx/krw', { preHandler: [authGuard] }, async () => {
+    return await getUsdKrwRate();
   });
 
   // ===== 계좌 =====
@@ -1204,12 +1208,34 @@ export default async function financeRoutes(app) {
     return res;
   });
 
-  // 환율 요약: 지정 기간 추이 + 통계 + USD 거래 요약. query: from, to (YYYY-MM-DD)
+  // 환율 요약: 지정 기간 추이 + 통계 + USD 거래 요약.
+  // query: from, to (YYYY-MM-DD), pair=usdmxn|mxnkrw (기본 usdmxn)
   app.get('/api/fx/summary', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
     const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
-    const series = await getFxRange(from, to);
-    const today = await getUsdMxnRate();
+    const pair = req.query.pair === 'mxnkrw' ? 'mxnkrw' : 'usdmxn';
+
+    let series, todayMeta;
+    if (pair === 'mxnkrw') {
+      // USD→MXN, USD→KRW 두 시리즈를 날짜로 조인 → MXN→KRW = USD→KRW ÷ USD→MXN (둘 다 있는 날만)
+      const mxnSeries = await getFxRange(from, to, 'MXN');
+      const krwSeries = await getFxRange(from, to, 'KRW');
+      const mxnMap = new Map(mxnSeries.map((r) => [r.rate_date, r.rate]));
+      series = [];
+      for (const k of krwSeries) {
+        const m = mxnMap.get(k.rate_date);
+        if (m && m > 0) series.push({ rate_date: k.rate_date, rate: Math.round((k.rate / m) * 10000) / 10000, source: k.source });
+      }
+      const tMxn = await getUsdMxnRate();
+      const tKrw = await getUsdKrwRate();
+      const tRate = (tMxn.rate > 0) ? Math.round((tKrw.rate / tMxn.rate) * 10000) / 10000 : null;
+      todayMeta = { rate: tRate, asOf: tKrw.asOf, source: 'USD→KRW ÷ USD→MXN', stale: tKrw.stale || tMxn.stale };
+    } else {
+      series = await getFxRange(from, to, 'MXN');
+      const today = await getUsdMxnRate();
+      todayMeta = { rate: today.rate, asOf: today.asOf, source: today.source, stale: today.stale };
+    }
+
     let stats = null;
     if (series.length) {
       const rates = series.map((s) => s.rate);
@@ -1225,17 +1251,20 @@ export default async function financeRoutes(app) {
         count: series.length,
       };
     }
-    // USD 거래 요약(예정/실제)
-    const usdRows = (await query(
-      `SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS usd, COALESCE(SUM(amount_mxn),0) AS mxn,
-              CASE WHEN SUM(amount)>0 THEN SUM(amount_mxn)/SUM(amount) ELSE NULL END AS avg_rate
-         FROM transactions WHERE currency='USD' AND deleted_at IS NULL GROUP BY status`)).rows;
-    const usd = { plan: { cnt: 0, usd: 0, mxn: 0, avg_rate: null }, actual: { cnt: 0, usd: 0, mxn: 0, avg_rate: null } };
-    for (const r of usdRows) {
-      const k = r.status === 'actual' ? 'actual' : 'plan';
-      usd[k] = { cnt: Number(r.cnt), usd: r2(r.usd), mxn: r2(r.mxn), avg_rate: r.avg_rate == null ? null : Math.round(Number(r.avg_rate) * 10000) / 10000 };
+    // USD 거래 요약(예정/실제) — USD→MXN 모드에서만(거래가 USD라 KRW 모드엔 비표시)
+    let usd = null;
+    if (pair === 'usdmxn') {
+      const usdRows = (await query(
+        `SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS usd, COALESCE(SUM(amount_mxn),0) AS mxn,
+                CASE WHEN SUM(amount)>0 THEN SUM(amount_mxn)/SUM(amount) ELSE NULL END AS avg_rate
+           FROM transactions WHERE currency='USD' AND deleted_at IS NULL GROUP BY status`)).rows;
+      usd = { plan: { cnt: 0, usd: 0, mxn: 0, avg_rate: null }, actual: { cnt: 0, usd: 0, mxn: 0, avg_rate: null } };
+      for (const r of usdRows) {
+        const k = r.status === 'actual' ? 'actual' : 'plan';
+        usd[k] = { cnt: Number(r.cnt), usd: r2(r.usd), mxn: r2(r.mxn), avg_rate: r.avg_rate == null ? null : Math.round(Number(r.avg_rate) * 10000) / 10000 };
+      }
     }
-    return { from, to, today: { rate: today.rate, asOf: today.asOf, source: today.source, stale: today.stale }, series, stats, usd };
+    return { from, to, pair, today: todayMeta, series, stats, usd };
   });
 
   // 처리 대기 예정 목록: 이번 달(또는 지정 월) 예정 + 과거에 예정됐으나 미처리(경과)인 것 전부.
