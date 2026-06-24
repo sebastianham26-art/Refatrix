@@ -26,6 +26,8 @@ export function fieldVisible(perm, fieldKey) {
   // 영업 대시보드 핵심 지표는 전 직원 공개(디렉터 외 모두):
   //   매출 금액(매출목표 대비 실적·주차별 워터폴·주간 캘린더), 수금/외상 금액(수금계획 대비 실적)
   if (fieldKey === 'sales_amount' || fieldKey === 'ar_amount') return true;
+  // 소시오(파트너)는 원가(평균원가·재고평가·원가분석·매출총이익)도 열람 — 디렉터 결정. 직원 역할은 계속 숨김.
+  if (perm.role === 'socio' && fieldKey === 'unit_cost') return true;
   return perm.fields?.has(fieldKey) ?? false;
 }
 
