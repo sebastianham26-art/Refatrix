@@ -28,8 +28,10 @@ function toBlockSet(blockIds) {
 // blockIds: '세부 차단' 계좌 id 배열(현금·불공제). 디렉터에게도 적용된다(잔액만 노출).
 export function buildAccountAccess(role, rows, blockIds) {
   const detailBlock = toBlockSet(blockIds);
-  if (role === 'director') {
-    // 디렉터는 전체. 단, detailBlock 계좌는 잔액만(세부·운영 차단).
+  if (role === 'director' || role === 'socio') {
+    // 디렉터·소시오는 전 계좌 잔액 열람(all:true). 단, detailBlock 계좌는 잔액만(세부·운영 차단).
+    //   - 디렉터: blockIds 가 항상 비어 무제한(본인 전용).
+    //   - 소시오: 디렉터가 '잔액만'으로 지정한 계좌(can_detail=false)가 blockIds 로 들어와 차단됨.
     return { all: true, viewIds: null, detailIds: null, operateIds: null, detailBlock };
   }
   const viewIds = new Set();

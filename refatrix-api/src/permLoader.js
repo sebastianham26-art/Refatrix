@@ -35,11 +35,10 @@ export async function loadPerm(userId) {
   // 계좌별 열람/운영 권한.
   const accRows = (await query(
     `SELECT account_id, can_operate, can_detail FROM user_account_access WHERE user_id=$1`, [userId])).rows;
-  // 디렉터: 기본은 전체. 단, 관리자 페이지에서 계좌별로 '잔액만'(can_detail=false)으로 지정한 계좌는
-  //   디렉터여도 세부내역(거래목록·현금흐름·드릴다운)·운영이 막힌다(잔액은 계속 보임).
-  //   비디렉터는 buildAccountAccess 가 기존대로(없음/잔액만/열람/운영) 처리.
+  // 소시오: 디렉터가 계좌별로 '잔액만'(can_detail=false)으로 지정한 계좌는 세부내역(드릴다운·거래목록·현금흐름)·운영 차단.
+  //   디렉터는 항상 무제한(blockIds 비움). 비디렉터는 buildAccountAccess 가 기존대로 처리.
   let blockIds = [];
-  if (u.role === 'director') {
+  if (u.role === 'socio') {
     blockIds = accRows.filter((r) => r.can_detail === false).map((r) => Number(r.account_id));
   }
   const accountAccess = buildAccountAccess(u.role, accRows, blockIds);

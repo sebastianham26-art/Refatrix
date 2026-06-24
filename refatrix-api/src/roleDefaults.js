@@ -21,6 +21,12 @@ export const SCREEN_PAGE_KEY = {
 // 'ALL' = 모든 페이지 edit (디렉터)
 export const ROLE_DEFAULTS = {
   director: { pages: 'ALL', fields: ['sales_amount', 'ar_amount', 'mkt_amount'] },
+  socio: {
+    // 파트너: 디렉터처럼 사업 전반을 보되 관리(사용자·회사)는 제외. 계좌 드릴다운은 디렉터가 계좌별 지정.
+    pages: [['transactions', 'edit'], ['settlement', 'edit'], ['customers', 'view'], ['targets', 'view'],
+            ['products', 'view'], ['pipeline', 'view'], ['sales', 'view'], ['marketing', 'view'], ['inventory', 'view']],
+    fields: ['sales_amount', 'ar_amount', 'mkt_amount'],
+  },
   sales: {
     // 재무탭(transactions)은 영업에게 미부여 — 수금 현황은 영업 대시보드의 담당고객 오픈 인보이스로 확인.
     pages: [['quote', 'edit'], ['sales', 'edit'], ['stock', 'edit'], ['shortage', 'edit'], ['devrequest', 'edit'],
