@@ -90,9 +90,9 @@ export async function getFxHistory(limit = 60) {
   return rows.map((r) => ({ rate_date: r.rate_date, rate: Number(r.rate), source: r.source }));
 }
 
-// 기간 환율(요약페이지: 지정 기간 추이). 오름차순(오래된→최신).
-export async function getFxRange(fromStr, toStr) {
-  const cond = ["base='USD'", "quote='MXN'"]; const args = [];
+// 기간 환율(요약페이지: 지정 기간 추이). 오름차순(오래된→최신). quote 기본 'MXN'.
+export async function getFxRange(fromStr, toStr, quote = 'MXN') {
+  const cond = ["base='USD'", 'quote=$1']; const args = [quote];
   if (fromStr) { args.push(fromStr); cond.push(`rate_date>=$${args.length}`); }
   if (toStr) { args.push(toStr); cond.push(`rate_date<=$${args.length}`); }
   const rows = (await query(
