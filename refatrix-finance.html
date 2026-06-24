@@ -365,10 +365,10 @@
       if(!accounts.length){b.innerHTML='<div class="hint">등록된 계좌가 없습니다. 아래에서 추가하세요.</div>';}
       else b.innerHTML=`<table><thead><tr><th>계좌</th><th>유형</th><th>통화</th><th class="num">기초잔액</th><th class="num">현재 잔액</th><th>비고</th></tr></thead>
         <tbody>${accounts.map(a=>`<tr class="acc-row" data-id="${a.id}" style="cursor:pointer">
-          <td><b>${a.name}</b></td><td>${a.type||'—'} <label onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:${a.non_deductible?'#6b8cae':'#bbb'};cursor:pointer"><input type="checkbox" ${a.non_deductible?'checked':''} onchange="setNonDeductible(${a.id},this.checked)" style="width:auto;margin:0">불공제</label></td><td>${a.currency}</td>
+          <td><b>${a.name}</b></td><td>${a.type||'—'}</td><td>${a.currency}</td>
           <td class="num">${fmt(a.open_balance)}</td>
           <td class="num"><b>${fmt(a.balance)}</b> ${a.currency}</td>
-          <td>${a.currency==='USD'&&fxRate?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance*fxRate)} (예상환율 ${fxRate.toFixed(2)})</span>`:'<span class="hint" style="margin:0">클릭하면 거래내역</span>'}</td>
+          <td>${a.currency==='USD'&&fxRate?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance*fxRate)} (예상환율 ${fxRate.toFixed(2)})</span>`:''}</td>
         </tr>`).join('')}</tbody></table>`;
       // 거래 등록 계좌 드롭다운
       $('t-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
