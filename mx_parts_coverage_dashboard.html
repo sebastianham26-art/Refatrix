@@ -616,7 +616,7 @@ apply();
   function chip(){
     var el=document.getElementById('liveSync');
     if(!el){ el=document.createElement('div'); el.id='liveSync';
-      el.style.cssText='position:fixed;left:12px;bottom:12px;z-index:9999;font:600 11px/1.4 -apple-system,Arial,sans-serif;padding:6px 10px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18);max-width:46vw;';
+      el.style.cssText='position:fixed;left:12px;bottom:12px;z-index:9999;font:600 11px/1.4 -apple-system,Arial,sans-serif;padding:6px 10px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.18);max-width:50vw;';
       document.body.appendChild(el); }
     return el;
   }
@@ -632,32 +632,38 @@ apply();
         return {token:t, api:api}; } }catch(e){}
     return null;
   }
+  /* 견고한 페이지네이션: 서버가 페이지 크기를 제한해도 받은 개수만큼 전진하며 total까지 순회 */
   async function fetchAll(api, token){
-    var map={}, offset=0, limit=1000;
-    for(var guard=0; guard<60; guard++){
+    var map={}, offset=0, limit=500, total=null, fetched=0, guard=0, prevOffset=-1;
+    while(guard++ < 300){
       var res=await fetch(api+'/api/products?limit='+limit+'&offset='+offset, {headers:{'Authorization':'Bearer '+token}});
       if(!res.ok) throw new Error('HTTP '+res.status);
       var d=await res.json(); var items=d.items||[];
-      for(var k=0;k<items.length;k++){ var p=items[k]; if(p&&p.code){
-        map[String(p.code).trim().toUpperCase()]={ stk:(p.stock_qty==null?null:Number(p.stock_qty)), cpr:(p.list_price==null?null:Number(p.list_price)) }; } }
-      offset+=items.length;
-      if(items.length<limit || offset>=Number(d.total||offset)) break;
+      if(total==null && d && d.total!=null) total=Number(d.total);
+      if(!items.length) break;
+      for(var k=0;k<items.length;k++){ var p=items[k];
+        if(p&&p.code){ map[String(p.code).trim().toUpperCase()]={ stk:(p.stock_qty==null?null:Number(p.stock_qty)), cpr:(p.list_price==null?null:Number(p.list_price)) }; } }
+      fetched+=items.length; prevOffset=offset; offset+=items.length;
+      if(offset<=prevOffset) break;                 // 무진행 방지
+      if(total!=null && offset>=total) break;        // 끝까지 조회 완료
     }
-    return map;
+    return {map:map, fetched:fetched, total:(total==null?fetched:total)};
   }
   function overlay(map){
-    var hit=0, tot=0;
+    var hit=0, tot=0, unmatched=[];
     V.forEach(function(v){
       v.gens.forEach(function(g){ g.cats.forEach(function(c){ c.parts.forEach(function(p){
         if(!p.cpn) return; tot++;
         var m=map[String(p.cpn).trim().toUpperCase()];
         if(m){ hit++; if(m.stk!=null) p.stk=m.stk; if(m.cpr!=null) p.cpr=m.cpr; }
+        else if(unmatched.length<30){ unmatched.push(p.cpn); }
       }); }); });
       var acc=0, n=0;
       v.gens.forEach(function(g){ g.cats.forEach(function(c){ c.parts.forEach(function(p){
         if(p.cpn && p.cpr!=null && p.cpr>0){ acc+=p.cpr; n++; } }); }); });
       if(n) v.ctr_avg=Math.round(acc/n);
     });
+    if(unmatched.length) try{ console.warn('[REFATRIX] 미매칭 CTR코드 예시:', unmatched.slice(0,30)); }catch(e){}
     return {hit:hit, tot:tot};
   }
   async function sync(){
@@ -665,11 +671,11 @@ apply();
     if(!s||!s.token||!s.api){ setChip('재고·CTR가격: 내장값 표시 (포털 로그인 시 실시간)','off'); return; }
     setChip('재고·CTR가격 동기화 중…','wait');
     try{
-      var map=await fetchAll(s.api, s.token);
-      var r=overlay(map);
+      var r=await fetchAll(s.api, s.token);
+      var o=overlay(r.map);
       if(typeof updateCtrAuto==='function') updateCtrAuto();
       if(typeof apply==='function') apply();
-      setChip('재고·CTR가격 실시간 동기화됨 · '+r.hit+'개 매칭 · '+new Date().toLocaleTimeString('es-MX'),'ok');
+      setChip('재고·CTR가격 동기화됨 · 제품 '+r.fetched+'/'+r.total+'개 조회 · '+o.hit+'개 매칭 · '+new Date().toLocaleTimeString('es-MX'),'ok');
     }catch(e){
       setChip('실시간 동기화 실패 — 내장값 표시 ('+(e&&e.message||e)+')','err');
     }
