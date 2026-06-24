@@ -263,14 +263,43 @@
 
     <!-- 환율 -->
     <div class="card hidden" id="fxCard">
-      <h2>환율 요약 (USD → MXN)</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
-        <div><label>시작일</label><input id="fx-from" type="date" style="width:auto"></div>
-        <div><label>종료일</label><input id="fx-to" type="date" style="width:auto"></div>
-        <div class="seg" style="height:38px"><button class="segb" id="fx-30" data-d="30">최근 30일</button><button class="segb" id="fx-90" data-d="90">90일</button><button class="segb" id="fx-365" data-d="365">1년</button></div>
-        <button class="btn sm" id="fx-go">조회</button>
+      <h2>환율</h2>
+      <!-- 통화쌍 토글 -->
+      <div class="seg" id="fxModeSeg" style="height:36px;margin-bottom:12px">
+        <button class="segb on" id="fxMode-usdmxn" data-mode="usdmxn">USD → MXN</button>
+        <button class="segb" id="fxMode-mxnkrw" data-mode="mxnkrw">MXN → KRW</button>
       </div>
-      <div id="fxBody"><div class="hint">기간을 선택하고 조회하세요.</div></div>
+      <!-- 오늘 환율 + 계산기 (한 줄) -->
+      <div id="fxTopBox" style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-bottom:14px">
+        <div id="fxTodayCard" style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:210px">
+          <div class="hint" style="margin:0">오늘 환율</div>
+          <div id="fxTodayRate" style="font-size:20px;font-weight:800;color:var(--brand)">—</div>
+          <div class="hint" id="fxTodayMeta" style="margin:0"></div>
+        </div>
+        <div id="fxCalcCard" style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;flex:1;min-width:260px">
+          <div class="hint" style="margin:0 0 6px">환율 계산기</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input id="fxCalcInput" type="number" step="any" placeholder="금액" style="width:120px">
+            <span id="fxCalcFrom" style="font-weight:700"></span>
+            <button class="btn ghost sm" id="fxSwapBtn" title="방향 전환" style="padding:6px 10px">⇄</button>
+            <span style="font-weight:700">=</span>
+            <span id="fxCalcResult" style="font-size:18px;font-weight:800;color:var(--brand)">—</span>
+            <span id="fxCalcTo" style="font-weight:700"></span>
+          </div>
+          <div class="hint" id="fxCalcRate" style="margin:6px 0 0"></div>
+        </div>
+      </div>
+      <!-- 기간 추이 -->
+      <div id="fxRangeSection">
+        <div id="fxRangeTitle" style="font-weight:700;margin-bottom:8px">USD → MXN 추이</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+          <div><label>시작일</label><input id="fx-from" type="date" style="width:auto"></div>
+          <div><label>종료일</label><input id="fx-to" type="date" style="width:auto"></div>
+          <div class="seg" style="height:38px"><button class="segb" id="fx-30" data-d="30">최근 30일</button><button class="segb" id="fx-90" data-d="90">90일</button><button class="segb" id="fx-365" data-d="365">1년</button></div>
+          <button class="btn sm" id="fx-go">조회</button>
+        </div>
+        <div id="fxBody"><div class="hint">기간을 선택하고 조회하세요.</div></div>
+      </div>
     </div>
 
     <!-- 승인 대기 -->
@@ -288,6 +317,11 @@
 <script>
   let session={token:null,user:null,api:''};
   let fxRate=null, fxAsOf=null, fxStale=false, accounts=[], cats=[];
+  // 환율 탭: KRW(USD→KRW 오늘값) + 통화쌍 모드 + 계산기 방향 상태
+  let usdKrw=null, usdKrwStale=false;
+  let fxMode='usdmxn';   // 'usdmxn' | 'mxnkrw'
+  let fxSwap=false;      // true면 역방향(MXN→USD / KRW→MXN)
+  let fxCalcVal='';      // 계산기 입력값 유지
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   function goSettlement(){
@@ -331,7 +365,7 @@
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       $('t-date').value=new Date().toISOString().slice(0,10);
       if(!isDirector())$('accAddBtn').classList.add('hidden');
-      await loadFx(); await loadCats(); await loadAccounts();
+      await loadFx(); loadKrwRate(); await loadCats(); await loadAccounts();
       applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -344,6 +378,85 @@
       const md=fxAsOf?fxAsOf.slice(5).replace('-','/'):'—';
       $('fxBanner').innerHTML=`오늘 환율 <b style="color:var(--brand)">USD 1 = MXN ${fxRate.toFixed(4)}</b> <span style="color:var(--muted)">(${fxStale?'최신 못 받음·마지막값':'실시간'}, ${md} 기준, 출처 ${d.source||'—'})</span>`;
     }catch(e){$('fxBanner').textContent='환율을 불러오지 못했습니다.';}
+  }
+
+  // 오늘자 USD→KRW 선로딩 (MXN→KRW = usdKrw ÷ fxRate)
+  async function loadKrwRate(){
+    try{
+      const d=await fetch(session.api+'/api/fx/krw',{headers:auth()}).then(r=>r.json());
+      if(d&&Number(d.rate)>0){usdKrw=Number(d.rate);usdKrwStale=!!d.stale;}
+    }catch(e){/* 계산기에서 안내 */}
+  }
+
+  // 환율 탭 통화쌍별 오늘 환율(1단위)·계산기 방향 정보
+  function fxModeInfo(){
+    if(fxMode==='mxnkrw'){
+      const mxnKrw=(usdKrw!=null&&fxRate)?usdKrw/fxRate:null;   // MXN 1 = KRW ?
+      return {ready:mxnKrw!=null, base:'MXN', counter:'KRW', rate:mxnKrw,
+        note:'USD→KRW ÷ USD→MXN'};
+    }
+    return {ready:fxRate!=null, base:'USD', counter:'MXN', rate:fxRate, note:''};
+  }
+
+  function renderFxToday(){
+    const info=fxModeInfo();
+    if(!info.ready){
+      $('fxTodayRate').textContent='—';
+      $('fxTodayMeta').textContent='환율을 불러오지 못했습니다.';
+      return;
+    }
+    $('fxTodayRate').textContent=`${info.base} 1 = ${info.counter} ${fmtRate(info.rate)}`;
+    const meta=fxMode==='mxnkrw'
+      ? `${info.note}${(fxStale||usdKrwStale)?' · 최신 못받음':''}`
+      : `${fxAsOf||''}${fxStale?' · 최신 못받음':' · 실시간'}`;
+    $('fxTodayMeta').textContent=meta;
+  }
+
+  // 계산기: 현재 방향(fxMode+fxSwap)에 따른 from/to 통화·적용환율 반환
+  function fxCalcDir(){
+    const info=fxModeInfo();
+    if(!info.ready) return null;
+    if(!fxSwap) return {from:info.base, to:info.counter, rate:info.rate};
+    return {from:info.counter, to:info.base, rate:1/info.rate};   // 역방향
+  }
+  function renderFxCalc(){
+    const dir=fxCalcDir();
+    $('fxCalcInput').value=fxCalcVal;
+    if(!dir){
+      $('fxCalcFrom').textContent='';$('fxCalcTo').textContent='';
+      $('fxCalcResult').textContent='—';
+      $('fxCalcRate').textContent='환율을 불러오지 못했습니다.';
+      return;
+    }
+    $('fxCalcFrom').textContent=dir.from;
+    $('fxCalcTo').textContent=dir.to;
+    const v=Number(fxCalcVal);
+    if(fxCalcVal===''||!isFinite(v)){$('fxCalcResult').textContent='—';}
+    else{$('fxCalcResult').textContent=fmt(v*dir.rate);}
+    $('fxCalcRate').textContent=`적용 환율 1 ${dir.from} = ${fmtRate(dir.rate)} ${dir.to}`;
+  }
+  // ⇄ : 방향 뒤집고 현재 환산 결과를 입력칸으로 이동(왕복)
+  function fxSwapToggle(){
+    const dir=fxCalcDir();
+    if(dir){
+      const v=Number(fxCalcVal);
+      if(fxCalcVal!==''&&isFinite(v)){
+        fxCalcVal=String(Math.round(v*dir.rate*10000)/10000);
+      }
+    }
+    fxSwap=!fxSwap;
+    renderFxCalc();
+  }
+  function fxRenderTop(){renderFxToday();renderFxCalc();}
+
+  // 통화쌍 토글
+  function setFxMode(mode){
+    if(mode!==fxMode){fxMode=mode;fxSwap=false;}   // 모드 바꾸면 방향 초기화
+    ['fxMode-usdmxn','fxMode-mxnkrw'].forEach(id=>$(id).classList.toggle('on',$(id).dataset.mode===fxMode));
+    $('fxRangeTitle').textContent=fxMode==='mxnkrw'?'MXN → KRW 추이':'USD → MXN 추이';
+    fxRenderTop();
+    if(fxMode==='mxnkrw'&&usdKrw==null){loadKrwRate().then(fxRenderTop);}
+    loadFxSummary();
   }
 
   async function loadCats(){
@@ -1233,13 +1346,17 @@
   async function loadFxSummary(){
     const b=$('fxBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
     const from=$('fx-from').value,to=$('fx-to').value;
+    const krw=fxMode==='mxnkrw';
+    const colHdr=krw?'MXN→KRW':'USD→MXN';
     try{
-      const d=await fetch(`${session.api}/api/fx/summary?from=${from}&to=${to}`,{headers:auth()}).then(r=>r.json());
+      const d=await fetch(`${session.api}/api/fx/summary?from=${from}&to=${to}&pair=${fxMode}`,{headers:auth()}).then(r=>r.json());
+      // 상단 오늘 환율 카드도 함께 갱신(서버 today 기준)
+      fxRenderTop();
       const s=d.stats;
-      const today=`<div style="display:inline-block;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px">
-        <div class="hint" style="margin:0">오늘 환율</div><div style="font-size:20px;font-weight:800;color:var(--brand)">USD 1 = MXN ${fmtRate(d.today.rate)}</div>
-        <div class="hint" style="margin:0">${d.today.asOf||''} · ${d.today.source||''}${d.today.stale?' · 최신 못받음':''}</div></div>`;
-      if(!s){b.innerHTML=today+'<div class="hint">선택한 기간에 기록된 환율이 없습니다. (환율은 시스템을 사용한 날 기록됩니다)</div>';return;}
+      if(!s){
+        const note=krw?'KRW 환율은 오늘부터 매일 기록되어 누적됩니다.':'환율은 시스템을 사용한 날 기록됩니다.';
+        b.innerHTML=`<div class="hint">선택한 기간에 기록된 환율이 없습니다. (${note})</div>`;return;
+      }
       const up=s.change>0,dn=s.change<0;const chCol=up?'var(--expense)':(dn?'var(--income)':'var(--muted)');
       const stat=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         ${statCard('기간 변화',`${up?'▲':dn?'▼':''} ${fmtRate(Math.abs(s.change))}`,`${s.change_pct>0?'+':''}${s.change_pct}%`,chCol)}
@@ -1250,12 +1367,12 @@
         ${statCard('평균',fmtRate(s.avg),`${s.count}일 기록`)}</div>`;
       const chart=svgFxChart(d.series);
       const tbl=`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">일자별 환율 (${d.series.length}일)</summary>
-        <table style="margin-top:6px"><thead><tr><th>날짜</th><th class="num">USD→MXN</th><th class="num">전일 대비</th></tr></thead>
+        <table style="margin-top:6px"><thead><tr><th>날짜</th><th class="num">${colHdr}</th><th class="num">전일 대비</th></tr></thead>
         <tbody>${d.series.map((r,i)=>{const prev=i>0?d.series[i-1].rate:null;const ch=prev==null?null:Math.round((r.rate-prev)*10000)/10000;
           return `<tr><td>${r.rate_date}</td><td class="num">${fmtRate(r.rate)}</td>
           <td class="num" style="color:${ch==null?'var(--muted)':(ch>0?'var(--expense)':ch<0?'var(--income)':'var(--muted)')}">${ch==null?'—':(ch>0?'+':'')+fmtRate(ch)}</td></tr>`;}).reverse().join('')}</tbody></table></details>`;
       const usd=renderUsdSummary(d.usd);
-      b.innerHTML=today+stat+chart+usd+tbl;
+      b.innerHTML=stat+chart+usd+tbl;
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function statCard(label,big,sub,col){
@@ -1374,7 +1491,7 @@
     if(w==='pay'){loadArView();}
     if(w==='fixed'){loadFixed();loadVariance();}
     if(w==='cash'){loadCashAll();}
-    if(w==='fx'){if(!$('fx-from').value){fxDefaultRange(90);}loadFxSummary();}
+    if(w==='fx'){if(!$('fx-from').value){fxDefaultRange(90);}fxRenderTop();if(fxMode==='mxnkrw'&&usdKrw==null){loadKrwRate().then(fxRenderTop);}loadFxSummary();}
     if(w==='approve'){loadApprovals();loadChangeReqs();}
     if(w==='acc')loadAccounts();
   }
@@ -1400,6 +1517,9 @@
   $('tabFx').addEventListener('click',()=>showTab('fx'));
   $('tabApprove').addEventListener('click',()=>showTab('approve'));
   $('fx-go').addEventListener('click',loadFxSummary);
+  ['fxMode-usdmxn','fxMode-mxnkrw'].forEach(id=>$(id).addEventListener('click',()=>setFxMode($(id).dataset.mode)));
+  $('fxSwapBtn').addEventListener('click',fxSwapToggle);
+  $('fxCalcInput').addEventListener('input',()=>{fxCalcVal=$('fxCalcInput').value;renderFxCalc();});
   ['fx-30','fx-90','fx-365'].forEach(id=>$(id).addEventListener('click',()=>{
     ['fx-30','fx-90','fx-365'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');
     fxDefaultRange(Number($(id).dataset.d));loadFxSummary();}));
