@@ -259,7 +259,8 @@
         +'<label>내용</label><textarea id="nf-body"></textarea>'
         +'<div style="margin-top:8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><label style="margin:0"><input type="checkbox" id="nf-pin" style="width:auto"> 상단 고정</label>'
         +'<label style="margin:0"><input type="checkbox" id="nf-popup" style="width:auto" checked> 로그인 팝업으로 표시</label>'
-        +'<button class="btn" onclick="addNotice()">공지 등록</button></div>'
+        +'<button class="btn" id="nf-submit" onclick="addNotice()">공지 등록</button>'
+        +'<button class="btn ghost hidden" id="nf-cancel" onclick="cancelNoticeEdit()">취소</button></div>'
         +'<div class="msg" id="nf-msg"></div>';
     } else $('noticeForm').innerHTML='';
 
@@ -489,10 +490,13 @@
   }
 
   // ===== 공지 =====
+  let noticeItems=[];        // 마지막 조회된 공지 목록(수정 사전선택용)
+  let editingNoticeId=null;  // null=신규 등록, 값=수정 중인 공지 id
   async function loadNotices(){
     try{
       const d=await fetch(session.api+'/api/notices',{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
+      noticeItems=items;
       const badge=$('noticeBadge');
       if(d.unread>0){badge.textContent=d.unread;badge.classList.remove('hidden');}else badge.classList.add('hidden');
       if(!items.length){$('noticeList').innerHTML='<div class="hint" style="margin-top:10px">공지가 없습니다.</div>';return;}
@@ -508,6 +512,7 @@
           +(isDirector?'<div class="roster" id="roster-'+n.id+'"><a style="cursor:pointer;color:var(--brand-soft);font-weight:700" onclick="loadRoster('+n.id+')">읽음 현황 보기</a></div>':'')
           +'</div>'
           +(!n.read?'<button class="btn ghost sm" onclick="readNotice('+n.id+')">확인</button>':'')
+          +(isDirector?'<button class="btn ghost sm" onclick="editNotice('+n.id+')">수정</button>':'')
           +(isDirector?'<button class="btn danger sm" onclick="delNotice('+n.id+')">삭제</button>':'')
           +'</div>';
       }).join('');
@@ -536,14 +541,51 @@
       if(!body.target_ids.length){m.className='msg err';m.textContent='대상 유저를 1명 이상 선택하세요.';return;}
     }
     if(!body.title){m.className='msg err';m.textContent='제목을 입력하세요.';return;}
+    const editing=editingNoticeId;
     try{
-      const res=await fetch(session.api+'/api/notices',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const url=editing?(session.api+'/api/notices/'+editing):(session.api+'/api/notices');
+      const res=await fetch(url,{method:editing?'PATCH':'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='공지를 등록했습니다.';$('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;
+      if(!res.ok||d.error){m.className='msg err';m.textContent=(editing?'수정':'등록')+' 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.textContent=editing?'공지를 수정했습니다.':'공지를 등록했습니다.';
+      editingNoticeId=null;
+      const btn=$('nf-submit'); if(btn) btn.textContent='공지 등록';
+      const cx=$('nf-cancel'); if(cx) cx.classList.add('hidden');
+      $('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;
+      $('nf-aud').value='all';noticeAudChange();
       document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=false);
       loadNotices();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+  }
+  async function editNotice(id){
+    const n=(noticeItems||[]).find(x=>x.id===id); if(!n) return;
+    editingNoticeId=id;
+    $('nf-title').value=n.title||''; $('nf-body').value=n.body||'';
+    $('nf-pin').checked=!!n.pinned; $('nf-popup').checked=!!n.is_popup;
+    $('nf-aud').value=n.audience||'all';
+    $('nf-roleWrap').classList.toggle('hidden',n.audience!=='role');
+    $('nf-teamWrap').classList.toggle('hidden',n.audience!=='team');
+    $('nf-usersWrap').classList.toggle('hidden',n.audience!=='users');
+    if(n.audience==='role') $('nf-role').value=n.audience_role||'sales';
+    if(n.audience==='team' && n.team_id!=null) $('nf-team').value=String(n.team_id);
+    if(n.audience==='users'){
+      await loadNoticeUsers();
+      const set=new Set((n.target_ids||[]).map(Number));
+      document.querySelectorAll('.nf-uchk').forEach(c=>{ c.checked=set.has(Number(c.value)); });
+    }
+    const btn=$('nf-submit'); if(btn) btn.textContent='수정 저장';
+    const cx=$('nf-cancel'); if(cx) cx.classList.remove('hidden');
+    const m=$('nf-msg'); m.className='msg'; m.textContent='수정 중: "'+(n.title||'')+'"';
+    $('noticeForm').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function cancelNoticeEdit(){
+    editingNoticeId=null;
+    $('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;
+    $('nf-aud').value='all'; noticeAudChange();
+    document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=false);
+    const btn=$('nf-submit'); if(btn) btn.textContent='공지 등록';
+    const cx=$('nf-cancel'); if(cx) cx.classList.add('hidden');
+    const m=$('nf-msg'); m.className='msg'; m.textContent='';
   }
   async function delNotice(id){ if(!confirm('이 공지를 삭제할까요?'))return; await fetch(session.api+'/api/notices/'+id,{method:'DELETE',headers:auth()});loadNotices(); }
 
@@ -697,6 +739,6 @@
   $('calToday').addEventListener('click',()=>calGoToday());
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260622g"></script>
+<script src="refatrix-nav.js?v=20260624g"></script>
 </body>
 </html>
