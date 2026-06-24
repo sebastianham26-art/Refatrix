@@ -282,11 +282,7 @@
   window.pickYear=pickYear;
 
   async function initApp(){
-    try{
-      const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());
-      isDirector=!!(su&&su.isDirector)||((su&&su.role)==='director');
-    }catch(e){ isDirector=((session.user&&session.user.role)==='director'); }
-    if(!isDirector){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
+    // 접근 제어는 백엔드 requirePage('grossprofit')가 담당. 권한 없으면 load()에서 403 → 차단 카드.
     $('denyCard').classList.add('hidden'); $('gpSection').classList.remove('hidden');
     renderYearSeg(); load();
   }
@@ -297,6 +293,7 @@
       let qs='';
       if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
       const d=await fetch(session.api+'/api/gross-profit'+qs,{headers:auth()}).then(r=>r.json());
+      if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
       if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
       DATA=d;
       openDrill.clear(); drillCache={};   // 기간이 바뀌면 드릴다운 캐시 무효화
@@ -615,6 +612,6 @@
       highlightPoint, hideChartTip, getPts:()=>chartPts };
   }
 </script>
-<script src="refatrix-nav.js?v=20260624j"></script>
+<script src="refatrix-nav.js?v=20260624k"></script>
 </body>
 </html>

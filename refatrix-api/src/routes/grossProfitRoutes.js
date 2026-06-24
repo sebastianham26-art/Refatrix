@@ -1,8 +1,8 @@
 import { query } from '../db.js';
-import { authGuard, requireDirector } from '../middleware/authGuard.js';
+import { authGuard, requirePage } from '../middleware/authGuard.js';
 import { logPageView } from '../audit.js';
 
-// ── 매출총이익(SKU별) — 디렉터 전용 ────────────────────────────────────────────
+// ── 매출총이익(SKU별) — 'grossprofit' 페이지 권한(디렉터 자동 우회) ────────────────────────────────────────────
 // 가중평균 단일 풀 모델에서, 매출원가(COGS)는 판매 시점 스냅샷(sales_invoice_lines.cogs_mxn /
 // applied_unit_cost)으로 동결돼 있다. 따라서 SKU별 매출총이익은 게시(posted)·미삭제 인보이스
 // 라인을 제품별로 합산해 산출한다 — 이후 평균원가를 바꿔도 과거 매출총이익은 변하지 않는다.
@@ -42,7 +42,7 @@ export function summarizeTiers(items) {
 export default async function grossProfitRoutes(app) {
   // SKU별 매출총이익 전체(자재내역) + 4단계 요약 + (정렬된) 곡선 데이터.
   // 옵션: ?from=YYYY-MM-DD&to=YYYY-MM-DD (inv_date 기준 기간 한정). 미지정 시 전체 기간.
-  app.get('/api/gross-profit', { preHandler: [authGuard, requireDirector] }, async (req) => {
+  app.get('/api/gross-profit', { preHandler: [authGuard, requirePage('grossprofit')] }, async (req) => {
     const { perm } = req.ctx;
     const from = (req.query.from || '').trim();
     const to = (req.query.to || '').trim();
@@ -146,7 +146,7 @@ export default async function grossProfitRoutes(app) {
   // ── SKU 드릴다운(자재내역 행 펼치기) — 디렉터 전용 ─────────────────────────────
   // 한 SKU의 ① 적용차종(전체) ② 판매처(고객)별 매출/원가/매출총이익/이익률을 반환.
   // 기간(from/to)은 자재내역 화면의 연도 토글과 동일하게 inv_date 기준으로 한정.
-  app.get('/api/gross-profit/sku/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  app.get('/api/gross-profit/sku/:id', { preHandler: [authGuard, requirePage('grossprofit')] }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_product' });
 
