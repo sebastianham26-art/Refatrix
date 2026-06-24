@@ -307,6 +307,50 @@
   }
   function dismissAppr(){ try{ sessionStorage.setItem('appr_nag_dismissed','1'); }catch(e){} $('apprModal').style.display='none'; }
 
+  // 로그인 공지 팝업 — 나에게 해당되는 '미확인 + 팝업' 공지를 띄움.
+  // "확인"을 누르면 서버에 읽음(notice_reads) 기록 → 다음 로그인부터 안 뜸.
+  let __popupNoticeIds=[];
+  async function checkNoticePopup(){
+    try{
+      const d=await fetch(session.api+'/api/notices/popup',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length){ $('noticePopModal').style.display='none'; return; }
+      __popupNoticeIds=items.map(n=>n.id);
+      $('noticePopList').innerHTML=items.map(n=>
+        '<div style="padding:12px 14px;border-bottom:1px solid #f0ece2">'
+        +'<div style="font-size:14px;font-weight:800;color:var(--ink)">'+(n.pinned?'📌 ':'📢 ')+escp(n.title)+'</div>'
+        +(n.body?'<div style="font-size:13px;color:var(--ink);line-height:1.6;margin-top:5px;white-space:pre-wrap">'+escp(n.body)+'</div>':'')
+        +'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+escp(n.author||'')+(n.created_at?' · '+new Date(n.created_at).toLocaleString('ko-KR'):'')+'</div></div>'
+      ).join('');
+      $('noticePopCount').textContent=items.length>1?('공지 '+items.length+'건'):'공지';
+      $('noticePopModal').style.display='flex';
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  async function confirmNoticePopup(){
+    const btn=$('noticePopOk'); if(btn){ btn.disabled=true; btn.textContent='처리 중…'; }
+    try{
+      // 표시된 모든 공지를 읽음 처리(최초 1회 기록) → 다음부터 안 뜸
+      await Promise.all(__popupNoticeIds.map(id=>
+        fetch(session.api+'/api/notices/'+id+'/read',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'}).catch(()=>{})
+      ));
+    }catch(e){}
+    __popupNoticeIds=[];
+    $('noticePopModal').style.display='none';
+    if(btn){ btn.disabled=false; btn.textContent='확인'; }
+  }
+
+  // JWT exp(만료) 검사 — 6시간 지난 토큰이면 true. 디코드 실패 시 만료로 간주(안전).
+  function tokenExpired(token){
+    try{
+      const p=JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      if(!p||!p.exp) return false; // exp 없으면 서버가 판단(차단 안 함)
+      return (p.exp*1000) <= Date.now();
+    }catch(e){ return true; }
+  }
+  function forceRelogin(){
+    try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
+  }
+
   async function login(){
     const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
     const m=$('loginMsg');m.className='msg';
@@ -330,7 +374,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkNoticePopup();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -669,6 +713,7 @@
   // 포털 자동 복원: 세션이 있으면 로그인 화면 건너뛰고 바로 포털 표시
   (function(){
     const ps=portalSession();
+    if(ps&&ps.token&&tokenExpired(ps.token)){ forceRelogin(); return; } // 6시간 만료 → PIN 재로그인
     if(ps&&ps.token){
       session={token:ps.token,user:ps.user||{},api:ps.api||''};
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
@@ -710,6 +755,19 @@
     <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
       <button onclick="dismissAppr()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
       <button onclick="goScreen('customers')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">고객관리로 가기 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 로그인 공지 팝업 -->
+<div id="noticePopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:210;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">📢 <span id="noticePopCount">공지</span></div>
+    </div>
+    <div id="noticePopList" style="max-height:60vh;overflow:auto"></div>
+    <div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">
+      <button id="noticePopOk" onclick="confirmNoticePopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
     </div>
   </div>
 </div>

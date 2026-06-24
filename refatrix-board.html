@@ -249,12 +249,16 @@
         '<div class="card-h">공지 작성</div>'
         +'<div class="row">'
         +'<div style="flex:2"><label>제목</label><input id="nf-title" type="text"></div>'
-        +'<div style="flex:0 0 130px"><label>대상</label><select id="nf-aud" onchange="noticeAudChange()"><option value="all">전체</option><option value="role">역할</option><option value="team">팀</option></select></div>'
+        +'<div style="flex:0 0 130px"><label>대상</label><select id="nf-aud" onchange="noticeAudChange()"><option value="all">전체공지</option><option value="role">역할</option><option value="team">팀</option><option value="users">대상 지정</option></select></div>'
         +'<div style="flex:0 0 130px" id="nf-roleWrap" class="hidden"><label>역할</label><select id="nf-role"><option value="sales">영업</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="viewer">뷰어</option></select></div>'
         +'<div style="flex:0 0 150px" id="nf-teamWrap" class="hidden"><label>팀</label><select id="nf-team">'+teamOpts+'</select></div>'
         +'</div>'
+        +'<div id="nf-usersWrap" class="hidden" style="margin-top:6px"><label>대상 유저 (중복선택)</label>'
+          +'<div style="margin-bottom:6px"><a id="nf-usersAll" style="cursor:pointer;color:var(--brand-soft);font-weight:700;font-size:12px">전체 선택</a> · <a id="nf-usersNone" style="cursor:pointer;color:var(--brand-soft);font-weight:700;font-size:12px">전체 해제</a></div>'
+          +'<div id="nf-users" style="display:flex;flex-wrap:wrap;gap:6px 14px;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:200px;overflow:auto"><span class="hint">불러오는 중…</span></div></div>'
         +'<label>내용</label><textarea id="nf-body"></textarea>'
-        +'<div style="margin-top:8px;display:flex;align-items:center;gap:10px"><label style="margin:0"><input type="checkbox" id="nf-pin" style="width:auto"> 상단 고정</label>'
+        +'<div style="margin-top:8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><label style="margin:0"><input type="checkbox" id="nf-pin" style="width:auto"> 상단 고정</label>'
+        +'<label style="margin:0"><input type="checkbox" id="nf-popup" style="width:auto" checked> 로그인 팝업으로 표시</label>'
         +'<button class="btn" onclick="addNotice()">공지 등록</button></div>'
         +'<div class="msg" id="nf-msg"></div>';
     } else $('noticeForm').innerHTML='';
@@ -288,7 +292,26 @@
       window.__tfRecv=isDirector?'user':'self';
     }
   }
-  function noticeAudChange(){ const a=$('nf-aud').value; $('nf-roleWrap').classList.toggle('hidden',a!=='role'); $('nf-teamWrap').classList.toggle('hidden',a!=='team'); }
+  let noticeUsersLoaded=false;
+  function noticeAudChange(){
+    const a=$('nf-aud').value;
+    $('nf-roleWrap').classList.toggle('hidden',a!=='role');
+    $('nf-teamWrap').classList.toggle('hidden',a!=='team');
+    const uw=$('nf-usersWrap'); if(uw){ uw.classList.toggle('hidden',a!=='users'); if(a==='users') loadNoticeUsers(); }
+  }
+  async function loadNoticeUsers(){
+    if(noticeUsersLoaded) return; noticeUsersLoaded=true;
+    const box=$('nf-users'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/todo-users',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ box.innerHTML='<span class="hint">유저가 없습니다.</span>'; return; }
+      box.innerHTML=items.map(u=>'<label style="margin:0;font-weight:500;white-space:nowrap"><input type="checkbox" class="nf-uchk" value="'+u.id+'" style="width:auto"> '+esc(u.name)+' <span style="color:var(--muted);font-size:11px">('+esc(ROLE[u.role]||u.role||'')+')</span></label>').join('');
+      const all=$('nf-usersAll'), none=$('nf-usersNone');
+      if(all) all.addEventListener('click',()=>{ document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=true); });
+      if(none) none.addEventListener('click',()=>{ document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=false); });
+    }catch(e){ box.innerHTML='<span class="hint">유저를 불러오지 못했습니다.</span>'; noticeUsersLoaded=false; }
+  }
 
   // ===== 일정 (월간/주간 달력) =====
   let calView='month';
@@ -474,13 +497,14 @@
       if(d.unread>0){badge.textContent=d.unread;badge.classList.remove('hidden');}else badge.classList.add('hidden');
       if(!items.length){$('noticeList').innerHTML='<div class="hint" style="margin-top:10px">공지가 없습니다.</div>';return;}
       $('noticeList').innerHTML=items.map(n=>{
-        const audLbl={all:'전체',role:'역할 · '+(ROLE[n.audience_role]||n.audience_role),team:'팀 · '+esc(n.team_name||'')}[n.audience]||n.audience;
+        const audLbl={all:'전체',role:'역할 · '+(ROLE[n.audience_role]||n.audience_role),team:'팀 · '+esc(n.team_name||''),users:'대상 · '+esc((n.target_names||[]).join(', ')||'지정')}[n.audience]||n.audience;
+        const popupLbl=n.is_popup?' <span class="pill" style="background:#eef4f1;color:var(--brand)">팝업</span>':'';
         const when=n.created_at?new Date(n.created_at).toLocaleString('ko-KR'):'';
         const readInfo=n.read?('<span style="color:var(--income)">✓ 확인 '+new Date(n.my_read_at).toLocaleString('ko-KR')+'</span>'):'<span style="color:var(--expense)">● 미확인</span>';
         return '<div class="item" id="notice-'+n.id+'"><div class="body">'
           +'<div class="t">'+(n.pinned?'<span class="pill pin">고정</span> ':'')+esc(n.title)+'</div>'
           +(n.body?'<div class="d">'+esc(n.body)+'</div>':'')
-          +'<div class="meta"><span class="pill">'+audLbl+'</span> · '+esc(n.author||'')+' · '+when+' · '+readInfo+'</div>'
+          +'<div class="meta"><span class="pill">'+audLbl+'</span>'+popupLbl+' · '+esc(n.author||'')+' · '+when+' · '+readInfo+'</div>'
           +(isDirector?'<div class="roster" id="roster-'+n.id+'"><a style="cursor:pointer;color:var(--brand-soft);font-weight:700" onclick="loadRoster('+n.id+')">읽음 현황 보기</a></div>':'')
           +'</div>'
           +(!n.read?'<button class="btn ghost sm" onclick="readNotice('+n.id+')">확인</button>':'')
@@ -503,15 +527,21 @@
   }
   async function addNotice(){
     const m=$('nf-msg');m.className='msg';
-    const body={title:$('nf-title').value.trim(),body:$('nf-body').value,audience:$('nf-aud').value,pinned:$('nf-pin').checked};
-    if(body.audience==='role')body.audience_role=$('nf-role').value;
-    if(body.audience==='team')body.team_id=$('nf-team').value;
+    const aud=$('nf-aud').value;
+    const body={title:$('nf-title').value.trim(),body:$('nf-body').value,audience:aud,pinned:$('nf-pin').checked,is_popup:$('nf-popup').checked};
+    if(aud==='role')body.audience_role=$('nf-role').value;
+    if(aud==='team')body.team_id=$('nf-team').value;
+    if(aud==='users'){
+      body.target_ids=Array.from(document.querySelectorAll('.nf-uchk:checked')).map(c=>Number(c.value));
+      if(!body.target_ids.length){m.className='msg err';m.textContent='대상 유저를 1명 이상 선택하세요.';return;}
+    }
     if(!body.title){m.className='msg err';m.textContent='제목을 입력하세요.';return;}
     try{
       const res=await fetch(session.api+'/api/notices',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='공지를 등록했습니다.';$('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;
+      m.className='msg ok';m.textContent='공지를 등록했습니다.';$('nf-title').value='';$('nf-body').value='';$('nf-pin').checked=false;$('nf-popup').checked=true;
+      document.querySelectorAll('.nf-uchk').forEach(c=>c.checked=false);
       loadNotices();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }

@@ -6,6 +6,18 @@ import { logEvent } from '../audit.js';
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function isoTs(d) { if (!d) return null; if (d instanceof Date) return d.toISOString(); return String(d); }
 
+// 'users' 대상 공지들의 대상자 이름 매핑 { notice_id: [name,...] }
+async function loadTargetNames(noticeIds) {
+  if (!noticeIds || !noticeIds.length) return {};
+  const rows = (await query(
+    `SELECT nt.notice_id, u.name
+       FROM notice_targets nt JOIN users u ON u.id=nt.user_id
+      WHERE nt.notice_id = ANY($1) ORDER BY u.name`, [noticeIds])).rows;
+  const map = {};
+  for (const r of rows) { (map[r.notice_id] = map[r.notice_id] || []).push(r.name); }
+  return map;
+}
+
 export default async function portalBoardRoutes(app) {
   // =================== 일정 (Calendar) ===================
   // 보이는 일정: 전사 + 내 팀(scope=team) + 내 개인(scope=personal, owner=me) + 내가 만든 것
@@ -86,15 +98,19 @@ export default async function portalBoardRoutes(app) {
     const vis = visibleTeamIds(perm);
     const conds = [`n.deleted_at IS NULL`];
     const args = [];
+    // 본인 id 는 가시성·읽음 조인 양쪽에서 쓰므로 먼저 바인딩
+    args.push(perm.userId); const meIdx = args.length;
     if (vis !== null) {
       args.push(perm.role); const rIdx = args.length;
       const myTeams = vis.length ? vis : [-1];
       args.push(myTeams); const tIdx = args.length;
-      conds.push(`(n.audience='all' OR (n.audience='role' AND n.audience_role=$${rIdx}) OR (n.audience='team' AND n.team_id = ANY($${tIdx})))`);
+      conds.push(`(n.audience='all'
+                 OR (n.audience='role' AND n.audience_role=$${rIdx})
+                 OR (n.audience='team' AND n.team_id = ANY($${tIdx}))
+                 OR (n.audience='users' AND n.id IN (SELECT notice_id FROM notice_targets WHERE user_id=$${meIdx})))`);
     }
-    args.push(perm.userId); const meIdx = args.length;
     const rows = (await query(
-      `SELECT n.id, n.title, n.body, n.audience, n.audience_role, n.team_id, n.pinned, n.created_at,
+      `SELECT n.id, n.title, n.body, n.audience, n.audience_role, n.team_id, n.pinned, n.is_popup, n.created_at,
               u.name AS author, t.name AS team_name,
               nr.read_at AS my_read_at
          FROM notices n
@@ -103,13 +119,47 @@ export default async function portalBoardRoutes(app) {
          LEFT JOIN notice_reads nr ON nr.notice_id=n.id AND nr.user_id=$${meIdx}
         WHERE ${conds.join(' AND ')}
         ORDER BY n.pinned DESC, n.created_at DESC`, args)).rows;
+    // 'users' 대상 공지의 대상자 이름(디렉터 화면 라벨용) — 별도 조회 후 머지
+    const targetMap = await loadTargetNames(rows.filter((r) => r.audience === 'users').map((r) => r.id));
     return {
       items: rows.map((r) => ({
         id: r.id, title: r.title, body: r.body, audience: r.audience, audience_role: r.audience_role,
-        team_id: r.team_id, team_name: r.team_name, pinned: r.pinned, author: r.author,
+        team_id: r.team_id, team_name: r.team_name, pinned: r.pinned, is_popup: !!r.is_popup, author: r.author,
+        target_names: targetMap[r.id] || [],
         created_at: isoTs(r.created_at), my_read_at: isoTs(r.my_read_at), read: !!r.my_read_at,
       })),
       unread: rows.filter((r) => !r.my_read_at).length,
+    };
+  });
+
+  // 로그인 팝업용 — 나에게 해당되는 '미확인' 공지 중 is_popup=true 만
+  app.get('/api/notices/popup', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const vis = visibleTeamIds(perm);
+    const conds = [`n.deleted_at IS NULL`, `n.is_popup = true`, `nr.read_at IS NULL`];
+    const args = [];
+    args.push(perm.userId); const meIdx = args.length;
+    if (vis !== null) {
+      args.push(perm.role); const rIdx = args.length;
+      const myTeams = vis.length ? vis : [-1];
+      args.push(myTeams); const tIdx = args.length;
+      conds.push(`(n.audience='all'
+                 OR (n.audience='role' AND n.audience_role=$${rIdx})
+                 OR (n.audience='team' AND n.team_id = ANY($${tIdx}))
+                 OR (n.audience='users' AND n.id IN (SELECT notice_id FROM notice_targets WHERE user_id=$${meIdx})))`);
+    }
+    const rows = (await query(
+      `SELECT n.id, n.title, n.body, n.pinned, n.created_at, u.name AS author
+         FROM notices n
+         LEFT JOIN users u ON u.id=n.created_by
+         LEFT JOIN notice_reads nr ON nr.notice_id=n.id AND nr.user_id=$${meIdx}
+        WHERE ${conds.join(' AND ')}
+        ORDER BY n.pinned DESC, n.created_at DESC`, args)).rows;
+    return {
+      items: rows.map((r) => ({
+        id: r.id, title: r.title, body: r.body, pinned: r.pinned,
+        author: r.author, created_at: isoTs(r.created_at),
+      })),
     };
   });
 
@@ -117,16 +167,34 @@ export default async function portalBoardRoutes(app) {
     const perm = req.ctx.perm;
     const b = req.body || {};
     if (!b.title || !String(b.title).trim()) return reply.code(400).send({ error: 'title_required' });
-    const audience = ['all', 'role', 'team'].includes(b.audience) ? b.audience : 'all';
+    const audience = ['all', 'role', 'team', 'users'].includes(b.audience) ? b.audience : 'all';
     const audienceRole = audience === 'role' ? (b.audience_role || null) : null;
     const teamId = audience === 'team' ? (Number(b.team_id) || null) : null;
     if (audience === 'role' && !audienceRole) return reply.code(400).send({ error: 'role_required' });
     if (audience === 'team' && !teamId) return reply.code(400).send({ error: 'team_required' });
+    // 특정 유저 지정(중복선택): 정수 id 배열로 정규화
+    let targetIds = [];
+    if (audience === 'users') {
+      targetIds = Array.isArray(b.target_ids)
+        ? [...new Set(b.target_ids.map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0))]
+        : [];
+      if (!targetIds.length) return reply.code(400).send({ error: 'targets_required' });
+    }
+    const isPopup = b.is_popup === undefined ? true : !!b.is_popup; // 기본 ON
     const r = (await query(
-      `INSERT INTO notices (title, body, audience, audience_role, team_id, pinned, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [String(b.title).trim(), b.body ? String(b.body) : null, audience, audienceRole, teamId, !!b.pinned, perm.userId])).rows[0];
-    await logEvent({ userId: perm.userId, action: 'create', target: `notice:${r.id}`, detail: { audience } });
+      `INSERT INTO notices (title, body, audience, audience_role, team_id, pinned, is_popup, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [String(b.title).trim(), b.body ? String(b.body) : null, audience, audienceRole, teamId, !!b.pinned, isPopup, perm.userId])).rows[0];
+    if (audience === 'users' && targetIds.length) {
+      // 존재하는 유저만 INSERT (FK 위반 방지) — 한 건씩, 중복은 UNIQUE 로 무시
+      for (const uid of targetIds) {
+        await query(
+          `INSERT INTO notice_targets (notice_id, user_id)
+             SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL)
+           ON CONFLICT (notice_id, user_id) DO NOTHING`, [r.id, uid]);
+      }
+    }
+    await logEvent({ userId: perm.userId, action: 'create', target: `notice:${r.id}`, detail: { audience, is_popup: isPopup, targets: targetIds.length } });
     return { id: r.id };
   });
 
