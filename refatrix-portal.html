@@ -313,7 +313,7 @@
   async function checkNoticePopup(){
     try{
       const d=await fetch(session.api+'/api/notices/popup',{headers:auth()}).then(r=>r.json());
-      const items=((d&&d.items)||[]).filter(n=>!n.popup_persist);
+      const items=(d&&d.items)||[];
       if(!items.length){ $('noticePopModal').style.display='none'; return; }
       __popupNoticeIds=items.map(n=>n.id);
       $('noticePopList').innerHTML=items.map(n=>
@@ -772,6 +772,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260624h"></script>
+<script src="refatrix-nav.js?v=20260624a"></script>
 </body>
 </html>
