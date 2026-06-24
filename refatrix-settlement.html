@@ -79,6 +79,16 @@
 
   <div class="hidden" id="app">
 
+    <!-- 미배분 입금 인박스 (재무담당/디렉터가 등록한 은행 매출입금 → 반제 연결) -->
+    <div class="card" id="bdInboxCard" style="display:none">
+      <div class="card-h">미배분 입금 인박스
+        <span id="bdBadge" style="margin-left:8px;display:none;background:#c0392b;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">0</span>
+        <span style="margin-left:auto"><button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="loadBdInbox()">새로고침</button></span>
+      </div>
+      <div class="hint" style="margin-bottom:4px">재무담당/디렉터가 등록한 <b>은행 매출입금</b>입니다. 각 입금의 <b>[이 입금으로 반제]</b>를 누른 뒤, 아래 미수 목록에서 해당 고객의 인보이스 <b>반제</b>를 처리하면 입금이 닫힙니다. (계좌·금액·입금일은 자동으로 채워집니다.)</div>
+      <div id="bdInboxBox"></div>
+    </div>
+
     <!-- 수금 상세 (오픈 인보이스 / AR) — 최상단 -->
     <div class="card">
       <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
@@ -92,6 +102,7 @@
         <span id="arSearchInfo" class="hint"></span>
         <button class="btn" id="arClosedToggle" style="margin-left:auto;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleClosed()" title="100% 반제(완납)되어 마감된 인보이스도 목록에 표시">완납(closing) 포함: 끔</button>
       </div>
+      <div id="bdCtxBanner" class="msg" style="display:none;margin:8px 0;background:#eef6f1;color:var(--brand);border:1px solid var(--line)"></div>
       <div class="stats" id="arStats"></div>
       <div id="arGroupBox" style="margin-top:12px"></div>
       <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
@@ -191,6 +202,7 @@
     if(isFin){ $('varSection').classList.remove('hidden'); renderYearSeg(); load(); }
     else { $('varSection').classList.add('hidden'); }
     loadAr();
+    loadBdInbox(); startBdPolling();
   }
 
   const SRC_BADGE={sales_edit:'b-edit',sales_delete:'b-del',import_cost:'b-imp',import_recost:'b-imp'};
@@ -399,17 +411,22 @@
   }
   function pickArFilter(k){ arFilter=k; arOpenRepay=null; renderAr(); }
   function repayForm(it){
-    const accOpts=arAccounts.map(a=>'<option value="'+a.id+'">'+esc(a.name)+'</option>').join('');
+    const _bd=(typeof bdCtx!=='undefined'&&bdCtx)?bdCtx:null;
+    const accOpts=arAccounts.map(a=>'<option value="'+a.id+'"'+(_bd&&Number(_bd.account_id)===Number(a.id)?' selected':'')+'>'+esc(a.name)+'</option>').join('');
+    const defAmt=_bd?Math.min(Number(_bd.amount),Number(it.outstanding)):it.outstanding;
+    const defDate=_bd?_bd.deposit_date:arToday;
+    const bdNote=_bd?'<div class="hint" style="flex-basis:100%;margin:2px 0 0;color:var(--brand)">📥 미배분 입금 MX$'+fmt(_bd.amount)+' 반제 중 — 저장하면 이 입금이 닫힙니다.</div>':'';
     return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
-      +'<div><label>반제 금액 (잔액 MX$'+fmt(it.outstanding)+')</label><input id="rpAmt" type="number" step="0.01" value="'+it.outstanding+'" style="width:140px"></div>'
+      +'<div><label>반제 금액 (잔액 MX$'+fmt(it.outstanding)+')</label><input id="rpAmt" type="number" step="0.01" value="'+defAmt+'" style="width:140px"></div>'
       +'<div><label>입금 계좌</label><select id="rpAcc" style="width:170px">'+(accOpts||'<option value="">(계좌 없음)</option>')+'</select></div>'
-      +'<div><label>입금일</label><input id="rpDate" type="date" value="'+arToday+'" style="width:150px"></div>'
+      +'<div><label>입금일</label><input id="rpDate" type="date" value="'+defDate+'" style="width:150px"></div>'
       +'<div><label>은행 입금증(선택)</label>'
         +'<input id="rpFile" type="file" accept="image/*,application/pdf" style="display:none" onchange="onReceiptPicked(event)">'
         +'<button class="btn" style="background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="document.getElementById(\'rpFile\').click()">📎 파일 선택</button>'
         +' <span id="rpFileName" class="hint">'+(arRepayReceipt?esc(arRepayReceiptName||'선택됨'):'미첨부')+'</span></div>'
       +'<div><button class="btn" onclick="submitRepay('+it.id+')">저장</button></div>'
       +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="openRepay(null)">취소</button></div>'
+      +bdNote
       +'</div><div class="hint" style="margin-top:6px">잔액보다 작게 넣으면 부분수금(반제)으로 기록됩니다. 입금은 통장 거래로도 반영돼요. 입금증(이미지·PDF, 8MB 이하)을 첨부하면 <b>수금내역</b>에서 다시 볼 수 있습니다.</div>';
   }
   function onReceiptPicked(ev){
@@ -432,11 +449,13 @@
     try{
       const body={customer_id:it.customer_id,pay_date:date,account_id:acc,amount:amt,allocations:[{invoice_id:invId,amount:amt}],memo:'수금 상세 반제'};
       if(arRepayReceipt){ body.receipt=arRepayReceipt; body.receipt_name=arRepayReceiptName; }
+      if(typeof bdCtx!=='undefined'&&bdCtx){ body.deposit_id=bdCtx.id; }
       const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='반제 실패: '+(d.detail?JSON.stringify(d.detail):(d.error||res.status)); return; }
-      m.className='msg ok'; m.textContent='반제 저장 완료: '+it.customer_name+' MX$'+fmt(amt)+(d.receipt?' · 입금증 첨부됨':'')+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'');
+      m.className='msg ok'; m.textContent='반제 저장 완료: '+it.customer_name+' MX$'+fmt(amt)+(d.receipt?' · 입금증 첨부됨':'')+(d.deposit_linked?' · 미배분 입금 닫힘':'')+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'');
       arOpenRepay=null; arRepayReceipt=null; arRepayReceiptName=null; delete arHistData[invId];
+      if(typeof bdCtx!=='undefined'&&bdCtx){ bdCtx=null; renderBdCtxBanner(); loadBdInbox(); }
       if(arSearchMode){ await doArSearch(); } else { loadAr(); }
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
@@ -719,12 +738,75 @@
   }
 
 
+  // ===== 미배분 입금 인박스 + 폴링 팝업 =====
+  let bdCtx=null, bdInbox=[], bdPollTimer=null, bdShownIds={};
+  async function loadBdInbox(){
+    const card=$('bdInboxCard'), box=$('bdInboxBox'); if(!box) return;
+    try{
+      const items=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
+      bdInbox=items;
+      if(!items.length){ if(card)card.style.display='none'; return; }
+      if(card)card.style.display='';
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>고객(추정)</th><th>등록자</th><th></th></tr></thead><tbody>'
+        +items.map(d=>'<tr'+(d.read_by_me?'':' style="background:#fffaf0"')+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+esc(d.payer_memo||'—')+'</td><td>'+esc(d.customer_name||'—')+'</td><td>'+esc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="startBdAlloc('+d.id+')">이 입금으로 반제</button></td></tr>').join('')
+        +'</tbody></table>';
+    }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
+  }
+  function startBdAlloc(id){
+    const d=bdInbox.find(x=>x.id===id); if(!d) return;
+    bdCtx=d; arOpenRepay=null; renderBdCtxBanner();
+    const q=$('arSearchQ');
+    if(q){ q.value=d.customer_name||d.payer_memo||''; if(q.value.trim()){ doArSearch(); } else { renderAr(); } }
+    try{ document.getElementById('arStats').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  }
+  function cancelBdCtx(){ bdCtx=null; renderBdCtxBanner(); }
+  function renderBdCtxBanner(){
+    const el=$('bdCtxBanner'); if(!el) return;
+    if(!bdCtx){ el.style.display='none'; el.innerHTML=''; return; }
+    el.style.display='';
+    el.innerHTML='반제 대상 입금: <b>MX$'+fmt(bdCtx.amount)+'</b> · '+esc(bdCtx.account_name||'')+' · '+esc(bdCtx.deposit_date)+(bdCtx.payer_memo?(' · '+esc(bdCtx.payer_memo)):'')
+      +' — 아래 미수 목록에서 해당 고객 인보이스의 <b>[반제]</b>를 누르세요.'
+      +'<button class="btn" style="margin-left:8px;padding:2px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="cancelBdCtx()">대상 해제</button>';
+  }
+  function startBdPolling(){ if(bdPollTimer) return; bdPollOnce(); bdPollTimer=setInterval(bdPollOnce,45000); }
+  async function bdPollOnce(){
+    try{
+      const d=await fetch(session.api+'/api/bank-deposits/unread',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[], count=(d&&d.count)||0;
+      const badge=$('bdBadge'); if(badge){ if(count>0){ badge.style.display=''; badge.textContent=count; } else badge.style.display='none'; }
+      const fresh=items.filter(x=>!bdShownIds[x.id]);
+      if(fresh.length){ items.forEach(x=>{ bdShownIds[x.id]=1; }); loadBdInbox(); bdPopupShow(items); }
+    }catch(e){}
+  }
+  function bdPopupShow(items){
+    if(!items||!items.length) return;
+    let ov=document.getElementById('bdPopup');
+    if(!ov){ ov=document.createElement('div'); ov.id='bdPopup'; ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10050;display:flex;align-items:center;justify-content:center'; document.body.appendChild(ov); }
+    const ids=items.map(x=>x.id);
+    ov.innerHTML='<div style="background:#fff;border-radius:12px;max-width:520px;width:92%;padding:18px;box-shadow:0 18px 50px -12px rgba(0,0,0,.5)">'
+      +'<div style="font-size:16px;font-weight:700;margin-bottom:6px">📥 새 미배분 입금 '+items.length+'건</div>'
+      +'<div class="hint" style="margin-top:0">재무담당/디렉터가 등록한 은행 매출입금입니다. 인박스에서 인보이스에 반제하세요.</div>'
+      +'<div style="max-height:220px;overflow:auto;margin:10px 0;border:1px solid var(--line);border-radius:8px"><table style="width:100%"><tbody>'
+      +items.map(x=>'<tr><td style="padding:6px 8px">'+esc(x.deposit_date)+'</td><td style="padding:6px 8px">'+esc(x.account_name||'')+'</td><td style="padding:6px 8px;text-align:right"><b>MX$'+fmt(x.amount)+'</b></td><td style="padding:6px 8px;color:var(--muted)">'+esc(x.payer_memo||'')+'</td></tr>').join('')
+      +'</tbody></table></div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" id="bdPopClose">확인(읽음)</button>'
+      +'<button class="btn" id="bdPopGo">인박스 열기</button></div></div>';
+    const close=async(go)=>{
+      try{ await fetch(session.api+'/api/bank-deposits/read',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ids})}); }catch(e){}
+      ov.remove(); const badge=$('bdBadge'); if(badge)badge.style.display='none'; loadBdInbox();
+      if(go){ try{ document.getElementById('bdInboxCard').scrollIntoView({behavior:'smooth'}); }catch(e){} }
+    };
+    document.getElementById('bdPopClose').onclick=()=>close(false);
+    document.getElementById('bdPopGo').onclick=()=>close(true);
+  }
+
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   { const _it=$('itemToggle'); if(_it) _it.addEventListener('click',toggleItemBody); }
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260623g"></script>
+<script src="refatrix-nav.js?v=20260624h"></script>
 </body>
 </html>

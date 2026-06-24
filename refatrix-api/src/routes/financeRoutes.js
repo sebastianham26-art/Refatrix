@@ -1,5 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
+import { pageAllowed } from '../permissions.js';
 import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
@@ -408,6 +409,101 @@ export default async function financeRoutes(app) {
 
   // 입금(반제) 생성
   // body: { customer_id, pay_date, account_id, amount, allocations:[{invoice_id, amount}], memo }
+  // ===== 미배분 입금함 (은행 매출입금 통지 → 영업지원 반제) =====
+  // 등록·취소: 재무담당(treasury)·디렉터.  목록: 위 + 수금/정산 권한자.
+  // 알림(폴링): 영업지원(sales_support)·디렉터.  ※ transactions 는 만들지 않음(반제 시 생성).
+  const canRegisterDeposit = (perm) => perm.role === 'director' || perm.role === 'treasury';
+  const canSeeDeposits = (req) => {
+    const perm = req.ctx.perm;
+    if (perm.role === 'director' || perm.role === 'treasury') return true;
+    return pageAllowed(perm, 'settlement', req.ctx.isRegistered);
+  };
+  const notifyEligible = (perm) => perm.role === 'director' || perm.role === 'sales_support';
+
+  // 등록(통지)
+  app.post('/api/bank-deposits', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (!canRegisterDeposit(perm)) return reply.code(403).send({ error: 'forbidden' });
+    const b = req.body || {};
+    const accountId = Number(b.account_id), amount = r2(b.amount);
+    if (!accountId || !b.deposit_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    const acc = (await query(`SELECT id FROM accounts WHERE id=$1 AND deleted_at IS NULL`, [accountId])).rows[0];
+    if (!acc) return reply.code(400).send({ error: 'bad_account' });
+    const customerId = b.customer_id ? Number(b.customer_id) : null;
+    const row = (await query(
+      `INSERT INTO bank_deposits_pending (account_id, deposit_date, amount, payer_memo, customer_id, note, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [accountId, b.deposit_date, amount, b.payer_memo || null, customerId, b.note || null, perm.userId])).rows[0];
+    await logEvent({ userId: perm.userId, action: 'create', target: `bank_deposit:${row.id}`, detail: { amount, account_id: accountId } });
+    return { id: Number(row.id) };
+  });
+
+  // 목록(기본 pending)
+  app.get('/api/bank-deposits', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!canSeeDeposits(req)) return reply.code(403).send({ error: 'forbidden' });
+    const perm = req.ctx.perm;
+    const status = String((req.query && req.query.status) || 'pending').toLowerCase();
+    const args = [perm.userId];
+    let cond = '';
+    if (status !== 'all') { args.push(status); cond = `WHERE d.status = $${args.length}`; }
+    const rows = (await query(
+      `SELECT d.id, d.account_id, a.name AS account_name, d.deposit_date, d.amount,
+              d.payer_memo, d.customer_id, c.name AS customer_name, d.status, d.note,
+              d.created_at, d.created_by, u.name AS created_by_name,
+              d.allocated_at, d.payment_id,
+              (r.user_id IS NOT NULL) AS read_by_me
+         FROM bank_deposits_pending d
+         LEFT JOIN accounts  a ON a.id = d.account_id
+         LEFT JOIN customers c ON c.id = d.customer_id
+         LEFT JOIN users     u ON u.id = d.created_by
+         LEFT JOIN bank_deposit_reads r ON r.deposit_id = d.id AND r.user_id = $1
+         ${cond}
+        ORDER BY (d.status='pending') DESC, d.deposit_date DESC, d.id DESC
+        LIMIT 200`, args)).rows;
+    return { items: rows.map((x) => ({ ...x, id: Number(x.id), amount: Number(x.amount), read_by_me: x.read_by_me === true })) };
+  });
+
+  // 폴링(안읽음) — 영업지원·디렉터만 결과를 받음(그 외엔 빈 결과). 자기 등록분은 제외.
+  app.get('/api/bank-deposits/unread', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    if (!notifyEligible(perm)) return { count: 0, items: [] };
+    const rows = (await query(
+      `SELECT d.id, d.deposit_date, d.amount, d.payer_memo, a.name AS account_name
+         FROM bank_deposits_pending d
+         LEFT JOIN accounts a ON a.id = d.account_id
+        WHERE d.status = 'pending'
+          AND d.created_by IS DISTINCT FROM $1
+          AND NOT EXISTS (SELECT 1 FROM bank_deposit_reads r WHERE r.deposit_id = d.id AND r.user_id = $1)
+        ORDER BY d.id DESC LIMIT 20`, [perm.userId])).rows;
+    return { count: rows.length, items: rows.map((x) => ({ ...x, id: Number(x.id), amount: Number(x.amount) })) };
+  });
+
+  // 읽음 처리(팝업 확인)
+  app.post('/api/bank-deposits/read', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(Number).filter((n) => n > 0) : [];
+    for (const id of ids) {
+      await query(
+        `INSERT INTO bank_deposit_reads (deposit_id, user_id) VALUES ($1,$2)
+         ON CONFLICT (deposit_id, user_id) DO NOTHING`, [id, perm.userId]);
+    }
+    return { ok: true, marked: ids.length };
+  });
+
+  // 취소(void) — 미배분(pending)만 가능
+  app.post('/api/bank-deposits/:id/void', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (!canRegisterDeposit(perm)) return reply.code(403).send({ error: 'forbidden' });
+    const id = Number(req.params.id);
+    const d = (await query(`SELECT id, status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+    if (!d) return reply.code(404).send({ error: 'not_found' });
+    if (d.status === 'allocated') return reply.code(409).send({ error: 'already_allocated' });
+    if (d.status === 'void') return { ok: true };
+    await query(`UPDATE bank_deposits_pending SET status='void', voided_by=$1, voided_at=now() WHERE id=$2`, [perm.userId, id]);
+    await logEvent({ userId: perm.userId, action: 'void', target: `bank_deposit:${id}`, detail: {} });
+    return { ok: true };
+  });
+
   app.post('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
     const b = req.body || {};
     const customerId = Number(b.customer_id), accountId = Number(b.account_id), amount = r2(b.amount);
@@ -455,6 +551,18 @@ export default async function financeRoutes(app) {
           [accountId, b.pay_date, advance, userId, '선수금(과입금)'])).rows[0];
         await c.query(`UPDATE sales_payments SET advance_txn_id=$1 WHERE id=$2`, [at.id, pay.id]);
       }
+      // 미배분 입금함 연결(있으면) — 그 통지를 'allocated'로 닫음
+      let depositLinked = false;
+      const depId = Number(b.deposit_id) || 0;
+      if (depId) {
+        const dep = (await c.query(`SELECT id, status FROM bank_deposits_pending WHERE id=$1`, [depId])).rows[0];
+        if (dep && dep.status === 'pending') {
+          await c.query(
+            `UPDATE bank_deposits_pending SET status='allocated', payment_id=$1, allocated_by=$2, allocated_at=now() WHERE id=$3`,
+            [pay.id, userId, depId]);
+          depositLinked = true;
+        }
+      }
       // 입금증 저장(있으면)
       if (receipt) {
         await c.query(
@@ -462,7 +570,7 @@ export default async function financeRoutes(app) {
            VALUES ($1,$2,$3,$4,$5)`,
           [pay.id, receipt.name, receipt.mime, receipt.data, userId]);
       }
-      return { id: pay.id, advance, allocated: sumAlloc, receipt: !!receipt };
+      return { id: pay.id, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: depositLinked };
     });
     if (out.error) return reply.code(out.error === 'invalid_allocations' ? 409 : 400).send(out);
     await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount, advance: out.advance, receipt: out.receipt } });
