@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
+import { validateReceiptDataUrl } from '../ar.js';
 import { logEvent } from '../audit.js';
 
 // WBR(주간 비즈니스 리뷰) 보드 — 팀별 이슈 불릿 + 회의 메모를 단일 JSON 문서로 영속.
@@ -35,5 +36,54 @@ export default async function wbrRoutes(app) {
     logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'wbr_board_save', target: 'wbr_board:1' });
     const r = (await query(`SELECT updated_at FROM wbr_board WHERE id=1`)).rows[0];
     return { ok: true, updated_at: r ? r.updated_at : null };
+  });
+
+  // ===== 팀별 주요이슈 사진 (wbr_issue_photos) =====
+  // 보드 JSON엔 사진 id만 참조. 이미지(클라 압축 JPEG data URL)는 여기 별도 저장.
+  // 업로드/삭제: 'wbr' 수정 권한. 조회: 'wbr' 열람 권한.
+
+  // 업로드 — { thumb, full, caption? } (둘 다 data:image/...;base64,...)
+  app.post('/api/wbr/photos', { preHandler: [authGuard, requirePageEdit('wbr')] }, async (req, reply) => {
+    const b = req.body || {};
+    if (!b.thumb || !b.full) return reply.code(400).send({ error: 'missing_image' });
+    const tv = validateReceiptDataUrl(b.thumb, 400 * 1024);        // 썸네일 ≤ 400KB
+    const fv = validateReceiptDataUrl(b.full, 4 * 1024 * 1024);    // 원본 ≤ 4MB
+    if (!tv.ok || !tv.mime.startsWith('image/')) return reply.code(400).send({ error: 'bad_thumb', detail: tv.error });
+    if (!fv.ok || !fv.mime.startsWith('image/')) return reply.code(400).send({ error: 'bad_full', detail: fv.error });
+    const uid = req.ctx.perm.userId;
+    const r = (await query(
+      `INSERT INTO wbr_issue_photos (thumb_data, file_data, mime, caption, created_by)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [b.thumb, b.full, fv.mime, (b.caption || null), uid])).rows[0];
+    logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'wbr_photo_add', target: `wbr_photo:${r.id}` });
+    return { id: Number(r.id) };
+  });
+
+  // 썸네일 일괄 조회 — ?ids=1,2,3 → 그리드용
+  app.get('/api/wbr/photos/thumbs', { preHandler: [authGuard, requirePage('wbr')] }, async (req) => {
+    const ids = String((req.query && req.query.ids) || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (!ids.length) return { items: [] };
+    const ph = ids.map((_, i) => '$' + (i + 1)).join(',');
+    const rows = (await query(
+      `SELECT id, thumb_data, mime, caption FROM wbr_issue_photos WHERE id IN (${ph})`, ids)).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), thumb: r.thumb_data, mime: r.mime, caption: r.caption })) };
+  });
+
+  // 원본 1건 — 라이트박스(클릭 시 지연 로드)
+  app.get('/api/wbr/photos/:id/full', { preHandler: [authGuard, requirePage('wbr')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`SELECT id, file_data, mime, caption FROM wbr_issue_photos WHERE id=$1`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { id: Number(r.id), full: r.file_data, mime: r.mime, caption: r.caption };
+  });
+
+  // 삭제
+  app.delete('/api/wbr/photos/:id', { preHandler: [authGuard, requirePageEdit('wbr')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    await query(`DELETE FROM wbr_issue_photos WHERE id=$1`, [id]);
+    logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_photo_del', target: `wbr_photo:${id}` });
+    return { ok: true, id };
   });
 }

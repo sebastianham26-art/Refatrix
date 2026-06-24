@@ -89,6 +89,19 @@
   .bullets li .btxt{flex:1;overflow-wrap:anywhere}
   .bullets li .del{flex:0 0 auto;border:none;background:transparent;color:#c08a7e;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;font-weight:700}
   .bullets li .del:hover{color:var(--expense)}
+  /* 사진 첨부 */
+  .photostrip{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center}
+  .pthumb{position:relative;width:54px;height:54px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:#f2efe7;cursor:pointer;flex:0 0 auto}
+  .pthumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .pthumb .pdel{position:absolute;top:1px;right:1px;width:16px;height:16px;border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:10px;line-height:16px;text-align:center;cursor:pointer;padding:0}
+  .pthumb .pload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted)}
+  .paddbtn{width:54px;height:54px;border-radius:8px;border:1px dashed var(--brand-soft);background:#fff;color:var(--brand-soft);font-size:20px;line-height:1;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+  .paddbtn:hover{background:#faf6ee}
+  .plightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10060;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:24px}
+  .plightbox img{max-width:94vw;max-height:84vh;border-radius:8px;box-shadow:0 20px 60px -10px rgba(0,0,0,.7)}
+  .plightbox .pclose{position:absolute;top:16px;right:20px;width:38px;height:38px;border:none;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:20px;cursor:pointer}
+  .plightbox .pcap{color:#fff;font-size:13px;max-width:80vw;text-align:center}
+  @media print{ .paddbtn,.pthumb .pdel{display:none!important} }
   .bempty{font-size:11.5px;color:#bbb;padding:3px 2px}
   .addrow{display:flex;gap:6px;margin-top:7px}
   .addrow input{flex:1;font-size:12px;padding:6px 8px}
@@ -168,6 +181,7 @@
       <div class="card-h">팀별 주요 이슈 <span class="src">이번주 / 다음주 · 작성 내용은 직접 지울 때까지 유지</span>
         <span class="saveind no-print" id="issueSave" style="margin-left:auto"></span></div>
       <div class="issuegrid" id="issueGrid"><div class="hint">불러오는 중…</div></div>
+      <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
     </div>
 
     <!-- 회의 메모 -->
@@ -406,9 +420,12 @@
 
   // ===== 팀별 이슈 보드 + 메모 (영속) =====
   function normalizeBoard(b){
-    b=b||{}; const issues=b.issues||{};
-    ORG.forEach(t=>{ issues[t.key]=issues[t.key]||{}; issues[t.key].this=Array.isArray(issues[t.key].this)?issues[t.key].this:[]; issues[t.key].next=Array.isArray(issues[t.key].next)?issues[t.key].next:[]; });
-    return {issues, memo:typeof b.memo==='string'?b.memo:''};
+    b=b||{}; const issues=b.issues||{}; const photos=b.photos||{};
+    ORG.forEach(t=>{
+      issues[t.key]=issues[t.key]||{}; issues[t.key].this=Array.isArray(issues[t.key].this)?issues[t.key].this:[]; issues[t.key].next=Array.isArray(issues[t.key].next)?issues[t.key].next:[];
+      photos[t.key]=photos[t.key]||{}; photos[t.key].this=Array.isArray(photos[t.key].this)?photos[t.key].this:[]; photos[t.key].next=Array.isArray(photos[t.key].next)?photos[t.key].next:[];
+    });
+    return {issues, photos, memo:typeof b.memo==='string'?b.memo:''};
   }
   async function loadBoard(){
     try{
@@ -435,7 +452,7 @@
       const addrow= canEdit
         ? '<div class="addrow no-print"><input type="text" placeholder="새 이슈 입력 후 Enter" data-t="'+tk+'" data-w="'+wk+'"><button data-t="'+tk+'" data-w="'+wk+'">추가</button></div>'
         : '';
-      return '<div class="wkcol"><div class="wkh">'+title+' <span class="pill">'+arr.length+'</span></div>'+items+addrow+'</div>';
+      return '<div class="wkcol"><div class="wkh">'+title+' <span class="pill">'+arr.length+'</span></div>'+items+addrow+photoStripHtml(tk,wk)+'</div>';
     };
     $('issueGrid').innerHTML=ORG.map(t=>
       '<div class="teamblock"><div class="teamhead" style="background:'+t.color+'"><span class="tdot"></span>'+esc(t.name)+'</div>'
@@ -444,6 +461,100 @@
     $('issueGrid').querySelectorAll('.del').forEach(b=>b.addEventListener('click',()=>delBullet(b.dataset.t,b.dataset.w,Number(b.dataset.i))));
     $('issueGrid').querySelectorAll('.addrow input').forEach(inp=>inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ addBullet(inp.dataset.t,inp.dataset.w,inp.value); inp.value=''; }}));
     $('issueGrid').querySelectorAll('.addrow button').forEach(btn=>btn.addEventListener('click',()=>{ const inp=btn.previousElementSibling; addBullet(btn.dataset.t,btn.dataset.w,inp.value); inp.value=''; }));
+    // 사진: 업로드 버튼·썸네일 클릭(라이트박스)·삭제 바인딩
+    $('issueGrid').querySelectorAll('.paddbtn').forEach(b=>b.addEventListener('click',()=>{ const inp=$('photoInput'); inp.dataset.t=b.dataset.t; inp.dataset.w=b.dataset.w; inp.value=''; inp.click(); }));
+    $('issueGrid').querySelectorAll('.pthumb').forEach(el=>el.addEventListener('click',(e)=>{ if(e.target.classList.contains('pdel')) return; openLightbox(Number(el.dataset.pid)); }));
+    $('issueGrid').querySelectorAll('.pthumb .pdel').forEach(b=>b.addEventListener('click',(e)=>{ e.stopPropagation(); deletePhoto(b.dataset.t,b.dataset.w,Number(b.dataset.pid)); }));
+    loadThumbs();
+  }
+
+  // ===== 사진: 스트립 렌더 · 압축 · 업로드 · 썸네일 · 라이트박스 =====
+  const thumbCache={};   // id -> dataURL
+  function photoStripHtml(tk,wk){
+    const ids=(board.photos[tk] && board.photos[tk][wk])||[];
+    if(!ids.length && !canEdit) return '';
+    const thumbs=ids.map(id=>{
+      const src=thumbCache[id];
+      const inner=src?'<img src="'+src+'" alt="">':'<span class="pload">…</span>';
+      const del=canEdit?'<button class="pdel" data-t="'+tk+'" data-w="'+wk+'" data-pid="'+id+'" title="삭제">✕</button>':'';
+      return '<div class="pthumb" data-pid="'+id+'">'+inner+del+'</div>';
+    }).join('');
+    const addbtn=canEdit?'<button type="button" class="paddbtn no-print" data-t="'+tk+'" data-w="'+wk+'" title="사진 추가">+</button>':'';
+    return '<div class="photostrip">'+thumbs+addbtn+'</div>';
+  }
+  async function loadThumbs(){
+    const need=[];
+    Object.keys(board.photos||{}).forEach(tk=>['this','next'].forEach(wk=>{
+      ((board.photos[tk]||{})[wk]||[]).forEach(id=>{ if(thumbCache[id]==null && need.indexOf(id)<0) need.push(id); });
+    }));
+    if(!need.length) return;
+    try{
+      const d=await fetch(session.api+'/api/wbr/photos/thumbs?ids='+need.join(','),{headers:auth()}).then(r=>r.json());
+      (d.items||[]).forEach(it=>{ thumbCache[it.id]=it.thumb; });
+      // 받은 썸네일을 자리표시 img에 채움(전체 재렌더 없이)
+      (d.items||[]).forEach(it=>{
+        document.querySelectorAll('.pthumb[data-pid="'+it.id+'"]').forEach(el=>{
+          if(!el.querySelector('img')){ const pl=el.querySelector('.pload'); if(pl) pl.remove(); const img=document.createElement('img'); img.src=it.thumb; el.insertBefore(img, el.firstChild); }
+        });
+      });
+    }catch(e){}
+  }
+  // 이미지 압축: 최대변 maxDim, JPEG quality → data URL (무거운 파일 자동 축소)
+  function compressImage(file, maxDim, quality){
+    return new Promise((resolve,reject)=>{
+      const url=URL.createObjectURL(file); const img=new Image();
+      img.onload=function(){
+        URL.revokeObjectURL(url);
+        let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+        if(w>maxDim||h>maxDim){ const s=maxDim/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror=function(){ URL.revokeObjectURL(url); reject(new Error('이미지를 읽지 못했습니다')); };
+      img.src=url;
+    });
+  }
+  async function onPhotoSelected(){
+    const inp=$('photoInput'); const tk=inp.dataset.t, wk=inp.dataset.w;
+    const files=Array.from(inp.files||[]); inp.value='';
+    if(!files.length || !canEdit) return;
+    const ind=$('issueSave'); ind.className='saveind'; ind.textContent='사진 업로드 중…';
+    for(const f of files){
+      if(!/^image\//.test(f.type)){ continue; }
+      try{
+        const full=await compressImage(f, 1600, 0.72);
+        const thumb=await compressImage(f, 256, 0.6);
+        const res=await fetch(session.api+'/api/wbr/photos',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({thumb,full})});
+        const d=await res.json();
+        if(!res.ok||d.error){ ind.textContent='사진 업로드 실패: '+(d.error||res.status); ind.style.color='var(--expense)'; continue; }
+        thumbCache[d.id]=thumb;
+        board.photos[tk][wk].push(d.id);
+      }catch(e){ ind.textContent='사진 처리 실패'; ind.style.color='var(--expense)'; }
+    }
+    renderIssues(); saveBoard('issue');
+  }
+  async function deletePhoto(tk,wk,id){
+    if(!canEdit) return;
+    if(!confirm('이 사진을 삭제할까요?')) return;
+    try{ await fetch(session.api+'/api/wbr/photos/'+id,{method:'DELETE',headers:auth()}); }catch(e){}
+    const arr=board.photos[tk][wk]||[]; const ix=arr.indexOf(id); if(ix>=0) arr.splice(ix,1);
+    delete thumbCache[id];
+    renderIssues(); saveBoard('issue');
+  }
+  async function openLightbox(id){
+    let ov=document.getElementById('wbrLightbox');
+    if(!ov){ ov=document.createElement('div'); ov.id='wbrLightbox'; ov.className='plightbox'; document.body.appendChild(ov); }
+    ov.innerHTML='<button class="pclose" title="닫기">✕</button><div class="pcap">불러오는 중…</div>';
+    ov.style.display='flex';
+    const close=()=>{ ov.style.display='none'; ov.innerHTML=''; };
+    ov.querySelector('.pclose').addEventListener('click',close);
+    ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); });
+    try{
+      const d=await fetch(session.api+'/api/wbr/photos/'+id+'/full',{headers:auth()}).then(r=>r.json());
+      if(d&&d.full){ ov.innerHTML='<button class="pclose" title="닫기">✕</button><img src="'+d.full+'" alt="">'+(d.caption?'<div class="pcap">'+esc(d.caption)+'</div>':''); ov.querySelector('.pclose').addEventListener('click',close); ov.addEventListener('click',(e)=>{ if(e.target===ov) close(); }); }
+      else { ov.querySelector('.pcap').textContent='사진을 불러오지 못했습니다.'; }
+    }catch(e){ if(ov.querySelector('.pcap')) ov.querySelector('.pcap').textContent='사진을 불러오지 못했습니다.'; }
   }
   function addBullet(tk,wk,text){
     text=(text||'').trim(); if(!text) return;
@@ -494,8 +605,9 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('pdfBtn').addEventListener('click',savePdf);
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
+  $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624k"></script>
+<script src="refatrix-nav.js?v=20260624l"></script>
 </body>
 </html>
