@@ -188,12 +188,14 @@ export default async function salesPerfRoutes(app) {
     // 카드1 매출목표 / 카드2 수금 — carry=1이면 팀 토글 + 미달분 이월 적용, 아니면 종전 동작
     const carryMode = String(req.query.carry || '') === '1';
     let teamList = [], selectedTeam = 'total';
+    let selScopeIds = null; // 선택 팀 스코프(carry 모드에서 카드3 고객개발에 사용)
     let target = 0, actual = 0, prevActual = 0;
     let collectPlan = 0, collectActual = 0;
 
     if (carryMode) {
       const scope = await resolveTeamScope(perm, req.query.team);
       teamList = scope.teamList; selectedTeam = scope.selected;
+      selScopeIds = scope.scopeIds;
       const months = neededMonths(yms);
       const sba = await salesBaseActual(scope.scopeIds, months);
       const sAgg = aggregateCarryover(scope.scopeIds, sba.base, sba.actual, yms);
@@ -230,6 +232,9 @@ export default async function salesPerfRoutes(app) {
 
     // 카드3 고객 개발 — 당월 견적/협상/수주 건수 (quotes 기준)
     //  · 견적 = 당월 생성된 견적(취소 제외) · 협상 = 그 중 미결(draft/confirmed) · 수주 = 그 중 전환(converted)
+    //  · 팀 선택 반영: carry 모드에서 특정 팀을 고르면 그 팀 스코프(selScopeIds)로 거른다.
+    //    전체(total)/비carry 는 종전대로 권한 전체 스코프(ta) 사용 → 전체 고객 집계 유지.
+    const devTeamArr = (carryMode && selectedTeam !== 'total' && selScopeIds) ? selScopeIds : ta;
     let dq = `SELECT
         COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed','converted'))::int AS quote_total,
         COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed'))::int AS negotiation,
@@ -238,7 +243,7 @@ export default async function salesPerfRoutes(app) {
       WHERE q.deleted_at IS NULL AND c.deleted_at IS NULL
         AND to_char(q.quote_date,'YYYY-MM') = to_char(now(),'YYYY-MM')`;
     const dp = [];
-    if (ta) { dp.push(ta); dq += ` AND c.team_id = ANY($1)`; }
+    if (devTeamArr) { dp.push(devTeamArr); dq += ` AND c.team_id = ANY($1)`; }
     const dr = (await query(dq, dp)).rows[0] || {};
     const devQuote = Number(dr.quote_total) || 0, devNeg = Number(dr.negotiation) || 0, devWon = Number(dr.won) || 0;
     // 지난 7일 단계 변동(진입−이탈) — 영업활동의 고객 단계변화일(customer_stage_history) 기준
@@ -250,7 +255,7 @@ export default async function salesPerfRoutes(app) {
               JOIN customers c ON c.id=h.customer_id AND c.deleted_at IS NULL
               WHERE s.sort_order IN (30,40,50)`;
     const hp = [];
-    if (ta) { hp.push(ta); hq += ` AND c.team_id = ANY($1)`; }
+    if (devTeamArr) { hp.push(devTeamArr); hq += ` AND c.team_id = ANY($1)`; }
     hq += ` GROUP BY s.sort_order`;
     const hRows = (await query(hq, hp)).rows;
     const delta = { 30: 0, 40: 0, 50: 0 };
