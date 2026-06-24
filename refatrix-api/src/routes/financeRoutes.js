@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
+import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
@@ -48,7 +48,7 @@ export default async function financeRoutes(app) {
                  WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL
               ),0) AS balance
          FROM accounts a WHERE a.deleted_at IS NULL${acccond} ORDER BY a.id`, args)).rows;
-    return { items: rows.map((a) => ({ ...a, non_deductible: a.non_deductible === true, open_balance: Number(a.open_balance), balance: Number(a.balance) })) };
+    return { items: rows.map((a) => ({ ...a, non_deductible: a.non_deductible === true, can_detail: canViewDetail(req.ctx.perm, a.id), open_balance: Number(a.open_balance), balance: Number(a.balance) })) };
   });
 
   // 계좌 생성(디렉터)

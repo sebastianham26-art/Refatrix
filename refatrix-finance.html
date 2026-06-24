@@ -363,11 +363,11 @@
       accounts=(await fetch(session.api+'/api/accounts',{headers:auth()}).then(r=>r.json())).items||[];
       if(!accounts.length){b.innerHTML='<div class="hint">등록된 계좌가 없습니다. 아래에서 추가하세요.</div>';}
       else b.innerHTML=`<table><thead><tr><th>계좌</th><th>유형</th><th>통화</th><th class="num">기초잔액</th><th class="num">현재 잔액</th><th>비고</th></tr></thead>
-        <tbody>${accounts.map(a=>`<tr class="acc-row" data-id="${a.id}" style="cursor:pointer">
+        <tbody>${accounts.map(a=>`<tr class="acc-row" data-id="${a.id}" data-detail="${a.can_detail===false?'0':'1'}" style="cursor:pointer">
           <td><b>${a.name}</b></td><td>${a.type||'—'}</td><td>${a.currency}</td>
           <td class="num">${fmt(a.open_balance)}</td>
           <td class="num"><b>${fmt(a.balance)}</b> ${a.currency}</td>
-          <td>${a.currency==='USD'&&fxRate?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance*fxRate)} (예상환율 ${fxRate.toFixed(2)})</span>`:''}</td>
+          <td>${a.can_detail===false?'<span class="hint" style="margin:0;color:#6b8cae">잔액만 · 세부 비공개</span>':(a.currency==='USD'&&fxRate?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance*fxRate)} (예상환율 ${fxRate.toFixed(2)})</span>`:'')}</td>
         </tr>`).join('')}</tbody></table>`;
       // 거래 등록 계좌 드롭다운
       $('t-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
@@ -375,8 +375,9 @@
       const facc=$('f-acc');const cur=facc.value;
       facc.innerHTML='<option value="">전체 계좌</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
       facc.value=cur;
-      // 계좌 행 클릭 → 그 계좌의 거래내역으로
+      // 계좌 행 클릭 → 그 계좌의 거래내역으로 (단, '잔액만' 계좌는 세부 비공개라 차단)
       [...b.querySelectorAll('.acc-row')].forEach(row=>row.onclick=()=>{
+        if(row.dataset.detail==='0'){ alert('이 계좌는 권한상 잔액만 볼 수 있습니다. 세부내역(드릴다운)은 비공개입니다.'); return; }
         $('f-acc').value=row.dataset.id;$('f-status').value='';$('f-dir').value='';
         showTab('txn');
       });
@@ -1428,6 +1429,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624b"></script>
+<script src="refatrix-nav.js?v=20260624c"></script>
 </body>
 </html>
