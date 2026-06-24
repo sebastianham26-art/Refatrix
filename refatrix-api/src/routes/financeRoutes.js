@@ -1,9 +1,8 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
-import { pageAllowed } from '../permissions.js';
 import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
 import { logEvent } from '../audit.js';
-import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
+import { getUsdMxnRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
@@ -24,9 +23,6 @@ export default async function financeRoutes(app) {
   // ===== 환율 =====
   app.get('/api/fx/usd-mxn', { preHandler: [authGuard] }, async () => {
     return await getUsdMxnRate();
-  });
-  app.get('/api/fx/krw', { preHandler: [authGuard] }, async () => {
-    return await getUsdKrwRate();   // USD→KRW (MXN→KRW는 프런트에서 USD→KRW ÷ USD→MXN로 산출)
   });
   app.get('/api/fx/history', { preHandler: [authGuard] }, async (req) => {
     const limit = Math.min(Number(req.query.limit) || 60, 365);
@@ -144,10 +140,13 @@ export default async function financeRoutes(app) {
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.sales_invoice_id,
               t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
+              si.sat_no AS sat_no, c.name AS customer_name,
               (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
+         LEFT JOIN customers c ON c.id=si.customer_id
         WHERE ${cond.join(' AND ')}
         ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
     return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
@@ -409,101 +408,6 @@ export default async function financeRoutes(app) {
 
   // 입금(반제) 생성
   // body: { customer_id, pay_date, account_id, amount, allocations:[{invoice_id, amount}], memo }
-  // ===== 미배분 입금함 (은행 매출입금 통지 → 영업지원 반제) =====
-  // 등록·취소: 재무담당(treasury)·디렉터.  목록: 위 + 수금/정산 권한자.
-  // 알림(폴링): 영업지원(sales_support)·디렉터.  ※ transactions 는 만들지 않음(반제 시 생성).
-  const canRegisterDeposit = (perm) => perm.role === 'director' || perm.role === 'treasury';
-  const canSeeDeposits = (req) => {
-    const perm = req.ctx.perm;
-    if (perm.role === 'director' || perm.role === 'treasury') return true;
-    return pageAllowed(perm, 'settlement', req.ctx.isRegistered);
-  };
-  const notifyEligible = (perm) => perm.role === 'director' || perm.role === 'sales_support';
-
-  // 등록(통지)
-  app.post('/api/bank-deposits', { preHandler: [authGuard] }, async (req, reply) => {
-    const perm = req.ctx.perm;
-    if (!canRegisterDeposit(perm)) return reply.code(403).send({ error: 'forbidden' });
-    const b = req.body || {};
-    const accountId = Number(b.account_id), amount = r2(b.amount);
-    if (!accountId || !b.deposit_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
-    const acc = (await query(`SELECT id FROM accounts WHERE id=$1 AND deleted_at IS NULL`, [accountId])).rows[0];
-    if (!acc) return reply.code(400).send({ error: 'bad_account' });
-    const customerId = b.customer_id ? Number(b.customer_id) : null;
-    const row = (await query(
-      `INSERT INTO bank_deposits_pending (account_id, deposit_date, amount, payer_memo, customer_id, note, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [accountId, b.deposit_date, amount, b.payer_memo || null, customerId, b.note || null, perm.userId])).rows[0];
-    await logEvent({ userId: perm.userId, action: 'create', target: `bank_deposit:${row.id}`, detail: { amount, account_id: accountId } });
-    return { id: Number(row.id) };
-  });
-
-  // 목록(기본 pending)
-  app.get('/api/bank-deposits', { preHandler: [authGuard] }, async (req, reply) => {
-    if (!canSeeDeposits(req)) return reply.code(403).send({ error: 'forbidden' });
-    const perm = req.ctx.perm;
-    const status = String((req.query && req.query.status) || 'pending').toLowerCase();
-    const args = [perm.userId];
-    let cond = '';
-    if (status !== 'all') { args.push(status); cond = `WHERE d.status = $${args.length}`; }
-    const rows = (await query(
-      `SELECT d.id, d.account_id, a.name AS account_name, d.deposit_date, d.amount,
-              d.payer_memo, d.customer_id, c.name AS customer_name, d.status, d.note,
-              d.created_at, d.created_by, u.name AS created_by_name,
-              d.allocated_at, d.payment_id,
-              (r.user_id IS NOT NULL) AS read_by_me
-         FROM bank_deposits_pending d
-         LEFT JOIN accounts  a ON a.id = d.account_id
-         LEFT JOIN customers c ON c.id = d.customer_id
-         LEFT JOIN users     u ON u.id = d.created_by
-         LEFT JOIN bank_deposit_reads r ON r.deposit_id = d.id AND r.user_id = $1
-         ${cond}
-        ORDER BY (d.status='pending') DESC, d.deposit_date DESC, d.id DESC
-        LIMIT 200`, args)).rows;
-    return { items: rows.map((x) => ({ ...x, id: Number(x.id), amount: Number(x.amount), read_by_me: x.read_by_me === true })) };
-  });
-
-  // 폴링(안읽음) — 영업지원·디렉터만 결과를 받음(그 외엔 빈 결과). 자기 등록분은 제외.
-  app.get('/api/bank-deposits/unread', { preHandler: [authGuard] }, async (req) => {
-    const perm = req.ctx.perm;
-    if (!notifyEligible(perm)) return { count: 0, items: [] };
-    const rows = (await query(
-      `SELECT d.id, d.deposit_date, d.amount, d.payer_memo, a.name AS account_name
-         FROM bank_deposits_pending d
-         LEFT JOIN accounts a ON a.id = d.account_id
-        WHERE d.status = 'pending'
-          AND d.created_by IS DISTINCT FROM $1
-          AND NOT EXISTS (SELECT 1 FROM bank_deposit_reads r WHERE r.deposit_id = d.id AND r.user_id = $1)
-        ORDER BY d.id DESC LIMIT 20`, [perm.userId])).rows;
-    return { count: rows.length, items: rows.map((x) => ({ ...x, id: Number(x.id), amount: Number(x.amount) })) };
-  });
-
-  // 읽음 처리(팝업 확인)
-  app.post('/api/bank-deposits/read', { preHandler: [authGuard] }, async (req) => {
-    const perm = req.ctx.perm;
-    const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(Number).filter((n) => n > 0) : [];
-    for (const id of ids) {
-      await query(
-        `INSERT INTO bank_deposit_reads (deposit_id, user_id) VALUES ($1,$2)
-         ON CONFLICT (deposit_id, user_id) DO NOTHING`, [id, perm.userId]);
-    }
-    return { ok: true, marked: ids.length };
-  });
-
-  // 취소(void) — 미배분(pending)만 가능
-  app.post('/api/bank-deposits/:id/void', { preHandler: [authGuard] }, async (req, reply) => {
-    const perm = req.ctx.perm;
-    if (!canRegisterDeposit(perm)) return reply.code(403).send({ error: 'forbidden' });
-    const id = Number(req.params.id);
-    const d = (await query(`SELECT id, status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
-    if (!d) return reply.code(404).send({ error: 'not_found' });
-    if (d.status === 'allocated') return reply.code(409).send({ error: 'already_allocated' });
-    if (d.status === 'void') return { ok: true };
-    await query(`UPDATE bank_deposits_pending SET status='void', voided_by=$1, voided_at=now() WHERE id=$2`, [perm.userId, id]);
-    await logEvent({ userId: perm.userId, action: 'void', target: `bank_deposit:${id}`, detail: {} });
-    return { ok: true };
-  });
-
   app.post('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
     const b = req.body || {};
     const customerId = Number(b.customer_id), accountId = Number(b.account_id), amount = r2(b.amount);
@@ -551,18 +455,6 @@ export default async function financeRoutes(app) {
           [accountId, b.pay_date, advance, userId, '선수금(과입금)'])).rows[0];
         await c.query(`UPDATE sales_payments SET advance_txn_id=$1 WHERE id=$2`, [at.id, pay.id]);
       }
-      // 미배분 입금함 연결(있으면) — 그 통지를 'allocated'로 닫음
-      let depositLinked = false;
-      const depId = Number(b.deposit_id) || 0;
-      if (depId) {
-        const dep = (await c.query(`SELECT id, status FROM bank_deposits_pending WHERE id=$1`, [depId])).rows[0];
-        if (dep && dep.status === 'pending') {
-          await c.query(
-            `UPDATE bank_deposits_pending SET status='allocated', payment_id=$1, allocated_by=$2, allocated_at=now() WHERE id=$3`,
-            [pay.id, userId, depId]);
-          depositLinked = true;
-        }
-      }
       // 입금증 저장(있으면)
       if (receipt) {
         await c.query(
@@ -570,7 +462,7 @@ export default async function financeRoutes(app) {
            VALUES ($1,$2,$3,$4,$5)`,
           [pay.id, receipt.name, receipt.mime, receipt.data, userId]);
       }
-      return { id: pay.id, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: depositLinked };
+      return { id: pay.id, advance, allocated: sumAlloc, receipt: !!receipt };
     });
     if (out.error) return reply.code(out.error === 'invalid_allocations' ? 409 : 400).send(out);
     await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount, advance: out.advance, receipt: out.receipt } });
@@ -1316,26 +1208,8 @@ export default async function financeRoutes(app) {
   app.get('/api/fx/summary', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
     const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
-    const pair = req.query.pair === 'mxnkrw' ? 'mxnkrw' : 'usdmxn';
-    const r6 = (n) => Math.round(Number(n) * 1e6) / 1e6;
-
-    let series, today;
-    if (pair === 'mxnkrw') {
-      // MXN→KRW = USD→KRW ÷ USD→MXN (날짜별 둘 다 있는 날만)
-      const mxnRows = await getFxRange(from, to, 'MXN');
-      const krwRows = await getFxRange(from, to, 'KRW');
-      const mxnMap = new Map(mxnRows.map((r) => [r.rate_date, r.rate]));
-      series = krwRows
-        .filter((r) => mxnMap.get(r.rate_date) > 0)
-        .map((r) => ({ rate_date: r.rate_date, rate: r6(r.rate / mxnMap.get(r.rate_date)), source: r.source }));
-      const km = await getUsdKrwRate(); const mm = await getUsdMxnRate();
-      const tRate = (km.rate > 0 && mm.rate > 0) ? r6(km.rate / mm.rate) : null;
-      today = { rate: tRate, asOf: km.asOf, source: 'open.er-api.com', stale: km.stale };
-    } else {
-      series = await getFxRange(from, to, 'MXN');
-      today = await getUsdMxnRate();
-    }
-
+    const series = await getFxRange(from, to);
+    const today = await getUsdMxnRate();
     let stats = null;
     if (series.length) {
       const rates = series.map((s) => s.rate);
@@ -1351,20 +1225,17 @@ export default async function financeRoutes(app) {
         count: series.length,
       };
     }
-    // USD 거래 요약(예정/실제) — USD→MXN 모드에서만(거래가 USD라서)
-    let usd = null;
-    if (pair === 'usdmxn') {
-      const usdRows = (await query(
-        `SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS usd, COALESCE(SUM(amount_mxn),0) AS mxn,
-                CASE WHEN SUM(amount)>0 THEN SUM(amount_mxn)/SUM(amount) ELSE NULL END AS avg_rate
-           FROM transactions WHERE currency='USD' AND deleted_at IS NULL GROUP BY status`)).rows;
-      usd = { plan: { cnt: 0, usd: 0, mxn: 0, avg_rate: null }, actual: { cnt: 0, usd: 0, mxn: 0, avg_rate: null } };
-      for (const r of usdRows) {
-        const k = r.status === 'actual' ? 'actual' : 'plan';
-        usd[k] = { cnt: Number(r.cnt), usd: r2(r.usd), mxn: r2(r.mxn), avg_rate: r.avg_rate == null ? null : Math.round(Number(r.avg_rate) * 10000) / 10000 };
-      }
+    // USD 거래 요약(예정/실제)
+    const usdRows = (await query(
+      `SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS usd, COALESCE(SUM(amount_mxn),0) AS mxn,
+              CASE WHEN SUM(amount)>0 THEN SUM(amount_mxn)/SUM(amount) ELSE NULL END AS avg_rate
+         FROM transactions WHERE currency='USD' AND deleted_at IS NULL GROUP BY status`)).rows;
+    const usd = { plan: { cnt: 0, usd: 0, mxn: 0, avg_rate: null }, actual: { cnt: 0, usd: 0, mxn: 0, avg_rate: null } };
+    for (const r of usdRows) {
+      const k = r.status === 'actual' ? 'actual' : 'plan';
+      usd[k] = { cnt: Number(r.cnt), usd: r2(r.usd), mxn: r2(r.mxn), avg_rate: r.avg_rate == null ? null : Math.round(Number(r.avg_rate) * 10000) / 10000 };
     }
-    return { from, to, pair, today: { rate: today.rate, asOf: today.asOf, source: today.source, stale: today.stale }, series, stats, usd };
+    return { from, to, today: { rate: today.rate, asOf: today.asOf, source: today.source, stale: today.stale }, series, stats, usd };
   });
 
   // 처리 대기 예정 목록: 이번 달(또는 지정 월) 예정 + 과거에 예정됐으나 미처리(경과)인 것 전부.
@@ -1378,10 +1249,13 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.direction,
               t.amount, t.currency, t.fx_rate, t.amount_mxn, t.category_code, cat.name AS category_name,
-              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_amount, t.memo, t.sales_invoice_id, t.recurring_rule_id
+              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_amount, t.memo, t.sales_invoice_id, t.recurring_rule_id,
+              si.sat_no AS sat_no, c.name AS customer_name
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
+         LEFT JOIN customers c ON c.id=si.customer_id
         WHERE t.status='plan' AND t.deleted_at IS NULL
           AND (
             (COALESCE(t.plan_date,t.txn_date) BETWEEN $1 AND $2)   -- 이번 달 예정
