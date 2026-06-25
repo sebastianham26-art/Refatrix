@@ -414,7 +414,7 @@
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
-  // ===== Top 500 견적 (VIO 상위 500 · SKU당 1개 + 추가수량 입력) =====
+  // ===== Top 500 견적 (VIO 등록대수 상위 500 · Oferta 양식) =====
   async function downloadTop500(){
     const m=$('lineMsg');m.className='msg';
     const guest=isGuest;
@@ -427,85 +427,98 @@
       if(!guest && cid && cid!=='__guest__') url+='&customer_id='+encodeURIComponent(cid);
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
-      if(!items.length){ m.className='msg err';m.textContent='VIO 순위가 매칭된 재고 SKU가 없습니다.';return; }
-      const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : d.discountRate;
-      // ---- 스타일 정의 (xlsx-js-style) ----
-      const BRAND='143D34', INK='1C1B19';
-      const thin={style:'thin',color:{rgb:'D9D4C8'}};
+      if(!items.length){ m.className='msg err';m.textContent='VIO가 매칭된 재고 SKU가 없습니다.';return; }
+      const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : (d.discountRate==null?0:d.discountRate);
+      const rateFrac = (Number(disc)||0)/100;            // 할인율 셀(편집형, 0.49 = 49%)
+      const today=new Date(); const pad=n=>String(n).padStart(2,'0');
+      const fechaStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
+      // ---- 색/스타일 (CTR 브랜드 레드) ----
+      const RED='D81E25', INK='1C1B19', GREY='6F6A60';
+      const thin={style:'thin',color:{rgb:'E3D6D6'}};
       const bAll={top:thin,bottom:thin,left:thin,right:thin};
-      const sHead={fill:{fgColor:{rgb:BRAND}},font:{color:{rgb:'FFFFFF'},bold:true,sz:11},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
-      const sTitle={font:{color:{rgb:BRAND},bold:true,sz:14}};
-      const sNote={font:{color:{rgb:'6F6A60'},italic:true,sz:10},alignment:{wrapText:true}};
-      const sTxt={font:{color:{rgb:INK},sz:10},alignment:{vertical:'center'},border:bAll};
-      const sNum={font:{color:{rgb:INK},sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0.00',border:bAll};
-      const sCtr={font:{color:{rgb:INK},sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
-      const sVio={font:{color:{rgb:BRAND},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
-      const sExist={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sBase={fill:{fgColor:{rgb:'ECEAE3'}},font:{color:{rgb:'6F6A60'},sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sAdic={fill:{fgColor:{rgb:'FFF6DA'}},font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sTotQ={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sSumL={font:{color:{rgb:BRAND},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'}};
-      const sSumV={font:{color:{rgb:BRAND},bold:true,sz:11},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0.00'};
-      // ---- 데이터(aoa) ----
+      const sLogo={font:{color:{rgb:RED},bold:true,sz:18}};
+      const sTitle={font:{color:{rgb:RED},bold:true,sz:13},alignment:{wrapText:true}};
+      const sSub={font:{color:{rgb:GREY},sz:10}};
+      const sMeta={font:{color:{rgb:GREY},sz:10}};
+      const sLbl={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'}};
+      const sCli={font:{color:{rgb:INK},bold:true,sz:11}};
+      const sRate={fill:{fgColor:{rgb:'FFF2CC'}},font:{color:{rgb:RED},bold:true,sz:12},alignment:{horizontal:'center',vertical:'center'},numFmt:'0%',border:bAll};
+      const sHead={fill:{fgColor:{rgb:RED}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
+      const sVeh={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'left',vertical:'center',wrapText:true},border:bAll};
+      const sVio={font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
+      const sTxt={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'center',wrapText:true},border:bAll};
+      const sCtr={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
+      const sQty={fill:{fgColor:{rgb:'FFF2CC'}},font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
+      const sLista={font:{color:{rgb:GREY},sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
+      const sDesc={font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
+      const sImp={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
+      const sSumL={font:{color:{rgb:RED},bold:true,sz:11},alignment:{horizontal:'right',vertical:'center'}};
+      const sSumV={font:{color:{rgb:RED},bold:true,sz:11},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00'};
+      // ---- 레터헤드 + 헤더(aoa) ----
       const rows=[];
-      rows.push(['COTIZACIÓN — Top 500 SKU por VIO (registros México) · precios SIN IVA']);
-      rows.push(['Cliente', custName||'(no seleccionado)','','Descuento', disc==null?'a definir':(disc+'%')]);
-      rows.push(['Cada SKU inicia con 1 pieza. Escriba las piezas extra en "Cant. adicional"; el Total y el Importe se calculan automáticamente.']);
-      rows.push([]);
-      rows.push(['#','Clave CTR','Clave SYD','Aplicación','VIO','Existencia','Precio unit. (sin IVA)','Cant. base','Cant. adicional','Cant. total','Importe (sin IVA)']);
+      rows.push(['REFATRIX']);                                                                 // r1
+      rows.push(['Distribuidor oficial CTR en México']);                                       // r2
+      rows.push(['COTIZACIÓN — Top 500 SKU CTR · ordenado por registro vehicular (VIO) · existencia disponible']); // r3
+      rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
+      rows.push([]);                                                                           // r5
+      rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
+      rows.push([]);                                                                           // r7
+      rows.push(['Vehículo (Modelo / Año)','Registro (VIO)','Código CTR','Código SYD','Aplicación','cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)']); // r8
       const headerRow=rows.length, firstData=headerRow+1;
-      items.forEach((it,idx)=>{
-        const unit=(disc==null)?(Number(it.list_price)||0):(Math.round((Number(it.list_price)||0)*(1-disc/100)*100)/100);
-        rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.app||'',
-          it.vio_rank!=null?Number(it.vio_rank):'',
-          it.stock_qty==null?'':Number(it.stock_qty), unit, 1, 0, null, null ]);
+      // 차량 병합 범위 계산용
+      const grpKey=it=>((it.vio_model||'')+' '+(it.vio_year||'')).trim();
+      items.forEach((it)=>{
+        rows.push([ grpKey(it)||'—', it.vio_units!=null?Number(it.vio_units):'',
+          it.ctr_code||'', it.syd_codes||'', it.app||'', 1,
+          Number(it.list_price)||0, null, null ]);
       });
       const lastData=rows.length;
       rows.push([]);
-      rows.push(['','','','','','','','','Piezas totales →', null, '']); const pcsRow=rows.length;
-      rows.push(['','','','','','','','','', 'Subtotal (sin IVA)', null]); const subRow=rows.length;
-      rows.push(['','','','','','','','','', 'IVA 16%', null]); const ivaRow=rows.length;
-      rows.push(['','','','','','','','','', 'Total (con IVA)', null]); const totRow=rows.length;
-
+      rows.push(['','','','','','','','Subtotal (sin IVA)', null]); const subRow=rows.length;
+      rows.push(['','','','','','','','IVA 16%', null]); const ivaRow=rows.length;
+      rows.push(['','','','','','','','Total (con IVA)', null]); const totRow=rows.length;
       const ws=XLSX.utils.aoa_to_sheet(rows);
-      // 수식: Cant. total = base + adicional · Importe = precio × total
+      // 할인율 셀
+      ws['G6']={t:'n',v:rateFrac,z:'0%',s:sRate};
+      // 라인 수식: c/Desc = Lista×(1−tasa) · Importe = c/Desc×cantidad
       for(let r=firstData;r<=lastData;r++){
-        ws['J'+r]={t:'n',z:'#,##0',f:'H'+r+'+I'+r};
-        ws['K'+r]={t:'n',z:'#,##0.00',f:'G'+r+'*J'+r};
+        ws['H'+r]={t:'n',z:'$#,##0.00',f:'G'+r+'*(1-$G$6)'};
+        ws['I'+r]={t:'n',z:'$#,##0.00',f:'H'+r+'*F'+r};
       }
-      // 합계 수식
-      ws['J'+pcsRow]={t:'n',z:'#,##0',f:'SUM(J'+firstData+':J'+lastData+')'};
-      ws['K'+subRow]={t:'n',z:'#,##0.00',f:'SUM(K'+firstData+':K'+lastData+')'};
-      ws['K'+ivaRow]={t:'n',z:'#,##0.00',f:'K'+subRow+'*0.16'};
-      ws['K'+totRow]={t:'n',z:'#,##0.00',f:'K'+subRow+'+K'+ivaRow};
+      // 합계
+      ws['I'+subRow]={t:'n',z:'$#,##0.00',f:'SUM(I'+firstData+':I'+lastData+')'};
+      ws['I'+ivaRow]={t:'n',z:'$#,##0.00',f:'I'+subRow+'*0.16'};
+      ws['I'+totRow]={t:'n',z:'$#,##0.00',f:'I'+subRow+'+I'+ivaRow};
       // ---- 스타일 적용 ----
-      if(ws['A1']) ws['A1'].s=sTitle;
-      if(ws['A3']) ws['A3'].s=sNote;
-      ['A','B','C','D','E','F','G','H','I','J','K'].forEach(c=>{ if(ws[c+headerRow]) ws[c+headerRow].s=sHead; });
+      if(ws['A1'])ws['A1'].s=sLogo; if(ws['A2'])ws['A2'].s=sSub; if(ws['A3'])ws['A3'].s=sTitle; if(ws['A4'])ws['A4'].s=sMeta;
+      if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl;
+      ['A','B','C','D','E','F','G','H','I'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
       for(let r=firstData;r<=lastData;r++){
-        if(ws['A'+r]) ws['A'+r].s=sCtr;
-        if(ws['B'+r]) ws['B'+r].s=sTxt;
-        if(ws['C'+r]) ws['C'+r].s=sTxt;
-        if(ws['D'+r]) ws['D'+r].s=sTxt;
-        if(ws['E'+r]) ws['E'+r].s=sVio;
-        if(ws['F'+r]) ws['F'+r].s=sExist;
-        if(ws['G'+r]) ws['G'+r].s=sNum;
-        if(ws['H'+r]) ws['H'+r].s=sBase;
-        if(ws['I'+r]) ws['I'+r].s=sAdic;   // 노란 입력칸
-        if(ws['J'+r]) ws['J'+r].s=sTotQ;
-        if(ws['K'+r]) ws['K'+r].s=sNum;
+        if(ws['A'+r])ws['A'+r].s=sVeh; if(ws['B'+r])ws['B'+r].s=sVio;
+        if(ws['C'+r])ws['C'+r].s=sCtr; if(ws['D'+r])ws['D'+r].s=sTxt; if(ws['E'+r])ws['E'+r].s=sTxt;
+        if(ws['F'+r])ws['F'+r].s=sQty; if(ws['G'+r])ws['G'+r].s=sLista;
+        if(ws['H'+r])ws['H'+r].s=sDesc; if(ws['I'+r])ws['I'+r].s=sImp;
       }
-      if(ws['I'+pcsRow]) ws['I'+pcsRow].s=sSumL;
-      if(ws['J'+pcsRow]) ws['J'+pcsRow].s=sTotQ;
-      [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['J'+rr]) ws['J'+rr].s=sSumL; if(ws['K'+rr]) ws['K'+rr].s=sSumV; });
-      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:10}},{s:{r:2,c:0},e:{r:2,c:10}}];
-      ws['!cols']=[{wch:5},{wch:13},{wch:16},{wch:30},{wch:6},{wch:11},{wch:18},{wch:10},{wch:14},{wch:11},{wch:16}];
-      ws['!rows']=[{hpt:20},{hpt:16},{hpt:26},{hpt:6},{hpt:30}];
+      [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['H'+rr])ws['H'+rr].s=sSumL; if(ws['I'+rr])ws['I'+rr].s=sSumV; });
+      // ---- 차량/등록 병합(연속 동일 차량) + 레터헤드 병합 ----
+      const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:8}},{s:{r:3,c:0},e:{r:3,c:8}},{s:{r:5,c:0},e:{r:5,c:0}}];
+      let gs=firstData, gk=items.length?grpKey(items[0]):'';
+      for(let i=1;i<=items.length;i++){
+        const k=i<items.length?grpKey(items[i]):'__END__';
+        if(k!==gk){ const ge=firstData+i-1;
+          if(ge>gs){ merges.push({s:{r:gs-1,c:0},e:{r:ge-1,c:0}}); merges.push({s:{r:gs-1,c:1},e:{r:ge-1,c:1}}); }
+          gs=firstData+i; gk=k;
+        }
+      }
+      ws['!merges']=merges;
+      ws['!autofilter']={ref:'A'+headerRow+':I'+lastData};
+      ws['!cols']=[{wch:30},{wch:14},{wch:13},{wch:16},{wch:40},{wch:12},{wch:15},{wch:14},{wch:15}];
+      ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:6},{hpt:30}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Top500');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,'cotizacion_top500_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent='Top 500 VIO 견적 다운로드 완료 — '+items.length+'개 SKU(각 1개 기본) (IVA 미포함).'+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
+      m.className='msg ok';m.textContent='Top 500 VIO 견적 다운로드 완료 — '+items.length+'개 SKU · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함, 셀에서 할인율·수량 편집 가능).';
     }catch(e){ m.className='msg err';m.textContent='Top 500 견적 다운로드 실패: '+(e&&e.message||e); }
   }
 

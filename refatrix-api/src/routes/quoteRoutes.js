@@ -595,16 +595,16 @@ export default async function quoteRoutes(app) {
     if (topN > 0) {
       prods = (await query(
         `SELECT p.id, p.code, p.scode, p.app, p.list_price, p.stock_qty,
-                v.vio_rank, v.vio_model
+                v.vio_units, v.vio_model, v.vio_year
            FROM products p
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL AND p.stock_qty > 0
-          ORDER BY v.vio_rank ASC, p.stock_qty DESC, p.code
+          ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code
           LIMIT $1`, [topN])).rows;
     } else {
       prods = (await query(
         `SELECT id, code, scode, app, list_price, stock_qty,
-                NULL::int AS vio_rank, NULL::text AS vio_model
+                NULL::bigint AS vio_units, NULL::text AS vio_model, NULL::text AS vio_year
            FROM products WHERE deleted_at IS NULL ORDER BY code`)).rows;
     }
     const ids = prods.map((p) => p.id);
@@ -617,8 +617,9 @@ export default async function quoteRoutes(app) {
       app: p.app || '',
       list_price: Number(p.list_price) || 0,
       stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
-      vio_rank: p.vio_rank != null ? Number(p.vio_rank) : null,
+      vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
+      vio_year: p.vio_year || null,
     }));
     return { discountRate, top: topN || null, count: items.length, items };
   });
