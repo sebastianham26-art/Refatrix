@@ -99,6 +99,25 @@
   var GROUP_ANCHOR_KEYS={ support:['settlement','import','importcost'] };
 
   var sess=null, sum=null, openGroup=null;
+  // 접속 현황 하트비트 — 모든 페이지에서 주기적으로 last_seen 갱신(관리화면 디렉터 전용 표시용).
+  function startHeartbeat(api){
+    if(window.__rnavHeartbeat) return;                 // 중복 가동 방지
+    function ping(){
+      try{
+        var s=getSession(); if(!s||!s.token) return;
+        var a=(s.api||api||'').replace(/\/+$/,'');
+        var path=(location.pathname.split('/').pop()||'').toLowerCase();
+        fetch(a+'/api/presence/ping',{method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
+          body:JSON.stringify({path:path}), keepalive:true}).catch(function(){});
+      }catch(e){}
+    }
+    ping();                                            // 진입 즉시 1회
+    window.__rnavHeartbeat=setInterval(ping, 45000);   // 45초마다(탭이 열려있는 동안 = 접속 중)
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState==='visible') ping(); // 다시 보일 때 즉시 갱신
+    });
+  }
   function getSession(){
     try{ var raw=sessionStorage.getItem('refatrix_session'); if(raw){ var o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var tk=p.get('token'); if(tk) return {token:tk,api:p.get('api')||'',user:{}}; } }catch(e){}
@@ -284,6 +303,7 @@
     }
     if(window.__rnavWatch){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; }
     var api=(sess.api||'').replace(/\/+$/,'');
+    startHeartbeat(api);   // 접속 현황 하트비트 시작(세션 확인 후 1회만)
     var authFailed=false;
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
       if(r.status===401||r.status===403){

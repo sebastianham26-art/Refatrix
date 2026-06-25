@@ -38,6 +38,21 @@
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .pg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;margin:2px 8px 2px 0}
   .pinbox{background:#fff7e0;border:1px solid #ecd9a0;border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
+  /* 접속 현황 카드 */
+  .presence-group{margin-top:16px}.presence-group:first-child{margin-top:4px}
+  .presence-group h3{margin:0 0 9px;font-size:12px;color:var(--brand);font-weight:800;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .presence-group h3 .gcount{font-weight:600;color:#a9a497;font-size:11px}
+  .presence-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(186px,1fr));gap:10px}
+  .ucard{border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:#fff}
+  .ucard.on{border-color:#bfe3d4;background:#f5fbf8}
+  .ucard .nm{font-size:13.5px;font-weight:700;color:var(--ink)}
+  .ucard .meta{font-size:11px;color:var(--muted);margin-top:2px}
+  .ucard .st{font-size:11.5px;margin-top:7px;display:flex;align-items:center;gap:6px}
+  .dotp{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dotp.on{background:var(--income);box-shadow:0 0 0 3px rgba(15,110,86,.15)}
+  .dotp.off{background:#cfcabd}
+  .st.on{color:var(--income);font-weight:700}.st.off{color:var(--muted)}
+  .presence-empty{font-size:12px;color:#bbb;padding:4px 0}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -57,6 +72,13 @@
   </div>
 
   <div class="hidden" id="app">
+    <!-- 접속 현황(디렉터 전용) -->
+    <div class="card" id="presenceCard">
+      <h2>접속 현황 <span style="font-weight:400;font-size:11px;color:var(--muted)" id="presenceSummary"></span></h2>
+      <div class="hint" style="margin-top:0">사용자별 현재 접속 여부와 마지막 접속(페이지를 닫은) 시각입니다. 배치 순서: <b>socio · 영업 · 영업지원 · 재무 · 기타</b>.</div>
+      <div id="presenceBody" style="margin-top:10px"><div class="presence-empty">불러오는 중…</div></div>
+    </div>
+
     <!-- 새 사용자 -->
     <div class="card">
       <h2>새 사용자 만들기</h2>
@@ -132,6 +154,7 @@
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       await loadTeams(); renderPageChecks(); loadUsers();
+      loadPresence(); if(!window.__presTimer) window.__presTimer=setInterval(loadPresence,25000);
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -158,6 +181,58 @@
       $('n-name').value='';$('n-login').value='';$('n-pin').value='';document.querySelectorAll('#n-pages input').forEach(c=>c.checked=false);
       loadUsers();
     }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 접속 현황 =====
+  const PRESENCE_GROUPS=[
+    ['socio',['socio'],'Socio (파트너)'],
+    ['sales',['sales'],'영업'],
+    ['sales_support',['sales_support'],'영업지원'],
+    ['treasury',['treasury'],'재무'],
+    ['__rest__',null,'기타'],
+  ];
+  const ROLE_LABEL={director:'디렉터',treasury:'재무',marketing:'마케팅',ops:'운영',sales:'영업',sales_support:'영업지원',socio:'소시오',viewer:'뷰어'};
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function fmtAgo(sec){
+    if(sec==null) return '';
+    sec=Math.max(0,Math.floor(sec));
+    if(sec<60) return '방금';
+    const m=Math.floor(sec/60); if(m<60) return m+'분 전';
+    const h=Math.floor(m/60); if(h<24) return h+'시간 전';
+    return Math.floor(h/24)+'일 전';
+  }
+  function fmtWhen(iso){
+    if(!iso) return '';
+    const dt=new Date(iso); if(isNaN(dt)) return '';
+    const hh=String(dt.getHours()).padStart(2,'0'), mm=String(dt.getMinutes()).padStart(2,'0');
+    return (dt.getMonth()+1)+'월 '+dt.getDate()+'일 '+hh+':'+mm;
+  }
+  async function loadPresence(){
+    const box=$('presenceBody'); if(!box) return;
+    let d;
+    try{ d=await fetch(session.api+'/api/presence',{headers:auth()}).then(r=>r.json()); }
+    catch(e){ box.innerHTML='<div class="presence-empty">불러오지 못했습니다.</div>'; return; }
+    const items=d.items||[];
+    const onlineCount=items.filter(u=>u.online).length;
+    const sm=$('presenceSummary'); if(sm) sm.textContent='· 접속 중 '+onlineCount+'명 / 전체 '+items.length+'명 · 자동 갱신';
+    const used=new Set(); let html='';
+    for(const [,roles,label] of PRESENCE_GROUPS){
+      let group;
+      if(roles){ group=items.filter(u=>roles.includes(u.role)); group.forEach(u=>used.add(u.id)); }
+      else { group=items.filter(u=>!used.has(u.id)); }
+      if(!group.length) continue;
+      group.sort((a,b)=>{ if(a.online!==b.online) return a.online?-1:1; return (a.seconds_ago==null?1e15:a.seconds_ago)-(b.seconds_ago==null?1e15:b.seconds_ago); });
+      html+='<div class="presence-group"><h3>'+esc(label)+' <span class="gcount">'+group.length+'명</span></h3><div class="presence-grid">'+
+        group.map(u=>{
+          const meta=[ROLE_LABEL[u.role]||u.role,u.team_name].filter(Boolean).join(' · ')+(u.login_id?' · '+u.login_id:'');
+          let st;
+          if(u.online) st='<span class="st on"><span class="dotp on"></span>접속 중</span>';
+          else if(u.last_seen) st='<span class="st off"><span class="dotp off"></span>'+esc(fmtWhen(u.last_seen))+' ('+esc(fmtAgo(u.seconds_ago))+')</span>';
+          else st='<span class="st off"><span class="dotp off"></span>접속 기록 없음</span>';
+          return '<div class="ucard'+(u.online?' on':'')+'"><div class="nm">'+esc(u.name)+'</div><div class="meta">'+esc(meta)+'</div>'+st+'</div>';
+        }).join('')+'</div></div>';
+    }
+    box.innerHTML=html||'<div class="presence-empty">표시할 사용자가 없습니다.</div>';
   }
 
   async function loadUsers(){
@@ -329,6 +404,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624k"></script>
+<script src="refatrix-nav.js?v=20260625c"></script>
 </body>
 </html>
