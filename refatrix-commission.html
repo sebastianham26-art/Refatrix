@@ -53,7 +53,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급 · <b>설정창 b0625e</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급 · <b>설정창 b0625f</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -158,9 +158,9 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      if(canSeeAll()){ $('agentPick').classList.remove('hidden'); }
+      if(canSeeAll()){ $('agentPick').classList.remove('hidden'); loadAgents(); }
       if(canPay()){ $('payPanel').classList.remove('hidden'); }
-      if(isDir()){ $('rateBtn').classList.remove('hidden'); loadAgents(); }
+      if(isDir()){ $('rateBtn').classList.remove('hidden'); }
       loadOverview();
       loadVouchers('');
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
@@ -182,10 +182,11 @@
     }catch(e){ window.__agents=[]; window.__agentsErr='서버에 연결할 수 없습니다.'; }
   }
 
-  // 재무·소시오: agentSel 을 overview의 by_agent(id+name)로 채움 (커미션/agents 는 디렉터 전용이라 못 씀)
+  // 폴백: loadAgents(전체 대상자)가 비었을 때만 overview의 by_agent(실적자)로 채움
   function syncAgentOptions(){
     if(isDir()||!canSeeAll()) return;          // 디렉터는 loadAgents 유지
     if(!data||!data.by_agent) return;          // by_agent 는 '전체'일 때만 옴
+    if($('agentSel').options.length>1) return; // loadAgents 가 이미 채웠으면 그대로 둠
     const cur=$('agentSel').value;
     const opts=['<option value="">전체 (영업사원별 요약)</option>']
       .concat(data.by_agent.map(a=>'<option value="'+a.agent_id+'">'+esc(a.agent_name)+'</option>'));

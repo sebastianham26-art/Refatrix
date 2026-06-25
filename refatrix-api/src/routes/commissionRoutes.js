@@ -96,8 +96,9 @@ function parseDataUrl(dataUrl) {
 }
 
 export default async function commissionRoutes(app) {
-  // ── 커미션 대상 영업사원 + 기본률 목록 (디렉터) ──
-  app.get('/api/commission/agents', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  // ── 커미션 대상 영업사원 + 기본률 목록 (디렉터·재무·소시오 열람 / sales 차단) ──
+  app.get('/api/commission/agents', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
+    if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     let rows;
     try {
       rows = (await query(
