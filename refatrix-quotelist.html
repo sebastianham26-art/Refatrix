@@ -379,9 +379,29 @@
 
   // ===== 견적 상세 / 편집 =====
   let dtId=null, dtData=null, dtEdit=false;
+  let dtSort={key:'ctr',dir:'asc'};                 // 상세 라인 정렬 (기본: CTR 알파벳)
+  const dtCtr=l=>String((l&&(l.ctr_code||l.input_code))||'').trim();
+  function dtSortedLines(){
+    const arr=(dtData&&dtData.lines)?dtData.lines.slice():[];
+    const dir=dtSort.dir==='desc'?-1:1, k=dtSort.key;
+    arr.sort((a,b)=>{
+      let r;
+      if(k==='qty')       r=(Number(a.qty)||0)-(Number(b.qty)||0);
+      else if(k==='price')r=(Number(a.list_price)||0)-(Number(b.list_price)||0);
+      else                r=dtCtr(a).localeCompare(dtCtr(b),'en',{numeric:true});
+      if(r===0) r=dtCtr(a).localeCompare(dtCtr(b),'en',{numeric:true});  // 동률은 CTR순(안정)
+      return r*dir;
+    });
+    return arr;
+  }
+  function dtSetSort(key){
+    if(dtSort.key===key) dtSort.dir=(dtSort.dir==='asc'?'desc':'asc');
+    else dtSort={key, dir:(key==='ctr'?'asc':'desc')};
+    renderDetail();
+  }
   const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'삭제 승인대기',pricelist:'가용재고 및 견적'};
   async function openDetail(id){
-    dtId=id; dtEdit=false;
+    dtId=id; dtEdit=false; dtSort={key:'ctr',dir:'asc'};
     $('dtBody').innerHTML='<div class="hint">불러오는 중…</div>';
     $('dtModal').style.display='flex';
     try{ dtData=await fetch(session.api+'/api/quotes/'+id,{headers:auth()}).then(r=>r.json()); renderDetail(); }
@@ -392,7 +412,7 @@
   // ===== 견적서 출력 (PDF) — 드릴다운 상세에서 =====
   async function printQuotePdf(){
     if(!dtData||!dtData.quote){ return; }
-    const q=dtData.quote, lines=(dtData.lines||[]);
+    const q=dtData.quote, lines=dtSortedLines();   // 보이는 순서 그대로 인쇄
     const co=await getCompany();
     const custName=q.party_name||'';
     const date=q.quote_date||'';
@@ -544,7 +564,7 @@
     XLSX.writeFile(wb,'cotizacion_'+safe+'.xlsx');
   }
   function renderDetail(){
-    const q=dtData.quote, lines=dtData.lines||[];
+    const q=dtData.quote, lines=dtSortedLines();
     $('dtTitle').textContent='견적 '+(q.quote_no||'')+' · '+(stLblFull[q.status]||q.status);
     const editable = q.status==='draft' || q.status==='confirmed';
     if(dtEdit){ renderEdit(); return; }
@@ -560,7 +580,12 @@
     }
     h+='<div><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">'
       +'<colgroup><col style="width:11%"><col style="width:12%"><col style="width:26%"><col style="width:9%"><col style="width:11%"><col style="width:8%"><col style="width:14%"><col style="width:9%"></colgroup>'
-      +'<thead><tr><th style="text-align:left">CTR</th><th style="text-align:left">SYD</th><th style="text-align:left">품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
+      +'<thead><tr>'
+        +'<th style="text-align:left;cursor:pointer;user-select:none" onclick="dtSetSort(\'ctr\')" title="CTR 코드순 정렬">CTR'+(dtSort.key==='ctr'?(dtSort.dir==='asc'?' ▲':' ▼'):' ⇅')+'</th>'
+        +'<th style="text-align:left">SYD</th><th style="text-align:left">품명</th>'
+        +'<th class="r" style="cursor:pointer;user-select:none" onclick="dtSetSort(\'qty\')" title="수량순 정렬">수량'+(dtSort.key==='qty'?(dtSort.dir==='asc'?' ▲':' ▼'):' ⇅')+'</th>'
+        +'<th class="r" style="cursor:pointer;user-select:none" onclick="dtSetSort(\'price\')" title="단가순 정렬">단가'+(dtSort.key==='price'?(dtSort.dir==='asc'?' ▲':' ▼'):' ⇅')+'</th>'
+        +'<th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
     lines.forEach(l=>{
       const cp=codePair(l);
       h+='<tr style="vertical-align:top">'
@@ -804,7 +829,7 @@
   async function printPickList(){
     const pv=cvPreviewData;
     if(!pv || !(pv.in_stock||[]).length){ alert('즉시 매출 가능한 SKU가 없습니다.'); return; }
-    const items=pv.in_stock;
+    const items=(pv.in_stock||[]).slice().sort((a,b)=>String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en',{numeric:true}));
     const row=qRowsById[cvId]||{};
     const co=await getCompany();
 
