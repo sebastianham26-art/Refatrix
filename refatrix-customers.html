@@ -115,6 +115,10 @@
         </div>
 
         <div id="stageSummary" style="margin-top:10px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">
+          <div style="font-weight:700;font-size:13px;color:var(--brand)">고객 목록</div>
+          <button class="btn ghost sm" id="listToggleBtn">감추기 ▴</button>
+        </div>
         <div id="custList"><div class="hint">불러오는 중…</div></div>
       </div>
 
@@ -191,7 +195,7 @@
   let session={token:null,user:null,api:''};
   let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
   let selectedTeam='', summaryData=null;
-  let stageHidden=false, lastCustomers=[];
+  let listHidden=false, lastCustomers=[];
   // 7단계(0~6) 색상 — 가독성용
   const STAGE_META=[
     {key:'unset',  label:'미지정', bg:'#eceff1', fg:'#5b6b73'},
@@ -342,12 +346,19 @@
       +tgTeams.map(t=>'<button class="ttg'+(String(selectedTeam)===String(t.id)?' on':'')+'" onclick="setTeamScope(\''+t.id+'\')">'+esc(t.name)+'</button>').join('')
       +'</div>';
     box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfaf6">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:'+(stageHidden?'0':'8px')+'"><div style="font-weight:700">단계별 고객 현황</div><button class="btn ghost sm" onclick="toggleStage()">'+(stageHidden?'보이기 ▾':'감추기 ▴')+'</button></div>'
-      +(stageHidden?'':('<div class="sumgrid">'+totalBox+stageBoxes+'</div>'+toggle))
+      +'<div style="font-weight:700;margin-bottom:8px">단계별 고객 현황</div>'
+      +'<div class="sumgrid">'+totalBox+stageBoxes+'</div>'
+      +toggle
       +'</div>';
   }
-  function toggleStage(){ stageHidden=!stageHidden; renderStageSummary(); }
   function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
+
+  // 고객 목록 감추기/보이기 (단계별 현황은 항상 유지)
+  function toggleList(){
+    listHidden=!listHidden;
+    $('custList').style.display = listHidden?'none':'';
+    $('listToggleBtn').textContent = listHidden?'보이기 ▾':'감추기 ▴';
+  }
 
   // 할인률 그래프 (X=고객, Y=할인률, 지점수↓ → 매출액↓ 순 정렬, 점 표시)
   function openChart(){
@@ -384,22 +395,35 @@
     // 축선
     svg+='<line x1="'+mL+'" y1="'+mT+'" x2="'+mL+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
     svg+='<line x1="'+mL+'" y1="'+(mT+plotH)+'" x2="'+(mL+plotW)+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
-    // 점 + 회전 라벨
+    // 매출 음영 bar 스케일
+    const maxSales=Math.max(0, ...rows.map(r=>Number(r.sales_total)||0));
+    const maxBarH=plotH*0.55, baseY=mT+plotH, barW=Math.min(22, colW*0.62);
+    // 점 + 매출 bar + 회전 라벨
     rows.forEach((r,i)=>{
       const x=xOf(i), d=Number(r.discount)||0, y=yOf(d);
+      const sales=Number(r.sales_total)||0, hasSales=sales>0;
       const bc=r.branch_count==null?'—':r.branch_count;
-      const st=Number(r.sales_total||0).toLocaleString('es-MX',{maximumFractionDigits:0});
+      const st=sales.toLocaleString('es-MX',{maximumFractionDigits:0});
       const nm=String(r.name||'');
-      const lbl=nm.length>12?nm.slice(0,11)+'…':nm;
-      svg+='<line x1="'+x+'" y1="'+(mT+plotH)+'" x2="'+x+'" y2="'+y+'" stroke="#E2DDD2" stroke-width="1"/>';
-      svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="#0F6E56" stroke="#fff" stroke-width="1">'
-         +'<title>'+esc(nm)+'\n할인률 '+d+'%\n지점 '+bc+'개\n매출 $'+st+'</title></circle>';
-      svg+='<text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9.5" fill="#143D34" font-weight="700">'+d+'%</text>';
-      svg+='<text transform="translate('+x+','+(mT+plotH+10)+') rotate(60)" text-anchor="start" font-size="10" fill="#1A1A1A">'+esc(lbl)+'</text>';
+      const lbl=(nm.length>11?nm.slice(0,10)+'…':nm)+' ('+bc+')';
+      // 매출 음영 bar: 할인률 점에서 아래로, 매출 클수록 크게 (기준선까지 클램프)
+      if(hasSales && maxSales>0){
+        const barH=Math.min(Math.max(4,(sales/maxSales)*maxBarH), baseY-y);
+        if(barH>0)
+          svg+='<rect x="'+(x-barW/2)+'" y="'+y+'" width="'+barW+'" height="'+barH+'" rx="2" '
+             +'fill="#0F6E56" fill-opacity="0.15" stroke="#0F6E56" stroke-opacity="0.30" stroke-width="1"/>';
+      }
+      // 점: 매출 없으면 회색
+      const ptColor=hasSales?'#0F6E56':'#9AA0A0';
+      svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+ptColor+'" stroke="#fff" stroke-width="1">'
+         +'<title>'+esc(nm)+'\n할인률 '+d+'%\n지점 '+bc+'개\n매출 $'+st+(hasSales?'':' (매출 없음)')+'</title></circle>';
+      svg+='<text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9.5" fill="'+(hasSales?'#143D34':'#9AA0A0')+'" font-weight="700">'+d+'%</text>';
+      svg+='<text transform="translate('+x+','+(baseY+10)+') rotate(60)" text-anchor="start" font-size="10" fill="#1A1A1A">'+esc(lbl)+'</text>';
     });
-    // 축 제목
+    // 축 제목 + 범례
     svg+='<text transform="translate(13,'+(mT+plotH/2)+') rotate(-90)" text-anchor="middle" font-size="11" fill="#6B6B6B" font-weight="700">할인률(%)</text>';
     svg+='</svg>';
+    svg+='<div class="hint" style="margin-top:6px">● 점 = 할인률 위치 · <span style="color:#0F6E56">초록</span>=매출 있음 / <span style="color:#9AA0A0">회색</span>=매출 없음 · 점 아래 음영 bar = 매출 규모(클수록 큼) · 괄호 안 숫자 = 지점수</div>';
     return svg;
   }
 
@@ -444,9 +468,9 @@
       lastCustomers=items;
       if(!items.length){b.innerHTML='<div class="hint">고객이 없습니다.</div>';return;}
       b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th class="num">지점</th><th>담당</th><th>단계</th><th class="num">오픈인보이스 금액</th><th class="num">연체</th><th></th></tr></thead>
-        <tbody>${items.map(c=>`<tr>
+        <tbody>${items.map(c=>{const inactive=(c.days_no_sales!=null&&Number(c.days_no_sales)>30);return `<tr>
           <td class="code">${c.code}</td>
-          <td>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
+          <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
           <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
           <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
@@ -454,8 +478,8 @@
           <td class="num">${fmt(c.outstanding)}</td>
           <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
           <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
-        </tr>`).join('')}</tbody></table>
-        <div class="hint">${items.length}명 표시. 연체액이 있으면 빨간색입니다.</div>`;
+        </tr>`;}).join('')}</tbody></table>
+        <div class="hint">${items.length}명 표시. 연체액이 있으면 빨간색입니다. <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출 고객입니다.</div>`;
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
 
@@ -703,6 +727,7 @@
   $('upDrop').addEventListener('drop',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--line)';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
   $('searchBtn').addEventListener('click',loadCustomers);
   $('discChartBtn').addEventListener('click',openChart);
+  $('listToggleBtn').addEventListener('click',toggleList);
   $('chartModal').addEventListener('click',e=>{ if(e.target===$('chartModal'))closeChart(); });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeChart(); });
   $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});

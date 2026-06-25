@@ -162,6 +162,8 @@ export default async function customerRoutes(app) {
               COALESCE(ar.overdue,0) AS overdue,
               COALESCE(ar.sales_total,0) AS sales_total,
               COALESCE(dc.doc_count,0) AS doc_count,
+              (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS days_no_sales,
+              (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS no_sale_days,
               (EXISTS (SELECT 1 FROM customer_change_requests rr WHERE rr.customer_id=c.id AND rr.status='pending')) AS has_pending
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
@@ -171,7 +173,9 @@ export default async function customerRoutes(app) {
            SELECT i.customer_id,
                   SUM(i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
                   SUM(CASE WHEN i.due_date < CURRENT_DATE THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END) AS overdue,
-                  SUM(i.total_mxn) AS sales_total
+                  SUM(i.total_mxn) AS sales_total,
+                  MAX(i.inv_date) AS last_sale_date,
+                  MAX(i.inv_date) AS last_sale_date
              FROM sales_invoices i
              LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p
                     ON p.invoice_id=i.id
@@ -194,6 +198,8 @@ export default async function customerRoutes(app) {
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
       sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
+      days_no_sales: c.days_no_sales == null ? null : Number(c.days_no_sales),
+      no_sale_days: c.no_sale_days == null ? null : Number(c.no_sale_days),
       pending_change: !!c.has_pending,
     })) };
   });
