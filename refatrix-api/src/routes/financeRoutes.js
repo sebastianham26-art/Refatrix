@@ -733,7 +733,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'
-          AND (s.sat_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\' OR c.code ILIKE $1 ESCAPE '\\')
+          AND (s.sat_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\')
         ORDER BY s.inv_date DESC, s.id DESC
         LIMIT 80`, [like])).rows;
     return {
