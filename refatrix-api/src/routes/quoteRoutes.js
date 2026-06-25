@@ -159,6 +159,107 @@ export default async function quoteRoutes(app) {
     return { discountRate, ivaRate, lines: out, totals };
   });
 
+  // ============ 재고 예약(블럭) · 만료(무효화) 공통 ============
+  // 가용재고 = 현재고 − 타 미결·미만료 견적의 reserved_qty 합. 물리 stock_qty는 예약으로 안 건드림.
+  // 한 견적의 매칭 라인들을 제품별로 묶어 생성순(line_no)으로 선착순 greedy 배분한다.
+  //  · 같은 트랜잭션(c) 안에서 product 행을 FOR UPDATE 로 잠가, 동시 저장이 같은 재고를 중복 예약하지 못하게 직렬화.
+  //  · '타 견적' 합은 이미 커밋된 reserved_qty 만 보이므로(잠금 대기 후 읽음) 선착순이 보장된다.
+  async function assignReservations(c, quoteId) {
+    const lines = (await c.query(
+      `SELECT id, product_id, qty FROM quote_lines
+        WHERE quote_id=$1 AND product_id IS NOT NULL ORDER BY product_id, line_no, id`, [quoteId])).rows;
+    const byProd = {};
+    for (const l of lines) { (byProd[Number(l.product_id)] ||= []).push(l); }
+    for (const pid of Object.keys(byProd)) {
+      const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [Number(pid)])).rows[0];
+      const physical = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
+      const other = (await c.query(
+        `SELECT COALESCE(SUM(ql.reserved_qty),0) AS s
+           FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
+          WHERE ql.product_id=$1 AND q.id<>$2 AND q.status IN ('draft','confirmed')
+            AND q.reserve_expires_at > now() AND q.deleted_at IS NULL`, [Number(pid), quoteId])).rows[0];
+      let remaining = Math.max(0, physical - (Number(other.s) || 0));
+      for (const l of byProd[pid]) {
+        const want = Number(l.qty) || 0;
+        const give = Math.max(0, Math.min(want, remaining));
+        remaining -= give;
+        await c.query(`UPDATE quote_lines SET reserved_qty=$1 WHERE id=$2`, [give, l.id]);
+      }
+    }
+  }
+
+  // 만료 처리: 24h 지난 미결견적을 'expired'로 무효화 + 부족/개발 demand 백로그 적재.
+  //  · 정확히 1회: status 플립을 RETURNING 으로 선점한 트랜잭션만 백로그를 쓴다(스위퍼 중복 무해).
+  //  · 가용재고 정합성은 쿼리시 reserve_expires_at>now() 필터로 이미 보장됨(여긴 회색화+백로그만).
+  async function finalizeExpiredQuotes() {
+    const due = (await query(
+      `SELECT id FROM quotes
+        WHERE status IN ('draft','confirmed') AND reserve_expires_at IS NOT NULL
+          AND reserve_expires_at <= now() AND deleted_at IS NULL
+        ORDER BY id LIMIT 200`)).rows;
+    for (const row of due) {
+      const id = row.id;
+      try {
+        await withTx(async (c) => {
+          const won = (await c.query(
+            `UPDATE quotes SET status='expired', updated_at=now()
+              WHERE id=$1 AND status IN ('draft','confirmed') RETURNING id, quote_no, customer_id`, [id])).rows[0];
+          if (!won) return;                       // 다른 틱이 이미 처리 — 백로그 중복 방지
+          const today = d10(new Date());
+          // 매칭 라인: 현재고로 못 채우는 부족분만 stock_shortages 에 적재(즉시분은 재고 복귀 → 미적재)
+          const mlines = (await c.query(
+            `SELECT ql.product_id, ql.qty, ql.final_price, p.stock_qty
+               FROM quote_lines ql JOIN products p ON p.id=ql.product_id
+              WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL`, [id])).rows;
+          for (const l of mlines) {
+            const qty = Number(l.qty) || 0;
+            const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
+            const short = Math.max(0, qty - Math.max(physical, 0));
+            if (short <= 0) continue;
+            const shAmount = round2(Number(l.final_price || 0) * short * 1.16);
+            await c.query(
+              `INSERT INTO stock_shortages
+                 (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty,
+                  shortage_amount_mxn, occurred_at, source_quote_id, note, created_by)
+               VALUES ($1,$2,NULL,$3,0,$4,$5,$6,$7,$8,$9)`,
+              [l.product_id, won.customer_id, qty, short, shAmount, today, id,
+               `견적 ${won.quote_no} 만료(미확정) — 부족 수요신호`, won.created_by || null]);
+          }
+          // 미매칭 라인: 제품개발요청 적재(전환 로직과 동일 — source_quote_id+input_code 중복가드 + 담당 알림)
+          const ulines = (await c.query(
+            `SELECT input_code, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NULL`, [id])).rows;
+          const custName = won.customer_id
+            ? ((await c.query(`SELECT name FROM customers WHERE id=$1`, [won.customer_id])).rows[0]?.name || '')
+            : '';
+          for (const u of ulines) {
+            const dup = (await c.query(
+              `SELECT 1 FROM product_dev_requests
+                WHERE source_quote_id=$1 AND input_code IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
+              [id, u.input_code || null])).rows[0];
+            if (dup) continue;
+            await c.query(
+              `INSERT INTO product_dev_requests
+                 (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
+               VALUES ($1,$2,$3,$4,$5,'received',$6)`,
+              [u.input_code || null, won.customer_id, Number(u.qty) || null, today, id, won.created_by || null]);
+            await notifyProductMarketing(c, {
+              title: `개발검토 요청: ${u.input_code || ''}`,
+              detail: `${custName ? custName + ' 고객 ' : ''}견적 ${won.quote_no}(만료)에서 미등록 코드 ${u.input_code || '-'} 개발 검토가 필요합니다.`,
+              createdBy: won.created_by || null,
+            });
+          }
+          await logEvent({ userId: won.created_by || null, action: 'update', target: `quote:${id}`, detail: { expired: true } });
+        });
+      } catch (_) { /* best-effort; 다음 틱에서 재시도 */ }
+    }
+  }
+  // 서버 기동 시 1회 + 60초 주기 스위퍼(외부 크론 불필요). 테스트(미기동)에선 등록 안 됨.
+  if (!globalThis.__refatrixExpirySweeper) {
+    globalThis.__refatrixExpirySweeper = setInterval(() => { finalizeExpiredQuotes().catch(() => {}); }, 60000);
+    if (globalThis.__refatrixExpirySweeper.unref) globalThis.__refatrixExpirySweeper.unref();
+    finalizeExpiredQuotes().catch(() => {});
+  }
+
   // ============ 견적 저장/수정 ============
   async function nextQuoteNo(c, year) {
     const r = (await c.query(`SELECT COUNT(*)::int AS n FROM quotes WHERE quote_no LIKE $1`, [`Q-${year}-%`])).rows[0];
@@ -231,8 +332,8 @@ export default async function quoteRoutes(app) {
       const lines = await buildLines(discountRate, ivaRate, Array.isArray(b.lines) ? b.lines : []);
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
       const q = (await c.query(
-        `INSERT INTO quotes (quote_no, customer_id, guest_name, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by)
-         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13) RETURNING id, quote_no`,
+        `INSERT INTO quotes (quote_no, customer_id, guest_name, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at)
+         VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,'draft',$8,$9,$10,$11,$12,$13, now() + interval '24 hours') RETURNING id, quote_no`,
         [quoteNo, customerId, guestName, b.quote_date || null, discountRate, ivaRate, b.memo || null, totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
       for (const l of lines) {
         await c.query(
@@ -240,6 +341,7 @@ export default async function quoteRoutes(app) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
           [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag]);
       }
+      await assignReservations(c, q.id);   // 선착순 재고 예약(블럭)
       return q;
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}` });
@@ -273,6 +375,7 @@ export default async function quoteRoutes(app) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
           [id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag]);
       }
+      await assignReservations(c, id);   // 라인 교체 후 예약 재배분(만료시각은 생성 기준 유지)
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}` });
     return { ok: true };
@@ -336,7 +439,7 @@ export default async function quoteRoutes(app) {
     const conds = [`q.deleted_at IS NULL`]; const args = [];
     if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { args.push(from); conds.push(`q.quote_date >= $${args.length}`); }
     if (/^\d{4}-\d{2}-\d{2}$/.test(to)) { args.push(to); conds.push(`q.quote_date <= $${args.length}`); }
-    if (['draft', 'confirmed', 'converted', 'cancelled', 'pricelist'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
+    if (['draft', 'confirmed', 'converted', 'cancelled', 'pricelist', 'expired'].includes(status)) { args.push(status); conds.push(`q.status=$${args.length}`); }
     if (req.query.open === '1') conds.push(`q.status IN ('draft','confirmed')`);          // 견적후 미결
     if (req.query.guest === '1') conds.push(`q.customer_id IS NULL AND q.status IN ('draft','confirmed')`); // 불특정·미등록
     // 팀 가시성: 디렉터/영업지원=전체. 그 외=자기 팀 고객 견적 + 본인이 만든 불특정 견적만.
@@ -348,30 +451,25 @@ export default async function quoteRoutes(app) {
     }
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
-              q.invoice_id, q.guest_name, q.customer_id, q.created_by,
-              c.name AS customer_name, c.team_id,
+              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at,
+              c.name AS customer_name,
               uc.name AS creator_name,
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
-              cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
-              cls.ok_amt, cls.short_amt, cls.ok_sub, cls.short_sub
+              cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
          LEFT JOIN sales_invoices i ON i.id=q.invoice_id
          LEFT JOIN LATERAL (
            SELECT
-             COUNT(*) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty)::int AS ok_cnt,
-             COUNT(*) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) <  ql.qty)::int AS short_cnt,
-             COUNT(*) FILTER (WHERE ql.product_id IS NULL)::int                                          AS dev_cnt,
-             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty),0) AS ok_qty,
-             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) <  ql.qty),0) AS short_qty,
-             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NULL),0)                                AS dev_qty,
-             COALESCE(SUM(ql.line_total)    FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty),0) AS ok_amt,
-             COALESCE(SUM(ql.line_total)    FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) <  ql.qty),0) AS short_amt,
-             COALESCE(SUM(ql.line_subtotal) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty),0) AS ok_sub,
-             COALESCE(SUM(ql.line_subtotal) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) <  ql.qty),0) AS short_sub
-           FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
+             COUNT(*) FILTER (WHERE ql.product_id IS NOT NULL AND ql.reserved_qty >= ql.qty)::int AS ok_cnt,
+             COUNT(*) FILTER (WHERE ql.product_id IS NOT NULL AND ql.reserved_qty <  ql.qty)::int AS short_cnt,
+             COUNT(*) FILTER (WHERE ql.product_id IS NULL)::int                                   AS dev_cnt,
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND ql.reserved_qty >= ql.qty),0) AS ok_qty,
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND ql.reserved_qty <  ql.qty),0) AS short_qty,
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NULL),0)                          AS dev_qty
+           FROM quote_lines ql
            WHERE ql.quote_id = q.id
          ) cls ON TRUE
         WHERE ${conds.join(' AND ')}
@@ -379,8 +477,7 @@ export default async function quoteRoutes(app) {
     return {
       items: rows.map((r) => ({
         id: r.id, quote_no: r.quote_no, quote_date: d10(r.quote_date), status: r.status,
-        total_mxn: Number(r.total_mxn), subtotal_mxn: Number(r.subtotal_mxn), total_qty: Number(r.total_qty), sku_count: r.sku_count,
-        team_id: r.team_id == null ? null : Number(r.team_id),
+        total_mxn: Number(r.total_mxn), total_qty: Number(r.total_qty), sku_count: r.sku_count,
         invoice_id: r.invoice_id, sale_date: r.sale_date ? d10(r.sale_date) : null, sale_sat_no: r.sale_sat_no || null,
         sale_total: (r.status === 'converted') ? Number(r.sale_total || 0) : null,
         shortage_cnt: Number(r.shortage_cnt || 0),
@@ -388,12 +485,11 @@ export default async function quoteRoutes(app) {
         party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
         creator_name: r.creator_name || null,
         open: ['draft', 'confirmed'].includes(r.status),
+        reserve_expires_at: r.reserve_expires_at || null,
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
           ok_qty: Number(r.ok_qty || 0), short_qty: Number(r.short_qty || 0), dev_qty: Number(r.dev_qty || 0),
-          ok_amt: Number(r.ok_amt || 0), short_amt: Number(r.short_amt || 0),       // IVA 포함(line_total)
-          ok_sub: Number(r.ok_sub || 0), short_sub: Number(r.short_sub || 0),       // IVA 제외(line_subtotal)
         },
       })),
     };
@@ -430,22 +526,22 @@ export default async function quoteRoutes(app) {
       `SELECT ql.*, p.stock_qty AS cur_stock_raw
          FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
         WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
-    const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0, ok_amt: 0, short_amt: 0, ok_sub: 0, short_sub: 0 };
+    const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0 };
     const outLines = lines.map((l) => {
       const qtyN = Number(l.qty) || 0;
-      const totN = Number(l.line_total) || 0;
-      const subN = Number(l.line_subtotal) || 0;
       const cur = l.product_id != null ? (l.cur_stock_raw != null ? Number(l.cur_stock_raw) : 0) : null;
-      // live_flag: 현재고 기준 실시간 3분류 (저장시 스냅샷 stock_flag와 별개)
+      const resvN = Number(l.reserved_qty) || 0;
+      // live_flag: 예약(블럭) 확보 기준 3분류 — reserved_qty>=요청이면 즉시(확보), 미만이면 부족
       let live = 'not_found';
-      if (l.product_id != null) live = (cur >= qtyN) ? 'ok' : 'low_stock';
-      if (live === 'ok') { cls.ok++; cls.ok_qty += qtyN; cls.ok_amt += totN; cls.ok_sub += subN; }
-      else if (live === 'low_stock') { cls.short++; cls.short_qty += qtyN; cls.short_amt += totN; cls.short_sub += subN; }
+      if (l.product_id != null) live = (resvN >= qtyN) ? 'ok' : 'low_stock';
+      if (live === 'ok') { cls.ok++; cls.ok_qty += qtyN; }
+      else if (live === 'low_stock') { cls.short++; cls.short_qty += qtyN; }
       else { cls.dev++; cls.dev_qty += qtyN; }
       return {
         ...l, qty: qtyN, list_price: Number(l.list_price), discount_rate: Number(l.discount_rate),
         final_price: Number(l.final_price), line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
         avail_stock: l.avail_stock != null ? Number(l.avail_stock) : null,
+        reserved_qty: Number(l.reserved_qty) || 0,
         cur_stock: cur, live_flag: live,
       };
     });
@@ -577,10 +673,12 @@ export default async function quoteRoutes(app) {
       const qty = Number(l.qty) || 0;
       if (!l.product_id) { newDev.push({ input_code: l.input_code, qty }); continue; }
       const p = (await query(`SELECT stock_qty FROM products WHERE id=$1`, [l.product_id])).rows[0];
-      const avail = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
-      if (avail >= qty) inStock.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail });
+      const physical = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
+      const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));   // 예약 확보분(현재고로 캡)
+      const short = qty - fulfill;
+      if (short <= 0) inStock.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill });
       else {
-        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail, fulfill: Math.max(avail, 0), short: qty - Math.max(avail, 0) });
+        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short });
       }
     }
     return {
@@ -680,10 +778,13 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
+    if (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date()))
+      return reply.code(409).send({ error: 'quote_expired', note: '예약 24시간이 지나 무효화된 견적입니다. 전환할 수 없습니다. 견적을 복제해 새로 진행하세요.' });
     // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
     const pickable = (await query(
       `SELECT 1 FROM quote_lines ql JOIN products p ON p.id=ql.product_id
-        WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty LIMIT 1`, [id])).rows[0];
+        WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL
+          AND LEAST(ql.reserved_qty, COALESCE(p.stock_qty,0)) > 0 LIMIT 1`, [id])).rows[0];
     if (pickable) {
       const pd = (await query(`SELECT 1 FROM quote_packing_docs WHERE quote_id=$1`, [id])).rows[0];
       if (!pd) return reply.code(409).send({ error: 'packing_doc_required', note: '포장작업지시서 서명 스캔본을 먼저 업로드해야 매출로 전환할 수 있습니다.' });
@@ -696,18 +797,35 @@ export default async function quoteRoutes(app) {
       const cu = (await query(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
       if (!cu) return reply.code(404).send({ error: 'customer_not_found' });
     }
-    // 매칭된 줄(케이스 1·2) + 미매칭 줄(케이스 3) 분리
-    const matched = (await query(`SELECT product_id, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id])).rows;
+    // 매칭된 줄: 예약 확보분(현재고로 캡)만 매출 확정. 미확보분은 부족 백로그.
+    const mrows = (await query(
+      `SELECT ql.product_id, ql.qty, ql.reserved_qty, ql.final_price, p.stock_qty
+         FROM quote_lines ql JOIN products p ON p.id=ql.product_id
+        WHERE ql.quote_id=$1`, [id])).rows;
     const unmatched = (await query(`SELECT input_code, qty FROM quote_lines WHERE quote_id=$1 AND product_id IS NULL`, [id])).rows;
-    if (!matched.length && !unmatched.length) return reply.code(400).send({ error: 'no_valid_lines' });
+    if (!mrows.length && !unmatched.length) return reply.code(400).send({ error: 'no_valid_lines' });
+
+    const shipLines = [];   // /api/sales 로 보낼 확보분(현재고가 보장 → sales 내부 부족 없음)
+    const shortRows = [];   // 미확보 → 부족 백로그
+    for (const l of mrows) {
+      const qty = Number(l.qty) || 0;
+      const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
+      const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));
+      const short = round2(qty - fulfill);
+      if (fulfill > 0) shipLines.push({ product_id: l.product_id, qty: fulfill });
+      if (short > 0) shortRows.push({
+        product_id: l.product_id, requested: qty, fulfilled: fulfill, shortage: short,
+        amount_mxn: round2(Number(l.final_price || 0) * short * 1.16),
+      });
+    }
 
     let invoiceId = null, sale = null;
     const invDate = req.body?.inv_date || d10(new Date());
-    if (matched.length) {
-      // allow_partial: 재고 있는 만큼 매출 + 부족분은 stock_shortages 자동 기록(케이스 2)
+    if (shipLines.length) {
+      // allow_partial: 안전망(현재고가 확보분을 보장하므로 통상 sales 내부 부족은 0)
       const payload = {
         customer_id: customerId, inv_date: invDate, allow_partial: true,
-        lines: matched.map((l) => ({ product_id: l.product_id, qty: Number(l.qty) })),
+        lines: shipLines,
         memo: `견적 ${q.quote_no} 전환`,
       };
       const res = await app.inject({
@@ -719,43 +837,88 @@ export default async function quoteRoutes(app) {
       sale = res.json();
       invoiceId = sale.id || (sale.invoice && sale.invoice.id);
     }
-    // 케이스 3: 미등록 코드 → 제품개발요청 생성 + 제품·마케팅 담당 검토 알림
+
+    // 미확보 부족분 백로그 + 미등록 개발요청 + 견적 종료(converted) — 한 트랜잭션
     const devIds = [];
-    if (unmatched.length) {
-      const custName = (await query(`SELECT name FROM customers WHERE id=$1`, [customerId])).rows[0]?.name || '';
-      await withTx(async (c) => {
-        for (const u of unmatched) {
-          // 재전환 시 동일 견적·코드의 개발요청 중복 생성 방지
-          const dup = (await c.query(
-            `SELECT 1 FROM product_dev_requests WHERE source_quote_id=$1 AND input_code IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
-            [id, u.input_code || null])).rows[0];
-          if (dup) continue;
-          const r = (await c.query(
-            `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
-             VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
-            [u.input_code || null, customerId, Number(u.qty) || null, invDate, id, req.ctx.perm.userId])).rows[0];
-          devIds.push(r.id);
-          await notifyProductMarketing(c, {
-            title: `개발검토 요청: ${u.input_code || ''}`,
-            detail: `${custName ? custName + ' 고객 ' : ''}견적 ${q.quote_no}에서 미등록 코드 ${u.input_code || '-'} 개발 검토가 필요합니다.`,
-            createdBy: req.ctx.perm.userId,
-          });
-        }
-      });
-    }
-    // 가용재고만 매출 확정, 부족분은 금액과 함께 기록. 견적은 종료(converted).
-    //   - 일부 재고: 가용분 인보이스 + 나머지 부족분 기록 + 종료
-    //   - 재고 전무: 인보이스 없음(매출 0) + 전량 부족분 기록 + 종료
-    const sShort = (sale && sale.shortages) || [];
-    await query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`, [invoiceId || null, customerId, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, shortages: sShort.length, dev_requests: devIds.length } });
+    const custName = (await query(`SELECT name FROM customers WHERE id=$1`, [customerId])).rows[0]?.name || '';
+    await withTx(async (c) => {
+      for (const s of shortRows) {
+        await c.query(
+          `INSERT INTO stock_shortages
+             (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty,
+              shortage_amount_mxn, occurred_at, source_quote_id, note, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [s.product_id, customerId, invoiceId || null, s.requested, s.fulfilled, s.shortage,
+           s.amount_mxn || 0, invDate, id, `견적 ${q.quote_no} 전환 — 미확보 부족분`, req.ctx.perm.userId]);
+      }
+      for (const u of unmatched) {
+        // 재전환 시 동일 견적·코드의 개발요청 중복 생성 방지
+        const dup = (await c.query(
+          `SELECT 1 FROM product_dev_requests WHERE source_quote_id=$1 AND input_code IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
+          [id, u.input_code || null])).rows[0];
+        if (dup) continue;
+        const r = (await c.query(
+          `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, requested_at, source_quote_id, status, created_by)
+           VALUES ($1,$2,$3,$4,$5,'received',$6) RETURNING id`,
+          [u.input_code || null, customerId, Number(u.qty) || null, invDate, id, req.ctx.perm.userId])).rows[0];
+        devIds.push(r.id);
+        await notifyProductMarketing(c, {
+          title: `개발검토 요청: ${u.input_code || ''}`,
+          detail: `${custName ? custName + ' 고객 ' : ''}견적 ${q.quote_no}에서 미등록 코드 ${u.input_code || '-'} 개발 검토가 필요합니다.`,
+          createdBy: req.ctx.perm.userId,
+        });
+      }
+      await c.query(`UPDATE quotes SET status='converted', invoice_id=$1, customer_id=$2, updated_by=$3, updated_at=now() WHERE id=$4`,
+        [invoiceId || null, customerId, req.ctx.perm.userId, id]);
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, shortages: shortRows.length, dev_requests: devIds.length } });
     return {
       ok: true, converted: true, invoice_id: invoiceId,
       invoiced: !!invoiceId,
-      shortages: sShort,
-      shortage_amount: sShort.reduce((s, x) => s + (Number(x.amount_mxn) || 0), 0),
+      shortages: shortRows,
+      shortage_amount: shortRows.reduce((s, x) => s + (Number(x.amount_mxn) || 0), 0),
       dev_requests: devIds.length,
       sale,
     };
+  });
+
+  // 견적 복제 → 새 draft(현재고 기준 재평가 + 새 24h 예약). 만료 견적 회생용.
+  //  · 부족분 정보는 복제 시점 현재고/타 예약으로 재산정(과거 스냅샷 복사 아님).
+  app.post('/api/quotes/:id/clone', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {
+    const srcId = Number(req.params.id);
+    const src = (await query(`SELECT id, customer_id, quote_no, memo FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [srcId])).rows[0];
+    if (!src) return reply.code(404).send({ error: 'not_found' });
+    const customerId = src.customer_id;
+    if (!customerId) return reply.code(409).send({ error: 'customer_required', note: '고객이 지정된 견적만 복제할 수 있습니다.' });
+    const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
+    if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
+    const discountRate = Number(cust.discount) || 0;
+    const ivaRate = 16;
+    const srcLines = (await query(`SELECT product_id, input_code, qty FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [srcId])).rows;
+    if (!srcLines.length) return reply.code(400).send({ error: 'no_lines', note: '복제할 품목이 없습니다.' });
+    const inputLines = srcLines.map((l) => (l.product_id
+      ? { product_id: l.product_id, qty: Number(l.qty) }
+      : { code: l.input_code, qty: Number(l.qty) }));
+    const result = await withTx(async (c) => {
+      const year = String(new Date().getFullYear());
+      const quoteNo = await nextQuoteNo(c, year);
+      const lines = await buildLines(discountRate, ivaRate, inputLines);
+      const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
+      const q = (await c.query(
+        `INSERT INTO quotes (quote_no, customer_id, quote_date, discount_rate, iva_rate, memo, status, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, created_by, reserve_expires_at)
+         VALUES ($1,$2,CURRENT_DATE,$3,16,$4,'draft',$5,$6,$7,$8,$9,$10, now() + interval '24 hours') RETURNING id, quote_no`,
+        [quoteNo, customerId, discountRate, src.memo ? `${src.memo} (복제 ${src.quote_no})` : `복제 ${src.quote_no}`,
+         totals.subtotal, totals.iva, totals.total, totals.totalQty, totals.skuCount, req.ctx.perm.userId])).rows[0];
+      for (const l of lines) {
+        await c.query(
+          `INSERT INTO quote_lines (quote_id, line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          [q.id, l.line_no, l.product_id, l.input_code, l.ctr_code, l.syd_codes, l.product_name, l.app_text, l.qty, l.list_price, l.discount_rate, l.final_price, l.line_subtotal, l.line_iva, l.line_total, l.avail_stock, l.stock_flag]);
+      }
+      await assignReservations(c, q.id);
+      return q;
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}`, detail: { cloned_from: srcId } });
+    return { id: result.id, quote_no: result.quote_no, customer_id: customerId };
   });
 }
