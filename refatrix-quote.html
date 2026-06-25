@@ -428,6 +428,11 @@
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
       if(!items.length){ m.className='msg err';m.textContent='VIO가 매칭된 재고 SKU가 없습니다.';return; }
+      // 선정은 백엔드에서 VIO(등록대수) 상위 500. 표시 순서는 CTR 코드 알파벳순.
+      items.sort((a,b)=>String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en'));
+      // 엑셀 생성이 잠깐 메인스레드를 점유 → 상태 메시지를 먼저 그리도록 양보(체감 멈춤 방지)
+      m.className='msg ok';m.textContent='Top 500 견적 엑셀 생성 중… ('+items.length+'개)';
+      await new Promise(r=>setTimeout(r,20));
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : (d.discountRate==null?0:d.discountRate);
       const rateFrac = (Number(disc)||0)/100;            // 할인율 셀(편집형, 0.49 = 49%)
       const today=new Date(); const pad=n=>String(n).padStart(2,'0');
@@ -444,9 +449,9 @@
       const sCli={font:{color:{rgb:INK},bold:true,sz:11}};
       const sRate={fill:{fgColor:{rgb:'FFF2CC'}},font:{color:{rgb:RED},bold:true,sz:12},alignment:{horizontal:'center',vertical:'center'},numFmt:'0%',border:bAll};
       const sHead={fill:{fgColor:{rgb:RED}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
-      const sVeh={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'left',vertical:'center',wrapText:true},border:bAll};
+      const sVeh={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'left',vertical:'center'},border:bAll};
       const sVio={font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sTxt={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'center',wrapText:true},border:bAll};
+      const sTxt={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'center'},border:bAll};
       const sCtr={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
       const sQty={fill:{fgColor:{rgb:'FFF2CC'}},font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
       const sLista={font:{color:{rgb:GREY},sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
@@ -458,7 +463,7 @@
       const rows=[];
       rows.push(['REFATRIX']);                                                                 // r1
       rows.push(['Distribuidor oficial CTR en México']);                                       // r2
-      rows.push(['COTIZACIÓN — Top 500 SKU CTR · ordenado por registro vehicular (VIO) · existencia disponible']); // r3
+      rows.push(['COTIZACIÓN — Top 500 SKU CTR (selección por registro VIO · existencia disponible) · listado por código CTR']); // r3
       rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
@@ -500,16 +505,8 @@
         if(ws['H'+r])ws['H'+r].s=sDesc; if(ws['I'+r])ws['I'+r].s=sImp;
       }
       [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['H'+rr])ws['H'+rr].s=sSumL; if(ws['I'+rr])ws['I'+rr].s=sSumV; });
-      // ---- 차량/등록 병합(연속 동일 차량) + 레터헤드 병합 ----
-      const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:8}},{s:{r:3,c:0},e:{r:3,c:8}},{s:{r:5,c:0},e:{r:5,c:0}}];
-      let gs=firstData, gk=items.length?grpKey(items[0]):'';
-      for(let i=1;i<=items.length;i++){
-        const k=i<items.length?grpKey(items[i]):'__END__';
-        if(k!==gk){ const ge=firstData+i-1;
-          if(ge>gs){ merges.push({s:{r:gs-1,c:0},e:{r:ge-1,c:0}}); merges.push({s:{r:gs-1,c:1},e:{r:ge-1,c:1}}); }
-          gs=firstData+i; gk=k;
-        }
-      }
+      // 레터헤드 병합만 (코드순 정렬이라 차량 셀 병합은 하지 않음)
+      const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:8}},{s:{r:3,c:0},e:{r:3,c:8}}];
       ws['!merges']=merges;
       ws['!autofilter']={ref:'A'+headerRow+':I'+lastData};
       ws['!cols']=[{wch:30},{wch:14},{wch:13},{wch:16},{wch:40},{wch:12},{wch:15},{wch:14},{wch:15}];
