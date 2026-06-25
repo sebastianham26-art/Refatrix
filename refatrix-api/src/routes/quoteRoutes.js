@@ -452,11 +452,12 @@ export default async function quoteRoutes(app) {
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
               q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at,
-              c.name AS customer_name,
+              c.name AS customer_name, c.team_id,
               uc.name AS creator_name,
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
-              cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty
+              cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
+              cls.ok_sub, cls.short_sub, cls.ok_amt, cls.short_amt
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
@@ -468,7 +469,12 @@ export default async function quoteRoutes(app) {
              COUNT(*) FILTER (WHERE ql.product_id IS NULL)::int                                   AS dev_cnt,
              COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND ql.reserved_qty >= ql.qty),0) AS ok_qty,
              COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND ql.reserved_qty <  ql.qty),0) AS short_qty,
-             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NULL),0)                          AS dev_qty
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NULL),0)                          AS dev_qty,
+             -- 실제 매출가능 금액(부분충당): 확보분 비율만큼 즉시, 모자란 비율만큼 부족. IVA제외=line_subtotal, IVA포함=line_total
+             COALESCE(SUM( LEAST(COALESCE(ql.reserved_qty,0), ql.qty)::numeric / NULLIF(ql.qty,0) * ql.line_subtotal ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS ok_sub,
+             COALESCE(SUM( GREATEST(ql.qty - COALESCE(ql.reserved_qty,0), 0)::numeric / NULLIF(ql.qty,0) * ql.line_subtotal ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS short_sub,
+             COALESCE(SUM( LEAST(COALESCE(ql.reserved_qty,0), ql.qty)::numeric / NULLIF(ql.qty,0) * ql.line_total ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS ok_amt,
+             COALESCE(SUM( GREATEST(ql.qty - COALESCE(ql.reserved_qty,0), 0)::numeric / NULLIF(ql.qty,0) * ql.line_total ) FILTER (WHERE ql.product_id IS NOT NULL),0) AS short_amt
            FROM quote_lines ql
            WHERE ql.quote_id = q.id
          ) cls ON TRUE
@@ -477,7 +483,9 @@ export default async function quoteRoutes(app) {
     return {
       items: rows.map((r) => ({
         id: r.id, quote_no: r.quote_no, quote_date: d10(r.quote_date), status: r.status,
-        total_mxn: Number(r.total_mxn), total_qty: Number(r.total_qty), sku_count: r.sku_count,
+        total_mxn: Number(r.total_mxn), subtotal_mxn: Number(r.subtotal_mxn || 0),
+        total_qty: Number(r.total_qty), sku_count: r.sku_count,
+        team_id: r.team_id != null ? Number(r.team_id) : null,
         invoice_id: r.invoice_id, sale_date: r.sale_date ? d10(r.sale_date) : null, sale_sat_no: r.sale_sat_no || null,
         sale_total: (r.status === 'converted') ? Number(r.sale_total || 0) : null,
         shortage_cnt: Number(r.shortage_cnt || 0),
@@ -490,6 +498,8 @@ export default async function quoteRoutes(app) {
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
           ok_qty: Number(r.ok_qty || 0), short_qty: Number(r.short_qty || 0), dev_qty: Number(r.dev_qty || 0),
+          ok_sub: Number(r.ok_sub || 0), short_sub: Number(r.short_sub || 0),
+          ok_amt: Number(r.ok_amt || 0), short_amt: Number(r.short_amt || 0),
         },
       })),
     };
@@ -526,7 +536,7 @@ export default async function quoteRoutes(app) {
       `SELECT ql.*, p.stock_qty AS cur_stock_raw
          FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
         WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
-    const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0 };
+    const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0, ok_sub: 0, short_sub: 0, ok_amt: 0, short_amt: 0 };
     const outLines = lines.map((l) => {
       const qtyN = Number(l.qty) || 0;
       const cur = l.product_id != null ? (l.cur_stock_raw != null ? Number(l.cur_stock_raw) : 0) : null;
@@ -537,6 +547,14 @@ export default async function quoteRoutes(app) {
       if (live === 'ok') { cls.ok++; cls.ok_qty += qtyN; }
       else if (live === 'low_stock') { cls.short++; cls.short_qty += qtyN; }
       else { cls.dev++; cls.dev_qty += qtyN; }
+      // 실제 매출가능 금액(부분충당): 확보분 비율만큼 즉시, 나머지는 부족
+      if (l.product_id != null && qtyN > 0) {
+        const subN = Number(l.line_subtotal) || 0;
+        const totN = Number(l.line_total) || 0;
+        const filled = Math.min(Math.max(resvN, 0), qtyN);
+        cls.ok_sub += subN * filled / qtyN; cls.short_sub += subN * (qtyN - filled) / qtyN;
+        cls.ok_amt += totN * filled / qtyN; cls.short_amt += totN * (qtyN - filled) / qtyN;
+      }
       return {
         ...l, qty: qtyN, list_price: Number(l.list_price), discount_rate: Number(l.discount_rate),
         final_price: Number(l.final_price), line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
