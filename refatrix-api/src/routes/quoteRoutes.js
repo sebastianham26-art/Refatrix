@@ -352,11 +352,23 @@ export default async function quoteRoutes(app) {
               c.name AS customer_name,
               uc.name AS creator_name,
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
-              (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt
+              (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
+              cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN users uc ON uc.id=q.created_by
          LEFT JOIN sales_invoices i ON i.id=q.invoice_id
+         LEFT JOIN LATERAL (
+           SELECT
+             COUNT(*) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty)::int AS ok_cnt,
+             COUNT(*) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) <  ql.qty)::int AS short_cnt,
+             COUNT(*) FILTER (WHERE ql.product_id IS NULL)::int                                          AS dev_cnt,
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) >= ql.qty),0) AS ok_qty,
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NOT NULL AND COALESCE(p.stock_qty,0) <  ql.qty),0) AS short_qty,
+             COALESCE(SUM(ql.qty) FILTER (WHERE ql.product_id IS NULL),0)                                AS dev_qty
+           FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
+           WHERE ql.quote_id = q.id
+         ) cls ON TRUE
         WHERE ${conds.join(' AND ')}
         ORDER BY q.quote_date DESC, q.id DESC`, args)).rows;
     return {
@@ -370,6 +382,11 @@ export default async function quoteRoutes(app) {
         party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
         creator_name: r.creator_name || null,
         open: ['draft', 'confirmed'].includes(r.status),
+        // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
+        cls: {
+          ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
+          ok_qty: Number(r.ok_qty || 0), short_qty: Number(r.short_qty || 0), dev_qty: Number(r.dev_qty || 0),
+        },
       })),
     };
   });
@@ -401,17 +418,34 @@ export default async function quoteRoutes(app) {
     if (!q) return reply.code(404).send({ error: 'not_found' });
     q.is_guest = q.customer_id == null;
     q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;
-    const lines = (await query(`SELECT * FROM quote_lines WHERE quote_id=$1 ORDER BY line_no, id`, [id])).rows;
+    const lines = (await query(
+      `SELECT ql.*, p.stock_qty AS cur_stock_raw
+         FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
+        WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
+    const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0 };
+    const outLines = lines.map((l) => {
+      const qtyN = Number(l.qty) || 0;
+      const cur = l.product_id != null ? (l.cur_stock_raw != null ? Number(l.cur_stock_raw) : 0) : null;
+      // live_flag: 현재고 기준 실시간 3분류 (저장시 스냅샷 stock_flag와 별개)
+      let live = 'not_found';
+      if (l.product_id != null) live = (cur >= qtyN) ? 'ok' : 'low_stock';
+      if (live === 'ok') { cls.ok++; cls.ok_qty += qtyN; }
+      else if (live === 'low_stock') { cls.short++; cls.short_qty += qtyN; }
+      else { cls.dev++; cls.dev_qty += qtyN; }
+      return {
+        ...l, qty: qtyN, list_price: Number(l.list_price), discount_rate: Number(l.discount_rate),
+        final_price: Number(l.final_price), line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
+        avail_stock: l.avail_stock != null ? Number(l.avail_stock) : null,
+        cur_stock: cur, live_flag: live,
+      };
+    });
     return {
       quote: {
         ...q, quote_date: d10(q.quote_date),
         subtotal_mxn: Number(q.subtotal_mxn), iva_mxn: Number(q.iva_mxn), total_mxn: Number(q.total_mxn), total_qty: Number(q.total_qty),
+        cls,
       },
-      lines: lines.map((l) => ({
-        ...l, qty: Number(l.qty), list_price: Number(l.list_price), discount_rate: Number(l.discount_rate),
-        final_price: Number(l.final_price), line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
-        avail_stock: l.avail_stock != null ? Number(l.avail_stock) : null,
-      })),
+      lines: outLines,
     };
   });
 

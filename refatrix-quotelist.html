@@ -51,6 +51,17 @@
   .pvtag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
   .pvtag.ok{background:var(--income-bg);color:var(--income)}.pvtag.warn{background:#fdf3e3;color:#9a6512}.pvtag.dev{background:#f1ebf7;color:#7a4ea0}
   .pvseg{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.6;max-height:150px;overflow:auto}
+  /* 수주현황(3분류) 표시 */
+  .clsbar{display:flex;height:7px;width:96px;border-radius:999px;overflow:hidden;background:#eceae4;margin-bottom:3px}
+  .clsbar .s-ok{background:var(--income)}.clsbar .s-sh{background:#e0a23a}.clsbar .s-dv{background:#9a78c9}
+  .clsbadges{display:flex;gap:5px;flex-wrap:wrap;font-size:10.5px;font-weight:700;line-height:1.3}
+  .clsbadges .b-ok{color:var(--income)}.clsbadges .b-sh{color:#9a6512}.clsbadges .b-dv{color:#6B4FB0}
+  .clsbadges .z{color:#c2c0ba;font-weight:600}
+  #clsBanner .cb{display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f4f7f5;border:1px solid var(--line);border-radius:10px;padding:9px 14px;margin:10px 0 2px;font-size:12.5px}
+  #clsBanner .cb b{font-size:15px}
+  #clsBanner .cb .dot{display:inline-block;width:9px;height:9px;border-radius:999px;margin-right:5px;vertical-align:middle}
+  .clschip{cursor:pointer;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#555;user-select:none}
+  .clschip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -83,7 +94,9 @@
         <div style="margin-left:auto"><a href="refatrix-quote.html" style="text-decoration:none"><button class="btn ghost">＋ 새 견적</button></a></div>
       </div>
       <div class="chips" id="chips" style="margin-top:12px"></div>
+      <div class="chips" id="clsChips" style="margin-top:8px"></div>
       <div class="msg" id="msg"></div>
+      <div id="clsBanner"></div>
       <div id="listWrap" style="overflow-x:auto"><div class="hint" style="margin-top:12px">조회를 누르세요.</div></div>
     </div>
   </div>
@@ -141,6 +154,7 @@
   let isDirector=false;
   let filter='all', counts={open:0,guest_pending:0};
   let cvPreviewData=null, qRowsById={};
+  let clsFilter='all', lastItems=[];
   let cvPrinted=false, cvHasDoc=false, cvDocMeta=null;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -221,7 +235,7 @@
     return { from:minYm+'-01', to:maxYm+'-'+String(last).padStart(2,'0') };
   }
 
-  function setFilter(f){ filter=f; renderChips(); load(); }
+  function setFilter(f){ filter=f; clsFilter='all'; renderChips(); load(); }
   function renderChips(){
     const defs=[['all','전체'],['open','견적후 미결'],['guest','불특정 미등록'],['pricelist','가용재고 및 견적'],['delpend','🗑 삭제대기'],['converted','매출 전환됨']];
     $('chips').innerHTML=defs.map(([k,label])=>{
@@ -253,15 +267,80 @@
       // 선택된 연도×월 조합만 정확히 남김(비연속·다년 조합 지원)
       const eff=effectiveYMs();
       if(eff) items=items.filter(q=>eff.has(String(q.quote_date||'').slice(0,7)));
-      render(items);
+      lastItems=items;
+      applyAndRender();
     }catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  // ===== 수주현황(3분류) 필터·집계 =====
+  // 현재고 기준 라인 분류: 즉시매출가능(ok) / 재고부족(short) / 개발필요(dev)
+  const CLS_DEFS=[['all','전체'],['ok','🟢 즉시매출가능'],['short','🟡 재고부족 포함'],['dev','🟣 개발필요 포함']];
+  function renderClsChips(){
+    const el=$('clsChips'); if(!el) return;
+    // 미결(open) 견적이 있을 때만 분류 필터 노출 (전환·취소·가격표엔 무의미)
+    const hasOpen=lastItems.some(q=>q.open);
+    if(!hasOpen){ el.innerHTML=''; return; }
+    el.innerHTML='<span class="hint" style="align-self:center;margin-right:4px">수주현황</span>'
+      +CLS_DEFS.map(([k,label])=>'<div class="clschip'+(clsFilter===k?' on':'')+'" onclick="setClsFilter(\''+k+'\')">'+label+'</div>').join('');
+  }
+  function setClsFilter(k){ clsFilter=k; renderClsChips(); applyAndRender(); }
+  function clsMatch(q){
+    if(clsFilter==='all') return true;
+    const c=q.cls||{}; 
+    if(clsFilter==='ok') return (c.ok||0)>0;
+    if(clsFilter==='short') return (c.short||0)>0;
+    if(clsFilter==='dev') return (c.dev||0)>0;
+    return true;
+  }
+  function applyAndRender(){
+    renderClsChips();
+    let items=lastItems;
+    if(clsFilter!=='all') items=items.filter(q=>!q.open ? false : clsMatch(q)); // 분류필터 활성 시 미결만
+    renderClsBanner(items);
+    render(items);
+  }
+  // 미결 견적 수주현황 합계 배너
+  function renderClsBanner(items){
+    const el=$('clsBanner'); if(!el) return;
+    const open=items.filter(q=>q.open);
+    if(!open.length){ el.innerHTML=''; return; }
+    const s={ok:0,short:0,dev:0,ok_qty:0,short_qty:0,dev_qty:0};
+    open.forEach(q=>{const c=q.cls||{};s.ok+=c.ok||0;s.short+=c.short||0;s.dev+=c.dev||0;s.ok_qty+=c.ok_qty||0;s.short_qty+=c.short_qty||0;s.dev_qty+=c.dev_qty||0;});
+    el.innerHTML='<div class="cb">'
+      +'<span style="font-weight:800;color:var(--brand)">미결 견적 '+open.length+'건 수주현황</span>'
+      +'<span><span class="dot" style="background:var(--income)"></span>즉시매출가능 <b style="color:var(--income)">'+s.ok+'</b> SKU <span class="hint">('+fmtq(s.ok_qty)+'개)</span></span>'
+      +'<span><span class="dot" style="background:#e0a23a"></span>재고부족 <b style="color:#9a6512">'+s.short+'</b> SKU <span class="hint">('+fmtq(s.short_qty)+'개)</span></span>'
+      +'<span><span class="dot" style="background:#9a78c9"></span>개발필요 <b style="color:#6B4FB0">'+s.dev+'</b> SKU <span class="hint">('+fmtq(s.dev_qty)+'개)</span></span>'
+      +'</div>';
+  }
+  // 견적 1건의 수주현황 셀 (3분할 막대 + 뱃지)
+  function clsCellHtml(q){
+    if(!q.open) return '<span class="hint">—</span>';
+    const c=q.cls||{ok:0,short:0,dev:0,ok_qty:0,short_qty:0,dev_qty:0};
+    const tq=(c.ok_qty||0)+(c.short_qty||0)+(c.dev_qty||0);
+    let bar='';
+    if(tq>0){
+      const wo=(c.ok_qty||0)/tq*100, ws=(c.short_qty||0)/tq*100, wd=(c.dev_qty||0)/tq*100;
+      bar='<div class="clsbar" title="수량 비중 — 즉시 '+fmtq(c.ok_qty)+' · 부족 '+fmtq(c.short_qty)+' · 개발 '+fmtq(c.dev_qty)+'">'
+        +(wo>0?'<div class="s-ok" style="width:'+wo+'%"></div>':'')
+        +(ws>0?'<div class="s-sh" style="width:'+ws+'%"></div>':'')
+        +(wd>0?'<div class="s-dv" style="width:'+wd+'%"></div>':'')+'</div>';
+    }
+    const seg=(n,qty,cls,lbl)=> n>0
+      ? '<span class="'+cls+'" title="'+lbl+' '+n+' SKU · '+fmtq(qty)+'개">'+lbl+' '+n+'</span>'
+      : '<span class="z">'+lbl+' 0</span>';
+    const badges='<div class="clsbadges">'
+      +seg(c.ok,c.ok_qty,'b-ok','즉시')
+      +seg(c.short,c.short_qty,'b-sh','부족')
+      +seg(c.dev,c.dev_qty,'b-dv','개발')+'</div>';
+    return bar+badges;
   }
 
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적'};
     let html='<table><thead><tr>'
-      +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th class="r">견적액 / 실매출액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
+      +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       qRowsById[q.id]=q;
@@ -277,6 +356,7 @@
         +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':(q.sku_count||0))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmtq(q.total_qty))+'</td>'
+        +'<td>'+(q.status==='pricelist'?'<span class="hint">—</span>':clsCellHtml(q))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmt(q.total_mxn)
           +(q.status==='converted' ? (function(){
               var rz=Number(q.sale_total||0);
@@ -468,6 +548,15 @@
     const editable = q.status==='draft' || q.status==='confirmed';
     if(dtEdit){ renderEdit(); return; }
     let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+'</div>';
+    if(editable && q.cls){
+      const c=q.cls;
+      h+='<div class="cb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f4f7f5;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12.5px">'
+        +'<span style="font-weight:800;color:var(--brand)">수주현황(현재고 기준)</span>'
+        +'<span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:var(--income);margin-right:5px"></span>즉시매출가능 <b style="color:var(--income)">'+(c.ok||0)+'</b> SKU <span class="hint">('+fmtq(c.ok_qty||0)+'개)</span></span>'
+        +'<span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#e0a23a;margin-right:5px"></span>재고부족 <b style="color:#9a6512">'+(c.short||0)+'</b> SKU <span class="hint">('+fmtq(c.short_qty||0)+'개)</span></span>'
+        +'<span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#9a78c9;margin-right:5px"></span>개발필요 <b style="color:#6B4FB0">'+(c.dev||0)+'</b> SKU <span class="hint">('+fmtq(c.dev_qty||0)+'개)</span></span>'
+        +'</div>';
+    }
     h+='<div><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">'
       +'<colgroup><col style="width:11%"><col style="width:12%"><col style="width:26%"><col style="width:9%"><col style="width:11%"><col style="width:8%"><col style="width:14%"><col style="width:9%"></colgroup>'
       +'<thead><tr><th style="text-align:left">CTR</th><th style="text-align:left">SYD</th><th style="text-align:left">품명</th><th class="r">수량</th><th class="r">단가</th><th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
@@ -481,7 +570,7 @@
         +'<td class="r">'+fmt(l.list_price)+'</td>'
         +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
         +'<td class="r">'+fmt(l.line_total)+'</td>'
-        +'<td style="word-break:break-word">'+(flagLbl[l.stock_flag]||l.stock_flag||'')+'</td>'
+        +'<td style="word-break:break-word">'+(flagLbl[l.live_flag||l.stock_flag]||flagLbl[l.stock_flag]||l.stock_flag||'')+(l.cur_stock!=null?'<br><span class="hint" style="font-size:10px">재고 '+fmtq(l.cur_stock)+'</span>':'')+'</td>'
         +'</tr>';
     });
     h+='</tbody></table></div>';
@@ -899,6 +988,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260624k"></script>
+<script src="refatrix-nav.js?v=20260625a"></script>
 </body>
 </html>
