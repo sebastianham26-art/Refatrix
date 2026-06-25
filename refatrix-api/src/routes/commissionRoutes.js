@@ -64,6 +64,7 @@ const PAYABLE_SQL = `
     ) pa ON pa.invoice_id=i.id
     LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
    WHERE i.status <> 'deleted' AND i.owner_id=$1
+     AND (ca.effective_from IS NULL OR i.inv_date >= ca.effective_from)
      AND COALESCE(cp.paid,false)=false
    ORDER BY i.inv_date ASC, i.id ASC`;
 
@@ -101,7 +102,7 @@ export default async function commissionRoutes(app) {
     try {
       rows = (await query(
         `SELECT u.id AS user_id, u.name, u.role, t.name AS team_name,
-                ca.default_rate, ca.active, ca.note
+                ca.default_rate, ca.active, ca.note, ca.effective_from
            FROM users u
            LEFT JOIN sales_teams t ON t.id=u.team_id
            LEFT JOIN commission_agents ca ON ca.user_id=u.id
@@ -116,21 +117,23 @@ export default async function commissionRoutes(app) {
         user_id: r.user_id, name: r.name, role: r.role, team_name: r.team_name,
         default_rate: r.default_rate != null ? Number(r.default_rate) : null,
         active: r.active === true, is_agent: r.default_rate != null, note: r.note || null,
+        effective_from: r.effective_from ? String(r.effective_from).slice(0, 10) : null,
       })),
     };
   });
 
   // ── 커미션 대상 지정/수정 (디렉터) ──
   app.post('/api/commission/agents', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
-    const { user_id, default_rate, active = true, note } = req.body || {};
+    const { user_id, default_rate, active = true, note, effective_from } = req.body || {};
     if (!user_id || default_rate == null) return reply.code(400).send({ error: 'user_id_rate_required' });
+    const effFrom = (effective_from && /^\d{4}-\d{2}-\d{2}$/.test(effective_from)) ? effective_from : null;
     const uid = req.ctx.perm.userId;
     await query(
-      `INSERT INTO commission_agents (user_id, default_rate, active, note, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$5)
-       ON CONFLICT (user_id) DO UPDATE SET default_rate=$2, active=$3, note=$4, updated_by=$5, updated_at=now()`,
-      [user_id, default_rate, active === true, note || null, uid]);
-    await logEvent({ userId: uid, action: 'update', target: `commission_agent:${user_id}`, detail: { default_rate, active } });
+      `INSERT INTO commission_agents (user_id, default_rate, active, note, effective_from, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$6)
+       ON CONFLICT (user_id) DO UPDATE SET default_rate=$2, active=$3, note=$4, effective_from=$5, updated_by=$6, updated_at=now()`,
+      [user_id, default_rate, active === true, note || null, effFrom, uid]);
+    await logEvent({ userId: uid, action: 'update', target: `commission_agent:${user_id}`, detail: { default_rate, active, effective_from: effFrom } });
     return { ok: true };
   });
 
@@ -193,7 +196,8 @@ export default async function commissionRoutes(app) {
             GROUP BY spa.invoice_id
          ) pa ON pa.invoice_id=i.id
          LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
-        WHERE i.status <> 'deleted'${ownerCond}
+        WHERE i.status <> 'deleted'
+          AND (ca.effective_from IS NULL OR i.inv_date >= ca.effective_from)${ownerCond}
         ORDER BY i.inv_date DESC, i.id DESC`, args)).rows;
     } catch (e) {
       if (e && e.code === '42P01') return { view, is_director: perm.role === 'director', can_pay: canPay, see_all: seeAll, agent_id: null, not_migrated: true, summary: { invoice_count: 0, total_base: 0, total_expected: 0, total_confirmed: 0, total_paid: 0, total_unpaid: 0 }, groups: [], by_agent: null };
@@ -388,8 +392,9 @@ export default async function commissionRoutes(app) {
              FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
             GROUP BY spa.invoice_id
          ) pa ON pa.invoice_id=i.id
-        WHERE i.id=$1`, [invoiceId])).rows[0];
-    if (!r) return reply.code(404).send({ error: 'not_found' });
+        WHERE i.id=$1
+          AND (ca.effective_from IS NULL OR i.inv_date >= ca.effective_from)`, [invoiceId])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found', note: '커미션 대상이 아니거나(시작일 이전 매출) 인보이스를 찾을 수 없습니다.' });
     const fullyPaid = Number(r.paid_amount) + 0.01 >= Number(r.total_mxn) && Number(r.total_mxn) > 0;
     if (!fullyPaid) return reply.code(409).send({ error: 'not_settled', note: '반제(완납) 완료 후에 확정 커미션을 지급 처리할 수 있습니다.' });
     const rate = r.cust_rate != null ? Number(r.cust_rate) : Number(r.default_rate || 0);
