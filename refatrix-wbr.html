@@ -115,6 +115,23 @@
   .ctxline{font-size:12px;color:var(--muted);margin-top:6px}
   .ctxline b{color:var(--brand)}
   .prtonly{display:none}
+  /* 당월 누적 견적 요약 */
+  .qsumwrap{overflow-x:auto;margin-top:8px}
+  table.qsum{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px}
+  table.qsum th,table.qsum td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  table.qsum th{font-size:11px;font-weight:700;color:var(--muted);background:#faf8f3;position:sticky;top:0}
+  table.qsum th.l,table.qsum td.l{text-align:left}
+  table.qsum td.qno{font-weight:700;color:var(--brand-soft)}
+  table.qsum td.cust{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  table.qsum tr:hover td{background:#fbfaf6}
+  table.qsum td.ok{color:var(--income);font-weight:700}
+  table.qsum td.sh{color:#9a6512;font-weight:700}
+  table.qsum td.dash{color:#c4bfb4}
+  table.qsum tfoot td{border-top:2px solid var(--line);border-bottom:none;font-weight:800;color:var(--brand);background:#f4f1ea}
+  .qstag{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:6px;vertical-align:1px}
+  .qstag.open{background:#eef2ef;color:#4a5a52}
+  .qstag.conv{background:#e4f0eb;color:var(--income)}
+  .qsempty{font-size:12.5px;color:var(--muted);padding:10px 2px}
   /* ===== 인쇄(PDF 저장) ===== */
   @media print{
     @page{margin:12mm}
@@ -169,11 +186,22 @@
     <!-- 3개 요약 카드 -->
     <div class="cards" id="cards"></div>
 
+    <!-- 당월 누적 견적 (견적건별 요약) -->
+    <div class="card">
+      <div class="card-h"><span id="qsumTitle">당월 누적 견적</span>
+        <span class="src" id="qsumSrc"></span>
+        <span class="lnk no-print" id="qsumToggle" style="margin-left:auto">감추기</span></div>
+      <div id="qsumBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
     <!-- 매출 워터폴 -->
     <div class="card">
-      <div class="card-h" id="wfTitle">매출 실적 (워터폴)</div>
-      <div class="hint" style="margin:-2px 0 4px">상단 「조회 월」 선택에 연동 · 목표선은 <b>전월 미달분 이월 포함</b> 당월 매출목표</div>
-      <div id="wfBody"><div class="hint">불러오는 중…</div></div>
+      <div class="card-h"><span id="wfTitle">매출 실적 (워터폴)</span>
+        <span class="lnk no-print" id="wfToggle" style="margin-left:auto">감추기</span></div>
+      <div id="wfCollapse">
+        <div class="hint" style="margin:-2px 0 4px">상단 「조회 월」 선택에 연동 · 목표선은 <b>전월 미달분 이월 포함</b> 당월 매출목표</div>
+        <div id="wfBody"><div class="hint">불러오는 중…</div></div>
+      </div>
     </div>
 
     <!-- 팀별 주요 이슈 -->
@@ -289,7 +317,7 @@
   function ymLabel(ym){return Number(ym.split('-')[1])+'월';}
   function monthsLabel(){ return topYms.map(ymLabel).join('·'); }
 
-  function refreshAll(){ updateCtx(); loadCards(); loadWaterfall(); }
+  function refreshAll(){ updateCtx(); loadCards(); loadQuoteSummary(); loadWaterfall(); }
   function updateCtx(){
     const txt='조회월 '+monthsLabel()+' · 팀 '+teamLabel();
     $('ctxLine').textContent=txt;
@@ -418,6 +446,86 @@
       +'<div class="wfsum">누적 실적 <b>MX$'+fmt(wk.cumActual)+'</b> / 목표 <b>MX$'+fmt(target)+'</b> ('+(wk.progress==null?'—':wk.progress+'%')+')</div>';
   }
 
+  // ===== 당월 누적 견적 (견적건별 요약) =====
+  // 조회월(다중)·팀선택에 연동. /api/quotes 의 from~to(최소월초~최대월말)로 한 번 받아 선택월·팀으로 클라이언트 필터.
+  function monthRange(){
+    const sorted=[...topYms].sort();
+    const minYm=sorted[0], maxYm=sorted[sorted.length-1];
+    const [my,mm]=maxYm.split('-').map(Number);
+    const lastDay=new Date(my, mm, 0).getDate();   // 해당 월 말일
+    return { from:minYm+'-01', to:maxYm+'-'+String(lastDay).padStart(2,'0') };
+  }
+  const Q_STATUS=['draft','confirmed','converted'];   // 취소·가격표·삭제대기 제외
+  async function loadQuoteSummary(){
+    $('qsumTitle').textContent=monthsLabel()+' 누적 견적';
+    const r=monthRange();
+    const ymSet=new Set(topYms);
+    const teamFilter = teamSel.has('total') ? null : new Set(Array.from(teamSel).map(String));
+    try{
+      const res=await fetch(session.api+'/api/quotes?from='+r.from+'&to='+r.to,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      let items=(d.items||[])
+        .filter(q=> ymSet.has(String(q.quote_date||'').slice(0,7)))   // 선택월만(비연속 선택 대응)
+        .filter(q=> Q_STATUS.includes(q.status))
+        .filter(q=> !teamFilter || (q.team_id!=null && teamFilter.has(String(q.team_id))));
+      renderQuoteSummary(items);
+    }catch(e){
+      $('qsumSrc').textContent='';
+      $('qsumBody').innerHTML='<div class="qsempty">불러오지 못했습니다. (견적 조회 권한이 필요할 수 있습니다.)</div>';
+    }
+  }
+  function renderQuoteSummary(items){
+    const teamLbl=teamSel.has('total')?'전 팀':teamLabel();
+    if(!items.length){
+      $('qsumSrc').textContent=teamLbl+' · IVA 제외 기준';
+      $('qsumBody').innerHTML='<div class="qsempty">해당 월에 견적이 없습니다.</div>';
+      return;
+    }
+    let tSub=0,tOk=0,tShort=0;
+    const stTag=(s)=> s==='converted'
+      ? '<span class="qstag conv">전환완료</span>'
+      : '<span class="qstag open">'+(s==='draft'?'작성중':'확정')+'</span>';
+    const rows=items.map(q=>{
+      const c=q.cls||{}; const isOpen=q.status==='draft'||q.status==='confirmed';
+      const sub=Number(q.subtotal_mxn||0); tSub+=sub;
+      const okv=Number(c.ok_sub||0), shv=Number(c.short_sub||0);
+      if(isOpen){ tOk+=okv; tShort+=shv; }
+      const okCell=isOpen?'<td class="ok">MX$'+fmt(okv)+'</td>':'<td class="dash">—</td>';
+      const shCell=isOpen?'<td class="sh">MX$'+fmt(shv)+'</td>':'<td class="dash">—</td>';
+      return '<tr>'
+        +'<td class="l qno">'+esc(q.quote_no)+stTag(q.status)+'</td>'
+        +'<td class="l cust" title="'+esc(q.party_name||'')+'">'+esc(q.party_name||'—')+'</td>'
+        +'<td>'+fmt(q.sku_count)+'</td>'
+        +'<td>'+fmt(q.total_qty)+'</td>'
+        +'<td>MX$'+fmt(sub)+'</td>'
+        +okCell+shCell
+        +'</tr>';
+    }).join('');
+    $('qsumSrc').textContent=teamLbl+' · '+items.length+'건 · IVA 제외 기준';
+    $('qsumBody').innerHTML=
+      '<div class="qsumwrap"><table class="qsum">'
+      +'<thead><tr>'
+        +'<th class="l">견적번호</th><th class="l">고객명</th>'
+        +'<th>SKU수량</th><th>총 수량</th><th>IVA 제외 매출액</th>'
+        +'<th>즉시매출가능액</th><th>부족재고 매출액</th>'
+      +'</tr></thead><tbody>'+rows+'</tbody>'
+      +'<tfoot><tr>'
+        +'<td class="l" colspan="4">합계 ('+items.length+'건)</td>'
+        +'<td>MX$'+fmt(tSub)+'</td>'
+        +'<td class="ok">MX$'+fmt(tOk)+'</td>'
+        +'<td class="sh">MX$'+fmt(tShort)+'</td>'
+      +'</tr></tfoot>'
+      +'</table></div>'
+      +'<div class="hint" style="margin-top:8px">상단 「조회 월·팀」 선택에 연동 · 미결(작성중/확정)·전환완료 견적 포함(취소·가격표 제외) · 즉시매출가능/부족재고는 <b>현재고 기준</b>이라 미결 견적에만 표시</div>';
+  }
+
+  // ===== 섹션 감추기/보이기 토글 =====
+  let qsumOpen=true, wfOpen=true;
+  function applyToggle(open, bodyId, btnId){
+    $(bodyId).style.display = open ? '' : 'none';
+    $(btnId).textContent = open ? '감추기' : '보이기';
+  }
   // ===== 팀별 이슈 보드 + 메모 (영속) =====
   function normalizeBoard(b){
     b=b||{}; const issues=b.issues||{}; const photos=b.photos||{};
@@ -604,6 +712,8 @@
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('pdfBtn').addEventListener('click',savePdf);
+  $('qsumToggle').addEventListener('click',()=>{ qsumOpen=!qsumOpen; applyToggle(qsumOpen,'qsumBody','qsumToggle'); });
+  $('wfToggle').addEventListener('click',()=>{ wfOpen=!wfOpen; applyToggle(wfOpen,'wfCollapse','wfToggle'); });
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
