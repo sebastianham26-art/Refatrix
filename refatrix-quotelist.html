@@ -568,17 +568,40 @@
     $('dtTitle').textContent='견적 '+(q.quote_no||'')+' · '+(stLblFull[q.status]||q.status);
     const editable = q.status==='draft' || q.status==='confirmed';
     if(dtEdit){ renderEdit(); return; }
-    let h='<div class="hint" style="margin-bottom:8px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+'</div>';
+    // ── 사용자 친화 배치: 액션 버튼·요약을 상단으로, 라인표는 내부 스크롤 ──
+    const hint='<div class="hint" style="margin-bottom:10px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+'</div>';
+
+    // 액션 버튼 (상단)
+    let actions='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
+    actions+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
+    actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="현재 재고가 있는 항목만 엑셀로 다운로드">📥 엑셀 (재고분)</button>';
+    if(editable){
+      actions+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
+      actions+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
+    } else if(q.status==='delete_pending'){
+      actions+='<span class="hint" style="color:#9a6512">🗑 삭제 승인 대기 중'+(q.del_reason?(' — 사유: '+esc(q.del_reason)):'')+'. 디렉터 승인 전까지 집계에서 제외됩니다.</span>';
+      if(isDirector){ actions+='<button class="btn" onclick="approveDelete()">삭제 승인</button><button class="btn ghost" onclick="rejectDelete()">반려</button>'; }
+    } else actions+='<span class="hint">전환·취소된 견적은 편집·삭제할 수 없습니다 (보기 전용).</span>';
+    actions+='<button class="btn ghost" onclick="closeDetail()" style="margin-left:auto">닫기</button></div>';
+
+    // 요약: 합계 + 수주현황 (상단)
+    let summary='<div style="background:#143D34;color:#fff;border-radius:10px;padding:9px 14px;margin-bottom:10px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline">'
+      +'<span style="font-size:12px;opacity:.85">소계 <b style="font-size:14px">'+fmt(q.subtotal_mxn)+'</b></span>'
+      +'<span style="font-size:12px;opacity:.85">IVA <b style="font-size:14px">'+fmt(q.iva_mxn)+'</b></span>'
+      +'<span style="margin-left:auto;font-size:13px">총액 <b style="font-size:19px">'+fmt(q.total_mxn)+'</b> <span style="font-size:11px;opacity:.8">MXN</span></span>'
+      +'</div>';
     if(editable && q.cls){
       const c=q.cls;
-      h+='<div class="cb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f4f7f5;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12.5px">'
+      summary+='<div class="cb" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#f4f7f5;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12.5px">'
         +'<span style="font-weight:800;color:var(--brand)">수주현황(현재고 기준)</span>'
         +'<span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:var(--income);margin-right:5px"></span>즉시매출가능 <b style="color:var(--income)">'+(c.ok||0)+'</b> SKU <span class="hint">('+fmtq(c.ok_qty||0)+'개 · $'+fmt(c.ok_amt||0)+')</span></span>'
         +'<span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#e0a23a;margin-right:5px"></span>재고부족 <b style="color:#9a6512">'+(c.short||0)+'</b> SKU <span class="hint">('+fmtq(c.short_qty||0)+'개 · $'+fmt(c.short_amt||0)+')</span></span>'
         +'<span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#9a78c9;margin-right:5px"></span>개발필요 <b style="color:#6B4FB0">'+(c.dev||0)+'</b> SKU <span class="hint">('+fmtq(c.dev_qty||0)+'개)</span></span>'
         +'</div>';
     }
-    h+='<div><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">'
+
+    // 라인 표 (내부 스크롤 → 버튼·요약은 항상 상단에 고정 노출)
+    let table='<div style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">'
       +'<colgroup><col style="width:11%"><col style="width:12%"><col style="width:26%"><col style="width:9%"><col style="width:11%"><col style="width:8%"><col style="width:14%"><col style="width:9%"></colgroup>'
       +'<thead><tr>'
         +'<th style="text-align:left;cursor:pointer;user-select:none" onclick="dtSetSort(\'ctr\')" title="CTR 코드순 정렬">CTR'+(dtSort.key==='ctr'?(dtSort.dir==='asc'?' ▲':' ▼'):' ⇅')+'</th>'
@@ -588,7 +611,7 @@
         +'<th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
     lines.forEach(l=>{
       const cp=codePair(l);
-      h+='<tr style="vertical-align:top">'
+      table+='<tr style="vertical-align:top">'
         +'<td style="word-break:break-word"><span class="clamp2" title="'+esc(cp.ctr)+'">'+esc(cp.ctr||'—')+'</span></td>'
         +'<td style="word-break:break-word"><span class="clamp2" style="color:#555" title="'+esc(cp.syd)+'">'+esc(cp.syd||'—')+'</span></td>'
         +'<td style="word-break:break-word"><span class="clamp2" title="'+esc(l.product_name||'(미등록)')+'">'+esc(l.product_name||'(미등록)')+'</span>'+(l.app_text?'<span class="hint clamp2" style="font-size:10px;margin-top:2px" title="'+esc(l.app_text)+'">'+esc(l.app_text)+'</span>':'')+'</td>'
@@ -599,21 +622,9 @@
         +'<td style="word-break:break-word">'+(flagLbl[l.live_flag||l.stock_flag]||flagLbl[l.stock_flag]||l.stock_flag||'')+(l.cur_stock!=null?'<br><span class="hint" style="font-size:10px">재고 '+fmtq(l.cur_stock)+'</span>':'')+'</td>'
         +'</tr>';
     });
-    h+='</tbody></table></div>';
-    h+='<div style="text-align:right;margin-top:10px;font-size:13px">소계 <b>'+fmt(q.subtotal_mxn)+'</b> · IVA <b>'+fmt(q.iva_mxn)+'</b> · <span style="font-size:15px;color:var(--brand)">총액 <b>'+fmt(q.total_mxn)+'</b></span></div>';
-    h+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
-    h+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
-    h+='<button class="btn ghost" onclick="downloadStockExcel()" title="현재 재고가 있는 항목만 엑셀로 다운로드">📥 엑셀 (재고분)</button>';
-    if(editable){
-      h+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
-      h+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
-    } else if(q.status==='delete_pending'){
-      h+='<span class="hint" style="color:#9a6512">🗑 삭제 승인 대기 중'+(q.del_reason?(' — 사유: '+esc(q.del_reason)):'')+'. 디렉터 승인 전까지 집계에서 제외됩니다.</span>';
-      if(isDirector){ h+='<button class="btn" onclick="approveDelete()">삭제 승인</button><button class="btn ghost" onclick="rejectDelete()">반려</button>'; }
-    } else h+='<span class="hint">전환·취소된 견적은 편집·삭제할 수 없습니다 (보기 전용).</span>';
-    h+='<button class="btn ghost" onclick="closeDetail()">닫기</button></div>';
-    h+='<div id="delForm" style="margin-top:12px"></div>';
-    $('dtBody').innerHTML=h;
+    table+='</tbody></table></div>';
+
+    $('dtBody').innerHTML = hint + actions + '<div id="delForm" style="margin:0 0 10px"></div>' + summary + table;
   }
   function startEdit(){ dtEdit=true; renderDetail(); }
   function renderEdit(){
