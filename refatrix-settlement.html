@@ -92,8 +92,9 @@
     <!-- 수금 상세 (오픈 인보이스 / AR) — 최상단 -->
     <div class="card">
       <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
-        <span style="margin-left:auto"><span class="seg" id="arSeg"></span></span>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="seg" id="arSeg"></span><button id="arToggle" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleArBody()">감추기</button></span>
       </div>
+      <div id="arBody">
       <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 각 행에서 <b>반제(부분수금)</b>를 바로 입력하고(은행 입금증 첨부 가능), <b>수금내역</b>으로 인보이스별 수금 이력을 봅니다.</div>
       <div class="searchbar">
         <input id="arSearchQ" placeholder="SAT 번호 또는 고객명·코드로 인보이스 검색" oninput="onArSearchInput()" onkeydown="if(event.key==='Enter')doArSearch()">
@@ -107,11 +108,12 @@
       <div id="arGroupBox" style="margin-top:12px"></div>
       <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
       <div class="msg" id="arMsg"></div>
+      </div><!-- /arBody -->
     </div>
 
     <!-- Nota de crédito (NC) · 할인 승인 증빙 -->
     <div class="card">
-      <div class="card-h">NC · 할인 승인 증빙 (Nota de crédito)
+      <div class="card-h">Nota de crédito (NC) · 할인 승인 증빙
         <span style="margin-left:auto"><span class="seg" id="ncSeg"></span></span>
       </div>
       <div class="hint" style="margin-bottom:4px">조기입금(pronto pago) 등으로 인보이스 잔액보다 적게 받을 때, 할인분을 <b>비현금 반제</b>로 마감하는 사내 증빙입니다. 발기는 위 <b>오픈 인보이스</b> 행의 <b>[NC]</b> 버튼에서 합니다. 절차: 발기 → <b>인쇄·서명</b> → <b>서명본 업로드</b> → <b>디렉터 승인</b> → <b>적용(비현금 반제)</b>. ※ 현금/수금 총액에는 잡히지 않습니다.</div>
@@ -295,6 +297,14 @@
     else { b.style.background='#fff'; b.style.color='var(--muted)'; b.style.borderColor='var(--line)'; }
   }
   function toggleClosed(){ arIncludeClosed=!arIncludeClosed; arFilter=null; arOpenRepay=null; arHistOpen=null; syncClosedToggleBtn(); loadAr(); }
+  // 수금 상세 감추기/보이기
+  let arHidden=false;
+  function toggleArBody(){
+    arHidden=!arHidden;
+    const b=$('arBody'), t=$('arToggle');
+    if(b) b.style.display = arHidden ? 'none' : '';
+    if(t) t.textContent = arHidden ? '보이기' : '감추기';
+  }
   function arKeyOf(it){
     if(arGroup==='team') return {key:'t'+(it.team_id||0), label: it.team_name||'(팀 미지정)'};
     if(arGroup==='owner') return {key:'o'+(it.owner_id||0), label: it.owner_name||'(담당자 미지정)'};
@@ -1028,6 +1038,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260625e"></script>
+<script src="refatrix-nav.js?v=20260625f"></script>
 </body>
 </html>
