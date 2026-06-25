@@ -160,6 +160,8 @@ export default async function customerRoutes(app) {
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
               COALESCE(ar.overdue,0) AS overdue,
+              COALESCE(ar.sales_total,0) AS sales_total,
+              COALESCE(dc.doc_count,0) AS doc_count,
               (EXISTS (SELECT 1 FROM customer_change_requests rr WHERE rr.customer_id=c.id AND rr.status='pending')) AS has_pending
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
@@ -168,13 +170,20 @@ export default async function customerRoutes(app) {
          LEFT JOIN (
            SELECT i.customer_id,
                   SUM(i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
-                  SUM(CASE WHEN i.due_date < CURRENT_DATE THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END) AS overdue
+                  SUM(CASE WHEN i.due_date < CURRENT_DATE THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END) AS overdue,
+                  SUM(i.total_mxn) AS sales_total
              FROM sales_invoices i
              LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p
                     ON p.invoice_id=i.id
             WHERE i.status='posted'
             GROUP BY i.customer_id
          ) ar ON ar.customer_id=c.id
+         LEFT JOIN (
+           SELECT customer_id, COUNT(*) AS doc_count
+             FROM customer_documents
+            WHERE deleted_at IS NULL
+            GROUP BY customer_id
+         ) dc ON dc.customer_id=c.id
         WHERE ${conds.join(' AND ')}
         ORDER BY c.name LIMIT 300`, params)).rows;
     return { items: rows.map((c) => ({
@@ -184,6 +193,7 @@ export default async function customerRoutes(app) {
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
+      sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
       pending_change: !!c.has_pending,
     })) };
   });

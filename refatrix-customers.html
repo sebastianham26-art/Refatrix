@@ -55,6 +55,18 @@
   .tabs{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
   .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
   .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  /* 고객 목록: 타이틀 고정 + 항목만 스크롤 */
+  #custList{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px}
+  #custList table{margin-top:0}
+  #custList thead th{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--line)}
+  #custList .hint{padding:0 9px 8px}
+  .doc-badge{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:#e7f3ee;color:var(--income)}
+  /* 할인률 그래프 모달 */
+  .modal-back{position:fixed;inset:0;background:rgba(20,30,28,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
+  .modal-back.on{display:flex}
+  .modal-card{background:#fff;border-radius:14px;max-width:1120px;width:100%;max-height:92vh;overflow:auto;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:10px}
+  .modal-head h2{margin:0;font-size:16px;color:var(--brand)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -82,24 +94,14 @@
 
     <!-- 고객 목록 -->
     <div id="tab-list">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
-          <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
-        </div>
-        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.</div>
-        <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
-          <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
-          <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
-        </div>
-        <div id="upPreview"></div>
-        <div class="msg" id="upMsg"></div>
-      </div>
 
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h2 style="margin:0">고객 등록 · 목록</h2>
-          <button class="btn sm" id="newCustBtn">+ 고객 등록</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn ghost sm" id="discChartBtn">📊 할인률 그래프</button>
+            <button class="btn sm" id="newCustBtn">+ 고객 등록</button>
+          </div>
         </div>
         <div class="row" style="margin-top:8px">
           <div style="flex:3"><label>검색 (이름·코드·RFC)</label><input id="q" type="text" placeholder="비우면 전체"></div>
@@ -135,6 +137,21 @@
         <div style="font-weight:700;margin-top:14px">미수/연체 인보이스</div>
         <div id="d-invoices"></div>
       </div>
+
+      <!-- 엑셀 일괄 등록 (목록 아래로 이동) -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
+          <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
+        </div>
+        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.</div>
+        <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
+          <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
+          <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
+        </div>
+        <div id="upPreview"></div>
+        <div class="msg" id="upMsg"></div>
+      </div>
     </div>
 
     <!-- 고객 수정 승인 대기(디렉터) -->
@@ -157,11 +174,24 @@
   </div>
 </div>
 
+<!-- 할인률 그래프 모달 -->
+<div class="modal-back" id="chartModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>고객별 할인률 (지점수 ▸ 매출액 순)</h2>
+      <button class="btn ghost sm" onclick="closeChart()">닫기 ✕</button>
+    </div>
+    <div class="hint" style="margin-top:0">왼쪽부터 <b>지점이 많은 순</b>, 같은 지점수면 <b>매출액이 큰 순</b>으로 정렬했습니다. 각 점은 해당 고객의 할인률 위치입니다. (현재 목록에 표시된 고객 기준)</div>
+    <div id="chartHost" style="overflow-x:auto;margin-top:10px"></div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
   let session={token:null,user:null,api:''};
   let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
   let selectedTeam='', summaryData=null;
+  let stageHidden=false, lastCustomers=[];
   // 7단계(0~6) 색상 — 가독성용
   const STAGE_META=[
     {key:'unset',  label:'미지정', bg:'#eceff1', fg:'#5b6b73'},
@@ -312,12 +342,66 @@
       +tgTeams.map(t=>'<button class="ttg'+(String(selectedTeam)===String(t.id)?' on':'')+'" onclick="setTeamScope(\''+t.id+'\')">'+esc(t.name)+'</button>').join('')
       +'</div>';
     box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfaf6">'
-      +'<div style="font-weight:700;margin-bottom:8px">단계별 고객 현황</div>'
-      +'<div class="sumgrid">'+totalBox+stageBoxes+'</div>'
-      +toggle
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:'+(stageHidden?'0':'8px')+'"><div style="font-weight:700">단계별 고객 현황</div><button class="btn ghost sm" onclick="toggleStage()">'+(stageHidden?'보이기 ▾':'감추기 ▴')+'</button></div>'
+      +(stageHidden?'':('<div class="sumgrid">'+totalBox+stageBoxes+'</div>'+toggle))
       +'</div>';
   }
+  function toggleStage(){ stageHidden=!stageHidden; renderStageSummary(); }
   function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
+
+  // 할인률 그래프 (X=고객, Y=할인률, 지점수↓ → 매출액↓ 순 정렬, 점 표시)
+  function openChart(){
+    const rows=(lastCustomers||[]).filter(c=>c.discount!=null && !isNaN(Number(c.discount))).slice();
+    rows.sort((a,b)=>{
+      const ba=a.branch_count==null?-1:Number(a.branch_count);
+      const bb=b.branch_count==null?-1:Number(b.branch_count);
+      if(bb!==ba) return bb-ba;                                   // 지점 많은 순(왼쪽부터)
+      return Number(b.sales_total||0)-Number(a.sales_total||0);    // 같은 지점수면 매출액 큰 순
+    });
+    $('chartHost').innerHTML = rows.length ? buildDiscChart(rows)
+      : '<div class="hint">표시할 고객이 없습니다. (목록을 먼저 불러오세요)</div>';
+    $('chartModal').classList.add('on');
+  }
+  function closeChart(){ $('chartModal').classList.remove('on'); }
+  function buildDiscChart(rows){
+    const n=rows.length;
+    const mL=46, mR=18, mT=16, mB=128;          // 마진(아래는 회전 라벨 공간)
+    const colW=Math.max(30, Math.min(64, 880/n));
+    const plotW=n*colW, plotH=300;
+    const W=mL+plotW+mR, H=mT+plotH+mB;
+    const maxDRaw=Math.max(10, ...rows.map(r=>Number(r.discount)||0));
+    const maxD=Math.ceil(maxDRaw/5)*5;          // 5% 단위로 올림
+    const yOf=v=>mT+plotH-(v/maxD)*plotH;
+    const xOf=i=>mL+(i+0.5)*colW;
+    let svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" font-family="inherit" style="max-width:none">';
+    // Y축 그리드 + 라벨(% )
+    const step=maxD<=20?5:(maxD<=50?10:20);
+    for(let v=0; v<=maxD; v+=step){
+      const y=yOf(v);
+      svg+='<line x1="'+mL+'" y1="'+y+'" x2="'+(mL+plotW)+'" y2="'+y+'" stroke="#E2DDD2" stroke-width="1"/>';
+      svg+='<text x="'+(mL-6)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="10" fill="#6B6B6B">'+v+'%</text>';
+    }
+    // 축선
+    svg+='<line x1="'+mL+'" y1="'+mT+'" x2="'+mL+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
+    svg+='<line x1="'+mL+'" y1="'+(mT+plotH)+'" x2="'+(mL+plotW)+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
+    // 점 + 회전 라벨
+    rows.forEach((r,i)=>{
+      const x=xOf(i), d=Number(r.discount)||0, y=yOf(d);
+      const bc=r.branch_count==null?'—':r.branch_count;
+      const st=Number(r.sales_total||0).toLocaleString('es-MX',{maximumFractionDigits:0});
+      const nm=String(r.name||'');
+      const lbl=nm.length>12?nm.slice(0,11)+'…':nm;
+      svg+='<line x1="'+x+'" y1="'+(mT+plotH)+'" x2="'+x+'" y2="'+y+'" stroke="#E2DDD2" stroke-width="1"/>';
+      svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="#0F6E56" stroke="#fff" stroke-width="1">'
+         +'<title>'+esc(nm)+'\n할인률 '+d+'%\n지점 '+bc+'개\n매출 $'+st+'</title></circle>';
+      svg+='<text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9.5" fill="#143D34" font-weight="700">'+d+'%</text>';
+      svg+='<text transform="translate('+x+','+(mT+plotH+10)+') rotate(60)" text-anchor="start" font-size="10" fill="#1A1A1A">'+esc(lbl)+'</text>';
+    });
+    // 축 제목
+    svg+='<text transform="translate(13,'+(mT+plotH/2)+') rotate(-90)" text-anchor="middle" font-size="11" fill="#6B6B6B" font-weight="700">할인률(%)</text>';
+    svg+='</svg>';
+    return svg;
+  }
 
   // 상세 드릴다운: 승인 대기 변경내역 + 승인/반려(디렉터)
   async function loadDetailApproval(custId){
@@ -357,11 +441,12 @@
     try{
       const d=await fetch(session.api+'/api/customers?'+params.toString(),{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
+      lastCustomers=items;
       if(!items.length){b.innerHTML='<div class="hint">고객이 없습니다.</div>';return;}
       b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th class="num">지점</th><th>담당</th><th>단계</th><th class="num">오픈인보이스 금액</th><th class="num">연체</th><th></th></tr></thead>
         <tbody>${items.map(c=>`<tr>
           <td class="code">${c.code}</td>
-          <td>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}</td>
+          <td>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
           <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
           <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
@@ -617,6 +702,9 @@
   $('upDrop').addEventListener('dragleave',()=>$('upDrop').style.borderColor='var(--line)');
   $('upDrop').addEventListener('drop',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--line)';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
   $('searchBtn').addEventListener('click',loadCustomers);
+  $('discChartBtn').addEventListener('click',openChart);
+  $('chartModal').addEventListener('click',e=>{ if(e.target===$('chartModal'))closeChart(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeChart(); });
   $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
   $('newCustBtn').addEventListener('click',()=>showForm(null));
   $('editBtn').addEventListener('click',()=>{if(curCustomer)showForm(curCustomer);});
