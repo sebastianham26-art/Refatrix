@@ -215,4 +215,23 @@ export default async function notaCreditoRoutes(app) {
     await logEvent({ userId, action: 'void', target: `nota_credito:${id}` });
     return { ok: true, ...out };
   });
+
+  // ── 완전 삭제 (디렉터) — 기록·증빙까지 제거. 적용된 NC면 배분 제거하여 잔액 복원 ──
+  app.delete('/api/nc/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const nc = (await c.query(`SELECT id, invoice_id FROM notas_credito WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+      if (!nc) return { error: 'not_found' };
+      // 적용된 비현금 배분 제거 → 인보이스 잔액 복원
+      await c.query(`DELETE FROM sales_payment_allocations WHERE nc_id=$1`, [id]);
+      // 증빙 문서(nota_credito_docs는 ON DELETE CASCADE) + NC 헤더 삭제
+      await c.query(`DELETE FROM notas_credito WHERE id=$1`, [id]);
+      const after = await outstandingOf(c, Number(nc.invoice_id));
+      return { id, invoice_outstanding: after.outstanding };
+    });
+    if (out.error) return reply.code(404).send(out);
+    await logEvent({ userId, action: 'delete', target: `nota_credito:${id}` });
+    return { ok: true, ...out };
+  });
 }

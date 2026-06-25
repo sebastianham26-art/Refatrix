@@ -109,7 +109,7 @@
       <div class="msg" id="arMsg"></div>
     </div>
 
-    <!-- NC · 할인 승인 증빙 (Nota de crédito) -->
+    <!-- Nota de crédito (NC) · 할인 승인 증빙 -->
     <div class="card">
       <div class="card-h">NC · 할인 승인 증빙 (Nota de crédito)
         <span style="margin-left:auto"><span class="seg" id="ncSeg"></span></span>
@@ -758,7 +758,7 @@
   }
   function ncForm(it){
     return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
-      +'<div style="flex-basis:100%;font-weight:700;color:var(--brand)">NC 발기 (할인 승인 증빙) — 잔액 MX$'+fmt(it.outstanding)+'</div>'
+      +'<div style="flex-basis:100%;font-weight:700;color:var(--brand)">Nota de crédito 발기 (NC) — 잔액 MX$'+fmt(it.outstanding)+'</div>'
       +'<div style="flex-basis:100%"><label>Concepto (메모 — 인쇄 상단에 크게 표시)</label>'
         +'<input id="ncConcepto" placeholder="예: pago anticipado en 15 días, 3% descuento" style="width:100%;max-width:560px"></div>'
       +'<div><label>방식</label><select id="ncMode" onchange="ncRecalc('+it.id+')" style="width:130px"><option value="rate">할인률(%)</option><option value="amount">금액(MXN)</option></select></div>'
@@ -854,6 +854,7 @@
       a+=ncBtn('🖨 인쇄','printNc('+n.id+')','background:#fff;color:var(--brand);border:1px solid var(--line)');
       if(isDirector) a+=ncBtn('취소(적용 취소)','voidNc('+n.id+')','background:#fff;color:var(--expense);border:1px solid var(--line)');
     }
+    if(isDirector) a+=ncBtn('🗑 삭제','deleteNc('+n.id+')','background:#fff;color:var(--expense);border:1px solid var(--line)');
     return a||'<span class="hint">—</span>';
   }
   function ncShowMsg(cls,txt){ const m=$('ncMsg'); if(m){ m.className='msg '+(cls||''); m.textContent=txt; } }
@@ -872,10 +873,17 @@
     }catch(e){ ncShowMsg('err','서버 연결 실패'); }
   }
   async function voidNc(id){
-    if(!confirm('이 NC를 취소합니다. 이미 적용된 경우 인보이스 잔액이 원복됩니다. 진행할까요?'))return;
+    if(!confirm('이 Nota de crédito를 취소합니다(기록은 남김). 이미 적용된 경우 인보이스 잔액이 원복됩니다. 진행할까요?'))return;
     try{ const res=await fetch(session.api+'/api/nc/'+id+'/void',{method:'POST',headers:auth()}); const d=await res.json();
       if(!res.ok||d.error){ ncShowMsg('err','취소 실패: '+(d.error||res.status)); return; }
       ncShowMsg('ok','취소 완료 · 인보이스 잔액 MX$'+fmt(d.invoice_outstanding)); loadNc(); loadAr();
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  async function deleteNc(id){
+    if(!confirm('이 Nota de crédito를 완전히 삭제합니다(증빙 포함). 이미 적용된 경우 인보이스 잔액이 원복됩니다. 되돌릴 수 없습니다. 진행할까요?'))return;
+    try{ const res=await fetch(session.api+'/api/nc/'+id,{method:'DELETE',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ ncShowMsg('err','삭제 실패: '+(d.error||res.status)); return; }
+      ncShowMsg('ok','삭제 완료 · 인보이스 잔액 MX$'+fmt(d.invoice_outstanding)); loadNc(); loadAr();
     }catch(e){ ncShowMsg('err','서버 연결 실패'); }
   }
   function pickNcDoc(id){
@@ -1020,6 +1028,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260625d"></script>
+<script src="refatrix-nav.js?v=20260625e"></script>
 </body>
 </html>
