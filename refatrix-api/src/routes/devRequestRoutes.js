@@ -282,7 +282,9 @@ export default async function devRequestRoutes(app) {
                 COUNT(*) FILTER (WHERE ql.stock_flag='low_stock')::int AS short_sku,
                 COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='low_stock'),0)::numeric AS short_qty,
                 COUNT(*) FILTER (WHERE ql.stock_flag='not_found')::int AS dev_sku,
-                COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='not_found'),0)::numeric AS dev_qty
+                COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='not_found'),0)::numeric AS dev_qty,
+                COALESCE(SUM(ql.line_total) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_amt,
+                COALESCE(SUM(ql.line_total) FILTER (WHERE ql.stock_flag='low_stock'),0)::numeric AS short_amt
            FROM quotes q
            JOIN quote_lines ql ON ql.quote_id=q.id
            LEFT JOIN customers c ON c.id=q.customer_id
@@ -295,6 +297,7 @@ export default async function devRequestRoutes(app) {
         label: o.quote_no || ('#' + o.id), quote_no: o.quote_no, qdate: o.qdate, customer_name: o.customer_name,
         req_sku: o.req_sku, req_qty: Number(o.req_qty),
         ok_sku: o.ok_sku, ok_qty: Number(o.ok_qty), short_sku: o.short_sku, short_qty: Number(o.short_qty), dev_sku: o.dev_sku, dev_qty: Number(o.dev_qty),
+        ok_amt: Number(o.ok_amt), short_amt: Number(o.short_amt),
         ok_sku_pct: pct(o.ok_sku, o.req_sku), ok_qty_pct: pct(Number(o.ok_qty), Number(o.req_qty)),
         short_sku_pct: pct(o.short_sku, o.req_sku), short_qty_pct: pct(Number(o.short_qty), Number(o.req_qty)),
         dev_sku_pct: pct(o.dev_sku, o.req_sku), dev_qty_pct: pct(Number(o.dev_qty), Number(o.req_qty)),
@@ -310,19 +313,19 @@ export default async function devRequestRoutes(app) {
     const margs = [months]; const mtc = teamFilterClause(req.ctx.perm, margs);
     const ql = (await query(
       `SELECT to_char(q.quote_date,'YYYY-MM') AS ym, ql.stock_flag AS flag,
-              COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty
+              COUNT(*)::int AS sku, COALESCE(SUM(ql.qty),0)::numeric AS qty, COALESCE(SUM(ql.line_total),0)::numeric AS amt
          FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
          LEFT JOIN customers c ON c.id=q.customer_id
         WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending' AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${mtc}
         GROUP BY 1,2`, margs)).rows;
     const map = {};
-    for (const m of months) map[m] = { ym: m, label: m, req_sku: 0, req_qty: 0, ok_sku: 0, ok_qty: 0, short_sku: 0, short_qty: 0, dev_sku: 0, dev_qty: 0 };
+    for (const m of months) map[m] = { ym: m, label: m, req_sku: 0, req_qty: 0, ok_sku: 0, ok_qty: 0, short_sku: 0, short_qty: 0, dev_sku: 0, dev_qty: 0, ok_amt: 0, short_amt: 0 };
     for (const r of ql) {
       const o = map[r.ym]; if (!o) continue;
-      const sku = r.sku, qty = Number(r.qty);
+      const sku = r.sku, qty = Number(r.qty), amt = Number(r.amt);
       o.req_sku += sku; o.req_qty += qty;
-      if (r.flag === 'ok') { o.ok_sku += sku; o.ok_qty += qty; }
-      else if (r.flag === 'low_stock') { o.short_sku += sku; o.short_qty += qty; }
+      if (r.flag === 'ok') { o.ok_sku += sku; o.ok_qty += qty; o.ok_amt += amt; }
+      else if (r.flag === 'low_stock') { o.short_sku += sku; o.short_qty += qty; o.short_amt += amt; }
       else if (r.flag === 'not_found') { o.dev_sku += sku; o.dev_qty += qty; }
     }
     const rows = months.map((m) => {
