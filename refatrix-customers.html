@@ -369,10 +369,15 @@
     const amtOf = c => useQuoteAmt ? Number(c.live_quote_mxn||0) : Number(c.sales_total||0);
     const amtFmt = useQuoteAmt ? fmt : money0;   // 견적기준은 소수점 2자리, 매출은 정수
     const amtName = idx===3 ? '미전환 견적액' : idx===4 ? '협상 견적액' : idx===5 ? '수주액(견적기준)' : (idx===6 ? '거래후 누적매출' : '누적매출');
+    const stageDesc = idx===3 ? '견적저장 후, 아무것도 진행 안된 상태'
+                    : idx===4 ? '상황 보며 임의(수동) 지정'
+                    : idx===5 ? '견적저장 후 포장작업지시서 발행기준'
+                    : idx===6 ? 'SAT 번호 기록 상태' : '';
     const list=(lastCustomers||[]).filter(c=> idx<0 ? true : stageIdx(c.stage_name)===idx)
       .sort((a,b)=> showAmt ? (amtOf(b)-amtOf(a)) : String(a.name||'').localeCompare(String(b.name||'')));
-    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계'+(showAmt ? ' ('+amtName+')' : ''));
-    if(!list.length){ host.innerHTML='<div class="hint" style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;padding:10px">'+title+': 해당 고객이 없습니다.</div>'; return; }
+    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계');
+    const descHtml = stageDesc ? ' <span class="hint" style="margin:0;font-weight:400">· '+stageDesc+'</span>' : '';
+    if(!list.length){ host.innerHTML='<div class="hint" style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;padding:10px">'+title+(stageDesc?' ('+stageDesc+')':'')+': 해당 고객이 없습니다.</div>'; return; }
     const rows=list.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)">'
         +'<span style="cursor:pointer" onclick="openCustomer('+c.id+')">'+esc(c.name)+' <span class="hint" style="margin:0">('+esc(c.code)+')</span></span>'
         +(showAmt?'<span style="color:#0f7a5f;font-weight:700;white-space:nowrap">'+amtFmt(amtOf(c))+'</span>':'')
@@ -380,7 +385,7 @@
     const totalAmt=showAmt?list.reduce((s,c)=>s+amtOf(c),0):0;
     host.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;max-height:260px;overflow:auto">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#fbfaf6;border-bottom:1px solid var(--line);font-weight:700;position:sticky;top:0">'
-        +'<span>'+title+' · '+list.length+'개 업체</span>'+(showAmt?'<span style="color:#0f7a5f">합계 '+amtFmt(totalAmt)+'</span>':'')+'</div>'
+        +'<span>'+title+descHtml+' · '+list.length+'개 업체</span>'+(showAmt?'<span style="color:#0f7a5f;white-space:nowrap">합계 '+amtFmt(totalAmt)+' <span class="hint" style="margin:0;color:#0f7a5f;font-weight:400">('+amtName+')</span></span>':'')+'</div>'
       +rows+'</div>';
   }
   function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
