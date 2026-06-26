@@ -47,7 +47,7 @@
   .item .body .d{font-size:12px;color:var(--muted);margin-top:2px}
   .item .body .meta{font-size:11px;color:var(--muted);margin-top:4px}
   .pill{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;background:#eee;color:#555}
-  .pill.company{background:var(--income-bg);color:var(--income)}.pill.team{background:#e6f1fb;color:#0c447c}.pill.personal{background:#f0ece2;color:#6b6354}
+  .pill.company{background:var(--expense-bg);color:var(--expense)}.pill.team{background:#e6f1fb;color:#0c447c}.pill.personal{background:var(--income-bg);color:var(--income)}
   .pill.pin{background:#fdf8ec;color:#8a6512}
   .pill.over{background:var(--expense-bg);color:var(--expense)}
   .item.done{opacity:.6}.item.done .t{text-decoration:line-through}
@@ -76,6 +76,7 @@
   .cgcell.today .dn{color:var(--income)}
   .chip{font-size:10px;line-height:1.3;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chip.ev{background:var(--income-bg);color:var(--brand)}
+  .chip.ev.company{background:var(--expense-bg);color:var(--expense)}.chip.ev.team{background:#e6f1fb;color:#0c447c}.chip.ev.personal{background:var(--income-bg);color:var(--income)}
   .chip.td{background:#e6f1fb;color:#0c447c}
   .chip .tm{font-weight:700;color:var(--gold)}
   .cgmore{font-size:9.5px;color:var(--muted)}
@@ -332,7 +333,9 @@
   function evKey(e){ const dt=evAt(e); return dt ? cYmd(dt) : e.date; }       // 보는 사람 로컬 날짜
   function evHM(e){ const dt=evAt(e); if(dt) return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); return e&&e.time?String(e.time):''; }
   function tzNote(){ let z=''; try{ z=Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(_){}
-    return '<div class="hint" style="margin:0 0 8px">표시 시각은 보고 있는 분의 시간대'+(z?'('+esc(z)+')':'')+' 기준입니다.</div>'; }
+    const dot=(c)=>'<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+c+';margin:0 3px 0 10px;vertical-align:middle"></span>';
+    const legend='<span style="margin-left:2px">'+dot('#b23a2e')+'전사'+dot('#0c447c')+'팀'+dot('#0f6e56')+'개인</span>';
+    return '<div class="hint" style="margin:0 0 8px">표시 시각은 보고 있는 분의 시간대'+(z?'('+esc(z)+')':'')+' 기준입니다.'+legend+'</div>'; }
 
   function setCalView(v){ calView=v;
     $('calDayBtn').classList.toggle('on',v==='day');
@@ -387,8 +390,27 @@
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  // scope 필터: all=전부, mine=공동(team)+개인(personal), personal=개인만
-  function scopeOk(e){ if(calScope==='all') return true; if(calScope==='personal') return e.scope==='personal'; return e.scope==='team'||e.scope==='personal'; }
+  // scope 필터: all=전부, mine=전사(company)+개인(personal), personal=개인만
+  // (전사일정은 나에게도 부여되므로 '내 일정만'에 포함. 팀 공동일정은 '모두의 일정'에서만 표시)
+  function scopeOk(e){ if(calScope==='all') return true; if(calScope==='personal') return e.scope==='personal'; return e.scope==='company'||e.scope==='personal'; }
+  // 수정/삭제 권한: 디렉터, 또는 내 개인일정
+  function canMod(e){ return isDirector || (e.scope==='personal' && session.user && Number(e.owner_id)===Number(session.user.id)); }
+  function modBtns(e){ return canMod(e)?('<button class="btn ghost sm" onclick="editCal('+e.id+')">수정</button><button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>'):''; }
+  function editCal(id){
+    const e=calEvents.find(x=>Number(x.id)===Number(id)); if(!e) return;
+    const dateKey=evKey(e);
+    openDay(dateKey);
+    dmEditId=Number(id);
+    if($('dm-date')) $('dm-date').value=dateKey;
+    if($('dm-time')) $('dm-time').value=evHM(e)||'';
+    if($('dm-content')) $('dm-content').value=e.content||'';
+    if($('dm-scope')&&$('dm-scope').querySelector('option[value="'+e.scope+'"]')) $('dm-scope').value=e.scope;
+    dmScopeChange();
+    if(e.scope==='team'&&e.team_id&&$('dm-team')) $('dm-team').value=e.team_id;
+    if($('dm-formTitle')) $('dm-formTitle').textContent='일정 수정';
+    if($('dm-saveBtn')) $('dm-saveBtn').textContent='수정 저장';
+    const f=$('dm-formTitle'); if(f&&f.scrollIntoView) f.scrollIntoView({block:'nearest'});
+  }
   function eventsOn(key){ return calEvents.filter(e=>evKey(e)===key && scopeOk(e)).sort((a,b)=>evHM(a).localeCompare(evHM(b))); }
   function todosOn(key){ return calTodos.filter(t=>t.due_date===key); }
 
@@ -409,7 +431,7 @@
       let chips='';
       const all=[...evs.map(e=>({type:'ev',e})),...tds.map(t=>({type:'td',t}))];
       all.slice(0,maxChips).forEach(x=>{
-        if(x.type==='ev'){ const _t=evHM(x.e); chips+='<div class="chip ev">'+(_t?'<span class="tm">'+esc(_t)+'</span> ':'')+esc(x.e.content)+'</div>'; }
+        if(x.type==='ev'){ const _t=evHM(x.e); chips+='<div class="chip ev '+esc(x.e.scope)+'">'+(_t?'<span class="tm">'+esc(_t)+'</span> ':'')+esc(x.e.content)+'</div>'; }
         else chips+='<div class="chip td">▪ '+esc(x.t.title)+'</div>';
       });
       if(all.length>maxChips) chips+='<div class="cgmore">+'+(all.length-maxChips)+' 더</div>';
@@ -428,7 +450,7 @@
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
-      return '<div class="item" style="margin-top:6px"><div class="when">'+(evHM(e)?'<span class="tm">'+esc(evHM(e))+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+      return '<div class="item" style="margin-top:6px"><div class="when">'+(evHM(e)?'<span class="tm">'+esc(evHM(e))+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
     if(tds.length){
@@ -441,9 +463,9 @@
   }
 
   // 날짜 상세/추가 모달
-  let dmDate=null;
+  let dmDate=null, dmEditId=null;
   function openDay(key){
-    dmDate=key;
+    dmDate=key; dmEditId=null;
     const [y,m,d]=key.split('-'); const wd=DOW[new Date(key+'T00:00:00').getDay()];
     $('dmTitle').textContent=Number(m)+'월 '+Number(d)+'일('+wd+')';
     const evs=eventsOn(key), tds=todosOn(key);
@@ -452,7 +474,7 @@
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:4px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
-      return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+      return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
     // 할 일(마감)
@@ -466,14 +488,15 @@
       : '<option value="personal">개인(내)</option>';
     const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
     html+='<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
-      +'<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정 추가</div>'
+      +'<div id="dm-formTitle" style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정 추가</div>'
       +'<div class="row">'
-      +'<div style="flex:0 0 130px"><label>시간(내 시간대)</label><input id="dm-time" type="text" placeholder="예: 22:00"></div>'
+      +'<div style="flex:0 0 140px"><label>날짜</label><input id="dm-date" type="date" value="'+dmDate+'"></div>'
+      +'<div style="flex:0 0 120px"><label>시간(내 시간대)</label><input id="dm-time" type="text" placeholder="예: 22:00"></div>'
       +'<div style="flex:2"><label>내용</label><input id="dm-content" type="text" placeholder="일정 내용"></div>'
       +'<div style="flex:0 0 120px"><label>대상</label><select id="dm-scope" onchange="dmScopeChange()">'+scopeOpts+'</select></div>'
       +'<div style="flex:0 0 140px" id="dm-teamWrap" class="hidden"><label>팀</label><select id="dm-team">'+teamOpts+'</select></div>'
       +'</div>'
-      +'<div style="margin-top:8px"><button class="btn" onclick="addCalDay()">추가</button></div>'
+      +'<div style="margin-top:8px"><button class="btn" id="dm-saveBtn" onclick="addCalDay()">추가</button></div>'
       +'<div class="msg" id="dm-msg"></div>'
       +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
     $('dmBody').innerHTML=html;
@@ -483,18 +506,21 @@
   function dmScopeChange(){ $('dm-teamWrap').classList.toggle('hidden',$('dm-scope').value!=='team'); }
   async function addCalDay(){
     const m=$('dm-msg');m.className='msg';
+    const dateV=($('dm-date')&&$('dm-date').value)||dmDate;
     // 입력 시각을 "지금 내(입력자) 위치 시간대" 로 해석해 절대시각(ISO)을 만든다.
     const _tv=$('dm-time').value.trim();
     let _at=null;
     const _m=_tv.match(/^(\d{1,2}):(\d{2})/);
-    if(_m){ const p=dmDate.split('-').map(Number); const _dt=new Date(p[0],p[1]-1,p[2],Number(_m[1]),Number(_m[2]),0,0); if(!isNaN(_dt.getTime())) _at=_dt.toISOString(); }
-    const body={event_date:dmDate,event_time:_tv||null,event_at:_at,content:$('dm-content').value.trim(),scope:$('dm-scope').value};
+    if(_m){ const p=dateV.split('-').map(Number); const _dt=new Date(p[0],p[1]-1,p[2],Number(_m[1]),Number(_m[2]),0,0); if(!isNaN(_dt.getTime())) _at=_dt.toISOString(); }
+    const body={event_date:dateV,event_time:_tv||null,event_at:_at,content:$('dm-content').value.trim(),scope:$('dm-scope').value};
     if(body.scope==='team')body.team_id=$('dm-team').value;
     if(!body.content){m.className='msg err';m.textContent='내용을 입력하세요.';return;}
+    const editing=(dmEditId!=null);
+    const url=session.api+'/api/calendar'+(editing?'/'+dmEditId:'');
     try{
-      const res=await fetch(session.api+'/api/calendar',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const res=await fetch(url,{method:editing?'PATCH':'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='추가 실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){m.className='msg err';m.textContent=(editing?'수정':'추가')+' 실패: '+(d.error||res.status);return;}
       closeDay();loadCal();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }

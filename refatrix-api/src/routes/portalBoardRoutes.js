@@ -98,6 +98,31 @@ export default async function portalBoardRoutes(app) {
     return { ok: true };
   });
 
+  // 일정 수정: 작성자 본인 또는 디렉터만. 검증 규칙은 POST와 동일.
+  app.patch('/api/calendar/:id', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const cur = (await query(`SELECT created_by, scope FROM calendar_events WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    if (perm.role !== 'director' && Number(cur.created_by) !== perm.userId) return reply.code(403).send({ error: 'forbidden' });
+    const scope = ['company', 'team', 'personal'].includes(b.scope) ? b.scope : cur.scope;
+    if (!b.event_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.event_date))) return reply.code(400).send({ error: 'date_required' });
+    if (!b.content || !String(b.content).trim()) return reply.code(400).send({ error: 'content_required' });
+    if ((scope === 'company' || scope === 'team') && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const teamId = scope === 'team' ? (Number(b.team_id) || null) : null;
+    if (scope === 'team' && !teamId) return reply.code(400).send({ error: 'team_required' });
+    const ownerId = scope === 'personal' ? (Number(b.owner_id) || perm.userId) : null;
+    if (scope === 'personal' && ownerId !== perm.userId && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    let eventAt = null;
+    if (b.event_at) { const dd = new Date(b.event_at); if (!Number.isNaN(dd.getTime())) eventAt = dd.toISOString(); }
+    await query(
+      `UPDATE calendar_events SET event_date=$1, event_time=$2, event_at=$3, content=$4, scope=$5, team_id=$6, owner_id=$7 WHERE id=$8`,
+      [b.event_date, b.event_time ? String(b.event_time).trim() : null, eventAt, String(b.content).trim(), scope, teamId, ownerId, id]);
+    await logEvent({ userId: perm.userId, action: 'update', target: `calendar_event:${id}`, detail: { scope } });
+    return { ok: true };
+  });
+
   // =================== 공지 (Notice) ===================
   app.get('/api/notices', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
