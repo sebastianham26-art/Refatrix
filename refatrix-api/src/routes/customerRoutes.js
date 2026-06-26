@@ -174,7 +174,6 @@ export default async function customerRoutes(app) {
                   SUM(i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
                   SUM(CASE WHEN i.due_date < CURRENT_DATE THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END) AS overdue,
                   SUM(i.total_mxn) AS sales_total,
-                  MAX(i.inv_date) AS last_sale_date,
                   MAX(i.inv_date) AS last_sale_date
              FROM sales_invoices i
              LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p
