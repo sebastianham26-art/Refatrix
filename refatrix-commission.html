@@ -38,6 +38,7 @@
   .gsum{background:#faf8f3;font-weight:700}
   .badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:#eee;color:#555}
   .badge.paid{background:var(--income-bg);color:var(--income)}.badge.wait{background:#FBEFD6;color:#8a6d1f}.badge.exp{background:#eef;color:#5560a0}
+  .badge.conf2{background:#e7eef7;color:#2f5d8a}.badge.hand{background:#efe7f7;color:#6b46a0}
   .toggle{display:inline-flex;gap:4px;background:#f0ece2;border-radius:9px;padding:3px}
   .toggle button{border:none;background:transparent;padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:700;color:#8a8676;cursor:pointer}
   .toggle button.on{background:#fff;color:var(--brand);box-shadow:0 1px 2px rgba(0,0,0,.08)}
@@ -53,7 +54,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급 · <b>설정창 b0625f</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급 · <b>설정창 b0625g</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -64,6 +65,12 @@
   </div>
 
   <div class="hidden" id="app">
+    <!-- ⓪ 월별 지급 배치 (반제 완료월) — 디렉터·재무·소시오 -->
+    <div class="card hidden" id="batchCard">
+      <div class="card-h">월별 지급 배치 <span class="hint" style="font-weight:400">· 반제 완료월 단위 · 디렉터 확정 → 재무 인사전달 → 증빙 지급 · 익월 15일</span></div>
+      <div id="batchBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
     <!-- ① 커미션 내역 -->
     <div class="card">
       <div class="card-h">커미션 내역
@@ -97,6 +104,7 @@
       <div class="card-h">커미션 지급(반제) · <span class="hint" style="font-weight:400">재무담당·디렉터 · 송금 후 증빙 첨부 시 지급 확정</span></div>
       <div id="payBody"><div class="hint">위에서 영업사원을 선택하면 그 사원의 확정·미지급 커미션과 지급 입력칸이 나타납니다.</div></div>
       <div class="payform hidden" id="payForm">
+        <div><label>지급 월(반제 완료월)</label><select id="payMonth" style="width:150px"><option value="">선택</option></select></div>
         <div><label>지급액(MXN)</label><input id="payAmt" type="number" step="0.01" style="width:140px"></div>
         <div><label>지급일</label><input id="payDate" type="date" style="width:150px"></div>
         <div><label>증빙(송금증·캡처 · 이미지/PDF)</label><input id="payFile" type="file" accept="image/*,application/pdf" style="width:230px"></div>
@@ -158,7 +166,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      if(canSeeAll()){ $('agentPick').classList.remove('hidden'); loadAgents(); }
+      if(canSeeAll()){ $('agentPick').classList.remove('hidden'); $('batchCard').classList.remove('hidden'); loadAgents(); loadBatches(); }
       if(canPay()){ $('payPanel').classList.remove('hidden'); }
       if(isDir()){ $('rateBtn').classList.remove('hidden'); }
       loadOverview();
@@ -205,7 +213,59 @@
     }catch(e){ $('body').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
 
-  function reloadAll(){ loadOverview(); loadPayable(agentId); loadVouchers(agentId); }
+  function reloadAll(){ loadOverview(); loadBatches(); loadPayable(agentId, $('payMonth')?$('payMonth').value:''); loadVouchers(agentId); }
+
+  // ── 월별 지급 배치 ──
+  async function loadBatches(){
+    if(!canSeeAll()) return;
+    try{
+      const d=await fetch(session.api+'/api/commission/batches',{headers:auth()}).then(r=>r.json());
+      window.__batchPerm={can_confirm:!!d.can_confirm,can_hand:!!d.can_hand};
+      if(d.not_migrated){ $('batchBody').innerHTML='<div class="hint">배치 테이블이 없습니다. 서버 마이그레이션(0088)을 실행하세요.</div>'; return; }
+      const items=d.items||[]; window.__batches=items; populatePayMonths(items);
+      if(!items.length){ $('batchBody').innerHTML='<div class="hint">표시할 월이 없습니다. (반제 완료된 커미션이 생기면 월이 나타납니다)</div>'; return; }
+      let h='<table><thead><tr><th>반제 완료월</th><th class="r">확정 커미션</th><th class="r">지급완료</th><th class="r">미지급</th><th class="r">사원</th><th>지급예정</th><th>상태</th><th></th></tr></thead><tbody>';
+      for(const m of items){
+        const badge = m.status==='paid'?'<span class="badge paid">지급완료</span>'
+          : m.status==='handed'?'<span class="badge hand">인사전달됨</span>'
+          : m.status==='confirmed'?'<span class="badge conf2">확정</span>'
+          : '<span class="badge wait">집계중(미확정)</span>';
+        let act='';
+        if(d.can_confirm && m.status==='open' && m.confirmed>0) act='<button class="btn sm gold" onclick="confirmBatch(\''+m.settle_ym+'\')">확정</button>';
+        else if(d.can_hand && m.status==='confirmed') act='<button class="btn sm" onclick="handOff(\''+m.settle_ym+'\')">인사 전달</button>';
+        const handTs=m.handed_at?(' · 전달 '+new Date(m.handed_at).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})):'';
+        h+='<tr><td><b>'+m.settle_ym+'</b></td><td class="r conf">'+fmtm(m.confirmed)+'</td><td class="r">'+fmtm(m.paid)+'</td><td class="r short">'+fmtm(m.unpaid)+'</td><td class="r">'+m.agent_count+'</td><td>'+(m.pay_date||'—')+'</td><td>'+badge+'<span class="hint">'+handTs+'</span></td><td>'+act+'</td></tr>';
+      }
+      h+='</tbody></table>';
+      $('batchBody').innerHTML=h;
+    }catch(e){ $('batchBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function populatePayMonths(items){
+    const sel=$('payMonth'); if(!sel) return;
+    const cur=sel.value;
+    const payable=items.filter(m=>(m.status==='confirmed'||m.status==='handed')&&m.unpaid>0);
+    sel.innerHTML='<option value="">선택</option>'+payable.map(m=>'<option value="'+m.settle_ym+'">'+m.settle_ym+' (미지급 '+fmtm(m.unpaid)+')</option>').join('');
+    sel.value=cur;
+  }
+  async function confirmBatch(ym){
+    if(!confirm(ym+' 월을 지급 대상으로 확정합니다.\n확정 후 제외·조정·취소가 불가하며, 지급예정일은 익월 15일입니다. 진행할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/commission/batches/'+ym+'/confirm',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('확정 실패: '+(d.note||d.error||res.status)); return; }
+      loadBatches(); loadOverview();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  async function handOff(ym){
+    const note=prompt(ym+' 월 지급 명단을 인사에 전달한 것으로 기록합니다.\n메모(선택, 예: 전달 방법/담당자):','');
+    if(note===null) return;
+    try{
+      const res=await fetch(session.api+'/api/commission/batches/'+ym+'/hand-off',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({note})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('실패: '+(d.note||d.error||res.status)); return; }
+      loadBatches();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
 
   function statusOf(l){
     return l.paid ? 'paid' : (l.fully_paid ? 'unpaid' : 'expected');
@@ -249,7 +309,10 @@
         +'<th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">기대</th><th class="r">확정</th><th>지급예상일</th><th>상태</th></tr></thead><tbody>';
       for(const l of lines){
         const st = l.paid ? '<span class="badge paid">지급완료'+(l.paid_date?(' '+l.paid_date):'')+'</span>'
-                  : (l.fully_paid ? '<span class="badge wait">확정·미지급</span>' : '<span class="badge exp">기대(반제 전)</span>');
+                  : (!l.fully_paid ? '<span class="badge exp">기대(반제 전)</span>'
+                  : (l.batch_status==='handed' ? '<span class="badge hand">인사전달됨</span>'
+                  : (l.batch_status==='confirmed' ? '<span class="badge conf2">확정·지급대기</span>'
+                  : '<span class="badge wait">집계중(미확정)</span>')));
         html+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+'</td><td>'+l.inv_date+'</td>'
           +(view==='customer'?'':'<td>'+esc(l.customer_name)+'</td>')
           +(seeAgentCol?'<td>'+esc(l.agent_name)+'</td>':'')
@@ -266,18 +329,20 @@
 
   // ── 지급(반제) 패널 ──
   function payMsg(kind,text){ const m=$('payMsg'); m.className='msg '+kind; m.textContent=text; }
-  async function loadPayable(aid){
+  async function loadPayable(aid, ym){
     if(!canPay()) return;
-    if(!aid){ $('payBody').innerHTML='<div class="hint">위에서 영업사원을 선택하면 그 사원의 확정·미지급 커미션과 지급 입력칸이 나타납니다.</div>'; $('payForm').classList.add('hidden'); return; }
+    ym = ym || ($('payMonth')?$('payMonth').value:'');
+    if(!aid){ $('payBody').innerHTML='<div class="hint">위에서 영업사원을 선택하고, 아래에서 확정된 지급 월을 고르면 그 달의 미지급 커미션과 입력칸이 나타납니다.</div>'; $('payForm').classList.add('hidden'); return; }
+    if(!ym){ $('payBody').innerHTML='<div class="hint">지급할 <b>확정 월(반제 완료월)</b>을 선택하세요. 디렉터가 확정한 달만 지급할 수 있습니다.</div>'; $('payForm').classList.remove('hidden'); $('payAmt').value=''; return; }
     $('payBody').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const d=await fetch(session.api+'/api/commission/payable?agent_id='+aid,{headers:auth()}).then(r=>r.json());
-      if(d.not_migrated){ $('payBody').innerHTML='<div class="msg err" style="display:block">지급(반제) 테이블이 없습니다. 서버 마이그레이션(0086)을 실행하세요.</div>'; $('payForm').classList.add('hidden'); return; }
+      const d=await fetch(session.api+'/api/commission/payable?agent_id='+aid+'&settle_ym='+ym,{headers:auth()}).then(r=>r.json());
+      if(d.not_migrated){ $('payBody').innerHTML='<div class="msg err" style="display:block">지급 테이블이 없습니다. 마이그레이션(0086~0088)을 실행하세요.</div>'; $('payForm').classList.add('hidden'); return; }
       const lines=d.lines||[];
-      if(!lines.length){ $('payBody').innerHTML='<div class="hint">이 영업사원의 확정(반제완납)·미지급 커미션이 없습니다.</div>'; $('payForm').classList.add('hidden'); return; }
-      let h='<div class="hint" style="margin-bottom:6px">확정·미지급 <b>'+lines.length+'건</b> · 합계 <b>'+fmtm(d.total)+'</b> · 오래된 인보이스부터 충당</div>';
-      h+='<table><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">확정 커미션</th><th>반제월</th></tr></thead><tbody>';
-      for(const l of lines) h+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+'</td><td>'+l.inv_date+'</td><td>'+esc(l.customer_name)+'</td><td class="r">'+fmtm(l.base)+'</td><td class="r">'+l.rate+'%</td><td class="r conf">'+fmtm(l.expected)+'</td><td>'+(l.settle_ym||'—')+'</td></tr>';
+      if(!lines.length){ $('payBody').innerHTML='<div class="hint">'+ym+' 월, 이 영업사원의 확정·미지급 커미션이 없습니다.</div>'; $('payForm').classList.remove('hidden'); $('payAmt').value=''; return; }
+      let h='<div class="hint" style="margin-bottom:6px">'+ym+' 월 · 확정·미지급 <b>'+lines.length+'건</b> · 합계 <b>'+fmtm(d.total)+'</b></div>';
+      h+='<table><thead><tr><th>인보이스</th><th>일자</th><th>고객</th><th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">확정 커미션</th></tr></thead><tbody>';
+      for(const l of lines) h+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+'</td><td>'+l.inv_date+'</td><td>'+esc(l.customer_name)+'</td><td class="r">'+fmtm(l.base)+'</td><td class="r">'+l.rate+'%</td><td class="r conf">'+fmtm(l.expected)+'</td></tr>';
       h+='</tbody></table>';
       $('payBody').innerHTML=h;
       $('payAmt').value=d.total;
@@ -308,22 +373,24 @@
   async function submitPayment(){
     const aid=Number($('agentSel').value||0);
     if(!aid){ payMsg('err','위에서 영업사원을 먼저 선택하세요.'); return; }
+    const ym=$('payMonth').value;
+    if(!ym){ payMsg('err','지급할 확정 월(반제 완료월)을 선택하세요.'); return; }
     const amount=Number($('payAmt').value||0);
     const paid_date=$('payDate').value;
     const note=$('payNote').value.trim();
     const file=$('payFile').files[0];
     if(!(amount>0)){ payMsg('err','지급액을 입력하세요.'); return; }
-    if(!file){ payMsg('err','증빙(은행 송금증·시스템 캡처)을 첨부해야 지급으로 인정됩니다.'); return; }
+    if(!file){ payMsg('err','인사 송금 내역(증빙)을 첨부해야 지급으로 인정됩니다.'); return; }
     $('paySubmit').disabled=true; $('paySubmit').textContent='처리 중…';
     try{
       const evi=await fileToEvidence(file);
       const res=await fetch(session.api+'/api/commission/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
-        body:JSON.stringify({agent_id:aid,amount,paid_date,note,evi_name:evi.name,evidence:evi.dataUrl})});
+        body:JSON.stringify({agent_id:aid,settle_ym:ym,amount,paid_date,note,evi_name:evi.name,evidence:evi.dataUrl})});
       const d=await res.json();
       if(!res.ok||d.error){ payMsg('err','지급 등록 실패: '+(d.note||d.error||res.status)); return; }
       payMsg('ok','지급 등록·반제 완료 — '+d.settled_count+'건 충당 · '+fmtm(d.settled)+(d.leftover>0?(' · 남은 입력액 '+fmtm(d.leftover)+'은 미충당'):''));
       $('payFile').value=''; $('payNote').value='';
-      loadOverview(); loadPayable(aid); loadVouchers(aid);
+      loadOverview(); loadBatches(); loadPayable(aid, ym); loadVouchers(aid);
     }catch(e){ payMsg('err', e.message||'서버에 연결할 수 없습니다.'); }
     finally{ $('paySubmit').disabled=false; $('paySubmit').textContent='지급 등록(반제)'; }
   }
@@ -398,7 +465,10 @@
     document.querySelectorAll('#statusToggle button').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); statusFilter=b.dataset.s; render();
   }));
-  document.addEventListener('change',e=>{ if(e.target&&e.target.id==='agentSel'){ agentId=e.target.value; loadOverview(); loadPayable(agentId); loadVouchers(agentId); }});
+  document.addEventListener('change',e=>{
+    if(e.target&&e.target.id==='agentSel'){ agentId=e.target.value; loadOverview(); loadPayable(agentId, $('payMonth').value); loadVouchers(agentId); }
+    if(e.target&&e.target.id==='payMonth'){ loadPayable(agentId, e.target.value); }
+  });
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

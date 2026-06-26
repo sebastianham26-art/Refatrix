@@ -68,13 +68,14 @@ const PAYABLE_SQL = `
      AND COALESCE(cp.paid,false)=false
    ORDER BY i.inv_date ASC, i.id ASC`;
 
-// 한 영업사원의 확정(반제완납)·미지급 커미션 라인(FIFO 순) 반환
-async function payableLines(agentId) {
+// 한 영업사원의 확정(반제완납)·미지급 커미션 라인(FIFO 순) 반환. settleYm 지정 시 그 달만.
+async function payableLines(agentId, settleYm) {
   const rows = (await query(PAYABLE_SQL, [agentId])).rows;
   const out = [];
   for (const r of rows) {
     const c = computeLine(r);
     if (!c.fullyPaid || c.expected <= 0) continue; // 확정·금액>0 인 것만
+    if (settleYm && c.settleYm !== settleYm) continue; // 월 스코프
     out.push({
       invoice_id: r.invoice_id, sat_no: r.sat_no, inv_date: String(r.inv_date).slice(0, 10),
       customer_name: r.customer_name, customer_code: r.customer_code,
@@ -93,6 +94,50 @@ function parseDataUrl(dataUrl) {
   const ok = mime.startsWith('image/') || mime === 'application/pdf';
   if (!ok) return null;
   return { mime, b64: m[2] };
+}
+
+// 월별 배치 집계 (순수·테스트용). lines: 확정 라인 [{settle_ym, owner_id, expected, paid}]
+export function summarizeByMonth(lines) {
+  const by = {};
+  for (const l of lines) {
+    if (!l.settle_ym) continue;
+    const g = (by[l.settle_ym] ||= { settle_ym: l.settle_ym, confirmed: 0, paid: 0, agents: new Set() });
+    g.confirmed = round2(g.confirmed + Number(l.expected || 0));
+    if (l.paid) g.paid = round2(g.paid + Number(l.expected || 0));
+    g.agents.add(l.owner_id);
+  }
+  return Object.values(by)
+    .map((g) => ({ settle_ym: g.settle_ym, confirmed: g.confirmed, paid: g.paid, unpaid: round2(g.confirmed - g.paid), agent_count: g.agents.size }))
+    .sort((a, b) => b.settle_ym.localeCompare(a.settle_ym));
+}
+
+// 전체 영업사원의 확정(반제완납) 커미션 라인(settle_ym 포함) — 배치 집계/확정용
+const CONFIRMED_LINES_SQL = `
+  SELECT i.id AS invoice_id, i.owner_id, i.subtotal_mxn, i.total_mxn,
+         ca.default_rate, ccr.rate AS cust_rate,
+         COALESCE(pa.paid_amount,0) AS paid_amount, pa.last_pay_date,
+         cp.paid AS payout_paid
+    FROM sales_invoices i
+    JOIN commission_agents ca ON ca.user_id=i.owner_id AND ca.active=true
+    LEFT JOIN commission_customer_rates ccr ON ccr.user_id=i.owner_id AND ccr.customer_id=i.customer_id
+    LEFT JOIN (
+      SELECT spa.invoice_id, SUM(spa.amount) AS paid_amount, to_char(MAX(sp.pay_date),'YYYY-MM-DD') AS last_pay_date
+        FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
+       GROUP BY spa.invoice_id
+    ) pa ON pa.invoice_id=i.id
+    LEFT JOIN commission_payouts cp ON cp.invoice_id=i.id
+   WHERE i.status <> 'deleted'
+     AND (ca.effective_from IS NULL OR i.inv_date >= ca.effective_from)`;
+
+async function confirmedMonthLines() {
+  const rows = (await query(CONFIRMED_LINES_SQL, [])).rows;
+  const out = [];
+  for (const r of rows) {
+    const c = computeLine(r);
+    if (!c.fullyPaid || c.expected <= 0) continue;
+    out.push({ settle_ym: c.settleYm, owner_id: r.owner_id, expected: c.expected, paid: r.payout_paid === true });
+  }
+  return out;
 }
 
 export default async function commissionRoutes(app) {
@@ -205,14 +250,21 @@ export default async function commissionRoutes(app) {
       throw e;
     }
 
+    let bmap = {};
+    try {
+      const brows = (await query(`SELECT settle_ym, status FROM commission_batches`)).rows;
+      for (const b of brows) bmap[b.settle_ym] = b.status;
+    } catch (e) { if (!(e && e.code === '42P01')) throw e; }
+
     const lines = rows.map((r) => {
       const c = computeLine(r);
+      const bstatus = c.settleYm ? (bmap[c.settleYm] || 'open') : null;
       return {
         invoice_id: r.invoice_id, sat_no: r.sat_no, inv_date: String(r.inv_date).slice(0, 10),
         agent_id: r.owner_id, agent_name: r.agent_name,
         customer_id: r.customer_id, customer_name: r.customer_name, customer_code: r.customer_code,
         rate: c.rate, base: c.base, expected: c.expected, confirmed: c.confirmed,
-        fully_paid: c.fullyPaid, settle_ym: c.settleYm,
+        fully_paid: c.fullyPaid, settle_ym: c.settleYm, batch_status: bstatus,
         due_date: c.settleYm ? nextMonth15(c.settleYm) : null,
         paid: r.payout_paid === true, paid_date: r.payout_paid_date ? String(r.payout_paid_date).slice(0, 10) : null,
       };
@@ -286,10 +338,11 @@ export default async function commissionRoutes(app) {
       return reply.code(403).send({ error: 'forbidden' });
     }
     let lines;
-    try { lines = await payableLines(agentId); }
+    const settleYm = (/^\d{4}-\d{2}$/.test(req.query.settle_ym || '')) ? req.query.settle_ym : null;
+    try { lines = await payableLines(agentId, settleYm); }
     catch (e) { if (e && e.code === '42P01') return { agent_id: agentId, not_migrated: true, lines: [], total: 0 }; throw e; }
     const total = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0));
-    return { agent_id: agentId, can_pay: PAY_ROLES.includes(perm.role), lines, total };
+    return { agent_id: agentId, settle_ym: settleYm, can_pay: PAY_ROLES.includes(perm.role), lines, total };
   });
 
   // ── 지급 전표 등록 + 반제(FIFO) + 증빙 (디렉터·재무) ──
@@ -299,14 +352,24 @@ export default async function commissionRoutes(app) {
     const agentId = Number(agent_id);
     const amt = round2(Number(amount));
     if (!agentId || !(amt > 0)) return reply.code(400).send({ error: 'agent_amount_required' });
+    const settleYm = (req.body && /^\d{4}-\d{2}$/.test(req.body.settle_ym || '')) ? req.body.settle_ym : null;
+    if (!settleYm) return reply.code(400).send({ error: 'settle_ym_required', note: '지급할 확정 월(반제 완료월)을 지정해야 합니다.' });
     const evi = parseDataUrl(evidence);
-    if (!evi) return reply.code(400).send({ error: 'evidence_required', note: '은행 송금증 또는 시스템 화면 캡처(이미지/PDF)를 증빙으로 첨부해야 지급으로 인정됩니다.' });
-    const payDate = (paid_date && /^\d{4}-\d{2}-\d{2}$/.test(paid_date)) ? paid_date : new Date().toISOString().slice(0, 10);
+    if (!evi) return reply.code(400).send({ error: 'evidence_required', note: '인사 송금 내역(은행 송금증·화면 캡처, 이미지/PDF)을 증빙으로 첨부해야 지급으로 인정됩니다.' });
+
+    // 그 달이 디렉터 확정(또는 인사전달) 상태여야 지급 가능
+    let batch;
+    try { batch = (await query(`SELECT settle_ym, status, pay_date FROM commission_batches WHERE settle_ym=$1`, [settleYm])).rows[0]; }
+    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
+    if (!batch) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 디렉터가 그 달을 확정해야 지급할 수 있습니다.' });
+
+    const payDate = (paid_date && /^\d{4}-\d{2}-\d{2}$/.test(paid_date)) ? paid_date
+      : (batch.pay_date ? String(batch.pay_date).slice(0, 10) : new Date().toISOString().slice(0, 10));
 
     let lines;
-    try { lines = await payableLines(agentId); }
-    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: '커미션 지급 테이블이 없습니다. npm run migrate(0086)을 실행하세요.' }); throw e; }
-    if (!lines.length) return reply.code(409).send({ error: 'nothing_payable', note: '이 영업사원의 확정(반제완납)·미지급 커미션이 없습니다.' });
+    try { lines = await payableLines(agentId, settleYm); }
+    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
+    if (!lines.length) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션이 없습니다.' });
 
     const { allocs, settled, leftover } = allocateFifo(lines, amt);
     if (!allocs.length) return reply.code(409).send({ error: 'amount_too_small', note: `가장 오래된 미지급 커미션(${round2(lines[0].expected)})보다 지급액이 적습니다. 인보이스 단위로 충당됩니다.` });
@@ -374,6 +437,70 @@ export default async function commissionRoutes(app) {
     reply.header('Content-Type', r.evi_mime || 'application/octet-stream');
     reply.header('Content-Disposition', `inline; filename="${(r.evi_name || ('evidence-' + id)).replace(/"/g, '')}"`);
     return reply.send(buf);
+  });
+
+  // ── 월별 지급 배치 목록 (반제 완료월 단위) — canSeeAll ──
+  app.get('/api/commission/batches', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
+    if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    let months, batches;
+    try {
+      months = summarizeByMonth(await confirmedMonthLines());
+      batches = (await query(`SELECT settle_ym, status, pay_date, total_amount, agent_count, confirmed_at, handed_at, handed_note FROM commission_batches`)).rows;
+    } catch (e) {
+      if (e && e.code === '42P01') return { items: [], not_migrated: true };
+      throw e;
+    }
+    const bmap = {};
+    for (const b of batches) bmap[b.settle_ym] = b;
+    const items = months.map((m) => {
+      const b = bmap[m.settle_ym];
+      const allPaid = m.confirmed > 0 && m.unpaid <= 0.001;
+      const status = !b ? 'open' : (allPaid ? 'paid' : b.status); // open=집계중(미확정)
+      return {
+        settle_ym: m.settle_ym, confirmed: m.confirmed, paid: m.paid, unpaid: m.unpaid, agent_count: m.agent_count,
+        status, pay_date: b ? (b.pay_date ? String(b.pay_date).slice(0, 10) : null) : nextMonth15(m.settle_ym),
+        confirmed_at: b && b.confirmed_at ? b.confirmed_at : null,
+        handed_at: b && b.handed_at ? b.handed_at : null,
+        handed_note: b ? (b.handed_note || null) : null,
+      };
+    });
+    return { items, can_confirm: req.ctx.perm.role === 'director', can_hand: PAY_ROLES.includes(req.ctx.perm.role) };
+  });
+
+  // ── 월 확정 (디렉터) — 제외/조정 없음. 그 달 확정 커미션을 스냅샷으로 잠금 ──
+  app.post('/api/commission/batches/:ym/confirm', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const ym = String(req.params.ym || '');
+    if (!/^\d{4}-\d{2}$/.test(ym)) return reply.code(400).send({ error: 'bad_ym' });
+    const uid = req.ctx.perm.userId;
+    let months;
+    try { months = summarizeByMonth(await confirmedMonthLines()); }
+    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated' }); throw e; }
+    const m = months.find((x) => x.settle_ym === ym);
+    if (!m || m.confirmed <= 0) return reply.code(409).send({ error: 'nothing_to_confirm', note: '확정할 커미션(반제 완료분)이 없는 달입니다.' });
+    const exists = (await query(`SELECT settle_ym FROM commission_batches WHERE settle_ym=$1`, [ym])).rows[0];
+    if (exists) return reply.code(409).send({ error: 'already_confirmed', note: '이미 확정된 달입니다. (확정 취소는 없습니다)' });
+    await query(
+      `INSERT INTO commission_batches (settle_ym, status, pay_date, total_amount, agent_count, confirmed_by, confirmed_at)
+       VALUES ($1,'confirmed',$2,$3,$4,$5,now())`,
+      [ym, nextMonth15(ym), m.confirmed, m.agent_count, uid]);
+    await logEvent({ userId: uid, action: 'confirm', target: `commission_batch:${ym}`, detail: { total: m.confirmed, agents: m.agent_count } });
+    return { ok: true, settle_ym: ym, total_amount: m.confirmed, agent_count: m.agent_count, pay_date: nextMonth15(ym) };
+  });
+
+  // ── 인사 전달 기록 (재무·디렉터) — 넘긴 시점 + 로그 ──
+  app.post('/api/commission/batches/:ym/hand-off', { preHandler: [authGuard, requirePageEdit('commission')] }, async (req, reply) => {
+    const ym = String(req.params.ym || '');
+    if (!/^\d{4}-\d{2}$/.test(ym)) return reply.code(400).send({ error: 'bad_ym' });
+    const uid = req.ctx.perm.userId;
+    const note = (req.body && req.body.note) ? String(req.body.note).slice(0, 500) : null;
+    let b;
+    try { b = (await query(`SELECT settle_ym, status FROM commission_batches WHERE settle_ym=$1`, [ym])).rows[0]; }
+    catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated' }); throw e; }
+    if (!b) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 디렉터가 그 달을 확정해야 합니다.' });
+    if (b.status === 'handed') return reply.code(409).send({ error: 'already_handed', note: '이미 인사 전달이 기록된 달입니다.' });
+    await query(`UPDATE commission_batches SET status='handed', handed_by=$2, handed_at=now(), handed_note=$3 WHERE settle_ym=$1`, [ym, uid, note]);
+    await logEvent({ userId: uid, action: 'hand_off', target: `commission_batch:${ym}`, detail: { note } });
+    return { ok: true, settle_ym: ym, handed_at: new Date().toISOString() };
   });
 
   // ── (레거시) 인보이스별 단건 지급 처리 (디렉터) — 증빙 없는 빠른 마킹. 신규는 전표(payments) 사용 ──
