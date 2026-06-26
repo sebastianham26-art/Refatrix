@@ -54,6 +54,18 @@
   .tier.t4{border-top:3px solid var(--t4)} .tier.t4 .cnt{color:var(--t4)} .tier.t4 .swatch{background:var(--t4)}
   .totline{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;font-size:12.5px;color:var(--muted)}
   .totline b{color:var(--ink);font-weight:800}
+  /* 자재내역 상단 3카드 (전체 누적) */
+  .gpcards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 16px}
+  @media(max-width:680px){.gpcards{grid-template-columns:1fr}}
+  .gpc{border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px 16px;background:#fbfaf6}
+  .gpc .lab{font-size:12px;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .gpc .lab .note{font-weight:600;font-size:11px;color:var(--muted)}
+  .gpc .val{font-size:27px;font-weight:800;line-height:1.15;margin-top:8px;color:var(--ink)}
+  .gpc .val .cur{font-size:14px;font-weight:700;color:var(--muted);margin-right:3px}
+  .gpc .sub{font-size:11px;color:var(--muted);margin-top:5px}
+  .gpc.rev{border-top:3px solid var(--brand)} .gpc.rev .val{color:var(--brand)}
+  .gpc.cogs{border-top:3px solid var(--gold)} .gpc.cogs .val{color:var(--gold)}
+  .gpc.mgn{border-top:3px solid var(--t1)} .gpc.mgn .val{color:var(--t1)}
   /* 자재내역 */
   .listhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .searchbar input{width:280px;max-width:60vw}
@@ -150,6 +162,12 @@
         <div class="card-h">자재내역 (전체 SKU)
           <span style="margin-left:auto"><button class="btn ghost sm" id="toggleList">▸ 펼치기</button></span>
         </div>
+        <!-- 판매된 자재 매출총이익 요약 (전체 기간 누적) -->
+        <div class="gpcards" id="gpCards">
+          <div class="gpc rev"><div class="lab">총매출액 <span class="note">(IVA 불포함)</span></div><div class="val" id="gpcRev">—</div><div class="sub">전체 기간 누적 · 판매된 자재</div></div>
+          <div class="gpc cogs"><div class="lab">총매출원가</div><div class="val" id="gpcCogs">—</div><div class="sub">판매 시점 동결 COGS 합계</div></div>
+          <div class="gpc mgn"><div class="lab">매출총이익률</div><div class="val" id="gpcMgn">—</div><div class="sub">(총매출액 − 총매출원가) ÷ 총매출액</div></div>
+        </div>
         <div id="listBox" class="hidden">
           <div class="listhead searchbar">
             <input id="q" type="text" placeholder="코드 · 경쟁사코드 · 품명 검색">
@@ -190,7 +208,8 @@
   let session={token:null,user:null,api:''};
   let year='';                 // ''=전체, 'YYYY'=해당 연도
   let isDirector=false;
-  let DATA=null;               // 서버 응답 캐시
+  let DATA=null;               // 서버 응답 캐시 (기간 토글 반영)
+  let TOTALS_ALL=null;         // 전체 기간 누적 합계 (자재내역 상단 3카드용 · 토글 무관)
   let listOpen=false, listSort='margin', listDir='desc', listQ='';
   let openDrill=new Set(), drillCache={};   // 자재내역 행 드릴다운(고객별 내역) 상태
   let chartScope='all', chartTier=null;
@@ -284,7 +303,7 @@
   async function initApp(){
     // 접근 제어는 백엔드 requirePage('grossprofit')가 담당. 권한 없으면 load()에서 403 → 차단 카드.
     $('denyCard').classList.add('hidden'); $('gpSection').classList.remove('hidden');
-    renderYearSeg(); load();
+    renderYearSeg(); load(); loadAllTime();
   }
 
   async function load(){
@@ -331,6 +350,20 @@
         +(pr.share_pct!=null&&pr.share_pct>100?' (손실 SKU가 있어 100% 초과)':'')+'.</span>';
     }
     $('totLine').innerHTML=h;
+  }
+
+  // ── 판매된 자재 매출총이익 3카드 (전체 기간 누적 · 기간 토글과 무관) ──
+  async function loadAllTime(){
+    try{
+      const d=await fetch(session.api+'/api/gross-profit',{headers:auth()}).then(r=>r.json());
+      if(d&&!d.error){ TOTALS_ALL=d.totals||{}; renderGpCards(); }
+    }catch(e){ /* 무시: 카드는 — 로 둠 */ }
+  }
+  function renderGpCards(){
+    const t=TOTALS_ALL||{};
+    if($('gpcRev'))  $('gpcRev').innerHTML ='<span class="cur">MX$</span>'+fmt(t.revenue);
+    if($('gpcCogs')) $('gpcCogs').innerHTML='<span class="cur">MX$</span>'+fmt(t.cogs);
+    if($('gpcMgn'))  $('gpcMgn').textContent=pct(t.margin_pct);
   }
 
   // ── 자재내역 토글/렌더 ──
