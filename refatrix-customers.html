@@ -363,26 +363,18 @@
     const host=$('stageDrill'); if(!host)return;
     if(drillIdx===idx){ drillIdx=null; host.innerHTML=''; return; }
     drillIdx=idx;
-    const isQuote = idx===3;       // 견적: 단계 무관, 미결(살아있는) 견적 보유 고객 전체 — 견적목록과 합계 일치
-    const useQuoteAmt = (idx===3 || idx===4 || idx===5);  // 견적/협상/수주 = 아직 인보이스(SAT) 전 → 미전환 견적(주문)액 표시
-    const showAmt = idx>=3;        // 견적(3)/협상(4)/수주(5)/거래중(6)
+    // 각 단계 고객만 표시(상호배타·중복 없음). 견적/협상/수주는 인보이스(SAT) 전이라 미전환 견적(주문)액, 거래중만 누적매출.
+    const useQuoteAmt = (idx===3 || idx===4 || idx===5);
+    const showAmt = idx>=3;
     const amtOf = c => useQuoteAmt ? Number(c.live_quote_mxn||0) : Number(c.sales_total||0);
-    const amtFmt = useQuoteAmt ? fmt : money0;   // 견적기준은 소수점 2자리(견적목록 일치), 매출은 정수
-    const amtName = idx===3 ? '미결 견적액' : idx===4 ? '협상 견적액' : idx===5 ? '수주액(견적기준)' : (idx===6 ? '거래후 누적매출' : '누적매출');
-    const list=(lastCustomers||[]).filter(c=>{
-        if(idx<0) return true;
-        if(isQuote) return Number(c.live_quote_mxn||0) > 0;   // 견적만 단계 무관, 살아있는 견적 보유
-        return stageIdx(c.stage_name)===idx;                   // 협상/수주/거래중: 해당 단계 고객
-      })
+    const amtFmt = useQuoteAmt ? fmt : money0;   // 견적기준은 소수점 2자리, 매출은 정수
+    const amtName = idx===3 ? '미전환 견적액' : idx===4 ? '협상 견적액' : idx===5 ? '수주액(견적기준)' : (idx===6 ? '거래후 누적매출' : '누적매출');
+    const list=(lastCustomers||[]).filter(c=> idx<0 ? true : stageIdx(c.stage_name)===idx)
       .sort((a,b)=> showAmt ? (amtOf(b)-amtOf(a)) : String(a.name||'').localeCompare(String(b.name||'')));
-    const title = idx<0 ? '전체 고객'
-      : (isQuote ? '견적 · 미결(살아있는) 견적 보유 업체'
-                 : (STAGE_META[idx].label+' 단계'+(showAmt ? ' ('+amtName+')' : '')));
+    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계'+(showAmt ? ' ('+amtName+')' : ''));
     if(!list.length){ host.innerHTML='<div class="hint" style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;padding:10px">'+title+': 해당 고객이 없습니다.</div>'; return; }
     const rows=list.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)">'
-        +'<span style="cursor:pointer" onclick="openCustomer('+c.id+')">'+esc(c.name)+' <span class="hint" style="margin:0">('+esc(c.code)+')</span>'
-          +(isQuote ? ' <span class="hint" style="margin:0">· '+esc((c.stage_name||'').replace(/^\d+_/,'')||'미지정')+'</span>' : '')
-        +'</span>'
+        +'<span style="cursor:pointer" onclick="openCustomer('+c.id+')">'+esc(c.name)+' <span class="hint" style="margin:0">('+esc(c.code)+')</span></span>'
         +(showAmt?'<span style="color:#0f7a5f;font-weight:700;white-space:nowrap">'+amtFmt(amtOf(c))+'</span>':'')
       +'</div>').join('');
     const totalAmt=showAmt?list.reduce((s,c)=>s+amtOf(c),0):0;
@@ -438,7 +430,7 @@
     svg+='<line x1="'+mL+'" y1="'+(mT+plotH)+'" x2="'+(mL+plotW)+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
     // 매출 음영 bar 스케일
     const maxSales=Math.max(0, ...rows.map(r=>Number(r.sales_total)||0));
-    const maxBarH=plotH*0.55, baseY=mT+plotH, barW=Math.min(22, colW*0.62);
+    const maxBarH=plotH*0.55, baseY=mT+plotH, barW=Math.min(34, colW*0.74);
     // 점 + 매출 bar + 회전 라벨
     rows.forEach((r,i)=>{
       const x=xOf(i), d=Number(r.discount)||0, y=yOf(d);
@@ -454,7 +446,7 @@
           svg+='<rect x="'+(x-barW/2)+'" y="'+y+'" width="'+barW+'" height="'+barH+'" rx="2" '
              +'fill="#0F6E56" fill-opacity="0.15" stroke="#0F6E56" stroke-opacity="0.30" stroke-width="1"/>';
           // 누적매출 숫자(작게) — bar 상단 안쪽
-          svg+='<text x="'+x+'" y="'+(y+9)+'" text-anchor="middle" font-size="7" fill="#0b5440" font-weight="700">'+compactMoney(sales)+'</text>';
+          svg+='<text x="'+x+'" y="'+(y+13)+'" text-anchor="middle" font-size="10" fill="#0b5440" font-weight="800">'+compactMoney(sales)+'</text>';
         }
       }
       // 점: 매출 없으면 회색
