@@ -572,7 +572,7 @@
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
   async function editNotice(id){
-    const n=(noticeItems||[]).find(x=>x.id===id); if(!n) return;
+    const n=(noticeItems||[]).find(x=>Number(x.id)===Number(id)); if(!n) return;
     editingNoticeId=id;
     $('nf-title').value=n.title||''; $('nf-body').value=n.body||'';
     $('nf-pin').checked=!!n.pinned; $('nf-popup').checked=!!n.is_popup;
