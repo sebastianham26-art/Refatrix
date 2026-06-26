@@ -50,18 +50,18 @@ export default async function presenceRoutes(app) {
             (user_id, last_seen, last_path, updated_at,
              last_ip, geo_city, geo_region, geo_country, geo_lat, geo_lng, geo_at)
             VALUES ($1, now(), $2, now(),
-             $3, $4, $5, $6, $7, $8, CASE WHEN $3 IS NULL THEN NULL ELSE now() END)
+             $3::text, $4, $5, $6, $7, $8, CASE WHEN $3::text IS NULL THEN NULL ELSE now() END)
        ON CONFLICT (user_id) DO UPDATE SET
              last_seen   = now(),
              updated_at  = now(),
              last_path   = COALESCE($2, user_presence.last_path),
-             last_ip     = COALESCE($3, user_presence.last_ip),
-             geo_city    = CASE WHEN $3 IS NULL THEN user_presence.geo_city    ELSE $4 END,
-             geo_region  = CASE WHEN $3 IS NULL THEN user_presence.geo_region  ELSE $5 END,
-             geo_country = CASE WHEN $3 IS NULL THEN user_presence.geo_country ELSE $6 END,
-             geo_lat     = CASE WHEN $3 IS NULL THEN user_presence.geo_lat     ELSE $7 END,
-             geo_lng     = CASE WHEN $3 IS NULL THEN user_presence.geo_lng     ELSE $8 END,
-             geo_at      = CASE WHEN $3 IS NULL THEN user_presence.geo_at      ELSE now() END`,
+             last_ip     = COALESCE($3::text, user_presence.last_ip),
+             geo_city    = CASE WHEN $3::text IS NULL THEN user_presence.geo_city    ELSE $4 END,
+             geo_region  = CASE WHEN $3::text IS NULL THEN user_presence.geo_region  ELSE $5 END,
+             geo_country = CASE WHEN $3::text IS NULL THEN user_presence.geo_country ELSE $6 END,
+             geo_lat     = CASE WHEN $3::text IS NULL THEN user_presence.geo_lat     ELSE $7 END,
+             geo_lng     = CASE WHEN $3::text IS NULL THEN user_presence.geo_lng     ELSE $8 END,
+             geo_at      = CASE WHEN $3::text IS NULL THEN user_presence.geo_at      ELSE now() END`,
       [userId, path, ip, geoCity, geoRegion, geoCountry, geoLat, geoLng]
     );
 
