@@ -166,6 +166,99 @@ export default async function salesRoutes(app) {
     }
   });
 
+  // ============================================================
+  // 매출확정(인보이스) 첨부파일 — SAT 번호 옆 인보이스 관련 파일 업로드.
+  //   저장: sales_invoice_files (file_data = data URL base64). 인보이스 1건당 여러 파일.
+  //   목록/집계 쿼리는 이 테이블을 건드리지 않음(성능 보호).
+  //   허용 형식: PDF·이미지·XML(CFDI)·Excel·Word·CSV·ZIP 등.
+  // ============================================================
+  const INVOICE_FILE_MAX = 8 * 1024 * 1024; // 파일당 8MB(raw) — 12MB bodyLimit 내
+  function validateInvoiceFileDataUrl(dataUrl, maxBytes = INVOICE_FILE_MAX) {
+    if (typeof dataUrl !== 'string' || !dataUrl) return { ok: false, error: 'empty' };
+    const m = dataUrl.match(/^data:([^;,]*);base64,([A-Za-z0-9+/=\s]+)$/);
+    if (!m) return { ok: false, error: 'bad_format' };
+    const mime = (m[1] || 'application/octet-stream').toLowerCase();
+    const allowed =
+      mime.startsWith('image/') ||
+      mime === 'application/pdf' ||
+      mime === 'application/xml' || mime === 'text/xml' ||
+      mime === 'text/plain' || mime === 'text/csv' ||
+      mime === 'application/zip' || mime === 'application/x-zip-compressed' ||
+      mime === 'application/vnd.ms-excel' ||
+      mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mime === 'application/msword' ||
+      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mime === 'application/octet-stream' || mime === '';
+    if (!allowed) return { ok: false, error: 'bad_mime' };
+    const b64 = m[2].replace(/\s+/g, '');
+    if (!b64) return { ok: false, error: 'empty_data' };
+    const bytes = Math.floor((b64.length * 3) / 4);
+    if (bytes > maxBytes) return { ok: false, error: 'too_large' };
+    return { ok: true, mime, bytes };
+  }
+
+  // 첨부 목록(메타만 — file_data 제외)
+  app.get('/api/sales/:id/files', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const r = await query(
+      `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_at,
+              u.name AS uploaded_by_name
+         FROM sales_invoice_files f
+         LEFT JOIN users u ON u.id = f.uploaded_by
+        WHERE f.invoice_id = $1
+        ORDER BY f.uploaded_at DESC, f.id DESC`, [id]);
+    return {
+      items: r.rows.map(x => ({
+        id: Number(x.id),
+        file_name: x.file_name,
+        mime_type: x.mime_type,
+        file_size: x.file_size == null ? null : Number(x.file_size),
+        uploaded_at: x.uploaded_at,
+        uploaded_by_name: x.uploaded_by_name || null,
+      })),
+    };
+  });
+
+  // 첨부 업로드(추가) — body: { file_name, mime_type, data(data URL base64) }
+  app.post('/api/sales/:id/files', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const { file_name, mime_type, data } = req.body || {};
+    const v = validateInvoiceFileDataUrl(data);
+    if (!v.ok) return reply.code(400).send({ error: 'invalid_file', note: v.error });
+    const inv = (await query(`SELECT id FROM sales_invoices WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'not_found' });
+    const name = (file_name && String(file_name).slice(0, 200)) || '첨부파일';
+    const mime = (mime_type && String(mime_type).slice(0, 100)) || v.mime;
+    const r = await query(
+      `INSERT INTO sales_invoice_files (invoice_id, file_name, mime_type, file_data, file_size, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, uploaded_at`,
+      [id, name, mime, data, v.bytes, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `sales_invoice_file:${r.rows[0].id}`, detail: { invoice_id: id, file_name: name, bytes: v.bytes } });
+    return { ok: true, id: Number(r.rows[0].id), uploaded_at: r.rows[0].uploaded_at };
+  });
+
+  // 단일 첨부 다운로드(데이터 포함) — 인증 fetch로 받아 blob 표시
+  app.get('/api/sales/files/:fileId', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!fid) return reply.code(400).send({ error: 'bad_id' });
+    const r = await query(
+      `SELECT id, invoice_id, file_name, mime_type, file_data FROM sales_invoice_files WHERE id=$1`, [fid]);
+    if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
+    return r.rows[0];
+  });
+
+  // 첨부 삭제
+  app.delete('/api/sales/files/:fileId', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!fid) return reply.code(400).send({ error: 'bad_id' });
+    const r = await query(`DELETE FROM sales_invoice_files WHERE id=$1 RETURNING invoice_id`, [fid]);
+    if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `sales_invoice_file:${fid}`, detail: { invoice_id: Number(r.rows[0].invoice_id) } });
+    return { ok: true };
+  });
+
   // ---- 디렉터: 인보이스 일자(inv_date) 변경 → 만기일(due_date) 자동 재계산 + 담당(영업담당) 동기화 ----
   // body: { inv_date: 'YYYY-MM-DD' }. due_date = inv_date + credit_days. owner_id는 고객의 영업담당으로 자동 반영.
   app.post('/api/sales/:id/inv-date', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {

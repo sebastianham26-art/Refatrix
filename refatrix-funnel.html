@@ -115,6 +115,7 @@
   let cat='quotes', months=[], FYEAR=new Date().getFullYear();
   let openRows={};
   let invCache={};
+  let invFilesCache={};   // 인보이스별 첨부파일 메타 캐시(재렌더 시 복원)
   let invCompany=null, stmtInvId=null;
   let immOwner='', immTeam='';
   const $=(id)=>document.getElementById(id);
@@ -277,6 +278,7 @@
       });
       h+='</tbody></table>'; }
     $('body').innerHTML=h;
+    renderAllInvFiles();   // 열린 인보이스 첨부 목록을 캐시에서 복원(재렌더 대비)
   }
   function setImmFilter(kind,val){
     if(kind==='clear'){ immTeam=''; immOwner=''; }
@@ -315,6 +317,17 @@
         +'<input id="sat-in-'+id+'" type="text" placeholder="SAT 번호 입력/수정" style="font-size:12px;padding:5px 8px;width:170px" value="'+(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?esc(inv.sat_no):'')+'">'
         +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveSatF('+id+')">SAT 번호 저장</button>'
         +'<span id="sat-msg-'+id+'" style="font-size:12px"></span></div>';
+      // 인보이스 첨부파일 (SAT 옆) — 인보이스 관련 파일 업로드/보기/삭제
+      t+='<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fafafa">'
+        +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        +'<span style="font-size:12.5px;font-weight:700">📎 인보이스 첨부파일</span>'
+        +'<input id="invfile-in-'+id+'" type="file" multiple style="display:none" onchange="onInvoiceFilePicked('+id+',this)">'
+        +'<button class="btn ghost sm" style="border:1px solid var(--brand);color:var(--brand);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff;font-weight:700" onclick="triggerInvoiceFile('+id+')">＋ 파일 추가</button>'
+        +'<span class="hint">PDF·이미지·XML(CFDI)·Excel 등 · 파일당 8MB 이하</span>'
+        +'<span id="invfile-msg-'+id+'" style="font-size:12px"></span>'
+        +'</div>'
+        +'<div id="invfiles-'+id+'" style="margin-top:6px;font-size:12px;color:var(--muted)">불러오는 중…</div>'
+        +'</div>';
       // 영업담당 + 인보이스일 + 만기일 (+ 디렉터: 일자 편집)
       t+='<div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fafafa">'
         +'<span style="font-size:12.5px">영업담당: <b>'+(inv.owner_name?esc(inv.owner_name):'<span style="color:var(--expense)">미지정</span>')+'</b></span>'
@@ -370,7 +383,7 @@
           +'<span id="cd-msg-'+id+'" style="font-size:12px"></span></div>';
         t+='</div>';
       }
-      openRows['i'+id]=t; loadImmediate();
+      openRows['i'+id]=t; await loadImmediate(); loadInvoiceFiles(id);
     }catch(e){ openRows['i'+id]='불러오지 못했습니다.'; loadImmediate(); }
   }
   async function deleteSaleF(id){
@@ -621,6 +634,90 @@
       delete openRows['i'+id]; delete invCache[id]; loadImmediate();
     }catch(e){ if(msg){msg.style.color='var(--expense)';msg.textContent='서버 연결 실패';} }
   }
+
+  // ===== 인보이스 첨부파일 =====
+  function fmtBytes(n){ n=Number(n)||0; if(n<1024) return n+' B'; if(n<1024*1024) return (n/1024).toFixed(0)+' KB'; return (n/1024/1024).toFixed(1)+' MB'; }
+  function renderInvFiles(id){
+    const box=document.getElementById('invfiles-'+id); if(!box) return;
+    const list=invFilesCache[id];
+    if(!Array.isArray(list)){ box.innerHTML='불러오는 중…'; return; }
+    if(!list.length){ box.innerHTML='<span style="color:var(--muted)">첨부된 파일이 없습니다.</span>'; return; }
+    let h='<div style="display:flex;flex-direction:column;gap:4px">';
+    list.forEach(f=>{
+      const when=f.uploaded_at?esc(String(f.uploaded_at).slice(0,16).replace('T',' ')):'';
+      const who=f.uploaded_by_name?(' · '+esc(f.uploaded_by_name)):'';
+      h+='<div style="display:flex;gap:8px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:7px;padding:4px 8px">'
+        +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(f.file_name||'')+'"><b>'+esc(f.file_name||'첨부파일')+'</b>'
+        +'<span style="color:var(--muted)"> · '+fmtBytes(f.file_size)+(when?(' · '+when):'')+who+'</span></span>'
+        +'<button class="btn ghost sm" style="border:1px solid var(--line);background:#fff;border-radius:7px;padding:3px 9px;cursor:pointer" onclick="viewInvoiceFile('+f.id+')">보기</button>'
+        +'<button class="btn ghost sm" style="border:1px solid #e7b6af;color:var(--expense);background:#fff;border-radius:7px;padding:3px 9px;cursor:pointer" onclick="deleteInvoiceFile('+id+','+f.id+')">삭제</button>'
+        +'</div>';
+    });
+    h+='</div>';
+    box.innerHTML=h;
+  }
+  function renderAllInvFiles(){
+    Object.keys(openRows).forEach(k=>{ if(k.charAt(0)==='i'){ const id=Number(k.slice(1)); if(Array.isArray(invFilesCache[id])) renderInvFiles(id); } });
+  }
+  async function loadInvoiceFiles(id){
+    try{
+      const d=await fetch(session.api+'/api/sales/'+id+'/files',{headers:auth()}).then(r=>r.json());
+      invFilesCache[id]=Array.isArray(d.items)?d.items:[];
+    }catch(e){ invFilesCache[id]=[]; }
+    renderInvFiles(id);
+  }
+  function triggerInvoiceFile(id){ const f=document.getElementById('invfile-in-'+id); if(f){ f.value=''; f.click(); } }
+  async function onInvoiceFilePicked(id, input){
+    const files=Array.from(input.files||[]); if(!files.length) return;
+    const msg=document.getElementById('invfile-msg-'+id);
+    const MAX=8*1024*1024; let okN=0, errN=0, lastErr='';
+    for(const f of files){
+      if(f.size>MAX){ errN++; lastErr='“'+f.name+'” 8MB 초과'; continue; }
+      if(msg){ msg.style.color=''; msg.textContent='“'+f.name+'” 업로드 중…'; }
+      let data;
+      try{ data=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('read')); r.readAsDataURL(f); }); }
+      catch(_){ errN++; lastErr='“'+f.name+'” 읽기 실패'; continue; }
+      try{
+        const res=await fetch(session.api+'/api/sales/'+id+'/files',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({file_name:f.name,mime_type:f.type||'',data})});
+        const dd=await res.json().catch(()=>({}));
+        if(!res.ok||dd.error){
+          errN++;
+          if(res.status===403) lastErr='업로드 권한이 없습니다';
+          else if(dd.note==='too_large') lastErr='“'+f.name+'” 파일이 너무 큼';
+          else if(dd.note==='bad_mime') lastErr='“'+f.name+'” 지원하지 않는 형식';
+          else lastErr='“'+f.name+'” 업로드 실패';
+          continue;
+        }
+        okN++;
+      }catch(e){ errN++; lastErr='“'+f.name+'” 서버 연결 실패'; }
+    }
+    if(msg){
+      if(errN===0){ msg.style.color='var(--income)'; msg.textContent='업로드 완료 ('+okN+'건)'; }
+      else { msg.style.color='var(--expense)'; msg.textContent=(okN?okN+'건 완료 · ':'')+errN+'건 실패: '+lastErr; }
+    }
+    await loadInvoiceFiles(id);
+  }
+  async function viewInvoiceFile(fileId){
+    try{
+      const d=await fetch(session.api+'/api/sales/files/'+fileId,{headers:auth()}).then(r=>r.json());
+      if(!d || !d.file_data){ alert('파일을 찾을 수 없습니다.'); return; }
+      const comma=d.file_data.indexOf(','); const meta=d.file_data.slice(0,comma); const b64=d.file_data.slice(comma+1);
+      const mime=(meta.match(/data:([^;]+)/)||[])[1] || d.mime_type || 'application/octet-stream';
+      const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      const w=window.open(url,'_blank'); if(!w) alert('팝업이 차단되었습니다. 팝업을 허용하세요.');
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alert('파일을 불러오지 못했습니다.'); }
+  }
+  async function deleteInvoiceFile(id, fileId){
+    if(!confirm('이 첨부파일을 삭제할까요? 되돌릴 수 없습니다.')) return;
+    try{
+      const res=await fetch(session.api+'/api/sales/files/'+fileId,{method:'DELETE',headers:auth()});
+      const dd=await res.json().catch(()=>({}));
+      if(!res.ok||dd.error){ alert(res.status===403?'삭제 권한이 없습니다.':'삭제 실패'); return; }
+    }catch(e){ alert('서버 연결 실패'); return; }
+    await loadInvoiceFiles(id);
+  }
   async function creditPendingCard(){
     if(!(session.user && session.user.role==='director')) return '';
     let items=[];
@@ -749,6 +846,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260625c"></script>
+<script src="refatrix-nav.js?v=20260626sf"></script>
 </body>
 </html>
