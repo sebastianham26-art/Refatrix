@@ -1180,16 +1180,18 @@
         const v=dayMap[ds];const dow=new Date(Date.UTC(y,m-1,dd)).getUTCDay();
         const we=(dow===0||dow===6)?' weekend':'';
         const hasV=v&&(v.ar||v.ap||(v.items&&v.items.length));
+        const actNet=Math.round((v&&v.items?v.items.reduce((s,t)=>t.status==='actual'?s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0):s,0):0)*100)/100;
         cells+=`<div class="cal-cell${we}" data-day="${ds}">
           <div class="cal-daynum">${dd}</div>
           <div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
           <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
+          <div class="cal-slot"><span class="k">실적</span><span style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):''}</span></div>
           <div class="cal-slot"><span class="k">잔고</span><span style="font-weight:700">${v?fmt(v.balance!=null?v.balance:v.cumulative):''}</span></div>
         </div>`;
       }
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
-        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 잔고=누적(실적)</span></div>
+        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · 잔고=누적(실적)</span></div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
         ${renderMonthSections(d)}`;
@@ -1245,19 +1247,25 @@
         const v=dayMap[ds];const we=(i===0||i===6);
         const arItems=(v&&v.ar_items)||[];
         const apItems=(v&&v.ap_items)||[];
+        const cashItems=(v&&v.items)?v.items.filter(t=>t.status==='actual'):[];
+        const actNet=Math.round(cashItems.reduce((s,t)=>s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0),0)*100)/100;
         const arLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
           <span>${x.customer_name||''}${x.sat_no?' · '+x.sat_no:''}</span>
           <span style="color:var(--income)">+${fmt(x.amount_mxn)}</span></div>`;
         const apLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
           <span>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}</span>
           <span style="color:var(--expense)">-${fmt(x.amount_mxn)}</span></div>`;
+        const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
+          <span>${t.category_name||t.category_code||''}${t.memo?' · '+String(t.memo).slice(0,22):''}</span>
+          <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
         const detail=weekSummaryOnly?'':`
           <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AR (수금예정)</div>${arItems.length?arItems.map(arLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
-          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지급예정)</div>${apItems.length?apItems.map(apLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`;
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지급예정)</div>${apItems.length?apItems.map(apLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">실적 (현금)</div>${cashItems.length?cashItems.map(cashLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`;
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;background:${we?'#f3f1ec':'#fff'}">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <b style="${we?'color:var(--expense)':''}">${dows[i]} ${ds}</b>
-            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · 잔고 <b>${v?fmt(v.balance!=null?v.balance:v.cumulative):'—'}</b></span>
+            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · 실적 <b style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):'0.00'}</b> · 잔고 <b>${v?fmt(v.balance!=null?v.balance:v.cumulative):'—'}</b></span>
           </div>${detail}</div>`;
       }).join('');
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
