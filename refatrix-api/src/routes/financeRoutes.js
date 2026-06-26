@@ -6,7 +6,7 @@ import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange 
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -1065,10 +1065,22 @@ export default async function financeRoutes(app) {
     const includePlan = req.query.includePlan === '1' || req.query.includePlan === 'true';
     const txns = await loadCashTxns(req.ctx.perm);
     const opening = await openingBalanceMxn(req.ctx.perm);
-    const rows = aggregateCashflow(txns.map((t) => ({
+    const mappedTx = txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
-    })), { granularity, includePlan, openingBalance: opening });
+    }));
+    const rows = aggregateCashflow(mappedTx, { granularity, includePlan, openingBalance: opening });
+    // 실적 기준 누적잔고: 토글과 무관하게 실제 거래만 누적(= 실제 현금잔고). 표시 구간별로 정렬해 산출.
+    const actualNetByPeriod = new Map();
+    for (const t of mappedTx) {
+      if (t.status !== 'actual') continue;
+      const key = bucketKey(t.txn_date, granularity);
+      actualNetByPeriod.set(key, (actualNetByPeriod.get(key) || 0) + (t.direction === 'in' ? 1 : -1) * t.amount_mxn);
+    }
+    const allKeys = [...new Set([...rows.map((r) => r.period), ...actualNetByPeriod.keys()])].sort();
+    let runA = opening; const cumActualByPeriod = {};
+    for (const k of allKeys) { runA += (actualNetByPeriod.get(k) || 0); cumActualByPeriod[k] = r2(runA); }
+    for (const r of rows) { r.cumulative_actual = cumActualByPeriod[r.period]; }
     return { granularity, includePlan, opening_balance: r2(opening), rows };
   });
 
