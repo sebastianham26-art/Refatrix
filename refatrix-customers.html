@@ -197,7 +197,7 @@
 <script>
   let session={token:null,user:null,api:''};
   let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
-  let selectedTeam='', summaryData=null;
+  let selectedTeam='', summaryData=null, drillIdx=null;
   let listHidden=false, lastCustomers=[];
   // 7단계(0~6) 색상 — 가독성용
   const STAGE_META=[
@@ -260,6 +260,8 @@
     finally{ $('docUpload').disabled=false; }
   }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const money0=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const compactMoney=(n)=>{ n=Number(n||0); const a=Math.abs(n); if(a>=1e6)return '$'+(n/1e6).toFixed(a>=1e7?0:1)+'M'; if(a>=1e3)return '$'+Math.round(n/1e3)+'K'; return '$'+Math.round(n); };
   const isDirector=()=> session.user && session.user.role==='director';
   const teamPill=(name,id)=> name?`<span class="pill ${id%2===1?'team1':'team2'}">${name}</span>`:'<span class="hint" style="margin:0">미지정</span>';
 
@@ -339,20 +341,42 @@
   }
   function renderStageSummary(){
     const box=$('stageSummary'); if(!box||!summaryData) return;
+    drillIdx=null;
     const sumTeams=summaryData.teams||[];
     const scope = selectedTeam==='' ? (summaryData.total||{}) : (sumTeams.find(t=>String(t.team_id)===String(selectedTeam))||{});
-    const totalBox='<div class="sumbox" style="background:var(--brand);color:#fff"><div class="sk">총 고객수</div><div class="sv">'+(scope.total||0)+'</div></div>';
-    const stageBoxes=STAGE_META.map(m=>'<div class="sumbox" style="background:'+m.bg+';color:'+m.fg+'"><div class="sk">'+m.label+'</div><div class="sv">'+(scope[m.key]||0)+'</div></div>').join('');
+    const totalBox='<div class="sumbox" style="background:var(--brand);color:#fff;cursor:pointer" onclick="drillStage(-1)"><div class="sk">총 고객수</div><div class="sv">'+(scope.total||0)+'</div></div>';
+    const stageBoxes=STAGE_META.map((m,i)=>'<div class="sumbox" style="background:'+m.bg+';color:'+m.fg+';cursor:pointer" onclick="drillStage('+i+')"><div class="sk">'+m.label+'</div><div class="sv">'+(scope[m.key]||0)+'</div></div>').join('');
     const tgTeams=(teams&&teams.length)?teams:sumTeams.map(t=>({id:t.team_id,name:t.team_name}));
     const toggle='<div class="teamtoggle">'
       +'<button class="ttg'+(selectedTeam===''?' on':'')+'" onclick="setTeamScope(\'\')">전체</button>'
       +tgTeams.map(t=>'<button class="ttg'+(String(selectedTeam)===String(t.id)?' on':'')+'" onclick="setTeamScope(\''+t.id+'\')">'+esc(t.name)+'</button>').join('')
       +'</div>';
     box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfaf6">'
-      +'<div style="font-weight:700;margin-bottom:8px">단계별 고객 현황</div>'
+      +'<div style="font-weight:700;margin-bottom:8px">단계별 고객 현황 <span class="hint" style="margin:0;font-weight:400">— 카드를 누르면 업체 목록이 나옵니다</span></div>'
       +'<div class="sumgrid">'+totalBox+stageBoxes+'</div>'
+      +'<div id="stageDrill"></div>'
       +toggle
       +'</div>';
+  }
+  // 단계 카드 클릭 → 해당 단계 업체명 (견적·협상·수주·거래중은 누적매출 표시). 다시 누르면 닫힘.
+  function drillStage(idx){
+    const host=$('stageDrill'); if(!host)return;
+    if(drillIdx===idx){ drillIdx=null; host.innerHTML=''; return; }
+    drillIdx=idx;
+    const showSales = idx>=3;   // 견적(3)/협상(4)/수주(5)/거래중(6) → 매출액 표시
+    const list=(lastCustomers||[]).filter(c=> idx<0 ? true : stageIdx(c.stage_name)===idx)
+      .sort((a,b)=> showSales ? (Number(b.sales_total||0)-Number(a.sales_total||0)) : String(a.name||'').localeCompare(String(b.name||'')));
+    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계'+(idx===6?' (거래후 누적매출)':''));
+    if(!list.length){ host.innerHTML='<div class="hint" style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;padding:10px">'+title+': 해당 고객이 없습니다.</div>'; return; }
+    const rows=list.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)">'
+        +'<span style="cursor:pointer" onclick="openCustomer('+c.id+')">'+esc(c.name)+' <span class="hint" style="margin:0">('+esc(c.code)+')</span></span>'
+        +(showSales?'<span style="color:#0f7a5f;font-weight:700;white-space:nowrap">'+money0(c.sales_total)+'</span>':'')
+      +'</div>').join('');
+    const totalSales=showSales?list.reduce((s,c)=>s+Number(c.sales_total||0),0):0;
+    host.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;max-height:260px;overflow:auto">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#fbfaf6;border-bottom:1px solid var(--line);font-weight:700;position:sticky;top:0">'
+        +'<span>'+title+' · '+list.length+'개 업체</span>'+(showSales?'<span style="color:#0f7a5f">합계 '+money0(totalSales)+'</span>':'')+'</div>'
+      +rows+'</div>';
   }
   function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
 
@@ -413,9 +437,12 @@
       // 매출 음영 bar: 할인률 점에서 아래로, 매출 클수록 크게 (기준선까지 클램프)
       if(hasSales && maxSales>0){
         const barH=Math.min(Math.max(4,(sales/maxSales)*maxBarH), baseY-y);
-        if(barH>0)
+        if(barH>0){
           svg+='<rect x="'+(x-barW/2)+'" y="'+y+'" width="'+barW+'" height="'+barH+'" rx="2" '
              +'fill="#0F6E56" fill-opacity="0.15" stroke="#0F6E56" stroke-opacity="0.30" stroke-width="1"/>';
+          // 누적매출 숫자(작게) — bar 상단 안쪽
+          svg+='<text x="'+x+'" y="'+(y+9)+'" text-anchor="middle" font-size="7" fill="#0b5440" font-weight="700">'+compactMoney(sales)+'</text>';
+        }
       }
       // 점: 매출 없으면 회색
       const ptColor=hasSales?'#0F6E56':'#9AA0A0';
@@ -474,20 +501,54 @@
       const items=d.items||[];
       lastCustomers=items;
       if(!items.length){b.innerHTML='<div class="hint">고객이 없습니다.</div>';return;}
-      b.innerHTML=`<table><thead><tr><th>코드</th><th>고객명</th><th>종류</th><th class="num">지점</th><th>담당</th><th>단계</th><th class="num">오픈인보이스 금액</th><th class="num">연체</th><th></th></tr></thead>
-        <tbody>${items.map(c=>{const inactive=(c.days_no_sales!=null&&Number(c.days_no_sales)>30);return `<tr>
-          <td class="code">${c.code}</td>
-          <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
-          <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
-          <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
-          <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
-          <td>${stagePill(c.stage_name)}</td>
-          <td class="num">${fmt(c.outstanding)}</td>
-          <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
-          <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
-        </tr>`;}).join('')}</tbody></table>
-        <div class="hint">${items.length}명 표시. 연체액이 있으면 빨간색입니다. <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출 고객입니다.</div>`;
+      renderCustTable();
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // 목록 정렬 상태 + 컬럼 정의 (타이틀 클릭 정렬)
+  let custSort={key:'name',dir:1};
+  const CUST_COLS=[
+    {key:'code',label:'코드'},
+    {key:'name',label:'고객명'},
+    {key:'customer_type',label:'종류'},
+    {key:'branch_count',label:'지점',num:true},
+    {key:'owner_name',label:'담당'},
+    {key:'stage',label:'단계'},
+    {key:'sales_total',label:'누적매출',num:true},
+    {key:'overdue',label:'연체',num:true},
+  ];
+  function custSortVal(c,key){
+    if(key==='stage')return stageIdx(c.stage_name);
+    if(key==='sales_total')return Number(c.sales_total||0);
+    if(key==='overdue')return Number(c.overdue||0);
+    if(key==='branch_count')return c.branch_count==null?-1:Number(c.branch_count);
+    return String(c[key]==null?'':c[key]).toLowerCase();
+  }
+  function sortCust(key){
+    if(custSort.key===key)custSort.dir*=-1; else {custSort.key=key;custSort.dir=1;}
+    renderCustTable();
+  }
+  function renderCustTable(){
+    const b=$('custList'); const items=(lastCustomers||[]).slice();
+    const k=custSort.key,dir=custSort.dir;
+    items.sort((a,bb)=>{const va=custSortVal(a,k),vb=custSortVal(bb,k); if(va<vb)return -1*dir; if(va>vb)return 1*dir; return 0;});
+    const head=CUST_COLS.map(col=>{
+      const arrow = custSort.key===col.key ? (custSort.dir>0?' ▲':' ▼') : '';
+      return '<th class="'+(col.num?'num ':'')+'" onclick="sortCust(\''+col.key+'\')" style="cursor:pointer;user-select:none" title="클릭하면 정렬">'+col.label+arrow+'</th>';
+    }).join('');
+    b.innerHTML=`<table><thead><tr>${head}<th></th></tr></thead>
+      <tbody>${items.map(c=>{const inactive=(c.days_no_sales!=null&&Number(c.days_no_sales)>30);return `<tr>
+        <td class="code">${c.code}</td>
+        <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
+        <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
+        <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
+        <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
+        <td>${stagePill(c.stage_name)}</td>
+        <td class="num">${money0(c.sales_total)}</td>
+        <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
+        <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
+      </tr>`;}).join('')}</tbody></table>
+      <div class="hint">${items.length}명 표시 · <b>누적매출</b>=거래후 누적 매출액(IVA 포함), 옆은 연체액(빨간색). <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출. 타이틀을 누르면 정렬됩니다.</div>`;
   }
 
   async function showForm(cust){
