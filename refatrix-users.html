@@ -65,7 +65,8 @@
       <div id="presList"><div class="hint">불러오는 중…</div></div>
       <div style="margin:14px 0 6px;font-size:12px;font-weight:800;color:#666">접속 위치 (IP 추정)</div>
       <div id="presMap" style="height:340px;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;background:#eef1ef"></div>
-      <div class="hint" style="margin-top:5px">IP 기반 도시 단위 추정 · 모바일망/VPN은 부정확할 수 있음. 같은 도시는 한 핀에 묶어 표시.</div>
+      <div id="presMapLegend" class="hint" style="margin-top:5px"></div>
+      <div class="hint" style="margin-top:3px">IP 기반 도시 단위 추정 · 모바일망/VPN은 부정확할 수 있음. 같은 도시는 한 핀에 묶어 표시.</div>
       <div style="border-top:1px solid #eee;margin:16px 0 12px"></div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
         <b style="font-size:14px">로그인 타임라인</b>
@@ -147,6 +148,7 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
       if(d.user?.role!=='director'){m.className='msg err';m.textContent='이 화면은 디렉터만 사용할 수 있습니다.';return;}
       session={token:d.token,user:d.user,api};
+      try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token, api, user:d.user||{}, ts:Date.now()})); }catch(e){}  // nav.js 하트비트(접속현황·위치)용 세션 — 없으면 본인이 접속/위치로 안 잡힘
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       await loadTeams(); renderPageChecks(); loadUsers(); startPresencePoll(); initTimeline();
@@ -226,7 +228,8 @@
   // 접속 위치 지도 (Leaflet, 같은 도시는 한 핀으로 묶음)
   function renderPresenceMap(items){
     const el=$('presMap'); if(!el) return;
-    if(typeof L==='undefined'){ el.innerHTML='<div class="hint" style="padding:12px">지도 라이브러리를 불러오지 못했습니다.</div>'; return; }
+    const lg=$('presMapLegend');
+    if(typeof L==='undefined'){ el.innerHTML='<div class="hint" style="padding:12px">지도 라이브러리를 불러오지 못했습니다.</div>'; if(lg)lg.textContent=''; return; }
     if(!window.__presMap){
       window.__presMap=L.map(el,{scrollWheelZoom:false,zoomControl:true}).setView([23.6,-102.5],5);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(window.__presMap);
@@ -234,11 +237,14 @@
     }
     const map=window.__presMap, lyr=window.__presLayer; lyr.clearLayers();
     const geo=(items||[]).filter(u=>u.geo_lat!=null&&u.geo_lng!=null);
-    if(!geo.length){ setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60); return; }
+    if(!geo.length){
+      if(lg) lg.innerHTML='\uD83D\uDCCD 아직 표시할 위치가 없습니다 — 로그인 사용자의 IP가 잡히면(최대 45초) 핀이 나타납니다.';
+      setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60); return;
+    }
     const groups={};
     geo.forEach(u=>{ const k=(u.geo_city||u.geo_region||u.geo_country||((+u.geo_lat).toFixed(2)+','+(+u.geo_lng).toFixed(2)));
       const gp=(groups[k]=groups[k]||{latSum:0,lngSum:0,users:[]}); gp.latSum+=(+u.geo_lat); gp.lngSum+=(+u.geo_lng); gp.users.push(u); });
-    const bounds=[];
+    const bounds=[]; let pins=0;
     Object.keys(groups).forEach(k=>{
       const gp=groups[k]; gp.lat=gp.latSum/gp.users.length; gp.lng=gp.lngSum/gp.users.length;
       const online=gp.users.filter(u=>u.online).length;
@@ -246,8 +252,10 @@
       const list=gp.users.map(u=>(u.online?'\uD83D\uDFE2 ':'\u26AA ')+presEsc(u.name||u.login_id||'')).join('<br>');
       const m=L.circleMarker([gp.lat,gp.lng],{radius:7+Math.min(12,gp.users.length*2),weight:2,color:'#0F6E56',fillColor:online?'#19a974':'#9aa3a0',fillOpacity:0.85});
       m.bindPopup('<b>'+title+'</b> ('+gp.users.length+'\uBA85, \uC811\uC18D '+online+')<br>'+list);
-      lyr.addLayer(m); bounds.push([gp.lat,gp.lng]);
+      m.bindTooltip(title+' ('+gp.users.length+')',{permanent:true,direction:'top',offset:[0,-6],className:'presTip'});
+      lyr.addLayer(m); bounds.push([gp.lat,gp.lng]); pins++;
     });
+    if(lg) lg.innerHTML='\uD83D\uDFE2 접속 중 · \u26AA 오프라인 · 핀 크기 = 인원수 · 핀/라벨 클릭 = 상세 · 표시 '+pins+'곳';
     try{ map.fitBounds(bounds,{padding:[30,30],maxZoom:11}); }catch(e){}
     setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60);
   }
