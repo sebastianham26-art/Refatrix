@@ -56,9 +56,9 @@
   .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
   .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   /* 고객 목록: 타이틀 고정 + 항목만 스크롤 */
-  #custList{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px}
+  #custList{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px;background:#fff;position:relative}
   #custList table{margin-top:0}
-  #custList thead th{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--line)}
+  #custList thead th{position:sticky;top:0;z-index:3;background:#faf8f3;box-shadow:0 1px 0 var(--line)}
   #custList .hint{padding:0 9px 8px}
   .doc-badge{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:#e7f3ee;color:var(--income)}
   /* 할인률 그래프 모달 */
@@ -126,7 +126,7 @@
       <div class="card hidden" id="detailCard">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h2 style="margin:0" id="d-name">고객 상세</h2>
-          <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
+          <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="delBtn" style="display:none;color:var(--expense);border-color:var(--expense)">삭제</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
         </div>
         <div id="d-info"></div>
         <div id="d-approval"></div>
@@ -458,7 +458,10 @@
 
   async function loadCustomers(){
     loadStageSummary();
-    const b=$('custList');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    const b=$('custList');
+    // 데이터 로드 시 목록은 항상 보이게 — 감추기 상태가 남아 이름이 안 보이는 문제 방지
+    listHidden=false; b.style.display=''; const ltb=$('listToggleBtn'); if(ltb)ltb.textContent='감추기 ▴';
+    b.innerHTML='<div class="hint">불러오는 중…</div>';
     const params=new URLSearchParams();
     if($('q').value.trim())params.set('q',$('q').value.trim());
     if(selectedTeam)params.set('team_id',selectedTeam);
@@ -548,6 +551,16 @@
   }
 
   let curCustomer=null;
+  // 디렉터 전용 고객 삭제 (백엔드: DELETE /api/customers/:id, requireDirector 소프트삭제)
+  async function deleteCustomer(){
+    if(!curCustomer||!isDirector())return;
+    if(!confirm(`고객 "${curCustomer.name}" (${curCustomer.code}) 을(를) 삭제합니다.\n삭제는 디렉터만 가능합니다. 계속할까요?`))return;
+    try{
+      const res=await fetch(session.api+'/api/customers/'+curCustomer.id,{method:'DELETE',headers:auth()});
+      if(res.ok){ $('detailCard').classList.add('hidden'); curCustomer=null; loadCustomers(); }
+      else{ const e=await res.json().catch(()=>({})); alert('삭제 실패'+(e.error?(' ('+e.error+')'):'')); }
+    }catch(e){ alert('삭제 실패'); }
+  }
   async function openCustomer(id){
     $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';
     if($('detailCard').scrollIntoView)$('detailCard').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -555,6 +568,7 @@
       const d=await fetch(session.api+'/api/customers/'+id,{headers:auth()}).then(r=>r.json());
       if(d.error){$('d-info').innerHTML='<div class="hint">'+(d.error==='forbidden_team'?'다른 팀 고객은 볼 수 없습니다.':'불러오지 못했습니다.')+'</div>';return;}
       curCustomer=d.customer;const c=d.customer;
+      $('delBtn').style.display = isDirector()?'':'none';
       $('d-name').innerHTML=`${c.name} <span class="hint" style="margin:0">(${c.code})</span> ${teamPill(c.team_name,c.team_id)}`;
       const totalOut=d.invoices.reduce((s,i)=>s+i.outstanding,0);
       const totalOver=d.invoices.reduce((s,i)=>s+(i.overdue?i.outstanding:0),0);
@@ -733,6 +747,7 @@
   $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
   $('newCustBtn').addEventListener('click',()=>showForm(null));
   $('editBtn').addEventListener('click',()=>{if(curCustomer)showForm(curCustomer);});
+  $('delBtn').addEventListener('click',deleteCustomer);
   $('d-back').addEventListener('click',()=>$('detailCard').classList.add('hidden'));
 
   // 포털 자동 로그인

@@ -346,8 +346,14 @@ export default async function quoteRoutes(app) {
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `quote:${result.id}` });
     if (customerId) {
-      // 등록 고객 견적 작성 → 단계 견적(30) 자동 전진(전진만) + 이력/미팅 로그
-      try { await autoStage({ customerId, targetSort: 30, onDate: b.quote_date || null, userId: req.ctx.perm.userId, note: `자동: 견적서 작성 (${result.quote_no}) · 견적 단계` }); } catch (_) { /* best-effort */ }
+      // 단계 자동 전진(전진만): 이름입력으로 신규 자동등록된 미등록 고객 → 접촉(20),
+      //  기존 등록 고객(선택 또는 동명 재사용) 견적 작성 → 견적(30).
+      const isNewGuest = !!(autoCustomer && autoCustomer.created);
+      const targetSort = isNewGuest ? 20 : 30;
+      const note = isNewGuest
+        ? `자동: 미등록 고객 이름입력 견적서 (${result.quote_no}) · 접촉 단계`
+        : `자동: 견적서 작성 (${result.quote_no}) · 견적 단계`;
+      try { await autoStage({ customerId, targetSort, onDate: b.quote_date || null, userId: req.ctx.perm.userId, note }); } catch (_) { /* best-effort */ }
     }
     return { id: result.id, quote_no: result.quote_no, customer_id: customerId || null, auto_customer: autoCustomer };
   });
@@ -773,7 +779,7 @@ export default async function quoteRoutes(app) {
   // 업로드(교체) — 이미지/PDF, 약 5MB 이하 base64 data URL
   app.post('/api/quotes/:id/packing-doc', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const q = (await query(`SELECT id FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const q = (await query(`SELECT id, customer_id, quote_no FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     const data = String(req.body?.data || '');
     const name = (req.body?.file_name || '').toString().slice(0, 200) || null;
@@ -787,6 +793,17 @@ export default async function quoteRoutes(app) {
          file_data=EXCLUDED.file_data, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
       [id, name, mime, data, req.ctx.perm.userId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { packing_doc_uploaded: name || true } });
+    // 포장작업지시서 스캔본 업로드 시점에도 단계 수주(50) 백스톱(전진만)
+    if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
+    return { ok: true };
+  });
+
+  // 포장작업지시서 "출력(인쇄)" 시점에 단계 수주(50) 자동 전진(전진만). 프런트 printPickList에서 호출.
+  app.post('/api/quotes/:id/packing-printed', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(`SELECT id, customer_id, quote_no FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 출력 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
     return { ok: true };
   });
 
@@ -890,6 +907,8 @@ export default async function quoteRoutes(app) {
         [invoiceId || null, customerId, req.ctx.perm.userId, id]);
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { converted_to_invoice: invoiceId, shortages: shortRows.length, dev_requests: devIds.length } });
+    // 전환 실행 → 단계 거래중(60) 자동 전진(전진만). (매출 확정 경로가 이미 올리지만 무인보이스 전환도 커버)
+    if (customerId) { try { await autoStage({ customerId, targetSort: 60, onDate: invDate, userId: req.ctx.perm.userId, note: `자동: 견적 전환 실행 (${q.quote_no}) · 거래중 단계` }); } catch (_) {} }
     return {
       ok: true, converted: true, invoice_id: invoiceId,
       invoiced: !!invoiceId,

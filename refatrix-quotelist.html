@@ -1023,6 +1023,8 @@
     if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
     win.document.open(); win.document.write(html); win.document.close();
     cvPrinted=true; updateCvGate();   // 출력 완료 → 스캔 업로드 단계 활성화
+    // 포장작업지시서 출력 → 단계 수주(50) 자동(베스트에포트)
+    if(cvId){ try{ fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}); }catch(_){} }
   }
   async function doConvert(){
     const m=$('cvMsg');m.className='msg';
