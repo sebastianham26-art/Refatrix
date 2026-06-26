@@ -161,7 +161,7 @@
       </div>
       <div class="calbar" style="margin-top:-4px">
         <span class="seg" id="calDaysSeg"><button id="cal7Btn" class="on" onclick="setCalDays(7)">7일</button><button id="cal5Btn" onclick="setCalDays(5)">평일</button></span>
-        <span class="seg"><button id="calAllBtn" class="on" onclick="setCalMine(false)">모두의 일정</button><button id="calMineBtn" onclick="setCalMine(true)">내 일정만</button></span>
+        <span class="seg"><button id="calAllBtn" class="on" onclick="setCalScope('all')">모두의 일정</button><button id="calMineBtn" onclick="setCalScope('mine')">내 일정만</button><button id="calPersBtn" onclick="setCalScope('personal')">개인일정</button></span>
       </div>
       <div id="calGrid"><div class="hint">불러오는 중…</div></div>
       <div class="hint" style="margin-top:8px"><span class="chip ev" style="display:inline-block">초록</span> 일정 · <span class="chip td" style="display:inline-block">파랑</span> 할 일(마감) · 날짜 칸을 누르면 그날 상세·추가</div>
@@ -319,7 +319,7 @@
   let calCursor=new Date(); calCursor.setHours(0,0,0,0);
   let calEvents=[], calTodos=[];
   let calDays=7;     // 7=일~토, 5=평일(월~금)
-  let calMine=false; // false=모두, true=내 일정만
+  let calScope='all'; // 'all'=모두, 'mine'=공동(team)+개인(personal), 'personal'=개인만
   const DOW=['일','월','화','수','목','금','토'];
   function cYmd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
   function cAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
@@ -343,7 +343,7 @@
     loadCal();
   }
   function setCalDays(n){ calDays=n; $('cal7Btn').classList.toggle('on',n===7); $('cal5Btn').classList.toggle('on',n===5); loadCal(); }
-  function setCalMine(m){ calMine=m; $('calAllBtn').classList.toggle('on',!m); $('calMineBtn').classList.toggle('on',m); loadCal(); }
+  function setCalScope(s){ calScope=s; $('calAllBtn').classList.toggle('on',s==='all'); $('calMineBtn').classList.toggle('on',s==='mine'); $('calPersBtn').classList.toggle('on',s==='personal'); loadCal(); }
   function calShift(dir){
     if(calView==='month') calCursor=new Date(calCursor.getFullYear(),calCursor.getMonth()+dir,1);
     else if(calView==='week') calCursor=cAddDays(calCursor,dir*7);
@@ -374,21 +374,22 @@
     } else {
       $('calTitle').textContent=(from.getMonth()+1)+'/'+from.getDate()+' – '+(to.getMonth()+1)+'/'+to.getDate();
     }
-    const mineQ=calMine?'&mine=1':'';
     try{
       const [cal,td]=await Promise.all([
-        fetch(session.api+'/api/calendar?from='+cYmd(cAddDays(from,-1))+'&to='+cYmd(cAddDays(to,1))+mineQ,{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        fetch(session.api+'/api/calendar?from='+cYmd(cAddDays(from,-1))+'&to='+cYmd(cAddDays(to,1)),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
       calEvents=cal.items||[];
-      // 할 일은 본인것/전체 구분: 내 일정만 보기면 내게 배정된 것만(디렉터는 created_by 정보 없음 → assignee 기준)
+      // 할 일: '모두'면 전체, '내 일정만'/'개인일정'이면 내게 배정된 것만
       let tds=(td.items||[]).filter(t=>t.due_date);
-      if(calMine){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||t.assignee_name===me); }
+      if(calScope!=='all'){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||t.assignee_name===me); }
       calTodos=tds;
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  function eventsOn(key){ return calEvents.filter(e=>evKey(e)===key).sort((a,b)=>evHM(a).localeCompare(evHM(b))); }
+  // scope 필터: all=전부, mine=공동(team)+개인(personal), personal=개인만
+  function scopeOk(e){ if(calScope==='all') return true; if(calScope==='personal') return e.scope==='personal'; return e.scope==='team'||e.scope==='personal'; }
+  function eventsOn(key){ return calEvents.filter(e=>evKey(e)===key && scopeOk(e)).sort((a,b)=>evHM(a).localeCompare(evHM(b))); }
   function todosOn(key){ return calTodos.filter(t=>t.due_date===key); }
 
   function renderCal(from,to){
