@@ -162,6 +162,7 @@ export default async function customerRoutes(app) {
               COALESCE(ar.overdue,0) AS overdue,
               COALESCE(ar.sales_total,0) AS sales_total,
               COALESCE(dc.doc_count,0) AS doc_count,
+              COALESCE(lq.live_quote_mxn,0) AS live_quote_mxn,
               (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS days_no_sales,
               (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS no_sale_days,
               (EXISTS (SELECT 1 FROM customer_change_requests rr WHERE rr.customer_id=c.id AND rr.status='pending')) AS has_pending
@@ -187,6 +188,14 @@ export default async function customerRoutes(app) {
             WHERE deleted_at IS NULL
             GROUP BY customer_id
          ) dc ON dc.customer_id=c.id
+         LEFT JOIN (
+           SELECT customer_id, SUM(total_mxn) AS live_quote_mxn
+             FROM quotes
+            WHERE status IN ('draft','confirmed')
+              AND (reserve_expires_at IS NULL OR reserve_expires_at > now())
+              AND deleted_at IS NULL
+            GROUP BY customer_id
+         ) lq ON lq.customer_id=c.id
         WHERE ${conds.join(' AND ')}
         ORDER BY c.name LIMIT 300`, params)).rows;
     return { items: rows.map((c) => ({
@@ -197,6 +206,7 @@ export default async function customerRoutes(app) {
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
       sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
+      live_quote_mxn: r2(c.live_quote_mxn),
       days_no_sales: c.days_no_sales == null ? null : Number(c.days_no_sales),
       no_sale_days: c.no_sale_days == null ? null : Number(c.no_sale_days),
       pending_change: !!c.has_pending,

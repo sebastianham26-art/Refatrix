@@ -363,19 +363,22 @@
     const host=$('stageDrill'); if(!host)return;
     if(drillIdx===idx){ drillIdx=null; host.innerHTML=''; return; }
     drillIdx=idx;
-    const showSales = idx>=3;   // 견적(3)/협상(4)/수주(5)/거래중(6) → 매출액 표시
+    const isQuote = idx===3;       // 견적: 현재 살아있는 견적액(전환·만료 제외)
+    const showAmt = idx>=3;        // 견적(3)/협상(4)/수주(5)/거래중(6)
+    const amtOf = c => isQuote ? Number(c.live_quote_mxn||0) : Number(c.sales_total||0);
+    const amtName = isQuote ? '살아있는 견적액' : (idx===6 ? '거래후 누적매출' : '누적매출');
     const list=(lastCustomers||[]).filter(c=> idx<0 ? true : stageIdx(c.stage_name)===idx)
-      .sort((a,b)=> showSales ? (Number(b.sales_total||0)-Number(a.sales_total||0)) : String(a.name||'').localeCompare(String(b.name||'')));
-    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계'+(idx===6?' (거래후 누적매출)':''));
+      .sort((a,b)=> showAmt ? (amtOf(b)-amtOf(a)) : String(a.name||'').localeCompare(String(b.name||'')));
+    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계'+(showAmt ? ' ('+amtName+')' : ''));
     if(!list.length){ host.innerHTML='<div class="hint" style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;padding:10px">'+title+': 해당 고객이 없습니다.</div>'; return; }
     const rows=list.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)">'
         +'<span style="cursor:pointer" onclick="openCustomer('+c.id+')">'+esc(c.name)+' <span class="hint" style="margin:0">('+esc(c.code)+')</span></span>'
-        +(showSales?'<span style="color:#0f7a5f;font-weight:700;white-space:nowrap">'+money0(c.sales_total)+'</span>':'')
+        +(showAmt?'<span style="color:#0f7a5f;font-weight:700;white-space:nowrap">'+money0(amtOf(c))+'</span>':'')
       +'</div>').join('');
-    const totalSales=showSales?list.reduce((s,c)=>s+Number(c.sales_total||0),0):0;
+    const totalAmt=showAmt?list.reduce((s,c)=>s+amtOf(c),0):0;
     host.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;max-height:260px;overflow:auto">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#fbfaf6;border-bottom:1px solid var(--line);font-weight:700;position:sticky;top:0">'
-        +'<span>'+title+' · '+list.length+'개 업체</span>'+(showSales?'<span style="color:#0f7a5f">합계 '+money0(totalSales)+'</span>':'')+'</div>'
+        +'<span>'+title+' · '+list.length+'개 업체</span>'+(showAmt?'<span style="color:#0f7a5f">합계 '+money0(totalAmt)+'</span>':'')+'</div>'
       +rows+'</div>';
   }
   function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
