@@ -151,7 +151,7 @@
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token, api, user:d.user||{}, ts:Date.now()})); }catch(e){}  // nav.js 하트비트(접속현황·위치)용 세션 — 없으면 본인이 접속/위치로 안 잡힘
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      await loadTeams(); renderPageChecks(); loadUsers(); startPresencePoll(); initTimeline();
+      await loadTeams(); renderPageChecks(); loadUsers(); startSelfHeartbeat(); startPresencePoll(); initTimeline();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -193,7 +193,12 @@
   async function loadPresence(){
     const box=$('presList'); if(!box)return;
     try{
-      const d=await fetch(session.api+'/api/presence',{headers:auth()}).then(r=>r.json());
+      const r=await fetch(session.api+'/api/presence',{headers:auth()});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok || (d&&d.error)){
+        box.innerHTML='<div class="hint" style="color:#c0392b">접속 현황 서버 오류 ('+presEsc(String(r.status))+'): '+presEsc(String(d&&(d.message||d.error)||''))+'<br>DB 마이그레이션(0091_presence_geo) 실행 여부를 확인하세요.</div>';
+        return;
+      }
       const items=(d&&d.items)||[];
       const online=items.filter(x=>x.online).length;
       const sm=$('presSummary'); if(sm)sm.textContent='접속 중 '+online+'명 / 전체 '+items.length+'명 · 자동 갱신';
@@ -225,6 +230,18 @@
     }catch(e){ box.innerHTML='<div class="hint">접속 현황을 불러오지 못했습니다.</div>'; }
   }
   function startPresencePoll(){ loadPresence(); if(presenceTimer)clearInterval(presenceTimer); presenceTimer=setInterval(loadPresence,25000); }
+  // 관리화면 자체 하트비트 — nav.js 의존 없이 본인 접속/위치를 직접 기록.
+  let selfHbTimer=null;
+  function startSelfHeartbeat(){
+    if(selfHbTimer) return;
+    const ping=()=>{ if(!session||!session.token) return;
+      fetch(session.api+'/api/presence/ping',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),
+        body:JSON.stringify({path:'refatrix-users.html'}), keepalive:true}).catch(()=>{}); };
+    ping();                              // 진입 즉시 1회
+    selfHbTimer=setInterval(ping,45000); // 45초마다
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') ping(); });
+  }
   // 접속 위치 지도 (Leaflet, 같은 도시는 한 핀으로 묶음)
   function renderPresenceMap(items){
     const el=$('presMap'); if(!el) return;
