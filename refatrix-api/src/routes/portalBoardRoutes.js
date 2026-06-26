@@ -48,16 +48,16 @@ export default async function portalBoardRoutes(app) {
       conds.push(`(e.scope='company' OR (e.scope='team' AND e.team_id = ANY($${teamIdx})) OR (e.scope='personal' AND e.owner_id=$${meIdx}) OR e.created_by=$${meIdx})`);
     }
     const rows = (await query(
-      `SELECT e.id, e.event_date, e.event_time, e.content, e.scope, e.team_id, e.owner_id,
+      `SELECT e.id, e.event_date, e.event_time, e.event_at, e.content, e.scope, e.team_id, e.owner_id,
               t.name AS team_name, u.name AS owner_name
          FROM calendar_events e
          LEFT JOIN sales_teams t ON t.id=e.team_id
          LEFT JOIN users u ON u.id=e.owner_id
         WHERE ${conds.join(' AND ')}
-        ORDER BY e.event_date, e.event_time NULLS FIRST, e.id`, args)).rows;
+        ORDER BY COALESCE(e.event_at, e.event_date::timestamptz), e.event_time NULLS FIRST, e.id`, args)).rows;
     return {
       items: rows.map((r) => ({
-        id: r.id, date: d10(r.event_date), time: r.event_time || null, content: r.content,
+        id: r.id, date: d10(r.event_date), time: r.event_time || null, at: isoTs(r.event_at), content: r.content,
         scope: r.scope, team_id: r.team_id, team_name: r.team_name, owner_id: r.owner_id, owner_name: r.owner_name,
       })),
     };
@@ -76,10 +76,13 @@ export default async function portalBoardRoutes(app) {
     const ownerId = scope === 'personal' ? (Number(b.owner_id) || perm.userId) : null;
     // 개인 일정을 남에게 지정하는 건 디렉터만(본인 것은 누구나)
     if (scope === 'personal' && ownerId !== perm.userId && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    // 절대시각: 클라이언트가 입력자 위치(브라우저 시간대) 기준으로 계산해 보낸 ISO 순간.
+    let eventAt = null;
+    if (b.event_at) { const dd = new Date(b.event_at); if (!Number.isNaN(dd.getTime())) eventAt = dd.toISOString(); }
     const r = (await query(
-      `INSERT INTO calendar_events (event_date, event_time, content, scope, team_id, owner_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [b.event_date, b.event_time ? String(b.event_time).trim() : null, String(b.content).trim(), scope, teamId, ownerId, perm.userId])).rows[0];
+      `INSERT INTO calendar_events (event_date, event_time, event_at, content, scope, team_id, owner_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [b.event_date, b.event_time ? String(b.event_time).trim() : null, eventAt, String(b.content).trim(), scope, teamId, ownerId, perm.userId])).rows[0];
     await logEvent({ userId: perm.userId, action: 'create', target: `calendar_event:${r.id}`, detail: { scope } });
     return { id: r.id };
   });

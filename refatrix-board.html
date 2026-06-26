@@ -325,6 +325,15 @@
   function cAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
   function cSunday(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
 
+  // === 타임존 환산 헬퍼 ===
+  // event_at(절대시각) 이 있으면 "보는 사람(현재 브라우저)" 시간대로 환산해 날짜/시각을 만든다.
+  // 없으면(종일 일정) 저장된 event_date 를 그대로 쓴다(시간대 무관).
+  function evAt(e){ return e && e.at ? new Date(e.at) : null; }
+  function evKey(e){ const dt=evAt(e); return dt ? cYmd(dt) : e.date; }       // 보는 사람 로컬 날짜
+  function evHM(e){ const dt=evAt(e); if(dt) return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); return e&&e.time?String(e.time):''; }
+  function tzNote(){ let z=''; try{ z=Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(_){}
+    return '<div class="hint" style="margin:0 0 8px">표시 시각은 보고 있는 분의 시간대'+(z?'('+esc(z)+')':'')+' 기준입니다.</div>'; }
+
   function setCalView(v){ calView=v;
     $('calDayBtn').classList.toggle('on',v==='day');
     $('calWeekBtn').classList.toggle('on',v==='week');
@@ -368,7 +377,7 @@
     const mineQ=calMine?'&mine=1':'';
     try{
       const [cal,td]=await Promise.all([
-        fetch(session.api+'/api/calendar?from='+cYmd(from)+'&to='+cYmd(to)+mineQ,{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        fetch(session.api+'/api/calendar?from='+cYmd(cAddDays(from,-1))+'&to='+cYmd(cAddDays(to,1))+mineQ,{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
       calEvents=cal.items||[];
@@ -379,7 +388,7 @@
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  function eventsOn(key){ return calEvents.filter(e=>e.date===key); }
+  function eventsOn(key){ return calEvents.filter(e=>evKey(e)===key).sort((a,b)=>evHM(a).localeCompare(evHM(b))); }
   function todosOn(key){ return calTodos.filter(t=>t.due_date===key); }
 
   function renderCal(from,to){
@@ -399,7 +408,7 @@
       let chips='';
       const all=[...evs.map(e=>({type:'ev',e})),...tds.map(t=>({type:'td',t}))];
       all.slice(0,maxChips).forEach(x=>{
-        if(x.type==='ev') chips+='<div class="chip ev">'+(x.e.time?'<span class="tm">'+esc(x.e.time)+'</span> ':'')+esc(x.e.content)+'</div>';
+        if(x.type==='ev'){ const _t=evHM(x.e); chips+='<div class="chip ev">'+(_t?'<span class="tm">'+esc(_t)+'</span> ':'')+esc(x.e.content)+'</div>'; }
         else chips+='<div class="chip td">▪ '+esc(x.t.title)+'</div>';
       });
       if(all.length>maxChips) chips+='<div class="cgmore">+'+(all.length-maxChips)+' 더</div>';
@@ -407,7 +416,7 @@
         +'<div class="dn">'+day.getDate()+'</div>'+chips+'</div>';
     }).join('');
     $('calGrid').style.gridTemplateColumns='';
-    $('calGrid').innerHTML='<div class="calgrid" style="grid-template-columns:repeat('+dows.length+',1fr)">'+head+cells+'</div>';
+    $('calGrid').innerHTML=tzNote()+'<div class="calgrid" style="grid-template-columns:repeat('+dows.length+',1fr)">'+head+cells+'</div>';
   }
 
   // 일 보기: 하루를 큰 목록으로
@@ -418,7 +427,7 @@
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
-      return '<div class="item" style="margin-top:6px"><div class="when">'+(e.time?'<span class="tm">'+esc(e.time)+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+      return '<div class="item" style="margin-top:6px"><div class="when">'+(evHM(e)?'<span class="tm">'+esc(evHM(e))+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
     if(tds.length){
@@ -427,7 +436,7 @@
     }
     html+='<div style="margin-top:12px"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button></div>';
     html+='</div>';
-    $('calGrid').innerHTML=html;
+    $('calGrid').innerHTML=tzNote()+html;
   }
 
   // 날짜 상세/추가 모달
@@ -442,7 +451,7 @@
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:4px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
-      return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(e.time?'<span style="color:var(--gold)">'+esc(e.time)+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
+      return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+(isDirector?'<button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>':'')+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
     // 할 일(마감)
@@ -458,14 +467,14 @@
     html+='<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
       +'<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정 추가</div>'
       +'<div class="row">'
-      +'<div style="flex:0 0 110px"><label>시간</label><input id="dm-time" type="text" placeholder="예: 14:30"></div>'
+      +'<div style="flex:0 0 130px"><label>시간(내 시간대)</label><input id="dm-time" type="text" placeholder="예: 22:00"></div>'
       +'<div style="flex:2"><label>내용</label><input id="dm-content" type="text" placeholder="일정 내용"></div>'
       +'<div style="flex:0 0 120px"><label>대상</label><select id="dm-scope" onchange="dmScopeChange()">'+scopeOpts+'</select></div>'
       +'<div style="flex:0 0 140px" id="dm-teamWrap" class="hidden"><label>팀</label><select id="dm-team">'+teamOpts+'</select></div>'
       +'</div>'
       +'<div style="margin-top:8px"><button class="btn" onclick="addCalDay()">추가</button></div>'
       +'<div class="msg" id="dm-msg"></div>'
-      +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다.</div></div>';
+      +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
     $('dmBody').innerHTML=html;
     $('dayModal').style.display='flex';
   }
@@ -473,7 +482,12 @@
   function dmScopeChange(){ $('dm-teamWrap').classList.toggle('hidden',$('dm-scope').value!=='team'); }
   async function addCalDay(){
     const m=$('dm-msg');m.className='msg';
-    const body={event_date:dmDate,event_time:$('dm-time').value.trim(),content:$('dm-content').value.trim(),scope:$('dm-scope').value};
+    // 입력 시각을 "지금 내(입력자) 위치 시간대" 로 해석해 절대시각(ISO)을 만든다.
+    const _tv=$('dm-time').value.trim();
+    let _at=null;
+    const _m=_tv.match(/^(\d{1,2}):(\d{2})/);
+    if(_m){ const p=dmDate.split('-').map(Number); const _dt=new Date(p[0],p[1]-1,p[2],Number(_m[1]),Number(_m[2]),0,0); if(!isNaN(_dt.getTime())) _at=_dt.toISOString(); }
+    const body={event_date:dmDate,event_time:_tv||null,event_at:_at,content:$('dm-content').value.trim(),scope:$('dm-scope').value};
     if(body.scope==='team')body.team_id=$('dm-team').value;
     if(!body.content){m.className='msg err';m.textContent='내용을 입력하세요.';return;}
     try{
