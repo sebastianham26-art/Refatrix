@@ -61,6 +61,15 @@
     <div class="card" id="presenceCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">접속 현황 <span id="presSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
       <div id="presList"><div class="hint">불러오는 중…</div></div>
+      <div style="border-top:1px solid #eee;margin:16px 0 12px"></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <b style="font-size:14px">로그인 타임라인</b>
+        <input type="date" id="tlDate" style="padding:5px 8px;border:1px solid #cfd6d2;border-radius:7px;font-size:13px">
+        <button class="btn sm" id="tlToday" style="padding:5px 12px">오늘</button>
+        <span id="tlInfo" class="hint" style="margin:0"></span>
+      </div>
+      <div id="tlWrap" style="overflow-x:auto;border:1px solid #eef1ef;border-radius:8px;padding:6px;background:#fff"><div class="hint">불러오는 중…</div></div>
+      <div class="hint" style="margin-top:6px">막대 = 그 시각에 로그인되어 있던 구간(세로축 0~24시, 가로축 사용자). 길수록 오래 접속 · 막대에 마우스를 올리면 시간 표시.</div>
     </div>
     <!-- 새 사용자 -->
     <div class="card">
@@ -135,7 +144,7 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      await loadTeams(); renderPageChecks(); loadUsers(); startPresencePoll();
+      await loadTeams(); renderPageChecks(); loadUsers(); startPresencePoll(); initTimeline();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -205,6 +214,63 @@
     }catch(e){ box.innerHTML='<div class="hint">접속 현황을 불러오지 못했습니다.</div>'; }
   }
   function startPresencePoll(){ loadPresence(); if(presenceTimer)clearInterval(presenceTimer); presenceTimer=setInterval(loadPresence,25000); }
+
+  // ===== 로그인 타임라인 (일자별) =====
+  let tlBound=false;
+  function tlTodayStr(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+  function tlHHMM(min){ min=Math.max(0,Math.min(1440,Math.round(min))); return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
+  function tlDur(min){ min=Math.round(min); const h=Math.floor(min/60),m=min%60; return (h?h+'시간 ':'')+m+'분'; }
+  async function loadTimeline(){
+    const wrap=$('tlWrap'); if(!wrap)return;
+    const date=($('tlDate')&&$('tlDate').value)||tlTodayStr();
+    wrap.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/presence/timeline?date='+encodeURIComponent(date),{headers:auth()}).then(r=>r.json());
+      renderTimeline(d);
+    }catch(e){ wrap.innerHTML='<div class="hint">타임라인을 불러오지 못했습니다.</div>'; }
+  }
+  function renderTimeline(d){
+    const wrap=$('tlWrap');
+    const allUsers=(d&&d.users)||[], segs=(d&&d.segments)||[];
+    const byUser={}; segs.forEach(s=>{ (byUser[s.user_id]=byUser[s.user_id]||[]).push(s); });
+    const cols=allUsers.filter(u=>byUser[u.id]&&byUser[u.id].length);
+    const dateStr=(d&&d.date)||tlTodayStr();
+    const wd=['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00').getDay()];
+    const info=$('tlInfo'); if(info) info.textContent=dateStr+' ('+wd+') · 접속 '+cols.length+'명';
+    if(!cols.length){ wrap.innerHTML='<div class="hint">이 날짜에 로그인 기록이 없습니다. (타임라인은 기능 배포 이후부터 쌓입니다.)</div>'; return; }
+    const gutter=46, colW=36, plotH=480, top=12, nameH=82;
+    const W=gutter+cols.length*colW+12, H=top+plotH+nameH;
+    const y=min=> top+(min/1440)*plotH;
+    let svg='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,Segoe UI,Roboto,sans-serif">';
+    for(let h=0;h<=24;h++){
+      const yy=y(h*60), major=(h%3===0);
+      svg+='<line x1="'+gutter+'" y1="'+yy.toFixed(1)+'" x2="'+(W-12)+'" y2="'+yy.toFixed(1)+'" stroke="'+(major?'#dfe5e2':'#f2f5f3')+'" stroke-width="1"/>';
+      if(major) svg+='<text x="'+(gutter-6)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" font-size="10" fill="#888">'+String(h).padStart(2,'0')+':00</text>';
+    }
+    cols.forEach((u,i)=>{
+      const x0=gutter+i*colW, bx=x0+5, bw=colW-10;
+      svg+='<rect x="'+x0+'" y="'+top+'" width="'+colW+'" height="'+plotH+'" fill="'+(i%2?'#fbfdfc':'#ffffff')+'"/>';
+      (byUser[u.id]||[]).forEach(s=>{
+        const yy=y(s.start_min), hh=Math.max(2,y(s.end_min)-y(s.start_min));
+        svg+='<rect x="'+bx+'" y="'+yy.toFixed(1)+'" width="'+bw+'" height="'+hh.toFixed(1)+'" rx="3" fill="#19a974" fill-opacity="0.85" stroke="#0F6E56" stroke-width="0.6">'
+            +'<title>'+presEsc(u.name||u.login_id||'')+' · '+tlHHMM(s.start_min)+'–'+tlHHMM(s.end_min)+' ('+tlDur(s.end_min-s.start_min)+')</title></rect>';
+      });
+      const lx=x0+colW/2, ly=top+plotH+12;
+      const nm=presEsc(String(u.name||u.login_id||'').slice(0,11));
+      svg+='<text x="'+lx+'" y="'+ly+'" transform="rotate(50 '+lx+' '+ly+')" font-size="10.5" fill="#444">'+nm+'</text>';
+    });
+    svg+='</svg>';
+    wrap.innerHTML=svg;
+  }
+  function initTimeline(){
+    const di=$('tlDate'); if(di&&!di.value) di.value=tlTodayStr();
+    if(!tlBound){
+      if(di) di.addEventListener('change', loadTimeline);
+      const tb=$('tlToday'); if(tb) tb.addEventListener('click', ()=>{ if($('tlDate'))$('tlDate').value=tlTodayStr(); loadTimeline(); });
+      tlBound=true;
+    }
+    loadTimeline();
+  }
 
   async function loadUsers(){
     const b=$('userList');b.innerHTML='<div class="hint">불러오는 중…</div>';
