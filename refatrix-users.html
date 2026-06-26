@@ -216,10 +216,22 @@
   function startPresencePoll(){ loadPresence(); if(presenceTimer)clearInterval(presenceTimer); presenceTimer=setInterval(loadPresence,25000); }
 
   // ===== 로그인 타임라인 (일자별) =====
-  let tlBound=false;
+  let tlBound=false, tlTimer=null;
+  // 역할 표시 순서: 관리자 → socio → 영업 → 영업지원 → 재무 → 그외
+  const TL_ROLE_ORDER={director:0,socio:1,sales:2,sales_support:3,treasury:4};
+  function tlRank(r){ return TL_ROLE_ORDER[r]!==undefined?TL_ROLE_ORDER[r]:5; }
   function tlTodayStr(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
   function tlHHMM(min){ min=Math.max(0,Math.min(1440,Math.round(min))); return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
   function tlDur(min){ min=Math.round(min); const h=Math.floor(min/60),m=min%60; return (h?h+'시간 ':'')+m+'분'; }
+  // 지정 타임존(멕시코시티) 기준 현재 날짜/분 — 브라우저 TZ와 무관하게 계산
+  function tlNowInTz(tz){
+    try{
+      const ps=new Intl.DateTimeFormat('en-CA',{timeZone:tz,hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date());
+      const m={}; ps.forEach(x=>m[x.type]=x.value);
+      let hh=parseInt(m.hour,10); if(hh===24)hh=0;
+      return { dateStr:m.year+'-'+m.month+'-'+m.day, minutes:hh*60+parseInt(m.minute,10)+parseInt(m.second,10)/60 };
+    }catch(e){ const d=new Date(); return { dateStr:tlTodayStr(), minutes:d.getHours()*60+d.getMinutes() }; }
+  }
   async function loadTimeline(){
     const wrap=$('tlWrap'); if(!wrap)return;
     const date=($('tlDate')&&$('tlDate').value)||tlTodayStr();
@@ -228,25 +240,40 @@
       const d=await fetch(session.api+'/api/presence/timeline?date='+encodeURIComponent(date),{headers:auth()}).then(r=>r.json());
       renderTimeline(d);
     }catch(e){ wrap.innerHTML='<div class="hint">타임라인을 불러오지 못했습니다.</div>'; }
+    // 오늘을 보고 있으면 1분마다 갱신(현재시각 줄 이동 + 막대 자람). 과거 날짜면 멈춤.
+    if(tlTimer){ clearInterval(tlTimer); tlTimer=null; }
+    const tz='America/Mexico_City';
+    if(date===tlNowInTz(tz).dateStr){ tlTimer=setInterval(loadTimeline,60000); }
   }
   function renderTimeline(d){
     const wrap=$('tlWrap');
+    const tz=(d&&d.tz)||'America/Mexico_City';
     const allUsers=(d&&d.users)||[], segs=(d&&d.segments)||[];
     const byUser={}; segs.forEach(s=>{ (byUser[s.user_id]=byUser[s.user_id]||[]).push(s); });
-    const cols=allUsers.filter(u=>byUser[u.id]&&byUser[u.id].length);
+    // 전체 유저 고정 컬럼 — 지정 순서(역할 rank → 이름)
+    const cols=allUsers.slice().sort((a,b)=>{
+      const ra=tlRank(a.role), rb=tlRank(b.role);
+      if(ra!==rb) return ra-rb;
+      return String(a.name||a.login_id||'').localeCompare(String(b.name||b.login_id||''),'ko');
+    });
+    const activeCnt=cols.filter(u=>byUser[u.id]&&byUser[u.id].length).length;
     const dateStr=(d&&d.date)||tlTodayStr();
     const wd=['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00').getDay()];
-    const info=$('tlInfo'); if(info) info.textContent=dateStr+' ('+wd+') · 접속 '+cols.length+'명';
-    if(!cols.length){ wrap.innerHTML='<div class="hint">이 날짜에 로그인 기록이 없습니다. (타임라인은 기능 배포 이후부터 쌓입니다.)</div>'; return; }
-    const gutter=46, colW=36, plotH=480, top=12, nameH=82;
+    const info=$('tlInfo'); if(info) info.textContent=dateStr+' ('+wd+') · 접속 '+activeCnt+' / 전체 '+cols.length+'명';
+    if(!cols.length){ wrap.innerHTML='<div class="hint">표시할 사용자가 없습니다.</div>'; return; }
+    const gutter=46, colW=38, plotH=480, top=12;
+    const maxLen=cols.reduce((m,u)=>Math.max(m,String(u.name||u.login_id||'').length),0);
+    const nameH=Math.min(160, 40+maxLen*7);
     const W=gutter+cols.length*colW+12, H=top+plotH+nameH;
     const y=min=> top+(min/1440)*plotH;
     let svg='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,Segoe UI,Roboto,sans-serif">';
+    // 시간 격자
     for(let h=0;h<=24;h++){
       const yy=y(h*60), major=(h%3===0);
       svg+='<line x1="'+gutter+'" y1="'+yy.toFixed(1)+'" x2="'+(W-12)+'" y2="'+yy.toFixed(1)+'" stroke="'+(major?'#dfe5e2':'#f2f5f3')+'" stroke-width="1"/>';
       if(major) svg+='<text x="'+(gutter-6)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" font-size="10" fill="#888">'+String(h).padStart(2,'0')+':00</text>';
     }
+    // 컬럼 + 막대
     cols.forEach((u,i)=>{
       const x0=gutter+i*colW, bx=x0+5, bw=colW-10;
       svg+='<rect x="'+x0+'" y="'+top+'" width="'+colW+'" height="'+plotH+'" fill="'+(i%2?'#fbfdfc':'#ffffff')+'"/>';
@@ -256,11 +283,19 @@
             +'<title>'+presEsc(u.name||u.login_id||'')+' · '+tlHHMM(s.start_min)+'–'+tlHHMM(s.end_min)+' ('+tlDur(s.end_min-s.start_min)+')</title></rect>';
       });
       const lx=x0+colW/2, ly=top+plotH+12;
-      const nm=presEsc(String(u.name||u.login_id||'').slice(0,11));
+      const nm=presEsc(String(u.name||u.login_id||'').slice(0,20));
       svg+='<text x="'+lx+'" y="'+ly+'" transform="rotate(50 '+lx+' '+ly+')" font-size="10.5" fill="#444">'+nm+'</text>';
     });
+    // 현재 시각 가로줄 (오늘을 볼 때만)
+    const now=tlNowInTz(tz);
+    if(dateStr===now.dateStr){
+      const ny=y(now.minutes);
+      svg+='<line x1="'+gutter+'" y1="'+ny.toFixed(1)+'" x2="'+(W-12)+'" y2="'+ny.toFixed(1)+'" stroke="#e23744" stroke-width="1.5" stroke-dasharray="5 3"/>';
+      svg+='<text x="'+(W-14)+'" y="'+(ny-4).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="700" fill="#e23744">현재 '+tlHHMM(now.minutes)+'</text>';
+    }
     svg+='</svg>';
-    wrap.innerHTML=svg;
+    let note = activeCnt? '' : '<div class="hint" style="margin:0 0 4px">이 날짜 로그인 기록 없음 (타임라인은 기능 배포 이후부터 쌓입니다).</div>';
+    wrap.innerHTML=note+svg;
   }
   function initTimeline(){
     const di=$('tlDate'); if(di&&!di.value) di.value=tlTodayStr();
