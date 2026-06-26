@@ -478,7 +478,7 @@
       else { const dir=isDirector(); const od=a=>a.open_date?String(a.open_date).slice(0,10):'';
         b.innerHTML=`<table><thead><tr><th>계좌</th><th>유형</th><th>통화</th><th class="num">기초잔액</th><th>개설일</th><th class="num">현재 잔액</th><th>비고</th>${dir?'<th>관리</th>':''}</tr></thead>
         <tbody>${accounts.map(a=>{
-          if(dir && accEditId===a.id){
+          if(dir && accEditId!=null && String(accEditId)===String(a.id)){
             return `<tr class="acc-edit-row" data-id="${a.id}" style="background:#fffaf0">
               <td><b>${a.name}</b></td><td>${a.type||'—'}</td><td>${a.currency}</td>
               <td class="num"><input id="ae-open-${a.id}" type="number" step="0.01" value="${a.open_balance}" style="width:120px;text-align:right"></td>
@@ -528,7 +528,7 @@
   }
 
   // 기존 계좌의 기초잔액·개설일 인라인 수정 (디렉터 전용)
-  function editAccOpen(id){ accEditId=Number(id); loadAccounts(); }
+  function editAccOpen(id){ accEditId=String(id); loadAccounts(); }
   function cancelAccEdit(){ accEditId=null; loadAccounts(); }
   async function saveAccEdit(id){
     const m=$('accMsg');m.className='msg';
