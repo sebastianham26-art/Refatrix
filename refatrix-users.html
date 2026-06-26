@@ -218,8 +218,10 @@
           const status=u.online
             ? '<span style="color:#0F6E56;font-weight:700"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19a974;margin-right:5px;vertical-align:middle"></span>접속 중</span>'
             : '<span style="color:#888">'+presEsc(presWhen(u.last_seen,u.seconds_ago))+'</span>';
+          const srcTag=u.geo_src==='gps' ? ' · GPS'+(u.geo_acc?(' \u00B1'+u.geo_acc+'m'):'') : (u.geo_src==='ip'?' · IP 추정':'');
           const locTxt=[u.geo_city,u.geo_region,u.geo_country].filter(Boolean).map(presEsc).join(', ');
-          const loc=locTxt?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCCD '+locTxt+'</div>':'';
+          const locShown = locTxt || (u.geo_src==='gps'?'GPS 위치':'');
+          const loc=locShown?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCCD '+locShown+srcTag+'</div>':'';
           return '<div style="border:1px solid #e3e3e3;border-radius:10px;padding:8px 11px;min-width:160px;background:'+(u.online?'#f3fbf7':'#fff')+'">'
             +'<div style="font-weight:700"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+userColor(u.id).fill+';border:1px solid '+userColor(u.id).stroke+';margin-right:6px;vertical-align:middle"></span>'+presEsc(u.name||'-')+'</div>'
             +'<div class="hint" style="margin:2px 0 4px">'+meta+'</div>'
@@ -272,15 +274,18 @@
         const ang=(2*Math.PI*idx)/Math.max(1,n);
         const lat=gp.lat+(n>1?R*Math.cos(ang):0), lng=gp.lng+(n>1?R*Math.sin(ang):0);
         const c=userColor(u.id);
-        const cityNm=presEsc(u.geo_city||u.geo_region||u.geo_country||'위치');
+        const isGps=(u.geo_src==='gps');
+        const cityNm=presEsc(u.geo_city||u.geo_region||u.geo_country||(isGps?'GPS 위치':'위치'));
+        const srcTag=isGps?('GPS'+(u.geo_acc?(' \u00B1'+u.geo_acc+'m'):'')):'IP 추정';
         const m=L.circleMarker([lat,lng],{radius:u.online?9:7,weight:u.online?3:1.5,
-          color:u.online?'#19a974':c.stroke, fillColor:c.fill, fillOpacity:u.online?0.95:0.5});
-        m.bindPopup('<b>'+presEsc(u.name||u.login_id||'')+'</b><br>'+cityNm+' · '+(u.online?'\uD83D\uDFE2 접속 중':'\u26AA 오프라인'));
+          color:u.online?'#19a974':c.stroke, fillColor:c.fill, fillOpacity:u.online?0.95:0.5,
+          dashArray:isGps?null:'4 3'});
+        m.bindPopup('<b>'+presEsc(u.name||u.login_id||'')+'</b><br>'+cityNm+' · '+(u.online?'\uD83D\uDFE2 접속 중':'\u26AA 오프라인')+'<br><span style="color:#888">'+srcTag+'</span>');
         m.bindTooltip(presEsc(u.name||u.login_id||''),{permanent:true,direction:'top',offset:[0,-6],className:'presTip'});
         lyr.addLayer(m); bounds.push([lat,lng]); pins++;
       });
     });
-    if(lg) lg.innerHTML='핀 색 = 사용자 고유색 · 초록 테두리 = 접속 중 · 핀/라벨 클릭 = 상세 · 표시 '+pins+'명';
+    if(lg) lg.innerHTML='핀 색 = 사용자 고유색 · 실선=GPS, 점선=IP추정 · 초록 테두리=접속중 · 클릭=상세 · 표시 '+pins+'명';
     window.__presBounds=bounds;
     try{ map.fitBounds(bounds,{padding:[30,30],maxZoom:11}); }catch(e){}
     setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60);
@@ -574,6 +579,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260625c"></script>
+<script src="refatrix-nav.js?v=20260626gps"></script>
 </body>
 </html>

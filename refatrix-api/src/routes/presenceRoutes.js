@@ -33,36 +33,49 @@ export default async function presenceRoutes(app) {
     let path = null;
     if (req.body && typeof req.body.path === 'string') path = req.body.path.slice(0, 200);
 
-    // 클라이언트 IP → 위치 추정(오프라인 GeoLite2). 사설/로컬 IP는 null.
+    // 위치: GPS(브라우저 동의) 우선 → 없으면 IP 추정(오프라인 GeoLite2).
+    const bLat = req.body && typeof req.body.lat === 'number' ? req.body.lat : null;
+    const bLng = req.body && typeof req.body.lng === 'number' ? req.body.lng : null;
+    const bAcc = req.body && typeof req.body.acc === 'number' ? req.body.acc : null;
+    const hasGps = bLat != null && bLng != null && Math.abs(bLat) <= 90 && Math.abs(bLng) <= 180;
+
     const ip = normalizeIp(req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0]);
     let g = null;
     if (ip) { try { g = geoip.lookup(ip); } catch (e) { g = null; } }
+    // 도시/지역/국가 라벨은 IP 기준(GPS는 좌표만 제공). 좌표는 GPS 우선.
     const geoCity    = g && g.city    ? g.city    : null;
     const geoRegion  = g && g.region  ? g.region  : null;
     const geoCountry = g && g.country ? g.country : null;
-    const geoLat     = g && g.ll      ? g.ll[0]   : null;
-    const geoLng     = g && g.ll      ? g.ll[1]   : null;
+    const ipLat      = g && g.ll      ? g.ll[0]   : null;
+    const ipLng      = g && g.ll      ? g.ll[1]   : null;
+    const geoLat     = hasGps ? bLat : ipLat;
+    const geoLng     = hasGps ? bLng : ipLng;
+    const geoSrc     = hasGps ? 'gps' : (geoLat != null ? 'ip' : null);
+    const geoAcc     = hasGps && bAcc != null ? Math.round(bAcc) : null;
 
     // (1) 현재 접속 카드용: 마지막 시각 + IP/위치 upsert.
     //     공인 IP가 있을 때만 위치를 갱신, 사설/로컬이면 직전 위치를 유지(COALESCE/CASE).
     await query(
       `INSERT INTO user_presence
             (user_id, last_seen, last_path, updated_at,
-             last_ip, geo_city, geo_region, geo_country, geo_lat, geo_lng, geo_at)
+             last_ip, geo_city, geo_region, geo_country, geo_lat, geo_lng, geo_src, geo_acc, geo_at)
             VALUES ($1, now(), $2, now(),
-             $3::text, $4, $5, $6, $7, $8, CASE WHEN $3::text IS NULL THEN NULL ELSE now() END)
+             $3::text, $4, $5, $6, $7, $8, $9::text, $10,
+             CASE WHEN $9::text IS NULL THEN NULL ELSE now() END)
        ON CONFLICT (user_id) DO UPDATE SET
              last_seen   = now(),
              updated_at  = now(),
              last_path   = COALESCE($2, user_presence.last_path),
              last_ip     = COALESCE($3::text, user_presence.last_ip),
-             geo_city    = CASE WHEN $3::text IS NULL THEN user_presence.geo_city    ELSE $4 END,
-             geo_region  = CASE WHEN $3::text IS NULL THEN user_presence.geo_region  ELSE $5 END,
-             geo_country = CASE WHEN $3::text IS NULL THEN user_presence.geo_country ELSE $6 END,
-             geo_lat     = CASE WHEN $3::text IS NULL THEN user_presence.geo_lat     ELSE $7 END,
-             geo_lng     = CASE WHEN $3::text IS NULL THEN user_presence.geo_lng     ELSE $8 END,
-             geo_at      = CASE WHEN $3::text IS NULL THEN user_presence.geo_at      ELSE now() END`,
-      [userId, path, ip, geoCity, geoRegion, geoCountry, geoLat, geoLng]
+             geo_city    = CASE WHEN $9::text IS NULL THEN user_presence.geo_city    ELSE $4 END,
+             geo_region  = CASE WHEN $9::text IS NULL THEN user_presence.geo_region  ELSE $5 END,
+             geo_country = CASE WHEN $9::text IS NULL THEN user_presence.geo_country ELSE $6 END,
+             geo_lat     = CASE WHEN $9::text IS NULL THEN user_presence.geo_lat     ELSE $7 END,
+             geo_lng     = CASE WHEN $9::text IS NULL THEN user_presence.geo_lng     ELSE $8 END,
+             geo_src     = CASE WHEN $9::text IS NULL THEN user_presence.geo_src     ELSE $9::text END,
+             geo_acc     = CASE WHEN $9::text IS NULL THEN user_presence.geo_acc     ELSE $10 END,
+             geo_at      = CASE WHEN $9::text IS NULL THEN user_presence.geo_at      ELSE now() END`,
+      [userId, path, ip, geoCity, geoRegion, geoCountry, geoLat, geoLng, geoSrc, geoAcc]
     );
 
     // (2) 타임라인용: 최근 세션이 gap 이내면 연장, 아니면 새 세션 시작 (단일 문장으로 원자적 처리)
@@ -95,7 +108,7 @@ export default async function presenceRoutes(app) {
       `SELECT u.id, u.name, u.login_id, u.role, u.dept,
               t.name AS team_name,
               p.last_seen, p.last_path,
-              p.last_ip, p.geo_city, p.geo_region, p.geo_country, p.geo_lat, p.geo_lng, p.geo_at,
+              p.last_ip, p.geo_city, p.geo_region, p.geo_country, p.geo_lat, p.geo_lng, p.geo_src, p.geo_acc, p.geo_at,
               EXTRACT(EPOCH FROM (now() - p.last_seen)) AS seconds_ago,
               (p.last_seen IS NOT NULL
                 AND p.last_seen > now() - ($1 || ' seconds')::interval) AS online
@@ -122,6 +135,8 @@ export default async function presenceRoutes(app) {
       geo_country: r.geo_country,
       geo_lat: r.geo_lat == null ? null : Number(r.geo_lat),
       geo_lng: r.geo_lng == null ? null : Number(r.geo_lng),
+      geo_src: r.geo_src,
+      geo_acc: r.geo_acc == null ? null : Number(r.geo_acc),
       geo_at: r.geo_at,
       seconds_ago: r.seconds_ago == null ? null : Number(r.seconds_ago),
       online: r.online === true,

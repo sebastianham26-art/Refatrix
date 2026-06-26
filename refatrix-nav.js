@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260625e loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260626gps loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -100,6 +100,21 @@
 
   var sess=null, sum=null, openGroup=null;
   // 접속 현황 하트비트 — 모든 페이지에서 주기적으로 last_seen 갱신(관리화면 디렉터 전용 표시용).
+  // 위치(GPS) 수집 — 브라우저 동의 팝업. 허용 시 좌표를 ping 에 실어 보냄(미동의/미지원 시 서버가 IP 추정 폴백).
+  function startGeo(){
+    if(window.__rgeoInit) return; window.__rgeoInit=true;
+    if(!('geolocation' in navigator)) return;
+    function grab(){
+      try{
+        navigator.geolocation.getCurrentPosition(function(p){
+          window.__rgeo={lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy, t:Date.now()};
+        }, function(){ /* 거부/실패 -> IP 폴백, 재촉 안 함 */ },
+        {enableHighAccuracy:true, timeout:15000, maximumAge:120000});
+      }catch(e){}
+    }
+    grab();                              // 로그인 직후 1회(동의 팝업 트리거)
+    setInterval(grab, 300000);           // 5분마다 갱신(허용된 경우 조용히)
+  }
   function startHeartbeat(api){
     if(window.__rnavHeartbeat) return;                 // 중복 가동 방지
     function ping(){
@@ -107,11 +122,16 @@
         var s=getSession(); if(!s||!s.token) return;
         var a=(s.api||api||'').replace(/\/+$/,'');
         var path=(location.pathname.split('/').pop()||'').toLowerCase();
+        var body={path:path};
+        if(window.__rgeo && (Date.now()-window.__rgeo.t < 600000)){   // 10분 이내 GPS 좌표면 동봉
+          body.lat=window.__rgeo.lat; body.lng=window.__rgeo.lng; body.acc=window.__rgeo.acc;
+        }
         fetch(a+'/api/presence/ping',{method:'POST',
           headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
-          body:JSON.stringify({path:path}), keepalive:true}).catch(function(){});
+          body:JSON.stringify(body), keepalive:true}).catch(function(){});
       }catch(e){}
     }
+    startGeo();                                        // GPS 동의/수집 시작
     ping();                                            // 진입 즉시 1회
     window.__rnavHeartbeat=setInterval(ping, 45000);   // 45초마다(탭이 열려있는 동안 = 접속 중)
     document.addEventListener('visibilitychange',function(){
