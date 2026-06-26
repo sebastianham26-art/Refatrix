@@ -1,5 +1,5 @@
 import { query } from '../db.js';
-import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { logEvent } from '../audit.js';
 
@@ -78,12 +78,95 @@ export default async function wbrRoutes(app) {
     return { id: Number(r.id), full: r.file_data, mime: r.mime, caption: r.caption };
   });
 
-  // 삭제
+  // 삭제 — 단, 어떤 스냅샷이라도 이 사진을 참조 중이면 행은 보존(과거 스냅샷이 깨지지 않도록).
+  //   라이브 보드의 참조는 프런트가 board.photos 에서 빼고 저장하므로, 행만 살려두면 라이브에선 사라지고 스냅샷에선 계속 보인다.
   app.delete('/api/wbr/photos/:id', { preHandler: [authGuard, requirePageEdit('wbr')] }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const ref = (await query(`SELECT 1 FROM wbr_snapshots WHERE $1 = ANY(photo_ids) LIMIT 1`, [id])).rows[0];
+    if (ref) {
+      // 스냅샷이 참조 중 → 하드삭제하지 않고 보존(라이브 화면에선 프런트가 참조만 제거).
+      logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_photo_del_kept', target: `wbr_photo:${id}` });
+      return { ok: true, id, kept: true };
+    }
     await query(`DELETE FROM wbr_issue_photos WHERE id=$1`, [id]);
     logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_photo_del', target: `wbr_photo:${id}` });
+    return { ok: true, id };
+  });
+
+  // ===== 주간 스냅샷(동결 보관) =====
+  // 저장/삭제 = 디렉터 전용. 목록/열람 = 'wbr' 열람 권한.
+
+  // data.board.photos 에서 참조하는 사진 id 전부 추출(하드삭제 보호용 비정규화).
+  function extractPhotoIds(data) {
+    const out = new Set();
+    const photos = data && data.board && data.board.photos;
+    if (photos && typeof photos === 'object') {
+      for (const tk of Object.keys(photos)) {
+        const wks = photos[tk] || {};
+        for (const wk of Object.keys(wks)) {
+          const arr = wks[wk];
+          if (Array.isArray(arr)) for (const v of arr) { const n = Number(v); if (Number.isInteger(n) && n > 0) out.add(n); }
+        }
+      }
+    }
+    return Array.from(out);
+  }
+
+  // 저장(신규 스냅샷 생성) — { label, period_label?, data } 전체 동결 페이로드.
+  app.post('/api/wbr/snapshots', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const b = req.body || {};
+    const label = (typeof b.label === 'string' ? b.label.trim() : '');
+    const data = b.data;
+    if (!label) return reply.code(400).send({ error: 'missing_label' });
+    if (label.length > 200) return reply.code(400).send({ error: 'label_too_long' });
+    if (data == null || typeof data !== 'object' || Array.isArray(data)) return reply.code(400).send({ error: 'bad_data' });
+    let json;
+    try { json = JSON.stringify(data); } catch { return reply.code(400).send({ error: 'bad_json' }); }
+    if (json.length > 2000000) return reply.code(413).send({ error: 'too_large' }); // 2MB 방어(사진은 참조만이라 충분)
+    const periodLabel = (typeof b.period_label === 'string' ? b.period_label.slice(0, 300) : null);
+    const photoIds = extractPhotoIds(data);
+    const uid = req.ctx.perm.userId;
+    const r = (await query(
+      `INSERT INTO wbr_snapshots (label, period_label, data, photo_ids, created_by)
+         VALUES ($1, $2, $3::jsonb, $4, $5)
+       RETURNING id, created_at`,
+      [label, periodLabel, json, photoIds, uid]
+    )).rows[0];
+    logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'wbr_snapshot_save', target: `wbr_snapshot:${r.id}` });
+    return { id: Number(r.id), created_at: r.created_at };
+  });
+
+  // 목록 — 무거운 data 는 빼고 메타만(작성자 이름 포함). 최신순.
+  app.get('/api/wbr/snapshots', { preHandler: [authGuard, requirePage('wbr')] }, async () => {
+    const rows = (await query(
+      `SELECT s.id, s.label, s.period_label, s.created_at, u.name AS created_by_name
+         FROM wbr_snapshots s
+         LEFT JOIN users u ON u.id = s.created_by
+        ORDER BY s.created_at DESC`
+    )).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), label: r.label, period_label: r.period_label, created_at: r.created_at, created_by_name: r.created_by_name || null })) };
+  });
+
+  // 1건 전체(동결 data 포함) — 열람용.
+  app.get('/api/wbr/snapshots/:id', { preHandler: [authGuard, requirePage('wbr')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(
+      `SELECT s.id, s.label, s.period_label, s.data, s.created_at, u.name AS created_by_name
+         FROM wbr_snapshots s LEFT JOIN users u ON u.id = s.created_by
+        WHERE s.id=$1`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { id: Number(r.id), label: r.label, period_label: r.period_label, data: r.data || {}, created_at: r.created_at, created_by_name: r.created_by_name || null };
+  });
+
+  // 삭제 — 디렉터 전용.
+  app.delete('/api/wbr/snapshots/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`DELETE FROM wbr_snapshots WHERE id=$1 RETURNING id`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_snapshot_del', target: `wbr_snapshot:${id}` });
     return { ok: true, id };
   });
 }

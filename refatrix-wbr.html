@@ -132,6 +132,12 @@
   .qstag.open{background:#eef2ef;color:#4a5a52}
   .qstag.conv{background:#e4f0eb;color:var(--income)}
   .qsempty{font-size:12.5px;color:var(--muted);padding:10px 2px}
+  /* ===== 스냅샷(주간 저장본) ===== */
+  #snapSel{padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;font:inherit;font-size:13px;min-width:240px;max-width:100%}
+  .snapbanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff7e6;border:1px solid var(--gold);border-radius:12px;padding:11px 15px;margin-top:10px;font-size:13px;color:#7a5a12;font-weight:700}
+  .snapbanner .bk{margin-left:auto}
+  .viewlocked{pointer-events:none;opacity:.55}
+  @media print{ #snapRow{display:none!important} }
   /* ===== 인쇄(PDF 저장) ===== */
   @media print{
     @page{margin:12mm}
@@ -180,7 +186,15 @@
         <button class="btn gold" id="pdfBtn">📄 이 페이지를 PDF로 저장</button>
         <span class="hint">파일명: Refatrix_WBR_YYMMDD · 브라우저 인쇄창에서 "PDF로 저장" 선택</span>
       </div>
+      <div class="mrow" id="snapRow" style="margin-top:12px"><span class="ml">저장된 회의</span>
+        <select id="snapSel"><option value="">— 현재(라이브) —</option></select>
+        <button class="btn gold hidden" id="snapSaveBtn" style="padding:7px 12px">💾 이번 회의 저장</button>
+        <button class="btn hidden" id="snapDelBtn" style="padding:7px 12px;background:#b4561f">🗑 이 저장본 삭제</button>
+        <span class="hint" id="snapHint"></span>
+      </div>
     </div>
+    <!-- 스냅샷 열람 배너(열람 모드에서만 표시) -->
+    <div class="snapbanner hidden no-print" id="snapBanner"></div>
     <div class="ctxline no-print" id="ctxLine"></div>
 
     <!-- 3개 요약 카드 -->
@@ -244,6 +258,11 @@
   ];
   let board={issues:{},memo:''};   // 영속 상태(서버 저장)
   let canEdit=true;                 // 'wbr' 수정 권한 여부(서버 can_edit). 열람 전용이면 입력 차단
+  // ===== 스냅샷(주간 저장본) 상태 =====
+  let lastCards=null, lastWaterfall=null, lastQuotes=null;  // 최근 라이브 렌더 데이터(저장 시 동결)
+  let viewMode=null;                // 열람 중인 스냅샷 객체(null=라이브)
+  let liveBackup=null;              // 열람 진입 시 라이브 상태 백업
+  let isDirector=false;             // 디렉터만 저장/삭제 가능
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -265,9 +284,12 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      isDirector=((d.user&&d.user.role)==='director');
+      $('snapSaveBtn').classList.toggle('hidden', !isDirector);
       renderMonthBtns();
       loadBoard();
       refreshAll();
+      loadSnapList('');
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -280,6 +302,7 @@
     $('topMonths').querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',()=>pickTop(b.dataset.ym)));
   }
   function pickTop(ym){
+    if(viewMode) return;            // 열람 모드에선 월 변경 금지(동결 데이터 유지)
     if(topYms.includes(ym)){ if(topYms.length>1) topYms=topYms.filter(x=>x!==ym); }
     else topYms=[...topYms,ym].sort();
     renderMonthBtns(); refreshAll();
@@ -293,6 +316,7 @@
     $('teamToggle').querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',()=>pickTeam(b.dataset.t)));
   }
   function pickTeam(t){
+    if(viewMode) return;            // 열람 모드에선 팀 변경 금지
     t=String(t);
     if(t==='total'){ teamSel=new Set(['total']); }
     else{
@@ -358,6 +382,7 @@
       else if((su.teams||[]).length){ teamsList=su.teams.map(t=>({id:t.id,name:t.name})); }
       // multi-month 표시
       if(topYms.length>1) su.multi=true;
+      lastCards=su;
       renderCards(su);
     }catch(e){ $('cards').innerHTML='<div class="card" style="margin:0;grid-column:1/-1"><div class="hint">불러오지 못했습니다.</div></div>'; }
   }
@@ -415,6 +440,7 @@
       const keys=resolveTeamKeys();
       const list=await Promise.all(keys.map(fetchWeekly));
       const wk=list.length===1?list[0]:aggWeekly(list);
+      lastWaterfall=wk;
       renderWaterfall(wk);
     }catch(e){ $('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
@@ -469,6 +495,7 @@
         .filter(q=> ymSet.has(String(q.quote_date||'').slice(0,7)))   // 선택월만(비연속 선택 대응)
         .filter(q=> Q_STATUS.includes(q.status))
         .filter(q=> !teamFilter || (q.team_id!=null && teamFilter.has(String(q.team_id))));
+      lastQuotes=items;
       renderQuoteSummary(items);
     }catch(e){
       $('qsumSrc').textContent='';
@@ -684,7 +711,7 @@
     [$('issueSave'),$('memoSave')].forEach(el=>{ el.className='saveind ok'; el.textContent='저장됨 '+hh; });
   }
   function saveBoard(which){
-    if(!canEdit) return;                         // 열람 전용이면 저장 시도 안 함
+    if(!canEdit || viewMode) return;             // 열람 전용/스냅샷 열람 중이면 저장 시도 안 함
     markSaving(which);
     clearTimeout(saveTimer);
     saveTimer=setTimeout(async()=>{
@@ -699,19 +726,152 @@
 
   // ===== PDF 저장 =====
   function savePdf(){
-    const d=new Date();
-    const yy=String(d.getFullYear()).slice(2), mm=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
-    const name='Refatrix_WBR_'+yy+mm+dd;
+    let name;
+    if(viewMode && viewMode.label){
+      name='Refatrix_WBR_'+String(viewMode.label).replace(/[^0-9A-Za-z._-]+/g,'_').replace(/^_+|_+$/g,'');
+    }else{
+      const d=new Date();
+      const yy=String(d.getFullYear()).slice(2), mm=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+      name='Refatrix_WBR_'+yy+mm+dd;
+    }
     const prev=document.title;
     document.title=name;                 // 브라우저 "PDF로 저장" 기본 파일명 = document.title
     window.print();
     setTimeout(()=>{ document.title=prev; },1200);
   }
 
+  // ===== 스냅샷(주간 저장본): ISO 주차 라벨 · 목록 · 저장 · 열람/복귀 · 삭제 =====
+  function isoWeekLabel(d){
+    const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+    const day=(t.getUTCDay()+6)%7; t.setUTCDate(t.getUTCDate()-day+3);     // 그 주 목요일로 이동
+    const firstThu=new Date(Date.UTC(t.getUTCFullYear(),0,4));
+    const wk=1+Math.round(((t-firstThu)/86400000 - 3 + ((firstThu.getUTCDay()+6)%7))/7);
+    const mm=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+    return t.getUTCFullYear()+'-W'+String(wk).padStart(2,'0')+' ('+mm+'/'+dd+')';
+  }
+  function fmtDateTime(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+
+  async function loadSnapList(selectId){
+    try{
+      const d=await fetch(session.api+'/api/wbr/snapshots',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      let h='<option value="">— 현재(라이브) —</option>';
+      h+=items.map(it=>'<option value="'+it.id+'">'+esc(it.label)+(it.period_label?' · '+esc(it.period_label):'')+'</option>').join('');
+      const sel=$('snapSel'); sel.innerHTML=h;
+      sel.value = selectId!=null ? String(selectId) : (viewMode?String(viewMode.id):'');
+    }catch(e){ /* 권한·네트워크 실패 시 드롭다운은 라이브만 */ }
+  }
+
+  async function saveSnapshot(){
+    if(!isDirector || viewMode) return;
+    if(lastCards===null || lastWaterfall===null || lastQuotes===null){
+      alert('데이터를 아직 불러오는 중입니다. 카드·견적·워터폴이 모두 표시된 뒤 다시 저장하세요.'); return;
+    }
+    const def=isoWeekLabel(new Date());
+    const label=prompt('이 회의를 저장합니다. 저장본 이름을 확인/수정하세요.', def);
+    if(label===null) return;                 // 취소
+    const name=(label||'').trim()||def;
+    const periodLabel=$('ctxLine').textContent||'';
+    const data={
+      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes,
+      board:{issues:board.issues, photos:board.photos, memo:board.memo},
+      ctx:{ topYms:[...topYms], teamSel:Array.from(teamSel), teamsList:teamsList, ctxText:periodLabel }
+    };
+    const btn=$('snapSaveBtn'); const prev=btn.textContent; btn.disabled=true; btn.textContent='저장 중…';
+    try{
+      const res=await fetch(session.api+'/api/wbr/snapshots',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({label:name,period_label:periodLabel,data})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('저장 실패: '+(d.error||res.status)); }
+      else{ $('snapHint').textContent='저장됨: '+name; await loadSnapList(''); }
+    }catch(e){ alert('저장 실패: 서버에 연결할 수 없습니다.'); }
+    finally{ btn.disabled=false; btn.textContent=prev; }
+  }
+
+  async function enterView(id){
+    let d;
+    try{ const res=await fetch(session.api+'/api/wbr/snapshots/'+id,{headers:auth()}); d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status); }
+    catch(e){ alert('저장본을 불러오지 못했습니다.'); $('snapSel').value = viewMode?String(viewMode.id):''; return; }
+    const data=d.data||{};
+    // 라이브 상태 백업(최초 1회만)
+    if(!viewMode) liveBackup={topYms:[...topYms], teamSel:new Set(teamSel), teamsList:teamsList.slice(), board:board, canEdit:canEdit};
+    viewMode={id:Number(d.id), label:d.label, created_at:d.created_at, created_by_name:d.created_by_name};
+    // 동결 컨텍스트로 전환
+    const ctx=data.ctx||{};
+    if(Array.isArray(ctx.topYms)&&ctx.topYms.length) topYms=ctx.topYms.slice();
+    teamSel=new Set(Array.isArray(ctx.teamSel)&&ctx.teamSel.length?ctx.teamSel.map(String):['total']);
+    if(Array.isArray(ctx.teamsList)) teamsList=ctx.teamsList.slice();
+    board=normalizeBoard(data.board||{});
+    canEdit=false;                            // 열람 모드: 보드 편집 잠금
+    // 칩 재렌더(동결 선택 반영) + 클릭 잠금
+    renderMonthBtns(); renderTeamToggle();
+    $('topMonths').classList.add('viewlocked'); $('teamToggle').classList.add('viewlocked');
+    // 동결 데이터로 모든 섹션 렌더(라이브 fetch 안 함)
+    $('qsumTitle').textContent=monthsLabel()+' 누적 견적';
+    $('wfTitle').textContent=monthsLabel()+' 매출 실적 (워터폴)';
+    if(data.cards) renderCards(data.cards);
+    if(data.waterfall) renderWaterfall(data.waterfall);
+    renderQuoteSummary(Array.isArray(data.quotes)?data.quotes:[]);
+    applyReadOnly(); renderIssues(); $('memo').textContent=board.memo||'';
+    $('ctxLine').textContent=(ctx.ctxText||'')+' · 📌 저장본';
+    $('prtHead').textContent='WBR · 저장본 '+d.label+' · '+(ctx.ctxText||'');
+    // 배너
+    const meta='저장 '+fmtDateTime(d.created_at)+(d.created_by_name?' · '+esc(d.created_by_name):'');
+    $('snapBanner').innerHTML='📌 저장본 보기: <b>'+esc(d.label)+'</b> <span style="font-weight:600">('+meta+')</span>'
+      + (isDirector?'<button class="btn" id="snapDelInline" style="padding:5px 10px;background:#b4561f;margin-left:8px">🗑 삭제</button>':'')
+      + '<button class="btn gold bk" id="snapBackBtn" style="padding:5px 12px">↩ 현재(라이브)로 돌아가기</button>';
+    $('snapBanner').classList.remove('hidden');
+    $('snapBackBtn').addEventListener('click',exitView);
+    const di=document.getElementById('snapDelInline'); if(di) di.addEventListener('click',()=>deleteSnapshot(viewMode.id));
+    $('snapDelBtn').classList.toggle('hidden', !isDirector);
+    $('snapSel').value=String(viewMode.id);
+    window.scrollTo(0,0);
+  }
+
+  function exitView(){
+    if(!viewMode) return;
+    const b=liveBackup||{};
+    topYms=Array.isArray(b.topYms)&&b.topYms.length?b.topYms:topYms;
+    teamSel=b.teamSel instanceof Set?b.teamSel:new Set(['total']);
+    teamsList=Array.isArray(b.teamsList)?b.teamsList:teamsList;
+    board=b.board||board; canEdit=b.canEdit!==false;
+    viewMode=null; liveBackup=null;
+    $('topMonths').classList.remove('viewlocked'); $('teamToggle').classList.remove('viewlocked');
+    $('snapBanner').classList.add('hidden'); $('snapBanner').innerHTML='';
+    $('snapDelBtn').classList.add('hidden');
+    $('snapSel').value='';
+    renderMonthBtns(); renderTeamToggle();
+    applyReadOnly();
+    loadBoard();              // 라이브 보드 재로드(이슈/메모/사진)
+    refreshAll();             // 카드·견적·워터폴 라이브 재조회
+  }
+
+  async function deleteSnapshot(id){
+    if(!isDirector) return;
+    if(!confirm('이 저장본을 영구 삭제할까요? (복구 불가)')) return;
+    try{
+      const res=await fetch(session.api+'/api/wbr/snapshots/'+id,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+    }catch(e){ alert('삭제 실패: 서버에 연결할 수 없습니다.'); return; }
+    if(viewMode && viewMode.id===id) exitView();
+    await loadSnapList('');
+    $('snapHint').textContent='저장본을 삭제했습니다.';
+  }
+
+  function onSnapSelChange(){
+    const v=$('snapSel').value;
+    if(!v){ exitView(); }
+    else{ enterView(Number(v)); }
+  }
+
+
   // 바인딩
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('pdfBtn').addEventListener('click',savePdf);
+  $('snapSel').addEventListener('change',onSnapSelChange);
+  $('snapSaveBtn').addEventListener('click',saveSnapshot);
+  $('snapDelBtn').addEventListener('click',()=>{ if(viewMode) deleteSnapshot(viewMode.id); });
   $('qsumToggle').addEventListener('click',()=>{ qsumOpen=!qsumOpen; applyToggle(qsumOpen,'qsumBody','qsumToggle'); });
   $('wfToggle').addEventListener('click',()=>{ wfOpen=!wfOpen; applyToggle(wfOpen,'wfCollapse','wfToggle'); });
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
