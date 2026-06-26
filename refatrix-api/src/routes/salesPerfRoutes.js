@@ -230,18 +230,17 @@ export default async function salesPerfRoutes(app) {
     const momPct = multi ? null : (prevActual > 0 ? r2((actual - prevActual) / prevActual * 100) : (actual > 0 ? null : 0));
     const collectProgress = collectPlan > 0 ? r2(collectActual / collectPlan * 100) : null;
 
-    // 카드3 고객 개발 — 당월 견적/협상/수주 건수 (quotes 기준)
-    //  · 견적 = 당월 생성된 견적(취소 제외) · 협상 = 그 중 미결(draft/confirmed) · 수주 = 그 중 전환(converted)
+    // 카드3 고객 개발 — 현재 단계별 고객 수 (고객 화면과 동일 법칙)
+    //  · 견적(30)=견적저장 후 아무것도 진행 안됨 · 협상(40)=임의 지정 · 수주(50)=포장작업지시서 발행
+    //  · customers.stage_id 의 현재 단계 기준(자동화: 견적저장→견적 / 포장지시서→수주 / SAT→거래중, 전진전용)
     //  · 팀 선택 반영: carry 모드에서 특정 팀을 고르면 그 팀 스코프(selScopeIds)로 거른다.
-    //    전체(total)/비carry 는 종전대로 권한 전체 스코프(ta) 사용 → 전체 고객 집계 유지.
     const devTeamArr = (carryMode && selectedTeam !== 'total' && selScopeIds) ? selScopeIds : ta;
     let dq = `SELECT
-        COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed','converted'))::int AS quote_total,
-        COUNT(*) FILTER (WHERE q.status IN ('draft','confirmed'))::int AS negotiation,
-        COUNT(*) FILTER (WHERE q.status = 'converted')::int AS won
-      FROM quotes q JOIN customers c ON c.id=q.customer_id
-      WHERE q.deleted_at IS NULL AND c.deleted_at IS NULL
-        AND to_char(q.quote_date,'YYYY-MM') = to_char(now(),'YYYY-MM')`;
+        COUNT(*) FILTER (WHERE s.sort_order=30)::int AS quote_total,
+        COUNT(*) FILTER (WHERE s.sort_order=40)::int AS negotiation,
+        COUNT(*) FILTER (WHERE s.sort_order=50)::int AS won
+      FROM customers c LEFT JOIN stages s ON s.id=c.stage_id
+      WHERE c.deleted_at IS NULL`;
     const dp = [];
     if (devTeamArr) { dp.push(devTeamArr); dq += ` AND c.team_id = ANY($1)`; }
     const dr = (await query(dq, dp)).rows[0] || {};
@@ -268,7 +267,7 @@ export default async function salesPerfRoutes(app) {
                       : { progress, momPct, locked: true },
       collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false }
                         : { progress: collectProgress, locked: true },
-      pipeline_dev: { quote: devQuote, negotiation: devNeg, won: devWon, total: devQuote, delta: { quote: delta[30], negotiation: delta[40], won: delta[50] } },
+      pipeline_dev: { quote: devQuote, negotiation: devNeg, won: devWon, total: devQuote + devNeg + devWon, delta: { quote: delta[30], negotiation: delta[40], won: delta[50] } },
       drilldown: perm.role === 'director' ? true : (perm.dashDrilldown !== false),
     };
   });

@@ -373,16 +373,16 @@
     const dd=d.delta||{};
     const dchip=(n)=>{ if(n==null||n===0) return '<div class="l" style="color:var(--muted)">±0 (지난주)</div>'; const up=n>0; return '<div class="l" style="color:'+(up?'var(--income)':'var(--expense)')+'">'+(up?'+':'')+n+' (지난주)</div>'; };
     const devbox=(val,label,so,chip)=>{ const p=STAGE_PAIR_ALL[so]; return '<div class="devbox" style="background:'+p.bg+';border-color:'+p.bg+'"><div class="n" style="color:'+p.fg+'">'+(val||0)+'</div><div class="l" style="color:'+p.fg+';font-weight:700">'+label+'</div>'+chip+'</div>'; };
-    const c3='<div class="cardbody"><div class="bigv">'+(d.quote||0)+'<small> 건</small></div><div class="mom flat"></div>'
+    const c3='<div class="cardbody"><div class="bigv">'+((d.total!=null?d.total:((d.quote||0)+(d.negotiation||0)+(d.won||0))))+'<small> 고객</small></div><div class="mom flat"></div>'
       +'<div class="devboxes">'+devbox(d.quote,'견적',30,dchip(dd.quote))+devbox(d.negotiation,'협상',40,dchip(dd.negotiation))+devbox(d.won,'수주',50,dchip(dd.won))+'</div>'
-      +'<div class="cardfoot hint">당월 견적 기준 · 작은 숫자는 지난 7일 단계 변동(영업활동 고객 단계변화일)</div></div>';
+      +'<div class="cardfoot hint">현재 단계 기준 · 견적=견적저장 후 / 수주=포장작업지시서 발행 / 거래중=SAT · 작은 숫자는 지난 7일 단계 변동</div></div>';
     const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="goFunnelImmediate()">매출 확정 목록 보기 →</a>';
     const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="openAR()">담당고객 오픈 인보이스 →</a>';
     const lnkPipe  = noDrill ? '' : ' <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a>';
     $('cards').innerHTML=
       '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적'+lnkSales+'</div>'+c1+'</div>'
       +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적'+lnkFin+'</div>'+c2+'</div>'
-      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 당월 견적·협상·수주'+lnkPipe+'</div>'+c3+'</div>';
+      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 현재 단계(견적·협상·수주)'+lnkPipe+'</div>'+c3+'</div>';
   }
 
   async function loadWaterfall(){
