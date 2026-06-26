@@ -191,7 +191,7 @@ export default async function customerRoutes(app) {
          LEFT JOIN (
            SELECT customer_id, SUM(total_mxn) AS live_quote_mxn
              FROM quotes
-            WHERE status IN ('draft','confirmed','expired')   -- 미전환 견적 (전환·취소·삭제·가격표 제외)
+            WHERE status IN ('draft','confirmed')   -- 미결(살아있는) 견적 = 견적목록 '견적후 미결'과 동일 (전환·만료·취소·삭제·가격표 제외)
               AND deleted_at IS NULL
             GROUP BY customer_id
          ) lq ON lq.customer_id=c.id
