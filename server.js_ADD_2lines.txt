@@ -1,7 +1,0 @@
-refatrix-api/src/server.js 에 아래 2줄을 추가하세요. (덮어쓰지 말고 2줄만 추가)
-
-[상단 import 블록 — 다른 *Routes import 옆]
-import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
-
-[register 블록 — app.register(financeRoutes); 근처]
-app.register(notaCreditoRoutes);

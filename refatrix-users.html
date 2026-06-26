@@ -40,6 +40,8 @@
   .pinbox{background:#fff7e0;border:1px solid #ecd9a0;border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 <div class="wrap">
@@ -61,6 +63,9 @@
     <div class="card" id="presenceCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">접속 현황 <span id="presSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
       <div id="presList"><div class="hint">불러오는 중…</div></div>
+      <div style="margin:14px 0 6px;font-size:12px;font-weight:800;color:#666">접속 위치 (IP 추정)</div>
+      <div id="presMap" style="height:340px;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;background:#eef1ef"></div>
+      <div class="hint" style="margin-top:5px">IP 기반 도시 단위 추정 · 모바일망/VPN은 부정확할 수 있음. 같은 도시는 한 핀에 묶어 표시.</div>
       <div style="border-top:1px solid #eee;margin:16px 0 12px"></div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
         <b style="font-size:14px">로그인 타임라인</b>
@@ -204,16 +209,48 @@
           const status=u.online
             ? '<span style="color:#0F6E56;font-weight:700"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19a974;margin-right:5px;vertical-align:middle"></span>접속 중</span>'
             : '<span style="color:#888">'+presEsc(presWhen(u.last_seen,u.seconds_ago))+'</span>';
+          const locTxt=[u.geo_city,u.geo_region,u.geo_country].filter(Boolean).map(presEsc).join(', ');
+          const loc=locTxt?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCCD '+locTxt+'</div>':'';
           return '<div style="border:1px solid #e3e3e3;border-radius:10px;padding:8px 11px;min-width:160px;background:'+(u.online?'#f3fbf7':'#fff')+'">'
             +'<div style="font-weight:700">'+presEsc(u.name||'-')+'</div>'
             +'<div class="hint" style="margin:2px 0 4px">'+meta+'</div>'
+            +loc
             +'<div style="font-size:12px">'+status+'</div></div>';
         }).join('')+'</div>';
       });
       box.innerHTML=html||'<div class="hint">표시할 사용자가 없습니다.</div>';
+      renderPresenceMap(items);
     }catch(e){ box.innerHTML='<div class="hint">접속 현황을 불러오지 못했습니다.</div>'; }
   }
   function startPresencePoll(){ loadPresence(); if(presenceTimer)clearInterval(presenceTimer); presenceTimer=setInterval(loadPresence,25000); }
+  // 접속 위치 지도 (Leaflet, 같은 도시는 한 핀으로 묶음)
+  function renderPresenceMap(items){
+    const el=$('presMap'); if(!el) return;
+    if(typeof L==='undefined'){ el.innerHTML='<div class="hint" style="padding:12px">지도 라이브러리를 불러오지 못했습니다.</div>'; return; }
+    if(!window.__presMap){
+      window.__presMap=L.map(el,{scrollWheelZoom:false,zoomControl:true}).setView([23.6,-102.5],5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(window.__presMap);
+      window.__presLayer=L.layerGroup().addTo(window.__presMap);
+    }
+    const map=window.__presMap, lyr=window.__presLayer; lyr.clearLayers();
+    const geo=(items||[]).filter(u=>u.geo_lat!=null&&u.geo_lng!=null);
+    if(!geo.length){ setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60); return; }
+    const groups={};
+    geo.forEach(u=>{ const k=(u.geo_city||u.geo_region||u.geo_country||((+u.geo_lat).toFixed(2)+','+(+u.geo_lng).toFixed(2)));
+      const gp=(groups[k]=groups[k]||{latSum:0,lngSum:0,users:[]}); gp.latSum+=(+u.geo_lat); gp.lngSum+=(+u.geo_lng); gp.users.push(u); });
+    const bounds=[];
+    Object.keys(groups).forEach(k=>{
+      const gp=groups[k]; gp.lat=gp.latSum/gp.users.length; gp.lng=gp.lngSum/gp.users.length;
+      const online=gp.users.filter(u=>u.online).length;
+      const title=presEsc(gp.users[0].geo_city||gp.users[0].geo_region||gp.users[0].geo_country||'위치');
+      const list=gp.users.map(u=>(u.online?'\uD83D\uDFE2 ':'\u26AA ')+presEsc(u.name||u.login_id||'')).join('<br>');
+      const m=L.circleMarker([gp.lat,gp.lng],{radius:7+Math.min(12,gp.users.length*2),weight:2,color:'#0F6E56',fillColor:online?'#19a974':'#9aa3a0',fillOpacity:0.85});
+      m.bindPopup('<b>'+title+'</b> ('+gp.users.length+'\uBA85, \uC811\uC18D '+online+')<br>'+list);
+      lyr.addLayer(m); bounds.push([gp.lat,gp.lng]);
+    });
+    try{ map.fitBounds(bounds,{padding:[30,30],maxZoom:11}); }catch(e){}
+    setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60);
+  }
 
   // ===== 로그인 타임라인 (일자별) =====
   let tlBound=false, tlTimer=null;
@@ -260,12 +297,18 @@
     const dateStr=(d&&d.date)||tlTodayStr();
     const wd=['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00').getDay()];
     const info=$('tlInfo'); if(info) info.textContent=dateStr+' ('+wd+') · 접속 '+activeCnt+' / 전체 '+cols.length+'명';
+    // 막대 색: socio vs 직원
+    const SOCIO={fill:'#E8883A',stroke:'#B5651D'}, STAFF={fill:'#19a974',stroke:'#0F6E56'};
+    const legend='<div style="display:flex;gap:14px;align-items:center;font-size:11px;color:#666;margin:0 0 6px;flex-wrap:wrap">'
+      +'<span><span style="display:inline-block;width:11px;height:11px;background:'+STAFF.fill+';border:1px solid '+STAFF.stroke+';border-radius:2px;vertical-align:middle;margin-right:4px"></span>직원</span>'
+      +'<span><span style="display:inline-block;width:11px;height:11px;background:'+SOCIO.fill+';border:1px solid '+SOCIO.stroke+';border-radius:2px;vertical-align:middle;margin-right:4px"></span>socio</span>'
+      +'<span><span style="display:inline-block;width:16px;border-top:2px dashed #e23744;vertical-align:middle;margin-right:4px"></span>현재 시각</span></div>';
     if(!cols.length){ wrap.innerHTML='<div class="hint">표시할 사용자가 없습니다.</div>'; return; }
-    const gutter=46, colW=38, plotH=480, top=12;
-    const maxLen=cols.reduce((m,u)=>Math.max(m,String(u.name||u.login_id||'').length),0);
-    const nameH=Math.min(160, 40+maxLen*7);
+    const gutter=46, colW=58, plotH=480, top=12, nameH=46;
     const W=gutter+cols.length*colW+12, H=top+plotH+nameH;
     const y=min=> top+(min/1440)*plotH;
+    const trunc=(str,n)=>{ str=String(str||''); return str.length>n? str.slice(0,n-1)+'…' : str; };
+    const cityOf=u=>[u.geo_city,u.geo_region].filter(Boolean)[0] || (u.geo_country||'');
     let svg='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,Segoe UI,Roboto,sans-serif">';
     // 시간 격자
     for(let h=0;h<=24;h++){
@@ -275,16 +318,20 @@
     }
     // 컬럼 + 막대
     cols.forEach((u,i)=>{
-      const x0=gutter+i*colW, bx=x0+5, bw=colW-10;
+      const x0=gutter+i*colW, bx=x0+7, bw=colW-14;
+      const isSocio=(u.role==='socio'), col=isSocio?SOCIO:STAFF;
       svg+='<rect x="'+x0+'" y="'+top+'" width="'+colW+'" height="'+plotH+'" fill="'+(i%2?'#fbfdfc':'#ffffff')+'"/>';
       (byUser[u.id]||[]).forEach(s=>{
         const yy=y(s.start_min), hh=Math.max(2,y(s.end_min)-y(s.start_min));
-        svg+='<rect x="'+bx+'" y="'+yy.toFixed(1)+'" width="'+bw+'" height="'+hh.toFixed(1)+'" rx="3" fill="#19a974" fill-opacity="0.85" stroke="#0F6E56" stroke-width="0.6">'
+        svg+='<rect x="'+bx+'" y="'+yy.toFixed(1)+'" width="'+bw+'" height="'+hh.toFixed(1)+'" rx="3" fill="'+col.fill+'" fill-opacity="0.85" stroke="'+col.stroke+'" stroke-width="0.6">'
             +'<title>'+presEsc(u.name||u.login_id||'')+' · '+tlHHMM(s.start_min)+'–'+tlHHMM(s.end_min)+' ('+tlDur(s.end_min-s.start_min)+')</title></rect>';
       });
-      const lx=x0+colW/2, ly=top+plotH+12;
-      const nm=presEsc(String(u.name||u.login_id||'').slice(0,20));
-      svg+='<text x="'+lx+'" y="'+ly+'" transform="rotate(50 '+lx+' '+ly+')" font-size="10.5" fill="#444">'+nm+'</text>';
+      // 가로 2줄 라벨: 이름 + 위치
+      const lx=x0+colW/2, fullName=String(u.name||u.login_id||''), city=cityOf(u);
+      const fullLoc=[u.geo_city,u.geo_region,u.geo_country].filter(Boolean).join(', ');
+      svg+='<text x="'+lx+'" y="'+(top+plotH+16)+'" text-anchor="middle" font-size="11" font-weight="600" fill="#333">'
+          +'<title>'+presEsc(fullName)+(fullLoc?(' · '+presEsc(fullLoc)):'')+'</title>'+presEsc(trunc(fullName,9))+'</text>';
+      if(city) svg+='<text x="'+lx+'" y="'+(top+plotH+30)+'" text-anchor="middle" font-size="9" fill="#999">'+presEsc(trunc(city,11))+'</text>';
     });
     // 현재 시각 가로줄 (오늘을 볼 때만)
     const now=tlNowInTz(tz);
@@ -294,8 +341,8 @@
       svg+='<text x="'+(W-14)+'" y="'+(ny-4).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="700" fill="#e23744">현재 '+tlHHMM(now.minutes)+'</text>';
     }
     svg+='</svg>';
-    let note = activeCnt? '' : '<div class="hint" style="margin:0 0 4px">이 날짜 로그인 기록 없음 (타임라인은 기능 배포 이후부터 쌓입니다).</div>';
-    wrap.innerHTML=note+svg;
+    const note = activeCnt? '' : '<div class="hint" style="margin:0 0 4px">이 날짜 로그인 기록 없음 (타임라인은 기능 배포 이후부터 쌓입니다).</div>';
+    wrap.innerHTML=note+legend+svg;
   }
   function initTimeline(){
     const di=$('tlDate'); if(di&&!di.value) di.value=tlTodayStr();

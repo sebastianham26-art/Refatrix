@@ -33,7 +33,7 @@ import presenceRoutes from './routes/presenceRoutes.js';
 import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
 
 export function buildApp() {
-  const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 }); // 12MB (증빙서류 5MB base64 대비)
+  const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024, trustProxy: true }); // 12MB (증빙서류 5MB base64 대비) · trustProxy: Railway 프록시 뒤 실제 클라이언트 IP(X-Forwarded-For) 인식(접속 위치 추정용)
   // 외부 화면(프로토타입)에서의 요청 허용. 프로토타입 단계에서는 모든 출처 허용 +
   // 자격증명/기기키 헤더 허용. (운영 단계에서 실제 도메인으로 좁히는 것을 권장)
   app.register(fastifyCors, {
