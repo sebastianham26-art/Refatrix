@@ -72,14 +72,22 @@ export default async function portalBoardRoutes(app) {
       // 내 일정만: 내가 대상(개인)이거나 내가 만든 것
       args.push(perm.userId); const meIdx = args.length;
       conds.push(`(e.owner_id=$${meIdx} OR e.created_by=$${meIdx})`);
-    } else if (vis === null) {
-      // 디렉터: 전부
+    } else if (perm.role === 'director') {
+      // 디렉터: 전부 (역할 기준으로 엄격 판정 — vis===null 은 영업지원도 해당하므로 사용 금지)
     } else {
-      const myTeams = vis.length ? vis : [-1];
+      // 비디렉터 가시성: 회사전체 + (영업지원은 전 영업팀/그 외는 소속 팀) + 내 개인 + 내가 대상/작성자인 공유 + 내가 만든 것
       args.push(perm.userId); const meIdx = args.length;
-      args.push(myTeams); const teamIdx = args.length;
+      let teamClause;
+      if (vis === null) {
+        // sales_support: 전 영업팀 공동(team) 일정은 보되, 남의 개인/미지정 공유는 제외
+        teamClause = `e.scope='team'`;
+      } else {
+        const myTeams = vis.length ? vis : [-1];
+        args.push(myTeams); const teamIdx = args.length;
+        teamClause = `(e.scope='team' AND e.team_id = ANY($${teamIdx}))`;
+      }
       conds.push(`(e.scope='company'
-        OR (e.scope='team' AND e.team_id = ANY($${teamIdx}))
+        OR ${teamClause}
         OR (e.scope='personal' AND e.owner_id=$${meIdx})
         OR (e.scope='shared' AND (e.created_by=$${meIdx} OR EXISTS (SELECT 1 FROM calendar_event_targets ct WHERE ct.event_id=e.id AND ct.user_id=$${meIdx})))
         OR e.created_by=$${meIdx})`);
