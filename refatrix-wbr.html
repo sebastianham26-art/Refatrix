@@ -66,6 +66,26 @@
   .wflabel{font-size:9.5px;font-weight:700;color:var(--brand);position:absolute;top:-15px;width:52px;text-align:center;left:50%;transform:translateX(-50%)}
   .wffoot{display:flex;gap:10px;margin-top:6px;padding:0 6px}
   .wffoot .wff{flex:1;text-align:center;font-size:10.5px;color:var(--muted)}
+  /* 수주 단계 SLA 다이어그램 */
+  .sladiag{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap;margin:4px 0 14px}
+  .slacard{flex:1;min-width:150px;background:var(--income-bg);border:1px solid #cfe4db;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+  .slacard .sc-t{font-size:12px;font-weight:800;color:var(--brand)}
+  .slacard .sc-n{font-size:24px;font-weight:800;color:var(--brand);line-height:1.1}
+  .slacard .sc-n span{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px}
+  .slacard .sc-amt{font-size:12px;font-weight:700;color:var(--income)}
+  .slacard .sc-rate{font-size:12px;font-weight:800}
+  .slacard .sc-avg{font-size:11px;color:var(--muted);font-weight:600}
+  .slacard .sc-def{font-size:10px;color:var(--muted);margin-top:4px;border-top:1px dashed #cfe4db;padding-top:4px;line-height:1.35}
+  .slaarrow{display:flex;align-items:center;color:var(--brand-soft);font-size:18px;font-weight:800;flex:0 0 auto}
+  .slalists{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:6px}
+  .slalist{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .slalist .sl-h{background:#faf8f3;font-size:12px;font-weight:800;color:var(--brand);padding:6px 9px;border-bottom:1px solid var(--line)}
+  .slalist .sl-c{font-weight:700;color:var(--muted);font-size:11px;margin-left:4px}
+  .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
+  .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:4px 8px;background:#fcfbf7}
+  .sltab td{text-align:right;padding:4px 8px;border-top:1px solid #f0ece2;white-space:nowrap}
+  .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}
+  @media print{.sladiag{break-inside:avoid}.slaarrow{font-size:14px}}
   .wffoot .wff b{display:block;color:var(--brand);font-size:11px}
   .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:12px;align-items:center}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
@@ -369,30 +389,53 @@
   function renderStageSla(sla){
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     const order=['order','packing','sat','collect'];
-    const rateColor=(r)=> r==null?'var(--ink-soft,#888)' : (r>=90?'#1f8a4c' : (r>=70?'#b4801f' : '#b4401f'));
+    const shortLbl={order:'오더확정',packing:'포장단계',sat:'인보이스(SAT)',collect:'정시수금'};
+    const rateColor=(r)=> r==null?'#999' : (r>=90?'#1f8a4c' : (r>=70?'#b4801f' : '#b4401f'));
     const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
-    let h='<table class="slatab" style="width:100%;border-collapse:collapse;font-size:13px">'
-      +'<thead><tr style="text-align:left;color:#777"><th style="padding:6px 8px">단계</th>'
-      +'<th style="padding:6px 8px;text-align:right">대상</th><th style="padding:6px 8px;text-align:right">매출액</th>'
-      +'<th style="padding:6px 8px;text-align:right">준수</th>'
-      +'<th style="padding:6px 8px;text-align:right">준수율</th><th style="padding:6px 8px;text-align:right">평균</th></tr></thead><tbody>';
-    let totAmt=0;
-    for(const k of order){
+    const defOf=(s)=>{ const m=String(s.label||'').match(/\(([^)]*)\)/); return m?m[1]:''; };
+
+    // ── 다이어그램: 4단계 섹션카드 + 진행 화살표 ──
+    let cards='<div class="sladiag">';
+    order.forEach((k,i)=>{
       const s=sla[k]||{}; const n=Number(s.n||0);
       const rate=(s.rate==null)?'—':(s.rate+'%');
       const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
-      totAmt+=Number(s.amount||0);
-      h+='<tr style="border-top:1px solid #eee">'
-        +'<td style="padding:6px 8px">'+esc(s.label||k)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+n+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+(n?mxn(s.amount):'—')+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+Number(s.met||0)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+rateColor(s.rate)+'">'+rate+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+avg+'</td></tr>';
-    }
-    h+='</tbody></table>';
-    h+='<div class="hint" style="margin-top:6px">대상 = 해당 단계 도달 건수 · 매출액 = 그 건들의 합(IVA 포함, 단계별 중복 가능) · 준수율 = 기한 내 비율 · 평균 = 단계 소요(정시수금은 지연일)</div>';
-    $('slaBody').innerHTML=h;
+      cards+='<div class="slacard">'
+        +'<div class="sc-t">'+esc(shortLbl[k]||k)+'</div>'
+        +'<div class="sc-n">'+n+'<span>건</span></div>'
+        +'<div class="sc-amt">'+(n?mxn(s.amount):'—')+'</div>'
+        +'<div class="sc-rate" style="color:'+rateColor(s.rate)+'">준수 '+rate+'</div>'
+        +'<div class="sc-avg">평균 '+avg+'</div>'
+        +'<div class="sc-def">'+esc(defOf(s))+'</div>'
+        +'</div>';
+      if(i<order.length-1) cards+='<div class="slaarrow">▶</div>';
+    });
+    cards+='</div>';
+
+    // ── 단계별 고객 내역(표의 열을 고객이름 포함해 나열) ──
+    let lists='<div class="slalists">';
+    order.forEach(k=>{
+      const s=sla[k]||{}; const items=Array.isArray(s.items)?s.items:[];
+      lists+='<div class="slalist"><div class="sl-h">'+esc(shortLbl[k]||k)+' <span class="sl-c">'+items.length+'건</span></div>';
+      if(!items.length){ lists+='<div class="hint" style="padding:5px 8px">해당 없음</div>'; }
+      else{
+        lists+='<table class="sltab"><thead><tr><th style="text-align:left">고객</th><th>금액</th><th>리드</th><th>준수</th></tr></thead><tbody>';
+        items.forEach(it=>{
+          lists+='<tr>'
+            +'<td style="text-align:left">'+esc(it.customer||'-')+'</td>'
+            +'<td>'+mxn(it.amount)+'</td>'
+            +'<td>'+(it.lead!=null?(it.lead+' '+(s.unit||'')):'—')+'</td>'
+            +'<td>'+(it.ok?'<span class="slok">✔</span>':'<span class="slno">✘</span>')+'</td>'
+            +'</tr>';
+        });
+        lists+='</tbody></table>';
+      }
+      lists+='</div>';
+    });
+    lists+='</div>';
+
+    const note='<div class="hint" style="margin-top:8px">카드 숫자 = 해당 단계 도달 건수 · 금액 = 그 건들의 합(IVA 포함, 단계 중복 가능) · 준수 = 기한 내 비율 · 평균 = 단계 소요(정시수금은 지연일). 아래는 단계별 고객 내역입니다.</div>';
+    $('slaBody').innerHTML=cards+lists+note;
   }
 
   // ===== 카드 (영업 대시보드 summary 재사용) =====

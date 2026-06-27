@@ -50,6 +50,13 @@
   .si{background:var(--income)}.ss{background:var(--gold)}.sd{background:var(--purple)}
   .bamt{font-size:10px;font-weight:700;line-height:1.3;margin-top:3px}
   .bamt .ao{color:var(--income)}.bamt .as{color:var(--gold)}.bamt .sep{color:#c2c0ba;font-weight:600;margin:0 4px}
+  .brow{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .bpct{font-size:10.5px;font-weight:700;white-space:nowrap}
+  .bpct .okpct{color:var(--income)}.bpct .gld{color:var(--gold)}.bpct .ppl{color:var(--purple)}
+  .bpct .sep{color:#c2c0ba;font-weight:600;margin:0 4px}
+  .amtcell{text-align:right;min-width:128px}
+  .amain{font-size:12px;font-weight:800;color:var(--income);line-height:1.25}
+  .asub{font-size:10.5px;font-weight:700;color:var(--gold);line-height:1.2}
   /* 진행 단계 셀 */
   .stagecell{display:flex;flex-direction:column;gap:2px;align-items:flex-start;min-width:138px}
   .sdots{display:flex;gap:3px;margin-bottom:1px}
@@ -305,8 +312,7 @@
   function sortableHead(col1){
     let s=thS(col1,'__label',true);
     if(viewBy==='order'){ s+=thS('고객','customer_name',true)+thS('일자','qdate',false)+thS('진행 단계 / 경고','warn_rank',false); }
-    s+=thS('요청 SKU','req_sku',false)+thS('요청 수량','req_qty',false)+thS('구성 (수량 비중)',null,false);
-    s+=thS('즉시 %','ok_qty_pct',false)+thS('부족 %','short_qty_pct',false)+thS('개발 %','dev_qty_pct',false);
+    s+=thS('요청 SKU','req_sku',false)+thS('요청 수량','req_qty',false)+thS('구성 (수량 비중)','ok_qty_pct',false)+thS('금액 (IVA 포함)','ok_amt',false);
     return s;
   }
 
@@ -380,13 +386,11 @@
         +(viewBy==='order'?'<td style="text-align:left">'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td><td>'+stageCell(r)+'</td>':'')
         +'<td>'+nf(r.req_sku)+'</td>'
         +'<td>'+nf(r.req_qty)+'</td>'
-        +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span>'
-          +'<div class="bamt"><span class="ao" title="즉시 매출가능 금액(IVA 포함)">즉시 '+mf(r.ok_amt)+'</span><span class="sep">·</span><span class="as" title="재고부족분 금액(IVA 포함)">부족 '+mf(r.short_amt)+'</span></div></td>'
-        +'<td class="okpct">'+oi+'%</td>'
-        +'<td style="color:var(--gold)">'+ss+'%</td>'
-        +'<td style="color:var(--purple)">'+dd+'%</td>'
+        +'<td class="barcell"><div class="brow"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span>'
+          +'<span class="bpct"><b class="okpct">즉시 '+oi+'%</b><span class="sep">·</span><span class="gld">부족 '+ss+'%</span><span class="sep">·</span><span class="ppl">개발 '+dd+'%</span></span></div></td>'
+        +'<td class="amtcell"><div class="amain" title="즉시 매출가능 금액(IVA 포함)">즉시 '+mf(r.ok_amt)+'</div><div class="asub" title="재고부족분 금액(IVA 포함)">부족 '+mf(r.short_amt)+'</div></td>'
         +'</tr>';
-      if(open){ h+='<tr><td colspan="10" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
+      if(open){ h+='<tr><td colspan="'+(viewBy==='order'?8:5)+'" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     $('trendWrap').innerHTML=h;

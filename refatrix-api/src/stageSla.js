@@ -13,18 +13,28 @@ const H = 3600000;
 
 function reduceStage(rows, fn) {
   let met = 0, sumLead = 0, amount = 0;
+  const items = [];
   for (const r of rows) {
     const { ok, lead } = fn(r);
     if (ok) met++;
     sumLead += (Number(lead) || 0);
     amount += (Number(r.amount) || 0);
+    items.push({
+      customer: r.customer_name || '불특정',
+      amount: Math.round((Number(r.amount) || 0) * 100) / 100,
+      lead: Math.round((Number(lead) || 0) * 10) / 10,
+      ok: !!ok,
+    });
   }
+  // 금액 큰 순으로 정렬(상위가 위로)
+  items.sort((x, y) => (y.amount - x.amount));
   const n = rows.length;
   return {
     n, met,
     rate: n ? Math.round((met / n) * 1000) / 10 : null,
     avg: n ? Math.round((sumLead / n) * 10) / 10 : null,
     amount: Math.round(amount * 100) / 100,   // 해당 단계 코호트 매출액 합(IVA 포함)
+    items,                                     // 단계별 개별 내역(고객·금액·리드·준수)
   };
 }
 

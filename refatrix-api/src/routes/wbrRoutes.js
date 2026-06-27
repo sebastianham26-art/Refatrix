@@ -63,14 +63,14 @@ export default async function wbrRoutes(app) {
     if (!empty) {
       let a = [months]; let tcl = tc(a);
       cohorts.orderConfirm = (await query(
-        `SELECT q.created_at, q.packing_printed_at, q.total_mxn AS amount
+        `SELECT q.created_at, q.packing_printed_at, q.total_mxn AS amount, c.name AS customer_name
            FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
           WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL
             AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
 
       a = [months]; tcl = tc(a);
       cohorts.packing = (await query(
-        `SELECT q.packing_printed_at, q.packing_due_at, pd.uploaded_at AS packed_at, q.total_mxn AS amount
+        `SELECT q.packing_printed_at, q.packing_due_at, pd.uploaded_at AS packed_at, q.total_mxn AS amount, c.name AS customer_name
            FROM quotes q JOIN quote_packing_docs pd ON pd.quote_id=q.id
            LEFT JOIN customers c ON c.id=q.customer_id
           WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL
@@ -78,14 +78,14 @@ export default async function wbrRoutes(app) {
 
       a = [months]; tcl = tc(a);
       cohorts.sat = (await query(
-        `SELECT si.created_at AS converted_at, si.sat_entered_at, si.total_mxn AS amount
+        `SELECT si.created_at AS converted_at, si.sat_entered_at, si.total_mxn AS amount, c.name AS customer_name
            FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
           WHERE si.deleted_at IS NULL AND si.status <> 'deleted' AND si.sat_entered_at IS NOT NULL
             AND to_char(si.sat_entered_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
 
       a = [months]; tcl = tc(a);
       cohorts.collect = (await query(
-        `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, to_char(t.collected_at,'YYYY-MM-DD') AS collected_at, si.total_mxn AS amount
+        `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, to_char(t.collected_at,'YYYY-MM-DD') AS collected_at, si.total_mxn AS amount, c.name AS customer_name
            FROM sales_invoices si
            JOIN (SELECT spa.invoice_id, MAX(sp.created_at) AS collected_at, SUM(spa.amount) AS paid
                    FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
