@@ -598,7 +598,7 @@
     $('pcalTitle').textContent=pcalCursor.getFullYear()+'년 '+(pcalCursor.getMonth()+1)+'월';
     try{
       const [cal,td]=await Promise.all([
-        fetch(session.api+'/api/calendar?from='+pYmd(from)+'&to='+pYmd(to),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        fetch(session.api+'/api/calendar?from='+pYmd(pAdd(from,-1))+'&to='+pYmd(pAdd(to,1)),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
       pcalEvents=cal.items||[]; pcalTodos=(td.items||[]).filter(t=>t.due_date);
@@ -613,12 +613,12 @@
     const days=[]; for(let d=new Date(from);d<=to;d=pAdd(d,1)){ if(slim){const wd=d.getDay(); if(wd===0||wd===6) continue;} days.push(new Date(d)); }
     const cells=days.map(day=>{
       const key=pYmd(day);
-      const evs=pcalEvents.filter(e=>e.date===key), tds=pcalTodos.filter(t=>t.due_date===key);
+      const evs=pcalEvents.filter(e=>calEvKey(e)===key), tds=pcalTodos.filter(t=>t.due_date===key);
       const out=day.getMonth()!==pcalCursor.getMonth();
       const isT=key===today;
       const all=[...evs.map(e=>({t:'ev',v:e})),...tds.map(t=>({t:'td',v:t}))];
       let chips=all.slice(0,2).map(x=> x.t==='ev'
-        ? '<span class="cgchip ev">'+(x.v.time?x.v.time+' ':'')+escp(x.v.content)+'</span>'
+        ? '<span class="cgchip ev">'+(calEvHM(x.v)?calEvHM(x.v)+' ':'')+escp(x.v.content)+'</span>'
         : '<span class="cgchip td">▪ '+escp(x.v.title)+'</span>').join('');
       if(all.length>2)chips+='<span class="pcmore">+'+(all.length-2)+'</span>';
       return '<div class="pccell'+(out?' out':'')+(isT?' today':'')+'" onclick="goScreen(\'board\')"><div class="pcn">'+day.getDate()+'</div>'+chips+'</div>';
