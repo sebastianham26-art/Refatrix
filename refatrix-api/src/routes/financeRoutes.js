@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { allowedAccountIds, allowedDetailAccountIds, canViewAccount, canViewDetail, canOperateAccount, blockedDetailAccountIds } from '../accountScope.js';
+import { visibleTeamIds, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
@@ -377,7 +378,10 @@ export default async function financeRoutes(app) {
 
   // ===== 매출 AR 반제(입금 배분) =====
   // 미수 고객 목록(미반제 인보이스가 있는 고객 + 미수 합계 + 선수금)
-  app.get('/api/ar/customers', { preHandler: [authGuard, requirePage('settlement')] }, async () => {
+  app.get('/api/ar/customers', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const vis = visibleTeamIds(req.ctx.perm);
+    const cargs = []; let cTeam = '';
+    if (vis !== null) { cargs.push(vis); cTeam = ` AND c.team_id = ANY($${cargs.length})`; }
     const rows = (await query(
       `SELECT c.id, c.code, c.name,
               COALESCE(SUM(s.total_mxn),0) - COALESCE(SUM(pa.paid),0) AS outstanding,
@@ -386,10 +390,10 @@ export default async function financeRoutes(app) {
          JOIN sales_invoices s ON s.customer_id=c.id AND s.deleted_at IS NULL AND s.status='posted'
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
          LEFT JOIN (SELECT customer_id, SUM(advance_amount) AS advance FROM sales_payments GROUP BY customer_id) adv ON adv.customer_id=c.id
-        WHERE c.deleted_at IS NULL
+        WHERE c.deleted_at IS NULL${cTeam}
         GROUP BY c.id, c.code, c.name, adv.advance
        HAVING COALESCE(SUM(s.total_mxn),0) - COALESCE(SUM(pa.paid),0) > 0.01
-        ORDER BY outstanding DESC`)).rows;
+        ORDER BY outstanding DESC`, cargs)).rows;
     return { items: rows.map((r) => ({ ...r, outstanding: Number(r.outstanding), advance: Number(r.advance) })) };
   });
 
@@ -397,6 +401,12 @@ export default async function financeRoutes(app) {
   app.get('/api/ar/open-invoices', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
     const customerId = Number(req.query.customer_id);
     if (!customerId) return { items: [], advance: 0 };
+    // 팀 가드: 담당팀 밖 고객 id 직접 조회 차단(영업담당 등). 디렉터·영업지원(vis=null)은 통과.
+    const vis = visibleTeamIds(req.ctx.perm);
+    if (vis !== null) {
+      const ct = (await query(`SELECT team_id FROM customers WHERE id=$1`, [customerId])).rows[0];
+      if (!ct || !canViewTeam(req.ctx.perm, ct.team_id)) return { items: [], advance: 0 };
+    }
     const rows = (await query(
       `SELECT s.id, s.sat_no, s.inv_date, s.due_date, s.total_mxn,
               COALESCE(pa.paid,0) AS paid, s.total_mxn - COALESCE(pa.paid,0) AS outstanding
@@ -488,6 +498,8 @@ export default async function financeRoutes(app) {
   app.get('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
     const cond = []; const args = [];
     if (req.query.customer_id) { args.push(Number(req.query.customer_id)); cond.push(`p.customer_id=$${args.length}`); }
+    const vis = visibleTeamIds(req.ctx.perm);
+    if (vis !== null) { args.push(vis); cond.push(`c.team_id = ANY($${args.length})`); }
     const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
     const rows = (await query(
       `SELECT p.id, p.pay_date, p.amount, p.advance_amount, p.memo, c.code AS customer_code, c.name AS customer_name,
@@ -506,6 +518,9 @@ export default async function financeRoutes(app) {
   // 각 행: 고객·팀·담당자 + 청구액(total_mxn)·입금(반제합)·잔액(outstanding) + 연체여부/일수
   app.get('/api/ar/open-list', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
     const includeClosed = ['1', 'true', 'yes', 'on'].includes(String((req.query && req.query.closed) || '').toLowerCase());
+    const vis = visibleTeamIds(req.ctx.perm);
+    const oargs = []; let oTeam = '';
+    if (vis !== null) { oargs.push(vis); oTeam = ` AND c.team_id = ANY($${oargs.length})`; }
     const rows = (await query(
       `SELECT s.id, s.sat_no,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
@@ -523,9 +538,9 @@ export default async function financeRoutes(app) {
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
-        WHERE s.deleted_at IS NULL AND s.status='posted'
+        WHERE s.deleted_at IS NULL AND s.status='posted'${oTeam}
           ${includeClosed ? '' : 'AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01'}
-        ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) <= 0.005), s.due_date NULLS LAST, s.inv_date, s.id`)).rows;
+        ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) <= 0.005), s.due_date NULLS LAST, s.inv_date, s.id`, oargs)).rows;
     return {
       today: new Date().toISOString().slice(0, 10),
       items: rows.map((r) => ({
@@ -549,12 +564,13 @@ export default async function financeRoutes(app) {
     const inv = (await query(
       `SELECT s.id, s.sat_no, to_char(s.inv_date,'YYYY-MM-DD') AS inv_date, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               s.total_mxn, COALESCE(pa.paid,0) AS paid,
-              c.id AS customer_id, c.code AS customer_code, c.name AS customer_name
+              c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.team_id AS customer_team_id
          FROM sales_invoices s
          JOIN customers c ON c.id=s.customer_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
         WHERE s.id=$1 AND s.deleted_at IS NULL`, [invId])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, inv.customer_team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const rows = (await query(
       `SELECT al.id AS alloc_id, al.amount, p.id AS payment_id, p.account_id,
               to_char(p.pay_date,'YYYY-MM-DD') AS pay_date, p.memo,
@@ -728,6 +744,9 @@ export default async function financeRoutes(app) {
     const q = String(req.query.q || '').trim();
     if (q.length < 1) return { today, items: [] };
     const like = '%' + q.replace(/[%_\\]/g, (m) => '\\' + m) + '%';
+    const vis = visibleTeamIds(req.ctx.perm);
+    const sargs = [like]; let sTeam = '';
+    if (vis !== null) { sargs.push(vis); sTeam = ` AND c.team_id = ANY($${sargs.length})`; }
     const rows = (await query(
       `SELECT s.id, s.sat_no,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
@@ -743,10 +762,10 @@ export default async function financeRoutes(app) {
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
-        WHERE s.deleted_at IS NULL AND s.status='posted'
+        WHERE s.deleted_at IS NULL AND s.status='posted'${sTeam}
           AND (s.sat_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\')
         ORDER BY s.inv_date DESC, s.id DESC
-        LIMIT 80`, [like])).rows;
+        LIMIT 80`, sargs)).rows;
     return {
       today,
       items: rows.map((r) => {

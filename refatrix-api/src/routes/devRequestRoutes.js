@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { pageAllowed, allowPastMonthSalesEdit } from '../permissions.js';
-import { visibleTeamIds, teamArr } from '../teams.js';
+import { visibleTeamIds, teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { mxTodayStr } from '../workingHours.js';
 import { computeQuoteStage } from '../quoteStage.js';
@@ -454,6 +454,16 @@ export default async function devRequestRoutes(app) {
   app.get('/api/dashboard/funnel/quote-lines', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
     const id = Number(req.query.quote_id);
     if (!id) return reply.code(400).send({ error: 'quote_id_required' });
+    // 팀 가드: 담당팀 밖 견적 직접 조회 차단. 불특정(고객 없음) 견적은 작성자 본인만. 디렉터·영업지원(vis=null)은 통과.
+    const qvis = visibleTeamIds(req.ctx.perm);
+    if (qvis !== null) {
+      const qo = (await query(
+        `SELECT q.customer_id, q.created_by, c.team_id
+           FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id WHERE q.id=$1`, [id])).rows[0];
+      if (!qo) return reply.code(404).send({ error: 'not_found' });
+      const ownGuest = (qo.customer_id == null && Number(qo.created_by) === Number(req.ctx.perm.userId));
+      if (!ownGuest && !canViewTeam(req.ctx.perm, qo.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    }
     const lines = (await query(
       `SELECT ql.input_code, ql.ctr_code, ql.product_name, ql.qty, ql.stock_flag, ql.avail_stock, ql.line_total
          FROM quote_lines ql WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
@@ -469,7 +479,9 @@ export default async function devRequestRoutes(app) {
     let ownerId = req.query.owner_id ? Number(req.query.owner_id) : null;
     let teamId = req.query.team_id ? Number(req.query.team_id) : null;
     if (!isDirector) { ownerId = Number(perm.userId); teamId = null; }
-    // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적 (+ 견적 후 경과일)
+    // 발행 가능: 미전환 + 즉시(ok) 라인이 있는 견적 (+ 견적 후 경과일) — 팀 스코프(디렉터/영업지원=전체)
+    const aargs = [months];
+    const aTeam = teamFilterClause(perm, aargs);
     const able = (await query(
       `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS qdate,
               (CURRENT_DATE - q.quote_date)::int AS age_days,
@@ -477,10 +489,10 @@ export default async function devRequestRoutes(app) {
               COUNT(*) FILTER (WHERE ql.stock_flag='ok')::int AS ok_sku,
               COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_qty
          FROM quotes q JOIN quote_lines ql ON ql.quote_id=q.id LEFT JOIN customers c ON c.id=q.customer_id
-        WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed') AND to_char(q.quote_date,'YYYY-MM') = ANY($1)
+        WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed') AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${aTeam}
         GROUP BY q.id, q.quote_no, q.quote_date, c.name, q.guest_name, q.customer_id
         HAVING COUNT(*) FILTER (WHERE ql.stock_flag='ok') > 0
-        ORDER BY q.quote_date ASC`, [months])).rows;   // 오래된 것 먼저(팔로업 우선)
+        ORDER BY q.quote_date ASC`, aargs)).rows;   // 오래된 것 먼저(팔로업 우선)
     // 이미 발행: 전환된(인보이스 생성) 견적 — 담당자/팀 필터 적용
     const dargs = [months]; const dconds = [];
     if (ownerId) { dargs.push(ownerId); dconds.push(`c.owner_id = $${dargs.length}`); }
@@ -537,6 +549,7 @@ export default async function devRequestRoutes(app) {
               to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date_str, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
+              c.team_id AS customer_team_id,
               c.owner_id AS owner_id, cu.name AS owner_name,
               c.credit_days AS base_credit_days, s.credit_days_req, s.credit_req_memo, ru.name AS credit_req_by_name
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
@@ -544,6 +557,7 @@ export default async function devRequestRoutes(app) {
               LEFT JOIN users ru ON ru.id=s.credit_req_by
         WHERE s.id=$1`, [id])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, inv.customer_team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const lines = (await query(
       `SELECT p.code AS ctr_code, p.name AS product_name, p.app, sl.qty, sl.unit_price, sl.line_amount_mxn,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes

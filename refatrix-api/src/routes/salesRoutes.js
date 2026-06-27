@@ -1,4 +1,5 @@
 import { query, withTx } from '../db.js';
+import { visibleTeamIds, canViewTeam } from '../teams.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEdit } from '../middleware/authGuard.js';
 import { computeLine, computeInvoiceTotals, dueDate, isCreditException, computeDeleteReversal, computeEditNetEffect, ymd } from '../sales.js';
 import { isClosedMonth } from '../importCost.js';
@@ -374,6 +375,11 @@ export default async function salesRoutes(app) {
   });
 
   app.get('/api/sales', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+    // 영업팀 가시성: 담당 외 고객 매출은 목록에 노출하지 않음. 디렉터·영업지원(vis=null)=전체.
+    const vis = visibleTeamIds(req.ctx.perm);
+    const params = [];
+    let teamCond = '';
+    if (vis !== null) { params.push(vis.length ? vis : [-1]); teamCond = ` AND c.team_id = ANY($${params.length})`; }
     const rows = (await query(
       `SELECT s.id, s.sat_no, s.inv_date, s.due_date, s.credit_days, s.credit_exception, s.credit_approved,
               s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, c.code AS customer_code, c.name AS customer_name,
@@ -381,13 +387,17 @@ export default async function salesRoutes(app) {
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=s.id AND sh.status='open') AS shortage_count,
               (SELECT COUNT(*) FROM sales_sku_pending sp WHERE sp.sales_invoice_id=s.id AND sp.status='open') AS pending_count
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id
-        WHERE s.deleted_at IS NULL ORDER BY s.inv_date DESC, s.id DESC LIMIT 100`)).rows;
+        WHERE s.deleted_at IS NULL${teamCond} ORDER BY s.inv_date DESC, s.id DESC LIMIT 100`, params)).rows;
     return { items: rows.map((r) => ({ ...r, edit_count: Number(r.edit_count), shortage_count: Number(r.shortage_count), pending_count: Number(r.pending_count) })) };
   });
 
   // ---- 인보이스별 부족·보류 내역(세부 펼침용) ----
-  app.get('/api/sales/:id/issues', { preHandler: [authGuard, requirePage('sales')] }, async (req) => {
+  app.get('/api/sales/:id/issues', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
+    // 담당 외 고객 인보이스의 부족·보류 내역 비노출(직접 호출 방어).
+    const inv = (await query(`SELECT c.team_id FROM sales_invoices s JOIN customers c ON c.id=s.customer_id WHERE s.id=$1`, [id])).rows[0];
+    if (!inv) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, inv.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const shortages = (await query(
       `SELECT sh.id, p.code, p.name, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.occurred_at, sh.status
          FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
@@ -404,9 +414,11 @@ export default async function salesRoutes(app) {
   app.get('/api/sales/:id', { preHandler: [authGuard, requirePage('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const head = (await query(
-      `SELECT s.*, c.code AS customer_code, c.name AS customer_name, c.credit_days AS customer_credit_days
+      `SELECT s.*, c.code AS customer_code, c.name AS customer_name, c.credit_days AS customer_credit_days, c.team_id AS customer_team_id
          FROM sales_invoices s JOIN customers c ON c.id=s.customer_id WHERE s.id=$1`, [id])).rows[0];
     if (!head) return reply.code(404).send({ error: 'not_found' });
+    // 담당 외 고객 매출 상세 비노출(직접 id 접근 방어). 디렉터·영업지원=전체.
+    if (!canViewTeam(req.ctx.perm, head.customer_team_id)) return reply.code(403).send({ error: 'forbidden_team' });
     const lines = (await query(
       `SELECT l.*, p.code, p.name, p.app,
               (SELECT string_agg(syd_code, ' / ' ORDER BY syd_code) FROM product_syd_codes WHERE product_id=p.id) AS syd_codes
