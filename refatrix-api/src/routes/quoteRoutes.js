@@ -551,7 +551,14 @@ export default async function quoteRoutes(app) {
     q.is_guest = q.customer_id == null;
     q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;
     const lines = (await query(
-      `SELECT ql.*, p.stock_qty AS cur_stock_raw
+      `SELECT ql.*, p.stock_qty AS cur_stock_raw,
+              COALESCE((SELECT SUM(ql2.reserved_qty)
+                          FROM quote_lines ql2 JOIN quotes q2 ON q2.id = ql2.quote_id
+                         WHERE ql2.product_id = ql.product_id
+                           AND q2.id <> ql.quote_id
+                           AND q2.status IN ('draft','confirmed')
+                           AND (q2.reserve_expires_at > now() OR q2.packing_printed_at IS NOT NULL)
+                           AND q2.deleted_at IS NULL), 0) AS reserved_other_raw
          FROM quote_lines ql LEFT JOIN products p ON p.id = ql.product_id
         WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
     const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0, ok_sub: 0, short_sub: 0, ok_amt: 0, short_amt: 0 };
@@ -559,6 +566,10 @@ export default async function quoteRoutes(app) {
       const qtyN = Number(l.qty) || 0;
       const cur = l.product_id != null ? (l.cur_stock_raw != null ? Number(l.cur_stock_raw) : 0) : null;
       const resvN = Number(l.reserved_qty) || 0;
+      // 라이브 가용재고 = 현재 실물재고 − (이 견적을 제외한) 타 미결·미만료 견적 예약분.
+      //   현장재고조사/견적화면과 동일 정의. 고객 제시용 Existencia 는 이 값을 사용.
+      const reservedOther = Number(l.reserved_other_raw) || 0;
+      const liveAvail = (cur != null) ? Math.max(0, cur - reservedOther) : null;
       // live_flag: 예약(블럭) 확보 기준 3분류 — reserved_qty>=요청이면 즉시(확보), 미만이면 부족
       let live = 'not_found';
       if (l.product_id != null) live = (resvN >= qtyN) ? 'ok' : 'low_stock';
@@ -578,7 +589,7 @@ export default async function quoteRoutes(app) {
         final_price: Number(l.final_price), line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
         avail_stock: l.avail_stock != null ? Number(l.avail_stock) : null,
         reserved_qty: Number(l.reserved_qty) || 0,
-        cur_stock: cur, live_flag: live,
+        cur_stock: cur, live_avail: liveAvail, live_flag: live,
       };
     });
     return {

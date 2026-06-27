@@ -471,7 +471,7 @@
         +'<td class="r">'+(mt?fmt(l.final_price):'—')+'</td>'
         +'<td class="r">'+(mt?fmt(l.line_iva):'—')+'</td>'
         +'<td class="r">'+(mt?fmt(l.line_total):'—')+'</td>'
-        +'<td class="r">'+(l.avail_stock==null?'—':fmtq(l.avail_stock))+(fl?' <span class="warn">'+fl+'</span>':'')+'</td>'
+        +'<td class="r">'+(liveAvail(l)==null?'—':fmtq(liveAvail(l)))+(fl?' <span class="warn">'+fl+'</span>':'')+'</td>'
         +'</tr>';
     }).join('');
     const bankParts=[];
@@ -532,6 +532,9 @@
     return { ctr, syd };
   }
 
+  // 라이브 가용재고(현재고 − 이 견적 제외 타 예약) — 견적 상세 API의 live_avail 우선, 구버전 응답은 폴백.
+  function liveAvail(l){ return (l.live_avail!=null)?Number(l.live_avail):(l.cur_stock!=null?Number(l.cur_stock):(l.avail_stock!=null?Number(l.avail_stock):null)); }
+
   // ===== 엑셀 다운로드 (스페인어 견적양식 · 현재 재고 있는 항목만 · 수식) — 상세 모달 =====
   // 고객이 Cantidad(수량)를 입력하면 Importe=Precio×Cantidad, Subtotal/IVA/Total이 자동 재계산.
   // 가용재고(Existencia)는 음영으로 강조. (스타일 지원: xlsx-js-style)
@@ -539,7 +542,7 @@
     if(!dtData||!dtData.quote){ return; }
     if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
     const q=dtData.quote;
-    const rows=(dtData.lines||[]).filter(l=> Number(l.avail_stock)>0);
+    const rows=(dtData.lines||[]).filter(l=> (Number(liveAvail(l))||0)>0);
     if(!rows.length){ alert('현재 재고가 있는 항목이 없습니다.'); return; }
 
     // ----- 스타일 -----
@@ -582,7 +585,7 @@
       set('C'+r, cp.syd||'', cL);
       set('D'+r, l.product_name||'', cL);
       set('E'+r, l.app_text||'', cL);
-      set('F'+r, Number(l.avail_stock)||0, cExist);   // 가용재고 (음영)
+      set('F'+r, Number(liveAvail(l))||0, cExist);   // 가용재고(라이브: 현재고−타예약, 음영)
       set('G'+r, Number(l.final_price)||0, cMoney);    // 단가 (할인 반영, IVA 미포함)
       set('H'+r, 1, cQty);                              // 수량 입력칸 (기본 1)
       set('I'+r, 0, cMoney, 'G'+r+'*H'+r);             // Importe = Precio × Cantidad
@@ -1084,6 +1087,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260627fs"></script>
+<script src="refatrix-nav.js?v=20260627sf"></script>
 </body>
 </html>
