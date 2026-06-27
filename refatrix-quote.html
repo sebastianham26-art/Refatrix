@@ -369,15 +369,12 @@
       rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
       rows.push(['Ingrese las cantidades por sucursal (Suc 1–5). El importe por SKU y los totales se calculan automáticamente.']);
       rows.push([]);
-      rows.push(['#','CTR Code','SYD Code','Application','Existencia','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material']);
+      rows.push(['#','CTR Code','SYD Code','Application','Existencia','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)']);
       const headerRow=rows.length, firstData=headerRow+1;
-      const aluRows=[];   // 알루미늄 제품 행 번호(엑셀 행) — 음영 표기용
       items.forEach((it,idx)=>{
         const unit=(disc==null)?(Number(it.list_price)||0):(Math.round((Number(it.list_price)||0)*(1-disc/100)*100)/100);
-        const isAlu = it.material==='aluminio';
-        if(isAlu) aluRows.push(firstData+idx);
         rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.app||'',
-          it.stock_qty==null?'':Number(it.stock_qty), unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'' ]);
+          it.stock_qty==null?'':Number(it.stock_qty), unit, null,null,null,null,null, null, null ]);
       });
       const lastData=rows.length;
       rows.push([]);
@@ -405,22 +402,12 @@
       ws['M'+ivaRow]={t:'n',z:'#,##0.00',f:'M'+subRow+'*0.16'};
       ws['M'+totRow]={t:'n',z:'#,##0.00',f:'M'+subRow+'+M'+ivaRow};
 
-      // ── 알루미늄 제품 별도 표기: 행 연한 청록 음영 + Material 셀 강조 ──
-      const aluFill={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}}};
-      const aluCols=['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
-      aluRows.forEach(r=>{
-        aluCols.forEach(c=>{ const ref=c+r; if(!ws[ref]) ws[ref]={t:'s',v:''};
-          ws[ref].s=Object.assign({},ws[ref].s,aluFill); });
-        if(ws['N'+r]) ws['N'+r].s={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}},font:{bold:true,color:{rgb:'15616D'}}};
-      });
-      // Material 헤더 셀 강조
-      if(ws['N'+headerRow]) ws['N'+headerRow].s={font:{bold:true}};
-      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:28},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12}];
+      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:28},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(aluRows.length?(' · 알루미늄 '+aluRows.length+'개 음영 표기'):'')+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
+      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
       // 견적 목록에 '가용재고 및 견적'으로 기록 (SKU·총수량·금액은 빈칸)
       try{
         const pbody=(!guest && cid && cid!=='__guest__') ? {customer_id:Number(cid)} : {guest_name:$('guestName').value.trim(), discount_rate:(disc==null?0:disc)};
@@ -785,6 +772,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260624k"></script>
+<script src="refatrix-nav.js?v=20260627perm"></script>
 </body>
 </html>

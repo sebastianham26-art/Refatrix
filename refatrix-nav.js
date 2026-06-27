@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260626hdr loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260627perm loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -88,6 +88,9 @@
   var ROLE_ONLY_GROUPS={ treasury:['finance'] };
   // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
   var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 } };
+  // 역할별 그룹 숨김(블랙리스트): 그룹 자체를 제거. 영업(sales)=재무 그룹 숨김.
+  //   — 수금/정산은 영업지원, 커미션은 공통/포털에서 접근하므로 재무 그룹은 영업에게 불필요하며 권한 범위 밖.
+  var ROLE_HIDE_GROUPS={ sales:['finance'] };
 
   // 공유 화면(여러 그룹에 표시되지만, 그룹 노출 자체를 결정하진 않음)
   var SHARED={devrequest:1, orderfunnel:1, funnel:1, funnelImm:1, funnelShort:1, funnelDev:1, import:1, importcost:1, customers:1, settlement:1, quote:1, quotelist:1, shortage:1, stock:1};
@@ -224,13 +227,26 @@
   function enforceRoleAccess(){
     if(!sum || sum.isDirector) return false;
     var only=ROLE_ONLY_GROUPS[sum.role];
-    if(!only) return false;
-    var hide=ROLE_HIDE_SCREENS[sum.role]||{};
-    var allowed={};
-    GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ if(!hide[k]) allowed[k]=1; }); });
-    var cur=curScreen();
-    if(cur && allowed[cur]) return false;     // 허용된 화면이면 통과(재무 탭들)
-    if(sess && sess.token){ nav('finance'); return true; }  // 그 외(미허용·미인식) → 재무/계좌
+    if(only){
+      var hide=ROLE_HIDE_SCREENS[sum.role]||{};
+      var allowed={};
+      GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ if(!hide[k]) allowed[k]=1; }); });
+      var cur=curScreen();
+      if(cur && allowed[cur]) return false;     // 허용된 화면이면 통과(재무 탭들)
+      if(sess && sess.token){ nav('finance'); return true; }  // 그 외(미허용·미인식) → 재무/계좌
+      return false;
+    }
+    // 그룹 숨김(블랙리스트) 역할: 숨긴 그룹 '전용' 화면에 직접 접근하면 포털로 되돌림.
+    //   다른 보이는 그룹에서도 접근 가능한 공유 화면(예: settlement=영업지원, commission=공통)은 통과.
+    var hideG=ROLE_HIDE_GROUPS[sum.role];
+    if(hideG){
+      var cur2=curScreen();
+      if(!cur2) return false;                   // 미인식 화면 — 간섭 안 함
+      var reach={};
+      GROUPS.forEach(function(g){ if(groupVisible(g)) g.screens.forEach(function(k){ if(canSee(k)) reach[k]=1; }); });
+      if(reach[cur2]) return false;             // 보이는 그룹에서 접근 가능 → 통과
+      if(sess && sess.token){ nav('portal'); return true; }
+    }
     return false;
   }
   function groupVisible(g){
@@ -238,6 +254,8 @@
     if(sum && !sum.isDirector){
       var only=ROLE_ONLY_GROUPS[sum.role];
       if(only && only.indexOf(g.key)<0) return false;
+      var hideG=ROLE_HIDE_GROUPS[sum.role];        // 블랙리스트: 지정 그룹 숨김(영업=재무)
+      if(hideG && hideG.indexOf(g.key)>=0) return false;
     }
     // 그룹별 명시 앵커가 있으면 그것을, 없으면 공유 화면 제외 '앵커' 중 하나라도 볼 수 있으면 그룹 노출
     var anchors=GROUP_ANCHOR_KEYS[g.key];
