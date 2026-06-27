@@ -113,8 +113,8 @@ export default async function fieldSurveyRoutes(app) {
     }
     if (q) { params.push(`%${q}%`); conds.push(`(c.name ILIKE $${params.length} OR c.code ILIKE $${params.length})`); }
     const rows = (await query(
-      `SELECT id, code, name FROM customers c WHERE ${conds.join(' AND ')} ORDER BY name LIMIT 50`, params)).rows;
-    return { items: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name })) };
+      `SELECT id, code, name, discount FROM customers c WHERE ${conds.join(' AND ')} ORDER BY name LIMIT 1000`, params)).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name, discount: Number(r.discount) || 0 })) };
   });
 
   // ── 내 진행중(또는 상태별) 조사 목록 — 이어쓰기/데이터 분실 방지 ──
