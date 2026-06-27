@@ -79,14 +79,15 @@ export default async function wbrRoutes(app) {
             AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)${tcl}`, a)).rows;
 
       a = []; tcl = tc(a);
-      // 인보이스(SAT) 대기: 전환됐지만 실제 SAT 번호 미입력(sat_entered_at 없음 = 발행 미완료)
+      // 인보이스(SAT) 대기: 전환됐지만 실제 SAT 번호 미부여(없음/빈값/TMP- = 미발행)
       cohorts.sat = (await query(
         `SELECT si.created_at AS converted_at, si.total_mxn AS amount, c.name AS customer_name
            FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
-          WHERE si.deleted_at IS NULL AND si.status <> 'deleted' AND si.sat_entered_at IS NULL${tcl}`, a)).rows;
+          WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
+            AND (si.sat_no IS NULL OR si.sat_no = '' OR si.sat_no LIKE 'TMP-%')${tcl}`, a)).rows;
 
       a = []; tcl = tc(a);
-      // 정시수금 대기: SAT 입력완료(발행완료)된 인보이스 중 미수금(완납 안 됨)
+      // 정시수금 대기: 실제 SAT 번호 발행완료된 인보이스 중 미수금(완납 안 됨)
       cohorts.collect = (await query(
         `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS amount, c.name AS customer_name
            FROM sales_invoices si
@@ -94,7 +95,8 @@ export default async function wbrRoutes(app) {
                         FROM sales_payment_allocations spa GROUP BY spa.invoice_id) p ON p.invoice_id=si.id
            LEFT JOIN customers c ON c.id=si.customer_id
           WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
-            AND si.sat_entered_at IS NOT NULL AND si.due_date IS NOT NULL
+            AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
+            AND si.due_date IS NOT NULL
             AND COALESCE(p.paid,0) < si.total_mxn - 0.005${tcl}`, a)).rows;
     }
     return { ym: months, sla: summarizeSla(cohorts, new Date()) };

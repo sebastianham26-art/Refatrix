@@ -91,6 +91,7 @@
   .sltab td{text-align:right;padding:5px 10px;border-top:1px solid #f0ece2;white-space:nowrap}
   .sltab td.cust{white-space:normal;word-break:break-word;font-weight:600;color:var(--ink)}
   .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}
+  .sltab .slwarn{color:var(--gold);font-weight:800}
   .sltab .ln-emptyrow td{color:var(--muted)}
   @media(max-width:760px){.slaarrow{display:none}.slalane{min-width:100%}}
   @media print{.slaflow{break-inside:avoid}.slaarrow{font-size:14px}.slalane{break-inside:avoid}}
@@ -402,9 +403,9 @@
     // 친절한 서술형 정의(대기/지연 기준)
     const defMap={
       order:'견적 후 포장출력 전 대기 · 48h 초과 시 지연',
-      packing:'포장출력 후 포장완료 전 대기 · 6업무h 초과 시 지연',
-      sat:'전환 후 SAT 발행 전 대기 · 3h 초과 시 지연',
-      collect:'인보이스 후 미수금 대기 · 만기일 초과 시 지연',
+      packing:'포장출력 후 포장완료(스캔) 전 대기 · 6업무h 초과 시 지연',
+      sat:'전환 후 SAT 번호 발행 전 대기 · 3h 초과 시 지연',
+      collect:'SAT 발행 후 미수금 · 외상기간중/기일도래/지연중',
     };
     const shortUnit=(u)=> u==='시간'?'h' : u==='업무시간'?'업무h' : u==='지연일'?'일' : (u?(' '+u):'');
     // 병목 등급(지연 건수 기준): n=0→중립, 지연0→양호, 절반미만→주의, 절반이상→병목
@@ -430,13 +431,23 @@
         lane+='<tr class="ln-emptyrow"><td class="cust" style="text-align:left">대기 없음</td><td>—</td><td>—</td><td>—</td></tr>';
       }else{
         items.forEach(it=>{
-          const od=(it.overdue===true)||(it.overdue===undefined&&it.ok===false);   // 신/구 스냅샷 호환
-          const age=(it.age!=null?it.age:it.lead);
+          let elapsed, statusHtml;
+          if(k==='collect' && it.dueRel!==undefined){
+            const r=Number(it.dueRel);
+            if(r>0){      elapsed='D+'+r;  statusHtml='<span class="slno">지연중 '+r+'day</span>'; }
+            else if(r===0){ elapsed='D-day'; statusHtml='<span class="slwarn">기일도래</span>'; }
+            else {        elapsed='D'+r;   statusHtml='<span class="slok">외상기간중</span>'; }   // r<0 → 'D-5'
+          }else{
+            const age=(it.age!=null?it.age:it.lead);
+            elapsed=(age!=null?(age+shortUnit(s.unit)):'—');
+            const od=(it.overdue===true)||(it.overdue===undefined&&it.ok===false);   // 신/구 스냅샷 호환
+            statusHtml=od?'<span class="slno">지연</span>':'<span class="slok">정상</span>';
+          }
           lane+='<tr>'
             +'<td class="cust" style="text-align:left">'+esc(it.customer||'-')+'</td>'
             +'<td>'+mxn(it.amount)+'</td>'
-            +'<td>'+(age!=null?(age+shortUnit(s.unit)):'—')+'</td>'
-            +'<td>'+(od?'<span class="slno">지연</span>':'<span class="slok">정상</span>')+'</td>'
+            +'<td>'+elapsed+'</td>'
+            +'<td>'+statusHtml+'</td>'
             +'</tr>';
         });
       }
@@ -446,7 +457,7 @@
       if(i<order.length-1) h+='<div class="slaarrow">▶</div>';
     });
     h+='</div>';
-    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
+    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 정시수금 상태: <b style="color:var(--income)">외상기간중</b>(만기 전) · <b style="color:var(--gold)">기일도래</b>(만기 당일) · <b style="color:var(--expense)">지연중 Nday</b>(만기 후). 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
     $('slaBody').innerHTML=h;
   }
 

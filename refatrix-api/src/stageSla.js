@@ -9,7 +9,7 @@
 //    · 정시수금: 인보이스 후 미수금 — 외상만기(due_date) 초과 시 지연
 //   완료돼 다음 단계로 넘어간 건은 코호트에서 제외된다(쿼리에서).
 // =====================================================================
-import { workingMinutesBetween } from './workingHours.js';
+import { MX_OFFSET_MIN } from './workingHours.js';
 
 const H = 3600000;
 
@@ -18,19 +18,26 @@ function reduceStage(rows, fn) {
   let delayed = 0, sumAge = 0, amount = 0;
   const items = [];
   for (const r of rows) {
-    const { overdue, age } = fn(r);
+    const res = fn(r);
+    const { overdue, age } = res;
     if (overdue) delayed++;
     sumAge += (Number(age) || 0);
     amount += (Number(r.amount) || 0);
-    items.push({
+    const item = {
       customer: r.customer_name || '불특정',
       amount: Math.round((Number(r.amount) || 0) * 100) / 100,
       age: Math.round((Number(age) || 0) * 10) / 10,
       overdue: !!overdue,
-    });
+    };
+    if (res.dueRel !== undefined) item.dueRel = res.dueRel;  // 정시수금: 만기 상대일(부호: +지남 / 0당일 / -미도래)
+    items.push(item);
   }
-  // 지연건 먼저, 그다음 금액 큰 순
-  items.sort((x, y) => (Number(y.overdue) - Number(x.overdue)) || (y.amount - x.amount));
+  // 정시수금은 만기 상대일 큰 순(가장 많이 지난 것 위), 그 외는 지연건 먼저·금액 큰 순
+  if (items.some((it) => it.dueRel !== undefined)) {
+    items.sort((x, y) => (Number(y.dueRel) - Number(x.dueRel)) || (y.amount - x.amount));
+  } else {
+    items.sort((x, y) => (Number(y.overdue) - Number(x.overdue)) || (y.amount - x.amount));
+  }
   const n = rows.length;
   return {
     n,                                                   // 현재 대기 건수
@@ -50,9 +57,9 @@ export function summarizeSla(c, now) {
     return { overdue: (NOW - start) > 48 * H, age };
   });
   const packing = reduceStage(c.packing || [], (r) => {
-    const dl = r.packing_due_at ? new Date(r.packing_due_at).getTime()
-                                : (new Date(r.packing_printed_at).getTime() + 6 * H);
-    const age = workingMinutesBetween(r.packing_printed_at, new Date(NOW)) / 60; // 업무시간 경과(시)
+    const printed = new Date(r.packing_printed_at).getTime();
+    const dl = r.packing_due_at ? new Date(r.packing_due_at).getTime() : (printed + 6 * H);
+    const age = (NOW - printed) / H;                     // 실제 경과(벽시계 시간)
     return { overdue: NOW > dl, age };
   });
   const sat = reduceStage(c.sat || [], (r) => {
@@ -61,14 +68,16 @@ export function summarizeSla(c, now) {
     return { overdue: (NOW - start) > 3 * H, age };
   });
   const collect = reduceStage(c.collect || [], (r) => {
-    const due = new Date(String(r.due_date).slice(0, 10) + 'T00:00:00Z').getTime();
-    const lateDays = Math.max(0, Math.floor((NOW - due) / 86400000));  // 만기 후 경과일
-    return { overdue: NOW > due, age: lateDays };
+    const dueMs = Date.parse(String(r.due_date).slice(0, 10) + 'T00:00:00Z');
+    const todayStr = new Date(NOW + MX_OFFSET_MIN * 60000).toISOString().slice(0, 10); // MX 오늘 날짜
+    const todayMs = Date.parse(todayStr + 'T00:00:00Z');
+    const dueRel = Math.round((todayMs - dueMs) / 86400000);  // >0 지남(지연중) / 0 당일(기일도래) / <0 외상기간중
+    return { overdue: dueRel > 0, age: Math.max(0, dueRel), dueRel };
   });
   return {
     order:   { ...order,   key: 'order',   label: '오더확정 (견적→포장출력 대기 · 48h 초과 지연)',  unit: '시간' },
-    packing: { ...packing, key: 'packing', label: '포장단계 (포장출력→완료 대기 · 6업무h 초과 지연)', unit: '업무시간' },
-    sat:     { ...sat,     key: 'sat',     label: '인보이스 (전환→SAT 대기 · 3h 초과 지연)',        unit: '시간' },
-    collect: { ...collect, key: 'collect', label: '정시수금 (인보이스→수금 대기 · 만기 초과 지연)',   unit: '지연일' },
+    packing: { ...packing, key: 'packing', label: '포장단계 (포장출력→완료 대기 · 6업무h 초과 지연)', unit: '시간' },
+    sat:     { ...sat,     key: 'sat',     label: '인보이스 (전환→SAT발행 대기 · 3h 초과 지연)',     unit: '시간' },
+    collect: { ...collect, key: 'collect', label: '정시수금 (발행 후 미수금 · 만기 이후 지연중)',     unit: '지연일' },
   };
 }
