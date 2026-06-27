@@ -186,7 +186,8 @@ export default async function quoteRoutes(app) {
         `SELECT COALESCE(SUM(ql.reserved_qty),0) AS s
            FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
           WHERE ql.product_id=$1 AND q.id<>$2 AND q.status IN ('draft','confirmed')
-            AND q.reserve_expires_at > now() AND q.deleted_at IS NULL`, [Number(pid), quoteId])).rows[0];
+            AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
+            AND q.deleted_at IS NULL`, [Number(pid), quoteId])).rows[0];
       let remaining = Math.max(0, physical - (Number(other.s) || 0));
       for (const l of byProd[pid]) {
         const want = Number(l.qty) || 0;
@@ -205,6 +206,7 @@ export default async function quoteRoutes(app) {
       `SELECT id FROM quotes
         WHERE status IN ('draft','confirmed') AND reserve_expires_at IS NOT NULL
           AND reserve_expires_at <= now() AND deleted_at IS NULL
+          AND packing_printed_at IS NULL
         ORDER BY id LIMIT 200`)).rows;
     for (const row of due) {
       const id = row.id;
@@ -466,7 +468,7 @@ export default async function quoteRoutes(app) {
     }
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
-              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at,
+              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at,
               c.name AS customer_name, c.team_id,
               uc.name AS creator_name,
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
@@ -509,6 +511,7 @@ export default async function quoteRoutes(app) {
         creator_name: r.creator_name || null,
         open: ['draft', 'confirmed'].includes(r.status),
         reserve_expires_at: r.reserve_expires_at || null,
+        packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
@@ -838,7 +841,7 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
-    if (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date()))
+    if (!q.packing_printed_at && (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date())))
       return reply.code(409).send({ error: 'quote_expired', note: '예약 24시간이 지나 무효화된 견적입니다. 전환할 수 없습니다. 견적을 복제해 새로 진행하세요.' });
     // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
     const pickable = (await query(
