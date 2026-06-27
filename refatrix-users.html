@@ -64,7 +64,7 @@
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">접속 현황 <span id="presSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
       <div id="presList"><div class="hint">불러오는 중…</div></div>
       <div style="display:flex;align-items:center;gap:10px;margin:14px 0 6px"><span style="font-size:12px;font-weight:800;color:#666">접속 위치 (IP 추정)</span><button class="btn sm" id="mapBig" type="button" style="padding:3px 10px;font-size:12px">⛶ 크게</button></div>
-      <div id="presMap" style="height:380px;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;background:#eef1ef"></div>
+      <div id="presMap" style="height:520px;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;background:#eef1ef"></div>
       <div id="presMapLegend" class="hint" style="margin-top:5px"></div>
       <div class="hint" style="margin-top:3px">IP 기반 도시 단위 추정 · 모바일망/VPN은 부정확할 수 있음. 같은 도시는 한 핀에 묶어 표시.</div>
       <div style="border-top:1px solid #eee;margin:16px 0 12px"></div>
@@ -301,7 +301,7 @@
       if(btn){ btn.textContent='\u2715 닫기'; btn.style.position='fixed'; btn.style.top='16px'; btn.style.right='16px'; btn.style.zIndex='10001'; }
       if(window.__presMap) window.__presMap.scrollWheelZoom.enable();
     }else{
-      el.style.position=''; el.style.top=el.style.left=el.style.right=el.style.bottom=''; el.style.width=''; el.style.zIndex=''; el.style.boxShadow=''; el.style.height='380px';
+      el.style.position=''; el.style.top=el.style.left=el.style.right=el.style.bottom=''; el.style.width=''; el.style.zIndex=''; el.style.boxShadow=''; el.style.height='520px';
       if(btn){ btn.textContent='\u26F6 크게'; btn.style.position=''; btn.style.top=btn.style.right=''; btn.style.zIndex=''; }
       if(window.__presMap) window.__presMap.scrollWheelZoom.disable();
     }
