@@ -59,41 +59,43 @@ export default async function wbrRoutes(app) {
     const empty = Array.isArray(teamIds) && teamIds.length === 0;
     function tc(args) { if (teamIds == null) return ''; args.push(teamIds); return ` AND c.team_id = ANY($${args.length})`; }
 
-    const cohorts = { orderConfirm: [], packing: [], sat: [], collect: [] };
+    const cohorts = { order: [], packing: [], sat: [], collect: [] };
     if (!empty) {
-      let a = [months]; let tcl = tc(a);
-      cohorts.orderConfirm = (await query(
-        `SELECT q.created_at, q.packing_printed_at, q.total_mxn AS amount, c.name AS customer_name
+      // 월 필터 없음 — "지금" 각 단계에 막혀있는(대기 중인) 모든 건. 팀 필터만 적용.
+      let a = []; let tcl = tc(a);
+      // 오더확정 대기: 견적 미결(작성중/확정) + 아직 포장출력 전
+      cohorts.order = (await query(
+        `SELECT q.created_at, q.total_mxn AS amount, c.name AS customer_name
            FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
-          WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL
-            AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+          WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed')
+            AND q.packing_printed_at IS NULL${tcl}`, a)).rows;
 
-      a = [months]; tcl = tc(a);
+      a = []; tcl = tc(a);
+      // 포장단계 대기: 포장출력 했지만 포장작업지시서 스캔 업로드(완료) 전, 아직 전환 전
       cohorts.packing = (await query(
-        `SELECT q.packing_printed_at, q.packing_due_at, pd.uploaded_at AS packed_at, q.total_mxn AS amount, c.name AS customer_name
-           FROM quotes q JOIN quote_packing_docs pd ON pd.quote_id=q.id
-           LEFT JOIN customers c ON c.id=q.customer_id
-          WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL
-            AND to_char(q.packing_printed_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+        `SELECT q.packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name
+           FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+          WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL AND q.status <> 'converted'
+            AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)${tcl}`, a)).rows;
 
-      a = [months]; tcl = tc(a);
+      a = []; tcl = tc(a);
+      // 인보이스(SAT) 대기: 전환됐지만 실제 SAT 번호 미입력(sat_entered_at 없음 = 발행 미완료)
       cohorts.sat = (await query(
-        `SELECT si.created_at AS converted_at, si.sat_entered_at, si.total_mxn AS amount, c.name AS customer_name
+        `SELECT si.created_at AS converted_at, si.total_mxn AS amount, c.name AS customer_name
            FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
-          WHERE si.deleted_at IS NULL AND si.status <> 'deleted' AND si.sat_entered_at IS NOT NULL
-            AND to_char(si.sat_entered_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+          WHERE si.deleted_at IS NULL AND si.status <> 'deleted' AND si.sat_entered_at IS NULL${tcl}`, a)).rows;
 
-      a = [months]; tcl = tc(a);
+      a = []; tcl = tc(a);
+      // 정시수금 대기: SAT 입력완료(발행완료)된 인보이스 중 미수금(완납 안 됨)
       cohorts.collect = (await query(
-        `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, to_char(t.collected_at,'YYYY-MM-DD') AS collected_at, si.total_mxn AS amount, c.name AS customer_name
+        `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS amount, c.name AS customer_name
            FROM sales_invoices si
-           JOIN (SELECT spa.invoice_id, MAX(sp.created_at) AS collected_at, SUM(spa.amount) AS paid
-                   FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
-                  GROUP BY spa.invoice_id) t ON t.invoice_id=si.id
+           LEFT JOIN (SELECT spa.invoice_id, SUM(spa.amount) AS paid
+                        FROM sales_payment_allocations spa GROUP BY spa.invoice_id) p ON p.invoice_id=si.id
            LEFT JOIN customers c ON c.id=si.customer_id
           WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
-            AND t.paid >= si.total_mxn - 0.005
-            AND to_char(t.collected_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+            AND si.sat_entered_at IS NOT NULL AND si.due_date IS NOT NULL
+            AND COALESCE(p.paid,0) < si.total_mxn - 0.005${tcl}`, a)).rows;
     }
     return { ym: months, sla: summarizeSla(cohorts, new Date()) };
   });
