@@ -183,6 +183,17 @@
   // ===== 접속 현황 (디렉터 전용) =====
   let presenceTimer=null;
   const PRESENCE_GROUPS=[['socio','소시오'],['sales','영업'],['sales_support','영업지원'],['treasury','재무']];
+  const PAGE_NAMES={
+    'refatrix-dashboard.html':'대시보드','refatrix-portal.html':'포털','refatrix-quote.html':'견적작성','refatrix-quotelist.html':'견적목록',
+    'refatrix-sales.html':'영업','refatrix-salesperf.html':'영업실적','refatrix-finance.html':'재무','refatrix-settlement.html':'정산/반제',
+    'refatrix-commission.html':'커미션','refatrix-customers.html':'고객','refatrix-products.html':'제품','refatrix-stock.html':'재고',
+    'refatrix-stock-test.html':'재고(테스트)','refatrix-import.html':'수입','refatrix-importcost.html':'수입원가','refatrix-recost.html':'원가재계산',
+    'refatrix-grossprofit.html':'매출총이익','refatrix-budget.html':'예산','refatrix-targets.html':'목표','refatrix-pipeline.html':'파이프라인',
+    'refatrix-funnel.html':'퍼널','refatrix-orderfunnel.html':'수주퍼널','refatrix-marketing.html':'마케팅','refatrix-board.html':'게시판',
+    'refatrix-wbr.html':'WBR','refatrix-company.html':'회사','refatrix-users.html':'사용자관리','refatrix-shortage.html':'재고부족',
+    'refatrix-devrequest.html':'개발요청','refatrix-rnr.html':'R&R','refatrix-rnr-roles.html':'R&R역할','refatrix-login.html':'로그인'
+  };
+  function pageName(pp){ if(!pp)return''; pp=String(pp).toLowerCase().split('/').pop(); return PAGE_NAMES[pp]||pp.replace(/^refatrix-/,'').replace(/\.html$/,''); }
   function presEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
   function presRel(sec){ if(sec==null)return''; sec=Math.max(0,Math.floor(sec));
     if(sec<60)return'방금'; if(sec<3600)return Math.floor(sec/60)+'분 전';
@@ -213,7 +224,7 @@
       order.forEach(([k,label])=>{
         const arr=(groups[k]||[]).slice().sort(sortFn); if(!arr.length)return;
         html+='<div style="font-size:11px;font-weight:800;color:#888;margin:12px 0 6px">'+label+' ('+arr.length+')</div>';
-        html+='<div style="display:flex;flex-wrap:wrap;gap:8px">'+arr.map(u=>{
+        html+='<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">'+arr.map(u=>{
           const meta=[u.role,u.team_name,u.login_id].filter(Boolean).map(presEsc).join(' · ');
           const status=u.online
             ? '<span style="color:#0F6E56;font-weight:700"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19a974;margin-right:5px;vertical-align:middle"></span>접속 중</span>'
@@ -222,10 +233,13 @@
           const locTxt=[u.geo_city,u.geo_region,u.geo_country].filter(Boolean).map(presEsc).join(', ');
           const locShown = locTxt || (u.geo_src==='gps'?'GPS 위치':'');
           const loc=locShown?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCCD '+locShown+srcTag+'</div>':'';
-          return '<div style="border:1px solid #e3e3e3;border-radius:10px;padding:8px 11px;min-width:160px;background:'+(u.online?'#f3fbf7':'#fff')+'">'
-            +'<div style="font-weight:700"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+userColor(u.id).fill+';border:1px solid '+userColor(u.id).stroke+';margin-right:6px;vertical-align:middle"></span>'+presEsc(u.name||'-')+'</div>'
+          const pg=pageName(u.last_path);
+          const pageLine=pg?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCC4 '+(u.online?'현재':'마지막')+': '+presEsc(pg)+'</div>':'';
+          return '<div style="border:1px solid #e3e3e3;border-radius:10px;padding:8px 10px;background:'+(u.online?'#f3fbf7':'#fff')+'">'
+            +'<div style="font-weight:700;font-size:13px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+userColor(u.id).fill+';border:1px solid '+userColor(u.id).stroke+';margin-right:6px;vertical-align:middle"></span>'+presEsc(u.name||'-')+'</div>'
             +'<div class="hint" style="margin:2px 0 4px">'+meta+'</div>'
             +loc
+            +pageLine
             +'<div style="font-size:12px">'+status+'</div></div>';
         }).join('')+'</div>';
       });
