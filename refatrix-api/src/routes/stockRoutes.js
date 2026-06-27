@@ -125,12 +125,17 @@ export default async function stockRoutes(app) {
 
   // 이동 내역 목록 (전체: 수동 + 매출/수입 자동). 필터: product_id, move_type, from, to, source
   // 현재 재고 총괄(고정 요약): SKU 수 · 총수량 · 재고금액(MXN)
+  // 재고 판매가 환산액: 현재고를 정가(list_price) 기준 가정 할인율로 전량 판매했다고 볼 때의 매출 환산액.
+  // 원가가 아니라 판매가 추정치이므로 sale_price 필드 권한으로 게이팅(디렉터·sale_price 보유자).
+  const SELL_DISCOUNT = 0.45; // 리스트가 대비 평균 할인 가정(45%) → 판매단가 = list_price × (1-0.45)
   app.get('/api/stock/summary', { preHandler: [authGuard, requirePageAny(['stock', 'sales'])] }, async (req) => {
     const seeCost = fieldVisible(req.ctx.perm, 'unit_cost'); // 원가(재고금액)는 디렉터/원가권한자만
+    const seeSell = fieldVisible(req.ctx.perm, 'sale_price'); // 판매가 환산액은 디렉터/판매가권한자만
     const r = (await query(
       `SELECT COUNT(*) FILTER (WHERE COALESCE(stock_qty,0) <> 0)::int AS sku_count,
               COALESCE(SUM(stock_qty),0) AS total_qty,
-              COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(avg_cost,0)),0) AS stock_value_mxn
+              COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(avg_cost,0)),0) AS stock_value_mxn,
+              COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(list_price,0)),0) AS stock_list_value_mxn
          FROM products WHERE deleted_at IS NULL`)).rows[0];
     // PSN: 구매(수입입고) · 판매(매출출고) 당월/전월 수량 + 당월 순증감(재고 롤백용)
     const p = (await query(
@@ -148,6 +153,9 @@ export default async function stockRoutes(app) {
       sku_count: Number(r.sku_count) || 0,
       total_qty: totalQty,
       stock_value_mxn: seeCost ? Math.round((Number(r.stock_value_mxn) || 0) * 100) / 100 : null,
+      // 재고 판매가 환산액 = Σ(재고수량 × 정가) × (1 − 할인가정)
+      stock_sell_value_mxn: seeSell ? Math.round((Number(r.stock_list_value_mxn) || 0) * (1 - SELL_DISCOUNT) * 100) / 100 : null,
+      sell_discount_rate: SELL_DISCOUNT, // 라벨/툴팁 표기용(0.45)
       // P/S/N 당월·전월 비교 (수량)
       psn: {
         purchase: { cur: q3(p.p_cur), prev: q3(p.p_prev) },
