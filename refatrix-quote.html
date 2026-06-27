@@ -97,6 +97,9 @@
         <div style="flex:1;min-width:160px;position:relative"><label>코드 (CTR 또는 SYD) — 입력하면 자동완성</label>
           <input id="inCode" type="text" autocomplete="off" placeholder="예: CTR 또는 SYD 일부 입력" oninput="onCodeInput()" onkeydown="codeKey(event)">
           <div id="acBox" class="acbox hidden"></div>
+          <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-size:12px;color:#6f6a60;cursor:pointer;font-weight:500">
+            <input type="checkbox" id="inAlu" onchange="onCodeInput()" style="width:auto;margin:0"> 알루미늄만 (체크 시 알루미늄 소재 제품만 검색)
+          </label>
         </div>
         <div style="min-width:90px"><label>수량</label><input id="inQty" type="number" min="0" step="1" value="1" style="width:90px" onkeydown="if(event.key==='Enter')addLine()"></div>
         <div><button class="btn" onclick="addLine()">＋ 추가</button></div>
@@ -230,7 +233,8 @@
     if(q.length<1){ hideAc(); return; }
     acTimer=setTimeout(async()=>{
       try{
-        const d=await fetch(session.api+'/api/quotes/search-code?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json());
+        const alu=($('inAlu')&&$('inAlu').checked)?'&material=aluminio':'';
+        const d=await fetch(session.api+'/api/quotes/search-code?q='+encodeURIComponent(q)+alu,{headers:auth()}).then(r=>r.json());
         acItems=d.items||[]; acSel=-1; renderAc();
       }catch(e){ hideAc(); }
     },180);

@@ -111,6 +111,12 @@
     <h2>제품 검색 (코드·경쟁사코드·차종 통합)</h2>
     <div class="row">
       <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
+      <div style="flex:0 0 auto"><label>소재</label>
+        <select id="qMaterial" style="min-width:120px">
+          <option value="">전체</option>
+          <option value="aluminio">알루미늄</option>
+          <option value="__none__">미지정</option>
+        </select></div>
       <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
     </div>
     <div id="result"></div>
@@ -144,6 +150,21 @@
       <div class="hint" style="margin-top:0">이미 올린 제품들의 경쟁사 코드·적용차종 분해 데이터를 다시 만들려면 아래를 누르세요(검색이 비어 나올 때).</div>
       <button class="btn ghost sm" id="resyncBtn" style="margin-top:6px">분해 데이터 전체 재동기화</button>
       <div class="msg" id="resyncMsg"></div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div style="font-weight:700">소재 일괄지정 (CTR 코드 목록)</div>
+      <div class="hint" style="margin-top:4px">CTR 코드 목록으로 여러 제품의 소재를 한 번에 지정/해제합니다. 엑셀(.xlsx)을 올리거나 코드를 직접 붙여넣으세요(줄·쉼표·공백 구분). 첫 번째 열의 코드를 읽습니다. <b>재고·원가 등 다른 값은 바뀌지 않습니다.</b></div>
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:0 0 auto"><label>소재</label>
+          <select id="bmMaterial" style="min-width:140px"><option value="aluminio">알루미늄 지정</option><option value="">소재 해제(빈값)</option></select></div>
+        <div style="flex:0 0 auto"><label>엑셀 파일(.xlsx)</label><input type="file" id="bmFile" accept=".xlsx,.xls,.csv" style="font-size:11px"></div>
+      </div>
+      <textarea id="bmCodes" placeholder="여기에 CTR 코드를 붙여넣어도 됩니다 (한 줄에 하나, 또는 쉼표/공백 구분)" style="width:100%;min-height:70px;margin-top:8px;font-family:monospace;font-size:12px;padding:8px;box-sizing:border-box"></textarea>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn gold" id="bmApply">일괄 적용</button>
+        <span class="hint" id="bmCount" style="margin:0"></span>
+      </div>
+      <div class="msg" id="bmMsg"></div>
     </div>
   </div>
 
@@ -220,23 +241,41 @@
   }
   window.addEventListener('hashchange',function(){ if($('loginCard').classList.contains('hidden')) applyHashTab(); });
 
-  let prodOffset=0, prodQ='', prodLimit=50, prodTotal=0, prodHasList=false, prodHasCost=false;
+  let prodOffset=0, prodQ='', prodLimit=50, prodTotal=0, prodHasList=false, prodHasCost=false, prodMaterial='';
   let prodSort='', prodDir='desc';  // 헤더 클릭 정렬(서버측 전체 기준). ''=코드순 기본.
+  function matBadge(mat){
+    if(mat==='aluminio') return '<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:#e3eef0;color:#15616d;font-size:11px;font-weight:700">알루미늄</span>';
+    if(mat) return '<span style="font-size:11px;color:#6f6a60">'+escP(mat)+'</span>';
+    return '<span style="color:#bbb">—</span>';
+  }
+  async function setMaterial(pid, code, cur, td){
+    const next = (cur==='aluminio') ? null : 'aluminio';   // 토글: 알루미늄 ↔ 해제
+    const label = next ? '알루미늄으로 지정' : '소재 해제';
+    if(!confirm(code+' 제품을 '+label+'할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/products/'+pid+'/material',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({material:next})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('변경 실패: '+(d.error||res.status)); return; }
+      td.setAttribute('data-mat', d.material||''); td.innerHTML=matBadge(d.material);
+    }catch(e){ alert('변경 실패: '+e.message); }
+  }
   function escP(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-  function doSearch(){ prodOffset=0; prodQ=$('q').value.trim(); loadProducts(); }
+  function doSearch(){ prodOffset=0; prodQ=$('q').value.trim(); prodMaterial=($('qMaterial')?$('qMaterial').value:'')||''; loadProducts(); }
   async function loadProducts(){
     const r=$('result'); r.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):''),{headers:auth()});
+      const matParam=prodMaterial?('&material='+encodeURIComponent(prodMaterial)):'';
+      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):'')+matParam,{headers:auth()});
       const d=await res.json(); const items=d.items||[];
       prodTotal=Number(d.total||items.length);
       if(!items.length){ r.innerHTML='<div class="hint">일치하는 제품이 없습니다.</div>'; return; }
       prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
-      const colN=7+(prodHasList?1:0)+(prodHasCost?2:0);
+      const isDir=session&&session.user&&session.user.role==='director';
+      const colN=8+(prodHasList?1:0)+(prodHasCost?2:0);
       const sh=(key,label)=>'<th class="num nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'">'+label
         +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
       let h='<table><thead><tr>'
-        +'<th class="nowrap">코드</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th><th class="nowrap">랙</th>'
+        +'<th class="nowrap">코드</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th><th class="nowrap">랙</th><th class="nowrap">소재</th>'
         +sh('stock','재고')+sh('sold','누적판매')
         +(prodHasList?'<th class="num nowrap">List Price</th>':'')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
@@ -254,6 +293,8 @@
           +'<td style="font-size:11px;color:#6f6a60">'+(app||'—')+'</td>'
           +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
           +'<td class="rack nowrap">'+(rack||'—')+'</td>'
+          +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
+            +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
           +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
           +'<td class="num">'+qty(sold)+'</td>'
           +(prodHasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
@@ -274,6 +315,8 @@
       if(np) np.addEventListener('click',()=>{ if(prodOffset+prodLimit<prodTotal){ prodOffset+=prodLimit; loadProducts(); }});
       if(pp) pp.addEventListener('click',()=>{ if(prodOffset>0){ prodOffset=Math.max(0,prodOffset-prodLimit); loadProducts(); }});
       r.querySelectorAll('.prow').forEach(tr=>{ tr.addEventListener('click',()=>toggleDrill(tr, Number(tr.getAttribute('data-pid')), colN)); });
+      if(isDir){ r.querySelectorAll('.mat-cell').forEach(td=>{ td.addEventListener('click',(e)=>{ e.stopPropagation();
+        setMaterial(Number(td.getAttribute('data-pid')), td.getAttribute('data-code'), td.getAttribute('data-mat'), td); }); }); }
       r.querySelectorAll('th.sortable').forEach(th=>{ th.addEventListener('click',()=>{
         const key=th.getAttribute('data-sort');
         if(prodSort===key){ prodDir=(prodDir==='asc'?'desc':'asc'); }   // 같은 열 재클릭 → 오름/내림 토글
@@ -383,8 +426,8 @@
       const ws=wb.Sheets[wb.SheetNames[0]];
       const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
       if(!aoa.length){m.className='msg err';m.style.display='block';m.textContent='빈 파일입니다.';return;}
-      const header=(aoa[0]||[]).slice(0,13).map(h=>h==null?'':String(h));
-      const rows=aoa.slice(1).filter(r=>r&&r.some(c=>c!=null&&c!=='')).map(r=>r.slice(0,13));
+      const header=(aoa[0]||[]).slice(0,20).map(h=>h==null?'':String(h));
+      const rows=aoa.slice(1).filter(r=>r&&r.some(c=>c!=null&&c!=='')).map(r=>r.slice(0,20));
       if(!header.includes('Clave CTR')){m.className='msg err';m.style.display='block';m.textContent='“Clave CTR” 컬럼을 찾을 수 없습니다. 헤더 행을 확인하세요.';return;}
       parsedPayload={header,rows};
       m.className='msg ok';m.style.display='block';m.textContent=file.name+' — '+rows.length+'행 읽음. 미리보기를 불러옵니다…';
@@ -535,11 +578,56 @@
   $('vehBtn').addEventListener('click',vehSearch);
   $('veh-maker').addEventListener('change',loadModels);
   $('veh-model').addEventListener('change',loadYears);
+  // ===== 소재 일괄지정 =====
+  function parseCodeText(t){
+    return [...new Set(String(t||'').split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
+  }
+  async function bmReadFile(file){
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
+      // 첫 번째 열 값 수집. 헤더로 보이는 셀(코드/clave/ctr/code)은 제외.
+      const out=[];
+      aoa.forEach(r=>{ const v=r&&r[0]; if(v==null) return; const s2=String(v).trim(); if(!s2) return;
+        const low=s2.toLowerCase(); if(low==='clave ctr'||low==='ctr'||low==='code'||low==='codigo'||low==='código'||low==='코드') return;
+        out.push(s2); });
+      const codes=[...new Set(out)];
+      const ta=$('bmCodes'); ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+codes.join('\n');
+      bmRefreshCount();
+      const m=$('bmMsg'); m.className='msg ok'; m.style.display='block'; m.textContent=file.name+' — 코드 '+codes.length+'개 읽음. 확인 후 [일괄 적용]을 누르세요.';
+    }catch(e){ const m=$('bmMsg'); m.className='msg err'; m.style.display='block'; m.textContent='파일을 읽지 못했습니다: '+e.message; }
+  }
+  function bmRefreshCount(){ const n=parseCodeText($('bmCodes').value).length; $('bmCount').textContent=n?('코드 '+n+'개'):''; }
+  async function bmApply(){
+    const m=$('bmMsg'); m.className='msg'; m.style.display='none';
+    const codes=parseCodeText($('bmCodes').value);
+    if(!codes.length){ m.className='msg err'; m.style.display='block'; m.textContent='적용할 CTR 코드가 없습니다.'; return; }
+    const material=$('bmMaterial').value;
+    const label=material?'알루미늄으로 지정':'소재 해제';
+    if(!confirm(codes.length+'개 코드를 '+label+'할까요?')) return;
+    $('bmApply').disabled=true; $('bmApply').textContent='적용 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/material/bulk-set',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes,material})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+(d.error||res.status); return; }
+      m.className='msg ok'; m.style.display='block';
+      let txt='완료 — 요청 '+d.requested+'개 중 '+d.matched+'개 적용('+label+').';
+      if(d.unmatched&&d.unmatched.length){ txt+=' 미매칭 '+d.unmatched.length+'개: '+d.unmatched.slice(0,30).join(', ')+(d.unmatched.length>30?(' 외 '+(d.unmatched.length-30)+'개'):''); }
+      m.textContent=txt;
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+e.message; }
+    finally{ $('bmApply').disabled=false; $('bmApply').textContent='일괄 적용'; }
+  }
+
   $('resyncBtn').addEventListener('click',resyncDerived);
+  if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
+  if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
+  if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
+  if($('qMaterial')) $('qMaterial').addEventListener('change',doSearch);
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260625c"></script>
+<script src="refatrix-nav.js?v=20260627alu"></script>
 </body>
 </html>

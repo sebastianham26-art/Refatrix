@@ -2,7 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { minimizeProduct, fieldVisible } from '../permissions.js';
 import { logPageView, logEvent } from '../audit.js';
-import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd } from '../productImport.js';
+import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
 
 export default async function productRoutes(app) {
   // 제품 목록: 검색 + 페이징 (SKU ~5,000 대비, 한 번에 다 보내지 않음)
@@ -12,6 +12,8 @@ export default async function productRoutes(app) {
     const q = (req.query.q || '').trim();
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
+    // 소재 필터: material=aluminio 이면 알루미늄 제품만. material=__none__ 이면 미지정만.
+    const materialFilter = String(req.query.material || '').trim().toLowerCase();
 
     // 정렬: 헤더 클릭 정렬(서버측, 전체 데이터 기준 — 현재 페이지만이 아님).
     //   stock=재고, sold=누적판매수량, avgcost=평균원가, stockval=재고 평가액, code=코드(기본).
@@ -37,11 +39,17 @@ export default async function productRoutes(app) {
                    OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
                    OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
     }
+    if (materialFilter === '__none__') {
+      where += ' AND p.material IS NULL';
+    } else if (materialFilter) {
+      params.push(normalizeMaterial(materialFilter));
+      where += ` AND p.material = $${params.length}`;
+    }
     params.push(limit, offset);
     // 누적 판매수량(게시·미삭제 인보이스 기준)을 제품별로 합산해 LEFT JOIN. 파라미터 없음(인덱스 영향 없음).
     const rows = (await query(
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
-              p.stock_qty, p.avg_cost, p.rack_location,
+              p.stock_qty, p.avg_cost, p.rack_location, p.material,
               COALESCE(sold.qty, 0) AS sold_qty
          FROM products p
          LEFT JOIN (
@@ -187,7 +195,7 @@ export default async function productRoutes(app) {
     if (!codes.length) return {};
     const rows = (await query(
       `SELECT id, code, scode, app, name, sat_code, origin, list_price, iva_rate, ean, location,
-              list_price_syd, price_customer_syd, price_customer_ctr, stock_qty, avg_cost
+              list_price_syd, price_customer_syd, price_customer_ctr, stock_qty, avg_cost, material
          FROM products WHERE deleted_at IS NULL AND code = ANY($1)`, [codes])).rows;
     const sydRows = rows.length ? (await query(
       `SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`,
@@ -283,6 +291,40 @@ export default async function productRoutes(app) {
 
     await logEvent({ userId, action: 'create', target: 'product_import', detail: { created, updated, unchanged, skipped } });
     return { ok: true, created, updated, unchanged, skipped };
+  });
+
+  // ===== 소재(material) 지정 =====
+  // 제품 1건 소재 인라인 편집(디렉터). body { material } — 빈값/null이면 해제.
+  app.patch('/api/products/:id/material', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const material = normalizeMaterial((req.body || {}).material);
+    const r = (await query(
+      `UPDATE products SET material=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL RETURNING id, code, material`,
+      [material, req.ctx.perm.userId, id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_material', detail: { code: r.code, material } });
+    return { ok: true, id: r.id, code: r.code, material: r.material };
+  });
+
+  // CTR 코드 목록으로 소재 일괄 지정(디렉터). body { codes:[...], material }
+  //   material 빈값/null → 해당 코드들의 소재 해제. 반환: 매칭 수 + 미매칭 코드 목록.
+  app.post('/api/products/material/bulk-set', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const b = req.body || {};
+    const material = normalizeMaterial(b.material);
+    const codes = [...new Set((Array.isArray(b.codes) ? b.codes : [])
+      .map((c) => String(c == null ? '' : c).trim()).filter(Boolean))];
+    if (!codes.length) return reply.code(400).send({ error: 'no_codes' });
+    const updated = (await query(
+      `UPDATE products SET material=$1, updated_by=$2
+        WHERE code = ANY($3) AND deleted_at IS NULL
+        RETURNING code`,
+      [material, req.ctx.perm.userId, codes])).rows.map((r) => r.code);
+    const matchedSet = new Set(updated);
+    const unmatched = codes.filter((c) => !matchedSet.has(c));
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_material_bulk',
+      detail: { material, matched: updated.length, unmatched: unmatched.length } });
+    return { ok: true, material, requested: codes.length, matched: updated.length, unmatched };
   });
 
   // SyD(경쟁사) 코드로 CTR 제품 역검색 (적용차종 포함)

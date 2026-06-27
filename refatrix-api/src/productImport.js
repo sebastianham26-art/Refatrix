@@ -14,12 +14,16 @@ export const COLUMN_MAP = {
   'List Price de SYD': 'list_price_syd',
   'Precio Cliente de SYD': 'price_customer_syd',
   'Precio Cliente de CTR': 'price_customer_ctr',
+  'Material': 'material',
+  'Material (Aluminio)': 'material',
+  '소재': 'material',
 };
 
 // 업로드 시 갱신 대상 필드(코드는 키라 제외. 재고·평균원가는 절대 제외).
 export const UPDATABLE_FIELDS = [
   'scode', 'app', 'name', 'sat_code', 'origin', 'list_price', 'iva_rate', 'ean',
   'location', 'list_price_syd', 'price_customer_syd', 'price_customer_ctr',
+  'material',
 ];
 const NUMERIC_FIELDS = new Set(['list_price', 'iva_rate', 'list_price_syd', 'price_customer_syd', 'price_customer_ctr']);
 
@@ -35,6 +39,17 @@ function toNum(v) {
 }
 
 // SyD 원문에서 개별 코드 분해(' // ' 구분, 변형 허용: //, 앞뒤 공백)
+// 소재값 정규화: 알루미늄 계열( aluminio / aluminum / 알루미늄 / al )은 'aluminio'로 통일.
+//   빈값 → null. 그 외 텍스트는 다듬어서 그대로 저장(향후 다른 소재 확장 대비).
+export function normalizeMaterial(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const low = s.toLowerCase();
+  if (low.includes('alumin') || low.includes('\uc54c\ub8e8\ubbf8\ub284') || low === 'al') return 'aluminio';
+  return s;
+}
+
 export function splitSyd(raw) {
   if (raw == null) return [];
   return String(raw)
@@ -98,7 +113,7 @@ export function parseRow(row, headerIdx) {
   for (const f of UPDATABLE_FIELDS) {
     const raw = get(f);
     if (raw === undefined) continue; // 파일에 그 컬럼 자체가 없음
-    obj[f] = NUMERIC_FIELDS.has(f) ? toNum(raw) : clean(raw);
+    obj[f] = NUMERIC_FIELDS.has(f) ? toNum(raw) : (f === 'material' ? normalizeMaterial(raw) : clean(raw));
   }
   obj.syd_codes = splitSyd(obj.scode);
   obj.applications = parseApplications(obj.app);
