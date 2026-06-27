@@ -220,11 +220,11 @@
       const order=[...PRESENCE_GROUPS,['__etc','기타']];
       const sortFn=(a,b)=>{ if(a.online!==b.online)return a.online?-1:1;
         const sa=a.seconds_ago==null?Infinity:a.seconds_ago, sb=b.seconds_ago==null?Infinity:b.seconds_ago; return sa-sb; };
-      let html='';
-      order.forEach(([k,label])=>{
-        const arr=(groups[k]||[]).slice().sort(sortFn); if(!arr.length)return;
-        html+='<div style="font-size:11px;font-weight:800;color:#888;margin:12px 0 6px">'+label+' ('+arr.length+')</div>';
-        html+='<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">'+arr.map(u=>{
+      // 역할 순서대로 평탄화(그룹 헤더 없이 한 그리드) → 전체 인원이 2줄에 들어오도록 열 수 = 올림(N/2)
+      const all=[];
+      order.forEach(([k])=>{ (groups[k]||[]).slice().sort(sortFn).forEach(u=>all.push(u)); });
+      const cols=Math.max(1, Math.ceil(all.length/2));
+      const html='<div style="display:grid;grid-template-columns:repeat('+cols+',minmax(0,1fr));gap:8px">'+all.map(u=>{
           const meta=[u.role,u.team_name,u.login_id].filter(Boolean).map(presEsc).join(' · ');
           const status=u.online
             ? '<span style="color:#0F6E56;font-weight:700"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19a974;margin-right:5px;vertical-align:middle"></span>접속 중</span>'
@@ -242,8 +242,7 @@
             +pageLine
             +'<div style="font-size:12px">'+status+'</div></div>';
         }).join('')+'</div>';
-      });
-      box.innerHTML=html||'<div class="hint">표시할 사용자가 없습니다.</div>';
+      box.innerHTML=all.length?html:'<div class="hint">표시할 사용자가 없습니다.</div>';
       renderPresenceMap(items);
     }catch(e){ box.innerHTML='<div class="hint">접속 현황을 불러오지 못했습니다.</div>'; }
   }
