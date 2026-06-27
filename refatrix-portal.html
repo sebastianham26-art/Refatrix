@@ -10,7 +10,7 @@
 <title>Refatrix ERP · 포털</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
-    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--income-bg:#E4F0EB;--expense-bg:#F6E7E4;--brand-soft:#1E5247;}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
     font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
@@ -111,6 +111,33 @@
   .pend{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;cursor:pointer;font-size:13px}
   .pend:hover{border-color:var(--brand)}
   .pend b.n{color:var(--expense)}
+  /* 수주 단계 SLA — 병목 신호 다이어그램(세로 레인) */
+  .slaflow{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+  .slalane{flex:1;min-width:215px;border-radius:12px;border:1px solid var(--line);overflow:hidden;display:flex;flex-direction:column;background:#fff}
+  .slalane .ln-head{padding:13px 14px 11px}
+  .ln-title{font-size:15.5px;font-weight:800;color:var(--brand);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .ln-grade{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.75);border:1px solid currentColor;white-space:nowrap}
+  .ln-n{font-size:29px;font-weight:800;line-height:1.05;margin-top:4px;color:var(--brand)}
+  .ln-n span{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px}
+  .ln-amt{font-size:13px;font-weight:800;margin-top:1px}
+  .ln-metrics{font-size:12px;font-weight:700;margin-top:3px;color:var(--ink)}
+  .ln-sep{color:#c2c0ba;margin:0 5px}
+  .ln-def{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.35;border-top:1px dashed rgba(0,0,0,.08);padding-top:6px}
+  .ln-list{border-top:1px solid var(--line);background:#fff;flex:1}
+  .ln-empty{padding:9px 13px;font-size:11.5px;color:var(--muted)}
+  .slaarrow{display:flex;align-items:center;align-self:center;color:var(--brand-soft);font-size:20px;font-weight:800;flex:0 0 auto}
+  .g-good .ln-head{background:var(--income-bg)} .g-good{border-color:#cfe4db} .g-good .ln-title,.g-good .ln-grade,.g-good .ln-amt,.g-good .ln-rate{color:var(--income)}
+  .g-warn .ln-head{background:#FBF4E6} .g-warn{border-color:#ecdcb8} .g-warn .ln-title,.g-warn .ln-grade,.g-warn .ln-amt,.g-warn .ln-rate{color:var(--gold)}
+  .g-bad  .ln-head{background:var(--expense-bg)} .g-bad{border-color:#e2b7af} .g-bad .ln-title,.g-bad .ln-grade,.g-bad .ln-amt,.g-bad .ln-rate{color:var(--expense)}
+  .g-na   .ln-head{background:#F5F3EE} .g-na .ln-grade{color:var(--muted)}
+  .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
+  .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:5px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap}
+  .sltab td{text-align:right;padding:5px 10px;border-top:1px solid #f0ece2;white-space:nowrap}
+  .sltab td.cust{white-space:normal;word-break:break-word;font-weight:600;color:var(--ink)}
+  .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}
+  .sltab .slwarn{color:var(--gold);font-weight:800}
+  .sltab .ln-emptyrow td{color:var(--muted)}
+  @media(max-width:760px){.slaarrow{display:none}.slalane{min-width:100%}}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -139,6 +166,14 @@
         <span class="hint" id="kpiMonthLbl"></span>
       </div>
       <div id="kpiBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 수주 단계 SLA (진행/병목) — 매출목표 카드 다음, 전원 표시(고객명은 권한자만) -->
+    <div class="card" id="slaCard">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">수주 단계 SLA <span class="hint" style="display:inline;margin:0">— 견적 → 포장 → 인보이스(SAT) → 수금 단계별 대기·지연(병목)</span></h2>
+      </div>
+      <div id="portalSlaBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
     </div>
 
     <!-- 수주 이후 흐름 종합 대시보드 -->
@@ -406,7 +441,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkNoticePopup();checkCalendarPopup();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();loadStageSla();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkNoticePopup();checkCalendarPopup();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -592,6 +627,82 @@
   }
   function escp(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
   function kfmt(n){ return n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0}); }
+
+  // ===== 수주 단계 SLA (진행/병목) — 포털 홈 =====
+  function renderStageSla(sla){
+    if(!sla){ $('portalSlaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
+    const order=['order','packing','sat','collect'];
+    const shortLbl={order:'오더확정',packing:'포장단계',sat:'인보이스(SAT)',collect:'정시수금'};
+    const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
+    // 친절한 서술형 정의(대기/지연 기준)
+    const defMap={
+      order:'견적 후 포장출력 전 대기 · 48h 초과 시 지연',
+      packing:'포장출력 후 스캔(=포장완료) 업로드 전 대기 · 6업무h 초과 시 지연',
+      sat:'포장완료 후 SAT 발행 전 대기 · 3h 초과 시 지연',
+      collect:'SAT 발행 후 미수금 · 외상기간중/기일도래/지연중',
+    };
+    const shortUnit=(u)=> u==='시간'?'h' : u==='업무시간'?'업무h' : u==='지연일'?'일' : (u?(' '+u):'');
+    // 병목 등급(지연 건수 기준): n=0→중립, 지연0→양호, 절반미만→주의, 절반이상→병목
+    const grade=(s)=>{ const n=Number(s.n||0), d=Number(s.delayed||0); if(!n) return 'na'; if(d===0) return 'good'; if(d*2<n) return 'warn'; return 'bad'; };
+    const gLabel=(s,g)=> g==='na'?'대기 없음' : g==='good'?'정상' : ('지연 '+Number(s.delayed||0)+'건');
+
+    let h='<div class="slaflow">';
+    order.forEach((k,i)=>{
+      const s=sla[k]||{}; const n=Number(s.n||0); const d=Number(s.delayed||0); const g=grade(s);
+      const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
+      const items=Array.isArray(s.items)?s.items:[];
+      let lane='<div class="slalane g-'+g+'">'
+        +'<div class="ln-head">'
+          +'<div class="ln-title">'+escp(shortLbl[k]||k)+'<span class="ln-grade">'+gLabel(s,g)+'</span></div>'
+          +'<div class="ln-n">'+n+'<span>건 대기</span></div>'
+          +'<div class="ln-amt">'+(n?mxn(s.amount):'—')+'</div>'
+          +'<div class="ln-metrics"><span class="ln-rate">'+(d>0?('지연 '+d+'건'):'지연 없음')+'</span><span class="ln-sep">·</span><span class="ln-avg">평균 '+avg+'</span></div>'
+          +'<div class="ln-def">'+escp(defMap[k]||'')+'</div>'
+        +'</div>'
+        +'<div class="ln-list">';
+      lane+='<table class="sltab"><thead><tr><th style="text-align:left">고객</th><th>금액</th><th>경과</th><th>상태</th></tr></thead><tbody>';
+      if(!items.length){
+        lane+='<tr class="ln-emptyrow"><td class="cust" style="text-align:left">대기 없음</td><td>—</td><td>—</td><td>—</td></tr>';
+      }else{
+        items.forEach(it=>{
+          let elapsed, statusHtml;
+          if(k==='collect' && it.dueRel!==undefined){
+            const r=Number(it.dueRel);
+            if(r>0){      elapsed='+'+r+'일'; statusHtml='<span class="slno">지연중 '+r+'day</span>'; }
+            else if(r===0){ elapsed='0일';   statusHtml='<span class="slwarn">기일도래</span>'; }
+            else {        elapsed=r+'일';    statusHtml='<span class="slok">외상기간중</span>'; }  // r<0 → '-5일'(남은일수)
+          }else{
+            const age=(it.age!=null?it.age:it.lead);
+            elapsed=(age!=null?(age+shortUnit(s.unit)):'—');
+            const od=(it.overdue===true)||(it.overdue===undefined&&it.ok===false);   // 신/구 스냅샷 호환
+            statusHtml=od?'<span class="slno">지연</span>':'<span class="slok">정상</span>';
+          }
+          lane+='<tr>'
+            +'<td class="cust" style="text-align:left">'+escp(it.customer||'-')+'</td>'
+            +'<td>'+mxn(it.amount)+'</td>'
+            +'<td>'+elapsed+'</td>'
+            +'<td>'+statusHtml+'</td>'
+            +'</tr>';
+        });
+      }
+      lane+='</tbody></table>';
+      lane+='</div></div>';
+      h+=lane;
+      if(i<order.length-1) h+='<div class="slaarrow">▶</div>';
+    });
+    h+='</div>';
+    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 정시수금 상태: <b style="color:var(--income)">외상기간중</b>(만기 전, 경과 −N일 = N일 남음) · <b style="color:var(--gold)">기일도래</b>(만기 당일) · <b style="color:var(--expense)">지연중 Nday</b>(만기 후, 경과 +N일). 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
+    $('portalSlaBody').innerHTML=h;
+  }
+
+  async function loadStageSla(){
+    const body=$('portalSlaBody'); if(!body) return;
+    try{
+      const d=await fetch(session.api+'/api/portal/stage-sla',{headers:auth()}).then(r=>r.json());
+      renderStageSla((d&&d.sla)||null);
+    }catch(e){ body.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
   async function loadKpi(){
     const body=$('kpiBody'); if(!body)return;
     try{
@@ -816,6 +927,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260627fs"></script>
+<script src="refatrix-nav.js?v=20260627perm"></script>
 </body>
 </html>

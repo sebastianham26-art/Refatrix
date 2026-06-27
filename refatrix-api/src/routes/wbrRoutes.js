@@ -3,7 +3,74 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { validateReceiptDataUrl } from '../ar.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds } from '../teams.js';
+import { pageAllowed } from '../permissions.js';
 import { summarizeSla } from '../stageSla.js';
+
+// 단계별 "현재 대기" 코호트 — 팀 가시성(visibleTeamIds) 적용. wbr·portal 공용 단일 기준.
+//   각 단계 = 지금 그 단계에 막혀있는(아직 안 끝난) 건. 월 무관(시점 기준).
+async function buildStageCohorts(perm, reqTeam) {
+  const vis = visibleTeamIds(perm); // null = 전체(디렉터/영업지원)
+  const reqRaw = String(reqTeam || 'total').split(',').map((s) => s.trim()).filter(Boolean);
+  let teamIds;
+  if (reqRaw.includes('total') || !reqRaw.length) teamIds = vis;
+  else { const want = reqRaw.map(Number).filter(Number.isInteger); teamIds = vis ? want.filter((id) => vis.includes(id)) : want; }
+  const empty = Array.isArray(teamIds) && teamIds.length === 0;
+  function tc(args) { if (teamIds == null) return ''; args.push(teamIds); return ` AND c.team_id = ANY($${args.length})`; }
+
+  const cohorts = { order: [], packing: [], sat: [], collect: [] };
+  if (empty) return cohorts;
+
+  let a = []; let tcl = tc(a);
+  // 오더확정 대기: 견적 미결(작성중/확정) + 아직 포장출력 전
+  cohorts.order = (await query(
+    `SELECT q.created_at, q.total_mxn AS amount, c.name AS customer_name
+       FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+      WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed')
+        AND q.packing_printed_at IS NULL${tcl}`, a)).rows;
+
+  a = []; tcl = tc(a);
+  // 포장단계 대기: 포장출력 했지만 포장작업지시서 스캔 업로드(완료) 전, 아직 전환 전
+  cohorts.packing = (await query(
+    `SELECT q.packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name
+       FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+      WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL AND q.status <> 'converted'
+        AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)${tcl}`, a)).rows;
+
+  a = []; tcl = tc(a);
+  // 인보이스(SAT) 대기: 전환됐지만 실제 SAT 번호 미부여(없음/빈값/TMP- = 미발행)
+  cohorts.sat = (await query(
+    `SELECT si.created_at AS converted_at, si.total_mxn AS amount, c.name AS customer_name
+       FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
+      WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
+        AND (si.sat_no IS NULL OR si.sat_no = '' OR si.sat_no LIKE 'TMP-%')${tcl}`, a)).rows;
+
+  a = []; tcl = tc(a);
+  // 정시수금 대기: 실제 SAT 번호 발행완료된 인보이스 중 미수금(완납 안 됨)
+  cohorts.collect = (await query(
+    `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS amount, c.name AS customer_name
+       FROM sales_invoices si
+       LEFT JOIN (SELECT spa.invoice_id, SUM(spa.amount) AS paid
+                    FROM sales_payment_allocations spa GROUP BY spa.invoice_id) p ON p.invoice_id=si.id
+       LEFT JOIN customers c ON c.id=si.customer_id
+      WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
+        AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
+        AND si.due_date IS NOT NULL
+        AND COALESCE(p.paid,0) < si.total_mxn - 0.005${tcl}`, a)).rows;
+
+  return cohorts;
+}
+
+// 고객명 노출 권한 없으면 items 의 고객명을 '비공개'로 가림
+function maskSlaCustomers(sla, perm, isRegistered) {
+  const canSee = perm.role === 'director' || pageAllowed(perm, 'customers', isRegistered);
+  if (canSee) return { sla, can_see_customer: true };
+  for (const k of ['order', 'packing', 'sat', 'collect']) {
+    if (sla[k] && Array.isArray(sla[k].items)) {
+      sla[k].items = sla[k].items.map((it) => ({ ...it, customer: '비공개' }));
+    }
+  }
+  return { sla, can_see_customer: false };
+}
 
 // WBR(주간 비즈니스 리뷰) 보드 — 팀별 이슈 불릿 + 회의 메모를 단일 JSON 문서로 영속.
 // 권한: 페이지키 'wbr'. 열람(view) 이상이면 조회, 수정(edit) 이상이면 저장. 디렉터는 항상 전체.
@@ -48,58 +115,20 @@ export default async function wbrRoutes(app) {
   //  · 코호트는 각 단계 "정의 이벤트"의 월로 귀속(견적일/포장출력월/SAT입력월/완납월).
   //  · 팀 가시성(visibleTeamIds) 적용. 디렉터=전체.
   app.get('/api/wbr/stage-sla', { preHandler: [authGuard, requirePage('wbr')] }, async (req) => {
-    const perm = req.ctx.perm;
     const months = String(req.query.ym || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
     if (!months.length) months.push(new Date().toISOString().slice(0, 7));
-    const vis = visibleTeamIds(perm); // null = 전체(디렉터)
-    const reqRaw = String(req.query.team || 'total').split(',').map((s) => s.trim()).filter(Boolean);
-    let teamIds;
-    if (reqRaw.includes('total') || !reqRaw.length) teamIds = vis;
-    else { const want = reqRaw.map(Number).filter(Number.isInteger); teamIds = vis ? want.filter((id) => vis.includes(id)) : want; }
-    const empty = Array.isArray(teamIds) && teamIds.length === 0;
-    function tc(args) { if (teamIds == null) return ''; args.push(teamIds); return ` AND c.team_id = ANY($${args.length})`; }
-
-    const cohorts = { order: [], packing: [], sat: [], collect: [] };
-    if (!empty) {
-      // 월 필터 없음 — "지금" 각 단계에 막혀있는(대기 중인) 모든 건. 팀 필터만 적용.
-      let a = []; let tcl = tc(a);
-      // 오더확정 대기: 견적 미결(작성중/확정) + 아직 포장출력 전
-      cohorts.order = (await query(
-        `SELECT q.created_at, q.total_mxn AS amount, c.name AS customer_name
-           FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
-          WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed')
-            AND q.packing_printed_at IS NULL${tcl}`, a)).rows;
-
-      a = []; tcl = tc(a);
-      // 포장단계 대기: 포장출력 했지만 포장작업지시서 스캔 업로드(완료) 전, 아직 전환 전
-      cohorts.packing = (await query(
-        `SELECT q.packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name
-           FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
-          WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL AND q.status <> 'converted'
-            AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)${tcl}`, a)).rows;
-
-      a = []; tcl = tc(a);
-      // 인보이스(SAT) 대기: 전환됐지만 실제 SAT 번호 미부여(없음/빈값/TMP- = 미발행)
-      cohorts.sat = (await query(
-        `SELECT si.created_at AS converted_at, si.total_mxn AS amount, c.name AS customer_name
-           FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
-          WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
-            AND (si.sat_no IS NULL OR si.sat_no = '' OR si.sat_no LIKE 'TMP-%')${tcl}`, a)).rows;
-
-      a = []; tcl = tc(a);
-      // 정시수금 대기: 실제 SAT 번호 발행완료된 인보이스 중 미수금(완납 안 됨)
-      cohorts.collect = (await query(
-        `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS amount, c.name AS customer_name
-           FROM sales_invoices si
-           LEFT JOIN (SELECT spa.invoice_id, SUM(spa.amount) AS paid
-                        FROM sales_payment_allocations spa GROUP BY spa.invoice_id) p ON p.invoice_id=si.id
-           LEFT JOIN customers c ON c.id=si.customer_id
-          WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
-            AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
-            AND si.due_date IS NOT NULL
-            AND COALESCE(p.paid,0) < si.total_mxn - 0.005${tcl}`, a)).rows;
-    }
+    const cohorts = await buildStageCohorts(req.ctx.perm, req.query.team);
     return { ym: months, sla: summarizeSla(cohorts, new Date()) };
+  });
+
+  // 포털 홈용 — 전 직원 접근(authGuard만). 팀 가시성 적용.
+  //   고객명은 권한자(디렉터 또는 'customers' 화면 권한)만 노출, 나머지는 '비공개'.
+  //   건수·금액·단계·상태는 전원 표시.
+  app.get('/api/portal/stage-sla', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const cohorts = await buildStageCohorts(perm, 'total');
+    const sla = summarizeSla(cohorts, new Date());
+    return maskSlaCustomers(sla, perm, req.ctx.isRegistered);
   });
 
   // 업로드 — { thumb, full, caption? } (둘 다 data:image/...;base64,...)
