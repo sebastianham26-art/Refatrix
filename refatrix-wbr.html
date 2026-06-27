@@ -370,23 +370,28 @@
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     const order=['order','packing','sat','collect'];
     const rateColor=(r)=> r==null?'var(--ink-soft,#888)' : (r>=90?'#1f8a4c' : (r>=70?'#b4801f' : '#b4401f'));
+    const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
     let h='<table class="slatab" style="width:100%;border-collapse:collapse;font-size:13px">'
       +'<thead><tr style="text-align:left;color:#777"><th style="padding:6px 8px">단계</th>'
-      +'<th style="padding:6px 8px;text-align:right">대상</th><th style="padding:6px 8px;text-align:right">준수</th>'
+      +'<th style="padding:6px 8px;text-align:right">대상</th><th style="padding:6px 8px;text-align:right">매출액</th>'
+      +'<th style="padding:6px 8px;text-align:right">준수</th>'
       +'<th style="padding:6px 8px;text-align:right">준수율</th><th style="padding:6px 8px;text-align:right">평균</th></tr></thead><tbody>';
+    let totAmt=0;
     for(const k of order){
       const s=sla[k]||{}; const n=Number(s.n||0);
       const rate=(s.rate==null)?'—':(s.rate+'%');
       const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
+      totAmt+=Number(s.amount||0);
       h+='<tr style="border-top:1px solid #eee">'
         +'<td style="padding:6px 8px">'+esc(s.label||k)+'</td>'
         +'<td style="padding:6px 8px;text-align:right">'+n+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+(n?mxn(s.amount):'—')+'</td>'
         +'<td style="padding:6px 8px;text-align:right">'+Number(s.met||0)+'</td>'
         +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+rateColor(s.rate)+'">'+rate+'</td>'
         +'<td style="padding:6px 8px;text-align:right">'+avg+'</td></tr>';
     }
     h+='</tbody></table>';
-    h+='<div class="hint" style="margin-top:6px">준수율 = 기한 내 처리 비율 · 평균 = 단계 소요(정시수금은 평균 지연일) · 대상 0건은 「—」</div>';
+    h+='<div class="hint" style="margin-top:6px">대상 = 해당 단계 도달 건수 · 매출액 = 그 건들의 합(IVA 포함, 단계별 중복 가능) · 준수율 = 기한 내 비율 · 평균 = 단계 소요(정시수금은 지연일)</div>';
     $('slaBody').innerHTML=h;
   }
 

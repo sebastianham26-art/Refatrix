@@ -12,13 +12,19 @@ import { workingMinutesBetween } from './workingHours.js';
 const H = 3600000;
 
 function reduceStage(rows, fn) {
-  let met = 0, sumLead = 0;
-  for (const r of rows) { const { ok, lead } = fn(r); if (ok) met++; sumLead += (Number(lead) || 0); }
+  let met = 0, sumLead = 0, amount = 0;
+  for (const r of rows) {
+    const { ok, lead } = fn(r);
+    if (ok) met++;
+    sumLead += (Number(lead) || 0);
+    amount += (Number(r.amount) || 0);
+  }
   const n = rows.length;
   return {
     n, met,
     rate: n ? Math.round((met / n) * 1000) / 10 : null,
     avg: n ? Math.round((sumLead / n) * 10) / 10 : null,
+    amount: Math.round(amount * 100) / 100,   // 해당 단계 코호트 매출액 합(IVA 포함)
   };
 }
 
@@ -43,9 +49,9 @@ export function summarizeSla(c, _now) {
     return { ok: col <= due, lead: Math.max(0, lateDays) };
   });
   return {
-    order: { ...order, key: 'order', label: '오더확정 (견적→포장출력 ≤48h)', unit: '시간' },
-    packing: { ...packing, key: 'packing', label: '포장 (출력→완료 ≤업무6h)', unit: '업무시간' },
-    sat: { ...sat, key: 'sat', label: 'SAT (전환→입력 ≤3h)', unit: '시간' },
-    collect: { ...collect, key: 'collect', label: '정시수금 (외상만기 내)', unit: '지연일' },
+    order: { ...order, key: 'order', label: '오더확정 (견적→포장작업게시 48h)', unit: '시간' },
+    packing: { ...packing, key: 'packing', label: '포장단계 (포장작업→완료 6h)', unit: '업무시간' },
+    sat: { ...sat, key: 'sat', label: '인보이스 (포장완료→SAT발행 3h)', unit: '시간' },
+    collect: { ...collect, key: 'collect', label: '정시수금 (외상만기일 내)', unit: '지연일' },
   };
 }

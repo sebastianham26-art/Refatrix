@@ -6,6 +6,7 @@ import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 
 import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
+import { packingDeadline } from '../workingHours.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -734,7 +735,7 @@ export default async function quoteRoutes(app) {
     let prods;
     if (topN > 0) {
       prods = (await query(
-        `SELECT p.id, p.code, p.scode, p.app, p.list_price, p.stock_qty, p.material,
+        `SELECT p.id, p.code, p.scode, p.app, p.list_price, p.stock_qty,
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
@@ -743,7 +744,7 @@ export default async function quoteRoutes(app) {
           LIMIT $1`, [topN])).rows;
     } else {
       prods = (await query(
-        `SELECT id, code, scode, app, list_price, stock_qty, material,
+        `SELECT id, code, scode, app, list_price, stock_qty,
                 NULL::bigint AS vio_units, NULL::text AS vio_model, NULL::text AS vio_year
            FROM products WHERE deleted_at IS NULL ORDER BY code`)).rows;
     }
@@ -757,7 +758,6 @@ export default async function quoteRoutes(app) {
       app: p.app || '',
       list_price: Number(p.list_price) || 0,
       stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
-      material: p.material || null,
       vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
       vio_year: p.vio_year || null,
@@ -810,10 +810,26 @@ export default async function quoteRoutes(app) {
   // 포장작업지시서 "출력(인쇄)" 시점에 단계 수주(50) 자동 전진(전진만). 프런트 printPickList에서 호출.
   app.post('/api/quotes/:id/packing-printed', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const q = (await query(`SELECT id, customer_id, quote_no FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const q = (await query(`SELECT id, customer_id, quote_no, packing_printed_at, packing_due_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
+    // 포장 시각/기한은 "최초 출력"에만 고정(재출력해도 기한이 밀리지 않음 — 전진 전용 원칙).
+    let printedAt = q.packing_printed_at;
+    let dueAt = q.packing_due_at;
+    if (!printedAt) {
+      const now = new Date();
+      const due = packingDeadline(now); // 업무시간(07:30~17:00, UTC-6) 6시간
+      const r = (await query(
+        `UPDATE quotes SET packing_printed_at = now(), packing_due_at = $2
+           WHERE id=$1 AND packing_printed_at IS NULL
+         RETURNING packing_printed_at, packing_due_at`, [id, due])).rows[0];
+      if (r) { printedAt = r.packing_printed_at; dueAt = r.packing_due_at; }
+      else { // 경합(동시 두 번 출력) → 이미 박힌 값 재조회
+        const rr = (await query(`SELECT packing_printed_at, packing_due_at FROM quotes WHERE id=$1`, [id])).rows[0] || {};
+        printedAt = rr.packing_printed_at; dueAt = rr.packing_due_at;
+      }
+    }
     if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 출력 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
-    return { ok: true };
+    return { ok: true, held: true, packing_printed_at: printedAt, packing_due_at: dueAt };
   });
 
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.
