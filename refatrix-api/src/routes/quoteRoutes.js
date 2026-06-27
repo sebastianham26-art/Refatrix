@@ -471,6 +471,7 @@ export default async function quoteRoutes(app) {
               q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at,
               c.name AS customer_name, c.team_id,
               uc.name AS creator_name,
+              (EXISTS(SELECT 1 FROM field_surveys fs WHERE fs.quote_id=q.id AND fs.deleted_at IS NULL)) AS from_field_survey,
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
               (SELECT COUNT(*) FROM stock_shortages sh WHERE sh.sales_invoice_id=i.id AND sh.status='open')::int AS shortage_cnt,
               cls.ok_cnt, cls.short_cnt, cls.dev_cnt, cls.ok_qty, cls.short_qty, cls.dev_qty,
@@ -509,6 +510,7 @@ export default async function quoteRoutes(app) {
         is_guest: r.customer_id == null,
         party_name: r.customer_id == null ? (r.guest_name || '불특정 고객') : r.customer_name,
         creator_name: r.creator_name || null,
+        from_field_survey: !!r.from_field_survey,
         open: ['draft', 'confirmed'].includes(r.status),
         reserve_expires_at: r.reserve_expires_at || null,
         packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
@@ -592,10 +594,22 @@ export default async function quoteRoutes(app) {
         cur_stock: cur, live_avail: liveAvail, live_flag: live,
       };
     });
+    // 현장재고조사 전환 여부 + (디렉터에게만) 현장 위치 좌표
+    const fsRow = (await query(
+      `SELECT id, geo_lat, geo_lng, survey_date FROM field_surveys
+        WHERE quote_id = $1 AND deleted_at IS NULL ORDER BY id DESC LIMIT 1`, [id])).rows[0];
+    const isDir = req.ctx.perm.role === 'director';
+    const fieldSurvey = fsRow ? {
+      id: Number(fsRow.id), from: true, survey_date: fsRow.survey_date,
+      has_geo: fsRow.geo_lat != null && fsRow.geo_lng != null,
+      geo_lat: (isDir && fsRow.geo_lat != null) ? Number(fsRow.geo_lat) : null,
+      geo_lng: (isDir && fsRow.geo_lng != null) ? Number(fsRow.geo_lng) : null,
+    } : null;
     return {
       quote: {
         ...q, quote_date: d10(q.quote_date),
         subtotal_mxn: Number(q.subtotal_mxn), iva_mxn: Number(q.iva_mxn), total_mxn: Number(q.total_mxn), total_qty: Number(q.total_qty),
+        field_survey: fieldSurvey,
         cls,
       },
       lines: outLines,

@@ -394,7 +394,7 @@
       html+='<tr'+(expd?' class="qexp"':'')+'>'
         +'<td><b class="qlink" style="cursor:pointer;color:var(--brand);text-decoration:underline;text-underline-offset:2px" onclick=\'openDetail('+JSON.stringify(q.id)+')\'>'+esc(q.quote_no||'')+'</b></td>'
         +'<td>'+esc(q.quote_date||'')+'</td>'
-        +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+'</td>'
+        +'<td>'+esc(q.party_name||'')+(q.is_guest?'<span class="guest">불특정</span>':'')+(q.from_field_survey?'<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:800;color:#0F6E56;background:#E4F0EB;border-radius:10px;padding:1px 7px;white-space:nowrap">📍현장</span>':'')+'</td>'
         +'<td>'+esc(q.creator_name||'—')+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':(q.sku_count||0))+'</td>'
         +'<td class="r">'+(q.status==='pricelist'?'—':fmtq(q.total_qty))+'</td>'
@@ -449,6 +449,13 @@
     catch(e){ $('dtBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   function closeDetail(){ $('dtModal').style.display='none'; dtId=null; dtData=null; dtEdit=false; }
+
+  // 현장재고조사 전환 견적의 현장 위치를 지도에서 열기(디렉터 전용 — geo는 서버가 디렉터에게만 전달)
+  function openFieldLocation(){
+    const fs=dtData&&dtData.quote&&dtData.quote.field_survey;
+    if(!fs||fs.geo_lat==null||fs.geo_lng==null){ alert('현장 위치 정보가 없습니다.'); return; }
+    window.open('https://www.google.com/maps?q='+fs.geo_lat+','+fs.geo_lng+'&z=17','_blank','noopener');
+  }
 
   // ===== 견적서 출력 (PDF) — 드릴다운 상세에서 =====
   async function printQuotePdf(){
@@ -618,6 +625,8 @@
 
     // 액션 버튼 (상단)
     let actions='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
+    if(q.field_survey){ actions+='<span style="display:inline-flex;align-items:center;gap:6px;background:#E4F0EB;color:#0F6E56;font-weight:800;font-size:12px;border-radius:8px;padding:6px 10px">📍 현장재고조사 전환'+(q.field_survey.survey_date?(' · '+esc(q.field_survey.survey_date)):'')+'</span>'; }
+    if(isDirector && q.field_survey && q.field_survey.geo_lat!=null && q.field_survey.geo_lng!=null){ actions+='<button class="btn" onclick="openFieldLocation()" title="현장재고조사 당시 위치를 지도에서 봅니다">📍 현장 위치 보기</button>'; }
     actions+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
     actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="현재 재고가 있는 항목만 엑셀로 다운로드">📥 엑셀 (재고분)</button>';
     if(editable){

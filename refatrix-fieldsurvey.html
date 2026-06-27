@@ -486,29 +486,33 @@
   function downloadExcel(){
     if(typeof XLSX==='undefined'){ toast('엑셀 모듈 로드 실패 — 새로고침 후 재시도'); return; }
     const s=state.summary, sv=state.survey; const cust=sv.customer_name||''; const date=sv.survey_date||'';
-    const aoa=[]; const marks=[]; // marks: {r, kind, color}
-    aoa.push(['현장재고조사 — 고객 오퍼']); marks.push({r:0,kind:'title'});
-    aoa.push(['고객', cust, '조사일', date]); aoa.push([]);
+    const aoa=[]; const marks=[]; // marks: {r, kind, color, n}
+    aoa.push(['Levantamiento de inventario en sitio — Oferta']); marks.push({r:0,kind:'title'});
+    aoa.push(['Cliente', cust, 'Fecha', date]); aoa.push([]);
     function section(title,color,rows,isDev){
       const r0=aoa.length; aoa.push([title]); marks.push({r:r0,kind:'sec',color});
-      const hr=aoa.length; aoa.push(isDev?['입력코드','분류','관측수량']:['CTR','제품 · 적용차종','가용재고','관측수량']); marks.push({r:hr,kind:'head'});
-      if(!rows.length){ aoa.push(['(해당 없음)']); }
-      rows.forEach(r=> aoa.push(isDev?[r.input_code,'개발필요(미등록)',Number(r.observed_qty)||0]
-        :[r.ctr_code,(r.product_name||'')+(r.app_text?' · '+r.app_text:''),Number(r.avail_stock)||0,Number(r.observed_qty)||0]));
+      // Clave capturada = 현장에서 입력한 경쟁사/제품 코드(그대로) · Clave CTR = 매칭된 CTR
+      const head=isDev?['Clave capturada','Estatus','Cantidad']
+                      :['Clave capturada','Clave CTR','Producto · Aplicación','Existencia','Cantidad'];
+      const hr=aoa.length; aoa.push(head); marks.push({r:hr,kind:'head',n:head.length});
+      if(!rows.length){ aoa.push(['(Sin registros)']); }
+      rows.forEach(r=> aoa.push(isDev
+        ? [r.input_code||'', 'Por desarrollar', Number(r.observed_qty)||0]
+        : [r.input_code||'', r.ctr_code||'', (r.product_name||'')+(r.app_text?' · '+r.app_text:''), Number(r.avail_stock)||0, Number(r.observed_qty)||0]));
       aoa.push([]);
     }
-    section('■ 즉시매출가능','FF2F8A5B',s.imm,false);
-    section('■ 재고부족 (백오더)','FFC58A2E',s.short,false);
-    section('■ 개발필요','FFC0564F',s.dev,true);
+    section('Disponible inmediato', 'FF2F8A5B', s.imm, false);
+    section('Existencia insuficiente', 'FFC58A2E', s.short, false);
+    section('Por desarrollar', 'FFC0564F', s.dev, true);
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[{wch:16},{wch:42},{wch:12},{wch:11}];
+    ws['!cols']=[{wch:18},{wch:16},{wch:40},{wch:12},{wch:11}];
     setS(ws,0,0,{font:{bold:true,sz:14,color:{rgb:'FF143D34'}}});
     marks.forEach(m=>{
       if(m.kind==='sec') setS(ws,m.r,0,{font:{bold:true,sz:12,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:m.color}}});
-      if(m.kind==='head') for(let c=0;c<4;c++) setS(ws,m.r,c,{font:{bold:true,color:{rgb:'FF555555'}},fill:{fgColor:{rgb:'FFF0F0F0'}}});
+      if(m.kind==='head') for(let c=0;c<(m.n||5);c++) setS(ws,m.r,c,{font:{bold:true,color:{rgb:'FF555555'}},fill:{fgColor:{rgb:'FFF0F0F0'}}});
     });
-    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'현장재고조사');
-    const fn=('현장재고조사_'+cust+'_'+date+'.xlsx').replace(/[\\/:*?"<>|]/g,'_');
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Inventario en sitio');
+    const fn=('Inventario_en_sitio_'+cust+'_'+date+'.xlsx').replace(/[\\/:*?"<>|]/g,'_');
     XLSX.writeFile(wb,fn);
   }
 
