@@ -111,12 +111,10 @@
     <h2>제품 검색 (코드·경쟁사코드·차종 통합)</h2>
     <div class="row">
       <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
-      <div style="flex:0 0 auto"><label>소재</label>
-        <select id="qMaterial" style="min-width:120px">
-          <option value="">전체</option>
-          <option value="aluminio">알루미늄</option>
-          <option value="__none__">미지정</option>
-        </select></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px">
+          <input type="checkbox" id="qAlu" style="width:auto;margin:0"> 알루미늄만
+        </label></div>
       <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
     </div>
     <div id="result"></div>
@@ -260,7 +258,7 @@
     }catch(e){ alert('변경 실패: '+e.message); }
   }
   function escP(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-  function doSearch(){ prodOffset=0; prodQ=$('q').value.trim(); prodMaterial=($('qMaterial')?$('qMaterial').value:'')||''; loadProducts(); }
+  function doSearch(){ prodOffset=0; prodQ=$('q').value.trim(); prodMaterial=($('qAlu')&&$('qAlu').checked)?'aluminio':''; loadProducts(); }
   async function loadProducts(){
     const r=$('result'); r.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
@@ -623,7 +621,7 @@
   if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
   if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
   if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
-  if($('qMaterial')) $('qMaterial').addEventListener('change',doSearch);
+  if($('qAlu')) $('qAlu').addEventListener('change',doSearch);
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();

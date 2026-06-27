@@ -734,7 +734,7 @@ export default async function quoteRoutes(app) {
     let prods;
     if (topN > 0) {
       prods = (await query(
-        `SELECT p.id, p.code, p.scode, p.app, p.list_price, p.stock_qty,
+        `SELECT p.id, p.code, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
@@ -743,7 +743,7 @@ export default async function quoteRoutes(app) {
           LIMIT $1`, [topN])).rows;
     } else {
       prods = (await query(
-        `SELECT id, code, scode, app, list_price, stock_qty,
+        `SELECT id, code, scode, app, list_price, stock_qty, material,
                 NULL::bigint AS vio_units, NULL::text AS vio_model, NULL::text AS vio_year
            FROM products WHERE deleted_at IS NULL ORDER BY code`)).rows;
     }
@@ -757,6 +757,7 @@ export default async function quoteRoutes(app) {
       app: p.app || '',
       list_price: Number(p.list_price) || 0,
       stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
+      material: p.material || null,
       vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
       vio_year: p.vio_year || null,
