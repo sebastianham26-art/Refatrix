@@ -3,6 +3,7 @@ import { authGuard, requirePage, requireDirector } from '../middleware/authGuard
 import { minimizeProduct, fieldVisible } from '../permissions.js';
 import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
+import { visibleTeamIds } from '../teams.js';
 
 export default async function productRoutes(app) {
   // 제품 목록: 검색 + 페이징 (SKU ~5,000 대비, 한 번에 다 보내지 않음)
@@ -45,8 +46,19 @@ export default async function productRoutes(app) {
       params.push(normalizeMaterial(materialFilter));
       where += ` AND p.material = $${params.length}`;
     }
+    // 전체 건수용 파라미터(검색 조건만) — 팀/limit/offset 추가 전에 스냅샷.
+    const countParams = params.slice();
+    // 누적 판매수량을 영업팀 가시성으로 제한 — 담당 외 고객 판매수량이 합산되지 않도록.
+    //   디렉터·영업지원(vis=null)은 전체 집계, 그 외는 소속/부여팀 고객만 집계.
+    const vis = visibleTeamIds(perm);
+    let soldTeamJoin = '', soldTeamCond = '';
+    if (vis !== null) {
+      params.push(vis.length ? vis : [-1]);
+      soldTeamJoin = ' JOIN customers cu ON cu.id = si.customer_id';
+      soldTeamCond = ` AND cu.team_id = ANY($${params.length})`;
+    }
     params.push(limit, offset);
-    // 누적 판매수량(게시·미삭제 인보이스 기준)을 제품별로 합산해 LEFT JOIN. 파라미터 없음(인덱스 영향 없음).
+    // 누적 판매수량(게시·미삭제 인보이스 기준)을 제품별로 합산해 LEFT JOIN.
     const rows = (await query(
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
               p.stock_qty, p.avg_cost, p.rack_location, p.material,
@@ -55,15 +67,13 @@ export default async function productRoutes(app) {
          LEFT JOIN (
            SELECT sil.product_id, SUM(sil.qty) AS qty
              FROM sales_invoice_lines sil
-             JOIN sales_invoices si ON si.id = sil.invoice_id
-            WHERE si.status = 'posted' AND si.deleted_at IS NULL
+             JOIN sales_invoices si ON si.id = sil.invoice_id${soldTeamJoin}
+            WHERE si.status = 'posted' AND si.deleted_at IS NULL${soldTeamCond}
             GROUP BY sil.product_id
          ) sold ON sold.product_id = p.id
         WHERE ${where}
         ORDER BY ${orderBy}
         LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
-    // 전체 건수(검색 조건 동일) — limit/offset 인자는 제외하고 카운트
-    const countParams = params.slice(0, params.length - 2);
     const total = Number((await query(`SELECT COUNT(*)::int AS n FROM products p WHERE ${where}`, countParams)).rows[0].n);
 
     await logPageView(perm.userId, 'products');
@@ -81,6 +91,11 @@ export default async function productRoutes(app) {
     if (!prod) return reply.code(404).send({ error: 'not_found' });
 
     // ① 판매 고객별 수량 + (권한 시) 매출·매출원가(게시된 인보이스 기준)
+    //   영업팀 가시성 필터: 담당(소속/부여팀) 고객의 판매만 노출. 디렉터·영업지원(vis=null)=전체.
+    const vis = visibleTeamIds(perm);
+    const sParams = [id];
+    let teamCond = '';
+    if (vis !== null) { sParams.push(vis.length ? vis : [-1]); teamCond = ` AND cu.team_id = ANY($${sParams.length})`; }
     const salesRows = (await query(
       `SELECT cu.name AS customer_name,
               COALESCE(SUM(sil.qty),0) AS qty,
@@ -90,9 +105,9 @@ export default async function productRoutes(app) {
          FROM sales_invoice_lines sil
          JOIN sales_invoices si ON si.id=sil.invoice_id
          JOIN customers cu ON cu.id=si.customer_id
-        WHERE sil.product_id=$1 AND si.status='posted' AND si.deleted_at IS NULL
+        WHERE sil.product_id=$1 AND si.status='posted' AND si.deleted_at IS NULL${teamCond}
         GROUP BY cu.id, cu.name
-        ORDER BY SUM(sil.qty) DESC, cu.name`, [id])).rows;
+        ORDER BY SUM(sil.qty) DESC, cu.name`, sParams)).rows;
     const sales = salesRows.map((r) => ({ customer_name: r.customer_name, qty: Number(r.qty), inv_count: Number(r.inv_count) }));
     const totalSold = sales.reduce((s, r) => s + r.qty, 0);
 
