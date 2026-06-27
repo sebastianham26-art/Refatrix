@@ -97,9 +97,6 @@
         <div style="flex:1;min-width:160px;position:relative"><label>코드 (CTR 또는 SYD) — 입력하면 자동완성</label>
           <input id="inCode" type="text" autocomplete="off" placeholder="예: CTR 또는 SYD 일부 입력" oninput="onCodeInput()" onkeydown="codeKey(event)">
           <div id="acBox" class="acbox hidden"></div>
-          <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-size:12px;color:#6f6a60;cursor:pointer;font-weight:500">
-            <input type="checkbox" id="inAlu" onchange="onCodeInput()" style="width:auto;margin:0"> 알루미늄만 (체크 시 알루미늄 소재 제품만 검색)
-          </label>
         </div>
         <div style="min-width:90px"><label>수량</label><input id="inQty" type="number" min="0" step="1" value="1" style="width:90px" onkeydown="if(event.key==='Enter')addLine()"></div>
         <div><button class="btn" onclick="addLine()">＋ 추가</button></div>
@@ -112,6 +109,9 @@
           </div>
         </div>
       </div>
+      <label style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:#6f6a60;cursor:pointer;font-weight:500">
+        <input type="checkbox" id="inAlu" onchange="onCodeInput()" style="width:auto;margin:0"> 알루미늄만 (체크 시 알루미늄 소재 제품만 검색)
+      </label>
       <div class="msg" id="lineMsg"></div>
 
       <div id="linesWrap" style="margin-top:12px;overflow-x:auto"></div>
@@ -350,9 +350,23 @@
   // ===== 전체 SKU 가격표 다운로드 =====
   async function downloadPriceList(){
     const m=$('lineMsg');m.className='msg';
+    // 고객 선택 의무: 등록 고객을 고르거나, 없으면 '불특정 고객'을 선택해 고객명을 입력해야 다운로드 가능.
+    const sel=$('custSel');
+    if(sel && !sel.value){
+      sel.value='__guest__'; onCustChange();   // 미선택 → 불특정 고객 입력 모드로 안내 전환
+      m.className='msg err';
+      m.textContent='고객 선택은 필수입니다. 등록된 고객이 없으면 위의 「Nombre del cliente」 칸에 고객명을 입력한 뒤 다시 [전체 가격표]를 누르세요.';
+      if($('guestName')){ $('guestName').focus(); }
+      return;
+    }
     const guest = isGuest;
+    if(guest && !$('guestName').value.trim()){
+      m.className='msg err';
+      m.textContent='고객명을 입력하세요 — 불특정 고객은 이름이 필수입니다. 입력 후 [전체 가격표]를 다시 누르면 가격표가 다운로드됩니다(고객명이 가격표에 표시됩니다).';
+      if($('guestName')){ $('guestName').focus(); }
+      return;
+    }
     const custName = partyName();              // 불특정=입력 고객명, 등록=선택 고객명
-    if(guest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='Escriba primero el nombre del cliente.';return; }
     try{
       m.className='msg ok';m.textContent='가격표를 불러오는 중…';
       const cid=$('custSel').value;
@@ -369,12 +383,15 @@
       rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
       rows.push(['Ingrese las cantidades por sucursal (Suc 1–5). El importe por SKU y los totales se calculan automáticamente.']);
       rows.push([]);
-      rows.push(['#','CTR Code','SYD Code','Application','Existencia','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)']);
+      rows.push(['#','CTR Code','SYD Code','Application','Existencia','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material']);
       const headerRow=rows.length, firstData=headerRow+1;
+      const aluRows=[];   // 알루미늄 제품 행 번호(엑셀 행) — 음영 표기용
       items.forEach((it,idx)=>{
         const unit=(disc==null)?(Number(it.list_price)||0):(Math.round((Number(it.list_price)||0)*(1-disc/100)*100)/100);
+        const isAlu = it.material==='aluminio';
+        if(isAlu) aluRows.push(firstData+idx);
         rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.app||'',
-          it.stock_qty==null?'':Number(it.stock_qty), unit, null,null,null,null,null, null, null ]);
+          it.stock_qty==null?'':Number(it.stock_qty), unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'' ]);
       });
       const lastData=rows.length;
       rows.push([]);
@@ -402,12 +419,22 @@
       ws['M'+ivaRow]={t:'n',z:'#,##0.00',f:'M'+subRow+'*0.16'};
       ws['M'+totRow]={t:'n',z:'#,##0.00',f:'M'+subRow+'+M'+ivaRow};
 
-      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:28},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16}];
+      // ── 알루미늄 제품 별도 표기: 행 연한 청록 음영 + Material 셀 강조 ──
+      const aluFill={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}}};
+      const aluCols=['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
+      aluRows.forEach(r=>{
+        aluCols.forEach(c=>{ const ref=c+r; if(!ws[ref]) ws[ref]={t:'s',v:''};
+          ws[ref].s=Object.assign({},ws[ref].s,aluFill); });
+        if(ws['N'+r]) ws['N'+r].s={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}},font:{bold:true,color:{rgb:'15616D'}}};
+      });
+      // Material 헤더 셀 강조
+      if(ws['N'+headerRow]) ws['N'+headerRow].s={font:{bold:true}};
+      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:28},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,'lista_precios_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
+      m.className='msg ok';m.textContent=items.length+'개 제품 가격표(지점별 수량·자동합계)를 다운로드했습니다 (IVA 미포함).'+(aluRows.length?(' · 알루미늄 '+aluRows.length+'개 음영 표기'):'')+(disc==null?' (할인률 미등록 → 정가 기준)':(' · 할인 '+disc+'%'));
       // 견적 목록에 '가용재고 및 견적'으로 기록 (SKU·총수량·금액은 빈칸)
       try{
         const pbody=(!guest && cid && cid!=='__guest__') ? {customer_id:Number(cid)} : {guest_name:$('guestName').value.trim(), discount_rate:(disc==null?0:disc)};
@@ -772,6 +799,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627perm"></script>
+<script src="refatrix-nav.js?v=20260624k"></script>
 </body>
 </html>
