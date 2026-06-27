@@ -2,6 +2,8 @@ import { query } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { logEvent } from '../audit.js';
+import { visibleTeamIds } from '../teams.js';
+import { summarizeSla } from '../stageSla.js';
 
 // WBR(주간 비즈니스 리뷰) 보드 — 팀별 이슈 불릿 + 회의 메모를 단일 JSON 문서로 영속.
 // 권한: 페이지키 'wbr'. 열람(view) 이상이면 조회, 수정(edit) 이상이면 저장. 디렉터는 항상 전체.
@@ -41,6 +43,60 @@ export default async function wbrRoutes(app) {
   // ===== 팀별 주요이슈 사진 (wbr_issue_photos) =====
   // 보드 JSON엔 사진 id만 참조. 이미지(클라 압축 JPEG data URL)는 여기 별도 저장.
   // 업로드/삭제: 'wbr' 수정 권한. 조회: 'wbr' 열람 권한.
+
+  // 수주 단계 SLA(준수율 + 평균 리드타임) — WBR 스냅샷에 동결. 조회월(ym CSV) · 팀(team CSV/total) 연동.
+  //  · 코호트는 각 단계 "정의 이벤트"의 월로 귀속(견적일/포장출력월/SAT입력월/완납월).
+  //  · 팀 가시성(visibleTeamIds) 적용. 디렉터=전체.
+  app.get('/api/wbr/stage-sla', { preHandler: [authGuard, requirePage('wbr')] }, async (req) => {
+    const perm = req.ctx.perm;
+    const months = String(req.query.ym || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+    if (!months.length) months.push(new Date().toISOString().slice(0, 7));
+    const vis = visibleTeamIds(perm); // null = 전체(디렉터)
+    const reqRaw = String(req.query.team || 'total').split(',').map((s) => s.trim()).filter(Boolean);
+    let teamIds;
+    if (reqRaw.includes('total') || !reqRaw.length) teamIds = vis;
+    else { const want = reqRaw.map(Number).filter(Number.isInteger); teamIds = vis ? want.filter((id) => vis.includes(id)) : want; }
+    const empty = Array.isArray(teamIds) && teamIds.length === 0;
+    function tc(args) { if (teamIds == null) return ''; args.push(teamIds); return ` AND c.team_id = ANY($${args.length})`; }
+
+    const cohorts = { orderConfirm: [], packing: [], sat: [], collect: [] };
+    if (!empty) {
+      let a = [months]; let tcl = tc(a);
+      cohorts.orderConfirm = (await query(
+        `SELECT q.created_at, q.packing_printed_at
+           FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+          WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL
+            AND to_char(q.quote_date,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+
+      a = [months]; tcl = tc(a);
+      cohorts.packing = (await query(
+        `SELECT q.packing_printed_at, q.packing_due_at, pd.uploaded_at AS packed_at
+           FROM quotes q JOIN quote_packing_docs pd ON pd.quote_id=q.id
+           LEFT JOIN customers c ON c.id=q.customer_id
+          WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL
+            AND to_char(q.packing_printed_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+
+      a = [months]; tcl = tc(a);
+      cohorts.sat = (await query(
+        `SELECT si.created_at AS converted_at, si.sat_entered_at
+           FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
+          WHERE si.deleted_at IS NULL AND si.status <> 'deleted' AND si.sat_entered_at IS NOT NULL
+            AND to_char(si.sat_entered_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+
+      a = [months]; tcl = tc(a);
+      cohorts.collect = (await query(
+        `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, to_char(t.collected_at,'YYYY-MM-DD') AS collected_at
+           FROM sales_invoices si
+           JOIN (SELECT spa.invoice_id, MAX(sp.created_at) AS collected_at, SUM(spa.amount) AS paid
+                   FROM sales_payment_allocations spa JOIN sales_payments sp ON sp.id=spa.payment_id
+                  GROUP BY spa.invoice_id) t ON t.invoice_id=si.id
+           LEFT JOIN customers c ON c.id=si.customer_id
+          WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
+            AND t.paid >= si.total_mxn - 0.005
+            AND to_char(t.collected_at,'YYYY-MM') = ANY($1)${tcl}`, a)).rows;
+    }
+    return { ym: months, sla: summarizeSla(cohorts, new Date()) };
+  });
 
   // 업로드 — { thumb, full, caption? } (둘 다 data:image/...;base64,...)
   app.post('/api/wbr/photos', { preHandler: [authGuard, requirePageEdit('wbr')] }, async (req, reply) => {

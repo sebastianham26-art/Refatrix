@@ -3,6 +3,9 @@ import { authGuard } from '../middleware/authGuard.js';
 import { pageAllowed, allowPastMonthSalesEdit } from '../permissions.js';
 import { visibleTeamIds, teamArr } from '../teams.js';
 import { logEvent } from '../audit.js';
+import { mxTodayStr } from '../workingHours.js';
+import { computeQuoteStage } from '../quoteStage.js';
+import { sweepStageAlerts } from '../stageAlerts.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -10,6 +13,7 @@ function daysBetween(a, b) {
   const da = new Date(a), db = new Date(b);
   return Math.round((db - da) / 86400000);
 }
+
 
 // sales/products/marketing 중 하나라도 허용되면 통과 (디렉터 전체 허용)
 function requireDevAccess() {
@@ -284,15 +288,38 @@ export default async function devRequestRoutes(app) {
                 COUNT(*) FILTER (WHERE ql.stock_flag='not_found')::int AS dev_sku,
                 COALESCE(SUM(ql.qty) FILTER (WHERE ql.stock_flag='not_found'),0)::numeric AS dev_qty,
                 COALESCE(SUM(ql.line_total) FILTER (WHERE ql.stock_flag='ok'),0)::numeric AS ok_amt,
-                COALESCE(SUM(ql.line_total) FILTER (WHERE ql.stock_flag='low_stock'),0)::numeric AS short_amt
+                COALESCE(SUM(ql.line_total) FILTER (WHERE ql.stock_flag='low_stock'),0)::numeric AS short_amt,
+                q.status AS qstatus, q.created_at AS created_at,
+                q.packing_printed_at AS packing_printed_at, q.packing_due_at AS packing_due_at,
+                q.invoice_id AS invoice_id,
+                pd.uploaded_at AS packed_at,
+                si.created_at AS converted_at, si.sat_no AS sat_no, si.sat_entered_at AS sat_entered_at,
+                to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS total_mxn,
+                (SELECT COALESCE(SUM(spa.amount),0) FROM sales_payment_allocations spa WHERE spa.invoice_id = si.id) AS paid_sum,
+                c.owner_id AS owner_id, ou.name AS owner_name
            FROM quotes q
            JOIN quote_lines ql ON ql.quote_id=q.id
            LEFT JOIN customers c ON c.id=q.customer_id
+           LEFT JOIN users ou ON ou.id=c.owner_id
+           LEFT JOIN quote_packing_docs pd ON pd.quote_id=q.id
+           LEFT JOIN sales_invoices si ON si.id=q.invoice_id
           WHERE q.deleted_at IS NULL AND q.status <> 'delete_pending'${otc}
-          GROUP BY q.id, q.quote_no, q.quote_date, c.name
+          GROUP BY q.id, q.quote_no, q.quote_date, c.name, q.status, q.created_at,
+                   q.packing_printed_at, q.packing_due_at, q.invoice_id,
+                   pd.uploaded_at, si.id, si.created_at, si.sat_no, si.sat_entered_at, si.due_date, si.total_mxn,
+                   c.owner_id, ou.name
           ORDER BY q.quote_date DESC, q.id DESC
           LIMIT $1`, oargs)).rows;
-      const rows = qs.reverse().map((o) => ({
+      const nowTs = new Date();
+      const rows = qs.reverse().map((o) => {
+        const st = computeQuoteStage({
+          status: o.qstatus, created_at: o.created_at,
+          packing_printed_at: o.packing_printed_at, packing_due_at: o.packing_due_at, packed_at: o.packed_at,
+          invoice_id: o.invoice_id, converted_at: o.converted_at,
+          sat_no: o.sat_no, sat_entered_at: o.sat_entered_at,
+          due_date: o.due_date, total_mxn: o.total_mxn, paid_sum: o.paid_sum,
+        }, nowTs);
+        return ({
         quote_id: Number(o.id),
         label: o.quote_no || ('#' + o.id), quote_no: o.quote_no, qdate: o.qdate, customer_name: o.customer_name,
         req_sku: o.req_sku, req_qty: Number(o.req_qty),
@@ -301,7 +328,18 @@ export default async function devRequestRoutes(app) {
         ok_sku_pct: pct(o.ok_sku, o.req_sku), ok_qty_pct: pct(Number(o.ok_qty), Number(o.req_qty)),
         short_sku_pct: pct(o.short_sku, o.req_sku), short_qty_pct: pct(Number(o.short_qty), Number(o.req_qty)),
         dev_sku_pct: pct(o.dev_sku, o.req_sku), dev_qty_pct: pct(Number(o.dev_qty), Number(o.req_qty)),
-      }));
+        stage_key: st.stage_key, stage_label: st.stage_label, stage_rank: st.stage_rank,
+        status_key: st.status_key, deadline: st.deadline, warn: st.warn, warn_rank: st.warn_rank, warn_label: st.warn_label,
+        owner_id: o.owner_id != null ? Number(o.owner_id) : null, owner_name: o.owner_name || null,
+        ts_created: o.created_at ? new Date(o.created_at).toISOString() : null,
+        ts_printed: o.packing_printed_at ? new Date(o.packing_printed_at).toISOString() : null,
+        ts_packing_due: o.packing_due_at ? new Date(o.packing_due_at).toISOString() : null,
+        ts_packed: o.packed_at ? new Date(o.packed_at).toISOString() : null,
+        ts_converted: o.converted_at ? new Date(o.converted_at).toISOString() : null,
+        ts_sat: o.sat_entered_at ? new Date(o.sat_entered_at).toISOString() : null,
+        due_date: o.due_date || null,
+        });
+      });
       return { by, rows };
     }
 
@@ -572,4 +610,11 @@ export default async function devRequestRoutes(app) {
         ORDER BY d.requested_at DESC, d.id DESC`, [months])).rows;
     return { months, items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
   });
+
+  // 수주 단계 경고 → 담당자 팝업 노티스 sweep (5분 주기 + 시작 15초 후 1회).
+  //  · 정확히 1회/일 멱등은 quote_stage_alerts 가 보장(스위퍼 중복 무해).
+  if (!globalThis.__refatrixStageAlertSweeper) {
+    globalThis.__refatrixStageAlertSweeper = setInterval(() => { sweepStageAlerts().catch(() => {}); }, 300000);
+    setTimeout(() => { sweepStageAlerts().catch(() => {}); }, 15000);
+  }
 }

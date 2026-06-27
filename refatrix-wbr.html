@@ -218,6 +218,14 @@
       </div>
     </div>
 
+    <!-- 수주 단계 SLA -->
+    <div class="card">
+      <div class="card-h"><span id="slaTitle">수주 단계 SLA</span>
+        <span class="src">조회 월·팀에 연동 · 준수율 + 평균 리드타임 · 저장본에 동결</span>
+        <span class="lnk no-print" id="slaToggle" style="margin-left:auto">감추기</span></div>
+      <div id="slaBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
     <!-- 팀별 주요 이슈 -->
     <div class="card">
       <div class="card-h">팀별 주요 이슈 <span class="src">이번주 / 다음주 · 작성 내용은 직접 지울 때까지 유지</span>
@@ -259,7 +267,7 @@
   let board={issues:{},memo:''};   // 영속 상태(서버 저장)
   let canEdit=true;                 // 'wbr' 수정 권한 여부(서버 can_edit). 열람 전용이면 입력 차단
   // ===== 스냅샷(주간 저장본) 상태 =====
-  let lastCards=null, lastWaterfall=null, lastQuotes=null;  // 최근 라이브 렌더 데이터(저장 시 동결)
+  let lastCards=null, lastWaterfall=null, lastQuotes=null, lastSla=null;  // 최근 라이브 렌더 데이터(저장 시 동결)
   let viewMode=null;                // 열람 중인 스냅샷 객체(null=라이브)
   let liveBackup=null;              // 열람 진입 시 라이브 상태 백업
   let isDirector=false;             // 디렉터만 저장/삭제 가능
@@ -341,12 +349,45 @@
   function ymLabel(ym){return Number(ym.split('-')[1])+'월';}
   function monthsLabel(){ return topYms.map(ymLabel).join('·'); }
 
-  function refreshAll(){ updateCtx(); loadCards(); loadQuoteSummary(); loadWaterfall(); }
+  function refreshAll(){ updateCtx(); loadCards(); loadQuoteSummary(); loadWaterfall(); loadStageSla(); }
   function updateCtx(){
     const txt='조회월 '+monthsLabel()+' · 팀 '+teamLabel();
     $('ctxLine').textContent=txt;
     const d=new Date();
     $('prtHead').textContent='WBR · '+txt+' · 작성일 '+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+
+  // ===== 수주 단계 SLA (준수율 + 평균 리드타임) =====
+  async function loadStageSla(){
+    if(viewMode) return;                                  // 저장본 열람 중엔 라이브 fetch 안 함
+    try{
+      const d=await fetch(session.api+'/api/wbr/stage-sla?ym='+encodeURIComponent(topYms.join(','))+'&team='+encodeURIComponent(resolveTeamKeys().join(',')),{headers:auth()}).then(r=>r.json());
+      lastSla=(d&&d.sla)||null;
+      renderStageSla(lastSla);
+    }catch(e){ $('slaBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function renderStageSla(sla){
+    if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
+    const order=['order','packing','sat','collect'];
+    const rateColor=(r)=> r==null?'var(--ink-soft,#888)' : (r>=90?'#1f8a4c' : (r>=70?'#b4801f' : '#b4401f'));
+    let h='<table class="slatab" style="width:100%;border-collapse:collapse;font-size:13px">'
+      +'<thead><tr style="text-align:left;color:#777"><th style="padding:6px 8px">단계</th>'
+      +'<th style="padding:6px 8px;text-align:right">대상</th><th style="padding:6px 8px;text-align:right">준수</th>'
+      +'<th style="padding:6px 8px;text-align:right">준수율</th><th style="padding:6px 8px;text-align:right">평균</th></tr></thead><tbody>';
+    for(const k of order){
+      const s=sla[k]||{}; const n=Number(s.n||0);
+      const rate=(s.rate==null)?'—':(s.rate+'%');
+      const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
+      h+='<tr style="border-top:1px solid #eee">'
+        +'<td style="padding:6px 8px">'+esc(s.label||k)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+n+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+Number(s.met||0)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+rateColor(s.rate)+'">'+rate+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+avg+'</td></tr>';
+    }
+    h+='</tbody></table>';
+    h+='<div class="hint" style="margin-top:6px">준수율 = 기한 내 처리 비율 · 평균 = 단계 소요(정시수금은 평균 지연일) · 대상 0건은 「—」</div>';
+    $('slaBody').innerHTML=h;
   }
 
   // ===== 카드 (영업 대시보드 summary 재사용) =====
@@ -548,7 +589,7 @@
   }
 
   // ===== 섹션 감추기/보이기 토글 =====
-  let qsumOpen=true, wfOpen=true;
+  let qsumOpen=true, wfOpen=true, slaOpen=true;
   function applyToggle(open, bodyId, btnId){
     $(bodyId).style.display = open ? '' : 'none';
     $(btnId).textContent = open ? '감추기' : '보이기';
@@ -764,8 +805,8 @@
 
   async function saveSnapshot(){
     if(!isDirector || viewMode) return;
-    if(lastCards===null || lastWaterfall===null || lastQuotes===null){
-      alert('데이터를 아직 불러오는 중입니다. 카드·견적·워터폴이 모두 표시된 뒤 다시 저장하세요.'); return;
+    if(lastCards===null || lastWaterfall===null || lastQuotes===null || lastSla===null){
+      alert('데이터를 아직 불러오는 중입니다. 카드·견적·워터폴·SLA가 모두 표시된 뒤 다시 저장하세요.'); return;
     }
     const def=isoWeekLabel(new Date());
     const label=prompt('이 회의를 저장합니다. 저장본 이름을 확인/수정하세요.', def);
@@ -773,7 +814,7 @@
     const name=(label||'').trim()||def;
     const periodLabel=$('ctxLine').textContent||'';
     const data={
-      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes,
+      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes, sla:lastSla,
       board:{issues:board.issues, photos:board.photos, memo:board.memo},
       ctx:{ topYms:[...topYms], teamSel:Array.from(teamSel), teamsList:teamsList, ctxText:periodLabel }
     };
@@ -810,6 +851,7 @@
     $('wfTitle').textContent=monthsLabel()+' 매출 실적 (워터폴)';
     if(data.cards) renderCards(data.cards);
     if(data.waterfall) renderWaterfall(data.waterfall);
+    renderStageSla(data.sla||null);
     renderQuoteSummary(Array.isArray(data.quotes)?data.quotes:[]);
     applyReadOnly(); renderIssues(); $('memo').textContent=board.memo||'';
     $('ctxLine').textContent=(ctx.ctxText||'')+' · 📌 저장본';
@@ -874,10 +916,11 @@
   $('snapDelBtn').addEventListener('click',()=>{ if(viewMode) deleteSnapshot(viewMode.id); });
   $('qsumToggle').addEventListener('click',()=>{ qsumOpen=!qsumOpen; applyToggle(qsumOpen,'qsumBody','qsumToggle'); });
   $('wfToggle').addEventListener('click',()=>{ wfOpen=!wfOpen; applyToggle(wfOpen,'wfCollapse','wfToggle'); });
+  $('slaToggle').addEventListener('click',()=>{ slaOpen=!slaOpen; applyToggle(slaOpen,'slaBody','slaToggle'); });
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627perm"></script>
+<script src="refatrix-nav.js?v=20260627sf"></script>
 </body>
 </html>

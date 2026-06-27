@@ -50,6 +50,15 @@
   .si{background:var(--income)}.ss{background:var(--gold)}.sd{background:var(--purple)}
   .bamt{font-size:10px;font-weight:700;line-height:1.3;margin-top:3px}
   .bamt .ao{color:var(--income)}.bamt .as{color:var(--gold)}.bamt .sep{color:#c2c0ba;font-weight:600;margin:0 4px}
+  /* 진행 단계 셀 */
+  .stagecell{display:flex;flex-direction:column;gap:2px;align-items:flex-start;min-width:138px}
+  .sdots{display:flex;gap:3px;margin-bottom:1px}
+  .sdot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .stbadge{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:#eef3f1;color:var(--brand);white-space:nowrap}
+  .stbadge.warn{background:#fde8e6;color:var(--expense)}
+  .stx{font-size:11px;font-weight:700;white-space:nowrap}
+  .stdl{font-size:10px;color:var(--muted);white-space:nowrap}
+  .stdl.over{color:var(--expense);font-weight:700}
   .tg{display:inline-flex;align-items:center;gap:4px}
   .tgl{font-size:11px;font-weight:700;color:var(--muted);margin-right:2px}
   .tgb{padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
@@ -79,11 +88,11 @@
 
     <div class="card">
       <div class="card-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <span id="trendTitle">월별 추이</span>
+        <span id="trendTitle">오더(견적)별 추이</span>
         <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
           <div class="tg"><span class="tgl">보기</span>
-            <button class="tgb on" id="byMonth" onclick="setBy('month')">월별</button>
-            <button class="tgb" id="byOrder" onclick="setBy('order')">오더별</button>
+            <button class="tgb" id="byMonth" onclick="setBy('month')">월별</button>
+            <button class="tgb on" id="byOrder" onclick="setBy('order')">오더별</button>
           </div>
           <div class="tg" id="periodTg"><span class="tgl">기간</span></div>
         </div>
@@ -129,13 +138,13 @@
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  let viewBy='month';            // 'month' | 'order'
+  let viewBy='order';            // 'month' | 'order'  (디폴트: 오더별)
   let period={month:12, order:20}; // 표시 개월수 / 오더 건수
   const PERIOD_OPTS={ month:[6,12,24], order:[10,20,50] };
   let ofOpen=null, ofLines={}, lastRows=[];
-  let sortKey=null, sortDir=1;   // 헤더 클릭 정렬(테이블 전용)
+  let sortKey='qdate', sortDir=-1;   // 디폴트: 일자 최신순(내림차순). 헤더 클릭 정렬(테이블 전용)
 
-  function setBy(b){ viewBy=b; ofOpen=null; sortKey=null; $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
+  function setBy(b){ viewBy=b; ofOpen=null; if(b==='order'){ sortKey='qdate'; sortDir=-1; } else { sortKey=null; sortDir=1; } $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
   function setPeriod(n){ period[viewBy]=n; renderPeriod(); load(); }
   function renderPeriod(){
     const opts=PERIOD_OPTS[viewBy], unit=(viewBy==='month'?'개월':'건');
@@ -269,7 +278,7 @@
   }
 
   // ===== 헤더 클릭 정렬 (테이블만 정렬 · 차트/KPI는 시간순 유지) =====
-  const SORT_NUM={req_sku:1,req_qty:1,ok_qty_pct:1,short_qty_pct:1,dev_qty_pct:1};
+  const SORT_NUM={req_sku:1,req_qty:1,ok_qty_pct:1,short_qty_pct:1,dev_qty_pct:1,warn_rank:1};
   function sortVal(r,key){ return key==='__label' ? (r.label||r.ym||'') : r[key]; }
   function setSort(key){
     if(!key) return;
@@ -295,10 +304,48 @@
   }
   function sortableHead(col1){
     let s=thS(col1,'__label',true);
-    if(viewBy==='order'){ s+=thS('고객','customer_name',true)+thS('일자','qdate',false); }
+    if(viewBy==='order'){ s+=thS('고객','customer_name',true)+thS('일자','qdate',false)+thS('진행 단계 / 경고','warn_rank',false); }
     s+=thS('요청 SKU','req_sku',false)+thS('요청 수량','req_qty',false)+thS('구성 (수량 비중)',null,false);
     s+=thS('즉시 %','ok_qty_pct',false)+thS('부족 %','short_qty_pct',false)+thS('개발 %','dev_qty_pct',false);
     return s;
+  }
+
+  // MX 로컬(UTC-6) 'MM-DD HH:mm' 포맷
+  function mxFmt(iso){ if(!iso) return '—'; const d=new Date(new Date(iso).getTime()-360*60000); const p=n=>String(n).padStart(2,'0'); return p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes()); }
+
+  // 견적(오더) 현재 진행 단계/상태/경고 셀
+  function stageCell(r){
+    if(!r.stage_key) return '<span class="hint">—</span>';
+    const rank=r.stage_rank||0;
+    let dots='';
+    if(rank>=1&&rank<=6){
+      for(let i=1;i<=6;i++){
+        const on=i<=rank, isCur=i===rank;
+        const col=isCur&&r.warn?'var(--expense)':(on?'var(--income)':'#d8d3c7');
+        dots+='<i class="sdot" style="background:'+col+(isCur?';outline:2px solid '+(r.warn?'var(--expense)':'var(--income)')+';outline-offset:1px':'')+'"></i>';
+      }
+    }
+    let statusBadge='';
+    if(r.status_key==='within') statusBadge=' <span class="stx" style="color:var(--income)">● 외상일중</span>';
+    else if(r.status_key==='overdue') statusBadge=' <span class="stx" style="color:var(--expense)">● 지연중</span>';
+    const badge='<span class="stbadge'+(r.warn?' warn':'')+'">'+(r.warn?'⚠ ':'')+esc(r.stage_label||'')+'</span>'+statusBadge;
+    let dl='';
+    if(r.deadline && (r.stage_key==='created'||r.stage_key==='printing'||r.stage_key==='await_sat')){
+      dl='<div class="stdl'+(r.warn?' over':'')+'">기한 '+mxFmt(r.deadline)+'</div>';
+    } else if(r.stage_key==='await_collect' && r.due_date){
+      dl='<div class="stdl'+(r.warn?' over':'')+'">외상만기 '+esc(r.due_date)+'</div>';
+    }
+    const tl=[
+      '견적작성: '+mxFmt(r.ts_created),
+      r.ts_printed?('포장출력: '+mxFmt(r.ts_printed)+(r.ts_packing_due?(' (완료기한 '+mxFmt(r.ts_packing_due)+')'):'')):null,
+      r.ts_packed?('포장완료: '+mxFmt(r.ts_packed)):null,
+      r.ts_converted?('매출전환: '+mxFmt(r.ts_converted)):null,
+      r.ts_sat?('SAT입력: '+mxFmt(r.ts_sat)):null,
+      r.due_date?('외상만기: '+r.due_date):null,
+      r.warn_label?('⚠ '+r.warn_label):null,
+      r.owner_name?('담당 '+r.owner_name):null,
+    ].filter(Boolean).join('\n');
+    return '<div class="stagecell" title="'+esc(tl)+'"><div class="sdots">'+dots+'</div>'+badge+dl+'</div>';
   }
 
   function render(rows){
@@ -330,7 +377,7 @@
       const open = clickable && ofOpen===r.quote_id;
       h+='<tr'+(clickable?' style="cursor:pointer"'+(open?' class="oopen"':'')+' onclick="toggleOrder('+r.quote_id+')"':'')+'>'
         +'<td style="text-align:left"><b>'+(clickable?(open?'▾ ':'▸ '):'')+esc(r.label||r.ym||'')+'</b></td>'
-        +(viewBy==='order'?'<td style="text-align:left">'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td>':'')
+        +(viewBy==='order'?'<td style="text-align:left">'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td><td>'+stageCell(r)+'</td>':'')
         +'<td>'+nf(r.req_sku)+'</td>'
         +'<td>'+nf(r.req_qty)+'</td>'
         +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span>'
@@ -339,7 +386,7 @@
         +'<td style="color:var(--gold)">'+ss+'%</td>'
         +'<td style="color:var(--purple)">'+dd+'%</td>'
         +'</tr>';
-      if(open){ h+='<tr><td colspan="9" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
+      if(open){ h+='<tr><td colspan="10" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     $('trendWrap').innerHTML=h;
@@ -350,6 +397,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627perm"></script>
+<script src="refatrix-nav.js?v=20260627sf"></script>
 </body>
 </html>

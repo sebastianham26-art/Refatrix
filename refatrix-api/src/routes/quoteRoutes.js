@@ -6,6 +6,7 @@ import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 
 import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
+import { packingDeadline } from '../workingHours.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -92,15 +93,23 @@ export default async function quoteRoutes(app) {
     const q = String(req.query.q || '').trim();
     if (q.length < 1) return { items: [] };
     const like = `%${q}%`;
+    // 소재 필터: material=aluminio 이면 알루미늄 제품만 검색 결과에 노출(견적 화면 「알루미늄만」 체크).
+    const materialFilter = String(req.query.material || '').trim().toLowerCase();
+    const params = [like];
+    let matSql = '';
+    if (materialFilter) {
+      params.push(materialFilter === 'aluminio' || materialFilter.includes('alumin') ? 'aluminio' : materialFilter);
+      matSql = ` AND p.material = $${params.length}`;
+    }
     // CTR(code/name) 일치 + SYD 일치를 합쳐 제품 id 수집
     const rows = (await query(
       `SELECT DISTINCT p.id, p.code, p.name, p.app, p.list_price
          FROM products p
          LEFT JOIN product_syd_codes s ON s.product_id = p.id
         WHERE p.deleted_at IS NULL
-          AND (p.code ILIKE $1 OR p.name ILIKE $1 OR s.syd_code ILIKE $1)
+          AND (p.code ILIKE $1 OR p.name ILIKE $1 OR s.syd_code ILIKE $1)${matSql}
         ORDER BY p.code
-        LIMIT 12`, [like])).rows;
+        LIMIT 12`, params)).rows;
     if (!rows.length) return { items: [] };
     const ids = rows.map((r) => r.id);
     const sydRows = (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows;
@@ -177,8 +186,7 @@ export default async function quoteRoutes(app) {
         `SELECT COALESCE(SUM(ql.reserved_qty),0) AS s
            FROM quote_lines ql JOIN quotes q ON q.id=ql.quote_id
           WHERE ql.product_id=$1 AND q.id<>$2 AND q.status IN ('draft','confirmed')
-            AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
-            AND q.deleted_at IS NULL`, [Number(pid), quoteId])).rows[0];
+            AND q.reserve_expires_at > now() AND q.deleted_at IS NULL`, [Number(pid), quoteId])).rows[0];
       let remaining = Math.max(0, physical - (Number(other.s) || 0));
       for (const l of byProd[pid]) {
         const want = Number(l.qty) || 0;
@@ -197,7 +205,6 @@ export default async function quoteRoutes(app) {
       `SELECT id FROM quotes
         WHERE status IN ('draft','confirmed') AND reserve_expires_at IS NOT NULL
           AND reserve_expires_at <= now() AND deleted_at IS NULL
-          AND packing_printed_at IS NULL
         ORDER BY id LIMIT 200`)).rows;
     for (const row of due) {
       const id = row.id;
@@ -459,7 +466,7 @@ export default async function quoteRoutes(app) {
     }
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.quote_date, q.status, q.subtotal_mxn, q.iva_mxn, q.total_mxn, q.total_qty, q.sku_count,
-              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at, q.packing_printed_at,
+              q.invoice_id, q.guest_name, q.customer_id, q.created_by, q.reserve_expires_at,
               c.name AS customer_name, c.team_id,
               uc.name AS creator_name,
               i.inv_date AS sale_date, i.sat_no AS sale_sat_no, i.total_mxn AS sale_total,
@@ -502,7 +509,6 @@ export default async function quoteRoutes(app) {
         creator_name: r.creator_name || null,
         open: ['draft', 'confirmed'].includes(r.status),
         reserve_expires_at: r.reserve_expires_at || null,
-        packing_printed_at: r.packing_printed_at || null,   // 설정 시 시간과 무관 유효(만료 없음)
         // 수주현황(현재고 기준 라인 3분류): 즉시매출가능 / 재고부족 / 개발필요
         cls: {
           ok: Number(r.ok_cnt || 0), short: Number(r.short_cnt || 0), dev: Number(r.dev_cnt || 0),
@@ -801,34 +807,29 @@ export default async function quoteRoutes(app) {
     return { ok: true };
   });
 
-  // 포장작업지시서 "출력(인쇄)" 시점에 ① 단계 수주(50) 자동 전진(전진만) + ② 견적을 "유효 고정"(24h 만료 영구 제외).
-  //  · 유효 고정: packing_printed_at 설정 → 만료 스위퍼 제외 · 재고 예약 계속 유지 · 시간과 무관하게 전환 가능.
-  //  · 이미 만료(expired)된 견적이면 되살리고(→confirmed), 만료 때 적재된 부족/개발 수요신호를 원복(취소).
+  // 포장작업지시서 "출력(인쇄)" 시점에 단계 수주(50) 자동 전진(전진만). 프런트 printPickList에서 호출.
   app.post('/api/quotes/:id/packing-printed', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const q = (await query(`SELECT id, customer_id, quote_no, status, packing_printed_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const q = (await query(`SELECT id, customer_id, quote_no, packing_printed_at, packing_due_at FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
-    const wasExpired = (q.status === 'expired');
-    await withTx(async (c) => {
-      await c.query(
-        `UPDATE quotes
-            SET packing_printed_at = COALESCE(packing_printed_at, now()),
-                status = CASE WHEN status='expired' THEN 'confirmed' ELSE status END,
-                updated_by=$2, updated_at=now()
-          WHERE id=$1 AND status IN ('draft','confirmed','expired')`, [id, req.ctx.perm.userId]);
-      if (wasExpired) {
-        // 만료 시 쌓였던 이 견적의 수요신호 원복: 매출 미연결 부족(만료분) + 개발요청(접수단계)
-        await c.query(
-          `UPDATE stock_shortages SET status='cancelled'
-            WHERE source_quote_id=$1 AND sales_invoice_id IS NULL AND status='open'`, [id]);
-        await c.query(
-          `UPDATE product_dev_requests SET deleted_at=now(), updated_at=now()
-            WHERE source_quote_id=$1 AND deleted_at IS NULL AND status='received'`, [id]);
-        await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { packing_printed: true, revived_from_expired: true } });
+    // 포장 시각/기한은 "최초 출력"에만 고정(재출력해도 기한이 밀리지 않음 — 전진 전용 원칙).
+    let printedAt = q.packing_printed_at;
+    let dueAt = q.packing_due_at;
+    if (!printedAt) {
+      const now = new Date();
+      const due = packingDeadline(now); // 업무시간(07:30~17:00, UTC-6) 6시간
+      const r = (await query(
+        `UPDATE quotes SET packing_printed_at = now(), packing_due_at = $2
+           WHERE id=$1 AND packing_printed_at IS NULL
+         RETURNING packing_printed_at, packing_due_at`, [id, due])).rows[0];
+      if (r) { printedAt = r.packing_printed_at; dueAt = r.packing_due_at; }
+      else { // 경합(동시 두 번 출력) → 이미 박힌 값 재조회
+        const rr = (await query(`SELECT packing_printed_at, packing_due_at FROM quotes WHERE id=$1`, [id])).rows[0] || {};
+        printedAt = rr.packing_printed_at; dueAt = rr.packing_due_at;
       }
-    });
+    }
     if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 출력 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
-    return { ok: true, held: true, revived: wasExpired };
+    return { ok: true, held: true, packing_printed_at: printedAt, packing_due_at: dueAt };
   });
 
   // 확정된 견적을 매출 인보이스로 전환. 매칭 안 된 줄(not_found)은 제외.
@@ -837,7 +838,7 @@ export default async function quoteRoutes(app) {
     const q = (await query(`SELECT * FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     if (q.status === 'converted') return reply.code(409).send({ error: 'already_converted', invoice_id: q.invoice_id });
-    if (!q.packing_printed_at && (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date())))
+    if (q.status === 'expired' || (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date()))
       return reply.code(409).send({ error: 'quote_expired', note: '예약 24시간이 지나 무효화된 견적입니다. 전환할 수 없습니다. 견적을 복제해 새로 진행하세요.' });
     // 포장 게이트: 전량 가용(피킹 대상) 라인이 있으면 서명 스캔본 업로드가 선행돼야 전환 가능
     const pickable = (await query(

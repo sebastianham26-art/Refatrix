@@ -889,6 +889,18 @@
     const row=qRowsById[cvId]||{};
     const co=await getCompany();
 
+    // 포장출력 기록 + 포장완료 기한(업무시간 6시간) 수신 → 슬립에 기한 표기.
+    //   (최초 출력에만 기한 고정. 재출력해도 서버가 기존 기한을 그대로 반환.)
+    let packDueAt=null;
+    if(cvId){
+      try{
+        const pr=await fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}).then(r=>r.json()).catch(()=>null);
+        if(pr){ packDueAt=pr.packing_due_at||null; if(pr.packing_printed_at&&qRowsById[cvId]) qRowsById[cvId].packing_printed_at=pr.packing_printed_at; }
+      }catch(_){}
+    }
+    const mxFmtDl=(iso)=>{ if(!iso) return '—'; const d=new Date(new Date(iso).getTime()-360*60000); const p=n=>String(n).padStart(2,'0'); return p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes()); };
+    const dueStr=mxFmtDl(packDueAt);
+
     // CTR 코드 → SYD 코드 매핑 (견적 상세에서; convert-preview가 syd를 주면 그걸 우선 사용)
     let sydMap={};
     try{
@@ -930,6 +942,7 @@
       +'<div class="pk-sum">'
         +'<div class="pk-cell big accent"><span class="k">No. de SKU</span><span class="v">'+skuCount+'</span></div>'
         +'<div class="pk-cell big accent"><span class="k">Piezas totales</span><span class="v">'+qfmt(totalQty)+'</span></div>'
+        +'<div class="pk-cell big" style="background:#fdeee9;border-color:#e0a89a"><span class="k">Límite de empaque (6 h hábiles · 07:30–17:00)</span><span class="v" style="color:#c0392b">'+dueStr+'</span></div>'
       +'</div>';
 
     const colHead='<thead><tr>'
@@ -1026,13 +1039,7 @@
     if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
     win.document.open(); win.document.write(html); win.document.close();
     cvPrinted=true; updateCvGate();   // 출력 완료 → 스캔 업로드 단계 활성화
-    // 포장작업지시서 출력 → ① 단계 수주(50) ② 견적 유효 고정(24h 만료 영구 제외). 등록 확인 후 로컬 상태 갱신.
-    if(cvId){
-      try{
-        const pr=await fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}).then(r=>r.json()).catch(()=>null);
-        if(pr&&pr.held){ if(qRowsById[cvId]) qRowsById[cvId].packing_printed_at=new Date().toISOString(); }
-      }catch(_){}
-    }
+    // (포장출력 기록·완료기한 수신은 위에서 이미 처리: packing-printed 호출 → packDueAt)
   }
   async function doConvert(){
     const m=$('cvMsg');m.className='msg';
@@ -1077,6 +1084,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260627perm"></script>
+<script src="refatrix-nav.js?v=20260627sf"></script>
 </body>
 </html>
