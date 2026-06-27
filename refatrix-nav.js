@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260626gps loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260626hdr loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -215,7 +215,9 @@
     '#rnav .rwho{flex:0 0 auto;color:#7f928a;font-size:11px;font-weight:500;padding-left:14px;letter-spacing:.02em}'+
     '#rnav .rwho b{color:#bcae8e;font-weight:700}'+
     '#rnav .rlogout{flex:0 0 auto;margin-left:12px;padding:5px 12px;border-radius:8px;border:1px solid rgba(208,140,110,.45);background:rgba(208,140,110,.12);color:#e3b6a3;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit}'+
-    '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}';
+    '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}'+
+    '#rnav .rpres{flex:0 0 auto;margin-left:12px;padding:5px 11px;border-radius:999px;border:1px solid rgba(25,169,116,.45);background:rgba(25,169,116,.14);color:#7fe0bd;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit;display:none;align-items:center;gap:5px}'+
+    '#rnav .rpres:hover{background:rgba(25,169,116,.26);color:#d6fff0}';
     var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   }
   // 제한 역할(예: treasury)이 허용되지 않은 화면에 있으면 재무/계좌로 되돌림(직접 URL 접근 차단).
@@ -261,6 +263,7 @@
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
     bar+='</div><div class="rbarright"><span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
+    bar+='<span class="rpres" id="rPresBadge" title="접속 현황 보기" onclick="__rnavPresence()">\uD83D\uDFE2 <span id="rPresN">0</span>명 접속</span>';
     bar+='<button type="button" class="rlogout" title="로그아웃" onclick="__rnavLogout()">로그아웃</button></div></div>';
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
@@ -273,6 +276,7 @@
     var el=document.getElementById('rnav');
     el.innerHTML=bar+sub;
     syncOffset();
+    applyPresBadge();
   }
   // 고정 헤더(바+하위메뉴)의 실제 높이만큼 본문을 내려 가림 방지
   function syncOffset(){
@@ -308,6 +312,30 @@
     boot();
   }
   // 세션을 읽어 헤더를 그린다. 세션이 없으면 잠시 후 로그인되는지 감시(포털 첫 로그인 대응).
+  // 상단 헤더 접속 요약 배지 (디렉터 전용) — 클릭 시 접속현황(users) 이동
+  var navPresOnline=0, navPresDir=false;
+  function applyPresBadge(){
+    var b=document.getElementById('rPresBadge'); if(!b) return;
+    if(navPresDir){ b.style.display='inline-flex'; var n=document.getElementById('rPresN'); if(n) n.textContent=navPresOnline; }
+    else b.style.display='none';
+  }
+  function updatePresenceBadge(){
+    try{
+      if(!sum || !sum.isDirector){ navPresDir=false; applyPresBadge(); return; }
+      var s=getSession(); if(!s||!s.token) return;
+      var a=(s.api||'').replace(/\/+$/,'');
+      fetch(a+'/api/presence',{headers:{'Authorization':'Bearer '+s.token}}).then(function(r){
+        if(!r.ok) return null; return r.json();
+      }).then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[];
+        navPresDir=true; navPresOnline=items.filter(function(x){return x.online;}).length;
+        applyPresBadge();
+      }).catch(function(){});
+    }catch(e){}
+  }
+  window.__rnavPresence=function(){ try{ location.href='refatrix-users.html'; }catch(e){} };
+
   function boot(){
     var nv=document.getElementById('rnav'); if(!nv) return;
     sess=getSession();
@@ -339,6 +367,8 @@
       sum=d||{pages:[],isDirector:false};
       if(enforceRoleAccess()) return;   // 차단·리다이렉트 시 렌더 생략
       render();
+      updatePresenceBadge();
+      if(!window.__rnavPresTimer) window.__rnavPresTimer=setInterval(updatePresenceBadge, 30000);
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   window.__rnavReload=boot;
