@@ -403,7 +403,7 @@
     // 친절한 서술형 정의(대기/지연 기준)
     const defMap={
       order:'견적 후 포장출력 전 대기 · 48h 초과 시 지연',
-      packing:'포장출력 후 포장완료(스캔) 전 대기 · 6업무h 초과 시 지연',
+      packing:'포장출력 후 스캔(=포장완료) 업로드 전 대기 · 6업무h 초과 시 지연',
       sat:'전환 후 SAT 번호 발행 전 대기 · 3h 초과 시 지연',
       collect:'SAT 발행 후 미수금 · 외상기간중/기일도래/지연중',
     };
@@ -434,9 +434,9 @@
           let elapsed, statusHtml;
           if(k==='collect' && it.dueRel!==undefined){
             const r=Number(it.dueRel);
-            if(r>0){      elapsed='D+'+r;  statusHtml='<span class="slno">지연중 '+r+'day</span>'; }
-            else if(r===0){ elapsed='D-day'; statusHtml='<span class="slwarn">기일도래</span>'; }
-            else {        elapsed='D'+r;   statusHtml='<span class="slok">외상기간중</span>'; }   // r<0 → 'D-5'
+            if(r>0){      elapsed='+'+r+'일'; statusHtml='<span class="slno">지연중 '+r+'day</span>'; }
+            else if(r===0){ elapsed='0일';   statusHtml='<span class="slwarn">기일도래</span>'; }
+            else {        elapsed=r+'일';    statusHtml='<span class="slok">외상기간중</span>'; }  // r<0 → '-5일'(남은일수)
           }else{
             const age=(it.age!=null?it.age:it.lead);
             elapsed=(age!=null?(age+shortUnit(s.unit)):'—');
@@ -457,7 +457,7 @@
       if(i<order.length-1) h+='<div class="slaarrow">▶</div>';
     });
     h+='</div>';
-    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 정시수금 상태: <b style="color:var(--income)">외상기간중</b>(만기 전) · <b style="color:var(--gold)">기일도래</b>(만기 당일) · <b style="color:var(--expense)">지연중 Nday</b>(만기 후). 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
+    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 정시수금 상태: <b style="color:var(--income)">외상기간중</b>(만기 전, 경과 −N일 = N일 남음) · <b style="color:var(--gold)">기일도래</b>(만기 당일) · <b style="color:var(--expense)">지연중 Nday</b>(만기 후, 경과 +N일). 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
     $('slaBody').innerHTML=h;
   }
 
