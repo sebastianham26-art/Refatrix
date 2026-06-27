@@ -47,7 +47,7 @@
   .item .body .d{font-size:12px;color:var(--muted);margin-top:2px}
   .item .body .meta{font-size:11px;color:var(--muted);margin-top:4px}
   .pill{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;background:#eee;color:#555}
-  .pill.company{background:var(--expense-bg);color:var(--expense)}.pill.team{background:#e6f1fb;color:#0c447c}.pill.personal{background:var(--income-bg);color:var(--income)}
+  .pill.company{background:var(--expense-bg);color:var(--expense)}.pill.team{background:#e6f1fb;color:#0c447c}.pill.shared{background:#e6f1fb;color:#0c447c}.pill.personal{background:var(--income-bg);color:var(--income)}
   .pill.pin{background:#fdf8ec;color:#8a6512}
   .pill.over{background:var(--expense-bg);color:var(--expense)}
   .item.done{opacity:.6}.item.done .t{text-decoration:line-through}
@@ -76,7 +76,7 @@
   .cgcell.today .dn{color:var(--income)}
   .chip{font-size:10px;line-height:1.3;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chip.ev{background:var(--income-bg);color:var(--brand)}
-  .chip.ev.company{background:var(--expense-bg);color:var(--expense)}.chip.ev.team{background:#e6f1fb;color:#0c447c}.chip.ev.personal{background:var(--income-bg);color:var(--income)}
+  .chip.ev.company{background:var(--expense-bg);color:var(--expense)}.chip.ev.team{background:#e6f1fb;color:#0c447c}.chip.ev.shared{background:#e6f1fb;color:#0c447c}.chip.ev.personal{background:var(--income-bg);color:var(--income)}
   .chip.td{background:#e6f1fb;color:#0c447c}
   .chip .tm{font-weight:700;color:var(--gold)}
   .cgmore{font-size:9.5px;color:var(--muted)}
@@ -162,7 +162,7 @@
       </div>
       <div class="calbar" style="margin-top:-4px">
         <span class="seg" id="calDaysSeg"><button id="cal7Btn" class="on" onclick="setCalDays(7)">7일</button><button id="cal5Btn" onclick="setCalDays(5)">평일</button></span>
-        <span class="seg"><button id="calAllBtn" class="on" onclick="setCalScope('all')">모두의 일정</button><button id="calMineBtn" onclick="setCalScope('mine')">내 일정만</button><button id="calPersBtn" onclick="setCalScope('personal')">개인일정</button></span>
+        <span class="seg"><button id="calAllBtn" class="on" onclick="setCalScope('all')">모두</button><button id="calCompBtn" onclick="setCalScope('company')">회사 전체</button><button id="calShareBtn" onclick="setCalScope('shared')">개인별 공유</button><button id="calPersBtn" onclick="setCalScope('personal')">내 개인</button></span>
       </div>
       <div id="calGrid"><div class="hint">불러오는 중…</div></div>
       <div class="hint" style="margin-top:8px"><span class="chip ev" style="display:inline-block">초록</span> 일정 · <span class="chip td" style="display:inline-block">파랑</span> 할 일(마감) · 날짜 칸을 누르면 그날 상세·추가</div>
@@ -320,7 +320,7 @@
   let calCursor=new Date(); calCursor.setHours(0,0,0,0);
   let calEvents=[], calTodos=[];
   let calDays=7;     // 7=일~토, 5=평일(월~금)
-  let calScope='all'; // 'all'=모두, 'mine'=공동(team)+개인(personal), 'personal'=개인만
+  let calScope='all'; // 'all'=모두 / 'company'=회사전체 / 'shared'=개인별공유 / 'personal'=내개인
   const DOW=['일','월','화','수','목','금','토'];
   function cYmd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
   function cAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
@@ -334,7 +334,7 @@
   function evHM(e){ const dt=evAt(e); if(dt) return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); return e&&e.time?String(e.time):''; }
   function tzNote(){ let z=''; try{ z=Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(_){}
     const dot=(c)=>'<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+c+';margin:0 3px 0 10px;vertical-align:middle"></span>';
-    const legend='<span style="margin-left:2px">'+dot('#b23a2e')+'전사'+dot('#0c447c')+'팀'+dot('#0f6e56')+'개인</span>';
+    const legend='<span style="margin-left:2px">'+dot('#b23a2e')+'회사 전체'+dot('#0c447c')+'개인별 공유'+dot('#0f6e56')+'내 개인'+'</span>';
     return '<div class="hint" style="margin:0 0 8px">표시 시각은 보고 있는 분의 시간대'+(z?'('+esc(z)+')':'')+' 기준입니다.'+legend+'</div>'; }
 
   function setCalView(v){ calView=v;
@@ -346,7 +346,12 @@
     loadCal();
   }
   function setCalDays(n){ calDays=n; $('cal7Btn').classList.toggle('on',n===7); $('cal5Btn').classList.toggle('on',n===5); loadCal(); }
-  function setCalScope(s){ calScope=s; $('calAllBtn').classList.toggle('on',s==='all'); $('calMineBtn').classList.toggle('on',s==='mine'); $('calPersBtn').classList.toggle('on',s==='personal'); loadCal(); }
+  function setCalScope(s){ calScope=s;
+    $('calAllBtn').classList.toggle('on',s==='all');
+    $('calCompBtn').classList.toggle('on',s==='company');
+    $('calShareBtn').classList.toggle('on',s==='shared');
+    $('calPersBtn').classList.toggle('on',s==='personal');
+    loadCal(); }
   function calShift(dir){
     if(calView==='month') calCursor=new Date(calCursor.getFullYear(),calCursor.getMonth()+dir,1);
     else if(calView==='week') calCursor=cAddDays(calCursor,dir*7);
@@ -390,12 +395,32 @@
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  // scope 필터: all=전부, mine=전사(company)+개인(personal), personal=개인만
-  // (전사일정은 나에게도 부여되므로 '내 일정만'에 포함. 팀 공동일정은 '모두의 일정'에서만 표시)
-  function scopeOk(e){ if(calScope==='all') return true; if(calScope==='personal') return e.scope==='personal'; return e.scope==='company'||e.scope==='personal'; }
-  // 수정/삭제 권한: 디렉터, 또는 내 개인일정
-  function canMod(e){ return isDirector || (e.scope==='personal' && session.user && Number(e.owner_id)===Number(session.user.id)); }
+  // scope 필터: all=전부 / company=회사전체 / shared=개인별공유 / personal=내개인
+  // (레거시 team 일정은 'all'에서만 표시)
+  function scopeOk(e){
+    if(calScope==='all') return true;
+    if(calScope==='company') return e.scope==='company';
+    if(calScope==='shared')  return e.scope==='shared';
+    if(calScope==='personal')return e.scope==='personal';
+    return true;
+  }
+  // 수정/삭제 권한: 디렉터, 내 개인일정, 또는 내가 만든 일정(개인별 공유 포함)
+  function canMod(e){
+    if(isDirector) return true;
+    const myId=session.user&&Number(session.user.id);
+    if(e.scope==='personal' && myId && Number(e.owner_id)===myId) return true;
+    if(myId && e.created_by!=null && Number(e.created_by)===myId) return true;
+    return false;
+  }
   function modBtns(e){ return canMod(e)?('<button class="btn ghost sm" onclick="editCal('+e.id+')">수정</button><button class="btn danger sm" onclick="delCal('+e.id+')">삭제</button>'):''; }
+  // 일정 대상(scope) 표시 라벨
+  function scopeLabel(e){
+    if(e.scope==='company') return '회사 전체';
+    if(e.scope==='shared')  return '공유'+(e.target_names&&e.target_names.length?' · '+esc(e.target_names.join(', ')):' · (대상 없음)');
+    if(e.scope==='team')    return '팀'+(e.team_name?' · '+esc(e.team_name):'');
+    if(e.scope==='personal')return '개인'+(e.owner_name?' · '+esc(e.owner_name):'');
+    return e.scope;
+  }
   function editCal(id){
     const e=calEvents.find(x=>Number(x.id)===Number(id)); if(!e) return;
     const dateKey=evKey(e);
@@ -404,9 +429,19 @@
     if($('dm-date')) $('dm-date').value=dateKey;
     if($('dm-time')) $('dm-time').value=evHM(e)||'';
     if($('dm-content')) $('dm-content').value=e.content||'';
-    if($('dm-scope')&&$('dm-scope').querySelector('option[value="'+e.scope+'"]')) $('dm-scope').value=e.scope;
+    if($('dm-scope')){
+      // 레거시 팀 일정 등 목록에 없는 scope 면 동적 주입(라운드트립 보존)
+      if(!$('dm-scope').querySelector('option[value="'+e.scope+'"]')){
+        const o=document.createElement('option'); o.value=e.scope; o.textContent=(e.scope==='team'?'팀(레거시)':e.scope); $('dm-scope').appendChild(o);
+      }
+      $('dm-scope').value=e.scope;
+    }
     dmScopeChange();
     if(e.scope==='team'&&e.team_id&&$('dm-team')) $('dm-team').value=e.team_id;
+    if(e.scope==='shared'&&Array.isArray(e.target_ids)){
+      const set=new Set(e.target_ids.map(Number));
+      document.querySelectorAll('.dm-target').forEach(c=>{ c.checked=set.has(Number(c.value)); });
+    }
     if($('dm-formTitle')) $('dm-formTitle').textContent='일정 수정';
     if($('dm-saveBtn')) $('dm-saveBtn').textContent='수정 저장';
     const f=$('dm-formTitle'); if(f&&f.scrollIntoView) f.scrollIntoView({block:'nearest'});
@@ -449,7 +484,7 @@
     let html='<div style="border:1px solid var(--line);border-radius:10px;padding:14px 16px">';
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
-      const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
+      const scopeLbl=scopeLabel(e);
       return '<div class="item" style="margin-top:6px"><div class="when">'+(evHM(e)?'<span class="tm">'+esc(evHM(e))+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
@@ -473,7 +508,7 @@
     // 일정 목록
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:4px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
-      const scopeLbl={company:'전사',team:'팀'+(e.team_name?' · '+esc(e.team_name):''),personal:'개인'+(e.owner_name?' · '+esc(e.owner_name):'')}[e.scope]||e.scope;
+      const scopeLbl=scopeLabel(e);
       return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
@@ -483,10 +518,15 @@
       html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
     }
     // 일정 추가 폼
+    // 대상(scope): 누구나 '내 개인 일정' + '개인별 공유'. 디렉터는 '회사 전체' 추가.
+    // (레거시 '팀' scope 는 생성 목록엔 없음 — 기존 팀 일정 수정 시 editCal 이 동적으로 주입)
     const scopeOpts=isDirector
-      ? '<option value="personal">개인(내)</option><option value="company">전사</option><option value="team">팀</option>'
-      : '<option value="personal">개인(내)</option>';
+      ? '<option value="personal">내 개인 일정</option><option value="shared">개인별 공유</option><option value="company">회사 전체</option>'
+      : '<option value="personal">내 개인 일정</option><option value="shared">개인별 공유</option>';
     const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
+    const myId=session.user&&Number(session.user.id);
+    const targetChecks=(users||[]).filter(u=>Number(u.id)!==myId).map(u=>
+      '<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12.5px;font-weight:500"><input type="checkbox" class="dm-target" value="'+u.id+'" style="width:auto"> '+esc(u.name)+'</label>').join('');
     html+='<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
       +'<div id="dm-formTitle" style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정 추가</div>'
       +'<div class="row">'
@@ -496,6 +536,9 @@
       +'<div style="flex:0 0 120px"><label>대상</label><select id="dm-scope" onchange="dmScopeChange()">'+scopeOpts+'</select></div>'
       +'<div style="flex:0 0 140px" id="dm-teamWrap" class="hidden"><label>팀</label><select id="dm-team">'+teamOpts+'</select></div>'
       +'</div>'
+      +'<div id="dm-targetWrap" class="hidden" style="margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fafcfb">'
+      +'<label style="display:block;margin-bottom:5px">공유 대상 — 일정을 공유할 사람을 개인별로 선택(여러 명 가능)</label>'
+      +'<div style="max-height:130px;overflow:auto">'+(targetChecks||'<span class="hint">선택 가능한 사용자가 없습니다.</span>')+'</div></div>'
       +'<div style="margin-top:8px"><button class="btn" id="dm-saveBtn" onclick="addCalDay()">추가</button></div>'
       +'<div class="msg" id="dm-msg"></div>'
       +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
@@ -503,7 +546,11 @@
     $('dayModal').style.display='flex';
   }
   function closeDay(){ $('dayModal').style.display='none'; }
-  function dmScopeChange(){ $('dm-teamWrap').classList.toggle('hidden',$('dm-scope').value!=='team'); }
+  function dmScopeChange(){
+    const sc=$('dm-scope')?$('dm-scope').value:'';
+    if($('dm-teamWrap')) $('dm-teamWrap').classList.toggle('hidden',sc!=='team');
+    if($('dm-targetWrap')) $('dm-targetWrap').classList.toggle('hidden',sc!=='shared');
+  }
   async function addCalDay(){
     const m=$('dm-msg');m.className='msg';
     const dateV=($('dm-date')&&$('dm-date').value)||dmDate;
@@ -514,6 +561,7 @@
     if(_m){ const p=dateV.split('-').map(Number); const _dt=new Date(p[0],p[1]-1,p[2],Number(_m[1]),Number(_m[2]),0,0); if(!isNaN(_dt.getTime())) _at=_dt.toISOString(); }
     const body={event_date:dateV,event_time:_tv||null,event_at:_at,content:$('dm-content').value.trim(),scope:$('dm-scope').value};
     if(body.scope==='team')body.team_id=$('dm-team').value;
+    if(body.scope==='shared'){ body.target_ids=[...document.querySelectorAll('.dm-target:checked')].map(c=>Number(c.value)); }
     if(!body.content){m.className='msg err';m.textContent='내용을 입력하세요.';return;}
     const editing=(dmEditId!=null);
     const url=session.api+'/api/calendar'+(editing?'/'+dmEditId:'');

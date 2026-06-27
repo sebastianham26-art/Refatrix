@@ -339,6 +339,38 @@
     if(btn){ btn.disabled=false; btn.textContent='확인'; }
   }
 
+  // ===== 오늘 일정 로그인 팝업 =====
+  // 오늘(보는 사람 현지 날짜)에 일정이 있으면 로그인 시 팝업으로 그 날 전체 일정을 띄움.
+  // "0시~24시 지속 게시" = 같은 날엔 새 로그인마다 다시 뜬다(닫으면 그 세션 동안만 안 뜸).
+  function calEvKey(e){ if(e&&e.at){ const dt=new Date(e.at); if(!isNaN(dt.getTime())) return pYmd(dt); } return e&&e.date; }
+  function calEvHM(e){ if(e&&e.at){ const dt=new Date(e.at); if(!isNaN(dt.getTime())) return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); } return (e&&e.time)?String(e.time):''; }
+  async function checkCalendarPopup(){
+    try{
+      const today=pYmd(new Date());
+      try{ if(sessionStorage.getItem('cal_pop_'+today)==='1'){ $('calPopModal').style.display='none'; return; } }catch(_){}
+      const fromD=pAdd(new Date(),-1), toD=pAdd(new Date(),1);   // ±1일 패딩(타임존 날짜 경계)
+      const d=await fetch(session.api+'/api/calendar?from='+pYmd(fromD)+'&to='+pYmd(toD),{headers:auth()}).then(r=>r.json());
+      const items=(((d&&d.items)||[]).filter(e=>calEvKey(e)===today)).sort((a,b)=>calEvHM(a).localeCompare(calEvHM(b)));
+      if(!items.length){ $('calPopModal').style.display='none'; return; }
+      const scopeLbl=(e)=>e.scope==='company'?'회사 전체':e.scope==='shared'?('공유'+((e.target_names&&e.target_names.length)?' · '+escp(e.target_names.join(', ')):'')):e.scope==='team'?'팀':('개인'+(e.owner_name?' · '+escp(e.owner_name):''));
+      const pillCss=(e)=>e.scope==='company'?'background:#fbe9e7;color:#b23a2e':(e.scope==='shared'||e.scope==='team')?'background:#e6f1fb;color:#0c447c':'background:#e7f3ee;color:#0f6e56';
+      $('calPopList').innerHTML=items.map(e=>{
+        const hm=calEvHM(e);
+        return '<div style="padding:11px 14px;border-bottom:1px solid #f0ece2;display:flex;gap:10px;align-items:flex-start">'
+          +'<div style="flex:0 0 50px;font-weight:800;font-size:13px;padding-top:1px;color:'+(hm?'var(--brand)':'var(--muted)')+'">'+(hm||'종일')+'</div>'
+          +'<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:var(--ink);white-space:pre-wrap">'+escp(e.content)+'</div>'
+          +'<div style="margin-top:3px"><span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;'+pillCss(e)+'">'+scopeLbl(e)+'</span></div></div></div>';
+      }).join('');
+      const now=new Date(), wd=PDOW[now.getDay()];
+      $('calPopTitle').textContent='오늘 일정 · '+(now.getMonth()+1)+'/'+now.getDate()+'('+wd+') · '+items.length+'건';
+      $('calPopModal').style.display='flex';
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  function closeCalPopup(){
+    try{ sessionStorage.setItem('cal_pop_'+pYmd(new Date()),'1'); }catch(_){}
+    $('calPopModal').style.display='none';
+  }
+
   // JWT exp(만료) 검사 — 6시간 지난 토큰이면 true. 디코드 실패 시 만료로 간주(안전).
   function tokenExpired(token){
     try{
@@ -374,7 +406,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkNoticePopup();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkNoticePopup();checkCalendarPopup();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -768,6 +800,18 @@
     <div id="noticePopList" style="max-height:60vh;overflow:auto"></div>
     <div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">
       <button id="noticePopOk" onclick="confirmNoticePopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
+    </div>
+  </div>
+</div>
+
+<div id="calPopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:208;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">📅 <span id="calPopTitle">오늘 일정</span></div>
+    </div>
+    <div id="calPopList" style="max-height:60vh;overflow:auto"></div>
+    <div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">
+      <button id="calPopOk" onclick="closeCalPopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
     </div>
   </div>
 </div>

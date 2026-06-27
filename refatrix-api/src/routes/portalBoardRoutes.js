@@ -21,9 +21,42 @@ async function loadTargets(noticeIds) {
   return { names, ids };
 }
 
+// scope='shared' 일정들의 공유 대상자 매핑 { names:{event_id:[name]}, ids:{event_id:[id]} }
+async function loadEventTargets(eventIds) {
+  if (!eventIds || !eventIds.length) return { names: {}, ids: {} };
+  const rows = (await query(
+    `SELECT ct.event_id, u.id, u.name
+       FROM calendar_event_targets ct JOIN users u ON u.id=ct.user_id
+      WHERE ct.event_id = ANY($1) ORDER BY u.name`, [eventIds])).rows;
+  const names = {}, ids = {};
+  for (const r of rows) {
+    (names[r.event_id] = names[r.event_id] || []).push(r.name);
+    (ids[r.event_id] = ids[r.event_id] || []).push(Number(r.id));
+  }
+  return { names, ids };
+}
+
+// 요청 본문에서 공유 대상 user_id 배열을 정제(중복/비정수 제거).
+function cleanTargetIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const set = new Set();
+  for (const v of raw) { const n = Number(v); if (Number.isInteger(n) && n > 0) set.add(n); }
+  return [...set];
+}
+
+// 일정의 공유 대상자 전체 교체(DELETE 후 INSERT). targetIds 비면 전부 제거.
+async function setEventTargets(eventId, targetIds) {
+  await query(`DELETE FROM calendar_event_targets WHERE event_id=$1`, [eventId]);
+  if (!targetIds.length) return;
+  const vals = targetIds.map((_, i) => `($1,$${i + 2})`).join(',');
+  await query(
+    `INSERT INTO calendar_event_targets (event_id, user_id) VALUES ${vals} ON CONFLICT DO NOTHING`,
+    [eventId, ...targetIds]);
+}
+
 export default async function portalBoardRoutes(app) {
   // =================== 일정 (Calendar) ===================
-  // 보이는 일정: 전사 + 내 팀(scope=team) + 내 개인(scope=personal, owner=me) + 내가 만든 것
+  // 보이는 일정: 회사전체(company) + 내가 지정 대상인/내가 만든 공유(shared) + 내 개인(personal) + (레거시) 내 팀(team) + 내가 만든 것
   app.get('/api/calendar', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     const from = String(req.query.from || '');
@@ -45,20 +78,28 @@ export default async function portalBoardRoutes(app) {
       const myTeams = vis.length ? vis : [-1];
       args.push(perm.userId); const meIdx = args.length;
       args.push(myTeams); const teamIdx = args.length;
-      conds.push(`(e.scope='company' OR (e.scope='team' AND e.team_id = ANY($${teamIdx})) OR (e.scope='personal' AND e.owner_id=$${meIdx}) OR e.created_by=$${meIdx})`);
+      conds.push(`(e.scope='company'
+        OR (e.scope='team' AND e.team_id = ANY($${teamIdx}))
+        OR (e.scope='personal' AND e.owner_id=$${meIdx})
+        OR (e.scope='shared' AND (e.created_by=$${meIdx} OR EXISTS (SELECT 1 FROM calendar_event_targets ct WHERE ct.event_id=e.id AND ct.user_id=$${meIdx})))
+        OR e.created_by=$${meIdx})`);
     }
     const rows = (await query(
-      `SELECT e.id, e.event_date, e.event_time, e.event_at, e.content, e.scope, e.team_id, e.owner_id,
+      `SELECT e.id, e.event_date, e.event_time, e.event_at, e.content, e.scope, e.team_id, e.owner_id, e.created_by,
               t.name AS team_name, u.name AS owner_name
          FROM calendar_events e
          LEFT JOIN sales_teams t ON t.id=e.team_id
          LEFT JOIN users u ON u.id=e.owner_id
         WHERE ${conds.join(' AND ')}
         ORDER BY COALESCE(e.event_at, e.event_date::timestamptz), e.event_time NULLS FIRST, e.id`, args)).rows;
+    const sharedIds = rows.filter((r) => r.scope === 'shared').map((r) => r.id);
+    const tmap = await loadEventTargets(sharedIds);
     return {
       items: rows.map((r) => ({
         id: r.id, date: d10(r.event_date), time: r.event_time || null, at: isoTs(r.event_at), content: r.content,
         scope: r.scope, team_id: r.team_id, team_name: r.team_name, owner_id: r.owner_id, owner_name: r.owner_name,
+        created_by: r.created_by != null ? Number(r.created_by) : null,
+        target_ids: tmap.ids[r.id] || [], target_names: tmap.names[r.id] || [],
       })),
     };
   });
@@ -66,16 +107,17 @@ export default async function portalBoardRoutes(app) {
   app.post('/api/calendar', { preHandler: [authGuard] }, async (req, reply) => {
     const perm = req.ctx.perm;
     const b = req.body || {};
-    const scope = ['company', 'team', 'personal'].includes(b.scope) ? b.scope : 'personal';
+    const scope = ['company', 'team', 'personal', 'shared'].includes(b.scope) ? b.scope : 'personal';
     if (!b.event_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.event_date))) return reply.code(400).send({ error: 'date_required' });
     if (!b.content || !String(b.content).trim()) return reply.code(400).send({ error: 'content_required' });
-    // 전사·팀 일정은 디렉터만
+    // 회사전체·팀 일정은 디렉터만. (개인별 지정 공유는 누구나 가능)
     if ((scope === 'company' || scope === 'team') && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
     const teamId = scope === 'team' ? (Number(b.team_id) || null) : null;
     if (scope === 'team' && !teamId) return reply.code(400).send({ error: 'team_required' });
     const ownerId = scope === 'personal' ? (Number(b.owner_id) || perm.userId) : null;
     // 개인 일정을 남에게 지정하는 건 디렉터만(본인 것은 누구나)
     if (scope === 'personal' && ownerId !== perm.userId && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const targetIds = scope === 'shared' ? cleanTargetIds(b.target_ids) : [];
     // 절대시각: 클라이언트가 입력자 위치(브라우저 시간대) 기준으로 계산해 보낸 ISO 순간.
     let eventAt = null;
     if (b.event_at) { const dd = new Date(b.event_at); if (!Number.isNaN(dd.getTime())) eventAt = dd.toISOString(); }
@@ -83,7 +125,8 @@ export default async function portalBoardRoutes(app) {
       `INSERT INTO calendar_events (event_date, event_time, event_at, content, scope, team_id, owner_id, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [b.event_date, b.event_time ? String(b.event_time).trim() : null, eventAt, String(b.content).trim(), scope, teamId, ownerId, perm.userId])).rows[0];
-    await logEvent({ userId: perm.userId, action: 'create', target: `calendar_event:${r.id}`, detail: { scope } });
+    if (scope === 'shared') await setEventTargets(r.id, targetIds);
+    await logEvent({ userId: perm.userId, action: 'create', target: `calendar_event:${r.id}`, detail: { scope, targets: targetIds.length } });
     return { id: r.id };
   });
 
@@ -106,7 +149,7 @@ export default async function portalBoardRoutes(app) {
     const cur = (await query(`SELECT created_by, scope FROM calendar_events WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!cur) return reply.code(404).send({ error: 'not_found' });
     if (perm.role !== 'director' && Number(cur.created_by) !== perm.userId) return reply.code(403).send({ error: 'forbidden' });
-    const scope = ['company', 'team', 'personal'].includes(b.scope) ? b.scope : cur.scope;
+    const scope = ['company', 'team', 'personal', 'shared'].includes(b.scope) ? b.scope : cur.scope;
     if (!b.event_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.event_date))) return reply.code(400).send({ error: 'date_required' });
     if (!b.content || !String(b.content).trim()) return reply.code(400).send({ error: 'content_required' });
     if ((scope === 'company' || scope === 'team') && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
@@ -114,12 +157,16 @@ export default async function portalBoardRoutes(app) {
     if (scope === 'team' && !teamId) return reply.code(400).send({ error: 'team_required' });
     const ownerId = scope === 'personal' ? (Number(b.owner_id) || perm.userId) : null;
     if (scope === 'personal' && ownerId !== perm.userId && perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const targetIds = scope === 'shared' ? cleanTargetIds(b.target_ids) : [];
     let eventAt = null;
     if (b.event_at) { const dd = new Date(b.event_at); if (!Number.isNaN(dd.getTime())) eventAt = dd.toISOString(); }
     await query(
       `UPDATE calendar_events SET event_date=$1, event_time=$2, event_at=$3, content=$4, scope=$5, team_id=$6, owner_id=$7 WHERE id=$8`,
       [b.event_date, b.event_time ? String(b.event_time).trim() : null, eventAt, String(b.content).trim(), scope, teamId, ownerId, id]);
-    await logEvent({ userId: perm.userId, action: 'update', target: `calendar_event:${id}`, detail: { scope } });
+    // scope=shared 이면 대상자 교체. 다른 scope 로 바뀌었으면 기존 대상 매핑 제거.
+    if (scope === 'shared') await setEventTargets(id, targetIds);
+    else await setEventTargets(id, []);
+    await logEvent({ userId: perm.userId, action: 'update', target: `calendar_event:${id}`, detail: { scope, targets: targetIds.length } });
     return { ok: true };
   });
 
