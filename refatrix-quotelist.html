@@ -351,12 +351,15 @@
   }
   function isExpiredRow(q){
     if(!q) return false;
+    if(q.packing_printed_at) return false;   // 📦 포장작업지시서 출력 = 시간과 무관하게 유효(만료 없음)
     if(q.status==='expired') return true;
     if(q.open){ const r=resvRemain(q); if(r!=null && r<=0) return true; }
     return false;
   }
   function resvBadge(q){
-    if(!q || !q.open) return '';
+    if(!q) return '';
+    if(q.packing_printed_at) return '<span class="resv" style="background:#e6f4ec;color:#2f6b54;border-color:#bfe3cd" title="포장작업지시서 출력됨 — 시간과 무관하게 유효(만료 없음)">📦 유효 고정</span>';
+    if(!q.open) return '';
     const r=resvRemain(q); if(r==null) return '';
     if(r<=0) return '<span class="resv gone" title="예약 24시간 경과 — 곧 만료 처리됩니다">⏳ 만료</span>';
     const h=Math.floor(r/3600000), m=Math.floor((r%3600000)/60000);
@@ -604,11 +607,11 @@
   function renderDetail(){
     const q=dtData.quote, lines=dtSortedLines();
     $('dtTitle').textContent='견적 '+(q.quote_no||'')+' · '+(stLblFull[q.status]||q.status);
-    const expd = (q.status==='expired') || ((q.status==='draft'||q.status==='confirmed') && q.reserve_expires_at && new Date(q.reserve_expires_at).getTime()<=Date.now());
+    const expd = !q.packing_printed_at && ((q.status==='expired') || ((q.status==='draft'||q.status==='confirmed') && q.reserve_expires_at && new Date(q.reserve_expires_at).getTime()<=Date.now()));
     const editable = (q.status==='draft' || q.status==='confirmed') && !expd;
     if(dtEdit){ renderEdit(); return; }
     // ── 사용자 친화 배치: 액션 버튼·요약을 상단으로, 라인표는 내부 스크롤 ──
-    const hint='<div class="hint" style="margin-bottom:10px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+((q.status==='draft'||q.status==='confirmed')&&q.reserve_expires_at?(' · '+(expd?'<span style="color:#9a3a3a;font-weight:700">⏳ 재고 예약 만료</span>':'<span style="color:#2f6b54;font-weight:700">⏳ 재고 예약 잔여 '+(function(){var r=new Date(q.reserve_expires_at).getTime()-Date.now();var h=Math.floor(r/3600000),m=Math.floor((r%3600000)/60000);return h>0?(h+'시간'+(m>0?(' '+m+'분'):'')):(m+'분');})()+'</span>')):'')+'</div>';
+    const hint='<div class="hint" style="margin-bottom:10px">고객 <b>'+esc(q.party_name||'')+'</b>'+(q.is_guest?' <span class="guest">불특정</span>':'')+' · 견적일 '+esc(q.quote_date||'')+(q.memo?(' · 메모: '+esc(q.memo)):'')+(q.packing_printed_at?(' · <span style="color:#2f6b54;font-weight:700">📦 포장작업지시서 출력 — 유효 고정(시간 무관)</span>'):((q.status==='draft'||q.status==='confirmed')&&q.reserve_expires_at?(' · '+(expd?'<span style="color:#9a3a3a;font-weight:700">⏳ 재고 예약 만료</span>':'<span style="color:#2f6b54;font-weight:700">⏳ 재고 예약 잔여 '+(function(){var r=new Date(q.reserve_expires_at).getTime()-Date.now();var h=Math.floor(r/3600000),m=Math.floor((r%3600000)/60000);return h>0?(h+'시간'+(m>0?(' '+m+'분'):'')):(m+'분');})()+'</span>')):''))+'</div>';
 
     // 액션 버튼 (상단)
     let actions='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
@@ -1023,8 +1026,13 @@
     if(!win){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
     win.document.open(); win.document.write(html); win.document.close();
     cvPrinted=true; updateCvGate();   // 출력 완료 → 스캔 업로드 단계 활성화
-    // 포장작업지시서 출력 → 단계 수주(50) 자동(베스트에포트)
-    if(cvId){ try{ fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}); }catch(_){} }
+    // 포장작업지시서 출력 → ① 단계 수주(50) ② 견적 유효 고정(24h 만료 영구 제외). 등록 확인 후 로컬 상태 갱신.
+    if(cvId){
+      try{
+        const pr=await fetch(session.api+'/api/quotes/'+cvId+'/packing-printed',{method:'POST',headers:auth()}).then(r=>r.json()).catch(()=>null);
+        if(pr&&pr.held){ if(qRowsById[cvId]) qRowsById[cvId].packing_printed_at=new Date().toISOString(); }
+      }catch(_){}
+    }
   }
   async function doConvert(){
     const m=$('cvMsg');m.className='msg';
