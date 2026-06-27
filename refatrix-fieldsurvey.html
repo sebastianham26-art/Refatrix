@@ -60,6 +60,9 @@
   .geogate .gbtn:disabled{opacity:.5}
   .geogate .gerr{font-size:12px;color:#c0564f;margin-top:10px;min-height:16px}
   .geogate .gok{font-size:12px;color:#2c6a4b;margin-top:10px;font-weight:700}
+  .geogate .gnotice{text-align:left;background:#f7f6f3;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px;font-size:12.5px;color:#4a4845;line-height:1.7}
+  .geogate .gchk{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:#3a3833;text-align:left;margin-top:12px;cursor:pointer;line-height:1.5}
+  .geogate .gchk input{margin-top:2px;width:17px;height:17px;flex-shrink:0;accent-color:var(--green)}
   .resume{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 12px;margin-top:8px}
   .resume .r{display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
   .resume .r:last-child{border-bottom:0}
@@ -159,9 +162,15 @@
     <!-- 위치 승인 게이트 — 승인 전엔 조사 불가 -->
     <section id="geoGate" class="geogate hidden">
       <div class="gicon">📍</div>
-      <div class="gtitle">위치 정보 승인이 필요합니다</div>
-      <div class="gtext">현장재고조사는 방문 위치 확인을 위해 위치 정보 접근 권한이 필요합니다.<br>브라우저의 위치 권한을 <b>허용</b>해 주세요.</div>
-      <button class="gbtn" id="geoRetry">위치 권한 허용</button>
+      <div class="gtitle">위치 정보 공유 동의</div>
+      <div class="gnotice">
+        <b>현장재고조사</b>는 방문한 고객 현장의 <b>위치를 기록</b>합니다.<br>
+        아래 동의 후 <b>「위치 공유에 동의하고 시작」</b>을 누르면 브라우저가 위치 권한을 요청하며,
+        허용 시 현재 위치(좌표)가 이 조사에 함께 저장됩니다.<br>
+        수집한 위치는 <b>현장 방문 확인 용도로만</b> 사용됩니다.
+      </div>
+      <label class="gchk"><input type="checkbox" id="geoAgree"> 위 내용을 확인했으며 위치 정보 공유에 동의합니다.</label>
+      <button class="gbtn" id="geoConsent" disabled>위치 공유에 동의하고 시작</button>
       <div class="gerr" id="geoErr"></div>
     </section>
 
@@ -276,18 +285,22 @@
     ensureGeo();
   }
 
-  // ── 위치 승인 게이트 (승인 전엔 조사 불가) ──
+  // ── 위치 공유 동의 게이트 (동의·승인 전엔 조사 불가) ──
   function hideAllSections(){ ['start','entry','summary'].forEach(id=>$(id).classList.add('hidden')); }
   function ensureGeo(){
     if(state.geo){ enterApp(); return; }
-    hideAllSections(); $('geoGate').classList.remove('hidden'); requestGeo();
+    hideAllSections(); $('geoGate').classList.remove('hidden');
+    // 동의 안내문 단계 — 사용자가 체크 후 버튼을 눌러야 위치 요청(브라우저 팝업) 진행
+    $('geoErr').textContent=''; $('geoAgree').checked=false;
+    const b=$('geoConsent'); b.disabled=true; b.textContent='위치 공유에 동의하고 시작';
   }
   function requestGeo(){
-    const btn=$('geoRetry'), err=$('geoErr');
+    const btn=$('geoConsent'), err=$('geoErr');
+    if(!$('geoAgree').checked){ err.textContent='먼저 위치 정보 공유에 동의해 주세요.'; return; }
     if(!('geolocation' in navigator)){ err.textContent='이 기기/브라우저는 위치 정보를 지원하지 않습니다.'; return; }
     btn.disabled=true; btn.textContent='위치 확인 중…'; err.textContent='';
     navigator.geolocation.getCurrentPosition(
-      pos=>{ state.geo={lat:pos.coords.latitude,lng:pos.coords.longitude,at:Date.now()}; btn.disabled=false; btn.textContent='위치 권한 허용'; enterApp(); },
+      pos=>{ state.geo={lat:pos.coords.latitude,lng:pos.coords.longitude,at:Date.now()}; btn.disabled=false; btn.textContent='위치 공유에 동의하고 시작'; enterApp(); },
       e=>{ btn.disabled=false; btn.textContent='다시 시도';
            err.textContent=(e&&e.code===1)?'위치 권한이 거부되었습니다. 브라우저 설정에서 이 사이트의 위치 권한을 허용한 뒤 다시 시도하세요.':'위치를 가져오지 못했습니다. 신호가 잡히는 곳에서 다시 시도하세요.'; },
       { enableHighAccuracy:true, timeout:12000, maximumAge:60000 });
@@ -502,7 +515,8 @@
   // ── 이벤트 ──
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
-  $('geoRetry').addEventListener('click',requestGeo);
+  $('geoAgree').addEventListener('change',()=>{ $('geoConsent').disabled=!$('geoAgree').checked; if($('geoAgree').checked)$('geoErr').textContent=''; });
+  $('geoConsent').addEventListener('click',requestGeo);
   $('custSel').addEventListener('change',onCustChange);
   $('guestName').addEventListener('input',refreshStartBtn);
   $('startBtn').addEventListener('click',startSurvey);
