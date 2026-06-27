@@ -10,8 +10,12 @@
 -- 조사 헤더 (고객 × 방문 단위) ----------------------------------------
 CREATE TABLE IF NOT EXISTS field_surveys (
   id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  customer_id   BIGINT REFERENCES customers(id),
-  customer_name TEXT,                                  -- 고객명 스냅샷
+  customer_id   BIGINT REFERENCES customers(id),       -- 등록 고객(미등록이면 NULL)
+  customer_name TEXT,                                  -- 고객명 스냅샷(등록=고객명 / 미등록=직접입력 이름)
+  discount_rate NUMERIC(6,3),                          -- 미등록 고객 할인율(%). 등록 고객은 NULL(고객 등록 할인율 사용)
+  geo_lat       NUMERIC(9,6),                          -- 조사 위치(필수 승인). 위도
+  geo_lng       NUMERIC(9,6),                          -- 경도
+  geo_at        TIMESTAMPTZ,                           -- 위치 취득 시각
   survey_date   DATE NOT NULL DEFAULT CURRENT_DATE,
   status        TEXT NOT NULL DEFAULT 'open'
                 CHECK (status IN ('open','completed','quoted','cancelled')),

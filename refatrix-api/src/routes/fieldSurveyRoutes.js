@@ -76,7 +76,9 @@ export default async function fieldSurveyRoutes(app) {
   function surveyRow(s, creatorName) {
     return {
       id: Number(s.id), customer_id: s.customer_id != null ? Number(s.customer_id) : null,
-      customer_name: s.customer_name, survey_date: s.survey_date, status: s.status,
+      customer_name: s.customer_name, discount_rate: s.discount_rate != null ? Number(s.discount_rate) : null,
+      survey_date: s.survey_date, status: s.status,
+      geo_lat: s.geo_lat != null ? Number(s.geo_lat) : null, geo_lng: s.geo_lng != null ? Number(s.geo_lng) : null,
       quote_id: s.quote_id != null ? Number(s.quote_id) : null, dev_req_count: nint(s.dev_req_count),
       created_by: Number(s.created_by), creator_name: creatorName || '',
       completed_at: s.completed_at,
@@ -135,22 +137,34 @@ export default async function fieldSurveyRoutes(app) {
   });
 
   // ── 조사 생성(고객 특정) ──
+  //  · 등록 고객: { customer_id }
+  //  · 미등록 고객: { guest_name, discount_rate }  (견적화면 불특정 고객과 동일 포맷)
+  //  · 위치 승인 필수: { geo_lat, geo_lng } 없으면 거부
   app.post('/api/field-surveys', { preHandler: [authGuard] }, async (req, reply) => {
     const b = req.body || {};
+    const lat = (b.geo_lat != null && b.geo_lat !== '') ? Number(b.geo_lat) : null;
+    const lng = (b.geo_lng != null && b.geo_lng !== '') ? Number(b.geo_lng) : null;
+    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return reply.code(400).send({ error: 'location_required' });
+    }
     const custId = b.customer_id ? Number(b.customer_id) : null;
-    let custName = String(b.customer_name || '').trim() || null;
+    let custName = null, disc = null;
     if (custId) {
       const c = (await query(`SELECT name FROM customers WHERE id = $1 AND deleted_at IS NULL`, [custId])).rows[0];
       if (!c) return reply.code(404).send({ error: 'customer_not_found' });
-      custName = c.name;
+      custName = c.name;                                   // 등록 고객: 할인율은 고객 등록값 사용(NULL 저장)
+    } else {
+      custName = String(b.guest_name || b.customer_name || '').trim() || null;
+      if (!custName) return reply.code(400).send({ error: 'customer_required' });
+      if (b.discount_rate == null || b.discount_rate === '') return reply.code(400).send({ error: 'discount_required' });
+      disc = Number(b.discount_rate) || 0;                 // 미등록 고객: 입력 할인율 보관(견적 전환 시 사용)
     }
-    if (!custId && !custName) return reply.code(400).send({ error: 'customer_required' });
     const r = (await query(
-      `INSERT INTO field_surveys (customer_id, customer_name, survey_date, created_by)
-       VALUES ($1,$2,COALESCE($3,CURRENT_DATE),$4) RETURNING id, survey_date`,
-      [custId, custName, b.survey_date || null, req.ctx.perm.userId])).rows[0];
+      `INSERT INTO field_surveys (customer_id, customer_name, discount_rate, geo_lat, geo_lng, geo_at, survey_date, created_by)
+       VALUES ($1,$2,$3,$4,$5,now(),COALESCE($6,CURRENT_DATE),$7) RETURNING id, survey_date`,
+      [custId, custName, disc, lat, lng, b.survey_date || null, req.ctx.perm.userId])).rows[0];
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `field_survey:${r.id}` });
-    return { id: Number(r.id), customer_id: custId, customer_name: custName, survey_date: r.survey_date };
+    return { id: Number(r.id), customer_id: custId, customer_name: custName, discount_rate: disc, survey_date: r.survey_date };
   });
 
   // ── 조사 + 줄 조회(정리 화면 / 이어쓰기) ──
@@ -272,13 +286,16 @@ export default async function fieldSurveyRoutes(app) {
   });
 
   // ── 견적 전환 기록(프런트가 /api/quotes 생성 후 호출) ──
+  //  · 미등록 고객 견적 전환 시 자동 등록된 customer_id 를 받아 조사에도 backfill
   app.post('/api/field-surveys/:id/mark-quoted', { preHandler: [authGuard] }, async (req, reply) => {
     const { survey, err } = await loadSurvey(req.params.id, req.ctx.perm);
     if (err) return reply.code(err === 'forbidden' ? 403 : 404).send({ error: err });
     const qid = req.body && req.body.quote_id ? Number(req.body.quote_id) : null;
+    const newCust = (req.body && req.body.customer_id) ? Number(req.body.customer_id) : null;
+    const custId = survey.customer_id != null ? Number(survey.customer_id) : newCust;  // 기존 null 이면 backfill
     await query(
-      `UPDATE field_surveys SET status = 'quoted', quote_id = $1, updated_by = $2, updated_at = now() WHERE id = $3`,
-      [qid, req.ctx.perm.userId, survey.id]);
+      `UPDATE field_surveys SET status = 'quoted', quote_id = $1, customer_id = $2, updated_by = $3, updated_at = now() WHERE id = $4`,
+      [qid, custId, req.ctx.perm.userId, survey.id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `field_survey:${survey.id}`, detail: { quoted: qid } });
     return { ok: true };
   });

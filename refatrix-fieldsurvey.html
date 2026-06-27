@@ -43,6 +43,23 @@
   .chosen .x{margin-left:auto;color:var(--mut);cursor:pointer;font-weight:800}
   .startBtn{width:100%;border:0;background:var(--brass);color:#fff;font-weight:800;font-size:15px;border-radius:12px;padding:14px;margin-top:12px;cursor:pointer}
   .startBtn:disabled{opacity:.45}
+  /* customer picker (견적 포맷) */
+  .fsel{width:100%;font-size:15px;padding:13px;border:2px solid var(--green);border-radius:12px;background:#fff;font-weight:700;color:var(--ink)}
+  .flbl{font-size:12px;color:var(--mut);font-weight:700;display:block;margin:12px 4px 4px}
+  .finput{width:100%;font-size:15px;padding:12px;border:1.5px solid var(--line);border-radius:11px}
+  .discRow{display:flex;gap:10px;align-items:flex-end}
+  .discRow .col{flex:1}
+  .discRow input{width:100%;font-size:15px;padding:12px;border:1.5px solid var(--line);border-radius:11px}
+  .discRow input[readonly]{background:#faf8f3;color:#6a675f}
+  /* geo gate */
+  .geogate{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px 20px;margin:24px auto;max-width:420px;text-align:center}
+  .geogate .gicon{font-size:40px}
+  .geogate .gtitle{font-size:17px;font-weight:800;color:var(--green);margin:10px 0 6px}
+  .geogate .gtext{font-size:13px;color:var(--mut);line-height:1.6}
+  .geogate .gbtn{width:100%;border:0;background:var(--green);color:#fff;font-weight:800;font-size:15px;border-radius:12px;padding:14px;margin-top:16px;cursor:pointer}
+  .geogate .gbtn:disabled{opacity:.5}
+  .geogate .gerr{font-size:12px;color:#c0564f;margin-top:10px;min-height:16px}
+  .geogate .gok{font-size:12px;color:#2c6a4b;margin-top:10px;font-weight:700}
   .resume{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 12px;margin-top:8px}
   .resume .r{display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
   .resume .r:last-child{border-bottom:0}
@@ -139,14 +156,30 @@
   </div>
 
   <div id="app" class="wrap hidden">
+    <!-- 위치 승인 게이트 — 승인 전엔 조사 불가 -->
+    <section id="geoGate" class="geogate hidden">
+      <div class="gicon">📍</div>
+      <div class="gtitle">위치 정보 승인이 필요합니다</div>
+      <div class="gtext">현장재고조사는 방문 위치 확인을 위해 위치 정보 접근 권한이 필요합니다.<br>브라우저의 위치 권한을 <b>허용</b>해 주세요.</div>
+      <button class="gbtn" id="geoRetry">위치 권한 허용</button>
+      <div class="gerr" id="geoErr"></div>
+    </section>
+
     <!-- ① 시작: 고객 특정 / 이어쓰기 -->
-    <section id="start">
+    <section id="start" class="hidden">
       <div class="sect-h">고객 특정</div>
-      <div class="pick">
-        <input id="custInput" placeholder="고객명 또는 코드 검색…" autocomplete="off">
-        <div id="custSugg" class="sugg hidden"></div>
+      <select id="custSel" class="fsel">
+        <option value="">— 고객 선택 —</option>
+        <option value="__guest__">★ 미등록 고객 (직접 입력)</option>
+      </select>
+      <div id="guestWrap" class="hidden">
+        <label class="flbl">고객명 (견적·오퍼에 표시)</label>
+        <input id="guestName" class="finput" placeholder="예: Taller López" autocomplete="off">
       </div>
-      <div id="chosenBox"></div>
+      <div class="discRow">
+        <div class="col"><label class="flbl">할인율 (%)</label><input id="discInput" inputmode="decimal" placeholder="0" readonly></div>
+      </div>
+      <div class="hint" id="custHint">고객을 선택하면 등록 할인율이 적용됩니다. 미등록 고객은 이름과 할인율을 직접 입력합니다.</div>
       <button class="startBtn" id="startBtn" disabled>새 조사 시작</button>
 
       <div class="sect-h" id="resumeH" style="display:none">진행중 조사 이어쓰기</div>
@@ -240,8 +273,32 @@
   function afterLogin(){
     $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>'+esc(session.user&&session.user.role||'');
     $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
-    showStart(); loadOpenSurveys();
+    ensureGeo();
   }
+
+  // ── 위치 승인 게이트 (승인 전엔 조사 불가) ──
+  function hideAllSections(){ ['start','entry','summary'].forEach(id=>$(id).classList.add('hidden')); }
+  function ensureGeo(){
+    if(state.geo){ enterApp(); return; }
+    hideAllSections(); $('geoGate').classList.remove('hidden'); requestGeo();
+  }
+  function requestGeo(){
+    const btn=$('geoRetry'), err=$('geoErr');
+    if(!('geolocation' in navigator)){ err.textContent='이 기기/브라우저는 위치 정보를 지원하지 않습니다.'; return; }
+    btn.disabled=true; btn.textContent='위치 확인 중…'; err.textContent='';
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ state.geo={lat:pos.coords.latitude,lng:pos.coords.longitude,at:Date.now()}; btn.disabled=false; btn.textContent='위치 권한 허용'; enterApp(); },
+      e=>{ btn.disabled=false; btn.textContent='다시 시도';
+           err.textContent=(e&&e.code===1)?'위치 권한이 거부되었습니다. 브라우저 설정에서 이 사이트의 위치 권한을 허용한 뒤 다시 시도하세요.':'위치를 가져오지 못했습니다. 신호가 잡히는 곳에서 다시 시도하세요.'; },
+      { enableHighAccuracy:true, timeout:12000, maximumAge:60000 });
+  }
+  function freshGeo(){
+    return new Promise(res=>{ if(!('geolocation' in navigator)){ res(state.geo); return; }
+      navigator.geolocation.getCurrentPosition(
+        pos=>{ state.geo={lat:pos.coords.latitude,lng:pos.coords.longitude,at:Date.now()}; res(state.geo); },
+        ()=>res(state.geo), { enableHighAccuracy:true, timeout:8000, maximumAge:30000 }); });
+  }
+  function enterApp(){ $('geoGate').classList.add('hidden'); showStart(); loadCustomers(); loadOpenSurveys(); }
 
   // ── 화면 전환 ──
   function showStart(){ $('start').classList.remove('hidden'); $('entry').classList.add('hidden'); $('summary').classList.add('hidden'); }
@@ -250,26 +307,29 @@
     renderLive(); setTimeout(()=>$('codeIn').focus(),50); }
   function showSummary(){ $('start').classList.add('hidden'); $('entry').classList.add('hidden'); $('summary').classList.remove('hidden'); renderSummary(); }
 
-  // ── 고객 검색 ──
-  let custT=null;
-  async function searchCust(){
-    const q=$('custInput').value.trim();
-    clearTimeout(custT);
-    custT=setTimeout(async()=>{
-      try{ const d=await api('/api/field-surveys/customer-options?q='+encodeURIComponent(q),{headers:auth()});
-        const box=$('custSugg');
-        if(!d.items.length){ box.innerHTML='<div class="cc" style="cursor:default;color:#9b988f">검색 결과 없음</div>'; box.classList.remove('hidden'); return; }
-        box.innerHTML=d.items.map(c=>'<div data-id="'+c.id+'" data-name="'+esc(c.name)+'">'+esc(c.name)+' <span class="cc">'+esc(c.code||'')+'</span></div>').join('');
-        box.classList.remove('hidden');
-        box.querySelectorAll('div[data-id]').forEach(el=>el.addEventListener('click',()=>{
-          state.customer={id:Number(el.dataset.id),name:el.dataset.name};
-          box.classList.add('hidden'); $('custInput').value='';
-          $('chosenBox').innerHTML='<div class="chosen">🏢 '+esc(state.customer.name)+'<span class="x" id="clearCust">✕</span></div>';
-          $('clearCust').addEventListener('click',()=>{ state.customer=null; $('chosenBox').innerHTML=''; $('startBtn').disabled=true; });
-          $('startBtn').disabled=false;
-        }));
-      }catch(e){}
-    },220);
+  // ── 고객 선택(견적 포맷: 등록 select + 미등록 직접입력 + 할인율) ──
+  async function loadCustomers(){
+    try{ const d=await api('/api/field-surveys/customer-options',{headers:auth()});
+      $('custSel').innerHTML='<option value="">— 고객 선택 —</option><option value="__guest__">★ 미등록 고객 (직접 입력)</option>'
+        + d.items.map(c=>'<option value="'+c.id+'" data-disc="'+(c.discount||0)+'" data-name="'+esc(c.name)+'">'+esc(c.name)+(c.code?' ('+esc(c.code)+')':'')+'</option>').join('');
+    }catch(e){}
+  }
+  function onCustChange(){
+    const sel=$('custSel'), v=sel.value, opt=sel.selectedOptions[0]||{}, disc=$('discInput');
+    const guest=(v==='__guest__');
+    $('guestWrap').classList.toggle('hidden',!guest);
+    if(guest){ disc.readOnly=false; if(disc.value==='') disc.value='0';
+      $('custHint').textContent='미등록 고객 — 고객명과 할인율을 직접 입력하세요. (견적 발송 시 자동으로 고객 등록됩니다)'; state.customer=null;
+    } else if(v){ disc.readOnly=true; disc.value=(opt.dataset&&opt.dataset.disc)||'0';
+      $('custHint').textContent='할인율 '+disc.value+'% 가 견적에 적용됩니다.'; state.customer={id:Number(v),name:(opt.dataset&&opt.dataset.name)||opt.text};
+    } else { disc.readOnly=true; disc.value='';
+      $('custHint').textContent='고객을 선택하면 등록 할인율이 적용됩니다. 미등록 고객은 이름과 할인율을 직접 입력합니다.'; state.customer=null; }
+    refreshStartBtn();
+  }
+  function refreshStartBtn(){
+    const v=$('custSel').value; let ok=false;
+    if(v==='__guest__') ok=$('guestName').value.trim().length>0; else if(v) ok=true;
+    $('startBtn').disabled=!ok;
   }
 
   // ── 진행중 조사 ──
@@ -289,12 +349,21 @@
 
   // ── 조사 시작 ──
   async function startSurvey(){
-    if(!state.customer) return;
-    $('startBtn').disabled=true;
-    try{ const d=await api('/api/field-surveys',{method:'POST',headers:jhead(),body:JSON.stringify({customer_id:state.customer.id})});
-      state.survey={id:d.id,customer_id:d.customer_id,customer_name:d.customer_name,survey_date:d.survey_date,status:'open'};
+    const v=$('custSel').value; if(!v) return;
+    if(!state.geo){ ensureGeo(); return; }
+    $('startBtn').disabled=true; $('startBtn').textContent='시작 중…';
+    await freshGeo();
+    const body={ geo_lat:state.geo.lat, geo_lng:state.geo.lng };
+    if(v==='__guest__'){
+      const gn=$('guestName').value.trim();
+      if(!gn){ toast('고객명을 입력하세요'); $('startBtn').disabled=false; $('startBtn').textContent='새 조사 시작'; return; }
+      body.guest_name=gn; body.discount_rate=Number($('discInput').value)||0;
+    } else { body.customer_id=Number(v); }
+    try{ const d=await api('/api/field-surveys',{method:'POST',headers:jhead(),body:JSON.stringify(body)});
+      state.survey={id:d.id,customer_id:d.customer_id,customer_name:d.customer_name,discount_rate:d.discount_rate,survey_date:d.survey_date,status:'open'};
       state.lines=[]; state.summary=null; stampSave(); showEntry();
-    }catch(e){ toast('조사 생성 실패'); $('startBtn').disabled=false; }
+    }catch(e){ toast(e.message==='location_required'?'위치 승인이 필요합니다': e.message==='discount_required'?'할인율을 입력하세요':'조사 생성 실패'); }
+    finally{ $('startBtn').disabled=false; $('startBtn').textContent='새 조사 시작'; }
   }
 
   // ── 코드 추가(자동저장) ──
@@ -383,12 +452,16 @@
   async function sendToQuote(){
     const s=state.summary; const matched=s.imm.concat(s.short).filter(l=>l.product_id);
     if(!matched.length){ toast('견적에 담을 매칭 제품이 없습니다'); return; }
-    if(!state.survey.customer_id){ toast('견적 발송은 등록 고객만 가능합니다'); return; }
     $('btnQuote').disabled=true; $('btnQuote').innerHTML='<span class="spin"></span> 생성 중…';
     try{
       const lines=matched.map(l=>({product_id:l.product_id, qty:Number(l.observed_qty)||1}));
-      const q=await api('/api/quotes',{method:'POST',headers:jhead(),body:JSON.stringify({customer_id:state.survey.customer_id, lines, memo:'현장재고조사 전환'})});
-      try{ await api('/api/field-surveys/'+state.survey.id+'/mark-quoted',{method:'POST',headers:jhead(),body:JSON.stringify({quote_id:q.id})}); }catch(e){}
+      const body = state.survey.customer_id
+        ? { customer_id:state.survey.customer_id, lines, memo:'현장재고조사 전환' }
+        : { guest_name:state.survey.customer_name, discount_rate:(state.survey.discount_rate==null?0:state.survey.discount_rate), lines, memo:'현장재고조사 전환' };
+      const q=await api('/api/quotes',{method:'POST',headers:jhead(),body:JSON.stringify(body)});
+      const newCid=(q.auto_customer&&q.auto_customer.id)||q.customer_id||null;
+      try{ await api('/api/field-surveys/'+state.survey.id+'/mark-quoted',{method:'POST',headers:jhead(),body:JSON.stringify({quote_id:q.id, customer_id:newCid})}); }catch(e){}
+      if(newCid) state.survey.customer_id=newCid;
       toast('견적 '+ (q.quote_no||'') +' 생성됨 ('+matched.length+'개 품목)');
       setTimeout(()=>{ if(confirm('견적 '+(q.quote_no||'')+' 이(가) 생성되었습니다.\n견적 목록 화면으로 이동할까요?')) location.href='refatrix-quotelist.html'; },300);
     }catch(e){ toast('견적 생성 실패: '+e.message); }
@@ -429,7 +502,9 @@
   // ── 이벤트 ──
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
-  $('custInput').addEventListener('input',searchCust);
+  $('geoRetry').addEventListener('click',requestGeo);
+  $('custSel').addEventListener('change',onCustChange);
+  $('guestName').addEventListener('input',refreshStartBtn);
   $('startBtn').addEventListener('click',startSurvey);
   $('backToStart').addEventListener('click',()=>{ showStart(); loadOpenSurveys(); });
   $('addBtn').addEventListener('click',addCode);
@@ -438,7 +513,8 @@
   $('btnQuote').addEventListener('click',sendToQuote);
   $('btnXls').addEventListener('click',downloadExcel);
   $('btnReopen').addEventListener('click',()=>{ state.lines=state.summary?state.summary.imm.concat(state.summary.short,state.summary.dev).slice().reverse():state.lines; showEntry(); });
-  $('btnNew').addEventListener('click',()=>{ state.survey=null; state.lines=[]; state.summary=null; state.customer=null; $('chosenBox').innerHTML=''; $('startBtn').disabled=true; showStart(); loadOpenSurveys(); });
+  $('btnNew').addEventListener('click',()=>{ state.survey=null; state.lines=[]; state.summary=null; state.customer=null;
+    $('custSel').value=''; onCustChange(); $('guestName').value=''; $('discInput').value=''; showStart(); loadCustomers(); loadOpenSurveys(); });
 
   // 자동 로그인(포털 세션)
   (function(){ const ps=portalSession(); if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||$('api').value}; afterLogin(); } })();

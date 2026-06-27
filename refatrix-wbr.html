@@ -66,34 +66,6 @@
   .wflabel{font-size:9.5px;font-weight:700;color:var(--brand);position:absolute;top:-15px;width:52px;text-align:center;left:50%;transform:translateX(-50%)}
   .wffoot{display:flex;gap:10px;margin-top:6px;padding:0 6px}
   .wffoot .wff{flex:1;text-align:center;font-size:10.5px;color:var(--muted)}
-  /* 수주 단계 SLA — 병목 신호 다이어그램(세로 레인) */
-  .slaflow{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
-  .slalane{flex:1;min-width:215px;border-radius:12px;border:1px solid var(--line);overflow:hidden;display:flex;flex-direction:column;background:#fff}
-  .slalane .ln-head{padding:13px 14px 11px}
-  .ln-title{font-size:15.5px;font-weight:800;color:var(--brand);display:flex;align-items:center;justify-content:space-between;gap:8px}
-  .ln-grade{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.75);border:1px solid currentColor;white-space:nowrap}
-  .ln-n{font-size:29px;font-weight:800;line-height:1.05;margin-top:4px;color:var(--brand)}
-  .ln-n span{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px}
-  .ln-amt{font-size:13px;font-weight:800;margin-top:1px}
-  .ln-metrics{font-size:12px;font-weight:700;margin-top:3px;color:var(--ink)}
-  .ln-sep{color:#c2c0ba;margin:0 5px}
-  .ln-def{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.35;border-top:1px dashed rgba(0,0,0,.08);padding-top:6px}
-  .ln-list{border-top:1px solid var(--line);background:#fff;flex:1}
-  .ln-empty{padding:9px 13px;font-size:11.5px;color:var(--muted)}
-  .slaarrow{display:flex;align-items:center;align-self:center;color:var(--brand-soft);font-size:20px;font-weight:800;flex:0 0 auto}
-  /* 병목 신호 음영색 */
-  .g-good .ln-head{background:var(--income-bg)} .g-good{border-color:#cfe4db} .g-good .ln-title,.g-good .ln-grade,.g-good .ln-amt,.g-good .ln-rate{color:var(--income)}
-  .g-warn .ln-head{background:#FBF4E6} .g-warn{border-color:#ecdcb8} .g-warn .ln-title,.g-warn .ln-grade,.g-warn .ln-amt,.g-warn .ln-rate{color:var(--gold)}
-  .g-bad  .ln-head{background:var(--expense-bg)} .g-bad{border-color:#e2b7af} .g-bad .ln-title,.g-bad .ln-grade,.g-bad .ln-amt,.g-bad .ln-rate{color:var(--expense)}
-  .g-na   .ln-head{background:#F5F3EE} .g-na .ln-grade{color:var(--muted)}
-  .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
-  .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:5px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap}
-  .sltab td{text-align:right;padding:5px 10px;border-top:1px solid #f0ece2;white-space:nowrap}
-  .sltab td.cust{white-space:normal;word-break:break-word;font-weight:600;color:var(--ink)}
-  .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}
-  .sltab .ln-emptyrow td{color:var(--muted)}
-  @media(max-width:760px){.slaarrow{display:none}.slalane{min-width:100%}}
-  @media print{.slaflow{break-inside:avoid}.slaarrow{font-size:14px}.slalane{break-inside:avoid}}
   .wffoot .wff b{display:block;color:var(--brand);font-size:11px}
   .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:12px;align-items:center}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
@@ -397,57 +369,29 @@
   function renderStageSla(sla){
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     const order=['order','packing','sat','collect'];
-    const shortLbl={order:'오더확정',packing:'포장단계',sat:'인보이스(SAT)',collect:'정시수금'};
+    const rateColor=(r)=> r==null?'var(--ink-soft,#888)' : (r>=90?'#1f8a4c' : (r>=70?'#b4801f' : '#b4401f'));
     const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
-    const defOf=(s)=>{ const m=String(s.label||'').match(/\(([^)]*)\)/); return m?m[1]:''; };
-    // 친절한 서술형 단계 정의(기한 기준)
-    const defMap={
-      order:'견적부터 포장작업 개시까지 48h',
-      packing:'포장작업부터 포장완료까지 6h',
-      sat:'포장완료부터 SAT 인보이스 발행까지 3h',
-      collect:'외상 만기일 이내 완전 수금',
-    };
-    // 병목 신호 등급(준수율 기준): n=0 → 중립
-    const grade=(s)=>{ const n=Number(s.n||0); if(!n||s.rate==null) return 'na'; if(s.rate>=90) return 'good'; if(s.rate>=70) return 'warn'; return 'bad'; };
-    const gLabel={good:'양호',warn:'주의',bad:'⚠ 병목',na:'데이터 없음'};
-    // 리드 열 단위 축약(표 폭 절약): 시간→h, 업무시간→업무h, 지연일→일
-    const shortUnit=(u)=> u==='시간'?'h' : u==='업무시간'?'업무h' : u==='지연일'?'일' : (u?(' '+u):'');
-
-    let h='<div class="slaflow">';
-    order.forEach((k,i)=>{
-      const s=sla[k]||{}; const n=Number(s.n||0); const g=grade(s);
+    let h='<table class="slatab" style="width:100%;border-collapse:collapse;font-size:13px">'
+      +'<thead><tr style="text-align:left;color:#777"><th style="padding:6px 8px">단계</th>'
+      +'<th style="padding:6px 8px;text-align:right">대상</th><th style="padding:6px 8px;text-align:right">매출액</th>'
+      +'<th style="padding:6px 8px;text-align:right">준수</th>'
+      +'<th style="padding:6px 8px;text-align:right">준수율</th><th style="padding:6px 8px;text-align:right">평균</th></tr></thead><tbody>';
+    let totAmt=0;
+    for(const k of order){
+      const s=sla[k]||{}; const n=Number(s.n||0);
       const rate=(s.rate==null)?'—':(s.rate+'%');
       const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
-      const items=Array.isArray(s.items)?s.items:[];
-      let lane='<div class="slalane g-'+g+'">'
-        +'<div class="ln-head">'
-          +'<div class="ln-title">'+esc(shortLbl[k]||k)+'<span class="ln-grade">'+gLabel[g]+'</span></div>'
-          +'<div class="ln-n">'+n+'<span>건</span></div>'
-          +'<div class="ln-amt">'+(n?mxn(s.amount):'—')+'</div>'
-          +'<div class="ln-metrics"><span class="ln-rate">준수 '+rate+'</span><span class="ln-sep">·</span><span class="ln-avg">평균 '+avg+'</span></div>'
-          +'<div class="ln-def">'+esc(defMap[k]||defOf(s))+'</div>'
-        +'</div>'
-        +'<div class="ln-list">';
-      lane+='<table class="sltab"><thead><tr><th style="text-align:left">고객</th><th>금액</th><th>리드</th><th>준수</th></tr></thead><tbody>';
-      if(!items.length){
-        lane+='<tr class="ln-emptyrow"><td class="cust" style="text-align:left">해당 없음</td><td>—</td><td>—</td><td>—</td></tr>';
-      }else{
-        items.forEach(it=>{
-          lane+='<tr>'
-            +'<td class="cust" style="text-align:left">'+esc(it.customer||'-')+'</td>'
-            +'<td>'+mxn(it.amount)+'</td>'
-            +'<td>'+(it.lead!=null?(it.lead+shortUnit(s.unit)):'—')+'</td>'
-            +'<td>'+(it.ok?'<span class="slok">✔</span>':'<span class="slno">✘</span>')+'</td>'
-            +'</tr>';
-        });
-      }
-      lane+='</tbody></table>';
-      lane+='</div></div>';
-      h+=lane;
-      if(i<order.length-1) h+='<div class="slaarrow">▶</div>';
-    });
-    h+='</div>';
-    h+='<div class="hint" style="margin-top:8px">음영색 = 단계별 준수율 신호 (<b style="color:var(--income)">초록 양호</b> · <b style="color:var(--gold)">노랑 주의</b> · <b style="color:var(--expense)">빨강 병목</b> · 회색 데이터없음) — 색이 진한(빨강) 단계가 병목입니다. 큰 숫자 = 도달 건수 · 금액 = 그 건들의 합(IVA 포함, 단계 중복 가능) · 평균 = 단계 소요(정시수금은 지연일).</div>';
+      totAmt+=Number(s.amount||0);
+      h+='<tr style="border-top:1px solid #eee">'
+        +'<td style="padding:6px 8px">'+esc(s.label||k)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+n+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+(n?mxn(s.amount):'—')+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+Number(s.met||0)+'</td>'
+        +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+rateColor(s.rate)+'">'+rate+'</td>'
+        +'<td style="padding:6px 8px;text-align:right">'+avg+'</td></tr>';
+    }
+    h+='</tbody></table>';
+    h+='<div class="hint" style="margin-top:6px">대상 = 해당 단계 도달 건수 · 매출액 = 그 건들의 합(IVA 포함, 단계별 중복 가능) · 준수율 = 기한 내 비율 · 평균 = 단계 소요(정시수금은 지연일)</div>';
     $('slaBody').innerHTML=h;
   }
 
@@ -982,6 +926,6 @@
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627sf"></script>
+<script src="refatrix-nav.js?v=20260627fs"></script>
 </body>
 </html>
