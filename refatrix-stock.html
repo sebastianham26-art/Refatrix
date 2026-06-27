@@ -503,7 +503,8 @@
       let h=''
         +'<div class="sb"><div class="v">'+fmtq(s.sku_count)+'</div><div class="l">현재 SKU 수</div></div>'
         +'<div class="sb"><div class="v">'+fmtq(s.total_qty)+'</div><div class="l">총 수량</div></div>'
-        +(s.stock_value_mxn!=null?('<div class="sb"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_value_mxn)+'</div><div class="l">재고 금액(MXN)</div></div>'):'');
+        +(s.stock_value_mxn!=null?('<div class="sb"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_value_mxn)+'</div><div class="l">재고 금액(MXN)</div></div>'):'')
+        +(s.stock_sell_value_mxn!=null?('<div class="sb" title="현재고를 CTR 정가 기준 평균 '+Math.round((s.sell_discount_rate||0.45)*100)+'% 할인가로 전량 판매했다고 가정한 매출 환산액(IVA 미포함, 실제 판매 예측 아님)"><div class="v" style="color:var(--brand)">$'+fmt(s.stock_sell_value_mxn)+'</div><div class="l">재고 판매가 환산액(MXN) · CTR 정가 −'+Math.round((s.sell_discount_rate||0.45)*100)+'%</div></div>'):'');
       if(s.psn){
         h+='<div class="psnbreak"></div>'
           +'<div class="psncap">월별 비교 — 구매(P) / 판매(S) / 재고(N) · 당월(굵게) vs 전월</div>'
