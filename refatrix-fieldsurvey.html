@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>현장재고조사 · Refatrix</title>
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<style>
+  :root{
+    --green:#143D34; --green2:#1d5145; --brass:#B8893B; --brass2:#a4792f;
+    --imm:#2f8a5b; --immbg:#e8f4ed; --short:#C58A2E; --shortbg:#fbf2e0; --dev:#C0564F; --devbg:#fbe9e7;
+    --ink:#1c1b19; --mut:#7c7a74; --line:#e6e4df; --appbg:#f5f4f2; --muted:#7c7a74;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--appbg);font-family:-apple-system,system-ui,"Malgun Gothic",Arial,sans-serif;color:var(--ink);font-size:15px}
+  .hidden{display:none!important}
+  .topbar{position:sticky;top:0;z-index:20;background:var(--green);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px}
+  .topbar h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.3px}
+  .topbar .sub{font-size:11px;color:#bcd2c9;margin-top:1px}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:11px;color:#cfe0d8;text-align:right;line-height:1.3;max-width:120px}
+  .wrap{max-width:600px;margin:0 auto;padding:12px}
+
+  /* login */
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin:18px auto;max-width:380px}
+  .card h2{margin:0 0 12px;font-size:16px}
+  .card label{font-size:12px;color:var(--mut);font-weight:700;display:block;margin:10px 0 4px}
+  .card input{width:100%;font-size:15px;padding:11px;border:1.5px solid var(--line);border-radius:10px}
+  .card .api{margin-top:12px;font-size:11px;color:var(--mut)}
+  .btnP{width:100%;border:0;background:var(--green);color:#fff;font-weight:800;font-size:15px;border-radius:11px;padding:13px;margin-top:14px;cursor:pointer}
+  .msg{font-size:12px;margin-top:8px;min-height:16px}.msg.err{color:#c0564f}
+
+  /* start panel */
+  .sect-h{font-size:13px;font-weight:800;color:var(--green);margin:16px 4px 8px}
+  .pick{position:relative}
+  .pick input{width:100%;font-size:15px;padding:13px;border:2px solid var(--green);border-radius:12px}
+  .sugg{position:absolute;left:0;right:0;top:54px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 26px rgba(0,0,0,.12);max-height:240px;overflow:auto;z-index:30}
+  .sugg div{padding:11px 13px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px}
+  .sugg div:last-child{border-bottom:0}
+  .sugg div:hover,.sugg div.on{background:#eef6f0}
+  .sugg .cc{font-size:11px;color:var(--mut)}
+  .chosen{display:flex;align-items:center;gap:10px;background:#eef6f0;border:1px solid #cfe6da;border-radius:12px;padding:11px 13px;margin-top:10px;font-weight:700}
+  .chosen .x{margin-left:auto;color:var(--mut);cursor:pointer;font-weight:800}
+  .startBtn{width:100%;border:0;background:var(--brass);color:#fff;font-weight:800;font-size:15px;border-radius:12px;padding:14px;margin-top:12px;cursor:pointer}
+  .startBtn:disabled{opacity:.45}
+  .resume{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 12px;margin-top:8px}
+  .resume .r{display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer}
+  .resume .r:last-child{border-bottom:0}
+  .resume .r .nm{font-weight:700;font-size:14px}
+  .resume .r .meta{font-size:11px;color:var(--mut);margin-left:auto;text-align:right}
+
+  /* entry header */
+  .ehead{background:var(--green);color:#fff;border-radius:0 0 14px 14px;padding:12px 14px;margin:-12px -12px 0}
+  .ehead .row1{display:flex;align-items:center;gap:8px}
+  .ehead .back{font-size:12px;color:#bcd2c9;text-decoration:none;border:1px solid #2f5d50;border-radius:7px;padding:4px 9px;cursor:pointer}
+  .ehead .cust{font-size:15px;font-weight:800}
+  .ehead .meta{font-size:11px;color:#bcd2c9;margin-top:3px}
+  .save{display:flex;align-items:center;gap:8px;background:#eef6f0;border:1px solid #d8ece1;border-radius:10px;padding:8px 12px;margin:12px 0 6px;font-size:12px;color:#2c6a4b;font-weight:700}
+  .save .dot{width:8px;height:8px;border-radius:50%;background:var(--imm);box-shadow:0 0 0 4px rgba(47,138,91,.16)}
+  .save .x{margin-left:auto;color:var(--mut);font-weight:600}
+
+  .inrow{display:flex;gap:8px;margin-top:6px}
+  .inrow input{flex:1;font-size:18px;font-weight:700;letter-spacing:.5px;border:2px solid var(--green);border-radius:13px;padding:14px;outline:none}
+  .inrow input::placeholder{color:#b4b1ab;font-weight:600;font-size:14px;letter-spacing:0}
+  .addb{border:0;background:var(--brass);color:#fff;font-weight:800;font-size:16px;border-radius:13px;padding:0 20px;cursor:pointer}
+  .hint{font-size:11.5px;color:var(--mut);margin:8px 2px}.hint b{color:#2c6a4b}
+  .lhead{font-size:11px;color:var(--mut);font-weight:700;margin:14px 4px 6px;display:flex;justify-content:space-between}
+
+  .ccard{background:#fff;border:1px solid var(--line);border-left-width:5px;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;animation:pop .16s ease}
+  @keyframes pop{from{transform:translateY(-5px);opacity:0}to{transform:none;opacity:1}}
+  .ccard.imm{border-left-color:var(--imm)} .ccard.short{border-left-color:var(--short)} .ccard.dev{border-left-color:var(--dev)}
+  .ccard .mid{flex:1;min-width:0}
+  .ccard .top{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .badge{font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .badge.imm{background:var(--immbg);color:var(--imm)} .badge.short{background:var(--shortbg);color:var(--short)} .badge.dev{background:var(--devbg);color:var(--dev)}
+  .ctr{font-size:15px;font-weight:800;letter-spacing:.4px}
+  .ccode{font-size:11px;color:var(--mut)}
+  .name{font-size:12px;color:#4a4845;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stk{font-size:11px;font-weight:700;color:#3a6650}.stk.zero{color:var(--short)}
+  .obs{display:flex;align-items:center;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;flex-shrink:0}
+  .obs button{width:32px;height:36px;border:0;background:#f3f1ec;color:var(--green);font-size:18px;font-weight:800;cursor:pointer}
+  .obs .q{width:36px;text-align:center;font-size:14px;font-weight:800}.obs .cap{font-size:9px;color:var(--mut);text-align:center}
+  .del{border:0;background:none;color:#c9b6b3;font-size:18px;cursor:pointer;padding:0 2px}
+
+  .stickb{position:sticky;bottom:0;background:linear-gradient(transparent,var(--appbg) 22%);padding:12px 0 14px;margin-top:6px}
+  .doneb{width:100%;border:0;background:var(--green);color:#fff;font-size:16px;font-weight:800;border-radius:14px;padding:15px;cursor:pointer;box-shadow:0 6px 16px rgba(20,61,52,.28)}
+  .doneb:disabled{opacity:.5}
+  .doneb small{font-weight:600;color:#bcd2c9;font-size:12px}
+
+  /* summary */
+  .sumhead{background:var(--green);color:#fff;border-radius:0 0 14px 14px;padding:13px 14px;margin:-12px -12px 0}
+  .sumhead .h1{font-size:16px;font-weight:800}.sumhead .h2{font-size:12px;color:#bcd2c9;margin-top:3px}
+  .counts{display:flex;gap:8px;margin:12px 0}
+  .cc{flex:1;background:#fff;border:1px solid var(--line);border-radius:13px;padding:10px;text-align:center}
+  .cc .n{font-size:22px;font-weight:800;line-height:1}.cc .l{font-size:10.5px;color:var(--mut);font-weight:700;margin-top:5px}
+  .cc.imm .n{color:var(--imm)} .cc.short .n{color:var(--short)} .cc.dev .n{color:var(--dev)}
+  .devmsg{font-size:12px;color:#a4792f;background:#fbf2e0;border:1px solid #ecd9ad;border-radius:10px;padding:9px 12px;margin-bottom:10px}
+  .sectitle{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;margin:14px 2px 8px}
+  .sectitle .sw{width:11px;height:11px;border-radius:3px}.sectitle .ct{font-size:11px;color:var(--mut);font-weight:700}
+  .sectitle .srt{margin-left:auto;font-size:10px;color:var(--mut);font-weight:600}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{font-size:12px;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{background:#faf9f7;color:var(--mut);font-size:10.5px;font-weight:700}
+  tr:last-child td{border-bottom:0}
+  td.c{font-weight:800;letter-spacing:.3px}
+  td.s{text-align:right;font-weight:700}td.s.zero{color:var(--short)}
+  td.o{text-align:center;font-weight:800;color:var(--green)}
+  .veh{color:var(--mut);font-size:11px}
+  .none{font-size:12px;color:#9b988f;padding:6px 4px}
+
+  .actbar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 0;display:flex;gap:8px;margin:14px -12px 0;padding-left:12px;padding-right:12px}
+  .actbar button{flex:1;border:0;border-radius:12px;padding:14px 6px;font-size:14px;font-weight:800;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.1}
+  .actbar .ico{font-size:17px}
+  .quote{background:var(--brass);color:#fff}.xls{background:#1e7a46;color:#fff}
+  .subbar{display:flex;gap:8px;margin-top:10px}
+  .subbar button{flex:1;border:1.5px solid var(--line);background:#fff;color:var(--green);border-radius:11px;padding:11px;font-weight:700;font-size:13px;cursor:pointer}
+
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);background:#143D34;color:#fff;font-size:13px;font-weight:700;padding:10px 18px;border-radius:30px;opacity:0;pointer-events:none;transition:.25s;display:flex;align-items:center;gap:8px;z-index:50;max-width:90vw}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.toast .ck{color:#7fd6a6}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div><h1>📍 현장재고조사</h1><div class="sub">고객창고 경쟁사 재고 → 오퍼</div></div>
+    <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <!-- 로그인 -->
+  <div id="loginCard" class="card">
+    <h2>로그인</h2>
+    <label>아이디</label><input id="lid" autocomplete="username">
+    <label>PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="current-password">
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+    <button class="btnP" id="go">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <div id="app" class="wrap hidden">
+    <!-- ① 시작: 고객 특정 / 이어쓰기 -->
+    <section id="start">
+      <div class="sect-h">고객 특정</div>
+      <div class="pick">
+        <input id="custInput" placeholder="고객명 또는 코드 검색…" autocomplete="off">
+        <div id="custSugg" class="sugg hidden"></div>
+      </div>
+      <div id="chosenBox"></div>
+      <button class="startBtn" id="startBtn" disabled>새 조사 시작</button>
+
+      <div class="sect-h" id="resumeH" style="display:none">진행중 조사 이어쓰기</div>
+      <div class="resume hidden" id="resumeBox"></div>
+    </section>
+
+    <!-- ② 입력(현장) -->
+    <section id="entry" class="hidden">
+      <div class="ehead">
+        <div class="row1"><span class="back" id="backToStart">← 조사 선택</span><span class="cust" id="eCust"></span></div>
+        <div class="meta" id="eMeta"></div>
+      </div>
+      <div class="save"><span class="dot"></span> 자동저장 켜짐 · 한 건 입력 즉시 저장 <span class="x" id="lastSave"></span></div>
+      <div class="inrow">
+        <input id="codeIn" inputmode="text" autocomplete="off" placeholder="코드 입력 후 Enter (CTR 또는 경쟁사 코드)">
+        <button class="addb" id="addBtn">추가</button>
+      </div>
+      <div class="hint">💾 <b>한 건 입력 = 즉시 저장</b> · 데이터 분실 없음 &nbsp;|&nbsp; 코드는 자동으로 CTR로 분류됩니다</div>
+      <div class="lhead"><span>입력 내역 (최근 먼저)</span><span id="cnt">0건</span></div>
+      <div id="list"></div>
+      <div class="stickb"><button class="doneb" id="doneBtn">모두 완료 → 정리 보기 <small id="doneCnt"></small></button></div>
+    </section>
+
+    <!-- ③ 정리(오퍼) -->
+    <section id="summary" class="hidden">
+      <div class="sumhead"><div class="h1" id="sCust"></div><div class="h2" id="sMeta"></div></div>
+      <div class="counts">
+        <div class="cc imm"><div class="n" id="nImm">0</div><div class="l">즉시매출가능</div></div>
+        <div class="cc short"><div class="n" id="nShort">0</div><div class="l">재고부족</div></div>
+        <div class="cc dev"><div class="n" id="nDev">0</div><div class="l">개발필요</div></div>
+      </div>
+      <div id="devMsg"></div>
+      <div id="secImm"></div><div id="secShort"></div><div id="secDev"></div>
+      <div class="actbar">
+        <button class="quote" id="btnQuote"><span class="ico">📄</span>견적으로 발송</button>
+        <button class="xls" id="btnXls"><span class="ico">⬇︎</span>엑셀 다운로드</button>
+      </div>
+      <div class="subbar">
+        <button id="btnReopen">← 입력으로 (계속 추가)</button>
+        <button id="btnNew">+ 새 조사</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"><span class="ck">✓</span> <span id="toastTxt"></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  const state={ survey:null, lines:[], summary:null, customer:null };
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const jhead=()=>Object.assign({'Content-Type':'application/json'},auth());
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const apiBase=()=> (session.api||$('api').value||'').replace(/\/+$/,'');
+  const BADGE={imm:'🟢 즉시',short:'🟡 부족',dev:'🔴 개발'};
+
+  function toast(msg){ const t=$('toast'); $('toastTxt').textContent=msg; t.classList.add('show');
+    clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),1600); }
+  function stampSave(){ const n=new Date(); $('lastSave').textContent='마지막 저장 '+String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0'); }
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function api(path,opt={}){
+    const res=await fetch(apiBase()+path,opt);
+    let d=null; try{ d=await res.json(); }catch(e){}
+    if(!res.ok || (d&&d.error)) throw new Error((d&&d.error)||('http_'+res.status));
+    return d;
+  }
+
+  // ── 로그인 ──
+  async function login(){
+    const api0=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){ m.className='msg err'; m.textContent='아이디와 PIN을 입력하세요.'; return; }
+    $('go').disabled=true; $('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true}; const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else{ res=await fetch(api0+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})}); d=await res.json(); }
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='로그인 실패: '+(d.error||res.status); return; }
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api0};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      afterLogin();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ $('go').disabled=false; $('go').textContent='로그인'; }
+  }
+  function afterLogin(){
+    $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>'+esc(session.user&&session.user.role||'');
+    $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+    showStart(); loadOpenSurveys();
+  }
+
+  // ── 화면 전환 ──
+  function showStart(){ $('start').classList.remove('hidden'); $('entry').classList.add('hidden'); $('summary').classList.add('hidden'); }
+  function showEntry(){ $('start').classList.add('hidden'); $('entry').classList.remove('hidden'); $('summary').classList.add('hidden');
+    $('eCust').textContent=state.survey.customer_name||''; $('eMeta').textContent=(state.survey.survey_date||'')+' · 담당 '+(session.user&&session.user.name||'');
+    renderLive(); setTimeout(()=>$('codeIn').focus(),50); }
+  function showSummary(){ $('start').classList.add('hidden'); $('entry').classList.add('hidden'); $('summary').classList.remove('hidden'); renderSummary(); }
+
+  // ── 고객 검색 ──
+  let custT=null;
+  async function searchCust(){
+    const q=$('custInput').value.trim();
+    clearTimeout(custT);
+    custT=setTimeout(async()=>{
+      try{ const d=await api('/api/field-surveys/customer-options?q='+encodeURIComponent(q),{headers:auth()});
+        const box=$('custSugg');
+        if(!d.items.length){ box.innerHTML='<div class="cc" style="cursor:default;color:#9b988f">검색 결과 없음</div>'; box.classList.remove('hidden'); return; }
+        box.innerHTML=d.items.map(c=>'<div data-id="'+c.id+'" data-name="'+esc(c.name)+'">'+esc(c.name)+' <span class="cc">'+esc(c.code||'')+'</span></div>').join('');
+        box.classList.remove('hidden');
+        box.querySelectorAll('div[data-id]').forEach(el=>el.addEventListener('click',()=>{
+          state.customer={id:Number(el.dataset.id),name:el.dataset.name};
+          box.classList.add('hidden'); $('custInput').value='';
+          $('chosenBox').innerHTML='<div class="chosen">🏢 '+esc(state.customer.name)+'<span class="x" id="clearCust">✕</span></div>';
+          $('clearCust').addEventListener('click',()=>{ state.customer=null; $('chosenBox').innerHTML=''; $('startBtn').disabled=true; });
+          $('startBtn').disabled=false;
+        }));
+      }catch(e){}
+    },220);
+  }
+
+  // ── 진행중 조사 ──
+  async function loadOpenSurveys(){
+    try{ const d=await api('/api/field-surveys?status=open',{headers:auth()});
+      if(!d.items.length){ $('resumeH').style.display='none'; $('resumeBox').classList.add('hidden'); return; }
+      $('resumeH').style.display='block'; const box=$('resumeBox'); box.classList.remove('hidden');
+      box.innerHTML=d.items.map(s=>'<div class="r" data-id="'+s.id+'"><span class="nm">'+esc(s.customer_name||'(고객미정)')+'</span><span class="meta">'+esc(s.survey_date||'')+' · '+s.line_count+'건</span></div>').join('');
+      box.querySelectorAll('.r').forEach(el=>el.addEventListener('click',()=>resumeSurvey(Number(el.dataset.id))));
+    }catch(e){}
+  }
+  async function resumeSurvey(id){
+    try{ const d=await api('/api/field-surveys/'+id,{headers:auth()});
+      state.survey=d.survey; state.lines=d.lines.slice().reverse(); state.summary=d.summary; stampSave(); showEntry();
+    }catch(e){ toast('불러오기 실패'); }
+  }
+
+  // ── 조사 시작 ──
+  async function startSurvey(){
+    if(!state.customer) return;
+    $('startBtn').disabled=true;
+    try{ const d=await api('/api/field-surveys',{method:'POST',headers:jhead(),body:JSON.stringify({customer_id:state.customer.id})});
+      state.survey={id:d.id,customer_id:d.customer_id,customer_name:d.customer_name,survey_date:d.survey_date,status:'open'};
+      state.lines=[]; state.summary=null; stampSave(); showEntry();
+    }catch(e){ toast('조사 생성 실패'); $('startBtn').disabled=false; }
+  }
+
+  // ── 코드 추가(자동저장) ──
+  async function addCode(){
+    const v=$('codeIn').value.trim(); if(!v||!state.survey) return;
+    $('codeIn').value='';
+    try{ const d=await api('/api/field-surveys/'+state.survey.id+'/lines',{method:'POST',headers:jhead(),body:JSON.stringify({input_code:v})});
+      state.lines.unshift(d.line); renderLive(); stampSave();
+      const cl=d.line.classification;
+      toast(cl==='dev'?'저장됨 · 🔴 개발필요': cl==='imm'?'저장됨 · 🟢 즉시매출가능':'저장됨 · 🟡 재고부족');
+    }catch(e){ toast('저장 실패 — 다시 시도'); $('codeIn').value=v; }
+    $('codeIn').focus();
+  }
+  async function changeObs(lineId,delta){
+    const ln=state.lines.find(l=>l.id===lineId); if(!ln) return;
+    const nv=Math.max(0,(Number(ln.observed_qty)||0)+delta); ln.observed_qty=nv; renderLive();
+    try{ await api('/api/field-surveys/lines/'+lineId,{method:'PATCH',headers:jhead(),body:JSON.stringify({observed_qty:nv})}); stampSave(); }catch(e){}
+  }
+  async function delLine(lineId){
+    try{ await api('/api/field-surveys/lines/'+lineId,{method:'DELETE',headers:auth()});
+      state.lines=state.lines.filter(l=>l.id!==lineId); renderLive(); stampSave();
+    }catch(e){ toast('삭제 실패'); }
+  }
+
+  function renderLive(){
+    const L=$('list'); L.innerHTML='';
+    state.lines.forEach(e=>{
+      const card=document.createElement('div'); card.className='ccard '+e.classification;
+      const stk = e.classification==='dev' ? '<span class="ccode">카탈로그 미등록</span>'
+              : '<span class="stk'+((Number(e.avail_stock)||0)===0?' zero':'')+'">가용재고 '+(e.avail_stock==null?'—':e.avail_stock)+'</span>';
+      card.innerHTML=
+        '<div class="mid"><div class="top"><span class="badge '+e.classification+'">'+BADGE[e.classification]+'</span>'
+        +(e.ctr_code?'<span class="ctr">'+esc(e.ctr_code)+'</span>':'<span class="ctr" style="color:#C0564F">미등록</span>')
+        +'<span class="ccode">← '+esc(e.input_code)+'</span></div>'
+        +(e.product_name?'<div class="name">'+esc(e.product_name)+(e.app_text?' · '+esc(e.app_text):'')+'</div>':'<div class="name">'+esc(e.input_code)+' (개발필요)</div>')
+        +'<div style="margin-top:3px">'+stk+'</div></div>'
+        +'<div class="obs"><button data-m="'+e.id+'">–</button><div><div class="q">'+(e.observed_qty==null?1:e.observed_qty)+'</div><div class="cap">관측</div></div><button data-p="'+e.id+'">＋</button></div>'
+        +'<button class="del" data-d="'+e.id+'">🗑</button>';
+      L.appendChild(card);
+    });
+    $('cnt').textContent=state.lines.length+'건'; $('doneCnt').textContent=state.lines.length+'건 정리';
+    $('doneBtn').disabled=state.lines.length===0;
+    L.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>changeObs(Number(b.dataset.p),1)));
+    L.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',()=>changeObs(Number(b.dataset.m),-1)));
+    L.querySelectorAll('[data-d]').forEach(b=>b.addEventListener('click',()=>delLine(Number(b.dataset.d))));
+  }
+
+  // ── 모두 완료 ──
+  async function complete(){
+    if(!state.survey) return; $('doneBtn').disabled=true; $('doneBtn').innerHTML='<span class="spin"></span> 정리 중…';
+    try{ const d=await api('/api/field-surveys/'+state.survey.id+'/complete',{method:'POST',headers:auth()});
+      state.survey=d.survey; state.summary=d.summary; state.lines=d.lines.slice().reverse();
+      state._devCreated=d.dev_requests_created; showSummary();
+    }catch(e){ toast('완료 처리 실패'); }
+    finally{ $('doneBtn').disabled=false; $('doneBtn').innerHTML='모두 완료 → 정리 보기 <small id="doneCnt"></small>'; }
+  }
+
+  // ── 정리 렌더 ──
+  function secTable(rows,isDev){
+    if(!rows.length) return '<div class="none">해당 없음</div>';
+    const head=isDev?'<tr><th>입력코드</th><th>분류</th><th style="text-align:center">관측</th></tr>'
+      :'<tr><th>CTR</th><th>제품 · 적용차종</th><th style="text-align:right">가용재고</th><th style="text-align:center">관측</th></tr>';
+    const body=rows.map(e=> isDev
+      ? '<tr><td class="c">'+esc(e.input_code)+'</td><td class="veh">카탈로그 미등록</td><td class="o">'+(e.observed_qty==null?1:e.observed_qty)+'</td></tr>'
+      : '<tr><td class="c">'+esc(e.ctr_code)+'</td><td>'+esc(e.product_name||'')+'<div class="veh">'+esc(e.app_text||'')+'</div></td><td class="s'+((Number(e.avail_stock)||0)===0?' zero':'')+'">'+(e.avail_stock==null?'—':e.avail_stock)+'</td><td class="o">'+(e.observed_qty==null?1:e.observed_qty)+'</td></tr>'
+    ).join('');
+    return '<table><thead>'+head+'</thead><tbody>'+body+'</tbody></table>';
+  }
+  function renderSummary(){
+    const s=state.summary, c=s.counts;
+    // 뷰 단에서도 CTR(개발필요는 입력코드) 알파벳 정렬 보장(서버 정렬 + 이중 보장)
+    const byCtr=(a,b)=>String(a.ctr_code||'').localeCompare(String(b.ctr_code||''));
+    const byInput=(a,b)=>String(a.input_code||'').localeCompare(String(b.input_code||''));
+    const imm=(s.imm||[]).slice().sort(byCtr), short=(s.short||[]).slice().sort(byCtr), dev=(s.dev||[]).slice().sort(byInput);
+    $('sCust').textContent='정리 결과 · '+(state.survey.customer_name||'');
+    $('sMeta').textContent=(state.survey.survey_date||'')+' · 담당 '+(state.survey.creator_name||(session.user&&session.user.name)||'')+' · 총 '+c.total+'건 · CTR 알파벳순';
+    $('nImm').textContent=c.imm; $('nShort').textContent=c.short; $('nDev').textContent=c.dev;
+    $('devMsg').innerHTML = state._devCreated ? '<div class="devmsg">🛠 개발필요 '+c.dev+'건 중 '+state._devCreated+'건이 개발요청으로 자동 등록되었습니다(제품·마케팅 알림).</div>'
+      : (c.dev? '<div class="devmsg">🛠 개발필요 '+c.dev+'건 — 개발요청은 이미 등록되어 있습니다.</div>':'');
+    $('secImm').innerHTML='<div class="sectitle"><span class="sw" style="background:#2f8a5b"></span>즉시매출가능 <span class="ct">'+c.imm+'건</span><span class="srt">CTR ↑</span></div>'+secTable(imm,false);
+    $('secShort').innerHTML='<div class="sectitle"><span class="sw" style="background:#C58A2E"></span>재고부족 <span class="ct">'+c.short+'건</span><span class="srt">CTR ↑</span></div>'+secTable(short,false);
+    $('secDev').innerHTML='<div class="sectitle"><span class="sw" style="background:#C0564F"></span>개발필요 <span class="ct">'+c.dev+'건</span><span class="srt">코드 ↑</span></div>'+secTable(dev,true);
+  }
+
+  // ── 견적으로 발송 (즉시매출가능 + 재고부족 = 매칭된 줄) ──
+  async function sendToQuote(){
+    const s=state.summary; const matched=s.imm.concat(s.short).filter(l=>l.product_id);
+    if(!matched.length){ toast('견적에 담을 매칭 제품이 없습니다'); return; }
+    if(!state.survey.customer_id){ toast('견적 발송은 등록 고객만 가능합니다'); return; }
+    $('btnQuote').disabled=true; $('btnQuote').innerHTML='<span class="spin"></span> 생성 중…';
+    try{
+      const lines=matched.map(l=>({product_id:l.product_id, qty:Number(l.observed_qty)||1}));
+      const q=await api('/api/quotes',{method:'POST',headers:jhead(),body:JSON.stringify({customer_id:state.survey.customer_id, lines, memo:'현장재고조사 전환'})});
+      try{ await api('/api/field-surveys/'+state.survey.id+'/mark-quoted',{method:'POST',headers:jhead(),body:JSON.stringify({quote_id:q.id})}); }catch(e){}
+      toast('견적 '+ (q.quote_no||'') +' 생성됨 ('+matched.length+'개 품목)');
+      setTimeout(()=>{ if(confirm('견적 '+(q.quote_no||'')+' 이(가) 생성되었습니다.\n견적 목록 화면으로 이동할까요?')) location.href='refatrix-quotelist.html'; },300);
+    }catch(e){ toast('견적 생성 실패: '+e.message); }
+    finally{ $('btnQuote').disabled=false; $('btnQuote').innerHTML='<span class="ico">📄</span>견적으로 발송'; }
+  }
+
+  // ── 엑셀 다운로드 (1시트 3섹션, CTR 정렬) ──
+  function setS(ws,r,c,style){ const a=XLSX.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; ws[a].s=style; }
+  function downloadExcel(){
+    if(typeof XLSX==='undefined'){ toast('엑셀 모듈 로드 실패 — 새로고침 후 재시도'); return; }
+    const s=state.summary, sv=state.survey; const cust=sv.customer_name||''; const date=sv.survey_date||'';
+    const aoa=[]; const marks=[]; // marks: {r, kind, color}
+    aoa.push(['현장재고조사 — 고객 오퍼']); marks.push({r:0,kind:'title'});
+    aoa.push(['고객', cust, '조사일', date]); aoa.push([]);
+    function section(title,color,rows,isDev){
+      const r0=aoa.length; aoa.push([title]); marks.push({r:r0,kind:'sec',color});
+      const hr=aoa.length; aoa.push(isDev?['입력코드','분류','관측수량']:['CTR','제품 · 적용차종','가용재고','관측수량']); marks.push({r:hr,kind:'head'});
+      if(!rows.length){ aoa.push(['(해당 없음)']); }
+      rows.forEach(r=> aoa.push(isDev?[r.input_code,'개발필요(미등록)',Number(r.observed_qty)||0]
+        :[r.ctr_code,(r.product_name||'')+(r.app_text?' · '+r.app_text:''),Number(r.avail_stock)||0,Number(r.observed_qty)||0]));
+      aoa.push([]);
+    }
+    section('■ 즉시매출가능','FF2F8A5B',s.imm,false);
+    section('■ 재고부족 (백오더)','FFC58A2E',s.short,false);
+    section('■ 개발필요','FFC0564F',s.dev,true);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:16},{wch:42},{wch:12},{wch:11}];
+    setS(ws,0,0,{font:{bold:true,sz:14,color:{rgb:'FF143D34'}}});
+    marks.forEach(m=>{
+      if(m.kind==='sec') setS(ws,m.r,0,{font:{bold:true,sz:12,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:m.color}}});
+      if(m.kind==='head') for(let c=0;c<4;c++) setS(ws,m.r,c,{font:{bold:true,color:{rgb:'FF555555'}},fill:{fgColor:{rgb:'FFF0F0F0'}}});
+    });
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'현장재고조사');
+    const fn=('현장재고조사_'+cust+'_'+date+'.xlsx').replace(/[\\/:*?"<>|]/g,'_');
+    XLSX.writeFile(wb,fn);
+  }
+
+  // ── 이벤트 ──
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  $('custInput').addEventListener('input',searchCust);
+  $('startBtn').addEventListener('click',startSurvey);
+  $('backToStart').addEventListener('click',()=>{ showStart(); loadOpenSurveys(); });
+  $('addBtn').addEventListener('click',addCode);
+  $('codeIn').addEventListener('keydown',e=>{ if(e.key==='Enter') addCode(); });
+  $('doneBtn').addEventListener('click',complete);
+  $('btnQuote').addEventListener('click',sendToQuote);
+  $('btnXls').addEventListener('click',downloadExcel);
+  $('btnReopen').addEventListener('click',()=>{ state.lines=state.summary?state.summary.imm.concat(state.summary.short,state.summary.dev).slice().reverse():state.lines; showEntry(); });
+  $('btnNew').addEventListener('click',()=>{ state.survey=null; state.lines=[]; state.summary=null; state.customer=null; $('chosenBox').innerHTML=''; $('startBtn').disabled=true; showStart(); loadOpenSurveys(); });
+
+  // 자동 로그인(포털 세션)
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||$('api').value}; afterLogin(); } })();
+</script>
+<script src="refatrix-nav.js?v=20260627fs"></script>
+</body>
+</html>

@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260627stk loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260627fs loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -15,6 +15,7 @@
     wbr:{file:'refatrix-wbr.html',name:'WBR',desc:'주간 비즈니스 리뷰'},
     quote:{file:'refatrix-quote.html',name:'견적 작성',desc:'견적·매출전환'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
+    fieldsurvey:{file:'refatrix-fieldsurvey.html',name:'현장재고조사',desc:'고객창고 경쟁사 재고→오퍼'},
     orderfunnel:{file:'refatrix-orderfunnel.html',name:'수주 흐름 추이',desc:'즉시매출 KPI'},
     funnel:{file:'refatrix-funnel.html',name:'견적 요청',desc:'요청 SKU',tab:'quotes'},
     funnelImm:{file:'refatrix-funnel.html',name:'매출 확정 목록',desc:'발행 가능·확정',tab:'immediate'},
@@ -59,11 +60,11 @@
   };
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
   var PAGEKEY={
-    salesperf:null, dashboard:null, board:null, portal:null, rnr:null, coverage:null, devmap:null,
+    salesperf:null, dashboard:null, board:null, portal:null, rnr:null, coverage:null, devmap:null, fieldsurvey:null,
     commission:'commission',
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
-    stock:'stock', shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
+    stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
     pipeline:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions',
     boardNotice:null, boardTodo:null, wbr:'wbr',
@@ -76,7 +77,7 @@
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','dashboard','rnr','coverage','devmap']},
-    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','fieldsurvey','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},

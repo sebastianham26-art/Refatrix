@@ -31,6 +31,7 @@ import commissionRoutes from './routes/commissionRoutes.js';
 import wbrRoutes from './routes/wbrRoutes.js';
 import presenceRoutes from './routes/presenceRoutes.js';
 import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
+import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024, trustProxy: true }); // 12MB (증빙서류 5MB base64 대비) · trustProxy: Railway 프록시 뒤 실제 클라이언트 IP(X-Forwarded-For) 인식(접속 위치 추정용)
@@ -73,6 +74,7 @@ export function buildApp() {
   app.register(wbrRoutes);
   app.register(presenceRoutes);
   app.register(notaCreditoRoutes);
+  app.register(fieldSurveyRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {
