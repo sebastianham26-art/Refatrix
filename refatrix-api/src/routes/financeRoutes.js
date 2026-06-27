@@ -37,10 +37,11 @@ export default async function financeRoutes(app) {
   // 목록 + 잔액(계좌 통화 기준: 기초잔액 + 승인된 실제거래 합)
   app.get('/api/accounts', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const allow = allowedAccountIds(req.ctx.perm);   // null = 전체(디렉터)
+    const usd = (await getUsdMxnRate()).rate;        // 오늘 환율 — USD '기초잔액' 환산용(현금흐름과 동일 기준)
     const args = [];
     let acccond = '';
     if (allow !== null) {
-      if (allow.length === 0) return { items: [] };   // 권한 계좌 없음
+      if (allow.length === 0) return { items: [], fx_rate: usd };   // 권한 계좌 없음
       args.push(allow);
       acccond = ` AND a.id = ANY($${args.length})`;
     }
@@ -50,9 +51,19 @@ export default async function financeRoutes(app) {
                 SELECT SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END)
                   FROM transactions t
                  WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL
-              ),0) AS balance
+              ),0) AS balance,
+              COALESCE((
+                SELECT SUM(CASE WHEN t.direction='in' THEN t.amount_mxn ELSE -t.amount_mxn END)
+                  FROM transactions t
+                 WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL
+              ),0) AS mxn_txn_sum
          FROM accounts a WHERE a.deleted_at IS NULL${acccond} ORDER BY a.id`, args)).rows;
-    return { items: rows.map((a) => ({ ...a, non_deductible: a.non_deductible === true, can_detail: canViewDetail(req.ctx.perm, a.id), open_balance: Number(a.open_balance), balance: Number(a.balance) })) };
+    return { items: rows.map((a) => ({
+      ...a, non_deductible: a.non_deductible === true, can_detail: canViewDetail(req.ctx.perm, a.id),
+      open_balance: Number(a.open_balance), balance: Number(a.balance),
+      // MXN 환산 잔액: 거래는 거래당시 환율로 확정 저장된 amount_mxn, 기초잔액(USD)은 오늘 환율. → 현금흐름·장부와 동일 기준.
+      balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
+    })), fx_rate: usd };
   });
 
   // 계좌 생성(디렉터)
