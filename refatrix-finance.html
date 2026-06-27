@@ -466,7 +466,7 @@
   function refreshCatOptions(){
     const dir=$('t-dir').value;
     // 수입 = '수익' 그룹, 지출 = 그 외(매출원가·판관비·영업외비용)
-    const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
+    const list=cats.filter(c=> dir==='in' ? (c.group_name==='수익'||c.group_name==='비손익') : (c.group_name!=='수익'&&c.group_name!=='비손익'));
     $('t-cat').innerHTML='<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}">${c.code} · ${c.name} (${c.group_name})</option>`).join('');
   }
 
@@ -643,7 +643,7 @@
   }
 
   function catOptionsFor(dir,sel){
-    const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
+    const list=cats.filter(c=> dir==='in' ? (c.group_name==='수익'||c.group_name==='비손익') : (c.group_name!=='수익'&&c.group_name!=='비손익'));
     return '<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}" ${c.code===sel?'selected':''}>${c.code} · ${c.name}</option>`).join('');
   }
   function accOptions(sel){
@@ -1612,6 +1612,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260625c"></script>
+<script src="refatrix-nav.js?v=20260626a"></script>
 </body>
 </html>
