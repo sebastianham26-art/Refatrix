@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260627perm loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260627stk loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -63,7 +63,7 @@
     commission:'commission',
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
-    stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
+    stock:'stock', shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
     pipeline:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions',
     boardNotice:null, boardTodo:null, wbr:'wbr',
