@@ -161,7 +161,8 @@
   .ln-top{display:flex;align-items:center;gap:8px;padding:9px 13px 0}
   .ln-step{flex:none;width:21px;height:21px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff}
   .ln-title{font-size:16px;font-weight:800;color:var(--brand);white-space:nowrap;letter-spacing:-.2px}
-  .ln-cap{font-size:10.5px;color:var(--muted);padding:5px 13px 0;line-height:1.4}
+  .ln-cap{font-size:11px;color:#3A352B;font-weight:600;padding:5px 13px 0;line-height:1.45}
+  .capk{color:var(--expense);font-weight:800}
   .ln-grade{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
   .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #f0ece2}
   .ln-stats.c4{grid-template-columns:1.1fr 1fr 1fr 1.5fr}
@@ -403,7 +404,7 @@
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     var shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
     function capFor(k,n){
-      var th={order:'견적작성 후 48시간 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 6시간 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 3시간 이내에 SAT 인보이스 발행해야합니다',collect:'외상 만기일이 경과 되지 않도록 수금완료하시기 바랍니다'};
+      var th={order:'견적작성 후 <b class="capk">48시간</b> 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 <b class="capk">6시간</b> 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 <b class="capk">3시간</b> 이내에 SAT 인보이스 발행해야합니다',collect:'<b class="capk">외상 만기일</b>이 경과 되지 않도록 수금완료하시기 바랍니다'};
       var st={order:n+'개의 견적이 아직 오더확정되지 않았습니다',packing:n+'건의 오더가 현재 포장 진행 중입니다',sat:n+'건이 인보이스 전환 후 아직 SAT 발행되지 않았습니다',collect:n+'건의 인보이스가 아직 완납되지 않았습니다'};
       return st[k]+' · '+th[k];
     }
@@ -431,7 +432,7 @@
       var cap=capFor(k,n);
       var h='<div class="slaq-cell g-'+g+'">'
         +'<div class="ln-top"><span class="ln-step">'+step[k]+'</span><span class="ln-title">'+esc(shortLbl[k])+'</span><span class="ln-grade">'+gLabel(s,g)+'</span></div>'
-        +'<div class="ln-cap" title="'+esc(cap)+'">'+esc(cap)+'</div>'
+        +'<div class="ln-cap">'+cap+'</div>'
         +'<div class="ln-stats c'+stats.length+'">';
       stats.forEach(function(st){ h+='<div class="ln-stat'+(st.cls?(' '+st.cls):'')+'"><div class="v'+(st.dim?' dimp':'')+'">'+st.v+'</div><div class="l">'+st.l+'</div></div>'; });
       h+='</div>';
@@ -983,6 +984,6 @@
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260628e"></script>
+<script src="refatrix-nav.js?v=20260628g"></script>
 </body>
 </html>
