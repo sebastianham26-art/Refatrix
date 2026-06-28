@@ -301,7 +301,7 @@
   let board={issues:{},memo:''};   // 영속 상태(서버 저장)
   let canEdit=true;                 // 'wbr' 수정 권한 여부(서버 can_edit). 열람 전용이면 입력 차단
   // ===== 스냅샷(주간 저장본) 상태 =====
-  let lastCards=null, lastWaterfall=null, lastQuotes=null, lastSla=null;  // 최근 라이브 렌더 데이터(저장 시 동결)
+  let lastCards=null, lastWaterfall=null, lastQuotes=null, lastSla=null, lastSlaKpi=null;  // 최근 라이브 렌더 데이터(저장 시 동결)
   let viewMode=null;                // 열람 중인 스냅샷 객체(null=라이브)
   let liveBackup=null;              // 열람 진입 시 라이브 상태 백업
   let isDirector=false;             // 디렉터만 저장/삭제 가능
@@ -396,15 +396,16 @@
     if(viewMode) return;                                  // 저장본 열람 중엔 라이브 fetch 안 함
     try{
       const d=await fetch(session.api+'/api/wbr/stage-sla?ym='+encodeURIComponent(topYms.join(','))+'&team='+encodeURIComponent(resolveTeamKeys().join(',')),{headers:auth()}).then(r=>r.json());
-      lastSla=(d&&d.sla)||null;
-      renderStageSla(lastSla);
+      lastSla=(d&&d.sla)||null; lastSlaKpi=(d&&d.kpi)||null;
+      renderStageSla(lastSla, lastSlaKpi);
     }catch(e){ $('slaBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
-  function renderStageSla(sla){
+  function renderStageSla(sla, slaKpi){
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     var shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
     function capFor(k,n){
-      var th={order:'견적작성 후 <b class="capk">48시간</b> 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 <b class="capk">6시간</b> 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 <b class="capk">3시간</b> 이내에 SAT 인보이스 발행해야합니다',collect:'<b class="capk">외상 만기일</b>이 경과 되지 않도록 수금완료하시기 바랍니다'};
+      var ko=(slaKpi&&slaKpi.order)||48, kp=(slaKpi&&slaKpi.packing)||6, ks=(slaKpi&&slaKpi.sat)||3;
+      var th={order:'견적작성 후 <b class="capk">'+ko+'시간</b> 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 <b class="capk">'+kp+'업무시간</b> 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 <b class="capk">'+ks+'시간</b> 이내에 SAT 인보이스 발행해야합니다',collect:'<b class="capk">외상 만기일</b>이 경과 되지 않도록 수금완료하시기 바랍니다'};
       var st={order:n+'개의 견적이 아직 오더확정되지 않았습니다',packing:n+'건의 오더가 현재 포장 진행 중입니다',sat:n+'건이 인보이스 전환 후 아직 SAT 발행되지 않았습니다',collect:n+'건의 인보이스가 아직 완납되지 않았습니다'};
       return st[k]+' · '+th[k];
     }
@@ -877,7 +878,7 @@
     const name=(label||'').trim()||def;
     const periodLabel=$('ctxLine').textContent||'';
     const data={
-      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes, sla:lastSla,
+      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes, sla:lastSla, slaKpi:lastSlaKpi,
       board:{issues:board.issues, photos:board.photos, memo:board.memo},
       ctx:{ topYms:[...topYms], teamSel:Array.from(teamSel), teamsList:teamsList, ctxText:periodLabel }
     };
@@ -914,7 +915,7 @@
     $('wfTitle').textContent=monthsLabel()+' 매출 실적 (워터폴)';
     if(data.cards) renderCards(data.cards);
     if(data.waterfall) renderWaterfall(data.waterfall);
-    renderStageSla(data.sla||null);
+    renderStageSla(data.sla||null, data.slaKpi||null);
     renderQuoteSummary(Array.isArray(data.quotes)?data.quotes:[]);
     applyReadOnly(); renderIssues(); $('memo').textContent=board.memo||'';
     $('ctxLine').textContent=(ctx.ctxText||'')+' · 📌 저장본';

@@ -634,11 +634,12 @@
   }
   function escp(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
-  function renderStageSla(sla){
+  function renderStageSla(sla, slaKpi){
     if(!sla){ $('portalSlaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     var shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
     function capFor(k,n){
-      var th={order:'견적작성 후 <b class="capk">48시간</b> 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 <b class="capk">6시간</b> 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 <b class="capk">3시간</b> 이내에 SAT 인보이스 발행해야합니다',collect:'<b class="capk">외상 만기일</b>이 경과 되지 않도록 수금완료하시기 바랍니다'};
+      var ko=(slaKpi&&slaKpi.order)||48, kp=(slaKpi&&slaKpi.packing)||6, ks=(slaKpi&&slaKpi.sat)||3;
+      var th={order:'견적작성 후 <b class="capk">'+ko+'시간</b> 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 <b class="capk">'+kp+'업무시간</b> 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 <b class="capk">'+ks+'시간</b> 이내에 SAT 인보이스 발행해야합니다',collect:'<b class="capk">외상 만기일</b>이 경과 되지 않도록 수금완료하시기 바랍니다'};
       var st={order:n+'개의 견적이 아직 오더확정되지 않았습니다',packing:n+'건의 오더가 현재 포장 진행 중입니다',sat:n+'건이 인보이스 전환 후 아직 SAT 발행되지 않았습니다',collect:n+'건의 인보이스가 아직 완납되지 않았습니다'};
       return st[k]+' · '+th[k];
     }
@@ -690,7 +691,7 @@
     if(!$('portalSlaBody')) return;
     try{
       const d=await fetch(session.api+'/api/portal/stage-sla',{headers:auth()}).then(r=>r.json());
-      renderStageSla((d&&d.sla)||null);
+      renderStageSla((d&&d.sla)||null, (d&&d.kpi)||null);
     }catch(e){ $('portalSlaBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   function kfmt(n){ return n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0}); }

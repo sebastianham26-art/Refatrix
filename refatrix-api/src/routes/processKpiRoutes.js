@@ -1,33 +1,8 @@
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { ORDER_WINDOW_DAYS, ORDER_WAIT_STATUSES } from '../processWindow.js';
+import { bizMinutes } from '../businessHours.js';
 
-// ---- 업무시간 계산 (UTC-6 Nuevo León, 월~금 07:30~17:00, 서머타임 없음) ----
-const TZ_OFFSET_MIN = -6 * 60;
-const OPEN_MIN = 7 * 60 + 30;   // 07:30
-const CLOSE_MIN = 17 * 60;      // 17:00
-function bizMinutes(start, end) {
-  const s = new Date(start), e = new Date(end);
-  if (!(s instanceof Date) || isNaN(s) || isNaN(e) || e <= s) return 0;
-  const toMx = (d) => new Date(d.getTime() + TZ_OFFSET_MIN * 60000); // MX 벽시계를 UTC 필드로
-  let cur = toMx(s);
-  const end2 = toMx(e);
-  let total = 0;
-  let guard = 0;
-  while (cur < end2 && guard++ < 4000) {
-    const dow = cur.getUTCDay(); // 0=일 ... 6=토
-    const dayStart = new Date(cur); dayStart.setUTCHours(0, 0, 0, 0);
-    if (dow >= 1 && dow <= 5) {
-      const openT = new Date(dayStart.getTime() + OPEN_MIN * 60000);
-      const closeT = new Date(dayStart.getTime() + CLOSE_MIN * 60000);
-      const segS = cur > openT ? cur : openT;
-      const segE = end2 < closeT ? end2 : closeT;
-      if (segE > segS) total += (segE - segS) / 60000;
-    }
-    cur = new Date(dayStart.getTime() + 24 * 3600000);
-  }
-  return total;
-}
 const hoursBetween = (a, b) => (new Date(b) - new Date(a)) / 3600000;
 const daysBetween = (a, b) => (new Date(String(b).slice(0, 10) + 'T00:00:00Z') - new Date(String(a).slice(0, 10) + 'T00:00:00Z')) / 86400000;
 const num = (v) => (v == null ? null : Number(v));

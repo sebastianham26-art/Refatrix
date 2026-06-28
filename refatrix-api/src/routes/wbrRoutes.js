@@ -62,6 +62,15 @@ async function buildStageCohorts(perm, reqTeam) {
   return cohorts;
 }
 
+// SLA 지연 임계치 = process_sla_kpi(업무 프로세스 KPI factor). 테이블 없으면 기본값.
+async function getSlaKpi() {
+  try {
+    const r = (await query(`SELECT order_hours, packing_hours, sat_hours FROM process_sla_kpi WHERE id=1`)).rows[0];
+    if (r) return { order: Number(r.order_hours) || 48, packing: Number(r.packing_hours) || 6, sat: Number(r.sat_hours) || 3 };
+  } catch (e) { /* 테이블 미생성 시 기본값 */ }
+  return { order: 48, packing: 6, sat: 3 };
+}
+
 // 고객명 노출 권한 없으면 items 의 고객명을 '비공개'로 가림
 function maskSlaCustomers(sla, perm, isRegistered) {
   const canSee = perm.role === 'director' || pageAllowed(perm, 'customers', isRegistered);
@@ -120,7 +129,8 @@ export default async function wbrRoutes(app) {
     const months = String(req.query.ym || '').split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
     if (!months.length) months.push(new Date().toISOString().slice(0, 7));
     const cohorts = await buildStageCohorts(req.ctx.perm, req.query.team);
-    return { ym: months, sla: summarizeSla(cohorts, new Date()) };
+    const kpi = await getSlaKpi();
+    return { ym: months, sla: summarizeSla(cohorts, new Date(), kpi), kpi };
   });
 
   // 포털 홈용 — 전 직원 접근(authGuard만). 팀 가시성 적용.
@@ -129,8 +139,11 @@ export default async function wbrRoutes(app) {
   app.get('/api/portal/stage-sla', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     const cohorts = await buildStageCohorts(perm, 'total');
-    const sla = summarizeSla(cohorts, new Date());
-    return maskSlaCustomers(sla, perm, req.ctx.isRegistered);
+    const kpi = await getSlaKpi();
+    const sla = summarizeSla(cohorts, new Date(), kpi);
+    const out = maskSlaCustomers(sla, perm, req.ctx.isRegistered);
+    out.kpi = kpi;
+    return out;
   });
 
   // 업로드 — { thumb, full, caption? } (둘 다 data:image/...;base64,...)
