@@ -401,7 +401,12 @@
     if(calScope==='all') return true;
     if(calScope==='company') return e.scope==='company';
     if(calScope==='shared')  return e.scope==='shared';
-    if(calScope==='personal')return e.scope==='personal';
+    if(calScope==='personal'){
+      if(e.scope==='personal') return true;
+      // 내가 공유 대상으로 지정된 개인별 공유 일정도 '내 개인'에 포함(내가 함께하는 일정)
+      const _me=session.user&&Number(session.user.id);
+      return e.scope==='shared' && Array.isArray(e.target_ids) && e.target_ids.map(Number).includes(_me);
+    }
     return true;
   }
   // 수정/삭제 권한: 디렉터, 내 개인일정, 또는 내가 만든 일정(개인별 공유 포함)
@@ -525,8 +530,12 @@
       : '<option value="personal">내 개인 일정</option><option value="shared">개인별 공유</option>';
     const teamOpts=teams.map(t=>'<option value="'+t.id+'">'+esc(t.name)+'</option>').join('');
     const myId=session.user&&Number(session.user.id);
-    const targetChecks=(users||[]).filter(u=>Number(u.id)!==myId).map(u=>
+    const myName=(session.user&&session.user.name)||'나';
+    // 본인을 맨 앞에 고정 노출 — 내가 함께하는 일정이면 나도 대상으로 체크
+    const selfChk=myId?('<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12.5px;font-weight:700;color:var(--brand)"><input type="checkbox" class="dm-target" value="'+myId+'" style="width:auto"> '+esc(myName)+' (본인)</label>'):'';
+    const otherChks=(users||[]).filter(u=>Number(u.id)!==myId).map(u=>
       '<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12.5px;font-weight:500"><input type="checkbox" class="dm-target" value="'+u.id+'" style="width:auto"> '+esc(u.name)+'</label>').join('');
+    const targetChecks=selfChk+otherChks;
     html+='<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
       +'<div id="dm-formTitle" style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정 추가</div>'
       +'<div class="row">'
@@ -537,7 +546,7 @@
       +'<div style="flex:0 0 140px" id="dm-teamWrap" class="hidden"><label>팀</label><select id="dm-team">'+teamOpts+'</select></div>'
       +'</div>'
       +'<div id="dm-targetWrap" class="hidden" style="margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fafcfb">'
-      +'<label style="display:block;margin-bottom:5px">공유 대상 — 일정을 공유할 사람을 개인별로 선택(여러 명 가능)</label>'
+      +'<label style="display:block;margin-bottom:5px">공유 대상 — 일정을 함께할 사람을 개인별로 선택(여러 명 가능 · <b>나(본인)</b>도 체크하면 「내 개인」에서 보임)</label>'
       +'<div style="max-height:130px;overflow:auto">'+(targetChecks||'<span class="hint">선택 가능한 사용자가 없습니다.</span>')+'</div></div>'
       +'<div style="margin-top:8px"><button class="btn" id="dm-saveBtn" onclick="addCalDay()">추가</button></div>'
       +'<div class="msg" id="dm-msg"></div>'
