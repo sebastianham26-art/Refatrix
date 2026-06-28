@@ -858,6 +858,8 @@ export default async function quoteRoutes(app) {
       }
     }
     if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 출력 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
+    // 출력 클릭을 영구 기록(불변) — 매 클릭마다. 최초 1건이 실제 첫 출력 시각.
+    try { await logEvent({ userId: req.ctx.perm.userId, action: 'print', target: 'packing_print', detail: { quote_id: id, quote_no: q.quote_no || null, customer_id: q.customer_id || null, printed_at: printedAt } }); } catch (_) {}
     return { ok: true, held: true, packing_printed_at: printedAt, packing_due_at: dueAt };
   });
 

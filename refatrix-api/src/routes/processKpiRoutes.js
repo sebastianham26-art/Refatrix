@@ -48,7 +48,8 @@ export default async function processKpiRoutes(app) {
 
     // 견적(오더) 기준 한 행 = 4단계 (quotes.invoice_id 로 인보이스 연결)
     const rows = (await query(
-      `SELECT q.id, q.quote_no, q.status, q.created_at, q.packing_printed_at,
+      `SELECT q.id, q.quote_no, q.status, q.created_at,
+              COALESCE((SELECT MIN(occurred_at) FROM audit_log WHERE action='print' AND target='packing_print' AND detail->>'quote_id' = q.id::text), q.packing_printed_at) AS packing_printed_at,
               c.name AS customer_name,
               pd.uploaded_at AS packed_at,
               si.id AS invoice_id, si.created_at AS inv_created_at, si.inv_date::text AS inv_date, si.due_date::text AS due_date, si.credit_days,

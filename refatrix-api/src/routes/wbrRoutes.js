@@ -33,7 +33,7 @@ async function buildStageCohorts(perm, reqTeam) {
   a = []; tcl = tc(a);
   // 포장단계 대기: 포장출력 했지만 포장작업지시서 스캔 업로드(완료) 전, 아직 전환 전
   cohorts.packing = (await query(
-    `SELECT q.packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM quote_lines ql WHERE ql.quote_id=q.id) AS sku_count, (SELECT COALESCE(SUM(ql.qty),0) FROM quote_lines ql WHERE ql.quote_id=q.id) AS total_qty
+    `SELECT COALESCE((SELECT MIN(occurred_at) FROM audit_log WHERE action='print' AND target='packing_print' AND detail->>'quote_id' = q.id::text), q.packing_printed_at) AS packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM quote_lines ql WHERE ql.quote_id=q.id) AS sku_count, (SELECT COALESCE(SUM(ql.qty),0) FROM quote_lines ql WHERE ql.quote_id=q.id) AS total_qty
        FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
       WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL AND q.status <> 'converted'
         AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)${tcl}`, a)).rows;
