@@ -112,18 +112,12 @@
   .pend:hover{border-color:var(--brand)}
   .pend b.n{color:var(--expense)}
   /* 수주 단계 SLA — 4분면 흐름 카드 v4 (섹션별 스탯·SKU/수량) */
-  .slacol{display:flex;flex-direction:column}
-  .slarow{display:grid;grid-template-columns:1fr 46px 1fr;align-items:stretch}
-  .slamid{display:grid;grid-template-columns:1fr 46px 1fr;height:30px}
-  .slamid .qa-wrap{grid-column:3}
-  .qa-wrap{display:flex;align-items:center;justify-content:center}
-  .qarrow{width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--brand);border-radius:50%;box-shadow:0 2px 6px rgba(20,61,52,.26)}
-  .qarrow svg{width:22px;height:22px;display:block}
-  .slaq-cell{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:11px;overflow:hidden;display:flex;flex-direction:column;background:#fff;min-width:0}
+  .slaquad{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
+  .slaq-cell{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:11px;overflow:hidden;display:flex;flex-direction:column;background:#fff;min-width:0;height:360px}
   .ln-top{display:flex;align-items:center;gap:8px;padding:9px 13px 0}
   .ln-step{flex:none;width:21px;height:21px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff}
   .ln-title{font-size:16px;font-weight:800;color:var(--brand);white-space:nowrap;letter-spacing:-.2px}
-  .ln-def{font-size:10px;color:var(--muted);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ln-cap{font-size:10.5px;color:var(--muted);padding:5px 13px 0;line-height:1.4}
   .ln-grade{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
   .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #f0ece2}
   .ln-stats.c4{grid-template-columns:1.1fr 1fr 1fr 1.5fr}
@@ -134,7 +128,7 @@
   .ln-stat.kpi .v{font-size:21px;color:var(--brand)}
   .ln-stat.amt .v{font-size:15px}
   .ln-stat .l{font-size:9.5px;font-weight:700;color:var(--muted);margin-top:1px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ln-list{border-top:1px solid var(--line);flex:1;overflow:auto;max-height:250px}
+  .ln-list{border-top:1px solid var(--line);flex:1;overflow:auto;min-height:0}
   .ln-empty{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;background:repeating-linear-gradient(45deg,#fcfbf8,#fcfbf8 9px,#f7f5ef 9px,#f7f5ef 18px)}
   .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
   .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:6px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
@@ -148,8 +142,8 @@
   .g-bad{border-color:#e2b7af;border-left-color:var(--expense)}.g-bad .ln-step{background:var(--expense)}.g-bad .ln-grade{color:var(--expense)}.g-bad .ln-stat.kpi .v{color:var(--expense)}
   .g-na{border-left-color:#c4beb2}.g-na .ln-step{background:#9a948a}.g-na .ln-grade{color:var(--muted)}
   .dimp{color:var(--expense)!important}
-  @media print{ .qarrow{display:none} .ln-list{max-height:none} }
-  @media (max-width:760px){ .slarow,.slamid{grid-template-columns:1fr} .qa-wrap{display:none} }
+  @media print{ .ln-list{max-height:none} }
+  @media (max-width:760px){ .slaquad{grid-template-columns:1fr} }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -640,10 +634,13 @@
   function escp(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
   function renderStageSla(sla){
-    function arrowSVG(d){var p={right:'M4 12 H18 M13 7 L18 12 L13 17',down:'M12 4 V18 M7 13 L12 18 L17 13',left:'M20 12 H6 M11 7 L6 12 L11 17'};return '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="'+p[d]+'"/></svg>';}
     if(!sla){ $('portalSlaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     var shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
-    var defMap={order:'견적→포장출력 전 · 48h 초과 지연',packing:'포장출력→완료 전 · 업무6h 초과',sat:'전환→SAT 발행 전 · 3h 초과',collect:'발행 후 미수금 · 만기 기준'};
+    function capFor(k,n){
+      var th={order:'견적작성 후 48시간 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 6시간 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 3시간 이내에 SAT 인보이스 발행해야합니다',collect:'외상 만기일이 경과 되지 않도록 수금완료하시기 바랍니다'};
+      var st={order:n+'개의 견적이 아직 오더확정되지 않았습니다',packing:n+'건의 오더가 현재 포장 진행 중입니다',sat:n+'건이 인보이스 전환 후 아직 SAT 발행되지 않았습니다',collect:n+'건의 인보이스가 아직 완납되지 않았습니다'};
+      return st[k]+' · '+th[k];
+    }
     var step={order:'1',packing:'2',sat:'3',collect:'4'};
     var mxn=function(v){return '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});};
     var qfmt=function(v){return Number(v||0).toLocaleString('es-MX');};
@@ -665,8 +662,10 @@
       var avg=(s.avg==null)?'—':(s.avg+su(s.unit));
       var items=Array.isArray(s.items)?s.items:[];
       var stats=statsFor(k,s,n,d,avg,items);
+      var cap=capFor(k,n);
       var h='<div class="slaq-cell g-'+g+'">'
-        +'<div class="ln-top"><span class="ln-step">'+step[k]+'</span><span class="ln-title">'+escp(shortLbl[k])+'</span><span class="ln-def">'+escp(defMap[k])+'</span><span class="ln-grade">'+gLabel(s,g)+'</span></div>'
+        +'<div class="ln-top"><span class="ln-step">'+step[k]+'</span><span class="ln-title">'+escp(shortLbl[k])+'</span><span class="ln-grade">'+gLabel(s,g)+'</span></div>'
+        +'<div class="ln-cap" title="'+escp(cap)+'">'+escp(cap)+'</div>'
         +'<div class="ln-stats c'+stats.length+'">';
       stats.forEach(function(st){ h+='<div class="ln-stat'+(st.cls?(' '+st.cls):'')+'"><div class="v'+(st.dim?' dimp':'')+'">'+st.v+'</div><div class="l">'+st.l+'</div></div>'; });
       h+='</div>';
@@ -684,13 +683,7 @@
       h+='</tbody></table></div></div>';
       return h;
     }
-    var A='<div class="qa-wrap"><div class="qarrow">'+arrowSVG('right')+'</div></div>';
-    var L='<div class="qa-wrap"><div class="qarrow">'+arrowSVG('left')+'</div></div>';
-    var D='<div class="qa-wrap"><div class="qarrow">'+arrowSVG('down')+'</div></div>';
-    $('portalSlaBody').innerHTML='<div class="slacol">'
-      +'<div class="slarow">'+cell('order')+A+cell('packing')+'</div>'
-      +'<div class="slamid"><span></span><span></span>'+D+'</div>'
-      +'<div class="slarow">'+cell('collect')+L+cell('sat')+'</div></div>';
+    $('portalSlaBody').innerHTML='<div class="slaquad">'+cell('order')+cell('packing')+cell('sat')+cell('collect')+'</div>';
   }
   async function loadStageSla(){
     if(!$('portalSlaBody')) return;
@@ -924,6 +917,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260628a"></script>
+<script src="refatrix-nav.js?v=20260628e"></script>
 </body>
 </html>
