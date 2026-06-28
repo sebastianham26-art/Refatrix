@@ -44,6 +44,10 @@
   table.lst{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px}
   table.lst th{font-size:11px;color:var(--muted);font-weight:600;text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:#FCFBF7}
   table.lst th.l{text-align:left}
+  table.lst th.srt{cursor:pointer;user-select:none}
+  table.lst th.srt:hover{color:var(--brand)}
+  table.lst th.chk,table.lst td.chk{text-align:center;width:34px;padding-left:6px;padding-right:6px}
+  table.lst td.chk input,table.lst th.chk input{cursor:pointer}
   table.lst td{text-align:right;padding:8px 10px;border-bottom:1px solid #F1ECE2;white-space:nowrap}
   table.lst td.l{text-align:left}
   .ok{color:var(--income);font-weight:600}.no{color:var(--expense);font-weight:600}.pend{color:var(--muted)}
@@ -75,7 +79,7 @@
         <div id="modes" style="display:inline-flex;gap:6px">
           <button class="mbtn on" data-m="week">주간</button>
           <button class="mbtn" data-m="month">월</button>
-          <button class="mbtn" data-m="cust">고객</button>
+          <button class="mbtn" data-m="customer">고객</button>
         </div>
         <span id="status" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
       </div>
@@ -96,12 +100,10 @@
       <div class="secttl">오더 단계별 소요시간 <span style="color:var(--muted);font-weight:400">· 선택 기간 · 견적입력일 기준</span></div>
       <div class="scrollx">
         <table class="lst">
-          <thead><tr>
-            <th class="l">오더번호</th><th class="l">고객명</th><th>견적입력일</th>
-            <th>오더확정</th><th>피킹/포장</th><th>SAT 발행</th><th>수금(일)</th>
-          </tr></thead>
-          <tbody id="lbody"><tr><td colspan="7" class="l pend" style="padding:14px">조회를 눌러 데이터를 불러오세요.</td></tr></tbody>
+          <thead id="lhead"></thead>
+          <tbody id="lbody"><tr><td colspan="8" class="l pend" style="padding:14px">조회를 눌러 데이터를 불러오세요.</td></tr></tbody>
         </table>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">제목을 클릭하면 정렬됩니다 · 좌측 체크 해제 시 해당 오더는 그래프 집계에서 제외됩니다.</div>
       </div>
     </div>
   </div>
@@ -143,6 +145,17 @@
   }
 
   let curMode='week', chart=null, lastKpi={order_hours:48,packing_hours:6,sat_hours:3};
+  let allOrders=[], sortState={key:'created_at',dir:-1};
+  const COLS=[
+    {k:'_sel',chk:true},
+    {k:'quote_no',t:'오더번호',l:true},
+    {k:'customer',t:'고객명',l:true},
+    {k:'created_at',t:'견적입력일'},
+    {k:'order_h',t:'오더확정'},
+    {k:'packing_h',t:'피킹/포장'},
+    {k:'sat_h',t:'SAT 발행'},
+    {k:'collect_days',t:'수금(일)'}
+  ];
   const PAL=['#378ADD','#1D9E75','#EF9F27','#D85A30','#7F77DD','#D4537E','#185FA5','#0F6E56'];
   const DASH=[[],[6,4],[2,3],[9,3,2,3],[12,4],[4,2,1,2]];
 
@@ -167,7 +180,7 @@
       options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},spanGaps:true,
         plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':Math.round(c.parsed.y)+'%')}}},
         scales:{y:{min:0,suggestedMax:160,title:{display:true,text:'달성 % (KPI 대비)'},ticks:{callback:v=>v+'%'},
-          grid:{color:c=>c.tick.value===100?'#A32D2D':'rgba(0,0,0,.06)'}},x:{grid:{display:false}}}}});
+          grid:{color:c=>c.tick.value===100?'#A32D2D':'rgba(0,0,0,.06)'}},x:{grid:{display:false},ticks:{font:{weight:'bold',size:13},color:'#1C1B19'}}}}});
     return chart;
   }
   function renderChart(lines){
@@ -185,13 +198,50 @@
     const cls=(pct!=null&&pct<100)?'no':'ok';
     return '<span class="'+cls+'">'+val+unit+'</span>';
   }
-  function renderList(orders){
-    if(!orders||!orders.length){ $('lbody').innerHTML='<tr><td colspan="7" class="l pend" style="padding:14px">해당 기간 오더가 없습니다.</td></tr>'; return; }
-    $('lbody').innerHTML=orders.map(o=>{
+  function fromMs(){ const v=$('d1').value; return v?new Date(v+'T00:00:00Z').getTime():0; }
+  function groupOf(o){
+    if(curMode==='customer'){ const c=o.customer||'(미지정)'; return [c,c]; }
+    const d=new Date(o.created_at);
+    if(curMode==='month'){ return [d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0'),(d.getUTCMonth()+1)+'월']; }
+    const wi=Math.floor((d.getTime()-fromMs())/(7*86400000)); return ['w'+wi,(wi+1)+'주'];
+  }
+  function buildLines(){
+    const g=new Map();
+    allOrders.filter(o=>o._sel).forEach(o=>{
+      const [key,label]=groupOf(o);
+      if(!g.has(key)) g.set(key,{label,sum:[0,0,0,0],cnt:[0,0,0,0]});
+      const e=g.get(key);
+      [o.order_pct,o.packing_pct,o.sat_pct,o.collect_pct].forEach((v,i)=>{ if(v!=null){ e.sum[i]+=v; e.cnt[i]+=1; } });
+    });
+    return [...g.values()].map(e=>({label:e.label,points:e.sum.map((s,i)=>e.cnt[i]?Math.round(s/e.cnt[i]*10)/10:null)}))
+      .sort((a,b)=>String(a.label).localeCompare(String(b.label),'ko',{numeric:true}));
+  }
+  function sortedOrders(){
+    const arr=[...allOrders]; const k=sortState.key, dir=sortState.dir;
+    if(k && k!=='_sel') arr.sort((a,b)=>{
+      let x=a[k],y=b[k]; const an=(x==null||x===''),bn=(y==null||y==='');
+      if(an&&bn)return 0; if(an)return 1; if(bn)return -1;
+      if(typeof x==='string'||typeof y==='string') return dir*String(x).localeCompare(String(y),'ko',{numeric:true});
+      return dir*((x>y?1:x<y?-1:0));
+    });
+    return arr;
+  }
+  function renderList(){
+    const allSel=allOrders.length>0 && allOrders.every(o=>o._sel);
+    $('lhead').innerHTML='<tr>'+COLS.map(c=>{
+      if(c.chk) return '<th class="chk"><input type="checkbox" id="selAll" '+(allSel?'checked':'')+' title="전체 선택/해제"></th>';
+      const arrow=sortState.key===c.k?(sortState.dir>0?' ▲':' ▼'):'';
+      return '<th class="srt'+(c.l?' l':'')+'" data-k="'+c.k+'">'+c.t+arrow+'</th>';
+    }).join('')+'</tr>';
+    const arr=sortedOrders();
+    if(!arr.length){ $('lbody').innerHTML='<tr><td colspan="8" class="l pend" style="padding:14px">해당 기간 오더가 없습니다.</td></tr>'; return; }
+    $('lbody').innerHTML=arr.map(o=>{
+      const i=allOrders.indexOf(o);
       const collect = o.collect_pending ? '<span class="pend">미수</span>'
         : (o.collect_days==null ? '<span class="pend">—</span>'
         : '<span class="'+((o.credit_days!=null&&o.collect_days>o.credit_days)?'no':'ok')+'">'+o.collect_days+'일</span> <span class="pend">/ 기일 '+(o.credit_days!=null?o.credit_days:'-')+'</span>');
-      return '<tr><td class="l" style="font-weight:600">'+esc(o.quote_no)+'</td><td class="l">'+esc(o.customer)+'</td>'
+      return '<tr><td class="chk"><input type="checkbox" class="osel" data-i="'+i+'" '+(o._sel?'checked':'')+'></td>'
+        +'<td class="l" style="font-weight:600">'+esc(o.quote_no)+'</td><td class="l">'+esc(o.customer)+'</td>'
         +'<td>'+String(o.created_at).slice(0,10)+'</td>'
         +'<td>'+durCell(o.order_h,'h',o.order_pct,false)+'</td>'
         +'<td>'+durCell(o.packing_h,'업무h',o.packing_pct,false)+'</td>'
@@ -199,6 +249,7 @@
         +'<td>'+collect+'</td></tr>';
     }).join('');
   }
+  function rebuild(){ renderChart(buildLines()); renderList(); }
   async function loadAnalytics(){
     const from=$('d1').value, to=$('d2').value;
     if(!from||!to){ $('status').textContent='기간을 선택하세요.'; return; }
@@ -208,8 +259,9 @@
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       if(d.error){ $('status').textContent='조회 실패: '+d.error; return; }
       if(d.kpi){ $('k_order').value=d.kpi.order_hours; $('k_packing').value=d.kpi.packing_hours; $('k_sat').value=d.kpi.sat_hours; }
-      renderChart(d.lines||[]); renderList(d.orders||[]);
-      $('status').textContent=(d.orders?d.orders.length:0)+'건 · '+(d.lines?d.lines.length:0)+'개 선';
+      allOrders=(d.orders||[]).map(o=>({...o,_sel:true}));
+      rebuild();
+      $('status').textContent=allOrders.length+'건';
     }catch(e){ $('status').textContent='조회 오류'; }
   }
 
@@ -218,7 +270,18 @@
   $('reload').addEventListener('click',loadAnalytics);
   $('saveKpi').addEventListener('click',saveKpi);
   $('modes').addEventListener('click',e=>{const b=e.target.closest('.mbtn');if(!b)return;
-    [].forEach.call(document.querySelectorAll('#modes .mbtn'),x=>x.classList.remove('on'));b.classList.add('on');curMode=b.dataset.m;loadAnalytics();});
+    [].forEach.call(document.querySelectorAll('#modes .mbtn'),x=>x.classList.remove('on'));b.classList.add('on');curMode=b.dataset.m;rebuild();});
+  $('lhead').addEventListener('click',e=>{
+    const all=e.target.closest('#selAll'); if(all){ const v=all.checked; allOrders.forEach(o=>o._sel=v); rebuild(); return; }
+    const th=e.target.closest('th.srt'); if(!th)return; const k=th.dataset.k;
+    if(sortState.key===k) sortState.dir=-sortState.dir; else { sortState.key=k; sortState.dir=(k==='quote_no'||k==='customer'||k==='created_at')?1:-1; }
+    renderList();
+  });
+  $('lbody').addEventListener('change',e=>{
+    const cb=e.target.closest('.osel'); if(!cb)return; const i=+cb.dataset.i;
+    if(allOrders[i]){ allOrders[i]._sel=cb.checked; renderChart(buildLines());
+      const sa=$('selAll'); if(sa) sa.checked=allOrders.length>0&&allOrders.every(o=>o._sel); }
+  });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30);} })();
 </script>
 <script src="refatrix-nav.js?v=20260628h"></script>
