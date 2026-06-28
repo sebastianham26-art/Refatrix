@@ -155,6 +155,31 @@
     #memo{background:#fff;border:1px solid #ccc}
     a{color:inherit;text-decoration:none}
   }
+  /* 수주 단계 SLA — 병목 신호 4-레인 카드 (sls_03 원본 디자인) */
+  .slaflow{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+  .slalane{flex:1;min-width:215px;border-radius:12px;border:1px solid var(--line);overflow:hidden;display:flex;flex-direction:column;background:#fff}
+  .slalane .ln-head{padding:13px 14px 11px}
+  .ln-title{font-size:15.5px;font-weight:800;color:var(--brand);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .ln-grade{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.75);border:1px solid currentColor;white-space:nowrap}
+  .ln-n{font-size:29px;font-weight:800;line-height:1.05;margin-top:4px;color:var(--brand)}
+  .ln-n span{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px}
+  .ln-amt{font-size:13px;font-weight:800;margin-top:1px}
+  .ln-metrics{font-size:12px;font-weight:700;margin-top:3px;color:var(--ink)}
+  .ln-sep{color:#c2c0ba;margin:0 5px}
+  .ln-def{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.35;border-top:1px dashed rgba(0,0,0,.08);padding-top:6px}
+  .ln-list{border-top:1px solid var(--line);background:#fff;flex:1}
+  .slaarrow{display:flex;align-items:center;align-self:center;color:var(--brand-soft);font-size:20px;font-weight:800;flex:0 0 auto}
+  .g-good .ln-head{background:var(--income-bg)} .g-good{border-color:#cfe4db} .g-good .ln-title,.g-good .ln-grade,.g-good .ln-amt,.g-good .ln-rate{color:var(--income)}
+  .g-warn .ln-head{background:#FBF4E6} .g-warn{border-color:#ecdcb8} .g-warn .ln-title,.g-warn .ln-grade,.g-warn .ln-amt,.g-warn .ln-rate{color:var(--gold)}
+  .g-bad .ln-head{background:var(--expense-bg)} .g-bad{border-color:#e2b7af} .g-bad .ln-title,.g-bad .ln-grade,.g-bad .ln-amt,.g-bad .ln-rate{color:var(--expense)}
+  .g-na .ln-head{background:#F5F3EE} .g-na .ln-grade{color:var(--muted)}
+  .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
+  .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:5px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap}
+  .sltab td{text-align:right;padding:5px 10px;border-top:1px solid #f0ece2;white-space:nowrap}
+  .sltab td.cust{white-space:normal;word-break:break-word;font-weight:600;color:var(--ink);text-align:left}
+  .sltab .slok{color:var(--income);font-weight:800} .sltab .slno{color:var(--expense);font-weight:800} .sltab .slwarn{color:var(--gold);font-weight:800}
+  .sltab .ln-emptyrow td{color:var(--muted)}
+  @media print{ .slaflow{break-inside:avoid} .slalane{min-width:100%;break-inside:avoid} .slaarrow{display:none} }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -369,50 +394,66 @@
   function renderStageSla(sla){
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     const order=['order','packing','sat','collect'];
+    const shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
     const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
-    // 항목 우측 상태 텍스트/색: 정시수금은 만기상대일(외상기간중/기일도래/지연중), 그 외는 경과(지연이면 빨강)
-    const stateOf=(it,unit)=>{
-      if(it&&it.dueRel!==undefined){
-        const d=Number(it.dueRel);
-        if(d>0)  return {t:'지연 '+d+'일', c:'#c0492f'};
-        if(d===0)return {t:'기일도래', c:'#c79a3a'};
-        return {t:'만기 '+(-d)+'일 전', c:'#1f8a4c'};
-      }
-      return {t:'경과 '+(it?it.age:0)+(unit||''), c:(it&&it.overdue)?'#c0492f':'#6b6b6b'};
+    // 친절한 서술형 정의(대기/지연 기준)
+    const defMap={
+      order:'견적 후 포장출력 전 대기 · 48h 초과 시 지연',
+      packing:'포장출력 후 스캔(=포장완료) 업로드 전 대기 · 6업무h 초과 시 지연',
+      sat:'전환 후 SAT 번호 발행 전 대기 · 3h 초과 시 지연',
+      collect:'SAT 발행 후 미수금 · 외상기간중/기일도래/지연중',
     };
-    let h='<div style="display:flex;flex-direction:column;gap:12px">';
-    order.forEach((k)=>{
-      const s=sla[k]||{}; const n=Number(s.n||0); const delayed=Number(s.delayed||0);
+    const shortUnit=(u)=> u==='시간'?'h' : u==='업무시간'?'업무h' : u==='지연일'?'일' : (u?(' '+u):'');
+    // 병목 등급(지연 건수 기준): n=0→중립, 지연0→양호, 절반미만→주의, 절반이상→병목
+    const grade=(s)=>{ const n=Number(s.n||0), d=Number(s.delayed||0); if(!n) return 'na'; if(d===0) return 'good'; if(d*2<n) return 'warn'; return 'bad'; };
+    const gLabel=(s,g)=> g==='na'?'대기 없음' : g==='good'?'정상' : ('지연 '+Number(s.delayed||0)+'건');
+
+    let h='<div class="slaflow">';
+    order.forEach((k,i)=>{
+      const s=sla[k]||{}; const n=Number(s.n||0); const d=Number(s.delayed||0); const g=grade(s);
+      const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
       const items=Array.isArray(s.items)?s.items:[];
-      const accent = delayed>0 ? '#c0492f' : (n>0 ? '#143D34' : '#bcb6a8');
-      h+='<div style="border:1px solid #e7e2d8;border-radius:10px;overflow:hidden">';
-      // 카드 헤더: 단계명 + 대기/지연/매출 요약
-      h+='<div style="padding:9px 12px;background:#faf8f3;border-bottom:1px solid #efe9dd;border-left:4px solid '+accent+';display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        +  '<span style="font-weight:700;font-size:13px">'+esc(s.label||k)+'</span>'
-        +  '<span style="margin-left:auto;font-size:12px;color:#555">대기 <b style="color:#143D34">'+n+'</b>건'
-        +     (delayed>0?(' · <span style="color:#c0492f">지연 <b>'+delayed+'</b>건</span>'):'')
-        +     ' · 매출 <b style="color:#333">'+mxn(s.amount)+'</b></span>'
-        +'</div>';
-      // 카드 하단: 세부내역(현재 대기 항목 목록)
+      let lane='<div class="slalane g-'+g+'">'
+        +'<div class="ln-head">'
+          +'<div class="ln-title">'+esc(shortLbl[k]||k)+'<span class="ln-grade">'+gLabel(s,g)+'</span></div>'
+          +'<div class="ln-n">'+n+'<span>건 대기</span></div>'
+          +'<div class="ln-amt">'+(n?mxn(s.amount):'—')+'</div>'
+          +'<div class="ln-metrics"><span class="ln-rate">'+(d>0?('지연 '+d+'건'):'지연 없음')+'</span><span class="ln-sep">·</span><span class="ln-avg">평균 '+avg+'</span></div>'
+          +'<div class="ln-def">'+esc(defMap[k]||'')+'</div>'
+        +'</div>'
+        +'<div class="ln-list">';
+      lane+='<table class="sltab"><thead><tr><th style="text-align:left">고객</th><th>금액</th><th>경과</th><th>상태</th></tr></thead><tbody>';
       if(!items.length){
-        h+='<div class="hint" style="padding:9px 12px">현재 대기 건이 없습니다.</div>';
+        lane+='<tr class="ln-emptyrow"><td class="cust" style="text-align:left">대기 없음</td><td>—</td><td>—</td><td>—</td></tr>';
       }else{
-        h+='<div>';
-        items.forEach((it,i)=>{
-          const st=stateOf(it,s.unit);
-          h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:12.5px'
-            +(i?';border-top:1px solid #f2efe7':'')+(it.overdue?';background:#fdf3f1':'')+'">'
-            +  '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(it.customer||'-')+'</span>'
-            +  '<span style="flex:none;color:#444">'+mxn(it.amount)+'</span>'
-            +  '<span style="flex:none;width:104px;text-align:right;font-weight:600;color:'+st.c+'">'+st.t+'</span>'
-            +'</div>';
+        items.forEach(it=>{
+          let elapsed, statusHtml;
+          if(k==='collect' && it.dueRel!==undefined){
+            const r=Number(it.dueRel);
+            if(r>0){      elapsed='+'+r+'일'; statusHtml='<span class="slno">지연중 '+r+'day</span>'; }
+            else if(r===0){ elapsed='0일';   statusHtml='<span class="slwarn">기일도래</span>'; }
+            else {        elapsed=r+'일';    statusHtml='<span class="slok">외상기간중</span>'; }  // r<0 → '-5일'(남은일수)
+          }else{
+            const age=(it.age!=null?it.age:it.lead);
+            elapsed=(age!=null?(age+shortUnit(s.unit)):'—');
+            const od=(it.overdue===true)||(it.overdue===undefined&&it.ok===false);   // 신/구 스냅샷 호환
+            statusHtml=od?'<span class="slno">지연</span>':'<span class="slok">정상</span>';
+          }
+          lane+='<tr>'
+            +'<td class="cust" style="text-align:left">'+esc(it.customer||'-')+'</td>'
+            +'<td>'+mxn(it.amount)+'</td>'
+            +'<td>'+elapsed+'</td>'
+            +'<td>'+statusHtml+'</td>'
+            +'</tr>';
         });
-        h+='</div>';
       }
-      h+='</div>';
+      lane+='</tbody></table>';
+      lane+='</div></div>';
+      h+=lane;
+      if(i<order.length-1) h+='<div class="slaarrow">▶</div>';
     });
     h+='</div>';
-    h+='<div class="hint" style="margin-top:8px">각 단계 = 현재 그 단계에 <b>대기 중</b>인 건. 빨강 = 기한 초과(지연). 정시수금은 외상 만기 기준(만기 전/기일도래/지연). 매출액은 IVA 포함.</div>';
+    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 정시수금 상태: <b style="color:var(--income)">외상기간중</b>(만기 전, 경과 −N일 = N일 남음) · <b style="color:var(--gold)">기일도래</b>(만기 당일) · <b style="color:var(--expense)">지연중 Nday</b>(만기 후, 경과 +N일). 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
     $('slaBody').innerHTML=h;
   }
 
@@ -947,6 +988,6 @@
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627wb"></script>
+<script src="refatrix-nav.js?v=20260627wc"></script>
 </body>
 </html>
