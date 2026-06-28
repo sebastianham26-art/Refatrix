@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
+import { ORDER_WINDOW_DAYS, ORDER_WAIT_STATUSES } from '../processWindow.js';
 
 // ---- 업무시간 계산 (UTC-6 Nuevo León, 월~금 07:30~17:00, 서머타임 없음) ----
 const TZ_OFFSET_MIN = -6 * 60;
@@ -28,7 +29,7 @@ function bizMinutes(start, end) {
   return total;
 }
 const hoursBetween = (a, b) => (new Date(b) - new Date(a)) / 3600000;
-const daysBetween = (a, b) => (new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000;
+const daysBetween = (a, b) => (new Date(String(b).slice(0, 10) + 'T00:00:00Z') - new Date(String(a).slice(0, 10) + 'T00:00:00Z')) / 86400000;
 const num = (v) => (v == null ? null : Number(v));
 const round1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
 
@@ -75,10 +76,10 @@ export default async function processKpiRoutes(app) {
       `SELECT q.id, q.quote_no, q.status, q.created_at, q.packing_printed_at,
               c.name AS customer_name,
               pd.uploaded_at AS packed_at,
-              si.id AS invoice_id, si.created_at AS inv_created_at, si.inv_date, si.credit_days,
+              si.id AS invoice_id, si.created_at AS inv_created_at, si.inv_date::text AS inv_date, si.due_date::text AS due_date, si.credit_days,
               si.total_mxn, si.sat_no, si.sat_entered_at,
               (SELECT COALESCE(SUM(spa.amount),0) FROM sales_payment_allocations spa WHERE spa.invoice_id=si.id) AS paid_amount,
-              (SELECT MAX(sp.pay_date) FROM sales_payment_allocations spa
+              (SELECT MAX(sp.pay_date)::text FROM sales_payment_allocations spa
                  JOIN sales_payments sp ON sp.id=spa.payment_id WHERE spa.invoice_id=si.id) AS last_pay_date
          FROM quotes q
          JOIN customers c ON c.id = q.customer_id
@@ -107,31 +108,38 @@ export default async function processKpiRoutes(app) {
       return { state, value: value == null ? null : (isDays ? Math.round(value) : round1(value)), over };
     };
 
+    const today = new Date(nowMs - 6 * 3600000).toISOString().slice(0, 10); // MX(UTC-6) 오늘
+    const abandonCutoff = nowMs - ORDER_WINDOW_DAYS * 86400000;
     for (const r of rows) {
-      const expired = String(r.status || '') === 'expired';
-      // 오더확정: printed=done / 만료=expired / 그 외=wip(견적 진행중)
+      const st = String(r.status || '');
+      const printed = !!r.packing_printed_at;
+      const createdMs = new Date(r.created_at).getTime();
+      // 오더확정: 인쇄=done / 미인쇄+대기상태(draft·confirmed·expired)+30일내=wip / 30일초과=abandoned(포기) / 그 외 상태=none
       let oState, orderH;
-      if (r.packing_printed_at) { oState = 'done'; orderH = hoursBetween(r.created_at, r.packing_printed_at); }
-      else if (expired) { oState = 'expired'; orderH = null; }
+      if (printed) { oState = 'done'; orderH = hoursBetween(r.created_at, r.packing_printed_at); }
+      else if (!ORDER_WAIT_STATUSES.includes(st)) { oState = 'none'; orderH = null; }
+      else if (createdMs < abandonCutoff) { oState = 'abandoned'; orderH = hoursBetween(r.created_at, nowMs); }
       else { oState = 'wip'; orderH = hoursBetween(r.created_at, nowMs); }
-      // 피킹/포장: 미인쇄=none / 포장완료=done / 그 외=wip (업무시간)
-      let pState, packBh;
-      if (!r.packing_printed_at) { pState = 'none'; packBh = null; }
-      else if (r.packed_at) { pState = 'done'; packBh = bizMinutes(r.packing_printed_at, r.packed_at) / 60; }
-      else { pState = 'wip'; packBh = bizMinutes(r.packing_printed_at, nowMs) / 60; }
-      // SAT: 인보이스 없음=none / 실SAT=done / 그 외=wip
-      const satReal = r.invoice_id && r.sat_entered_at && r.sat_no && !String(r.sat_no).startsWith('TMP-');
+      // 피킹/포장: 미인쇄=none / 전환됨=none(SLA 일치) / 포장완료=done / 그 외=wip (업무시간+실 병기)
+      let pState, packBh, packWall = null;
+      if (!printed) { pState = 'none'; packBh = null; }
+      else if (r.packed_at) { pState = 'done'; packBh = bizMinutes(r.packing_printed_at, r.packed_at) / 60; packWall = hoursBetween(r.packing_printed_at, r.packed_at); }
+      else if (st === 'converted') { pState = 'none'; packBh = null; }
+      else { pState = 'wip'; packBh = bizMinutes(r.packing_printed_at, nowMs) / 60; packWall = hoursBetween(r.packing_printed_at, nowMs); }
+      // SAT: 인보이스 없음=none / 실SAT번호=done / 그 외(없음·빈값·TMP)=wip (SLA 일치)
+      const satRealNo = r.invoice_id && r.sat_no && String(r.sat_no) !== '' && !String(r.sat_no).startsWith('TMP-');
       let sState, satH;
       if (!r.invoice_id) { sState = 'none'; satH = null; }
-      else if (satReal) { sState = 'done'; satH = hoursBetween(r.inv_created_at, r.sat_entered_at); }
+      else if (satRealNo) { sState = 'done'; satH = r.sat_entered_at ? hoursBetween(r.inv_created_at, r.sat_entered_at) : null; }
       else { sState = 'wip'; satH = hoursBetween(r.inv_created_at, nowMs); }
-      // 수금: 인보이스 없음=none / 완납=done(일) / 그 외=wip(경과일)
+      // 수금: SLA 일치 — 실SAT+만기일 있는 인보이스만 수금단계. 완납=done / 미완납=wip / 그 전=none
       const fullyPaid = r.invoice_id && Number(r.paid_amount) >= Number(r.total_mxn || 0) && Number(r.total_mxn || 0) > 0 && r.last_pay_date;
       const creditDays = r.credit_days != null ? Number(r.credit_days) : null;
+      const inCollect = satRealNo && r.due_date != null;
       let cState, collectDays;
-      if (!r.invoice_id) { cState = 'none'; collectDays = null; }
+      if (!inCollect) { cState = 'none'; collectDays = null; }
       else if (fullyPaid) { cState = 'done'; collectDays = Math.max(0, daysBetween(String(r.inv_date), String(r.last_pay_date))); }
-      else { cState = 'wip'; collectDays = Math.max(0, daysBetween(String(r.inv_date), new Date(nowMs).toISOString().slice(0, 10))); }
+      else { cState = 'wip'; collectDays = Math.max(0, daysBetween(String(r.inv_date), today)); }
 
       // 달성%(그래프) — 완료 단계만
       const aOrder = oState === 'done' ? pct(kpi.order, orderH) : null;
@@ -156,7 +164,7 @@ export default async function processKpiRoutes(app) {
         customer: r.customer_name || '-',
         created_at: r.created_at,
         order_h: so.value, order_state: so.state, order_over: so.over, order_pct: round1(aOrder),
-        packing_h: sp.value, packing_state: sp.state, packing_over: sp.over, packing_pct: round1(aPack),
+        packing_h: sp.value, packing_state: sp.state, packing_over: sp.over, packing_pct: round1(aPack), packing_wall_h: round1(packWall),
         sat_h: ss.value, sat_state: ss.state, sat_over: ss.over, sat_pct: round1(aSat),
         collect_days: sc.value, collect_state: sc.state, collect_over: sc.over, credit_days: creditDays, collect_pct: round1(aCollect),
       });

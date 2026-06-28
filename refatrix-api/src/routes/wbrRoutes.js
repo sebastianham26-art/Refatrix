@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
+import { ORDER_WINDOW_DAYS, ORDER_WAIT_STATUSES } from '../processWindow.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds } from '../teams.js';
@@ -25,8 +26,9 @@ async function buildStageCohorts(perm, reqTeam) {
   cohorts.order = (await query(
     `SELECT q.created_at, q.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM quote_lines ql WHERE ql.quote_id=q.id) AS sku_count, (SELECT COALESCE(SUM(ql.qty),0) FROM quote_lines ql WHERE ql.quote_id=q.id) AS total_qty
        FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
-      WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed')
-        AND q.packing_printed_at IS NULL${tcl}`, a)).rows;
+      WHERE q.deleted_at IS NULL AND q.status IN (${ORDER_WAIT_STATUSES.map((s) => `'${s}'`).join(',')})
+        AND q.packing_printed_at IS NULL
+        AND q.created_at >= now() - (${ORDER_WINDOW_DAYS} || ' days')::interval${tcl}`, a)).rows;
 
   a = []; tcl = tc(a);
   // 포장단계 대기: 포장출력 했지만 포장작업지시서 스캔 업로드(완료) 전, 아직 전환 전

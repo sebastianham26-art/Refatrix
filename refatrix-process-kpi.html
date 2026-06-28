@@ -204,9 +204,16 @@
   function durCell(st,unit){
     if(!st||st.state==='none') return '<span class="pend">—</span>';
     if(st.state==='expired') return '<span class="pend">만료</span>';
+    if(st.state==='abandoned') return '<span class="pend" title="30일 초과 미확정 — 포기">포기'+(st.value!=null?' · '+Math.round(st.value/24)+'일':'')+'</span>';
     if(st.value==null) return '<span class="pend">—</span>';
     if(st.state==='wip') return '<span class="'+(st.over?'no':'wip')+'">'+st.value+unit+' <span class="tag">진행</span></span>';
     return '<span class="'+(st.over?'no':'ok')+'">'+st.value+unit+'</span>';
+  }
+  function packingCell(o){
+    let base=durCell({value:o.packing_h,state:o.packing_state,over:o.packing_over},'업무h');
+    if(o.packing_wall_h!=null && (o.packing_state==='wip' || Math.abs((o.packing_wall_h||0)-(o.packing_h||0))>=1))
+      base+=' <span class="pend" style="font-size:11px">· 실 '+o.packing_wall_h+'h</span>';
+    return base;
   }
   function collectCell(o){
     const cd=(o.credit_days!=null?o.credit_days:'-');
@@ -257,7 +264,7 @@
         +'<td class="l" style="font-weight:600">'+esc(o.quote_no)+'</td><td class="l">'+esc(o.customer)+'</td>'
         +'<td>'+String(o.created_at).slice(0,10)+'</td>'
         +'<td>'+durCell({value:o.order_h,state:o.order_state,over:o.order_over},'h')+'</td>'
-        +'<td>'+durCell({value:o.packing_h,state:o.packing_state,over:o.packing_over},'업무h')+'</td>'
+        +'<td>'+packingCell(o)+'</td>'
         +'<td>'+durCell({value:o.sat_h,state:o.sat_state,over:o.sat_over},'h')+'</td>'
         +'<td>'+collectCell(o)+'</td></tr>';
     }).join('');
