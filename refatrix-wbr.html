@@ -369,29 +369,39 @@
   function renderStageSla(sla){
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
     const order=['order','packing','sat','collect'];
-    const rateColor=(r)=> r==null?'var(--ink-soft,#888)' : (r>=90?'#1f8a4c' : (r>=70?'#b4801f' : '#b4401f'));
     const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
-    let h='<table class="slatab" style="width:100%;border-collapse:collapse;font-size:13px">'
-      +'<thead><tr style="text-align:left;color:#777"><th style="padding:6px 8px">단계</th>'
-      +'<th style="padding:6px 8px;text-align:right">대상</th><th style="padding:6px 8px;text-align:right">매출액</th>'
-      +'<th style="padding:6px 8px;text-align:right">준수</th>'
-      +'<th style="padding:6px 8px;text-align:right">준수율</th><th style="padding:6px 8px;text-align:right">평균</th></tr></thead><tbody>';
-    let totAmt=0;
-    for(const k of order){
+    const colOf=(r)=> r==null?'#c9c4b8' : (r>=90?'#1f8a4c' : (r>=70?'#c79a3a' : '#c0492f'));
+    let h='<div style="display:flex;flex-direction:column;gap:0">';
+    order.forEach((k,idx)=>{
       const s=sla[k]||{}; const n=Number(s.n||0);
-      const rate=(s.rate==null)?'—':(s.rate+'%');
+      const rate=s.rate;
+      const fill=(rate==null)?0:Math.max(0,Math.min(100,rate));
+      const col=colOf(rate);
+      const rateTxt=(rate==null)?'—':(rate+'%');
       const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
-      totAmt+=Number(s.amount||0);
-      h+='<tr style="border-top:1px solid #eee">'
-        +'<td style="padding:6px 8px">'+esc(s.label||k)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+n+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+(n?mxn(s.amount):'—')+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+Number(s.met||0)+'</td>'
-        +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+rateColor(s.rate)+'">'+rate+'</td>'
-        +'<td style="padding:6px 8px;text-align:right">'+avg+'</td></tr>';
-    }
-    h+='</tbody></table>';
-    h+='<div class="hint" style="margin-top:6px">대상 = 해당 단계 도달 건수 · 매출액 = 그 건들의 합(IVA 포함, 단계별 중복 가능) · 준수율 = 기한 내 비율 · 평균 = 단계 소요(정시수금은 지연일)</div>';
+      h+='<div style="border:1px solid #ece8df;border-left:4px solid '+col+';border-radius:8px;padding:9px 12px;background:#fff">'
+        // 헤더: 번호 + 단계명 + 준수율
+        +'<div style="display:flex;align-items:center;gap:8px">'
+        +  '<span style="flex:none;width:20px;height:20px;border-radius:50%;background:'+col+';color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">'+(idx+1)+'</span>'
+        +  '<span style="font-weight:600;font-size:13px">'+esc(s.label||k)+'</span>'
+        +  '<span style="margin-left:auto;font-weight:800;font-size:15px;color:'+col+'">'+rateTxt+'</span>'
+        +'</div>'
+        // 준수율 막대
+        +'<div style="margin:7px 0 6px;height:10px;background:#f0ede5;border-radius:6px;overflow:hidden">'
+        +  '<div style="height:100%;width:'+fill+'%;background:'+col+';border-radius:6px"></div>'
+        +'</div>'
+        // 메타: 대상 · 매출액 · 준수 · 평균
+        +'<div style="display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#6b6b6b">'
+        +  '<span>대상 <b style="color:#333">'+n+'</b>건</span>'
+        +  '<span>매출 <b style="color:#333">'+(n?mxn(s.amount):'—')+'</b></span>'
+        +  '<span>준수 <b style="color:#333">'+Number(s.met||0)+'</b>건</span>'
+        +  '<span>평균 <b style="color:#333">'+avg+'</b></span>'
+        +'</div>'
+        +'</div>';
+      if(idx<order.length-1) h+='<div style="text-align:center;color:#bcb6a8;font-size:12px;line-height:1.1;margin:1px 0">▼</div>';
+    });
+    h+='</div>';
+    h+='<div class="hint" style="margin-top:8px">막대 = 준수율(기한 내 비율) · 색: 초록 ≥90% / 주황 70~89% / 빨강 &lt;70% · 매출액은 IVA 포함(단계별 중복 가능) · 평균은 단계 소요(정시수금은 지연일)</div>';
     $('slaBody').innerHTML=h;
   }
 
@@ -926,6 +936,6 @@
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627fs"></script>
+<script src="refatrix-nav.js?v=20260627sf"></script>
 </body>
 </html>
