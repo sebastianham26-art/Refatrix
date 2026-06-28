@@ -72,7 +72,7 @@ export default async function processKpiRoutes(app) {
 
     // 견적(오더) 기준 한 행 = 4단계 (quotes.invoice_id 로 인보이스 연결)
     const rows = (await query(
-      `SELECT q.id, q.quote_no, q.created_at, q.packing_printed_at,
+      `SELECT q.id, q.quote_no, q.status, q.created_at, q.packing_printed_at,
               c.name AS customer_name,
               pd.uploaded_at AS packed_at,
               si.id AS invoice_id, si.created_at AS inv_created_at, si.inv_date, si.credit_days,
@@ -99,23 +99,47 @@ export default async function processKpiRoutes(app) {
       return groups.get(key);
     };
 
+    const nowMs = Date.now();
+    const stageOut = (state, value, kpiVal, isDays) => {
+      // state: done|wip|none|expired ; value: 소요(done) 또는 경과(wip)
+      let over = false;
+      if ((state === 'done' || state === 'wip') && value != null && kpiVal != null) over = value > kpiVal;
+      return { state, value: value == null ? null : (isDays ? Math.round(value) : round1(value)), over };
+    };
+
     for (const r of rows) {
-      // 단계별 실제 소요 + 달성%
-      const orderH = r.packing_printed_at ? hoursBetween(r.created_at, r.packing_printed_at) : null;
-      const packBh = (r.packing_printed_at && r.packed_at) ? bizMinutes(r.packing_printed_at, r.packed_at) / 60 : null;
+      const expired = String(r.status || '') === 'expired';
+      // 오더확정: printed=done / 만료=expired / 그 외=wip(견적 진행중)
+      let oState, orderH;
+      if (r.packing_printed_at) { oState = 'done'; orderH = hoursBetween(r.created_at, r.packing_printed_at); }
+      else if (expired) { oState = 'expired'; orderH = null; }
+      else { oState = 'wip'; orderH = hoursBetween(r.created_at, nowMs); }
+      // 피킹/포장: 미인쇄=none / 포장완료=done / 그 외=wip (업무시간)
+      let pState, packBh;
+      if (!r.packing_printed_at) { pState = 'none'; packBh = null; }
+      else if (r.packed_at) { pState = 'done'; packBh = bizMinutes(r.packing_printed_at, r.packed_at) / 60; }
+      else { pState = 'wip'; packBh = bizMinutes(r.packing_printed_at, nowMs) / 60; }
+      // SAT: 인보이스 없음=none / 실SAT=done / 그 외=wip
       const satReal = r.invoice_id && r.sat_entered_at && r.sat_no && !String(r.sat_no).startsWith('TMP-');
-      const satH = satReal ? hoursBetween(r.inv_created_at, r.sat_entered_at) : null;
+      let sState, satH;
+      if (!r.invoice_id) { sState = 'none'; satH = null; }
+      else if (satReal) { sState = 'done'; satH = hoursBetween(r.inv_created_at, r.sat_entered_at); }
+      else { sState = 'wip'; satH = hoursBetween(r.inv_created_at, nowMs); }
+      // 수금: 인보이스 없음=none / 완납=done(일) / 그 외=wip(경과일)
       const fullyPaid = r.invoice_id && Number(r.paid_amount) >= Number(r.total_mxn || 0) && Number(r.total_mxn || 0) > 0 && r.last_pay_date;
-      const collectDays = fullyPaid ? Math.max(0, daysBetween(String(r.inv_date), String(r.last_pay_date))) : null;
       const creditDays = r.credit_days != null ? Number(r.credit_days) : null;
+      let cState, collectDays;
+      if (!r.invoice_id) { cState = 'none'; collectDays = null; }
+      else if (fullyPaid) { cState = 'done'; collectDays = Math.max(0, daysBetween(String(r.inv_date), String(r.last_pay_date))); }
+      else { cState = 'wip'; collectDays = Math.max(0, daysBetween(String(r.inv_date), new Date(nowMs).toISOString().slice(0, 10))); }
 
-      const aOrder = pct(kpi.order, orderH);
-      const aPack = pct(kpi.packing, packBh);
-      const aSat = pct(kpi.sat, satH);
-      const aCollect = (fullyPaid && creditDays != null)
-        ? (collectDays > 0 ? (creditDays / collectDays) * 100 : 200) : null; // 같은날 완납=초과달성
+      // 달성%(그래프) — 완료 단계만
+      const aOrder = oState === 'done' ? pct(kpi.order, orderH) : null;
+      const aPack = pState === 'done' ? pct(kpi.packing, packBh) : null;
+      const aSat = sState === 'done' ? pct(kpi.sat, satH) : null;
+      const aCollect = (cState === 'done' && creditDays != null) ? (collectDays > 0 ? (creditDays / collectDays) * 100 : 200) : null;
 
-      // 그룹 누적
+      // 그룹 누적(완료만)
       let key, label;
       if (group === 'customer') { key = r.customer_name || '(미지정)'; label = key; }
       else if (group === 'month') { const d = new Date(r.created_at); key = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'); label = (d.getUTCMonth() + 1) + '월'; }
@@ -123,17 +147,18 @@ export default async function processKpiRoutes(app) {
       const g = ensure(key, label);
       [aOrder, aPack, aSat, aCollect].forEach((v, i) => { if (v != null) { g.sums[i] += v; g.counts[i] += 1; } });
 
+      const so = stageOut(oState, orderH, kpi.order, false);
+      const sp = stageOut(pState, packBh, kpi.packing, false);
+      const ss = stageOut(sState, satH, kpi.sat, false);
+      const sc = stageOut(cState, collectDays, creditDays, true);
       orders.push({
         quote_no: r.quote_no || ('#' + r.id),
         customer: r.customer_name || '-',
         created_at: r.created_at,
-        order_h: round1(orderH), order_pct: round1(aOrder),
-        packing_h: round1(packBh), packing_pct: round1(aPack),
-        sat_h: round1(satH), sat_pct: round1(aSat),
-        collect_days: collectDays != null ? Math.round(collectDays) : null,
-        credit_days: creditDays, collect_pct: round1(aCollect),
-        sat_pending: !!(r.invoice_id && !satReal),
-        collect_pending: !!(r.invoice_id && !fullyPaid),
+        order_h: so.value, order_state: so.state, order_over: so.over, order_pct: round1(aOrder),
+        packing_h: sp.value, packing_state: sp.state, packing_over: sp.over, packing_pct: round1(aPack),
+        sat_h: ss.value, sat_state: ss.state, sat_over: ss.over, sat_pct: round1(aSat),
+        collect_days: sc.value, collect_state: sc.state, collect_over: sc.over, credit_days: creditDays, collect_pct: round1(aCollect),
       });
     }
 

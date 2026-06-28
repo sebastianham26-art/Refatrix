@@ -51,6 +51,14 @@
   table.lst td{text-align:right;padding:8px 10px;border-bottom:1px solid #F1ECE2;white-space:nowrap}
   table.lst td.l{text-align:left}
   .ok{color:var(--income);font-weight:600}.no{color:var(--expense);font-weight:600}.pend{color:var(--muted)}
+  .wip{color:#BA7517;font-weight:600}
+  .tag{font-size:10px;padding:1px 5px;border-radius:8px;background:#FAEEDA;color:#854F0B;margin-left:2px}
+  .custbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;max-height:88px;overflow:auto;padding:2px 0}
+  .custbar .cblabel{font-size:11px;color:var(--muted);margin-right:2px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:14px;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;user-select:none}
+  .chip.on{background:#E4F0EB;color:var(--income);border-color:#cfe4db}
+  .chip .cn{font-size:10px;opacity:.7;margin-left:3px}
+  .chipbtn{font-size:11px;padding:3px 9px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--brand);cursor:pointer}
   .scrollx{overflow-x:auto}
   .secttl{font-size:14px;font-weight:600;margin:0 0 6px}
 </style>
@@ -84,6 +92,7 @@
         <span id="status" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
       </div>
       <div class="legend" id="legend"></div>
+      <div id="custbar" class="custbar" style="display:none"></div>
       <div class="chartbox"><canvas id="kc" role="img" aria-label="4단계 KPI 대비 달성 퍼센트 다중 선 그래프"></canvas></div>
       <div class="kpibar">
         <div class="khead"><span>KPI factor · 단계별 기준시간 직접 입력 (변경·저장 시 그래프·SLA 카드에 반영)</span></div>
@@ -145,7 +154,7 @@
   }
 
   let curMode='week', chart=null, lastKpi={order_hours:48,packing_hours:6,sat_hours:3};
-  let allOrders=[], sortState={key:'created_at',dir:-1};
+  let allOrders=[], sortState={key:'created_at',dir:-1}, custFilter=null;
   const COLS=[
     {k:'_sel',chk:true},
     {k:'quote_no',t:'오더번호',l:true},
@@ -192,11 +201,18 @@
     $('legend').innerHTML=lines.map((ln,i)=>'<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:0;border-top:2px '+(DASH[i%DASH.length].length?'dashed':'solid')+' '+PAL[i%PAL.length]+'"></span>'+esc(ln.label)+'</span>').join('')
       +'<span style="display:flex;align-items:center;gap:5px;color:#A32D2D"><span style="width:14px;height:0;border-top:1.5px dashed #A32D2D"></span>KPI 100%</span>';
   }
-  function durCell(val,unit,pct,pending){
-    if(pending) return '<span class="pend">진행중</span>';
-    if(val==null) return '<span class="pend">—</span>';
-    const cls=(pct!=null&&pct<100)?'no':'ok';
-    return '<span class="'+cls+'">'+val+unit+'</span>';
+  function durCell(st,unit){
+    if(!st||st.state==='none') return '<span class="pend">—</span>';
+    if(st.state==='expired') return '<span class="pend">만료</span>';
+    if(st.value==null) return '<span class="pend">—</span>';
+    if(st.state==='wip') return '<span class="'+(st.over?'no':'wip')+'">'+st.value+unit+' <span class="tag">진행</span></span>';
+    return '<span class="'+(st.over?'no':'ok')+'">'+st.value+unit+'</span>';
+  }
+  function collectCell(o){
+    const cd=(o.credit_days!=null?o.credit_days:'-');
+    if(o.collect_state==='none'||o.collect_days==null) return '<span class="pend">—</span>';
+    if(o.collect_state==='wip') return '<span class="'+(o.collect_over?'no':'wip')+'">'+o.collect_days+'일 경과 <span class="tag">진행</span></span> <span class="pend">/ 기일 '+cd+'</span>';
+    return '<span class="'+(o.collect_over?'no':'ok')+'">'+o.collect_days+'일</span> <span class="pend">/ 기일 '+cd+'</span>';
   }
   function fromMs(){ const v=$('d1').value; return v?new Date(v+'T00:00:00Z').getTime():0; }
   function groupOf(o){
@@ -207,7 +223,7 @@
   }
   function buildLines(){
     const g=new Map();
-    allOrders.filter(o=>o._sel).forEach(o=>{
+    allOrders.filter(o=>o._sel).filter(o=>!(curMode==='customer'&&custFilter&&!custFilter.has(o.customer||'(미지정)'))).forEach(o=>{
       const [key,label]=groupOf(o);
       if(!g.has(key)) g.set(key,{label,sum:[0,0,0,0],cnt:[0,0,0,0]});
       const e=g.get(key);
@@ -237,19 +253,30 @@
     if(!arr.length){ $('lbody').innerHTML='<tr><td colspan="8" class="l pend" style="padding:14px">해당 기간 오더가 없습니다.</td></tr>'; return; }
     $('lbody').innerHTML=arr.map(o=>{
       const i=allOrders.indexOf(o);
-      const collect = o.collect_pending ? '<span class="pend">미수</span>'
-        : (o.collect_days==null ? '<span class="pend">—</span>'
-        : '<span class="'+((o.credit_days!=null&&o.collect_days>o.credit_days)?'no':'ok')+'">'+o.collect_days+'일</span> <span class="pend">/ 기일 '+(o.credit_days!=null?o.credit_days:'-')+'</span>');
       return '<tr><td class="chk"><input type="checkbox" class="osel" data-i="'+i+'" '+(o._sel?'checked':'')+'></td>'
         +'<td class="l" style="font-weight:600">'+esc(o.quote_no)+'</td><td class="l">'+esc(o.customer)+'</td>'
         +'<td>'+String(o.created_at).slice(0,10)+'</td>'
-        +'<td>'+durCell(o.order_h,'h',o.order_pct,false)+'</td>'
-        +'<td>'+durCell(o.packing_h,'업무h',o.packing_pct,false)+'</td>'
-        +'<td>'+durCell(o.sat_h,'h',o.sat_pct,o.sat_pending)+'</td>'
-        +'<td>'+collect+'</td></tr>';
+        +'<td>'+durCell({value:o.order_h,state:o.order_state,over:o.order_over},'h')+'</td>'
+        +'<td>'+durCell({value:o.packing_h,state:o.packing_state,over:o.packing_over},'업무h')+'</td>'
+        +'<td>'+durCell({value:o.sat_h,state:o.sat_state,over:o.sat_over},'h')+'</td>'
+        +'<td>'+collectCell(o)+'</td></tr>';
     }).join('');
   }
-  function rebuild(){ renderChart(buildLines()); renderList(); }
+  function distinctCustomers(){
+    const m=new Map();
+    allOrders.forEach(o=>{const c=o.customer||'(미지정)'; m.set(c,(m.get(c)||0)+1);});
+    return [...m.entries()].sort((a,b)=>b[1]-a[1]);
+  }
+  function renderCustBar(){
+    const bar=$('custbar');
+    if(curMode!=='customer'||!allOrders.length){ bar.style.display='none'; return; }
+    bar.style.display='flex';
+    const cs=distinctCustomers();
+    bar.innerHTML='<span class="cblabel">고객 선택</span>'
+      +'<button class="chipbtn" data-act="all">전체</button><button class="chipbtn" data-act="none">해제</button>'
+      +cs.map(([c,n])=>'<span class="chip'+((custFilter&&custFilter.has(c))?' on':'')+'" data-c="'+esc(c)+'">'+esc(c)+'<span class="cn">'+n+'</span></span>').join('');
+  }
+  function rebuild(){ renderCustBar(); renderChart(buildLines()); renderList(); }
   async function loadAnalytics(){
     const from=$('d1').value, to=$('d2').value;
     if(!from||!to){ $('status').textContent='기간을 선택하세요.'; return; }
@@ -260,6 +287,8 @@
       if(d.error){ $('status').textContent='조회 실패: '+d.error; return; }
       if(d.kpi){ $('k_order').value=d.kpi.order_hours; $('k_packing').value=d.kpi.packing_hours; $('k_sat').value=d.kpi.sat_hours; }
       allOrders=(d.orders||[]).map(o=>({...o,_sel:true}));
+      const cs=distinctCustomers();
+      custFilter=new Set(cs.length>10? cs.slice(0,10).map(x=>x[0]) : cs.map(x=>x[0]));
       rebuild();
       $('status').textContent=allOrders.length+'건';
     }catch(e){ $('status').textContent='조회 오류'; }
@@ -281,6 +310,14 @@
     const cb=e.target.closest('.osel'); if(!cb)return; const i=+cb.dataset.i;
     if(allOrders[i]){ allOrders[i]._sel=cb.checked; renderChart(buildLines());
       const sa=$('selAll'); if(sa) sa.checked=allOrders.length>0&&allOrders.every(o=>o._sel); }
+  });
+  $('custbar').addEventListener('click',e=>{
+    const b=e.target.closest('.chipbtn');
+    if(b){ const cs=distinctCustomers().map(x=>x[0]); custFilter=b.dataset.act==='all'?new Set(cs):new Set(); renderCustBar(); renderChart(buildLines()); return; }
+    const chip=e.target.closest('.chip'); if(!chip)return; const c=chip.dataset.c;
+    if(!custFilter) custFilter=new Set(distinctCustomers().map(x=>x[0]));
+    if(custFilter.has(c)) custFilter.delete(c); else custFilter.add(c);
+    renderCustBar(); renderChart(buildLines());
   });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30);} })();
 </script>
