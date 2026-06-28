@@ -28,6 +28,8 @@ function reduceStage(rows, fn) {
       amount: Math.round((Number(r.amount) || 0) * 100) / 100,
       age: Math.round((Number(age) || 0) * 10) / 10,
       overdue: !!overdue,
+      sku_count: Number(r.sku_count) || 0,
+      total_qty: Math.round((Number(r.total_qty) || 0) * 1000) / 1000,
     };
     if (res.dueRel !== undefined) item.dueRel = res.dueRel;  // 정시수금: 만기 상대일(부호: +지남 / 0당일 / -미도래)
     items.push(item);

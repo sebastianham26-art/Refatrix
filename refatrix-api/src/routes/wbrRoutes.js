@@ -23,7 +23,7 @@ async function buildStageCohorts(perm, reqTeam) {
   let a = []; let tcl = tc(a);
   // 오더확정 대기: 견적 미결(작성중/확정) + 아직 포장출력 전
   cohorts.order = (await query(
-    `SELECT q.created_at, q.total_mxn AS amount, c.name AS customer_name
+    `SELECT q.created_at, q.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM quote_lines ql WHERE ql.quote_id=q.id) AS sku_count, (SELECT COALESCE(SUM(ql.qty),0) FROM quote_lines ql WHERE ql.quote_id=q.id) AS total_qty
        FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
       WHERE q.deleted_at IS NULL AND q.status IN ('draft','confirmed')
         AND q.packing_printed_at IS NULL${tcl}`, a)).rows;
@@ -31,7 +31,7 @@ async function buildStageCohorts(perm, reqTeam) {
   a = []; tcl = tc(a);
   // 포장단계 대기: 포장출력 했지만 포장작업지시서 스캔 업로드(완료) 전, 아직 전환 전
   cohorts.packing = (await query(
-    `SELECT q.packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name
+    `SELECT q.packing_printed_at, q.packing_due_at, q.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM quote_lines ql WHERE ql.quote_id=q.id) AS sku_count, (SELECT COALESCE(SUM(ql.qty),0) FROM quote_lines ql WHERE ql.quote_id=q.id) AS total_qty
        FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
       WHERE q.deleted_at IS NULL AND q.packing_printed_at IS NOT NULL AND q.status <> 'converted'
         AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)${tcl}`, a)).rows;
@@ -39,7 +39,7 @@ async function buildStageCohorts(perm, reqTeam) {
   a = []; tcl = tc(a);
   // 인보이스(SAT) 대기: 전환됐지만 실제 SAT 번호 미부여(없음/빈값/TMP- = 미발행)
   cohorts.sat = (await query(
-    `SELECT si.created_at AS converted_at, si.total_mxn AS amount, c.name AS customer_name
+    `SELECT si.created_at AS converted_at, si.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM sales_invoice_lines sil WHERE sil.invoice_id=si.id) AS sku_count, (SELECT COALESCE(SUM(sil.qty),0) FROM sales_invoice_lines sil WHERE sil.invoice_id=si.id) AS total_qty
        FROM sales_invoices si LEFT JOIN customers c ON c.id=si.customer_id
       WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
         AND (si.sat_no IS NULL OR si.sat_no = '' OR si.sat_no LIKE 'TMP-%')${tcl}`, a)).rows;
@@ -47,7 +47,7 @@ async function buildStageCohorts(perm, reqTeam) {
   a = []; tcl = tc(a);
   // 정시수금 대기: 실제 SAT 번호 발행완료된 인보이스 중 미수금(완납 안 됨)
   cohorts.collect = (await query(
-    `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS amount, c.name AS customer_name
+    `SELECT to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn AS amount, c.name AS customer_name, (SELECT COUNT(*) FROM sales_invoice_lines sil WHERE sil.invoice_id=si.id) AS sku_count, (SELECT COALESCE(SUM(sil.qty),0) FROM sales_invoice_lines sil WHERE sil.invoice_id=si.id) AS total_qty
        FROM sales_invoices si
        LEFT JOIN (SELECT spa.invoice_id, SUM(spa.amount) AS paid
                     FROM sales_payment_allocations spa GROUP BY spa.invoice_id) p ON p.invoice_id=si.id

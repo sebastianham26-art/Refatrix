@@ -155,31 +155,39 @@
     #memo{background:#fff;border:1px solid #ccc}
     a{color:inherit;text-decoration:none}
   }
-  /* 수주 단계 SLA — 병목 신호 4-레인 카드 (sls_03 원본 디자인) */
-  .slaflow{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
-  .slalane{flex:1;min-width:215px;border-radius:12px;border:1px solid var(--line);overflow:hidden;display:flex;flex-direction:column;background:#fff}
-  .slalane .ln-head{padding:13px 14px 11px}
-  .ln-title{font-size:15.5px;font-weight:800;color:var(--brand);display:flex;align-items:center;justify-content:space-between;gap:8px}
-  .ln-grade{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.75);border:1px solid currentColor;white-space:nowrap}
-  .ln-n{font-size:29px;font-weight:800;line-height:1.05;margin-top:4px;color:var(--brand)}
-  .ln-n span{font-size:12px;font-weight:700;color:var(--muted);margin-left:3px}
-  .ln-amt{font-size:13px;font-weight:800;margin-top:1px}
-  .ln-metrics{font-size:12px;font-weight:700;margin-top:3px;color:var(--ink)}
+  /* 수주 단계 SLA — 4분면 흐름 카드 (표준 디자인 · SKU/수량 포함) */
+  .slaquad{position:relative;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:38px 46px}
+  .slaq-cell{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;background:#fff;min-width:0}
+  .slaq-cell .ln-head{padding:11px 13px 9px}
+  .ln-top{display:flex;align-items:center;gap:8px}
+  .ln-title{font-size:15px;font-weight:800;color:var(--brand);white-space:nowrap}
+  .ln-grade{margin-left:auto;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.7);border:1px solid currentColor;white-space:nowrap}
+  .ln-statline{display:flex;align-items:baseline;gap:7px;margin-top:5px}
+  .ln-n{font-size:25px;font-weight:800;line-height:1;color:var(--brand)}
+  .ln-n span{font-size:11px;font-weight:700;color:var(--muted);margin-left:2px}
+  .ln-amt{font-size:13px;font-weight:800;margin-left:auto;white-space:nowrap}
+  .ln-metrics{font-size:11.5px;font-weight:700;margin-top:4px;color:var(--ink);white-space:nowrap}
   .ln-sep{color:#c2c0ba;margin:0 5px}
-  .ln-def{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.35;border-top:1px dashed rgba(0,0,0,.08);padding-top:6px}
-  .ln-list{border-top:1px solid var(--line);background:#fff;flex:1}
-  .slaarrow{display:flex;align-items:center;align-self:center;color:var(--brand-soft);font-size:20px;font-weight:800;flex:0 0 auto}
-  .g-good .ln-head{background:var(--income-bg)} .g-good{border-color:#cfe4db} .g-good .ln-title,.g-good .ln-grade,.g-good .ln-amt,.g-good .ln-rate{color:var(--income)}
-  .g-warn .ln-head{background:#FBF4E6} .g-warn{border-color:#ecdcb8} .g-warn .ln-title,.g-warn .ln-grade,.g-warn .ln-amt,.g-warn .ln-rate{color:var(--gold)}
-  .g-bad .ln-head{background:var(--expense-bg)} .g-bad{border-color:#e2b7af} .g-bad .ln-title,.g-bad .ln-grade,.g-bad .ln-amt,.g-bad .ln-rate{color:var(--expense)}
-  .g-na .ln-head{background:#F5F3EE} .g-na .ln-grade{color:var(--muted)}
+  .ln-def{font-size:10.5px;color:var(--muted);margin-top:6px;line-height:1.3;border-top:1px dashed rgba(0,0,0,.08);padding-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ln-list{border-top:1px solid var(--line);flex:1;overflow:auto;max-height:230px}
   .sltab{width:100%;border-collapse:collapse;font-size:11.5px}
-  .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:5px 10px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap}
-  .sltab td{text-align:right;padding:5px 10px;border-top:1px solid #f0ece2;white-space:nowrap}
-  .sltab td.cust{white-space:normal;word-break:break-word;font-weight:600;color:var(--ink);text-align:left}
-  .sltab .slok{color:var(--income);font-weight:800} .sltab .slno{color:var(--expense);font-weight:800} .sltab .slwarn{color:var(--gold);font-weight:800}
-  .sltab .ln-emptyrow td{color:var(--muted)}
-  @media print{ .slaflow{break-inside:avoid} .slalane{min-width:100%;break-inside:avoid} .slaarrow{display:none} }
+  .sltab th{font-size:10px;color:var(--muted);font-weight:700;text-align:right;padding:5px 9px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
+  .sltab th.l{text-align:left}
+  .sltab td{text-align:right;padding:5px 9px;border-top:1px solid #f0ece2;white-space:nowrap}
+  .sltab td.cust{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;font-weight:600;color:var(--ink);text-align:left}
+  .sltab .slok{color:var(--income);font-weight:800}.sltab .slno{color:var(--expense);font-weight:800}.sltab .slwarn{color:var(--gold);font-weight:800}
+  .g-good .ln-head{background:#E4F0EB}.g-good{border-color:#cfe4db}.g-good .ln-title,.g-good .ln-grade,.g-good .ln-amt{color:var(--income)}
+  .g-warn .ln-head{background:#FBF4E6}.g-warn{border-color:#ecdcb8}.g-warn .ln-title,.g-warn .ln-grade,.g-warn .ln-amt{color:var(--gold)}
+  .g-bad .ln-head{background:#F6E7E4}.g-bad{border-color:#e2b7af}.g-bad .ln-title,.g-bad .ln-grade,.g-bad .ln-amt{color:var(--expense)}
+  .g-na .ln-head{background:#F5F3EE}.g-na .ln-grade{color:var(--muted)}
+  .qarrow{position:absolute;z-index:5;width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:var(--brand);border-radius:50%;box-shadow:0 2px 7px rgba(20,61,52,.30)}
+  .qarrow svg{width:24px;height:24px;display:block}
+  .qa-top{top:25%;left:50%;transform:translate(-50%,-50%)}
+  .qa-right{top:50%;left:calc(75% + 4px);transform:translate(-50%,-50%)}
+  .qa-bottom{top:75%;left:50%;transform:translate(-50%,-50%)}
+  .qstep{position:absolute;top:8px;left:-1px;z-index:4;font-size:9.5px;font-weight:800;color:#fff;background:#1E5247;border-radius:0 999px 999px 0;padding:1px 7px 1px 6px}
+  @media print{ .slaquad{gap:14px} .qarrow{display:none} .ln-list{max-height:none} }
+  @media (max-width:760px){ .slaquad{grid-template-columns:1fr} .qarrow{display:none} }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -392,69 +400,48 @@
     }catch(e){ $('slaBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   function renderStageSla(sla){
+    function arrowSVG(d){
+      var paths={right:'M4 12 H18 M13 7 L18 12 L13 17',down:'M12 4 V18 M7 13 L12 18 L17 13',left:'M20 12 H6 M11 7 L6 12 L11 17'};
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[d]+'"/></svg>';
+    }
     if(!sla){ $('slaBody').innerHTML='<div class="hint">데이터 없음</div>'; return; }
-    const order=['order','packing','sat','collect'];
-    const shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
-    const mxn=(v)=> '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});
-    // 친절한 서술형 정의(대기/지연 기준)
-    const defMap={
-      order:'견적 후 포장출력 전 대기 · 48h 초과 시 지연',
-      packing:'포장출력 후 스캔(=포장완료) 업로드 전 대기 · 6업무h 초과 시 지연',
-      sat:'전환 후 SAT 번호 발행 전 대기 · 3h 초과 시 지연',
-      collect:'SAT 발행 후 미수금 · 외상기간중/기일도래/지연중',
+    var gridK=['order','packing','collect','sat']; // TL,TR,BL,BR (시계방향 흐름 order→packing→sat→collect)
+    var shortLbl={order:'오더확정',packing:'피킹/포장',sat:'SAT 발행',collect:'수금'};
+    var defMap={order:'견적작성→오더확정(포장출력) 전 · 48h 초과 지연',packing:'포장출력→포장완료(스캔) 전 · 업무6h 초과 지연',sat:'전환→SAT 인보이스 발행 전 · 3h 초과 지연',collect:'인보이스별 납부 상태 · 외상기간중/기일도래/지연중'};
+    var step={order:'1',packing:'2',sat:'3',collect:'4'};
+    var mxn=function(v){return '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});};
+    var qfmt=function(v){return Number(v||0).toLocaleString('es-MX');};
+    var shortUnit=function(u){return u==='시간'?'h':u==='업무시간'?'업무h':u==='지연일'?'일':(u||'');};
+    var grade=function(s){var n=+s.n||0,d=+s.delayed||0;if(!n)return'na';if(d===0)return'good';if(d*2<n)return'warn';return'bad';};
+    var gLabel=function(s,g){return g==='na'?'대기 없음':g==='good'?'정상':('지연 '+(+s.delayed||0)+'건');};
+    var cell=function(k){
+      var s=sla[k]||{};var n=+s.n||0;var d=+s.delayed||0;var g=grade(s);
+      var avg=(s.avg==null)?'—':(s.avg+shortUnit(s.unit));
+      var items=Array.isArray(s.items)?s.items:[];
+      var h='<div class="slaq-cell g-'+g+'"><div class="ln-head">'
+        +'<div class="ln-top"><span class="ln-title">'+esc(shortLbl[k])+'</span><span class="ln-grade">'+gLabel(s,g)+'</span></div>'
+        +'<div class="ln-statline"><span class="ln-n">'+n+'<span>건 대기</span></span><span class="ln-amt">'+(n?mxn(s.amount):'—')+'</span></div>'
+        +'<div class="ln-metrics">'+(d>0?('지연 '+d+'건'):'지연 없음')+'<span class="ln-sep">·</span>평균 '+avg+'</div>'
+        +'<div class="ln-def">'+esc(defMap[k])+'</div></div><div class="ln-list">';
+      h+='<table class="sltab"><thead><tr><th class="l">고객</th><th>SKU</th><th>수량</th><th>금액</th><th>경과</th><th>상태</th></tr></thead><tbody>';
+      if(!items.length){h+='<tr><td class="cust" style="color:var(--muted)">대기 없음</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>';}
+      else items.forEach(function(it){
+        var el,stt;
+        if(k==='collect'&&it.dueRel!==undefined){var r=+it.dueRel;
+          if(r>0){el='+'+r+'일';stt='<span class="slno">지연중 '+r+'day</span>';}
+          else if(r===0){el='0일';stt='<span class="slwarn">기일도래</span>';}
+          else{el=r+'일';stt='<span class="slok">외상기간중</span>';}
+        }else{el=(it.age!=null?it.age+shortUnit(s.unit):'—');stt=it.overdue?'<span class="slno">지연</span>':'<span class="slok">정상</span>';}
+        h+='<tr><td class="cust">'+esc(it.customer||'-')+'</td><td>'+qfmt(it.sku_count)+'</td><td>'+qfmt(it.total_qty)+'</td><td>'+mxn(it.amount)+'</td><td>'+el+'</td><td>'+stt+'</td></tr>';
+      });
+      h+='</tbody></table></div><div class="qstep">'+step[k]+'단계</div></div>';
+      return h;
     };
-    const shortUnit=(u)=> u==='시간'?'h' : u==='업무시간'?'업무h' : u==='지연일'?'일' : (u?(' '+u):'');
-    // 병목 등급(지연 건수 기준): n=0→중립, 지연0→양호, 절반미만→주의, 절반이상→병목
-    const grade=(s)=>{ const n=Number(s.n||0), d=Number(s.delayed||0); if(!n) return 'na'; if(d===0) return 'good'; if(d*2<n) return 'warn'; return 'bad'; };
-    const gLabel=(s,g)=> g==='na'?'대기 없음' : g==='good'?'정상' : ('지연 '+Number(s.delayed||0)+'건');
-
-    let h='<div class="slaflow">';
-    order.forEach((k,i)=>{
-      const s=sla[k]||{}; const n=Number(s.n||0); const d=Number(s.delayed||0); const g=grade(s);
-      const avg=(s.avg==null)?'—':(s.avg+' '+(s.unit||''));
-      const items=Array.isArray(s.items)?s.items:[];
-      let lane='<div class="slalane g-'+g+'">'
-        +'<div class="ln-head">'
-          +'<div class="ln-title">'+esc(shortLbl[k]||k)+'<span class="ln-grade">'+gLabel(s,g)+'</span></div>'
-          +'<div class="ln-n">'+n+'<span>건 대기</span></div>'
-          +'<div class="ln-amt">'+(n?mxn(s.amount):'—')+'</div>'
-          +'<div class="ln-metrics"><span class="ln-rate">'+(d>0?('지연 '+d+'건'):'지연 없음')+'</span><span class="ln-sep">·</span><span class="ln-avg">평균 '+avg+'</span></div>'
-          +'<div class="ln-def">'+esc(defMap[k]||'')+'</div>'
-        +'</div>'
-        +'<div class="ln-list">';
-      lane+='<table class="sltab"><thead><tr><th style="text-align:left">고객</th><th>금액</th><th>경과</th><th>상태</th></tr></thead><tbody>';
-      if(!items.length){
-        lane+='<tr class="ln-emptyrow"><td class="cust" style="text-align:left">대기 없음</td><td>—</td><td>—</td><td>—</td></tr>';
-      }else{
-        items.forEach(it=>{
-          let elapsed, statusHtml;
-          if(k==='collect' && it.dueRel!==undefined){
-            const r=Number(it.dueRel);
-            if(r>0){      elapsed='+'+r+'일'; statusHtml='<span class="slno">지연중 '+r+'day</span>'; }
-            else if(r===0){ elapsed='0일';   statusHtml='<span class="slwarn">기일도래</span>'; }
-            else {        elapsed=r+'일';    statusHtml='<span class="slok">외상기간중</span>'; }  // r<0 → '-5일'(남은일수)
-          }else{
-            const age=(it.age!=null?it.age:it.lead);
-            elapsed=(age!=null?(age+shortUnit(s.unit)):'—');
-            const od=(it.overdue===true)||(it.overdue===undefined&&it.ok===false);   // 신/구 스냅샷 호환
-            statusHtml=od?'<span class="slno">지연</span>':'<span class="slok">정상</span>';
-          }
-          lane+='<tr>'
-            +'<td class="cust" style="text-align:left">'+esc(it.customer||'-')+'</td>'
-            +'<td>'+mxn(it.amount)+'</td>'
-            +'<td>'+elapsed+'</td>'
-            +'<td>'+statusHtml+'</td>'
-            +'</tr>';
-        });
-      }
-      lane+='</tbody></table>';
-      lane+='</div></div>';
-      h+=lane;
-      if(i<order.length-1) h+='<div class="slaarrow">▶</div>';
-    });
-    h+='</div>';
-    h+='<div class="hint" style="margin-top:8px">각 단계 = 지금 그 단계에서 <b>다음 행동을 기다리는(아직 안 끝난)</b> 건. 큰 숫자 = 대기 건수 · <b style="color:var(--expense)">지연</b> = 기한 초과(병목) · 평균 = 평균 경과(정시수금은 지연일). 완료돼 다음 단계로 넘어간 건은 빠집니다. 정시수금 상태: <b style="color:var(--income)">외상기간중</b>(만기 전, 경과 −N일 = N일 남음) · <b style="color:var(--gold)">기일도래</b>(만기 당일) · <b style="color:var(--expense)">지연중 Nday</b>(만기 후, 경과 +N일). 음영색: <b style="color:var(--income)">초록 정상</b> · <b style="color:var(--gold)">노랑 일부지연</b> · <b style="color:var(--expense)">빨강 다수지연</b> · 회색 대기없음.</div>';
-    $('slaBody').innerHTML=h;
+    var html='<div class="slaquad">';
+    gridK.forEach(function(k){html+=cell(k);});
+    html+='<div class="qarrow qa-top">'+arrowSVG('right')+'</div><div class="qarrow qa-right">'+arrowSVG('down')+'</div><div class="qarrow qa-bottom">'+arrowSVG('left')+'</div>';
+    html+='</div>';
+    $('slaBody').innerHTML=html;
   }
 
   // ===== 카드 (영업 대시보드 summary 재사용) =====
@@ -988,6 +975,6 @@
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627wc"></script>
+<script src="refatrix-nav.js?v=20260627q1"></script>
 </body>
 </html>
