@@ -166,6 +166,26 @@
       <div id="kpiBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
     </div>
 
+    <!-- 수주 단계 SLA (전 직원 표시 · 고객명은 권한자만, 서버측 마스킹) -->
+    <div class="card" id="slaCard">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">수주 단계 SLA <span class="hint" style="display:inline;margin:0">— 견적 → 피킹/포장 → SAT 발행 → 수금 단계별 현재 대기·지연(병목)</span></h2>
+      </div>
+      <div id="portalSlaBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+    </div>
+    <!-- 일정 달력 (이번 달 미리보기) -->
+    <div class="card" id="calCard">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">일정 달력</h2>
+        <button class="navb" id="pcalPrev" type="button">‹</button>
+        <span id="pcalTitle" style="font-weight:800;color:var(--brand);min-width:110px;text-align:center"></span>
+        <button class="navb" id="pcalNext" type="button">›</button>
+        <button class="btn" style="margin-left:auto;padding:7px 13px;font-size:12px" onclick="goScreen('board')">일정·공지·할 일 열기 →</button>
+      </div>
+      <div id="pcalGrid" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+      <div class="hint" style="margin-top:8px"><span class="cgchip ev">초록</span> 일정 · <span class="cgchip td">파랑</span> 할 일(마감) · 날짜를 누르면 일정 화면으로 이동</div>
+    </div>
+
     <!-- 수주 이후 흐름 종합 대시보드 -->
     <div class="card hidden" id="funnelCard">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
@@ -199,26 +219,6 @@
       <div class="flow" id="flowProduct"></div>
     </div>
 
-    <!-- 일정 달력 (이번 달 미리보기) -->
-    <div class="card" id="calCard">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <h2 style="margin:0">일정 달력</h2>
-        <button class="navb" id="pcalPrev" type="button">‹</button>
-        <span id="pcalTitle" style="font-weight:800;color:var(--brand);min-width:110px;text-align:center"></span>
-        <button class="navb" id="pcalNext" type="button">›</button>
-        <button class="btn" style="margin-left:auto;padding:7px 13px;font-size:12px" onclick="goScreen('board')">일정·공지·할 일 열기 →</button>
-      </div>
-      <div id="pcalGrid" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
-      <div class="hint" style="margin-top:8px"><span class="cgchip ev">초록</span> 일정 · <span class="cgchip td">파랑</span> 할 일(마감) · 날짜를 누르면 일정 화면으로 이동</div>
-    </div>
-
-    <!-- 수주 단계 SLA (전 직원 표시 · 고객명은 권한자만, 서버측 마스킹) -->
-    <div class="card" id="slaCard">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <h2 style="margin:0">수주 단계 SLA <span class="hint" style="display:inline;margin:0">— 견적 → 피킹/포장 → SAT 발행 → 수금 단계별 현재 대기·지연(병목)</span></h2>
-      </div>
-      <div id="portalSlaBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
-    </div>
   </div>
 </div>
 
