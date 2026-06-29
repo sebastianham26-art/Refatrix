@@ -67,7 +67,6 @@ export default async function processKpiRoutes(app) {
 
     const fromMs = new Date(from + 'T00:00:00Z').getTime();
     const weekIndex = (d) => Math.floor((new Date(d).getTime() - fromMs) / (7 * 86400000));
-    const pct = (kpiH, actualH) => (actualH && actualH > 0 ? (kpiH / actualH) * 100 : null);
 
     const orders = [];
     const groups = new Map(); // key -> {label, sums:[4], counts:[4]}
@@ -117,11 +116,24 @@ export default async function processKpiRoutes(app) {
       else if (fullyPaid) { cState = 'done'; collectDays = Math.max(0, daysBetween(String(r.inv_date), String(r.last_pay_date))); }
       else { cState = 'wip'; collectDays = Math.max(0, daysBetween(String(r.inv_date), today)); }
 
-      // 달성%(그래프) — 완료 단계만
-      const aOrder = oState === 'done' ? pct(kpi.order, orderH) : null;
-      const aPack = pState === 'done' ? pct(kpi.packing, packBh) : null;
-      const aSat = sState === 'done' ? pct(kpi.sat, satH) : null;
-      const aCollect = (cState === 'done' && creditDays != null) ? (collectDays > 0 ? (creditDays / collectDays) * 100 : 200) : null;
+      // 달성%(그래프) — 단계별 규칙
+      //  오더·피킹·SAT(시간기준, 상한 200%): 미완료(wip/포기)=0% / 완료=KPI÷실제×100(0h 즉시=200) / 해당없음=제외(null)
+      //  수금(외상기일기준, 상한 100%): 기일내(진행·완료)=100% / 기일초과=100−초과일÷외상일×100(≥0) / 해당없음=제외(null)
+      const speedPct = (kpiH, actualH) => (actualH > 0 ? (kpiH / actualH) * 100 : 200); // 0h=즉시 완료=200(상한)
+      const aOrder = oState === 'done' ? speedPct(kpi.order, orderH)
+        : (oState === 'wip' || oState === 'abandoned') ? 0 : null;
+      const aPack = pState === 'done' ? speedPct(kpi.packing, packBh)
+        : pState === 'wip' ? 0 : null;
+      const aSat = sState === 'done' ? (satH != null ? speedPct(kpi.sat, satH) : null)
+        : sState === 'wip' ? 0 : null;
+      let aCollect = null;
+      if (cState !== 'none') {
+        const refDate = (cState === 'done' && r.last_pay_date) ? String(r.last_pay_date) : today;
+        const overdue = r.due_date != null ? daysBetween(String(r.due_date), refDate) : 0; // refDate − due_date (>0 지연)
+        if (overdue <= 0) aCollect = 100;                                   // 기일 내(외상기간중·기일내완료)
+        else if (creditDays && creditDays > 0) aCollect = Math.max(0, 100 - (overdue / creditDays) * 100); // 기일 초과: 차감
+        else aCollect = 0;                                                  // 외상기일 미상 + 초과
+      }
 
       // 그룹 누적(완료만)
       let key, label;
