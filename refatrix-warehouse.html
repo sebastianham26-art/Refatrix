@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 창고</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--steel:#52708A;--steel-bg:#E9EFF4;--gold:#B8893B;--radius:14px;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:14px;line-height:1.5}
+  .wrap{max-width:560px;margin:0 auto}
+  .head{background:var(--steel);color:#fff;padding:16px 18px;border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .head h1{margin:0;font-size:19px;letter-spacing:.02em}
+  .head .who{font-size:12px;color:#e3edf4;text-align:right;line-height:1.35}
+  .head .who b{color:#fff;font-weight:700}
+  .intro{font-size:12.5px;color:var(--muted);margin:12px 2px 4px}
+  .tiles{display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px}
+  @media(min-width:520px){.tiles{grid-template-columns:1fr 1fr}}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px;min-height:96px;display:flex;flex-direction:column;justify-content:center;gap:4px;position:relative}
+  .tile .ic{font-size:24px;line-height:1}
+  .tile .t{font-size:16px;font-weight:800;margin-top:6px}
+  .tile .d{font-size:12px;color:var(--muted)}
+  .tile.soon{opacity:.62}
+  .tile.soon .badge{position:absolute;top:12px;right:12px;font-size:10.5px;font-weight:800;color:var(--gold);background:#fbf4e7;border:1px solid #ecdcb3;border-radius:999px;padding:3px 9px}
+  .note{background:#faf8f3;border-left:3px solid var(--gold);border-radius:8px;padding:11px 13px;font-size:12px;color:#5e5a52;margin-top:16px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>창고</h1>
+    <div class="who" id="whoBox">—</div>
+  </div>
+
+  <div class="intro">입고 · 피킹 · 패킹 작업 공간입니다. 기능은 단계별로 추가됩니다.</div>
+
+  <div class="tiles">
+    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">📦</span><span class="t">입고 대기 / 랙 배치</span><span class="d">컨테이너 도착분 → 랙 배치(put-away)</span></div>
+    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">🔎</span><span class="t">피킹</span><span class="d">랙 위치 확인 → 바코드 스캔 피킹</span></div>
+    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">📥</span><span class="t">패킹</span><span class="d">박스에 담기 → 박스별 라벨 인쇄</span></div>
+    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">📋</span><span class="t">작업 현황</span><span class="d">진행 중·완료 작업 한눈에</span></div>
+  </div>
+
+  <div class="note">이 화면은 <b>창고 역할</b>과 <b>디렉터</b>에게만 보입니다. 위 작업 타일은 다음 배포 단계(입고 → 피킹/패킹 → 라벨)에서 차례로 활성화됩니다.</div>
+</div>
+
+<script>
+  (function(){
+    function sess(){ try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+      try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+      return null; }
+    var s=sess(); var box=document.getElementById('whoBox');
+    if(s&&s.user){ var nm=s.user.name||''; var rl=s.user.role||''; box.innerHTML=(nm?'<b>'+nm+'</b><br>':'')+'역할: '+(rl||'—'); }
+    else { box.textContent='로그인 필요'; }
+  })();
+</script>
+<script src="refatrix-nav.js?v=20260628wh1"></script>
+</body>
+</html>

@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260627fs loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260628wh1 loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -57,7 +57,8 @@
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
-    portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'}
+    portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
+    whHome:{file:'refatrix-warehouse.html',name:'창고 홈',desc:'입고·피킹·패킹'}
   };
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
   var PAGEKEY={
@@ -73,7 +74,8 @@
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory',
     recost:'__director__',
     products:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing',
-    users:'__director__', company:'__director__', processKpi:'__director__'
+    users:'__director__', company:'__director__', processKpi:'__director__',
+    whHome:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
@@ -83,11 +85,14 @@
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr']},
+    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
-  var ROLE_ONLY_GROUPS={ treasury:['finance'] };
+  var ROLE_ONLY_GROUPS={ treasury:['finance'], warehouse:['warehouse'] };
+  // 역할별 로그인 랜딩(제한역할이 미허용 화면 접근 시 되돌릴 첫 화면).
+  var ROLE_LANDING={ treasury:'finance', warehouse:'whHome' };
   // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
   var ROLE_HIDE_SCREENS={ treasury:{ finPay:1, budget:1 } };
   // 역할별 그룹 숨김(블랙리스트): 그룹 자체를 제거. 영업(sales)=재무 그룹 숨김.
@@ -235,7 +240,7 @@
       GROUPS.forEach(function(g){ if(only.indexOf(g.key)>=0) g.screens.forEach(function(k){ if(!hide[k]) allowed[k]=1; }); });
       var cur=curScreen();
       if(cur && allowed[cur]) return false;     // 허용된 화면이면 통과(재무 탭들)
-      if(sess && sess.token){ nav('finance'); return true; }  // 그 외(미허용·미인식) → 재무/계좌
+      if(sess && sess.token){ nav(ROLE_LANDING[sum.role]||'portal'); return true; }  // 그 외(미허용·미인식) → 역할 랜딩
       return false;
     }
     // 그룹 숨김(블랙리스트) 역할: 숨긴 그룹 '전용' 화면에 직접 접근하면 포털로 되돌림.

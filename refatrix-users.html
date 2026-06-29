@@ -84,7 +84,7 @@
       <div class="row">
         <div><label>이름</label><input id="n-name" type="text"></div>
         <div><label>로그인 아이디</label><input id="n-login" type="text" placeholder="예: sales1"></div>
-        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="sales_support">영업지원(sales_support)</option><option value="director">디렉터(director)</option><option value="socio">소시오(socio·파트너)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="viewer">뷰어</option></select></div>
+        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="sales_support">영업지원(sales_support)</option><option value="director">디렉터(director)</option><option value="socio">소시오(socio·파트너)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="warehouse">창고(warehouse)</option><option value="viewer">뷰어</option></select></div>
         <div><label>PIN(4~8자리, 비우면 자동)</label><input id="n-pin" type="text" inputmode="numeric" placeholder="자동"></div>
         <div><label>소속 팀</label><select id="n-team"></select></div>
       </div>
@@ -113,6 +113,7 @@
     ['영업지원', [['settlement','수금/정산(AR)'],['stock','재고 이동'],['shortage','부족분'],['inventory','수입원가·입고']]],
     ['재무', [['transactions','재무(거래·캐시플로)'],['commission','커미션'],['budget','예산']]],
     ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
+    ['창고', [['warehouse','창고(입고·피킹·패킹)']]],
   ];
   const PAGES=PERM_GROUPS.flatMap(([,arr])=>arr);
   const $=(id)=>document.getElementById(id);
@@ -324,7 +325,7 @@
   // ===== 로그인 타임라인 (일자별) =====
   let tlBound=false, tlTimer=null;
   // 역할 표시 순서: 관리자 → socio → 영업 → 영업지원 → 재무 → 그외
-  const TL_ROLE_ORDER={director:0,socio:1,sales:2,sales_support:3,treasury:4};
+  const TL_ROLE_ORDER={director:0,socio:1,sales:2,sales_support:3,treasury:4,warehouse:5};
   function tlRank(r){ return TL_ROLE_ORDER[r]!==undefined?TL_ROLE_ORDER[r]:5; }
   function tlTodayStr(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
   function tlHHMM(min){ min=Math.max(0,Math.min(1440,Math.round(min))); return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
@@ -592,6 +593,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260627fs"></script>
+<script src="refatrix-nav.js?v=20260628wh1"></script>
 </body>
 </html>
