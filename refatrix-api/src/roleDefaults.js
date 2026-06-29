@@ -13,6 +13,7 @@ export const SCREEN_PAGE_KEY = {
   budget: 'budget',
   importcost: 'inventory',   // 수입원가 화면 → inventory 권한
   products: 'products',
+  warehouse: 'warehouse',   // 창고 홈/모듈 화면 → warehouse 권한
   // 공통(권한 불필요): dashboard, board, salesperf
   // 디렉터 전용: users
 };
@@ -40,6 +41,11 @@ export const ROLE_DEFAULTS = {
             ['settlement', 'edit'], ['inventory', 'edit'], ['transactions', 'view']],
     fields: ['sales_amount', 'ar_amount'],
   },
+  warehouse: {
+    // 창고 작업자: 창고 모듈만. 원가·매출액·계좌 미노출(fields 비움).
+    pages: [['warehouse', 'edit']],
+    fields: [],
+  },
   treasury: {
     pages: [['transactions', 'edit'], ['settlement', 'edit'], ['budget', 'edit']],
     fields: ['sales_amount', 'ar_amount'],
@@ -59,7 +65,7 @@ export const ROLE_DEFAULTS = {
   },
 };
 
-const ALL_PAGES = ['quote', 'sales', 'stock', 'shortage', 'devrequest', 'pipeline', 'customers', 'targets', 'marketing', 'transactions', 'settlement', 'budget', 'inventory', 'products'];
+const ALL_PAGES = ['quote', 'sales', 'stock', 'shortage', 'devrequest', 'pipeline', 'customers', 'targets', 'marketing', 'transactions', 'settlement', 'budget', 'inventory', 'products', 'warehouse'];
 
 /**
  * 역할 기본 권한을 사용자에게 부여.
