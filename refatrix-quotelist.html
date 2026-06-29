@@ -576,14 +576,14 @@
     set('A1','COTIZACIÓN',cTitle);
     set('A2','Cliente: '+(q.party_name||''),cMeta);
     set('A3','Fecha: '+(q.quote_date||'')+'    No.: '+(q.quote_no||''),cMeta);
-    set('A4','Capture la Cantidad; el Importe, IVA y Total se calculan automáticamente. Columna Existencia = stock disponible.',cNote);
+    set('A4','Cantidad = cantidad cotizada (editable). El Importe, IVA y Total se recalculan automáticamente. Columna Existencia = stock disponible.',cNote);
 
     // 표 헤더 (행 6)
     const HR=6;
     const headers=['#','Clave CTR','Clave SYD','Producto','Aplicación','Existencia','Precio unit. (sin IVA)','Cantidad','Importe (sin IVA)'];
     headers.forEach((h,i)=>{ let s=fHead; if(i===5)s=fHeadExist; if(i===7)s=fHeadQty; set(cols[i]+HR,h,s); });
 
-    // 데이터 (Cantidad 기본 1, Importe = Precio×Cantidad 수식)
+    // 데이터 (Cantidad = 견적 수량 자동기입, Importe = Precio×Cantidad 수식)
     const first=HR+1;
     rows.forEach((l,idx)=>{
       const r=first+idx; const cp=codePair(l);
@@ -594,7 +594,7 @@
       set('E'+r, l.app_text||'', cL);
       set('F'+r, Number(liveAvail(l))||0, cExist);   // 가용재고(라이브: 현재고−타예약, 음영)
       set('G'+r, Number(l.final_price)||0, cMoney);    // 단가 (할인 반영, IVA 미포함)
-      set('H'+r, 1, cQty);                              // 수량 입력칸 (기본 1)
+      set('H'+r, Number(l.qty)||0, cQty);               // 수량 = 견적 수량 (PDF와 동일, 수정 가능)
       set('I'+r, 0, cMoney, 'G'+r+'*H'+r);             // Importe = Precio × Cantidad
     });
     const last=first+rows.length-1;
