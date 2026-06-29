@@ -188,7 +188,7 @@
     chart=new Chart($('kc').getContext('2d'),{type:'line',data:{labels:['오더확정','피킹/포장','SAT 발행','수금'],datasets:[]},
       options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},spanGaps:true,
         plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':Math.round(c.parsed.y)+'%')}}},
-        scales:{y:{min:0,suggestedMax:160,title:{display:true,text:'달성 % (KPI 대비)'},ticks:{callback:v=>v+'%'},
+        scales:{y:{min:0,suggestedMax:210,title:{display:true,text:'달성 % (KPI 대비 · 그래프 200% 상한)'},ticks:{callback:v=>v+'%'},
           grid:{color:c=>c.tick.value===100?'#A32D2D':'rgba(0,0,0,.06)'}},x:{grid:{display:false},ticks:{font:{weight:'bold',size:13},color:'#1C1B19'}}}}});
     return chart;
   }
@@ -228,13 +228,14 @@
     if(curMode==='month'){ return [d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0'),(d.getUTCMonth()+1)+'월']; }
     const wi=Math.floor((d.getTime()-fromMs())/(7*86400000)); return ['w'+wi,(wi+1)+'주'];
   }
+  const GRAPH_PCT_CAP=200; // 그래프(평균)만 적용. 리스트 개별 달성%는 실제값 표시.
   function buildLines(){
     const g=new Map();
     allOrders.filter(o=>o._sel).filter(o=>!(curMode==='customer'&&custFilter&&!custFilter.has(o.customer||'(미지정)'))).forEach(o=>{
       const [key,label]=groupOf(o);
       if(!g.has(key)) g.set(key,{label,sum:[0,0,0,0],cnt:[0,0,0,0]});
       const e=g.get(key);
-      [o.order_pct,o.packing_pct,o.sat_pct,o.collect_pct].forEach((v,i)=>{ if(v!=null){ e.sum[i]+=v; e.cnt[i]+=1; } });
+      [o.order_pct,o.packing_pct,o.sat_pct,o.collect_pct].forEach((v,i)=>{ if(v!=null){ e.sum[i]+=Math.min(v,GRAPH_PCT_CAP); e.cnt[i]+=1; } }); // 그래프 평균은 200% 상한(극단 왜곡 방지). 리스트는 원본값.
     });
     return [...g.values()].map(e=>({label:e.label,points:e.sum.map((s,i)=>e.cnt[i]?Math.round(s/e.cnt[i]*10)/10:null)}))
       .sort((a,b)=>String(a.label).localeCompare(String(b.label),'ko',{numeric:true}));
