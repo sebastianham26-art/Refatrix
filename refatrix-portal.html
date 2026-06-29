@@ -356,6 +356,115 @@
   }
   function dismissAppr(){ try{ sessionStorage.setItem('appr_nag_dismissed','1'); }catch(e){} $('apprModal').style.display='none'; }
 
+  // ===== 알림음 (Web Audio, 외부 파일 없이 합성) =====
+  // 브라우저 자동재생 정책상 사용자 제스처(로그인 클릭 등) 이후에만 소리가 납니다.
+  var __audioCtx=null;
+  function ensureAudio(){
+    try{
+      if(!__audioCtx){ var AC=window.AudioContext||window.webkitAudioContext; if(AC) __audioCtx=new AC(); }
+      if(__audioCtx && __audioCtx.state==='suspended'){ __audioCtx.resume(); }
+    }catch(e){}
+  }
+  function playAlertSound(){
+    try{
+      ensureAudio();
+      if(!__audioCtx) return;
+      var ctx=__audioCtx, t0=ctx.currentTime;
+      // 두 음(띵-동) 차임
+      [[880,0.0],[1175,0.18]].forEach(function(pair){
+        var f=pair[0], off=pair[1];
+        var o=ctx.createOscillator(), g=ctx.createGain();
+        o.type='sine'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.0001, t0+off);
+        g.gain.exponentialRampToValueAtTime(0.25, t0+off+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+off+0.34);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t0+off); o.stop(t0+off+0.36);
+      });
+    }catch(e){}
+  }
+  // 첫 사용자 제스처에서 오디오 컨텍스트 활성화(세션 자동복원 등 클릭 없이 들어온 경우 대비)
+  ['pointerdown','keydown','touchstart'].forEach(function(ev){ document.addEventListener(ev, ensureAudio, {passive:true}); });
+
+  // ===== 견적 삭제 승인 — 디렉터 즉시 알림(폴링 + 팝업 + 알림음) =====
+  var __delPendSeen=null, __delPollTimer=null;
+  function __loadDelSeen(){
+    if(__delPendSeen) return __delPendSeen;
+    __delPendSeen=new Set();
+    try{ var raw=sessionStorage.getItem('del_pend_seen'); if(raw){ JSON.parse(raw).forEach(function(x){ __delPendSeen.add(Number(x)); }); } }catch(e){}
+    return __delPendSeen;
+  }
+  function __saveDelSeen(){ try{ sessionStorage.setItem('del_pend_seen', JSON.stringify(Array.from(__loadDelSeen()))); }catch(e){} }
+
+  function renderDelApprList(items){
+    $('delApprMsg').innerHTML='승인 대기 중인 <b>견적 삭제 요청</b>이 <b>'+items.length+'건</b> 있습니다. 아래에서 바로 승인·반려하거나, 견적관리 화면에서 상세를 확인하세요.';
+    $('delApprList').innerHTML=items.map(function(r){
+      return '<div style="padding:11px 13px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
+        +'<div><b>'+escp(r.party_name||'')+'</b> <span style="color:var(--muted);font-size:11.5px">'+escp(r.quote_no||'')+'</span></div>'
+        +'<div style="font-weight:700;color:var(--ink)">'+fmt(r.total_mxn)+' <span style="color:var(--muted);font-weight:500;font-size:11px">MXN</span></div></div>'
+        +(r.del_reason?'<div style="color:var(--muted);font-size:12px;margin-top:3px">사유: '+escp(r.del_reason)+'</div>':'')
+        +(r.requested_by_name?'<div style="color:var(--muted);font-size:11.5px;margin-top:1px">요청자 '+escp(r.requested_by_name)+(r.del_requested_at?' · '+escp(r.del_requested_at):'')+'</div>':'')
+        +'<div style="display:flex;gap:6px;margin-top:8px">'
+        +'<button onclick="approveDelFromPopup('+r.id+')" style="border:none;background:var(--expense);color:#fff;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">삭제 승인</button>'
+        +'<button onclick="rejectDelFromPopup('+r.id+')" style="border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px">반려</button>'
+        +'</div></div>';
+    }).join('');
+  }
+
+  async function checkDeleteApprovals(opts){
+    if(!(session.user && session.user.role==='director')) return;
+    var silent=opts&&opts.silent;
+    try{
+      var d=await fetch(session.api+'/api/quotes/delete-pending',{headers:auth()}).then(function(r){return r.json();});
+      var items=(d&&d.items)||[];
+      if(!items.length){
+        $('delApprModal').style.display='none';
+        try{ sessionStorage.removeItem('del_appr_dismissed'); }catch(e){}
+        __delPendSeen=new Set(); __saveDelSeen();
+        return;
+      }
+      renderDelApprList(items);
+      var seen=__loadDelSeen();
+      var newItems=items.filter(function(x){ return !seen.has(Number(x.id)); });
+      if(newItems.length){
+        // 신규 삭제 요청 발생 → 강제 팝업 + 알림음(임시닫기 무시)
+        newItems.forEach(function(x){ seen.add(Number(x.id)); }); __saveDelSeen();
+        try{ sessionStorage.removeItem('del_appr_dismissed'); }catch(e){}
+        $('delApprModal').style.display='flex';
+        if(!silent) playAlertSound();
+      }else{
+        var dis=false; try{ dis=sessionStorage.getItem('del_appr_dismissed')==='1'; }catch(e){}
+        $('delApprModal').style.display = dis ? 'none' : 'flex';
+      }
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  function startDeletePolling(){
+    if(!(session.user && session.user.role==='director')) return;
+    if(__delPollTimer){ clearInterval(__delPollTimer); __delPollTimer=null; }
+    __delPollTimer=setInterval(function(){ checkDeleteApprovals(); }, 25000); // 25초마다 즉시 감지
+  }
+  async function approveDelFromPopup(id){
+    if(!confirm('이 견적의 삭제를 승인하시겠습니까?\n승인 시 견적이 완전히 삭제됩니다.')) return;
+    try{
+      var res=await fetch(session.api+'/api/quotes/'+id+'/delete-approve',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:'{}'});
+      var d=await res.json(); if(!res.ok||d.error){ alert('승인 실패: '+(d.error||res.status)); return; }
+    }catch(e){ alert('서버 연결 실패'); return; }
+    try{ __loadDelSeen().delete(Number(id)); __saveDelSeen(); }catch(e){}
+    checkDeleteApprovals({silent:true}); loadQuoteBadge();
+  }
+  async function rejectDelFromPopup(id){
+    try{
+      var res=await fetch(session.api+'/api/quotes/'+id+'/delete-reject',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:'{}'});
+      var d=await res.json(); if(!res.ok||d.error){ alert('반려 실패: '+(d.error||res.status)); return; }
+    }catch(e){ alert('서버 연결 실패'); return; }
+    try{ __loadDelSeen().delete(Number(id)); __saveDelSeen(); }catch(e){}
+    checkDeleteApprovals({silent:true}); loadQuoteBadge();
+  }
+  function dismissDelAppr(){ try{ sessionStorage.setItem('del_appr_dismissed','1'); }catch(e){} $('delApprModal').style.display='none'; }
+  // 탭으로 돌아오면 즉시 한 번 더 확인(디렉터)
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && session && session.user && session.user.role==='director'){ checkDeleteApprovals(); } });
+
   // 로그인 공지 팝업 — 나에게 해당되는 '미확인 + 팝업' 공지를 띄움.
   // "확인"을 누르면 서버에 읽음(notice_reads) 기록 → 다음 로그인부터 안 뜸.
   let __popupNoticeIds=[];
@@ -444,6 +553,8 @@
       session={token:d.token,user:d.user,api};
       try{ sessionStorage.removeItem('const_nag_dismissed'); }catch(e){}
       try{ sessionStorage.removeItem('appr_nag_dismissed'); }catch(e){}
+      try{ sessionStorage.removeItem('del_appr_dismissed'); sessionStorage.removeItem('del_pend_seen'); }catch(e){}
+      ensureAudio(); // 로그인 클릭(사용자 제스처) 시점에 오디오 컨텍스트 활성화 → 이후 알림음 재생 가능
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
@@ -455,7 +566,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkNoticePopup();checkCalendarPopup();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkNoticePopup();checkCalendarPopup();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -898,6 +1009,23 @@
     <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
       <button onclick="dismissAppr()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
       <button onclick="goScreen('customers')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">고객관리로 가기 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 견적 삭제 승인 대기 알림(디렉터) — 즉시 팝업 + 알림음 -->
+<div id="delApprModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:216;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--expense)">🗑 견적 삭제 — 승인 요청</div>
+    </div>
+    <div style="padding:14px 20px">
+      <div id="delApprMsg" style="font-size:13.5px;color:var(--ink);line-height:1.6;margin-bottom:10px"></div>
+      <div id="delApprList" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    </div>
+    <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissDelAppr()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
+      <button onclick="goScreen('quotelist')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">견적관리로 가기 →</button>
     </div>
   </div>
 </div>
