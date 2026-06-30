@@ -104,6 +104,20 @@
   .curbox-card .cline .qq{font-size:24px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums}
   .curbox-card .cline .mm{background:#f3efe6;border:none;border-radius:8px;width:38px;height:38px;font-size:22px;font-weight:800;cursor:pointer;color:var(--red);margin-left:10px}
   .curbox-card .em{color:#9a958b;font-size:16px;padding:8px 0}
+  .boxpick{font-size:15px;font-weight:800;color:var(--steel-d);white-space:nowrap}
+  .boxpick select{font-size:16px;font-weight:800;padding:9px 10px;border:2px solid var(--steel);border-radius:10px;background:#fff;margin-left:4px}
+  .ptbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+  table.ptbl{width:100%;border-collapse:collapse;table-layout:auto;min-width:680px;background:#fff}
+  table.ptbl th,table.ptbl td{padding:11px 10px;font-size:15px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.ptbl th{background:var(--steel);color:#fff;font-weight:800;font-size:13px;cursor:pointer;user-select:none;position:sticky;top:0}
+  table.ptbl th.num,table.ptbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+  table.ptbl th .ar{font-size:11px;margin-left:3px;opacity:.9}
+  table.ptbl td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+  table.ptbl tr.done td{background:#f7f5ef;color:#9a958b}
+  table.ptbl td b.zero{color:var(--green)} table.ptbl td b.pos{color:var(--red);font-size:17px}
+  table.ptbl tr:last-child td{border-bottom:none}
+  .bch .pickbox{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .bch .picknow{font-size:12px;font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:4px 11px;white-space:nowrap}
   #boxGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:6px}
   .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
   .bcard.active{border:3px solid var(--steel);box-shadow:0 4px 14px rgba(82,112,138,.18)}
@@ -154,7 +168,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630e</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630f</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -172,18 +186,19 @@
     <div id="pDone"></div>
     <div class="scanbar">
       <div class="scanrow">
+        <span class="boxpick">담을 박스: <select id="scanBoxSel"></select></span>
         <input id="eanInput" inputmode="none" autocomplete="off" placeholder="EAN-13 스캔/입력 후 Enter">
       </div>
-      <div class="fb idle" id="fb">먼저 아래 "새 박스"를 누르고 스캔하세요</div>
+      <div class="fb idle" id="fb">담을 박스를 고르고 스캔하세요 (마감된 박스를 골라도 자동으로 다시 열려 담깁니다)</div>
     </div>
   </div>
   <div class="pscroll">
     <div id="readyBanner"></div>
     <button class="newbox-cta" id="newBoxTop">+ 새 박스 시작</button>
-    <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 ‘작업 중’ 박스에 담깁니다)</span></div>
+    <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 위에서 선택한 박스에 담깁니다 · 카드의 “담을 박스로”로도 선택)</span></div>
     <div id="boxGrid"></div>
-    <div class="subt">남은 품목 (스캔하면 줄어듭니다)</div>
-    <table><thead><tr><th>CTR</th><th>EAN-13</th><th class="num">남음/필요</th><th>랙</th></tr></thead><tbody id="remBody"></tbody></table>
+    <div class="subt">포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
+    <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
     <button class="back" id="backBtn2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 목록으로 돌아가기</button>
   </div>
 </div>
@@ -195,7 +210,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0630e — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0630f — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -270,6 +285,33 @@
   var PHOTOS={};
   var confirmDelBox=null;
   function photosOf(boxId){ return PHOTOS[boxId]||[]; }
+  var itemSortKey='ctr_code', itemSortDir=1;
+  function renderBoxSel(){
+    var sel=$('scanBoxSel'); if(!sel||!PK) return;
+    var boxes=(PK.boxes||[]).slice().sort(function(a,b){return a.box_no-b.box_no;});
+    sel.innerHTML = boxes.length ? boxes.map(function(b){ return '<option value="'+b.box_id+'"'+(b.box_id===curBox?' selected':'')+'>Box '+b.box_no+(b.sealed?' (마감)':'')+'</option>'; }).join('') : '<option value="">박스 없음</option>';
+  }
+  function renderItemsTable(){
+    var d=PK;
+    var cols=[['ctr_code','CTR',false],['syd_code','경쟁사',false],['ean','EAN-13',false],['required','포장할',true],['scanned','포장한',true],['remaining','남은',true],['rack_location','랙위치',false],['box_nos','박스',false]];
+    $('itemsHead').innerHTML='<tr>'+cols.map(function(c){ var ar=(itemSortKey===c[0])?('<span class="ar">'+(itemSortDir>0?'\u25b2':'\u25bc')+'</span>'):''; return '<th class="'+(c[2]?'num':'')+'" data-k="'+c[0]+'">'+c[1]+ar+'</th>'; }).join('')+'</tr>';
+    var rows=(d.items||[]).slice().sort(function(a,b){
+      var k=itemSortKey, x=a[k], y=b[k];
+      if(k==='box_nos'){ x=(a.box_nos&&a.box_nos[0])||0; y=(b.box_nos&&b.box_nos[0])||0; return (x-y)*itemSortDir; }
+      if(k==='required'||k==='scanned'||k==='remaining'){ return ((Number(x)||0)-(Number(y)||0))*itemSortDir; }
+      return String(x||'').localeCompare(String(y||''))*itemSortDir;
+    });
+    $('remBody').innerHTML=rows.map(function(it){
+      var done=it.remaining<=0;
+      var bx=(it.box_nos&&it.box_nos.length)? it.box_nos.map(function(n){return 'Box '+n;}).join(', ') : '\u2014';
+      return '<tr class="'+(done?'done':'')+'">'
+        +'<td>'+esc(it.ctr_code)+'</td><td>'+esc(it.syd_code||'\u2014')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
+        +'<td class="num">'+it.required+'</td><td class="num">'+it.scanned+'</td>'
+        +'<td class="num"><b class="'+(done?'zero':'pos')+'">'+it.remaining+'</b></td>'
+        +'<td>'+esc(it.rack_location||'\u2014')+'</td><td>'+esc(bx)+'</td></tr>';
+    }).join('') || '<tr><td colspan="8" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
+    Array.prototype.forEach.call($('itemsHead').querySelectorAll('th'),function(th){ th.addEventListener('click',function(){ var k=th.getAttribute('data-k'); if(itemSortKey===k) itemSortDir=-itemSortDir; else { itemSortKey=k; itemSortDir=1; } renderItemsTable(); }); });
+  }
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
@@ -278,7 +320,11 @@
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
     $('pDone').innerHTML='';
 
-    var cb=curOpenBox(); curBox = cb? cb.box_id : null;
+    if(curBox==null || !(d.boxes||[]).some(function(b){return b.box_id===curBox;})){
+      var un0=(d.boxes||[]).filter(function(b){return !b.sealed;});
+      curBox = un0.length? un0[un0.length-1].box_id : ((d.boxes||[]).length? d.boxes[d.boxes.length-1].box_id : null);
+    }
+    renderBoxSel();
 
     var rb=$('readyBanner');
     if(d.all_done && d.photos_ok){ rb.innerHTML='<div class="ready ok">\u2713 스캔 완료 \u00b7 모든 박스 사진 있음 \u2014 포장 마무리(통합 패킹리스트) 준비 완료</div>'; }
@@ -289,17 +335,11 @@
     $('boxGrid').innerHTML = boxesSorted.length ? boxesSorted.map(buildBoxCard).join('')
       : '<div class="empty">박스가 없습니다 \u2014 위 "+ 새 박스 시작"을 누르세요.</div>';
 
-    var rows=(d.items||[]).slice().sort(function(a,b){ return (b.remaining>0)-(a.remaining>0) || String(a.ctr_code).localeCompare(String(b.ctr_code)); });
-    $('remBody').innerHTML=rows.map(function(it){
-      var done=it.remaining<=0;
-      return '<tr class="'+(done?'done':'')+'"><td>'+esc(it.ctr_code)+(done?' \u2713':'')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
-        +'<td class="num"><span class="rem '+(done?'zero':'pos')+'">'+it.remaining+'</span> / '+it.required+'</td><td>'+esc(it.rack_location||'\u2014')+'</td></tr>';
-    }).join('') || '<tr><td colspan="4" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
-
+    renderItemsTable();
     wireBoxHandlers();
   }
   function buildBoxCard(b){
-    var active = !b.sealed && b.box_id===curBox;
+    var active = (b.box_id===curBox);
     var ph=photosOf(b.box_id);
     var total=(b.lines||[]).reduce(function(a,l){return a+Number(l.qty);},0);
     var head='<div class="bch"><span class="bn">\ud83d\udce6 Box '+b.box_no+'</span>'
@@ -308,7 +348,7 @@
       +(b.sealed
         ? '<button class="reopen" data-box="'+b.box_id+'" data-seal="0">다시 열기</button>'
         : '<button class="full" data-box="'+b.box_id+'" data-seal="1">이 박스 다 찼음 \u2713</button>')
-      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1 삭제</button>'
+      +(active?'<span class="picknow">\u25cf 담는 중</span>':'<button class="pickbox" data-box="'+b.box_id+'">담을 박스로</button>')      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1 삭제</button>'
       +'</span></div>';
     var qtyrow='<div class="bqtyrow"><span>총 수량</span><b class="bqty">'+total+'</b><span>피스</span></div>';
     var delconf=(confirmDelBox===b.box_id)
@@ -340,6 +380,7 @@
     Array.prototype.forEach.call(g.querySelectorAll('.bdel'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=Number(btn.getAttribute('data-box')); renderPacking(); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.delyes'),function(btn){ btn.addEventListener('click',function(){ deleteBox(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.delno'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=null; renderPacking(); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.pickbox'),function(btn){ btn.addEventListener('click',function(){ curBox=Number(btn.getAttribute('data-box')); renderPacking(); focusScan(); }); });
   }
 
   function postJSON(url, body){
@@ -385,9 +426,10 @@
   function applyOk(res){ applyOkTo(curBox,res); }
   function applyOkTo(boxId,res){
     var it=(PK.items||[]).find(function(x){return x.product_id===res.product_id;});
-    if(it){ it.scanned++; it.remaining=Math.max(0,it.required-it.scanned); }
+    if(it){ it.scanned++; it.remaining=Math.max(0,it.required-it.scanned);
+      if(res.box_no!=null){ it.box_nos=it.box_nos||[]; if(it.box_nos.indexOf(res.box_no)<0){ it.box_nos.push(res.box_no); it.box_nos.sort(function(a,b){return a-b;}); } } }
     var b=(PK.boxes||[]).find(function(x){return x.box_id===boxId;});
-    if(b){ var bl=(b.lines||[]).find(function(x){return x.product_id===res.product_id;}); if(bl) bl.qty++; else b.lines.push({product_id:res.product_id,ctr_code:res.ctr_code,syd_code:res.syd_code||'',ean:res.ean,qty:1}); }
+    if(b){ b.sealed=false; var bl=(b.lines||[]).find(function(x){return x.product_id===res.product_id;}); if(bl) bl.qty++; else b.lines.push({product_id:res.product_id,ctr_code:res.ctr_code,syd_code:res.syd_code||'',ean:res.ean,qty:1}); }
     PK.scanned_total=res.scanned_total; PK.required_total=res.required_total; PK.all_done=res.all_done;
     renderPacking();
   }
@@ -443,6 +485,7 @@
       });
     }); }); }
   var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);
+  var sbs=$('scanBoxSel'); if(sbs) sbs.addEventListener('change',function(){ var v=Number(this.value); if(v){ curBox=v; renderPacking(); } focusScan(); });
 
   if(S){ loadQueue(); setInterval(loadQueue,25000); }
 })();

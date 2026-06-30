@@ -185,6 +185,13 @@ export default async function warehouseRoutes(app) {
                    .map((x) => ({ product_id: Number(x.product_id), ctr_code: x.ctr_code || '',
                                   syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty) })),
     }));
+    // product_id → 담긴 박스번호(여러 개면 모두)
+    const boxNoById = {}; boxes.forEach((b) => { boxNoById[Number(b.id)] = b.box_no; });
+    const prodBoxNos = {};
+    blines.forEach((x) => { const pid = Number(x.product_id); const bn = boxNoById[Number(x.box_id)];
+      if (bn != null) { (prodBoxNos[pid] = prodBoxNos[pid] || []).push(bn); } });
+    Object.keys(prodBoxNos).forEach((k) => { prodBoxNos[k] = Array.from(new Set(prodBoxNos[k])).sort((a, b) => a - b); });
+    items.forEach((it) => { it.box_nos = prodBoxNos[it.product_id] || []; });
     const photosOk = boxOut.length > 0 && boxOut.every((b) => b.photo_count >= 1);
 
     return {
@@ -243,7 +250,7 @@ export default async function warehouseRoutes(app) {
 
       const box = (await c.query(`SELECT id, sealed_at FROM packing_box WHERE id=$1 AND quote_id=$2`, [boxId, id])).rows[0];
       if (!box) return { http: 400, body: { error: 'no_box', note: '먼저 박스를 만들어 주세요.' } };
-      if (box.sealed_at) return { http: 400, body: { error: 'box_sealed' } };
+      if (box.sealed_at) { await c.query(`UPDATE packing_box SET sealed_at=NULL WHERE id=$1`, [boxId]); } // 선택한 박스가 마감돼 있으면 자동 재오픈
 
       await c.query(
         `INSERT INTO packing_box_line (box_id, quote_id, product_id, qty) VALUES ($1,$2,$3,1)
@@ -315,7 +322,7 @@ export default async function warehouseRoutes(app) {
 
       const box = (await c.query(`SELECT id, sealed_at FROM packing_box WHERE id=$1 AND quote_id=$2`, [boxId, id])).rows[0];
       if (!box) return { http: 400, body: { error: 'no_box' } };
-      if (box.sealed_at) return { http: 400, body: { error: 'box_sealed' } };
+      if (box.sealed_at) { await c.query(`UPDATE packing_box SET sealed_at=NULL WHERE id=$1`, [boxId]); } // 자동 재오픈
 
       await c.query(
         `INSERT INTO packing_box_line (box_id, quote_id, product_id, qty) VALUES ($1,$2,$3,1)
