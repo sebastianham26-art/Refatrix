@@ -32,7 +32,7 @@ export async function sweepStageAlerts() {
     `SELECT q.id, q.quote_no, q.status AS qstatus, q.created_at,
             q.packing_printed_at, q.packing_due_at, q.invoice_id, q.created_by,
             c.name AS customer_name, c.owner_id,
-            pd.uploaded_at AS packed_at,
+            q.packed_at AS packed_at,
             si.created_at AS converted_at, si.sat_no, to_char(si.due_date,'YYYY-MM-DD') AS due_date, si.total_mxn,
             (SELECT COALESCE(SUM(spa.amount),0) FROM sales_payment_allocations spa WHERE spa.invoice_id = si.id) AS paid_sum
        FROM quotes q

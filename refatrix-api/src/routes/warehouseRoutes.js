@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { bizMinutes } from '../businessHours.js';
+import { maybeMarkPacked } from '../packedGate.js';
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -266,6 +267,7 @@ export default async function warehouseRoutes(app) {
         scanned_total: Math.min(scanTotal, reqTotal), required_total: reqTotal, all_done: scanTotal >= reqTotal } };
     });
     if (out.http) return reply.code(out.http).send(out.body);
+    if (out.body && out.body.all_done) { try { await maybeMarkPacked(id); } catch (_) {} }
     return out.body;
   });
 
@@ -285,6 +287,7 @@ export default async function warehouseRoutes(app) {
       return { body: { ok: true } };
     });
     if (out.http) return reply.code(out.http).send(out.body);
+    if (out.body && out.body.all_done) { try { await maybeMarkPacked(id); } catch (_) {} }
     return out.body;
   });
 
@@ -339,6 +342,7 @@ export default async function warehouseRoutes(app) {
         scanned_total: Math.min(scanTotal, reqTotal), required_total: reqTotal, all_done: scanTotal >= reqTotal } };
     });
     if (out.http) return reply.code(out.http).send(out.body);
+    if (out.body && out.body.all_done) { try { await maybeMarkPacked(id); } catch (_) {} }
     return out.body;
   });
 
@@ -353,6 +357,7 @@ export default async function warehouseRoutes(app) {
       `INSERT INTO packing_box_photo (box_id, quote_id, image_data, uploaded_by) VALUES ($1,$2,$3,$4) RETURNING id`,
       [boxId, id, img, req.ctx.perm.userId])).rows[0];
     const n = Number((await query(`SELECT COUNT(*)::int AS n FROM packing_box_photo WHERE box_id=$1`, [boxId])).rows[0].n) || 0;
+    try { await maybeMarkPacked(id); } catch (_) {}
     return { ok: true, photo_id: Number(r.id), count: n };
   });
 
@@ -378,6 +383,7 @@ export default async function warehouseRoutes(app) {
     const id = Number(req.params.id), boxId = Number(req.params.boxId);
     const r = (await query(`DELETE FROM packing_box WHERE id=$1 AND quote_id=$2 RETURNING id`, [boxId, id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
+    try { await maybeMarkPacked(id); } catch (_) {}
     return { ok: true };
   });
 

@@ -51,7 +51,7 @@ export default async function processKpiRoutes(app) {
       `SELECT q.id, q.quote_no, q.status, q.created_at,
               COALESCE((SELECT MIN(occurred_at) FROM audit_log WHERE action='print' AND target='packing_print' AND detail->>'quote_id' = q.id::text), q.packing_printed_at) AS packing_printed_at,
               c.name AS customer_name,
-              pd.uploaded_at AS packed_at,
+              q.packed_at AS packed_at,
               si.id AS invoice_id, si.created_at AS inv_created_at, si.inv_date::text AS inv_date, si.due_date::text AS due_date, si.credit_days,
               si.total_mxn, si.sat_no, si.sat_entered_at,
               (SELECT COALESCE(SUM(spa.amount),0) FROM sales_payment_allocations spa WHERE spa.invoice_id=si.id) AS paid_amount,

@@ -7,6 +7,7 @@ import { notifyProductMarketing } from './devRequestRoutes.js';
 import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
 import { packingDeadline } from '../workingHours.js';
+import { maybeMarkPacked } from '../packedGate.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -831,6 +832,7 @@ export default async function quoteRoutes(app) {
          file_data=EXCLUDED.file_data, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
       [id, name, mime, data, req.ctx.perm.userId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`, detail: { packing_doc_uploaded: name || true } });
+    try { await maybeMarkPacked(id); } catch (_) {}   // 종이문서까지 올라오면 3조건 검사 → packed_at 확정
     // 포장작업지시서 스캔본 업로드 시점에도 단계 수주(50) 백스톱(전진만)
     if (q.customer_id) { try { await autoStage({ customerId: q.customer_id, targetSort: 50, userId: req.ctx.perm.userId, note: `자동: 포장작업지시서 (${q.quote_no || id}) · 수주 단계` }); } catch (_) {} }
     return { ok: true };
