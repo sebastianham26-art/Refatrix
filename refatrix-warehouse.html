@@ -106,6 +106,8 @@
   .curbox-card .em{color:#9a958b;font-size:16px;padding:8px 0}
   .boxpick{font-size:15px;font-weight:800;color:var(--steel-d);white-space:nowrap}
   .boxpick select{font-size:16px;font-weight:800;padding:9px 10px;border:2px solid var(--steel);border-radius:10px;background:#fff;margin-left:4px}
+  .items-toggle{width:100%;background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:12px;padding:14px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:12px}
+  .items-toggle:active{background:#e3edf4}
   .ptbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
   table.ptbl{width:100%;border-collapse:collapse;table-layout:auto;min-width:680px;background:#fff}
   table.ptbl th,table.ptbl td{padding:11px 10px;font-size:15px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -118,8 +120,9 @@
   table.ptbl tr:last-child td{border-bottom:none}
   .bch .pickbox{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
   .bch .picknow{font-size:12px;font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:4px 11px;white-space:nowrap}
-  #boxGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:6px}
-  .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  #boxGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:6px}
+  @media (max-width:640px){ #boxGrid{grid-template-columns:1fr} }
+  .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px}
   .bcard.active{border:3px solid var(--steel);box-shadow:0 4px 14px rgba(82,112,138,.18)}
   .bcard.sealed{background:#f6f7f4;border-color:#d6ddd2}
   .bch{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}
@@ -137,8 +140,9 @@
   .delconf .delno{background:#eee;color:#555;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer;font-size:14px}
   .bch .full{background:var(--green);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer}
   .bch .reopen{background:#eef2f5;color:var(--steel-d);border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
-  table.bt{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;table-layout:fixed;margin-bottom:8px}
-  table.bt th,table.bt td{padding:7px 8px;font-size:14px;text-align:left;border-bottom:1px solid var(--line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.bt{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;table-layout:auto;margin-bottom:8px}
+  table.bt th,table.bt td{padding:8px 9px;font-size:15px;text-align:left;border-bottom:1px solid var(--line);white-space:normal;word-break:break-word}
+  table.bt th{white-space:nowrap}
   table.bt th{background:#eef1f4;color:var(--steel-d);font-weight:800;font-size:12px}
   table.bt td.q{text-align:right;font-weight:800;font-size:16px}
   table.bt td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
@@ -168,7 +172,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630f</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630g</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -194,11 +198,15 @@
   </div>
   <div class="pscroll">
     <div id="readyBanner"></div>
+    <button class="items-toggle" id="itemsToggle">\ud83d\udccb 포장 품목 전체보기 \u25be</button>
+    <div id="itemsSection" style="display:none">
+      <div class="subt">포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
+      <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
+    </div>
     <button class="newbox-cta" id="newBoxTop">+ 새 박스 시작</button>
     <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 위에서 선택한 박스에 담깁니다 · 카드의 “담을 박스로”로도 선택)</span></div>
     <div id="boxGrid"></div>
-    <div class="subt">포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
-    <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
+
     <button class="back" id="backBtn2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 목록으로 돌아가기</button>
   </div>
 </div>
@@ -210,7 +218,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0630f — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0630g — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -485,6 +493,7 @@
       });
     }); }); }
   var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);
+  var itg=$('itemsToggle'); if(itg) itg.addEventListener('click',function(){ var sec=$('itemsSection'); var open=sec.style.display==='none'; sec.style.display=open?'block':'none'; itg.innerHTML=open?'\ud83d\udccb 포장 품목 닫기 \u25b4':'\ud83d\udccb 포장 품목 전체보기 \u25be'; });
   var sbs=$('scanBoxSel'); if(sbs) sbs.addEventListener('change',function(){ var v=Number(this.value); if(v){ curBox=v; renderPacking(); } focusScan(); });
 
   if(S){ loadQueue(); setInterval(loadQueue,25000); }
