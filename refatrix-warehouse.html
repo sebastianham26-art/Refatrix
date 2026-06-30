@@ -132,28 +132,32 @@
   table.ptbl tr.done td{background:#f7f5ef;color:#9a958b}
   table.ptbl td b.zero{color:var(--green)} table.ptbl td b.pos{color:var(--red);font-size:17px}
   table.ptbl tr:last-child td{border-bottom:none}
-  .bch .pickbox{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
-  .bch .picknow{font-size:12px;font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:4px 11px;white-space:nowrap}
+  .bact2 .pickbox{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .bact2 .picknow{font-size:12px;font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:4px 11px;white-space:nowrap}
   #boxGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:6px}
   @media (max-width:640px){ #boxGrid{grid-template-columns:1fr} }
   .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px}
   .bcard.active{border:3px solid var(--steel);box-shadow:0 4px 14px rgba(82,112,138,.18)}
   .bcard.sealed{background:#f6f7f4;border-color:#d6ddd2}
-  .bch{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .bch{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .bact{margin-bottom:8px}
+  .bact .full,.bact .reopen{width:100%;display:block;text-align:center;white-space:nowrap}
+  .bact2{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .bact2 .pickbox,.bact2 .picknow{flex:1;text-align:center;white-space:nowrap}
+  .bact2 .bdel{flex:0 0 auto;white-space:nowrap}
   .bch .bn{font-size:20px;font-weight:800;color:var(--steel-d)}
   .bch .bst{font-size:12px;font-weight:800;border-radius:999px;padding:2px 10px}
   .bch .bst.work{background:#e3edf4;color:var(--steel-d)}
   .bch .bst.done{background:#e7f3ec;color:#2e6b49}
-  .bch .bgrp{display:flex;align-items:center;gap:6px;margin-left:auto}
-  .bch .bdel{background:#fbeae6;color:var(--red);border:1px solid #e6b8ac;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap}
-  .bch .bdel:active{background:#f6d6cd}
+  .bact2 .bdel{background:#fbeae6;color:var(--red);border:1px solid #e6b8ac;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .bact2 .bdel:active{background:#f6d6cd}
   .bqtyrow{display:flex;align-items:baseline;gap:8px;margin:0 0 10px;font-size:13px;font-weight:700;color:var(--muted)}
   .bqtyrow .bqty{font-size:34px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums;line-height:1}
   .delconf{background:#fbe9e5;border:1px solid #e6b8ac;color:#a33b27;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px;font-weight:700;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
   .delconf .delyes{background:var(--red);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer;font-size:14px}
   .delconf .delno{background:#eee;color:#555;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer;font-size:14px}
-  .bch .full{background:var(--green);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer}
-  .bch .reopen{background:#eef2f5;color:var(--steel-d);border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
+  .bact .full{background:var(--green);color:#fff;border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .bact .reopen{background:#eef2f5;color:var(--steel-d);border:none;border-radius:10px;padding:11px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
   table.bt{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;table-layout:auto;margin-bottom:8px}
   table.bt th,table.bt td{padding:8px 9px;font-size:15px;text-align:left;border-bottom:1px solid var(--line);white-space:normal;word-break:break-word}
   table.bt th{white-space:nowrap}
@@ -186,7 +190,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631d</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631e</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -249,7 +253,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631d — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631e — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -526,13 +530,16 @@
     var ph=photosOf(b.box_id);
     var total=(b.lines||[]).reduce(function(a,l){return a+Number(l.qty);},0);
     var head='<div class="bch"><span class="bn">\ud83d\udce6 Box '+b.box_no+'</span>'
-      +'<span class="bst '+(b.sealed?'done':'work')+'">'+(b.sealed?'마감':'작업 중')+'</span>'
-      +'<span class="bgrp">'
+      +'<span class="bst '+(b.sealed?'done':'work')+'">'+(b.sealed?'마감':'작업 중')+'</span></div>'
+      +'<div class="bact">'
       +(b.sealed
         ? '<button class="reopen" data-box="'+b.box_id+'" data-seal="0">다시 열기</button>'
         : '<button class="full" data-box="'+b.box_id+'" data-seal="1">이 박스 다 찼음 \u2713</button>')
-      +(active?'<span class="picknow">\u25cf 담는 중</span>':'<button class="pickbox" data-box="'+b.box_id+'">담을 박스로</button>')      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1 삭제</button>'
-      +'</span></div>';
+      +'</div>'
+      +'<div class="bact2">'
+      +(active?'<span class="picknow">\u25cf 담는 중</span>':'<button class="pickbox" data-box="'+b.box_id+'">담을 박스로</button>')
+      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1 삭제</button>'
+      +'</div>';
     var qtyrow='<div class="bqtyrow"><span>총 수량</span><b class="bqty">'+total+'</b><span>피스</span></div>';
     var delconf=(confirmDelBox===b.box_id)
       ? '<div class="delconf"><span>\u26a0 Box '+b.box_no+' 삭제 — 담긴 내역\u00b7사진이 모두 지워집니다.</span><button class="delyes" data-box="'+b.box_id+'">삭제</button><button class="delno">취소</button></div>'
