@@ -144,6 +144,22 @@
       <button class="btn gold" id="t-save" style="margin-top:12px">거래 등록</button>
       <div class="msg" id="newMsg"></div>
       <div class="hint">지출을 담당자가 등록하면 디렉터 승인 후 잔액에 반영됩니다. 디렉터가 등록하면 바로 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.</div>
+      <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
+        <h2 style="margin:0 0 2px">📥 은행 매출입금 등록 <span style="font-size:12px;font-weight:600;color:var(--muted)">(영업지원에게 통지 — 거래는 반제 시 1건만 생성)</span></h2>
+        <div class="hint" style="margin-top:0">통장에 들어온 <b>매출 입금</b>을 여기서 통지로 등록하면, 영업지원에게 팝업·알림이 가고 영업지원이 수금/정산에서 고객 인보이스에 <b>반제</b>합니다. 이 등록만으로는 잔액·거래가 바뀌지 않습니다(이중계상 방지).</div>
+        <div class="row">
+          <div style="flex:2"><label>입금 계좌</label><select id="bd-acc"></select></div>
+          <div><label>입금일</label><input id="bd-date" type="date"></div>
+          <div><label>금액(MXN)</label><input id="bd-amt" type="number" step="0.01" placeholder="0.00"></div>
+        </div>
+        <div class="row">
+          <div style="flex:3"><label>송금인/적요 <span style="color:var(--muted);font-weight:400">(영업지원 매칭 단서)</span></label><input id="bd-memo" type="text" placeholder="예: 고객명·송금인·참조번호"></div>
+        </div>
+        <button class="btn gold" id="bd-save" style="margin-top:10px">입금 통지 등록</button>
+        <div class="msg" id="bd-msg"></div>
+        <div style="margin-top:12px"><div class="hint" style="margin:0 0 4px;font-weight:700">미배분(대기) 입금</div><div id="bd-list"><div class="hint" style="margin:0">불러오는 중…</div></div></div>
+      </div>
+
 
       <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -1554,6 +1570,48 @@
     }catch(e){m.className='msg pp-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
 
+  // ===== 은행 매출입금 등록(미배분 입금함) — 재무담당/디렉터 → 영업지원 통지 =====
+  function bdEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  async function loadBdp(){
+    const box=$('bd-list'); if(!box) return;
+    if($('bd-acc')) $('bd-acc').innerHTML=accOptions('');
+    if($('bd-date')&&!$('bd-date').value) $('bd-date').value=new Date().toISOString().slice(0,10);
+    try{
+      const items=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
+      if(!items.length){ box.innerHTML='<div class="hint" style="margin:0">대기 중인 미배분 입금이 없습니다.</div>'; return; }
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>등록자</th><th></th></tr></thead><tbody>'
+        +items.map(d=>'<tr><td>'+bdEsc(d.deposit_date)+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="voidBdp('+d.id+')">취소</button></td></tr>').join('')
+        +'</tbody></table>';
+    }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
+  }
+  async function saveBdp(){
+    const m=$('bd-msg'); m.className='msg';
+    const acc=Number($('bd-acc').value), date=$('bd-date').value, amt=Number($('bd-amt').value), memo=$('bd-memo').value.trim();
+    if(!acc){ m.className='msg err'; m.textContent='입금 계좌를 선택하세요.'; return; }
+    if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
+    if(!(amt>0)){ m.className='msg err'; m.textContent='금액을 입력하세요(양수).'; return; }
+    $('bd-save').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='등록 실패: '+(d.error||res.status); return; }
+      m.className='msg ok'; m.textContent='입금 통지 등록됨 — 영업지원에게 알림이 갑니다. (거래·잔액은 반제 시 반영)';
+      $('bd-amt').value=''; $('bd-memo').value='';
+      loadBdp();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('bd-save').disabled=false; }
+  }
+  async function voidBdp(id){
+    if(!confirm('이 미배분 입금을 취소할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/bank-deposits/'+id+'/void',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('취소 실패: '+(d.error||res.status)); return; }
+      loadBdp();
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+  window.voidBdp=voidBdp;
+
   function showTab(w){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
     ['Acc','New','Txn','Pay','Fixed','Cash','Fx','Approve'].forEach(x=>$('tab'+x).classList.toggle('on',x.toLowerCase()===w));
     $('accCard').classList.toggle('hidden',w!=='acc');
@@ -1564,7 +1622,7 @@
     $('cashCard').classList.toggle('hidden',w!=='cash');
     $('fxCard').classList.toggle('hidden',w!=='fx');
     $('apprCard').classList.toggle('hidden',w!=='approve');
-    if(w==='new'){loadPendingPlans();}
+    if(w==='new'){loadPendingPlans();loadBdp();}
     if(w==='txn')loadTxns();
     if(w==='pay'){loadArView();}
     if(w==='fixed'){loadFixed();loadVariance();}
@@ -1588,6 +1646,7 @@
   $('pp-prev').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);loadPendingPlans();});
   $('pp-next').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);loadPendingPlans();});
   $('tabNew').addEventListener('click',()=>showTab('new'));
+  $('bd-save').addEventListener('click',saveBdp);
   $('tabTxn').addEventListener('click',()=>showTab('txn'));
   $('tabPay').addEventListener('click',()=>showTab('pay'));
   $('tabFixed').addEventListener('click',()=>showTab('fixed'));
