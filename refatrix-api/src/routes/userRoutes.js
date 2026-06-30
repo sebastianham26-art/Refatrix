@@ -10,7 +10,7 @@ export default async function userRoutes(app) {
   // 사용자 목록(디렉터): 역할·팀·페이지 권한
   app.get('/api/users', { preHandler: [authGuard, requireDirector] }, async () => {
     const users = (await query(
-      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, u.restrict_cash_detail, t.name AS team_name
+      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, u.restrict_cash_detail, u.device_locked, t.name AS team_name
          FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
         WHERE u.deleted_at IS NULL ORDER BY u.role, u.name`)).rows;
     const pages = (await query(`SELECT user_id, page_key, access FROM user_page_access`)).rows;
@@ -32,7 +32,7 @@ export default async function userRoutes(app) {
     return {
       accounts,
       items: users.map((u) => ({
-        ...u, id: Number(u.id), restrict_cash_detail: u.restrict_cash_detail === true,
+        ...u, id: Number(u.id), restrict_cash_detail: u.restrict_cash_detail === true, device_locked: u.device_locked === true,
         pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {},
         team_access: teamAccessByUser[u.id] || [],
         account_access: aaByUser[u.id] || {},
@@ -82,6 +82,19 @@ export default async function userRoutes(app) {
     await query(`UPDATE users SET restrict_cash_detail=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { restrict_cash_detail: value } });
     return { ok: true, id, restrict_cash_detail: value };
+  });
+
+  // 기기 접속 제한 토글(디렉터) — true 면 이 사용자는 '승인된 기기'에서만 로그인 가능.
+  //   디렉터 역할은 게이트가 적용되지 않음(잠금사고 방지) — 토글은 저장되나 로그인에는 영향 없음.
+  app.patch('/api/users/:id/device-lock', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const value = req.body?.value === true;
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE users SET device_locked=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { device_locked: value } });
+    return { ok: true, id, device_locked: value };
   });
 
   // 계정 삭제(디렉터, 소프트 삭제). login_id 를 NULL 로 비워 같은 아이디를 재사용 가능하게 한다.

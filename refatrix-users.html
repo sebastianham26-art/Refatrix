@@ -94,6 +94,13 @@
       <div id="createResult"></div>
     </div>
 
+    <!-- 기기 접속 관리 (디렉터 전용) -->
+    <div class="card" id="deviceCard">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">기기 접속 관리 <span id="devSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
+      <div class="hint" style="margin-top:0"><b>기기잠금</b>이 켜진 사용자는 <b>승인된 기기에서만</b> 로그인됩니다(아래 사용자 목록의 「기기」 열에서 켜기). 미승인 기기로 로그인하면 PIN이 맞아도 차단되고 여기에 <b>승인 대기</b>로 올라옵니다. 승인 시 <b>전용</b>(그 사용자만) 또는 <b>공용</b>(승인된 기기는 누구나)을 고르세요. <b>디렉터는 기기 제한을 받지 않습니다.</b></div>
+      <div id="devList"><div class="hint">불러오는 중…</div></div>
+    </div>
+
     <!-- 사용자 목록 -->
     <div class="card">
       <h2>사용자 목록 · 권한</h2>
@@ -152,7 +159,7 @@
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token, api, user:d.user||{}, ts:Date.now()})); }catch(e){}  // nav.js 하트비트(접속현황·위치)용 세션 — 없으면 본인이 접속/위치로 안 잡힘
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      await loadTeams(); renderPageChecks(); loadUsers(); startSelfHeartbeat(); startPresencePoll(); initTimeline();
+      await loadTeams(); renderPageChecks(); loadUsers(); startSelfHeartbeat(); startPresencePoll(); startDevicePoll(); initTimeline();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -430,7 +437,7 @@
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
       accountsList=d.accounts||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th>페이지 권한</th><th>계좌 권한</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th>페이지 권한</th><th>계좌 권한</th><th>기기</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
           <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
           <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
@@ -465,10 +472,90 @@
                 <option value="view" ${cur==='view'?'selected':''}>열람(내역)</option>
                 <option value="operate" ${cur==='operate'?'selected':''}>운영(등록)</option>
               </select></label>`;}).join(''):'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
+          <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">${u.device_locked?'잠금':'해제'}</label>`}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
           <td style="white-space:nowrap"><button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
         </tr>`).join('')+'</tbody></table>';
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ===== 기기 접속 관리 =====
+  let devTimer=null;
+  function devWhen(iso){ if(!iso) return '기록 없음'; const d=new Date(iso); if(isNaN(d.getTime())) return '기록 없음';
+    const when=(d.getMonth()+1)+'월 '+d.getDate()+'일 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    const sec=Math.floor((Date.now()-d.getTime())/1000); const rel=presRel(sec); return when+(rel?' ('+rel+')':''); }
+  function devBadge(st,shared){
+    if(st==='pending')  return '<span style="display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:800;background:#fff3d6;color:#9a6b00">승인 대기</span>';
+    if(st==='approved') return '<span style="display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:800;background:#e6f3ee;color:#0F6E56">승인됨'+(shared?' · 공용':' · 전용')+'</span>';
+    if(st==='revoked')  return '<span style="display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:800;background:#fde8e6;color:#b23a2e">해지됨</span>';
+    return presEsc(st);
+  }
+  async function loadDevices(){
+    const b=$('devList'); if(!b) return;
+    try{
+      const d=await fetch(session.api+'/api/devices',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      const pend=items.filter(x=>x.status==='pending');
+      const appr=items.filter(x=>x.status==='approved');
+      const revk=items.filter(x=>x.status==='revoked');
+      $('devSummary').textContent='승인 대기 '+pend.length+' · 승인 '+appr.length+' · 해지 '+revk.length;
+      const row=(x)=>{
+        const who='<b>'+presEsc(x.name)+'</b> <span class="hint" style="margin:0">('+presEsc(x.login_id||'-')+(x.dept?' · '+presEsc(x.dept):'')+')</span>'+(x.device_locked?'':' <span class="hint" style="margin:0;color:#b23a2e">⚠ 기기잠금 꺼짐</span>');
+        const lab=x.label?presEsc(x.label):'<span class="hint" style="margin:0">이름 없음</span>';
+        let act='';
+        if(x.status==='pending'){
+          act='<button class="btn gold sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',false)">승인·전용</button> '
+             +'<button class="btn ghost sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',true)">승인·공용</button> '
+             +'<button class="btn danger sm" style="padding:3px 10px" onclick="deleteDevice('+x.id+')">삭제</button>';
+        }else if(x.status==='approved'){
+          act='<button class="btn ghost sm" style="padding:3px 10px" onclick="approveDevice('+x.id+','+(x.shared?'false':'true')+')">'+(x.shared?'전용으로':'공용으로')+'</button> '
+             +'<button class="btn ghost sm" style="padding:3px 10px" onclick="renameDevice('+x.id+',\''+(x.label?encodeURIComponent(x.label):'')+'\')">이름변경</button> '
+             +'<button class="btn danger sm" style="padding:3px 10px" onclick="revokeDevice('+x.id+')">해지</button>';
+        }else{
+          act='<button class="btn gold sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',false)">재승인·전용</button> '
+             +'<button class="btn ghost sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',true)">재승인·공용</button> '
+             +'<button class="btn danger sm" style="padding:3px 10px" onclick="deleteDevice('+x.id+')">삭제</button>';
+        }
+        return '<tr><td style="white-space:normal">'+who+'</td><td>'+lab+'</td><td>'+devBadge(x.status,x.shared)+'</td>'
+              +'<td class="hint" style="margin:0;white-space:nowrap">'+devWhen(x.last_seen||x.created_at)+'</td>'
+              +'<td style="white-space:nowrap">'+act+'</td></tr>';
+      };
+      const sect=(title,arr)=> arr.length? ('<div style="font-size:12px;font-weight:800;color:#666;margin:12px 0 4px">'+title+' ('+arr.length+')</div>'
+        +'<table><thead><tr><th>사용자</th><th>기기 이름</th><th>상태</th><th>마지막 시도</th><th>관리</th></tr></thead><tbody>'+arr.map(row).join('')+'</tbody></table>') : '';
+      const html=sect('승인 대기',pend)+sect('승인됨',appr)+sect('해지됨',revk);
+      b.innerHTML=html||'<div class="hint">기기 접속 요청 기록이 없습니다. (기기잠금을 켠 사용자가 미승인 기기로 로그인하면 여기에 표시됩니다.)</div>';
+    }catch(e){ b.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function startDevicePoll(){ loadDevices(); if(devTimer)clearInterval(devTimer); devTimer=setInterval(loadDevices,25000); }
+  async function setDeviceLock(userId,locked){
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/device-lock',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({value:!!locked})},15000);
+    if(!r.ok){ alert('기기잠금 변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); loadUsers(); return; }
+    const u=users.find(x=>Number(x.id)===Number(userId)); if(u) u.device_locked=!!locked;
+    loadDevices();
+  }
+  async function approveDevice(id,shared){
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({shared:!!shared})},15000);
+    if(!r.ok){ alert('승인 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+  async function revokeDevice(id){
+    if(!confirm('이 기기의 접속을 차단(해지)하시겠습니까?\n해당 기기에서는 더 이상 로그인할 수 없습니다.')) return;
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id+'/revoke',{method:'POST',headers:auth()},15000);
+    if(!r.ok){ alert('해지 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+  async function deleteDevice(id){
+    if(!confirm('이 기기 기록을 삭제하시겠습니까?\n같은 기기로 다시 로그인하면 승인 대기로 재등록됩니다.')) return;
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id,{method:'DELETE',headers:auth()},15000);
+    if(!r.ok){ alert('삭제 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+  async function renameDevice(id,curEnc){
+    const cur=curEnc?decodeURIComponent(curEnc):'';
+    const label=prompt('기기 이름(예: 사무실 PC / 마리아 노트북):',cur); if(label===null) return;
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({label:label.trim()})},15000);
+    if(!r.ok){ alert('이름변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
   }
 
   async function setTeam(userId,teamId){

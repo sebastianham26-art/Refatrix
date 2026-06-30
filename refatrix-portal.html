@@ -541,15 +541,31 @@
     try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
   }
 
+  // 기기 식별 키 — 브라우저별 1회 생성 후 localStorage 영구 보관(세션·6시간 만료와 무관).
+  // 서버는 이 값을 해시로만 저장(원본 미저장). 기기잠금 사용자만 서버에서 실제로 검사함.
+  function getDeviceKey(){
+    try{
+      var k=localStorage.getItem('refatrix_device_key');
+      if(!k){ k=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+'-'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)); localStorage.setItem('refatrix_device_key',k); }
+      return k;
+    }catch(e){ return null; }   // 로컬저장소 차단 시 null → 잠금 사용자는 device_required 로 안내됨
+  }
+  function deviceBlockMsg(err){
+    if(err==='device_pending')  return '이 기기는 아직 승인되지 않았습니다. 승인 요청이 접수되었으니, 디렉터(관리자) 승인 후 다시 로그인하세요.';
+    if(err==='device_revoked')  return '이 기기는 접속이 차단(해지)되었습니다. 디렉터에게 문의하세요.';
+    if(err==='device_required') return '기기 정보를 확인할 수 없습니다(브라우저의 로컬 저장소가 차단됨). 시크릿/프라이빗 모드를 끄거나 저장소 허용 후 다시 시도하세요.';
+    return null;
+  }
+
   async function login(){
     const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
     const m=$('loginMsg');m.className='msg';
     if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
     $('go').disabled=true;$('go').textContent='확인 중…';
     try{
-      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin,device_key:getDeviceKey()})});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){ const dm=deviceBlockMsg(d.error); m.className='msg err';m.textContent=dm||('로그인 실패: '+(d.error||res.status));return;}
       session={token:d.token,user:d.user,api};
       try{ sessionStorage.removeItem('const_nag_dismissed'); }catch(e){}
       try{ sessionStorage.removeItem('appr_nag_dismissed'); }catch(e){}
