@@ -190,7 +190,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631f</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631g</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -253,7 +253,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631f — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631g — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -480,7 +480,9 @@
     var it=(d.items||[]).map(function(i){ return i.product_id+':'+i.scanned+':'+i.remaining+':'+(i.box_nos||[]).join('.'); }).join('|');
     return bx+'#'+it+'#'+d.scanned_total+'/'+d.required_total+'/'+(d.all_done?1:0)+'/'+(d.photos_ok?1:0);
   }
-  function pollStart(){ pollStop(); pollTimer=setInterval(pollRefresh, 3000); }
+  // 실시간 자동 갱신 중지: 포장 중 화면이 다시 그려지며 커서가 튀는 문제 방지.
+  // 내 스캔/추가/사진은 각 핸들러가 즉시 화면을 갱신합니다.
+  function pollStart(){ pollStop(); }
   function pollStop(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
   function curOpenBox(){ var un=(PK.boxes||[]).filter(function(b){return !b.sealed;}); return un.length? un[un.length-1] : null; }
   var PHOTOS={};
@@ -521,7 +523,7 @@
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
-      +'<span class="el" id="pEl">경과 '+fmtHoursDec(drillElapsedSec)+' \u00b7 '+fmtClock(drillElapsedSec)+'</span>';
+      +'<span class="el" id="pEl">경과 '+fmtHoursDec(drillElapsedSec)+' (업무시간 기준)</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
     $('pDone').innerHTML='';
