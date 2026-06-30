@@ -202,7 +202,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631o</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631p</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -267,7 +267,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631o — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631p — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -566,7 +566,61 @@
       +'.tot{margin-top:4mm;font-weight:800;font-size:12pt;text-align:right}.sign{display:flex;gap:20mm;margin-top:16mm}.sb{flex:1;text-align:center;font-size:10pt}.sb .ln{border-top:1px solid #111;margin-bottom:2mm;height:14mm}'
       +'</style></head><body>'+copy('ORIGINAL \u2014 CLIENTE')+copy('COPIA \u2014 ALMAC\u00c9N')+'</body></html>';
   }
-  function printLabels(id){ fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildLabelsHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
+  // 라벨 바코드 → PNG dataURL(jsPDF 삽입용)
+  function labelBarcodePNG(text){
+    try{ var c=document.createElement('canvas'); window.JsBarcode(c, String(text), {format:'CODE128', displayValue:true, fontSize:16, height:48, margin:0, width:2}); return c.toDataURL('image/png'); }
+    catch(e){ return null; }
+  }
+  // 정확히 100x150mm 라벨 PDF(물리 치수가 PDF에 내장 → 프린터 무시 없이 정확)
+  function buildLabelsPDF(d){
+    var JS=(window.jspdf&&window.jspdf.jsPDF); if(!JS) return null;
+    var doc=new JS({unit:'mm', format:[100,150], orientation:'portrait'});
+    var W=100, M=4;
+    (d.boxes||[]).forEach(function(b, idx){
+      if(idx>0) doc.addPage([100,150],'portrait');
+      var y=M+6;
+      doc.setFont('helvetica','bold'); doc.setFontSize(22);
+      doc.text('CAJA '+b.box_no+' / '+d.box_count, M, y);
+      doc.setFont('helvetica','normal'); doc.setFontSize(9);
+      doc.text(String(d.inv_date||d.quote_date||''), W-M, y, {align:'right'});
+      y+=2.5; doc.setLineWidth(0.6); doc.line(M, y, W-M, y); y+=6;
+      doc.setFont('helvetica','bold'); doc.setFontSize(12);
+      var cust=String(d.customer||'')+(d.customer_code?' ('+d.customer_code+')':'');
+      var cl=doc.splitTextToSize(cust, W-2*M); doc.text(cl, M, y); y+=cl.length*5+1.5;
+      doc.setFontSize(9.5);
+      doc.text('No. de factura: '+(d.sat_no||'PENDIENTE'), M, y); y+=4.6;
+      doc.setFont('helvetica','normal'); doc.setFontSize(9);
+      doc.text('Pedido: '+String(d.quote_no||'')+'    SKU: '+b.box_sku+'    Pzas: '+b.box_qty, M, y); y+=3.5;
+      var bc=labelBarcodePNG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
+      if(bc){ var bh=15; doc.addImage(bc,'PNG', M, y, W-2*M, bh); y+=bh+2.5; }
+      // 표
+      var x2=M+30;
+      doc.setFontSize(8.5); doc.setDrawColor(150); doc.setLineWidth(0.2);
+      doc.setFillColor(240,240,240); doc.rect(M, y, W-2*M, 6, 'FD');
+      doc.setFont('helvetica','bold');
+      doc.text('CTR', M+1, y+4); doc.text('Competidor', x2+1, y+4); doc.text('Cant.', W-M-1, y+4, {align:'right'});
+      y+=6; doc.setFont('helvetica','normal');
+      (b.lines||[]).forEach(function(l){
+        if(y>150-M-5){ return; }
+        doc.rect(M, y, W-2*M, 5.4);
+        doc.text(String(l.ctr_code||''), M+1, y+3.7);
+        doc.text(String(l.syd_code||'-'), x2+1, y+3.7);
+        doc.setFont('helvetica','bold'); doc.text(String(l.qty), W-M-1, y+3.7, {align:'right'}); doc.setFont('helvetica','normal');
+        y+=5.4;
+      });
+    });
+    return doc;
+  }
+  function printLabels(id){
+    fetchShip(id).then(function(o){
+      if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; }
+      var doc=buildLabelsPDF(o.body);
+      if(!doc){ printDoc(buildLabelsHTML(o.body)); return; }   // jsPDF 미로드 시 HTML 폴백
+      try{ doc.autoPrint(); }catch(e){}
+      try{ var url=doc.output('bloburl'); var w=window.open(url,'_blank'); if(!w) alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); }
+      catch(e){ try{ doc.save('etiquetas_'+(o.body.quote_no||id)+'.pdf'); }catch(_){ alert('라벨 PDF 생성 오류'); } }
+    }).catch(function(){ alert('불러오기 실패'); });
+  }
   function printPackingList(id){ ensureCompany().then(function(){ return fetchShip(id); }).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildPackingListHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
 
   function renderQueue(items){
@@ -884,6 +938,7 @@
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="refatrix-nav.js?v=20260630es"></script>
 </body>
 </html>
