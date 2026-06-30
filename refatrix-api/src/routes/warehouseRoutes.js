@@ -1,5 +1,6 @@
-import { query } from '../db.js';
-import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { query, withTx } from '../db.js';
+import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
+import { logEvent } from '../audit.js';
 import { bizMinutes } from '../businessHours.js';
 
 // =====================================================================
@@ -102,4 +103,180 @@ export default async function warehouseRoutes(app) {
       items,
     };
   });
+
+  // ===================================================================
+  // 출고-1b 패킹: 박스 분류 + EAN-13 스캔 (1스캔=1피스)
+  //   · 권한: warehouse(쓰기는 edit) + 디렉터.
+  //   · 포장 대상 = 즉시재고(in_stock) 라인만 (드릴다운과 동일 기준).
+  //   · 스캔/박스 기록뿐 — 재고·매출전환 게이트는 1b-2에서.
+  // ===================================================================
+
+  // 포장 대상 라인(즉시재고만) — required 포함. 드릴다운과 동일 판정.
+  async function packableLines(quoteId, exec = query) {
+    const rows = (await exec(
+      `SELECT l.line_no, l.ctr_code, l.syd_codes, l.qty, l.product_id, l.reserved_qty,
+              p.ean, p.rack_location, p.scode, p.stock_qty
+         FROM quote_lines l LEFT JOIN products p ON p.id=l.product_id
+        WHERE l.quote_id=$1 ORDER BY l.line_no, l.id`, [quoteId])).rows;
+    const out = [];
+    for (const l of rows) {
+      if (!l.product_id) continue;
+      const qty = Number(l.qty) || 0;
+      const physical = l.stock_qty != null ? Number(l.stock_qty) : 0;
+      const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));
+      if (fulfill < qty) continue;
+      const syd = (l.syd_codes && String(l.syd_codes).trim()) || (l.scode && String(l.scode).trim()) || '';
+      out.push({ product_id: Number(l.product_id), ctr_code: l.ctr_code || '', syd_code: syd,
+                 ean: (l.ean || '').trim(), rack_location: l.rack_location || '', required: qty });
+    }
+    return out;
+  }
+
+  // EAN-13 매칭(리더기 앞자리 0 가감 폴백)
+  async function findProductByEan(ean, exec = query) {
+    const e = String(ean || '').trim();
+    if (!e) return null;
+    let r = (await exec(`SELECT id, code, ean FROM products WHERE TRIM(ean)=$1 AND deleted_at IS NULL LIMIT 1`, [e])).rows[0];
+    if (r) return r;
+    r = (await exec(`SELECT id, code, ean FROM products WHERE ltrim(TRIM(ean),'0')=ltrim($1,'0') AND deleted_at IS NULL LIMIT 1`, [e])).rows[0];
+    return r || null;
+  }
+
+  // ---------- 패킹 상태(재개용 전체 스냅샷) ----------
+  app.get('/api/warehouse/packing/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(
+      `SELECT q.id, q.quote_no, q.customer_id, q.guest_name, c.name AS customer_name,
+              q.packing_printed_at, q.packing_due_at, q.status, q.invoice_id
+         FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+        WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+
+    const req2 = await packableLines(id);
+    const scanned = {};
+    (await query(`SELECT product_id, SUM(qty)::int AS q FROM packing_box_line WHERE quote_id=$1 GROUP BY product_id`, [id]))
+      .rows.forEach((r) => { scanned[Number(r.product_id)] = Number(r.q) || 0; });
+
+    let reqTotal = 0, scanTotal = 0;
+    const items = req2.map((l) => {
+      const sc = scanned[l.product_id] || 0;
+      reqTotal += l.required; scanTotal += Math.min(sc, l.required);
+      return { product_id: l.product_id, ctr_code: l.ctr_code, syd_code: l.syd_code, ean: l.ean,
+               rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc) };
+    });
+
+    const boxes = (await query(`SELECT id, box_no, sealed_at FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
+    const blines = (await query(
+      `SELECT bl.box_id, bl.product_id, bl.qty, p.code AS ctr_code, p.ean
+         FROM packing_box_line bl JOIN products p ON p.id=bl.product_id
+        WHERE bl.quote_id=$1 AND bl.qty>0 ORDER BY bl.box_id, p.code`, [id])).rows;
+    const boxOut = boxes.map((b) => ({
+      box_id: Number(b.id), box_no: b.box_no, sealed: !!b.sealed_at,
+      lines: blines.filter((x) => Number(x.box_id) === Number(b.id))
+                   .map((x) => ({ product_id: Number(x.product_id), ctr_code: x.ctr_code || '', ean: x.ean || '', qty: Number(x.qty) })),
+    }));
+
+    return {
+      quote_id: Number(q.id), quote_no: q.quote_no || null,
+      customer: q.customer_name || q.guest_name || '—',
+      printed_at: q.packing_printed_at,
+      elapsed_biz_sec: q.packing_printed_at ? Math.floor(bizMinutes(q.packing_printed_at, new Date()) * 60) : 0,
+      in_business: inBusinessNow(),
+      required_total: reqTotal, scanned_total: scanTotal, remaining_total: Math.max(0, reqTotal - scanTotal),
+      all_done: reqTotal > 0 && scanTotal >= reqTotal,
+      items, boxes: boxOut,
+    };
+  });
+
+  // ---------- 새 박스(자동번호 Box N) ----------
+  app.post('/api/warehouse/packing/:id/box', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const result = await withTx(async (c) => {
+      const q = (await c.query(`SELECT id FROM quotes WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!q) return null;
+      const next = (await c.query(`SELECT COALESCE(MAX(box_no),0)+1 AS n FROM packing_box WHERE quote_id=$1`, [id])).rows[0].n;
+      const b = (await c.query(
+        `INSERT INTO packing_box (quote_id, box_no, created_by) VALUES ($1,$2,$3) RETURNING id, box_no`,
+        [id, next, req.ctx.perm.userId])).rows[0];
+      return { box_id: Number(b.id), box_no: b.box_no };
+    });
+    if (!result) return reply.code(404).send({ error: 'not_found' });
+    return result;
+  });
+
+  // ---------- 스캔(EAN-13, 1건=1피스) ----------
+  app.post('/api/warehouse/packing/:id/scan', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const boxId = Number(req.body && req.body.box_id);
+    const ean = String((req.body && req.body.ean) || '').trim();
+    if (!ean) return reply.code(400).send({ error: 'no_ean' });
+
+    const out = await withTx(async (c) => {
+      const q = (await c.query(`SELECT id FROM quotes WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!q) return { http: 404, body: { error: 'not_found' } };
+
+      const prod = await findProductByEan(ean, c.query.bind(c));
+      const logScan = async (res, pid) => { await c.query(
+        `INSERT INTO packing_scan (quote_id, box_id, product_id, ean, result, scanned_by) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, boxId || null, pid || null, ean, res, req.ctx.perm.userId]); };
+
+      if (!prod) { await logScan('unknown', null); return { body: { result: 'unknown', ean } }; }
+
+      const list = await packableLines(id, c.query.bind(c));
+      const target = list.find((x) => x.product_id === Number(prod.id));
+      if (!target) { await logScan('wrong', prod.id); return { body: { result: 'wrong', ean, ctr_code: prod.code || '' } }; }
+
+      const sc = Number((await c.query(`SELECT COALESCE(SUM(qty),0)::int AS q FROM packing_box_line WHERE quote_id=$1 AND product_id=$2`, [id, prod.id])).rows[0].q) || 0;
+      if (sc >= target.required) { await logScan('excess', prod.id); return { body: { result: 'excess', ean, ctr_code: target.ctr_code, required: target.required } }; }
+
+      const box = (await c.query(`SELECT id, sealed_at FROM packing_box WHERE id=$1 AND quote_id=$2`, [boxId, id])).rows[0];
+      if (!box) return { http: 400, body: { error: 'no_box', note: '먼저 박스를 만들어 주세요.' } };
+      if (box.sealed_at) return { http: 400, body: { error: 'box_sealed' } };
+
+      await c.query(
+        `INSERT INTO packing_box_line (box_id, quote_id, product_id, qty) VALUES ($1,$2,$3,1)
+           ON CONFLICT (box_id, product_id) DO UPDATE SET qty = packing_box_line.qty + 1, updated_at=now()`,
+        [boxId, id, prod.id]);
+      await logScan('ok', prod.id);
+
+      const reqTotal = list.reduce((a, x) => a + x.required, 0);
+      const scanTotal = Number((await c.query(`SELECT COALESCE(SUM(qty),0)::int AS q FROM packing_box_line WHERE quote_id=$1`, [id])).rows[0].q) || 0;
+      const boxNo = (await c.query(`SELECT box_no FROM packing_box WHERE id=$1`, [boxId])).rows[0].box_no;
+      return { body: { result: 'ok', ean, product_id: Number(prod.id), ctr_code: target.ctr_code, box_no: boxNo,
+        scanned: sc + 1, required: target.required, remaining: Math.max(0, target.required - (sc + 1)),
+        scanned_total: Math.min(scanTotal, reqTotal), required_total: reqTotal, all_done: scanTotal >= reqTotal } };
+    });
+    if (out.http) return reply.code(out.http).send(out.body);
+    return out.body;
+  });
+
+  // ---------- 언스캔(오스캔 정정: 박스에서 1개 빼기) ----------
+  app.post('/api/warehouse/packing/:id/unscan', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const boxId = Number(req.body && req.body.box_id);
+    const pid = Number(req.body && req.body.product_id);
+    const out = await withTx(async (c) => {
+      const q = (await c.query(`SELECT id FROM quotes WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!q) return { http: 404, body: { error: 'not_found' } };
+      const ln = (await c.query(`SELECT id, qty FROM packing_box_line WHERE box_id=$1 AND product_id=$2 AND quote_id=$3`, [boxId, pid, id])).rows[0];
+      if (!ln || Number(ln.qty) <= 0) return { http: 400, body: { error: 'nothing_to_undo' } };
+      if (Number(ln.qty) <= 1) await c.query(`DELETE FROM packing_box_line WHERE id=$1`, [ln.id]);
+      else await c.query(`UPDATE packing_box_line SET qty = qty - 1, updated_at = now() WHERE id=$1`, [ln.id]);
+      await c.query(`INSERT INTO packing_scan (quote_id, box_id, product_id, ean, result, scanned_by) VALUES ($1,$2,$3,NULL,'undo',$4)`, [id, boxId, pid, req.ctx.perm.userId]);
+      return { body: { ok: true } };
+    });
+    if (out.http) return reply.code(out.http).send(out.body);
+    return out.body;
+  });
+
+  // ---------- 박스 봉인/해제 ----------
+  app.post('/api/warehouse/packing/:id/box/:boxId/seal', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id), boxId = Number(req.params.boxId);
+    const seal = req.body && req.body.seal === false ? false : true;
+    const b = (await query(`SELECT id FROM packing_box WHERE id=$1 AND quote_id=$2`, [boxId, id])).rows[0];
+    if (!b) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE packing_box SET sealed_at=$2 WHERE id=$1`, [boxId, seal ? new Date() : null]);
+    return { ok: true, sealed: seal };
+  });
+
 }
