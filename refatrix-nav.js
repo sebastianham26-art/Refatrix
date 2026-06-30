@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260628wh1 loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260630es loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -399,3 +399,168 @@
   window.__rnavReload=boot;
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount); else mount();
 })();
+
+
+/* ===== Refatrix 드롭다운 한→스페인어 병기 (자동 주입) ===== */
+// Refatrix 드롭다운 한→스페인어 병기 (decorator). nav.js에 주입됨.
+// 규칙: <option>의 보이는 텍스트만 "한국어 (Español)"로 바꾼다. value/속성은 절대 안 건드린다.
+(function(global){
+  'use strict';
+
+  // 전체일치 사전 (옵션 텍스트 전체가 키와 똑같을 때만; 단일글자·문장형은 여기) ----------
+  var EXACT = {
+    // 요일(단일 글자)
+    '일':'Dom','월':'Lun','화':'Mar','수':'Mié','목':'Jue','금':'Vie','토':'Sáb',
+    // 짧지만 전체일치로만 처리할 일반어
+    '전체':'Todos','선택':'Seleccionar','없음':'Ninguno','기타':'Otros','조정':'Ajuste',
+    '입고':'Entrada','출고':'Salida','수정':'Editar','취소':'Cancelar','팀':'Equipo',
+    '역할':'Rol','열람':'Ver','운영':'Operar','재무':'Finanzas','영업':'Ventas','마케팅':'Marketing',
+    '뷰어':'Visor','접수':'Recibido','실제':'Real','예정':'Programado','수입':'Ingreso','지출':'Egreso',
+    // 문장형(전체일치 — 깔끔한 스페인어로 큐레이션)
+    '★ 미등록 고객 (직접 입력)':'Cliente no registrado, entrada directa',
+    '— 고객 —':'— Cliente —',
+    '— 고객 선택 —':'— Seleccionar cliente —',
+    '— 현재(라이브) —':'— Actual (en vivo) —',
+    '— 등록된 고객이 없습니다. ‘고객 등록’ 탭에서 추가하세요 —':'No hay clientes; agréguelos en la pestaña Registrar cliente',
+    '실제(완료)':'Real (completado)',
+    '종료 없음(무기한)':'Sin fin (indefinido)',
+    '종료월 지정':'Mes de término',
+    '고객 없음(전사)':'Sin cliente (toda la empresa)',
+    '(계좌 없음)':'Sin cuenta','(미지정)':'Sin asignar','(없음)':'Ninguno',
+    '전체 (영업사원별 요약)':'Todos (resumen por vendedor)',
+    '디렉터(director)':'Director','소시오(socio·파트너)':'Socio',
+    '영업(sales)':'Ventas','영업지원(sales_support)':'Soporte de ventas','창고(warehouse)':'Almacén',
+    'CTR단독(빨강) 많은 순':'Más CTR únicos (rojo)',
+    '미대응(파랑) 많은 순':'Más sin cubrir (azul)',
+    '정렬 · VIO 순위(고정)':'Orden · Ranking VIO (fijo)',
+    '정렬 · 미대응 품번 수 ↓ (기회 규모)':'Orden · SKU sin cubrir ↓ (oportunidad)',
+    '정렬 · 시장 등록대수 ↓':'Orden · Unidades en mercado ↓',
+    '정렬 · 자사 준비율 ↑ (공백 우선)':'Orden · Cobertura propia ↑ (huecos primero)',
+    '소재 해제(빈값)':'Quitar material (vacío)',
+    '(배치 불러오기 실패)':'Error al cargar lotes',
+    '배치 선택…':'Seleccionar lote…',
+    '조정 (±)':'Ajuste (±)','입고 (+)':'Entrada (+)','출고 (−)':'Salida (−)',
+    '할인률(%)':'Descuento (%)','금액(MXN)':'Monto (MXN)'
+  };
+
+  // 부분(경계인식) 사전 — 멀티글자 한국어 구. 앞뒤가 비한글일 때만 치환. 긴 것 먼저.
+  var PHRASE = {
+    // 계정과목(category) 이름
+    '수입원가 정산차액':'Ajuste de costo de importación',
+    '매출원가(COGS)':'Costo de ventas (COGS)',
+    '대여금(차입금)':'Préstamo (financiamiento)',
+    '제품 매출':'Ventas de productos','기타 수익':'Otros ingresos',
+    '지급수수료':'Honorarios pagados','세금과공과':'Impuestos y contribuciones',
+    '여비교통비':'Viáticos y transporte','전문가보수':'Honorarios profesionales',
+    '복리후생비':'Prestaciones','소프트웨어·IT':'Software · TI',
+    '기타경비':'Otros gastos','이자비용':'Gastos por intereses','외환차손':'Pérdida cambiaria',
+    '소모품비':'Consumibles','수선비':'Reparaciones','마케팅비':'Marketing',
+    '선수금':'Anticipo de clientes','자본금':'Capital social','임차료':'Renta',
+    '급여':'Sueldos','비품':'Mobiliario y equipo',
+    // 그룹(group_name)
+    '영업외비용':'Gastos no operativos','매출원가':'Costo de ventas',
+    '판관비':'Gastos de operación','수익':'Ingresos','비손익':'No P&L',
+    // 필터/권한/공통(멀티글자)
+    '전체 카테고리':'Todas las categorías','전체 계좌':'Todas las cuentas',
+    '전체 담당자':'Todos los responsables','담당자 전체':'Todos los responsables',
+    '전체 제조사':'Todos los fabricantes','전체 maker':'Todos los makers',
+    '전체 팀':'Todos los equipos','회사 전체':'Toda la empresa','영업 전체':'Todas las ventas',
+    '세부 열람':'Ver detalle','잔액만':'Solo saldo','수동만':'Solo manual',
+    '미지정':'Sin asignar','전체공지':'Aviso general','대상 지정':'Destinatarios específicos',
+    '개인별 공유':'Compartir individual','내 개인 일정':'Mi agenda personal',
+    '본인 작성분':'Mis registros','활동 선택':'Seleccionar actividad','카테고리 선택':'Seleccionar categoría',
+    '검토완료':'Revisado','개발완료':'Desarrollo completo','공장요청':'Solicitud a fábrica',
+    '알루미늄 지정':'Asignar aluminio',
+    '종료월':'Mes de término','월별':'Por mes','주별':'Por semana','매월':'Mensual','매주':'Semanal',
+    '이번 달':'este mes','이번 주':'esta semana','까지':'hasta',
+    'MXN만':'Solo MXN','USD만':'Solo USD',
+    '계좌 없음':'Sin cuenta','없음':'Ninguno'
+  };
+
+  function isHangul(ch){ if(!ch) return false; var c=ch.charCodeAt(0);
+    return (c>=0xAC00&&c<=0xD7A3)||(c>=0x1100&&c<=0x11FF)||(c>=0x3130&&c<=0x318F); }
+
+  // 경계인식 치환: text 안에서 PHRASE 키를 앞뒤 비한글일 때만 "키 (es)"로
+  var PHRASE_KEYS = Object.keys(PHRASE).sort(function(a,b){return b.length-a.length;});
+  function annotatePhrases(text){
+    var out='', i=0, n=text.length, changed=false;
+    while(i<n){
+      var ch=text.charAt(i);
+      var boundaryStart = (i===0) || !isHangul(text.charAt(i-1));
+      if(isHangul(ch) && boundaryStart){
+        var matched=null;
+        for(var k=0;k<PHRASE_KEYS.length;k++){
+          var key=PHRASE_KEYS[k];
+          if(text.substr(i,key.length)===key){
+            var after=text.charAt(i+key.length);
+            if(!isHangul(after)){ matched=key; break; }   // 최장일치 + 뒤 경계
+          }
+        }
+        if(matched){ out += matched+' ('+PHRASE[matched]+')'; i+=matched.length; changed=true; continue; }
+      }
+      out += ch; i++;
+    }
+    return changed?out:null;
+  }
+
+  function decorateOption(opt){
+    if(!opt || opt.getAttribute('data-i18n')==='1') return;
+    var raw = opt.textContent;
+    var t = raw.replace(/\s+/g,' ').trim();
+    if(!t){ opt.setAttribute('data-i18n','1'); return; }
+    var res=null;
+    if(EXACT.hasOwnProperty(t)){ res = raw + ' ('+EXACT[t]+')'; }
+    else { var ann=annotatePhrases(raw); if(ann!==null) res=ann; }
+    if(res!==null && res!==raw){ opt.textContent = res; }
+    opt.setAttribute('data-i18n','1');
+  }
+
+  function scan(root){
+    if(!root) return;
+    var opts = (root.querySelectorAll ? root.querySelectorAll('option') : []);
+    for(var i=0;i<opts.length;i++) decorateOption(opts[i]);
+  }
+
+  var _raf=null, _pending=[];
+  function schedule(node){ _pending.push(node);
+    if(_raf) return;
+    _raf=(global.requestAnimationFrame||function(f){return setTimeout(f,16);})(function(){
+      _raf=null; var nodes=_pending; _pending=[];
+      for(var i=0;i<nodes.length;i++){
+        var n=nodes[i]; if(!n) continue;
+        if(n.tagName==='OPTION') decorateOption(n);
+        else if(n.querySelectorAll) scan(n);
+      }
+    });
+  }
+
+  function start(doc){
+    doc = doc || global.document; if(!doc) return;
+    scan(doc);
+    try{
+      var MO = global.MutationObserver;
+      if(MO){
+        var obs=new MO(function(muts){
+          for(var i=0;i<muts.length;i++){
+            var added=muts[i].addedNodes;
+            for(var j=0;j<added.length;j++){
+              var nd=added[j]; if(nd.nodeType===1) schedule(nd);
+            }
+          }
+        });
+        obs.observe(doc.body||doc.documentElement, {childList:true, subtree:true});
+      }
+    }catch(e){}
+  }
+
+  global.RefxI18n = { start:start, scan:scan, decorateOption:decorateOption,
+                      annotatePhrases:annotatePhrases, EXACT:EXACT, PHRASE:PHRASE };
+})(typeof window!=='undefined'?window:globalThis);
+
+// 자동 시작: 페이지 로드 시 드롭다운 병기 + 동적 옵션 감시
+(function(g){
+  try{ if(g.console) g.console.log('[refatrix-i18n] dropdown KO→ES 병기 활성'); }catch(e){}
+  function go(){ try{ g.RefxI18n && g.RefxI18n.start(g.document); }catch(e){} }
+  if(g.document && g.document.readyState==='loading') g.document.addEventListener('DOMContentLoaded',go);
+  else go();
+})(typeof window!=='undefined'?window:globalThis);
