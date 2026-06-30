@@ -14,7 +14,7 @@
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
     font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
-  .wrap{max-width:1080px;margin:0 auto}
+  .wrap{max-width:1480px;margin:0 auto}
   .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
   .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
   .who{margin-left:auto;font-size:13px;text-align:right}
@@ -38,6 +38,24 @@
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .pg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;margin:2px 8px 2px 0}
   .pinbox{background:#fff7e0;border:1px solid #ecd9a0;border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
+  /* ── 사용자 목록·권한: 넓은 화면 활용 + 격자 정돈 ── */
+  #userList{overflow-x:auto;margin-top:6px}
+  #userList table{font-size:12.5px}
+  #userList thead th{position:sticky;top:0;z-index:2;background:#faf8f3;white-space:nowrap}
+  #userList tbody tr:nth-child(even){background:#fbfaf6}
+  #userList tbody tr:hover{background:#f4f1e8}
+  #userList td{vertical-align:top}
+  .c-id{white-space:nowrap}.uname{font-weight:700}
+  .rolepill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef0f2;color:#555;white-space:nowrap}
+  th.col-perm,td.col-perm{min-width:380px}
+  th.col-acc,td.col-acc{min-width:230px}
+  .permgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:6px 14px}
+  .permgroup .gh{font-size:9.5px;font-weight:800;color:#a0a0a0;letter-spacing:.04em;margin:0 0 3px}
+  .pgline,.accline{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:1px 0 1px 6px;border-left:3px solid #ccc;border-radius:0 5px 5px 0;margin:0 0 2px;cursor:pointer}
+  .pgline .lb,.accline .lb{font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .pgline select,.accline select{padding:2px 4px;font-size:11px;flex:none}
+  .accgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:6px 14px}
+  .accline .lb .cur{color:#9a9a9a;font-size:10px;margin-left:3px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -437,41 +455,31 @@
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
       accountsList=d.accounts||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th>페이지 권한</th><th>계좌 권한</th><th>기기</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>기기</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
-          <td><b>${u.name}</b></td><td>${u.login_id||'—'}</td><td>${u.role}</td>
-          <td><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
+          <td class="c-id"><b class="uname">${u.name}</b></td>
+          <td class="c-id">${u.login_id||'—'}</td>
+          <td class="c-id"><span class="rolepill">${u.role}</span></td>
+          <td class="c-id"><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
             <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
-          <td style="white-space:normal;max-width:240px">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':teams.map(t=>{
+          <td style="white-space:normal;max-width:200px">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':teams.map(t=>{
             const granted=(u.team_access||[]).includes(t.id); const own=u.team_id===t.id;
             if(own) return `<span class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;background:#eef0f2;color:#888">${t.name} (소속)</span>`;
             return `<label class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${granted?'#0F6E56':'#ccc'};background:${granted?'#e6f3ee':'#fff'};color:${granted?'#0F6E56':'#666'}"><input type="checkbox" ${granted?'checked':''} onchange="toggleTeamAccess(${u.id},${t.id},this.checked)" style="vertical-align:middle;margin-right:3px">${t.name}</label>`;
           }).join('')}</td>
-          <td style="max-width:560px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':PERM_GROUPS.map(([gname,arr])=>{
-            return `<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:800;color:#888;margin-bottom:2px">${gname}</div>`+arr.map(([k,label])=>{
+          <td class="col-perm">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':'<div class="permgrid">'+PERM_GROUPS.map(([gname,arr])=>
+            `<div class="permgroup"><div class="gh">${gname}</div>`+arr.map(([k,label])=>{
               const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
-              const col=cur==='edit'?'#0F6E56':cur==='view'?'#B8893B':'#bbb';
-              return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px">${label} <select data-uid="${u.id}" data-page="${k}" style="padding:3px 5px;font-size:11px" onchange="setPageAccess(this)">
-                <option value="none" ${cur==='none'?'selected':''}>없음</option>
-                <option value="view" ${cur==='view'?'selected':''}>열람</option>
-                <option value="edit" ${cur==='edit'?'selected':''}>수정·기록</option></select></label>`;}).join('')+`</div>`;}).join('')}</td>
-          <td style="max-width:240px;white-space:normal">${u.role==='director'?'<span class="hint" style="margin:0">전체 접근(무제한)</span>':u.role==='socio'?(accountsList.length?accountsList.map(a=>{
+              const col=cur==='edit'?'#0F6E56':cur==='view'?'#B8893B':'#ccc';
+              return `<label class="pgline" style="border-left-color:${col}"><span class="lb">${label}</span><select data-uid="${u.id}" data-page="${k}" onchange="setPageAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="edit" ${cur==='edit'?'selected':''}>수정</option></select></label>`;
+            }).join('')+`</div>`).join('')+'</div>'}</td>
+          <td class="col-acc">${u.role==='director'?'<span class="hint" style="margin:0">전체 접근(무제한)</span>':u.role==='socio'?(accountsList.length?'<div class="accgrid">'+accountsList.map(a=>{
             const cur=(u.account_access&&u.account_access[a.id])==='balance'?'balance':'view';
             const col=cur==='balance'?'#6b8cae':'#B8893B';
-            return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px;display:block;margin-bottom:3px">${a.name} <span class="hint" style="margin:0">${a.currency||''}</span>
-              <select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)" style="padding:3px 5px;font-size:11px">
-                <option value="view" ${cur==='view'?'selected':''}>세부 열람</option>
-                <option value="balance" ${cur==='balance'?'selected':''}>잔액만(드릴다운 차단)</option>
-              </select></label>`;}).join(''):'<span class="hint" style="margin:0">계좌 없음</span>'):(accountsList.length?accountsList.map(a=>{
+            return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="view" ${cur==='view'?'selected':''}>세부 열람</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>'):(accountsList.length?'<div class="accgrid">'+accountsList.map(a=>{
             const cur=(u.account_access&&u.account_access[a.id])||'none';
-            const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#bbb';
-            return `<label class="pg" style="border-left:3px solid ${col};padding-left:5px;display:block;margin-bottom:3px">${a.name} <span class="hint" style="margin:0">${a.currency||''}</span>
-              <select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)" style="padding:3px 5px;font-size:11px">
-                <option value="none" ${cur==='none'?'selected':''}>없음</option>
-                <option value="balance" ${cur==='balance'?'selected':''}>잔액만</option>
-                <option value="view" ${cur==='view'?'selected':''}>열람(내역)</option>
-                <option value="operate" ${cur==='operate'?'selected':''}>운영(등록)</option>
-              </select></label>`;}).join(''):'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
+            const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#ccc';
+            return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="operate" ${cur==='operate'?'selected':''}>운영</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
           <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">${u.device_locked?'잠금':'해제'}</label>`}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
           <td style="white-space:nowrap"><button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
