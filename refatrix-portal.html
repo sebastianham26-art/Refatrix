@@ -462,6 +462,62 @@
     checkDeleteApprovals({silent:true}); loadQuoteBadge();
   }
   function dismissDelAppr(){ try{ sessionStorage.setItem('del_appr_dismissed','1'); }catch(e){} $('delApprModal').style.display='none'; }
+
+  // ===== 포장완료 → 영업지원/디렉터 즉시 알림(폴링 + 팝업 + 알림음) =====
+  //   트리거: 스캔 남은 0 + 모든 박스 사진≥1 + 종이문서 미업로드.
+  var __packSeen=null, __packPollTimer=null;
+  function __packAud(){ return !!(session.user && (session.user.role==='sales_support' || session.user.role==='director')); }
+  function __loadPackSeen(){
+    if(__packSeen) return __packSeen;
+    __packSeen=new Set();
+    try{ var raw=sessionStorage.getItem('pack_ready_seen'); if(raw){ JSON.parse(raw).forEach(function(x){ __packSeen.add(Number(x)); }); } }catch(e){}
+    return __packSeen;
+  }
+  function __savePackSeen(){ try{ sessionStorage.setItem('pack_ready_seen', JSON.stringify(Array.from(__loadPackSeen()))); }catch(e){} }
+  function renderPackReadyList(items){
+    $('packReadyMsg').innerHTML='<b>포장완료.</b> SAT 발행하고 <b>매출확정</b> 항목에서 SAT 번호를 등록해 주세요. 그리고 <b>창고에 알려주세요</b>. (대상 <b>'+items.length+'건</b>)';
+    $('packReadyList').innerHTML=items.map(function(r){
+      return '<div style="padding:12px 14px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
+        +'<div><b>'+escp(r.customer_name||'')+'</b> <span style="color:var(--muted);font-size:11.5px">'+escp(r.quote_no||'')+'</span></div>'
+        +'<div style="font-weight:800;color:var(--ink)">'+fmt(r.total_mxn)+' <span style="color:var(--muted);font-weight:500;font-size:11px">MXN</span></div></div>'
+        +'<div style="color:var(--muted);font-size:12px;margin-top:4px">SKU <b>'+r.sku_count+'</b>종 \u00b7 총 <b>'+r.total_qty+'</b>피스</div>'
+        +'</div>';
+    }).join('');
+  }
+  async function checkPackingReady(opts){
+    if(!__packAud()) return;
+    var silent=opts&&opts.silent;
+    try{
+      var d=await fetch(session.api+'/api/warehouse/sales/packing-ready',{headers:auth()}).then(function(r){return r.json();});
+      var items=(d&&d.items)||[];
+      if(!items.length){
+        $('packReadyModal').style.display='none';
+        try{ sessionStorage.removeItem('pack_ready_dismissed'); }catch(e){}
+        __packSeen=new Set(); __savePackSeen();
+        return;
+      }
+      renderPackReadyList(items);
+      var seen=__loadPackSeen();
+      var newItems=items.filter(function(x){ return !seen.has(Number(x.quote_id)); });
+      if(newItems.length){
+        newItems.forEach(function(x){ seen.add(Number(x.quote_id)); }); __savePackSeen();
+        try{ sessionStorage.removeItem('pack_ready_dismissed'); }catch(e){}
+        $('packReadyModal').style.display='flex';
+        if(!silent) playAlertSound();
+      }else{
+        var dis=false; try{ dis=sessionStorage.getItem('pack_ready_dismissed')==='1'; }catch(e){}
+        $('packReadyModal').style.display = dis ? 'none' : 'flex';
+      }
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  function startPackingPolling(){
+    if(!__packAud()) return;
+    if(__packPollTimer){ clearInterval(__packPollTimer); __packPollTimer=null; }
+    __packPollTimer=setInterval(function(){ checkPackingReady(); }, 25000); // 25초마다 즉시 감지
+  }
+  function dismissPackReady(){ try{ sessionStorage.setItem('pack_ready_dismissed','1'); }catch(e){} $('packReadyModal').style.display='none'; }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && __packAud()){ checkPackingReady(); } });
   // 탭으로 돌아오면 즉시 한 번 더 확인(디렉터)
   document.addEventListener('visibilitychange', function(){ if(!document.hidden && session && session.user && session.user.role==='director'){ checkDeleteApprovals(); } });
 
@@ -649,7 +705,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkDeviceApprovals();startDevicePolling();checkNoticePopup();checkCalendarPopup();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkDeviceApprovals();startDevicePolling();checkPackingReady();startPackingPolling();checkNoticePopup();checkCalendarPopup();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -1113,6 +1169,23 @@
   </div>
 </div>
 
+<!-- 포장완료 → SAT 발행 알림 팝업(영업지원/디렉터) -->
+<div id="packReadyModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:217;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">\ud83d\udce6 포장완료 — SAT 발행 요청</div>
+    </div>
+    <div style="padding:14px 20px">
+      <div id="packReadyMsg" style="font-size:13.5px;color:var(--ink);line-height:1.6;margin-bottom:10px"></div>
+      <div id="packReadyList" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    </div>
+    <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissPackReady()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
+      <button onclick="goScreen('quotelist')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">견적매출 추적으로 가기 →</button>
+    </div>
+  </div>
+</div>
+
 <!-- 기기 접속 승인 팝업(디렉터) -->
 <div id="devApprModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:216;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
   <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
@@ -1155,6 +1228,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260630es"></script>
+<script src="refatrix-nav.js?v=20260628wh1"></script>
 </body>
 </html>

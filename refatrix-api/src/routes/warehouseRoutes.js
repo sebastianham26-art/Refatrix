@@ -381,4 +381,43 @@ export default async function warehouseRoutes(app) {
     return { ok: true };
   });
 
+
+  // ---------- 영업지원 포장완료 알림 대상(스캔 0 + 모든 박스 사진≥1, ③ 종이문서 미업로드) ----------
+  //   · 영업지원/디렉터 폴링용. 포장지시 출력됨 + 미전환 + packing_doc 없음 후보 중,
+  //     즉시재고 라인 전부 스캔 완료 && 박스>0 && 모든 박스 사진≥1 인 견적만 반환.
+  app.get('/api/warehouse/sales/packing-ready', { preHandler: [authGuard] }, async (req, reply) => {
+    const role = req.ctx.perm.role;
+    if (role !== 'sales_support' && role !== 'director') return reply.code(403).send({ error: 'forbidden' });
+    const cands = (await query(
+      `SELECT q.id, q.quote_no, q.total_mxn,
+              COALESCE(c.name, q.guest_name, '\u2014') AS customer_name
+         FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id
+        WHERE q.deleted_at IS NULL
+          AND q.packing_printed_at IS NOT NULL
+          AND q.status NOT IN ('converted','cancelled','expired','delete_pending')
+          AND NOT EXISTS (SELECT 1 FROM quote_packing_docs pd WHERE pd.quote_id=q.id)
+        ORDER BY q.packing_printed_at`)).rows;
+    const out = [];
+    for (const q of cands) {
+      const lines = await packableLines(q.id);
+      if (!lines.length) continue;
+      const scanned = {};
+      (await query(`SELECT product_id, SUM(qty)::int AS s FROM packing_box_line WHERE quote_id=$1 GROUP BY product_id`, [q.id]))
+        .rows.forEach((r) => { scanned[Number(r.product_id)] = Number(r.s) || 0; });
+      const complete = lines.every((l) => (scanned[l.product_id] || 0) >= l.required);
+      if (!complete) continue;
+      const boxes = (await query(`SELECT id FROM packing_box WHERE quote_id=$1`, [q.id])).rows;
+      if (!boxes.length) continue;
+      const pc = {};
+      (await query(`SELECT box_id, COUNT(*)::int AS n FROM packing_box_photo WHERE quote_id=$1 GROUP BY box_id`, [q.id]))
+        .rows.forEach((r) => { pc[Number(r.box_id)] = Number(r.n) || 0; });
+      const photosOk = boxes.every((b) => (pc[Number(b.id)] || 0) >= 1);
+      if (!photosOk) continue;
+      out.push({ quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), customer_name: q.customer_name,
+                 sku_count: lines.length, total_qty: lines.reduce((a, l) => a + l.required, 0),
+                 total_mxn: Number(q.total_mxn) || 0 });
+    }
+    return { count: out.length, items: out };
+  });
+
 }
