@@ -390,9 +390,9 @@ export default async function warehouseRoutes(app) {
   });
 
 
-  // ---------- 영업지원 포장완료 알림 대상(스캔 0 + 모든 박스 사진≥1, ③ 종이문서 미업로드) ----------
+  // ---------- 영업지원 포장완료 알림 대상(스캔 완료 + 박스>0, ③ 종이문서 미업로드 · 사진은 선택) ----------
   //   · 영업지원/디렉터 폴링용. 포장지시 출력됨 + 미전환 + packing_doc 없음 후보 중,
-  //     즉시재고 라인 전부 스캔 완료 && 박스>0 && 모든 박스 사진≥1 인 견적만 반환.
+  //     즉시재고 라인 전부 스캔 완료 && 박스>0 인 견적만 반환(사진 선택).
   app.get('/api/warehouse/sales/packing-ready', { preHandler: [authGuard] }, async (req, reply) => {
     const role = req.ctx.perm.role;
     if (role !== 'sales_support' && role !== 'director') return reply.code(403).send({ error: 'forbidden' });
@@ -416,11 +416,6 @@ export default async function warehouseRoutes(app) {
       if (!complete) continue;
       const boxes = (await query(`SELECT id FROM packing_box WHERE quote_id=$1`, [q.id])).rows;
       if (!boxes.length) continue;
-      const pc = {};
-      (await query(`SELECT box_id, COUNT(*)::int AS n FROM packing_box_photo WHERE quote_id=$1 GROUP BY box_id`, [q.id]))
-        .rows.forEach((r) => { pc[Number(r.box_id)] = Number(r.n) || 0; });
-      const photosOk = boxes.every((b) => (pc[Number(b.id)] || 0) >= 1);
-      if (!photosOk) continue;
       out.push({ quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), customer_name: q.customer_name,
                  sku_count: lines.length, total_qty: lines.reduce((a, l) => a + l.required, 0),
                  total_mxn: Number(q.total_mxn) || 0 });

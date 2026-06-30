@@ -2,7 +2,7 @@ import { query } from './db.js';
 
 // 포장완료(packed) 3조건이 처음 모두 충족되면 quotes.packed_at 을 정확히 한 번 기록.
 //   ① 즉시재고(in_stock) 라인 전부 스캔 완료(packing_box_line 합 >= required)
-//   ② 박스 1개 이상 + 모든 박스 사진 ≥1 (packing_box_photo)
+//   ② 박스 1개 이상 (사진은 선택 — 더 이상 필수 아님)
 //   ③ 종이 포장지시서 업로드(quote_packing_docs)
 // 재호출 안전(WHERE packed_at IS NULL 가드). 재고·매출엔 영향 없음(packed_at 기록만).
 export async function maybeMarkPacked(quoteId, exec = query) {
@@ -31,13 +31,9 @@ export async function maybeMarkPacked(quoteId, exec = query) {
   (await exec(`SELECT product_id, SUM(qty)::int AS s FROM packing_box_line WHERE quote_id=$1 GROUP BY product_id`, [id]))
     .rows.forEach((r) => { scanned[Number(r.product_id)] = Number(r.s) || 0; });
   if (!req.every((l) => (scanned[l.product_id] || 0) >= l.required)) return false;
-  // ② 모든 박스 사진≥1
+  // ② 박스 1개 이상(사진은 선택 — 필수 아님)
   const boxes = (await exec(`SELECT id FROM packing_box WHERE quote_id=$1`, [id])).rows;
   if (!boxes.length) return false;
-  const pc = {};
-  (await exec(`SELECT box_id, COUNT(*)::int AS n FROM packing_box_photo WHERE quote_id=$1 GROUP BY box_id`, [id]))
-    .rows.forEach((r) => { pc[Number(r.box_id)] = Number(r.n) || 0; });
-  if (!boxes.every((b) => (pc[Number(b.id)] || 0) >= 1)) return false;
   // 3조건 충족 → 한 번만 기록
   const r = (await exec(`UPDATE quotes SET packed_at=now() WHERE id=$1 AND packed_at IS NULL RETURNING packed_at`, [id])).rows[0];
   return !!r;

@@ -183,7 +183,7 @@
   .photos .pwrap{position:relative}
   .photos .px{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border:none;border-radius:999px;width:20px;height:20px;font-size:12px;font-weight:800;cursor:pointer;line-height:1}
   .photos .addphoto{background:#eef2f5;color:var(--steel-d);border:1px dashed var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer}
-  .photos .needphoto{font-size:12px;font-weight:800;color:#a33b27;background:#fbe9e5;border-radius:999px;padding:3px 10px}
+  .photos .optphoto{font-size:12px;font-weight:700;color:var(--muted);background:#f1efe9;border-radius:999px;padding:3px 10px}
   #lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:12000;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
   #lightbox img{max-width:96vw;max-height:92vh;border-radius:10px}
   .ready{border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;font-size:16px;font-weight:800;text-align:center}
@@ -200,7 +200,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631l</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631m</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -265,7 +265,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631l — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631m — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -339,7 +339,8 @@
     ['불러오는 중…','Cargando…'],
     ['출력 불가','No se puede imprimir'],
     ['박스 없음','Sin cajas'],
-    ['사진 필요','Falta foto'],
+    ['사진 (선택)','Foto (opcional)'],
+    ['스캔 완료 — 포장 마무리(통합 패킹리스트) 준비 완료 (사진은 선택)','Escaneo completo — listo para finalizar (lista de empaque). Foto opcional'],
     ['다시 열기','Reabrir'],
     ['담는 중','En uso'],
     ['작업 중','En proceso'],
@@ -703,8 +704,7 @@
     renderBoxSel();
 
     var rb=$('readyBanner');
-    if(d.all_done && d.photos_ok){ rb.innerHTML='<div class="ready ok">\u2713 스캔 완료 \u00b7 모든 박스 사진 있음 \u2014 포장 마무리(통합 패킹리스트) 준비 완료</div>'; }
-    else if(d.all_done && !d.photos_ok){ rb.innerHTML='<div class="ready warn">스캔은 끝났지만 사진 없는 박스가 있습니다 \u2014 박스마다 사진 1장 이상 올려야 포장 마무리/패킹리스트 출력 가능</div>'; }
+    if(d.all_done){ rb.innerHTML='<div class="ready ok">\u2713 스캔 완료 \u2014 포장 마무리(통합 패킹리스트) 준비 완료 (사진은 선택)</div>'; }
     else { rb.innerHTML=''; }
 
     var boxesSorted=(d.boxes||[]).slice().sort(function(a,b){ return b.box_no-a.box_no; });
@@ -745,7 +745,7 @@
     var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
     var photos='<div class="photos">'+thumbs
       +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
-      +(ph.length===0?'<span class="needphoto">사진 필요</span>':'')+'</div>';
+      +(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
     return '<div class="bcard'+(active?' active':'')+(b.sealed?' sealed':'')+'">'+head+qtyrow+delconf+table+addrow+photos+'</div>';
   }
   function wireBoxHandlers(){
