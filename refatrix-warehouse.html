@@ -186,7 +186,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631c</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631d</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -230,7 +230,7 @@
   </div>
   <div class="pscroll">
     <div id="readyBanner"></div>
-    <button class="items-toggle" id="itemsToggle">\ud83d\udccb 포장 품목 전체보기 \u25be</button>
+    <button class="items-toggle" id="itemsToggle">📋 포장 품목 전체보기 ▾</button>
     <div id="itemsSection" style="display:none">
       <div class="subt">포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
       <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
@@ -239,7 +239,6 @@
     <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 위에서 선택한 박스에 담깁니다 · 카드의 “담을 박스로”로도 선택)</span></div>
     <div id="boxGrid"></div>
 
-    <button class="back" id="backBtn2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 목록으로 돌아가기</button>
   </div>
 </div>
 
@@ -250,7 +249,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631c — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631d — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -631,7 +630,7 @@
   // 돌아가기 (터치 클릭-통과 방지)
   var suppressCard=0;
   function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); pollStop(); suppressCard=Date.now()+700; loadQueue(); }
-  ['backBtn','backBtn2'].forEach(function(bid){ var b=$(bid); if(!b) return; b.addEventListener('click',closeDrill); b.addEventListener('touchend',function(e){ e.preventDefault(); closeDrill(e); },{passive:false}); });
+  ['backBtn'].forEach(function(bid){ var b=$(bid); if(!b) return; b.addEventListener('click',closeDrill); b.addEventListener('touchend',function(e){ e.preventDefault(); closeDrill(e); },{passive:false}); });
 
   // 수동 추가(CTR)
   function addManual(boxId, inp){
@@ -666,7 +665,7 @@
       });
     }); }); }
   var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);
-  var itg=$('itemsToggle'); if(itg) itg.addEventListener('click',function(){ var sec=$('itemsSection'); var open=sec.style.display==='none'; sec.style.display=open?'block':'none'; itg.innerHTML=open?'\ud83d\udccb 포장 품목 닫기 \u25b4':'\ud83d\udccb 포장 품목 전체보기 \u25be'; });
+  var itg=$('itemsToggle'); if(itg) itg.addEventListener('click',function(){ var sec=$('itemsSection'); var open=sec.style.display==='none'; sec.style.display=open?'block':'none'; itg.innerHTML=open?'📋 포장 품목 닫기 ▴':'📋 포장 품목 전체보기 ▾'; });
   var sbs=$('scanBoxSel'); if(sbs) sbs.addEventListener('change',function(){ var v=Number(this.value); if(v){ curBox=v; renderPacking(); } focusScan(); });
 
   var sbk=$('shipBack'); if(sbk) sbk.addEventListener('click',closeShip);
