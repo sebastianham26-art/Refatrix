@@ -29,7 +29,8 @@ export default async function warehouseRoutes(app) {
       `SELECT q.id, q.quote_no, q.customer_id, q.guest_name,
               c.name AS customer_name,
               q.packing_printed_at, q.packing_due_at,
-              q.total_qty, q.sku_count, q.total_mxn
+              q.total_qty, q.sku_count, q.total_mxn,
+              (SELECT COALESCE(SUM(bl.qty),0)::int FROM packing_box_line bl WHERE bl.quote_id = q.id) AS packed_qty
          FROM quotes q
          LEFT JOIN customers c ON c.id = q.customer_id
         WHERE q.packing_printed_at IS NOT NULL
@@ -50,6 +51,7 @@ export default async function warehouseRoutes(app) {
       elapsed_biz_sec: r.packing_printed_at ? Math.floor(bizMinutes(r.packing_printed_at, now) * 60) : 0,
       total_qty: num(r.total_qty),
       sku_count: r.sku_count != null ? Number(r.sku_count) : null,
+      packed_qty: Number(r.packed_qty) || 0,
     }));
     return { count: items.length, in_business: inBusinessNow(), items };
   });
