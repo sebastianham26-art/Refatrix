@@ -113,6 +113,14 @@
   .bch .bst{font-size:12px;font-weight:800;border-radius:999px;padding:2px 10px}
   .bch .bst.work{background:#e3edf4;color:var(--steel-d)}
   .bch .bst.done{background:#e7f3ec;color:#2e6b49}
+  .bch .bgrp{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .bch .bdel{background:#fbeae6;color:var(--red);border:none;border-radius:8px;width:36px;height:36px;font-size:16px;cursor:pointer}
+  .bch .bdel:active{background:#f6d6cd}
+  .bqtyrow{display:flex;align-items:baseline;gap:8px;margin:0 0 10px;font-size:13px;font-weight:700;color:var(--muted)}
+  .bqtyrow .bqty{font-size:34px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums;line-height:1}
+  .delconf{background:#fbe9e5;border:1px solid #e6b8ac;color:#a33b27;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px;font-weight:700;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .delconf .delyes{background:var(--red);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer;font-size:14px}
+  .delconf .delno{background:#eee;color:#555;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer;font-size:14px}
   .bch .full{background:var(--green);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer}
   .bch .reopen{background:#eef2f5;color:var(--steel-d);border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
   table.bt{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;table-layout:fixed;margin-bottom:8px}
@@ -259,6 +267,7 @@
   }
   function curOpenBox(){ var un=(PK.boxes||[]).filter(function(b){return !b.sealed;}); return un.length? un[un.length-1] : null; }
   var PHOTOS={};
+  var confirmDelBox=null;
   function photosOf(boxId){ return PHOTOS[boxId]||[]; }
   function renderPacking(){
     var d=PK;
@@ -291,12 +300,19 @@
   function buildBoxCard(b){
     var active = !b.sealed && b.box_id===curBox;
     var ph=photosOf(b.box_id);
+    var total=(b.lines||[]).reduce(function(a,l){return a+Number(l.qty);},0);
     var head='<div class="bch"><span class="bn">\ud83d\udce6 Box '+b.box_no+'</span>'
       +'<span class="bst '+(b.sealed?'done':'work')+'">'+(b.sealed?'마감':'작업 중')+'</span>'
+      +'<span class="bgrp">'
       +(b.sealed
         ? '<button class="reopen" data-box="'+b.box_id+'" data-seal="0">다시 열기</button>'
         : '<button class="full" data-box="'+b.box_id+'" data-seal="1">이 박스 다 찼음 \u2713</button>')
-      +'</div>';
+      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1</button>'
+      +'</span></div>';
+    var qtyrow='<div class="bqtyrow"><span>총 수량</span><b class="bqty">'+total+'</b><span>피스</span></div>';
+    var delconf=(confirmDelBox===b.box_id)
+      ? '<div class="delconf"><span>\u26a0 Box '+b.box_no+' 삭제 — 담긴 내역\u00b7사진이 모두 지워집니다.</span><button class="delyes" data-box="'+b.box_id+'">삭제</button><button class="delno">취소</button></div>'
+      : '';
     var lines=(b.lines||[]).slice().sort(function(a,c){return String(a.ctr_code).localeCompare(String(c.ctr_code));}).map(function(l){
       return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="ean">'+esc(l.ean||'\u2014')+'</td>'
         +'<td class="q">'+l.qty+'</td>'+(b.sealed?'':'<td style="text-align:center"><button class="mm" data-box="'+b.box_id+'" data-pid="'+l.product_id+'">\u2212</button></td>')+'</tr>';
@@ -309,7 +325,7 @@
     var photos='<div class="photos">'+thumbs
       +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
       +(ph.length===0?'<span class="needphoto">사진 필요</span>':'')+'</div>';
-    return '<div class="bcard'+(active?' active':'')+(b.sealed?' sealed':'')+'">'+head+table+addrow+photos+'</div>';
+    return '<div class="bcard'+(active?' active':'')+(b.sealed?' sealed':'')+'">'+head+qtyrow+delconf+table+addrow+photos+'</div>';
   }
   function wireBoxHandlers(){
     var g=$('boxGrid');
@@ -320,6 +336,9 @@
     Array.prototype.forEach.call(g.querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.px'),function(btn){ btn.addEventListener('click',function(){ removePhoto(Number(btn.getAttribute('data-photo'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.addphoto'),function(btn){ btn.addEventListener('click',function(){ triggerPhoto(Number(btn.getAttribute('data-box'))); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.bdel'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=Number(btn.getAttribute('data-box')); renderPacking(); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.delyes'),function(btn){ btn.addEventListener('click',function(){ deleteBox(Number(btn.getAttribute('data-box'))); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.delno'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=null; renderPacking(); }); });
   }
 
   function postJSON(url, body){
@@ -408,6 +427,12 @@
   var pendingPhotoBox=null;
   function triggerPhoto(boxId){ pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
   function resizeImage(file,maxDim,q){ return new Promise(function(res){ try{ var img=new Image(); var url=URL.createObjectURL(file); img.onload=function(){ var w=img.width,h=img.height,s=Math.min(1,maxDim/Math.max(w,h)); var cw=Math.max(1,Math.round(w*s)),ch=Math.max(1,Math.round(h*s)); var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch); try{URL.revokeObjectURL(url);}catch(e){} res(cv.toDataURL('image/jpeg',q)); }; img.onerror=function(){ res(null); }; img.src=url; }catch(e){ res(null); } }); }
+  function deleteBox(boxId){
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/box/'+boxId+'/remove').then(function(o){
+      if(o.ok){ confirmDelBox=null; if(curBox===boxId) curBox=null; feedback('박스 삭제됨','idle'); loadPacking(PK.quote_id,false); }
+      else feedback(failMsg(o),'err');
+    }).catch(function(){ feedback('박스 삭제 실패(통신)','err'); });
+  }
   function removePhoto(photoId){ postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/photo/'+photoId+'/remove').then(function(o){ if(o.ok){ feedback('사진 삭제됨','idle'); loadPacking(PK.quote_id,false); } else feedback(failMsg(o),'err'); }); }
   function openLight(src){ var li=$('lightImg'); if(li){ li.src=src; } $('lightbox').style.display='flex'; }
   var fi0=$('photoInput'); if(fi0){ fi0.addEventListener('change',function(){ var f=this.files&&this.files[0]; if(!f||pendingPhotoBox==null) return; feedback('사진 업로드 중\u2026','idle');

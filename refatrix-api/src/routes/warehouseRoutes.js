@@ -365,4 +365,13 @@ export default async function warehouseRoutes(app) {
     return { ok: true };
   });
 
+
+  // ---------- 박스 삭제(담긴 내역·사진 함께 삭제, 스캔 이력은 보존) ----------
+  app.post('/api/warehouse/packing/:id/box/:boxId/remove', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id), boxId = Number(req.params.boxId);
+    const r = (await query(`DELETE FROM packing_box WHERE id=$1 AND quote_id=$2 RETURNING id`, [boxId, id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+
 }
