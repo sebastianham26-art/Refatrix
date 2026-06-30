@@ -5,57 +5,188 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고</title>
+<title>Refatrix · 창고 포장</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--brand:#143D34;--steel:#52708A;--steel-bg:#E9EFF4;--gold:#B8893B;--radius:14px;}
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--steel:#52708A;--steel-d:#3C566D;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:14px;}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:14px;line-height:1.5}
-  .wrap{max-width:560px;margin:0 auto}
-  .head{background:var(--steel);color:#fff;padding:16px 18px;border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .head h1{margin:0;font-size:19px;letter-spacing:.02em}
-  .head .who{font-size:12px;color:#e3edf4;text-align:right;line-height:1.35}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:12px;line-height:1.5;-webkit-text-size-adjust:100%}
+  .wrap{max-width:680px;margin:0 auto}
+  .head{background:var(--steel);color:#fff;padding:14px 16px;border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .head h1{margin:0;font-size:17px;letter-spacing:.02em}
+  .head .who{font-size:11px;color:#e3edf4;text-align:right;line-height:1.35}
   .head .who b{color:#fff;font-weight:700}
-  .intro{font-size:12.5px;color:var(--muted);margin:12px 2px 4px}
-  .tiles{display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px}
-  @media(min-width:520px){.tiles{grid-template-columns:1fr 1fr}}
-  .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px;min-height:96px;display:flex;flex-direction:column;justify-content:center;gap:4px;position:relative}
-  .tile .ic{font-size:24px;line-height:1}
-  .tile .t{font-size:16px;font-weight:800;margin-top:6px}
-  .tile .d{font-size:12px;color:var(--muted)}
-  .tile.soon{opacity:.62}
-  .tile.soon .badge{position:absolute;top:12px;right:12px;font-size:10.5px;font-weight:800;color:var(--gold);background:#fbf4e7;border:1px solid #ecdcb3;border-radius:999px;padding:3px 9px}
-  .note{background:#faf8f3;border-left:3px solid var(--gold);border-radius:8px;padding:11px 13px;font-size:12px;color:#5e5a52;margin-top:16px}
+  .sec{margin-top:14px}
+  .sec-t{font-size:12.5px;color:var(--muted);margin:0 2px 8px;display:flex;align-items:center;justify-content:space-between}
+  .sec-t .cnt{font-weight:800;color:var(--steel-d)}
+  /* queue cards */
+  .qcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:13px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .qcard:active{background:#fbf9f4}
+  .qcard .l .no{font-size:15px;font-weight:800}
+  .qcard .l .cu{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .qcard .l .ti{font-size:11px;color:#8a857a;margin-top:3px}
+  .qcard .r{text-align:right;white-space:nowrap}
+  .qcard .r .pc{font-size:18px;font-weight:800}
+  .qcard .r .pcl{font-size:10.5px;color:var(--muted)}
+  .badge{display:inline-block;font-size:10px;font-weight:800;border-radius:999px;padding:2px 8px;margin-top:4px}
+  .b-over{color:#fff;background:var(--red)}
+  .empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--radius);padding:22px;text-align:center;color:var(--muted);font-size:13px}
+  /* drilldown panel */
+  .panel{position:fixed;inset:0;background:var(--paper);z-index:60;overflow:auto;padding:12px;display:none}
+  .panel.on{display:block}
+  .pbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .back{background:var(--steel);color:#fff;border:none;border-radius:10px;padding:9px 13px;font-size:14px;font-weight:700;cursor:pointer}
+  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+  .phead .no{font-size:16px;font-weight:800}
+  .phead .cu{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .phead .mt{font-size:11px;color:#8a857a;margin-top:4px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  th,td{padding:9px 8px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:#eef2f5;color:var(--steel-d);font-weight:700;cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:0}
+  th .ar{font-size:9px;color:#9aa7b2;margin-left:2px}
+  td.num,th.num{text-align:right}
+  td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
+  tr:last-child td{border-bottom:none}
+  .pfoot{display:flex;justify-content:space-between;align-items:center;padding:11px 6px 2px;font-size:13px}
+  .pfoot b{font-size:16px}
+  /* popup */
+  .modal{position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:200;display:none;align-items:center;justify-content:center;padding:24px}
+  .modal.on{display:flex}
+  .mbox{background:#fff;border-radius:16px;max-width:380px;width:100%;padding:20px;box-shadow:0 16px 48px rgba(0,0,0,.32);text-align:center}
+  .mbox .ic{font-size:34px}
+  .mbox h3{margin:8px 0 4px;font-size:17px}
+  .mbox p{margin:0 0 16px;font-size:13px;color:var(--muted)}
+  .mbtn{background:var(--steel);color:#fff;border:none;border-radius:10px;padding:11px 18px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
+  .soon{opacity:.6;font-size:11px;color:var(--muted);margin-top:10px;text-align:center}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
   <div class="head">
-    <h1>창고</h1>
+    <h1>창고 · 포장 작업</h1>
     <div class="who" id="whoBox">—</div>
   </div>
 
-  <div class="intro">입고 · 피킹 · 패킹 작업 공간입니다. 기능은 단계별로 추가됩니다.</div>
-
-  <div class="tiles">
-    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">📦</span><span class="t">입고 대기 / 랙 배치</span><span class="d">컨테이너 도착분 → 랙 배치(put-away)</span></div>
-    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">🔎</span><span class="t">피킹</span><span class="d">랙 위치 확인 → 바코드 스캔 피킹</span></div>
-    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">📥</span><span class="t">패킹</span><span class="d">박스에 담기 → 박스별 라벨 인쇄</span></div>
-    <div class="tile soon"><span class="badge">준비 중</span><span class="ic">📋</span><span class="t">작업 현황</span><span class="d">진행 중·완료 작업 한눈에</span></div>
+  <div class="sec">
+    <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
+    <div id="queue"><div class="empty">불러오는 중…</div></div>
   </div>
+  <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
+</div>
 
-  <div class="note">이 화면은 <b>창고 역할</b>과 <b>디렉터</b>에게만 보입니다. 위 작업 타일은 다음 배포 단계(입고 → 피킹/패킹 → 라벨)에서 차례로 활성화됩니다.</div>
+<!-- 드릴다운 패널 -->
+<div class="panel" id="panel">
+  <div class="pbar"><button class="back" id="backBtn">← 목록</button></div>
+  <div class="phead" id="pHead"></div>
+  <table id="pTable"><thead id="pThead"></thead><tbody id="pBody"></tbody></table>
+  <div class="pfoot"><span>총 피스</span><b id="pTotal">0</b></div>
+</div>
+
+<!-- 새 포장지시 팝업 -->
+<div class="modal" id="newModal">
+  <div class="mbox">
+    <div class="ic">📦</div>
+    <h3>새 포장지시 도착</h3>
+    <p id="newMsg">새 포장 작업이 내려왔습니다.</p>
+    <button class="mbtn" id="newOk">확인</button>
+  </div>
 </div>
 
 <script>
-  (function(){
-    function sess(){ try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
-      try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
-      return null; }
-    var s=sess(); var box=document.getElementById('whoBox');
-    if(s&&s.user){ var nm=s.user.name||''; var rl=s.user.role||''; box.innerHTML=(nm?'<b>'+nm+'</b><br>':'')+'역할: '+(rl||'—'); }
-    else { box.textContent='로그인 필요'; }
-  })();
+(function(){
+  function sess(){
+    try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+    return null;
+  }
+  var S=sess();
+  var API=(S&&S.api)||'';
+  var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  var who=document.getElementById('whoBox');
+  if(S&&S.user){ who.innerHTML=(S.user.name?'<b>'+S.user.name+'</b><br>':'')+'역할: '+(S.user.role||'—'); } else { who.textContent='로그인 필요'; }
+
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function fmtTime(iso){ if(!iso) return ''; try{ var d=new Date(iso); var p=function(n){return (n<10?'0':'')+n;}; return p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }catch(e){ return ''; } }
+
+  // ---------- 큐 ----------
+  var SEEN_KEY='wh_seen_queue';
+  var firstLoad=true;
+  function loadQueue(){
+    fetch(API+'/api/warehouse/packing-queue',{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      var items=(d&&d.items)||[];
+      $('qCount').textContent=items.length;
+      renderQueue(items);
+      checkNew(items);
+    }).catch(function(){ $('queue').innerHTML='<div class="empty">목록을 불러오지 못했습니다.</div>'; });
+  }
+  function renderQueue(items){
+    var box=$('queue');
+    if(!items.length){ box.innerHTML='<div class="empty">대기 중인 포장지시가 없습니다.</div>'; return; }
+    box.innerHTML=items.map(function(it){
+      return '<div class="qcard" data-id="'+it.quote_id+'">'
+        +'<div class="l"><div class="no">'+esc(it.quote_no||('#'+it.quote_id))+'</div>'
+        +'<div class="cu">'+esc(it.customer)+'</div>'
+        +'<div class="ti">포장지시 '+fmtTime(it.printed_at)+'</div>'
+        +(it.overdue?'<span class="badge b-over">지연</span>':'')+'</div>'
+        +'<div class="r"><div class="pc">'+(it.total_qty==null?'—':it.total_qty)+'</div><div class="pcl">수량</div></div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.qcard'),function(el){
+      el.addEventListener('click',function(){ openDrill(Number(el.getAttribute('data-id'))); });
+    });
+  }
+  function checkNew(items){
+    var ids=items.map(function(x){return x.quote_id;});
+    var seen={};
+    try{ (JSON.parse(sessionStorage.getItem(SEEN_KEY)||'[]')||[]).forEach(function(i){seen[i]=1;}); }catch(e){}
+    var fresh=ids.filter(function(i){return !seen[i];});
+    try{ sessionStorage.setItem(SEEN_KEY, JSON.stringify(ids)); }catch(e){}
+    if(firstLoad){ firstLoad=false; return; }       // 최초 로드는 알림 안 함
+    if(fresh.length){ popupNew(fresh.length); chime(); }
+  }
+  function popupNew(n){ $('newMsg').textContent='새 포장 작업 '+n+'건이 내려왔습니다.'; $('newModal').classList.add('on'); }
+  $('newOk').addEventListener('click',function(){ $('newModal').classList.remove('on'); });
+  function chime(){ try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return; var ac=new C(); var o=ac.createOscillator(),g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(0.001,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.5); o.start(); o.stop(ac.currentTime+0.5); }catch(e){} }
+
+  // ---------- 드릴다운 ----------
+  var curItems=[], sortKey='ctr_code', sortDir=1;
+  var COLS=[['ctr_code','CTR',false],['syd_code','SYD',false],['ean','EAN-13',false],['qty','수량',true],['rack_location','랙',false]];
+  function openDrill(id){
+    fetch(API+'/api/warehouse/packing-queue/'+id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      if(!d||d.error) return;
+      $('pHead').innerHTML='<div class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</div>'
+        +'<div class="cu">'+esc(d.customer)+'</div>'
+        +'<div class="mt">SKU '+d.sku_count+'종 · 총 '+d.total_pieces+'피스 · 포장지시 '+fmtTime(d.printed_at)+'</div>';
+      curItems=d.items||[]; sortKey='ctr_code'; sortDir=1;
+      $('pTotal').textContent=d.total_pieces;
+      renderTable();
+      $('panel').classList.add('on');
+    }).catch(function(){});
+  }
+  function renderTable(){
+    $('pThead').innerHTML='<tr>'+COLS.map(function(c){
+      var ar=(sortKey===c[0])?('<span class="ar">'+(sortDir>0?'▲':'▼')+'</span>'):'';
+      return '<th class="'+(c[2]?'num':'')+'" data-k="'+c[0]+'">'+c[1]+ar+'</th>';
+    }).join('')+'</tr>';
+    var rows=curItems.slice().sort(function(a,b){
+      var x=a[sortKey], y=b[sortKey];
+      if(sortKey==='qty'){ x=Number(x)||0; y=Number(y)||0; return (x-y)*sortDir; }
+      x=String(x||''); y=String(y||''); return x.localeCompare(y)*sortDir;
+    });
+    $('pBody').innerHTML=rows.map(function(it){
+      return '<tr><td>'+esc(it.ctr_code)+'</td><td>'+esc(it.syd_code||'—')+'</td>'
+        +'<td class="ean">'+esc(it.ean||'—')+'</td>'
+        +'<td class="num">'+it.qty+'</td><td>'+esc(it.rack_location||'—')+'</td></tr>';
+    }).join('');
+    Array.prototype.forEach.call($('pThead').querySelectorAll('th'),function(th){
+      th.addEventListener('click',function(){ var k=th.getAttribute('data-k'); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=1; } renderTable(); });
+    });
+  }
+  $('backBtn').addEventListener('click',function(){ $('panel').classList.remove('on'); });
+
+  // ---------- boot + 폴링 ----------
+  if(S){ loadQueue(); setInterval(loadQueue, 25000); }
+})();
 </script>
 <script src="refatrix-nav.js?v=20260628wh1"></script>
 </body>
