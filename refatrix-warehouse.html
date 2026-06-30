@@ -202,7 +202,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631p</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631r</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -267,7 +267,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631p — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631r — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -568,16 +568,17 @@
   }
   // 라벨 바코드 → PNG dataURL(jsPDF 삽입용)
   function labelBarcodePNG(text){
-    try{ var c=document.createElement('canvas'); window.JsBarcode(c, String(text), {format:'CODE128', displayValue:true, fontSize:16, height:48, margin:0, width:2}); return c.toDataURL('image/png'); }
+    try{ var c=document.createElement('canvas'); window.JsBarcode(c, String(text), {format:'CODE128', displayValue:true, fontSize:20, height:70, margin:4, width:3}); return c.toDataURL('image/png'); }
     catch(e){ return null; }
   }
   // 정확히 100x150mm 라벨 PDF(물리 치수가 PDF에 내장 → 프린터 무시 없이 정확)
   function buildLabelsPDF(d){
     var JS=(window.jspdf&&window.jspdf.jsPDF); if(!JS) return null;
-    var doc=new JS({unit:'mm', format:[100,150], orientation:'portrait'});
+    var LBL_H=150, GAP=3, PITCH=LBL_H+GAP;   // 라벨 본체 150mm + 라벨간 갭 3mm = 피치 153mm
+    var doc=new JS({unit:'mm', format:[100,PITCH], orientation:'portrait'});
     var W=100, M=4;
     (d.boxes||[]).forEach(function(b, idx){
-      if(idx>0) doc.addPage([100,150],'portrait');
+      if(idx>0) doc.addPage([100,PITCH],'portrait');
       var y=M+6;
       doc.setFont('helvetica','bold'); doc.setFontSize(22);
       doc.text('CAJA '+b.box_no+' / '+d.box_count, M, y);
@@ -595,13 +596,14 @@
       if(bc){ var bh=15; doc.addImage(bc,'PNG', M, y, W-2*M, bh); y+=bh+2.5; }
       // 표
       var x2=M+30;
-      doc.setFontSize(8.5); doc.setDrawColor(150); doc.setLineWidth(0.2);
-      doc.setFillColor(240,240,240); doc.rect(M, y, W-2*M, 6, 'FD');
-      doc.setFont('helvetica','bold');
-      doc.text('CTR', M+1, y+4); doc.text('Competidor', x2+1, y+4); doc.text('Cant.', W-M-1, y+4, {align:'right'});
+      doc.setFontSize(8.5); doc.setDrawColor(0); doc.setLineWidth(0.3);
+      doc.setFillColor(0,0,0); doc.rect(M, y, W-2*M, 6, 'F');           // 검정 헤더 바
+      doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+      doc.text('CTR', M+1.5, y+4); doc.text('Competidor', x2+1, y+4); doc.text('Cant.', W-M-1.5, y+4, {align:'right'});
+      doc.setTextColor(0,0,0);
       y+=6; doc.setFont('helvetica','normal');
       (b.lines||[]).forEach(function(l){
-        if(y>150-M-5){ return; }
+        if(y>LBL_H-M-5){ return; }
         doc.rect(M, y, W-2*M, 5.4);
         doc.text(String(l.ctr_code||''), M+1, y+3.7);
         doc.text(String(l.syd_code||'-'), x2+1, y+3.7);
