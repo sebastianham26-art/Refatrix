@@ -7,56 +7,82 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refatrix · 창고 포장</title>
 <style>
-  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--steel:#52708A;--steel-d:#3C566D;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:14px;}
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:12px;line-height:1.5;-webkit-text-size-adjust:100%}
-  .wrap{max-width:680px;margin:0 auto}
-  .head{background:var(--steel);color:#fff;padding:14px 16px;border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .head h1{margin:0;font-size:17px;letter-spacing:.02em}
-  .head .who{font-size:11px;color:#e3edf4;text-align:right;line-height:1.35}
-  .head .who b{color:#fff;font-weight:700}
-  .sec{margin-top:14px}
-  .sec-t{font-size:12.5px;color:var(--muted);margin:0 2px 8px;display:flex;align-items:center;justify-content:space-between}
-  .sec-t .cnt{font-weight:800;color:var(--steel-d)}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+  .wrap{max-width:980px;margin:0 auto}
+  .head{background:var(--steel);color:#fff;padding:18px 22px;border-radius:var(--radius);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .head h1{margin:0;font-size:26px;font-weight:800;letter-spacing:.01em}
+  .head .who{font-size:14px;color:#e7eef4;text-align:right;line-height:1.4}
+  .head .who b{color:#fff;font-weight:800;font-size:16px}
+  .sec{margin-top:18px}
+  .sec-t{font-size:17px;font-weight:800;color:var(--steel-d);margin:0 4px 12px;display:flex;align-items:center;justify-content:space-between}
+  .sec-t .cnt{font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:2px 14px;font-size:16px}
+
   /* queue cards */
-  .qcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:13px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .qcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;display:grid;grid-template-columns:1fr auto;gap:6px 16px;cursor:pointer;-webkit-tap-highlight-color:transparent;box-shadow:0 1px 3px rgba(0,0,0,.04)}
   .qcard:active{background:#fbf9f4}
-  .qcard .l .no{font-size:15px;font-weight:800}
-  .qcard .l .cu{font-size:12.5px;color:var(--muted);margin-top:2px}
-  .qcard .l .ti{font-size:11px;color:#8a857a;margin-top:3px}
-  .qcard .r{text-align:right;white-space:nowrap}
-  .qcard .r .pc{font-size:18px;font-weight:800}
-  .qcard .r .pcl{font-size:10.5px;color:var(--muted)}
-  .badge{display:inline-block;font-size:10px;font-weight:800;border-radius:999px;padding:2px 8px;margin-top:4px}
+  .qcard .no{font-size:28px;font-weight:800;line-height:1.1;grid-column:1}
+  .qcard .cu{font-size:20px;font-weight:700;color:#2c2a26;grid-column:1}
+  .qcard .meta{grid-column:1;display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:2px}
+  .qcard .meta .lab{font-size:13px;color:var(--muted);font-weight:600}
+  .qcard .meta .val{font-size:16px;font-weight:700;color:#3a372f}
+  .qcard .elap{display:inline-flex;align-items:baseline;gap:6px}
+  .qcard .elap .t{font-size:22px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums}
+  .qcard .qbox{grid-column:2;grid-row:1 / span 3;align-self:center;text-align:center;min-width:96px}
+  .qcard .qbox .pc{font-size:40px;font-weight:800;line-height:1;color:var(--ink)}
+  .qcard .qbox .pcl{font-size:13px;font-weight:700;color:var(--muted);margin-top:4px}
+  .badge{display:inline-block;font-size:13px;font-weight:800;border-radius:999px;padding:3px 12px;margin-left:6px}
   .b-over{color:#fff;background:var(--red)}
-  .empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--radius);padding:22px;text-align:center;color:var(--muted);font-size:13px}
+  /* KPI 기준시간(포장완료 기한) 초과 = 지연 경고: 붉은 음영 + 천천히 깜빡임 */
+  @keyframes warnPulse{
+    0%,100%{ background:#fdece9; box-shadow:0 0 0 1px rgba(192,83,59,.10); }
+    50%{ background:#f8d6cf; box-shadow:0 0 0 3px rgba(192,83,59,.42); }
+  }
+  .qcard.overdue{ border-color:#dca295; animation:warnPulse 2.4s ease-in-out infinite; }
+  .qcard.overdue .no, .qcard.overdue .elap .t{ color:var(--red); }
+  .qcard.overdue .qbox .pc{ color:var(--red); }
+  @media (prefers-reduced-motion: reduce){ .qcard.overdue{ animation:none; background:#f8d6cf; } }
+  .empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--radius);padding:32px;text-align:center;color:var(--muted);font-size:18px;font-weight:600}
+
   /* drilldown panel */
-  .panel{position:fixed;inset:0;background:var(--paper);z-index:60;overflow:auto;padding:12px;display:none}
+  .panel{position:fixed;inset:0;background:var(--paper);z-index:60;overflow:auto;padding:16px;display:none}
   .panel.on{display:block}
-  .pbar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-  .back{background:var(--steel);color:#fff;border:none;border-radius:10px;padding:9px 13px;font-size:14px;font-weight:700;cursor:pointer}
-  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
-  .phead .no{font-size:16px;font-weight:800}
-  .phead .cu{font-size:12.5px;color:var(--muted);margin-top:2px}
-  .phead .mt{font-size:11px;color:#8a857a;margin-top:4px}
-  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
-  th,td{padding:9px 8px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--line)}
-  th{background:#eef2f5;color:var(--steel-d);font-weight:700;cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:0}
-  th .ar{font-size:9px;color:#9aa7b2;margin-left:2px}
-  td.num,th.num{text-align:right}
-  td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
+  .panel .inner{max-width:980px;margin:0 auto}
+  .back{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:19px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  .back:active{background:var(--steel-d)}
+  .pbar{position:sticky;top:0;z-index:3;background:var(--paper);padding:4px 0 12px;margin-bottom:6px}
+  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin-bottom:16px}
+  .phead .no{font-size:22px;font-weight:800;color:var(--steel-d)}
+  .phead .cu{font-size:34px;font-weight:800;line-height:1.15;margin:4px 0 12px}
+  .phead .grid{display:flex;flex-wrap:wrap;gap:14px 30px}
+  .phead .kv{display:flex;flex-direction:column}
+  .phead .kv .lab{font-size:14px;color:var(--muted);font-weight:700}
+  .phead .kv .val{font-size:24px;font-weight:800;color:#2c2a26;font-variant-numeric:tabular-nums}
+  .phead .kv.timer .val{color:var(--steel-d);font-size:30px;letter-spacing:.5px}
+
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;table-layout:fixed}
+  th,td{padding:15px 12px;font-size:19px;text-align:left;border-bottom:1px solid var(--line);width:20%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  th{background:var(--steel);color:#fff;font-weight:800;cursor:pointer;user-select:none;position:sticky;top:64px;font-size:18px}
+  th .ar{font-size:13px;margin-left:4px;opacity:.9}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px}
+  td.qty{font-weight:800;font-size:22px}
   tr:last-child td{border-bottom:none}
-  .pfoot{display:flex;justify-content:space-between;align-items:center;padding:11px 6px 2px;font-size:13px}
-  .pfoot b{font-size:16px}
+  tbody tr:nth-child(even){background:#faf8f3}
+  .pfoot{display:flex;justify-content:space-between;align-items:center;padding:18px 8px 6px;font-size:20px;font-weight:700}
+  .pfoot b{font-size:30px;font-weight:800}
+  .backbottom{margin:18px 0 8px;width:100%;justify-content:center;padding:16px}
+
   /* popup */
-  .modal{position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:200;display:none;align-items:center;justify-content:center;padding:24px}
+  .modal{position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:200;display:none;align-items:center;justify-content:center;padding:24px}
   .modal.on{display:flex}
-  .mbox{background:#fff;border-radius:16px;max-width:380px;width:100%;padding:20px;box-shadow:0 16px 48px rgba(0,0,0,.32);text-align:center}
-  .mbox .ic{font-size:34px}
-  .mbox h3{margin:8px 0 4px;font-size:17px}
-  .mbox p{margin:0 0 16px;font-size:13px;color:var(--muted)}
-  .mbtn{background:var(--steel);color:#fff;border:none;border-radius:10px;padding:11px 18px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
-  .soon{opacity:.6;font-size:11px;color:var(--muted);margin-top:10px;text-align:center}
+  .mbox{background:#fff;border-radius:18px;max-width:420px;width:100%;padding:26px;box-shadow:0 16px 48px rgba(0,0,0,.32);text-align:center}
+  .mbox .ic{font-size:44px}
+  .mbox h3{margin:10px 0 6px;font-size:22px;font-weight:800}
+  .mbox p{margin:0 0 18px;font-size:16px;color:var(--muted)}
+  .mbtn{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:18px;font-weight:800;cursor:pointer;width:100%}
+  .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -76,10 +102,13 @@
 
 <!-- 드릴다운 패널 -->
 <div class="panel" id="panel">
-  <div class="pbar"><button class="back" id="backBtn">← 목록</button></div>
-  <div class="phead" id="pHead"></div>
-  <table id="pTable"><thead id="pThead"></thead><tbody id="pBody"></tbody></table>
-  <div class="pfoot"><span>총 피스</span><b id="pTotal">0</b></div>
+  <div class="inner">
+    <div class="pbar"><button class="back" id="backBtn">← 목록으로</button></div>
+    <div class="phead" id="pHead"></div>
+    <table id="pTable"><thead id="pThead"></thead><tbody id="pBody"></tbody></table>
+    <div class="pfoot"><span>총 피스</span><b id="pTotal">0</b></div>
+    <button class="back backbottom" id="backBtn2">← 목록으로 돌아가기</button>
+  </div>
 </div>
 
 <!-- 새 포장지시 팝업 -->
@@ -107,7 +136,14 @@
 
   var $=function(id){return document.getElementById(id);};
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
-  function fmtTime(iso){ if(!iso) return ''; try{ var d=new Date(iso); var p=function(n){return (n<10?'0':'')+n;}; return p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }catch(e){ return ''; } }
+  function p2(n){ return (n<10?'0':'')+n; }
+  function fmtDateTime(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes()); }catch(e){ return '—'; } }
+  function elapsed(iso, withSec){
+    if(!iso) return '—';
+    var ms=Date.now()-new Date(iso).getTime(); if(ms<0||isNaN(ms)) ms=0;
+    var s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+    return withSec ? (p2(h)+':'+p2(m)+':'+p2(sec)) : (p2(h)+':'+p2(m));
+  }
 
   // ---------- 큐 ----------
   var SEEN_KEY='wh_seen_queue';
@@ -124,15 +160,25 @@
     var box=$('queue');
     if(!items.length){ box.innerHTML='<div class="empty">대기 중인 포장지시가 없습니다.</div>'; return; }
     box.innerHTML=items.map(function(it){
-      return '<div class="qcard" data-id="'+it.quote_id+'">'
-        +'<div class="l"><div class="no">'+esc(it.quote_no||('#'+it.quote_id))+'</div>'
+      return '<div class="qcard'+(it.overdue?' overdue':'')+'" data-id="'+it.quote_id+'">'
+        +'<div class="no">'+esc(it.quote_no||('#'+it.quote_id))+'</div>'
         +'<div class="cu">'+esc(it.customer)+'</div>'
-        +'<div class="ti">포장지시 '+fmtTime(it.printed_at)+'</div>'
-        +(it.overdue?'<span class="badge b-over">지연</span>':'')+'</div>'
-        +'<div class="r"><div class="pc">'+(it.total_qty==null?'—':it.total_qty)+'</div><div class="pcl">수량</div></div></div>';
+        +'<div class="meta">'
+          +'<span><span class="lab">포장지시</span> <span class="val">'+fmtDateTime(it.printed_at)+'</span></span>'
+          +'<span class="elap"><span class="lab">경과</span> <span class="t el" data-p="'+esc(it.printed_at||'')+'">'+elapsed(it.printed_at)+'</span>'
+            +(it.overdue?'<span class="badge b-over">⚠ 지연 중</span>':'')+'</span>'
+        +'</div>'
+        +'<div class="qbox"><div class="pc">'+(it.total_qty==null?'—':it.total_qty)+'</div><div class="pcl">수량(피스)</div></div>'
+        +'</div>';
     }).join('');
     Array.prototype.forEach.call(box.querySelectorAll('.qcard'),function(el){
       el.addEventListener('click',function(){ openDrill(Number(el.getAttribute('data-id'))); });
+    });
+    tickQueueElapsed();
+  }
+  function tickQueueElapsed(){
+    Array.prototype.forEach.call(document.querySelectorAll('#queue .el'),function(s){
+      s.textContent=elapsed(s.getAttribute('data-p'));
     });
   }
   function checkNew(items){
@@ -141,7 +187,7 @@
     try{ (JSON.parse(sessionStorage.getItem(SEEN_KEY)||'[]')||[]).forEach(function(i){seen[i]=1;}); }catch(e){}
     var fresh=ids.filter(function(i){return !seen[i];});
     try{ sessionStorage.setItem(SEEN_KEY, JSON.stringify(ids)); }catch(e){}
-    if(firstLoad){ firstLoad=false; return; }       // 최초 로드는 알림 안 함
+    if(firstLoad){ firstLoad=false; return; }
     if(fresh.length){ popupNew(fresh.length); chime(); }
   }
   function popupNew(n){ $('newMsg').textContent='새 포장 작업 '+n+'건이 내려왔습니다.'; $('newModal').classList.add('on'); }
@@ -149,20 +195,32 @@
   function chime(){ try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return; var ac=new C(); var o=ac.createOscillator(),g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(0.001,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.5); o.start(); o.stop(ac.currentTime+0.5); }catch(e){} }
 
   // ---------- 드릴다운 ----------
-  var curItems=[], sortKey='ctr_code', sortDir=1;
+  var curItems=[], sortKey='ctr_code', sortDir=1, drillTimer=null, drillPrinted=null;
   var COLS=[['ctr_code','CTR',false],['syd_code','SYD',false],['ean','EAN-13',false],['qty','수량',true],['rack_location','랙',false]];
   function openDrill(id){
     fetch(API+'/api/warehouse/packing-queue/'+id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
       if(!d||d.error) return;
+      drillPrinted=d.printed_at||null;
       $('pHead').innerHTML='<div class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</div>'
         +'<div class="cu">'+esc(d.customer)+'</div>'
-        +'<div class="mt">SKU '+d.sku_count+'종 · 총 '+d.total_pieces+'피스 · 포장지시 '+fmtTime(d.printed_at)+'</div>';
+        +'<div class="grid">'
+          +'<div class="kv"><span class="lab">SKU</span><span class="val">'+d.sku_count+'종</span></div>'
+          +'<div class="kv"><span class="lab">총 수량</span><span class="val">'+d.total_pieces+' 피스</span></div>'
+          +'<div class="kv"><span class="lab">포장지시</span><span class="val">'+fmtDateTime(d.printed_at)+'</span></div>'
+          +'<div class="kv timer"><span class="lab">경과시간 (실시간)</span><span class="val" id="pElapsed">'+elapsed(d.printed_at,true)+'</span></div>'
+        +'</div>';
       curItems=d.items||[]; sortKey='ctr_code'; sortDir=1;
       $('pTotal').textContent=d.total_pieces;
       renderTable();
       $('panel').classList.add('on');
+      startDrillTimer();
     }).catch(function(){});
   }
+  function startDrillTimer(){
+    stopDrillTimer();
+    drillTimer=setInterval(function(){ var e=$('pElapsed'); if(e&&drillPrinted) e.textContent=elapsed(drillPrinted,true); },1000);
+  }
+  function stopDrillTimer(){ if(drillTimer){ clearInterval(drillTimer); drillTimer=null; } }
   function renderTable(){
     $('pThead').innerHTML='<tr>'+COLS.map(function(c){
       var ar=(sortKey===c[0])?('<span class="ar">'+(sortDir>0?'▲':'▼')+'</span>'):'';
@@ -176,16 +234,18 @@
     $('pBody').innerHTML=rows.map(function(it){
       return '<tr><td>'+esc(it.ctr_code)+'</td><td>'+esc(it.syd_code||'—')+'</td>'
         +'<td class="ean">'+esc(it.ean||'—')+'</td>'
-        +'<td class="num">'+it.qty+'</td><td>'+esc(it.rack_location||'—')+'</td></tr>';
+        +'<td class="num qty">'+it.qty+'</td><td>'+esc(it.rack_location||'—')+'</td></tr>';
     }).join('');
     Array.prototype.forEach.call($('pThead').querySelectorAll('th'),function(th){
       th.addEventListener('click',function(){ var k=th.getAttribute('data-k'); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=1; } renderTable(); });
     });
   }
-  $('backBtn').addEventListener('click',function(){ $('panel').classList.remove('on'); });
+  function closeDrill(){ $('panel').classList.remove('on'); stopDrillTimer(); }
+  $('backBtn').addEventListener('click',closeDrill);
+  $('backBtn2').addEventListener('click',closeDrill);
 
-  // ---------- boot + 폴링 ----------
-  if(S){ loadQueue(); setInterval(loadQueue, 25000); }
+  // ---------- boot + 폴링/틱 ----------
+  if(S){ loadQueue(); setInterval(loadQueue, 25000); setInterval(tickQueueElapsed, 20000); }
 })();
 </script>
 <script src="refatrix-nav.js?v=20260628wh1"></script>
