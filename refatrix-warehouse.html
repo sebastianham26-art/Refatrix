@@ -99,6 +99,9 @@
   .lblcal-reset{background:#efece6;color:#3a372f;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
   .lblcal-test{background:#2c2a26;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
   .lblcal-hint{font-size:12px;color:var(--muted);line-height:1.5}
+  .lblhint{background:#eef4f8;border:1px solid #d3e2ec;color:#33495c;font-weight:700;font-size:13px;border-radius:10px;padding:9px 12px;margin-bottom:10px}
+  .sbh .boxlbl{margin-left:10px;background:#2c2a26;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:800;cursor:pointer;vertical-align:middle}
+  .sbh .boxlbl:active{opacity:.8}
   .scard .sat.nosat{text-align:right}
   .scard .satwarn{display:inline-block;background:#fbe9e5;color:#a33b27;font-weight:800;font-size:12.5px;border-radius:999px;padding:5px 12px}
   #shipPanel .shipbtns{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -212,7 +215,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631t</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631u</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -292,7 +295,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631t — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631u — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -368,6 +371,8 @@
     ['페이지 길이(mm)','Largo de página (mm)'],
     ['위 여백(mm)','Margen superior (mm)'],
     ['📐 보정용 라벨 1장 인쇄','📐 Imprimir etiqueta de prueba'],
+    ['🖨 라벨은 박스마다 한 장씩 인쇄하면 가장 정확합니다 (밀림 없음)','🖨 Imprima una etiqueta por caja para mayor precisión (sin desajuste)'],
+    ['📦 이 박스 라벨 인쇄','📦 Imprimir etiqueta de esta caja'],
     ['표준값(153 / 0)','Predeterminado (153 / 0)'],
     ['저장됨!','¡Guardado!'],
     ['저장','Guardar'],
@@ -515,10 +520,12 @@
   function openShip(id){
     fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } var d=o.body; SHIP=d;
       $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' · 박스 '+d.box_count+' · '+d.total_qty+'피스</span>';
-      $('shipBody').innerHTML=d.boxes.map(function(b){
+      var hint='<div class="lblhint">\ud83d\udda8 라벨은 박스마다 한 장씩 인쇄하면 가장 정확합니다 (밀림 없음)</div>';
+      $('shipBody').innerHTML=hint+d.boxes.map(function(b){
         var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
-        return '<div class="sbox"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스</div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
+        return '<div class="sbox"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스 <button class="boxlbl" data-box="'+b.box_no+'">\ud83d\udce6 이 박스 라벨 인쇄</button></div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
       }).join('');
+      Array.prototype.forEach.call($('shipBody').querySelectorAll('.boxlbl'),function(btn){ btn.addEventListener('click',function(){ printBoxLabel(Number(btn.getAttribute('data-box'))); }); });
       $('shipPanel').classList.add('on');
     }).catch(function(){ alert('불러오기 실패(통신)'); });
   }
@@ -646,6 +653,18 @@
   function labelBarcodePNG(text){
     try{ var c=document.createElement('canvas'); window.JsBarcode(c, String(text), {format:'CODE128', displayValue:true, fontSize:20, height:70, margin:4, width:3}); return c.toDataURL('image/png'); }
     catch(e){ return null; }
+  }
+  // 박스 1개만 단독 인쇄(독립 인쇄작업 → 갭 재정렬, 누적 밀림 없음)
+  function printBoxLabel(boxNo){
+    if(!SHIP) return;
+    var one=(SHIP.boxes||[]).filter(function(x){ return Number(x.box_no)===Number(boxNo); });
+    if(!one.length){ alert('박스를 찾을 수 없습니다'); return; }
+    var d={}; for(var k in SHIP){ d[k]=SHIP[k]; } d.boxes=one;   // box_count는 전체 유지(라벨에 "Caja n / 총")
+    var doc=buildLabelsPDF(d);
+    if(!doc){ alert('jsPDF 미로드'); return; }
+    try{ doc.autoPrint(); }catch(e){}
+    try{ var url=doc.output('bloburl'); var w=window.open(url,'_blank'); if(!w) alert('팝업 허용 후 다시 시도하세요.'); }
+    catch(e){ try{ doc.save('etiqueta_'+(SHIP.quote_no||'')+'_caja'+boxNo+'.pdf'); }catch(_){ } }
   }
   // 정확히 100x150mm 라벨 PDF(물리 치수가 PDF에 내장 → 프린터 무시 없이 정확)
   function buildLabelsPDF(d){
