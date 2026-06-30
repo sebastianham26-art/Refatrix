@@ -114,7 +114,7 @@
   .bch .bst.work{background:#e3edf4;color:var(--steel-d)}
   .bch .bst.done{background:#e7f3ec;color:#2e6b49}
   .bch .bgrp{display:flex;align-items:center;gap:6px;margin-left:auto}
-  .bch .bdel{background:#fbeae6;color:var(--red);border:none;border-radius:8px;width:36px;height:36px;font-size:16px;cursor:pointer}
+  .bch .bdel{background:#fbeae6;color:var(--red);border:1px solid #e6b8ac;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap}
   .bch .bdel:active{background:#f6d6cd}
   .bqtyrow{display:flex;align-items:baseline;gap:8px;margin:0 0 10px;font-size:13px;font-weight:700;color:var(--muted)}
   .bqtyrow .bqty{font-size:34px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums;line-height:1}
@@ -307,18 +307,18 @@
       +(b.sealed
         ? '<button class="reopen" data-box="'+b.box_id+'" data-seal="0">다시 열기</button>'
         : '<button class="full" data-box="'+b.box_id+'" data-seal="1">이 박스 다 찼음 \u2713</button>')
-      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1</button>'
+      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1 삭제</button>'
       +'</span></div>';
     var qtyrow='<div class="bqtyrow"><span>총 수량</span><b class="bqty">'+total+'</b><span>피스</span></div>';
     var delconf=(confirmDelBox===b.box_id)
       ? '<div class="delconf"><span>\u26a0 Box '+b.box_no+' 삭제 — 담긴 내역\u00b7사진이 모두 지워집니다.</span><button class="delyes" data-box="'+b.box_id+'">삭제</button><button class="delno">취소</button></div>'
       : '';
     var lines=(b.lines||[]).slice().sort(function(a,c){return String(a.ctr_code).localeCompare(String(c.ctr_code));}).map(function(l){
-      return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="ean">'+esc(l.ean||'\u2014')+'</td>'
+      return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td>'
         +'<td class="q">'+l.qty+'</td>'+(b.sealed?'':'<td style="text-align:center"><button class="mm" data-box="'+b.box_id+'" data-pid="'+l.product_id+'">\u2212</button></td>')+'</tr>';
     }).join('');
-    var ncol=b.sealed?4:5;
-    var table='<table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th>EAN-13</th><th class="q" style="text-align:right">수량</th>'+(b.sealed?'':'<th></th>')+'</tr></thead>'
+    var ncol=b.sealed?3:4;
+    var table='<table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th>'+(b.sealed?'':'<th></th>')+'</tr></thead>'
       +'<tbody>'+(lines||('<tr><td colspan="'+ncol+'" style="color:#9a958b;text-align:center">비어 있음 \u2014 스캔/＋로 담기</td></tr>'))+'</tbody></table>';
     var addrow = b.sealed ? '' : '<div class="addrow"><input class="ctrAdd" data-box="'+b.box_id+'" placeholder="CTR 코드 수동입력 후 Enter/＋" autocomplete="off"><button class="addBtn" data-box="'+b.box_id+'">＋ 추가</button></div>';
     var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
