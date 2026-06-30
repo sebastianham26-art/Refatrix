@@ -227,24 +227,36 @@
     Array.prototype.forEach.call($('boxList').querySelectorAll('.mm'),function(b){ b.addEventListener('click',function(){ unscan(Number(b.getAttribute('data-box')),Number(b.getAttribute('data-pid'))); }); });
     Array.prototype.forEach.call($('boxList').querySelectorAll('.seal'),function(b){ b.addEventListener('click',function(){ sealBox(Number(b.getAttribute('data-box')), b.getAttribute('data-seal')==='1'); }); });
   }
+  function postJSON(url, body){
+    return fetch(url,{method:'POST',headers:JH,body:body?JSON.stringify(body):undefined})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {status:r.status, ok:r.ok, body:j||{}}; }); });
+  }
+  function failMsg(o){
+    if(o.status===403) return '⚠ 권한 없음: 창고 “수정·기록(edit)” 권한이 필요합니다 (디렉터→사용자·권한에서 설정)';
+    if(o.status===401) return '⚠ 로그인 만료 — 다시 로그인하세요';
+    if(o.status>=500 || (o.body&&/relation|table|column|does not exist/i.test(JSON.stringify(o.body)))) return '⚠ 서버 오류 — DB 마이그레이션(npm run migrate)이 적용됐는지 확인하세요';
+    return '⚠ 실패: '+((o.body&&o.body.error)||('상태 '+o.status));
+  }
   function feedback(msg, kind){ var f=$('fb'); f.className='fb '+(kind||'idle'); f.textContent=msg; }
   function focusScan(){ var e=$('eanInput'); if(e && $('panel').classList.contains('on')) { try{ e.focus(); }catch(_){} } }
 
   $('boxSel').addEventListener('change',function(){ var v=Number(this.value); if(v) curBox=v; focusScan(); });
   $('newBoxBtn').addEventListener('click',function(){
     if(!PK) return;
-    fetch(API+'/api/warehouse/packing/'+PK.quote_id+'/box',{method:'POST',headers:JH}).then(function(r){return r.json();}).then(function(res){
-      if(res&&res.box_id){ PK.boxes.push({box_id:res.box_id,box_no:res.box_no,sealed:false,lines:[]}); curBox=res.box_id; renderPacking(); feedback('Box '+res.box_no+' 생성 — 스캔을 시작하세요','idle'); }
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/box').then(function(o){
+      if(o.ok && o.body && o.body.box_id){ PK.boxes.push({box_id:o.body.box_id,box_no:o.body.box_no,sealed:false,lines:[]}); curBox=o.body.box_id; renderPacking(); feedback('Box '+o.body.box_no+' 생성 — 스캔을 시작하세요','idle'); }
+      else { feedback(failMsg(o),'err'); beep(false); }
       focusScan();
-    });
+    }).catch(function(){ feedback('⚠ 박스 생성 실패(통신)','err'); focusScan(); });
   });
   $('eanInput').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); doScan(); } });
   function doScan(){
     var inp=$('eanInput'); var v=(inp.value||'').trim(); inp.value='';
     if(!v){ focusScan(); return; }
     if(!curBox){ feedback('⚠ 먼저 "+ 새 박스"로 박스를 만드세요','warn'); beep(false); focusScan(); return; }
-    fetch(API+'/api/warehouse/packing/'+PK.quote_id+'/scan',{method:'POST',headers:JH,body:JSON.stringify({box_id:curBox,ean:v})})
-      .then(function(r){return r.json();}).then(function(res){
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/scan',{box_id:curBox,ean:v}).then(function(o){
+        if(!o.ok && o.status!==400){ feedback(failMsg(o),'err'); beep(false); focusScan(); return; }
+        var res=o.body||{};
         if(res.result==='ok'){ applyOk(res); feedback('✓ '+res.ctr_code+' → Box '+res.box_no+' (남음 '+res.remaining+')','ok'); beep(true); }
         else if(res.result==='wrong'){ feedback('⚠ 오품: 이 주문에 없는 제품 '+(res.ctr_code||v),'err'); beep(false); }
         else if(res.result==='excess'){ feedback('⚠ 초과: '+res.ctr_code+' 필요수량('+res.required+') 이미 충족','err'); beep(false); }
