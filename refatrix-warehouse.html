@@ -58,13 +58,14 @@
   .prog .lab b{font-size:20px}
   .done-banner{background:#e7f3ec;border:1px solid #bcdcc8;color:#2e6b49;border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;font-size:18px;font-weight:800;text-align:center}
   /* 스캔 바 */
-  .scanbar{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;position:sticky;top:0;z-index:3}
+  .scanbar{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:11px 13px;margin-bottom:10px;position:sticky;top:0;z-index:3}
   .scanrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .scanrow .newbox-cta{width:auto;flex:0 0 auto;padding:13px 18px;font-size:16px;margin-bottom:0;white-space:nowrap}
   .curbox{font-size:17px;font-weight:800;color:var(--steel-d)}
   .curbox select{font-size:16px;font-weight:700;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
   .btn{background:var(--steel);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:800;cursor:pointer}
   .btn.ghost{background:#eef2f5;color:var(--steel-d)}
-  #eanInput{flex:1 1 220px;min-width:200px;font-size:24px;font-weight:800;letter-spacing:1px;padding:14px 16px;border:2px solid var(--steel);border-radius:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  #eanInput{flex:1 1 200px;min-width:180px;font-size:20px;font-weight:800;letter-spacing:1px;padding:14px 16px;border:2px solid var(--steel);border-radius:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
   .fb{margin-top:10px;font-size:18px;font-weight:800;border-radius:10px;padding:10px 14px;min-height:44px;display:flex;align-items:center}
   .fb.ok{background:#e7f3ec;color:#2e6b49}
   .fb.err{background:#fbe9e5;color:#a33b27}
@@ -190,7 +191,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631g</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631h</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -227,9 +228,10 @@
     <div class="scanbar">
       <div class="scanrow">
         <span class="boxpick">담을 박스: <select id="scanBoxSel"></select></span>
-        <input id="eanInput" inputmode="none" autocomplete="off" placeholder="EAN-13 스캔/입력 후 Enter">
+        <input id="eanInput" autocomplete="off" placeholder="EAN 스캔 또는 CTR 코드 입력 후 Enter">
+        <button class="newbox-cta" id="newBoxTop">＋ 새 박스</button>
       </div>
-      <div class="fb idle" id="fb">담을 박스를 고르고 스캔하세요 (마감된 박스를 골라도 자동으로 다시 열려 담깁니다)</div>
+      <div class="fb idle" id="fb">EAN 스캔 또는 CTR 코드를 입력해 “담을 박스”에 담으세요 · 마감 박스는 자동 재오픈</div>
     </div>
   </div>
   <div class="pscroll">
@@ -239,7 +241,6 @@
       <div class="subt">포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
       <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
     </div>
-    <button class="newbox-cta" id="newBoxTop">+ 새 박스 시작</button>
     <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 위에서 선택한 박스에 담깁니다 · 카드의 “담을 박스로”로도 선택)</span></div>
     <div id="boxGrid"></div>
 
@@ -253,7 +254,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631g — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631h — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -573,7 +574,7 @@
     var ncol=b.sealed?3:4;
     var table='<table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th>'+(b.sealed?'':'<th></th>')+'</tr></thead>'
       +'<tbody>'+(lines||('<tr><td colspan="'+ncol+'" style="color:#9a958b;text-align:center">비어 있음 \u2014 스캔/＋로 담기</td></tr>'))+'</tbody></table>';
-    var addrow = b.sealed ? '' : '<div class="addrow"><input class="ctrAdd" data-box="'+b.box_id+'" placeholder="CTR 코드 수동입력 후 Enter/＋" autocomplete="off"><button class="addBtn" data-box="'+b.box_id+'">＋ 추가</button></div>';
+    var addrow = '';   // 수동입력은 상단 고정바로 통합
     var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
     var photos='<div class="photos">'+thumbs
       +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
@@ -617,7 +618,14 @@
       focusScan();
     }).catch(function(){ feedback('\u26a0 박스 생성 실패(통신)','err'); focusScan(); });
   }
-  $('eanInput').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); doScan(); } });
+  $('eanInput').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); submitEntry(); } });
+  function submitEntry(){
+    var inp=$('eanInput'); var v=(inp.value||'').trim();
+    if(!v){ focusScan(); return; }
+    if(!curBox){ feedback('\u26a0 먼저 "\uff0b 새 박스"로 박스를 만드세요','warn'); beep(false); focusScan(); return; }
+    if(/^[0-9]{6,}$/.test(v)){ doScan(); }            // 숫자(6자리 이상) \u2192 EAN 바코드
+    else { addManual(curBox, inp); focusScan(); }      // 그 외 \u2192 CTR 수동추가
+  }
   function doScan(){
     var inp=$('eanInput'); var v=(inp.value||'').trim(); inp.value='';
     if(!v){ focusScan(); return; }
