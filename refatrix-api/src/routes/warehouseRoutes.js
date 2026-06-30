@@ -35,6 +35,7 @@ export default async function warehouseRoutes(app) {
          LEFT JOIN customers c ON c.id = q.customer_id
         WHERE q.packing_printed_at IS NOT NULL
           AND q.invoice_id IS NULL
+          AND q.packed_at IS NULL
           AND q.status NOT IN ('converted','cancelled')
           AND q.deleted_at IS NULL
         ORDER BY q.packing_printed_at ASC, q.id ASC`)).rows;
@@ -429,28 +430,29 @@ export default async function warehouseRoutes(app) {
   // ---------- 출고 대기 목록 ----------
   app.get('/api/warehouse/ship-queue', { preHandler: [authGuard, requirePage('warehouse')] }, async () => {
     const rows = (await query(
-      `SELECT q.id, q.quote_no, q.packed_at, q.total_qty, q.sku_count, q.quote_date,
+      `SELECT q.id, q.quote_no, q.packed_at, q.total_qty, q.sku_count, q.quote_date, q.invoice_id,
               COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code,
               si.sat_no, si.inv_date::text AS inv_date, si.total_mxn,
               (SELECT COUNT(*)::int FROM packing_box pb WHERE pb.quote_id=q.id) AS box_count
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
-         JOIN sales_invoices si ON si.id=q.invoice_id
+         LEFT JOIN sales_invoices si ON si.id=q.invoice_id
         WHERE q.deleted_at IS NULL
           AND q.packed_at IS NOT NULL
-          AND q.invoice_id IS NOT NULL
-          AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
         ORDER BY q.packed_at DESC
         LIMIT 200`)).rows;
-    const items = rows.map((r) => ({
-      quote_id: Number(r.id), quote_no: r.quote_no || ('#' + r.id),
-      customer: r.customer_name, customer_code: r.customer_code || null,
-      sat_no: r.sat_no, inv_date: r.inv_date,
-      box_count: Number(r.box_count) || 0,
-      total_qty: r.total_qty != null ? Number(r.total_qty) : null,
-      sku_count: r.sku_count != null ? Number(r.sku_count) : null,
-      packed_at: r.packed_at,
-    }));
+    const items = rows.map((r) => {
+      const realSat = r.invoice_id && r.sat_no && String(r.sat_no) !== '' && !String(r.sat_no).startsWith('TMP-');
+      return {
+        quote_id: Number(r.id), quote_no: r.quote_no || ('#' + r.id),
+        customer: r.customer_name, customer_code: r.customer_code || null,
+        sat_no: realSat ? r.sat_no : null, has_sat: !!realSat, inv_date: r.inv_date,
+        box_count: Number(r.box_count) || 0,
+        total_qty: r.total_qty != null ? Number(r.total_qty) : null,
+        sku_count: r.sku_count != null ? Number(r.sku_count) : null,
+        packed_at: r.packed_at,
+      };
+    });
     return { count: items.length, items };
   });
 
@@ -467,7 +469,7 @@ export default async function warehouseRoutes(app) {
         WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     const realSat = q.invoice_id && q.sat_no && String(q.sat_no) !== '' && !String(q.sat_no).startsWith('TMP-');
-    if (!q.packed_at || !realSat) return reply.code(409).send({ error: 'not_shippable', note: '포장완료(3조건) + 실제 SAT 번호 등록 후 출력할 수 있습니다.' });
+    if (!q.packed_at) return reply.code(409).send({ error: 'not_shippable', note: '포장완료 후 출력할 수 있습니다.' });
 
     // 경쟁사(SYD) 매핑 — 포장목록 기준
     const sydMap = {};
@@ -490,7 +492,7 @@ export default async function warehouseRoutes(app) {
     return {
       quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), quote_date: q.quote_date,
       customer: q.customer_name, customer_code: q.customer_code || null, customer_rfc: q.customer_rfc || null,
-      sat_no: q.sat_no, inv_date: q.inv_date, total_mxn: q.total_mxn != null ? Number(q.total_mxn) : null,
+      sat_no: realSat ? q.sat_no : null, has_sat: !!realSat, inv_date: q.inv_date, total_mxn: q.total_mxn != null ? Number(q.total_mxn) : null,
       packed_at: q.packed_at,
       box_count: boxOut.length, total_qty: totQty, sku_count: skuSet.size,
       boxes: boxOut,
