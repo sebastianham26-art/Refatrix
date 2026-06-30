@@ -202,7 +202,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631n</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631o</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -267,7 +267,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631n — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631o — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -517,8 +517,8 @@
         +'<table class="lt"><thead><tr><th>CTR</th><th>Competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></section>';
     }).join('');
     return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Etiquetas '+esc(d.quote_no)+'</title><style>'
-      +'@page{size:100mm 150mm;margin:4mm} *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#111}'
-      +'.lbl{width:92mm;min-height:142mm;page-break-after:always;padding:1mm;display:flex;flex-direction:column}'
+      +'@page{size:100mm 150mm;margin:0} *{box-sizing:border-box} html,body{margin:0;padding:0} body{font-family:Arial,Helvetica,sans-serif;color:#111}'
+      +'.lbl{width:100mm;height:150mm;box-sizing:border-box;padding:4mm;page-break-after:always;break-after:page;display:flex;flex-direction:column;overflow:hidden}'+'.lbl:last-child{page-break-after:auto;break-after:auto}'
       +'.lhdr{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:2mm}'
       +'.lhdr .bx{font-size:21pt;font-weight:800}.lhdr .dt{font-size:9.5pt}'
       +'.cust{font-size:14pt;font-weight:700;margin:2mm 0 1mm}.meta{font-size:10pt;margin:0.6mm 0}'
