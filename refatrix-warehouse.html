@@ -94,6 +94,20 @@
   .mbox{background:#fff;border-radius:18px;max-width:420px;width:100%;padding:26px;box-shadow:0 16px 48px rgba(0,0,0,.32);text-align:center}
   .mbox .ic{font-size:44px}.mbox h3{margin:10px 0 6px;font-size:22px;font-weight:800}.mbox p{margin:0 0 18px;font-size:16px;color:var(--muted)}
   .mbtn{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 18px;font-size:18px;font-weight:800;cursor:pointer;width:100%}
+    .curbox-card{background:#fff;border:3px solid var(--steel);border-radius:var(--radius);padding:16px 18px;margin-bottom:14px;box-shadow:0 4px 14px rgba(82,112,138,.18)}
+  .curbox-card .ch{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+  .curbox-card .ch .bn{font-size:26px;font-weight:800;color:var(--steel-d)}
+  .curbox-card .full{background:var(--green);color:#fff;border:none;border-radius:12px;padding:12px 18px;font-size:17px;font-weight:800;cursor:pointer}
+  .curbox-card .cline{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px dashed var(--line);font-size:20px}
+  .curbox-card .cline:first-of-type{border-top:none}
+  .curbox-card .cline .cc{font-weight:800}
+  .curbox-card .cline .qq{font-size:24px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums}
+  .curbox-card .cline .mm{background:#f3efe6;border:none;border-radius:8px;width:38px;height:38px;font-size:22px;font-weight:800;cursor:pointer;color:var(--red);margin-left:10px}
+  .curbox-card .em{color:#9a958b;font-size:16px;padding:8px 0}
+  .newbox-cta{width:100%;background:var(--steel);color:#fff;border:none;border-radius:var(--radius);padding:20px;font-size:22px;font-weight:800;cursor:pointer;margin-bottom:14px;box-shadow:0 4px 14px rgba(82,112,138,.18)}
+  .sealedbox{background:#f3f5f2;border:1px solid #d6ddd2;border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:15px}
+  .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
+  .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
   .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
@@ -118,18 +132,17 @@
     <div id="pDone"></div>
     <div class="scanbar">
       <div class="scanrow">
-        <span class="curbox">현재 박스: <select id="boxSel"></select></span>
-        <button class="btn" id="newBoxBtn">+ 새 박스</button>
         <input id="eanInput" inputmode="none" autocomplete="off" placeholder="EAN-13 스캔/입력 후 Enter">
       </div>
-      <div class="fb idle" id="fb">바코드를 스캔하세요</div>
+      <div class="fb idle" id="fb">먼저 아래 "새 박스"를 누르고 스캔하세요</div>
     </div>
   </div>
   <div class="pscroll">
+    <div id="curBoxWrap"></div>
     <div class="subt">남은 품목 (스캔하면 줄어듭니다)</div>
     <table><thead><tr><th>CTR</th><th>EAN-13</th><th class="num">남음/필요</th><th>랙</th></tr></thead><tbody id="remBody"></tbody></table>
-    <div class="subt">박스 내역</div>
-    <div id="boxList"></div>
+    <div class="subt" id="sealedSub" style="display:none">마감된 박스</div>
+    <div id="sealedList"></div>
     <button class="back" id="backBtn2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 목록으로 돌아가기</button>
   </div>
 </div>
@@ -202,31 +215,53 @@
       setTimeout(focusScan,60);
     }).catch(function(){});
   }
+  function curOpenBox(){ var un=(PK.boxes||[]).filter(function(b){return !b.sealed;}); return un.length? un[un.length-1] : null; }
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
       +'<span class="el" id="pEl">경과 '+fmtHoursDec(d.elapsed_biz_sec)+' · '+fmtClock(d.elapsed_biz_sec)+'</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
-    $('pDone').innerHTML = d.all_done ? '<div class="done-banner">✓ 모든 품목 스캔 완료 — 박스 사진 업로드는 다음 단계</div>' : '';
-    // 박스 셀렉트
-    var bs=$('boxSel'); bs.innerHTML=(d.boxes||[]).map(function(b){ return '<option value="'+b.box_id+'"'+(b.box_id===curBox?' selected':'')+(b.sealed?' disabled':'')+'>Box '+b.box_no+(b.sealed?' (봉인)':'')+'</option>'; }).join('') || '<option value="">박스 없음</option>';
+    $('pDone').innerHTML = d.all_done ? '<div class="done-banner">\u2713 모든 품목 스캔 완료 \u2014 박스 사진 업로드는 다음 단계</div>' : '';
+
+    // 현재(작업 중) 박스 카드
+    var cb=curOpenBox(); curBox = cb? cb.box_id : null;
+    var wrap=$('curBoxWrap');
+    if(cb){
+      var clines=(cb.lines||[]).slice().sort(function(a,b){return String(a.ctr_code).localeCompare(String(b.ctr_code));}).map(function(l){
+        return '<div class="cline"><span class="cc">'+esc(l.ctr_code)+' <span style="color:#8a857a;font-weight:500;font-size:14px">('+esc(l.ean||'')+')</span></span>'
+          +'<span><span class="qq">'+l.qty+'</span><button class="mm" data-box="'+cb.box_id+'" data-pid="'+l.product_id+'" title="1개 빼기">\u2212</button></span></div>';
+      }).join('') || '<div class="em">아직 담긴 제품이 없습니다 \u2014 바코드를 스캔하세요</div>';
+      wrap.innerHTML='<div class="curbox-card"><div class="ch"><span class="bn">\ud83d\udce6 Box '+cb.box_no+' \u00b7 작업 중</span>'
+        +'<button class="full" id="boxFullBtn">이 박스 다 찼음 \u2713</button></div>'+clines+'</div>';
+    } else {
+      wrap.innerHTML='<button class="newbox-cta" id="newBoxCta">+ 새 박스 시작</button>';
+    }
+
     // 남은 품목
     var rows=(d.items||[]).slice().sort(function(a,b){ return (b.remaining>0)-(a.remaining>0) || String(a.ctr_code).localeCompare(String(b.ctr_code)); });
     $('remBody').innerHTML=rows.map(function(it){
       var done=it.remaining<=0;
-      return '<tr class="'+(done?'done':'')+'"><td>'+esc(it.ctr_code)+(done?' ✓':'')+'</td><td class="ean">'+esc(it.ean||'—')+'</td>'
-        +'<td class="num"><span class="rem '+(done?'zero':'pos')+'">'+it.remaining+'</span> / '+it.required+'</td><td>'+esc(it.rack_location||'—')+'</td></tr>';
+      return '<tr class="'+(done?'done':'')+'"><td>'+esc(it.ctr_code)+(done?' \u2713':'')+'</td><td class="ean">'+esc(it.ean||'\u2014')+'</td>'
+        +'<td class="num"><span class="rem '+(done?'zero':'pos')+'">'+it.remaining+'</span> / '+it.required+'</td><td>'+esc(it.rack_location||'\u2014')+'</td></tr>';
     }).join('') || '<tr><td colspan="4" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
-    // 박스 내역
-    $('boxList').innerHTML=(d.boxes||[]).map(function(b){
-      var lines=(b.lines||[]).map(function(l){ return '<div class="bl"><span>'+esc(l.ctr_code)+' <span style="color:#8a857a">('+esc(l.ean||'')+')</span></span><span><b style="font-size:18px">'+l.qty+'</b> '+(b.sealed?'':'<button class="mm" data-box="'+b.box_id+'" data-pid="'+l.product_id+'" title="1개 빼기">−</button>')+'</span></div>'; }).join('') || '<div class="bl" style="color:#9a958b">비어 있음</div>';
-      return '<div class="boxc"><h4>Box '+b.box_no+' <button class="seal'+(b.sealed?' on':'')+'" data-box="'+b.box_id+'" data-seal="'+(b.sealed?'0':'1')+'">'+(b.sealed?'봉인됨 · 해제':'봉인')+'</button></h4>'+lines+'</div>';
-    }).join('') || '<div class="empty">박스가 없습니다. "+ 새 박스"로 시작하세요.</div>';
+
+    // 마감된 박스
+    var sealed=(d.boxes||[]).filter(function(b){return b.sealed;});
+    $('sealedSub').style.display = sealed.length? '' : 'none';
+    $('sealedList').innerHTML=sealed.map(function(b){
+      var sum=(b.lines||[]).reduce(function(a,x){return a+Number(x.qty);},0);
+      var det=(b.lines||[]).map(function(l){return esc(l.ctr_code)+'\u00d7'+l.qty;}).join(', ')||'비어있음';
+      return '<div class="sealedbox"><div class="sh"><span>\u2713 Box '+b.box_no+' \u00b7 '+sum+'피스</span><button class="un" data-box="'+b.box_id+'">다시 열기</button></div><div style="color:#6f6a60;margin-top:4px">'+det+'</div></div>';
+    }).join('');
+
     // 핸들러
-    Array.prototype.forEach.call($('boxList').querySelectorAll('.mm'),function(b){ b.addEventListener('click',function(){ unscan(Number(b.getAttribute('data-box')),Number(b.getAttribute('data-pid'))); }); });
-    Array.prototype.forEach.call($('boxList').querySelectorAll('.seal'),function(b){ b.addEventListener('click',function(){ sealBox(Number(b.getAttribute('data-box')), b.getAttribute('data-seal')==='1'); }); });
+    var fbb=$('boxFullBtn'); if(fbb) fbb.addEventListener('click',function(){ if(curBox) sealBox(curBox,true); });
+    var ncta=$('newBoxCta'); if(ncta) ncta.addEventListener('click',newBox);
+    Array.prototype.forEach.call($('curBoxWrap').querySelectorAll('.mm'),function(b){ b.addEventListener('click',function(){ unscan(Number(b.getAttribute('data-box')),Number(b.getAttribute('data-pid'))); }); });
+    Array.prototype.forEach.call($('sealedList').querySelectorAll('.un'),function(b){ b.addEventListener('click',function(){ sealBox(Number(b.getAttribute('data-box')),false); }); });
   }
+
   function postJSON(url, body){
     return fetch(url,{method:'POST',headers:JH,body:body?JSON.stringify(body):undefined})
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {status:r.status, ok:r.ok, body:j||{}}; }); });
@@ -240,15 +275,15 @@
   function feedback(msg, kind){ var f=$('fb'); f.className='fb '+(kind||'idle'); f.textContent=msg; }
   function focusScan(){ var e=$('eanInput'); if(e && $('panel').classList.contains('on')) { try{ e.focus(); }catch(_){} } }
 
-  $('boxSel').addEventListener('change',function(){ var v=Number(this.value); if(v) curBox=v; focusScan(); });
-  $('newBoxBtn').addEventListener('click',function(){
+  function newBox(){
     if(!PK) return;
+    feedback('박스 생성 중\u2026','idle');
     postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/box').then(function(o){
-      if(o.ok && o.body && o.body.box_id){ PK.boxes.push({box_id:o.body.box_id,box_no:o.body.box_no,sealed:false,lines:[]}); curBox=o.body.box_id; renderPacking(); feedback('Box '+o.body.box_no+' 생성 — 스캔을 시작하세요','idle'); }
+      if(o.ok && o.body && o.body.box_id){ PK.boxes.push({box_id:o.body.box_id,box_no:o.body.box_no,sealed:false,lines:[]}); curBox=o.body.box_id; renderPacking(); feedback('\ud83d\udce6 Box '+o.body.box_no+' 시작 \u2014 스캔하세요','idle'); }
       else { feedback(failMsg(o),'err'); beep(false); }
       focusScan();
-    }).catch(function(){ feedback('⚠ 박스 생성 실패(통신)','err'); focusScan(); });
-  });
+    }).catch(function(){ feedback('\u26a0 박스 생성 실패(통신)','err'); focusScan(); });
+  }
   $('eanInput').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); doScan(); } });
   function doScan(){
     var inp=$('eanInput'); var v=(inp.value||'').trim(); inp.value='';
