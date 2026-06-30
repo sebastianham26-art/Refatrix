@@ -165,16 +165,27 @@ export default async function warehouseRoutes(app) {
                rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc) };
     });
 
+    // product_id → 경쟁사 코드(SYD) 매핑(포장목록 기준)
+    const sydMap = {};
+    req2.forEach((l) => { sydMap[l.product_id] = l.syd_code || ''; });
+
     const boxes = (await query(`SELECT id, box_no, sealed_at FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
     const blines = (await query(
       `SELECT bl.box_id, bl.product_id, bl.qty, p.code AS ctr_code, p.ean
          FROM packing_box_line bl JOIN products p ON p.id=bl.product_id
         WHERE bl.quote_id=$1 AND bl.qty>0 ORDER BY bl.box_id, p.code`, [id])).rows;
+    const photoCnt = {};
+    (await query(`SELECT box_id, COUNT(*)::int AS n FROM packing_box_photo WHERE quote_id=$1 GROUP BY box_id`, [id]))
+      .rows.forEach((r) => { photoCnt[Number(r.box_id)] = Number(r.n) || 0; });
+
     const boxOut = boxes.map((b) => ({
       box_id: Number(b.id), box_no: b.box_no, sealed: !!b.sealed_at,
+      photo_count: photoCnt[Number(b.id)] || 0,
       lines: blines.filter((x) => Number(x.box_id) === Number(b.id))
-                   .map((x) => ({ product_id: Number(x.product_id), ctr_code: x.ctr_code || '', ean: x.ean || '', qty: Number(x.qty) })),
+                   .map((x) => ({ product_id: Number(x.product_id), ctr_code: x.ctr_code || '',
+                                  syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty) })),
     }));
+    const photosOk = boxOut.length > 0 && boxOut.every((b) => b.photo_count >= 1);
 
     return {
       quote_id: Number(q.id), quote_no: q.quote_no || null,
@@ -184,6 +195,7 @@ export default async function warehouseRoutes(app) {
       in_business: inBusinessNow(),
       required_total: reqTotal, scanned_total: scanTotal, remaining_total: Math.max(0, reqTotal - scanTotal),
       all_done: reqTotal > 0 && scanTotal >= reqTotal,
+      photos_ok: photosOk,
       items, boxes: boxOut,
     };
   });
@@ -242,7 +254,7 @@ export default async function warehouseRoutes(app) {
       const reqTotal = list.reduce((a, x) => a + x.required, 0);
       const scanTotal = Number((await c.query(`SELECT COALESCE(SUM(qty),0)::int AS q FROM packing_box_line WHERE quote_id=$1`, [id])).rows[0].q) || 0;
       const boxNo = (await c.query(`SELECT box_no FROM packing_box WHERE id=$1`, [boxId])).rows[0].box_no;
-      return { body: { result: 'ok', ean, product_id: Number(prod.id), ctr_code: target.ctr_code, box_no: boxNo,
+      return { body: { result: 'ok', ean, product_id: Number(prod.id), ctr_code: target.ctr_code, syd_code: target.syd_code, box_no: boxNo,
         scanned: sc + 1, required: target.required, remaining: Math.max(0, target.required - (sc + 1)),
         scanned_total: Math.min(scanTotal, reqTotal), required_total: reqTotal, all_done: scanTotal >= reqTotal } };
     });
@@ -277,6 +289,80 @@ export default async function warehouseRoutes(app) {
     if (!b) return reply.code(404).send({ error: 'not_found' });
     await query(`UPDATE packing_box SET sealed_at=$2 WHERE id=$1`, [boxId, seal ? new Date() : null]);
     return { ok: true, sealed: seal };
+  });
+
+
+  // ---------- 수동 추가(CTR 코드, 포장목록에 있는 제품만) ----------
+  app.post('/api/warehouse/packing/:id/add', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const boxId = Number(req.body && req.body.box_id);
+    const ctr = String((req.body && req.body.ctr_code) || '').trim();
+    if (!ctr) return reply.code(400).send({ error: 'no_ctr' });
+
+    const out = await withTx(async (c) => {
+      const q = (await c.query(`SELECT id FROM quotes WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!q) return { http: 404, body: { error: 'not_found' } };
+
+      const prod = (await c.query(`SELECT id, code, ean FROM products WHERE UPPER(TRIM(code))=UPPER($1) AND deleted_at IS NULL LIMIT 1`, [ctr.toUpperCase()])).rows[0];
+      if (!prod) return { body: { result: 'wrong', ctr_code: ctr, note: '등록되지 않은 CTR 코드' } };
+
+      const list = await packableLines(id, c.query.bind(c));
+      const target = list.find((x) => x.product_id === Number(prod.id));
+      if (!target) return { body: { result: 'wrong', ctr_code: prod.code || ctr, note: '이 주문(포장목록)에 없는 제품' } };
+
+      const sc = Number((await c.query(`SELECT COALESCE(SUM(qty),0)::int AS q FROM packing_box_line WHERE quote_id=$1 AND product_id=$2`, [id, prod.id])).rows[0].q) || 0;
+      if (sc >= target.required) return { body: { result: 'excess', ctr_code: target.ctr_code, required: target.required } };
+
+      const box = (await c.query(`SELECT id, sealed_at FROM packing_box WHERE id=$1 AND quote_id=$2`, [boxId, id])).rows[0];
+      if (!box) return { http: 400, body: { error: 'no_box' } };
+      if (box.sealed_at) return { http: 400, body: { error: 'box_sealed' } };
+
+      await c.query(
+        `INSERT INTO packing_box_line (box_id, quote_id, product_id, qty) VALUES ($1,$2,$3,1)
+           ON CONFLICT (box_id, product_id) DO UPDATE SET qty = packing_box_line.qty + 1, updated_at = now()`,
+        [boxId, id, prod.id]);
+      await c.query(`INSERT INTO packing_scan (quote_id, box_id, product_id, ean, result, scanned_by) VALUES ($1,$2,$3,$4,'ok',$5)`,
+        [id, boxId, prod.id, prod.ean || null, req.ctx.perm.userId]);
+
+      const reqTotal = list.reduce((a, x) => a + x.required, 0);
+      const scanTotal = Number((await c.query(`SELECT COALESCE(SUM(qty),0)::int AS q FROM packing_box_line WHERE quote_id=$1`, [id])).rows[0].q) || 0;
+      const boxNo = (await c.query(`SELECT box_no FROM packing_box WHERE id=$1`, [boxId])).rows[0].box_no;
+      return { body: { result: 'ok', product_id: Number(prod.id), ctr_code: target.ctr_code, syd_code: target.syd_code, ean: prod.ean || '', box_no: boxNo,
+        scanned: sc + 1, required: target.required, remaining: Math.max(0, target.required - (sc + 1)),
+        scanned_total: Math.min(scanTotal, reqTotal), required_total: reqTotal, all_done: scanTotal >= reqTotal } };
+    });
+    if (out.http) return reply.code(out.http).send(out.body);
+    return out.body;
+  });
+
+  // ---------- 박스 사진 업로드(여러 장 가능) ----------
+  app.post('/api/warehouse/packing/:id/box/:boxId/photo', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id), boxId = Number(req.params.boxId);
+    const img = String((req.body && req.body.image_data) || '');
+    if (!img || img.length < 32 || !/^data:image\//i.test(img)) return reply.code(400).send({ error: 'bad_image' });
+    const box = (await query(`SELECT id FROM packing_box WHERE id=$1 AND quote_id=$2`, [boxId, id])).rows[0];
+    if (!box) return reply.code(404).send({ error: 'not_found' });
+    const r = (await query(
+      `INSERT INTO packing_box_photo (box_id, quote_id, image_data, uploaded_by) VALUES ($1,$2,$3,$4) RETURNING id`,
+      [boxId, id, img, req.ctx.perm.userId])).rows[0];
+    const n = Number((await query(`SELECT COUNT(*)::int AS n FROM packing_box_photo WHERE box_id=$1`, [boxId])).rows[0].n) || 0;
+    return { ok: true, photo_id: Number(r.id), count: n };
+  });
+
+  // ---------- 박스 사진 목록(이미지 데이터 포함) ----------
+  app.get('/api/warehouse/packing/:id/photos', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+    const id = Number(req.params.id);
+    const rows = (await query(
+      `SELECT id, box_id, image_data, uploaded_at FROM packing_box_photo WHERE quote_id=$1 ORDER BY box_id, id`, [id])).rows;
+    return { photos: rows.map((r) => ({ id: Number(r.id), box_id: Number(r.box_id), image_data: r.image_data, uploaded_at: r.uploaded_at })) };
+  });
+
+  // ---------- 박스 사진 삭제 ----------
+  app.post('/api/warehouse/packing/:id/photo/:photoId/remove', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id), photoId = Number(req.params.photoId);
+    const r = (await query(`DELETE FROM packing_box_photo WHERE id=$1 AND quote_id=$2 RETURNING box_id`, [photoId, id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
   });
 
 }

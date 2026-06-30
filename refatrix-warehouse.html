@@ -104,6 +104,38 @@
   .curbox-card .cline .qq{font-size:24px;font-weight:800;color:var(--steel-d);font-variant-numeric:tabular-nums}
   .curbox-card .cline .mm{background:#f3efe6;border:none;border-radius:8px;width:38px;height:38px;font-size:22px;font-weight:800;cursor:pointer;color:var(--red);margin-left:10px}
   .curbox-card .em{color:#9a958b;font-size:16px;padding:8px 0}
+  #boxGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:6px}
+  .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  .bcard.active{border:3px solid var(--steel);box-shadow:0 4px 14px rgba(82,112,138,.18)}
+  .bcard.sealed{background:#f6f7f4;border-color:#d6ddd2}
+  .bch{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .bch .bn{font-size:20px;font-weight:800;color:var(--steel-d)}
+  .bch .bst{font-size:12px;font-weight:800;border-radius:999px;padding:2px 10px}
+  .bch .bst.work{background:#e3edf4;color:var(--steel-d)}
+  .bch .bst.done{background:#e7f3ec;color:#2e6b49}
+  .bch .full{background:var(--green);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:14px;font-weight:800;cursor:pointer}
+  .bch .reopen{background:#eef2f5;color:var(--steel-d);border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
+  table.bt{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;table-layout:fixed;margin-bottom:8px}
+  table.bt th,table.bt td{padding:7px 8px;font-size:14px;text-align:left;border-bottom:1px solid var(--line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.bt th{background:#eef1f4;color:var(--steel-d);font-weight:800;font-size:12px}
+  table.bt td.q{text-align:right;font-weight:800;font-size:16px}
+  table.bt td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  table.bt .mm{background:#f3efe6;border:none;border-radius:6px;width:28px;height:28px;font-size:18px;font-weight:800;cursor:pointer;color:var(--red)}
+  table.bt tr:last-child td{border-bottom:none}
+  .addrow{display:flex;gap:6px;margin-bottom:8px}
+  .addrow input{flex:1;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;text-transform:uppercase}
+  .addrow button{background:var(--gold);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:800;cursor:pointer}
+  .photos{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .photos .thumb{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
+  .photos .pwrap{position:relative}
+  .photos .px{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border:none;border-radius:999px;width:20px;height:20px;font-size:12px;font-weight:800;cursor:pointer;line-height:1}
+  .photos .addphoto{background:#eef2f5;color:var(--steel-d);border:1px dashed var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer}
+  .photos .needphoto{font-size:12px;font-weight:800;color:#a33b27;background:#fbe9e5;border-radius:999px;padding:3px 10px}
+  #lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:12000;align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
+  #lightbox img{max-width:96vw;max-height:92vh;border-radius:10px}
+  .ready{border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;font-size:16px;font-weight:800;text-align:center}
+  .ready.ok{background:#e7f3ec;border:1px solid #bcdcc8;color:#2e6b49}
+  .ready.warn{background:#fbf4e7;border:1px solid #e6d4ad;color:#8a6516}
   .newbox-cta{width:100%;background:var(--steel);color:#fff;border:none;border-radius:var(--radius);padding:20px;font-size:22px;font-weight:800;cursor:pointer;margin-bottom:14px;box-shadow:0 4px 14px rgba(82,112,138,.18)}
   .sealedbox{background:#f3f5f2;border:1px solid #d6ddd2;border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:15px}
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
@@ -138,14 +170,18 @@
     </div>
   </div>
   <div class="pscroll">
-    <div id="curBoxWrap"></div>
+    <div id="readyBanner"></div>
+    <button class="newbox-cta" id="newBoxTop">+ 새 박스 시작</button>
+    <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 ‘작업 중’ 박스에 담깁니다)</span></div>
+    <div id="boxGrid"></div>
     <div class="subt">남은 품목 (스캔하면 줄어듭니다)</div>
     <table><thead><tr><th>CTR</th><th>EAN-13</th><th class="num">남음/필요</th><th>랙</th></tr></thead><tbody id="remBody"></tbody></table>
-    <div class="subt" id="sealedSub" style="display:none">마감된 박스</div>
-    <div id="sealedList"></div>
     <button class="back" id="backBtn2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 목록으로 돌아가기</button>
   </div>
 </div>
+
+<input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
+<div id="lightbox" onclick="this.style.display='none'"><img id="lightImg" alt=""></div>
 
 <div class="modal" id="newModal"><div class="mbox"><div class="ic">📦</div><h3>새 포장지시 도착</h3><p id="newMsg">새 포장 작업이 내려왔습니다.</p><button class="mbtn" id="newOk">확인</button></div></div>
 
@@ -210,35 +246,39 @@
       PK=d;
       var un=(d.boxes||[]).filter(function(b){return !b.sealed;});
       if(curBox==null || !(d.boxes||[]).some(function(b){return b.box_id===curBox;})) curBox = un.length? un[un.length-1].box_id : null;
-      renderPacking();
+      loadPhotos(id, renderPacking);
       if(open){ $('panel').classList.add('on'); startDrillTimer(Number(d.elapsed_biz_sec)||0); }
       setTimeout(focusScan,60);
     }).catch(function(){});
   }
+  function loadPhotos(id, cb){
+    fetch(API+'/api/warehouse/packing/'+id+'/photos',{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      PHOTOS={}; (((d&&d.photos)||[])).forEach(function(pp){ (PHOTOS[pp.box_id]=PHOTOS[pp.box_id]||[]).push(pp); });
+      if(cb) cb();
+    }).catch(function(){ if(cb) cb(); });
+  }
   function curOpenBox(){ var un=(PK.boxes||[]).filter(function(b){return !b.sealed;}); return un.length? un[un.length-1] : null; }
+  var PHOTOS={};
+  function photosOf(boxId){ return PHOTOS[boxId]||[]; }
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
-      +'<span class="el" id="pEl">경과 '+fmtHoursDec(d.elapsed_biz_sec)+' · '+fmtClock(d.elapsed_biz_sec)+'</span>';
+      +'<span class="el" id="pEl">경과 '+fmtHoursDec(d.elapsed_biz_sec)+' \u00b7 '+fmtClock(d.elapsed_biz_sec)+'</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
-    $('pDone').innerHTML = d.all_done ? '<div class="done-banner">\u2713 모든 품목 스캔 완료 \u2014 박스 사진 업로드는 다음 단계</div>' : '';
+    $('pDone').innerHTML='';
 
-    // 현재(작업 중) 박스 카드
     var cb=curOpenBox(); curBox = cb? cb.box_id : null;
-    var wrap=$('curBoxWrap');
-    if(cb){
-      var clines=(cb.lines||[]).slice().sort(function(a,b){return String(a.ctr_code).localeCompare(String(b.ctr_code));}).map(function(l){
-        return '<div class="cline"><span class="cc">'+esc(l.ctr_code)+' <span style="color:#8a857a;font-weight:500;font-size:14px">('+esc(l.ean||'')+')</span></span>'
-          +'<span><span class="qq">'+l.qty+'</span><button class="mm" data-box="'+cb.box_id+'" data-pid="'+l.product_id+'" title="1개 빼기">\u2212</button></span></div>';
-      }).join('') || '<div class="em">아직 담긴 제품이 없습니다 \u2014 바코드를 스캔하세요</div>';
-      wrap.innerHTML='<div class="curbox-card"><div class="ch"><span class="bn">\ud83d\udce6 Box '+cb.box_no+' \u00b7 작업 중</span>'
-        +'<button class="full" id="boxFullBtn">이 박스 다 찼음 \u2713</button></div>'+clines+'</div>';
-    } else {
-      wrap.innerHTML='<button class="newbox-cta" id="newBoxCta">+ 새 박스 시작</button>';
-    }
 
-    // 남은 품목
+    var rb=$('readyBanner');
+    if(d.all_done && d.photos_ok){ rb.innerHTML='<div class="ready ok">\u2713 스캔 완료 \u00b7 모든 박스 사진 있음 \u2014 포장 마무리(통합 패킹리스트) 준비 완료</div>'; }
+    else if(d.all_done && !d.photos_ok){ rb.innerHTML='<div class="ready warn">스캔은 끝났지만 사진 없는 박스가 있습니다 \u2014 박스마다 사진 1장 이상 올려야 포장 마무리/패킹리스트 출력 가능</div>'; }
+    else { rb.innerHTML=''; }
+
+    var boxesSorted=(d.boxes||[]).slice().sort(function(a,b){ return b.box_no-a.box_no; });
+    $('boxGrid').innerHTML = boxesSorted.length ? boxesSorted.map(buildBoxCard).join('')
+      : '<div class="empty">박스가 없습니다 \u2014 위 "+ 새 박스 시작"을 누르세요.</div>';
+
     var rows=(d.items||[]).slice().sort(function(a,b){ return (b.remaining>0)-(a.remaining>0) || String(a.ctr_code).localeCompare(String(b.ctr_code)); });
     $('remBody').innerHTML=rows.map(function(it){
       var done=it.remaining<=0;
@@ -246,20 +286,40 @@
         +'<td class="num"><span class="rem '+(done?'zero':'pos')+'">'+it.remaining+'</span> / '+it.required+'</td><td>'+esc(it.rack_location||'\u2014')+'</td></tr>';
     }).join('') || '<tr><td colspan="4" style="text-align:center;color:#9a958b">포장할 품목이 없습니다</td></tr>';
 
-    // 마감된 박스
-    var sealed=(d.boxes||[]).filter(function(b){return b.sealed;});
-    $('sealedSub').style.display = sealed.length? '' : 'none';
-    $('sealedList').innerHTML=sealed.map(function(b){
-      var sum=(b.lines||[]).reduce(function(a,x){return a+Number(x.qty);},0);
-      var det=(b.lines||[]).map(function(l){return esc(l.ctr_code)+'\u00d7'+l.qty;}).join(', ')||'비어있음';
-      return '<div class="sealedbox"><div class="sh"><span>\u2713 Box '+b.box_no+' \u00b7 '+sum+'피스</span><button class="un" data-box="'+b.box_id+'">다시 열기</button></div><div style="color:#6f6a60;margin-top:4px">'+det+'</div></div>';
+    wireBoxHandlers();
+  }
+  function buildBoxCard(b){
+    var active = !b.sealed && b.box_id===curBox;
+    var ph=photosOf(b.box_id);
+    var head='<div class="bch"><span class="bn">\ud83d\udce6 Box '+b.box_no+'</span>'
+      +'<span class="bst '+(b.sealed?'done':'work')+'">'+(b.sealed?'마감':'작업 중')+'</span>'
+      +(b.sealed
+        ? '<button class="reopen" data-box="'+b.box_id+'" data-seal="0">다시 열기</button>'
+        : '<button class="full" data-box="'+b.box_id+'" data-seal="1">이 박스 다 찼음 \u2713</button>')
+      +'</div>';
+    var lines=(b.lines||[]).slice().sort(function(a,c){return String(a.ctr_code).localeCompare(String(c.ctr_code));}).map(function(l){
+      return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="ean">'+esc(l.ean||'\u2014')+'</td>'
+        +'<td class="q">'+l.qty+'</td>'+(b.sealed?'':'<td style="text-align:center"><button class="mm" data-box="'+b.box_id+'" data-pid="'+l.product_id+'">\u2212</button></td>')+'</tr>';
     }).join('');
-
-    // 핸들러
-    var fbb=$('boxFullBtn'); if(fbb) fbb.addEventListener('click',function(){ if(curBox) sealBox(curBox,true); });
-    var ncta=$('newBoxCta'); if(ncta) ncta.addEventListener('click',newBox);
-    Array.prototype.forEach.call($('curBoxWrap').querySelectorAll('.mm'),function(b){ b.addEventListener('click',function(){ unscan(Number(b.getAttribute('data-box')),Number(b.getAttribute('data-pid'))); }); });
-    Array.prototype.forEach.call($('sealedList').querySelectorAll('.un'),function(b){ b.addEventListener('click',function(){ sealBox(Number(b.getAttribute('data-box')),false); }); });
+    var ncol=b.sealed?4:5;
+    var table='<table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th>EAN-13</th><th class="q" style="text-align:right">수량</th>'+(b.sealed?'':'<th></th>')+'</tr></thead>'
+      +'<tbody>'+(lines||('<tr><td colspan="'+ncol+'" style="color:#9a958b;text-align:center">비어 있음 \u2014 스캔/＋로 담기</td></tr>'))+'</tbody></table>';
+    var addrow = b.sealed ? '' : '<div class="addrow"><input class="ctrAdd" data-box="'+b.box_id+'" placeholder="CTR 코드 수동입력 후 Enter/＋" autocomplete="off"><button class="addBtn" data-box="'+b.box_id+'">＋ 추가</button></div>';
+    var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
+    var photos='<div class="photos">'+thumbs
+      +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
+      +(ph.length===0?'<span class="needphoto">사진 필요</span>':'')+'</div>';
+    return '<div class="bcard'+(active?' active':'')+(b.sealed?' sealed':'')+'">'+head+table+addrow+photos+'</div>';
+  }
+  function wireBoxHandlers(){
+    var g=$('boxGrid');
+    Array.prototype.forEach.call(g.querySelectorAll('.full,.reopen'),function(btn){ btn.addEventListener('click',function(){ sealBox(Number(btn.getAttribute('data-box')), btn.getAttribute('data-seal')==='1'); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.mm'),function(btn){ btn.addEventListener('click',function(){ unscan(Number(btn.getAttribute('data-box')),Number(btn.getAttribute('data-pid'))); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.addBtn'),function(btn){ btn.addEventListener('click',function(){ var inp=g.querySelector('.ctrAdd[data-box="'+btn.getAttribute('data-box')+'"]'); addManual(Number(btn.getAttribute('data-box')), inp); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.ctrAdd'),function(inp){ inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); addManual(Number(inp.getAttribute('data-box')), inp); } }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.px'),function(btn){ btn.addEventListener('click',function(){ removePhoto(Number(btn.getAttribute('data-photo'))); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.addphoto'),function(btn){ btn.addEventListener('click',function(){ triggerPhoto(Number(btn.getAttribute('data-box'))); }); });
   }
 
   function postJSON(url, body){
@@ -302,11 +362,12 @@
         focusScan();
       }).catch(function(){ feedback('스캔 실패(통신)','err'); focusScan(); });
   }
-  function applyOk(res){
+  function applyOk(res){ applyOkTo(curBox,res); }
+  function applyOkTo(boxId,res){
     var it=(PK.items||[]).find(function(x){return x.product_id===res.product_id;});
     if(it){ it.scanned++; it.remaining=Math.max(0,it.required-it.scanned); }
-    var b=(PK.boxes||[]).find(function(x){return x.box_id===curBox;});
-    if(b){ var bl=(b.lines||[]).find(function(x){return x.product_id===res.product_id;}); if(bl) bl.qty++; else b.lines.push({product_id:res.product_id,ctr_code:res.ctr_code,ean:res.ean,qty:1}); }
+    var b=(PK.boxes||[]).find(function(x){return x.box_id===boxId;});
+    if(b){ var bl=(b.lines||[]).find(function(x){return x.product_id===res.product_id;}); if(bl) bl.qty++; else b.lines.push({product_id:res.product_id,ctr_code:res.ctr_code,syd_code:res.syd_code||'',ean:res.ean,qty:1}); }
     PK.scanned_total=res.scanned_total; PK.required_total=res.required_total; PK.all_done=res.all_done;
     renderPacking();
   }
@@ -328,6 +389,34 @@
   var suppressCard=0;
   function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); stopDrillTimer(); suppressCard=Date.now()+700; loadQueue(); }
   ['backBtn','backBtn2'].forEach(function(bid){ var b=$(bid); if(!b) return; b.addEventListener('click',closeDrill); b.addEventListener('touchend',function(e){ e.preventDefault(); closeDrill(e); },{passive:false}); });
+
+  // 수동 추가(CTR)
+  function addManual(boxId, inp){
+    var ctr=(inp&&inp.value||'').trim(); if(!ctr) return;
+    postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/add',{box_id:boxId,ctr_code:ctr}).then(function(o){
+      if(!o.ok && o.status!==400){ feedback(failMsg(o),'err'); beep(false); return; }
+      var res=o.body||{};
+      if(res.result==='ok'){ if(inp) inp.value=''; feedback('\u2713 '+res.ctr_code+' \u2192 Box '+res.box_no+' (남음 '+res.remaining+')','ok'); beep(true); loadPacking(PK.quote_id,false); }
+      else if(res.result==='wrong'){ feedback('\u26a0 '+(res.note||'주문에 없는/미등록 CTR')+': '+ctr,'err'); beep(false); }
+      else if(res.result==='excess'){ feedback('\u26a0 초과: '+res.ctr_code+' 필요수량('+res.required+') 이미 충족','err'); beep(false); }
+      else if(res.error==='box_sealed'){ feedback('\u26a0 마감된 박스입니다 \u2014 다시 열기 후 추가','warn'); beep(false); }
+      else if(res.error==='no_box'){ feedback('\u26a0 박스를 먼저 만드세요','warn'); beep(false); }
+      else { feedback('추가 처리 오류','err'); }
+    }).catch(function(){ feedback('추가 실패(통신)','err'); });
+  }
+  // 사진 업로드(리사이즈 후) / 삭제 / 확대
+  var pendingPhotoBox=null;
+  function triggerPhoto(boxId){ pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
+  function resizeImage(file,maxDim,q){ return new Promise(function(res){ try{ var img=new Image(); var url=URL.createObjectURL(file); img.onload=function(){ var w=img.width,h=img.height,s=Math.min(1,maxDim/Math.max(w,h)); var cw=Math.max(1,Math.round(w*s)),ch=Math.max(1,Math.round(h*s)); var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch); try{URL.revokeObjectURL(url);}catch(e){} res(cv.toDataURL('image/jpeg',q)); }; img.onerror=function(){ res(null); }; img.src=url; }catch(e){ res(null); } }); }
+  function removePhoto(photoId){ postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/photo/'+photoId+'/remove').then(function(o){ if(o.ok){ feedback('사진 삭제됨','idle'); loadPacking(PK.quote_id,false); } else feedback(failMsg(o),'err'); }); }
+  function openLight(src){ var li=$('lightImg'); if(li){ li.src=src; } $('lightbox').style.display='flex'; }
+  var fi0=$('photoInput'); if(fi0){ fi0.addEventListener('change',function(){ var f=this.files&&this.files[0]; if(!f||pendingPhotoBox==null) return; feedback('사진 업로드 중\u2026','idle');
+    resizeImage(f,1600,0.72).then(function(dataUrl){ if(!dataUrl){ feedback('이미지 처리 실패','err'); return; }
+      postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/box/'+pendingPhotoBox+'/photo',{image_data:dataUrl}).then(function(o){
+        if(o.ok){ feedback('사진 1장 추가됨','ok'); loadPacking(PK.quote_id,false); } else feedback(failMsg(o),'err');
+      });
+    }); }); }
+  var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);
 
   if(S){ loadQueue(); setInterval(loadQueue,25000); }
 })();
