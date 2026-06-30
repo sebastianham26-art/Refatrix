@@ -172,7 +172,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630g</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630h</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -218,7 +218,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0630g — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0630h — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -270,8 +270,8 @@
   $('newOk').addEventListener('click',function(){ $('newModal').classList.remove('on'); });
 
   // ---------- 패킹 ----------
-  var PK=null, curBox=null, drillTimer=null, drillSec=0;
-  function openPacking(id){ loadPacking(id, true); }
+  var PK=null, curBox=null, drillTimer=null, drillSec=0, pollTimer=null;
+  function openPacking(id){ loadPacking(id, true); pollStart(); }
   function loadPacking(id, open){
     fetch(API+'/api/warehouse/packing/'+id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
       if(!d||d.error) return;
@@ -289,6 +289,35 @@
       if(cb) cb();
     }).catch(function(){ if(cb) cb(); });
   }
+  // ----- 같은 오더 실시간 동기화(3초) — 입력/선택을 절대 방해하지 않음 -----
+  function boxSig(d){ return ((d&&d.boxes)||[]).map(function(b){return b.box_id+':'+(b.photo_count||0);}).join('|'); }
+  function pollBlocked(){
+    if(!PK || !$('panel').classList.contains('on')) return true;
+    if(confirmDelBox!=null) return true;                 // 삭제 확인 중
+    var ae=document.activeElement;
+    var ean=$('eanInput');
+    if(ae===ean && ean && ean.value) return true;        // EAN 입력/스캔 중(값 있음)
+    if(ae && ae.id==='scanBoxSel') return true;          // 박스 선택 중
+    if(ae && ae.classList && ae.classList.contains('ctrAdd') && ae.value) return true; // 수동 CTR 입력 중
+    return false;
+  }
+  function pollRefresh(){
+    if(pollBlocked()) return;
+    fetch(API+'/api/warehouse/packing/'+PK.quote_id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      if(!d||d.error) return;
+      if(pollBlocked()) return;                          // 응답 도착 시점에 다시 확인(그 사이 입력 시작했을 수 있음)
+      var changedBoxes = boxSig(PK)!==boxSig(d);
+      PK=d;
+      if(curBox==null || !(d.boxes||[]).some(function(b){return b.box_id===curBox;})){
+        var un=(d.boxes||[]).filter(function(b){return !b.sealed;});
+        curBox = un.length? un[un.length-1].box_id : ((d.boxes||[]).length? d.boxes[d.boxes.length-1].box_id : null);
+      }
+      if(changedBoxes){ loadPhotos(d.quote_id, renderPacking); } // 박스/사진수 변동 시에만 사진 재로드
+      else { renderPacking(); }
+    }).catch(function(){});
+  }
+  function pollStart(){ pollStop(); pollTimer=setInterval(pollRefresh, 3000); }
+  function pollStop(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
   function curOpenBox(){ var un=(PK.boxes||[]).filter(function(b){return !b.sealed;}); return un.length? un[un.length-1] : null; }
   var PHOTOS={};
   var confirmDelBox=null;
@@ -457,7 +486,7 @@
 
   // 돌아가기 (터치 클릭-통과 방지)
   var suppressCard=0;
-  function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); stopDrillTimer(); suppressCard=Date.now()+700; loadQueue(); }
+  function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); stopDrillTimer(); pollStop(); suppressCard=Date.now()+700; loadQueue(); }
   ['backBtn','backBtn2'].forEach(function(bid){ var b=$(bid); if(!b) return; b.addEventListener('click',closeDrill); b.addEventListener('touchend',function(e){ e.preventDefault(); closeDrill(e); },{passive:false}); });
 
   // 수동 추가(CTR)
