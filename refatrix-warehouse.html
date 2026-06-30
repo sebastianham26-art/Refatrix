@@ -190,7 +190,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631e</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631f</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -253,7 +253,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631e — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631f — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -299,6 +299,11 @@
     Array.prototype.forEach.call(box.querySelectorAll('.pl'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); printLabels(Number(b.getAttribute('data-id'))); }); });
     Array.prototype.forEach.call(box.querySelectorAll('.pk'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); printPackingList(Number(b.getAttribute('data-id'))); }); });
     Array.prototype.forEach.call(box.querySelectorAll('.op'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); openShip(Number(b.getAttribute('data-id'))); }); });
+  }
+  var COMPANY=null;
+  function ensureCompany(){
+    if(COMPANY) return Promise.resolve(COMPANY);
+    return fetch(API+'/api/company',{headers:AUTH}).then(function(r){return r.json();}).then(function(j){ COMPANY=j||{}; return COMPANY; }).catch(function(){ COMPANY={}; return COMPANY; });
   }
   function fetchShip(id){ return fetch(API+'/api/warehouse/ship/'+id,{headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, body:j||{}}; }); }); }
   function openShip(id){
@@ -356,7 +361,18 @@
         return '<div class="box"><div class="bh">Caja '+b.box_no+' / '+d.box_count+' \u00b7 '+b.box_qty+' pzas</div>'
           +'<table class="pt"><thead><tr><th>CTR</th><th>Código competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
       }).join('');
-      return '<section class="pg"><div class="top"><div class="title">LISTA DE EMPAQUE</div><div class="cp">'+tag+'</div></div>'
+      var C=COMPANY||{};
+      var cohead='';
+      if(C.logo_data||C.emisor){
+        cohead='<div class="cohead">'
+          +(C.logo_data?'<img class="clogo" src="'+C.logo_data+'">':'')
+          +'<div class="coinfo">'
+          +(C.emisor?'<div class="con">'+esc(C.emisor)+'</div>':'')
+          +(C.domicilio?'<div>'+esc(C.domicilio)+'</div>':'')
+          +((C.rfc||C.phone)?'<div>'+(C.rfc?'RFC: '+esc(C.rfc):'')+(C.rfc&&C.phone?'  \u00b7  ':'')+(C.phone?'Tel: '+esc(C.phone):'')+'</div>':'')
+          +'</div></div>';
+      }
+      return '<section class="pg">'+cohead+'<div class="top"><div class="title">LISTA DE EMPAQUE</div><div class="cp">'+tag+'</div></div>'
         +'<table class="hd"><tr><td><b>Cliente:</b> '+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</td><td><b>No. de factura:</b> '+esc(d.sat_no)+'</td></tr>'
         +'<tr><td><b>RFC:</b> '+esc(d.customer_rfc||'-')+'</td><td><b>Pedido:</b> '+esc(d.quote_no)+'</td></tr>'
         +'<tr><td><b>Fecha:</b> '+esc(d.inv_date||d.quote_date||'')+'</td><td><b>Cajas:</b> '+d.box_count+' \u00b7 <b>SKU:</b> '+d.sku_count+' \u00b7 <b>Piezas:</b> '+d.total_qty+'</td></tr></table>'
@@ -366,6 +382,10 @@
     }
     return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista de empaque '+esc(d.quote_no)+'</title><style>'
       +'@page{size:A4;margin:14mm} *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#111;font-size:11pt}'
+      +'.cohead{display:flex;align-items:center;gap:10mm;margin-bottom:4mm;padding-bottom:3mm;border-bottom:1px solid #ddd}'
+      +'.cohead .clogo{max-height:20mm;max-width:55mm;object-fit:contain}'
+      +'.cohead .coinfo{font-size:9.5pt;line-height:1.4;color:#222}'
+      +'.cohead .coinfo .con{font-size:13pt;font-weight:800;color:#111}'
       +'.pg{page-break-after:always}.top{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #111;padding-bottom:3mm;margin-bottom:3mm}'
       +'.title{font-size:18pt;font-weight:800}.cp{font-size:10pt;font-weight:700;border:1px solid #111;padding:2mm 4mm;border-radius:4px}'
       +'.hd{width:100%;border-collapse:collapse;margin-bottom:4mm}.hd td{padding:1.5mm 2mm;border:1px solid #ccc;font-size:10.5pt}'
@@ -375,7 +395,7 @@
       +'</style></head><body>'+copy('ORIGINAL \u2014 CLIENTE')+copy('COPIA \u2014 ALMAC\u00c9N')+'</body></html>';
   }
   function printLabels(id){ fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildLabelsHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
-  function printPackingList(id){ fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildPackingListHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
+  function printPackingList(id){ ensureCompany().then(function(){ return fetchShip(id); }).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildPackingListHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
 
   function renderQueue(items){
     var box=$('queue');
