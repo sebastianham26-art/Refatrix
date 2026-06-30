@@ -194,7 +194,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631i</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631j</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -259,7 +259,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631i — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631j — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -275,7 +275,33 @@
   function fmtHoursDec(sec){ return (Math.round((Number(sec)||0)/360)/10).toFixed(1)+'h'; }
   function fmtClock(sec){ sec=Math.max(0,Math.floor(Number(sec)||0)); return p2(Math.floor(sec/3600))+':'+p2(Math.floor((sec%3600)/60))+':'+p2(sec%60); }
   function isBusinessNow(){ var mx=new Date(Date.now()-6*3600000); var dow=mx.getUTCDay(); if(dow<1||dow>5) return false; var m=mx.getUTCHours()*60+mx.getUTCMinutes(); return m>=450&&m<1020; }
-  function beep(ok){ try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return; var ac=new C(); var o=ac.createOscillator(),g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=ok?1000:320; g.gain.setValueAtTime(0.001,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.3,ac.currentTime+0.01); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+(ok?0.18:0.4)); o.start(); o.stop(ac.currentTime+(ok?0.18:0.4)); }catch(e){} }
+  // 스캔 사운드: 최대 음량(컴프레서+거친 파형) · OK=밝은 상승 더블비프 / ERROR=낮고 거친 더블부저
+  function beep(ok){
+    try{
+      var C=window.AudioContext||window.webkitAudioContext; if(!C) return;
+      var ac=beep._ac||(beep._ac=new C());            // 컨텍스트 1개 재사용(장시간 스캔 안 끊김)
+      if(ac.state==='suspended'){ try{ ac.resume(); }catch(_){} }
+      var now=ac.currentTime;
+      var comp=ac.createDynamicsCompressor();          // 클리핑 없이 크게
+      comp.threshold.value=-10; comp.knee.value=0; comp.ratio.value=20; comp.attack.value=0.001; comp.release.value=0.1;
+      comp.connect(ac.destination);
+      function tone(freq,t0,dur,type,peak){
+        var o=ac.createOscillator(),g=ac.createGain();
+        o.type=type; o.frequency.value=freq; o.connect(g); g.connect(comp);
+        g.gain.setValueAtTime(0.0001,t0);
+        g.gain.exponentialRampToValueAtTime(peak,t0+0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+        o.start(t0); o.stop(t0+dur+0.02);
+      }
+      if(ok){
+        tone(1180,now,0.09,'square',0.95);             // OK: 밝은 고음 상승
+        tone(1760,now+0.10,0.13,'square',0.95);
+      }else{
+        tone(200,now,0.20,'sawtooth',1.0);             // ERROR: 낮고 거친 부저 2회
+        tone(150,now+0.22,0.34,'sawtooth',1.0);
+      }
+    }catch(e){}
+  }
 
   // ---------- 큐 ----------
   var SEEN_KEY='wh_seen_queue', firstLoad=true;
