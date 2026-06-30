@@ -1,8 +1,7 @@
 <!DOCTYPE html>
-<html lang="ko" translate="no" class="notranslate">
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="google" content="notranslate">
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -71,6 +70,20 @@
   .fb.err{background:#fbe9e5;color:#a33b27}
   .fb.warn{background:#fbf4e7;color:#8a6516}
   .fb.idle{background:#f3efe6;color:#8a857a}
+
+  /* 출고 */
+  .scard{background:#fff;border:1px solid var(--line);border-left:5px solid var(--green);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:default}
+  .scard .srow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .scard .no{font-size:16px;font-weight:800;color:var(--steel-d)} .scard .cu{font-size:14px;color:var(--ink)}
+  .scard .sat{text-align:right;font-size:13px} .scard .sat .lab{display:block;color:var(--muted);font-size:11px} .scard .sat b{font-size:15px}
+  .scard .meta2{color:var(--muted);font-size:12.5px;margin:6px 0 10px}
+  .scard .sbtns{display:flex;gap:8px;flex-wrap:wrap}
+  .scard .sbtns button{border:none;border-radius:9px;padding:10px 14px;font-size:14px;font-weight:800;cursor:pointer}
+  .scard .pl{background:#33495c;color:#fff} .scard .pk{background:#3E7D5A;color:#fff} .scard .op{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel)}
+  #shipPanel .shipbtns{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  #shipPanel .shipbtns button{border:none;border-radius:11px;padding:14px 18px;font-size:16px;font-weight:800;cursor:pointer}
+  #shipPanel #shipPrintLabels{background:#33495c;color:#fff} #shipPanel #shipPrintList{background:#3E7D5A;color:#fff}
+  .sbox{margin-bottom:12px} .sbh{font-weight:800;color:var(--steel-d);margin:0 2px 6px;font-size:15px}
   /* 남은 품목 */
   table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);table-layout:fixed;border-radius:12px;overflow:hidden}
   th,td{padding:13px 10px;font-size:18px;text-align:left;border-bottom:1px solid var(--line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -173,13 +186,31 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631a</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631c</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
     <div id="queue"><div class="empty">불러오는 중…</div></div>
   </div>
+  <div class="sec">
+    <div class="sec-t"><span>출고 대기 (포장완료 · SAT 발행됨)</span><span class="cnt" id="shipCount">—</span></div>
+    <div class="bznote">📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.</div>
+    <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
+  </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
+</div>
+
+<!-- 출고 상세 패널 -->
+<div class="panel" id="shipPanel">
+  <div class="ptop">
+    <button class="back" id="shipBack">← 출고 목록</button>
+    <div class="pHead" id="shipHead"></div>
+  </div>
+  <div class="pscroll">
+    <div class="shipbtns"><button id="shipPrintLabels">📦 박스 라벨 출력</button><button id="shipPrintList">📄 패킹리스트 출력</button></div>
+    <div id="shipBody"></div>
+    <button class="back" id="shipBack2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 출고 목록으로</button>
+  </div>
 </div>
 
 <!-- 패킹 패널 -->
@@ -219,7 +250,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631a — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631c — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -244,6 +275,105 @@
       var items=(d&&d.items)||[]; $('qCount').textContent=items.length; renderQueue(items); checkNew(items);
     }).catch(function(){ $('queue').innerHTML='<div class="empty">목록을 불러오지 못했습니다.</div>'; });
   }
+  // ===================== 출고-2: 목록 · 상세 · 출력 =====================
+  var SHIP=null;
+  function loadShipQueue(){
+    fetch(API+'/api/warehouse/ship-queue',{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      var items=(d&&d.items)||[]; var c=$('shipCount'); if(c) c.textContent=items.length; renderShipQueue(items);
+    }).catch(function(){ var b=$('shipQueue'); if(b) b.innerHTML='<div class="empty">목록을 불러오지 못했습니다.</div>'; });
+  }
+  function renderShipQueue(items){
+    var box=$('shipQueue'); if(!box) return;
+    if(!items.length){ box.innerHTML='<div class="empty">출고 대기 건이 없습니다.</div>'; return; }
+    box.innerHTML=items.map(function(it){
+      return '<div class="scard" data-id="'+it.quote_id+'">'
+        +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+'</div><div class="cu">'+esc(it.customer)+'</div></div>'
+        +'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div></div>'
+        +'<div class="meta2">박스 '+it.box_count+' · SKU '+(it.sku_count==null?'\u2014':it.sku_count)+' · 총 '+(it.total_qty==null?'\u2014':it.total_qty)+'피스 · '+esc(it.inv_date||'')+'</div>'
+        +'<div class="sbtns"><button class="pl" data-id="'+it.quote_id+'">\ud83d\udce6 라벨</button><button class="pk" data-id="'+it.quote_id+'">\ud83d\udcc4 패킹리스트</button><button class="op" data-id="'+it.quote_id+'">상세</button></div>'
+        +'</div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.pl'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); printLabels(Number(b.getAttribute('data-id'))); }); });
+    Array.prototype.forEach.call(box.querySelectorAll('.pk'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); printPackingList(Number(b.getAttribute('data-id'))); }); });
+    Array.prototype.forEach.call(box.querySelectorAll('.op'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); openShip(Number(b.getAttribute('data-id'))); }); });
+  }
+  function fetchShip(id){ return fetch(API+'/api/warehouse/ship/'+id,{headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, body:j||{}}; }); }); }
+  function openShip(id){
+    fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } var d=o.body; SHIP=d;
+      $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">No. factura '+esc(d.sat_no)+' · 박스 '+d.box_count+' · '+d.total_qty+'피스</span>';
+      $('shipBody').innerHTML=d.boxes.map(function(b){
+        var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+        return '<div class="sbox"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스</div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
+      }).join('');
+      $('shipPanel').classList.add('on');
+    }).catch(function(){ alert('불러오기 실패(통신)'); });
+  }
+  function closeShip(){ $('shipPanel').classList.remove('on'); loadShipQueue(); }
+  // 바코드 SVG(메인에서 생성 → 인쇄창에 정적 삽입)
+  function barcodeSVG(text){
+    try{
+      if(!window.JsBarcode) return '<div style="font-family:monospace;font-size:11px">'+esc(text)+'</div>';
+      var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      window.JsBarcode(svg, String(text), {format:'CODE128', displayValue:true, fontSize:13, height:44, margin:2, width:1.5});
+      return svg.outerHTML;
+    }catch(e){ return '<div style="font-family:monospace;font-size:11px">'+esc(text)+'</div>'; }
+  }
+  function printDoc(html){
+    var w=window.open('','_blank');
+    if(!w){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+    w.document.open(); w.document.write(html); w.document.close(); w.focus();
+    setTimeout(function(){ try{ w.print(); }catch(e){} }, 400);
+  }
+  function buildLabelsHTML(d){
+    var M=d.box_count;
+    var pages=d.boxes.map(function(b){
+      var bc=barcodeSVG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
+      var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+      return '<section class="lbl"><div class="lhdr"><div class="bx">CAJA '+b.box_no+' / '+M+'</div><div class="dt">'+esc(d.inv_date||d.quote_date||'')+'</div></div>'
+        +'<div class="cust">'+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</div>'
+        +'<div class="meta"><b>No. de factura:</b> '+esc(d.sat_no)+'</div>'
+        +'<div class="meta"><b>Pedido:</b> '+esc(d.quote_no)+' &nbsp; SKU: '+b.box_sku+' &nbsp; Pzas: '+b.box_qty+'</div>'
+        +'<div class="bc">'+bc+'</div>'
+        +'<table class="lt"><thead><tr><th>CTR</th><th>Competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></section>';
+    }).join('');
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Etiquetas '+esc(d.quote_no)+'</title><style>'
+      +'@page{size:100mm 150mm;margin:4mm} *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#111}'
+      +'.lbl{width:92mm;min-height:142mm;page-break-after:always;padding:1mm;display:flex;flex-direction:column}'
+      +'.lhdr{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:2mm}'
+      +'.lhdr .bx{font-size:21pt;font-weight:800}.lhdr .dt{font-size:9.5pt}'
+      +'.cust{font-size:14pt;font-weight:700;margin:2mm 0 1mm}.meta{font-size:10pt;margin:0.6mm 0}'
+      +'.bc{text-align:center;margin:2mm 0}.bc svg{max-width:100%}'
+      +'.lt{width:100%;border-collapse:collapse;font-size:9pt;margin-top:1mm}.lt th,.lt td{border:1px solid #999;padding:1mm;text-align:left}.lt .q{text-align:right;font-weight:700}'
+      +'</style></head><body>'+pages+'</body></html>';
+  }
+  function buildPackingListHTML(d){
+    function copy(tag){
+      var boxes=d.boxes.map(function(b){
+        var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+        return '<div class="box"><div class="bh">Caja '+b.box_no+' / '+d.box_count+' \u00b7 '+b.box_qty+' pzas</div>'
+          +'<table class="pt"><thead><tr><th>CTR</th><th>Código competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
+      }).join('');
+      return '<section class="pg"><div class="top"><div class="title">LISTA DE EMPAQUE</div><div class="cp">'+tag+'</div></div>'
+        +'<table class="hd"><tr><td><b>Cliente:</b> '+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</td><td><b>No. de factura:</b> '+esc(d.sat_no)+'</td></tr>'
+        +'<tr><td><b>RFC:</b> '+esc(d.customer_rfc||'-')+'</td><td><b>Pedido:</b> '+esc(d.quote_no)+'</td></tr>'
+        +'<tr><td><b>Fecha:</b> '+esc(d.inv_date||d.quote_date||'')+'</td><td><b>Cajas:</b> '+d.box_count+' \u00b7 <b>SKU:</b> '+d.sku_count+' \u00b7 <b>Piezas:</b> '+d.total_qty+'</td></tr></table>'
+        +boxes
+        +'<div class="tot">Total: '+d.box_count+' cajas \u00b7 '+d.sku_count+' SKU \u00b7 '+d.total_qty+' piezas</div>'
+        +'<div class="sign"><div class="sb"><div class="ln"></div>Entreg\u00f3 (Almac\u00e9n)</div><div class="sb"><div class="ln"></div>Recib\u00ed conforme (Cliente)</div></div></section>';
+    }
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista de empaque '+esc(d.quote_no)+'</title><style>'
+      +'@page{size:A4;margin:14mm} *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#111;font-size:11pt}'
+      +'.pg{page-break-after:always}.top{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #111;padding-bottom:3mm;margin-bottom:3mm}'
+      +'.title{font-size:18pt;font-weight:800}.cp{font-size:10pt;font-weight:700;border:1px solid #111;padding:2mm 4mm;border-radius:4px}'
+      +'.hd{width:100%;border-collapse:collapse;margin-bottom:4mm}.hd td{padding:1.5mm 2mm;border:1px solid #ccc;font-size:10.5pt}'
+      +'.box{margin-bottom:4mm}.bh{font-weight:800;background:#eee;padding:2mm 3mm;border:1px solid #999;border-bottom:none}'
+      +'.pt{width:100%;border-collapse:collapse;font-size:10pt}.pt th,.pt td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}.pt .q{text-align:right;font-weight:700}.pt th{background:#f3f3f3}'
+      +'.tot{margin-top:4mm;font-weight:800;font-size:12pt;text-align:right}.sign{display:flex;gap:20mm;margin-top:16mm}.sb{flex:1;text-align:center;font-size:10pt}.sb .ln{border-top:1px solid #111;margin-bottom:2mm;height:14mm}'
+      +'</style></head><body>'+copy('ORIGINAL \u2014 CLIENTE')+copy('COPIA \u2014 ALMAC\u00c9N')+'</body></html>';
+  }
+  function printLabels(id){ fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildLabelsHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
+  function printPackingList(id){ fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } printDoc(buildPackingListHTML(o.body)); }).catch(function(){ alert('불러오기 실패'); }); }
+
   function renderQueue(items){
     var box=$('queue');
     if(!items.length){ box.innerHTML='<div class="empty">대기 중인 포장지시가 없습니다.</div>'; return; }
@@ -271,7 +401,7 @@
   $('newOk').addEventListener('click',function(){ $('newModal').classList.remove('on'); });
 
   // ---------- 패킹 ----------
-  var PK=null, curBox=null, drillTimer=null, drillSec=0, pollTimer=null;
+  var PK=null, curBox=null, pollTimer=null, drillElapsedSec=0;
   function openPacking(id){ loadPacking(id, true); pollStart(); }
   function loadPacking(id, open){
     fetch(API+'/api/warehouse/packing/'+id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
@@ -279,8 +409,9 @@
       PK=d;
       var un=(d.boxes||[]).filter(function(b){return !b.sealed;});
       if(curBox==null || !(d.boxes||[]).some(function(b){return b.box_id===curBox;})) curBox = un.length? un[un.length-1].box_id : null;
+      drillElapsedSec = Number(d.elapsed_biz_sec)||0;   // 경과시간 정적 표시(실시간 틱 없음)
       loadPhotos(id, renderPacking);
-      if(open){ $('panel').classList.add('on'); startDrillTimer(Number(d.elapsed_biz_sec)||0); }
+      if(open){ $('panel').classList.add('on'); }
       setTimeout(focusScan,60);
     }).catch(function(){});
   }
@@ -308,14 +439,23 @@
       if(!d||d.error) return;
       if(pollBlocked()) return;                          // 응답 도착 시점에 다시 확인(그 사이 입력 시작했을 수 있음)
       var changedBoxes = boxSig(PK)!==boxSig(d);
+      var newSig = renderSig(d);
       PK=d;
       if(curBox==null || !(d.boxes||[]).some(function(b){return b.box_id===curBox;})){
         var un=(d.boxes||[]).filter(function(b){return !b.sealed;});
         curBox = un.length? un[un.length-1].box_id : ((d.boxes||[]).length? d.boxes[d.boxes.length-1].box_id : null);
       }
+      if(newSig===_renderSig) return;   // 데이터 변화 없음 → 다시 그리지 않음(번역 깜빡임 방지)
       if(changedBoxes){ loadPhotos(d.quote_id, renderPacking); } // 박스/사진수 변동 시에만 사진 재로드
       else { renderPacking(); }
     }).catch(function(){});
+  }
+  var _renderSig='';
+  function renderSig(d){
+    if(!d) return '';
+    var bx=(d.boxes||[]).map(function(b){ return b.box_id+'/'+b.box_no+'/'+(b.sealed?1:0)+'/'+(b.photo_count||0)+'/'+(b.lines||[]).map(function(l){return l.product_id+':'+l.qty;}).join(','); }).join('|');
+    var it=(d.items||[]).map(function(i){ return i.product_id+':'+i.scanned+':'+i.remaining+':'+(i.box_nos||[]).join('.'); }).join('|');
+    return bx+'#'+it+'#'+d.scanned_total+'/'+d.required_total+'/'+(d.all_done?1:0)+'/'+(d.photos_ok?1:0);
   }
   function pollStart(){ pollStop(); pollTimer=setInterval(pollRefresh, 3000); }
   function pollStop(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
@@ -358,7 +498,7 @@
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
-      +'<span class="el" id="pEl" translate="no">경과 '+fmtHoursDec(d.elapsed_biz_sec)+' \u00b7 '+fmtClock(d.elapsed_biz_sec)+'</span>';
+      +'<span class="el" id="pEl">경과 '+fmtHoursDec(drillElapsedSec)+' \u00b7 '+fmtClock(drillElapsedSec)+'</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
     $('pDone').innerHTML='';
@@ -380,6 +520,7 @@
 
     renderItemsTable();
     wireBoxHandlers();
+    _renderSig=renderSig(PK);
   }
   function buildBoxCard(b){
     var active = (b.box_id===curBox);
@@ -486,13 +627,10 @@
   }
 
   // 타이머
-  function startDrillTimer(baseSec){ stopDrillTimer(); drillSec=baseSec||0; paintTimer(); drillTimer=setInterval(function(){ if(isBusinessNow()) drillSec++; paintTimer(); },1000); }
-  function stopDrillTimer(){ if(drillTimer){ clearInterval(drillTimer); drillTimer=null; } }
-  function paintTimer(){ var e=$('pEl'); if(e) e.textContent='경과 '+fmtHoursDec(drillSec)+' · '+fmtClock(drillSec)+(isBusinessNow()?'':' · 업무시간 외'); }
 
   // 돌아가기 (터치 클릭-통과 방지)
   var suppressCard=0;
-  function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); stopDrillTimer(); pollStop(); suppressCard=Date.now()+700; loadQueue(); }
+  function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); pollStop(); suppressCard=Date.now()+700; loadQueue(); }
   ['backBtn','backBtn2'].forEach(function(bid){ var b=$(bid); if(!b) return; b.addEventListener('click',closeDrill); b.addEventListener('touchend',function(e){ e.preventDefault(); closeDrill(e); },{passive:false}); });
 
   // 수동 추가(CTR)
@@ -531,9 +669,14 @@
   var itg=$('itemsToggle'); if(itg) itg.addEventListener('click',function(){ var sec=$('itemsSection'); var open=sec.style.display==='none'; sec.style.display=open?'block':'none'; itg.innerHTML=open?'\ud83d\udccb 포장 품목 닫기 \u25b4':'\ud83d\udccb 포장 품목 전체보기 \u25be'; });
   var sbs=$('scanBoxSel'); if(sbs) sbs.addEventListener('change',function(){ var v=Number(this.value); if(v){ curBox=v; renderPacking(); } focusScan(); });
 
-  if(S){ loadQueue(); setInterval(loadQueue,25000); }
+  var sbk=$('shipBack'); if(sbk) sbk.addEventListener('click',closeShip);
+  var sbk2=$('shipBack2'); if(sbk2) sbk2.addEventListener('click',closeShip);
+  var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
+  var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
+  if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="refatrix-nav.js?v=20260630es"></script>
 </body>
 </html>

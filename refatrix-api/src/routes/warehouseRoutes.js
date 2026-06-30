@@ -426,4 +426,78 @@ export default async function warehouseRoutes(app) {
     return { count: out.length, items: out };
   });
 
+
+  // ================= 출고-2: 라벨 + 통합 패킹리스트 =================
+  //   출고 대기 = packed(3조건) + 매출전환(invoice) + 실제 SAT(번호 있고 TMP- 아님).
+  // ---------- 출고 대기 목록 ----------
+  app.get('/api/warehouse/ship-queue', { preHandler: [authGuard, requirePage('warehouse')] }, async () => {
+    const rows = (await query(
+      `SELECT q.id, q.quote_no, q.packed_at, q.total_qty, q.sku_count, q.quote_date,
+              COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code,
+              si.sat_no, si.inv_date::text AS inv_date, si.total_mxn,
+              (SELECT COUNT(*)::int FROM packing_box pb WHERE pb.quote_id=q.id) AS box_count
+         FROM quotes q
+         LEFT JOIN customers c ON c.id=q.customer_id
+         JOIN sales_invoices si ON si.id=q.invoice_id
+        WHERE q.deleted_at IS NULL
+          AND q.packed_at IS NOT NULL
+          AND q.invoice_id IS NOT NULL
+          AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
+        ORDER BY q.packed_at DESC
+        LIMIT 200`)).rows;
+    const items = rows.map((r) => ({
+      quote_id: Number(r.id), quote_no: r.quote_no || ('#' + r.id),
+      customer: r.customer_name, customer_code: r.customer_code || null,
+      sat_no: r.sat_no, inv_date: r.inv_date,
+      box_count: Number(r.box_count) || 0,
+      total_qty: r.total_qty != null ? Number(r.total_qty) : null,
+      sku_count: r.sku_count != null ? Number(r.sku_count) : null,
+      packed_at: r.packed_at,
+    }));
+    return { count: items.length, items };
+  });
+
+  // ---------- 출고 출력 데이터(라벨/패킹리스트 공용) ----------
+  app.get('/api/warehouse/ship/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(
+      `SELECT q.id, q.quote_no, q.quote_date::text AS quote_date, q.packed_at, q.total_qty, q.sku_count, q.invoice_id,
+              COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code, c.rfc AS customer_rfc,
+              si.sat_no, si.inv_date::text AS inv_date, si.total_mxn
+         FROM quotes q
+         LEFT JOIN customers c ON c.id=q.customer_id
+         LEFT JOIN sales_invoices si ON si.id=q.invoice_id
+        WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    const realSat = q.invoice_id && q.sat_no && String(q.sat_no) !== '' && !String(q.sat_no).startsWith('TMP-');
+    if (!q.packed_at || !realSat) return reply.code(409).send({ error: 'not_shippable', note: '포장완료(3조건) + 실제 SAT 번호 등록 후 출력할 수 있습니다.' });
+
+    // 경쟁사(SYD) 매핑 — 포장목록 기준
+    const sydMap = {};
+    (await packableLines(id)).forEach((l) => { sydMap[l.product_id] = l.syd_code || ''; });
+
+    const boxes = (await query(`SELECT id, box_no FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
+    const blines = (await query(
+      `SELECT bl.box_id, bl.product_id, bl.qty, p.code AS ctr_code, p.ean
+         FROM packing_box_line bl JOIN products p ON p.id=bl.product_id
+        WHERE bl.quote_id=$1 AND bl.qty>0 ORDER BY bl.box_id, p.code`, [id])).rows;
+    let totQty = 0; const skuSet = new Set();
+    const boxOut = boxes.map((b) => {
+      const lines = blines.filter((x) => Number(x.box_id) === Number(b.id)).map((x) => {
+        totQty += Number(x.qty) || 0; skuSet.add(Number(x.product_id));
+        return { ctr_code: x.ctr_code || '', syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty) };
+      });
+      const bq = lines.reduce((a, l) => a + l.qty, 0);
+      return { box_no: b.box_no, lines, box_qty: bq, box_sku: lines.length };
+    });
+    return {
+      quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), quote_date: q.quote_date,
+      customer: q.customer_name, customer_code: q.customer_code || null, customer_rfc: q.customer_rfc || null,
+      sat_no: q.sat_no, inv_date: q.inv_date, total_mxn: q.total_mxn != null ? Number(q.total_mxn) : null,
+      packed_at: q.packed_at,
+      box_count: boxOut.length, total_qty: totQty, sku_count: skuSet.size,
+      boxes: boxOut,
+    };
+  });
+
 }
