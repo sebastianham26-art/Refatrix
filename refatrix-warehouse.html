@@ -89,6 +89,16 @@
   .scard .sbtns{display:flex;gap:8px;flex-wrap:wrap}
   .scard .sbtns button{border:none;border-radius:9px;padding:10px 14px;font-size:14px;font-weight:800;cursor:pointer}
   .scard .pl{background:#33495c;color:#fff} .scard .pk{background:#3E7D5A;color:#fff} .scard .op{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel)}
+  .lblcal{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:10px}
+  .lblcal-t{background:none;border:none;font-weight:800;font-size:14px;color:var(--steel-d);cursor:pointer;padding:4px 0}
+  .lblcal-b{margin-top:8px}
+  .lblcal-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}
+  .lblcal-b label{font-size:13px;font-weight:700;color:#3a372f;display:flex;align-items:center;gap:6px}
+  .lblcal-b input{width:78px;font-size:16px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-weight:700}
+  .lblcal-save{background:var(--steel-d);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer}
+  .lblcal-reset{background:#efece6;color:#3a372f;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
+  .lblcal-test{background:#2c2a26;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
+  .lblcal-hint{font-size:12px;color:var(--muted);line-height:1.5}
   .scard .sat.nosat{text-align:right}
   .scard .satwarn{display:inline-block;background:#fbe9e5;color:#a33b27;font-weight:800;font-size:12.5px;border-radius:999px;padding:5px 12px}
   #shipPanel .shipbtns{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -202,7 +212,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631r</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631t</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -211,6 +221,21 @@
   <div class="sec">
     <div class="sec-t"><span>출고 대기 (포장완료 · SAT 발행됨)</span><span class="cnt" id="shipCount">—</span></div>
     <div class="bznote">📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.</div>
+    <div class="lblcal">
+      <button type="button" id="lblCalToggle" class="lblcal-t">⚙ 라벨 인쇄 보정 ▴</button>
+      <div id="lblCalBody" class="lblcal-b" style="display:block">
+        <div class="lblcal-row">
+          <label>페이지 길이(mm) <input type="number" id="lblPitch" step="0.5" min="140" max="175"></label>
+          <label>위 여백(mm) <input type="number" id="lblTop" step="0.5" min="-25" max="25"></label>
+        </div>
+        <div class="lblcal-row">
+          <button type="button" id="lblCalSave" class="lblcal-save">저장</button>
+          <button type="button" id="lblCalReset" class="lblcal-reset">표준값(153 / 0)</button>
+          <button type="button" id="lblCalTest" class="lblcal-test">📐 보정용 라벨 1장 인쇄</button>
+        </div>
+        <div class="lblcal-hint">장마다 아래로 밀리면 페이지 길이를 0.5씩 줄이고, 위로 밀리면 0.5씩 늘리세요. 첫 장 위치만 어긋나면 위 여백으로 맞추세요.</div>
+      </div>
+    </div>
     <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
   </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
@@ -267,7 +292,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631r — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631t — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -337,6 +362,15 @@
     ['수량(피스)','Cantidad (pzas)'],
     ['포장중(피스)','Empacado (pzas)'],
     ['⚠ SAT 번호를 넣으세요','⚠ Ingrese el número de SAT'],
+    ['⚙ 라벨 인쇄 보정 ▾','⚙ Ajuste de etiqueta ▾'],
+    ['⚙ 라벨 인쇄 보정 ▴','⚙ Ajuste de etiqueta ▴'],
+    ['장마다 아래로 밀리면 페이지 길이를 0.5씩 줄이고, 위로 밀리면 0.5씩 늘리세요. 첫 장 위치만 어긋나면 위 여백으로 맞추세요.','Si cada etiqueta se corre hacia abajo, reduzca el largo 0.5; si hacia arriba, auméntelo 0.5. Si solo la primera está desfasada, use el margen superior.'],
+    ['페이지 길이(mm)','Largo de página (mm)'],
+    ['위 여백(mm)','Margen superior (mm)'],
+    ['📐 보정용 라벨 1장 인쇄','📐 Imprimir etiqueta de prueba'],
+    ['표준값(153 / 0)','Predeterminado (153 / 0)'],
+    ['저장됨!','¡Guardado!'],
+    ['저장','Guardar'],
     ['총 수량','Cantidad total'],
     ['불러오기 실패','Error al cargar'],
     ['불러오는 중…','Cargando…'],
@@ -566,6 +600,48 @@
       +'.tot{margin-top:4mm;font-weight:800;font-size:12pt;text-align:right}.sign{display:flex;gap:20mm;margin-top:16mm}.sb{flex:1;text-align:center;font-size:10pt}.sb .ln{border-top:1px solid #111;margin-bottom:2mm;height:14mm}'
       +'</style></head><body>'+copy('ORIGINAL \u2014 CLIENTE')+copy('COPIA \u2014 ALMAC\u00c9N')+'</body></html>';
   }
+  // ===== 라벨 인쇄 보정(페이지 길이/여백) — localStorage 저장 =====
+  function labelPitch(){ var v=parseFloat(localStorage.getItem('wh_lbl_pitch')); return (isFinite(v)&&v>=140&&v<=175)?v:153; }
+  function labelTop(){ var v=parseFloat(localStorage.getItem('wh_lbl_top')); return (isFinite(v)&&v>=-25&&v<=25)?v:0; }
+  function buildCalLabelPDF(){
+    var JS=(window.jspdf&&window.jspdf.jsPDF); if(!JS) return null;
+    var P=labelPitch(), T=labelTop(), LBL=P-3;
+    var doc=new JS({unit:'mm', format:[100,P], orientation:'portrait'});
+    doc.setDrawColor(0); doc.setLineWidth(0.4);
+    doc.rect(1, 1+T, 98, LBL-2);                 // 라벨 테두리(가장자리에 맞아야 함)
+    doc.setLineWidth(0.2); doc.line(0, LBL+T, 100, LBL+T);  // 라벨 끝선(갭 시작)
+    doc.setFont('helvetica','bold'); doc.setFontSize(12);
+    doc.text('CALIBRACIÓN', 6, 13+T);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    doc.text('pitch = '+P+' mm   top = '+T+' mm', 6, 20+T);
+    doc.text('El borde debe coincidir con el borde de la etiqueta', 6, LBL+T-4);
+    doc.setLineWidth(0.3); doc.line(50, LBL/2-8+T, 50, LBL/2+8+T); doc.line(42, LBL/2+T, 58, LBL/2+T); // 중앙 십자
+    return doc;
+  }
+  function printCalLabel(){
+    var doc=buildCalLabelPDF(); if(!doc){ alert('jsPDF 미로드'); return; }
+    try{ doc.autoPrint(); }catch(e){}
+    try{ var url=doc.output('bloburl'); var w=window.open(url,'_blank'); if(!w) alert('팝업 허용 후 다시 시도하세요.'); }
+    catch(e){ try{ doc.save('calibracion.pdf'); }catch(_){ } }
+  }
+  function initLabelCal(){
+    var pi=document.getElementById('lblPitch'), tp=document.getElementById('lblTop');
+    if(pi) pi.value=labelPitch(); if(tp) tp.value=labelTop();
+    var tg=document.getElementById('lblCalToggle'), bd=document.getElementById('lblCalBody');
+    if(tg&&bd) tg.addEventListener('click',function(){ var on=bd.style.display!=='none'; bd.style.display=on?'none':'block'; tg.textContent=(on?'⚙ 라벨 인쇄 보정 ▾':'⚙ 라벨 인쇄 보정 ▴'); if(LANG==='es') applyLang(tg.parentNode); });
+    var sv=document.getElementById('lblCalSave');
+    if(sv) sv.addEventListener('click',function(){
+      var P=parseFloat(pi.value), T=parseFloat(tp.value);
+      if(!isFinite(P)||P<140||P>175){ alert('페이지 길이는 140~175mm'); return; }
+      if(!isFinite(T)||T<-25||T>25){ alert('위 여백은 -25~25mm'); return; }
+      localStorage.setItem('wh_lbl_pitch',String(P)); localStorage.setItem('wh_lbl_top',String(T));
+      sv.textContent=(LANG==='es'?'¡Guardado!':'저장됨!'); setTimeout(function(){ sv.textContent=(LANG==='es'?'Guardar':'저장'); },1200);
+    });
+    var rs=document.getElementById('lblCalReset');
+    if(rs) rs.addEventListener('click',function(){ localStorage.setItem('wh_lbl_pitch','153'); localStorage.setItem('wh_lbl_top','0'); pi.value=153; tp.value=0; });
+    var ts=document.getElementById('lblCalTest');
+    if(ts) ts.addEventListener('click',printCalLabel);
+  }
   // 라벨 바코드 → PNG dataURL(jsPDF 삽입용)
   function labelBarcodePNG(text){
     try{ var c=document.createElement('canvas'); window.JsBarcode(c, String(text), {format:'CODE128', displayValue:true, fontSize:20, height:70, margin:4, width:3}); return c.toDataURL('image/png'); }
@@ -574,12 +650,12 @@
   // 정확히 100x150mm 라벨 PDF(물리 치수가 PDF에 내장 → 프린터 무시 없이 정확)
   function buildLabelsPDF(d){
     var JS=(window.jspdf&&window.jspdf.jsPDF); if(!JS) return null;
-    var LBL_H=150, GAP=3, PITCH=LBL_H+GAP;   // 라벨 본체 150mm + 라벨간 갭 3mm = 피치 153mm
+    var GAP=3, PITCH=labelPitch(), TADJ=labelTop(), LBL_H=PITCH-GAP;   // 페이지=피치(보정값), 내용은 라벨 본체 안
     var doc=new JS({unit:'mm', format:[100,PITCH], orientation:'portrait'});
     var W=100, M=4;
     (d.boxes||[]).forEach(function(b, idx){
       if(idx>0) doc.addPage([100,PITCH],'portrait');
-      var y=M+6;
+      var y=M+6+TADJ;
       doc.setFont('helvetica','bold'); doc.setFontSize(22);
       doc.text('CAJA '+b.box_no+' / '+d.box_count, M, y);
       doc.setFont('helvetica','normal'); doc.setFontSize(9);
@@ -935,7 +1011,7 @@
   var sbk2=$('shipBack2'); if(sbk2) sbk2.addEventListener('click',closeShip);
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
-  initLangBtn(); startI18n();
+  initLangBtn(); initLabelCal(); startI18n();
   if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>
