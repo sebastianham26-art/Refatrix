@@ -37,6 +37,13 @@ import warehouseRoutes from './routes/warehouseRoutes.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024, trustProxy: true }); // 12MB (증빙서류 5MB base64 대비) · trustProxy: Railway 프록시 뒤 실제 클라이언트 IP(X-Forwarded-For) 인식(접속 위치 추정용)
+
+  // 본문 없는 POST(예: 박스 생성)도 Content-Type: application/json 으로 오면
+  // 기본 파서가 빈 본문을 거부해 400(Bad Request)이 난다. 빈/공백 본문은 {} 로 허용.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, function (request, body, done) {
+    if (body === undefined || body === null || String(body).trim() === '') { done(null, {}); return; }
+    try { done(null, JSON.parse(body)); } catch (err) { err.statusCode = 400; done(err, undefined); }
+  });
   // 외부 화면(프로토타입)에서의 요청 허용. 프로토타입 단계에서는 모든 출처 허용 +
   // 자격증명/기기키 헤더 허용. (운영 단계에서 실제 도메인으로 좁히는 것을 권장)
   app.register(fastifyCors, {
