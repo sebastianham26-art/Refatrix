@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" translate="no" class="notranslate">
 <head>
 <meta charset="UTF-8">
+<meta name="google" content="notranslate">
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -172,7 +173,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0630h</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631a</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -218,7 +219,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0630h — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631a — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -323,9 +324,14 @@
   var confirmDelBox=null;
   function photosOf(boxId){ return PHOTOS[boxId]||[]; }
   var itemSortKey='ctr_code', itemSortDir=1;
+  var _boxSelSig='';
   function renderBoxSel(){
     var sel=$('scanBoxSel'); if(!sel||!PK) return;
     var boxes=(PK.boxes||[]).slice().sort(function(a,b){return a.box_no-b.box_no;});
+    // 옵션 구성(박스 목록·마감상태·선택) 시그니처가 같으면 다시 그리지 않음 → 재번역 깜빡임 방지
+    var sig=boxes.map(function(b){return b.box_id+':'+b.box_no+':'+(b.sealed?1:0);}).join('|')+'#'+curBox;
+    if(sig===_boxSelSig) return;
+    _boxSelSig=sig;
     sel.innerHTML = boxes.length ? boxes.map(function(b){ return '<option value="'+b.box_id+'"'+(b.box_id===curBox?' selected':'')+'>Box '+b.box_no+(b.sealed?' (마감)':'')+'</option>'; }).join('') : '<option value="">박스 없음</option>';
   }
   function renderItemsTable(){
@@ -352,7 +358,7 @@
   function renderPacking(){
     var d=PK;
     $('pHead').innerHTML='<span class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</span><span class="cu">'+esc(d.customer)+'</span>'
-      +'<span class="el" id="pEl">경과 '+fmtHoursDec(d.elapsed_biz_sec)+' \u00b7 '+fmtClock(d.elapsed_biz_sec)+'</span>';
+      +'<span class="el" id="pEl" translate="no">경과 '+fmtHoursDec(d.elapsed_biz_sec)+' \u00b7 '+fmtClock(d.elapsed_biz_sec)+'</span>';
     var pct=d.required_total? Math.round(d.scanned_total/d.required_total*100):0;
     $('pProg').innerHTML='<div class="lab">진행 <b>'+d.scanned_total+'</b> / '+d.required_total+' 피스 ('+pct+'%)</div><div class="bar"><i style="width:'+pct+'%"></i></div>';
     $('pDone').innerHTML='';
