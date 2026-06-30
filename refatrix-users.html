@@ -115,7 +115,7 @@
     <!-- 기기 접속 관리 (디렉터 전용) -->
     <div class="card" id="deviceCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">기기 접속 관리 <span id="devSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
-      <div class="hint" style="margin-top:0"><b>기기잠금</b>이 켜진 사용자는 <b>승인된 기기에서만</b> 로그인됩니다(아래 사용자 목록의 「기기」 열에서 켜기). 미승인 기기로 로그인하면 PIN이 맞아도 차단되고 여기에 <b>승인 대기</b>로 올라옵니다. 승인 시 <b>전용</b>(그 사용자만) 또는 <b>공용</b>(승인된 기기는 누구나)을 고르세요. <b>디렉터는 기기 제한을 받지 않습니다.</b></div>
+      <div class="hint" style="margin-top:0"><b>기기잠금</b>이 켜진 사용자는 <b>승인된 기기에서만</b> 로그인됩니다(아래 사용자 목록의 「기기 제한」 열에서 켜기). 미승인 기기로 로그인하면 PIN이 맞아도 차단되고 여기에 <b>승인 대기</b>로 올라옵니다. 승인 시 <b>전용</b>(그 사용자만) 또는 <b>공용</b>(승인된 기기는 누구나)을 고르세요. <b>디렉터는 기기 제한을 받지 않습니다.</b></div>
       <div id="devList"><div class="hint">불러오는 중…</div></div>
     </div>
 
@@ -455,7 +455,7 @@
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
       accountsList=d.accounts||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>기기</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>기기 제한</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
           <td class="c-id"><b class="uname">${u.name}</b></td>
           <td class="c-id">${u.login_id||'—'}</td>
@@ -480,7 +480,7 @@
             const cur=(u.account_access&&u.account_access[a.id])||'none';
             const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#ccc';
             return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="operate" ${cur==='operate'?'selected':''}>운영</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
-          <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">${u.device_locked?'잠금':'해제'}</label>`}</td>
+          <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" title="체크 = 기기 제한 켜짐(승인된 기기에서만 로그인) · 비움 = 제한 해제" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">🔒 기기 제한</label>`}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
           <td style="white-space:nowrap"><button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
         </tr>`).join('')+'</tbody></table>';
