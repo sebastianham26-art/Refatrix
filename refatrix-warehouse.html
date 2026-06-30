@@ -16,15 +16,16 @@
   .head .who{font-size:14px;color:#e7eef4;text-align:right;line-height:1.4}
   .head .who b{color:#fff;font-weight:800;font-size:16px}
   .sec{margin-top:18px}
-  .sec-t{font-size:17px;font-weight:800;color:var(--steel-d);margin:0 4px 12px;display:flex;align-items:center;justify-content:space-between}
+  .sec-t{font-size:17px;font-weight:800;color:var(--steel-d);margin:0 4px 4px;display:flex;align-items:center;justify-content:space-between}
   .sec-t .cnt{font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:2px 14px;font-size:16px}
+  .bznote{font-size:13px;color:var(--muted);font-weight:600;margin:0 4px 12px}
+  .bznote b{color:var(--steel-d)}
 
-  /* queue cards */
   .qcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;display:grid;grid-template-columns:1fr auto;gap:6px 16px;cursor:pointer;-webkit-tap-highlight-color:transparent;box-shadow:0 1px 3px rgba(0,0,0,.04)}
   .qcard:active{background:#fbf9f4}
   .qcard .no{font-size:28px;font-weight:800;line-height:1.1;grid-column:1}
   .qcard .cu{font-size:20px;font-weight:700;color:#2c2a26;grid-column:1}
-  .qcard .meta{grid-column:1;display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:2px}
+  .qcard .meta{grid-column:1;display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:2px;align-items:baseline}
   .qcard .meta .lab{font-size:13px;color:var(--muted);font-weight:600}
   .qcard .meta .val{font-size:16px;font-weight:700;color:#3a372f}
   .qcard .elap{display:inline-flex;align-items:baseline;gap:6px}
@@ -34,25 +35,22 @@
   .qcard .qbox .pcl{font-size:13px;font-weight:700;color:var(--muted);margin-top:4px}
   .badge{display:inline-block;font-size:13px;font-weight:800;border-radius:999px;padding:3px 12px;margin-left:6px}
   .b-over{color:#fff;background:var(--red)}
-  /* KPI 기준시간(포장완료 기한) 초과 = 지연 경고: 붉은 음영 + 천천히 깜빡임 */
-  @keyframes warnPulse{
-    0%,100%{ background:#fdece9; box-shadow:0 0 0 1px rgba(192,83,59,.10); }
-    50%{ background:#f8d6cf; box-shadow:0 0 0 3px rgba(192,83,59,.42); }
-  }
-  .qcard.overdue{ border-color:#dca295; animation:warnPulse 2.4s ease-in-out infinite; }
-  .qcard.overdue .no, .qcard.overdue .elap .t{ color:var(--red); }
-  .qcard.overdue .qbox .pc{ color:var(--red); }
-  @media (prefers-reduced-motion: reduce){ .qcard.overdue{ animation:none; background:#f8d6cf; } }
+  /* KPI 기준시간(포장완료 기한) 초과 = 지연: 붉은 음영 + 천천히 깜빡임 */
+  @keyframes warnPulse{0%,100%{background:#fdece9;box-shadow:0 0 0 1px rgba(192,83,59,.10)}50%{background:#f8d6cf;box-shadow:0 0 0 3px rgba(192,83,59,.42)}}
+  .qcard.overdue{border-color:#dca295;animation:warnPulse 2.4s ease-in-out infinite}
+  .qcard.overdue .no,.qcard.overdue .elap .t,.qcard.overdue .qbox .pc{color:var(--red)}
+  @media (prefers-reduced-motion: reduce){.qcard.overdue{animation:none;background:#f8d6cf}}
   .empty{background:var(--card);border:1px dashed var(--line);border-radius:var(--radius);padding:32px;text-align:center;color:var(--muted);font-size:18px;font-weight:600}
 
-  /* drilldown panel */
-  .panel{position:fixed;inset:0;background:var(--paper);z-index:60;overflow:auto;padding:16px;display:none}
-  .panel.on{display:block}
-  .panel .inner{max-width:980px;margin:0 auto}
+  /* 드릴다운: nav(z9000) 위로 올려 돌아가기 버튼이 반드시 눌리게 */
+  .panel{position:fixed;inset:0;background:var(--paper);z-index:9500;display:none}
+  .panel.on{display:flex;flex-direction:column}
+  .ptop{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:16px 16px 8px}
+  .tscroll{flex:1 1 auto;min-height:0;overflow:auto;width:100%;max-width:980px;margin:0 auto;padding:0 16px}
+  .pbottom{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:8px 16px 16px;background:var(--paper)}
   .back{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:19px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
   .back:active{background:var(--steel-d)}
-  .pbar{position:sticky;top:0;z-index:3;background:var(--paper);padding:4px 0 12px;margin-bottom:6px}
-  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin-bottom:16px}
+  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 22px;margin:12px 0 6px}
   .phead .no{font-size:22px;font-weight:800;color:var(--steel-d)}
   .phead .cu{font-size:34px;font-weight:800;line-height:1.15;margin:4px 0 12px}
   .phead .grid{display:flex;flex-wrap:wrap;gap:14px 30px}
@@ -60,21 +58,21 @@
   .phead .kv .lab{font-size:14px;color:var(--muted);font-weight:700}
   .phead .kv .val{font-size:24px;font-weight:800;color:#2c2a26;font-variant-numeric:tabular-nums}
   .phead .kv.timer .val{color:var(--steel-d);font-size:30px;letter-spacing:.5px}
+  .phead .kv.timer .off{font-size:13px;font-weight:700;color:var(--gold)}
 
-  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;table-layout:fixed}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);table-layout:fixed}
   th,td{padding:15px 12px;font-size:19px;text-align:left;border-bottom:1px solid var(--line);width:20%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  th{background:var(--steel);color:#fff;font-weight:800;cursor:pointer;user-select:none;position:sticky;top:64px;font-size:18px}
+  th{background:var(--steel);color:#fff;font-weight:800;cursor:pointer;user-select:none;position:sticky;top:0;font-size:18px;z-index:2}
   th .ar{font-size:13px;margin-left:4px;opacity:.9}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px}
   td.qty{font-weight:800;font-size:22px}
   tr:last-child td{border-bottom:none}
   tbody tr:nth-child(even){background:#faf8f3}
-  .pfoot{display:flex;justify-content:space-between;align-items:center;padding:18px 8px 6px;font-size:20px;font-weight:700}
+  .pfoot{display:flex;justify-content:space-between;align-items:center;padding:14px 8px 10px;font-size:20px;font-weight:700}
   .pfoot b{font-size:30px;font-weight:800}
-  .backbottom{margin:18px 0 8px;width:100%;justify-content:center;padding:16px}
+  .backbottom{margin-top:6px;width:100%;justify-content:center;padding:16px}
 
-  /* popup */
   .modal{position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:200;display:none;align-items:center;justify-content:center;padding:24px}
   .modal.on{display:flex}
   .mbox{background:#fff;border-radius:18px;max-width:420px;width:100%;padding:26px;box-shadow:0 16px 48px rgba(0,0,0,.32);text-align:center}
@@ -95,6 +93,7 @@
 
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
+    <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
     <div id="queue"><div class="empty">불러오는 중…</div></div>
   </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
@@ -102,10 +101,15 @@
 
 <!-- 드릴다운 패널 -->
 <div class="panel" id="panel">
-  <div class="inner">
-    <div class="pbar"><button class="back" id="backBtn">← 목록으로</button></div>
+  <div class="ptop">
+    <button class="back" id="backBtn">← 목록으로</button>
     <div class="phead" id="pHead"></div>
+    <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00</div>
+  </div>
+  <div class="tscroll">
     <table id="pTable"><thead id="pThead"></thead><tbody id="pBody"></tbody></table>
+  </div>
+  <div class="pbottom">
     <div class="pfoot"><span>총 피스</span><b id="pTotal">0</b></div>
     <button class="back backbottom" id="backBtn2">← 목록으로 돌아가기</button>
   </div>
@@ -138,11 +142,17 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function p2(n){ return (n<10?'0':'')+n; }
   function fmtDateTime(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes()); }catch(e){ return '—'; } }
-  function elapsed(iso, withSec){
-    if(!iso) return '—';
-    var ms=Date.now()-new Date(iso).getTime(); if(ms<0||isNaN(ms)) ms=0;
-    var s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
-    return withSec ? (p2(h)+':'+p2(m)+':'+p2(sec)) : (p2(h)+':'+p2(m));
+  function fmtElapsed(sec, withSec){
+    sec=Math.max(0, Math.floor(Number(sec)||0));
+    var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+    return withSec ? (p2(h)+':'+p2(m)+':'+p2(s)) : (p2(h)+':'+p2(m));
+  }
+  // 현재가 업무시간(월~금 07:30~17:00, UTC-6)인가 — 서버 규칙과 동일. 실시간 틱 on/off용.
+  function isBusinessNow(){
+    var mx=new Date(Date.now()-6*3600000);
+    var dow=mx.getUTCDay(); if(dow<1||dow>5) return false;
+    var m=mx.getUTCHours()*60+mx.getUTCMinutes();
+    return m>=450 && m<1020;
   }
 
   // ---------- 큐 ----------
@@ -165,7 +175,7 @@
         +'<div class="cu">'+esc(it.customer)+'</div>'
         +'<div class="meta">'
           +'<span><span class="lab">포장지시</span> <span class="val">'+fmtDateTime(it.printed_at)+'</span></span>'
-          +'<span class="elap"><span class="lab">경과</span> <span class="t el" data-p="'+esc(it.printed_at||'')+'">'+elapsed(it.printed_at)+'</span>'
+          +'<span class="elap"><span class="lab">경과(업무)</span> <span class="t">'+fmtElapsed(it.elapsed_biz_sec)+'</span>'
             +(it.overdue?'<span class="badge b-over">⚠ 지연 중</span>':'')+'</span>'
         +'</div>'
         +'<div class="qbox"><div class="pc">'+(it.total_qty==null?'—':it.total_qty)+'</div><div class="pcl">수량(피스)</div></div>'
@@ -173,12 +183,6 @@
     }).join('');
     Array.prototype.forEach.call(box.querySelectorAll('.qcard'),function(el){
       el.addEventListener('click',function(){ openDrill(Number(el.getAttribute('data-id'))); });
-    });
-    tickQueueElapsed();
-  }
-  function tickQueueElapsed(){
-    Array.prototype.forEach.call(document.querySelectorAll('#queue .el'),function(s){
-      s.textContent=elapsed(s.getAttribute('data-p'));
     });
   }
   function checkNew(items){
@@ -195,32 +199,33 @@
   function chime(){ try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return; var ac=new C(); var o=ac.createOscillator(),g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(0.001,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.5); o.start(); o.stop(ac.currentTime+0.5); }catch(e){} }
 
   // ---------- 드릴다운 ----------
-  var curItems=[], sortKey='ctr_code', sortDir=1, drillTimer=null, drillPrinted=null;
+  var curItems=[], sortKey='ctr_code', sortDir=1, drillTimer=null, drillSec=0;
   var COLS=[['ctr_code','CTR',false],['syd_code','SYD',false],['ean','EAN-13',false],['qty','수량',true],['rack_location','랙',false]];
   function openDrill(id){
     fetch(API+'/api/warehouse/packing-queue/'+id,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
       if(!d||d.error) return;
-      drillPrinted=d.printed_at||null;
       $('pHead').innerHTML='<div class="no">'+esc(d.quote_no||('#'+d.quote_id))+'</div>'
         +'<div class="cu">'+esc(d.customer)+'</div>'
         +'<div class="grid">'
           +'<div class="kv"><span class="lab">SKU</span><span class="val">'+d.sku_count+'종</span></div>'
           +'<div class="kv"><span class="lab">총 수량</span><span class="val">'+d.total_pieces+' 피스</span></div>'
           +'<div class="kv"><span class="lab">포장지시</span><span class="val">'+fmtDateTime(d.printed_at)+'</span></div>'
-          +'<div class="kv timer"><span class="lab">경과시간 (실시간)</span><span class="val" id="pElapsed">'+elapsed(d.printed_at,true)+'</span></div>'
+          +'<div class="kv timer"><span class="lab">경과시간 (업무, 실시간)</span><span class="val" id="pElapsed">'+fmtElapsed(d.elapsed_biz_sec,true)+'</span><span class="off" id="pOff"></span></div>'
         +'</div>';
       curItems=d.items||[]; sortKey='ctr_code'; sortDir=1;
       $('pTotal').textContent=d.total_pieces;
       renderTable();
       $('panel').classList.add('on');
-      startDrillTimer();
+      var ts=document.querySelector('.tscroll'); if(ts) ts.scrollTop=0;
+      startDrillTimer(Number(d.elapsed_biz_sec)||0);
     }).catch(function(){});
   }
-  function startDrillTimer(){
-    stopDrillTimer();
-    drillTimer=setInterval(function(){ var e=$('pElapsed'); if(e&&drillPrinted) e.textContent=elapsed(drillPrinted,true); },1000);
+  function startDrillTimer(baseSec){
+    stopDrillTimer(); drillSec=baseSec||0; paintTimer();
+    drillTimer=setInterval(function(){ if(isBusinessNow()) drillSec++; paintTimer(); },1000);
   }
   function stopDrillTimer(){ if(drillTimer){ clearInterval(drillTimer); drillTimer=null; } }
+  function paintTimer(){ var e=$('pElapsed'), o=$('pOff'); if(e) e.textContent=fmtElapsed(drillSec,true); if(o) o.textContent=isBusinessNow()?'':'업무시간 외 — 정지'; }
   function renderTable(){
     $('pThead').innerHTML='<tr>'+COLS.map(function(c){
       var ar=(sortKey===c[0])?('<span class="ar">'+(sortDir>0?'▲':'▼')+'</span>'):'';
@@ -244,8 +249,8 @@
   $('backBtn').addEventListener('click',closeDrill);
   $('backBtn2').addEventListener('click',closeDrill);
 
-  // ---------- boot + 폴링/틱 ----------
-  if(S){ loadQueue(); setInterval(loadQueue, 25000); setInterval(tickQueueElapsed, 20000); }
+  // ---------- boot + 폴링 ----------
+  if(S){ loadQueue(); setInterval(loadQueue, 25000); }
 })();
 </script>
 <script src="refatrix-nav.js?v=20260628wh1"></script>

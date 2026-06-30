@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { bizMinutes } from '../businessHours.js';
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -12,6 +13,13 @@ import { authGuard, requirePage } from '../middleware/authGuard.js';
 // =====================================================================
 export default async function warehouseRoutes(app) {
   const num = (v) => (v == null ? null : Number(v));
+  // 현재가 업무시간인가(월~금 07:30~17:00, UTC-6) — 클라가 실시간 틱을 켤지 판단용
+  function inBusinessNow() {
+    const mx = new Date(Date.now() - 6 * 3600000); // MX 벽시계를 UTC 필드로
+    const dow = mx.getUTCDay(); if (dow < 1 || dow > 5) return false;
+    const m = mx.getUTCHours() * 60 + mx.getUTCMinutes();
+    return m >= 450 && m < 1020; // 07:30 ~ 17:00
+  }
 
   // ---------- 포장 대기 목록 (오더목록처럼) ----------
   app.get('/api/warehouse/packing-queue', { preHandler: [authGuard, requirePage('warehouse')] }, async () => {
@@ -28,7 +36,7 @@ export default async function warehouseRoutes(app) {
           AND q.deleted_at IS NULL
         ORDER BY q.packing_printed_at ASC, q.id ASC`)).rows;
 
-    const now = Date.now();
+    const now = new Date();
     const items = rows.map((r) => ({
       quote_id: Number(r.id),
       quote_no: r.quote_no || null,
@@ -36,11 +44,12 @@ export default async function warehouseRoutes(app) {
       is_guest: r.customer_id == null,
       printed_at: r.packing_printed_at,
       due_at: r.packing_due_at,
-      overdue: r.packing_due_at ? (now > new Date(r.packing_due_at).getTime()) : false,
+      overdue: r.packing_due_at ? (now.getTime() > new Date(r.packing_due_at).getTime()) : false,
+      elapsed_biz_sec: r.packing_printed_at ? Math.floor(bizMinutes(r.packing_printed_at, now) * 60) : 0,
       total_qty: num(r.total_qty),
       sku_count: r.sku_count != null ? Number(r.sku_count) : null,
     }));
-    return { count: items.length, items };
+    return { count: items.length, in_business: inBusinessNow(), items };
   });
 
   // ---------- 드릴다운: 포장할 품목 (즉시재고 라인만) ----------
@@ -86,6 +95,8 @@ export default async function warehouseRoutes(app) {
       customer: q.customer_name || q.guest_name || '—',
       printed_at: q.packing_printed_at,
       due_at: q.packing_due_at,
+      elapsed_biz_sec: q.packing_printed_at ? Math.floor(bizMinutes(q.packing_printed_at, new Date()) * 60) : 0,
+      in_business: inBusinessNow(),
       sku_count: items.length,
       total_pieces: totalPieces,
       items,
