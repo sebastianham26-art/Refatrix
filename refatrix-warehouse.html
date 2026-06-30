@@ -148,6 +148,8 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function p2(n){ return (n<10?'0':'')+n; }
   function fmtDateTime(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes()); }catch(e){ return '—'; } }
+  // SLA 카드와 동일: 업무시간 → 0.1h 반올림 (예: 6.3h)
+  function fmtHoursDec(sec){ return (Math.round((Number(sec)||0)/360)/10).toFixed(1)+'h'; }
   function fmtElapsed(sec, withSec){
     sec=Math.max(0, Math.floor(Number(sec)||0));
     var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
@@ -181,14 +183,14 @@
         +'<div class="cu">'+esc(it.customer)+'</div>'
         +'<div class="meta">'
           +'<span><span class="lab">포장지시</span> <span class="val">'+fmtDateTime(it.printed_at)+'</span></span>'
-          +'<span class="elap"><span class="lab">경과(업무)</span> <span class="t">'+fmtElapsed(it.elapsed_biz_sec)+'</span>'
+          +'<span class="elap"><span class="lab">경과(업무)</span> <span class="t">'+fmtHoursDec(it.elapsed_biz_sec)+'</span>'
             +(it.overdue?'<span class="badge b-over">⚠ 지연 중</span>':'')+'</span>'
         +'</div>'
         +'<div class="qbox"><div class="pc">'+(it.total_qty==null?'—':it.total_qty)+'</div><div class="pcl">수량(피스)</div></div>'
         +'</div>';
     }).join('');
     Array.prototype.forEach.call(box.querySelectorAll('.qcard'),function(el){
-      el.addEventListener('click',function(){ openDrill(Number(el.getAttribute('data-id'))); });
+      el.addEventListener('click',function(){ if(Date.now()<suppressCard) return; openDrill(Number(el.getAttribute('data-id'))); });
     });
   }
   function checkNew(items){
@@ -216,7 +218,7 @@
           +'<div class="kv"><span class="lab">SKU</span><span class="val">'+d.sku_count+'종</span></div>'
           +'<div class="kv"><span class="lab">총 수량</span><span class="val">'+d.total_pieces+' 피스</span></div>'
           +'<div class="kv"><span class="lab">포장지시</span><span class="val">'+fmtDateTime(d.printed_at)+'</span></div>'
-          +'<div class="kv timer"><span class="lab">경과시간 (업무, 실시간)</span><span class="val" id="pElapsed">'+fmtElapsed(d.elapsed_biz_sec,true)+'</span><span class="off" id="pOff"></span></div>'
+          +'<div class="kv timer"><span class="lab">경과 · 업무시간 (SLA 동일 기준)</span><span class="val" id="pElapsedH">'+fmtHoursDec(d.elapsed_biz_sec)+'</span><span class="off" id="pOff">'+fmtElapsed(d.elapsed_biz_sec,true)+' · 실시간</span></div>'
         +'</div>';
       curItems=d.items||[]; sortKey='ctr_code'; sortDir=1;
       $('pTotal').textContent=d.total_pieces;
@@ -231,7 +233,7 @@
     drillTimer=setInterval(function(){ if(isBusinessNow()) drillSec++; paintTimer(); },1000);
   }
   function stopDrillTimer(){ if(drillTimer){ clearInterval(drillTimer); drillTimer=null; } }
-  function paintTimer(){ var e=$('pElapsed'), o=$('pOff'); if(e) e.textContent=fmtElapsed(drillSec,true); if(o) o.textContent=isBusinessNow()?'':'업무시간 외 — 정지'; }
+  function paintTimer(){ var h=$('pElapsedH'), o=$('pOff'); if(h) h.textContent=fmtHoursDec(drillSec); if(o) o.textContent=fmtElapsed(drillSec,true)+(isBusinessNow()?' · 실시간':' · 업무시간 외 정지'); }
   function renderTable(){
     $('pThead').innerHTML='<tr>'+COLS.map(function(c){
       var ar=(sortKey===c[0])?('<span class="ar">'+(sortDir>0?'▲':'▼')+'</span>'):'';
@@ -251,9 +253,12 @@
       th.addEventListener('click',function(){ var k=th.getAttribute('data-k'); if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=1; } renderTable(); });
     });
   }
-  function closeDrill(){ $('panel').classList.remove('on'); stopDrillTimer(); }
-  $('backBtn').addEventListener('click',closeDrill);
-  $('backBtn2').addEventListener('click',closeDrill);
+  var suppressCard=0;
+  function closeDrill(e){ if(e){ if(e.preventDefault)e.preventDefault(); if(e.stopPropagation)e.stopPropagation(); } $('panel').classList.remove('on'); stopDrillTimer(); suppressCard=Date.now()+700; }
+  ['backBtn','backBtn2'].forEach(function(bid){ var b=$(bid); if(!b) return;
+    b.addEventListener('click', closeDrill);
+    b.addEventListener('touchend', function(e){ e.preventDefault(); closeDrill(e); }, {passive:false});
+  });
 
   // ---------- boot + 폴링 ----------
   if(S){ loadQueue(); setInterval(loadQueue, 25000); }
