@@ -45,8 +45,8 @@
   /* 드릴다운: nav(z9000) 위로 올려 돌아가기 버튼이 반드시 눌리게 */
   .panel{position:fixed;inset:0;background:var(--paper);z-index:9500;display:none}
   .panel.on{display:flex;flex-direction:column}
-  .ptop{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:16px 16px 8px}
-  .tscroll{flex:1 1 auto;min-height:0;overflow:auto;width:100%;max-width:980px;margin:0 auto;padding:0 16px}
+  .ptop{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:16px 16px 0}
+  .tscroll{flex:1 1 auto;min-height:0;overflow:auto;width:100%;max-width:980px;margin:0 auto;padding:0 16px;scrollbar-gutter:stable}
   .pbottom{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:8px 16px 16px;background:var(--paper)}
   .back{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:19px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
   .back:active{background:var(--steel-d)}
@@ -60,15 +60,20 @@
   .phead .kv.timer .val{color:var(--steel-d);font-size:30px;letter-spacing:.5px}
   .phead .kv.timer .off{font-size:13px;font-weight:700;color:var(--gold)}
 
-  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);table-layout:fixed}
-  th,td{padding:15px 12px;font-size:19px;text-align:left;border-bottom:1px solid var(--line);width:20%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  th{background:var(--steel);color:#fff;font-weight:800;cursor:pointer;user-select:none;position:sticky;top:0;font-size:18px;z-index:2}
-  th .ar{font-size:13px;margin-left:4px;opacity:.9}
-  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-  td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px}
-  td.qty{font-weight:800;font-size:22px}
-  tr:last-child td{border-bottom:none}
-  tbody tr:nth-child(even){background:#faf8f3}
+  /* 고정 헤더 표 + 스크롤 본문 표 (둘 다 5열 균등 20%로 정렬 일치) */
+  .thfix,.tbod{width:100%;table-layout:fixed;border-collapse:collapse}
+  .thfix col,.tbod col{width:20%}
+  .thfix{background:var(--steel);border:1px solid var(--line);border-bottom:none;border-top-left-radius:10px;border-top-right-radius:10px;overflow:hidden}
+  .thfix th{padding:15px 12px;font-size:18px;text-align:left;color:#fff;font-weight:800;cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .thfix th.num{text-align:right}
+  .thfix th .ar{font-size:13px;margin-left:4px;opacity:.9}
+  .tbod{background:var(--card);border:1px solid var(--line)}
+  .tbod td{padding:15px 12px;font-size:19px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tbod td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .tbod td.ean{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px}
+  .tbod td.qty{font-weight:800;font-size:22px}
+  .tbod tr:last-child td{border-bottom:none}
+  .tbod tbody tr:nth-child(even){background:#faf8f3}
   .pfoot{display:flex;justify-content:space-between;align-items:center;padding:14px 8px 10px;font-size:20px;font-weight:700}
   .pfoot b{font-size:30px;font-weight:800}
   .backbottom{margin-top:6px;width:100%;justify-content:center;padding:16px}
@@ -105,9 +110,10 @@
     <button class="back" id="backBtn">← 목록으로</button>
     <div class="phead" id="pHead"></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00</div>
+    <table class="thfix"><colgroup><col><col><col><col><col></colgroup><thead id="pThead"></thead></table>
   </div>
   <div class="tscroll">
-    <table id="pTable"><thead id="pThead"></thead><tbody id="pBody"></tbody></table>
+    <table class="tbod"><colgroup><col><col><col><col><col></colgroup><tbody id="pBody"></tbody></table>
   </div>
   <div class="pbottom">
     <div class="pfoot"><span>총 피스</span><b id="pTotal">0</b></div>
