@@ -46,12 +46,15 @@
   .pscroll{flex:1 1 auto;min-height:0;overflow:auto;width:100%;max-width:980px;margin:0 auto;padding:0 16px 16px;scrollbar-gutter:stable}
   .back{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:19px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
   .back:active{background:var(--steel-d)}
-  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;margin:12px 0 10px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
+  .headrow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:12px 0 10px}
+  .headrow .phead{margin:0;flex:1 1 320px}
+  .headrow .prog{margin:0;flex:1 1 230px;display:flex;flex-direction:column;justify-content:center}
+  .phead{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
   .phead .no{font-size:20px;font-weight:800;color:var(--steel-d)}
   .phead .cu{font-size:26px;font-weight:800}
   .phead .el{font-size:16px;font-weight:700;color:var(--steel-d);font-variant-numeric:tabular-nums}
   /* 진행 */
-  .prog{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;margin-bottom:10px}
+  .prog{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px}
   .prog .bar{height:14px;background:#eee6d8;border-radius:999px;overflow:hidden;margin-top:8px}
   .prog .bar i{display:block;height:100%;background:var(--steel);border-radius:999px;transition:width .2s}
   .prog .lab{font-size:15px;font-weight:700}
@@ -191,7 +194,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631h</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631i</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -222,8 +225,10 @@
 <div class="panel" id="panel">
   <div class="ptop">
     <button class="back" id="backBtn">← 목록으로</button>
-    <div class="phead" id="pHead"></div>
-    <div class="prog" id="pProg"></div>
+    <div class="headrow">
+      <div class="phead" id="pHead"></div>
+      <div class="prog" id="pProg"></div>
+    </div>
     <div id="pDone"></div>
     <div class="scanbar">
       <div class="scanrow">
@@ -254,7 +259,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631h — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631i — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
