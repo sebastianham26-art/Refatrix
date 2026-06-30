@@ -81,7 +81,7 @@
     <div class="card" id="presenceCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">접속 현황 <span id="presSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
       <div id="presList"><div class="hint">불러오는 중…</div></div>
-      <div style="display:flex;align-items:center;gap:10px;margin:14px 0 6px"><span style="font-size:12px;font-weight:800;color:#666">접속 위치 (IP 추정)</span><button class="btn sm" id="mapBig" type="button" style="padding:3px 10px;font-size:12px">⛶ 크게</button></div>
+      <div style="display:flex;align-items:center;gap:10px;margin:14px 0 6px"><span style="font-size:12px;font-weight:800;color:#666">접속 위치 (IP 추정)</span><button class="btn sm" id="mapFit" type="button" style="padding:3px 10px;font-size:12px">📍 핀에 맞추기</button><button class="btn sm" id="mapBig" type="button" style="padding:3px 10px;font-size:12px">⛶ 크게</button></div>
       <div id="presMap" style="height:520px;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;background:#eef1ef"></div>
       <div id="presMapLegend" class="hint" style="margin-top:5px"></div>
       <div class="hint" style="margin-top:3px">IP 기반 도시 단위 추정 · 모바일망/VPN은 부정확할 수 있음. 같은 도시는 한 핀에 묶어 표시.</div>
@@ -294,6 +294,8 @@
       window.__presMap=L.map(el,{scrollWheelZoom:false,zoomControl:true}).setView([23.6,-102.5],5);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(window.__presMap);
       window.__presLayer=L.layerGroup().addTo(window.__presMap);
+      // 사용자가 직접 줌/이동하면 자동 맞춤을 영구 중지(프로그램 맞춤은 __presProgrammatic 로 제외)
+      window.__presMap.on('zoomstart movestart', function(){ if(!window.__presProgrammatic) window.__presUserZoom=true; });
     }
     const map=window.__presMap, lyr=window.__presLayer; lyr.clearLayers();
     const geo=(items||[]).filter(u=>u.geo_lat!=null&&u.geo_lng!=null);
@@ -326,8 +328,18 @@
     });
     if(lg) lg.innerHTML='핀 색 = 사용자 고유색 · 실선=GPS, 점선=IP추정 · 초록 테두리=접속중 · 클릭=상세 · 표시 '+pins+'명';
     window.__presBounds=bounds;
-    try{ map.fitBounds(bounds,{padding:[30,30],maxZoom:11}); }catch(e){}
+    // 최초 1회(또는 사용자가 아직 줌/이동하지 않았을 때)만 자동 맞춤 — 이후 25초 폴링 갱신은 줌·위치 유지
+    if(!window.__presFitted && !window.__presUserZoom){ presFit(false); window.__presFitted=true; }
     setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60);
+  }
+  // 핀 범위로 맞춤. force=true(버튼)면 사용자 줌 여부와 무관하게 강제. 프로그램 맞춤은 자동중지 플래그에서 제외.
+  function presFit(force){
+    const map=window.__presMap, b=window.__presBounds;
+    if(!map || !b || !b.length) return;
+    window.__presProgrammatic=true;
+    try{ map.fitBounds(b,{padding:[30,30],maxZoom:11}); }catch(e){}
+    if(force){ window.__presUserZoom=false; }   // 버튼으로 재정렬하면 다시 손대기 전까지 기준 리셋
+    setTimeout(()=>{ window.__presProgrammatic=false; },400);
   }
   // 지도 크게 보기 토글 (전체화면 오버레이) — 야외/모바일에서 보기 편하게
   let __mapBig=false;
@@ -344,7 +356,7 @@
       if(btn){ btn.textContent='\u26F6 크게'; btn.style.position=''; btn.style.top=btn.style.right=''; btn.style.zIndex=''; }
       if(window.__presMap) window.__presMap.scrollWheelZoom.disable();
     }
-    setTimeout(()=>{ try{ if(window.__presMap){ window.__presMap.invalidateSize(); if(window.__presBounds&&window.__presBounds.length) window.__presMap.fitBounds(window.__presBounds,{padding:[30,30],maxZoom:12}); } }catch(e){} },220);
+    setTimeout(()=>{ try{ if(window.__presMap){ window.__presMap.invalidateSize(); } }catch(e){} },220);
   }
 
   // ===== 로그인 타임라인 (일자별) =====
@@ -440,6 +452,7 @@
   }
   function initTimeline(){
     const mb=$('mapBig'); if(mb&&!mb.__bound){ mb.__bound=1; mb.addEventListener('click', toggleMapBig); }
+    const mf=$('mapFit'); if(mf&&!mf.__bound){ mf.__bound=1; mf.addEventListener('click', ()=>presFit(true)); }
     const di=$('tlDate'); if(di&&!di.value) di.value=tlTodayStr();
     if(!tlBound){
       if(di) di.addEventListener('change', loadTimeline);
