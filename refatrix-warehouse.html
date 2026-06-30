@@ -263,7 +263,7 @@
   }
 
   function postJSON(url, body){
-    return fetch(url,{method:'POST',headers:JH,body:body?JSON.stringify(body):undefined})
+    return fetch(url,{method:'POST',headers:JH,body:body?JSON.stringify(body):'{}'})
       .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {status:r.status, ok:r.ok, body:j||{}}; }); });
   }
   function failMsg(o){
