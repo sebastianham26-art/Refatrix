@@ -465,6 +465,72 @@
   // 탭으로 돌아오면 즉시 한 번 더 확인(디렉터)
   document.addEventListener('visibilitychange', function(){ if(!document.hidden && session && session.user && session.user.role==='director'){ checkDeleteApprovals(); } });
 
+  // ===== 기기 접속 승인 — 디렉터 즉시 알림(폴링 + 팝업 + 알림음) =====
+  var __devPendSeen=null, __devPollTimer=null;
+  function __loadDevSeen(){
+    if(__devPendSeen) return __devPendSeen;
+    __devPendSeen=new Set();
+    try{ var raw=sessionStorage.getItem('dev_pend_seen'); if(raw){ JSON.parse(raw).forEach(function(x){ __devPendSeen.add(Number(x)); }); } }catch(e){}
+    return __devPendSeen;
+  }
+  function __saveDevSeen(){ try{ sessionStorage.setItem('dev_pend_seen', JSON.stringify(Array.from(__loadDevSeen()))); }catch(e){} }
+  function renderDevApprList(items){
+    $('devApprMsg').innerHTML='승인 대기 중인 <b>기기 접속 요청</b>이 <b>'+items.length+'건</b> 있습니다. 아래에서 바로 승인하거나, 사용자 관리 화면에서 상세를 확인하세요.';
+    $('devApprList').innerHTML=items.map(function(r){
+      return '<div style="padding:11px 13px;border-bottom:1px solid var(--line)">'
+        +'<div><b>'+escp(r.name||'')+'</b>'+(r.dept?' <span style="color:var(--muted);font-size:11.5px">'+escp(r.dept)+'</span>':'')+' <span style="color:var(--muted);font-size:11.5px">미승인 기기에서 로그인 시도</span></div>'
+        +(r.label?'<div style="color:var(--muted);font-size:12px;margin-top:2px">기기: '+escp(r.label)+'</div>':'')
+        +'<div style="display:flex;gap:6px;margin-top:8px">'
+        +'<button onclick="approveDevFromPopup('+r.id+',false)" style="border:none;background:var(--brand);color:#fff;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">승인 · 전용</button>'
+        +'<button onclick="approveDevFromPopup('+r.id+',true)" style="border:1px solid var(--brand);background:#fff;color:var(--brand);border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">승인 · 공용</button>'
+        +'</div>'
+        +'<div style="color:var(--muted);font-size:11px;margin-top:5px">전용=이 사용자만 / 공용=승인된 기기는 누구나</div>'
+        +'</div>';
+    }).join('');
+  }
+  async function checkDeviceApprovals(opts){
+    if(!(session.user && session.user.role==='director')) return;
+    var silent=opts&&opts.silent;
+    try{
+      var d=await fetch(session.api+'/api/devices/pending',{headers:auth()}).then(function(r){return r.json();});
+      var items=(d&&d.pending)||[];
+      if(!items.length){
+        $('devApprModal').style.display='none';
+        try{ sessionStorage.removeItem('dev_appr_dismissed'); }catch(e){}
+        __devPendSeen=new Set(); __saveDevSeen();
+        return;
+      }
+      renderDevApprList(items);
+      var seen=__loadDevSeen();
+      var newItems=items.filter(function(x){ return !seen.has(Number(x.id)); });
+      if(newItems.length){
+        // 신규 기기 요청 발생 → 강제 팝업 + 알림음(임시닫기 무시)
+        newItems.forEach(function(x){ seen.add(Number(x.id)); }); __saveDevSeen();
+        try{ sessionStorage.removeItem('dev_appr_dismissed'); }catch(e){}
+        $('devApprModal').style.display='flex';
+        if(!silent) playAlertSound();
+      }else{
+        var dis=false; try{ dis=sessionStorage.getItem('dev_appr_dismissed')==='1'; }catch(e){}
+        $('devApprModal').style.display = dis ? 'none' : 'flex';
+      }
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  function startDevicePolling(){
+    if(!(session.user && session.user.role==='director')) return;
+    if(__devPollTimer){ clearInterval(__devPollTimer); __devPollTimer=null; }
+    __devPollTimer=setInterval(function(){ checkDeviceApprovals(); }, 25000); // 25초마다 즉시 감지
+  }
+  async function approveDevFromPopup(id, shared){
+    try{
+      var res=await fetch(session.api+'/api/devices/'+id+'/approve',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({shared:!!shared})});
+      var d=await res.json(); if(!res.ok||d.error){ alert('승인 실패: '+(d.error||res.status)); return; }
+    }catch(e){ alert('서버 연결 실패'); return; }
+    try{ __loadDevSeen().delete(Number(id)); __saveDevSeen(); }catch(e){}
+    checkDeviceApprovals({silent:true});
+  }
+  function dismissDevAppr(){ try{ sessionStorage.setItem('dev_appr_dismissed','1'); }catch(e){} $('devApprModal').style.display='none'; }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && session && session.user && session.user.role==='director'){ checkDeviceApprovals(); } });
+
   // 로그인 공지 팝업 — 나에게 해당되는 '미확인 + 팝업' 공지를 띄움.
   // "확인"을 누르면 서버에 읽음(notice_reads) 기록 → 다음 로그인부터 안 뜸.
   let __popupNoticeIds=[];
@@ -570,6 +636,7 @@
       try{ sessionStorage.removeItem('const_nag_dismissed'); }catch(e){}
       try{ sessionStorage.removeItem('appr_nag_dismissed'); }catch(e){}
       try{ sessionStorage.removeItem('del_appr_dismissed'); sessionStorage.removeItem('del_pend_seen'); }catch(e){}
+      try{ sessionStorage.removeItem('dev_appr_dismissed'); sessionStorage.removeItem('dev_pend_seen'); }catch(e){}
       ensureAudio(); // 로그인 클릭(사용자 제스처) 시점에 오디오 컨텍스트 활성화 → 이후 알림음 재생 가능
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
@@ -582,7 +649,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkNoticePopup();checkCalendarPopup();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkDeviceApprovals();startDevicePolling();checkNoticePopup();checkCalendarPopup();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -1042,6 +1109,23 @@
     <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
       <button onclick="dismissDelAppr()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
       <button onclick="goScreen('quotelist')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">견적관리로 가기 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 기기 접속 승인 팝업(디렉터) -->
+<div id="devApprModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:216;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">🔒 기기 접속 — 승인 요청</div>
+    </div>
+    <div style="padding:14px 20px">
+      <div id="devApprMsg" style="font-size:13.5px;color:var(--ink);line-height:1.6;margin-bottom:10px"></div>
+      <div id="devApprList" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    </div>
+    <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissDevAppr()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
+      <button onclick="goScreen('users')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">사용자 관리로 가기 →</button>
     </div>
   </div>
 </div>
