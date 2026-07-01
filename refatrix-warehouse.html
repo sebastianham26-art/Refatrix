@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632b</title>
+<title>Refatrix · 창고 포장 · build 0632c</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -292,7 +292,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632b — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632c — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -360,6 +360,7 @@
     ['+ 새 박스','＋ Nueva caja'],
     ['박스 현황','Estado de cajas'],
     ['담을 박스로','Usar esta caja'],
+    ['📷 ＋ 사진','📷 ＋ Foto'],
     ['담을 박스:','Caja destino:'],
     ['← 출고 목록','← Cola de salida'],
     ['← 목록으로','← A la lista'],
@@ -496,7 +497,7 @@
     }).catch(function(){ $('queue').innerHTML='<div class="empty">목록을 불러오지 못했습니다.</div>'; });
   }
   // ===================== 출고-2: 목록 · 상세 · 출력 =====================
-  var SHIP=null;
+  var SHIP=null, SHIP_PHOTOS={}, PHOTO_MODE='packing';
   function loadShipQueue(){
     fetch(API+'/api/warehouse/ship-queue?status='+SHIP_STATUS,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
       var items=(d&&d.items)||[]; var c=$('shipCount'); if(c) c.textContent=items.length; renderShipQueue(items, SHIP_STATUS);
@@ -558,16 +559,30 @@
   function fetchShip(id){ return fetch(API+'/api/warehouse/ship/'+id,{headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, body:j||{}}; }); }); }
   function openShip(id){
     fetchShip(id).then(function(o){ if(!o.ok){ alert((o.body&&o.body.note)||'출력 불가'); return; } var d=o.body; SHIP=d;
-      $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' · 박스 '+d.box_count+' · '+d.total_qty+'피스</span>';
-      var hint='<div class="lblhint">\ud83d\udda8 라벨은 박스마다 한 장씩 인쇄하면 가장 정확합니다 (밀림 없음)</div>';
-      $('shipBody').innerHTML=hint+d.boxes.map(function(b){
-        var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
-        return '<div class="sbox"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스 <button class="boxlbl" data-box="'+b.box_no+'">\ud83d\udce6 이 박스 라벨 인쇄</button></div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
-      }).join('');
-      Array.prototype.forEach.call($('shipBody').querySelectorAll('.boxlbl'),function(btn){ btn.addEventListener('click',function(){ printBoxLabel(Number(btn.getAttribute('data-box'))); }); });
-      $('shipPanel').classList.add('on');
+      fetch(API+'/api/warehouse/packing/'+id+'/photos',{headers:AUTH}).then(function(r){return r.json();}).then(function(pd){
+        SHIP_PHOTOS={}; (((pd&&pd.photos)||[])).forEach(function(pp){ (SHIP_PHOTOS[pp.box_id]=SHIP_PHOTOS[pp.box_id]||[]).push(pp); });
+        renderShipDetail(d);
+      }).catch(function(){ SHIP_PHOTOS={}; renderShipDetail(d); });
     }).catch(function(){ alert('불러오기 실패(통신)'); });
   }
+  function renderShipDetail(d){
+    $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' \u00b7 박스 '+d.box_count+' \u00b7 '+d.total_qty+'피스</span>';
+    var hint='<div class="lblhint">\ud83d\udda8 라벨은 박스마다 한 장씩 인쇄하면 가장 정확합니다 (밀림 없음)</div>';
+    $('shipBody').innerHTML=hint+d.boxes.map(function(b){
+      var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+      var ph=(SHIP_PHOTOS[b.box_id]||[]);
+      var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="spx" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
+      var photos='<div class="photos">'+thumbs+'<button class="saddphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'+(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
+      return '<div class="sbox"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스 <button class="boxlbl" data-box="'+b.box_no+'">\ud83d\udce6 이 박스 라벨 인쇄</button></div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table>'+photos+'</div>';
+    }).join('');
+    Array.prototype.forEach.call($('shipBody').querySelectorAll('.boxlbl'),function(btn){ btn.addEventListener('click',function(){ printBoxLabel(Number(btn.getAttribute('data-box'))); }); });
+    Array.prototype.forEach.call($('shipBody').querySelectorAll('.saddphoto'),function(btn){ btn.addEventListener('click',function(){ shipTriggerPhoto(Number(btn.getAttribute('data-box'))); }); });
+    Array.prototype.forEach.call($('shipBody').querySelectorAll('.spx'),function(btn){ btn.addEventListener('click',function(){ shipRemovePhoto(Number(btn.getAttribute('data-photo'))); }); });
+    Array.prototype.forEach.call($('shipBody').querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
+    $('shipPanel').classList.add('on');
+  }
+  function shipTriggerPhoto(boxId){ PHOTO_MODE='ship'; pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
+  function shipRemovePhoto(photoId){ if(!SHIP) return; postJSON(API+'/api/warehouse/packing/'+SHIP.quote_id+'/photo/'+photoId+'/remove').then(function(o){ if(o.ok){ openShip(SHIP.quote_id); } else alert(failMsg(o)); }); }
   function closeShip(){ $('shipPanel').classList.remove('on'); loadShipQueue(); }
   // 바코드 SVG(메인에서 생성 → 인쇄창에 정적 삽입)
   function barcodeSVG(text){
@@ -1075,7 +1090,7 @@
   }
   // 사진 업로드(리사이즈 후) / 삭제 / 확대
   var pendingPhotoBox=null;
-  function triggerPhoto(boxId){ pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
+  function triggerPhoto(boxId){ PHOTO_MODE='packing'; pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
   function resizeImage(file,maxDim,q){ return new Promise(function(res){ try{ var img=new Image(); var url=URL.createObjectURL(file); img.onload=function(){ var w=img.width,h=img.height,s=Math.min(1,maxDim/Math.max(w,h)); var cw=Math.max(1,Math.round(w*s)),ch=Math.max(1,Math.round(h*s)); var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch); try{URL.revokeObjectURL(url);}catch(e){} res(cv.toDataURL('image/jpeg',q)); }; img.onerror=function(){ res(null); }; img.src=url; }catch(e){ res(null); } }); }
   function deleteBox(boxId){
     postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/box/'+boxId+'/remove').then(function(o){
@@ -1085,10 +1100,12 @@
   }
   function removePhoto(photoId){ postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/photo/'+photoId+'/remove').then(function(o){ if(o.ok){ feedback('사진 삭제됨','idle'); loadPacking(PK.quote_id,false); } else feedback(failMsg(o),'err'); }); }
   function openLight(src){ var li=$('lightImg'); if(li){ li.src=src; } $('lightbox').style.display='flex'; }
-  var fi0=$('photoInput'); if(fi0){ fi0.addEventListener('change',function(){ var f=this.files&&this.files[0]; if(!f||pendingPhotoBox==null) return; feedback('사진 업로드 중\u2026','idle');
-    resizeImage(f,1600,0.72).then(function(dataUrl){ if(!dataUrl){ feedback('이미지 처리 실패','err'); return; }
-      postJSON(API+'/api/warehouse/packing/'+PK.quote_id+'/box/'+pendingPhotoBox+'/photo',{image_data:dataUrl}).then(function(o){
-        if(o.ok){ feedback('사진 1장 추가됨','ok'); loadPacking(PK.quote_id,false); } else feedback(failMsg(o),'err');
+  var fi0=$('photoInput'); if(fi0){ fi0.addEventListener('change',function(){ var f=this.files&&this.files[0]; if(!f||pendingPhotoBox==null) return;
+    var ship=(PHOTO_MODE==='ship'); var qid=ship?(SHIP&&SHIP.quote_id):(PK&&PK.quote_id); if(qid==null) return;
+    if(!ship) feedback('사진 업로드 중\u2026','idle');
+    resizeImage(f,1600,0.72).then(function(dataUrl){ if(!dataUrl){ ship?alert('이미지 처리 실패'):feedback('이미지 처리 실패','err'); return; }
+      postJSON(API+'/api/warehouse/packing/'+qid+'/box/'+pendingPhotoBox+'/photo',{image_data:dataUrl}).then(function(o){
+        if(o.ok){ if(ship){ openShip(qid); } else { feedback('사진 1장 추가됨','ok'); loadPacking(qid,false); } } else { ship?alert(failMsg(o)):feedback(failMsg(o),'err'); }
       });
     }); }); }
   var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);

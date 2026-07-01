@@ -507,7 +507,7 @@ export default async function warehouseRoutes(app) {
         return { ctr_code: x.ctr_code || '', syd_code: sydMap[Number(x.product_id)] || '', ean: x.ean || '', qty: Number(x.qty) };
       });
       const bq = lines.reduce((a, l) => a + l.qty, 0);
-      return { box_no: b.box_no, lines, box_qty: bq, box_sku: lines.length };
+      return { box_id: Number(b.id), box_no: b.box_no, lines, box_qty: bq, box_sku: lines.length };
     });
     return {
       quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), quote_date: q.quote_date,
