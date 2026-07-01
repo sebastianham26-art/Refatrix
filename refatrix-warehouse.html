@@ -221,7 +221,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631y</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631z</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -230,21 +230,6 @@
   <div class="sec">
     <div class="sec-t"><span>출고 대기 (포장완료 · SAT 발행됨)</span><span class="cnt" id="shipCount">—</span></div>
     <div class="bznote">📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.</div>
-    <div class="lblcal">
-      <button type="button" id="lblCalToggle" class="lblcal-t">⚙ 라벨 인쇄 보정 ▴</button>
-      <div id="lblCalBody" class="lblcal-b" style="display:block">
-        <div class="lblcal-row">
-          <label>페이지 길이(mm) <input type="number" id="lblPitch" step="0.5" min="140" max="175"></label>
-          <label>위 여백(mm) <input type="number" id="lblTop" step="0.5" min="-25" max="25"></label>
-        </div>
-        <div class="lblcal-row">
-          <button type="button" id="lblCalSave" class="lblcal-save">저장</button>
-          <button type="button" id="lblCalReset" class="lblcal-reset">표준값(153 / 0)</button>
-          <button type="button" id="lblCalTest" class="lblcal-test">📐 보정용 라벨 1장 인쇄</button>
-        </div>
-        <div class="lblcal-hint">장마다 아래로 밀리면 페이지 길이를 0.5씩 줄이고, 위로 밀리면 0.5씩 늘리세요. 첫 장 위치만 어긋나면 위 여백으로 맞추세요.</div>
-      </div>
-    </div>
     <div class="shiptabs"><button type="button" class="shiptab on" data-st="pending">대기중</button><button type="button" class="shiptab" data-st="shipped">출고완료 내역</button></div>
     <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
   </div>
@@ -302,7 +287,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631y — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631z — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -1093,7 +1078,7 @@
   var sbk2=$('shipBack2'); if(sbk2) sbk2.addEventListener('click',closeShip);
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
-  initLangBtn(); initLabelCal(); initShipTabs(); startI18n();
+  initLangBtn(); initShipTabs(); startI18n();
   if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>
