@@ -34,9 +34,11 @@ import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
 import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
 import processKpiRoutes from './routes/processKpiRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
+import { installPerfMonitor } from './perfMonitor.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024, trustProxy: true }); // 12MB (증빙서류 5MB base64 대비) · trustProxy: Railway 프록시 뒤 실제 클라이언트 IP(X-Forwarded-For) 인식(접속 위치 추정용)
+  installPerfMonitor(app); // 진단: 이벤트 루프 지연 + 느린 요청 로깅(부작용 없음)
 
   // 본문 없는 POST(예: 박스 생성)도 Content-Type: application/json 으로 오면
   // 기본 파서가 빈 본문을 거부해 400(Bad Request)이 난다. 빈/공백 본문은 {} 로 허용.
