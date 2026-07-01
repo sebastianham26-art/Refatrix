@@ -130,7 +130,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출총이익 · SKU별</div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출총이익 · SKU별 / 고객별</div></div>
     <a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
@@ -147,11 +147,23 @@
       <div class="hint">매출총이익 화면은 <b>디렉터 전용</b>입니다. 원가·매출총이익이 노출되므로 다른 역할에는 표시되지 않습니다.</div></div>
 
     <div id="gpSection" class="hidden">
-      <!-- 요약 + 기간 -->
-      <div class="card">
-        <div class="card-h">매출총이익 4단계 요약 <span class="src">매출원가는 판매 시점 동결 스냅샷 · ex-IVA 매출 기준</span>
+      <!-- 보기 전환(SKU별/고객별) + 기간(공통) -->
+      <div class="card" id="viewBar">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span class="seg" id="viewSeg">
+            <button data-view="sku" class="on">SKU별</button>
+            <button data-view="cust">고객별</button>
+          </span>
+          <span class="hint" id="viewHint" style="margin:0">제품(SKU) 단위 매출총이익</span>
           <span style="margin-left:auto"><span class="seg" id="yearSeg"></span></span>
         </div>
+      </div>
+
+      <!-- ══ SKU별 뷰 ══ -->
+      <div id="skuView">
+      <!-- 요약 -->
+      <div class="card">
+        <div class="card-h">매출총이익 4단계 요약 <span class="src">매출원가는 판매 시점 동결 스냅샷 · ex-IVA 매출 기준</span></div>
         <div class="tiers" id="tierCards"></div>
         <div class="totline" id="totLine"></div>
         <div class="hint" style="margin-top:8px">카드를 클릭하면 SKU별 매출총이익률 곡선(높은 이익 → 낮은 이익, 우하향)이 열립니다. <b style="color:var(--gold)">★ = 파레토 상위 20%</b> — 매출총이익 금액 기준 상위 20% SKU(전체 이익의 대부분을 차지하는 핵심 소수).</div>
@@ -178,7 +190,36 @@
           <div id="listResult"></div>
         </div>
       </div>
-    </div>
+      </div><!-- /skuView -->
+
+      <!-- ══ 고객별 뷰 ══ -->
+      <div id="custView" class="hidden">
+        <!-- 고객별 4단계 요약 -->
+        <div class="card">
+          <div class="card-h">고객별 매출총이익 4단계 요약 <span class="src">고객이 산 모든 제품 합산 · 매출원가는 판매 시점 동결 스냅샷 · ex-IVA</span></div>
+          <div class="tiers" id="custTierCards"></div>
+          <div class="totline" id="custTotLine"></div>
+          <div class="hint" style="margin-top:8px">각 카드는 <b>고객의 전체 매출총이익률</b> 기준으로 분류한 <b>거래처 수</b>입니다. 아래 목록에서 고객을 클릭하면 그 고객이 구매한 <b>SKU별 매출총이익 내역</b>이 펼쳐집니다. <b style="color:var(--gold)">★ = 파레토 상위 20% 고객</b>(매출총이익 금액 기준).</div>
+        </div>
+
+        <!-- 고객 목록 -->
+        <div class="card">
+          <div class="card-h">고객 목록 (거래 고객) <span class="src" id="custPeriodLbl"></span></div>
+          <div class="gpcards" id="custGpCards">
+            <div class="gpc rev"><div class="lab">거래 고객 수</div><div class="val" id="custCntV">—</div><div class="sub" id="custCntSub">판매 기록이 있는 고객</div></div>
+            <div class="gpc cogs"><div class="lab">총매출액 <span class="note">(IVA 불포함)</span></div><div class="val" id="custRevV">—</div><div class="sub">선택 기간 · 전체 고객 합계</div></div>
+            <div class="gpc mgn"><div class="lab">매출총이익률</div><div class="val" id="custMgnV">—</div><div class="sub">(총매출 − 총매출원가) ÷ 총매출</div></div>
+          </div>
+          <div class="listhead searchbar">
+            <input id="custQ" type="text" placeholder="고객명 검색">
+            <button class="btn sm" id="custSearchBtn">검색</button>
+            <button class="btn ghost sm" id="custClearBtn">해제</button>
+            <span class="hint" id="custMeta"></span>
+          </div>
+          <div id="custResult"></div>
+        </div>
+      </div><!-- /custView -->
+    </div><!-- /gpSection -->
     <div class="msg" id="errMsg"></div>
   </div>
 </div>
@@ -214,6 +255,11 @@
   let openDrill=new Set(), drillCache={};   // 자재내역 행 드릴다운(고객별 내역) 상태
   let chartScope='all', chartTier=null;
   let chartPts=[], chartW=0, chartH=0;
+  // ── 고객별 뷰 상태 ──
+  let curView='sku';
+  let CUST=null;               // 고객별 서버 응답 캐시
+  let custSort='revenue', custDir='desc', custQ='';
+  let custOpen=new Set(), custCache={};      // 고객 행 드릴다운(SKU별 내역) 상태
 
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -297,8 +343,25 @@
       '<button class="'+(year===''?'on':'')+'" onclick="pickYear(\'\')">전체</button>'
       +years.map(y=>'<button class="'+(String(y)===year?'on':'')+'" onclick="pickYear(\''+y+'\')">'+y+'</button>').join('');
   }
-  function pickYear(y){ year=String(y); renderYearSeg(); load(); }
+  function pickYear(y){
+    year=String(y); renderYearSeg();
+    // 기간이 바뀌면 두 뷰 캐시를 모두 무효화하고, 활성 뷰만 즉시 재로딩(다른 뷰는 전환 시 로딩).
+    DATA=null; openDrill.clear(); drillCache={};
+    CUST=null; custOpen.clear(); custCache={};
+    if(curView==='cust') loadCust(); else load();
+  }
   window.pickYear=pickYear;
+
+  function pickView(v){
+    curView=v;
+    $('viewSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-view')===v));
+    $('skuView').classList.toggle('hidden', v!=='sku');
+    $('custView').classList.toggle('hidden', v!=='cust');
+    $('viewHint').textContent = v==='cust' ? '고객(거래처) 단위 매출총이익' : '제품(SKU) 단위 매출총이익';
+    if(v==='sku' && DATA===null) load();
+    if(v==='cust' && CUST===null) loadCust();
+  }
+  window.pickView=pickView;
 
   async function initApp(){
     // 접근 제어는 백엔드 requirePage('grossprofit')가 담당. 권한 없으면 load()에서 403 → 차단 카드.
@@ -364,6 +427,157 @@
     if($('gpcRev'))  $('gpcRev').innerHTML ='<span class="cur">MX$</span>'+fmt(t.revenue);
     if($('gpcCogs')) $('gpcCogs').innerHTML='<span class="cur">MX$</span>'+fmt(t.cogs);
     if($('gpcMgn'))  $('gpcMgn').textContent=pct(t.margin_pct);
+  }
+
+  // ════════════════════════════ 고객별 뷰 ════════════════════════════
+  async function loadCust(){
+    const err=$('errMsg'); err.className='msg';
+    try{
+      let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const d=await fetch(session.api+'/api/gross-profit/by-customer'+qs,{headers:auth()}).then(r=>r.json());
+      if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
+      if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
+      CUST=d; custOpen.clear(); custCache={};
+      renderCustTiers(); renderCustTotals(); renderCustCards(); renderCustList();
+    }catch(e){ err.className='msg err'; err.textContent='서버에 연결할 수 없습니다.'; }
+  }
+  function renderCustTiers(){
+    const s=CUST.summary||{};
+    $('custTierCards').innerHTML=TIERS.map(t=>{
+      const n=s[t.key]||0;
+      return '<div class="tier '+t.key+'">'
+        +'<div class="lab"><span class="swatch"></span>'+t.label+' <span style="color:var(--muted);font-weight:600">· '+TIER_DESC[t.key]+'</span></div>'
+        +'<div class="cnt">'+n+'<span class="unit">개 거래처</span></div></div>';
+    }).join('');
+  }
+  function renderCustTotals(){
+    const t=CUST.totals||{}; const pr=CUST.pareto||{};
+    let h='거래 고객 <b>'+(CUST.cust_count||0)+'</b>개처'
+      +' · 총매출 <span style="font-size:.85em;color:var(--muted)">(IVA 불포함)</span> <b>MX$'+fmt(t.revenue)+'</b>'
+      +' · 총매출원가 <b>MX$'+fmt(t.cogs)+'</b>'
+      +' · 총매출총이익 <b>MX$'+fmt(t.profit)+'</b>'
+      +' · 전체 이익률 <b>'+pct(t.margin_pct)+'</b>';
+    if(pr.count){
+      h+='<br><span style="color:var(--gold)">★ 파레토 상위 20% — 매출총이익 금액 상위 <b>'+pr.count+'</b>개 고객'
+        +'('+(pr.sku_total?Math.round(pr.count/pr.sku_total*100):20)+'%)가 '
+        +'전체 매출총이익의 <b>'+(pr.share_pct==null?'—':Number(pr.share_pct).toFixed(1)+'%')+'</b>를 차지'
+        +(pr.share_pct!=null&&pr.share_pct>100?' (손실 고객이 있어 100% 초과)':'')+'.</span>';
+    }
+    $('custTotLine').innerHTML=h;
+    $('custPeriodLbl').textContent=year?(year+'년'):'전체 기간';
+  }
+  function renderCustCards(){
+    const t=CUST.totals||{};
+    $('custCntV').textContent=(CUST.cust_count||0);
+    $('custRevV').innerHTML='<span class="cur">MX$</span>'+fmt(t.revenue);
+    $('custMgnV').textContent=pct(t.margin_pct);
+  }
+  function sortedCust(){
+    let items=(CUST.items||[]).slice();
+    if(custQ){ const q=custQ.toLowerCase(); items=items.filter(c=>(c.name||'').toLowerCase().includes(q)); }
+    const dir=custDir==='asc'?1:-1;
+    const keyf={
+      name:(a,b)=>(a.name>b.name?1:a.name<b.name?-1:0),
+      revenue:(a,b)=>a.revenue-b.revenue, profit:(a,b)=>a.profit-b.profit,
+      margin:(a,b)=>((a.margin_pct==null?-1e9:a.margin_pct)-(b.margin_pct==null?-1e9:b.margin_pct)),
+      qty:(a,b)=>a.qty-b.qty, inv:(a,b)=>a.inv_count-b.inv_count, sku:(a,b)=>a.sku_count-b.sku_count,
+    }[custSort]||((a,b)=>0);
+    items.sort((a,b)=>keyf(a,b)*dir);
+    return items;
+  }
+  function renderCustList(){
+    const impSet=new Set(CUST.important_ids||[]);
+    const items=sortedCust();
+    const sh=(k,l)=>'<th class="n" data-csort="'+k+'">'+l+(custSort===k?('<span class="ar">'+(custDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
+    let h='<table><thead><tr>'
+      +'<th class="l" data-csort="name">고객(거래처)'+(custSort==='name'?('<span class="ar">'+(custDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>'
+      +sh('inv','거래건수')+sh('qty','판매수량')+sh('sku','취급SKU')
+      +sh('revenue','매출(ex-IVA)')+'<th class="n">매출원가</th>'+sh('profit','매출총이익')+sh('margin','이익률')
+      +'<th class="n">최근거래</th></tr></thead><tbody>';
+    items.forEach(c=>{
+      const tk=tierOf(c.margin_pct);
+      const imp=impSet.has(c.id);
+      const isOpen=custOpen.has(c.id);
+      h+='<tr class="'+(tk?('r-'+tk):'')+'">'
+        +'<td class="l drillcell" data-cid="'+c.id+'"><span class="bdrill">'+(isOpen?'▾':'▸')+'</span>'+esc(c.name)+(imp?'<span class="chip chip-imp" title="파레토 상위 20%: 매출총이익 금액 상위 20% 고객">★ 상위20%</span>':'')+'</td>'
+        +'<td class="n">'+fmt(c.inv_count)+'</td>'
+        +'<td class="n">'+fmt(c.qty)+'</td>'
+        +'<td class="n">'+fmt(c.sku_count)+'</td>'
+        +'<td class="n">'+fmt(c.revenue)+'</td>'
+        +'<td class="n">'+fmt(c.cogs)+'</td>'
+        +'<td class="n">'+fmt(c.profit)+'</td>'
+        +'<td class="n mg">'+(c.margin_pct==null?'<span style="color:var(--muted)">—</span>':pct(c.margin_pct))+'</td>'
+        +'<td class="n" style="color:var(--muted)">'+(c.last_date||'—')+'</td>'
+        +'</tr>';
+      if(isOpen){ h+='<tr class="drill-row"><td colspan="9">'+renderCustDrill(c)+'</td></tr>'; }
+    });
+    h+='</tbody></table>';
+    $('custResult').innerHTML=items.length?h:'<div class="nores">일치하는 고객이 없습니다.</div>';
+    $('custMeta').textContent='표시 '+items.length+'개처 / 전체 '+((CUST.items||[]).length)+'개처';
+    $('custResult').querySelectorAll('th[data-csort]').forEach(th=>{
+      th.addEventListener('click',()=>{ const k=th.getAttribute('data-csort');
+        if(custSort===k) custDir=(custDir==='asc'?'desc':'asc'); else { custSort=k; custDir=(k==='name'?'asc':'desc'); }
+        renderCustList();
+      });
+    });
+    $('custResult').querySelectorAll('td.drillcell').forEach(td=>{
+      td.addEventListener('click',()=>toggleCustDrill(Number(td.getAttribute('data-cid'))));
+    });
+  }
+  // 고객 행 드릴다운: 그 고객이 산 SKU별 내역
+  function renderCustDrill(c){
+    const d=custCache[c.id];
+    let body='<div class="drillbox">';
+    if(!d){ body+='<div class="nores">불러오는 중…</div>'; }
+    else if(d.__err){ body+='<div class="nores">불러오기 실패: '+esc(d.__err)+'</div>'; }
+    else {
+      const bs=d.by_sku||[];
+      body+='<div class="drill-sub">구매 SKU별 매출총이익'+(year?(' · '+year+'년'):' · 전체 기간')+'</div>';
+      if(!bs.length){ body+='<div class="nores">이 기간에 구매 기록이 없습니다.</div>'; }
+      else{
+        body+='<table class="drilltbl"><thead><tr>'
+          +'<th class="l">코드</th><th class="l">경쟁사(SyD)</th><th class="l">적용차종</th>'
+          +'<th class="n">판매수량</th><th class="n">매출(ex-IVA)</th><th class="n">매출원가</th>'
+          +'<th class="n">매출총이익</th><th class="n">이익률</th><th class="n">최근</th>'
+          +'</tr></thead><tbody>';
+        bs.forEach(p=>{
+          const tk=tierOf(p.margin_pct);
+          let syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · '); if(syd.length>28)syd=syd.slice(0,28)+'…';
+          let app=(p.app||'').toString(); if(app.length>28)app=app.slice(0,28)+'…';
+          body+='<tr class="'+(tk?('r-'+tk):'')+'">'
+            +'<td class="l"><span class="code">'+esc(p.code)+'</span></td>'
+            +'<td class="l" style="font-size:11px;color:var(--muted)">'+(syd||'—')+'</td>'
+            +'<td class="l" style="font-size:11px;color:var(--muted)">'+(app||'—')+'</td>'
+            +'<td class="n">'+fmt(p.qty)+'</td>'
+            +'<td class="n">'+fmt(p.revenue)+'</td>'
+            +'<td class="n">'+fmt(p.cogs)+'</td>'
+            +'<td class="n">'+fmt(p.profit)+'</td>'
+            +'<td class="n mg">'+pct(p.margin_pct)+'</td>'
+            +'<td class="n" style="color:var(--muted)">'+(p.last_date||'—')+'</td>'
+            +'</tr>';
+        });
+        const t=d.total||{};
+        body+='<tr class="drill-tot">'
+          +'<td class="l" colspan="3">합계 ('+bs.length+'개 SKU)</td>'
+          +'<td class="n">'+fmt(t.qty)+'</td><td class="n">'+fmt(t.revenue)+'</td>'
+          +'<td class="n">'+fmt(t.cogs)+'</td><td class="n">'+fmt(t.profit)+'</td>'
+          +'<td class="n">'+pct(t.margin_pct)+'</td><td></td>'
+          +'</tr></tbody></table>';
+      }
+    }
+    return body+'</div>';
+  }
+  async function toggleCustDrill(id){
+    if(custOpen.has(id)){ custOpen.delete(id); renderCustList(); return; }
+    custOpen.add(id); renderCustList();
+    if(!custCache[id]){
+      try{
+        let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+        const d=await fetch(session.api+'/api/gross-profit/customer/'+id+qs,{headers:auth()}).then(r=>r.json());
+        custCache[id]= d && !d.error ? d : {__err:(d&&d.error)||'불러오기 실패'};
+      }catch(e){ custCache[id]={__err:'서버에 연결할 수 없습니다.'}; }
+      if(custOpen.has(id)) renderCustList();
+    }
   }
 
   // ── 자재내역 토글/렌더 ──
@@ -626,6 +840,12 @@
   $('searchBtn').addEventListener('click',()=>{ listQ=$('q').value.trim(); renderList(); });
   $('clearBtn').addEventListener('click',()=>{ listQ=''; $('q').value=''; renderList(); });
   $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ listQ=$('q').value.trim(); renderList(); } });
+  // 보기 전환(SKU별/고객별)
+  $('viewSeg').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>pickView(b.getAttribute('data-view'))));
+  // 고객 검색
+  $('custSearchBtn').addEventListener('click',()=>{ custQ=$('custQ').value.trim(); renderCustList(); });
+  $('custClearBtn').addEventListener('click',()=>{ custQ=''; $('custQ').value=''; renderCustList(); });
+  $('custQ').addEventListener('keydown',e=>{ if(e.key==='Enter'){ custQ=$('custQ').value.trim(); renderCustList(); } });
   $('chartClose').addEventListener('click',closeChart);
   $('chartOverlay').addEventListener('click',e=>{ if(e.target.id==='chartOverlay') closeChart(); });
   $('scopeSeg').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
@@ -642,7 +862,9 @@
     window.__gp={tierOf,filterCurve,chartGeo,TIERS,nearestByX};
     window.__gpTest={ setData:(d)=>{DATA=d;}, renderTiers, renderTotals, toggleList,
       openChart, drawChart, setScope:(s)=>{chartScope=s;}, renderList, setSort:(k,d)=>{listSort=k;listDir=d;},
-      highlightPoint, hideChartTip, getPts:()=>chartPts };
+      highlightPoint, hideChartTip, getPts:()=>chartPts,
+      setCust:(d)=>{CUST=d;}, renderCustTiers, renderCustTotals, renderCustCards, renderCustList,
+      sortedCust, setCustSort:(k,d)=>{custSort=k;custDir=d;}, setCustQ:(q)=>{custQ=q;}, pickView };
   }
 </script>
 <script src="refatrix-nav.js?v=20260630es"></script>
