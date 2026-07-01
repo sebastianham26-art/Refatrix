@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장</title>
+<title>Refatrix · 창고 포장 · build 0632b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -164,8 +164,14 @@
   table.ptbl tr:last-child td{border-bottom:none}
   .bact2 .pickbox{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
   .bact2 .picknow{font-size:12px;font-weight:800;color:#fff;background:var(--steel);border-radius:999px;padding:4px 11px;white-space:nowrap}
-  #boxGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:6px}
+  #boxGrid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:6px}
   @media (max-width:640px){ #boxGrid{grid-template-columns:1fr} }
+  #boxChips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
+  .bchip{background:#eef1f4;color:#33495c;border:1px solid #d3e2ec;border-radius:999px;padding:8px 15px;font-weight:800;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .bchip.active{background:var(--steel-d);color:#fff;border-color:var(--steel-d)}
+  .bchip.sealed{background:#e8e6e0;color:#8a857b;border-color:#d8d5cd}
+  .bchip.sealed.active{background:#6a655c;color:#fff;border-color:#6a655c}
+  .bchip .cam{font-size:12px}
   .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px}
   .bcard.active{border:3px solid var(--steel);box-shadow:0 4px 14px rgba(82,112,138,.18)}
   .bcard.sealed{background:#f6f7f4;border-color:#d6ddd2}
@@ -221,7 +227,6 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631z</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -269,12 +274,12 @@
   </div>
   <div class="pscroll">
     <div id="readyBanner"></div>
-    <button class="items-toggle" id="itemsToggle">📋 포장 품목 전체보기 ▾</button>
-    <div id="itemsSection" style="display:none">
-      <div class="subt">포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
+    <div id="itemsSection">
+      <div class="subt">📋 포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
       <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
     </div>
-    <div class="subt">박스 현황 <span style="font-weight:600;color:#9a958b;font-size:12px">(스캔은 위에서 선택한 박스에 담깁니다 · 카드의 “담을 박스로”로도 선택)</span></div>
+    <div class="subt">박스 선택 <span style="font-weight:600;color:#9a958b;font-size:12px">(작업할 박스를 누르면 이동 · 스캔은 선택된 박스에 담깁니다)</span></div>
+    <div id="boxChips"></div>
     <div id="boxGrid"></div>
 
   </div>
@@ -287,7 +292,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631z — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632b — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -322,7 +327,9 @@
     ['대기중','Pendientes'],
     ['비어 있음 — 스캔/＋로 담기','Vacío — escanee o use ＋'],
     ['포장할 품목이 없습니다','No hay artículos para empacar'],
-    ['📋 포장 품목 전체보기 ▾','📋 Ver todos los artículos ▾'],
+    ['📋 포장 품목 (전체)','📋 Artículos (todos)'],
+    ['박스 선택','Seleccionar caja'],
+    ['(작업할 박스를 누르면 이동 · 스캔은 선택된 박스에 담깁니다)','(Pulse la caja para ir · el escaneo va a la caja seleccionada)'],
     ['박스 삭제 실패(통신)','Error al eliminar caja (conexión)'],
     ['📦 박스 라벨 출력','📦 Imprimir etiquetas'],
     ['📄 패킹리스트 출력','📄 Imprimir lista'],
@@ -446,7 +453,7 @@
 
   var JH=Object.assign({'Content-Type':'application/json'},AUTH);
   var $=function(id){return document.getElementById(id);};
-  var who=$('whoBox'); if(S&&S.user){ who.innerHTML=(S.user.name?'<b>'+S.user.name+'</b><br>':'')+'역할: '+(S.user.role||'—'); } else who.textContent='로그인 필요';
+  var who=$('whoBox'); if(who){ if(S&&S.user){ who.innerHTML=(S.user.name?'<b>'+S.user.name+'</b><br>':'')+'역할: '+(S.user.role||'—'); } else who.textContent='로그인 필요'; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function p2(n){ return (n<10?'0':'')+n; }
   function fmtDT(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes()); }catch(e){ return '—'; } }
@@ -861,6 +868,19 @@
   function photosOf(boxId){ return PHOTOS[boxId]||[]; }
   var itemSortKey='ctr_code', itemSortDir=1;
   var _boxSelSig='';
+  function renderBoxChips(){
+    var d=PK; var box=$('boxChips'); if(!box) return;
+    var boxes=(d.boxes||[]).slice().sort(function(a,b){ return a.box_no-b.box_no; });
+    if(!boxes.length){ box.innerHTML=''; return; }
+    box.innerHTML=boxes.map(function(b){
+      var active=(b.box_id===curBox);
+      var cam=((b.photo_count||0)>0)?' <span class="cam">\ud83d\udcf7</span>':'';
+      return '<button class="bchip'+(b.sealed?' sealed':'')+(active?' active':'')+'" data-box="'+b.box_id+'">Box '+b.box_no+cam+'</button>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.bchip'),function(btn){
+      btn.addEventListener('click',function(){ curBox=Number(btn.getAttribute('data-box')); renderPacking(); focusScan(); });
+    });
+  }
   function renderBoxSel(){
     var sel=$('scanBoxSel'); if(!sel||!PK) return;
     var boxes=(PK.boxes||[]).slice().sort(function(a,b){return a.box_no-b.box_no;});
@@ -909,9 +929,10 @@
     if(d.all_done){ rb.innerHTML='<div class="ready ok">\u2713 스캔 완료 \u2014 포장 마무리(통합 패킹리스트) 준비 완료 (사진은 선택)</div>'; }
     else { rb.innerHTML=''; }
 
-    var boxesSorted=(d.boxes||[]).slice().sort(function(a,b){ return b.box_no-a.box_no; });
-    $('boxGrid').innerHTML = boxesSorted.length ? boxesSorted.map(buildBoxCard).join('')
-      : '<div class="empty">박스가 없습니다 \u2014 위 "+ 새 박스 시작"을 누르세요.</div>';
+    renderBoxChips();
+    var curCard=(d.boxes||[]).filter(function(b){ return b.box_id===curBox; });
+    $('boxGrid').innerHTML = curCard.length ? curCard.map(buildBoxCard).join('')
+      : '<div class="empty">박스가 없습니다 \u2014 위 "\uff0b 새 박스"를 누르세요.</div>';
 
     renderItemsTable();
     wireBoxHandlers();
@@ -1071,7 +1092,6 @@
       });
     }); }); }
   var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);
-  var itg=$('itemsToggle'); if(itg) itg.addEventListener('click',function(){ var sec=$('itemsSection'); var open=sec.style.display==='none'; sec.style.display=open?'block':'none'; itg.innerHTML=open?'📋 포장 품목 닫기 ▴':'📋 포장 품목 전체보기 ▾'; });
   var sbs=$('scanBoxSel'); if(sbs) sbs.addEventListener('change',function(){ var v=Number(this.value); if(v){ curBox=v; renderPacking(); } focusScan(); });
 
   var sbk=$('shipBack'); if(sbk) sbk.addEventListener('click',closeShip);
