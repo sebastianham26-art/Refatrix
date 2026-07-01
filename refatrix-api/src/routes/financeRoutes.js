@@ -596,6 +596,86 @@ export default async function financeRoutes(app) {
     return { ok: true, id };
   });
 
+  // 수정 (디렉터·재무) — pending 만. 계좌·입금일·금액·적요.
+  app.patch('/api/bank-deposits/:id', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const cur = (await query(`SELECT status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    if (cur.status !== 'pending') return reply.code(409).send({ error: 'not_pending', status: cur.status });
+    const b = req.body || {};
+    const accountId = Number(b.account_id), amount = r2(b.amount);
+    if (!accountId || !b.deposit_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    const userId = req.ctx.perm.userId;
+    await query(
+      `UPDATE bank_deposits_pending
+          SET account_id=$1, deposit_date=$2, amount=$3, payer_memo=$4
+        WHERE id=$5 AND status='pending'`,
+      [accountId, b.deposit_date, amount, b.payer_memo || null, id]);
+    await logEvent({ userId, action: 'update', target: `bank_deposit:${id}`, detail: { edited: true, amount } });
+    return { ok: true, id };
+  });
+
+  // 삭제 (디렉터·재무) — pending|void 만 완전 삭제(하드). allocated·booked 는 실거래가 있어 불가(409).
+  app.delete('/api/bank-deposits/:id', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const cur = (await query(`SELECT status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    if (cur.status !== 'pending' && cur.status !== 'void') {
+      return reply.code(409).send({ error: 'has_transaction', status: cur.status });
+    }
+    const userId = req.ctx.perm.userId;
+    await query(`DELETE FROM bank_deposits_pending WHERE id=$1`, [id]); // bank_deposit_reads 는 ON DELETE CASCADE
+    await logEvent({ userId, action: 'delete', target: `bank_deposit:${id}`, detail: { hard: true, prevStatus: cur.status } });
+    return { ok: true, id };
+  });
+
+  // 수입 전환 (디렉터 전용) — pending 을 일반 수입 거래 1건으로 직접 기표.
+  //  반제 경로 대신 디렉터가 "거래등록 수입"으로 확정. 입금은 booked 로 닫혀 반제 인박스에서 사라짐(이중계상 불가).
+  app.post('/api/bank-deposits/:id/book-income', { preHandler: [authGuard] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const dep = (await query(
+      `SELECT id, account_id, deposit_date, amount, payer_memo, status
+         FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+    if (!dep) return reply.code(404).send({ error: 'not_found' });
+    if (dep.status !== 'pending') return reply.code(409).send({ error: 'not_pending', status: dep.status });
+    const b = req.body || {};
+    // 기본값은 입금 정보. 디렉터가 계좌·일자·금액·적요·계정과목을 덮어쓸 수 있음.
+    const accountId = Number(b.account_id || dep.account_id);
+    const txnDate = b.txn_date || String(dep.deposit_date).slice(0, 10);
+    const amount = r2(b.amount != null ? b.amount : dep.amount);
+    const categoryCode = b.category_code || null;
+    const memo = (b.memo != null ? b.memo : (dep.payer_memo || '')) || null;
+    if (!accountId || !txnDate || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    const userId = req.ctx.perm.userId;
+    // 일반 수입 거래 1건(actual/general/approved). MXN, fx=1.
+    const tr = await query(
+      `INSERT INTO transactions
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by)
+       VALUES ($1,$2,'in',$3,'MXN',1,$3,$4,'actual','general',true,$5,$6,$5) RETURNING id`,
+      [accountId, txnDate, amount, categoryCode, userId, memo]);
+    const txnId = Number(tr.rows[0].id);
+    const upd = await query(
+      `UPDATE bank_deposits_pending
+          SET status='booked', txn_id=$1, booked_by=$2, booked_at=now()
+        WHERE id=$3 AND status='pending' RETURNING id`,
+      [txnId, userId, id]);
+    if (!upd.rows[0]) {
+      // 경합(사이에 상태 변경) → 방금 만든 거래 취소하고 409.
+      await query(`DELETE FROM transactions WHERE id=$1`, [txnId]);
+      const now = (await query(`SELECT status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+      return reply.code(409).send({ error: 'not_pending', status: now ? now.status : 'gone' });
+    }
+    await logEvent({ userId, action: 'create', target: `transaction:${txnId}`, detail: { from_bank_deposit: id, amount } });
+    await logEvent({ userId, action: 'update', target: `bank_deposit:${id}`, detail: { booked: true, txn_id: txnId } });
+    return { ok: true, id, txn_id: txnId, amount_mxn: amount };
+  });
+
   // 입금 이력
   app.get('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
     const cond = []; const args = [];

@@ -157,7 +157,7 @@
         </div>
         <button class="btn gold" id="bd-save" style="margin-top:10px">입금 통지 등록</button>
         <div class="msg" id="bd-msg"></div>
-        <div style="margin-top:12px"><div class="hint" style="margin:0 0 4px;font-weight:700">미배분(대기) 입금</div><div id="bd-list"><div class="hint" style="margin:0">불러오는 중…</div></div></div>
+        <div style="margin-top:12px"><div class="hint" style="margin:0 0 4px;font-weight:700">미배분(대기) 입금 <span style="font-weight:400;color:var(--muted)">— 각 항목: 수입 전환(디렉터) · 수정 · 삭제</span></div><div id="bd-list"><div class="hint" style="margin:0">불러오는 중…</div></div><div id="bd-panel"></div></div>
       </div>
 
 
@@ -1572,17 +1572,113 @@
 
   // ===== 은행 매출입금 등록(미배분 입금함) — 재무담당/디렉터 → 영업지원 통지 =====
   function bdEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  let bdItems=[];
+  function bdFind(id){ return bdItems.find(x=>String(x.id)===String(id)); }
+  function bdClosePanel(){ const p=$('bd-panel'); if(p) p.innerHTML=''; }
+  function bdDateStr(v){ return v?String(v).slice(0,10):''; }
   async function loadBdp(){
     const box=$('bd-list'); if(!box) return;
     if($('bd-acc')) $('bd-acc').innerHTML=accOptions('');
     if($('bd-date')&&!$('bd-date').value) $('bd-date').value=new Date().toISOString().slice(0,10);
+    bdClosePanel();
     try{
-      const items=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
-      if(!items.length){ box.innerHTML='<div class="hint" style="margin:0">대기 중인 미배분 입금이 없습니다.</div>'; return; }
+      bdItems=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
+      if(!bdItems.length){ box.innerHTML='<div class="hint" style="margin:0">대기 중인 미배분 입금이 없습니다.</div>'; return; }
+      const dir=isDirector();
       box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>등록자</th><th></th></tr></thead><tbody>'
-        +items.map(d=>'<tr><td>'+bdEsc(d.deposit_date)+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="voidBdp('+d.id+')">취소</button></td></tr>').join('')
+        +bdItems.map(d=>{
+          const acts=(dir?'<button class="btn gold" style="padding:4px 10px;font-size:11.5px" data-bd="book" data-id="'+d.id+'">수입 전환</button> ':'')
+            +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="edit" data-id="'+d.id+'">수정</button> '
+            +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" data-bd="del" data-id="'+d.id+'">삭제</button>';
+          return '<tr><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
+        }).join('')
         +'</tbody></table>';
     }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
+  }
+  // ---- 수입 전환(디렉터): 일반 수입 거래 1건 생성 + 입금 booked 처리 ----
+  function bdOpenBook(id){
+    const d=bdFind(id), p=$('bd-panel'); if(!d||!p) return;
+    const dd=bdDateStr(d.deposit_date);
+    p.innerHTML=
+      '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px;background:#fbfbf7">'
+      +'<div style="font-weight:800;margin-bottom:4px">💰 수입으로 전환 — 거래등록(수입) 1건 생성</div>'
+      +'<div class="hint" style="margin-top:0">이 입금을 <b>일반 수입 거래</b>로 확정합니다. 확정하면 계좌 잔액·거래목록·현금흐름에 반영되고, 이 입금은 목록에서 닫힙니다(이후 반제 불가 → 이중계상 없음).</div>'
+      +'<div class="row">'
+        +'<div style="flex:2"><label>계좌</label><select id="bk-acc">'+accOptions(d.account_id)+'</select></div>'
+        +'<div><label>거래일</label><input id="bk-date" type="date" value="'+dd+'"></div>'
+        +'<div><label>금액(MXN)</label><input id="bk-amt" type="number" step="0.01" value="'+Number(d.amount)+'"></div>'
+      +'</div>'
+      +'<div class="row">'
+        +'<div style="flex:2"><label>계정과목(수익)</label><select id="bk-cat">'+catOptionsFor('in','')+'</select></div>'
+        +'<div style="flex:3"><label>적요</label><input id="bk-memo" type="text" value="'+bdEsc(d.payer_memo||'')+'"></div>'
+      +'</div>'
+      +'<div style="margin-top:10px;display:flex;gap:8px">'
+        +'<button class="btn gold" id="bk-go">수입으로 확정</button>'
+        +'<button class="btn" id="bk-close" style="background:#fff;color:var(--muted);border:1px solid var(--line)">닫기</button>'
+      +'</div><div class="msg" id="bk-msg"></div></div>';
+    $('bk-go').addEventListener('click',()=>bdSubmitBook(id));
+    $('bk-close').addEventListener('click',bdClosePanel);
+  }
+  async function bdSubmitBook(id){
+    const m=$('bk-msg'); if(m) m.className='msg';
+    const body={account_id:Number($('bk-acc').value)||null,txn_date:$('bk-date').value,amount:Number($('bk-amt').value),category_code:$('bk-cat').value||null,memo:$('bk-memo').value.trim()||null};
+    if(!body.account_id){ if(m){m.className='msg err';m.textContent='계좌를 선택하세요.';} return; }
+    if(!body.txn_date){ if(m){m.className='msg err';m.textContent='거래일을 입력하세요.';} return; }
+    if(!(body.amount>0)){ if(m){m.className='msg err';m.textContent='금액을 입력하세요(양수).';} return; }
+    $('bk-go').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/bank-deposits/'+id+'/book-income',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='전환 실패: '+(d.error||res.status);} return; }
+      const bm=$('bd-msg'); if(bm){bm.className='msg ok';bm.textContent='수입 거래로 전환됨 (거래 #'+d.txn_id+' · '+fmt(d.amount_mxn)+' MXN). 거래목록·잔액에 반영됨.';}
+      bdClosePanel(); loadBdp();
+    }catch(e){ if(m){m.className='msg err';m.textContent='서버 연결 실패';} }
+    finally{ if($('bk-go'))$('bk-go').disabled=false; }
+  }
+  // ---- 수정(디렉터·재무): pending 항목의 계좌·입금일·금액·적요 ----
+  function bdOpenEdit(id){
+    const d=bdFind(id), p=$('bd-panel'); if(!d||!p) return;
+    const dd=bdDateStr(d.deposit_date);
+    p.innerHTML=
+      '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px;background:#fff">'
+      +'<div style="font-weight:800;margin-bottom:6px">✏️ 미배분 입금 수정</div>'
+      +'<div class="row">'
+        +'<div style="flex:2"><label>입금 계좌</label><select id="ed-acc">'+accOptions(d.account_id)+'</select></div>'
+        +'<div><label>입금일</label><input id="ed-date" type="date" value="'+dd+'"></div>'
+        +'<div><label>금액(MXN)</label><input id="ed-amt" type="number" step="0.01" value="'+Number(d.amount)+'"></div>'
+      +'</div>'
+      +'<div class="row"><div style="flex:3"><label>송금인/적요</label><input id="ed-memo" type="text" value="'+bdEsc(d.payer_memo||'')+'"></div></div>'
+      +'<div style="margin-top:10px;display:flex;gap:8px">'
+        +'<button class="btn gold" id="ed-go">저장</button>'
+        +'<button class="btn" id="ed-close" style="background:#fff;color:var(--muted);border:1px solid var(--line)">닫기</button>'
+      +'</div><div class="msg" id="ed-msg"></div></div>';
+    $('ed-go').addEventListener('click',()=>bdSubmitEdit(id));
+    $('ed-close').addEventListener('click',bdClosePanel);
+  }
+  async function bdSubmitEdit(id){
+    const m=$('ed-msg'); if(m) m.className='msg';
+    const body={account_id:Number($('ed-acc').value)||null,deposit_date:$('ed-date').value,amount:Number($('ed-amt').value),payer_memo:$('ed-memo').value.trim()||null};
+    if(!body.account_id){ if(m){m.className='msg err';m.textContent='계좌를 선택하세요.';} return; }
+    if(!body.deposit_date){ if(m){m.className='msg err';m.textContent='입금일을 입력하세요.';} return; }
+    if(!(body.amount>0)){ if(m){m.className='msg err';m.textContent='금액을 입력하세요(양수).';} return; }
+    $('ed-go').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/bank-deposits/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='수정 실패: '+(d.error||res.status);} return; }
+      bdClosePanel(); loadBdp();
+    }catch(e){ if(m){m.className='msg err';m.textContent='서버 연결 실패';} }
+    finally{ if($('ed-go'))$('ed-go').disabled=false; }
+  }
+  // ---- 삭제(디렉터·재무): pending 완전 삭제 ----
+  async function bdDelete(id){
+    if(!confirm('이 미배분 입금을 완전히 삭제할까요? (되돌릴 수 없습니다)')) return;
+    try{
+      const res=await fetch(session.api+'/api/bank-deposits/'+id,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+      bdClosePanel(); loadBdp();
+    }catch(e){ alert('서버 연결 실패'); }
   }
   async function saveBdp(){
     const m=$('bd-msg'); m.className='msg';
@@ -1601,16 +1697,16 @@
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ $('bd-save').disabled=false; }
   }
-  async function voidBdp(id){
-    if(!confirm('이 미배분 입금을 취소할까요?')) return;
-    try{
-      const res=await fetch(session.api+'/api/bank-deposits/'+id+'/void',{method:'POST',headers:auth()});
-      const d=await res.json();
-      if(!res.ok||d.error){ alert('취소 실패: '+(d.error||res.status)); return; }
-      loadBdp();
-    }catch(e){ alert('서버 연결 실패'); }
-  }
-  window.voidBdp=voidBdp;
+  // 미배분 입금 목록 액션(수입전환/수정/삭제) — 이벤트 위임(인라인 onclick 미사용)
+  (function(){ const box=$('bd-list'); if(!box) return;
+    box.addEventListener('click',function(e){
+      const b=e.target.closest('button[data-bd]'); if(!b) return;
+      const id=Number(b.getAttribute('data-id')); const act=b.getAttribute('data-bd');
+      if(act==='book') bdOpenBook(id);
+      else if(act==='edit') bdOpenEdit(id);
+      else if(act==='del') bdDelete(id);
+    });
+  })();
 
   function showTab(w){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
     ['Acc','New','Txn','Pay','Fixed','Cash','Fx','Approve'].forEach(x=>$('tab'+x).classList.toggle('on',x.toLowerCase()===w));
