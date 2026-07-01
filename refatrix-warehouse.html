@@ -89,6 +89,12 @@
   .scard .sbtns{display:flex;gap:8px;flex-wrap:wrap}
   .scard .sbtns button{border:none;border-radius:9px;padding:10px 14px;font-size:14px;font-weight:800;cursor:pointer}
   .scard .pl{background:#33495c;color:#fff} .scard .pk{background:#3E7D5A;color:#fff} .scard .op{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel)}
+  .shiptabs{display:flex;gap:6px;margin-bottom:10px}
+  .shiptab{background:#efece6;color:#6a655c;border:none;border-radius:999px;padding:7px 16px;font-weight:800;font-size:13px;cursor:pointer}
+  .shiptab.on{background:var(--steel-d);color:#fff}
+  .scard .doship{background:var(--green);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer}
+  .scard .unship{background:#8a6d3b;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer}
+  .scard .shipdt{margin-top:3px;font-size:12.5px;font-weight:800;color:var(--green)}
   .lblcal{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:10px}
   .lblcal-t{background:none;border:none;font-weight:800;font-size:14px;color:var(--steel-d);cursor:pointer;padding:4px 0}
   .lblcal-b{margin-top:8px}
@@ -215,7 +221,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631x</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631y</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -239,6 +245,7 @@
         <div class="lblcal-hint">장마다 아래로 밀리면 페이지 길이를 0.5씩 줄이고, 위로 밀리면 0.5씩 늘리세요. 첫 장 위치만 어긋나면 위 여백으로 맞추세요.</div>
       </div>
     </div>
+    <div class="shiptabs"><button type="button" class="shiptab on" data-st="pending">대기중</button><button type="button" class="shiptab" data-st="shipped">출고완료 내역</button></div>
     <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
   </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
@@ -295,7 +302,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631x — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631y — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -323,6 +330,11 @@
     ['목록을 불러오지 못했습니다.','No se pudo cargar la lista.'],
     ['새 포장 작업이 내려왔습니다.','Llegó nuevo trabajo de empaque.'],
     ['출고 대기 건이 없습니다.','No hay pedidos en cola de salida.'],
+    ['출고완료 내역이 없습니다.','No hay envíos registrados.'],
+    ['출고완료 내역','Historial de envíos'],
+    ['✓ 출고완료','✓ Enviado'],
+    ['↩ 대기로','↩ Regresar'],
+    ['대기중','Pendientes'],
     ['비어 있음 — 스캔/＋로 담기','Vacío — escanee o use ＋'],
     ['포장할 품목이 없습니다','No hay artículos para empacar'],
     ['📋 포장 품목 전체보기 ▾','📋 Ver todos los artículos ▾'],
@@ -417,6 +429,8 @@
     ['Box','Caja']
   ];
   I18N.sort(function(a,b){ return b[0].length - a[0].length; });
+  var IS_DIRECTOR=!!(S&&S.user&&S.user.role==='director');
+  var SHIP_STATUS='pending';
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
   function tr(str){ if(LANG!=='es'||!str) return str; var s=str; for(var i=0;i<I18N.length;i++){ if(s.indexOf(I18N[i][0])>=0){ s=s.split(I18N[i][0]).join(I18N[i][1]); } } return s; }
   var _i18nMO=null;
@@ -492,24 +506,57 @@
   // ===================== 출고-2: 목록 · 상세 · 출력 =====================
   var SHIP=null;
   function loadShipQueue(){
-    fetch(API+'/api/warehouse/ship-queue',{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
-      var items=(d&&d.items)||[]; var c=$('shipCount'); if(c) c.textContent=items.length; renderShipQueue(items);
+    fetch(API+'/api/warehouse/ship-queue?status='+SHIP_STATUS,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      var items=(d&&d.items)||[]; var c=$('shipCount'); if(c) c.textContent=items.length; renderShipQueue(items, SHIP_STATUS);
     }).catch(function(){ var b=$('shipQueue'); if(b) b.innerHTML='<div class="empty">목록을 불러오지 못했습니다.</div>'; });
   }
-  function renderShipQueue(items){
+  function initShipTabs(){
+    Array.prototype.forEach.call(document.querySelectorAll('.shiptab'),function(t){
+      t.addEventListener('click',function(){
+        SHIP_STATUS=t.getAttribute('data-st');
+        Array.prototype.forEach.call(document.querySelectorAll('.shiptab'),function(x){ x.classList.toggle('on', x===t); });
+        loadShipQueue();
+      });
+    });
+  }
+  function shipComplete(id){
+    if(!confirm(LANG==='es'?'¿Marcar como ENVIADO? Saldrá de la cola de salida.':'출고완료 처리할까요? 출고 대기에서 사라집니다.')) return;
+    fetch(API+'/api/warehouse/ship/'+id+'/complete',{method:'POST',headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, body:j||{}}; }); }).then(function(o){
+      if(!o.ok){ alert((o.body&&o.body.note)||(LANG==='es'?'No se pudo procesar':'처리 실패')); return; }
+      loadShipQueue();
+    }).catch(function(){ alert(LANG==='es'?'Error (conexión)':'처리 실패(통신)'); });
+  }
+  function shipUncomplete(id){
+    if(!confirm(LANG==='es'?'¿Regresar a la cola de salida?':'대기 목록으로 되돌릴까요?')) return;
+    fetch(API+'/api/warehouse/ship/'+id+'/uncomplete',{method:'POST',headers:AUTH}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, body:j||{}}; }); }).then(function(o){
+      if(!o.ok){ alert((o.body&&o.body.note)||(LANG==='es'?'No se pudo procesar':'처리 실패')); return; }
+      loadShipQueue();
+    }).catch(function(){ alert(LANG==='es'?'Error (conexión)':'처리 실패(통신)'); });
+  }
+  function renderShipQueue(items, status){
     var box=$('shipQueue'); if(!box) return;
-    if(!items.length){ box.innerHTML='<div class="empty">출고 대기 건이 없습니다.</div>'; return; }
+    status=status||SHIP_STATUS;
+    if(!items.length){ box.innerHTML='<div class="empty">'+(status==='shipped'?'출고완료 내역이 없습니다.':'출고 대기 건이 없습니다.')+'</div>'; return; }
     box.innerHTML=items.map(function(it){
+      var satHtml=(it.has_sat?'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div>':'<div class="sat nosat"><span class="satwarn">\u26a0 SAT 번호를 넣으세요</span></div>');
+      var shipdt=(status==='shipped'&&it.shipped_at)?'<div class="shipdt">\u2713 출고완료 '+esc(String(it.shipped_at).slice(0,10))+'</div>':'';
+      var actBtn='';
+      if(IS_DIRECTOR){
+        actBtn=(status==='shipped')
+          ? '<button class="unship" data-id="'+it.quote_id+'">\u21a9 대기로</button>'
+          : '<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
+      }
       return '<div class="scard" data-id="'+it.quote_id+'">'
-        +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+'</div><div class="cu">'+esc(it.customer)+'</div></div>'
-        +(it.has_sat?'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div>':'<div class="sat nosat"><span class="satwarn">\u26a0 SAT 번호를 넣으세요</span></div>')+'</div>'
-        +'<div class="meta2">박스 '+it.box_count+' · SKU '+(it.sku_count==null?'\u2014':it.sku_count)+' · 총 '+(it.total_qty==null?'\u2014':it.total_qty)+'피스 · '+esc(it.inv_date||'')+'</div>'
-        +'<div class="sbtns"><button class="pl" data-id="'+it.quote_id+'">\ud83d\udce6 라벨</button><button class="pk" data-id="'+it.quote_id+'">\ud83d\udcc4 패킹리스트</button><button class="op" data-id="'+it.quote_id+'">상세</button></div>'
+        +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+'</div><div class="cu">'+esc(it.customer)+'</div>'+shipdt+'</div>'+satHtml+'</div>'
+        +'<div class="meta2">박스 '+it.box_count+' \u00b7 SKU '+(it.sku_count==null?'\u2014':it.sku_count)+' \u00b7 총 '+(it.total_qty==null?'\u2014':it.total_qty)+'피스 \u00b7 '+esc(it.inv_date||'')+'</div>'
+        +'<div class="sbtns"><button class="pl" data-id="'+it.quote_id+'">\ud83d\udce6 라벨</button><button class="pk" data-id="'+it.quote_id+'">\ud83d\udcc4 패킹리스트</button><button class="op" data-id="'+it.quote_id+'">상세</button>'+actBtn+'</div>'
         +'</div>';
     }).join('');
     Array.prototype.forEach.call(box.querySelectorAll('.pl'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); printLabels(Number(b.getAttribute('data-id'))); }); });
     Array.prototype.forEach.call(box.querySelectorAll('.pk'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); printPackingList(Number(b.getAttribute('data-id'))); }); });
     Array.prototype.forEach.call(box.querySelectorAll('.op'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); openShip(Number(b.getAttribute('data-id'))); }); });
+    Array.prototype.forEach.call(box.querySelectorAll('.doship'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); shipComplete(Number(b.getAttribute('data-id'))); }); });
+    Array.prototype.forEach.call(box.querySelectorAll('.unship'),function(b){ b.addEventListener('click',function(e){ e.stopPropagation(); shipUncomplete(Number(b.getAttribute('data-id'))); }); });
   }
   var COMPANY=null;
   function ensureCompany(){
@@ -1046,7 +1093,7 @@
   var sbk2=$('shipBack2'); if(sbk2) sbk2.addEventListener('click',closeShip);
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
-  initLangBtn(); initLabelCal(); startI18n();
+  initLangBtn(); initLabelCal(); initShipTabs(); startI18n();
   if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>

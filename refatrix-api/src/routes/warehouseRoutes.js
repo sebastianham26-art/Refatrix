@@ -428,18 +428,22 @@ export default async function warehouseRoutes(app) {
   // ================= 출고-2: 라벨 + 통합 패킹리스트 =================
   //   출고 대기 = packed(3조건) + 매출전환(invoice) + 실제 SAT(번호 있고 TMP- 아님).
   // ---------- 출고 대기 목록 ----------
-  app.get('/api/warehouse/ship-queue', { preHandler: [authGuard, requirePage('warehouse')] }, async () => {
+  app.get('/api/warehouse/ship-queue', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+    const status = (req.query && req.query.status === 'shipped') ? 'shipped' : 'pending';
+    const shipCond = status === 'shipped' ? 'AND q.shipped_at IS NOT NULL' : 'AND q.shipped_at IS NULL';
+    const shipOrder = status === 'shipped' ? 'q.shipped_at DESC' : 'q.packed_at DESC';
     const rows = (await query(
       `SELECT q.id, q.quote_no, q.packed_at, q.total_qty, q.sku_count, q.quote_date, q.invoice_id,
               COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code,
-              si.sat_no, si.inv_date::text AS inv_date, si.total_mxn,
+              si.sat_no, si.inv_date::text AS inv_date, si.total_mxn, q.shipped_at::text AS shipped_at,
               (SELECT COUNT(*)::int FROM packing_box pb WHERE pb.quote_id=q.id) AS box_count
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
          LEFT JOIN sales_invoices si ON si.id=q.invoice_id
         WHERE q.deleted_at IS NULL
           AND q.packed_at IS NOT NULL
-        ORDER BY q.packed_at DESC
+          ${shipCond}
+        ORDER BY ${shipOrder}
         LIMIT 200`)).rows;
     const items = rows.map((r) => {
       const realSat = r.invoice_id && r.sat_no && String(r.sat_no) !== '' && !String(r.sat_no).startsWith('TMP-');
@@ -450,13 +454,29 @@ export default async function warehouseRoutes(app) {
         box_count: Number(r.box_count) || 0,
         total_qty: r.total_qty != null ? Number(r.total_qty) : null,
         sku_count: r.sku_count != null ? Number(r.sku_count) : null,
-        packed_at: r.packed_at,
+        packed_at: r.packed_at, shipped_at: r.shipped_at || null,
       };
     });
-    return { count: items.length, items };
+    return { count: items.length, status, items };
   });
 
   // ---------- 출고 출력 데이터(라벨/패킹리스트 공용) ----------
+  // 출고완료 처리(디렉터 승인)
+  app.post('/api/warehouse/ship/:id/complete', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only', note: '\ub514\ub809\ud130 \uc2b9\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.' });
+    const id = Number(req.params.id);
+    const r = (await query(`UPDATE quotes SET shipped_at=now(), shipped_by=$2 WHERE id=$1 AND packed_at IS NOT NULL AND shipped_at IS NULL AND deleted_at IS NULL RETURNING id`, [id, req.ctx.perm.userId])).rows[0];
+    if (!r) return reply.code(409).send({ error: 'not_updatable', note: '\ud3ec\uc7a5\uc644\ub8cc \uc0c1\ud0dc\uac00 \uc544\ub2c8\uac70\ub098 \uc774\ubbf8 \ucd9c\uace0\uc644\ub8cc\ub428' });
+    return { ok: true, id };
+  });
+  // 출고완료 취소(디렉터 승인)
+  app.post('/api/warehouse/ship/:id/uncomplete', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only', note: '\ub514\ub809\ud130 \uc2b9\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.' });
+    const id = Number(req.params.id);
+    await query(`UPDATE quotes SET shipped_at=NULL, shipped_by=NULL WHERE id=$1`, [id]);
+    return { ok: true, id };
+  });
+
   app.get('/api/warehouse/ship/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(
