@@ -215,7 +215,7 @@
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631u</span></h1><div class="who" id="whoBox">—</div></div>
+  <div class="head"><h1>창고 · 포장 작업 <span style="font-size:12px;font-weight:700;opacity:.65;vertical-align:super">build 0631x</span></h1><div class="who" id="whoBox">—</div></div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -295,7 +295,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0631u — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0631x — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -570,9 +570,9 @@
   function buildPackingListHTML(d){
     function copy(tag){
       var boxes=d.boxes.map(function(b){
-        var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
-        return '<div class="box"><div class="bh">Caja '+b.box_no+' / '+d.box_count+' \u00b7 '+b.box_qty+' pzas</div>'
-          +'<table class="pt"><thead><tr><th>CTR</th><th>Código competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
+        var lines=b.lines.map(function(l,i){ return '<tr><td class="no">'+(i+1)+'</td><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'-')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
+        return '<div class="box"><div class="bh">Caja '+b.box_no+' / '+d.box_count+' \u00b7 '+(b.box_sku!=null?b.box_sku+' SKU \u00b7 ':'')+b.box_qty+' pzas</div>'
+          +'<table class="pt"><thead><tr><th class="no">No.</th><th>CTR</th><th>Código competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></div>';
       }).join('');
       var C=COMPANY||{};
       var cohead='';
@@ -603,7 +603,7 @@
       +'.title{font-size:18pt;font-weight:800}.cp{font-size:10pt;font-weight:700;border:1px solid #111;padding:2mm 4mm;border-radius:4px}'
       +'.hd{width:100%;border-collapse:collapse;margin-bottom:4mm}.hd td{padding:1.5mm 2mm;border:1px solid #ccc;font-size:10.5pt}'
       +'.box{margin-bottom:4mm}.bh{font-weight:800;background:#eee;padding:2mm 3mm;border:1px solid #999;border-bottom:none}'
-      +'.pt{width:100%;border-collapse:collapse;font-size:10pt}.pt th,.pt td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}.pt .q{text-align:right;font-weight:700}.pt th{background:#f3f3f3}'
+      +'.pt{width:100%;border-collapse:collapse;font-size:10pt}.pt th,.pt td{border:1px solid #999;padding:1.5mm 2mm;text-align:left}.pt .q{text-align:right;font-weight:700}.pt .no{width:12mm;text-align:center;font-weight:700}.pt th{background:#f3f3f3}'
       +'.tot{margin-top:4mm;font-weight:800;font-size:12pt;text-align:right}.sign{display:flex;gap:20mm;margin-top:16mm}.sb{flex:1;text-align:center;font-size:10pt}.sb .ln{border-top:1px solid #111;margin-bottom:2mm;height:14mm}'
       +'</style></head><body>'+copy('ORIGINAL \u2014 CLIENTE')+copy('COPIA \u2014 ALMAC\u00c9N')+'</body></html>';
   }
@@ -669,42 +669,58 @@
   // 정확히 100x150mm 라벨 PDF(물리 치수가 PDF에 내장 → 프린터 무시 없이 정확)
   function buildLabelsPDF(d){
     var JS=(window.jspdf&&window.jspdf.jsPDF); if(!JS) return null;
-    var GAP=3, PITCH=labelPitch(), TADJ=labelTop(), LBL_H=PITCH-GAP;   // 페이지=피치(보정값), 내용은 라벨 본체 안
+    var GAP=3, PITCH=labelPitch(), TADJ=labelTop();   // 페이지=피치(보정값), 내용은 라벨 본체 안
     var doc=new JS({unit:'mm', format:[100,PITCH], orientation:'portrait'});
-    var W=100, M=4;
-    (d.boxes||[]).forEach(function(b, idx){
-      if(idx>0) doc.addPage([100,PITCH],'portrait');
-      var y=M+6+TADJ;
-      doc.setFont('helvetica','bold'); doc.setFontSize(22);
-      doc.text('CAJA '+b.box_no+' / '+d.box_count, M, y);
-      doc.setFont('helvetica','normal'); doc.setFontSize(9);
-      doc.text(String(d.inv_date||d.quote_date||''), W-M, y, {align:'right'});
-      y+=2.5; doc.setLineWidth(0.6); doc.line(M, y, W-M, y); y+=6;
-      doc.setFont('helvetica','bold'); doc.setFontSize(12);
-      var cust=String(d.customer||'')+(d.customer_code?' ('+d.customer_code+')':'');
-      var cl=doc.splitTextToSize(cust, W-2*M); doc.text(cl, M, y); y+=cl.length*5+1.5;
-      doc.setFontSize(9.5);
-      doc.text('No. de factura: '+(d.sat_no||'PENDIENTE'), M, y); y+=4.6;
-      doc.setFont('helvetica','normal'); doc.setFontSize(9);
-      doc.text('Pedido: '+String(d.quote_no||'')+'    SKU: '+b.box_sku+'    Pzas: '+b.box_qty, M, y); y+=3.5;
-      var bc=labelBarcodePNG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
-      if(bc){ var bh=15; doc.addImage(bc,'PNG', M, y, W-2*M, bh); y+=bh+2.5; }
-      // 표
-      var x2=M+30;
-      doc.setFontSize(8.5); doc.setDrawColor(0); doc.setLineWidth(0.3);
-      doc.setFillColor(0,0,0); doc.rect(M, y, W-2*M, 6, 'F');           // 검정 헤더 바
-      doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
-      doc.text('CTR', M+1.5, y+4); doc.text('Competidor', x2+1, y+4); doc.text('Cant.', W-M-1.5, y+4, {align:'right'});
-      doc.setTextColor(0,0,0);
-      y+=6; doc.setFont('helvetica','normal');
-      (b.lines||[]).forEach(function(l){
-        if(y>LBL_H-M-5){ return; }
-        doc.rect(M, y, W-2*M, 5.4);
-        doc.text(String(l.ctr_code||''), M+1, y+3.7);
-        doc.text(String(l.syd_code||'-'), x2+1, y+3.7);
-        doc.setFont('helvetica','bold'); doc.text(String(l.qty), W-M-1, y+3.7, {align:'right'}); doc.setFont('helvetica','normal');
-        y+=5.4;
-      });
+    var W=100, M=4, MAXROWS=14;                        // 한 라벨당 최대 14줄, 15번째부터 새 라벨(헤더 반복)
+    var first=true;
+    (d.boxes||[]).forEach(function(b){
+      var lines=b.lines||[];
+      var sheets=Math.max(1, Math.ceil(lines.length/MAXROWS));
+      for(var sh=0; sh<sheets; sh++){
+        if(!first) doc.addPage([100,PITCH],'portrait');
+        first=false;
+        var y=M+6+TADJ;
+        // ===== 상단 고정내용(매 라벨 반복) =====
+        doc.setFont('helvetica','bold'); doc.setFontSize(22);
+        doc.text('CAJA '+b.box_no+' / '+d.box_count, M, y);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9);
+        doc.text(String(d.inv_date||d.quote_date||''), W-M, y, {align:'right'});
+        y+=2.5; doc.setLineWidth(0.6); doc.line(M, y, W-M, y); y+=6;
+        doc.setFont('helvetica','bold'); doc.setFontSize(12);
+        var cust=String(d.customer||'')+(d.customer_code?' ('+d.customer_code+')':'');
+        var cl=doc.splitTextToSize(cust, W-2*M); doc.text(cl, M, y); y+=cl.length*5+1.5;
+        doc.setFontSize(9.5);
+        doc.text('No. de factura: '+(d.sat_no||'PENDIENTE'), M, y); y+=4.6;
+        doc.setFont('helvetica','normal'); doc.setFontSize(9);
+        var sLines=lines.slice(sh*MAXROWS, (sh+1)*MAXROWS);
+        var bSku=lines.length, bQty=lines.reduce(function(a,l){ return a+(Number(l.qty)||0); },0);
+        var ped='Pedido: '+String(d.quote_no||'')+'    SKU: '+bSku+'    Pzas: '+bQty;
+        if(sheets>1) ped+='    Hoja '+(sh+1)+'/'+sheets;
+        doc.text(ped, M, y); y+=3.5;
+        var bc=labelBarcodePNG(String(d.quote_no||d.quote_id)+'-B'+b.box_no);
+        if(bc){ var bh=15; doc.addImage(bc,'PNG', M, y, W-2*M, bh); y+=bh+2.5; }
+        // ===== 표 헤더(검정 바) — 매 라벨 반복. 열: No | CTR | Competidor | Cant =====
+        var cNo=M, cCtr=M+9, cComp=M+37, cCantR=W-M-1.5;
+        var vNo=M+9, vCtr=M+37, vCant=W-M-16;   // 세로 구분선 위치
+        doc.setFontSize(8.5); doc.setDrawColor(0); doc.setLineWidth(0.3);
+        doc.setFillColor(0,0,0); doc.rect(M, y, W-2*M, 6, 'F');
+        doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+        doc.text('No.', cNo+4.5, y+4, {align:'center'}); doc.text('CTR', cCtr+1, y+4); doc.text('Competidor', cComp+1, y+4); doc.text('Cant.', cCantR, y+4, {align:'right'});
+        doc.setTextColor(0,0,0); y+=6;
+        var bodyTop=y; doc.setFont('helvetica','normal');
+        // ===== 이 라벨의 줄(최대 14) — 순번은 박스 전체 기준 연속 =====
+        sLines.forEach(function(l, i){
+          var no=sh*MAXROWS + i + 1;
+          doc.rect(M, y, W-2*M, 5.4);
+          doc.setFont('helvetica','bold'); doc.text(String(no), cNo+4.5, y+3.7, {align:'center'}); doc.setFont('helvetica','normal');
+          doc.text(String(l.ctr_code||''), cCtr+1, y+3.7);
+          doc.text(String(l.syd_code||'-'), cComp+1, y+3.7);
+          doc.setFont('helvetica','bold'); doc.text(String(l.qty), cCantR, y+3.7, {align:'right'}); doc.setFont('helvetica','normal');
+          y+=5.4;
+        });
+        doc.setDrawColor(150); doc.setLineWidth(0.2);
+        doc.line(vNo, bodyTop, vNo, y); doc.line(vCtr, bodyTop, vCtr, y); doc.line(vCant, bodyTop, vCant, y);
+      }
     });
     return doc;
   }
