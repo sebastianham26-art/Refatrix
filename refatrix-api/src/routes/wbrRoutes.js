@@ -118,6 +118,32 @@ export default async function wbrRoutes(app) {
     return { ok: true, updated_at: r ? r.updated_at : null };
   });
 
+  // ===== 화상회의 링크 (wbr_meeting 싱글톤) — 조회월 카드에 표시 =====
+  //  열람권한: 링크 조회/클릭. 수정권한(디렉터 등): 링크 설정/변경.
+  app.get('/api/wbr/meeting', { preHandler: [authGuard, requirePage('wbr')] }, async (req) => {
+    const row = (await query(`SELECT url, updated_at FROM wbr_meeting WHERE id=1`)).rows[0];
+    const perm = req.ctx.perm;
+    const canEdit = perm.role === 'director'
+      || ((perm.pageAccess && perm.pageAccess['wbr']) === 'edit');
+    return { url: (row && row.url) || '', updated_at: row ? row.updated_at : null, can_edit: canEdit };
+  });
+
+  app.put('/api/wbr/meeting', { preHandler: [authGuard, requirePageEdit('wbr')] }, async (req, reply) => {
+    let url = req.body && typeof req.body.url === 'string' ? req.body.url.trim() : '';
+    if (url.length > 2000) return reply.code(413).send({ error: 'too_long' });
+    if (url && !/^https?:\/\//i.test(url)) {
+      return reply.code(400).send({ error: 'bad_url', note: 'http:// 또는 https:// 로 시작해야 합니다.' });
+    }
+    const uid = req.ctx.perm.userId;
+    await query(
+      `INSERT INTO wbr_meeting (id, url, updated_by, updated_at) VALUES (1, $1, $2, now())
+       ON CONFLICT (id) DO UPDATE SET url=EXCLUDED.url, updated_by=EXCLUDED.updated_by, updated_at=now()`,
+      [url || null, uid]);
+    logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'wbr_meeting_set', target: 'wbr_meeting:1' });
+    const r = (await query(`SELECT updated_at FROM wbr_meeting WHERE id=1`)).rows[0];
+    return { ok: true, url: url || '', updated_at: r ? r.updated_at : null };
+  });
+
   // ===== 팀별 주요이슈 사진 (wbr_issue_photos) =====
   // 보드 JSON엔 사진 id만 참조. 이미지(클라 압축 JPEG data URL)는 여기 별도 저장.
   // 업로드/삭제: 'wbr' 수정 권한. 조회: 'wbr' 열람 권한.
