@@ -219,16 +219,16 @@
       <div class="mrow" style="margin-top:10px;align-items:flex-start"><span class="ml">화상회의</span>
         <span style="display:flex;flex-direction:column;gap:6px">
           <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <button type="button" class="btn gold hidden" id="vcJoin" style="padding:7px 14px">\ud83d\udcf9 \ud654\uc0c1\ud68c\uc758 \ucc38\uc5ec</button>
-            <span id="vcNone" class="hint hidden">\uc544\uc9c1 \ub9c1\ud06c\uac00 \uc124\uc815\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.</span>
+            <button type="button" class="btn gold hidden" id="vcJoin" style="padding:7px 14px">📹 화상회의 참여</button>
+            <span id="vcNone" class="hint hidden">아직 링크가 설정되지 않았습니다.</span>
           </span>
           <span id="vcLinkWrap" class="hidden" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <a id="vcLink" href="#" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all;color:var(--brand)"></a>
-            <button type="button" class="btn" id="vcCopy" style="padding:4px 10px;font-size:11.5px">\ubcf5\uc0ac</button>
+            <button type="button" class="btn" id="vcCopy" style="padding:4px 10px;font-size:11.5px">복사</button>
           </span>
           <span id="vcEditWrap" class="hidden no-print" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <input id="vcInput" type="text" placeholder="https://meet... \ud68c\uc758 \ub9c1\ud06c \ubd99\uc5ec\ub123\uae30" style="min-width:280px;font-size:12px">
-            <button type="button" class="btn gold" id="vcSave" style="padding:6px 12px">\uc800\uc7a5</button>
+            <input id="vcInput" type="text" placeholder="https://meet... 회의 링크 붙여넣기" style="min-width:280px;font-size:12px">
+            <button type="button" class="btn gold" id="vcSave" style="padding:6px 12px">저장</button>
             <span class="hint" id="vcMsg"></span>
           </span>
         </span>
@@ -376,7 +376,7 @@
   function openMeeting(){ if(VC_URL) window.open(VC_URL,'_blank','noopener'); }
   function vcFallbackCopy(u,done){ try{ const ta=document.createElement('textarea'); ta.value=u; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done(); }catch(e){} }
   function copyMeeting(){ if(!VC_URL) return; const b=$('vcCopy'); const t=b?b.textContent:'';
-    const done=()=>{ if(b){ b.textContent='\ubcf5\uc0ac\ub428!'; setTimeout(()=>{ if(b) b.textContent=t; },1200);} };
+    const done=()=>{ if(b){ b.textContent='복사\ub428!'; setTimeout(()=>{ if(b) b.textContent=t; },1200);} };
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(VC_URL).then(done).catch(()=>vcFallbackCopy(VC_URL,done)); }
     else vcFallbackCopy(VC_URL,done);
   }
@@ -387,8 +387,8 @@
     try{
       const res=await fetch(session.api+'/api/wbr/meeting',{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({url})});
       const d=await res.json();
-      if(!res.ok||d.error){ if(m) m.textContent='\uc800\uc7a5 \uc2e4\ud328: '+(d.error||res.status); return; }
-      renderMeeting(d.url||'', true); if(m){ m.textContent='\uc800\uc7a5\ub428'; setTimeout(()=>{ if(m) m.textContent=''; },1500); }
+      if(!res.ok||d.error){ if(m) m.textContent='저장 \uc2e4\ud328: '+(d.error||res.status); return; }
+      renderMeeting(d.url||'', true); if(m){ m.textContent='저장\ub428'; setTimeout(()=>{ if(m) m.textContent=''; },1500); }
     }catch(e){ if(m) m.textContent='\uc11c\ubc84 \uc5f0\uacb0 \uc2e4\ud328'; }
     finally{ if($('vcSave')) $('vcSave').disabled=false; }
   }
