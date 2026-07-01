@@ -364,12 +364,24 @@ export default async function warehouseRoutes(app) {
     return { ok: true, photo_id: Number(r.id), count: n };
   });
 
-  // ---------- 박스 사진 목록(이미지 데이터 포함) ----------
+  // ---------- 박스 사진 목록(메타데이터만 — image_data 제외로 대용량 전송 방지) ----------
+  //  주의: 예전엔 image_data(수 MB base64)를 전부 반환해 폴링마다 커넥션 풀을 고갈시켰다.
+  //  이제 목록은 가볍게 id/box_id만 주고, 실제 이미지는 아래 /photo/:photoId 로 1장씩(캐시) 로드한다.
   app.get('/api/warehouse/packing/:id/photos', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const id = Number(req.params.id);
     const rows = (await query(
-      `SELECT id, box_id, image_data, uploaded_at FROM packing_box_photo WHERE quote_id=$1 ORDER BY box_id, id`, [id])).rows;
-    return { photos: rows.map((r) => ({ id: Number(r.id), box_id: Number(r.box_id), image_data: r.image_data, uploaded_at: r.uploaded_at })) };
+      `SELECT id, box_id, uploaded_at FROM packing_box_photo WHERE quote_id=$1 ORDER BY box_id, id`, [id])).rows;
+    return { photos: rows.map((r) => ({ id: Number(r.id), box_id: Number(r.box_id), uploaded_at: r.uploaded_at })) };
+  });
+
+  // ---------- 단일 박스 사진(image_data 1장) — 프런트에서 한 번만 받아 캐시 ----------
+  app.get('/api/warehouse/packing/photo/:photoId', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const photoId = Number(req.params.photoId);
+    if (!Number.isInteger(photoId)) return reply.code(400).send({ error: 'bad_id' });
+    const row = (await query(`SELECT image_data FROM packing_box_photo WHERE id=$1`, [photoId])).rows[0];
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    reply.header('Cache-Control', 'private, max-age=86400'); // 사진은 불변 → 하루 캐시
+    return { id: photoId, image_data: row.image_data };
   });
 
   // ---------- 박스 사진 삭제 ----------

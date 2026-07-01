@@ -303,6 +303,18 @@
     return null;
   }
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  // 박스 사진: 목록은 메타데이터만, 이미지는 1장씩 받아 캐시(불변→재요청 안 함). 폴링해도 이미지 트래픽 0 수렴.
+  var PHOTO_DATA={};
+  var PH_PLACEHOLDER='data:image/gif;base64,R0lGODlhAQABAIAAAOTk5AAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==';
+  function loadThumb(imgEl){ var pid=imgEl&&imgEl.getAttribute('data-photo-id'); if(!pid) return;
+    if(PHOTO_DATA[pid]){ imgEl.src=PHOTO_DATA[pid]; return; }
+    fetch(API+'/api/warehouse/packing/photo/'+pid,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      if(d&&d.image_data){ PHOTO_DATA[pid]=d.image_data; if(imgEl&&imgEl.getAttribute('data-photo-id')===String(pid)) imgEl.src=d.image_data; }
+    }).catch(function(){});
+  }
+  function loadThumbsIn(container){ if(!container) return;
+    Array.prototype.forEach.call(container.querySelectorAll('img.thumb[data-photo-id]'), function(img){ loadThumb(img); });
+  }
 
   // ================= 한국어 ↔ 스페인어 (앱 내장 번역) =================
   var I18N=[
@@ -575,7 +587,7 @@
     $('shipBody').innerHTML=hint+d.boxes.map(function(b){
       var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
       var ph=(SHIP_PHOTOS[b.box_id]||[]);
-      var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="spx" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
+      var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+(PHOTO_DATA[pp.id]||PH_PLACEHOLDER)+'" data-photo-id="'+pp.id+'" alt=""><button class="spx" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
       var photos='<div class="photos">'+thumbs+'<button class="saddphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'+(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
       return '<div class="sbox"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스 <button class="boxlbl" data-box="'+b.box_no+'">\ud83d\udce6 이 박스 라벨 인쇄</button></div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table>'+photos+'</div>';
     }).join('');
@@ -583,6 +595,7 @@
     Array.prototype.forEach.call($('shipBody').querySelectorAll('.saddphoto'),function(btn){ btn.addEventListener('click',function(){ shipTriggerPhoto(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call($('shipBody').querySelectorAll('.spx'),function(btn){ btn.addEventListener('click',function(){ shipRemovePhoto(Number(btn.getAttribute('data-photo'))); }); });
     Array.prototype.forEach.call($('shipBody').querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
+    loadThumbsIn($('shipBody'));
     $('shipPanel').classList.add('on');
   }
   function shipTriggerPhoto(boxId){ PHOTO_MODE='ship'; pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
@@ -982,7 +995,7 @@
     var table='<table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th>'+(b.sealed?'':'<th></th>')+'</tr></thead>'
       +'<tbody>'+(lines||('<tr><td colspan="'+ncol+'" style="color:#9a958b;text-align:center">비어 있음 \u2014 스캔/＋로 담기</td></tr>'))+'</tbody></table>';
     var addrow = '';   // 수동입력은 상단 고정바로 통합
-    var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
+    var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+(PHOTO_DATA[pp.id]||PH_PLACEHOLDER)+'" data-photo-id="'+pp.id+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
     var photos='<div class="photos">'+thumbs
       +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
       +(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
@@ -995,6 +1008,7 @@
     Array.prototype.forEach.call(g.querySelectorAll('.addBtn'),function(btn){ btn.addEventListener('click',function(){ var inp=g.querySelector('.ctrAdd[data-box="'+btn.getAttribute('data-box')+'"]'); addManual(Number(btn.getAttribute('data-box')), inp); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.ctrAdd'),function(inp){ inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); addManual(Number(inp.getAttribute('data-box')), inp); } }); });
     Array.prototype.forEach.call(g.querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
+    loadThumbsIn(g);
     Array.prototype.forEach.call(g.querySelectorAll('.px'),function(btn){ btn.addEventListener('click',function(){ removePhoto(Number(btn.getAttribute('data-photo'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.addphoto'),function(btn){ btn.addEventListener('click',function(){ triggerPhoto(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.bdel'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=Number(btn.getAttribute('data-box')); renderPacking(); }); });
@@ -1104,7 +1118,7 @@
   var fi0=$('photoInput'); if(fi0){ fi0.addEventListener('change',function(){ var f=this.files&&this.files[0]; if(!f||pendingPhotoBox==null) return;
     var ship=(PHOTO_MODE==='ship'); var qid=ship?(SHIP&&SHIP.quote_id):(PK&&PK.quote_id); if(qid==null) return;
     if(!ship) feedback('사진 업로드 중\u2026','idle');
-    resizeImage(f,1600,0.72).then(function(dataUrl){ if(!dataUrl){ ship?alert('이미지 처리 실패'):feedback('이미지 처리 실패','err'); return; }
+    resizeImage(f,1280,0.62).then(function(dataUrl){ if(!dataUrl){ ship?alert('이미지 처리 실패'):feedback('이미지 처리 실패','err'); return; }
       postJSON(API+'/api/warehouse/packing/'+qid+'/box/'+pendingPhotoBox+'/photo',{image_data:dataUrl}).then(function(o){
         if(o.ok){ if(ship){ openShip(qid); } else { feedback('사진 1장 추가됨','ok'); loadPacking(qid,false); } } else { ship?alert(failMsg(o)):feedback(failMsg(o),'err'); }
       });
