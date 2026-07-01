@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632c</title>
+<title>Refatrix · 창고 포장 · build 0632d</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -48,7 +48,7 @@
   .panel.on{display:flex;flex-direction:column}
   .ptop{flex:0 0 auto;width:100%;max-width:980px;margin:0 auto;padding:14px 16px 0}
   .pscroll{flex:1 1 auto;min-height:0;overflow:auto;width:100%;max-width:980px;margin:0 auto;padding:0 16px 16px;scrollbar-gutter:stable}
-  .back{background:var(--steel);color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:19px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+  .back{background:var(--steel);color:#fff;border:none;border-radius:9px;padding:6px 12px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .back:active{background:var(--steel-d)}
   .headrow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:12px 0 10px}
   .headrow .phead{margin:0;flex:1 1 320px}
@@ -150,9 +150,9 @@
   .curbox-card .em{color:#9a958b;font-size:16px;padding:8px 0}
   .boxpick{font-size:15px;font-weight:800;color:var(--steel-d);white-space:nowrap}
   .boxpick select{font-size:16px;font-weight:800;padding:9px 10px;border:2px solid var(--steel);border-radius:10px;background:#fff;margin-left:4px}
-  .items-toggle{width:100%;background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:12px;padding:14px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:12px}
+  .items-toggle{width:100%;background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:10px;padding:9px 13px;font-size:14px;font-weight:800;cursor:pointer;margin:2px 0 10px;text-align:left}
   .items-toggle:active{background:#e3edf4}
-  .ptbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+  .ptbl-wrap{overflow:auto;max-height:42vh;border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
   table.ptbl{width:100%;border-collapse:collapse;table-layout:auto;min-width:680px;background:#fff}
   table.ptbl th,table.ptbl td{padding:11px 10px;font-size:15px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
   table.ptbl th{background:var(--steel);color:#fff;font-weight:800;font-size:13px;cursor:pointer;user-select:none;position:sticky;top:0}
@@ -175,7 +175,12 @@
   .bcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px}
   .bcard.active{border:3px solid var(--steel);box-shadow:0 4px 14px rgba(82,112,138,.18)}
   .bcard.sealed{background:#f6f7f4;border-color:#d6ddd2}
-  .bch{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .bch{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .bch .bqi{font-size:13px;font-weight:700;color:var(--muted)} .bch .bqi b{color:var(--ink);font-size:15px}
+  .bch .bchsp{flex:1 1 auto}
+  .bch .full{background:var(--green);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:800;cursor:pointer}
+  .bch .reopen{background:#eef2f5;color:var(--steel-d);border:1px solid var(--steel);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:800;cursor:pointer}
+  .bch .bdel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:14px;cursor:pointer;color:var(--red)}
   .bact{margin-bottom:8px}
   .bact .full,.bact .reopen{width:100%;display:block;text-align:center;white-space:nowrap}
   .bact2{display:flex;align-items:center;gap:8px;margin-bottom:10px}
@@ -250,7 +255,6 @@
   <div class="pscroll">
     <div class="shipbtns"><button id="shipPrintLabels">📦 박스 라벨 출력</button><button id="shipPrintList">📄 패킹리스트 출력</button></div>
     <div id="shipBody"></div>
-    <button class="back" id="shipBack2" style="width:100%;justify-content:center;padding:16px;margin:8px 0 12px">← 출고 목록으로</button>
   </div>
 </div>
 
@@ -274,8 +278,8 @@
   </div>
   <div class="pscroll">
     <div id="readyBanner"></div>
+    <button class="items-toggle" id="itemsToggle">📋 포장 품목 (전체) ▴</button>
     <div id="itemsSection">
-      <div class="subt">📋 포장 품목 (전체) <span style="font-weight:600;color:#9a958b;font-size:12px">(타이틀 클릭 정렬)</span></div>
       <div class="ptbl-wrap"><table class="ptbl"><thead id="itemsHead"></thead><tbody id="remBody"></tbody></table></div>
     </div>
     <div class="subt">박스 선택 <span style="font-weight:600;color:#9a958b;font-size:12px">(작업할 박스를 누르면 이동 · 스캔은 선택된 박스에 담깁니다)</span></div>
@@ -292,7 +296,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632c — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632d — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -957,18 +961,16 @@
     var active = (b.box_id===curBox);
     var ph=photosOf(b.box_id);
     var total=(b.lines||[]).reduce(function(a,l){return a+Number(l.qty);},0);
-    var head='<div class="bch"><span class="bn">\ud83d\udce6 Box '+b.box_no+'</span>'
-      +'<span class="bst '+(b.sealed?'done':'work')+'">'+(b.sealed?'마감':'작업 중')+'</span></div>'
-      +'<div class="bact">'
+    var head='<div class="bch">'
+      +'<span class="bn">\ud83d\udce6 Box '+b.box_no+'</span>'
+      +'<span class="bqi"><b>'+total+'</b>피스</span>'
+      +'<span class="bst '+(b.sealed?'done':'work')+'">'+(b.sealed?'마감':'작업 중')+'</span>'
+      +'<span class="bchsp"></span>'
       +(b.sealed
         ? '<button class="reopen" data-box="'+b.box_id+'" data-seal="0">다시 열기</button>'
-        : '<button class="full" data-box="'+b.box_id+'" data-seal="1">이 박스 다 찼음 \u2713</button>')
-      +'</div>'
-      +'<div class="bact2">'
-      +(active?'<span class="picknow">\u25cf 담는 중</span>':'<button class="pickbox" data-box="'+b.box_id+'">담을 박스로</button>')
-      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1 삭제</button>'
+        : '<button class="full" data-box="'+b.box_id+'" data-seal="1">다 찼음 \u2713</button>')
+      +'<button class="bdel" data-box="'+b.box_id+'" title="박스 삭제">\ud83d\uddd1</button>'
       +'</div>';
-    var qtyrow='<div class="bqtyrow"><span>총 수량</span><b class="bqty">'+total+'</b><span>피스</span></div>';
     var delconf=(confirmDelBox===b.box_id)
       ? '<div class="delconf"><span>\u26a0 Box '+b.box_no+' 삭제 — 담긴 내역\u00b7사진이 모두 지워집니다.</span><button class="delyes" data-box="'+b.box_id+'">삭제</button><button class="delno">취소</button></div>'
       : '';
@@ -984,7 +986,7 @@
     var photos='<div class="photos">'+thumbs
       +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
       +(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
-    return '<div class="bcard'+(active?' active':'')+(b.sealed?' sealed':'')+'">'+head+qtyrow+delconf+table+addrow+photos+'</div>';
+    return '<div class="bcard'+(active?' active':'')+(b.sealed?' sealed':'')+'">'+head+delconf+table+addrow+photos+'</div>';
   }
   function wireBoxHandlers(){
     var g=$('boxGrid');
@@ -998,7 +1000,6 @@
     Array.prototype.forEach.call(g.querySelectorAll('.bdel'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=Number(btn.getAttribute('data-box')); renderPacking(); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.delyes'),function(btn){ btn.addEventListener('click',function(){ deleteBox(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.delno'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=null; renderPacking(); }); });
-    Array.prototype.forEach.call(g.querySelectorAll('.pickbox'),function(btn){ btn.addEventListener('click',function(){ curBox=Number(btn.getAttribute('data-box')); renderPacking(); focusScan(); }); });
   }
 
   function postJSON(url, body){
@@ -1109,10 +1110,10 @@
       });
     }); }); }
   var nbt=$('newBoxTop'); if(nbt) nbt.addEventListener('click',newBox);
+  var itg=$('itemsToggle'); if(itg) itg.addEventListener('click',function(){ var sec=$('itemsSection'); var hidden=sec.style.display==='none'; sec.style.display=hidden?'block':'none'; itg.innerHTML=hidden?'📋 포장 품목 (전체) ▴':'📋 포장 품목 (전체) ▾'; });
   var sbs=$('scanBoxSel'); if(sbs) sbs.addEventListener('change',function(){ var v=Number(this.value); if(v){ curBox=v; renderPacking(); } focusScan(); });
 
   var sbk=$('shipBack'); if(sbk) sbk.addEventListener('click',closeShip);
-  var sbk2=$('shipBack2'); if(sbk2) sbk2.addEventListener('click',closeShip);
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
   initLangBtn(); initShipTabs(); startI18n();
