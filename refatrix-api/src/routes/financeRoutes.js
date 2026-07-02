@@ -1369,6 +1369,8 @@ export default async function financeRoutes(app) {
     const invRows = (await query(
       `SELECT si.id, c.name AS customer_name, si.sat_no,
               to_char(si.due_date,'YYYY-MM-DD') AS due_date,
+              si.total_mxn AS total,
+              COALESCE(SUM(spa.amount),0) AS collected,
               (si.total_mxn - COALESCE(SUM(spa.amount),0)) AS outstanding
          FROM sales_invoices si
          JOIN customers c ON c.id=si.customer_id
@@ -1376,10 +1378,12 @@ export default async function financeRoutes(app) {
         WHERE si.status='posted' AND si.deleted_at IS NULL
           AND to_char(si.due_date,'YYYY-MM')=$1
         GROUP BY si.id, c.name`, [month])).rows
-      .map((r) => ({ ...r, outstanding: Number(r.outstanding) }));
+      .map((r) => ({ ...r, outstanding: Number(r.outstanding), total: Number(r.total), collected: Number(r.collected) }));
     // AP(지급예정): 권한 계좌의 예정(plan)·지출(out) 거래(plan_date 기준).
     const planOut = mapped.filter((t) => t.status === 'plan' && t.direction === 'out');
-    const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month);
+    // 실적화된(지급완료) 예정지출: 계획이 있었고 실제로 전환된 지출 — AP 자리에 회색+배지로 표시(잔고엔 실적으로만 반영, sum 미포함).
+    const realizedOut = mapped.filter((t) => t.status === 'actual' && t.direction === 'out' && t.plan_amount_mxn != null);
+    const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month, realizedOut);
     // 일자별 집계 + 누적잔고(기초잔고부터 그 달 시작 직전까지 누적 후 일자별)
     const opening = await openingBalanceMxn(req.ctx.perm);
     // 그 달 1일 직전까지의 모든 실적 순액 합 = 기초 + 과거 실적
@@ -1402,16 +1406,22 @@ export default async function financeRoutes(app) {
       if (t.direction === 'in') cell.in += t.amount_mxn; else cell.out += t.amount_mxn;
       cell.items.push(t);
     }
-    // 누적잔고: 실적만 누적(예정 포함 옵션은 프런트 토글 시 별도 표시)
+    // 누적잔고 2종:
+    //  balance      = 실적만 누적 (오늘 기준 실제 실행분만) — '실제' 모드
+    //  balance_proj = 실적 + 그날 AR(수금예정) - AP(지급예정) 누적 (예상잔고) — '예정' 모드
+    // 둘 다 그 달 시작 직전 실적잔고(runBefore)에서 출발. 예정분(AR/AP)은 표시된 달 범위 내에서만 반영(과거 경과분 이월 없음).
     let cumActual = runBefore;
+    let cumProj = runBefore;
     const days = Object.keys(byDay).sort().map((ds) => {
       const c = byDay[ds];
       const actualNet = c.items.filter((x) => x.status === 'actual').reduce((s, x) => s + (x.direction === 'in' ? 1 : -1) * x.amount_mxn, 0);
       cumActual += actualNet;
       const arc = arByDay[ds] || { sum: 0, items: [] };
       const apc = apByDay[ds] || { sum: 0, items: [] };
+      cumProj += actualNet + arc.sum - apc.sum;
       return { date: ds, in: r2(c.in), out: r2(c.out), net: r2(c.in - c.out), cumulative: r2(cumActual), items: c.items,
-        ar: r2(arc.sum), ap: r2(apc.sum), ar_items: arc.items, ap_items: apc.items, balance: r2(cumActual) };
+        ar: r2(arc.sum), ap: r2(apc.sum), ar_items: arc.items, ap_items: apc.items,
+        balance: r2(cumActual), balance_proj: r2(cumProj) };
     });
     const breakdown = monthBreakdown(mapped, month, today);
     return { month, today, opening_before_month: r2(runBefore), days, ...breakdown };

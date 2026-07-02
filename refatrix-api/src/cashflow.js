@@ -222,24 +222,39 @@ export { round2 };
 //   planOut  : 권한계좌의 예정 지출 거래 [{ id, plan_date|txn_date, amount_mxn, account_name, category_name, memo }]
 //   month    : 'YYYY-MM'
 // 반환: { ar: { [date]: {sum, items[]} }, ap: { [date]: {sum, items[]} } }
-export function calendarArApByDay(invoices, planOut, month) {
+export function calendarArApByDay(invoices, planOut, month, realizedOut) {
   const ar = {}; const ap = {};
   for (const iv of invoices || []) {
     const d = String(iv.due_date).slice(0, 10);
     if (d.slice(0, 7) !== month) continue;
-    const out = Number(iv.outstanding);
-    if (!(out > 0)) continue;
+    const total = Number(iv.total != null ? iv.total : iv.total_mxn) || 0;
+    const collected = Number(iv.collected) || 0;
+    const out = iv.outstanding != null ? Number(iv.outstanding) : round2(total - collected);
+    // 상태: pending=미수금(색상) / partial=일부수금(회색) / paid=완납(회색+배지)
+    let state;
+    if (out <= 0.009) state = 'paid';
+    else if (collected > 0.009) state = 'partial';
+    else state = 'pending';
     if (!ar[d]) ar[d] = { sum: 0, items: [] };
-    ar[d].sum = round2(ar[d].sum + out);
-    ar[d].items.push({ id: iv.id, customer_name: iv.customer_name, sat_no: iv.sat_no, amount_mxn: round2(out) });
+    ar[d].sum = round2(ar[d].sum + Math.max(0, out)); // 예상잔고엔 미수(remaining)만 반영
+    ar[d].items.push({ id: iv.id, customer_name: iv.customer_name, sat_no: iv.sat_no,
+      amount_mxn: round2(Math.max(0, out)), total_mxn: round2(total), collected_mxn: round2(collected), state });
   }
   for (const t of planOut || []) {
     const d = String(t.plan_date || t.txn_date).slice(0, 10);
     if (d.slice(0, 7) !== month) continue;
     const amt = Number(t.amount_mxn) || 0;
     if (!ap[d]) ap[d] = { sum: 0, items: [] };
-    ap[d].sum = round2(ap[d].sum + amt);
-    ap[d].items.push({ id: t.id, account_name: t.account_name || null, category_name: t.category_name || null, memo: t.memo || null, amount_mxn: round2(amt) });
+    ap[d].sum = round2(ap[d].sum + amt); // 예정 지급(pending)만 예상잔고에 반영
+    ap[d].items.push({ id: t.id, account_name: t.account_name || null, category_name: t.category_name || null, memo: t.memo || null, amount_mxn: round2(amt), state: 'pending' });
+  }
+  // 실적화된(지급완료) 예정지출: 계획일 자리에 회색+배지로 노출. 잔고(sum)엔 넣지 않음(실적으로 이미 반영됨 → 이중계산 방지).
+  for (const t of realizedOut || []) {
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (d.slice(0, 7) !== month) continue;
+    const amt = Number(t.amount_mxn) || 0;
+    if (!ap[d]) ap[d] = { sum: 0, items: [] };
+    ap[d].items.push({ id: t.id, account_name: t.account_name || null, category_name: t.category_name || null, memo: t.memo || null, amount_mxn: round2(amt), state: 'paid' });
   }
   return { ar, ap };
 }
