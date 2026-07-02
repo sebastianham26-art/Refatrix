@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260630es loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260702sc loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -58,7 +58,8 @@
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
-    whHome:{file:'refatrix-warehouse.html',name:'창고 홈',desc:'입고·피킹·패킹'}
+    whHome:{file:'refatrix-warehouse.html',name:'창고 홈',desc:'입고·피킹·패킹'},
+    stockcount:{file:'refatrix-stockcount.html',name:'재고실사',desc:'실물 재고조사·대조·실물맞추기'}
   };
   // 화면 → 권한키 (배열=하나라도 있으면 표시, null=공통, __director__=디렉터)
   var PAGEKEY={
@@ -75,7 +76,7 @@
     recost:'__director__',
     products:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing',
     users:'__director__', company:'__director__', processKpi:'__director__',
-    whHome:'warehouse'
+    whHome:'warehouse', stockcount:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
@@ -85,7 +86,7 @@
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr']},
-    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome']},
+    {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','processKpi']}
   ];
 
