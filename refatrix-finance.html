@@ -1149,6 +1149,8 @@
   const paState={filter:'all'};
   function fmtSigned(n){return (n>0?'+':'')+fmt(n);}
   function netColor(n){return n>0?'var(--income)':(n<0?'var(--expense)':'var(--muted)');}
+  function pgTouched(x){return !!(x&&(x.state==='partial'||x.state==='paid'));} // 조금이라도 실적반영 → 회색
+  function pgPaid(x){return !!(x&&x.state==='paid');}                          // 전액 실적반영 → 배지
 
   // 간단 SVG 선그래프: series=[{name,color,points:[{x_label,value}]}], 공통 x축(labels)
   function svgLineChart(labels,series,opts={}){
@@ -1237,12 +1239,12 @@
           <div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
           <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
           <div class="cal-slot"><span class="k">실적</span><span style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):''}</span></div>
-          <div class="cal-slot"><span class="k">잔고</span><span style="font-weight:700">${v?fmt(v.balance!=null?v.balance:v.cumulative):''}</span></div>
+          <div class="cal-slot"><span class="k">${cfState.mode==='plan'?'예상':'잔고'}</span><span style="font-weight:700;${cfState.mode==='plan'?'color:#7a4fb0':''}">${v?fmt(cfState.mode==='plan'?(v.balance_proj!=null?v.balance_proj:v.balance):(v.balance!=null?v.balance:v.cumulative)):''}</span></div>
         </div>`;
       }
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
-        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · 잔고=누적(실적)</span></div>
+        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · ${cfState.mode==='plan'?'<span style="color:#7a4fb0">예상=실적+AR−AP 누적</span>':'잔고=누적(실적)'}</span></div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
         ${renderMonthSections(d)}`;
@@ -1300,12 +1302,12 @@
         const apItems=(v&&v.ap_items)||[];
         const cashItems=(v&&v.items)?v.items.filter(t=>t.status==='actual'):[];
         const actNet=Math.round(cashItems.reduce((s,t)=>s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0),0)*100)/100;
-        const arLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
-          <span>${x.customer_name||''}${x.sat_no?' · '+x.sat_no:''}</span>
-          <span style="color:var(--income)">+${fmt(x.amount_mxn)}</span></div>`;
-        const apLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
-          <span>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}</span>
-          <span style="color:var(--expense)">-${fmt(x.amount_mxn)}</span></div>`;
+        const arLine=(x)=>{const g=pgTouched(x),p=pgPaid(x);const amt=p?(x.total_mxn!=null?x.total_mxn:x.amount_mxn):x.amount_mxn;const bd=p?' <span class="badge" style="background:#e6efe9;color:#2f8f5b">완납</span>':(x&&x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부</span>':'');return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${g?'background:#f4f2ec':''}">
+          <span${g?' style="color:#999"':''}>${x.customer_name||''}${x.sat_no?' · '+x.sat_no:''}${bd}</span>
+          <span style="color:${g?'#999':'var(--income)'}">+${fmt(amt)}</span></div>`;};
+        const apLine=(x)=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${p?'background:#f4f2ec':''}">
+          <span${p?' style="color:#999"':''}>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}${bd}</span>
+          <span style="color:${p?'#999':'var(--expense)'}">-${fmt(x.amount_mxn)}</span></div>`;};
         const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${t.status==='actual'?'background:#f4f2ec':''}">
           <span>${t.category_name||t.category_code||''}${t.memo?' · '+String(t.memo).slice(0,22):''}</span>
           <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
@@ -1316,7 +1318,7 @@
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;background:${we?'#f3f1ec':'#fff'}">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <b style="${we?'color:var(--expense)':''}">${dows[i]} ${ds}</b>
-            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · 실적 <b style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):'0.00'}</b> · 잔고 <b>${v?fmt(v.balance!=null?v.balance:v.cumulative):'—'}</b></span>
+            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · 실적 <b style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):'0.00'}</b> · ${cfState.mode==='plan'?'예상':'잔고'} <b${cfState.mode==='plan'?' style="color:#7a4fb0"':''}>${v?fmt(cfState.mode==='plan'?(v.balance_proj!=null?v.balance_proj:v.balance):(v.balance!=null?v.balance:v.cumulative)):'—'}</b></span>
           </div>${detail}</div>`;
       }).join('');
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
@@ -1335,13 +1337,13 @@
     const ar=(v&&v.ar_items)||[], ap=(v&&v.ap_items)||[], cash=((v&&v.items)||[]).filter(t=>t.status==='actual');
     if(!ar.length&&!ap.length&&!cash.length){dt.innerHTML=`<div class="hint">${ds}: 내역 없음</div>`;return;}
     const arTbl=ar.length?`<div style="font-weight:700;margin:6px 0 2px;color:var(--income)">수금예정 (AR) · 합계 +${fmt(v.ar)}</div>
-      <table><thead><tr><th>고객</th><th>SAT</th><th class="num">금액</th></tr></thead><tbody>${ar.map(x=>`<tr>
-        <td>${x.customer_name||''}</td><td>${x.sat_no||''}</td>
-        <td class="num" style="color:var(--income)">+${fmt(x.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
+      <table><thead><tr><th>고객</th><th>SAT</th><th class="num">금액</th></tr></thead><tbody>${ar.map(x=>{const g=pgTouched(x),p=pgPaid(x);const amt=p?(x.total_mxn!=null?x.total_mxn:x.amount_mxn):x.amount_mxn;const bd=p?' <span class="badge" style="background:#e6efe9;color:#2f8f5b">완납</span>':(x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부수금</span>':'');return `<tr style="${g?'background:#f4f2ec':''}">
+        <td style="${g?'color:#999':''}">${x.customer_name||''}${bd}</td><td style="${g?'color:#999':''}">${x.sat_no||''}</td>
+        <td class="num" style="color:${g?'#999':'var(--income)'}">+${fmt(amt)}</td></tr>`;}).join('')}</tbody></table>`:'';
     const apTbl=ap.length?`<div style="font-weight:700;margin:10px 0 2px;color:var(--expense)">지급예정 (AP) · 합계 -${fmt(v.ap)}</div>
-      <table><thead><tr><th>계좌</th><th>계정과목</th><th>메모</th><th class="num">금액</th></tr></thead><tbody>${ap.map(x=>`<tr>
-        <td>${x.account_name||''}</td><td>${x.category_name||''}</td><td>${(x.memo||'').slice(0,26)}</td>
-        <td class="num" style="color:var(--expense)">-${fmt(x.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
+      <table><thead><tr><th>계좌</th><th>계정과목</th><th>메모</th><th class="num">금액</th></tr></thead><tbody>${ap.map(x=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<tr style="${p?'background:#f4f2ec':''}">
+        <td style="${p?'color:#999':''}">${x.account_name||''}</td><td style="${p?'color:#999':''}">${x.category_name||''}${bd}</td><td style="${p?'color:#999':''}">${(x.memo||'').slice(0,26)}</td>
+        <td class="num" style="color:${p?'#999':'var(--expense)'}">-${fmt(x.amount_mxn)}</td></tr>`;}).join('')}</tbody></table>`:'';
     const cashTbl=cash.length?`<div style="font-weight:700;margin:10px 0 2px">실적 (현금)</div>
       <table><tbody>${cash.map(t=>`<tr style="background:#f4f2ec">
         <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
@@ -1794,6 +1796,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260701a"></script>
+<script src="refatrix-nav.js?v=20260701c"></script>
 </body>
 </html>
