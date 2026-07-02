@@ -1253,7 +1253,7 @@
   }
   function dirItemRow(t){
     const amt=Number(t.amount_mxn)||0;
-    return `<tr><td>${(t.status==='actual'?t.txn_date:(t.plan_date||t.txn_date)||'').slice(0,10)}</td>
+    return `<tr style="${t.status==='actual'?'background:#f4f2ec':''}"><td>${(t.status==='actual'?t.txn_date:(t.plan_date||t.txn_date)||'').slice(0,10)}</td>
       <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
       <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(amt)}</td></tr>`;
   }
@@ -1306,7 +1306,7 @@
         const apLine=(x)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
           <span>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}</span>
           <span style="color:var(--expense)">-${fmt(x.amount_mxn)}</span></div>`;
-        const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">
+        const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${t.status==='actual'?'background:#f4f2ec':''}">
           <span>${t.category_name||t.category_code||''}${t.memo?' · '+String(t.memo).slice(0,22):''}</span>
           <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
         const detail=weekSummaryOnly?'':`
@@ -1343,7 +1343,7 @@
         <td>${x.account_name||''}</td><td>${x.category_name||''}</td><td>${(x.memo||'').slice(0,26)}</td>
         <td class="num" style="color:var(--expense)">-${fmt(x.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
     const cashTbl=cash.length?`<div style="font-weight:700;margin:10px 0 2px">실적 (현금)</div>
-      <table><tbody>${cash.map(t=>`<tr>
+      <table><tbody>${cash.map(t=>`<tr style="background:#f4f2ec">
         <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
         <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
     dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${ds}</b>${arTbl}${apTbl}${cashTbl}</div>`;
@@ -1794,6 +1794,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260630es"></script>
+<script src="refatrix-nav.js?v=20260701a"></script>
 </body>
 </html>
