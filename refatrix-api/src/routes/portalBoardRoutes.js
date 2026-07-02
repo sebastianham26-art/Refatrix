@@ -54,6 +54,35 @@ async function setEventTargets(eventId, targetIds) {
     [eventId, ...targetIds]);
 }
 
+// 메모 권한 판정용: 일정 1건 로드(삭제 제외).
+async function loadEventForPerm(eventId) {
+  return (await query(
+    `SELECT id, scope, team_id, owner_id, created_by FROM calendar_events WHERE id=$1 AND deleted_at IS NULL`,
+    [eventId])).rows[0] || null;
+}
+
+// 이 사용자가 해당 일정을 볼 수 있는가(= 메모 '대상자'인가).
+// GET /api/calendar 의 가시성 규칙과 동일. director 는 전부.
+async function userCanSeeEvent(perm, e) {
+  if (!e) return false;
+  if (perm.role === 'director') return true;
+  const me = Number(perm.userId);
+  if (e.created_by != null && Number(e.created_by) === me) return true;
+  if (e.scope === 'company') return true;
+  if (e.scope === 'personal') return Number(e.owner_id) === me;
+  if (e.scope === 'team') {
+    const vis = visibleTeamIds(perm); // null=영업지원(전 영업팀 열람)
+    if (vis === null) return true;
+    return vis.map(Number).includes(Number(e.team_id));
+  }
+  if (e.scope === 'shared') {
+    const t = (await query(
+      `SELECT 1 FROM calendar_event_targets WHERE event_id=$1 AND user_id=$2 LIMIT 1`, [e.id, me])).rows[0];
+    return !!t;
+  }
+  return false;
+}
+
 export default async function portalBoardRoutes(app) {
   // =================== 일정 (Calendar) ===================
   // 보이는 일정: 회사전체(company) + 내가 지정 대상인/내가 만든 공유(shared) + 내 개인(personal) + (레거시) 내 팀(team) + 내가 만든 것
@@ -176,6 +205,130 @@ export default async function portalBoardRoutes(app) {
     else await setEventTargets(id, []);
     await logEvent({ userId: perm.userId, action: 'update', target: `calendar_event:${id}`, detail: { scope, targets: targetIds.length } });
     return { ok: true };
+  });
+
+  // =================== 일정 메모(댓글) ===================
+  // 목록: 일정을 볼 수 있는 사람(대상자)만 조회.
+  app.get('/api/calendar/:id/memos', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    const e = await loadEventForPerm(id);
+    if (!e) return reply.code(404).send({ error: 'not_found' });
+    if (!(await userCanSeeEvent(perm, e))) return reply.code(403).send({ error: 'forbidden' });
+    const rows = (await query(
+      `SELECT m.id, m.body, m.author_id, m.created_at, m.updated_at, u.name AS author_name, u.role AS author_role
+         FROM calendar_event_memos m LEFT JOIN users u ON u.id=m.author_id
+        WHERE m.event_id=$1 AND m.deleted_at IS NULL ORDER BY m.created_at, m.id`, [id])).rows;
+    return {
+      items: rows.map((r) => ({
+        id: r.id, body: r.body,
+        author_id: r.author_id != null ? Number(r.author_id) : null,
+        author_name: r.author_name, author_role: r.author_role,
+        created_at: isoTs(r.created_at), updated_at: isoTs(r.updated_at), edited: !!r.updated_at,
+      })),
+    };
+  });
+
+  // 작성: 대상자 누구나. 작성자 본인은 자기 메모 팝업이 안 뜨도록 즉시 seen 처리.
+  app.post('/api/calendar/:id/memos', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const body = String(b.body || '').trim();
+    if (!body) return reply.code(400).send({ error: 'body_required' });
+    const e = await loadEventForPerm(id);
+    if (!e) return reply.code(404).send({ error: 'not_found' });
+    if (!(await userCanSeeEvent(perm, e))) return reply.code(403).send({ error: 'forbidden' });
+    const r = (await query(
+      `INSERT INTO calendar_event_memos (event_id, author_id, body) VALUES ($1,$2,$3) RETURNING id, created_at`,
+      [id, perm.userId, body])).rows[0];
+    await query(`INSERT INTO calendar_memo_seen (memo_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [r.id, perm.userId]);
+    await logEvent({ userId: perm.userId, action: 'create', target: `calendar_memo:${r.id}`, detail: { event: id } });
+    return { ok: true, id: r.id, created_at: isoTs(r.created_at) };
+  });
+
+  // 수정: 작성자 본인만(디렉터도 남의 메모는 수정 불가 — 색상=작성자 원칙 유지).
+  app.patch('/api/calendar/memos/:memoId', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const memoId = Number(req.params.memoId);
+    const b = req.body || {};
+    const body = String(b.body || '').trim();
+    if (!body) return reply.code(400).send({ error: 'body_required' });
+    const m = (await query(`SELECT author_id FROM calendar_event_memos WHERE id=$1 AND deleted_at IS NULL`, [memoId])).rows[0];
+    if (!m) return reply.code(404).send({ error: 'not_found' });
+    if (Number(m.author_id) !== Number(perm.userId)) return reply.code(403).send({ error: 'forbidden' });
+    await query(`UPDATE calendar_event_memos SET body=$1, updated_at=now() WHERE id=$2`, [body, memoId]);
+    await logEvent({ userId: perm.userId, action: 'update', target: `calendar_memo:${memoId}` });
+    return { ok: true };
+  });
+
+  // 삭제: 디렉터만.
+  app.delete('/api/calendar/memos/:memoId', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const memoId = Number(req.params.memoId);
+    if (perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const m = (await query(`SELECT id FROM calendar_event_memos WHERE id=$1 AND deleted_at IS NULL`, [memoId])).rows[0];
+    if (!m) return reply.code(404).send({ error: 'not_found' });
+    await query(`UPDATE calendar_event_memos SET deleted_at=now() WHERE id=$1`, [memoId]);
+    await logEvent({ userId: perm.userId, action: 'delete', target: `calendar_memo:${memoId}` });
+    return { ok: true };
+  });
+
+  // 새 메모 팝업용 — 내가 볼 수 있는 일정에 달린, 내가 안 쓴, 아직 확인 안 한 메모.
+  app.get('/api/calendar/memos/unseen', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const vis = visibleTeamIds(perm);
+    const args = [];
+    args.push(perm.userId); const meIdx = args.length; // $1 = me
+    let visClause;
+    if (perm.role === 'director') {
+      visClause = 'TRUE';
+    } else {
+      let teamClause;
+      if (vis === null) {
+        teamClause = `e.scope='team'`;
+      } else {
+        const myTeams = vis.length ? vis : [-1];
+        args.push(myTeams); const teamIdx = args.length;
+        teamClause = `(e.scope='team' AND e.team_id = ANY($${teamIdx}))`;
+      }
+      visClause = `(e.scope='company'
+        OR ${teamClause}
+        OR (e.scope='personal' AND e.owner_id=$${meIdx})
+        OR (e.scope='shared' AND (e.created_by=$${meIdx} OR EXISTS (SELECT 1 FROM calendar_event_targets ct WHERE ct.event_id=e.id AND ct.user_id=$${meIdx})))
+        OR e.created_by=$${meIdx})`;
+    }
+    const rows = (await query(
+      `SELECT m.id, m.body, m.created_at, m.author_id, au.name AS author_name,
+              e.id AS event_id, e.content AS event_title, e.event_date, e.event_at
+         FROM calendar_event_memos m
+         JOIN calendar_events e ON e.id=m.event_id AND e.deleted_at IS NULL
+         LEFT JOIN users au ON au.id=m.author_id
+        WHERE m.deleted_at IS NULL
+          AND m.author_id <> $${meIdx}
+          AND NOT EXISTS (SELECT 1 FROM calendar_memo_seen s WHERE s.memo_id=m.id AND s.user_id=$${meIdx})
+          AND ${visClause}
+        ORDER BY m.created_at, m.id
+        LIMIT 50`, args)).rows;
+    return {
+      items: rows.map((r) => ({
+        id: r.id, body: r.body, created_at: isoTs(r.created_at),
+        author_id: r.author_id != null ? Number(r.author_id) : null, author_name: r.author_name,
+        event_id: r.event_id, event_title: r.event_title,
+        event_date: d10(r.event_date), event_at: isoTs(r.event_at),
+      })),
+    };
+  });
+
+  // 팝업 확인 → 표시된 메모들을 seen 처리(다음부터 안 뜸).
+  app.post('/api/calendar/memos/seen', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const b = req.body || {};
+    const ids = cleanTargetIds(b.memo_ids);
+    if (!ids.length) return { ok: true, marked: 0 };
+    const vals = ids.map((_, i) => `($${i + 2},$1)`).join(',');
+    await query(`INSERT INTO calendar_memo_seen (memo_id, user_id) VALUES ${vals} ON CONFLICT DO NOTHING`, [perm.userId, ...ids]);
+    return { ok: true, marked: ids.length };
   });
 
   // =================== 공지 (Notice) ===================

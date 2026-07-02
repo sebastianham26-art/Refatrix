@@ -126,6 +126,24 @@
   .memoadd{display:flex;gap:6px;margin-top:7px}
   .memoadd input{flex:1;padding:6px 9px;font-size:12px;border:1px solid var(--line);border-radius:8px}
   .memoadd button{padding:6px 12px;font-size:12px}
+  /* 일정 항목 메모(댓글) — 유저별 색상 */
+  .evmemos{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;display:flex;flex-direction:column;gap:7px}
+  .evmemos .lbl{font-size:11px;font-weight:700;color:var(--muted)}
+  .evmemo{border-radius:11px;padding:7px 11px;font-size:12.5px;line-height:1.45;border-left:5px solid;position:relative}
+  .evmemo .ma{font-size:11px;font-weight:800;margin-bottom:2px;display:flex;align-items:center;gap:6px}
+  .evmemo .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  .evmemo .mbody{white-space:pre-wrap;word-break:break-word;padding-right:56px}
+  .evmemo .mt{font-size:10px;color:#8a8a8a;margin-top:3px}
+  .evmemo .mt .ed{color:var(--gold);font-weight:700;margin-left:4px}
+  .evmemo .acts{position:absolute;top:7px;right:10px;display:flex;gap:9px}
+  .evmemo .acts a{font-size:10.5px;color:var(--brand-soft);cursor:pointer;text-decoration:underline}
+  .evmemo .acts a.del{color:var(--expense)}
+  .evmemo .editbox{margin-top:4px;display:flex;gap:6px}
+  .evmemo .editbox input{flex:1;padding:5px 8px;font-size:12px;border:1px solid var(--line);border-radius:7px}
+  .evmemoadd{display:flex;gap:6px;margin-top:4px}
+  .evmemoadd input{flex:1;padding:7px 10px;font-size:12.5px;border:1px solid var(--line);border-radius:9px}
+  .evmemoadd button{padding:7px 13px;font-size:12px}
+  .evmempty{font-size:11.5px;color:#aaa}
   .seg-recv{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg-recv button{border:none;background:#fff;padding:7px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
   .seg-recv button.on{background:var(--brand);color:#fff}
@@ -190,6 +208,20 @@
   </div>
 </div>
 
+<!-- 새 일정 메모 팝업 -->
+<div id="calMemoPopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:220;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 12px 40px rgba(20,30,26,.3);overflow:hidden">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--line);background:#faf8f3">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">💬 <span id="calMemoPopCount">새 메모</span></div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:2px">내가 대상인 일정에 새 메모가 달렸습니다.</div>
+    </div>
+    <div id="calMemoPopList" style="max-height:60vh;overflow:auto"></div>
+    <div style="padding:12px 18px;text-align:right;border-top:1px solid var(--line)">
+      <button id="calMemoPopOk" onclick="confirmCalMemoPopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
+    </div>
+  </div>
+</div>
+
 <script>
   let session={token:null,user:null,api:''};
   let isDirector=false, users=[], teams=[];
@@ -222,7 +254,7 @@
       // 할 일 배정/협조용 사용자 목록(누구나)
       try{ users=(await fetch(session.api+'/api/todo-users',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){users=[];}
       if(isDirector){ try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){teams=[];} }
-      renderForms();loadCal();loadNotices();loadTodos();
+      renderForms();loadCal();loadNotices();loadTodos();checkCalMemoPopup();startCalMemoPoll();
       applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -322,6 +354,14 @@
   let calDays=7;     // 7=일~토, 5=평일(월~금)
   let calScope='all'; // 'all'=모두 / 'company'=회사전체 / 'shared'=개인별공유 / 'personal'=내개인
   const DOW=['일','월','화','수','목','금','토'];
+  // 유저별 고정 배색(작성자 식별). id 기반 결정적 → 같은 사람은 항상 같은 색.
+  const USERPAL=[
+    ['#e8f3ee','#2f8f5b'],['#e6f1fb','#2c5a86'],['#f3ecfb','#6b4fb0'],['#fbeee6','#b8622e'],
+    ['#fdf5e3','#b8893b'],['#fbe9ef','#b23a67'],['#e4f5f1','#1f8f86'],['#eef0e0','#6f7a2e'],
+    ['#eae6f7','#5a4fb0'],['#e7ecf5','#41618f'],['#f7e9e8','#b23a2e'],['#e8f4ec','#3a8f57']
+  ];
+  function userColor(id){ const n=Math.abs(Number(id)||0)%USERPAL.length; const p=USERPAL[n]; return {bg:p[0],ac:p[1]}; }
+  function memoTime(iso){ try{ return new Date(iso).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
   function cYmd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
   function cAddDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
   function cSunday(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
@@ -514,7 +554,10 @@
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:4px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl=scopeLabel(e);
-      return '<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+modBtns(e)+'</div>';
+      return '<div class="item" style="margin-top:6px;align-items:flex-start"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div>'
+        +'<div class="evmemos" id="evm-'+e.id+'"><div class="evmempty">메모 불러오는 중…</div></div>'
+        +'<div class="evmemoadd"><input type="text" id="evmin-'+e.id+'" placeholder="메모 작성... (Enter 전송)" onkeydown="if(event.key===\'Enter\')addEvMemo('+e.id+')"><button class="btn sm" onclick="addEvMemo('+e.id+')">전송</button></div>'
+        +'</div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
     // 할 일(마감)
@@ -552,6 +595,7 @@
       +'<div class="msg" id="dm-msg"></div>'
       +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
     $('dmBody').innerHTML=html;
+    evs.forEach(e=>loadEvMemos(e.id));
     $('dayModal').style.display='flex';
   }
   function closeDay(){ $('dayModal').style.display='none'; }
@@ -586,6 +630,91 @@
     await fetch(session.api+'/api/calendar/'+id,{method:'DELETE',headers:auth()});
     closeDay();loadCal();
   }
+
+  // ===== 일정 항목 메모(댓글) =====
+  function myUid(){ return session.user&&Number(session.user.id); }
+  async function loadEvMemos(eid){
+    const box=$('evm-'+eid); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/calendar/'+eid+'/memos',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length){ box.innerHTML='<div class="evmempty">아직 메모가 없습니다.</div>'; return; }
+      const me=myUid();
+      box.innerHTML=items.map(m=>{
+        const c=userColor(m.author_id);
+        const acts=[];
+        if(Number(m.author_id)===me) acts.push('<a onclick="startEditEvMemo('+m.id+','+eid+')">수정</a>');
+        if(isDirector) acts.push('<a class="del" onclick="delEvMemo('+m.id+','+eid+')">삭제</a>');
+        const actsHtml=acts.length?'<div class="acts">'+acts.join('')+'</div>':'';
+        const edited=m.edited?'<span class="ed">(수정됨)</span>':'';
+        return '<div class="evmemo" id="evmemo-'+m.id+'" style="background:'+c.bg+';border-left-color:'+c.ac+'">'
+          +'<div class="ma"><span class="dot" style="background:'+c.ac+'"></span>'+esc(m.author_name||'')+(m.author_role==='director'?' (디렉터)':'')+'</div>'
+          +'<div class="mbody" id="evmemobody-'+m.id+'">'+esc(m.body)+'</div>'
+          +'<div class="mt">'+memoTime(m.created_at)+edited+'</div>'
+          +actsHtml+'</div>';
+      }).join('');
+    }catch(e){}
+  }
+  async function addEvMemo(eid){
+    const inp=$('evmin-'+eid); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+    inp.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/calendar/'+eid+'/memos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
+      if(res.ok){ inp.value=''; await loadEvMemos(eid); } else { const d=await res.json().catch(()=>({})); alert('메모 작성 실패: '+((d&&d.error)||res.status)); }
+    }catch(e){ alert('서버 연결 실패'); }
+    inp.disabled=false; inp.focus();
+  }
+  function startEditEvMemo(mid,eid){
+    const bodyEl=$('evmemobody-'+mid); if(!bodyEl) return;
+    const cur=bodyEl.textContent;
+    bodyEl.innerHTML='<div class="editbox"><input type="text" id="evmemoedit-'+mid+'"><button class="btn sm" onclick="saveEvMemo('+mid+','+eid+')">저장</button><button class="btn ghost sm" onclick="loadEvMemos('+eid+')">취소</button></div>';
+    const inp=$('evmemoedit-'+mid); if(inp){ inp.value=cur; inp.focus(); inp.onkeydown=(e)=>{ if(e.key==='Enter') saveEvMemo(mid,eid); }; }
+  }
+  async function saveEvMemo(mid,eid){
+    const inp=$('evmemoedit-'+mid); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+    try{
+      const res=await fetch(session.api+'/api/calendar/memos/'+mid,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
+      if(res.ok) await loadEvMemos(eid); else alert('수정 실패(본인 메모만 가능)');
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+  async function delEvMemo(mid,eid){
+    if(!confirm('이 메모를 삭제할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/calendar/memos/'+mid,{method:'DELETE',headers:auth()});
+      if(res.ok) await loadEvMemos(eid); else alert('삭제 실패(디렉터만 가능)');
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+
+  // ===== 새 일정 메모 팝업(대상자 전원) =====
+  let __calMemoPopIds=[], __calMemoTimer=null;
+  async function checkCalMemoPopup(){
+    if(!(session&&session.token)) return;
+    if($('calMemoPopModal').style.display==='flex') return; // 이미 떠 있으면 재조회 안 함
+    try{
+      const d=await fetch(session.api+'/api/calendar/memos/unseen',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length) return;
+      __calMemoPopIds=items.map(x=>x.id);
+      $('calMemoPopList').innerHTML=items.map(x=>
+        '<div style="padding:11px 14px;border-bottom:1px solid #f0ece2">'
+        +'<div style="font-size:11.5px;color:var(--brand);font-weight:700">'+esc(x.event_title||'(제목 없음)')+' · '+(x.event_date||'')+'</div>'
+        +'<div style="font-size:13.5px;color:var(--ink);line-height:1.55;margin-top:3px;white-space:pre-wrap"><b>'+esc(x.author_name||'')+'</b> — '+esc(x.body)+'</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+memoTime(x.created_at)+'</div></div>'
+      ).join('');
+      $('calMemoPopCount').textContent=items.length>1?('새 메모 '+items.length+'건'):'새 메모';
+      $('calMemoPopModal').style.display='flex';
+    }catch(e){}
+  }
+  async function confirmCalMemoPopup(){
+    const btn=$('calMemoPopOk'); if(btn){ btn.disabled=true; btn.textContent='처리 중…'; }
+    try{
+      if(__calMemoPopIds.length) await fetch(session.api+'/api/calendar/memos/seen',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({memo_ids:__calMemoPopIds})});
+    }catch(e){}
+    __calMemoPopIds=[]; $('calMemoPopModal').style.display='none';
+    if(btn){ btn.disabled=false; btn.textContent='확인'; }
+    loadCal();
+  }
+  function startCalMemoPoll(){ if(__calMemoTimer) return; __calMemoTimer=setInterval(()=>{ if(session&&session.token) checkCalMemoPopup(); }, 60000); }
 
   // ===== 공지 =====
   let noticeItems=[];        // 마지막 조회된 공지 목록(수정 사전선택용)

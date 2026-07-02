@@ -619,6 +619,39 @@
     if(btn){ btn.disabled=false; btn.textContent='확인'; }
   }
 
+  // ===== 새 일정 메모 팝업(대상자 전원) =====
+  // 내가 대상인 일정에 새(안 본) 메모가 달리면 팝업. 확인하면 seen 처리 → 다시 안 뜸.
+  let __calMemoPopIds=[], __calMemoTimer=null;
+  function memoTime(iso){ try{ return new Date(iso).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+  async function checkCalMemoPopup(){
+    if(!(session&&session.token)) return;
+    if($('calMemoPopModal')&&$('calMemoPopModal').style.display==='flex') return;
+    try{
+      const d=await fetch(session.api+'/api/calendar/memos/unseen',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length) return;
+      __calMemoPopIds=items.map(x=>x.id);
+      $('calMemoPopList').innerHTML=items.map(x=>
+        '<div style="padding:11px 14px;border-bottom:1px solid #f0ece2">'
+        +'<div style="font-size:11.5px;color:var(--brand);font-weight:700">'+escp(x.event_title||'(제목 없음)')+' · '+(x.event_date||'')+'</div>'
+        +'<div style="font-size:13.5px;color:var(--ink);line-height:1.55;margin-top:3px;white-space:pre-wrap"><b>'+escp(x.author_name||'')+'</b> — '+escp(x.body)+'</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+memoTime(x.created_at)+'</div></div>'
+      ).join('');
+      $('calMemoPopCount').textContent=items.length>1?('새 메모 '+items.length+'건'):'새 메모';
+      $('calMemoPopModal').style.display='flex';
+    }catch(e){}
+  }
+  async function confirmCalMemoPopup(){
+    const btn=$('calMemoPopOk'); if(btn){ btn.disabled=true; btn.textContent='처리 중…'; }
+    try{
+      if(__calMemoPopIds.length) await fetch(session.api+'/api/calendar/memos/seen',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({memo_ids:__calMemoPopIds})});
+    }catch(e){}
+    __calMemoPopIds=[];
+    if($('calMemoPopModal')) $('calMemoPopModal').style.display='none';
+    if(btn){ btn.disabled=false; btn.textContent='확인'; }
+  }
+  function startCalMemoPoll(){ if(__calMemoTimer) return; __calMemoTimer=setInterval(function(){ if(session&&session.token) checkCalMemoPopup(); }, 60000); }
+
   // ===== 오늘 일정 로그인 팝업 =====
   // 오늘(보는 사람 현지 날짜)에 일정이 있으면 로그인 시 팝업으로 그 날 전체 일정을 띄움.
   // "0시~24시 지속 게시" = 같은 날엔 새 로그인마다 다시 뜬다(닫으면 그 세션 동안만 안 뜸).
@@ -705,7 +738,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkDeviceApprovals();startDevicePolling();checkPackingReady();startPackingPolling();checkNoticePopup();checkCalendarPopup();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkDeviceApprovals();startDevicePolling();checkPackingReady();startPackingPolling();checkNoticePopup();checkCalendarPopup();checkCalMemoPopup();startCalMemoPoll();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -1212,6 +1245,19 @@
     <div id="noticePopList" style="max-height:60vh;overflow:auto"></div>
     <div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">
       <button id="noticePopOk" onclick="confirmNoticePopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
+    </div>
+  </div>
+</div>
+
+<div id="calMemoPopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:211;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line)">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">💬 <span id="calMemoPopCount">새 메모</span></div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:2px">내가 대상인 일정에 새 메모가 달렸습니다.</div>
+    </div>
+    <div id="calMemoPopList" style="max-height:60vh;overflow:auto"></div>
+    <div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">
+      <button id="calMemoPopOk" onclick="confirmCalMemoPopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
     </div>
   </div>
 </div>
