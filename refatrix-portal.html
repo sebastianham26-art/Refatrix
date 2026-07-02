@@ -416,8 +416,9 @@
     if(!(session.user && session.user.role==='director')) return;
     var silent=opts&&opts.silent;
     try{
-      var d=await fetch(session.api+'/api/quotes/delete-pending',{headers:auth()}).then(function(r){return r.json();});
-      var items=(d&&d.items)||[];
+      var items;
+      if(opts && Array.isArray(opts.items)){ items=opts.items; }
+      else { var d=await fetch(session.api+'/api/quotes/delete-pending',{headers:auth()}).then(function(r){return r.json();}); items=(d&&d.items)||[]; }
       if(!items.length){
         $('delApprModal').style.display='none';
         try{ sessionStorage.removeItem('del_appr_dismissed'); }catch(e){}
@@ -439,11 +440,33 @@
       }
     }catch(e){ /* 조용히 무시 */ }
   }
-  function startDeletePolling(){
-    if(!(session.user && session.user.role==='director')) return;
-    if(__delPollTimer){ clearInterval(__delPollTimer); __delPollTimer=null; }
-    __delPollTimer=setInterval(function(){ checkDeleteApprovals(); }, 25000); // 25초마다 즉시 감지
+  // ===== 포털 통합 알림 폴러 (삭제·기기·포장 → 1요청 / 120초 / 탭 숨김 시 정지) =====
+  //   기존 3개 폴링(각 25초)을 단일 엔드포인트 /api/portal/alerts 1요청으로 통합.
+  //   응답을 기존 check* 함수에 items 로 주입 → 팝업·알림음·seen 로직 그대로 재사용.
+  var __alertsTimer=null;
+  function __alertsAudience(){ return !!(session.user && (session.user.role==='director' || session.user.role==='sales_support')); }
+  async function pollPortalAlerts(opts){
+    if(!__alertsAudience()) return;
+    var silent=opts&&opts.silent;
+    try{
+      var d=await fetch(session.api+'/api/portal/alerts',{headers:auth()}).then(function(r){return r.json();});
+      if(!d) return;
+      var isDir=session.user && session.user.role==='director';
+      if(isDir){
+        checkDeleteApprovals({items:(d.delete&&d.delete.items)||[], silent:silent});
+        checkDeviceApprovals({items:(d.device&&d.device.items)||[], silent:silent});
+      }
+      checkPackingReady({items:(d.packing&&d.packing.items)||[], silent:silent});
+    }catch(e){ /* 조용히 무시 */ }
   }
+  function startPortalAlerts(){
+    if(!__alertsAudience()) return;
+    if(__alertsTimer){ clearInterval(__alertsTimer); __alertsTimer=null; }
+    __alertsTimer=setInterval(function(){ pollPortalAlerts({silent:false}); }, 120000); // 120초
+  }
+  function stopPortalAlerts(){ if(__alertsTimer){ clearInterval(__alertsTimer); __alertsTimer=null; } }
+  // 통합 폴러로 대체됨(개별 폴링 비활성). 하위호환용 no-op.
+  function startDeletePolling(){ /* replaced by startPortalAlerts */ }
   async function approveDelFromPopup(id){
     if(!confirm('이 견적의 삭제를 승인하시겠습니까?\n승인 시 견적이 완전히 삭제됩니다.')) return;
     try{
@@ -489,8 +512,9 @@
     if(!__packAud()) return;
     var silent=opts&&opts.silent;
     try{
-      var d=await fetch(session.api+'/api/warehouse/sales/packing-ready',{headers:auth()}).then(function(r){return r.json();});
-      var items=(d&&d.items)||[];
+      var items;
+      if(opts && Array.isArray(opts.items)){ items=opts.items; }
+      else { var d=await fetch(session.api+'/api/warehouse/sales/packing-ready',{headers:auth()}).then(function(r){return r.json();}); items=(d&&d.items)||[]; }
       if(!items.length){
         $('packReadyModal').style.display='none';
         try{ sessionStorage.removeItem('pack_ready_dismissed'); }catch(e){}
@@ -511,15 +535,13 @@
       }
     }catch(e){ /* 조용히 무시 */ }
   }
-  function startPackingPolling(){
-    if(!__packAud()) return;
-    if(__packPollTimer){ clearInterval(__packPollTimer); __packPollTimer=null; }
-    __packPollTimer=setInterval(function(){ checkPackingReady(); }, 25000); // 25초마다 즉시 감지
-  }
+  function startPackingPolling(){ /* replaced by startPortalAlerts */ }
   function dismissPackReady(){ try{ sessionStorage.setItem('pack_ready_dismissed','1'); }catch(e){} $('packReadyModal').style.display='none'; }
-  document.addEventListener('visibilitychange', function(){ if(!document.hidden && __packAud()){ checkPackingReady(); } });
-  // 탭으로 돌아오면 즉시 한 번 더 확인(디렉터)
-  document.addEventListener('visibilitychange', function(){ if(!document.hidden && session && session.user && session.user.role==='director'){ checkDeleteApprovals(); } });
+  // 탭 가시성: 숨기면 폴링 정지(백그라운드 헛도는 요청 제거), 돌아오면 즉시 1회 + 재시작.
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){ stopPortalAlerts(); }
+    else if(__alertsAudience()){ pollPortalAlerts({silent:true}); startPortalAlerts(); }
+  });
 
   // ===== 기기 접속 승인 — 디렉터 즉시 알림(폴링 + 팝업 + 알림음) =====
   var __devPendSeen=null, __devPollTimer=null;
@@ -548,8 +570,9 @@
     if(!(session.user && session.user.role==='director')) return;
     var silent=opts&&opts.silent;
     try{
-      var d=await fetch(session.api+'/api/devices/pending',{headers:auth()}).then(function(r){return r.json();});
-      var items=(d&&d.pending)||[];
+      var items;
+      if(opts && Array.isArray(opts.items)){ items=opts.items; }
+      else { var d=await fetch(session.api+'/api/devices/pending',{headers:auth()}).then(function(r){return r.json();}); items=(d&&d.pending)||[]; }
       if(!items.length){
         $('devApprModal').style.display='none';
         try{ sessionStorage.removeItem('dev_appr_dismissed'); }catch(e){}
@@ -571,11 +594,7 @@
       }
     }catch(e){ /* 조용히 무시 */ }
   }
-  function startDevicePolling(){
-    if(!(session.user && session.user.role==='director')) return;
-    if(__devPollTimer){ clearInterval(__devPollTimer); __devPollTimer=null; }
-    __devPollTimer=setInterval(function(){ checkDeviceApprovals(); }, 25000); // 25초마다 즉시 감지
-  }
+  function startDevicePolling(){ /* replaced by startPortalAlerts */ }
   async function approveDevFromPopup(id, shared){
     try{
       var res=await fetch(session.api+'/api/devices/'+id+'/approve',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({shared:!!shared})});
@@ -585,7 +604,6 @@
     checkDeviceApprovals({silent:true});
   }
   function dismissDevAppr(){ try{ sessionStorage.setItem('dev_appr_dismissed','1'); }catch(e){} $('devApprModal').style.display='none'; }
-  document.addEventListener('visibilitychange', function(){ if(!document.hidden && session && session.user && session.user.role==='director'){ checkDeviceApprovals(); } });
 
   // 로그인 공지 팝업 — 나에게 해당되는 '미확인 + 팝업' 공지를 띄움.
   // "확인"을 누르면 서버에 읽음(notice_reads) 기록 → 다음 로그인부터 안 뜸.
@@ -738,7 +756,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();checkDeleteApprovals();startDeletePolling();checkDeviceApprovals();startDevicePolling();checkPackingReady();startPackingPolling();checkNoticePopup();checkCalendarPopup();checkCalMemoPopup();startCalMemoPoll();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();pollPortalAlerts({silent:false});startPortalAlerts();checkNoticePopup();checkCalendarPopup();checkCalMemoPopup();startCalMemoPoll();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -1274,6 +1292,6 @@
   </div>
 </div>
 
-<script src="refatrix-nav.js?v=20260630es"></script>
+<script src="refatrix-nav.js?v=20260702a"></script>
 </body>
 </html>
