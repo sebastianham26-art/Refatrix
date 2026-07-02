@@ -71,8 +71,10 @@ export default async function stockCountRoutes(app) {
   }
 
   async function nextCode(exec = query) {
+    // exec 은 query(함수) 또는 withTx 클라이언트(.query) 둘 다 올 수 있음 → 정규화
+    const run = typeof exec === 'function' ? exec : (s, p) => exec.query(s, p);
     const year = new Date().getFullYear();
-    const r = (await exec(`SELECT COUNT(*)::int AS n FROM stock_counts WHERE code LIKE $1`, [`SC-${year}-%`])).rows[0];
+    const r = (await run(`SELECT COUNT(*)::int AS n FROM stock_counts WHERE code LIKE $1`, [`SC-${year}-%`])).rows[0];
     return `SC-${year}-${String((r.n || 0) + 1).padStart(4, '0')}`;
   }
 
