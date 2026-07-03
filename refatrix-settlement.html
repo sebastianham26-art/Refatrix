@@ -783,10 +783,10 @@
         +'<input id="ncConcepto" placeholder="예: pago anticipado en 15 días, 3% descuento" style="width:100%;max-width:560px"></div>'
       +'<div><label>방식</label><select id="ncMode" onchange="ncRecalc('+it.id+')" style="width:150px"><option value="rate">할인률(%)</option><option value="amount">금액(sin IVA)</option></select></div>'
       +'<div><label id="ncValLbl">할인률(%)</label><input id="ncVal" type="number" step="0.01" oninput="ncRecalc('+it.id+')" style="width:130px"></div>'
-      +'<div style="min-width:260px"><label>미리보기 (sin IVA 할인 + IVA 16%)</label><div id="ncPreview" class="hint" style="margin:0">—</div></div>'
+      +'<div style="min-width:280px"><label>미리보기 (sin IVA 할인 · IVA 미가산)</label><div id="ncPreview" class="hint" style="margin:0">—</div></div>'
       +'<div><button class="btn" onclick="submitNc('+it.id+')">발기</button></div>'
       +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleNc(null)">취소</button></div>'
-      +'</div><div class="hint" style="margin-top:6px">할인은 <b>sin IVA(과세표준)</b> 기준으로 계산되고 <b>IVA 16%</b>가 그 위에 더해집니다. 「할인률(%)」은 인보이스 과세표준에 대한 비율, 「금액(sin IVA)」은 IVA 제외 할인액입니다. 발기 후: ① <b>인쇄</b>하여 서명 받기 → ② 서명본 <b>업로드</b> → ③ 디렉터 <b>승인</b> → ④ <b>적용(비현금 반제)</b>으로 잔액 마감. 아래 <b>NC 목록</b>에서 진행합니다.</div>';
+      +'</div><div class="hint" style="margin-top:6px">할인율은 <b>sin IVA(과세표준)</b> 에 적용해 할인액을 구하고, 그 <b>할인액을 IVA 없이</b> con IVA 총액(잔액)에서 그대로 차감합니다(<b>할인액에 IVA를 더하지 않음</b>). 「할인률(%)」은 과세표준 대비 비율, 「금액(sin IVA)」은 IVA 제외 할인액입니다. 발기 후: ① <b>인쇄</b>하여 서명 받기 → ② 서명본 <b>업로드</b> → ③ 디렉터 <b>승인</b> → ④ <b>적용(비현금 반제)</b>으로 잔액 마감. 아래 <b>NC 목록</b>에서 진행합니다.</div>';
   }
   function ncCompute(it){
     const mode=$('ncMode')?$('ncMode').value:'rate';
@@ -796,16 +796,15 @@
     // 금액 모드: 입력값 = 할인액(sin IVA). 할인률 모드: 과세표준 × rate%.
     let base = mode==='amount' ? v : invBase*v/100;
     base=Math.round((base+Number.EPSILON)*100)/100;
-    const iva=Math.round((base*0.16+Number.EPSILON)*100)/100;   // IVA를 base 위에 더함
-    const total=Math.round((base+iva+Number.EPSILON)*100)/100;
-    return {total,base,iva};
+    // NC 금액 = 할인액(sin IVA) 그 자체. IVA를 더하지 않음 → con IVA 잔액에서 이 금액만 차감.
+    return {total:base, base:base, iva:0};
   }
   function ncRecalc(invId){
     const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
     const lbl=$('ncValLbl'); if(lbl) lbl.textContent = ($('ncMode').value==='amount'?'금액(sin IVA)':'할인률(%)');
     const c=ncCompute(it); const p=$('ncPreview');
-    if(p){ const over = c.total>it.outstanding+0.01;
-      p.innerHTML = c.total>0 ? ('할인(sin IVA) <b>MX$'+fmt(c.base)+'</b> + IVA 16% MX$'+fmt(c.iva)+' = 총 <b>MX$'+fmt(c.total)+'</b>'+(over?' <b style="color:var(--expense)">· 잔액 초과!</b>':'')) : '—'; }
+    if(p){ const over = c.total>it.outstanding+0.01; const newBal=Math.round((it.outstanding-c.total+Number.EPSILON)*100)/100;
+      p.innerHTML = c.total>0 ? ('할인(sin IVA) = NC 금액 <b>MX$'+fmt(c.total)+'</b> · IVA 미가산 · 잔액 MX$'+fmt(it.outstanding)+' → <b>MX$'+fmt(newBal>0?newBal:0)+'</b>'+(over?' <b style="color:var(--expense)">· 잔액 초과!</b>':'')) : '—'; }
   }
   async function submitNc(invId){
     const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
@@ -823,7 +822,7 @@
       const res=await fetch(session.api+'/api/nc',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='NC 발기 실패: '+(d.error||res.status)+(d.outstanding!=null?(' (잔액 '+fmt(d.outstanding)+')'):''); return; }
-      m.className='msg ok'; m.textContent='NC 발기됨: '+it.customer_name+' · MX$'+fmt(d.total)+' (base '+fmt(d.base)+' + IVA '+fmt(d.iva)+'). 아래 NC 목록에서 인쇄·업로드·승인·적용을 진행하세요.';
+      m.className='msg ok'; m.textContent='NC 발기됨: '+it.customer_name+' · 할인(sin IVA) MX$'+fmt(d.total)+' (IVA 미가산, con IVA 잔액에서 차감). 아래 NC 목록에서 인쇄·업로드·승인·적용을 진행하세요.';
       arOpenNc=null; renderAr(); loadNc();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
@@ -965,11 +964,10 @@
         +'<tr><td>Factura relacionada / 원 인보이스</td><td class="amt">'+esc(n.sat_no||('#'+n.invoice_id))+'</td></tr>'
         +'<tr><td>Emisión / 발행일</td><td class="amt">'+esc(n.inv_date||'—')+'</td></tr>'
         +'<tr><td>Importe factura / 인보이스 총액</td><td class="amt">MX$ '+fmt(n.invoice_total)+'</td></tr>'
-        +(n.rate_pct!=null?('<tr><td>Descuento / 할인률</td><td class="amt">'+fmt(n.rate_pct)+' %</td></tr>'):'')
-        +'<tr><td>Descuento (base sin IVA) / 할인(과세표준)</td><td class="amt">MX$ '+fmt(n.base_mxn)+'</td></tr>'
-        +'<tr><td>IVA 16%</td><td class="amt">MX$ '+fmt(n.iva_mxn)+'</td></tr>'
-        +'<tr><td class="tot">Total nota de crédito</td><td class="amt tot">MX$ '+fmt(n.total_mxn)+'</td></tr>'
+        +(n.rate_pct!=null?('<tr><td>Descuento sobre subtotal (sin IVA) / 할인률(과세표준 기준)</td><td class="amt">'+fmt(n.rate_pct)+' %</td></tr>'):'')
+        +'<tr><td class="tot">Descuento sin IVA (Total nota de crédito) / 할인액</td><td class="amt tot">MX$ '+fmt(n.total_mxn)+'</td></tr>'
       +'</tbody></table>'
+      +'<div style="font-size:11.5px;color:#666;margin-top:6px">El descuento se calcula sobre el subtotal (sin IVA) y se aplica directamente al total (con IVA) de la factura. No se agrega IVA al importe del descuento. / 할인은 과세표준(sin IVA)에 적용되며, 그 할인액을 인보이스 총액(con IVA)에서 IVA 가산 없이 그대로 차감합니다.</div>'
       +'<div class="signs">'
         +'<div class="sign"><div class="line">&nbsp;</div><div class="who">'+esc(userName||'담당자')+'</div><div class="role">Elaboró / 담당자 (서명)</div></div>'
         +'<div class="sign"><div class="line">&nbsp;</div><div class="who">&nbsp;</div><div class="role">Autorizó / Director (서명)</div></div>'
@@ -1051,6 +1049,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260703wp"></script>
+<script src="refatrix-nav.js?v=20260703nc2"></script>
 </body>
 </html>
