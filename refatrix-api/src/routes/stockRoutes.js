@@ -165,6 +165,49 @@ export default async function stockRoutes(app) {
     };
   });
 
+  // 현재 재고 다운로드용 데이터: 제품별 CTR/경쟁사(SYD) 코드·적용차종·현재고·누적판매수량·재고금액·재고판매가 환산액.
+  // - 누적판매 수량 = 매출로 출고된 이동(stock_movements: sales_invoice_id 있는 out)의 합.
+  // - back order 수량은 아직 데이터 소스가 없어 응답에 넣지 않고 프런트에서 빈 열로 둔다(추후 연결).
+  // - 재고금액(원가)은 unit_cost 권한, 재고판매가 환산액은 sale_price 권한이 있는 사용자에게만 값 제공(없으면 null → 빈 칸).
+  app.get('/api/stock/current-export', { preHandler: [authGuard, requirePageAny(['stock', 'sales'])] }, async (req) => {
+    const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
+    const seeSell = fieldVisible(req.ctx.perm, 'sale_price');
+    const rows = (await query(
+      `SELECT p.code AS ctr_code,
+              COALESCE(NULLIF(TRIM(p.scode), ''),
+                       (SELECT string_agg(DISTINCT sc.syd_code, ' / ') FROM product_syd_codes sc WHERE sc.product_id = p.id)) AS syd_code,
+              p.app AS app_text,
+              COALESCE(p.stock_qty, 0) AS stock_qty,
+              COALESCE(sold.qty, 0) AS sold_qty,
+              (COALESCE(p.stock_qty, 0) * COALESCE(p.avg_cost, 0)) AS stock_value_mxn,
+              (COALESCE(p.stock_qty, 0) * COALESCE(p.list_price, 0)) AS stock_list_value_mxn
+         FROM products p
+         LEFT JOIN (
+           SELECT product_id, SUM(qty) AS qty
+             FROM stock_movements
+            WHERE sales_invoice_id IS NOT NULL AND move_type = 'out'
+            GROUP BY product_id
+         ) sold ON sold.product_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND (COALESCE(p.stock_qty, 0) <> 0 OR COALESCE(sold.qty, 0) <> 0)
+        ORDER BY (COALESCE(p.stock_qty, 0) * COALESCE(p.avg_cost, 0)) DESC, p.code`)).rows;
+    const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    return {
+      sell_discount_rate: SELL_DISCOUNT, // 판매가 환산 할인 가정(0.45) → 라벨 "−45%"
+      see_cost: seeCost, see_sell: seeSell,
+      count: rows.length,
+      items: rows.map((r) => ({
+        ctr_code: r.ctr_code || '',
+        syd_code: r.syd_code || '',
+        app_text: r.app_text || '',
+        stock_qty: Number(r.stock_qty) || 0,
+        sold_qty: Number(r.sold_qty) || 0,
+        stock_value_mxn: seeCost ? r2(r.stock_value_mxn) : null,
+        stock_sell_value_mxn: seeSell ? r2(Number(r.stock_list_value_mxn) * (1 - SELL_DISCOUNT)) : null,
+      })),
+    };
+  });
+
   // 이벤트 단위 일괄 수정: 같은 event_no(함께 등록된 입·출고)의 날짜·참조·사유를 한 번에 변경
   app.patch('/api/stock/events/:eventNo', { preHandler: [authGuard, requirePageEditAny(['stock', 'sales'])] }, async (req, reply) => {
     const eventNo = Number(req.params.eventNo);
