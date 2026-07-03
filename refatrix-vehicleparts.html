@@ -62,7 +62,8 @@
   .promobtn.on{background:#e8b923;border-color:#c99a12;color:#3a2e07}
   tr.promoOn .modcell{box-shadow:inset 3px 0 0 #e8b923}
   /* A4 프로모션 오버레이 */
-  #promoOverlay{position:fixed;inset:0;background:rgba(20,20,20,.55);z-index:60;display:flex;flex-direction:column;align-items:center;overflow:auto;padding:18px}
+  #promoOverlay{position:fixed;inset:0;background:rgba(20,20,20,.55);z-index:60;display:none;overflow:auto;padding:18px}
+  #promoOverlay.show{display:flex;flex-direction:column;align-items:center}
   .promoBar{width:210mm;max-width:100%;display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
   .promoBar .fill{flex:1}
   .promoBar button,.promoBar input{font-family:inherit}
@@ -347,12 +348,12 @@
     const v=(d.variants||[]).filter(x=>x.key===vkey)[0]; if(!v) return;
     _psheet={ vkey:vkey, marca:(cov&&cov.marca)||'', modelo:(cov&&cov.modelo)||d.model_label||d.query,
       model:v.model, years:v.years||'', vio:colVio[vkey], prods:variantProducts(vkey), disc:15, vehImg:'' };
-    $('promoOverlay').classList.remove('hidden');
+    $('promoOverlay').classList.add('show');
     drawPromo();
     const q=(_psheet.marca?_psheet.marca+' ':'')+_psheet.modelo;
     fetchVehicleImage(q).then(function(u){ if(u&&_psheet){ _psheet.vehImg=u; drawPromo(); } });
   }
-  function closePromo(){ const o=$('promoOverlay'); o.classList.add('hidden'); o.innerHTML=''; _psheet=null; }
+  function closePromo(){ const o=$('promoOverlay'); o.classList.remove('show'); o.innerHTML=''; _psheet=null; }
   function drawPromo(){
     const s=_psheet; if(!s) return; const ov=$('promoOverlay');
     const modelTitle=escP((s.marca?s.marca.toUpperCase()+' ':'')+s.modelo);
@@ -406,6 +407,6 @@
   window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
 </script>
-<script src="refatrix-nav.js?v=20260702vr"></script>
+<script src="refatrix-nav.js?v=20260702vs"></script>
 </body>
 </html>
