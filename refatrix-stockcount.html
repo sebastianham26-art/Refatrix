@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix</title>
+<title>재고실사 · Refatrix · build sc0703a</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -358,13 +358,24 @@ function enterRecord(r){
 }
 
 // ================= 기록 =================
-$('rackInput')&&$('rackInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); curRack=$('rackInput').value.trim(); $('curRackLbl').textContent=curRack||'(미지정)'; $('codeInput').focus(); }});
+// 스캐너 키보드배열 보정: 스페인어 배열에서 US '-' 키가 '(아포스트로피)로 입력되는 문제.
+// '(및 유사 문자 ´ ` ‘ ’ ′)를 -로 자동변환. (예: A1'3 → A1-3)
+function normScan(s){ return String(s||'').replace(/['\u00B4\u0060\u2018\u2019\u2032]/g,'-'); }
+function attachScanFix(el){
+  if(!el) return;
+  el.addEventListener('input',function(){
+    var v=normScan(el.value);
+    if(v!==el.value){ var p=el.selectionStart; el.value=v; try{ el.setSelectionRange(p,p); }catch(e){} }
+  });
+}
+attachScanFix($('rackInput')); attachScanFix($('codeInput')); attachScanFix($('pmRack')); attachScanFix($('pmBar'));
+$('rackInput')&&$('rackInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); curRack=normScan($('rackInput').value).trim(); $('curRackLbl').textContent=curRack||'(미지정)'; $('codeInput').focus(); }});
 $('codeInput')&&$('codeInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); onCodeEnter(); }});
 $('qtyInput')&&$('qtyInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); saveLine(); }});
 
 function onModeToggle(){ /* 스캔모드 안내만 — 동작은 onCodeEnter에서 분기 */ }
 async function onCodeEnter(){
-  const code=$('codeInput').value.trim(); if(!code) return;
+  const code=normScan($('codeInput').value).trim(); if(!code) return;
   const scanMode=$('scanMode').checked;
   const r=await api('/api/stock-counts/resolve?code='+encodeURIComponent(code));
   if(!r.ok){ setMsg('recMsg','해석 실패','err'); beep(false); return; }
@@ -563,6 +574,6 @@ async function deletePromo(){
   else { show('loginView'); }
 })();
 </script>
-<script src="refatrix-nav.js?v=20260702sc"></script>
+<script src="refatrix-nav.js?v=20260703a"></script>
 </body>
 </html>
