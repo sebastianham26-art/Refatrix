@@ -1271,9 +1271,9 @@ export default async function financeRoutes(app) {
   }
 
   // 현금흐름 집계: 기간별 유입/유출/순액/누적잔고
-  // query: granularity=month|week, includePlan=0|1
+  // query: granularity=month|week|day, includePlan=0|1  (day = 현금잔액 워터폴용)
   app.get('/api/cashflow', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
-    const granularity = req.query.granularity === 'week' ? 'week' : 'month';
+    const granularity = (req.query.granularity === 'week' || req.query.granularity === 'day') ? req.query.granularity : 'month';
     const includePlan = req.query.includePlan === '1' || req.query.includePlan === 'true';
     const txns = await loadCashTxns(req.ctx.perm);
     const opening = await openingBalanceMxn(req.ctx.perm);

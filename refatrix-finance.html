@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 매출 등록</title>
+<title>Refatrix ERP · 재무 · build cfwf-0703a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -259,7 +259,25 @@
         <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
       </div>
       <div id="cashBody"><div class="hint">불러오는 중…</div></div>
-      <div id="cashChart" style="margin-top:14px"></div>
+
+      <!-- 현금잔액 워터폴 -->
+      <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:12px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <h2 style="margin:0">현금잔액 워터폴</h2>
+          <input type="date" id="wf-from" style="width:auto;display:inline-block">
+          <span style="color:var(--muted)">~</span>
+          <input type="date" id="wf-to" style="width:auto;display:inline-block">
+          <select id="wf-gran" style="width:auto;display:inline-block">
+            <option value="auto" selected>단위 자동</option>
+            <option value="day">일별</option>
+            <option value="week">주별</option>
+            <option value="month">월별</option>
+          </select>
+          <button class="btn ghost sm" id="wf-go">조회</button>
+        </div>
+        <div class="hint" style="margin-top:4px">기간 시작 시점의 현금잔액(<span style="color:#2f8f5b;font-weight:700">기준 · 초록</span>)에서 출발해, 기간별 변화가 직전 잔액 위에서 <span style="color:#c0392b;font-weight:700">증가(+) 빨강</span> / <span style="color:#0c447c;font-weight:700">감소(−) 파랑</span>으로 이어집니다. 위 「실제만/예정 포함」 토글을 따릅니다.</div>
+        <div id="wfChart" style="margin-top:8px;overflow-x:auto"><div class="hint">불러오는 중…</div></div>
+      </div>
 
       <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -1152,27 +1170,116 @@
   function pgTouched(x){return !!(x&&(x.state==='partial'||x.state==='paid'));} // 조금이라도 실적반영 → 회색
   function pgPaid(x){return !!(x&&x.state==='paid');}                          // 전액 실적반영 → 배지
 
-  // 간단 SVG 선그래프: series=[{name,color,points:[{x_label,value}]}], 공통 x축(labels)
-  function svgLineChart(labels,series,opts={}){
-    const W=opts.width||720,H=opts.height||220,padL=54,padR=14,padT=14,padB=30;
-    const n=labels.length; if(!n)return '<div class="hint">데이터가 없습니다.</div>';
-    const all=series.flatMap(s=>s.points.map(p=>p.value));
-    let mn=Math.min(0,...all),mx=Math.max(0,...all); if(mn===mx){mx=mn+1;}
-    const x=i=>padL+(n===1?0:(W-padL-padR)*i/(n-1));
+  // ===== 현금잔액 워터폴 =====
+  // 기준(초록) → 기간별 변화(+빨강/−파랑, 직전 잔액 위에서 시작) → 기말(초록)
+  const WF_GREEN='#2f8f5b', WF_RED='#c0392b', WF_BLUE='#0c447c';
+  const wfState={gran:'auto'};
+  function wfDefaultRange(){
+    if($('wf-from').value && $('wf-to').value) return;
+    const t=new Date();
+    if(!$('wf-to').value)$('wf-to').value=t.toISOString().slice(0,10);
+    if(!$('wf-from').value)$('wf-from').value=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()-2,1)).toISOString().slice(0,10);
+  }
+  // 백엔드 bucketKey와 동일 규칙 (day='YYYY-MM-DD', week=ISO 'YYYY-Www', month='YYYY-MM')
+  function wfBucket(dateStr,g){
+    if(g==='day')return String(dateStr).slice(0,10);
+    if(g==='month')return String(dateStr).slice(0,7);
+    const [y,m,d]=String(dateStr).slice(0,10).split('-').map(Number);
+    const dt=new Date(Date.UTC(y,m-1,d));
+    const day=(dt.getUTCDay()+6)%7;
+    dt.setUTCDate(dt.getUTCDate()-day+3);
+    const firstThu=new Date(Date.UTC(dt.getUTCFullYear(),0,4));
+    const week=1+Math.round(((dt-firstThu)/86400000-3+((firstThu.getUTCDay()+6)%7))/7);
+    return dt.getUTCFullYear()+'-W'+String(week).padStart(2,'0');
+  }
+  function wfResolveGran(from,to){
+    if(wfState.gran!=='auto')return wfState.gran;
+    const days=Math.round((new Date(to)-new Date(from))/86400000)+1;
+    return days<=45?'day':(days<=200?'week':'month');
+  }
+  function fmtK(n){
+    const a=Math.abs(n);
+    if(a>=1e6)return (n/1e6).toFixed(a>=1e7?0:1)+'M';
+    if(a>=1e3)return (n/1e3).toFixed(a>=1e5?0:1)+'k';
+    return String(Math.round(n));
+  }
+  async function loadWaterfall(){
+    const box=$('wfChart'); if(!box)return;
+    wfDefaultRange();
+    const from=$('wf-from').value, to=$('wf-to').value;
+    if(!from||!to||from>to){box.innerHTML='<div class="hint">기간을 올바르게 선택하세요 (시작일 ≤ 종료일).</div>';return;}
+    box.innerHTML='<div class="hint">불러오는 중…</div>';
+    const g=wfResolveGran(from,to);
+    try{
+      const url=`${session.api}/api/cashflow?granularity=${g}&includePlan=${cfState.mode==='plan'?1:0}`;
+      const res=await fetch(url,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error)throw new Error(d.error||res.status);
+      if(d.granularity!==g){box.innerHTML='<div class="hint">⚠ 백엔드가 아직 일별 단위를 지원하지 않습니다. 최신 백엔드 배포 후 다시 시도하거나, 단위를 주별/월별로 선택하세요.</div>';return;}
+      const sk=wfBucket(from,g), ek=wfBucket(to,g);
+      let base=Number(d.opening_balance)||0;
+      const items=[];
+      for(const r of (d.rows||[])){
+        const net=Number(r.net)||0;
+        if(r.period<sk)base+=net;
+        else if(r.period<=ek && Math.abs(net)>0.005)items.push({label:r.period,delta:net});
+      }
+      const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
+      box.innerHTML=svgWaterfall(base,items,{from,to,granLabel});
+    }catch(e){box.innerHTML='<div class="hint">워터폴을 불러오지 못했습니다.</div>';}
+  }
+  function svgWaterfall(base,items,opts={}){
+    const round2=(v)=>Math.round(v*100)/100;
+    if(!items.length)return `<div class="hint">선택 기간에 현금 변동이 없습니다. (기준 잔액 ${fmt(base)} MXN)</div>`;
+    const cums=[round2(base)];let c=base;for(const it of items){c+=it.delta;cums.push(round2(c));}
+    const final=round2(c);
+    const bars=[
+      {type:'base',dateLbl:(opts.from||'').slice(5),text:'기준',v1:base},
+      ...items.map((it,i)=>({type:it.delta>=0?'plus':'minus',label:it.label,v0:cums[i],v1:cums[i+1],delta:it.delta})),
+      {type:'base',dateLbl:(opts.to||'').slice(5),text:'기말',v1:final},
+    ];
+    const N=bars.length;
+    const W=Math.max(720,Math.min(1600,N*46+100)),H=290,padL=64,padR=14,padT=26,padB=44;
+    let mn=Math.min(base,final,...cums),mx=Math.max(base,final,...cums);
+    if(mn>0)mn=Math.max(0,mn-(mx-mn)*0.15);           // 바닥 여유(0 아래로는 안 내려감)
+    if(mx===mn)mx=mn+1;
+    const span=mx-mn;mx+=span*0.08;                    // 상단 라벨 여유
+    const bw=(W-padL-padR)/N, xc=i=>padL+bw*i+bw/2, colW=Math.min(bw*0.62,46);
     const y=v=>padT+(H-padT-padB)*(1-(v-mn)/(mx-mn));
     const grid=[];const steps=4;
-    for(let k=0;k<=steps;k++){const v=mn+(mx-mn)*k/steps;const yy=y(v);grid.push(`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#eee"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="10" fill="#999">${fmt(Math.round(v))}</text>`);}
-    const zeroY=y(0);const zero=`<line x1="${padL}" y1="${zeroY}" x2="${W-padR}" y2="${zeroY}" stroke="#ccc" stroke-dasharray="3 3"/>`;
-    const showLbl=(i)=> n<=14 || i===0 || i===n-1 || i%Math.ceil(n/12)===0;
-    const anchorFor=(i)=> i===0?'start':(i===n-1?'end':'middle');
-    const xlabels=labels.map((l,i)=>showLbl(i)?`<text x="${x(i)}" y="${H-10}" text-anchor="${anchorFor(i)}" font-size="9" fill="#999">${l}</text>`:'').join('');
-    const paths=series.map(s=>{
-      const pts=s.points.map((p,i)=>`${x(i)},${y(p.value)}`).join(' ');
-      const dots=s.points.map((p,i)=>`<circle cx="${x(i)}" cy="${y(p.value)}" r="2.5" fill="${s.color}"/>`).join('');
-      return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2"${s.dash?' stroke-dasharray="5 4"':''}/>${dots}`;
-    }).join('');
-    const legend=series.map((s,i)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:12px"><span style="width:14px;height:0;border-top:3px ${s.dash?'dashed':'solid'} ${s.color};display:inline-block"></span>${s.name}</span>`).join('');
-    return `<div>${legend?`<div style="margin-bottom:6px">${legend}</div>`:''}<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px">${grid.join('')}${zero}${paths}${xlabels}</svg></div>`;
+    for(let k=0;k<=steps;k++){const v=mn+(mx-mn)*k/steps;const yy=y(v);
+      grid.push(`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="#eee"/><text x="${padL-6}" y="${(yy+3).toFixed(1)}" text-anchor="end" font-size="10" fill="#999">${fmtK(v)}</text>`);}
+    if(mn<0&&mx>0){const zy=y(0);grid.push(`<line x1="${padL}" y1="${zy.toFixed(1)}" x2="${W-padR}" y2="${zy.toFixed(1)}" stroke="#bbb" stroke-dasharray="3 3"/>`);}
+    const rects=[],labels=[],conns=[],xlabels=[];
+    const maxLbl=Math.max(1,Math.floor((W-padL-padR)/46));
+    const lblStep=Math.ceil(N/maxLbl);
+    const shortLbl=(p)=> p.length===10?p.slice(5):(p.includes('W')?p.slice(5):p.slice(2));
+    bars.forEach((b,i)=>{
+      let top,bot,fill,tip,lbl;
+      if(b.type==='base'){
+        fill=WF_GREEN;top=y(Math.max(b.v1,mn));bot=y(mn);lbl=fmtK(b.v1);
+        tip=`${b.text} 잔액 ${fmt(b.v1)} MXN`;
+        xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-28}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${WF_GREEN}">${b.text}</text><text x="${xc(i).toFixed(1)}" y="${H-16}" text-anchor="middle" font-size="9" fill="#999">${b.dateLbl}</text>`);
+      }else{
+        const hi=Math.max(b.v0,b.v1),lo=Math.min(b.v0,b.v1);
+        fill=b.type==='plus'?WF_RED:WF_BLUE;top=y(hi);bot=y(lo);
+        lbl=(b.delta>0?'+':'−')+fmtK(Math.abs(b.delta));
+        tip=`${b.label} 순변화 ${b.delta>0?'+':''}${fmt(b.delta)} → 잔액 ${fmt(b.v1)} MXN`;
+        if(i%lblStep===0)xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-20}" text-anchor="middle" font-size="9" fill="#999">${shortLbl(b.label)}</text>`);
+      }
+      const h=Math.max(1.5,bot-top);
+      rects.push(`<rect x="${(xc(i)-colW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${colW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" rx="2"><title>${tip}</title></rect>`);
+      if(N<=40||b.type==='base'||i%lblStep===0)labels.push(`<text x="${xc(i).toFixed(1)}" y="${(top-4).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${fill}">${lbl}</text>`);
+      if(i<N-1){const yy=y(b.v1);conns.push(`<line x1="${(xc(i)+colW/2).toFixed(1)}" y1="${yy.toFixed(1)}" x2="${(xc(i+1)-colW/2).toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#b9b1a0" stroke-dasharray="3 3"/>`);}
+    });
+    const legend=`<div style="display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--muted);margin-bottom:6px">
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${WF_GREEN};vertical-align:-1px;margin-right:4px"></i>기준/기말 잔액</span>
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${WF_RED};vertical-align:-1px;margin-right:4px"></i>증가(+)</span>
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${WF_BLUE};vertical-align:-1px;margin-right:4px"></i>감소(−)</span>
+      <span style="margin-left:auto">${opts.granLabel||''} · ${opts.from} ~ ${opts.to}</span></div>`;
+    const diff=round2(final-base);
+    const sum=`<div style="font-size:12.5px;color:var(--muted);margin-top:8px">기준 잔액 <b style="color:${WF_GREEN}">${fmt(base)}</b> → 기말 잔액 <b style="color:${WF_GREEN}">${fmt(final)}</b> MXN · 순변화 <b style="color:${diff>0?WF_RED:(diff<0?WF_BLUE:'var(--muted)')}">${diff>0?'+':''}${fmt(diff)}</b></div>`;
+    return `<div>${legend}<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${Math.min(W,720)}px;max-width:${W}px">${grid.join('')}${conns.join('')}${rects.join('')}${labels.join('')}${xlabels.join('')}</svg>${sum}</div>`;
   }
 
   async function loadCashflow(){
@@ -1185,15 +1292,6 @@
       if(cfState.view==='table')renderCashTable(d);
       else if(cfState.view==='cal')renderMonthCal(d);
       else renderWeekCal(d);
-      // 선그래프: 순현금흐름 + 실제 누적잔고(+ 예정 포함 시 예상 잔고 점선)
-      const series=[
-        {name:'순현금흐름',color:'#2f8f5b',points:d.rows.map(r=>({value:r.net}))},
-        {name:'누적 잔고(실적)',color:'#0c447c',points:d.rows.map(r=>({value:(r.cumulative_actual!=null?r.cumulative_actual:r.cumulative)}))},
-      ];
-      if(cfState.mode==='plan' && d.rows.some(r=>r.cumulative_actual!=null && Math.abs(r.cumulative-r.cumulative_actual)>0.005)){
-        series.push({name:'예상 잔고(예정 포함)',color:'#7a4fb0',dash:true,points:d.rows.map(r=>({value:r.cumulative}))});
-      }
-      $('cashChart').innerHTML=svgLineChart(d.rows.map(r=>r.period),series);
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   let cfLast=null;
@@ -1431,7 +1529,7 @@
       b.innerHTML=cur+byc+hist;
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  function loadCashAll(){loadCashflow();loadPlanActual();loadOverdue();}
+  function loadCashAll(){loadCashflow();loadWaterfall();loadPlanActual();loadOverdue();}
 
   // ===== 환율 요약 =====
   const fmtRate=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:4,maximumFractionDigits:4});
@@ -1764,6 +1862,11 @@
   cfSeg(['cf-actual','cf-plan'],'mode',()=>loadCashAll());
   cfSeg(['cf-month','cf-week'],'gran',()=>loadCashAll());
   cfSeg(['cf-table','cf-cal','cf-wcal'],'view',()=>loadCashflow());
+  // 현금잔액 워터폴 컨트롤
+  $('wf-go').addEventListener('click',loadWaterfall);
+  $('wf-from').addEventListener('change',loadWaterfall);
+  $('wf-to').addEventListener('change',loadWaterfall);
+  $('wf-gran').addEventListener('change',()=>{wfState.gran=$('wf-gran').value;loadWaterfall();});
   ['pa-all','pa-rec','pa-oth'].forEach(id=>$(id).addEventListener('click',()=>{
     ['pa-all','pa-rec','pa-oth'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');paState.filter=$(id).dataset.v;loadPlanActual();}));
   $('rxAddBtn').addEventListener('click',async ()=>{
@@ -1796,6 +1899,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703wp"></script>
+<script src="refatrix-nav.js?v=20260703wq"></script>
 </body>
 </html>

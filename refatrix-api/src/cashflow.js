@@ -20,15 +20,18 @@ export function weekKey(dateStr) {
   return `${dt.getUTCFullYear()}-W${pad2(week)}`;
 }
 
+// 일 키 'YYYY-MM-DD'
+export function dayKey(dateStr) { return String(dateStr).slice(0, 10); }
+
 export function bucketKey(dateStr, granularity) {
-  return granularity === 'week' ? weekKey(dateStr) : monthKey(dateStr);
+  return granularity === 'week' ? weekKey(dateStr) : granularity === 'day' ? dayKey(dateStr) : monthKey(dateStr);
 }
 
 // 실제/예정 현금흐름을 기간 버킷으로 집계 + 누적잔고
 // opts: { granularity:'month'|'week', includePlan:boolean, openingBalance:number }
 // 반환: [{ period, inflow, outflow, net, cumulative }]
 export function aggregateCashflow(txns, opts = {}) {
-  const gran = opts.granularity === 'week' ? 'week' : 'month';
+  const gran = (opts.granularity === 'week' || opts.granularity === 'day') ? opts.granularity : 'month';
   const includePlan = !!opts.includePlan;
   const map = new Map();
   for (const t of txns) {
