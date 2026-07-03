@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632e</title>
+<title>Refatrix · 창고 포장 · build 0633a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -226,6 +226,20 @@
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
   .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
   .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
+  .lblrow{display:flex;gap:8px;margin-bottom:8px}
+  .lblrow input{flex:1;font-size:18px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace;text-transform:uppercase}
+  .lblrow button{background:var(--steel);color:#fff;border:none;border-radius:10px;padding:11px 20px;font-size:15px;font-weight:800;cursor:pointer}
+  .lblerr{background:#fdecec;border:1px solid #eebfbf;color:#a33;border-radius:10px;padding:9px 13px;font-size:14px;font-weight:700;margin-bottom:8px}
+  .lblcard{border:2px solid var(--steel);border-radius:14px;padding:18px;text-align:center;background:#fff;margin-top:6px}
+  .lblcard .lctr{font-size:34px;font-weight:900;letter-spacing:1px;font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.1}
+  .lblcard .lsyd{font-size:22px;font-weight:900;color:var(--gold);margin-top:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .lblcard .lapp{font-size:12px;color:var(--muted);margin-top:4px}
+  .lblcard .lbc{margin:10px auto 2px}
+  .lblcard .lbc svg{max-width:100%;height:auto}
+  .lblcard .lprow{display:flex;gap:10px;justify-content:center;align-items:center;margin-top:12px}
+  .lblcard .lprow label{font-size:14px;font-weight:700;color:var(--steel-d)}
+  .lblcard .lprow input{width:76px;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:8px;text-align:center}
+  .lblcard .lprow button{background:var(--gold);color:#fff;border:none;border-radius:10px;padding:11px 24px;font-size:16px;font-weight:800;cursor:pointer}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -242,6 +256,25 @@
     <div class="bznote">📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.</div>
     <div class="shiptabs"><button type="button" class="shiptab on" data-st="pending">대기중</button><button type="button" class="shiptab" data-st="shipped">출고완료 내역</button></div>
     <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
+  </div>
+  <div class="sec">
+    <div class="sec-t"><span>🏷 바코드 라벨 출력</span></div>
+    <div class="bznote">CTR 코드를 키보드로 입력하고 Enter — CTR·SYD 코드와 EAN-13 바코드 라벨(51×25mm)을 출력합니다.</div>
+    <div class="lblrow">
+      <input id="lblInput" autocomplete="off" placeholder="CTR 코드 입력 후 Enter">
+      <button type="button" id="lblGo">조회</button>
+    </div>
+    <div class="lblerr" id="lblErr" style="display:none"></div>
+    <div class="lblcard" id="lblCard" style="display:none">
+      <div class="lctr" id="lblCtr"></div>
+      <div class="lsyd" id="lblSyd"></div>
+      <div class="lapp" id="lblApp"></div>
+      <div class="lbc" id="lblBc"></div>
+      <div class="lprow">
+        <label>매수</label><input type="number" id="lblCopies" value="1" min="1" max="200">
+        <button type="button" id="lblPrint">🖨 라벨 인쇄</button>
+      </div>
+    </div>
   </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
 </div>
@@ -296,7 +329,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632e — 패킹리스트 WhatsApp QR'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0633a — 바코드 라벨 출력(51×25mm)'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -331,6 +364,16 @@
     ['출고 대기 (포장완료 · SAT 발행됨)','Cola de salida (empaque listo · SAT emitida)'],
     ['EAN 스캔 또는 CTR 코드 입력 후 Enter','Escanee EAN o escriba código CTR y Enter'],
     ['CTR 코드 수동입력 후 Enter/＋','Escriba código CTR y Enter/＋'],
+    ['CTR 코드를 키보드로 입력하고 Enter — CTR·SYD 코드와 EAN-13 바코드 라벨(51×25mm)을 출력합니다.','Escriba el código CTR y Enter — imprime etiqueta (51×25mm) con códigos CTR·SYD y EAN-13.'],
+    ['해당 CTR 코드를 찾을 수 없습니다','No se encontró el código CTR'],
+    ['EAN 미등록 — 바코드 없이 코드만 인쇄됩니다','Sin EAN registrado — se imprime solo el código'],
+    ['서버 오류 — 잠시 후 다시 시도하세요','Error del servidor — intente de nuevo'],
+    ['서버 오류 — 네트워크를 확인하세요','Error del servidor — verifique la red'],
+    ['🏷 바코드 라벨 출력','🏷 Imprimir etiqueta de código'],
+    ['CTR 코드 입력 후 Enter','Escriba código CTR y Enter'],
+    ['🖨 라벨 인쇄','🖨 Imprimir etiquetas'],
+    ['조회','Buscar'],
+    ['매수','Copias'],
     ['대기 중인 포장지시가 없습니다.','No hay órdenes de empaque pendientes.'],
     ['포장 대기 (포장지시 도착)','Cola de empaque (orden recibida)'],
     ['목록을 불러오지 못했습니다.','No se pudo cargar la lista.'],
@@ -616,6 +659,70 @@
     w.document.open(); w.document.write(html); w.document.close(); w.focus();
     setTimeout(function(){ try{ w.print(); }catch(e){} }, 400);
   }
+  // ================= 바코드 라벨 출력 (CTR → CTR·SYD·EAN-13 · 51×25mm) =================
+  var LBL=null;
+  function eanDigits(e){ var v=String(e||'').replace(/\D/g,''); return (v.length===12||v.length===13)?v:''; }
+  function lblBarcodeSVG(ean, opts){
+    try{
+      if(!window.JsBarcode) return '<div style="font-family:monospace;font-size:12px">'+esc(ean)+'</div>';
+      var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      var v=eanDigits(ean); var o=opts||{};
+      if(v) window.JsBarcode(svg, v, {format:'EAN13', displayValue:true, fontSize:o.fs||16, height:o.h||56, margin:(o.m!=null?o.m:2), width:o.w||2});
+      else window.JsBarcode(svg, String(ean), {format:'CODE128', displayValue:true, fontSize:o.fs||13, height:o.h||56, margin:(o.m!=null?o.m:2), width:1.4});
+      return svg.outerHTML;
+    }catch(e2){ return '<div style="font-family:monospace;font-size:12px">'+esc(ean)+'</div>'; }
+  }
+  function showLblErr(m){ var e=$('lblErr'); e.textContent=m; e.style.display='block'; }
+  function lblLookup(){
+    var v=($('lblInput').value||'').trim().toUpperCase();
+    if(!v) return;
+    $('lblErr').style.display='none'; $('lblCard').style.display='none'; LBL=null;
+    fetch(API+'/api/warehouse/product-label?code='+encodeURIComponent(v),{headers:AUTH}).then(function(r){
+      if(r.status===404) return {__nf:1};
+      if(!r.ok) return {__err:1};
+      return r.json();
+    }).then(function(d){
+      if(!d||d.__nf){ showLblErr('\u26a0 해당 CTR 코드를 찾을 수 없습니다: '+v); return; }
+      if(d.__err){ showLblErr('\u26a0 서버 오류 — 잠시 후 다시 시도하세요'); return; }
+      LBL=d;
+      $('lblCtr').textContent=d.code||'';
+      $('lblSyd').textContent=(d.syd_codes&&d.syd_codes.length)?('SYD: '+d.syd_codes.join(' / ')):'';
+      $('lblApp').textContent=d.app||d.name||'';
+      $('lblBc').innerHTML=d.ean?lblBarcodeSVG(d.ean):'<div style="color:#a33;font-weight:700;font-size:13px">\u26a0 EAN 미등록 — 바코드 없이 코드만 인쇄됩니다</div>';
+      $('lblCard').style.display='block';
+      try{ $('lblInput').select(); }catch(e){}
+    }).catch(function(){ showLblErr('\u26a0 서버 오류 — 네트워크를 확인하세요'); });
+  }
+  function lblPrint(){
+    if(!LBL) return;
+    var n=Math.max(1, Math.min(200, parseInt($('lblCopies').value,10)||1));
+    var syd=(LBL.syd_codes||[]).join(' / ');
+    var sydFs=(syd.length>16)?'7pt':'9pt';
+    var bc=LBL.ean?lblBarcodeSVG(LBL.ean,{h:34,fs:9,m:0,w:1.6}):'';
+    var one='<section class="lb">'
+      +'<div class="c">'+esc(LBL.code)+'</div>'
+      +(syd?'<div class="s" style="font-size:'+sydFs+'">'+esc(syd)+'</div>':'')
+      +(LBL.app?'<div class="a">'+esc(LBL.app)+'</div>':'')
+      +(bc?'<div class="b">'+bc+'</div>':'')
+      +'</section>';
+    var pages=new Array(n+1).join(one);
+    printDoc('<!doctype html><html><head><meta charset="utf-8"><title>Etiqueta '+esc(LBL.code)+'</title><style>'
+      +'@page{size:51mm 25mm;margin:0} *{box-sizing:border-box} html,body{margin:0;padding:0}'
+      +'body{font-family:Arial,Helvetica,sans-serif;color:#000}'
+      +'.lb{width:51mm;height:25mm;padding:1mm 1.5mm;page-break-after:always;break-after:page;text-align:center;overflow:hidden;display:flex;flex-direction:column;justify-content:center}'
+      +'.lb:last-child{page-break-after:auto;break-after:auto}'
+      +'.c{font-size:12pt;font-weight:900;font-family:Consolas,Menlo,monospace;line-height:1.05;letter-spacing:0.3px}'
+      +'.s{font-weight:900;font-family:Consolas,Menlo,monospace;line-height:1.05;white-space:nowrap}'
+      +'.a{font-size:4.5pt;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#222;margin-top:0.3mm}'
+      +'.b{margin-top:0.5mm}.b svg{height:10mm;max-width:47mm}'
+      +'</style></head><body>'+pages+'</body></html>');
+  }
+  (function(){
+    var li=$('lblInput'); if(!li) return;
+    li.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); lblLookup(); } });
+    var g=$('lblGo'); if(g) g.addEventListener('click', lblLookup);
+    var pb=$('lblPrint'); if(pb) pb.addEventListener('click', lblPrint);
+  })();
   function buildLabelsHTML(d){
     var M=d.box_count;
     var pages=d.boxes.map(function(b){
@@ -1141,6 +1248,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260703wp"></script>
+<script src="refatrix-nav.js?v=20260703wq"></script>
 </body>
 </html>

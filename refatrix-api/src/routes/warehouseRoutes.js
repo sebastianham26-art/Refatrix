@@ -531,4 +531,23 @@ export default async function warehouseRoutes(app) {
     };
   });
 
+  // ---------- 바코드 라벨 조회 (CTR 코드 → CTR·SYD·EAN-13) ----------
+  //   · 창고 화면 「바코드 라벨 출력」용. 읽기 전용, requirePage('warehouse') + 디렉터 바이패스.
+  //   · 마이그레이션 불필요 — products.ean / product_syd_codes 재사용.
+  app.get('/api/warehouse/product-label', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const code = String((req.query && req.query.code) || '').trim().toUpperCase();
+    if (!code) return reply.code(400).send({ error: 'no_code' });
+    const p = (await query(
+      `SELECT id, code, name, app, ean FROM products
+        WHERE UPPER(TRIM(code)) = $1 AND deleted_at IS NULL LIMIT 1`, [code])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const syd = (await query(
+      `SELECT syd_code FROM product_syd_codes WHERE product_id = $1 ORDER BY syd_code`,
+      [p.id])).rows.map((r) => String(r.syd_code || '').trim()).filter(Boolean);
+    return {
+      code: p.code, name: p.name || '', app: p.app || '',
+      ean: String(p.ean || '').trim(), syd_codes: syd,
+    };
+  });
+
 }
