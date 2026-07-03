@@ -135,6 +135,79 @@ export default async function financeRoutes(app) {
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
   });
 
+  // 거래 일괄 등록(엑셀 업로드 — 과거자료 마이그레이션).
+  // 전건 검증 통과 시에만 단일 트랜잭션으로 전부 삽입(부분 성공 없음 → 마이그레이션 무결성).
+  // body: { rows: [{ txn_date, direction, account_id, category_code, currency, amount, fx_rate, status, memo }] }
+  app.post('/api/transactions/bulk-import', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const rows = Array.isArray(req.body && req.body.rows) ? req.body.rows : [];
+    if (!rows.length) return reply.code(400).send({ error: 'rows_required' });
+    if (rows.length > 1000) return reply.code(400).send({ error: 'too_many_rows', max: 1000 });
+    const isDirector = req.ctx.perm.role === 'director';
+    const accIds = new Set((await query(`SELECT id FROM accounts WHERE deleted_at IS NULL`)).rows.map((a) => Number(a.id)));
+    const catCodes = new Set((await query(`SELECT code FROM categories`)).rows.map((c) => String(c.code)));
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    const errors = [];
+    const prepared = [];
+    const fxCache = new Map(); // 날짜별 환율 캐시(USD 실제 거래)
+    let fxToday = null;
+    for (let i = 0; i < rows.length; i++) {
+      const b = rows[i] || {};
+      const line = i + 2; // 엑셀 기준 행 번호(1행=헤더)
+      const direction = b.direction === 'in' ? 'in' : (b.direction === 'out' ? 'out' : null);
+      if (!direction) { errors.push({ line, error: 'bad_direction' }); continue; }
+      const currency = ['MXN', 'USD'].includes(b.currency) ? b.currency : (b.currency == null || b.currency === '' ? 'MXN' : null);
+      if (!currency) { errors.push({ line, error: 'bad_currency' }); continue; }
+      const amount = Number(b.amount);
+      if (!(amount > 0)) { errors.push({ line, error: 'bad_amount' }); continue; }
+      const dstr = String(b.txn_date || '');
+      let dOk = dateRe.test(dstr);
+      if (dOk) { const dt = new Date(dstr + 'T00:00:00Z'); dOk = !isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === dstr; }
+      if (!dOk) { errors.push({ line, error: 'bad_date' }); continue; }
+      const status = b.status === 'plan' ? 'plan' : 'actual';
+      const accountId = (b.account_id == null || b.account_id === '') ? null : Number(b.account_id);
+      if (accountId != null && !accIds.has(accountId)) { errors.push({ line, error: 'account_not_found' }); continue; }
+      if (status === 'actual' && accountId == null) { errors.push({ line, error: 'account_required_for_actual' }); continue; }
+      if (accountId != null && !canOperateAccount(req.ctx.perm, accountId)) { errors.push({ line, error: 'account_not_operable' }); continue; }
+      if (accountId == null && !isDirector) { errors.push({ line, error: 'account_required' }); continue; }
+      const categoryCode = (b.category_code == null || b.category_code === '') ? null : String(b.category_code);
+      if (categoryCode != null && !catCodes.has(categoryCode)) { errors.push({ line, error: 'category_not_found' }); continue; }
+      let fx = 1;
+      if (currency === 'USD') {
+        if (Number(b.fx_rate) > 0) fx = Number(b.fx_rate);
+        else if (status === 'actual') {
+          if (!fxCache.has(b.txn_date)) fxCache.set(b.txn_date, await getRateForDate(b.txn_date));
+          fx = fxCache.get(b.txn_date);
+        } else {
+          if (fxToday == null) fxToday = (await getUsdMxnRate()).rate;
+          fx = fxToday;
+        }
+      }
+      const approved = !(direction === 'out' && !isDirector);
+      prepared.push({ accountId, txn_date: b.txn_date, direction, amount: r2(amount), currency, fx,
+        amountMxn: r2(amount * fx), categoryCode, status, approved,
+        memo: (b.memo == null || String(b.memo).trim() === '') ? null : String(b.memo).trim().slice(0, 500) });
+    }
+    if (errors.length) return reply.code(400).send({ error: 'validation_failed', errors: errors.slice(0, 50), total_errors: errors.length });
+    const userId = req.ctx.perm.userId;
+    const ids = await withTx(async (c) => {
+      const run = (s, p) => c.query(s, p);
+      const out = [];
+      for (const p of prepared) {
+        const r = await run(
+          `INSERT INTO transactions
+             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14) RETURNING id`,
+          [p.accountId, p.txn_date, p.direction, p.amount, p.currency, p.fx, p.amountMxn, p.categoryCode, p.status, p.approved, userId, p.memo,
+           p.status === 'plan' ? p.amount : null, p.status === 'plan' ? p.txn_date : null]);
+        out.push(Number(r.rows[0].id));
+      }
+      return out;
+    });
+    await logEvent({ userId, action: 'create', target: 'transaction:bulk-import', detail: { count: ids.length } });
+    const pendingCount = prepared.filter((p) => !p.approved).length;
+    return { ok: true, inserted: ids.length, pending_approval: pendingCount };
+  });
+
   // 거래 목록(필터: status, direction, account_id, from, to)
   app.get('/api/transactions', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const q = req.query || {};

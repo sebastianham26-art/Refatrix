@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703b</title>
+<title>Refatrix ERP · 재무 · build fin-0703c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -144,6 +144,20 @@
       <button class="btn gold" id="t-save" style="margin-top:12px">거래 등록</button>
       <div class="msg" id="newMsg"></div>
       <div class="hint">지출을 담당자가 등록하면 디렉터 승인 후 잔액에 반영됩니다. 디렉터가 등록하면 바로 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.</div>
+
+      <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
+        <h2 style="margin:0 0 2px">📄 엑셀 일괄 등록 <span style="font-size:12px;font-weight:600;color:var(--muted)">(과거자료 마이그레이션용)</span></h2>
+        <div class="hint" style="margin-top:0">① <b>양식 다운로드</b> → 엑셀에서 행 입력(구분·상태·계좌·계정과목·통화는 <b>드롭다운</b> 선택, 메모 자유 입력) → ② 파일 선택 → <b>검증</b> → ③ 미리보기 확인 후 <b>일괄 등록</b>. 오류 행이 하나라도 있으면 등록되지 않습니다(전건 성공 방식). 최대 1,000행.</div>
+        <div class="row" style="align-items:flex-end">
+          <div><button class="btn ghost" id="bi-tpl">📥 양식 다운로드 (.xlsx)</button></div>
+          <div style="flex:2"><label>작성한 파일</label><input id="bi-file" type="file" accept=".xlsx"></div>
+          <div><button class="btn gold" id="bi-check">파일 검증</button></div>
+        </div>
+        <div id="bi-preview" style="margin-top:10px"></div>
+        <button class="btn gold hidden" id="bi-submit" style="margin-top:10px"></button>
+        <div class="msg" id="bi-msg"></div>
+      </div>
+
       <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
         <h2 style="margin:0 0 2px">📥 은행 매출입금 등록 <span style="font-size:12px;font-weight:600;color:var(--muted)">(영업지원에게 통지 — 거래는 반제 시 1건만 생성)</span></h2>
         <div class="hint" style="margin-top:0">통장에 들어온 <b>매출 입금</b>을 여기서 통지로 등록하면, 영업지원에게 팝업·알림이 가고 영업지원이 수금/정산에서 고객 인보이스에 <b>반제</b>합니다. 이 등록만으로는 잔액·거래가 바뀌지 않습니다(이중계상 방지).</div>
@@ -641,6 +655,174 @@
       await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
+  }
+
+  // ===== 엑셀 일괄 등록 (과거자료 마이그레이션) =====
+  let _xljsP=null;
+  function loadExcelJS(){
+    if(window.ExcelJS)return Promise.resolve();
+    if(_xljsP)return _xljsP;
+    _xljsP=new Promise((res,rej)=>{const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      s.onload=res;s.onerror=()=>rej(new Error('exceljs_load_failed'));document.head.appendChild(s);});
+    return _xljsP;
+  }
+  const BI_MAX=1000;
+  function biAccLabel(a){return a.name+' ('+a.currency+')';}
+  function biCatLabel(c){return c.code+' · '+c.name;}
+  async function biTemplate(){
+    const m=$('bi-msg');m.className='msg';m.textContent='양식 생성 중…';
+    try{
+      await loadExcelJS();
+      if(!accounts.length)await loadAccounts();
+      if(!cats.length)await loadCats();
+      const wb=new ExcelJS.Workbook();
+      const ws=wb.addWorksheet('거래입력');
+      const ref=wb.addWorksheet('목록');
+      const accList=accounts.map(biAccLabel), catList=cats.map(biCatLabel);
+      ref.getCell(1,1).value='계좌';ref.getCell(1,2).value='계정과목 (코드 · 이름)';ref.getCell(1,3).value='그룹';
+      accList.forEach((v,i)=>{ref.getCell(2+i,1).value=v;});
+      cats.forEach((c,i)=>{ref.getCell(2+i,2).value=biCatLabel(c);ref.getCell(2+i,3).value=c.group_name||'';});
+      ref.getColumn(1).width=28;ref.getColumn(2).width=32;ref.getColumn(3).width=10;
+      ws.columns=[
+        {header:'거래일 (YYYY-MM-DD)',width:18},
+        {header:'구분',width:9},
+        {header:'상태',width:11},
+        {header:'계좌',width:28},
+        {header:'계정과목',width:30},
+        {header:'통화',width:8},
+        {header:'금액',width:14},
+        {header:'환율(USD·비우면 자동)',width:20},
+        {header:'메모',width:44}];
+      const hd=ws.getRow(1);hd.font={bold:true};hd.alignment={vertical:'middle'};
+      hd.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFE7D3'}};c.border={bottom:{style:'thin'}};});
+      ws.views=[{state:'frozen',ySplit:1}];
+      for(let r=2;r<=BI_MAX+1;r++){
+        ws.getCell(r,1).numFmt='@';
+        ws.getCell(r,2).dataValidation={type:'list',allowBlank:false,formulae:['"수입,지출"'],showErrorMessage:true,error:'수입 또는 지출을 선택하세요.'};
+        ws.getCell(r,3).dataValidation={type:'list',allowBlank:true,formulae:['"실제,예정"'],showErrorMessage:true,error:'실제 또는 예정을 선택하세요. (비우면 실제)'};
+        if(accList.length)ws.getCell(r,4).dataValidation={type:'list',allowBlank:true,formulae:["'목록'!$A$2:$A$"+(1+accList.length)],showErrorMessage:true,error:'목록 시트의 계좌 중에서 선택하세요.'};
+        if(catList.length)ws.getCell(r,5).dataValidation={type:'list',allowBlank:true,formulae:["'목록'!$B$2:$B$"+(1+catList.length)],showErrorMessage:true,error:'목록 시트의 계정과목 중에서 선택하세요.'};
+        ws.getCell(r,6).dataValidation={type:'list',allowBlank:true,formulae:['"MXN,USD"'],showErrorMessage:true,error:'MXN 또는 USD. (비우면 MXN)'};
+        ws.getCell(r,7).numFmt='#,##0.00';
+        ws.getCell(r,8).numFmt='0.0000';
+      }
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download='refatrix_txn_import_template.xlsx';document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+      m.className='msg ok';m.textContent='양식 다운로드 완료 — 드롭다운으로 선택해 채운 뒤 업로드하세요. (거래일은 2026-01-15 형식)';
+    }catch(e){m.className='msg err';m.textContent='양식 생성 실패: '+(e&&e.message||e);}
+  }
+  function biIsDate(v){return v&&typeof v==='object'&&typeof v.getTime==='function'&&typeof v.toISOString==='function';}
+  function biCellStr(v){
+    if(v==null)return '';
+    if(biIsDate(v))return v.toISOString().slice(0,10);
+    if(typeof v==='object'){
+      if(v.text!=null)return String(v.text).trim();
+      if(v.result!=null)return biCellStr(v.result);
+      if(Array.isArray(v.richText))return v.richText.map(t=>t.text).join('').trim();
+      return '';
+    }
+    return String(v).trim();
+  }
+  function biDateStr(v){
+    if(v==null||v==='')return '';
+    if(biIsDate(v))return v.toISOString().slice(0,10);
+    if(typeof v==='number'&&isFinite(v))return new Date(Date.UTC(1899,11,30)+Math.round(v)*86400000).toISOString().slice(0,10);
+    let s=biCellStr(v).replace(/[./]/g,'-');
+    const m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+    return s;
+  }
+  let biRows=null;
+  async function biParse(){
+    const m=$('bi-msg');m.className='msg';const pv=$('bi-preview');pv.innerHTML='';
+    $('bi-submit').classList.add('hidden');biRows=null;
+    const f=$('bi-file').files&&$('bi-file').files[0];
+    if(!f){m.className='msg err';m.textContent='파일을 선택하세요.';return;}
+    m.textContent='검증 중…';
+    try{
+      await loadExcelJS();
+      if(!accounts.length)await loadAccounts();
+      if(!cats.length)await loadCats();
+      const wb=new ExcelJS.Workbook();await wb.xlsx.load(await f.arrayBuffer());
+      const ws=wb.getWorksheet('거래입력')||wb.worksheets[0];
+      if(!ws){m.className='msg err';m.textContent='시트를 찾을 수 없습니다.';return;}
+      const accMap={};accounts.forEach(a=>{accMap[biAccLabel(a)]=a.id;accMap[a.name]=a.id;});
+      const catMap={};cats.forEach(c=>{catMap[biCatLabel(c)]=c.code;catMap[c.code]=c.code;catMap[c.name]=c.code;});
+      const rows=[],errs=[],dateRe=/^\d{4}-\d{2}-\d{2}$/;
+      const last=Math.min(ws.rowCount,BI_MAX+1);
+      for(let r=2;r<=last;r++){
+        const row=ws.getRow(r);
+        const dateS=biDateStr(row.getCell(1).value), dirS=biCellStr(row.getCell(2).value),
+          stS=biCellStr(row.getCell(3).value), accS=biCellStr(row.getCell(4).value),
+          catS=biCellStr(row.getCell(5).value), curS=biCellStr(row.getCell(6).value).toUpperCase(),
+          amtS=biCellStr(row.getCell(7).value), fxS=biCellStr(row.getCell(8).value),
+          memoS=biCellStr(row.getCell(9).value);
+        if(!dateS&&!dirS&&!accS&&!catS&&!amtS&&!memoS)continue; // 빈 행 스킵
+        const e=[];
+        let dOk=dateRe.test(dateS);
+        if(dOk){const dt=new Date(dateS+'T00:00:00Z');dOk=!isNaN(dt.getTime())&&dt.toISOString().slice(0,10)===dateS;}
+        if(!dOk)e.push('거래일 형식(YYYY-MM-DD)');
+        const dir=dirS==='수입'?'in':(dirS==='지출'?'out':null);
+        if(!dir)e.push('구분(수입/지출)');
+        const status=(stS===''||stS==='실제')?'actual':(stS==='예정'?'plan':null);
+        if(!status)e.push('상태(실제/예정)');
+        let accId=null;
+        if(accS){accId=accMap[accS];if(accId==null)e.push('계좌 미일치: '+accS);}
+        if(status==='actual'&&accId==null&&!e.some(x=>x.startsWith('계좌')))e.push('실제 거래는 계좌 필수');
+        let cat=null;
+        if(catS){cat=catMap[catS]||catMap[catS.split(' · ')[0]]||null;if(!cat)e.push('계정과목 미일치: '+catS);}
+        const cur=(curS===''?'MXN':(curS==='MXN'||curS==='USD'?curS:null));
+        if(!cur)e.push('통화(MXN/USD)');
+        const amt=Number(String(amtS).replace(/,/g,''));
+        if(!(amt>0))e.push('금액(>0)');
+        const fx=fxS?Number(String(fxS).replace(/,/g,'')):null;
+        if(fxS&&!(fx>0))e.push('환율 숫자');
+        if(dir&&cat){const g=(cats.find(c=>c.code===cat)||{}).group_name;
+          if(dir==='in'&&g==='비용')e.push('수입인데 비용 계정과목');
+          if(dir==='out'&&g==='수익')e.push('지출인데 수익 계정과목');}
+        rows.push({line:r,txn_date:dateS,direction:dir,status,account_id:accId,category_code:cat,
+          currency:cur||'MXN',amount:amt,fx_rate:fx,memo:memoS||null,
+          _accS:accS,_catS:catS,_err:e});
+        if(e.length)errs.push(r);
+      }
+      if(!rows.length){m.className='msg err';m.textContent='입력된 행이 없습니다. (2행부터 입력)';return;}
+      const show=rows.slice(0,200);
+      pv.innerHTML='<div class="hint" style="margin:0 0 6px"><b>'+rows.length+'행</b> 읽음 · 오류 <b style="color:'+(errs.length?'#c0392b':'inherit')+'">'+errs.length+'건</b>'+(rows.length>200?' (미리보기는 앞 200행)':'')+'</div>'
+        +'<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table style="margin:0"><thead><tr><th>행</th><th>거래일</th><th>구분</th><th>상태</th><th>계좌</th><th>계정과목</th><th>통화</th><th class="num">금액</th><th>메모</th><th>오류</th></tr></thead><tbody>'
+        +show.map(x=>'<tr style="'+(x._err.length?'background:rgba(192,57,43,.08)':'')+'"><td>'+x.line+'</td><td>'+x.txn_date+'</td><td>'+(x.direction==='in'?'수입':x.direction==='out'?'지출':'?')+'</td><td>'+(x.status==='plan'?'예정':'실제')+'</td><td>'+(x._accS||'—')+'</td><td>'+(x._catS||'—')+'</td><td>'+x.currency+'</td><td class="num">'+(x.amount>0?fmt(x.amount):'?')+'</td><td>'+(x.memo?String(x.memo).slice(0,24):'')+'</td><td style="color:#c0392b">'+x._err.join(' · ')+'</td></tr>').join('')
+        +'</tbody></table></div>';
+      if(errs.length){m.className='msg err';m.textContent='오류 행을 수정한 뒤 다시 검증하세요. (행 번호: '+errs.slice(0,10).join(', ')+(errs.length>10?' …':'')+')';return;}
+      biRows=rows.map(x=>({txn_date:x.txn_date,direction:x.direction,status:x.status,account_id:x.account_id,
+        category_code:x.category_code,currency:x.currency,amount:x.amount,fx_rate:x.fx_rate,memo:x.memo}));
+      const sb=$('bi-submit');sb.classList.remove('hidden');sb.textContent='✅ '+biRows.length+'건 일괄 등록';
+      m.className='msg ok';m.textContent='검증 통과 — 아래 미리보기를 확인하고 일괄 등록을 누르세요.';
+    }catch(e){m.className='msg err';m.textContent='파일을 읽지 못했습니다: '+(e&&e.message||e);}
+  }
+  async function biSubmit(){
+    if(!biRows||!biRows.length)return;
+    const m=$('bi-msg'),sb=$('bi-submit');
+    if(!confirm(biRows.length+'건을 등록합니다. 진행할까요?'))return;
+    sb.disabled=true;sb.textContent='등록 중…';m.className='msg';m.textContent='';
+    try{
+      const res=await fetch(session.api+'/api/transactions/bulk-import',{method:'POST',
+        headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:biRows})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        if(d.error==='validation_failed'&&Array.isArray(d.errors)){
+          m.className='msg err';m.textContent='서버 검증 실패 '+(d.total_errors||d.errors.length)+'건: '+d.errors.slice(0,5).map(x=>x.line+'행 '+x.error).join(' · ');
+        }else{m.className='msg err';m.textContent='등록 실패: '+(d.error||res.status);}
+        return;
+      }
+      m.className='msg ok';
+      m.textContent='✅ '+d.inserted+'건 등록 완료.'+(d.pending_approval?' (지출 '+d.pending_approval+'건은 디렉터 승인 후 잔액 반영)':' 잔액에 반영되었습니다.');
+      biRows=null;sb.classList.add('hidden');$('bi-file').value='';$('bi-preview').innerHTML='';
+      await loadAccounts();
+    }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
+    finally{sb.disabled=false;}
   }
 
   let txnMap={};
@@ -1914,6 +2096,9 @@
   $('accAddBtn').addEventListener('click',()=>$('accForm').classList.toggle('hidden'));
   $('a-save').addEventListener('click',saveAccount);
   $('t-save').addEventListener('click',saveTxn);
+  $('bi-tpl').addEventListener('click',biTemplate);
+  $('bi-check').addEventListener('click',biParse);
+  $('bi-submit').addEventListener('click',biSubmit);
   $('f-go').addEventListener('click',loadTxns);
   $('f-acc').addEventListener('change',loadTxns);
   $('f-status').addEventListener('change',loadTxns);
@@ -1924,6 +2109,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703wr"></script>
+<script src="refatrix-nav.js?v=20260703bi"></script>
 </body>
 </html>
