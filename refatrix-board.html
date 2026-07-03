@@ -160,6 +160,10 @@
   .evmemoadd input{flex:1;padding:7px 10px;font-size:12.5px;border:1px solid var(--line);border-radius:9px}
   .evmemoadd button{padding:7px 13px;font-size:12px}
   .evmempty{font-size:11.5px;color:#aaa}
+  .evmtogrow{margin-top:7px}
+  .evmtog{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:var(--brand-soft);cursor:pointer;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:2px 11px;background:#fafcfb;user-select:none}
+  .evmtog:hover{border-color:var(--brand-soft);background:#f2f7f4}
+  .evmemowrap{margin-top:6px}
   .seg-recv{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg-recv button{border:none;background:#fff;padding:7px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
   .seg-recv button.on{background:var(--brand);color:#fff}
@@ -568,7 +572,7 @@
     html+='<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:6px">일정</div>';
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl=scopeLabel(e);
-      return '<div class="item" style="margin-top:6px"><div class="when">'+(evHM(e)?'<span class="tm">'+esc(evHM(e))+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div></div>'+modBtns(e)+'</div>';
+      return '<div class="item" style="margin-top:6px;align-items:flex-start"><div class="when">'+(evHM(e)?'<span class="tm">'+esc(evHM(e))+'</span>':'<span class="tm" style="color:var(--muted)">종일</span>')+'</div><div class="body"><div class="t">'+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div>'+evMemoBlock(e.id,'dv-')+'</div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
     if(tds.length){
@@ -578,6 +582,7 @@
     html+='<div style="margin-top:12px"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button></div>';
     html+='</div>';
     $('calGrid').innerHTML=tzNote()+html;
+    evs.forEach(e=>loadEvMemos(e.id,'dv-'));
   }
 
   // 날짜 상세/추가 모달
@@ -593,8 +598,7 @@
     if(evs.length) html+=evs.map(e=>{
       const scopeLbl=scopeLabel(e);
       return '<div class="item" style="margin-top:6px;align-items:flex-start"><div class="body"><div class="t">'+(evHM(e)?'<span style="color:var(--gold)">'+esc(evHM(e))+'</span> ':'')+esc(e.content)+'</div><div class="meta"><span class="pill '+e.scope+'">'+scopeLbl+'</span></div>'
-        +'<div class="evmemos" id="evm-'+e.id+'"><div class="evmempty">메모 불러오는 중…</div></div>'
-        +'<div class="evmemoadd"><input type="text" id="evmin-'+e.id+'" placeholder="메모 작성... (Enter 전송)" onkeydown="if(event.key===\'Enter\')addEvMemo('+e.id+')"><button class="btn sm" onclick="addEvMemo('+e.id+')">전송</button></div>'
+        +evMemoBlock(e.id,'')
         +'</div>'+modBtns(e)+'</div>';
     }).join('');
     else html+='<div class="hint">일정 없음</div>';
@@ -671,8 +675,27 @@
 
   // ===== 일정 항목 메모(댓글) =====
   function myUid(){ return session.user&&Number(session.user.id); }
-  async function loadEvMemos(eid){
-    const box=$('evm-'+eid); if(!box) return;
+  // 메모 블록 HTML(토글 + 펼침영역 + 목록 + 입력). pfx: 렌더 위치별 ID 네임스페이스(모달=''/일뷰='dv-').
+  function evMemoBlock(eid, pfx){
+    pfx=pfx||'';
+    return '<div class="evmtogrow"><a class="evmtog" id="evmtog-'+pfx+eid+'" onclick="toggleEvMemo(\''+pfx+'\','+eid+')">💬 메모 감추기 ▲</a></div>'
+      +'<div class="evmemowrap" id="evmwrap-'+pfx+eid+'">'
+        +'<div class="evmemos" id="evm-'+pfx+eid+'"><div class="evmempty">메모 불러오는 중…</div></div>'
+        +'<div class="evmemoadd"><input type="text" id="evmin-'+pfx+eid+'" placeholder="메모 작성... (Enter 전송)" onkeydown="if(event.key===\'Enter\')addEvMemo('+eid+',\''+pfx+'\')"><button class="btn sm" onclick="addEvMemo('+eid+',\''+pfx+'\')">전송</button></div>'
+      +'</div>';
+  }
+  // 항목별 메모 열기/감추기 (기본=펼침)
+  function toggleEvMemo(pfx, id){
+    pfx=pfx||'';
+    const wrap=$('evmwrap-'+pfx+id), btn=$('evmtog-'+pfx+id);
+    if(!wrap) return;
+    const hidden=(wrap.style.display==='none');
+    wrap.style.display=hidden?'':'none';
+    if(btn) btn.innerHTML=hidden?'💬 메모 감추기 ▲':'💬 메모 열기 ▼';
+  }
+  async function loadEvMemos(eid, pfx){
+    pfx=pfx||'';
+    const box=$('evm-'+pfx+eid); if(!box) return;
     try{
       const d=await fetch(session.api+'/api/calendar/'+eid+'/memos',{headers:auth()}).then(r=>r.json());
       const items=(d&&d.items)||[];
@@ -681,45 +704,49 @@
       box.innerHTML=items.map(m=>{
         const c=userColor(m.author_id);
         const acts=[];
-        if(Number(m.author_id)===me) acts.push('<a onclick="startEditEvMemo('+m.id+','+eid+')">수정</a>');
-        if(isDirector) acts.push('<a class="del" onclick="delEvMemo('+m.id+','+eid+')">삭제</a>');
+        if(Number(m.author_id)===me) acts.push('<a onclick="startEditEvMemo('+m.id+','+eid+',\''+pfx+'\')">수정</a>');
+        if(isDirector) acts.push('<a class="del" onclick="delEvMemo('+m.id+','+eid+',\''+pfx+'\')">삭제</a>');
         const actsHtml=acts.length?'<div class="acts">'+acts.join('')+'</div>':'';
         const edited=m.edited?'<span class="ed">(수정됨)</span>':'';
-        return '<div class="evmemo" id="evmemo-'+m.id+'" style="background:'+c.bg+';border-left-color:'+c.ac+'">'
+        return '<div class="evmemo" id="evmemo-'+pfx+m.id+'" style="background:'+c.bg+';border-left-color:'+c.ac+'">'
           +'<div class="ma"><span class="dot" style="background:'+c.ac+'"></span>'+esc(m.author_name||'')+(m.author_role==='director'?' (디렉터)':'')+'</div>'
-          +'<div class="mbody" id="evmemobody-'+m.id+'">'+esc(m.body)+'</div>'
+          +'<div class="mbody" id="evmemobody-'+pfx+m.id+'">'+esc(m.body)+'</div>'
           +'<div class="mt">'+memoTime(m.created_at)+edited+'</div>'
           +actsHtml+'</div>';
       }).join('');
     }catch(e){}
   }
-  async function addEvMemo(eid){
-    const inp=$('evmin-'+eid); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+  async function addEvMemo(eid, pfx){
+    pfx=pfx||'';
+    const inp=$('evmin-'+pfx+eid); if(!inp) return; const body=inp.value.trim(); if(!body) return;
     inp.disabled=true;
     try{
       const res=await fetch(session.api+'/api/calendar/'+eid+'/memos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
-      if(res.ok){ inp.value=''; await loadEvMemos(eid); } else { const d=await res.json().catch(()=>({})); alert('메모 작성 실패: '+((d&&d.error)||res.status)); }
+      if(res.ok){ inp.value=''; await loadEvMemos(eid,pfx); } else { const d=await res.json().catch(()=>({})); alert('메모 작성 실패: '+((d&&d.error)||res.status)); }
     }catch(e){ alert('서버 연결 실패'); }
     inp.disabled=false; inp.focus();
   }
-  function startEditEvMemo(mid,eid){
-    const bodyEl=$('evmemobody-'+mid); if(!bodyEl) return;
+  function startEditEvMemo(mid,eid,pfx){
+    pfx=pfx||'';
+    const bodyEl=$('evmemobody-'+pfx+mid); if(!bodyEl) return;
     const cur=bodyEl.textContent;
-    bodyEl.innerHTML='<div class="editbox"><input type="text" id="evmemoedit-'+mid+'"><button class="btn sm" onclick="saveEvMemo('+mid+','+eid+')">저장</button><button class="btn ghost sm" onclick="loadEvMemos('+eid+')">취소</button></div>';
-    const inp=$('evmemoedit-'+mid); if(inp){ inp.value=cur; inp.focus(); inp.onkeydown=(e)=>{ if(e.key==='Enter') saveEvMemo(mid,eid); }; }
+    bodyEl.innerHTML='<div class="editbox"><input type="text" id="evmemoedit-'+pfx+mid+'"><button class="btn sm" onclick="saveEvMemo('+mid+','+eid+',\''+pfx+'\')">저장</button><button class="btn ghost sm" onclick="loadEvMemos('+eid+',\''+pfx+'\')">취소</button></div>';
+    const inp=$('evmemoedit-'+pfx+mid); if(inp){ inp.value=cur; inp.focus(); inp.onkeydown=(e)=>{ if(e.key==='Enter') saveEvMemo(mid,eid,pfx); }; }
   }
-  async function saveEvMemo(mid,eid){
-    const inp=$('evmemoedit-'+mid); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+  async function saveEvMemo(mid,eid,pfx){
+    pfx=pfx||'';
+    const inp=$('evmemoedit-'+pfx+mid); if(!inp) return; const body=inp.value.trim(); if(!body) return;
     try{
       const res=await fetch(session.api+'/api/calendar/memos/'+mid,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
-      if(res.ok) await loadEvMemos(eid); else alert('수정 실패(본인 메모만 가능)');
+      if(res.ok) await loadEvMemos(eid,pfx); else alert('수정 실패(본인 메모만 가능)');
     }catch(e){ alert('서버 연결 실패'); }
   }
-  async function delEvMemo(mid,eid){
+  async function delEvMemo(mid,eid,pfx){
+    pfx=pfx||'';
     if(!confirm('이 메모를 삭제할까요?')) return;
     try{
       const res=await fetch(session.api+'/api/calendar/memos/'+mid,{method:'DELETE',headers:auth()});
-      if(res.ok) await loadEvMemos(eid); else alert('삭제 실패(디렉터만 가능)');
+      if(res.ok) await loadEvMemos(eid,pfx); else alert('삭제 실패(디렉터만 가능)');
     }catch(e){ alert('서버 연결 실패'); }
   }
 
