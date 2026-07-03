@@ -80,6 +80,17 @@
   .appsec{margin:0 0 12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
   .appchips{display:flex;flex-wrap:wrap;gap:4px}
   .appchips .tag{font-size:12px;padding:3px 9px;background:#f4efe4;color:#6b5f45;border:1px solid #e6ddca}
+  /* 중국차 브랜드 칩(복수선택 토글) */
+  .cnchip{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:14px;
+    font-size:12px;font-weight:600;cursor:pointer;user-select:none;
+    background:#fff;color:#8a1c1c;border:1px solid #e2b8b8;transition:all .12s}
+  .cnchip:hover{background:#fdf2f2}
+  .cnchip.on{background:#c0392b;color:#fff;border-color:#c0392b}
+  .cnchip .cnt{font-size:11px;opacity:.7;font-weight:500}
+  .cnchip.on .cnt{opacity:.85}
+  /* 결과행 중국 브랜드 배지 */
+  .cnbadge{display:inline-block;margin-right:3px;padding:0 6px;border-radius:9px;
+    background:#fbe9e7;color:#b23a2e;font-size:10px;font-weight:700;line-height:16px}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
@@ -119,7 +130,15 @@
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px">
           <input type="checkbox" id="qAlu" style="width:auto;margin:0"> 알루미늄만
         </label></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px">
+          <input type="checkbox" id="qCn" style="width:auto;margin:0"> 중국차량만
+        </label></div>
       <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
+    </div>
+    <div id="cnBrands" class="hidden" style="margin:2px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;color:#6f6a60;white-space:nowrap">중국 브랜드(복수선택):</span>
+      <div id="cnChips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
     </div>
     <div id="result"></div>
     <div class="hint">경쟁사(SyD) 코드나 적용차종으로도 검색됩니다(중복 매칭 포함). 평균원가(이동평균)는 수입 입고·부대비용 승인 시 갱신되고, <b>매출로는 바뀌지 않습니다</b>. 매출 등록 후 재고만 줄고 평균원가는 그대로면 정상입니다. 역할에 따라 원가·정가가 보이지 않을 수 있습니다(권한 최소화).</div>
@@ -245,6 +264,8 @@
 
   let prodOffset=0, prodQ='', prodLimit=50, prodTotal=0, prodHasList=false, prodHasCost=false, prodMaterial='';
   let prodSort='', prodDir='desc';  // 헤더 클릭 정렬(서버측 전체 기준). ''=코드순 기본.
+  // 중국차 필터 상태: prodCn=중국차량만 여부, prodCnSel=선택된 브랜드(maker) 배열(복수선택).
+  let prodCn=false, prodCnSel=[], cnMakersCache=null;
   function matBadge(mat){
     if(mat==='aluminio') return '<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:#e3eef0;color:#15616d;font-size:11px;font-weight:700">알루미늄</span>';
     if(mat) return '<span style="font-size:11px;color:#6f6a60">'+escP(mat)+'</span>';
@@ -262,12 +283,63 @@
     }catch(e){ alert('변경 실패: '+e.message); }
   }
   function escP(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-  function doSearch(){ prodOffset=0; prodQ=$('q').value.trim(); prodMaterial=($('qAlu')&&$('qAlu').checked)?'aluminio':''; loadProducts(); }
+  // ── 중국차 브랜드 칩(복수선택) ──────────────────────────────────────
+  // 결과행 적용차종 앞에 매칭된 중국 브랜드 배지 표시(선택 브랜드만; 미선택 시 매칭된 전부).
+  function cnBadgeHtml(appText){
+    if(!prodCn || !cnMakersCache || !appText) return '';
+    const up=String(appText).toUpperCase();
+    const pool=cnMakersCache.map(x=>x.maker);
+    const sel=prodCnSel.length?prodCnSel:pool;
+    const hit=[];
+    sel.forEach(mk=>{ if(new RegExp('(?<![A-Z])'+mk.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![A-Z])').test(up)){
+      const it=cnMakersCache.find(x=>x.maker===mk); hit.push(it?it.label:mk);
+    }});
+    return hit.map(l=>'<span class="cnbadge">'+escP(l)+'</span>').join('');
+  }
+  // 칩 렌더(선택 상태 반영)
+  function renderCnChips(){
+    const box=$('cnChips'); if(!box) return;
+    if(!cnMakersCache){ box.innerHTML='<span class="hint" style="margin:0">불러오는 중…</span>'; return; }
+    if(!cnMakersCache.length){ box.innerHTML='<span class="hint" style="margin:0">등록된 중국차 브랜드가 없습니다.</span>'; return; }
+    box.innerHTML=cnMakersCache.map(x=>
+      '<span class="cnchip'+(prodCnSel.includes(x.maker)?' on':'')+'" data-mk="'+escP(x.maker)+'">'
+      +escP(x.label)+' <span class="cnt">'+x.count+'</span></span>').join('');
+    box.querySelectorAll('.cnchip').forEach(el=>{ el.addEventListener('click',()=>{
+      const mk=el.getAttribute('data-mk');
+      const i=prodCnSel.indexOf(mk);
+      if(i>=0) prodCnSel.splice(i,1); else prodCnSel.push(mk);
+      el.classList.toggle('on');
+      doSearch();
+    }); });
+  }
+  // 중국차 브랜드 목록 로드(1회 캐시)
+  async function ensureCnMakers(){
+    if(cnMakersCache) return;
+    try{ const d=await fetch(session.api+'/api/products/cn-makers',{headers:auth()}).then(x=>x.json());
+      cnMakersCache=(d.items||[]); }catch(e){ cnMakersCache=[]; }
+    renderCnChips();
+  }
+  // 「중국차량만」 토글
+  async function onCnToggle(){
+    const on=!!($('qCn')&&$('qCn').checked);
+    const wrap=$('cnBrands');
+    if(on){ wrap.classList.remove('hidden'); await ensureCnMakers(); renderCnChips(); }
+    else { wrap.classList.add('hidden'); prodCnSel=[]; }
+    doSearch();
+  }
+  function doSearch(){
+    prodOffset=0; prodQ=$('q').value.trim();
+    prodMaterial=($('qAlu')&&$('qAlu').checked)?'aluminio':'';
+    prodCn=!!($('qCn')&&$('qCn').checked);
+    loadProducts();
+  }
   async function loadProducts(){
     const r=$('result'); r.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
       const matParam=prodMaterial?('&material='+encodeURIComponent(prodMaterial)):'';
-      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):'')+matParam,{headers:auth()});
+      let cnParam='';
+      if(prodCn){ cnParam='&cn=1'; if(prodCnSel.length) cnParam+='&cnbrand='+encodeURIComponent(prodCnSel.join(',')); }
+      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):'')+matParam+cnParam,{headers:auth()});
       const d=await res.json(); const items=d.items||[];
       prodTotal=Number(d.total||items.length);
       if(!items.length){ r.innerHTML='<div class="hint">일치하는 제품이 없습니다.</div>'; return; }
@@ -292,7 +364,7 @@
         h+='<tr class="prow" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" style="cursor:pointer">'
           +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
-          +'<td style="font-size:11px;color:#6f6a60">'+(app||'—')+'</td>'
+          +'<td style="font-size:11px;color:#6f6a60">'+cnBadgeHtml(p.app)+(app||'—')+'</td>'
           +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
           +'<td class="rack nowrap">'+(rack||'—')+'</td>'
           +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
@@ -638,10 +710,11 @@
   if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
   if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
   if($('qAlu')) $('qAlu').addEventListener('change',doSearch);
+  if($('qCn')) $('qCn').addEventListener('change',onCnToggle);
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260702sd"></script>
+<script src="refatrix-nav.js?v=20260702cn"></script>
 </body>
 </html>

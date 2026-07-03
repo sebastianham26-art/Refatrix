@@ -5,6 +5,29 @@ import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
 import { visibleTeamIds } from '../teams.js';
 
+// ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
+// 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
+// 아래는 "분류(화이트리스트)"이며, 실제 UI/카운트는 DB에 존재하는 브랜드만 노출한다
+// (cn-makers 엔드포인트가 이 목록과 DB의 교집합만 반환). 신규 중국차 적용차종이
+// 마스터에 추가되면 별도 코드 수정 없이 자동으로 목록/필터에 잡힌다.
+const CN_MAKERS = [
+  'MG', 'JAC', 'CHIREY', 'CHERY', 'OMODA', 'JAECOO', 'CHANGAN', 'BYD',
+  'GWM', 'GREAT WALL', 'HAVAL', 'GEELY', 'DONGFENG', 'FAW', 'BAIC', 'FOTON',
+  'JETOUR', 'EXEED', 'WULING', 'BAOJUN', 'MAXUS', 'JMC', 'ZEEKR', 'HONGQI',
+  'LYNK', 'NIO', 'XPENG', 'LEAPMOTOR', 'SERES', 'BESTUNE', 'ORA', 'TANK', 'ROEWE',
+];
+// 표시명(브랜드 계열 병기). 목록에 없으면 저장값 그대로 노출.
+const CN_MAKER_LABEL = {
+  MG: 'MG', JAC: 'JAC', BYD: 'BYD', FAW: 'FAW', BAIC: 'BAIC', JMC: 'JMC', ORA: 'ORA', NIO: 'NIO',
+  GWM: 'GWM (Great Wall)', 'GREAT WALL': 'Great Wall',
+  CHIREY: 'Chirey (Chery)', OMODA: 'Omoda (Chery)', JAECOO: 'Jaecoo (Chery)', CHERY: 'Chery',
+  CHANGAN: 'Changan', HAVAL: 'Haval', GEELY: 'Geely', DONGFENG: 'Dongfeng', FOTON: 'Foton',
+  JETOUR: 'Jetour', EXEED: 'Exeed', WULING: 'Wuling', BAOJUN: 'Baojun', MAXUS: 'Maxus',
+  ZEEKR: 'Zeekr', HONGQI: 'Hongqi', LYNK: 'Lynk & Co', XPENG: 'Xpeng', LEAPMOTOR: 'Leapmotor',
+  SERES: 'Seres', BESTUNE: 'Bestune', TANK: 'Tank', ROEWE: 'Roewe',
+};
+const cnLabel = (m) => CN_MAKER_LABEL[m] || m;
+
 export default async function productRoutes(app) {
   // 제품 목록: 검색 + 페이징 (SKU ~5,000 대비, 한 번에 다 보내지 않음)
   // 민감 필드(원가·마진 등)는 권한 없으면 응답에서 제거(데이터 최소 전송).
@@ -45,6 +68,19 @@ export default async function productRoutes(app) {
     } else if (materialFilter) {
       params.push(normalizeMaterial(materialFilter));
       where += ` AND p.material = $${params.length}`;
+    }
+    // 중국차 필터: cn=1 이면 중국 브랜드 적용차종을 가진 제품만.
+    //   cnbrand=MG,JAC 처럼 특정 브랜드를 다중선택하면 그 브랜드들로 좁힌다(화이트리스트 검증).
+    //   선택이 없고 cn=1 이면 전체 중국 브랜드(CN_MAKERS) 대상.
+    const cnOn = ['1', 'true', 'yes', 'on'].includes(String(req.query.cn || '').trim().toLowerCase());
+    const cnSel = String(req.query.cnbrand || '')
+      .split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
+      .filter((m) => CN_MAKERS.includes(m));   // 임의 값 주입 방지(화이트리스트만 허용)
+    if (cnOn || cnSel.length) {
+      const cnList = cnSel.length ? cnSel : CN_MAKERS;
+      params.push(cnList);
+      where += ` AND EXISTS (SELECT 1 FROM product_applications pa
+                             WHERE pa.product_id = p.id AND pa.maker = ANY($${params.length}))`;
     }
     // 전체 건수용 파라미터(검색 조건만) — 팀/limit/offset 추가 전에 스냅샷.
     const countParams = params.slice();
@@ -352,6 +388,22 @@ export default async function productRoutes(app) {
          FROM product_syd_codes s JOIN products p ON p.id=s.product_id AND p.deleted_at IS NULL
         WHERE s.syd_code = $1`, [code])).rows;
     return { items: rows };
+  });
+
+  // 중국차 필터용: DB에 실제 존재하는 중국 브랜드 + 제품수(다중선택 칩 소스).
+  //   count = 브랜드별 제품수(제품 기준 DISTINCT), total = 전체 중국차 제품 중복제거 수.
+  app.get('/api/products/cn-makers', { preHandler: [authGuard, requirePage('products')] }, async () => {
+    const rows = (await query(
+      `SELECT maker, COUNT(DISTINCT product_id)::int AS cnt
+         FROM product_applications
+        WHERE maker = ANY($1)
+        GROUP BY maker
+        ORDER BY cnt DESC, maker`, [CN_MAKERS])).rows;
+    const items = rows.map((r) => ({ maker: r.maker, label: cnLabel(r.maker), count: Number(r.cnt) }));
+    const tot = (await query(
+      `SELECT COUNT(DISTINCT product_id)::int AS n
+         FROM product_applications WHERE maker = ANY($1)`, [CN_MAKERS])).rows[0].n;
+    return { items, total: Number(tot) };
   });
 
   // 차종 드롭다운: 메이커 목록
