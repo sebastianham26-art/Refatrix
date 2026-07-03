@@ -138,7 +138,10 @@
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0">기록 내역 <span class="mut" id="lineCount"></span></h2>
-      <button class="btn brass sm" onclick="submitCount()">제출 → 대조 보기</button>
+      <div class="row">
+        <button class="btn ghost sm" onclick="previewReconcile()">🔍 임시 대조</button>
+        <button class="btn brass sm" onclick="submitCount()">✔ 실사 완료(제출)</button>
+      </div>
     </div>
     <div id="linesBox"></div>
   </div>
@@ -251,8 +254,8 @@
   <div class="grpttl" style="margin-top:14px">④ 수정 · 삭제</div>
   <div class="mut" style="line-height:1.7">기록 내역은 <b>랙별로 묶여</b> 보입니다. 수량은 칸에서 바로 고치고, 잘못 넣은 줄은 <b>삭제</b>할 수 있습니다. (제출 전까지만 가능)</div>
 
-  <div class="grpttl" style="margin-top:14px">⑤ 제출 → 대조 결과</div>
-  <div class="mut" style="line-height:1.7"><b>제출 → 대조 보기</b>를 누르면 기록이 잠기고, 항목별 <b>실사합계 vs 시스템재고</b>가 5가지로 분류됩니다:</div>
+  <div class="grpttl" style="margin-top:14px">⑤ 임시 대조 · 완료(제출)</div>
+  <div class="mut" style="line-height:1.7"><b>🔍 임시 대조</b>는 아직 제출하지 않고 현재까지의 차이를 미리 봅니다 — 재고에 영향이 없고, <b>← 기록 계속하기</b>로 돌아가 얼마든지 추가·수정할 수 있어요. 다 세면 <b>✔ 실사 완료(제출)</b>로 기록을 잠그고 최종 대조로 넘어갑니다. 항목별 <b>실사합계 vs 시스템재고</b>가 5가지로 분류됩니다:</div>
   <div style="line-height:1.9;margin-top:6px">
     <span class="pill p-match">일치</span> 실사 = 시스템 &nbsp;·&nbsp;
     <span class="pill p-short">부족</span> 실사 &lt; 시스템 &nbsp;·&nbsp;
@@ -423,10 +426,24 @@ function renderLines(lines){
 async function editLine(id,val){ const q=Number(val); if(!isFinite(q)||q<0){toast('수량 오류');return;} const r=await api('/api/stock-counts/'+CUR.id+'/lines/'+id,{method:'PATCH',body:JSON.stringify({counted_qty:q})}); if(r.ok) toast('수정됨'); else toast('수정 실패'); }
 async function delLine(id){ if(!confirm('이 기록을 삭제할까요?')) return; const r=await api('/api/stock-counts/'+CUR.id+'/lines/'+id,{method:'DELETE'}); if(r.ok){ toast('삭제됨'); refreshLines(); } }
 async function submitCount(){
-  if(!confirm('제출하면 기록이 잠기고 대조 결과로 넘어갑니다. 계속할까요?')) return;
+  if(!confirm('실사를 완료(제출)하면 기록이 잠기고 최종 대조로 넘어갑니다. 계속할까요?')) return;
   const r=await api('/api/stock-counts/'+CUR.id+'/submit',{method:'POST'});
   if(!r.ok){ toast('제출 실패'); return; }
   openReconcile(CUR.id);
+}
+// 임시 대조: 제출하지 않고(잠금 없이) 현재까지의 차이를 미리 확인
+async function previewReconcile(){
+  if(!CUR){ return; }
+  openReconcile(CUR.id);
+}
+// 임시 대조 화면 → 기록으로 복귀(계속 추가·수정). 현재 랙은 유지.
+async function backToRecord(){
+  const r=await api('/api/stock-counts/'+CUR.id);
+  if(!r.ok){ toast('불러오기 실패'); return; }
+  CUR={id:r.id,code:r.code,status:r.status};
+  $('scCode').textContent=r.code;
+  show('recordView'); cancelPrev(); renderLines(r.lines||[]);
+  setTimeout(()=>{ var c=$('codeInput'); if(c) c.focus(); },100);
 }
 function setMsg(id,m,cls){ const e=$(id); e.textContent=m; e.className='msg '+(cls||''); }
 
@@ -434,7 +451,8 @@ function setMsg(id,m,cls){ const e=$(id); e.textContent=m; e.className='msg '+(c
 async function openReconcile(id){
   const r=await api('/api/stock-counts/'+id+'/reconcile'); if(!r.ok){ toast('대조 실패'); return; }
   RECON=r; CUR={id:r.count.id,code:r.count.code,status:r.count.status};
-  $('scCode').textContent=r.count.code; $('rcCode').textContent='· '+r.count.code+' ('+r.count.status+')';
+  const stKo={draft:'임시 대조',submitted:'제출됨',reconciled:'반영완료'}[r.count.status]||r.count.status;
+  $('scCode').textContent=r.count.code; $('rcCode').textContent='· '+r.count.code+' ('+stKo+')';
   show('reconView'); reconFilter='all'; renderChips(); renderApply(); renderRcTable();
   document.querySelectorAll('.valcol').forEach(e=>e.classList.toggle('hidden', !RECON.summary.value_cost_impact && RECON.summary.value_cost_impact!==0));
 }
@@ -451,6 +469,17 @@ function renderChips(){
 function setFilter(f){ reconFilter=f; renderChips(); renderRcTable(); }
 function renderApply(){
   const box=$('applyBox');
+  if(RECON.count.status==='draft'){
+    box.innerHTML='<div class="prev" style="background:#fbf2e0;border-color:#e7d3a3">'
+      +'<div class="nm">🧪 임시 대조 — 아직 제출 전</div>'
+      +'<div class="meta">재고에 영향 없이 현재까지의 차이를 확인하는 중입니다. 계속 기록·수정할 수 있어요. '
+      +'<span class="mut">(<b>미실사</b>는 아직 안 센 품목입니다 — 다 세면 줄어듭니다.)</span></div>'
+      +'<div class="row" style="margin-top:10px">'
+      +'<button class="btn ghost sm" onclick="backToRecord()">← 기록 계속하기</button>'
+      +'<button class="btn brass sm" onclick="submitCount()">✔ 실사 완료(제출)</button>'
+      +'</div></div>';
+    return;
+  }
   if(RECON.can_apply){
     box.innerHTML='<button class="btn brass" onclick="previewApply()">🔒 실물로 맞추기 (디렉터 승인)</button> <span class="mut">부족·초과 항목을 실물 수량으로 조정. 미실사·미등록은 건드리지 않음.</span>';
   } else if(RECON.count.status==='reconciled'){
@@ -534,6 +563,6 @@ async function deletePromo(){
   else { show('loginView'); }
 })();
 </script>
-<script src="refatrix-nav.js?v=20260703wp"></script>
+<script src="refatrix-nav.js?v=20260702sc"></script>
 </body>
 </html>
