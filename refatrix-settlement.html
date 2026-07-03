@@ -62,6 +62,16 @@
   .nores{font-size:13px;color:var(--muted);padding:8px 2px}
   .inv-no{font-size:11px;color:var(--muted);white-space:nowrap;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.2px}
   td.n,th.n{font-variant-numeric:tabular-nums}
+  /* 스페인어 자동번역 시 버튼(반제/N/C/수금내역)이 길어져 오른쪽으로 넘칠 때
+     항상 보이는 가로 스크롤바를 노출해 외국인 직원이 버튼에 도달할 수 있게 함 */
+  .arscroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+    scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#c8bfa8 #efe9dd}
+  .arscroll::-webkit-scrollbar{height:12px}
+  .arscroll::-webkit-scrollbar-track{background:#efe9dd;border-radius:8px}
+  .arscroll::-webkit-scrollbar-thumb{background:#c8bfa8;border-radius:8px;border:2px solid #efe9dd}
+  .arscroll::-webkit-scrollbar-thumb:hover{background:var(--gold)}
+  /* N/C 등 번역 제외 라벨 */
+  .notranslate{}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -116,7 +126,7 @@
       <div class="card-h">Nota de crédito (NC) · 할인 승인 증빙
         <span style="margin-left:auto"><span class="seg" id="ncSeg"></span></span>
       </div>
-      <div class="hint" style="margin-bottom:4px">조기입금(pronto pago) 등으로 인보이스 잔액보다 적게 받을 때, 할인분을 <b>비현금 반제</b>로 마감하는 사내 증빙입니다. 발기는 위 <b>오픈 인보이스</b> 행의 <b>[NC]</b> 버튼에서 합니다. 절차: 발기 → <b>인쇄·서명</b> → <b>서명본 업로드</b> → <b>디렉터 승인</b> → <b>적용(비현금 반제)</b>. ※ 현금/수금 총액에는 잡히지 않습니다.</div>
+      <div class="hint" style="margin-bottom:4px">조기입금(pronto pago) 등으로 인보이스 잔액보다 적게 받을 때, 할인분을 <b>비현금 반제</b>로 마감하는 사내 증빙입니다. 발기는 위 <b>오픈 인보이스</b> 행의 <b class="notranslate" translate="no">[N/C]</b> 버튼에서 합니다. 절차: 발기 → <b>인쇄·서명</b> → <b>서명본 업로드</b> → <b>디렉터 승인</b> → <b>적용(비현금 반제)</b>. ※ 현금/수금 총액에는 잡히지 않습니다.</div>
       <div id="ncListBox"><div class="hint">불러오는 중…</div></div>
       <div class="msg" id="ncMsg"></div>
     </div>
@@ -360,7 +370,7 @@
       +(active?' data-on="1"':'')+' title="클릭하여 정렬(다시 누르면 방향 전환·3번째는 기본)">'+esc(label)+' '+arrow+'</th>';
   }
   function arListTableHtml(list){
-    let h='<div style="overflow-x:auto"><table><thead><tr>'
+    let h='<div class="arscroll"><table><thead><tr>'
       +arTh('customer','고객 · 인보이스','left')
       +arTh('inv_date','발행일','left')
       +arTh('due_date','만기일','left')
@@ -380,7 +390,7 @@
         +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td>'
         +'<td style="white-space:nowrap">'
         +(it.paid_full?'':'<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">반제</button> ')
-        +(it.paid_full?'':'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--gold);border:1px solid var(--line)" onclick="toggleNc('+it.id+')" title="할인 승인 증빙(Nota de crédito) 발기">NC</button> ')
+        +(it.paid_full?'':'<button class="btn notranslate" translate="no" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--gold);border:1px solid var(--line)" onclick="toggleNc('+it.id+')" title="할인 승인 증빙(Nota de crédito) 발기">N/C</button> ')
         +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
         +'</tr>';
       if(arOpenRepay===it.id){ h+='<tr><td colspan="8" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
@@ -833,7 +843,7 @@
   function renderNcList(){
     const box=$('ncListBox'); if(!box)return;
     if(!ncItems.length){ box.innerHTML='<div class="hint">해당 상태의 NC가 없습니다.</div>'; return; }
-    let h='<div style="overflow-x:auto"><table><thead><tr>'
+    let h='<div class="arscroll"><table><thead><tr>'
       +'<th style="text-align:left">고객 · 인보이스</th><th style="text-align:left">Concepto</th>'
       +'<th class="n">총액</th><th class="n">base</th><th class="n">IVA</th>'
       +'<th>상태</th><th>증빙</th><th></th></tr></thead><tbody>';
@@ -1038,6 +1048,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260702sc"></script>
+<script src="refatrix-nav.js?v=20260703st"></script>
 </body>
 </html>
