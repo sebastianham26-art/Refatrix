@@ -120,6 +120,7 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+escP(d.user?.name||login_id)+'</b><br>역할: '+escP(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('searchCard').classList.remove('hidden');
+      loadVio();
       applyHashQuery();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -135,15 +136,75 @@
     if(q.length<2){ r.innerHTML='<div class="hint" style="margin-top:12px">두 글자 이상 입력하세요.</div>'; return; }
     r.innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
     try{
-      const d=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json());
+      const [d]=await Promise.all([
+        fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json()),
+        loadVio()
+      ]);
       render(d);
     }catch(e){ r.innerHTML='<div class="hint" style="margin-top:12px">조회에 실패했습니다.</div>'; }
   }
 
+  // ── 연식대별 VIO: 공통>커버리지 화면의 데이터(mx_parts_coverage_dashboard.html)를 단일 소스로 사용 ──
+  // 커버리지 HTML의 const DATA={...} 한 줄을 읽어 모델→세대(연식대) VIO 인덱스를 만든다.
+  // units 내림차순으로 전 세대 순위를 파생(ctr_vio_rank의 순위와 동일 규칙). 실패 시 엔드포인트 VIO로 폴백.
+  let VIO=null, _vioReady=null;
+  function normS(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+  function loadVio(){
+    if(_vioReady) return _vioReady;
+    _vioReady=(async()=>{
+      try{
+        const txt=await fetch('mx_parts_coverage_dashboard.html?nc='+Date.now()).then(x=>x.text());
+        const line=txt.split('\n').find(l=>l.trimStart().startsWith('const DATA='));
+        if(!line) throw new Error('no DATA');
+        const js=line.trim().replace(/^const\s+DATA\s*=\s*/,'').replace(/;\s*$/,'');
+        const D=JSON.parse(js); const vehicles=(D&&D.vehicles)||[];
+        const models=vehicles.map(m=>({
+          marca:(m.marca||'').toString(), modelo:(m.modelo||'').toString(), units:Number(m.units)||0,
+          gens:(m.gens||[]).map(g=>({label:(g.label||'').toString(), ys:Number(g.ys)||null, ye:Number(g.ye)||null, units:Number(g.units)||0}))
+        }));
+        const allG=[]; models.forEach(m=>m.gens.forEach(g=>{ if(g.units>0) allG.push(g); }));
+        allG.sort((a,b)=>b.units-a.units); allG.forEach((g,i)=>{ g.rank=i+1; });
+        const mm=models.filter(m=>m.units>0).slice().sort((a,b)=>b.units-a.units); mm.forEach((m,i)=>{ m.rank=i+1; });
+        VIO={models};
+      }catch(e){ VIO={models:[]}; }
+      return VIO;
+    })();
+    return _vioReady;
+  }
+  function findVioModel(q){
+    if(!VIO||!VIO.models.length) return null;
+    const nq=normS(q); if(!nq) return null;
+    let best=null,bo=-1;
+    VIO.models.forEach(m=>{
+      const nm=normS(m.modelo); let sc=-1;
+      if(nm===nq) sc=100;
+      else if(nm.split(' ').indexOf(nq)>=0) sc=90;
+      else if(nm.indexOf(nq)===0) sc=80;
+      else if(nm.indexOf(nq)>=0) sc=60;
+      else if(nq.indexOf(nm.split(' ')[0])>=0) sc=40;
+      if(sc>bo || (sc===bo && best && m.units>best.units)){ bo=sc; best=m; }
+    });
+    return bo>=40?best:null;
+  }
+  function parseYears(s){ const mm=(''+(s||'')).match(/(\d{4})\s*[-~]?\s*(\d{4})?/); if(!mm) return null; const a=+mm[1], b=mm[2]?+mm[2]:a; return [Math.min(a,b),Math.max(a,b)]; }
+  function vioForColumn(vmodel,vyears,cov){
+    if(!cov||!cov.gens.length) return null;
+    const yr=parseYears(vyears), nvm=normS(vmodel); let best=null,bo=-1e9;
+    cov.gens.forEach(g=>{
+      let ov=-1; if(yr&&g.ys&&g.ye){ ov=Math.min(yr[1],g.ye)-Math.max(yr[0],g.ys); }
+      const ng=normS(g.label); const lab=(ng===nvm)?3:((ng.indexOf(nvm)>=0||nvm.indexOf(ng)>=0)?1:0);
+      const score=ov+lab*0.5;
+      if(score>bo){ bo=score; best=g; }
+    });
+    return (best&&bo>-1e8)?best:null;
+  }
   function vioChip(vio,small){
     if(!vio) return small?'<span class="vio none">VIO —</span>':'';
-    const t='VIO '+vio.rank+'위 · '+num(vio.units)+'대';
-    return '<span class="vio">'+t+'</span>';
+    const hasRank=(vio.rank!==undefined&&vio.rank!==null);
+    const t=(hasRank&&vio.units>0)?('VIO '+vio.rank+'위 · '+num(vio.units)+'대')
+           :('VIO '+num(vio.units||0)+'대');
+    const cls=(vio.units>0)?'vio':'vio none';
+    return '<span class="'+cls+'">'+t+'</span>';
   }
   function codeCard(x){
     const syd=(x.syd&&x.syd.length)?x.syd.map(escP).join(' / '):'<span style="color:#c9c3b6">—</span>';
@@ -161,9 +222,18 @@
       r.innerHTML='<div class="hint" style="margin-top:14px">‘'+escP(d&&d.query||'')+'’에 해당하는 적용차종을 찾지 못했습니다. 철자나 다른 모델명으로 시도해 보세요.</div>';return;
     }
     const vars=d.variants;
+    // 연식대별 VIO 소스: 커버리지 데이터에서 이 차종 모델을 찾는다(실패 시 엔드포인트 VIO 폴백)
+    const cov=findVioModel(d.model_label||d.query);
+    const headVio=cov?{rank:cov.rank,units:cov.units}:d.headline_vio;
     let h='<div class="titlerow"><span class="car">'+escP(d.model_label||d.query)+'</span>'
-      +(d.headline_vio?vioChip(d.headline_vio,false):'')
+      +(headVio?vioChip(headVio,false):'')
       +'<span class="meta">'+d.categories.length+'개 카테고리 · '+num(d.total)+'개 제품</span></div>';
+    // 각 세대 열의 VIO를 미리 계산(커버리지 연식대 → 열 연식 겹침 매칭)
+    const colVio={};
+    vars.forEach(function(v){
+      const cvio=cov?vioForColumn(v.model,v.years,cov):null;
+      colVio[v.key]= cvio?{rank:cvio.rank,units:cvio.units}:(v.vio||null);
+    });
     const gtc='repeat('+vars.length+',minmax(180px,1fr))';
     d.categories.forEach(function(c){
       h+='<div class="cat"><div class="cathead"><span class="es">'+escP(c.es)+'</span><span class="ko">'+escP(c.ko)+'</span><span class="cnt">'+c.count+'개</span></div>';
@@ -172,7 +242,7 @@
         const items=(c.cells&&c.cells[v.key])||[];
         const body=items.length?items.map(codeCard).join(''):'<div class="empty">—</div>';
         h+='<div class="col"><div class="colhead"><div class="m">'+escP(v.model)+'</div>'
-          +'<div class="y">'+escP(v.years||'')+'</div>'+vioChip(v.vio,true)+'</div>'
+          +'<div class="y">'+escP(v.years||'')+'</div>'+vioChip(colVio[v.key],true)+'</div>'
           +'<div class="colbody">'+body+'</div></div>';
       });
       h+='</div></div></div>';
@@ -187,6 +257,6 @@
   window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
 </script>
-<script src="refatrix-nav.js?v=20260702vp"></script>
+<script src="refatrix-nav.js?v=20260702vq"></script>
 </body>
 </html>
