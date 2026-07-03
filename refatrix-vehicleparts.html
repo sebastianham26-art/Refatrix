@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 차종별 부품 · build vv</title>
+<title>Refatrix ERP · 차종별 부품 · build vw</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--accent:#2f6d8f;--accentbg:#e9f1f6;}
@@ -69,6 +69,7 @@
   .promoBar button,.promoBar input{font-family:inherit}
   .promoBar .pbtn{padding:8px 14px;border:1px solid #fff;background:#143D34;color:#fff;border-radius:8px;font-size:13px;cursor:pointer}
   .promoBar .pbtn.sec{background:#fff;color:#143D34}
+  .promoBar .pbtn.wa{background:#25D366;border-color:#1da851;color:#06371c}
   .promoBar .fld{background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;display:flex;gap:6px;align-items:center}
   .promoBar .fld input{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px}
   .sheet{width:210mm;min-height:297mm;background:#fff;box-shadow:0 6px 30px rgba(0,0,0,.4);padding:14mm 14mm 12mm;position:relative}
@@ -399,6 +400,33 @@
     }catch(e){ alert('JPEG 생성 중 문제가 발생했습니다. 인쇄를 이용해 주세요.'); }
     finally{ busy(btn,false); }
   }
+  function promoText(){
+    const s=_psheet||{}; const nm=((s.marca?s.marca+' ':'')+(s.modelo||'')).trim();
+    return '¡PROMOCIÓN EN SET! Kit de suspensión y dirección CTR para '+nm+' '+(s.years||'')+' · '+(s.disc||0)+'% de descuento por compra en conjunto. — REFATRIX';
+  }
+  async function shareWhatsApp(btn){
+    if(!_psheet) return;
+    busy(btn,true,'준비 중…');
+    try{
+      // 모바일/지원 브라우저: 생성 이미지 파일을 OS 공유 시트로 → WhatsApp 선택 후 대상 지정해 전송
+      if(window.html2canvas && navigator.canShare){
+        const canvas=await captureSheet();
+        const blob=await new Promise(function(res){ canvas.toBlob(res,'image/jpeg',0.95); });
+        if(blob){
+          const file=new File([blob],fileBase()+'.jpg',{type:'image/jpeg'});
+          if(navigator.canShare({files:[file]})){
+            await navigator.share({files:[file],text:promoText(),title:'Refatrix Promo'});
+            busy(btn,false); return;
+          }
+        }
+      }
+      // 폴백(파일 공유 미지원, 예: 데스크톱): 이미지 다운로드 후 WhatsApp 문구 열기(이미지는 수동 첨부)
+      await downloadJPEG(null);
+      window.open('https://wa.me/?text='+encodeURIComponent(promoText()),'_blank');
+      alert('이 브라우저는 이미지 직접 공유를 지원하지 않아, 이미지를 내려받았습니다. 열린 WhatsApp 창에서 방금 받은 이미지를 첨부해 보내세요.\n(휴대폰에서 열면 이미지가 바로 공유됩니다.)');
+    }catch(e){ /* 사용자가 공유 취소 등 */ }
+    finally{ busy(btn,false); }
+  }
   function drawPromo(){
     const s=_psheet; if(!s) return; const ov=$('promoOverlay');
     const modelTitle=escP((s.marca?s.marca.toUpperCase()+' ':'')+s.modelo);
@@ -412,6 +440,7 @@
     const bar='<div class="promoBar">'
       +'<button class="pbtn" data-ppdf="1">⬇ PDF 다운로드</button>'
       +'<button class="pbtn" data-pjpg="1">⬇ JPEG 다운로드</button>'
+      +'<button class="pbtn wa" data-pwa="1">📱 WhatsApp 공유</button>'
       +'<button class="pbtn sec" data-pprint="1">🖨 인쇄</button>'
       +'<div class="fld">할인율 <input id="pDisc" type="text" value="'+escP(''+s.disc)+'">%</div>'
       +'<div class="fld" style="flex:1;min-width:200px">차량 이미지 URL <input id="pVehUrl" type="text" placeholder="자동 검색 실패 시 붙여넣기"></div>'
@@ -438,11 +467,12 @@
   }
   $('result').addEventListener('click',function(e){ const b=e.target.closest('.promobtn'); if(b) togglePromo(b.getAttribute('data-promo')); });
   $('promoOverlay').addEventListener('click',function(e){
-    const t=e.target.closest('[data-pprint],[data-pclose],[data-pveh],[data-ppdf],[data-pjpg]'); if(!t) return;
+    const t=e.target.closest('[data-pprint],[data-pclose],[data-pveh],[data-ppdf],[data-pjpg],[data-pwa]'); if(!t) return;
     if(t.hasAttribute('data-pprint')) window.print();
     else if(t.hasAttribute('data-pclose')) closePromo();
     else if(t.hasAttribute('data-ppdf')) downloadPDF(t);
     else if(t.hasAttribute('data-pjpg')) downloadJPEG(t);
+    else if(t.hasAttribute('data-pwa')) shareWhatsApp(t);
     else if(t.hasAttribute('data-pveh')){ const u=$('pVehUrl'); if(u&&u.value.trim()&&_psheet){ _psheet.vehImg=u.value.trim(); drawPromo(); } }
   });
   $('promoOverlay').addEventListener('change',function(e){
@@ -456,6 +486,6 @@
   window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
 </script>
-<script src="refatrix-nav.js?v=20260702vv"></script>
+<script src="refatrix-nav.js?v=20260702vw"></script>
 </body>
 </html>
