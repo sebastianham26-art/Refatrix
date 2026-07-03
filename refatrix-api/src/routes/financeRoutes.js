@@ -704,7 +704,7 @@ export default async function financeRoutes(app) {
     const oargs = []; let oTeam = '';
     if (vis !== null) { oargs.push(vis); oTeam = ` AND c.team_id = ANY($${oargs.length})`; }
     const rows = (await query(
-      `SELECT s.id, s.sat_no,
+      `SELECT s.id, s.sat_no, s.folio_no,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
               to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               s.total_mxn,
@@ -726,7 +726,7 @@ export default async function financeRoutes(app) {
     return {
       today: new Date().toISOString().slice(0, 10),
       items: rows.map((r) => ({
-        id: Number(r.id), sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date,
+        id: Number(r.id), sat_no: r.sat_no, folio_no: r.folio_no || null, inv_date: r.inv_date, due_date: r.due_date,
         total_mxn: r2(Number(r.total_mxn)), paid: r2(Number(r.paid)), outstanding: r2(Number(r.outstanding)),
         paid_full: r2(Number(r.outstanding)) <= 0.005,
         overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
@@ -930,7 +930,7 @@ export default async function financeRoutes(app) {
     const sargs = [like]; let sTeam = '';
     if (vis !== null) { sargs.push(vis); sTeam = ` AND c.team_id = ANY($${sargs.length})`; }
     const rows = (await query(
-      `SELECT s.id, s.sat_no,
+      `SELECT s.id, s.sat_no, s.folio_no,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date,
               to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               s.total_mxn, COALESCE(pa.paid,0) AS paid,
@@ -945,7 +945,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'${sTeam}
-          AND (s.sat_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\')
+          AND (s.sat_no ILIKE $1 ESCAPE '\\' OR s.folio_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\')
         ORDER BY s.inv_date DESC, s.id DESC
         LIMIT 80`, sargs)).rows;
     return {
@@ -953,7 +953,7 @@ export default async function financeRoutes(app) {
       items: rows.map((r) => {
         const total = r2(Number(r.total_mxn)), paid = r2(Number(r.paid)), outstanding = r2(Number(r.outstanding));
         return {
-          id: Number(r.id), sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date,
+          id: Number(r.id), sat_no: r.sat_no, folio_no: r.folio_no || null, inv_date: r.inv_date, due_date: r.due_date,
           total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
           overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
           customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,

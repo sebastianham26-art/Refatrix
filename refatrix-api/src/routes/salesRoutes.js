@@ -151,19 +151,25 @@ export default async function salesRoutes(app) {
     return { found, missing, customer_discount: cust ? Number(cust.discount) || 0 : 0, customer_credit_days: cust ? Number(cust.credit_days) || 0 : 0 };
   });
 
-  // ---- SAT 번호 수정(임시번호 → 실제번호) ----
+  // ---- SAT 번호 수정(임시번호 → 실제번호) + No. de Folio 저장 ----
+  //   body: { sat_no?, folio_no? } — 둘 중 하나 이상.
+  //   sat_no 미포함 → 기존 SAT 유지. folio_no 키 포함 시에만 folio 갱신(빈값=지움).
   app.post('/api/sales/:id/sat-no', { preHandler: [authGuard, requirePageEdit('sales')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const sat = (req.body?.sat_no && String(req.body.sat_no).trim()) || null;
-    if (!sat) return reply.code(400).send({ error: 'sat_no_required' });
+    const hasFolio = !!(req.body && Object.prototype.hasOwnProperty.call(req.body, 'folio_no'));
+    const folio = hasFolio ? ((String(req.body.folio_no == null ? '' : req.body.folio_no).trim()) || null) : null;
+    if (!sat && !hasFolio) return reply.code(400).send({ error: 'sat_no_required' });
     try {
       const r = await query(`UPDATE sales_invoices
-           SET sat_no=$1, updated_by=$2,
-               sat_entered_at = COALESCE(sat_entered_at, CASE WHEN $1 NOT LIKE 'TMP-%' THEN now() END)
-         WHERE id=$3 AND deleted_at IS NULL RETURNING id`, [sat, req.ctx.perm.userId, id]);
+           SET sat_no = COALESCE($1, sat_no),
+               folio_no = CASE WHEN $2 THEN $3 ELSE folio_no END,
+               updated_by=$4,
+               sat_entered_at = COALESCE(sat_entered_at, CASE WHEN $1 IS NOT NULL AND $1 NOT LIKE 'TMP-%' THEN now() END)
+         WHERE id=$5 AND deleted_at IS NULL RETURNING id, sat_no, folio_no`, [sat, hasFolio, folio, req.ctx.perm.userId, id]);
       if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
-      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_invoice:${id}`, detail: { sat_no: sat } });
-      return { ok: true, sat_no: sat };
+      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `sales_invoice:${id}`, detail: { sat_no: r.rows[0].sat_no, folio_no: r.rows[0].folio_no } });
+      return { ok: true, sat_no: r.rows[0].sat_no, folio_no: r.rows[0].folio_no };
     } catch (e) {
       if (String(e.message).includes('unique') || e.code === '23505') return reply.code(409).send({ error: 'sat_no_duplicate' });
       throw e;

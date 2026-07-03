@@ -545,7 +545,7 @@ export default async function devRequestRoutes(app) {
     const id = Number(req.query.invoice_id);
     if (!id) return reply.code(400).send({ error: 'invoice_id_required' });
     const inv = (await query(
-      `SELECT s.id, s.sat_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, s.credit_days,
+      `SELECT s.id, s.sat_no, s.folio_no, s.inv_date, s.subtotal_mxn, s.iva_mxn, s.total_mxn, s.status, s.credit_days,
               to_char(s.inv_date,'YYYY-MM') AS inv_ym, to_char(now(),'YYYY-MM') AS now_ym,
               to_char(s.inv_date,'YYYY-MM-DD') AS inv_date_str, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
@@ -569,7 +569,7 @@ export default async function devRequestRoutes(app) {
     const canAdjust = isDirector && (allowPastMonthSalesEdit() || inv.inv_ym === inv.now_ym);
     return {
       invoice: {
-        id: inv.id, sat_no: inv.sat_no, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
+        id: inv.id, sat_no: inv.sat_no, folio_no: inv.folio_no || null, inv_date: inv.inv_date, inv_date_str: inv.inv_date_str, due_date: inv.due_date, status: inv.status,
         credit_days: inv.credit_days == null ? 0 : Number(inv.credit_days),
         base_credit_days: inv.base_credit_days == null ? 0 : Number(inv.base_credit_days),
         credit_days_req: inv.credit_days_req == null ? null : Number(inv.credit_days_req),

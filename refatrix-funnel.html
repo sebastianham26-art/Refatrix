@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수주 흐름 세부</title>
+<title>Refatrix ERP · 수주 흐름 세부 · build 0703fo</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;--income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#6B4FB0;--radius:12px;}
   *{box-sizing:border-box}
@@ -315,7 +315,9 @@
         +'<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
         +'<span style="font-size:12.5px">SAT 번호: <b>'+esc(inv.sat_no||'—')+'</b> '+(inv.sat_no&&String(inv.sat_no).startsWith('TMP-')?'<span style="background:#fde7c9;color:#9a6512;border-radius:999px;padding:1px 7px;font-size:10px">임시</span>':'')+'</span>'
         +'<input id="sat-in-'+id+'" type="text" placeholder="SAT 번호 입력/수정" style="font-size:12px;padding:5px 8px;width:170px" value="'+(inv.sat_no&&!String(inv.sat_no).startsWith('TMP-')?esc(inv.sat_no):'')+'">'
-        +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveSatF('+id+')">SAT 번호 저장</button>'
+        +'<span class="notranslate" translate="no" style="font-size:12.5px">No. de Folio: <b>'+esc(inv.folio_no||'—')+'</b></span>'
+        +'<input id="folio-in-'+id+'" type="text" class="notranslate" translate="no" placeholder="No. de Folio" style="font-size:12px;padding:5px 8px;width:110px" value="'+esc(inv.folio_no||'')+'">'
+        +'<button class="btn ghost sm" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer;background:#fff" onclick="saveSatF('+id+')">SAT·Folio 저장</button>'
         +'<span id="sat-msg-'+id+'" style="font-size:12px"></span></div>';
       // 인보이스 첨부파일 (SAT 옆) — 인보이스 관련 파일 업로드/보기/삭제
       t+='<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fafafa">'
@@ -624,10 +626,13 @@
   }
   async function saveSatF(id){
     const el=document.getElementById('sat-in-'+id), msg=document.getElementById('sat-msg-'+id);
-    const val=(el?el.value:'').trim(); if(msg){msg.style.color='';}
-    if(!val){ if(msg){msg.style.color='var(--expense)';msg.textContent='번호를 입력하세요.';} return; }
+    const fel=document.getElementById('folio-in-'+id);
+    const val=(el?el.value:'').trim(), folioVal=(fel?fel.value:'').trim(); if(msg){msg.style.color='';}
+    if(!val && !folioVal){ if(msg){msg.style.color='var(--expense)';msg.textContent='SAT 번호 또는 Folio를 입력하세요.';} return; }
+    // SAT 미입력 시 기존 SAT 유지(서버가 COALESCE). folio_no는 항상 전송(빈값=지움, 입력칸이 기존값으로 미리 채워짐).
+    const body={folio_no:folioVal}; if(val) body.sat_no=val;
     try{
-      const r=await fetch(session.api+'/api/sales/'+id+'/sat-no',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({sat_no:val})});
+      const r=await fetch(session.api+'/api/sales/'+id+'/sat-no',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const dd=await r.json();
       if(!r.ok||dd.error){ if(msg){msg.style.color='var(--expense)';msg.textContent=dd.error==='sat_no_duplicate'?'이미 쓰인 번호입니다.':'저장 실패';} return; }
       if(msg){msg.style.color='var(--income)';msg.textContent='저장됨';}
@@ -846,6 +851,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703wp"></script>
+<script src="refatrix-nav.js?v=20260703fo"></script>
 </body>
 </html>
