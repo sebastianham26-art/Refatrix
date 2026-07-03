@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 차종별 부품</title>
+<title>Refatrix ERP · 차종별 부품 · build vv</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--accent:#2f6d8f;--accentbg:#e9f1f6;}
@@ -104,11 +104,17 @@
     body>.wrap{display:none!important}
     #promoOverlay{position:static!important;background:#fff!important;padding:0!important;overflow:visible!important}
     .promoBar{display:none!important}
+    #promoOverlay .pClose{display:none!important}
     .sheet{box-shadow:none!important;width:auto;min-height:auto;margin:0}
     @page{size:A4;margin:0}
   }
   .empty{color:#d6d0c2;font-size:18px;text-align:center;padding:6px 0}
+  #promoOverlay .pClose{position:fixed;top:14px;right:18px;z-index:5;width:40px;height:40px;border-radius:50%;
+    border:none;background:#fff;color:#143D34;font-size:20px;font-weight:800;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35);line-height:1}
+  #promoOverlay .pClose:hover{background:#f1efe8}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -140,7 +146,7 @@
   </div>
 </div>
 
-<div id="promoOverlay" class="hidden"></div>
+<div id="promoOverlay" style="display:none"></div>
 
 <script>
   let session={token:null,user:null,api:''};
@@ -186,13 +192,12 @@
     const q=$('q').value.trim();const r=$('result');
     if(q.length<2){ r.innerHTML='<div class="hint" style="margin-top:12px">두 글자 이상 입력하세요.</div>'; return; }
     r.innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
-    try{
-      const [d]=await Promise.all([
-        fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json()),
-        loadVio()
-      ]);
-      render(d);
-    }catch(e){ r.innerHTML='<div class="hint" style="margin-top:12px">조회에 실패했습니다.</div>'; }
+    let d;
+    try{ d=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json()); }
+    catch(e){ r.innerHTML='<div class="hint" style="margin-top:12px">조회에 실패했습니다.</div>'; return; }
+    render(d);  // 즉시 렌더(커버리지 VIO 미로딩이면 엔드포인트 VIO로 폴백)
+    // 커버리지 VIO는 비차단으로 로드되면 화면 갱신(1.7MB 다운로드가 검색을 막지 않도록 임계 경로에서 분리)
+    try{ loadVio().then(function(){ if(_last&&_last.d===d) render(d); }).catch(function(){}); }catch(e){}
   }
 
   // ── 연식대별 VIO: 공통>커버리지 화면의 데이터(mx_parts_coverage_dashboard.html)를 단일 소스로 사용 ──
@@ -204,7 +209,11 @@
     if(_vioReady) return _vioReady;
     _vioReady=(async()=>{
       try{
-        const txt=await fetch('mx_parts_coverage_dashboard.html?nc='+Date.now()).then(x=>x.text());
+        let signal=null,to=null;
+        try{ const ctrl=new AbortController(); signal=ctrl.signal; to=setTimeout(function(){try{ctrl.abort();}catch(e){}},8000); }catch(e){}
+        const _dk=new Date().toISOString().slice(0,10); // 일 단위 캐시(재방문 시 브라우저 캐시 사용)
+        const txt=await fetch('mx_parts_coverage_dashboard.html?d='+_dk,signal?{signal:signal}:undefined).then(x=>x.text());
+        if(to) clearTimeout(to);
         const line=txt.split('\n').find(l=>l.trimStart().startsWith('const DATA='));
         if(!line) throw new Error('no DATA');
         const js=line.trim().replace(/^const\s+DATA\s*=\s*/,'').replace(/;\s*$/,'');
@@ -348,12 +357,48 @@
     const v=(d.variants||[]).filter(x=>x.key===vkey)[0]; if(!v) return;
     _psheet={ vkey:vkey, marca:(cov&&cov.marca)||'', modelo:(cov&&cov.modelo)||d.model_label||d.query,
       model:v.model, years:v.years||'', vio:colVio[vkey], prods:variantProducts(vkey), disc:15, vehImg:'' };
-    $('promoOverlay').classList.add('show');
+    const ov0=$('promoOverlay'); ov0.style.display='flex'; ov0.classList.add('show');
     drawPromo();
     const q=(_psheet.marca?_psheet.marca+' ':'')+_psheet.modelo;
     fetchVehicleImage(q).then(function(u){ if(u&&_psheet){ _psheet.vehImg=u; drawPromo(); } });
   }
-  function closePromo(){ const o=$('promoOverlay'); o.classList.remove('show'); o.innerHTML=''; _psheet=null; }
+  function closePromo(){ const o=$('promoOverlay'); o.style.display='none'; o.classList.remove('show'); o.innerHTML=''; _psheet=null; }
+  function asciiName(s){ return String(s||'promo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_').replace(/^_+|_+$/g,'')||'promo'; }
+  function fileBase(){ const s=_psheet||{}; return 'promo_'+asciiName(s.modelo)+'_'+asciiName(s.years); }
+  function captureSheet(){
+    const el=document.querySelector('#promoOverlay .sheet');
+    if(!el||!window.html2canvas) return Promise.reject(new Error('no-lib'));
+    return window.html2canvas(el,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
+  }
+  function busy(btn,on,label){ if(!btn) return; if(on){ btn.dataset._t=btn.textContent; btn.textContent=label; btn.disabled=true; } else { btn.textContent=btn.dataset._t||btn.textContent; btn.disabled=false; } }
+  async function downloadPDF(btn){
+    if(!_psheet) return;
+    if(!window.html2canvas||!window.jspdf){ window.print(); return; }
+    busy(btn,true,'PDF 생성 중…');
+    try{
+      const canvas=await captureSheet();
+      const img=canvas.toDataURL('image/jpeg',0.95);
+      const jsPDF=window.jspdf.jsPDF;
+      const pdf=new jsPDF('p','mm','a4');
+      let iw=210, ih=210*canvas.height/canvas.width;
+      if(ih>297){ ih=297; iw=297*canvas.width/canvas.height; }
+      pdf.addImage(img,'JPEG',(210-iw)/2,(297-ih)/2,iw,ih);
+      pdf.save(fileBase()+'.pdf');
+    }catch(e){ alert('PDF 생성 중 문제가 발생했습니다. [🖨 인쇄]에서 “PDF로 저장”을 이용해 주세요.'); }
+    finally{ busy(btn,false); }
+  }
+  async function downloadJPEG(btn){
+    if(!_psheet) return;
+    if(!window.html2canvas){ alert('이미지 생성 라이브러리를 불러오지 못했습니다. 인쇄를 이용해 주세요.'); return; }
+    busy(btn,true,'JPEG 생성 중…');
+    try{
+      const canvas=await captureSheet();
+      const a=document.createElement('a');
+      a.href=canvas.toDataURL('image/jpeg',0.95); a.download=fileBase()+'.jpg';
+      document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){ alert('JPEG 생성 중 문제가 발생했습니다. 인쇄를 이용해 주세요.'); }
+    finally{ busy(btn,false); }
+  }
   function drawPromo(){
     const s=_psheet; if(!s) return; const ov=$('promoOverlay');
     const modelTitle=escP((s.marca?s.marca.toUpperCase()+' ':'')+s.modelo);
@@ -365,9 +410,11 @@
         +'<div class="cap"><div class="cd">'+escP(p.code)+'</div><div class="cat">'+escP(p.cat)+'</div></div></div>';
     }).join(''):'<div class="pItem"><div class="cap"><div class="cat">이 세대의 CTR 제품 없음</div></div></div>';
     const bar='<div class="promoBar">'
-      +'<button class="pbtn" data-pprint="1">🖨 A4 인쇄 / PDF 저장</button>'
+      +'<button class="pbtn" data-ppdf="1">⬇ PDF 다운로드</button>'
+      +'<button class="pbtn" data-pjpg="1">⬇ JPEG 다운로드</button>'
+      +'<button class="pbtn sec" data-pprint="1">🖨 인쇄</button>'
       +'<div class="fld">할인율 <input id="pDisc" type="text" value="'+escP(''+s.disc)+'">%</div>'
-      +'<div class="fld" style="flex:1;min-width:220px">차량 이미지 URL <input id="pVehUrl" type="text" placeholder="자동 검색 실패 시 붙여넣기"></div>'
+      +'<div class="fld" style="flex:1;min-width:200px">차량 이미지 URL <input id="pVehUrl" type="text" placeholder="자동 검색 실패 시 붙여넣기"></div>'
       +'<button class="pbtn sec" data-pveh="1">적용</button><div class="fill"></div>'
       +'<button class="pbtn sec" data-pclose="1">닫기</button></div>';
     const sheet='<div class="sheet"><div class="pHead">'
@@ -382,7 +429,7 @@
       +'<div class="pGrid">'+items+'</div>'
       +'<div class="pFoot"><b>REFATRIX</b> · Refacciones CTR &nbsp;|&nbsp; Compra en set y ahorra &nbsp;|&nbsp; www.refatrix.com.mx</div>'
       +'</div>';
-    ov.innerHTML=bar+sheet;
+    ov.innerHTML='<button class="pClose" data-pclose="1" title="닫기">✕</button>'+bar+sheet;
     // 제품 이미지 로드 실패 시 코드 텍스트로 대체
     Array.prototype.forEach.call(ov.querySelectorAll('.pItem .imgbox img'),function(im){
       im.onerror=function(){ const box=im.parentNode; box.innerHTML='<span class="noimg">'+escP(im.getAttribute('data-code')||'')+'</span>'; };
@@ -391,9 +438,11 @@
   }
   $('result').addEventListener('click',function(e){ const b=e.target.closest('.promobtn'); if(b) togglePromo(b.getAttribute('data-promo')); });
   $('promoOverlay').addEventListener('click',function(e){
-    const t=e.target.closest('[data-pprint],[data-pclose],[data-pveh]'); if(!t) return;
+    const t=e.target.closest('[data-pprint],[data-pclose],[data-pveh],[data-ppdf],[data-pjpg]'); if(!t) return;
     if(t.hasAttribute('data-pprint')) window.print();
     else if(t.hasAttribute('data-pclose')) closePromo();
+    else if(t.hasAttribute('data-ppdf')) downloadPDF(t);
+    else if(t.hasAttribute('data-pjpg')) downloadJPEG(t);
     else if(t.hasAttribute('data-pveh')){ const u=$('pVehUrl'); if(u&&u.value.trim()&&_psheet){ _psheet.vehImg=u.value.trim(); drawPromo(); } }
   });
   $('promoOverlay').addEventListener('change',function(e){
@@ -407,6 +456,6 @@
   window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
 </script>
-<script src="refatrix-nav.js?v=20260702vs"></script>
+<script src="refatrix-nav.js?v=20260702vv"></script>
 </body>
 </html>
