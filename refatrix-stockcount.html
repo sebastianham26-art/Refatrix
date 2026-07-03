@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703a</title>
+<title>재고실사 · Refatrix · build sc0703b</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -119,6 +119,10 @@
     <label>① 랙 위치 (바코드 스캔 또는 입력)</label>
     <input id="rackInput" class="scan" placeholder="랙 바코드 스캔 후 Enter (예: A-01-03)" autocomplete="off">
     <div class="mut" style="margin-top:4px">현재 랙: <b id="curRackLbl">(미지정)</b> — 다음 랙으로 이동하면 다시 스캔</div>
+    <div class="row" style="margin-top:6px;align-items:center">
+      <button class="btn ghost sm" onclick="printRackLabel()">🏷 '새 랙' 바코드 인쇄</button>
+      <span class="mut">제품 스캔 중 이 바코드를 읽으면 손 안 떼고 랙 입력으로 이동합니다.</span>
+    </div>
 
     <label style="margin-top:14px">② 품목 코드 (EAN 스캔 / CTR / SYD / 프로모)</label>
     <input id="codeInput" class="scan" placeholder="바코드 스캔 또는 코드 입력 후 Enter" autocomplete="off" inputmode="text">
@@ -237,6 +241,7 @@
   <div style="line-height:1.7">
     <div style="margin:6px 0"><span class="pill p-match">1</span> <b>랙 위치</b> 칸에 랙 바코드를 스캔(또는 입력) + Enter → “현재 랙”이 표시됩니다. 다음 랙으로 이동할 때마다 다시 스캔하세요.</div>
     <div style="margin:6px 0"><span class="pill p-match">2</span> <b>품목 코드</b> 칸에 EAN 바코드를 스캔하거나 코드를 입력 + Enter. CTR·SYD·프로모션·EAN 모두 자동 인식됩니다.</div>
+    <div style="margin:6px 0"><span class="pill p-over">💡</span> <b>다른 랙으로 이동:</b> 제품 스캔 중 <b>'새 랙' 바코드</b>를 읽으면 손 안 떼고 랙 입력으로 이동합니다. 랙 입력 옆 <b>🏷 '새 랙' 바코드 인쇄</b>로 한 장 뽑아 통로에 두고 쓰세요.</div>
     <div style="margin:6px 0"><span class="pill p-match">3</span> 품명·시스템재고 미리보기가 뜨면 <b>실사 수량</b>을 입력 + Enter(저장).</div>
   </div>
 
@@ -369,13 +374,14 @@ function attachScanFix(el){
   });
 }
 attachScanFix($('rackInput')); attachScanFix($('codeInput')); attachScanFix($('pmRack')); attachScanFix($('pmBar'));
-$('rackInput')&&$('rackInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); curRack=normScan($('rackInput').value).trim(); $('curRackLbl').textContent=curRack||'(미지정)'; $('codeInput').focus(); }});
+$('rackInput')&&$('rackInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); var rv=normScan($('rackInput').value).trim(); if(isNewRackSignal(rv)){ $('rackInput').value=''; $('rackInput').focus(); setMsg('recMsg','📍 실제 랙 바코드를 스캔하세요','warn'); return; } curRack=rv; $('curRackLbl').textContent=curRack||'(미지정)'; $('codeInput').focus(); }});
 $('codeInput')&&$('codeInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); onCodeEnter(); }});
 $('qtyInput')&&$('qtyInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); saveLine(); }});
 
 function onModeToggle(){ /* 스캔모드 안내만 — 동작은 onCodeEnter에서 분기 */ }
 async function onCodeEnter(){
   const code=normScan($('codeInput').value).trim(); if(!code) return;
+  if(isNewRackSignal(code)){ gotoRackScan(); return; }   // '새 랙' 신호 바코드 → 랙 입력으로 점프
   const scanMode=$('scanMode').checked;
   const r=await api('/api/stock-counts/resolve?code='+encodeURIComponent(code));
   if(!r.ok){ setMsg('recMsg','해석 실패','err'); beep(false); return; }
@@ -457,6 +463,31 @@ async function backToRecord(){
   setTimeout(()=>{ var c=$('codeInput'); if(c) c.focus(); },100);
 }
 function setMsg(id,m,cls){ const e=$(id); e.textContent=m; e.className='msg '+(cls||''); }
+
+// ===== '새 랙' 신호 바코드: 제품 스캔 중 이 바코드를 읽으면 랙 입력으로 자동 이동 =====
+const NEWRACK_SIGNALS=['#NEWRACK#','##RACK##','#RACK#','NUEVO-RACK','NUEVA-UBICACION','새랙','새랙#'];
+function normSig(s){ return normScan(String(s||'')).trim().toUpperCase().replace(/\s+/g,''); }
+function isNewRackSignal(code){ const c=normSig(code); return NEWRACK_SIGNALS.some(s=>normSig(s)===c); }
+function gotoRackScan(){
+  var ri=$('rackInput'); $('codeInput').value='';
+  curRack=''; $('curRackLbl').textContent='(새 랙 스캔 대기)';
+  cancelPrev&&$('prevBox')&&$('prevBox').classList.add('hidden');
+  if(ri){ ri.value=''; ri.focus(); try{ri.select();}catch(e){} }
+  setMsg('recMsg','📍 새 랙 바코드를 스캔하세요','warn'); beep(true);
+}
+// '새 랙' 신호 바코드를 인쇄(Code128). 한 번 뽑아 각 통로에 두고 스캔하면 됩니다.
+function printRackLabel(){
+  var code=NEWRACK_SIGNALS[0];
+  var w=window.open('','_blank','width=460,height=340'); if(!w){ toast('팝업 차단됨 — 허용 후 다시'); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>새 랙 바코드</title>'
+    +'<style>body{font-family:sans-serif;text-align:center;padding:18px}h3{margin:6px 0}.d{color:#555;font-size:12px;margin-top:6px}</style></head>'
+    +'<body><h3>📍 새 랙 이동 바코드</h3><svg id="bc"></svg>'
+    +'<div class="d">재고실사 중 <b>제품 코드 칸</b>에서 이 바코드를 스캔하면<br>자동으로 <b>랙 입력</b>으로 이동합니다.</div>'
+    +'<scr'+'ipt src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></scr'+'ipt>'
+    +'<scr'+'ipt>window.onload=function(){try{JsBarcode("#bc","'+code+'",{format:"CODE128",displayValue:true,fontSize:16,height:80,margin:10});}catch(e){document.body.insertAdjacentHTML("beforeend","<p>바코드 생성 실패: 인터넷 연결 확인</p>");}setTimeout(function(){window.print();},500);};</scr'+'ipt>'
+    +'</body></html>');
+  w.document.close();
+}
 
 // ================= 대조 =================
 async function openReconcile(id){
@@ -574,6 +605,6 @@ async function deletePromo(){
   else { show('loginView'); }
 })();
 </script>
-<script src="refatrix-nav.js?v=20260703a"></script>
+<script src="refatrix-nav.js?v=20260703b"></script>
 </body>
 </html>
