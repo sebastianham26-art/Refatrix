@@ -673,17 +673,17 @@
       +'<th style="text-align:right">Saldo<br><span style="font-weight:600;color:var(--muted)">잔액</span></th>'
       +'<th style="text-align:right">Días<br><span style="font-weight:600;color:var(--muted)">미수일</span></th>'
       +'</tr></thead><tbody>';
-    rows.forEach((r,idx)=>{ const ovd=(r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(idx%2===1?' style="background:#faf9f6"':''))+'>'
-      +'<td style="text-align:left;font-weight:700">'+(ovd?'<span style="color:var(--expense)">●</span> ':'')+'#'+(idx+1)+'</td>'
+    rows.forEach((r,idx)=>{ const pf=(r.paid_full||Number(r.outstanding)<=0.005); const ovd=(!pf&&r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(pf?' style="background:#edf6ed"':(idx%2===1?' style="background:#faf9f6"':'')))+'>'
+      +'<td style="text-align:left;font-weight:700">'+(ovd?'<span style="color:var(--expense)">●</span> ':(pf?'<span style="color:#2e8b4f">●</span> ':''))+'#'+(idx+1)+'</td>'
       +'<td style="text-align:left;white-space:nowrap;padding-right:14px">'+folioHtml(r.sat_no||('#'+r.id))+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.inv_date||'—')+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.due_date||'—')+'</td>'
       +'<td style="text-align:right">'+fmt(r.total_mxn)+'</td>'
       +'<td style="text-align:right;color:var(--muted)">'+fmt(r.paid)+'</td>'
       +'<td style="text-align:right"><b>'+fmt(r.outstanding)+'</b></td>'
-      +'<td style="text-align:right'+(ovd?';color:var(--expense);font-weight:700':'')+'">'+esc(stmtDias(r))+'</td></tr>'; });
+      +'<td style="text-align:right'+(ovd?';color:var(--expense);font-weight:700':(pf?';color:#2e8b4f;font-weight:700':''))+'">'+(pf?'완료 (PAGADA)':esc(stmtDias(r)))+'</td></tr>'; });
     h+='</tbody><tfoot><tr><td colspan="6" style="text-align:right;font-weight:800">Total adeudado</td><td style="text-align:right;font-weight:800">MX$ '+fmt(total)+'</td><td></td></tr></tfoot></table>';
-    h+='<div class="hint" style="margin-top:8px">빨간 ● 행 / 양수(+N) 미수일 = <b style="color:var(--expense)">연체(VENCIDA)</b> · 음수(D-N) = 만기 전.</div>';
+    h+='<div class="hint" style="margin-top:8px">빨간 ● 행 / 양수(+N) 미수일 = <b style="color:var(--expense)">연체(VENCIDA)</b> · 음수(D-N) = 만기 전 · 초록 ● 행 = <b style="color:#2e8b4f">완료(PAGADA · 잔액 0)</b>.</div>';
     h+='<div class="hint" style="margin-top:10px">아래 <b>PDF 다운로드</b>를 누르면 이 명세서가 PDF로 저장됩니다.</div>';
     $('stmtBody').innerHTML=h;
     $('stmtModal').classList.remove('hidden'); $('stmtModal').style.display='flex';
@@ -739,8 +739,10 @@
     rows.forEach((r,idx)=>{
       if(y+ROWH>800){ doc.addPage(); y=54; drawHead(y); y+=10; }
       const top=y, mid=top+9, sub=top+18;
-      const overdue=(r.day_diff!=null && Number(r.day_diff)>0);
+      const pf=(r.paid_full||Number(r.outstanding)<=0.005);
+      const overdue=(!pf && r.day_diff!=null && Number(r.day_diff)>0);
       if(overdue){ doc.setFillColor(252,233,233); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(208,46,46); doc.rect(40,top-4,3,ROWH,'F'); }
+      else if(pf){ doc.setFillColor(235,246,235); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(52,150,80); doc.rect(40,top-4,3,ROWH,'F'); }
       else if(idx%2===1){ doc.setFillColor(249,249,247); doc.rect(40,top-4,515,ROWH,'F'); }
       doc.setTextColor(125); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.text(String(idx+1),X.hash,mid);
       const full=String(r.sat_no||('#'+r.id)), sref=shortRef(full);
@@ -753,9 +755,12 @@
       doc.setTextColor(135); doc.text(fmt(Number(r.paid)||0),X.pag,mid,{align:'right'});
       doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.text(fmt(Number(r.outstanding)||0),X.sal,mid,{align:'right'}); doc.setFont('helvetica','normal');
       const dd=(r.day_diff==null?null:Number(r.day_diff));
-      const dstr=dd==null?'—':(dd>0?('+'+dd):(dd===0?'0':String(dd)));
-      if(overdue){ doc.setTextColor(200,40,40); doc.setFont('helvetica','bold'); } else { doc.setTextColor(130); }
+      const dstr=pf?'PAGADA':(dd==null?'—':(dd>0?('+'+dd):(dd===0?'0':String(dd))));
+      if(overdue){ doc.setTextColor(200,40,40); doc.setFont('helvetica','bold'); }
+      else if(pf){ doc.setTextColor(40,140,70); doc.setFont('helvetica','bold'); doc.setFontSize(7); }
+      else { doc.setTextColor(130); }
       doc.text(dstr,X.dia,mid,{align:'right'});
+      doc.setFontSize(8);
       doc.setFont('helvetica','normal'); doc.setTextColor(20);
       y+=ROWH; total+=Number(r.outstanding)||0;
     });
@@ -767,6 +772,8 @@
     doc.text('Importe = monto original · Pagado = abonos recibidos · Saldo = pendiente.', 40, y); y+=10;
     doc.setTextColor(196,30,30);
     doc.text('Filas en rojo y Días con valor positivo (+N) = facturas VENCIDAS.  Valores negativos = aún por vencer.', 40, y);
+    y+=10; doc.setTextColor(34,130,64);
+    doc.text('Filas en verde = facturas PAGADAS (saldo 0).', 40, y);
     doc.setTextColor(20);
     doc.save('estado_cuenta_'+(c.customer_code||c.customer_id)+'.pdf');
   }
@@ -1049,6 +1056,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260703nc2"></script>
+<script src="refatrix-nav.js?v=20260703nc3"></script>
 </body>
 </html>
