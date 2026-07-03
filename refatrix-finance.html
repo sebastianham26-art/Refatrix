@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build cfwf-0703a</title>
+<title>Refatrix ERP · 재무 · build fin-0703b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1452,11 +1452,11 @@
   // 계정과목별 계획 vs 실적 막대(편성=회색, 집행=초록, 초과집행=빨강)
   function svgBarCompare(rows,opts={}){
     if(!rows.length)return '<div class="hint">데이터가 없습니다.</div>';
-    const W=opts.width||720,H=240,padT=14,padB=54,padL=46,padR=10;
+    const W=opts.width||720,H=240,padT=14,padB=54,padL=58,padR=10;
     const max=Math.max(1,...rows.flatMap(r=>[r.plan,r.actual]));
     const n=rows.length,bw=Math.min(46,(W-padL-padR)/n-14),group=(W-padL-padR)/n;
     const y=v=>padT+(H-padT-padB)*(1-v/max);
-    const grid=[];for(let k=0;k<=4;k++){const v=max*k/4,yy=y(v);grid.push(`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#eee"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="9" fill="#999">${fmt(Math.round(v))}</text>`);}
+    const grid=[];for(let k=0;k<=4;k++){const v=max*k/4,yy=y(v);grid.push(`<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="#eee"/><text x="${padL-6}" y="${yy+3}" text-anchor="end" font-size="10" fill="#999">${fmtK(v)}</text>`);}
     const bars=rows.map((r,i)=>{
       const cx=padL+group*i+group/2;const over=r.actual>r.plan;
       const planX=cx-bw-2,actX=cx+2;
@@ -1474,17 +1474,34 @@
       <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:10px;background:var(--expense);display:inline-block"></span>초과</span></div>`;
     return `${legend}<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px">${grid.join('')}${bars}</svg>`;
   }
-  function paTable(rows,total){
+  function escH(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  // 카테고리 드릴다운: 개별 거래 내역(전체 메모 포함)
+  function paItemsTable(items){
+    if(!items)return '<div class="hint" style="padding:4px 0">개별 내역은 최신 백엔드(cashflow.js) 배포 후 표시됩니다.</div>';
+    if(!items.length)return '<div class="hint" style="padding:4px 0">개별 내역이 없습니다.</div>';
+    return `<table style="margin:6px 0"><thead><tr><th>일자</th><th>구분</th><th>메모(전체)</th><th class="num">계획액</th><th class="num">실적액</th></tr></thead>
+      <tbody>${items.map(it=>`<tr>
+        <td style="white-space:nowrap">${escH(String(it.date||'').slice(0,10))}</td>
+        <td style="white-space:nowrap"><span class="pill" style="background:${it.status==='actual'?'#e7f3ee':'#eef1f5'};color:${it.status==='actual'?'var(--income)':'#5a6b7b'}">${it.status==='actual'?'실적':'계획'}</span>${it.recurring?' <span class="pill" style="background:#f4efe2;color:#8a6512">고정비</span>':''}</td>
+        <td style="font-size:11.5px;white-space:pre-wrap;word-break:break-word">${escH(it.memo)||'<span style="color:var(--muted)">—</span>'}</td>
+        <td class="num">${it.plan!=null?fmt(it.plan):'—'}</td>
+        <td class="num" style="font-weight:600">${it.actual!=null?fmt(it.actual):'—'}</td></tr>`).join('')}</tbody></table>`;
+  }
+  function paTable(rows,total,pfx){
     const rateCell=(r)=>{const v=r.rate;const over=v!=null&&v>100;return `<span class="pill" style="background:${v==null?'#eee':(over?'#fde2e0':'#e7f3ee')};color:${v==null?'#888':(over?'#c0392b':'var(--income)')}">${v==null?'—':v+'%'}</span>`;};
-    return `<table><thead><tr><th>계정과목</th><th>메모</th><th class="num">계획</th><th class="num">실적</th><th class="num">차이</th><th class="num">집행률</th></tr></thead>
-      <tbody>${rows.map(r=>`<tr>
-        <td>${r.name}</td>
-        <td style="font-size:11px;color:var(--muted)">${(r.memo||'').slice(0,60)}</td>
+    return `<table><thead><tr><th style="width:18px"></th><th>계정과목</th><th>메모</th><th class="num">계획</th><th class="num">실적</th><th class="num">차이</th><th class="num">집행률</th></tr></thead>
+      <tbody>${rows.map((r,i)=>{
+        const memoFull=r.memo||'';
+        return `<tr class="pa-row" data-det="pa-det-${pfx}-${i}" style="cursor:pointer" title="클릭하면 개별 내역(전체 메모)이 펼쳐집니다">
+        <td style="color:var(--muted)"><span class="pa-caret">▸</span></td>
+        <td>${escH(r.name)}</td>
+        <td style="font-size:11px;color:var(--muted)" title="${escH(memoFull)}">${escH(memoFull.slice(0,60))}${memoFull.length>60?'…':''}</td>
         <td class="num">${fmt(r.plan)}</td>
         <td class="num" style="color:${r.actual>r.plan?'var(--expense)':'var(--ink)'}">${fmt(r.actual)}</td>
         <td class="num" style="color:${netColor(r.diff)}">${fmtSigned(r.diff)}</td>
-        <td class="num">${rateCell(r)}</td></tr>`).join('')}
-        <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td><td></td>
+        <td class="num">${rateCell(r)}</td></tr>
+        <tr class="pa-det" id="pa-det-${pfx}-${i}" style="display:none;background:#faf8f2"><td></td><td colspan="6" style="padding:4px 8px 10px">${paItemsTable(r.items)}</td></tr>`;}).join('')}
+        <tr style="border-top:2px solid var(--line);font-weight:700"><td></td><td>합계</td><td></td>
         <td class="num">${fmt(total.plan)}</td><td class="num">${fmt(total.actual)}</td>
         <td class="num" style="color:${netColor(total.diff)}">${fmtSigned(total.diff)}</td>
         <td class="num">${rateCell(total)}</td></tr></tbody></table>`;
@@ -1496,9 +1513,17 @@
       const incEmpty=!d.income.rows.length,expEmpty=!d.expense.rows.length;
       b.innerHTML=`
         <div style="font-weight:700;margin:4px 0 6px">수금 (계정과목별 계획 vs 실적)</div>
-        ${incEmpty?'<div class="hint">수금 계획/실적이 없습니다.</div>':svgBarCompare(d.income.rows)+paTable(d.income.rows,d.income.total)}
+        ${incEmpty?'<div class="hint">수금 계획/실적이 없습니다.</div>':svgBarCompare(d.income.rows)+paTable(d.income.rows,d.income.total,'inc')}
         <div style="font-weight:700;margin:18px 0 6px">지출 (계정과목별 계획 vs 실적)</div>
-        ${expEmpty?'<div class="hint">지출 계획/실적이 없습니다.</div>':svgBarCompare(d.expense.rows)+paTable(d.expense.rows,d.expense.total)}`;
+        ${expEmpty?'<div class="hint">지출 계획/실적이 없습니다.</div>':svgBarCompare(d.expense.rows)+paTable(d.expense.rows,d.expense.total,'exp')}
+        <div class="hint" style="margin-top:6px">행을 클릭하면 해당 계정과목의 개별 거래 내역(전체 메모)이 펼쳐집니다.</div>`;
+      b.querySelectorAll('tr.pa-row').forEach(tr=>tr.addEventListener('click',()=>{
+        const det=document.getElementById(tr.dataset.det);
+        if(!det)return;
+        const open=det.style.display!=='none';
+        det.style.display=open?'none':'table-row';
+        const c=tr.querySelector('.pa-caret');if(c)c.textContent=open?'▸':'▾';
+      }));
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
 
@@ -1899,6 +1924,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703wq"></script>
+<script src="refatrix-nav.js?v=20260703wr"></script>
 </body>
 </html>
