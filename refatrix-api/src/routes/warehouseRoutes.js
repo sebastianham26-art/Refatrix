@@ -473,9 +473,9 @@ export default async function warehouseRoutes(app) {
   });
 
   // ---------- 출고 출력 데이터(라벨/패킹리스트 공용) ----------
-  // 출고완료 처리(디렉터 승인)
+  // 출고완료 처리(디렉터 또는 영업지원)
   app.post('/api/warehouse/ship/:id/complete', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
-    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only', note: '\ub514\ub809\ud130 \uc2b9\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.' });
+    if (req.ctx.perm.role !== 'director' && req.ctx.perm.role !== 'sales_support') return reply.code(403).send({ error: 'forbidden', note: '\ub514\ub809\ud130 \ub610\ub294 \uc601\uc5c5\uc9c0\uc6d0\ub9cc \uac00\ub2a5\ud569\ub2c8\ub2e4.' });
     const id = Number(req.params.id);
     const r = (await query(`UPDATE quotes SET shipped_at=now(), shipped_by=$2 WHERE id=$1 AND packed_at IS NOT NULL AND shipped_at IS NULL AND deleted_at IS NULL RETURNING id`, [id, req.ctx.perm.userId])).rows[0];
     if (!r) return reply.code(409).send({ error: 'not_updatable', note: '\ud3ec\uc7a5\uc644\ub8cc \uc0c1\ud0dc\uac00 \uc544\ub2c8\uac70\ub098 \uc774\ubbf8 \ucd9c\uace0\uc644\ub8cc\ub428' });
