@@ -5,11 +5,12 @@ import { validateReceiptDataUrl } from '../ar.js';
 
 const IVA = 0.16;
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-// 총액(IVA 포함)에서 base/iva 분리
-function splitIva(total) {
-  const t = r2(total);
-  const base = r2(t / (1 + IVA));
-  return { total: t, base, iva: r2(t - base) };
+// 할인은 sin IVA(과세표준) 기준으로 정의하고, IVA(16%)를 그 위에 더한다.
+//   base = 할인액(sin IVA), iva = base×16%, total = base+iva (con IVA)
+function addIva(base) {
+  const b = r2(base);
+  const iva = r2(b * IVA);
+  return { base: b, iva, total: r2(b + iva) };
 }
 // 인보이스 미수 잔액(IVA 포함 MXN) — 모든 배분(현금+NC) 차감
 async function outstandingOf(c, invoiceId) {
@@ -82,7 +83,7 @@ export default async function notaCreditoRoutes(app) {
   });
 
   // ── 발기(초안 생성) — 오픈 인보이스에서 ────────────────────────────
-  // body: { invoice_id, concepto, rate_pct? , total_mxn? }  (rate 또는 total 중 하나)
+  // body: { invoice_id, concepto, rate_pct? , base_mxn? }  (rate 또는 base 중 하나; 할인은 sin IVA 기준)
   app.post('/api/nc', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
     const b = req.body || {};
     const invoiceId = Number(b.invoice_id);
@@ -91,23 +92,29 @@ export default async function notaCreditoRoutes(app) {
     const userId = req.ctx.perm.userId;
     const out = await withTx(async (c) => {
       const inv = (await c.query(
-        `SELECT id, customer_id, total_mxn, deleted_at, status FROM sales_invoices WHERE id=$1`, [invoiceId])).rows[0];
+        `SELECT id, customer_id, subtotal_mxn, total_mxn, deleted_at, status FROM sales_invoices WHERE id=$1`, [invoiceId])).rows[0];
       if (!inv || inv.deleted_at || inv.status !== 'posted') return { error: 'invalid_invoice' };
       const os = await outstandingOf(c, invoiceId);
-      // 금액 결정: total 직접입력 우선, 없으면 rate_pct × 인보이스 총액(IVA 포함)
+      // 금액 결정: 할인은 sin IVA(과세표준) 기준. base_mxn 직접입력 우선, 없으면 rate_pct × 인보이스 subtotal(sin IVA)
+      //   · 금액 모드(base_mxn): 입력값 = 할인액(sin IVA)
+      //   · 할인률 모드(rate_pct): 할인 base = 인보이스 과세표준 × rate%
+      // IVA(16%)는 base 위에 더해 total(con IVA)을 만든다. total이 미수 잔액(con IVA)을 넘지 못함.
+      const invBaseSinIva = Number(inv.subtotal_mxn) > 0
+        ? Number(inv.subtotal_mxn)
+        : r2(Number(inv.total_mxn) / (1 + IVA)); // 레거시(과세표준 미기록) 안전장치
       let rate = (b.rate_pct == null || b.rate_pct === '') ? null : Number(b.rate_pct);
-      let total;
-      if (b.total_mxn != null && b.total_mxn !== '') {
-        total = r2(b.total_mxn);
+      let baseSinIva;
+      if (b.base_mxn != null && b.base_mxn !== '') {
+        baseSinIva = r2(b.base_mxn);
       } else if (rate != null && rate > 0) {
-        total = r2(Number(inv.total_mxn) * rate / 100);
+        baseSinIva = r2(invBaseSinIva * rate / 100);
       } else {
         return { error: 'need_rate_or_total' };
       }
-      if (!(total > 0)) return { error: 'bad_amount' };
-      // 잔액 캡: NC 금액은 현재 미수 잔액을 넘을 수 없음
-      if (total > os.outstanding + 0.01) return { error: 'exceeds_outstanding', outstanding: os.outstanding };
-      const s = splitIva(total);
+      if (!(baseSinIva > 0)) return { error: 'bad_amount' };
+      const s = addIva(baseSinIva);
+      // 잔액 캡: NC 총액(con IVA)은 현재 미수 잔액을 넘을 수 없음
+      if (s.total > os.outstanding + 0.01) return { error: 'exceeds_outstanding', outstanding: os.outstanding };
       const row = (await c.query(
         `INSERT INTO notas_credito (invoice_id, customer_id, concepto, rate_pct, total_mxn, base_mxn, iva_mxn, status, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8) RETURNING id`,

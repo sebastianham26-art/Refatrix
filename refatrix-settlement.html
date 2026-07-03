@@ -781,28 +781,31 @@
       +'<div style="flex-basis:100%;font-weight:700;color:var(--brand)">Nota de crédito 발기 (NC) — 잔액 MX$'+fmt(it.outstanding)+'</div>'
       +'<div style="flex-basis:100%"><label>Concepto (메모 — 인쇄 상단에 크게 표시)</label>'
         +'<input id="ncConcepto" placeholder="예: pago anticipado en 15 días, 3% descuento" style="width:100%;max-width:560px"></div>'
-      +'<div><label>방식</label><select id="ncMode" onchange="ncRecalc('+it.id+')" style="width:130px"><option value="rate">할인률(%)</option><option value="amount">금액(MXN)</option></select></div>'
+      +'<div><label>방식</label><select id="ncMode" onchange="ncRecalc('+it.id+')" style="width:150px"><option value="rate">할인률(%)</option><option value="amount">금액(sin IVA)</option></select></div>'
       +'<div><label id="ncValLbl">할인률(%)</label><input id="ncVal" type="number" step="0.01" oninput="ncRecalc('+it.id+')" style="width:130px"></div>'
-      +'<div style="min-width:240px"><label>미리보기 (IVA 16% 분리)</label><div id="ncPreview" class="hint" style="margin:0">—</div></div>'
+      +'<div style="min-width:260px"><label>미리보기 (sin IVA 할인 + IVA 16%)</label><div id="ncPreview" class="hint" style="margin:0">—</div></div>'
       +'<div><button class="btn" onclick="submitNc('+it.id+')">발기</button></div>'
       +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleNc(null)">취소</button></div>'
-      +'</div><div class="hint" style="margin-top:6px">발기 후: ① <b>인쇄</b>하여 서명 받기 → ② 서명본 <b>업로드</b> → ③ 디렉터 <b>승인</b> → ④ <b>적용(비현금 반제)</b>으로 잔액 마감. 아래 <b>NC 목록</b>에서 진행합니다.</div>';
+      +'</div><div class="hint" style="margin-top:6px">할인은 <b>sin IVA(과세표준)</b> 기준으로 계산되고 <b>IVA 16%</b>가 그 위에 더해집니다. 「할인률(%)」은 인보이스 과세표준에 대한 비율, 「금액(sin IVA)」은 IVA 제외 할인액입니다. 발기 후: ① <b>인쇄</b>하여 서명 받기 → ② 서명본 <b>업로드</b> → ③ 디렉터 <b>승인</b> → ④ <b>적용(비현금 반제)</b>으로 잔액 마감. 아래 <b>NC 목록</b>에서 진행합니다.</div>';
   }
   function ncCompute(it){
     const mode=$('ncMode')?$('ncMode').value:'rate';
     const v=Number($('ncVal')?$('ncVal').value:0)||0;
-    let total = mode==='amount' ? v : (Number(it.total_mxn)||0)*v/100;
-    total=Math.round((total+Number.EPSILON)*100)/100;
-    const base=Math.round((total/1.16+Number.EPSILON)*100)/100;
-    const iva=Math.round((total-base+Number.EPSILON)*100)/100;
+    // 할인은 sin IVA(과세표준) 기준. 인보이스 과세표준(정확값 우선, 없으면 total/1.16 근사).
+    const invBase=(it.subtotal_mxn!=null && Number(it.subtotal_mxn)>0)?Number(it.subtotal_mxn):(Number(it.total_mxn)||0)/1.16;
+    // 금액 모드: 입력값 = 할인액(sin IVA). 할인률 모드: 과세표준 × rate%.
+    let base = mode==='amount' ? v : invBase*v/100;
+    base=Math.round((base+Number.EPSILON)*100)/100;
+    const iva=Math.round((base*0.16+Number.EPSILON)*100)/100;   // IVA를 base 위에 더함
+    const total=Math.round((base+iva+Number.EPSILON)*100)/100;
     return {total,base,iva};
   }
   function ncRecalc(invId){
     const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
-    const lbl=$('ncValLbl'); if(lbl) lbl.textContent = ($('ncMode').value==='amount'?'금액(MXN)':'할인률(%)');
+    const lbl=$('ncValLbl'); if(lbl) lbl.textContent = ($('ncMode').value==='amount'?'금액(sin IVA)':'할인률(%)');
     const c=ncCompute(it); const p=$('ncPreview');
     if(p){ const over = c.total>it.outstanding+0.01;
-      p.innerHTML = c.total>0 ? ('총액 <b>MX$'+fmt(c.total)+'</b> = base '+fmt(c.base)+' + IVA '+fmt(c.iva)+(over?' <b style="color:var(--expense)">· 잔액 초과!</b>':'')) : '—'; }
+      p.innerHTML = c.total>0 ? ('할인(sin IVA) <b>MX$'+fmt(c.base)+'</b> + IVA 16% MX$'+fmt(c.iva)+' = 총 <b>MX$'+fmt(c.total)+'</b>'+(over?' <b style="color:var(--expense)">· 잔액 초과!</b>':'')) : '—'; }
   }
   async function submitNc(invId){
     const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
@@ -815,7 +818,7 @@
     if(!(c.total>0)){ m.className='msg err'; m.textContent='할인 금액이 0입니다.'; return; }
     if(c.total>it.outstanding+0.01){ m.className='msg err'; m.textContent='할인 금액이 잔액(MX$'+fmt(it.outstanding)+')보다 큽니다.'; return; }
     const body={invoice_id:invId, concepto};
-    if(mode==='amount') body.total_mxn=c.total; else body.rate_pct=v;
+    if(mode==='amount') body.base_mxn=c.base; else body.rate_pct=v;
     try{
       const res=await fetch(session.api+'/api/nc',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
@@ -963,7 +966,7 @@
         +'<tr><td>Emisión / 발행일</td><td class="amt">'+esc(n.inv_date||'—')+'</td></tr>'
         +'<tr><td>Importe factura / 인보이스 총액</td><td class="amt">MX$ '+fmt(n.invoice_total)+'</td></tr>'
         +(n.rate_pct!=null?('<tr><td>Descuento / 할인률</td><td class="amt">'+fmt(n.rate_pct)+' %</td></tr>'):'')
-        +'<tr><td>Base (sin IVA)</td><td class="amt">MX$ '+fmt(n.base_mxn)+'</td></tr>'
+        +'<tr><td>Descuento (base sin IVA) / 할인(과세표준)</td><td class="amt">MX$ '+fmt(n.base_mxn)+'</td></tr>'
         +'<tr><td>IVA 16%</td><td class="amt">MX$ '+fmt(n.iva_mxn)+'</td></tr>'
         +'<tr><td class="tot">Total nota de crédito</td><td class="amt tot">MX$ '+fmt(n.total_mxn)+'</td></tr>'
       +'</tbody></table>'
@@ -1048,6 +1051,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260703st"></script>
+<script src="refatrix-nav.js?v=20260703nc"></script>
 </body>
 </html>
