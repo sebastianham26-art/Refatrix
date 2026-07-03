@@ -5,13 +5,10 @@ import { validateReceiptDataUrl } from '../ar.js';
 
 const IVA = 0.16;
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-// 할인은 sin IVA(과세표준) 기준으로 정의하고, IVA(16%)를 그 위에 더한다.
-//   base = 할인액(sin IVA), iva = base×16%, total = base+iva (con IVA)
-function addIva(base) {
-  const b = r2(base);
-  const iva = r2(b * IVA);
-  return { base: b, iva, total: r2(b + iva) };
-}
+// 할인은 sin IVA(과세표준) 기준으로 계산한다.
+//   할인액 = 과세표준 × 할인율(또는 직접 입력한 sin-IVA 금액)
+//   NC 금액(잔액에서 차감) = 이 할인액 그 자체. **IVA를 위에 더하지 않는다.**
+//   → base = total = 할인액, iva = 0. con IVA 총액(잔액)에서 이 금액만큼만 차감.
 // 인보이스 미수 잔액(IVA 포함 MXN) — 모든 배분(현금+NC) 차감
 async function outstandingOf(c, invoiceId) {
   const r = (await c.query(
@@ -95,25 +92,26 @@ export default async function notaCreditoRoutes(app) {
         `SELECT id, customer_id, subtotal_mxn, total_mxn, deleted_at, status FROM sales_invoices WHERE id=$1`, [invoiceId])).rows[0];
       if (!inv || inv.deleted_at || inv.status !== 'posted') return { error: 'invalid_invoice' };
       const os = await outstandingOf(c, invoiceId);
-      // 금액 결정: 할인은 sin IVA(과세표준) 기준. base_mxn 직접입력 우선, 없으면 rate_pct × 인보이스 subtotal(sin IVA)
+      // 할인은 sin IVA(과세표준) 기준. base_mxn 직접입력 우선, 없으면 rate_pct × 인보이스 subtotal(sin IVA).
       //   · 금액 모드(base_mxn): 입력값 = 할인액(sin IVA)
-      //   · 할인률 모드(rate_pct): 할인 base = 인보이스 과세표준 × rate%
-      // IVA(16%)는 base 위에 더해 total(con IVA)을 만든다. total이 미수 잔액(con IVA)을 넘지 못함.
+      //   · 할인률 모드(rate_pct): 할인액 = 인보이스 과세표준 × rate%
+      // NC 금액 = 이 할인액 그 자체(IVA 미가산). con IVA 총액(잔액)에서 이 금액만큼만 차감.
       const invBaseSinIva = Number(inv.subtotal_mxn) > 0
         ? Number(inv.subtotal_mxn)
         : r2(Number(inv.total_mxn) / (1 + IVA)); // 레거시(과세표준 미기록) 안전장치
       let rate = (b.rate_pct == null || b.rate_pct === '') ? null : Number(b.rate_pct);
-      let baseSinIva;
+      let discount;
       if (b.base_mxn != null && b.base_mxn !== '') {
-        baseSinIva = r2(b.base_mxn);
+        discount = r2(b.base_mxn);
       } else if (rate != null && rate > 0) {
-        baseSinIva = r2(invBaseSinIva * rate / 100);
+        discount = r2(invBaseSinIva * rate / 100);
       } else {
         return { error: 'need_rate_or_total' };
       }
-      if (!(baseSinIva > 0)) return { error: 'bad_amount' };
-      const s = addIva(baseSinIva);
-      // 잔액 캡: NC 총액(con IVA)은 현재 미수 잔액을 넘을 수 없음
+      if (!(discount > 0)) return { error: 'bad_amount' };
+      // NC 금액 = 할인액(sin IVA). IVA를 더하지 않으므로 base=total=할인액, iva=0.
+      const s = { base: discount, iva: 0, total: discount };
+      // 잔액 캡: NC 금액은 현재 미수 잔액(con IVA)을 넘을 수 없음
       if (s.total > os.outstanding + 0.01) return { error: 'exceeds_outstanding', outstanding: os.outstanding };
       const row = (await c.query(
         `INSERT INTO notas_credito (invoice_id, customer_id, concepto, rate_pct, total_mxn, base_mxn, iva_mxn, status, created_by)
