@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 차종별 부품 · build vw</title>
+<title>Refatrix ERP · 차종별 부품 · build vx</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--accent:#2f6d8f;--accentbg:#e9f1f6;}
@@ -62,7 +62,7 @@
   .promobtn.on{background:#e8b923;border-color:#c99a12;color:#3a2e07}
   tr.promoOn .modcell{box-shadow:inset 3px 0 0 #e8b923}
   /* A4 프로모션 오버레이 */
-  #promoOverlay{position:fixed;inset:0;background:rgba(20,20,20,.55);z-index:60;display:none;overflow:auto;padding:18px}
+  #promoOverlay{position:fixed;inset:0;background:rgba(20,20,20,.55);z-index:10002;display:none;overflow:auto;padding:18px}
   #promoOverlay.show{display:flex;flex-direction:column;align-items:center}
   .promoBar{width:210mm;max-width:100%;display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
   .promoBar .fill{flex:1}
@@ -486,6 +486,6 @@
   window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
 </script>
-<script src="refatrix-nav.js?v=20260702vw"></script>
+<script src="refatrix-nav.js?v=20260702vx"></script>
 </body>
 </html>
