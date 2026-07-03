@@ -48,6 +48,7 @@
     importcost:{file:'refatrix-importcost.html',name:'수입원가',desc:'부대비용·원가'},
     import:{file:'refatrix-import.html',name:'수입 입고',desc:'배치 등록'},
     products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
+    vehicleparts:{file:'refatrix-vehicleparts.html',name:'차종별 부품',desc:'차종 검색·카테고리별 CTR/SYD·VIO'},
     prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
     prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
@@ -74,7 +75,7 @@
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory',
     recost:'__director__',
-    products:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing',
+    products:'products', vehicleparts:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing',
     users:'__director__', company:'__director__', processKpi:'__director__',
     whHome:'warehouse', stockcount:'warehouse'
   };
@@ -84,7 +85,7 @@
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','fieldsurvey','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','grossprofit','commission','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','devrequest','marketing','prodFind','prodUpload']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','devrequest','marketing','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','processKpi']}

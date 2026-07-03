@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 차종별 부품</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--accent:#2f6d8f;--accentbg:#e9f1f6;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1120px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:14px;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:16px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  input,button{font-family:inherit}
+  input[type=text],input[type=password]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff}
+  .btn{padding:9px 18px;border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:8px;font-size:14px;cursor:pointer}
+  .btn:disabled{opacity:.6;cursor:default}
+  .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:130px}
+  .msg{margin-top:10px;font-size:13px}.msg.err{color:var(--expense)}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .searchrow{display:flex;gap:8px;align-items:flex-end}
+  .searchrow>div{flex:1}
+  /* 결과 */
+  .titlerow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 2px 2px}
+  .titlerow .car{font-size:19px;font-weight:800;color:var(--brand)}
+  .titlerow .vio{background:var(--accentbg);color:var(--accent);border:1px solid #cfe0ea;border-radius:20px;padding:3px 12px;font-size:12.5px;font-weight:700}
+  .titlerow .meta{font-size:13px;color:var(--muted);margin-left:auto}
+  .cat{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:14px}
+  .cathead{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);background:#faf8f3}
+  .cathead .es{font-weight:800;font-size:15px;color:var(--brand)}
+  .cathead .ko{font-size:12px;color:var(--muted)}
+  .cathead .cnt{margin-left:auto;font-size:11px;color:#6f6a60;background:#f1efe8;border-radius:7px;padding:3px 9px;font-weight:700}
+  .gridwrap{overflow-x:auto}
+  .grid{display:grid;min-width:100%}
+  .col{border-right:1px solid #f0ece2}.col:last-child{border-right:none}
+  .colhead{padding:9px 12px;background:#f7faf9;border-bottom:1px solid #e6efe9;text-align:center}
+  .colhead .m{font-weight:800;font-size:13px;color:var(--brand)}
+  .colhead .y{font-size:11px;color:#9aa39f;font-family:ui-monospace,Consolas,monospace}
+  .colhead .vio{display:inline-block;margin-top:4px;background:var(--accentbg);color:var(--accent);border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:700}
+  .colhead .vio.none{background:#f1efe8;color:#a49e90}
+  .colbody{padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-height:52px}
+  .cc{border:1px solid #e6ddca;border-radius:9px;padding:7px 9px;background:#fffdf8}
+  .cc .ln{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .cc .lbl{font-size:10px;color:#a49e90;font-weight:700}
+  .cc .ctr{font-family:ui-monospace,Consolas,monospace;font-size:13px;font-weight:700;color:var(--accent)}
+  .cc .syd{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#6f6a60;text-align:right;word-break:break-all}
+  .cc .meta{margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .cc .yr{display:inline-block;background:var(--accentbg);color:var(--accent);border-radius:5px;padding:1px 6px;font-size:10.5px;font-family:ui-monospace,Consolas,monospace;font-weight:700}
+  .cc .desc{font-size:10.5px;color:#9a9384}
+  .empty{color:#d6d0c2;font-size:18px;text-align:center;padding:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>Refatrix ERP</h1><div class="sub">차종별 부품 · 카테고리 정렬 · VIO</div></div>
+    <a href="refatrix-portal.html" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="searchCard">
+    <h2>차종으로 부품 찾기</h2>
+    <div class="hint" style="margin-bottom:10px">차량 모델명을 입력하면 그 차량에 적용되는 부품을 <b>카테고리별로 정렬</b>합니다. <b>차종모델·연식이 열 머리</b>, 그 아래에 <b>CTR / SYD 코드</b>가 들어가고, 각 세대 열에 <b>VIO(멕시코 등록대수) 순위·수량</b>을 표시합니다. 예: <b>tsuru</b>, <b>versa</b>, <b>jetta</b>, <b>aveo</b>.</div>
+    <div class="searchrow">
+      <div><label>차량 모델</label><input id="q" type="text" placeholder="예: tsuru" autocomplete="off"></div>
+      <div style="flex:0 0 auto"><button class="btn" id="goSearch">검색</button></div>
+    </div>
+    <div id="result"></div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const escP=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const num=(n)=> n==null?'—':Number(n).toLocaleString('es-MX');
+  const titleCase=(s)=>String(s||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+
+  function portalSession(){
+    try{const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){const o=JSON.parse(raw);if(o&&o.token)return{token:o.token,api:o.api||'',user:o.user||{}};}}catch(e){}
+    try{const h=location.hash.slice(1);if(h){const p=new URLSearchParams(h);const token=p.get('token');
+      if(token){const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')};
+        try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){}return o;}}}catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+escP(d.user?.name||login_id)+'</b><br>역할: '+escP(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('searchCard').classList.remove('hidden');
+      applyHashQuery();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function applyHashQuery(){
+    let q=''; try{const p=new URLSearchParams(location.hash.slice(1));q=p.get('q')||'';}catch(e){}
+    if(q){ $('q').value=q; doSearch(); }
+  }
+
+  async function doSearch(){
+    const q=$('q').value.trim();const r=$('result');
+    if(q.length<2){ r.innerHTML='<div class="hint" style="margin-top:12px">두 글자 이상 입력하세요.</div>'; return; }
+    r.innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json());
+      render(d);
+    }catch(e){ r.innerHTML='<div class="hint" style="margin-top:12px">조회에 실패했습니다.</div>'; }
+  }
+
+  function vioChip(vio,small){
+    if(!vio) return small?'<span class="vio none">VIO —</span>':'';
+    const t='VIO '+vio.rank+'위 · '+num(vio.units)+'대';
+    return '<span class="vio">'+t+'</span>';
+  }
+  function codeCard(x){
+    const syd=(x.syd&&x.syd.length)?x.syd.map(escP).join(' / '):'<span style="color:#c9c3b6">—</span>';
+    const yr=x.year?'<span class="yr">'+escP(x.year)+'</span>':'';
+    const desc=x.name?'<span class="desc">'+escP(titleCase(x.name))+'</span>':'';
+    return '<div class="cc">'
+      +'<div class="ln"><span class="lbl">CTR</span><span class="ctr">'+escP(x.ctr||'—')+'</span></div>'
+      +'<div class="ln"><span class="lbl">SYD</span><span class="syd">'+syd+'</span></div>'
+      +(yr||desc?('<div class="meta">'+yr+desc+'</div>'):'')
+      +'</div>';
+  }
+  function render(d){
+    const r=$('result');
+    if(!d||!d.variants||!d.variants.length||!d.categories||!d.categories.length){
+      r.innerHTML='<div class="hint" style="margin-top:14px">‘'+escP(d&&d.query||'')+'’에 해당하는 적용차종을 찾지 못했습니다. 철자나 다른 모델명으로 시도해 보세요.</div>';return;
+    }
+    const vars=d.variants;
+    let h='<div class="titlerow"><span class="car">'+escP(d.model_label||d.query)+'</span>'
+      +(d.headline_vio?vioChip(d.headline_vio,false):'')
+      +'<span class="meta">'+d.categories.length+'개 카테고리 · '+num(d.total)+'개 제품</span></div>';
+    const gtc='repeat('+vars.length+',minmax(180px,1fr))';
+    d.categories.forEach(function(c){
+      h+='<div class="cat"><div class="cathead"><span class="es">'+escP(c.es)+'</span><span class="ko">'+escP(c.ko)+'</span><span class="cnt">'+c.count+'개</span></div>';
+      h+='<div class="gridwrap"><div class="grid" style="grid-template-columns:'+gtc+'">';
+      vars.forEach(function(v){
+        const items=(c.cells&&c.cells[v.key])||[];
+        const body=items.length?items.map(codeCard).join(''):'<div class="empty">—</div>';
+        h+='<div class="col"><div class="colhead"><div class="m">'+escP(v.model)+'</div>'
+          +'<div class="y">'+escP(v.years||'')+'</div>'+vioChip(v.vio,true)+'</div>'
+          +'<div class="colbody">'+body+'</div></div>';
+      });
+      h+='</div></div></div>';
+    });
+    r.innerHTML=h;
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('goSearch').addEventListener('click',doSearch);
+  $('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
+  window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
+</script>
+<script src="refatrix-nav.js?v=20260702vp"></script>
+</body>
+</html>

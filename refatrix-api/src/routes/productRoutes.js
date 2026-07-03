@@ -431,5 +431,131 @@ export default async function productRoutes(app) {
     await logEvent({ userId, action: 'update', target: 'product_resync', detail: { products: n } });
     return { ok: true, products: n };
   });
+
+  // 차종별 부품 매트릭스: 모델 검색 → 카테고리별 정렬. 세대(모델·연식)를 열 머리로, 그 아래에 CTR/SYD 코드.
+  // 각 세대 열에는 그 연식대의 VIO(멕시코 등록대수) 순위·수량을 표시(출처: ctr_vio_rank).
+  // 마이그레이션 불필요 — product_applications / product_syd_codes / ctr_vio_rank / products 재사용.
+  app.get('/api/products/by-model', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const raw = String(req.query.q || '').trim();
+    const empty = { query: raw, model_label: '', headline_vio: null, variants: [], categories: [], total: 0 };
+    if (raw.length < 2) return empty;
+    const esc = raw.replace(/([%_\\])/g, '\\$1');
+    const like = '%' + esc + '%';
+
+    // 1) 검색 모델에 걸리는 개별 차량 적용 항목 + 제품 기본(코드=CTR, 이름=DESCRIPCIÓN)
+    const appRows = (await query(
+      `SELECT pa.product_id, pa.maker, pa.model, pa.year_from, pa.year_to,
+              p.code AS ctr, p.name
+         FROM product_applications pa
+         JOIN products p ON p.id = pa.product_id AND p.deleted_at IS NULL
+        WHERE (pa.model ILIKE $1 OR pa.app_text ILIKE $1)
+          AND pa.model IS NOT NULL AND pa.model <> ''`, [like])).rows;
+    if (!appRows.length) return empty;
+
+    const pids = [...new Set(appRows.map((r) => Number(r.product_id)))];
+
+    // 2) SYD 코드(제품:다)
+    const sydRows = (await query(
+      `SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [pids])).rows;
+    const sydByPid = {};
+    for (const s of sydRows) (sydByPid[Number(s.product_id)] ||= []).push(s.syd_code);
+
+    // 3) VIO — 검색 모델의 연식대별 순위/등록대수
+    const vioRows = (await query(
+      `SELECT DISTINCT vio_year, vio_rank, vio_units FROM ctr_vio_rank WHERE vio_model ILIKE $1`, [like])).rows;
+    const vioBands = [];
+    for (const v of vioRows) {
+      const m = String(v.vio_year || '').match(/(\d{4})\s*-\s*(\d{4})/);
+      if (!m) continue;
+      vioBands.push({ a: Number(m[1]), b: Number(m[2]), rank: Number(v.vio_rank), units: v.vio_units != null ? Number(v.vio_units) : null });
+    }
+    const vioFor = (minY, maxY) => {
+      if (minY == null || maxY == null) return null;
+      let best = null;
+      for (const v of vioBands) if (v.a <= maxY && v.b >= minY) { if (!best || v.rank < best.rank) best = v; }
+      return best ? { rank: best.rank, units: best.units } : null;
+    };
+
+    // 모델 표기 정규화(로마숫자 대문자: Tsuru Iii → Tsuru III)
+    const normModel = (mm) => String(mm || '').trim().split(/\s+/)
+      .map((t) => (/^[ivx]{1,4}$/i.test(t) ? t.toUpperCase() : (t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())))
+      .join(' ');
+
+    // 카테고리 분류(제품명 기준). 대표 지정 6종 우선 → 흔한 계열 → 나머지=기타.
+    const CATS = [
+      { key: 'rotula', es: 'Rótula', ko: '볼조인트', test: (n) => /ROTULA/.test(n) },
+      { key: 'terminal_ext', es: 'Terminal exterior', ko: '타이로드엔드(외측)', test: (n) => /TERMINAL/.test(n) && /EXTERIOR/.test(n) },
+      { key: 'terminal_int', es: 'Terminal interior', ko: '타이로드엔드(내측)', test: (n) => /TERMINAL/.test(n) && /INTERIOR/.test(n) },
+      { key: 'horquilla', es: 'Horquilla', ko: '컨트롤암(로어암)', test: (n) => /HORQUILLA/.test(n) },
+      { key: 'buje', es: 'Buje', ko: '부싱', test: (n) => /BUJE/.test(n) },
+      { key: 'tornillo', es: 'Tornillo estabilizador', ko: '스태빌라이저 링크', test: (n) => /TORNILLO/.test(n) && /ESTABILIZADOR/.test(n) },
+      { key: 'amortiguador', es: 'Amortiguador', ko: '쇼크업소버', test: (n) => /AMORTIGUADOR/.test(n) },
+      { key: 'junta', es: 'Junta homocinética', ko: '등속조인트', test: (n) => /JUNTA/.test(n) || /HOMOCIN/.test(n) },
+      { key: 'maza', es: 'Maza / Balero', ko: '허브·베어링', test: (n) => /MAZA/.test(n) || /BALERO/.test(n) },
+      { key: 'mangueta', es: 'Mangueta', ko: '너클', test: (n) => /MANGUETA/.test(n) },
+      { key: 'resorte', es: 'Resorte', ko: '스프링', test: (n) => /RESORTE|MUELLE/.test(n) },
+      { key: 'cremallera', es: 'Cremallera', ko: '스티어링 랙', test: (n) => /CREMALLERA/.test(n) },
+      { key: 'soporte', es: 'Soporte', ko: '마운트·서포트', test: (n) => /SOPORTE/.test(n) },
+      { key: 'goma', es: 'Goma', ko: '고무부품', test: (n) => /GOMA/.test(n) },
+    ];
+    const OTROS = { key: 'otros', es: 'Otros', ko: '기타' };
+    const classify = (name) => {
+      const n = String(name || '').toUpperCase();
+      for (const c of CATS) if (c.test(n)) return c.key;
+      return 'otros';
+    };
+
+    // 4) 변형(열) + 셀 구성
+    const varMap = new Map();   // model -> {key, model, minY, maxY}
+    const catCells = new Map(); // catKey -> Map(model -> Map(ctr -> cell))
+    const makerCount = {};
+    for (const r of appRows) {
+      const model = normModel(r.model);
+      if (!model) continue;
+      const yf = r.year_from != null ? Number(r.year_from) : null;
+      const yt = r.year_to != null ? Number(r.year_to) : yf;
+      if (r.maker) makerCount[r.maker] = (makerCount[r.maker] || 0) + 1;
+      let v = varMap.get(model);
+      if (!v) { v = { key: model, model, minY: yf, maxY: yt }; varMap.set(model, v); }
+      if (yf != null) v.minY = v.minY == null ? yf : Math.min(v.minY, yf);
+      if (yt != null) v.maxY = v.maxY == null ? yt : Math.max(v.maxY, yt);
+
+      const catKey = classify(r.name);
+      if (!catCells.has(catKey)) catCells.set(catKey, new Map());
+      const byVar = catCells.get(catKey);
+      if (!byVar.has(model)) byVar.set(model, new Map());
+      const byCtr = byVar.get(model);
+      if (!byCtr.has(r.ctr)) {
+        const yStr = yf != null ? (yt != null && yt !== yf ? yf + '-' + yt : String(yf)) : '';
+        byCtr.set(r.ctr, { ctr: r.ctr, syd: sydByPid[Number(r.product_id)] || [], name: r.name || '', year: yStr });
+      }
+    }
+
+    const variants = [...varMap.values()]
+      .sort((a, b) => (a.minY == null ? 99999 : a.minY) - (b.minY == null ? 99999 : b.minY))
+      .map((v) => ({
+        key: v.key, model: v.model,
+        years: v.minY != null ? (v.maxY != null && v.maxY !== v.minY ? v.minY + '-' + v.maxY : String(v.minY)) : '',
+        vio: vioFor(v.minY, v.maxY),
+      }));
+
+    const order = CATS.map((c) => c.key).concat(['otros']);
+    const meta = {}; CATS.forEach((c) => (meta[c.key] = c)); meta.otros = OTROS;
+    const categories = [];
+    for (const ck of order) {
+      const byVar = catCells.get(ck);
+      if (!byVar) continue;
+      const cells = {}; let cnt = 0;
+      for (const [vk, byCtr] of byVar) { cells[vk] = [...byCtr.values()]; cnt += cells[vk].length; }
+      categories.push({ key: ck, es: meta[ck].es, ko: meta[ck].ko, count: cnt, cells });
+    }
+
+    const maker = Object.keys(makerCount).sort((a, b) => makerCount[b] - makerCount[a])[0] || '';
+    const model_label = (maker ? maker + ' ' : '') + raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+    let headline_vio = null;
+    for (const v of variants) if (v.vio && (!headline_vio || v.vio.rank < headline_vio.rank)) headline_vio = v.vio;
+
+    return { query: raw, model_label, headline_vio, variants, categories, total: pids.length };
+  });
 }
 
