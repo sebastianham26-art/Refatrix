@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수입원가 정산차액</title>
+<title>Refatrix ERP · 수입원가 정산차액 · build 0703p1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -102,7 +102,7 @@
     <!-- 수금 상세 (오픈 인보이스 / AR) — 최상단 -->
     <div class="card">
       <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
-        <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="seg" id="arSeg"></span><button id="arToggle" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleArBody()">감추기</button></span>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="seg" id="arSeg"></span><button id="arPrintBtn" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="printArList()" title="지금 화면에 보이는 목록(검색·그룹필터·정렬·완납토글 반영)을 인쇄/PDF로 저장">🖨 인쇄</button><button id="arToggle" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleArBody()">감추기</button></span>
       </div>
       <div class="stats" id="arStats" style="margin-bottom:4px"></div>
       <div id="arBody">
@@ -314,6 +314,98 @@
     const b=$('arBody'), t=$('arToggle');
     if(b) b.style.display = arHidden ? 'none' : '';
     if(t) t.textContent = arHidden ? '보이기' : '감추기';
+  }
+  // ===== 수금 상세 인쇄 (현재 보이는 목록 그대로) =====
+  function arStatusText(it){
+    if(it.paid_full) return '완납';
+    if(it.day_diff==null) return '기일 없음';
+    if(it.day_diff>0) return '연체 '+it.day_diff+'일';
+    if(it.day_diff===0) return '오늘 만기';
+    return 'D-'+(-it.day_diff);
+  }
+  function printArList(){
+    // 화면과 동일한 목록: 검색/그룹필터/헤더정렬/완납토글 전부 반영
+    let list, scopeTxt;
+    if(arSearchMode){
+      list=arSortList(arSearchItems);
+      scopeTxt='검색: "'+((($('arSearchQ')||{}).value)||'')+'"';
+    }else{
+      const filtered=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
+      list = arSort ? arSortList(filtered)
+        : filtered.slice().sort((a,b)=>(a.paid_full?1:0)-(b.paid_full?1:0));
+      let label='회사 전체';
+      if(arFilter){ const hit=filtered[0]; label = hit ? arKeyOf(hit).label : '(비어 있음)'; }
+      else if(arGroup==='team') label='팀별 · 전체';
+      else if(arGroup==='owner') label='영업담당자별 · 전체';
+      else if(arGroup==='customer') label='고객별 · 전체';
+      scopeTxt='범위: '+label;
+    }
+    if(!list.length){ const m=$('arMsg'); if(m){m.className='msg err';m.textContent='인쇄할 항목이 없습니다.';} return; }
+    const open=list.filter(x=>!x.paid_full);
+    const sOut=open.reduce((s,x)=>s+(Number(x.outstanding)||0),0);
+    const sOvd=open.reduce((s,x)=>s+(x.overdue?(Number(x.outstanding)||0):0),0);
+    const tTot=list.reduce((s,x)=>s+(Number(x.total_mxn)||0),0);
+    const tPaid=list.reduce((s,x)=>s+(Number(x.paid)||0),0);
+    const tOut=list.reduce((s,x)=>s+(Number(x.outstanding)||0),0);
+    const co=arCompany||{};
+    const now=new Date(), pad=(n)=>String(n).padStart(2,'0');
+    const dtTxt=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+':'+pad(now.getMinutes());
+    const ymd=String(now.getFullYear()).slice(2)+pad(now.getMonth()+1)+pad(now.getDate());
+    const head=''
+      +(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:52px;max-width:170px;object-fit:contain;display:block;margin-bottom:6px">'):'')
+      +(co.emisor?('<div style="font-weight:800;font-size:15px">'+esc(co.emisor)+'</div>'):'');
+    let rows='';
+    list.forEach((it,i)=>{
+      const st= it.paid_full?'background:#f2f2f2;color:#777':(it.overdue?'background:#fbeae7':'');
+      rows+='<tr style="'+st+'">'
+        +'<td class="c">'+(i+1)+'</td>'
+        +'<td><b>'+esc(it.customer_name)+'</b><div class="inv">'+esc(it.sat_no||('#'+it.id))+'</div></td>'
+        +'<td class="c">'+esc(it.inv_date||'—')+'</td>'
+        +'<td class="c">'+esc(it.due_date||'—')+'</td>'
+        +'<td class="c'+((it.overdue&&!it.paid_full)?' ovd':'')+'">'+esc(arStatusText(it))+'</td>'
+        +'<td class="n">'+fmt(it.total_mxn)+'</td>'
+        +'<td class="n">'+fmt(it.paid)+'</td>'
+        +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td></tr>';
+    });
+    const html='<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Refatrix_AR_'+ymd+'</title>'
+      +'<style>*{box-sizing:border-box}@page{size:A4;margin:12mm}'
+      +'body{font-family:"IBM Plex Sans KR","Malgun Gothic",Arial,sans-serif;color:#1b1b1b;margin:0;padding:26px 30px;font-size:12px}'
+      +'.row{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}'
+      +'.title{font-size:19px;font-weight:800;text-align:right;color:#143D34}.sub{color:#666;font-size:11.5px;text-align:right;margin-top:3px}'
+      +'hr{border:none;border-top:1px solid #ccc;margin:12px 0}'
+      +'.stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 2px}'
+      +'.stat{border:1px solid #ddd;border-radius:8px;padding:8px 12px;min-width:118px}'
+      +'.stat .k{font-size:10.5px;color:#777}.stat .v{font-size:15px;font-weight:800;margin-top:2px;color:#143D34}'
+      +'table{width:100%;border-collapse:collapse;margin-top:12px;font-size:11.5px}'
+      +'th,td{padding:5px 7px;border-bottom:1px solid #e3e3e3;text-align:left}'
+      +'th{background:#f3f1ea;font-size:10.5px;color:#555}'
+      +'td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}td.c,th.c{white-space:nowrap}'
+      +'td.ovd{color:#B23A2E;font-weight:700}'
+      +'.inv{font-size:10px;color:#888;font-family:ui-monospace,Menlo,monospace}'
+      +'tfoot td{font-weight:800;background:#f3f1ea;border-top:2px solid #ccc}'
+      +'thead{display:table-header-group}tr{page-break-inside:avoid}'
+      +'@media print{.noprint{display:none}}</style></head><body>'
+      +'<div class="row"><div>'+head+'</div>'
+        +'<div><div class="title">수금 상세 — 오픈 인보이스(미수금)</div>'
+        +'<div class="sub">'+esc(scopeTxt)+' · 완납 포함: '+(arIncludeClosed?'켬':'끔')+'</div>'
+        +'<div class="sub">인쇄일시: '+esc(dtTxt)+'</div></div></div>'
+      +'<hr>'
+      +'<div class="stats">'
+        +'<div class="stat"><div class="k">총 잔액(미수)</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
+        +'<div class="stat"><div class="k">오픈 인보이스</div><div class="v">'+open.length+'건</div></div>'
+        +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:#B23A2E">MX$'+fmt(sOvd)+'</div></div>'
+        +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+open.filter(x=>x.overdue).length+'건</div></div>'
+        +(arIncludeClosed?('<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:#0F6E56">'+(list.length-open.length)+'건</div></div>'):'')
+      +'</div>'
+      +'<table><thead><tr><th class="c">#</th><th>고객 · 인보이스</th><th class="c">발행일</th><th class="c">만기일</th><th class="c">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th></tr></thead>'
+      +'<tbody>'+rows+'</tbody>'
+      +'<tfoot><tr><td colspan="5">합계 ('+list.length+'건)</td><td class="n">'+fmt(tTot)+'</td><td class="n">'+fmt(tPaid)+'</td><td class="n">'+fmt(tOut)+'</td></tr></tfoot></table>'
+      +'<div class="noprint" style="text-align:center;margin-top:26px"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">인쇄</button></div>'
+      +'</body></html>';
+    const w=window.open('','_blank');
+    if(!w){ const m=$('arMsg'); if(m){ m.className='msg err'; m.textContent='팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'; } return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    try{ w.focus(); setTimeout(()=>{ try{w.print();}catch(e){} },350); }catch(e){}
   }
   function arKeyOf(it){
     if(arGroup==='team') return {key:'t'+(it.team_id||0), label: it.team_name||'(팀 미지정)'};
@@ -1056,6 +1148,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260703nc3"></script>
+<script src="refatrix-nav.js?v=20260703p1"></script>
 </body>
 </html>
