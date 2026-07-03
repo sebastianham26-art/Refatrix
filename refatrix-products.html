@@ -76,6 +76,10 @@
   .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#faf8f3}
   .drop:hover{border-color:var(--brand);color:var(--brand)}
   .tag{display:inline-block;background:#eef1f5;color:#5a6b7b;border-radius:6px;padding:1px 6px;font-size:11px;margin:1px}
+  /* 드릴다운 적용차종 전체 섹션 */
+  .appsec{margin:0 0 12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
+  .appchips{display:flex;flex-wrap:wrap;gap:4px}
+  .appchips .tag{font-size:12px;padding:3px 9px;background:#f4efe4;color:#6b5f45;border:1px solid #e6ddca}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
@@ -285,7 +289,7 @@
         if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
         var sold=Number(p.sold_qty||0);
         var rack=escP(p.rack_location||'');
-        h+='<tr class="prow" data-pid="'+p.id+'" style="cursor:pointer">'
+        h+='<tr class="prow" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" style="cursor:pointer">'
           +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
           +'<td style="font-size:11px;color:#6f6a60">'+(app||'—')+'</td>'
@@ -331,13 +335,25 @@
     dr.innerHTML='<td colspan="'+colN+'" style="background:#faf8f3;padding:10px 14px"><div class="hint">불러오는 중…</div></td>';
     tr.parentNode.insertBefore(dr, tr.nextSibling);
     try{
+      const appText=tr.getAttribute('data-app')||'';
       const d=await fetch(session.api+'/api/products/'+pid+'/drilldown',{headers:auth()}).then(r=>r.json());
-      dr.firstChild.innerHTML=drillHtml(d);
+      dr.firstChild.innerHTML=drillHtml(d, appText);
     }catch(e){ dr.firstChild.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>'; }
   }
-  function drillHtml(d){
+  function drillHtml(d, appText){
     const fc=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
     const pct=(n)=> n==null?'—':(Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})+'%');
+
+    // ── 적용차종 전체(드릴다운 상단·잘림 없음) ──
+    // 목록 셀은 40자에서 잘리지만, 여기서는 원문 전체를 ' // ' 단위로 칩처럼 모두 표시한다.
+    function appSection(txt){
+      const list=String(txt||'').split(/\s*\/\/\s*/).map(s=>s.trim()).filter(Boolean);
+      let h='<div class="appsec"><div class="dh">적용차종'+(list.length?(' ('+list.length+'종)'):'')+'</div>';
+      if(!list.length){ h+='<div class="hint" style="margin:2px 0">등록된 적용차종이 없습니다.</div>'; }
+      else{ h+='<div class="appchips">'+list.map(a=>'<span class="tag">'+escP(a)+'</span>').join('')+'</div>'; }
+      return h+'</div>';
+    }
+    const appHtml=appSection(appText);
 
     // ── 원가 분석 패널(좌) ──
     function costPanel(c){
@@ -391,7 +407,7 @@
     // ── 레이아웃 ──
     // 권한(원가) 있으면 좌(원가분석)/우(매출총이익) 2분할. 없으면 판매 고객 수량만 단순 표시.
     if(d&&d.cost){
-      let h='<div style="font-weight:800;color:var(--brand);margin-bottom:8px">판매 고객 '+(d.customer_count||0)+'곳 · 총 판매 '+qty(d.total_sold||0)+'</div>';
+      let h=appHtml+'<div style="font-weight:800;color:var(--brand);margin-bottom:8px">판매 고객 '+(d.customer_count||0)+'곳 · 총 판매 '+qty(d.total_sold||0)+'</div>';
       h+='<div class="dcols">'
         +'<div class="dcol"><div class="dh">원가 분석</div>'+costPanel(d.cost)+'</div>'
         +'<div class="dcol"><div class="dh">매출총이익</div>'+grossPanel(d.gross)+'</div>'
@@ -400,7 +416,7 @@
     }
     // 권한 없음(직원): 판매 고객별 수량만
     const s=(d&&d.sales)||[];
-    let h='<div style="font-weight:800;color:var(--brand);margin-bottom:4px">판매 고객 ('+(d.customer_count||0)+'곳 · 총 '+qty(d.total_sold||0)+')</div>';
+    let h=appHtml+'<div style="font-weight:800;color:var(--brand);margin-bottom:4px">판매 고객 ('+(d.customer_count||0)+'곳 · 총 '+qty(d.total_sold||0)+')</div>';
     if(!s.length){ h+='<div class="hint" style="margin:2px 0 10px">판매 이력이 없습니다.</div>'; }
     else{
       h+='<table style="margin-bottom:12px"><thead><tr><th>고객</th><th class="num">판매수량</th><th class="num">건수</th></tr></thead><tbody>'
@@ -626,6 +642,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260702sc"></script>
+<script src="refatrix-nav.js?v=20260702sd"></script>
 </body>
 </html>
