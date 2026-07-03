@@ -97,6 +97,7 @@
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0">재고실사 세션</h2>
       <div class="row">
+        <button class="btn ghost sm" onclick="openHelp()">📖 사용방법</button>
         <button class="btn ghost sm" onclick="showPromo()">🎁 프로모션 품목 관리</button>
         <button class="btn brass sm" onclick="openStart()">＋ 새 실사 시작</button>
       </div>
@@ -212,6 +213,66 @@
   </div>
 </div></div>
 
+<!-- 사용방법 모달 -->
+<div class="modal" id="helpModal"><div class="box" style="max-width:620px">
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <h2 style="margin:0">📖 재고실사 사용방법</h2>
+    <button class="btn ghost sm" onclick="closeModal('helpModal')">닫기 ✕</button>
+  </div>
+
+  <div class="prev" style="margin-top:12px">
+    <div class="nm">이 화면은 뭘 하나요?</div>
+    <div class="meta" style="line-height:1.6">실물 재고를 직접 세어 <b>시스템 재고와 대조</b>합니다. 기록만으로는 재고가 <b>바뀌지 않습니다</b>(감사 전용). 차이를 실제 재고에 반영하려면 마지막에 <b>디렉터 승인</b>이 필요합니다.</div>
+  </div>
+
+  <div class="grpttl" style="margin-top:16px">① 실사 시작</div>
+  <div class="mut" style="line-height:1.7">
+    <b>＋ 새 실사 시작</b> → (선택) 범위 메모 입력 → <b>시작</b>. 하다가 중단하면 홈의 <b>“진행중 실사 (이어쓰기)”</b>에서 그대로 이어서 할 수 있습니다.
+  </div>
+
+  <div class="grpttl" style="margin-top:14px">② 기록 — 랙 → 품목 → 수량 순서</div>
+  <div style="line-height:1.7">
+    <div style="margin:6px 0"><span class="pill p-match">1</span> <b>랙 위치</b> 칸에 랙 바코드를 스캔(또는 입력) + Enter → “현재 랙”이 표시됩니다. 다음 랙으로 이동할 때마다 다시 스캔하세요.</div>
+    <div style="margin:6px 0"><span class="pill p-match">2</span> <b>품목 코드</b> 칸에 EAN 바코드를 스캔하거나 코드를 입력 + Enter. CTR·SYD·프로모션·EAN 모두 자동 인식됩니다.</div>
+    <div style="margin:6px 0"><span class="pill p-match">3</span> 품명·시스템재고 미리보기가 뜨면 <b>실사 수량</b>을 입력 + Enter(저장).</div>
+  </div>
+
+  <div class="prev" style="margin-top:12px;background:#fbf2e0;border-color:#e7d3a3">
+    <div class="nm">＋1 스캔모드 (우상단 체크박스)</div>
+    <div class="meta" style="line-height:1.7">
+      <b>꺼짐(기본):</b> 스캔 후 수량을 직접 입력. <span class="mut">박스·무더기로 세서 개수를 아는 경우 (“이 랙에 37개”).</span><br>
+      <b>켜짐:</b> 스캔 1회 = <b>즉시 +1 누적</b>. 미리보기·수량입력 없음. <span class="mut">물건을 하나씩 집으며 스캔하는 경우 (같은 코드 5번 = 5개).</span>
+    </div>
+  </div>
+
+  <div class="grpttl" style="margin-top:14px">③ 미등록 코드</div>
+  <div class="mut" style="line-height:1.7">마스터에 없는 코드도 <b>그대로 기록</b>됩니다(대조에서 <span class="pill p-unk">미등록</span>으로 별도 표시). 나중에 무엇이 안 잡혔는지 확인하는 용도예요.</div>
+
+  <div class="grpttl" style="margin-top:14px">④ 수정 · 삭제</div>
+  <div class="mut" style="line-height:1.7">기록 내역은 <b>랙별로 묶여</b> 보입니다. 수량은 칸에서 바로 고치고, 잘못 넣은 줄은 <b>삭제</b>할 수 있습니다. (제출 전까지만 가능)</div>
+
+  <div class="grpttl" style="margin-top:14px">⑤ 제출 → 대조 결과</div>
+  <div class="mut" style="line-height:1.7"><b>제출 → 대조 보기</b>를 누르면 기록이 잠기고, 항목별 <b>실사합계 vs 시스템재고</b>가 5가지로 분류됩니다:</div>
+  <div style="line-height:1.9;margin-top:6px">
+    <span class="pill p-match">일치</span> 실사 = 시스템 &nbsp;·&nbsp;
+    <span class="pill p-short">부족</span> 실사 &lt; 시스템 &nbsp;·&nbsp;
+    <span class="pill p-over">초과</span> 실사 &gt; 시스템<br>
+    <span class="pill p-unc">미실사</span> 재고는 있는데 안 센 품목(놓친 랙 탐지) &nbsp;·&nbsp;
+    <span class="pill p-unk">미등록</span> 마스터에 없는 스캔
+  </div>
+  <div class="mut" style="line-height:1.7;margin-top:6px">상단 칩을 누르면 <b>필터</b>됩니다. <b>⬇ 엑셀</b>로 결과를 내려받을 수 있어요. (기준은 항상 <b>실물 재고</b>이고, 가용재고는 참고 컬럼입니다.)</div>
+
+  <div class="grpttl" style="margin-top:14px">⑥ 실물로 맞추기 <span class="mut">(디렉터 전용)</span></div>
+  <div class="mut" style="line-height:1.7"><b>🔒 실물로 맞추기</b> → 조정 대상 미리보기(전/후/증감) → 확인 시 <b>부족·초과 품목만</b> 실물 수량으로 조정하고 재고이동 기록을 남깁니다. <b>미실사·미등록은 절대 건드리지 않습니다</b>(놓친 랙이 재고를 0으로 만들지 않도록).</div>
+
+  <div class="grpttl" style="margin-top:14px">🎁 프로모션 품목</div>
+  <div class="mut" style="line-height:1.7">장갑·티셔츠·모자 등은 <b>프로모션 품목 관리</b>에서 먼저 등록해야 실사에서 잡힙니다. 자동차부품 마스터와 분리되어 견적·매출엔 영향이 없습니다.</div>
+
+  <div class="row" style="margin-top:16px;justify-content:flex-end">
+    <button class="btn" onclick="closeModal('helpModal')">확인</button>
+  </div>
+</div></div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -244,6 +305,7 @@ async function api(path,opt){
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),1600); }
 function show(v){ ['loginView','homeView','recordView','reconView','promoView'].forEach(x=>$(x).classList.add('hidden')); $(v).classList.remove('hidden'); }
 function closeModal(id){ $(id).classList.remove('on'); }
+function openHelp(){ $('helpModal').classList.add('on'); }
 
 // beep
 function beep(ok){ try{ const C=window.AudioContext||window.webkitAudioContext; if(!C) return; const ac=beep._ac||(beep._ac=new C()); if(ac.state==='suspended'){try{ac.resume();}catch(_){}} const o=ac.createOscillator(),g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.frequency.value=ok?880:220; o.type='square'; g.gain.setValueAtTime(0.0001,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+0.005); g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+(ok?0.12:0.22)); o.start(); o.stop(ac.currentTime+0.25); }catch(e){} }
