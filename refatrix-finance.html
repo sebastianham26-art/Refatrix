@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703d</title>
+<title>Refatrix ERP · 재무 · build fin-0703f</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -139,7 +139,8 @@
         <div><label>금액</label><input id="t-amt" type="number" step="0.01" placeholder="0.00"></div>
         <div><label>환율(USD일 때)</label><input id="t-fx" type="number" step="0.0001" placeholder="오늘 환율"></div>
       </div>
-      <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div></div>
+      <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div>
+        <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
       <div id="t-preview" class="hint"></div>
       <button class="btn gold" id="t-save" style="margin-top:12px">거래 등록</button>
       <div class="msg" id="newMsg"></div>
@@ -147,7 +148,7 @@
 
       <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
         <h2 style="margin:0 0 2px">📄 엑셀 일괄 등록 <span style="font-size:12px;font-weight:600;color:var(--muted)">(과거자료 마이그레이션용)</span></h2>
-        <div class="hint" style="margin-top:0">① <b>양식 다운로드</b> → 엑셀에서 행 입력(구분·상태·계좌·계정과목·통화는 <b>드롭다운</b> 선택, 메모 자유 입력) → ② 파일 선택 → <b>검증</b> → ③ 미리보기 확인 후 <b>일괄 등록</b>. 오류 행이 하나라도 있으면 등록되지 않습니다(전건 성공 방식). 최대 1,000행.</div>
+        <div class="hint" style="margin-top:0">① <b>양식 다운로드</b> → 엑셀에서 행 입력(구분·상태·계좌·계정과목·통화는 <b>드롭다운</b> 선택, 메모·영수증 번호 자유 입력) → ② 파일 선택 → <b>검증</b> → ③ 미리보기 확인 후 <b>일괄 등록</b>. 오류 행이 하나라도 있으면 등록되지 않습니다(전건 성공 방식). 최대 1,000행.</div>
         <div class="row" style="align-items:flex-end">
           <div><button class="btn ghost" id="bi-tpl">📥 양식 다운로드 (.xlsx)</button></div>
           <div style="flex:2"><label>작성한 파일</label><input id="bi-file" type="file" accept=".xlsx"></div>
@@ -643,7 +644,8 @@
     const cur=$('t-cur').value;
     const body={account_id:$('t-acc').value?Number($('t-acc').value):null,txn_date:$('t-date').value,direction:$('t-dir').value,
       amount:amt,currency:cur,fx_rate:cur==='USD'?(Number($('t-fx').value)||fxRate):1,
-      category_code:$('t-cat').value||null,status:$('t-status').value,memo:$('t-memo').value.trim()||null};
+      category_code:$('t-cat').value||null,status:$('t-status').value,memo:$('t-memo').value.trim()||null,
+      receipt_no:$('t-receipt').value.trim()||null};
     $('t-save').disabled=true;$('t-save').textContent='등록 중…';
     try{
       const res=await fetch(session.api+'/api/transactions',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
@@ -651,7 +653,7 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(d.error||res.status));return;}
       m.className='msg ok';
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
-      $('t-amt').value='';$('t-memo').value='';$('t-fx').value='';previewTxn();
+      $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';previewTxn();
       await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
@@ -693,7 +695,8 @@
         {header:'통화',width:8},
         {header:'금액',width:14},
         {header:'환율(USD·비우면 자동)',width:20},
-        {header:'메모',width:44}];
+        {header:'메모',width:44},
+        {header:'영수증 번호',width:18}];
       const hd=ws.getRow(1);hd.font={bold:true};hd.alignment={vertical:'middle'};
       hd.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFE7D3'}};c.border={bottom:{style:'thin'}};});
       ws.views=[{state:'frozen',ySplit:1}];
@@ -706,6 +709,7 @@
         ws.getCell(r,6).dataValidation={type:'list',allowBlank:true,formulae:['"MXN,USD"'],showErrorMessage:true,error:'MXN 또는 USD. (비우면 MXN)'};
         ws.getCell(r,7).numFmt='#,##0.00';
         ws.getCell(r,8).numFmt='0.0000';
+        ws.getCell(r,10).numFmt='@';
       }
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
@@ -760,8 +764,9 @@
           stS=biCellStr(row.getCell(3).value), accS=biCellStr(row.getCell(4).value),
           catS=biCellStr(row.getCell(5).value), curS=biCellStr(row.getCell(6).value).toUpperCase(),
           amtS=biCellStr(row.getCell(7).value), fxS=biCellStr(row.getCell(8).value),
-          memoS=biCellStr(row.getCell(9).value);
-        if(!dateS&&!dirS&&!accS&&!catS&&!amtS&&!memoS)continue; // 빈 행 스킵
+          memoS=biCellStr(row.getCell(9).value),
+          receiptS=biCellStr(row.getCell(10).value);
+        if(!dateS&&!dirS&&!accS&&!catS&&!amtS&&!memoS&&!receiptS)continue; // 빈 행 스킵
         const e=[];
         let dOk=dateRe.test(dateS);
         if(dOk){const dt=new Date(dateS+'T00:00:00Z');dOk=!isNaN(dt.getTime())&&dt.toISOString().slice(0,10)===dateS;}
@@ -785,19 +790,19 @@
           if(dir==='in'&&g==='비용')e.push('수입인데 비용 계정과목');
           if(dir==='out'&&g==='수익')e.push('지출인데 수익 계정과목');}
         rows.push({line:r,txn_date:dateS,direction:dir,status,account_id:accId,category_code:cat,
-          currency:cur||'MXN',amount:amt,fx_rate:fx,memo:memoS||null,
+          currency:cur||'MXN',amount:amt,fx_rate:fx,memo:memoS||null,receipt_no:receiptS||null,
           _accS:accS,_catS:catS,_err:e});
         if(e.length)errs.push(r);
       }
       if(!rows.length){m.className='msg err';m.textContent='입력된 행이 없습니다. (2행부터 입력)';return;}
       const show=rows.slice(0,200);
       pv.innerHTML='<div class="hint" style="margin:0 0 6px"><b>'+rows.length+'행</b> 읽음 · 오류 <b style="color:'+(errs.length?'#c0392b':'inherit')+'">'+errs.length+'건</b>'+(rows.length>200?' (미리보기는 앞 200행)':'')+'</div>'
-        +'<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table style="margin:0"><thead><tr><th>행</th><th>거래일</th><th>구분</th><th>상태</th><th>계좌</th><th>계정과목</th><th>통화</th><th class="num">금액</th><th>메모</th><th>오류</th></tr></thead><tbody>'
-        +show.map(x=>'<tr style="'+(x._err.length?'background:rgba(192,57,43,.08)':'')+'"><td>'+x.line+'</td><td>'+x.txn_date+'</td><td>'+(x.direction==='in'?'수입':x.direction==='out'?'지출':'?')+'</td><td>'+(x.status==='plan'?'예정':'실제')+'</td><td>'+(x._accS||'—')+'</td><td>'+(x._catS||'—')+'</td><td>'+x.currency+'</td><td class="num">'+(x.amount>0?fmt(x.amount):'?')+'</td><td>'+(x.memo?String(x.memo).slice(0,24):'')+'</td><td style="color:#c0392b">'+x._err.join(' · ')+'</td></tr>').join('')
+        +'<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table style="margin:0"><thead><tr><th>행</th><th>거래일</th><th>구분</th><th>상태</th><th>계좌</th><th>계정과목</th><th>통화</th><th class="num">금액</th><th>메모</th><th>영수증</th><th>오류</th></tr></thead><tbody>'
+        +show.map(x=>'<tr style="'+(x._err.length?'background:rgba(192,57,43,.08)':'')+'"><td>'+x.line+'</td><td>'+x.txn_date+'</td><td>'+(x.direction==='in'?'수입':x.direction==='out'?'지출':'?')+'</td><td>'+(x.status==='plan'?'예정':'실제')+'</td><td>'+(x._accS||'—')+'</td><td>'+(x._catS||'—')+'</td><td>'+x.currency+'</td><td class="num">'+(x.amount>0?fmt(x.amount):'?')+'</td><td>'+(x.memo?String(x.memo).slice(0,24):'')+'</td><td style="font-family:monospace;font-size:11px">'+(x.receipt_no?String(x.receipt_no).slice(0,18):'')+'</td><td style="color:#c0392b">'+x._err.join(' · ')+'</td></tr>').join('')
         +'</tbody></table></div>';
       if(errs.length){m.className='msg err';m.textContent='오류 행을 수정한 뒤 다시 검증하세요. (행 번호: '+errs.slice(0,10).join(', ')+(errs.length>10?' …':'')+')';return;}
       biRows=rows.map(x=>({txn_date:x.txn_date,direction:x.direction,status:x.status,account_id:x.account_id,
-        category_code:x.category_code,currency:x.currency,amount:x.amount,fx_rate:x.fx_rate,memo:x.memo}));
+        category_code:x.category_code,currency:x.currency,amount:x.amount,fx_rate:x.fx_rate,memo:x.memo,receipt_no:x.receipt_no}));
       const sb=$('bi-submit');sb.classList.remove('hidden');sb.textContent='✅ '+biRows.length+'건 일괄 등록';
       m.className='msg ok';m.textContent='검증 통과 — 아래 미리보기를 확인하고 일괄 등록을 누르세요.';
     }catch(e){m.className='msg err';m.textContent='파일을 읽지 못했습니다: '+(e&&e.message||e);}
@@ -845,7 +850,7 @@
       if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';return;}
       txnMap={};items.forEach(t=>txnMap[t.id]=t);
       b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색</div>
-        <table><thead><tr><th>일자</th><th>구분</th><th>계좌</th><th>계정과목</th><th class="num">금액 (MXN)</th><th>상태</th><th>고객명</th><th>SAT 번호</th></tr></thead>
+        <table><thead><tr><th>일자</th><th>구분</th><th>계좌</th><th>계정과목</th><th class="num">금액 (MXN)</th><th>상태</th><th>고객명</th><th>SAT 번호</th><th>영수증</th></tr></thead>
         <tbody>${items.map(t=>{
           const usd=t.currency==='USD';
           const amtColor=t.direction==='in'?'var(--income)':'var(--expense)';
@@ -875,8 +880,9 @@
                         : '<span style="font-family:monospace">'+t.sat_no+'</span>')
                     : '<span style="color:var(--muted)">미발급</span>')
                 : (t.memo||'')}</td>
+            <td style="font-family:monospace;font-size:12px">${t.receipt_no||''}</td>
           </tr>
-          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="8" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
+          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="9" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
         const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
         if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));}
@@ -953,6 +959,7 @@
           <div><label>환율(USD)</label><input class="e-fx" type="number" step="0.0001" value="${t.currency==='USD'?t.fx_rate:''}" placeholder="오늘 환율"></div>
         </div>
         <div class="row"><div style="flex:3"><label>메모</label><input class="e-memo" type="text" value="${t.memo||''}"></div>
+          <div style="flex:2"><label>영수증 번호</label><input class="e-receipt" type="text" value="${(t.receipt_no||'').replace(/"/g,'&quot;')}"></div>
           ${directEdit?'':'<div style="flex:2"><label>변경 사유</label><input class="e-reason" type="text" placeholder="디렉터 검토용"></div>'}</div>
         <div style="margin-top:10px;display:flex;gap:8px">
           <button class="btn e-submit">${directEdit?'수정 저장':'수정요청 제출'}</button>
@@ -974,7 +981,8 @@
       txn_date:box.querySelector('.e-date').value,direction:box.querySelector('.e-dir').value,
       currency:cur,amount:Number(box.querySelector('.e-amt').value)||0,
       fx_rate:cur==='USD'?(Number(box.querySelector('.e-fx').value)||fxRate):1,
-      category_code:box.querySelector('.e-cat').value||null,memo:box.querySelector('.e-memo').value.trim()||null};
+      category_code:box.querySelector('.e-cat').value||null,memo:box.querySelector('.e-memo').value.trim()||null,
+      receipt_no:box.querySelector('.e-receipt').value.trim()||null};
     if(!(payload.amount>0)){m.className='msg e-msg err';m.style.display='block';m.textContent='금액을 확인하세요.';return;}
     try{
       let res;
@@ -1085,7 +1093,8 @@
           <tr><td style="color:var(--muted)">거래일</td><td>${o.txn_date}</td></tr>
           <tr><td style="color:var(--muted)">계정과목</td><td>${o.category_code||'—'} ${o.category_name||''}</td></tr>
           <tr><td style="color:var(--muted)">금액</td><td>${money(o.amount,o.currency,o.amount_mxn)}</td></tr>
-          <tr><td style="color:var(--muted)">메모</td><td>${o.memo||''}</td></tr></table>
+          <tr><td style="color:var(--muted)">메모</td><td>${o.memo||''}</td></tr>
+          <tr><td style="color:var(--muted)">영수증 번호</td><td>${o.receipt_no||''}</td></tr></table>
           <div class="hint" style="color:var(--expense)">승인하면 이 거래가 삭제되고 계좌 잔액에서 빠집니다.</div>`;
       }else{
         const n=d.next;
@@ -1095,7 +1104,8 @@
           ${fldRow('거래일',o.txn_date,n.txn_date)}
           ${fldRow('계정과목',(o.category_code||'—')+' '+(o.category_name||''),(n.category_code||'—'))}
           ${fldRow('금액',money(o.amount,o.currency,o.amount_mxn),money(n.amount,n.currency,n.amount_mxn))}
-          ${fldRow('메모',o.memo||'',n.memo||'')}</table>
+          ${fldRow('메모',o.memo||'',n.memo||'')}
+          ${fldRow('영수증 번호',o.receipt_no||'',n.receipt_no||'')}</table>
           <div class="hint">승인하면 변경 내용이 거래에 반영되고 계좌 잔액이 재계산됩니다.</div>`;
       }
       box.innerHTML=`${rows}
@@ -2109,6 +2119,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703bi2"></script>
+<script src="refatrix-nav.js?v=20260703bi3"></script>
 </body>
 </html>

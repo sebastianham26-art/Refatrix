@@ -127,10 +127,11 @@ export default async function financeRoutes(app) {
     const approved = !(direction === 'out' && !isDirector);
     const r = await query(
       `INSERT INTO transactions
-         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14) RETURNING id`,
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15) RETURNING id`,
       [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
-       status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null]);
+       status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null,
+       (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
   });
@@ -185,7 +186,8 @@ export default async function financeRoutes(app) {
       const approved = !(direction === 'out' && !isDirector);
       prepared.push({ accountId, txn_date: b.txn_date, direction, amount: r2(amount), currency, fx,
         amountMxn: r2(amount * fx), categoryCode, status, approved,
-        memo: (b.memo == null || String(b.memo).trim() === '') ? null : String(b.memo).trim().slice(0, 500) });
+        memo: (b.memo == null || String(b.memo).trim() === '') ? null : String(b.memo).trim().slice(0, 500),
+        receiptNo: (b.receipt_no == null || String(b.receipt_no).trim() === '') ? null : String(b.receipt_no).trim().slice(0, 60) });
     }
     if (errors.length) return reply.code(400).send({ error: 'validation_failed', errors: errors.slice(0, 50), total_errors: errors.length });
     const userId = req.ctx.perm.userId;
@@ -195,10 +197,10 @@ export default async function financeRoutes(app) {
       for (const p of prepared) {
         const r = await run(
           `INSERT INTO transactions
-             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14) RETURNING id`,
+             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15) RETURNING id`,
           [p.accountId, p.txn_date, p.direction, p.amount, p.currency, p.fx, p.amountMxn, p.categoryCode, p.status, p.approved, userId, p.memo,
-           p.status === 'plan' ? p.amount : null, p.status === 'plan' ? p.txn_date : null]);
+           p.status === 'plan' ? p.amount : null, p.status === 'plan' ? p.txn_date : null, p.receiptNo]);
         out.push(Number(r.rows[0].id));
       }
       return out;
@@ -228,7 +230,7 @@ export default async function financeRoutes(app) {
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
-              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.sales_invoice_id,
+              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
               t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
               si.sat_no AS sat_no, c.name AS customer_name,
               (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
@@ -312,9 +314,11 @@ export default async function financeRoutes(app) {
     const { fx, amountMxn } = await calcMxn(currency, amount, b.fx_rate, t.status, txnDate);
     await query(
       `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
-         category_code=$8, memo=$9, updated_by=$10 WHERE id=$11`,
+         category_code=$8, memo=$9, receipt_no=$10, updated_by=$11 WHERE id=$12`,
       [b.account_id ?? t.account_id, b.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
-       b.category_code ?? t.category_code, b.memo ?? t.memo, req.ctx.perm.userId, id]);
+       b.category_code ?? t.category_code, b.memo ?? t.memo,
+       b.receipt_no !== undefined ? ((b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
+       req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { direct_edit: true } });
     return { ok: true };
   });
@@ -378,7 +382,7 @@ export default async function financeRoutes(app) {
     const orig = {
       account_id: t.account_id, account_name: t.account_name, txn_date: String(t.txn_date).slice(0, 10), direction: t.direction,
       amount: Number(t.amount), currency: t.currency, fx_rate: Number(t.fx_rate), amount_mxn: Number(t.amount_mxn),
-      category_code: t.category_code, category_name: t.category_name, memo: t.memo,
+      category_code: t.category_code, category_name: t.category_name, memo: t.memo, receipt_no: t.receipt_no,
     };
     if (cr.req_type === 'delete') return { type: 'delete', reason: cr.reason, orig };
     const p = typeof cr.payload === 'string' ? JSON.parse(cr.payload) : (cr.payload || {});
@@ -393,6 +397,7 @@ export default async function financeRoutes(app) {
     const next = {
       account_id: p.account_id ?? t.account_id, account_name: accName, txn_date: p.txn_date || orig.txn_date, direction,
       amount, currency, fx_rate: fx, amount_mxn: amountMxn, category_code: p.category_code ?? t.category_code, memo: p.memo ?? t.memo,
+      receipt_no: p.receipt_no !== undefined ? p.receipt_no : t.receipt_no,
     };
     return { type: 'edit', reason: cr.reason, orig, next };
   });
@@ -423,9 +428,11 @@ export default async function financeRoutes(app) {
         const amountMxn = r2(amount * fx);
         await c.query(
           `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
-             category_code=$8, memo=$9, change_status=NULL, updated_by=$10 WHERE id=$11`,
+             category_code=$8, memo=$9, receipt_no=$10, change_status=NULL, updated_by=$11 WHERE id=$12`,
           [p.account_id ?? t.account_id, p.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
-           p.category_code ?? t.category_code, p.memo ?? t.memo, userId, t.id]);
+           p.category_code ?? t.category_code, p.memo ?? t.memo,
+           p.receipt_no !== undefined ? ((p.receipt_no && String(p.receipt_no).trim()) ? String(p.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
+           userId, t.id]);
       }
       await c.query(`UPDATE txn_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [userId, reqId]);
       return { ok: true, type: cr.req_type };
