@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703m</title>
+<title>Refatrix ERP · 재무 · build fin-0703n</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -77,6 +77,24 @@
   .tabs{display:flex;gap:8px;margin-top:6px}
   .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
   .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  /* ===== 월 자금 리포트 ===== */
+  .rp-sumgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+  @media(max-width:720px){.rp-sumgrid{grid-template-columns:repeat(2,1fr)}}
+  .rp-sumcard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fbfaf6}
+  .rp-sumcard .k{font-size:11.5px;color:var(--muted);font-weight:600}
+  .rp-sumcard .v{font-size:19px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums}
+  .rp-sumcard .d{font-size:11.5px;margin-top:3px;font-weight:700}
+  .rp-gauge{background:#eee9de;border-radius:6px;height:14px;position:relative;overflow:hidden;min-width:110px}
+  .rp-gauge>i{position:absolute;left:0;top:0;bottom:0;background:var(--income);border-radius:6px}
+  .rp-gauge>i.over{background:var(--expense)}
+  .rp-gauge>b{position:absolute;right:6px;top:0;font-size:10.5px;line-height:14px;color:#333}
+  .rp-hm0{background:#fff}.rp-hm1{background:#fdf3f1}.rp-hm2{background:#fae3df}.rp-hm3{background:#f5cdc6}
+  .rp-arr{font-size:10.5px;font-weight:700;margin-left:3px}
+  .rp-cell{cursor:pointer}
+  .rp-cell:hover{outline:2px solid var(--brand);outline-offset:-2px}
+  .rp-drill{background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:8px}
+  .rp-exrow{opacity:.55}
+  .rp-mom-wrap{overflow-x:auto}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -108,6 +126,7 @@
       <div class="tab" id="tabFixed">고정비</div>
       <div class="tab" id="tabCash">현금흐름</div>
       <div class="tab" id="tabFx">환율</div>
+      <div class="tab hidden" id="tabReport">월 리포트</div>
       <div class="tab" id="tabApprove">승인 대기</div>
     </div>
 
@@ -359,6 +378,17 @@
     </div>
 
     <!-- 승인 대기 -->
+    <div class="card hidden" id="reportCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">월 자금 리포트 <span class="hint" style="margin:0">디렉터 전용 · 잔액은 실제 장부, 분석치는 「분석 제외」 반영</span></h2>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn ghost sm" id="rp-prev">◀</button>
+          <input type="month" id="rp-month" style="width:150px">
+          <button class="btn ghost sm" id="rp-next">▶</button>
+        </div>
+      </div>
+      <div id="rp-body"><div class="hint">불러오는 중…</div></div>
+    </div>
     <div class="card hidden" id="apprCard">
       <h2>지출 승인 대기 (디렉터)</h2>
       <div id="apprBody"><div class="hint">불러오는 중…</div></div>
@@ -2148,8 +2178,156 @@
     });
   })();
 
+  // ===== 월 자금 리포트 (디렉터 전용) =====
+  let rpData=null, rpPvaOpen={}, rpMomCell=null, rpFilter='all';
+  function rpShift(n){const [y,m]=$('rp-month').value.split('-').map(Number);const d=new Date(Date.UTC(y,m-1+n,1));$('rp-month').value=d.toISOString().slice(0,7);loadReport();}
+  function rpBadgeMom(p){ // 전월비 뱃지: +빨강(지출 증가) −초록(감소) 신규/–
+    if(p===null)return '<span class="badge" style="background:#ede4f7;color:#6b3fa0">신규</span>';
+    if(p===0)return '<span class="badge" style="background:#f0eee8;color:var(--muted)">전월 0</span>';
+    const up=p>0;
+    return `<span class="badge" style="background:${up?'#fde0db':'#e7f3ee'};color:${up?'var(--expense)':'var(--income)'}">${up?'▲':'▼'} 전월비 ${up?'+':''}${p}%</span>`;
+  }
+  function rpGauge(rate){
+    if(rate===null)return '<span class="hint" style="margin:0">계획 없음</span>';
+    const w=Math.min(rate,100), over=rate>100;
+    return `<div class="rp-gauge"><i class="${over?'over':''}" style="width:${w}%"></i><b style="${w>55?'color:#fff':''}">${rate}%</b></div>`;
+  }
+  async function rpExclude(id,excluded){
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/report-exclude',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({excluded})});
+      if(!res.ok)throw 0;
+      loadReport();
+    }catch(e){alert('변경하지 못했습니다.');}
+  }
+  window.rpExclude=rpExclude;
+  function rpItemRows(items,showStatus){ // 드릴다운 공용 행(제외건 회색 + 복원 버튼)
+    return items.map(x=>`<tr class="${x.excluded?'rp-exrow':''}">
+      <td>${x.date}</td>
+      <td>${showStatus?(x.status==='plan'?'<span class="badge" style="background:#fff0d6;color:#9a6512">예정</span> ':''):''}${x.recurring?'<span class="badge" style="background:#e6f1fb;color:#0c447c">고정비</span> ':''}${(x.memo||'<span class="hint" style="margin:0">(메모 없음)</span>')}</td>
+      <td class="num">${fmt(x.amount_mxn)}</td>
+      <td style="white-space:nowrap">${x.status==='plan'?'':(x.excluded
+        ?'<span class="badge" style="background:#f0eee8;color:var(--muted)">분석 제외됨</span> <button class="btn ghost sm" onclick="rpExclude('+x.id+',false)">복원</button>'
+        :'<button class="btn ghost sm" onclick="rpExclude('+x.id+',true)">분석 제외</button>')}</td>
+    </tr>`).join('');
+  }
+  async function loadReport(){
+    const b=$('rp-body');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const month=$('rp-month').value||new Date().toISOString().slice(0,7);
+      rpData=await fetch(session.api+'/api/monthly-report?month='+month,{headers:auth()}).then(r=>r.json());
+      renderReport();
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderReport(){
+    const d=rpData;if(!d){return;}
+    const b=$('rp-body');
+    const s=d.summary;const net=r2c(s.closing-s.opening);
+    const pct=(cur,prev)=>prev>0?Math.round(((cur-prev)/prev)*1000)/10:null;
+    const dchip=(cur,prev,goodDown)=>{const p=pct(cur,prev);if(p===null)return '<span class="d hint" style="margin:0">전월 데이터 없음</span>';
+      const up=p>0;const good=goodDown?!up:up;
+      return `<span class="d" style="color:${good?'var(--income)':'var(--expense)'}">${up?'▲':'▼'} 전월 대비 ${up?'+':''}${p}%</span>`;};
+    const exN=(d.excluded_items||[]).length, exSum=r2c((d.excluded_items||[]).reduce((t,x)=>t+x.amount_mxn,0));
+    // ① 요약
+    let html=`<div class="rp-sumgrid">
+      <div class="rp-sumcard"><div class="k">기초 잔액 (${d.month}-01)</div><div class="v">${fmt(s.opening)}</div><div class="d hint" style="margin:0">MXN · 실제 장부(제외 무관)</div></div>
+      <div class="rp-sumcard"><div class="k">실제 수입 (분석)</div><div class="v" style="color:var(--income)">+${fmt(s.in_month)}</div>${dchip(s.in_month,s.in_prev,false)}</div>
+      <div class="rp-sumcard"><div class="k">실제 지출 (분석)</div><div class="v" style="color:var(--expense)">−${fmt(s.out_month)}</div>${dchip(s.out_month,s.out_prev,true)}</div>
+      <div class="rp-sumcard"><div class="k">기말 잔액</div><div class="v">${fmt(s.closing)}</div><div class="d ${net>=0?'':''}" style="color:${net>=0?'var(--income)':'var(--expense)'}">순증 ${net>=0?'+':''}${fmt(net)}</div></div>
+    </div>
+    ${exN?`<div class="hint" style="margin-top:8px">🔎 분석 제외 ${exN}건 · ${fmt(exSum)} MXN — <a href="#" id="rp-exlist-toggle" style="color:var(--brand)">목록 보기</a></div>
+    <div id="rp-exlist" class="rp-drill hidden"><b style="font-size:13px">분석 제외 목록 (${d.month})</b>
+      <table><thead><tr><th>일자</th><th>내용</th><th class="num">MXN</th><th></th></tr></thead><tbody>
+      ${d.excluded_items.map(x=>`<tr class="rp-exrow"><td>${x.date}</td><td>${x.category} · ${x.memo||'(메모 없음)'}</td><td class="num">${fmt(x.amount_mxn)}</td><td><button class="btn ghost sm" onclick="rpExclude(${x.id},false)">복원</button></td></tr>`).join('')}
+      </tbody></table></div>`:''}`;
+
+    // ② 계획 vs 실적 + 전월비 뱃지 + 드릴다운
+    const rows=d.pva.rows.filter(r=>rpFilter==='all'?true:rpFilter==='recurring'?r.recurring:!r.recurring);
+    html+=`<div style="margin-top:20px"><h2 style="margin:0 0 4px;font-size:15px;color:var(--brand)">② 계획 vs 실적 — 이번 달 지출 집행</h2>
+      <div class="hint" style="margin:0 0 8px">행 클릭 → 세부 내역(분석 제외 지정/복원). 실적·전월비는 제외 반영.
+      <span class="seg" style="margin-left:8px">${['all','recurring','other'].map(f=>`<button class="segb ${rpFilter===f?'on':''}" data-rpf="${f}">${f==='all'?'전체':f==='recurring'?'고정비':'기타'}</button>`).join('')}</span></div>
+      <table><thead><tr><th>계정과목</th><th class="num">계획</th><th class="num">실제</th><th class="num">차이</th><th style="width:140px">집행률</th><th>전월비</th></tr></thead><tbody>
+      ${rows.map((r,i)=>{
+        const key=r.code||'none';
+        return `<tr class="rp-pva-row" data-k="${key}" style="cursor:pointer;${r.plan>0&&r.actual===0?'background:#fffdf5':''}">
+          <td>${r.code?r.code+' · ':''}${r.name}${r.plan>0&&r.actual===0?' <span class="badge" style="background:#fff0d6;color:#9a6512">미집행</span>':''}</td>
+          <td class="num">${r.plan?fmt(r.plan):'—'}</td><td class="num">${fmt(r.actual)}</td>
+          <td class="num" style="color:${r.diff>0?'var(--expense)':r.diff<0?'var(--income)':'inherit'}">${r.diff>0?'+':''}${r.diff?fmt(r.diff):'0'}</td>
+          <td>${rpGauge(r.rate)}</td><td>${rpBadgeMom(r.mom_pct)}</td></tr>
+        <tr class="rp-pva-det ${rpPvaOpen[key]?'':'hidden'}" data-k="${key}"><td colspan="6" style="padding:0;border:none"><div class="rp-drill" style="margin:6px 0 10px">
+          <table><thead><tr><th>일자</th><th>내용</th><th class="num">MXN</th><th style="width:140px"></th></tr></thead><tbody>${rpItemRows(r.items,true)}</tbody></table>
+        </div></td></tr>`;}).join('')}
+      <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td><td class="num">${fmt(d.pva.total.plan)}</td><td class="num">${fmt(d.pva.total.actual)}</td>
+        <td class="num">${d.pva.total.diff>0?'+':''}${fmt(d.pva.total.diff)}</td><td>${rpGauge(d.pva.total.rate)}</td><td></td></tr>
+      </tbody></table></div>`;
+
+    // ③ 월간 지출 비교 + 셀 드릴다운(메모 기준)
+    const ms=d.months;const mLabel=m=>Number(m.slice(5))+'월';
+    const rowMax=r=>Math.max(...ms.map(m=>r.vals[m]||0),1);
+    const hm=(v,mx)=>v===0?'rp-hm0':v>=mx*0.85?'rp-hm3':v>=mx*0.5?'rp-hm2':'rp-hm1';
+    const arr=(r,i)=>{if(i===0)return '';const cur=r.vals[ms[i]]||0,prev=r.vals[ms[i-1]]||0;if(prev<=0||Math.abs(cur-prev)/prev<0.1)return '';
+      return `<span class="rp-arr" style="color:${cur>prev?'var(--expense)':'var(--income)'}">${cur>prev?'▲':'▼'}</span>`;};
+    html+=`<div style="margin-top:22px"><h2 style="margin:0 0 4px;font-size:15px;color:var(--brand)">③ 월간 지출 비교 — 어디에 돈이 늘고 있나 (최근 6개월)</h2>
+      <div class="hint" style="margin:0 0 8px">실적만·분석 제외 반영. 셀 음영=행 내 상대 크기, 화살표=전월 대비 ±10% 이상. <b>셀 클릭 → 메모별 세부 드릴다운</b></div>
+      <div class="rp-mom-wrap"><table><thead><tr><th>계정과목</th>${ms.map((m,i)=>`<th class="num">${i===5?'<b>'+mLabel(m)+'</b>':mLabel(m)}</th>`).join('')}<th class="num">6개월 합</th></tr></thead><tbody>
+      ${d.mom.rows.map(r=>{const mx=rowMax(r);
+        return `<tr><td>${r.code?r.code+' · ':''}${r.name}</td>
+          ${ms.map((m,i)=>`<td class="num rp-cell ${hm(r.vals[m]||0,mx)}" data-ym="${m}" data-k="${r.code||''}">${r.vals[m]?fmt(r.vals[m]):'<span class="hint" style="margin:0">—</span>'}${arr(r,i)}</td>`).join('')}
+          <td class="num"><b>${fmt(r.total)}</b></td></tr>`;}).join('')}
+      <tr style="border-top:2px solid var(--line);font-weight:700"><td>지출 합계</td>${d.mom.totals.map(v=>`<td class="num">${fmt(v)}</td>`).join('')}<td class="num">${fmt(r2c(d.mom.totals.reduce((a,b)=>a+b,0)))}</td></tr>
+      </tbody></table></div>
+      <div id="rp-mom-drill"></div></div>`;
+
+    // ④ Top 지출 + ⑤ 미집행
+    html+=`<div style="margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:20px" class="rp-two">
+      <div><h2 style="margin:0 0 4px;font-size:15px;color:var(--brand)">④ 이번 달 Top 지출</h2><div class="hint" style="margin:0">단일 거래 Top 10 · 제외 반영</div>
+        <table><thead><tr><th>일자</th><th>내용</th><th class="num">MXN</th></tr></thead><tbody>
+        ${d.top.length?d.top.map(x=>`<tr><td>${x.date}</td><td>${x.category} · ${x.memo||'(메모 없음)'}</td><td class="num">${fmt(x.amount_mxn)}</td></tr>`).join(''):'<tr><td colspan="3" class="hint">지출 없음</td></tr>'}
+        </tbody></table></div>
+      <div><h2 style="margin:0 0 4px;font-size:15px;color:var(--brand)">⑤ 미집행 계획</h2><div class="hint" style="margin:0">이 달 계획됐지만 실행 안 된 예정 — 이월/취소 판단</div>
+        <table><thead><tr><th>계획일</th><th>내용</th><th class="num">MXN</th></tr></thead><tbody>
+        ${d.unexecuted.length?d.unexecuted.map(x=>`<tr><td>${x.plan_date}</td><td>${x.recurring?'<span class="badge" style="background:#e6f1fb;color:#0c447c">고정비</span> ':''}${x.category} · ${x.memo||'(메모 없음)'}</td><td class="num">${fmt(x.amount_mxn)}</td></tr>`).join(''):'<tr><td colspan="3" class="hint">전부 집행됨 🎉</td></tr>'}
+        </tbody></table>
+        ${d.unexecuted.length?`<div class="hint">합계 ${fmt(r2c(d.unexecuted.reduce((t,x)=>t+x.amount_mxn,0)))} MXN</div>`:''}</div>
+    </div>`;
+    b.innerHTML=html;
+
+    // 바인딩
+    const ex=$('rp-exlist-toggle');if(ex)ex.onclick=(e)=>{e.preventDefault();$('rp-exlist').classList.toggle('hidden');};
+    [...b.querySelectorAll('[data-rpf]')].forEach(x=>x.onclick=()=>{rpFilter=x.dataset.rpf;renderReport();});
+    [...b.querySelectorAll('.rp-pva-row')].forEach(row=>row.onclick=()=>{const k=row.dataset.k;rpPvaOpen[k]=!rpPvaOpen[k];
+      b.querySelector(`.rp-pva-det[data-k="${k}"]`).classList.toggle('hidden',!rpPvaOpen[k]);});
+    [...b.querySelectorAll('.rp-cell')].forEach(c=>c.onclick=()=>{rpMomCell={ym:c.dataset.ym,k:c.dataset.k};renderMomDrill();});
+    if(rpMomCell)renderMomDrill();
+  }
+  function r2c(n){return Math.round((Number(n)+Number.EPSILON)*100)/100;}
+  function renderMomDrill(){
+    const box=$('rp-mom-drill');if(!rpMomCell||!rpData){box.innerHTML='';return;}
+    const {ym,k}=rpMomCell;const items=(rpData.mom.items[ym+'|'+k]||[]);
+    const row=rpData.mom.rows.find(r=>(r.code||'')===k);
+    if(!items.length){box.innerHTML='';return;}
+    // 메모 기준 그룹핑(고정비 접두 제거·빈 메모는 "(메모 없음)")
+    const g=new Map();
+    for(const x of items){
+      const m=(x.memo||'').replace(/^\[고정비\]\s*/,'').trim()||'(메모 없음)';
+      if(!g.has(m))g.set(m,{memo:m,sum:0,exsum:0,rows:[]});
+      const e=g.get(m); if(x.excluded)e.exsum=r2c(e.exsum+x.amount_mxn); else e.sum=r2c(e.sum+x.amount_mxn); e.rows.push(x);
+    }
+    const groups=[...g.values()].sort((a,b)=>(b.sum+b.exsum)-(a.sum+a.exsum));
+    box.innerHTML=`<div class="rp-drill" style="margin-top:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <b style="font-size:13.5px">${ym} · ${row?((row.code?row.code+' · ':'')+row.name):k} — 메모별 세부</b>
+        <button class="btn ghost sm" id="rp-mom-close">닫기</button></div>
+      ${groups.map(grp=>`<div style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;border-bottom:2px solid var(--line);padding-bottom:4px">
+          <span>${grp.memo} <span class="hint" style="margin:0">(${grp.rows.length}건)</span></span>
+          <span style="font-variant-numeric:tabular-nums">${fmt(grp.sum)}${grp.exsum?` <span class="hint" style="margin:0">+ 제외 ${fmt(grp.exsum)}</span>`:''} MXN</span></div>
+        <table style="margin-top:2px"><tbody>${rpItemRows(grp.rows,false)}</tbody></table></div>`).join('')}
+    </div>`;
+    $('rp-mom-close').onclick=()=>{rpMomCell=null;box.innerHTML='';};
+  }
+
   function showTab(w){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
-    ['Acc','New','Txn','Pay','Fixed','Cash','Fx','Approve'].forEach(x=>$('tab'+x).classList.toggle('on',x.toLowerCase()===w));
+    ['Acc','New','Txn','Pay','Fixed','Cash','Fx','Report','Approve'].forEach(x=>$('tab'+x).classList.toggle('on',x.toLowerCase()===w));
     $('accCard').classList.toggle('hidden',w!=='acc');
     $('newCard').classList.toggle('hidden',w!=='new');
     $('txnCard').classList.toggle('hidden',w!=='txn');
@@ -2157,6 +2335,7 @@
     $('fixedCard').classList.toggle('hidden',w!=='fixed');
     $('cashCard').classList.toggle('hidden',w!=='cash');
     $('fxCard').classList.toggle('hidden',w!=='fx');
+    $('reportCard').classList.toggle('hidden',w!=='report');
     $('apprCard').classList.toggle('hidden',w!=='approve');
     if(w==='new'){loadPendingPlans();loadBdp();}
     if(w==='txn')loadTxns();
@@ -2164,13 +2343,14 @@
     if(w==='fixed'){loadFixed();loadVariance();}
     if(w==='cash'){loadCashAll();}
     if(w==='fx'){if(!$('fx-from').value){fxDefaultRange(90);}fxRenderTop();if(fxMode==='mxnkrw'&&usdKrw==null){loadKrwRate().then(fxRenderTop);}loadFxSummary();}
+    if(w==='report'){if(!$('rp-month').value)$('rp-month').value=new Date().toISOString().slice(0,7);loadReport();}
     if(w==='approve'){loadApprovals();loadChangeReqs();}
     if(w==='acc')loadAccounts();
   }
   // 헤더(트리) 딥링크: #tab=acc/new/txn/pay/fixed/cash/fx/approve
   function applyHashTab(){
     var t='acc'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'acc'; }catch(e){}
-    var valid=['acc','new','txn','pay','fixed','cash','fx','approve'];
+    var valid=['acc','new','txn','pay','fixed','cash','fx','report','approve'];
     showTab(valid.indexOf(t)>=0?t:'acc');
   }
   window.addEventListener('hashchange',function(){ if(!$('app').classList.contains('hidden')) applyHashTab(); });
@@ -2188,6 +2368,10 @@
   $('tabFixed').addEventListener('click',()=>showTab('fixed'));
   $('tabCash').addEventListener('click',()=>showTab('cash'));
   $('tabFx').addEventListener('click',()=>showTab('fx'));
+  $('tabReport').addEventListener('click',()=>showTab('report'));
+  $('rp-prev').addEventListener('click',()=>rpShift(-1));
+  $('rp-next').addEventListener('click',()=>rpShift(1));
+  $('rp-month').addEventListener('change',loadReport);
   $('tabApprove').addEventListener('click',()=>showTab('approve'));
   $('fx-go').addEventListener('click',loadFxSummary);
   ['fxMode-usdmxn','fxMode-mxnkrw'].forEach(id=>$(id).addEventListener('click',()=>setFxMode($(id).dataset.mode)));
@@ -2212,6 +2396,7 @@
   $('rxAddBtn').addEventListener('click',async ()=>{
     $('rxForm').classList.toggle('hidden');
     $('rx-privbox').classList.toggle('hidden',!isDirector());
+    $('tabReport').classList.toggle('hidden',!isDirector());
     if(!accounts||!accounts.length){await loadAccounts();}
     $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
     $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
@@ -2243,6 +2428,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703mw"></script>
+<script src="refatrix-nav.js?v=20260703mx"></script>
 </body>
 </html>

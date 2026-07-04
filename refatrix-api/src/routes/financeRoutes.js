@@ -1451,7 +1451,7 @@ export default async function financeRoutes(app) {
     return (await query(
       `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
               t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
-              t.recurring_rule_id, t.sales_invoice_id, t.account_id, a.name AS account_name, t.memo, t.approved,
+              t.recurring_rule_id, t.sales_invoice_id, t.account_id, a.name AS account_name, t.memo, t.approved, t.report_excluded,
               (t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_amount_mxn
          FROM transactions t
          LEFT JOIN categories cat ON cat.code=t.category_code
@@ -1668,6 +1668,149 @@ export default async function financeRoutes(app) {
     });
     const breakdown = monthBreakdown(mapped, month, today);
     return { month, today, opening_before_month: r2(runBefore), days, ...breakdown };
+  });
+
+  // ===== 월 자금 리포트 (디렉터 전용) =====
+  // 잔액(기초·기말)은 실제 장부(제외 무관, 보완분 포함). 분석치(요약 증감·계획대비·MoM·Top)는
+  // report_excluded=true 인 실적 지출을 제외한다. 지출 중심(수입은 요약 총액만).
+  app.get('/api/monthly-report', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : new Date().toISOString().slice(0, 7);
+    const ymAdd = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+    const prevMonth = ymAdd(month, -1);
+    const moms = [];                                 // 오래된 → 최신 6개월
+    for (let i = 5; i >= 0; i--) moms.push(ymAdd(month, -i));
+    const momStart = moms[0] + '-01';
+    const monthStart = month + '-01';
+    const nextStart = ymAdd(month, 1) + '-01';
+
+    const txns = await loadCashTxns(req.ctx.perm);   // 디렉터: 전 계좌(세부차단 제외), 비공개 포함
+    const hidden = (await loadHiddenBalanceTxns(req.ctx.perm)); // 잔액 보완분(세부차단 계좌 등)
+    const opening0 = await openingBalanceMxn(req.ctx.perm);
+
+    const mxn = (t) => Number(t.amount_mxn) || 0;
+    const pMxn = (t) => t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : 0;
+    const ymOf = (d) => String(d).slice(0, 7);
+    const planDate = (t) => String(t.plan_date || t.txn_date).slice(0, 10);
+    const catKey = (t) => t.category_code || '';
+    const catName = (t) => t.category_name || t.category_code || '(계정없음)';
+    const excl = (t) => t.report_excluded === true;
+
+    // --- 잔액(실제): 기초 = 개설잔액 + 월시작 전 실적 순액(보완분 포함), 기말 = 기초 + 당월 실적 순액 ---
+    let opening = opening0, monthNetReal = 0;
+    for (const t of txns) {
+      if (t.status !== 'actual') continue;
+      const d = String(t.txn_date).slice(0, 10);
+      const sgn = t.direction === 'in' ? 1 : -1;
+      if (d < monthStart) opening += sgn * mxn(t);
+      else if (d < nextStart) monthNetReal += sgn * mxn(t);
+    }
+    for (const t of hidden) {
+      if (t.status !== 'actual') continue;
+      const d = String(t.txn_date).slice(0, 10);
+      const sgn = t.direction === 'in' ? 1 : -1;
+      const v = Number(t.amount_mxn) || 0;
+      if (d < monthStart) opening += sgn * v;
+      else if (d < nextStart) monthNetReal += sgn * v;
+    }
+    const closing = opening + monthNetReal;
+
+    // --- 분석용 월 수입/지출(제외 반영) — 당월·전월 ---
+    const sums = { in_month: 0, out_month: 0, in_prev: 0, out_prev: 0 };
+    for (const t of txns) {
+      if (t.status !== 'actual' || excl(t)) continue;
+      const ym = ymOf(t.txn_date);
+      if (ym === month) { t.direction === 'in' ? sums.in_month += mxn(t) : sums.out_month += mxn(t); }
+      else if (ym === prevMonth) { t.direction === 'in' ? sums.in_prev += mxn(t) : sums.out_prev += mxn(t); }
+    }
+
+    // --- ② 계획 vs 실적 (지출, 계정과목별) + 전월비 ---
+    const pvaMap = new Map();
+    const pvaRow = (t) => {
+      const k = catKey(t);
+      if (!pvaMap.has(k)) pvaMap.set(k, { code: k, name: catName(t), plan: 0, actual: 0, prev_actual: 0, recurring: false, items: [] });
+      return pvaMap.get(k);
+    };
+    for (const t of txns) {
+      if (t.direction !== 'out') continue;
+      const pd = planDate(t), pym = pd.slice(0, 7);
+      const isPlanSide = pMxn(t) > 0 || t.status === 'plan';
+      if (isPlanSide && pym === month) {                     // 당월 계획(예정 + 실적화된 계획분)
+        const row = pvaRow(t);
+        row.plan = r2(row.plan + (pMxn(t) || (t.status === 'plan' ? mxn(t) : 0)));
+        if (t.recurring_rule_id) row.recurring = true;
+      }
+      if (t.status === 'actual') {
+        const ym = ymOf(t.txn_date);
+        if (ym === month && !excl(t)) { const row = pvaRow(t); row.actual = r2(row.actual + mxn(t)); }
+        if (ym === prevMonth && !excl(t)) { const row = pvaRow(t); row.prev_actual = r2(row.prev_actual + mxn(t)); }
+      }
+      // 드릴다운 항목: 당월에 걸린 지출(계획일 또는 실행일 기준) 전부 — 제외건 포함(복원용)
+      const touch = (t.status === 'actual' ? ymOf(t.txn_date) : pym) === month;
+      if (touch) {
+        pvaRow(t).items.push({ id: t.id, date: t.status === 'actual' ? String(t.txn_date).slice(0, 10) : pd,
+          status: t.status, memo: t.memo || '', amount_mxn: r2(t.status === 'actual' ? mxn(t) : (pMxn(t) || mxn(t))),
+          recurring: !!t.recurring_rule_id, excluded: excl(t) });
+      }
+    }
+    const pvaRows = [...pvaMap.values()].filter((r) => r.plan !== 0 || r.actual !== 0 || r.prev_actual !== 0 || r.items.length)
+      .map((r) => ({ ...r, plan: r2(r.plan), actual: r2(r.actual), diff: r2(r.actual - r.plan),
+        rate: r.plan > 0 ? Math.round((r.actual / r.plan) * 100) : null,
+        mom_pct: r.prev_actual > 0 ? Math.round(((r.actual - r.prev_actual) / r.prev_actual) * 1000) / 10 : (r.actual > 0 ? null : 0),
+        items: r.items.sort((a, b) => b.amount_mxn - a.amount_mxn) }))
+      .sort((a, b) => b.plan - a.plan || b.actual - a.actual);
+    const pvaTotal = { plan: r2(pvaRows.reduce((s, r) => s + r.plan, 0)), actual: r2(pvaRows.reduce((s, r) => s + r.actual, 0)) };
+    pvaTotal.diff = r2(pvaTotal.actual - pvaTotal.plan);
+    pvaTotal.rate = pvaTotal.plan > 0 ? Math.round((pvaTotal.actual / pvaTotal.plan) * 100) : null;
+
+    // --- ③ 월간 지출 비교(최근 6개월, 실적·제외 반영) + 셀 드릴다운 ---
+    const momMap = new Map(); const momItems = {};
+    for (const t of txns) {
+      if (t.direction !== 'out' || t.status !== 'actual') continue;
+      const d = String(t.txn_date).slice(0, 10);
+      if (d < momStart || d >= nextStart) continue;
+      const ym = ymOf(d), k = catKey(t);
+      if (!momMap.has(k)) momMap.set(k, { code: k, name: catName(t), vals: Object.fromEntries(moms.map((m) => [m, 0])), total: 0 });
+      const row = momMap.get(k);
+      if (!excl(t)) { row.vals[ym] = r2(row.vals[ym] + mxn(t)); row.total = r2(row.total + mxn(t)); }
+      const ck = ym + '|' + k;
+      (momItems[ck] = momItems[ck] || []).push({ id: t.id, date: d, memo: t.memo || '', amount_mxn: r2(mxn(t)), recurring: !!t.recurring_rule_id, excluded: excl(t) });
+    }
+    const momRows = [...momMap.values()].filter((r) => r.total > 0 || Object.values(r.vals).some((v) => v > 0))
+      .sort((a, b) => b.total - a.total);
+    Object.values(momItems).forEach((arr) => arr.sort((a, b) => b.amount_mxn - a.amount_mxn));
+    const momTotals = moms.map((m) => r2(momRows.reduce((s, r) => s + (r.vals[m] || 0), 0)));
+
+    // --- ④ Top 지출(당월 실적, 제외 반영) ---
+    const top = txns.filter((t) => t.direction === 'out' && t.status === 'actual' && !excl(t) && ymOf(t.txn_date) === month)
+      .sort((a, b) => mxn(b) - mxn(a)).slice(0, 10)
+      .map((t) => ({ id: t.id, date: String(t.txn_date).slice(0, 10), memo: t.memo || '', category: catName(t), amount_mxn: r2(mxn(t)) }));
+
+    // --- ⑤ 미집행 계획(당월 계획일의 예정 지출) ---
+    const unexecuted = txns.filter((t) => t.direction === 'out' && t.status === 'plan' && planDate(t).slice(0, 7) === month)
+      .sort((a, b) => (planDate(a) < planDate(b) ? -1 : 1))
+      .map((t) => ({ id: t.id, plan_date: planDate(t), memo: t.memo || '', category: catName(t), amount_mxn: r2(pMxn(t) || mxn(t)), recurring: !!t.recurring_rule_id }));
+
+    // --- 분석 제외 목록(당월에 걸린 제외건 — 복원용) ---
+    const excluded_items = txns.filter((t) => excl(t) && t.status === 'actual' && ymOf(t.txn_date) === month)
+      .map((t) => ({ id: t.id, date: String(t.txn_date).slice(0, 10), memo: t.memo || '', category: catName(t),
+        direction: t.direction, amount_mxn: r2(mxn(t)) }));
+
+    return { month, prev_month: prevMonth, months: moms,
+      summary: { opening: r2(opening), closing: r2(closing),
+        in_month: r2(sums.in_month), out_month: r2(sums.out_month), in_prev: r2(sums.in_prev), out_prev: r2(sums.out_prev) },
+      pva: { rows: pvaRows, total: pvaTotal }, mom: { rows: momRows, totals: momTotals, items: momItems },
+      top, unexecuted, excluded_items };
+  });
+
+  // 분석 제외 토글(디렉터) — 리포트 전용 플래그, 장부·잔액 무관
+  app.patch('/api/transactions/:id/report-exclude', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const excluded = req.body && req.body.excluded === true;
+    const r = await query(`UPDATE transactions SET report_excluded=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL RETURNING id`,
+      [excluded, req.ctx.perm.userId, id]);
+    if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { report_excluded: excluded } });
+    return { ok: true };
   });
 
   // 계정과목별 계획 vs 실적(막대 비교): query filter=all|recurring|other, from, to (YYYY-MM-DD)
