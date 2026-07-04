@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703o</title>
+<title>Refatrix ERP · 재무 · build fin-0703p</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -452,6 +452,7 @@
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       $('t-date').value=new Date().toISOString().slice(0,10);
       if(!isDirector())$('accAddBtn').classList.add('hidden');
+      $('tabReport').classList.toggle('hidden',!isDirector()); // 월 리포트 탭: 디렉터만 노출
       await loadFx(); loadKrwRate(); await loadCats(); await loadAccounts();
       applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
@@ -2482,7 +2483,6 @@
   $('rxAddBtn').addEventListener('click',async ()=>{
     $('rxForm').classList.toggle('hidden');
     $('rx-privbox').classList.toggle('hidden',!isDirector());
-    $('tabReport').classList.toggle('hidden',!isDirector());
     if(!accounts||!accounts.length){await loadAccounts();}
     $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
     $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
@@ -2514,6 +2514,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703my"></script>
+<script src="refatrix-nav.js?v=20260703mz"></script>
 </body>
 </html>
