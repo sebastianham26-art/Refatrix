@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260703a</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260703b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -44,7 +44,11 @@
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
   .chip{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted)}
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
-  .payline{display:grid;grid-template-columns:108px 132px 132px 1fr 84px;gap:8px;align-items:center;margin-top:8px}
+  .itemcard{border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:10px;padding:12px 14px;margin-top:12px;background:#fdfcf9}
+  .itemhead{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .itemhead .nm{flex:1;min-width:180px}
+  .itemsub{display:flex;justify-content:flex-end;gap:14px;font-size:12.5px;margin-top:8px;font-weight:700}
+  .payline{display:grid;grid-template-columns:104px 128px 128px 1fr 84px;gap:8px;align-items:center;margin-top:8px}
   .payline input,.payline select{width:100%}
   .filebox{border:1.5px dashed var(--line);border-radius:10px;padding:10px 12px;margin-top:12px;background:#fbfaf6}
   .filerow{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;flex-wrap:wrap}
@@ -65,7 +69,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">마케팅 지출계획 · 행사·활동 기안 → 디렉터 승인 → 자금계획</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">마케팅 지출계획 · 활동 → 집행 항목 → 지급 일정 → 자금계획</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
@@ -114,10 +118,9 @@
       <div id="tgWrap" style="overflow-x:auto"></div>
       <div class="hint" style="margin-top:6px">매출목표 = 매출목표 화면의 <b>고객별 연간(올해) 목표 합</b> · 누적 매출 = <b>올해 1/1 ~ 오늘 확정 매출(IVA 불포함)</b>, 조회 시점 자동 집계.</div>
 
-      <div class="secttl">💸 지급 일정 <span class="hint" style="font-weight:500">— 선지급금·잔금처럼 나눠 지급되면 줄을 추가하세요</span></div>
-      <div class="payline hint" style="font-weight:700;margin-top:10px"><span>구분</span><span>지급 예정일</span><span>금액 (MXN)</span><span>명목·메모</span><span></span></div>
-      <div id="lnWrap"></div>
-      <button class="btn ghost sm" id="btnAddLine" style="margin-top:8px">＋ 지급 줄 추가</button>
+      <div class="secttl">💸 집행 항목 <span class="hint" style="font-weight:500">— 장소·케이터링·판촉물처럼 집행별로 나누고, 각 항목마다 선지급·중도금·잔금 일정을 계획</span></div>
+      <div id="itWrap"></div>
+      <button class="btn ghost sm" id="btnAddItem" style="margin-top:10px">＋ 집행 항목 추가</button>
 
       <div class="flowbox ratio" id="ratioBox"></div>
 
@@ -139,7 +142,7 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let cur=null;            // 열려있는 계획 {id,status,created_by,lines,targets,files}
+  let cur=null;            // {id,status,created_by,items:[{id,name,memo,lines:[…]}],targets,files}
   let stats=null;          // 대상 통계 캐시
   let listFilter='';
   const $=(id)=>document.getElementById(id);
@@ -196,11 +199,11 @@
     if(!d.ok){$('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>';return;}
     const items=d.items||[];
     if(!items.length){$('listWrap').innerHTML='<div class="hint" style="margin-top:10px">계획이 없습니다. [＋ 새 지출 계획]으로 작성하세요.</div>';return;}
-    $('listWrap').innerHTML='<table><tr><th>#</th><th>활동·행사명</th><th>분류</th><th>대상</th><th class="r">지급건수</th><th class="r">총액(MXN)</th><th>첫 지급일</th><th>담당</th><th>상태</th><th></th></tr>'
+    $('listWrap').innerHTML='<table><tr><th>#</th><th>활동·행사명</th><th>분류</th><th>대상</th><th class="r">집행항목</th><th class="r">지급건수</th><th class="r">총액(MXN)</th><th>첫 지급일</th><th>담당</th><th>상태</th><th></th></tr>'
       +items.map(p=>{
         const tg=(p.customer_count?p.customer_count+'개사':'')+(p.has_general?(p.customer_count?' +':'')+'불특정':'')||'—';
         return '<tr><td>'+planNo(p.id)+'</td><td style="white-space:normal;min-width:180px">'+esc(p.title)+'</td><td>'+esc(p.category||'')+'</td><td>'+tg+'</td>'
-          +'<td class="r">'+p.line_count+'</td><td class="r">'+fmt(p.total_amount)+'</td><td>'+(p.first_due||'—')+'</td><td>'+esc(p.created_by_name||'')+'</td>'
+          +'<td class="r">'+(p.item_count||0)+'</td><td class="r">'+p.line_count+'</td><td class="r">'+fmt(p.total_amount)+'</td><td>'+(p.first_due||'—')+'</td><td>'+esc(p.created_by_name||'')+'</td>'
           +'<td><span class="st '+p.status+'">'+ST_LABEL[p.status]+'</span></td>'
           +'<td><button class="btn ghost sm" data-open="'+p.id+'">열기</button></td></tr>';
       }).join('')+'</table>';
@@ -208,8 +211,9 @@
 
   // ================= 작성/검토 폼 =================
   function blankLine(){ return {id:null,kind:'one',due_date:'',amount:'',memo:'',paid:false}; }
+  function blankItem(){ return {id:null,name:'',memo:'',lines:[blankLine()]}; }
   function newPlan(){
-    cur={id:null,status:'draft',created_by:me(),lines:[blankLine()],targets:[],files:[]};
+    cur={id:null,status:'draft',created_by:me(),items:[blankItem()],targets:[],files:[]};
     stats=null; renderComposer(); $('composer').classList.remove('hidden');
     try{$('composer').scrollIntoView({behavior:'smooth'});}catch(e){}
   }
@@ -219,9 +223,11 @@
     cur={id:d.plan.id,status:d.plan.status,created_by:d.plan.created_by,reject_reason:d.plan.reject_reason,
       title:d.plan.title,category:d.plan.category,event_date:d.plan.event_date,purpose:d.plan.purpose,
       created_by_name:d.plan.created_by_name,
-      lines:(d.lines||[]).map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount})),
+      items:(d.items||[]).map(it=>({id:it.id,name:it.name||'',memo:it.memo||'',
+        lines:(it.lines||[]).map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount}))})),
       targets:(d.targets||[]).map(t=>({customer_id:t.customer_id,is_general:t.is_general,code:t.code,name:t.name})),
       files:d.files||[]};
+    if(!cur.items.length)cur.items=[blankItem()];
     stats=null; renderComposer(); $('composer').classList.remove('hidden');
     refreshStats();
     try{$('composer').scrollIntoView({behavior:'smooth'});}catch(e){}
@@ -242,8 +248,8 @@
     $('fTitle').value=cur.title||''; $('fCategory').value=cur.category||''; $('fEventDate').value=cur.event_date||''; $('fPurpose').value=cur.purpose||'';
     ['fTitle','fCategory','fEventDate','fPurpose'].forEach(id=>$(id).disabled=!ed);
     $('tgTools').style.display=ed?'':'none';
-    $('btnAddLine').style.display=ed?'':'none';
-    renderTargets(); renderLines(); renderRatio(); renderFiles(); renderButtons();
+    $('btnAddItem').style.display=ed?'':'none';
+    renderTargets(); renderItems(); renderRatio(); renderFiles(); renderButtons();
   }
 
   // ---- 대상 ----
@@ -286,28 +292,45 @@
     cur.targets.push({customer_id:null,is_general:true}); renderTargets();
   }
 
-  // ---- 지급 라인 ----
-  function renderLines(){
+  // ---- 집행 항목 + 지급 라인 ----
+  function itemTotal(it){ return it.lines.reduce((s,l)=>s+(Number(l.amount)>0?Number(l.amount):0),0); }
+  function planTotal(){ return cur.items.reduce((s,it)=>s+itemTotal(it),0); }
+  function itemHasPaid(it){ return it.lines.some(l=>l.paid); }
+  function renderItems(){
     const ed=editable();
-    $('lnWrap').innerHTML=cur.lines.map((l,i)=>{
-      const lock=!ed||l.paid;
-      return '<div class="payline'+(l.paid?' lockrow':'')+'" data-ln="'+i+'">'
-        +'<select data-f="kind" '+(lock?'disabled':'')+'>'+Object.keys(KIND_LABEL).map(k=>'<option value="'+k+'"'+(l.kind===k?' selected':'')+'>'+KIND_LABEL[k]+'</option>').join('')+'</select>'
-        +'<input type="date" data-f="due_date" value="'+esc(l.due_date)+'" '+(lock?'disabled':'')+'>'
-        +'<input type="number" step="0.01" min="0" data-f="amount" value="'+esc(l.amount)+'" style="text-align:right" '+(lock?'disabled':'')+'>'
-        +'<input data-f="memo" value="'+esc(l.memo)+'" maxlength="300" placeholder="명목·메모" '+(lock?'disabled':'')+'>'
-        +'<span>'+(l.paid?'<span class="paidchip">지급완료 '+esc(l.paid_date||'')+'</span>':(ed?'<button class="btn warn sm" data-delln="'+i+'">✕</button>':''))+'</span>'
+    $('itWrap').innerHTML=cur.items.map((it,i)=>{
+      const linesHtml=it.lines.map((l,j)=>{
+        const lock=!ed||l.paid;
+        return '<div class="payline'+(l.paid?' lockrow':'')+'" data-it="'+i+'" data-ln="'+j+'">'
+          +'<select data-f="kind" '+(lock?'disabled':'')+'>'+Object.keys(KIND_LABEL).map(k=>'<option value="'+k+'"'+(l.kind===k?' selected':'')+'>'+KIND_LABEL[k]+'</option>').join('')+'</select>'
+          +'<input type="date" data-f="due_date" value="'+esc(l.due_date)+'" '+(lock?'disabled':'')+'>'
+          +'<input type="number" step="0.01" min="0" data-f="amount" value="'+esc(l.amount)+'" style="text-align:right" '+(lock?'disabled':'')+'>'
+          +'<input data-f="memo" value="'+esc(l.memo)+'" maxlength="300" placeholder="명목·메모" '+(lock?'disabled':'')+'>'
+          +'<span>'+(l.paid?'<span class="paidchip">지급완료 '+esc(l.paid_date||'')+'</span>':(ed?'<button class="btn warn sm" data-delln="'+i+','+j+'">✕</button>':''))+'</span>'
+          +'</div>';
+      }).join('');
+      return '<div class="itemcard" data-item="'+i+'">'
+        +'<div class="itemhead">'
+        +'<div class="nm"><label>집행 항목명 * <span class="hint" style="font-weight:500">(예: 장소 대관, 케이터링, 판촉물 제작)</span></label>'
+        +'<input data-itf="name" data-it="'+i+'" value="'+esc(it.name)+'" maxlength="120" style="width:100%" '+(ed?'':'disabled')+'></div>'
+        +'<div style="flex:1;min-width:160px"><label>업체·비고</label><input data-itf="memo" data-it="'+i+'" value="'+esc(it.memo)+'" maxlength="300" style="width:100%" '+(ed?'':'disabled')+'></div>'
+        +(ed?'<button class="btn warn sm" data-delitem="'+i+'" style="margin-bottom:1px">항목 삭제 ✕</button>':'')
+        +'</div>'
+        +'<div class="payline hint" style="font-weight:700;margin-top:10px"><span>구분</span><span>지급 예정일</span><span>금액 (MXN)</span><span>명목·메모</span><span></span></div>'
+        +linesHtml
+        +(ed?'<button class="btn ghost sm" data-addln="'+i+'" style="margin-top:8px">＋ 지급 줄 추가</button>':'')
+        +'<div class="itemsub"><span class="hint" style="font-weight:600">지급 '+it.lines.length+'건</span><span>항목 소계 <b style="color:var(--expense)">MX$ '+fmt(itemTotal(it))+'</b></span></div>'
         +'</div>';
-    }).join('')||'<div class="hint" style="margin-top:8px">지급 줄이 없습니다.</div>';
+    }).join('')||'<div class="hint" style="margin-top:8px">집행 항목이 없습니다. [＋ 집행 항목 추가]를 누르세요.</div>';
   }
-  function lineTotal(){ return cur.lines.reduce((s,l)=>s+(Number(l.amount)>0?Number(l.amount):0),0); }
   function renderRatio(){
-    const budget=lineTotal();
+    const budget=planTotal();
     const cum=stats?Number(stats.total_sales):0, tgt=stats?Number(stats.total_target):0;
     const custN=cur.targets.filter(t=>!t.is_general).length;
+    const nItems=cur.items.length, nLines=cur.items.reduce((s,it)=>s+it.lines.length,0);
     const pct=(a,b)=>b>0?(Math.round(a/b*1000)/10).toFixed(1)+'%':'—';
     $('ratioBox').innerHTML=
-      '<div><div class="hint" style="font-weight:700">마케팅 예산 (지급 합계)</div><b style="color:var(--expense)">MX$ '+fmt(budget)+'</b></div>'
+      '<div><div class="hint" style="font-weight:700">마케팅 예산 <span style="font-weight:500">(집행 '+nItems+'항목 · 지급 '+nLines+'건)</span></div><b style="color:var(--expense)">MX$ '+fmt(budget)+'</b></div>'
       +'<div><div class="hint" style="font-weight:700">대상 누적 매출 대비'+(custN?' <span style="font-weight:500">('+fmt(cum)+')</span>':'')+'</div><b>'+(custN?pct(budget,cum):'—')+'</b></div>'
       +'<div><div class="hint" style="font-weight:700">연간 매출목표 대비'+(custN?' <span style="font-weight:500">('+fmt(tgt)+')</span>':'')+'</div><b>'+(custN?pct(budget,tgt):'—')+'</b></div>'
       +(!custN?'<div class="hint" style="align-self:center">고객 대상을 추가하면 비율이 계산됩니다</div>':'');
@@ -360,17 +383,21 @@
 
   // ---- 저장/제출/승인 ----
   function collect(){
-    const lines=cur.lines.map((l,i)=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:Number(l.amount),memo:l.memo||null}));
+    const items=cur.items.map(it=>({id:it.id,name:(it.name||'').trim(),memo:(it.memo||'').trim()||null,
+      lines:it.lines.map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:Number(l.amount),memo:l.memo||null}))}));
     const targets=cur.targets.map(t=>t.is_general?{is_general:true}:{customer_id:t.customer_id});
     return {title:$('fTitle').value.trim(),category:$('fCategory').value||null,event_date:$('fEventDate').value||null,
-      purpose:$('fPurpose').value.trim()||null,lines,targets};
+      purpose:$('fPurpose').value.trim()||null,items,targets};
   }
   function validateLocal(p){
     if(!p.title){say('cpMsg',false,'활동·행사명을 입력하세요.');return false;}
-    if(!p.lines.length){say('cpMsg',false,'지급 줄을 1개 이상 추가하세요.');return false;}
-    for(let i=0;i<p.lines.length;i++){const l=p.lines[i];
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(l.due_date||'')){say('cpMsg',false,(i+1)+'번째 줄: 지급 예정일을 입력하세요.');return false;}
-      if(!(l.amount>0)){say('cpMsg',false,(i+1)+'번째 줄: 금액을 입력하세요.');return false;}}
+    if(!p.items.length){say('cpMsg',false,'집행 항목을 1개 이상 추가하세요.');return false;}
+    for(let i=0;i<p.items.length;i++){const it=p.items[i];
+      if(!it.name){say('cpMsg',false,(i+1)+'번째 집행 항목: 항목명을 입력하세요.');return false;}
+      if(!it.lines.length){say('cpMsg',false,'['+it.name+'] 지급 줄을 1개 이상 추가하세요.');return false;}
+      for(let j=0;j<it.lines.length;j++){const l=it.lines[j];
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(l.due_date||'')){say('cpMsg',false,'['+it.name+'] '+(j+1)+'번째 줄: 지급 예정일을 입력하세요.');return false;}
+        if(!(l.amount>0)){say('cpMsg',false,'['+it.name+'] '+(j+1)+'번째 줄: 금액을 입력하세요.');return false;}}}
     return true;
   }
   async function saveDraft(silent){
@@ -402,7 +429,8 @@
   }
   async function approvePlan(){
     const p=collect(); if(!validateLocal(p))return;
-    if(!confirm('수정 내용대로 승인할까요?\n지급 줄 '+p.lines.length+'건이 재무 자금계획(예정 지출)에 등록됩니다.'))return;
+    const nLines=p.items.reduce((s,it)=>s+it.lines.length,0);
+    if(!confirm('수정 내용대로 승인할까요?\n집행 '+p.items.length+'항목 · 지급 '+nLines+'건이 재무 자금계획(예정 지출)에 등록됩니다.'))return;
     const d=await api('/api/mktspend/plans/'+cur.id+'/approve',{method:'POST',body:JSON.stringify(p)});
     if(!d.ok){say('cpMsg',false,'승인 실패: '+(d.error||d.status));return;}
     say('cpMsg',true,'승인 완료 — 예정 지출 '+((d.txn_ids||[]).length)+'건이 자금계획에 등록되었습니다.');
@@ -438,8 +466,8 @@
       }
     }else if(cur.status==='submitted'){
       if(isDir()){
-        const n=cur.lines.length;
-        info.innerHTML='<b>승인하면 자동으로:</b><br>① 지급 줄 <b>'+n+'건</b>이 재무 → <b>예정 지출(자금 계획)</b>에 각각 등록됩니다 (출처 배지: 마케팅)<br>② 현금흐름 달력의 해당 날짜 AP(예정 지출)에 반영됩니다<br>③ 실제 송금은 재무의 <b>예정 내역 → [실적 처리]</b>에서 계좌를 골라 확정합니다';
+        const nI=cur.items.length, nL=cur.items.reduce((s,it)=>s+it.lines.length,0);
+        info.innerHTML='<b>승인하면 자동으로:</b><br>① 집행 '+nI+'항목의 지급 줄 <b>'+nL+'건</b>이 재무 → <b>예정 지출(자금 계획)</b>에 각각 등록됩니다 (출처 배지: 마케팅, 메모: 활동·항목·구분)<br>② 현금흐름 달력의 해당 날짜 AP(예정 지출)에 반영됩니다<br>③ 실제 송금은 재무의 <b>예정 내역 → [실적 처리]</b>에서 계좌를 골라 확정합니다';
         info.classList.remove('hidden');
         h+='<button class="btn" data-act="approve">✔ 수정 내용으로 승인</button>';
         h+='<button class="btn warn" data-act="reject">반려</button>';
@@ -462,15 +490,21 @@
 
   // ================= 이벤트 (위임) =================
   document.addEventListener('click',function(ev){
-    const t=ev.target.closest('[data-open],[data-st],[data-deltg],[data-delln],[data-viewf],[data-delf],[data-act],.srchItem');
+    const t=ev.target.closest('[data-open],[data-st],[data-deltg],[data-delitem],[data-addln],[data-delln],[data-viewf],[data-delf],[data-act],.srchItem');
     if(!t)return;
     if(t.dataset.open!=null){openPlan(Number(t.dataset.open));return;}
     if(t.dataset.st!=null){listFilter=t.dataset.st;renderStChips();loadList();return;}
     if(t.dataset.deltg!=null){cur.targets.splice(Number(t.dataset.deltg),1);renderTargets();refreshStats();return;}
+    if(t.dataset.delitem!=null){
+      const i=Number(t.dataset.delitem);
+      if(itemHasPaid(cur.items[i])){say('cpMsg',false,'지급완료된 줄이 있는 항목은 삭제할 수 없습니다.');return;}
+      cur.items.splice(i,1);renderItems();renderRatio();return;}
+    if(t.dataset.addln!=null){
+      cur.items[Number(t.dataset.addln)].lines.push(blankLine());renderItems();renderRatio();return;}
     if(t.dataset.delln!=null){
-      const i=Number(t.dataset.delln);
-      if(cur.lines[i]&&cur.lines[i].paid){say('cpMsg',false,'지급완료된 줄은 삭제할 수 없습니다.');return;}
-      cur.lines.splice(i,1);renderLines();renderRatio();return;}
+      const [i,j]=t.dataset.delln.split(',').map(Number);
+      if(cur.items[i].lines[j]&&cur.items[i].lines[j].paid){say('cpMsg',false,'지급완료된 줄은 삭제할 수 없습니다.');return;}
+      cur.items[i].lines.splice(j,1);renderItems();renderRatio();return;}
     if(t.dataset.viewf!=null){viewFile(Number(t.dataset.viewf));return;}
     if(t.dataset.delf!=null){delFile(Number(t.dataset.delf));return;}
     if(t.classList.contains('srchItem')&&t.dataset.cid){
@@ -488,10 +522,17 @@
     }
   });
   document.addEventListener('input',function(ev){
-    const row=ev.target.closest('.payline[data-ln]');
-    if(row){
-      const i=Number(row.dataset.ln), f=ev.target.dataset.f;
-      if(cur&&cur.lines[i]&&f){cur.lines[i][f]=ev.target.value; if(f==='amount')renderRatio();}
+    const row=ev.target.closest('.payline[data-it]');
+    if(row&&ev.target.dataset.f){
+      const i=Number(row.dataset.it), j=Number(row.dataset.ln), f=ev.target.dataset.f;
+      if(cur&&cur.items[i]&&cur.items[i].lines[j]){cur.items[i].lines[j][f]=ev.target.value;
+        if(f==='amount'){renderRatio();const card=ev.target.closest('.itemcard');
+          if(card){const sub=card.querySelector('.itemsub');if(sub)sub.innerHTML='<span class="hint" style="font-weight:600">지급 '+cur.items[i].lines.length+'건</span><span>항목 소계 <b style="color:var(--expense)">MX$ '+fmt(itemTotal(cur.items[i]))+'</b></span>';}}}
+      return;
+    }
+    if(ev.target.dataset.itf){
+      const i=Number(ev.target.dataset.it);
+      if(cur&&cur.items[i])cur.items[i][ev.target.dataset.itf]=ev.target.value;
       return;
     }
     if(ev.target.id==='tgSearch'){clearTimeout(srchT);srchT=setTimeout(doSearch,250);}
@@ -506,7 +547,7 @@
     $('btnNew').addEventListener('click',newPlan);
     $('btnClose').addEventListener('click',()=>{$('composer').classList.add('hidden');cur=null;});
     $('btnGeneral').addEventListener('click',addGeneral);
-    $('btnAddLine').addEventListener('click',()=>{cur.lines.push(blankLine());renderLines();renderRatio();});
+    $('btnAddItem').addEventListener('click',()=>{cur.items.push(blankItem());renderItems();renderRatio();});
     $('btnAddFile').addEventListener('click',pickFiles);
     $('filePick').addEventListener('change',onFilesPicked);
     const ps=portalSession();

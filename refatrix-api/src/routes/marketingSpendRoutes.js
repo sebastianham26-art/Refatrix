@@ -3,13 +3,13 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 
 // =====================================================================
-// Refatrix ERP · marketingSpendRoutes.js  (마케팅 지출 계획)
-//   · 행사·활동 단위 지출 기안: 헤더 + 지급 라인 N(선지급/중도금/잔금/일시불)
-//     + 마케팅 대상 N(등록 고객 복수 / 불특정 다수) + 증빙 N(base64).
-//   · 담당자(marketing 페이지 편집권한) 작성·제출 → 디렉터가 내용을 직접
-//     수정한 뒤 승인 → 지급 라인마다 transactions(status='plan', 6070,
-//     memo '[마케팅] …')이 생성돼 재무 예정 내역·현금흐름 AP에 반영.
-//   · 실제 송금은 재무 [실적 처리](confirm-pay)로 확정 — 기존 흐름 그대로.
+// Refatrix ERP · marketingSpendRoutes.js  (마케팅 지출 계획 · v2 집행항목)
+//   · 구조: 활동(계획) → 집행 항목 N(장소·케이터링·판촉물 …)
+//            → 항목별 지급 라인 N(선지급/중도금/잔금/일시불).
+//   · 담당자(marketing 편집권한) 작성·제출 → 디렉터가 내용을 직접 수정하며
+//     승인 → 모든 지급 라인마다 transactions(status='plan', 6070,
+//     memo '[마케팅] 활동 · 항목 · 구분')이 생성돼 재무 예정 내역·현금흐름
+//     AP(자금 계획)에 반영. 실제 송금은 재무 [실적 처리](confirm-pay).
 //   · 승인 후 수정: 디렉터만. 연결 거래가 아직 plan이면 자동 동기화,
 //     이미 actual(지급완료)이면 그 라인은 잠금(409 line_locked).
 //   · 대상 통계: 고객별 연간 매출목표(target_customer_months 합) +
@@ -43,7 +43,7 @@ export function validateSpendFileDataUrl(dataUrl, maxBytes = 8 * 1024 * 1024) {
   return { ok: true, mime, size: bytes };
 }
 
-// 본문 → 지급 라인 정규화. 오류 시 {error}
+// 지급 라인 정규화(항목 내부). 오류 시 {error}
 export function normalizeLines(rawLines) {
   const lines = Array.isArray(rawLines) ? rawLines : [];
   if (!lines.length) return { error: 'lines_required' };
@@ -64,6 +64,28 @@ export function normalizeLines(rawLines) {
   return { lines: out };
 }
 
+// 집행 항목 정규화(항목마다 지급 라인 1개 이상). 오류 시 {error}
+export function normalizeItems(rawItems) {
+  const arr = Array.isArray(rawItems) ? rawItems : [];
+  if (!arr.length) return { error: 'items_required' };
+  if (arr.length > 30) return { error: 'too_many_items' };
+  const items = [];
+  let totalLines = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const it = arr[i] || {};
+    const name = String(it.name || '').trim().slice(0, 120);
+    if (!name) return { error: 'item_name_required', index: i };
+    const nl = normalizeLines(it.lines);
+    if (nl.error) return { error: nl.error, item_index: i, index: nl.index };
+    totalLines += nl.lines.length;
+    if (totalLines > 100) return { error: 'too_many_lines_total' };
+    items.push({ id: it.id != null ? Number(it.id) : null, name,
+      memo: (it.memo == null || String(it.memo).trim() === '') ? null : String(it.memo).trim().slice(0, 300),
+      sort_order: i, lines: nl.lines });
+  }
+  return { items };
+}
+
 // 본문 → 대상 정규화(고객 중복 제거, 불특정 다수 1건으로 축약)
 export function normalizeTargets(rawTargets) {
   const arr = Array.isArray(rawTargets) ? rawTargets : [];
@@ -80,26 +102,30 @@ export function normalizeTargets(rawTargets) {
   return { custIds, general };
 }
 
-// 계획 거래 메모: '[마케팅] 제목 · 구분 (· 명목)' — 재무 화면이 이 접두사로 출처 배지를 표시
-export function spendTxnMemo(title, kind, lineMemo) {
-  const base = `[마케팅] ${String(title || '').slice(0, 120)} · ${KIND_LABEL[kind] || kind}`;
-  return lineMemo ? `${base} · ${String(lineMemo).slice(0, 200)}` : base;
+// 계획 거래 메모: '[마케팅] 활동 · 집행항목 · 구분 (· 명목)'
+//  — 재무 화면이 '[마케팅]' 접두사로 출처 배지를 표시
+export function spendTxnMemo(title, itemName, kind, lineMemo) {
+  const base = `[마케팅] ${String(title || '').slice(0, 100)} · ${String(itemName || '').slice(0, 80)} · ${KIND_LABEL[kind] || kind}`;
+  return lineMemo ? `${base} · ${String(lineMemo).slice(0, 160)}` : base;
 }
 
 export default async function marketingSpendRoutes(app) {
   const num = (v) => (v == null ? 0 : Number(v));
 
-  // ---- 라인/대상 저장 헬퍼(트랜잭션 내) --------------------------------
-  async function insertLines(run, planId, lines) {
-    const ids = [];
-    for (const l of lines) {
+  // ---- 저장 헬퍼(트랜잭션 내) ------------------------------------------
+  async function insertItemsWithLines(run, planId, items) {
+    for (const it of items) {
       const r = await run(
-        `INSERT INTO marketing_spend_lines (plan_id, kind, due_date, amount, memo, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [planId, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
-      ids.push(Number(r.rows[0].id));
+        `INSERT INTO marketing_spend_items (plan_id, name, memo, sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
+        [planId, it.name, it.memo, it.sort_order]);
+      const itemId = Number(r.rows[0].id);
+      for (const l of it.lines) {
+        await run(
+          `INSERT INTO marketing_spend_lines (plan_id, item_id, kind, due_date, amount, memo, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [planId, itemId, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
+      }
     }
-    return ids;
   }
   async function replaceTargets(run, planId, custIds, general) {
     await run(`DELETE FROM marketing_spend_targets WHERE plan_id=$1`, [planId]);
@@ -141,7 +167,6 @@ export default async function marketingSpendRoutes(app) {
 
   // =====================================================================
   // 대상 통계: 연간 매출목표 + 올해 누적 매출(기안 시점 기준, ex-IVA)
-  //   GET /api/mktspend/target-stats?ids=1,2,3
   // =====================================================================
   app.get('/api/mktspend/target-stats', { preHandler: [authGuard, requirePage('marketing')] }, async (req) => {
     const ids = String(req.query.ids || '').split(',').map((s) => Number(s)).filter((n) => n > 0);
@@ -184,11 +209,14 @@ export default async function marketingSpendRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.title, p.category, to_char(p.event_date,'YYYY-MM-DD') AS event_date, p.status, p.reject_reason,
               p.created_by, u.name AS created_by_name, p.submitted_at, p.decided_at,
+              COALESCE(ia.item_count,0) AS item_count,
               COALESCE(la.line_count,0) AS line_count, COALESCE(la.total_amount,0) AS total_amount, la.first_due,
               COALESCE(ta.customer_count,0) AS customer_count, COALESCE(ta.general_count,0) AS general_count,
               COALESCE(fa.file_count,0) AS file_count
          FROM marketing_spend_plans p
          LEFT JOIN users u ON u.id=p.created_by
+         LEFT JOIN (SELECT plan_id, COUNT(*) AS item_count
+                      FROM marketing_spend_items GROUP BY plan_id) ia ON ia.plan_id=p.id
          LEFT JOIN (SELECT plan_id, COUNT(*) AS line_count, COALESCE(SUM(amount),0) AS total_amount,
                            to_char(MIN(due_date),'YYYY-MM-DD') AS first_due
                       FROM marketing_spend_lines GROUP BY plan_id) la ON la.plan_id=p.id
@@ -203,14 +231,14 @@ export default async function marketingSpendRoutes(app) {
       id: Number(r.id), title: r.title, category: r.category, event_date: r.event_date, status: r.status,
       reject_reason: r.reject_reason, created_by: r.created_by == null ? null : Number(r.created_by),
       created_by_name: r.created_by_name, submitted_at: r.submitted_at, decided_at: r.decided_at,
-      line_count: num(r.line_count), total_amount: r2(num(r.total_amount)), first_due: r.first_due,
+      item_count: num(r.item_count), line_count: num(r.line_count), total_amount: r2(num(r.total_amount)), first_due: r.first_due,
       customer_count: num(r.customer_count), has_general: num(r.general_count) > 0, file_count: num(r.file_count),
     }));
     return { items, me: req.ctx.perm.userId, is_director: isDirector(req) };
   });
 
   // =====================================================================
-  // 계획 상세(라인+지급상태, 대상+통계, 파일 메타)
+  // 계획 상세(집행 항목 → 라인+지급상태, 대상, 파일 메타)
   // =====================================================================
   app.get('/api/mktspend/plans/:id', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -222,12 +250,25 @@ export default async function marketingSpendRoutes(app) {
          LEFT JOIN users d ON d.id=p.decided_by
         WHERE p.id=$1 AND p.deleted_at IS NULL`, [id])).rows[0];
     if (!p) return reply.code(404).send({ error: 'not_found' });
-    const lines = (await query(
-      `SELECT l.id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo, l.sort_order, l.txn_id,
+    const itemRows = (await query(
+      `SELECT id, name, memo, sort_order FROM marketing_spend_items WHERE plan_id=$1 ORDER BY sort_order, id`, [id])).rows;
+    const lineRows = (await query(
+      `SELECT l.id, l.item_id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo, l.sort_order, l.txn_id,
               t.status AS txn_status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount AS txn_amount, t.deleted_at AS txn_deleted
          FROM marketing_spend_lines l
          LEFT JOIN transactions t ON t.id=l.txn_id
         WHERE l.plan_id=$1 ORDER BY l.sort_order, l.id`, [id])).rows;
+    const mapLine = (l) => ({ id: Number(l.id), item_id: l.item_id == null ? null : Number(l.item_id),
+      kind: l.kind, due_date: l.due_date, amount: r2(num(l.amount)), memo: l.memo,
+      txn_id: l.txn_id == null ? null : Number(l.txn_id),
+      paid: l.txn_status === 'actual', txn_deleted: !!l.txn_deleted,
+      paid_date: l.txn_status === 'actual' ? l.txn_date : null,
+      paid_amount: l.txn_status === 'actual' ? r2(num(l.txn_amount)) : null });
+    const items = itemRows.map((it) => ({ id: Number(it.id), name: it.name, memo: it.memo,
+      lines: lineRows.filter((l) => Number(l.item_id) === Number(it.id)).map(mapLine) }));
+    // 항목 미귀속 라인(0116 백필 전 잔여) 안전망
+    const orphan = lineRows.filter((l) => l.item_id == null).map(mapLine);
+    if (orphan.length) items.push({ id: null, name: '기본 집행', memo: null, lines: orphan });
     const targets = (await query(
       `SELECT tg.id, tg.customer_id, tg.is_general, c.code, c.name
          FROM marketing_spend_targets tg
@@ -243,11 +284,8 @@ export default async function marketingSpendRoutes(app) {
         purpose: p.purpose, status: p.status, reject_reason: p.reject_reason,
         created_by: p.created_by == null ? null : Number(p.created_by), created_by_name: p.created_by_name,
         submitted_at: p.submitted_at, decided_at: p.decided_at, decided_by_name: p.decided_by_name },
-      lines: lines.map((l) => ({ id: Number(l.id), kind: l.kind, due_date: l.due_date, amount: r2(num(l.amount)),
-        memo: l.memo, txn_id: l.txn_id == null ? null : Number(l.txn_id),
-        paid: l.txn_status === 'actual', txn_deleted: !!l.txn_deleted,
-        paid_date: l.txn_status === 'actual' ? l.txn_date : null,
-        paid_amount: l.txn_status === 'actual' ? r2(num(l.txn_amount)) : null })),
+      items,
+      lines: lineRows.map(mapLine),
       targets: targets.map((t) => ({ id: Number(t.id), customer_id: t.customer_id == null ? null : Number(t.customer_id),
         is_general: !!t.is_general, code: t.code, name: t.name })),
       files: files.map((f) => ({ id: Number(f.id), file_name: f.file_name, mime_type: f.mime_type,
@@ -258,14 +296,14 @@ export default async function marketingSpendRoutes(app) {
   });
 
   // =====================================================================
-  // 계획 생성(작성중 저장)
+  // 계획 생성(작성중 저장) — body.items = [{name, memo, lines:[…]}]
   // =====================================================================
   app.post('/api/mktspend/plans', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     const b = req.body || {};
     const h = headerFields(b);
     if (h.error) return reply.code(400).send({ error: h.error });
-    const nl = normalizeLines(b.lines);
-    if (nl.error) return reply.code(400).send(nl);
+    const ni = normalizeItems(b.items);
+    if (ni.error) return reply.code(400).send(ni);
     const nt = normalizeTargets(b.targets);
     if (nt.error) return reply.code(400).send(nt);
     if (!(await validateCustomers(nt.custIds))) return reply.code(400).send({ error: 'customer_not_found' });
@@ -277,7 +315,7 @@ export default async function marketingSpendRoutes(app) {
          VALUES ($1,$2,$3,$4,'draft',$5,$5) RETURNING id`,
         [h.title, h.category, h.eventDate, h.purpose, userId]);
       const pid = Number(r.rows[0].id);
-      await insertLines(run, pid, nl.lines);
+      await insertItemsWithLines(run, pid, ni.items);
       await replaceTargets(run, pid, nt.custIds, nt.general);
       return pid;
     });
@@ -287,7 +325,7 @@ export default async function marketingSpendRoutes(app) {
 
   // =====================================================================
   // 계획 수정
-  //   · draft/rejected: 작성자 또는 디렉터 — 라인·대상 전체 교체
+  //   · draft/rejected: 작성자 또는 디렉터 — 항목·라인·대상 전체 교체
   //   · submitted: 디렉터만(승인 전 검토 수정) — 전체 교체
   //   · approved: 디렉터만 — 연결 거래 동기화(plan만), actual 라인은 잠금
   // =====================================================================
@@ -297,8 +335,8 @@ export default async function marketingSpendRoutes(app) {
     const b = req.body || {};
     const h = headerFields(b);
     if (h.error) return reply.code(400).send({ error: h.error });
-    const nl = normalizeLines(b.lines);
-    if (nl.error) return reply.code(400).send(nl);
+    const ni = normalizeItems(b.items);
+    if (ni.error) return reply.code(400).send(ni);
     const nt = normalizeTargets(b.targets);
     if (nt.error) return reply.code(400).send(nt);
     if (!(await validateCustomers(nt.custIds))) return reply.code(400).send({ error: 'customer_not_found' });
@@ -318,23 +356,43 @@ export default async function marketingSpendRoutes(app) {
       await replaceTargets(run, id, nt.custIds, nt.general);
 
       if (p.status !== 'approved') {
-        // 아직 거래 미생성 — 라인 전체 교체
+        // 아직 거래 미생성 — 항목·라인 전체 교체
         await run(`DELETE FROM marketing_spend_lines WHERE plan_id=$1`, [id]);
-        await insertLines(run, id, nl.lines);
+        await run(`DELETE FROM marketing_spend_items WHERE plan_id=$1`, [id]);
+        await insertItemsWithLines(run, id, ni.items);
         return { ok: true };
       }
 
-      // ---- 승인된 계획: 연결 거래 동기화 --------------------------------
+      // ---- 승인된 계획: 집행 항목 upsert + 연결 거래 동기화 ---------------
+      const exItems = (await run(`SELECT id, name, memo, sort_order FROM marketing_spend_items WHERE plan_id=$1`, [id])).rows;
+      const exItemIds = new Set(exItems.map((e) => Number(e.id)));
+      const keepItemIds = new Set();
+      // 1) 항목 upsert(기존 id 유지·이름 수정 / 신규 삽입)
+      for (const it of ni.items) {
+        if (it.id != null && exItemIds.has(it.id)) {
+          await run(`UPDATE marketing_spend_items SET name=$1, memo=$2, sort_order=$3 WHERE id=$4 AND plan_id=$5`,
+            [it.name, it.memo, it.sort_order, it.id, id]);
+          it._dbId = it.id;
+        } else {
+          const r = await run(`INSERT INTO marketing_spend_items (plan_id, name, memo, sort_order) VALUES ($1,$2,$3,$4) RETURNING id`,
+            [id, it.name, it.memo, it.sort_order]);
+          it._dbId = Number(r.rows[0].id);
+        }
+        keepItemIds.add(it._dbId);
+      }
+      // 2) 라인 동기화
       const existing = (await run(
-        `SELECT l.id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo, l.txn_id,
+        `SELECT l.id, l.item_id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo, l.txn_id,
                 t.status AS txn_status, t.deleted_at AS txn_deleted
            FROM marketing_spend_lines l LEFT JOIN transactions t ON t.id=l.txn_id
           WHERE l.plan_id=$1`, [id])).rows;
       const exMap = new Map(existing.map((e) => [Number(e.id), e]));
-      const keepIds = new Set(nl.lines.filter((l) => l.id != null).map((l) => Number(l.id)));
+      const flat = [];
+      for (const it of ni.items) for (const l of it.lines) flat.push({ ...l, itemId: it._dbId, itemName: it.name });
+      const keepLineIds = new Set(flat.filter((l) => l.id != null).map((l) => Number(l.id)));
       // 삭제된 라인
       for (const e of existing) {
-        if (keepIds.has(Number(e.id))) continue;
+        if (keepLineIds.has(Number(e.id))) continue;
         if (e.txn_id != null && e.txn_status === 'actual' && !e.txn_deleted) {
           return { error: 'line_locked', line_id: Number(e.id), reason: 'paid' };
         }
@@ -344,35 +402,42 @@ export default async function marketingSpendRoutes(app) {
         await run(`DELETE FROM marketing_spend_lines WHERE id=$1`, [e.id]);
       }
       // 유지·수정 라인 + 신규 라인
-      for (const l of nl.lines) {
+      for (const l of flat) {
         if (l.id != null && exMap.has(Number(l.id))) {
           const e = exMap.get(Number(l.id));
-          const changed = e.kind !== l.kind || e.due_date !== l.due_date || Math.abs(num(e.amount) - l.amount) > 0.001 || (e.memo || null) !== l.memo;
+          const changed = e.kind !== l.kind || e.due_date !== l.due_date || Math.abs(num(e.amount) - l.amount) > 0.001
+            || (e.memo || null) !== l.memo || Number(e.item_id) !== Number(l.itemId);
           if (e.txn_status === 'actual' && !e.txn_deleted) {
             if (changed) return { error: 'line_locked', line_id: Number(l.id), reason: 'paid' };
             await run(`UPDATE marketing_spend_lines SET sort_order=$1 WHERE id=$2`, [l.sort_order, l.id]);
             continue;
           }
           await run(
-            `UPDATE marketing_spend_lines SET kind=$1, due_date=$2, amount=$3, memo=$4, sort_order=$5 WHERE id=$6`,
-            [l.kind, l.due_date, l.amount, l.memo, l.sort_order, l.id]);
+            `UPDATE marketing_spend_lines SET item_id=$1, kind=$2, due_date=$3, amount=$4, memo=$5, sort_order=$6 WHERE id=$7`,
+            [l.itemId, l.kind, l.due_date, l.amount, l.memo, l.sort_order, l.id]);
           if (e.txn_id != null && !e.txn_deleted) {
             await run(
               `UPDATE transactions SET txn_date=$1, plan_date=$1, amount=$2, amount_mxn=$2, plan_amount=$2, memo=$3, updated_by=$4 WHERE id=$5`,
-              [l.due_date, l.amount, spendTxnMemo(h.title, l.kind, l.memo), userId, e.txn_id]);
+              [l.due_date, l.amount, spendTxnMemo(h.title, l.itemName, l.kind, l.memo), userId, e.txn_id]);
           }
         } else {
           const r = await run(
-            `INSERT INTO marketing_spend_lines (plan_id, kind, due_date, amount, memo, sort_order)
-             VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-            [id, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
+            `INSERT INTO marketing_spend_lines (plan_id, item_id, kind, due_date, amount, memo, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+            [id, l.itemId, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
           const lineId = Number(r.rows[0].id);
           const t = await run(
             `INSERT INTO transactions
                (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
              VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
-            [l.due_date, l.amount, userId, spendTxnMemo(h.title, l.kind, l.memo)]);
+            [l.due_date, l.amount, userId, spendTxnMemo(h.title, l.itemName, l.kind, l.memo)]);
           await run(`UPDATE marketing_spend_lines SET txn_id=$1 WHERE id=$2`, [t.rows[0].id, lineId]);
+        }
+      }
+      // 3) 빈 항목 정리(라인 삭제가 모두 통과한 뒤)
+      for (const e of exItems) {
+        if (!keepItemIds.has(Number(e.id))) {
+          await run(`DELETE FROM marketing_spend_items WHERE id=$1 AND plan_id=$2`, [e.id, id]);
         }
       }
       return { ok: true, synced: true };
@@ -411,8 +476,8 @@ export default async function marketingSpendRoutes(app) {
   });
 
   // =====================================================================
-  // 승인(디렉터) — 지급 라인마다 계획 거래 생성 → 자금계획 연결
-  //   본문에 수정 내용(title/lines/targets 등)을 함께 보내면 반영 후 승인.
+  // 승인(디렉터) — 모든 항목의 지급 라인마다 계획 거래 생성 → 자금계획 연결
+  //   본문에 수정 내용(title/items/targets 등)을 함께 보내면 반영 후 승인.
   // =====================================================================
   app.post('/api/mktspend/plans/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -423,12 +488,12 @@ export default async function marketingSpendRoutes(app) {
     if (!['submitted', 'draft', 'rejected'].includes(p.status)) return reply.code(409).send({ error: 'bad_status', status: p.status });
 
     // 수정 내용이 오면 검증(없으면 저장된 내용 그대로 승인)
-    let h = null, nl = null, nt = null;
-    if (b.title != null || b.lines != null || b.targets != null) {
+    let h = null, ni = null, nt = null;
+    if (b.title != null || b.items != null || b.targets != null) {
       h = headerFields({ title: b.title != null ? b.title : p.title, category: b.category, event_date: b.event_date, purpose: b.purpose });
       if (h.error) return reply.code(400).send({ error: h.error });
-      nl = normalizeLines(b.lines);
-      if (nl.error) return reply.code(400).send(nl);
+      ni = normalizeItems(b.items);
+      if (ni.error) return reply.code(400).send(ni);
       nt = normalizeTargets(b.targets);
       if (nt.error) return reply.code(400).send(nt);
       if (!(await validateCustomers(nt.custIds))) return reply.code(400).send({ error: 'customer_not_found' });
@@ -443,10 +508,15 @@ export default async function marketingSpendRoutes(app) {
           [h.title, h.category, h.eventDate, h.purpose, userId, id]);
         await replaceTargets(run, id, nt.custIds, nt.general);
         await run(`DELETE FROM marketing_spend_lines WHERE plan_id=$1`, [id]);
-        await insertLines(run, id, nl.lines);
+        await run(`DELETE FROM marketing_spend_items WHERE plan_id=$1`, [id]);
+        await insertItemsWithLines(run, id, ni.items);
       }
       const lines = (await run(
-        `SELECT id, kind, to_char(due_date,'YYYY-MM-DD') AS due_date, amount, memo FROM marketing_spend_lines WHERE plan_id=$1 ORDER BY sort_order, id`, [id])).rows;
+        `SELECT l.id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo,
+                COALESCE(i.name,'기본 집행') AS item_name
+           FROM marketing_spend_lines l
+           LEFT JOIN marketing_spend_items i ON i.id=l.item_id
+          WHERE l.plan_id=$1 ORDER BY l.sort_order, l.id`, [id])).rows;
       if (!lines.length) return { error: 'lines_required' };
       const txnIds = [];
       for (const l of lines) {
@@ -454,7 +524,7 @@ export default async function marketingSpendRoutes(app) {
           `INSERT INTO transactions
              (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
            VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
-          [l.due_date, r2(num(l.amount)), userId, spendTxnMemo(title, l.kind, l.memo)]);
+          [l.due_date, r2(num(l.amount)), userId, spendTxnMemo(title, l.item_name, l.kind, l.memo)]);
         await run(`UPDATE marketing_spend_lines SET txn_id=$1 WHERE id=$2`, [t.rows[0].id, l.id]);
         txnIds.push(Number(t.rows[0].id));
       }
