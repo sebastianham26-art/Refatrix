@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703g</title>
+<title>Refatrix ERP · 재무 · build fin-0703j</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -223,10 +223,10 @@
     <!-- 고정비 -->
     <div class="card hidden" id="fixedCard">
       <h2>고정비 (반복 규칙)</h2>
-      <div class="hint" style="margin-top:0">규칙을 등록한 뒤, 목록의 각 규칙에서 <b>목표 월</b>을 골라 “생성”을 누르면 그 달까지 예정 거래가 만들어집니다(기본값은 가장 먼 월). 더 멀리 필요하면 다시 더 먼 월을 골라 “추가 생성”하세요. 오늘 기준 <b>최대 24개월</b>까지 가능합니다. 실제 지급하면 거래 목록에서 “지급 확인”으로 실제 처리하세요.</div>
+      <div class="hint" style="margin-top:0">공개 고정비는 재무담당도 등록·관리할 수 있고, 🔒 <b>비공개 고정비</b>(디렉터 전용)는 디렉터만 보고 관리합니다. 규칙을 등록한 뒤, 목록의 각 규칙에서 <b>목표 월</b>을 골라 “생성”을 누르면 그 달까지 예정 거래가 만들어집니다(기본값은 가장 먼 월). 더 멀리 필요하면 다시 더 먼 월을 골라 “추가 생성”하세요. 오늘 기준 <b>최대 24개월</b>까지 가능합니다. 실제 지급하면 거래 목록에서 “지급 확인”으로 실제 처리하세요.</div>
       <div id="fixedBody"><div class="hint">불러오는 중…</div></div>
       <div style="margin-top:10px;display:flex;gap:8px">
-        <button class="btn ghost sm" id="rxAddBtn">+ 고정비 규칙 추가 (디렉터)</button>
+        <button class="btn ghost sm" id="rxAddBtn">+ 고정비 규칙 추가</button>
         <span class="msg" id="rxGenMsg" style="display:none"></span>
       </div>
       <div id="rxForm" class="hidden" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
@@ -249,6 +249,7 @@
           <div id="rx-endbox" class="hidden"><label>종료월</label><input id="rx-end" type="month"></div>
         </div>
         <div class="row"><div style="flex:3"><label>메모</label><input id="rx-memo" type="text"></div></div>
+        <div class="row hidden" id="rx-privbox"><div><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="rx-priv" style="width:auto">🔒 비공개(디렉터 전용) — 재무담당 등 비디렉터에게는 고정비 목록·거래목록·예정내역·현금흐름에서 완전히 숨겨집니다</label></div></div>
         <button class="btn" id="rx-save" style="margin-top:10px">규칙 저장</button>
         <div class="msg" id="rxMsg"></div>
       </div>
@@ -259,7 +260,7 @@
           <div><label style="display:inline">기간 단위 </label>
             <select id="var-gran" style="width:auto;display:inline-block"><option value="month">월별</option><option value="week">주별</option></select></div>
         </div>
-        <div class="hint" style="margin-top:4px">지급 확인된 고정비 실적을 계획과 비교합니다. 실적이 계획보다 적으면 <span style="color:var(--income)">절감</span>, 많으면 <span style="color:var(--expense)">증가</span>입니다.</div>
+        <div class="hint" style="margin-top:4px">지급 확인된 고정비 실적을 계획과 비교합니다. 실적이 계획보다 적으면 <span style="color:var(--income)">절감</span>, 많으면 <span style="color:var(--expense)">증가(초과 집행)</span>입니다. 실적 처리 때 <b>마감</b>을 고르면 잔액이 절감으로 기록되고, <b>남겨두기</b>를 고르면 잔액이 새 예정으로 분리되어 절감으로 잡히지 않습니다. 수동 예정(일반 예산계획)도 같은 로직이며 현금흐름 탭의 "계획 대비 실적"(전체/고정비/기타)에서 평가됩니다.</div>
         <div id="varBody"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
@@ -918,6 +919,12 @@
             ${t.currency==='USD'?'<div><label>환율(USD)</label><input class="cf-fx" type="number" step="0.0001" placeholder="지급일 환율"></div>':''}
           </div>
           <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="cf-memo" type="text" placeholder="예: 임대료 인상분 반영"></div></div>
+          <div class="cf-rembox hidden" style="margin-top:8px;border:1px dashed var(--brand);border-radius:8px;padding:9px;background:#fff">
+            <div style="font-weight:700;font-size:12.5px">계획보다 적게 집행 — 잔액 <span class="cf-remamt"></span> 처리를 선택하세요</div>
+            <label style="display:block;margin-top:5px;font-weight:400;cursor:pointer"><input type="radio" name="cfrem-${t.id}" class="cf-rem" value="close" checked style="width:auto"> <b>마감</b> — 잔액을 <span style="color:var(--income)">절감</span>으로 기록하고 이 예정을 종료합니다</label>
+            <label style="display:block;margin-top:2px;font-weight:400;cursor:pointer"><input type="radio" name="cfrem-${t.id}" class="cf-rem" value="keep" style="width:auto"> <b>남겨두기</b> — 잔액을 새 <b>예정</b>으로 분리해 유지합니다(나중에 추가 집행, 절감 아님)</label>
+          </div>
+          <div class="cf-overbox hidden" style="margin-top:8px;font-size:12.5px;color:var(--expense);font-weight:600"></div>
           <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn cf-go">${t.direction==='in'?'입금':'지급'} 확인 (실제 반영)</button>
             <button class="btn ghost cf-planedit">계획 수정</button>
@@ -937,6 +944,9 @@
         </div>`;
       box.querySelector('.cf-cancel').onclick=()=>{box.closest('.txn-det').classList.add('hidden');};
       box.querySelector('.cf-go').onclick=()=>confirmPay(t.id,box);
+      const cfPlanAmt=t.plan_amount!=null?Number(t.plan_amount):Number(t.amount);
+      const cfAmtEl=box.querySelector('.cf-amt');
+      if(cfAmtEl){const upd=()=>updateRemainderUi(box,'cf',Number(cfAmtEl.value)||0,cfPlanAmt,t.currency);cfAmtEl.addEventListener('input',upd);upd();}
       box.querySelector('.cf-planedit').onclick=()=>{box.querySelector('.planedit').classList.toggle('hidden');};
       box.querySelector('.pe-save').onclick=()=>savePlanEdit(t.id,box);
       return;
@@ -1211,7 +1221,7 @@
                <button class="btn ${through?'ghost ':''}sm rx-gen" data-id="${r.id}">${through?'추가 생성':'생성'}</button>`
                :'<span class="hint" style="margin:0">최대(24개월)까지 생성됨</span>'}`;
           return `<tr style="${r.active?'':'opacity:.5'}">
-            <td><b>${r.name}</b></td>
+            <td><b>${r.name}</b>${r.is_private?' <span class="badge" style="background:#f6e9e9;color:#a33">🔒 비공개</span>':''}</td>
             <td>${r.direction==='in'?'수입':'지출'}</td>
             <td>${r.category_code?r.category_code+' · '+(r.category_name||''):'—'}</td>
             <td class="num">${fmt(r.amount)} ${r.currency}</td>
@@ -1221,10 +1231,11 @@
             <td>${r.active?'<span class="badge" style="background:#e7f3ee;color:var(--income)">활성</span>':'<span class="badge" style="background:#eee;color:#888">중지</span>'}</td>
             <td>${r.generated_count}건 / ${r.paid_count}지급</td>
             <td style="white-space:nowrap">${genCell}</td>
-            <td style="white-space:nowrap"><button class="btn ghost sm rx-toggle" data-id="${r.id}" data-active="${r.active?1:0}">${r.active?'중지':'재개'}</button> <button class="btn ghost sm rx-del" data-id="${r.id}">삭제</button></td>
+            <td style="white-space:nowrap"><button class="btn ghost sm rx-toggle" data-id="${r.id}" data-active="${r.active?1:0}">${r.active?'중지':'재개'}</button> ${isDirector()?`<button class="btn ghost sm rx-priv-toggle" data-id="${r.id}" data-priv="${r.is_private?1:0}">${r.is_private?'공개로':'비공개로'}</button> `:''}<button class="btn ghost sm rx-del" data-id="${r.id}">삭제</button></td>
           </tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.rx-toggle')].forEach(el=>el.onclick=()=>toggleRule(Number(el.dataset.id),el.dataset.active!=='1'));
       [...b.querySelectorAll('.rx-del')].forEach(el=>el.onclick=()=>delRule(Number(el.dataset.id)));
+      [...b.querySelectorAll('.rx-priv-toggle')].forEach(el=>el.onclick=()=>togglePriv(Number(el.dataset.id),el.dataset.priv!=='1'));
       [...b.querySelectorAll('.rx-gen')].forEach(el=>el.onclick=()=>{
         const id=Number(el.dataset.id);
         const sel=b.querySelector('.rx-mon[data-id="'+id+'"]');
@@ -1241,6 +1252,7 @@
     const body={name,direction:$('rx-dir').value,category_code:$('rx-cat').value||null,amount:amt,currency:$('rx-cur').value,
       account_id:$('rx-acc').value?Number($('rx-acc').value):null,freq,start_date:start,
       end_month:$('rx-endtype').value==='month'?($('rx-end').value||null):null,memo:$('rx-memo').value.trim()||null};
+    if(isDirector())body.is_private=$('rx-priv').checked;
     if(freq==='month')body.day_of_month=Number($('rx-dom').value)||0;
     else body.weekday=Number($('rx-wday').value);
     if(freq==='month'&&!(body.day_of_month>=1&&body.day_of_month<=31)){m.className='msg err';m.textContent='매월 며칠(1~31)을 입력하세요.';return;}
@@ -1249,10 +1261,16 @@
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);alert('규칙 저장 실패: '+(d.error||('HTTP '+res.status))+'\n3단계 백엔드가 배포·마이그레이트되었는지 확인하세요.');return;}
       // 저장 완료 — 폼 닫고 목록 갱신(생성은 백그라운드)
-      $('rx-name').value='';$('rx-amt').value='';$('rx-memo').value='';$('rxForm').classList.add('hidden');
+      $('rx-name').value='';$('rx-amt').value='';$('rx-memo').value='';$('rx-priv').checked=false;$('rxForm').classList.add('hidden');
       m.className='msg ok';m.textContent='규칙이 저장되었습니다. 아래 목록에서 이 규칙의 목표 월을 골라 “생성”을 누르세요.';
       await loadFixed();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';alert('서버 연결 실패 — 서버 주소와 배포 상태를 확인하세요.');}
+  }
+  async function togglePriv(id,priv){
+    if(priv&&!confirm('이 고정비를 비공개로 전환하시겠습니까?\n재무담당 등 비디렉터에게는 이 규칙과 이미 생성된 예정·실적 거래가 모두 숨겨집니다.'))return;
+    if(!priv&&!confirm('이 고정비를 공개로 전환하시겠습니까?\n재무담당에게 이 규칙과 생성된 거래가 모두 보이게 됩니다.'))return;
+    try{await fetch(session.api+'/api/recurring/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({is_private:priv})});
+      loadFixed();}catch(e){}
   }
   async function toggleRule(id,active){
     try{await fetch(session.api+'/api/recurring/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({active})});
@@ -1309,6 +1327,29 @@
     }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
 
+  // 실적 금액 입력에 따라 잔액 처리 선택(마감/남겨두기) 또는 초과 집행 안내를 표시
+  function updateRemainderUi(root,prefix,amt,planAmt,cur){
+    const remBox=root.querySelector('.'+prefix+'-rembox'),overBox=root.querySelector('.'+prefix+'-overbox');
+    if(!remBox||!overBox)return;
+    const diff=planAmt-amt;
+    if(amt>0&&diff>0.001){
+      remBox.classList.remove('hidden');overBox.classList.add('hidden');
+      remBox.querySelector('.'+prefix+'-remamt').textContent=fmt(diff)+' '+cur;
+    }else if(amt>0&&diff<-0.001){
+      remBox.classList.add('hidden');overBox.classList.remove('hidden');
+      overBox.textContent='계획('+fmt(planAmt)+' '+cur+')보다 '+fmt(-diff)+' '+cur+' 초과 집행됩니다(예산 초과로 기록).';
+    }else{remBox.classList.add('hidden');overBox.classList.add('hidden');}
+  }
+  // confirm-pay 응답 → 사용자 메시지
+  function confirmResultMsg(d){
+    if(d.remainder==='keep'&&d.remainder_amount>0)
+      return '부분 집행으로 반영되었습니다.\n잔액 '+fmt(d.remainder_amount)+'이(가) 새 예정으로 남았습니다(예정 내역에서 확인).';
+    if(d.saved>0)
+      return '실적으로 반영·마감되었습니다.\n계획 대비 '+fmt(d.saved)+' 절감입니다. (계획 대비 실적에 절감으로 표시)';
+    if(d.over>0)
+      return '실적으로 반영되었습니다.\n계획 대비 '+fmt(d.over)+' 초과 집행입니다. (계획 대비 실적에 증가로 표시)';
+    return d.changed?'실적으로 반영되었습니다(계획과 달라 "계획대비 변경" 표시).':'실적으로 반영되었습니다. 계좌 잔액에 적용됩니다.';
+  }
   async function confirmPay(id,box){
     const m=box.querySelector('.cf-msg');m.className='msg cf-msg';m.style.display='none';
     const acc=box.querySelector('.cf-acc').value;
@@ -1317,11 +1358,12 @@
     const amtEl=box.querySelector('.cf-amt');if(amtEl&&Number(amtEl.value)>0)body.amount=Number(amtEl.value);
     const memoEl=box.querySelector('.cf-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
     const fxEl=box.querySelector('.cf-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    const remSel=box.querySelector('.cf-rembox:not(.hidden) .cf-rem:checked');if(remSel)body.remainder=remSel.value;
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='account_required'?'계좌가 필요합니다.':(d.error||res.status));return;}
-      alert(d.changed?'실제로 반영되었습니다. 계획과 달라 "계획대비 변경"으로 표시됩니다.':'실제로 반영되었습니다. 계좌 잔액에 적용됩니다.');
+      alert(confirmResultMsg(d));
       loadTxns();loadAccounts();
     }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
@@ -1480,7 +1522,7 @@
       const url=`${session.api}/api/cashflow?granularity=${cfState.gran}&includePlan=${cfState.mode==='plan'?1:0}`;
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       cfLast=d;
-      $('cf-open').textContent=`기초 잔고(개설) ${fmt(d.opening_balance)} MXN`;
+      $('cf-open').textContent=`기초 잔고(개설) ${fmt(d.opening_balance)} MXN — 잔액 열람 가능한 모든 계좌 포함`;
       if(cfState.view==='table')renderCashTable(d);
       else if(cfState.view==='cal')renderMonthCal(d);
       else renderWeekCal(d);
@@ -1534,7 +1576,7 @@
       }
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
-        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · ${cfState.mode==='plan'?'<span style="color:#7a4fb0">예상=실적+AR−AP 누적</span>':'잔고=누적(실적)'}</span></div>
+        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · ${cfState.mode==='plan'?'<span style="color:#7a4fb0">예상=실적+AR−AP 누적</span>':'잔고=누적(실적)'} · <b>잔고는 잔액 열람 가능한 모든 계좌 기준</b>(세부내역 없는 '잔액만' 계좌 포함 — 표시 항목 합계와 다를 수 있음)</span></div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
         ${renderMonthSections(d)}`;
@@ -1865,11 +1907,20 @@
         ${t.currency==='USD'?'<div><label>환율</label><input class="pp-fx" type="number" step="0.0001" placeholder="지급일 환율"></div>':''}
       </div>
       <div class="row"><div style="flex:3"><label>변경 사유(계획과 다를 때)</label><input class="pp-memo" type="text"></div></div>
+      <div class="pp-rembox hidden" style="margin-top:8px;border:1px dashed var(--brand);border-radius:8px;padding:9px;background:#fff">
+        <div style="font-weight:700;font-size:12.5px">계획보다 적게 집행 — 잔액 <span class="pp-remamt"></span> 처리를 선택하세요</div>
+        <label style="display:block;margin-top:5px;font-weight:400;cursor:pointer"><input type="radio" name="pprem-${t.id}" class="pp-rem" value="close" checked style="width:auto"> <b>마감</b> — 잔액을 <span style="color:var(--income)">절감</span>으로 기록하고 이 예정을 종료합니다</label>
+        <label style="display:block;margin-top:2px;font-weight:400;cursor:pointer"><input type="radio" name="pprem-${t.id}" class="pp-rem" value="keep" style="width:auto"> <b>남겨두기</b> — 잔액을 새 <b>예정</b>으로 분리해 유지합니다(나중에 추가 집행, 절감 아님)</label>
+      </div>
+      <div class="pp-overbox hidden" style="margin-top:8px;font-size:12.5px;color:var(--expense);font-weight:600"></div>
       <div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm pp-go">실적 반영</button><button class="btn ghost sm pp-cancel">닫기</button></div>
       <div class="msg pp-msg"></div></div>`;
     tr.classList.remove('hidden');
     tr.querySelector('.pp-cancel').onclick=()=>togglePpForm(id);
     tr.querySelector('.pp-go').onclick=()=>doPpConfirm(id,tr);
+    const ppPlanAmt=t.plan_amount!=null?Number(t.plan_amount):Number(t.amount);
+    const ppAmtEl=tr.querySelector('.pp-amt');
+    if(ppAmtEl){const upd=()=>updateRemainderUi(tr,'pp',Number(ppAmtEl.value)||0,ppPlanAmt,t.currency);ppAmtEl.addEventListener('input',upd);upd();}
   }
   async function doPpConfirm(id,tr){
     const m=tr.querySelector('.pp-msg');m.className='msg pp-msg';m.style.display='none';
@@ -1879,11 +1930,12 @@
     const amtEl=tr.querySelector('.pp-amt');if(amtEl&&Number(amtEl.value)>0)body.amount=Number(amtEl.value);
     const memoEl=tr.querySelector('.pp-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
     const fxEl=tr.querySelector('.pp-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    const remSel=tr.querySelector('.pp-rembox:not(.hidden) .pp-rem:checked');if(remSel)body.remainder=remSel.value;
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg pp-msg err';m.style.display='block';m.textContent='실패: '+(d.error||res.status);return;}
-      alert(d.changed?'실적으로 반영되었습니다(계획과 달라 "계획대비 변경" 표시).':'실적으로 반영되었습니다.');
+      alert(confirmResultMsg(d));
       loadPendingPlans();loadAccounts();
     }catch(e){m.className='msg pp-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
@@ -2089,6 +2141,7 @@
     ['pa-all','pa-rec','pa-oth'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');paState.filter=$(id).dataset.v;loadPlanActual();}));
   $('rxAddBtn').addEventListener('click',async ()=>{
     $('rxForm').classList.toggle('hidden');
+    $('rx-privbox').classList.toggle('hidden',!isDirector());
     if(!accounts||!accounts.length){await loadAccounts();}
     $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
     $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
@@ -2120,6 +2173,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703ms"></script>
+<script src="refatrix-nav.js?v=20260703mt"></script>
 </body>
 </html>
