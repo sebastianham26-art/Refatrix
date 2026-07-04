@@ -62,7 +62,7 @@ export default async function financeRoutes(app) {
       acccond = ` AND a.id = ANY($${args.length})`;
     }
     const rows = (await query(
-      `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date, a.non_deductible,
+      `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date, a.non_deductible, a.disabled,
               a.open_balance + COALESCE((
                 SELECT SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END)
                   FROM transactions t
@@ -75,7 +75,7 @@ export default async function financeRoutes(app) {
               ),0) AS mxn_txn_sum
          FROM accounts a WHERE a.deleted_at IS NULL${acccond} ORDER BY a.id`, args)).rows;
     return { items: rows.map((a) => ({
-      ...a, non_deductible: a.non_deductible === true, can_detail: canViewDetail(req.ctx.perm, a.id),
+      ...a, non_deductible: a.non_deductible === true, disabled: a.disabled === true, can_detail: canViewDetail(req.ctx.perm, a.id),
       open_balance: Number(a.open_balance), balance: Number(a.balance),
       // MXN 환산 잔액: 거래는 거래당시 환율로 확정 저장된 amount_mxn, 기초잔액(USD)은 오늘 환율. → 현금흐름·장부와 동일 기준.
       balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
@@ -97,14 +97,16 @@ export default async function financeRoutes(app) {
   // 계좌 수정(디렉터)
   app.patch('/api/accounts/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const { name, type, open_balance, open_date, non_deductible } = req.body || {};
+    const { name, type, open_balance, open_date, non_deductible, disabled } = req.body || {};
     const r = await query(
       `UPDATE accounts SET name=COALESCE($1,name), type=COALESCE($2,type),
          open_balance=COALESCE($3,open_balance), open_date=COALESCE($4,open_date),
-         non_deductible=COALESCE($5,non_deductible), updated_by=$6
-       WHERE id=$7 AND deleted_at IS NULL RETURNING id`,
+         non_deductible=COALESCE($5,non_deductible), disabled=COALESCE($6,disabled), updated_by=$7
+       WHERE id=$8 AND deleted_at IS NULL RETURNING id`,
       [name ?? null, type ?? null, (open_balance == null ? null : r2(open_balance)), open_date ?? null,
-       (typeof non_deductible === 'boolean' ? non_deductible : null), req.ctx.perm.userId, id]);
+       (typeof non_deductible === 'boolean' ? non_deductible : null),
+       (typeof disabled === 'boolean' ? disabled : null), req.ctx.perm.userId, id]);
+    if (typeof disabled === 'boolean') await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `account:${id}`, detail: { disabled } });
     if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
     return { ok: true };
   });

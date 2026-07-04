@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703l</title>
+<title>Refatrix ERP · 재무 · build fin-0703m</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -571,20 +571,20 @@
               <td style="white-space:nowrap"><button class="btn sm" onclick="event.stopPropagation();saveAccEdit(${a.id})">저장</button> <button class="btn ghost sm" onclick="event.stopPropagation();cancelAccEdit()">취소</button></td>
             </tr>`;
           }
-          return `<tr class="acc-row" data-id="${a.id}" data-detail="${a.can_detail===false?'0':'1'}" style="cursor:${a.can_detail===false?'default':'pointer'}">
-          <td><b>${a.name}</b></td><td>${a.type||'—'}</td><td>${a.currency}</td>
+          return `<tr class="acc-row" data-id="${a.id}" data-detail="${a.can_detail===false?'0':'1'}" style="cursor:${a.can_detail===false?'default':'pointer'};${a.disabled?'opacity:.55;background:#f6f5f1':''}">
+          <td><b>${a.name}</b>${a.disabled?' <span class="badge" style="background:#e8e6e0;color:#6b6a66">안씀</span>':''}</td><td>${a.type||'—'}</td><td>${a.currency}</td>
           <td class="num">${fmt(a.open_balance)}</td>
           <td>${a.open_date?od(a):'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num"><b>${fmt(a.balance)}</b> ${a.currency}</td>
           <td>${a.currency==='USD'?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance_mxn)} <span style="font-size:11px">(현금흐름 기준)</span></span>`:''}</td>
-          ${dir?`<td><button class="btn ghost sm" onclick="event.stopPropagation();editAccOpen(${a.id})">기초 수정</button></td>`:''}
+          ${dir?`<td style="white-space:nowrap"><button class="btn ghost sm" onclick="event.stopPropagation();editAccOpen(${a.id})">기초 수정</button> <button class="btn ghost sm" onclick="event.stopPropagation();toggleAccDisabled(${a.id},${a.disabled?'false':'true'})">${a.disabled?'해제':'안씀'}</button></td>`:''}
         </tr>`;
         }).join('')}</tbody></table>${accountsTotalSummaryHtml(accounts)}`; }
       // 거래 등록 계좌 드롭다운
-      $('t-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      $('t-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
       // 거래목록 계좌 필터 드롭다운
       const facc=$('f-acc');const cur=facc.value;
-      facc.innerHTML='<option value="">전체 계좌</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      facc.innerHTML='<option value="">전체 계좌</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})${a.disabled?' — 안씀':''}</option>`).join('');
       facc.value=cur;
       // 계좌 행 클릭 → 그 계좌의 거래내역으로 (단, '잔액만' 계좌는 세부 비공개라 차단)
       [...b.querySelectorAll('.acc-row')].forEach(row=>row.onclick=()=>{
@@ -612,6 +612,17 @@
 
   // 기존 계좌의 기초잔액·개설일 인라인 수정 (디렉터 전용)
   function editAccOpen(id){ accEditId=String(id); loadAccounts(); }
+  async function toggleAccDisabled(id,next){
+    const a=accounts.find(x=>String(x.id)===String(id));
+    const label=a?a.name:('#'+id);
+    if(next&&!confirm(`'${label}' 계좌를 안씀으로 잠급니다.\n\n- 거래등록·수정·지급확인·고정비·엑셀입력의 계좌 선택에서 사라집니다.\n- 기존 거래·잔액·목록 필터에는 계속 표시됩니다.\n\n진행할까요?`))return;
+    try{
+      const res=await fetch(session.api+'/api/accounts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({disabled:next})});
+      if(!res.ok)throw 0;
+      await loadAccounts();
+    }catch(e){alert('변경하지 못했습니다.');}
+  }
+  window.toggleAccDisabled=toggleAccDisabled;
   function cancelAccEdit(){ accEditId=null; loadAccounts(); }
   async function saveAccEdit(id){
     const m=$('accMsg');m.className='msg';
@@ -688,7 +699,7 @@
       const wb=new ExcelJS.Workbook();
       const ws=wb.addWorksheet('거래입력');
       const ref=wb.addWorksheet('목록');
-      const accList=accounts.map(biAccLabel), catList=cats.map(biCatLabel);
+      const accList=accounts.filter(a=>!a.disabled).map(biAccLabel), catList=cats.map(biCatLabel);
       ref.getCell(1,1).value='계좌';ref.getCell(1,2).value='계정과목 (코드 · 이름)';ref.getCell(1,3).value='그룹';
       accList.forEach((v,i)=>{ref.getCell(2+i,1).value=v;});
       cats.forEach((c,i)=>{ref.getCell(2+i,2).value=biCatLabel(c);ref.getCell(2+i,3).value=c.group_name||'';});
@@ -761,7 +772,7 @@
       const wb=new ExcelJS.Workbook();await wb.xlsx.load(await f.arrayBuffer());
       const ws=wb.getWorksheet('거래입력')||wb.worksheets[0];
       if(!ws){m.className='msg err';m.textContent='시트를 찾을 수 없습니다.';return;}
-      const accMap={};accounts.forEach(a=>{accMap[biAccLabel(a)]=a.id;accMap[a.name]=a.id;});
+      const accMap={};accounts.filter(a=>!a.disabled).forEach(a=>{accMap[biAccLabel(a)]=a.id;accMap[a.name]=a.id;});
       const catMap={};cats.forEach(c=>{catMap[biCatLabel(c)]=c.code;catMap[c.code]=c.code;catMap[c.name]=c.code;});
       const rows=[],errs=[],dateRe=/^\d{4}-\d{2}-\d{2}$/;
       const last=Math.min(ws.rowCount,BI_MAX+1);
@@ -949,8 +960,14 @@
     const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
     return '<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}" ${c.code===sel?'selected':''}>${c.code} · ${c.name}</option>`).join('');
   }
+  // 잠금(안씀) 계좌는 신규 사용 드롭다운에서 제외. 단, 이미 그 계좌에 걸린 항목을 열었을 땐
+  // 현재 선택값으로는 '(안씀)' 표기로 남겨 값이 엉뚱하게 바뀌는 것을 방지.
+  function activeAccounts(){ return accounts.filter(a=>!a.disabled); }
   function accOptions(sel){
-    return '<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}" ${String(a.id)===String(sel)?'selected':''}>${a.name} (${a.currency})</option>`).join('');
+    const cur=accounts.find(a=>String(a.id)===String(sel));
+    const list=activeAccounts().slice();
+    if(cur&&cur.disabled)list.push(cur);
+    return '<option value="">(미지정)</option>'+list.map(a=>`<option value="${a.id}" ${String(a.id)===String(sel)?'selected':''}>${a.name} (${a.currency})${a.disabled?' — 안씀':''}</option>`).join('');
   }
 
   function renderTxnDetail(id,box){
@@ -1262,7 +1279,7 @@
     try{
       const items=(await fetch(session.api+'/api/recurring',{headers:auth()}).then(r=>r.json())).items||[];
       $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
-      $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
       if(!items.length){b.innerHTML='<div class="hint">등록된 고정비 규칙이 없습니다. 아래에서 추가하세요.</div>';return;}
       b.innerHTML=`<table><thead><tr><th>이름</th><th>구분</th><th>계정과목</th><th class="num">금액</th><th>주기</th><th>시작</th><th>종료</th><th>상태</th><th>생성/지급</th><th>목표 월까지 생성</th><th></th></tr></thead>
         <tbody>${items.map(r=>{
@@ -2197,7 +2214,7 @@
     $('rx-privbox').classList.toggle('hidden',!isDirector());
     if(!accounts||!accounts.length){await loadAccounts();}
     $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
-    $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+    $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
   });
   $('rx-save').addEventListener('click',saveRule);
   $('rx-dir').addEventListener('change',()=>{$('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');});
@@ -2226,6 +2243,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703mv"></script>
+<script src="refatrix-nav.js?v=20260703mw"></script>
 </body>
 </html>
