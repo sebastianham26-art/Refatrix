@@ -1222,17 +1222,14 @@ export default async function financeRoutes(app) {
       const startYmd = toYMD(rule.start_date);
       if (!startYmd) return reply.code(400).send({ error: 'bad_start_date' });
       const gthrough = toYMD(rule.generated_through);
-      const fromExclusive = gthrough
-        ? new Date(new Date(gthrough + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)
-        : startYmd;
-      if (gthrough && target <= gthrough) {
-        return { ok: true, created: 0, generated_through: gthrough, capped: target >= cap };
-      }
+      // 항상 시작일부터 전개 — 기존 생성분은 (rule_id, period) 멱등(ON CONFLICT)으로 자동 스킵.
+      // generated_through 기준 연장 방식은 폐기: 과거 버그로 거래 0건 상태에서 generated_through만
+      // 기록된 규칙이 "이미 생성됨"으로 오판돼 영구 복구 불가였음. 이 방식이면 [생성] 재클릭만으로 치유됨.
       const occ = expandBetween({
         freq: rule.freq, start_date: startYmd,
         day_of_month: rule.day_of_month == null ? null : Number(rule.day_of_month),
         weekday: rule.weekday == null ? null : Number(rule.weekday), end_month: rule.end_month,
-      }, fromExclusive, target);
+      }, startYmd, target);
       const fx = rule.currency === 'USD' ? (await getUsdMxnRate()).rate : 1;
       const amt = r2(rule.amount); const amountMxn = r2(amt * fx);
       let created = 0;
@@ -1257,8 +1254,10 @@ export default async function financeRoutes(app) {
           created = res.rowCount || 0;
         }
       }
-      await query(`UPDATE recurring_rules SET generated_through=$1 WHERE id=$2`, [target, id]);
-      return { ok: true, created, generated_through: target, capped: target >= cap };
+      // generated_through는 이제 표시용(어디까지 생성했는지) — 뒤로 가지 않게만 유지
+      const newThrough = gthrough && gthrough > target ? gthrough : target;
+      await query(`UPDATE recurring_rules SET generated_through=$1 WHERE id=$2`, [newThrough, id]);
+      return { ok: true, created, generated_through: newThrough, capped: target >= cap };
     } finally {
       app.__recurGenerating = false;
     }
