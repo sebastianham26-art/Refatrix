@@ -134,10 +134,11 @@ export default async function stockCountRoutes(app) {
          LEFT JOIN users u ON u.id = sc.started_by WHERE sc.id=$1`, [id])).rows[0];
     if (!sc) return reply.code(404).send({ error: 'not_found' });
     const lines = (await query(
-      `SELECT l.*, COALESCE(p.name, pi.name) AS item_name
+      `SELECT l.*, COALESCE(p.name, pi.name) AS item_name, ru.name AS del_requested_by_name
          FROM stock_count_lines l
          LEFT JOIN products p ON p.id = l.product_id
          LEFT JOIN promo_items pi ON pi.id = l.promo_item_id
+         LEFT JOIN users ru ON ru.id = l.del_requested_by
         WHERE l.count_id=$1 ORDER BY l.id`, [id])).rows;
     return {
       ...sessRow(sc),
@@ -147,6 +148,7 @@ export default async function stockCountRoutes(app) {
         promo_item_id: l.promo_item_id != null ? Number(l.promo_item_id) : null,
         raw_code: l.raw_code, matched_code: l.matched_code || '', match_source: l.match_source || '',
         item_name: l.item_name || '', rack_scanned: l.rack_scanned || '', counted_qty: num(l.counted_qty),
+        del_requested_at: l.del_requested_at || null, del_requested_by: l.del_requested_by != null ? Number(l.del_requested_by) : null, del_requested_by_name: l.del_requested_by_name || '',
       })),
     };
   });
@@ -236,11 +238,47 @@ export default async function stockCountRoutes(app) {
 
   // 라인 삭제
   app.delete('/api/stock-counts/:id/lines/:lineId', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '\ub514\ub809\ud130 \uc2b9\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.' });
     const id = Number(req.params.id); const lineId = Number(req.params.lineId);
     const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
     if (!sc) return reply.code(404).send({ error: 'not_found' });
     if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft' });
     await query(`DELETE FROM stock_count_lines WHERE id=$1 AND count_id=$2`, [lineId, id]);
+    return { ok: true };
+  });
+
+  // 선택 라인 삭제 요청(담당자) — draft 만, 플래그만 세팅
+  app.post('/api/stock-counts/:id/lines/delete-request', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const ids = (req.body && Array.isArray(req.body.line_ids)) ? req.body.line_ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return reply.code(400).send({ error: 'no_lines' });
+    const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft' });
+    const r = await query(`UPDATE stock_count_lines SET del_requested_at=now(), del_requested_by=$3 WHERE count_id=$1 AND id = ANY($2::bigint[]) AND del_requested_at IS NULL`, [id, ids, req.ctx.perm.userId]);
+    return { ok: true, requested: r.rowCount };
+  });
+
+  // 선택 라인 삭제 승인(디렉터) — 실제 삭제
+  app.post('/api/stock-counts/:id/lines/delete-approve', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '\ub514\ub809\ud130 \uc2b9\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.' });
+    const id = Number(req.params.id);
+    const ids = (req.body && Array.isArray(req.body.line_ids)) ? req.body.line_ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return reply.code(400).send({ error: 'no_lines' });
+    const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft' });
+    const r = await query(`DELETE FROM stock_count_lines WHERE count_id=$1 AND id = ANY($2::bigint[])`, [id, ids]);
+    return { ok: true, deleted: r.rowCount };
+  });
+
+  // 선택 라인 삭제요청 반려(디렉터) — 플래그 해제
+  app.post('/api/stock-counts/:id/lines/delete-reject', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '\ub514\ub809\ud130 \uc2b9\uc778\uc774 \ud544\uc694\ud569\ub2c8\ub2e4.' });
+    const id = Number(req.params.id);
+    const ids = (req.body && Array.isArray(req.body.line_ids)) ? req.body.line_ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return reply.code(400).send({ error: 'no_lines' });
+    await query(`UPDATE stock_count_lines SET del_requested_at=NULL, del_requested_by=NULL WHERE count_id=$1 AND id = ANY($2::bigint[])`, [id, ids]);
     return { ok: true };
   });
 

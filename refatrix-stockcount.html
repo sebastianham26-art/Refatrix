@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703b</title>
+<title>재고실사 · Refatrix · build sc0703c</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -26,6 +26,12 @@
   input,select{width:100%;font-size:15px;padding:11px;border:1.5px solid var(--line);border-radius:10px;background:#fff}
   input.scan{border:2px solid var(--green);font-weight:700}
   .btn{border:0;background:var(--green);color:#fff;font-weight:800;font-size:14px;border-radius:11px;padding:11px 16px;cursor:pointer}
+  .scselbar{position:sticky;top:0;z-index:5;background:#33495c;color:#fff;padding:9px 12px;border-radius:10px;margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-weight:700}
+  .scselbar .btn{border:none;border-radius:8px;padding:7px 12px;font-weight:800;cursor:pointer;font-size:13px}
+  .scselbar .btn.danger{background:#c0392b;color:#fff}
+  .scselbar .btn.ghost{background:#fff;color:#33495c}
+  .scselbar .link{color:#dfe8ef;cursor:pointer;text-decoration:underline}
+  #linesBox td .cbx{width:18px;height:18px;cursor:pointer}
   .btn.brass{background:var(--brass)}
   .btn.ghost{background:#fff;color:var(--green);border:1.5px solid var(--green)}
   .btn.sm{padding:7px 11px;font-size:13px;border-radius:9px}
@@ -147,6 +153,7 @@
         <button class="btn brass sm" onclick="submitCount()">✔ 실사 완료(제출)</button>
       </div>
     </div>
+    <div id="scSelBar" class="scselbar" style="display:none"></div>
     <div id="linesBox"></div>
   </div>
 </div>
@@ -422,23 +429,61 @@ async function postLine(code,qty,quiet){
   await refreshLines();
 }
 async function refreshLines(){ const r=await api('/api/stock-counts/'+CUR.id); if(r.ok) renderLines(r.lines||[]); }
+let SEL=new Set();
+function isDir(){ return !!(session.user && session.user.role==='director'); }
 function renderLines(lines){
   $('lineCount').textContent='('+lines.length+'건)';
-  if(!lines.length){ $('linesBox').innerHTML='<div class="mut" style="padding:8px">아직 기록이 없습니다. 랙 → 코드 → 수량 순으로 스캔하세요.</div>'; return; }
-  // 랙별 그룹
+  const idset={}; lines.forEach(l=>idset[l.id]=1); Array.from(SEL).forEach(id=>{ if(!idset[id]) SEL.delete(id); });
+  if(!lines.length){ $('linesBox').innerHTML='<div class="mut" style="padding:8px">아직 기록이 없습니다. 랙 → 코드 → 수량 순으로 스캔하세요.</div>'; renderSelBar(); return; }
   const groups={}; lines.forEach(l=>{ const k=l.rack_scanned||'(랙 미지정)'; (groups[k]=groups[k]||[]).push(l); });
   let html='';
   Object.keys(groups).forEach(rk=>{
-    html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th>코드</th><th>품명</th><th>구분</th><th class="num">수량</th><th></th></tr></thead><tbody>';
+    html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th style="width:30px"></th><th>코드</th><th>품명</th><th>구분</th><th class="num">수량</th><th>상태</th></tr></thead><tbody>';
     groups[rk].forEach(l=>{
       const kind=l.item_kind==='unknown'?'<span class="pill p-unk">미등록</span>':(l.item_kind==='promo'?'<span class="pill p-over">프로모</span>':'<span class="pill p-match">부품</span>');
-      html+='<tr><td>'+(l.matched_code||l.raw_code)+'</td><td>'+(l.item_name||'')+'</td><td>'+kind+'</td>'
+      const pend=!!l.del_requested_at;
+      const checked=SEL.has(l.id)?' checked':'';
+      const badge=pend?('<span class="pill" style="background:#fdeecf;color:#8a6d3b">🕓 삭제 승인 대기'+(l.del_requested_by_name?' · '+l.del_requested_by_name:'')+'</span>'):'';
+      html+='<tr'+(pend?' style="background:#fff8ec"':'')+'>'
+        +'<td><input type="checkbox" class="cbx" onchange="toggleSel('+l.id+',this.checked)"'+checked+'></td>'
+        +'<td>'+(l.matched_code||l.raw_code)+'</td><td>'+(l.item_name||'')+'</td><td>'+kind+'</td>'
         +'<td class="num"><input type="number" value="'+l.counted_qty+'" min="0" step="1" style="width:74px;padding:5px" onchange="editLine('+l.id+',this.value)"></td>'
-        +'<td><a class="link" style="color:var(--short)" onclick="delLine('+l.id+')">삭제</a></td></tr>';
+        +'<td>'+badge+'</td></tr>';
     });
     html+='</tbody></table></div>';
   });
   $('linesBox').innerHTML=html;
+  renderSelBar();
+}
+function renderSelBar(){
+  const el=$('scSelBar'); if(!el) return;
+  const n=SEL.size;
+  if(!n){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='';
+  const btns = isDir()
+    ? '<button class="btn danger" onclick="approveDelSel()">🗑 선택 삭제(승인)</button> <button class="btn ghost" onclick="rejectDelSel()">↩ 요청 반려</button>'
+    : '<button class="btn danger" onclick="requestDelSel()">🗑 선택 삭제 요청</button>';
+  el.innerHTML='<span>선택 <b>'+n+'</b>건</span> '+btns+' <a class="link" onclick="clearSel()">해제</a>';
+}
+function toggleSel(id,on){ if(on) SEL.add(id); else SEL.delete(id); renderSelBar(); }
+function clearSel(){ SEL.clear(); refreshLines(); }
+function selIds(){ return Array.from(SEL); }
+async function requestDelSel(){
+  const ids=selIds(); if(!ids.length) return;
+  if(!confirm(ids.length+'건 삭제를 요청할까요? 디렉터 승인 후 삭제됩니다.')) return;
+  const r=await api('/api/stock-counts/'+CUR.id+'/lines/delete-request',{method:'POST',body:JSON.stringify({line_ids:ids})});
+  if(r.ok){ toast('삭제 요청 '+(r.requested!=null?r.requested:ids.length)+'건'); SEL.clear(); refreshLines(); } else toast((r&&r.note)||'요청 실패');
+}
+async function approveDelSel(){
+  const ids=selIds(); if(!ids.length) return;
+  if(!confirm(ids.length+'건을 삭제(승인)할까요? 되돌릴 수 없습니다.')) return;
+  const r=await api('/api/stock-counts/'+CUR.id+'/lines/delete-approve',{method:'POST',body:JSON.stringify({line_ids:ids})});
+  if(r.ok){ toast('삭제 '+(r.deleted!=null?r.deleted:ids.length)+'건'); SEL.clear(); refreshLines(); } else toast((r&&r.note)||'삭제 실패');
+}
+async function rejectDelSel(){
+  const ids=selIds(); if(!ids.length) return;
+  const r=await api('/api/stock-counts/'+CUR.id+'/lines/delete-reject',{method:'POST',body:JSON.stringify({line_ids:ids})});
+  if(r.ok){ toast('요청 반려'); SEL.clear(); refreshLines(); } else toast((r&&r.note)||'반려 실패');
 }
 async function editLine(id,val){ const q=Number(val); if(!isFinite(q)||q<0){toast('수량 오류');return;} const r=await api('/api/stock-counts/'+CUR.id+'/lines/'+id,{method:'PATCH',body:JSON.stringify({counted_qty:q})}); if(r.ok) toast('수정됨'); else toast('수정 실패'); }
 async function delLine(id){ if(!confirm('이 기록을 삭제할까요?')) return; const r=await api('/api/stock-counts/'+CUR.id+'/lines/'+id,{method:'DELETE'}); if(r.ok){ toast('삭제됨'); refreshLines(); } }
