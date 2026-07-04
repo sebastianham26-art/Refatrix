@@ -19,6 +19,20 @@ function addMonthsUTC(dateStr, months) {
   return dt.toISOString().slice(0, 10);
 }
 
+// DB DATE 컬럼 안전 변환: node-pg는 DATE를 JS Date 객체(로컬 자정)로 반환하므로
+// String(date).slice(0,10) → "Wed Jul 01" 같은 깨진 값이 됨(고정비 월간 생성 무한루프의 원인).
+// Date 객체·'YYYY-MM-DD...' 문자열 모두 'YYYY-MM-DD'로 정규화, 실패 시 null.
+function toYMD(v) {
+  if (v == null) return null;
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, '0'), d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(v).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
 export default async function financeRoutes(app) {
@@ -1205,16 +1219,19 @@ export default async function financeRoutes(app) {
         target = addMonthsUTC(today, RECUR_HORIZON_MONTHS);
       }
       if (target > cap) target = cap; // 상한 초과 차단
-      const gthrough = rule.generated_through ? String(rule.generated_through).slice(0, 10) : null;
+      const startYmd = toYMD(rule.start_date);
+      if (!startYmd) return reply.code(400).send({ error: 'bad_start_date' });
+      const gthrough = toYMD(rule.generated_through);
       const fromExclusive = gthrough
         ? new Date(new Date(gthrough + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)
-        : String(rule.start_date).slice(0, 10);
+        : startYmd;
       if (gthrough && target <= gthrough) {
         return { ok: true, created: 0, generated_through: gthrough, capped: target >= cap };
       }
       const occ = expandBetween({
-        freq: rule.freq, start_date: String(rule.start_date).slice(0, 10),
-        day_of_month: rule.day_of_month, weekday: rule.weekday, end_month: rule.end_month,
+        freq: rule.freq, start_date: startYmd,
+        day_of_month: rule.day_of_month == null ? null : Number(rule.day_of_month),
+        weekday: rule.weekday == null ? null : Number(rule.weekday), end_month: rule.end_month,
       }, fromExclusive, target);
       const fx = rule.currency === 'USD' ? (await getUsdMxnRate()).rate : 1;
       const amt = r2(rule.amount); const amountMxn = r2(amt * fx);

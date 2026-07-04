@@ -6,7 +6,15 @@ function ymd(d) {
   const y = d.getUTCFullYear(), m = String(d.getUTCMonth() + 1).padStart(2, '0'), day = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-function parseYMD(s) { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); }
+function parseYMD(s) {
+  if (s instanceof Date) { return isNaN(s.getTime()) ? null : new Date(Date.UTC(s.getFullYear(), s.getMonth(), s.getDate())); }
+  const mm = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+  if (!mm) return null;
+  const d = new Date(Date.UTC(Number(mm[1]), Number(mm[2]) - 1, Number(mm[3])));
+  return isNaN(d.getTime()) ? null : d;
+}
+// 무한루프 백스톱: 월 단위 루프 최대 반복(50년치). 정상 사용에선 도달 불가.
+const MAX_ITER = 600;
 
 // 해당 연·월의 말일(28~31) 고려해 일자를 클램프
 function clampDay(year, month0, day) {
@@ -17,6 +25,7 @@ function clampDay(year, month0, day) {
 // 지평 끝 날짜: 오늘 기준 +months개월
 export function horizonEnd(today, months) {
   const d = parseYMD(today);
+  if (!d) return null;
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, d.getUTCDate()));
 }
 
@@ -25,8 +34,8 @@ function expandMonthly(rule, startD, endD) {
   const out = [];
   const day = rule.day_of_month || startD.getUTCDate();
   let y = startD.getUTCFullYear(), m = startD.getUTCMonth();
-  // 시작 지점: 시작일이 속한 달부터
-  while (true) {
+  // 시작 지점: 시작일이 속한 달부터 (MAX_ITER: 잘못된 날짜로 인한 무한루프 방지)
+  for (let i = 0; i < MAX_ITER; i++) {
     const occDay = clampDay(y, m, day);
     const occ = new Date(Date.UTC(y, m, occDay));
     if (occ > endD) break;
@@ -57,6 +66,7 @@ function expandWeekly(rule, startD, endD) {
 export function expandRule(rule, today, horizonMonths) {
   const startD = parseYMD(rule.start_date);
   let endD = horizonEnd(today, horizonMonths);
+  if (!startD || !endD) return [];
   if (rule.end_month) {
     const [ey, em] = rule.end_month.split('-').map(Number);
     const endMonthLast = new Date(Date.UTC(ey, em, 0)); // em월 말일
@@ -73,6 +83,7 @@ export function expandRule(rule, today, horizonMonths) {
 export function expandBetween(rule, fromStr, toStr) {
   const startD = parseYMD(rule.start_date);
   let from = parseYMD(fromStr), to = parseYMD(toStr);
+  if (!startD || !from || !to) return [];
   if (from < startD) from = startD;
   // end_month 상한
   if (rule.end_month) {
@@ -94,7 +105,7 @@ export function expandBetween(rule, fromStr, toStr) {
   } else {
     const day = rule.day_of_month || startD.getUTCDate();
     let y = from.getUTCFullYear(), m = from.getUTCMonth();
-    while (true) {
+    for (let i = 0; i < MAX_ITER; i++) {
       const occ = new Date(Date.UTC(y, m, clampDay(y, m, day)));
       if (occ > to) break;
       if (occ >= from && occ >= startD) out.push({ date: ymd(occ), period: `${y}-${String(m + 1).padStart(2, '0')}` });
