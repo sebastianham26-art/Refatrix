@@ -404,7 +404,7 @@ export default async function financeRoutes(app) {
       `SELECT t.*, a.name AS account_name, cat.name AS category_name FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id LEFT JOIN categories cat ON cat.code=t.category_code WHERE t.id=$1`, [cr.txn_id])).rows[0];
     const orig = {
-      account_id: t.account_id, account_name: t.account_name, txn_date: String(t.txn_date).slice(0, 10), direction: t.direction,
+      account_id: t.account_id, account_name: t.account_name, txn_date: toYMD(t.txn_date), direction: t.direction,
       amount: Number(t.amount), currency: t.currency, fx_rate: Number(t.fx_rate), amount_mxn: Number(t.amount_mxn),
       category_code: t.category_code, category_name: t.category_name, memo: t.memo, receipt_no: t.receipt_no,
     };
@@ -1294,8 +1294,9 @@ export default async function financeRoutes(app) {
     const amountMxn = r2(newAmount * fx);
     // 계획 대비 변경 여부
     const planAmt = t.plan_amount != null ? Number(t.plan_amount) : Number(t.amount);
-    const planDate = t.plan_date ? String(t.plan_date).slice(0, 10) : String(t.txn_date).slice(0, 10);
-    const changed = Math.abs(newAmount - planAmt) > 0.001 || String(payDate).slice(0, 10) !== planDate;
+    // pg는 DATE 컬럼을 JS Date 객체로 반환 — String().slice는 'Mon Jul 06' 같은 깨진 값이 됨(잔액분리 INSERT 500의 원인)
+    const planDate = toYMD(t.plan_date) || toYMD(t.txn_date);
+    const changed = Math.abs(newAmount - planAmt) > 0.001 || toYMD(payDate) !== planDate;
     const memo = req.body?.memo ? String(req.body.memo).trim() : null;
     const newChangeCount = Number(t.change_count || 0) + (changed ? 1 : 0);
     const planMemo = changed && memo
@@ -1378,11 +1379,11 @@ export default async function financeRoutes(app) {
     const b = req.body || {};
     const newAmount = b.amount != null ? r2(b.amount) : Number(t.amount);
     if (!(newAmount > 0)) return reply.code(400).send({ error: 'invalid_amount' });
-    const newDate = b.plan_date || String(t.txn_date).slice(0, 10);
+    const newDate = b.plan_date || toYMD(t.plan_date) || toYMD(t.txn_date);
     let fx = Number(t.fx_rate) || 1;
     if (t.currency === 'USD') fx = Number(b.fx_rate) > 0 ? Number(b.fx_rate) : (await getUsdMxnRate()).rate;
     const amountMxn = r2(newAmount * fx);
-    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== String(t.txn_date).slice(0, 10);
+    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date);
     const memo = b.memo ? String(b.memo).trim() : null;
     const newCount = Number(t.change_count || 0) + (changed ? 1 : 0);
     const planMemo = changed && memo
