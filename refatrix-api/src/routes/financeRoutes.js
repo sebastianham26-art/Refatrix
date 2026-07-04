@@ -1373,6 +1373,42 @@ export default async function financeRoutes(app) {
     return { ok: true, changed, change_count: newCount };
   });
 
+  // ===== 잔액 보완 스트림 =====
+  // 원칙: "현금흐름의 누적잔고 = 잔액을 볼 수 있는 계좌(viewIds)들의 실제 잔액 합".
+  // 세부내역(일자 상세·계획대비실적 항목)은 기존대로 detail 권한 기준이지만,
+  // 잔액 계산에는 '잔액만' 계좌·세부차단(현금·불공제) 계좌·비공개 고정비 거래까지 전부 포함해야
+  // 재무/계좌 화면의 잔액 합과 현금흐름 잔고가 일치한다.
+  // 이 헬퍼는 detail 스트림(loadCashTxns)에서 빠지지만 잔액에는 반영돼야 하는 거래(보완분)만 돌려준다.
+  // 항목화 금지 — 메모·계정과목 없이 금액·날짜·방향만 조회하고, 합산에만 쓴다.
+  async function loadHiddenBalanceTxns(perm) {
+    const a = perm && perm.accountAccess;
+    const args = []; const ors = [];
+    let baseCond;
+    if (!a || a.all) {
+      // 디렉터/소시오(all): 세부차단 계좌 + (비디렉터인 소시오는) 비공개 거래가 보완분.
+      baseCond = 't.deleted_at IS NULL AND t.account_id IS NOT NULL';
+      const block = blockedDetailAccountIds(perm);
+      if (block.length) { args.push(block); ors.push(`t.account_id = ANY($${args.length})`); }
+      if (perm.role !== 'director') ors.push('t.is_private=true');
+      if (!ors.length) return []; // 디렉터 무제한 — detail 스트림이 이미 전체라 보완분 없음
+    } else {
+      const view = allowedAccountIds(perm);
+      if (!view || !view.length) return [];
+      args.push(view);
+      baseCond = `t.deleted_at IS NULL AND t.account_id = ANY($${args.length})`;
+      const detail = allowedDetailAccountIds(perm);
+      ors.push('t.is_private=true'); // 비공개 고정비 실적도 잔액엔 반영(잔액=현실)
+      if (detail.length) { args.push(detail); ors.push(`t.account_id <> ALL($${args.length})`); }
+      else { ors.length = 0; } // detail 계좌가 하나도 없으면 view 전체가 보완분
+    }
+    const cond = ors.length ? `${baseCond} AND (${ors.join(' OR ')})` : baseCond;
+    return (await query(
+      `SELECT t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date,
+              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.amount_mxn
+         FROM transactions t
+        WHERE ${cond}`, args)).rows;
+  }
+
   // 모든 거래(현금흐름용) 로딩 헬퍼 — 권한 계좌로 필터(잔고·AP용).
   // AR(수금예정)은 account_id=NULL 인 plan·in 거래라 비디렉터에선 자동 제외되고, 별도(전사)로 계산한다.
   async function loadCashTxns(perm) {
@@ -1400,16 +1436,15 @@ export default async function financeRoutes(app) {
   }
   async function openingBalanceMxn(perm) {
     const usd = (await getUsdMxnRate()).rate;
-    const allow = allowedDetailAccountIds(perm);
+    // 잔액 열람(viewIds) 기준 — '잔액만' 계좌·세부차단(현금·불공제) 계좌도 기초잔고에 포함.
+    // (현금흐름 잔고 = 잔액 열람 가능 계좌들의 실제 잔액 합. 세부내역만 detail 기준으로 숨긴다.)
+    const allow = allowedAccountIds(perm);
     const args = [];
     let cond = 'deleted_at IS NULL';
     if (allow !== null) {
       if (allow.length === 0) return 0;
       args.push(allow); cond += ` AND id = ANY($${args.length})`;
     }
-    // 현금·불공제 세부 차단(디렉터 포함): 현금흐름 기초잔고 계산에서도 제외(거래내역과 일관).
-    const block = blockedDetailAccountIds(perm);
-    if (block.length) { args.push(block); cond += ` AND id <> ALL($${args.length})`; }
     const accs = (await query(`SELECT currency, open_balance FROM accounts WHERE ${cond}`, args)).rows;
     return accs.reduce((s, a) => s + Number(a.open_balance) * (a.currency === 'USD' ? usd : 1), 0);
   }
@@ -1421,22 +1456,44 @@ export default async function financeRoutes(app) {
     const includePlan = req.query.includePlan === '1' || req.query.includePlan === 'true';
     const txns = await loadCashTxns(req.ctx.perm);
     const opening = await openingBalanceMxn(req.ctx.perm);
+    const hidden = await loadHiddenBalanceTxns(req.ctx.perm); // 잔액 보완분(항목 미노출, 누적잔고에만 합산)
     const mappedTx = txns.map((t) => ({
+      direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
+      txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
+    }));
+    const mappedHidden = hidden.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
     }));
     const rows = aggregateCashflow(mappedTx, { granularity, includePlan, openingBalance: opening });
     // 실적 기준 누적잔고: 토글과 무관하게 실제 거래만 누적(= 실제 현금잔고). 표시 구간별로 정렬해 산출.
+    // 잔액 보완분(hidden)도 포함해 재무/계좌 잔액 합과 일치시킨다.
     const actualNetByPeriod = new Map();
-    for (const t of mappedTx) {
+    for (const t of [...mappedTx, ...mappedHidden]) {
       if (t.status !== 'actual') continue;
       const key = bucketKey(t.txn_date, granularity);
       actualNetByPeriod.set(key, (actualNetByPeriod.get(key) || 0) + (t.direction === 'in' ? 1 : -1) * t.amount_mxn);
     }
-    const allKeys = [...new Set([...rows.map((r) => r.period), ...actualNetByPeriod.keys()])].sort();
-    let runA = opening; const cumActualByPeriod = {};
-    for (const k of allKeys) { runA += (actualNetByPeriod.get(k) || 0); cumActualByPeriod[k] = r2(runA); }
-    for (const r of rows) { r.cumulative_actual = cumActualByPeriod[r.period]; }
+    // 계획 포함 누적(cumulative) 보정: aggregateCashflow는 보이는 거래만 누적하므로,
+    // 보완분의 순액을 기간 순서대로 더해 실제 잔고 궤적으로 맞춘다.
+    const hiddenNetByPeriod = new Map();
+    for (const t of mappedHidden) {
+      if (!includePlan && t.status !== 'actual') continue;
+      const date = t.status === 'actual' ? t.txn_date : (t.plan_date || t.txn_date);
+      const key = bucketKey(date, granularity);
+      hiddenNetByPeriod.set(key, (hiddenNetByPeriod.get(key) || 0) + (t.direction === 'in' ? 1 : -1) * t.amount_mxn);
+    }
+    const allKeys = [...new Set([...rows.map((r) => r.period), ...actualNetByPeriod.keys(), ...hiddenNetByPeriod.keys()])].sort();
+    let runA = opening; let runH = 0;
+    const cumActualByPeriod = {}; const cumHiddenByPeriod = {};
+    for (const k of allKeys) {
+      runA += (actualNetByPeriod.get(k) || 0); cumActualByPeriod[k] = r2(runA);
+      runH += (hiddenNetByPeriod.get(k) || 0); cumHiddenByPeriod[k] = runH;
+    }
+    for (const r of rows) {
+      r.cumulative_actual = cumActualByPeriod[r.period];
+      r.cumulative = r2(r.cumulative + (cumHiddenByPeriod[r.period] || 0));
+    }
     return { granularity, includePlan, opening_balance: r2(opening), rows };
   });
 
@@ -1530,12 +1587,28 @@ export default async function financeRoutes(app) {
     const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month, realizedOut);
     // 일자별 집계 + 누적잔고(기초잔고부터 그 달 시작 직전까지 누적 후 일자별)
     const opening = await openingBalanceMxn(req.ctx.perm);
-    // 그 달 1일 직전까지의 모든 실적 순액 합 = 기초 + 과거 실적
+    // 잔액 보완분(항목 미노출): '잔액만'·세부차단 계좌 거래 + 비공개 고정비 거래 — 잔고 계산에만 합산.
+    const hidden = (await loadHiddenBalanceTxns(req.ctx.perm)).map((t) => ({
+      direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
+      txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
+    }));
+    // 그 달 1일 직전까지의 모든 실적 순액 합 = 기초 + 과거 실적 (보완분 포함)
     const monthStart = month + '-01';
     let runBefore = opening;
-    for (const t of mapped) {
+    for (const t of [...mapped, ...hidden]) {
       if (t.status !== 'actual') continue;
       if (t.txn_date < monthStart) runBefore += (t.direction === 'in' ? 1 : -1) * t.amount_mxn;
+    }
+    // 보완분의 일자별 순액: 실적(잔고용) / 예정(예상잔고용, apByDay에 없으므로 이중계상 없음)
+    const hiddenActualByDay = {}; const hiddenPlanByDay = {};
+    for (const t of hidden) {
+      const sign = t.direction === 'in' ? 1 : -1;
+      if (t.status === 'actual') {
+        if (String(t.txn_date).slice(0, 7) === month) hiddenActualByDay[t.txn_date] = (hiddenActualByDay[t.txn_date] || 0) + sign * t.amount_mxn;
+      } else {
+        const pd = t.plan_date || t.txn_date;
+        if (String(pd).slice(0, 7) === month) hiddenPlanByDay[pd] = (hiddenPlanByDay[pd] || 0) + sign * t.amount_mxn;
+      }
     }
     // 그 달 일자별
     const [yy, mm] = month.split('-').map(Number);
@@ -1554,15 +1627,17 @@ export default async function financeRoutes(app) {
     //  balance      = 실적만 누적 (오늘 기준 실제 실행분만) — '실제' 모드
     //  balance_proj = 실적 + 그날 AR(수금예정) - AP(지급예정) 누적 (예상잔고) — '예정' 모드
     // 둘 다 그 달 시작 직전 실적잔고(runBefore)에서 출발. 예정분(AR/AP)은 표시된 달 범위 내에서만 반영(과거 경과분 이월 없음).
+    // 잔액 보완분(hidden)은 두 잔고 모두에 합산 — 항목(items/ap_items)에는 나타나지 않는다.
     let cumActual = runBefore;
     let cumProj = runBefore;
     const days = Object.keys(byDay).sort().map((ds) => {
       const c = byDay[ds];
-      const actualNet = c.items.filter((x) => x.status === 'actual').reduce((s, x) => s + (x.direction === 'in' ? 1 : -1) * x.amount_mxn, 0);
+      const actualNet = c.items.filter((x) => x.status === 'actual').reduce((s, x) => s + (x.direction === 'in' ? 1 : -1) * x.amount_mxn, 0)
+        + (hiddenActualByDay[ds] || 0);
       cumActual += actualNet;
       const arc = arByDay[ds] || { sum: 0, items: [] };
       const apc = apByDay[ds] || { sum: 0, items: [] };
-      cumProj += actualNet + arc.sum - apc.sum;
+      cumProj += actualNet + arc.sum - apc.sum + (hiddenPlanByDay[ds] || 0);
       return { date: ds, in: r2(c.in), out: r2(c.out), net: r2(c.in - c.out), cumulative: r2(cumActual), items: c.items,
         ar: r2(arc.sum), ap: r2(apc.sum), ar_items: arc.items, ap_items: apc.items,
         balance: r2(cumActual), balance_proj: r2(cumProj) };
