@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703n</title>
+<title>Refatrix ERP · 재무 · build fin-0703o</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -297,6 +297,7 @@
         <div class="seg"><button class="segb" id="cf-actual" data-v="actual">실제만</button><button class="segb on" id="cf-plan" data-v="plan">예정 포함</button></div>
         <div class="seg"><button class="segb on" id="cf-month" data-v="month">월별</button><button class="segb" id="cf-week" data-v="week">주별</button></div>
         <div class="seg"><button class="segb" id="cf-table" data-v="table">표</button><button class="segb on" id="cf-cal" data-v="cal">월간달력</button><button class="segb" id="cf-wcal" data-v="wcal">주간달력</button></div>
+        <div class="seg"><button class="segb on" id="cf-show-act">실적 표시</button><button class="segb on" id="cf-show-plan">예정 표시</button></div>
         <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
       </div>
       <div id="cashBody"><div class="hint">불러오는 중…</div></div>
@@ -1498,6 +1499,7 @@
 
   // ===== 현금흐름 =====
   const cfState={mode:'plan',gran:'month',view:'cal'};
+  const cfShow={actual:true,plan:true};   // 달력 표시 숨김(실적/예정) — 잔고 계산엔 영향 없음(표시만)
   const paState={filter:'all'};
   function fmtSigned(n){return (n>0?'+':'')+fmt(n);}
   function netColor(n){return n>0?'var(--income)':(n<0?'var(--expense)':'var(--muted)');}
@@ -1545,7 +1547,7 @@
     box.innerHTML='<div class="hint">불러오는 중…</div>';
     const g=wfResolveGran(from,to);
     try{
-      const url=`${session.api}/api/cashflow?granularity=${g}&includePlan=${cfState.mode==='plan'?1:0}`;
+      const url=`${session.api}/api/cashflow?granularity=${g}&includePlan=${cfState.mode==='plan'?1:0}&breakdown=1`;
       const res=await fetch(url,{headers:auth()});
       const d=await res.json();
       if(!res.ok||d.error)throw new Error(d.error||res.status);
@@ -1556,11 +1558,43 @@
       for(const r of (d.rows||[])){
         const net=Number(r.net)||0;
         if(r.period<sk)base+=net;
-        else if(r.period<=ek && Math.abs(net)>0.005)items.push({label:r.period,delta:net});
+        else if(r.period<=ek && Math.abs(net)>0.005)items.push({label:r.period,delta:net,inflow:Number(r.inflow)||0,outflow:Number(r.outflow)||0,cats:(d.breakdown&&d.breakdown[r.period])||[]});
       }
       const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
-      box.innerHTML=svgWaterfall(base,items,{from,to,granLabel});
+      box.innerHTML=svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
     }catch(e){box.innerHTML='<div class="hint">워터폴을 불러오지 못했습니다.</div>';}
+  }
+  // ISO 주 라벨('YYYY-Www') → 그 주 월요일 날짜('MM-DD')
+  function wfWeekMonday(lbl){
+    const m=/^(\d{4})-W(\d{2})$/.exec(String(lbl)); if(!m)return '';
+    const y=Number(m[1]),w=Number(m[2]);
+    const jan4=new Date(Date.UTC(y,0,4));
+    const mon1=new Date(jan4.getTime()-((jan4.getUTCDay()+6)%7)*86400000); // 1주차 월요일
+    return new Date(mon1.getTime()+(w-1)*7*86400000).toISOString().slice(5,10);
+  }
+  // 카테고리 요약 텍스트: "계정이름 ±금액" 상위 n개
+  function wfCatLines(cats,n){
+    return (cats||[]).slice(0,n).map(c=>`${c.name} ${c.net>=0?'+':'−'}${fmt(Math.abs(c.net))}`);
+  }
+  // 워터폴 아래 세부내역 표
+  function wfDetailTable(base,items,g){
+    if(!items.length)return '';
+    let bal=base;
+    const rows=items.map(it=>{
+      bal=Math.round((bal+it.delta)*100)/100;
+      const sub=g==='week'?` <span class="hint" style="margin:0">(${wfWeekMonday(it.label)}~)</span>`:'';
+      const catCells=(it.cats||[]).map(c=>`<span style="display:inline-block;margin:1px 8px 1px 0;font-size:12px"><span style="color:var(--muted)">${c.name}</span> <b style="color:${c.net>=0?'var(--income)':'var(--expense)'}">${c.net>=0?'+':'−'}${fmt(Math.abs(c.net))}</b>${(c.plan_in||c.plan_out)?'<span class="hint" style="margin:0;font-size:10.5px"> (예정포함)</span>':''}</span>`).join('');
+      return `<tr>
+        <td style="white-space:nowrap">${it.label}${sub}</td>
+        <td class="num" style="color:var(--income)">+${fmt(it.inflow)}</td>
+        <td class="num" style="color:var(--expense)">−${fmt(it.outflow)}</td>
+        <td class="num" style="font-weight:700;color:${it.delta>0?WF_RED:WF_BLUE}">${it.delta>0?'+':''}${fmt(it.delta)}</td>
+        <td class="num" style="font-weight:700">${fmt(bal)}</td>
+        <td>${catCells||'<span class="hint" style="margin:0">—</span>'}</td></tr>`;
+    }).join('');
+    return `<div style="margin-top:14px"><div style="font-weight:700;font-size:13.5px;margin-bottom:2px">구간별 세부내역</div>
+      <div class="hint" style="margin-top:0">계정과목별 순변화(유입−유출). 「예정 포함」 모드에서는 예정분이 합산되며 (예정포함)으로 표기됩니다.</div>
+      <table><thead><tr><th>구간</th><th class="num">유입</th><th class="num">유출</th><th class="num">순변화</th><th class="num">잔액</th><th>세부 (계정과목별)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function svgWaterfall(base,items,opts={}){
     const round2=(v)=>Math.round(v*100)/100;
@@ -1569,7 +1603,7 @@
     const final=round2(c);
     const bars=[
       {type:'base',dateLbl:(opts.from||'').slice(5),text:'기준',v1:base},
-      ...items.map((it,i)=>({type:it.delta>=0?'plus':'minus',label:it.label,v0:cums[i],v1:cums[i+1],delta:it.delta})),
+      ...items.map((it,i)=>({type:it.delta>=0?'plus':'minus',label:it.label,v0:cums[i],v1:cums[i+1],delta:it.delta,cats:it.cats})),
       {type:'base',dateLbl:(opts.to||'').slice(5),text:'기말',v1:final},
     ];
     const N=bars.length;
@@ -1598,8 +1632,14 @@
         const hi=Math.max(b.v0,b.v1),lo=Math.min(b.v0,b.v1);
         fill=b.type==='plus'?WF_RED:WF_BLUE;top=y(hi);bot=y(lo);
         lbl=(b.delta>0?'+':'−')+fmtK(Math.abs(b.delta));
-        tip=`${b.label} 순변화 ${b.delta>0?'+':''}${fmt(b.delta)} → 잔액 ${fmt(b.v1)} MXN`;
-        if(i%lblStep===0)xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-20}" text-anchor="middle" font-size="9" fill="#999">${shortLbl(b.label)}</text>`);
+        const catTip=wfCatLines(b.cats,6);
+        tip=`${b.label} 순변화 ${b.delta>0?'+':''}${fmt(b.delta)} → 잔액 ${fmt(b.v1)} MXN`
+          +(catTip.length?'\n──────────\n'+catTip.join('\n')+((b.cats||[]).length>6?`\n외 ${b.cats.length-6}개 계정`:''):'');
+        if(i%lblStep===0){
+          const sub=opts.gran==='week'?wfWeekMonday(b.label):'';
+          if(sub)xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-26}" text-anchor="middle" font-size="9" fill="#999">${shortLbl(b.label)}</text><text x="${xc(i).toFixed(1)}" y="${H-15}" text-anchor="middle" font-size="8" fill="#bbb">${sub}</text>`);
+          else xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-20}" text-anchor="middle" font-size="9" fill="#999">${shortLbl(b.label)}</text>`);
+        }
       }
       const h=Math.max(1.5,bot-top);
       rects.push(`<rect x="${(xc(i)-colW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${colW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" rx="2"><title>${tip}</title></rect>`);
@@ -1668,9 +1708,9 @@
         const actNet=Math.round((v&&v.items?v.items.reduce((s,t)=>t.status==='actual'?s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0):s,0):0)*100)/100;
         cells+=`<div class="cal-cell${we}" data-day="${ds}">
           <div class="cal-daynum">${dd}</div>
-          <div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
-          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
-          <div class="cal-slot"><span class="k">실적</span><span style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):''}</span></div>
+          ${cfShow.plan?`<div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
+          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>`:''}
+          ${cfShow.actual?`<div class="cal-slot"><span class="k">실적</span><span style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):''}</span></div>`:''}
           <div class="cal-slot"><span class="k">${cfState.mode==='plan'?'예상':'잔고'}</span><span style="font-weight:700;${cfState.mode==='plan'?'color:#7a4fb0':''}">${v?fmt(cfState.mode==='plan'?(v.balance_proj!=null?v.balance_proj:v.balance):(v.balance!=null?v.balance:v.cumulative)):''}</span></div>
         </div>`;
       }
@@ -1706,9 +1746,10 @@
     const planTbl=p.items.length?`<table><thead><tr><th>계획일</th><th>상태</th><th>계정과목</th><th>메모</th><th class="num">계획액</th></tr></thead><tbody>${p.items.map(planRow).join('')}</tbody></table>`:'<div class="hint">계획 없음</div>';
     const sumLine=(lbl,o)=>`<span>${lbl} 계획 <b>${fmt(o.planned)}</b> = 처리 <b style="color:var(--income)">${fmt(o.processed)}</b> + 남은예정 <b>${fmt(o.remaining)}</b>${o.overdue>0?` <span style="color:#c0392b">(경과 ${fmt(o.overdue)})</span>`:''}</span>`;
     const pSum=`<div class="sec-sum" style="flex-direction:column;gap:4px">${sumLine('수입(수금)',p.summary.in)}${sumLine('지출',p.summary.out)}</div>`;
-    return `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
-      <div style="font-weight:700;margin-bottom:2px">${d.month} 실적</div>${aSub}${actualTbl}
-      <div style="font-weight:700;margin:16px 0 2px">${d.month} 예정 (오늘 ${d.today} 기준)</div>${pSum}${planTbl}</div>`;
+    const actSec=cfShow.actual?`<div style="font-weight:700;margin-bottom:2px">${d.month} 실적</div>${aSub}${actualTbl}`:'';
+    const planSec=cfShow.plan?`<div style="font-weight:700;margin:16px 0 2px">${d.month} 예정 (오늘 ${d.today} 기준)</div>${pSum}${planTbl}`:'';
+    if(!actSec&&!planSec)return '';
+    return `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">${actSec}${planSec}</div>`;
   }
 
   // 주간달력: 해당 주(일~토)만. 각 일자에 AR/AP/잔고 + 항목 내용. (월별 API 재사용해 누적잔고 정확)
@@ -1744,13 +1785,13 @@
           <span>${t.category_name||t.category_code||''}${t.memo?' · '+String(t.memo).slice(0,22):''}</span>
           <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
         const detail=weekSummaryOnly?'':`
-          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AR (수금예정)</div>${arItems.length?arItems.map(arLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
-          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지급예정)</div>${apItems.length?apItems.map(apLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
-          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">실적 (현금)</div>${cashItems.length?cashItems.map(cashLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`;
+          ${cfShow.plan?`<div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AR (수금예정)</div>${arItems.length?arItems.map(arLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>
+          <div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">AP (지급예정)</div>${apItems.length?apItems.map(apLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`:''}
+          ${cfShow.actual?`<div style="margin-top:4px"><div class="k" style="font-size:10px;color:var(--muted);font-weight:700">실적 (현금)</div>${cashItems.length?cashItems.map(cashLine).join(''):'<div class="hint" style="margin:0;font-size:11px">—</div>'}</div>`:''}`;
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;background:${we?'#f3f1ec':'#fff'}">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <b style="${we?'color:var(--expense)':''}">${dows[i]} ${ds}</b>
-            <span style="font-size:12px">AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · 실적 <b style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):'0.00'}</b> · ${cfState.mode==='plan'?'예상':'잔고'} <b${cfState.mode==='plan'?' style="color:#7a4fb0"':''}>${v?fmt(cfState.mode==='plan'?(v.balance_proj!=null?v.balance_proj:v.balance):(v.balance!=null?v.balance:v.cumulative)):'—'}</b></span>
+            <span style="font-size:12px">${cfShow.plan?`AR <b style="color:var(--income)">+${fmt(v?v.ar:0)}</b> · AP <b style="color:var(--expense)">-${fmt(v?v.ap:0)}</b> · `:''}${cfShow.actual?`실적 <b style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):'0.00'}</b> · `:''}${cfState.mode==='plan'?'예상':'잔고'} <b${cfState.mode==='plan'?' style="color:#7a4fb0"':''}>${v?fmt(cfState.mode==='plan'?(v.balance_proj!=null?v.balance_proj:v.balance):(v.balance!=null?v.balance:v.cumulative)):'—'}</b></span>
           </div>${detail}</div>`;
       }).join('');
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
@@ -1967,9 +2008,52 @@
     try{
       const d=await fetch(`${session.api}/api/transactions/pending-plans?month=${ppMonth}`,{headers:auth()}).then(r=>r.json());
       if(!d.items.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';return;}
+      ppItems=d.items;
+      renderPendingPlans();
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  // 예정 내역 정렬(거래목록과 동일 3단계: 문자 오름→내림→기본 / 숫자 내림→오름→기본)
+  let ppItems=[]; let ppSort={key:null,dir:1};
+  const PP_NUM={amt:1};
+  function ppMemoText(t){ // '메모' 열 표시값과 동일 기준(매출건은 SAT, 그 외 메모)
+    return t.source==='sales' ? (t.sat_no||'') : String(t.memo||'').replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'');
+  }
+  function ppSortVal(t,k){
+    switch(k){
+      case 'date': return String(t.plan_date||'');
+      case 'cust': return t.source==='sales'?(t.customer_name||''):'';
+      case 'src': return t.source==='sales'?'매출':t.source==='recurring'?'고정비':t.source==='marketing'?'마케팅':'수동';
+      case 'cat': return t.category_name||t.category_code||'';
+      case 'memo': return ppMemoText(t);
+      case 'amt': {const a=Number(t.plan_amount!=null?t.plan_amount:t.amount)||0;return t.currency==='USD'?a*(fxRate||1):a;}
+      default: return '';
+    }
+  }
+  function ppHeadClick(k){
+    if(ppSort.key!==k){ ppSort={key:k,dir:PP_NUM[k]?-1:1}; }
+    else if((PP_NUM[k]?-1:1)===ppSort.dir){ ppSort.dir=-ppSort.dir; }
+    else { ppSort={key:null,dir:1}; }
+    renderPendingPlans();
+  }
+  function renderPendingPlans(){
+      const b=$('ppBody');
+      let items=ppItems;
+      if(ppSort.key){
+        const k=ppSort.key,dd=ppSort.dir,isNum=!!PP_NUM[k];
+        items=ppItems.slice().sort((a,z)=>{
+          const va=ppSortVal(a,k),vz=ppSortVal(z,k);
+          const ea=(va===''||va==null),ez=(vz===''||vz==null);
+          if(ea!==ez)return ea?1:-1;
+          let c=isNum?(va-vz):String(va).localeCompare(String(vz),'ko',{numeric:true});
+          if(c===0)c=(Number(a.id)||0)-(Number(z.id)||0);
+          return c*dd;
+        });
+      }
+      const parrow=k=>ppSort.key===k?(ppSort.dir===1?' ▲':' ▼'):'';
+      const pth=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-ppsort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${parrow(k)}</th>`;
       const srcLabel=(s)=>s==='sales'?'<span class="badge" style="background:#e6f1fb;color:#0c447c">매출</span>':s==='recurring'?'<span class="badge" style="background:#efeee9;color:#6b6b6b">고정비</span>':s==='marketing'?'<span class="badge" style="background:#f1ebf7;color:#7a4ea0">마케팅</span>':'<span class="badge" style="background:#f0ece4;color:#8a6d1a">수동</span>';
-      b.innerHTML=`<table><thead><tr><th>예정일</th><th>고객</th><th>출처</th><th>계정과목</th><th>SAT 번호</th><th class="num">계획액</th><th></th></tr></thead>
-        <tbody>${d.items.map(t=>{
+      b.innerHTML=`<table><thead><tr>${pth('date','예정일')}${pth('cust','고객')}${pth('src','출처')}${pth('cat','계정과목')}${pth('memo','메모')}${pth('amt','계획액','num')}<th></th></tr></thead>
+        <tbody>${items.map(t=>{
           if(t.source==='manual' && String(t.memo||'').startsWith('[마케팅]')) t.source='marketing';
           const isSales=t.source==='sales';
           return `<tr class="${t.overdue?'pp-over':''}" data-id="${t.id}">
@@ -1989,9 +2073,9 @@
           </tr>${isSales?'':`<tr class="pp-form hidden" data-form="${t.id}"><td colspan="7"></td></tr>`}`;
         }).join('')}</tbody></table>`;
       // 데이터 보관
-      ppMap={};d.items.forEach(t=>ppMap[t.id]=t);
+      ppMap={};ppItems.forEach(t=>ppMap[t.id]=t);
       [...b.querySelectorAll('.pp-do')].forEach(el=>el.onclick=()=>togglePpForm(Number(el.dataset.id)));
-    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+      [...b.querySelectorAll('th[data-ppsort]')].forEach(h=>h.onclick=()=>ppHeadClick(h.dataset.ppsort));
   }
   let ppMap={};
   function togglePpForm(id){
@@ -2384,6 +2468,8 @@
   function cfSeg(ids,key,after){ids.forEach(id=>$(id).addEventListener('click',()=>{
     ids.forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');cfState[key]=$(id).dataset.v;after();}));}
   cfSeg(['cf-actual','cf-plan'],'mode',()=>loadCashAll());
+  $('cf-show-act').addEventListener('click',()=>{cfShow.actual=!cfShow.actual;$('cf-show-act').classList.toggle('on',cfShow.actual);loadCashflow();});
+  $('cf-show-plan').addEventListener('click',()=>{cfShow.plan=!cfShow.plan;$('cf-show-plan').classList.toggle('on',cfShow.plan);loadCashflow();});
   cfSeg(['cf-month','cf-week'],'gran',()=>loadCashAll());
   cfSeg(['cf-table','cf-cal','cf-wcal'],'view',()=>loadCashflow());
   // 현금잔액 워터폴 컨트롤
@@ -2428,6 +2514,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703mx"></script>
+<script src="refatrix-nav.js?v=20260703my"></script>
 </body>
 </html>

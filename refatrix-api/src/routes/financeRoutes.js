@@ -1490,6 +1490,28 @@ export default async function financeRoutes(app) {
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
     }));
     const rows = aggregateCashflow(mappedTx, { granularity, includePlan, openingBalance: opening });
+    // breakdown=1: 기간별 계정과목 유입/유출 합 (현금잔액 워터폴의 툴팁·세부 표용)
+    // aggregateCashflow와 동일 규칙: 실적=거래일, 예정=계획일(includePlan일 때만 포함). 보완분(hidden) 제외 — 항목화 금지 원칙.
+    let breakdown = null;
+    if (req.query.breakdown === '1') {
+      breakdown = {};
+      for (const t of txns) {
+        if (!includePlan && t.status !== 'actual') continue;
+        const date = t.status === 'actual' ? String(t.txn_date).slice(0, 10) : String(t.plan_date || t.txn_date).slice(0, 10);
+        const key = bucketKey(date, granularity);
+        const name = t.category_name || t.category_code || '(계정없음)';
+        const arr = (breakdown[key] = breakdown[key] || {});
+        const cell = (arr[name] = arr[name] || { name, in: 0, out: 0, plan_in: 0, plan_out: 0 });
+        const amt = Number(t.amount_mxn) || 0;
+        const f = t.status === 'actual' ? (t.direction === 'in' ? 'in' : 'out') : (t.direction === 'in' ? 'plan_in' : 'plan_out');
+        cell[f] = r2(cell[f] + amt);
+      }
+      for (const k of Object.keys(breakdown)) {
+        breakdown[k] = Object.values(breakdown[k])
+          .map((c) => ({ ...c, net: r2(c.in + c.plan_in - c.out - c.plan_out) }))
+          .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+      }
+    }
     // 실적 기준 누적잔고: 토글과 무관하게 실제 거래만 누적(= 실제 현금잔고). 표시 구간별로 정렬해 산출.
     // 잔액 보완분(hidden)도 포함해 재무/계좌 잔액 합과 일치시킨다.
     const actualNetByPeriod = new Map();
@@ -1518,7 +1540,7 @@ export default async function financeRoutes(app) {
       r.cumulative_actual = cumActualByPeriod[r.period];
       r.cumulative = r2(r.cumulative + (cumHiddenByPeriod[r.period] || 0));
     }
-    return { granularity, includePlan, opening_balance: r2(opening), rows };
+    return { granularity, includePlan, opening_balance: r2(opening), rows, ...(breakdown ? { breakdown } : {}) };
   });
 
   // 계획 대비 실적(수입/지출 분리): query granularity, filter=all|recurring|other
