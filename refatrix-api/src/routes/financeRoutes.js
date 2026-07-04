@@ -223,6 +223,8 @@ export default async function financeRoutes(app) {
     // 현금·불공제 세부 차단(디렉터 포함): 해당 계좌 거래는 목록에서 숨김.
     const block = blockedDetailAccountIds(req.ctx.perm);
     if (block.length) { args.push(block); cond.push(`(t.account_id IS NULL OR t.account_id <> ALL($${args.length}))`); }
+    // 비공개 고정비 거래: 디렉터 외 숨김
+    if (req.ctx.perm.role !== 'director') cond.push('t.is_private=false');
     if (q.status) { args.push(q.status); cond.push(`t.status=$${args.length}`); }
     if (q.direction) { args.push(q.direction); cond.push(`t.direction=$${args.length}`); }
     if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
@@ -294,6 +296,7 @@ export default async function financeRoutes(app) {
     const id = Number(req.params.id);
     const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
     if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
     if (t.approved) return reply.code(409).send({ error: 'already_approved_use_request' });
     const isDir = req.ctx.perm.role === 'director';
@@ -326,8 +329,9 @@ export default async function financeRoutes(app) {
   // 승인된 일반 거래: 수정 요청 (원본 유지)
   app.post('/api/transactions/:id/edit-request', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const t = (await query(`SELECT id, kind, sales_invoice_id, approved, change_status FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const t = (await query(`SELECT id, kind, sales_invoice_id, approved, change_status, is_private FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
     if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
     if (!t.approved) return reply.code(409).send({ error: 'not_approved_edit_directly' });
     if (t.change_status) return reply.code(409).send({ error: 'change_in_progress' });
@@ -343,8 +347,9 @@ export default async function financeRoutes(app) {
   // 승인된 일반 거래: 삭제 요청
   app.post('/api/transactions/:id/delete-request', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const t = (await query(`SELECT id, kind, sales_invoice_id, approved, change_status FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const t = (await query(`SELECT id, kind, sales_invoice_id, approved, change_status, is_private FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
     if (t.kind !== 'general' || t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked_readonly' });
     if (!t.approved) return reply.code(409).send({ error: 'not_approved_delete_directly' });
     if (t.change_status) return reply.code(409).send({ error: 'change_in_progress' });
@@ -1103,21 +1108,27 @@ export default async function financeRoutes(app) {
   });
 
   // ===== 고정비(반복 규칙) =====
-  app.get('/api/recurring', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
+  // 비공개(is_private) 규칙은 디렉터만 조회/조작. 비디렉터에겐 목록·거래·현금흐름 전부에서 숨김.
+  const privTxnCond = (perm, alias = 't') => (perm.role === 'director' ? '' : ` AND ${alias}.is_private=false`);
+  app.get('/api/recurring', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const privCond = req.ctx.perm.role === 'director' ? '' : ' AND r.is_private=false';
     const rows = (await query(
       `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
-              r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, r.start_date, r.end_month, r.active, r.memo, r.generated_through,
+              r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, r.start_date, r.end_month, r.active, r.memo, r.generated_through, r.is_private,
               (SELECT COUNT(*) FROM transactions t WHERE t.recurring_rule_id=r.id AND t.deleted_at IS NULL) AS generated_count,
               (SELECT COUNT(*) FROM transactions t WHERE t.recurring_rule_id=r.id AND t.status='actual' AND t.deleted_at IS NULL) AS paid_count
          FROM recurring_rules r
          LEFT JOIN categories cat ON cat.code=r.category_code
          LEFT JOIN accounts a ON a.id=r.account_id
-        WHERE r.deleted_at IS NULL ORDER BY r.active DESC, r.id`)).rows;
+        WHERE r.deleted_at IS NULL${privCond} ORDER BY r.active DESC, r.id`)).rows;
     return { items: rows.map((r) => ({ ...r, amount: Number(r.amount), generated_count: Number(r.generated_count), paid_count: Number(r.paid_count) })) };
   });
 
-  app.post('/api/recurring', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  // 등록: 재무담당(transactions 권한)도 "공개" 고정비는 입력 가능. 비공개(is_private)는 디렉터만.
+  app.post('/api/recurring', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const b = req.body || {};
+    const isDir = req.ctx.perm.role === 'director';
+    const isPrivate = isDir && b.is_private === true; // 비디렉터 요청은 무조건 공개로 강제
     const freq = b.freq === 'week' ? 'week' : 'month';
     const direction = b.direction === 'in' ? 'in' : 'out';
     const currency = ['MXN', 'USD'].includes(b.currency) ? b.currency : 'MXN';
@@ -1125,35 +1136,49 @@ export default async function financeRoutes(app) {
     if (freq === 'week' && (b.weekday == null || b.weekday < 0 || b.weekday > 6)) return reply.code(400).send({ error: 'weekday_required' });
     if (freq === 'month' && !(b.day_of_month >= 1 && b.day_of_month <= 31)) return reply.code(400).send({ error: 'day_of_month_required' });
     const r = await query(
-      `INSERT INTO recurring_rules (name, category_code, amount, direction, currency, account_id, freq, weekday, day_of_month, start_date, end_month, active, memo, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+      `INSERT INTO recurring_rules (name, category_code, amount, direction, currency, account_id, freq, weekday, day_of_month, start_date, end_month, active, memo, created_by, is_private)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
       [b.name, b.category_code || null, r2(b.amount), direction, currency, b.account_id || null, freq,
        freq === 'week' ? b.weekday : null, freq === 'month' ? b.day_of_month : null, b.start_date, b.end_month || null,
-       b.active !== false, b.memo || null, req.ctx.perm.userId]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `recurring_rule:${r.rows[0].id}` });
+       b.active !== false, b.memo || null, req.ctx.perm.userId, isPrivate]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `recurring_rule:${r.rows[0].id}`, detail: { is_private: isPrivate } });
     return { id: r.rows[0].id };
   });
 
-  app.patch('/api/recurring/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+  // 수정: 비디렉터는 공개 규칙만(비공개는 존재 자체를 숨기려 404). is_private 전환은 디렉터만 — 전환 시 생성된 거래도 동기화.
+  app.patch('/api/recurring/:id', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id); const b = req.body || {};
+    const isDir = req.ctx.perm.role === 'director';
+    const privCond = isDir ? '' : ' AND is_private=false';
+    const newPriv = isDir && typeof b.is_private === 'boolean' ? b.is_private : null;
     const r = await query(
       `UPDATE recurring_rules SET name=COALESCE($1,name), category_code=COALESCE($2,category_code), amount=COALESCE($3,amount),
-         account_id=COALESCE($4,account_id), end_month=$5, active=COALESCE($6,active), memo=COALESCE($7,memo), updated_at=now()
-       WHERE id=$8 AND deleted_at IS NULL RETURNING id`,
+         account_id=COALESCE($4,account_id), end_month=$5, active=COALESCE($6,active), memo=COALESCE($7,memo),
+         is_private=COALESCE($9,is_private), updated_at=now()
+       WHERE id=$8 AND deleted_at IS NULL${privCond} RETURNING id, is_private`,
       [b.name ?? null, b.category_code ?? null, (b.amount == null ? null : r2(b.amount)), b.account_id ?? null,
-       b.end_month ?? null, (b.active == null ? null : b.active), b.memo ?? null, id]);
+       b.end_month ?? null, (b.active == null ? null : b.active), b.memo ?? null, id, newPriv]);
     if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
-    return { ok: true };
+    // 비공개 여부 전환 시, 이 규칙이 생성한 거래(예정+실적)의 is_private 동기화
+    if (newPriv != null) {
+      await query(`UPDATE transactions SET is_private=$1 WHERE recurring_rule_id=$2`, [newPriv, id]);
+    }
+    return { ok: true, is_private: r.rows[0].is_private };
   });
 
-  // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거
-  app.delete('/api/recurring/:id', { preHandler: [authGuard, requireDirector] }, async (req) => {
+  // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거. 비디렉터는 공개 규칙만.
+  app.delete('/api/recurring/:id', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const userId = req.ctx.perm.userId;
+    const privCond = req.ctx.perm.role === 'director' ? '' : ' AND is_private=false';
+    let found = false;
     await withTx(async (c) => {
-      await c.query(`UPDATE recurring_rules SET deleted_at=now(), active=false WHERE id=$1`, [id]);
+      const r = await c.query(`UPDATE recurring_rules SET deleted_at=now(), active=false WHERE id=$1 AND deleted_at IS NULL${privCond} RETURNING id`, [id]);
+      if (!r.rows[0]) return;
+      found = true;
       await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE recurring_rule_id=$2 AND status='plan' AND deleted_at IS NULL`, [userId, id]);
     });
+    if (!found) return reply.code(404).send({ error: 'not_found' });
     await logEvent({ userId, action: 'delete', target: `recurring_rule:${id}` });
     return { ok: true };
   });
@@ -1167,6 +1192,7 @@ export default async function financeRoutes(app) {
     try {
       const rule = (await query(`SELECT * FROM recurring_rules WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
       if (!rule) return reply.code(404).send({ error: 'not_found' });
+      if (rule.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
       if (!rule.start_date) return reply.code(400).send({ error: 'no_start_date' });
       const today = new Date().toISOString().slice(0, 10);
       const cap = addMonthsUTC(today, RECUR_MAX_MONTHS); // 오늘+24개월 상한(날짜)
@@ -1201,13 +1227,14 @@ export default async function financeRoutes(app) {
           const userId = req.ctx.perm.userId;
           const vals = []; const params = []; let i = 1;
           for (const o of fresh) {
-            vals.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},'plan','general',true,$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`);
+            vals.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},'plan','general',true,$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`);
             params.push(rule.account_id || null, o.date, rule.direction, amt, rule.currency, fx, amountMxn,
-              rule.category_code || null, userId, `[고정비] ${rule.name}`, userId, rule.id, o.period, amt, o.date);
+              rule.category_code || null, userId, `[고정비] ${rule.name}`, userId, rule.id, o.period, amt, o.date,
+              rule.is_private === true);
           }
           const res = await query(
             `INSERT INTO transactions
-               (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date)
+               (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date, is_private)
              VALUES ${vals.join(',')}
              ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING`, params);
           created = res.rowCount || 0;
@@ -1226,6 +1253,7 @@ export default async function financeRoutes(app) {
     const id = Number(req.params.id);
     const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
     if (t.status !== 'plan') return reply.code(409).send({ error: 'not_plan' });
     if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
     const accountId = req.body?.account_id || t.account_id;
@@ -1271,7 +1299,7 @@ export default async function financeRoutes(app) {
               COUNT(*) AS items,
               SUM(CASE WHEN t.change_count>0 THEN 1 ELSE 0 END) AS changed_items
          FROM transactions t
-        WHERE t.recurring_rule_id IS NOT NULL AND t.status='actual' AND t.deleted_at IS NULL
+        WHERE t.recurring_rule_id IS NOT NULL AND t.status='actual' AND t.deleted_at IS NULL${privTxnCond(req.ctx.perm)}
         GROUP BY 1 ORDER BY 1 DESC LIMIT 60`)).rows;
     return { granularity: gran, items: rows.map((r) => {
       const plan = Number(r.plan_mxn) || 0, actual = Number(r.actual_mxn) || 0;
@@ -1286,6 +1314,7 @@ export default async function financeRoutes(app) {
     const id = Number(req.params.id);
     const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.is_private && req.ctx.perm.role !== 'director') return reply.code(404).send({ error: 'not_found' });
     if (t.status !== 'plan') return reply.code(409).send({ error: 'not_plan' });
     if (t.sales_invoice_id) return reply.code(409).send({ error: 'sales_linked' });
     if (!canOperateAccount(req.ctx.perm, t.account_id)) return reply.code(403).send({ error: 'account_not_operable' });
@@ -1324,6 +1353,8 @@ export default async function financeRoutes(app) {
     // 현금·불공제 세부 차단(디렉터 포함): 현금흐름에서도 제외. (account_id NULL = AR 예정은 유지)
     const block = blockedDetailAccountIds(perm);
     if (block.length) { args.push(block); cond += ` AND (t.account_id IS NULL OR t.account_id <> ALL($${args.length}))`; }
+    // 비공개 고정비 거래(예정·실적): 디렉터 외 현금흐름·계획대비실적에서 제외
+    cond += privTxnCond(perm);
     return (await query(
       `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
               t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
@@ -1599,7 +1630,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
          LEFT JOIN customers c ON c.id=si.customer_id
-        WHERE t.status='plan' AND t.deleted_at IS NULL
+        WHERE t.status='plan' AND t.deleted_at IS NULL${privTxnCond(req.ctx.perm)}
           AND (
             (COALESCE(t.plan_date,t.txn_date) BETWEEN $1 AND $2)   -- 이번 달 예정
             OR (COALESCE(t.plan_date,t.txn_date) < $3)              -- 과거 미처리(경과) 전부
