@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0704b</title>
+<title>Refatrix ERP · 재무 · build fin-0704c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1460,6 +1460,18 @@
     const amtEl=box.querySelector('.cf-amt');if(amtEl&&Number(amtEl.value)>0)body.amount=Number(amtEl.value);
     const memoEl=box.querySelector('.cf-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
     const fxEl=box.querySelector('.cf-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    // ── 잔액 결정 강제 가드: 계획보다 적게 집행하는데 마감/남겨두기 박스가 안 떠 있으면
+    //     조용히 'close'로 넘어가지 않도록 박스를 강제로 띄우고 선택을 받는다(결정 단계 보장).
+    const t9=txnMap[id]||{};
+    const planAmt9=t9.plan_amount!=null?Number(t9.plan_amount):Number(t9.amount)||0;
+    const amt9=amtEl?Number(amtEl.value)||0:0;
+    const remBox9=box.querySelector('.cf-rembox');
+    if(amt9>0&&planAmt9-amt9>0.001&&remBox9&&remBox9.classList.contains('hidden')){
+      updateRemainderUi(box,'cf',amt9,planAmt9,t9.currency||'MXN');
+      m.className='msg cf-msg err';m.style.display='block';
+      m.textContent='계획('+fmt(planAmt9)+')보다 적게 집행합니다. 아래에서 잔액 처리(마감/남겨두기)를 선택한 뒤 다시 눌러주세요.';
+      return;
+    }
     const remSel=box.querySelector('.cf-rembox:not(.hidden) .cf-rem:checked');if(remSel)body.remainder=remSel.value;
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
@@ -2115,6 +2127,17 @@
     const amtEl=tr.querySelector('.pp-amt');if(amtEl&&Number(amtEl.value)>0)body.amount=Number(amtEl.value);
     const memoEl=tr.querySelector('.pp-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
     const fxEl=tr.querySelector('.pp-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    // 잔액 결정 강제 가드(예정 내역) — cf와 동일
+    const t8=ppMap[id]||{};
+    const planAmt8=t8.plan_amount!=null?Number(t8.plan_amount):Number(t8.amount)||0;
+    const amtEl8=tr.querySelector('.pp-amt');const amt8=amtEl8?Number(amtEl8.value)||0:0;
+    const remBox8=tr.querySelector('.pp-rembox');
+    if(amt8>0&&planAmt8-amt8>0.001&&remBox8&&remBox8.classList.contains('hidden')){
+      updateRemainderUi(tr,'pp',amt8,planAmt8,t8.currency||'MXN');
+      m.className='msg pp-msg err';m.style.display='block';
+      m.textContent='계획('+fmt(planAmt8)+')보다 적게 집행합니다. 아래에서 잔액 처리(마감/남겨두기)를 선택한 뒤 다시 눌러주세요.';
+      return;
+    }
     const remSel=tr.querySelector('.pp-rembox:not(.hidden) .pp-rem:checked');if(remSel)body.remainder=remSel.value;
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/confirm-pay',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
