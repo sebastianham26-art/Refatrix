@@ -1706,8 +1706,18 @@ export default async function financeRoutes(app) {
     const monthStart = month + '-01';
     const nextStart = ymAdd(month, 1) + '-01';
 
-    const txns = await loadCashTxns(req.ctx.perm);   // 디렉터: 전 계좌(세부차단 제외), 비공개 포함
-    const hidden = (await loadHiddenBalanceTxns(req.ctx.perm)); // 잔액 보완분(세부차단 계좌 등)
+    // 디렉터 전용 전체 스트림: loadCashTxns의 세부차단(현금·불공제) 제외 정책은 공유 화면(현금흐름)용.
+    // 월 리포트는 디렉터만 보므로 전 계좌·비공개 포함 전체를 직접 조회 — 지출 요약에 현금 계좌가 빠지던 문제 수정.
+    // (전체 스트림이므로 잔액 보완분(hidden) 별도 합산 불필요 — 이중계상 방지 차원에서 제거)
+    const txns = (await query(
+      `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date,
+              to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
+              (t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_amount_mxn,
+              t.category_code, cat.name AS category_name, t.memo, t.recurring_rule_id, t.report_excluded
+         FROM transactions t
+         LEFT JOIN categories cat ON cat.code=t.category_code
+        WHERE t.deleted_at IS NULL`)).rows;
+    const hidden = [];                               // 전체 스트림 사용 — 보완분 없음
     const opening0 = await openingBalanceMxn(req.ctx.perm);
 
     const mxn = (t) => Number(t.amount_mxn) || 0;
