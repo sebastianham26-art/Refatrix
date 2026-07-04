@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0703k</title>
+<title>Refatrix ERP · 재무 · build fin-0703l</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -838,6 +838,8 @@
   }
 
   let txnMap={};
+  let txnItems=[];                      // 거래목록 원본(백엔드 순서 보존)
+  let txnSort={key:null,dir:1};         // 정렬 상태: key=null이면 기본순서, dir 1=오름 -1=내림
   async function loadTxns(){
     const b=$('txnBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
     const p=new URLSearchParams();
@@ -856,8 +858,53 @@
       $('txnSummary').innerHTML=`<b>${accName}</b> · 실적 수입 <span style="color:var(--income)">${fmt(ain)}</span> / 지출 <span style="color:var(--expense)">${fmt(aout)}</span> · 예정 수입 <span style="color:var(--income)">${fmt(pin)}</span> / 지출 <span style="color:var(--expense)">${fmt(pout)}</span> (MXN)`;
       if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';return;}
       txnMap={};items.forEach(t=>txnMap[t.id]=t);
-      b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색</div>
-        <table><thead><tr><th>일자</th><th>구분</th><th>계좌</th><th>계정과목</th><th class="num">금액 (MXN)</th><th>상태</th><th>고객명</th><th>SAT 번호</th><th>영수증</th></tr></thead>
+      txnItems=items;
+      renderTxnTable();
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ===== 거래목록 정렬 =====
+  // 각 열의 정렬용 값 추출. 금액은 표시와 동일한 MXN 환산(예정 USD=오늘환율)·부호 무시(크기순).
+  function txnSortVal(t,key){
+    switch(key){
+      case 'date': return String(t.txn_date).slice(0,10);
+      case 'dir': return t.direction==='in'?'수입':'지출';
+      case 'acc': return t.account_name||'';
+      case 'cat': return t.category_code?String(t.category_code):'';
+      case 'amt': return Math.abs(t.currency==='USD'&&t.status==='plan'?t.amount*(fxRate||t.fx_rate):t.amount_mxn)||0;
+      case 'status': return t.status==='actual'?'실제':'예정';
+      case 'cust': return t.sales_invoice_id?(t.customer_name||''):'';
+      case 'sat': return t.sales_invoice_id?(t.sat_no||''):(t.memo||'');
+      case 'rcpt': return t.receipt_no||'';
+      default: return '';
+    }
+  }
+  const TXN_NUM_COLS={amt:1}; // 숫자 열: 첫 클릭 내림차순
+  function txnHeadClick(key){
+    if(txnSort.key!==key){ txnSort={key,dir:TXN_NUM_COLS[key]?-1:1}; }        // 새 열: 숫자=내림, 문자=오름
+    else if((TXN_NUM_COLS[key]?-1:1)===txnSort.dir){ txnSort.dir=-txnSort.dir; } // 2번째 클릭: 반전
+    else { txnSort={key:null,dir:1}; }                                          // 3번째 클릭: 기본순서 복귀
+    renderTxnTable();
+  }
+  function renderTxnTable(){
+    const b=$('txnBody');
+    let items=txnItems;
+    if(txnSort.key){
+      const k=txnSort.key,d=txnSort.dir,isNum=!!TXN_NUM_COLS[k];
+      items=txnItems.slice().sort((a,z)=>{
+        const va=txnSortVal(a,k),vz=txnSortVal(z,k);
+        // 빈 값은 방향 무관 항상 뒤로
+        const ea=(va===''||va==null),ez=(vz===''||vz==null);
+        if(ea!==ez)return ea?1:-1;
+        let c=isNum?(va-vz):String(va).localeCompare(String(vz),'ko',{numeric:true});
+        if(c===0)c=(Number(a.id)||0)-(Number(z.id)||0); // 안정 정렬(동률은 id)
+        return c*d;
+      });
+    }
+    const arrow=k=>txnSort.key===k?(txnSort.dir===1?' ▲':' ▼'):'';
+    const th=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-sort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${arrow(k)}</th>`;
+      b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색 · 열 제목 클릭으로 정렬</div>
+        <table><thead><tr>${th('date','일자')}${th('dir','구분')}${th('acc','계좌')}${th('cat','계정과목')}${th('amt','금액 (MXN)','num')}${th('status','상태')}${th('cust','고객명')}${th('sat','SAT 번호')}${th('rcpt','영수증')}</tr></thead>
         <tbody>${items.map(t=>{
           const usd=t.currency==='USD';
           const amtColor=t.direction==='in'?'var(--income)':'var(--expense)';
@@ -895,7 +942,7 @@
         if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));}
         else det.classList.add('hidden');
       });
-    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+      [...b.querySelectorAll('th[data-sort]')].forEach(h=>h.onclick=()=>txnHeadClick(h.dataset.sort));
   }
 
   function catOptionsFor(dir,sel){
@@ -2179,6 +2226,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703mu"></script>
+<script src="refatrix-nav.js?v=20260703mv"></script>
 </body>
 </html>
