@@ -17,6 +17,7 @@ import customerRoutes from './routes/customerRoutes.js';
 import targetRoutes from './routes/targetRoutes.js';
 import meetingRoutes from './routes/meetingRoutes.js';
 import marketingRoutes from './routes/marketingRoutes.js';
+import marketingSpendRoutes from './routes/marketingSpendRoutes.js';
 import portalRoutes from './routes/portalRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import salesPerfRoutes from './routes/salesPerfRoutes.js';
@@ -73,6 +74,7 @@ export function buildApp() {
   app.register(targetRoutes);
   app.register(meetingRoutes);
   app.register(marketingRoutes);
+  app.register(marketingSpendRoutes);
   app.register(portalRoutes);
   app.register(dashboardRoutes);
   app.register(salesPerfRoutes);

@@ -1280,12 +1280,45 @@ export default async function financeRoutes(app) {
     // 지출(out)을 비디렉터가 확정하면 실적이지만 디렉터 승인 전까지 미반영(approved=false).
     const isDir = req.ctx.perm.role === 'director';
     const approved = !(t.direction === 'out' && !isDir);
+    // ===== 잔액 처리: 실적 < 계획일 때 선택 =====
+    // remainder='close'(기본): 그대로 마감 → plan_amount(계획)는 유지되어 차액이 "절감"으로 기록됨.
+    // remainder='keep': 부분 집행 → 이 행의 계획을 실집행분으로 낮추고, 잔액을 새 예정(plan) 거래로 분리해 남김(절감 아님·미집행).
+    const remainderMode = req.body?.remainder === 'keep' ? 'keep' : 'close';
+    const rem = r2(planAmt - newAmount);
+    if (remainderMode === 'keep') {
+      if (!(rem > 0.001)) return reply.code(400).send({ error: 'remainder_not_applicable' });
+      const planFx = Number(t.fx_rate) || 1; // 잔액 예정은 기존 계획 환율 유지
+      const remMxn = r2(rem * planFx);
+      const remPeriod = t.recurring_period ? `${t.recurring_period}#r${id}` : null; // (rule_id, period) 유니크 회피
+      const remMemo = `${t.memo || ''}${t.memo ? ' ' : ''}(잔액)`.trim();
+      const splitNote = `${new Date().toISOString().slice(0, 10)}: 부분 집행 — 잔액 ${rem} ${t.currency} 예정으로 유지${memo ? ` (${memo})` : ''}`;
+      const planMemoKeep = (t.plan_memo ? t.plan_memo + ' | ' : '') + splitNote;
+      let remId = null;
+      await withTx(async (exec) => {
+        await exec.query(
+          `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
+             approved=$10, change_count=$6, plan_memo=$7, plan_amount=$3, updated_by=$8 WHERE id=$9`,
+          [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemoKeep, req.ctx.perm.userId, id, approved]);
+        const rr = await exec.query(
+          `INSERT INTO transactions
+             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date, is_private)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'plan','general',true,$9,$10,$9,$11,$12,$4,$2,$13) RETURNING id`,
+          [t.account_id || null, planDate, t.direction, rem, t.currency, planFx, remMxn, t.category_code || null,
+           req.ctx.perm.userId, remMemo, t.recurring_rule_id || null, remPeriod, t.is_private === true]);
+        remId = Number(rr.rows[0].id);
+      });
+      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'keep', remainder_amount: rem, remainder_txn_id: remId } });
+      return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
+        plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'keep', remainder_amount: rem, remainder_txn_id: remId };
+    }
     await query(
       `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
          approved=$10, change_count=$6, plan_memo=$7, updated_by=$8 WHERE id=$9`,
       [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved } });
-    return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved };
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'close' } });
+    return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
+      plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'close',
+      saved: rem > 0.001 ? rem : 0, over: newAmount - planAmt > 0.001 ? r2(newAmount - planAmt) : 0 };
   });
 
   // 계획 대비 실적(고정비) 차이 리포트: 확정된 고정비 실적을 기간별로 계획 대비 비교

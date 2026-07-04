@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260703a</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:disabled,select:disabled,textarea:disabled{background:#f4f2ec;color:#7c776c}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.warn{background:var(--expense)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}.msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.r,th.r{text-align:right}
+  .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .st.draft{background:#eef0f2;color:#555}.st.submitted{background:#fdf3e3;color:#9a6512}
+  .st.approved{background:var(--income-bg);color:var(--income)}.st.rejected{background:var(--expense-bg);color:var(--expense)}
+  .pk{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .pk.adv{background:#eaf1f7;color:#2b5a78}.pk.mid{background:#f1ebf7;color:#7a4ea0}
+  .pk.fin{background:#fdf3e3;color:#9a6512}.pk.one{background:#eef0f2;color:#555}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  .chip{padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:var(--muted)}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .payline{display:grid;grid-template-columns:108px 132px 132px 1fr 84px;gap:8px;align-items:center;margin-top:8px}
+  .payline input,.payline select{width:100%}
+  .filebox{border:1.5px dashed var(--line);border-radius:10px;padding:10px 12px;margin-top:12px;background:#fbfaf6}
+  .filerow{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;flex-wrap:wrap}
+  .filerow .nm{font-weight:600;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+  .flowbox{background:#f4f7f5;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12.5px;line-height:1.7}
+  .ratio{display:flex;gap:22px;flex-wrap:wrap}
+  .ratio b{font-size:16px}
+  .rejbox{background:var(--expense-bg);color:var(--expense);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
+  .srch{position:relative}
+  .srchList{position:absolute;top:100%;left:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:280px;max-height:260px;overflow:auto;display:none}
+  .srchList.on{display:block}
+  .srchItem{padding:8px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #f2efe8}
+  .srchItem:hover{background:#f4f7f5}
+  .secttl{margin-top:16px;font-weight:800;color:var(--brand);font-size:13px}
+  .paidchip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--income-bg);color:var(--income)}
+  .lockrow input,.lockrow select{background:#f4f2ec;color:#7c776c}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">마케팅 지출계획 · 행사·활동 기안 → 디렉터 승인 → 자금계획</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="goLogin" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="apiInput" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- ============ 계획 목록 ============ -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:800;color:var(--brand)">지출 계획 목록</div>
+        <div class="chips" id="stChips" style="margin:0"></div>
+        <button class="btn" id="btnNew" style="margin-left:auto">＋ 새 지출 계획</button>
+      </div>
+      <div class="msg" id="listMsg"></div>
+      <div id="listWrap" style="overflow-x:auto"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+
+    <!-- ============ 작성 / 검토 ============ -->
+    <div class="card hidden" id="composer">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:800;color:var(--brand)" id="cpTitle">📝 새 지출 계획</div>
+        <span id="cpStatus"></span>
+        <button class="btn ghost sm" id="btnClose" style="margin-left:auto">닫기 ✕</button>
+      </div>
+      <div id="rejBox" class="rejbox hidden"></div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+        <div style="flex:1;min-width:220px"><label>활동·행사명 *</label><input id="fTitle" style="width:100%" maxlength="200"></div>
+        <div><label>분류</label><select id="fCategory">
+          <option value="">선택…</option><option>행사·이벤트</option><option>판촉물</option><option>광고</option><option>전시회</option><option>고객접대</option><option>기타</option>
+        </select></div>
+        <div><label>행사일(예정)</label><input id="fEventDate" type="date"></div>
+      </div>
+      <div style="margin-top:10px"><label>목적·내용</label><textarea id="fPurpose" style="width:100%;height:56px" maxlength="2000"></textarea></div>
+
+      <div class="secttl">🎯 마케팅 대상 <span class="hint" style="font-weight:500">— 등록 고객 복수 선택 + 불특정 다수 가능</span></div>
+      <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px;flex-wrap:wrap" id="tgTools">
+        <div class="srch"><label>고객 검색</label><input id="tgSearch" placeholder="고객명·코드 검색…" style="width:240px" autocomplete="off">
+          <div class="srchList" id="tgList"></div></div>
+        <button class="btn ghost sm" id="btnGeneral" style="margin-bottom:1px">＋ 불특정 다수</button>
+      </div>
+      <div id="tgWrap" style="overflow-x:auto"></div>
+      <div class="hint" style="margin-top:6px">매출목표 = 매출목표 화면의 <b>고객별 연간(올해) 목표 합</b> · 누적 매출 = <b>올해 1/1 ~ 오늘 확정 매출(IVA 불포함)</b>, 조회 시점 자동 집계.</div>
+
+      <div class="secttl">💸 지급 일정 <span class="hint" style="font-weight:500">— 선지급금·잔금처럼 나눠 지급되면 줄을 추가하세요</span></div>
+      <div class="payline hint" style="font-weight:700;margin-top:10px"><span>구분</span><span>지급 예정일</span><span>금액 (MXN)</span><span>명목·메모</span><span></span></div>
+      <div id="lnWrap"></div>
+      <button class="btn ghost sm" id="btnAddLine" style="margin-top:8px">＋ 지급 줄 추가</button>
+
+      <div class="flowbox ratio" id="ratioBox"></div>
+
+      <div class="filebox" id="fileBox">
+        <div style="font-weight:700;font-size:12.5px">📎 증빙자료 <span class="hint" style="font-weight:500">— 견적서·계약서·인보이스 등 (PDF/이미지/Excel 등, 파일당 8MB)</span></div>
+        <div id="fileList"></div>
+        <button class="btn ghost sm" id="btnAddFile" style="margin-top:6px">＋ 파일 추가</button>
+        <span class="hint" id="fileHint" style="margin-left:8px"></span>
+        <input type="file" id="filePick" multiple class="hidden">
+      </div>
+
+      <div class="flowbox hidden" id="approveInfo"></div>
+
+      <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap" id="btnRow"></div>
+      <div class="msg" id="cpMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let cur=null;            // 열려있는 계획 {id,status,created_by,lines,targets,files}
+  let stats=null;          // 대상 통계 캐시
+  let listFilter='';
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=>n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const KIND_LABEL={adv:'선지급금',mid:'중도금',fin:'잔금',one:'일시불'};
+  const ST_LABEL={draft:'작성중',submitted:'승인대기',approved:'승인됨',rejected:'반려'};
+  const isDir=()=>session.user&&session.user.role==='director';
+  const me=()=>Number(session.user&&session.user.id);
+  const planNo=(id)=>'MK-'+String(id).padStart(3,'0');
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token,api:o.api||'',user:o.user||{}}; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function api(path,opt){
+    opt=opt||{}; opt.headers=Object.assign({'Content-Type':'application/json'},auth(),opt.headers||{});
+    const res=await fetch(session.api+path,opt);
+    let body={}; try{ body=await res.json(); }catch(e){}
+    return {ok:res.ok,status:res.status,...body};
+  }
+  function say(id,ok,text){ const m=$(id); m.className='msg '+(ok?'ok':'err'); m.textContent=text; if(ok){clearTimeout(say._t);say._t=setTimeout(()=>{m.className='msg';},2500);} }
+
+  async function login(){
+    const apiBase=$('apiInput').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('goLogin').disabled=true; $('goLogin').textContent='확인 중…';
+    try{
+      const res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:apiBase};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      afterLogin();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('goLogin').disabled=false;$('goLogin').textContent='로그인';}
+  }
+  function afterLogin(){
+    $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>역할: '+esc(session.user&&session.user.role||'');
+    $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+    renderStChips(); loadList();
+  }
+
+  // ================= 목록 =================
+  function renderStChips(){
+    const opts=[['','전체'],['draft','작성중'],['submitted','승인대기'],['approved','승인됨'],['rejected','반려']];
+    $('stChips').innerHTML=opts.map(o=>'<span class="chip'+(listFilter===o[0]?' on':'')+'" data-st="'+o[0]+'">'+o[1]+'</span>').join('');
+  }
+  async function loadList(){
+    const d=await api('/api/mktspend/plans'+(listFilter?'?status='+listFilter:''));
+    if(!d.ok){$('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>';return;}
+    const items=d.items||[];
+    if(!items.length){$('listWrap').innerHTML='<div class="hint" style="margin-top:10px">계획이 없습니다. [＋ 새 지출 계획]으로 작성하세요.</div>';return;}
+    $('listWrap').innerHTML='<table><tr><th>#</th><th>활동·행사명</th><th>분류</th><th>대상</th><th class="r">지급건수</th><th class="r">총액(MXN)</th><th>첫 지급일</th><th>담당</th><th>상태</th><th></th></tr>'
+      +items.map(p=>{
+        const tg=(p.customer_count?p.customer_count+'개사':'')+(p.has_general?(p.customer_count?' +':'')+'불특정':'')||'—';
+        return '<tr><td>'+planNo(p.id)+'</td><td style="white-space:normal;min-width:180px">'+esc(p.title)+'</td><td>'+esc(p.category||'')+'</td><td>'+tg+'</td>'
+          +'<td class="r">'+p.line_count+'</td><td class="r">'+fmt(p.total_amount)+'</td><td>'+(p.first_due||'—')+'</td><td>'+esc(p.created_by_name||'')+'</td>'
+          +'<td><span class="st '+p.status+'">'+ST_LABEL[p.status]+'</span></td>'
+          +'<td><button class="btn ghost sm" data-open="'+p.id+'">열기</button></td></tr>';
+      }).join('')+'</table>';
+  }
+
+  // ================= 작성/검토 폼 =================
+  function blankLine(){ return {id:null,kind:'one',due_date:'',amount:'',memo:'',paid:false}; }
+  function newPlan(){
+    cur={id:null,status:'draft',created_by:me(),lines:[blankLine()],targets:[],files:[]};
+    stats=null; renderComposer(); $('composer').classList.remove('hidden');
+    try{$('composer').scrollIntoView({behavior:'smooth'});}catch(e){}
+  }
+  async function openPlan(id){
+    const d=await api('/api/mktspend/plans/'+id);
+    if(!d.ok){say('listMsg',false,'계획을 불러오지 못했습니다: '+(d.error||d.status));return;}
+    cur={id:d.plan.id,status:d.plan.status,created_by:d.plan.created_by,reject_reason:d.plan.reject_reason,
+      title:d.plan.title,category:d.plan.category,event_date:d.plan.event_date,purpose:d.plan.purpose,
+      created_by_name:d.plan.created_by_name,
+      lines:(d.lines||[]).map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount})),
+      targets:(d.targets||[]).map(t=>({customer_id:t.customer_id,is_general:t.is_general,code:t.code,name:t.name})),
+      files:d.files||[]};
+    stats=null; renderComposer(); $('composer').classList.remove('hidden');
+    refreshStats();
+    try{$('composer').scrollIntoView({behavior:'smooth'});}catch(e){}
+  }
+  function editable(){
+    if(!cur) return false;
+    if(!cur.id) return true;
+    if(cur.status==='draft'||cur.status==='rejected') return isDir()||cur.created_by===me();
+    return isDir(); // submitted·approved는 디렉터만 수정
+  }
+  function renderComposer(){
+    const ed=editable();
+    $('cpTitle').textContent=cur.id?('📝 '+planNo(cur.id)+' · 지출 계획'):'📝 새 지출 계획';
+    $('cpStatus').innerHTML='<span class="st '+cur.status+'">'+ST_LABEL[cur.status]+'</span>'+(cur.created_by_name?' <span class="hint">담당 '+esc(cur.created_by_name)+'</span>':'');
+    const rb=$('rejBox');
+    if(cur.status==='rejected'&&cur.reject_reason){rb.textContent='반려 사유: '+cur.reject_reason;rb.classList.remove('hidden');}
+    else rb.classList.add('hidden');
+    $('fTitle').value=cur.title||''; $('fCategory').value=cur.category||''; $('fEventDate').value=cur.event_date||''; $('fPurpose').value=cur.purpose||'';
+    ['fTitle','fCategory','fEventDate','fPurpose'].forEach(id=>$(id).disabled=!ed);
+    $('tgTools').style.display=ed?'':'none';
+    $('btnAddLine').style.display=ed?'':'none';
+    renderTargets(); renderLines(); renderRatio(); renderFiles(); renderButtons();
+  }
+
+  // ---- 대상 ----
+  function renderTargets(){
+    const ed=editable();
+    const rows=cur.targets.map((t,i)=>{
+      const st=stats&&t.customer_id?(stats.items||[]).find(x=>x.customer_id===t.customer_id):null;
+      const tgt=t.is_general?'—':(st?(st.annual_target==null?'<span class="hint">목표 미설정</span>':fmt(st.annual_target)):'…');
+      const sal=t.is_general?'—':(st?fmt(st.ytd_sales):'…');
+      const pr=t.is_general?'—':(st&&st.progress!=null?st.progress+'%':'<span class="hint">—</span>');
+      const nm=t.is_general?'<span class="pk one">불특정 다수</span> <span class="hint">신규·미등록 잠재고객</span>':'<b>'+esc(t.name)+'</b> <span class="hint">'+esc(t.code||'')+'</span>';
+      return '<tr><td style="white-space:normal">'+nm+'</td><td class="r">'+tgt+'</td><td class="r">'+sal+'</td><td class="r">'+pr+'</td>'
+        +'<td>'+(ed?'<button class="btn warn sm" data-deltg="'+i+'">✕</button>':'')+'</td></tr>';
+    }).join('');
+    const custN=cur.targets.filter(t=>!t.is_general).length;
+    const totalRow=(stats&&custN)?('<tr style="background:#faf8f3;font-weight:700"><td>선택 대상 합계 ('+custN+'개사)</td><td class="r">'+fmt(stats.total_target)+'</td><td class="r">'+fmt(stats.total_sales)+'</td>'
+      +'<td class="r">'+(stats.total_target>0?Math.round(stats.total_sales/stats.total_target*100)+'%':'—')+'</td><td></td></tr>'):'';
+    $('tgWrap').innerHTML=cur.targets.length
+      ?('<table><tr><th>대상</th><th class="r">연간 매출목표(MXN)</th><th class="r">누적 매출액(MXN)</th><th class="r">달성률</th><th></th></tr>'+rows+totalRow+'</table>')
+      :'<div class="hint" style="margin-top:8px">대상이 없습니다. 고객을 검색해 추가하거나 [＋ 불특정 다수]를 누르세요.</div>';
+  }
+  async function refreshStats(){
+    const ids=cur.targets.filter(t=>!t.is_general&&t.customer_id).map(t=>t.customer_id);
+    if(!ids.length){stats={items:[],total_target:0,total_sales:0};renderTargets();renderRatio();return;}
+    const d=await api('/api/mktspend/target-stats?ids='+ids.join(','));
+    if(d.ok){stats=d;renderTargets();renderRatio();}
+  }
+  let srchT=null;
+  async function doSearch(){
+    const q=$('tgSearch').value.trim(); const box=$('tgList');
+    if(!q){box.classList.remove('on');box.innerHTML='';return;}
+    const d=await api('/api/mktspend/customers?q='+encodeURIComponent(q));
+    const items=(d.items||[]).filter(c=>!cur.targets.some(t=>t.customer_id===c.id));
+    box.innerHTML=items.length?items.map(c=>'<div class="srchItem" data-cid="'+c.id+'" data-code="'+esc(c.code)+'" data-name="'+esc(c.name)+'">'+esc(c.name)+' <span class="hint">'+esc(c.code)+'</span></div>').join('')
+      :'<div class="srchItem hint">검색 결과 없음</div>';
+    box.classList.add('on');
+  }
+  function addGeneral(){
+    if(cur.targets.some(t=>t.is_general)){say('cpMsg',false,'불특정 다수는 이미 추가되어 있습니다.');return;}
+    cur.targets.push({customer_id:null,is_general:true}); renderTargets();
+  }
+
+  // ---- 지급 라인 ----
+  function renderLines(){
+    const ed=editable();
+    $('lnWrap').innerHTML=cur.lines.map((l,i)=>{
+      const lock=!ed||l.paid;
+      return '<div class="payline'+(l.paid?' lockrow':'')+'" data-ln="'+i+'">'
+        +'<select data-f="kind" '+(lock?'disabled':'')+'>'+Object.keys(KIND_LABEL).map(k=>'<option value="'+k+'"'+(l.kind===k?' selected':'')+'>'+KIND_LABEL[k]+'</option>').join('')+'</select>'
+        +'<input type="date" data-f="due_date" value="'+esc(l.due_date)+'" '+(lock?'disabled':'')+'>'
+        +'<input type="number" step="0.01" min="0" data-f="amount" value="'+esc(l.amount)+'" style="text-align:right" '+(lock?'disabled':'')+'>'
+        +'<input data-f="memo" value="'+esc(l.memo)+'" maxlength="300" placeholder="명목·메모" '+(lock?'disabled':'')+'>'
+        +'<span>'+(l.paid?'<span class="paidchip">지급완료 '+esc(l.paid_date||'')+'</span>':(ed?'<button class="btn warn sm" data-delln="'+i+'">✕</button>':''))+'</span>'
+        +'</div>';
+    }).join('')||'<div class="hint" style="margin-top:8px">지급 줄이 없습니다.</div>';
+  }
+  function lineTotal(){ return cur.lines.reduce((s,l)=>s+(Number(l.amount)>0?Number(l.amount):0),0); }
+  function renderRatio(){
+    const budget=lineTotal();
+    const cum=stats?Number(stats.total_sales):0, tgt=stats?Number(stats.total_target):0;
+    const custN=cur.targets.filter(t=>!t.is_general).length;
+    const pct=(a,b)=>b>0?(Math.round(a/b*1000)/10).toFixed(1)+'%':'—';
+    $('ratioBox').innerHTML=
+      '<div><div class="hint" style="font-weight:700">마케팅 예산 (지급 합계)</div><b style="color:var(--expense)">MX$ '+fmt(budget)+'</b></div>'
+      +'<div><div class="hint" style="font-weight:700">대상 누적 매출 대비'+(custN?' <span style="font-weight:500">('+fmt(cum)+')</span>':'')+'</div><b>'+(custN?pct(budget,cum):'—')+'</b></div>'
+      +'<div><div class="hint" style="font-weight:700">연간 매출목표 대비'+(custN?' <span style="font-weight:500">('+fmt(tgt)+')</span>':'')+'</div><b>'+(custN?pct(budget,tgt):'—')+'</b></div>'
+      +(!custN?'<div class="hint" style="align-self:center">고객 대상을 추가하면 비율이 계산됩니다</div>':'');
+  }
+
+  // ---- 증빙 파일 ----
+  function fmtBytes(n){ if(n==null)return''; if(n>1048576)return (n/1048576).toFixed(1)+'MB'; if(n>1024)return Math.round(n/1024)+'KB'; return n+'B'; }
+  function renderFiles(){
+    const ed=editable();
+    $('btnAddFile').disabled=!cur.id||!ed;
+    $('fileHint').textContent=cur.id?'':'임시 저장 후 파일을 첨부할 수 있습니다.';
+    $('fileList').innerHTML=(cur.files||[]).map(f=>'<div class="filerow"><span class="nm">'+esc(f.file_name)+'</span><span class="hint">'+fmtBytes(f.file_size)+(f.uploaded_by_name?' · '+esc(f.uploaded_by_name):'')+'</span>'
+      +'<button class="btn ghost sm" data-viewf="'+f.id+'">보기</button>'+(ed?'<button class="btn warn sm" data-delf="'+f.id+'">삭제</button>':'')+'</div>').join('')
+      ||'<div class="hint" style="margin-top:6px">첨부된 증빙이 없습니다.</div>';
+  }
+  async function reloadFiles(){
+    if(!cur.id)return;
+    const d=await api('/api/mktspend/plans/'+cur.id+'/files');
+    if(d.ok){cur.files=d.items||[];renderFiles();}
+  }
+  function pickFiles(){ $('filePick').value=''; $('filePick').click(); }
+  async function onFilesPicked(){
+    const files=[...$('filePick').files]; if(!files.length)return;
+    let okN=0,failN=0;
+    for(const f of files){
+      if(f.size>8*1024*1024){failN++;continue;}
+      const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('read'));r.readAsDataURL(f);});
+      const d=await api('/api/mktspend/plans/'+cur.id+'/files',{method:'POST',body:JSON.stringify({file_name:f.name,data:dataUrl})});
+      if(d.ok)okN++;else failN++;
+    }
+    say('cpMsg',failN===0,'업로드 완료 '+okN+'건'+(failN?' · 실패 '+failN+'건(8MB 초과 또는 형식)':''));
+    reloadFiles();
+  }
+  async function viewFile(fid){
+    const d=await api('/api/mktspend/files/'+fid);
+    if(!d.ok||!d.file_data){say('cpMsg',false,'파일을 불러오지 못했습니다.');return;}
+    try{
+      const m=String(d.file_data).match(/^data:([^;]+);base64,(.*)$/s);
+      const bin=atob(m[2].replace(/\s+/g,'')); const arr=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:m[1]}));
+      window.open(url,'_blank');
+    }catch(e){say('cpMsg',false,'파일 표시 실패');}
+  }
+  async function delFile(fid){
+    if(!confirm('이 증빙을 삭제할까요?'))return;
+    const d=await api('/api/mktspend/files/'+fid,{method:'DELETE'});
+    if(d.ok)reloadFiles(); else say('cpMsg',false,'삭제 실패: '+(d.error||d.status));
+  }
+
+  // ---- 저장/제출/승인 ----
+  function collect(){
+    const lines=cur.lines.map((l,i)=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:Number(l.amount),memo:l.memo||null}));
+    const targets=cur.targets.map(t=>t.is_general?{is_general:true}:{customer_id:t.customer_id});
+    return {title:$('fTitle').value.trim(),category:$('fCategory').value||null,event_date:$('fEventDate').value||null,
+      purpose:$('fPurpose').value.trim()||null,lines,targets};
+  }
+  function validateLocal(p){
+    if(!p.title){say('cpMsg',false,'활동·행사명을 입력하세요.');return false;}
+    if(!p.lines.length){say('cpMsg',false,'지급 줄을 1개 이상 추가하세요.');return false;}
+    for(let i=0;i<p.lines.length;i++){const l=p.lines[i];
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(l.due_date||'')){say('cpMsg',false,(i+1)+'번째 줄: 지급 예정일을 입력하세요.');return false;}
+      if(!(l.amount>0)){say('cpMsg',false,(i+1)+'번째 줄: 금액을 입력하세요.');return false;}}
+    return true;
+  }
+  async function saveDraft(silent){
+    const p=collect(); if(!validateLocal(p))return false;
+    let d;
+    if(cur.id)d=await api('/api/mktspend/plans/'+cur.id,{method:'PATCH',body:JSON.stringify(p)});
+    else d=await api('/api/mktspend/plans',{method:'POST',body:JSON.stringify(p)});
+    if(!d.ok){
+      if(d.error==='line_locked')say('cpMsg',false,'이미 지급완료된 줄은 수정·삭제할 수 없습니다.');
+      else say('cpMsg',false,'저장 실패: '+(d.error||d.status));
+      return false;
+    }
+    if(!cur.id)cur.id=d.id;
+    if(!silent)say('cpMsg',true,cur.status==='approved'?'저장 완료 — 자금계획 예정 지출도 동기화했습니다.':'저장했습니다.');
+    loadList();
+    if(!silent)openPlan(cur.id);
+    return true;
+  }
+  async function submitPlan(){
+    if(!(await saveDraft(true)))return;
+    const d=await api('/api/mktspend/plans/'+cur.id+'/submit',{method:'POST',body:'{}'});
+    if(!d.ok){say('cpMsg',false,'제출 실패: '+(d.error||d.status));return;}
+    say('cpMsg',true,'디렉터 승인 요청을 보냈습니다.'); loadList(); openPlan(cur.id);
+  }
+  async function withdrawPlan(){
+    const d=await api('/api/mktspend/plans/'+cur.id+'/withdraw',{method:'POST',body:'{}'});
+    if(!d.ok){say('cpMsg',false,'회수 실패: '+(d.error||d.status));return;}
+    say('cpMsg',true,'작성중으로 되돌렸습니다.'); loadList(); openPlan(cur.id);
+  }
+  async function approvePlan(){
+    const p=collect(); if(!validateLocal(p))return;
+    if(!confirm('수정 내용대로 승인할까요?\n지급 줄 '+p.lines.length+'건이 재무 자금계획(예정 지출)에 등록됩니다.'))return;
+    const d=await api('/api/mktspend/plans/'+cur.id+'/approve',{method:'POST',body:JSON.stringify(p)});
+    if(!d.ok){say('cpMsg',false,'승인 실패: '+(d.error||d.status));return;}
+    say('cpMsg',true,'승인 완료 — 예정 지출 '+((d.txn_ids||[]).length)+'건이 자금계획에 등록되었습니다.');
+    loadList(); openPlan(cur.id);
+  }
+  async function rejectPlan(){
+    const reason=($('rejReason')&&$('rejReason').value.trim())||'';
+    if(!reason){say('cpMsg',false,'반려 사유를 입력하세요.');return;}
+    const d=await api('/api/mktspend/plans/'+cur.id+'/reject',{method:'POST',body:JSON.stringify({reason})});
+    if(!d.ok){say('cpMsg',false,'반려 실패: '+(d.error||d.status));return;}
+    say('cpMsg',true,'반려했습니다.'); loadList(); openPlan(cur.id);
+  }
+  async function deletePlan(){
+    if(!confirm('이 계획을 삭제할까요?'+(cur.status==='approved'?'\n(연결된 미확정 예정 지출도 함께 취소됩니다)':'')))return;
+    const d=await api('/api/mktspend/plans/'+cur.id,{method:'DELETE'});
+    if(!d.ok){
+      if(d.error==='has_paid_lines')say('cpMsg',false,'지급완료된 줄이 있어 삭제할 수 없습니다.');
+      else say('cpMsg',false,'삭제 실패: '+(d.error||d.status));
+      return;
+    }
+    say('listMsg',true,'삭제했습니다.'); $('composer').classList.add('hidden'); cur=null; loadList();
+  }
+
+  function renderButtons(){
+    const b=$('btnRow'); const info=$('approveInfo');
+    info.classList.add('hidden');
+    let h='';
+    if(!cur.id||cur.status==='draft'||cur.status==='rejected'){
+      if(editable()){
+        h+='<button class="btn ghost" data-act="save">임시 저장</button>';
+        h+='<button class="btn" data-act="submit">디렉터 승인 요청 →</button>';
+        if(cur.id)h+='<button class="btn warn" data-act="del">삭제</button>';
+      }
+    }else if(cur.status==='submitted'){
+      if(isDir()){
+        const n=cur.lines.length;
+        info.innerHTML='<b>승인하면 자동으로:</b><br>① 지급 줄 <b>'+n+'건</b>이 재무 → <b>예정 지출(자금 계획)</b>에 각각 등록됩니다 (출처 배지: 마케팅)<br>② 현금흐름 달력의 해당 날짜 AP(예정 지출)에 반영됩니다<br>③ 실제 송금은 재무의 <b>예정 내역 → [실적 처리]</b>에서 계좌를 골라 확정합니다';
+        info.classList.remove('hidden');
+        h+='<button class="btn" data-act="approve">✔ 수정 내용으로 승인</button>';
+        h+='<button class="btn warn" data-act="reject">반려</button>';
+        h+='<input id="rejReason" placeholder="반려 사유 (반려 시 필수)" style="flex:1;min-width:200px">';
+      }else if(cur.created_by===me()){
+        h+='<span class="hint">디렉터 승인 대기 중입니다. 수정하려면 회수하세요.</span>';
+        h+='<button class="btn ghost" data-act="withdraw">회수 (작성중으로)</button>';
+      }
+    }else if(cur.status==='approved'){
+      if(isDir()){
+        h+='<button class="btn" data-act="save">수정 저장 (자금계획 동기화)</button>';
+        h+='<button class="btn warn" data-act="del">계획 삭제</button>';
+        h+='<span class="hint">지급완료된 줄은 잠깁니다 · 날짜·금액 수정 시 미확정 예정 지출이 자동 동기화됩니다</span>';
+      }else{
+        h+='<span class="hint">승인된 계획입니다. 수정은 디렉터만 가능합니다.</span>';
+      }
+    }
+    b.innerHTML=h;
+  }
+
+  // ================= 이벤트 (위임) =================
+  document.addEventListener('click',function(ev){
+    const t=ev.target.closest('[data-open],[data-st],[data-deltg],[data-delln],[data-viewf],[data-delf],[data-act],.srchItem');
+    if(!t)return;
+    if(t.dataset.open!=null){openPlan(Number(t.dataset.open));return;}
+    if(t.dataset.st!=null){listFilter=t.dataset.st;renderStChips();loadList();return;}
+    if(t.dataset.deltg!=null){cur.targets.splice(Number(t.dataset.deltg),1);renderTargets();refreshStats();return;}
+    if(t.dataset.delln!=null){
+      const i=Number(t.dataset.delln);
+      if(cur.lines[i]&&cur.lines[i].paid){say('cpMsg',false,'지급완료된 줄은 삭제할 수 없습니다.');return;}
+      cur.lines.splice(i,1);renderLines();renderRatio();return;}
+    if(t.dataset.viewf!=null){viewFile(Number(t.dataset.viewf));return;}
+    if(t.dataset.delf!=null){delFile(Number(t.dataset.delf));return;}
+    if(t.classList.contains('srchItem')&&t.dataset.cid){
+      cur.targets.push({customer_id:Number(t.dataset.cid),is_general:false,code:t.dataset.code,name:t.dataset.name});
+      $('tgSearch').value='';$('tgList').classList.remove('on');renderTargets();refreshStats();return;}
+    if(t.dataset.act){
+      const a=t.dataset.act;
+      if(a==='save')saveDraft(false);
+      else if(a==='submit')submitPlan();
+      else if(a==='withdraw')withdrawPlan();
+      else if(a==='approve')approvePlan();
+      else if(a==='reject')rejectPlan();
+      else if(a==='del')deletePlan();
+      return;
+    }
+  });
+  document.addEventListener('input',function(ev){
+    const row=ev.target.closest('.payline[data-ln]');
+    if(row){
+      const i=Number(row.dataset.ln), f=ev.target.dataset.f;
+      if(cur&&cur.lines[i]&&f){cur.lines[i][f]=ev.target.value; if(f==='amount')renderRatio();}
+      return;
+    }
+    if(ev.target.id==='tgSearch'){clearTimeout(srchT);srchT=setTimeout(doSearch,250);}
+  });
+  document.addEventListener('click',function(ev){
+    if(!ev.target.closest('.srch'))$('tgList')&&$('tgList').classList.remove('on');
+  });
+
+  window.addEventListener('DOMContentLoaded',function(){
+    $('goLogin').addEventListener('click',login);
+    $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+    $('btnNew').addEventListener('click',newPlan);
+    $('btnClose').addEventListener('click',()=>{$('composer').classList.add('hidden');cur=null;});
+    $('btnGeneral').addEventListener('click',addGeneral);
+    $('btnAddLine').addEventListener('click',()=>{cur.lines.push(blankLine());renderLines();renderRatio();});
+    $('btnAddFile').addEventListener('click',pickFiles);
+    $('filePick').addEventListener('change',onFilesPicked);
+    const ps=portalSession();
+    if(ps&&ps.token){session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')};afterLogin();}
+  });
+</script>
+<script src="refatrix-nav.js?v=20260703ms"></script>
+</body>
+</html>

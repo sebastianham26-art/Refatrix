@@ -26,6 +26,11 @@ export default async function portalRoutes(app) {
       out.badges.target_approvals = Number(t.n);
       const m = (await query(`SELECT COUNT(*) AS n FROM marketing_plan_status WHERE id=1 AND status='submitted'`)).rows[0];
       out.badges.marketing_approvals = Number(m.n);
+      // 마케팅 지출 계획 승인 대기(0115) — 마이그레이션 전 배포돼도 안전하게 try
+      try {
+        const ms = (await query(`SELECT COUNT(*) AS n FROM marketing_spend_plans WHERE status='submitted' AND deleted_at IS NULL`)).rows[0];
+        out.badges.marketing_approvals += Number(ms.n);
+      } catch (_) { /* 테이블 미생성(마이그레이션 전) */ }
       const s = (await query(`SELECT COUNT(*) AS n FROM sales_change_requests WHERE status='pending'`)).rows[0];
       out.badges.sales_change_approvals = Number(s.n);
       const imp = (await query(`SELECT COUNT(*) AS n FROM import_batches WHERE deleted_at IS NULL AND status='pending'`)).rows[0];

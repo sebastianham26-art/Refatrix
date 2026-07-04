@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260703wp loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260703ms loaded'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -52,6 +52,7 @@
     prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
     prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
+    mktspend:{file:'refatrix-mktspend.html',name:'마케팅 지출계획',desc:'행사·활동 지출 기안·승인'},
     rnr:{file:'refatrix-rnr.html',name:'업무 프로세스',desc:'R&R 안내'},
     coverage:{file:'mx_parts_coverage_dashboard.html',name:'Coverage',desc:'부품 커버리지 대시보드'},
     devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
@@ -75,7 +76,7 @@
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory',
     recost:'__director__',
-    products:'products', vehicleparts:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing',
+    products:'products', vehicleparts:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing', mktspend:'marketing',
     users:'__director__', company:'__director__', processKpi:'__director__',
     whHome:'warehouse', stockcount:'warehouse'
   };
@@ -85,7 +86,7 @@
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','fieldsurvey','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finFx','finApprove','settlement','grossprofit','commission','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','devrequest','marketing','prodFind','prodUpload']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','devrequest','marketing','mktspend','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','processKpi']}

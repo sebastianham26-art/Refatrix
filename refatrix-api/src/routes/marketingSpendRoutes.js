@@ -1,0 +1,559 @@
+import { query, withTx } from '../db.js';
+import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
+import { logEvent } from '../audit.js';
+
+// =====================================================================
+// Refatrix ERP · marketingSpendRoutes.js  (마케팅 지출 계획)
+//   · 행사·활동 단위 지출 기안: 헤더 + 지급 라인 N(선지급/중도금/잔금/일시불)
+//     + 마케팅 대상 N(등록 고객 복수 / 불특정 다수) + 증빙 N(base64).
+//   · 담당자(marketing 페이지 편집권한) 작성·제출 → 디렉터가 내용을 직접
+//     수정한 뒤 승인 → 지급 라인마다 transactions(status='plan', 6070,
+//     memo '[마케팅] …')이 생성돼 재무 예정 내역·현금흐름 AP에 반영.
+//   · 실제 송금은 재무 [실적 처리](confirm-pay)로 확정 — 기존 흐름 그대로.
+//   · 승인 후 수정: 디렉터만. 연결 거래가 아직 plan이면 자동 동기화,
+//     이미 actual(지급완료)이면 그 라인은 잠금(409 line_locked).
+//   · 대상 통계: 고객별 연간 매출목표(target_customer_months 합) +
+//     올해 1/1~오늘 누적 매출(sales_invoices posted subtotal_mxn, ex-IVA).
+// =====================================================================
+
+function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
+const KINDS = new Set(['adv', 'mid', 'fin', 'one']);
+const KIND_LABEL = { adv: '선지급금', mid: '중도금', fin: '잔금', one: '일시불' };
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isDirector(req) { return req.ctx.perm.role === 'director'; }
+
+// 증빙 파일 검증(인보이스 첨부와 동일하게 폭넓은 허용, 8MB)
+export function validateSpendFileDataUrl(dataUrl, maxBytes = 8 * 1024 * 1024) {
+  const s = String(dataUrl || '');
+  const m = s.match(/^data:([a-zA-Z0-9.+\/-]+);base64,([A-Za-z0-9+\/=\s]+)$/);
+  if (!m) return { ok: false, error: 'bad_format' };
+  const mime = m[1].toLowerCase();
+  const okMime = mime.startsWith('image/') || [
+    'application/pdf', 'text/xml', 'application/xml',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/csv', 'text/plain', 'application/zip', 'application/octet-stream',
+  ].includes(mime);
+  if (!okMime) return { ok: false, error: 'bad_mime' };
+  const b64 = m[2].replace(/\s+/g, '');
+  if (!b64) return { ok: false, error: 'empty' };
+  const bytes = Math.floor(b64.length * 3 / 4);
+  if (bytes > maxBytes) return { ok: false, error: 'too_large' };
+  return { ok: true, mime, size: bytes };
+}
+
+// 본문 → 지급 라인 정규화. 오류 시 {error}
+export function normalizeLines(rawLines) {
+  const lines = Array.isArray(rawLines) ? rawLines : [];
+  if (!lines.length) return { error: 'lines_required' };
+  if (lines.length > 50) return { error: 'too_many_lines' };
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i] || {};
+    const kind = KINDS.has(l.kind) ? l.kind : 'one';
+    const due = String(l.due_date || '');
+    let dOk = DATE_RE.test(due);
+    if (dOk) { const dt = new Date(due + 'T00:00:00Z'); dOk = !isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === due; }
+    if (!dOk) return { error: 'bad_line_date', index: i };
+    const amount = Number(l.amount);
+    if (!(amount > 0)) return { error: 'bad_line_amount', index: i };
+    out.push({ id: l.id != null ? Number(l.id) : null, kind, due_date: due, amount: r2(amount),
+      memo: (l.memo == null || String(l.memo).trim() === '') ? null : String(l.memo).trim().slice(0, 300), sort_order: i });
+  }
+  return { lines: out };
+}
+
+// 본문 → 대상 정규화(고객 중복 제거, 불특정 다수 1건으로 축약)
+export function normalizeTargets(rawTargets) {
+  const arr = Array.isArray(rawTargets) ? rawTargets : [];
+  if (arr.length > 200) return { error: 'too_many_targets' };
+  const custIds = [];
+  const seen = new Set();
+  let general = false;
+  for (const t of arr) {
+    if (t && t.is_general) { general = true; continue; }
+    const cid = Number(t && t.customer_id);
+    if (!(cid > 0)) return { error: 'bad_target' };
+    if (!seen.has(cid)) { seen.add(cid); custIds.push(cid); }
+  }
+  return { custIds, general };
+}
+
+// 계획 거래 메모: '[마케팅] 제목 · 구분 (· 명목)' — 재무 화면이 이 접두사로 출처 배지를 표시
+export function spendTxnMemo(title, kind, lineMemo) {
+  const base = `[마케팅] ${String(title || '').slice(0, 120)} · ${KIND_LABEL[kind] || kind}`;
+  return lineMemo ? `${base} · ${String(lineMemo).slice(0, 200)}` : base;
+}
+
+export default async function marketingSpendRoutes(app) {
+  const num = (v) => (v == null ? 0 : Number(v));
+
+  // ---- 라인/대상 저장 헬퍼(트랜잭션 내) --------------------------------
+  async function insertLines(run, planId, lines) {
+    const ids = [];
+    for (const l of lines) {
+      const r = await run(
+        `INSERT INTO marketing_spend_lines (plan_id, kind, due_date, amount, memo, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [planId, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
+      ids.push(Number(r.rows[0].id));
+    }
+    return ids;
+  }
+  async function replaceTargets(run, planId, custIds, general) {
+    await run(`DELETE FROM marketing_spend_targets WHERE plan_id=$1`, [planId]);
+    for (const cid of custIds) {
+      await run(`INSERT INTO marketing_spend_targets (plan_id, customer_id, is_general) VALUES ($1,$2,false)`, [planId, cid]);
+    }
+    if (general) {
+      await run(`INSERT INTO marketing_spend_targets (plan_id, customer_id, is_general) VALUES ($1,NULL,true)`, [planId]);
+    }
+  }
+  async function validateCustomers(custIds) {
+    if (!custIds.length) return true;
+    const rows = (await query(`SELECT id FROM customers WHERE id=ANY($1) AND deleted_at IS NULL`, [custIds])).rows;
+    return rows.length === custIds.length;
+  }
+
+  // ---- 헤더 필드 정규화 ------------------------------------------------
+  function headerFields(b) {
+    const title = String(b.title || '').trim().slice(0, 200);
+    if (!title) return { error: 'title_required' };
+    const category = (b.category == null || String(b.category).trim() === '') ? null : String(b.category).trim().slice(0, 60);
+    const eventDate = (b.event_date && DATE_RE.test(String(b.event_date))) ? String(b.event_date) : null;
+    const purpose = (b.purpose == null || String(b.purpose).trim() === '') ? null : String(b.purpose).trim().slice(0, 2000);
+    return { title, category, eventDate, purpose };
+  }
+
+  // =====================================================================
+  // 고객 검색(마케팅 권한으로 — customers 페이지 권한 없이도 대상 선택 가능)
+  // =====================================================================
+  app.get('/api/mktspend/customers', { preHandler: [authGuard, requirePage('marketing')] }, async (req) => {
+    const q = String(req.query.q || '').trim();
+    if (!q) return { items: [] };
+    const rows = (await query(
+      `SELECT id, code, name FROM customers
+        WHERE deleted_at IS NULL AND (name ILIKE $1 OR code ILIKE $1)
+        ORDER BY name LIMIT 20`, ['%' + q + '%'])).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name })) };
+  });
+
+  // =====================================================================
+  // 대상 통계: 연간 매출목표 + 올해 누적 매출(기안 시점 기준, ex-IVA)
+  //   GET /api/mktspend/target-stats?ids=1,2,3
+  // =====================================================================
+  app.get('/api/mktspend/target-stats', { preHandler: [authGuard, requirePage('marketing')] }, async (req) => {
+    const ids = String(req.query.ids || '').split(',').map((s) => Number(s)).filter((n) => n > 0);
+    const year = String(new Date().getFullYear());
+    const today = new Date().toISOString().slice(0, 10);
+    if (!ids.length) return { year, as_of: today, items: [], total_target: 0, total_sales: 0 };
+    const ymFrom = year + '-01', ymTo = year + '-12';
+    const dFrom = year + '-01-01';
+    const custRows = (await query(`SELECT id, code, name FROM customers WHERE id=ANY($1)`, [ids])).rows;
+    const tgtRows = (await query(
+      `SELECT customer_id, COALESCE(SUM(amount),0) AS t FROM target_customer_months
+        WHERE customer_id=ANY($1) AND ym >= $2 AND ym <= $3 GROUP BY customer_id`, [ids, ymFrom, ymTo])).rows;
+    const salesRows = (await query(
+      `SELECT customer_id, COALESCE(SUM(subtotal_mxn),0) AS s FROM sales_invoices
+        WHERE customer_id=ANY($1) AND status='posted' AND inv_date >= $2 AND inv_date <= $3 GROUP BY customer_id`,
+      [ids, dFrom, today])).rows;
+    const tgtMap = new Map(tgtRows.map((r) => [Number(r.customer_id), r2(num(r.t))]));
+    const salesMap = new Map(salesRows.map((r) => [Number(r.customer_id), r2(num(r.s))]));
+    let totalTarget = 0, totalSales = 0;
+    const items = custRows.map((c) => {
+      const id = Number(c.id);
+      const target = tgtMap.has(id) ? tgtMap.get(id) : null;   // null = 목표 미설정
+      const sales = salesMap.get(id) || 0;
+      if (target != null) totalTarget = r2(totalTarget + target);
+      totalSales = r2(totalSales + sales);
+      return { customer_id: id, code: c.code, name: c.name, annual_target: target, ytd_sales: sales,
+        progress: target ? Math.round(sales / target * 100) : null };
+    });
+    return { year, as_of: today, items, total_target: totalTarget, total_sales: totalSales };
+  });
+
+  // =====================================================================
+  // 계획 목록
+  // =====================================================================
+  app.get('/api/mktspend/plans', { preHandler: [authGuard, requirePage('marketing')] }, async (req) => {
+    const st = ['draft', 'submitted', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : null;
+    const params = [];
+    let where = `p.deleted_at IS NULL`;
+    if (st) { params.push(st); where += ` AND p.status=$${params.length}`; }
+    const rows = (await query(
+      `SELECT p.id, p.title, p.category, to_char(p.event_date,'YYYY-MM-DD') AS event_date, p.status, p.reject_reason,
+              p.created_by, u.name AS created_by_name, p.submitted_at, p.decided_at,
+              COALESCE(la.line_count,0) AS line_count, COALESCE(la.total_amount,0) AS total_amount, la.first_due,
+              COALESCE(ta.customer_count,0) AS customer_count, COALESCE(ta.general_count,0) AS general_count,
+              COALESCE(fa.file_count,0) AS file_count
+         FROM marketing_spend_plans p
+         LEFT JOIN users u ON u.id=p.created_by
+         LEFT JOIN (SELECT plan_id, COUNT(*) AS line_count, COALESCE(SUM(amount),0) AS total_amount,
+                           to_char(MIN(due_date),'YYYY-MM-DD') AS first_due
+                      FROM marketing_spend_lines GROUP BY plan_id) la ON la.plan_id=p.id
+         LEFT JOIN (SELECT plan_id, SUM(CASE WHEN is_general THEN 0 ELSE 1 END) AS customer_count,
+                           SUM(CASE WHEN is_general THEN 1 ELSE 0 END) AS general_count
+                      FROM marketing_spend_targets GROUP BY plan_id) ta ON ta.plan_id=p.id
+         LEFT JOIN (SELECT plan_id, COUNT(*) AS file_count
+                      FROM marketing_spend_files GROUP BY plan_id) fa ON fa.plan_id=p.id
+        WHERE ${where}
+        ORDER BY p.id DESC LIMIT 300`, params)).rows;
+    const items = rows.map((r) => ({
+      id: Number(r.id), title: r.title, category: r.category, event_date: r.event_date, status: r.status,
+      reject_reason: r.reject_reason, created_by: r.created_by == null ? null : Number(r.created_by),
+      created_by_name: r.created_by_name, submitted_at: r.submitted_at, decided_at: r.decided_at,
+      line_count: num(r.line_count), total_amount: r2(num(r.total_amount)), first_due: r.first_due,
+      customer_count: num(r.customer_count), has_general: num(r.general_count) > 0, file_count: num(r.file_count),
+    }));
+    return { items, me: req.ctx.perm.userId, is_director: isDirector(req) };
+  });
+
+  // =====================================================================
+  // 계획 상세(라인+지급상태, 대상+통계, 파일 메타)
+  // =====================================================================
+  app.get('/api/mktspend/plans/:id', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const p = (await query(
+      `SELECT p.*, u.name AS created_by_name, d.name AS decided_by_name
+         FROM marketing_spend_plans p
+         LEFT JOIN users u ON u.id=p.created_by
+         LEFT JOIN users d ON d.id=p.decided_by
+        WHERE p.id=$1 AND p.deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const lines = (await query(
+      `SELECT l.id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo, l.sort_order, l.txn_id,
+              t.status AS txn_status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount AS txn_amount, t.deleted_at AS txn_deleted
+         FROM marketing_spend_lines l
+         LEFT JOIN transactions t ON t.id=l.txn_id
+        WHERE l.plan_id=$1 ORDER BY l.sort_order, l.id`, [id])).rows;
+    const targets = (await query(
+      `SELECT tg.id, tg.customer_id, tg.is_general, c.code, c.name
+         FROM marketing_spend_targets tg
+         LEFT JOIN customers c ON c.id=tg.customer_id
+        WHERE tg.plan_id=$1 ORDER BY tg.is_general, tg.id`, [id])).rows;
+    const files = (await query(
+      `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_at, u.name AS uploaded_by_name
+         FROM marketing_spend_files f LEFT JOIN users u ON u.id=f.uploaded_by
+        WHERE f.plan_id=$1 ORDER BY f.id DESC`, [id])).rows;
+    return {
+      plan: { id: Number(p.id), title: p.title, category: p.category,
+        event_date: p.event_date ? String(p.event_date).slice(0, 10) : null,
+        purpose: p.purpose, status: p.status, reject_reason: p.reject_reason,
+        created_by: p.created_by == null ? null : Number(p.created_by), created_by_name: p.created_by_name,
+        submitted_at: p.submitted_at, decided_at: p.decided_at, decided_by_name: p.decided_by_name },
+      lines: lines.map((l) => ({ id: Number(l.id), kind: l.kind, due_date: l.due_date, amount: r2(num(l.amount)),
+        memo: l.memo, txn_id: l.txn_id == null ? null : Number(l.txn_id),
+        paid: l.txn_status === 'actual', txn_deleted: !!l.txn_deleted,
+        paid_date: l.txn_status === 'actual' ? l.txn_date : null,
+        paid_amount: l.txn_status === 'actual' ? r2(num(l.txn_amount)) : null })),
+      targets: targets.map((t) => ({ id: Number(t.id), customer_id: t.customer_id == null ? null : Number(t.customer_id),
+        is_general: !!t.is_general, code: t.code, name: t.name })),
+      files: files.map((f) => ({ id: Number(f.id), file_name: f.file_name, mime_type: f.mime_type,
+        file_size: f.file_size == null ? null : Number(f.file_size), uploaded_at: f.uploaded_at, uploaded_by_name: f.uploaded_by_name })),
+      can_edit: isDirector(req) || (Number(p.created_by) === Number(req.ctx.perm.userId) && ['draft', 'rejected'].includes(p.status)),
+      is_director: isDirector(req),
+    };
+  });
+
+  // =====================================================================
+  // 계획 생성(작성중 저장)
+  // =====================================================================
+  app.post('/api/mktspend/plans', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const b = req.body || {};
+    const h = headerFields(b);
+    if (h.error) return reply.code(400).send({ error: h.error });
+    const nl = normalizeLines(b.lines);
+    if (nl.error) return reply.code(400).send(nl);
+    const nt = normalizeTargets(b.targets);
+    if (nt.error) return reply.code(400).send(nt);
+    if (!(await validateCustomers(nt.custIds))) return reply.code(400).send({ error: 'customer_not_found' });
+    const userId = req.ctx.perm.userId;
+    const planId = await withTx(async (c) => {
+      const run = (s, p2) => c.query(s, p2);
+      const r = await run(
+        `INSERT INTO marketing_spend_plans (title, category, event_date, purpose, status, created_by, updated_by)
+         VALUES ($1,$2,$3,$4,'draft',$5,$5) RETURNING id`,
+        [h.title, h.category, h.eventDate, h.purpose, userId]);
+      const pid = Number(r.rows[0].id);
+      await insertLines(run, pid, nl.lines);
+      await replaceTargets(run, pid, nt.custIds, nt.general);
+      return pid;
+    });
+    await logEvent({ userId, action: 'create', target: `mktspend:${planId}` });
+    return { ok: true, id: planId };
+  });
+
+  // =====================================================================
+  // 계획 수정
+  //   · draft/rejected: 작성자 또는 디렉터 — 라인·대상 전체 교체
+  //   · submitted: 디렉터만(승인 전 검토 수정) — 전체 교체
+  //   · approved: 디렉터만 — 연결 거래 동기화(plan만), actual 라인은 잠금
+  // =====================================================================
+  app.patch('/api/mktspend/plans/:id', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const h = headerFields(b);
+    if (h.error) return reply.code(400).send({ error: h.error });
+    const nl = normalizeLines(b.lines);
+    if (nl.error) return reply.code(400).send(nl);
+    const nt = normalizeTargets(b.targets);
+    if (nt.error) return reply.code(400).send(nt);
+    if (!(await validateCustomers(nt.custIds))) return reply.code(400).send({ error: 'customer_not_found' });
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const dir = isDirector(req);
+    const mine = Number(p.created_by) === Number(req.ctx.perm.userId);
+    if (['draft', 'rejected'].includes(p.status)) { if (!dir && !mine) return reply.code(403).send({ error: 'not_owner' }); }
+    else if (!dir) return reply.code(403).send({ error: 'director_only' });
+    const userId = req.ctx.perm.userId;
+
+    const result = await withTx(async (c) => {
+      const run = (s, p2) => c.query(s, p2);
+      await run(
+        `UPDATE marketing_spend_plans SET title=$1, category=$2, event_date=$3, purpose=$4, updated_by=$5 WHERE id=$6`,
+        [h.title, h.category, h.eventDate, h.purpose, userId, id]);
+      await replaceTargets(run, id, nt.custIds, nt.general);
+
+      if (p.status !== 'approved') {
+        // 아직 거래 미생성 — 라인 전체 교체
+        await run(`DELETE FROM marketing_spend_lines WHERE plan_id=$1`, [id]);
+        await insertLines(run, id, nl.lines);
+        return { ok: true };
+      }
+
+      // ---- 승인된 계획: 연결 거래 동기화 --------------------------------
+      const existing = (await run(
+        `SELECT l.id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo, l.txn_id,
+                t.status AS txn_status, t.deleted_at AS txn_deleted
+           FROM marketing_spend_lines l LEFT JOIN transactions t ON t.id=l.txn_id
+          WHERE l.plan_id=$1`, [id])).rows;
+      const exMap = new Map(existing.map((e) => [Number(e.id), e]));
+      const keepIds = new Set(nl.lines.filter((l) => l.id != null).map((l) => Number(l.id)));
+      // 삭제된 라인
+      for (const e of existing) {
+        if (keepIds.has(Number(e.id))) continue;
+        if (e.txn_id != null && e.txn_status === 'actual' && !e.txn_deleted) {
+          return { error: 'line_locked', line_id: Number(e.id), reason: 'paid' };
+        }
+        if (e.txn_id != null && !e.txn_deleted) {
+          await run(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, e.txn_id]);
+        }
+        await run(`DELETE FROM marketing_spend_lines WHERE id=$1`, [e.id]);
+      }
+      // 유지·수정 라인 + 신규 라인
+      for (const l of nl.lines) {
+        if (l.id != null && exMap.has(Number(l.id))) {
+          const e = exMap.get(Number(l.id));
+          const changed = e.kind !== l.kind || e.due_date !== l.due_date || Math.abs(num(e.amount) - l.amount) > 0.001 || (e.memo || null) !== l.memo;
+          if (e.txn_status === 'actual' && !e.txn_deleted) {
+            if (changed) return { error: 'line_locked', line_id: Number(l.id), reason: 'paid' };
+            await run(`UPDATE marketing_spend_lines SET sort_order=$1 WHERE id=$2`, [l.sort_order, l.id]);
+            continue;
+          }
+          await run(
+            `UPDATE marketing_spend_lines SET kind=$1, due_date=$2, amount=$3, memo=$4, sort_order=$5 WHERE id=$6`,
+            [l.kind, l.due_date, l.amount, l.memo, l.sort_order, l.id]);
+          if (e.txn_id != null && !e.txn_deleted) {
+            await run(
+              `UPDATE transactions SET txn_date=$1, plan_date=$1, amount=$2, amount_mxn=$2, plan_amount=$2, memo=$3, updated_by=$4 WHERE id=$5`,
+              [l.due_date, l.amount, spendTxnMemo(h.title, l.kind, l.memo), userId, e.txn_id]);
+          }
+        } else {
+          const r = await run(
+            `INSERT INTO marketing_spend_lines (plan_id, kind, due_date, amount, memo, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+            [id, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
+          const lineId = Number(r.rows[0].id);
+          const t = await run(
+            `INSERT INTO transactions
+               (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
+             VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
+            [l.due_date, l.amount, userId, spendTxnMemo(h.title, l.kind, l.memo)]);
+          await run(`UPDATE marketing_spend_lines SET txn_id=$1 WHERE id=$2`, [t.rows[0].id, lineId]);
+        }
+      }
+      return { ok: true, synced: true };
+    });
+    if (result.error) return reply.code(409).send(result);
+    await logEvent({ userId, action: 'update', target: `mktspend:${id}` });
+    return result;
+  });
+
+  // =====================================================================
+  // 제출(승인 요청) / 회수
+  // =====================================================================
+  app.post('/api/mktspend/plans/:id/submit', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (!['draft', 'rejected'].includes(p.status)) return reply.code(409).send({ error: 'bad_status', status: p.status });
+    if (!isDirector(req) && Number(p.created_by) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_owner' });
+    const n = (await query(`SELECT COUNT(*) AS n FROM marketing_spend_lines WHERE plan_id=$1`, [id])).rows[0];
+    if (!(Number(n.n) > 0)) return reply.code(400).send({ error: 'lines_required' });
+    await query(
+      `UPDATE marketing_spend_plans SET status='submitted', submitted_at=now(), reject_reason=NULL, updated_by=$1 WHERE id=$2`,
+      [req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `mktspend:${id}`, detail: { submit: true } });
+    return { ok: true };
+  });
+
+  app.post('/api/mktspend/plans/:id/withdraw', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (p.status !== 'submitted') return reply.code(409).send({ error: 'bad_status', status: p.status });
+    if (!isDirector(req) && Number(p.created_by) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_owner' });
+    await query(`UPDATE marketing_spend_plans SET status='draft', updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
+    return { ok: true };
+  });
+
+  // =====================================================================
+  // 승인(디렉터) — 지급 라인마다 계획 거래 생성 → 자금계획 연결
+  //   본문에 수정 내용(title/lines/targets 등)을 함께 보내면 반영 후 승인.
+  // =====================================================================
+  app.post('/api/mktspend/plans/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (!['submitted', 'draft', 'rejected'].includes(p.status)) return reply.code(409).send({ error: 'bad_status', status: p.status });
+
+    // 수정 내용이 오면 검증(없으면 저장된 내용 그대로 승인)
+    let h = null, nl = null, nt = null;
+    if (b.title != null || b.lines != null || b.targets != null) {
+      h = headerFields({ title: b.title != null ? b.title : p.title, category: b.category, event_date: b.event_date, purpose: b.purpose });
+      if (h.error) return reply.code(400).send({ error: h.error });
+      nl = normalizeLines(b.lines);
+      if (nl.error) return reply.code(400).send(nl);
+      nt = normalizeTargets(b.targets);
+      if (nt.error) return reply.code(400).send(nt);
+      if (!(await validateCustomers(nt.custIds))) return reply.code(400).send({ error: 'customer_not_found' });
+    }
+    const userId = req.ctx.perm.userId;
+    const result = await withTx(async (c) => {
+      const run = (s, p2) => c.query(s, p2);
+      let title = p.title;
+      if (h) {
+        title = h.title;
+        await run(`UPDATE marketing_spend_plans SET title=$1, category=$2, event_date=$3, purpose=$4, updated_by=$5 WHERE id=$6`,
+          [h.title, h.category, h.eventDate, h.purpose, userId, id]);
+        await replaceTargets(run, id, nt.custIds, nt.general);
+        await run(`DELETE FROM marketing_spend_lines WHERE plan_id=$1`, [id]);
+        await insertLines(run, id, nl.lines);
+      }
+      const lines = (await run(
+        `SELECT id, kind, to_char(due_date,'YYYY-MM-DD') AS due_date, amount, memo FROM marketing_spend_lines WHERE plan_id=$1 ORDER BY sort_order, id`, [id])).rows;
+      if (!lines.length) return { error: 'lines_required' };
+      const txnIds = [];
+      for (const l of lines) {
+        const t = await run(
+          `INSERT INTO transactions
+             (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date)
+           VALUES (NULL,$1,'out',$2,'MXN',1,$2,'6070','plan','general',true,$3,$4,$3,$2,$1) RETURNING id`,
+          [l.due_date, r2(num(l.amount)), userId, spendTxnMemo(title, l.kind, l.memo)]);
+        await run(`UPDATE marketing_spend_lines SET txn_id=$1 WHERE id=$2`, [t.rows[0].id, l.id]);
+        txnIds.push(Number(t.rows[0].id));
+      }
+      await run(`UPDATE marketing_spend_plans SET status='approved', decided_by=$1, decided_at=now(), reject_reason=NULL, updated_by=$1 WHERE id=$2`, [userId, id]);
+      return { ok: true, txn_ids: txnIds };
+    });
+    if (result.error) return reply.code(400).send(result);
+    await logEvent({ userId, action: 'update', target: `mktspend:${id}`, detail: { approve: true, txns: result.txn_ids.length } });
+    return result;
+  });
+
+  // 반려(디렉터, 사유 필수)
+  app.post('/api/mktspend/plans/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const reason = String((req.body && req.body.reason) || '').trim();
+    if (!reason) return reply.code(400).send({ error: 'reason_required' });
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (p.status !== 'submitted') return reply.code(409).send({ error: 'bad_status', status: p.status });
+    await query(
+      `UPDATE marketing_spend_plans SET status='rejected', reject_reason=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
+      [reason.slice(0, 500), req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `mktspend:${id}`, detail: { reject: true } });
+    return { ok: true };
+  });
+
+  // =====================================================================
+  // 삭제(soft) — 작성자(draft/rejected) 또는 디렉터. 승인건은 지급완료 없을 때만.
+  // =====================================================================
+  app.delete('/api/mktspend/plans/:id', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const dir = isDirector(req);
+    const mine = Number(p.created_by) === Number(req.ctx.perm.userId);
+    if (!dir && !(mine && ['draft', 'rejected'].includes(p.status))) return reply.code(403).send({ error: 'not_allowed' });
+    const result = await withTx(async (c) => {
+      const run = (s, p2) => c.query(s, p2);
+      if (p.status === 'approved') {
+        const paid = (await run(
+          `SELECT COUNT(*) AS n FROM marketing_spend_lines l JOIN transactions t ON t.id=l.txn_id
+            WHERE l.plan_id=$1 AND t.status='actual' AND t.deleted_at IS NULL`, [id])).rows[0];
+        if (Number(paid.n) > 0) return { error: 'has_paid_lines' };
+        const txns = (await run(`SELECT txn_id FROM marketing_spend_lines WHERE plan_id=$1 AND txn_id IS NOT NULL`, [id])).rows;
+        for (const t of txns) {
+          await run(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [req.ctx.perm.userId, t.txn_id]);
+        }
+      }
+      await run(`UPDATE marketing_spend_plans SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
+      return { ok: true };
+    });
+    if (result.error) return reply.code(409).send(result);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `mktspend:${id}` });
+    return result;
+  });
+
+  // =====================================================================
+  // 증빙 파일 — 인보이스 첨부(0091) 패턴
+  // =====================================================================
+  app.get('/api/mktspend/plans/:id/files', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const rows = (await query(
+      `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_at, u.name AS uploaded_by_name
+         FROM marketing_spend_files f LEFT JOIN users u ON u.id=f.uploaded_by
+        WHERE f.plan_id=$1 ORDER BY f.id DESC`, [id])).rows;
+    return { items: rows.map((f) => ({ id: Number(f.id), file_name: f.file_name, mime_type: f.mime_type,
+      file_size: f.file_size == null ? null : Number(f.file_size), uploaded_at: f.uploaded_at, uploaded_by_name: f.uploaded_by_name })) };
+  });
+
+  app.post('/api/mktspend/plans/:id/files', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const p = (await query(`SELECT id FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body || {};
+    const v = validateSpendFileDataUrl(b.data);
+    if (!v.ok) return reply.code(400).send({ error: 'invalid_file', note: v.error });
+    const name = String(b.file_name || 'archivo').slice(0, 200);
+    const r = (await query(
+      `INSERT INTO marketing_spend_files (plan_id, file_name, mime_type, file_data, file_size, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, uploaded_at`,
+      [id, name, v.mime, b.data, v.size, req.ctx.perm.userId])).rows[0];
+    return { ok: true, id: Number(r.id), uploaded_at: r.uploaded_at };
+  });
+
+  app.get('/api/mktspend/files/:fileId', { preHandler: [authGuard, requirePage('marketing')] }, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!(fid > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const f = (await query(`SELECT id, plan_id, file_name, mime_type, file_data FROM marketing_spend_files WHERE id=$1`, [fid])).rows[0];
+    if (!f) return reply.code(404).send({ error: 'not_found' });
+    return { id: Number(f.id), plan_id: Number(f.plan_id), file_name: f.file_name, mime_type: f.mime_type, file_data: f.file_data };
+  });
+
+  app.delete('/api/mktspend/files/:fileId', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!(fid > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const r = await query(`DELETE FROM marketing_spend_files WHERE id=$1 RETURNING plan_id`, [fid]);
+    if (!r.rows.length) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true };
+  });
+}
