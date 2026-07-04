@@ -1785,8 +1785,11 @@ export default async function financeRoutes(app) {
           recurring: !!t.recurring_rule_id, excluded: excl(t) });
       }
     }
+    const memoOf = (m) => String(m || '').replace(/^\[고정비\]\s*/, '').replace(/^\[마케팅\]\s*/, '').trim();
     const pvaRows = [...pvaMap.values()].filter((r) => r.plan !== 0 || r.actual !== 0 || r.prev_actual !== 0 || r.items.length)
-      .map((r) => ({ ...r, plan: r2(r.plan), actual: r2(r.actual), diff: r2(r.actual - r.plan),
+      .map((r) => ({ ...r,
+        memos: [...new Set(r.items.map((x) => memoOf(x.memo)).filter(Boolean))], // 행 요약용 — 자르지 않음
+        plan: r2(r.plan), actual: r2(r.actual), diff: r2(r.actual - r.plan),
         rate: r.plan > 0 ? Math.round((r.actual / r.plan) * 100) : null,
         mom_pct: r.prev_actual > 0 ? Math.round(((r.actual - r.prev_actual) / r.prev_actual) * 1000) / 10 : (r.actual > 0 ? null : 0),
         items: r.items.sort((a, b) => b.amount_mxn - a.amount_mxn) }))

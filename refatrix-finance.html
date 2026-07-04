@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0704a</title>
+<title>Refatrix ERP · 재무 · build fin-0704b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -2328,20 +2328,21 @@
     // ② 계획 vs 실적 + 전월비 뱃지 + 드릴다운
     const rows=d.pva.rows.filter(r=>rpFilter==='all'?true:rpFilter==='recurring'?r.recurring:!r.recurring);
     html+=`<div style="margin-top:20px"><h2 style="margin:0 0 4px;font-size:15px;color:var(--brand)">② 계획 vs 실적 — 이번 달 지출 집행</h2>
-      <div class="hint" style="margin:0 0 8px">행 클릭 → 세부 내역(분석 제외 지정/복원). 실적·전월비는 제외 반영.
+      <div class="hint" style="margin:0 0 8px">내용(메모)은 그 달 항목 전체 요약(자르지 않음). 행 클릭 → 건별 세부(분석 제외 지정/복원). 실적·전월비는 제외 반영.
       <span class="seg" style="margin-left:8px">${['all','recurring','other'].map(f=>`<button class="segb ${rpFilter===f?'on':''}" data-rpf="${f}">${f==='all'?'전체':f==='recurring'?'고정비':'기타'}</button>`).join('')}</span></div>
-      <table><thead><tr><th>계정과목</th><th class="num">계획</th><th class="num">실제</th><th class="num">차이</th><th style="width:140px">집행률</th><th>전월비</th></tr></thead><tbody>
+      <table><thead><tr><th>계정과목</th><th style="min-width:180px">내용 (메모)</th><th class="num">계획</th><th class="num">실제</th><th class="num">차이</th><th style="width:140px">집행률</th><th>전월비</th></tr></thead><tbody>
       ${rows.map((r,i)=>{
         const key=r.code||'none';
         return `<tr class="rp-pva-row" data-k="${key}" style="cursor:pointer;${r.plan>0&&r.actual===0?'background:#fffdf5':''}">
           <td>${r.code?r.code+' · ':''}${r.name}${r.plan>0&&r.actual===0?' <span class="badge" style="background:#fff0d6;color:#9a6512">미집행</span>':''}</td>
+          <td style="font-size:12.5px;word-break:break-word">${(r.memos&&r.memos.length)?r.memos.join(' · '):'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num">${r.plan?fmt(r.plan):'—'}</td><td class="num">${fmt(r.actual)}</td>
           <td class="num" style="color:${r.diff>0?'var(--expense)':r.diff<0?'var(--income)':'inherit'}">${r.diff>0?'+':''}${r.diff?fmt(r.diff):'0'}</td>
           <td>${rpGauge(r.rate)}</td><td>${rpBadgeMom(r.mom_pct)}</td></tr>
-        <tr class="rp-pva-det ${rpPvaOpen[key]?'':'hidden'}" data-k="${key}"><td colspan="6" style="padding:0;border:none"><div class="rp-drill" style="margin:6px 0 10px">
+        <tr class="rp-pva-det ${rpPvaOpen[key]?'':'hidden'}" data-k="${key}"><td colspan="7" style="padding:0;border:none"><div class="rp-drill" style="margin:6px 0 10px">
           <table><thead><tr><th>일자</th><th>내용</th><th class="num">MXN</th><th style="width:140px"></th></tr></thead><tbody>${rpItemRows(r.items,true)}</tbody></table>
         </div></td></tr>`;}).join('')}
-      <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td><td class="num">${fmt(d.pva.total.plan)}</td><td class="num">${fmt(d.pva.total.actual)}</td>
+      <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td><td></td><td class="num">${fmt(d.pva.total.plan)}</td><td class="num">${fmt(d.pva.total.actual)}</td>
         <td class="num">${d.pva.total.diff>0?'+':''}${fmt(d.pva.total.diff)}</td><td>${rpGauge(d.pva.total.rate)}</td><td></td></tr>
       </tbody></table></div>`;
 
