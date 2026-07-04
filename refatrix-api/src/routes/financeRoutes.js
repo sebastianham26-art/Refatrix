@@ -333,7 +333,10 @@ export default async function financeRoutes(app) {
       `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
          category_code=$8, memo=$9, receipt_no=$10, updated_by=$11 WHERE id=$12`,
       [b.account_id ?? t.account_id, b.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
-       b.category_code ?? t.category_code, b.memo ?? t.memo,
+       // 필드가 body에 있으면 null=비우기(계정과목 '(없음)'·메모 지움), 없으면 기존값 유지.
+       // (기존 `?? t.x`는 null을 '변경 없음'으로 삼켜 비우기가 불가능했음)
+       ('category_code' in b) ? (b.category_code || null) : t.category_code,
+       ('memo' in b) ? (b.memo || null) : t.memo,
        b.receipt_no !== undefined ? ((b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
        req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { direct_edit: true } });
@@ -415,7 +418,9 @@ export default async function financeRoutes(app) {
     }
     const next = {
       account_id: p.account_id ?? t.account_id, account_name: accName, txn_date: p.txn_date || orig.txn_date, direction,
-      amount, currency, fx_rate: fx, amount_mxn: amountMxn, category_code: p.category_code ?? t.category_code, memo: p.memo ?? t.memo,
+      amount, currency, fx_rate: fx, amount_mxn: amountMxn,
+      category_code: ('category_code' in p) ? (p.category_code || null) : t.category_code, // null=비우기(승인적용과 동일 규칙)
+      memo: ('memo' in p) ? (p.memo || null) : t.memo,
       receipt_no: p.receipt_no !== undefined ? p.receipt_no : t.receipt_no,
     };
     return { type: 'edit', reason: cr.reason, orig, next };
@@ -449,7 +454,8 @@ export default async function financeRoutes(app) {
           `UPDATE transactions SET account_id=$1, txn_date=$2, direction=$3, amount=$4, currency=$5, fx_rate=$6, amount_mxn=$7,
              category_code=$8, memo=$9, receipt_no=$10, change_status=NULL, updated_by=$11 WHERE id=$12`,
           [p.account_id ?? t.account_id, p.txn_date || t.txn_date, direction, r2(amount), currency, fx, amountMxn,
-           p.category_code ?? t.category_code, p.memo ?? t.memo,
+           ('category_code' in p) ? (p.category_code || null) : t.category_code, // null=비우기
+           ('memo' in p) ? (p.memo || null) : t.memo,
            p.receipt_no !== undefined ? ((p.receipt_no && String(p.receipt_no).trim()) ? String(p.receipt_no).trim().slice(0, 60) : null) : t.receipt_no,
            userId, t.id]);
       }
