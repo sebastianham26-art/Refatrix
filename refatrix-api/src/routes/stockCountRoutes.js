@@ -442,6 +442,34 @@ export default async function stockCountRoutes(app) {
     return plan;
   }
 
+  // 코드별 실사 내역(드릴다운) + SYD 코드
+  app.get('/api/stock-counts/:id/code-lines', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = req.query || {};
+    const productId = (q.product_id != null && q.product_id !== '') ? Number(q.product_id) : null;
+    const promoId   = (q.promo_item_id != null && q.promo_item_id !== '') ? Number(q.promo_item_id) : null;
+    const raw       = (q.raw != null && q.raw !== '') ? String(q.raw) : null;
+    const sel = `l.id, l.rack_scanned, l.counted_qty, l.matched_code, l.created_at, u.name AS created_by_name`;
+    let lines = [], syd = [];
+    if (productId != null) {
+      lines = (await query(`SELECT ${sel} FROM stock_count_lines l LEFT JOIN users u ON u.id=l.created_by
+                             WHERE l.count_id=$1 AND l.product_id=$2 ORDER BY l.created_at, l.id`, [id, productId])).rows;
+      syd = (await query(`SELECT syd_code FROM product_syd_codes WHERE product_id=$1 AND syd_code IS NOT NULL AND TRIM(syd_code) <> '' ORDER BY syd_code`, [productId])).rows.map((r) => r.syd_code);
+    } else if (promoId != null) {
+      lines = (await query(`SELECT ${sel} FROM stock_count_lines l LEFT JOIN users u ON u.id=l.created_by
+                             WHERE l.count_id=$1 AND l.promo_item_id=$2 ORDER BY l.created_at, l.id`, [id, promoId])).rows;
+    } else if (raw != null) {
+      lines = (await query(`SELECT ${sel} FROM stock_count_lines l LEFT JOIN users u ON u.id=l.created_by
+                             WHERE l.count_id=$1 AND l.item_kind='unknown' AND l.raw_code=$2 ORDER BY l.created_at, l.id`, [id, raw])).rows;
+    } else {
+      return reply.code(400).send({ error: 'no_key' });
+    }
+    return { ok: true, syd_codes: syd, lines: lines.map((l) => ({
+      id: Number(l.id), rack_scanned: l.rack_scanned || '', counted_qty: num(l.counted_qty),
+      matched_code: l.matched_code || '', created_at: l.created_at, created_by_name: l.created_by_name || '',
+    })) };
+  });
+
   app.post('/api/stock-counts/:id/apply/preview', { preHandler: [authGuard] }, async (req, reply) => {
     if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '디렉터 승인이 필요합니다.' });
     const id = Number(req.params.id);

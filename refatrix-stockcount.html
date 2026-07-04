@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703c</title>
+<title>재고실사 · Refatrix · build sc0703d</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -32,6 +32,9 @@
   .scselbar .btn.ghost{background:#fff;color:#33495c}
   .scselbar .link{color:#dfe8ef;cursor:pointer;text-decoration:underline}
   #linesBox td .cbx{width:18px;height:18px;cursor:pointer}
+  #rcTable th.sortable{cursor:pointer;user-select:none} #rcTable th.sortable:hover{background:rgba(0,0,0,.04)}
+  .sarrow{font-size:11px} .codelink{cursor:pointer;text-decoration:underline}
+  #cdBody table{width:100%;border-collapse:collapse} #cdBody th,#cdBody td{border-bottom:1px solid var(--line,#e5e2da);padding:6px 8px;text-align:left} #cdBody .num{text-align:right}
   .btn.brass{background:var(--brass)}
   .btn.ghost{background:#fff;color:var(--green);border:1.5px solid var(--green)}
   .btn.sm{padding:7px 11px;font-size:13px;border-radius:9px}
@@ -176,9 +179,15 @@
   <div class="card">
     <div class="tbl-wrap">
       <table id="rcTable"><thead><tr>
-        <th>분류</th><th>코드</th><th>품명</th><th>랙</th>
-        <th class="num">시스템</th><th class="num">실사</th><th class="num">차이</th>
-        <th class="num">가용(참고)</th><th class="num valcol hidden">원가영향</th>
+        <th class="sortable" data-key="category" onclick="rcSortBy('category')">분류<span class="sarrow"></span></th>
+        <th class="sortable" data-key="code" onclick="rcSortBy('code')">코드<span class="sarrow"></span></th>
+        <th class="sortable" data-key="name" onclick="rcSortBy('name')">품명<span class="sarrow"></span></th>
+        <th class="sortable" data-key="rack" onclick="rcSortBy('rack')">랙<span class="sarrow"></span></th>
+        <th class="num sortable" data-key="system_qty" onclick="rcSortBy('system_qty')">시스템<span class="sarrow"></span></th>
+        <th class="num sortable" data-key="counted_qty" onclick="rcSortBy('counted_qty')">실사<span class="sarrow"></span></th>
+        <th class="num sortable" data-key="diff" onclick="rcSortBy('diff')">차이<span class="sarrow"></span></th>
+        <th class="num sortable" data-key="avail_qty" onclick="rcSortBy('avail_qty')">가용(참고)<span class="sarrow"></span></th>
+        <th class="num valcol hidden sortable" data-key="value_cost" onclick="rcSortBy('value_cost')">원가영향<span class="sarrow"></span></th>
       </tr></thead><tbody id="rcBody"></tbody></table>
     </div>
   </div>
@@ -577,16 +586,57 @@ function renderApply(){
 }
 function catPill(c){ const m={match:['p-match','일치'],short:['p-short','부족'],over:['p-over','초과'],uncounted:['p-unc','미실사'],unknown:['p-unk','미등록']}; const x=m[c]||['p-unc',c]; return '<span class="pill '+x[0]+'">'+x[1]+'</span>'; }
 function diffCell(d){ if(d==null) return '<td class="num">—</td>'; const c=d<0?'diff-neg':(d>0?'diff-pos':'diff-zero'); return '<td class="num '+c+'">'+(d>0?'+':'')+fmt(d)+'</td>'; }
+let rcSort={key:null,dir:1};
+function rcSortBy(key){ if(rcSort.key===key) rcSort.dir*=-1; else { rcSort.key=key; rcSort.dir=1; } renderRcTable(); }
+function sortRcRows(rows){
+  if(!rcSort.key) return rows;
+  const k=rcSort.key, dir=rcSort.dir;
+  const numKeys={system_qty:1,counted_qty:1,diff:1,avail_qty:1,value_cost:1};
+  return rows.slice().sort((a,b)=>{
+    if(numKeys[k]){ let av=(a[k]==null?null:Number(a[k])), bv=(b[k]==null?null:Number(b[k]));
+      if(av==null&&bv==null) return 0; if(av==null) return 1; if(bv==null) return -1; return (av-bv)*dir; }
+    const av=(a[k]==null?'':String(a[k])), bv=(b[k]==null?'':String(b[k]));
+    return av.localeCompare(bv,'ko')*dir;
+  });
+}
+function updateRcArrows(){
+  document.querySelectorAll('#rcTable thead th.sortable').forEach(th=>{ const k=th.getAttribute('data-key'); const ar=th.querySelector('.sarrow'); if(ar) ar.textContent=(rcSort.key===k)?(rcSort.dir>0?' ▲':' ▼'):''; });
+}
+function jsArg(v){ if(v===''||v==null) return "''"; if(typeof v==='number') return String(v); return "'"+String(v).replace(/['"\\]/g,'')+"'"; }
+function codeLink(r){
+  const c=r.code||''; if(!c) return c;
+  const pid=r.product_id!=null?r.product_id:'';
+  const mid=r.promo_item_id!=null?r.promo_item_id:'';
+  const raw=(r.kind==='unknown')?(r.code||''):'';
+  if(pid===''&&mid===''&&raw==='') return c;
+  return '<a class="codelink" onclick="openCodeDetail('+jsArg(pid)+','+jsArg(mid)+','+jsArg(raw)+','+jsArg(c)+')">'+c+'</a>';
+}
+async function openCodeDetail(pid,mid,raw,code){
+  const qs=[]; if(pid!=='') qs.push('product_id='+encodeURIComponent(pid)); if(mid!=='') qs.push('promo_item_id='+encodeURIComponent(mid)); if(raw!=='') qs.push('raw='+encodeURIComponent(raw));
+  const r=await api('/api/stock-counts/'+CUR.id+'/code-lines?'+qs.join('&'));
+  if(!r.ok){ toast('내역 조회 실패'); return; }
+  $('cdTitle').textContent='실사 내역 · '+code;
+  $('cdSyd').innerHTML=(r.syd_codes&&r.syd_codes.length)?('SYD 코드: <b>'+r.syd_codes.join(', ')+'</b>'):'<span class="mut">SYD 코드 없음</span>';
+  const rows=r.lines||[];
+  let html='<div class="tbl-wrap" style="max-height:52vh"><table><thead><tr><th>랙</th><th>SYD</th><th class="num">수량</th><th>담당</th><th>시각</th></tr></thead><tbody>';
+  const sydTxt=(r.syd_codes&&r.syd_codes.length)?r.syd_codes.join(', '):'—';
+  html+=rows.map(l=>'<tr><td>'+(l.rack_scanned||'(미지정)')+'</td><td>'+sydTxt+'</td><td class="num">'+fmt(l.counted_qty)+'</td><td>'+(l.created_by_name||'')+'</td><td>'+(l.created_at?new Date(l.created_at).toLocaleString('ko-KR'):'')+'</td></tr>').join('')||'<tr><td colspan="5" class="mut" style="text-align:center;padding:12px">실사 내역이 없습니다.</td></tr>';
+  html+='</tbody></table></div>';
+  $('cdBody').innerHTML=html;
+  $('codeDetailModal').classList.add('on');
+}
 function renderRcTable(){
-  const rows=RECON.rows.filter(r=>reconFilter==='all'||r.category===reconFilter);
+  let rows=RECON.rows.filter(r=>reconFilter==='all'||r.category===reconFilter);
+  rows=sortRcRows(rows);
   const showVal=RECON.summary.value_cost_impact!=null;
   $('rcBody').innerHTML=rows.map(r=>{
-    return '<tr><td>'+catPill(r.category)+'</td><td>'+(r.code||'')+'</td><td>'+(r.name||'')+'</td><td>'+(r.rack||'')+'</td>'
+    return '<tr><td>'+catPill(r.category)+'</td><td>'+codeLink(r)+'</td><td>'+(r.name||'')+'</td><td>'+(r.rack||'')+'</td>'
       +'<td class="num">'+fmt(r.system_qty)+'</td><td class="num">'+fmt(r.counted_qty)+'</td>'+diffCell(r.diff)
       +'<td class="num">'+fmt(r.avail_qty)+'</td>'
       +(showVal?'<td class="num valcol">'+(r.value_cost!=null?money(r.value_cost):'—')+'</td>':'<td class="num valcol hidden"></td>')
       +'</tr>';
   }).join('')||'<tr><td colspan="9" class="mut" style="text-align:center;padding:16px">해당 항목 없음</td></tr>';
+  updateRcArrows();
 }
 async function previewApply(){
   const r=await api('/api/stock-counts/'+CUR.id+'/apply/preview',{method:'POST'});
@@ -650,6 +700,12 @@ async function deletePromo(){
   else { show('loginView'); }
 })();
 </script>
+<div class="modal" id="codeDetailModal"><div class="box" style="max-width:640px">
+  <h3 id="cdTitle" style="margin:0 0 4px"></h3>
+  <div id="cdSyd" style="margin-bottom:10px"></div>
+  <div id="cdBody"></div>
+  <div style="text-align:right;margin-top:12px"><button class="btn ghost" onclick="closeModal('codeDetailModal')">닫기</button></div>
+</div></div>
 <script src="refatrix-nav.js?v=20260703nb"></script>
 </body>
 </html>
