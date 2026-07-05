@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703d</title>
+<title>재고실사 · Refatrix · build sc0703e</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -286,8 +286,8 @@
   </div>
   <div class="mut" style="line-height:1.7;margin-top:6px">상단 칩을 누르면 <b>필터</b>됩니다. <b>⬇ 엑셀</b>로 결과를 내려받을 수 있어요. (기준은 항상 <b>실물 재고</b>이고, 가용재고는 참고 컬럼입니다.)</div>
 
-  <div class="grpttl" style="margin-top:14px">⑥ 실물로 맞추기 <span class="mut">(디렉터 전용)</span></div>
-  <div class="mut" style="line-height:1.7"><b>🔒 실물로 맞추기</b> → 조정 대상 미리보기(전/후/증감) → 확인 시 <b>부족·초과 품목만</b> 실물 수량으로 조정하고 재고이동 기록을 남깁니다. <b>미실사·미등록은 절대 건드리지 않습니다</b>(놓친 랙이 재고를 0으로 만들지 않도록).</div>
+  <div class="grpttl" style="margin-top:14px">⑥ 실물 반영 검토 <span class="mut">(디렉터 전용)</span></div>
+  <div class="mut" style="line-height:1.7"><b>🔒 실물 반영 검토</b> → 차이 항목마다 <b>반영/보류</b>를 개별 선택하고 <b>코멘트</b>(사유)를 남길 수 있습니다. 반영한 항목만 재고가 조정되고(재고이동 기록), 보류한 항목은 <b>사유만 기록</b>됩니다. 실사 중 스캔한 랙은 <b>랙저장</b> 체크로 <b>제품 마스터 위치</b>에 저장돼 이후 제품검색에도 나옵니다. 마감 후 <b>📋 반영 내역·코멘트</b>로 다시 볼 수 있어요.</div>
 
   <div class="grpttl" style="margin-top:14px">🎁 프로모션 품목</div>
   <div class="mut" style="line-height:1.7">장갑·티셔츠·모자 등은 <b>프로모션 품목 관리</b>에서 먼저 등록해야 실사에서 잡힙니다. 자동차부품 마스터와 분리되어 견적·매출엔 영향이 없습니다.</div>
@@ -577,11 +577,11 @@ function renderApply(){
     return;
   }
   if(RECON.can_apply){
-    box.innerHTML='<button class="btn brass" onclick="previewApply()">🔒 실물로 맞추기 (디렉터 승인)</button> <span class="mut">부족·초과 항목을 실물 수량으로 조정. 미실사·미등록은 건드리지 않음.</span>';
+    box.innerHTML='<button class="btn brass" onclick="openReview()">🔒 실물 반영 검토 (디렉터 승인)</button> <span class="mut">차이 항목마다 반영/보류·코멘트·랙저장을 개별 선택합니다.</span>';
   } else if(RECON.count.status==='reconciled'){
-    box.innerHTML='<span class="badge b-rec">✔ 실물 반영 완료</span> <span class="mut">이 실사의 차이가 재고에 조정 반영되었습니다.</span>';
+    box.innerHTML='<span class="badge b-rec">✔ 실물 반영 완료</span> <button class="btn ghost sm" onclick="openAdjustments()" style="margin-left:8px">📋 반영 내역·코멘트</button>';
   } else if(RECON.count.status==='submitted'){
-    box.innerHTML='<span class="mut">실물로 맞추기는 디렉터만 실행할 수 있습니다.</span>';
+    box.innerHTML='<span class="mut">실물 반영 검토는 디렉터만 실행할 수 있습니다.</span>';
   } else { box.innerHTML=''; }
 }
 function catPill(c){ const m={match:['p-match','일치'],short:['p-short','부족'],over:['p-over','초과'],uncounted:['p-unc','미실사'],unknown:['p-unk','미등록']}; const x=m[c]||['p-unc',c]; return '<span class="pill '+x[0]+'">'+x[1]+'</span>'; }
@@ -637,6 +637,72 @@ function renderRcTable(){
       +'</tr>';
   }).join('')||'<tr><td colspan="9" class="mut" style="text-align:center;padding:16px">해당 항목 없음</td></tr>';
   updateRcArrows();
+}
+// ===== 디렉터 검토·반영 (항목별 반영/보류 + 코멘트 + 랙저장) =====
+let REVIEW=[];
+async function openReview(){
+  const r=await api('/api/stock-counts/'+CUR.id+'/apply/preview',{method:'POST'});
+  if(!r.ok){ toast(r.note||'검토 목록 조회 실패'); return; }
+  REVIEW=r.items||[];
+  if(!REVIEW.length){ if(confirm('반영할 차이도, 저장할 랙 변경도 없습니다. 실사를 반영완료로 마감할까요?')) finalizeEmpty(); return; }
+  renderReview(); $('reviewModal').classList.add('on');
+}
+function renderReview(){
+  $('rvHint').innerHTML='항목별로 <b>반영</b>(재고 조정)과 <b>랙저장</b>(마스터 위치 갱신)을 선택하고, 필요하면 <b>코멘트</b>를 남기세요. 체크 해제한 항목은 반영되지 않고 <b>사유만 기록</b>됩니다.';
+  $('rvBody').innerHTML=REVIEW.map((it,i)=>{
+    const diffTxt=(it.delta>0?'+':'')+fmt(it.delta);
+    const diffCls=it.delta<0?'diff-neg':(it.delta>0?'diff-pos':'diff-zero');
+    const applyDisabled=(Number(it.delta)===0);
+    const rackTxt=(it.rack_scanned||'(없음)')+' → '+(it.master_rack||'(비어있음)');
+    return '<tr>'
+      +'<td><b>'+(it.code||'')+'</b><div class="mut">'+(it.name||'')+'</div></td>'
+      +'<td class="num">'+fmt(it.system_qty)+' → '+fmt(it.counted_qty)+' <span class="'+diffCls+'">('+diffTxt+')</span></td>'
+      +'<td style="text-align:center"><input type="checkbox" id="rvA_'+i+'" '+(applyDisabled?'disabled':'checked')+' onchange="updateReviewSummary()"></td>'
+      +'<td>'+rackTxt+(it.rack_diff?' <span class="pill p-over">변경</span>':'')+'</td>'
+      +'<td style="text-align:center"><input type="checkbox" id="rvR_'+i+'" '+(it.rack_scanned?(it.rack_diff?'checked':''):'disabled')+' onchange="updateReviewSummary()"></td>'
+      +'<td><input id="rvC_'+i+'" placeholder="사유·메모" style="min-width:150px;padding:6px"></td>'
+      +'</tr>';
+  }).join('');
+  updateReviewSummary();
+}
+function updateReviewSummary(){
+  let ap=0,rk=0;
+  REVIEW.forEach((it,i)=>{ const a=$('rvA_'+i),r=$('rvR_'+i); if(a&&a.checked&&!a.disabled)ap++; if(r&&r.checked&&!r.disabled)rk++; });
+  $('rvSummary').innerHTML='반영 <b>'+ap+'</b>건 · 랙저장 <b>'+rk+'</b>건 <span class="mut">(전체 '+REVIEW.length+')</span>';
+}
+async function submitReview(){
+  const items=REVIEW.map((it,i)=>({ kind:it.kind, product_id:it.product_id, promo_item_id:it.promo_item_id,
+    apply: !!($('rvA_'+i)&&$('rvA_'+i).checked&&!$('rvA_'+i).disabled),
+    save_rack: !!($('rvR_'+i)&&$('rvR_'+i).checked&&!$('rvR_'+i).disabled),
+    comment: ($('rvC_'+i)?$('rvC_'+i).value:'') }));
+  const ap=items.filter(x=>x.apply).length, rk=items.filter(x=>x.save_rack).length;
+  if(!confirm('반영 '+ap+'건, 랙저장 '+rk+'건을 적용하고 실사를 마감합니다.\n반영 안 한 항목은 사유만 기록됩니다. 계속할까요?')) return;
+  const r=await api('/api/stock-counts/'+CUR.id+'/apply',{method:'POST',body:JSON.stringify({items})});
+  if(!r.ok){ toast(r.note||('적용 실패: '+(r.error||''))); return; }
+  closeModal('reviewModal');
+  toast('✔ 반영 '+r.applied+'건 · 랙저장 '+(r.rack_saved||0)+'건 완료');
+  openReconcile(CUR.id);
+}
+async function finalizeEmpty(){
+  const r=await api('/api/stock-counts/'+CUR.id+'/apply',{method:'POST',body:JSON.stringify({items:[]})});
+  if(!r.ok){ toast(r.note||'마감 실패'); return; }
+  toast('✔ 반영완료로 마감'); openReconcile(CUR.id);
+}
+// 반영 내역(코멘트) 보기
+async function openAdjustments(){
+  const r=await api('/api/stock-counts/'+CUR.id+'/adjustments');
+  if(!r.ok){ toast('내역 조회 실패'); return; }
+  const rows=r.items||[];
+  let html='<div class="tbl-wrap" style="max-height:56vh"><table><thead><tr><th>코드/품명</th><th class="num">시스템→실사</th><th class="num">차이</th><th>결정</th><th>랙저장</th><th>코멘트</th><th>검토자</th></tr></thead><tbody>';
+  html+=rows.map(a=>'<tr><td><b>'+(a.code||'')+'</b><div class="mut">'+(a.name||'')+'</div></td>'
+    +'<td class="num">'+fmt(a.system_qty)+' → '+fmt(a.counted_qty)+'</td>'
+    +'<td class="num '+(a.delta<0?'diff-neg':(a.delta>0?'diff-pos':'diff-zero'))+'">'+(a.delta>0?'+':'')+fmt(a.delta)+'</td>'
+    +'<td>'+(a.applied?'<span class="pill p-match">반영</span>':'<span class="pill p-unc">보류</span>')+'</td>'
+    +'<td>'+(a.rack_saved?('<span class="pill p-over">'+(a.rack_scanned||'')+'</span>'):'—')+'</td>'
+    +'<td>'+(a.comment||'<span class="mut">—</span>')+'</td>'
+    +'<td class="mut">'+(a.reviewer||'')+'</td></tr>').join('')||'<tr><td colspan="7" class="mut" style="text-align:center;padding:12px">내역이 없습니다.</td></tr>';
+  html+='</tbody></table></div>';
+  $('adjBody').innerHTML=html; $('adjModal').classList.add('on');
 }
 async function previewApply(){
   const r=await api('/api/stock-counts/'+CUR.id+'/apply/preview',{method:'POST'});
@@ -706,6 +772,38 @@ async function deletePromo(){
   <div id="cdBody"></div>
   <div style="text-align:right;margin-top:12px"><button class="btn ghost" onclick="closeModal('codeDetailModal')">닫기</button></div>
 </div></div>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+
+<!-- 디렉터 검토·반영 모달 -->
+<div class="modal" id="reviewModal"><div class="box" style="max-width:860px">
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <h2 style="margin:0">🔒 실물 반영 검토 <span class="mut" style="font-size:12px">(디렉터 승인)</span></h2>
+    <button class="btn ghost sm" onclick="closeModal('reviewModal')">닫기 ✕</button>
+  </div>
+  <div class="mut" id="rvHint" style="margin:6px 0"></div>
+  <div class="tbl-wrap" style="max-height:56vh">
+    <table><thead><tr>
+      <th>코드 / 품명</th><th class="num">시스템→실사</th><th style="text-align:center">반영</th>
+      <th>랙(실사→마스터)</th><th style="text-align:center">랙저장</th><th>코멘트</th>
+    </tr></thead><tbody id="rvBody"></tbody></table>
+  </div>
+  <div class="row" style="margin-top:12px;justify-content:space-between;align-items:center">
+    <div id="rvSummary" class="mut"></div>
+    <div class="row">
+      <button class="btn ghost sm" onclick="closeModal('reviewModal')">취소</button>
+      <button class="btn brass" onclick="submitReview()">✔ 승인 및 반영</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- 반영 내역·코멘트 모달 -->
+<div class="modal" id="adjModal"><div class="box" style="max-width:860px">
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <h2 style="margin:0">📋 반영 내역 · 코멘트</h2>
+    <button class="btn ghost sm" onclick="closeModal('adjModal')">닫기 ✕</button>
+  </div>
+  <div id="adjBody" style="margin-top:10px"></div>
+</div></div>
+
+<script src="refatrix-nav.js?v=20260703nc"></script>
 </body>
 </html>

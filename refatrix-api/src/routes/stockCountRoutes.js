@@ -369,7 +369,8 @@ export default async function stockCountRoutes(app) {
       valCost += vc; valList += vl;
       rows.push({
         kind: 'part', category: cat, product_id: Number(p.product_id), code: p.code, name: p.name || '',
-        rack: p.racks || p.rack_location || '', system_qty: sys, counted_qty: cnt,
+        rack: p.racks || p.rack_location || '', rack_scanned: p.racks || '', master_rack: p.rack_location || '',
+        system_qty: sys, counted_qty: cnt,
         avail_qty: Math.max(0, sys - num(p.reserved)), diff,
         ...(withValue ? { value_cost: vc, value_list: vl } : {}),
       });
@@ -382,7 +383,8 @@ export default async function stockCountRoutes(app) {
       valCost += vc;
       rows.push({
         kind: 'promo', category: cat, promo_item_id: Number(p.promo_item_id), code: p.code, name: p.name || '',
-        rack: p.racks || p.rack_location || '', system_qty: sys, counted_qty: cnt, avail_qty: null, diff,
+        rack: p.racks || p.rack_location || '', rack_scanned: p.racks || '', master_rack: p.rack_location || '',
+        system_qty: sys, counted_qty: cnt, avail_qty: null, diff,
         ...(withValue ? { value_cost: vc, value_list: 0 } : {}),
       });
     }
@@ -442,6 +444,41 @@ export default async function stockCountRoutes(app) {
     return plan;
   }
 
+  // 디렉터 검토 목록: 수량 차이(delta≠0) 또는 실사랙≠마스터랙 인 항목.
+  // 각 항목에 시스템/실사/차이 + 실사랙(rack_scanned) + 마스터랙(master_rack) 포함.
+  async function buildReviewList(id, exec = query) {
+    const run = typeof exec === 'function' ? exec : (s, p) => exec.query(s, p);
+    const parts = (await run(
+      `SELECT g.product_id, g.counted, g.racks, p.code, p.name, p.stock_qty, p.rack_location
+         FROM (SELECT product_id, SUM(counted_qty) AS counted,
+                      STRING_AGG(DISTINCT NULLIF(rack_scanned,''), ', ') AS racks
+                 FROM stock_count_lines
+                WHERE count_id=$1 AND item_kind='part' AND product_id IS NOT NULL GROUP BY product_id) g
+         JOIN products p ON p.id=g.product_id WHERE p.deleted_at IS NULL`, [id])).rows;
+    const promos = (await run(
+      `SELECT g.promo_item_id, g.counted, g.racks, pi.code, pi.name, pi.stock_qty, pi.rack_location
+         FROM (SELECT promo_item_id, SUM(counted_qty) AS counted,
+                      STRING_AGG(DISTINCT NULLIF(rack_scanned,''), ', ') AS racks
+                 FROM stock_count_lines
+                WHERE count_id=$1 AND item_kind='promo' AND promo_item_id IS NOT NULL GROUP BY promo_item_id) g
+         JOIN promo_items pi ON pi.id=g.promo_item_id WHERE pi.deleted_at IS NULL`, [id])).rows;
+    const items = [];
+    const mk = (kind, p, idKey) => {
+      const before = num(p.stock_qty), after = num(p.counted), delta = round2(after - before);
+      const scanned = (p.racks || '').trim(), master = (p.rack_location || '').trim();
+      const rackDiff = scanned !== '' && scanned !== master;
+      if (delta === 0 && !rackDiff) return null;
+      const it = { kind, code: p.code, name: p.name || '', system_qty: before, counted_qty: after, delta,
+        rack_scanned: scanned, master_rack: master, rack_diff: rackDiff };
+      it[idKey] = Number(kind === 'part' ? p.product_id : p.promo_item_id);
+      return it;
+    };
+    for (const p of parts) { const it = mk('part', p, 'product_id'); if (it) items.push(it); }
+    for (const p of promos) { const it = mk('promo', p, 'promo_item_id'); if (it) items.push(it); }
+    items.sort((a, b) => Math.abs(num(b.delta)) - Math.abs(num(a.delta)));
+    return items;
+  }
+
   // 코드별 실사 내역(드릴다운) + SYD 코드
   app.get('/api/stock-counts/:id/code-lines', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -476,55 +513,117 @@ export default async function stockCountRoutes(app) {
     const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
     if (!sc) return reply.code(404).send({ error: 'not_found' });
     if (sc.status !== 'submitted') return reply.code(409).send({ error: 'not_submitted', note: '제출된 실사만 적용할 수 있습니다.' });
-    const plan = await buildAdjustPlan(id);
-    return { count_id: id, adjust_count: plan.length, plan };
+    const items = await buildReviewList(id);
+    const plan = await buildAdjustPlan(id);            // 하위호환(레거시 필드 유지)
+    return { count_id: id, adjust_count: plan.length, review_count: items.length, items, plan };
   });
 
+  // 디렉터 승인·반영. body.items 가 오면 항목별 결정(반영/보류·코멘트·랙저장)을 적용.
+  //   items: [{ kind:'part'|'promo', product_id?/promo_item_id?, apply:bool, save_rack:bool, comment:string }]
+  // body.items 가 없으면 레거시(차이 전부 반영).
   app.post('/api/stock-counts/:id/apply', { preHandler: [authGuard] }, async (req, reply) => {
     if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '디렉터 승인이 필요합니다.' });
     const id = Number(req.params.id);
     const uid = req.ctx.perm.userId;
+    const body = req.body || {};
+    const hasDecisions = Array.isArray(body.items);
+    const keyOf = (kind, pid, promoId) => `${kind}:${kind === 'part' ? pid : promoId}`;
+    const decMap = new Map();
+    if (hasDecisions) {
+      for (const it of body.items) {
+        const k = keyOf(it.kind, Number(it.product_id), Number(it.promo_item_id));
+        decMap.set(k, { apply: !!it.apply, save_rack: !!it.save_rack, comment: String(it.comment || '').trim().slice(0, 500) });
+      }
+    }
     const result = await withTx(async (c) => {
       const sc = (await c.query(`SELECT id, code, status FROM stock_counts WHERE id=$1 FOR UPDATE`, [id])).rows[0];
       if (!sc) return { error: 'not_found' };
       if (sc.status !== 'submitted') return { error: 'not_submitted' };
-      const plan = await buildAdjustPlan(id, c);
+      const review = await buildReviewList(id, c);
       const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
-      let applied = 0;
-      for (const it of plan) {
+      let applied = 0, rackSaved = 0;
+      for (const it of review) {
+        const k = keyOf(it.kind, it.product_id, it.promo_item_id);
+        // 결정: 명시적 payload 있으면 그대로, 없으면 레거시(차이는 반영, 랙은 저장 안함)
+        const dec = hasDecisions ? (decMap.get(k) || { apply: false, save_rack: false, comment: '' })
+                                 : { apply: it.delta !== 0, save_rack: false, comment: '' };
+        let didApply = false, didRack = false;
         if (it.kind === 'part') {
-          const p = (await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [it.product_id])).rows[0];
-          const cur = num(p.stock_qty); const next = round2(it.after);
-          if (next < 0) return { error: 'would_go_negative', code: it.code };
-          const delta = round2(next - cur);
-          if (delta === 0) continue;
-          await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, uid, it.product_id]);
-          await c.query(
-            `INSERT INTO stock_movements (product_id, move_type, qty, ref, note, source, moved_at, event_no, created_by)
-             VALUES ($1,'adjust',$2,$3,$4,'count', now(), $5, $6)`,
-            [it.product_id, delta, `count:${id}`, `재고실사 ${sc.code} 실물조정`, eventNo, uid]);
-          applied += 1;
+          if (dec.apply && it.delta !== 0) {
+            const cur = num((await c.query(`SELECT stock_qty FROM products WHERE id=$1 FOR UPDATE`, [it.product_id])).rows[0].stock_qty);
+            const next = round2(it.counted_qty);
+            if (next < 0) return { error: 'would_go_negative', code: it.code };
+            const delta = round2(next - cur);
+            if (delta !== 0) {
+              await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, uid, it.product_id]);
+              const note = `재고실사 ${sc.code} 실물조정` + (dec.comment ? ` · ${dec.comment}` : '');
+              await c.query(
+                `INSERT INTO stock_movements (product_id, move_type, qty, ref, note, source, moved_at, event_no, created_by)
+                 VALUES ($1,'adjust',$2,$3,$4,'count', now(), $5, $6)`,
+                [it.product_id, delta, `count:${id}`, note, eventNo, uid]);
+              didApply = true; applied += 1;
+            }
+          }
+          if (dec.save_rack && it.rack_scanned) {
+            await c.query(`UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3`, [it.rack_scanned, uid, it.product_id]);
+            didRack = true; rackSaved += 1;
+          }
         } else {
-          const next = round2(it.after);
-          if (next < 0) return { error: 'would_go_negative', code: it.code };
-          await c.query(`UPDATE promo_items SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, uid, it.promo_item_id]);
-          applied += 1;
+          if (dec.apply && it.delta !== 0) {
+            const next = round2(it.counted_qty);
+            if (next < 0) return { error: 'would_go_negative', code: it.code };
+            await c.query(`UPDATE promo_items SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [next, uid, it.promo_item_id]);
+            didApply = true; applied += 1;
+          }
+          if (dec.save_rack && it.rack_scanned) {
+            await c.query(`UPDATE promo_items SET rack_location=$1, updated_by=$2 WHERE id=$3`, [it.rack_scanned, uid, it.promo_item_id]);
+            didRack = true; rackSaved += 1;
+          }
         }
+        // 검토 이력 기록(반영/보류·코멘트 모두 감사 저장)
+        await c.query(
+          `INSERT INTO stock_count_adjustments
+             (count_id, item_kind, product_id, promo_item_id, code, system_qty, counted_qty, delta,
+              decision, comment, rack_scanned, rack_saved, applied, event_no, reviewed_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+          [id, it.kind, it.kind === 'part' ? it.product_id : null, it.kind === 'promo' ? it.promo_item_id : null,
+           it.code, it.system_qty, it.counted_qty, it.delta,
+           didApply ? 'apply' : 'skip', dec.comment || null, it.rack_scanned || null, didRack, didApply, eventNo, uid]);
       }
       await c.query(`UPDATE stock_counts SET status='reconciled', reconciled_at=now(), reconciled_by=$1, adjust_event_no=$2 WHERE id=$3`,
         [uid, eventNo, id]);
-      return { ok: true, applied, event_no: eventNo, code: sc.code };
+      return { ok: true, applied, rack_saved: rackSaved, reviewed: review.length, event_no: eventNo, code: sc.code };
     });
     if (result.error) {
       const codeMap = { not_found: 404, not_submitted: 409, would_go_negative: 400 };
       return reply.code(codeMap[result.error] || 400).send(result);
     }
-    await logEvent({ userId: uid, action: 'update', target: `stock_count:${id}`, detail: { step: 'apply', applied: result.applied, event_no: result.event_no } });
+    await logEvent({ userId: uid, action: 'update', target: `stock_count:${id}`, detail: { step: 'apply', applied: result.applied, rack_saved: result.rack_saved, event_no: result.event_no } });
     return result;
   });
 
-  // ================= 프로모션 품목 마스터 =================
-  app.get('/api/promo-items', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+  // 반영 내역(디렉터 검토 결과·코멘트) 조회
+  app.get('/api/stock-counts/:id/adjustments', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+    const id = Number(req.params.id);
+    const rows = (await query(
+      `SELECT a.*, COALESCE(p.name, pi.name) AS item_name, u.name AS reviewer
+         FROM stock_count_adjustments a
+         LEFT JOIN products p ON p.id = a.product_id
+         LEFT JOIN promo_items pi ON pi.id = a.promo_item_id
+         LEFT JOIN users u ON u.id = a.reviewed_by
+        WHERE a.count_id = $1 ORDER BY a.id`, [id])).rows;
+    return {
+      items: rows.map((a) => ({
+        code: a.code, name: a.item_name || '', kind: a.item_kind,
+        system_qty: num(a.system_qty), counted_qty: num(a.counted_qty), delta: num(a.delta),
+        decision: a.decision, applied: !!a.applied, comment: a.comment || '',
+        rack_scanned: a.rack_scanned || '', rack_saved: !!a.rack_saved,
+        reviewer: a.reviewer || '', reviewed_at: a.reviewed_at,
+      })),
+    };
+  });
+
+  // ================= 프로모션 품목 마스터 =================  app.get('/api/promo-items', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const includeInactive = String(req.query.all || '') === '1';
     const rows = (await query(
       `SELECT * FROM promo_items WHERE deleted_at IS NULL ${includeInactive ? '' : 'AND active=TRUE'} ORDER BY code`, [])).rows;
