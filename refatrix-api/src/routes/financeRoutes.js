@@ -1145,7 +1145,17 @@ export default async function financeRoutes(app) {
       const o = Number(r.outstanding);
       if (o > 0.005) { open += 1; outstanding += o; if (r.due_date < today) overdue += o; }
     }
-    return { today, open_count: open, outstanding: r2(outstanding), overdue: r2(overdue) };
+    // 입금액: 실제 현금 입금(sales_payments.amount 합 — 선수금 포함).
+    // NC(nota de crédito) 비현금 반제는 payment_id NULL 배분이라 자동 제외됨.
+    const monthStart = today.slice(0, 7) + '-01';
+    const ms = new Date(monthStart + 'T00:00:00Z');
+    const nextMonth = new Date(Date.UTC(ms.getUTCFullYear(), ms.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+    const p = (await query(
+      `SELECT COALESCE(SUM(amount),0) AS paid_total,
+              COALESCE(SUM(CASE WHEN pay_date >= $1 AND pay_date < $2 THEN amount ELSE 0 END),0) AS paid_month
+         FROM sales_payments`, [monthStart, nextMonth])).rows[0];
+    return { today, open_count: open, outstanding: r2(outstanding), overdue: r2(overdue),
+      paid_month: r2(Number(p.paid_month)), paid_total: r2(Number(p.paid_total)) };
   });
 
   // 최근 반제(입금) 내역 — 영업지원이 기록한 수금 활동(읽기 전용).
