@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0704c</title>
+<title>Refatrix ERP · 재무 · build fin-0704d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -166,6 +166,10 @@
       </div>
       <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div>
         <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
+      <div class="row" id="t-cashdue-row" style="margin-top:2px;align-items:center">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:var(--brand);margin:0"><input type="checkbox" id="t-cashdue" style="width:16px;height:16px;margin:0"> 💰 현금받아야함</label>
+        <span class="hint" style="margin:0">금고 등에서 나간 지출 중 <b>디렉터가 현금으로 회수해야 하는 항목</b>이면 체크하세요. 거래 목록의 <b>[💰 현금받아야함]</b> 버튼에서 이 항목만 따로 모아 관리합니다.</span>
+      </div>
       <div id="t-preview" class="hint"></div>
       <button class="btn gold" id="t-save" style="margin-top:12px">거래 등록</button>
       <div class="msg" id="newMsg"></div>
@@ -228,7 +232,9 @@
         <div><label>시작일</label><input id="f-from" type="date"></div>
         <div><label>종료일</label><input id="f-to" type="date"></div>
         <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="f-go">조회</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn sm" id="cashDueBtn" style="display:none;background:#fdf3d7;color:#8a6410;border:1px solid #e8d29a">💰 현금받아야함 <span id="cashDueCnt"></span></button></div>
       </div>
+      <div id="cashDueBox" class="hidden" style="border:2px solid #e8d29a;border-radius:10px;background:#fffdf6;padding:14px;margin:0 0 12px"></div>
       <div id="txnSummary" class="hint" style="margin:0 0 6px"></div>
       <div id="txnBody"><div class="hint">불러오는 중…</div></div>
     </div>
@@ -695,7 +701,8 @@
     const body={account_id:$('t-acc').value?Number($('t-acc').value):null,txn_date:$('t-date').value,direction:$('t-dir').value,
       amount:amt,currency:cur,fx_rate:cur==='USD'?(Number($('t-fx').value)||fxRate):1,
       category_code:$('t-cat').value||null,status:$('t-status').value,memo:$('t-memo').value.trim()||null,
-      receipt_no:$('t-receipt').value.trim()||null};
+      receipt_no:$('t-receipt').value.trim()||null,
+      cash_due:($('t-dir').value==='out' && $('t-cashdue').checked)};
     $('t-save').disabled=true;$('t-save').textContent='등록 중…';
     try{
       const res=await fetch(session.api+'/api/transactions',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
@@ -703,7 +710,7 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(d.error||res.status));return;}
       m.className='msg ok';
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
-      $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';previewTxn();
+      $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';$('t-cashdue').checked=false;previewTxn();
       await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
@@ -885,6 +892,7 @@
   let txnSort={key:null,dir:1};         // 정렬 상태: key=null이면 기본순서, dir 1=오름 -1=내림
   async function loadTxns(){
     const b=$('txnBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    if(isDirector()){ $('cashDueBtn').style.display=''; loadCashDue(false); }
     const p=new URLSearchParams();
     if($('f-status').value)p.set('status',$('f-status').value);
     if($('f-dir').value)p.set('direction',$('f-dir').value);
@@ -961,6 +969,7 @@
           const chg=t.change_status==='edit_pending'?'<span class="badge b-warn">수정 승인대기</span>':(t.change_status==='delete_pending'?'<span class="badge b-warn">삭제 승인대기</span>':'');
           const editBadge=Number(t.edit_count)>0?`<span class="badge" style="background:#ede4f7;color:#6b3fa0">수정 ${t.edit_count}회</span>`:'';
           const planBadge=Number(t.change_count)>0?`<span class="badge" style="background:#fff0d6;color:#9a6512" title="${(t.plan_memo||'').replace(/"/g,'&quot;')}">계획대비 변경 ${t.change_count}</span>`:'';
+          const cashBadge=t.cash_due?(t.cash_due_done_at?'<span class="badge" style="background:#eee;color:#888" title="현금 수령 완료">💰 수령완료</span>':'<span class="badge" style="background:#fdf3d7;color:#8a6410" title="현금받아야함 — 미수령">💰 현금받아야함</span>'):'';
           const bg=t.status==='actual'?'background:#f4f2ec':'background:#fff';
           return `<tr class="txn-row" data-id="${t.id}" style="cursor:pointer;${bg}">
             <td>${String(t.txn_date).slice(0,10)}</td>
@@ -968,7 +977,7 @@
             <td>${t.account_name||'—'}</td>
             <td>${t.category_code?t.category_code+' · '+(t.category_name||''):'—'}</td>
             <td class="num">${amtCell}</td>
-            <td>${t.status==='actual'?'실제':'예정'}${t.sales_invoice_id?' · <span class="badge" style="background:#e6f1fb;color:#0c447c">매출#'+t.sales_invoice_id+'</span>':''} ${chg} ${editBadge} ${planBadge}</td>
+            <td>${t.status==='actual'?'실제':'예정'}${t.sales_invoice_id?' · <span class="badge" style="background:#e6f1fb;color:#0c447c">매출#'+t.sales_invoice_id+'</span>':''} ${chg} ${editBadge} ${planBadge} ${cashBadge}</td>
             <td>${t.sales_invoice_id ? (t.customer_name||'') : (t.approved?'':'<span class="badge b-warn">미승인</span>')}</td>
             <td style="font-size:12px">${t.sales_invoice_id
                 ? (t.sat_no
@@ -986,6 +995,74 @@
         else det.classList.add('hidden');
       });
       [...b.querySelectorAll('th[data-sort]')].forEach(h=>h.onclick=()=>txnHeadClick(h.dataset.sort));
+  }
+
+  // ===== 💰 현금받아야함 (금고 회수 목록 — 디렉터 전용) =====
+  let cashDueItems=[],cashDueSummary=null,cashDueShowDone=false;
+  async function loadCashDue(openPanel){
+    if(!isDirector())return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/cash-due',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error)throw 0;
+      cashDueItems=d.items||[];cashDueSummary=d.summary||{};
+      const n=Number(cashDueSummary.pending_count)||0;
+      $('cashDueCnt').textContent=n?('('+n+'건 · MX$'+fmt(cashDueSummary.pending_mxn)+')'):'(0건)';
+      if(openPanel||!$('cashDueBox').classList.contains('hidden'))renderCashDue();
+    }catch(e){ $('cashDueCnt').textContent='(오류)'; }
+  }
+  function renderCashDue(){
+    const box=$('cashDueBox');box.classList.remove('hidden');
+    const s=cashDueSummary||{};
+    const list=cashDueShowDone?cashDueItems:cashDueItems.filter(x=>!x.cash_due_done_at);
+    let h='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<b style="color:#8a6410;font-size:15px">💰 현금받아야함 — 금고 회수 목록</b>'
+      +'<span class="badge" style="background:#fdf3d7;color:#8a6410">미수령 '+(s.pending_count||0)+'건 · MX$'+fmt(s.pending_mxn||0)+'</span>'
+      +'<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:400;margin:0 0 0 auto"><input type="checkbox" id="cashDueDoneChk" '+(cashDueShowDone?'checked':'')+' style="width:14px;height:14px;margin:0"> 수령완료 포함 ('+(s.done_count||0)+'건)</label>'
+      +'<button class="btn ghost sm" id="cashDueClose">닫기</button></div>';
+    if(!list.length){ h+='<div class="hint" style="margin-top:10px">'+(cashDueShowDone?'표시된 항목이 없습니다.':'미수령 항목이 없습니다. 🎉')+'</div>'; }
+    else{
+      h+='<table style="margin-top:10px"><thead><tr><th>일자</th><th>계좌</th><th>계정과목</th><th class="num">금액 (MXN)</th><th>메모</th><th>영수증</th><th>상태</th><th></th></tr></thead><tbody>';
+      list.forEach(t=>{
+        const done=!!t.cash_due_done_at;
+        h+='<tr style="'+(done?'background:#f2f2f2;color:#888':'background:#fffdf6')+'">'
+          +'<td style="white-space:nowrap">'+String(t.txn_date).slice(0,10)+'</td>'
+          +'<td>'+(t.account_name||'—')+'</td>'
+          +'<td>'+(t.category_code?(t.category_code+' · '+(t.category_name||'')):'—')+'</td>'
+          +'<td class="num" style="font-weight:700;color:'+(done?'#888':'var(--expense)')+'">'+fmt(t.amount_mxn)
+            +(t.currency==='USD'?' <span class="hint" style="margin:0">(USD '+fmt(t.amount)+')</span>':'')+'</td>'
+          +'<td>'+(t.memo||'')+(t.approved?'':' <span class="badge b-warn">미승인</span>')+'</td>'
+          +'<td style="font-family:monospace;font-size:12px">'+(t.receipt_no||'')+'</td>'
+          +'<td style="white-space:nowrap">'+(done
+            ?('<span class="badge" style="background:#eee;color:#777">✔ 수령완료 '+String(t.cash_due_done_at).slice(0,10)+(t.done_by_name?(' · '+t.done_by_name):'')+'</span>')
+            :'<span class="badge" style="background:#fdf3d7;color:#8a6410">미수령</span>')+'</td>'
+          +'<td style="white-space:nowrap">'+(done
+            ?('<button class="btn ghost sm" onclick="cashDueDone('+t.id+',false)">↩ 되돌리기</button>')
+            :('<button class="btn sm" style="background:#0F6E56" onclick="cashDueDone('+t.id+',true)">✔ 수령완료</button> '
+              +'<button class="btn ghost sm" onclick="cashDueFlag('+t.id+',false)" title="현금받아야함 목록에서 제외 (잘못 지정한 경우)">해제</button>'))+'</td>'
+          +'</tr>';
+      });
+      h+='</tbody></table>';
+    }
+    h+='<div class="hint" style="margin-top:8px">지출 등록 시 <b>💰 현금받아야함</b> 체크박스로 지정합니다. 기존 지출은 거래 행을 열어(클릭) <b>💰 지정</b> 버튼으로 추가할 수 있습니다. [수령완료]는 디렉터가 실제로 현금을 받은 뒤 누르세요.</div>';
+    box.innerHTML=h;
+    $('cashDueClose').onclick=()=>box.classList.add('hidden');
+    $('cashDueDoneChk').onchange=e=>{cashDueShowDone=e.target.checked;renderCashDue();};
+  }
+  async function cashDueDone(id,done){
+    if(done&&!confirm('이 항목의 현금을 수령 완료 처리할까요?'))return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/cash-due-done',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done})});
+      const d=await res.json(); if(!res.ok||d.error){alert('실패: '+(d.error||res.status));return;}
+      await loadCashDue(true); loadTxns();
+    }catch(e){alert('서버 연결 실패');}
+  }
+  async function cashDueFlag(id,on){
+    if(!on&&!confirm('이 항목을 현금받아야함 목록에서 해제할까요?'))return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id+'/cash-due',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({on})});
+      const d=await res.json(); if(!res.ok||d.error){alert('실패: '+(d.error==='expense_only'?'지출 거래만 지정할 수 있습니다.':(d.error||res.status)));return;}
+      await loadCashDue(!$('cashDueBox').classList.contains('hidden')); loadTxns();
+    }catch(e){alert('서버 연결 실패');}
   }
 
   function catOptionsFor(dir,sel){
@@ -1056,7 +1133,14 @@
     if(!t.editable){box.innerHTML='<div class="hint">이 거래는 여기서 수정할 수 없습니다.</div>';return;}
     if(t.change_status){box.innerHTML=`<div class="hint">${t.change_status==='edit_pending'?'수정':'삭제'} 승인 대기 중입니다. 디렉터 승인/반려 후 다시 변경할 수 있습니다.</div>`;return;}
     const directEdit=!t.approved; // 미승인은 바로 수정, 승인된 것은 요청
+    const cashStrip=(isDirector()&&t.direction==='out')
+      ?('<div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<button class="btn ghost sm e-cashdue" style="border-color:#e8d29a;color:#8a6410">'+(t.cash_due?'💰 현금받아야함 해제':'💰 현금받아야함 지정')+'</button>'
+        +(t.cash_due?('<span class="hint" style="margin:0">이 지출은 현금받아야함 목록에 있습니다'+(t.cash_due_done_at?' (수령완료)':' (미수령)')+'.</span>'):'<span class="hint" style="margin:0">디렉터가 현금으로 회수할 지출이면 지정하세요.</span>')
+        +'</div>')
+      :'';
     box.innerHTML=`
+      ${cashStrip}
       <div style="border:1px solid var(--brand);border-radius:10px;padding:14px;background:#fbfaf6">
         <div style="font-weight:700;margin-bottom:6px">${directEdit?'거래 수정 (미승인 — 바로 반영)':'거래 수정요청 (승인 후 반영)'}</div>
         <div class="row">
@@ -1081,6 +1165,7 @@
         <div class="msg e-msg"></div>
       </div>`;
     box.querySelector('.e-dir').addEventListener('change',e=>{box.querySelector('.e-cat').innerHTML=catOptionsFor(e.target.value,'');});
+    const cdBtn=box.querySelector('.e-cashdue');if(cdBtn)cdBtn.onclick=()=>cashDueFlag(id,!t.cash_due);
     box.querySelector('.e-cancel').onclick=()=>{box.closest('.txn-det').classList.add('hidden');};
     box.querySelector('.e-submit').onclick=()=>submitTxnEdit(id,box,directEdit);
     const del=box.querySelector('.e-del');if(del)del.onclick=()=>deleteTxnRequest(id);
@@ -2468,6 +2553,8 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   $('tabAcc').addEventListener('click',()=>showTab('acc'));
   $('txnBackAcc').addEventListener('click',()=>{ $('f-acc').value=''; $('f-status').value=''; $('f-dir').value=''; showTab('acc'); });
+  $('cashDueBtn').addEventListener('click',()=>{ const box=$('cashDueBox'); if(box.classList.contains('hidden'))loadCashDue(true); else box.classList.add('hidden'); });
+  $('t-dir').addEventListener('change',()=>{ $('t-cashdue-row').style.display = $('t-dir').value==='out' ? '' : 'none'; if($('t-dir').value!=='out')$('t-cashdue').checked=false; });
   $('pp-prev').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);loadPendingPlans();});
   $('pp-next').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);loadPendingPlans();});
   $('tabNew').addEventListener('click',()=>showTab('new'));
@@ -2538,6 +2625,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260704b"></script>
 </body>
 </html>
