@@ -141,16 +141,14 @@ export default async function financeRoutes(app) {
     const amountMxn = r2(amount * fx);
     // 승인 규칙: 지출 + 담당자 → 미승인(approved=false). 그 외 → 승인.
     const approved = !(direction === 'out' && !isDirector);
-    // 현금받아야함: 지출에만 유효(금고 등에서 나간 지출 중 디렉터가 현금으로 회수할 항목).
-    const cashDue = (direction === 'out' && b.cash_due === true);
     const r = await query(
       `INSERT INTO transactions
-         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16) RETURNING id`,
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15) RETURNING id`,
       [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
        status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null,
-       (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null, cashDue]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved, cash_due: cashDue } });
+       (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
   });
 
@@ -248,11 +246,10 @@ export default async function financeRoutes(app) {
     if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
     if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
-    if (q.cash_due === '1' || q.cash_due === 'true') cond.push('t.cash_due=TRUE');
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
-              t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id, t.cash_due, t.cash_due_done_at,
+              t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
               si.sat_no AS sat_no, c.name AS customer_name,
               (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM transactions t
@@ -266,59 +263,6 @@ export default async function financeRoutes(app) {
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
-  });
-
-  // ===== 현금받아야함 (금고 회수 목록) — 디렉터 전용 =====
-  // 지출 중 '현금받아야함'으로 표시된 항목. 디렉터가 직접 현금으로 회수할 항목이므로
-  // 현금·불공제 세부 차단(blockedDetailAccountIds)을 적용하지 않는다(디렉터 본인용 목록).
-  app.get('/api/transactions/cash-due', { preHandler: [authGuard, requireDirector] }, async () => {
-    const rows = (await query(
-      `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.amount, t.currency, t.fx_rate,
-              t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.approved, t.memo, t.receipt_no,
-              t.cash_due_done_at, u.name AS done_by_name
-         FROM transactions t
-         LEFT JOIN accounts a ON a.id=t.account_id
-         LEFT JOIN categories cat ON cat.code=t.category_code
-         LEFT JOIN users u ON u.id=t.cash_due_done_by
-        WHERE t.deleted_at IS NULL AND t.cash_due=TRUE
-        ORDER BY (t.cash_due_done_at IS NOT NULL) ASC, t.txn_date DESC, t.id DESC LIMIT 500`)).rows;
-    const items = rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate) }));
-    const pending = items.filter((x) => !x.cash_due_done_at);
-    return { items, summary: {
-      pending_count: pending.length,
-      pending_mxn: r2(pending.reduce((s, x) => s + x.amount_mxn, 0)),
-      done_count: items.length - pending.length } };
-  });
-
-  // 현금받아야함 플래그 지정/해제 (디렉터) — 지출 거래만 지정 가능. 해제 시 수령기록도 초기화.
-  app.post('/api/transactions/:id/cash-due', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
-    const id = Number(req.params.id);
-    const on = !!(req.body && req.body.on);
-    const t = (await query(`SELECT id, direction FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
-    if (!t) return reply.code(404).send({ error: 'not_found' });
-    if (on && t.direction !== 'out') return reply.code(409).send({ error: 'expense_only' });
-    await query(
-      `UPDATE transactions SET cash_due=$1,
-         cash_due_done_at=CASE WHEN $1 THEN cash_due_done_at ELSE NULL END,
-         cash_due_done_by=CASE WHEN $1 THEN cash_due_done_by ELSE NULL END,
-         updated_by=$2
-       WHERE id=$3`, [on, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { cash_due: on } });
-    return { ok: true };
-  });
-
-  // 현금 수령 완료/되돌리기 (디렉터)
-  app.post('/api/transactions/:id/cash-due-done', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
-    const id = Number(req.params.id);
-    const done = !!(req.body && req.body.done);
-    const t = (await query(`SELECT id, cash_due FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
-    if (!t || !t.cash_due) return reply.code(404).send({ error: 'not_found' });
-    await query(
-      `UPDATE transactions SET cash_due_done_at=CASE WHEN $1 THEN now() ELSE NULL END,
-         cash_due_done_by=CASE WHEN $1 THEN $2::bigint ELSE NULL END, updated_by=$2
-       WHERE id=$3`, [done, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { cash_due_done: done } });
-    return { ok: true };
   });
 
   // 승인 대기(디렉터) — 담당자가 올린 미승인 지출
@@ -1145,17 +1089,7 @@ export default async function financeRoutes(app) {
       const o = Number(r.outstanding);
       if (o > 0.005) { open += 1; outstanding += o; if (r.due_date < today) overdue += o; }
     }
-    // 입금액: 실제 현금 입금(sales_payments.amount 합 — 선수금 포함).
-    // NC(nota de crédito) 비현금 반제는 payment_id NULL 배분이라 자동 제외됨.
-    const monthStart = today.slice(0, 7) + '-01';
-    const ms = new Date(monthStart + 'T00:00:00Z');
-    const nextMonth = new Date(Date.UTC(ms.getUTCFullYear(), ms.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
-    const p = (await query(
-      `SELECT COALESCE(SUM(amount),0) AS paid_total,
-              COALESCE(SUM(CASE WHEN pay_date >= $1 AND pay_date < $2 THEN amount ELSE 0 END),0) AS paid_month
-         FROM sales_payments`, [monthStart, nextMonth])).rows[0];
-    return { today, open_count: open, outstanding: r2(outstanding), overdue: r2(overdue),
-      paid_month: r2(Number(p.paid_month)), paid_total: r2(Number(p.paid_total)) };
+    return { today, open_count: open, outstanding: r2(outstanding), overdue: r2(overdue) };
   });
 
   // 최근 반제(입금) 내역 — 영업지원이 기록한 수금 활동(읽기 전용).
@@ -1479,7 +1413,8 @@ export default async function financeRoutes(app) {
       // 디렉터/소시오(all): 세부차단 계좌 + (비디렉터인 소시오는) 비공개 거래가 보완분.
       baseCond = 't.deleted_at IS NULL AND t.account_id IS NOT NULL';
       const block = blockedDetailAccountIds(perm);
-      if (block.length) { args.push(block); ors.push(`t.account_id = ANY($${args.length})`); }
+      // 세부차단 계좌 보완분: '실적'만 — 예정은 이제 detail 스트림에 항목으로 직접 나가므로(위 참조) 여기 담으면 이중계상.
+      if (block.length) { args.push(block); ors.push(`(t.account_id = ANY($${args.length}) AND t.status='actual')`); }
       if (perm.role !== 'director') ors.push('t.is_private=true');
       if (!ors.length) return []; // 디렉터 무제한 — detail 스트림이 이미 전체라 보완분 없음
     } else {
@@ -1508,11 +1443,15 @@ export default async function financeRoutes(app) {
     let cond = 't.deleted_at IS NULL';
     if (allow !== null) {
       if (allow.length === 0) return [];
-      args.push(allow); cond += ` AND t.account_id = ANY($${args.length})`;
+      // 계좌미지정(NULL) 거래 = 회사 공통 예정(마케팅 계획·계좌미지정 수동 예정) — 계좌 권한과 무관하게 포함.
+      // (아래 세부차단 필터의 'NULL 유지' 의도와 대칭. 기존엔 NULL 예외가 빠져 비디렉터 현금흐름에서 마케팅 예정이 통째로 누락)
+      args.push(allow); cond += ` AND (t.account_id IS NULL OR t.account_id = ANY($${args.length}))`;
     }
-    // 현금·불공제 세부 차단(디렉터 포함): 현금흐름에서도 제외. (account_id NULL = AR 예정은 유지)
+    // 현금·불공제 세부 차단(디렉터 포함): '과거 실집행(actual)'만 숨긴다. 예정(plan)=자금계획은 민감 이력이
+    // 아니므로 항목으로 통과 — "어떤 계좌든 계획은 계획으로 반영" 원칙(2026-07-04 디렉터 확정).
+    // (이중계상 방지: loadHiddenBalanceTxns가 정확히 대칭으로 '실적만' 보완)
     const block = blockedDetailAccountIds(perm);
-    if (block.length) { args.push(block); cond += ` AND (t.account_id IS NULL OR t.account_id <> ALL($${args.length}))`; }
+    if (block.length) { args.push(block); cond += ` AND (t.account_id IS NULL OR t.account_id <> ALL($${args.length}) OR t.status='plan')`; }
     // 비공개 고정비 거래(예정·실적): 디렉터 외 현금흐름·계획대비실적에서 제외
     cond += privTxnCond(perm);
     return (await query(
@@ -1695,9 +1634,11 @@ export default async function financeRoutes(app) {
       .map((r) => ({ ...r, outstanding: Number(r.outstanding), total: Number(r.total), collected: Number(r.collected) }));
     // AP(지급예정): 권한 계좌의 예정(plan)·지출(out) 거래(plan_date 기준).
     const planOut = mapped.filter((t) => t.status === 'plan' && t.direction === 'out');
+    // 수동 예정 수입(인보이스 미연결): AR 쪽에 합류시켜 달력·예상잔고에 반영 (인보이스 AR과 이중계상 없음)
+    const planIn = mapped.filter((t) => t.status === 'plan' && t.direction === 'in' && !t.sales_invoice_id);
     // 실적화된(지급완료) 예정지출: 계획이 있었고 실제로 전환된 지출 — AP 자리에 회색+배지로 표시(잔고엔 실적으로만 반영, sum 미포함).
     const realizedOut = mapped.filter((t) => t.status === 'actual' && t.direction === 'out' && t.plan_amount_mxn != null);
-    const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month, realizedOut);
+    const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month, realizedOut, planIn);
     // 일자별 집계 + 누적잔고(기초잔고부터 그 달 시작 직전까지 누적 후 일자별)
     const opening = await openingBalanceMxn(req.ctx.perm);
     // 잔액 보완분(항목 미노출): '잔액만'·세부차단 계좌 거래 + 비공개 고정비 거래 — 잔고 계산에만 합산.
