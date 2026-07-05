@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회</title>
+<title>Refatrix ERP · 제품 조회 · pm0705a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -123,7 +123,10 @@
   </div>
 
 <div class="card hidden" id="searchCard">
-    <h2>제품 검색 (코드·경쟁사코드·차종 통합)</h2>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin-bottom:0">제품 검색 (코드·경쟁사코드·차종 통합)</h2>
+      <button class="btn" id="dlMaster" type="button" style="padding:7px 13px;font-size:12px" title="전체 제품 마스터를 엑셀(.xlsx)로 내려받습니다. 업로드와 같은 컬럼 구성이라 수정 후 재업로드할 수 있습니다.">⬇ 제품 마스터 다운로드</button>
+    </div>
     <div class="row">
       <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
       <div style="flex:0 0 auto;display:flex;align-items:flex-end">
@@ -647,7 +650,44 @@
 
   async function sydSearchTail(){}
 
+  // ===== 제품 마스터 다운로드 (엑셀) =====
+  // 업로드(COLUMN_MAP)와 같은 헤더명으로 시트를 만들어, 내려받아 수정 후 그대로 재업로드 가능.
+  // 가격류 컬럼은 백엔드가 sale_price 권한 없으면 필드를 생략 → 헤더 자체를 뺀다.
+  // Rack·Stock은 정보용(업로드는 재고·평균원가를 절대 건드리지 않음).
+  function masterSheetRows(items, priceIncluded){
+    const cols=[
+      ['Clave CTR','code'],['Clave SyD','scode'],
+      ['Aplicacion (Maker : Model : Year)','app'],['Nombre del producto','name'],
+      ['Clave SAT','sat_code'],['Origen','origin'],
+    ];
+    if(priceIncluded) cols.push(['List Price','list_price']);
+    cols.push(['IVA','iva_rate'],['Barcode (EAN13)','ean'],['Fast Movement Location','location']);
+    if(priceIncluded) cols.push(['List Price de SYD','list_price_syd'],['Precio Cliente de SYD','price_customer_syd'],['Precio Cliente de CTR','price_customer_ctr']);
+    cols.push(['Material','material'],['Rack','rack_location'],['Stock','stock_qty']);
+    const header=cols.map(c=>c[0]);
+    const rows=(items||[]).map(p=>cols.map(c=>{ const v=p[c[1]]; return v==null?'':v; }));
+    return [header].concat(rows);
+  }
+  async function downloadMaster(){
+    const btn=$('dlMaster'); if(!btn||btn.disabled) return;
+    btn.disabled=true; const old=btn.textContent; btn.textContent='내려받는 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/master-export',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('다운로드 실패: '+(d.error||res.status)); return; }
+      const aoa=masterSheetRows(d.items||[], !!d.price_included);
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=aoa[0].map(h=>({wch:Math.max(12,Math.min(38,String(h).length+4))}));
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'Plantilla Articulo');
+      const ymd=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      XLSX.writeFile(wb,'Refatrix_ProductMaster_'+ymd+'.xlsx');
+    }catch(e){ alert('다운로드 중 오류가 발생했습니다: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+
   $('go').addEventListener('click',login);
+  $('dlMaster').addEventListener('click',downloadMaster);
   $('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
   $('search').addEventListener('click',doSearch);
   $('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
@@ -715,6 +755,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260705pm"></script>
 </body>
 </html>

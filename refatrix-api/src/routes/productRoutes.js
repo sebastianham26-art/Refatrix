@@ -118,6 +118,42 @@ export default async function productRoutes(app) {
     return { items: rows.map((p) => minimizeProduct(perm, p)), limit, offset, total };
   });
 
+  // 제품 마스터 다운로드용 전체 목록(프런트가 엑셀로 변환).
+  //   - 컬럼은 마스터 "업로드"와 같은 필드 구성 → 내려받아 수정 후 그대로 재업로드 가능.
+  //   - 가격류(List Price·SYD/CTR 고객가)는 sale_price 권한 있을 때만 포함(없으면 필드 자체 생략).
+  //   - 재고·랙은 정보용으로 포함(업로드는 어차피 재고·평균원가를 절대 건드리지 않음). 원가는 미포함.
+  app.get('/api/products/master-export', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const { perm } = req.ctx;
+    const rows = (await query(
+      `SELECT p.code, p.scode, p.app, p.name, p.sat_code, p.origin,
+              p.list_price, p.iva_rate, p.ean, p.location,
+              p.list_price_syd, p.price_customer_syd, p.price_customer_ctr,
+              p.material, p.rack_location, p.stock_qty
+         FROM products p
+        WHERE p.deleted_at IS NULL
+        ORDER BY p.code ASC`)).rows;
+    const canPrice = fieldVisible(perm, 'sale_price');
+    const num = (v) => (v == null ? null : Number(v));
+    const items = rows.map((r) => {
+      const o = {
+        code: r.code, scode: r.scode, app: r.app, name: r.name,
+        sat_code: r.sat_code, origin: r.origin, iva_rate: num(r.iva_rate),
+        ean: r.ean, location: r.location, material: r.material,
+        rack_location: r.rack_location, stock_qty: num(r.stock_qty) || 0,
+      };
+      if (canPrice) {
+        o.list_price = num(r.list_price);
+        o.list_price_syd = num(r.list_price_syd);
+        o.price_customer_syd = num(r.price_customer_syd);
+        o.price_customer_ctr = num(r.price_customer_ctr);
+      }
+      return o;
+    });
+    await logEvent({ userId: perm.userId, action: 'read', target: 'product_master_export',
+      detail: { rows: items.length, price_included: canPrice } });
+    return { items, total: items.length, price_included: canPrice };
+  });
+
   // 제품 드릴다운: ① 지금까지 판매한 고객별 수량 ② 원가(평균원가) 계산 근거(수식).
   //   원가 근거는 unit_cost 권한 있는 경우(디렉터 등)만 포함.
   app.get('/api/products/:id/drilldown', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
