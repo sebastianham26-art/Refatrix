@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수금/정산 · build 0703fo</title>
+<title>Refatrix ERP · 수금/정산 · build 0704fa</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -360,7 +360,8 @@
       const st= it.paid_full?'background:#f2f2f2;color:#777':(it.overdue?'background:#fbeae7':'');
       rows+='<tr style="'+st+'">'
         +'<td class="c">'+(i+1)+'</td>'
-        +'<td><b>'+(it.folio_no?('<span style="color:#143D34">'+esc(it.folio_no)+'</span> '):'')+esc(it.customer_name)+'</b><div class="inv">'+satTwoLine(it.sat_no||('#'+it.id))+'</div></td>'
+        +'<td class="c" style="font-weight:800;color:#143D34">'+(it.folio_no?esc(it.folio_no):'<span style="color:#aaa;font-weight:400">—</span>')+'</td>'
+        +'<td><b>'+esc(it.customer_name)+'</b><div class="inv">'+satTwoLine(it.sat_no||('#'+it.id))+'</div></td>'
         +'<td class="c">'+esc(it.inv_date||'—')+'</td>'
         +'<td class="c">'+esc(it.due_date||'—')+'</td>'
         +'<td class="c'+((it.overdue&&!it.paid_full)?' ovd':'')+'">'+esc(arStatusText(it))+'</td>'
@@ -398,9 +399,9 @@
         +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+open.filter(x=>x.overdue).length+'건</div></div>'
         +(arIncludeClosed?('<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:#0F6E56">'+(list.length-open.length)+'건</div></div>'):'')
       +'</div>'
-      +'<table><thead><tr><th class="c">#</th><th>고객 · 인보이스</th><th class="c">발행일</th><th class="c">만기일</th><th class="c">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th></tr></thead>'
+      +'<table><thead><tr><th class="c">#</th><th class="c">Folio</th><th>고객 · 인보이스</th><th class="c">발행일</th><th class="c">만기일</th><th class="c">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th></tr></thead>'
       +'<tbody>'+rows+'</tbody>'
-      +'<tfoot><tr><td colspan="5">합계 ('+list.length+'건)</td><td class="n">'+fmt(tTot)+'</td><td class="n">'+fmt(tPaid)+'</td><td class="n">'+fmt(tOut)+'</td></tr></tfoot></table>'
+      +'<tfoot><tr><td colspan="6">합계 ('+list.length+'건)</td><td class="n">'+fmt(tTot)+'</td><td class="n">'+fmt(tPaid)+'</td><td class="n">'+fmt(tOut)+'</td></tr></tfoot></table>'
       +'<div class="noprint" style="text-align:center;margin-top:26px"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">인쇄</button></div>'
       +'</body></html>';
     const w=window.open('','_blank');
@@ -427,6 +428,7 @@
   // ===== 헤더 클릭 정렬 =====
   // 컬럼 메타: 정렬키 → {타입, 값추출, 첫클릭방향}
   const AR_COLS={
+    folio:{type:'folio', get:it=>String(it.folio_no||'').trim(), firstDesc:false},
     customer:{type:'text', get:it=>(it.customer_name||'')+'\u0001'+(it.sat_no||''), firstDesc:false},
     inv_date:{type:'text', get:it=>it.inv_date||'', firstDesc:true},
     due_date:{type:'text', get:it=>it.due_date||'', firstDesc:false},
@@ -444,6 +446,16 @@
   function arSortList(list){
     if(!arSort||!AR_COLS[arSort.key]) return list;
     const col=AR_COLS[arSort.key], dir=arSort.dir==='desc'?-1:1;
+    if(col.type==='folio'){
+      // Folio: 숫자면 숫자 비교, 아니면 문자열. 빈 값은 정렬 방향과 무관하게 항상 맨 뒤.
+      return list.slice().sort((a,b)=>{
+        const fa=col.get(a), fb=col.get(b);
+        if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
+        const na=Number(fa), nb=Number(fb);
+        if(Number.isFinite(na)&&Number.isFinite(nb)) return dir*(na-nb);
+        return dir*(fa<fb?-1:(fa>fb?1:0));
+      });
+    }
     return list.slice().sort((a,b)=> dir*arCmp(col.get(a),col.get(b),col.type));
   }
   function setArSort(key){
@@ -464,6 +476,7 @@
   }
   function arListTableHtml(list){
     let h='<div class="arscroll"><table><thead><tr>'
+      +arTh('folio','Folio','left')
       +arTh('customer','고객 · 인보이스','left')
       +arTh('inv_date','발행일','left')
       +arTh('due_date','만기일','left')
@@ -474,7 +487,8 @@
       +'<th></th></tr></thead><tbody>';
     list.forEach(it=>{
       h+='<tr'+(it.overdue?' class="ovd"':'')+(it.paid_full?' style="background:#f4f7f4;color:var(--muted)"':'')+'>'
-        +'<td><b class="notranslate" translate="no">'+(it.folio_no?('<span class="folio-no">'+esc(it.folio_no)+'</span>'):'')+esc(it.customer_name)+'</b><div class="inv-no">'+satTwoLine(it.sat_no||('#'+it.id))+'</div></td>'
+        +'<td class="notranslate" translate="no" style="text-align:left;white-space:nowrap"><span class="folio-no">'+(it.folio_no?esc(it.folio_no):'<span style="color:var(--muted);font-weight:400">—</span>')+'</span></td>'
+        +'<td><b class="notranslate" translate="no">'+esc(it.customer_name)+'</b><div class="inv-no">'+satTwoLine(it.sat_no||('#'+it.id))+'</div></td>'
         +'<td style="text-align:left;white-space:nowrap">'+esc(it.inv_date||'—')+'</td>'
         +'<td style="text-align:left;white-space:nowrap">'+esc(it.due_date||'—')+'</td>'
         +'<td style="text-align:left;white-space:nowrap">'+arStatusChip(it)+'</td>'
@@ -486,9 +500,9 @@
         +(it.paid_full?'':'<button class="btn notranslate" translate="no" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--gold);border:1px solid var(--line)" onclick="toggleNc('+it.id+')" title="할인 승인 증빙(Nota de crédito) 발기">N/C</button> ')
         +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
         +'</tr>';
-      if(arOpenRepay===it.id){ h+='<tr><td colspan="8" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
-      if(arOpenNc===it.id){ h+='<tr><td colspan="8" style="background:#fbf7ee">'+ncForm(it)+'</td></tr>'; }
-      if(arHistOpen===it.id){ h+='<tr><td colspan="8">'+histInnerHtml(it)+'</td></tr>'; }
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
+      if(arOpenNc===it.id){ h+='<tr><td colspan="9" style="background:#fbf7ee">'+ncForm(it)+'</td></tr>'; }
+      if(arHistOpen===it.id){ h+='<tr><td colspan="9">'+histInnerHtml(it)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     return h;
@@ -764,7 +778,7 @@
     const cuLine=[c.customer_rfc?('RFC: '+esc(c.customer_rfc)):'',c.customer_phone?('Tel: '+esc(c.customer_phone)):''].filter(Boolean).join(' · ');
     if(cuLine) h+='<div style="color:var(--muted);font-size:12px;margin-top:2px">'+cuLine+'</div>';
     h+='<table style="margin-top:14px;font-size:12px"><thead><tr>'
-      +'<th style="text-align:left">#</th>'
+      +'<th style="text-align:left">Folio</th>'
       +'<th style="text-align:left">Factura</th>'
       +'<th style="text-align:left">Emisión<br><span style="font-weight:600;color:var(--muted)">발행일</span></th>'
       +'<th style="text-align:left">Vencim.<br><span style="font-weight:600;color:var(--muted)">만료일</span></th>'
@@ -774,8 +788,8 @@
       +'<th style="text-align:right">Días<br><span style="font-weight:600;color:var(--muted)">미수일</span></th>'
       +'</tr></thead><tbody>';
     rows.forEach((r,idx)=>{ const pf=(r.paid_full||Number(r.outstanding)<=0.005); const ovd=(!pf&&r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(pf?' style="background:#edf6ed"':(idx%2===1?' style="background:#faf9f6"':'')))+'>'
-      +'<td style="text-align:left;font-weight:700">'+(ovd?'<span style="color:var(--expense)">●</span> ':(pf?'<span style="color:#2e8b4f">●</span> ':''))+'#'+(idx+1)+'</td>'
-      +'<td style="text-align:left;white-space:nowrap;padding-right:14px">'+folioHtml(r.sat_no||('#'+r.id), r.folio_no)+'</td>'
+      +'<td style="text-align:left;font-weight:800;white-space:nowrap;color:var(--brand)">'+(ovd?'<span style="color:var(--expense)">●</span> ':(pf?'<span style="color:#2e8b4f">●</span> ':''))+(r.folio_no?esc(String(r.folio_no)):'<span style="color:var(--muted);font-weight:400">—</span>')+'</td>'
+      +'<td style="text-align:left;white-space:nowrap;padding-right:14px">'+folioHtml(r.sat_no||('#'+r.id))+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.inv_date||'—')+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.due_date||'—')+'</td>'
       +'<td style="text-align:right">'+fmt(r.total_mxn)+'</td>'
@@ -823,14 +837,14 @@
     const cuLine=[c.customer_rfc?('RFC: '+c.customer_rfc):'', c.customer_phone?('Tel: '+c.customer_phone):''].filter(Boolean).join('   ');
     if(cuLine){ doc.text(cuLine, 40, y); y+=4; }
     y+=16;
-    // 컬럼 좌표(A4 pt, 좌40~우555). Folio는 '마지막 8자리(굵게)'+전체 UUID(회색)로 간결화.
-    const X={hash:44, fol:64, emi:215, ven:275, imp:380, pag:450, sal:525, dia:555};
+    // 컬럼 좌표(A4 pt, 좌40~우555). FOLIO(순번)가 첫 컬럼, FACTURA(SAT)는 '마지막 12자리(굵게)'+전체 UUID(회색).
+    const X={folio:44, fol:86, emi:234, ven:296, imp:400, pag:463, sal:525, dia:555};
     const isUuid=(s)=>String(s||'').replace(/[^A-Za-z0-9]/g,'').length>=20;
     const shortRef=(s)=>{ s=String(s||''); return isUuid(s)? s.slice(-12).toUpperCase() : s; };
     const fit=(t,x,yy,maxW,base)=>{ let s=base; doc.setFontSize(s); while(doc.getTextWidth(String(t))>maxW && s>5){ s-=0.3; doc.setFontSize(s);} doc.text(String(t),x,yy); };
     function drawHead(yy){ doc.setFillColor(243,241,236); doc.rect(40,yy-12,515,18,'F');
       doc.setTextColor(95); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
-      doc.text('#',X.hash,yy); doc.text('FACTURA',X.fol,yy); doc.text('EMISIÓN',X.emi,yy); doc.text('VENCIM.',X.ven,yy);
+      doc.text('FOLIO',X.folio,yy); doc.text('FACTURA',X.fol,yy); doc.text('EMISIÓN',X.emi,yy); doc.text('VENCIM.',X.ven,yy);
       doc.text('IMPORTE',X.imp,yy,{align:'right'}); doc.text('PAGADO',X.pag,yy,{align:'right'});
       doc.text('SALDO',X.sal,yy,{align:'right'}); doc.text('DÍAS',X.dia,yy,{align:'right'});
       doc.setFont('helvetica','normal'); }
@@ -844,11 +858,13 @@
       if(overdue){ doc.setFillColor(252,233,233); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(208,46,46); doc.rect(40,top-4,3,ROWH,'F'); }
       else if(pf){ doc.setFillColor(235,246,235); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(52,150,80); doc.rect(40,top-4,3,ROWH,'F'); }
       else if(idx%2===1){ doc.setFillColor(249,249,247); doc.rect(40,top-4,515,ROWH,'F'); }
-      doc.setTextColor(125); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.text(String(idx+1),X.hash,mid);
+      const folioTxt=(r.folio_no!=null&&String(r.folio_no).trim())?String(r.folio_no).trim():'';
+      if(folioTxt){ doc.setTextColor(20,61,52); doc.setFont('helvetica','bold'); fit(folioTxt,X.folio,mid,38,9.5); }
+      else { doc.setTextColor(170); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.text('—',X.folio,mid); }
       const full=String(r.sat_no||('#'+r.id));
-      const sref=(r.folio_no&&String(r.folio_no).trim())?String(r.folio_no).trim():shortRef(full);
-      doc.setTextColor(25); doc.setFont('helvetica','bold'); fit(sref,X.fol,mid,145,9.5);
-      if(isUuid(full) || (r.folio_no && full && full!==sref)){ doc.setFont('courier','normal'); doc.setFontSize(6.5); doc.setTextColor(155); doc.text(full,X.fol,sub); }
+      const sref=shortRef(full);
+      doc.setTextColor(25); doc.setFont('helvetica','bold'); fit(sref,X.fol,mid,132,9.5);
+      if(isUuid(full)){ doc.setFont('courier','normal'); doc.setFontSize(6.5); doc.setTextColor(155); doc.text(full,X.fol,sub); }
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(70);
       doc.text(String(r.inv_date||'—'),X.emi,mid);
       doc.text(String(r.due_date||'—'),X.ven,mid);
@@ -1157,6 +1173,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260704a"></script>
 </body>
 </html>
