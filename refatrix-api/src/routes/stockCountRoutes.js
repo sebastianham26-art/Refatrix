@@ -1,3 +1,4 @@
+// stockCountRoutes.js · rev 20260705r2 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -14,6 +15,7 @@ import { logEvent } from '../audit.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
+  try { console.log("[stockCountRoutes] loaded rev 20260705r2"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -623,7 +625,8 @@ export default async function stockCountRoutes(app) {
     };
   });
 
-  // ================= 프로모션 품목 마스터 =================  app.get('/api/promo-items', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+  // ================= 프로모션 품목 마스터 =================
+  app.get('/api/promo-items', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const includeInactive = String(req.query.all || '') === '1';
     const rows = (await query(
       `SELECT * FROM promo_items WHERE deleted_at IS NULL ${includeInactive ? '' : 'AND active=TRUE'} ORDER BY code`, [])).rows;
