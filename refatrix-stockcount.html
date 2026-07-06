@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703g</title>
+<title>재고실사 · Refatrix · build sc0703h</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -356,8 +356,35 @@ async function loadHome(){
   }
 }
 function badge(st){ const m={draft:['b-draft','작성중'],submitted:['b-sub','제출됨'],reconciled:['b-rec','반영완료']}; const x=m[st]||['b-draft',st]; return '<span class="badge '+x[0]+'">'+x[1]+'</span>'; }
+function sessActions(s){
+  if(s.del_requested_at){
+    let h='<span class="badge" style="background:#fdeecf;color:#8a6d3b">🕓 삭제 대기'+(s.del_requested_by_name?' · '+s.del_requested_by_name:'')+'</span>';
+    if(isDir()) h+=' <button class="btn danger sm" onclick="event.stopPropagation();approveDelSession('+s.id+')">삭제 승인</button> <button class="btn ghost sm" onclick="event.stopPropagation();rejectDelSession('+s.id+')">반려</button>';
+    return h;
+  }
+  return '<button class="btn ghost sm" onclick="event.stopPropagation();reqDelSession('+s.id+')" style="color:#C0564F;border-color:#e3b5b1">🗑 삭제요청</button>';
+}
 function sesRowHtml(s,resume){
-  return '<div class="sesrow" onclick="openCount('+s.id+')"><div><span class="c">'+s.code+'</span> '+badge(s.status)+'<div class="s">'+(s.scope_note||'')+' · '+(s.started_by_name||'')+' · '+new Date(s.started_at).toLocaleString('ko-KR')+' · '+s.lines+'건</div></div><div>'+(resume?'<span class="badge b-draft">이어쓰기 ▸</span>':(s.status==='submitted'?'<span class="badge b-sub">대조 ▸</span>':'<span class="badge b-rec">보기 ▸</span>'))+'</div></div>';
+  const go = resume?'<span class="badge b-draft">이어쓰기 ▸</span>':(s.status==='submitted'?'<span class="badge b-sub">대조 ▸</span>':'<span class="badge b-rec">보기 ▸</span>');
+  const canDel = (s.status==='draft'||s.status==='submitted');
+  const act = canDel ? sessActions(s) : '';
+  return '<div class="sesrow" onclick="openCount('+s.id+')">'
+    +'<div><span class="c">'+s.code+'</span> '+badge(s.status)+'<div class="s">'+(s.scope_note||'')+' · '+(s.started_by_name||'')+' · '+new Date(s.started_at).toLocaleString('ko-KR')+' · '+s.lines+'건</div></div>'
+    +'<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'+act+' '+go+'</div></div>';
+}
+async function reqDelSession(id){
+  if(!confirm('이 실사 세션 삭제를 요청할까요? 디렉터 승인 후 삭제됩니다.')) return;
+  const r=await api('/api/stock-counts/'+id+'/delete-request',{method:'POST'});
+  if(r.ok){ toast('삭제 요청됨'); loadHome(); } else toast((r&&r.note)||'요청 실패');
+}
+async function approveDelSession(id){
+  if(!confirm('이 세션을 삭제(승인)할까요? 목록에서 사라집니다.')) return;
+  const r=await api('/api/stock-counts/'+id+'/delete-approve',{method:'POST'});
+  if(r.ok){ toast('삭제됨'); loadHome(); } else toast((r&&r.note)||'삭제 실패');
+}
+async function rejectDelSession(id){
+  const r=await api('/api/stock-counts/'+id+'/delete-reject',{method:'POST'});
+  if(r.ok){ toast('요청 반려'); loadHome(); } else toast((r&&r.note)||'반려 실패');
 }
 function openStart(){ $('scopeInput').value=''; $('startModal').classList.add('on'); }
 async function createCount(){
@@ -704,16 +731,24 @@ async function submitReview(){
     save_rack: !!($('rvR_'+i)&&$('rvR_'+i).checked&&!$('rvR_'+i).disabled),
     comment: ($('rvC_'+i)?$('rvC_'+i).value:'') }));
   const ap=items.filter(x=>x.apply).length, rk=items.filter(x=>x.save_rack).length;
+  const pin=($('rvPin')?$('rvPin').value:'').trim();
+  if(!pin){ toast('디렉터 PIN을 입력하세요'); $('rvPin')&&$('rvPin').focus(); return; }
   if(!confirm('반영 '+ap+'건, 랙저장 '+rk+'건을 적용하고 실사를 마감합니다.\n반영 안 한 항목은 사유만 기록됩니다. 계속할까요?')) return;
-  const r=await api('/api/stock-counts/'+CUR.id+'/apply',{method:'POST',body:JSON.stringify({items})});
-  if(!r.ok){ toast(r.note||('적용 실패: '+(r.error||''))); return; }
+  const r=await api('/api/stock-counts/'+CUR.id+'/apply',{method:'POST',body:JSON.stringify({items,pin})});
+  if(!r.ok){
+    if(r.error==='bad_pin'||r.error==='pin_required'){ toast('PIN이 올바르지 않습니다'); if($('rvPin')){ $('rvPin').value=''; $('rvPin').focus(); } return; }
+    toast(r.note||('적용 실패: '+(r.error||''))); return;
+  }
+  if($('rvPin')) $('rvPin').value='';
   closeModal('reviewModal');
   toast('✔ 반영 '+r.applied+'건 · 랙저장 '+(r.rack_saved||0)+'건 완료');
   openReconcile(CUR.id);
 }
 async function finalizeEmpty(){
-  const r=await api('/api/stock-counts/'+CUR.id+'/apply',{method:'POST',body:JSON.stringify({items:[]})});
-  if(!r.ok){ toast(r.note||'마감 실패'); return; }
+  const pin=(window.prompt('반영완료로 마감합니다. 디렉터 PIN을 입력하세요.')||'').trim();
+  if(!pin){ toast('취소됨'); return; }
+  const r=await api('/api/stock-counts/'+CUR.id+'/apply',{method:'POST',body:JSON.stringify({items:[],pin})});
+  if(!r.ok){ toast((r.error==='bad_pin'||r.error==='pin_required')?'PIN이 올바르지 않습니다':(r.note||'마감 실패')); return; }
   toast('✔ 반영완료로 마감'); openReconcile(CUR.id);
 }
 // 반영 내역(코멘트) 보기
@@ -814,9 +849,10 @@ async function deletePromo(){
       <th>랙(실사→마스터)</th><th style="text-align:center">랙저장</th><th>코멘트</th>
     </tr></thead><tbody id="rvBody"></tbody></table>
   </div>
-  <div class="row" style="margin-top:12px;justify-content:space-between;align-items:center">
+  <div class="row" style="margin-top:12px;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <div id="rvSummary" class="mut"></div>
-    <div class="row">
+    <div class="row" style="align-items:center;gap:8px">
+      <input id="rvPin" type="password" inputmode="numeric" placeholder="디렉터 PIN" autocomplete="off" style="width:120px;padding:9px;border:2px solid var(--brass)">
       <button class="btn ghost sm" onclick="closeModal('reviewModal')">취소</button>
       <button class="btn brass" onclick="submitReview()">✔ 승인 및 반영</button>
     </div>
@@ -832,6 +868,6 @@ async function deletePromo(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
-<script src="refatrix-nav.js?v=20260703ne"></script>
+<script src="refatrix-nav.js?v=20260703nf"></script>
 </body>
 </html>

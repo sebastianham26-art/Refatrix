@@ -1,8 +1,9 @@
-// stockCountRoutes.js · rev 20260705r3 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260705r4 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
+import { verifyPin } from '../auth.js';
 
 // =====================================================================
 // Refatrix ERP · stockCountRoutes.js  (재고실사 / Inventory Count)
@@ -15,7 +16,7 @@ import { logEvent } from '../audit.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260705r3"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260705r4"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -86,6 +87,9 @@ export default async function stockCountRoutes(app) {
       started_by: r.started_by != null ? Number(r.started_by) : null, started_by_name: r.started_by_name || '',
       started_at: r.started_at, submitted_at: r.submitted_at, reconciled_at: r.reconciled_at,
       lines: r.lines != null ? Number(r.lines) : 0,
+      del_requested_at: r.del_requested_at || null,
+      del_requested_by: r.del_requested_by != null ? Number(r.del_requested_by) : null,
+      del_requested_by_name: r.del_requested_by_name || '',
     };
   }
 
@@ -95,9 +99,11 @@ export default async function stockCountRoutes(app) {
   app.get('/api/stock-counts', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const rows = (await query(
-      `SELECT sc.*, u.name AS started_by_name,
+      `SELECT sc.*, u.name AS started_by_name, du.name AS del_requested_by_name,
               (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = sc.id) AS lines
-         FROM stock_counts sc LEFT JOIN users u ON u.id = sc.started_by
+         FROM stock_counts sc
+         LEFT JOIN users u ON u.id = sc.started_by
+         LEFT JOIN users du ON du.id = sc.del_requested_by
         WHERE sc.status <> 'canceled'
         ORDER BY sc.started_at DESC LIMIT $1`, [limit])).rows;
     return { items: rows.map(sessRow) };
@@ -314,6 +320,39 @@ export default async function stockCountRoutes(app) {
     if (!sc) return reply.code(404).send({ error: 'not_found' });
     if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft' });
     await query(`UPDATE stock_counts SET status='canceled' WHERE id=$1`, [id]);
+    return { ok: true };
+  });
+
+  // ===== 세션 삭제: 담당자 요청 → 디렉터 승인 =====
+  // 담당자가 세션 삭제를 요청(진행중/제출됨 대상). 반영완료·이미취소는 불가.
+  app.post('/api/stock-counts/:id/delete-request', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (!['draft', 'submitted'].includes(sc.status)) return reply.code(409).send({ error: 'not_deletable', note: '진행중/제출된 실사만 삭제 요청할 수 있습니다.' });
+    await query(`UPDATE stock_counts SET del_requested_at=now(), del_requested_by=$2 WHERE id=$1`, [id, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `stock_count:${id}`, detail: { step: 'delete_request' } });
+    return { ok: true };
+  });
+
+  // 디렉터 승인 → 세션 취소(목록에서 사라짐, 데이터는 보존)
+  app.post('/api/stock-counts/:id/delete-approve', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '디렉터만 승인할 수 있습니다.' });
+    const id = Number(req.params.id);
+    const sc = (await query(`SELECT status, del_requested_at FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (!sc.del_requested_at) return reply.code(409).send({ error: 'not_requested', note: '삭제 요청이 없습니다.' });
+    if (!['draft', 'submitted'].includes(sc.status)) return reply.code(409).send({ error: 'not_deletable' });
+    await query(`UPDATE stock_counts SET status='canceled', del_requested_at=NULL, del_requested_by=NULL WHERE id=$1`, [id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `stock_count:${id}`, detail: { step: 'delete_approve' } });
+    return { ok: true };
+  });
+
+  // 디렉터 반려 → 요청 해제
+  app.post('/api/stock-counts/:id/delete-reject', { preHandler: [authGuard] }, async (req, reply) => {
+    if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '디렉터만 반려할 수 있습니다.' });
+    const id = Number(req.params.id);
+    await query(`UPDATE stock_counts SET del_requested_at=NULL, del_requested_by=NULL WHERE id=$1`, [id]);
     return { ok: true };
   });
 
@@ -540,6 +579,11 @@ export default async function stockCountRoutes(app) {
     const id = Number(req.params.id);
     const uid = req.ctx.perm.userId;
     const body = req.body || {};
+    // 디렉터 PIN 확인 — 반영은 되돌릴 수 없으므로 본인 재인증
+    const pin = String(body.pin || '');
+    if (!pin) return reply.code(400).send({ error: 'pin_required', note: 'PIN을 입력하세요.' });
+    const me = (await query(`SELECT pin_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
+    if (!me || !verifyPin(pin, me.pin_hash)) return reply.code(403).send({ error: 'bad_pin', note: 'PIN이 올바르지 않습니다.' });
     const hasDecisions = Array.isArray(body.items);
     const keyOf = (kind, pid, promoId) => `${kind}:${kind === 'part' ? pid : promoId}`;
     const decMap = new Map();
