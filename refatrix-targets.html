@@ -50,6 +50,12 @@
   .teambtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .smallnote{font-size:11px;color:var(--muted);white-space:normal}
   .custmeta{font-size:10.5px;color:var(--muted);white-space:normal;max-width:230px}
+  tr.actrow td{background:#faf8f3;color:#555}
+  tr.actrow td.lbl{background:#f3f0e8}
+  table.grid tr.curmon td{background:#fdf9ec}
+  table.grid tr.futmon td{color:#aaa}
+  table.grid td.eff{font-weight:700}
+  .carrylegend{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -90,9 +96,19 @@
       <div class="msg" id="topMsg"></div>
     </div>
 
+    <!-- ①-1 미달분 이월 · 당월 목표 계산 -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">①-1 당월 목표 계산 (미달분 이월) · 팀별/전체 실적</h2>
+      </div>
+      <div class="teampick" id="carryPick" style="margin-top:8px"></div>
+      <div class="scroll" style="margin-top:10px"><div id="carryGrid"><div class="hint">불러오는 중…</div></div></div>
+      <div class="carrylegend">당월 목표 = 그달 기본목표 + 직전 달 미달분(이월) · 미달분 = max(0, 당월목표 − 실적) · 초과 달성분은 이월하지 않음 · 매년 1월 이월 0 리셋 · 실적 = 게시 인보이스 IVA 제외(subtotal), 인보이스 날짜 기준 · 전체 = 팀별 이월을 각각 계산한 뒤 합산</div>
+    </div>
+
     <!-- ② 팀 선택 + 고객 할당 -->
     <div class="card">
-      <h2 style="margin:0 0 6px">② 고객별 목표 배분</h2>
+      <h2 style="margin:0 0 6px">② 고객별 목표 배분 <span class="smallnote">· 실적 = 게시 인보이스 IVA 제외(subtotal), 인보이스 날짜 기준</span></h2>
       <div class="teampick" id="teamPick"></div>
       <div id="teamStatusBar" style="margin-top:10px"></div>
       <div class="scroll" style="margin-top:10px"><div id="custGrid"><div class="hint">팀을 선택하세요.</div></div></div>
@@ -105,6 +121,7 @@
 <script>
   let session={token:null,user:null,api:''};
   let startYm='', months=[], overview=null, curTeam=null, teamData=null;
+  let carrySel='';   // 이월 표 선택: 'total' 또는 team id 문자열
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const isDirector=()=> session.user && session.user.role==='director';
@@ -176,6 +193,7 @@
       overview=await fetch(session.api+'/api/targets/overview?start='+startYm,{headers:auth()}).then(r=>r.json());
       months=overview.months;
       renderTop();
+      renderCarry();
       renderTeamPick();
       if(curTeam)selectTeam(curTeam);
     }catch(e){$('topGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -192,14 +210,27 @@
       const v=comp[m]||0;compSum+=v;
       return dir?`<td><input data-comp="${m}" type="number" value="${v||''}" oninput="onTopInput()"></td>`:`<td class="num">${fmt(v)}</td>`;
     }).join('')+`<td class="num"><b id="compSum">${fmt(compSum)}</b></td></tr>`;
-    // 팀 목표 행들
+    // 전체 실적 행(가시 전체 합 — 디렉터·영업지원)
+    const ct=overview.carry_total||null;
+    if(ct){
+      let as=0;
+      compRow+='<tr class="actrow"><td class="lbl smallnote">└ 전체 실적 (IVA 제외)</td>'+months.map(m=>{
+        const v=(ct[m]&&ct[m].actual)||0;as+=v;return `<td class="num">${fmt(v)}</td>`;
+      }).join('')+`<td class="num">${fmt(as)}</td></tr>`;
+    }
+    // 팀 목표 행들 (+ 팀 실적 행)
     let teamRows=(overview.teams||[]).map(t=>{
       let ts=0;
       const cells=months.map(m=>{
         const v=(t.months&&t.months[m])||0;ts+=v;
         return dir?`<td><input data-team="${t.id}" data-ym="${m}" type="number" value="${v||''}" oninput="onTopInput()"></td>`:`<td class="num">${fmt(v)}</td>`;
       }).join('');
-      return `<tr><td class="lbl">${t.name} <span class="pill st-${t.status}">${stLabel(t.status)}</span></td>${cells}<td class="num" data-teamsum="${t.id}">${fmt(ts)}</td></tr>`;
+      let as=0;
+      const actCells=months.map(m=>{
+        const v=(t.actuals&&t.actuals[m])||0;as+=v;return `<td class="num">${fmt(v)}</td>`;
+      }).join('');
+      return `<tr><td class="lbl">${t.name} <span class="pill st-${t.status}">${stLabel(t.status)}</span></td>${cells}<td class="num" data-teamsum="${t.id}">${fmt(ts)}</td></tr>`
+        +`<tr class="actrow"><td class="lbl smallnote">└ ${t.name} 실적 (IVA 제외)</td>${actCells}<td class="num">${fmt(as)}</td></tr>`;
     }).join('');
     // 팀 합 vs 전체(부족/초과) 행
     let diffRow='<tr><td class="lbl smallnote">전체−팀합 (부족/초과)</td>'+months.map(m=>{
@@ -211,6 +242,57 @@
   }
 
   function stLabel(s){return {draft:'작성중',submitted:'제출됨',approved:'승인',rejected:'반려'}[s]||s;}
+
+  // ===== ①-1 미달분 이월 · 당월 목표 표 =====
+  function nextYm(ym){const[y,m]=ym.split('-').map(Number);const d=new Date(Date.UTC(y,m,1));return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');}
+  function carryMapFor(sel){
+    if(sel==='total')return overview.carry_total||{};
+    const t=(overview.teams||[]).find(x=>String(x.id)===String(sel));
+    return (t&&t.carry)||{};
+  }
+  function renderCarry(){
+    const teams=overview.teams||[];
+    const opts=[];
+    if(overview.carry_total)opts.push({id:'total',name:'전체'});
+    teams.forEach(t=>opts.push({id:String(t.id),name:t.name}));
+    if(!opts.length){$('carryPick').innerHTML='';$('carryGrid').innerHTML='<div class="hint">표시할 팀이 없습니다.</div>';return;}
+    if(!carrySel||!opts.some(o=>o.id===carrySel))carrySel=opts[0].id;
+    $('carryPick').innerHTML=opts.map(o=>`<div class="teambtn ${carrySel===o.id?'on':''}" data-carrysel="${o.id}">${o.name}</div>`).join('');
+    document.querySelectorAll('[data-carrysel]').forEach(el=>el.addEventListener('click',()=>{carrySel=el.dataset.carrysel;renderCarry();}));
+    const cmap=carryMapFor(carrySel);
+    const cur=overview.current_ym||'';
+    const year=(startYm||cur).slice(0,4);
+    const yms=[];for(let i=1;i<=12;i++)yms.push(year+'-'+String(i).padStart(2,'0'));
+    const nxt=nextYm(cur);
+    let sumBase=0,sumAct=0;
+    const rows=yms.map(ym=>{
+      const e=cmap[ym];
+      const isCur=ym===cur, isNext=ym===nxt&&ym>cur, isFut=ym>cur&&!isNext;
+      const lab=`<td class="lbl" style="min-width:70px"><b>${ymLabel(ym)}</b>${isCur?' <span class="pill" style="background:#fff4d6;color:#8a6512">당월</span>':''}</td>`;
+      if(!e||isFut){
+        const b=e?e.base:0;if(e&&ym<=cur)sumBase+=b;
+        return `<tr class="futmon">${lab}<td class="num">${e?fmt(b):'—'}</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>`;
+      }
+      if(isNext){
+        return `<tr class="futmon">${lab}<td class="num">${fmt(e.base)}</td><td class="num">+${fmt(e.carryIn)} <span class="smallnote">(예상)</span></td><td class="num eff">${fmt(e.effective)} <span class="smallnote">(예상)</span></td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>`;
+      }
+      sumBase+=e.base;sumAct+=e.actual;
+      const rate=e.effective>0?Math.round(e.actual/e.effective*100):null;
+      const rem=e.remaining>0
+        ?`<span class="short">${fmt(e.remaining)}${isCur?' <span class="smallnote">(현재 기준)</span>':' →다음달'}</span>`
+        :'<span class="okrow">0 (달성)</span>';
+      return `<tr${isCur?' class="curmon"':''}>${lab}
+        <td class="num">${fmt(e.base)}</td>
+        <td class="num">${e.carryIn>0?'+'+fmt(e.carryIn):'0'}</td>
+        <td class="num eff">${fmt(e.effective)}</td>
+        <td class="num">${fmt(e.actual)}</td>
+        <td class="num">${rate==null?'—':rate+'%'}</td>
+        <td class="num">${rem}</td></tr>`;
+    }).join('');
+    const head='<tr><th class="lbl" style="min-width:70px">월</th><th>기본목표</th><th>+ 이월</th><th>= 당월 목표</th><th>실적</th><th>달성률</th><th>미달분(→다음달 이월)</th></tr>';
+    const foot=`<tr><td class="lbl"><b>합계(1월~당월)</b></td><td class="num"><b>${fmt(sumBase)}</b></td><td class="num">—</td><td class="num">—</td><td class="num"><b>${fmt(sumAct)}</b></td><td class="num">${sumBase>0?Math.round(sumAct/sumBase*100)+'%':'—'}</td><td class="num">—</td></tr>`;
+    $('carryGrid').innerHTML=`<table class="grid">${'<thead>'+head+'</thead><tbody>'+rows+foot+'</tbody>'}</table>`;
+  }
 
   // 전체/팀 입력 시 합계·차이 실시간 갱신
   function onTopInput(){
@@ -273,24 +355,34 @@
     // 고객 행
     let custRows=(teamData.customers||[]).map(c=>{
       const meta=`<div class="custmeta">${[c.customer_type||'—',c.stage_name||'—',(c.overdue>0?'연체 '+fmt(c.overdue):(c.outstanding>0?'미수 '+fmt(c.outstanding):'미수 없음')),'할인 '+c.discount+'%'].join(' · ')}${c.memo?'<br>메모: '+c.memo:''}</div>`;
-      let rsum=0;
+      let rsum=0,asum=0;
       const cells=months.map(m=>{
         const v=(c.alloc&&c.alloc[m])||0;rsum+=v;
-        const act=(c.actual&&c.actual[m])||0;
+        const act=(c.actual&&c.actual[m])||0;asum+=act;
         const actTxt=act?`<div class="smallnote" style="text-align:right">실적 ${fmt(act)}</div>`:'';
         return canEdit?`<td><input data-cust="${c.id}" data-ym="${m}" type="number" value="${v||''}" oninput="onCustInput()">${actTxt}</td>`:`<td class="num">${fmt(v)}${actTxt}</td>`;
       }).join('');
-      return `<tr><td class="lbl"><b>${c.name}</b> <span class="smallnote">${c.code}</span>${meta}</td>${cells}<td class="num csum" data-custsum="${c.id}">${fmt(rsum)}</td></tr>`;
+      const actSumTxt=asum?`<div class="smallnote" style="text-align:right">실적 ${fmt(asum)}</div>`:'';
+      return `<tr><td class="lbl"><b>${c.name}</b> <span class="smallnote">${c.code}</span>${meta}</td>${cells}<td class="num csum"><span data-custsum="${c.id}">${fmt(rsum)}</span>${actSumTxt}</td></tr>`;
     }).join('');
     // 고객 합 행
-    let allocRow='<tr><td class="lbl smallnote">고객 배분 합</td>'+months.map(m=>`<td class="num" data-allocsum="${m}">${fmt(teamData.cust_sum&&teamData.cust_sum[m]||0)}</td>`).join('')+'<td></td></tr>';
+    let allocRow='<tr><td class="lbl smallnote">고객 배분 합</td>'+months.map(m=>`<td class="num" data-allocsum="${m}">${fmt(teamData.cust_sum&&teamData.cust_sum[m]||0)}</td>`).join('')+`<td class="num" id="allocGrand"></td></tr>`;
+    // 실적 합 행 (고객별 실적의 월 합 + 총합 · IVA 제외)
+    let actGrand=0;
+    let actRow='<tr class="actrow"><td class="lbl smallnote">실적 합 (IVA 제외)</td>'+months.map(m=>{
+      let s=0;(teamData.customers||[]).forEach(c=>{s+=(c.actual&&c.actual[m])||0;});
+      actGrand+=s;
+      return `<td class="num">${fmt(s)}</td>`;
+    }).join('')+`<td class="num"><b>${fmt(actGrand)}</b></td></tr>`;
     // 부족/초과 행
     let shRow='<tr><td class="lbl smallnote">팀목표−배분 (부족/초과)</td>'+months.map(m=>{
       const s=(teamData.shortfall&&teamData.shortfall[m])||{};
       const txt=s.shortfall>0?`<span class="short">부족 ${fmt(s.shortfall)}</span>`:(s.over>0?`<span class="over">초과 ${fmt(s.over)}</span>`:'<span class="okrow">0</span>');
       return `<td class="num" data-sh="${m}">${txt}</td>`;
     }).join('')+'<td></td></tr>';
-    $('custGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${teamRow}${custRows}${allocRow}${shRow}</tbody></table>`;
+    $('custGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${teamRow}${custRows}${allocRow}${actRow}${shRow}</tbody></table>`;
+    const ag=Object.values(teamData.cust_sum||{}).reduce((a,b)=>a+Number(b||0),0);
+    const agEl=$('allocGrand');if(agEl)agEl.textContent=fmt(ag);
     if(!(teamData.customers||[]).length)$('custGrid').innerHTML+='<div class="hint">이 팀에 등록된 고객이 없습니다. 고객관리에서 먼저 고객을 추가하세요.</div>';
     renderStatusBar();
     renderCustActions();
@@ -314,6 +406,8 @@
       const sh=document.querySelector(`[data-sh="${m}"]`);
       if(sh)sh.innerHTML=diff>0?`<span class="short">부족 ${fmt(diff)}</span>`:(diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:'<span class="okrow">0</span>');
     });
+    const agEl=$('allocGrand');
+    if(agEl)agEl.textContent=fmt(Object.values(sumByM).reduce((a,b)=>a+Number(b||0),0));
   }
 
   function renderCustActions(){
