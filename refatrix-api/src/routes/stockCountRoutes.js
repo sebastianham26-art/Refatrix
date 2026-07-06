@@ -1,4 +1,4 @@
-// stockCountRoutes.js · rev 20260705r4 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260705r5 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -16,7 +16,7 @@ import { verifyPin } from '../auth.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260705r4"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260705r5"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -142,7 +142,9 @@ export default async function stockCountRoutes(app) {
          LEFT JOIN users u ON u.id = sc.started_by WHERE sc.id=$1`, [id])).rows[0];
     if (!sc) return reply.code(404).send({ error: 'not_found' });
     const lines = (await query(
-      `SELECT l.*, COALESCE(p.name, pi.name) AS item_name, ru.name AS del_requested_by_name
+      `SELECT l.*, COALESCE(p.name, pi.name) AS item_name, ru.name AS del_requested_by_name,
+              (SELECT STRING_AGG(DISTINCT s.syd_code, ', ') FROM product_syd_codes s
+                 WHERE s.product_id = l.product_id AND s.syd_code IS NOT NULL AND TRIM(s.syd_code) <> '') AS syd_code
          FROM stock_count_lines l
          LEFT JOIN products p ON p.id = l.product_id
          LEFT JOIN promo_items pi ON pi.id = l.promo_item_id
@@ -155,6 +157,7 @@ export default async function stockCountRoutes(app) {
         product_id: l.product_id != null ? Number(l.product_id) : null,
         promo_item_id: l.promo_item_id != null ? Number(l.promo_item_id) : null,
         raw_code: l.raw_code, matched_code: l.matched_code || '', match_source: l.match_source || '',
+        syd_code: l.syd_code || '',
         item_name: l.item_name || '', rack_scanned: l.rack_scanned || '', counted_qty: num(l.counted_qty),
         del_requested_at: l.del_requested_at || null, del_requested_by: l.del_requested_by != null ? Number(l.del_requested_by) : null, del_requested_by_name: l.del_requested_by_name || '',
       })),
@@ -212,13 +215,17 @@ export default async function stockCountRoutes(app) {
       [id, kind, productId, promoId, raw, matched, r.source, rack, qty, req.ctx.perm.userId])).rows[0];
 
     const name = kind === 'part' ? (r.product.name || '') : (kind === 'promo' ? (r.promo.name || '') : '');
-    let systemQty = null, availQty = null;
-    if (kind === 'part') { systemQty = num((await query(`SELECT stock_qty FROM products WHERE id=$1`, [productId])).rows[0].stock_qty); availQty = await availFor(productId); }
+    let systemQty = null, availQty = null, sydCode = '';
+    if (kind === 'part') {
+      systemQty = num((await query(`SELECT stock_qty FROM products WHERE id=$1`, [productId])).rows[0].stock_qty);
+      availQty = await availFor(productId);
+      sydCode = (await query(`SELECT STRING_AGG(DISTINCT syd_code, ', ') AS s FROM product_syd_codes WHERE product_id=$1 AND syd_code IS NOT NULL AND TRIM(syd_code) <> ''`, [productId])).rows[0].s || '';
+    }
     else if (kind === 'promo') { systemQty = num((await query(`SELECT stock_qty FROM promo_items WHERE id=$1`, [promoId])).rows[0].stock_qty); }
 
     return {
       id: Number(row.id), item_kind: kind, source: r.source, product_id: productId, promo_item_id: promoId,
-      raw_code: raw, matched_code: matched || '', item_name: name, rack_scanned: rack || '',
+      raw_code: raw, matched_code: matched || '', syd_code: sydCode, item_name: name, rack_scanned: rack || '',
       counted_qty: qty, system_qty: systemQty, avail_qty: availQty,
     };
   });

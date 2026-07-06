@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703h</title>
+<title>재고실사 · Refatrix · build sc0703i</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -79,6 +79,10 @@
   .modal .box{background:#fff;border-radius:16px;padding:18px;max-width:560px;width:100%;max-height:86vh;overflow:auto}
   .mut{color:var(--mut);font-size:12px}
   a.link{color:var(--green);font-weight:700;font-size:13px;text-decoration:none;cursor:pointer}
+  .rackbar{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}
+  .rackchip{border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:7px 13px;font-size:13px;cursor:pointer;font-weight:700;color:var(--ink)}
+  .rackchip.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .rackchip b{font-weight:800}
 </style>
 </head>
 <body>
@@ -456,7 +460,7 @@ async function saveLine(){
 let LINES=[];
 function appendLineLocal(r){
   LINES.push({ id:r.id, item_kind:r.item_kind, product_id:r.product_id, promo_item_id:r.promo_item_id,
-    raw_code:r.raw_code, matched_code:r.matched_code, item_name:r.item_name, rack_scanned:r.rack_scanned, counted_qty:r.counted_qty });
+    raw_code:r.raw_code, matched_code:r.matched_code, syd_code:r.syd_code, item_name:r.item_name, rack_scanned:r.rack_scanned, counted_qty:r.counted_qty });
   renderLines(LINES);
 }
 // 스캔모드 초고속: 입력창 즉시 비우고 resolve 없이 바로 저장, 전체 새로고침 없이 로컬 추가
@@ -481,23 +485,33 @@ async function postLine(code,qty,quiet){
 async function refreshLines(){ const r=await api('/api/stock-counts/'+CUR.id); if(r.ok) renderLines(r.lines||[]); }
 let SEL=new Set();
 function isDir(){ return !!(session.user && session.user.role==='director'); }
+let RACKFILTER='__all__';
+function setRackFilter(rk){ RACKFILTER=rk; renderLines(LINES); }
 function renderLines(lines){
   LINES=lines;
   $('lineCount').textContent='('+lines.length+'건)';
   const idset={}; lines.forEach(l=>idset[l.id]=1); Array.from(SEL).forEach(id=>{ if(!idset[id]) SEL.delete(id); });
   if(!lines.length){ $('linesBox').innerHTML='<div class="mut" style="padding:8px">아직 기록이 없습니다. 랙 → 코드 → 수량 순으로 스캔하세요.</div>'; renderSelBar(); return; }
   const groups={}; lines.forEach(l=>{ const k=l.rack_scanned||'(랙 미지정)'; (groups[k]=groups[k]||[]).push(l); });
-  let html='';
-  Object.keys(groups).forEach(rk=>{
-    html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th style="width:30px"></th><th>코드</th><th>품명</th><th>구분</th><th class="num">수량</th><th>삭제</th></tr></thead><tbody>';
+  const rackKeys=Object.keys(groups);
+  if(RACKFILTER!=='__all__' && !groups[RACKFILTER]) RACKFILTER='__all__';   // 랙이 사라졌으면 전체로
+  // 랙 빠른 이동 토글 바
+  let html='<div class="rackbar"><button class="rackchip'+(RACKFILTER==='__all__'?' on':'')+'" onclick="setRackFilter(\'__all__\')">전체 '+lines.length+'</button>';
+  rackKeys.forEach(rk=>{ const esc=rk.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); html+='<button class="rackchip'+(RACKFILTER===rk?' on':'')+'" onclick="setRackFilter(\''+esc+'\')">📍 '+rk+' <b>'+groups[rk].length+'</b></button>'; });
+  html+='</div>';
+  const showKeys = RACKFILTER==='__all__' ? rackKeys : [RACKFILTER];
+  showKeys.forEach(rk=>{
+    html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th style="width:30px"></th><th>코드</th><th>SYD</th><th>품명</th><th class="num">수량</th><th>삭제</th></tr></thead><tbody>';
     groups[rk].forEach(l=>{
-      const kind=l.item_kind==='unknown'?'<span class="pill p-unk">미등록</span>':(l.item_kind==='promo'?'<span class="pill p-over">프로모</span>':'<span class="pill p-match">부품</span>');
       const pend=!!l.del_requested_at;
       const checked=SEL.has(l.id)?' checked':'';
       const badge=pend?('<span class="pill" style="background:#fdeecf;color:#8a6d3b">🕓 삭제 승인 대기'+(l.del_requested_by_name?' · '+l.del_requested_by_name:'')+'</span>'):'';
+      const syd = l.item_kind==='unknown' ? '<span class="pill p-unk">미등록</span>'
+                : (l.item_kind==='promo' ? '<span class="pill p-over">프로모</span>'
+                : (l.syd_code ? l.syd_code : '<span class="mut">—</span>'));
       html+='<tr'+(pend?' style="background:#fff8ec"':'')+'>'
         +'<td><input type="checkbox" class="cbx" onchange="toggleSel('+l.id+',this.checked)"'+checked+'></td>'
-        +'<td>'+(l.matched_code||l.raw_code)+'</td><td>'+(l.item_name||'')+'</td><td>'+kind+'</td>'
+        +'<td>'+(l.matched_code||l.raw_code)+'</td><td>'+syd+'</td><td>'+(l.item_name||'')+'</td>'
         +'<td class="num"><input type="number" value="'+l.counted_qty+'" min="0" step="1" style="width:74px;padding:5px" onchange="editLine('+l.id+',this.value)"></td>'
         +'<td>'+badge+' <button onclick="delOneDirect('+l.id+')" style="background:#C0564F;color:#fff;border:0;border-radius:8px;padding:5px 11px;font-weight:800;cursor:pointer;font-size:13px">🗑 삭제</button></td></tr>';
     });
@@ -868,6 +882,6 @@ async function deletePromo(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
-<script src="refatrix-nav.js?v=20260703nf"></script>
+<script src="refatrix-nav.js?v=20260703ng"></script>
 </body>
 </html>
