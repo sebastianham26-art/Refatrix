@@ -143,11 +143,12 @@ export default async function financeRoutes(app) {
     const approved = !(direction === 'out' && !isDirector);
     const r = await query(
       `INSERT INTO transactions
-         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15) RETURNING id`,
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16) RETURNING id`,
       [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
        status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null,
-       (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null]);
+       (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null,
+       direction === 'out' && b.cash_due === true]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
   });
@@ -250,6 +251,7 @@ export default async function financeRoutes(app) {
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
               t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
+              t.cash_due, t.cash_due_done_at,
               si.sat_no AS sat_no, c.name AS customer_name,
               (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM transactions t
@@ -1273,6 +1275,50 @@ export default async function financeRoutes(app) {
 
   // 지급/입금 확인: 예정(plan) 거래 → 실제(actual). 날짜·금액 수정 가능(계획과 다를 수 있음).
   // body: { account_id, pay_date?, amount?, fx_rate?, memo? }
+  // ===== 💰 현금받아야함 (금고 회수 관리) =====
+  // 회수 목록 — 디렉터 전용. summary: 미수령 건수·합계(MXN), 수령완료 건수.
+  app.get('/api/transactions/cash-due', { preHandler: [authGuard, requireDirector] }, async () => {
+    const items = (await query(
+      `SELECT t.id, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, a.name AS account_name,
+              t.category_code, cat.name AS category_name, t.amount, t.currency, t.amount_mxn,
+              t.memo, t.approved, t.receipt_no, t.cash_due_done_at, u.name AS done_by_name
+         FROM transactions t
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN users u ON u.id=t.cash_due_done_by
+        WHERE t.cash_due=true AND t.deleted_at IS NULL
+        ORDER BY (t.cash_due_done_at IS NOT NULL), t.txn_date DESC, t.id DESC`)).rows
+      .map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn) || 0 }));
+    const pending = items.filter((x) => !x.cash_due_done_at);
+    return { items, summary: { pending_count: pending.length, pending_mxn: r2(pending.reduce((s, x) => s + x.amount_mxn, 0)),
+      done_count: items.length - pending.length } };
+  });
+
+  // 지정/해제 {on:boolean} — 지출 거래만. 해제 시 수령기록도 초기화.
+  app.post('/api/transactions/:id/cash-due', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const on = req.body && req.body.on === true;
+    const t = (await query(`SELECT direction FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (on && t.direction !== 'out') return reply.code(400).send({ error: 'expense_only' });
+    await query(`UPDATE transactions SET cash_due=$1, cash_due_done_at=NULL, cash_due_done_by=NULL, updated_by=$2 WHERE id=$3`, [on, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { cash_due: on } });
+    return { ok: true, cash_due: on };
+  });
+
+  // 수령완료/되돌리기 {done:boolean} — 디렉터 전용(실물 현금을 받는 사람).
+  app.post('/api/transactions/:id/cash-due-done', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const done = req.body && req.body.done === true;
+    const r = await query(
+      `UPDATE transactions SET cash_due_done_at=${'CASE WHEN $1 THEN now() ELSE NULL END'},
+              cash_due_done_by=CASE WHEN $1 THEN $2::int ELSE NULL END, updated_by=$2
+        WHERE id=$3 AND deleted_at IS NULL AND cash_due=true RETURNING id`, [done, req.ctx.perm.userId, id]);
+    if (!r.rows[0]) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { cash_due_done: done } });
+    return { ok: true };
+  });
+
   app.post('/api/transactions/:id/confirm-pay', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
     const t = (await query(`SELECT * FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
