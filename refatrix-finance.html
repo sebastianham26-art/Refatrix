@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0705b</title>
+<title>Refatrix ERP · 재무 · build fin-0705c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1108,6 +1108,7 @@
           <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn cf-go">${t.direction==='in'?'입금':'지급'} 확인 (실제 반영)</button>
             <button class="btn ghost cf-planedit">계획 수정</button>
+            ${isDirector()?'<button class="btn ghost cf-del" style="border-color:var(--expense);color:var(--expense)">예정 삭제</button>':''}
             <button class="btn ghost cf-cancel">닫기</button>
           </div>
           <div class="planedit hidden" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
@@ -1129,6 +1130,8 @@
       if(cfAmtEl){const upd=()=>updateRemainderUi(box,'cf',Number(cfAmtEl.value)||0,cfPlanAmt,t.currency);cfAmtEl.addEventListener('input',upd);upd();}
       box.querySelector('.cf-planedit').onclick=()=>{box.querySelector('.planedit').classList.toggle('hidden');};
       box.querySelector('.pe-save').onclick=()=>savePlanEdit(t.id,box);
+      const cfDel=box.querySelector('.cf-del');
+      if(cfDel)cfDel.onclick=()=>deleteTxnDirect(t.id,{plan:true,recurring:isRecur});
       return;
     }
     if(!t.editable){box.innerHTML='<div class="hint">이 거래는 여기서 수정할 수 없습니다.</div>';return;}
@@ -1199,9 +1202,13 @@
   }
 
   // 디렉터 직접 삭제(소프트) — 매출연계 거래는 반제/정산 무결성 때문에 금지(반제 취소 경로 안내)
-  async function deleteTxnDirect(id){
-    const t=txnMap[id]||{};
-    if(!confirm('이 거래를 삭제할까요?\n\n'+String(t.txn_date||'').slice(0,10)+' · '+(t.direction==='in'?'수입':'지출')+' '+fmt(t.amount)+' '+(t.currency||'')+'\n'+(t.memo||'')+'\n\n삭제 즉시 잔액·현금흐름에서 제외됩니다.'))return;
+  async function deleteTxnDirect(id,opt){
+    const t=txnMap[id]||{};opt=opt||{};
+    const head=opt.plan?'이 예정(계획)을 삭제할까요?':'이 거래를 삭제할까요?';
+    const tail=opt.plan
+      ?(opt.recurring?'\n\n※ 고정비 회차 예정입니다. 삭제해도 [생성]으로 다시 만들어지지 않습니다(삭제 의도 보존).\n삭제 즉시 현금흐름 예정에서 제외됩니다.':'\n\n삭제 즉시 현금흐름 예정에서 제외됩니다.')
+      :'\n\n삭제 즉시 잔액·현금흐름에서 제외됩니다.';
+    if(!confirm(head+'\n\n'+String((t.plan_date||t.txn_date)||'').slice(0,10)+' · '+(t.direction==='in'?'수입':'지출')+' '+fmt(t.amount)+' '+(t.currency||'')+'\n'+(t.memo||'')+tail))return;
     try{
       const res=await fetch(session.api+'/api/transactions/'+id,{method:'DELETE',headers:auth()});
       const d=await res.json();

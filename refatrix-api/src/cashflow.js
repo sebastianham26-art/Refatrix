@@ -237,7 +237,7 @@ export { round2 };
 //   planOut  : 권한계좌의 예정 지출 거래 [{ id, plan_date|txn_date, amount_mxn, account_name, category_name, memo }]
 //   month    : 'YYYY-MM'
 // 반환: { ar: { [date]: {sum, items[]} }, ap: { [date]: {sum, items[]} } }
-export function calendarArApByDay(invoices, planOut, month, realizedOut) {
+export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn) {
   const ar = {}; const ap = {};
   for (const iv of invoices || []) {
     const d = String(iv.due_date).slice(0, 10);
@@ -254,6 +254,17 @@ export function calendarArApByDay(invoices, planOut, month, realizedOut) {
     ar[d].sum = round2(ar[d].sum + Math.max(0, out)); // 예상잔고엔 미수(remaining)만 반영
     ar[d].items.push({ id: iv.id, customer_name: iv.customer_name, sat_no: iv.sat_no,
       amount_mxn: round2(Math.max(0, out)), total_mxn: round2(total), collected_mxn: round2(collected), state });
+  }
+  // 수동 예정 수입(인보이스 없는 plan·in): AR에 합류 — 달력 표시 + 예상잔고 반영.
+  // (표·워터폴·하단 예정 섹션에는 이미 포함되던 것을 달력/예상잔고에도 대칭화)
+  for (const t of planIn || []) {
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (d.slice(0, 7) !== month) continue;
+    const amt = Number(t.amount_mxn) || 0;
+    if (!ar[d]) ar[d] = { sum: 0, items: [] };
+    ar[d].sum = round2(ar[d].sum + amt);
+    ar[d].items.push({ id: t.id, customer_name: (t.memo || t.category_name || t.account_name || '예정 수입'),
+      sat_no: null, amount_mxn: round2(amt), total_mxn: round2(amt), collected_mxn: 0, state: 'pending', manual: true });
   }
   for (const t of planOut || []) {
     const d = String(t.plan_date || t.txn_date).slice(0, 10);
