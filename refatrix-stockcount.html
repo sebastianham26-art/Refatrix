@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703i</title>
+<title>재고실사 · Refatrix · build sc0703j</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -461,6 +461,7 @@ let LINES=[];
 function appendLineLocal(r){
   LINES.push({ id:r.id, item_kind:r.item_kind, product_id:r.product_id, promo_item_id:r.promo_item_id,
     raw_code:r.raw_code, matched_code:r.matched_code, syd_code:r.syd_code, item_name:r.item_name, rack_scanned:r.rack_scanned, counted_qty:r.counted_qty });
+  RACKFILTER = r.rack_scanned || '(랙 미지정)';   // 방금 스캔한 랙만 표시 → 스캔마다 전체 재그림 방지
   renderLines(LINES);
 }
 // 스캔모드 초고속: 입력창 즉시 비우고 resolve 없이 바로 저장, 전체 새로고침 없이 로컬 추가
@@ -500,6 +501,10 @@ function renderLines(lines){
   rackKeys.forEach(rk=>{ const esc=rk.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); html+='<button class="rackchip'+(RACKFILTER===rk?' on':'')+'" onclick="setRackFilter(\''+esc+'\')">📍 '+rk+' <b>'+groups[rk].length+'</b></button>'; });
   html+='</div>';
   const showKeys = RACKFILTER==='__all__' ? rackKeys : [RACKFILTER];
+  if(RACKFILTER==='__all__' && lines.length>300){
+    html+='<div class="mut" style="padding:14px;text-align:center;line-height:1.6">전체 <b>'+lines.length+'건</b>이 많아 목록을 숨겼습니다.<br>위에서 <b>랙</b>을 선택하면 해당 랙만 빠르게 표시됩니다.</div>';
+    $('linesBox').innerHTML=html; renderSelBar(); return;
+  }
   showKeys.forEach(rk=>{
     html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th style="width:30px"></th><th>코드</th><th>SYD</th><th>품명</th><th class="num">수량</th><th>삭제</th></tr></thead><tbody>';
     groups[rk].forEach(l=>{
@@ -630,6 +635,7 @@ function renderChips(){
   const v=$('valLine');
   if(s.value_cost_impact!=null){ v.innerHTML='차이 수량 합 <b>'+fmt(s.diff_qty_total)+'</b> · 원가영향 <b>'+money(s.value_cost_impact)+'</b> · 정가영향 <b>'+money(s.value_list_impact)+'</b> <span class="mut">(+초과/−부족)</span>'; }
   else { v.innerHTML='차이 수량 합 <b>'+fmt(s.diff_qty_total)+'</b>'; }
+  if(s.uncounted_truncated){ v.innerHTML+='<div class="mut" style="margin-top:4px">※ 미실사 <b>'+fmt(s.uncounted)+'</b>건 중 상위 <b>'+fmt(s.uncounted_shown)+'</b>건만 표로 표시(개수는 정확). 실사가 진행될수록 줄어듭니다.</div>'; }
 }
 function setFilter(f){ reconFilter=f; renderChips(); renderRcTable(); }
 function renderApply(){
@@ -882,6 +888,6 @@ async function deletePromo(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
-<script src="refatrix-nav.js?v=20260703ng"></script>
+<script src="refatrix-nav.js?v=20260703nh"></script>
 </body>
 </html>

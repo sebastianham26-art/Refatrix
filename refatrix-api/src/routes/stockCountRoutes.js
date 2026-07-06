@@ -1,4 +1,4 @@
-// stockCountRoutes.js · rev 20260705r5 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260705r6 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -16,7 +16,7 @@ import { verifyPin } from '../auth.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260705r5"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260705r6"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -409,13 +409,19 @@ export default async function stockCountRoutes(app) {
         GROUP BY raw_code ORDER BY raw_code`, [id])).rows;
 
     // 재고 있으나 실사되지 않은 부품(미실사) — 놓친 랙 탐지
+    // 개수는 정확히 세되(요약용), 표시 행은 상위 N건만(부분 실사 중 카탈로그 전체 반환 방지)
+    const UNCOUNTED_LIMIT = 300;
+    const uncountedTotal = Number((await query(
+      `SELECT COUNT(*)::int AS n FROM products p
+        WHERE p.deleted_at IS NULL AND COALESCE(p.stock_qty,0) > 0
+          AND NOT EXISTS (SELECT 1 FROM stock_count_lines l WHERE l.count_id=$1 AND l.product_id=p.id)`, [id])).rows[0].n);
     const uncounted = (await query(
       `SELECT p.id AS product_id, p.code, p.name, p.rack_location, p.stock_qty, p.avg_cost, p.list_price
          FROM products p
         WHERE p.deleted_at IS NULL AND COALESCE(p.stock_qty,0) > 0
           AND NOT EXISTS (SELECT 1 FROM stock_count_lines l
                            WHERE l.count_id=$1 AND l.product_id=p.id)
-        ORDER BY p.stock_qty DESC`, [id])).rows;
+        ORDER BY p.stock_qty DESC LIMIT ${UNCOUNTED_LIMIT}`, [id])).rows;
 
     const rows = [];
     const S = { match: 0, short: 0, over: 0, uncounted: 0, unknown: 0 };
@@ -449,7 +455,6 @@ export default async function stockCountRoutes(app) {
       });
     }
     for (const p of uncounted) {
-      S.uncounted += 1;
       const sys = num(p.stock_qty);
       rows.push({
         kind: 'part', category: 'uncounted', product_id: Number(p.product_id), code: p.code, name: p.name || '',
@@ -457,6 +462,7 @@ export default async function stockCountRoutes(app) {
         ...(withValue ? { value_cost: 0, value_list: 0 } : {}),
       });
     }
+    S.uncounted = uncountedTotal;   // 요약 개수는 전체(정확), 위 rows 는 상위 N건만
     for (const u of unknowns) {
       S.unknown += 1;
       rows.push({
@@ -474,6 +480,7 @@ export default async function stockCountRoutes(app) {
 
     const summary = {
       ...S, counted_items: parts.length + promos.length, diff_qty_total: round2(diffQty),
+      uncounted_shown: uncounted.length, uncounted_truncated: uncountedTotal > uncounted.length,
       ...(withValue ? { value_cost_impact: round2(valCost), value_list_impact: round2(valList) } : {}),
     };
     return { count: sessRow(sc), can_apply: isDirector(req) && sc.status === 'submitted', summary, rows };
