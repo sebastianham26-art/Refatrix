@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0705d</title>
+<title>Refatrix ERP · 재무 · build fin-0705e</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1807,12 +1807,14 @@
 
   // 월간달력: 일요일 시작·주말 음영·AR/AP/잔고 3칸 + 하단 실적/예정 섹션
   let calMonth=new Date().toISOString().slice(0,7);
+  let calCarry=null;   // {date, ar_sum, ap_sum, net, items[]} | null
   async function renderMonthFromApi(){
     const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
       const res=await fetch(`${session.api}/api/cashflow/month?month=${calMonth}`,{headers:auth()});
       if(!res.ok){b.innerHTML=`<div class="hint">월간달력을 불러오지 못했습니다 (HTTP ${res.status}).${res.status===404?' 최신 백엔드(현금흐름 월별 API)가 배포되었는지 확인하세요.':''}</div>`;return;}
       const d=await res.json();
+      calCarry=d.carry||null;   // 이월(지난 미실현 AR/AP → 오늘 합산) — 셀·상세에서 사용
       const dayMap={};d.days.forEach(x=>dayMap[x.date]=x);
       const [y,m]=calMonth.split('-').map(Number);
       const first=new Date(Date.UTC(y,m-1,1));
@@ -1830,7 +1832,8 @@
         cells+=`<div class="cal-cell${we}" data-day="${ds}">
           <div class="cal-daynum">${dd}</div>
           ${cfShow.plan?`<div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
-          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>`:''}
+          <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
+          <div class="cal-slot"><span class="k" style="color:#c77714;font-weight:700">이월</span><span>${(calCarry&&ds===calCarry.date)?`${calCarry.ar_sum?'<b style=\"color:var(--income)\">+'+fmt(calCarry.ar_sum)+'</b>':''}${calCarry.ar_sum&&calCarry.ap_sum?' ':''}${calCarry.ap_sum?'<b style=\"color:var(--expense)\">-'+fmt(calCarry.ap_sum)+'</b>':''}`:''}</span></div>`:''}
           ${cfShow.actual?`<div class="cal-slot"><span class="k">실적</span><span style="color:${netColor(actNet)}">${actNet?fmtSigned(actNet):''}</span></div>`:''}
           <div class="cal-slot"><span class="k">${cfState.mode==='plan'?'예상':'잔고'}</span><span style="font-weight:700;${cfState.mode==='plan'?'color:#7a4fb0':''}">${v?fmt(cfState.mode==='plan'?(v.balance_proj!=null?v.balance_proj:v.balance):(v.balance!=null?v.balance:v.cumulative)):''}</span></div>
         </div>`;
@@ -1838,6 +1841,10 @@
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
         <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · ${cfState.mode==='plan'?'<span style="color:#7a4fb0">예상=실적+AR−AP 누적</span>':'잔고=누적(실적)'} · <b>잔고는 잔액 열람 가능한 모든 계좌 기준</b>(세부내역 없는 '잔액만' 계좌 포함 — 표시 항목 합계와 다를 수 있음)</span></div>
+        <div class="hint" style="margin:2px 0 6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#fdebd7;border:1px solid #eccb9c;vertical-align:-1px;margin-right:4px"></i>실적 반영된 예정(실현)</span>
+          <span><b style="color:#c77714">이월</b> = 지난 미실현 AR·AP를 오늘로 합산 — 원래 날짜는 보존(과거 달에서 그대로 확인)</span>
+        </div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
         ${renderMonthSections(d)}`;
@@ -1896,12 +1903,12 @@
         const apItems=(v&&v.ap_items)||[];
         const cashItems=(v&&v.items)?v.items.filter(t=>t.status==='actual'):[];
         const actNet=Math.round(cashItems.reduce((s,t)=>s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0),0)*100)/100;
-        const arLine=(x)=>{const g=pgTouched(x),p=pgPaid(x);const amt=p?(x.total_mxn!=null?x.total_mxn:x.amount_mxn):x.amount_mxn;const bd=p?' <span class="badge" style="background:#e6efe9;color:#2f8f5b">완납</span>':(x&&x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부</span>':'');return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${g?'background:#f4f2ec':''}">
-          <span${g?' style="color:#999"':''}>${x.customer_name||''}${x.sat_no?' · '+x.sat_no:''}${bd}</span>
-          <span style="color:${g?'#999':'var(--income)'}">+${fmt(amt)}</span></div>`;};
-        const apLine=(x)=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${p?'background:#f4f2ec':''}">
-          <span${p?' style="color:#999"':''}>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}${bd}</span>
-          <span style="color:${p?'#999':'var(--expense)'}">-${fmt(x.amount_mxn)}</span></div>`;};
+        const arLine=(x)=>{const g=pgTouched(x),p=pgPaid(x);const amt=p?(x.total_mxn!=null?x.total_mxn:x.amount_mxn):x.amount_mxn;const bd=p?' <span class="badge" style="background:#e6efe9;color:#2f8f5b">완납</span>':(x&&x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부</span>':'');return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${g?'background:#fdebd7':''}">
+          <span${g?' style="color:#a06a28"':''}>${x.customer_name||''}${x.sat_no?' · '+x.sat_no:''}${bd}</span>
+          <span style="color:${g?'#a06a28':'var(--income)'}">+${fmt(amt)}</span></div>`;};
+        const apLine=(x)=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${p?'background:#fdebd7':''}">
+          <span${p?' style="color:#a06a28"':''}>${x.category_name||x.account_name||''}${x.memo?' · '+x.memo.slice(0,22):''}${bd}</span>
+          <span style="color:${p?'#a06a28':'var(--expense)'}">-${fmt(x.amount_mxn)}</span></div>`;};
         const cashLine=(t)=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 6px;border-radius:6px;margin:1px 0;${t.status==='actual'?'background:#f4f2ec':''}">
           <span>${t.category_name||t.category_code||''}${t.memo?' · '+String(t.memo).slice(0,22):''}</span>
           <span style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</span></div>`;
@@ -1929,20 +1936,28 @@
   function showDayDetail(ds,v){
     const dt=$('calDetail');if(!dt)return;
     const ar=(v&&v.ar_items)||[], ap=(v&&v.ap_items)||[], cash=((v&&v.items)||[]).filter(t=>t.status==='actual');
-    if(!ar.length&&!ap.length&&!cash.length){dt.innerHTML=`<div class="hint">${ds}: 내역 없음</div>`;return;}
+    const cy=(calCarry&&ds===calCarry.date)?calCarry:null;
+    if(!ar.length&&!ap.length&&!cash.length&&!cy){dt.innerHTML=`<div class="hint">${ds}: 내역 없음</div>`;return;}
     const arTbl=ar.length?`<div style="font-weight:700;margin:6px 0 2px;color:var(--income)">수금예정 (AR) · 합계 +${fmt(v.ar)}</div>
-      <table><thead><tr><th>고객</th><th>SAT</th><th class="num">금액</th></tr></thead><tbody>${ar.map(x=>{const g=pgTouched(x),p=pgPaid(x);const amt=p?(x.total_mxn!=null?x.total_mxn:x.amount_mxn):x.amount_mxn;const bd=p?' <span class="badge" style="background:#e6efe9;color:#2f8f5b">완납</span>':(x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부수금</span>':'');return `<tr style="${g?'background:#f4f2ec':''}">
-        <td style="${g?'color:#999':''}">${x.customer_name||''}${bd}</td><td style="${g?'color:#999':''}">${x.sat_no||''}</td>
-        <td class="num" style="color:${g?'#999':'var(--income)'}">+${fmt(amt)}</td></tr>`;}).join('')}</tbody></table>`:'';
+      <table><thead><tr><th>고객</th><th>SAT</th><th class="num">금액</th></tr></thead><tbody>${ar.map(x=>{const g=pgTouched(x),p=pgPaid(x);const amt=p?(x.total_mxn!=null?x.total_mxn:x.amount_mxn):x.amount_mxn;const bd=p?' <span class="badge" style="background:#e6efe9;color:#2f8f5b">완납</span>':(x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부수금</span>':'');return `<tr style="${g?'background:#fdebd7':''}">
+        <td style="${g?'color:#a06a28':''}">${x.customer_name||''}${bd}</td><td style="${g?'color:#a06a28':''}">${x.sat_no||''}</td>
+        <td class="num" style="color:${g?'#a06a28':'var(--income)'}">+${fmt(amt)}</td></tr>`;}).join('')}</tbody></table>`:'';
     const apTbl=ap.length?`<div style="font-weight:700;margin:10px 0 2px;color:var(--expense)">지급예정 (AP) · 합계 -${fmt(v.ap)}</div>
-      <table><thead><tr><th>계좌</th><th>계정과목</th><th>메모</th><th class="num">금액</th></tr></thead><tbody>${ap.map(x=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<tr style="${p?'background:#f4f2ec':''}">
-        <td style="${p?'color:#999':''}">${x.account_name||''}</td><td style="${p?'color:#999':''}">${x.category_name||''}${bd}</td><td style="${p?'color:#999':''}">${(x.memo||'').slice(0,26)}</td>
-        <td class="num" style="color:${p?'#999':'var(--expense)'}">-${fmt(x.amount_mxn)}</td></tr>`;}).join('')}</tbody></table>`:'';
+      <table><thead><tr><th>계좌</th><th>계정과목</th><th>메모</th><th class="num">금액</th></tr></thead><tbody>${ap.map(x=>{const p=pgPaid(x);const bd=p?' <span class="badge" style="background:#f0e6e6;color:#c0392b">지급완료</span>':'';return `<tr style="${p?'background:#fdebd7':''}">
+        <td style="${p?'color:#a06a28':''}">${x.account_name||''}</td><td style="${p?'color:#a06a28':''}">${x.category_name||''}${bd}</td><td style="${p?'color:#a06a28':''}">${(x.memo||'').slice(0,26)}</td>
+        <td class="num" style="color:${p?'#a06a28':'var(--expense)'}">-${fmt(x.amount_mxn)}</td></tr>`;}).join('')}</tbody></table>`:'';
     const cashTbl=cash.length?`<div style="font-weight:700;margin:10px 0 2px">실적 (현금)</div>
       <table><tbody>${cash.map(t=>`<tr style="background:#f4f2ec">
         <td>${t.category_name||t.category_code||''}</td><td>${(t.memo||'').slice(0,30)}</td>
         <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${t.direction==='in'?'+':'-'}${fmt(t.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
-    dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${ds}</b>${arTbl}${apTbl}${cashTbl}</div>`;
+    const cyTbl=cy?`<div style="font-weight:700;margin:10px 0 2px;color:#c77714">이월 (지난 미실현 예정) · ${cy.ar_sum?'AR +'+fmt(cy.ar_sum):''}${cy.ar_sum&&cy.ap_sum?' · ':''}${cy.ap_sum?'AP -'+fmt(cy.ap_sum):''}</div>
+      <div class="hint" style="margin:0 0 4px">원래 예정일이 지났지만 아직 실현되지 않은 항목 — 날짜는 그대로 두고 금액만 오늘로 합산했습니다.</div>
+      <table><thead><tr><th></th><th>원래 예정일</th><th>내용</th><th class="num">금액</th></tr></thead><tbody>${cy.items.map(x=>`<tr style="background:#fff8ef">
+        <td><span class="badge" style="background:${x.src==='ar'?'#e6efe9':'#f6e8e6'};color:${x.src==='ar'?'#2f8f5b':'#b0433a'}">${x.src==='ar'?'AR':'AP'}</span></td>
+        <td style="white-space:nowrap">${x.orig_date} <b style="color:#c0392b">D+${x.overdue_days}</b></td>
+        <td>${x.src==='ar'?((x.customer_name||'')+(x.sat_no?' · '+x.sat_no:'')+(x.state==='partial'?' <span class="badge" style="background:#eee;color:#777">일부수금</span>':'')+(x.manual?' <span class="badge" style="background:#f3ecdf;color:#8a6410">수동</span>':'')):[x.account_name,x.category_name,x.memo].filter(Boolean).join(' · ')}</td>
+        <td class="num" style="color:${x.src==='ar'?'var(--income)':'var(--expense)'};font-weight:700">${x.src==='ar'?'+':'-'}${fmt(x.amount_mxn)}</td></tr>`).join('')}</tbody></table>`:'';
+    dt.innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;padding:10px"><b>${ds}</b>${arTbl}${apTbl}${cyTbl}${cashTbl}</div>`;
   }
 
   // 계정과목별 계획 vs 실적 막대(편성=회색, 집행=초록, 초과집행=빨강)

@@ -1555,10 +1555,23 @@ export default async function financeRoutes(app) {
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
     }));
+    for (const t of hidden) {
+      if (t.status !== 'actual') {
+        const eff = String(t.plan_date || t.txn_date).slice(0, 10);
+        if (eff < todayStrCF) t.plan_date = todayStrCF; // 이월 규칙(보완분 예정)
+      }
+    }
     const mappedHidden = hidden.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
     }));
+    // 이월 규칙: 예정(plan)의 유효일이 오늘보다 과거면 '오늘'로 귀속(집계·세부표 공통) — 데이터 불변, 계산만 이동
+    const todayStrCF = new Date().toISOString().slice(0, 10);
+    for (const t of mappedTx) {
+      if (t.status !== 'plan') continue;
+      const eff = String(t.plan_date || t.txn_date).slice(0, 10);
+      if (eff < todayStrCF) t.plan_date = todayStrCF;
+    }
     const rows = aggregateCashflow(mappedTx, { granularity, includePlan, openingBalance: opening });
     // breakdown=1: 기간별 계정과목 유입/유출 합 (현금잔액 워터폴의 툴팁·세부 표용)
     // aggregateCashflow와 동일 규칙: 실적=거래일, 예정=계획일(includePlan일 때만 포함). 보완분(hidden) 제외 — 항목화 금지 원칙.
@@ -1567,7 +1580,8 @@ export default async function financeRoutes(app) {
       breakdown = {};
       for (const t of txns) {
         if (!includePlan && t.status !== 'actual') continue;
-        const date = t.status === 'actual' ? String(t.txn_date).slice(0, 10) : String(t.plan_date || t.txn_date).slice(0, 10);
+        let date = t.status === 'actual' ? String(t.txn_date).slice(0, 10) : String(t.plan_date || t.txn_date).slice(0, 10);
+        if (t.status !== 'actual' && date < todayStrCF) date = todayStrCF; // 이월 규칙 동일 적용
         const key = bucketKey(date, granularity);
         const name = t.category_name || t.category_code || '(계정없음)';
         const arr = (breakdown[key] = breakdown[key] || {});
@@ -1693,8 +1707,8 @@ export default async function financeRoutes(app) {
          JOIN customers c ON c.id=si.customer_id
          LEFT JOIN sales_payment_allocations spa ON spa.invoice_id=si.id
         WHERE si.status='posted' AND si.deleted_at IS NULL
-          AND to_char(si.due_date,'YYYY-MM')=$1
-        GROUP BY si.id, c.name`, [month])).rows
+          AND (to_char(si.due_date,'YYYY-MM')=$1 OR ($1=$2 AND si.due_date < CURRENT_DATE))
+        GROUP BY si.id, c.name`, [month, new Date().toISOString().slice(0, 7)])).rows
       .map((r) => ({ ...r, outstanding: Number(r.outstanding), total: Number(r.total), collected: Number(r.collected) }));
     // AP(지급예정): 권한 계좌의 예정(plan)·지출(out) 거래(plan_date 기준).
     const planOut = mapped.filter((t) => t.status === 'plan' && t.direction === 'out');
@@ -1702,7 +1716,7 @@ export default async function financeRoutes(app) {
     const planIn = mapped.filter((t) => t.status === 'plan' && t.direction === 'in' && !t.sales_invoice_id);
     // 실적화된(지급완료) 예정지출: 계획이 있었고 실제로 전환된 지출 — AP 자리에 회색+배지로 표시(잔고엔 실적으로만 반영, sum 미포함).
     const realizedOut = mapped.filter((t) => t.status === 'actual' && t.direction === 'out' && t.plan_amount_mxn != null);
-    const { ar: arByDay, ap: apByDay } = calendarArApByDay(invRows, planOut, month, realizedOut, planIn);
+    const { ar: arByDay, ap: apByDay, carry } = calendarArApByDay(invRows, planOut, month, realizedOut, planIn, today);
     // 일자별 집계 + 누적잔고(기초잔고부터 그 달 시작 직전까지 누적 후 일자별)
     const opening = await openingBalanceMxn(req.ctx.perm);
     // 잔액 보완분(항목 미노출): '잔액만'·세부차단 계좌 거래 + 비공개 고정비 거래 — 잔고 계산에만 합산.
@@ -1724,7 +1738,9 @@ export default async function financeRoutes(app) {
       if (t.status === 'actual') {
         if (String(t.txn_date).slice(0, 7) === month) hiddenActualByDay[t.txn_date] = (hiddenActualByDay[t.txn_date] || 0) + sign * t.amount_mxn;
       } else {
-        const pd = t.plan_date || t.txn_date;
+        let pd = t.plan_date || t.txn_date;
+        // 이월 규칙: 오늘이 속한 달 조회 시, 과거 미실현 보완분(예정)도 오늘로 귀속(예상잔고 정확성)
+        if (String(today).slice(0, 7) === month && pd < today) pd = today;
         if (String(pd).slice(0, 7) === month) hiddenPlanByDay[pd] = (hiddenPlanByDay[pd] || 0) + sign * t.amount_mxn;
       }
     }
@@ -1744,7 +1760,9 @@ export default async function financeRoutes(app) {
     // 누적잔고 2종:
     //  balance      = 실적만 누적 (오늘 기준 실제 실행분만) — '실제' 모드
     //  balance_proj = 실적 + 그날 AR(수금예정) - AP(지급예정) 누적 (예상잔고) — '예정' 모드
-    // 둘 다 그 달 시작 직전 실적잔고(runBefore)에서 출발. 예정분(AR/AP)은 표시된 달 범위 내에서만 반영(과거 경과분 이월 없음).
+    // 둘 다 그 달 시작 직전 실적잔고(runBefore)에서 출발.
+    // 이월 규칙(2026-07-05): 오늘보다 과거인 미실현 AR/AP(과거 달 포함)는 원래 날짜가 아니라 '오늘' 발생으로
+    // 취급해 carry 버킷에 합산 — 날짜 데이터는 불변, 예상잔고·표시만 이동. 과거 달 조회 시엔 원래 자리.
     // 잔액 보완분(hidden)은 두 잔고 모두에 합산 — 항목(items/ap_items)에는 나타나지 않는다.
     let cumActual = runBefore;
     let cumProj = runBefore;
@@ -1755,13 +1773,14 @@ export default async function financeRoutes(app) {
       cumActual += actualNet;
       const arc = arByDay[ds] || { sum: 0, items: [] };
       const apc = apByDay[ds] || { sum: 0, items: [] };
-      cumProj += actualNet + arc.sum - apc.sum + (hiddenPlanByDay[ds] || 0);
+      cumProj += actualNet + arc.sum - apc.sum + (hiddenPlanByDay[ds] || 0)
+        + (carry && ds === carry.date ? carry.net : 0);
       return { date: ds, in: r2(c.in), out: r2(c.out), net: r2(c.in - c.out), cumulative: r2(cumActual), items: c.items,
         ar: r2(arc.sum), ap: r2(apc.sum), ar_items: arc.items, ap_items: apc.items,
         balance: r2(cumActual), balance_proj: r2(cumProj) };
     });
     const breakdown = monthBreakdown(mapped, month, today);
-    return { month, today, opening_before_month: r2(runBefore), days, ...breakdown };
+    return { month, today, opening_before_month: r2(runBefore), days, carry: carry || null, ...breakdown };
   });
 
   // ===== 월 자금 리포트 (디렉터 전용) =====

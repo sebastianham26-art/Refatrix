@@ -237,14 +237,27 @@ export { round2 };
 //   planOut  : 권한계좌의 예정 지출 거래 [{ id, plan_date|txn_date, amount_mxn, account_name, category_name, memo }]
 //   month    : 'YYYY-MM'
 // 반환: { ar: { [date]: {sum, items[]} }, ap: { [date]: {sum, items[]} } }
-export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn) {
+export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn, today) {
   const ar = {}; const ap = {};
+  // 이월(carry): '오늘이 속한 달'을 볼 때, 오늘보다 과거인 미실현 AR/AP는 원래 날짜 칸이 아니라
+  // 오늘 하나의 '이월' 버킷으로 합산한다(과거 달 포함). 데이터의 날짜는 불변 — 표시·예상잔고 계산만 이동.
+  const doCarry = !!(today && String(today).slice(0, 7) === month);
+  const carry = doCarry ? { date: today, ar_sum: 0, ap_sum: 0, items: [] } : null;
+  const overdueDays = (d) => Math.max(1, Math.round((Date.parse(today) - Date.parse(d)) / 86400000));
   for (const iv of invoices || []) {
     const d = String(iv.due_date).slice(0, 10);
-    if (d.slice(0, 7) !== month) continue;
     const total = Number(iv.total != null ? iv.total : iv.total_mxn) || 0;
     const collected = Number(iv.collected) || 0;
     const out = iv.outstanding != null ? Number(iv.outstanding) : round2(total - collected);
+    if (doCarry && d < today && out > 0.009) {
+      carry.ar_sum = round2(carry.ar_sum + out);
+      carry.items.push({ src: 'ar', orig_date: d, overdue_days: overdueDays(d), id: iv.id,
+        customer_name: iv.customer_name, sat_no: iv.sat_no, amount_mxn: round2(out),
+        total_mxn: round2(total), collected_mxn: round2(collected),
+        state: collected > 0.009 ? 'partial' : 'pending', manual: false });
+      continue;
+    }
+    if (d.slice(0, 7) !== month) continue;
     // 상태: pending=미수금(색상) / partial=일부수금(회색) / paid=완납(회색+배지)
     let state;
     if (out <= 0.009) state = 'paid';
@@ -259,8 +272,16 @@ export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn)
   // (표·워터폴·하단 예정 섹션에는 이미 포함되던 것을 달력/예상잔고에도 대칭화)
   for (const t of planIn || []) {
     const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    const amtC = Number(t.amount_mxn) || 0;
+    if (doCarry && d < today && amtC > 0) {
+      carry.ar_sum = round2(carry.ar_sum + amtC);
+      carry.items.push({ src: 'ar', orig_date: d, overdue_days: overdueDays(d), id: t.id,
+        customer_name: (t.memo || t.category_name || t.account_name || '예정 수입'), sat_no: null,
+        amount_mxn: round2(amtC), total_mxn: round2(amtC), collected_mxn: 0, state: 'pending', manual: true });
+      continue;
+    }
     if (d.slice(0, 7) !== month) continue;
-    const amt = Number(t.amount_mxn) || 0;
+    const amt = amtC;
     if (!ar[d]) ar[d] = { sum: 0, items: [] };
     ar[d].sum = round2(ar[d].sum + amt);
     ar[d].items.push({ id: t.id, customer_name: (t.memo || t.category_name || t.account_name || '예정 수입'),
@@ -268,8 +289,16 @@ export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn)
   }
   for (const t of planOut || []) {
     const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    const amtC = Number(t.amount_mxn) || 0;
+    if (doCarry && d < today && amtC > 0) {
+      carry.ap_sum = round2(carry.ap_sum + amtC);
+      carry.items.push({ src: 'ap', orig_date: d, overdue_days: overdueDays(d), id: t.id,
+        account_name: t.account_name || null, category_name: t.category_name || null,
+        memo: t.memo || null, amount_mxn: round2(amtC), state: 'pending' });
+      continue;
+    }
     if (d.slice(0, 7) !== month) continue;
-    const amt = Number(t.amount_mxn) || 0;
+    const amt = amtC;
     if (!ap[d]) ap[d] = { sum: 0, items: [] };
     ap[d].sum = round2(ap[d].sum + amt); // 예정 지급(pending)만 예상잔고에 반영
     ap[d].items.push({ id: t.id, account_name: t.account_name || null, category_name: t.category_name || null, memo: t.memo || null, amount_mxn: round2(amt), state: 'pending' });
@@ -282,5 +311,10 @@ export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn)
     if (!ap[d]) ap[d] = { sum: 0, items: [] };
     ap[d].items.push({ id: t.id, account_name: t.account_name || null, category_name: t.category_name || null, memo: t.memo || null, amount_mxn: round2(amt), state: 'paid' });
   }
-  return { ar, ap };
+  let carryOut = null;
+  if (carry && (carry.ar_sum > 0 || carry.ap_sum > 0)) {
+    carry.items.sort((a, b) => (a.orig_date < b.orig_date ? -1 : a.orig_date > b.orig_date ? 1 : 0));
+    carryOut = { ...carry, net: round2(carry.ar_sum - carry.ap_sum) };
+  }
+  return { ar, ap, carry: carryOut };
 }
