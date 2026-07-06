@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703e</title>
+<title>재고실사 · Refatrix · build sc0703f</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -398,13 +398,9 @@ function onModeToggle(){ /* 스캔모드 안내만 — 동작은 onCodeEnter에�
 async function onCodeEnter(){
   const code=normScan($('codeInput').value).trim(); if(!code) return;
   if(isNewRackSignal(code)){ gotoRackScan(); return; }   // '새 랙' 신호 바코드 → 랙 입력으로 점프
-  const scanMode=$('scanMode').checked;
+  if($('scanMode').checked){ fastScan(code); return; }   // 스캔모드: resolve 생략·즉시 저장(입력창 바로 비움)
   const r=await api('/api/stock-counts/resolve?code='+encodeURIComponent(code));
   if(!r.ok){ setMsg('recMsg','해석 실패','err'); beep(false); return; }
-  if(scanMode){
-    // +1 즉시 저장(스캔=1피스). 미등록도 기록.
-    await postLine(code,1,true); $('codeInput').value=''; $('codeInput').focus(); return;
-  }
   // 수량입력 모드: 미리보기 표시
   prevResolved={code};
   const box=$('prevBox'); box.classList.remove('hidden');
@@ -430,17 +426,36 @@ async function saveLine(){
   const qty=Number($('qtyInput').value); if(!isFinite(qty)||qty<0){ setMsg('recMsg','수량 오류','err'); return; }
   await postLine(prevResolved.code,qty,false); cancelPrev();
 }
+let LINES=[];
+function appendLineLocal(r){
+  LINES.push({ id:r.id, item_kind:r.item_kind, product_id:r.product_id, promo_item_id:r.promo_item_id,
+    raw_code:r.raw_code, matched_code:r.matched_code, item_name:r.item_name, rack_scanned:r.rack_scanned, counted_qty:r.counted_qty });
+  renderLines(LINES);
+}
+// 스캔모드 초고속: 입력창 즉시 비우고 resolve 없이 바로 저장, 전체 새로고침 없이 로컬 추가
+function fastScan(code){
+  $('codeInput').value=''; $('codeInput').focus();   // ★ 즉시 비움 → 다음 스캔 바로 가능
+  api('/api/stock-counts/'+CUR.id+'/lines',{method:'POST',body:JSON.stringify({raw_code:code,rack_scanned:curRack,counted_qty:1})})
+    .then(r=>{
+      if(!r.ok){ beep(false); setMsg('recMsg',(r.error==='not_draft')?'제출된 실사는 수정 불가':'저장 실패 — 재스캔','err'); return; }
+      beep(r.item_kind!=='unknown'); setMsg('recMsg','','');
+      appendLineLocal(r);
+      toast('✓ '+(r.matched_code||code)+(r.item_kind==='unknown'?' (미등록)':''));
+    })
+    .catch(()=>{ beep(false); setMsg('recMsg','네트워크 오류 — 재스캔','err'); });
+}
 async function postLine(code,qty,quiet){
   const r=await api('/api/stock-counts/'+CUR.id+'/lines',{method:'POST',body:JSON.stringify({raw_code:code,rack_scanned:curRack,counted_qty:qty})});
   if(!r.ok){ setMsg('recMsg',r.error==='not_draft'?'제출된 실사는 수정 불가':'저장 실패','err'); beep(false); return; }
   toast('✓ '+(r.matched_code||code)+(r.item_kind==='unknown'?' (미등록)':'')+' · '+qty);
   if(quiet) beep(true);
-  await refreshLines();
+  appendLineLocal(r);           // 전체 새로고침 대신 로컬 추가(빠름)
 }
 async function refreshLines(){ const r=await api('/api/stock-counts/'+CUR.id); if(r.ok) renderLines(r.lines||[]); }
 let SEL=new Set();
 function isDir(){ return !!(session.user && session.user.role==='director'); }
 function renderLines(lines){
+  LINES=lines;
   $('lineCount').textContent='('+lines.length+'건)';
   const idset={}; lines.forEach(l=>idset[l.id]=1); Array.from(SEL).forEach(id=>{ if(!idset[id]) SEL.delete(id); });
   if(!lines.length){ $('linesBox').innerHTML='<div class="mut" style="padding:8px">아직 기록이 없습니다. 랙 → 코드 → 수량 순으로 스캔하세요.</div>'; renderSelBar(); return; }
@@ -469,14 +484,20 @@ function renderSelBar(){
   const n=SEL.size;
   if(!n){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='';
-  const btns = isDir()
-    ? '<button class="btn danger" onclick="approveDelSel()">🗑 선택 삭제(승인)</button> <button class="btn ghost" onclick="rejectDelSel()">↩ 요청 반려</button>'
-    : '<button class="btn danger" onclick="requestDelSel()">🗑 선택 삭제 요청</button>';
+  const btns = '<button class="btn danger" onclick="directDelSel()">🗑 선택 삭제</button>';
   el.innerHTML='<span>선택 <b>'+n+'</b>건</span> '+btns+' <a class="link" onclick="clearSel()">해제</a>';
 }
 function toggleSel(id,on){ if(on) SEL.add(id); else SEL.delete(id); renderSelBar(); }
 function clearSel(){ SEL.clear(); refreshLines(); }
 function selIds(){ return Array.from(SEL); }
+// 담당자 직접 삭제(초안 상태, 승인 불필요)
+async function directDelSel(){
+  const ids=selIds(); if(!ids.length) return;
+  if(!confirm(ids.length+'건을 삭제할까요?')) return;
+  const r=await api('/api/stock-counts/'+CUR.id+'/lines/delete',{method:'POST',body:JSON.stringify({line_ids:ids})});
+  if(r.ok){ toast('삭제 '+(r.deleted!=null?r.deleted:ids.length)+'건'); SEL.clear(); refreshLines(); }
+  else toast((r&&r.note)||'삭제 실패');
+}
 async function requestDelSel(){
   const ids=selIds(); if(!ids.length) return;
   if(!confirm(ids.length+'건 삭제를 요청할까요? 디렉터 승인 후 삭제됩니다.')) return;
@@ -804,6 +825,6 @@ async function deletePromo(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
-<script src="refatrix-nav.js?v=20260703nc"></script>
+<script src="refatrix-nav.js?v=20260703nd"></script>
 </body>
 </html>

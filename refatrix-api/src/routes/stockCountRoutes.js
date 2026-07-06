@@ -1,4 +1,4 @@
-// stockCountRoutes.js · rev 20260705r2 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260705r3 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -15,7 +15,7 @@ import { logEvent } from '../audit.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260705r2"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260705r3"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -282,6 +282,18 @@ export default async function stockCountRoutes(app) {
     if (!ids.length) return reply.code(400).send({ error: 'no_lines' });
     await query(`UPDATE stock_count_lines SET del_requested_at=NULL, del_requested_by=NULL WHERE count_id=$1 AND id = ANY($2::bigint[])`, [id, ids]);
     return { ok: true };
+  });
+
+  // 선택 라인 직접 삭제(담당자) — draft 상태에서 승인 없이 즉시 삭제
+  app.post('/api/stock-counts/:id/lines/delete', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const ids = (req.body && Array.isArray(req.body.line_ids)) ? req.body.line_ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return reply.code(400).send({ error: 'no_lines' });
+    const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft', note: '제출 후에는 직접 삭제할 수 없습니다.' });
+    const r = await query(`DELETE FROM stock_count_lines WHERE count_id=$1 AND id = ANY($2::bigint[])`, [id, ids]);
+    return { ok: true, deleted: r.rowCount };
   });
 
   // 제출(대조 확정) draft → submitted
