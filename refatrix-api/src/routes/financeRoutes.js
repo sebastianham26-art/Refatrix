@@ -1275,6 +1275,21 @@ export default async function financeRoutes(app) {
 
   // 지급/입금 확인: 예정(plan) 거래 → 실제(actual). 날짜·금액 수정 가능(계획과 다를 수 있음).
   // body: { account_id, pay_date?, amount?, fx_rate?, memo? }
+  // 디렉터 직접 삭제(소프트): 잔액·현금흐름에서 즉시 제외.
+  // 매출연계(sales_invoice_id) 거래는 반제/정산 무결성 보호를 위해 금지 — 반제 취소 경로 사용.
+  // general 외 kind(NC·정산차액 등)는 각자의 취소 절차가 있으므로 금지.
+  app.delete('/api/transactions/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const t = (await query(`SELECT sales_invoice_id, kind, direction, amount, currency, memo FROM transactions WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!t) return reply.code(404).send({ error: 'not_found' });
+    if (t.sales_invoice_id != null) return reply.code(400).send({ error: 'sales_linked' });
+    if (t.kind !== 'general') return reply.code(400).send({ error: 'kind_not_deletable' });
+    await query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `transaction:${id}`,
+      detail: { direction: t.direction, amount: Number(t.amount), currency: t.currency, memo: t.memo } });
+    return { ok: true };
+  });
+
   // ===== 💰 현금받아야함 (금고 회수 관리) =====
   // 회수 목록 — 디렉터 전용. summary: 미수령 건수·합계(MXN), 수령완료 건수.
   app.get('/api/transactions/cash-due', { preHandler: [authGuard, requireDirector] }, async () => {

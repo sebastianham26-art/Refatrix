@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0705a</title>
+<title>Refatrix ERP · 재무 · build fin-0705b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -173,7 +173,7 @@
       <div id="t-preview" class="hint"></div>
       <button class="btn gold" id="t-save" style="margin-top:12px">거래 등록</button>
       <div class="msg" id="newMsg"></div>
-      <div class="hint">지출을 담당자가 등록하면 디렉터 승인 후 잔액에 반영됩니다. 디렉터가 등록하면 바로 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.</div>
+      <div class="hint" id="t-approval-hint">지출을 담당자가 등록하면 디렉터 승인 후 잔액에 반영됩니다. 디렉터가 등록하면 바로 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.</div>
 
       <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
         <h2 style="margin:0 0 2px">📄 엑셀 일괄 등록 <span style="font-size:12px;font-weight:600;color:var(--muted)">(과거자료 마이그레이션용)</span></h2>
@@ -892,7 +892,8 @@
   let txnSort={key:null,dir:1};         // 정렬 상태: key=null이면 기본순서, dir 1=오름 -1=내림
   async function loadTxns(){
     const b=$('txnBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
-    if(isDirector()){ $('cashDueBtn').style.display=''; loadCashDue(false); }
+    if(isDirector()){ $('cashDueBtn').style.display=''; loadCashDue(false);
+      $('t-approval-hint').textContent='디렉터 등록은 승인 없이 즉시 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.'; }
     const p=new URLSearchParams();
     if($('f-status').value)p.set('status',$('f-status').value);
     if($('f-dir').value)p.set('direction',$('f-dir').value);
@@ -1159,7 +1160,7 @@
           ${directEdit?'':'<div style="flex:2"><label>변경 사유</label><input class="e-reason" type="text" placeholder="디렉터 검토용"></div>'}</div>
         <div style="margin-top:10px;display:flex;gap:8px">
           <button class="btn e-submit">${directEdit?'수정 저장':'수정요청 제출'}</button>
-          ${directEdit?'':'<button class="btn ghost e-del">삭제요청</button>'}
+          ${directEdit?'<button class="btn ghost e-deldir" style="border-color:var(--expense);color:var(--expense)">삭제</button>':'<button class="btn ghost e-del">삭제요청</button>'}
           <button class="btn ghost e-cancel">닫기</button>
         </div>
         <div class="msg e-msg"></div>
@@ -1169,6 +1170,7 @@
     box.querySelector('.e-cancel').onclick=()=>{box.closest('.txn-det').classList.add('hidden');};
     box.querySelector('.e-submit').onclick=()=>submitTxnEdit(id,box,directEdit);
     const del=box.querySelector('.e-del');if(del)del.onclick=()=>deleteTxnRequest(id);
+    const deld=box.querySelector('.e-deldir');if(deld)deld.onclick=()=>deleteTxnDirect(id);
   }
 
   async function submitTxnEdit(id,box,directEdit){
@@ -1196,6 +1198,17 @@
     }catch(e){m.className='msg e-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
 
+  // 디렉터 직접 삭제(소프트) — 매출연계 거래는 반제/정산 무결성 때문에 금지(반제 취소 경로 안내)
+  async function deleteTxnDirect(id){
+    const t=txnMap[id]||{};
+    if(!confirm('이 거래를 삭제할까요?\n\n'+String(t.txn_date||'').slice(0,10)+' · '+(t.direction==='in'?'수입':'지출')+' '+fmt(t.amount)+' '+(t.currency||'')+'\n'+(t.memo||'')+'\n\n삭제 즉시 잔액·현금흐름에서 제외됩니다.'))return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/'+id,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){alert('삭제 실패: '+(d.error==='sales_linked'?'매출(반제) 연계 거래는 여기서 삭제할 수 없습니다. 수금/정산의 반제 취소를 사용하세요.':d.error==='kind_not_deletable'?'이 유형의 거래는 삭제할 수 없습니다.':(d.error||res.status)));return;}
+      loadTxns();loadAccounts();
+    }catch(e){alert('서버 연결 실패');}
+  }
   async function deleteTxnRequest(id){
     const reason=prompt('삭제 요청 사유를 입력하세요 (디렉터 검토용):','');
     if(reason===null)return;
