@@ -102,6 +102,7 @@
         <h2 style="margin:0">①-1 당월 목표 계산 (미달분 이월) · 팀별/전체 실적</h2>
       </div>
       <div class="teampick" id="carryPick" style="margin-top:8px"></div>
+      <div id="carryChart" style="margin-top:10px"></div>
       <div class="scroll" style="margin-top:10px"><div id="carryGrid"><div class="hint">불러오는 중…</div></div></div>
       <div class="carrylegend">당월 목표 = 그달 기본목표 + 직전 달 미달분(이월) · 미달분 = max(0, 당월목표 − 실적) · 초과 달성분은 이월하지 않음 · 매년 1월 이월 0 리셋 · 실적 = 게시 인보이스 IVA 제외(subtotal), 인보이스 날짜 기준 · 전체 = 팀별 이월을 각각 계산한 뒤 합산</div>
     </div>
@@ -250,12 +251,98 @@
     const t=(overview.teams||[]).find(x=>String(x.id)===String(sel));
     return (t&&t.carry)||{};
   }
+  // ===== ①-1 그래프 (순수 SVG · 실적 막대 + 붉은 목표 계단선) =====
+  const fmtK=(n)=>{n=Number(n)||0;const a=Math.abs(n);
+    if(a>=1e6)return (n/1e6).toLocaleString('es-MX',{maximumFractionDigits:2})+'M';
+    if(a>=1e4)return Math.round(n/1e3).toLocaleString('es-MX')+'k';
+    return fmt(n);};
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function buildCarryChart(cmap,yms,cur){
+    const nxt=nextYm(cur);
+    const pts=yms.map(ym=>{
+      const e=cmap[ym]||{base:0,carryIn:0,effective:0,actual:0,remaining:0};
+      const kind=ym<=cur?'done':(ym===nxt?'next':'fut');
+      const line=kind==='fut'?e.base:e.effective;
+      return {ym,e,kind,line,bar:kind==='done'?e.actual:null};
+    });
+    const maxV=Math.max(...pts.map(p=>Math.max(p.line||0,p.bar||0)),0);
+    if(maxV<=0)return '<div class="hint">표시할 목표·실적 데이터가 없습니다.</div>';
+    const W=1040,H=330,padL=64,padR=16,padT=44,padB=30;
+    const cw=(W-padL-padR)/yms.length;
+    const top=maxV*1.28; // 라벨 공간
+    const Y=(v)=>padT+(H-padT-padB)*(1-v/top);
+    // y 눈금: ~5개 나이스 스텝
+    const rawStep=maxV/4;const pow=Math.pow(10,Math.floor(Math.log10(rawStep||1)));
+    const step=[1,2,2.5,5,10].map(m=>m*pow).find(s2=>s2>=rawStep)||rawStep;
+    let s='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block" font-family="inherit">';
+    for(let gv=0;gv<=top;gv+=step){
+      const gy=Y(gv);
+      s+='<line x1="'+padL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+gy.toFixed(1)+'" stroke="#EDEAE0" stroke-width="1"/>';
+      s+='<text x="'+(padL-8)+'" y="'+(gy+4).toFixed(1)+'" text-anchor="end" font-size="11" fill="#6B6B6B">'+fmtK(gv)+'</text>';
+    }
+    const ci=yms.indexOf(cur);
+    if(ci>=0){
+      const hx=padL+ci*cw;
+      s+='<rect x="'+hx.toFixed(1)+'" y="'+(padT-28)+'" width="'+cw.toFixed(1)+'" height="'+(H-padT-padB+28)+'" fill="#FDF6E0"/>';
+      s+='<rect x="'+(hx+cw/2-24).toFixed(1)+'" y="'+(padT-26)+'" width="48" height="18" rx="9" fill="#FFF4D6" stroke="#ECD9A0"/>';
+      s+='<text x="'+(hx+cw/2).toFixed(1)+'" y="'+(padT-12.5)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#8A6512">당월</text>';
+    }
+    // 실적 막대 + 라벨
+    const bw=cw*0.5;
+    pts.forEach((p,i)=>{
+      if(p.bar==null)return;
+      const bx=padL+i*cw+(cw-bw)/2, by=Y(p.bar), bh=Y(0)-by;
+      const col=p.ym===cur?'#185FA5':'#378ADD';
+      if(p.bar>0)s+='<rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(bh,0).toFixed(1)+'" rx="3" fill="'+col+'"/>';
+      if(p.bar>0||p.e.effective>0){
+        const cx=bx+bw/2;
+        const pct=p.e.effective>0?Math.round(p.e.actual/p.e.effective*100):null;
+        s+='<text x="'+cx.toFixed(1)+'" y="'+(by-22).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="#1A1A1A">'+fmtK(p.bar)+'</text>';
+        if(pct!=null)s+='<text x="'+cx.toFixed(1)+'" y="'+(by-8).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="'+(pct>=100?'#0F6E56':'#B23A2E')+'">'+pct+'%</text>';
+      }
+    });
+    // 목표 계단선
+    const segStyle=(p)=>p.kind==='done'?['#B23A2E',4,'']:(p.kind==='next'?['rgba(178,58,46,0.55)',3.5,' stroke-dasharray="7,5"']:['#B4B2A9',3,'']);
+    pts.forEach((p,i)=>{
+      const x1=padL+i*cw+3,x2=padL+(i+1)*cw-3,yy=Y(p.line);
+      const [col,wd,dash]=segStyle(p);
+      s+='<line x1="'+x1.toFixed(1)+'" y1="'+yy.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+yy.toFixed(1)+'" stroke="'+col+'" stroke-width="'+wd+'" stroke-linecap="round"'+dash+'/>';
+      if(i<pts.length-1&&pts[i+1].line!==p.line){
+        const [c2,w2,d2]=segStyle(pts[i+1]);const xc=padL+(i+1)*cw;
+        s+='<line x1="'+xc.toFixed(1)+'" y1="'+Y(p.line).toFixed(1)+'" x2="'+xc.toFixed(1)+'" y2="'+Y(pts[i+1].line).toFixed(1)+'" stroke="'+c2+'" stroke-width="'+w2+'"'+d2+'/>';
+      }
+      // 목표 금액 라벨: 당월 + 다음달(예상)
+      if(p.ym===cur||p.kind==='next'){
+        const xc2=padL+i*cw+cw/2;
+        s+='<text x="'+xc2.toFixed(1)+'" y="'+(yy-7).toFixed(1)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="#B23A2E">목표 '+fmtK(p.line)+(p.kind==='next'?' (예상)':'')+'</text>';
+      }
+    });
+    // x 라벨 + 축 + 툴팁 히트영역
+    pts.forEach((p,i)=>{
+      const xc=padL+i*cw+cw/2;
+      s+='<text x="'+xc.toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" font-size="12"'+(p.ym===cur?' font-weight="700" fill="#1A1A1A"':' fill="#6B6B6B"')+'>'+ymLabel(p.ym)+'</text>';
+      let tip;
+      if(p.kind==='fut')tip=ymLabel(p.ym)+' · 기본목표 '+fmt(p.e.base)+' (이월 미정)';
+      else if(p.kind==='next')tip=ymLabel(p.ym)+' · 예상 목표 '+fmt(p.e.effective)+' = 기본 '+fmt(p.e.base)+' + 이월(예상) '+fmt(p.e.carryIn);
+      else tip=ymLabel(p.ym)+' · 목표 '+fmt(p.e.effective)+' (기본 '+fmt(p.e.base)+' + 이월 '+fmt(p.e.carryIn)+') · 실적 '+fmt(p.e.actual)+(p.e.remaining>0?' · 미달 '+fmt(p.e.remaining)+(p.ym===cur?' (진행중)':' → 다음달 이월'):' · 달성');
+      s+='<rect x="'+(padL+i*cw).toFixed(1)+'" y="'+(padT-28)+'" width="'+cw.toFixed(1)+'" height="'+(H-padT-padB+28)+'" fill="transparent"><title>'+esc(tip)+'</title></rect>';
+    });
+    s+='<line x1="'+padL+'" y1="'+Y(0).toFixed(1)+'" x2="'+(W-padR)+'" y2="'+Y(0).toFixed(1)+'" stroke="#C9C4B6" stroke-width="1.5"/>';
+    s+='</svg>';
+    // 범례
+    const legend='<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--muted);margin-bottom:2px">'
+      +'<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block"></span>실적 (막대 위: 금액 · 달성률%)</span>'
+      +'<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:18px;border-top:4px solid #B23A2E;display:inline-block"></span>당월 목표선 (이월 포함)</span>'
+      +'<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:18px;border-top:3px dashed rgba(178,58,46,.55);display:inline-block"></span>다음달 예상</span>'
+      +'<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:18px;border-top:3px solid #B4B2A9;display:inline-block"></span>미래월 기본목표</span></div>';
+    return legend+s;
+  }
   function renderCarry(){
     const teams=overview.teams||[];
     const opts=[];
     if(overview.carry_total)opts.push({id:'total',name:'전체'});
     teams.forEach(t=>opts.push({id:String(t.id),name:t.name}));
-    if(!opts.length){$('carryPick').innerHTML='';$('carryGrid').innerHTML='<div class="hint">표시할 팀이 없습니다.</div>';return;}
+    if(!opts.length){$('carryPick').innerHTML='';$('carryChart').innerHTML='';$('carryGrid').innerHTML='<div class="hint">표시할 팀이 없습니다.</div>';return;}
     if(!carrySel||!opts.some(o=>o.id===carrySel))carrySel=opts[0].id;
     $('carryPick').innerHTML=opts.map(o=>`<div class="teambtn ${carrySel===o.id?'on':''}" data-carrysel="${o.id}">${o.name}</div>`).join('');
     document.querySelectorAll('[data-carrysel]').forEach(el=>el.addEventListener('click',()=>{carrySel=el.dataset.carrysel;renderCarry();}));
@@ -263,6 +350,7 @@
     const cur=overview.current_ym||'';
     const year=(startYm||cur).slice(0,4);
     const yms=[];for(let i=1;i<=12;i++)yms.push(year+'-'+String(i).padStart(2,'0'));
+    $('carryChart').innerHTML=buildCarryChart(cmap,yms,cur);
     const nxt=nextYm(cur);
     let sumBase=0,sumAct=0;
     const rows=yms.map(ym=>{
