@@ -1353,6 +1353,9 @@ export default async function financeRoutes(app) {
     let fx = Number(t.fx_rate) || 1;
     if (t.currency === 'USD') fx = Number(req.body?.fx_rate) > 0 ? Number(req.body.fx_rate) : await getRateForDate(payDate);
     const amountMxn = r2(newAmount * fx);
+    // 영수증 번호(선택): 예정 단계엔 영수증이 없으므로 확인 시 입력이 곧 최초 기록(빈값=null)
+    const receiptNo = (req.body?.receipt_no != null && String(req.body.receipt_no).trim() !== '')
+      ? String(req.body.receipt_no).trim().slice(0, 60) : null;
     // 계획 대비 변경 여부
     const planAmt = t.plan_amount != null ? Number(t.plan_amount) : Number(t.amount);
     // pg는 DATE 컬럼을 JS Date 객체로 반환 — String().slice는 'Mon Jul 06' 같은 깨진 값이 됨(잔액분리 INSERT 500의 원인)
@@ -1383,8 +1386,8 @@ export default async function financeRoutes(app) {
       await withTx(async (exec) => {
         await exec.query(
           `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
-             approved=$10, change_count=$6, plan_memo=$7, plan_amount=$3, updated_by=$8 WHERE id=$9`,
-          [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemoKeep, req.ctx.perm.userId, id, approved]);
+             approved=$10, change_count=$6, plan_memo=$7, plan_amount=$3, receipt_no=$11, updated_by=$8 WHERE id=$9`,
+          [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemoKeep, req.ctx.perm.userId, id, approved, receiptNo]);
         const rr = await exec.query(
           `INSERT INTO transactions
              (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date, is_private)
@@ -1399,8 +1402,8 @@ export default async function financeRoutes(app) {
     }
     await query(
       `UPDATE transactions SET status='actual', account_id=$1, txn_date=$2, amount=$3, fx_rate=$4, amount_mxn=$5,
-         approved=$10, change_count=$6, plan_memo=$7, updated_by=$8 WHERE id=$9`,
-      [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved]);
+         approved=$10, change_count=$6, plan_memo=$7, receipt_no=$11, updated_by=$8 WHERE id=$9`,
+      [accountId, payDate, newAmount, fx, amountMxn, newChangeCount, planMemo, req.ctx.perm.userId, id, approved, receiptNo]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { confirm_pay: true, changed, approved, remainder: 'close' } });
     return { ok: true, amount_mxn: amountMxn, changed, change_count: newChangeCount, approved,
       plan_amount: planAmt, diff: r2(newAmount - planAmt), remainder: 'close',
