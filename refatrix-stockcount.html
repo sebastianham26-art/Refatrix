@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703f</title>
+<title>재고실사 · Refatrix · build sc0703g</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -462,7 +462,7 @@ function renderLines(lines){
   const groups={}; lines.forEach(l=>{ const k=l.rack_scanned||'(랙 미지정)'; (groups[k]=groups[k]||[]).push(l); });
   let html='';
   Object.keys(groups).forEach(rk=>{
-    html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th style="width:30px"></th><th>코드</th><th>품명</th><th>구분</th><th class="num">수량</th><th>상태</th></tr></thead><tbody>';
+    html+='<div class="grpttl">📍 '+rk+'</div><div class="tbl-wrap" style="max-height:none"><table><thead><tr><th style="width:30px"></th><th>코드</th><th>품명</th><th>구분</th><th class="num">수량</th><th>삭제</th></tr></thead><tbody>';
     groups[rk].forEach(l=>{
       const kind=l.item_kind==='unknown'?'<span class="pill p-unk">미등록</span>':(l.item_kind==='promo'?'<span class="pill p-over">프로모</span>':'<span class="pill p-match">부품</span>');
       const pend=!!l.del_requested_at;
@@ -472,7 +472,7 @@ function renderLines(lines){
         +'<td><input type="checkbox" class="cbx" onchange="toggleSel('+l.id+',this.checked)"'+checked+'></td>'
         +'<td>'+(l.matched_code||l.raw_code)+'</td><td>'+(l.item_name||'')+'</td><td>'+kind+'</td>'
         +'<td class="num"><input type="number" value="'+l.counted_qty+'" min="0" step="1" style="width:74px;padding:5px" onchange="editLine('+l.id+',this.value)"></td>'
-        +'<td>'+badge+'</td></tr>';
+        +'<td>'+badge+' <button onclick="delOneDirect('+l.id+')" style="background:#C0564F;color:#fff;border:0;border-radius:8px;padding:5px 11px;font-weight:800;cursor:pointer;font-size:13px">🗑 삭제</button></td></tr>';
     });
     html+='</tbody></table></div>';
   });
@@ -491,6 +491,13 @@ function toggleSel(id,on){ if(on) SEL.add(id); else SEL.delete(id); renderSelBar
 function clearSel(){ SEL.clear(); refreshLines(); }
 function selIds(){ return Array.from(SEL); }
 // 담당자 직접 삭제(초안 상태, 승인 불필요)
+// 담당자 직접 삭제(초안 상태, 승인 불필요)
+async function delOneDirect(id){
+  if(!confirm('이 기록을 삭제할까요?')) return;
+  const r=await api('/api/stock-counts/'+CUR.id+'/lines/delete',{method:'POST',body:JSON.stringify({line_ids:[id]})});
+  if(r.ok){ toast('삭제됨'); LINES=LINES.filter(l=>l.id!==id); SEL.delete(id); renderLines(LINES); }
+  else toast((r&&r.note)||'삭제 실패');
+}
 async function directDelSel(){
   const ids=selIds(); if(!ids.length) return;
   if(!confirm(ids.length+'건을 삭제할까요?')) return;
@@ -825,6 +832,6 @@ async function deletePromo(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
-<script src="refatrix-nav.js?v=20260703nd"></script>
+<script src="refatrix-nav.js?v=20260703ne"></script>
 </body>
 </html>
