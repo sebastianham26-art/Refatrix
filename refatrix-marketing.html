@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 메뉴판 · 배분</title>
+<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260706b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -99,6 +99,7 @@
         <button class="btn ghost sm hidden" id="addMenuBtn">+ 메뉴 추가</button>
       </div>
       <div id="menuBox"></div>
+      <div class="msg" id="menuMsg"></div>
     </div>
 
     <!-- ② 고객 선택 + 활동 수량 배분 -->
@@ -193,28 +194,79 @@
     try{menu=(await fetch(session.api+'/api/marketing/menu',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){menu=[];}
     renderMenu();
   }
+  // ===== 메뉴판(활동·단가) — 인라인 행 편집기 =====
+  //   · 수정: 행이 입력폼으로 바뀌어 활동명·분류·단가·단위 전부 수정 가능
+  //   · id 비교는 String()으로 정규화(node-pg BIGINT→문자열 대비)
+  //   · 서버 오류(권한 등)는 menuMsg에 표시(기존엔 조용히 실패해 "수정이 안 되는" 증상)
+  let menuEdit=null; // null | 'new' | id(string)
+  function num2(v){ const n=Number(String(v==null?'':v).replace(/[,\s]/g,'')); return isNaN(n)?null:n; }
+  function esch(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function menuSay(ok,text){ const m=$('menuMsg'); if(!m)return; m.className='msg '+(ok?'ok':'err'); m.textContent=text; if(ok){clearTimeout(menuSay._t);menuSay._t=setTimeout(()=>{m.className='msg';},2500);} }
+  function menuEditRow(m){
+    const v=m||{name:'',category:'',unit_budget:'',unit:''};
+    return `<tr data-editrow="1" style="background:#faf8f3">
+      <td><input data-mf="name" type="text" value="${esch(v.name)}" placeholder="활동 이름" style="width:100%;min-width:140px"></td>
+      <td><input data-mf="category" type="text" value="${esch(v.category||'')}" placeholder="온라인/오프라인" style="width:100%;min-width:90px"></td>
+      <td class="num"><input data-mf="unit_budget" type="text" inputmode="decimal" value="${v.unit_budget===''?'':esch(v.unit_budget)}" placeholder="0" style="width:100px;text-align:right"></td>
+      <td><input data-mf="unit" type="text" value="${esch(v.unit||'')}" placeholder="건/회" style="width:70px"></td>
+      <td style="white-space:nowrap"><button class="btn sm" data-msave="1">저장</button> <button class="btn ghost sm" data-mcancel="1">취소</button></td></tr>`;
+  }
   function renderMenu(){
     const editable=isMarketing();
-    $('menuBox').innerHTML='<table><thead><tr><th>활동</th><th>분류</th><th class="num">단가</th><th>단위</th>'+(editable?'<th></th>':'')+'</tr></thead><tbody>'+
-      menu.map(m=>`<tr><td><b>${m.name}</b></td><td>${m.category||'—'}</td><td class="num">${fmt(m.unit_budget)}</td><td>${m.unit||'—'}</td>
-        ${editable?`<td><button class="btn ghost sm" onclick="editMenu(${m.id})">수정</button> <button class="btn danger sm" onclick="delMenu(${m.id})">삭제</button></td>`:''}</tr>`).join('')+'</tbody></table>';
+    let html='<table><thead><tr><th>활동</th><th>분류</th><th class="num">단가</th><th>단위</th>'+(editable?'<th></th>':'')+'</tr></thead><tbody>';
+    if(editable && menuEdit==='new') html+=menuEditRow(null);
+    html+=menu.map(m=>{
+      if(editable && menuEdit!=null && String(menuEdit)===String(m.id)) return menuEditRow(m);
+      return `<tr><td><b>${esch(m.name)}</b></td><td>${esch(m.category)||'—'}</td><td class="num">${fmt(m.unit_budget)}</td><td>${esch(m.unit)||'—'}</td>
+        ${editable?`<td style="white-space:nowrap"><button class="btn ghost sm" data-medit="${m.id}">수정</button> <button class="btn danger sm" data-mdel="${m.id}">삭제</button></td>`:''}</tr>`;
+    }).join('');
+    $('menuBox').innerHTML=html+'</tbody></table>';
   }
-  async function addMenu(){
-    const name=prompt('활동 이름:');if(!name)return;
-    const unit_budget=Number(prompt('단가(숫자):')||'0')||0;
-    const category=prompt('분류(온라인/오프라인 등, 선택):')||null;
-    const unit=prompt('단위(건/회 등, 선택):')||null;
-    try{await fetch(session.api+'/api/marketing/menu',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({name,unit_budget,category,unit})});loadMenu();}catch(e){alert('실패');}
-  }
-  async function editMenu(id){
-    const m=menu.find(x=>x.id===id);
-    const unit_budget=Number(prompt('단가:',m.unit_budget)||m.unit_budget)||m.unit_budget;
-    try{await fetch(session.api+'/api/marketing/menu/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({unit_budget})});loadMenu();loadCustomers();if(curCust)selectCust(curCust);}catch(e){alert('실패');}
+  function addMenu(){ if(!isMarketing())return; menuEdit='new'; renderMenu(); const f=$('menuBox').querySelector('input[data-mf="name"]'); if(f)f.focus(); }
+  async function saveMenuEdit(){
+    const row=$('menuBox').querySelector('tr[data-editrow]'); if(!row)return;
+    const gv=(k)=>{ const el=row.querySelector('input[data-mf="'+k+'"]'); return el?el.value.trim():''; };
+    const name=gv('name');
+    if(!name){ menuSay(false,'활동 이름을 입력하세요.'); return; }
+    const ub=num2(gv('unit_budget'));
+    if(ub==null||ub<0){ menuSay(false,'단가는 0 이상의 숫자여야 합니다. (예: 1500 또는 1,500)'); return; }
+    const body={name, category:gv('category'), unit_budget:ub, unit:gv('unit')};
+    const isNew=menuEdit==='new';
+    const url=session.api+'/api/marketing/menu'+(isNew?'':'/'+menuEdit);
+    try{
+      const res=await fetch(url,{method:isNew?'POST':'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      let d={}; try{ d=await res.json(); }catch(e){}
+      if(!res.ok||d.error){
+        menuSay(false, res.status===403?'권한이 없습니다. 마케팅·디렉터만 수정할 수 있습니다.':'저장 실패: '+(d.error||res.status));
+        return;
+      }
+      menuEdit=null; menuSay(true, isNew?'메뉴를 추가했습니다.':'수정했습니다.');
+      await loadMenu(); loadCustomers(); if(curCust)selectCust(curCust); // 단가 변경 → 배분 비용 재계산
+    }catch(e){ menuSay(false,'서버에 연결할 수 없습니다.'); }
   }
   async function delMenu(id){
-    if(!confirm('이 메뉴를 삭제할까요?'))return;
-    try{await fetch(session.api+'/api/marketing/menu/'+id,{method:'DELETE',headers:auth()});loadMenu();}catch(e){alert('실패');}
+    const m=menu.find(x=>String(x.id)===String(id));
+    if(!confirm('메뉴 "'+((m&&m.name)||'')+'" 를 삭제할까요?\n(기존 배분 데이터는 유지됩니다)'))return;
+    try{
+      const res=await fetch(session.api+'/api/marketing/menu/'+id,{method:'DELETE',headers:auth()});
+      let d={}; try{ d=await res.json(); }catch(e){}
+      if(!res.ok||d.error){ menuSay(false, res.status===403?'권한이 없습니다. 마케팅·디렉터만 삭제할 수 있습니다.':'삭제 실패: '+(d.error||res.status)); return; }
+      if(String(menuEdit)===String(id)) menuEdit=null;
+      menuSay(true,'삭제했습니다.'); loadMenu();
+    }catch(e){ menuSay(false,'서버에 연결할 수 없습니다.'); }
   }
+  // 이벤트 위임(인라인 onclick 미사용)
+  $('menuBox').addEventListener('click',(e)=>{
+    const t=e.target.closest('button'); if(!t)return;
+    if(t.dataset.medit!=null){ menuEdit=String(t.dataset.medit); renderMenu(); return; }
+    if(t.dataset.mdel!=null){ delMenu(t.dataset.mdel); return; }
+    if(t.dataset.msave!=null){ saveMenuEdit(); return; }
+    if(t.dataset.mcancel!=null){ menuEdit=null; renderMenu(); return; }
+  });
+  $('menuBox').addEventListener('keydown',(e)=>{
+    if(e.key==='Enter' && e.target.matches('input[data-mf]')){ e.preventDefault(); saveMenuEdit(); }
+    if(e.key==='Escape' && e.target.matches('input[data-mf]')){ menuEdit=null; renderMenu(); }
+  });
 
   async function loadOverview(){
     startYm=$('startYm').value||startYm;
@@ -376,6 +428,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260706b"></script>
 </body>
 </html>

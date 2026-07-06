@@ -12,32 +12,66 @@ export default async function marketingRoutes(app) {
   app.get('/api/marketing/menu', { preHandler: [authGuard, requirePage('marketing')] }, async () => {
     const rows = (await query(
       `SELECT id, name, category, unit_budget, unit FROM activity_catalog WHERE deleted_at IS NULL ORDER BY category, name`)).rows;
-    return { items: rows.map((r) => ({ id: r.id, name: r.name, category: r.category, unit_budget: Number(r.unit_budget), unit: r.unit })) };
+    // id를 Number로 정규화(node-pg BIGINT→문자열 — 프런트 === 비교가 조용히 실패해 수정 불가 증상)
+    return { items: rows.map((r) => ({ id: Number(r.id), name: r.name, category: r.category, unit_budget: Number(r.unit_budget), unit: r.unit })) };
   });
 
   // 메뉴 항목 작성/수정/삭제 — 마케팅·디렉터
   app.post('/api/marketing/menu', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const b = req.body || {};
-    if (!b.name) return reply.code(400).send({ error: 'name_required' });
+    const name = String(b.name || '').trim().slice(0, 120);
+    if (!name) return reply.code(400).send({ error: 'name_required' });
+    const ub = Number(b.unit_budget);
+    if (!(ub >= 0)) return reply.code(400).send({ error: 'bad_unit_budget' });
+    const category = (b.category == null || String(b.category).trim() === '') ? null : String(b.category).trim().slice(0, 60);
+    const unit = (b.unit == null || String(b.unit).trim() === '') ? null : String(b.unit).trim().slice(0, 30);
     const row = (await query(
       `INSERT INTO activity_catalog (name, category, category_code, unit_budget, unit) VALUES ($1,$2,'6070',$3,$4) RETURNING id`,
-      [b.name, b.category || null, Number(b.unit_budget) || 0, b.unit || null])).rows[0];
+      [name, category, ub, unit])).rows[0];
     await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `menu:${row.id}` });
-    return { ok: true, id: row.id };
+    return { ok: true, id: Number(row.id) };
   });
   app.patch('/api/marketing/menu/:id', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
-    const id = Number(req.params.id); const b = req.body || {};
-    await query(`UPDATE activity_catalog SET name=COALESCE($1,name), category=COALESCE($2,category), unit_budget=COALESCE($3,unit_budget), unit=COALESCE($4,unit) WHERE id=$5`,
-      [b.name || null, b.category || null, b.unit_budget != null ? Number(b.unit_budget) : null, b.unit || null, id]);
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    // 보낸 필드만 갱신. category/unit은 ''를 보내면 비움(NULL) — 기존 COALESCE 방식은 비우기 불가였음.
+    const sets = [], params = [];
+    const push = (frag, v) => { params.push(v); sets.push(frag.replace('?', '$' + params.length)); };
+    if (b.name !== undefined) {
+      const name = String(b.name || '').trim().slice(0, 120);
+      if (!name) return reply.code(400).send({ error: 'name_required' });
+      push('name=?', name);
+    }
+    if (b.category !== undefined) {
+      const category = (b.category == null || String(b.category).trim() === '') ? null : String(b.category).trim().slice(0, 60);
+      push('category=?', category);
+    }
+    if (b.unit_budget !== undefined) {
+      const ub = Number(b.unit_budget);
+      if (!(ub >= 0)) return reply.code(400).send({ error: 'bad_unit_budget' });
+      push('unit_budget=?', ub);
+    }
+    if (b.unit !== undefined) {
+      const unit = (b.unit == null || String(b.unit).trim() === '') ? null : String(b.unit).trim().slice(0, 30);
+      push('unit=?', unit);
+    }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    params.push(id);
+    const r = await query(
+      `UPDATE activity_catalog SET ${sets.join(', ')} WHERE id=$${params.length} AND deleted_at IS NULL RETURNING id`, params);
+    if (!r.rows.length) return reply.code(404).send({ error: 'not_found' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `menu:${id}` });
     return { ok: true };
   });
   app.delete('/api/marketing/menu/:id', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });
     const id = Number(req.params.id);
-    await query(`UPDATE activity_catalog SET deleted_at=now() WHERE id=$1`, [id]);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const r = await query(`UPDATE activity_catalog SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [id]);
+    if (!r.rows.length) return reply.code(404).send({ error: 'not_found' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'delete', target: `menu:${id}` });
     return { ok: true };
   });
