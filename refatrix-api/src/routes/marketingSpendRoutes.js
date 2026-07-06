@@ -10,8 +10,13 @@ import { logEvent } from '../audit.js';
 //     승인 → 모든 지급 라인마다 transactions(status='plan', 6070,
 //     memo '[마케팅] 활동 · 항목 · 구분')이 생성돼 재무 예정 내역·현금흐름
 //     AP(자금 계획)에 반영. 실제 송금은 재무 [실적 처리](confirm-pay).
-//   · 승인 후 수정: 디렉터만. 연결 거래가 아직 plan이면 자동 동기화,
-//     이미 actual(지급완료)이면 그 라인은 잠금(409 line_locked).
+//   · 승인 후 수정:
+//       - 디렉터: 즉시 반영 — 연결 거래가 아직 plan이면 자동 동기화,
+//         이미 actual(지급완료)이면 그 라인은 잠금(409 line_locked).
+//       - 담당자(작성자, 비디렉터): "수정 요청" — pending_revision(jsonb)에만
+//         저장되고 자금계획(현금흐름)은 건드리지 않음. 디렉터가 열어 검토·
+//         승인 저장 시에만 예정 지출이 동기화되고 요청이 종료됨(0124).
+//         디렉터 승인 전까지 담당자는 요청 내용을 계속 수정 가능.
 //   · 대상 통계: 고객별 연간 매출목표(target_customer_months 합) +
 //     올해 1/1~오늘 누적 매출(sales_invoices posted subtotal_mxn, ex-IVA).
 // =====================================================================
@@ -208,6 +213,7 @@ export default async function marketingSpendRoutes(app) {
     if (st) { params.push(st); where += ` AND p.status=$${params.length}`; }
     const rows = (await query(
       `SELECT p.id, p.title, p.category, to_char(p.event_date,'YYYY-MM-DD') AS event_date, p.status, p.reject_reason,
+              (p.pending_revision IS NOT NULL) AS has_revision,
               p.created_by, u.name AS created_by_name, p.submitted_at, p.decided_at,
               COALESCE(ia.item_count,0) AS item_count,
               COALESCE(la.line_count,0) AS line_count, COALESCE(la.total_amount,0) AS total_amount, la.first_due,
@@ -233,6 +239,7 @@ export default async function marketingSpendRoutes(app) {
       created_by_name: r.created_by_name, submitted_at: r.submitted_at, decided_at: r.decided_at,
       item_count: num(r.item_count), line_count: num(r.line_count), total_amount: r2(num(r.total_amount)), first_due: r.first_due,
       customer_count: num(r.customer_count), has_general: num(r.general_count) > 0, file_count: num(r.file_count),
+      has_revision: !!r.has_revision,
     }));
     return { items, me: req.ctx.perm.userId, is_director: isDirector(req) };
   });
@@ -244,10 +251,11 @@ export default async function marketingSpendRoutes(app) {
     const id = Number(req.params.id);
     if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
     const p = (await query(
-      `SELECT p.*, u.name AS created_by_name, d.name AS decided_by_name
+      `SELECT p.*, u.name AS created_by_name, d.name AS decided_by_name, rv.name AS revision_by_name
          FROM marketing_spend_plans p
          LEFT JOIN users u ON u.id=p.created_by
          LEFT JOIN users d ON d.id=p.decided_by
+         LEFT JOIN users rv ON rv.id=p.revision_by
         WHERE p.id=$1 AND p.deleted_at IS NULL`, [id])).rows[0];
     if (!p) return reply.code(404).send({ error: 'not_found' });
     const itemRows = (await query(
@@ -278,6 +286,28 @@ export default async function marketingSpendRoutes(app) {
       `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_at, u.name AS uploaded_by_name
          FROM marketing_spend_files f LEFT JOIN users u ON u.id=f.uploaded_by
         WHERE f.plan_id=$1 ORDER BY f.id DESC`, [id])).rows;
+    // ---- 담당자 수정 요청(0124): 대상 고객명 하이드레이션 포함 ----
+    let revision = null;
+    if (p.pending_revision != null) {
+      let rp = p.pending_revision;
+      if (typeof rp === 'string') { try { rp = JSON.parse(rp); } catch (_) { rp = null; } }
+      if (rp) {
+        const rids = (rp.targets || []).filter((t) => t && t.customer_id).map((t) => Number(t.customer_id));
+        let nmap = new Map();
+        if (rids.length) {
+          const cr = (await query(`SELECT id, code, name FROM customers WHERE id=ANY($1)`, [rids])).rows;
+          nmap = new Map(cr.map((c) => [Number(c.id), c]));
+        }
+        rp.targets = (rp.targets || []).map((t) => {
+          if (t && t.customer_id) {
+            const c = nmap.get(Number(t.customer_id)) || {};
+            return { customer_id: Number(t.customer_id), is_general: false, code: c.code || null, name: c.name || ('#' + t.customer_id) };
+          }
+          return { customer_id: null, is_general: true };
+        });
+        revision = { payload: rp, by_name: p.revision_by_name || null, at: p.revision_at };
+      }
+    }
     return {
       plan: { id: Number(p.id), title: p.title, category: p.category,
         event_date: p.event_date ? String(p.event_date).slice(0, 10) : null,
@@ -290,7 +320,8 @@ export default async function marketingSpendRoutes(app) {
         is_general: !!t.is_general, code: t.code, name: t.name })),
       files: files.map((f) => ({ id: Number(f.id), file_name: f.file_name, mime_type: f.mime_type,
         file_size: f.file_size == null ? null : Number(f.file_size), uploaded_at: f.uploaded_at, uploaded_by_name: f.uploaded_by_name })),
-      can_edit: isDirector(req) || (Number(p.created_by) === Number(req.ctx.perm.userId) && ['draft', 'rejected'].includes(p.status)),
+      revision,
+      can_edit: isDirector(req) || (Number(p.created_by) === Number(req.ctx.perm.userId) && ['draft', 'rejected', 'approved'].includes(p.status)),
       is_director: isDirector(req),
     };
   });
@@ -345,8 +376,36 @@ export default async function marketingSpendRoutes(app) {
     const dir = isDirector(req);
     const mine = Number(p.created_by) === Number(req.ctx.perm.userId);
     if (['draft', 'rejected'].includes(p.status)) { if (!dir && !mine) return reply.code(403).send({ error: 'not_owner' }); }
+    else if (p.status === 'approved') { if (!dir && !mine) return reply.code(403).send({ error: 'not_owner' }); }
     else if (!dir) return reply.code(403).send({ error: 'director_only' });
     const userId = req.ctx.perm.userId;
+
+    // ---- 승인건 + 담당자(비디렉터): "수정 요청" 저장 — 자금계획(현금흐름) 미반영 ----
+    //      디렉터가 검토·승인 저장할 때만 예정 지출이 동기화된다(0124).
+    if (p.status === 'approved' && !dir) {
+      // 지급완료 라인 조기 잠금 검사(실제 반영 시에도 다시 검사됨)
+      const paidRows = (await query(
+        `SELECT l.id, l.item_id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo
+           FROM marketing_spend_lines l JOIN transactions t ON t.id=l.txn_id
+          WHERE l.plan_id=$1 AND t.status='actual' AND t.deleted_at IS NULL`, [id])).rows;
+      const flat = [];
+      for (const it of ni.items) for (const l of it.lines) flat.push({ ...l, itemId: it.id });
+      for (const e of paidRows) {
+        const m = flat.find((l) => l.id != null && Number(l.id) === Number(e.id));
+        if (!m) return reply.code(409).send({ error: 'line_locked', line_id: Number(e.id), reason: 'paid' });
+        const changed = m.kind !== e.kind || m.due_date !== e.due_date || Math.abs(num(e.amount) - m.amount) > 0.001
+          || (e.memo || null) !== m.memo || Number(m.itemId) !== Number(e.item_id);
+        if (changed) return reply.code(409).send({ error: 'line_locked', line_id: Number(e.id), reason: 'paid' });
+      }
+      const payload = { title: h.title, category: h.category, event_date: h.eventDate, purpose: h.purpose,
+        items: ni.items,
+        targets: [...nt.custIds.map((cid) => ({ customer_id: cid })), ...(nt.general ? [{ is_general: true }] : [])] };
+      await query(
+        `UPDATE marketing_spend_plans SET pending_revision=$1::jsonb, revision_by=$2, revision_at=now(), updated_by=$2 WHERE id=$3`,
+        [JSON.stringify(payload), userId, id]);
+      await logEvent({ userId, action: 'update', target: `mktspend:${id}`, detail: { revision: true } });
+      return { ok: true, revision: true };
+    }
 
     const result = await withTx(async (c) => {
       const run = (s, p2) => c.query(s, p2);
@@ -440,7 +499,9 @@ export default async function marketingSpendRoutes(app) {
           await run(`DELETE FROM marketing_spend_items WHERE id=$1 AND plan_id=$2`, [e.id, id]);
         }
       }
-      return { ok: true, synced: true };
+      // 4) 디렉터가 저장했으므로 담당자 수정 요청은 종료(반영 또는 대체)
+      await run(`UPDATE marketing_spend_plans SET pending_revision=NULL, revision_by=NULL, revision_at=NULL WHERE id=$1`, [id]);
+      return { ok: true, synced: true, revision_cleared: p.pending_revision != null };
     });
     if (result.error) return reply.code(409).send(result);
     await logEvent({ userId, action: 'update', target: `mktspend:${id}` });
@@ -472,6 +533,27 @@ export default async function marketingSpendRoutes(app) {
     if (p.status !== 'submitted') return reply.code(409).send({ error: 'bad_status', status: p.status });
     if (!isDirector(req) && Number(p.created_by) !== Number(req.ctx.perm.userId)) return reply.code(403).send({ error: 'not_owner' });
     await query(`UPDATE marketing_spend_plans SET status='draft', updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
+    return { ok: true };
+  });
+
+  // =====================================================================
+  // 수정 요청 폐기(0124) — 디렉터(반려) 또는 요청자·담당자 본인(취소).
+  //   승인본·자금계획은 그대로 유지된다.
+  // =====================================================================
+  app.post('/api/mktspend/plans/:id/discard-revision', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!(id > 0)) return reply.code(400).send({ error: 'bad_id' });
+    const p = (await query(`SELECT * FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!p) return reply.code(404).send({ error: 'not_found' });
+    if (p.pending_revision == null) return reply.code(409).send({ error: 'no_revision' });
+    const meId = Number(req.ctx.perm.userId);
+    if (!isDirector(req) && Number(p.revision_by) !== meId && Number(p.created_by) !== meId) {
+      return reply.code(403).send({ error: 'not_allowed' });
+    }
+    await query(
+      `UPDATE marketing_spend_plans SET pending_revision=NULL, revision_by=NULL, revision_at=NULL, updated_by=$1 WHERE id=$2`,
+      [meId, id]);
+    await logEvent({ userId: meId, action: 'update', target: `mktspend:${id}`, detail: { revision_discard: true } });
     return { ok: true };
   });
 

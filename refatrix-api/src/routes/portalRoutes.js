@@ -31,6 +31,11 @@ export default async function portalRoutes(app) {
         const ms = (await query(`SELECT COUNT(*) AS n FROM marketing_spend_plans WHERE status='submitted' AND deleted_at IS NULL`)).rows[0];
         out.badges.marketing_approvals += Number(ms.n);
       } catch (_) { /* 테이블 미생성(마이그레이션 전) */ }
+      // 담당자 수정 요청 대기(0124) — 컬럼 미생성(마이그레이션 전)에도 안전하게 별도 try
+      try {
+        const mr = (await query(`SELECT COUNT(*) AS n FROM marketing_spend_plans WHERE pending_revision IS NOT NULL AND deleted_at IS NULL`)).rows[0];
+        out.badges.marketing_approvals += Number(mr.n);
+      } catch (_) { /* 0124 미적용 */ }
       const s = (await query(`SELECT COUNT(*) AS n FROM sales_change_requests WHERE status='pending'`)).rows[0];
       out.badges.sales_change_approvals = Number(s.n);
       const imp = (await query(`SELECT COUNT(*) AS n FROM import_batches WHERE deleted_at IS NULL AND status='pending'`)).rows[0];

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260703b</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260706a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -57,6 +57,8 @@
   .ratio{display:flex;gap:22px;flex-wrap:wrap}
   .ratio b{font-size:16px}
   .rejbox{background:var(--expense-bg);color:var(--expense);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
+  .revbox{background:#fdf3e3;color:#7a5410;border:1px solid #ecd9b0;border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px;line-height:1.7}
+  .revbox .btn{vertical-align:middle}
   .srch{position:relative}
   .srchList{position:absolute;top:100%;left:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:280px;max-height:260px;overflow:auto;display:none}
   .srchList.on{display:block}
@@ -99,6 +101,7 @@
         <button class="btn ghost sm" id="btnClose" style="margin-left:auto">닫기 ✕</button>
       </div>
       <div id="rejBox" class="rejbox hidden"></div>
+      <div id="revBox" class="revbox hidden"></div>
 
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
         <div style="flex:1;min-width:220px"><label>활동·행사명 *</label><input id="fTitle" style="width:100%" maxlength="200"></div>
@@ -204,7 +207,7 @@
         const tg=(p.customer_count?p.customer_count+'개사':'')+(p.has_general?(p.customer_count?' +':'')+'불특정':'')||'—';
         return '<tr><td>'+planNo(p.id)+'</td><td style="white-space:normal;min-width:180px">'+esc(p.title)+'</td><td>'+esc(p.category||'')+'</td><td>'+tg+'</td>'
           +'<td class="r">'+(p.item_count||0)+'</td><td class="r">'+p.line_count+'</td><td class="r">'+fmt(p.total_amount)+'</td><td>'+(p.first_due||'—')+'</td><td>'+esc(p.created_by_name||'')+'</td>'
-          +'<td><span class="st '+p.status+'">'+ST_LABEL[p.status]+'</span></td>'
+          +'<td><span class="st '+p.status+'">'+ST_LABEL[p.status]+'</span>'+(p.has_revision?' <span class="st submitted">수정요청</span>':'')+'</td>'
           +'<td><button class="btn ghost sm" data-open="'+p.id+'">열기</button></td></tr>';
       }).join('')+'</table>';
   }
@@ -228,15 +231,45 @@
       targets:(d.targets||[]).map(t=>({customer_id:t.customer_id,is_general:t.is_general,code:t.code,name:t.name})),
       files:d.files||[]};
     if(!cur.items.length)cur.items=[blankItem()];
+    // ---- 담당자 수정 요청(0124): 원본/수정안 스냅샷 ----
+    cur._orig=deep({title:cur.title,category:cur.category,event_date:cur.event_date,purpose:cur.purpose,items:cur.items,targets:cur.targets});
+    cur.revision=null; cur._rev=null; cur._snap='orig';
+    if(d.revision&&d.revision.payload){
+      cur.revision={by_name:d.revision.by_name,at:d.revision.at};
+      const paidMap=new Map(); (d.lines||[]).forEach(l=>{if(l.id!=null)paidMap.set(Number(l.id),{paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount});});
+      const rp=d.revision.payload;
+      cur._rev={title:rp.title||'',category:rp.category||'',event_date:rp.event_date||'',purpose:rp.purpose||'',
+        items:(rp.items||[]).map(it=>({id:it.id!=null?it.id:null,name:it.name||'',memo:it.memo||'',
+          lines:(it.lines||[]).map(l=>{const pd=l.id!=null?paidMap.get(Number(l.id)):null;
+            return {id:l.id!=null?l.id:null,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',
+              paid:pd?pd.paid:false,paid_date:pd?pd.paid_date:null,paid_amount:pd?pd.paid_amount:null};})})),
+        targets:(rp.targets||[]).map(t=>({customer_id:t.customer_id,is_general:!!t.is_general,code:t.code,name:t.name}))};
+      // 수정 가능한 사용자(담당자·디렉터)에게는 수정안을 기본으로 표시
+      if(isDir()||cur.created_by===me()) cur._snap='rev';
+    }
+    loadSnap(cur._snap,true);
     stats=null; renderComposer(); $('composer').classList.remove('hidden');
     refreshStats();
     try{$('composer').scrollIntoView({behavior:'smooth'});}catch(e){}
   }
+  function deep(o){return JSON.parse(JSON.stringify(o));}
+  function loadSnap(which,silent){
+    if(!cur)return;
+    const s=(which==='rev'&&cur._rev)?cur._rev:cur._orig; if(!s)return;
+    cur._snap=(which==='rev'&&cur._rev)?'rev':'orig';
+    const c=deep(s);
+    cur.title=c.title;cur.category=c.category;cur.event_date=c.event_date;cur.purpose=c.purpose;
+    cur.items=c.items&&c.items.length?c.items:[blankItem()];cur.targets=c.targets||[];
+    if(!silent){renderComposer();refreshStats();}
+  }
+  function fmtDT(t){ if(!t)return''; try{const d=new Date(t);const p2=(n)=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes());}catch(e){return String(t).slice(0,16);} }
   function editable(){
     if(!cur) return false;
     if(!cur.id) return true;
     if(cur.status==='draft'||cur.status==='rejected') return isDir()||cur.created_by===me();
-    return isDir(); // submitted·approved는 디렉터만 수정
+    if(cur.status==='approved') return isDir()||cur.created_by===me(); // 담당자는 "수정 요청"으로 저장(자금계획 미반영)
+    return isDir(); // submitted는 디렉터만 직접 수정(담당자는 회수)
   }
   function renderComposer(){
     const ed=editable();
@@ -245,6 +278,18 @@
     const rb=$('rejBox');
     if(cur.status==='rejected'&&cur.reject_reason){rb.textContent='반려 사유: '+cur.reject_reason;rb.classList.remove('hidden');}
     else rb.classList.add('hidden');
+    const rv=$('revBox');
+    if(cur.revision){
+      const onRev=cur._snap==='rev';
+      let rh='🕓 <b>수정 요청 대기</b> — '+esc(cur.revision.by_name||'담당자')+' · '+fmtDT(cur.revision.at)+'<br>';
+      if(isDir()) rh+=onRev
+        ?'아래 내용은 <b>담당자 수정안</b>입니다. 검토 후 <b>[✔ 수정안 승인 · 자금계획 반영]</b>을 누르면 예정 지출이 동기화되고 요청이 종료됩니다.'
+        :'아래 내용은 <b>현재 승인본(원본)</b>입니다. 이 내용으로 저장하면 담당자 수정안은 폐기됩니다.';
+      else if(cur.created_by===me()) rh+='디렉터 승인 전까지 계속 수정할 수 있습니다. <b>현금흐름(자금계획)은 디렉터 승인 후에만 갱신</b>됩니다.';
+      else rh+='담당자 수정안이 디렉터 승인을 기다리고 있습니다.';
+      if(cur._rev) rh+=' <button class="btn ghost sm" data-act="snap">'+(onRev?'원본 보기':'수정안 보기')+'</button>';
+      rv.innerHTML=rh; rv.classList.remove('hidden');
+    } else rv.classList.add('hidden');
     $('fTitle').value=cur.title||''; $('fCategory').value=cur.category||''; $('fEventDate').value=cur.event_date||''; $('fPurpose').value=cur.purpose||'';
     ['fTitle','fCategory','fEventDate','fPurpose'].forEach(id=>$(id).disabled=!ed);
     $('tgTools').style.display=ed?'':'none';
@@ -411,7 +456,11 @@
       return false;
     }
     if(!cur.id)cur.id=d.id;
-    if(!silent)say('cpMsg',true,cur.status==='approved'?'저장 완료 — 자금계획 예정 지출도 동기화했습니다.':'저장했습니다.');
+    if(!silent){
+      if(d.revision)say('cpMsg',true,'수정 요청을 저장했습니다 — 디렉터 승인 후 현금흐름(자금계획)에 반영됩니다.');
+      else if(cur.status==='approved')say('cpMsg',true,'저장 완료 — 자금계획 예정 지출도 동기화했습니다.'+(d.revision_cleared?' (담당자 수정 요청 종료)':''));
+      else say('cpMsg',true,'저장했습니다.');
+    }
     loadList();
     if(!silent)openPlan(cur.id);
     return true;
@@ -442,6 +491,13 @@
     const d=await api('/api/mktspend/plans/'+cur.id+'/reject',{method:'POST',body:JSON.stringify({reason})});
     if(!d.ok){say('cpMsg',false,'반려 실패: '+(d.error||d.status));return;}
     say('cpMsg',true,'반려했습니다.'); loadList(); openPlan(cur.id);
+  }
+  async function discardRevision(){
+    const q=isDir()?'담당자 수정 요청을 폐기할까요?\n(승인본과 자금계획은 그대로 유지됩니다)':'수정 요청을 취소할까요?\n(승인본은 그대로 유지됩니다)';
+    if(!confirm(q))return;
+    const d=await api('/api/mktspend/plans/'+cur.id+'/discard-revision',{method:'POST',body:'{}'});
+    if(!d.ok){say('cpMsg',false,'실패: '+(d.error||d.status));return;}
+    say('cpMsg',true,'수정 요청을 종료했습니다.'); loadList(); openPlan(cur.id);
   }
   async function deletePlan(){
     if(!confirm('이 계획을 삭제할까요?'+(cur.status==='approved'?'\n(연결된 미확정 예정 지출도 함께 취소됩니다)':'')))return;
@@ -478,11 +534,22 @@
       }
     }else if(cur.status==='approved'){
       if(isDir()){
-        h+='<button class="btn" data-act="save">수정 저장 (자금계획 동기화)</button>';
+        if(cur.revision){
+          h+=(cur._snap==='rev')
+            ?'<button class="btn" data-act="save">✔ 수정안 승인 · 자금계획 반영</button>'
+            :'<button class="btn" data-act="save">이 내용(원본 기준)으로 저장 · 요청 종료</button>';
+          h+='<button class="btn warn" data-act="discard">수정 요청 폐기</button>';
+        }else{
+          h+='<button class="btn" data-act="save">수정 저장 (자금계획 동기화)</button>';
+        }
         h+='<button class="btn warn" data-act="del">계획 삭제</button>';
-        h+='<span class="hint">지급완료된 줄은 잠깁니다 · 날짜·금액 수정 시 미확정 예정 지출이 자동 동기화됩니다</span>';
+        h+='<span class="hint">지급완료된 줄은 잠깁니다 · 저장 시 미확정 예정 지출이 자동 동기화됩니다</span>';
+      }else if(cur.created_by===me()){
+        h+='<button class="btn" data-act="save">수정 요청 저장 →</button>';
+        if(cur.revision)h+='<button class="btn warn" data-act="discard">수정 요청 취소</button>';
+        h+='<span class="hint">저장은 <b>디렉터 승인 후</b> 현금흐름(자금계획)에 반영됩니다 · 지급완료된 줄은 수정할 수 없습니다</span>';
       }else{
-        h+='<span class="hint">승인된 계획입니다. 수정은 디렉터만 가능합니다.</span>';
+        h+='<span class="hint">승인된 계획입니다. 수정은 담당자·디렉터만 가능합니다.</span>';
       }
     }
     b.innerHTML=h;
@@ -518,6 +585,8 @@
       else if(a==='approve')approvePlan();
       else if(a==='reject')rejectPlan();
       else if(a==='del')deletePlan();
+      else if(a==='discard')discardRevision();
+      else if(a==='snap')loadSnap(cur._snap==='rev'?'orig':'rev');
       return;
     }
   });
@@ -554,6 +623,6 @@
     if(ps&&ps.token){session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')};afterLogin();}
   });
 </script>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260706a"></script>
 </body>
 </html>
