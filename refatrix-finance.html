@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0705e</title>
+<title>Refatrix ERP · 재무 · build fin-0706a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -559,8 +559,8 @@
   }
   function refreshCatOptions(){
     const dir=$('t-dir').value;
-    // 수입 = '수익' 그룹, 지출 = 그 외(매출원가·판관비·영업외비용)
-    const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
+    // 수입 = 수익 ∪ 비손익(차입금·자본금), 지출 = 그 외(매출원가·판관비·영업외비용·자산)
+    const list=cats.filter(c=> dir==='in' ? (c.group_name==='수익'||c.group_name==='비손익') : (c.group_name!=='수익'&&c.group_name!=='비손익'));
     $('t-cat').innerHTML='<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}">${c.code} · ${c.name} (${c.group_name})</option>`).join('');
   }
 
@@ -844,8 +844,9 @@
         const fx=fxS?Number(String(fxS).replace(/,/g,'')):null;
         if(fxS&&!(fx>0))e.push('환율 숫자');
         if(dir&&cat){const g=(cats.find(c=>c.code===cat)||{}).group_name;
-          if(dir==='in'&&g==='비용')e.push('수입인데 비용 계정과목');
-          if(dir==='out'&&g==='수익')e.push('지출인데 수익 계정과목');}
+          const inOk=(g==='수익'||g==='비손익');
+          if(dir==='in'&&!inOk)e.push('수입인데 지출성 계정과목');
+          if(dir==='out'&&inOk)e.push('지출인데 수입성 계정과목(수익·차입금·자본금)');}
         rows.push({line:r,txn_date:dateS,direction:dir,status,account_id:accId,category_code:cat,
           currency:cur||'MXN',amount:amt,fx_rate:fx,memo:memoS||null,receipt_no:receiptS||null,
           _accS:accS,_catS:catS,_err:e});
@@ -1067,7 +1068,8 @@
   }
 
   function catOptionsFor(dir,sel){
-    const list=cats.filter(c=> dir==='in' ? c.group_name==='수익' : c.group_name!=='수익');
+    // 수입 = 수익 ∪ 비손익(차입금·자본금), 지출 = 그 외(매출원가·판관비·영업외비용·자산)
+    const list=cats.filter(c=> dir==='in' ? (c.group_name==='수익'||c.group_name==='비손익') : (c.group_name!=='수익'&&c.group_name!=='비손익'));
     return '<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}" ${c.code===sel?'selected':''}>${c.code} · ${c.name}</option>`).join('');
   }
   // 잠금(안씀) 계좌는 신규 사용 드롭다운에서 제외. 단, 이미 그 계좌에 걸린 항목을 열었을 땐
@@ -2665,6 +2667,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260705a"></script>
+<script src="refatrix-nav.js?v=20260706a"></script>
 </body>
 </html>
