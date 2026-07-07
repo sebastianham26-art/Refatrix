@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · t500sort-20260707b</title>
+<title>Refatrix ERP · 견적 (수주관리) · t500sort-20260707c</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -104,7 +104,7 @@
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
-            <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — 차량 모델(VIO순)·부품 고정순서(rótula→horquilla L/R→tornillo→terminal int/ext→buje) 정렬 · Existencia(재고)·할인·수량 입력칸 포함">⭐ Top 500 견적</button>
+            <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — 차량 모델(VIO순)·부품 고정순서(rótula→horquilla L/R→tornillo→terminal int/ext→buje) 정렬 · Existencia(재고, 품절 포함·0은 빨강)·할인·수량 입력칸 포함">⭐ Top 500 견적</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
         </div>
@@ -527,7 +527,7 @@
       const rows=[];
       rows.push(['REFATRIX']);                                                                 // r1
       rows.push(['Distribuidor oficial CTR en México']);                                       // r2
-      rows.push(['COTIZACIÓN — Top 500 SKU CTR (selección por registro VIO · existencia disponible) · ordenado por vehículo (VIO) y tipo de pieza']); // r3
+      rows.push(['COTIZACIÓN — Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia) · ordenado por vehículo (VIO) y tipo de pieza']); // r3
       rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
@@ -562,10 +562,11 @@
       if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl;
       ['A','B','C','D','E','F','G','H','I','J'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
       const sExi={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
+      const sExi0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 품절(0) — 연빨강
       for(let r=firstData;r<=lastData;r++){
         if(ws['A'+r])ws['A'+r].s=sVeh; if(ws['B'+r])ws['B'+r].s=sVio;
         if(ws['C'+r])ws['C'+r].s=sCtr; if(ws['D'+r])ws['D'+r].s=sTxt; if(ws['E'+r])ws['E'+r].s=sTxt;
-        if(ws['F'+r])ws['F'+r].s=sExi; if(ws['G'+r])ws['G'+r].s=sQty; if(ws['H'+r])ws['H'+r].s=sLista;
+        if(ws['F'+r])ws['F'+r].s=(Number(ws['F'+r].v)>0?sExi:sExi0); if(ws['G'+r])ws['G'+r].s=sQty; if(ws['H'+r])ws['H'+r].s=sLista;
         if(ws['I'+r])ws['I'+r].s=sDesc; if(ws['J'+r])ws['J'+r].s=sImp;
       }
       [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['I'+rr])ws['I'+rr].s=sSumL; if(ws['J'+rr])ws['J'+rr].s=sSumV; });
@@ -832,6 +833,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260707t5"></script>
+<script src="refatrix-nav.js?v=20260707t6"></script>
 </body>
 </html>

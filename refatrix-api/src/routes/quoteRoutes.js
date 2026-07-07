@@ -758,7 +758,7 @@ export default async function quoteRoutes(app) {
       const c = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [Number(req.query.customer_id)])).rows[0];
       if (c) discountRate = Number(c.discount) || 0;
     }
-    // top=N(예: 500): VIO 순위 기반 상위 N개. 재고>0 + ctr_vio_rank 매칭 SKU만, 순위 오름차순(1위=최다등록).
+    // top=N(예: 500): VIO 순위 기반 상위 N개. ctr_vio_rank 매칭 SKU(재고 무관 — 품절 포함), 순위 오름차순(1위=최다등록).
     //   동순위(같은 대표차종)는 재고 많은 순 → 코드 순. top 미지정이면 종전대로 전체 SKU(코드순).
     const topN = Math.min(Math.max(Number(req.query.top) || 0, 0), 1000);
     let prods;
@@ -768,7 +768,7 @@ export default async function quoteRoutes(app) {
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
-          WHERE p.deleted_at IS NULL AND p.stock_qty > 0
+          WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code
           LIMIT $1`, [topN])).rows;
     } else {
