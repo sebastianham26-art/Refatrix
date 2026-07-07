@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0706a</title>
+<title>Refatrix ERP · 재무 · build fin-0706b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -557,10 +557,17 @@
     try{cats=(await fetch(session.api+'/api/categories',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){cats=[];}
     refreshCatOptions();
   }
+  // 계정과목 수동선택 규칙: 수입 = 수익∪비손익(차입금·자본금) / 지출 = 그 외(매출원가·판관비·영업외·자산).
+  // 부채(2030 선수금)는 수금/정산 화면에서 자동 부여 전용 — 수동 드롭다운 양쪽에서 제외
+  // (수동 등록 시 sales_payments와 안 맞는 유령 선수금이 생기는 것 방지).
+  function catManualOk(g,dir){
+    if(g==='부채')return false;
+    const inG=(g==='수익'||g==='비손익');
+    return dir==='in'?inG:!inG;
+  }
   function refreshCatOptions(){
     const dir=$('t-dir').value;
-    // 수입 = 수익 ∪ 비손익(차입금·자본금), 지출 = 그 외(매출원가·판관비·영업외비용·자산)
-    const list=cats.filter(c=> dir==='in' ? (c.group_name==='수익'||c.group_name==='비손익') : (c.group_name!=='수익'&&c.group_name!=='비손익'));
+    const list=cats.filter(c=>catManualOk(c.group_name,dir));
     $('t-cat').innerHTML='<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}">${c.code} · ${c.name} (${c.group_name})</option>`).join('');
   }
 
@@ -844,9 +851,10 @@
         const fx=fxS?Number(String(fxS).replace(/,/g,'')):null;
         if(fxS&&!(fx>0))e.push('환율 숫자');
         if(dir&&cat){const g=(cats.find(c=>c.code===cat)||{}).group_name;
-          const inOk=(g==='수익'||g==='비손익');
+          if(g==='부채')e.push('선수금(2030)은 수금/정산 화면에서 자동 처리 — 직접 입력 불가');
+          else{const inOk=(g==='수익'||g==='비손익');
           if(dir==='in'&&!inOk)e.push('수입인데 지출성 계정과목');
-          if(dir==='out'&&inOk)e.push('지출인데 수입성 계정과목(수익·차입금·자본금)');}
+          if(dir==='out'&&inOk)e.push('지출인데 수입성 계정과목(수익·차입금·자본금)');}}
         rows.push({line:r,txn_date:dateS,direction:dir,status,account_id:accId,category_code:cat,
           currency:cur||'MXN',amount:amt,fx_rate:fx,memo:memoS||null,receipt_no:receiptS||null,
           _accS:accS,_catS:catS,_err:e});
@@ -1068,9 +1076,11 @@
   }
 
   function catOptionsFor(dir,sel){
-    // 수입 = 수익 ∪ 비손익(차입금·자본금), 지출 = 그 외(매출원가·판관비·영업외비용·자산)
-    const list=cats.filter(c=> dir==='in' ? (c.group_name==='수익'||c.group_name==='비손익') : (c.group_name!=='수익'&&c.group_name!=='비손익'));
-    return '<option value="">(없음)</option>'+list.map(c=>`<option value="${c.code}" ${c.code===sel?'selected':''}>${c.code} · ${c.name}</option>`).join('');
+    const list=cats.filter(c=>catManualOk(c.group_name,dir));
+    // 기존 항목이 자동 계정(선수금 2030 등)이면 현재 선택값으로는 남겨 값이 엉뚱하게 바뀌는 것 방지(잠금 계좌 패턴과 동일).
+    const cur=sel&&!list.some(c=>c.code===sel)?cats.find(c=>c.code===sel):null;
+    const opts=cur?list.concat([{...cur,name:cur.name+' — 자동'}]):list;
+    return '<option value="">(없음)</option>'+opts.map(c=>`<option value="${c.code}" ${c.code===sel?'selected':''}>${c.code} · ${c.name}</option>`).join('');
   }
   // 잠금(안씀) 계좌는 신규 사용 드롭다운에서 제외. 단, 이미 그 계좌에 걸린 항목을 열었을 땐
   // 현재 선택값으로는 '(안씀)' 표기로 남겨 값이 엉뚱하게 바뀌는 것을 방지.
@@ -2667,6 +2677,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260706a"></script>
+<script src="refatrix-nav.js?v=20260706b"></script>
 </body>
 </html>
