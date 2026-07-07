@@ -677,6 +677,28 @@ export default async function productRoutes(app) {
     return { query: raw, model_label, headline_vio, variants, categories, total: pids.length, price_included: canPrice };
   });
 
+  // VIO 제품찾기 — 적용차종에 존재하는 차종(maker/model) 목록.
+  //   VIO(커버리지) 목록에 없는 차종(예: Audi Q2)도 화면에 노출하기 위한 보충 소스.
+  //   제품이 1개 이상 걸린(미삭제) 차종만, 연식 범위·제품수 포함.
+  app.get('/api/products/applied-models', { preHandler: [authGuard, requirePage('products')] }, async () => {
+    const rows = (await query(
+      `SELECT pa.maker, pa.model, COUNT(DISTINCT pa.product_id)::int AS products,
+              MIN(pa.year_from) AS y_from, MAX(pa.year_to) AS y_to
+         FROM product_applications pa
+         JOIN products p ON p.id = pa.product_id AND p.deleted_at IS NULL
+        WHERE pa.model IS NOT NULL AND pa.model <> ''
+        GROUP BY pa.maker, pa.model
+        ORDER BY pa.maker NULLS LAST, pa.model`)).rows;
+    return {
+      items: rows.map((r) => ({
+        maker: r.maker || '', model: r.model, products: Number(r.products),
+        y_from: r.y_from != null ? Number(r.y_from) : null,
+        y_to: r.y_to != null ? Number(r.y_to) : null,
+      })),
+      total: rows.length,
+    };
+  });
+
   // VIO 제품찾기 — 기준품목(SYD 코드)의 SYD 정가 조회.
   //   화면에서 "1516049를 고객이 얼마에 사는지" 입력받아 할인율(1 − 구매단가÷정가)을 산출하고,
   //   그 할인율을 SYD 전 품목 정가에 적용(SYD 고객구매가) → CTR = SYD 고객구매가 × 0.95.

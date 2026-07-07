@@ -310,6 +310,36 @@
     return _vioReady;
   }
 
+  // ── 적용차종 보충: product_applications에 있으나 VIO 목록에 없는 차종(예: Audi Q2)을 뒤에 붙임 ──
+  let EXTRA=[],_appliedReady=null;
+  const titleCase=(s)=>String(s||'').toLowerCase().replace(/(^|\s)\S/g,c=>c.toUpperCase());
+  function loadApplied(){
+    if(_appliedReady) return _appliedReady;
+    _appliedReady=(async()=>{
+      try{
+        const d=await fetch(session.api+'/api/products/applied-models',{headers:auth()}).then(x=>x.json());
+        const items=(d&&d.items)||[];
+        const covered=(VIO&&VIO.models||[]).map(m=>normS(m.modelo));
+        const seen={};
+        EXTRA=[];
+        items.forEach(it=>{
+          const nm=normS(it.model); if(!nm||seen[nm]) return;
+          // 커버리지 모델과 이름이 겹치면(포함 관계 포함) 제외 — 이미 목록에 있음
+          const dup=covered.some(cv=>cv===nm||cv.indexOf(nm)>=0||nm.indexOf(cv)>=0);
+          if(dup) return;
+          seen[nm]=1;
+          EXTRA.push({ marca:titleCase(it.maker), modelo:it.model, units:0, rank:null,
+            ys:it.y_from, ye:it.y_to, extra:true, products:it.products });
+        });
+        EXTRA.sort((a,b)=>(a.marca+a.modelo).localeCompare(b.marca+b.modelo));
+        // 펼치기/요약칩 참조용 음수 가상 rank 부여
+        EXTRA.forEach((m,i)=>{ m.rank=-(i+1); });
+      }catch(e){ EXTRA=[]; }
+      return EXTRA;
+    })();
+    return _appliedReady;
+  }
+
   // ── 기준단가 → 할인율 상태 ──
   const P={ baseLP:null, baseInfo:null, disc:null, priceIncluded:true };
   async function loadBaseline(){
@@ -377,7 +407,11 @@
     if(S.range>0) arr=arr.slice(0,S.range);
     const nq=normS(S.q);
     if(nq) arr=arr.filter(m=>normS(m.marca+' '+m.modelo).indexOf(nq)>=0);
-    return arr;
+    // VIO 미등록(적용차종 보충) 차종: 검색어가 있으면 매칭되는 것만, 없으면 '전체' 범위에서만 뒤에 표시
+    let ex=EXTRA;
+    if(nq) ex=ex.filter(m=>normS(m.marca+' '+m.modelo).indexOf(nq)>=0);
+    else if(S.range>0) ex=[];
+    return arr.concat(ex);
   }
   function renderList(){
     const arr=filteredModels();
@@ -386,15 +420,20 @@
     if(!pageArr.length){ el.innerHTML='<div class="card hint">해당하는 차종이 없습니다.</div>'; $('pager').innerHTML=''; return; }
     el.innerHTML=pageArr.map(m=>{
       const yrs=(m.ys?m.ys:'')+(m.ye&&m.ye!==m.ys?(' – '+m.ye):'');
-      const gensTxt=m.gens.filter(g=>g.units>0).map(g=>escP(g.label)).slice(0,4).join(' · ');
+      const gensTxt=m.extra?('제품 '+num(m.products)+'개 적용')
+        :m.gens.filter(g=>g.units>0).map(g=>escP(g.label)).slice(0,4).join(' · ');
+      const rid2=rid(m.rank);
+      const rb=m.extra
+        ?'<div class="rankbox" style="background:#8C9EAF"><div class="r" style="font-size:16px">—</div><div class="u">VIO 자료없음</div></div>'
+        :'<div class="rankbox"><div class="r">'+m.rank+'<small>위</small></div><div class="u">'+num(m.units)+'대</div></div>';
       return '<div class="veh" data-rank="'+m.rank+'">'
         +'<div class="veh-h" data-rank="'+m.rank+'">'
-        +'<div class="rankbox"><div class="r">'+m.rank+'<small>위</small></div><div class="u">'+num(m.units)+'대</div></div>'
+        +rb
         +'<div class="veh-t"><div class="name">'+escP((m.marca+' '+m.modelo).toUpperCase())+'</div>'
         +'<div class="yrs">연식 <b>'+escP(yrs||'—')+'</b>'+(gensTxt?(' · '+gensTxt):'')+'</div></div>'
-        +'<div class="veh-stats" id="st'+m.rank+'"><span class="caret">'+(openSet[m.rank]?'▼':'▶')+'</span></div>'
+        +'<div class="veh-stats" id="st'+rid2+'"><span class="caret">'+(openSet[m.rank]?'▼':'▶')+'</span></div>'
         +'</div>'
-        +'<div class="veh-body" id="vb'+m.rank+'" style="display:'+(openSet[m.rank]?'block':'none')+'"></div>'
+        +'<div class="veh-body" id="vb'+rid2+'" style="display:'+(openSet[m.rank]?'block':'none')+'"></div>'
         +'</div>';
     }).join('');
     el.querySelectorAll('.veh-h').forEach(h=>{
@@ -412,11 +451,12 @@
     if(pv)pv.addEventListener('click',()=>{S.page--;renderList();});
     if(nx)nx.addEventListener('click',()=>{S.page++;renderList();});
   }
-  function modelByRank(r){ return (VIO&&VIO.models.find(m=>m.rank===r))||null; }
+  const rid=(r)=>'r'+String(r).replace('-','m');
+  function modelByRank(r){ return (VIO&&VIO.models.find(m=>m.rank===r))||(EXTRA.find(m=>m.rank===r))||null; }
   function toggleVeh(rank){
     const m=modelByRank(rank); if(!m) return;
     openSet[rank]=!openSet[rank];
-    const body=$('vb'+rank);
+    const body=$('vb'+rid(rank));
     const caret=document.querySelector('.veh-h[data-rank="'+rank+'"] .caret');
     if(caret) caret.textContent=openSet[rank]?'▼':'▶';
     if(openSet[rank]){ body.style.display='block'; expand(m,true); }
@@ -424,12 +464,12 @@
   }
   function rerenderOpen(){
     if(!VIO) return;
-    VIO.models.forEach(m=>{ if(openSet[m.rank]){ const b=$('vb'+m.rank); if(b) drawMatrix(m,b); } });
+    VIO.models.concat(EXTRA).forEach(m=>{ if(openSet[m.rank]){ const b=$('vb'+rid(m.rank)); if(b) drawMatrix(m,b); } });
   }
 
   // ── 차량 펼치기: by-model 조회 → 행렬 ──
   async function expand(m,fetchIfNeeded){
-    const body=$('vb'+m.rank); if(!body) return;
+    const body=$('vb'+rid(m.rank)); if(!body) return;
     const key=normS(m.modelo);
     if(cache[key]){ drawMatrix(m,body); return; }
     body.innerHTML='<div class="loading">제품을 불러오는 중…</div>';
@@ -464,7 +504,7 @@
     const key=normS(m.modelo), d=cache[key];
     if(!d||!d.categories||!d.categories.length){
       body.innerHTML='<div class="loading">‘'+escP(m.modelo)+'’에 매칭된 제품이 없습니다.</div>';
-      const st=$('st'+m.rank); if(st) st.innerHTML='<span class="vstat">품목 0</span><span class="caret">▼</span>';
+      const st=$('st'+rid(m.rank)); if(st) st.innerHTML='<span class="vstat">품목 0</span><span class="caret">▼</span>';
       return;
     }
     // 카테고리 → 컬럼 구성(RH/LH 분리)
@@ -485,7 +525,7 @@
       }
     });
     const itemCnt=Object.keys(itemSet).length;
-    const st=$('st'+m.rank);
+    const st=$('st'+rid(m.rank));
     if(st) st.innerHTML='<span class="vstat">품목 '+itemCnt+'</span>'
       +'<span class="vstat stk">재고 '+num(stockSum)+'</span>'
       +'<span class="vstat sold">누적판매 '+num(soldSum)+'</span>'
@@ -601,6 +641,8 @@
       $('msg').textContent=VIO.models.length? '' : '차량(VIO) 데이터를 불러오지 못했습니다. 공통>Coverage 화면 배포 여부를 확인하세요.';
       if(!VIO.models.length) $('msg').className='msg err';
       renderList();
+      // 적용차종 보충(VIO 미등록 차종) — 비차단 로드 후 목록 갱신
+      loadApplied().then(()=>{ if(EXTRA.length) renderList(); });
     });
   }
 
