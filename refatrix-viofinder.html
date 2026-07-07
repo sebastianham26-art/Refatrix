@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf1</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--gold-bg:#FFF6DA;
+    --ctr:#d81e25;--ctr-bg:#FCE9EA;--syd:#0a5cab;--syd-bg:#E7F0F8;--radius:12px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-top:16px;box-shadow:var(--shadow)}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn:disabled{opacity:.5}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{cursor:pointer;font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#555;user-select:none}
+  .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .filters{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+  .msg{margin-top:10px;font-size:13px}.msg.err{color:var(--expense)}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:130px}
+
+  /* 기준단가 → 할인율 패널 */
+  .pricepanel{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-top:12px}
+  .pp{flex:1;min-width:180px;border:1px solid var(--line);border-radius:10px;padding:11px 14px;background:#FCFBF7}
+  .pp .t{font-size:11px;font-weight:700;color:var(--muted)}
+  .pp .v{font-size:19px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+  .pp.base .v{color:var(--syd)}
+  .pp.disc{background:var(--gold-bg);border-color:#ecdcb8}.pp.disc .v{color:#8a6414;font-size:24px}
+  .pp.sydp{background:var(--syd-bg);border-color:#c6d9ec}.pp.sydp .v{color:var(--syd);font-size:15px}
+  .pp.ctrp{background:var(--ctr-bg);border-color:#efc9cb}.pp.ctrp .v{color:var(--ctr);font-size:15px}
+  .pp .s{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .arrow{align-self:center;font-size:18px;color:var(--muted);font-weight:800}
+
+  /* 차량 블록 */
+  .veh{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-top:14px;box-shadow:var(--shadow);overflow:hidden}
+  .veh-h{display:flex;align-items:center;gap:16px;padding:12px 18px;background:#FAF8F3;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+  .rankbox{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:76px;background:var(--brand);color:#fff;border-radius:10px;padding:7px 10px}
+  .rankbox .r{font-size:21px;font-weight:800;line-height:1.05}
+  .rankbox .r small{font-size:11px;font-weight:700;color:#cfe0d8;margin-left:1px}
+  .rankbox .u{font-size:10.5px;color:#cfe0d8;font-weight:600;margin-top:2px;white-space:nowrap}
+  .veh-t{min-width:0}
+  .veh-t .name{font-size:15.5px;font-weight:800;color:var(--brand)}
+  .veh-t .yrs{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px}
+  .veh-t .yrs b{color:var(--ink)}
+  .veh-stats{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .vstat{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#fff;color:#555;white-space:nowrap}
+  .vstat.stk{background:var(--income-bg);color:var(--income);border-color:#cfe4db}
+  .vstat.sold{background:var(--gold-bg);color:#8a6414;border-color:#ecdcb8}
+  .caret{font-size:12px;color:var(--muted);margin-left:4px}
+  .veh-body{overflow-x:auto}
+  .veh-body .loading{padding:16px;font-size:12.5px;color:var(--muted)}
+
+  /* 행렬: X축=품목(RH/LH 분리), Y축=속성 */
+  table.mx{border-collapse:collapse;width:100%;min-width:760px}
+  table.mx th,table.mx td{border-bottom:1px solid #F0EDE4;padding:7px 9px;font-size:12px;text-align:center;vertical-align:top;white-space:nowrap}
+  table.mx thead th{background:#FCFBF7;font-size:11px;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.mx thead .grp{font-size:11.5px;color:var(--brand);border-left:1px solid var(--line)}
+  table.mx thead .grp .es2{font-weight:600;color:var(--muted);font-size:10px}
+  table.mx thead .side{font-size:10px;padding:4px 9px}
+  table.mx td.split,table.mx th.split{border-left:1px solid var(--line)}
+  .rowlab{position:sticky;left:0;background:#FCFBF7;text-align:left!important;font-size:11px;font-weight:700;color:var(--muted);border-right:1px solid var(--line);min-width:104px;vertical-align:middle!important;z-index:1}
+  .rowlab .b{display:inline-block;font-size:9.5px;font-weight:800;padding:1px 7px;border-radius:999px;margin-right:5px;vertical-align:1px}
+  .rowlab .b.ctr{background:var(--ctr-bg);color:var(--ctr)}
+  .rowlab .b.syd{background:var(--syd-bg);color:var(--syd)}
+  .iline{display:block;line-height:1.9;min-height:23px}
+  .code{font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;background:none;border:none;padding:0}
+  .code.ctr{color:var(--ctr)}.code.syd{color:var(--syd)}
+  .code .cam{font-size:10.5px;opacity:.7}
+  .code:hover{text-decoration:underline}
+  .sidepill{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;border-radius:999px;background:#EFEBE0;color:#6F6A60;margin-left:4px;vertical-align:1px}
+  .price{font-variant-numeric:tabular-nums;font-weight:700;font-size:11.5px}
+  .price.ctrv{color:var(--ctr)}.price.sydv{color:var(--syd)}
+  .stk-ok{display:inline-block;min-width:38px;font-weight:800;color:var(--income);background:var(--income-bg);border-radius:6px;padding:1px 7px;font-size:11.5px}
+  .stk-zero{display:inline-block;min-width:38px;font-weight:800;color:var(--expense);background:var(--expense-bg);border-radius:6px;padding:1px 7px;font-size:11.5px}
+  .sold-v{display:inline-block;min-width:38px;font-weight:800;color:#8a6414;background:var(--gold-bg);border-radius:6px;padding:1px 7px;font-size:11.5px}
+  .dash{color:#c2c0ba}
+  td.empty{background:repeating-linear-gradient(45deg,#fff,#fff 6px,#fcfcfc 6px,#fcfcfc 12px)}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:16px}
+  .pager .pg{font-size:12.5px;color:var(--muted);font-weight:700;margin:0 6px}
+
+  /* 사진 비교 모달 */
+  #photoModal{display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:100;align-items:center;justify-content:center;padding:20px}
+  #photoModal.open{display:flex}
+  .pm-box{background:#fff;border-radius:14px;max-width:740px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.35);overflow:hidden}
+  .pm-h{display:flex;align-items:center;padding:12px 18px;background:var(--brand);color:#fff}
+  .pm-h .t{font-size:14px;font-weight:800}
+  .pm-h .sub{font-size:11px;color:#cfe0d8;margin-left:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pm-x{margin-left:auto;cursor:pointer;font-size:18px;color:#cfe0d8;background:none;border:none;font-family:inherit}
+  .pm-body{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px 18px}
+  .pm-side{border:2px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+  .pm-side.ctr{border-color:var(--ctr)}.pm-side.syd{border-color:var(--syd)}
+  .pm-side .hd{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12.5px;font-weight:800;color:#fff}
+  .pm-side.ctr .hd{background:var(--ctr)}.pm-side.syd .hd{background:var(--syd)}
+  .pm-side .hd .cd{font-family:ui-monospace,Consolas,monospace;margin-left:auto;font-size:12px}
+  .pm-imgwrap{position:relative;height:230px;background:#F7F5F0;display:flex;align-items:center;justify-content:center}
+  .pm-imgwrap img{max-width:100%;max-height:100%;object-fit:contain}
+  .pm-noimg{color:#b8b2a4;font-size:13px;text-align:center;padding:12px}
+  .pm-noimg .big{font-size:34px;display:block;margin-bottom:6px}
+  .pm-nav{position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:none;background:rgba(20,61,52,.75);color:#fff;font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center}
+  .pm-nav.show{display:flex}
+  .pm-nav.prev{left:6px}.pm-nav.next{right:6px}
+  .pm-cnt{position:absolute;bottom:6px;right:8px;background:rgba(20,61,52,.75);color:#fff;font-size:10px;font-weight:700;border-radius:999px;padding:2px 8px;display:none}
+  .pm-cnt.show{display:block}
+  .pm-meta{padding:8px 12px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);line-height:1.7}
+  .pm-meta b{color:var(--ink)}
+  @media (max-width:640px){.pm-body{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>Refatrix ERP</h1><div class="sub">제품·마케팅 · VIO 차량모델 제품찾기</div></div>
+    <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <div class="filters">
+        <div style="flex:1;min-width:200px">
+          <label>차종 검색</label>
+          <input type="text" id="q" placeholder="예: versa, tsuru, jetta" style="width:100%" autocomplete="off">
+        </div>
+        <div>
+          <label>기준품목 (SYD 코드)</label>
+          <input type="text" id="baseCode" value="1516049" style="width:110px;font-family:ui-monospace,Consolas,monospace;font-weight:700;color:var(--syd)">
+        </div>
+        <div>
+          <label>고객 구매단가 입력 (MXN)</label>
+          <input type="number" id="buyIn" step="0.01" min="0" placeholder="0.00" style="width:130px;text-align:right;font-weight:700">
+        </div>
+        <div><button class="btn" id="applyBtn">적용</button></div>
+      </div>
+
+      <div class="pricepanel" id="pricePanel">
+        <div class="pp base">
+          <div class="t" id="ppBaseT">기준품목 · SYD 정가</div>
+          <div class="v" id="ppList">—</div>
+          <div class="s" id="ppBaseS">List Price (제품 마스터)</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="pp disc">
+          <div class="t">산출 할인율</div>
+          <div class="v" id="ppDisc">—</div>
+          <div class="s">1 − (구매단가 ÷ 정가)</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="pp sydp">
+          <div class="t">SYD 고객 구매가 (전 품목)</div>
+          <div class="v" id="ppSyd">—</div>
+          <div class="s">동일 할인율을 SYD 전 품목 정가에 적용</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="pp ctrp">
+          <div class="t">CTR 판매가 (전 품목)</div>
+          <div class="v" id="ppCtr">SYD 구매가 × 0.95</div>
+          <div class="s">SYD 고객 구매가 대비 5% 할인</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label>VIO 범위</label>
+          <div class="chips" id="rangeChips">
+            <span class="chip on" data-n="50">Top 50</span>
+            <span class="chip" data-n="100">Top 100</span>
+            <span class="chip" data-n="500">Top 500</span>
+            <span class="chip" data-n="0">전체</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <label>품목(카테고리) 필터 — 중복선택</label>
+          <div class="chips" id="catChips"></div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:10px">VIO(멕시코 등록대수) 내림차순 · 차량 헤더 클릭=펼치기 · X축=품목(RH/LH 분리), Y축=CTR 코드→CTR 구매단가→재고→누적판매→SYD 코드→SYD 구매단가 · 코드(📷) 클릭=CTR·SYD 사진 비교</div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div id="list"></div>
+    <div class="pager" id="pager"></div>
+  </div>
+</div>
+
+<!-- 사진 비교 모달 -->
+<div id="photoModal">
+  <div class="pm-box">
+    <div class="pm-h">
+      <span class="t">제품 사진 비교</span>
+      <span class="sub" id="pmCat"></span>
+      <button class="pm-x" id="pmClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="pm-body">
+      <div class="pm-side ctr">
+        <div class="hd">CTR <span class="cd" id="pmCtrCode"></span></div>
+        <div class="pm-imgwrap" id="pmCtrWrap">
+          <img id="pmCtrImg" alt="CTR" style="display:none">
+          <div class="pm-noimg" id="pmCtrNo"><span class="big">🖼</span>사진 없음</div>
+          <button class="pm-nav prev" id="pmPrev">‹</button>
+          <button class="pm-nav next" id="pmNext">›</button>
+          <span class="pm-cnt" id="pmCnt"></span>
+        </div>
+        <div class="pm-meta" id="pmCtrMeta"></div>
+      </div>
+      <div class="pm-side syd">
+        <div class="hd">SYD <span class="cd" id="pmSydCode"></span></div>
+        <div class="pm-imgwrap">
+          <img id="pmSydImg" alt="SYD" style="display:none">
+          <div class="pm-noimg" id="pmSydNo"><span class="big">🖼</span>사진 없음</div>
+        </div>
+        <div class="pm-meta" id="pmSydMeta"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const escP=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const num=(n)=> n==null?'—':Number(n).toLocaleString('es-MX');
+  const fm=(n)=> n==null?'—':'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function portalSession(){
+    try{const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){const o=JSON.parse(raw);if(o&&o.token)return{token:o.token,api:o.api||'',user:o.user||{}};}}catch(e){}
+    try{const h=location.hash.slice(1);if(h){const p=new URLSearchParams(h);const token=p.get('token');
+      if(token){const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')};
+        try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){}return o;}}}catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+escP(d.user?.name||login_id)+'</b><br>역할: '+escP(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      init();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ── VIO 차량 목록: 공통>커버리지 데이터(mx_parts_coverage_dashboard.html)의 const DATA를 단일 소스로 사용 ──
+  function normS(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+  let VIO=null,_vioReady=null;
+  function loadVio(){
+    if(_vioReady) return _vioReady;
+    _vioReady=(async()=>{
+      try{
+        let signal=null,to=null;
+        try{ const ctrl=new AbortController(); signal=ctrl.signal; to=setTimeout(function(){try{ctrl.abort();}catch(e){}},12000); }catch(e){}
+        const _dk=new Date().toISOString().slice(0,10);
+        const txt=await fetch('mx_parts_coverage_dashboard.html?d='+_dk,signal?{signal:signal}:undefined).then(x=>x.text());
+        if(to) clearTimeout(to);
+        const line=txt.split('\n').find(l=>l.trimStart().startsWith('const DATA='));
+        if(!line) throw new Error('no DATA');
+        const js=line.trim().replace(/^const\s+DATA\s*=\s*/,'').replace(/;\s*$/,'');
+        const D=JSON.parse(js); const vehicles=(D&&D.vehicles)||[];
+        const models=vehicles.map(m=>({
+          marca:(m.marca||'').toString(), modelo:(m.modelo||'').toString(), units:Number(m.units)||0,
+          gens:(m.gens||[]).map(g=>({label:(g.label||'').toString(), ys:Number(g.ys)||null, ye:Number(g.ye)||null, units:Number(g.units)||0}))
+        })).filter(m=>m.units>0);
+        models.sort((a,b)=>b.units-a.units);
+        models.forEach((m,i)=>{ m.rank=i+1;
+          let ys=null,ye=null; m.gens.forEach(g=>{ if(g.ys){ys=ys==null?g.ys:Math.min(ys,g.ys);} if(g.ye){ye=ye==null?g.ye:Math.max(ye,g.ye);} });
+          m.ys=ys; m.ye=ye;
+        });
+        VIO={models};
+      }catch(e){ VIO={models:[]}; }
+      return VIO;
+    })();
+    return _vioReady;
+  }
+
+  // ── 기준단가 → 할인율 상태 ──
+  const P={ baseLP:null, baseInfo:null, disc:null, priceIncluded:true };
+  async function loadBaseline(){
+    const code=$('baseCode').value.trim();
+    if(!code){ P.baseLP=null; P.baseInfo=null; recalc(); return; }
+    try{
+      const res=await fetch(session.api+'/api/products/syd-baseline?code='+encodeURIComponent(code),{headers:auth()});
+      if(res.status===403){ P.priceIncluded=false; P.baseLP=null; setPricePanelHidden(true); return; }
+      const d=await res.json();
+      if(d&&d.found&&d.list_price_syd!=null){ P.baseLP=Number(d.list_price_syd); P.baseInfo=d; }
+      else{ P.baseLP=null; P.baseInfo=null; $('msg').className='msg err'; $('msg').textContent='기준품목 '+code+' 을(를) 찾지 못했거나 SYD 정가가 없습니다.'; }
+    }catch(e){ P.baseLP=null; }
+    recalc();
+  }
+  function setPricePanelHidden(h){
+    $('pricePanel').style.display=h?'none':'';
+    document.querySelectorAll('tr.prow').forEach(tr=>{ tr.style.display=h?'none':''; });
+  }
+  function recalc(){
+    const buy=Number($('buyIn').value)||0;
+    $('ppBaseT').textContent='기준품목 '+($('baseCode').value.trim()||'—')+' · SYD 정가';
+    $('ppBaseS').textContent=P.baseInfo?('CTR '+(P.baseInfo.ctr_code||'')+' · '+(P.baseInfo.name||'')):'List Price (제품 마스터)';
+    $('ppList').textContent=fm(P.baseLP);
+    if(P.baseLP>0&&buy>0){ P.disc=Math.max(0,Math.min(0.95,1-buy/P.baseLP)); }
+    else P.disc=null;
+    $('ppDisc').textContent=P.disc==null?'—':(P.disc*100).toFixed(1)+'%';
+    $('ppSyd').textContent=P.disc==null?'—':('정가 × '+(1-P.disc).toFixed(3));
+    // 펼쳐진 표의 가격 갱신
+    document.querySelectorAll('.price.sydv').forEach(el=>{
+      const lp=el.dataset.lp; el.textContent=(lp===''||P.disc==null)?'—':fm(Number(lp)*(1-P.disc));
+    });
+    document.querySelectorAll('.price.ctrv').forEach(el=>{
+      const lp=el.dataset.lp; el.textContent=(lp===''||P.disc==null)?'—':fm(Number(lp)*(1-P.disc)*0.95);
+    });
+  }
+
+  // ── 카테고리 칩(중복선택) ──
+  const CAT_CHIPS=[
+    {key:'rotula',label:'Rótula(볼조인트)'},
+    {key:'terminal_ext',label:'Terminal ext.'},
+    {key:'terminal_int',label:'Terminal int.'},
+    {key:'horquilla',label:'Horquilla(컨트롤암)'},
+    {key:'tornillo',label:'Tornillo estab.(링크)'},
+    {key:'buje',label:'Buje(부싱)'},
+    {key:'__etc',label:'기타 전체'}
+  ];
+  const NAMED=CAT_CHIPS.filter(c=>c.key!=='__etc').map(c=>c.key);
+  const catOn={}; CAT_CHIPS.forEach(c=>catOn[c.key]=true);
+  function renderCatChips(){
+    $('catChips').innerHTML=CAT_CHIPS.map(c=>'<span class="chip'+(catOn[c.key]?' on':'')+'" data-k="'+c.key+'">'+escP(c.label)+'</span>').join('');
+    $('catChips').querySelectorAll('.chip').forEach(ch=>{
+      ch.addEventListener('click',()=>{ catOn[ch.dataset.k]=!catOn[ch.dataset.k]; renderCatChips(); rerenderOpen(); });
+    });
+  }
+  function catVisible(key){ return NAMED.indexOf(key)>=0 ? !!catOn[key] : !!catOn['__etc']; }
+
+  // ── 차량 목록 렌더 ──
+  const PAGE=20;
+  const S={range:50,page:0,q:''};
+  const cache={};   // modelo(normS) -> by-model 응답
+  const openSet={}; // rank -> true
+  function filteredModels(){
+    if(!VIO) return [];
+    let arr=VIO.models;
+    if(S.range>0) arr=arr.slice(0,S.range);
+    const nq=normS(S.q);
+    if(nq) arr=arr.filter(m=>normS(m.marca+' '+m.modelo).indexOf(nq)>=0);
+    return arr;
+  }
+  function renderList(){
+    const arr=filteredModels();
+    const start=S.page*PAGE, pageArr=arr.slice(start,start+PAGE);
+    const el=$('list');
+    if(!pageArr.length){ el.innerHTML='<div class="card hint">해당하는 차종이 없습니다.</div>'; $('pager').innerHTML=''; return; }
+    el.innerHTML=pageArr.map(m=>{
+      const yrs=(m.ys?m.ys:'')+(m.ye&&m.ye!==m.ys?(' – '+m.ye):'');
+      const gensTxt=m.gens.filter(g=>g.units>0).map(g=>escP(g.label)).slice(0,4).join(' · ');
+      return '<div class="veh" data-rank="'+m.rank+'">'
+        +'<div class="veh-h" data-rank="'+m.rank+'">'
+        +'<div class="rankbox"><div class="r">'+m.rank+'<small>위</small></div><div class="u">'+num(m.units)+'대</div></div>'
+        +'<div class="veh-t"><div class="name">'+escP((m.marca+' '+m.modelo).toUpperCase())+'</div>'
+        +'<div class="yrs">연식 <b>'+escP(yrs||'—')+'</b>'+(gensTxt?(' · '+gensTxt):'')+'</div></div>'
+        +'<div class="veh-stats" id="st'+m.rank+'"><span class="caret">'+(openSet[m.rank]?'▼':'▶')+'</span></div>'
+        +'</div>'
+        +'<div class="veh-body" id="vb'+m.rank+'" style="display:'+(openSet[m.rank]?'block':'none')+'"></div>'
+        +'</div>';
+    }).join('');
+    el.querySelectorAll('.veh-h').forEach(h=>{
+      h.addEventListener('click',()=>toggleVeh(Number(h.dataset.rank)));
+    });
+    // 이미 펼쳐진 블록 재렌더
+    pageArr.forEach(m=>{ if(openSet[m.rank]) expand(m,false); });
+    // 페이저
+    const pages=Math.ceil(arr.length/PAGE);
+    $('pager').innerHTML=pages<=1?'' :
+      '<button class="btn ghost" id="pgPrev" '+(S.page<=0?'disabled':'')+'>← 이전</button>'
+      +'<span class="pg">'+(S.page+1)+' / '+pages+' 페이지 · '+arr.length+'차종</span>'
+      +'<button class="btn ghost" id="pgNext" '+(S.page>=pages-1?'disabled':'')+'>다음 →</button>';
+    const pv=$('pgPrev'),nx=$('pgNext');
+    if(pv)pv.addEventListener('click',()=>{S.page--;renderList();});
+    if(nx)nx.addEventListener('click',()=>{S.page++;renderList();});
+  }
+  function modelByRank(r){ return (VIO&&VIO.models.find(m=>m.rank===r))||null; }
+  function toggleVeh(rank){
+    const m=modelByRank(rank); if(!m) return;
+    openSet[rank]=!openSet[rank];
+    const body=$('vb'+rank);
+    const caret=document.querySelector('.veh-h[data-rank="'+rank+'"] .caret');
+    if(caret) caret.textContent=openSet[rank]?'▼':'▶';
+    if(openSet[rank]){ body.style.display='block'; expand(m,true); }
+    else body.style.display='none';
+  }
+  function rerenderOpen(){
+    if(!VIO) return;
+    VIO.models.forEach(m=>{ if(openSet[m.rank]){ const b=$('vb'+m.rank); if(b) drawMatrix(m,b); } });
+  }
+
+  // ── 차량 펼치기: by-model 조회 → 행렬 ──
+  async function expand(m,fetchIfNeeded){
+    const body=$('vb'+m.rank); if(!body) return;
+    const key=normS(m.modelo);
+    if(cache[key]){ drawMatrix(m,body); return; }
+    body.innerHTML='<div class="loading">제품을 불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(m.modelo),{headers:auth()}).then(x=>x.json());
+      cache[key]=d;
+      if(d&&d.price_included===false){ P.priceIncluded=false; setPricePanelHidden(true); }
+      drawMatrix(m,body);
+    }catch(e){ body.innerHTML='<div class="loading">조회에 실패했습니다. 잠시 후 다시 시도하세요.</div>'; }
+  }
+
+  // 아이템 좌우 판별: ① CTR 코드 접미사 L/R ② 제품명 IZQ/DER
+  function sideOf(item){
+    const c=String(item.ctr||'');
+    const mm=c.match(/^(.*\d)([LR])$/i);
+    if(mm) return mm[2].toUpperCase()==='L'?'L':'R';
+    const n=String(item.name||'').toUpperCase();
+    if(/IZQ/.test(n)) return 'L';
+    if(/DER/.test(n)) return 'R';
+    return null;
+  }
+  // 카테고리 셀 병합: 모든 세대(variants) 셀을 합치고 CTR코드로 중복 제거
+  function mergedItems(cat){
+    const seen={},out=[];
+    Object.keys(cat.cells||{}).forEach(vk=>{
+      (cat.cells[vk]||[]).forEach(x=>{ if(x.ctr&&!seen[x.ctr]){seen[x.ctr]=1;out.push(x);} });
+    });
+    out.sort((a,b)=>String(a.ctr).localeCompare(String(b.ctr)));
+    return out;
+  }
+  function drawMatrix(m,body){
+    const key=normS(m.modelo), d=cache[key];
+    if(!d||!d.categories||!d.categories.length){
+      body.innerHTML='<div class="loading">‘'+escP(m.modelo)+'’에 매칭된 제품이 없습니다.</div>';
+      const st=$('st'+m.rank); if(st) st.innerHTML='<span class="vstat">품목 0</span><span class="caret">▼</span>';
+      return;
+    }
+    // 카테고리 → 컬럼 구성(RH/LH 분리)
+    const cols=[]; // {cat, side:null|'R'|'L', items:[]}
+    let itemSet={}, stockSum=0, soldSum=0;
+    d.categories.forEach(c=>{
+      if(!catVisible(c.key)) return;
+      const items=mergedItems(c);
+      if(!items.length) return;
+      items.forEach(x=>{ if(!itemSet[x.ctr]){itemSet[x.ctr]=1;stockSum+=Number(x.stock)||0;soldSum+=Number(x.sold)||0;} });
+      const R=items.filter(x=>sideOf(x)==='R'), L=items.filter(x=>sideOf(x)==='L'), C=items.filter(x=>sideOf(x)==null);
+      if(R.length||L.length){
+        // 좌우 분리 — 공용(무측) 품목은 Der. 열에 'L/R공용' 필로 표기
+        cols.push({cat:c, side:'R', items:R.concat(C.map(x=>Object.assign({__both:1},x)))});
+        cols.push({cat:c, side:'L', items:L, split:false});
+      }else{
+        cols.push({cat:c, side:null, items:C});
+      }
+    });
+    const itemCnt=Object.keys(itemSet).length;
+    const st=$('st'+m.rank);
+    if(st) st.innerHTML='<span class="vstat">품목 '+itemCnt+'</span>'
+      +'<span class="vstat stk">재고 '+num(stockSum)+'</span>'
+      +'<span class="vstat sold">누적판매 '+num(soldSum)+'</span>'
+      +'<span class="caret">▼</span>';
+    if(!cols.length){ body.innerHTML='<div class="loading">선택한 품목 필터에 해당하는 제품이 없습니다.</div>'; return; }
+
+    // 헤더 2줄: 그룹(카테고리) + 사이드
+    let h='<table class="mx"><thead><tr><th class="rowlab" rowspan="2">구분</th>';
+    let i=0;
+    while(i<cols.length){
+      const c=cols[i];
+      if(c.side){ // R 다음은 같은 카테고리의 L
+        h+='<th class="grp split" colspan="2">'+escP(c.cat.es)+' <span class="es2">'+escP(c.cat.ko)+'</span></th>'; i+=2;
+      }else{
+        h+='<th class="grp split" rowspan="2">'+escP(c.cat.es)+'<br><span class="es2">'+escP(c.cat.ko)+'</span></th>'; i+=1;
+      }
+    }
+    h+='</tr><tr>';
+    cols.forEach(c=>{
+      if(c.side==='R') h+='<th class="side split">Der. <span class="sidepill">RH</span></th>';
+      else if(c.side==='L') h+='<th class="side">Izq. <span class="sidepill">LH</span></th>';
+    });
+    h+='</tr></thead><tbody>';
+
+    const cellCls=(c,idx)=> (c.side==='L') ? '' : ' class="split"';
+    const lineWrap=(items,fn)=> items.length? items.map(fn).join('') : '';
+    const cellTd=(c,inner)=> '<td'+((c.side!=='L')?' class="split'+(inner?'':' empty')+'"':(inner?'':' class="empty"'))+'>'+inner+'</td>';
+    const camBtn=(x,brand)=>{
+      const code=brand==='ctr'?x.ctr:(x.syd&&x.syd[0]||'');
+      const sydAll=(x.syd||[]).join('/');
+      const both=x.__both?'<span class="sidepill">L/R공용</span>':'';
+      if(!code) return '<span class="iline dash">—</span>';
+      return '<span class="iline"><button type="button" class="code '+brand+'" data-cat="'+escP(x.__cat||'')+'" data-ctr="'+escP(x.ctr)+'" data-syd="'+escP(sydAll)+'" data-name="'+escP(x.name||'')+'" data-stock="'+escP(x.stock)+'" data-sold="'+escP(x.sold)+'" data-lpsyd="'+(x.lp_syd!=null?x.lp_syd:'')+'">'
+        +escP(brand==='ctr'?x.ctr:code)+' <span class="cam">📷</span></button>'+(brand==='ctr'?both:'')+'</span>';
+    };
+    // 행 1: CTR 코드
+    h+='<tr><td class="rowlab"><span class="b ctr">CTR</span>코드</td>';
+    cols.forEach(c=>{ c.items.forEach(x=>{x.__cat=c.cat.es+(c.side?(c.side==='R'?' Der. (RH)':' Izq. (LH)'):'');});
+      h+=cellTd(c,lineWrap(c.items,x=>camBtn(x,'ctr'))); });
+    h+='</tr>';
+    // 행 2: CTR 구매단가 (SYD 구매가 × 0.95)
+    h+='<tr class="prow"><td class="rowlab"><span class="b ctr">CTR</span>구매단가</td>';
+    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline"><span class="price ctrv" data-lp="'+(x.lp_syd!=null?x.lp_syd:'')+'">—</span></span>')); });
+    h+='</tr>';
+    // 행 3: 재고
+    h+='<tr><td class="rowlab">재고</td>';
+    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline"><span class="'+((Number(x.stock)||0)>0?'stk-ok':'stk-zero')+'">'+num(x.stock||0)+'</span></span>')); });
+    h+='</tr>';
+    // 행 4: 누적판매
+    h+='<tr><td class="rowlab">누적판매</td>';
+    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline">'+((Number(x.sold)||0)>0?('<span class="sold-v">'+num(x.sold)+'</span>'):'<span class="dash">—</span>')+'</span>')); });
+    h+='</tr>';
+    // 행 5: SYD 코드
+    h+='<tr><td class="rowlab"><span class="b syd">SYD</span>코드</td>';
+    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>camBtn(x,'syd'))); });
+    h+='</tr>';
+    // 행 6: SYD 구매단가 (정가 × (1−할인율))
+    h+='<tr class="prow"><td class="rowlab"><span class="b syd">SYD</span>구매단가</td>';
+    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline"><span class="price sydv" data-lp="'+(x.lp_syd!=null?x.lp_syd:'')+'">—</span></span>')); });
+    h+='</tr>';
+    h+='</tbody></table>';
+    body.innerHTML=h;
+    if(!P.priceIncluded) setPricePanelHidden(true);
+    // 사진 모달 바인딩 (장바구니 확장 지점: data-ctr/data-syd/data-lpsyd 속성 사용 예정)
+    body.querySelectorAll('button.code').forEach(b=>{ b.addEventListener('click',()=>openPhoto(b.dataset)); });
+    recalc();
+  }
+
+  // ── 사진 비교 모달 (CTR: R2 1~12 프로브 + 좌우 넘김 · SYD: 카탈로그 jpg) ──
+  const R2='https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/{c}/{c}_{n}.webp';
+  const SYDIMG='https://www.syd.com.mx/Catalogo/fotos/{c}.jpg';
+  const PM={imgs:[],idx:0};
+  function probeCtrImages(code){
+    const urls=[]; for(let n=1;n<=12;n++) urls.push(R2.split('{c}').join(encodeURIComponent(code)).replace('{n}',n));
+    return Promise.all(urls.map(u=>new Promise(res=>{
+      const im=new Image(); im.onload=()=>res(u); im.onerror=()=>res(null); im.src=u;
+    }))).then(a=>a.filter(Boolean));
+  }
+  function pmShow(){
+    const img=$('pmCtrImg'),no=$('pmCtrNo'),pv=$('pmPrev'),nx=$('pmNext'),cnt=$('pmCnt');
+    if(PM.imgs.length){ img.src=PM.imgs[PM.idx]; img.style.display=''; no.style.display='none';
+      cnt.textContent=(PM.idx+1)+' / '+PM.imgs.length;
+      cnt.classList.toggle('show',PM.imgs.length>1);
+      pv.classList.toggle('show',PM.imgs.length>1); nx.classList.toggle('show',PM.imgs.length>1);
+    }else{ img.style.display='none'; no.style.display=''; pv.classList.remove('show'); nx.classList.remove('show'); cnt.classList.remove('show'); }
+  }
+  function openPhoto(ds){
+    $('pmCat').textContent=(ds.cat||'')+(ds.name?(' · '+ds.name):'');
+    $('pmCtrCode').textContent=ds.ctr||'—';
+    const syd1=(ds.syd||'').split('/')[0];
+    $('pmSydCode').textContent=ds.syd||'—';
+    const d=P.disc, lps=ds.lpsyd!==''?Number(ds.lpsyd):null;
+    const sydBuy=(d!=null&&lps!=null)?lps*(1-d):null;
+    const ctrBuy=sydBuy!=null?sydBuy*0.95:null;
+    $('pmCtrMeta').innerHTML='구매단가 <b>'+fm(ctrBuy)+'</b> · 재고 <b>'+num(ds.stock)+'</b> · 누적판매 <b>'+num(ds.sold)+'</b>';
+    $('pmSydMeta').innerHTML='구매단가 <b>'+fm(sydBuy)+'</b>'+(lps!=null?(' · 정가 '+fm(lps)):'');
+    // SYD 이미지
+    const si=$('pmSydImg'),sn=$('pmSydNo');
+    si.style.display='none'; sn.style.display='';
+    if(syd1){ si.onload=()=>{si.style.display='';sn.style.display='none';}; si.onerror=()=>{si.style.display='none';sn.style.display='';};
+      si.src=SYDIMG.replace('{c}',encodeURIComponent(syd1)); }
+    // CTR 이미지 프로브
+    PM.imgs=[]; PM.idx=0; pmShow();
+    if(ds.ctr){ probeCtrImages(ds.ctr).then(list=>{ PM.imgs=list; PM.idx=0; pmShow(); }); }
+    $('photoModal').classList.add('open');
+  }
+
+  function init(){
+    renderCatChips();
+    loadBaseline();
+    $('msg').textContent='차량 목록을 불러오는 중…'; $('msg').className='msg';
+    loadVio().then(()=>{
+      $('msg').textContent=VIO.models.length? '' : '차량(VIO) 데이터를 불러오지 못했습니다. 공통>Coverage 화면 배포 여부를 확인하세요.';
+      if(!VIO.models.length) $('msg').className='msg err';
+      renderList();
+    });
+  }
+
+  // ── 이벤트 ──
+  document.addEventListener('DOMContentLoaded',function(){
+    $('go').addEventListener('click',login);
+    $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+    $('applyBtn').addEventListener('click',()=>{ loadBaseline(); });
+    $('buyIn').addEventListener('input',recalc);
+    $('baseCode').addEventListener('keydown',e=>{if(e.key==='Enter')loadBaseline();});
+    let qt=null;
+    $('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>{S.q=$('q').value;S.page=0;renderList();},250); });
+    $('rangeChips').querySelectorAll('.chip').forEach(ch=>{
+      ch.addEventListener('click',()=>{
+        $('rangeChips').querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+        ch.classList.add('on'); S.range=Number(ch.dataset.n); S.page=0; renderList();
+      });
+    });
+    $('pmClose').addEventListener('click',()=>$('photoModal').classList.remove('open'));
+    $('photoModal').addEventListener('click',e=>{if(e.target===$('photoModal'))$('photoModal').classList.remove('open');});
+    $('pmPrev').addEventListener('click',()=>{ if(PM.imgs.length){PM.idx=(PM.idx-1+PM.imgs.length)%PM.imgs.length;pmShow();} });
+    $('pmNext').addEventListener('click',()=>{ if(PM.imgs.length){PM.idx=(PM.idx+1)%PM.imgs.length;pmShow();} });
+    const ps=portalSession();
+    if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||$('api').value.replace(/\/+$/,'')};
+      $('who').innerHTML='<b>'+escP(ps.user?.name||'')+'</b><br>역할: '+escP(ps.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');init(); }
+  });
+</script>
+<script src="refatrix-nav.js?v=20260707vf"></script>
+</body>
+</html>

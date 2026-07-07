@@ -524,8 +524,10 @@ export default async function productRoutes(app) {
   // 각 세대 열에는 그 연식대의 VIO(멕시코 등록대수) 순위·수량을 표시(출처: ctr_vio_rank).
   // 마이그레이션 불필요 — product_applications / product_syd_codes / ctr_vio_rank / products 재사용.
   app.get('/api/products/by-model', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const { perm } = req.ctx;
+    const canPrice = fieldVisible(perm, 'sale_price'); // 정가류(list_price·list_price_syd)는 sale_price 권한자에게만
     const raw = String(req.query.q || '').trim();
-    const empty = { query: raw, model_label: '', headline_vio: null, variants: [], categories: [], total: 0 };
+    const empty = { query: raw, model_label: '', headline_vio: null, variants: [], categories: [], total: 0, price_included: canPrice };
     if (raw.length < 2) return empty;
     const esc = raw.replace(/([%_\\])/g, '\\$1');
     const like = '%' + esc + '%';
@@ -533,7 +535,7 @@ export default async function productRoutes(app) {
     // 1) 검색 모델에 걸리는 개별 차량 적용 항목 + 제품 기본(코드=CTR, 이름=DESCRIPCIÓN)
     const appRows = (await query(
       `SELECT pa.product_id, pa.maker, pa.model, pa.year_from, pa.year_to,
-              p.code AS ctr, p.name
+              p.code AS ctr, p.name, p.stock_qty, p.list_price, p.list_price_syd
          FROM product_applications pa
          JOIN products p ON p.id = pa.product_id AND p.deleted_at IS NULL
         WHERE (pa.model ILIKE $1 OR pa.app_text ILIKE $1)
@@ -541,6 +543,26 @@ export default async function productRoutes(app) {
     if (!appRows.length) return empty;
 
     const pids = [...new Set(appRows.map((r) => Number(r.product_id)))];
+
+    // 1-b) 누적 판매수량(게시·미삭제 인보이스) — 제품 목록과 동일하게 영업팀 가시성 제한.
+    //   디렉터·영업지원(vis=null)은 전체 집계, 그 외는 소속/부여팀 고객 판매만 합산.
+    const vis = visibleTeamIds(perm);
+    const soldParams = [pids];
+    let soldTeamJoin = '', soldTeamCond = '';
+    if (vis !== null) {
+      soldParams.push(vis.length ? vis : [-1]);
+      soldTeamJoin = ' JOIN customers cu ON cu.id = si.customer_id';
+      soldTeamCond = ' AND cu.team_id = ANY($2)';
+    }
+    const soldRows = (await query(
+      `SELECT sil.product_id, SUM(sil.qty) AS qty
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id = sil.invoice_id${soldTeamJoin}
+        WHERE si.status = 'posted' AND si.deleted_at IS NULL
+          AND sil.product_id = ANY($1)${soldTeamCond}
+        GROUP BY sil.product_id`, soldParams)).rows;
+    const soldByPid = {};
+    for (const s of soldRows) soldByPid[Number(s.product_id)] = Number(s.qty);
 
     // 2) SYD 코드(제품:다)
     const sydRows = (await query(
@@ -615,7 +637,16 @@ export default async function productRoutes(app) {
       const byCtr = byVar.get(model);
       if (!byCtr.has(r.ctr)) {
         const yStr = yf != null ? (yt != null && yt !== yf ? yf + '-' + yt : String(yf)) : '';
-        byCtr.set(r.ctr, { ctr: r.ctr, syd: sydByPid[Number(r.product_id)] || [], name: r.name || '', year: yStr });
+        const cell = {
+          ctr: r.ctr, syd: sydByPid[Number(r.product_id)] || [], name: r.name || '', year: yStr,
+          stock: r.stock_qty != null ? Number(r.stock_qty) : 0,
+          sold: soldByPid[Number(r.product_id)] || 0,
+        };
+        if (canPrice) {
+          cell.lp = r.list_price != null ? Number(r.list_price) : null;          // CTR List Price
+          cell.lp_syd = r.list_price_syd != null ? Number(r.list_price_syd) : null; // SYD List Price
+        }
+        byCtr.set(r.ctr, cell);
       }
     }
 
@@ -643,7 +674,38 @@ export default async function productRoutes(app) {
     let headline_vio = null;
     for (const v of variants) if (v.vio && (!headline_vio || v.vio.rank < headline_vio.rank)) headline_vio = v.vio;
 
-    return { query: raw, model_label, headline_vio, variants, categories, total: pids.length };
+    return { query: raw, model_label, headline_vio, variants, categories, total: pids.length, price_included: canPrice };
+  });
+
+  // VIO 제품찾기 — 기준품목(SYD 코드)의 SYD 정가 조회.
+  //   화면에서 "1516049를 고객이 얼마에 사는지" 입력받아 할인율(1 − 구매단가÷정가)을 산출하고,
+  //   그 할인율을 SYD 전 품목 정가에 적용(SYD 고객구매가) → CTR = SYD 고객구매가 × 0.95.
+  //   정가는 sale_price 권한자에게만 제공. 매칭: product_syd_codes 정확일치 우선 → products.scode ILIKE 폴백.
+  app.get('/api/products/syd-baseline', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    if (!fieldVisible(perm, 'sale_price')) { reply.code(403); return { error: 'forbidden' }; }
+    const code = String(req.query.code || '').trim();
+    if (!code) return { found: false, code };
+    const esc = code.replace(/([%_\\])/g, '\\$1');
+    let row = (await query(
+      `SELECT p.code, p.name, p.list_price_syd
+         FROM product_syd_codes sc
+         JOIN products p ON p.id = sc.product_id AND p.deleted_at IS NULL
+        WHERE sc.syd_code = $1
+        ORDER BY p.code LIMIT 1`, [code])).rows[0];
+    if (!row) {
+      row = (await query(
+        `SELECT code, name, list_price_syd
+           FROM products
+          WHERE deleted_at IS NULL AND scode ILIKE $1
+          ORDER BY code LIMIT 1`, ['%' + esc + '%'])).rows[0];
+    }
+    if (!row) return { found: false, code };
+    return {
+      found: true, code,
+      ctr_code: row.code, name: row.name,
+      list_price_syd: row.list_price_syd != null ? Number(row.list_price_syd) : null,
+    };
   });
 }
 
