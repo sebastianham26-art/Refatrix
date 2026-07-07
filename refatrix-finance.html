@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0706b</title>
+<title>Refatrix ERP · 재무 · build fin-0706c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1440,7 +1440,8 @@
           const genCell=`${through?`<div style="font-size:11px;color:var(--muted);margin-bottom:3px">~${through}까지 생성됨</div>`:''}
                ${opts.length?`<select class="rx-mon" data-id="${r.id}" style="width:auto;display:inline-block">${opts}</select>
                <button class="btn ${through?'ghost ':''}sm rx-gen" data-id="${r.id}">${through?'추가 생성':'생성'}</button>`
-               :'<span class="hint" style="margin:0">최대(24개월)까지 생성됨</span>'}`;
+               :`<span class="hint" style="margin:0">최대(24개월)까지 생성됨</span> <button class="btn ghost sm rx-gen" data-id="${r.id}" data-through="${through?through.slice(0,7):''}">재생성</button>`}
+               ${(through&&Number(r.generated_count)===0)?'<div style="font-size:11px;color:var(--expense);font-weight:700;margin-top:2px">⚠ 생성 이력은 있으나 예정 0건 — 위 버튼으로 빠진 회차를 채우세요</div>':''}`;
           return `<tr style="${r.active?'':'opacity:.5'}">
             <td class="rx-ell" title="${(r.name||'').replace(/"/g,'&quot;')}"><b>${r.name}</b>${r.is_private?' <span class="badge" style="background:#f6e9e9;color:#a33">🔒 비공개</span>':''}</td>
             <td>${r.direction==='in'?'수입':'지출'}</td>
@@ -1460,7 +1461,8 @@
       [...b.querySelectorAll('.rx-gen')].forEach(el=>el.onclick=()=>{
         const id=Number(el.dataset.id);
         const sel=b.querySelector('.rx-mon[data-id="'+id+'"]');
-        generateRule(id,sel?sel.value:null,el);
+        // 재생성(옵션 없음) 버튼은 이미 약속된 구간(generated_through)까지 빠진 회차를 채움 — 전개는 항상 시작일부터, live 멱등이라 중복 없음.
+        generateRule(id,sel?sel.value:(el.dataset.through||null),el);
       });
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
@@ -2677,6 +2679,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260706b"></script>
+<script src="refatrix-nav.js?v=20260706c"></script>
 </body>
 </html>
