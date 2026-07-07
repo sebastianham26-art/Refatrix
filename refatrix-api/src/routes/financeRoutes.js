@@ -1245,7 +1245,7 @@ export default async function financeRoutes(app) {
       let created = 0;
       if (occ.length) {
         const existing = new Set((await query(
-          `SELECT recurring_period FROM transactions WHERE recurring_rule_id=$1`, [id])).rows.map((r) => r.recurring_period));
+          `SELECT recurring_period FROM transactions WHERE recurring_rule_id=$1 AND deleted_at IS NULL`, [id])).rows.map((r) => r.recurring_period));
         const fresh = occ.filter((o) => !existing.has(o.period));
         if (fresh.length) {
           const userId = req.ctx.perm.userId;
@@ -1260,7 +1260,7 @@ export default async function financeRoutes(app) {
             `INSERT INTO transactions
                (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, recurring_rule_id, recurring_period, plan_amount, plan_date, is_private)
              VALUES ${vals.join(',')}
-             ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL DO NOTHING`, params);
+             ON CONFLICT (recurring_rule_id, recurring_period) WHERE recurring_rule_id IS NOT NULL AND deleted_at IS NULL DO NOTHING`, params);
           created = res.rowCount || 0;
         }
       }
