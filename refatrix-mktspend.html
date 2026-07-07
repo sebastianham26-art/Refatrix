@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260706a</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260706b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -190,6 +190,8 @@
     $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>역할: '+esc(session.user&&session.user.role||'');
     $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
     renderStChips(); loadList();
+    // 포털 알림 팝업 딥링크: #...&plan=ID → 해당 계획 즉시 열기(수정 요청 검토 동선)
+    try{ const hp=new URLSearchParams(location.hash.slice(1)); const pid=Number(hp.get('plan')); if(pid>0) openPlan(pid); }catch(e){}
   }
 
   // ================= 목록 =================
@@ -623,6 +625,6 @@
     if(ps&&ps.token){session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')};afterLogin();}
   });
 </script>
-<script src="refatrix-nav.js?v=20260706a"></script>
+<script src="refatrix-nav.js?v=20260706b"></script>
 </body>
 </html>

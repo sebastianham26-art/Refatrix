@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털</title>
+<title>Refatrix ERP · 포털 · build 20260706b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -459,6 +459,7 @@
       if(isDir){
         checkDeleteApprovals({items:(d.delete&&d.delete.items)||[], silent:silent});
         checkDeviceApprovals({items:(d.device&&d.device.items)||[], silent:silent});
+        checkMktRevisions({items:(d.mktrev&&d.mktrev.items)||[], silent:silent});
       }
       checkPackingReady({items:(d.packing&&d.packing.items)||[], silent:silent});
     }catch(e){ /* 조용히 무시 */ }
@@ -489,6 +490,76 @@
     checkDeleteApprovals({silent:true}); loadQuoteBadge();
   }
   function dismissDelAppr(){ try{ sessionStorage.setItem('del_appr_dismissed','1'); }catch(e){} $('delApprModal').style.display='none'; }
+
+  // ===== 마케팅 지출계획 수정 요청 — 디렉터 즉시 알림(팝업 + 알림음, 0124) =====
+  //   승인건에 담당자가 저장한 "수정 요청". 디렉터가 수정안을 승인해야
+  //   자금계획(예정 지출)에 반영되므로, 신규 요청(재수정 포함)마다 강제 팝업 + 알림음.
+  //   seen 키 = 계획ID:요청시각 → 같은 계획을 담당자가 다시 고치면 재알림.
+  var __mktRevSeen=null;
+  function __loadMktRevSeen(){
+    if(__mktRevSeen) return __mktRevSeen;
+    __mktRevSeen=new Set();
+    try{ var raw=sessionStorage.getItem('mkt_rev_seen'); if(raw){ JSON.parse(raw).forEach(function(x){ __mktRevSeen.add(String(x)); }); } }catch(e){}
+    return __mktRevSeen;
+  }
+  function __saveMktRevSeen(){ try{ sessionStorage.setItem('mkt_rev_seen', JSON.stringify(Array.from(__loadMktRevSeen()))); }catch(e){} }
+  function __mktRevKey(r){ return String(r.id)+':'+String(r.revision_at||''); }
+  function renderMktRevList(items){
+    $('mktRevMsg').innerHTML='승인된 지출계획에 담당자의 <b>수정 요청</b>이 <b>'+items.length+'건</b> 있습니다. 검토 후 <b>수정안 승인</b>을 눌러야 자금계획(예정 지출)에 반영됩니다. 그 전까지 현금흐름은 승인된 원본 기준입니다.';
+    $('mktRevList').innerHTML=items.map(function(r){
+      var tot=(r.revision_total!=null && Math.abs(Number(r.revision_total)-Number(r.current_total))>0.001)
+        ? '<span style="color:var(--muted);text-decoration:line-through;font-weight:500">'+fmt(r.current_total)+'</span> → <b>'+fmt(r.revision_total)+'</b>'
+        : '<b>'+fmt(r.revision_total!=null?r.revision_total:r.current_total)+'</b>';
+      return '<div style="padding:11px 13px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">'
+        +'<div><b>'+escp(r.title||'')+'</b> <span style="color:var(--muted);font-size:11.5px">MK-'+String(r.id).padStart(3,'0')+'</span></div>'
+        +'<div style="font-weight:700;color:var(--ink)">'+tot+' <span style="color:var(--muted);font-weight:500;font-size:11px">MXN</span></div></div>'
+        +'<div style="color:var(--muted);font-size:11.5px;margin-top:2px">요청자 '+escp(r.revision_by_name||'')+(r.revision_at?' · '+escp(String(r.revision_at).slice(0,16).replace('T',' ')):'')+'</div>'
+        +'<div style="display:flex;gap:6px;margin-top:8px">'
+        +'<button onclick="reviewMktRev('+r.id+')" style="border:none;background:var(--brand);color:#fff;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">검토·승인하러 가기</button>'
+        +'<button onclick="discardMktRev('+r.id+')" style="border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px">요청 폐기</button>'
+        +'</div></div>';
+    }).join('');
+  }
+  async function checkMktRevisions(opts){
+    if(!(session.user && session.user.role==='director')) return;
+    var silent=opts&&opts.silent;
+    try{
+      var items;
+      if(opts && Array.isArray(opts.items)){ items=opts.items; }
+      else { var d=await fetch(session.api+'/api/portal/alerts',{headers:auth()}).then(function(r){return r.json();}); items=(d&&d.mktrev&&d.mktrev.items)||[]; }
+      if(!items.length){
+        $('mktRevModal').style.display='none';
+        try{ sessionStorage.removeItem('mkt_rev_dismissed'); }catch(e){}
+        __mktRevSeen=new Set(); __saveMktRevSeen();
+        return;
+      }
+      renderMktRevList(items);
+      var seen=__loadMktRevSeen();
+      var newItems=items.filter(function(x){ return !seen.has(__mktRevKey(x)); });
+      if(newItems.length){
+        // 신규 수정 요청(같은 계획의 재수정 포함) → 강제 팝업 + 알림음(임시닫기 무시)
+        newItems.forEach(function(x){ seen.add(__mktRevKey(x)); }); __saveMktRevSeen();
+        try{ sessionStorage.removeItem('mkt_rev_dismissed'); }catch(e){}
+        $('mktRevModal').style.display='flex';
+        if(!silent) playAlertSound();
+      }else{
+        var dis=false; try{ dis=sessionStorage.getItem('mkt_rev_dismissed')==='1'; }catch(e){}
+        $('mktRevModal').style.display = dis ? 'none' : 'flex';
+      }
+    }catch(e){ /* 조용히 무시 */ }
+  }
+  function dismissMktRev(){ try{ sessionStorage.setItem('mkt_rev_dismissed','1'); }catch(e){} $('mktRevModal').style.display='none'; }
+  function reviewMktRev(id){ goScreen('mktspend','plan='+id); }
+  async function discardMktRev(id){
+    if(!confirm('이 수정 요청을 폐기하시겠습니까?\n승인된 원본 계획과 자금계획은 그대로 유지됩니다.')) return;
+    try{
+      var res=await fetch(session.api+'/api/mktspend/plans/'+id+'/discard-revision',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:'{}'});
+      var d=await res.json(); if(!res.ok||d.error){ alert('폐기 실패: '+(d.error||res.status)); return; }
+    }catch(e){ alert('서버 연결 실패'); return; }
+    checkMktRevisions({silent:true});
+    try{ sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(function(r){return r.json();}); renderPending(); renderFlows(); }catch(e){}
+  }
 
   // ===== 포장완료 → 영업지원/디렉터 즉시 알림(폴링 + 팝업 + 알림음) =====
   //   트리거: 스캔 남은 0 + 모든 박스 사진≥1 + 종이문서 미업로드.
@@ -1258,6 +1329,23 @@
   </div>
 </div>
 
+<!-- 마케팅 지출계획 수정 요청 알림(디렉터) — 즉시 팝업 + 알림음 -->
+<div id="mktRevModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:216;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">📝 지출계획 수정 — 승인 요청</div>
+    </div>
+    <div style="padding:14px 20px">
+      <div id="mktRevMsg" style="font-size:13.5px;color:var(--ink);line-height:1.6;margin-bottom:10px"></div>
+      <div id="mktRevList" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    </div>
+    <div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissMktRev()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>
+      <button onclick="goScreen('mktspend')" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">지출계획으로 가기 →</button>
+    </div>
+  </div>
+</div>
+
 <!-- 로그인 공지 팝업 -->
 <div id="noticePopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:210;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
   <div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
@@ -1298,6 +1386,6 @@
 
 
 
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260706b"></script>
 </body>
 </html>

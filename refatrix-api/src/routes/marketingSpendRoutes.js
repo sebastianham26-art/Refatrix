@@ -8,7 +8,7 @@ import { logEvent } from '../audit.js';
 //            → 항목별 지급 라인 N(선지급/중도금/잔금/일시불).
 //   · 담당자(marketing 편집권한) 작성·제출 → 디렉터가 내용을 직접 수정하며
 //     승인 → 모든 지급 라인마다 transactions(status='plan', 6070,
-//     memo '[마케팅] 활동 · 항목 · 구분')이 생성돼 재무 예정 내역·현금흐름
+//     memo '[마케팅] 집행항목 · 구분 · 활동', 0125)이 생성돼 재무 예정 내역·현금흐름
 //     AP(자금 계획)에 반영. 실제 송금은 재무 [실적 처리](confirm-pay).
 //   · 승인 후 수정:
 //       - 디렉터: 즉시 반영 — 연결 거래가 아직 plan이면 자동 동기화,
@@ -107,10 +107,12 @@ export function normalizeTargets(rawTargets) {
   return { custIds, general };
 }
 
-// 계획 거래 메모: '[마케팅] 활동 · 집행항목 · 구분 (· 명목)'
-//  — 재무 화면이 '[마케팅]' 접두사로 출처 배지를 표시
+// 계획 거래 메모: '[마케팅] 집행항목 · 구분 · 활동명 (· 명목)'  (0125)
+//  — 집행항목이 앞에 오도록: 현금흐름·예정내역의 좁은 메모 칸(22~30자)에서
+//    활동명이 아니라 "그 날짜에 무엇을 집행하는지"가 먼저 보이게 한다.
+//  — 재무 화면이 '[마케팅]' 접두사로 출처 배지를 표시(규약 유지)
 export function spendTxnMemo(title, itemName, kind, lineMemo) {
-  const base = `[마케팅] ${String(title || '').slice(0, 100)} · ${String(itemName || '').slice(0, 80)} · ${KIND_LABEL[kind] || kind}`;
+  const base = `[마케팅] ${String(itemName || '기본 집행').slice(0, 80)} · ${KIND_LABEL[kind] || kind} · ${String(title || '').slice(0, 100)}`;
   return lineMemo ? `${base} · ${String(lineMemo).slice(0, 160)}` : base;
 }
 

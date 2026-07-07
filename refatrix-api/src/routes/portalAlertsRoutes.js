@@ -99,6 +99,46 @@ async function packingReadyItems() {
   return out;
 }
 
+// ── 마케팅 지출계획 수정 요청 대기(0124) — 담당자 변경 → 디렉터 반영 필요 ──
+//    승인건에 담당자가 저장한 "수정 요청"(pending_revision). 디렉터가 수정안을
+//    승인해야 자금계획(예정 지출)에 반영되므로 즉시 알림 대상.
+//    0124 미적용(컬럼 없음) 배포 순서에도 안전하도록 전체를 try로 감쌈.
+function r2a(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
+async function mktRevisionItems() {
+  try {
+    const rows = (await query(
+      `SELECT p.id, p.title, p.category, p.pending_revision, p.revision_at,
+              rv.name AS revision_by_name,
+              COALESCE(la.total_amount,0) AS current_total
+         FROM marketing_spend_plans p
+         LEFT JOIN users rv ON rv.id=p.revision_by
+         LEFT JOIN (SELECT plan_id, COALESCE(SUM(amount),0) AS total_amount
+                      FROM marketing_spend_lines GROUP BY plan_id) la ON la.plan_id=p.id
+        WHERE p.pending_revision IS NOT NULL AND p.deleted_at IS NULL
+        ORDER BY p.revision_at DESC NULLS LAST, p.id DESC`)).rows;
+    return rows.map((r) => {
+      // 수정안 총액: payload.items[].lines[].amount 합계(구조 이상 시 null)
+      let revTotal = null;
+      try {
+        let rp = r.pending_revision;
+        if (typeof rp === 'string') rp = JSON.parse(rp);
+        if (rp && Array.isArray(rp.items)) {
+          revTotal = 0;
+          for (const it of rp.items) for (const l of (it.lines || [])) revTotal += Number(l.amount) || 0;
+          revTotal = r2a(revTotal);
+        }
+      } catch (_) { revTotal = null; }
+      return {
+        id: Number(r.id), title: r.title, category: r.category,
+        revision_at: r.revision_at ? new Date(r.revision_at).toISOString() : null,
+        revision_by_name: r.revision_by_name || null,
+        current_total: r2a(r.current_total),
+        revision_total: revTotal,
+      };
+    });
+  } catch (_) { return []; } // 0124 미적용 또는 테이블 미생성
+}
+
 export default async function portalAlertsRoutes(app) {
   // 통합 폴링: 포털 홈에서 120초마다 1회. 역할에 따라 필요한 것만 조회.
   app.get('/api/portal/alerts', { preHandler: [authGuard] }, async (req) => {
@@ -106,12 +146,14 @@ export default async function portalAlertsRoutes(app) {
     const isDirector = role === 'director';
     const isSalesSupport = role === 'sales_support';
 
-    const out = { delete: { items: [] }, device: { items: [] }, packing: { items: [] } };
+    const out = { delete: { items: [] }, device: { items: [] }, packing: { items: [] }, mktrev: { items: [] } };
 
     // 디렉터: 삭제 + 기기 (기존 checkDeleteApprovals/checkDeviceApprovals 가 디렉터 전용이었던 것과 동일)
+    //         + 마케팅 지출계획 수정 요청(0124)
     if (isDirector) {
       out.delete.items = await deletePendingItems();
       out.device.items = await devicePendingItems();
+      out.mktrev.items = await mktRevisionItems();
     }
     // 포장완료: 디렉터 또는 영업지원 (기존 __packAud 와 동일)
     if (isDirector || isSalesSupport) {
