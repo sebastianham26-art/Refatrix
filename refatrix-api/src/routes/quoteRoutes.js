@@ -760,9 +760,20 @@ export default async function quoteRoutes(app) {
     }
     // top=N(예: 500): VIO 순위 기반 상위 N개. ctr_vio_rank 매칭 SKU(재고 무관 — 품절 포함), 순위 오름차순(1위=최다등록).
     //   동순위(같은 대표차종)는 재고 많은 순 → 코드 순. top 미지정이면 종전대로 전체 SKU(코드순).
+    // all=1: 전체 SKU(재고·VIO매칭 무관)를 LEFT JOIN으로 VIO 정보 붙여 반환 — Top500과 동일 양식의 "전체 견적"용.
+    //   VIO 미매칭 SKU는 vio_* = null (프런트 정렬에서 맨 뒤 그룹).
     const topN = Math.min(Math.max(Number(req.query.top) || 0, 0), 1000);
+    const wantAll = String(req.query.all || '') === '1';
     let prods;
-    if (topN > 0) {
+    if (wantAll) {
+      prods = (await query(
+        `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
+                v.vio_units, v.vio_model, v.vio_year
+           FROM products p
+           LEFT JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
+          WHERE p.deleted_at IS NULL
+          ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code`)).rows;
+    } else if (topN > 0) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 v.vio_units, v.vio_model, v.vio_year
@@ -793,7 +804,7 @@ export default async function quoteRoutes(app) {
       vio_model: p.vio_model || null,
       vio_year: p.vio_year || null,
     }));
-    return { discountRate, top: topN || null, count: items.length, items };
+    return { discountRate, top: topN || null, all: wantAll || undefined, count: items.length, items };
   });
 
   // ============ 포장작업지시서(서명 스캔본) — 업로드 / 메타 / 보기 ============

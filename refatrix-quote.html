@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · t500sort-20260707c</title>
+<title>Refatrix ERP · 견적 (수주관리) · t500all-20260707d</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -105,6 +105,7 @@
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
             <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — 차량 모델(VIO순)·부품 고정순서(rótula→horquilla L/R→tornillo→terminal int/ext→buje) 정렬 · Existencia(재고, 품절 포함·0은 빨강)·할인·수량 입력칸 포함">⭐ Top 500 견적</button>
+            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — Top 500과 동일 양식·정렬(차량 VIO순·부품 고정순서), VIO 미매칭 SKU는 맨 뒤 그룹 · 품절 포함(0은 빨강)">📚 전체 견적</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
         </div>
@@ -445,20 +446,24 @@
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
-  // ===== Top 500 견적 (VIO 등록대수 상위 500 · Oferta 양식) =====
-  async function downloadTop500(){
+  // ===== Top 500 / 전체 견적 (VIO 등록대수 기준 · Oferta 양식) =====
+  // all=false: VIO 상위 500 SKU. all=true: 전체 SKU(VIO 미매칭 포함 — 미매칭은 맨 뒤 그룹).
+  async function downloadTop500(){ return downloadVioQuote(false); }
+  async function downloadAllQuote(){ return downloadVioQuote(true); }
+  async function downloadVioQuote(all){
+    const LBL=all?'전체':'Top 500';
     const m=$('lineMsg');m.className='msg';
     const guest=isGuest;
     const custName=partyName();
     if(guest && !$('guestName').value.trim()){ m.className='msg err';m.textContent='Escriba primero el nombre del cliente.';return; }
     try{
-      m.className='msg ok';m.textContent='Top 500 VIO 견적을 불러오는 중…';
+      m.className='msg ok';m.textContent=LBL+' 견적을 불러오는 중…';
       const cid=$('custSel').value;
-      let url=session.api+'/api/quotes/price-list?top=500';
+      let url=session.api+'/api/quotes/price-list?'+(all?'all=1':'top=500');
       if(!guest && cid && cid!=='__guest__') url+='&customer_id='+encodeURIComponent(cid);
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
-      if(!items.length){ m.className='msg err';m.textContent='VIO가 매칭된 재고 SKU가 없습니다.';return; }
+      if(!items.length){ m.className='msg err';m.textContent=all?'다운로드할 SKU가 없습니다.':'VIO가 매칭된 SKU가 없습니다.';return; }
       // 선정은 백엔드에서 VIO(등록대수) 상위 500.
       // 표시 순서: ① 차량 모델 그룹(VIO 등록대수 내림차순) → ② 모델 안에서 부품 고정순서
       //   1 rótula → 2 horquilla izq(L) → 3 horquilla der(R) → 4 tornillo estabilizador
@@ -495,7 +500,7 @@
         return String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en');
       });
       // 엑셀 생성이 잠깐 메인스레드를 점유 → 상태 메시지를 먼저 그리도록 양보(체감 멈춤 방지)
-      m.className='msg ok';m.textContent='Top 500 견적 엑셀 생성 중… ('+items.length+'개)';
+      m.className='msg ok';m.textContent=LBL+' 견적 엑셀 생성 중… ('+items.length+'개)';
       await new Promise(r=>setTimeout(r,20));
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : (d.discountRate==null?0:d.discountRate);
       const rateFrac = (Number(disc)||0)/100;            // 할인율 셀(편집형, 0.49 = 49%)
@@ -527,7 +532,7 @@
       const rows=[];
       rows.push(['REFATRIX']);                                                                 // r1
       rows.push(['Distribuidor oficial CTR en México']);                                       // r2
-      rows.push(['COTIZACIÓN — Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia) · ordenado por vehículo (VIO) y tipo de pieza']); // r3
+      rows.push(['COTIZACIÓN — '+(all?'Catálogo completo CTR (todos los SKU · incluye sin existencia)':'Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia)')+' · ordenado por vehículo (VIO) y tipo de pieza']); // r3
       rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
@@ -577,11 +582,11 @@
       ws['!cols']=[{wch:30},{wch:14},{wch:13},{wch:16},{wch:40},{wch:11},{wch:12},{wch:15},{wch:14},{wch:15}];
       ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:6},{hpt:30}];
       const wb=XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb,ws,'Top500');
+      XLSX.utils.book_append_sheet(wb,ws,all?'Completo':'Top500');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
-      XLSX.writeFile(wb,'cotizacion_top500_'+safe+'.xlsx');
-      m.className='msg ok';m.textContent='Top 500 VIO 견적 다운로드 완료 — '+items.length+'개 SKU · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함, 셀에서 할인율·수량 편집 가능).';
-    }catch(e){ m.className='msg err';m.textContent='Top 500 견적 다운로드 실패: '+(e&&e.message||e); }
+      XLSX.writeFile(wb,(all?'cotizacion_completa_':'cotizacion_top500_')+safe+'.xlsx');
+      m.className='msg ok';m.textContent=LBL+' 견적 다운로드 완료 — '+items.length+'개 SKU · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함, 셀에서 할인율·수량 편집 가능).';
+    }catch(e){ m.className='msg err';m.textContent=LBL+' 견적 다운로드 실패: '+(e&&e.message||e); }
   }
 
   // ===== 작성 중 견적 → 엑셀 다운로드 =====
@@ -833,6 +838,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260707t6"></script>
+<script src="refatrix-nav.js?v=20260707t7"></script>
 </body>
 </html>
