@@ -182,9 +182,9 @@
         </div>
         <div class="arrow">→</div>
         <div class="pp ctrp">
-          <div class="t">CTR 판매가 (전 품목)</div>
-          <div class="v" id="ppCtr">SYD 구매가 × 0.95</div>
-          <div class="s">SYD 고객 구매가 대비 5% 할인</div>
+          <div class="t">CTR 산출 할인율 (CTR 정가 대비)</div>
+          <div class="v" id="ppCtrDisc">—</div>
+          <div class="s" id="ppCtrS">CTR 정가 = SYD 정가 × 1.40 · 판매가 = SYD 구매가 × 0.95</div>
         </div>
       </div>
 
@@ -399,6 +399,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   }
 
   // ── 기준단가 → 할인율 상태 ──
+  const CTR_MARKUP=1.40; // CTR 정가 = SYD 정가 × 1.40 (40% 마크업)
   const P={ baseLP:null, baseInfo:null, disc:null, priceIncluded:true };
   async function loadBaseline(){
     const code=$('baseCode').value.trim();
@@ -425,6 +426,10 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     else P.disc=null;
     $('ppDisc').textContent=P.disc==null?'—':(P.disc*100).toFixed(1)+'%';
     $('ppSyd').textContent=P.disc==null?'—':('정가 × '+(1-P.disc).toFixed(3));
+    // CTR 산출 할인율: CTR 정가(=SYD 정가×1.40) 대비 CTR 판매가(=SYD 구매가×0.95)의 할인율
+    //   = 1 − (1−disc)×0.95 ÷ 1.40
+    var ctrDisc = P.disc==null ? null : (1 - (1-P.disc)*0.95/CTR_MARKUP);
+    $('ppCtrDisc').textContent = ctrDisc==null ? '—' : (ctrDisc*100).toFixed(1)+'%';
     // 펼쳐진 표의 가격 갱신
     document.querySelectorAll('.price.sydv').forEach(el=>{
       const lp=el.dataset.lp; el.textContent=(lp===''||P.disc==null)?'—':fm(Number(lp)*(1-P.disc));
