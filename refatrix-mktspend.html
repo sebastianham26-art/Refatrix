@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260706b</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260708a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -384,13 +384,15 @@
   }
 
   // ---- 증빙 파일 ----
+  //  증빙은 계획 편집 가능 여부와 "무관" — 저장된 계획이면 상태(승인대기·승인됨 포함)·작성자에
+  //  관계없이 마케팅·디렉터가 첨부/삭제할 수 있다(서버 requirePageEdit가 최종 검증, 보기전용은 403 안내).
+  //  인보이스 첨부(0091)와 동일 방침: 증빙(견적서·계약서·인보이스)은 제출 후·승인 후에 도착하는 경우가 많다.
   function fmtBytes(n){ if(n==null)return''; if(n>1048576)return (n/1048576).toFixed(1)+'MB'; if(n>1024)return Math.round(n/1024)+'KB'; return n+'B'; }
   function renderFiles(){
-    const ed=editable();
-    $('btnAddFile').disabled=!cur.id||!ed;
+    $('btnAddFile').disabled=!cur.id;
     $('fileHint').textContent=cur.id?'':'임시 저장 후 파일을 첨부할 수 있습니다.';
     $('fileList').innerHTML=(cur.files||[]).map(f=>'<div class="filerow"><span class="nm">'+esc(f.file_name)+'</span><span class="hint">'+fmtBytes(f.file_size)+(f.uploaded_by_name?' · '+esc(f.uploaded_by_name):'')+'</span>'
-      +'<button class="btn ghost sm" data-viewf="'+f.id+'">보기</button>'+(ed?'<button class="btn warn sm" data-delf="'+f.id+'">삭제</button>':'')+'</div>').join('')
+      +'<button class="btn ghost sm" data-viewf="'+f.id+'">보기</button><button class="btn warn sm" data-delf="'+f.id+'">삭제</button></div>').join('')
       ||'<div class="hint" style="margin-top:6px">첨부된 증빙이 없습니다.</div>';
   }
   async function reloadFiles(){
@@ -399,16 +401,24 @@
     if(d.ok){cur.files=d.items||[];renderFiles();}
   }
   function pickFiles(){ $('filePick').value=''; $('filePick').click(); }
+  function fixDataUrl(u){ // 확장자 미인식 파일: FileReader가 mime 없이 'data:;base64,'를 만들면 서버 검증(bad_format)에 걸림 → octet-stream으로 보정
+    return String(u||'').replace(/^data:;base64,/,'data:application/octet-stream;base64,').replace(/^data:base64,/,'data:application/octet-stream;base64,');
+  }
   async function onFilesPicked(){
     const files=[...$('filePick').files]; if(!files.length)return;
-    let okN=0,failN=0;
+    if(!cur.id){say('cpMsg',false,'먼저 계획을 저장한 뒤 파일을 첨부하세요.');return;}
+    let okN=0,failN=0,lastErr='';
     for(const f of files){
-      if(f.size>8*1024*1024){failN++;continue;}
-      const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('read'));r.readAsDataURL(f);});
-      const d=await api('/api/mktspend/plans/'+cur.id+'/files',{method:'POST',body:JSON.stringify({file_name:f.name,data:dataUrl})});
-      if(d.ok)okN++;else failN++;
+      if(f.size>8*1024*1024){failN++;lastErr=esc(f.name)+' — 8MB 초과';continue;}
+      let dataUrl;
+      try{ dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('read'));r.readAsDataURL(f);}); }
+      catch(e){failN++;lastErr=esc(f.name)+' — 읽기 실패';continue;}
+      const d=await api('/api/mktspend/plans/'+cur.id+'/files',{method:'POST',body:JSON.stringify({file_name:f.name,data:fixDataUrl(dataUrl)})});
+      if(d.ok)okN++;
+      else{failN++;lastErr=d.status===403?'권한 없음 — 이 화면이 보기 전용입니다. 디렉터에게 편집 권한을 요청하세요.'
+        :(d.note==='bad_mime'?esc(f.name)+' — 지원하지 않는 형식':d.note==='too_large'?esc(f.name)+' — 8MB 초과':(d.error||('오류 '+d.status)));}
     }
-    say('cpMsg',failN===0,'업로드 완료 '+okN+'건'+(failN?' · 실패 '+failN+'건(8MB 초과 또는 형식)':''));
+    say('cpMsg',failN===0,'업로드 완료 '+okN+'건'+(failN?' · 실패 '+failN+'건 ('+lastErr+')':''));
     reloadFiles();
   }
   async function viewFile(fid){
@@ -625,6 +635,6 @@
     if(ps&&ps.token){session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')};afterLogin();}
   });
 </script>
-<script src="refatrix-nav.js?v=20260706b"></script>
+<script src="refatrix-nav.js?v=20260708a"></script>
 </body>
 </html>

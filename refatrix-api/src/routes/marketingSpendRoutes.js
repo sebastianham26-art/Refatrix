@@ -30,7 +30,10 @@ function isDirector(req) { return req.ctx.perm.role === 'director'; }
 
 // 증빙 파일 검증(인보이스 첨부와 동일하게 폭넓은 허용, 8MB)
 export function validateSpendFileDataUrl(dataUrl, maxBytes = 8 * 1024 * 1024) {
-  const s = String(dataUrl || '');
+  let s = String(dataUrl || '');
+  // 확장자 미인식 파일: 브라우저 FileReader가 mime 없이 'data:;base64,'를 만들 수 있음 → octet-stream으로 간주
+  s = s.replace(/^data:;base64,/, 'data:application/octet-stream;base64,')
+       .replace(/^data:base64,/, 'data:application/octet-stream;base64,');
   const m = s.match(/^data:([a-zA-Z0-9.+\/-]+);base64,([A-Za-z0-9+\/=\s]+)$/);
   if (!m) return { ok: false, error: 'bad_format' };
   const mime = m[1].toLowerCase();
@@ -45,7 +48,7 @@ export function validateSpendFileDataUrl(dataUrl, maxBytes = 8 * 1024 * 1024) {
   if (!b64) return { ok: false, error: 'empty' };
   const bytes = Math.floor(b64.length * 3 / 4);
   if (bytes > maxBytes) return { ok: false, error: 'too_large' };
-  return { ok: true, mime, size: bytes };
+  return { ok: true, mime, size: bytes, data: s };
 }
 
 // 지급 라인 정규화(항목 내부). 오류 시 {error}
@@ -691,7 +694,7 @@ export default async function marketingSpendRoutes(app) {
     const r = (await query(
       `INSERT INTO marketing_spend_files (plan_id, file_name, mime_type, file_data, file_size, uploaded_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, uploaded_at`,
-      [id, name, v.mime, b.data, v.size, req.ctx.perm.userId])).rows[0];
+      [id, name, v.mime, v.data, v.size, req.ctx.perm.userId])).rows[0];
     return { ok: true, id: Number(r.id), uploaded_at: r.uploaded_at };
   });
 
