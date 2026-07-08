@@ -148,8 +148,8 @@
     <div class="card">
       <div class="filters">
         <div style="flex:1;min-width:200px">
-          <label>차종 검색</label>
-          <input type="text" id="q" placeholder="예: versa, tsuru, jetta" style="width:100%" autocomplete="off">
+          <label>차종 · 코드 검색 (CTR/SYD)</label>
+          <input type="text" id="q" placeholder="예: versa · CB0336 · 1516049" style="width:100%" autocomplete="off">
         </div>
         <div>
           <label>기준품목 (SYD 코드)</label>
@@ -464,11 +464,47 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   const S={range:50,page:0,q:''};
   const cache={};   // modelo(normS) -> by-model 응답
   const openSet={}; // rank -> true
+  // 코드 역검색 상태: 검색어가 코드일 때 서버가 돌려준 대상 모델(normS) 집합
+  const CODEQ={ q:null, set:null, matched:[] };
+  function looksLikeCode(s){
+    const t=String(s||'').trim();
+    if(t.length<3) return false;
+    // 숫자 포함 + (하이픈 또는 영문+숫자 혼합). 순수 알파벳 단어(차종명)는 제외.
+    if(/^\d+$/.test(t)) return true;                          // 순수 숫자 SYD 코드
+    if(/[0-9]/.test(t) && /[a-z]/i.test(t)) return true;      // CB0336, CE0536R 등 영숫자 혼합
+    if(/[0-9].*[-].*|.*[-].*[0-9]/.test(t)) return true;      // 하이픈 포함 코드
+    return false;
+  }
+  // 검색 실행: 코드 패턴이면 서버 역검색으로 대상 모델 집합 확보, 아니면 차종명 필터
+  async function runSearch(raw){
+    const q=String(raw||'').trim();
+    S.q=q; S.page=0;
+    if(looksLikeCode(q)){
+      if(CODEQ.q===q && CODEQ.set){ renderList(); return; }
+      $('msg').className='msg'; $('msg').textContent='코드 '+q+' 적용 차종을 찾는 중…';
+      try{
+        const d=await fetch(session.api+'/api/products/models-by-code?code='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json());
+        const set=new Set((d.models||[]).map(m=>normS(m.model)));
+        CODEQ.q=q; CODEQ.set=set.size?set:null; CODEQ.matched=d.matched||[];
+        if(!set.size){ $('msg').className='msg err'; $('msg').textContent='코드 '+q+' 에 해당하는 제품/적용차종을 찾지 못했습니다.'; }
+        else { $('msg').className='msg'; $('msg').textContent='코드 '+q+' → '+(d.matched||[]).slice(0,6).join(', ')+((d.matched||[]).length>6?' 외':'')+' · 적용차종 '+set.size+'종'; }
+      }catch(e){ CODEQ.q=null; CODEQ.set=null; $('msg').className='msg err'; $('msg').textContent='코드 검색에 실패했습니다.'; }
+    } else {
+      CODEQ.q=null; CODEQ.set=null; CODEQ.matched=[];
+      if($('msg')) { $('msg').textContent=''; $('msg').className='msg'; }
+    }
+    renderList();
+  }
   function filteredModels(){
     if(!VIO) return [];
     let arr=VIO.models;
     if(S.range>0) arr=arr.slice(0,S.range);
     const nq=normS(S.q);
+    // 코드 검색 모드: 서버 역검색 결과(모델 집합)로 필터 (범위 무시 — 코드가 걸린 모든 차종)
+    if(CODEQ.set){
+      let base=VIO.models.concat(EXTRA).filter(m=>CODEQ.set.has(normS(m.modelo)));
+      return base;
+    }
     if(nq) arr=arr.filter(m=>normS(m.marca+' '+m.modelo).indexOf(nq)>=0);
     // VIO 미등록(적용차종 보충) 차종: 검색어가 있으면 매칭되는 것만, 없으면 '전체' 범위에서만 뒤에 표시
     let ex=EXTRA;
@@ -723,7 +759,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     $('buyIn').addEventListener('input',recalc);
     $('baseCode').addEventListener('keydown',e=>{if(e.key==='Enter')loadBaseline();});
     let qt=null;
-    $('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>{S.q=$('q').value;S.page=0;renderList();},250); });
+    $('q').addEventListener('input',()=>{ clearTimeout(qt); qt=setTimeout(()=>runSearch($('q').value),250); });
     $('rangeChips').querySelectorAll('.chip').forEach(ch=>{
       ch.addEventListener('click',()=>{
         $('rangeChips').querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));

@@ -701,6 +701,33 @@ export default async function productRoutes(app) {
     };
   });
 
+  // VIO 제품찾기 — CTR/SYD 코드로 적용 차종(모델) 역검색.
+  //   입력 코드가 걸린 제품(들)의 product_applications 모델 목록을 반환 → 화면에서 해당 차종만 필터.
+  //   매칭: products.code(CTR) 정확/부분 · products.scode · product_syd_codes.syd_code.
+  app.get('/api/products/models-by-code', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const code = String(req.query.code || '').trim();
+    const out = { code, matched: [], models: [] };
+    if (code.length < 2) return out;
+    const esc = code.replace(/([%_\\])/g, '\\$1');
+    const like = '%' + esc + '%';
+    const prod = (await query(
+      `SELECT DISTINCT p.id, p.code
+         FROM products p
+         LEFT JOIN product_syd_codes sc ON sc.product_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND (p.code ILIKE $1 OR p.scode ILIKE $1 OR sc.syd_code ILIKE $1)
+        LIMIT 200`, [like])).rows;
+    if (!prod.length) return out;
+    const pids = prod.map((r) => Number(r.id));
+    out.matched = prod.map((r) => r.code);
+    const models = (await query(
+      `SELECT DISTINCT pa.maker, pa.model
+         FROM product_applications pa
+        WHERE pa.product_id = ANY($1) AND pa.model IS NOT NULL AND pa.model <> ''`, [pids])).rows;
+    out.models = models.map((r) => ({ maker: r.maker || '', model: r.model }));
+    return out;
+  });
+
   // VIO 제품찾기 — 기준품목(SYD 코드)의 SYD 정가 조회.
   //   화면에서 "1516049를 고객이 얼마에 사는지" 입력받아 할인율(1 − 구매단가÷정가)을 산출하고,
   //   그 할인율을 SYD 전 품목 정가에 적용(SYD 고객구매가) → CTR = SYD 고객구매가 × 0.95.
