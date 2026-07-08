@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf1</title>
+<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf12</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -728,13 +728,18 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     if(_fetchInflight[key]) return _fetchInflight[key];
     _fetchInflight[key]=(async()=>{
       let d=null;
+      const hit=(r)=> r && r.categories && r.categories.length;
+      const call=async(qq)=>{ try{ return await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(qq),{headers:auth()}).then(x=>x.json()); }catch(e){ return null; } };
       try{
-        // 모든 후보 모델명을 '||'로 합쳐 서버에서 OR 합집합 매칭 (세대 표기 차이로 인한 누락 방지)
         const cands=candQueries(m.modelo);
+        // 1) 신버전 백엔드: 모든 후보를 '||'로 합쳐 OR 합집합 (세대 표기 차이 누락 방지)
         const qJoined=cands.join('||');
-        const r=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(qJoined),{headers:auth()}).then(x=>x.json());
-        d=(r&&r.categories&&r.categories.length)?r:r;
-        if(d) d.__used=qJoined;
+        let r=await call(qJoined);
+        // 2) 구버전 백엔드 호환: '||'를 못 알아들어 0건이면, 후보를 하나씩 단일 조회하여 첫 비공란 채택
+        if(!hit(r) && cands.length>1){
+          for(const cq of cands){ const rr=await call(cq); if(hit(rr)){ r=rr; r.__used=cq; break; } if(rr) r=rr; }
+        } else if(r){ r.__used=qJoined; }
+        d=r;
         cache[key]=d||{categories:[]};
         if(d&&d.price_included===false){ P.priceIncluded=false; setPricePanelHidden(true); }
       }catch(e){ cache[key]={categories:[]}; }
