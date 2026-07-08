@@ -136,7 +136,7 @@ export default async function stockRoutes(app) {
               COALESCE(SUM(stock_qty),0) AS total_qty,
               COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(avg_cost,0)),0) AS stock_value_mxn,
               COALESCE(SUM(COALESCE(stock_qty,0) * COALESCE(list_price,0)),0) AS stock_list_value_mxn
-         FROM products WHERE deleted_at IS NULL`)).rows[0];
+         FROM products WHERE deleted_at IS NULL AND code NOT ILIKE 'PRO%'`)).rows[0]; // PRO*=마케팅 프로모션 재고(판매용 아님) → 요약 카드 집계 제외
     // PSN: 구매(수입입고) · 판매(매출출고) 당월/전월 수량 + 당월 순증감(재고 롤백용)
     const p = (await query(
       `SELECT
@@ -144,7 +144,7 @@ export default async function stockRoutes(app) {
          COALESCE(SUM(qty) FILTER (WHERE batch_id IS NOT NULL AND move_type='in' AND moved_at >= date_trunc('month', now()) - interval '1 month' AND moved_at < date_trunc('month', now())),0) AS p_prev,
          COALESCE(SUM(qty) FILTER (WHERE sales_invoice_id IS NOT NULL AND move_type='out' AND moved_at >= date_trunc('month', now())),0) AS s_cur,
          COALESCE(SUM(qty) FILTER (WHERE sales_invoice_id IS NOT NULL AND move_type='out' AND moved_at >= date_trunc('month', now()) - interval '1 month' AND moved_at < date_trunc('month', now())),0) AS s_prev,
-         COALESCE(SUM(CASE WHEN move_type='in' THEN qty WHEN move_type='out' THEN -qty ELSE qty END) FILTER (WHERE moved_at >= date_trunc('month', now())),0) AS net_cur
+         COALESCE(SUM(CASE WHEN move_type='in' THEN qty WHEN move_type='out' THEN -qty ELSE qty END) FILTER (WHERE moved_at >= date_trunc('month', now()) AND product_id NOT IN (SELECT id FROM products WHERE code ILIKE 'PRO%')),0) AS net_cur
        FROM stock_movements`)).rows[0];
     const q3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
     const totalQty = q3(r.total_qty);
