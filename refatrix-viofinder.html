@@ -203,7 +203,7 @@
           <div class="chips" id="catChips"></div>
         </div>
       </div>
-      <div class="hint" style="margin-top:10px">VIO(멕시코 등록대수) 내림차순 · 차량 헤더 클릭=펼치기 · X축=품목(RH/LH 분리), Y축=CTR 코드→CTR 구매단가→재고→누적판매→SYD 코드→SYD 구매단가 · 코드(📷) 클릭=CTR·SYD 사진 비교</div>
+      <div class="hint" style="margin-top:10px">VIO(멕시코 등록대수) 내림차순 · 차량 헤더 클릭=펼치기 · X축=품목(RH/LH 분리), Y축=CTR 코드→CTR 할인단가→재고→누적판매→SYD 코드→SYD 할인단가 · 코드(📷) 클릭=CTR·SYD 사진 비교</div>
       <div class="msg" id="msg"></div>
     </div>
 
@@ -636,7 +636,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       h+=cellTd(c,lineWrap(c.items,x=>camBtn(x,'ctr'))); });
     h+='</tr>';
     // 행 2: CTR 구매단가 (SYD 구매가 × 0.95)
-    h+='<tr class="prow"><td class="rowlab"><span class="b ctr">CTR</span>구매단가</td>';
+    h+='<tr class="prow"><td class="rowlab"><span class="b ctr">CTR</span>할인단가</td>';
     cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline"><span class="price ctrv" data-lp="'+(x.lp_syd!=null?x.lp_syd:'')+'">—</span></span>')); });
     h+='</tr>';
     // 행 3: 재고
@@ -652,7 +652,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>camBtn(x,'syd'))); });
     h+='</tr>';
     // 행 6: SYD 구매단가 (정가 × (1−할인율))
-    h+='<tr class="prow"><td class="rowlab"><span class="b syd">SYD</span>구매단가</td>';
+    h+='<tr class="prow"><td class="rowlab"><span class="b syd">SYD</span>할인단가</td>';
     cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline"><span class="price sydv" data-lp="'+(x.lp_syd!=null?x.lp_syd:'')+'">—</span></span>')); });
     h+='</tr>';
     h+='</tbody></table>';
@@ -689,8 +689,8 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     const d=P.disc, lps=ds.lpsyd!==''?Number(ds.lpsyd):null;
     const sydBuy=(d!=null&&lps!=null)?lps*(1-d):null;
     const ctrBuy=sydBuy!=null?sydBuy*0.95:null;
-    $('pmCtrMeta').innerHTML='구매단가 <b>'+fm(ctrBuy)+'</b> · 재고 <b>'+num(ds.stock)+'</b> · 누적판매 <b>'+num(ds.sold)+'</b>';
-    $('pmSydMeta').innerHTML='구매단가 <b>'+fm(sydBuy)+'</b>'+(lps!=null?(' · 정가 '+fm(lps)):'');
+    $('pmCtrMeta').innerHTML='할인단가 <b>'+fm(ctrBuy)+'</b> · 재고 <b>'+num(ds.stock)+'</b> · 누적판매 <b>'+num(ds.sold)+'</b>';
+    $('pmSydMeta').innerHTML='할인단가 <b>'+fm(sydBuy)+'</b>'+(lps!=null?(' · 정가 '+fm(lps)):'');
     // SYD 이미지
     const si=$('pmSydImg'),sn=$('pmSydNo');
     si.style.display='none'; sn.style.display='';

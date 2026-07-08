@@ -609,9 +609,11 @@ export default async function productRoutes(app) {
       { key: 'goma', es: 'Goma', ko: '고무부품', test: (n) => /GOMA/.test(n) },
     ];
     const OTROS = { key: 'otros', es: 'Otros', ko: '기타' };
-    const classify = (name) => {
+    const classify = (name, code) => {
       const n = String(name || '').toUpperCase();
       for (const c of CATS) if (c.test(n)) return c.key;
+      const cd = String(code || '');
+      if (/^CB/i.test(cd)) return 'rotula'; // CB* 코드 = Rótula(볼조인트)
       return 'otros';
     };
 
@@ -630,7 +632,7 @@ export default async function productRoutes(app) {
       if (yf != null) v.minY = v.minY == null ? yf : Math.min(v.minY, yf);
       if (yt != null) v.maxY = v.maxY == null ? yt : Math.max(v.maxY, yt);
 
-      const catKey = classify(r.name);
+      const catKey = classify(r.name, r.ctr);
       if (!catCells.has(catKey)) catCells.set(catKey, new Map());
       const byVar = catCells.get(catKey);
       if (!byVar.has(model)) byVar.set(model, new Map());
