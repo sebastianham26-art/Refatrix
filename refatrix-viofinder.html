@@ -66,6 +66,8 @@
   .vstat.stk{background:var(--income-bg);color:var(--income);border-color:#cfe4db}
   .vstat.sold{background:var(--gold-bg);color:#8a6414;border-color:#ecdcb8}
   .caret{font-size:12px;color:var(--muted);margin-left:4px}
+  .vthumb{width:54px;height:40px;border-radius:7px;object-fit:cover;background:#EFEBE0;border:1px solid var(--line);cursor:pointer;flex:0 0 auto;display:block}
+  .vthumb.ph{display:flex;align-items:center;justify-content:center;font-size:15px;color:#b8b2a4}
   .veh-body{overflow-x:auto}
   .veh-body .loading{padding:16px;font-size:12.5px;color:var(--muted)}
 
@@ -244,6 +246,21 @@
   </div>
 </div>
 
+<!-- 차량 이미지 확대 모달 -->
+<div id="vehModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.62);z-index:110;align-items:center;justify-content:center;padding:24px">
+  <div style="background:#fff;border-radius:14px;max-width:640px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.35);overflow:hidden">
+    <div style="display:flex;align-items:center;padding:12px 18px;background:var(--brand);color:#fff">
+      <span style="font-size:14px;font-weight:800" id="vmTitle">차량</span>
+      <span style="font-size:11px;color:#cfe0d8;margin-left:10px" id="vmYrs"></span>
+      <button style="margin-left:auto;cursor:pointer;font-size:18px;color:#cfe0d8;background:none;border:none" id="vmClose" aria-label="닫기">✕</button>
+    </div>
+    <div style="background:#F7F5F0;display:flex;align-items:center;justify-content:center;min-height:280px">
+      <img id="vmImg" alt="" style="max-width:100%;max-height:520px;object-fit:contain;display:block">
+    </div>
+    <div style="padding:9px 18px;font-size:11px;color:var(--muted)" id="vmCredit">이미지: Wikipedia</div>
+  </div>
+</div>
+
 <script>
 /* REGISTRO(구매 VIO 원본) 보충 데이터 — 커버리지 120모델에 없는 패밀리 770종(Golf·Q2 등).
    생성: Hoja1 Cantidad를 (Marca,모델패밀리)로 합산, 변형(Gti·PTAS·엔진표기)은 토큰-프리픽스 병합,
@@ -282,6 +299,42 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       init();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ── 상위 차량 썸네일: 위키피디아 REST 이미지 (CORS 허용). 모델명+제조사로 조회, es→en, summary→search 폴백 ──
+  const _vehImgCache={};
+  function wikiSummaryThumb(lang,title){
+    return fetch('https://'+lang+'.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(title),{headers:{'accept':'application/json'}})
+      .then(r=>r.ok?r.json():null)
+      .then(d=>{ if(!d) return null; const t=(d.originalimage||d.thumbnail||{}).source; return t||null; }).catch(()=>null);
+  }
+  function wikiSearchThumb(lang,q){
+    const u='https://'+lang+'.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=thumbnail&pithumbsize=320&generator=search&gsrlimit=1&gsrsearch='+encodeURIComponent(q);
+    return fetch(u).then(r=>r.ok?r.json():null).then(d=>{
+      try{ const pages=d.query.pages; const k=Object.keys(pages)[0]; return pages[k].thumbnail.source||null; }catch(e){ return null; }
+    }).catch(()=>null);
+  }
+  async function loadVehImage(m){
+    const marca=String(m.marca||'').replace(/\bGeneral Motors\b/i,'Chevrolet').replace(/\bFord Motor\b/i,'Ford').trim();
+    const model=dispModel(m.modelo);
+    const key=normS(marca+' '+model);
+    if(key in _vehImgCache) return _vehImgCache[key];
+    const titles=[ (marca+' '+model).replace(/\s+/g,'_'), model.replace(/\s+/g,'_') ];
+    let url=null;
+    for(const lang of ['es','en']){
+      for(const t of titles){ url=await wikiSummaryThumb(lang,t); if(url) break; }
+      if(url) break;
+    }
+    if(!url){ for(const lang of ['es','en']){ url=await wikiSearchThumb(lang, marca+' '+model+' automóvil'); if(url) break; } }
+    _vehImgCache[key]=url||null;
+    return _vehImgCache[key];
+  }
+  function openVehPhoto(m,url){
+    $('vmTitle').textContent=(m.marca+' '+dispModel(m.modelo)).toUpperCase();
+    const yrs=(m.ys?m.ys:'')+(m.ye&&m.ye!==m.ys?(' – '+m.ye):'');
+    $('vmYrs').textContent=yrs?('연식 '+yrs):'';
+    $('vmImg').src=url; $('vmImg').alt=m.marca+' '+m.modelo;
+    $('vehModal').style.display='flex';
   }
 
   // ── VIO 차량 목록: 공통>커버리지 데이터(mx_parts_coverage_dashboard.html)의 const DATA를 단일 소스로 사용 ──
@@ -525,9 +578,13 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       const rb=m.extra
         ?'<div class="rankbox" style="background:#8C9EAF"><div class="r" style="font-size:16px">—</div><div class="u">VIO 자료없음</div></div>'
         :'<div class="rankbox"><div class="r">'+m.rank+'<small>위</small></div><div class="u">'+num(m.units)+'대</div></div>';
+      const thumbSlot=(!m.extra && m.rank<=10)
+        ? '<div class="vthumb ph" id="vt'+rid2+'" title="차량 이미지" data-vrank="'+m.rank+'">🚗</div>'
+        : '';
       return '<div class="veh" data-rank="'+m.rank+'">'
         +'<div class="veh-h" data-rank="'+m.rank+'">'
         +rb
+        +thumbSlot
         +'<div class="veh-t"><div class="name" title="'+escP(m.modelo)+'">'+escP((m.marca+' '+dispModel(m.modelo)).toUpperCase())+'</div>'
         +'<div class="yrs">연식 <b>'+escP(yrs||'—')+'</b>'+(gensTxt?(' · '+gensTxt):'')+'</div></div>'
         +'<div class="veh-stats" id="st'+rid2+'"><span class="caret">'+(openSet[m.rank]?'▼':'▶')+'</span></div>'
@@ -537,6 +594,17 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     }).join('');
     el.querySelectorAll('.veh-h').forEach(h=>{
       h.addEventListener('click',()=>toggleVeh(Number(h.dataset.rank)));
+    });
+    // 상위 10위 차량 썸네일: 위키 이미지 비동기 로드 + 클릭 확대(펼치기와 충돌 방지)
+    el.querySelectorAll('.vthumb[data-vrank]').forEach(slot=>{
+      const r=Number(slot.dataset.vrank); const m=modelByRank(r); if(!m) return;
+      loadVehImage(m).then(url=>{
+        if(!url){ return; } // 실패 시 🚗 플레이스홀더 유지
+        const img=document.createElement('img');
+        img.className='vthumb'; img.src=url; img.alt=m.marca+' '+m.modelo; img.title='클릭하면 크게 보기';
+        img.addEventListener('click',e=>{ e.stopPropagation(); openVehPhoto(m,url); });
+        slot.replaceWith(img);
+      });
     });
     // 이미 펼쳐진 블록 재렌더
     pageArr.forEach(m=>{ if(openSet[m.rank]) expand(m,false); });
@@ -768,6 +836,8 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     });
     $('pmClose').addEventListener('click',()=>$('photoModal').classList.remove('open'));
     $('photoModal').addEventListener('click',e=>{if(e.target===$('photoModal'))$('photoModal').classList.remove('open');});
+    $('vmClose').addEventListener('click',()=>$('vehModal').style.display='none');
+    $('vehModal').addEventListener('click',e=>{if(e.target===$('vehModal'))$('vehModal').style.display='none';});
     $('pmPrev').addEventListener('click',()=>{ if(PM.imgs.length){PM.idx=(PM.idx-1+PM.imgs.length)%PM.imgs.length;pmShow();} });
     $('pmNext').addEventListener('click',()=>{ if(PM.imgs.length){PM.idx=(PM.idx+1)%PM.imgs.length;pmShow();} });
     const ps=portalSession();
