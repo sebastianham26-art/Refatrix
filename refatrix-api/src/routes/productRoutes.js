@@ -534,6 +534,7 @@ export default async function productRoutes(app) {
     const terms = raw.split('||').map((t) => t.trim()).filter((t) => t.length >= 2);
     if (!terms.length) return empty;
     const likeParams = terms.map((t) => '%' + t.replace(/([%_\\])/g, '\\$1') + '%');
+    const like = likeParams[0]; // VIO 순위 조회(vio_model ILIKE)용 — 대표 term 기준
     const orModel = terms.map((_, i) => `pa.model ILIKE $${i + 1}`).join(' OR ');
     const orApp = terms.map((_, i) => `pa.app_text ILIKE $${i + 1}`).join(' OR ');
 

@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf13</title>
+<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf14</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -728,8 +728,9 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     if(_fetchInflight[key]) return _fetchInflight[key];
     _fetchInflight[key]=(async()=>{
       let d=null;
+      let lastErr=null;
       const hit=(r)=> r && r.categories && r.categories.length;
-      const call=async(qq)=>{ try{ return await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(qq),{headers:auth()}).then(x=>x.json()); }catch(e){ return null; } };
+      const call=async(qq)=>{ try{ const res=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(qq),{headers:auth()}); const j=await res.json().catch(()=>null); if(!res.ok||(j&&j.error)){ lastErr=(j&&j.error)||('HTTP '+res.status); return null; } return j; }catch(e){ lastErr='network'; return null; } };
       try{
         const cands=candQueries(m.modelo);
         let r=null;
@@ -743,9 +744,10 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
           for(const cq of cands){ const rr=await call(cq); if(hit(rr)){ r=rr; r.__used=cq; break; } if(rr&&!r) r=rr; }
         }
         d=r;
+        if(!d && lastErr) d={ categories:[], __err:lastErr }; // 오류를 매칭없음과 구분
         cache[key]=d||{categories:[]};
         if(d&&d.price_included===false){ P.priceIncluded=false; setPricePanelHidden(true); }
-      }catch(e){ cache[key]={categories:[]}; }
+      }catch(e){ cache[key]={categories:[], __err:'exception'}; }
       delete _fetchInflight[key];
       return cache[key];
     })();
@@ -815,7 +817,17 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
   function drawMatrix(m,body){
     const key=normS(m.modelo), d=cache[key];
     if(!d||!d.categories||!d.categories.length){
-      body.innerHTML='<div class="loading">‘'+escP(m.modelo)+'’에 매칭된 제품이 없습니다.</div>';
+      if(d&&d.__err){
+        var em=d.__err;
+        var msg=(em==='unauthorized'||em==='HTTP 401'||em==='HTTP 403')
+          ? '조회 권한이 없거나 로그인이 만료되었습니다. 다시 로그인해 주세요. ('+em+')'
+          : (em==='network'
+            ? '서버에 연결하지 못했습니다. 네트워크·서버 상태를 확인해 주세요.'
+            : '조회 중 오류가 발생했습니다 ('+em+'). 잠시 후 다시 시도해 주세요.');
+        body.innerHTML='<div class="loading" style="color:var(--expense)">'+escP(msg)+'</div>';
+      } else {
+        body.innerHTML='<div class="loading">‘'+escP(m.modelo)+'’에 매칭된 제품이 없습니다.</div>';
+      }
       const st=$('st'+rid(m.rank)); if(st) st.innerHTML='<span class="vstat">품목 0</span><span class="caret">▼</span>';
       return;
     }
