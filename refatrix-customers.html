@@ -151,7 +151,7 @@
           <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
           <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
         </div>
-        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.</div>
+        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.<br><span style="color:var(--muted)">Descargue la plantilla, llénela y súbala: con <b>Código</b> actualiza, vacío crea (código automático). <b>Nombre</b> y <b>Equipo</b> son obligatorios (nombre exacto del equipo, p. ej. 01_Monterrey).</span></div>
         <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
           <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
           <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
@@ -739,7 +739,7 @@
   // ===== 엑셀 일괄 등록 =====
   let upRows=null;
   async function downloadTemplate(){
-    let headers=['고객코드','고객명','팀','회사종류','RFC','담당자','단계','연락처','전화','할인율','외상일','메모'];
+    let headers=['고객코드 (Código)','고객명 (Nombre)','팀 (Equipo)','회사종류 (Tipo)','RFC','담당자 (Responsable)','단계 (Etapa)','연락처 (Contacto)','전화 (Teléfono)','할인율 (Descuento %)','외상일 (Días crédito)','메모 (Nota)'];
     try{const d=await fetch(session.api+'/api/customers/template',{headers:auth()}).then(r=>r.json());if(d.headers)headers=d.headers;}catch(e){}
     const teamNames=(teams||[]).map(t=>t.name).join(' / ')||'01_Monterrey / 02_Merida';
     const ws=XLSX.utils.aoa_to_sheet([headers,

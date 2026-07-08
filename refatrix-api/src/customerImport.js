@@ -1,28 +1,77 @@
 // 고객 엑셀 업로드 파싱·검증(순수 함수)
-// 양식 컬럼(한글 헤더) → 내부 필드
-export const CUST_COLUMN_MAP = {
-  '고객코드': 'code',
-  '고객명': 'name',
-  '팀': 'team',
-  '회사종류': 'customer_type',
-  'RFC': 'rfc',
-  '담당자': 'owner',
-  '단계': 'stage',
-  '연락처': 'contact',
-  '전화': 'phone',
-  '할인율': 'discount',
-  '외상일': 'credit_days',
-  '메모': 'memo',
-};
+// 양식 컬럼(한글+스페인어 이중언어 헤더) → 내부 필드
+// 헤더 표기는 "한글 (Español)" 형식으로 다운로드되며, 업로드 시에는
+// 한글 전용 / 스페인어 전용 / 이중언어 헤더를 모두 인식한다(하위호환 유지).
 
-export const CUST_TEMPLATE_HEADERS = Object.keys(CUST_COLUMN_MAP);
+// 컬럼 정의 단일 소스: 내부필드 · 한글 · 스페인어
+export const CUST_COLUMNS = [
+  { field: 'code',          ko: '고객코드', es: 'Código' },
+  { field: 'name',          ko: '고객명',   es: 'Nombre' },
+  { field: 'team',          ko: '팀',       es: 'Equipo' },
+  { field: 'customer_type', ko: '회사종류', es: 'Tipo' },
+  { field: 'rfc',           ko: 'RFC',      es: 'RFC' },
+  { field: 'owner',         ko: '담당자',   es: 'Responsable' },
+  { field: 'stage',         ko: '단계',     es: 'Etapa' },
+  { field: 'contact',       ko: '연락처',   es: 'Contacto' },
+  { field: 'phone',         ko: '전화',     es: 'Teléfono' },
+  { field: 'discount',      ko: '할인율',   es: 'Descuento %' },
+  { field: 'credit_days',   ko: '외상일',   es: 'Días crédito' },
+  { field: 'memo',          ko: '메모',     es: 'Nota' },
+];
+
+// 하위호환용: 한글 헤더 → 내부 필드 (기존 참조 보존)
+export const CUST_COLUMN_MAP = Object.fromEntries(CUST_COLUMNS.map((c) => [c.ko, c.field]));
+
+// 다운로드 양식 헤더: "한글 (Español)" (한글==스페인어면 한글만, 예: RFC)
+export const CUST_TEMPLATE_HEADERS = CUST_COLUMNS.map((c) =>
+  c.es && c.es !== c.ko ? `${c.ko} (${c.es})` : c.ko
+);
+
 export const CUSTOMER_TYPES = ['refraccionaria', 'Mayoreo', 'Flotia', 'taller', 'publico'];
+
+// 헤더 문자열 정규화: 악센트 제거 · 소문자 · 공백 정리
+function normHeader(s) {
+  return String(s == null ? '' : s)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // 악센트 제거 (é→e, í→i 등)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// 인식 가능한 모든 헤더 형태 → 내부 필드 (정규화 키)
+const HEADER_LOOKUP = (() => {
+  const m = {};
+  const put = (label, field) => {
+    const k = normHeader(label);
+    if (k && m[k] == null) m[k] = field;
+  };
+  for (const c of CUST_COLUMNS) {
+    put(c.ko, c.field);                 // 한글 전용 (기존 파일 하위호환)
+    put(c.es, c.field);                 // 스페인어 전용
+    put(`${c.ko} (${c.es})`, c.field);  // 이중언어 (신규 양식)
+    put(`${c.es} (${c.ko})`, c.field);  // 역순 표기도 허용
+  }
+  // 추가 별칭(사용자가 흔히 쓸 수 있는 표기)
+  const EXTRA = [
+    ['name', 'Cliente'],
+    ['owner', 'Vendedor'],
+    ['customer_type', 'Tipo de cliente'],
+    ['customer_type', 'Tipo empresa'],
+    ['memo', 'Observaciones'],
+    ['discount', 'Descuento'],
+    ['credit_days', 'Días de crédito'],
+    ['code', 'Código cliente'],
+  ];
+  for (const [field, alias] of EXTRA) put(alias, field);
+  return m;
+})();
 
 export function buildHeaderIndex(headerRow) {
   const idx = {};
   (headerRow || []).forEach((h, i) => {
-    const key = String(h == null ? '' : h).trim();
-    if (CUST_COLUMN_MAP[key]) idx[CUST_COLUMN_MAP[key]] = i;
+    const field = HEADER_LOOKUP[normHeader(h)];
+    if (field && idx[field] == null) idx[field] = i;
   });
   return idx;
 }
