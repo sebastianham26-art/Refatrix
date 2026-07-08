@@ -529,8 +529,13 @@ export default async function productRoutes(app) {
     const raw = String(req.query.q || '').trim();
     const empty = { query: raw, model_label: '', headline_vio: null, variants: [], categories: [], total: 0, price_included: canPrice };
     if (raw.length < 2) return empty;
-    const esc = raw.replace(/([%_\\])/g, '\\$1');
-    const like = '%' + esc + '%';
+    // q에 '||'로 여러 모델명을 넘기면 OR 합집합으로 매칭 (예: 'Jetta 4 PTAS||Jetta').
+    //   세대 표기 차이(적용차종=Jetta Vi, VIO=Jetta 4 PTAS)로 좁은 질의가 일부만 잡던 문제 해결.
+    const terms = raw.split('||').map((t) => t.trim()).filter((t) => t.length >= 2);
+    if (!terms.length) return empty;
+    const likeParams = terms.map((t) => '%' + t.replace(/([%_\\])/g, '\\$1') + '%');
+    const orModel = terms.map((_, i) => `pa.model ILIKE $${i + 1}`).join(' OR ');
+    const orApp = terms.map((_, i) => `pa.app_text ILIKE $${i + 1}`).join(' OR ');
 
     // 1) 검색 모델에 걸리는 개별 차량 적용 항목 + 제품 기본(코드=CTR, 이름=DESCRIPCIÓN)
     const appRows = (await query(
@@ -538,8 +543,8 @@ export default async function productRoutes(app) {
               p.code AS ctr, p.name, p.stock_qty, p.list_price, p.list_price_syd
          FROM product_applications pa
          JOIN products p ON p.id = pa.product_id AND p.deleted_at IS NULL
-        WHERE (pa.model ILIKE $1 OR pa.app_text ILIKE $1)
-          AND pa.model IS NOT NULL AND pa.model <> ''`, [like])).rows;
+        WHERE ((${orModel}) OR (${orApp}))
+          AND pa.model IS NOT NULL AND pa.model <> ''`, likeParams)).rows;
     if (!appRows.length) return empty;
 
     const pids = [...new Set(appRows.map((r) => Number(r.product_id)))];

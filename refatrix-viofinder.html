@@ -721,12 +721,12 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     _fetchInflight[key]=(async()=>{
       let d=null;
       try{
+        // 모든 후보 모델명을 '||'로 합쳐 서버에서 OR 합집합 매칭 (세대 표기 차이로 인한 누락 방지)
         const cands=candQueries(m.modelo);
-        for(const cq of cands){
-          const r=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(cq),{headers:auth()}).then(x=>x.json());
-          if(r&&r.categories&&r.categories.length){ d=r; d.__used=cq; break; }
-          d=r;
-        }
+        const qJoined=cands.join('||');
+        const r=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(qJoined),{headers:auth()}).then(x=>x.json());
+        d=(r&&r.categories&&r.categories.length)?r:r;
+        if(d) d.__used=qJoined;
         cache[key]=d||{categories:[]};
         if(d&&d.price_included===false){ P.priceIncluded=false; setPricePanelHidden(true); }
       }catch(e){ cache[key]={categories:[]}; }
