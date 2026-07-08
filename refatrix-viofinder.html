@@ -68,6 +68,16 @@
   .caret{font-size:12px;color:var(--muted);margin-left:4px}
   .vthumb{width:54px;height:40px;border-radius:7px;object-fit:cover;background:#EFEBE0;border:1px solid var(--line);cursor:pointer;flex:0 0 auto;display:block}
   .vthumb.ph{display:flex;align-items:center;justify-content:center;font-size:15px;color:#b8b2a4}
+  .vpie{flex:0 0 auto;display:flex;gap:12px;align-items:center;padding:0 6px}
+  .vpie .pie{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .vpie .pie svg{display:block}
+  .vpie .pie .lbl{font-size:9.5px;font-weight:800}
+  .vpie .pie.ctr .lbl{color:var(--ctr)}
+  .vpie .pie.syd .lbl{color:var(--syd)}
+  .vpie .pie .pct{font-size:11px;font-weight:800;font-variant-numeric:tabular-nums}
+  .vpie .pie.ctr .pct{color:var(--ctr)}
+  .vpie .pie.syd .pct{color:var(--syd)}
+  .vpie.loading{font-size:10px;color:var(--muted)}
   .veh-body{overflow-x:auto}
   .veh-body .loading{padding:16px;font-size:12.5px;color:var(--muted)}
 
@@ -317,6 +327,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     'general motors chevy':'Chevrolet Chevy',
     'chevrolet chevy':'Chevrolet Chevy',
     'honda cr v':'Honda CR-V',
+    'honda crv':'Honda CR-V',
     'mazda mazda 3':'Mazda 3',
     'mazda 3':'Mazda 3',
     'nissan tiida':'Nissan Tiida',
@@ -356,12 +367,26 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     titles.push((marca+' '+model).replace(/\s+/g,'_'));
     titles.push(model.replace(/\s+/g,'_'));
     let url=null;
+    // 세대차가 큰 차종(픽업·롱런 모델)은 연식 포함 '검색'을 문서 요약보다 우선 — 해당 시기 세대 이미지 확보
+    const yr0=(m.ys&&m.ye)?Math.round((m.ys+m.ye)/2):(m.ys||m.ye||'');
+    const genSensitive=/hilux|ibiza|hilux dc|ranger|frontier|np300|amarok|gol|sentra|tsuru/i.test(model);
+    if(genSensitive && yr0){
+      const bodyHint0=/hilux|np300|navara|frontier|ranger|amarok/i.test(model)?' pickup':'';
+      for(const lang of ['es','en']){ url=await wikiSearchThumb(lang, marca+' '+model+bodyHint0+' '+yr0); if(url) break; }
+    }
     // 라틴아메리카/멕시코 시장은 스페인어 위키가 정확 → es 우선, 그다음 en
-    for(const lang of ['es','en']){
+    if(!url) for(const lang of ['es','en']){
       for(const t of titles){ url=await wikiSummaryThumb(lang,t); if(url) break; }
       if(url) break;
     }
-    if(!url){ for(const lang of ['es','en']){ url=await wikiSearchThumb(lang, marca+' '+model+' automóvil México'); if(url) break; } }
+    if(!url){
+      // 검색 폴백: 연식(대표 연도) + 차형 키워드로 해당 세대 이미지 우선
+      const yr=(m.ys&&m.ye)?Math.round((m.ys+m.ye)/2):(m.ys||m.ye||'');
+      const bodyHint=/hilux|np300|navara|frontier|tacoma|ranger|amarok/i.test(model)?' pickup':'';
+      for(const lang of ['es','en']){
+        url=await wikiSearchThumb(lang, marca+' '+model+bodyHint+' '+(yr||'')+' automóvil'); if(url) break;
+      }
+    }
     _vehImgCache[key]=url||null;
     return _vehImgCache[key];
   }
@@ -442,11 +467,15 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     return toks.filter((_,i)=>!drop.has(i)).map(normTok).filter(Boolean);
   }
   // 화면 표시명: 문짝수·차형 수식어 제거한 모델명 (JETTA 4 PTAS → JETTA). 원본은 title 속성으로 보존
+  // 화면 표시명 치환(조회에는 미사용). Xtrail→X-Trail 등 사람이 읽는 정식 표기.
+  const DISP_FIX={ 'xtrail':'X-Trail' };
   function dispModel(modelo){
     const toks=String(modelo||'').trim().split(/\s+/).filter(Boolean);
     const drop=descDropIdx(toks);
-    const out=toks.filter((_,i)=>!drop.has(i)).join(' ');
-    return out||String(modelo||'');
+    let out=toks.filter((_,i)=>!drop.has(i)).join(' ');
+    out=out||String(modelo||'');
+    const fx=DISP_FIX[normS(out)];
+    return fx||out;
   }
   // 한쪽 토큰열이 다른쪽의 앞부분이면 같은 차종으로 간주 (jetta ↔ jetta 4 ptas ↔ jetta a4)
   function sameModel(aT,bT){
@@ -617,12 +646,16 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       const thumbSlot=(!m.extra && m.rank<=20)
         ? '<div class="vthumb ph" id="vt'+rid2+'" title="차량 이미지" data-vrank="'+m.rank+'">🚗</div>'
         : '';
+      const pieSlot=(!m.extra && m.rank<=20)
+        ? '<div class="vpie loading" id="vp'+rid2+'" data-prank="'+m.rank+'">보유율 …</div>'
+        : '';
       return '<div class="veh" data-rank="'+m.rank+'">'
         +'<div class="veh-h" data-rank="'+m.rank+'">'
         +rb
         +thumbSlot
         +'<div class="veh-t"><div class="name" title="'+escP(m.modelo)+'">'+escP((m.marca+' '+dispModel(m.modelo)).toUpperCase())+'</div>'
         +'<div class="yrs">연식 <b>'+escP(yrs||'—')+'</b>'+(gensTxt?(' · '+gensTxt):'')+'</div></div>'
+        +pieSlot
         +'<div class="veh-stats" id="st'+rid2+'"><span class="caret">'+(openSet[m.rank]?'▼':'▶')+'</span></div>'
         +'</div>'
         +'<div class="veh-body" id="vb'+rid2+'" style="display:'+(openSet[m.rank]?'block':'none')+'"></div>'
@@ -641,6 +674,15 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
         img.addEventListener('click',e=>{ e.stopPropagation(); openVehPhoto(m,url); });
         slot.replaceWith(img);
       });
+    });
+    // CTR/SYD 6대 품목 보유율 파이차트: by-model(캐시) 조회 후 렌더
+    el.querySelectorAll('.vpie[data-prank]').forEach(slot=>{
+      const r=Number(slot.dataset.prank); const m=modelByRank(r); if(!m) return;
+      fetchByModel(m).then(d=>{
+        const cov=sixCoverage(d);
+        if(!cov){ slot.textContent=''; return; }
+        slot.classList.remove('loading'); slot.innerHTML=pieBlock(cov);
+      }).catch(()=>{ slot.textContent=''; });
     });
     // 이미 펼쳐진 블록 재렌더
     pageArr.forEach(m=>{ if(openSet[m.rank]) expand(m,false); });
@@ -670,24 +712,38 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     VIO.models.concat(EXTRA).forEach(m=>{ if(openSet[m.rank]){ const b=$('vb'+rid(m.rank)); if(b) drawMatrix(m,b); } });
   }
 
+  // by-model 조회(캐시 공유): candQueries 순차 시도, 첫 비공란 채택. 파이차트·펼치기 공용.
+  const _fetchInflight={};
+  async function fetchByModel(m){
+    const key=normS(m.modelo);
+    if(cache[key]) return cache[key];
+    if(_fetchInflight[key]) return _fetchInflight[key];
+    _fetchInflight[key]=(async()=>{
+      let d=null;
+      try{
+        const cands=candQueries(m.modelo);
+        for(const cq of cands){
+          const r=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(cq),{headers:auth()}).then(x=>x.json());
+          if(r&&r.categories&&r.categories.length){ d=r; d.__used=cq; break; }
+          d=r;
+        }
+        cache[key]=d||{categories:[]};
+        if(d&&d.price_included===false){ P.priceIncluded=false; setPricePanelHidden(true); }
+      }catch(e){ cache[key]={categories:[]}; }
+      delete _fetchInflight[key];
+      return cache[key];
+    })();
+    return _fetchInflight[key];
+  }
+
   // ── 차량 펼치기: by-model 조회 → 행렬 ──
   async function expand(m,fetchIfNeeded){
     const body=$('vb'+rid(m.rank)); if(!body) return;
     const key=normS(m.modelo);
     if(cache[key]){ drawMatrix(m,body); return; }
     body.innerHTML='<div class="loading">제품을 불러오는 중…</div>';
-    try{
-      const cands=candQueries(m.modelo);
-      let d=null;
-      for(const cq of cands){
-        const r=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(cq),{headers:auth()}).then(x=>x.json());
-        if(r&&r.categories&&r.categories.length){ d=r; d.__used=cq; break; }
-        d=r; // 마지막 응답 보관(전부 공란이면 공란 표시)
-      }
-      cache[key]=d||{categories:[]};
-      if(d&&d.price_included===false){ P.priceIncluded=false; setPricePanelHidden(true); }
-      drawMatrix(m,body);
-    }catch(e){ body.innerHTML='<div class="loading">조회에 실패했습니다. 잠시 후 다시 시도하세요.</div>'; }
+    await fetchByModel(m);
+    drawMatrix(m,body);
   }
 
   // 아이템 좌우 판별: ① CTR 코드 접미사 L/R ② 제품명 IZQ/DER
@@ -708,6 +764,37 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     });
     out.sort((a,b)=>String(a.ctr).localeCompare(String(b.ctr)));
     return out;
+  }
+  // 6대 품목 보유율: 6종 카테고리 중 (CTR 제품 존재 종수)/6, (SYD 코드 존재 종수)/6.
+  //   품목당 코드가 여러 개여도 "그 품목 보유=1"로만 카운트(사용자 지침).
+  const SIX=['rotula','terminal_ext','terminal_int','horquilla','tornillo','buje'];
+  function sixCoverage(d){
+    if(!d||!d.categories) return null;
+    const byKey={}; d.categories.forEach(c=>{ byKey[c.key]=c; });
+    let ctr=0, syd=0;
+    SIX.forEach(k=>{
+      const c=byKey[k]; if(!c) return;
+      const items=mergedItems(c);
+      if(items.length){ ctr++; if(items.some(x=>(x.syd&&x.syd.length))) syd++; }
+    });
+    return { ctr, syd, total:SIX.length };
+  }
+  function pieSVG(n,total,color){
+    const R=17, C=2*Math.PI*R, frac=total?Math.max(0,Math.min(1,n/total)):0;
+    const off=C*(1-frac);
+    return '<svg width="40" height="40" viewBox="0 0 40 40">'
+      +'<circle cx="20" cy="20" r="'+R+'" fill="none" stroke="#EDE9DF" stroke-width="6"/>'
+      +'<circle cx="20" cy="20" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="6" '
+      +'stroke-dasharray="'+C.toFixed(2)+'" stroke-dashoffset="'+off.toFixed(2)+'" '
+      +'transform="rotate(-90 20 20)" stroke-linecap="round"/></svg>';
+  }
+  function pieBlock(cov){
+    if(!cov) return '';
+    const pct=(n)=>Math.round(n/cov.total*100)+'%';
+    return '<div class="vpie">'
+      +'<div class="pie ctr"><div class="lbl">CTR</div>'+pieSVG(cov.ctr,cov.total,'#d81e25')+'<div class="pct">'+pct(cov.ctr)+'</div></div>'
+      +'<div class="pie syd"><div class="lbl">SYD</div>'+pieSVG(cov.syd,cov.total,'#0a5cab')+'<div class="pct">'+pct(cov.syd)+'</div></div>'
+      +'</div>';
   }
   function drawMatrix(m,body){
     const key=normS(m.modelo), d=cache[key];
