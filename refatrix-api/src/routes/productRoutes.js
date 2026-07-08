@@ -570,6 +570,29 @@ export default async function productRoutes(app) {
     const soldByPid = {};
     for (const s of soldRows) soldByPid[Number(s.product_id)] = Number(s.qty);
 
+    // 1-c) 고객별 판매 내역(툴팁용) — 제품별 고객명+수량, 수량 내림차순 상위 20명.
+    //   sold 합계와 동일한 팀 가시성·게시·미삭제 조건. 가격 권한과 무관(수량·고객명만).
+    const custParams = [pids];
+    let custTeamCond = '';
+    if (vis !== null) { custParams.push(vis.length ? vis : [-1]); custTeamCond = ' AND cu.team_id = ANY($2)'; }
+    const custRows = (await query(
+      `SELECT sil.product_id, cu.name AS customer, SUM(sil.qty) AS qty
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id = sil.invoice_id
+         JOIN customers cu ON cu.id = si.customer_id
+        WHERE si.status = 'posted' AND si.deleted_at IS NULL
+          AND sil.product_id = ANY($1)${custTeamCond}
+        GROUP BY sil.product_id, cu.name`, custParams)).rows;
+    const custByPid = {};
+    for (const c of custRows) {
+      const pid = Number(c.product_id);
+      (custByPid[pid] ||= []).push({ customer: c.customer || '(미지정)', qty: Number(c.qty) });
+    }
+    for (const pid of Object.keys(custByPid)) {
+      custByPid[pid].sort((a, b) => b.qty - a.qty);
+      custByPid[pid] = custByPid[pid].slice(0, 20); // 상위 20명
+    }
+
     // 2) SYD 코드(제품:다)
     const sydRows = (await query(
       `SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [pids])).rows;
@@ -649,6 +672,7 @@ export default async function productRoutes(app) {
           ctr: r.ctr, syd: sydByPid[Number(r.product_id)] || [], name: r.name || '', year: yStr,
           stock: r.stock_qty != null ? Number(r.stock_qty) : 0,
           sold: soldByPid[Number(r.product_id)] || 0,
+          sold_by: custByPid[Number(r.product_id)] || [],
         };
         if (canPrice) {
           cell.lp = r.list_price != null ? Number(r.list_price) : null;          // CTR List Price

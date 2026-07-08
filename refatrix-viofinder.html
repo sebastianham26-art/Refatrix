@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf14</title>
+<title>Refatrix ERP · VIO 차량모델 제품찾기 · build vf15</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -104,6 +104,14 @@
   .stk-ok{display:inline-block;min-width:38px;font-weight:800;color:var(--income);background:var(--income-bg);border-radius:6px;padding:1px 7px;font-size:11.5px}
   .stk-zero{display:inline-block;min-width:38px;font-weight:800;color:var(--expense);background:var(--expense-bg);border-radius:6px;padding:1px 7px;font-size:11.5px}
   .sold-v{display:inline-block;min-width:38px;font-weight:800;color:#8a6414;background:var(--gold-bg);border-radius:6px;padding:1px 7px;font-size:11.5px}
+  .soldhover{cursor:help;outline:none}
+  .soldhover:hover,.soldhover:focus{box-shadow:0 0 0 2px #8a6414}
+  #soldTip{position:fixed;z-index:200;display:none;max-width:280px;max-height:300px;overflow:auto;background:#20302a;color:#fff;border-radius:9px;box-shadow:0 8px 28px rgba(0,0,0,.35);padding:9px 12px;font-size:11.5px;line-height:1.7;pointer-events:none}
+  #soldTip.on{display:block}
+  #soldTip .h{font-weight:800;color:#cfe0d8;margin-bottom:5px;font-size:11px;border-bottom:1px solid #3a5850;padding-bottom:4px}
+  #soldTip .r{display:flex;justify-content:space-between;gap:14px;white-space:nowrap}
+  #soldTip .r .c{overflow:hidden;text-overflow:ellipsis}
+  #soldTip .r .q{font-weight:800;font-variant-numeric:tabular-nums}
   .dash{color:#c2c0ba}
   td.empty{background:repeating-linear-gradient(45deg,#fff,#fff 6px,#fcfcfc 6px,#fcfcfc 12px)}
   .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:16px}
@@ -257,6 +265,7 @@
 </div>
 
 <!-- 차량 이미지 확대 모달 -->
+<div id="soldTip"></div>
 <div id="vehModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.62);z-index:110;align-items:center;justify-content:center;padding:24px">
   <div style="background:#fff;border-radius:14px;max-width:640px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.35);overflow:hidden">
     <div style="display:flex;align-items:center;padding:12px 18px;background:var(--brand);color:#fff">
@@ -898,9 +907,14 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     h+='<tr><td class="rowlab">재고</td>';
     cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline"><span class="'+((Number(x.stock)||0)>0?'stk-ok':'stk-zero')+'">'+num(x.stock||0)+'</span></span>')); });
     h+='</tr>';
-    // 행 4: 누적판매
+    // 행 4: 누적판매 (마우스오버 시 고객명+수량 팝오버)
     h+='<tr><td class="rowlab">누적판매</td>';
-    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>'<span class="iline">'+((Number(x.sold)||0)>0?('<span class="sold-v">'+num(x.sold)+'</span>'):'<span class="dash">—</span>')+'</span>')); });
+    cols.forEach(c=>{ h+=cellTd(c,lineWrap(c.items,x=>{
+      if(!((Number(x.sold)||0)>0)) return '<span class="iline"><span class="dash">—</span></span>';
+      const by=(x.sold_by||[]);
+      const payload=escP(JSON.stringify({ code:x.ctr, total:Number(x.sold), by:by }));
+      return '<span class="iline"><span class="sold-v soldhover" data-by="'+payload+'" tabindex="0">'+num(x.sold)+'</span></span>';
+    })); });
     h+='</tr>';
     // 행 5: SYD 코드
     h+='<tr><td class="rowlab"><span class="b syd">SYD</span>코드</td>';
@@ -988,6 +1002,34 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     $('pmClose').addEventListener('click',()=>$('photoModal').classList.remove('open'));
     $('photoModal').addEventListener('click',e=>{if(e.target===$('photoModal'))$('photoModal').classList.remove('open');});
     $('vmClose').addEventListener('click',()=>$('vehModal').style.display='none');
+    // 누적판매 고객 팝오버 (이벤트 위임 — 재렌더에도 안전)
+    (function(){
+      const tip=$('soldTip');
+      function show(el){
+        let d; try{ d=JSON.parse(el.getAttribute('data-by')||'{}'); }catch(e){ return; }
+        const by=(d.by||[]);
+        let html='<div class="h">'+escP(d.code||'')+' · 누적판매 '+num(d.total||0)+'</div>';
+        if(by.length){
+          html+=by.map(b=>'<div class="r"><span class="c">'+escP(b.customer)+'</span><span class="q">'+num(b.qty)+'</span></div>').join('');
+          if(by.length>=20) html+='<div class="r" style="color:#cfe0d8">…(수량 상위 20명)</div>';
+        } else { html+='<div class="r">고객 내역 없음</div>'; }
+        tip.innerHTML=html; tip.classList.add('on');
+      }
+      function move(e){
+        const pad=14; let x=e.clientX+pad, y=e.clientY+pad;
+        const w=tip.offsetWidth, h=tip.offsetHeight;
+        if(x+w>window.innerWidth-8) x=e.clientX-w-pad;
+        if(y+h>window.innerHeight-8) y=e.clientY-h-pad;
+        tip.style.left=Math.max(8,x)+'px'; tip.style.top=Math.max(8,y)+'px';
+      }
+      function hide(){ tip.classList.remove('on'); }
+      document.addEventListener('mouseover',e=>{ const el=e.target.closest && e.target.closest('.soldhover'); if(el){ show(el); move(e); } });
+      document.addEventListener('mousemove',e=>{ if(tip.classList.contains('on')) move(e); });
+      document.addEventListener('mouseout',e=>{ const el=e.target.closest && e.target.closest('.soldhover'); if(el) hide(); });
+      // 키보드 접근성
+      document.addEventListener('focusin',e=>{ const el=e.target.closest && e.target.closest('.soldhover'); if(el){ const r=el.getBoundingClientRect(); show(el); tip.style.left=r.left+'px'; tip.style.top=(r.bottom+6)+'px'; } });
+      document.addEventListener('focusout',e=>{ const el=e.target.closest && e.target.closest('.soldhover'); if(el) hide(); });
+    })();
     $('vehModal').addEventListener('click',e=>{if(e.target===$('vehModal'))$('vehModal').style.display='none';});
     $('pmPrev').addEventListener('click',()=>{ if(PM.imgs.length){PM.idx=(PM.idx-1+PM.imgs.length)%PM.imgs.length;pmShow();} });
     $('pmNext').addEventListener('click',()=>{ if(PM.imgs.length){PM.idx=(PM.idx+1)%PM.imgs.length;pmShow();} });
