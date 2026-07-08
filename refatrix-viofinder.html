@@ -301,8 +301,38 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  // ── 상위 차량 썸네일: 위키피디아 REST 이미지 (CORS 허용). 모델명+제조사로 조회, es→en, summary→search 폴백 ──
+  // ── 상위 차량 썸네일: 위키피디아 REST 이미지 (CORS 허용). 미국/중남미 모델 지향 조회 ──
   const _vehImgCache={};
+  // 멕시코/미주 전용명·수식어가 있는 차종 → 위키 문서명 직접 매핑(최우선 시도). 라틴/미국 시장 세대 문서를 지정.
+  const WIKI_TITLE={
+    'nissan versa':'Nissan Versa',
+    'general motors aveo':'Chevrolet Aveo',
+    'chevrolet aveo':'Chevrolet Aveo',
+    'volkswagen jetta':'Volkswagen Jetta',
+    'nissan tsuru':'Nissan Tsuru',
+    'nissan march':'Nissan March',
+    'nissan sentra':'Nissan Sentra',
+    'nissan np300':'Nissan Navara',
+    'volkswagen vento':'Volkswagen Polo Sedán',
+    'general motors chevy':'Chevrolet Chevy',
+    'chevrolet chevy':'Chevrolet Chevy',
+    'honda cr v':'Honda CR-V',
+    'mazda mazda 3':'Mazda 3',
+    'mazda 3':'Mazda 3',
+    'nissan tiida':'Nissan Tiida',
+    'nissan xtrail':'Nissan X-Trail',
+    'nissan x trail':'Nissan X-Trail',
+    'kia rio':'Kia Rio',
+    'kia kia rio':'Kia Rio',
+    'volkswagen gol':'Volkswagen Gol',
+    'toyota hilux':'Toyota Hilux',
+    'seat ibiza':'SEAT Ibiza',
+    'general motors spark':'Chevrolet Spark',
+    'chevrolet spark':'Chevrolet Spark',
+    'general motors beat':'Chevrolet Beat',
+    'chevrolet beat':'Chevrolet Beat',
+    'toyota yaris':'Toyota Yaris'
+  };
   function wikiSummaryThumb(lang,title){
     return fetch('https://'+lang+'.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(title),{headers:{'accept':'application/json'}})
       .then(r=>r.ok?r.json():null)
@@ -319,13 +349,19 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     const model=dispModel(m.modelo);
     const key=normS(marca+' '+model);
     if(key in _vehImgCache) return _vehImgCache[key];
-    const titles=[ (marca+' '+model).replace(/\s+/g,'_'), model.replace(/\s+/g,'_') ];
+    // 후보 문서명: ①직접 매핑(모델단독/제조사+모델) ②제조사+모델 ③모델 단독
+    const titles=[];
+    const mapped=WIKI_TITLE[key] || WIKI_TITLE[normS(model)];
+    if(mapped) titles.push(mapped.replace(/\s+/g,'_'));
+    titles.push((marca+' '+model).replace(/\s+/g,'_'));
+    titles.push(model.replace(/\s+/g,'_'));
     let url=null;
+    // 라틴아메리카/멕시코 시장은 스페인어 위키가 정확 → es 우선, 그다음 en
     for(const lang of ['es','en']){
       for(const t of titles){ url=await wikiSummaryThumb(lang,t); if(url) break; }
       if(url) break;
     }
-    if(!url){ for(const lang of ['es','en']){ url=await wikiSearchThumb(lang, marca+' '+model+' automóvil'); if(url) break; } }
+    if(!url){ for(const lang of ['es','en']){ url=await wikiSearchThumb(lang, marca+' '+model+' automóvil México'); if(url) break; } }
     _vehImgCache[key]=url||null;
     return _vehImgCache[key];
   }
@@ -578,7 +614,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
       const rb=m.extra
         ?'<div class="rankbox" style="background:#8C9EAF"><div class="r" style="font-size:16px">—</div><div class="u">VIO 자료없음</div></div>'
         :'<div class="rankbox"><div class="r">'+m.rank+'<small>위</small></div><div class="u">'+num(m.units)+'대</div></div>';
-      const thumbSlot=(!m.extra && m.rank<=10)
+      const thumbSlot=(!m.extra && m.rank<=20)
         ? '<div class="vthumb ph" id="vt'+rid2+'" title="차량 이미지" data-vrank="'+m.rank+'">🚗</div>'
         : '';
       return '<div class="veh" data-rank="'+m.rank+'">'
