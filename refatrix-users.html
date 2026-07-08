@@ -468,7 +468,7 @@
       const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
       users=d.items||[];
       accountsList=d.accounts||[];
-      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>기기 제한</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>판매가</th><th>기기 제한</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
         users.map(u=>`<tr>
           <td class="c-id"><b class="uname">${u.name}</b></td>
           <td class="c-id">${u.login_id||'—'}</td>
@@ -493,6 +493,7 @@
             const cur=(u.account_access&&u.account_access[a.id])||'none';
             const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#ccc';
             return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="operate" ${cur==='operate'?'selected':''}>운영</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
+          <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':`<label class="chip" title="체크 = 이 사용자가 판매가(List Price·할인·구매/할인단가)를 볼 수 있음" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${(u.fields||[]).includes('sale_price')?'#B23A2E':'#ccc'};background:${(u.fields||[]).includes('sale_price')?'#f6e7e4':'#fff'};color:${(u.fields||[]).includes('sale_price')?'#B23A2E':'#777'}"><input type="checkbox" ${(u.fields||[]).includes('sale_price')?'checked':''} onchange="setFieldAccess(${u.id},'sale_price',this.checked)" style="vertical-align:middle">💲 판매가</label>`}</td>
           <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" title="체크 = 기기 제한 켜짐(승인된 기기에서만 로그인) · 비움 = 제한 해제" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">🔒 기기 제한</label>`}</td>
           <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
           <td style="white-space:nowrap"><button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
@@ -553,6 +554,13 @@
     if(!r.ok){ alert('기기잠금 변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); loadUsers(); return; }
     const u=users.find(x=>Number(x.id)===Number(userId)); if(u) u.device_locked=!!locked;
     loadDevices();
+  }
+  // 판매가(sale_price) 열람 권한 토글 — 즉시 저장
+  async function setFieldAccess(userId,fieldKey,visible){
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/field-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({field_key:fieldKey,visible:!!visible})},15000);
+    if(!r.ok){ alert('판매가 권한 변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); loadUsers(); return; }
+    const u=users.find(x=>Number(x.id)===Number(userId));
+    if(u){ u.fields=u.fields||[]; if(visible){ if(!u.fields.includes(fieldKey)) u.fields.push(fieldKey); } else { u.fields=u.fields.filter(f=>f!==fieldKey); } }
   }
   async function approveDevice(id,shared){
     const r=await fetchJsonHard(session.api+'/api/devices/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({shared:!!shared})},15000);

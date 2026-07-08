@@ -636,9 +636,10 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
     const el=$('list');
     if(!pageArr.length){ el.innerHTML='<div class="card hint">해당하는 차종이 없습니다.</div>'; $('pager').innerHTML=''; return; }
     el.innerHTML=pageArr.map(m=>{
+     try{
       const yrs=(m.ys?m.ys:'')+(m.ye&&m.ye!==m.ys?(' – '+m.ye):'');
       const gensTxt=m.extra?('제품 '+num(m.products)+'개 적용')
-        :(m.reg?'REGISTRO 등록대수':m.gens.filter(g=>g.units>0).map(g=>escP(g.label)).slice(0,4).join(' · '));
+        :(m.reg?'REGISTRO 등록대수':(m.gens||[]).filter(g=>g.units>0).map(g=>escP(g.label)).slice(0,4).join(' · '));
       const rid2=rid(m.rank);
       const rb=m.extra
         ?'<div class="rankbox" style="background:#8C9EAF"><div class="r" style="font-size:16px">—</div><div class="u">VIO 자료없음</div></div>'
@@ -660,6 +661,7 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
         +'</div>'
         +'<div class="veh-body" id="vb'+rid2+'" style="display:'+(openSet[m.rank]?'block':'none')+'"></div>'
         +'</div>';
+     }catch(err){ return '<div class="veh"><div class="veh-h"><div class="veh-t"><div class="name">'+escP((m.marca||'')+' '+(m.modelo||''))+'</div></div></div></div>'; }
     }).join('');
     el.querySelectorAll('.veh-h').forEach(h=>{
       h.addEventListener('click',()=>toggleVeh(Number(h.dataset.rank)));
@@ -675,15 +677,21 @@ window.VIOX=[{"m":"Chrysler","o":"Crew Cab","u":102434,"a":null,"b":null},{"m":"
         slot.replaceWith(img);
       });
     });
-    // CTR/SYD 6대 품목 보유율 파이차트: by-model(캐시) 조회 후 렌더
-    el.querySelectorAll('.vpie[data-prank]').forEach(slot=>{
-      const r=Number(slot.dataset.prank); const m=modelByRank(r); if(!m) return;
+    // CTR/SYD 6대 품목 보유율 파이차트: 목록 렌더 후 순차 지연 조회(동시 폭주 방지)
+    const pieSlots=[...el.querySelectorAll('.vpie[data-prank]')];
+    (function runPies(i){
+      if(i>=pieSlots.length) return;
+      const slot=pieSlots[i]; const r=Number(slot.dataset.prank); const m=modelByRank(r);
+      const next=()=>setTimeout(()=>runPies(i+1),60);
+      if(!m){ next(); return; }
       fetchByModel(m).then(d=>{
-        const cov=sixCoverage(d);
-        if(!cov){ slot.textContent=''; return; }
-        slot.classList.remove('loading'); slot.innerHTML=pieBlock(cov);
-      }).catch(()=>{ slot.textContent=''; });
-    });
+        try{ const cov=sixCoverage(d);
+          if(!cov){ slot.textContent=''; }
+          else { slot.classList.remove('loading'); slot.innerHTML=pieBlock(cov); }
+        }catch(e){ slot.textContent=''; }
+        next();
+      }).catch(()=>{ slot.textContent=''; next(); });
+    })(0);
     // 이미 펼쳐진 블록 재렌더
     pageArr.forEach(m=>{ if(openSet[m.rank]) expand(m,false); });
     // 페이저

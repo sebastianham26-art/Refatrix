@@ -20,6 +20,10 @@ export default async function userRoutes(app) {
     const grants = (await query(`SELECT user_id, team_id FROM user_team_access`)).rows;
     const teamAccessByUser = {};
     for (const g of grants) (teamAccessByUser[g.user_id] ||= []).push(Number(g.team_id));
+    // 사용자별 민감 필드 권한(sale_price 등) — 목록에서 인라인 토글용
+    const fieldRows = (await query(`SELECT user_id, field_key FROM user_field_access WHERE visible=true`)).rows;
+    const fieldsByUser = {};
+    for (const f of fieldRows) (fieldsByUser[f.user_id] ||= []).push(f.field_key);
     // 계좌 목록 + 사용자별 계좌권한(인라인 선택용)
     const accountsRows = (await query(`SELECT id, name, currency FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).rows;
     const accounts = accountsRows.map((a) => ({ id: Number(a.id), name: a.name, currency: a.currency }));
@@ -36,6 +40,7 @@ export default async function userRoutes(app) {
         pages: pagesByUser[u.id] || [], page_access: accessByUser[u.id] || {},
         team_access: teamAccessByUser[u.id] || [],
         account_access: aaByUser[u.id] || {},
+        fields: fieldsByUser[u.id] || [],
       })),
     };
   });
