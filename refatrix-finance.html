@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708e</title>
+<title>Refatrix ERP · 재무 · build fin-0708f</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -70,6 +70,14 @@
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .b-warn{background:#fbe9e7;color:var(--expense)}
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  /* 고정비 월별 카드/매트릭스/정렬 */
+  .mom-chip{display:inline-block;font-size:9.5px;font-weight:700;margin-top:2px;padding:1px 5px;border-radius:999px}
+  .mom-up{background:#fbe9e7;color:var(--expense)} .mom-dn{background:#e7f3ee;color:var(--income)} .mom-flat{background:#eee;color:#888}
+  table.matrix .code{font-size:10.5px;color:var(--muted);font-weight:600}
+  table.matrix .cat{font-weight:700;color:var(--ink)}
+  table.matrix tr.sum{background:#f4f1ea} table.matrix tr.sum td{font-weight:800;border-top:2px solid var(--brand)}
+  th.fxsort{cursor:pointer;user-select:none;white-space:nowrap} th.fxsort:hover{color:var(--brand);background:#f0ede4}
+  .arw{font-size:9px;color:var(--brand);margin-left:2px} .arw.inact{color:#c9c3b6}
   /* 고정비/계획대비실적 표: 자동번역(스페인어 등)으로 텍스트가 길어져도 열이 밀리지 않게 —
      셀 줄바꿈 금지 + 컨테이너 가로 스크롤. 이름·계정과목은 말줄임(전체는 툴팁). */
   #fixedBody,#varBody{overflow-x:auto}
@@ -257,6 +265,31 @@
 
     <!-- 고정비 -->
     <div class="card hidden" id="fixedCard">
+      <!-- 월간 총 고정비 (연/월 선택 · 전월/당월/익월) -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">월간 총 고정비</h2>
+        <select id="fx-year" style="width:auto;display:inline-block"></select>
+        <select id="fx-month" style="width:auto;display:inline-block"></select>
+        <div class="seg" style="margin-left:auto"><button class="segb" id="fxm-actual" data-v="actual">실적</button><button class="segb on" id="fxm-plan" data-v="plan">예정 포함</button></div>
+      </div>
+      <div id="fxThreeMon" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+
+      <!-- 월별 고정비 추이 그래프 -->
+      <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:14px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <h2 style="margin:0">월별 고정비 추이</h2>
+          <div class="seg" style="margin-left:auto"><button class="segb on" id="fxg-6" data-v="6">6개월</button><button class="segb" id="fxg-12" data-v="12">12개월</button></div>
+        </div>
+        <div id="fxChart" style="margin-top:8px;overflow-x:auto"><div class="hint">불러오는 중…</div></div>
+      </div>
+
+      <!-- 계정과목별 월 합계 · 전월대비 -->
+      <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:14px">
+        <h2 style="margin:0">계정과목별 월 합계 · 전월대비</h2>
+        <div id="fxMatrix" style="margin-top:4px;overflow-x:auto"><div class="hint">불러오는 중…</div></div>
+      </div>
+
+      <div style="margin-top:22px;border-top:2px solid var(--line);padding-top:16px"></div>
       <h2>고정비 (반복 규칙)</h2>
       <div class="hint" style="margin-top:0">공개 고정비는 재무담당도 등록·관리할 수 있고, 🔒 <b>비공개 고정비</b>(디렉터 전용)는 디렉터만 보고 관리합니다. 규칙을 등록한 뒤, 목록의 각 규칙에서 <b>목표 월</b>을 골라 “생성”을 누르면 그 달까지 예정 거래가 만들어집니다(기본값은 가장 먼 월). 더 멀리 필요하면 다시 더 먼 월을 골라 “추가 생성”하세요. 오늘 기준 <b>최대 24개월</b>까지 가능합니다. 실제 지급하면 거래 목록에서 “지급 확인”으로 실제 처리하세요.</div>
       <div id="fixedBody"><div class="hint">불러오는 중…</div></div>
@@ -1516,14 +1549,42 @@
 
   // ===== 고정비(반복 규칙) =====
   const WDAY=['일','월','화','수','목','금','토'];
+  let fixItems=[]; let fixSortState={key:'name',dir:1}; let fixUsdRate=1;
+  // 월 환산 MXN(정렬용): 매주=×4.33회, USD=환율 환산
+  function ruleMonthlyMxn(r){ const fx=r.currency==='USD'?(fixUsdRate||1):1; const per=r.freq==='week'?(52/12):1; return (Number(r.amount)||0)*fx*per; }
+  function ruleSortVal(r,key){
+    switch(key){
+      case 'dir':return r.direction==='in'?1:0;
+      case 'cat':return (r.category_code||'zzz')+' '+(r.category_name||'');
+      case 'amt':return ruleMonthlyMxn(r);
+      case 'freq':return (r.freq==='week'?'1':'0')+String(r.freq==='week'?r.weekday:(r.day_of_month||0)).padStart(2,'0');
+      case 'start':return r.start_date?String(r.start_date).slice(0,10):'';
+      case 'end':return r.end_month||'9999-99';
+      case 'active':return r.active?1:0;
+      case 'gen':return Number(r.generated_count)||0;
+      default:return (r.name||'').toLowerCase();
+    }
+  }
+  function fixSortArrow(k){ return fixSortState.key===k?`<span class="arw">${fixSortState.dir>0?'▲':'▼'}</span>`:'<span class="arw inact">↕</span>'; }
   async function loadFixed(){
     const b=$('fixedBody');
     try{
       const items=(await fetch(session.api+'/api/recurring',{headers:auth()}).then(r=>r.json())).items||[];
       $('rx-cat').innerHTML=catOptionsFor($('rx-dir').value,'');
       $('rx-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
+      fixItems=items;
       if(!items.length){b.innerHTML='<div class="hint">등록된 고정비 규칙이 없습니다. 아래에서 추가하세요.</div>';return;}
-      b.innerHTML=`<table><thead><tr><th>이름</th><th>구분</th><th>계정과목</th><th class="num">금액</th><th>주기</th><th>시작</th><th>종료</th><th>상태</th><th>생성/지급</th><th>목표 월까지 생성</th><th></th></tr></thead>
+      renderFixTable();
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderFixTable(){
+    const b=$('fixedBody'); if(!fixItems.length)return;
+    const items=fixItems.slice();
+    const {key,dir}=fixSortState;
+    items.sort((a,z)=>{const va=ruleSortVal(a,key),vz=ruleSortVal(z,key);if(va<vz)return -dir;if(va>vz)return dir;return (Number(a.id)||0)-(Number(z.id)||0);});
+    const th=(k,label,extra)=>`<th class="fxsort${extra||''}" data-k="${k}">${label} ${fixSortArrow(k)}</th>`;
+    try{
+      b.innerHTML=`<table><thead><tr>${th('name','이름')}${th('dir','구분')}${th('cat','계정과목')}${th('amt','금액',' num')}${th('freq','주기')}${th('start','시작')}${th('end','종료')}${th('active','상태')}${th('gen','생성/지급')}<th>목표 월까지 생성</th><th></th></tr></thead>
         <tbody>${items.map(r=>{
           const cycle=r.freq==='week'?('매주 '+WDAY[r.weekday]+'요일'):('매월 '+r.day_of_month+'일');
           const through=r.generated_through?String(r.generated_through).slice(0,10):null;
@@ -1555,8 +1616,107 @@
         // 재생성(옵션 없음) 버튼은 이미 약속된 구간(generated_through)까지 빠진 회차를 채움 — 전개는 항상 시작일부터, live 멱등이라 중복 없음.
         generateRule(id,sel?sel.value:(el.dataset.through||null),el);
       });
+      [...b.querySelectorAll('.fxsort')].forEach(el=>el.onclick=()=>{
+        const k=el.dataset.k;
+        if(fixSortState.key===k)fixSortState.dir*=-1;
+        else fixSortState={key:k,dir:(k==='amt'||k==='gen')?-1:1};
+        renderFixTable();
+      });
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+
+  // ===== 월간 총 고정비 (3개월 카드) · 추이 그래프 · 계정과목 매트릭스 =====
+  let fxMonthlyState={toggle:'plan',graphN:6,sel:null,data:null};
+  function fxYmAdd(ym,d){let[y,m]=ym.split('-').map(Number);m+=d;while(m<1){m+=12;y--;}while(m>12){m-=12;y++;}return `${y}-${String(m).padStart(2,'0')}`;}
+  function fxYmLabel(ym){return Number(ym.slice(5,7))+'월';}
+  function fxYmFull(ym){return ym.slice(0,4)+'.'+ym.slice(5,7);}
+  function fxNowYm(){const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;}
+  function fxMonVal(cell){if(!cell)return 0;return fxMonthlyState.toggle==='actual'?cell.actual:(cell.actual+cell.plan);}
+  function fxMomChip(cur,base,plain){
+    if(base<=0)return cur>0?(plain?{t:'신규',cls:'mom-up'}:'<div class="mom-chip mom-up">신규</div>'):(plain?{t:'—',cls:'mom-flat'}:'');
+    const p=(cur-base)/base*100; const flat=Math.abs(p)<0.05; const up=p>0;
+    const cls=flat?'mom-flat':(up?'mom-up':'mom-dn'); const t=flat?'0%':`${up?'▲':'▼'}${Math.abs(p).toFixed(1)}%`;
+    return plain?{t,cls}:`<div class="mom-chip ${cls}">${t}</div>`;
+  }
+  function initFixMonthSelectors(){
+    const ys=$('fx-year'),ms=$('fx-month'); if(!ys)return;
+    if(!ys.dataset.init){
+      const n=new Date(),cy=n.getFullYear(),cm=n.getMonth()+1;
+      let yo='';for(let y=cy-2;y<=cy+1;y++)yo+=`<option value="${y}">${y}</option>`;ys.innerHTML=yo;ys.value=String(cy);
+      let mo='';for(let m=1;m<=12;m++)mo+=`<option value="${m}">${m}월</option>`;ms.innerHTML=mo;ms.value=String(cm);
+      ys.dataset.init='1';
+      ys.addEventListener('change',()=>{fxSyncSel();loadFixedMonthly();});
+      ms.addEventListener('change',()=>{fxSyncSel();loadFixedMonthly();});
+    }
+    fxSyncSel();
+  }
+  function fxSyncSel(){const y=$('fx-year').value,m=String($('fx-month').value).padStart(2,'0');fxMonthlyState.sel=`${y}-${m}`;}
+  async function loadFixedMonthly(){
+    initFixMonthSelectors();
+    const sel=fxMonthlyState.sel,N=fxMonthlyState.graphN;
+    const from=fxYmAdd(sel,-(N-1)),to=fxYmAdd(sel,1); // 익월(카드)까지
+    try{
+      const d=await fetch(session.api+`/api/recurring/monthly?from=${from}&to=${to}`,{headers:auth()}).then(r=>r.json());
+      fxMonthlyState.data=d;
+      if(d&&d.fx_rate){fixUsdRate=Number(d.fx_rate)||1;if(fixItems.length)renderFixTable();}
+      renderFixThreeMon();renderFixChart();renderFixMatrix();
+    }catch(e){$('fxThreeMon').innerHTML='<div class="hint">불러오지 못했습니다.</div>';$('fxChart').innerHTML='';$('fxMatrix').innerHTML='';}
+  }
+  function renderFixThreeMon(){
+    const d=fxMonthlyState.data;if(!d){return;}
+    const sel=fxMonthlyState.sel,prev=fxYmAdd(sel,-1),next=fxYmAdd(sel,1);
+    const val=(ym)=>fxMonVal(d.total?d.total[ym]:null);
+    const vp=val(prev),vc=val(sel),vn=val(next);
+    const mc=fxMomChip(vc,vp,true),mn=fxMomChip(vn,vc,true);
+    const side=(lab,ym,v,subLab,mm)=>`<div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:15px 16px;background:#faf8f3;display:flex;flex-direction:column;justify-content:center">
+        <div style="font-size:12px;color:var(--muted);font-weight:600">${lab} · ${fxYmFull(ym)}</div>
+        <div style="font-size:21px;font-weight:800;color:var(--brand);margin-top:3px;font-variant-numeric:tabular-nums">$${fmt(v)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${subLab}${mm?' <span class="mom-chip '+mm.cls+'">'+mm.t+'</span>':''}</div>
+      </div>`;
+    const main=`<div style="flex:1.35;min-width:230px;background:linear-gradient(135deg,#143D34,#1c5245);color:#fff;border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;justify-content:center">
+        <div style="font-size:12px;color:#bcd6cc;font-weight:600">당월 · ${fxYmFull(sel)}</div>
+        <div style="font-size:30px;font-weight:800;letter-spacing:-.5px;margin:2px 0">$${fmt(vc)} <small style="font-size:14px;color:#cfe0d8">MXN</small></div>
+        <div style="font-size:12px;color:#e7f3ee">전월 대비 <span class="mom-chip ${mc.cls}">${mc.t}</span></div>
+      </div>`;
+    $('fxThreeMon').innerHTML=`<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
+        ${side('전월',prev,vp,'MXN',null)}${main}${side('익월',next,vn,'당월 대비',mn)}
+      </div>
+      <div class="hint">선택월 기준 <b>직전·당월·익월</b> 총 고정비(MXN). ${fxMonthlyState.toggle==='actual'?'<b>실적(지급확인)</b>만':'<b>예정 포함</b>(예정+실적)'} 기준. 익월은 대개 예정분이라 「실적」에선 낮게 나올 수 있습니다.</div>`;
+  }
+  function renderFixChart(){
+    const d=fxMonthlyState.data;if(!d){return;}
+    const N=fxMonthlyState.graphN,sel=fxMonthlyState.sel,nowYm=fxNowYm();
+    const months=[];for(let i=N-1;i>=0;i--)months.push(fxYmAdd(sel,-i));
+    const vals=months.map(ym=>fxMonVal(d.total?d.total[ym]:null));
+    const max=Math.max(1,...vals);
+    const padL=64,padR=20,padT=30,plotH=170,baseY=padT+plotH;
+    const slotW=N<=6?132:70,barW=Math.min(72,slotW-22),W=padL+padR+slotW*N;
+    const grid=[0,.25,.5,.75,1].map(f=>{const y=baseY-f*plotH;return `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${f===0?'#cfc8ba':'#eee7db'}" stroke-width="${f===0?1.5:1}"/><text x="${padL-8}" y="${y+4}" font-size="11" fill="#9a927f" text-anchor="end">${fmtK(max*f)}</text>`;}).join('');
+    const bars=months.map((ym,i)=>{const v=vals[i],h=Math.round(v/max*plotH),x=padL+i*slotW+(slotW-barW)/2,y=baseY-h;
+      const future=ym>=nowYm,fill=future?'#8fb3a8':'#1c5245';
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="3" fill="${fill}"/><text x="${x+barW/2}" y="${baseY+18}" font-size="11.5" fill="#3a3a3a" text-anchor="middle">${fxYmLabel(ym)}</text><text x="${x+barW/2}" y="${y-6}" font-size="11" font-weight="700" fill="#3a3a3a" text-anchor="middle">${v>0?fmtK(v):''}</text>`;
+    }).join('');
+    $('fxChart').innerHTML=`<div style="display:flex;gap:14px;font-size:11px;color:var(--muted);margin:0 0 6px"><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:#1c5245"></i>과거</span><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:#8fb3a8"></i>당월·미래(예정 비중)</span></div>
+      <svg viewBox="0 0 ${W} 280" style="width:100%;height:auto;min-width:${Math.min(W,700)}px">${grid}${bars}</svg>
+      <div class="hint">x축 = 월, y축 = 고정비 금액(MXN). ${fxMonthlyState.toggle==='actual'?'실적만':'예정 포함'} 기준 · 선택월 기준 최근 ${N}개월.</div>`;
+  }
+  function renderFixMatrix(){
+    const d=fxMonthlyState.data;if(!d){return;}
+    const N=fxMonthlyState.graphN,sel=fxMonthlyState.sel;
+    const months=[];for(let i=N-1;i>=0;i--)months.push(fxYmAdd(sel,-i));
+    const head=`<tr><th style="min-width:150px">계정과목</th>${months.map(ym=>`<th class="num">${fxYmLabel(ym)}</th>`).join('')}</tr>`;
+    const cats=(d.by_cat||[]);
+    const body=cats.map(c=>{
+      const cells=months.map((ym,i)=>{const v=fxMonVal(c.m?c.m[ym]:null);const chip=i>0?fxMomChip(v,fxMonVal(c.m[months[i-1]]),false):'';return `<td class="num">${fmt(v)}${chip}</td>`;}).join('');
+      const code=c.code?`<span class="code">${c.code}</span> `:'';
+      return `<tr><td>${code}<span class="cat">${c.name}</span></td>${cells}</tr>`;
+    }).join('');
+    const totVals=months.map(ym=>fxMonVal(d.total?d.total[ym]:null));
+    const totCells=totVals.map((v,i)=>`<td class="num">${fmt(v)}${i>0?fxMomChip(v,totVals[i-1],false):''}</td>`).join('');
+    const table=cats.length?`<table class="matrix"><thead>${head}</thead><tbody>${body}<tr class="sum"><td>월 합계</td>${totCells}</tr></tbody></table>`:'<div class="hint">해당 기간 고정비 거래가 없습니다.</div>';
+    $('fxMatrix').innerHTML=table+`<div class="hint">각 셀 = 월·계정과목 고정비 합계(MXN), 아래 칩 = 전월 대비 증가율(▲빨강 증가 / ▼초록 감소 / 0% 동일). 첫 달은 비교 대상이 없어 칩 없음. ${fxMonthlyState.toggle==='actual'?'실적만':'예정 포함'} 기준.</div>`;
+  }
+
   async function saveRule(){
     const m=$('rxMsg');m.className='msg';
     const name=$('rx-name').value.trim(),amt=Number($('rx-amt').value)||0,freq=$('rx-freq').value,start=$('rx-start').value;
@@ -2730,7 +2890,7 @@
     if(w==='new'){loadPendingPlans();loadBdp();}
     if(w==='txn')loadTxns();
     if(w==='pay'){loadArView();}
-    if(w==='fixed'){loadFixed();loadVariance();}
+    if(w==='fixed'){loadFixed();loadFixedMonthly();loadVariance();}
     if(w==='cash'){loadCashAll();}
     if(w==='fx'){if(!$('fx-from').value){fxDefaultRange(90);}fxRenderTop();if(fxMode==='mxnkrw'&&usdKrw==null){loadKrwRate().then(fxRenderTop);}loadFxSummary();}
     if(w==='report'){if(!$('rp-month').value)$('rp-month').value=new Date().toISOString().slice(0,7);loadReport();}
@@ -2758,6 +2918,15 @@
   $('tabTxn').addEventListener('click',()=>showTab('txn'));
   $('tabPay').addEventListener('click',()=>showTab('pay'));
   $('tabFixed').addEventListener('click',()=>showTab('fixed'));
+  (function wireFxMonthly(){
+    const rerender=()=>{if(fxMonthlyState.data){renderFixThreeMon();renderFixChart();renderFixMatrix();}};
+    const setTog=(v)=>{fxMonthlyState.toggle=v;$('fxm-actual').classList.toggle('on',v==='actual');$('fxm-plan').classList.toggle('on',v==='plan');rerender();};
+    if($('fxm-actual'))$('fxm-actual').addEventListener('click',()=>setTog('actual'));
+    if($('fxm-plan'))$('fxm-plan').addEventListener('click',()=>setTog('plan'));
+    const setN=(n)=>{fxMonthlyState.graphN=n;$('fxg-6').classList.toggle('on',n===6);$('fxg-12').classList.toggle('on',n===12);loadFixedMonthly();};
+    if($('fxg-6'))$('fxg-6').addEventListener('click',()=>setN(6));
+    if($('fxg-12'))$('fxg-12').addEventListener('click',()=>setN(12));
+  })();
   $('tabCash').addEventListener('click',()=>showTab('cash'));
   $('tabFx').addEventListener('click',()=>showTab('fx'));
   $('tabReport').addEventListener('click',()=>showTab('report'));

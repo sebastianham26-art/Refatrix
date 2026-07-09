@@ -1525,6 +1525,55 @@ export default async function financeRoutes(app) {
     }) };
   });
 
+  // 월별 고정비 집계 — 고정비 탭 상단(월간 총 고정비 3개월 카드)·추이 그래프·계정과목별 매트릭스용.
+  // 데이터원: recurring_rule_id 보유 '지출' 거래의 amount_mxn. status로 실적(actual)/예정(plan) 분리.
+  // 월 귀속: COALESCE(plan_date, txn_date) 기준(예정된 달에 귀속 — 고정비는 예정월이 곧 그 달 비용).
+  // 게이팅: privTxnCond(비공개 고정비는 비디렉터에 제외) — 기존 고정비 variance와 동일 기준. (계좌 스코프는 미적용: variance와 대칭.)
+  app.get('/api/recurring/monthly', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const mRe = /^\d{4}-\d{2}$/;
+    const from = mRe.test(String(req.query.from || '')) ? String(req.query.from) : null;
+    const to = mRe.test(String(req.query.to || '')) ? String(req.query.to) : null;
+    if (!from || !to || from > to) return { months: [], total: {}, by_cat: [], fx_rate: (await getUsdMxnRate()).rate, error: 'bad_range' };
+    const fromDate = from + '-01';
+    const [ty, tm] = to.split('-').map(Number);
+    const nextY = tm === 12 ? ty + 1 : ty, nextM = tm === 12 ? 1 : tm + 1;
+    const toExcl = `${nextY}-${String(nextM).padStart(2, '0')}-01`;
+    const rows = (await query(
+      `SELECT to_char(COALESCE(t.plan_date, t.txn_date), 'YYYY-MM') AS ym,
+              t.category_code AS code, cat.name AS cat_name, t.status,
+              SUM(t.amount_mxn) AS mxn
+         FROM transactions t
+         LEFT JOIN categories cat ON cat.code=t.category_code
+        WHERE t.recurring_rule_id IS NOT NULL AND t.direction='out' AND t.deleted_at IS NULL
+          AND COALESCE(t.plan_date, t.txn_date) >= $1::date
+          AND COALESCE(t.plan_date, t.txn_date) <  $2::date${privTxnCond(req.ctx.perm)}
+        GROUP BY 1, 2, 3, 4`, [fromDate, toExcl])).rows;
+    // 연속 월 목록 생성
+    const months = [];
+    { let [y, m] = from.split('-').map(Number); const [ey, em] = to.split('-').map(Number);
+      while (y < ey || (y === ey && m <= em)) { months.push(`${y}-${String(m).padStart(2, '0')}`);
+        if (m === 12) { y++; m = 1; } else m++; } }
+    const total = {}; months.forEach((ym) => { total[ym] = { actual: 0, plan: 0 }; });
+    const catMap = new Map();
+    const emptyM = () => { const o = {}; months.forEach((z) => { o[z] = { actual: 0, plan: 0 }; }); return o; };
+    for (const r of rows) {
+      const ym = r.ym; const v = Number(r.mxn) || 0;
+      const bucket = r.status === 'actual' ? 'actual' : 'plan';
+      if (!total[ym]) total[ym] = { actual: 0, plan: 0 };
+      total[ym][bucket] = r2(total[ym][bucket] + v);
+      const key = r.code || '(none)';
+      if (!catMap.has(key)) catMap.set(key, { code: r.code || null, name: r.cat_name || '(미분류)', m: emptyM() });
+      const c = catMap.get(key); if (!c.m[ym]) c.m[ym] = { actual: 0, plan: 0 };
+      c.m[ym][bucket] = r2(c.m[ym][bucket] + v);
+    }
+    const by_cat = [...catMap.values()].sort((a, b) => {
+      const sa = months.reduce((s, z) => s + a.m[z].actual + a.m[z].plan, 0);
+      const sb = months.reduce((s, z) => s + b.m[z].actual + b.m[z].plan, 0);
+      return sb - sa;
+    });
+    return { months, total, by_cat, fx_rate: (await getUsdMxnRate()).rate };
+  });
+
   // ===== 예정(plan) 거래 계획 수정 =====
   // 매출에서 온 AR(sales_invoice_id)은 인보이스와 묶여 수정 불가. 일반 예정만 금액/날짜/메모 수정.
   app.patch('/api/transactions/:id/plan', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
