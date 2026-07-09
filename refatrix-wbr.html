@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR</title>
+<title>Refatrix ERP · WBR · build wbr-0708a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -269,6 +269,16 @@
       </div>
     </div>
 
+    <!-- 현금잔액 워터폴 (디렉터 전용) -->
+    <div class="card hidden" id="cfwfCard">
+      <div class="card-h"><span id="cfwfTitle">현금잔액 워터폴</span>
+        <span class="src">상단 「조회 월」에 연동 · 실적(예정 제외) 기준 · 회사 전체(팀 무관) · 재무 현금흐름과 동일 그래프</span>
+        <span class="lnk no-print" id="cfwfToggle" style="margin-left:auto">감추기</span></div>
+      <div id="cfwfCollapse">
+        <div id="cfwfBody"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
     <!-- 수주 단계 SLA -->
     <div class="card">
       <div class="card-h"><span id="slaTitle">수주 단계 SLA</span>
@@ -446,7 +456,7 @@
   function ymLabel(ym){return Number(ym.split('-')[1])+'월';}
   function monthsLabel(){ return topYms.map(ymLabel).join('·'); }
 
-  function refreshAll(){ updateCtx(); loadCards(); loadQuoteSummary(); loadWaterfall(); loadStageSla(); }
+  function refreshAll(){ updateCtx(); loadCards(); loadQuoteSummary(); loadWaterfall(); loadCfWaterfall(); loadStageSla(); }
   function updateCtx(){
     const txt='조회월 '+monthsLabel()+' · 팀 '+teamLabel();
     $('ctxLine').textContent=txt;
@@ -640,6 +650,124 @@
       +'<div class="wfsum">누적 실적 <b>MX$'+fmt(wk.cumActual)+'</b> / 목표 <b>MX$'+fmt(target)+'</b> ('+(wk.progress==null?'—':wk.progress+'%')+')</div>';
   }
 
+  // ===== 현금잔액 워터폴 (재무 SVG 워터폴 재사용 · 디렉터 전용 · 조회월 연동) =====
+  const CFWF_GREEN='#2f8f5b', CFWF_RED='#c0392b', CFWF_BLUE='#0c447c';
+  const cfFmtMxn=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  function cfFmtK(n){ const a=Math.abs(n);
+    if(a>=1e6)return (n/1e6).toFixed(a>=1e7?0:1)+'M';
+    if(a>=1e3)return (n/1e3).toFixed(a>=1e5?0:1)+'k';
+    return String(Math.round(n)); }
+  function cfWfWeekMonday(lbl){ const m=/^(\d{4})-W(\d{2})$/.exec(String(lbl)); if(!m)return '';
+    const y=Number(m[1]),w=Number(m[2]);
+    const jan4=new Date(Date.UTC(y,0,4));
+    const mon1=new Date(jan4.getTime()-((jan4.getUTCDay()+6)%7)*86400000);
+    return new Date(mon1.getTime()+(w-1)*7*86400000).toISOString().slice(5,10); }
+  function cfWfCatLines(cats,n){ return (cats||[]).slice(0,n).map(c=>`${c.name} ${c.net>=0?'+':'−'}${cfFmtMxn(Math.abs(c.net))}`); }
+  function cfWfBucket(dateStr,g){
+    if(g==='month')return String(dateStr).slice(0,7);
+    const [y,m,d]=String(dateStr).slice(0,10).split('-').map(Number);
+    const dt=new Date(Date.UTC(y,m-1,d));
+    const day=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-day+3);
+    const firstThu=new Date(Date.UTC(dt.getUTCFullYear(),0,4));
+    const week=1+Math.round(((dt-firstThu)/86400000-3+((firstThu.getUTCDay()+6)%7))/7);
+    return dt.getUTCFullYear()+'-W'+String(week).padStart(2,'0'); }
+  function cfSvgWaterfall(base,items,opts={}){
+    const round2=(v)=>Math.round(v*100)/100;
+    if(!items.length)return `<div class="hint">선택 기간에 현금 변동이 없습니다. (기준 잔액 ${cfFmtMxn(base)} MXN)</div>`;
+    const cums=[round2(base)];let c=base;for(const it of items){c+=it.delta;cums.push(round2(c));}
+    const final=round2(c);
+    const bars=[
+      {type:'base',dateLbl:(opts.from||'').slice(5),text:'기준',v1:base},
+      ...items.map((it,i)=>({type:it.delta>=0?'plus':'minus',label:it.label,v0:cums[i],v1:cums[i+1],delta:it.delta,cats:it.cats})),
+      {type:'base',dateLbl:(opts.to||'').slice(5),text:'기말',v1:final},
+    ];
+    const N=bars.length;
+    const W=Math.max(720,Math.min(1600,N*46+100)),H=306,padL=64,padR=14,padT=26,padB=60;
+    let mn=Math.min(base,final,...cums),mx=Math.max(base,final,...cums);
+    if(mn>0)mn=Math.max(0,mn-(mx-mn)*0.15);           // 바닥 여유(0 아래로는 안 내려감)
+    if(mx===mn)mx=mn+1;
+    const span=mx-mn;mx+=span*0.08;                    // 상단 라벨 여유
+    const bw=(W-padL-padR)/N, xc=i=>padL+bw*i+bw/2, colW=Math.min(bw*0.62,46);
+    const y=v=>padT+(H-padT-padB)*(1-(v-mn)/(mx-mn));
+    const grid=[];const steps=4;
+    for(let k=0;k<=steps;k++){const v=mn+(mx-mn)*k/steps;const yy=y(v);
+      grid.push(`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="#eee"/><text x="${padL-6}" y="${(yy+3).toFixed(1)}" text-anchor="end" font-size="10" fill="#999">${cfFmtK(v)}</text>`);}
+    if(mn<=0&&mx>=0){const zy=y(0);grid.push(`<line x1="${padL}" y1="${zy.toFixed(1)}" x2="${W-padR}" y2="${zy.toFixed(1)}" stroke="#e0483d" stroke-width="1"/><text x="${padL-6}" y="${(zy+3).toFixed(1)}" text-anchor="end" font-size="10" font-weight="700" fill="#e0483d">0</text>`);}
+    const rects=[],labels=[],conns=[],xlabels=[],balLabels=[];
+    const maxLbl=Math.max(1,Math.floor((W-padL-padR)/46));
+    const lblStep=Math.ceil(N/maxLbl);
+    const shortLbl=(p)=> p.length===10?p.slice(5):(p.includes('W')?p.slice(5):p.slice(2));
+    bars.forEach((b,i)=>{
+      let top,bot,fill,tip,lbl;
+      if(b.type==='base'){
+        fill=CFWF_GREEN;top=y(Math.max(b.v1,mn));bot=y(mn);lbl=cfFmtK(b.v1);
+        tip=`${b.text} 잔액 ${cfFmtMxn(b.v1)} MXN`;
+        xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-28}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${CFWF_GREEN}">${b.text}</text><text x="${xc(i).toFixed(1)}" y="${H-16}" text-anchor="middle" font-size="9" fill="#999">${b.dateLbl}</text>`);
+      }else{
+        const hi=Math.max(b.v0,b.v1),lo=Math.min(b.v0,b.v1);
+        fill=b.type==='plus'?CFWF_RED:CFWF_BLUE;top=y(hi);bot=y(lo);
+        lbl=(b.delta>0?'+':'−')+cfFmtK(Math.abs(b.delta));
+        const catTip=cfWfCatLines(b.cats,6);
+        tip=`${b.label} 순변화 ${b.delta>0?'+':''}${cfFmtMxn(b.delta)} → 잔액 ${cfFmtMxn(b.v1)} MXN`
+          +(catTip.length?'\n──────────\n'+catTip.join('\n')+((b.cats||[]).length>6?`\n외 ${b.cats.length-6}개 계정`:''):'');
+        if(i%lblStep===0){
+          const sub=opts.gran==='week'?cfWfWeekMonday(b.label):'';
+          if(sub)xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-26}" text-anchor="middle" font-size="9" fill="#999">${shortLbl(b.label)}</text><text x="${xc(i).toFixed(1)}" y="${H-15}" text-anchor="middle" font-size="8" fill="#bbb">${sub}</text>`);
+          else xlabels.push(`<text x="${xc(i).toFixed(1)}" y="${H-20}" text-anchor="middle" font-size="9" fill="#999">${shortLbl(b.label)}</text>`);
+        }
+      }
+      const h=Math.max(1.5,bot-top);
+      rects.push(`<rect x="${(xc(i)-colW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${colW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" rx="2"><title>${tip}</title></rect>`);
+      if(N<=40||b.type==='base'||i%lblStep===0)labels.push(`<text x="${xc(i).toFixed(1)}" y="${(top-4).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${fill}">${lbl}</text>`);
+      if(N<=40||b.type==='base'||i%lblStep===0)balLabels.push(`<text x="${xc(i).toFixed(1)}" y="${(H-padB+12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#b7ad98"><title>${b.text||b.label} 잔액 ${cfFmtMxn(b.v1)} MXN</title>${cfFmtK(b.v1)}</text>`);
+      if(i<N-1){const yy=y(b.v1);conns.push(`<line x1="${(xc(i)+colW/2).toFixed(1)}" y1="${yy.toFixed(1)}" x2="${(xc(i+1)-colW/2).toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#b9b1a0" stroke-dasharray="3 3"/>`);}
+    });
+    const legend=`<div style="display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--muted);margin-bottom:6px">
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${CFWF_GREEN};vertical-align:-1px;margin-right:4px"></i>기준/기말 잔액</span>
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${CFWF_RED};vertical-align:-1px;margin-right:4px"></i>증가(+)</span>
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${CFWF_BLUE};vertical-align:-1px;margin-right:4px"></i>감소(−)</span>
+      <span><i style="display:inline-block;width:13px;height:0;border-top:1.5px solid #e0483d;vertical-align:3px;margin-right:4px"></i>0 기준선</span>
+      <span style="color:#b7ad98">막대 아래 숫자 = 잔액</span>
+      <span style="margin-left:auto">${opts.granLabel||''} · ${opts.from} ~ ${opts.to}</span></div>`;
+    const diff=round2(final-base);
+    const sum=`<div style="font-size:12.5px;color:var(--muted);margin-top:8px">기준 잔액 <b style="color:${CFWF_GREEN}">${cfFmtMxn(base)}</b> → 기말 잔액 <b style="color:${CFWF_GREEN}">${cfFmtMxn(final)}</b> MXN · 순변화 <b style="color:${diff>0?CFWF_RED:(diff<0?CFWF_BLUE:'var(--muted)')}">${diff>0?'+':''}${cfFmtMxn(diff)}</b></div>`;
+    return `<div>${legend}<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${Math.min(W,720)}px;max-width:${W}px">${grid.join('')}${conns.join('')}${rects.join('')}${labels.join('')}${balLabels.join('')}${xlabels.join('')}</svg>${sum}</div>`;
+  }
+
+  let lastCfWaterfall=null;
+  async function loadCfWaterfall(){
+    const card=$('cfwfCard');
+    if(!isDirector){ if(card) card.classList.add('hidden'); lastCfWaterfall=null; return; }
+    if(card) card.classList.remove('hidden');
+    $('cfwfTitle').textContent=monthsLabel()+' 현금잔액 워터폴';
+    const box=$('cfwfBody'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    const r=monthRange(), from=r.from, to=r.to, g='week';
+    try{
+      const res=await fetch(session.api+'/api/cashflow?granularity='+g+'&includePlan=0&breakdown=1',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(d.granularity!==g){ box.innerHTML='<div class="hint">⚠ 백엔드가 주별 단위를 지원하지 않습니다. 최신 백엔드 배포 후 다시 시도하세요.</div>'; lastCfWaterfall=null; return; }
+      const sk=cfWfBucket(from,g), ek=cfWfBucket(to,g);
+      let base=Number(d.opening_balance)||0; const items=[];
+      for(const row of (d.rows||[])){
+        const net=Number(row.net)||0;
+        if(row.period<sk) base+=net;
+        else if(row.period<=ek && Math.abs(net)>0.005) items.push({label:row.period,delta:net,cats:(d.breakdown&&d.breakdown[row.period])||[]});
+      }
+      const opts={from,to,granLabel:'주별',gran:g};
+      lastCfWaterfall={base,items,opts};
+      box.innerHTML=cfSvgWaterfall(base,items,opts);
+    }catch(e){ box.innerHTML='<div class="hint">현금잔액 워터폴을 불러오지 못했습니다. (재무 열람 권한이 필요합니다.)</div>'; lastCfWaterfall=null; }
+  }
+  function renderCfWaterfallFrozen(cf){
+    const card=$('cfwfCard');
+    if(!isDirector){ if(card) card.classList.add('hidden'); return; }
+    if(card) card.classList.remove('hidden');
+    $('cfwfTitle').textContent=monthsLabel()+' 현금잔액 워터폴';
+    if(cf&&Array.isArray(cf.items)) $('cfwfBody').innerHTML=cfSvgWaterfall(Number(cf.base)||0,cf.items,cf.opts||{});
+    else $('cfwfBody').innerHTML='<div class="hint">이 저장본에는 현금잔액 워터폴 기록이 없습니다.</div>';
+  }
+
   // ===== 당월 누적 견적 (견적건별 요약) =====
   // 조회월(다중)·팀선택에 연동. /api/quotes 의 from~to(최소월초~최대월말)로 한 번 받아 선택월·팀으로 클라이언트 필터.
   function monthRange(){
@@ -716,7 +844,7 @@
   }
 
   // ===== 섹션 감추기/보이기 토글 =====
-  let qsumOpen=true, wfOpen=true, slaOpen=true;
+  let qsumOpen=true, wfOpen=true, slaOpen=true, cfwfOpen=true;
   function applyToggle(open, bodyId, btnId){
     $(bodyId).style.display = open ? '' : 'none';
     $(btnId).textContent = open ? '감추기' : '보이기';
@@ -941,7 +1069,7 @@
     const name=(label||'').trim()||def;
     const periodLabel=$('ctxLine').textContent||'';
     const data={
-      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes, sla:lastSla, slaKpi:lastSlaKpi,
+      cards:lastCards, waterfall:lastWaterfall, quotes:lastQuotes, sla:lastSla, slaKpi:lastSlaKpi, cashflow:lastCfWaterfall,
       board:{issues:board.issues, photos:board.photos, memo:board.memo},
       ctx:{ topYms:[...topYms], teamSel:Array.from(teamSel), teamsList:teamsList, ctxText:periodLabel }
     };
@@ -978,6 +1106,7 @@
     $('wfTitle').textContent=monthsLabel()+' 매출 실적 (워터폴)';
     if(data.cards) renderCards(data.cards);
     if(data.waterfall) renderWaterfall(data.waterfall);
+    renderCfWaterfallFrozen(data.cashflow);
     renderStageSla(data.sla||null, data.slaKpi||null);
     renderQuoteSummary(Array.isArray(data.quotes)?data.quotes:[]);
     applyReadOnly(); renderIssues(); $('memo').textContent=board.memo||'';
@@ -1043,6 +1172,7 @@
   $('snapDelBtn').addEventListener('click',()=>{ if(viewMode) deleteSnapshot(viewMode.id); });
   $('qsumToggle').addEventListener('click',()=>{ qsumOpen=!qsumOpen; applyToggle(qsumOpen,'qsumBody','qsumToggle'); });
   $('wfToggle').addEventListener('click',()=>{ wfOpen=!wfOpen; applyToggle(wfOpen,'wfCollapse','wfToggle'); });
+  $('cfwfToggle').addEventListener('click',()=>{ cfwfOpen=!cfwfOpen; applyToggle(cfwfOpen,'cfwfCollapse','cfwfToggle'); });
   $('slaToggle').addEventListener('click',()=>{ slaOpen=!slaOpen; applyToggle(slaOpen,'slaBody','slaToggle'); });
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   $('photoInput').addEventListener('change', onPhotoSelected);
