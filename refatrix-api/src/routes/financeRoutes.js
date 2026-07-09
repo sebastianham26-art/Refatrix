@@ -111,6 +111,86 @@ export default async function financeRoutes(app) {
     return { ok: true };
   });
 
+  // ===== 계좌 원장(엑셀용) =====
+  // 기초잔액(open_balance) + 실적(status='actual' AND approved=true)만 행별로, 각 행 누적잔액 포함.
+  // 잔액 공식은 /api/accounts 의 balance 와 100% 동일: open_balance + Σ(in:+amount / out:-amount)
+  //   WHERE status='actual' AND approved=true AND deleted_at IS NULL.
+  // 권한: 해당 계좌의 '세부내역 열람'(can_detail)이 가능한 사용자만(canViewDetail). 현금·불공제 세부차단 계좌는 여기서 막힌다.
+  // from 지정 시 그 이전 실적을 기초잔액으로 이월(자체정합: opening + 표시행 = closing).
+  app.get('/api/accounts/:id/ledger', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    if (!canViewDetail(perm, id)) return reply.code(403).send({ error: 'account_detail_forbidden' });
+    const acc = (await query(
+      `SELECT id, name, type, currency, open_balance, open_date
+         FROM accounts WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!acc) return reply.code(404).send({ error: 'not_found' });
+
+    const q = req.query || {};
+    const from = (q.from && String(q.from).slice(0, 10)) || null;
+    const to = (q.to && String(q.to).slice(0, 10)) || null;
+    // 비디렉터에게는 비공개 거래를 숨긴다(거래목록 정책과 동일). 디렉터는 전부.
+    const priv = perm.role === 'director' ? '' : ' AND t.is_private=false';
+
+    // 기초잔액: from 이 있으면 그 이전 실적을 개시잔고에 이월.
+    let opening = Number(acc.open_balance);
+    if (from) {
+      const pr = (await query(
+        `SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END),0) AS s
+           FROM transactions t
+          WHERE t.account_id=$1 AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL${priv}
+            AND t.txn_date < $2`, [id, from])).rows[0];
+      opening = r2(opening + Number(pr.s));
+    }
+
+    const args = [id];
+    let dcond = '';
+    if (from) { args.push(from); dcond += ` AND t.txn_date >= $${args.length}`; }
+    if (to) { args.push(to); dcond += ` AND t.txn_date <= $${args.length}`; }
+    const rows = (await query(
+      `SELECT t.id, t.txn_date, t.direction, t.amount, t.currency, t.amount_mxn, t.fx_rate,
+              t.category_code, cat.name AS category_name, t.kind, t.memo, t.receipt_no,
+              si.sat_no AS sat_no, c.name AS customer_name
+         FROM transactions t
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
+         LEFT JOIN customers c ON c.id=si.customer_id
+        WHERE t.account_id=$1 AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL${priv}${dcond}
+        ORDER BY t.txn_date ASC, t.id ASC`, args)).rows;
+
+    let bal = opening;
+    const items = rows.map((t) => {
+      const amt = Number(t.amount);
+      const isIn = t.direction === 'in';
+      bal = r2(bal + (isIn ? amt : -amt));
+      return {
+        id: Number(t.id),
+        date: String(t.txn_date).slice(0, 10),
+        direction: t.direction,
+        category_code: t.category_code || null,
+        category_name: t.category_name || null,
+        kind: t.kind || 'general',
+        memo: t.memo || '',
+        receipt_no: t.receipt_no || '',
+        sat_no: t.sat_no || '',
+        customer_name: t.customer_name || '',
+        in_amt: isIn ? amt : 0,
+        out_amt: isIn ? 0 : amt,
+        amount_mxn: Number(t.amount_mxn),
+        balance: bal,
+      };
+    });
+
+    return {
+      account: {
+        id: Number(acc.id), name: acc.name, type: acc.type || '', currency: acc.currency,
+        open_balance: Number(acc.open_balance), open_date: acc.open_date ? String(acc.open_date).slice(0, 10) : null,
+      },
+      from, to, opening, closing: bal, count: items.length, items,
+    };
+  });
+
   // ===== 거래 =====
   // 수동 거래 등록(수입/지출). 규칙: 지출(out)을 담당자(비디렉터)가 등록하면 승인 대기, 디렉터면 바로 반영.
   // body: { account_id, txn_date, direction, amount, currency, fx_rate, category_code, status, memo }

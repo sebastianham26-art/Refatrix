@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708a</title>
+<title>Refatrix ERP · 재무 · build fin-0708b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -621,7 +621,7 @@
           <td class="num">${fmt(a.open_balance)}</td>
           <td>${a.open_date?od(a):'<span class="hint" style="margin:0">—</span>'}</td>
           <td class="num"><b>${fmt(a.balance)}</b> ${a.currency}</td>
-          <td>${a.currency==='USD'?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance_mxn)} <span style="font-size:11px">(현금흐름 기준)</span></span>`:''}</td>
+          <td>${a.currency==='USD'?`<span class="hint" style="margin:0">≈ MXN ${fmt(a.balance_mxn)} <span style="font-size:11px">(현금흐름 기준)</span></span> `:''}${a.can_detail===false?'':`<button class="btn ghost sm" onclick="event.stopPropagation();downloadAccountLedger(${a.id})" title="기초잔액부터 실적 수입·지출을 행별 잔액과 함께 엑셀로 내려받기">⬇ 엑셀</button>`}</td>
           ${dir?`<td style="white-space:nowrap"><button class="btn ghost sm" onclick="event.stopPropagation();editAccOpen(${a.id})">기초 수정</button> <button class="btn ghost sm" onclick="event.stopPropagation();toggleAccDisabled(${a.id},${a.disabled?'false':'true'})">${a.disabled?'해제':'안씀'}</button></td>`:''}
         </tr>`;
         }).join('')}</tbody></table>${accountsTotalSummaryHtml(accounts)}`; }
@@ -639,6 +639,84 @@
         showTab('txn');
       });
     }catch(e){b.innerHTML='<div class="hint">계좌를 불러오지 못했습니다.</div>';}
+  }
+
+  // ===== 계좌 원장 엑셀 다운로드 (기초잔액 → 실적 수입·지출 → 행별 잔액) =====
+  // 세부내역 열람 권한이 있는 계좌만 버튼이 노출되며, 백엔드도 canViewDetail 로 재차 차단(403).
+  const _kindLbl={payment:'매출수금',advance:'선수금',recurring:'고정비',general:''};
+  async function downloadAccountLedger(id){
+    try{
+      const r=await fetch(session.api+'/api/accounts/'+id+'/ledger',{headers:auth()});
+      if(!r.ok){
+        let e={};try{e=await r.json();}catch(_){}
+        alert(e.error==='account_detail_forbidden'?'이 계좌의 세부내역 열람 권한이 없습니다.':('원장을 불러오지 못했습니다. ('+(e.error||r.status)+')'));
+        return;
+      }
+      const d=await r.json();
+      await loadExcelJS();
+      const acc=d.account, cur=acc.currency, isUsd=cur==='USD';
+      const money='#,##0.00';
+      const wb=new ExcelJS.Workbook();
+      const ws=wb.addWorksheet('계좌원장');
+      const cols=[
+        {h:'일자',w:13},{h:'구분',w:8},{h:'계정과목',w:26},{h:'적요',w:42},
+        {h:'증빙/SAT',w:16},{h:'수입',w:15},{h:'지출',w:15},{h:'잔액',w:16}];
+      if(isUsd)cols.push({h:'MXN환산(거래시환율)',w:20});
+      const N=cols.length;
+      // 상단 제목 3줄
+      ws.mergeCells(1,1,1,N);
+      const t1=ws.getCell(1,1);t1.value='계좌 원장  —  기초잔액 → 실적(수입·지출)만 → 행별 누적잔액';t1.font={bold:true,size:13};
+      ws.getCell(2,1).value='계좌';ws.getCell(2,1).font={bold:true};ws.getCell(2,2).value=acc.name+'  ('+cur+')';
+      ws.getCell(3,1).value='기간';ws.getCell(3,1).font={bold:true};
+      ws.getCell(3,2).value=(d.from||acc.open_date||'개설')+'  ~  '+(d.to||'전체(현재까지)');
+      // 헤더 (5행)
+      const HR=5;
+      cols.forEach((c,i)=>{const cell=ws.getCell(HR,i+1);cell.value=c.h;cell.font={bold:true};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFE7D3'}};
+        cell.border={bottom:{style:'thin'}};cell.alignment={vertical:'middle'};});
+      cols.forEach((c,i)=>{ws.getColumn(i+1).width=c.w;});
+      ws.views=[{state:'frozen',ySplit:HR}];
+      let row=HR+1;
+      // 기초잔액 행
+      const ob=ws.getRow(row++);
+      ob.getCell(1).value=acc.open_date||'';
+      ob.getCell(2).value='기초';
+      ob.getCell(3).value='기초잔액';
+      ob.getCell(8).value=Number(d.opening);ob.getCell(8).numFmt=money;
+      ob.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F7F3'}};c.font={bold:true};});
+      // 거래 행
+      let sumIn=0,sumOut=0;
+      (d.items||[]).forEach(it=>{
+        const rr=ws.getRow(row++);
+        rr.getCell(1).value=it.date;
+        rr.getCell(2).value=it.direction==='in'?'수입':'지출';
+        rr.getCell(2).font={color:{argb:it.direction==='in'?'FF0F6E56':'FFB4231F'}};
+        const catName=it.category_name||_kindLbl[it.kind]||'';
+        rr.getCell(3).value=(it.category_code?it.category_code+' · ':'')+catName;
+        rr.getCell(4).value=it.memo||(it.customer_name?('['+it.customer_name+']'):'');
+        rr.getCell(5).value=it.sat_no||it.receipt_no||'';
+        if(it.in_amt){rr.getCell(6).value=Number(it.in_amt);rr.getCell(6).numFmt=money;sumIn+=Number(it.in_amt);}
+        if(it.out_amt){rr.getCell(7).value=Number(it.out_amt);rr.getCell(7).numFmt=money;sumOut+=Number(it.out_amt);}
+        rr.getCell(8).value=Number(it.balance);rr.getCell(8).numFmt=money;
+        if(isUsd){rr.getCell(9).value=Number(it.amount_mxn);rr.getCell(9).numFmt=money;}
+      });
+      // 합계 / 기말잔액 행
+      const tr=ws.getRow(row++);
+      tr.getCell(3).value='합계 / 기말잔액';
+      tr.getCell(6).value=Math.round((sumIn+Number.EPSILON)*100)/100;tr.getCell(6).numFmt=money;
+      tr.getCell(7).value=Math.round((sumOut+Number.EPSILON)*100)/100;tr.getCell(7).numFmt=money;
+      tr.getCell(8).value=Number(d.closing);tr.getCell(8).numFmt=money;
+      tr.eachCell(c=>{c.font={bold:true};c.border={top:{style:'thin'}};});
+      // 숫자열 오른쪽 정렬
+      [6,7,8].concat(isUsd?[9]:[]).forEach(ci=>{ws.getColumn(ci).alignment={horizontal:'right'};});
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const today=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download='refatrix_ledger_acc'+acc.id+'_'+today+'.xlsx';
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+    }catch(e){alert('엑셀 생성 실패: '+(e&&e.message||e));}
   }
 
   async function saveAccount(){
