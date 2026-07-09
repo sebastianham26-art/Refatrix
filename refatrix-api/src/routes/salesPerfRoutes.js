@@ -2,7 +2,7 @@ import { query } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
-import { effectiveTargetFor, aggregateCarryover } from '../salesTarget.js';
+import { effectiveTargetFor, aggregateCarryover, monthsInclusive } from '../salesTarget.js';
 import { arInvoiceStatus, bucketByDueMonth, arSummary } from '../ar.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
@@ -200,8 +200,17 @@ export default async function salesPerfRoutes(app) {
       const sba = await salesBaseActual(scope.scopeIds, months);
       const sAgg = aggregateCarryover(scope.scopeIds, sba.base, sba.actual, yms);
       target = sAgg.target; actual = sAgg.actual;
-      const cba = await collectBaseActual(scope.scopeIds, months);
-      const cAgg = aggregateCarryover(scope.scopeIds, cba.base, cba.actual, yms);
+      // 수금: AR은 반드시 받아야 하므로 미실행분은 연이 넘어가도 이월(리셋 없음).
+      // → epoch(전 기간 최초 만기월)부터 표시월까지 replay해야 작년 이월이 사라지지 않는다.
+      const collectEpoch = (await query(
+        `SELECT to_char(MIN(i.due_date),'YYYY-MM') AS ep
+           FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+          WHERE i.status='posted' AND i.deleted_at IS NULL AND c.team_id=ANY($1) AND c.deleted_at IS NULL`,
+        [scope.scopeIds])).rows[0]?.ep || (String([...yms].sort()[0]).slice(0, 4) + '-01');
+      const collectMaxYm = [...yms].sort().slice(-1)[0];
+      const collectMonths = monthsInclusive(collectEpoch, collectMaxYm); // epoch→표시월 전체(다년) 로드
+      const cba = await collectBaseActual(scope.scopeIds, collectMonths);
+      const cAgg = aggregateCarryover(scope.scopeIds, cba.base, cba.actual, yms, { annualReset: false, startYm: collectEpoch });
       collectPlan = cAgg.target; collectActual = cAgg.actual;
       if (!multi) {
         const pYm = prevYm(yms[0]);
