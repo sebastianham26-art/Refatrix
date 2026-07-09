@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0709a</title>
+<title>Refatrix ERP · 재무 · build fin-0708i</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -59,12 +59,7 @@
   .cal-cell{border:1px solid var(--line);border-radius:6px;min-height:74px;padding:0;font-size:11px;cursor:pointer;background:#fff;overflow:hidden}
   .cal-cell.empty{background:transparent;border:none;cursor:default}
   .cal-cell.weekend{background:#f3f1ec}
-  .cal-daynum{font-weight:700;padding:2px 4px;font-size:11px;display:flex;align-items:center;flex-wrap:wrap;gap:3px}
-  /* 계좌별 잔고 부족 경보 칩 (날짜 옆) */
-  .acct-chip{display:inline-block;font-size:9px;font-weight:700;padding:0 5px;border-radius:999px;line-height:15px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-  .acct-chip.low{background:#e6eef8;color:#2f5c96;border:1px solid #cbddf2}   /* 파랑: 0 < 잔고 ≤ 10,000 */
-  .acct-chip.neg{background:#fbe9e7;color:#B23A2E;border:1px solid #f0c5bf}   /* 빨강: 잔고 ≤ 0 */
-  .acct-chip.more{background:#eee;color:#666;border:1px solid #ddd}
+  .cal-daynum{font-weight:700;padding:2px 4px;font-size:11px}
   .cal-slot{display:flex;justify-content:space-between;padding:1px 4px;line-height:1.5;border-top:1px solid #f0ede6}
   .cal-slot .k{color:var(--muted);font-size:9px}
   .cal-dow{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:2px}
@@ -83,6 +78,10 @@
   table.matrix tr.sum{background:#f4f1ea} table.matrix tr.sum td{font-weight:800;border-top:2px solid var(--brand)}
   th.fxsort{cursor:pointer;user-select:none;white-space:nowrap} th.fxsort:hover{color:var(--brand);background:#f0ede4}
   .arw{font-size:9px;color:var(--brand);margin-left:2px} .arw.inact{color:#c9c3b6}
+  .rx-scroll{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .rx-scroll table{margin:0}
+  .rx-scroll thead th{position:sticky;top:0;background:#efece3;z-index:2;box-shadow:inset 0 -1px 0 var(--line)}
+  td.rx-num,th.rx-num{width:40px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
   /* 고정비/계획대비실적 표: 자동번역(스페인어 등)으로 텍스트가 길어져도 열이 밀리지 않게 —
      셀 줄바꿈 금지 + 컨테이너 가로 스크롤. 이름·계정과목은 말줄임(전체는 툴팁). */
   #fixedBody,#varBody{overflow-x:auto}
@@ -1589,17 +1588,11 @@
     items.sort((a,z)=>{const va=ruleSortVal(a,key),vz=ruleSortVal(z,key);if(va<vz)return -dir;if(va>vz)return dir;return (Number(a.id)||0)-(Number(z.id)||0);});
     const th=(k,label,extra)=>`<th class="fxsort${extra||''}" data-k="${k}">${label} ${fixSortArrow(k)}</th>`;
     try{
-      b.innerHTML=`<table><thead><tr>${th('name','이름')}${th('dir','구분')}${th('cat','계정과목')}${th('amt','금액',' num')}${th('freq','주기')}${th('start','시작')}${th('end','종료')}${th('active','상태')}${th('gen','생성/지급')}<th>목표 월까지 생성</th><th></th></tr></thead>
-        <tbody>${items.map(r=>{
+      b.innerHTML=`<div class="rx-scroll"><table><thead><tr><th class="rx-num">#</th>${th('name','이름')}${th('dir','구분')}${th('cat','계정과목')}${th('amt','금액',' num')}${th('freq','주기')}${th('start','시작')}${th('end','종료')}${th('active','상태')}${th('gen','생성/지급')}<th>수정/삭제</th></tr></thead>
+        <tbody>${items.map((r,i)=>{
           const cycle=r.freq==='week'?('매주 '+WDAY[r.weekday]+'요일'):('매월 '+r.day_of_month+'일');
-          const through=r.generated_through?String(r.generated_through).slice(0,10):null;
-          const opts=monthTargetOptions(through);
-          const genCell=`${through?`<div style="font-size:11px;color:var(--muted);margin-bottom:3px">~${through}까지 생성됨</div>`:''}
-               ${opts.length?`<select class="rx-mon" data-id="${r.id}" style="width:auto;display:inline-block">${opts}</select>
-               <button class="btn ${through?'ghost ':''}sm rx-gen" data-id="${r.id}">${through?'추가 생성':'생성'}</button>`
-               :`<span class="hint" style="margin:0">최대(24개월)까지 생성됨</span> <button class="btn ghost sm rx-gen" data-id="${r.id}" data-through="${through?through.slice(0,7):''}">재생성</button>`}
-               ${(through&&Number(r.generated_count)===0)?'<div style="font-size:11px;color:var(--expense);font-weight:700;margin-top:2px">⚠ 생성 이력은 있으나 예정 0건 — 위 버튼으로 빠진 회차를 채우세요</div>':''}`;
           return `<tr style="${r.active?'':'opacity:.5'}">
+            <td class="rx-num">${i+1}</td>
             <td class="rx-ell" title="${(r.name||'').replace(/"/g,'&quot;')}"><b>${r.name}</b>${r.is_private?' <span class="badge" style="background:#f6e9e9;color:#a33">🔒 비공개</span>':''}</td>
             <td>${r.direction==='in'?'수입':'지출'}</td>
             <td class="rx-ell" title="${r.category_code?(r.category_code+' · '+(r.category_name||'')).replace(/"/g,'&quot;'):''}">${r.category_code?r.category_code+' · '+(r.category_name||''):'—'}</td>
@@ -1609,18 +1602,11 @@
             <td>${r.end_month||'무기한'}</td>
             <td>${r.active?'<span class="badge" style="background:#e7f3ee;color:var(--income)">활성</span>':'<span class="badge" style="background:#eee;color:#888">중지</span>'}</td>
             <td>${r.generated_count}건 / ${r.paid_count}지급</td>
-            <td style="white-space:nowrap">${genCell}</td>
-            <td style="white-space:nowrap"><button class="btn ghost sm rx-toggle" data-id="${r.id}" data-active="${r.active?1:0}">${r.active?'중지':'재개'}</button> ${isDirector()?`<button class="btn ghost sm rx-priv-toggle" data-id="${r.id}" data-priv="${r.is_private?1:0}">${r.is_private?'공개로':'비공개로'}</button> `:''}<button class="btn ghost sm rx-del" data-id="${r.id}">삭제</button></td>
-          </tr>`;}).join('')}</tbody></table>`;
-      [...b.querySelectorAll('.rx-toggle')].forEach(el=>el.onclick=()=>toggleRule(Number(el.dataset.id),el.dataset.active!=='1'));
+            <td style="white-space:nowrap"><button class="btn ghost sm rx-edit" data-id="${r.id}">수정</button> <button class="btn ghost sm rx-del" data-id="${r.id}">삭제</button></td>
+          </tr>`;}).join('')}</tbody></table></div>
+        <div id="rxEditPanel" class="hidden"></div>`;
+      [...b.querySelectorAll('.rx-edit')].forEach(el=>el.onclick=()=>openRuleEdit(Number(el.dataset.id)));
       [...b.querySelectorAll('.rx-del')].forEach(el=>el.onclick=()=>delRule(Number(el.dataset.id)));
-      [...b.querySelectorAll('.rx-priv-toggle')].forEach(el=>el.onclick=()=>togglePriv(Number(el.dataset.id),el.dataset.priv!=='1'));
-      [...b.querySelectorAll('.rx-gen')].forEach(el=>el.onclick=()=>{
-        const id=Number(el.dataset.id);
-        const sel=b.querySelector('.rx-mon[data-id="'+id+'"]');
-        // 재생성(옵션 없음) 버튼은 이미 약속된 구간(generated_through)까지 빠진 회차를 채움 — 전개는 항상 시작일부터, live 멱등이라 중복 없음.
-        generateRule(id,sel?sel.value:(el.dataset.through||null),el);
-      });
       [...b.querySelectorAll('.fxsort')].forEach(el=>el.onclick=()=>{
         const k=el.dataset.k;
         if(fixSortState.key===k)fixSortState.dir*=-1;
@@ -1628,6 +1614,75 @@
         renderFixTable();
       });
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  // 규칙 수정 패널 (PATCH 지원 필드: 이름·계정·금액·계좌·종료월·메모·상태·비공개) + 예정 생성 이동
+  function openRuleEdit(id){
+    const r=fixItems.find(x=>Number(x.id)===Number(id)); if(!r)return;
+    const p=$('rxEditPanel'); if(!p)return;
+    const cycle=r.freq==='week'?('매주 '+WDAY[r.weekday]+'요일'):('매월 '+r.day_of_month+'일');
+    const through=r.generated_through?String(r.generated_through).slice(0,10):null;
+    const opts=monthTargetOptions(through);
+    const accOpt='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}" ${Number(r.account_id)===Number(a.id)?'selected':''}>${a.name} (${a.currency})</option>`).join('');
+    p.innerHTML=`<div style="border:1px solid var(--brand);border-radius:10px;padding:14px;background:#fbfaf6;margin-top:12px">
+      <div style="font-weight:700;margin-bottom:8px">고정비 규칙 수정 — ${(r.name||'').replace(/</g,'&lt;')}</div>
+      <div class="row">
+        <div style="flex:2"><label>이름</label><input class="re-name" type="text" value="${(r.name||'').replace(/"/g,'&quot;')}"></div>
+        <div><label>구분(고정)</label><input type="text" value="${r.direction==='in'?'수입':'지출'}" disabled></div>
+        <div><label>주기(고정)</label><input type="text" value="${cycle}" disabled></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label>계정과목</label><select class="re-cat">${catOptionsFor(r.direction,r.category_code)}</select></div>
+        <div><label>통화(고정)</label><input type="text" value="${r.currency}" disabled></div>
+        <div><label>금액</label><input class="re-amt" type="number" step="0.01" value="${r.amount}"></div>
+      </div>
+      <div class="row">
+        <div style="flex:2"><label>계좌</label><select class="re-acc">${accOpt}</select></div>
+        <div><label>시작일(고정)</label><input type="text" value="${r.start_date?String(r.start_date).slice(0,10):'—'}" disabled></div>
+        <div><label>종료월</label><input class="re-end" type="month" value="${r.end_month||''}"></div>
+      </div>
+      <div class="row">
+        <div style="flex:3"><label>메모</label><input class="re-memo" type="text" value="${(r.memo||'').replace(/"/g,'&quot;')}"></div>
+        <div><label>상태</label><select class="re-active"><option value="1" ${r.active?'selected':''}>활성</option><option value="0" ${r.active?'':'selected'}>중지</option></select></div>
+        ${isDirector()?`<div><label>공개범위</label><select class="re-priv"><option value="0" ${r.is_private?'':'selected'}>공개</option><option value="1" ${r.is_private?'selected':''}>비공개</option></select></div>`:''}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn re-save" data-id="${r.id}">저장</button>
+        <button class="btn ghost re-cancel">닫기</button>
+      </div>
+      <div class="msg re-msg" style="display:none"></div>
+      <div class="hint" style="margin-top:4px">구분·주기·통화·시작일은 이미 생성된 예정/실적과의 정합성 때문에 수정 불가입니다. 바꾸려면 삭제 후 새로 등록하세요. 금액·계정 변경은 이후 새로 생성되는 예정부터 적용됩니다.</div>
+      <div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:12px">
+        <div style="font-weight:700;margin-bottom:6px">예정 생성</div>
+        ${through?`<div class="hint" style="margin:0 0 6px">~${through}까지 생성됨</div>`:'<div class="hint" style="margin:0 0 6px">아직 생성된 예정이 없습니다.</div>'}
+        ${opts.length?`<select class="re-mon" style="width:auto;display:inline-block">${opts}</select> <button class="btn sm re-gen" data-id="${r.id}">${through?'추가 생성':'생성'}</button>`
+          :`<span class="hint" style="margin:0">최대(24개월)까지 생성됨</span> <button class="btn ghost sm re-gen" data-id="${r.id}" data-through="${through?through.slice(0,7):''}">재생성</button>`}
+        <div class="hint" style="margin-top:6px">그래프·매트릭스의 미래 월은 여기서 생성한 예정 거래로 채워집니다.</div>
+      </div>
+    </div>`;
+    p.classList.remove('hidden');
+    p.querySelector('.re-cancel').onclick=()=>{p.classList.add('hidden');p.innerHTML='';};
+    p.querySelector('.re-save').onclick=()=>saveRuleEdit(id,p);
+    const genBtn=p.querySelector('.re-gen');if(genBtn)genBtn.onclick=(e)=>{const sel=p.querySelector('.re-mon');generateRule(id,sel?sel.value:(e.currentTarget.dataset.through||null),e.currentTarget);};
+    p.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  async function saveRuleEdit(id,p){
+    const m=p.querySelector('.re-msg');m.className='msg re-msg';m.style.display='none';
+    const name=p.querySelector('.re-name').value.trim();
+    const amount=Number(p.querySelector('.re-amt').value)||0;
+    if(!name){m.className='msg err re-msg';m.style.display='block';m.textContent='이름을 입력하세요.';return;}
+    if(!(amount>0)){m.className='msg err re-msg';m.style.display='block';m.textContent='금액을 0보다 크게 입력하세요.';return;}
+    const payload={name,category_code:p.querySelector('.re-cat').value||null,amount,
+      account_id:p.querySelector('.re-acc').value?Number(p.querySelector('.re-acc').value):null,
+      end_month:p.querySelector('.re-end').value||null,memo:p.querySelector('.re-memo').value||null,
+      active:p.querySelector('.re-active').value==='1'};
+    const privSel=p.querySelector('.re-priv');if(privSel)payload.is_private=privSel.value==='1';
+    try{
+      const res=await fetch(session.api+'/api/recurring/'+id,{method:'PATCH',headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||('HTTP '+res.status));}
+      m.className='msg ok re-msg';m.style.display='block';m.textContent='저장되었습니다.';
+      p.classList.add('hidden');p.innerHTML='';
+      loadFixed();loadFixedMonthly();
+    }catch(err){m.className='msg err re-msg';m.style.display='block';m.textContent='저장 실패: '+err.message;}
   }
 
   // ===== 월간 총 고정비 (3개월 카드) · 추이 그래프 · 계정과목 매트릭스 =====
@@ -2135,19 +2190,6 @@
   // 월간달력: 일요일 시작·주말 음영·AR/AP/잔고 3칸 + 하단 실적/예정 섹션
   let calMonth=new Date().toISOString().slice(0,7);
   let calCarry=null;   // {date, ar_sum, ap_sum, net, items[]} | null
-  // 계좌별 잔고 부족 경보 칩(날짜 옆): 예상 모드→acct_alerts / 실적 모드→acct_alerts_real. 최대 4개 + "+N".
-  function cfAcctChips(v){
-    if(!v) return '';
-    const list=(cfState.mode==='plan'?v.acct_alerts:v.acct_alerts_real)||[];
-    if(!list.length) return '';
-    const MAX=4;
-    const chips=list.slice(0,MAX).map(a=>{
-      const cls=(a.level==='neg')?'neg':'low';
-      return `<span class="acct-chip ${cls}" title="${escH(a.name+' 잔고 '+fmt(a.balance))}">${escH(a.name)}</span>`;
-    }).join('');
-    const extra=list.length>MAX?`<span class="acct-chip more" title="${escH('외 '+(list.length-MAX)+'개 계좌')}">+${list.length-MAX}</span>`:'';
-    return chips+extra;
-  }
   async function renderMonthFromApi(){
     const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
@@ -2170,7 +2212,7 @@
         const hasV=v&&(v.ar||v.ap||(v.items&&v.items.length));
         const actNet=Math.round((v&&v.items?v.items.reduce((s,t)=>t.status==='actual'?s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0):s,0):0)*100)/100;
         cells+=`<div class="cal-cell${we}" data-day="${ds}">
-          <div class="cal-daynum">${dd}${cfAcctChips(v)}</div>
+          <div class="cal-daynum">${dd}</div>
           ${cfShow.plan?`<div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
           <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
           <div class="cal-slot"><span class="k" style="color:#c77714;font-weight:700">이월</span><span>${(calCarry&&ds===calCarry.date)?`${calCarry.ar_sum?'<b style=\"color:var(--income)\">+'+fmt(calCarry.ar_sum)+'</b>':''}${calCarry.ar_sum&&calCarry.ap_sum?' ':''}${calCarry.ap_sum?'<b style=\"color:var(--expense)\">-'+fmt(calCarry.ap_sum)+'</b>':''}`:''}</span></div>`:''}
@@ -2184,7 +2226,6 @@
         <div class="hint" style="margin:2px 0 6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
           <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#fdebd7;border:1px solid #eccb9c;vertical-align:-1px;margin-right:4px"></i>실적 반영된 예정(실현)</span>
           <span><b style="color:#c77714">이월</b> = 지난 미실현 AR·AP를 오늘로 합산 — 원래 날짜는 보존(과거 달에서 그대로 확인)</span>
-          <span><span class="acct-chip low" style="vertical-align:-1px">계좌</span> 잔고 0~10,000 · <span class="acct-chip neg" style="vertical-align:-1px">계좌</span> 잔고 0 이하 <span class="hint" style="margin:0">— 계좌별 예상잔고 부족(약속된 지출 기준, 수금예정 AR 제외 · MXN)</span></span>
         </div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
