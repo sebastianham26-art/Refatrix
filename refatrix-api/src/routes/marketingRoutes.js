@@ -94,6 +94,46 @@ export default async function marketingRoutes(app) {
     };
   });
 
+  // 지출계획(프로젝트)별 월 예산 — 마케팅 지출계획 화면의 계획을 프로젝트 행으로,
+  //   각 지급 라인의 due_date를 월(YYYY-MM)로 집계해 전체 예산 vs 배분 표에 붙인다.
+  //   삭제되지 않은 전 상태 계획 포함(작성중/제출/승인/반려) — 상태 배지로 구분.
+  //   horizon(시작월부터 12개월) 안에 라인이 하나도 없는 계획은 제외.
+  app.get('/api/marketing/spend-by-month', { preHandler: [authGuard, requirePage('marketing')] }, async (req) => {
+    const start = String(req.query.start || currentYm());
+    const months = monthsHorizon(start, 12);
+    const minYm = months[0], maxYm = months[months.length - 1];
+    const rows = (await query(
+      `SELECT p.id, p.title, p.category, p.status,
+              to_char(l.due_date, 'YYYY-MM') AS ym,
+              COALESCE(SUM(l.amount), 0) AS amount
+         FROM marketing_spend_plans p
+         JOIN marketing_spend_lines l ON l.plan_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND to_char(l.due_date, 'YYYY-MM') >= $1
+          AND to_char(l.due_date, 'YYYY-MM') <= $2
+        GROUP BY p.id, p.title, p.category, p.status, to_char(l.due_date, 'YYYY-MM')
+        ORDER BY p.id`, [minYm, maxYm])).rows;
+    const inHorizon = new Set(months);
+    const planMap = new Map();          // id → { id, title, category, status, by_month, total, first_ym }
+    const totalsByMonth = {};
+    for (const r of rows) {
+      if (!inHorizon.has(r.ym)) continue; // 안전망(월 목록에 실제로 있는 것만)
+      let p = planMap.get(Number(r.id));
+      if (!p) { p = { id: Number(r.id), title: r.title, category: r.category, status: r.status, by_month: {}, total: 0, first_ym: r.ym }; planMap.set(p.id, p); }
+      const amt = r2(Number(r.amount));
+      p.by_month[r.ym] = r2((p.by_month[r.ym] || 0) + amt);
+      p.total = r2(p.total + amt);
+      if (r.ym < p.first_ym) p.first_ym = r.ym;
+      totalsByMonth[r.ym] = r2((totalsByMonth[r.ym] || 0) + amt);
+    }
+    // 첫 집행월 → 상태 → id 순 정렬
+    const stOrder = { approved: 0, submitted: 1, draft: 2, rejected: 3 };
+    const plans = [...planMap.values()].sort((a, b) =>
+      (a.first_ym < b.first_ym ? -1 : a.first_ym > b.first_ym ? 1 :
+        (stOrder[a.status] ?? 9) - (stOrder[b.status] ?? 9) || a.id - b.id));
+    return { months, plans, totals_by_month: totalsByMonth };
+  });
+
   // 전체 마케팅 월 예산 저장 — 마케팅·디렉터
   app.post('/api/marketing/budget', { preHandler: [authGuard, requirePageEdit('marketing')] }, async (req, reply) => {
     if (!isMarketing(req.ctx.perm)) return reply.code(403).send({ error: 'marketing_only' });

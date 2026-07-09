@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260706b</title>
+<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -44,6 +44,11 @@
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
   .st-draft{background:#eee;color:#555}.st-submitted{background:#fff4d6;color:#8a6512}.st-approved{background:#e7f3ee;color:var(--income)}.st-rejected{background:#fbe9e7;color:var(--expense)}
   .short{color:var(--expense);font-weight:700}.over{color:var(--expense);font-weight:700}.okrow{color:var(--income)}
+  table.grid tr.grp td{background:#eef3f0;color:var(--muted);font-weight:700;font-size:11.5px;text-align:left}
+  table.grid tr.planrow{cursor:pointer}
+  table.grid tr.planrow:hover td{background:#f3f7f5}
+  table.grid tr.planrow:hover td.lbl{background:#e8f0ec}
+  table.grid tr.planrow .plink{color:#0c6b52;text-decoration:underline;text-underline-offset:2px}
   .teampick,.custpick{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
   .chip{padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted)}
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -124,7 +129,7 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let startYm='', months=[], overview=null, menu=[], custData=null, curCust=null, noteScope=null;
+  let startYm='', months=[], overview=null, menu=[], custData=null, curCust=null, noteScope=null, spendPlans=null;
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const isDirector=()=> session.user && session.user.role==='director';
@@ -274,9 +279,31 @@
     try{
       overview=await fetch(session.api+'/api/marketing/overview?start='+startYm,{headers:auth()}).then(r=>r.json());
       months=overview.months;
+      try{ spendPlans=await fetch(session.api+'/api/marketing/spend-by-month?start='+startYm,{headers:auth()}).then(r=>r.json()); }
+      catch(e){ spendPlans=null; }
       $('statusBadge').innerHTML=`<span class="pill st-${overview.status}">${stLabel(overview.status)}</span>`;
       renderBudget();
     }catch(e){$('budgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function planRowsHtml(){
+    // 마케팅 지출계획(프로젝트)별 월 예산 행. 클릭 시 계획서 새 창.
+    if(!spendPlans||!Array.isArray(spendPlans.plans)) return '';
+    const plans=spendPlans.plans, tbm=spendPlans.totals_by_month||{};
+    const grand=months.reduce((s,m)=>s+(tbm[m]||0),0);
+    const hdr='<tr class="grp"><td class="lbl" colspan="'+(months.length+2)+'">📋 마케팅 지출계획 (프로젝트별 · 행 클릭 시 계획서 열기)</td></tr>';
+    if(!plans.length) return hdr+'<tr><td class="lbl smallnote">등록된 지출계획 없음</td>'+months.map(()=>'<td class="num">—</td>').join('')+'<td class="num">—</td></tr>';
+    const body=plans.map(p=>{
+      let ptot=0;
+      const cells=months.map(m=>{const v=p.by_month[m]||0;ptot+=v;return `<td class="num">${v?fmt(v):''}</td>`;}).join('');
+      const badge=`<span class="pill st-${p.status}" style="margin-left:6px;transform:scale(.85)">${stLabel(p.status)}</span>`;
+      return `<tr class="planrow" data-plan="${p.id}" title="클릭하면 계획서가 새 창으로 열립니다">`
+        +`<td class="lbl"><span class="plink">${esch(p.title||('계획 '+p.id))}</span>${badge}</td>${cells}<td class="num"><b>${fmt(ptot)}</b></td></tr>`;
+    }).join('');
+    const totRow='<tr><td class="lbl">지출계획 합</td>'+months.map(m=>`<td class="num" data-spendsum="${m}">${fmt(tbm[m]||0)}</td>`).join('')+`<td class="num"><b>${fmt(grand)}</b></td></tr>`;
+    const bud=overview.budget||{};
+    const diffRow='<tr><td class="lbl smallnote">예산−지출계획 (잔여/초과)</td>'+months.map(m=>{const diff=(bud[m]||0)-(tbm[m]||0);
+      return `<td class="num" data-spenddiff="${m}">${diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`}</td>`;}).join('')+'<td></td></tr>';
+    return hdr+body+totRow+diffRow;
   }
   function renderBudget(){
     const dir=isMarketing();const bud=overview.budget||{},chk=overview.check||{};
@@ -289,13 +316,23 @@
     let diffRow='<tr><td class="lbl smallnote">예산−배분 (잔여/초과)</td>'+months.map(m=>{const c=chk[m]||{};
       const txt=c.over>0?`<span class="over">초과 ${fmt(c.over)}</span>`:`<span class="okrow">잔여 ${fmt(c.remaining||0)}</span>`;
       return `<td class="num" data-diff="${m}">${txt}</td>`;}).join('')+'<td></td></tr>';
-    $('budgetGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${budRow}${allocRow}${diffRow}</tbody></table>`;
+    $('budgetGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${budRow}${allocRow}${diffRow}${planRowsHtml()}</tbody></table>`;
+    $('budgetGrid').querySelectorAll('tr.planrow').forEach(tr=>tr.addEventListener('click',()=>openPlanWindow(Number(tr.dataset.plan))));
+  }
+  function openPlanWindow(id){
+    if(!(id>0))return;
+    // 지출계획 화면을 계획 딥링크와 함께 새 창으로 (afterLogin에서 #plan= 파싱해 자동 오픈)
+    const base=(location.pathname.replace(/[^/]*$/,''))+'refatrix-mktspend.html';
+    window.open(base+'#plan='+id, 'mktplan_'+id, 'width=920,height=900,scrollbars=yes,resizable=yes');
   }
   function onBudInput(){
     let s=0;const bud={};document.querySelectorAll('[data-bud]').forEach(i=>{bud[i.dataset.bud]=n0(i.value);s+=n0(i.value);});
     $('budSum').textContent=fmt(s);
     const allocSum=overview.alloc_sum||{};
     months.forEach(m=>{const diff=(bud[m]||0)-(allocSum[m]||0);const el=document.querySelector(`[data-diff="${m}"]`);
+      if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
+    const tbm=(spendPlans&&spendPlans.totals_by_month)||{};
+    months.forEach(m=>{const diff=(bud[m]||0)-(tbm[m]||0);const el=document.querySelector(`[data-spenddiff="${m}"]`);
       if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
   }
   async function saveBudget(){
@@ -428,6 +465,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260706b"></script>
+<script src="refatrix-nav.js?v=20260708b"></script>
 </body>
 </html>
