@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708d</title>
+<title>Refatrix ERP · 재무 · build fin-0708e</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -27,6 +27,10 @@
   .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
   .btn:disabled{opacity:.5;cursor:default}
   .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .wfzoomwrap{position:relative}
+  .wflens{position:absolute;border-radius:50%;border:2px solid var(--brand);box-shadow:0 4px 14px rgba(0,0,0,.30);overflow:hidden;pointer-events:none;background:#fff;display:none;z-index:6}
+  #wf-zoom.on{background:var(--brand);color:#fff}
+  @media print{.no-print{display:none!important}.wflens{display:none!important}}
   .btn.gold{background:var(--gold)}
   .btn.sm{padding:6px 10px;font-size:12px}
   .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
@@ -322,8 +326,9 @@
             <option value="month">월별</option>
           </select>
           <button class="btn ghost sm" id="wf-go">조회</button>
+          <button class="btn ghost sm no-print" id="wf-zoom" title="렌즈형 돋보기: 켠 뒤 그래프 위에서 마우스를 움직이세요. 휠로 배율 조절.">🔍 돋보기</button>
         </div>
-        <div class="hint" style="margin-top:4px">기간 시작 시점의 현금잔액(<span style="color:#2f8f5b;font-weight:700">기준 · 초록</span>)에서 출발해, 기간별 변화가 직전 잔액 위에서 <span style="color:#c0392b;font-weight:700">증가(+) 빨강</span> / <span style="color:#0c447c;font-weight:700">감소(−) 파랑</span>으로 이어집니다. 위 「실제만/예정 포함」 토글을 따릅니다.</div>
+        <div class="hint" style="margin-top:4px">기간 시작 시점의 현금잔액(<span style="color:#2f8f5b;font-weight:700">기준 · 초록</span>)에서 출발해, 기간별 변화가 직전 잔액 위에서 <span style="color:#c0392b;font-weight:700">증가(+) 빨강</span> / <span style="color:#0c447c;font-weight:700">감소(−) 파랑</span>으로 이어집니다. 위 「실제만/예정 포함」 토글을 따릅니다. <span class="no-print">🔍 <b>돋보기</b>를 켜면 그래프를 렌즈로 확대(마우스 휠로 배율).</span></div>
         <div id="wfChart" style="margin-top:8px;overflow-x:auto"><div class="hint">불러오는 중…</div></div>
       </div>
 
@@ -1783,7 +1788,55 @@
       }
       const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
       box.innerHTML=svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
+      setupWfMagnifier();
     }catch(e){box.innerHTML='<div class="hint">워터폴을 불러오지 못했습니다.</div>';}
+  }
+  // ===== 현금잔액 워터폴 — 렌즈형 돋보기(줌) =====
+  const wfMag={on:false, zoom:2.6, R:80};
+  let wfMagSync=null;
+  function updateWfZoomBtn(){ const b=$('wf-zoom'); if(!b)return; b.classList.toggle('on',wfMag.on); b.textContent=wfMag.on?('🔍 돋보기 '+wfMag.zoom.toFixed(1)+'×'):'🔍 돋보기'; }
+  function setupWfMagnifier(){
+    const box=$('wfChart'); if(!box)return;
+    const svg=box.querySelector('svg'); if(!svg){ wfMagSync=null; return; }
+    let wrap=svg.parentNode;
+    if(!(wrap&&wrap.classList&&wrap.classList.contains('wfzoomwrap'))){
+      wrap=document.createElement('div'); wrap.className='wfzoomwrap';
+      svg.parentNode.insertBefore(wrap,svg); wrap.appendChild(svg);
+    }
+    let lens=wrap.querySelector('.wflens');
+    if(!lens){ lens=document.createElement('div'); lens.className='wflens no-print'; wrap.appendChild(lens); }
+    const applySize=()=>{ const d=wfMag.R*2; lens.style.width=d+'px'; lens.style.height=d+'px'; };
+    applySize();
+    let clone=null, cloneW=0;
+    const rebuild=()=>{
+      const rect=svg.getBoundingClientRect();
+      lens.innerHTML='';
+      clone=svg.cloneNode(true);
+      clone.removeAttribute('style');
+      clone.style.position='absolute'; clone.style.left='0'; clone.style.top='0';
+      clone.style.width=(rect.width*wfMag.zoom)+'px';
+      clone.style.height=(rect.height*wfMag.zoom)+'px';
+      lens.appendChild(clone); cloneW=rect.width;
+    };
+    const place=(e)=>{
+      if(!wfMag.on){ lens.style.display='none'; return; }
+      const rect=svg.getBoundingClientRect();
+      const px=e.clientX-rect.left, py=e.clientY-rect.top;
+      if(px<0||py<0||px>rect.width||py>rect.height){ lens.style.display='none'; return; }
+      if(!clone||Math.abs(cloneW-rect.width)>0.5) rebuild();
+      lens.style.display='block';
+      lens.style.left=(px-wfMag.R)+'px';
+      lens.style.top=(py-wfMag.R)+'px';
+      clone.style.left=(wfMag.R-px*wfMag.zoom)+'px';
+      clone.style.top=(wfMag.R-py*wfMag.zoom)+'px';
+    };
+    svg.addEventListener('mousemove',place);
+    svg.addEventListener('mouseleave',()=>{ lens.style.display='none'; });
+    svg.addEventListener('wheel',(e)=>{ if(!wfMag.on)return; e.preventDefault();
+      wfMag.zoom=Math.min(6,Math.max(1.5,Math.round((wfMag.zoom+(e.deltaY<0?0.3:-0.3))*10)/10));
+      clone=null; place(e); updateWfZoomBtn(); },{passive:false});
+    wfMagSync=()=>{ clone=null; applySize(); if(!wfMag.on) lens.style.display='none'; };
+    updateWfZoomBtn();
   }
   // ISO 주 라벨('YYYY-Www') → 그 주 월요일 날짜('MM-DD')
   function wfWeekMonday(lbl){
@@ -2732,6 +2785,7 @@
   $('wf-from').addEventListener('change',loadWaterfall);
   $('wf-to').addEventListener('change',loadWaterfall);
   $('wf-gran').addEventListener('change',()=>{wfState.gran=$('wf-gran').value;loadWaterfall();});
+  $('wf-zoom').addEventListener('click',()=>{ wfMag.on=!wfMag.on; if(wfMagSync)wfMagSync(); updateWfZoomBtn(); });
   ['pa-all','pa-rec','pa-oth'].forEach(id=>$(id).addEventListener('click',()=>{
     ['pa-all','pa-rec','pa-oth'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');paState.filter=$(id).dataset.v;loadPlanActual();}));
   $('rxAddBtn').addEventListener('click',async ()=>{
