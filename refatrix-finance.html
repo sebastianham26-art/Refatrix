@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708b</title>
+<title>Refatrix ERP · 재무 · build fin-0708c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -657,39 +657,41 @@
       const acc=d.account, cur=acc.currency, isUsd=cur==='USD';
       const money='#,##0.00';
       const wb=new ExcelJS.Workbook();
-      const ws=wb.addWorksheet('계좌원장');
+      const ws=wb.addWorksheet('원장 Libro mayor');
       const cols=[
-        {h:'일자',w:13},{h:'구분',w:8},{h:'계정과목',w:26},{h:'적요',w:42},
-        {h:'증빙/SAT',w:16},{h:'수입',w:15},{h:'지출',w:15},{h:'잔액',w:16}];
-      if(isUsd)cols.push({h:'MXN환산(거래시환율)',w:20});
+        {h:'일자\nFecha',w:14},{h:'구분\nTipo',w:14},{h:'계정과목\nCuenta',w:26},{h:'적요\nConcepto',w:40},
+        {h:'증빙/SAT\nComprob.',w:16},{h:'수입\nIngreso',w:15},{h:'지출\nEgreso',w:15},{h:'잔액\nSaldo',w:16}];
+      if(isUsd)cols.push({h:'MXN환산\nConv. MXN',w:18});
       const N=cols.length;
-      // 상단 제목 3줄
+      // 상단 제목 3줄 (한/스 병기)
       ws.mergeCells(1,1,1,N);
-      const t1=ws.getCell(1,1);t1.value='계좌 원장  —  기초잔액 → 실적(수입·지출)만 → 행별 누적잔액';t1.font={bold:true,size:13};
-      ws.getCell(2,1).value='계좌';ws.getCell(2,1).font={bold:true};ws.getCell(2,2).value=acc.name+'  ('+cur+')';
-      ws.getCell(3,1).value='기간';ws.getCell(3,1).font={bold:true};
-      ws.getCell(3,2).value=(d.from||acc.open_date||'개설')+'  ~  '+(d.to||'전체(현재까지)');
-      // 헤더 (5행)
+      const t1=ws.getCell(1,1);t1.value='계좌 원장 / Libro mayor de cuenta  —  기초잔액 → 실적 → 행별 잔액 (Saldo inicial → movimientos → saldo)';t1.font={bold:true,size:13};
+      ws.getCell(2,1).value='계좌 / Cuenta';ws.getCell(2,1).font={bold:true};ws.getCell(2,2).value=acc.name+'  ('+cur+')';
+      ws.getCell(3,1).value='기간 / Periodo';ws.getCell(3,1).font={bold:true};
+      ws.getCell(3,2).value=(d.from||acc.open_date||'개설')+'  ~  '+(d.to||'전체 / Actual');
+      // 헤더 (5행) — 한/스 2줄
       const HR=5;
       cols.forEach((c,i)=>{const cell=ws.getCell(HR,i+1);cell.value=c.h;cell.font={bold:true};
         cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFE7D3'}};
-        cell.border={bottom:{style:'thin'}};cell.alignment={vertical:'middle'};});
+        cell.border={bottom:{style:'thin'}};cell.alignment={vertical:'middle',horizontal:'center',wrapText:true};});
+      ws.getRow(HR).height=30;
       cols.forEach((c,i)=>{ws.getColumn(i+1).width=c.w;});
       ws.views=[{state:'frozen',ySplit:HR}];
-      let row=HR+1;
-      // 기초잔액 행
-      const ob=ws.getRow(row++);
-      ob.getCell(1).value=acc.open_date||'';
-      ob.getCell(2).value='기초';
-      ob.getCell(3).value='기초잔액';
+      const openRow=HR+1;      // 기초잔액 행 번호
+      // 기초잔액 행 (잔액 = 값)
+      const ob=ws.getRow(openRow);
+      ob.getCell(1).value=acc.open_date||'';ob.getCell(1).numFmt='@';
+      ob.getCell(2).value='기초 / Inicial';
+      ob.getCell(3).value='기초잔액 / Saldo inicial';
       ob.getCell(8).value=Number(d.opening);ob.getCell(8).numFmt=money;
       ob.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F7F3'}};c.font={bold:true};});
-      // 거래 행
-      let sumIn=0,sumOut=0;
+      // 거래 행 (일자=YYYY-MM-DD 텍스트, 잔액=함수: 바로 위 잔액 + 이 행 수입 − 이 행 지출)
+      const firstItemRow=openRow+1;
+      let er=firstItemRow, sumIn=0, sumOut=0;
       (d.items||[]).forEach(it=>{
-        const rr=ws.getRow(row++);
-        rr.getCell(1).value=it.date;
-        rr.getCell(2).value=it.direction==='in'?'수입':'지출';
+        const rr=ws.getRow(er);
+        rr.getCell(1).value=it.date;rr.getCell(1).numFmt='@';   // 일자: YYYY-MM-DD 텍스트 고정(멕시코식 dd/mm 자동변환 방지)
+        rr.getCell(2).value=it.direction==='in'?'수입 / Ingreso':'지출 / Egreso';
         rr.getCell(2).font={color:{argb:it.direction==='in'?'FF0F6E56':'FFB4231F'}};
         const catName=it.category_name||_kindLbl[it.kind]||'';
         rr.getCell(3).value=(it.category_code?it.category_code+' · ':'')+catName;
@@ -697,15 +699,21 @@
         rr.getCell(5).value=it.sat_no||it.receipt_no||'';
         if(it.in_amt){rr.getCell(6).value=Number(it.in_amt);rr.getCell(6).numFmt=money;sumIn+=Number(it.in_amt);}
         if(it.out_amt){rr.getCell(7).value=Number(it.out_amt);rr.getCell(7).numFmt=money;sumOut+=Number(it.out_amt);}
-        rr.getCell(8).value=Number(it.balance);rr.getCell(8).numFmt=money;
+        // 잔액 = 함수(위 잔액 + 수입 − 지출) + 캐시결과(재계산 전에도 값 표시)
+        rr.getCell(8).value={formula:'H'+(er-1)+'+F'+er+'-G'+er,result:Number(it.balance)};rr.getCell(8).numFmt=money;
         if(isUsd){rr.getCell(9).value=Number(it.amount_mxn);rr.getCell(9).numFmt=money;}
+        er++;
       });
-      // 합계 / 기말잔액 행
-      const tr=ws.getRow(row++);
-      tr.getCell(3).value='합계 / 기말잔액';
-      tr.getCell(6).value=Math.round((sumIn+Number.EPSILON)*100)/100;tr.getCell(6).numFmt=money;
-      tr.getCell(7).value=Math.round((sumOut+Number.EPSILON)*100)/100;tr.getCell(7).numFmt=money;
-      tr.getCell(8).value=Number(d.closing);tr.getCell(8).numFmt=money;
+      const lastItemRow=er-1;               // 거래 없으면 openRow
+      const hasItems=lastItemRow>=firstItemRow;
+      // 합계 / 기말잔액 행 (수입·지출 = SUM 함수, 잔액 = 마지막 행 잔액 참조)
+      const totRow=er;
+      const tr=ws.getRow(totRow);
+      tr.getCell(3).value='합계 · 기말잔액 / Total · Saldo final';
+      const r2=(n)=>Math.round((n+Number.EPSILON)*100)/100;
+      tr.getCell(6).value=hasItems?{formula:'SUM(F'+firstItemRow+':F'+lastItemRow+')',result:r2(sumIn)}:0;tr.getCell(6).numFmt=money;
+      tr.getCell(7).value=hasItems?{formula:'SUM(G'+firstItemRow+':G'+lastItemRow+')',result:r2(sumOut)}:0;tr.getCell(7).numFmt=money;
+      tr.getCell(8).value={formula:'H'+(hasItems?lastItemRow:openRow),result:Number(d.closing)};tr.getCell(8).numFmt=money;
       tr.eachCell(c=>{c.font={bold:true};c.border={top:{style:'thin'}};});
       // 숫자열 오른쪽 정렬
       [6,7,8].concat(isUsd?[9]:[]).forEach(ci=>{ws.getColumn(ci).alignment={horizontal:'right'};});
