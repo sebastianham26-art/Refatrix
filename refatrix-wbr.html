@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0708a</title>
+<title>Refatrix ERP · WBR · build wbr-0708d</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -272,9 +272,22 @@
     <!-- 현금잔액 워터폴 (디렉터 전용) -->
     <div class="card hidden" id="cfwfCard">
       <div class="card-h"><span id="cfwfTitle">현금잔액 워터폴</span>
-        <span class="src">상단 「조회 월」에 연동 · 실적(예정 제외) 기준 · 회사 전체(팀 무관) · 재무 현금흐름과 동일 그래프</span>
+        <span class="src">재무 현금흐름과 동일 계산 · 같은 기간·같은 실적/예정이면 숫자 일치 · 회사 전체(팀 무관)</span>
         <span class="lnk no-print" id="cfwfToggle" style="margin-left:auto">감추기</span></div>
       <div id="cfwfCollapse">
+        <div class="cfwfctl no-print" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px">
+          <input type="date" id="cfwf-from" style="width:auto">
+          <span style="color:var(--muted)">~</span>
+          <input type="date" id="cfwf-to" style="width:auto">
+          <select id="cfwf-gran" style="width:auto">
+            <option value="auto" selected>단위 자동</option>
+            <option value="day">일별</option>
+            <option value="week">주별</option>
+            <option value="month">월별</option>
+          </select>
+          <button class="btn sm" id="cfwf-plan" title="재무 현금흐름과 동일: 예정 포함(예상 잔고) ↔ 실적만(실현 잔고)">예정 포함</button>
+          <button class="btn sm" id="cfwf-go">조회</button>
+        </div>
         <div id="cfwfBody"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
@@ -650,7 +663,7 @@
       +'<div class="wfsum">누적 실적 <b>MX$'+fmt(wk.cumActual)+'</b> / 목표 <b>MX$'+fmt(target)+'</b> ('+(wk.progress==null?'—':wk.progress+'%')+')</div>';
   }
 
-  // ===== 현금잔액 워터폴 (재무 SVG 워터폴 재사용 · 디렉터 전용 · 조회월 연동) =====
+  // ===== 현금잔액 워터폴 (재무 SVG 워터폴 재사용 · 디렉터 전용 · 기간/단위/실적·예정 직접 선택) =====
   const CFWF_GREEN='#2f8f5b', CFWF_RED='#c0392b', CFWF_BLUE='#0c447c';
   const cfFmtMxn=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   function cfFmtK(n){ const a=Math.abs(n);
@@ -664,6 +677,7 @@
     return new Date(mon1.getTime()+(w-1)*7*86400000).toISOString().slice(5,10); }
   function cfWfCatLines(cats,n){ return (cats||[]).slice(0,n).map(c=>`${c.name} ${c.net>=0?'+':'−'}${cfFmtMxn(Math.abs(c.net))}`); }
   function cfWfBucket(dateStr,g){
+    if(g==='day')return String(dateStr).slice(0,10);
     if(g==='month')return String(dateStr).slice(0,7);
     const [y,m,d]=String(dateStr).slice(0,10).split('-').map(Number);
     const dt=new Date(Date.UTC(y,m-1,d));
@@ -671,6 +685,19 @@
     const firstThu=new Date(Date.UTC(dt.getUTCFullYear(),0,4));
     const week=1+Math.round(((dt-firstThu)/86400000-3+((firstThu.getUTCDay()+6)%7))/7);
     return dt.getUTCFullYear()+'-W'+String(week).padStart(2,'0'); }
+  const cfwfState={gran:'auto', plan:true};
+  function updateCfPlanBtn(){ const b=$('cfwf-plan'); if(!b)return; b.textContent=cfwfState.plan?'예정 포함':'실적만'; }
+  function cfWfDefaultRange(){
+    if($('cfwf-from').value && $('cfwf-to').value) return;
+    const t=new Date();
+    if(!$('cfwf-to').value)$('cfwf-to').value=t.toISOString().slice(0,10);
+    if(!$('cfwf-from').value)$('cfwf-from').value=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()-2,1)).toISOString().slice(0,10);
+  }
+  function cfWfResolveGran(from,to){
+    if(cfwfState.gran!=='auto')return cfwfState.gran;
+    const days=Math.round((new Date(to)-new Date(from))/86400000)+1;
+    return days<=45?'day':(days<=200?'week':'month');
+  }
   function cfSvgWaterfall(base,items,opts={}){
     const round2=(v)=>Math.round(v*100)/100;
     if(!items.length)return `<div class="hint">선택 기간에 현금 변동이 없습니다. (기준 잔액 ${cfFmtMxn(base)} MXN)</div>`;
@@ -739,14 +766,18 @@
     const card=$('cfwfCard');
     if(!isDirector){ if(card) card.classList.add('hidden'); lastCfWaterfall=null; return; }
     if(card) card.classList.remove('hidden');
-    $('cfwfTitle').textContent=monthsLabel()+' 현금잔액 워터폴';
-    const box=$('cfwfBody'); box.innerHTML='<div class="hint">불러오는 중…</div>';
-    const r=monthRange(), from=r.from, to=r.to, g='week';
+    $('cfwfTitle').textContent='현금잔액 워터폴';
+    cfWfDefaultRange(); updateCfPlanBtn();
+    const from=$('cfwf-from').value, to=$('cfwf-to').value;
+    const box=$('cfwfBody');
+    if(!from||!to||from>to){ box.innerHTML='<div class="hint">기간을 올바르게 선택하세요 (시작일 ≤ 종료일).</div>'; lastCfWaterfall=null; return; }
+    box.innerHTML='<div class="hint">불러오는 중…</div>';
+    const g=cfWfResolveGran(from,to);
     try{
-      const res=await fetch(session.api+'/api/cashflow?granularity='+g+'&includePlan=0&breakdown=1',{headers:auth()});
+      const res=await fetch(session.api+'/api/cashflow?granularity='+g+'&includePlan='+(cfwfState.plan?1:0)+'&breakdown=1',{headers:auth()});
       const d=await res.json();
       if(!res.ok||d.error) throw new Error(d.error||res.status);
-      if(d.granularity!==g){ box.innerHTML='<div class="hint">⚠ 백엔드가 주별 단위를 지원하지 않습니다. 최신 백엔드 배포 후 다시 시도하세요.</div>'; lastCfWaterfall=null; return; }
+      if(d.granularity!==g){ box.innerHTML='<div class="hint">⚠ 백엔드가 '+(g==='day'?'일별':'해당')+' 단위를 지원하지 않습니다. 단위를 주별/월별로 바꿔보세요.</div>'; lastCfWaterfall=null; return; }
       const sk=cfWfBucket(from,g), ek=cfWfBucket(to,g);
       let base=Number(d.opening_balance)||0; const items=[];
       for(const row of (d.rows||[])){
@@ -754,7 +785,8 @@
         if(row.period<sk) base+=net;
         else if(row.period<=ek && Math.abs(net)>0.005) items.push({label:row.period,delta:net,cats:(d.breakdown&&d.breakdown[row.period])||[]});
       }
-      const opts={from,to,granLabel:'주별',gran:g};
+      const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
+      const opts={from,to,granLabel,gran:g,plan:cfwfState.plan};
       lastCfWaterfall={base,items,opts};
       box.innerHTML=cfSvgWaterfall(base,items,opts);
     }catch(e){ box.innerHTML='<div class="hint">현금잔액 워터폴을 불러오지 못했습니다. (재무 열람 권한이 필요합니다.)</div>'; lastCfWaterfall=null; }
@@ -763,9 +795,15 @@
     const card=$('cfwfCard');
     if(!isDirector){ if(card) card.classList.add('hidden'); return; }
     if(card) card.classList.remove('hidden');
-    $('cfwfTitle').textContent=monthsLabel()+' 현금잔액 워터폴';
-    if(cf&&Array.isArray(cf.items)) $('cfwfBody').innerHTML=cfSvgWaterfall(Number(cf.base)||0,cf.items,cf.opts||{});
-    else $('cfwfBody').innerHTML='<div class="hint">이 저장본에는 현금잔액 워터폴 기록이 없습니다.</div>';
+    $('cfwfTitle').textContent='현금잔액 워터폴';
+    if(cf&&Array.isArray(cf.items)){
+      const o=cf.opts||{};
+      if(o.from&&$('cfwf-from')) $('cfwf-from').value=o.from;
+      if(o.to&&$('cfwf-to')) $('cfwf-to').value=o.to;
+      if(o.gran&&$('cfwf-gran')){ $('cfwf-gran').value=o.gran; cfwfState.gran=o.gran; }
+      if(typeof o.plan==='boolean'){ cfwfState.plan=o.plan; updateCfPlanBtn(); }
+      $('cfwfBody').innerHTML=cfSvgWaterfall(Number(cf.base)||0,cf.items,o);
+    } else $('cfwfBody').innerHTML='<div class="hint">이 저장본에는 현금잔액 워터폴 기록이 없습니다.</div>';
   }
 
   // ===== 당월 누적 견적 (견적건별 요약) =====
@@ -1101,6 +1139,7 @@
     // 칩 재렌더(동결 선택 반영) + 클릭 잠금
     renderMonthBtns(); renderTeamToggle();
     $('topMonths').classList.add('viewlocked'); $('teamToggle').classList.add('viewlocked');
+    { const c=document.querySelector('#cfwfCard .cfwfctl'); if(c) c.classList.add('viewlocked'); }
     // 동결 데이터로 모든 섹션 렌더(라이브 fetch 안 함)
     $('qsumTitle').textContent=monthsLabel()+' 누적 견적';
     $('wfTitle').textContent=monthsLabel()+' 매출 실적 (워터폴)';
@@ -1134,6 +1173,7 @@
     board=b.board||board; canEdit=b.canEdit!==false;
     viewMode=null; liveBackup=null;
     $('topMonths').classList.remove('viewlocked'); $('teamToggle').classList.remove('viewlocked');
+    { const c=document.querySelector('#cfwfCard .cfwfctl'); if(c) c.classList.remove('viewlocked'); }
     $('snapBanner').classList.add('hidden'); $('snapBanner').innerHTML='';
     $('snapDelBtn').classList.add('hidden');
     $('snapSel').value='';
@@ -1173,6 +1213,11 @@
   $('qsumToggle').addEventListener('click',()=>{ qsumOpen=!qsumOpen; applyToggle(qsumOpen,'qsumBody','qsumToggle'); });
   $('wfToggle').addEventListener('click',()=>{ wfOpen=!wfOpen; applyToggle(wfOpen,'wfCollapse','wfToggle'); });
   $('cfwfToggle').addEventListener('click',()=>{ cfwfOpen=!cfwfOpen; applyToggle(cfwfOpen,'cfwfCollapse','cfwfToggle'); });
+  $('cfwf-go').addEventListener('click',()=>{ if(!viewMode) loadCfWaterfall(); });
+  $('cfwf-from').addEventListener('change',()=>{ if(!viewMode) loadCfWaterfall(); });
+  $('cfwf-to').addEventListener('change',()=>{ if(!viewMode) loadCfWaterfall(); });
+  $('cfwf-gran').addEventListener('change',()=>{ cfwfState.gran=$('cfwf-gran').value; if(!viewMode) loadCfWaterfall(); });
+  $('cfwf-plan').addEventListener('click',()=>{ if(viewMode)return; cfwfState.plan=!cfwfState.plan; updateCfPlanBtn(); loadCfWaterfall(); });
   $('slaToggle').addEventListener('click',()=>{ slaOpen=!slaOpen; applyToggle(slaOpen,'slaBody','slaToggle'); });
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   $('photoInput').addEventListener('change', onPhotoSelected);
