@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708e</title>
+<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708f</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -32,6 +32,10 @@
   .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
   .hidden{display:none}
   .scroll{overflow-x:auto}
+  /* 항목이 많아지면 예산표에 세로 스크롤(최대 높이 초과 시에만). 헤더행·구분열 고정 */
+  .budgetscroll{max-height:62vh;overflow:auto}
+  .budgetscroll table.grid thead th{position:sticky;top:0;z-index:2}
+  .budgetscroll table.grid thead th.lbl{z-index:3}
   table.grid{border-collapse:collapse;font-size:12px;white-space:nowrap}
   table.grid th,table.grid td{border:1px solid var(--line);padding:5px 7px;text-align:right}
   table.grid th.lbl,table.grid td.lbl{text-align:left;position:sticky;left:0;background:#faf8f3;z-index:1;min-width:180px}
@@ -113,7 +117,7 @@
         <button class="btn gold sm hidden" id="saveBudgetBtn">전체 예산 저장</button>
       </div>
       <div id="sumCards" class="sumcards"></div>
-      <div class="scroll"><div id="budgetGrid"><div class="hint">불러오는 중…</div></div></div>
+      <div class="scroll budgetscroll"><div id="budgetGrid"><div class="hint">불러오는 중…</div></div></div>
       <div class="msg" id="budgetMsg"></div>
     </div>
 
@@ -539,6 +543,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260708e"></script>
+<script src="refatrix-nav.js?v=20260708f"></script>
 </body>
 </html>
