@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708c</title>
+<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -56,6 +56,16 @@
   table.grid .plv{font-size:10px;color:var(--muted)}
   table.grid .plv.none{color:#c9a24a}
   table.grid tr.actsum td{background:#eef4f1}
+  .sumcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:4px 0 12px}
+  .sumcard{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .sumcard .lb{font-size:11.5px;color:var(--muted);font-weight:700}
+  .sumcard .vv{font-size:20px;font-weight:800;margin-top:3px}
+  .sumcard .sub{font-size:10.5px;color:var(--muted);margin-top:2px}
+  .sumcard.plan .vv{color:#8a6512}.sumcard.act .vv{color:#0c6b52}
+  .sumcard.rem .vv.neg{color:var(--expense)}
+  .sumhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 8px}
+  .sumhead label{margin:0;font-size:12px;color:var(--muted)}
+  .sumhead select{padding:4px 8px;font-size:12px;border:1px solid var(--line);border-radius:6px}
   .teampick,.custpick{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
   .chip{padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted)}
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -100,6 +110,7 @@
         <h2 style="margin:0">① 전체 마케팅 월 예산 vs 배분 <span class="smallnote" id="budgetRole"></span></h2>
         <button class="btn gold sm hidden" id="saveBudgetBtn">전체 예산 저장</button>
       </div>
+      <div id="sumCards" class="sumcards"></div>
       <div class="scroll"><div id="budgetGrid"><div class="hint">불러오는 중…</div></div></div>
       <div class="msg" id="budgetMsg"></div>
     </div>
@@ -292,6 +303,38 @@
       renderBudget();
     }catch(e){$('budgetGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+  let sumEndYm=null; // 요약 카드 누적 종료월(선택)
+  function renderSummary(){
+    const box=$('sumCards'); if(!box) return;
+    if(!months.length){ box.innerHTML=''; return; }
+    // 종료월 기본값 = 현재 실제월이 horizon 안이면 그 달, 아니면 마지막 달
+    const nowYm=(()=>{const n=new Date();return n.getUTCFullYear()+'-'+String(n.getUTCMonth()+1).padStart(2,'0');})();
+    if(!sumEndYm||!months.includes(sumEndYm)) sumEndYm=months.includes(nowYm)?nowYm:months[months.length-1];
+    const endIdx=months.indexOf(sumEndYm);
+    const range=months.slice(0,endIdx+1);
+    const bud=overview.budget||{};
+    const plan=(spendPlans&&spendPlans.totals_by_month)||{};
+    const act=(spendPlans&&spendPlans.actual_total_by_month)||{};
+    const sBud=range.reduce((s,m)=>s+(bud[m]||0),0);
+    const sPlan=range.reduce((s,m)=>s+(plan[m]||0),0);
+    const sAct=range.reduce((s,m)=>s+(act[m]||0),0);
+    const rem=sBud-sAct;                 // 잔여 예산 = 예산 − 실제 집행
+    const remPlan=sBud-sPlan;            // 참고: 계획 반영 시 잔여
+    const opts=months.map(m=>`<option value="${m}"${m===sumEndYm?' selected':''}>${ymLabel(m)}</option>`).join('');
+    const rangeLabel=ymLabel(range[0])+' ~ '+ymLabel(sumEndYm);
+    box.innerHTML=`
+      <div class="sumhead" style="grid-column:1/-1">
+        <label>기간(까지)</label>
+        <select id="sumEndSel">${opts}</select>
+        <span class="smallnote">누적 ${rangeLabel} (${range.length}개월)</span>
+      </div>
+      <div class="sumcard"><div class="lb">마케팅 예산</div><div class="vv">${fmt(sBud)}</div><div class="sub">선택 기간 누적</div></div>
+      <div class="sumcard plan"><div class="lb">집행 계획</div><div class="vv">${fmt(sPlan)}</div><div class="sub">예산 대비 ${sBud?Math.round(sPlan/sBud*100):0}%</div></div>
+      <div class="sumcard act"><div class="lb">집행 실적</div><div class="vv">${fmt(sAct)}</div><div class="sub">계획 대비 ${sPlan?Math.round(sAct/sPlan*100):0}%</div></div>
+      <div class="sumcard rem"><div class="lb">잔여 예산 <span class="smallnote">(예산−실적)</span></div><div class="vv ${rem<0?'neg':''}">${fmt(rem)}</div><div class="sub">계획 반영 시 ${fmt(remPlan)}</div></div>`;
+    const sel=$('sumEndSel');
+    if(sel) sel.addEventListener('change',()=>{ sumEndYm=sel.value; renderSummary(); });
+  }
   function planRowsHtml(){
     // 마케팅 지출계획(프로젝트)별 월 예산 행. 클릭 시 계획서 새 창.
     if(!spendPlans||!Array.isArray(spendPlans.plans)) return '';
@@ -344,6 +387,7 @@
       return `<td class="num" data-diff="${m}">${txt}</td>`;}).join('')+'<td></td></tr>';
     $('budgetGrid').innerHTML=`<table class="grid"><thead>${head}</thead><tbody>${budRow}${allocRow}${diffRow}${planRowsHtml()}</tbody></table>`;
     $('budgetGrid').querySelectorAll('tr.planrow').forEach(tr=>tr.addEventListener('click',()=>openPlanWindow(Number(tr.dataset.plan))));
+    renderSummary();
   }
   function openPlanWindow(id){
     if(!(id>0))return;
@@ -354,6 +398,7 @@
   function onBudInput(){
     let s=0;const bud={};document.querySelectorAll('[data-bud]').forEach(i=>{bud[i.dataset.bud]=n0(i.value);s+=n0(i.value);});
     $('budSum').textContent=fmt(s);
+    if(overview) overview.budget=bud; // 카드·diff가 최신 입력을 반영하도록 메모리 갱신
     const allocSum=overview.alloc_sum||{};
     months.forEach(m=>{const diff=(bud[m]||0)-(allocSum[m]||0);const el=document.querySelector(`[data-diff="${m}"]`);
       if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
@@ -363,6 +408,7 @@
     const atbm=(spendPlans&&spendPlans.actual_total_by_month)||{};
     months.forEach(m=>{const diff=(bud[m]||0)-(atbm[m]||0);const el=document.querySelector(`[data-actdiff="${m}"]`);
       if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
+    renderSummary();
   }
   async function saveBudget(){
     const m=$('budgetMsg');m.className='msg';m.style.display='none';
@@ -494,6 +540,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260708c"></script>
+<script src="refatrix-nav.js?v=20260708d"></script>
 </body>
 </html>
