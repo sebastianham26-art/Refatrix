@@ -126,12 +126,59 @@ export default async function marketingRoutes(app) {
       if (r.ym < p.first_ym) p.first_ym = r.ym;
       totalsByMonth[r.ym] = r2((totalsByMonth[r.ym] || 0) + amt);
     }
+    // 프로젝트별 집행실적(계획 라인에 연결된 거래가 actual인 것). 월 판정 = 실제 지급일(txn_date).
+    const actualRows = (await query(
+      `SELECT p.id,
+              to_char(t.txn_date, 'YYYY-MM') AS ym,
+              COALESCE(SUM(t.amount_mxn), 0) AS amount
+         FROM marketing_spend_plans p
+         JOIN marketing_spend_lines l ON l.plan_id = p.id
+         JOIN transactions t ON t.id = l.txn_id
+        WHERE p.deleted_at IS NULL
+          AND t.status = 'actual' AND t.deleted_at IS NULL
+          AND to_char(t.txn_date, 'YYYY-MM') >= $1
+          AND to_char(t.txn_date, 'YYYY-MM') <= $2
+        GROUP BY p.id, to_char(t.txn_date, 'YYYY-MM')`, [minYm, maxYm])).rows;
+    const actualByMonth = {};   // 프로젝트 실적 합(월별)
+    for (const r of actualRows) {
+      if (!inHorizon.has(r.ym)) continue;
+      const p = planMap.get(Number(r.id));
+      const amt = r2(Number(r.amount));
+      if (p) { if (!p.actual_by_month) p.actual_by_month = {}; p.actual_by_month[r.ym] = r2((p.actual_by_month[r.ym] || 0) + amt); p.actual_total = r2((p.actual_total || 0) + amt); }
+      actualByMonth[r.ym] = r2((actualByMonth[r.ym] || 0) + amt);
+    }
+
+    // 미계획 집행(계획 외): 6070 실적 거래 중 어떤 지출계획 라인에도 연결 안 된 것. 지급일 기준.
+    const unplannedRows = (await query(
+      `SELECT to_char(t.txn_date, 'YYYY-MM') AS ym, COALESCE(SUM(t.amount_mxn), 0) AS amount
+         FROM transactions t
+        WHERE t.category_code = '6070' AND t.status = 'actual' AND t.deleted_at IS NULL
+          AND to_char(t.txn_date, 'YYYY-MM') >= $1
+          AND to_char(t.txn_date, 'YYYY-MM') <= $2
+          AND NOT EXISTS (SELECT 1 FROM marketing_spend_lines l WHERE l.txn_id = t.id)
+        GROUP BY to_char(t.txn_date, 'YYYY-MM')`, [minYm, maxYm])).rows;
+    const unplannedByMonth = {};
+    for (const r of unplannedRows) { if (inHorizon.has(r.ym)) unplannedByMonth[r.ym] = r2(Number(r.amount)); }
+
+    // 집행 합(실적) = 프로젝트 실적 + 미계획 집행 (= 전 6070 실적)
+    const actualTotalByMonth = {};
+    for (const m of months) {
+      const v = r2((actualByMonth[m] || 0) + (unplannedByMonth[m] || 0));
+      if (v) actualTotalByMonth[m] = v;
+    }
+
     // 첫 집행월 → 상태 → id 순 정렬
     const stOrder = { approved: 0, submitted: 1, draft: 2, rejected: 3 };
     const plans = [...planMap.values()].sort((a, b) =>
       (a.first_ym < b.first_ym ? -1 : a.first_ym > b.first_ym ? 1 :
         (stOrder[a.status] ?? 9) - (stOrder[b.status] ?? 9) || a.id - b.id));
-    return { months, plans, totals_by_month: totalsByMonth };
+    return {
+      months, plans,
+      totals_by_month: totalsByMonth,          // 계획 합(월별)
+      actual_by_month: actualByMonth,          // 프로젝트 실적 합
+      unplanned_by_month: unplannedByMonth,    // 미계획 집행(계획 외)
+      actual_total_by_month: actualTotalByMonth, // 집행 합(실적) = 프로젝트+미계획
+    };
   });
 
   // 전체 마케팅 월 예산 저장 — 마케팅·디렉터

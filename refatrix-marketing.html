@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708b</title>
+<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -49,6 +49,13 @@
   table.grid tr.planrow:hover td{background:#f3f7f5}
   table.grid tr.planrow:hover td.lbl{background:#e8f0ec}
   table.grid tr.planrow .plink{color:#0c6b52;text-decoration:underline;text-underline-offset:2px}
+  table.grid td.cvcell{line-height:1.25}
+  table.grid .acv{font-weight:700;color:#0c6b52}
+  table.grid .acv.over{color:var(--expense)}
+  table.grid .acv.none{color:var(--line);font-weight:400}
+  table.grid .plv{font-size:10px;color:var(--muted)}
+  table.grid .plv.none{color:#c9a24a}
+  table.grid tr.actsum td{background:#eef4f1}
   .teampick,.custpick{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
   .chip{padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted)}
   .chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
@@ -289,21 +296,40 @@
     // 마케팅 지출계획(프로젝트)별 월 예산 행. 클릭 시 계획서 새 창.
     if(!spendPlans||!Array.isArray(spendPlans.plans)) return '';
     const plans=spendPlans.plans, tbm=spendPlans.totals_by_month||{};
+    const abm=spendPlans.actual_by_month||{};          // 프로젝트 실적 합
+    const ubm=spendPlans.unplanned_by_month||{};        // 미계획 집행
+    const atbm=spendPlans.actual_total_by_month||{};    // 집행 합(실적)=프로젝트+미계획
     const grand=months.reduce((s,m)=>s+(tbm[m]||0),0);
-    const hdr='<tr class="grp"><td class="lbl" colspan="'+(months.length+2)+'">📋 마케팅 지출계획 (프로젝트별 · 행 클릭 시 계획서 열기)</td></tr>';
+    const hdr='<tr class="grp"><td class="lbl" colspan="'+(months.length+2)+'">📋 마케팅 지출계획 (프로젝트별 · <b>실적</b>/<span class="smallnote">계획</span> · 행 클릭 시 계획서 열기)</td></tr>';
     if(!plans.length) return hdr+'<tr><td class="lbl smallnote">등록된 지출계획 없음</td>'+months.map(()=>'<td class="num">—</td>').join('')+'<td class="num">—</td></tr>';
+    // 각 칸: 실적(큼)/계획(작음). 실적>계획이면 초과(빨강), 계획만 있으면 계획 회색, 실적만(계획無 월) 있으면 파랑 표시.
+    const cell=(pl,ac)=>{
+      if(!pl&&!ac) return '<td class="num"></td>';
+      const over=ac>pl;
+      const acHtml=ac?`<span class="acv ${over?'over':''}">${fmt(ac)}</span>`:'<span class="acv none">·</span>';
+      const plHtml=pl?`<span class="plv">계획 ${fmt(pl)}</span>`:(ac?'<span class="plv none">계획 없음</span>':'');
+      return `<td class="num cvcell">${acHtml}<br>${plHtml}</td>`;
+    };
     const body=plans.map(p=>{
-      let ptot=0;
-      const cells=months.map(m=>{const v=p.by_month[m]||0;ptot+=v;return `<td class="num">${v?fmt(v):''}</td>`;}).join('');
+      const abp=p.actual_by_month||{};
+      let ptot=0,patot=0;
+      const cells=months.map(m=>{const pv=p.by_month[m]||0,av=abp[m]||0;ptot+=pv;patot+=av;return cell(pv,av);}).join('');
       const badge=`<span class="pill st-${p.status}" style="margin-left:6px;transform:scale(.85)">${stLabel(p.status)}</span>`;
+      const totC=`<td class="num cvcell"><span class="acv ${patot>ptot?'over':''}">${fmt(patot)}</span><br><span class="plv">계획 ${fmt(ptot)}</span></td>`;
       return `<tr class="planrow" data-plan="${p.id}" title="클릭하면 계획서가 새 창으로 열립니다">`
-        +`<td class="lbl"><span class="plink">${esch(p.title||('계획 '+p.id))}</span>${badge}</td>${cells}<td class="num"><b>${fmt(ptot)}</b></td></tr>`;
+        +`<td class="lbl"><span class="plink">${esch(p.title||('계획 '+p.id))}</span>${badge}</td>${cells}${totC}</tr>`;
     }).join('');
-    const totRow='<tr><td class="lbl">지출계획 합</td>'+months.map(m=>`<td class="num" data-spendsum="${m}">${fmt(tbm[m]||0)}</td>`).join('')+`<td class="num"><b>${fmt(grand)}</b></td></tr>`;
+    const planTot='<tr><td class="lbl">지출계획 합 (계획)</td>'+months.map(m=>`<td class="num" data-spendsum="${m}">${fmt(tbm[m]||0)}</td>`).join('')+`<td class="num"><b>${fmt(grand)}</b></td></tr>`;
+    const actGrand=months.reduce((s,m)=>s+(atbm[m]||0),0);
+    const actTot='<tr class="actsum"><td class="lbl"><b>집행 합 (실적)</b></td>'+months.map(m=>`<td class="num"><b>${(atbm[m]||0)?fmt(atbm[m]):''}</b></td>`).join('')+`<td class="num"><b>${fmt(actGrand)}</b></td></tr>`;
+    const unpGrand=months.reduce((s,m)=>s+(ubm[m]||0),0);
+    const unpTot='<tr><td class="lbl smallnote">└ 미계획 집행 (계획 외)</td>'+months.map(m=>`<td class="num smallnote">${(ubm[m]||0)?fmt(ubm[m]):''}</td>`).join('')+`<td class="num smallnote">${unpGrand?fmt(unpGrand):''}</td></tr>`;
     const bud=overview.budget||{};
-    const diffRow='<tr><td class="lbl smallnote">예산−지출계획 (잔여/초과)</td>'+months.map(m=>{const diff=(bud[m]||0)-(tbm[m]||0);
+    const spDiff='<tr><td class="lbl smallnote">예산−지출계획 (잔여/초과)</td>'+months.map(m=>{const diff=(bud[m]||0)-(tbm[m]||0);
       return `<td class="num" data-spenddiff="${m}">${diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`}</td>`;}).join('')+'<td></td></tr>';
-    return hdr+body+totRow+diffRow;
+    const acDiff='<tr><td class="lbl smallnote">예산−실적 (잔여/초과)</td>'+months.map(m=>{const diff=(bud[m]||0)-(atbm[m]||0);
+      return `<td class="num" data-actdiff="${m}">${diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`}</td>`;}).join('')+'<td></td></tr>';
+    return hdr+body+planTot+actTot+unpTot+spDiff+acDiff;
   }
   function renderBudget(){
     const dir=isMarketing();const bud=overview.budget||{},chk=overview.check||{};
@@ -333,6 +359,9 @@
       if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
     const tbm=(spendPlans&&spendPlans.totals_by_month)||{};
     months.forEach(m=>{const diff=(bud[m]||0)-(tbm[m]||0);const el=document.querySelector(`[data-spenddiff="${m}"]`);
+      if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
+    const atbm=(spendPlans&&spendPlans.actual_total_by_month)||{};
+    months.forEach(m=>{const diff=(bud[m]||0)-(atbm[m]||0);const el=document.querySelector(`[data-actdiff="${m}"]`);
       if(el)el.innerHTML=diff<0?`<span class="over">초과 ${fmt(-diff)}</span>`:`<span class="okrow">잔여 ${fmt(diff)}</span>`;});
   }
   async function saveBudget(){
@@ -465,6 +494,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260708b"></script>
+<script src="refatrix-nav.js?v=20260708c"></script>
 </body>
 </html>
