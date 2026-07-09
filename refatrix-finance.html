@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708g</title>
+<title>Refatrix ERP · 재무 · build fin-0708h</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1653,8 +1653,11 @@
   function fxSyncSel(){const y=$('fx-year').value,m=String($('fx-month').value).padStart(2,'0');fxMonthlyState.sel=`${y}-${m}`;}
   async function loadFixedMonthly(){
     initFixMonthSelectors();
-    const sel=fxMonthlyState.sel,N=fxMonthlyState.graphN;
-    const from=fxYmAdd(sel,-1),to=fxYmAdd(sel,N-2); // 전월(6월)~미래 N개월 (카드 익월도 이 범위 안)
+    const sel=fxMonthlyState.sel,N=fxMonthlyState.graphN,now=fxNowYm();
+    // 그래프·매트릭스: 현재월 기준 전월~미래(N개월). 카드: 선택월 3개월. 둘을 모두 덮는 범위를 받는다.
+    const gFrom=fxYmAdd(now,-1),gTo=fxYmAdd(now,N-1);
+    const cFrom=fxYmAdd(sel,-1),cTo=fxYmAdd(sel,1);
+    const from=(gFrom<cFrom?gFrom:cFrom),to=(gTo>cTo?gTo:cTo);
     try{
       const d=await fetch(session.api+`/api/recurring/monthly?from=${from}&to=${to}`,{headers:auth()}).then(r=>r.json());
       fxMonthlyState.data=d;
@@ -1685,12 +1688,13 @@
   }
   function renderFixChart(){
     const d=fxMonthlyState.data;if(!d){return;}
-    const N=fxMonthlyState.graphN,sel=fxMonthlyState.sel,nowYm=fxNowYm();
-    const months=[];for(let i=-1;i<=N-2;i++)months.push(fxYmAdd(sel,i)); // 전월(기준)~미래 N개월
+    const N=fxMonthlyState.graphN,nowYm=fxNowYm();
+    // 현재월 고정: 전월(기준)부터 미래 N개월 (예: 지금 7월·6개월 → 6월~12월). 선택월과 무관.
+    const months=[];for(let i=-1;i<=N-1;i++)months.push(fxYmAdd(nowYm,i));
     const vals=months.map(ym=>fxMonVal(d.total?d.total[ym]:null));
     const max=Math.max(1,...vals);
     const padL=64,padR=20,padT=30,plotH=170,baseY=padT+plotH;
-    const slotW=N<=6?132:70,barW=Math.min(72,slotW-22),W=padL+padR+slotW*N;
+    const count=months.length,slotW=count<=8?132:70,barW=Math.min(72,slotW-22),W=padL+padR+slotW*count;
     const grid=[0,.25,.5,.75,1].map(f=>{const y=baseY-f*plotH;return `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${f===0?'#cfc8ba':'#eee7db'}" stroke-width="${f===0?1.5:1}"/><text x="${padL-8}" y="${y+4}" font-size="11" fill="#9a927f" text-anchor="end">${fmtK(max*f)}</text>`;}).join('');
     const bars=months.map((ym,i)=>{const v=vals[i],h=Math.round(v/max*plotH),x=padL+i*slotW+(slotW-barW)/2,y=baseY-h;
       const future=ym>nowYm,fill=future?'#8fb3a8':'#1c5245'; // 미래=옅은색, 기준월(전월·당월)=진한색
@@ -1700,12 +1704,12 @@
     }).join('');
     $('fxChart').innerHTML=`<div style="display:flex;gap:14px;font-size:11px;color:var(--muted);margin:0 0 6px"><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:#1c5245"></i>기준(전월·당월)</span><span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:#8fb3a8"></i>미래(예정)</span><span style="color:#B23A2E">▲ 전월比 증가</span></div>
       <svg viewBox="0 0 ${W} 280" style="width:100%;height:auto;min-width:${Math.min(W,700)}px">${grid}${bars}</svg>
-      <div class="hint">x축 = 월, y축 = 고정비 금액(MXN). <b>전월(기준)부터 미래 ${N}개월</b>을 표시 — 미래로 갈수록 고정비 예정이 반영·누적되는 추이를 봅니다. ${fxMonthlyState.toggle==='actual'?'실적만':'예정 포함'} 기준. 막대 위 ▲는 전월 대비 증가.</div>`;
+      <div class="hint">x축 = 월, y축 = 고정비 금액(MXN). <b>현재월 기준 전월부터 미래 ${N}개월</b>(지금은 ${fxYmLabel(months[0])}~${fxYmLabel(months[months.length-1])}) — 상단 월 선택과 무관하게 항상 미래 구간을 보여줍니다. ${fxMonthlyState.toggle==='actual'?'실적만':'예정 포함'} 기준. 막대 위 ▲는 전월 대비 증가.</div>`;
   }
   function renderFixMatrix(){
     const d=fxMonthlyState.data;if(!d){return;}
-    const N=fxMonthlyState.graphN,sel=fxMonthlyState.sel;
-    const months=[];for(let i=-1;i<=N-2;i++)months.push(fxYmAdd(sel,i)); // 그래프와 동일: 전월~미래 N개월
+    const N=fxMonthlyState.graphN,nowYm=fxNowYm();
+    const months=[];for(let i=-1;i<=N-1;i++)months.push(fxYmAdd(nowYm,i)); // 그래프와 동일: 현재월 기준 전월~미래
     const head=`<tr><th style="min-width:150px">계정과목</th>${months.map(ym=>`<th class="num">${fxYmLabel(ym)}</th>`).join('')}</tr>`;
     const cats=(d.by_cat||[]);
     const body=cats.map(c=>{
@@ -1716,7 +1720,7 @@
     const totVals=months.map(ym=>fxMonVal(d.total?d.total[ym]:null));
     const totCells=totVals.map((v,i)=>`<td class="num">${fmt(v)}${i>0?fxMomChip(v,totVals[i-1],false):''}</td>`).join('');
     const table=cats.length?`<table class="matrix"><thead>${head}</thead><tbody>${body}<tr class="sum"><td>월 합계</td>${totCells}</tr></tbody></table>`:'<div class="hint">해당 기간 고정비 거래가 없습니다.</div>';
-    $('fxMatrix').innerHTML=table+`<div class="hint">각 셀 = 월·계정과목 고정비 합계(MXN) · <b>전월(기준)부터 미래 ${N}개월</b>. 아래 칩 = 전월 대비 <b>증가 시 ▲빨강</b> / 감소 ▼초록 / 0% 동일. 첫 열(전월)은 비교 대상이 없어 칩 없음. ${fxMonthlyState.toggle==='actual'?'실적만':'예정 포함'} 기준.</div>`;
+    $('fxMatrix').innerHTML=table+`<div class="hint">각 셀 = 월·계정과목 고정비 합계(MXN) · <b>현재월 기준 전월부터 미래 ${N}개월</b>(지금은 ${fxYmLabel(months[0])}~${fxYmLabel(months[months.length-1])}). 아래 칩 = 전월 대비 <b>증가 시 ▲빨강</b> / 감소 ▼초록 / 0% 동일. 첫 열(전월)은 비교 대상이 없어 칩 없음. ${fxMonthlyState.toggle==='actual'?'실적만':'예정 포함'} 기준.</div>`;
   }
 
   async function saveRule(){
