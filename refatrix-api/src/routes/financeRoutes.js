@@ -1950,7 +1950,7 @@ export default async function financeRoutes(app) {
       const blockSet = new Set((blockedDetailAccountIds(req.ctx.perm) || []).map(Number));
       let acctRows = [];
       if (!(detailAllow !== null && detailAllow.length === 0)) {
-        const aargs = []; let acond = 'deleted_at IS NULL';
+        const aargs = []; let acond = 'deleted_at IS NULL AND disabled IS NOT TRUE';   // 안씀(disabled) 계좌는 경보 제외
         if (detailAllow !== null) { aargs.push(detailAllow); acond += ` AND id = ANY($${aargs.length})`; }
         acctRows = (await query(`SELECT id, name, currency, open_balance FROM accounts WHERE ${acond}`, aargs)).rows
           .filter((a) => !blockSet.has(Number(a.id)));
