@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708d</title>
+<title>Refatrix ERP · 마케팅 메뉴판 · 배분 · build 20260708e</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -49,12 +49,14 @@
   table.grid tr.planrow:hover td{background:#f3f7f5}
   table.grid tr.planrow:hover td.lbl{background:#e8f0ec}
   table.grid tr.planrow .plink{color:#0c6b52;text-decoration:underline;text-underline-offset:2px}
-  table.grid td.cvcell{line-height:1.25}
-  table.grid .acv{font-weight:700;color:#0c6b52}
-  table.grid .acv.over{color:var(--expense)}
-  table.grid .acv.none{color:var(--line);font-weight:400}
-  table.grid .plv{font-size:10px;color:var(--muted)}
-  table.grid .plv.none{color:#c9a24a}
+  table.grid td.plv2{color:var(--muted)}
+  table.grid td.acv2{font-weight:700;color:#0c6b52}
+  table.grid td.acv2.over{color:var(--expense)}
+  table.grid td.acv2 .acv.none{color:var(--line);font-weight:400}
+  table.grid tr.prow-act td{border-top:0}
+  table.grid tr.prow-act td.lbl{padding-left:18px}
+  table.grid .rtag{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px}
+  table.grid .rtag.act{color:#0c6b52;border-color:#bfe0d3}
   table.grid tr.actsum td{background:#eef4f1}
   .sumcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:4px 0 12px}
   .sumcard{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
@@ -343,26 +345,23 @@
     const ubm=spendPlans.unplanned_by_month||{};        // 미계획 집행
     const atbm=spendPlans.actual_total_by_month||{};    // 집행 합(실적)=프로젝트+미계획
     const grand=months.reduce((s,m)=>s+(tbm[m]||0),0);
-    const hdr='<tr class="grp"><td class="lbl" colspan="'+(months.length+2)+'">📋 마케팅 지출계획 (프로젝트별 · <b>실적</b>/<span class="smallnote">계획</span> · 행 클릭 시 계획서 열기)</td></tr>';
+    const hdr='<tr class="grp"><td class="lbl" colspan="'+(months.length+2)+'">📋 마케팅 지출계획 (프로젝트별 · 계획/실적 행 분리 · 행 클릭 시 계획서 열기)</td></tr>';
     if(!plans.length) return hdr+'<tr><td class="lbl smallnote">등록된 지출계획 없음</td>'+months.map(()=>'<td class="num">—</td>').join('')+'<td class="num">—</td></tr>';
-    // 각 칸: 실적(큼)/계획(작음). 실적>계획이면 초과(빨강), 계획만 있으면 계획 회색, 실적만(계획無 월) 있으면 파랑 표시.
-    const cell=(pl,ac)=>{
-      if(!pl&&!ac) return '<td class="num"></td>';
-      const over=ac>pl;
-      const acHtml=ac?`<span class="acv ${over?'over':''}">${fmt(ac)}</span>`:'<span class="acv none">·</span>';
-      const plHtml=pl?`<span class="plv">계획 ${fmt(pl)}</span>`:(ac?'<span class="plv none">계획 없음</span>':'');
-      return `<td class="num cvcell">${acHtml}<br>${plHtml}</td>`;
-    };
+    // 프로젝트마다 2행: '계획' 행(계획액)과 '실적' 행(집행액). 숫자 칸엔 값 하나만 → 자동번역 순서 오류 없음.
     const body=plans.map(p=>{
       const abp=p.actual_by_month||{};
       let ptot=0,patot=0;
-      const cells=months.map(m=>{const pv=p.by_month[m]||0,av=abp[m]||0;ptot+=pv;patot+=av;return cell(pv,av);}).join('');
+      const planCells=months.map(m=>{const pv=p.by_month[m]||0;ptot+=pv;return `<td class="num plv2">${pv?fmt(pv):''}</td>`;}).join('');
+      const actCells=months.map(m=>{const pv=p.by_month[m]||0,av=abp[m]||0;patot+=av;
+        return `<td class="num acv2 ${av>pv&&av?'over':''}">${av?fmt(av):(pv?'<span class="acv none">·</span>':'')}</td>`;}).join('');
       const badge=`<span class="pill st-${p.status}" style="margin-left:6px;transform:scale(.85)">${stLabel(p.status)}</span>`;
-      const totC=`<td class="num cvcell"><span class="acv ${patot>ptot?'over':''}">${fmt(patot)}</span><br><span class="plv">계획 ${fmt(ptot)}</span></td>`;
-      return `<tr class="planrow" data-plan="${p.id}" title="클릭하면 계획서가 새 창으로 열립니다">`
-        +`<td class="lbl"><span class="plink">${esch(p.title||('계획 '+p.id))}</span>${badge}</td>${cells}${totC}</tr>`;
+      const planRow=`<tr class="planrow prow-plan" data-plan="${p.id}" title="클릭하면 계획서가 새 창으로 열립니다">`
+        +`<td class="lbl"><span class="plink">${esch(p.title||('계획 '+p.id))}</span>${badge} <span class="rtag">계획</span></td>${planCells}<td class="num"><b>${fmt(ptot)}</b></td></tr>`;
+      const actRow=`<tr class="planrow prow-act" data-plan="${p.id}" title="클릭하면 계획서가 새 창으로 열립니다">`
+        +`<td class="lbl"><span class="rtag act">실적</span></td>${actCells}<td class="num acv2 ${patot>ptot&&patot?'over':''}"><b>${patot?fmt(patot):''}</b></td></tr>`;
+      return planRow+actRow;
     }).join('');
-    const planTot='<tr><td class="lbl">지출계획 합 (계획)</td>'+months.map(m=>`<td class="num" data-spendsum="${m}">${fmt(tbm[m]||0)}</td>`).join('')+`<td class="num"><b>${fmt(grand)}</b></td></tr>`;
+    const planTot='<tr class="sumrow"><td class="lbl">지출계획 합 (계획)</td>'+months.map(m=>`<td class="num" data-spendsum="${m}">${fmt(tbm[m]||0)}</td>`).join('')+`<td class="num"><b>${fmt(grand)}</b></td></tr>`;
     const actGrand=months.reduce((s,m)=>s+(atbm[m]||0),0);
     const actTot='<tr class="actsum"><td class="lbl"><b>집행 합 (실적)</b></td>'+months.map(m=>`<td class="num"><b>${(atbm[m]||0)?fmt(atbm[m]):''}</b></td>`).join('')+`<td class="num"><b>${fmt(actGrand)}</b></td></tr>`;
     const unpGrand=months.reduce((s,m)=>s+(ubm[m]||0),0);
@@ -540,6 +539,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260708d"></script>
+<script src="refatrix-nav.js?v=20260708e"></script>
 </body>
 </html>
