@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632h</title>
+<title>Refatrix · 창고 포장 · build 0632i</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -346,7 +346,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632h — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632i — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -1186,8 +1186,8 @@
   function wcYmd(d){var x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');}
   function wcAdd(d,n){var x=new Date(d);x.setDate(x.getDate()+n);return x;}
   function wcSun(d){var x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-x.getDay());return x;}
-  function wcEvKey(e){ if(e.event_at){var d=new Date(e.event_at); return wcYmd(d);} return e.event_date||''; }  // 보는 사람 로컬 날짜로 배치
-  function wcEvHM(e){ if(!e.event_at) return ''; var d=new Date(e.event_at); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+  function wcEvKey(e){ if(e.at){var d=new Date(e.at); return wcYmd(d);} return e.date||''; }  // 응답 필드: at / date · 보는 사람 로컬 날짜로 배치
+  function wcEvHM(e){ if(!e.at) return ''; var d=new Date(e.at); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
   async function loadWhCal(){
     if(!S) return;
     var y=whcalCursor.getFullYear(), mo=whcalCursor.getMonth();
@@ -1224,7 +1224,7 @@
     var box=$('whcalDay'); if(!box) return;
     if(!whcalSel){ box.innerHTML=''; return; }
     var evs=whcalEvents.filter(function(e){return wcEvKey(e)===whcalSel;});
-    evs.sort(function(a,b){ var ta=a.event_at?new Date(a.event_at).getTime():0, tb=b.event_at?new Date(b.event_at).getTime():0; return ta-tb; });
+    evs.sort(function(a,b){ var ta=a.at?new Date(a.at).getTime():0, tb=b.at?new Date(b.at).getTime():0; return ta-tb; });
     var head='<div class="whcal-dayhd">📅 '+whcalSel+' · '+evs.length+wcL('건',' evento(s)')+'</div>';
     var scL={company:wcL('전사','Todos'),team:wcL('팀','Equipo'),personal:wcL('개인','Personal'),shared:wcL('공유','Compartido')};
     var listHtml = evs.length ? evs.map(function(e){
