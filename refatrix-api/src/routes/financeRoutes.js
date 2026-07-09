@@ -625,9 +625,12 @@ export default async function financeRoutes(app) {
   // body: { customer_id, pay_date, account_id, amount, allocations:[{invoice_id, amount}], memo }
   app.post('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
     const b = req.body || {};
-    const customerId = Number(b.customer_id), accountId = Number(b.account_id), amount = r2(b.amount);
+    const customerId = Number(b.customer_id);
+    const depositId = Number(b.deposit_id);
     const allocations = Array.isArray(b.allocations) ? b.allocations.filter((a) => Number(a.amount) > 0).map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(a.amount) })) : [];
-    if (!customerId || !accountId || !b.pay_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    if (!customerId) return reply.code(400).send({ error: 'missing_fields' });
+    // 통지 우선 강제: 반제는 반드시 미배분 입금(통지)에 연결. 계좌·입금일·금액은 통지에서 확정(클라이언트 값 무시).
+    if (!Number.isInteger(depositId) || depositId <= 0) return reply.code(400).send({ error: 'deposit_required' });
     // 입금증(은행 입금증 등) 첨부 — 선택. 있으면 형식·크기 검증 후 입금건에 함께 저장.
     let receipt = null;
     if (b.receipt) {
@@ -637,29 +640,40 @@ export default async function financeRoutes(app) {
     }
     const userId = req.ctx.perm.userId;
     const out = await withTx(async (c) => {
-      // 현재 미수금 맵(검증용)
+      // 통지 잠금 + 상태 확인. 계좌·입금일·금액은 통지에서 확정.
+      const dep = (await c.query(
+        `SELECT id, account_id, deposit_date, amount, status FROM bank_deposits_pending WHERE id=$1 FOR UPDATE`, [depositId])).rows[0];
+      if (!dep) return { error: 'deposit_not_found' };
+      if (dep.status !== 'pending') return { error: 'deposit_not_pending', status: dep.status };
+      const accountId = Number(dep.account_id);
+      const payDate = String(dep.deposit_date).slice(0, 10);
+      const amount = r2(Number(dep.amount));
+      // 현재 미수금 맵(검증용) — 이 고객 인보이스만
       const inv = (await c.query(
         `SELECT s.id, s.total_mxn - COALESCE(pa.paid,0) AS outstanding
            FROM sales_invoices s
            LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
           WHERE s.customer_id=$1 AND s.deleted_at IS NULL AND s.status='posted'`, [customerId])).rows;
       const outMap = {}; inv.forEach((r) => { outMap[r.id] = r2(Number(r.outstanding)); });
+      // 배분 대상 인보이스는 반드시 이 고객 소속(통지 고객)이어야 함
+      for (const a of allocations) { if (outMap[a.invoice_id] == null) return { error: 'invalid_allocations', detail: [{ invoice_id: a.invoice_id, error: 'not_customer_invoice' }] }; }
       const sumAlloc = r2(allocations.reduce((s, a) => s + a.amount, 0));
+      // 통지 금액 상한: 배분 합계는 통지 금액을 초과할 수 없음(남는 금액 = 선수금)
+      if (sumAlloc - amount > 0.001) return { error: 'allocations_exceed_deposit', deposit: amount, sum: sumAlloc };
       const advance = r2(amount - sumAlloc);
-      if (advance < -0.001) return { error: 'allocations_exceed_amount' };
       const v = validateAllocations(amount, allocations, outMap, advance);
       if (!v.ok) return { error: 'invalid_allocations', detail: v.errors };
       // 헤더
       const pay = (await c.query(
         `INSERT INTO sales_payments (customer_id, pay_date, account_id, amount, advance_amount, memo, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [customerId, b.pay_date, accountId, amount, advance, b.memo || null, userId])).rows[0];
+        [customerId, payDate, accountId, amount, advance, b.memo || null, userId])).rows[0];
       // 배분별 실제 입금 거래 + 배분행
       for (const a of allocations) {
         const txn = (await c.query(
           `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, sales_invoice_id, memo, created_by)
            VALUES ($1,$2,'in',$3,'MXN',1,$3,'4010','actual','payment',true,$4,$5,$6,$4) RETURNING id`,
-          [accountId, b.pay_date, a.amount, userId, a.invoice_id, `입금 반제 (인보이스 #${a.invoice_id})`])).rows[0];
+          [accountId, payDate, a.amount, userId, a.invoice_id, `입금 반제 (인보이스 #${a.invoice_id})`])).rows[0];
         await c.query(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount, txn_id) VALUES ($1,$2,$3,$4)`, [pay.id, a.invoice_id, a.amount, txn.id]);
       }
       // 선수금(과입금)
@@ -667,7 +681,7 @@ export default async function financeRoutes(app) {
         const at = (await c.query(
           `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by)
            VALUES ($1,$2,'in',$3,'MXN',1,$3,'2030','actual','advance',true,$4,$5,$4) RETURNING id`,
-          [accountId, b.pay_date, advance, userId, '선수금(과입금)'])).rows[0];
+          [accountId, payDate, advance, userId, '선수금(과입금)'])).rows[0];
         await c.query(`UPDATE sales_payments SET advance_txn_id=$1 WHERE id=$2`, [at.id, pay.id]);
       }
       // 입금증 저장(있으면)
@@ -677,19 +691,20 @@ export default async function financeRoutes(app) {
            VALUES ($1,$2,$3,$4,$5)`,
           [pay.id, receipt.name, receipt.mime, receipt.data, userId]);
       }
-      // 미배분 입금 연결(있으면): 이 반제로 해당 입금을 닫음(pending→allocated). 통지→실거래 1회만.
-      let depositLinked = false;
-      if (b.deposit_id != null) {
-        const dep = (await c.query(
-          `UPDATE bank_deposits_pending SET status='allocated', payment_id=$1, allocated_by=$2, allocated_at=now()
-            WHERE id=$3 AND status='pending' RETURNING id`,
-          [pay.id, userId, Number(b.deposit_id)])).rows[0];
-        depositLinked = !!dep;
-      }
-      return { id: pay.id, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: depositLinked };
+      // 통지 닫기: pending→allocated (FOR UPDATE로 잠갔으므로 경합 없음). 통지 → 실거래 1회만 = 이중계상 불가.
+      const depClose = (await c.query(
+        `UPDATE bank_deposits_pending SET status='allocated', payment_id=$1, allocated_by=$2, allocated_at=now()
+          WHERE id=$3 AND status='pending' RETURNING id`,
+        [pay.id, userId, depositId])).rows[0];
+      if (!depClose) return { error: 'deposit_not_pending' };
+      return { id: pay.id, amount, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: true };
     });
-    if (out.error) return reply.code(out.error === 'invalid_allocations' ? 409 : 400).send(out);
-    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount, advance: out.advance, receipt: out.receipt } });
+    if (out.error) {
+      const code = (out.error === 'invalid_allocations' || out.error === 'deposit_not_pending') ? 409
+        : (out.error === 'deposit_not_found') ? 404 : 400;
+      return reply.code(code).send(out);
+    }
+    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount: out.amount, advance: out.advance, receipt: out.receipt, deposit_id: depositId } });
     return out;
   });
 
