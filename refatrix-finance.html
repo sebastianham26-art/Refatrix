@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708c</title>
+<title>Refatrix ERP · 재무 · build fin-0708d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1828,7 +1828,7 @@
       {type:'base',dateLbl:(opts.to||'').slice(5),text:'기말',v1:final},
     ];
     const N=bars.length;
-    const W=Math.max(720,Math.min(1600,N*46+100)),H=290,padL=64,padR=14,padT=26,padB=44;
+    const W=Math.max(720,Math.min(1600,N*46+100)),H=306,padL=64,padR=14,padT=26,padB=60;
     let mn=Math.min(base,final,...cums),mx=Math.max(base,final,...cums);
     if(mn>0)mn=Math.max(0,mn-(mx-mn)*0.15);           // 바닥 여유(0 아래로는 안 내려감)
     if(mx===mn)mx=mn+1;
@@ -1838,8 +1838,8 @@
     const grid=[];const steps=4;
     for(let k=0;k<=steps;k++){const v=mn+(mx-mn)*k/steps;const yy=y(v);
       grid.push(`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="#eee"/><text x="${padL-6}" y="${(yy+3).toFixed(1)}" text-anchor="end" font-size="10" fill="#999">${fmtK(v)}</text>`);}
-    if(mn<0&&mx>0){const zy=y(0);grid.push(`<line x1="${padL}" y1="${zy.toFixed(1)}" x2="${W-padR}" y2="${zy.toFixed(1)}" stroke="#bbb" stroke-dasharray="3 3"/>`);}
-    const rects=[],labels=[],conns=[],xlabels=[];
+    if(mn<=0&&mx>=0){const zy=y(0);grid.push(`<line x1="${padL}" y1="${zy.toFixed(1)}" x2="${W-padR}" y2="${zy.toFixed(1)}" stroke="#e0483d" stroke-width="1"/><text x="${padL-6}" y="${(zy+3).toFixed(1)}" text-anchor="end" font-size="10" font-weight="700" fill="#e0483d">0</text>`);}
+    const rects=[],labels=[],conns=[],xlabels=[],balLabels=[];
     const maxLbl=Math.max(1,Math.floor((W-padL-padR)/46));
     const lblStep=Math.ceil(N/maxLbl);
     const shortLbl=(p)=> p.length===10?p.slice(5):(p.includes('W')?p.slice(5):p.slice(2));
@@ -1865,16 +1865,19 @@
       const h=Math.max(1.5,bot-top);
       rects.push(`<rect x="${(xc(i)-colW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${colW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" rx="2"><title>${tip}</title></rect>`);
       if(N<=40||b.type==='base'||i%lblStep===0)labels.push(`<text x="${xc(i).toFixed(1)}" y="${(top-4).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${fill}">${lbl}</text>`);
+      if(N<=40||b.type==='base'||i%lblStep===0)balLabels.push(`<text x="${xc(i).toFixed(1)}" y="${(H-padB+12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#b7ad98"><title>${b.text||b.label} 잔액 ${fmt(b.v1)} MXN</title>${fmtK(b.v1)}</text>`);
       if(i<N-1){const yy=y(b.v1);conns.push(`<line x1="${(xc(i)+colW/2).toFixed(1)}" y1="${yy.toFixed(1)}" x2="${(xc(i+1)-colW/2).toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#b9b1a0" stroke-dasharray="3 3"/>`);}
     });
     const legend=`<div style="display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--muted);margin-bottom:6px">
       <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${WF_GREEN};vertical-align:-1px;margin-right:4px"></i>기준/기말 잔액</span>
       <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${WF_RED};vertical-align:-1px;margin-right:4px"></i>증가(+)</span>
       <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${WF_BLUE};vertical-align:-1px;margin-right:4px"></i>감소(−)</span>
+      <span><i style="display:inline-block;width:13px;height:0;border-top:1.5px solid #e0483d;vertical-align:3px;margin-right:4px"></i>0 기준선</span>
+      <span style="color:#b7ad98">막대 아래 숫자 = 잔액</span>
       <span style="margin-left:auto">${opts.granLabel||''} · ${opts.from} ~ ${opts.to}</span></div>`;
     const diff=round2(final-base);
     const sum=`<div style="font-size:12.5px;color:var(--muted);margin-top:8px">기준 잔액 <b style="color:${WF_GREEN}">${fmt(base)}</b> → 기말 잔액 <b style="color:${WF_GREEN}">${fmt(final)}</b> MXN · 순변화 <b style="color:${diff>0?WF_RED:(diff<0?WF_BLUE:'var(--muted)')}">${diff>0?'+':''}${fmt(diff)}</b></div>`;
-    return `<div>${legend}<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${Math.min(W,720)}px;max-width:${W}px">${grid.join('')}${conns.join('')}${rects.join('')}${labels.join('')}${xlabels.join('')}</svg>${sum}</div>`;
+    return `<div>${legend}<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${Math.min(W,720)}px;max-width:${W}px">${grid.join('')}${conns.join('')}${rects.join('')}${labels.join('')}${balLabels.join('')}${xlabels.join('')}</svg>${sum}</div>`;
   }
 
   async function loadCashflow(){
