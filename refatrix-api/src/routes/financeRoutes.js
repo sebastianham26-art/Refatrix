@@ -1938,8 +1938,85 @@ export default async function financeRoutes(app) {
         ar: r2(arc.sum), ap: r2(apc.sum), ar_items: arc.items, ap_items: apc.items,
         balance: r2(cumActual), balance_proj: r2(cumProj) };
     });
+    // ===== 계좌별 일자 잔고 부족 경보 (2026-07-09, option A) =====
+    // 예상 잔고 = 그 계좌 개설잔액 + 그 계좌 실적 순액 + 그 계좌 수동 예정수입 − 그 계좌 예정지출(AP).
+    //   인보이스 AR(수금예정)은 계좌 귀속이 없으므로 제외 → "약속된 지출만으로 언제 바닥나는가"의 선제 경보.
+    // 대상 계좌: 세부내역 열람 가능 계좌(loadCashTxns와 동일 스코프 → 잔고가 표시 항목과 일치). USD는 MXN 환산.
+    // 판정: 잔고 ≤ 0 → 'neg'(빨강) / 0 < 잔고 ≤ ACCT_ALERT_LOW → 'low'(파랑). 위험 우선(0은 neg).
+    // days[]에 acct_alerts(예상 기준)·acct_alerts_real(실적 기준) 둘 다 부착 → 프런트가 [실적/예상] 토글 따라 사용.
+    const ACCT_ALERT_LOW = 10000;
+    {
+      const detailAllow = allowedDetailAccountIds(req.ctx.perm);   // null = 전체(디렉터)
+      const blockSet = new Set((blockedDetailAccountIds(req.ctx.perm) || []).map(Number));
+      let acctRows = [];
+      if (!(detailAllow !== null && detailAllow.length === 0)) {
+        const aargs = []; let acond = 'deleted_at IS NULL';
+        if (detailAllow !== null) { aargs.push(detailAllow); acond += ` AND id = ANY($${aargs.length})`; }
+        acctRows = (await query(`SELECT id, name, currency, open_balance FROM accounts WHERE ${acond}`, aargs)).rows
+          .filter((a) => !blockSet.has(Number(a.id)));
+      }
+      const usdRate = (await getUsdMxnRate()).rate;
+      const acctMeta = new Map(); // id -> { name, openMxn }
+      for (const a of acctRows) acctMeta.set(Number(a.id), { name: a.name, openMxn: Number(a.open_balance) * (a.currency === 'USD' ? usdRate : 1) });
+
+      // 계좌별 '월초 직전' 실적 순액(= 실적 기준 시작잔고)
+      const actualBefore = new Map();
+      for (const [id, m] of acctMeta) actualBefore.set(id, m.openMxn);
+      for (const t of mapped) {
+        if (t.status !== 'actual' || t.account_id == null) continue;
+        const id = Number(t.account_id); if (!acctMeta.has(id)) continue;
+        if (t.txn_date < monthStart) actualBefore.set(id, actualBefore.get(id) + (t.direction === 'in' ? 1 : -1) * t.amount_mxn);
+      }
+      // 예상 기준 시작잔고: 미래 달 조회 시 월초 이전 '미실현 예정'(AP·수동수입, AR 제외)도 반영 → 달 연속.
+      const projBefore = new Map(actualBefore);
+      if (monthStart > today) {
+        for (const t of planOut) { if (t.account_id == null) continue; const id = Number(t.account_id); if (!acctMeta.has(id)) continue; const d = String(t.plan_date || t.txn_date).slice(0, 10); if (d < monthStart) projBefore.set(id, projBefore.get(id) - t.amount_mxn); }
+        for (const t of planIn)  { if (t.account_id == null) continue; const id = Number(t.account_id); if (!acctMeta.has(id)) continue; const d = String(t.plan_date || t.txn_date).slice(0, 10); if (d < monthStart) projBefore.set(id, projBefore.get(id) + t.amount_mxn); }
+      }
+      // 계좌별 '그 달' 일자 순액: 실적(양 모드 공통)·예정(예상 모드만, 이월 규칙 동일)
+      const aActualDay = {}; const aPlanDay = {};
+      const bump = (bag, day, id, v) => { (bag[day] || (bag[day] = new Map())).set(id, ((bag[day].get(id)) || 0) + v); };
+      for (const t of mapped) {
+        if (t.status !== 'actual' || t.account_id == null) continue;
+        const id = Number(t.account_id); if (!acctMeta.has(id)) continue;
+        if (String(t.txn_date).slice(0, 7) !== month) continue;
+        bump(aActualDay, t.txn_date, id, (t.direction === 'in' ? 1 : -1) * t.amount_mxn);
+      }
+      const carryDay = (String(today).slice(0, 7) === month) ? today : null; // 오늘 달이면 과거 미실현 예정은 오늘로 이월(예상 정확도)
+      for (const t of planOut) {
+        if (t.account_id == null) continue; const id = Number(t.account_id); if (!acctMeta.has(id)) continue;
+        let d = String(t.plan_date || t.txn_date).slice(0, 10); if (carryDay && d < today) d = carryDay;
+        if (String(d).slice(0, 7) !== month) continue;
+        bump(aPlanDay, d, id, -t.amount_mxn);
+      }
+      for (const t of planIn) {
+        if (t.account_id == null) continue; const id = Number(t.account_id); if (!acctMeta.has(id)) continue;
+        let d = String(t.plan_date || t.txn_date).slice(0, 10); if (carryDay && d < today) d = carryDay;
+        if (String(d).slice(0, 7) !== month) continue;
+        bump(aPlanDay, d, id, t.amount_mxn);
+      }
+      // 일자별 누적 → 경보(정렬: 잔고 낮은 순)
+      const runReal = new Map(actualBefore);
+      const runProj = new Map(projBefore);
+      const alertsOf = (runMap) => {
+        const out = [];
+        for (const [id, bal] of runMap) {
+          const b = r2(bal); const meta = acctMeta.get(id); if (!meta) continue;
+          if (b <= 0) out.push({ account_id: id, name: meta.name, balance: b, level: 'neg' });
+          else if (b <= ACCT_ALERT_LOW) out.push({ account_id: id, name: meta.name, balance: b, level: 'low' });
+        }
+        return out.sort((a, b) => a.balance - b.balance);
+      };
+      for (const dobj of days) {
+        const ds = dobj.date;
+        const av = aActualDay[ds]; if (av) for (const [id, v] of av) { runReal.set(id, (runReal.get(id) || 0) + v); runProj.set(id, (runProj.get(id) || 0) + v); }
+        const pv = aPlanDay[ds]; if (pv) for (const [id, v] of pv) { runProj.set(id, (runProj.get(id) || 0) + v); }
+        dobj.acct_alerts = alertsOf(runProj);
+        dobj.acct_alerts_real = alertsOf(runReal);
+      }
+    }
     const breakdown = monthBreakdown(mapped, month, today);
-    return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, ...breakdown };
+    return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, acct_alert_low_threshold: ACCT_ALERT_LOW, ...breakdown };
   });
 
   // ===== 월 자금 리포트 (디렉터 전용) =====

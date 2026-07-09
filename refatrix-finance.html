@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708h</title>
+<title>Refatrix ERP · 재무 · build fin-0709a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -59,7 +59,12 @@
   .cal-cell{border:1px solid var(--line);border-radius:6px;min-height:74px;padding:0;font-size:11px;cursor:pointer;background:#fff;overflow:hidden}
   .cal-cell.empty{background:transparent;border:none;cursor:default}
   .cal-cell.weekend{background:#f3f1ec}
-  .cal-daynum{font-weight:700;padding:2px 4px;font-size:11px}
+  .cal-daynum{font-weight:700;padding:2px 4px;font-size:11px;display:flex;align-items:center;flex-wrap:wrap;gap:3px}
+  /* 계좌별 잔고 부족 경보 칩 (날짜 옆) */
+  .acct-chip{display:inline-block;font-size:9px;font-weight:700;padding:0 5px;border-radius:999px;line-height:15px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .acct-chip.low{background:#e6eef8;color:#2f5c96;border:1px solid #cbddf2}   /* 파랑: 0 < 잔고 ≤ 10,000 */
+  .acct-chip.neg{background:#fbe9e7;color:#B23A2E;border:1px solid #f0c5bf}   /* 빨강: 잔고 ≤ 0 */
+  .acct-chip.more{background:#eee;color:#666;border:1px solid #ddd}
   .cal-slot{display:flex;justify-content:space-between;padding:1px 4px;line-height:1.5;border-top:1px solid #f0ede6}
   .cal-slot .k{color:var(--muted);font-size:9px}
   .cal-dow{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:2px}
@@ -2130,6 +2135,19 @@
   // 월간달력: 일요일 시작·주말 음영·AR/AP/잔고 3칸 + 하단 실적/예정 섹션
   let calMonth=new Date().toISOString().slice(0,7);
   let calCarry=null;   // {date, ar_sum, ap_sum, net, items[]} | null
+  // 계좌별 잔고 부족 경보 칩(날짜 옆): 예상 모드→acct_alerts / 실적 모드→acct_alerts_real. 최대 4개 + "+N".
+  function cfAcctChips(v){
+    if(!v) return '';
+    const list=(cfState.mode==='plan'?v.acct_alerts:v.acct_alerts_real)||[];
+    if(!list.length) return '';
+    const MAX=4;
+    const chips=list.slice(0,MAX).map(a=>{
+      const cls=(a.level==='neg')?'neg':'low';
+      return `<span class="acct-chip ${cls}" title="${escH(a.name+' 잔고 '+fmt(a.balance))}">${escH(a.name)}</span>`;
+    }).join('');
+    const extra=list.length>MAX?`<span class="acct-chip more" title="${escH('외 '+(list.length-MAX)+'개 계좌')}">+${list.length-MAX}</span>`:'';
+    return chips+extra;
+  }
   async function renderMonthFromApi(){
     const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
@@ -2152,7 +2170,7 @@
         const hasV=v&&(v.ar||v.ap||(v.items&&v.items.length));
         const actNet=Math.round((v&&v.items?v.items.reduce((s,t)=>t.status==='actual'?s+(t.direction==='in'?1:-1)*(Number(t.amount_mxn)||0):s,0):0)*100)/100;
         cells+=`<div class="cal-cell${we}" data-day="${ds}">
-          <div class="cal-daynum">${dd}</div>
+          <div class="cal-daynum">${dd}${cfAcctChips(v)}</div>
           ${cfShow.plan?`<div class="cal-slot"><span class="k">AR</span><span style="color:var(--income)">${v&&v.ar?'+'+fmt(v.ar):''}</span></div>
           <div class="cal-slot"><span class="k">AP</span><span style="color:var(--expense)">${v&&v.ap?'-'+fmt(v.ap):''}</span></div>
           <div class="cal-slot"><span class="k" style="color:#c77714;font-weight:700">이월</span><span>${(calCarry&&ds===calCarry.date)?`${calCarry.ar_sum?'<b style=\"color:var(--income)\">+'+fmt(calCarry.ar_sum)+'</b>':''}${calCarry.ar_sum&&calCarry.ap_sum?' ':''}${calCarry.ap_sum?'<b style=\"color:var(--expense)\">-'+fmt(calCarry.ap_sum)+'</b>':''}`:''}</span></div>`:''}
@@ -2166,6 +2184,7 @@
         <div class="hint" style="margin:2px 0 6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
           <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#fdebd7;border:1px solid #eccb9c;vertical-align:-1px;margin-right:4px"></i>실적 반영된 예정(실현)</span>
           <span><b style="color:#c77714">이월</b> = 지난 미실현 AR·AP를 오늘로 합산 — 원래 날짜는 보존(과거 달에서 그대로 확인)</span>
+          <span><span class="acct-chip low" style="vertical-align:-1px">계좌</span> 잔고 0~10,000 · <span class="acct-chip neg" style="vertical-align:-1px">계좌</span> 잔고 0 이하 <span class="hint" style="margin:0">— 계좌별 예상잔고 부족(약속된 지출 기준, 수금예정 AR 제외 · MXN)</span></span>
         </div>
         <div class="cal-grid">${dows.map((x,i)=>`<div class="cal-dow${(i===0||i===6)?' we':''}">${x}</div>`).join('')}${cells}</div>
         <div id="calDetail" style="margin-top:10px"></div>
