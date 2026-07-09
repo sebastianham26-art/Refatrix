@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0706c</title>
+<title>Refatrix ERP · 재무 · build fin-0708a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1854,7 +1854,7 @@
       }
       b.innerHTML=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <button class="btn ghost sm" id="cal-prev">◀</button><b>${calMonth}</b><button class="btn ghost sm" id="cal-next">▶</button>
-        <span class="hint" style="margin:0 0 0 auto">전월말 잔고 ${fmt(d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · ${cfState.mode==='plan'?'<span style="color:#7a4fb0">예상=실적+AR−AP 누적</span>':'잔고=누적(실적)'} · <b>잔고는 잔액 열람 가능한 모든 계좌 기준</b>(세부내역 없는 '잔액만' 계좌 포함 — 표시 항목 합계와 다를 수 있음)</span></div>
+        <span class="hint" style="margin:0 0 0 auto">전월말 잔고${cfState.mode==='plan'?'(예상)':''} ${fmt(cfState.mode==='plan'&&d.opening_before_month_proj!=null?d.opening_before_month_proj:d.opening_before_month)} · AR=그날 수금예정(전사) · AP=지급예정(권한계좌) · 실적=당일 현금변동 · ${cfState.mode==='plan'?'<span style="color:#7a4fb0">예상=실적+AR−AP 누적</span>':'잔고=누적(실적)'} · <b>잔고는 잔액 열람 가능한 모든 계좌 기준</b>(세부내역 없는 '잔액만' 계좌 포함 — 표시 항목 합계와 다를 수 있음)</span></div>
         <div class="hint" style="margin:2px 0 6px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
           <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#fdebd7;border:1px solid #eccb9c;vertical-align:-1px;margin-right:4px"></i>실적 반영된 예정(실현)</span>
           <span><b style="color:#c77714">이월</b> = 지난 미실현 AR·AP를 오늘로 합산 — 원래 날짜는 보존(과거 달에서 그대로 확인)</span>

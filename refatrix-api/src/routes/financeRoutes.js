@@ -8,7 +8,7 @@ import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange 
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -1731,6 +1731,21 @@ export default async function financeRoutes(app) {
       if (t.status !== 'actual') continue;
       if (t.txn_date < monthStart) runBefore += (t.direction === 'in' ? 1 : -1) * t.amount_mxn;
     }
+    // 예상 월초(2026-07-08): '미래 달' 조회 시 예상잔고는 전월 '예상' 말잔고에서 출발해야 달이 이어진다.
+    // = runBefore(실적) + monthStart 이전 만기 미수 인보이스 잔액 + monthStart 이전 미실현 예정 순액(수동AR·AP·보완분).
+    // 이번 달 조회는 종전 그대로(달 안 carry가 처리) / 과거 달 조회도 그대로(이력 보존). 연 경계 로직 없음 — 12월→1월 자동 연속.
+    let runBeforeProj = runBefore;
+    if (monthStart > today) {
+      const prevAr = Number((await query(
+        `SELECT COALESCE(SUM(si.total_mxn - COALESCE(p.paid,0)),0) AS a
+           FROM sales_invoices si
+           LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p
+                  ON p.invoice_id = si.id
+          WHERE si.status='posted' AND si.deleted_at IS NULL
+            AND si.due_date < $1
+            AND (si.total_mxn - COALESCE(p.paid,0)) > 0`, [monthStart])).rows[0]?.a) || 0;
+      runBeforeProj = r2(runBefore + prevAr + planNetBefore(planIn, planOut, hidden, monthStart));
+    }
     // 보완분의 일자별 순액: 실적(잔고용) / 예정(예상잔고용, apByDay에 없으므로 이중계상 없음)
     const hiddenActualByDay = {}; const hiddenPlanByDay = {};
     for (const t of hidden) {
@@ -1765,7 +1780,7 @@ export default async function financeRoutes(app) {
     // 취급해 carry 버킷에 합산 — 날짜 데이터는 불변, 예상잔고·표시만 이동. 과거 달 조회 시엔 원래 자리.
     // 잔액 보완분(hidden)은 두 잔고 모두에 합산 — 항목(items/ap_items)에는 나타나지 않는다.
     let cumActual = runBefore;
-    let cumProj = runBefore;
+    let cumProj = runBeforeProj;
     const days = Object.keys(byDay).sort().map((ds) => {
       const c = byDay[ds];
       const actualNet = c.items.filter((x) => x.status === 'actual').reduce((s, x) => s + (x.direction === 'in' ? 1 : -1) * x.amount_mxn, 0)
@@ -1780,7 +1795,7 @@ export default async function financeRoutes(app) {
         balance: r2(cumActual), balance_proj: r2(cumProj) };
     });
     const breakdown = monthBreakdown(mapped, month, today);
-    return { month, today, opening_before_month: r2(runBefore), days, carry: carry || null, ...breakdown };
+    return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, ...breakdown };
   });
 
   // ===== 월 자금 리포트 (디렉터 전용) =====

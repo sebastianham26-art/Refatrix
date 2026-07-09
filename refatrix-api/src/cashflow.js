@@ -318,3 +318,25 @@ export function calendarArApByDay(invoices, planOut, month, realizedOut, planIn,
   }
   return { ar, ap, carry: carryOut };
 }
+
+// 예상 월초(미래 달) 보정 — monthStart 이전 유효일(plan_date||txn_date)의 '미실현 예정' 순액.
+// planIn: 수동 예정수입(인보이스 미연결) / planOut: 예정지출 / hidden: 보완분(예정만 집계).
+// 인보이스 AR(만기<monthStart 미수 잔액 합)은 SQL로 별도 집계해 호출부에서 더한다.
+// 의미는 calendarArApByDay와 동일(amount_mxn·유효일) — 예상잔고가 전월 '예상' 말잔고와 연속되게 한다.
+export function planNetBefore(planIn, planOut, hidden, monthStart) {
+  let net = 0;
+  for (const t of planIn || []) {
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (d < monthStart) net += Number(t.amount_mxn) || 0;
+  }
+  for (const t of planOut || []) {
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (d < monthStart) net -= Number(t.amount_mxn) || 0;
+  }
+  for (const t of hidden || []) {
+    if (t.status === 'actual') continue;
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (d < monthStart) net += (t.direction === 'in' ? 1 : -1) * (Number(t.amount_mxn) || 0);
+  }
+  return round2(net);
+}
