@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>현장재고조사 · Refatrix</title>
+<title>현장재고조사 · Refatrix · build fsx-0710a</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -206,7 +206,12 @@
         <input id="codeIn" inputmode="text" autocomplete="off" placeholder="코드 입력 후 Enter (CTR 또는 경쟁사 코드)">
         <button class="addb" id="addBtn">추가</button>
       </div>
-      <div class="hint">💾 <b>한 건 입력 = 즉시 저장</b> · 데이터 분실 없음 &nbsp;|&nbsp; 코드는 자동으로 CTR로 분류됩니다</div>
+      <div class="hint">💾 <b>한 건 입력 = 즉시 저장</b> · 데이터 분실 없음 &nbsp;|&nbsp; 코드는 자동으로 CTR로 분류됩니다 (SYD·BAW·GROB 등 경쟁사 코드 지원)</div>
+      <div class="subbar" style="margin-top:4px">
+        <button id="btnBulkXls">📊 엑셀 업로드 (코드+수량)</button>
+      </div>
+      <input type="file" id="bulkFile" accept=".xlsx,.xls,.csv" class="hidden">
+      <div class="hint" id="bulkHint">엑셀 A열=코드(SYD·BAW 등 아무 경쟁사 코드), B열=수량. 수량 비어있으면 1로 처리.</div>
       <div class="lhead"><span>입력 내역 (최근 먼저)</span><span id="cnt">0건</span></div>
       <div id="list"></div>
       <div class="stickb"><button class="doneb" id="doneBtn">모두 완료 → 정리 보기 <small id="doneCnt"></small></button></div>
@@ -390,6 +395,43 @@
     }catch(e){ toast('저장 실패 — 다시 시도'); $('codeIn').value=v; }
     $('codeIn').focus();
   }
+  // ── 엑셀 대량 업로드 (A열=코드, B열=수량) ──
+  function parseBulkSheet(wb){
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
+    const items=[];
+    aoa.forEach((r,i)=>{
+      const a=r&&r[0]!=null?String(r[0]).trim():''; if(!a) return;
+      const low=a.toLowerCase();
+      // 헤더 행 스킵 (코드/clave/code/syd/referencia 등)
+      if(i===0 && /^(코드|code|clave|codigo|código|syd|referencia|ctr)/.test(low)) return;
+      items.push({code:a, qty:(r[1]==null?'':String(r[1]))});
+    });
+    return items;
+  }
+  async function bulkUpload(file){
+    if(!state.survey) return;
+    let items;
+    try{ items=parseBulkSheet(XLSX.read(await file.arrayBuffer())); }
+    catch(e){ toast('파일을 읽지 못했습니다'); return; }
+    if(!items.length){ toast('코드가 없습니다 (A열=코드, B열=수량)'); return; }
+    const btn=$('btnBulkXls'); btn.disabled=true;
+    const CH=500; let added=0, skipped=0; const cnt={imm:0,short:0,dev:0};
+    try{
+      for(let i=0;i<items.length;i+=CH){
+        btn.innerHTML='<span class="spin"></span> 업로드 중… '+Math.min(i+CH,items.length)+'/'+items.length;
+        const d=await api('/api/field-surveys/'+state.survey.id+'/lines/bulk',
+          {method:'POST',headers:jhead(),body:JSON.stringify({items:items.slice(i,i+CH)})});
+        d.lines.slice().reverse().forEach(l=>state.lines.unshift(l));
+        added+=d.added; skipped+=d.skipped||0;
+        Object.keys(cnt).forEach(k=>cnt[k]+=(d.counts&&d.counts[k])||0);
+        renderLive(); stampSave();
+      }
+      toast('업로드 완료 · '+added+'건 (🟢'+cnt.imm+' 🟡'+cnt.short+' 🔴'+cnt.dev+(skipped?' · 스킵 '+skipped:'')+')');
+    }catch(e){ toast('업로드 실패 — '+(added?added+'건까지 저장됨':'다시 시도')); }
+    finally{ btn.disabled=false; btn.textContent='📊 엑셀 업로드 (코드+수량)'; }
+  }
+
   async function changeObs(lineId,delta){
     const ln=state.lines.find(l=>l.id===lineId); if(!ln) return;
     const nv=Math.max(0,(Number(ln.observed_qty)||0)+delta); ln.observed_qty=nv; renderLive();
@@ -527,6 +569,8 @@
   $('backToStart').addEventListener('click',()=>{ showStart(); loadOpenSurveys(); });
   $('addBtn').addEventListener('click',addCode);
   $('codeIn').addEventListener('keydown',e=>{ if(e.key==='Enter') addCode(); });
+  $('btnBulkXls').addEventListener('click',()=>$('bulkFile').click());
+  $('bulkFile').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; if(f) bulkUpload(f); e.target.value=''; });
   $('doneBtn').addEventListener('click',complete);
   $('btnQuote').addEventListener('click',sendToQuote);
   $('btnXls').addEventListener('click',downloadExcel);

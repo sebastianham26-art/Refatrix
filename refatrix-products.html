@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pj0707a</title>
+<title>Refatrix ERP · 제품 조회 · pj0710x</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -213,6 +213,19 @@
         <span class="hint" id="bmCount" style="margin:0"></span>
       </div>
       <div class="msg" id="bmMsg"></div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div style="font-weight:700">경쟁사 교차참조 업로드 (BAW · GROB · VASLO · KYB · MOOG 등)</div>
+      <div class="hint" style="margin-top:4px">경쟁사 가격표(예: LISTA GENERAL — CODIGO BAW + REFERENCIA 1~9)를 올리면, 각 행에서 <b>SYD 코드가 기존 CTR↔SYD 매칭과 일치하는 행</b>의 모든 코드(BAW·GROB·VASLO·KYB·MOOG·YOKOMITSU 등)를 해당 CTR 제품의 교차참조로 등록합니다. 이후 <b>현장재고조사에서 그 코드를 입력·업로드만 해도 CTR로 자동 매칭</b>됩니다. 재업로드 안전(중복 없음). <b>재고·가격 등 다른 값은 바뀌지 않습니다.</b></div>
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:0 0 auto"><label>엑셀 파일(.xlsx)</label><input type="file" id="xrFile" accept=".xlsx,.xls" style="font-size:11px"></div>
+        <div style="flex:0 0 auto"><button class="btn ghost sm" id="xrStats" style="margin-bottom:2px">등록 현황 보기</button></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn gold" id="xrApply" disabled>교차참조 등록</button>
+        <span class="hint" id="xrCount" style="margin:0"></span>
+      </div>
+      <div class="msg" id="xrMsg"></div>
     </div>
   </div>
 
@@ -873,7 +886,86 @@
     finally{ $('bmApply').disabled=false; $('bmApply').textContent='일괄 적용'; }
   }
 
+  // ===== 경쟁사 교차참조 업로드 =====
+  //  대상 시트: 헤더 행에 'REFERENCIA'가 있는 시트(예: LISTA GENERAL). 헤더 윗줄이 브랜드 라벨(BAW·SYD1…).
+  //  행 → { codes:[{brand,code}] }. 셀에 '//', 쉼표, 세미콜론으로 여러 코드가 있으면 분리.
+  let xrRows=null;
+  function xrParseWb(wb){
+    // 후보 시트 전부 스캔 → 코드 열(CODIGO xxx + REFERENCIA n)이 가장 많은 시트 채택 (최소 3열)
+    //  · 안내/할인계산 시트에도 'REFERENCIA' 낱개가 있을 수 있어 열 수 기준이 안전.
+    let best=null;
+    for(const name of wb.SheetNames){
+      const aoa=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,blankrows:false});
+      let hIdx=-1;
+      for(let i=0;i<Math.min(aoa.length,30);i++){
+        const r=aoa[i]||[];
+        if(r.some(c=>c!=null&&/referencia\s*\d/i.test(String(c)))){ hIdx=i; break; }
+      }
+      if(hIdx<0) continue;
+      const head=aoa[hIdx]||[], brandRow=(hIdx>0?aoa[hIdx-1]:[])||[];
+      const cols=[];
+      head.forEach((h,ci)=>{ if(h==null) return; const s=String(h).trim();
+        if(/^codigo\s/i.test(s)||/referencia\s*\d/i.test(s)){
+          const b=brandRow[ci]!=null?String(brandRow[ci]).trim():'';
+          cols.push({ci, brand: b || s.replace(/^codigo\s+/i,'').toUpperCase() || null});
+        }});
+      if(cols.length<3) continue;
+      if(!best || cols.length>best.cols.length) best={name, aoa, hIdx, cols};
+    }
+    if(!best) return null;
+    const rows=[];
+    for(let i=best.hIdx+1;i<best.aoa.length;i++){
+      const r=best.aoa[i]||[]; const codes=[];
+      best.cols.forEach(c=>{ const v=r[c.ci]; if(v==null) return;
+        String(v).split(/\/\/|[,;]/).forEach(part=>{ const p=part.trim(); if(p&&p!=='0') codes.push({brand:c.brand, code:p}); });
+      });
+      if(codes.length) rows.push({codes});
+    }
+    return {sheet:best.name, cols:best.cols.map(c=>c.brand), rows};
+  }
+  async function xrReadFile(file){
+    const m=$('xrMsg'); m.className='msg'; m.style.display='none'; xrRows=null; $('xrApply').disabled=true; $('xrCount').textContent='';
+    try{
+      const parsed=xrParseWb(XLSX.read(await file.arrayBuffer()));
+      if(!parsed){ m.className='msg err'; m.style.display='block'; m.textContent='교차참조 형식 시트를 찾지 못했습니다 (헤더에 REFERENCIA 1~9가 있어야 합니다).'; return; }
+      xrRows=parsed.rows; $('xrApply').disabled=false;
+      $('xrCount').textContent='['+parsed.sheet+'] '+parsed.rows.length+'행 · 열: '+parsed.cols.join(', ');
+      m.className='msg ok'; m.style.display='block'; m.textContent=file.name+' 읽음. [교차참조 등록]을 누르면 SYD 일치 행의 코드가 CTR에 연결됩니다.';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='파일을 읽지 못했습니다: '+e.message; }
+  }
+  async function xrApply(){
+    if(!xrRows||!xrRows.length) return;
+    if(!confirm(xrRows.length+'행을 등록할까요? (SYD 일치 행만 CTR에 연결되며, 재업로드해도 중복되지 않습니다)')) return;
+    const m=$('xrMsg'); const btn=$('xrApply'); btn.disabled=true;
+    const CH=400; const tot={rows:0,matchedRows:0,inserted:0,unmatchedRows:0}; let sample=[];
+    try{
+      for(let i=0;i<xrRows.length;i+=CH){
+        btn.textContent='등록 중… '+Math.min(i+CH,xrRows.length)+'/'+xrRows.length;
+        const res=await fetch(session.api+'/api/products/xref/bulk-upsert',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:xrRows.slice(i,i+CH)})});
+        const d=await res.json();
+        if(!res.ok||d.error) throw new Error(d.error||res.status);
+        ['rows','matchedRows','inserted','unmatchedRows'].forEach(k=>tot[k]+=d[k]||0);
+        if(sample.length<10&&d.unmatchedSample) sample=sample.concat(d.unmatchedSample).slice(0,10);
+      }
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='완료 — 총 '+tot.rows+'행 중 매칭 '+tot.matchedRows+'행 · 신규 교차참조 '+tot.inserted+'개 등록 · 미매칭 '+tot.unmatchedRows+'행(CTR 미취급 라인)';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+e.message+' (완료분까지는 저장됨 — 같은 파일 재업로드 시 이어서 처리됩니다)'; }
+    finally{ btn.disabled=false; btn.textContent='교차참조 등록'; }
+  }
+  async function xrShowStats(){
+    const m=$('xrMsg'); m.className='msg'; m.style.display='none';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/stats',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      m.className='msg ok'; m.style.display='block';
+      m.textContent=d.items.length? '등록 현황 — '+d.items.map(x=>x.brand+': '+x.codes+'개('+x.products+'제품)').join(' · ') : '등록된 교차참조가 없습니다.';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='조회 실패: '+e.message; }
+  }
+
   $('resyncBtn').addEventListener('click',resyncDerived);
+  if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
+  if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
+  if($('xrStats')) $('xrStats').addEventListener('click',xrShowStats);
   if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
   if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
   if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);

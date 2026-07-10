@@ -33,6 +33,7 @@ import wbrRoutes from './routes/wbrRoutes.js';
 import presenceRoutes from './routes/presenceRoutes.js';
 import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
 import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
+import xrefRoutes from './routes/xrefRoutes.js';
 import processKpiRoutes from './routes/processKpiRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
 import portalAlertsRoutes from './routes/portalAlertsRoutes.js';
@@ -91,6 +92,7 @@ export function buildApp() {
   app.register(presenceRoutes);
   app.register(notaCreditoRoutes);
   app.register(fieldSurveyRoutes);
+  app.register(xrefRoutes);
   app.register(processKpiRoutes);
   app.register(warehouseRoutes);
   app.register(portalAlertsRoutes);
