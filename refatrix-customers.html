@@ -151,7 +151,7 @@
           <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
           <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
         </div>
-        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.<br><span style="color:var(--muted)">Descargue la plantilla, llénela y súbala: con <b>Código</b> actualiza, vacío crea (código automático). <b>Nombre</b> y <b>Equipo</b> son obligatorios (nombre exacto del equipo, p. ej. 01_Monterrey).</span></div>
+        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey_01). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.<br><span style="color:var(--muted)">Descargue la plantilla, llénela y súbala: con <b>Código</b> actualiza, vacío crea (código automático). <b>Nombre</b> y <b>Equipo</b> son obligatorios (nombre exacto del equipo, p. ej. 01_Monterrey_01).</span></div>
         <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
           <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
           <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
@@ -172,6 +172,21 @@
 
     <!-- 팀 권한 관리(디렉터) -->
     <div id="tab-team" class="hidden">
+      <div class="card">
+        <h2>팀 관리</h2>
+        <div class="hint" style="margin-top:0">영업 조직을 추가하거나 이름을 바꿉니다. 소속 인원·고객이 있는 팀은 삭제할 수 없습니다. 개명해도 기존 고객·실적 연결은 유지됩니다.</div>
+        <div style="margin:10px 0"><button class="btn sm" onclick="showAddTeam()">+ 팀 추가</button></div>
+        <div id="addTeamRow" class="hidden" style="margin:8px 0;padding:10px;border:1px solid var(--line,#ddd);border-radius:8px">
+          <span>팀명 <input id="newTeamName" style="width:auto;padding:5px 8px" placeholder="예: 01_Monterrey_02"></span>
+          <span style="margin-left:10px">유형
+            <select id="newTeamSales" style="width:auto;padding:5px 8px"><option value="1">영업</option><option value="0">비영업</option></select>
+          </span>
+          <span style="margin-left:10px">정렬 <input id="newTeamSort" type="number" value="0" style="width:64px;padding:5px 8px"></span>
+          <button class="btn sm" style="margin-left:10px" onclick="createTeam()">저장</button>
+          <button class="btn ghost sm" onclick="hideAddTeam()">취소</button>
+        </div>
+        <div id="teamManage"><div class="hint">불러오는 중…</div></div>
+      </div>
       <div class="card">
         <h2>팀 배정 · 상대팀 열람 권한</h2>
         <div class="hint" style="margin-top:0">각 사용자의 소속 팀을 정하고, 필요한 경우 상대 팀을 볼 수 있는 권한을 부여합니다. 기본적으로 사용자는 자기 팀의 고객만 봅니다.</div>
@@ -709,6 +724,72 @@
     }catch(e){alert('실패');}
   }
 
+  // ===== 팀 관리(생성·개명·삭제, 디렉터) =====
+  async function reloadAdminTeams(){
+    try{adminTeams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){}
+  }
+  async function loadTeamsAdmin(){
+    const b=$('teamManage');if(!b)return;
+    b.innerHTML='<div class="hint">불러오는 중…</div>';
+    await reloadAdminTeams();
+    b.innerHTML=`<table><thead><tr><th>팀명</th><th>유형</th><th style="text-align:right">인원</th><th style="text-align:right">고객수</th><th style="text-align:right">정렬</th><th>작업</th></tr></thead>
+      <tbody>${adminTeams.map(t=>{
+        const locked=(Number(t.member_count)>0||Number(t.customer_count)>0);
+        return `<tr>
+          <td id="tname-${t.id}"><b>${esc(t.name)}</b></td>
+          <td>${t.is_sales===false?'비영업':'영업'}</td>
+          <td style="text-align:right">${Number(t.member_count)}</td>
+          <td style="text-align:right">${Number(t.customer_count)}</td>
+          <td style="text-align:right">${Number(t.sort_order)}</td>
+          <td>
+            <button class="btn ghost sm" onclick="startRename(${t.id})">개명</button>
+            <button class="btn ghost sm" ${locked?'disabled title="소속 인원·고객이 있어 삭제 불가"':''} onclick="delTeam(${t.id})">삭제</button>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      <div class="hint">삭제는 인원·고객이 모두 0일 때만 가능합니다.</div>`;
+  }
+  function showAddTeam(){const r=$('addTeamRow');if(r){r.classList.remove('hidden');const n=$('newTeamName');if(n){n.value='';n.focus();}}}
+  function hideAddTeam(){const r=$('addTeamRow');if(r)r.classList.add('hidden');}
+  async function createTeam(){
+    const name=($('newTeamName').value||'').trim();
+    if(!name){alert('팀명을 입력하세요.');return;}
+    const isSales=$('newTeamSales').value!=='0';
+    const sortOrder=Number($('newTeamSort').value)||0;
+    try{
+      const res=await fetch(session.api+'/api/team-admin/teams',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({name,is_sales:isSales,sort_order:sortOrder})});
+      if(res.status===409){alert('이미 같은 이름의 팀이 있습니다.');return;}
+      if(!res.ok){alert('생성 실패');return;}
+      hideAddTeam();await loadTeamsAdmin();loadTeamUsers();
+    }catch(e){alert('생성 실패');}
+  }
+  function startRename(id){
+    const t=adminTeams.find(x=>Number(x.id)===Number(id));if(!t)return;
+    const cell=$('tname-'+id);if(!cell)return;
+    cell.innerHTML=`<input id="rn-${id}" value="${esc(t.name)}" style="width:auto;padding:5px 8px"> <button class="btn sm" onclick="saveRename(${id})">저장</button> <button class="btn ghost sm" onclick="loadTeamsAdmin()">취소</button>`;
+    const inp=$('rn-'+id);if(inp){inp.focus();inp.addEventListener('keydown',e=>{if(e.key==='Enter')saveRename(id);});}
+  }
+  async function saveRename(id){
+    const inp=$('rn-'+id);const name=((inp&&inp.value)||'').trim();
+    if(!name){alert('팀명을 입력하세요.');return;}
+    try{
+      const res=await fetch(session.api+'/api/team-admin/teams/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({name})});
+      if(res.status===409){alert('이미 같은 이름의 팀이 있습니다.');return;}
+      if(!res.ok){alert('개명 실패');return;}
+      await loadTeamsAdmin();loadTeamUsers();
+    }catch(e){alert('개명 실패');}
+  }
+  async function delTeam(id){
+    const t=adminTeams.find(x=>Number(x.id)===Number(id));if(!t)return;
+    if(!confirm(`'${t.name}' 팀을 삭제할까요?`))return;
+    try{
+      const res=await fetch(session.api+'/api/team-admin/teams/'+id,{method:'DELETE',headers:auth()});
+      if(res.status===409){alert('소속 인원 또는 고객이 있어 삭제할 수 없습니다.');return;}
+      if(!res.ok){alert('삭제 실패');return;}
+      await loadTeamsAdmin();loadTeamUsers();
+    }catch(e){alert('삭제 실패');}
+  }
+
   // 탭 전환
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
@@ -716,7 +797,7 @@
     $('tab-list').classList.toggle('hidden',tab!=='list');
     $('tab-team').classList.toggle('hidden',tab!=='team');
     $('tab-approve').classList.toggle('hidden',tab!=='approve');
-    if(tab==='team')loadTeamUsers();
+    if(tab==='team'){loadTeamsAdmin();loadTeamUsers();}
     if(tab==='approve')loadApprovals();
   }));
   if(window.__rnavRefresh)window.__rnavRefresh();
@@ -728,7 +809,7 @@
     $('tab-list').classList.toggle('hidden',tab!=='list');
     $('tab-team').classList.toggle('hidden',tab!=='team');
     $('tab-approve').classList.toggle('hidden',tab!=='approve');
-    if(tab==='team')loadTeamUsers();
+    if(tab==='team'){loadTeamsAdmin();loadTeamUsers();}
     if(tab==='approve')loadApprovals();
   }
   window.addEventListener('hashchange',()=>{ if(!$('app').classList.contains('hidden'))applyCustHashTab(); });
@@ -741,9 +822,9 @@
   async function downloadTemplate(){
     let headers=['고객코드 (Código)','고객명 (Nombre)','팀 (Equipo)','회사종류 (Tipo)','RFC','담당자 (Responsable)','단계 (Etapa)','연락처 (Contacto)','전화 (Teléfono)','할인율 (Descuento %)','외상일 (Días crédito)','메모 (Nota)'];
     try{const d=await fetch(session.api+'/api/customers/template',{headers:auth()}).then(r=>r.json());if(d.headers)headers=d.headers;}catch(e){}
-    const teamNames=(teams||[]).map(t=>t.name).join(' / ')||'01_Monterrey / 02_Merida';
+    const teamNames=(teams||[]).map(t=>t.name).join(' / ')||'01_Monterrey_01 / 02_Merida';
     const ws=XLSX.utils.aoa_to_sheet([headers,
-      ['', '예시고객', (teams[0]?.name||'01_Monterrey'), 'Mayoreo','XAXX010101000','', '01_잠재','담당연락','8112345678','5','30','메모예시']]);
+      ['', '예시고객', (teams[0]?.name||'01_Monterrey_01'), 'Mayoreo','XAXX010101000','', '01_잠재','담당연락','8112345678','5','30','메모예시']]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'고객');
     XLSX.writeFile(wb,'refatrix_고객양식.xlsx');
   }
