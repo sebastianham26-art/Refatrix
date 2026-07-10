@@ -590,12 +590,13 @@
     else html+='<div class="hint">일정 없음</div>';
     if(tds.length){
       html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 6px">이 날 마감 할 일</div>';
-      html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(tdNames(t).join(', '))+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
+      html+=tds.map(t=>'<div class="item" style="margin-top:6px;align-items:flex-start"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(tdNames(t).join(', '))+(t.status==='done'?' · 완료':'')+'</div>'+todoMemoBlock(t,'cvd-')+'</div></div>').join('');
     }
     html+='<div style="margin-top:12px"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button></div>';
     html+='</div>';
     $('calGrid').innerHTML=tzNote()+html;
     evs.forEach(e=>loadEvMemos(e.id,'dv-'));
+    tds.forEach(t=>loadMemos(t.id,'cvd-'));
   }
 
   // 날짜 상세/추가 모달
@@ -618,7 +619,7 @@
     // 할 일(마감)
     if(tds.length){
       html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 4px">이 날 마감 할 일</div>';
-      html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(tdNames(t).join(', '))+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
+      html+=tds.map(t=>'<div class="item" style="margin-top:6px;align-items:flex-start"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(tdNames(t).join(', '))+(t.status==='done'?' · 완료':'')+'</div>'+todoMemoBlock(t,'cmd-')+'</div></div>').join('');
     }
     // 일정 추가 폼
     // 대상(scope): 누구나 '내 개인 일정' + '개인별 공유'. 디렉터는 '회사 전체' 추가.
@@ -651,6 +652,7 @@
       +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
     $('dmBody').innerHTML=html;
     evs.forEach(e=>loadEvMemos(e.id));
+    tds.forEach(t=>loadMemos(t.id,'cmd-'));
     $('dayModal').style.display='flex';
   }
   function closeDay(){ $('dayModal').style.display='none'; }
@@ -981,8 +983,7 @@
       +(t.created_by_name?'<span class="tdpill">작성 '+esc(t.created_by_name)+'</span>':'')
       +(done&&t.done_at?'<span class="tdpill" style="background:#e8f3ee;color:#2f6f54">완료 '+new Date(t.done_at).toLocaleDateString('ko-KR')+'</span>':'')
       +'</div>';
-    const memos='<div class="tdmemos" id="memos-'+t.id+'"></div>'
-      +(!done?'<div class="memoadd"><input type="text" id="memoin-'+t.id+'" placeholder="진행상황·피드백 메모 작성..." onkeydown="if(event.key===\'Enter\')addMemo('+t.id+')"><button class="btn sm" onclick="addMemo('+t.id+')">전송</button></div>':'');
+    const memos=todoMemoBlock(t,'');
     return '<div class="tdcard lv-'+lv[1]+(done?' done':'')+(t.overdue?' overdue':'')+'" id="td-'+t.id+'">'
       +'<div class="tdtop">'
         +'<div class="tdchk '+(done?'on':'')+'" onclick="toggleTodo('+t.id+','+(!done)+')">'+(done?'✓':'')+'</div>'
@@ -997,10 +998,20 @@
     +'</div>';
   }
 
-  async function loadMemos(id){
+  // 할 일 메모(댓글) 블록 — 할 일 탭('')과 달력(cvd-/cmd-)에서 같은 메모를 공유
+  function todoMemoBlock(t, pfx){
+    pfx=pfx||'';
+    const done=t.status==='done';
+    return '<div class="tdmemos" id="'+pfx+'memos-'+t.id+'"></div>'
+      +(!done?'<div class="memoadd"><input type="text" id="'+pfx+'memoin-'+t.id+'" placeholder="진행상황·피드백 메모 작성..." onkeydown="if(event.key===\'Enter\')addMemo('+t.id+',\''+pfx+'\')"><button class="btn sm" onclick="addMemo('+t.id+',\''+pfx+'\')">전송</button></div>':'');
+  }
+  // 같은 할 일이 여러 곳(탭/달력)에 떠 있으면 모두 새로고침 → 서로 반영
+  function reloadAllMemos(id){ return Promise.all(['','cvd-','cmd-'].map(p=> $(p+'memos-'+id)?loadMemos(id,p):null )); }
+  async function loadMemos(id, pfx){
+    pfx=pfx||'';
     try{
       const d=await fetch(session.api+'/api/todos/'+id+'/memos',{headers:auth()}).then(r=>r.json());
-      const box=$('memos-'+id); if(!box) return;
+      const box=$(pfx+'memos-'+id); if(!box) return;
       const items=d.items||[];
       if(!items.length){ box.innerHTML='<div style="font-size:11px;color:#aaa">아직 메모가 없습니다. 진행상황을 기록해 보세요.</div>'; return; }
       box.innerHTML=items.map(m=>{
@@ -1011,12 +1022,13 @@
       }).join('');
     }catch(e){}
   }
-  async function addMemo(id){
-    const inp=$('memoin-'+id); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+  async function addMemo(id, pfx){
+    pfx=pfx||'';
+    const inp=$(pfx+'memoin-'+id); if(!inp) return; const body=inp.value.trim(); if(!body) return;
     inp.disabled=true;
     try{
       const res=await fetch(session.api+'/api/todos/'+id+'/memos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
-      if(res.ok){ inp.value=''; await loadMemos(id); }
+      if(res.ok){ inp.value=''; await reloadAllMemos(id); }
     }catch(e){}
     inp.disabled=false; inp.focus();
   }
