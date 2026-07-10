@@ -16,8 +16,82 @@ export default async function customerRoutes(app) {
 
   // 소속 배정용 전체 팀(director 포함) — 팀 권한 관리 화면
   app.get('/api/team-admin/teams', { preHandler: [authGuard, requireDirector] }, async () => {
-    const rows = (await query(`SELECT id, name, sort_order, is_sales FROM sales_teams WHERE deleted_at IS NULL ORDER BY sort_order, id`)).rows;
-    return { items: rows.map((t) => ({ id: t.id, name: t.name, is_sales: t.is_sales })) };
+    const rows = (await query(
+      `SELECT t.id, t.name, t.sort_order, t.is_sales,
+              (SELECT COUNT(*) FROM users u WHERE u.team_id = t.id AND u.deleted_at IS NULL)     AS member_count,
+              (SELECT COUNT(*) FROM customers c WHERE c.team_id = t.id AND c.deleted_at IS NULL) AS customer_count
+         FROM sales_teams t
+        WHERE t.deleted_at IS NULL
+        ORDER BY t.sort_order, t.id`)).rows;
+    return {
+      items: rows.map((t) => ({
+        id: Number(t.id),
+        name: t.name,
+        is_sales: t.is_sales,
+        sort_order: Number(t.sort_order),
+        member_count: Number(t.member_count),
+        customer_count: Number(t.customer_count),
+      })),
+    };
+  });
+
+  // 팀 생성(디렉터) — 자동 추가. name UNIQUE 이므로 동명 소프트삭제 팀은 되살림.
+  app.post('/api/team-admin/teams', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const name = String(req.body?.name || '').trim();
+    const isSales = req.body?.is_sales === false ? false : true;
+    const sortOrder = Number.isFinite(Number(req.body?.sort_order)) ? Number(req.body.sort_order) : 0;
+    if (!name) return reply.code(400).send({ error: 'name_required' });
+    const dup = (await query(`SELECT id, deleted_at FROM sales_teams WHERE name = $1`, [name])).rows[0];
+    if (dup && dup.deleted_at == null) return reply.code(409).send({ error: 'name_taken' });
+    let row;
+    if (dup && dup.deleted_at != null) {
+      // 과거 소프트삭제된 동명 팀 재활성화(이름 UNIQUE 충돌 회피)
+      row = (await query(
+        `UPDATE sales_teams SET deleted_at = NULL, is_sales = $2, sort_order = $3 WHERE id = $1
+         RETURNING id, name, is_sales, sort_order`, [dup.id, isSales, sortOrder])).rows[0];
+    } else {
+      row = (await query(
+        `INSERT INTO sales_teams (name, sort_order, is_sales) VALUES ($1, $2, $3)
+         RETURNING id, name, is_sales, sort_order`, [name, sortOrder, isSales])).rows[0];
+    }
+    await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `team:${row.id}`, detail: { name, is_sales: isSales } });
+    return { ok: true, team: { id: Number(row.id), name: row.name, is_sales: row.is_sales, sort_order: Number(row.sort_order) } };
+  });
+
+  // 팀 개명·유형·정렬 변경(디렉터). id 불변이라 기존 연결 유지.
+  app.patch('/api/team-admin/teams/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const cur = (await query(`SELECT id, name, is_sales, sort_order FROM sales_teams WHERE id = $1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    const b = req.body || {};
+    const name = b.name != null ? String(b.name).trim() : cur.name;
+    if (!name) return reply.code(400).send({ error: 'name_required' });
+    const isSales = b.is_sales != null ? (b.is_sales === false ? false : true) : cur.is_sales;
+    const sortOrder = (b.sort_order != null && Number.isFinite(Number(b.sort_order))) ? Number(b.sort_order) : Number(cur.sort_order);
+    if (name !== cur.name) {
+      const dup = (await query(`SELECT id FROM sales_teams WHERE name = $1 AND id <> $2`, [name, id])).rows[0];
+      if (dup) return reply.code(409).send({ error: 'name_taken' });
+    }
+    const row = (await query(
+      `UPDATE sales_teams SET name = $1, is_sales = $2, sort_order = $3 WHERE id = $4
+       RETURNING id, name, is_sales, sort_order`, [name, isSales, sortOrder, id])).rows[0];
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `team:${id}`, detail: { name, is_sales: isSales, sort_order: sortOrder } });
+    return { ok: true, team: { id: Number(row.id), name: row.name, is_sales: row.is_sales, sort_order: Number(row.sort_order) } };
+  });
+
+  // 팀 삭제(소프트, 디렉터) — 소속 유저·고객 있으면 차단(고아 방지).
+  app.delete('/api/team-admin/teams/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const cur = (await query(`SELECT id FROM sales_teams WHERE id = $1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    const mem = Number((await query(`SELECT COUNT(*) AS n FROM users WHERE team_id = $1 AND deleted_at IS NULL`, [id])).rows[0].n);
+    const cus = Number((await query(`SELECT COUNT(*) AS n FROM customers WHERE team_id = $1 AND deleted_at IS NULL`, [id])).rows[0].n);
+    if (mem > 0 || cus > 0) return reply.code(409).send({ error: 'team_in_use', member_count: mem, customer_count: cus });
+    await query(`UPDATE sales_teams SET deleted_at = now() WHERE id = $1`, [id]);
+    // 이 팀을 가리키던 상대팀 열람권도 정리(팀이 비었을 때만 이 지점 도달).
+    await query(`DELETE FROM user_team_access WHERE team_id = $1`, [id]);
+    await safeLog({ userId: req.ctx.perm.userId, action: 'delete', target: `team:${id}`, detail: {} });
+    return { ok: true };
   });
 
   async function computeNextCode() {
