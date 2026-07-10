@@ -102,6 +102,8 @@
   .daymodal .hd .t{font-size:15px;font-weight:800;color:var(--brand)}
   .daymodal .bd{padding:16px 18px}
   /* ===== 할 일(Tarea) 고도화 ===== */
+  .tddevbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;background:#f6f4ee;border:1px solid var(--line);border-radius:10px;flex-wrap:wrap}
+  .tddevbar .hint{margin:0}
   .tdgroup{margin-bottom:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
   .tdghead{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:#faf8f3;user-select:none}
   .tdghead:hover{background:#f3efe6}
@@ -215,6 +217,10 @@
     <!-- 할 일 -->
     <div class="card hidden" id="paneTodo">
       <div id="todoForm"></div>
+      <div id="todoDevBar" class="tddevbar" style="display:none">
+        <button type="button" id="todoDevBtn" class="btn sm ghost" onclick="toggleDevTodos()">제품개발 항목 보기</button>
+        <span id="todoDevNote" class="hint"></span>
+      </div>
       <div id="todoList"><div class="hint">불러오는 중…</div></div>
     </div>
   </div>
@@ -893,6 +899,19 @@
   function tfDuePending(){ const c=$('tf-due-pending'); const d=$('tf-due'); if(d){ d.disabled=c.checked; if(c.checked) d.value=''; } }
 
   const LV={assigned:['지시','assigned'],self:['자가','self'],coop:['협조','coop']};
+  // 제품개발 관련 자동생성 알림 종류(백엔드 kind) — 감추기 대상
+  const DEV_KINDS=new Set(['dev_review','dev_complete']);
+  // 기본값: 감춤(1). 사용자가 이 브라우저에서 '보기'를 누르면 기억(0). '모두에게' = 기본 감춤.
+  let hideDevTodos=true; try{ const _hv=localStorage.getItem('refatrix_todo_hide_dev'); if(_hv!==null) hideDevTodos=(_hv==='1'); }catch(e){}
+  function toggleDevTodos(){ hideDevTodos=!hideDevTodos; try{localStorage.setItem('refatrix_todo_hide_dev', hideDevTodos?'1':'0');}catch(e){} loadTodos(); }
+  function renderDevToggle(devCount){
+    const bar=$('todoDevBar'); if(!bar) return;
+    if(!devCount){ bar.style.display='none'; return; }
+    bar.style.display='flex';
+    const btn=$('todoDevBtn'), note=$('todoDevNote');
+    if(btn){ btn.textContent = hideDevTodos ? ('제품개발 항목 보기 ('+devCount+'건 숨김)') : '제품개발 항목 감추기'; btn.className='btn sm '+(hideDevTodos?'ghost':''); }
+    if(note){ note.textContent = hideDevTodos ? '제품개발 검토·완료 알림을 숨기는 중입니다. 버튼을 눌러 다시 볼 수 있어요.' : ('제품개발 검토·완료 알림 '+devCount+'건 표시 중'); }
+  }
   let todoCollapse={}; // assignee_name → collapsed?
   function toggleGroup(key){ todoCollapse[key]=!todoCollapse[key]; const el=document.getElementById('tdg-'+cssId(key)); if(el) el.classList.toggle('collapsed',todoCollapse[key]); }
   function cssId(s){ return String(s).replace(/[^a-zA-Z0-9]/g,'_'); }
@@ -900,11 +919,15 @@
   async function loadTodos(){
     try{
       const d=await fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
+      const allItems=d.items||[];
+      // 제품개발 관련 항목 분리 + 감추기 토글 바 갱신
+      const devCount=allItems.filter(t=>DEV_KINDS.has(t.kind)).length;
+      renderDevToggle(devCount);
+      const items=hideDevTodos ? allItems.filter(t=>!DEV_KINDS.has(t.kind)) : allItems;
       const openCount=items.filter(t=>t.status==='open').length;
       const badge=$('todoBadge');
       if(openCount>0){badge.textContent=openCount;badge.classList.remove('hidden');}else badge.classList.add('hidden');
-      if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">할 일이 없습니다.</div>';return;}
+      if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">'+((hideDevTodos&&devCount>0)?('표시할 할 일이 없습니다. (제품개발 '+devCount+'건 숨김 — 위 버튼으로 보기)'):'할 일이 없습니다.')+'</div>';return;}
       // 담당자별 그룹화 (전체 공통은 별도 그룹)
       const groups={}; const order=[];
       items.forEach(t=>{
@@ -1031,6 +1054,6 @@
   $('calToday').addEventListener('click',()=>calGoToday());
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260710pr"></script>
+<script src="refatrix-nav.js?v=20260710pu"></script>
 </body>
 </html>
