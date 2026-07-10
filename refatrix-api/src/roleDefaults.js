@@ -65,7 +65,7 @@ export const ROLE_DEFAULTS = {
   },
 };
 
-const ALL_PAGES = ['quote', 'sales', 'stock', 'shortage', 'devrequest', 'pipeline', 'customers', 'targets', 'marketing', 'transactions', 'settlement', 'budget', 'inventory', 'products', 'warehouse'];
+const ALL_PAGES = ['quote', 'sales', 'stock', 'shortage', 'devrequest', 'pipeline', 'customers', 'targets', 'marketing', 'transactions', 'settlement', 'budget', 'inventory', 'products', 'warehouse', 'purchase'];
 
 /**
  * 역할 기본 권한을 사용자에게 부여.

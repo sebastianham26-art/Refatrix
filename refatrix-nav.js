@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260707vg loaded (warehouse+cal)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260710pu loaded (purchase group)'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -48,6 +48,7 @@
     budget:{file:'refatrix-budget.html',name:'예산',desc:'예산 계획'},
     importcost:{file:'refatrix-importcost.html',name:'수입원가',desc:'부대비용·원가'},
     import:{file:'refatrix-import.html',name:'수입 입고',desc:'배치 등록'},
+    purchase:{file:'refatrix-purchase.html',name:'구매 내역',desc:'발주·구매원가(USD) 엑셀 기록·조회'},
     products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
     vehicleparts:{file:'refatrix-vehicleparts.html',name:'차종별 부품',desc:'차종 검색·카테고리별 CTR/SYD·VIO'},
     viofinder:{file:'refatrix-viofinder.html',name:'VIO 차량모델 제품찾기',desc:'VIO 순위·연식·CTR/SYD·재고·누적판매·가격'},
@@ -76,7 +77,7 @@
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
     boardNotice:null, boardTodo:null, wbr:'wbr',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
-    settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory',
+    settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', marketing:'marketing', mktspend:'marketing',
     users:'__director__', company:'__director__', processKpi:'__director__',
@@ -87,6 +88,7 @@
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','dashboard','rnr','coverage','devmap']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','fieldsurvey','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
+    {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','prodFind','prodUpload']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr']},
@@ -95,7 +97,7 @@
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
-  var ROLE_ONLY_GROUPS={ treasury:['finance'], warehouse:['warehouse','pm','cal'] };  // 창고: 제품·마케팅 + 일정 그룹 허용(개별 화면은 권한(canSee)으로 필터; wbr은 페이지권한 없어 자동 숨김)
+  var ROLE_ONLY_GROUPS={ treasury:['finance','purchase'], warehouse:['warehouse','pm','cal'] };  // 창고: 제품·마케팅 + 일정 그룹 허용(개별 화면은 권한(canSee)으로 필터; wbr은 페이지권한 없어 자동 숨김)
   // 역할별 로그인 랜딩(제한역할이 미허용 화면 접근 시 되돌릴 첫 화면).
   var ROLE_LANDING={ treasury:'finance', warehouse:'whHome' };
   // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.

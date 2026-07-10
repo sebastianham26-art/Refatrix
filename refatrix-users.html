@@ -136,6 +136,7 @@
   const PERM_GROUPS=[
     ['영업', [['quote','견적(작성·목록)'],['sales','매출 등록'],['devrequest','개발 요청'],['pipeline','영업활동(파이프라인)'],['customers','고객'],['targets','매출목표']]],
     ['영업지원', [['settlement','수금/정산(AR)'],['stock','재고 이동'],['shortage','부족분'],['inventory','수입원가·입고']]],
+    ['구매', [['purchase','구매 내역']]],
     ['재무', [['transactions','재무(거래·캐시플로)'],['commission','커미션'],['budget','예산']]],
     ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
     ['창고', [['warehouse','창고(입고·피킹·패킹)']]],
@@ -213,7 +214,7 @@
     'refatrix-dashboard.html':'대시보드','refatrix-portal.html':'포털','refatrix-quote.html':'견적작성','refatrix-quotelist.html':'견적목록',
     'refatrix-sales.html':'영업','refatrix-salesperf.html':'영업실적','refatrix-finance.html':'재무','refatrix-settlement.html':'정산/반제',
     'refatrix-commission.html':'커미션','refatrix-customers.html':'고객','refatrix-products.html':'제품','refatrix-stock.html':'재고',
-    'refatrix-stock-test.html':'재고(테스트)','refatrix-import.html':'수입','refatrix-importcost.html':'수입원가','refatrix-recost.html':'원가재계산',
+    'refatrix-stock-test.html':'재고(테스트)','refatrix-import.html':'수입','refatrix-importcost.html':'수입원가','refatrix-purchase.html':'구매','refatrix-recost.html':'원가재계산',
     'refatrix-grossprofit.html':'매출총이익','refatrix-budget.html':'예산','refatrix-targets.html':'목표','refatrix-pipeline.html':'파이프라인',
     'refatrix-funnel.html':'퍼널','refatrix-orderfunnel.html':'수주퍼널','refatrix-marketing.html':'마케팅','refatrix-board.html':'게시판',
     'refatrix-wbr.html':'WBR','refatrix-company.html':'회사','refatrix-users.html':'사용자관리','refatrix-shortage.html':'재고부족',
@@ -709,6 +710,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260703nb"></script>
+<script src="refatrix-nav.js?v=20260710pu"></script>
 </body>
 </html>
