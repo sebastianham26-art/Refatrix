@@ -529,15 +529,16 @@ export default async function portalBoardRoutes(app) {
   app.get('/api/todos', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     const status = req.query.status === 'done' ? 'done' : (req.query.status === 'all' ? null : 'open');
-    const conds = [`t.deleted_at IS NULL`];
+    // 제품개발 자동생성 알림(개발검토/개발완료)은 할 일 목록·달력에서 제외
+    const conds = [`t.deleted_at IS NULL`, `COALESCE(t.kind,'') NOT IN ('dev_review','dev_complete')`];
     const args = [];
-    // 가시성: 디렉터=전체 / 그 외=내게 배정 OR 전체(all) OR 내가 만든 것
+    // 가시성: 디렉터=전체 / 그 외=내가 담당(단일 또는 다중) OR 전체(all) OR 내가 만든 것
     if (perm.role !== 'director') {
       args.push(perm.userId);
-      conds.push(`(t.assignee_id=$${args.length} OR t.scope='all' OR t.created_by=$${args.length})`);
+      conds.push(`(EXISTS (SELECT 1 FROM todo_assignees ta WHERE ta.todo_id=t.id AND ta.user_id=$${args.length}) OR t.assignee_id=$${args.length} OR t.scope='all' OR t.created_by=$${args.length})`);
     } else if (req.query.assignee_id) {
       args.push(Number(req.query.assignee_id));
-      conds.push(`(t.assignee_id=$${args.length})`);
+      conds.push(`(EXISTS (SELECT 1 FROM todo_assignees ta WHERE ta.todo_id=t.id AND ta.user_id=$${args.length}) OR t.assignee_id=$${args.length})`);
     }
     if (status) { args.push(status); conds.push(`t.status=$${args.length}`); }
     const rows = (await query(
@@ -550,6 +551,18 @@ export default async function portalBoardRoutes(app) {
          LEFT JOIN users c ON c.id=t.created_by
         WHERE ${conds.join(' AND ')}
         ORDER BY t.status, (t.due_date IS NULL), t.due_date, t.id DESC`, args)).rows;
+    // 다중 담당자 조회(대표 assignee_id 외 추가 담당자 포함)
+    const ids = rows.map((r) => Number(r.id));
+    const asgMap = {};
+    if (ids.length) {
+      const arows = (await query(
+        `SELECT ta.todo_id, ta.user_id, u.name
+           FROM todo_assignees ta JOIN users u ON u.id=ta.user_id
+          WHERE ta.todo_id = ANY($1) ORDER BY ta.id`, [ids])).rows;
+      for (const a of arows) {
+        (asgMap[Number(a.todo_id)] = asgMap[Number(a.todo_id)] || []).push({ id: Number(a.user_id), name: a.name });
+      }
+    }
     const today = new Date().toISOString().slice(0, 10);
     const todayMs = new Date(today).getTime();
     return {
@@ -557,9 +570,13 @@ export default async function portalBoardRoutes(app) {
         const due = d10(r.due_date);
         const created = d10(r.created_at);
         const daysSince = created ? Math.max(0, Math.round((todayMs - new Date(created).getTime()) / 86400000)) : null;
+        // 담당자 목록: 조인 테이블 우선, 없으면 대표 assignee 한 명(레거시)
+        let asg = asgMap[Number(r.id)] || [];
+        if (!asg.length && r.assignee_id) asg = [{ id: Number(r.assignee_id), name: r.assignee_name }];
         return {
           id: r.id, title: r.title, detail: r.detail,
           assignee_id: r.assignee_id, assignee_name: r.assignee_name,
+          assignee_ids: asg.map((x) => x.id), assignee_names: asg.map((x) => x.name),
           scope: r.scope || 'user', level: r.level || 'assigned',
           due_date: due, due_pending: !!r.due_pending,
           status: r.status, done_at: isoTs(r.done_at), done_note: r.done_note, kind: r.kind || null,
@@ -580,23 +597,31 @@ export default async function portalBoardRoutes(app) {
     const isDir = perm.role === 'director';
     let scope = (b.scope === 'all') ? 'all' : 'user';
     let level = b.level;
-    let assignee = b.assignee_id ? Number(b.assignee_id) : null;
+    // 다중 담당자: assignee_ids(배열) 우선, 없으면 legacy assignee_id 단일
+    let assigneeIds = Array.isArray(b.assignee_ids) ? b.assignee_ids.map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+    if (!assigneeIds.length && b.assignee_id) assigneeIds = [Number(b.assignee_id)];
+    assigneeIds = [...new Set(assigneeIds)]; // 중복 제거
+    let assignee = assigneeIds.length ? assigneeIds[0] : null;
 
     if (isDir) {
-      // 디렉터: 전체 또는 특정 담당자에게 지시
-      if (scope === 'all') { assignee = null; level = level || 'assigned'; }
+      // 디렉터: 전체 또는 특정 담당자(여러 명)에게 지시
+      if (scope === 'all') { assignee = null; assigneeIds = []; level = level || 'assigned'; }
       else {
-        if (!assignee) return reply.code(400).send({ error: 'assignee_required' });
+        if (!assigneeIds.length) return reply.code(400).send({ error: 'assignee_required' });
         level = level || 'assigned';
       }
     } else {
       // 비디렉터: 전체 배정 불가
       scope = 'user';
       const me = Number(perm.userId);
-      if (assignee && assignee !== me) {
-        level = 'coop';   // 타 팀원에게 협조 요청
+      const others = assigneeIds.filter((id) => id !== me);
+      if (others.length) {
+        level = 'coop';        // 타 팀원(여러 명)에게 협조 요청
+        assigneeIds = others;
+        assignee = others[0];
       } else {
-        level = 'self';   // 자가 작성
+        level = 'self';        // 자가 작성
+        assigneeIds = [me];
         assignee = me;
       }
     }
@@ -608,7 +633,11 @@ export default async function portalBoardRoutes(app) {
       `INSERT INTO todos (title, detail, assignee_id, due_date, due_pending, scope, level, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [String(b.title).trim(), b.detail ? String(b.detail) : null, assignee, due, duePending, scope, level, perm.userId])).rows[0];
-    await logEvent({ userId: perm.userId, action: 'create', target: `todo:${r.id}`, detail: { assignee, scope, level } });
+    // 다중 담당자 저장
+    for (const uid of assigneeIds) {
+      await query(`INSERT INTO todo_assignees (todo_id, user_id) VALUES ($1,$2) ON CONFLICT (todo_id, user_id) DO NOTHING`, [r.id, uid]);
+    }
+    await logEvent({ userId: perm.userId, action: 'create', target: `todo:${r.id}`, detail: { assignee, assignee_ids: assigneeIds, scope, level } });
     return { id: r.id };
   });
 
@@ -619,7 +648,9 @@ export default async function portalBoardRoutes(app) {
     const b = req.body || {};
     const t = (await query(`SELECT assignee_id, created_by, scope FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
-    const mine = perm.role === 'director' || Number(t.assignee_id) === Number(perm.userId) || Number(t.created_by) === Number(perm.userId) || t.scope === 'all';
+    const isAssignee = Number(t.assignee_id) === Number(perm.userId)
+      || (await query(`SELECT 1 FROM todo_assignees WHERE todo_id=$1 AND user_id=$2`, [id, perm.userId])).rows.length > 0;
+    const mine = perm.role === 'director' || isAssignee || Number(t.created_by) === Number(perm.userId) || t.scope === 'all';
     if (!mine) return reply.code(403).send({ error: 'forbidden' });
     if (!b.due_date || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.due_date))) return reply.code(400).send({ error: 'bad_date' });
     await query(`UPDATE todos SET due_date=$2, due_pending=false, updated_at=now() WHERE id=$1`, [id, b.due_date]);
@@ -645,7 +676,9 @@ export default async function portalBoardRoutes(app) {
     if (!body) return reply.code(400).send({ error: 'body_required' });
     const t = (await query(`SELECT assignee_id, created_by, scope FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
-    const allowed = perm.role === 'director' || t.scope === 'all' || Number(t.assignee_id) === Number(perm.userId) || Number(t.created_by) === Number(perm.userId);
+    const isAssignee = Number(t.assignee_id) === Number(perm.userId)
+      || (await query(`SELECT 1 FROM todo_assignees WHERE todo_id=$1 AND user_id=$2`, [id, perm.userId])).rows.length > 0;
+    const allowed = perm.role === 'director' || t.scope === 'all' || isAssignee || Number(t.created_by) === Number(perm.userId);
     if (!allowed) return reply.code(403).send({ error: 'forbidden' });
     const r = (await query(`INSERT INTO todo_memos (todo_id, author_id, body) VALUES ($1,$2,$3) RETURNING id, created_at`, [id, perm.userId, body])).rows[0];
     await query(`UPDATE todos SET updated_at=now() WHERE id=$1`, [id]);
@@ -659,7 +692,9 @@ export default async function portalBoardRoutes(app) {
     const b = req.body || {};
     const t = (await query(`SELECT assignee_id, created_by, scope, status FROM todos WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!t) return reply.code(404).send({ error: 'not_found' });
-    const allowed = perm.role === 'director' || Number(t.assignee_id) === Number(perm.userId) || Number(t.created_by) === Number(perm.userId);
+    const isAssignee = Number(t.assignee_id) === Number(perm.userId)
+      || (await query(`SELECT 1 FROM todo_assignees WHERE todo_id=$1 AND user_id=$2`, [id, perm.userId])).rows.length > 0;
+    const allowed = perm.role === 'director' || isAssignee || Number(t.created_by) === Number(perm.userId);
     if (!allowed) return reply.code(403).send({ error: 'forbidden' });
     const done = b.done !== false;
     if (done) await query(`UPDATE todos SET status='done', done_at=now(), done_note=$2, updated_at=now() WHERE id=$1`, [id, b.note ? String(b.note) : null]);
