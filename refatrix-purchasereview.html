@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-0710a</title>
+<title>Refatrix ERP · 구매 검토 · build pr-0710b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -50,6 +50,17 @@
   .pager{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted)}
   .chk{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted);font-size:12.5px}
   .chk input{width:auto}
+  tr.clk{cursor:pointer}tr.clk:hover{background:#f7f5ef}
+  .drill{margin-top:14px;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .drill h3{margin:0;font-size:14px;color:var(--brand)}
+  .drill .close{float:right;cursor:pointer;color:var(--muted);font-weight:700;border:none;background:none;font-size:13px}
+  .mtag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .mtag.in{background:#e7f3ee;color:var(--income)}
+  .mtag.out{background:#fdeceb;color:var(--expense)}
+  .mtag.adj{background:#eee;color:#555}
+  .bar{position:relative;height:14px;background:#ece7dc;border-radius:4px;min-width:60px}
+  .bar>span{position:absolute;left:0;top:0;bottom:0;background:var(--brand);border-radius:4px;opacity:.7}
+  .bar>em{position:relative;font-style:normal;font-size:10.5px;color:#333;padding-left:5px;line-height:14px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -88,6 +99,7 @@
     <div class="sbrow" id="summary" style="margin-top:12px"></div>
     <div class="msg" id="msg"></div>
     <div style="max-height:560px;overflow:auto"><table id="tbl"></table></div>
+    <div class="drill hidden" id="drill"></div>
     <div class="pager">
       <button class="btn ghost sm" id="prevBtn" type="button">◀ 이전</button>
       <span id="pageInfo">—</span>
@@ -174,7 +186,7 @@
       const appShort=appAll.length>70?appAll.slice(0,70)+'…':(appAll||'—');
       const boCls=Number(it.backorder_qty)>0?'ok-cell':'';
       const shCls=Number(it.shortage_qty)>0?'warn-cell':'';
-      h+='<tr>'+
+      h+='<tr class="clk" data-pid="'+it.product_id+'">'+
         '<td><b>'+esc(it.ctr)+'</b>'+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
         '<td class="syd">'+esc(sydTxt)+'</td>'+
         '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
@@ -191,8 +203,70 @@
       else { sortKey=s; sortDir=(s==='code')?'asc':'desc'; }
       offset=0; load();
     }));
+    $('tbl').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>openDrill(tr.dataset.pid)));
   }
   function SORTS_ACTIVE(c){ return c.sort===sortKey; }
+
+  // ---- 드릴다운: SKU 이동이력(movement) ----
+  let drillItems=[], drillProd=null, drillTotals=null, drillSortKey='moved_at', drillSortDir='desc';
+  const DRILL_COLS=[
+    {k:'moved_at',t:'일자'},{k:'origin',t:'구분'},{k:'qty',t:'수량',num:true},
+    {k:'pct',t:'전체대비 %',num:true},{k:'destination',t:'목적지 / 근거'},{k:'ref',t:'참조 / 비고'},
+  ];
+  const fmtDate=(s)=> s? String(s).slice(0,10) : '—';
+  async function openDrill(pid){
+    const box=$('drill'); box.classList.remove('hidden'); box.innerHTML='<div class="hint">이동 이력 불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/purchases/review/'+pid+'/movements',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ box.innerHTML='이력 실패: '+esc(d.error||res.status); return; }
+      drillItems=d.items||[]; drillProd=d.product||{}; drillTotals=d.totals||{};
+      drillSortKey='moved_at'; drillSortDir='desc';
+      renderDrill();
+      if(typeof box.scrollIntoView==='function') box.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }catch(e){ box.innerHTML='서버 오류: '+esc(e.message); }
+  }
+  function sortDrill(items){
+    const col=DRILL_COLS.find(c=>c.k===drillSortKey)||DRILL_COLS[0];
+    const a=items.slice();
+    a.sort((x,y)=> col.num ? ((Number(x[drillSortKey])||0)-(Number(y[drillSortKey])||0))
+                           : String(x[drillSortKey]==null?'':x[drillSortKey]).localeCompare(String(y[drillSortKey]==null?'':y[drillSortKey]),'es'));
+    if(drillSortDir==='desc') a.reverse();
+    return a;
+  }
+  function renderDrill(){
+    const box=$('drill'); const t=drillTotals||{};
+    let h='<button class="close" onclick="document.getElementById(\'drill\').classList.add(\'hidden\')">✕ 닫기</button>';
+    h+='<h3>'+esc(drillProd.code||'')+(drillProd.name?(' · '+esc(drillProd.name)):'')+' — 이동 이력</h3>';
+    h+='<div class="sbrow" style="margin-top:10px">'+
+        sb(num(t.in_qty),'총 입고')+sb(num(t.out_qty),'총 출고')+sb(num(t.adjust_qty),'조정')+
+        sb(num(t.net),'순증감')+sb(num(drillProd.stock_qty),'현재고')+sb(num(t.count),'이동 건수')+'</div>';
+    if(t.capped) h+='<div class="hint">※ 최근 5,000건까지 표시(초과분 있음).</div>';
+    const items=sortDrill(drillItems);
+    let tbl='<table><tr>';
+    for(const c of DRILL_COLS){ const ar=drillSortKey===c.k?(drillSortDir==='asc'?' ▲':' ▼'):''; tbl+='<th class="'+(c.num?'num ':'')+'sortable" data-k="'+c.k+'">'+c.t+ar+'</th>'; }
+    tbl+='</tr>';
+    if(!items.length){ tbl+='<tr><td colspan="'+DRILL_COLS.length+'" style="color:var(--muted)">이동 내역 없음</td></tr>'; }
+    for(const m of items){
+      const cls=m.move_type==='in'?'in':(m.move_type==='out'?'out':'adj');
+      tbl+='<tr>'+
+        '<td>'+fmtDate(m.moved_at)+'</td>'+
+        '<td><span class="mtag '+cls+'">'+esc(m.origin)+'</span></td>'+
+        '<td class="num">'+num(m.qty)+'</td>'+
+        '<td class="num"><div class="bar"><span style="width:'+Math.min(100,Number(m.pct)||0)+'%"></span><em>'+(Number(m.pct)||0).toFixed(2)+'%</em></div></td>'+
+        '<td>'+esc(m.destination||'—')+(m.sat_no?(' <span style="color:var(--muted);font-size:11px">('+esc(m.sat_no)+')</span>'):'')+'</td>'+
+        '<td style="color:var(--muted);font-size:12px">'+esc(m.ref||m.note||'')+'</td>'+
+      '</tr>';
+    }
+    tbl+='</table>';
+    box.innerHTML=h+tbl;
+    box.querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.k;
+      if(drillSortKey===k){ drillSortDir=(drillSortDir==='asc'?'desc':'asc'); }
+      else { drillSortKey=k; const col=DRILL_COLS.find(c=>c.k===k); drillSortDir=(col&&col.num)?'desc':'asc'; }
+      renderDrill();
+    }));
+  }
 
   function updatePager(shown){
     const from=total===0?0:offset+1, to=offset+shown;

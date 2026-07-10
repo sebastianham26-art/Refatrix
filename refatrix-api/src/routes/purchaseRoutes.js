@@ -266,6 +266,59 @@ export default async function purchaseRoutes(app) {
     };
   });
 
+  // 구매검토 드릴다운: SKU별 입출고 이력 — 언제 입고 몇개 / 언제 출고 어디로 몇개 + 전체 이동수량 대비 %.
+  //   qty 관례: in/out 양수(방향은 move_type), adjust 부호유지. % 분모 = Σ|qty|(전체 이동수량).
+  app.get('/api/purchases/review/:productId/movements', gate, async (req, reply) => {
+    const pid = Number(req.params.productId);
+    if (!pid) return reply.code(400).send({ error: 'bad_id' });
+    const prod = (await query(`SELECT id, code, name, stock_qty FROM products WHERE id=$1`, [pid])).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'not_found' });
+    const rows = (await query(
+      `SELECT m.id, m.move_type, m.qty, m.ref, m.note, m.source, m.moved_at,
+              m.sales_invoice_id, m.batch_id,
+              cu.name AS customer_name, si.sat_no AS sat_no, ib.batch_no AS batch_no
+         FROM stock_movements m
+         LEFT JOIN sales_invoices si ON si.id = m.sales_invoice_id
+         LEFT JOIN customers cu ON cu.id = si.customer_id
+         LEFT JOIN import_batches ib ON ib.id = m.batch_id
+        WHERE m.product_id = $1
+        ORDER BY m.moved_at DESC, m.id DESC
+        LIMIT 5000`, [pid])).rows;
+    let totalAbs = 0, inQty = 0, outQty = 0, adjQty = 0;
+    for (const r of rows) {
+      const q = Number(r.qty) || 0; totalAbs += Math.abs(q);
+      if (r.move_type === 'in') inQty += Math.abs(q);
+      else if (r.move_type === 'out') outQty += Math.abs(q);
+      else adjQty += q;
+    }
+    const items = rows.map((r) => {
+      const q = Number(r.qty) || 0; const absq = Math.abs(q);
+      const origin = r.move_type === 'in' ? '입고' : (r.move_type === 'out' ? '출고' : '조정');
+      let destination;
+      if (r.move_type === 'out') destination = r.customer_name || (r.sat_no ? `SAT ${r.sat_no}` : (r.ref || '—'));
+      else if (r.move_type === 'in') destination = r.batch_no ? `수입 ${r.batch_no}` : (r.ref ? `수입 ${r.ref}` : '수입입고');
+      else destination = r.note || r.ref || '조정';
+      return {
+        id: Number(r.id), moved_at: r.moved_at, move_type: r.move_type, origin,
+        qty: absq, signed_qty: q, destination, sat_no: r.sat_no || null, ref: r.ref || null, note: r.note || null,
+        source: r.sales_invoice_id ? '매출' : (r.batch_id ? '수입' : (r.source === 'manual' ? '수동' : '기타')),
+        pct: totalAbs > 0 ? Math.round((absq / totalAbs) * 10000) / 100 : 0,   // 전체 이동수량 대비 %
+      };
+    });
+    return {
+      product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty) || 0 },
+      totals: {
+        count: rows.length,
+        in_qty: Math.round(inQty * 1000) / 1000,
+        out_qty: Math.round(outQty * 1000) / 1000,
+        adjust_qty: Math.round(adjQty * 1000) / 1000,
+        total_abs: Math.round(totalAbs * 1000) / 1000,
+        net: Math.round((inQty - outQty + adjQty) * 1000) / 1000,
+      },
+      items, capped: rows.length >= 5000,
+    };
+  });
+
   // 상세(라인)
   app.get('/api/purchases/:id', gate, async (req, reply) => {
     const id = Number(req.params.id);
