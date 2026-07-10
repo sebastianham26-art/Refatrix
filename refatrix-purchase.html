@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0710d</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0710e</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -325,7 +325,7 @@
     {k:'sku',t:'제품코드'},{k:'product_name',t:'제품명'},{k:'matched',t:'매칭'},
     {k:'qty',t:'수량',num:true},
     {k:'unit_cost_usd',t:'구매원가(USD)',num:true,cost:true},{k:'amount_usd',t:'금액(USD)',num:true,cost:true},
-    {k:'stock_qty',t:'현재고',num:true},{k:'delta',t:'현재고−주문',num:true},
+    {k:'stock_qty',t:'현재고',num:true},{k:'incoming',t:'입고예정(재고↑)',num:true},{k:'projected',t:'입고후 예상재고',num:true},
   ];
   let detailData=null, detSortKey='', detSortDir='asc';
 
@@ -392,7 +392,8 @@
       sku:l.matched?l.matched_code:l.input_code, product_name:l.product_name, matched:l.matched,
       qty:Number(l.qty), unit_cost_usd:l.unit_cost_usd, amount_usd:l.amount_usd,
       stock_qty:l.stock_qty==null?null:Number(l.stock_qty),
-      delta:(l.stock_qty==null)?null:(Number(l.stock_qty)-Number(l.qty)),
+      incoming:Number(l.backorder_qty)||0,                                   // 입고되면 재고에 더해질 미입고 수량(qty−received)
+      projected:(l.stock_qty==null)?null:((Number(l.stock_qty)||0)+(Number(l.backorder_qty)||0)), // 입고후 예상재고
     }));
     detailData=d; detSortKey=''; detSortDir='asc';
     renderDetail();
@@ -417,7 +418,8 @@
         else if(c.k==='unit_cost_usd') h+='<td class="num">'+usd(r.unit_cost_usd)+'</td>';
         else if(c.k==='amount_usd') h+='<td class="num">'+usd(r.amount_usd)+'</td>';
         else if(c.k==='stock_qty') h+='<td class="num">'+(r.stock_qty==null?'—':num(r.stock_qty))+'</td>';
-        else if(c.k==='delta') h+='<td class="num">'+signedNum(r.delta)+'</td>';
+        else if(c.k==='incoming') h+='<td class="num">'+signedNum(r.incoming)+'</td>';
+        else if(c.k==='projected') h+='<td class="num">'+(r.projected==null?'—':num(r.projected))+'</td>';
       }
       h+='</tr>';
     }
