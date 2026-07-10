@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 구매 검토 · build pr-0710a</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1240px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 4px;font-size:15px;color:var(--brand)}
+  .card .cdesc{font-size:12px;color:var(--muted);margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3;position:sticky;top:0;z-index:1}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
+  .app{max-width:340px;font-size:12px;color:#4a4a4a;line-height:1.4}
+  .syd{font-size:12px;color:#4a4a4a}
+  .warn-cell{color:var(--expense);font-weight:700}
+  .ok-cell{color:var(--income)}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .sb{flex:1;min-width:120px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:19px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  .toolbar>div{flex:0 0 auto}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .pager{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted);font-size:12.5px}
+  .chk input{width:auto}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>구매 검토</h1>
+      <div class="sub">보유 SKU 종합 — CTR · SYD · 적용차종 · 현재재고 · backorder · 누적판매 · 견적부족</div>
+    </div>
+    <div class="who" id="who"></div>
+  </div>
+
+  <!-- 로그인 -->
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="toolbar">
+      <div style="min-width:160px"><label>아이디</label><input id="lid" autocomplete="username"></div>
+      <div style="min-width:160px"><label>PIN</label><input id="pin" type="password" autocomplete="current-password"></div>
+    </div>
+    <div class="api"><label>서버 주소</label><input id="api" value="https://refatrix-production.up.railway.app"></div>
+    <div style="margin-top:12px"><button class="btn" id="go" onclick="login()">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- 검토 -->
+  <div class="card hidden" id="reviewCard">
+    <h2>SKU 구매 검토</h2>
+    <div class="cdesc">보유 SKU 전체를 종합해 구매 판단을 돕습니다. 누적판매·견적부족(수요)과 현재재고·backorder(공급)를 함께 봅니다.</div>
+    <div class="toolbar">
+      <div style="min-width:240px"><label>검색 (CTR·SYD·차종·제품명)</label><input id="q" placeholder="예: CA0032 · NISSAN Frontier"></div>
+      <div><label style="visibility:hidden">.</label><label class="chk"><input type="checkbox" id="demandOnly"> 수요만(backorder&gt;0 또는 부족&gt;0)</label></div>
+      <div><label>페이지당</label><select id="pageSize"><option value="200">200</option><option value="500">500</option><option value="2000">2000</option></select></div>
+      <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
+    </div>
+    <div class="sbrow" id="summary" style="margin-top:12px"></div>
+    <div class="msg" id="msg"></div>
+    <div style="max-height:560px;overflow:auto"><table id="tbl"></table></div>
+    <div class="pager">
+      <button class="btn ghost sm" id="prevBtn" type="button">◀ 이전</button>
+      <span id="pageInfo">—</span>
+      <button class="btn ghost sm" id="nextBtn" type="button">다음 ▶</button>
+    </div>
+    <div class="hint">※ 누적판매=발행(posted) 매출 합계(전사 기준). backorder=미입고 발주잔량(구매내역). 견적부족=재고부족으로 기록된 미해소(open) 수량. 열 제목(숫자·CTR) 클릭으로 정렬합니다.</div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let sortKey='code', sortDir='asc', offset=0, total=0;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const num=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  const COLS=[
+    {k:'ctr',t:'CTR',sort:'code'},
+    {k:'syd',t:'SYD'},
+    {k:'app',t:'적용차종'},
+    {k:'stock_qty',t:'현재재고',num:true,sort:'stock'},
+    {k:'backorder_qty',t:'backorder',num:true,sort:'backorder'},
+    {k:'sold_qty',t:'누적판매',num:true,sort:'sold'},
+    {k:'shortage_qty',t:'견적부족',num:true,sort:'shortage'},
+  ];
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      onLoggedIn(d.user);
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+  function onLoggedIn(user){
+    $('who').innerHTML='<b>'+esc(user?.name||'')+'</b><br>역할: '+esc(user?.role||'-');
+    $('loginCard').classList.add('hidden'); $('reviewCard').classList.remove('hidden');
+    offset=0; load();
+  }
+
+  function pageSize(){ return Number($('pageSize').value)||200; }
+
+  async function load(){
+    const q=$('q').value.trim(), demand=$('demandOnly').checked;
+    const p=new URLSearchParams();
+    if(q)p.set('q',q); if(demand)p.set('demand','1');
+    p.set('sort',sortKey); p.set('dir',sortDir);
+    p.set('limit',pageSize()); p.set('offset',offset);
+    const m=$('msg'); m.className='msg';
+    let d;
+    try{
+      const res=await fetch(session.api+'/api/purchases/review?'+p.toString(),{headers:auth()});
+      d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='조회 실패: '+(d.error||res.status); return; }
+    }catch(e){ m.className='msg err'; m.textContent='서버 오류: '+e.message; return; }
+    total=d.total||0;
+    const s=d.summary||{};
+    $('summary').innerHTML=
+      sb(num(s.sku_count),'SKU 수')+sb(num(s.total_stock),'총 현재재고')+sb(num(s.total_backorder),'총 backorder')+
+      sb(num(s.total_sold),'총 누적판매')+sb(num(s.total_shortage),'총 견적부족');
+    render(d.items||[]);
+    updatePager(d.items?d.items.length:0);
+  }
+  function sb(v,l){ return '<div class="sb"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+
+  function render(items){
+    let h='<tr>';
+    for(const c of COLS){
+      if(c.sort){ const ar=(SORTS_ACTIVE(c))?(sortDir==='asc'?' ▲':' ▼'):''; h+='<th class="'+(c.num?'num ':'')+'sortable" data-s="'+c.sort+'">'+c.t+ar+'</th>'; }
+      else h+='<th class="'+(c.num?'num ':'')+'">'+c.t+'</th>';
+    }
+    h+='</tr>';
+    if(!items.length){ h+='<tr><td colspan="'+COLS.length+'" style="color:var(--muted)">데이터 없음</td></tr>'; }
+    for(const it of items){
+      const sydTxt=(it.syd&&it.syd.length)?it.syd.join(', '):'—';
+      const appAll=(it.applications&&it.applications.length)?it.applications.join('  /  '):'';
+      const appShort=appAll.length>70?appAll.slice(0,70)+'…':(appAll||'—');
+      const boCls=Number(it.backorder_qty)>0?'ok-cell':'';
+      const shCls=Number(it.shortage_qty)>0?'warn-cell':'';
+      h+='<tr>'+
+        '<td><b>'+esc(it.ctr)+'</b>'+(it.name?('<div style="font-size:11px;color:var(--muted)">'+esc(it.name)+'</div>'):'')+'</td>'+
+        '<td class="syd">'+esc(sydTxt)+'</td>'+
+        '<td class="app" title="'+esc(appAll)+'">'+esc(appShort)+'</td>'+
+        '<td class="num">'+num(it.stock_qty)+'</td>'+
+        '<td class="num '+boCls+'">'+num(it.backorder_qty)+'</td>'+
+        '<td class="num">'+num(it.sold_qty)+'</td>'+
+        '<td class="num '+shCls+'">'+num(it.shortage_qty)+'</td>'+
+      '</tr>';
+    }
+    $('tbl').innerHTML=h;
+    $('tbl').querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+      const s=th.dataset.s;
+      if(sortKey===s){ sortDir=(sortDir==='asc'?'desc':'asc'); }
+      else { sortKey=s; sortDir=(s==='code')?'asc':'desc'; }
+      offset=0; load();
+    }));
+  }
+  function SORTS_ACTIVE(c){ return c.sort===sortKey; }
+
+  function updatePager(shown){
+    const from=total===0?0:offset+1, to=offset+shown;
+    $('pageInfo').textContent=total? (from.toLocaleString()+'–'+to.toLocaleString()+' / '+total.toLocaleString()+' SKU') : '0 SKU';
+    $('prevBtn').disabled=offset<=0;
+    $('nextBtn').disabled=(offset+shown)>=total;
+  }
+
+  // 이벤트
+  $('searchBtn').addEventListener('click',()=>{ offset=0; load(); });
+  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ offset=0; load(); } });
+  $('demandOnly').addEventListener('change',()=>{ offset=0; load(); });
+  $('pageSize').addEventListener('change',()=>{ offset=0; load(); });
+  $('prevBtn').addEventListener('click',()=>{ offset=Math.max(0,offset-pageSize()); load(); });
+  $('nextBtn').addEventListener('click',()=>{ offset=offset+pageSize(); load(); });
+
+  // 포털 세션 자동 로그인
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  (function(){ try{ const ps=portalSession(); if(ps&&ps.token){
+    const apiEl=$('api');
+    session={token:ps.token,user:ps.user||{},api:(ps.api||(apiEl?apiEl.value:'')||'https://refatrix-production.up.railway.app').replace(/\/+$/,'')};
+    onLoggedIn(ps.user||{});
+  } }catch(e){ console.error('auto-login',e); } })();
+</script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
+</body>
+</html>

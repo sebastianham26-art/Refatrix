@@ -184,6 +184,88 @@ export default async function purchaseRoutes(app) {
     return { cost_visible: seeCost, items, summary };
   });
 
+  // 구매검토: 보유 SKU 전체 종합 — CTR · SYD · 적용차종 · 현재재고 · backorder · 누적판매 · 견적부족.
+  //   순수 읽기·집계(원가 없음 → 마스킹 불필요). q 검색 · 서버정렬 · 페이지네이션. 누적판매는 전사 기준(구매 판단용).
+  app.get('/api/purchases/review', gate, async (req) => {
+    const q = (req.query.q || '').trim();
+    const dir = String(req.query.dir || '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const limit = Math.min(Number(req.query.limit) || 500, 5000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const onlyDemand = ['1', 'true', 'yes'].includes(String(req.query.demand || '').toLowerCase());
+    const params = [];
+    let where = 'p.deleted_at IS NULL';
+    if (q) {
+      params.push(`%${q}%`); const i = params.length;
+      where += ` AND (p.code ILIKE $${i} OR p.name ILIKE $${i} OR p.scode ILIKE $${i} OR p.app ILIKE $${i}
+                   OR EXISTS (SELECT 1 FROM product_syd_codes sc WHERE sc.product_id=p.id AND sc.syd_code ILIKE $${i})
+                   OR EXISTS (SELECT 1 FROM product_applications pa WHERE pa.product_id=p.id AND pa.app_text ILIKE $${i}))`;
+    }
+    // 공통 조인: 누적판매(posted 매출) · backorder(v_backorder) · 견적부족(open stock_shortages)
+    const joins = `
+      LEFT JOIN (SELECT sil.product_id, SUM(sil.qty) AS qty
+                   FROM sales_invoice_lines sil JOIN sales_invoices si ON si.id=sil.invoice_id
+                  WHERE si.status='posted' AND si.deleted_at IS NULL
+                  GROUP BY sil.product_id) sold ON sold.product_id=p.id
+      LEFT JOIN v_backorder bo ON bo.product_id=p.id
+      LEFT JOIN (SELECT product_id, SUM(shortage_qty) AS qty
+                   FROM stock_shortages WHERE status='open' GROUP BY product_id) sh ON sh.product_id=p.id`;
+    let where2 = where;
+    if (onlyDemand) where2 += ' AND (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0)';
+    const SORTS = {
+      code: 'p.code', stock: 'p.stock_qty', backorder: 'COALESCE(bo.backorder_qty,0)',
+      sold: 'COALESCE(sold.qty,0)', shortage: 'COALESCE(sh.qty,0)',
+    };
+    const orderCol = SORTS[String(req.query.sort || '').toLowerCase()] || 'p.code';
+    const orderBy = orderCol === 'p.code' ? `p.code ${dir}` : `${orderCol} ${dir} NULLS LAST, p.code ASC`;
+
+    const pageParams = params.slice(); pageParams.push(limit, offset);
+    const rows = (await query(
+      `SELECT p.id, p.code AS ctr, p.name, p.stock_qty,
+              COALESCE(sold.qty,0)          AS sold_qty,
+              COALESCE(bo.backorder_qty,0)  AS backorder_qty,
+              COALESCE(sh.qty,0)            AS shortage_qty
+         FROM products p ${joins}
+        WHERE ${where2}
+        ORDER BY ${orderBy}
+        LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}`, pageParams)).rows;
+    const agg = (await query(
+      `SELECT COUNT(*)::int AS n,
+              COALESCE(SUM(p.stock_qty),0)                 AS stock,
+              COALESCE(SUM(COALESCE(bo.backorder_qty,0)),0) AS backorder,
+              COALESCE(SUM(COALESCE(sold.qty,0)),0)         AS sold,
+              COALESCE(SUM(COALESCE(sh.qty,0)),0)           AS shortage
+         FROM products p ${joins}
+        WHERE ${where2}`, params)).rows[0];
+
+    // SYD·적용차종 보조 조회(현재 페이지 SKU만)
+    const ids = rows.map((r) => Number(r.id));
+    const sydBy = {}, appBy = {};
+    if (ids.length) {
+      const sy = await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids]);
+      for (const s of sy.rows) (sydBy[s.product_id] ||= []).push(s.syd_code);
+      const ap = await query(`SELECT product_id, app_text FROM product_applications WHERE product_id = ANY($1)`, [ids]);
+      for (const a of ap.rows) (appBy[a.product_id] ||= []).push(a.app_text);
+    }
+    const items = rows.map((r) => ({
+      product_id: Number(r.id), ctr: r.ctr, name: r.name,
+      syd: sydBy[r.id] || [], applications: appBy[r.id] || [],
+      stock_qty: Number(r.stock_qty) || 0,
+      backorder_qty: Number(r.backorder_qty) || 0,
+      sold_qty: Number(r.sold_qty) || 0,
+      shortage_qty: Number(r.shortage_qty) || 0,
+    }));
+    return {
+      items, total: Number(agg.n), limit, offset,
+      summary: {
+        sku_count: Number(agg.n),
+        total_stock: Math.round(Number(agg.stock) * 1000) / 1000,
+        total_backorder: Math.round(Number(agg.backorder) * 1000) / 1000,
+        total_sold: Math.round(Number(agg.sold) * 1000) / 1000,
+        total_shortage: Math.round(Number(agg.shortage) * 1000) / 1000,
+      },
+    };
+  });
+
   // 상세(라인)
   app.get('/api/purchases/:id', gate, async (req, reply) => {
     const id = Number(req.params.id);
