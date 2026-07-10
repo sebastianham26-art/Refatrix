@@ -31,7 +31,11 @@ export default async function fieldSurveyRoutes(app) {
     return Math.max(0, phys - resd);
   }
 
-  // 코드 분류: CTR 정확매칭(대소문자 무시) → SYD 역검색 → 미등록
+  // 코드 정규화 (매칭용): 대문자 + 영숫자 외 제거 — 'DS-1045-S' == 'DS1045S'
+  const normCode = (s) => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  // 코드 분류: CTR 정확매칭(대소문자 무시) → SYD 역검색 → 교차참조(전 브랜드, 정규화)
+  //           → SYD 정규화 폴백 → 미등록
   async function resolveCode(codeRaw, exec = query) {
     const c = String(codeRaw || '').trim();
     if (!c) return { source: 'none', product: null };
@@ -44,6 +48,23 @@ export default async function fieldSurveyRoutes(app) {
         `SELECT p.id, p.code, p.name, p.app
            FROM product_syd_codes s JOIN products p ON p.id = s.product_id AND p.deleted_at IS NULL
           WHERE UPPER(s.syd_code) = UPPER($1) ORDER BY p.code LIMIT 1`, [c])).rows;
+      source = rows.length ? 'syd' : 'none';
+    }
+    const nc = normCode(c);
+    if (!rows.length && nc) {
+      // 교차참조(BAW·GROB·VASLO·KYB·MOOG·YOKOMITSU 등 — product_xref_codes)
+      rows = (await exec(
+        `SELECT p.id, p.code, p.name, p.app
+           FROM product_xref_codes x JOIN products p ON p.id = x.product_id AND p.deleted_at IS NULL
+          WHERE x.norm_code = $1 ORDER BY p.code LIMIT 1`, [nc])).rows;
+      source = rows.length ? 'xref' : source;
+    }
+    if (!rows.length && nc) {
+      // SYD 정규화 폴백 (하이픈 유무 등 표기 차이)
+      rows = (await exec(
+        `SELECT p.id, p.code, p.name, p.app
+           FROM product_syd_codes s JOIN products p ON p.id = s.product_id AND p.deleted_at IS NULL
+          WHERE regexp_replace(upper(s.syd_code), '[^A-Z0-9]', '', 'g') = $1 ORDER BY p.code LIMIT 1`, [nc])).rows;
       source = rows.length ? 'syd' : 'none';
     }
     if (!rows.length) return { source: 'none', product: null };
@@ -195,6 +216,51 @@ export default async function fieldSurveyRoutes(app) {
       [survey.id, lineNo, code, cl.product_id, cl.ctr_code, cl.name, cl.app, cl.source, cl.avail, obs, cl.classification])).rows[0];
     await query(`UPDATE field_surveys SET updated_by = $1, updated_at = now() WHERE id = $2`, [req.ctx.perm.userId, survey.id]);
     return { line: lineRow(r) };
+  });
+
+  // ── 엑셀 대량 업로드: 코드+수량 목록 일괄 추가 ──
+  //  body: { items: [ { code, qty } ] }  (청크 최대 1000건)
+  //  · 수량 방어 파싱: '1,000' 쉼표 제거, 빈칸/NaN/0 이하 → 1 (한 행 때문에 전체 실패하지 않음)
+  //  · 각 코드는 단건 입력과 동일한 resolveCode(CTR→SYD→xref)로 자동 분류
+  app.post('/api/field-surveys/:id/lines/bulk', { preHandler: [authGuard] }, async (req, reply) => {
+    const { survey, err } = await loadSurvey(req.params.id, req.ctx.perm);
+    if (err) return reply.code(err === 'forbidden' ? 403 : 404).send({ error: err });
+    const items = Array.isArray(req.body && req.body.items) ? req.body.items.slice(0, 1000) : [];
+    if (!items.length) return reply.code(400).send({ error: 'no_items' });
+
+    const parseQty = (v) => {
+      if (v == null || v === '') return 1;
+      const n = Number(String(v).replace(/[,\s]/g, ''));
+      return (Number.isFinite(n) && n > 0) ? n : 1;
+    };
+
+    const out = await withTx(async (c) => {
+      const exec = c.query.bind(c);
+      let lineNo = Number((await exec(
+        `SELECT COALESCE(MAX(line_no),0) AS n FROM field_survey_lines WHERE survey_id = $1`, [survey.id])).rows[0].n);
+      const lines = []; let skipped = 0;
+      for (const it of items) {
+        const code = String((it && it.code) || '').trim();
+        if (!code) { skipped++; continue; }
+        const obs = parseQty(it && it.qty);
+        const cl = await classifyCode(code, exec);
+        lineNo += 1;
+        const r = (await exec(
+          `INSERT INTO field_survey_lines
+             (survey_id, line_no, input_code, product_id, ctr_code, product_name, app_text, match_source, avail_stock, observed_qty, classification)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+          [survey.id, lineNo, code, cl.product_id, cl.ctr_code, cl.name, cl.app, cl.source, cl.avail, obs, cl.classification])).rows[0];
+        lines.push(lineRow(r));
+      }
+      await exec(`UPDATE field_surveys SET updated_by = $1, updated_at = now() WHERE id = $2`, [req.ctx.perm.userId, survey.id]);
+      return { lines, skipped };
+    });
+
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `field_survey:${survey.id}`,
+      detail: { bulk_lines: out.lines.length, skipped: out.skipped } });
+    const counts = { imm: 0, short: 0, dev: 0 };
+    for (const l of out.lines) counts[l.classification] = (counts[l.classification] || 0) + 1;
+    return { lines: out.lines, added: out.lines.length, skipped: out.skipped, counts };
   });
 
   // ── 관측수량/메모 수정(스테퍼 즉시 저장) ──
