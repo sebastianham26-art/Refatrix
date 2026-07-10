@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>현장재고조사 · Refatrix · build fsx-0710a</title>
+<title>현장재고조사 · Refatrix · build fsx-0710b</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -209,6 +209,7 @@
       <div class="hint">💾 <b>한 건 입력 = 즉시 저장</b> · 데이터 분실 없음 &nbsp;|&nbsp; 코드는 자동으로 CTR로 분류됩니다 (SYD·BAW·GROB 등 경쟁사 코드 지원)</div>
       <div class="subbar" style="margin-top:4px">
         <button id="btnBulkXls">📊 엑셀 업로드 (코드+수량)</button>
+        <button id="btnBulkTpl" style="flex:0 0 auto;padding-left:14px;padding-right:14px">⬇︎ 양식</button>
       </div>
       <input type="file" id="bulkFile" accept=".xlsx,.xls,.csv" class="hidden">
       <div class="hint" id="bulkHint">엑셀 A열=코드(SYD·BAW 등 아무 경쟁사 코드), B열=수량. 수량 비어있으면 1로 처리.</div>
@@ -409,6 +410,24 @@
     });
     return items;
   }
+  // ── 업로드 양식 다운로드 (A열=코드, B열=수량) ──
+  function downloadBulkTemplate(){
+    const aoa=[
+      ['코드 (SYD·BAW 등 경쟁사 코드)','수량','← A열에 코드, B열에 수량. 수량을 비우면 1로 처리됩니다. 이 안내(C열)는 지워도 됩니다.'],
+      ['',''],
+      ['',''],
+      ['',''],
+      ['',''],
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:30},{wch:8},{wch:60}];
+    const st={font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF143D34'}}};
+    ['A1','B1'].forEach(a=>{ if(ws[a]) ws[a].s=st; });
+    if(ws['C1']) ws['C1'].s={font:{color:{rgb:'FF7C7A74'},italic:true}};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'upload');
+    XLSX.writeFile(wb,'Refatrix_fieldsurvey_upload_template.xlsx');
+  }
+
   async function bulkUpload(file){
     if(!state.survey) return;
     let items;
@@ -570,6 +589,7 @@
   $('addBtn').addEventListener('click',addCode);
   $('codeIn').addEventListener('keydown',e=>{ if(e.key==='Enter') addCode(); });
   $('btnBulkXls').addEventListener('click',()=>$('bulkFile').click());
+  $('btnBulkTpl').addEventListener('click',downloadBulkTemplate);
   $('bulkFile').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; if(f) bulkUpload(f); e.target.value=''; });
   $('doneBtn').addEventListener('click',complete);
   $('btnQuote').addEventListener('click',sendToQuote);
