@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0710b</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0710c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -40,6 +40,8 @@
   th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   tr.clk{cursor:pointer}tr.clk:hover{background:#f7f5ef}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
+  .delta{font-weight:700}.delta.pos{color:var(--income)}.delta.neg{color:var(--expense)}.delta.zero{color:var(--muted)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
   .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
@@ -122,11 +124,19 @@
   let isDirector = false;
   let canCost = false;  // 구매단가(USD) 열람 권한 — 디렉터·소시오만(서버 cost_visible 로 확정)
   let preview = null;   // 미리보기 결과 캐시
+  let listItems = [];   // 조회 목록 캐시(클라이언트 정렬용)
+  let sortKey = 'order_date', sortDir = 'desc';   // 목록 정렬 상태
   const $ = (id)=>document.getElementById(id);
   const auth = ()=>({'Authorization':'Bearer '+session.token});
   const usd = (n)=> n==null ? '—' : '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const num = (n)=> n==null ? '—' : Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
   const esc = (s)=> String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // 부호(+/-)·색상 델타 표시
+  const signedNum = (n)=>{
+    if(n==null) return '<span class="delta zero">—</span>';
+    const v=Number(n); const cls=v>0?'pos':(v<0?'neg':'zero'); const sign=v>0?'+':(v<0?'-':'');
+    return '<span class="delta '+cls+'">'+sign+num(Math.abs(v))+'</span>';
+  };
 
   // 방어적 숫자 파싱(백엔드 parseNum 과 동일 규칙)
   function numify(v){
@@ -256,6 +266,17 @@
   function resetPreview(){ preview=null; $('previewWrap').classList.add('hidden'); $('prevTable').innerHTML=''; $('prevWarn').innerHTML=''; }
 
   // ---- 조회 ----
+  // 목록 열 정의(cost=원가열은 canCost 일 때만)
+  const LIST_COLS=[
+    {k:'order_date',t:'발주일',num:false},
+    {k:'ref_no',t:'참조번호',num:false},
+    {k:'line_count',t:'라인',num:true},
+    {k:'total_qty',t:'수량',num:true},
+    {k:'total_usd',t:'금액(USD)',num:true,cost:true},
+    {k:'matched_cnt',t:'매칭',num:true},
+    {k:'note',t:'메모',num:false},
+    {k:'created_by_name',t:'기록자',num:false},
+  ];
   async function loadList(){
     const q=$('q').value.trim(), from=$('from').value, to=$('to').value;
     const p=new URLSearchParams(); if(q)p.set('q',q); if(from)p.set('from',from); if(to)p.set('to',to);
@@ -263,23 +284,55 @@
     const d=await res.json();
     if(!res.ok||d.error){ $('listTable').innerHTML='<tr><td>목록 실패: '+esc(d.error||res.status)+'</td></tr>'; return; }
     canCost=!!d.cost_visible;
+    listItems=d.items||[];
     const s=d.summary;
     const costCard=canCost?sb(usd(s.total_usd),'총 구매액(USD)'):'';
     $('listSummary').innerHTML=sb(s.po_count,'발주 건')+costCard+sb(num(s.total_qty),'총 수량')+sb(s.unmatched_lines,'미매칭 라인');
-    const ch=canCost?'<th class="num">금액(USD)</th>':'';
-    const cspan=canCost?8:7;
-    let h='<tr><th>발주일</th><th>참조번호</th><th class="num">라인</th><th class="num">수량</th>'+ch+'<th>매칭</th><th>메모</th><th>기록자</th></tr>';
-    if(!d.items.length){ h+='<tr><td colspan="'+cspan+'" style="color:var(--muted)">기록 없음</td></tr>'; }
-    for(const it of d.items){
-      const cv=canCost?('<td class="num">'+usd(it.total_usd)+'</td>'):'';
-      h+='<tr class="clk" data-id="'+it.id+'"><td>'+esc(it.order_date)+'</td><td><b>'+esc(it.ref_no)+'</b></td>'+
-        '<td class="num">'+it.line_count+'</td><td class="num">'+num(it.total_qty)+'</td>'+cv+
-        '<td>'+it.matched_cnt+(it.unmatched_cnt?(' <span class="pill no">미'+it.unmatched_cnt+'</span>'):'')+'</td>'+
-        '<td>'+esc(it.note||'')+'</td><td>'+esc(it.created_by_name||'')+'</td></tr>';
+    renderList();
+    $('detailBox').classList.add('hidden');
+  }
+  function sortItems(items){
+    const col=LIST_COLS.find(c=>c.k===sortKey)||LIST_COLS[0];
+    const arr=items.slice();
+    arr.sort((a,b)=>{
+      if(col.num){ return (Number(a[sortKey])||0)-(Number(b[sortKey])||0); }
+      return String(a[sortKey]==null?'':a[sortKey]).localeCompare(String(b[sortKey]==null?'':b[sortKey]),'es');
+    });
+    if(sortDir==='desc') arr.reverse();
+    return arr;
+  }
+  function renderList(){
+    const cols=LIST_COLS.filter(c=>!c.cost||canCost);
+    let h='<tr>';
+    for(const c of cols){
+      const arrow=sortKey===c.k?(sortDir==='asc'?' ▲':' ▼'):'';
+      h+='<th class="'+(c.num?'num ':'')+'sortable" data-k="'+c.k+'">'+c.t+arrow+'</th>';
+    }
+    h+='</tr>';
+    const items=sortItems(listItems);
+    if(!items.length){ h+='<tr><td colspan="'+cols.length+'" style="color:var(--muted)">기록 없음</td></tr>'; }
+    for(const it of items){
+      h+='<tr class="clk" data-id="'+it.id+'">';
+      for(const c of cols){
+        if(c.k==='ref_no') h+='<td><b>'+esc(it.ref_no)+'</b></td>';
+        else if(c.k==='total_usd') h+='<td class="num">'+usd(it.total_usd)+'</td>';
+        else if(c.k==='total_qty') h+='<td class="num">'+num(it.total_qty)+'</td>';
+        else if(c.k==='line_count') h+='<td class="num">'+it.line_count+'</td>';
+        else if(c.k==='matched_cnt') h+='<td class="num">'+it.matched_cnt+(it.unmatched_cnt?(' <span class="pill no">미'+it.unmatched_cnt+'</span>'):'')+'</td>';
+        else if(c.k==='order_date') h+='<td>'+esc(it.order_date)+'</td>';
+        else if(c.k==='note') h+='<td>'+esc(it.note||'')+'</td>';
+        else if(c.k==='created_by_name') h+='<td>'+esc(it.created_by_name||'')+'</td>';
+      }
+      h+='</tr>';
     }
     $('listTable').innerHTML=h;
+    $('listTable').querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.k;
+      if(sortKey===k){ sortDir=(sortDir==='asc'?'desc':'asc'); }
+      else { sortKey=k; const col=LIST_COLS.find(c=>c.k===k); sortDir=(col&&col.num)?'desc':'asc'; }
+      renderList();
+    }));
     $('listTable').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>showDetail(tr.dataset.id)));
-    $('detailBox').classList.add('hidden');
   }
   async function showDetail(id){
     const box=$('detailBox'); box.classList.remove('hidden'); box.innerHTML='불러오는 중…';
@@ -292,13 +345,15 @@
       totTxt+
       (isDirector?(' <button class="btn ghost sm" id="delPo" data-id="'+d.header.id+'">삭제</button>'):'')+'</div>';
     const ch=canCost?'<th class="num">구매원가(USD)</th><th class="num">금액(USD)</th>':'';
-    h+='<table><tr><th>제품코드</th><th>제품명</th><th>매칭</th><th class="num">수량</th>'+ch+'<th class="num">현재고</th></tr>';
+    h+='<table><tr><th>제품코드</th><th>제품명</th><th>매칭</th><th class="num">수량</th>'+ch+'<th class="num">현재고</th><th class="num" title="현재고 − 주문수량">현재고−주문</th></tr>';
     for(const l of d.lines){
       const cv=canCost?('<td class="num">'+usd(l.unit_cost_usd)+'</td><td class="num">'+usd(l.amount_usd)+'</td>'):'';
+      const delta=(l.stock_qty==null)?null:(Number(l.stock_qty)-Number(l.qty));
       h+='<tr><td>'+esc(l.matched?l.matched_code:l.input_code)+'</td><td>'+esc(l.product_name||'—')+'</td>'+
         '<td>'+(l.matched?'<span class="pill ok">매칭</span>':'<span class="pill no">미매칭</span>')+'</td>'+
         '<td class="num">'+num(l.qty)+'</td>'+cv+
-        '<td class="num">'+(l.stock_qty==null?'—':num(l.stock_qty))+'</td></tr>';
+        '<td class="num">'+(l.stock_qty==null?'—':num(l.stock_qty))+'</td>'+
+        '<td class="num">'+signedNum(delta)+'</td></tr>';
     }
     h+='</table>';
     box.innerHTML=h;
