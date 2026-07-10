@@ -220,6 +220,59 @@ export default async function purchaseRoutes(app) {
     };
   });
 
+  // 전체 라인 평면 뷰 — 참조번호 무관, SKU·구매참조번호·backorder·현재고·예상재고(현재+추가)
+  app.get('/api/purchases/lines', gate, async (req) => {
+    const seeCost = canSeeCost(req.ctx.perm);
+    const q = (req.query.q || '').trim();
+    const from = (req.query.from || '').trim();
+    const to = (req.query.to || '').trim();
+    const boOnly = req.query.backorder_only === '1' || req.query.backorder_only === 'true';
+    const limit = Math.min(Number(req.query.limit) || 1000, 3000);
+    const params = [];
+    const where = ['p.deleted_at IS NULL', "p.status <> 'cancelled'"];
+    if (boOnly) where.push('(l.qty - l.received_qty) > 0');
+    if (from) { params.push(from); where.push(`p.order_date >= $${params.length}`); }
+    if (to) { params.push(to); where.push(`p.order_date <= $${params.length}`); }
+    if (q) {
+      params.push(`%${q}%`); const pi = params.length;
+      where.push(`(l.input_code ILIKE $${pi} OR pr.code ILIKE $${pi} OR pr.name ILIKE $${pi} OR p.ref_no ILIKE $${pi})`);
+    }
+    params.push(limit);
+    const r = await query(
+      `SELECT l.id, p.id AS po_id, p.ref_no, p.order_date,
+              l.input_code, l.product_id, pr.code AS matched_code, pr.name AS product_name,
+              pr.stock_qty, l.qty, l.received_qty,
+              (l.qty - l.received_qty) AS backorder,
+              l.unit_cost_usd, l.amount_usd
+       FROM purchase_order_lines l
+       JOIN purchase_orders p ON p.id = l.po_id
+       LEFT JOIN products pr ON pr.id = l.product_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY COALESCE(pr.code, l.input_code) ASC, p.order_date DESC, l.id DESC
+       LIMIT $${params.length}`, params);
+    const items = r.rows.map((x) => {
+      const stock = x.stock_qty == null ? null : Number(x.stock_qty);
+      const backorder = Number(x.backorder);
+      return {
+        id: Number(x.id), po_id: Number(x.po_id), ref_no: x.ref_no, order_date: x.order_date,
+        input_code: x.input_code, product_id: x.product_id ? Number(x.product_id) : null,
+        matched_code: x.matched_code, product_name: x.product_name, matched: x.product_id != null,
+        stock_qty: stock, qty: Number(x.qty), received_qty: Number(x.received_qty),
+        backorder, projected: stock == null ? null : Math.round((stock + backorder) * 1000) / 1000,   // 현재고 + backorder = 입고 후 예상재고
+        unit_cost_usd: seeCost ? Number(x.unit_cost_usd) : null,
+        amount_usd: seeCost ? Number(x.amount_usd) : null,
+      };
+    });
+    const skuSet = new Set(items.map((i) => (i.matched ? i.matched_code : i.input_code)));
+    const summary = {
+      line_count: items.length,
+      total_backorder: Math.round(items.reduce((s, i) => s + i.backorder, 0) * 1000) / 1000,
+      sku_count: skuSet.size,
+      total_usd: seeCost ? Math.round(items.reduce((s, i) => s + (i.amount_usd || 0), 0) * 100) / 100 : null,
+    };
+    return { cost_visible: seeCost, items, summary };
+  });
+
   // 소프트 삭제(디렉터 전용) — 오기입 정정용
   app.delete('/api/purchases/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);

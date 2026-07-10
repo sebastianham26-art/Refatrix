@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0710c</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0710d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -41,6 +41,9 @@
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   tr.clk{cursor:pointer}tr.clk:hover{background:#f7f5ef}
   th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
+  .segbtn{padding:7px 15px;font-size:12.5px;font-weight:700;background:#fff;color:var(--muted);border:none;cursor:pointer;font-family:inherit}
+  .segbtn.on{background:var(--brand);color:#fff}
   .delta{font-weight:700}.delta.pos{color:var(--income)}.delta.neg{color:var(--expense)}.delta.zero{color:var(--muted)}
   .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
   .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
@@ -112,9 +115,21 @@
       <div><label>종료일</label><input id="to" type="date"></div>
       <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
     </div>
-    <div class="sbrow" id="listSummary" style="margin-top:12px"></div>
-    <div style="max-height:420px;overflow:auto"><table id="listTable"></table></div>
-    <div class="detailbox hidden" id="detailBox"></div>
+    <div class="seg">
+      <button class="segbtn on" id="modePo" type="button">건별 (참조번호)</button>
+      <button class="segbtn" id="modeLine" type="button">전체 라인 (SKU · backorder)</button>
+    </div>
+    <div id="poWrap">
+      <div class="sbrow" id="listSummary" style="margin-top:12px"></div>
+      <div style="max-height:420px;overflow:auto"><table id="listTable"></table></div>
+      <div class="detailbox hidden" id="detailBox"></div>
+    </div>
+    <div id="linesWrap" class="hidden">
+      <label style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-weight:600;color:var(--muted)"><input type="checkbox" id="boOnly" style="width:auto"> 미입고(backorder&gt;0)만 보기</label>
+      <div class="sbrow" id="linesSummary" style="margin-top:8px"></div>
+      <div style="max-height:460px;overflow:auto"><table id="linesTable"></table></div>
+      <div class="hint">SKU별로 어느 참조번호에 얼마가 미입고(backorder)인지, 현재고와 <b>예상재고(현재고+추가입고)</b>를 함께 봅니다. 열 제목 클릭으로 정렬.</div>
+    </div>
     <div class="hint">※ 이 화면은 구매 <b>기록·조회</b> 전용입니다. 기록된 수량은 다음 단계에서 <b>가용재고의 backorder(미입고) 정보</b>로 표시되고, 창고 <b>입고</b>와 연결되면 received_qty가 채워지며, 입고 확정 시 <b>이동평균원가(COGS)</b>에 반영됩니다.</div>
   </div>
 </div>
@@ -291,6 +306,39 @@
     renderList();
     $('detailBox').classList.add('hidden');
   }
+  // ---- 공용 정렬 헬퍼(여러 표 재사용) ----
+  function genSort(arr,key,dir,cols){
+    const col=cols.find(c=>c.k===key)||cols[0];
+    const out=arr.slice();
+    out.sort((a,b)=> (col&&col.num) ? ((Number(a[key])||0)-(Number(b[key])||0)) : String(a[key]==null?'':a[key]).localeCompare(String(b[key]==null?'':b[key]),'es'));
+    if(dir==='desc') out.reverse();
+    return out;
+  }
+  function headTR(cols,key,dir){
+    return '<tr>'+cols.map(c=>{ const ar=key===c.k?(dir==='asc'?' ▲':' ▼'):''; return '<th class="'+(c.num?'num ':'')+'sortable" data-k="'+c.k+'">'+c.t+ar+'</th>'; }).join('')+'</tr>';
+  }
+  function wireSort(tableEl,onSort){ if(!tableEl) return; tableEl.querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>onSort(th.dataset.k))); }
+  function nextDir(curKey,curDir,k,cols){ if(curKey===k) return curDir==='asc'?'desc':'asc'; const col=cols.find(c=>c.k===k); return (col&&col.num)?'desc':'asc'; }
+
+  // 상세(드릴다운) 표 열 정의 + 정렬 상태
+  const DETAIL_COLS=[
+    {k:'sku',t:'제품코드'},{k:'product_name',t:'제품명'},{k:'matched',t:'매칭'},
+    {k:'qty',t:'수량',num:true},
+    {k:'unit_cost_usd',t:'구매원가(USD)',num:true,cost:true},{k:'amount_usd',t:'금액(USD)',num:true,cost:true},
+    {k:'stock_qty',t:'현재고',num:true},{k:'delta',t:'현재고−주문',num:true},
+  ];
+  let detailData=null, detSortKey='', detSortDir='asc';
+
+  // 전체 라인 뷰 열 정의 + 정렬 상태
+  const LINE_COLS=[
+    {k:'sku',t:'SKU'},{k:'product_name',t:'제품명'},{k:'ref_no',t:'구매참조번호'},
+    {k:'backorder',t:'backorder',num:true},{k:'stock_qty',t:'현재고',num:true},
+    {k:'projected',t:'예상재고(현재+추가)',num:true},
+    {k:'unit_cost_usd',t:'구매원가(USD)',num:true,cost:true},
+  ];
+  let lineItems=[], lineSortKey='backorder', lineSortDir='desc';
+  let viewMode='po';
+
   function sortItems(items){
     const col=LIST_COLS.find(c=>c.k===sortKey)||LIST_COLS[0];
     const arr=items.slice();
@@ -340,23 +388,42 @@
     const d=await res.json();
     if(!res.ok||d.error){ box.innerHTML='상세 실패: '+esc(d.error||res.status); return; }
     canCost=!!d.cost_visible;
+    d.rows=(d.lines||[]).map(l=>({
+      sku:l.matched?l.matched_code:l.input_code, product_name:l.product_name, matched:l.matched,
+      qty:Number(l.qty), unit_cost_usd:l.unit_cost_usd, amount_usd:l.amount_usd,
+      stock_qty:l.stock_qty==null?null:Number(l.stock_qty),
+      delta:(l.stock_qty==null)?null:(Number(l.stock_qty)-Number(l.qty)),
+    }));
+    detailData=d; detSortKey=''; detSortDir='asc';
+    renderDetail();
+  }
+  function renderDetail(){
+    const d=detailData; if(!d) return;
+    const box=$('detailBox');
+    const cols=DETAIL_COLS.filter(c=>!c.cost||canCost);
     const totTxt=canCost?(' · 총 '+usd(d.total_usd)+' / '+num(d.total_qty)+'개'):(' · 총 '+num(d.total_qty)+'개');
     let h='<div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(d.header.ref_no)+'</b> · '+esc(d.header.order_date)+
       totTxt+
       (isDirector?(' <button class="btn ghost sm" id="delPo" data-id="'+d.header.id+'">삭제</button>'):'')+'</div>';
-    const ch=canCost?'<th class="num">구매원가(USD)</th><th class="num">금액(USD)</th>':'';
-    h+='<table><tr><th>제품코드</th><th>제품명</th><th>매칭</th><th class="num">수량</th>'+ch+'<th class="num">현재고</th><th class="num" title="현재고 − 주문수량">현재고−주문</th></tr>';
-    for(const l of d.lines){
-      const cv=canCost?('<td class="num">'+usd(l.unit_cost_usd)+'</td><td class="num">'+usd(l.amount_usd)+'</td>'):'';
-      const delta=(l.stock_qty==null)?null:(Number(l.stock_qty)-Number(l.qty));
-      h+='<tr><td>'+esc(l.matched?l.matched_code:l.input_code)+'</td><td>'+esc(l.product_name||'—')+'</td>'+
-        '<td>'+(l.matched?'<span class="pill ok">매칭</span>':'<span class="pill no">미매칭</span>')+'</td>'+
-        '<td class="num">'+num(l.qty)+'</td>'+cv+
-        '<td class="num">'+(l.stock_qty==null?'—':num(l.stock_qty))+'</td>'+
-        '<td class="num">'+signedNum(delta)+'</td></tr>';
+    const rows=detSortKey?genSort(d.rows,detSortKey,detSortDir,cols):d.rows;
+    h+='<table>'+headTR(cols,detSortKey,detSortDir);
+    for(const r of rows){
+      h+='<tr>';
+      for(const c of cols){
+        if(c.k==='sku') h+='<td>'+esc(r.sku)+'</td>';
+        else if(c.k==='product_name') h+='<td>'+esc(r.product_name||'—')+'</td>';
+        else if(c.k==='matched') h+='<td>'+(r.matched?'<span class="pill ok">매칭</span>':'<span class="pill no">미매칭</span>')+'</td>';
+        else if(c.k==='qty') h+='<td class="num">'+num(r.qty)+'</td>';
+        else if(c.k==='unit_cost_usd') h+='<td class="num">'+usd(r.unit_cost_usd)+'</td>';
+        else if(c.k==='amount_usd') h+='<td class="num">'+usd(r.amount_usd)+'</td>';
+        else if(c.k==='stock_qty') h+='<td class="num">'+(r.stock_qty==null?'—':num(r.stock_qty))+'</td>';
+        else if(c.k==='delta') h+='<td class="num">'+signedNum(r.delta)+'</td>';
+      }
+      h+='</tr>';
     }
     h+='</table>';
     box.innerHTML=h;
+    wireSort(box.querySelector('table'),k=>{ detSortDir=nextDir(detSortKey,detSortDir,k,DETAIL_COLS); detSortKey=k; renderDetail(); });
     const del=$('delPo'); if(del) del.addEventListener('click',()=>deletePo(del.dataset.id));
   }
   async function deletePo(id){
@@ -366,6 +433,51 @@
     if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
     $('detailBox').classList.add('hidden'); loadList();
   }
+
+  // ---- 전체 라인 뷰 ----
+  async function loadLines(){
+    const q=$('q').value.trim(), from=$('from').value, to=$('to').value, bo=$('boOnly').checked;
+    const p=new URLSearchParams(); if(q)p.set('q',q); if(from)p.set('from',from); if(to)p.set('to',to); if(bo)p.set('backorder_only','1');
+    const res=await fetch(session.api+'/api/purchases/lines?'+p.toString(),{headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error){ $('linesTable').innerHTML='<tr><td>목록 실패: '+esc(d.error||res.status)+'</td></tr>'; return; }
+    canCost=!!d.cost_visible;
+    lineItems=(d.items||[]).map(x=>({ ...x, sku:x.matched?x.matched_code:x.input_code }));
+    const s=d.summary;
+    const costCard=canCost?sb(usd(s.total_usd),'총 구매액(USD)'):'';
+    $('linesSummary').innerHTML=sb(s.line_count,'라인')+sb(num(s.total_backorder),'총 backorder')+sb(s.sku_count,'SKU 수')+costCard;
+    renderLines();
+  }
+  function renderLines(){
+    const cols=LINE_COLS.filter(c=>!c.cost||canCost);
+    const rows=genSort(lineItems,lineSortKey,lineSortDir,cols);
+    let h=headTR(cols,lineSortKey,lineSortDir);
+    if(!rows.length){ h+='<tr><td colspan="'+cols.length+'" style="color:var(--muted)">기록 없음</td></tr>'; }
+    for(const r of rows){
+      h+='<tr>';
+      for(const c of cols){
+        if(c.k==='sku') h+='<td><b>'+esc(r.sku)+'</b></td>';
+        else if(c.k==='product_name') h+='<td>'+esc(r.product_name||'—')+'</td>';
+        else if(c.k==='ref_no') h+='<td>'+esc(r.ref_no)+'</td>';
+        else if(c.k==='backorder') h+='<td class="num">'+num(r.backorder)+'</td>';
+        else if(c.k==='stock_qty') h+='<td class="num">'+(r.stock_qty==null?'—':num(r.stock_qty))+'</td>';
+        else if(c.k==='projected') h+='<td class="num">'+(r.projected==null?'—':num(r.projected))+'</td>';
+        else if(c.k==='unit_cost_usd') h+='<td class="num">'+usd(r.unit_cost_usd)+'</td>';
+      }
+      h+='</tr>';
+    }
+    $('linesTable').innerHTML=h;
+    wireSort($('linesTable'),k=>{ lineSortDir=nextDir(lineSortKey,lineSortDir,k,LINE_COLS); lineSortKey=k; renderLines(); });
+  }
+
+  // ---- 모드 전환(건별 ↔ 전체 라인) ----
+  function setMode(m){
+    viewMode=m;
+    $('modePo').classList.toggle('on',m==='po'); $('modeLine').classList.toggle('on',m==='line');
+    $('poWrap').classList.toggle('hidden',m!=='po'); $('linesWrap').classList.toggle('hidden',m!=='line');
+    loadCurrent();
+  }
+  function loadCurrent(){ if(viewMode==='line') loadLines(); else loadList(); }
 
   // ---- 템플릿 ----
   function downloadTemplate(){
@@ -380,8 +492,11 @@
   $('upFile').addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; });
   $('commitBtn').addEventListener('click',commit);
   $('cancelBtn').addEventListener('click',resetPreview);
-  $('searchBtn').addEventListener('click',loadList);
-  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter') loadList(); });
+  $('searchBtn').addEventListener('click',loadCurrent);
+  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter') loadCurrent(); });
+  $('modePo').addEventListener('click',()=>setMode('po'));
+  $('modeLine').addEventListener('click',()=>setMode('line'));
+  $('boOnly').addEventListener('change',loadLines);
 
   // ---- 포털 세션 자동 로그인 ----
   function portalSession(){
