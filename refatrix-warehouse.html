@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632i</title>
+<title>Refatrix · 창고 포장 · build 0632j</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -230,36 +230,6 @@
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
   .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
   .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
-
-  /* 일정 달력 */
-  .whcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-  .whcal-dow{text-align:center;font-size:12px;font-weight:800;color:var(--muted);padding:3px 0}
-  .whcal-dow.sun{color:var(--red)}
-  .whcal-cell{background:var(--card);border:1px solid var(--line);border-radius:10px;min-height:50px;padding:5px 6px;cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
-  .whcal-cell.off{opacity:.38}
-  .whcal-cell.today{border-color:var(--steel);box-shadow:0 0 0 2px rgba(82,112,138,.22)}
-  .whcal-cell.sel{background:#eef3f7;border-color:var(--steel)}
-  .whcal-dn{font-size:13px;font-weight:700}
-  .whcal-dot{color:var(--green);font-size:9px;letter-spacing:-1px;margin-top:3px;line-height:1;font-weight:800}
-  .whcal-nav{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 12px;font-size:14px;font-weight:800;cursor:pointer;color:var(--steel-d)}
-  .whcal-dayhd{font-weight:800;margin:12px 0 8px;color:var(--steel-d)}
-  .whcal-none{color:var(--muted);padding:10px;text-align:center}
-  .whcal-ev{display:flex;gap:10px;align-items:baseline;padding:9px 12px;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:6px}
-  .whcal-evt{font-weight:800;color:var(--steel-d);min-width:56px}
-  .whcal-evc{flex:1;word-break:break-word}
-  .whcal-evs{font-size:11px;color:var(--muted);background:var(--paper);border-radius:8px;padding:2px 8px;white-space:nowrap}
-
-  /* 일정 추가 폼 */
-  .whadd{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:#fafcfb}
-  .whadd-row{display:flex;gap:8px;flex-wrap:wrap}
-  .whadd input,.whadd select{padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:#fff}
-  .whadd-tgt{margin-top:9px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff}
-  .whchks{display:flex;flex-wrap:wrap;gap:4px 12px;max-height:120px;overflow:auto}
-  .whchk{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:500;white-space:nowrap;margin:0}
-  .whchk input{width:auto}
-  .btn-add{background:var(--steel);color:#fff;border:0;border-radius:9px;padding:8px 16px;font-weight:800;font-size:14px;cursor:pointer}
-  .whadd-msg{font-size:12.5px;font-weight:700}
-  .hidden{display:none}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -276,18 +246,6 @@
     <div class="bznote">📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.</div>
     <div class="shiptabs"><button type="button" class="shiptab on" data-st="pending">대기중</button><button type="button" class="shiptab" data-st="shipped">출고완료 내역</button></div>
     <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
-  </div>
-  <div class="sec" id="whcalSec">
-    <div class="sec-t">
-      <span id="whcalTitle">일정</span>
-      <span style="display:flex;gap:6px;align-items:center">
-        <button type="button" class="whcal-nav" id="whcalPrev">‹</button>
-        <button type="button" class="whcal-nav" id="whcalToday">오늘</button>
-        <button type="button" class="whcal-nav" id="whcalNext">›</button>
-      </span>
-    </div>
-    <div id="whcalGrid"><div class="empty">불러오는 중…</div></div>
-    <div id="whcalDay"></div>
   </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
 </div>
@@ -346,7 +304,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632i — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632j — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -1173,114 +1131,11 @@
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
   initLangBtn(); initShipTabs(); startI18n();
-  // ===== 일정 달력 (Calendario) =====
-  var whcalCursor=new Date(); whcalCursor.setHours(0,0,0,0);
-  var whcalEvents=[], whcalSel=null, whUsers=[], whAddOpen=false;
-  function wcL(ko,es){ return LANG==='es'?es:ko; }
-  async function loadWhUsers(){
-    if(!S) return;
-    try{ var d=await fetch(API+'/api/todo-users',{headers:AUTH}).then(function(r){return r.json();}).catch(function(){return {};}); whUsers=(d&&d.items)||[]; }catch(e){ whUsers=[]; }
-  }
-  var WDOW=(LANG==='es')?['D','L','M','M','J','V','S']:['일','월','화','수','목','금','토'];
-  var WMON=(LANG==='es')?['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']:null;
-  function wcYmd(d){var x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');}
-  function wcAdd(d,n){var x=new Date(d);x.setDate(x.getDate()+n);return x;}
-  function wcSun(d){var x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-x.getDay());return x;}
-  function wcEvKey(e){ if(e.at){var d=new Date(e.at); return wcYmd(d);} return e.date||''; }  // 응답 필드: at / date · 보는 사람 로컬 날짜로 배치
-  function wcEvHM(e){ if(!e.at) return ''; var d=new Date(e.at); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
-  async function loadWhCal(){
-    if(!S) return;
-    var y=whcalCursor.getFullYear(), mo=whcalCursor.getMonth();
-    var first=new Date(y,mo,1), last=new Date(y,mo+1,0);
-    var from=wcAdd(wcSun(first),-1), to=wcAdd(wcAdd(wcSun(last),6),1);   // ±1일 패딩(타임존 환산 대비)
-    var mt=WMON?(WMON[mo]+' '+y):(y+'년 '+(mo+1)+'월');
-    $('whcalTitle').textContent=(LANG==='es'?'Calendario':'일정')+' · '+mt;
-    try{
-      var d=await fetch(API+'/api/calendar?from='+wcYmd(from)+'&to='+wcYmd(to),{headers:AUTH}).then(function(r){return r.json();}).catch(function(){return {};});
-      whcalEvents=(d&&d.items)||[];
-      renderWhCal(first,last);
-    }catch(e){ $('whcalGrid').innerHTML='<div class="empty">'+(LANG==='es'?'No se pudo cargar':'불러오지 못했습니다')+'</div>'; }
-  }
-  function renderWhCal(first,last){
-    var today=wcYmd(new Date()), start=wcSun(first), byDay={};
-    whcalEvents.forEach(function(e){ var k=wcEvKey(e); if(k)(byDay[k]=byDay[k]||[]).push(e); });
-    var html='<div class="whcal-grid">';
-    WDOW.forEach(function(w,i){ html+='<div class="whcal-dow'+(i===0?' sun':'')+'">'+w+'</div>'; });
-    var cur=new Date(start);
-    for(var i=0;i<42;i++){
-      var ymd=wcYmd(cur), inMonth=(cur.getMonth()===first.getMonth()), evs=byDay[ymd]||[];
-      var dots=evs.length?('<div class="whcal-dot">'+(evs.length<=3?'●●●'.slice(0,evs.length):'●●● +'+(evs.length-3))+'</div>'):'';
-      html+='<div class="whcal-cell'+(inMonth?'':' off')+(ymd===today?' today':'')+(whcalSel===ymd?' sel':'')+'" onclick="selectWhDay(\''+ymd+'\')">'
-        +'<div class="whcal-dn">'+cur.getDate()+'</div>'+dots+'</div>';
-      cur=wcAdd(cur,1);
-    }
-    html+='</div>';
-    $('whcalGrid').innerHTML=html;
-    if(whcalSel===null && first.getMonth()===new Date().getMonth() && first.getFullYear()===new Date().getFullYear()) whcalSel=today;
-    renderWhDay();
-  }
-  window.selectWhDay=function(ymd){ whcalSel=ymd; var y=whcalCursor.getFullYear(),mo=whcalCursor.getMonth(); renderWhCal(new Date(y,mo,1),new Date(y,mo+1,0)); };
-  function renderWhDay(){
-    var box=$('whcalDay'); if(!box) return;
-    if(!whcalSel){ box.innerHTML=''; return; }
-    var evs=whcalEvents.filter(function(e){return wcEvKey(e)===whcalSel;});
-    evs.sort(function(a,b){ var ta=a.at?new Date(a.at).getTime():0, tb=b.at?new Date(b.at).getTime():0; return ta-tb; });
-    var head='<div class="whcal-dayhd">📅 '+whcalSel+' · '+evs.length+wcL('건',' evento(s)')+'</div>';
-    var scL={company:wcL('전사','Todos'),team:wcL('팀','Equipo'),personal:wcL('개인','Personal'),shared:wcL('공유','Compartido')};
-    var listHtml = evs.length ? evs.map(function(e){
-      var hm=wcEvHM(e);
-      return '<div class="whcal-ev"><span class="whcal-evt">'+(hm||wcL('종일','Todo el día'))+'</span>'
-        +'<span class="whcal-evc">'+esc(e.content||'')+'</span>'
-        +'<span class="whcal-evs">'+(scL[e.scope]||'')+'</span></div>';
-    }).join('') : '<div class="whcal-none">'+wcL('일정 없음','Sin eventos')+'</div>';
-    box.innerHTML=head+listHtml+renderWhAdd();
-    var sc=$('wh-scope'); if(sc){ sc.onchange=whScopeChange; whScopeChange(); }
-  }
-  function renderWhAdd(){
-    if(!whAddOpen) return '<div style="margin-top:10px"><button class="whcal-nav" onclick="whToggleAdd()">＋ '+wcL('일정 추가','Agregar evento')+'</button></div>';
-    var isDir=(S&&S.user&&S.user.role==='director');
-    var scopeOpts='<option value="personal">'+wcL('내 개인','Personal')+'</option><option value="shared">'+wcL('개인별 공유','Compartir')+'</option>'+(isDir?'<option value="company">'+wcL('회사 전체','Todos')+'</option>':'');
-    var myId=S&&S.user&&Number(S.user.id), myName=(S&&S.user&&S.user.name)||'';
-    var self=myId?('<label class="whchk"><input type="checkbox" class="wh-tgt" value="'+myId+'"> '+esc(myName)+' ('+wcL('본인','yo')+')</label>'):'';
-    var others=(whUsers||[]).filter(function(u){return Number(u.id)!==myId;}).map(function(u){ return '<label class="whchk"><input type="checkbox" class="wh-tgt" value="'+u.id+'"> '+esc(u.name)+'</label>'; }).join('');
-    return '<div class="whadd">'
-      +'<div class="whadd-row">'
-        +'<input id="wh-time" placeholder="'+wcL('시간 예:14:00','Hora ej:14:00')+'" style="flex:0 0 116px">'
-        +'<input id="wh-content" placeholder="'+wcL('일정 내용','Contenido')+'" style="flex:1;min-width:120px">'
-        +'<select id="wh-scope" style="flex:0 0 132px">'+scopeOpts+'</select>'
-      +'</div>'
-      +'<div id="wh-tgtWrap" class="whadd-tgt hidden"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">'+wcL('공유 대상 선택 (여러 명)','Compartir con (varios)')+'</div><div class="whchks">'+(self+others||'<span class="hint">—</span>')+'</div></div>'
-      +'<div class="whadd-row" style="margin-top:9px;align-items:center"><button class="btn-add" onclick="whAddEvent()">'+wcL('추가','Agregar')+'</button> <button class="whcal-nav" onclick="whToggleAdd()">'+wcL('취소','Cancelar')+'</button> <span id="wh-msg" class="whadd-msg"></span></div>'
-      +'</div>';
-  }
-  window.whToggleAdd=function(){ whAddOpen=!whAddOpen; renderWhDay(); };
-  function whScopeChange(){ var sc=$('wh-scope'), w=$('wh-tgtWrap'); if(w) w.classList.toggle('hidden', !sc||sc.value!=='shared'); }
-  window.whAddEvent=async function(){
-    var msg=$('wh-msg'); if(msg){ msg.textContent=''; msg.style.color='var(--red)'; }
-    var content=(($('wh-content')&&$('wh-content').value)||'').trim();
-    if(!content){ if(msg)msg.textContent=wcL('내용을 입력하세요','Ingrese contenido'); return; }
-    var tv=(($('wh-time')&&$('wh-time').value)||'').trim();
-    var at=null, m=tv.match(/^(\d{1,2}):(\d{2})/);
-    if(m){ var p=whcalSel.split('-').map(Number); var dt=new Date(p[0],p[1]-1,p[2],Number(m[1]),Number(m[2]),0,0); if(!isNaN(dt.getTime())) at=dt.toISOString(); }
-    var scope=($('wh-scope')&&$('wh-scope').value)||'personal';
-    var body={event_date:whcalSel,event_time:tv||null,event_at:at,content:content,scope:scope};
-    if(scope==='shared'){ body.target_ids=[].slice.call(document.querySelectorAll('.wh-tgt:checked')).map(function(c){return Number(c.value);}); }
-    try{
-      var res=await fetch(API+'/api/calendar',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},AUTH),body:JSON.stringify(body)});
-      var d=await res.json().catch(function(){return {};});
-      if(!res.ok||d.error){ if(msg)msg.textContent=wcL('추가 실패','Error')+': '+(d.error||res.status); return; }
-      whAddOpen=false; loadWhCal();
-    }catch(e){ if(msg)msg.textContent=wcL('서버 연결 실패','Error de conexión'); }
-  };
-
-  var wcp=$('whcalPrev'); if(wcp) wcp.addEventListener('click',function(){ whcalCursor.setMonth(whcalCursor.getMonth()-1); whcalSel=null; loadWhCal(); });
-  var wcn=$('whcalNext'); if(wcn) wcn.addEventListener('click',function(){ whcalCursor.setMonth(whcalCursor.getMonth()+1); whcalSel=null; loadWhCal(); });
-  var wct=$('whcalToday'); if(wct) wct.addEventListener('click',function(){ whcalCursor=new Date(); whcalCursor.setHours(0,0,0,0); whcalSel=wcYmd(new Date()); loadWhCal(); });
-  if(S){ loadQueue(); loadShipQueue(); loadWhUsers(); loadWhCal(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
+  if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260630es"></script>
+<script src="refatrix-nav.js?v=20260707vg"></script>
 </body>
 </html>

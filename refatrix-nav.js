@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260707vf loaded'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260707vg loaded (warehouse+cal)'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -95,7 +95,7 @@
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
-  var ROLE_ONLY_GROUPS={ treasury:['finance'], warehouse:['warehouse','pm'] };  // 창고: 제품·마케팅 그룹 열람 허용(개별 화면은 권한(canSee)으로 필터)
+  var ROLE_ONLY_GROUPS={ treasury:['finance'], warehouse:['warehouse','pm','cal'] };  // 창고: 제품·마케팅 + 일정 그룹 허용(개별 화면은 권한(canSee)으로 필터; wbr은 페이지권한 없어 자동 숨김)
   // 역할별 로그인 랜딩(제한역할이 미허용 화면 접근 시 되돌릴 첫 화면).
   var ROLE_LANDING={ treasury:'finance', warehouse:'whHome' };
   // 역할별 화면(탭) 숨김: 그룹은 보이되 특정 하위 탭만 제거. 재무담당=반제(finPay)·예산(budget) 숨김.
