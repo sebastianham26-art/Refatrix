@@ -353,7 +353,7 @@
         +'<div><button class="btn" onclick="addTodo()">'+(isDirector?'배정':'등록')+'</button></div>'
         +'</div>'
         +'<div class="row"><div style="flex:2"><label>할 일 제목</label><input id="tf-title" type="text" placeholder="무엇을 해야 하나요?"></div>'
-        +'<div style="flex:3"><label>상세(선택)</label><input id="tf-detail" type="text" placeholder="추가 설명"></div></div>'
+        +'<div style="flex:3"><label>상세(선택)</label><textarea id="tf-detail" placeholder="추가 설명 — 여러 줄 입력 가능" style="min-height:92px;resize:vertical"></textarea></div></div>'
         +'<div class="hint" style="margin-top:4px">마감을 <b>미정</b>으로 두면 담당자가 직접 마감일을 정합니다. 완료 체크 전까지 메모로 진행상황·피드백을 주고받습니다.</div>'
         +'<div class="msg" id="tf-msg"></div>';
       window.__tfRecv=isDirector?'user':'self';
