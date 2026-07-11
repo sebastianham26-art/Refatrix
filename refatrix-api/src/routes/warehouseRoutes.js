@@ -3,6 +3,8 @@ import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import { bizMinutes } from '../businessHours.js';
 import { maybeMarkPacked } from '../packedGate.js';
+import { summarizeSla } from '../stageSla.js';
+import { buildStageCohorts, getSlaKpi } from '../stageCohorts.js';
 
 // =====================================================================
 // Refatrix ERP · warehouseRoutes.js  (창고 모듈)
@@ -55,6 +57,18 @@ export default async function warehouseRoutes(app) {
       packed_qty: Number(r.packed_qty) || 0,
     }));
     return { count: items.length, in_business: inBusinessNow(), items };
+  });
+
+  // ---------- 창고 SLA 카드(오더확정 · 창고포장 · SAT) ----------
+  //   WBR·포털과 동일한 단계 SLA 집계(stageCohorts/stageSla 공용).
+  //   단, 포장은 팀 무관 중앙집중 처리이므로 allTeams=true 로 전체를 집계(팀 필터 없음 —
+  //   포장 대기 목록과 동일한 가시 범위). 고객명은 포장 대기 목록과 마찬가지로 그대로 노출.
+  //   응답의 sla 는 4단계(order/packing/sat/collect)를 모두 담지만, 창고 화면은 앞 3개만 렌더.
+  app.get('/api/warehouse/stage-sla', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+    const cohorts = await buildStageCohorts(req.ctx.perm, 'total', { allTeams: true });
+    const kpi = await getSlaKpi();
+    const sla = summarizeSla(cohorts, new Date(), kpi);
+    return { sla, kpi };
   });
 
   // ---------- 드릴다운: 포장할 품목 (즉시재고 라인만) ----------
