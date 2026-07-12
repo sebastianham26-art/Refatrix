@@ -1,3 +1,4 @@
+// build fsr-0710b — 엑셀 대량 업로드(/lines/bulk) + 경쟁사 교차참조(xref) 매칭 포함
 import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
