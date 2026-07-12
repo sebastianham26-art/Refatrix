@@ -12,6 +12,19 @@ import { logEvent } from '../audit.js';
 export const normCode = (s) => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export default async function xrefRoutes(app) {
+  // 현재 교차참조 전체를 스냅샷으로 저장 → snapshot id
+  async function takeSnapshot(label, kind, userId, exec = query) {
+    const s = (await exec(
+      `INSERT INTO xref_snapshots (label, kind, created_by) VALUES ($1,$2,$3) RETURNING id`,
+      [label || null, kind, userId || null])).rows[0];
+    const sid = Number(s.id);
+    const r = await exec(
+      `INSERT INTO xref_snapshot_rows (snapshot_id, product_id, xref_code, norm_code, brand, list_price)
+       SELECT $1, product_id, xref_code, norm_code, brand, list_price FROM product_xref_codes`, [sid]);
+    await exec(`UPDATE xref_snapshots SET row_count = $1 WHERE id = $2`, [r.rowCount || 0, sid]);
+    return { id: sid, rows: r.rowCount || 0 };
+  }
+
   // 청크 내 모든 norm 코드 → product_id 매핑 (우선순위: CTR 코드 > SyD > 기존 xref)
   async function resolveMap(norms, exec = query) {
     if (!norms.length) return new Map();
@@ -59,8 +72,14 @@ export default async function xrefRoutes(app) {
 
     const allNorms = [...new Set(clean.flatMap((r) => r.codes.map((c) => c.norm)))];
 
+    // 자동백업: 업로드 세션의 첫 청크(backup 지정)에서만 — 적용 직전 상태 보존
+    const backupLabel = b.backup && b.backup.first
+      ? ('업로드 전 자동백업' + (b.backup.filename ? ' · ' + String(b.backup.filename).slice(0, 120) : '')) : null;
+
     const out = await withTx(async (c) => {
       const exec = c.query.bind(c);
+      let snapshot = null;
+      if (backupLabel) snapshot = await takeSnapshot(backupLabel, 'auto', req.ctx.perm.userId, exec);
       const map = await resolveMap(allNorms, exec);
       // 매칭된 제품들의 CTR norm (자기 CTR 코드는 xref로 중복 저장 안 함)
       const pids = [...new Set([...map.values()])];
@@ -97,7 +116,8 @@ export default async function xrefRoutes(app) {
           if (r.rows[0] && r.rows[0].is_new) inserted++;
         }
       }
-      return { rows: clean.length, matchedRows, inserted, unmatchedRows, unmatchedSample };
+      return { rows: clean.length, matchedRows, inserted, unmatchedRows, unmatchedSample,
+               snapshot: snapshot ? { id: snapshot.id, rows: snapshot.rows } : null };
     });
 
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_xref_codes',
@@ -113,13 +133,78 @@ export default async function xrefRoutes(app) {
     return { items: rows.map((r) => ({ brand: r.brand, codes: Number(r.n), products: Number(r.products) })) };
   });
 
-  // ── 교차참조 삭제 (디렉터, 롤백/재업로드용) — body { brand } 없으면 전체 ──
+  // ── 교차참조 삭제 (디렉터, 롤백/재업로드용) — body { brand } 없으면 전체 · 삭제 전 자동백업 ──
   app.post('/api/products/xref/clear', { preHandler: [authGuard, requireDirector] }, async (req) => {
     const brand = req.body && req.body.brand ? String(req.body.brand).trim() : null;
-    const r = brand
-      ? await query(`DELETE FROM product_xref_codes WHERE brand = $1`, [brand])
-      : await query(`DELETE FROM product_xref_codes`);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: 'product_xref_codes', detail: { brand: brand || 'ALL', deleted: r.rowCount } });
+    const out = await withTx(async (c) => {
+      const exec = c.query.bind(c);
+      const snap = await takeSnapshot('삭제 전 자동백업' + (brand ? ' · 브랜드 ' + brand : ' · 전체'), 'auto', req.ctx.perm.userId, exec);
+      const r = brand
+        ? await exec(`DELETE FROM product_xref_codes WHERE brand = $1`, [brand])
+        : await exec(`DELETE FROM product_xref_codes`);
+      return { deleted: r.rowCount, snapshot: { id: snap.id, rows: snap.rows } };
+    });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: 'product_xref_codes', detail: { brand: brand || 'ALL', deleted: out.deleted, snapshot: out.snapshot.id } });
+    return out;
+  });
+
+  // ── 현재 교차참조 마스터 내보내기 (디렉터) — 화면에서 xlsx 생성용 ──
+  app.get('/api/products/xref/export', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT p.code AS ctr_code, x.brand, x.xref_code, x.list_price
+         FROM product_xref_codes x JOIN products p ON p.id = x.product_id
+        ORDER BY p.code, x.brand, x.xref_code`)).rows;
+    return { rows: rows.map((r) => ({ ctr: r.ctr_code, brand: r.brand, code: r.xref_code,
+      price: r.list_price != null ? Number(r.list_price) : null })), count: rows.length };
+  });
+
+  // ── 백업 목록 (디렉터) ──
+  app.get('/api/products/xref/snapshots', { preHandler: [authGuard, requireDirector] }, async () => {
+    const rows = (await query(
+      `SELECT s.id, s.label, s.kind, s.row_count, s.created_at, u.name AS created_by_name
+         FROM xref_snapshots s LEFT JOIN users u ON u.id = s.created_by
+        ORDER BY s.id DESC LIMIT 100`)).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), label: r.label, kind: r.kind,
+      rows: Number(r.row_count), at: r.created_at, by: r.created_by_name || '' })) };
+  });
+
+  // ── 수동 백업 (디렉터) — body { label? } ──
+  app.post('/api/products/xref/snapshots', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const label = req.body && req.body.label ? String(req.body.label).slice(0, 140) : '수동 백업';
+    const snap = await withTx(async (c) => takeSnapshot(label, 'manual', req.ctx.perm.userId, c.query.bind(c)));
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: 'xref_snapshot', detail: snap });
+    return snap;
+  });
+
+  // ── 복원 (디렉터) — 해당 스냅샷 시점으로 전체 회귀 · 복원 직전 상태도 자동백업 ──
+  app.post('/api/products/xref/snapshots/:id/restore', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const sid = Number(req.params.id);
+    if (!Number.isFinite(sid)) return reply.code(400).send({ error: 'bad_id' });
+    const out = await withTx(async (c) => {
+      const exec = c.query.bind(c);
+      const s = (await exec(`SELECT id, label, row_count FROM xref_snapshots WHERE id = $1`, [sid])).rows[0];
+      if (!s) return { error: 'not_found' };
+      const pre = await takeSnapshot('복원 전 자동백업 · #' + sid + ' 복원 직전', 'pre_restore', req.ctx.perm.userId, exec);
+      await exec(`DELETE FROM product_xref_codes`);
+      const r = await exec(
+        `INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand, list_price, created_by)
+         SELECT r.product_id, r.xref_code, r.norm_code, r.brand, r.list_price, $2
+           FROM xref_snapshot_rows r
+           JOIN products p ON p.id = r.product_id AND p.deleted_at IS NULL
+          WHERE r.snapshot_id = $1`, [sid, req.ctx.perm.userId]);
+      return { restored: r.rowCount, snapshot_id: sid, label: s.label, pre_backup: { id: pre.id, rows: pre.rows } };
+    });
+    if (out.error) return reply.code(404).send(out);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_xref_codes', detail: { restore_from: sid, restored: out.restored, pre_backup: out.pre_backup.id } });
+    return out;
+  });
+
+  // ── 백업 삭제 (디렉터) — 오래된 스냅샷 정리 ──
+  app.delete('/api/products/xref/snapshots/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const sid = Number(req.params.id);
+    if (!Number.isFinite(sid)) return reply.code(400).send({ error: 'bad_id' });
+    const r = await query(`DELETE FROM xref_snapshots WHERE id = $1`, [sid]);   // rows는 CASCADE 삭제
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: 'xref_snapshot', detail: { id: sid } });
     return { deleted: r.rowCount };
   });
 }

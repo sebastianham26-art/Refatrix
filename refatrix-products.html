@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pj0713a</title>
+<title>Refatrix ERP · 제품 조회 · pj0713b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -220,12 +220,24 @@
       <div class="row" style="margin-top:8px;align-items:flex-end">
         <div style="flex:0 0 auto"><label>엑셀 파일(.xlsx)</label><input type="file" id="xrFile" accept=".xlsx,.xls" style="font-size:11px"></div>
         <div style="flex:0 0 auto"><button class="btn ghost sm" id="xrStats" style="margin-bottom:2px">등록 현황 보기</button></div>
+        <div style="flex:0 0 auto"><button class="btn ghost sm" id="xrExport" style="margin-bottom:2px">⬇ 현재 마스터 다운로드</button></div>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
         <button class="btn gold" id="xrApply" disabled>교차참조 등록</button>
         <span class="hint" id="xrCount" style="margin:0"></span>
       </div>
       <div class="msg" id="xrMsg"></div>
+
+      <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-weight:700">백업·복원 (교차참조 스냅샷)</div>
+          <button class="btn ghost sm" id="xrSnapList">백업 목록 불러오기</button>
+          <button class="btn ghost sm" id="xrSnapNow">지금 상태 수동 백업</button>
+        </div>
+        <div class="hint" style="margin-top:4px">업로드·삭제·복원 때마다 <b>직전 상태가 자동 백업</b>됩니다. 목록에서 시점을 선택해 그때로 회귀할 수 있고, 복원 직전 상태도 자동 백업되므로 복원 자체도 되돌릴 수 있습니다. 범위: 경쟁사 교차참조 전체 (제품·재고·CTR 가격 원본은 교차참조 업로드로 변경되지 않음)</div>
+        <div id="xrSnapBox" style="margin-top:8px"></div>
+        <div class="msg" id="xrSnapMsg"></div>
+      </div>
     </div>
   </div>
 
@@ -889,7 +901,7 @@
   // ===== 경쟁사 교차참조 업로드 =====
   //  대상 시트: 헤더 행에 'REFERENCIA'가 있는 시트(예: LISTA GENERAL). 헤더 윗줄이 브랜드 라벨(BAW·SYD1…).
   //  행 → { codes:[{brand,code}] }. 셀에 '//', 쉼표, 세미콜론으로 여러 코드가 있으면 분리.
-  let xrRows=null;
+  let xrRows=null, xrFileName='';
   function xrParseWb(wb){
     // 후보 시트 전부 스캔 → 코드 열(CODIGO xxx + REFERENCIA n)이 가장 많은 시트 채택 (최소 3열)
     //  · 안내/할인계산 시트에도 'REFERENCIA' 낱개가 있을 수 있어 열 수 기준이 안전.
@@ -935,7 +947,7 @@
     try{
       const parsed=xrParseWb(XLSX.read(await file.arrayBuffer()));
       if(!parsed){ m.className='msg err'; m.style.display='block'; m.textContent='교차참조 형식 시트를 찾지 못했습니다 (헤더에 REFERENCIA 1~9가 있어야 합니다).'; return; }
-      xrRows=parsed.rows; $('xrApply').disabled=false;
+      xrRows=parsed.rows; xrFileName=file.name||''; $('xrApply').disabled=false;
       $('xrCount').textContent='['+parsed.sheet+'] '+parsed.rows.length+'행 · 열: '+parsed.cols.join(', ');
       m.className='msg ok'; m.style.display='block'; m.textContent=file.name+' 읽음. [교차참조 등록]을 누르면 SYD 일치 행의 코드가 CTR에 연결됩니다.';
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='파일을 읽지 못했습니다: '+e.message; }
@@ -944,18 +956,21 @@
     if(!xrRows||!xrRows.length) return;
     if(!confirm(xrRows.length+'행을 등록할까요? (SYD 일치 행만 CTR에 연결되며, 재업로드해도 중복되지 않습니다)')) return;
     const m=$('xrMsg'); const btn=$('xrApply'); btn.disabled=true;
-    const CH=400; const tot={rows:0,matchedRows:0,inserted:0,unmatchedRows:0}; let sample=[];
+    const CH=400; const tot={rows:0,matchedRows:0,inserted:0,unmatchedRows:0,snapId:null}; let sample=[];
     try{
       for(let i=0;i<xrRows.length;i+=CH){
         btn.textContent='등록 중… '+Math.min(i+CH,xrRows.length)+'/'+xrRows.length;
-        const res=await fetch(session.api+'/api/products/xref/bulk-upsert',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:xrRows.slice(i,i+CH)})});
+        const payload={rows:xrRows.slice(i,i+CH)};
+        if(i===0) payload.backup={first:true, filename:xrFileName};   // 첫 청크: 업로드 전 자동백업
+        const res=await fetch(session.api+'/api/products/xref/bulk-upsert',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(payload)});
         const d=await res.json();
         if(!res.ok||d.error) throw new Error(d.error||res.status);
         ['rows','matchedRows','inserted','unmatchedRows'].forEach(k=>tot[k]+=d[k]||0);
+        if(d.snapshot&&d.snapshot.id) tot.snapId=d.snapshot.id;
         if(sample.length<10&&d.unmatchedSample) sample=sample.concat(d.unmatchedSample).slice(0,10);
       }
       m.className='msg ok'; m.style.display='block';
-      m.textContent='완료 — 총 '+tot.rows+'행 중 매칭 '+tot.matchedRows+'행 · 신규 교차참조 '+tot.inserted+'개 등록 · 미매칭 '+tot.unmatchedRows+'행(CTR 미취급 라인)';
+      m.textContent='완료 — 총 '+tot.rows+'행 중 매칭 '+tot.matchedRows+'행 · 신규 교차참조 '+tot.inserted+'개 등록 · 미매칭 '+tot.unmatchedRows+'행(CTR 미취급 라인)'+(tot.snapId?' · 업로드 전 상태 자동백업 #'+tot.snapId:'');
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+e.message+' (완료분까지는 저장됨 — 같은 파일 재업로드 시 이어서 처리됩니다)'; }
     finally{ btn.disabled=false; btn.textContent='교차참조 등록'; }
   }
@@ -969,10 +984,82 @@
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='조회 실패: '+e.message; }
   }
 
+  // ── 현재 마스터 다운로드 (교차참조 전체 → xlsx) ──
+  async function xrExport(){
+    const m=$('xrMsg'); m.className='msg'; m.style.display='none';
+    const btn=$('xrExport'); btn.disabled=true; btn.textContent='생성 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/export',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(!d.rows.length){ m.className='msg err'; m.style.display='block'; m.textContent='내보낼 교차참조가 없습니다.'; return; }
+      const aoa=[['CTR','MARCA','CODIGO','PRECIO']].concat(d.rows.map(r=>[r.ctr,r.brand||'',r.code,r.price!=null?r.price:'']));
+      const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:12},{wch:12},{wch:22},{wch:10}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'xref_master');
+      const dt=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      XLSX.writeFile(wb,'Refatrix_xref_master_'+dt+'.xlsx');
+      m.className='msg ok'; m.style.display='block'; m.textContent='현재 마스터 '+d.count.toLocaleString()+'건 다운로드 완료.';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='내보내기 실패: '+e.message; }
+    finally{ btn.disabled=false; btn.textContent='⬇ 현재 마스터 다운로드'; }
+  }
+
+  // ── 백업 목록 · 수동 백업 · 복원 ──
+  async function xrSnapList(){
+    const box=$('xrSnapBox'), m=$('xrSnapMsg'); m.className='msg'; m.style.display='none';
+    box.innerHTML='<span class="hint">불러오는 중…</span>';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(!d.items.length){ box.innerHTML='<span class="hint">백업이 아직 없습니다. 업로드하면 자동으로 생성됩니다.</span>'; return; }
+      const kindLb={auto:'자동',manual:'수동',pre_restore:'복원전'};
+      box.innerHTML='<table style="min-width:0"><thead><tr><th>#</th><th>시각</th><th>구분</th><th>내용</th><th class="num">행수</th><th>작업자</th><th></th></tr></thead><tbody>'
+        + d.items.map(s=>'<tr><td>'+s.id+'</td><td class="nowrap">'+new Date(s.at).toLocaleString('sv-SE').slice(0,16)+'</td>'
+          +'<td>'+(kindLb[s.kind]||s.kind)+'</td><td>'+(s.label||'—')+'</td><td class="num">'+s.rows.toLocaleString()+'</td><td>'+(s.by||'—')+'</td>'
+          +'<td class="nowrap"><button class="btn ghost sm xr-restore" data-id="'+s.id+'" data-rows="'+s.rows+'">이 시점으로 복원</button> '
+          +'<button class="btn ghost sm xr-snapdel" data-id="'+s.id+'" title="백업 삭제">🗑</button></td></tr>').join('')
+        + '</tbody></table>';
+      box.querySelectorAll('.xr-restore').forEach(b=>b.addEventListener('click',()=>xrRestore(Number(b.dataset.id),Number(b.dataset.rows))));
+      box.querySelectorAll('.xr-snapdel').forEach(b=>b.addEventListener('click',()=>xrSnapDel(Number(b.dataset.id))));
+    }catch(e){ box.innerHTML=''; m.className='msg err'; m.style.display='block'; m.textContent='목록 조회 실패: '+e.message; }
+  }
+  async function xrSnapNow(){
+    const m=$('xrSnapMsg'); m.className='msg'; m.style.display='none';
+    const label=prompt('백업 메모 (예: BAW 6월판 반영 후)','수동 백업');
+    if(label===null) return;
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({label})});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      m.className='msg ok'; m.style.display='block'; m.textContent='백업 #'+d.id+' 생성 ('+d.rows.toLocaleString()+'행).';
+      xrSnapList();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='백업 실패: '+e.message; }
+  }
+  async function xrRestore(sid,rows){
+    if(!confirm('#'+sid+' 시점('+rows.toLocaleString()+'행)으로 교차참조 전체를 되돌립니다.\n현재 상태는 복원 직전에 자동 백업됩니다.\n계속할까요?')) return;
+    if(!confirm('최종 확인 — 현재 교차참조가 #'+sid+' 시점으로 교체됩니다.')) return;
+    const m=$('xrSnapMsg'); m.className='msg'; m.style.display='none';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots/'+sid+'/restore',{method:'POST',headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='복원 완료 — #'+sid+' 시점 '+d.restored.toLocaleString()+'행 적용. 복원 직전 상태는 백업 #'+d.pre_backup.id+'에 보관됨 (되돌리기 가능).';
+      xrSnapList();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='복원 실패: '+e.message; }
+  }
+  async function xrSnapDel(sid){
+    if(!confirm('백업 #'+sid+'를 삭제할까요? (복원 불가능해집니다)')) return;
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots/'+sid,{method:'DELETE',headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      xrSnapList();
+    }catch(e){ alert('삭제 실패: '+e.message); }
+  }
+
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
   if($('xrStats')) $('xrStats').addEventListener('click',xrShowStats);
+  if($('xrExport')) $('xrExport').addEventListener('click',xrExport);
+  if($('xrSnapList')) $('xrSnapList').addEventListener('click',xrSnapList);
+  if($('xrSnapNow')) $('xrSnapNow').addEventListener('click',xrSnapNow);
   if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
   if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
   if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
