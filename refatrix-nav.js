@@ -53,7 +53,7 @@
     products:{file:'refatrix-products.html',name:'제품',desc:'제품·재고',tab:'find'},
     vehicleparts:{file:'refatrix-vehicleparts.html',name:'차종별 부품',desc:'차종 검색·카테고리별 CTR/SYD·VIO'},
     viofinder:{file:'refatrix-viofinder.html',name:'VIO 차량모델 제품찾기',desc:'VIO 순위·연식·CTR/SYD·재고·누적판매·가격'},
-    prodFind:{file:'refatrix-products.html',name:'제품 찾기',desc:'검색·경쟁사코드·차종',tab:'find'},
+    prodFind:{file:'refatrix-finder.html',name:'제품 찾기',desc:'경쟁사 코드 검색·CTR/BAW/SYD 가격비교'},
     prodUpload:{file:'refatrix-products.html',name:'제품 마스터 업로드',desc:'엑셀 업로드',tab:'upload'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
     mktspend:{file:'refatrix-mktspend.html',name:'마케팅 지출계획',desc:'행사·활동 지출 기안·승인'},

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pj0710x</title>
+<title>Refatrix ERP · 제품 조회 · pj0713a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -216,7 +216,7 @@
     </div>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
       <div style="font-weight:700">경쟁사 교차참조 업로드 (BAW · GROB · VASLO · KYB · MOOG 등)</div>
-      <div class="hint" style="margin-top:4px">경쟁사 가격표(예: LISTA GENERAL — CODIGO BAW + REFERENCIA 1~9)를 올리면, 각 행에서 <b>SYD 코드가 기존 CTR↔SYD 매칭과 일치하는 행</b>의 모든 코드(BAW·GROB·VASLO·KYB·MOOG·YOKOMITSU 등)를 해당 CTR 제품의 교차참조로 등록합니다. 이후 <b>현장재고조사에서 그 코드를 입력·업로드만 해도 CTR로 자동 매칭</b>됩니다. 재업로드 안전(중복 없음). <b>재고·가격 등 다른 값은 바뀌지 않습니다.</b></div>
+      <div class="hint" style="margin-top:4px">경쟁사 가격표(예: LISTA GENERAL — CODIGO BAW + REFERENCIA 1~9)를 올리면, 각 행에서 <b>SYD 코드가 기존 CTR↔SYD 매칭과 일치하는 행</b>의 모든 코드(BAW·GROB·VASLO·KYB·MOOG·YOKOMITSU 등)를 해당 CTR 제품의 교차참조로 등록합니다. 이후 <b>현장재고조사에서 그 코드를 입력·업로드만 해도 CTR로 자동 매칭</b>됩니다. 재업로드 안전(중복 없음). PRECIO열이 있으면 기준 브랜드 리스트가격도 함께 저장(제품찾기 가격비교용). <b>재고·CTR 가격 등 다른 값은 바뀌지 않습니다.</b></div>
       <div class="row" style="margin-top:8px;align-items:flex-end">
         <div style="flex:0 0 auto"><label>엑셀 파일(.xlsx)</label><input type="file" id="xrFile" accept=".xlsx,.xls" style="font-size:11px"></div>
         <div style="flex:0 0 auto"><button class="btn ghost sm" id="xrStats" style="margin-bottom:2px">등록 현황 보기</button></div>
@@ -903,25 +903,32 @@
       }
       if(hIdx<0) continue;
       const head=aoa[hIdx]||[], brandRow=(hIdx>0?aoa[hIdx-1]:[])||[];
-      const cols=[];
+      const cols=[]; let priceCi=-1, anchorCi=-1;
       head.forEach((h,ci)=>{ if(h==null) return; const s=String(h).trim();
+        if(/^precio/i.test(s)&&priceCi<0){ priceCi=ci; return; }   // Q열 PRECIO(리스트가격) → 기준 브랜드 코드에 저장
         if(/^codigo\s/i.test(s)||/referencia\s*\d/i.test(s)){
           const b=brandRow[ci]!=null?String(brandRow[ci]).trim():'';
+          if(/^codigo\s/i.test(s)&&anchorCi<0) anchorCi=ci;        // 첫 CODIGO 열 = 기준 브랜드(가격 귀속)
           cols.push({ci, brand: b || s.replace(/^codigo\s+/i,'').toUpperCase() || null});
         }});
       if(cols.length<3) continue;
-      if(!best || cols.length>best.cols.length) best={name, aoa, hIdx, cols};
+      if(!best || cols.length>best.cols.length) best={name, aoa, hIdx, cols, priceCi, anchorCi};
     }
     if(!best) return null;
     const rows=[];
     for(let i=best.hIdx+1;i<best.aoa.length;i++){
       const r=best.aoa[i]||[]; const codes=[];
+      // 행 가격(PRECIO열) — 기준 브랜드(첫 CODIGO 열) 코드에 귀속
+      let price=null;
+      if(best.priceCi>=0 && r[best.priceCi]!=null && r[best.priceCi]!==''){
+        const pn=Number(String(r[best.priceCi]).replace(/[$,\s]/g,'')); if(isFinite(pn)&&pn>0) price=pn;
+      }
       best.cols.forEach(c=>{ const v=r[c.ci]; if(v==null) return;
-        String(v).split(/\/\/|[,;]/).forEach(part=>{ const p=part.trim(); if(p&&p!=='0') codes.push({brand:c.brand, code:p}); });
+        String(v).split(/\/\/|[,;]/).forEach(part=>{ const p=part.trim(); if(p&&p!=='0') codes.push({brand:c.brand, code:p, price:(c.ci===best.anchorCi?price:null)}); });
       });
       if(codes.length) rows.push({codes});
     }
-    return {sheet:best.name, cols:best.cols.map(c=>c.brand), rows};
+    return {sheet:best.name, cols:best.cols.map(c=>c.brand), rows, hasPrice:best.priceCi>=0};
   }
   async function xrReadFile(file){
     const m=$('xrMsg'); m.className='msg'; m.style.display='none'; xrRows=null; $('xrApply').disabled=true; $('xrCount').textContent='';
@@ -975,6 +982,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260710pr"></script>
+<script src="refatrix-nav.js?v=20260713fx"></script>
 </body>
 </html>

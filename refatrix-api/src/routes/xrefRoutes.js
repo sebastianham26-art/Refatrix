@@ -42,10 +42,15 @@ export default async function xrefRoutes(app) {
     const rows = Array.isArray(b.rows) ? b.rows.slice(0, 1000) : [];
     if (!rows.length) return reply.code(400).send({ error: 'no_rows' });
 
-    // 행 정제: 코드 원문 + norm 준비, 빈 코드 제거
+    // 행 정제: 코드 원문 + norm + 가격(선택) 준비, 빈 코드 제거
     const clean = rows.map((r) => {
       const codes = (Array.isArray(r && r.codes) ? r.codes : [])
-        .map((c) => ({ brand: String((c && c.brand) || '').trim() || null, code: String((c && c.code) || '').trim() }))
+        .map((c) => {
+          const p = c && c.price != null && c.price !== '' ? Number(String(c.price).replace(/[,\s]/g, '')) : null;
+          return { brand: String((c && c.brand) || '').trim() || null,
+                   code: String((c && c.code) || '').trim(),
+                   price: (Number.isFinite(p) && p > 0) ? p : null };
+        })
         .filter((c) => c.code)
         .map((c) => ({ ...c, norm: normCode(c.code) }))
         .filter((c) => c.norm);
@@ -83,11 +88,12 @@ export default async function xrefRoutes(app) {
           if (cd.norm === own || seen.has(cd.norm)) continue;   // 자기 CTR 코드·행 내 중복 제외
           seen.add(cd.norm);
           const r = await exec(
-            `INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand, created_by)
-             VALUES ($1,$2,$3,$4,$5)
+            `INSERT INTO product_xref_codes (product_id, xref_code, norm_code, brand, list_price, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6)
              ON CONFLICT (product_id, norm_code)
-             DO UPDATE SET xref_code = EXCLUDED.xref_code, brand = EXCLUDED.brand
-             RETURNING (xmax = 0) AS is_new`, [pid, cd.code, cd.norm, cd.brand, req.ctx.perm.userId]);
+             DO UPDATE SET xref_code = EXCLUDED.xref_code, brand = EXCLUDED.brand,
+                           list_price = COALESCE(EXCLUDED.list_price, product_xref_codes.list_price)
+             RETURNING (xmax = 0) AS is_new`, [pid, cd.code, cd.norm, cd.brand, cd.price, req.ctx.perm.userId]);
           if (r.rows[0] && r.rows[0].is_new) inserted++;
         }
       }

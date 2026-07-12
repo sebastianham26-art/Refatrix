@@ -35,6 +35,7 @@ import presenceRoutes from './routes/presenceRoutes.js';
 import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
 import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
 import xrefRoutes from './routes/xrefRoutes.js';
+import finderRoutes from './routes/finderRoutes.js';
 import processKpiRoutes from './routes/processKpiRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
 import portalAlertsRoutes from './routes/portalAlertsRoutes.js';
@@ -94,6 +95,7 @@ export function buildApp() {
   app.register(notaCreditoRoutes);
   app.register(fieldSurveyRoutes);
   app.register(xrefRoutes);
+  app.register(finderRoutes);
   app.register(processKpiRoutes);
   app.register(warehouseRoutes);
   app.register(portalAlertsRoutes);
