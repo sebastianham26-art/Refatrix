@@ -209,39 +209,89 @@ async function sectionPacking(perm) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// ④ 마케팅 일정 — 승인된 계획 중 향후 14일 내 행사 + 같은 창의 예정 집행액.
+// ④ 마케팅 일정 — 승인된 계획 중 향후 14일 내 행사 + 예정 집행 "세부 내역".
+//    돈: 각 지급 라인마다 [언제·어느 활동·무슨 집행항목(업체)·지급구분·왜(목적)·얼마].
+//    계층: 계획(활동) → 집행항목(장소/케이터링/판촉물…) → 지급라인(선지급/중도금/잔금/일시불).
 // ─────────────────────────────────────────────────────────────────────
+const MKT_KIND = { adv: '선지급금', mid: '중도금', fin: '잔금', one: '일시불' };
 async function sectionMarketing(mxToday) {
   const to = shiftYmd(mxToday, 14);
   let plans = [];
-  let payAmt = 0, payCnt = 0;
+  let lines = [];
   try {
     plans = (await query(
-      `SELECT title, category, to_char(event_date,'YYYY-MM-DD') AS event_date
+      `SELECT id, title, category, to_char(event_date,'YYYY-MM-DD') AS event_date
          FROM marketing_spend_plans
         WHERE status='approved' AND deleted_at IS NULL
           AND event_date IS NOT NULL AND event_date >= $1 AND event_date <= $2
         ORDER BY event_date`, [mxToday, to])).rows;
-    const pay = (await query(
-      `SELECT COALESCE(SUM(l.amount),0) AS amt, COUNT(*) AS cnt
-         FROM marketing_spend_lines l JOIN marketing_spend_plans p ON p.id=l.plan_id
+
+    // 향후 14일 예정 집행 라인(승인 계획) — 활동·집행항목·업체·목적·명목까지 조인
+    const raw = (await query(
+      `SELECT to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.kind, l.amount, l.memo AS line_memo,
+              p.id AS plan_id, p.title AS plan_title, p.category, p.purpose,
+              i.name AS item_name, i.memo AS vendor
+         FROM marketing_spend_lines l
+         JOIN marketing_spend_plans p ON p.id=l.plan_id
+         LEFT JOIN marketing_spend_items i ON i.id=l.item_id
         WHERE p.status='approved' AND p.deleted_at IS NULL
-          AND l.due_date >= $1 AND l.due_date <= $2`, [mxToday, to])).rows[0];
-    payAmt = Math.round(n(pay && pay.amt)); payCnt = n(pay && pay.cnt);
+          AND l.due_date >= $1 AND l.due_date <= $2
+        ORDER BY l.due_date, p.title, i.sort_order, l.sort_order, l.id`, [mxToday, to])).rows;
+
+    // 대상(고객/불특정) — 등장한 계획들만 조회해 라벨 구성 (ANY 대신 정수 IN 리터럴 — pg-mem 호환)
+    const planIds = [...new Set(raw.map((r) => Number(r.plan_id)).filter(Number.isInteger))];
+    const targetMap = {};
+    if (planIds.length) {
+      const trows = (await query(
+        `SELECT t.plan_id, t.is_general, c.name AS customer_name
+           FROM marketing_spend_targets t
+           LEFT JOIN customers c ON c.id=t.customer_id
+          WHERE t.plan_id IN (${planIds.join(',')})`)).rows;
+      for (const t of trows) {
+        const pid = Number(t.plan_id);
+        (targetMap[pid] = targetMap[pid] || []).push(t.is_general ? '불특정 다수' : (t.customer_name || '고객'));
+      }
+    }
+    lines = raw.map((r) => ({
+      due_date: r.due_date,
+      plan_title: r.plan_title || '',
+      category: r.category || null,
+      item_name: r.item_name || '기본 집행',
+      vendor: r.vendor || null,                 // 업체·비고
+      kind: r.kind || 'one',
+      kind_label: MKT_KIND[r.kind] || '일시불',
+      amount: Math.round(n(r.amount)),
+      purpose: r.purpose || null,               // 왜(목적)
+      line_memo: r.line_memo || null,           // 명목
+      targets: joinNames(targetMap[Number(r.plan_id)] || [], 4),
+    }));
   } catch (_) { /* 0115/0116 미적용 시 안전 무시 */ }
 
-  const items = plans.map((p) => ({ title: p.title, category: p.category || null, event_date: p.event_date }));
+  const evItems = plans.map((p) => ({ title: p.title, category: p.category || null, event_date: p.event_date }));
+  const payAmt = lines.reduce((s, l) => s + l.amount, 0);
+  const payCnt = lines.length;
+
+  // 요약 문장 + "왜·어디에·얼마" 한 줄 요약(상위 몇 건). 상세는 lines 로 카드에 표기.
   let text;
-  if (!items.length && !payAmt) {
+  if (!evItems.length && !payCnt) {
     text = '향후 2주 내 예정된 마케팅 행사·집행은 없습니다.';
   } else {
-    const evParts = items.slice(0, 3).map((p) => `${p.event_date} ${p.title}`);
-    const more = items.length > 3 ? ` 외 ${items.length - 3}건` : '';
-    const evText = items.length ? `예정 행사 ${items.length}건 — ` + evParts.join(' / ') + more + '. ' : '';
-    const payText = payAmt ? `향후 2주 집행 예정액은 ${money(payAmt)}(${payCnt}건)입니다.` : '예정 집행액은 없습니다.';
+    const evParts = evItems.slice(0, 3).map((p) => `${p.event_date} ${p.title}`);
+    const evMore = evItems.length > 3 ? ` 외 ${evItems.length - 3}건` : '';
+    const evText = evItems.length ? `예정 행사 ${evItems.length}건 — ` + evParts.join(' / ') + evMore + '. ' : '';
+    const payText = payCnt
+      ? `향후 2주 집행 예정액 ${money(payAmt)}(${payCnt}건). 세부: `
+        + lines.slice(0, 3).map((l) =>
+            `${l.due_date} ${l.plan_title}·${l.item_name} ${l.kind_label} ${money(l.amount)}`).join(' / ')
+        + (payCnt > 3 ? ` 외 ${payCnt - 3}건` : '') + '.'
+      : '예정 집행액은 없습니다.';
     text = evText + payText;
   }
-  return { key: 'marketing', icon: '📣', title: '마케팅 일정', count: items.length, plan_amount: payAmt, plan_count: payCnt, items, text };
+  return {
+    key: 'marketing', icon: '📣', title: '마케팅 일정',
+    count: evItems.length, plan_amount: payAmt, plan_count: payCnt,
+    items: evItems, lines, text,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────
