@@ -646,7 +646,10 @@ export default async function financeRoutes(app) {
       if (!dep) return { error: 'deposit_not_found' };
       if (dep.status !== 'pending') return { error: 'deposit_not_pending', status: dep.status };
       const accountId = Number(dep.account_id);
-      const payDate = String(dep.deposit_date).slice(0, 10);
+      // node-pg는 DATE를 JS Date 객체로 반환 → String().slice(0,10)은 "Mon Jul 13"(연도 잘림)이 되어
+      // pay_date INSERT가 invalid input syntax로 터짐(반제 500의 원인). toYMD로 안전 변환.
+      const payDate = toYMD(dep.deposit_date);
+      if (!payDate) return { error: 'bad_deposit_date' };
       const amount = r2(Number(dep.amount));
       // 현재 미수금 맵(검증용) — 이 고객 인보이스만
       const inv = (await c.query(
@@ -851,7 +854,7 @@ export default async function financeRoutes(app) {
     const b = req.body || {};
     // 기본값은 입금 정보. 디렉터가 계좌·일자·금액·적요·계정과목을 덮어쓸 수 있음.
     const accountId = Number(b.account_id || dep.account_id);
-    const txnDate = b.txn_date || String(dep.deposit_date).slice(0, 10);
+    const txnDate = b.txn_date || toYMD(dep.deposit_date); // Date 객체 안전 변환(반제 500과 동일 패턴 예방)
     const amount = r2(b.amount != null ? b.amount : dep.amount);
     const categoryCode = b.category_code || null;
     const memo = (b.memo != null ? b.memo : (dep.payer_memo || '')) || null;

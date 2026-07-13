@@ -363,8 +363,10 @@ export default async function commissionRoutes(app) {
     catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
     if (!batch) return reply.code(409).send({ error: 'not_confirmed', note: '먼저 디렉터가 그 달을 확정해야 지급할 수 있습니다.' });
 
+    // node-pg는 DATE를 JS Date 객체로 반환 → String().slice(0,10)="Mon Jul 13"(연도 잘림)이 되어 INSERT가 터짐. 안전 변환.
+    const _ymd = (v) => { if (v == null) return null; if (v instanceof Date) { if (isNaN(v.getTime())) return null; return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`; } const s = String(v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
     const payDate = (paid_date && /^\d{4}-\d{2}-\d{2}$/.test(paid_date)) ? paid_date
-      : (batch.pay_date ? String(batch.pay_date).slice(0, 10) : new Date().toISOString().slice(0, 10));
+      : (_ymd(batch.pay_date) || new Date().toISOString().slice(0, 10));
 
     let lines;
     try { lines = await payableLines(agentId, settleYm); }
