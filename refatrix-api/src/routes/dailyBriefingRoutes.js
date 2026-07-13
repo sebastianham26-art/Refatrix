@@ -5,7 +5,7 @@
 //     ① 오늘의 일정   (calendar_events, MX 현지 오늘)
 //     ② 어제 견적     (quotes, quote_date = MX 어제)
 //     ③ 진행 중 포장  (stageCohorts.buildStageCohorts().packing — 단일 기준 재사용)
-//     ④ 마케팅 일정   (marketing_spend_plans/lines, 향후 14일 예정 행사·집행)
+//     ④ 마케팅 일정   (marketing_spend_plans/lines, 향후 7일 예정 행사·집행)
 //     ⑤ 재무 현황     (accounts 잔액 + 오늘 확정거래 순액 + 향후 7일 예정 지출/수금)
 //
 //   원칙(격리·무해): 100% 읽기 전용. 재고·매출·단계에 아무 영향 없음.
@@ -209,13 +209,13 @@ async function sectionPacking(perm) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// ④ 마케팅 일정 — 승인된 계획 중 향후 14일 내 행사 + 예정 집행 "세부 내역".
+// ④ 마케팅 일정 — 승인된 계획 중 향후 7일 내 행사 + 예정 집행 "세부 내역".
 //    돈: 각 지급 라인마다 [언제·어느 활동·무슨 집행항목(업체)·지급구분·왜(목적)·얼마].
 //    계층: 계획(활동) → 집행항목(장소/케이터링/판촉물…) → 지급라인(선지급/중도금/잔금/일시불).
 // ─────────────────────────────────────────────────────────────────────
 const MKT_KIND = { adv: '선지급금', mid: '중도금', fin: '잔금', one: '일시불' };
 async function sectionMarketing(mxToday) {
-  const to = shiftYmd(mxToday, 14);
+  const to = shiftYmd(mxToday, 7);
   let plans = [];
   let lines = [];
   try {
@@ -226,7 +226,7 @@ async function sectionMarketing(mxToday) {
           AND event_date IS NOT NULL AND event_date >= $1 AND event_date <= $2
         ORDER BY event_date`, [mxToday, to])).rows;
 
-    // 향후 14일 예정 집행 라인(승인 계획) — 활동·집행항목·업체·목적·명목까지 조인
+    // 향후 7일 예정 집행 라인(승인 계획) — 활동·집행항목·업체·목적·명목까지 조인
     const raw = (await query(
       `SELECT to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.kind, l.amount, l.memo AS line_memo,
               p.id AS plan_id, p.title AS plan_title, p.category, p.purpose,
@@ -274,13 +274,13 @@ async function sectionMarketing(mxToday) {
   // 요약 문장 + "왜·어디에·얼마" 한 줄 요약(상위 몇 건). 상세는 lines 로 카드에 표기.
   let text;
   if (!evItems.length && !payCnt) {
-    text = '향후 2주 내 예정된 마케팅 행사·집행은 없습니다.';
+    text = '향후 7일 내 예정된 마케팅 행사·집행은 없습니다.';
   } else {
     const evParts = evItems.slice(0, 3).map((p) => `${p.event_date} ${p.title}`);
     const evMore = evItems.length > 3 ? ` 외 ${evItems.length - 3}건` : '';
     const evText = evItems.length ? `예정 행사 ${evItems.length}건 — ` + evParts.join(' / ') + evMore + '. ' : '';
     const payText = payCnt
-      ? `향후 2주 집행 예정액 ${money(payAmt)}(${payCnt}건). 세부: `
+      ? `향후 7일 집행 예정액 ${money(payAmt)}(${payCnt}건). 세부: `
         + lines.slice(0, 3).map((l) =>
             `${l.due_date} ${l.plan_title}·${l.item_name} ${l.kind_label} ${money(l.amount)}`).join(' / ')
         + (payCnt > 3 ? ` 외 ${payCnt - 3}건` : '') + '.'
