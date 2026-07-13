@@ -40,6 +40,8 @@ import processKpiRoutes from './routes/processKpiRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
 import portalAlertsRoutes from './routes/portalAlertsRoutes.js';
 import dailyBriefingRoutes from './routes/dailyBriefingRoutes.js';
+import briefingPendingRoutes from './routes/briefingPendingRoutes.js';
+import briefingAiRoutes from './routes/briefingAiRoutes.js';
 import stockCountRoutes from './routes/stockCountRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
 import { installPerfMonitor } from './perfMonitor.js';
@@ -101,6 +103,8 @@ export function buildApp() {
   app.register(warehouseRoutes);
   app.register(portalAlertsRoutes);
   app.register(dailyBriefingRoutes);
+  app.register(briefingPendingRoutes);
+  app.register(briefingAiRoutes);
   app.register(stockCountRoutes);
   app.register(purchaseRoutes);
 
