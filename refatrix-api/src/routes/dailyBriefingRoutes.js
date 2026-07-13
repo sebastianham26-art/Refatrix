@@ -134,6 +134,55 @@ async function sectionQuotes(mxYesterday) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// ②-b 어제 영업활동 — 영업(파이프라인) > 영업활동의 미팅·방문 기록(customer_meetings).
+//     meeting_date = MX 어제. 담당자·접촉 고객·단계 이동 집계.
+// ─────────────────────────────────────────────────────────────────────
+async function sectionSalesActivity(mxYesterday) {
+  const rows = (await query(
+    `SELECT m.customer_id, c.name AS customer_name, u.name AS by_name,
+            m.stage_before, m.stage_after, sa.name AS stage_after_name
+       FROM customer_meetings m
+       LEFT JOIN customers c ON c.id=m.customer_id
+       LEFT JOIN users u ON u.id=m.created_by
+       LEFT JOIN stages sa ON sa.id=m.stage_after
+      WHERE m.meeting_date = $1
+      ORDER BY m.id`, [mxYesterday])).rows;
+  const cnt = rows.length;
+  const custNames = [];
+  const repNames = [];
+  const advances = [];
+  for (const r of rows) {
+    custNames.push(r.customer_name || '—');
+    if (r.by_name) repNames.push(r.by_name);
+    // 단계 이동(전→후가 다르고 후단계가 있는 경우) = 실질 진전
+    if (r.stage_after != null && String(r.stage_before) !== String(r.stage_after)) {
+      advances.push({ customer: r.customer_name || '—', to_stage: r.stage_after_name || null });
+    }
+  }
+  const custLabel = joinNames(custNames);
+  const repLabel = joinNames(repNames);
+  const advCnt = advances.length;
+
+  let text;
+  if (!cnt) {
+    text = '어제 기록된 영업활동은 없습니다.';
+  } else {
+    const advParts = advances.slice(0, 3)
+      .map((a) => a.to_stage ? `${a.customer}→${a.to_stage}` : a.customer);
+    const advMore = advCnt > 3 ? ` 외 ${advCnt - 3}건` : '';
+    const advText = advCnt ? ` 단계 이동 ${advCnt}건 (${advParts.join(', ')}${advMore}).` : '';
+    text = `어제 영업활동은 ${cnt}건입니다`
+      + (repLabel ? ` (${repLabel})` : '')
+      + `. 접촉 고객: ${custLabel || '—'}.`
+      + advText;
+  }
+  return {
+    key: 'sales_activity', icon: '🤝', title: '어제 영업활동',
+    count: cnt, advance_count: advCnt, customers: custLabel, reps: repLabel, advances, text,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // ③ 진행 중 포장 — 공용 stageCohorts.packing 재사용(WBR·포털 SLA 와 단일 기준).
 //    포장출력 됐으나 포장작업지시서 스캔(완료) 전, 전환 전.
 // ─────────────────────────────────────────────────────────────────────
@@ -275,9 +324,10 @@ export default async function dailyBriefingRoutes(app) {
       try { return await fn(); }
       catch (e) { return { key, icon, title, error: true, text: `${title} 정보를 불러오지 못했습니다.` }; }
     }
-    const [schedule, quotes, packing, marketing, finance] = await Promise.all([
+    const [schedule, quotes, salesActivity, packing, marketing, finance] = await Promise.all([
       safe(() => sectionSchedule(mxToday), 'schedule', '오늘의 일정', '📅'),
       safe(() => sectionQuotes(mxYesterday), 'quotes', '어제 견적', '📝'),
+      safe(() => sectionSalesActivity(mxYesterday), 'sales_activity', '어제 영업활동', '🤝'),
       safe(() => sectionPacking(perm), 'packing', '진행 중 포장', '📦'),
       safe(() => sectionMarketing(mxToday), 'marketing', '마케팅 일정', '📣'),
       safe(() => sectionFinance(mxToday), 'finance', '재무 현황', '💰'),
@@ -290,7 +340,7 @@ export default async function dailyBriefingRoutes(app) {
       mx_yesterday: mxYesterday,
       date_label: krDateLabel(mxToday),
       greeting: `${krDateLabel(mxToday)} · 오늘의 브리핑`,
-      sections: [schedule, quotes, packing, marketing, finance],
+      sections: [schedule, quotes, salesActivity, packing, marketing, finance],
     };
   });
 }
