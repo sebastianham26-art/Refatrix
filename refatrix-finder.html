@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 경쟁사 제품검색 · build cx-0714b</title>
+<title>Refatrix ERP · 경쟁사 제품검색 · build cx-0714c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--ctr:#d81e25;--syd:#0a5cab;
@@ -499,7 +499,7 @@
       const flagLbl={ok:'OK',low_stock:'Stock bajo',not_found:'No encontrado'};
       (d.lines||[]).forEach(l=>{
         rows.push([
-          l.ctr_code||'', (l.syd_codes||[]).join(' / '),
+          l.ctr_code||'', (Array.isArray(l.syd_codes)?l.syd_codes.join(' / '):(l.syd_codes||'')),
           (l.product_name||'')+(l.app_text?' · '+l.app_text:''),
           Number(l.qty)||0,
           l.product_id?Number(l.list_price):'', l.product_id?Number(l.discount_rate):'',
