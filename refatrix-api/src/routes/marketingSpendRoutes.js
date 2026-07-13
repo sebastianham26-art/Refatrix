@@ -127,44 +127,51 @@ export function fmtMoney(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 export async function syncPlanCalendar(run, planId, actorId) {
-  // 1) 기존 자동 일정 제거(대상자 → 이벤트 순, 이 계획 소속 전부)
-  await run(`DELETE FROM calendar_event_targets WHERE event_id IN (SELECT id FROM calendar_events WHERE src_plan_id=$1)`, [planId]);
-  await run(`DELETE FROM calendar_events WHERE src_plan_id=$1`, [planId]);
+  // best-effort: 마이그레이션(0135) 미적용 등으로 실패해도 호출측(계획 저장)에 영향 없도록 자체 흡수.
+  //   반드시 트랜잭션 커밋 "이후" pool query로 호출할 것(실패가 계획 저장을 롤백하지 않게).
+  try {
+    // 1) 기존 자동 일정 제거(대상자 → 이벤트 순, 이 계획 소속 전부)
+    await run(`DELETE FROM calendar_event_targets WHERE event_id IN (SELECT id FROM calendar_events WHERE src_plan_id=$1)`, [planId]);
+    await run(`DELETE FROM calendar_events WHERE src_plan_id=$1`, [planId]);
 
-  const p = (await run(
-    `SELECT title, to_char(event_date,'YYYY-MM-DD') AS event_date, created_by, status, deleted_at
-       FROM marketing_spend_plans WHERE id=$1`, [planId])).rows[0];
-  if (!p || p.deleted_at || p.status !== 'approved') return; // 승인 상태에서만 일정 생성
+    const p = (await run(
+      `SELECT title, to_char(event_date,'YYYY-MM-DD') AS event_date, created_by, status, deleted_at
+         FROM marketing_spend_plans WHERE id=$1`, [planId])).rows[0];
+    if (!p || p.deleted_at || p.status !== 'approved') return; // 승인 상태에서만 일정 생성
 
-  // 대상자 = 작성자 + 디렉터 전원(중복 제거)
-  const dirs = (await run(`SELECT id FROM users WHERE role='director' AND deleted_at IS NULL`)).rows.map((r) => Number(r.id));
-  const targetIds = [...new Set([...(p.created_by != null ? [Number(p.created_by)] : []), ...dirs])];
+    // 대상자 = 작성자 + 디렉터 전원(중복 제거)
+    const dirs = (await run(`SELECT id FROM users WHERE role='director' AND deleted_at IS NULL`)).rows.map((r) => Number(r.id));
+    const targetIds = [...new Set([...(p.created_by != null ? [Number(p.created_by)] : []), ...dirs])];
 
-  const addEvent = async (dateStr, content, kind, srcId) => {
-    if (!dateStr) return;
-    const ev = (await run(
-      `INSERT INTO calendar_events (event_date, content, scope, created_by, src_kind, src_id, src_plan_id)
-       VALUES ($1,$2,'shared',$3,$4,$5,$6) RETURNING id`,
-      [dateStr, String(content).slice(0, 200), actorId || p.created_by || null, kind, srcId, planId])).rows[0];
-    for (const uid of targetIds) {
-      await run(`INSERT INTO calendar_event_targets (event_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ev.id, uid]);
+    const addEvent = async (dateStr, content, kind, srcId) => {
+      if (!dateStr) return;
+      const ev = (await run(
+        `INSERT INTO calendar_events (event_date, content, scope, created_by, src_kind, src_id, src_plan_id)
+         VALUES ($1,$2,'shared',$3,$4,$5,$6) RETURNING id`,
+        [dateStr, String(content).slice(0, 200), actorId || p.created_by || null, kind, srcId, planId])).rows[0];
+      for (const uid of targetIds) {
+        await run(`INSERT INTO calendar_event_targets (event_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [ev.id, uid]);
+      }
+    };
+
+    // 2) 행사일 일정 — 내용 = 행사명
+    if (p.event_date) await addEvent(p.event_date, p.title || '(행사)', 'mkt_plan', planId);
+
+    // 3) 집행 라인 일정 — 내용 = 행사명 · 집행항목명 · 금액
+    const lines = (await run(
+      `SELECT l.id, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount,
+              COALESCE(i.name,'기본 집행') AS item_name
+         FROM marketing_spend_lines l
+         LEFT JOIN marketing_spend_items i ON i.id=l.item_id
+        WHERE l.plan_id=$1 AND l.due_date IS NOT NULL
+        ORDER BY l.due_date, l.id`, [planId])).rows;
+    for (const l of lines) {
+      const content = `${p.title || ''} · ${l.item_name} · ${fmtMoney(l.amount)} MXN`;
+      await addEvent(l.due_date, content, 'mkt_line', Number(l.id));
     }
-  };
-
-  // 2) 행사일 일정 — 내용 = 행사명
-  if (p.event_date) await addEvent(p.event_date, p.title || '(행사)', 'mkt_plan', planId);
-
-  // 3) 집행 라인 일정 — 내용 = 행사명 · 집행항목명 · 금액
-  const lines = (await run(
-    `SELECT l.id, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount,
-            COALESCE(i.name,'기본 집행') AS item_name
-       FROM marketing_spend_lines l
-       LEFT JOIN marketing_spend_items i ON i.id=l.item_id
-      WHERE l.plan_id=$1 AND l.due_date IS NOT NULL
-      ORDER BY l.due_date, l.id`, [planId])).rows;
-  for (const l of lines) {
-    const content = `${p.title || ''} · ${l.item_name} · ${fmtMoney(l.amount)} MXN`;
-    await addEvent(l.due_date, content, 'mkt_line', Number(l.id));
+  } catch (e) {
+    // 마이그레이션 미적용/일시 오류 등 — 계획 저장 자체는 성공해야 하므로 삼킨다.
+    try { console.error('[mktspend] calendar sync skipped:', e && e.message ? e.message : e); } catch (_) {}
   }
 }
 
@@ -556,10 +563,10 @@ export default async function marketingSpendRoutes(app) {
       }
       // 4) 디렉터가 저장했으므로 담당자 수정 요청은 종료(반영 또는 대체)
       await run(`UPDATE marketing_spend_plans SET pending_revision=NULL, revision_by=NULL, revision_at=NULL WHERE id=$1`, [id]);
-      await syncPlanCalendar(run, id, userId); // 승인건 수정 → 일정 재동기화
       return { ok: true, synced: true, revision_cleared: p.pending_revision != null };
     });
     if (result.error) return reply.code(409).send(result);
+    await syncPlanCalendar(query, id, userId); // 커밋 후 best-effort(실패해도 저장 유지) — 승인건 수정 시 일정 재동기화
     await logEvent({ userId, action: 'update', target: `mktspend:${id}` });
     return result;
   });
@@ -667,10 +674,10 @@ export default async function marketingSpendRoutes(app) {
         txnIds.push(Number(t.rows[0].id));
       }
       await run(`UPDATE marketing_spend_plans SET status='approved', decided_by=$1, decided_at=now(), reject_reason=NULL, updated_by=$1 WHERE id=$2`, [userId, id]);
-      await syncPlanCalendar(run, id, userId); // 승인 → 일정 달력 자동 등록
       return { ok: true, txn_ids: txnIds };
     });
     if (result.error) return reply.code(400).send(result);
+    await syncPlanCalendar(query, id, userId); // 커밋 후 best-effort — 승인 시 일정 달력 자동 등록
     await logEvent({ userId, action: 'update', target: `mktspend:${id}`, detail: { approve: true, txns: result.txn_ids.length } });
     return result;
   });
@@ -686,7 +693,7 @@ export default async function marketingSpendRoutes(app) {
     await query(
       `UPDATE marketing_spend_plans SET status='rejected', reject_reason=$1, decided_by=$2, decided_at=now(), updated_by=$2 WHERE id=$3`,
       [reason.slice(0, 500), req.ctx.perm.userId, id]);
-    await withTx(async (c) => { await syncPlanCalendar((s, p2) => c.query(s, p2), id, req.ctx.perm.userId); }); // 반려 → 일정 제거
+    await syncPlanCalendar(query, id, req.ctx.perm.userId); // best-effort — 반려 → 일정 제거
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `mktspend:${id}`, detail: { reject: true } });
     return { ok: true };
   });
@@ -714,10 +721,10 @@ export default async function marketingSpendRoutes(app) {
         }
       }
       await run(`UPDATE marketing_spend_plans SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [req.ctx.perm.userId, id]);
-      await syncPlanCalendar(run, id, req.ctx.perm.userId); // 삭제 → 일정 제거(deleted_at 감지)
       return { ok: true };
     });
     if (result.error) return reply.code(409).send(result);
+    await syncPlanCalendar(query, id, req.ctx.perm.userId); // best-effort — 삭제 → 일정 제거
     await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `mktspend:${id}` });
     return result;
   });
