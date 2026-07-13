@@ -2175,11 +2175,23 @@ export default async function financeRoutes(app) {
   // 처리 대기 예정 목록: 이번 달(또는 지정 월) 예정 + 과거에 예정됐으나 미처리(경과)인 것 전부.
   // query: month=YYYY-MM (기본 이번 달)
   app.get('/api/transactions/pending-plans', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    // all=1 → 모든 예정 반환(연·월 필터·검색은 프런트에서 처리). 미지정 시 기존처럼 month 기준.
+    const wantAll = req.query.all === '1' || req.query.all === 'true';
     const month = /^\d{4}-\d{2}$/.test(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
     const today = new Date().toISOString().slice(0, 10);
-    const monthStart = month + '-01';
-    const [yy, mm] = month.split('-').map(Number);
-    const monthEnd = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+    let dateCond = '';
+    let params = [];
+    if (!wantAll) {
+      const monthStart = month + '-01';
+      const [yy, mm] = month.split('-').map(Number);
+      const monthEnd = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+      dateCond = `
+          AND (
+            (COALESCE(t.plan_date,t.txn_date) BETWEEN $1 AND $2)   -- 이번 달 예정
+            OR (COALESCE(t.plan_date,t.txn_date) < $3)              -- 과거 미처리(경과) 전부
+          )`;
+      params = [monthStart, monthEnd, today];
+    }
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.direction,
               t.amount, t.currency, t.fx_rate, t.amount_mxn, t.category_code, cat.name AS category_name,
@@ -2190,13 +2202,9 @@ export default async function financeRoutes(app) {
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
          LEFT JOIN customers c ON c.id=si.customer_id
-        WHERE t.status='plan' AND t.deleted_at IS NULL${privTxnCond(req.ctx.perm)}
-          AND (
-            (COALESCE(t.plan_date,t.txn_date) BETWEEN $1 AND $2)   -- 이번 달 예정
-            OR (COALESCE(t.plan_date,t.txn_date) < $3)              -- 과거 미처리(경과) 전부
-          )
+        WHERE t.status='plan' AND t.deleted_at IS NULL${privTxnCond(req.ctx.perm)}${dateCond}
         ORDER BY COALESCE(t.plan_date,t.txn_date) ASC, t.id ASC`,
-      [monthStart, monthEnd, today])).rows;
+      params)).rows;
     const items = rows.map((t) => {
       const pdate = t.plan_date || t.txn_date;
       const overdue = pdate < today;
@@ -2204,7 +2212,7 @@ export default async function financeRoutes(app) {
         plan_amount: t.plan_amount == null ? null : Number(t.plan_amount), plan_date: pdate, overdue,
         source: t.sales_invoice_id ? 'sales' : (t.recurring_rule_id ? 'recurring' : 'manual') };
     });
-    return { month, today, count: items.length, items };
+    return { month, all: wantAll, today, count: items.length, items };
   });
 
   // 계정과목 목록(드롭다운용)
