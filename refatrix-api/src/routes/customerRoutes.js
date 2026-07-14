@@ -3,7 +3,8 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
-import { mxTodayStr, workingDaysBetween } from '../workingHours.js';
+import { mxTodayStr } from '../workingHours.js';
+import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
@@ -239,8 +240,10 @@ export default async function customerRoutes(app) {
               COALESCE(dc.doc_count,0) AS doc_count,
               COALESCE(lq.live_quote_mxn,0) AS live_quote_mxn,
               COALESCE(iq.total_qty,0) AS total_qty,
+              iq.order_dates AS order_dates,
               iq.first_deal_date AS first_deal_date,
-              iq.open_days AS open_days,
+              iq.last_deal_date AS last_deal_date,
+              iq.first_qty AS first_qty,
               (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS days_no_sales,
               (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS no_sale_days,
               (EXISTS (SELECT 1 FROM customer_change_requests rr WHERE rr.customer_id=c.id AND rr.status='pending')) AS has_pending
@@ -274,21 +277,24 @@ export default async function customerRoutes(app) {
             GROUP BY customer_id
          ) lq ON lq.customer_id=c.id
          LEFT JOIN (
-           SELECT si.customer_id,
-                  SUM(sil.qty) AS total_qty,
-                  to_char(MIN(si.inv_date),'YYYY-MM-DD') AS first_deal_date,
-                  (CURRENT_DATE - MIN(si.inv_date)) AS open_days
-             FROM sales_invoices si
-             JOIN sales_invoice_lines sil ON sil.invoice_id=si.id
-            WHERE si.status='posted'
-            GROUP BY si.customer_id
+           SELECT customer_id,
+                  SUM(day_qty) AS total_qty,
+                  COUNT(*) AS order_dates,
+                  to_char(MIN(inv_date),'YYYY-MM-DD') AS first_deal_date,
+                  to_char(MAX(inv_date),'YYYY-MM-DD') AS last_deal_date,
+                  (ARRAY_AGG(day_qty ORDER BY inv_date))[1] AS first_qty
+             FROM (SELECT si.customer_id, si.inv_date, SUM(sil.qty) AS day_qty
+                     FROM sales_invoices si JOIN sales_invoice_lines sil ON sil.invoice_id=si.id
+                    WHERE si.status='posted' GROUP BY si.customer_id, si.inv_date) pd
+            GROUP BY customer_id
          ) iq ON iq.customer_id=c.id
         WHERE ${conds.join(' AND ')}
         ORDER BY c.name LIMIT 300`, params)).rows;
-    // 일평균 판매수량 통일: 파이프라인 「거래중」 카드와 동일하게 영업일(월~금) 기준.
+    // 재주문(구매주기) 지표 — 첫 주문 제외, 영업일 기준(파이프라인/그래프/상세 공통 계산)
     const mxToday = mxTodayStr(new Date());
     for (const c of rows) {
-      c.working_days = c.first_deal_date ? workingDaysBetween(c.first_deal_date, mxToday) : null;
+      c._rc = reorderMetrics({ total_qty: c.total_qty, order_dates: c.order_dates, first_qty: c.first_qty,
+        first_date: c.first_deal_date, last_date: c.last_deal_date }, mxToday);
     }
     return { items: rows.map((c) => ({
       id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
@@ -300,11 +306,12 @@ export default async function customerRoutes(app) {
       sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
       live_quote_mxn: r2(c.live_quote_mxn),
       total_qty: Number(c.total_qty) || 0,
+      orders: c._rc.orders,
       first_deal_date: c.first_deal_date || null,
-      open_days: c.open_days == null ? null : Number(c.open_days),
-      working_days: c.working_days,
-      // 일평균 판매수량 = 누적수량 / 거래개시 후 영업일(월~금, 최소 1) — 파이프라인 카드와 동일 기준
-      avg_daily_qty: c.working_days ? r2((Number(c.total_qty) || 0) / c.working_days) : null,
+      last_deal_date: c.last_deal_date || null,
+      reorder_velocity: c._rc.reorder_velocity,  // ② 그래프 우측축
+      reorder_cycle: c._rc.reorder_cycle,        // ③ (참고)
+      reorder_qty: c._rc.reorder_qty,            // ③ (참고)
       days_no_sales: c.days_no_sales == null ? null : Number(c.days_no_sales),
       no_sale_days: c.no_sale_days == null ? null : Number(c.no_sale_days),
       pending_change: !!c.has_pending,
@@ -343,6 +350,27 @@ export default async function customerRoutes(app) {
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
         WHERE i.customer_id=$1 AND i.status='posted'
         ORDER BY i.inv_date DESC LIMIT 100`, [id])).rows;
+    // 재주문(구매주기) 지표 — 주문일(중복 제거)별 수량 목록에서 ②재주문속도/③주기·수량/④중앙값 산출
+    const orderDays = (await query(
+      `SELECT to_char(si.inv_date,'YYYY-MM-DD') AS d, SUM(sil.qty) AS day_qty
+         FROM sales_invoices si JOIN sales_invoice_lines sil ON sil.invoice_id=si.id
+        WHERE si.customer_id=$1 AND si.status='posted'
+        GROUP BY si.inv_date ORDER BY si.inv_date`, [id])).rows;
+    const rcToday = mxTodayStr(new Date());
+    const rcTotal = orderDays.reduce((s, r) => s + (Number(r.day_qty) || 0), 0);
+    const rcFirst = orderDays.length ? orderDays[0].d : null;
+    const rcLast = orderDays.length ? orderDays[orderDays.length - 1].d : null;
+    const rcFirstQty = orderDays.length ? (Number(orderDays[0].day_qty) || 0) : 0;
+    const rc = reorderMetrics({ total_qty: rcTotal, order_dates: orderDays.length, first_qty: rcFirstQty,
+      first_date: rcFirst, last_date: rcLast }, rcToday);
+    const reorderSummary = {
+      orders: orderDays.length, total_qty: rcTotal, first_qty: rcFirstQty,
+      first_date: rcFirst, last_date: rcLast,
+      reorder_velocity: rc.reorder_velocity,      // ② 개/영업일
+      reorder_cycle: rc.reorder_cycle,            // ③ 영업일/회
+      reorder_qty: rc.reorder_qty,                // ③ 개/회
+      median_cycle: medianWorkingGap(orderDays.map((r) => r.d)),  // ④ 영업일
+    };
     // 중요 아이템 — 누적 구매 SKU 중 파레토(누적 80%) ∪ 반복주문(2회 이상) + 적용차량정보
     const skuRows = (await query(
       `SELECT p.id AS product_id, p.code, p.name,
@@ -391,6 +419,7 @@ export default async function customerRoutes(app) {
       },
       invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
       important_skus: importantSkus,
+      reorder_summary: reorderSummary,
       sku_stats: { distinct: skuRows.length, total_qty: grandQty, important: importantSkus.length },
       summary: {
         ytd_actual: r2(ytd.actual),     // 연초~현재 누적 매출실적

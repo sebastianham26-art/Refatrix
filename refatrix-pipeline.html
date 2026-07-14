@@ -245,12 +245,15 @@
   function dayColor(d){ if(d==null)return '#bbb'; if(d<=7)return 'var(--income)'; if(d<=14)return 'var(--gold)'; return 'var(--expense)'; }
   function dayPill(d){ if(d==null)return ''; const bg=d<=7?'#e7f3ee':(d<=14?'#fff7e0':'#fbe9e7'); const col=d<=7?'var(--income)':(d<=14?'#9a6512':'var(--expense)'); return `<span class="kc-days" style="background:${bg};color:${col}">${d}일</span>`; }
   // 일평균 판매수량 포맷: 10 이상은 소수1자리, 미만은 소수2자리(구매주기 비교용)
-  function fmtAvgQty(n){ if(n==null)return '—'; n=Number(n); const dec=n>=10?1:2; return n.toLocaleString('es-MX',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
-  // 거래중 카드용: 일평균 판매수량 + 근거(누적수량 / 영업일)
+  function fmtAvgQty(n){ if(n==null||isNaN(n))return '—'; n=Number(n); const dec=Math.abs(n)>=1?1:2; return n.toLocaleString('es-MX',{maximumFractionDigits:dec}); }
+  // 거래중 카드용: 재주문 주기 + 재주문 수량(첫 주문 제외, 영업일 기준)
   function activeRateLine(c){
-    if(c.avg_daily_qty==null) return `<div class="kc-rate-na">일평균 — · 첫 구매 대기</div>`;
-    const q=Number(c.total_qty)||0, wd=Number(c.working_days)||0;
-    return `<div class="kc-rate">일평균 <b>${fmtAvgQty(c.avg_daily_qty)}</b>개/영업일 <span class="mut">· 누적 ${q.toLocaleString('es-MX')}개 / ${wd.toLocaleString('es-MX')}영업일</span></div>`;
+    const orders=Number(c.orders)||0;
+    if(orders<2 || c.reorder_cycle==null){
+      const q=Number(c.total_qty)||0;
+      return `<div class="kc-rate-na">재주문 없음${q>0?` · 첫 구매 ${q.toLocaleString('es-MX')}개`:''}</div>`;
+    }
+    return `<div class="kc-rate">재주문 <b>${fmtAvgQty(c.reorder_cycle)}</b>영업일마다 <b>${fmtAvgQty(c.reorder_qty)}</b>개 <span class="mut">· 주문 ${orders}회 · 누적 ${(Number(c.total_qty)||0).toLocaleString('es-MX')}개</span></div>`;
   }
 
   function renderKanban(){
@@ -414,6 +417,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260714b"></script>
+<script src="refatrix-nav.js?v=20260714e"></script>
 </body>
 </html>

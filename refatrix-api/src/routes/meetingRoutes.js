@@ -4,22 +4,10 @@ import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { pipelineByStage, detectBottleneck, stalledCustomers } from '../pipeline.js';
 import { mxTodayStr } from '../workingHours.js';
+import { reorderMetrics } from '../salesCycle.js';
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-// 두 YYYY-MM-DD(양끝 포함) 사이의 영업일(월~금) 수. 공휴일은 미반영(주말만 제외). 최소 1.
-function workingDaysBetween(startYmd, endYmd) {
-  if (!startYmd || !endYmd) return null;
-  const s = new Date(startYmd + 'T00:00:00Z');
-  const e = new Date(endYmd + 'T00:00:00Z');
-  if (isNaN(s) || isNaN(e) || !(e >= s)) return 1;
-  let n = 0, guard = 0;
-  for (let d = new Date(s); d <= e && guard < 20000; d.setUTCDate(d.getUTCDate() + 1), guard++) {
-    const dow = d.getUTCDay(); // 0=일, 6=토
-    if (dow !== 0 && dow !== 6) n++;
-  }
-  return Math.max(1, n);
-}
 
 export default async function meetingRoutes(app) {
   // 미팅 기록(+ 단계 진전 시 단계 변경 및 이력 갱신)
@@ -207,10 +195,21 @@ export default async function meetingRoutes(app) {
               (SELECT COUNT(*) FROM customer_directives dd WHERE dd.customer_id=c.id AND dd.status<>'done') AS open_directives,
               (SELECT COUNT(*) FROM sales_invoices si WHERE si.customer_id=c.id AND si.status='posted') AS invoice_count,
               (SELECT COALESCE(SUM(sil.qty),0) FROM sales_invoice_lines sil JOIN sales_invoices si2 ON si2.id=sil.invoice_id WHERE si2.customer_id=c.id AND si2.status='posted') AS total_qty,
-              (SELECT to_char(MIN(si3.inv_date),'YYYY-MM-DD') FROM sales_invoices si3 WHERE si3.customer_id=c.id AND si3.status='posted') AS first_deal_date
+              (SELECT to_char(MIN(si3.inv_date),'YYYY-MM-DD') FROM sales_invoices si3 WHERE si3.customer_id=c.id AND si3.status='posted') AS first_deal_date,
+              rq.order_dates AS order_dates, rq.first_qty AS first_qty, rq.last_deal_date AS last_deal_date
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN stages s ON s.id=c.stage_id
+         LEFT JOIN (
+           SELECT customer_id,
+                  COUNT(*) AS order_dates,
+                  (ARRAY_AGG(day_qty ORDER BY inv_date))[1] AS first_qty,
+                  to_char(MAX(inv_date),'YYYY-MM-DD') AS last_deal_date
+             FROM (SELECT si.customer_id, si.inv_date, SUM(sil.qty) AS day_qty
+                     FROM sales_invoices si JOIN sales_invoice_lines sil ON sil.invoice_id=si.id
+                    WHERE si.status='posted' GROUP BY si.customer_id, si.inv_date) pd
+            GROUP BY customer_id
+         ) rq ON rq.customer_id=c.id
         WHERE ${conds.join(' AND ')} ORDER BY c.name`, params)).rows;
     const today = new Date().toISOString().slice(0, 10);
     const mxToday = mxTodayStr(new Date());
@@ -226,10 +225,11 @@ export default async function meetingRoutes(app) {
       customers: custs.map((c) => {
         const totalQty = Number(c.total_qty) || 0;
         const firstDeal = c.first_deal_date || null;
-        // 거래시작(첫 posted 인보이스일)부터 MX 오늘까지의 영업일(월~금)
-        const workingDays = firstDeal ? workingDaysBetween(firstDeal, mxToday) : null;
-        // 일평균 판매수량 = 누적 수량 / 영업일 (첫 구매 없으면 null)
-        const avgDailyQty = (workingDays && workingDays > 0) ? Math.round((totalQty / workingDays) * 100) / 100 : null;
+        // 재주문(구매주기) 지표 — 첫 주문 제외, 영업일 기준. 파이프라인/고객화면 공통 계산.
+        const rc = reorderMetrics({
+          total_qty: totalQty, order_dates: c.order_dates, first_qty: c.first_qty,
+          first_date: firstDeal, last_date: c.last_deal_date,
+        }, mxToday);
         return {
           id: c.id, code: c.code, name: c.name, customer_type: c.customer_type,
           stage_id: c.stage_id, stage_name: c.stage_name, stage_since: c.stage_since,
@@ -238,8 +238,10 @@ export default async function meetingRoutes(app) {
           invoice_count: Number(c.invoice_count) || 0,
           total_qty: totalQty,
           first_deal_date: firstDeal,
-          working_days: workingDays,
-          avg_daily_qty: avgDailyQty,
+          orders: rc.orders,
+          reorder_cycle: rc.reorder_cycle,
+          reorder_qty: rc.reorder_qty,
+          reorder_velocity: rc.reorder_velocity,
           days_in_stage: c.stage_since ? Math.max(0, Math.round((new Date(today) - new Date(c.stage_since)) / 86400000)) : null,
         };
       }),

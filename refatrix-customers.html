@@ -141,6 +141,7 @@
           <button class="btn gold sm" id="docUpload">업로드</button>
           <span class="msg" id="docMsg" style="margin:0"></span>
         </div>
+        <div id="d-cycle"></div>
         <div style="font-weight:700;margin-top:14px">중요 아이템 <span class="hint" style="margin:0;font-weight:400">· 파레토(누적 80%) + 반복주문 SKU · 적용차량</span></div>
         <div id="d-skus"></div>
         <div style="font-weight:700;margin-top:14px">미수/연체 인보이스</div>
@@ -202,7 +203,7 @@
 <div class="modal-back" id="chartModal">
   <div class="modal-card">
     <div class="modal-head">
-      <h2>고객별 할인률 · 일평균 판매수량 (지점수 ▸ 매출액 순)</h2>
+      <h2>고객별 할인률 · 재주문 속도 (지점수 ▸ 매출액 순)</h2>
       <button class="btn ghost sm" onclick="closeChart()">닫기 ✕</button>
     </div>
     <div class="hint" style="margin-top:0">왼쪽부터 <b>지점이 많은 순</b>, 같은 지점수면 <b>매출액이 큰 순</b>으로 정렬했습니다. 각 점은 해당 고객의 할인률 위치입니다. (현재 목록에 표시된 고객 기준)</div>
@@ -431,7 +432,7 @@
   function closeChart(){ $('chartModal').classList.remove('on'); }
   function buildDiscChart(rows){
     // 일평균 판매수량 포맷(우측 축·점 라벨): 10↑ 소수1, 미만 소수2
-    const fmtAvgQ=(n)=>{ if(n==null||isNaN(n))return '—'; n=Number(n); if(n===0)return '0'; const dec=n>=10?1:2; return n.toLocaleString('es-MX',{minimumFractionDigits:dec,maximumFractionDigits:dec}); };
+    const fmtAvgQ=(n)=>{ if(n==null||isNaN(n))return '—'; n=Number(n); if(n===0)return '0'; const dec=Math.abs(n)>=1?1:2; return n.toLocaleString('es-MX',{maximumFractionDigits:dec}); };
     // 축 상한을 보기좋은 수(1/2/5/10…)로 올림
     const niceMax=(x)=>{ if(!(x>0))return 1; const p=Math.pow(10,Math.floor(Math.log10(x))); const n=x/p; const m=n<=1?1:(n<=2?2:(n<=5?5:10)); return m*p; };
     const n=rows.length;
@@ -443,8 +444,8 @@
     const maxD=Math.ceil(maxDRaw/5)*5;          // 5% 단위로 올림
     const yOf=v=>mT+plotH-(v/maxD)*plotH;
     const xOf=i=>mL+(i+0.5)*colW;
-    // 일평균 판매수량(우측 축) 스케일
-    const avgVals=rows.map(r=>Number(r.avg_daily_qty)).filter(v=>v!=null&&!isNaN(v)&&v>0);
+    // 재주문 속도(우측 축) 스케일 — ②(누적−첫주문)÷거래개시후영업일
+    const avgVals=rows.map(r=>Number(r.reorder_velocity)).filter(v=>v!=null&&!isNaN(v)&&v>0);
     const hasAvg=avgVals.length>0;
     const maxA=hasAvg?niceMax(Math.max(...avgVals)):0;
     const yaOf=v=>mT+plotH-(maxA>0?(v/maxA):0)*plotH;
@@ -459,13 +460,13 @@
     // 축선
     svg+='<line x1="'+mL+'" y1="'+mT+'" x2="'+mL+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
     svg+='<line x1="'+mL+'" y1="'+(mT+plotH)+'" x2="'+(mL+plotW)+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
-    // 우측 Y축(일평균 판매수량) — 축선 + 눈금 라벨 + 축제목
+    // 우측 Y축(재주문 속도) — 축선 + 눈금 라벨 + 축제목
     if(hasAvg){
       const xR=mL+plotW;
       svg+='<line x1="'+xR+'" y1="'+mT+'" x2="'+xR+'" y2="'+(mT+plotH)+'" stroke="#B36A00" stroke-width="1"/>';
       for(let k=0;k<=5;k++){ const val=maxA*k/5, y=yaOf(val);
         svg+='<text x="'+(xR+6)+'" y="'+(y+3.5)+'" text-anchor="start" font-size="10" fill="#B36A00">'+fmtAvgQ(val)+'</text>'; }
-      svg+='<text transform="translate('+(W-4)+','+(mT+plotH/2)+') rotate(90)" text-anchor="middle" font-size="11" fill="#B36A00" font-weight="700">일평균 판매(개/일)</text>';
+      svg+='<text transform="translate('+(W-4)+','+(mT+plotH/2)+') rotate(90)" text-anchor="middle" font-size="11" fill="#B36A00" font-weight="700">재주문 속도(개/영업일)</text>';
     }
     // 매출 음영 bar 스케일
     const maxSales=Math.max(0, ...rows.map(r=>Number(r.sales_total)||0));
@@ -495,22 +496,23 @@
       svg+='<text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9.5" fill="'+(hasSales?'#143D34':'#9AA0A0')+'" font-weight="700">'+d+'%</text>';
       svg+='<text transform="translate('+x+','+(baseY+10)+') rotate(60)" text-anchor="start" font-size="10" fill="#1A1A1A">'+esc(lbl)+'</text>';
     });
-    // 일평균 판매수량 시리즈(우측 축 기준): 추세선 + 고객별 점 + 숫자
+    // 재주문 속도 시리즈(우측 축 기준): 추세선 + 고객별 점 + 숫자
     if(hasAvg){
-      const pts=rows.map((r,i)=>{ const v=Number(r.avg_daily_qty); return (v!=null&&!isNaN(v)&&v>0)?(xOf(i)+','+yaOf(v)):null; }).filter(Boolean);
+      const pts=rows.map((r,i)=>{ const v=Number(r.reorder_velocity); return (v!=null&&!isNaN(v)&&v>0)?(xOf(i)+','+yaOf(v)):null; }).filter(Boolean);
       if(pts.length>1) svg+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="#E08A00" stroke-width="1.5" stroke-opacity="0.5"/>';
-      rows.forEach((r,i)=>{ const v=Number(r.avg_daily_qty); if(v==null||isNaN(v)||v<=0)return;
+      rows.forEach((r,i)=>{ const v=Number(r.reorder_velocity); if(v==null||isNaN(v)||v<=0)return;
         const x=xOf(i), ay=yaOf(v);
-        const od=r.working_days!=null?r.working_days+'영업일':'—', tq=(Number(r.total_qty)||0).toLocaleString('es-MX');
+        const tq=(Number(r.total_qty)||0).toLocaleString('es-MX'), ords=Number(r.orders)||0;
+        const cyc=(r.reorder_cycle!=null)?('\n재주문 '+fmtAvgQ(r.reorder_cycle)+'영업일마다 '+fmtAvgQ(r.reorder_qty)+'개'):'';
         svg+='<circle cx="'+x+'" cy="'+ay+'" r="3.6" fill="#E08A00" stroke="#fff" stroke-width="1">'
-           +'<title>'+esc(String(r.name||''))+'\n일평균 '+fmtAvgQ(v)+'개/일\n누적 '+tq+'개 / '+od+'</title></circle>';
+           +'<title>'+esc(String(r.name||''))+'\n재주문 속도 '+fmtAvgQ(v)+'개/영업일\n주문 '+ords+'회 · 누적 '+tq+'개'+cyc+'</title></circle>';
         svg+='<text x="'+x+'" y="'+(ay-6)+'" text-anchor="middle" font-size="9" fill="#B36A00" font-weight="800">'+fmtAvgQ(v)+'</text>';
       });
     }
     // 축 제목 + 범례
     svg+='<text transform="translate(13,'+(mT+plotH/2)+') rotate(-90)" text-anchor="middle" font-size="11" fill="#6B6B6B" font-weight="700">할인률(%)</text>';
     svg+='</svg>';
-    svg+='<div class="hint" style="margin-top:6px">● <span style="color:#0F6E56">초록</span> 점 = 할인률(좌축) · 점 아래 음영 bar = 매출 규모 · <span style="color:#E08A00">주황</span> 점/선 = 일평균 판매수량(우축, 개/일 = 누적수량 ÷ 거래개시 후 영업일(월~금)) · 괄호 안 숫자 = 지점수</div>';
+    svg+='<div class="hint" style="margin-top:6px">● <span style="color:#0F6E56">초록</span> 점 = 할인률(좌축) · 점 아래 음영 bar = 매출 규모 · <span style="color:#E08A00">주황</span> 점/선 = 재주문 속도(우축, 개/영업일 = (누적−첫주문)÷거래개시후 영업일 · 첫 주문 제외) · 괄호 안 숫자 = 지점수</div>';
     return svg;
   }
 
@@ -682,6 +684,23 @@
       else{ const e=await res.json().catch(()=>({})); alert('삭제 실패'+(e.error?(' ('+e.error+')'):'')); }
     }catch(e){ alert('삭제 실패'); }
   }
+  // 구매주기(재주문) 요약 — 첫 주문 제외, 영업일 기준
+  function renderCycle(rs){
+    const host=$('d-cycle'); if(!host) return;
+    const f=n=>n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:Math.abs(Number(n))>=1?1:2});
+    if(!rs || !rs.orders){ host.innerHTML='<div class="hint" style="margin-top:10px">구매 이력이 없습니다.</div>'; return; }
+    const box=(inner)=>`<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-left:4px solid #2545a6;border-radius:8px;background:#f7f9ff">${inner}</div>`;
+    if(rs.orders<2 || rs.reorder_cycle==null){
+      host.innerHTML=box(`<div style="font-weight:700;color:#2545a6">구매주기</div>
+        <div style="font-size:14px;margin-top:2px">재주문 없음 <span class="hint" style="margin:0;font-weight:400">· 첫 구매 ${(Number(rs.total_qty)||0).toLocaleString('es-MX')}개 (${rs.first_date||'—'})</span></div>`);
+      return;
+    }
+    const med=(rs.median_cycle!=null && rs.orders>=3)?` · 중앙값 ${f(rs.median_cycle)}영업일`:'';
+    host.innerHTML=box(`<div style="font-weight:700;color:#2545a6">구매주기 <span class="hint" style="margin:0;font-weight:400">(첫 주문 제외 · 영업일)</span></div>
+      <div style="font-size:15px;margin-top:2px"><b>${f(rs.reorder_cycle)}</b>영업일마다 <b>${f(rs.reorder_qty)}</b>개${med}</div>
+      <div class="hint" style="margin:3px 0 0">주문 ${rs.orders}회 · 재주문 속도 ${f(rs.reorder_velocity)}개/영업일 · 누적 ${(Number(rs.total_qty)||0).toLocaleString('es-MX')}개 · ${rs.first_date||'—'} ~ ${rs.last_date||'—'}</div>`);
+  }
+
   // 중요 아이템(파레토·반복주문 SKU) 렌더 + 적용차량
   function renderSkus(items, stats){
     const host=$('d-skus'); if(!host) return;
@@ -733,6 +752,7 @@
       </table>`;
       loadDocs(c.id);
       loadDetailApproval(c.id);
+      renderCycle(d.reorder_summary||null);
       renderSkus(d.important_skus||[], d.sku_stats||null);
       if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
       $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
@@ -963,6 +983,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260620ay"></script>
-<script src="refatrix-nav.js?v=20260714d"></script>
+<script src="refatrix-nav.js?v=20260714e"></script>
 </body>
 </html>
