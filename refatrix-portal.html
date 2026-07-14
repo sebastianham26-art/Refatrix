@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털 · build 20260714c-pending</title>
+<title>Refatrix ERP · 포털 · build 20260714d-pending</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1258,10 +1258,16 @@
   }
   function renderAiScan(d){
     if(!d || d.enabled===false){
-      const why = d&&d.reason==='disabled' ? 'AI 스캔이 꺼져 있습니다(서버 환경변수 AI_SCAN_ENABLED=1 필요).'
-                : d&&d.reason==='no_api_key' ? 'API 키가 설정되지 않았습니다(ANTHROPIC_API_KEY).'
-                : 'AI 스캔을 사용할 수 없습니다.';
-      return '<div class="hint">'+escp(why)+'</div>';
+      const r=d&&d.reason;
+      if(r==='no_api_key'){
+        return '<div style="background:#f6f8ff;border:1px solid #d9e1ff;border-radius:8px;padding:9px 12px;font-size:12px;color:#3a4a7a;line-height:1.6">'
+          +'AI 스캔을 쓰려면 <b>상업용 API 키</b> 1개만 설정하면 됩니다.<br>'
+          +'Railway → 프로젝트 → <b>Variables</b> 에 <code>ANTHROPIC_API_KEY</code> 추가 → 재배포하면 이 버튼이 바로 동작합니다.'
+          +'</div>';
+      }
+      if(r==='off') return '<div class="hint">AI 스캔이 관리자에 의해 꺼져 있습니다(AI_SCAN_ENABLED=0).</div>';
+      if(r==='director_only') return '<div class="hint">AI 스캔은 디렉터만 사용할 수 있습니다.</div>';
+      return '<div class="hint">AI 스캔을 사용할 수 없습니다.</div>';
     }
     if(d.error) return '<div class="hint">AI 응답 처리 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.</div>';
     const sg=(d.suggestions||[]);

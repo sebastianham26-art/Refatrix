@@ -137,6 +137,7 @@ export async function collectPending(mxToday, quoteDelayDays = 3) {
       `SELECT t.id, t.title, to_char(t.due_date,'YYYY-MM-DD') AS due_date
          FROM todos t
         WHERE t.deleted_at IS NULL AND t.status='open'
+          AND (t.kind IS NULL OR t.kind NOT IN ('dev_review','dev_complete'))
           AND t.due_date IS NOT NULL AND t.due_date <= $1`, [mxToday])).rows;
     for (const r of rows) {
       push({ type: 'todo', item_key: `todo:${r.id}`, ref_id: Number(r.id),

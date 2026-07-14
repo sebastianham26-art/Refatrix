@@ -4,7 +4,8 @@
 //   POST /api/portal/pending/ai-todo   제안을 디렉터 확인 후 todo 로 등록
 //
 //   ── 안전·격리 원칙 ──
-//   · 기본 OFF. 환경변수 AI_SCAN_ENABLED='1' + ANTHROPIC_API_KEY 가 있어야 동작.
+//   · 기본 OFF. ANTHROPIC_API_KEY 를 설정하면 활성화(키만 넣으면 켜짐).
+//     명시적으로 끄려면 AI_SCAN_ENABLED='0'.
 //   · 켜져 있어도 GET 은 최근 자유텍스트만 최소화해 API 로 보냄(고객 DB·금액 미전송).
 //     (자유텍스트 자체에 이름이 있을 수 있음 — 상업용 API 약관: 학습 미사용, ZDR 가능.)
 //   · AI 는 "감지·제안"만. 자동 실행 없음. 등록은 디렉터가 명시적으로 눌러야 함.
@@ -62,7 +63,9 @@ export default async function briefingAiRoutes(app) {
   app.get('/api/portal/pending/ai-scan', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
     if (perm.role !== 'director') return { enabled: false, reason: 'director_only' };
-    if (process.env.AI_SCAN_ENABLED !== '1') return { enabled: false, reason: 'disabled' };
+    // 활성 조건 단순화: ANTHROPIC_API_KEY 만 있으면 켜짐.
+    //   명시적으로 끄고 싶을 때만 AI_SCAN_ENABLED='0'.
+    if (process.env.AI_SCAN_ENABLED === '0') return { enabled: false, reason: 'off' };
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) return { enabled: false, reason: 'no_api_key' };
 
