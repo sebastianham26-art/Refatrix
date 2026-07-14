@@ -829,7 +829,8 @@ export default async function financeRoutes(app) {
     return { file_name: r.file_name, mime_type: r.mime_type, file_data: r.file_data };
   });
 
-  // 수정 (디렉터·재무) — pending 만. 계좌·입금일·금액·적요. (file 있으면 캡처 교체)
+  // 수정 (디렉터·재무) — pending 만. 계좌·입금일·금액·적요.
+  // 캡처 1개 보장: 새 file이 오면 교체, 없으면 기존 캡처가 있어야 저장(레거시 무캡처 통지는 첨부 필수).
   app.patch('/api/bank-deposits/:id', { preHandler: [authGuard] }, async (req, reply) => {
     if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     const id = Number(req.params.id);
@@ -841,21 +842,31 @@ export default async function financeRoutes(app) {
     const accountId = Number(b.account_id), amount = r2(b.amount);
     if (!accountId || !b.deposit_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
     const userId = req.ctx.perm.userId;
-    await query(
-      `UPDATE bank_deposits_pending
-          SET account_id=$1, deposit_date=$2, amount=$3, payer_memo=$4
-        WHERE id=$5 AND status='pending'`,
-      [accountId, b.deposit_date, amount, b.payer_memo || null, id]);
     if (b.file) {
       const fv = validateReceiptDataUrl(b.file);
       if (!fv.ok) return reply.code(400).send({ error: 'invalid_file', detail: fv.error });
+      await withTx(async (c) => {
+        await c.query(
+          `UPDATE bank_deposits_pending
+              SET account_id=$1, deposit_date=$2, amount=$3, payer_memo=$4
+            WHERE id=$5 AND status='pending'`,
+          [accountId, b.deposit_date, amount, b.payer_memo || null, id]);
+        await c.query(
+          `INSERT INTO bank_deposit_docs (deposit_id, file_name, mime_type, file_data, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (deposit_id) DO UPDATE
+             SET file_name=EXCLUDED.file_name, mime_type=EXCLUDED.mime_type, file_data=EXCLUDED.file_data,
+                 uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
+          [id, b.file_name || null, fv.mime, b.file, userId]);
+      });
+    } else {
+      const hasDoc = (await query(`SELECT 1 FROM bank_deposit_docs WHERE deposit_id=$1`, [id])).rows[0];
+      if (!hasDoc) return reply.code(400).send({ error: 'file_required', note: '은행계좌 입금내역을 스크린캡춰해서 업로드해주세요' });
       await query(
-        `INSERT INTO bank_deposit_docs (deposit_id, file_name, mime_type, file_data, uploaded_by)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (deposit_id) DO UPDATE
-           SET file_name=EXCLUDED.file_name, mime_type=EXCLUDED.mime_type, file_data=EXCLUDED.file_data,
-               uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
-        [id, b.file_name || null, fv.mime, b.file, userId]);
+        `UPDATE bank_deposits_pending
+            SET account_id=$1, deposit_date=$2, amount=$3, payer_memo=$4
+          WHERE id=$5 AND status='pending'`,
+        [accountId, b.deposit_date, amount, b.payer_memo || null, id]);
     }
     await logEvent({ userId, action: 'update', target: `bank_deposit:${id}`, detail: { edited: true, amount, file: !!b.file } });
     return { ok: true, id };
