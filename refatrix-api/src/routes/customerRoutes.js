@@ -3,6 +3,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
+import { mxTodayStr, workingDaysBetween } from '../workingHours.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
@@ -237,6 +238,9 @@ export default async function customerRoutes(app) {
               COALESCE(ar.sales_total,0) AS sales_total,
               COALESCE(dc.doc_count,0) AS doc_count,
               COALESCE(lq.live_quote_mxn,0) AS live_quote_mxn,
+              COALESCE(iq.total_qty,0) AS total_qty,
+              iq.first_deal_date AS first_deal_date,
+              iq.open_days AS open_days,
               (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS days_no_sales,
               (CURRENT_DATE - COALESCE(ar.last_sale_date, c.created_at::date)) AS no_sale_days,
               (EXISTS (SELECT 1 FROM customer_change_requests rr WHERE rr.customer_id=c.id AND rr.status='pending')) AS has_pending
@@ -269,8 +273,23 @@ export default async function customerRoutes(app) {
               AND deleted_at IS NULL
             GROUP BY customer_id
          ) lq ON lq.customer_id=c.id
+         LEFT JOIN (
+           SELECT si.customer_id,
+                  SUM(sil.qty) AS total_qty,
+                  to_char(MIN(si.inv_date),'YYYY-MM-DD') AS first_deal_date,
+                  (CURRENT_DATE - MIN(si.inv_date)) AS open_days
+             FROM sales_invoices si
+             JOIN sales_invoice_lines sil ON sil.invoice_id=si.id
+            WHERE si.status='posted'
+            GROUP BY si.customer_id
+         ) iq ON iq.customer_id=c.id
         WHERE ${conds.join(' AND ')}
         ORDER BY c.name LIMIT 300`, params)).rows;
+    // 일평균 판매수량 통일: 파이프라인 「거래중」 카드와 동일하게 영업일(월~금) 기준.
+    const mxToday = mxTodayStr(new Date());
+    for (const c of rows) {
+      c.working_days = c.first_deal_date ? workingDaysBetween(c.first_deal_date, mxToday) : null;
+    }
     return { items: rows.map((c) => ({
       id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
       discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
@@ -280,6 +299,12 @@ export default async function customerRoutes(app) {
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
       sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
       live_quote_mxn: r2(c.live_quote_mxn),
+      total_qty: Number(c.total_qty) || 0,
+      first_deal_date: c.first_deal_date || null,
+      open_days: c.open_days == null ? null : Number(c.open_days),
+      working_days: c.working_days,
+      // 일평균 판매수량 = 누적수량 / 거래개시 후 영업일(월~금, 최소 1) — 파이프라인 카드와 동일 기준
+      avg_daily_qty: c.working_days ? r2((Number(c.total_qty) || 0) / c.working_days) : null,
       days_no_sales: c.days_no_sales == null ? null : Number(c.days_no_sales),
       no_sale_days: c.no_sale_days == null ? null : Number(c.no_sale_days),
       pending_change: !!c.has_pending,
@@ -318,6 +343,43 @@ export default async function customerRoutes(app) {
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
         WHERE i.customer_id=$1 AND i.status='posted'
         ORDER BY i.inv_date DESC LIMIT 100`, [id])).rows;
+    // 중요 아이템 — 누적 구매 SKU 중 파레토(누적 80%) ∪ 반복주문(2회 이상) + 적용차량정보
+    const skuRows = (await query(
+      `SELECT p.id AS product_id, p.code, p.name,
+              SUM(sil.qty) AS total_qty,
+              COUNT(DISTINCT sil.invoice_id) AS order_count,
+              to_char(MAX(si.inv_date),'YYYY-MM-DD') AS last_date
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id=sil.invoice_id
+         JOIN products p ON p.id=sil.product_id
+        WHERE si.customer_id=$1 AND si.status='posted'
+        GROUP BY p.id, p.code, p.name
+        ORDER BY SUM(sil.qty) DESC, p.code`, [id])).rows;
+    const grandQty = skuRows.reduce((s, r) => s + (Number(r.total_qty) || 0), 0);
+    let cum = 0;
+    const skuMarked = skuRows.map((r) => {
+      const qty = Number(r.total_qty) || 0;
+      const before = cum; cum += qty;
+      // 파레토: 내림차순 누적이 80%에 도달하기 전(경계를 넘기는 항목 포함) = 핵심 소수
+      const isPareto = grandQty > 0 ? (before < 0.8 * grandQty) : false;
+      const isRepeat = (Number(r.order_count) || 0) >= 2; // 서로 다른 인보이스 2건 이상 = 반복주문
+      return { product_id: r.product_id, code: r.code, name: r.name, total_qty: qty,
+        order_count: Number(r.order_count) || 0, last_date: r.last_date || null,
+        is_pareto: isPareto, is_repeat: isRepeat };
+    });
+    const importantRaw = skuMarked.filter((r) => r.is_pareto || r.is_repeat);
+    const appMap = {};
+    if (importantRaw.length) {
+      const ids = importantRaw.map((r) => r.product_id);
+      const apps = (await query(
+        `SELECT product_id, app_text FROM product_applications WHERE product_id = ANY($1) ORDER BY product_id, id`, [ids])).rows;
+      for (const a of apps) { (appMap[a.product_id] ||= []).push(a.app_text); }
+    }
+    const importantSkus = importantRaw.map((r) => ({
+      code: r.code, name: r.name, total_qty: r.total_qty, order_count: r.order_count,
+      last_date: r.last_date, is_pareto: r.is_pareto, is_repeat: r.is_repeat,
+      applications: appMap[r.product_id] || [],
+    }));
     return {
       customer: {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
@@ -328,6 +390,8 @@ export default async function customerRoutes(app) {
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
       invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
+      important_skus: importantSkus,
+      sku_stats: { distinct: skuRows.length, total_qty: grandQty, important: importantSkus.length },
       summary: {
         ytd_actual: r2(ytd.actual),     // 연초~현재 누적 매출실적
         year_target: yearTarget,        // 올해 고객 월 목표 합(매출 목표 메뉴에서 설정)

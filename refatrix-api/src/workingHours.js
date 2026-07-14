@@ -81,6 +81,21 @@ export function mxTodayStr(nowUtc) {
   return `${y}-${mo}-${d}`;
 }
 
+// 두 YYYY-MM-DD(양끝 포함) 사이의 영업일(월~금) 수. 공휴일은 미반영(주말만 제외). 최소 1.
+// 일평균 판매수량(구매수량 ÷ 거래개시 후 영업일) 산출용 — 파이프라인/고객 화면 공통.
+export function workingDaysBetween(startYmd, endYmd) {
+  if (!startYmd || !endYmd) return null;
+  const s = new Date(startYmd + 'T00:00:00Z');
+  const e = new Date(endYmd + 'T00:00:00Z');
+  if (isNaN(s) || isNaN(e) || !(e >= s)) return 1;
+  let n = 0, guard = 0;
+  for (let d = new Date(s); d <= e && guard < 20000; d.setUTCDate(d.getUTCDate() + 1), guard++) {
+    const dow = d.getUTCDay(); // 0=일, 6=토
+    if (dow !== 0 && dow !== 6) n++;
+  }
+  return Math.max(1, n);
+}
+
 
 // start~end 사이의 "업무시간 분"(07:30~17:00, UTC-6) 합계. 평균 리드타임 산출용.
 export function workingMinutesBetween(startUtc, endUtc) {
