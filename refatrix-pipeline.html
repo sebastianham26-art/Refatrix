@@ -50,10 +50,15 @@
   .kcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--c,#bbb);border-radius:8px;padding:8px 9px;cursor:pointer}
   .kcard:hover{border-color:var(--brand)}
   .kcard .kc-top{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
-  .kcard .kc-name{font-weight:700;font-size:13px;overflow-wrap:anywhere;min-width:0}
+  .kcard .kc-name{font-weight:700;font-size:13px;overflow-wrap:anywhere;min-width:0;flex:1 1 auto}
+  .kcard .kc-right{display:flex;align-items:center;gap:5px;flex:0 0 auto;margin-left:auto}
   .kcard .kc-days{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
   .kcard .kc-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
   .dirbadge{display:inline-block;background:var(--expense);color:#fff;font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px;margin-left:4px}
+  /* 거래중 카드: 최초~현재 발행 인보이스(구매) 총 횟수 뱃지 */
+  .kcard .kc-inv{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;line-height:1;padding:2px 7px;border-radius:999px;background:#e8eefc;color:#2545a6;border:1px solid #c8d5f5;white-space:nowrap}
+  .kcard .kc-inv .lbl{font-size:9.5px;font-weight:700;opacity:.85}
+  .kcard .kc-inv.zero{background:#f1f3f5;color:#8a94a0;border-color:#e3e7ec}
   .legend{display:flex;gap:14px;justify-content:flex-end;font-size:11px;color:var(--muted);margin-top:8px}
   .legend span{display:inline-flex;align-items:center;gap:4px}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -243,10 +248,11 @@
       const isB=String(s.stage_id)===bottleId;
       const cs=(byStage[s.stage_id]||[]).slice().sort((a,b)=>(b.days_in_stage||0)-(a.days_in_stage||0));
       const meta=stageMeta(s.name);
+      const isActive=/거래중/.test(String(s.name||''));  // 거래중 단계 카드에만 구매(인보이스) 횟수 뱃지 노출
       return `<div class="kcol ${isB?'bottle':''}">
         <div class="khead" style="background:${meta.bg}"><div class="kname" style="color:${meta.fg}">${s.name.replace(/^\d+_/,'')}${isB?' ⚠':''}</div><div class="kcount" style="color:${meta.fg}">${s.count}</div></div>
         <div class="kbody">${cs.map(c=>`<div class="kcard" style="--c:${dayColor(c.days_in_stage)}" onclick="openMeet(${c.id})">
-          <div class="kc-top"><span class="kc-name">${c.name}${c.open_directives>0?`<span class="dirbadge">지시 ${c.open_directives}</span>`:''}</span>${dayPill(c.days_in_stage)}</div>
+          <div class="kc-top"><span class="kc-name">${c.name}${c.open_directives>0?`<span class="dirbadge">지시 ${c.open_directives}</span>`:''}</span><span class="kc-right">${dayPill(c.days_in_stage)}${isActive?`<span class="kc-inv${(Number(c.invoice_count)||0)===0?' zero':''}" title="최초 거래 이후 현재까지 발행된 인보이스(구매) 총 ${Number(c.invoice_count)||0}회"><span class="lbl">구매</span> ${Number(c.invoice_count)||0}</span>`:''}</span></div>
           <div class="kc-meta">진입 ${c.stage_since?c.stage_since.slice(5):'—'} · ${c.days_in_stage==null?'—':c.days_in_stage+'일 경과'}${c.last_meeting?' · 미팅 '+c.last_meeting.slice(5):''}</div>
         </div>`).join('')||'<div class="hint" style="margin:4px 0 0;text-align:center">—</div>'}</div>
       </div>`;
@@ -394,6 +400,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260714a"></script>
 </body>
 </html>

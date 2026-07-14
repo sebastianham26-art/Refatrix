@@ -190,7 +190,8 @@ export default async function meetingRoutes(app) {
       `SELECT c.id, c.code, c.name, c.customer_type, c.stage_id, to_char(c.stage_since,'YYYY-MM-DD') AS stage_since,
               t.name AS team_name, s.name AS stage_name,
               (SELECT to_char(MAX(meeting_date),'YYYY-MM-DD') FROM customer_meetings mm WHERE mm.customer_id=c.id) AS last_meeting,
-              (SELECT COUNT(*) FROM customer_directives dd WHERE dd.customer_id=c.id AND dd.status<>'done') AS open_directives
+              (SELECT COUNT(*) FROM customer_directives dd WHERE dd.customer_id=c.id AND dd.status<>'done') AS open_directives,
+              (SELECT COUNT(*) FROM sales_invoices si WHERE si.customer_id=c.id AND si.status='posted') AS invoice_count
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN stages s ON s.id=c.stage_id
@@ -210,6 +211,7 @@ export default async function meetingRoutes(app) {
         stage_id: c.stage_id, stage_name: c.stage_name, stage_since: c.stage_since,
         team_name: c.team_name, last_meeting: c.last_meeting,
         open_directives: Number(c.open_directives) || 0,
+        invoice_count: Number(c.invoice_count) || 0,
         days_in_stage: c.stage_since ? Math.max(0, Math.round((new Date(today) - new Date(c.stage_since)) / 86400000)) : null,
       })),
     };
