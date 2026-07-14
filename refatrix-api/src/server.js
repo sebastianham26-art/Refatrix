@@ -44,6 +44,7 @@ import briefingPendingRoutes from './routes/briefingPendingRoutes.js';
 import briefingAiRoutes from './routes/briefingAiRoutes.js';
 import stockCountRoutes from './routes/stockCountRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
+import visitRoutes from './routes/visitRoutes.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
 export function buildApp() {
@@ -107,6 +108,7 @@ export function buildApp() {
   app.register(briefingAiRoutes);
   app.register(stockCountRoutes);
   app.register(purchaseRoutes);
+  app.register(visitRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {

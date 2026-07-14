@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260715v)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -84,8 +84,41 @@
     .kanban{grid-auto-columns:minmax(170px,1fr);overflow-x:auto;scroll-snap-type:x proximity}
     .kcol{scroll-snap-align:start}
   }
+
+  /* 방문·동선 뷰탭 */
+  .vl-tabbar{display:flex;gap:8px;margin-top:16px}
+  .vl-tab{padding:9px 18px;border:1px solid var(--line);border-radius:10px 10px 0 0;background:#efece4;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer}
+  .vl-tab.on{background:#fff;color:var(--brand);border-bottom-color:#fff;border-color:var(--brand)}
+  .vl-geoBox{display:flex;align-items:center;gap:8px;background:#f0f6f3;border:1px solid #cfe4da;border-radius:9px;padding:9px 11px;margin-top:8px;font-size:12.5px;color:var(--brand)}
+  .vl-geoBox.err{background:#fbe9e7;border-color:#f0c5bf;color:var(--expense)}
+  .vl-segment{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:4px}
+  .vl-segment button{padding:7px 16px;border:none;background:#fff;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer}
+  .vl-segment button.on{background:var(--brand);color:#fff}
+  .vl-newflag{font-size:11.5px;color:var(--gold);margin-top:5px;line-height:1.4}
+  .vl-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .vl-thumbs .th{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .vl-thumbs .th img{width:100%;height:100%;object-fit:cover}
+  .vl-thumbs .th .x{position:absolute;top:1px;right:1px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;padding:0 5px}
+  .vl-thumbs .th .kd{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:9px;text-align:center}
+  .vl-pendrow{display:flex;gap:6px;margin-top:6px}.vl-pendrow input[type=text]{flex:1}
+  .vl-pendrow .del{background:#fff;border:1px solid var(--line);border-radius:7px;color:var(--expense);cursor:pointer;padding:0 10px}
+  .vl-chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+  .vl-chip{padding:6px 11px;border:1.5px solid var(--line);border-radius:999px;background:#fff;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted)}
+  .vl-chip.on{color:#fff}
+  .vl-map{height:340px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#eef1ee}
+  .vl-visit{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;cursor:pointer}
+  .vl-visit .vh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .vl-visit .seq{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .vl-visit .tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px}
+  .vl-visit .tag.ex{background:#e8eefc;color:#2545a6}.vl-visit .tag.nw{background:#fdf3e0;color:#9a6512}
+  .vl-visit .body{display:none;margin-top:8px;font-size:12.5px;color:#333;line-height:1.5}
+  .vl-visit.open .body{display:block}
+  .vl-due-over{color:var(--expense);font-weight:700}
+  .vl-place{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-top:7px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -103,6 +136,11 @@
   </div>
 
   <div class="hidden" id="app">
+  <div class="vl-tabbar">
+    <button type="button" id="vt-pipe" class="vl-tab on">단계관리</button>
+    <button type="button" id="vt-visit" class="vl-tab">🧭 방문·동선</button>
+  </div>
+  <div id="viewPipe">
     <div class="card">
       <h2 style="margin:0 0 6px">팀 선택</h2>
       <div class="teampick" id="teamPick"></div>
@@ -151,6 +189,65 @@
         <div id="dirList"></div>
       </div>
     </div>
+  </div><!-- /viewPipe -->
+  <div id="viewVisit" class="hidden">
+    <div class="card" id="vlUserCard" style="display:none">
+      <label>영업사원 필터 (디렉터)</label>
+      <select id="vl-userFilter"><option value="">전체</option></select>
+    </div>
+
+    <!-- 방문 체크인 -->
+    <div class="card">
+      <h2>📍 방문 체크인</h2>
+      <div class="hint" style="margin-top:0">저장 시점의 GPS 위치와 시각이 방문 1건으로 기록됩니다. <b>기존 고객</b>이면 이 기록이 해당 고객의 <b>미팅기록에도 자동 보존</b>되고, <b>신규 방문처</b>면 방문기록으로만 남았다가 이후 고객 등록 시 함께 연결됩니다.</div>
+      <div class="vl-geoBox" id="vl-geo">위치 확인 중…</div>
+      <label>방문처</label>
+      <div class="vl-segment"><button type="button" id="vl-segCust" class="on">기존 고객</button><button type="button" id="vl-segNew">신규 방문처</button></div>
+      <div id="vl-rowCust" style="margin-top:6px"><select id="vl-cust" style="min-width:280px"><option value="">고객 검색·선택…</option></select></div>
+      <div id="vl-rowNew" class="hidden" style="margin-top:6px">
+        <input id="vl-place" style="width:100%;max-width:420px" placeholder="방문처 이름 (예: Refaccionaria El Águila)">
+        <div class="vl-newflag">★ 미등록 방문처 — 기록만 저장됩니다. 이후 「미등록 방문처 → 고객 등록」에서 연결하면 방문기록이 함께 소급 연결됩니다.</div>
+      </div>
+      <label>만난 사람 (이름 · 직책)</label><input id="vl-who" style="width:100%;max-width:420px">
+      <label>무슨 이야기를 했나 (대화 내용)</label><textarea id="vl-talk" rows="2" style="width:100%"></textarea>
+      <label>새로배운 내용/파악한 내용 (인사이트)</label><textarea id="vl-insight" rows="2" style="width:100%"></textarea>
+      <label>📷 사진 (명함·가게 등 · 최대 10장 · 자동 1600px 압축)</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="vl-photoKind"><option value="card">명함</option><option value="store">가게</option><option value="other" selected>기타</option></select>
+        <input type="file" id="vl-photoInput" accept="image/*" multiple capture="environment">
+      </div>
+      <div id="vl-thumbs" class="vl-thumbs"></div>
+      <label>펜딩 · 할 일 (후속조치)</label>
+      <div id="vl-pends"></div>
+      <button class="btn ghost sm" type="button" id="vl-addPend" style="margin-top:6px">＋ 항목 추가</button>
+      <div style="margin-top:12px"><button class="btn" id="vl-save">방문 저장 (체크인)</button> <span class="hint" style="margin:0">저장 즉시 동선 지도에 순번이 찍힙니다</span></div>
+      <div class="msg" id="vl-msg"></div>
+    </div>
+
+    <!-- 동선 지도 -->
+    <div class="card">
+      <h2>🗺️ 동선 지도 <span class="hint" style="margin:0">(날짜 토글 — 중복 선택 가능)</span></h2>
+      <div class="vl-chips" id="vl-chips"></div>
+      <div id="vl-map" class="vl-map"></div>
+      <div class="hint">날짜별 고정 색상: <b style="color:#0F6E56">오늘=초록</b> · <b style="color:#2563EB">어제=파랑</b> · <b style="color:#B23A2E">그저께=빨강</b> (이후 6색 순환). 마커 숫자 = 그날의 방문 순번, 클릭 시 상세.</div>
+      <div id="vl-list"></div>
+    </div>
+
+    <!-- 후속조치(펜딩) -->
+    <div class="card">
+      <h2>📌 후속조치 (펜딩) <span class="hint" style="margin:0">— 방문에서 남긴 할 일 모아보기</span></h2>
+      <div id="vl-pendTable"></div>
+    </div>
+
+    <!-- 미등록 방문처 → 고객 등록/연결 -->
+    <div class="card">
+      <h2>👤 미등록 방문처 → 고객 등록/연결</h2>
+      <div class="hint" style="margin-top:0">아래 미등록 방문처를 선택하면 신규 고객으로 등록하거나 이미 등록된 고객에 연결할 수 있습니다. 연결 시 그 방문처의 방문기록 전건이 고객 미팅기록에 소급 연결됩니다.</div>
+      <div id="vl-places"></div>
+      <div id="vl-regForm" class="hidden"></div>
+    </div>
+  </div>
+
   </div>
 </div>
 
@@ -413,6 +510,300 @@
   $('m-advance').addEventListener('change',e=>{$('m-stage').disabled=!e.target.checked;});
   $('m-save').addEventListener('click',saveMeet);
   $('meetClose').addEventListener('click',()=>$('meetCard').classList.add('hidden'));
+
+  // ===== 방문·동선 모듈 (build 20260715v-visitlog) =====
+  var vlMxToday = new Date().toISOString().slice(0,10);
+  let vlInited=false, vlGeo=null, vlPhotos=[], vlSel=new Set();
+  var vlMap=null, vlLayer=null, vlMarkerCount=0, vlPolyCount=0;
+  const VL_PAL=['#0F6E56','#2563EB','#B23A2E','#6D28D9','#0E7490','#C2410C']; // 오늘·어제·그저께·보라·청록·주황
+  function vlDaysAgo(d){ const a=String(vlMxToday).split('-').map(Number), b=String(d).split('-').map(Number);
+    return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(b[0],b[1]-1,b[2]))/86400000); }
+  function vlColor(d){ let k=vlDaysAgo(d)%6; if(k<0)k=(k+6)%6; return VL_PAL[k]; }
+  function vlMMDD(d){ const p=String(d).split('-'); return p[1]+'/'+p[2]; }
+  function vlDayLabel(d){ const a=vlDaysAgo(d), md=vlMMDD(d);
+    if(a===0)return '오늘 '+md; if(a===1)return '어제 '+md; if(a===2)return '그저께 '+md; return md; }
+  const vlEsc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  function vlUserQ(){ const el=$('vl-userFilter'); const v=el?el.value:''; return (isDirector()&&v)?('&user_id='+encodeURIComponent(v)):''; }
+
+  // 뷰탭 전환
+  function showView(which){
+    const vp=$('viewPipe'), vv=$('viewVisit');
+    if(which==='visit'){ vp.classList.add('hidden'); vv.classList.remove('hidden'); $('vt-visit').classList.add('on'); $('vt-pipe').classList.remove('on'); vlInit(); }
+    else { vv.classList.add('hidden'); vp.classList.remove('hidden'); $('vt-pipe').classList.add('on'); $('vt-visit').classList.remove('on'); }
+  }
+
+  async function vlInit(){
+    if(vlInited)return; vlInited=true;
+    if(isDirector()){ $('vlUserCard').style.display='block'; try{
+      const u=(await fetch(session.api+'/api/pipeline/salespeople',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[];
+      $('vl-userFilter').innerHTML='<option value="">전체</option>'+u.map(x=>`<option value="${x.id}">${vlEsc(x.name)}</option>`).join('');
+    }catch(e){} $('vl-userFilter').onchange=()=>{ vlSel.clear(); vlLoadDates(); vlLoadPendings(); vlLoadPlaces(); }; }
+    vlRequestGeo();
+    vlLoadCustOptions();
+    vlAddPendRow();
+    await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
+  }
+
+  function vlRequestGeo(){
+    const g=$('vl-geo');
+    if(!navigator.geolocation){ g.className='vl-geoBox err'; g.textContent='이 브라우저는 위치를 지원하지 않습니다.'; return; }
+    g.className='vl-geoBox'; g.textContent='위치 확인 중… (권한 허용을 눌러주세요)';
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{ vlGeo={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy};
+        const t=new Date().toTimeString().slice(0,5);
+        g.className='vl-geoBox'; g.innerHTML='<b>현재 위치 확보됨</b> · '+vlGeo.lat.toFixed(4)+', '+vlGeo.lng.toFixed(4)+' · 정확도 ±'+Math.round(vlGeo.acc||0)+'m · '+t; },
+      (err)=>{ vlGeo=null; g.className='vl-geoBox err'; g.innerHTML='<b>위치 권한 필요</b> — 방문 저장은 위치가 있어야 합니다. 브라우저/설정에서 위치를 허용해 주세요.'; },
+      {enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+  }
+
+  async function vlLoadCustOptions(){
+    try{ const d=await fetch(session.api+'/api/visits/customer-options',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      $('vl-cust').innerHTML='<option value="">고객 검색·선택…</option>'+items.map(c=>`<option value="${c.id}">${vlEsc(c.name)}${c.stage_name?(' ('+vlEsc(c.stage_name)+')'):''}</option>`).join('');
+    }catch(e){}
+  }
+
+  function vlSegment(mode){
+    const isNew=mode==='new';
+    $('vl-segNew').classList.toggle('on',isNew); $('vl-segCust').classList.toggle('on',!isNew);
+    $('vl-rowNew').classList.toggle('hidden',!isNew); $('vl-rowCust').classList.toggle('hidden',isNew);
+  }
+
+  function vlAddPendRow(content,due){
+    const row=document.createElement('div'); row.className='vl-pendrow';
+    row.innerHTML=`<input type="text" placeholder="후속조치 내용" value="${vlEsc(content||'')}"><input type="date" value="${due||''}"><button type="button" class="del">✕</button>`;
+    row.querySelector('.del').onclick=()=>row.remove();
+    $('vl-pends').appendChild(row);
+  }
+
+  // 사진: 1600px JPEG 압축
+  function vlCompress(file){
+    return new Promise((res)=>{ const fr=new FileReader();
+      fr.onload=()=>{ const img=new Image(); img.onload=()=>{
+        const max=1600; let w=img.width,h=img.height;
+        if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;} else {w=Math.round(w*max/h);h=max;} }
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        try{ cv.getContext('2d').drawImage(img,0,0,w,h); res(cv.toDataURL('image/jpeg',0.82)); }
+        catch(e){ res(fr.result); } };
+        img.onerror=()=>res(fr.result); img.src=fr.result; };
+      fr.onerror=()=>res(null); fr.readAsDataURL(file); });
+  }
+  async function vlOnPhoto(e){
+    const kind=$('vl-photoKind').value; const files=[...(e.target.files||[])];
+    for(const f of files){ if(vlPhotos.length>=10){ alert('사진은 방문당 최대 10장입니다.'); break; }
+      const durl=await vlCompress(f); if(durl) vlPhotos.push({kind,file_name:f.name,mime:'image/jpeg',size_bytes:durl.length,data_url:durl}); }
+    e.target.value=''; vlRenderThumbs();
+  }
+  function vlRenderThumbs(){
+    const KD={card:'명함',store:'가게',other:'기타'};
+    $('vl-thumbs').innerHTML=vlPhotos.map((p,i)=>`<div class="th"><img src="${p.data_url}"><button type="button" class="x" data-i="${i}">✕</button><div class="kd">${KD[p.kind]||'기타'}</div></div>`).join('');
+    $('vl-thumbs').querySelectorAll('.x').forEach(b=>b.onclick=()=>{ vlPhotos.splice(Number(b.dataset.i),1); vlRenderThumbs(); });
+  }
+
+  async function vlSave(){
+    const m=$('vl-msg'); m.className='msg'; m.style.display='none';
+    if(!vlGeo){ m.className='msg err'; m.style.display='block'; m.textContent='위치가 없습니다. 위치 권한을 허용한 뒤 다시 시도하세요.'; return; }
+    const isNew=$('vl-segNew').classList.contains('on');
+    const body={ geo_lat:vlGeo.lat, geo_lng:vlGeo.lng, geo_accuracy:vlGeo.acc,
+      met_person:$('vl-who').value.trim()||null, talk_note:$('vl-talk').value.trim()||null, insight_note:$('vl-insight').value.trim()||null,
+      pendings:[], photos:vlPhotos };
+    if(isNew){ const pn=$('vl-place').value.trim(); if(!pn){ m.className='msg err'; m.style.display='block'; m.textContent='방문처 이름을 입력하세요.'; return; } body.place_name=pn; }
+    else { const cid=$('vl-cust').value; if(!cid){ m.className='msg err'; m.style.display='block'; m.textContent='고객을 선택하세요.'; return; } body.customer_id=Number(cid); }
+    $('vl-pends').querySelectorAll('.vl-pendrow').forEach(r=>{ const c=r.querySelector('input[type=text]').value.trim(); const d=r.querySelector('input[type=date]').value||null; if(c)body.pendings.push({content:c,due_date:d}); });
+    const btn=$('vl-save'); btn.disabled=true; btn.textContent='저장 중…';
+    try{
+      const res=await fetch(session.api+'/api/visits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+(d.error==='forbidden_team'?'이 고객을 편집할 권한이 없습니다.':(d.error==='location_required'?'위치가 필요합니다.':(d.error||res.status))); return; }
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='✔ 방문 저장됨'+(d.meeting_saved?' · 고객 미팅기록에도 보존됨':'')+(body.pendings.length?(' · 펜딩 '+body.pendings.length+'건'):'')+(d.photo_ok?(' · 사진 '+d.photo_ok+'장'+(d.photo_fail?(' (실패 '+d.photo_fail+')'):'')):'');
+      $('vl-who').value='';$('vl-talk').value='';$('vl-insight').value='';$('vl-place').value='';$('vl-cust').value='';
+      $('vl-pends').innerHTML=''; vlAddPendRow(); vlPhotos=[]; vlRenderThumbs();
+      vlSel.clear(); await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; btn.textContent='방문 저장 (체크인)'; }
+  }
+
+  // 날짜 칩 + 동선
+  async function vlLoadDates(){
+    try{
+      const d=await fetch(session.api+'/api/visits/dates?x=1'+vlUserQ(),{headers:auth()}).then(r=>r.json());
+      vlMxToday=d.mx_today||vlMxToday;
+      const items=d.items||[];
+      if(!items.some(x=>x.d===vlMxToday)) items.unshift({d:vlMxToday,cnt:0});
+      if(!vlSel.size) vlSel.add(vlMxToday);
+      const box=$('vl-chips'); box.innerHTML='';
+      items.forEach(x=>{ const on=vlSel.has(x.d), col=vlColor(x.d);
+        const b=document.createElement('button'); b.type='button'; b.className='vl-chip'+(on?' on':'');
+        b.style.borderColor=col; if(on)b.style.background=col;
+        b.textContent=vlDayLabel(x.d)+(x.cnt?(' · '+x.cnt):'');
+        b.onclick=()=>{ if(vlSel.has(x.d))vlSel.delete(x.d); else vlSel.add(x.d); vlLoadDates(); };
+        box.appendChild(b); });
+      vlLoadVisits();
+    }catch(e){}
+  }
+
+  function vlEnsureMap(){
+    if(typeof L==='undefined') return null;
+    if(!vlMap){ vlMap=L.map('vl-map').setView([25.6714,-100.3095],11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(vlMap); }
+    if(vlLayer){ vlLayer.remove(); } vlLayer=L.layerGroup().addTo(vlMap); return vlLayer;
+  }
+
+  async function vlLoadVisits(){
+    const dates=[...vlSel]; if(!dates.length){ $('vl-list').innerHTML='<div class="hint">날짜를 선택하세요.</div>'; return; }
+    try{
+      const d=await fetch(session.api+'/api/visits?dates='+encodeURIComponent(dates.join(','))+vlUserQ(),{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      // 지도
+      vlMarkerCount=0; vlPolyCount=0;
+      const layer=vlEnsureMap();
+      const byDate={}; items.forEach(v=>{ (byDate[v.visit_date]||=[]).push(v); });
+      const pts=[];
+      Object.keys(byDate).forEach(dt=>{ const col=vlColor(dt); const line=[];
+        byDate[dt].forEach((v,i)=>{ const ll=[v.geo_lat,v.geo_lng]; line.push(ll); pts.push(ll);
+          if(layer){ const mk=L.circleMarker(ll,{radius:11,color:'#fff',weight:2,fillColor:col,fillOpacity:1});
+            mk.bindTooltip(String(i+1),{permanent:true,direction:'center',className:'vl-seq-tt'});
+            mk.bindPopup('<b>'+vlEsc(v.place_name)+'</b><br>'+vlDayLabel(dt)+' · 순번 '+(i+1)); mk.addTo(layer); }
+          vlMarkerCount++; });
+        if(layer && line.length>=2){ L.polyline(line,{color:col,weight:3,opacity:.8}).addTo(layer); }
+        if(line.length>=2) vlPolyCount++; });
+      if(vlMap && pts.length){ try{ vlMap.fitBounds(pts,{padding:[30,30],maxZoom:14}); }catch(e){} }
+      // 리스트
+      const KD={card:'명함',store:'가게',other:'기타'};
+      $('vl-list').innerHTML=items.map(v=>{ const col=vlColor(v.visit_date); const ex=v.customer_id!=null;
+        const idx=(byDate[v.visit_date]||[]).indexOf(v)+1;
+        const pend=(v.pendings||[]).map(p=>'· '+vlEsc(p.content)+(p.due_date?(' ('+p.due_date+')'):'')+(p.done?' ✔':'')).join('<br>');
+        return `<div class="vl-visit" data-id="${v.id}">
+          <div class="vh"><span class="seq" style="background:${col}">${idx}</span>
+            <b>${vlEsc(v.place_name)}</b>
+            <span class="tag ${ex?'ex':'nw'}">${ex?'기존고객':'신규 방문처'}</span>
+            <span class="hint" style="margin:0">${vlDayLabel(v.visit_date)}${v.by_name?(' · '+vlEsc(v.by_name)):''}</span>
+            ${v.photo_cnt?`<button type="button" class="btn ghost sm vl-ph" data-id="${v.id}">📷 명함/사진 ${v.photo_cnt}</button>`:''}
+          </div>
+          <div class="body">
+            ${v.met_person?('만남: '+vlEsc(v.met_person)+'<br>'):''}
+            ${v.talk_note?('대화: '+vlEsc(v.talk_note)+'<br>'):''}
+            ${v.insight_note?('새로배운/파악: '+vlEsc(v.insight_note)+'<br>'):''}
+            ${pend?('<div style="margin-top:6px"><b>펜딩</b><br>'+pend+'</div>'):''}
+            <div class="vl-phbox" id="vl-phbox-${v.id}"></div>
+            <div style="margin-top:8px"><button type="button" class="btn ghost sm vl-del" data-id="${v.id}">방문 삭제</button></div>
+          </div></div>`;
+      }).join('')||'<div class="hint">선택한 날짜에 방문이 없습니다.</div>';
+      $('vl-list').querySelectorAll('.vl-visit').forEach(el=>{ el.onclick=(e)=>{ if(e.target.closest('button'))return; el.classList.toggle('open'); }; });
+      $('vl-list').querySelectorAll('.vl-del').forEach(b=>b.onclick=()=>vlDelete(Number(b.dataset.id)));
+      $('vl-list').querySelectorAll('.vl-ph').forEach(b=>b.onclick=()=>vlLoadPhotos(Number(b.dataset.id)));
+    }catch(e){ $('vl-list').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  async function vlLoadPhotos(id){
+    const box=$('vl-phbox-'+id); if(!box)return; box.innerHTML='<div class="hint">사진 불러오는 중…</div>';
+    try{ const d=await fetch(session.api+'/api/visits/'+id+'/photos',{headers:auth()}).then(r=>r.json());
+      const KD={card:'명함',store:'가게',other:'기타'};
+      box.innerHTML='<div class="vl-thumbs" style="margin-top:8px">'+(d.items||[]).map(p=>`<div class="th"><img src="${p.data_url}"><div class="kd">${KD[p.kind]||'기타'}</div></div>`).join('')+'</div>';
+    }catch(e){ box.innerHTML='<div class="hint">사진 로드 실패</div>'; }
+  }
+
+  async function vlDelete(id){
+    if(!confirm('이 방문을 삭제할까요? (자동 생성된 미팅기록도 함께 삭제됩니다)'))return;
+    try{ const res=await fetch(session.api+'/api/visits/'+id,{method:'DELETE',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+      await vlLoadDates(); vlLoadPendings();
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+
+  async function vlLoadPendings(){
+    try{ const d=await fetch(session.api+'/api/visits/pendings'+(vlUserQ()?('?'+vlUserQ().slice(1)):''),{headers:auth()}).then(r=>r.json());
+      vlMxToday=d.mx_today||vlMxToday; const items=d.items||[];
+      if(!items.length){ $('vl-pendTable').innerHTML='<div class="hint">열린 후속조치가 없습니다.</div>'; return; }
+      $('vl-pendTable').innerHTML='<table><thead><tr><th></th><th>내용</th><th>기한</th><th>방문처</th><th>방문일</th></tr></thead><tbody>'+
+        items.map(p=>{ const over=p.overdue>0;
+          return `<tr><td><input type="checkbox" ${p.done?'checked':''} onchange="vlTogglePend(${p.id},this.checked)"></td>
+            <td>${vlEsc(p.content)}</td>
+            <td class="${over?'vl-due-over':''}">${p.due_date||'—'}${over?(' ⚠ '+p.overdue+'일 초과'):''}</td>
+            <td>${vlEsc(p.place_name)}</td><td>${p.visit_date}</td></tr>`; }).join('')+'</tbody></table>';
+    }catch(e){ $('vl-pendTable').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  async function vlTogglePend(id,done){
+    try{ await fetch(session.api+'/api/visits/pendings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done})}); vlLoadPendings(); }
+    catch(e){ alert('실패'); }
+  }
+
+  async function vlLoadPlaces(){
+    try{ const d=await fetch(session.api+'/api/visits/places'+(vlUserQ()?('?'+vlUserQ().slice(1)):''),{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ $('vl-places').innerHTML='<div class="hint">미등록 방문처가 없습니다.</div>'; return; }
+      $('vl-places').innerHTML=items.map(p=>`<div class="vl-place"><div><b>${vlEsc(p.place_name)}</b> <span class="hint" style="margin:0">· 방문 ${p.cnt}회 · 최근 ${p.last_date||'—'}</span></div><button type="button" class="btn sm vl-reg" data-p="${vlEsc(p.place_name)}">고객 등록/연결</button></div>`).join('');
+      $('vl-places').querySelectorAll('.vl-reg').forEach(b=>b.onclick=()=>vlShowReg(b.dataset.p));
+    }catch(e){ $('vl-places').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  async function vlShowReg(place){
+    const f=$('vl-regForm'); f.classList.remove('hidden');
+    let teams=[],stages=[];
+    try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[]; }catch(e){}
+    try{ stages=(await fetch(session.api+'/api/stages',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[]; }catch(e){}
+    f.innerHTML=`<div style="border:1px solid var(--brand);border-radius:10px;padding:12px;margin-top:10px">
+      <div style="font-weight:800;color:var(--brand)">「${vlEsc(place)}」 연결</div>
+      <div class="vl-segment" style="margin-top:8px"><button type="button" id="vlreg-new" class="on">신규 고객 등록</button><button type="button" id="vlreg-exist">기존 고객에 연결</button></div>
+      <div id="vlreg-newbox" style="margin-top:8px">
+        <label>고객명</label><input id="vlreg-name" value="${vlEsc(place)}" style="width:100%;max-width:420px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div><label>팀</label><select id="vlreg-team">${teams.map(t=>`<option value="${t.id}">${vlEsc(t.name)}</option>`).join('')}</select></div>
+          <div><label>단계</label><select id="vlreg-stage">${stages.map(s=>`<option value="${s.id}">${vlEsc(s.name)}</option>`).join('')}</select></div>
+        </div>
+      </div>
+      <div id="vlreg-existbox" class="hidden" style="margin-top:8px">
+        <label>연결할 고객</label><select id="vlreg-cust"><option value="">선택…</option></select>
+      </div>
+      <div style="margin-top:12px"><button class="btn" id="vlreg-save">연결 실행</button> <button class="btn ghost" id="vlreg-cancel">취소</button></div>
+      <div class="msg" id="vlreg-msg"></div>
+    </div>`;
+    // 기존 고객 옵션
+    try{ const cu=(await fetch(session.api+'/api/visits/customer-options',{headers:auth()}).then(r=>r.json())).items||[];
+      $('vlreg-cust').innerHTML='<option value="">선택…</option>'+cu.map(c=>`<option value="${c.id}">${vlEsc(c.name)}</option>`).join(''); }catch(e){}
+    $('vlreg-new').onclick=()=>{ $('vlreg-new').classList.add('on');$('vlreg-exist').classList.remove('on');$('vlreg-newbox').classList.remove('hidden');$('vlreg-existbox').classList.add('hidden'); };
+    $('vlreg-exist').onclick=()=>{ $('vlreg-exist').classList.add('on');$('vlreg-new').classList.remove('on');$('vlreg-existbox').classList.remove('hidden');$('vlreg-newbox').classList.add('hidden'); };
+    $('vlreg-cancel').onclick=()=>{ f.classList.add('hidden'); f.innerHTML=''; };
+    $('vlreg-save').onclick=()=>vlDoReg(place);
+  }
+
+  async function vlDoReg(place){
+    const m=$('vlreg-msg'); m.className='msg'; m.style.display='none';
+    const isNew=$('vlreg-new').classList.contains('on');
+    let custId=null;
+    try{
+      if(isNew){
+        const name=$('vlreg-name').value.trim(); if(!name){ m.className='msg err'; m.style.display='block'; m.textContent='고객명을 입력하세요.'; return; }
+        const payload={ name, team_id:Number($('vlreg-team').value)||null, stage_id:Number($('vlreg-stage').value)||null };
+        const r=await fetch(session.api+'/api/customers',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(payload)});
+        const d=await r.json();
+        if(!r.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='고객 등록 실패: '+(d.error==='forbidden'||r.status===403?'고객 편집 권한이 없습니다.':(d.error||r.status)); return; }
+        custId=d.id||d.customer_id||(d.item&&d.item.id);
+      } else {
+        custId=Number($('vlreg-cust').value); if(!custId){ m.className='msg err'; m.style.display='block'; m.textContent='연결할 고객을 선택하세요.'; return; }
+      }
+      const lr=await fetch(session.api+'/api/visits/link-customer',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({place_name:place,customer_id:custId})});
+      const ld=await lr.json();
+      if(!lr.ok||ld.error){ m.className='msg err'; m.style.display='block'; m.textContent='연결 실패: '+(ld.error||lr.status); return; }
+      m.className='msg ok'; m.style.display='block'; m.textContent='✔ 연결됨 · 방문 '+ld.linked+'건이 '+(ld.customer_name||'고객')+' 미팅기록에 소급 연결되었습니다.';
+      $('vl-regForm').classList.add('hidden'); $('vl-regForm').innerHTML='';
+      vlLoadPlaces(); vlLoadDates(); vlLoadCustOptions();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+
+  // 이벤트 바인딩
+  (function vlBind(){
+    const vp=$('vt-pipe'), vv=$('vt-visit'); if(!vp)return;
+    vp.addEventListener('click',()=>showView('pipe'));
+    vv.addEventListener('click',()=>showView('visit'));
+    $('vl-segCust').addEventListener('click',()=>vlSegment('cust'));
+    $('vl-segNew').addEventListener('click',()=>vlSegment('new'));
+    $('vl-addPend').addEventListener('click',()=>vlAddPendRow());
+    $('vl-photoInput').addEventListener('change',vlOnPhoto);
+    $('vl-save').addEventListener('click',vlSave);
+  })();
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
