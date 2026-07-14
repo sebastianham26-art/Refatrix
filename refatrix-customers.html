@@ -436,7 +436,7 @@
     // 축 상한을 보기좋은 수(1/2/5/10…)로 올림
     const niceMax=(x)=>{ if(!(x>0))return 1; const p=Math.pow(10,Math.floor(Math.log10(x))); const n=x/p; const m=n<=1?1:(n<=2?2:(n<=5?5:10)); return m*p; };
     const n=rows.length;
-    const mL=46, mR=58, mT=16, mB=128;          // 마진(우측=일평균축, 아래는 회전 라벨 공간)
+    const mL=46, mR=76, mT=16, mB=128;          // 마진(우측=재주문속도축 제목 공간 확보, 아래는 회전 라벨 공간)
     const colW=Math.max(30, Math.min(64, 880/n));
     const plotW=n*colW, plotH=300;
     const W=mL+plotW+mR, H=mT+plotH+mB;
@@ -466,7 +466,7 @@
       svg+='<line x1="'+xR+'" y1="'+mT+'" x2="'+xR+'" y2="'+(mT+plotH)+'" stroke="#B36A00" stroke-width="1"/>';
       for(let k=0;k<=5;k++){ const val=maxA*k/5, y=yaOf(val);
         svg+='<text x="'+(xR+6)+'" y="'+(y+3.5)+'" text-anchor="start" font-size="10" fill="#B36A00">'+fmtAvgQ(val)+'</text>'; }
-      svg+='<text transform="translate('+(W-4)+','+(mT+plotH/2)+') rotate(90)" text-anchor="middle" font-size="11" fill="#B36A00" font-weight="700">재주문 속도(개/영업일)</text>';
+      svg+='<text transform="translate('+(W-16)+','+(mT+plotH/2)+') rotate(90)" text-anchor="middle" font-size="11" fill="#B36A00" font-weight="700">재주문 속도(개/영업일)</text>';
     }
     // 매출 음영 bar 스케일
     const maxSales=Math.max(0, ...rows.map(r=>Number(r.sales_total)||0));
@@ -983,6 +983,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260620ay"></script>
-<script src="refatrix-nav.js?v=20260714e"></script>
+<script src="refatrix-nav.js?v=20260714f"></script>
 </body>
 </html>
