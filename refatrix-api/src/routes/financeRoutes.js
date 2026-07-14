@@ -1035,10 +1035,18 @@ export default async function financeRoutes(app) {
       if (pay.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, pay.advance_txn_id]);
       await c.query(`DELETE FROM sales_payment_allocations WHERE payment_id=$1`, [pid]);
       await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [pid]);
+      // 통지 연동 반제면 통지를 다시 pending으로 복귀 — bank_deposits_pending.payment_id FK가
+      // sales_payments를 참조하므로 먼저 끊지 않으면 헤더 DELETE가 FK 위반(삭제 500의 원인).
+      // 복귀된 통지는 미배분 입금함에 다시 나타나 재반제 가능(입금 자체는 사라지지 않음).
+      const reopened = (await c.query(
+        `UPDATE bank_deposits_pending
+            SET status='pending', payment_id=NULL, allocated_by=NULL, allocated_at=NULL
+          WHERE payment_id=$1 AND status='allocated' RETURNING id`, [pid])).rows;
       await c.query(`DELETE FROM sales_payments WHERE id=$1`, [pid]);
       return {
         ok: true, customer_id: Number(pay.customer_id), amount: r2(Number(pay.amount)),
         advance: r2(Number(pay.advance_amount || 0)),
+        deposit_reopened: reopened.length > 0,
         restored: allocs.map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(Number(a.amount)) })),
       };
     });
@@ -1065,15 +1073,23 @@ export default async function financeRoutes(app) {
       await c.query(`DELETE FROM sales_payment_allocations WHERE id=$1`, [aid]);
       const remain = Number((await c.query(`SELECT COUNT(*) AS n FROM sales_payment_allocations WHERE payment_id=$1`, [al.payment_id])).rows[0].n);
       let payment_deleted = false;
+      let deposit_reopened = false;
       if (remain === 0 && r2(Number(al.advance_amount || 0)) === 0) {
         if (al.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, al.advance_txn_id]);
         await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [al.payment_id]);
+        // 통지 연동 반제면 통지를 다시 pending으로 복귀 — bank_deposits_pending.payment_id FK가
+        // sales_payments를 참조하므로 먼저 끊지 않으면 헤더 DELETE가 FK 위반(삭제 500의 원인).
+        const reopened = (await c.query(
+          `UPDATE bank_deposits_pending
+              SET status='pending', payment_id=NULL, allocated_by=NULL, allocated_at=NULL
+            WHERE payment_id=$1 AND status='allocated' RETURNING id`, [al.payment_id])).rows;
+        deposit_reopened = reopened.length > 0;
         await c.query(`DELETE FROM sales_payments WHERE id=$1`, [al.payment_id]);
         payment_deleted = true;
       } else {
         await c.query(`UPDATE sales_payments SET amount = amount - $1 WHERE id=$2`, [r2(Number(al.amount)), al.payment_id]);
       }
-      return { ok: true, invoice_id: Number(al.invoice_id), amount: r2(Number(al.amount)), payment_deleted };
+      return { ok: true, invoice_id: Number(al.invoice_id), amount: r2(Number(al.amount)), payment_deleted, deposit_reopened };
     });
     if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
     await logEvent({ userId, action: 'delete', target: `sales_payment_allocation:${aid}`, detail: { invoice_id: out.invoice_id, amount: out.amount, payment_deleted: out.payment_deleted } });
