@@ -3,9 +3,23 @@ import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { pipelineByStage, detectBottleneck, stalledCustomers } from '../pipeline.js';
+import { mxTodayStr } from '../workingHours.js';
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
+// 두 YYYY-MM-DD(양끝 포함) 사이의 영업일(월~금) 수. 공휴일은 미반영(주말만 제외). 최소 1.
+function workingDaysBetween(startYmd, endYmd) {
+  if (!startYmd || !endYmd) return null;
+  const s = new Date(startYmd + 'T00:00:00Z');
+  const e = new Date(endYmd + 'T00:00:00Z');
+  if (isNaN(s) || isNaN(e) || !(e >= s)) return 1;
+  let n = 0, guard = 0;
+  for (let d = new Date(s); d <= e && guard < 20000; d.setUTCDate(d.getUTCDate() + 1), guard++) {
+    const dow = d.getUTCDay(); // 0=일, 6=토
+    if (dow !== 0 && dow !== 6) n++;
+  }
+  return Math.max(1, n);
+}
 
 export default async function meetingRoutes(app) {
   // 미팅 기록(+ 단계 진전 시 단계 변경 및 이력 갱신)
@@ -191,12 +205,15 @@ export default async function meetingRoutes(app) {
               t.name AS team_name, s.name AS stage_name,
               (SELECT to_char(MAX(meeting_date),'YYYY-MM-DD') FROM customer_meetings mm WHERE mm.customer_id=c.id) AS last_meeting,
               (SELECT COUNT(*) FROM customer_directives dd WHERE dd.customer_id=c.id AND dd.status<>'done') AS open_directives,
-              (SELECT COUNT(*) FROM sales_invoices si WHERE si.customer_id=c.id AND si.status='posted') AS invoice_count
+              (SELECT COUNT(*) FROM sales_invoices si WHERE si.customer_id=c.id AND si.status='posted') AS invoice_count,
+              (SELECT COALESCE(SUM(sil.qty),0) FROM sales_invoice_lines sil JOIN sales_invoices si2 ON si2.id=sil.invoice_id WHERE si2.customer_id=c.id AND si2.status='posted') AS total_qty,
+              (SELECT to_char(MIN(si3.inv_date),'YYYY-MM-DD') FROM sales_invoices si3 WHERE si3.customer_id=c.id AND si3.status='posted') AS first_deal_date
          FROM customers c
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN stages s ON s.id=c.stage_id
         WHERE ${conds.join(' AND ')} ORDER BY c.name`, params)).rows;
     const today = new Date().toISOString().slice(0, 10);
+    const mxToday = mxTodayStr(new Date());
     const pipeline = pipelineByStage(stages, custs.map((c) => ({ id: c.id, stage_id: c.stage_id, stage_since: c.stage_since })), today);
     const bottleneck = detectBottleneck(pipeline);
     const stalled = stalledCustomers(pipeline, 30);
@@ -206,14 +223,26 @@ export default async function meetingRoutes(app) {
       pipeline,
       bottleneck,
       stalled: stalled.map((s) => ({ ...s, customer: custById[s.customer_id] || null })),
-      customers: custs.map((c) => ({
-        id: c.id, code: c.code, name: c.name, customer_type: c.customer_type,
-        stage_id: c.stage_id, stage_name: c.stage_name, stage_since: c.stage_since,
-        team_name: c.team_name, last_meeting: c.last_meeting,
-        open_directives: Number(c.open_directives) || 0,
-        invoice_count: Number(c.invoice_count) || 0,
-        days_in_stage: c.stage_since ? Math.max(0, Math.round((new Date(today) - new Date(c.stage_since)) / 86400000)) : null,
-      })),
+      customers: custs.map((c) => {
+        const totalQty = Number(c.total_qty) || 0;
+        const firstDeal = c.first_deal_date || null;
+        // 거래시작(첫 posted 인보이스일)부터 MX 오늘까지의 영업일(월~금)
+        const workingDays = firstDeal ? workingDaysBetween(firstDeal, mxToday) : null;
+        // 일평균 판매수량 = 누적 수량 / 영업일 (첫 구매 없으면 null)
+        const avgDailyQty = (workingDays && workingDays > 0) ? Math.round((totalQty / workingDays) * 100) / 100 : null;
+        return {
+          id: c.id, code: c.code, name: c.name, customer_type: c.customer_type,
+          stage_id: c.stage_id, stage_name: c.stage_name, stage_since: c.stage_since,
+          team_name: c.team_name, last_meeting: c.last_meeting,
+          open_directives: Number(c.open_directives) || 0,
+          invoice_count: Number(c.invoice_count) || 0,
+          total_qty: totalQty,
+          first_deal_date: firstDeal,
+          working_days: workingDays,
+          avg_daily_qty: avgDailyQty,
+          days_in_stage: c.stage_since ? Math.max(0, Math.round((new Date(today) - new Date(c.stage_since)) / 86400000)) : null,
+        };
+      }),
     };
   });
 }

@@ -59,6 +59,11 @@
   .kcard .kc-inv{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;line-height:1;padding:2px 7px;border-radius:999px;background:#e8eefc;color:#2545a6;border:1px solid #c8d5f5;white-space:nowrap}
   .kcard .kc-inv .lbl{font-size:9.5px;font-weight:700;opacity:.85}
   .kcard .kc-inv.zero{background:#f1f3f5;color:#8a94a0;border-color:#e3e7ec}
+  /* 거래중 카드: 일평균 판매수량(누적수량 / 거래시작 후 영업일) */
+  .kcard .kc-rate{margin-top:3px;font-size:10.5px;color:#2545a6;font-weight:600;line-height:1.35}
+  .kcard .kc-rate b{font-size:12px;font-weight:800}
+  .kcard .kc-rate .mut{color:var(--muted);font-weight:500}
+  .kcard .kc-rate-na{margin-top:3px;font-size:10.5px;color:var(--muted)}
   .legend{display:flex;gap:14px;justify-content:flex-end;font-size:11px;color:var(--muted);margin-top:8px}
   .legend span{display:inline-flex;align-items:center;gap:4px}
   .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -239,6 +244,14 @@
 
   function dayColor(d){ if(d==null)return '#bbb'; if(d<=7)return 'var(--income)'; if(d<=14)return 'var(--gold)'; return 'var(--expense)'; }
   function dayPill(d){ if(d==null)return ''; const bg=d<=7?'#e7f3ee':(d<=14?'#fff7e0':'#fbe9e7'); const col=d<=7?'var(--income)':(d<=14?'#9a6512':'var(--expense)'); return `<span class="kc-days" style="background:${bg};color:${col}">${d}일</span>`; }
+  // 일평균 판매수량 포맷: 10 이상은 소수1자리, 미만은 소수2자리(구매주기 비교용)
+  function fmtAvgQty(n){ if(n==null)return '—'; n=Number(n); const dec=n>=10?1:2; return n.toLocaleString('es-MX',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+  // 거래중 카드용: 일평균 판매수량 + 근거(누적수량 / 영업일)
+  function activeRateLine(c){
+    if(c.avg_daily_qty==null) return `<div class="kc-rate-na">일평균 — · 첫 구매 대기</div>`;
+    const q=Number(c.total_qty)||0, wd=Number(c.working_days)||0;
+    return `<div class="kc-rate">일평균 <b>${fmtAvgQty(c.avg_daily_qty)}</b>개/영업일 <span class="mut">· 누적 ${q.toLocaleString('es-MX')}개 / ${wd.toLocaleString('es-MX')}영업일</span></div>`;
+  }
 
   function renderKanban(){
     const pipe=data.pipeline||[];
@@ -254,6 +267,7 @@
         <div class="kbody">${cs.map(c=>`<div class="kcard" style="--c:${dayColor(c.days_in_stage)}" onclick="openMeet(${c.id})">
           <div class="kc-top"><span class="kc-name">${c.name}${c.open_directives>0?`<span class="dirbadge">지시 ${c.open_directives}</span>`:''}</span><span class="kc-right">${dayPill(c.days_in_stage)}${isActive?`<span class="kc-inv${(Number(c.invoice_count)||0)===0?' zero':''}" title="최초 거래 이후 현재까지 발행된 인보이스(구매) 총 ${Number(c.invoice_count)||0}회"><span class="lbl">구매</span> ${Number(c.invoice_count)||0}</span>`:''}</span></div>
           <div class="kc-meta">진입 ${c.stage_since?c.stage_since.slice(5):'—'} · ${c.days_in_stage==null?'—':c.days_in_stage+'일 경과'}${c.last_meeting?' · 미팅 '+c.last_meeting.slice(5):''}</div>
+          ${isActive?activeRateLine(c):''}
         </div>`).join('')||'<div class="hint" style="margin:4px 0 0;text-align:center">—</div>'}</div>
       </div>`;
     }).join('')+'</div>';
@@ -400,6 +414,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260714a"></script>
+<script src="refatrix-nav.js?v=20260714b"></script>
 </body>
 </html>
