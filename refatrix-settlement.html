@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수금/정산 · build 0708da</title>
+<title>Refatrix ERP · 수금/정산 · build 0714a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -1170,8 +1170,8 @@
       bdInbox=items;
       if(!items.length){ if(card)card.style.display='none'; return; }
       if(card)card.style.display='';
-      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>고객(추정)</th><th>등록자</th><th></th></tr></thead><tbody>'
-        +items.map(d=>'<tr'+(d.read_by_me?'':' style="background:#fffaf0"')+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+esc(d.payer_memo||'—')+'</td><td>'+esc(d.customer_name||'—')+'</td><td>'+esc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="startBdAlloc('+d.id+')">이 입금으로 반제</button></td></tr>').join('')
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>캡처</th><th>고객(추정)</th><th>등록자</th><th></th></tr></thead><tbody>'
+        +items.map(d=>'<tr'+(d.read_by_me?'':' style="background:#fffaf0"')+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+esc(d.payer_memo||'—')+'</td><td>'+(d.has_file?'<button class="lnk" onclick="bdViewCapture('+d.id+')">👁 보기</button>':'<span class="hint">—</span>')+'</td><td>'+esc(d.customer_name||'—')+'</td><td>'+esc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="startBdAlloc('+d.id+')">이 입금으로 반제</button></td></tr>').join('')
         +'</tbody></table>';
     }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
   }
@@ -1183,11 +1183,26 @@
     try{ document.getElementById('arStats').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
   }
   function cancelBdCtx(){ bdCtx=null; bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null; renderBdCtxBanner(); renderBdCart(); renderAr(); }
+  async function bdViewCapture(id){
+    const m=$('arMsg'); if(m) m.className='msg';
+    try{
+      const r=await fetch(session.api+'/api/bank-deposits/'+id+'/file',{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error||!d.file_data){ if(m){m.className='msg err'; m.textContent='입금내역 캡처를 불러오지 못했습니다.';} return; }
+      const parts=String(d.file_data).split(','); const meta=parts[0]||''; const b64=parts[1]||'';
+      const mime=(meta.match(/data:([^;]+)/)||[])[1]||(d.mime_type||'application/octet-stream');
+      const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      const w=window.open(url,'_blank'); if(!w&&m){ m.className='msg err'; m.textContent='팝업이 차단되었습니다. 팝업을 허용해 주세요.'; }
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ if(m){m.className='msg err'; m.textContent='캡처 보기 실패(네트워크).';} }
+  }
   function renderBdCtxBanner(){
     const el=$('bdCtxBanner'); if(!el) return;
     if(!bdCtx){ el.style.display='none'; el.innerHTML=''; renderBdCart(); return; }
     el.style.display='';
     el.innerHTML='반제 대상 입금: <b>MX$'+fmt(bdCtx.amount)+'</b> · '+esc(bdCtx.account_name||'')+' · '+esc(bdCtx.deposit_date)+(bdCtx.payer_memo?(' · '+esc(bdCtx.payer_memo)):'')
+      +(bdCtx.has_file?' <button class="lnk" onclick="bdViewCapture('+bdCtx.id+')">👁 입금내역 캡처</button>':'')
       +' — 아래 미수 목록에서 해당 고객 인보이스의 <b>[반제]</b>로 배분을 담고, <b>[저장·통지 닫기]</b>로 확정하세요. (계좌·입금일 고정)'
       +'<button class="btn" style="margin-left:8px;padding:2px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="cancelBdCtx()">대상 해제</button>';
     renderBdCart();

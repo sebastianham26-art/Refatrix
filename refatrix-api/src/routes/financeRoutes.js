@@ -717,19 +717,30 @@ export default async function financeRoutes(app) {
   function _bdCanRegister(perm) { return perm.role === 'director' || perm.role === 'treasury'; }
   function _bdCanNotify(perm) { return perm.role === 'director' || perm.role === 'sales_support'; }
 
-  // 등록 (디렉터·재무)
+  // 등록 (디렉터·재무) — 은행 입금내역 스크린캡처 첨부 필수(file: data URL, 이미지/PDF 8MB↓)
   app.post('/api/bank-deposits', { preHandler: [authGuard] }, async (req, reply) => {
     if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     const b = req.body || {};
     const accountId = Number(b.account_id), amount = r2(b.amount);
     if (!accountId || !b.deposit_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
+    if (!b.file) return reply.code(400).send({ error: 'file_required', note: '은행계좌 입금내역을 스크린캡춰해서 업로드해주세요' });
+    const fv = validateReceiptDataUrl(b.file);
+    if (!fv.ok) return reply.code(400).send({ error: 'invalid_file', detail: fv.error });
     const userId = req.ctx.perm.userId;
-    const r = await query(
-      `INSERT INTO bank_deposits_pending (account_id, deposit_date, amount, payer_memo, customer_id, note, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [accountId, b.deposit_date, amount, b.payer_memo || null, b.customer_id ? Number(b.customer_id) : null, b.note || null, userId]);
-    await logEvent({ userId, action: 'create', target: `bank_deposit:${r.rows[0].id}`, detail: { amount } });
-    return { id: Number(r.rows[0].id) };
+    const out = await withTx(async (c) => {
+      const r = await c.query(
+        `INSERT INTO bank_deposits_pending (account_id, deposit_date, amount, payer_memo, customer_id, note, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [accountId, b.deposit_date, amount, b.payer_memo || null, b.customer_id ? Number(b.customer_id) : null, b.note || null, userId]);
+      const id = Number(r.rows[0].id);
+      await c.query(
+        `INSERT INTO bank_deposit_docs (deposit_id, file_name, mime_type, file_data, uploaded_by)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [id, b.file_name || null, fv.mime, b.file, userId]);
+      return { id };
+    });
+    await logEvent({ userId, action: 'create', target: `bank_deposit:${out.id}`, detail: { amount, file: true } });
+    return out;
   });
 
   // 목록 (디렉터·재무·정산권한자) — status=pending(기본) | all
@@ -742,18 +753,21 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT d.id, d.deposit_date, d.account_id, a.name AS account_name, d.amount, d.payer_memo,
               d.customer_id, c.name AS customer_name, d.status, d.created_by, u.name AS created_by_name,
-              (rd.user_id IS NOT NULL) AS read_by_me
+              (rd.user_id IS NOT NULL) AS read_by_me,
+              (fd.deposit_id IS NOT NULL) AS has_file
          FROM bank_deposits_pending d
          LEFT JOIN accounts a ON a.id=d.account_id
          LEFT JOIN customers c ON c.id=d.customer_id
          LEFT JOIN users u ON u.id=d.created_by
          LEFT JOIN bank_deposit_reads rd ON rd.deposit_id=d.id AND rd.user_id=$1
+         LEFT JOIN bank_deposit_docs fd ON fd.deposit_id=d.id
          ${where}
         ORDER BY d.created_at DESC`, [perm.userId])).rows;
     return {
       items: rows.map((x) => ({
         ...x, id: Number(x.id), account_id: Number(x.account_id), amount: Number(x.amount),
         customer_id: x.customer_id != null ? Number(x.customer_id) : null, read_by_me: x.read_by_me === true,
+        has_file: x.has_file === true,
       })),
     };
   });
@@ -803,7 +817,19 @@ export default async function financeRoutes(app) {
     return { ok: true, id };
   });
 
-  // 수정 (디렉터·재무) — pending 만. 계좌·입금일·금액·적요.
+  // 캡처 파일 보기 (디렉터·재무·정산권한자) — 통지의 은행 입금내역 스크린캡처
+  app.get('/api/bank-deposits/:id/file', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const allowed = perm.role === 'director' || perm.role === 'treasury' || pageAllowed(perm, 'settlement', req.ctx.isRegistered);
+    if (!allowed) return reply.code(403).send({ error: 'forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`SELECT file_name, mime_type, file_data FROM bank_deposit_docs WHERE deposit_id=$1`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { file_name: r.file_name, mime_type: r.mime_type, file_data: r.file_data };
+  });
+
+  // 수정 (디렉터·재무) — pending 만. 계좌·입금일·금액·적요. (file 있으면 캡처 교체)
   app.patch('/api/bank-deposits/:id', { preHandler: [authGuard] }, async (req, reply) => {
     if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     const id = Number(req.params.id);
@@ -820,7 +846,18 @@ export default async function financeRoutes(app) {
           SET account_id=$1, deposit_date=$2, amount=$3, payer_memo=$4
         WHERE id=$5 AND status='pending'`,
       [accountId, b.deposit_date, amount, b.payer_memo || null, id]);
-    await logEvent({ userId, action: 'update', target: `bank_deposit:${id}`, detail: { edited: true, amount } });
+    if (b.file) {
+      const fv = validateReceiptDataUrl(b.file);
+      if (!fv.ok) return reply.code(400).send({ error: 'invalid_file', detail: fv.error });
+      await query(
+        `INSERT INTO bank_deposit_docs (deposit_id, file_name, mime_type, file_data, uploaded_by)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (deposit_id) DO UPDATE
+           SET file_name=EXCLUDED.file_name, mime_type=EXCLUDED.mime_type, file_data=EXCLUDED.file_data,
+               uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`,
+        [id, b.file_name || null, fv.mime, b.file, userId]);
+    }
+    await logEvent({ userId, action: 'update', target: `bank_deposit:${id}`, detail: { edited: true, amount, file: !!b.file } });
     return { ok: true, id };
   });
 

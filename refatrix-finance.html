@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0710a</title>
+<title>Refatrix ERP · 재무 · build fin-0714a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -214,6 +214,15 @@
         </div>
         <div class="row">
           <div style="flex:3"><label>송금인/적요 <span style="color:var(--muted);font-weight:400">(영업지원 매칭 단서)</span></label><input id="bd-memo" type="text" placeholder="예: 고객명·송금인·참조번호"></div>
+        </div>
+        <div class="row">
+          <div style="flex:3"><label>입금내역 캡처 <span style="color:var(--expense)">(필수)</span> <span style="color:var(--muted);font-weight:400">— 은행계좌 입금내역 스크린캡처(이미지·PDF, 8MB↓)</span></label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="bd-file" type="file" accept="image/*,application/pdf" style="display:none">
+              <button class="btn" id="bd-file-btn" type="button" style="background:#fff;color:var(--brand);border:1px solid var(--line)">📎 캡처 첨부</button>
+              <span id="bd-file-name" class="hint" style="margin:0">미첨부</span>
+            </div>
+          </div>
         </div>
         <button class="btn gold" id="bd-save" style="margin-top:10px">입금 통지 등록</button>
         <div class="msg" id="bd-msg"></div>
@@ -2733,12 +2742,13 @@
       bdItems=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
       if(!bdItems.length){ box.innerHTML='<div class="hint" style="margin:0">대기 중인 미배분 입금이 없습니다.</div>'; return; }
       const dir=isDirector();
-      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>등록자</th><th></th></tr></thead><tbody>'
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>캡처</th><th>등록자</th><th></th></tr></thead><tbody>'
         +bdItems.map(d=>{
           const acts=(dir?'<button class="btn gold" style="padding:4px 10px;font-size:11.5px" data-bd="book" data-id="'+d.id+'">수입 전환</button> ':'')
             +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="edit" data-id="'+d.id+'">수정</button> '
             +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" data-bd="del" data-id="'+d.id+'">삭제</button>';
-          return '<tr><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
+          const cap=d.has_file?'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" data-bd="file" data-id="'+d.id+'">👁 보기</button>':'<span class="hint" style="margin:0">—</span>';
+          return '<tr><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+cap+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
         }).join('')
         +'</tbody></table>';
     }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
@@ -2828,19 +2838,48 @@
       bdClosePanel(); loadBdp();
     }catch(e){ alert('서버 연결 실패'); }
   }
+  // ---- 입금내역 캡처(필수) ----
+  let bdFile=null, bdFileName=null;
+  function bdOnFilePicked(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    if(f.size>8*1024*1024){ const m=$('bd-msg'); m.className='msg err'; m.textContent='캡처 파일이 너무 큽니다(8MB 이하).'; ev.target.value=''; return; }
+    const rd=new FileReader();
+    rd.onload=()=>{ bdFile=rd.result; bdFileName=f.name; const el=$('bd-file-name'); if(el)el.textContent=f.name; const m=$('bd-msg'); if(m&&m.classList.contains('err')){m.className='msg';m.textContent='';} };
+    rd.onerror=()=>{ const m=$('bd-msg'); m.className='msg err'; m.textContent='파일을 읽지 못했습니다.'; };
+    rd.readAsDataURL(f);
+  }
+  async function bdViewFile(id){
+    try{
+      const r=await fetch(session.api+'/api/bank-deposits/'+id+'/file',{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error||!d.file_data){ alert('캡처를 불러오지 못했습니다.'); return; }
+      const parts=String(d.file_data).split(','); const meta=parts[0]||''; const b64=parts[1]||'';
+      const mime=(meta.match(/data:([^;]+)/)||[])[1]||(d.mime_type||'application/octet-stream');
+      const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      const w=window.open(url,'_blank'); if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용해 주세요.'); }
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alert('캡처 보기 실패(네트워크).'); }
+  }
   async function saveBdp(){
     const m=$('bd-msg'); m.className='msg';
     const acc=Number($('bd-acc').value), date=$('bd-date').value, amt=Number($('bd-amt').value), memo=$('bd-memo').value.trim();
     if(!acc){ m.className='msg err'; m.textContent='입금 계좌를 선택하세요.'; return; }
     if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
     if(!(amt>0)){ m.className='msg err'; m.textContent='금액을 입력하세요(양수).'; return; }
+    if(!bdFile){ m.className='msg err'; m.textContent='은행계좌 입금내역을 스크린캡춰해서 업로드해주세요'; return; }
     $('bd-save').disabled=true;
     try{
-      const res=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null})});
+      const res=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null,file:bdFile,file_name:bdFileName})});
       const d=await res.json();
-      if(!res.ok||d.error){ m.className='msg err'; m.textContent='등록 실패: '+(d.error||res.status); return; }
-      m.className='msg ok'; m.textContent='입금 통지 등록됨 — 영업지원에게 알림이 갑니다. (거래·잔액은 반제 시 반영)';
+      if(!res.ok||d.error){
+        m.className='msg err';
+        m.textContent=(d.error==='file_required')?'은행계좌 입금내역을 스크린캡춰해서 업로드해주세요':('등록 실패: '+(d.error||res.status));
+        return;
+      }
+      m.className='msg ok'; m.textContent='입금 통지 등록됨(캡처 첨부) — 영업지원에게 알림이 갑니다. (거래·잔액은 반제 시 반영)';
       $('bd-amt').value=''; $('bd-memo').value='';
+      bdFile=null; bdFileName=null; if($('bd-file'))$('bd-file').value=''; if($('bd-file-name'))$('bd-file-name').textContent='미첨부';
       loadBdp();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ $('bd-save').disabled=false; }
@@ -2853,6 +2892,7 @@
       if(act==='book') bdOpenBook(id);
       else if(act==='edit') bdOpenEdit(id);
       else if(act==='del') bdDelete(id);
+      else if(act==='file') bdViewFile(id);
     });
   })();
 
@@ -3048,6 +3088,8 @@
   $('pp-clear-months').addEventListener('click',()=>{ ppMonthSel=new Set(); renderPpMonths(); computePpView(); });
   $('tabNew').addEventListener('click',()=>showTab('new'));
   $('bd-save').addEventListener('click',saveBdp);
+  if($('bd-file-btn'))$('bd-file-btn').addEventListener('click',function(){ $('bd-file').click(); });
+  if($('bd-file'))$('bd-file').addEventListener('change',bdOnFilePicked);
   $('tabTxn').addEventListener('click',()=>showTab('txn'));
   $('tabPay').addEventListener('click',()=>showTab('pay'));
   $('tabFixed').addEventListener('click',()=>showTab('fixed'));
