@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260715v)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260716a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -550,11 +550,25 @@
     if(!navigator.geolocation){ g.className='vl-geoBox err'; g.textContent='이 브라우저는 위치를 지원하지 않습니다.'; return; }
     g.className='vl-geoBox'; g.textContent='위치 확인 중… (권한 허용을 눌러주세요)';
     navigator.geolocation.getCurrentPosition(
-      (pos)=>{ vlGeo={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy};
+      (pos)=>{ vlGeo={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy,at:Date.now()};
         const t=new Date().toTimeString().slice(0,5);
         g.className='vl-geoBox'; g.innerHTML='<b>현재 위치 확보됨</b> · '+vlGeo.lat.toFixed(4)+', '+vlGeo.lng.toFixed(4)+' · 정확도 ±'+Math.round(vlGeo.acc||0)+'m · '+t; },
       (err)=>{ vlGeo=null; g.className='vl-geoBox err'; g.innerHTML='<b>위치 권한 필요</b> — 방문 저장은 위치가 있어야 합니다. 브라우저/설정에서 위치를 허용해 주세요.'; },
-      {enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+      {enableHighAccuracy:true,timeout:12000,maximumAge:10000});
+  }
+
+  // ★ 체크인 저장 시마다 새 위치를 강제 확보(캐시 미사용) — 동일 좌표 중복 저장 방지 (b20260716a)
+  function vlFreshGeo(){
+    return new Promise((res,rej)=>{
+      if(!navigator.geolocation) return rej(new Error('unsupported'));
+      navigator.geolocation.getCurrentPosition(
+        (pos)=>{ vlGeo={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy,at:Date.now()};
+          const g=$('vl-geo'); if(g){ const t=new Date().toTimeString().slice(0,5);
+            g.className='vl-geoBox'; g.innerHTML='<b>현재 위치 확보됨</b> · '+vlGeo.lat.toFixed(4)+', '+vlGeo.lng.toFixed(4)+' · 정확도 ±'+Math.round(vlGeo.acc||0)+'m · '+t; }
+          res(vlGeo); },
+        (err)=>rej(err),
+        {enableHighAccuracy:true,timeout:15000,maximumAge:0});
+    });
   }
 
   async function vlLoadCustOptions(){
@@ -603,24 +617,39 @@
 
   async function vlSave(){
     const m=$('vl-msg'); m.className='msg'; m.style.display='none';
-    if(!vlGeo){ m.className='msg err'; m.style.display='block'; m.textContent='위치가 없습니다. 위치 권한을 허용한 뒤 다시 시도하세요.'; return; }
+    if(!navigator.geolocation){ m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 위치를 지원하지 않습니다.'; return; }
     const isNew=$('vl-segNew').classList.contains('on');
-    const body={ geo_lat:vlGeo.lat, geo_lng:vlGeo.lng, geo_accuracy:vlGeo.acc,
+    const body={ geo_lat:null, geo_lng:null, geo_accuracy:null,
       met_person:$('vl-who').value.trim()||null, talk_note:$('vl-talk').value.trim()||null, insight_note:$('vl-insight').value.trim()||null,
       pendings:[], photos:vlPhotos };
     if(isNew){ const pn=$('vl-place').value.trim(); if(!pn){ m.className='msg err'; m.style.display='block'; m.textContent='방문처 이름을 입력하세요.'; return; } body.place_name=pn; }
     else { const cid=$('vl-cust').value; if(!cid){ m.className='msg err'; m.style.display='block'; m.textContent='고객을 선택하세요.'; return; } body.customer_id=Number(cid); }
     $('vl-pends').querySelectorAll('.vl-pendrow').forEach(r=>{ const c=r.querySelector('input[type=text]').value.trim(); const d=r.querySelector('input[type=date]').value||null; if(c)body.pendings.push({content:c,due_date:d}); });
-    const btn=$('vl-save'); btn.disabled=true; btn.textContent='저장 중…';
+    const btn=$('vl-save'); btn.disabled=true; btn.textContent='현재 위치 확인 중…';
+    let usedPrev=false;
     try{
+      try{
+        const fix=await vlFreshGeo();
+        body.geo_lat=fix.lat; body.geo_lng=fix.lng; body.geo_accuracy=fix.acc;
+      }catch(ge){
+        if(vlGeo && vlGeo.at && (Date.now()-vlGeo.at)<120000){
+          body.geo_lat=vlGeo.lat; body.geo_lng=vlGeo.lng; body.geo_accuracy=vlGeo.acc; usedPrev=true;
+        }else{
+          m.className='msg err'; m.style.display='block';
+          m.textContent='현재 위치를 가져오지 못했습니다 — GPS를 켜고 위치 권한을 허용한 뒤 다시 시도하세요.';
+          return;
+        }
+      }
+      btn.textContent='저장 중…';
       const res=await fetch(session.api+'/api/visits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+(d.error==='forbidden_team'?'이 고객을 편집할 권한이 없습니다.':(d.error==='location_required'?'위치가 필요합니다.':(d.error||res.status))); return; }
       m.className='msg ok'; m.style.display='block';
-      m.textContent='✔ 방문 저장됨'+(d.meeting_saved?' · 고객 미팅기록에도 보존됨':'')+(body.pendings.length?(' · 펜딩 '+body.pendings.length+'건'):'')+(d.photo_ok?(' · 사진 '+d.photo_ok+'장'+(d.photo_fail?(' (실패 '+d.photo_fail+')'):'')):'');
+      m.textContent='✔ 방문 저장됨'+(d.meeting_saved?' · 고객 미팅기록에도 보존됨':'')+(body.pendings.length?(' · 펜딩 '+body.pendings.length+'건'):'')+(d.photo_ok?(' · 사진 '+d.photo_ok+'장'+(d.photo_fail?(' (실패 '+d.photo_fail+')'):'')):'')+(usedPrev?' · ⚠ 새 위치 확보 실패로 2분 내 직전 위치 사용':'');
       $('vl-who').value='';$('vl-talk').value='';$('vl-insight').value='';$('vl-place').value='';$('vl-cust').value='';
       $('vl-pends').innerHTML=''; vlAddPendRow(); vlPhotos=[]; vlRenderThumbs();
       vlSel.clear(); await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
+      vlRequestGeo();
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
     finally{ btn.disabled=false; btn.textContent='방문 저장 (체크인)'; }
   }
@@ -808,6 +837,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260714e"></script>
+<script src="refatrix-nav.js?v=20260716a"></script>
 </body>
 </html>
