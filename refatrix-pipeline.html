@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260716a)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260716b)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -209,6 +209,10 @@
         <div class="vl-newflag">★ 미등록 방문처 — 기록만 저장됩니다. 이후 「미등록 방문처 → 고객 등록」에서 연결하면 방문기록이 함께 소급 연결됩니다.</div>
       </div>
       <label>만난 사람 (이름 · 직책)</label><input id="vl-who" style="width:100%;max-width:420px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;max-width:420px">
+        <div style="flex:1;min-width:160px"><label>핸드폰 번호</label><input id="vl-phone" type="tel" inputmode="tel" placeholder="81-1234-5678" style="width:100%"></div>
+        <div style="flex:1;min-width:180px"><label>이메일 주소</label><input id="vl-email" type="email" inputmode="email" placeholder="correo@ejemplo.mx" style="width:100%"></div>
+      </div>
       <label>무슨 이야기를 했나 (대화 내용)</label><textarea id="vl-talk" rows="2" style="width:100%"></textarea>
       <label>새로배운 내용/파악한 내용 (인사이트)</label><textarea id="vl-insight" rows="2" style="width:100%"></textarea>
       <label>📷 사진 (명함·가게 등 · 최대 10장 · 자동 1600px 압축)</label>
@@ -621,6 +625,7 @@
     const isNew=$('vl-segNew').classList.contains('on');
     const body={ geo_lat:null, geo_lng:null, geo_accuracy:null,
       met_person:$('vl-who').value.trim()||null, talk_note:$('vl-talk').value.trim()||null, insight_note:$('vl-insight').value.trim()||null,
+      contact_phone:$('vl-phone').value.trim()||null, contact_email:$('vl-email').value.trim()||null,
       pendings:[], photos:vlPhotos };
     if(isNew){ const pn=$('vl-place').value.trim(); if(!pn){ m.className='msg err'; m.style.display='block'; m.textContent='방문처 이름을 입력하세요.'; return; } body.place_name=pn; }
     else { const cid=$('vl-cust').value; if(!cid){ m.className='msg err'; m.style.display='block'; m.textContent='고객을 선택하세요.'; return; } body.customer_id=Number(cid); }
@@ -647,6 +652,7 @@
       m.className='msg ok'; m.style.display='block';
       m.textContent='✔ 방문 저장됨'+(d.meeting_saved?' · 고객 미팅기록에도 보존됨':'')+(body.pendings.length?(' · 펜딩 '+body.pendings.length+'건'):'')+(d.photo_ok?(' · 사진 '+d.photo_ok+'장'+(d.photo_fail?(' (실패 '+d.photo_fail+')'):'')):'')+(usedPrev?' · ⚠ 새 위치 확보 실패로 2분 내 직전 위치 사용':'');
       $('vl-who').value='';$('vl-talk').value='';$('vl-insight').value='';$('vl-place').value='';$('vl-cust').value='';
+      $('vl-phone').value='';$('vl-email').value='';
       $('vl-pends').innerHTML=''; vlAddPendRow(); vlPhotos=[]; vlRenderThumbs();
       vlSel.clear(); await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
       vlRequestGeo();
@@ -713,6 +719,7 @@
           </div>
           <div class="body">
             ${v.met_person?('만남: '+vlEsc(v.met_person)+'<br>'):''}
+            ${(v.contact_phone||v.contact_email)?('연락처: '+[v.contact_phone?('<a href="tel:'+vlEsc(v.contact_phone)+'">📞 '+vlEsc(v.contact_phone)+'</a>'):null,v.contact_email?('<a href="mailto:'+vlEsc(v.contact_email)+'">✉ '+vlEsc(v.contact_email)+'</a>'):null].filter(Boolean).join(' · ')+'<br>'):''}
             ${v.talk_note?('대화: '+vlEsc(v.talk_note)+'<br>'):''}
             ${v.insight_note?('새로배운/파악: '+vlEsc(v.insight_note)+'<br>'):''}
             ${pend?('<div style="margin-top:6px"><b>펜딩</b><br>'+pend+'</div>'):''}
@@ -837,6 +844,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260716a"></script>
+<script src="refatrix-nav.js?v=20260716b"></script>
 </body>
 </html>

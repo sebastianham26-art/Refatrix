@@ -34,6 +34,8 @@ export default async function visitRoutes(app) {
   function buildMeetNote(v, pendings) {
     const lines = [MEET_PREFIX];
     if (v.met_person) lines.push('만남: ' + v.met_person);
+    const contact = [v.contact_phone, v.contact_email].filter(Boolean).join(' · ');
+    if (contact) lines.push('연락처: ' + contact);
     if (v.talk_note) lines.push('대화: ' + v.talk_note);
     if (v.insight_note) lines.push('새로배운/파악: ' + v.insight_note);
     if (pendings && pendings.length) lines.push('펜딩: ' + pendings.map((p) => p.content).filter(Boolean).join(' · '));
@@ -92,6 +94,7 @@ export default async function visitRoutes(app) {
     const rows = (await query(
       `SELECT v.id, v.visit_date, v.visited_at, v.customer_id, v.place_name,
               v.geo_lat, v.geo_lng, v.geo_accuracy, v.met_person, v.talk_note, v.insight_note,
+              v.contact_email, v.contact_phone,
               v.created_by, u.name AS by_name, c.code AS cust_code,
               (SELECT COUNT(*) FROM sales_visit_photos ph WHERE ph.visit_id = v.id) AS photo_cnt
          FROM sales_visits v
@@ -115,6 +118,7 @@ export default async function visitRoutes(app) {
         geo_lat: Number(r.geo_lat), geo_lng: Number(r.geo_lng),
         geo_accuracy: r.geo_accuracy != null ? Number(r.geo_accuracy) : null,
         met_person: r.met_person, talk_note: r.talk_note, insight_note: r.insight_note,
+        contact_email: r.contact_email, contact_phone: r.contact_phone,
         created_by: Number(r.created_by), by_name: r.by_name,
         photo_cnt: Number(r.photo_cnt), pendings: pendByVisit[r.id] || [],
       })),
@@ -159,10 +163,10 @@ export default async function visitRoutes(app) {
       const v = (await q(
         `INSERT INTO sales_visits
            (visit_date, customer_id, place_name, geo_lat, geo_lng, geo_accuracy,
-            met_person, talk_note, insight_note, meeting_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+            met_person, talk_note, insight_note, contact_email, contact_phone, meeting_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
         [mxToday, custId, placeName, lat, lng, num(b.geo_accuracy),
-         str(b.met_person), str(b.talk_note), str(b.insight_note), meetingId, perm.userId])).rows[0];
+         str(b.met_person), str(b.talk_note), str(b.insight_note), str(b.contact_email), str(b.contact_phone), meetingId, perm.userId])).rows[0];
       const visitId = Number(v.id);
       for (const p of pendings) {
         await q(`INSERT INTO sales_visit_pendings (visit_id, content, due_date) VALUES ($1,$2,$3)`,
@@ -295,7 +299,7 @@ export default async function visitRoutes(app) {
     const linked = await withTx(async (client) => {
       const q = client.query.bind(client);
       const visits = (await q(
-        `SELECT id, visit_date, met_person, talk_note, insight_note, created_by FROM sales_visits WHERE ${vcond}`, vp)).rows;
+        `SELECT id, visit_date, met_person, talk_note, insight_note, contact_email, contact_phone, created_by FROM sales_visits WHERE ${vcond}`, vp)).rows;
       let n = 0;
       for (const v of visits) {
         const pend = (await q(`SELECT content FROM sales_visit_pendings WHERE visit_id = $1 ORDER BY id`, [v.id])).rows;
