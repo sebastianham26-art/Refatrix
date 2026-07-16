@@ -82,6 +82,14 @@ export default async function productRoutes(app) {
       where += ` AND EXISTS (SELECT 1 FROM product_applications pa
                              WHERE pa.product_id = p.id AND pa.maker = ANY($${params.length}))`;
     }
+    // 마케팅 상품(머천다이즈) 필터: 제품코드가 'PRO'로 시작하는 제품(예: PRO-CAP, PROGORRA).
+    //   pro=1 → 마케팅 상품만. pro=0 → 마케팅 상품 제외(부품만). 파라미터 없으면 종전대로 전부.
+    const proRaw = String(req.query.pro || '').trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on', 'only'].includes(proRaw)) {
+      where += " AND COALESCE(p.code,'') ILIKE 'PRO%'";
+    } else if (['0', 'false', 'no', 'off', 'exclude'].includes(proRaw)) {
+      where += " AND COALESCE(p.code,'') NOT ILIKE 'PRO%'";
+    }
     // 전체 건수용 파라미터(검색 조건만) — 팀/limit/offset 추가 전에 스냅샷.
     const countParams = params.slice();
     // 누적 판매수량을 영업팀 가시성으로 제한 — 담당 외 고객 판매수량이 합산되지 않도록.
