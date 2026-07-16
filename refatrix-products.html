@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pj0716pro</title>
+<title>Refatrix ERP · 제품 조회 · pj0716pro2</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -161,10 +161,13 @@
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px">
           <input type="checkbox" id="qCn" style="width:auto;margin:0"> 중국차량만
         </label></div>
-      <div style="flex:0 0 auto;display:flex;align-items:flex-end">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px" title="제품코드가 PRO로 시작하는 마케팅 머천다이즈(판촉물)만 봅니다.">
-          <input type="checkbox" id="qPro" style="width:auto;margin:0"> 🎁 마케팅 상품(PRO)만
-        </label></div>
+      <div style="flex:0 0 auto" title="제품코드가 PRO로 시작하는 마케팅 머천다이즈(판촉물)를 기준으로 걸러냅니다.">
+        <label>🎁 마케팅 상품(PRO)</label>
+        <select id="qPro" style="min-width:132px">
+          <option value="">전체(포함)</option>
+          <option value="only">🎁 PRO만</option>
+          <option value="exclude">🚫 PRO 제외</option>
+        </select></div>
       <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
     </div>
     <div id="cnBrands" class="hidden" style="margin:2px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -319,7 +322,7 @@
   window.addEventListener('hashchange',function(){ if($('loginCard').classList.contains('hidden')) applyHashTab(); });
 
   let prodOffset=0, prodQ='', prodLimit=50, prodTotal=0, prodHasList=false, prodHasCost=false, prodMaterial='';
-  let prodPro=false;   // 🎁 마케팅 상품(PRO*)만 보기
+  let prodPro='';   // 마케팅 상품(PRO*) 필터: ''=전체 · 'only'=PRO만 · 'exclude'=PRO 제외
   let prodSort='', prodDir='desc';  // 헤더 클릭 정렬(서버측 전체 기준). ''=코드순 기본.
   // 중국차 필터 상태: prodCn=중국차량만 여부, prodCnSel=선택된 브랜드(maker) 배열(복수선택).
   let prodCn=false, prodCnSel=[], cnMakersCache=null;
@@ -388,7 +391,7 @@
     prodOffset=0; prodQ=$('q').value.trim();
     prodMaterial=($('qAlu')&&$('qAlu').checked)?'aluminio':'';
     prodCn=!!($('qCn')&&$('qCn').checked);
-    prodPro=!!($('qPro')&&$('qPro').checked);
+    prodPro=($('qPro')&&$('qPro').value)||'';
     loadProducts();
   }
   async function loadProducts(){
@@ -397,11 +400,11 @@
       const matParam=prodMaterial?('&material='+encodeURIComponent(prodMaterial)):'';
       let cnParam='';
       if(prodCn){ cnParam='&cn=1'; if(prodCnSel.length) cnParam+='&cnbrand='+encodeURIComponent(prodCnSel.join(',')); }
-      const proParam=prodPro?'&pro=1':'';
+      const proParam=prodPro==='only'?'&pro=1':(prodPro==='exclude'?'&pro=0':'');
       const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):'')+matParam+cnParam+proParam,{headers:auth()});
       const d=await res.json(); const items=d.items||[];
       prodTotal=Number(d.total||items.length);
-      if(!items.length){ r.innerHTML='<div class="hint">'+(prodPro?'제품코드가 PRO로 시작하는 마케팅 상품이 없습니다.':'일치하는 제품이 없습니다.')+'</div>'; return; }
+      if(!items.length){ r.innerHTML='<div class="hint">'+(prodPro==='only'?'제품코드가 PRO로 시작하는 마케팅 상품이 없습니다.':(prodPro==='exclude'?'마케팅 상품(PRO)을 제외하면 일치하는 제품이 없습니다.':'일치하는 제품이 없습니다.'))+'</div>'; return; }
       prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
       const isDir=session&&session.user&&session.user.role==='director';
       const colN=8+(prodHasList?1:0)+(prodHasCost?2:0);
