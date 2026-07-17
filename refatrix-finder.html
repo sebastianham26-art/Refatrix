@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 경쟁사 제품검색 · build cx-0717a</title>
+<title>Refatrix ERP · 경쟁사 제품검색 · build cx-0717b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--ctr:#d81e25;--syd:#0a5cab;
@@ -398,6 +398,7 @@
     const M=state.up.filter(u=>u.product_id&&state.upProducts.get(u.product_id));
     const U=state.up.filter(u=>!u.product_id);
     const tot={qty:0,ctr:0,baw:0,syd:0,missC:0,missB:0,missS:0};
+    const umQty=U.reduce((s,u)=>s+(Number(u.qty)||0),0);      // 미등록 수량 합
     M.forEach(u=>{ const p=state.upProducts.get(u.product_id); tot.qty+=u.qty;
       const pc=disc(p.ctr_price,dc.ctr), pb=disc(p.brand_prices.BAW!=null?p.brand_prices.BAW:null,dc.baw), ps=disc(p.syd_price,dc.syd);
       if(pc!=null) tot.ctr+=pc*u.qty; else tot.missC++;
@@ -409,7 +410,8 @@
     const card=(lb,v,s,isMin)=>'<div class="sumcard'+(isMin?' min':'')+'"><div class="lb">'+lb+(isMin?'<span class="minbadge">최저</span>':'')+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>';
     if(state.canPrice){
       const mn=Math.min(tot.ctr,tot.baw,tot.syd);
-      sb.innerHTML=card('총 수량',fmt(tot.qty)+'개','품목 '+state.up.length+'건 · 매칭 '+M.length+' · 미등록 '+U.length+' (전량 저장됨)',false)
+      sb.innerHTML=card('총 수량 (업로드 전체)',fmt(tot.qty+umQty)+'개','매칭 '+M.length+'건 '+fmt(tot.qty)+'개 · 미등록 '+U.length+'건 '+fmt(umQty)+'개 (전량 저장)',false)
+        + (U.length?card('미등록 기록',fmt(umQty)+'개','카탈로그에 없는 코드 '+U.length+'건 — 저장 시 기록으로 보관',false):'')
         + card('CTR 총액','$'+fmt2(tot.ctr),'할인 '+dc.ctr+'%'+(tot.missC?' · 가격없음 '+tot.missC+'건 제외':''),M.length&&tot.ctr===mn)
         + card('BAW 총액','$'+fmt2(tot.baw),'할인 '+dc.baw+'%'+(tot.missB?' · 가격없음 '+tot.missB+'건 제외':''),M.length&&tot.baw===mn)
         + card('SYD 총액','$'+fmt2(tot.syd),'할인 '+dc.syd+'%'+(tot.missS?' · 가격없음 '+tot.missS+'건 제외':''),M.length&&tot.syd===mn);
@@ -428,7 +430,8 @@
         $('cmpNote').textContent='매칭 '+M.length+'개 품목 · 총 '+fmt(tot.qty)+'개 기준 · 할인율 변경 시 즉시 재계산 (미등록 '+U.length+'건 및 브랜드별 가격 미등록 품목은 총액에서 제외 — 저장 기록에는 포함)';
       } else cmp.style.display='none';
     } else {
-      sb.innerHTML=card('총 수량',fmt(tot.qty)+'개','품목 '+state.up.length+'건 · 매칭 '+M.length+' · 미매칭 '+U.length,false);
+      sb.innerHTML=card('총 수량 (업로드 전체)',fmt(tot.qty+umQty)+'개','매칭 '+M.length+'건 '+fmt(tot.qty)+'개 · 미등록 '+U.length+'건 '+fmt(umQty)+'개 (전량 저장)',false)
+        + (U.length?card('미등록 기록',fmt(umQty)+'개','카탈로그에 없는 코드 '+U.length+'건 — 저장 시 기록으로 보관',false):'');
       $('cmp').style.display='none';
     }
     $('cnt').textContent='업로드 비교 모드';
@@ -477,9 +480,12 @@
   }
   function qteStats(){
     const all=qteLines();
+    const qn=(v)=>{ const n=Number(String(v==null?1:v).replace(/[,\s]/g,'')); return (isFinite(n)&&n>0)?n:1; };
     const matched=all.filter(l=>l.product_id).length;
     const nostock=state.up.filter(u=>{ const p=u.product_id&&state.upProducts.get(u.product_id); return p&&(p.avail==null||p.avail<=0); }).length;
-    return { total:all.length, matched, unmatched:all.length-matched, nostock };
+    const totalQty=all.reduce((s,l)=>s+qn(l.qty),0);
+    const unmatchedQty=all.filter(l=>!l.product_id).reduce((s,l)=>s+qn(l.qty),0);
+    return { total:all.length, matched, unmatched:all.length-matched, nostock, totalQty, unmatchedQty, matchedQty:totalQty-unmatchedQty };
   }
   function qteParty(){
     const v=$('qteCust').value;
@@ -550,9 +556,9 @@
     if(!party){ m.className='msg err'; m.style.display='block'; m.textContent='고객을 선택하거나 신규 고객명을 입력하세요.'; return; }
     const lines=qteLines(), st=qteStats();
     if(!lines.length){ m.className='msg err'; m.style.display='block'; m.textContent='업로드된 품목이 없습니다.'; return; }
-    if(!confirm('업로드 '+st.total+'품목 전체를 저장합니다.\n · 매칭(우리 제품) '+st.matched+'건'
+    if(!confirm('업로드 '+st.total+'품목 · 총 '+st.totalQty+'개 전체를 저장합니다.\n · 매칭(우리 제품) '+st.matched+'건 '+st.matchedQty+'개'
       +(st.nostock?' (그중 재고 없음 '+st.nostock+'건)':'')
-      +'\n · 카탈로그 미등록 '+st.unmatched+'건 — 기록으로 저장(금액 0 · 총액 미포함)'
+      +'\n · 카탈로그 미등록 '+st.unmatched+'건 '+st.unmatchedQty+'개 — 코드·수량 기록으로 저장(금액 0 · 총액 미포함)'
       +'\n · 할인 '+state.d.ctr+'%'
       +'\n\n(이 화면의 「저장된 견적」 목록에만 보관 — 공용 견적리스트 미기록, 재고 예약 없음)')) return;
     const btn=$('qteSave'); btn.disabled=true; btn.textContent='저장 중…';
@@ -563,8 +569,8 @@
       const c=d.counts||{};
       m.className='msg ok'; m.style.display='block';
       m.textContent='견적 #'+d.id+' 저장 완료 — 총 '+(c.total!=null?c.total:lines.length)+'줄 기록'
-        +' (매칭 '+(c.matched!=null?c.matched:st.matched)+' · 미등록 '+(c.unmatched!=null?c.unmatched:st.unmatched)
-        +(c.noStock?' · 재고없음 '+c.noStock:'')+'). 아래 「저장된 견적」 목록에서 확인·재다운로드할 수 있습니다.';
+        +' (매칭 '+(c.matched!=null?c.matched:st.matched)+' · 미등록 '+(c.unmatched!=null?c.unmatched:st.unmatched)+'건 '+(c.unmatchedQty!=null?c.unmatchedQty:st.unmatchedQty)+'개'
+        +(c.noStock?' · 재고없음 '+c.noStock:'')+'). 아래 「저장된 견적」 목록의 ▸ 내역에서 미등록 코드까지 확인할 수 있습니다.';
       fqLoad();
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+e.message; }
     finally{ btn.disabled=false; btn.textContent='💾 견적 저장'; }
@@ -578,20 +584,54 @@
       const res=await fetch(session.api+'/api/finder/quotes',{headers:auth()});
       const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
       if(!d.items.length){ box.innerHTML='<span class="hint">저장된 견적이 없습니다.</span>'; return; }
-      box.innerHTML='<div class="tablewrap"><table style="min-width:820px;table-layout:auto"><thead><tr><th>#</th><th>일시</th><th>고객</th><th style="text-align:right">할인%</th><th style="text-align:right">기록 줄</th><th style="text-align:right">SKU</th><th style="text-align:right">미등록</th><th style="text-align:right">재고0</th><th style="text-align:right">수량</th><th style="text-align:right">총액</th><th>작성</th><th></th></tr></thead><tbody>'
+      box.innerHTML='<div class="tablewrap"><table style="min-width:820px;table-layout:auto"><thead><tr><th>#</th><th>일시</th><th>고객</th><th style="text-align:right">할인%</th><th style="text-align:right">기록 줄</th><th style="text-align:right">SKU</th><th style="text-align:right">미등록 (건·수량)</th><th style="text-align:right">재고0</th><th style="text-align:right">수량(매칭)</th><th style="text-align:right">총액</th><th>작성</th><th></th></tr></thead><tbody>'
         + d.items.map(f=>'<tr><td>'+f.id+'</td><td style="white-space:nowrap">'+new Date(f.at).toLocaleString('sv-SE').slice(0,16)+'</td>'
           +'<td>'+String(f.customer).replace(/</g,'&lt;')+'</td><td class="price">'+f.discount+'%</td>'
           +'<td class="price"><b>'+fmt(f.lines||0)+'</b></td>'
           +'<td class="price">'+f.sku+'</td>'
-          +'<td class="price">'+(f.unmatched?'<span class="tag-um">'+f.unmatched+'</span>':'—')+'</td>'
+          +'<td class="price">'+(f.unmatched?'<span class="tag-um">'+f.unmatched+'건 · '+fmt(f.unmatched_qty||0)+'개</span>':'—')+'</td>'
           +'<td class="price">'+(f.no_stock?'<span class="bo" style="color:var(--gold);font-weight:700">'+f.no_stock+'</span>':'—')+'</td>'
           +'<td class="price">'+fmt(f.qty)+'</td>'
           +'<td class="price">'+(f.total!=null?('$'+fmt2(f.total)):'—')+'</td><td>'+String(f.by).replace(/</g,'&lt;')+'</td>'
-          +'<td style="white-space:nowrap"><button class="upbtn ghost fq-xls" data-id="'+f.id+'">⬇ 엑셀</button> <button class="upbtn ghost fq-del" data-id="'+f.id+'">🗑</button></td></tr>').join('')
+          +'<td style="white-space:nowrap"><button class="upbtn ghost fq-det" data-id="'+f.id+'">▸ 내역</button> <button class="upbtn ghost fq-xls" data-id="'+f.id+'">⬇ 엑셀</button> <button class="upbtn ghost fq-del" data-id="'+f.id+'">🗑</button></td></tr>'
+          +'<tr class="fq-detrow" data-id="'+f.id+'" style="display:none"><td colspan="12" style="background:#faf8f2;padding:10px 14px"></td></tr>').join('')
         + '</tbody></table></div>';
       box.querySelectorAll('.fq-xls').forEach(b=>b.addEventListener('click',()=>fqExcel(Number(b.dataset.id))));
       box.querySelectorAll('.fq-del').forEach(b=>b.addEventListener('click',()=>fqDel(Number(b.dataset.id))));
+      box.querySelectorAll('.fq-det').forEach(b=>b.addEventListener('click',()=>fqDetail(Number(b.dataset.id),b)));
     }catch(e){ box.innerHTML=''; m.className='msg err'; m.style.display='block'; m.textContent='목록 조회 실패: '+e.message; }
+  }
+  // ── ▸ 내역: 저장 기록을 화면에서 바로 확인(미등록 코드 포함) ──
+  async function fqDetail(id,btn){
+    const row=document.querySelector('.fq-detrow[data-id="'+id+'"]'); if(!row) return;
+    if(row.style.display!=='none'){ row.style.display='none'; btn.textContent='▸ 내역'; return; }
+    const cell=row.firstElementChild;
+    cell.innerHTML='<span class="hint">불러오는 중…</span>'; row.style.display=''; btn.textContent='▾ 접기';
+    try{
+      const res=await fetch(session.api+'/api/finder/quotes/'+id,{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error==='price_forbidden'?'가격 열람 권한이 없어 내역을 볼 수 없습니다':(d.error||res.status));
+      const cc=d.counts||{};
+      const um=(d.lines||[]).filter(l=>!l.product_id);
+      const mt=(d.lines||[]).filter(l=>l.product_id);
+      let h='<div style="font-size:12px;margin-bottom:8px"><b>기록 '+(cc.total!=null?cc.total:(d.lines||[]).length)+'줄</b>'
+        +' — 매칭 '+(cc.matched||mt.length)+'건 · <span style="color:var(--expense);font-weight:700">미등록 '+(cc.unmatched||um.length)+'건 '+fmt(cc.unmatchedQty||um.reduce((s,l)=>s+(Number(l.qty)||0),0))+'개</span>'
+        +(cc.noStock?' · <span style="color:var(--gold);font-weight:700">재고없음 '+cc.noStock+'건</span>':'')+'</div>';
+      if(um.length){
+        h+='<div style="font-size:11px;font-weight:800;color:var(--expense);margin:6px 0 4px">카탈로그 미등록 코드 (기록)</div>'
+          +'<table style="min-width:0;table-layout:auto;font-size:12px"><thead><tr><th>#</th><th>입력 코드(경쟁사)</th><th style="text-align:right">수량</th><th>상태</th></tr></thead><tbody>'
+          +um.map(l=>'<tr><td>'+l.line_no+'</td><td><b>'+String(l.input_code||'—').replace(/</g,'&lt;')+'</b></td><td class="price">'+fmt(l.qty)+'</td><td><span class="tag-um">미등록</span></td></tr>').join('')
+          +'</tbody></table>';
+      }
+      if(mt.length){
+        h+='<div style="font-size:11px;font-weight:800;color:var(--brand);margin:10px 0 4px">매칭된 우리 제품</div>'
+          +'<table style="min-width:0;table-layout:auto;font-size:12px"><thead><tr><th>#</th><th>입력 코드</th><th>CTR</th><th>제품명</th><th style="text-align:right">수량</th><th style="text-align:right">단가</th><th style="text-align:right">합계(IVA포함)</th><th>재고</th></tr></thead><tbody>'
+          +mt.map(l=>'<tr><td>'+l.line_no+'</td><td>'+String(l.input_code||'—').replace(/</g,'&lt;')+'</td><td><span class="codechip c-ctr">'+String(l.ctr_code||'').replace(/</g,'&lt;')+'</span></td>'
+            +'<td>'+String(l.product_name||'').replace(/</g,'&lt;')+'</td><td class="price">'+fmt(l.qty)+'</td><td class="price">$'+fmt2(l.final_price)+'</td><td class="price">$'+fmt2(l.line_total)+'</td>'
+            +'<td>'+(l.stock_flag==='no_stock'?'<span style="color:var(--gold);font-weight:700">재고없음</span>':(l.stock_flag==='low_stock'?'<span style="color:var(--gold)">부족</span>':(l.avail_stock==null?'—':fmt(l.avail_stock))))+'</td></tr>').join('')
+          +'</tbody></table>';
+      }
+      cell.innerHTML=h;
+    }catch(e){ cell.innerHTML='<span class="msg err" style="display:inline-block">내역 조회 실패: '+String(e.message).replace(/</g,'&lt;')+'</span>'; }
   }
   async function fqExcel(id){
     const m=$('fqMsg'); m.className='msg'; m.style.display='none';
@@ -659,7 +699,7 @@
   $('qteXls').addEventListener('click',qteExcel);
   $('qteSave').addEventListener('click',qteSave);
   $('fqReload').addEventListener('click',fqLoad);
-  window.__finder={state,parseUpload,applyUpload,render,qteParty,qteLines,qteStats,buildCotizacion,setSession:(s)=>{session=s;}};  // 테스트 훅
+  window.__finder={state,parseUpload,applyUpload,render,qteParty,qteLines,qteStats,buildCotizacion,fqLoad,setSession:(s)=>{session=s;}};  // 테스트 훅
 
   // 자동 로그인 (포털 세션)
   const ps=portalSession();
