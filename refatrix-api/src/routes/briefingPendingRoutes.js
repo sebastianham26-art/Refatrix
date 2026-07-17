@@ -6,6 +6,10 @@
 //   POST /api/portal/pending/dismiss   { item_key }        영구 무시
 //   POST /api/portal/pending/restore   { item_key }        스누즈/무시 해제
 //   POST /api/portal/pending/auto-todo 지난 일정(미전환)을 할 일로 자동 등록(중복방지)
+//   POST /api/portal/briefing-share    { share_socio } 브리핑·미결의 socio 공유 옵션(디렉터만)
+//
+//   열람: 디렉터(항상) + socio(공유 옵션 ON 시, 열람 전용).
+//   조치(스누즈/무시/복원/자동todo/옵션변경)는 디렉터 전용.
 //
 //   미결 항목은 원천 상태로 라이브 판정 → 완료 시 자동 소멸. 이 라우트는 순수 집계 +
 //   디렉터 조치(스누즈/무시/자동todo)만 상태 테이블(briefing_pending_state)에 기록.
@@ -14,6 +18,7 @@ import { query } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { mxTodayStr } from '../workingHours.js';
 import { collectPending, pastEventsForTodo } from '../pendingItems.js';
+import { briefingViewer, setShareSocio } from '../briefingShare.js';
 
 const QUOTE_DELAY_DAYS = 3;   // 지연 견적 기준(디렉터 결정)
 const PAST_EVENT_DAYS = 7;    // 자동 todo 후보로 볼 지난 일정 범위
@@ -49,7 +54,8 @@ export default async function briefingPendingRoutes(app) {
   // ── 미결 목록 (읽기 전용) ──
   app.get('/api/portal/pending', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
-    if (perm.role !== 'director') return { enabled: false, role: perm.role };
+    const view = await briefingViewer(perm);
+    if (!view.allowed) return { enabled: false, role: perm.role };
     const mxToday = mxTodayStr(new Date());
 
     const [items, state, pastEv] = await Promise.all([
@@ -93,6 +99,7 @@ export default async function briefingPendingRoutes(app) {
 
     return {
       enabled: true, mx_date: mxToday, total: visible.length,
+      role: view.role, share_socio: view.share_socio, can_toggle: view.can_toggle, read_only: view.read_only,
       by_severity: bySev, groups,
       auto_todo_candidates: autoTodoCands.length,
       auto_todo_preview: autoTodoCands.slice(0, 5).map((e) => ({ ev_date: e.ev_date, content: e.content })),
@@ -167,5 +174,14 @@ export default async function briefingPendingRoutes(app) {
       created++; madeTodoIds.push(Number(tr.id));
     }
     return { ok: true, created, todo_ids: madeTodoIds };
+  });
+
+  // ── 브리핑·미결 socio 공유 옵션(디렉터 전용) ──
+  app.post('/api/portal/briefing-share', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const v = !!(req.body && (req.body.share_socio === true || req.body.share_socio === 'true' || req.body.share_socio === 1));
+    const saved = await setShareSocio(v, perm.userId);
+    return { ok: true, share_socio: saved };
   });
 }

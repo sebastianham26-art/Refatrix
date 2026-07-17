@@ -16,13 +16,15 @@
 //     각 section 은 { key, icon, title, text(한국어 완성문), ...구조화 필드 } 를
 //     반환하므로, 프런트는 text 를 그대로 카드/팝업에 뿌리면 됩니다.
 //
-//   대상: 디렉터 전용(Phase 1). 그 외 역할은 { enabled:false } 만 반환(프런트 무표시).
+//   대상: 디렉터(항상) + socio(디렉터가 공유 옵션을 켠 경우만, 열람 전용).
+//         그 외 역할은 { enabled:false } 만 반환(프런트 무표시).
 // =====================================================================
 import { query } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { buildStageCohorts } from '../stageCohorts.js';
 import { mxTodayStr, MX_OFFSET_MIN } from '../workingHours.js';
 import { getUsdMxnRate } from '../fx.js';
+import { briefingViewer } from '../briefingShare.js';
 
 // ── 포맷 헬퍼(서버측 한국어 문장 조립용) ──
 function n(v) { return Number(v) || 0; }
@@ -186,8 +188,10 @@ async function sectionSalesActivity(mxYesterday) {
 // ③ 진행 중 포장 — 공용 stageCohorts.packing 재사용(WBR·포털 SLA 와 단일 기준).
 //    포장출력 됐으나 포장작업지시서 스캔(완료) 전, 전환 전.
 // ─────────────────────────────────────────────────────────────────────
-async function sectionPacking(perm) {
-  const cohorts = await buildStageCohorts(perm, 'total');
+async function sectionPacking(perm, allTeams) {
+  // socio 는 visibleTeamIds 가 빈 배열이라 팀 필터가 걸리면 결과가 비어버린다.
+  // 브리핑은 "디렉터와 같은 전사 뷰"를 공유하는 것이 목적이므로 allTeams 로 전체 코호트를 본다.
+  const cohorts = await buildStageCohorts(perm, 'total', allTeams ? { allTeams: true } : {});
   const list = (cohorts.packing || []).map((r) => ({
     customer: r.customer_name || '—', amount: Math.round(n(r.amount)), total_qty: n(r.total_qty), sku_count: n(r.sku_count),
   }));
@@ -359,10 +363,11 @@ async function sectionFinance(mxToday) {
 }
 
 export default async function dailyBriefingRoutes(app) {
-  // GET /api/portal/daily-briefing — 디렉터 전용(Phase 1). 읽기 전용.
+  // GET /api/portal/daily-briefing — 디렉터 + (옵션 ON 시) socio. 읽기 전용.
   app.get('/api/portal/daily-briefing', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
-    if (perm.role !== 'director') {
+    const view = await briefingViewer(perm);
+    if (!view.allowed) {
       return { enabled: false, role: perm.role };
     }
     const now = new Date();
@@ -378,13 +383,17 @@ export default async function dailyBriefingRoutes(app) {
       safe(() => sectionSchedule(mxToday), 'schedule', '오늘의 일정', '📅'),
       safe(() => sectionQuotes(mxYesterday), 'quotes', '어제 견적', '📝'),
       safe(() => sectionSalesActivity(mxYesterday), 'sales_activity', '어제 영업활동', '🤝'),
-      safe(() => sectionPacking(perm), 'packing', '진행 중 포장', '📦'),
+      safe(() => sectionPacking(perm, perm.role !== 'director'), 'packing', '진행 중 포장', '📦'),
       safe(() => sectionMarketing(mxToday), 'marketing', '마케팅 일정', '📣'),
       safe(() => sectionFinance(mxToday), 'finance', '재무 현황', '💰'),
     ]);
 
     return {
       enabled: true,
+      role: view.role,
+      share_socio: view.share_socio,
+      can_toggle: view.can_toggle,
+      read_only: view.read_only,
       generated_at: now.toISOString(),
       mx_date: mxToday,
       mx_yesterday: mxYesterday,

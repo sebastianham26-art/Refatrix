@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털 · build 20260714d-pending</title>
+<title>Refatrix ERP · 포털 · build 20260717a-share</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -173,7 +173,7 @@
         <span class="hint" style="display:inline;margin:0">완료될 때까지 매일 표시 · 경과일 누적</span>
       </div>
       <div id="carryBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
-      <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px">
+      <div id="aiScanFoot" class="hidden" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-size:12.5px;font-weight:800;color:var(--brand)">🤖 AI 미결 스캔</span>
           <span class="hint" style="display:inline;margin:0">일정·회의메모·지시에서 놓친 약속을 감지(제안만)</span>
@@ -187,7 +187,14 @@
     <div class="card hidden" id="briefCard">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <h2 style="margin:0">🗞 오늘의 브리핑 <span class="hint" id="briefDateLbl" style="display:inline;margin:0"></span></h2>
-        <span class="hint" style="display:inline;margin:0">부서별 오늘 요약 · 매일 갱신</span>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label id="shareSocioWrap" class="hidden" title="켜면 socio(파트너)도 브리핑·미결 누적을 열람할 수 있습니다(열람 전용)."
+                 style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--brand);font-weight:700;background:#f6f8ff;border:1px solid #d9e1ff;border-radius:999px;padding:4px 10px">
+            <input type="checkbox" id="shareSocioChk" onchange="toggleShareSocio(this.checked)" style="cursor:pointer">
+            <span>👥 socio 공유</span>
+          </label>
+          <span class="hint" style="display:inline;margin:0">부서별 오늘 요약 · 매일 갱신</span>
+        </div>
       </div>
       <div id="briefBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
     </div>
@@ -1101,13 +1108,14 @@
   }
   // ===== 하루 아침 브리핑 (디렉터 전용) =====
   async function loadDailyBriefing(){
-    if(!(session.user && session.user.role==='director')) return;
+    if(!__briefAud()) return;
     const card=$('briefCard'); if(!card) return;
     try{
       const d=await fetch(session.api+'/api/portal/daily-briefing',{headers:auth()}).then(r=>r.json());
       if(!d || d.enabled===false){ card.classList.add('hidden'); return; }
       window.__briefing=d;
       card.classList.remove('hidden');
+      syncShareSocio(d);
       if($('briefDateLbl')) $('briefDateLbl').textContent='— '+(d.date_label||'');
       $('briefBody').innerHTML=renderBriefing(d);
       checkBriefingPopup();
@@ -1153,7 +1161,7 @@
   }
   // 로그인 시 팝업 — MX 현지 하루 1회(닫으면 그날은 이 세션 동안만 안 뜸)
   function checkBriefingPopup(){
-    if(!(session.user && session.user.role==='director')) return;
+    if(!__briefAud()) return;
     const d=window.__briefing; if(!d || d.enabled===false) return;
     const key='brief_pop_'+(d.mx_date||'');
     try{ if(sessionStorage.getItem(key)==='1'){ $('briefPopModal').style.display='none'; return; } }catch(_){}
@@ -1167,28 +1175,54 @@
     $('briefPopModal').style.display='none';
   }
 
-  // ===== 미결 누적 (carry-over) — 디렉터 전용 =====
+  // ===== 브리핑·미결 공용: 열람 대상 =====
+  //   디렉터(항상) + socio(디렉터가 공유 옵션을 켠 경우) — 최종 허용 여부는 서버가 enabled 로 판정.
+  function __briefAud(){ return !!(session.user && (session.user.role==='director' || session.user.role==='socio')); }
+  function __isDir(){ return !!(session.user && session.user.role==='director'); }
+  // 공유 토글(디렉터만) — 브리핑·미결 양쪽에 동시 적용.
+  async function toggleShareSocio(on){
+    const chk=$('shareSocioChk');
+    try{
+      const r=await fetch(session.api+'/api/portal/briefing-share',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({share_socio:!!on})}).then(x=>x.json());
+      if(r&&r.ok){ if(chk) chk.checked=!!r.share_socio; }
+      else if(chk) chk.checked=!on;
+    }catch(_){ if(chk) chk.checked=!on; }
+    loadCarryover();
+  }
+  // 공유 토글 UI 상태 반영(디렉터에게만 노출)
+  function syncShareSocio(d){
+    const wrap=$('shareSocioWrap'), chk=$('shareSocioChk');
+    if(!wrap||!chk) return;
+    if(d && d.can_toggle){ wrap.classList.remove('hidden'); chk.checked=!!d.share_socio; }
+    else wrap.classList.add('hidden');
+  }
+
+  // ===== 미결 누적 (carry-over) — 디렉터 + (옵션 ON 시) socio =====
   async function loadCarryover(){
-    if(!(session.user && session.user.role==='director')) return;
+    if(!__briefAud()) return;
     const card=$('carryCard'); if(!card) return;
     try{
       const d=await fetch(session.api+'/api/portal/pending',{headers:auth()}).then(r=>r.json());
       if(!d || d.enabled===false){ card.classList.add('hidden'); return; }
       window.__carry=d;
       card.classList.remove('hidden');
+      syncShareSocio(d);
       $('carryBody').innerHTML=renderCarryover(d);
       $('carryCount').textContent='— 총 '+(d.total||0)+'건'+(d.by_severity&&d.by_severity.bad?(' · 심각 '+d.by_severity.bad):'');
-      // 지난 일정 자동 todo — MX 하루 1회
-      maybeAutoTodo(d);
+      // AI 스캔은 디렉터 전용(비용·할일생성) — socio 에게는 숨김
+      const aiFoot=$('aiScanFoot'); if(aiFoot) aiFoot.classList.toggle('hidden', !__isDir());
+      // 지난 일정 자동 todo — MX 하루 1회(디렉터만)
+      if(__isDir()) maybeAutoTodo(d);
     }catch(e){ $('carryBody').innerHTML='<div class="hint">미결을 불러오지 못했습니다.</div>'; }
   }
   function renderCarryover(d){
     const groups=(d&&d.groups)||[];
+    const ro=!!(d&&d.read_only);   // socio = 열람 전용(스누즈·무시·자동todo 숨김)
     const bm=(v)=>(v==null||v==='')?'':('$'+Math.round(Number(v)||0).toLocaleString('en-US'));
     const sevColor=(s)=> s==='bad'?'var(--expense)':(s==='warn'?'var(--gold)':'var(--muted)');
     let h='';
     // 자동 todo 후보 배너
-    if(d.auto_todo_candidates>0){
+    if(!ro && d.auto_todo_candidates>0){
       h+='<div style="background:#fff7ec;border:1px solid #f0dcc0;border-radius:8px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         +'<span style="font-size:12.5px;color:#8a5a13">지난 일정 <b>'+d.auto_todo_candidates+'건</b>이 미완일 수 있습니다 — 할 일로 등록해 완료까지 추적하세요.</span>'
         +'<button onclick="carryAutoTodo()" style="margin-left:auto;border:none;background:var(--gold);color:#fff;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">할 일로 자동 등록</button>'
@@ -1210,8 +1244,8 @@
           +'</div>'
           +'<div style="flex:0 0 auto;display:flex;gap:4px">'
             +(it.link?'<button title="바로가기" onclick="goScreen(\''+escp(it.link)+'\')" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">↗</button>':'')
-            +'<button title="7일 스누즈" onclick="carrySnooze(\''+escp(it.item_key)+'\',7)" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">🕒</button>'
-            +'<button title="무시" onclick="carryDismiss(\''+escp(it.item_key)+'\')" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">✕</button>'
+            +(ro?'':'<button title="7일 스누즈" onclick="carrySnooze(\''+escp(it.item_key)+'\',7)" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">🕒</button>')
+            +(ro?'':'<button title="무시" onclick="carryDismiss(\''+escp(it.item_key)+'\')" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">✕</button>')
           +'</div>'
           +'</div>';
       }
