@@ -1,4 +1,5 @@
-// build fdr-0714a — 경쟁사 제품검색(제품찾기) 백엔드
+// build fdr-0717a — 경쟁사 제품검색(제품찾기) 백엔드
+//   · 2026-07-17: 업로드 전량 보존 — 미등록(카탈로그 없음)·재고0 품목도 견적 라인으로 저장(금액 0, 총액 미포함)
 //   · /api/finder/search   : CTR·SYD·교차참조(BAW/GROB/VASLO/KYB/MOOG/YOKOMITSU…) 아무 코드로 제품 검색
 //   · /api/finder/compare  : 코드+수량 목록 → CTR 매칭 일괄 비교(견적 비교용)
 //   · 가격: CTR=products.list_price · SYD=products.list_price_syd · 경쟁사=product_xref_codes.list_price
@@ -126,12 +127,12 @@ export default async function finderRoutes(app) {
         if (Number.isFinite(n) && n > 0) qty = n;
       }
       return { code, qty, norm: norm(code) };
-    }).filter((it) => it.norm);
+    }).filter((it) => it.code);                      // 코드칸이 비지 않았으면 전부 보존(정규화 불가 코드도 미등록으로 기록)
     if (!clean.length) return reply.code(400).send({ error: 'no_items' });
 
-    const norms = [...new Set(clean.map((c) => c.norm))];
+    const norms = [...new Set(clean.map((c) => c.norm).filter(Boolean))];
     const map = new Map();
-    const rows = (await query(
+    const rows = norms.length ? (await query(
       `SELECT norm, pid, pri FROM (
          SELECT regexp_replace(upper(p.code), '[^A-Z0-9]', '', 'g') AS norm, p.id AS pid, 1 AS pri
            FROM products p WHERE p.deleted_at IS NULL
@@ -144,12 +145,12 @@ export default async function finderRoutes(app) {
          SELECT x.norm_code, x.product_id, 3
            FROM product_xref_codes x JOIN products p ON p.id = x.product_id AND p.deleted_at IS NULL
           WHERE x.norm_code = ANY($1)
-       ) t ORDER BY pri`, [norms])).rows;
+       ) t ORDER BY pri`, [norms])).rows : [];
     for (const r of rows) if (!map.has(r.norm)) map.set(r.norm, Number(r.pid));
 
     const pids = [...new Set([...map.values()])];
     const products = await bundle(pids, canPrice);
-    const lines = clean.map((c) => ({ code: c.code, qty: c.qty, product_id: map.get(c.norm) || null }));
+    const lines = clean.map((c) => ({ code: c.code, qty: c.qty, product_id: (c.norm && map.get(c.norm)) || null }));
     return { lines, products, price_included: canPrice, matched: lines.filter((l) => l.product_id).length, unmatched: lines.filter((l) => !l.product_id).length };
   });
 
@@ -186,13 +187,27 @@ export default async function finderRoutes(app) {
          FROM products p WHERE p.id = ANY($1)`, [ids])).rows : [];
     const amap = new Map(stock.map((r) => [Number(r.product_id),
       Math.max(0, (r.stock_qty != null ? Number(r.stock_qty) : 0) - (Number(r.reserved) || 0))]));
+    // ★ 업로드 전량 보존: 매칭 안 된(카탈로그 미등록) 줄도 금액 0짜리 기록 라인으로 남긴다.
+    //   재고0 품목은 예전부터 저장됐고, 여기선 stock_flag='no_stock'으로 눈에 띄게만 구분한다.
     const lines = []; let lineNo = 0;
+    let unmatched = 0, unmatchedQty = 0, noStock = 0;
     for (const it of items) {
-      const p = pmap.get(Number(it.product_id)); if (!p) continue;   // 우리 제품(매칭)만
       lineNo++;
       const qty = Number(String(it.qty == null ? 1 : it.qty).replace(/[,\s]/g, ''));
       const q = (Number.isFinite(qty) && qty > 0) ? qty : 1;
+      const p = it.product_id ? pmap.get(Number(it.product_id)) : null;
+      if (!p) {                                                     // 카탈로그 미등록(또는 삭제된 제품) → 기록만
+        unmatched++; unmatchedQty += q;
+        lines.push({ line_no: lineNo, product_id: null,
+          input_code: it.input_code || null, ctr_code: null, syd_codes: '',
+          product_name: '', app_text: '',
+          qty: q, list_price: 0, discount_rate: discountRate,
+          final_price: 0, line_subtotal: 0, line_iva: 0, line_total: 0,
+          avail_stock: null, stock_flag: 'not_found' });
+        continue;
+      }
       const avail = amap.has(Number(p.id)) ? amap.get(Number(p.id)) : null;
+      if (avail != null && avail <= 0) noStock++;
       const calc = computeQuoteLine({ listPrice: p.list_price, discountRate, qty: q, ivaRate });
       lines.push({ line_no: lineNo, product_id: Number(p.id),
         input_code: it.input_code || null, ctr_code: p.code,
@@ -201,10 +216,14 @@ export default async function finderRoutes(app) {
         qty: q, list_price: Number(p.list_price) || 0, discount_rate: discountRate,
         final_price: calc.finalPrice, line_subtotal: calc.lineSubtotal,
         line_iva: calc.lineIva, line_total: calc.lineTotal,
-        avail_stock: avail, stock_flag: stockFlag({ matched: true, qty: q, availStock: avail }) });
+        avail_stock: avail,
+        stock_flag: (avail != null && avail <= 0) ? 'no_stock' : stockFlag({ matched: true, qty: q, availStock: avail }) });
     }
-    const totals = computeQuoteTotals(lines.map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
-    return { lines, totals, discountRate, ivaRate };
+    // 합계(금액·SKU·수량)는 종전대로 **매칭 라인 기준** — 미등록은 가격이 없어 총액 왜곡을 만들면 안 됨.
+    const priced = lines.filter((l) => l.product_id);
+    const totals = computeQuoteTotals(priced.map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
+    return { lines, totals, discountRate, ivaRate,
+      counts: { total: lines.length, matched: priced.length, unmatched, unmatchedQty, noStock } };
   }
 
   function finderQuoteParty(b) {
@@ -239,7 +258,7 @@ export default async function finderRoutes(app) {
         if (!cu) return { error: 'customer_not_found' };
       }
       const calc = await computeFinder(items, discountRate, exec);
-      if (!calc.lines.length) return { error: 'no_matched_items' };
+      if (!calc.lines.length) return { error: 'no_items' };   // 미등록만 있어도 저장 허용(기록 목적)
       const fq = (await exec(
         `INSERT INTO finder_quotes (customer_id, customer_name, discount_rate, iva_rate, subtotal_mxn, iva_mxn, total_mxn, total_qty, sku_count, memo, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, created_at`,
@@ -256,20 +275,38 @@ export default async function finderRoutes(app) {
     });
     if (out.error) return reply.code(out.error === 'customer_not_found' ? 404 : 400).send(out);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `finder_quote:${out.id}`,
-      detail: { customer: name, discount: discountRate, sku: out.totals.skuCount, total: out.totals.total } });
+      detail: { customer: name, discount: discountRate, sku: out.totals.skuCount, total: out.totals.total,
+                lines: out.counts.total, unmatched: out.counts.unmatched, no_stock: out.counts.noStock } });
     return out;
   });
 
   // 저장 목록 (최근 100)
   app.get('/api/finder/quotes', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
     const canPrice = fieldVisible(req.ctx.perm, 'sale_price');
+    // 라인 집계는 저장 라인에서 파생(헤더 컬럼 추가 불필요 → 마이그레이션 없음).
+    // ※ FILTER 절 대신 COUNT(CASE …) — pg-mem 호환 유지.
     const rows = (await query(
-      `SELECT f.id, f.customer_name, f.discount_rate, f.total_mxn, f.total_qty, f.sku_count, f.created_at, u.name AS by_name
-         FROM finder_quotes f LEFT JOIN users u ON u.id = f.created_by
+      `SELECT f.id, f.customer_name, f.discount_rate, f.total_mxn, f.total_qty, f.sku_count, f.created_at, u.name AS by_name,
+              COALESCE(agg.line_count, 0)   AS line_count,
+              COALESCE(agg.unmatched, 0)    AS unmatched,
+              COALESCE(agg.unmatched_qty,0) AS unmatched_qty,
+              COALESCE(agg.no_stock, 0)     AS no_stock
+         FROM finder_quotes f
+         LEFT JOIN users u ON u.id = f.created_by
+         LEFT JOIN (
+           SELECT fq_id,
+                  COUNT(*) AS line_count,
+                  COUNT(CASE WHEN product_id IS NULL THEN 1 END) AS unmatched,
+                  COALESCE(SUM(CASE WHEN product_id IS NULL THEN qty ELSE 0 END), 0) AS unmatched_qty,
+                  COUNT(CASE WHEN product_id IS NOT NULL AND COALESCE(avail_stock, 0) <= 0 THEN 1 END) AS no_stock
+             FROM finder_quote_lines GROUP BY fq_id
+         ) agg ON agg.fq_id = f.id
         WHERE f.deleted_at IS NULL ORDER BY f.id DESC LIMIT 100`)).rows;
     return { items: rows.map((r) => ({ id: Number(r.id), customer: r.customer_name,
       discount: Number(r.discount_rate) || 0, total: canPrice ? Number(r.total_mxn) : null,
-      qty: Number(r.total_qty) || 0, sku: Number(r.sku_count) || 0, at: r.created_at, by: r.by_name || '' })),
+      qty: Number(r.total_qty) || 0, sku: Number(r.sku_count) || 0, at: r.created_at, by: r.by_name || '',
+      lines: Number(r.line_count) || 0, unmatched: Number(r.unmatched) || 0,
+      unmatched_qty: Number(r.unmatched_qty) || 0, no_stock: Number(r.no_stock) || 0 })),
       price_included: canPrice };
   });
 
@@ -284,13 +321,21 @@ export default async function finderRoutes(app) {
     const lines = (await query(
       `SELECT line_no, product_id, input_code, ctr_code, syd_codes, product_name, app_text, qty, list_price, discount_rate, final_price, line_subtotal, line_iva, line_total, avail_stock, stock_flag
          FROM finder_quote_lines WHERE fq_id = $1 ORDER BY line_no`, [id])).rows;
+    const out = lines.map((l) => ({ ...l,
+      product_id: l.product_id == null ? null : Number(l.product_id),   // ★ null이 0으로 둔갑하던 버그 수정
+      qty: Number(l.qty),
+      list_price: Number(l.list_price), discount_rate: Number(l.discount_rate), final_price: Number(l.final_price),
+      line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
+      avail_stock: l.avail_stock == null ? null : Number(l.avail_stock),
+      syd_codes: l.syd_codes ? String(l.syd_codes).split(' / ') : [] }));
+    const unmatchedLines = out.filter((l) => l.product_id == null);
     return { id: Number(h.id), customer: h.customer_name, created_at: h.created_at,
       discountRate: Number(h.discount_rate) || 0,
-      lines: lines.map((l) => ({ ...l, product_id: Number(l.product_id), qty: Number(l.qty),
-        list_price: Number(l.list_price), discount_rate: Number(l.discount_rate), final_price: Number(l.final_price),
-        line_subtotal: Number(l.line_subtotal), line_iva: Number(l.line_iva), line_total: Number(l.line_total),
-        avail_stock: l.avail_stock == null ? null : Number(l.avail_stock),
-        syd_codes: l.syd_codes ? String(l.syd_codes).split(' / ') : [] })),
+      lines: out,
+      counts: { total: out.length, matched: out.length - unmatchedLines.length,
+                unmatched: unmatchedLines.length,
+                unmatchedQty: unmatchedLines.reduce((s, l) => s + (Number(l.qty) || 0), 0),
+                noStock: out.filter((l) => l.product_id != null && (l.avail_stock == null || l.avail_stock <= 0)).length },
       totals: { subtotal: Number(h.subtotal_mxn), iva: Number(h.iva_mxn), total: Number(h.total_mxn),
                 totalQty: Number(h.total_qty), skuCount: Number(h.sku_count) } };
   });
