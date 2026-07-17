@@ -1,15 +1,22 @@
-// build fsr-0710b — 엑셀 대량 업로드(/lines/bulk) + 경쟁사 교차참조(xref) 매칭 포함
+// build fsr-20260717a — 누적판매 대조(소진) 체크리스트 추가 (엑셀 대량 업로드 + xref 매칭 유지)
 import { query, withTx } from '../db.js';
 import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
+import { customerSoldItems, customerSoldSkuCount, soldSnapFor, sellThrough, replenishSort, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 
 // 현장재고조사 (field stock survey)
 //  · 권한: 로그인 사용자 모두(authGuard). 조사 데이터는 본인 것만(디렉터는 전체).
 //  · 코드 한 건 입력 = 즉시 저장(데이터 분실 차단). 서버가 코드를 자동 분류.
 //  · 가용재고 = 현재고 − 타 미결·미만료 견적 예약분 (견적화면과 동일 기준).
 //  · 분류: imm(즉시매출가능, 가용>0) / short(재고부족, 매칭됐으나 가용≤0) / dev(개발필요, 미등록).
+//
+//  ── 누적판매 대조(소진) — 2026-07-17 추가 ──
+//  · 기존고객(customer_id) 조사에서만 활성. 미등록 고객은 누적판매가 없어 비활성.
+//  · 줄 origin: 'code'(현장 코드입력 = 기존 동작 그대로) / 'history'(누적판매 체크리스트 점검분).
+//  · 소진량 = 누적판매 스냅샷(sold_qty_snap) − 현장재고(observed_qty) → 보충 제안(소진율 내림차순).
+//  · history 줄은 imm/short/dev 3분류 집계에서 제외 → 기존 화면·견적 동작 회귀 없음.
 export default async function fieldSurveyRoutes(app) {
   // node-pg 정규화 헬퍼
   const num = (v) => (v == null ? null : Number(v));
@@ -85,6 +92,20 @@ export default async function fieldSurveyRoutes(app) {
     };
   }
 
+  // product_id 직행 분류 (누적판매 체크리스트 — 코드 해석 없이 제품이 이미 특정됨)
+  async function classifyProduct(productId, exec = query) {
+    const p = (await exec(
+      `SELECT id, code, name, app FROM products WHERE id = $1 AND deleted_at IS NULL`, [Number(productId)])).rows[0];
+    if (!p) return null;
+    const avail = await availFor(p.id, exec);
+    return {
+      source: 'ctr', product_id: Number(p.id), ctr_code: p.code, name: p.name, app: p.app,
+      avail, classification: avail > 0 ? 'imm' : 'short',
+    };
+  }
+
+  const d10 = (d) => (!d ? null : (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10)));
+
   function lineRow(r) {
     return {
       id: Number(r.id), survey_id: Number(r.survey_id), line_no: nint(r.line_no),
@@ -93,6 +114,9 @@ export default async function fieldSurveyRoutes(app) {
       avail_stock: num(r.avail_stock), observed_qty: num(r.observed_qty),
       classification: r.classification, dev_request_id: r.dev_request_id != null ? Number(r.dev_request_id) : null,
       note: r.note,
+      origin: r.origin || 'code',                       // 'code' | 'history'
+      sold_qty_snap: num(r.sold_qty_snap),              // 누적판매 스냅샷(A)
+      last_sold_at: d10(r.last_sold_at),
     };
   }
   function surveyRow(s, creatorName) {
@@ -107,13 +131,53 @@ export default async function fieldSurveyRoutes(app) {
     };
   }
   // 3분류 + CTR 알파벳 정렬(개발필요는 입력코드 정렬)
+  //  · imm/short/dev 는 **코드입력 줄(origin='code')만** 집계 — 기존 동작 그대로.
+  //  · 누적판매 체크리스트 줄(origin='history')은 소진 계산 → replenish/kept/anomaly 로 분리.
   function summarize(lines) {
     const byCtr = (a, b) => String(a.ctr_code || '').localeCompare(String(b.ctr_code || ''));
     const byInput = (a, b) => String(a.input_code || '').localeCompare(String(b.input_code || ''));
-    const imm = lines.filter((l) => l.classification === 'imm').sort(byCtr);
-    const short = lines.filter((l) => l.classification === 'short').sort(byCtr);
-    const dev = lines.filter((l) => l.classification === 'dev').sort(byInput);
-    return { imm, short, dev, counts: { imm: imm.length, short: short.length, dev: dev.length, total: lines.length } };
+    const code = lines.filter((l) => (l.origin || 'code') !== 'history');
+    const hist = lines.filter((l) => (l.origin || 'code') === 'history');
+
+    const imm = code.filter((l) => l.classification === 'imm').sort(byCtr);
+    const short = code.filter((l) => l.classification === 'short').sort(byCtr);
+    const dev = code.filter((l) => l.classification === 'dev').sort(byInput);
+
+    const replenish = [], kept = [], anomaly = [];
+    for (const l of hist) {
+      const st = sellThrough(l.sold_qty_snap, l.observed_qty);
+      const row = { ...l, sell_status: st.status, sold_out: st.sold_out, sell_pct: st.pct };
+      if (st.status === 'anomaly') anomaly.push(row);
+      else if (st.status === 'kept') kept.push(row);
+      else replenish.push(row);                       // gone(완전소진) + partial(부분소진)
+    }
+    const rep = replenishSort(replenish);             // 소진율 ▼ → 소진량 ▼ → CTR
+    const goneN = rep.filter((r) => r.sell_status === 'gone').length;
+
+    return {
+      imm, short, dev,
+      counts: { imm: imm.length, short: short.length, dev: dev.length, total: code.length },
+      replenish: rep,
+      kept: kept.sort(byCtr),
+      anomaly: anomaly.sort(byCtr),
+      sell: {
+        checked: hist.length,
+        gone: goneN,
+        partial: rep.length - goneN,
+        kept: kept.length,
+        anomaly: anomaly.length,
+        replenish_lines: rep.length,
+        replenish_qty: rep.reduce((s, r) => s + (Number(r.sold_out) || 0), 0),
+      },
+    };
+  }
+
+  // 미점검 건수 = 이 고객 누적판매 SKU 총 종수 − 점검한 줄 수
+  async function soldMeta(survey, lines) {
+    if (!survey.customer_id) return { enabled: false, total: 0, checked: 0, unchecked: 0 };
+    const total = await customerSoldSkuCount(survey.customer_id);
+    const checked = lines.filter((l) => (l.origin || 'code') === 'history').length;
+    return { enabled: true, total, checked, unchecked: Math.max(0, total - checked) };
   }
 
   // 소유/접근 확인: 디렉터=전체, 그 외=본인 생성분만
@@ -196,17 +260,74 @@ export default async function fieldSurveyRoutes(app) {
     const lines = (await query(
       `SELECT * FROM field_survey_lines WHERE survey_id = $1 ORDER BY line_no`, [survey.id])).rows.map(lineRow);
     const cb = (await query(`SELECT name FROM users WHERE id = $1`, [survey.created_by])).rows[0];
-    return { survey: surveyRow(survey, cb && cb.name), lines, summary: summarize(lines) };
+    return { survey: surveyRow(survey, cb && cb.name), lines, summary: summarize(lines), sold_meta: await soldMeta(survey, lines) };
+  });
+
+  // ── 기존 판매품목 점검 체크리스트: 이 고객 누적판매 목록 ──
+  //   기본 = 누적수량 상위 30 / ?all=1 = 전체 / ?q= 코드·품명 검색
+  //   미등록 고객(customer_id 없음) → enabled:false (누적판매가 없으므로 비활성)
+  app.get('/api/field-surveys/:id/sold-history', { preHandler: [authGuard] }, async (req, reply) => {
+    const { survey, err } = await loadSurvey(req.params.id, req.ctx.perm);
+    if (err) return reply.code(err === 'forbidden' ? 403 : 404).send({ error: err });
+    if (!survey.customer_id) return { enabled: false, items: [], total: 0, shown: 0, all: false, limit: SOLD_DEFAULT_LIMIT };
+    const d = await customerSoldItems(survey.customer_id, {
+      all: String(req.query.all || '') === '1',
+      q: req.query.q,
+      limit: SOLD_DEFAULT_LIMIT,
+    });
+    return { enabled: true, limit: SOLD_DEFAULT_LIMIT, ...d };
   });
 
   // ── 코드 한 건 추가(입력 즉시 저장 + 자동분류) ──
+  //   body ⓐ 코드입력(기존):  { input_code, observed_qty? }                  → origin='code'
+  //        ⓑ 체크리스트 점검: { product_id, observed_qty, origin:'history' } → origin='history'
+  //          · observed_qty=0 = 「없음(0)」 = 완전소진.
+  //          · 같은 조사에 같은 제품 줄이 이미 있으면 새로 만들지 않고 갱신(중복 줄 방지).
   app.post('/api/field-surveys/:id/lines', { preHandler: [authGuard] }, async (req, reply) => {
     const { survey, err } = await loadSurvey(req.params.id, req.ctx.perm);
     if (err) return reply.code(err === 'forbidden' ? 403 : 404).send({ error: err });
     const b = req.body || {};
+    const origin = String(b.origin || '') === 'history' ? 'history' : 'code';
+    const pidIn = (b.product_id != null && b.product_id !== '') ? Number(b.product_id) : null;
+    const obs = (b.observed_qty != null && b.observed_qty !== '') ? Number(b.observed_qty) : 1;
+
+    // ⓑ 체크리스트 점검 경로
+    if (origin === 'history') {
+      if (!pidIn) return reply.code(400).send({ error: 'product_required' });
+      if (!survey.customer_id) return reply.code(400).send({ error: 'sold_history_unavailable' }); // 미등록 고객
+      const cl = await classifyProduct(pidIn);
+      if (!cl) return reply.code(404).send({ error: 'product_not_found' });
+      const sn = await soldSnapFor(survey.customer_id, pidIn);
+
+      const dup = (await query(
+        `SELECT id FROM field_survey_lines WHERE survey_id = $1 AND product_id = $2 ORDER BY line_no LIMIT 1`,
+        [survey.id, pidIn])).rows[0];
+      let r;
+      if (dup) {
+        r = (await query(
+          `UPDATE field_survey_lines
+              SET observed_qty=$1, origin='history', sold_qty_snap=$2, last_sold_at=$3,
+                  avail_stock=$4, classification=$5, updated_at=now()
+            WHERE id=$6 RETURNING *`,
+          [obs, sn.sold, sn.last, cl.avail, cl.classification, dup.id])).rows[0];
+      } else {
+        const lineNo = Number((await query(
+          `SELECT COALESCE(MAX(line_no),0)+1 AS n FROM field_survey_lines WHERE survey_id = $1`, [survey.id])).rows[0].n);
+        r = (await query(
+          `INSERT INTO field_survey_lines
+             (survey_id, line_no, input_code, product_id, ctr_code, product_name, app_text, match_source,
+              avail_stock, observed_qty, classification, origin, sold_qty_snap, last_sold_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'history',$12,$13) RETURNING *`,
+          [survey.id, lineNo, cl.ctr_code, cl.product_id, cl.ctr_code, cl.name, cl.app, cl.source,
+           cl.avail, obs, cl.classification, sn.sold, sn.last])).rows[0];
+      }
+      await query(`UPDATE field_surveys SET updated_by = $1, updated_at = now() WHERE id = $2`, [req.ctx.perm.userId, survey.id]);
+      return { line: lineRow(r) };
+    }
+
+    // ⓐ 코드입력 경로 (기존 동작 그대로)
     const code = String(b.input_code || '').trim();
     if (!code) return reply.code(400).send({ error: 'code_required' });
-    const obs = (b.observed_qty != null && b.observed_qty !== '') ? Number(b.observed_qty) : 1;
     const cl = await classifyCode(code);
     const lineNo = Number((await query(
       `SELECT COALESCE(MAX(line_no),0)+1 AS n FROM field_survey_lines WHERE survey_id = $1`, [survey.id])).rows[0].n);
@@ -303,6 +424,18 @@ export default async function fieldSurveyRoutes(app) {
         || '';
       let devCreated = 0;
       for (const ln of lines) {
+        // ── 누적판매 체크리스트 줄: 가용재고 + 누적판매 스냅샷만 최신화. 개발요청 대상 아님. ──
+        if ((ln.origin || 'code') === 'history' && ln.product_id) {
+          const cp = await classifyProduct(ln.product_id, c.query.bind(c));
+          const sn = await soldSnapFor(survey.customer_id, ln.product_id, c.query.bind(c));
+          if (cp) {
+            await c.query(
+              `UPDATE field_survey_lines
+                  SET avail_stock=$1, classification=$2, sold_qty_snap=$3, last_sold_at=$4, updated_at=now()
+                WHERE id=$5`, [cp.avail, cp.classification, sn.sold, sn.last, ln.id]);
+          }
+          continue;
+        }
         // 최신 상태로 재분류(가용재고 변동·신규 등록 코드 반영)
         const cl = await classifyCode(ln.input_code, c.query.bind(c));
         await c.query(
@@ -349,7 +482,8 @@ export default async function fieldSurveyRoutes(app) {
     const lines = (await query(`SELECT * FROM field_survey_lines WHERE survey_id = $1 ORDER BY line_no`, [survey.id])).rows.map(lineRow);
     const cb = (await query(`SELECT name FROM users WHERE id = $1`, [survey.created_by])).rows[0];
     const s2 = (await query(`SELECT * FROM field_surveys WHERE id = $1`, [survey.id])).rows[0];
-    return { survey: surveyRow(s2, cb && cb.name), lines, summary: summarize(lines), dev_requests_created: out.devCreated };
+    return { survey: surveyRow(s2, cb && cb.name), lines, summary: summarize(lines),
+             sold_meta: await soldMeta(s2, lines), dev_requests_created: out.devCreated };
   });
 
   // ── 견적 전환 기록(프런트가 /api/quotes 생성 후 호출) ──

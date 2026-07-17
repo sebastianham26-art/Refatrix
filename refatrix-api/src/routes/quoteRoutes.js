@@ -1,6 +1,6 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
-import { teamArr } from '../teams.js';
+import { teamArr, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { computeQuoteLine, computeQuoteTotals, stockFlag, formatQuoteNo, round2 } from '../quotes.js';
 import { notifyProductMarketing } from './devRequestRoutes.js';
@@ -8,6 +8,7 @@ import { autoStage } from '../stageAuto.js';
 import { findOrCreateCustomerByName } from '../customerAuto.js';
 import { packingDeadline } from '../workingHours.js';
 import { maybeMarkPacked } from '../packedGate.js';
+import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -683,6 +684,24 @@ export default async function quoteRoutes(app) {
   });
 
   // ============ 고객-SKU 구매 실적 (최근 3년, 수량 기준) ============
+  // GET /api/quotes/customer-purchased?customer_id=&all=&q=
+  //   견적 사이드패널 「이 고객 누적 구매 품목」.
+  //   그동안 판매한 품목을 누적수량 ▼ 로 내려준다 → 이번 견적에 빠진 단골 품목을 화면이 잡아낸다.
+  //   기본 상위 30 / all=1 전체 / q= 코드·품명 검색. 기간 = 전체 누적.
+  app.get('/api/quotes/customer-purchased', { preHandler: [authGuard, requirePageAny(['quote', 'sales'])] }, async (req, reply) => {
+    const cid = Number(req.query.customer_id);
+    if (!cid) return { enabled: false, items: [], total: 0, shown: 0, all: false, limit: SOLD_DEFAULT_LIMIT };
+    const c = (await query(`SELECT team_id FROM customers WHERE id = $1 AND deleted_at IS NULL`, [cid])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const d = await customerSoldItems(cid, {
+      all: String(req.query.all || '') === '1',
+      q: req.query.q,
+      limit: SOLD_DEFAULT_LIMIT,
+    });
+    return { enabled: true, limit: SOLD_DEFAULT_LIMIT, ...d };
+  });
+
   // GET /api/quotes/customer-sku-history?customer_id=&product_id=
   // 반환: years[{year, qty, pct}], total3y, totalPct(전체 누적 비중)
   app.get('/api/quotes/customer-sku-history', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req) => {
