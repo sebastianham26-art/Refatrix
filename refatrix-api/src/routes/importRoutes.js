@@ -4,6 +4,7 @@ import { computeImportCosting } from '../cost.js';
 import { logEvent } from '../audit.js';
 import { fieldVisible, flatAvgCostEnabled } from '../permissions.js';
 import { flatAvgCost } from '../flatAvgCost.js';
+import { consumeBackorder } from '../poBackorder.js';
 
 export default async function importRoutes(app) {
   // 수입 입고 작성(영업지원). 라인(SKU별) + 부대비용(명목·인보이스별).
@@ -105,10 +106,19 @@ export default async function importRoutes(app) {
           `UPDATE products SET stock_qty=$1, avg_cost=$2, updated_by=$3 WHERE id=$4`,
           [st.stock_qty, avg, userId, pid]);
       }
+      // 발주(backorder) 소진 — 입고(재고 등재)된 수량만큼 해당 SKU의 열린 구매라인
+      //   received_qty 를 선입선출로 채움 → v_backorder 잔량이 실입고와 연동돼 줄어듦.
+      //   구매기록이 없는 SKU 는 그대로 통과(재고·원가 영향 없음).
+      const cqb = c.query.bind(c);
+      let boConsumed = 0;
+      for (const cl of computedLines) {
+        const bo = await consumeBackorder(cqb, Number(cl.product_id), Math.abs(Number(cl.qty) || 0));
+        boConsumed += bo.consumed;
+      }
       await c.query(
         `UPDATE import_batches SET status='approved', approved_by=$1, approved_at=now() WHERE id=$2`,
         [userId, id]);
-      return { ok: true, lines: computedLines };
+      return { ok: true, lines: computedLines, backorder_consumed: Math.round(boConsumed * 1000) / 1000 };
     });
 
     if (out.error) return reply.code(409).send({ error: out.error });

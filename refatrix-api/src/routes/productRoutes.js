@@ -88,6 +88,7 @@ export default async function productRoutes(app) {
     const canCost = fieldVisible(perm, 'unit_cost');
     const SORTS = {
       stock:    `p.stock_qty ${dir} NULLS LAST, p.code`,
+      backorder: `COALESCE(bo.backorder_qty,0) ${dir}, p.code`,
       sold:     `COALESCE(sold.qty,0) ${dir}, p.code`,
       avgcost:  canCost ? `p.avg_cost ${dir} NULLS LAST, p.code` : null,
       stockval: canCost ? `(p.stock_qty * COALESCE(p.avg_cost,0)) ${dir}, p.code` : null,
@@ -145,11 +146,14 @@ export default async function productRoutes(app) {
     }
     params.push(limit, offset);
     // 누적 판매수량(게시·미삭제 인보이스 기준)을 제품별로 합산해 LEFT JOIN.
+    // Backorder(미입고 발주잔량)는 구매모듈 뷰 v_backorder(Σ qty−received_qty, 취소 제외)에서 LEFT JOIN.
     const rows = (await query(
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
               p.stock_qty, p.avg_cost, p.rack_location, p.material,
+              COALESCE(bo.backorder_qty, 0) AS backorder_qty,
               COALESCE(sold.qty, 0) AS sold_qty
          FROM products p
+         LEFT JOIN v_backorder bo ON bo.product_id = p.id
          LEFT JOIN (
            SELECT sil.product_id, SUM(sil.qty) AS qty
              FROM sales_invoice_lines sil

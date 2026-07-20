@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageAny, requirePageEditAny, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { fieldVisible } from '../permissions.js';
+import { releaseBackorder } from '../poBackorder.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
@@ -293,6 +294,8 @@ export default async function stockRoutes(app) {
         else if (r.move_type === 'out') delta = -Math.abs(qty);
         else delta = qty;
         await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [(Number(p.stock_qty) || 0) - delta, req.ctx.perm.userId, r.product_id]);
+        // 입고 되돌림 → 발주 backorder 복원(received_qty 역순 감소, 0 미만 금지)
+        if (r.move_type === 'in') await releaseBackorder(c.query.bind(c), Number(r.product_id), Math.abs(qty));
       }
       await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
       return { ok: true, deleted: rows.length };

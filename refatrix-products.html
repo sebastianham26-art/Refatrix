@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pj0719pe1</title>
+<title>Refatrix ERP · 제품 조회 · pj0720bo1</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -63,6 +63,7 @@
   .hidden{display:none}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
   .lowstock{color:var(--expense);font-weight:700}
+  .bopos{color:#B8893B;font-weight:700}
   .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
   .btn.gold{background:var(--gold)}
   .btn.sm{padding:6px 12px;font-size:12px}
@@ -427,12 +428,12 @@
       if(!items.length){ r.innerHTML='<div class="hint">'+(prodPro==='only'?'제품코드가 PRO로 시작하는 마케팅 상품이 없습니다.':(prodPro==='exclude'?'마케팅 상품(PRO)을 제외하면 일치하는 제품이 없습니다.':'일치하는 제품이 없습니다.'))+'</div>'; return; }
       prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
       const isDir=session&&session.user&&session.user.role==='director';
-      const colN=8+(prodHasList?1:0)+(prodHasCost?2:0);
+      const colN=9+(prodHasList?1:0)+(prodHasCost?2:0);
       const sh=(key,label)=>'<th class="num nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'">'+label
         +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
       let h='<table><thead><tr>'
         +'<th class="nowrap">코드</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th><th class="nowrap">랙</th><th class="nowrap">소재</th>'
-        +sh('stock','재고')+sh('sold','누적판매')
+        +sh('stock','재고')+sh('backorder','Backorder')+sh('sold','누적판매')
         +(prodHasList?'<th class="num nowrap">List Price</th>':'')
         +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
         +'</tr></thead><tbody>';
@@ -442,6 +443,7 @@
         var syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · '); var app=(p.app||'').toString();
         if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
         var sold=Number(p.sold_qty||0);
+        var bo=Number(p.backorder_qty||0);
         var rack=escP(p.rack_location||'');
         h+='<tr class="prow" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" style="cursor:pointer">'
           +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
@@ -452,6 +454,7 @@
           +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
             +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
           +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
+          +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량(구매내역 backorder)">'+(bo>0?qty(bo):'—')+'</td>'
           +'<td class="num">'+qty(sold)+'</td>'
           +(prodHasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
           +(prodHasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
@@ -1282,6 +1285,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260719pe"></script>
+<script src="refatrix-nav.js?v=20260720a"></script>
 </body>
 </html>

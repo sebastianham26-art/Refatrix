@@ -5,6 +5,7 @@ import { round2, fieldVisible } from '../permissions.js';
 import { computeRecost } from '../recost.js';
 import { getRateForDate } from '../fx.js';
 import { logEvent } from '../audit.js';
+import { consumeBackorder, releaseBackorder } from '../poBackorder.js';
 
 // 한 입고 건의 총수량 (분배 비율 기준)
 async function batchTotalQty(c, batchId) {
@@ -388,6 +389,8 @@ export default async function importCostRoutes(app) {
         const qty = Number(r.qty) || 0;
         const delta = r.move_type === 'in' ? Math.abs(qty) : (r.move_type === 'out' ? -Math.abs(qty) : qty);
         await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [(Number(p.stock_qty) || 0) - delta, userId, r.product_id]);
+        // 입고 되돌림 → 발주 backorder 복원(received_qty 역순 감소, 0 미만 금지)
+        if (r.move_type === 'in') await releaseBackorder(c.query.bind(c), Number(r.product_id), Math.abs(qty));
       }
       if (mv.length) await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
       // 배치 기록 soft-delete → 목록·정정 엑셀에서 제외(import_lines 는 비삭제 배치 조인이라 자동 숨김)
@@ -431,6 +434,12 @@ export default async function importCostRoutes(app) {
             `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, event_no, moved_at, created_by)
              VALUES ($1,'in',$2,$3,$4,$5,$6,$7,$8)`,
             [Number(l.product_id), Math.abs(Number(l.qty) || 0), l.unit_cost_mxn, `restore:${batchId}`, batchId, evNo, b.import_date || new Date(), userId]);
+        }
+      }
+      // 입고 복원 → 발주 backorder 재소진(이동을 재생성한 경우에만; 승인 시와 동일 규칙)
+      if (!have) {
+        for (const l of lines) {
+          await consumeBackorder(c.query.bind(c), Number(l.product_id), Math.abs(Number(l.qty) || 0));
         }
       }
       await c.query(`UPDATE import_batches SET deleted_at=NULL WHERE id=$1`, [batchId]);
@@ -477,6 +486,8 @@ export default async function importCostRoutes(app) {
         const S = Number(pr.stock_qty) || 0;
         const removed = Math.max(0, Math.min(Q, S)); // 0에서 멈춤(음수 금지)
         if (removed > 0) await c.query(`UPDATE products SET stock_qty=$1, updated_by=$2 WHERE id=$3`, [S - removed, userId, r.product_id]);
+        // 가짜(중복) 입고 정리 → 승인 때 소진했던 발주 backorder 를 배치수량만큼 복원
+        await releaseBackorder(c.query.bind(c), Number(r.product_id), Q);
         lines.push({ product_id: Number(r.product_id), code: r.code, name: r.name, batch_qty: Q, removed, remaining: Q - removed });
       }
       if (mv.length) await c.query(`DELETE FROM stock_movements WHERE batch_id=$1`, [batchId]);
