@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0633b</title>
+<title>Refatrix · 창고 포장 · build 0633c</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -358,7 +358,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0633b — SLA 카드 1열 레이아웃·글자 확대'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0633c — SLA 카드 1열 레이아웃·글자 확대'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -490,6 +490,7 @@
   ];
   I18N.sort(function(a,b){ return b[0].length - a[0].length; });
   var IS_DIRECTOR=!!(S&&S.user&&S.user.role==='director');
+  var CAN_SHIP=IS_DIRECTOR||!!(S&&S.user&&S.user.role==='sales_support');  // 출고완료: 디렉터+영업지원(대기로 되돌리기는 디렉터 전용)
   var SHIP_STATUS='pending';
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
   function tr(str){ if(LANG!=='es'||!str) return str; var s=str; for(var i=0;i<I18N.length;i++){ if(s.indexOf(I18N[i][0])>=0){ s=s.split(I18N[i][0]).join(I18N[i][1]); } } return s; }
@@ -601,10 +602,10 @@
       var satHtml=(it.has_sat?'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div>':'<div class="sat nosat"><span class="satwarn">\u26a0 SAT 번호를 넣으세요</span></div>');
       var shipdt=(status==='shipped'&&it.shipped_at)?'<div class="shipdt">\u2713 출고완료 '+esc(String(it.shipped_at).slice(0,10))+'</div>':'';
       var actBtn='';
-      if(IS_DIRECTOR){
-        actBtn=(status==='shipped')
-          ? '<button class="unship" data-id="'+it.quote_id+'">\u21a9 대기로</button>'
-          : '<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
+      if(status==='shipped'){
+        if(IS_DIRECTOR) actBtn='<button class="unship" data-id="'+it.quote_id+'">\u21a9 대기로</button>';
+      } else {
+        if(CAN_SHIP) actBtn='<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
       }
       return '<div class="scard" data-id="'+it.quote_id+'">'
         +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+'</div><div class="cu">'+esc(it.customer)+'</div>'+shipdt+'</div>'+satHtml+'</div>'
