@@ -28,6 +28,48 @@ const CN_MAKER_LABEL = {
 };
 const cnLabel = (m) => CN_MAKER_LABEL[m] || m;
 
+// ── 제품 변경 이력(product_change_log) ─────────────────────────────────
+// 화면 직접 추가/수정 · 엑셀 업로드 · 소재 지정의 모든 마스터 변경을 한 테이블에 기록.
+// 기록 실패가 실제 작업을 깨지 않도록 방어적으로 호출(감사로그와 동일 원칙).
+async function logProductChange(exec, { productId = null, code = null, action, source = 'manual', changes = null, userId = null }) {
+  try {
+    await exec(
+      `INSERT INTO product_change_log (product_id, code, action, source, changes, changed_by)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [productId, code, action, source, changes ? JSON.stringify(changes) : null, userId]);
+  } catch (e) {
+    try { console.error('[product_change_log] failed:', action, source, e.message); } catch (_) {}
+  }
+}
+
+// 화면 직접 편집 대상 필드 = 업로드 갱신 필드 + rack_location(랙 위치).
+// 재고(stock_qty)·평균원가(avg_cost)는 어디서도 편집 불가.
+const EDITABLE_FIELDS = [...UPDATABLE_FIELDS, 'rack_location'];
+const EDIT_NUMERIC = new Set(['list_price', 'iva_rate', 'list_price_syd', 'price_customer_syd', 'price_customer_ctr']);
+function normEditValue(f, v) {
+  if (f === 'material') return normalizeMaterial(v);
+  if (EDIT_NUMERIC.has(f)) {
+    if (v == null || v === '') return null;
+    const n = Number(String(v).replace(/[, ]/g, ''));
+    return Number.isFinite(n) ? n : null;
+  }
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+// 값 동일성(숫자/문자 정규화) — productImport.diffProduct 와 같은 의미
+function editEq(a, b, isNum) {
+  if (isNum) {
+    const x = a == null || a === '' ? null : Number(a);
+    const y = b == null || b === '' ? null : Number(b);
+    if (x == null && y == null) return true;
+    return x === y;
+  }
+  const x = a == null ? '' : String(a).trim();
+  const y = b == null ? '' : String(b).trim();
+  return x === y;
+}
+
 export default async function productRoutes(app) {
   // 제품 목록: 검색 + 페이징 (SKU ~5,000 대비, 한 번에 다 보내지 않음)
   // 민감 필드(원가·마진 등)는 권한 없으면 응답에서 제거(데이터 최소 전송).
@@ -308,6 +350,183 @@ export default async function productRoutes(app) {
     return byCode;
   }
 
+  // 파생 데이터(SyD·적용차종) 동기화 — 화면 직접 추가/수정용 공용 헬퍼(트랜잭션 클라이언트 c 사용)
+  async function syncSydShared(c, productId, codes) {
+    await c.query(`DELETE FROM product_syd_codes WHERE product_id=$1`, [productId]);
+    const uniq = [...new Set((codes || []).map(String))].filter(Boolean);
+    for (const sc of uniq) {
+      await c.query(`INSERT INTO product_syd_codes (product_id, syd_code) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [productId, sc]);
+    }
+  }
+  async function syncAppShared(c, productId, applications) {
+    await c.query(`DELETE FROM product_applications WHERE product_id=$1`, [productId]);
+    for (const a of (applications || [])) {
+      await c.query(
+        `INSERT INTO product_applications (product_id, app_text, maker, model, year_from, year_to) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [productId, a.app_text, a.maker, a.model, a.year_from, a.year_to]);
+    }
+  }
+
+  // ===== 화면 직접 추가/수정 (디렉터) =====
+  // 편집용 전체 필드 조회 — 목록 응답은 권한 최소화로 필드가 빠질 수 있어 별도 제공.
+  app.get('/api/products/:id/master', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(
+      `SELECT id, code, scode, app, name, sat_code, origin, list_price, iva_rate, ean, location,
+              list_price_syd, price_customer_syd, price_customer_ctr, material, rack_location,
+              stock_qty, avg_cost
+         FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    const num = (v) => (v == null ? null : Number(v));
+    return {
+      id: Number(r.id), code: r.code, scode: r.scode, app: r.app, name: r.name,
+      sat_code: r.sat_code, origin: r.origin, list_price: num(r.list_price), iva_rate: num(r.iva_rate),
+      ean: r.ean, location: r.location, list_price_syd: num(r.list_price_syd),
+      price_customer_syd: num(r.price_customer_syd), price_customer_ctr: num(r.price_customer_ctr),
+      material: r.material, rack_location: r.rack_location,
+      stock_qty: num(r.stock_qty) || 0, avg_cost: num(r.avg_cost),
+    };
+  });
+
+  // 제품 직접 추가 — 엑셀 없이 1건 등록. 재고·평균원가는 0(기본값)으로 시작.
+  //   body: { code, name(필수), scode, app, sat_code, origin, list_price, iva_rate, ean, location,
+  //           list_price_syd, price_customer_syd, price_customer_ctr, material, rack_location }
+  app.post('/api/products', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const b = req.body || {};
+    const userId = req.ctx.perm.userId;
+    const code = normEditValue('code', b.code);
+    const name = normEditValue('name', b.name);
+    if (!code) return reply.code(400).send({ error: 'code_required', detail: '제품코드(Clave CTR)를 입력하세요.' });
+    if (!name) return reply.code(400).send({ error: 'name_required', detail: '제품명(Nombre del producto)을 입력하세요.' });
+    // 코드 유니크 검사(삭제 행 포함 — DB UNIQUE 제약이 전체 기준이므로 미리 안내)
+    const dup = (await query(`SELECT id, deleted_at FROM products WHERE code=$1`, [code])).rows[0];
+    if (dup) {
+      return reply.code(409).send({
+        error: dup.deleted_at ? 'code_used_by_deleted' : 'code_exists',
+        detail: dup.deleted_at ? '삭제된 제품이 이 코드를 사용 중입니다. 다른 코드를 쓰거나 관리자에게 문의하세요.' : '이미 존재하는 제품코드입니다.',
+      });
+    }
+    const values = { code, name };
+    for (const f of EDITABLE_FIELDS) {
+      if (f === 'name') continue;
+      if (b[f] === undefined) continue;
+      values[f] = normEditValue(f, b[f]);
+    }
+    const sydCodes = splitSyd(values.scode);
+    const apps = parseApplications(values.app);
+    const created = await withTx(async (c) => {
+      const cols = []; const vals = []; const ph = [];
+      for (const [k, v] of Object.entries(values)) { vals.push(v); cols.push(k); ph.push(`$${vals.length}`); }
+      vals.push(userId);
+      const r = (await c.query(
+        `INSERT INTO products (${cols.join(',')}, created_by, updated_by) VALUES (${ph.join(',')}, $${vals.length}, $${vals.length}) RETURNING id`, vals)).rows[0];
+      await syncSydShared(c, r.id, sydCodes);
+      await syncAppShared(c, r.id, apps);
+      const changes = {};
+      for (const [k, v] of Object.entries(values)) if (v != null) changes[k] = { from: null, to: v };
+      await logProductChange(c.query.bind(c), { productId: Number(r.id), code, action: 'create', source: 'manual', changes, userId });
+      return r;
+    });
+    await logEvent({ userId, action: 'create', target: 'product_manual', detail: { code, name } });
+    return { ok: true, id: Number(created.id), code };
+  });
+
+  // 제품 화면 수정 — 보낸 필드만 비교해 변경분만 반영. 재고·평균원가는 절대 불변.
+  //   code 변경도 허용(유니크 검사). scode/app 이 오면 파생 데이터 재동기화.
+  app.patch('/api/products/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const userId = req.ctx.perm.userId;
+    const cur = (await query(
+      `SELECT id, code, scode, app, name, sat_code, origin, list_price, iva_rate, ean, location,
+              list_price_syd, price_customer_syd, price_customer_ctr, material, rack_location
+         FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+
+    const changes = {};
+    const nextVals = {};
+    // 코드 변경(선택)
+    if (b.code !== undefined) {
+      const nc = normEditValue('code', b.code);
+      if (!nc) return reply.code(400).send({ error: 'code_required', detail: '제품코드는 비울 수 없습니다.' });
+      if (!editEq(nc, cur.code, false)) {
+        const dup = (await query(`SELECT id FROM products WHERE code=$1 AND id<>$2`, [nc, id])).rows[0];
+        if (dup) return reply.code(409).send({ error: 'code_exists', detail: '이미 다른 제품이 사용 중인 코드입니다.' });
+        changes.code = { from: cur.code, to: nc };
+        nextVals.code = nc;
+      }
+    }
+    for (const f of EDITABLE_FIELDS) {
+      if (b[f] === undefined) continue;
+      const nv = normEditValue(f, b[f]);
+      if (f === 'name' && nv == null) return reply.code(400).send({ error: 'name_required', detail: '제품명은 비울 수 없습니다.' });
+      if (!editEq(nv, cur[f], EDIT_NUMERIC.has(f))) {
+        changes[f] = { from: cur[f] ?? null, to: nv };
+        nextVals[f] = nv;
+      }
+    }
+    const chFields = Object.keys(nextVals);
+    const wantSyd = b.scode !== undefined;
+    const wantApp = b.app !== undefined;
+    if (!chFields.length && !wantSyd && !wantApp) return { ok: true, unchanged: true };
+
+    await withTx(async (c) => {
+      if (chFields.length) {
+        const sets = []; const vals = [];
+        for (const f of chFields) { vals.push(nextVals[f]); sets.push(`${f}=$${vals.length}`); }
+        vals.push(userId); sets.push(`updated_by=$${vals.length}`);
+        vals.push(id);
+        await c.query(`UPDATE products SET ${sets.join(', ')} WHERE id=$${vals.length}`, vals);
+      }
+      // 파생 데이터는 보낸 값 기준으로 항상 재동기화(업로드와 동일 불변식)
+      if (wantSyd) await syncSydShared(c, id, splitSyd(nextVals.scode !== undefined ? nextVals.scode : cur.scode));
+      if (wantApp) await syncAppShared(c, id, parseApplications(nextVals.app !== undefined ? nextVals.app : cur.app));
+      if (chFields.length) {
+        await logProductChange(c.query.bind(c), {
+          productId: id, code: nextVals.code || cur.code, action: 'update', source: 'manual', changes, userId });
+      }
+    });
+    if (chFields.length) {
+      await logEvent({ userId, action: 'update', target: 'product_manual', detail: { code: nextVals.code || cur.code, fields: chFields } });
+    }
+    return { ok: true, changed: chFields };
+  });
+
+  // 제품 변경 이력 조회(디렉터). ?product_id= / ?code=(부분일치) / limit / offset
+  app.get('/api/products/changelog', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const pid = req.query.product_id ? Number(req.query.product_id) : null;
+    const code = String(req.query.code || '').trim();
+    const conds = []; const params = [];
+    if (pid && Number.isFinite(pid)) { params.push(pid); conds.push(`l.product_id = $${params.length}`); }
+    if (code) { params.push('%' + code + '%'); conds.push(`l.code ILIKE $${params.length}`); }
+    const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+    const countParams = params.slice();
+    params.push(limit, offset);
+    const rows = (await query(
+      `SELECT l.id, l.product_id, l.code, l.action, l.source, l.changes, l.created_at,
+              u.name AS changed_by_name
+         FROM product_change_log l
+         LEFT JOIN users u ON u.id = l.changed_by
+        ${where}
+        ORDER BY l.id DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}`, params)).rows;
+    const total = Number((await query(
+      `SELECT COUNT(*)::int AS n FROM product_change_log l ${where}`, countParams)).rows[0].n);
+    return {
+      items: rows.map((r) => ({
+        id: Number(r.id), product_id: r.product_id != null ? Number(r.product_id) : null,
+        code: r.code, action: r.action, source: r.source,
+        changes: typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes,
+        changed_by_name: r.changed_by_name || null, created_at: r.created_at,
+      })),
+      total, limit, offset,
+    };
+  });
+
   // 미리보기: 변경 없이 신규/변경/동일/오류만 계산
   app.post('/api/products/import/preview', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const { header, rows } = req.body || {};
@@ -348,6 +567,11 @@ export default async function productRoutes(app) {
             `INSERT INTO products (${cols.join(',')}, created_by) VALUES (${ph.join(',')}, $${vals.length}) RETURNING id`, vals)).rows[0];
           await syncSyd(c, r.id, p.syd_codes);
           await syncApp(c, r.id, p.applications);
+          {
+            const chg = {};
+            for (const f of UPDATABLE_FIELDS) if (f in p && p[f] != null) chg[f] = { from: null, to: p[f] };
+            await logProductChange(c.query.bind(c), { productId: Number(r.id), code: p.code, action: 'create', source: 'import', changes: chg, userId });
+          }
           created++;
         } else {
           const chFields = Object.keys(d.changes);
@@ -362,7 +586,13 @@ export default async function productRoutes(app) {
           // "동일"로 분류돼도 분해 데이터가 비지 않도록 보장.
           await syncSyd(c, ex.id, p.syd_codes);
           await syncApp(c, ex.id, p.applications);
-          if (chFields.length > 0 || d.syd_changed || d.app_changed) updated++; else unchanged++;
+          if (chFields.length > 0 || d.syd_changed || d.app_changed) {
+            const chg = { ...d.changes };
+            if (d.syd_changed) chg._syd = { from: ex.syd_codes || [], to: p.syd_codes };
+            if (d.app_changed) chg._app = { from: (ex.app_texts || []).length, to: (p.applications || []).length };
+            await logProductChange(c.query.bind(c), { productId: Number(ex.id), code: p.code, action: 'update', source: 'import', changes: chg, userId });
+            updated++;
+          } else unchanged++;
         }
       }
       return { ok: true };
@@ -395,11 +625,17 @@ export default async function productRoutes(app) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
     const material = normalizeMaterial((req.body || {}).material);
+    const prev = (await query(`SELECT material FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     const r = (await query(
       `UPDATE products SET material=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL RETURNING id, code, material`,
       [material, req.ctx.perm.userId, id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_material', detail: { code: r.code, material } });
+    if (!editEq(prev ? prev.material : null, material, false)) {
+      await logProductChange(query, {
+        productId: Number(r.id), code: r.code, action: 'update', source: 'material',
+        changes: { material: { from: prev ? prev.material : null, to: material } }, userId: req.ctx.perm.userId });
+    }
     return { ok: true, id: r.id, code: r.code, material: r.material };
   });
 
@@ -411,11 +647,20 @@ export default async function productRoutes(app) {
     const codes = [...new Set((Array.isArray(b.codes) ? b.codes : [])
       .map((c) => String(c == null ? '' : c).trim()).filter(Boolean))];
     if (!codes.length) return reply.code(400).send({ error: 'no_codes' });
+    // 변경 전 값 스냅샷(이력용) — 실제로 값이 바뀌는 제품만 로그에 남김
+    const prevRows = (await query(
+      `SELECT id, code, material FROM products WHERE code = ANY($1) AND deleted_at IS NULL`, [codes])).rows;
     const updated = (await query(
       `UPDATE products SET material=$1, updated_by=$2
         WHERE code = ANY($3) AND deleted_at IS NULL
         RETURNING code`,
       [material, req.ctx.perm.userId, codes])).rows.map((r) => r.code);
+    for (const pr of prevRows) {
+      if (editEq(pr.material, material, false)) continue;
+      await logProductChange(query, {
+        productId: Number(pr.id), code: pr.code, action: 'update', source: 'material_bulk',
+        changes: { material: { from: pr.material ?? null, to: material } }, userId: req.ctx.perm.userId });
+    }
     const matchedSet = new Set(updated);
     const unmatched = codes.filter((c) => !matchedSet.has(c));
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_material_bulk',
