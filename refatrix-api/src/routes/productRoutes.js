@@ -88,6 +88,7 @@ export default async function productRoutes(app) {
     const canCost = fieldVisible(perm, 'unit_cost');
     const SORTS = {
       stock:    `p.stock_qty ${dir} NULLS LAST, p.code`,
+      rack:     `NULLIF(p.rack_location,'') ${dir} NULLS LAST, p.code`,
       backorder: `COALESCE(bo.backorder_qty,0) ${dir}, p.code`,
       incoming:  `COALESCE(inc.incoming_qty,0) ${dir}, p.code`,
       sold:     `COALESCE(sold.qty,0) ${dir}, p.code`,
