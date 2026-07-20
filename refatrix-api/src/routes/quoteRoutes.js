@@ -804,25 +804,32 @@ export default async function quoteRoutes(app) {
     if (wantAll) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
+                COALESCE(bo.backorder_qty,0) AS backorder_qty,
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
+           LEFT JOIN v_backorder bo ON bo.product_id = p.id
            LEFT JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code`)).rows;
     } else if (topN > 0) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
+                COALESCE(bo.backorder_qty,0) AS backorder_qty,
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
+           LEFT JOIN v_backorder bo ON bo.product_id = p.id
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code
           LIMIT $1`, [topN])).rows;
     } else {
       prods = (await query(
-        `SELECT id, code, name, scode, app, list_price, stock_qty, material,
+        `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
+                COALESCE(bo.backorder_qty,0) AS backorder_qty,
                 NULL::bigint AS vio_units, NULL::text AS vio_model, NULL::text AS vio_year
-           FROM products WHERE deleted_at IS NULL ORDER BY code`)).rows;
+           FROM products p
+           LEFT JOIN v_backorder bo ON bo.product_id = p.id
+          WHERE p.deleted_at IS NULL ORDER BY p.code`)).rows;
     }
     const ids = prods.map((p) => p.id);
     const sydRows = ids.length ? (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows : [];
@@ -835,6 +842,7 @@ export default async function quoteRoutes(app) {
       app: p.app || '',
       list_price: Number(p.list_price) || 0,
       stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
+      backorder_qty: Number(p.backorder_qty) || 0,
       material: p.material || null,
       vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
