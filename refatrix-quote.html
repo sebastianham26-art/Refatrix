@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · t500all-20260707d</title>
+<title>Refatrix ERP · 견적 (수주관리) · t500all-20260718i</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -45,6 +45,11 @@
   .flag.ok{background:var(--income-bg);color:var(--income)}
   .flag.low_stock{background:#fdf3e3;color:#9a6512}
   .flag.not_found{background:var(--expense-bg);color:var(--expense)}
+  .availsub{margin-top:3px;font-size:9.5px;line-height:1.5;text-align:right}
+  .availsub .short{color:var(--expense);font-weight:700}
+  .availsub .inc{color:var(--steel,#52708A);font-weight:700;white-space:nowrap}
+  .availsub .bo{color:#9a6512;font-weight:700;white-space:nowrap}
+  .availsub .none{color:var(--muted)}
   .inrow{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   .inrow>div{display:flex;flex-direction:column}
   .modal{position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
@@ -165,6 +170,24 @@
   }
   const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  // 가용 셀: 부족 시 운송중(incoming)·발주미선적(backorder−incoming) 구분 표시
+  function availCell(l){
+    if(l.avail_stock==null) return '—';
+    let s=fmtq(l.avail_stock);
+    if((l.stock_flag||'ok')==='low_stock'){
+      const need=Math.max(0,(Number(l.qty)||0)-Number(l.avail_stock));
+      const inc=Number(l.incoming_qty)||0;
+      const bo=Number(l.backorder_qty)||0;
+      const pureBo=Math.max(0,bo-inc);                 // 발주만 나가고 아직 선적 안 됨
+      const parts=[];
+      if(inc>0) parts.push('<span class="inc">🚢 운송중 +'+fmtq(inc)+(l.incoming_eta?(' · '+l.incoming_eta):'')+'</span>');
+      if(pureBo>0) parts.push('<span class="bo">📦 발주 +'+fmtq(pureBo)+'</span>');
+      let sub='<span class="short">부족 '+fmtq(need)+'</span>';
+      sub += parts.length ? ' '+parts.join(' ') : ' <span class="none">보충 예정 없음</span>';
+      s+='<div class="availsub">'+sub+'</div>';
+    }
+    return s;
+  }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -723,7 +746,7 @@
         +'<td>'+(l.matched?fmt(l.final_price):'—')+'</td>'
         +'<td>'+(l.matched?fmt(sub):'—')+'</td>'
         +'<td><b>'+(l.matched?fmt(l.line_total):'—')+'</b></td>'
-        +'<td>'+(l.avail_stock==null?'—':fmtq(l.avail_stock))+'</td>'
+        +'<td>'+availCell(l)+'</td>'
         +'<td><span class="flag '+flag+'">'+flagLbl+'</span></td>'
         +'<td><button class="delx" onclick="removeLine('+i+')">✕</button></td></tr>';
     });

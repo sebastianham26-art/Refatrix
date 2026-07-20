@@ -141,13 +141,27 @@ export default async function quoteRoutes(app) {
       const qty = Number(ln.qty) || 0;
       let prod = null;
       if (ln.product_id) {
-        const r = (await query(`SELECT id, code, name, app, list_price, stock_qty FROM products WHERE id=$1 AND deleted_at IS NULL`, [Number(ln.product_id)])).rows[0];
+        const r = (await query(
+          `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty,
+                  COALESCE(inc.incoming_qty,0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta,
+                  COALESCE(bo.backorder_qty,0) AS backorder_qty
+             FROM products p
+             LEFT JOIN v_incoming_stock inc ON inc.product_id=p.id
+             LEFT JOIN v_backorder bo ON bo.product_id=p.id
+            WHERE p.id=$1 AND p.deleted_at IS NULL`, [Number(ln.product_id)])).rows[0];
         if (r) prod = r;
       } else {
         const res = await resolveCode(ln.code);
         if (res.matches.length === 1) {
           const m = res.matches[0];
-          const r = (await query(`SELECT id, code, name, app, list_price, stock_qty FROM products WHERE id=$1`, [m.product_id])).rows[0];
+          const r = (await query(
+            `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty,
+                    COALESCE(inc.incoming_qty,0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta,
+                    COALESCE(bo.backorder_qty,0) AS backorder_qty
+               FROM products p
+               LEFT JOIN v_incoming_stock inc ON inc.product_id=p.id
+               LEFT JOIN v_backorder bo ON bo.product_id=p.id
+              WHERE p.id=$1`, [m.product_id])).rows[0];
           prod = r;
         } else if (res.matches.length > 1) {
           out.push({ input_code: ln.code, qty, ambiguous: true, candidates: res.matches });
@@ -164,6 +178,9 @@ export default async function quoteRoutes(app) {
         list_price: round2(prod.list_price), discount_rate: discountRate,
         final_price: calc.finalPrice, line_subtotal: calc.lineSubtotal, line_iva: calc.lineIva, line_total: calc.lineTotal,
         avail_stock: avail, stock_flag: stockFlag({ matched: true, qty, availStock: avail }),
+        incoming_qty: Number(prod.incoming_qty) || 0,
+        incoming_eta: prod.incoming_eta || null,
+        backorder_qty: Number(prod.backorder_qty) || 0,
       });
     }
     const totals = computeQuoteTotals(out.filter((l) => l.matched).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
