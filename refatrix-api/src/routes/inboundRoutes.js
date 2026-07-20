@@ -64,7 +64,7 @@ function summarize(pallets, pmap) {
 }
 
 export default async function inboundRoutes(app) {
-  const g = { preHandler: [authGuard, requirePage('inbound')] };
+  const g = { preHandler: [authGuard, requirePage('warehouse')] };
 
   // 패킹리스트 미리보기(검증만, 저장 안 함) --------------------------
   app.post('/api/inbound/preview', g, async (req) => {
@@ -294,7 +294,7 @@ export default async function inboundRoutes(app) {
   });
 
   // 선적 취소(디렉터) ------------------------------------------------
-  app.delete('/api/inbound/:id', { preHandler: [authGuard, requirePage('inbound')] }, async (req) => {
+  app.delete('/api/inbound/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id);
     const pinRow = (await query(`SELECT pin_hash, role FROM users WHERE id=$1`, [uid])).rows[0];
