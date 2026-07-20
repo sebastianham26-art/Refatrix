@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0633c</title>
+<title>Refatrix · 창고 포장 · build 0632j</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -230,57 +230,12 @@
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
   .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
   .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
-
-  /* ===== 상단 탭(작업 / SLA) ===== */
-  .whtabs{display:flex;gap:8px;margin:14px 4px 2px}
-  .whtab{background:#e9e4d9;color:#6a655c;border:none;border-radius:999px;padding:9px 22px;font-weight:800;font-size:15px;cursor:pointer}
-  .whtab.on{background:var(--steel-d);color:#fff}
-  .tabpane{display:none}
-  .tabpane.on{display:block}
-  /* ===== 수주 단계 SLA — 4분면 흐름 카드 v4(창고: 앞 3단계 오더확정·창고포장·SAT) ===== */
-  .slaquad{display:grid;grid-template-columns:1fr;gap:14px;align-items:stretch}
-  .slaq-cell{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:11px;overflow:hidden;display:flex;flex-direction:column;background:#fff;min-width:0;height:360px}
-  .ln-top{display:flex;align-items:center;gap:8px;padding:9px 13px 0}
-  .ln-step{flex:none;width:21px;height:21px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff}
-  .ln-title{font-size:18px;font-weight:800;color:var(--steel-d);white-space:nowrap;letter-spacing:-.2px}
-  .ln-cap{font-size:13px;color:#3A352B;font-weight:600;padding:5px 13px 0;line-height:1.5}
-  .capk{color:var(--red);font-weight:800}
-  .ln-grade{margin-left:auto;flex:none;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
-  .ln-stats{display:grid;margin:9px 0 0;border-top:1px solid #f0ece2}
-  .ln-stats.c4{grid-template-columns:1.1fr 1fr 1fr 1.5fr}
-  .ln-stats.c6{grid-template-columns:1fr 1fr 1fr 1fr 1fr 1.4fr}
-  .ln-stat{padding:7px 12px;border-right:1px solid #f3efe6;min-width:0}
-  .ln-stat:last-child{border-right:0;text-align:right}
-  .ln-stat .v{font-size:20px;font-weight:800;line-height:1.1;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ln-stat.kpi .v{font-size:26px;color:var(--steel-d)}
-  .ln-stat.amt .v{font-size:18px}
-  .ln-stat .l{font-size:11px;font-weight:700;color:var(--muted);margin-top:1px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ln-list{border-top:1px solid var(--line);flex:1;overflow:auto;min-height:0}
-  .ln-empty{flex:1;min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;background:repeating-linear-gradient(45deg,#fcfbf8,#fcfbf8 9px,#f7f5ef 9px,#f7f5ef 18px)}
-  .sltab{width:100%;border-collapse:collapse;font-size:13.5px}
-  .sltab th{font-size:11.5px;color:var(--muted);font-weight:700;text-align:right;padding:7px 12px;background:#fcfbf7;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0}
-  .sltab th.l{text-align:left}
-  .sltab td{text-align:right;padding:7px 12px;border-top:1px solid #f1ede4;white-space:nowrap}
-  .sltab td.cust{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;font-weight:600;color:var(--ink);text-align:left}
-  .sltab tr.od td{background:#fdf4f2}
-  .sltab .slok{color:var(--green);font-weight:800}.sltab .slno{color:var(--red);font-weight:800}.sltab .slwarn{color:var(--gold);font-weight:800}
-  .g-good{border-color:#cfe4db;border-left-color:var(--green)}.g-good .ln-step{background:var(--green)}.g-good .ln-grade{color:var(--green)}.g-good .ln-stat.kpi .v{color:var(--green)}
-  .g-warn{border-color:#ecdcb8;border-left-color:var(--gold)}.g-warn .ln-step{background:var(--gold)}.g-warn .ln-grade{color:var(--gold)}.g-warn .ln-stat.kpi .v{color:#9a6f23}
-  .g-bad{border-color:#e2b7af;border-left-color:var(--red)}.g-bad .ln-step{background:var(--red)}.g-bad .ln-grade{color:var(--red)}.g-bad .ln-stat.kpi .v{color:var(--red)}
-  .g-na{border-left-color:#c4beb2}.g-na .ln-step{background:#9a948a}.g-na .ln-grade{color:var(--muted)}
-  .dimp{color:var(--red)!important}
-  .slarefresh{background:#eef2f5;color:var(--steel-d);border:1px solid var(--line);border-radius:8px;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
   <button id="langToggle" class="langtgl" type="button">🌐</button>
-  <div class="whtabs">
-    <button type="button" class="whtab on" data-tab="work">📦 작업</button>
-    <button type="button" class="whtab" data-tab="sla">📊 SLA</button>
-  </div>
-  <div id="tabWork" class="tabpane on">
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -293,15 +248,6 @@
     <div id="shipQueue"><div class="empty">불러오는 중…</div></div>
   </div>
   <div class="soon">입고 · 작업현황 화면은 다음 단계에서 추가됩니다.</div>
-  </div>
-
-  <div id="tabSla" class="tabpane">
-    <div class="sec">
-      <div class="sec-t"><span>단계별 SLA (Service Level Agreement)</span></div>
-      <div class="bznote">현재 시점 기준 · <b>오더확정 → 창고포장 → SAT 발행</b> 3단계의 대기·지연을 한눈에 · 기한 초과 건은 <b style="color:var(--red)">빨강(지연)</b>으로 표시됩니다. (경과시간은 업무시간 기준)</div>
-      <div id="slaBody"><div class="empty">불러오는 중…</div></div>
-    </div>
-  </div>
 </div>
 
 <!-- 출고 상세 패널 -->
@@ -358,7 +304,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0633c — SLA 카드 1열 레이아웃·글자 확대'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632j — 삭제버튼/총수량/EAN제거'); }catch(e){}
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -490,7 +436,6 @@
   ];
   I18N.sort(function(a,b){ return b[0].length - a[0].length; });
   var IS_DIRECTOR=!!(S&&S.user&&S.user.role==='director');
-  var CAN_SHIP=IS_DIRECTOR||!!(S&&S.user&&S.user.role==='sales_support');  // 출고완료: 디렉터+영업지원(대기로 되돌리기는 디렉터 전용)
   var SHIP_STATUS='pending';
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
   function tr(str){ if(LANG!=='es'||!str) return str; var s=str; for(var i=0;i<I18N.length;i++){ if(s.indexOf(I18N[i][0])>=0){ s=s.split(I18N[i][0]).join(I18N[i][1]); } } return s; }
@@ -602,10 +547,10 @@
       var satHtml=(it.has_sat?'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div>':'<div class="sat nosat"><span class="satwarn">\u26a0 SAT 번호를 넣으세요</span></div>');
       var shipdt=(status==='shipped'&&it.shipped_at)?'<div class="shipdt">\u2713 출고완료 '+esc(String(it.shipped_at).slice(0,10))+'</div>':'';
       var actBtn='';
-      if(status==='shipped'){
-        if(IS_DIRECTOR) actBtn='<button class="unship" data-id="'+it.quote_id+'">\u21a9 대기로</button>';
-      } else {
-        if(CAN_SHIP) actBtn='<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
+      if(IS_DIRECTOR){
+        actBtn=(status==='shipped')
+          ? '<button class="unship" data-id="'+it.quote_id+'">\u21a9 대기로</button>'
+          : '<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
       }
       return '<div class="scard" data-id="'+it.quote_id+'">'
         +'<div class="srow"><div><div class="no">'+esc(it.quote_no)+'</div><div class="cu">'+esc(it.customer)+'</div>'+shipdt+'</div>'+satHtml+'</div>'
@@ -1185,85 +1130,12 @@
   var sbk=$('shipBack'); if(sbk) sbk.addEventListener('click',closeShip);
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
-  // ===================== 단계별 SLA(오더확정·창고포장·SAT) =====================
-  //  WBR·포털과 동일 디자인/집계(공용 백엔드). 창고는 앞 3단계만 표시(수금 제외).
-  var slaLoaded=false;
-  function renderStageSla(sla, slaKpi){
-    if(!sla){ $('slaBody').innerHTML='<div class="empty">데이터 없음</div>'; return; }
-    var shortLbl={order:'오더확정',packing:'창고포장',sat:'SAT'};
-    var ko=(slaKpi&&slaKpi.order)||48, kp=(slaKpi&&slaKpi.packing)||6, ks=(slaKpi&&slaKpi.sat)||3;
-    function capFor(k,n){
-      var th={order:'견적작성 후 <b class="capk">'+ko+'시간</b> 이내에 오더로 확정받아야합니다',packing:'포장작업지시서 발행 후 <b class="capk">'+kp+'업무시간</b> 이내에 포장작업을 마무리해야합니다',sat:'포장완료 후 <b class="capk">'+ks+'시간</b> 이내에 SAT 인보이스 발행해야합니다'};
-      var st={order:n+'개의 견적이 아직 오더확정되지 않았습니다',packing:n+'건의 오더가 현재 포장 진행 중입니다',sat:n+'건이 인보이스 전환 후 아직 SAT 발행되지 않았습니다'};
-      return st[k]+' · '+th[k];
-    }
-    var step={order:'1',packing:'2',sat:'3'};
-    var mxn=function(v){return '$'+Number(v||0).toLocaleString('es-MX',{maximumFractionDigits:0});};
-    var qfmt=function(v){return Number(v||0).toLocaleString('es-MX');};
-    var su=function(u){return u==='시간'?'h':u==='업무시간'?'업무h':(u||'');};
-    var grade=function(s){var n=+s.n||0,d=+s.delayed||0;if(!n)return'na';if(d===0)return'good';if(d*2<n)return'warn';return'bad';};
-    var gLabel=function(s,g){return g==='na'?'대기 없음':g==='good'?'정상':('지연 '+(+s.delayed||0)+'건');};
-    function statsFor(k,s,n,d,avg,items){
-      var amt={v:(n?mxn(s.amount):'—'),l:'매출액',cls:'amt'};
-      var avgS={v:avg,l:'평균 경과'};
-      var sku={v:qfmt(items.reduce(function(a,it){return a+(+it.sku_count||0);},0)),l:'SKU 수량'};
-      var qty={v:qfmt(items.reduce(function(a,it){return a+(+it.total_qty||0);},0)),l:'총 수량'};
-      if(k==='order')   return [{v:n,l:'건 대기',cls:'kpi'},{v:d,l:'지연 건',dim:d>0},avgS,amt];
-      if(k==='packing') return [{v:n,l:'건 진행 중',cls:'kpi'},{v:d,l:'건 지연 중',dim:d>0},sku,qty,avgS,amt];
-      return [{v:n,l:'건 발행 진행 중',cls:'kpi'},{v:d,l:'건 지연 중',dim:d>0},avgS,amt];
-    }
-    function cell(k){
-      var s=sla[k]||{};var n=+s.n||0;var d=+s.delayed||0;var g=grade(s);
-      var avg=(s.avg==null)?'—':(s.avg+su(s.unit));
-      var items=Array.isArray(s.items)?s.items:[];
-      var stats=statsFor(k,s,n,d,avg,items);
-      var cap=capFor(k,n);
-      var h='<div class="slaq-cell g-'+g+'">'
-        +'<div class="ln-top"><span class="ln-step">'+step[k]+'</span><span class="ln-title">'+esc(shortLbl[k])+'</span><span class="ln-grade">'+gLabel(s,g)+'</span></div>'
-        +'<div class="ln-cap">'+cap+'</div>'
-        +'<div class="ln-stats c'+stats.length+'">';
-      stats.forEach(function(st){ h+='<div class="ln-stat'+(st.cls?(' '+st.cls):'')+'"><div class="v'+(st.dim?' dimp':'')+'">'+st.v+'</div><div class="l">'+st.l+'</div></div>'; });
-      h+='</div>';
-      if(!items.length){ h+='<div class="ln-empty">현재 대기 건이 없습니다</div></div>'; return h; }
-      h+='<div class="ln-list"><table class="sltab"><thead><tr><th class="l">고객</th><th>SKU</th><th>수량</th><th>금액</th><th>경과</th><th>상태</th></tr></thead><tbody>';
-      items.forEach(function(it){
-        var el=(it.age!=null?it.age+su(s.unit):'—'); var od=!!it.overdue;
-        var stt=od?'<span class="slno">지연</span>':'<span class="slok">정상</span>';
-        h+='<tr'+(od?' class="od"':'')+'><td class="cust">'+esc(it.customer||'-')+'</td><td>'+qfmt(it.sku_count)+'</td><td>'+qfmt(it.total_qty)+'</td><td>'+mxn(it.amount)+'</td><td>'+el+'</td><td>'+stt+'</td></tr>';
-      });
-      h+='</tbody></table></div></div>';
-      return h;
-    }
-    $('slaBody').innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button type="button" class="slarefresh" id="slaRefresh">↻ 새로고침</button></div><div class="slaquad">'+cell('order')+cell('packing')+cell('sat')+'</div>';
-    var rb=$('slaRefresh'); if(rb) rb.addEventListener('click',function(){ loadWarehouseSla(true); });
-  }
-  function loadWarehouseSla(force){
-    if(!$('slaBody')) return;
-    if(force) $('slaBody').innerHTML='<div class="empty">불러오는 중…</div>';
-    fetch(API+'/api/warehouse/stage-sla',{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
-      renderStageSla((d&&d.sla)||null,(d&&d.kpi)||null);
-    }).catch(function(){ $('slaBody').innerHTML='<div class="empty">불러오지 못했습니다.</div>'; });
-  }
-  function slaVisible(){ var p=$('tabSla'); return !!(p&&p.classList.contains('on')); }
-  function initWhTabs(){
-    Array.prototype.forEach.call(document.querySelectorAll('.whtab'),function(t){
-      t.addEventListener('click',function(){
-        var tab=t.getAttribute('data-tab');
-        Array.prototype.forEach.call(document.querySelectorAll('.whtab'),function(x){ x.classList.toggle('on', x===t); });
-        var work=$('tabWork'), slap=$('tabSla');
-        if(work) work.classList.toggle('on', tab==='work');
-        if(slap) slap.classList.toggle('on', tab==='sla');
-        if(tab==='sla' && !slaLoaded){ slaLoaded=true; loadWarehouseSla(true); }
-      });
-    });
-  }
-
-  initLangBtn(); initShipTabs(); initWhTabs(); startI18n();
-  if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); if(slaLoaded&&slaVisible()) loadWarehouseSla(false); },25000); }
+  initLangBtn(); initShipTabs(); startI18n();
+  if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

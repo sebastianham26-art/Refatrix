@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0710e</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0710f</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -125,7 +125,10 @@
       <div class="detailbox hidden" id="detailBox"></div>
     </div>
     <div id="linesWrap" class="hidden">
-      <label style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-weight:600;color:var(--muted)"><input type="checkbox" id="boOnly" style="width:auto"> 미입고(backorder&gt;0)만 보기</label>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:12px">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted)"><input type="checkbox" id="boOnly" style="width:auto"> 미입고(backorder&gt;0)만 보기</label>
+        <button class="btn ghost sm" id="linesXlsxBtn" type="button">엑셀 다운로드</button>
+      </div>
       <div class="sbrow" id="linesSummary" style="margin-top:8px"></div>
       <div style="max-height:460px;overflow:auto"><table id="linesTable"></table></div>
       <div class="hint">SKU별로 어느 참조번호에 얼마가 미입고(backorder)인지, 현재고와 <b>예상재고(현재고+추가입고)</b>를 함께 봅니다. 열 제목 클릭으로 정렬.</div>
@@ -481,6 +484,34 @@
   }
   function loadCurrent(){ if(viewMode==='line') loadLines(); else loadList(); }
 
+  // 전체 라인 뷰를 현재 정렬·필터 그대로 엑셀로 내보내기(원가 열은 권한자만 포함).
+  function exportLinesExcel(){
+    if(!lineItems.length){ alert('내보낼 라인이 없습니다. 먼저 조회하세요.'); return; }
+    const rows=genSort(lineItems,lineSortKey,lineSortDir,LINE_COLS);
+    const data=rows.map(r=>{
+      const o={
+        '발주일': r.order_date?String(r.order_date).slice(0,10):'',
+        '제품코드(SKU)': r.sku||'',
+        '제품명': r.product_name||'',
+        '구매참조번호': r.ref_no||'',
+        '주문수량': Number(r.qty)||0,
+        '입고수량': Number(r.received_qty)||0,
+        'backorder(미입고)': Number(r.backorder)||0,
+        '현재고': r.stock_qty==null?'':Number(r.stock_qty),
+        '예상재고(현재+추가)': r.projected==null?'':Number(r.projected),
+      };
+      if(canCost){
+        o['구매원가(USD)']=r.unit_cost_usd==null?'':Number(r.unit_cost_usd);
+        o['금액(USD)']=(r.unit_cost_usd==null)?'':Math.round((Number(r.qty)||0)*(Number(r.unit_cost_usd)||0)*100)/100;
+      }
+      return o;
+    });
+    const ws=XLSX.utils.json_to_sheet(data);
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매라인');
+    const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,'refatrix_purchase_lines_'+ymd+'.xlsx');
+  }
+
   // ---- 템플릿 ----
   function downloadTemplate(){
     const ws=XLSX.utils.json_to_sheet([{ '제품코드':'CA0032','수량':100,'구매원가(USD)':4.20,'구매참조번호':'PO-2607-01' }]);
@@ -490,6 +521,7 @@
 
   // ---- 이벤트 ----
   $('tplBtn').addEventListener('click',downloadTemplate);
+  $('linesXlsxBtn').addEventListener('click',exportLinesExcel);
   $('upBtn').addEventListener('click',()=>$('upFile').click());
   $('upFile').addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; });
   $('commitBtn').addEventListener('click',commit);
@@ -512,6 +544,6 @@
     onLoggedIn(ps.user||{});
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

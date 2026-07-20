@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>현장재고조사 · Refatrix · build fsx-20260717a</title>
+<title>현장재고조사 · Refatrix</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -137,40 +137,6 @@
 
   .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);background:#143D34;color:#fff;font-size:13px;font-weight:700;padding:10px 18px;border-radius:30px;opacity:0;pointer-events:none;transition:.25s;display:flex;align-items:center;gap:8px;z-index:50;max-width:90vw}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.toast .ck{color:#7fd6a6}
-  /* ── 기존 판매품목 점검 (누적판매 대조) ── */
-  .segs{display:flex;gap:6px;margin:10px 0 4px}
-  .segs button{flex:1;border:1.5px solid var(--line);background:#fff;color:var(--mut);border-radius:11px;padding:10px 4px;font-size:12.5px;font-weight:800;cursor:pointer;line-height:1.3}
-  .segs button.on{background:var(--green);border-color:var(--green);color:#fff}
-  .segs button small{display:block;font-weight:600;font-size:10px;opacity:.8;margin-top:2px}
-  .prog{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin:10px 0 8px}
-  .prog .r{display:flex;align-items:center;font-size:12px;font-weight:700;color:var(--green)}
-  .prog .r .m{margin-left:auto;color:var(--mut);font-weight:600}
-  .bar{height:7px;background:#eceae5;border-radius:6px;margin-top:8px;overflow:hidden}
-  .bar i{display:block;height:100%;background:var(--imm);width:0;transition:.3s}
-  .tools{display:flex;gap:7px;margin:10px 0 8px;align-items:center}
-  .tools input{flex:1;font-size:13px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px}
-  .tools .srt{border:1.5px solid var(--line);background:#fff;color:var(--green);border-radius:10px;padding:10px 11px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
-  .allbtn{width:100%;border:1.5px dashed #c9c6bf;background:#fff;color:var(--green);border-radius:11px;padding:11px;font-size:12.5px;font-weight:800;cursor:pointer;margin-top:4px}
-  .kcard{background:#fff;border:1px solid var(--line);border-left-width:5px;border-left-color:#d6d3cc;border-radius:12px;padding:10px 12px;margin-bottom:8px}
-  .kcard.done{border-left-color:var(--imm)} .kcard.gone{border-left-color:var(--brass)}
-  .kcard.kept{border-left-color:#c9c6bf} .kcard.warn{border-left-color:var(--dev);background:#fffaf9}
-  .kcard .l1{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-  .kcard .nm{font-size:12px;color:#4a4845;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .kcard .l2{display:flex;align-items:center;gap:8px;margin-top:9px}
-  .badge.grey{background:#f0eeea;color:#8b8880} .badge.gone{background:var(--shortbg);color:var(--short)}
-  .badge.kept{background:#f0eeea;color:#8b8880} .badge.warn{background:var(--devbg);color:var(--dev)}
-  .acc{font-size:11.5px;color:var(--mut);font-weight:700;line-height:1.4}
-  .acc b{color:var(--green);font-size:13px}
-  .zerob{border:1.5px solid var(--brass);background:#fff;color:var(--brass2);border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
-  .zerob.on{background:var(--brass);color:#fff}
-  .kcard .obs{margin-left:auto}
-  .res{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px;font-size:12px;font-weight:700;color:var(--green);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .res .sug{margin-left:auto;background:var(--immbg);color:var(--imm);border-radius:8px;padding:4px 9px;font-size:11.5px;font-weight:800}
-  .res.warnt{color:var(--dev)} .res.warnt .sug{background:var(--devbg);color:var(--dev)}
-  .res.keptt{color:var(--mut)} .res.keptt .sug{background:#f0eeea;color:#8b8880}
-  .cc.gone .n{color:var(--brass2)} .cc.part .n{color:var(--imm)} .cc.todo .n{color:#9b988f} .cc.anom .n{color:var(--dev)}
-  td.hot{text-align:right;font-weight:800;color:var(--brass2)}
-  .repmsg{font-size:12px;color:#a4792f;background:#fbf2e0;border:1px solid #ecd9ad;border-radius:10px;padding:9px 12px;margin:10px 0}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid #ffffff55;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
 </style>
@@ -236,60 +202,20 @@
         <div class="meta" id="eMeta"></div>
       </div>
       <div class="save"><span class="dot"></span> 자동저장 켜짐 · 한 건 입력 즉시 저장 <span class="x" id="lastSave"></span></div>
-
-      <!-- 세그먼트: ① 기존 판매품목 점검(누적판매 대조) / ② 신규 코드 입력 -->
-      <div class="segs hidden" id="segs">
-        <button class="seg on" data-pane="hist" id="segHist">① 기존 판매품목 점검<small id="segHistSub">누적판매 기준</small></button>
-        <button class="seg" data-pane="code" id="segCode">② 신규 코드 입력<small>경쟁사·미판매품</small></button>
-      </div>
-
-      <!-- ①  기존 판매품목 점검 (기존고객 전용) -->
-      <section id="paneHist" class="hidden">
-        <div class="prog">
-          <div class="r">점검 진행 <span class="m" id="hMeta">—</span></div>
-          <div class="bar"><i id="hBar"></i></div>
-        </div>
-        <div class="tools">
-          <input id="hQ" placeholder="코드 검색 (CA0032 · 품명 · 차종)" autocomplete="off">
-          <button class="srt" id="hSort">정렬 · 누적순 ▾</button>
-        </div>
-        <div class="hint">🏬 고객 창고를 돌면서 <b>현장재고를 입력</b>하거나, 없으면 <b>「없음 (0)」</b>을 누르세요. 누적판매 − 현장재고 = <b>엔드커스터머 소진량</b> → 보충 제안.</div>
-        <div class="lhead"><span id="hHead">—</span><span id="hSortLbl">누적수량 많은 순</span></div>
-        <div id="hList"></div>
-        <button class="allbtn hidden" id="hAll">▸ 전체 판매품목 보기</button>
-      </section>
-
-      <!-- ②  신규 코드 입력 (기존 동작 그대로) -->
-      <section id="paneCode">
       <div class="inrow">
         <input id="codeIn" inputmode="text" autocomplete="off" placeholder="코드 입력 후 Enter (CTR 또는 경쟁사 코드)">
         <button class="addb" id="addBtn">추가</button>
       </div>
-      <div class="hint">💾 <b>한 건 입력 = 즉시 저장</b> · 데이터 분실 없음 &nbsp;|&nbsp; 코드는 자동으로 CTR로 분류됩니다 (SYD·BAW·GROB 등 경쟁사 코드 지원)</div>
-      <div class="subbar" style="margin-top:4px">
-        <button id="btnBulkXls">📊 엑셀 업로드 (코드+수량)</button>
-        <button id="btnBulkTpl" style="flex:0 0 auto;padding-left:14px;padding-right:14px">⬇︎ 양식</button>
-      </div>
-      <input type="file" id="bulkFile" accept=".xlsx,.xls,.csv" class="hidden">
-      <div class="hint" id="bulkHint">엑셀 A열=코드(SYD·BAW 등 아무 경쟁사 코드), B열=수량. 수량 비어있으면 1로 처리.</div>
+      <div class="hint">💾 <b>한 건 입력 = 즉시 저장</b> · 데이터 분실 없음 &nbsp;|&nbsp; 코드는 자동으로 CTR로 분류됩니다</div>
       <div class="lhead"><span>입력 내역 (최근 먼저)</span><span id="cnt">0건</span></div>
       <div id="list"></div>
-      </section>
       <div class="stickb"><button class="doneb" id="doneBtn">모두 완료 → 정리 보기 <small id="doneCnt"></small></button></div>
     </section>
 
     <!-- ③ 정리(오퍼) -->
     <section id="summary" class="hidden">
       <div class="sumhead"><div class="h1" id="sCust"></div><div class="h2" id="sMeta"></div></div>
-      <div class="counts hidden" id="sellCounts">
-        <div class="cc gone"><div class="n" id="nGone">0</div><div class="l">완전소진<br>(재고 0)</div></div>
-        <div class="cc part"><div class="n" id="nPart">0</div><div class="l">부분소진</div></div>
-        <div class="cc todo"><div class="n" id="nTodo">0</div><div class="l">미점검</div></div>
-        <div class="cc anom"><div class="n" id="nAnom">0</div><div class="l">이상<br>(재고&gt;판매)</div></div>
-      </div>
-      <div id="repMsg"></div>
-      <div id="secRep"></div><div id="secKept"></div><div id="secAnom"></div>
-      <div class="counts" id="codeCounts">
+      <div class="counts">
         <div class="cc imm"><div class="n" id="nImm">0</div><div class="l">즉시매출가능</div></div>
         <div class="cc short"><div class="n" id="nShort">0</div><div class="l">재고부족</div></div>
         <div class="cc dev"><div class="n" id="nDev">0</div><div class="l">개발필요</div></div>
@@ -312,16 +238,13 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script>
   let session={token:null,user:null,api:''};
-  const state={ survey:null, lines:[], summary:null, customer:null,
-                sold:{enabled:false,items:[],total:0,shown:0,all:false}, soldAll:false, soldQ:'', histSort:'acc', pane:'hist' };
+  const state={ survey:null, lines:[], summary:null, customer:null };
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const jhead=()=>Object.assign({'Content-Type':'application/json'},auth());
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const apiBase=()=> (session.api||$('api').value||'').replace(/\/+$/,'');
   const BADGE={imm:'🟢 즉시',short:'🟡 부족',dev:'🔴 개발'};
-  // 소진 상태 배지 — 백엔드 sellThrough 와 동일 규칙
-  const SBADGE={todo:['grey','미점검'],gone:['gone','완전소진'],partial:['imm','부분소진'],kept:['kept','미소진'],anomaly:['warn','⚠ 이상']};
 
   function toast(msg){ const t=$('toast'); $('toastTxt').textContent=msg; t.classList.add('show');
     clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),1600); }
@@ -394,7 +317,7 @@
   function showStart(){ $('start').classList.remove('hidden'); $('entry').classList.add('hidden'); $('summary').classList.add('hidden'); }
   function showEntry(){ $('start').classList.add('hidden'); $('entry').classList.remove('hidden'); $('summary').classList.add('hidden');
     $('eCust').textContent=state.survey.customer_name||''; $('eMeta').textContent=(state.survey.survey_date||'')+' · 담당 '+(session.user&&session.user.name||'');
-    renderLive(); loadSold(); }
+    renderLive(); setTimeout(()=>$('codeIn').focus(),50); }
   function showSummary(){ $('start').classList.add('hidden'); $('entry').classList.add('hidden'); $('summary').classList.remove('hidden'); renderSummary(); }
 
   // ── 고객 선택(견적 포맷: 등록 select + 미등록 직접입력 + 할인율) ──
@@ -433,8 +356,7 @@
   }
   async function resumeSurvey(id){
     try{ const d=await api('/api/field-surveys/'+id,{headers:auth()});
-      state.survey=d.survey; state.lines=d.lines.slice(); state.summary=d.summary; state.soldMeta=d.sold_meta||null;
-      state.soldAll=false; state.soldQ=''; state.pane='hist'; $('hQ').value=''; stampSave(); showEntry();
+      state.survey=d.survey; state.lines=d.lines.slice().reverse(); state.summary=d.summary; stampSave(); showEntry();
     }catch(e){ toast('불러오기 실패'); }
   }
 
@@ -452,151 +374,9 @@
     } else { body.customer_id=Number(v); }
     try{ const d=await api('/api/field-surveys',{method:'POST',headers:jhead(),body:JSON.stringify(body)});
       state.survey={id:d.id,customer_id:d.customer_id,customer_name:d.customer_name,discount_rate:d.discount_rate,survey_date:d.survey_date,status:'open'};
-      state.lines=[]; state.summary=null; state.soldMeta=null; state.soldAll=false; state.soldQ='';
-      state.histSort='acc'; state.pane='hist'; $('hQ').value=''; stampSave(); showEntry();
+      state.lines=[]; state.summary=null; stampSave(); showEntry();
     }catch(e){ toast(e.message==='location_required'?'위치 승인이 필요합니다': e.message==='discount_required'?'할인율을 입력하세요':'조사 생성 실패'); }
     finally{ $('startBtn').disabled=false; $('startBtn').textContent='새 조사 시작'; }
-  }
-
-  // ═══════════ 기존 판매품목 점검 (누적판매 대조 → 소진 → 보충 제안) ═══════════
-  //  · 기존고객 조사에서만 활성. 미등록 고객은 누적판매가 없어 자동 비활성(코드입력만).
-  //  · 점검한 품목만 줄이 생긴다(줄 없음 = 미점검). 「없음 (0)」 재클릭 = 점검 해제.
-  function soldEnabled(){ return !!(state.survey && state.survey.customer_id && state.sold && state.sold.enabled); }
-  function histLineFor(pid){ return state.lines.find(l=>l.product_id!=null && Number(l.product_id)===Number(pid)) || null; }
-
-  // 소진 계산 — 백엔드 sellThrough 와 동일 규칙(화면·서버 숫자 일치)
-  function calcSell(it){
-    const a=Number(it.sold_qty)||0; const ln=histLineFor(it.product_id);
-    if(!ln) return {status:'todo',sold_out:null,pct:null,b:null};
-    const b=Number(ln.observed_qty)||0;
-    if(b>a) return {status:'anomaly',sold_out:null,pct:null,b:b};
-    const d=a-b, pct=a>0?Math.round(d/a*1000)/10:null;
-    if(d===0) return {status:'kept',sold_out:0,pct:pct,b:b};
-    return {status:(b===0?'gone':'partial'),sold_out:d,pct:pct,b:b};
-  }
-  function sortedSold(){
-    const arr=(state.sold.items||[]).slice();
-    if(state.histSort==='sell'){
-      arr.sort((x,y)=>{
-        const sx=calcSell(x), sy=calcSell(y);
-        const px=(sx.status==='todo'||sx.status==='anomaly')?-1:(sx.pct==null?-1:sx.pct);
-        const py=(sy.status==='todo'||sy.status==='anomaly')?-1:(sy.pct==null?-1:sy.pct);
-        if(py!==px) return py-px;
-        const dx=Number(sx.sold_out)||0, dy=Number(sy.sold_out)||0;
-        if(dy!==dx) return dy-dx;
-        return String(x.ctr_code||'').localeCompare(String(y.ctr_code||''));
-      });
-    }
-    return arr;   // 기본: 서버가 이미 누적수량 ▼ 로 내려줌
-  }
-
-  async function loadSold(){
-    if(!state.survey || !state.survey.customer_id){
-      state.sold={enabled:false,items:[],total:0,shown:0,all:false}; renderHist(); return;
-    }
-    const p=new URLSearchParams();
-    if(state.soldAll) p.set('all','1');
-    if(state.soldQ) p.set('q',state.soldQ);
-    try{
-      const d=await api('/api/field-surveys/'+state.survey.id+'/sold-history'+(p.toString()?'?'+p.toString():''),{headers:auth()});
-      state.sold=d;
-    }catch(e){ state.sold={enabled:false,items:[],total:0,shown:0,all:false}; }
-    renderHist();
-  }
-
-  function setPane(which){
-    state.pane=which;
-    $('paneHist').classList.toggle('hidden',which!=='hist');
-    $('paneCode').classList.toggle('hidden',which!=='code');
-    $('segHist').classList.toggle('on',which==='hist');
-    $('segCode').classList.toggle('on',which==='code');
-    if(which==='code') setTimeout(()=>$('codeIn').focus(),50);
-  }
-
-  function renderHist(){
-    const on=soldEnabled();
-    $('segs').classList.toggle('hidden',!on);
-    if(!on){ setPane('code'); return; }        // 미등록 고객 → 코드입력만
-    setPane(state.pane);
-
-    const items=sortedSold(); const L=$('hList'); L.innerHTML='';
-    let checked=0;
-    items.forEach(it=>{
-      const r=calcSell(it); if(r.status!=='todo') checked++;
-      const cls = r.status==='todo'?'' : (r.status==='anomaly'?'warn' : (r.status==='gone'?'gone' : (r.status==='kept'?'kept':'done')));
-      const bg=SBADGE[r.status];
-      let res='';
-      if(r.status==='anomaly') res='<div class="res warnt">현장재고가 누적판매보다 많음 ('+r.b+' &gt; '+(Number(it.sold_qty)||0)+') · 타사 경로 / 조사 오차<span class="sug">제안 제외</span></div>';
-      else if(r.status==='kept') res='<div class="res keptt">그대로 남아있음 · 소진 0<span class="sug">제안 없음</span></div>';
-      else if(r.status!=='todo') res='<div class="res">엔드커스터머 소진 <b style="font-size:14px">&nbsp;'+r.sold_out+'개&nbsp;</b> · 소진율 '+(r.pct==null?'—':r.pct+'%')+'<span class="sug">보충 제안 '+r.sold_out+'</span></div>';
-
-      const card=document.createElement('div'); card.className='kcard '+cls;
-      card.innerHTML=
-         '<div class="l1"><span class="badge '+bg[0]+'">'+bg[1]+'</span><span class="ctr">'+esc(it.ctr_code||'')+'</span>'
-        +(it.scode?'<span class="ccode">'+esc(it.scode)+'</span>':'')+'</div>'
-        +'<div class="nm">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div>'
-        +'<div class="l2">'
-        +  '<div class="acc">누적판매 <b>'+(Number(it.sold_qty)||0)+'</b><br>최근 '+esc(it.last_sold_at||'—')+'</div>'
-        +  '<button class="zerob'+(r.b===0?' on':'')+'" data-z="'+it.product_id+'">없음 (0)</button>'
-        +  '<div class="obs"><button data-hm="'+it.product_id+'">–</button>'
-        +    '<div><div class="q">'+(r.b==null?'–':r.b)+'</div><div class="cap">현장재고</div></div>'
-        +    '<button data-hp="'+it.product_id+'">＋</button></div>'
-        +'</div>'+res;
-      L.appendChild(card);
-    });
-    if(!items.length) L.innerHTML='<div class="none">'+(state.soldQ?'검색 결과가 없습니다.':'이 고객에게 판매한 이력이 없습니다.')+'</div>';
-
-    const total=Number(state.sold.total)||0;
-    const shown=items.length;
-    $('hMeta').textContent=checked+' / '+total+' · 미점검 '+Math.max(0,total-checked);
-    $('hBar').style.width=(total?Math.round(checked/total*100):0)+'%';
-    $('segHistSub').textContent=total+'종 · 누적판매 기준';
-    $('hHead').textContent=state.soldQ ? ('검색 결과 '+shown+'종')
-      : (state.sold.all ? ('전체 판매품목 '+shown+'종 (전체 누적)') : ('누적판매 상위 '+shown+'종 (전체 누적)'));
-    $('hSortLbl').textContent=state.histSort==='acc'?'누적수량 많은 순':'소진율 높은 순';
-    const more=(!state.sold.all && !state.soldQ && total>shown);
-    $('hAll').classList.toggle('hidden',!more);
-    $('hAll').textContent='▸ 전체 판매품목 보기 ('+total+'종)';
-
-    L.querySelectorAll('[data-hp]').forEach(b=>b.addEventListener('click',()=>bumpHist(Number(b.dataset.hp),1)));
-    L.querySelectorAll('[data-hm]').forEach(b=>b.addEventListener('click',()=>bumpHist(Number(b.dataset.hm),-1)));
-    L.querySelectorAll('[data-z]').forEach(b=>b.addEventListener('click',()=>zeroHist(Number(b.dataset.z))));
-    refreshDone();
-  }
-
-  // 점검 저장 — 서버가 (조사×제품) 중복 줄을 갱신으로 흡수(dedupe)
-  async function setHist(pid,qty){
-    try{
-      const d=await api('/api/field-surveys/'+state.survey.id+'/lines',{method:'POST',headers:jhead(),
-        body:JSON.stringify({product_id:pid,observed_qty:qty,origin:'history'})});
-      const i=state.lines.findIndex(l=>Number(l.id)===Number(d.line.id));
-      if(i>=0) state.lines[i]=d.line; else state.lines.push(d.line);
-      renderHist(); renderLive(); stampSave();
-    }catch(e){ toast('저장 실패 — 다시 시도'); loadSold(); }
-  }
-  async function bumpHist(pid,delta){
-    const it=(state.sold.items||[]).find(i=>Number(i.product_id)===Number(pid)); if(!it) return;
-    const ln=histLineFor(pid);
-    const cur=ln?(Number(ln.observed_qty)||0):0;
-    const nv=Math.max(0,cur+delta);
-    if(ln){ ln.observed_qty=nv; ln.origin='history'; if(ln.sold_qty_snap==null) ln.sold_qty_snap=it.sold_qty; renderHist(); }  // 낙관적 반영
-    await setHist(pid,nv);
-  }
-  // 「없음 (0)」 토글 — 이미 0이면 점검 해제(줄 삭제 → 미점검)
-  async function zeroHist(pid){
-    const ln=histLineFor(pid);
-    if(ln && Number(ln.observed_qty)===0){
-      try{ await api('/api/field-surveys/lines/'+ln.id,{method:'DELETE',headers:auth()});
-        state.lines=state.lines.filter(l=>Number(l.id)!==Number(ln.id)); renderHist(); renderLive(); stampSave();
-      }catch(e){ toast('해제 실패'); }
-      return;
-    }
-    await setHist(pid,0);
-  }
-  function toggleHistSort(){
-    state.histSort = state.histSort==='acc'?'sell':'acc';
-    $('hSort').textContent = state.histSort==='acc'?'정렬 · 누적순 ▾':'정렬 · 소진순 ▾';
-    renderHist();
   }
 
   // ── 코드 추가(자동저장) ──
@@ -610,61 +390,6 @@
     }catch(e){ toast('저장 실패 — 다시 시도'); $('codeIn').value=v; }
     $('codeIn').focus();
   }
-  // ── 엑셀 대량 업로드 (A열=코드, B열=수량) ──
-  function parseBulkSheet(wb){
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
-    const items=[];
-    aoa.forEach((r,i)=>{
-      const a=r&&r[0]!=null?String(r[0]).trim():''; if(!a) return;
-      const low=a.toLowerCase();
-      // 헤더 행 스킵 (코드/clave/code/syd/referencia 등)
-      if(i===0 && /^(코드|code|clave|codigo|código|syd|referencia|ctr)/.test(low)) return;
-      items.push({code:a, qty:(r[1]==null?'':String(r[1]))});
-    });
-    return items;
-  }
-  // ── 업로드 양식 다운로드 (A열=코드, B열=수량) ──
-  function downloadBulkTemplate(){
-    const aoa=[
-      ['코드 (SYD·BAW 등 경쟁사 코드)','수량','← A열에 코드, B열에 수량. 수량을 비우면 1로 처리됩니다. 이 안내(C열)는 지워도 됩니다.'],
-      ['',''],
-      ['',''],
-      ['',''],
-      ['',''],
-    ];
-    const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[{wch:30},{wch:8},{wch:60}];
-    const st={font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF143D34'}}};
-    ['A1','B1'].forEach(a=>{ if(ws[a]) ws[a].s=st; });
-    if(ws['C1']) ws['C1'].s={font:{color:{rgb:'FF7C7A74'},italic:true}};
-    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'upload');
-    XLSX.writeFile(wb,'Refatrix_fieldsurvey_upload_template.xlsx');
-  }
-
-  async function bulkUpload(file){
-    if(!state.survey) return;
-    let items;
-    try{ items=parseBulkSheet(XLSX.read(await file.arrayBuffer())); }
-    catch(e){ toast('파일을 읽지 못했습니다'); return; }
-    if(!items.length){ toast('코드가 없습니다 (A열=코드, B열=수량)'); return; }
-    const btn=$('btnBulkXls'); btn.disabled=true;
-    const CH=500; let added=0, skipped=0; const cnt={imm:0,short:0,dev:0};
-    try{
-      for(let i=0;i<items.length;i+=CH){
-        btn.innerHTML='<span class="spin"></span> 업로드 중… '+Math.min(i+CH,items.length)+'/'+items.length;
-        const d=await api('/api/field-surveys/'+state.survey.id+'/lines/bulk',
-          {method:'POST',headers:jhead(),body:JSON.stringify({items:items.slice(i,i+CH)})});
-        d.lines.slice().reverse().forEach(l=>state.lines.unshift(l));
-        added+=d.added; skipped+=d.skipped||0;
-        Object.keys(cnt).forEach(k=>cnt[k]+=(d.counts&&d.counts[k])||0);
-        renderLive(); stampSave();
-      }
-      toast('업로드 완료 · '+added+'건 (🟢'+cnt.imm+' 🟡'+cnt.short+' 🔴'+cnt.dev+(skipped?' · 스킵 '+skipped:'')+')');
-    }catch(e){ toast('업로드 실패 — '+(added?added+'건까지 저장됨':'다시 시도')); }
-    finally{ btn.disabled=false; btn.textContent='📊 엑셀 업로드 (코드+수량)'; }
-  }
-
   async function changeObs(lineId,delta){
     const ln=state.lines.find(l=>l.id===lineId); if(!ln) return;
     const nv=Math.max(0,(Number(ln.observed_qty)||0)+delta); ln.observed_qty=nv; renderLive();
@@ -676,17 +401,9 @@
     }catch(e){ toast('삭제 실패'); }
   }
 
-  function refreshDone(){
-    const codeN=state.lines.filter(l=>(l.origin||'code')!=='history').length;
-    const histN=state.lines.filter(l=>(l.origin||'code')==='history').length;
-    const tot=codeN+histN;
-    $('doneCnt').textContent = histN ? (histN+'건 점검 · '+codeN+'건 입력') : (codeN+'건 정리');
-    $('doneBtn').disabled = tot===0;
-  }
   function renderLive(){
     const L=$('list'); L.innerHTML='';
-    // 코드입력 목록에는 코드입력 줄만(체크리스트 점검 줄은 ① 탭에서 관리)
-    state.lines.filter(l=>(l.origin||'code')!=='history').forEach(e=>{
+    state.lines.forEach(e=>{
       const card=document.createElement('div'); card.className='ccard '+e.classification;
       const stk = e.classification==='dev' ? '<span class="ccode">카탈로그 미등록</span>'
               : '<span class="stk'+((Number(e.avail_stock)||0)===0?' zero':'')+'">가용재고 '+(e.avail_stock==null?'—':e.avail_stock)+'</span>';
@@ -700,8 +417,8 @@
         +'<button class="del" data-d="'+e.id+'">🗑</button>';
       L.appendChild(card);
     });
-    $('cnt').textContent=L.children.length+'건';
-    refreshDone();
+    $('cnt').textContent=state.lines.length+'건'; $('doneCnt').textContent=state.lines.length+'건 정리';
+    $('doneBtn').disabled=state.lines.length===0;
     L.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>changeObs(Number(b.dataset.p),1)));
     L.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',()=>changeObs(Number(b.dataset.m),-1)));
     L.querySelectorAll('[data-d]').forEach(b=>b.addEventListener('click',()=>delLine(Number(b.dataset.d))));
@@ -712,7 +429,7 @@
     if(!state.survey) return; $('doneBtn').disabled=true; $('doneBtn').innerHTML='<span class="spin"></span> 정리 중…';
     try{ const d=await api('/api/field-surveys/'+state.survey.id+'/complete',{method:'POST',headers:auth()});
       state.survey=d.survey; state.summary=d.summary; state.lines=d.lines.slice().reverse();
-      state._devCreated=d.dev_requests_created; state.soldMeta=d.sold_meta||null; showSummary();
+      state._devCreated=d.dev_requests_created; showSummary();
     }catch(e){ toast('완료 처리 실패'); }
     finally{ $('doneBtn').disabled=false; $('doneBtn').innerHTML='모두 완료 → 정리 보기 <small id="doneCnt"></small>'; }
   }
@@ -728,41 +445,6 @@
     ).join('');
     return '<table><thead>'+head+'</thead><tbody>'+body+'</tbody></table>';
   }
-  // 보충 제안 표 — 소진율 ▼ (다 팔린 품목이 맨 위 = 지금 팔 품목)
-  function repTable(rows){
-    if(!rows.length) return '<div class="none">해당 없음</div>';
-    const head='<tr><th>CTR</th><th style="text-align:right">누적판매</th><th style="text-align:right">현장재고</th><th style="text-align:right">소진</th><th style="text-align:right">소진율</th><th style="text-align:right">제안</th></tr>';
-    const body=rows.map(e=>'<tr><td class="c">'+esc(e.ctr_code||'')+'<div class="veh">'+esc(e.app_text||'')+'</div></td>'
-      +'<td class="s">'+(Number(e.sold_qty_snap)||0)+'</td>'
-      +'<td class="s'+((Number(e.observed_qty)||0)===0?' zero':'')+'">'+(Number(e.observed_qty)||0)+'</td>'
-      +'<td class="hot">'+(Number(e.sold_out)||0)+'</td>'
-      +'<td class="s">'+(e.sell_pct==null?'—':e.sell_pct+'%')+'</td>'
-      +'<td class="hot">'+(Number(e.sold_out)||0)+'</td></tr>').join('');
-    return '<table><thead>'+head+'</thead><tbody>'+body+'</tbody></table>';
-  }
-  function keptTable(rows,anom){
-    if(!rows.length) return '<div class="none">해당 없음</div>';
-    const head=anom?'<tr><th>CTR</th><th style="text-align:right">누적판매</th><th style="text-align:right">현장재고</th><th>해석</th></tr>'
-                   :'<tr><th>CTR</th><th style="text-align:right">누적판매</th><th style="text-align:right">현장재고</th><th>상태</th></tr>';
-    const body=rows.map(e=>'<tr><td class="c">'+esc(e.ctr_code||'')+'</td><td class="s">'+(Number(e.sold_qty_snap)||0)+'</td>'
-      +'<td class="s">'+(Number(e.observed_qty)||0)+'</td>'
-      +'<td class="veh"'+(anom?' style="color:#C0564F;font-weight:700"':'')+'>'+(anom?'타사 경로 구매 / 조사 오차':'재고 그대로 — 소진 0')+'</td></tr>').join('');
-    return '<table><thead>'+head+'</thead><tbody>'+body+'</tbody></table>';
-  }
-  function renderSell(){
-    const s=state.summary; const sc=(s&&s.sell)||{checked:0,gone:0,partial:0,kept:0,anomaly:0,replenish_lines:0,replenish_qty:0};
-    const meta=state.soldMeta||{enabled:false,total:0,checked:0,unchecked:0};
-    const on=!!(meta.enabled && sc.checked>0);
-    $('sellCounts').classList.toggle('hidden',!on);
-    ['secRep','secKept','secAnom','repMsg'].forEach(id=>$(id).innerHTML='');
-    if(!on) return;
-    $('nGone').textContent=sc.gone; $('nPart').textContent=sc.partial;
-    $('nTodo').textContent=meta.unchecked; $('nAnom').textContent=sc.anomaly;
-    $('repMsg').innerHTML='<div class="repmsg">🔁 <b>보충 제안 '+sc.replenish_lines+'건 · 총 '+sc.replenish_qty+'개</b> — 엔드커스터머로 나간 만큼입니다. 그대로 견적 발송하거나 오퍼 엑셀로 내려받으세요.</div>';
-    $('secRep').innerHTML='<div class="sectitle"><span class="sw" style="background:#B8893B"></span>🔁 보충 제안 (소진분) <span class="ct">'+sc.replenish_lines+'건</span><span class="srt">소진율 ▼</span></div>'+repTable(s.replenish||[]);
-    if((s.kept||[]).length)    $('secKept').innerHTML='<div class="sectitle"><span class="sw" style="background:#c9c6bf"></span>미소진 <span class="ct">'+sc.kept+'건</span><span class="srt">CTR ↑</span></div>'+keptTable(s.kept,false);
-    if((s.anomaly||[]).length) $('secAnom').innerHTML='<div class="sectitle"><span class="sw" style="background:#C0564F"></span>⚠ 이상 — 현장재고 &gt; 누적판매 <span class="ct">'+sc.anomaly+'건</span></div>'+keptTable(s.anomaly,true);
-  }
   function renderSummary(){
     const s=state.summary, c=s.counts;
     // 뷰 단에서도 CTR(개발필요는 입력코드) 알파벳 정렬 보장(서버 정렬 + 이중 보장)
@@ -770,43 +452,22 @@
     const byInput=(a,b)=>String(a.input_code||'').localeCompare(String(b.input_code||''));
     const imm=(s.imm||[]).slice().sort(byCtr), short=(s.short||[]).slice().sort(byCtr), dev=(s.dev||[]).slice().sort(byInput);
     $('sCust').textContent='정리 결과 · '+(state.survey.customer_name||'');
-    const sc=(s.sell||{}); const meta=state.soldMeta||{};
-    $('sMeta').textContent=(state.survey.survey_date||'')+' · 담당 '+(state.survey.creator_name||(session.user&&session.user.name)||'')
-      +(meta.enabled?(' · 점검 '+(sc.checked||0)+' / 누적판매 '+(meta.total||0)+'종 · 소진 추정 '+(sc.replenish_qty||0)+'개'):'')
-      +(c.total?(' · 코드입력 '+c.total+'건'):'');
-    renderSell();
-    $('codeCounts').classList.toggle('hidden',c.total===0);
+    $('sMeta').textContent=(state.survey.survey_date||'')+' · 담당 '+(state.survey.creator_name||(session.user&&session.user.name)||'')+' · 총 '+c.total+'건 · CTR 알파벳순';
     $('nImm').textContent=c.imm; $('nShort').textContent=c.short; $('nDev').textContent=c.dev;
     $('devMsg').innerHTML = state._devCreated ? '<div class="devmsg">🛠 개발필요 '+c.dev+'건 중 '+state._devCreated+'건이 개발요청으로 자동 등록되었습니다(제품·마케팅 알림).</div>'
       : (c.dev? '<div class="devmsg">🛠 개발필요 '+c.dev+'건 — 개발요청은 이미 등록되어 있습니다.</div>':'');
-    if(c.total===0){ $('secImm').innerHTML=''; $('secShort').innerHTML=''; $('secDev').innerHTML=''; return; }
     $('secImm').innerHTML='<div class="sectitle"><span class="sw" style="background:#2f8a5b"></span>즉시매출가능 <span class="ct">'+c.imm+'건</span><span class="srt">CTR ↑</span></div>'+secTable(imm,false);
     $('secShort').innerHTML='<div class="sectitle"><span class="sw" style="background:#C58A2E"></span>재고부족 <span class="ct">'+c.short+'건</span><span class="srt">CTR ↑</span></div>'+secTable(short,false);
     $('secDev').innerHTML='<div class="sectitle"><span class="sw" style="background:#C0564F"></span>개발필요 <span class="ct">'+c.dev+'건</span><span class="srt">코드 ↑</span></div>'+secTable(dev,true);
   }
 
-  // ── 견적으로 발송 ──
-  //   ⓐ 코드입력 매칭분(즉시+부족) = 관측수량   ⓑ 보충 제안(소진분) = 소진량
-  //   같은 제품이 양쪽에 있으면 큰 수량으로 1줄 통합.
-  function quoteLines(){
-    const s=state.summary;
-    const m=new Map();
-    s.imm.concat(s.short).filter(l=>l.product_id).forEach(l=>{
-      const q=Number(l.observed_qty)||1; const pid=Number(l.product_id);
-      m.set(pid, Math.max(m.get(pid)||0, q));
-    });
-    (s.replenish||[]).filter(l=>l.product_id).forEach(l=>{
-      const q=Number(l.sold_out)||0; if(q<=0) return; const pid=Number(l.product_id);
-      m.set(pid, Math.max(m.get(pid)||0, q));
-    });
-    return [...m.entries()].map(([product_id,qty])=>({product_id,qty}));
-  }
+  // ── 견적으로 발송 (즉시매출가능 + 재고부족 = 매칭된 줄) ──
   async function sendToQuote(){
-    const s=state.summary; const lines=quoteLines();
-    if(!lines.length){ toast('견적에 담을 매칭 제품이 없습니다'); return; }
-    const repN=(s.replenish||[]).filter(l=>l.product_id && (Number(l.sold_out)||0)>0).length;
+    const s=state.summary; const matched=s.imm.concat(s.short).filter(l=>l.product_id);
+    if(!matched.length){ toast('견적에 담을 매칭 제품이 없습니다'); return; }
     $('btnQuote').disabled=true; $('btnQuote').innerHTML='<span class="spin"></span> 생성 중…';
     try{
+      const lines=matched.map(l=>({product_id:l.product_id, qty:Number(l.observed_qty)||1}));
       const body = state.survey.customer_id
         ? { customer_id:state.survey.customer_id, lines, memo:'현장재고조사 전환' }
         : { guest_name:state.survey.customer_name, discount_rate:(state.survey.discount_rate==null?0:state.survey.discount_rate), lines, memo:'현장재고조사 전환' };
@@ -814,7 +475,7 @@
       const newCid=(q.auto_customer&&q.auto_customer.id)||q.customer_id||null;
       try{ await api('/api/field-surveys/'+state.survey.id+'/mark-quoted',{method:'POST',headers:jhead(),body:JSON.stringify({quote_id:q.id, customer_id:newCid})}); }catch(e){}
       if(newCid) state.survey.customer_id=newCid;
-      toast('견적 '+(q.quote_no||'')+' 생성됨 ('+lines.length+'개 품목'+(repN?' · 보충제안 '+repN:'')+')');
+      toast('견적 '+ (q.quote_no||'') +' 생성됨 ('+matched.length+'개 품목)');
       setTimeout(()=>{ if(confirm('견적 '+(q.quote_no||'')+' 이(가) 생성되었습니다.\n견적 목록 화면으로 이동할까요?')) location.href='refatrix-quotelist.html'; },300);
     }catch(e){ toast('견적 생성 실패: '+e.message); }
     finally{ $('btnQuote').disabled=false; $('btnQuote').innerHTML='<span class="ico">📄</span>견적으로 발송'; }
@@ -840,27 +501,15 @@
         : [r.input_code||'', r.ctr_code||'', (r.product_name||'')+(r.app_text?' · '+r.app_text:''), Number(r.avail_stock)||0, Number(r.observed_qty)||0]));
       aoa.push([]);
     }
-    // 보충 제안(소진분) — Vendido acumulado / Existencia en sitio / Vendido al consumidor final / Sugerido
-    function repSection(rows){
-      const r0=aoa.length; aoa.push(['Reposición sugerida (vendido al consumidor final)']); marks.push({r:r0,kind:'sec',color:'FFB8893B'});
-      const head=['Clave CTR','Producto · Aplicación','Vendido acumulado','Existencia en sitio','Vendido al final','Sugerido','% Venta'];
-      const hr=aoa.length; aoa.push(head); marks.push({r:hr,kind:'head',n:head.length});
-      if(!rows.length){ aoa.push(['(Sin registros)']); }
-      rows.forEach(r=> aoa.push([ r.ctr_code||'', (r.product_name||'')+(r.app_text?' · '+r.app_text:''),
-        Number(r.sold_qty_snap)||0, Number(r.observed_qty)||0, Number(r.sold_out)||0, Number(r.sold_out)||0,
-        (r.sell_pct==null?'':Number(r.sell_pct)) ]));
-      aoa.push([]);
-    }
-    if((s.replenish||[]).length) repSection(s.replenish);
     section('Disponible inmediato', 'FF2F8A5B', s.imm, false);
     section('Existencia insuficiente', 'FFC58A2E', s.short, false);
     section('Por desarrollar', 'FFC0564F', s.dev, true);
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=[{wch:18},{wch:40},{wch:17},{wch:16},{wch:15},{wch:11},{wch:9}];
+    ws['!cols']=[{wch:18},{wch:16},{wch:40},{wch:12},{wch:11}];
     setS(ws,0,0,{font:{bold:true,sz:14,color:{rgb:'FF143D34'}}});
     marks.forEach(m=>{
       if(m.kind==='sec') setS(ws,m.r,0,{font:{bold:true,sz:12,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:m.color}}});
-      if(m.kind==='head') for(let c=0;c<(m.n||7);c++) setS(ws,m.r,c,{font:{bold:true,color:{rgb:'FF555555'}},fill:{fgColor:{rgb:'FFF0F0F0'}}});
+      if(m.kind==='head') for(let c=0;c<(m.n||5);c++) setS(ws,m.r,c,{font:{bold:true,color:{rgb:'FF555555'}},fill:{fgColor:{rgb:'FFF0F0F0'}}});
     });
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Inventario en sitio');
     const fn=('Inventario_en_sitio_'+cust+'_'+date+'.xlsx').replace(/[\\/:*?"<>|]/g,'_');
@@ -878,27 +527,16 @@
   $('backToStart').addEventListener('click',()=>{ showStart(); loadOpenSurveys(); });
   $('addBtn').addEventListener('click',addCode);
   $('codeIn').addEventListener('keydown',e=>{ if(e.key==='Enter') addCode(); });
-  $('btnBulkXls').addEventListener('click',()=>$('bulkFile').click());
-  $('btnBulkTpl').addEventListener('click',downloadBulkTemplate);
-  $('bulkFile').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; if(f) bulkUpload(f); e.target.value=''; });
-  $('segHist').addEventListener('click',()=>setPane('hist'));
-  $('segCode').addEventListener('click',()=>setPane('code'));
-  $('hSort').addEventListener('click',toggleHistSort);
-  $('hAll').addEventListener('click',()=>{ state.soldAll=true; loadSold(); });
-  $('hQ').addEventListener('input',()=>{ clearTimeout(window._hq);
-    window._hq=setTimeout(()=>{ state.soldQ=$('hQ').value.trim(); loadSold(); },320); });
   $('doneBtn').addEventListener('click',complete);
   $('btnQuote').addEventListener('click',sendToQuote);
   $('btnXls').addEventListener('click',downloadExcel);
-  $('btnReopen').addEventListener('click',()=>{ showEntry(); });
+  $('btnReopen').addEventListener('click',()=>{ state.lines=state.summary?state.summary.imm.concat(state.summary.short,state.summary.dev).slice().reverse():state.lines; showEntry(); });
   $('btnNew').addEventListener('click',()=>{ state.survey=null; state.lines=[]; state.summary=null; state.customer=null;
-    state.sold={enabled:false,items:[],total:0,shown:0,all:false}; state.soldAll=false; state.soldQ=''; state.histSort='acc'; state.pane='hist';
-    state.soldMeta=null; $('hQ').value='';
     $('custSel').value=''; onCustChange(); $('guestName').value=''; $('discInput').value=''; showStart(); loadCustomers(); loadOpenSurveys(); });
 
   // 자동 로그인(포털 세션)
   (function(){ const ps=portalSession(); if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||$('api').value}; afterLogin(); } })();
 </script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

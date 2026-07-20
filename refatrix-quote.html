@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · build cp-20260717a</title>
+<title>Refatrix ERP · 견적 (수주관리) · t500all-20260707d</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -53,40 +53,6 @@
   .modal .bd{padding:16px 18px}
   .cand{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
   .cand:hover{border-color:var(--brand);background:#faf8f3}
-  /* ── 이 고객 누적 구매 품목 (상시 사이드패널) ── */
-  .cols{display:grid;grid-template-columns:1fr 336px;gap:16px;align-items:start}
-  @media(max-width:900px){ .cols{grid-template-columns:1fr} }
-  .side{position:sticky;top:12px}
-  @media(max-width:900px){ .side{position:static} }
-  .side .hd{background:var(--brand);color:#fff;border-radius:var(--radius) var(--radius) 0 0;padding:12px 14px}
-  .side .hd .t{font-size:13.5px;font-weight:800}
-  .side .hd .s{font-size:11px;color:#bcd2c9;margin-top:3px}
-  .side .bd{background:var(--card);border:1px solid var(--line);border-top:0;border-radius:0 0 var(--radius) var(--radius);padding:11px 12px 13px;box-shadow:var(--shadow)}
-  .side .warnbox{background:var(--expense-bg);border:1px solid #edc4bf;border-radius:9px;padding:8px 10px;font-size:11.5px;font-weight:800;color:var(--expense);margin-bottom:9px;line-height:1.5}
-  .side .warnbox span{font-weight:600;color:#8a4a44;display:block;margin-top:2px}
-  .side input.q{width:100%;font-size:12.5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
-  .side .grp{font-size:10.5px;font-weight:800;color:var(--muted);margin:10px 2px 6px;display:flex;align-items:center;gap:6px}
-  .side .grp .n{margin-left:auto;font-weight:700}
-  .prow{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 9px;margin-bottom:6px}
-  .prow.miss{border-left-color:var(--expense);background:#fffaf9}
-  .prow.inq{border-left-color:var(--income);background:#f7faf8;opacity:.78}
-  .prow .mid{flex:1;min-width:0}
-  .prow .c{font-size:12.5px;font-weight:800;letter-spacing:.3px}
-  .prow .nmx{font-size:10.5px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .prow .m{font-size:10.5px;color:var(--muted);margin-top:2px}
-  .prow .m b{color:var(--brand);font-weight:800}
-  .prow .m .old{color:var(--expense);font-weight:800}
-  .addb{border:0;background:var(--gold);color:#fff;border-radius:8px;padding:7px 10px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap}
-  .addb.done{background:var(--income-bg);color:var(--income);cursor:default}
-  .side .allb{width:100%;border:1px dashed #c9c6bf;background:#fff;color:var(--brand);border-radius:9px;padding:9px;font-size:11.5px;font-weight:800;cursor:pointer;margin-top:4px}
-  .side .empty{font-size:11.5px;color:var(--muted);padding:6px 2px}
-  #missWarn .hd2{background:var(--expense-bg);color:var(--expense);padding:13px 16px;font-size:14px;font-weight:800;border-bottom:1px solid #edc4bf}
-  #missWarn .bd2{padding:14px 16px;font-size:12.5px;line-height:1.7;color:#3a3833}
-  #missWarn .bd2 ul{margin:8px 0 0;padding-left:18px}
-  #missWarn .ft2{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
-  #missWarn .ft2 button{flex:1;border:0;border-radius:9px;padding:11px;font-size:13px;font-weight:800;cursor:pointer}
-  #missWarn .ft2 .back{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}
-  #missWarn .ft2 .goo{background:var(--brand);color:#fff}
   .delx{color:var(--expense);cursor:pointer;font-weight:800;border:none;background:none;font-size:15px}
   .acbox{position:absolute;top:100%;left:0;right:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);margin-top:3px;max-height:280px;overflow:auto}
   .acitem{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
@@ -111,8 +77,6 @@
   </div>
 
   <div class="hidden" id="app">
-   <div class="cols">
-    <div>
     <!-- 견적 헤더 -->
     <div class="card">
       <div class="card-h">새 견적 작성</div>
@@ -161,38 +125,6 @@
         <button class="btn ghost" onclick="goQuoteList()" title="견적·매출 추적 화면으로 이동">견적 목록 보기</button>
         <span id="saveMsg" class="msg" style="margin:0"></span>
       </div>
-    </div>
-    </div>
-
-    <!-- 이 고객 누적 구매 품목 (상시) — 이번 견적에 빠진 단골 품목을 잡아냄 -->
-    <div class="side" id="soldSide">
-      <div class="hd">
-        <div class="t">📊 이 고객 누적 구매 품목</div>
-        <div class="s" id="soldSub">고객을 선택하세요</div>
-      </div>
-      <div class="bd">
-        <div id="soldWarn"></div>
-        <input class="q" id="soldQ" type="text" placeholder="코드 검색 (CA0032 · 품명 · 차종)" autocomplete="off">
-        <div id="soldBody"><div class="empty">고객을 선택하면 그동안 판매한 품목이 여기 표시됩니다.</div></div>
-        <button class="allb hidden" id="soldAll">▸ 전체 보기</button>
-      </div>
-    </div>
-   </div>
-  </div>
-</div>
-
-<!-- 저장 직전 누락 경고 (1회) -->
-<div class="modal" id="missWarn">
-  <div class="box" style="max-width:460px">
-    <div class="hd2">⚠ 단골 품목 <span id="mwN">0</span>건이 이번 견적에 없습니다</div>
-    <div class="bd2">
-      이 고객이 평소 구매하던 품목 중 아래가 빠져 있습니다.
-      <ul id="mwList"></ul>
-      그대로 저장할까요?
-    </div>
-    <div class="ft2">
-      <button class="back" onclick="closeMissWarn()">돌아가서 추가</button>
-      <button class="goo" onclick="saveQuote(true)">이대로 저장</button>
     </div>
   </div>
 </div>
@@ -286,8 +218,6 @@
       $('custHint').textContent=sel.value?('할인율 '+curDisc+'%가 모든 품목에 자동 적용됩니다.'):'고객을 선택하면 할인율이 자동 적용됩니다. 불특정 고객은 할인율을 직접 입력합니다.';
     }
     if(lines.length) recalc();
-    soldAllOn=false; soldQv=''; missWarned=false; $('soldQ').value='';
-    loadSold();
   }
   function onDiscInput(){
     if(!isGuest)return;
@@ -719,7 +649,7 @@
       lines.push({code,product_id:pickedProduct.product_id,qty});
       pickedProduct=null;
       $('inCode').value='';$('inQty').value='1';hideAc();$('inCode').focus();
-      recalc(); renderSold(); return;
+      recalc(); return;
     }
     // 코드 해석: 다중매칭이면 후보 선택
     try{
@@ -733,7 +663,7 @@
         openCand(code,qty,matches); return; // 후보 선택 후 push
       }
       $('inCode').value='';$('inQty').value='1';$('inCode').focus();
-      recalc(); renderSold();
+      recalc();
     }catch(e){m.className='msg err';m.textContent='코드 조회 실패';}
   }
 
@@ -749,12 +679,12 @@
   }
   function pickCand(pid){
     if(pendingCand){ lines.push({code:pendingCand.code,product_id:pid,qty:pendingCand.qty}); pendingCand=null; }
-    closeCand();$('inCode').value='';$('inQty').value='1';$('inCode').focus();recalc();renderSold();
+    closeCand();$('inCode').value='';$('inQty').value='1';$('inCode').focus();recalc();
   }
   function closeCand(){ $('candModal').style.display='none'; pendingCand=null; }
 
-  function removeLine(i){ lines.splice(i,1); recalc(); renderSold(); }
-  function clearLines(){ lines=[]; recalc(); renderSold(); }
+  function removeLine(i){ lines.splice(i,1); recalc(); }
+  function clearLines(){ lines=[]; recalc(); }
 
   // 미리보기 계산(서버) → 표 렌더
   async function recalc(){
@@ -845,90 +775,6 @@
     }catch(e){ if($('saveBtn')) $('saveBtn').disabled=false; m.className='msg err';m.textContent='엑셀을 읽지 못했습니다. (코드 열 + 수량 열 형식 확인)'; }
   }
 
-  // ═══════════ 이 고객 누적 구매 품목 (상시 사이드패널) ═══════════
-  //  · 고객 선택 시 그동안 판매한 품목을 누적수량 ▼ 로 로드(기본 상위 30 · 전체 누적).
-  //  · 이번 견적에 없는 품목 = ⚠ 누락 → 맨 위. 「+ 추가」 로 바로 견적 줄 삽입.
-  //  · 저장 시 누락이 있으면 1회 경고. 미등록(불특정) 고객은 누적판매가 없어 비활성.
-  let sold={enabled:false,items:[],total:0,shown:0,all:false};
-  let soldAllOn=false, soldQv='', missWarned=false;
-
-  function soldOn(){ return !!(sold && sold.enabled && !isGuest); }
-  function inQuote(pid){ return lines.some(l=>Number(l.product_id)===Number(pid)); }
-  function daysSince(d){
-    if(!d) return null;
-    const t=Date.parse(d+'T00:00:00'); if(isNaN(t)) return null;
-    return Math.max(0, Math.round((Date.now()-t)/86400000));
-  }
-  function missingItems(){ return soldOn()? sold.items.filter(i=>!inQuote(i.product_id)) : []; }
-
-  async function loadSold(){
-    const cid=$('custSel').value;
-    if(!cid || cid==='__guest__'){
-      sold={enabled:false,items:[],total:0,shown:0,all:false};
-      $('soldSub').textContent = cid==='__guest__' ? '불특정 고객 — 누적 구매 이력 없음' : '고객을 선택하세요';
-      renderSold(); return;
-    }
-    $('soldSub').textContent='불러오는 중…';
-    const p=new URLSearchParams({customer_id:String(Number(cid))});
-    if(soldAllOn) p.set('all','1');
-    if(soldQv) p.set('q',soldQv);
-    try{
-      const r=await fetch(session.api+'/api/quotes/customer-purchased?'+p.toString(),{headers:auth()});
-      const d=await r.json();
-      sold = (d&&!d.error) ? d : {enabled:false,items:[],total:0,shown:0,all:false};
-    }catch(e){ sold={enabled:false,items:[],total:0,shown:0,all:false}; }
-    renderSold();
-  }
-
-  function renderSold(){
-    const B=$('soldBody'), W=$('soldWarn');
-    $('soldAll').classList.add('hidden'); W.innerHTML='';
-    if(!soldOn()){
-      B.innerHTML='<div class="empty">'+(isGuest?'불특정 고객은 누적 구매 이력이 없습니다.':'고객을 선택하면 그동안 판매한 품목이 여기 표시됩니다.')+'</div>';
-      if(!isGuest && $('custSel').value) $('soldSub').textContent='구매 이력 없음';
-      return;
-    }
-    const total=Number(sold.total)||0, shown=(sold.items||[]).length;
-    $('soldSub').textContent = (soldQv?('검색 결과 '+shown+'종'):(sold.all?('전체 '+shown+'종'):('상위 '+shown+' / '+total+'종')))+' · 전체 누적';
-    if(!shown){ B.innerHTML='<div class="empty">'+(soldQv?'검색 결과가 없습니다.':'이 고객에게 판매한 이력이 없습니다.')+'</div>'; return; }
-
-    const miss=sold.items.filter(i=>!inQuote(i.product_id));
-    const has =sold.items.filter(i=> inQuote(i.product_id));
-    if(miss.length && !soldQv){
-      W.innerHTML='<div class="warnbox">⚠ 이번 견적에 빠진 단골 품목 '+miss.length+'건'
-        +'<span>평소 사가던 품목입니다. 확인하고 추가하세요.</span></div>';
-    }
-    const row=(it,isMiss)=>{
-      const dd=daysSince(it.last_sold_at);
-      return '<div class="prow '+(isMiss?'miss':'inq')+'"><div class="mid">'
-        +'<div class="c">'+esc(it.ctr_code||'')+'</div>'
-        +'<div class="nmx">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div>'
-        +'<div class="m">누적 <b>'+(Number(it.sold_qty)||0)+'</b> · 최근 '+esc(it.last_sold_at||'—')
-        +(dd!=null?' · <span class="old">'+dd+'일 경과</span>':'')+' · '+(Number(it.order_days)||0)+'회</div></div>'
-        +(isMiss?'<button class="addb" data-add="'+it.product_id+'">+ 추가</button>'
-                :'<button class="addb done">✓ 포함</button>')+'</div>';
-    };
-    let h='';
-    if(miss.length) h+='<div class="grp">⚠ 이번 견적 누락 <span class="n">'+miss.length+'건</span></div>'+miss.map(i=>row(i,true)).join('');
-    if(has.length)  h+='<div class="grp">✓ 이번 견적 포함 <span class="n">'+has.length+'건</span></div>'+has.map(i=>row(i,false)).join('');
-    B.innerHTML=h;
-    B.querySelectorAll('[data-add]').forEach(b=>b.addEventListener('click',()=>addFromSold(Number(b.dataset.add))));
-
-    const more=(!sold.all && !soldQv && total>shown);
-    $('soldAll').classList.toggle('hidden',!more);
-    $('soldAll').textContent='▸ 전체 '+total+'종 보기';
-  }
-
-  // 사이드패널 → 견적 줄 삽입 (기본 수량 = 평균 주문수량)
-  function addFromSold(pid){
-    const it=(sold.items||[]).find(i=>Number(i.product_id)===Number(pid)); if(!it) return;
-    if(inQuote(pid)){ renderSold(); return; }
-    lines.push({code:it.ctr_code, product_id:Number(pid), qty:Number(it.avg_order_qty)||1});
-    recalc(); renderSold();
-    const m=$('lineMsg'); m.className='msg ok';
-    m.textContent=it.ctr_code+' 추가됨 — 수량 '+(Number(it.avg_order_qty)||1)+' (평균 주문수량). 표에서 수정하세요.';
-  }
-
   // ===== 고객 구매 실적 (최근 3년) =====
   async function showHistory(productId, ctrCode){
     const cid=$('custSel').value;
@@ -960,8 +806,7 @@
     }catch(e){ location.href='refatrix-quotelist.html'; }
   }
 
-  function closeMissWarn(){ $('missWarn').style.display='none'; }
-  async function saveQuote(force){
+  async function saveQuote(){
     const m=$('saveMsg');m.className='msg';
     const cid=$('custSel').value;
     if(!cid){m.className='msg err';m.textContent='고객을 선택하세요.';return;}
@@ -971,21 +816,6 @@
     }
     const valid=lines.filter(l=>l.product_id||l.code);
     if(!valid.length){m.className='msg err';m.textContent='품목을 추가하세요.';return;}
-    // 단골 품목 누락 경고 — 저장 전 1회만
-    if(force!==true && !missWarned){
-      const miss=missingItems();
-      if(miss.length){
-        missWarned=true;
-        $('mwN').textContent=miss.length;
-        $('mwList').innerHTML=miss.slice(0,10).map(i=>{
-          const dd=daysSince(i.last_sold_at);
-          return '<li><b>'+esc(i.ctr_code||'')+'</b> — 누적 '+(Number(i.sold_qty)||0)+'개 · 마지막 구매 '+esc(i.last_sold_at||'—')+(dd!=null?(' ('+dd+'일 경과)'):'')+'</li>';
-        }).join('')+(miss.length>10?'<li>… 외 '+(miss.length-10)+'건</li>':'');
-        $('missWarn').style.display='flex';
-        return;
-      }
-    }
-    closeMissWarn();
     $('saveBtn').disabled=true;
     try{
       const body=isGuest
@@ -1000,18 +830,14 @@
       m.className='msg ok';
       m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · '+(d.auto_customer.created?'고객 자동등록':'기존 고객 연결')+': '+esc(d.auto_customer.name)):'');
       if(d.auto_customer){ loadCustomers(); }
-      missWarned=false; renderSold();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}
   }
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
-  $('soldAll').addEventListener('click',()=>{ soldAllOn=true; loadSold(); });
-  $('soldQ').addEventListener('input',()=>{ clearTimeout(window._sq);
-    window._sq=setTimeout(()=>{ soldQv=$('soldQ').value.trim(); loadSold(); },320); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 사용자 · 권한 관리 · build u14</title>
+<title>Refatrix ERP · 사용자 · 권한 관리 · build u13</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -77,159 +77,6 @@
   </div>
 
   <div class="hidden" id="app">
-    <!-- 시계 대시보드 (한국 ↔ 몬테레이) build u14 -->
-    <div class="card" id="clockDash">
-      <style>
-        #clockDash h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-        #clockDash .cd-live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-weight:700}
-        #clockDash .cd-dot{width:8px;height:8px;border-radius:50%;background:#3ea77c;animation:cdPulse 1.6s infinite}
-        @keyframes cdPulse{0%,100%{opacity:1}50%{opacity:.3}}
-        #clockDash .cd-clocks{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-        @media(max-width:640px){#clockDash .cd-clocks{grid-template-columns:1fr}}
-        #clockDash .cd-clock{position:relative;border:1px solid var(--line);border-top:4px solid var(--c);
-          border-radius:14px;padding:20px 22px;overflow:hidden;transition:background .5s,color .5s,box-shadow .5s}
-        /* 주간(07~18시): 밝은 음영 */
-        #clockDash .cd-clock.cd-day{background:linear-gradient(160deg,#fffdf5,#fbf7ea);color:var(--ink);
-          box-shadow:inset 0 0 0 1px rgba(255,255,255,.5),0 4px 16px rgba(154,123,22,.10)}
-        /* 야간(그 외): 어두운 음영 */
-        #clockDash .cd-clock.cd-night{background:linear-gradient(160deg,#1d2b31,#131f1b);color:#eef1ec;
-          box-shadow:0 6px 20px rgba(0,0,0,.22)}
-        #clockDash .cd-clock .cd-flag{font-size:26px;line-height:1}
-        #clockDash .cd-clock .cd-nm{font-size:15px;font-weight:800;color:var(--c);margin-top:6px}
-        #clockDash .cd-clock .cd-zone{font-size:11px;font-weight:700;margin-top:1px;opacity:.72}
-        #clockDash .cd-clock .cd-time{font-size:52px;font-weight:800;line-height:1;margin:14px 0 6px;
-          font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-        #clockDash .cd-clock .cd-time .cd-sec{font-size:26px;font-weight:700;opacity:.6}
-        #clockDash .cd-clock .cd-date{font-size:13px;font-weight:600;opacity:.75}
-        #clockDash .cd-clock .cd-dn{position:absolute;top:18px;right:20px;font-size:22px}
-        #clockDash .cd-clock .cd-tag{position:absolute;top:52px;right:20px;font-size:10px;font-weight:800;
-          padding:2px 8px;border-radius:999px;letter-spacing:.03em}
-        #clockDash .cd-clock.cd-day .cd-tag{background:#f3eccf;color:#7a5f0f}
-        #clockDash .cd-clock.cd-night .cd-tag{background:rgba(255,255,255,.14);color:#dfe6df}
-        #clockDash .cd-diff{margin-top:14px;background:#f6f3ec;border:1px solid var(--line);border-left:4px solid var(--brand);
-          border-radius:8px;padding:11px 14px;font-size:13px;line-height:1.6}
-        #clockDash .cd-diff b{color:var(--brand)}
-        #clockDash .cd-conv-h{margin:18px 0 10px;font-size:13px;font-weight:800;color:var(--brand)}
-        #clockDash .cd-seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:12px}
-        #clockDash .cd-seg button{border:none;background:#fff;padding:8px 14px;font-family:inherit;font-size:12.5px;
-          font-weight:700;color:var(--muted);cursor:pointer}
-        #clockDash .cd-seg button.on{background:var(--brand);color:#fff}
-        #clockDash .cd-conv{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
-        #clockDash .cd-fld label{margin:0 0 4px}
-        #clockDash .cd-fld input[type=time]{font-size:15px;padding:9px 10px}
-        #clockDash .cd-arrow{font-size:22px;color:#c9c2b2;padding-bottom:6px}
-        #clockDash .cd-res{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:#faf8f3;min-width:170px}
-        #clockDash .cd-res .cd-rl{font-size:11px;color:var(--muted);font-weight:700}
-        #clockDash .cd-res .cd-rt{font-size:30px;font-weight:800;color:var(--income);line-height:1.1;font-variant-numeric:tabular-nums}
-        #clockDash .cd-res .cd-rd{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px}
-      </style>
-      <h2>🕐 시계 대시보드 <span class="cd-live"><span class="cd-dot"></span>LIVE</span></h2>
-
-      <div class="cd-clocks">
-        <div class="cd-clock" id="cdCardKR" style="--c:#0F6E56">
-          <div class="cd-dn" id="cdDnKR">🌙</div>
-          <div class="cd-tag" id="cdTagKR">야간</div>
-          <div class="cd-flag">🇰🇷</div>
-          <div class="cd-nm">한국 (서울)</div>
-          <div class="cd-zone">KST · UTC+9 · Asia/Seoul</div>
-          <div class="cd-time"><span id="cdKrHM">--:--</span><span class="cd-sec" id="cdKrS">:--</span></div>
-          <div class="cd-date" id="cdKrDate">----년 --월 --일 (-)</div>
-        </div>
-        <div class="cd-clock" id="cdCardMX" style="--c:#B23A2E">
-          <div class="cd-dn" id="cdDnMX">🌙</div>
-          <div class="cd-tag" id="cdTagMX">야간</div>
-          <div class="cd-flag">🇲🇽</div>
-          <div class="cd-nm">몬테레이 (Monterrey)</div>
-          <div class="cd-zone">CST · UTC−6 · America/Monterrey</div>
-          <div class="cd-time"><span id="cdMxHM">--:--</span><span class="cd-sec" id="cdMxS">:--</span></div>
-          <div class="cd-date" id="cdMxDate">----년 --월 --일 (-)</div>
-        </div>
-      </div>
-      <div class="cd-diff" id="cdDiff">시차 계산 중…</div>
-
-      <div class="cd-conv-h">⇄ 시각 변환기</div>
-      <div class="cd-seg" id="cdSeg">
-        <button data-dir="kr2mx" class="on">🇰🇷 한국 → 🇲🇽 몬테레이</button>
-        <button data-dir="mx2kr">🇲🇽 몬테레이 → 🇰🇷 한국</button>
-      </div>
-      <div class="cd-conv">
-        <div class="cd-fld"><label id="cdSrcLabel">한국 시각 입력</label><input type="time" id="cdSrc" value="14:00"></div>
-        <button class="btn ghost sm" id="cdNow" type="button">현재 시각 넣기</button>
-        <div class="cd-arrow">→</div>
-        <div class="cd-res">
-          <div class="cd-rl" id="cdDstLabel">몬테레이 시각</div>
-          <div class="cd-rt" id="cdDst">--:--</div>
-          <div class="cd-rd" id="cdDstDay">&nbsp;</div>
-        </div>
-      </div>
-      <div class="hint">주간(07~18시) 카드는 밝게, 야간은 어둡게 표시됩니다 · 변환기는 날짜가 넘어가면 (전일)/(익일)로 안내합니다.</div>
-    </div>
-    <script>
-    (function(){
-      var KR='Asia/Seoul', MX='America/Monterrey';
-      var WD=['일','월','화','수','목','금','토'];
-      var wdMap={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
-      // Intl 포매터는 최초 1회만 생성 후 재사용 (랙 방지)
-      function mkParts(tz){return new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',weekday:'short',hourCycle:'h23'});}
-      var fKR=mkParts(KR), fMX=mkParts(MX);
-      function parts(fmt,d){var o={};fmt.formatToParts(d).forEach(function(p){o[p.type]=p.value;});return o;}
-      function tzOffset(d,fmt){var p=parts(fmt,d);return Math.round((Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-d.getTime())/60000);}
-
-      var $=function(id){return document.getElementById(id);};
-      var el={}; ['cdKrHM','cdKrS','cdKrDate','cdMxHM','cdMxS','cdMxDate','cdDnKR','cdDnMX','cdTagKR','cdTagMX'].forEach(function(k){el[k]=$(k);});
-      var cardKR=$('cdCardKR'), cardMX=$('cdCardMX'), diffEl=$('cdDiff');
-      var last={};
-      function setT(id,v){if(last[id]!==v){el[id].textContent=v;last[id]=v;}}
-
-      function paint(fmt,now,ids,card){
-        var p=parts(fmt,now), h=+p.hour;
-        setT(ids.hm,p.hour+':'+p.minute);
-        setT(ids.s,':'+p.second);
-        setT(ids.date,p.year+'년 '+(+p.month)+'월 '+(+p.day)+'일 ('+WD[wdMap[p.weekday]]+')');
-        var day=(h>=7&&h<18);                 // 주간: 오전 7시 ~ 오후 6시
-        setT(ids.dn, day?'☀️':'🌙');
-        setT(ids.tag, day?'주간':'야간');
-        if(card._day!==day){card.classList.toggle('cd-day',day);card.classList.toggle('cd-night',!day);card._day=day;}
-      }
-
-      var DIFF=900;
-      function tick(){
-        if(document.hidden) return;           // 백그라운드 탭이면 스킵
-        var now=new Date();
-        paint(fKR,now,{hm:'cdKrHM',s:'cdKrS',date:'cdKrDate',dn:'cdDnKR',tag:'cdTagKR'},cardKR);
-        paint(fMX,now,{hm:'cdMxHM',s:'cdMxS',date:'cdMxDate',dn:'cdDnMX',tag:'cdTagMX'},cardMX);
-        DIFF=tzOffset(now,fKR)-tzOffset(now,fMX);
-        var hrs=DIFF/60;
-        diffEl.innerHTML='🇰🇷 <b>한국</b>이 🇲🇽 <b>몬테레이</b>보다 <b>'+hrs+'시간</b> 빠릅니다.';
-        updateConv();
-      }
-
-      var dir='kr2mx', src=$('cdSrc'), srcLabel=$('cdSrcLabel'), dstLabel=$('cdDstLabel'), dst=$('cdDst'), dstDay=$('cdDstDay');
-      function updateConv(){
-        var v=src.value; if(!v){dst.textContent='--:--';dstDay.innerHTML='&nbsp;';return;}
-        var a=v.split(':'), mins=(+a[0])*60+(+a[1]);
-        var out=(dir==='kr2mx')?(mins-DIFF):(mins+DIFF);
-        var off=Math.floor(out/1440); out=((out%1440)+1440)%1440;
-        dst.textContent=String(Math.floor(out/60)).padStart(2,'0')+':'+String(out%60).padStart(2,'0');
-        dstDay.innerHTML= off<0?'(전일)':(off>0?'(익일)':'&nbsp;');
-      }
-      $('cdSeg').addEventListener('click',function(e){
-        var b=e.target.closest('button'); if(!b)return; dir=b.dataset.dir;
-        [].forEach.call(this.children,function(x){x.classList.toggle('on',x===b);});
-        if(dir==='kr2mx'){srcLabel.textContent='한국 시각 입력';dstLabel.textContent='몬테레이 시각';}
-        else{srcLabel.textContent='몬테레이 시각 입력';dstLabel.textContent='한국 시각';}
-        updateConv();
-      });
-      src.addEventListener('input',updateConv);
-      $('cdNow').addEventListener('click',function(){
-        var p=parts(dir==='kr2mx'?fKR:fMX,new Date()); src.value=p.hour+':'+p.minute; updateConv();
-      });
-      document.addEventListener('visibilitychange',function(){if(!document.hidden)tick();});
-
-      tick();
-      setInterval(tick,1000);                 // 단일 인터벌 · 값 변할 때만 DOM 반영
-    })();
-    </script>
     <!-- 접속 현황 (디렉터 전용) -->
     <div class="card" id="presenceCard">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">접속 현황 <span id="presSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
@@ -863,6 +710,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

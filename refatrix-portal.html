@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털 · build 20260717a-share</title>
+<title>Refatrix ERP · 포털 · build 20260706b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -166,39 +166,6 @@
   </div>
 
   <div class="hidden" id="app">
-    <!-- 미결 누적(carry-over) — 디렉터 전용, 완료까지 유지 -->
-    <div class="card hidden" id="carryCard" style="border-left:4px solid var(--expense)">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <h2 style="margin:0">🔴 미결 누적 <span class="hint" id="carryCount" style="display:inline;margin:0"></span></h2>
-        <span class="hint" style="display:inline;margin:0">완료될 때까지 매일 표시 · 경과일 누적</span>
-      </div>
-      <div id="carryBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
-      <div id="aiScanFoot" class="hidden" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:12.5px;font-weight:800;color:var(--brand)">🤖 AI 미결 스캔</span>
-          <span class="hint" style="display:inline;margin:0">일정·회의메모·지시에서 놓친 약속을 감지(제안만)</span>
-          <button id="aiScanBtn" onclick="loadAiScan()" style="margin-left:auto;border:1px solid var(--brand);background:#fff;color:var(--brand);border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">스캔 실행</button>
-        </div>
-        <div id="aiScanBox" style="margin-top:8px"></div>
-      </div>
-    </div>
-
-    <!-- 하루 아침 브리핑 (디렉터 전용) -->
-    <div class="card hidden" id="briefCard">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <h2 style="margin:0">🗞 오늘의 브리핑 <span class="hint" id="briefDateLbl" style="display:inline;margin:0"></span></h2>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <label id="shareSocioWrap" class="hidden" title="켜면 socio(파트너)도 브리핑·미결 누적을 열람할 수 있습니다(열람 전용)."
-                 style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--brand);font-weight:700;background:#f6f8ff;border:1px solid #d9e1ff;border-radius:999px;padding:4px 10px">
-            <input type="checkbox" id="shareSocioChk" onchange="toggleShareSocio(this.checked)" style="cursor:pointer">
-            <span>👥 socio 공유</span>
-          </label>
-          <span class="hint" style="display:inline;margin:0">부서별 오늘 요약 · 매일 갱신</span>
-        </div>
-      </div>
-      <div id="briefBody" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
-    </div>
-
     <!-- 공통 KPI: 당월 매출목표 대비 실적 (클릭 → 영업 대시보드) -->
     <div class="card" id="kpiCard" style="cursor:pointer" onclick="goScreen('salesperf')">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
@@ -866,7 +833,7 @@
 
   async function loadSummary(){
     try{sum=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());}catch(e){sum=null;}
-    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();loadCarryover();loadDailyBriefing();initFunnel();checkConstancia();checkApprovals();pollPortalAlerts({silent:false});startPortalAlerts();checkNoticePopup();checkCalendarPopup();checkCalMemoPopup();startCalMemoPoll();applySlimPortal();
+    renderFlows();renderPending();renderPipe();loadBoardMini();loadKpi();renderTabs();loadPortalCal();loadStageSla();loadQuoteBadge();initFunnel();checkConstancia();checkApprovals();pollPortalAlerts({silent:false});startPortalAlerts();checkNoticePopup();checkCalendarPopup();checkCalMemoPopup();startCalMemoPoll();applySlimPortal();
   }
   // oscar·armando·maria 전용 홈 레이아웃: 매출목표 실적 바로 아래 달력 + 대시보드 버튼 제거
   function applySlimPortal(){
@@ -1106,229 +1073,9 @@
     }
     $('portalSlaBody').innerHTML='<div class="slaquad">'+cell('order')+cell('packing')+cell('sat')+cell('collect')+'</div>';
   }
-  // ===== 하루 아침 브리핑 (디렉터 전용) =====
-  async function loadDailyBriefing(){
-    if(!__briefAud()) return;
-    const card=$('briefCard'); if(!card) return;
-    try{
-      const d=await fetch(session.api+'/api/portal/daily-briefing',{headers:auth()}).then(r=>r.json());
-      if(!d || d.enabled===false){ card.classList.add('hidden'); return; }
-      window.__briefing=d;
-      card.classList.remove('hidden');
-      syncShareSocio(d);
-      if($('briefDateLbl')) $('briefDateLbl').textContent='— '+(d.date_label||'');
-      $('briefBody').innerHTML=renderBriefing(d);
-      checkBriefingPopup();
-    }catch(e){ $('briefBody').innerHTML='<div class="hint">브리핑을 불러오지 못했습니다.</div>'; }
-  }
-  function renderBriefing(d){
-    const secs=(d&&d.sections)||[];
-    if(!secs.length) return '<div class="hint">표시할 내용이 없습니다.</div>';
-    const bm=(v)=>'$'+Math.round(Number(v)||0).toLocaleString('en-US');
-    const md=(s)=>{ const m=String(s||'').match(/^\d{4}-(\d{2})-(\d{2})$/); return m?(Number(m[1])+'/'+Number(m[2])):(s||''); };
-    function briefLines(s){
-      if(!(s&&Array.isArray(s.lines)&&s.lines.length)) return '';
-      return '<div style="margin-top:7px;border-top:1px dashed var(--line);padding-top:7px">'
-        +s.lines.map(l=>
-          '<div style="padding:5px 0;border-bottom:1px dotted var(--line)">'
-          +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
-            +'<span style="font-weight:800;color:var(--brand);min-width:34px">'+escp(md(l.due_date))+'</span>'
-            +'<span style="font-weight:800;color:var(--expense)">'+bm(l.amount)+'</span>'
-            +'<span class="hint" style="display:inline;margin:0">'+escp(l.kind_label||'')+'</span>'
-          +'</div>'
-          +'<div style="font-size:12.5px;color:var(--ink);margin-top:1px">'
-            +escp(l.plan_title||'')+(l.category?' <span class="hint" style="display:inline;margin:0">('+escp(l.category)+')</span>':'')
-            +' › '+escp(l.item_name||'')+(l.vendor?' · '+escp(l.vendor):'')
-          +'</div>'
-          +((l.purpose||l.targets||l.line_memo)?('<div class="hint" style="margin-top:1px">'
-            +(l.purpose?'왜: '+escp(l.purpose):'')
-            +(l.targets?(l.purpose?' · ':'')+'대상: '+escp(l.targets):'')
-            +(l.line_memo?' · 명목: '+escp(l.line_memo):'')
-            +'</div>'):'')
-          +'</div>'
-        ).join('')
-        +'</div>';
-    }
-    return secs.map((s,i)=>
-      '<div style="display:flex;gap:11px;align-items:flex-start;padding:11px 2px'+(i<secs.length-1?';border-bottom:1px solid var(--line)':'')+'">'
-      +'<div style="flex:0 0 26px;font-size:18px;line-height:1.3;text-align:center">'+(s.icon||'•')+'</div>'
-      +'<div style="flex:1;min-width:0">'
-        +'<div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:2px">'+escp(s.title||'')+'</div>'
-        +'<div style="font-size:13.5px;color:var(--ink);line-height:1.6">'+escp(s.text||'')+'</div>'
-        +briefLines(s)
-      +'</div></div>'
-    ).join('');
-  }
-  // 로그인 시 팝업 — MX 현지 하루 1회(닫으면 그날은 이 세션 동안만 안 뜸)
-  function checkBriefingPopup(){
-    if(!__briefAud()) return;
-    const d=window.__briefing; if(!d || d.enabled===false) return;
-    const key='brief_pop_'+(d.mx_date||'');
-    try{ if(sessionStorage.getItem(key)==='1'){ $('briefPopModal').style.display='none'; return; } }catch(_){}
-    if($('briefPopTitle')) $('briefPopTitle').textContent='오늘의 브리핑 · '+(d.date_label||'');
-    $('briefPopBody').innerHTML=renderBriefing(d);
-    $('briefPopModal').style.display='flex';
-    window.__briefPopKey=key;
-  }
-  function closeBriefPopup(){
-    try{ if(window.__briefPopKey) sessionStorage.setItem(window.__briefPopKey,'1'); }catch(_){}
-    $('briefPopModal').style.display='none';
-  }
-
-  // ===== 브리핑·미결 공용: 열람 대상 =====
-  //   디렉터(항상) + socio(디렉터가 공유 옵션을 켠 경우) — 최종 허용 여부는 서버가 enabled 로 판정.
-  function __briefAud(){ return !!(session.user && (session.user.role==='director' || session.user.role==='socio')); }
-  function __isDir(){ return !!(session.user && session.user.role==='director'); }
-  // 공유 토글(디렉터만) — 브리핑·미결 양쪽에 동시 적용.
-  async function toggleShareSocio(on){
-    const chk=$('shareSocioChk');
-    try{
-      const r=await fetch(session.api+'/api/portal/briefing-share',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({share_socio:!!on})}).then(x=>x.json());
-      if(r&&r.ok){ if(chk) chk.checked=!!r.share_socio; }
-      else if(chk) chk.checked=!on;
-    }catch(_){ if(chk) chk.checked=!on; }
-    loadCarryover();
-  }
-  // 공유 토글 UI 상태 반영(디렉터에게만 노출)
-  function syncShareSocio(d){
-    const wrap=$('shareSocioWrap'), chk=$('shareSocioChk');
-    if(!wrap||!chk) return;
-    if(d && d.can_toggle){ wrap.classList.remove('hidden'); chk.checked=!!d.share_socio; }
-    else wrap.classList.add('hidden');
-  }
-
-  // ===== 미결 누적 (carry-over) — 디렉터 + (옵션 ON 시) socio =====
-  async function loadCarryover(){
-    if(!__briefAud()) return;
-    const card=$('carryCard'); if(!card) return;
-    try{
-      const d=await fetch(session.api+'/api/portal/pending',{headers:auth()}).then(r=>r.json());
-      if(!d || d.enabled===false){ card.classList.add('hidden'); return; }
-      window.__carry=d;
-      card.classList.remove('hidden');
-      syncShareSocio(d);
-      $('carryBody').innerHTML=renderCarryover(d);
-      $('carryCount').textContent='— 총 '+(d.total||0)+'건'+(d.by_severity&&d.by_severity.bad?(' · 심각 '+d.by_severity.bad):'');
-      // AI 스캔은 디렉터 전용(비용·할일생성) — socio 에게는 숨김
-      const aiFoot=$('aiScanFoot'); if(aiFoot) aiFoot.classList.toggle('hidden', !__isDir());
-      // 지난 일정 자동 todo — MX 하루 1회(디렉터만)
-      if(__isDir()) maybeAutoTodo(d);
-    }catch(e){ $('carryBody').innerHTML='<div class="hint">미결을 불러오지 못했습니다.</div>'; }
-  }
-  function renderCarryover(d){
-    const groups=(d&&d.groups)||[];
-    const ro=!!(d&&d.read_only);   // socio = 열람 전용(스누즈·무시·자동todo 숨김)
-    const bm=(v)=>(v==null||v==='')?'':('$'+Math.round(Number(v)||0).toLocaleString('en-US'));
-    const sevColor=(s)=> s==='bad'?'var(--expense)':(s==='warn'?'var(--gold)':'var(--muted)');
-    let h='';
-    // 자동 todo 후보 배너
-    if(!ro && d.auto_todo_candidates>0){
-      h+='<div style="background:#fff7ec;border:1px solid #f0dcc0;border-radius:8px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        +'<span style="font-size:12.5px;color:#8a5a13">지난 일정 <b>'+d.auto_todo_candidates+'건</b>이 미완일 수 있습니다 — 할 일로 등록해 완료까지 추적하세요.</span>'
-        +'<button onclick="carryAutoTodo()" style="margin-left:auto;border:none;background:var(--gold);color:#fff;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700">할 일로 자동 등록</button>'
-        +'</div>';
-    }
-    if(!groups.length){
-      h+='<div class="hint">현재 미결 항목이 없습니다. 👍</div>';
-      return h;
-    }
-    for(const g of groups){
-      h+='<div style="margin-bottom:10px">'
-        +'<div style="font-size:12.5px;font-weight:800;color:var(--brand);margin-bottom:4px">'+g.icon+' '+escp(g.label)+' <span class="hint" style="display:inline;margin:0">'+g.count+'건'+(g.amount?(' · '+bm(g.amount)):'')+'</span></div>';
-      for(const it of g.items){
-        h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px dotted var(--line)">'
-          +'<span style="flex:0 0 auto;font-weight:800;font-size:11.5px;color:'+sevColor(it.severity)+';min-width:52px">'+ (it.age_days>0?('D+'+it.age_days):'오늘') +'</span>'
-          +'<div style="flex:1;min-width:0">'
-            +'<div style="font-size:12.5px;color:var(--ink)">'+escp(it.title||'')+(it.amount!=null?(' <b style="color:var(--expense)">'+bm(it.amount)+'</b>'):'')+'</div>'
-            +(it.sub?'<div class="hint" style="margin:0">'+escp(it.sub)+'</div>':'')
-          +'</div>'
-          +'<div style="flex:0 0 auto;display:flex;gap:4px">'
-            +(it.link?'<button title="바로가기" onclick="goScreen(\''+escp(it.link)+'\')" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">↗</button>':'')
-            +(ro?'':'<button title="7일 스누즈" onclick="carrySnooze(\''+escp(it.item_key)+'\',7)" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">🕒</button>')
-            +(ro?'':'<button title="무시" onclick="carryDismiss(\''+escp(it.item_key)+'\')" style="border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:11px">✕</button>')
-          +'</div>'
-          +'</div>';
-      }
-      h+='</div>';
-    }
-    return h;
-  }
-  async function carrySnooze(key,days){
-    try{ await fetch(session.api+'/api/portal/pending/snooze',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({item_key:key,days:days||7})}); }catch(_){}
-    loadCarryover();
-  }
-  async function carryDismiss(key){
-    if(!confirm('이 항목을 미결에서 영구히 무시할까요?')) return;
-    try{ await fetch(session.api+'/api/portal/pending/dismiss',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({item_key:key})}); }catch(_){}
-    loadCarryover();
-  }
-  async function carryAutoTodo(){
-    try{
-      const r=await fetch(session.api+'/api/portal/pending/auto-todo',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({})}).then(x=>x.json());
-      if(r&&r.ok) alert('할 일 '+(r.created||0)+'건을 등록했습니다.');
-    }catch(_){}
-    loadCarryover();
-  }
-  function maybeAutoTodo(d){
-    if(!(d&&d.auto_todo_candidates>0)) return;
-    const key='pending_autotodo_'+(d.mx_date||'');
-    try{ if(sessionStorage.getItem(key)==='1') return; }catch(_){}
-    // 하루 1회 자동 실행(중복은 서버가 방지). 조용히.
-    fetch(session.api+'/api/portal/pending/auto-todo',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({})})
-      .then(()=>{ try{sessionStorage.setItem(key,'1');}catch(_){}; loadCarryover(); }).catch(()=>{});
-  }
-
-  // ===== Layer 2 · AI 미결 스캔 (온디맨드, 디렉터 전용) =====
-  async function loadAiScan(){
-    if(!(session.user && session.user.role==='director')) return;
-    const box=$('aiScanBox'); const btn=$('aiScanBtn'); if(!box) return;
-    box.innerHTML='<div class="hint">스캔 중… (자유텍스트를 분석합니다)</div>';
-    if(btn) btn.disabled=true;
-    try{
-      const d=await fetch(session.api+'/api/portal/pending/ai-scan',{headers:auth()}).then(r=>r.json());
-      box.innerHTML=renderAiScan(d);
-    }catch(e){ box.innerHTML='<div class="hint">스캔에 실패했습니다.</div>'; }
-    if(btn) btn.disabled=false;
-  }
-  function renderAiScan(d){
-    if(!d || d.enabled===false){
-      const r=d&&d.reason;
-      if(r==='no_api_key'){
-        return '<div style="background:#f6f8ff;border:1px solid #d9e1ff;border-radius:8px;padding:9px 12px;font-size:12px;color:#3a4a7a;line-height:1.6">'
-          +'AI 스캔을 쓰려면 <b>상업용 API 키</b> 1개만 설정하면 됩니다.<br>'
-          +'Railway → 프로젝트 → <b>Variables</b> 에 <code>ANTHROPIC_API_KEY</code> 추가 → 재배포하면 이 버튼이 바로 동작합니다.'
-          +'</div>';
-      }
-      if(r==='off') return '<div class="hint">AI 스캔이 관리자에 의해 꺼져 있습니다(AI_SCAN_ENABLED=0).</div>';
-      if(r==='director_only') return '<div class="hint">AI 스캔은 디렉터만 사용할 수 있습니다.</div>';
-      return '<div class="hint">AI 스캔을 사용할 수 없습니다.</div>';
-    }
-    if(d.error) return '<div class="hint">AI 응답 처리 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.</div>';
-    const sg=(d.suggestions||[]);
-    if(!sg.length) return '<div class="hint">감지된 미결 약속이 없습니다. (검토 '+(d.scanned||0)+'건)</div>';
-    window.__aiSug=sg;
-    return '<div class="hint" style="margin:0 0 6px">검토 '+(d.scanned||0)+'건 중 '+sg.length+'건 제안 · 확인 후 할 일로 등록하세요.</div>'
-      +sg.map((s,i)=>
-        '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px dotted var(--line)">'
-        +'<div style="flex:1;min-width:0">'
-          +'<div style="font-size:12.5px;color:var(--ink);font-weight:700">'+escp(s.title||'')+'</div>'
-          +'<div class="hint" style="margin:0">'+(s.reason?escp(s.reason)+' · ':'')+(s.source_kind?escp(s.source_kind):'')+(s.source_date?' '+escp(s.source_date):'')+(s.source_text?' — '+escp(s.source_text):'')+'</div>'
-        +'</div>'
-        +'<button onclick="aiMakeTodo('+i+')" style="flex:0 0 auto;border:none;background:var(--brand);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11.5px;font-weight:700">할 일 만들기</button>'
-        +'</div>'
-      ).join('');
-  }
-  async function aiMakeTodo(i){
-    const s=(window.__aiSug||[])[i]; if(!s) return;
-    const detail=(s.source_kind?('['+s.source_kind+(s.source_date?' '+s.source_date:'')+'] '):'')+(s.source_text||'')+(s.reason?(' (근거: '+s.reason+')'):'');
-    try{
-      const r=await fetch(session.api+'/api/portal/pending/ai-todo',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({title:s.title,detail:detail})}).then(x=>x.json());
-      if(r&&r.ok){ alert('할 일로 등록했습니다.'); loadCarryover(); }
-    }catch(_){ alert('등록에 실패했습니다.'); }
-  }
-
   async function loadStageSla(){
-    if(!$('portalSlaBody')) return;    try{
+    if(!$('portalSlaBody')) return;
+    try{
       const d=await fetch(session.api+'/api/portal/stage-sla',{headers:auth()}).then(r=>r.json());
       renderStageSla((d&&d.sla)||null, (d&&d.kpi)||null);
     }catch(e){ $('portalSlaBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
@@ -1639,21 +1386,8 @@
   </div>
 </div>
 
-<!-- 하루 아침 브리핑 로그인 팝업 (디렉터) -->
-<div id="briefPopModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.55);z-index:209;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
-  <div style="background:#fff;border-radius:14px;max-width:600px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34)">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
-      <div style="font-size:16px;font-weight:800;color:var(--brand)">🗞 <span id="briefPopTitle">오늘의 브리핑</span></div>
-    </div>
-    <div id="briefPopBody" style="max-height:64vh;overflow:auto;padding:6px 18px"></div>
-    <div style="padding:14px 20px 18px;display:flex;justify-content:flex-end">
-      <button onclick="closeBriefPopup()" style="border:none;background:var(--brand);color:#fff;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13.5px;font-weight:700">확인</button>
-    </div>
-  </div>
-</div>
 
 
-
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

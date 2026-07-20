@@ -102,12 +102,6 @@
   .daymodal .hd .t{font-size:15px;font-weight:800;color:var(--brand)}
   .daymodal .bd{padding:16px 18px}
   /* ===== 할 일(Tarea) 고도화 ===== */
-  .tdsearch{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-  .tdsearch input{flex:1;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:#fff}
-  .tdsearch .clr{padding:6px 12px;font-size:12px}
-  .tdasgbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fafcfb;max-height:132px;overflow:auto;display:flex;flex-wrap:wrap;gap:2px}
-  .tdasgbox label{display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12.5px;font-weight:500}
-  .tdasgbox input{width:auto;margin:0}
   .tdgroup{margin-bottom:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
   .tdghead{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:#faf8f3;user-select:none}
   .tdghead:hover{background:#f3efe6}
@@ -221,10 +215,6 @@
     <!-- 할 일 -->
     <div class="card hidden" id="paneTodo">
       <div id="todoForm"></div>
-      <div class="tdsearch">
-        <input id="todoSearch" type="text" placeholder="할 일 검색 — 제목·상세·담당자로 찾기" oninput="renderTodoList()">
-        <button class="btn ghost clr" type="button" onclick="clearTodoSearch()">지우기</button>
-      </div>
       <div id="todoList"><div class="hint">불러오는 중…</div></div>
     </div>
   </div>
@@ -330,9 +320,6 @@
     // 할 일 폼 — 누구나 작성(디렉터=지시/전체, 그 외=자가/협조)
     {
       const userOpts=users.map(u=>'<option value="'+u.id+'">'+esc(u.name)+' ('+(ROLE[u.role]||u.role)+')</option>').join('');
-      const _myId=session.user&&Number(session.user.id);
-      const _asgUsers=isDirector?users:users.filter(u=>Number(u.id)!==_myId);
-      const userChecks=_asgUsers.map(u=>'<label><input type="checkbox" class="tf-asg" value="'+u.id+'"> '+esc(u.name)+' <span style="color:var(--muted);font-size:11px">('+(ROLE[u.role]||u.role)+')</span></label>').join('');
       const recv = isDirector
         ? '<div class="seg-recv" id="tf-recvseg">'
             +'<button type="button" class="on" id="tf-recv-user" onclick="tfRecv(\'user\')">개인 지정</button>'
@@ -344,7 +331,7 @@
         '<div class="card-h">'+(isDirector?'할 일 배정 (Tarea)':'할 일 작성 (Tarea)')+'</div>'
         +'<div class="row" style="align-items:flex-end">'
         +'<div><label>수신자</label>'+recv+'</div>'
-        +'<div style="flex:1 1 260px;min-width:220px" id="tf-assignWrap"><label>'+(isDirector?'담당자 (여러 명 선택 가능)':'협조 받을 사람 (여러 명 가능)')+'</label><div class="tdasgbox" id="tf-asgbox">'+userChecks+'</div></div>'
+        +'<div style="flex:0 0 180px" id="tf-assignWrap"><label>'+(isDirector?'담당자':'협조 받을 사람')+'</label><select id="tf-assignee">'+userOpts+'</select></div>'
         +'<div style="flex:0 0 170px"><label>마감일</label>'
           +'<div style="display:flex;gap:6px;align-items:center">'
           +'<input id="tf-due" type="date" style="flex:1">'
@@ -352,8 +339,8 @@
           +'</div></div>'
         +'<div><button class="btn" onclick="addTodo()">'+(isDirector?'배정':'등록')+'</button></div>'
         +'</div>'
-        +'<div class="row"><div style="flex:1"><label>할 일 제목</label><input id="tf-title" type="text" placeholder="무엇을 해야 하나요?"></div></div>'
-        +'<div class="row"><div style="flex:1"><label>상세(선택) <span style="color:var(--muted);font-size:11px;font-weight:400">— 우측 하단 모서리를 끌어 크기 조절</span></label><textarea id="tf-detail" placeholder="추가 설명 — 여러 줄 입력 가능" style="min-height:96px;resize:vertical"></textarea></div></div>'
+        +'<div class="row"><div style="flex:2"><label>할 일 제목</label><input id="tf-title" type="text" placeholder="무엇을 해야 하나요?"></div>'
+        +'<div style="flex:3"><label>상세(선택)</label><input id="tf-detail" type="text" placeholder="추가 설명"></div></div>'
         +'<div class="hint" style="margin-top:4px">마감을 <b>미정</b>으로 두면 담당자가 직접 마감일을 정합니다. 완료 체크 전까지 메모로 진행상황·피드백을 주고받습니다.</div>'
         +'<div class="msg" id="tf-msg"></div>';
       window.__tfRecv=isDirector?'user':'self';
@@ -463,7 +450,7 @@
       calEvents=cal.items||[];
       // 할 일: '모두'면 전체, '내 일정만'/'개인일정'이면 내게 배정된 것만
       let tds=(td.items||[]).filter(t=>t.due_date);
-      if(calScope!=='all'){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||tdNames(t).includes(me)); }
+      if(calScope!=='all'){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||t.assignee_name===me); }
       calTodos=tds;
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -539,7 +526,7 @@
     // 이벤트 시간대 분류: 12시 전=오전, 12시 이후=오후, 시간 없음=종일
     const evPeriod=(e)=>{ const hm=evHM(e); if(!hm) return 'allday'; const h=parseInt(String(hm).split(':')[0],10); return isNaN(h)?'allday':(h<12?'am':'pm'); };
     const evChip=(e)=>{ const _t=evHM(e); return '<div class="chip ev '+esc(e.scope)+'">'+(_t?'<span class="tm">'+esc(_t)+'</span> ':'')+esc(e.content)+'</div>'; };
-    const tdChip=(t)=>{ const nm=tdNames(t).join(', '); return '<div class="chip td" title="'+esc(t.title)+(nm?' · 담당 '+esc(nm):'')+'">▪ '+esc(t.title)+(nm?' <span style="opacity:.75">· '+esc(nm)+'</span>':'')+'</div>'; };
+    const tdChip=(t)=>'<div class="chip td">▪ '+esc(t.title)+'</div>';
     const cells=days.map(day=>{
       const key=cYmd(day);
       const evs=eventsOn(key), tds=todosOn(key);
@@ -567,7 +554,7 @@
       const all=[...evs.map(e=>({type:'ev',e})),...tds.map(t=>({type:'td',t}))];
       all.slice(0,maxChips).forEach(x=>{
         if(x.type==='ev'){ const _t=evHM(x.e); chips+='<div class="chip ev '+esc(x.e.scope)+'">'+(_t?'<span class="tm">'+esc(_t)+'</span> ':'')+esc(x.e.content)+'</div>'; }
-        else { const _nm=tdNames(x.t).join(', '); chips+='<div class="chip td" title="'+esc(x.t.title)+(_nm?' · 담당 '+esc(_nm):'')+'">▪ '+esc(x.t.title)+(_nm?' <span style="opacity:.75">· '+esc(_nm)+'</span>':'')+'</div>'; }
+        else chips+='<div class="chip td">▪ '+esc(x.t.title)+'</div>';
       });
       if(all.length>maxChips) chips+='<div class="cgmore">+'+(all.length-maxChips)+' 더</div>';
       return '<div class="cgcell'+(out?' out':'')+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
@@ -590,13 +577,12 @@
     else html+='<div class="hint">일정 없음</div>';
     if(tds.length){
       html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 6px">이 날 마감 할 일</div>';
-      html+=tds.map(t=>'<div class="item" style="margin-top:6px;align-items:flex-start"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(tdNames(t).join(', '))+(t.status==='done'?' · 완료':'')+'</div>'+todoMemoBlock(t,'cvd-')+'</div></div>').join('');
+      html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
     }
     html+='<div style="margin-top:12px"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button></div>';
     html+='</div>';
     $('calGrid').innerHTML=tzNote()+html;
     evs.forEach(e=>loadEvMemos(e.id,'dv-'));
-    tds.forEach(t=>loadMemos(t.id,'cvd-'));
   }
 
   // 날짜 상세/추가 모달
@@ -619,7 +605,7 @@
     // 할 일(마감)
     if(tds.length){
       html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 4px">이 날 마감 할 일</div>';
-      html+=tds.map(t=>'<div class="item" style="margin-top:6px;align-items:flex-start"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(tdNames(t).join(', '))+(t.status==='done'?' · 완료':'')+'</div>'+todoMemoBlock(t,'cmd-')+'</div></div>').join('');
+      html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
     }
     // 일정 추가 폼
     // 대상(scope): 누구나 '내 개인 일정' + '개인별 공유'. 디렉터는 '회사 전체' 추가.
@@ -652,7 +638,6 @@
       +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
     $('dmBody').innerHTML=html;
     evs.forEach(e=>loadEvMemos(e.id));
-    tds.forEach(t=>loadMemos(t.id,'cmd-'));
     $('dayModal').style.display='flex';
   }
   function closeDay(){ $('dayModal').style.display='none'; }
@@ -908,9 +893,6 @@
   function tfDuePending(){ const c=$('tf-due-pending'); const d=$('tf-due'); if(d){ d.disabled=c.checked; if(c.checked) d.value=''; } }
 
   const LV={assigned:['지시','assigned'],self:['자가','self'],coop:['협조','coop']};
-  // 검색어 상태 + 전체 할 일 캐시(검색은 재요청 없이 클라이언트 필터)
-  let todoItemsAll=[];
-  function clearTodoSearch(){ const s=$('todoSearch'); if(s) s.value=''; renderTodoList(); }
   let todoCollapse={}; // assignee_name → collapsed?
   function toggleGroup(key){ todoCollapse[key]=!todoCollapse[key]; const el=document.getElementById('tdg-'+cssId(key)); if(el) el.classList.toggle('collapsed',todoCollapse[key]); }
   function cssId(s){ return String(s).replace(/[^a-zA-Z0-9]/g,'_'); }
@@ -918,53 +900,37 @@
   async function loadTodos(){
     try{
       const d=await fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json());
-      todoItemsAll=d.items||[];
-      renderTodoList();
-    }catch(e){$('todoList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
-  }
-
-  // 담당자명 배열(다중 담당자 지원)
-  function tdNames(t){ return (t.assignee_names&&t.assignee_names.length)?t.assignee_names:(t.assignee_name?[t.assignee_name]:[]); }
-
-  function renderTodoList(){
-    const q=(($('todoSearch')&&$('todoSearch').value)||'').trim().toLowerCase();
-    let items=todoItemsAll;
-    if(q){
-      items=items.filter(t=>{
-        const hay=[t.title,t.detail,tdNames(t).join(' '),(t.created_by_name||'')].join(' ').toLowerCase();
-        return hay.includes(q);
+      const items=d.items||[];
+      const openCount=items.filter(t=>t.status==='open').length;
+      const badge=$('todoBadge');
+      if(openCount>0){badge.textContent=openCount;badge.classList.remove('hidden');}else badge.classList.add('hidden');
+      if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">할 일이 없습니다.</div>';return;}
+      // 담당자별 그룹화 (전체 공통은 별도 그룹)
+      const groups={}; const order=[];
+      items.forEach(t=>{
+        const key=(t.scope==='all')?'＊ 전체 공통':(t.assignee_name||'(미지정)');
+        if(!groups[key]){groups[key]=[];order.push(key);}
+        groups[key].push(t);
       });
-    }
-    // 배지: 실제 진행(미완료) 전체 기준 — 검색과 무관
-    const openCount=todoItemsAll.filter(t=>t.status==='open').length;
-    const badge=$('todoBadge');
-    if(openCount>0){badge.textContent=openCount;badge.classList.remove('hidden');}else badge.classList.add('hidden');
-    if(!items.length){$('todoList').innerHTML='<div class="hint" style="margin-top:10px">'+(q?('\u2018'+esc(q)+'\u2019 검색 결과가 없습니다.'):'할 일이 없습니다.')+'</div>';return;}
-    // 담당자별 그룹화 (전체 공통은 별도 그룹) — 대표 담당자 기준
-    const groups={}; const order=[];
-    items.forEach(t=>{
-      const key=(t.scope==='all')?'＊ 전체 공통':(t.assignee_name||'(미지정)');
-      if(!groups[key]){groups[key]=[];order.push(key);}
-      groups[key].push(t);
-    });
-    // 전체 공통을 맨 위로
-    order.sort((a,b)=>(a.startsWith('＊')?-1:0)-(b.startsWith('＊')?-1:0));
-    $('todoList').innerHTML=order.map(key=>{
-      const arr=groups[key];
-      const openN=arr.filter(t=>t.status==='open').length;
-      const overN=arr.filter(t=>t.overdue).length;
-      const collapsed=!!todoCollapse[key];
-      return '<div class="tdgroup'+(collapsed?' collapsed':'')+'" id="tdg-'+cssId(key)+'">'
-        +'<div class="tdghead" onclick="toggleGroup(\''+key.replace(/'/g,"\\'")+'\')">'
-          +'<span class="nm">'+esc(key)+'</span>'
-          +'<span class="cnt">진행 '+openN+'건'+(overN>0?' · <span style="color:#B23A2E;font-weight:700">지남 '+overN+'</span>':'')+' / 총 '+arr.length+'</span>'
-          +'<span class="arr">▾</span>'
-        +'</div>'
-        +'<div class="tdgbody">'+arr.map(renderTodoCard).join('')+'</div>'
-      +'</div>';
-    }).join('');
-    // 열려있는 항목의 메모 자동 로드(표시된 것만)
-    items.filter(t=>t.status==='open').forEach(t=>loadMemos(t.id));
+      // 전체 공통을 맨 위로
+      order.sort((a,b)=>(a.startsWith('＊')?-1:0)-(b.startsWith('＊')?-1:0));
+      $('todoList').innerHTML=order.map(key=>{
+        const arr=groups[key];
+        const openN=arr.filter(t=>t.status==='open').length;
+        const overN=arr.filter(t=>t.overdue).length;
+        const collapsed=!!todoCollapse[key];
+        return '<div class="tdgroup'+(collapsed?' collapsed':'')+'" id="tdg-'+cssId(key)+'">'
+          +'<div class="tdghead" onclick="toggleGroup(\''+key.replace(/'/g,"\\'")+'\')">'
+            +'<span class="nm">'+esc(key)+'</span>'
+            +'<span class="cnt">진행 '+openN+'건'+(overN>0?' · <span style="color:#B23A2E;font-weight:700">지남 '+overN+'</span>':'')+' / 총 '+arr.length+'</span>'
+            +'<span class="arr">▾</span>'
+          +'</div>'
+          +'<div class="tdgbody">'+arr.map(renderTodoCard).join('')+'</div>'
+        +'</div>';
+      }).join('');
+      // 열려있는 항목의 메모 자동 로드
+      items.filter(t=>t.status==='open').forEach(t=>loadMemos(t.id));
+    }catch(e){$('todoList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
 
   function renderTodoCard(t){
@@ -979,11 +945,12 @@
     // 마감 미정 → 담당자/디렉터가 직접 설정하는 입력
     const dueSet=(t.due_pending && !done)?'<div class="tddue-set"><span style="font-size:11px;color:#9a6a1a">마감일 직접 설정:</span><input type="date" id="due-'+t.id+'"><button class="btn sm" onclick="setDue('+t.id+')">설정</button></div>':'';
     const meta='<div class="tdmeta">'+days+dueChip
-      +(t.scope!=='all'?'<span class="tdpill">담당 '+esc(tdNames(t).join(', ')||'-')+'</span>':'')
+      +(t.scope!=='all'?'<span class="tdpill">담당 '+esc(t.assignee_name||'-')+'</span>':'')
       +(t.created_by_name?'<span class="tdpill">작성 '+esc(t.created_by_name)+'</span>':'')
       +(done&&t.done_at?'<span class="tdpill" style="background:#e8f3ee;color:#2f6f54">완료 '+new Date(t.done_at).toLocaleDateString('ko-KR')+'</span>':'')
       +'</div>';
-    const memos=todoMemoBlock(t,'');
+    const memos='<div class="tdmemos" id="memos-'+t.id+'"></div>'
+      +(!done?'<div class="memoadd"><input type="text" id="memoin-'+t.id+'" placeholder="진행상황·피드백 메모 작성..." onkeydown="if(event.key===\'Enter\')addMemo('+t.id+')"><button class="btn sm" onclick="addMemo('+t.id+')">전송</button></div>':'');
     return '<div class="tdcard lv-'+lv[1]+(done?' done':'')+(t.overdue?' overdue':'')+'" id="td-'+t.id+'">'
       +'<div class="tdtop">'
         +'<div class="tdchk '+(done?'on':'')+'" onclick="toggleTodo('+t.id+','+(!done)+')">'+(done?'✓':'')+'</div>'
@@ -998,20 +965,10 @@
     +'</div>';
   }
 
-  // 할 일 메모(댓글) 블록 — 할 일 탭('')과 달력(cvd-/cmd-)에서 같은 메모를 공유
-  function todoMemoBlock(t, pfx){
-    pfx=pfx||'';
-    const done=t.status==='done';
-    return '<div class="tdmemos" id="'+pfx+'memos-'+t.id+'"></div>'
-      +(!done?'<div class="memoadd"><input type="text" id="'+pfx+'memoin-'+t.id+'" placeholder="진행상황·피드백 메모 작성..." onkeydown="if(event.key===\'Enter\')addMemo('+t.id+',\''+pfx+'\')"><button class="btn sm" onclick="addMemo('+t.id+',\''+pfx+'\')">전송</button></div>':'');
-  }
-  // 같은 할 일이 여러 곳(탭/달력)에 떠 있으면 모두 새로고침 → 서로 반영
-  function reloadAllMemos(id){ return Promise.all(['','cvd-','cmd-'].map(p=> $(p+'memos-'+id)?loadMemos(id,p):null )); }
-  async function loadMemos(id, pfx){
-    pfx=pfx||'';
+  async function loadMemos(id){
     try{
       const d=await fetch(session.api+'/api/todos/'+id+'/memos',{headers:auth()}).then(r=>r.json());
-      const box=$(pfx+'memos-'+id); if(!box) return;
+      const box=$('memos-'+id); if(!box) return;
       const items=d.items||[];
       if(!items.length){ box.innerHTML='<div style="font-size:11px;color:#aaa">아직 메모가 없습니다. 진행상황을 기록해 보세요.</div>'; return; }
       box.innerHTML=items.map(m=>{
@@ -1022,20 +979,19 @@
       }).join('');
     }catch(e){}
   }
-  async function addMemo(id, pfx){
-    pfx=pfx||'';
-    const inp=$(pfx+'memoin-'+id); if(!inp) return; const body=inp.value.trim(); if(!body) return;
+  async function addMemo(id){
+    const inp=$('memoin-'+id); if(!inp) return; const body=inp.value.trim(); if(!body) return;
     inp.disabled=true;
     try{
       const res=await fetch(session.api+'/api/todos/'+id+'/memos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({body})});
-      if(res.ok){ inp.value=''; await reloadAllMemos(id); }
+      if(res.ok){ inp.value=''; await loadMemos(id); }
     }catch(e){}
     inp.disabled=false; inp.focus();
   }
   async function setDue(id){
     const inp=$('due-'+id); if(!inp||!inp.value){alert('마감일을 선택하세요.');return;}
     const res=await fetch(session.api+'/api/todos/'+id+'/due',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({due_date:inp.value})});
-    if(res.ok){ loadTodos(); loadCal(); } else alert('설정 실패');
+    if(res.ok) loadTodos(); else alert('설정 실패');
   }
 
   async function addTodo(){
@@ -1047,10 +1003,9 @@
     if($('tf-due-pending').checked) body.due_date='pending'; else if($('tf-due').value) body.due_date=$('tf-due').value;
     if(recv==='all'){ body.scope='all'; }
     else if(recv==='self'){ /* assignee 자동 본인 */ }
-    else { // user(디렉터 지정) 또는 coop(협조) — 여러 명 선택 가능
-      const ids=Array.from(document.querySelectorAll('#tf-asgbox .tf-asg:checked')).map(c=>Number(c.value));
-      if(!ids.length){m.className='msg err';m.textContent=(isDirector?'담당자':'협조 받을 사람')+'를 1명 이상 선택하세요.';return;}
-      body.assignee_ids=ids;
+    else { // user(디렉터 지정) 또는 coop(협조)
+      body.assignee_id=$('tf-assignee').value;
+      if(!body.assignee_id){m.className='msg err';m.textContent=(isDirector?'담당자':'협조 받을 사람')+'를 선택하세요.';return;}
     }
     try{
       const res=await fetch(session.api+'/api/todos',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
@@ -1058,17 +1013,16 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent='실패: '+(d.error||res.status);return;}
       m.className='msg ok';m.textContent=(isDirector?'할 일을 배정했습니다.':'할 일을 등록했습니다.');
       $('tf-title').value='';$('tf-detail').value='';$('tf-due').value='';$('tf-due-pending').checked=false;tfDuePending();
-      document.querySelectorAll('#tf-asgbox .tf-asg').forEach(c=>c.checked=false);
-      loadTodos(); loadCal();
+      loadTodos();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
   async function toggleTodo(id,done){
     let note=null;
     if(done){ note=prompt('완료 코멘트(선택):')||null; }
     await fetch(session.api+'/api/todos/'+id+'/done',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done,note})});
-    loadTodos(); loadCal();
+    loadTodos();
   }
-  async function delTodo(id){ if(!confirm('이 할 일을 삭제할까요?'))return; await fetch(session.api+'/api/todos/'+id,{method:'DELETE',headers:auth()});loadTodos(); loadCal(); }
+  async function delTodo(id){ if(!confirm('이 할 일을 삭제할까요?'))return; await fetch(session.api+'/api/todos/'+id,{method:'DELETE',headers:auth()});loadTodos(); }
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
@@ -1077,6 +1031,6 @@
   $('calToday').addEventListener('click',()=>calGoToday());
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

@@ -542,15 +542,15 @@
   // 라이브 가용재고(현재고 − 이 견적 제외 타 예약) — 견적 상세 API의 live_avail 우선, 구버전 응답은 폴백.
   function liveAvail(l){ return (l.live_avail!=null)?Number(l.live_avail):(l.cur_stock!=null?Number(l.cur_stock):(l.avail_stock!=null?Number(l.avail_stock):null)); }
 
-  // ===== 엑셀 다운로드 (스페인어 견적양식 · 견적 내역 전체 · 수식) — 상세 모달 =====
+  // ===== 엑셀 다운로드 (스페인어 견적양식 · 현재 재고 있는 항목만 · 수식) — 상세 모달 =====
   // 고객이 Cantidad(수량)를 입력하면 Importe=Precio×Cantidad, Subtotal/IVA/Total이 자동 재계산.
-  // 재고 유무와 무관하게 견적의 모든 라인을 포함(재고 0·개발품 포함). Existencia 열로 재고상태를 구분 표기.
+  // 가용재고(Existencia)는 음영으로 강조. (스타일 지원: xlsx-js-style)
   function downloadStockExcel(){
     if(!dtData||!dtData.quote){ return; }
     if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
     const q=dtData.quote;
-    const rows=dtSortedLines();   // 견적 내역 전체 (화면에 보이는 순서 그대로)
-    if(!rows.length){ alert('견적 내역이 없습니다.'); return; }
+    const rows=(dtData.lines||[]).filter(l=> (Number(liveAvail(l))||0)>0);
+    if(!rows.length){ alert('현재 재고가 있는 항목이 없습니다.'); return; }
 
     // ----- 스타일 -----
     const bd={style:'thin',color:{rgb:'C9C2B4'}}; const border={top:bd,bottom:bd,left:bd,right:bd};
@@ -561,8 +561,6 @@
     const cC={alignment:{horizontal:'center',vertical:'center'},border,font:{sz:10}};
     const cMoney={alignment:{horizontal:'right',vertical:'center'},border,font:{sz:10},numFmt:'#,##0.00'};
     const cExist={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'E4F0EB'}},font:{bold:true,color:{rgb:'0F6E56'},sz:10}};
-    const cExist0={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'FBE3E0'}},font:{bold:true,color:{rgb:'B3261E'},sz:10}};      // 재고 0/부족
-    const cExistNd={alignment:{horizontal:'center',vertical:'center'},border,fill:{fgColor:{rgb:'EFEAF7'}},font:{bold:true,color:{rgb:'6B4FB0'},sz:10}};                    // 개발품(미등록)
     const cQty={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'FFF6DA'}},font:{bold:true,sz:10}};
     const cTotLbl={alignment:{horizontal:'right',vertical:'center'},font:{bold:true,sz:11}};
     const cTotVal={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0.00',font:{bold:true,sz:11}};
@@ -578,7 +576,7 @@
     set('A1','COTIZACIÓN',cTitle);
     set('A2','Cliente: '+(q.party_name||''),cMeta);
     set('A3','Fecha: '+(q.quote_date||'')+'    No.: '+(q.quote_no||''),cMeta);
-    set('A4','Cantidad = cantidad cotizada (editable). El Importe, IVA y Total se recalculan automáticamente. Existencia = stock disponible (0 = sin stock, N/D = producto por desarrollar). Incluye todas las partidas de la cotización.',cNote);
+    set('A4','Cantidad = cantidad cotizada (editable). El Importe, IVA y Total se recalculan automáticamente. Columna Existencia = stock disponible.',cNote);
 
     // 표 헤더 (행 6)
     const HR=6;
@@ -594,10 +592,7 @@
       set('C'+r, cp.syd||'', cL);
       set('D'+r, l.product_name||'', cL);
       set('E'+r, l.app_text||'', cL);
-      // 가용재고(라이브: 현재고−타예약) — 재고>0 연녹 / 0·부족 연빨강 / 개발품(재고정보 없음) 'N/D' 연보라
-      const av=liveAvail(l);
-      if(av==null) set('F'+r, 'N/D', cExistNd);
-      else set('F'+r, Number(av)||0, (Number(av)||0)>0?cExist:cExist0);
+      set('F'+r, Number(liveAvail(l))||0, cExist);   // 가용재고(라이브: 현재고−타예약, 음영)
       set('G'+r, Number(l.final_price)||0, cMoney);    // 단가 (할인 반영, IVA 미포함)
       set('H'+r, Number(l.qty)||0, cQty);               // 수량 = 견적 수량 (PDF와 동일, 수정 가능)
       set('I'+r, 0, cMoney, 'G'+r+'*H'+r);             // Importe = Precio × Cantidad
@@ -633,7 +628,7 @@
     if(q.field_survey){ actions+='<span style="display:inline-flex;align-items:center;gap:6px;background:#E4F0EB;color:#0F6E56;font-weight:800;font-size:12px;border-radius:8px;padding:6px 10px">📍 현장재고조사 전환'+(q.field_survey.survey_date?(' · '+esc(q.field_survey.survey_date)):'')+'</span>'; }
     if(isDirector && q.field_survey && q.field_survey.geo_lat!=null && q.field_survey.geo_lng!=null){ actions+='<button class="btn" onclick="openFieldLocation()" title="현장재고조사 당시 위치를 지도에서 봅니다">📍 현장 위치 보기</button>'; }
     actions+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
-    actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="견적 내역 전체를 엑셀로 다운로드 (재고 0·개발품 포함, Existencia 열로 구분)">📥 엑셀 (견적 전체)</button>';
+    actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="현재 재고가 있는 항목만 엑셀로 다운로드">📥 엑셀 (재고분)</button>';
     if(editable){
       actions+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
       actions+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
@@ -1101,6 +1096,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260713fx"></script>
+<script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>
