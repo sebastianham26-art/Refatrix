@@ -89,6 +89,7 @@ export default async function productRoutes(app) {
     const SORTS = {
       stock:    `p.stock_qty ${dir} NULLS LAST, p.code`,
       backorder: `COALESCE(bo.backorder_qty,0) ${dir}, p.code`,
+      incoming:  `COALESCE(inc.incoming_qty,0) ${dir}, p.code`,
       sold:     `COALESCE(sold.qty,0) ${dir}, p.code`,
       avgcost:  canCost ? `p.avg_cost ${dir} NULLS LAST, p.code` : null,
       stockval: canCost ? `(p.stock_qty * COALESCE(p.avg_cost,0)) ${dir}, p.code` : null,
@@ -151,9 +152,12 @@ export default async function productRoutes(app) {
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
               p.stock_qty, p.avg_cost, p.rack_location, p.material,
               COALESCE(bo.backorder_qty, 0) AS backorder_qty,
+              COALESCE(inc.incoming_qty, 0) AS incoming_qty,
+              inc.incoming_eta::text AS incoming_eta,
               COALESCE(sold.qty, 0) AS sold_qty
          FROM products p
          LEFT JOIN v_backorder bo ON bo.product_id = p.id
+         LEFT JOIN v_incoming_stock inc ON inc.product_id = p.id
          LEFT JOIN (
            SELECT sil.product_id, SUM(sil.qty) AS qty
              FROM sales_invoice_lines sil
