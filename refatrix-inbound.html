@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260718a</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260718b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -158,7 +158,10 @@
         var st={incoming:L('운송중','En tránsito'),receiving:L('입고중','Recibiendo'),closed:L('마감','Cerrado'),cancelled:L('취소','Cancelado')}[s.status]||s.status;
         var cls={incoming:'s',receiving:'o',closed:'g',cancelled:'r'}[s.status]||'';
         return '<div class="ship" data-id="'+s.id+'"><div class="row" style="justify-content:space-between">'
-          +'<span class="t mono">'+esc(s.invoice_no||('#'+s.id))+'</span><span class="tag '+cls+'">'+st+'</span></div>'
+          +'<span class="t mono">'+esc(s.invoice_no||('#'+s.id))+'</span>'
+          +'<span class="row" style="gap:6px;align-items:center"><span class="tag '+cls+'">'+st+'</span>'
+          +((isDir&&s.status!=='closed')?'<button class="btn r sm" data-del="'+s.id+'" title="'+L('삭제','Eliminar')+'">🗑</button>':'')
+          +'</span></div>'
           +'<div class="d">ETA '+(s.eta||'—')+' · '+L('팔렛','Pallets')+' '+s.pallets_checked+'/'+s.pallets+' · '+L('카톤','Cajas')+' '+fmt(s.cartons)+' · '+fmt(s.qty)+' EA</div>'
           +'<div class="pr"><i style="width:'+pct+'%"></i></div></div>';
       }).join('');
@@ -166,12 +169,46 @@
       $('app').innerHTML=html;
       $('btnNew').addEventListener('click',showUpload);
       document.querySelectorAll('.ship').forEach(function(b){ b.addEventListener('click',function(){ openShip(+b.dataset.id); }); });
+      document.querySelectorAll('[data-del]').forEach(function(b){ b.addEventListener('click',function(ev){ ev.stopPropagation(); askDelete(b); }); });
     });
   }
   function err(o){ return '<div class="card"><div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)">'
     +(o.status===403?L('접근 권한이 없습니다(창고 권한 필요).','Sin permiso (se requiere almacén).')
       :L('서버 오류 — 마이그레이션(npm run migrate)이 적용됐는지 확인하세요.','Error del servidor — verifique la migración.'))
     +' <span class="mono">'+(o.body&&o.body.error||o.status)+'</span></div></div>'; }
+
+  /* ============ 삭제(디렉터 전용) ============ */
+  function askDelete(btn){
+    if(!isDir){ toast(L('디렉터만 삭제할 수 있습니다','Solo el director puede eliminar')); return; }
+    var id=+btn.dataset.del, card=btn.closest('.ship');
+    if(card.querySelector('.delrow')) return;
+    var row=document.createElement('div'); row.className='delrow'; row.style.marginTop='9px';
+    row.innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red);margin:0 0 7px">'
+      +L('이 선적을 삭제합니다. 입고예정 재고에서도 빠집니다.','Se eliminará este embarque y su stock entrante.')+'</div>'
+      +'<div class="row"><input type="password" class="delpin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px">'
+      +'<button class="btn r sm delok">'+L('삭제','Eliminar')+'</button>'
+      +'<button class="btn ghost sm delcancel">'+L('취소','Cancelar')+'</button></div>';
+    card.appendChild(row);
+    row.addEventListener('click',function(e){ e.stopPropagation(); });
+    var pin=row.querySelector('.delpin'); pin.focus();
+    row.querySelector('.delcancel').addEventListener('click',function(){ row.remove(); });
+    function go(){
+      if(!pin.value){ toast(L('디렉터 PIN을 입력하세요','Ingrese el PIN del director')); return; }
+      row.querySelector('.delok').disabled=true;
+      api('/api/inbound/'+id,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin.value})}).then(function(o){
+        if(!o.ok||o.body.error){
+          toast(o.body.error==='bad_pin'?L('PIN이 올바르지 않습니다','PIN incorrecto')
+               :o.body.error==='director_only'?L('디렉터만 가능합니다','Solo director')
+               :o.body.error==='bad_state'?L('마감된 선적은 삭제할 수 없습니다','No se puede eliminar un embarque cerrado')
+               :L('삭제 실패','Error')+': '+(o.body.error||o.status));
+          row.querySelector('.delok').disabled=false; return;
+        }
+        toast(L('✔ 선적을 삭제했습니다','✔ Embarque eliminado')); loadList();
+      });
+    }
+    row.querySelector('.delok').addEventListener('click',go);
+    pin.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+  }
 
   /* ============ 업로드 ============ */
   function showUpload(){
