@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt0720bo1</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt0720pn1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -408,57 +408,57 @@
       rows.push(['Cliente', custName||'(no seleccionado)', '', 'Descuento', disc==null?'a definir':(disc+'%')]);
       rows.push(['Ingrese las cantidades por sucursal (Suc 1–5). El importe por SKU y los totales se calculan automáticamente.']);
       rows.push([]);
-      rows.push(['#','CTR Code','SYD Code','Application','Existencia','En tránsito','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material']);
+      rows.push(['#','CTR Code','SYD Code','Producto','Application','Existencia','En tránsito','Precio unit. (sin IVA)','Suc 1','Suc 2','Suc 3','Suc 4','Suc 5','Cant. total','Importe (sin IVA)','Material']);
       const headerRow=rows.length, firstData=headerRow+1;
       const aluRows=[];   // 알루미늄 제품 행 번호(엑셀 행) — 음영 표기용
       items.forEach((it,idx)=>{
         const unit=(disc==null)?(Number(it.list_price)||0):(Math.round((Number(it.list_price)||0)*(1-disc/100)*100)/100);
         const isAlu = it.material==='aluminio';
         if(isAlu) aluRows.push(firstData+idx);
-        rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.app||'',
+        rows.push([ idx+1, it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
           it.stock_qty==null?'':Number(it.stock_qty),
           (Number(it.backorder_qty)||0)>0?Number(it.backorder_qty):'',
           unit, null,null,null,null,null, null, null, isAlu?'Aluminio':'' ]);
       });
       const lastData=rows.length;
       rows.push([]);
-      rows.push(['','','','Cantidad por sucursal →','','','',null,null,null,null,null,null,'']); const qtyRow=rows.length;
-      rows.push(['','','','Importe por sucursal (sin IVA) →','','','',null,null,null,null,null,'',null]); const amtRow=rows.length;
+      rows.push(['','','','','Cantidad por sucursal →','','','',null,null,null,null,null,null,'']); const qtyRow=rows.length;
+      rows.push(['','','','','Importe por sucursal (sin IVA) →','','','',null,null,null,null,null,'',null]); const amtRow=rows.length;
       rows.push([]);
-      rows.push(['','','','','','','','','','','','','Subtotal (sin IVA)',null]); const subRow=rows.length;
-      rows.push(['','','','','','','','','','','','','IVA 16%',null]); const ivaRow=rows.length;
-      rows.push(['','','','','','','','','','','','','Total (con IVA)',null]); const totRow=rows.length;
+      rows.push(['','','','','','','','','','','','','','Subtotal (sin IVA)',null]); const subRow=rows.length;
+      rows.push(['','','','','','','','','','','','','','IVA 16%',null]); const ivaRow=rows.length;
+      rows.push(['','','','','','','','','','','','','','Total (con IVA)',null]); const totRow=rows.length;
 
       const ws=XLSX.utils.aoa_to_sheet(rows);
       // SKU별 수식: 지점 합계(Cant. total) + 금액(Importe = precio × cant)
       for(let r=firstData;r<=lastData;r++){
-        ws['M'+r]={t:'n',f:'SUM(H'+r+':L'+r+')'};
-        ws['N'+r]={t:'n',z:'#,##0.00',f:'G'+r+'*M'+r};
-        if(ws['G'+r]) ws['G'+r].z='#,##0.00';
+        ws['N'+r]={t:'n',f:'SUM(I'+r+':M'+r+')'};
+        ws['O'+r]={t:'n',z:'#,##0.00',f:'H'+r+'*N'+r};
+        if(ws['H'+r]) ws['H'+r].z='#,##0.00';
       }
       // 지점별 수량 합계 + 전체 수량
-      ['H','I','J','K','L'].forEach(c=>{ ws[c+qtyRow]={t:'n',f:'SUM('+c+firstData+':'+c+lastData+')'}; });
-      ws['M'+qtyRow]={t:'n',f:'SUM(M'+firstData+':M'+lastData+')'};
+      ['I','J','K','L','M'].forEach(c=>{ ws[c+qtyRow]={t:'n',f:'SUM('+c+firstData+':'+c+lastData+')'}; });
+      ws['N'+qtyRow]={t:'n',f:'SUM(N'+firstData+':N'+lastData+')'};
       // 지점별 금액 합계 = SUMPRODUCT(precio, 지점수량)
-      ['H','I','J','K','L'].forEach(c=>{ ws[c+amtRow]={t:'n',z:'#,##0.00',f:'SUMPRODUCT($G$'+firstData+':$G$'+lastData+','+c+firstData+':'+c+lastData+')'}; });
+      ['I','J','K','L','M'].forEach(c=>{ ws[c+amtRow]={t:'n',z:'#,##0.00',f:'SUMPRODUCT($H$'+firstData+':$H$'+lastData+','+c+firstData+':'+c+lastData+')'}; });
       // 총 금액(소계·IVA·총계)
-      ws['N'+subRow]={t:'n',z:'#,##0.00',f:'SUM(N'+firstData+':N'+lastData+')'};
-      ws['N'+ivaRow]={t:'n',z:'#,##0.00',f:'N'+subRow+'*0.16'};
-      ws['N'+totRow]={t:'n',z:'#,##0.00',f:'N'+subRow+'+N'+ivaRow};
+      ws['O'+subRow]={t:'n',z:'#,##0.00',f:'SUM(O'+firstData+':O'+lastData+')'};
+      ws['O'+ivaRow]={t:'n',z:'#,##0.00',f:'O'+subRow+'*0.16'};
+      ws['O'+totRow]={t:'n',z:'#,##0.00',f:'O'+subRow+'+O'+ivaRow};
 
       // ── 알루미늄 제품 별도 표기: 행 연한 청록 음영 + Material 셀 강조 ──
       const aluFill={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}}};
-      const aluCols=['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'];
+      const aluCols=['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P'];
       aluRows.forEach(r=>{
         aluCols.forEach(c=>{ const ref=c+r; if(!ws[ref]) ws[ref]={t:'s',v:''};
           ws[ref].s=Object.assign({},ws[ref].s,aluFill); });
-        if(ws['O'+r]) ws['O'+r].s={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}},font:{bold:true,color:{rgb:'15616D'}}};
+        if(ws['P'+r]) ws['P'+r].s={fill:{patternType:'solid',fgColor:{rgb:'E3EEF0'}},font:{bold:true,color:{rgb:'15616D'}}};
       });
       // Material 헤더 셀 강조 + En tránsito(운송중) 열 강조(연한 파랑)
-      if(ws['O'+headerRow]) ws['O'+headerRow].s={font:{bold:true}};
+      if(ws['P'+headerRow]) ws['P'+headerRow].s={font:{bold:true}};
       const sTraP={fill:{patternType:'solid',fgColor:{rgb:'DDEBF7'}},font:{bold:true,color:{rgb:'1F4E79'}}};
-      for(let r=firstData;r<=lastData;r++){ if(ws['F'+r]&&ws['F'+r].v!==''&&ws['F'+r].v!=null){ ws['F'+r].s=Object.assign({},ws['F'+r].s,sTraP); ws['F'+r].z='#,##0'; } }
-      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12}];
+      for(let r=firstData;r<=lastData;r++){ if(ws['G'+r]&&ws['G'+r].v!==''&&ws['G'+r].v!=null){ ws['G'+r].s=Object.assign({},ws['G'+r].s,sTraP); ws['G'+r].z='#,##0'; } }
+      ws['!cols']=[{wch:5},{wch:14},{wch:18},{wch:30},{wch:28},{wch:11},{wch:11},{wch:18},{wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:12},{wch:16},{wch:12}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,'Lista');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
@@ -565,52 +565,52 @@
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
       rows.push([]);                                                                           // r7
-      rows.push(['Vehículo (Modelo / Año)','Registro (VIO)','Código CTR','Código SYD','Aplicación','Existencia','En tránsito','Cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)']); // r8
+      rows.push(['Vehículo (Modelo / Año)','Registro (VIO)','Código CTR','Código SYD','Producto','Aplicación','Existencia','En tránsito','Cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)']); // r8
       const headerRow=rows.length, firstData=headerRow+1;
       items.forEach((it)=>{
         rows.push([ grpKey(it)||'—', it.vio_units!=null?Number(it.vio_units):'',
-          it.ctr_code||'', it.syd_codes||'', it.app||'',
+          it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
           it.stock_qty!=null?Number(it.stock_qty):'',
           (Number(it.backorder_qty)||0)>0?Number(it.backorder_qty):'', 1,
           Number(it.list_price)||0, null, null ]);
       });
       const lastData=rows.length;
       rows.push([]);
-      rows.push(['','','','','','','','','','Subtotal (sin IVA)', null]); const subRow=rows.length;
-      rows.push(['','','','','','','','','','IVA 16%', null]); const ivaRow=rows.length;
-      rows.push(['','','','','','','','','','Total (con IVA)', null]); const totRow=rows.length;
+      rows.push(['','','','','','','','','','','Subtotal (sin IVA)', null]); const subRow=rows.length;
+      rows.push(['','','','','','','','','','','IVA 16%', null]); const ivaRow=rows.length;
+      rows.push(['','','','','','','','','','','Total (con IVA)', null]); const totRow=rows.length;
       const ws=XLSX.utils.aoa_to_sheet(rows);
       // 할인율 셀
       ws['G6']={t:'n',v:rateFrac,z:'0%',s:sRate};
       // 라인 수식: c/Desc = Lista×(1−tasa) · Importe = c/Desc×cantidad(G열)
       for(let r=firstData;r<=lastData;r++){
-        ws['J'+r]={t:'n',z:'$#,##0.00',f:'I'+r+'*(1-$G$6)'};
-        ws['K'+r]={t:'n',z:'$#,##0.00',f:'J'+r+'*H'+r};
+        ws['K'+r]={t:'n',z:'$#,##0.00',f:'J'+r+'*(1-$G$6)'};
+        ws['L'+r]={t:'n',z:'$#,##0.00',f:'K'+r+'*I'+r};
       }
       // 합계
-      ws['K'+subRow]={t:'n',z:'$#,##0.00',f:'SUM(K'+firstData+':K'+lastData+')'};
-      ws['K'+ivaRow]={t:'n',z:'$#,##0.00',f:'K'+subRow+'*0.16'};
-      ws['K'+totRow]={t:'n',z:'$#,##0.00',f:'K'+subRow+'+K'+ivaRow};
+      ws['L'+subRow]={t:'n',z:'$#,##0.00',f:'SUM(L'+firstData+':L'+lastData+')'};
+      ws['L'+ivaRow]={t:'n',z:'$#,##0.00',f:'L'+subRow+'*0.16'};
+      ws['L'+totRow]={t:'n',z:'$#,##0.00',f:'L'+subRow+'+L'+ivaRow};
       // ---- 스타일 적용 ----
       if(ws['A1'])ws['A1'].s=sLogo; if(ws['A2'])ws['A2'].s=sSub; if(ws['A3'])ws['A3'].s=sTitle; if(ws['A4'])ws['A4'].s=sMeta;
       if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl;
-      ['A','B','C','D','E','F','G','H','I','J','K'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
+      ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
       const sExi={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
       const sExi0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 품절(0) — 연빨강
       const sTra={fill:{fgColor:{rgb:'DDEBF7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 운송중(발주 미입고)
       for(let r=firstData;r<=lastData;r++){
         if(ws['A'+r])ws['A'+r].s=sVeh; if(ws['B'+r])ws['B'+r].s=sVio;
-        if(ws['C'+r])ws['C'+r].s=sCtr; if(ws['D'+r])ws['D'+r].s=sTxt; if(ws['E'+r])ws['E'+r].s=sTxt;
-        if(ws['F'+r])ws['F'+r].s=(Number(ws['F'+r].v)>0?sExi:sExi0);
-        if(ws['G'+r])ws['G'+r].s=sTra; if(ws['H'+r])ws['H'+r].s=sQty; if(ws['I'+r])ws['I'+r].s=sLista;
-        if(ws['J'+r])ws['J'+r].s=sDesc; if(ws['K'+r])ws['K'+r].s=sImp;
+        if(ws['C'+r])ws['C'+r].s=sCtr; if(ws['D'+r])ws['D'+r].s=sTxt; if(ws['E'+r])ws['E'+r].s=sTxt; if(ws['F'+r])ws['F'+r].s=sTxt;
+        if(ws['G'+r])ws['G'+r].s=(Number(ws['G'+r].v)>0?sExi:sExi0);
+        if(ws['H'+r])ws['H'+r].s=sTra; if(ws['I'+r])ws['I'+r].s=sQty; if(ws['J'+r])ws['J'+r].s=sLista;
+        if(ws['K'+r])ws['K'+r].s=sDesc; if(ws['L'+r])ws['L'+r].s=sImp;
       }
-      [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['J'+rr])ws['J'+rr].s=sSumL; if(ws['K'+rr])ws['K'+rr].s=sSumV; });
+      [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['K'+rr])ws['K'+rr].s=sSumL; if(ws['L'+rr])ws['L'+rr].s=sSumV; });
       // 레터헤드 병합만 (필터 유지 위해 차량 셀은 병합하지 않고 그룹 정렬로 표현)
-      const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:10}},{s:{r:3,c:0},e:{r:3,c:10}}];
+      const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:11}},{s:{r:3,c:0},e:{r:3,c:11}}];
       ws['!merges']=merges;
-      ws['!autofilter']={ref:'A'+headerRow+':K'+lastData};
-      ws['!cols']=[{wch:30},{wch:14},{wch:13},{wch:16},{wch:40},{wch:11},{wch:11},{wch:12},{wch:15},{wch:14},{wch:15}];
+      ws['!autofilter']={ref:'A'+headerRow+':L'+lastData};
+      ws['!cols']=[{wch:30},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:12},{wch:15},{wch:14},{wch:15}];
       ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:6},{hpt:30}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,all?'Completo':'Top500');
@@ -869,6 +869,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260720e"></script>
+<script src="refatrix-nav.js?v=20260720f"></script>
 </body>
 </html>
