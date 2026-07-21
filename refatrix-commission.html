@@ -54,7 +54,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급 · <b>설정창 b0625g</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">커미션 — 기대·확정·지급 · <b>기간기준 b0721p</b></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -71,10 +71,16 @@
       <div id="batchBody"><div class="hint">불러오는 중…</div></div>
     </div>
 
+    <!-- ⓪-b 내 커미션 조건 (영업사원 본인만) -->
+    <div class="card hidden" id="myCondCard">
+      <div class="card-h">내 커미션 조건 <span class="hint" style="font-weight:400">· 기간별 기준(매출/수금)·지급률 · 디렉터가 설정</span></div>
+      <div id="myCondBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
     <!-- ① 커미션 내역 -->
     <div class="card">
       <div class="card-h">커미션 내역
-        <span class="hint" style="font-weight:400">· 매출액(ex-IVA) 기준 · 반제 완료 시 확정 · 반제월 익월 15일 지급</span>
+        <span class="hint" style="font-weight:400">· 매출액(ex-IVA) 기준 · 매출기준=발행 즉시 확정 / 수금기준=반제완납 시 확정 · 익월 15일 지급</span>
       </div>
       <div class="agentbar">
         <div class="toggle" id="viewToggle">
@@ -126,10 +132,10 @@
 <!-- 대상·지급률 설정(디렉터) -->
 <div class="hidden" id="rateBackdrop" onclick="closeRates()" style="position:fixed;inset:0;background:rgba(20,20,18,.5);z-index:9998"></div>
 <div class="card hidden" id="rateModal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,94vw);z-index:9999;box-shadow:0 18px 50px rgba(0,0,0,.35);max-height:86vh;overflow:auto;padding:20px">
-  <div class="card-h" style="font-size:16px">커미션 대상 영업사원 · 기본 지급률(%)
+  <div class="card-h" style="font-size:16px">커미션 대상 영업사원 · 기간별 기준(매출/수금)·지급률
     <button class="btn ghost sm" style="float:right" onclick="closeRates()">닫기 ✕</button>
   </div>
-  <div class="hint" style="margin-bottom:10px">대상에 체크하고 기본률(%)을 입력한 뒤 각 행의 <b>저장</b>을 누르세요. 고객별 예외율은 추후 연결합니다.</div>
+  <div class="hint" style="margin-bottom:10px">영업사원마다 <b>대상</b>에 체크하고, 발행일 기간을 나눠 각 기간의 <b>기준(매출/수금)</b>과 <b>지급률(%)</b>을 정한 뒤 <b>저장</b>을 누르세요. 기간은 겹치지 않고 빈틈 없이 이어지며, 가장 최근 기간은 종료일을 비워 ∞(지속)로 둡니다. 고객별 예외율은 그 인보이스에 한해 율만 우선 적용됩니다.</div>
   <div id="rateList"><div class="hint">불러오는 중…</div></div>
 </div>
 
@@ -140,6 +146,13 @@
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtm=(n)=> '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const basisKo=(b)=> b==='revenue'?'매출':'수금';
+  function periodSummary(a){
+    const ps=a.periods||[];
+    if(!ps.length) return (a.default_rate!=null?a.default_rate+'%':'미설정');
+    const cur=ps.find(p=>!p.end_date)||ps[ps.length-1];
+    return basisKo(cur.basis)+' '+cur.rate+'%'+(ps.length>1?(' 외 '+(ps.length-1)+'기간'):'')+' · '+cur.start_date+'~';
+  }
 
   // 역할 기반 권한 (디렉터=전권 / 재무·소시오=전체 열람 / 영업사원=본인)
   const ROLE=()=> (session.user&&session.user.role)||'';
@@ -167,6 +180,7 @@
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       if(canSeeAll()){ $('agentPick').classList.remove('hidden'); $('batchCard').classList.remove('hidden'); loadAgents(); loadBatches(); }
+      else { $('myCondCard').classList.remove('hidden'); loadMyPeriods(); }
       if(canPay()){ $('payPanel').classList.remove('hidden'); }
       if(isDir()){ $('rateBtn').classList.remove('hidden'); }
       loadOverview();
@@ -183,7 +197,7 @@
       if(!res.ok||d.error){ window.__agents=[]; window.__agentsErr=(d.note||d.error||('조회 실패: '+res.status)); return; }
       window.__agentsErr=null;
       const opts=['<option value="">전체 (영업사원별 요약)</option>']
-        .concat((d.items||[]).filter(a=>a.is_agent&&a.active).map(a=>'<option value="'+a.user_id+'">'+esc(a.name)+(a.team_name?(' · '+esc(a.team_name)):'')+' ('+a.default_rate+'%'+(a.effective_from?(' · '+a.effective_from+'~'):'')+')</option>'));
+        .concat((d.items||[]).filter(a=>a.is_agent&&a.active).map(a=>'<option value="'+a.user_id+'">'+esc(a.name)+(a.team_name?(' · '+esc(a.team_name)):'')+' ('+esc(periodSummary(a))+')</option>'));
       $('agentSel').innerHTML=opts.join('');
       agentsPopulated=true;
       window.__agents=d.items||[];
@@ -268,13 +282,16 @@
   }
 
   function statusOf(l){
-    return l.paid ? 'paid' : (l.fully_paid ? 'unpaid' : 'expected');
+    return l.paid ? 'paid' : (l.recognized ? 'unpaid' : 'expected');
   }
   function lineVisible(l){
-    if(statusFilter==='unpaid') return l.fully_paid && !l.paid;   // 확정·미지급
+    if(statusFilter==='unpaid') return l.recognized && !l.paid;   // 확정·미지급
     if(statusFilter==='paid')   return l.paid;                    // 지급완료
     return true;
   }
+  const basisChip=(b)=> b==='revenue'
+    ? '<span class="badge exp" title="매출 기준: 인보이스 발행 즉시 확정">매출</span>'
+    : '<span class="badge" title="수금 기준: 반제완납 시 확정">수금</span>';
 
   function render(){
     if(!data){return;}
@@ -282,7 +299,7 @@
     $('summary').innerHTML=
       sb(s.invoice_count||0,'인보이스 건수')
       +sb(fmtm(s.total_expected),'기대 커미션')
-      +sb(fmtm(s.total_confirmed),'확정 커미션(반제분)')
+      +sb(fmtm(s.total_confirmed),'확정 커미션')
       +sb(fmtm(s.total_unpaid),'미지급 확정','unpaid')
       +sb(fmtm(s.total_paid),'지급완료','paid');
 
@@ -309,11 +326,11 @@
         +'<th class="r">매출(ex-IVA)</th><th class="r">율</th><th class="r">기대</th><th class="r">확정</th><th>지급예상일</th><th>상태</th></tr></thead><tbody>';
       for(const l of lines){
         const st = l.paid ? '<span class="badge paid">지급완료'+(l.paid_date?(' '+l.paid_date):'')+'</span>'
-                  : (!l.fully_paid ? '<span class="badge exp">기대(반제 전)</span>'
+                  : (!l.recognized ? '<span class="badge exp">기대(수금 전)</span>'
                   : (l.batch_status==='handed' ? '<span class="badge hand">인사전달됨</span>'
                   : (l.batch_status==='confirmed' ? '<span class="badge conf2">확정·지급대기</span>'
                   : '<span class="badge wait">집계중(미확정)</span>')));
-        html+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+'</td><td>'+l.inv_date+'</td>'
+        html+='<tr><td>'+esc(l.sat_no||('#'+l.invoice_id))+' '+basisChip(l.basis)+'</td><td>'+l.inv_date+'</td>'
           +(view==='customer'?'':'<td>'+esc(l.customer_name)+'</td>')
           +(seeAgentCol?'<td>'+esc(l.agent_name)+'</td>':'')
           +'<td class="r">'+fmtm(l.base)+'</td><td class="r">'+l.rate+'%</td>'
@@ -422,6 +439,20 @@
     }catch(e){ alert('증빙을 불러오지 못했습니다.'); }
   }
 
+  // ── 내 커미션 조건 (영업사원 본인) ──
+  async function loadMyPeriods(){
+    try{
+      const d=await fetch(session.api+'/api/commission/my-periods',{headers:auth()}).then(r=>r.json());
+      if(d.not_migrated){ $('myCondBody').innerHTML='<div class="hint">커미션 기간 테이블이 아직 없습니다. 서버 마이그레이션(0143)을 실행하세요.</div>'; return; }
+      const ps=d.periods||[];
+      if(!ps.length){ $('myCondBody').innerHTML='<div class="hint">아직 지정된 커미션 조건이 없습니다. (디렉터가 설정하면 여기에 표시됩니다)</div>'; return; }
+      let h='<table><thead><tr><th>기간(발행일)</th><th>기준</th><th class="r">지급률</th></tr></thead><tbody>';
+      for(const p of ps){ h+='<tr><td>'+p.start_date+' ~ '+(p.end_date||'지속(∞)')+'</td><td>'+basisChip(p.basis)+' '+basisKo(p.basis)+(p.basis==='revenue'?' · 발행 즉시 확정':' · 반제완납 시 확정')+'</td><td class="r exp">'+p.rate+'%</td></tr>'; }
+      h+='</tbody></table>';
+      $('myCondBody').innerHTML=h;
+    }catch(e){ $('myCondBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
   // ── 대상·지급률 설정(디렉터) ──
   async function openRates(){
     $('rateBackdrop').classList.remove('hidden'); $('rateModal').classList.remove('hidden');
@@ -429,31 +460,78 @@
     await loadAgents(); renderRates();
   }
   function closeRates(){ $('rateBackdrop').classList.add('hidden'); $('rateModal').classList.add('hidden'); }
+  // 'YYYY-MM-DD' 다음날 (기간 연속성 검증)
+  function nextDayC(ymd){ const [y,m,d]=String(ymd).split('-').map(Number); const dt=new Date(Date.UTC(y,m-1,d)); dt.setUTCDate(dt.getUTCDate()+1); return dt.getUTCFullYear()+'-'+String(dt.getUTCMonth()+1).padStart(2,'0')+'-'+String(dt.getUTCDate()).padStart(2,'0'); }
+  // 클라이언트 기간 검증(즉시 피드백). 서버도 동일하게 재검증함.
+  function clientValidatePeriods(list){
+    if(!list.length) return '최소 한 개의 기간이 필요합니다.';
+    for(const p of list){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(p.start_date)) return '시작일을 모두 입력하세요.';
+      if(p.end_date && !/^\d{4}-\d{2}-\d{2}$/.test(p.end_date)) return '종료일 형식이 올바르지 않습니다.';
+      if(p.end_date && p.end_date<p.start_date) return '종료일이 시작일보다 빠릅니다: '+p.start_date;
+      if(p.basis!=='revenue'&&p.basis!=='collection') return '기준(매출/수금)을 선택하세요.';
+      if(!(Number(p.rate)>=0)) return '지급률(%)은 0 이상이어야 합니다.';
+    }
+    const s=[...list].sort((a,b)=>a.start_date.localeCompare(b.start_date));
+    for(let i=0;i<s.length;i++){
+      const last=i===s.length-1;
+      if(last){ if(s[i].end_date) return '가장 최근(마지막) 기간은 종료일을 비워 ∞(지속)로 두어야 앞으로의 매출이 계속 대상이 됩니다.'; }
+      else{
+        if(!s[i].end_date) return '중간 기간은 종료일이 있어야 합니다(∞는 마지막 기간에만).';
+        if(s[i].end_date>=s[i+1].start_date) return '기간이 겹칩니다: '+s[i].start_date+'~'+s[i].end_date+' 와 '+s[i+1].start_date+'~';
+        if(nextDayC(s[i].end_date)!==s[i+1].start_date) return '기간 사이에 빈틈이 있습니다: '+s[i].end_date+' 다음은 '+nextDayC(s[i].end_date)+' 부터여야 합니다.';
+      }
+    }
+    return null;
+  }
   function renderRates(){
     const ags=window.__agents||[];
     if(!ags.length){ $('rateList').innerHTML='<div class="hint">'+(window.__agentsErr||'커미션 대상이 될 영업사원(역할 sales/sales_support)이 없습니다. 사용자 관리에서 역할을 확인하세요.')+'</div>'; return; }
-    $('rateList').innerHTML='<table><thead><tr><th>영업사원</th><th>팀</th><th>대상</th><th>기본률(%)</th><th>커미션 시작일</th><th></th></tr></thead><tbody>'
-      +ags.map(a=>'<tr data-uid="'+a.user_id+'"><td>'+esc(a.name)+'</td><td class="hint">'+esc(a.team_name||'-')+'</td>'
-        +'<td><input type="checkbox" class="r-on" '+(a.is_agent&&a.active?'checked':'')+'></td>'
-        +'<td><input type="number" step="0.001" class="r-rate" value="'+(a.default_rate!=null?a.default_rate:'')+'" style="width:80px"></td>'
-        +'<td><input type="date" class="r-from" value="'+(a.effective_from||'')+'" style="width:140px" title="이 날짜 이상의 매출만 커미션 대상. 비우면 전체 기간."></td>'
-        +'<td><button class="btn sm" onclick="saveRate('+a.user_id+')">저장</button></td></tr>').join('')
-      +'</tbody></table>'
-      +'<div class="hint" style="margin-top:8px">· <b>커미션 시작일</b>: 그 날짜(포함) 이후의 매출만 커미션으로 계산됩니다. 예) 2026-07-01 → 6월 매출은 제외. 비워두면 전체 기간이 대상입니다.</div>';
+    $('rateList').innerHTML=ags.map(a=>agentBlock(a)).join('');
   }
-  async function saveRate(uid){
-    const tr=document.querySelector('#rateList tr[data-uid="'+uid+'"]');
-    const active=tr.querySelector('.r-on').checked;
-    const rate=Number(tr.querySelector('.r-rate').value)||0;
-    const effective_from=tr.querySelector('.r-from').value||null;
+  function agentBlock(a){
+    const on=a.is_agent&&a.active;
+    const rows=(a.periods&&a.periods.length)?a.periods:[{start_date:'',end_date:null,basis:'collection',rate:(a.default_rate!=null?a.default_rate:0)}];
+    return '<div class="card" style="margin-top:10px;background:#faf8f3" id="ag-'+a.user_id+'">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<label style="margin:0"><input type="checkbox" class="ag-on" '+(on?'checked':'')+' onchange="toggleActive('+a.user_id+')"> <b>'+esc(a.name)+'</b></label>'
+      +'<span class="hint">'+esc(a.team_name||'')+'</span>'
+      +'<button class="btn sm" style="margin-left:auto" onclick="saveAgentPeriods('+a.user_id+')">저장</button></div>'
+      +'<div class="ag-periods" '+(on?'':'style="opacity:.45;pointer-events:none"')+'>'
+      +'<table style="margin-top:8px"><thead><tr><th>시작일</th><th>종료일(비우면 ∞)</th><th>기준</th><th class="r">율(%)</th><th></th></tr></thead>'
+      +'<tbody id="pt-'+a.user_id+'">'+rows.map(p=>periodRow(p)).join('')+'</tbody></table>'
+      +'<button class="btn ghost sm" style="margin-top:6px" onclick="addPeriodRow('+a.user_id+')">+ 기간 추가</button>'
+      +'<div class="hint" style="margin-top:6px">· <b>매출</b> = 인보이스 발행 즉시 확정 · <b>수금</b> = 반제완납 시 확정. 기간은 겹치지 않고 빈틈 없이 이어져야 하며, 가장 최근 기간은 종료일을 비워 ∞(지속)로 둡니다.</div>'
+      +'<div class="msg" id="pm-'+a.user_id+'"></div></div></div>';
+  }
+  function periodRow(p){
+    return '<tr class="prow"><td><input type="date" class="p-start" value="'+(p.start_date||'')+'" style="width:140px"></td>'
+      +'<td><input type="date" class="p-end" value="'+(p.end_date||'')+'" style="width:140px"></td>'
+      +'<td><select class="p-basis" style="width:92px"><option value="revenue"'+(p.basis==='revenue'?' selected':'')+'>매출</option><option value="collection"'+(p.basis!=='revenue'?' selected':'')+'>수금</option></select></td>'
+      +'<td class="r"><input type="number" step="0.001" class="p-rate" value="'+(p.rate!=null?p.rate:'')+'" style="width:80px"></td>'
+      +'<td><button class="btn ghost sm" onclick="this.closest(\'tr\').remove()" title="이 기간 삭제">✕</button></td></tr>';
+  }
+  function addPeriodRow(uid){ document.getElementById('pt-'+uid).insertAdjacentHTML('beforeend', periodRow({start_date:'',end_date:null,basis:'collection',rate:0})); }
+  function toggleActive(uid){ const blk=document.getElementById('ag-'+uid); const on=blk.querySelector('.ag-on').checked; const wrap=blk.querySelector('.ag-periods'); wrap.style.opacity=on?'':'.45'; wrap.style.pointerEvents=on?'':'none'; }
+  function gatherPeriods(uid){ return [...document.querySelectorAll('#pt-'+uid+' .prow')].map(tr=>({start_date:tr.querySelector('.p-start').value,end_date:tr.querySelector('.p-end').value||null,basis:tr.querySelector('.p-basis').value,rate:Number(tr.querySelector('.p-rate').value)||0})); }
+  async function saveAgentPeriods(uid){
+    const blk=document.getElementById('ag-'+uid); const on=blk.querySelector('.ag-on').checked;
+    const pm=document.getElementById('pm-'+uid); pm.className='msg';
+    let body;
+    if(!on){ body={active:false}; }
+    else{
+      const periods=gatherPeriods(uid);
+      const err=clientValidatePeriods(periods);
+      if(err){ pm.className='msg err'; pm.textContent=err; return; }
+      body={active:true,periods};
+    }
     try{
-      const res=await fetch(session.api+'/api/commission/agents',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:uid,default_rate:rate,active,effective_from})});
+      const res=await fetch(session.api+'/api/commission/agents/'+uid+'/periods',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      const m=$('msg');
-      if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.textContent='저장되었습니다.';
+      if(!res.ok||d.error){ pm.className='msg err'; pm.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      pm.className='msg ok'; pm.textContent=on?'저장되었습니다.':'커미션 대상에서 해제되었습니다.';
       await loadAgents(); renderRates(); loadOverview();
-    }catch(e){}
+    }catch(e){ pm.className='msg err'; pm.textContent='서버에 연결할 수 없습니다.'; }
   }
 
   // ── 토글/이벤트 ──
