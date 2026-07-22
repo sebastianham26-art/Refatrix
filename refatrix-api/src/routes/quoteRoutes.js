@@ -566,8 +566,12 @@ export default async function quoteRoutes(app) {
   app.get('/api/quotes/:id', { preHandler: [authGuard, requirePageAny(['quote','sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const q = (await query(
-      `SELECT q.*, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone
-         FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
+      `SELECT q.*, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
+              uo.name AS customer_owner_name
+         FROM quotes q
+         LEFT JOIN customers c ON c.id=q.customer_id
+         LEFT JOIN users uo ON uo.id=c.owner_id AND uo.deleted_at IS NULL
+        WHERE q.id=$1 AND q.deleted_at IS NULL`, [id])).rows[0];
     if (!q) return reply.code(404).send({ error: 'not_found' });
     q.is_guest = q.customer_id == null;
     q.party_name = q.customer_id == null ? (q.guest_name || '불특정 고객') : q.customer_name;

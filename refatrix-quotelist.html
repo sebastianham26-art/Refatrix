@@ -424,7 +424,15 @@
   // 출력 열 선택(중복선택): 가용재고(Existencia) · 운송중(En tránsito) · backorder(발주잔량) — PDF·엑셀 공통.
   // 기본: 가용재고·운송중 표시, backorder 숨김.
   let dtColExist=true, dtColTransit=true, dtColBack=false;
-  function dtToggleCol(which,on){ if(which==='exist') dtColExist=!!on; else if(which==='transit') dtColTransit=!!on; else if(which==='back') dtColBack=!!on; }
+  // PDF 전용 열: List Price · Descuento — 고객 발송용으로 숨길 수 있음(할인 전 가격·할인율 비노출). 기본 표시.
+  let dtColList=true, dtColDisc=true;
+  function dtToggleCol(which,on){
+    if(which==='exist') dtColExist=!!on;
+    else if(which==='transit') dtColTransit=!!on;
+    else if(which==='back') dtColBack=!!on;
+    else if(which==='list') dtColList=!!on;
+    else if(which==='disc') dtColDisc=!!on;
+  }
   const dtCtr=l=>String((l&&(l.ctr_code||l.input_code))||'').trim();
   function dtSortedLines(){
     const arr=(dtData&&dtData.lines)?dtData.lines.slice():[];
@@ -470,6 +478,7 @@
     const date=q.quote_date||'';
     const isMatched=(l)=> !!(l.product_name) && Number(l.final_price)>0;
     const showExist=dtColExist, showTransit=dtColTransit, showBack=dtColBack;   // 선택한 열만 출력(중복선택)
+    const showList=dtColList, showDisc=dtColDisc;   // PDF 전용: List Price·Descuento — 고객 발송용으로 숨김 가능
     const rowsHtml=lines.map(l=>{
       const short=isShortLine(l);
       const fl= short ? '재고부족' : (!l.product_name ? '개발' : '');
@@ -485,8 +494,8 @@
         +'<td>'+esc(l.syd_codes||'—')+'</td>'
         +'<td class="l">'+esc(l.product_name||'(미등록)')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
         +'<td class="r">'+fmtq(l.qty)+'</td>'
-        +'<td class="r">'+(mt?fmt(l.list_price):'—')+'</td>'
-        +'<td class="r">'+(mt?((Number(l.discount_rate)||0)+'%'):'—')+'</td>'
+        +(showList?'<td class="r">'+(mt?fmt(l.list_price):'—')+'</td>':'')
+        +(showDisc?'<td class="r">'+(mt?((Number(l.discount_rate)||0)+'%'):'—')+'</td>':'')
         +'<td class="r">'+(mt?fmt(l.final_price):'—')+'</td>'
         +'<td class="r">'+(mt?fmt(l.line_iva):'—')+'</td>'
         +'<td class="r">'+(mt?fmt(l.line_total):'—')+'</td>'
@@ -503,6 +512,10 @@
     const custMeta=[];
     if(q.customer_rfc)custMeta.push('RFC: '+esc(q.customer_rfc));
     if(q.customer_phone)custMeta.push('Tel: '+esc(q.customer_phone));
+    // 회사 WhatsApp QR (관리>회사정보에서 등록, /api/company whatsapp_qr) — 헤더 우측에 부착
+    const qrBox=co.whatsapp_qr?('<div class="qrbox"><img src="'+co.whatsapp_qr+'"><div class="qrcap">WhatsApp</div></div>'):'';
+    // 문의 안내(스페인어): 견적번호와 함께 WhatsApp으로 문의
+    const waNote='Para cualquier duda o aclaración, contáctenos por WhatsApp indicando el número de cotización'+(q.quote_no?(' (No. '+esc(q.quote_no)+')'):'')+'.';
     const html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cotización '+esc(q.quote_no||'')+'</title><style>'
       +'body{font-family:Arial,system-ui,sans-serif;color:#1c1b19;padding:26px;font-size:12px}'
       +'.head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #143D34;padding-bottom:12px}'
@@ -515,6 +528,8 @@
       +'th{background:#143D34;color:#fff;font-weight:600}'
       +'td.l{text-align:left}td.r{text-align:right}th{text-align:center}'
       +'.ap{color:#777;font-size:10px}.warn{color:#B23A2E;font-weight:700}.transit{color:#0F6E56;font-weight:700;font-size:10px}'
+      +'.qrbox{text-align:center;margin:0 14px;flex:0 0 auto}.qrbox img{width:74px;height:74px;object-fit:contain;border:1px solid #ccc;border-radius:4px;background:#fff}.qrcap{font-size:9px;color:#0F6E56;font-weight:700;margin-top:2px}'
+      +'.wanote{margin:0 0 6px;padding:7px 10px;background:#E4F0EB;border-radius:6px;font-size:11px;color:#0F6E56;font-weight:600}'
       +'.totbox{margin-top:14px;display:flex;justify-content:flex-end}'
       +'.totbox table{width:auto}.totbox td{border:none;padding:3px 10px}'
       +'.bank{margin-top:18px;border:1px solid #ccc;border-radius:6px;padding:10px 12px;font-size:11px;background:#faf8f3}'
@@ -523,10 +538,13 @@
       +'@media print{.noprint{display:none}}'
       +'</style></head><body>'
       +'<div class="head"><div>'+logo+'<div class="co">'+(co.emisor&&co.logo_data?'<b>'+esc(co.emisor)+'</b><br>':'')+(co.domicilio?esc(co.domicilio)+'<br>':'')+(co.rfc?'RFC: '+esc(co.rfc)+'<br>':'')+(co.phone?'Tel: '+esc(co.phone)+' · ':'')+(co.homepage?esc(co.homepage):'')+'</div></div>'
+      +qrBox
       +'<div class="title"><h2>COTIZACIÓN</h2><div class="qn">No. '+esc(q.quote_no||'')+'</div></div></div>'
       +'<div class="meta"><b>Cliente:</b> '+esc(custName)+(custMeta.length?' &nbsp; <span style="color:#666">('+custMeta.join(' · ')+')</span>':'')+'<br>'
-      +'<b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel(q))+'</div>'
-      +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th><th>List</th><th>Desc.</th><th>P.Unit</th><th>IVA</th><th>Total c/IVA</th>'+thExtra+'</tr></thead>'
+      +'<b>Fecha:</b> '+esc(date)+' &nbsp;&nbsp; <b>Atendió:</b> '+esc(issuerLabel(q))
+      +(q.customer_owner_name?' &nbsp;&nbsp; <b>Vendedor asignado:</b> '+esc(q.customer_owner_name):'')+'</div>'
+      +'<div class="wanote">📱 '+waNote+'</div>'
+      +'<table><thead><tr><th>CTR</th><th>SYD</th><th>Producto / Aplicación</th><th>Cant.</th>'+(showList?'<th>List</th>':'')+(showDisc?'<th>Desc.</th>':'')+'<th>P.Unit</th><th>IVA</th><th>Total c/IVA</th>'+thExtra+'</tr></thead>'
       +'<tbody>'+rowsHtml+'</tbody></table>'
       +'<div class="totbox"><table>'
       +'<tr><td>Total piezas:</td><td class="r">'+fmtq(q.total_qty||0)+'</td></tr>'
@@ -688,6 +706,9 @@
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColExist?'checked':'')+' onchange="dtToggleCol(\'exist\',this.checked)"> 가용재고</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColTransit?'checked':'')+' onchange="dtToggleCol(\'transit\',this.checked)"> 운송중</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="발주 미입고 잔량에서 운송중을 뺀 순수 발주잔량"><input type="checkbox" '+(dtColBack?'checked':'')+' onchange="dtToggleCol(\'back\',this.checked)"> backorder</label>'
+      +'<span style="color:#ccc">|</span>'
+      +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="PDF 전용 — 고객 발송 시 체크 해제하면 할인 전 가격(List)을 숨깁니다"><input type="checkbox" '+(dtColList?'checked':'')+' onchange="dtToggleCol(\'list\',this.checked)"> List Price</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="PDF 전용 — 고객 발송 시 체크 해제하면 할인율(Desc.)을 숨깁니다"><input type="checkbox" '+(dtColDisc?'checked':'')+' onchange="dtToggleCol(\'disc\',this.checked)"> Descuento</label>'
       +'</span>';
     actions+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
     actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="재고분(가용재고>0) 항목을 엑셀로 다운로드 · 선택한 열 포함">📥 엑셀 (재고분)</button>';
@@ -1158,6 +1179,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260722tr3"></script>
+<script src="refatrix-nav.js?v=20260722tr4"></script>
 </body>
 </html>
