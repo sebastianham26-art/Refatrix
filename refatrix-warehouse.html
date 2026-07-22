@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632j</title>
+<title>Refatrix · 창고 포장 · build 0632k</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -304,7 +304,8 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632j — 삭제버튼/총수량/EAN제거'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0632k — 박스사진 지연로드(썸네일 표시 복구)'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
@@ -511,6 +512,24 @@
   }
   // ===================== 출고-2: 목록 · 상세 · 출력 =====================
   var SHIP=null, SHIP_PHOTOS={}, PHOTO_MODE='packing';
+  // ---------- 박스 사진 이미지 지연 로드(캐시) ----------
+  //  /photos 목록은 메타(id·box_id)만 주고 image_data를 뺐다(대용량 폴링 전송 방지).
+  //  실제 이미지는 /packing/photo/:photoId 로 1장씩 받아 캐시하고 <img>에 채운다.
+  var PHOTO_IMG={};
+  function loadPhotoImg(pid, cb){
+    pid=Number(pid);
+    if(PHOTO_IMG[pid]){ if(cb) cb(PHOTO_IMG[pid]); return; }
+    fetch(API+'/api/warehouse/packing/photo/'+pid,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
+      if(d&&d.image_data){ PHOTO_IMG[pid]=d.image_data; if(cb) cb(d.image_data); }
+    }).catch(function(){});
+  }
+  function hydratePhotos(root){
+    if(!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll('img.thumb[data-pid]'),function(img){
+      if(img.getAttribute('src')) return;
+      loadPhotoImg(img.getAttribute('data-pid'),function(src){ img.src=src; });
+    });
+  }
   function loadShipQueue(){
     fetch(API+'/api/warehouse/ship-queue?status='+SHIP_STATUS,{headers:AUTH}).then(function(r){return r.json();}).then(function(d){
       var items=(d&&d.items)||[]; var c=$('shipCount'); if(c) c.textContent=items.length; renderShipQueue(items, SHIP_STATUS);
@@ -587,7 +606,7 @@
     $('shipBody').innerHTML=chips+d.boxes.map(function(b){
       var lines=b.lines.map(function(l){ return '<tr><td>'+esc(l.ctr_code)+'</td><td>'+esc(l.syd_code||'\u2014')+'</td><td class="q">'+l.qty+'</td></tr>'; }).join('');
       var ph=(SHIP_PHOTOS[b.box_id]||[]);
-      var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="spx" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
+      var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" data-pid="'+pp.id+'"'+(PHOTO_IMG[pp.id]?' src="'+PHOTO_IMG[pp.id]+'"':'')+' alt=""><button class="spx" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
       var photos='<div class="photos">'+thumbs+'<button class="saddphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'+(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
       return '<div class="sbox" id="sbox-'+b.box_no+'"><div class="sbh">\ud83d\udce6 Box '+b.box_no+' \u00b7 '+b.box_qty+'피스 <button class="boxlbl" data-box="'+b.box_no+'">\ud83d\udce6 이 박스 라벨 인쇄</button></div><table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th></tr></thead><tbody>'+lines+'</tbody></table>'+photos+'</div>';
     }).join('');
@@ -595,7 +614,8 @@
     Array.prototype.forEach.call($('shipBody').querySelectorAll('.boxlbl'),function(btn){ btn.addEventListener('click',function(){ printBoxLabel(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call($('shipBody').querySelectorAll('.saddphoto'),function(btn){ btn.addEventListener('click',function(){ shipTriggerPhoto(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call($('shipBody').querySelectorAll('.spx'),function(btn){ btn.addEventListener('click',function(){ shipRemovePhoto(Number(btn.getAttribute('data-photo'))); }); });
-    Array.prototype.forEach.call($('shipBody').querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
+    Array.prototype.forEach.call($('shipBody').querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ var s=img.getAttribute('src'); if(s){ openLight(s); } else { loadPhotoImg(img.getAttribute('data-pid'),function(src){ img.src=src; openLight(src); }); } }); });
+    hydratePhotos($('shipBody'));
     $('shipPanel').classList.add('on');
   }
   function shipTriggerPhoto(boxId){ PHOTO_MODE='ship'; pendingPhotoBox=boxId; var fi=$('photoInput'); if(fi){ fi.value=''; fi.click(); } }
@@ -995,7 +1015,7 @@
     var table='<table class="bt"><thead><tr><th>CTR</th><th>경쟁사</th><th class="q" style="text-align:right">수량</th>'+(b.sealed?'':'<th></th>')+'</tr></thead>'
       +'<tbody>'+(lines||('<tr><td colspan="'+ncol+'" style="color:#9a958b;text-align:center">비어 있음 \u2014 스캔/＋로 담기</td></tr>'))+'</tbody></table>';
     var addrow = '';   // 수동입력은 상단 고정바로 통합
-    var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" src="'+pp.image_data+'" alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
+    var thumbs=ph.map(function(pp){ return '<span class="pwrap"><img class="thumb" data-pid="'+pp.id+'"'+(PHOTO_IMG[pp.id]?' src="'+PHOTO_IMG[pp.id]+'"':'')+' alt=""><button class="px" data-photo="'+pp.id+'">\u00d7</button></span>'; }).join('');
     var photos='<div class="photos">'+thumbs
       +'<button class="addphoto" data-box="'+b.box_id+'">\ud83d\udcf7 ＋ 사진</button>'
       +(ph.length===0?'<span class="optphoto">사진 (선택)</span>':'')+'</div>';
@@ -1007,7 +1027,8 @@
     Array.prototype.forEach.call(g.querySelectorAll('.mm'),function(btn){ btn.addEventListener('click',function(){ unscan(Number(btn.getAttribute('data-box')),Number(btn.getAttribute('data-pid'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.addBtn'),function(btn){ btn.addEventListener('click',function(){ var inp=g.querySelector('.ctrAdd[data-box="'+btn.getAttribute('data-box')+'"]'); addManual(Number(btn.getAttribute('data-box')), inp); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.ctrAdd'),function(inp){ inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); addManual(Number(inp.getAttribute('data-box')), inp); } }); });
-    Array.prototype.forEach.call(g.querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ openLight(img.getAttribute('src')); }); });
+    Array.prototype.forEach.call(g.querySelectorAll('.thumb'),function(img){ img.addEventListener('click',function(){ var s=img.getAttribute('src'); if(s){ openLight(s); } else { loadPhotoImg(img.getAttribute('data-pid'),function(src){ img.src=src; openLight(src); }); } }); });
+    hydratePhotos(g);
     Array.prototype.forEach.call(g.querySelectorAll('.px'),function(btn){ btn.addEventListener('click',function(){ removePhoto(Number(btn.getAttribute('data-photo'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.addphoto'),function(btn){ btn.addEventListener('click',function(){ triggerPhoto(Number(btn.getAttribute('data-box'))); }); });
     Array.prototype.forEach.call(g.querySelectorAll('.bdel'),function(btn){ btn.addEventListener('click',function(){ confirmDelBox=Number(btn.getAttribute('data-box')); renderPacking(); }); });
