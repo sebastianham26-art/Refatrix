@@ -661,6 +661,7 @@
         <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
         <tr><th>${sm.year||''} 누적 실적</th><td><b style="color:var(--income)">${fmt(actual)}</b></td><th>연말 매출목표</th><td>${target!=null?fmt(target):'<span class="hint" style="margin:0">미설정</span>'}</td></tr>
         ${progressRow}
+        <tr><th>배송지</th><td colspan="3">${c.ship_address?esc(c.ship_address):'<span class="hint" style="margin:0">미입력 — 수정에서 입력하면 포장 라벨(etiqueta)에 인쇄됩니다</span>'}</td></tr>
         ${c.constancia_fiscal?`<tr><th>Constancia Fiscal</th><td colspan="3">${esc(c.constancia_fiscal)}</td></tr>`:''}
         ${c.memo?`<tr><th>메모</th><td colspan="3">${c.memo}</td></tr>`:''}
       </table>`;
@@ -828,7 +829,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260620ay"></script>
+<script src="refatrix-custform.js?v=20260722a"></script>
 <script src="refatrix-nav.js?v=20260710pr"></script>
 </body>
 </html>

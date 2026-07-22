@@ -232,6 +232,7 @@ export default async function customerRoutes(app) {
     if (q) { params.push(`%${q}%`); conds.push(`(c.name ILIKE $${params.length} OR c.code ILIKE $${params.length} OR c.rfc ILIKE $${params.length})`); }
     const rows = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.discount, c.credit_days, c.customer_type, c.branch_count,
+              c.ship_address,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
@@ -300,6 +301,7 @@ export default async function customerRoutes(app) {
       id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
       discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
       branch_count: c.branch_count == null ? null : Number(c.branch_count),
+      ship_address: c.ship_address || null,
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
@@ -413,6 +415,7 @@ export default async function customerRoutes(app) {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
         discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
         constancia_fiscal: c.constancia_fiscal || null,
+        ship_address: c.ship_address || null,
         branch_count: c.branch_count == null ? null : Number(c.branch_count),
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
@@ -442,11 +445,12 @@ export default async function customerRoutes(app) {
       const code = await computeNextCode();
       try {
         row = (await query(
-          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, branch_count, stage_since, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
+          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, branch_count, ship_address, stage_since, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14,$15, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
           [code, b.name, b.rfc || null, b.contact || null, b.phone || null, Number(b.discount) || 0,
            Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.customer_type || null, b.memo || null, req.ctx.perm.userId,
-           (b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count)])).rows[0];
+           (b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count),
+           (b.ship_address == null || String(b.ship_address).trim() === '') ? null : String(b.ship_address).trim()])).rows[0];
         break;
       } catch (e) { lastErr = e; if (!String(e.message || '').includes('unique') && !String(e.message || '').includes('duplicate')) throw e; }
     }
@@ -522,6 +526,22 @@ export default async function customerRoutes(app) {
     }
     await safeLog({ userId: perm.userId, action: 'change_request', target: `customer:${id}` });
     return { ok: true, pending: true };
+  });
+
+  // 배송지(ship_address) 즉시 저장 — 승인 플로우 없이 언제든 입력/수정 가능.
+  //   포장 라벨(etiqueta)·패킹리스트 출력에 쓰이는 운영 정보라 지연 없이 반영한다.
+  //   편집 권한(requirePageEdit) + 팀 편집권만 확인. 빈값 저장 = 배송지 비우기.
+  app.patch('/api/customers/:id/ship-address', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const c = (await query(`SELECT id, team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canEditTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const raw = (req.body || {}).ship_address;
+    const val = (raw == null || String(raw).trim() === '') ? null : String(raw).trim();
+    await query(`UPDATE customers SET ship_address=$1, updated_by=$2 WHERE id=$3`, [val, perm.userId, id]);
+    await safeLog({ userId: perm.userId, action: 'update', target: `customer:${id}`, detail: { field: 'ship_address' } });
+    return { ok: true, ship_address: val };
   });
 
   // 단계별 고객수 요약(팀별 + 합계) — 견적30/협상40/수주50/거래중60

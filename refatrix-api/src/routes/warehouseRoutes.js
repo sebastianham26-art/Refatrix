@@ -508,6 +508,7 @@ export default async function warehouseRoutes(app) {
     const q = (await query(
       `SELECT q.id, q.quote_no, q.quote_date::text AS quote_date, q.packed_at, q.total_qty, q.sku_count, q.invoice_id,
               COALESCE(c.name, q.guest_name, '\u2014') AS customer_name, c.code AS customer_code, c.rfc AS customer_rfc,
+              c.ship_address,
               si.sat_no, si.inv_date::text AS inv_date, si.total_mxn
          FROM quotes q
          LEFT JOIN customers c ON c.id=q.customer_id
@@ -538,6 +539,7 @@ export default async function warehouseRoutes(app) {
     return {
       quote_id: Number(q.id), quote_no: q.quote_no || ('#' + q.id), quote_date: q.quote_date,
       customer: q.customer_name, customer_code: q.customer_code || null, customer_rfc: q.customer_rfc || null,
+      ship_address: q.ship_address || null,
       sat_no: realSat ? q.sat_no : null, has_sat: !!realSat, inv_date: q.inv_date, total_mxn: q.total_mxn != null ? Number(q.total_mxn) : null,
       packed_at: q.packed_at,
       box_count: boxOut.length, total_qty: totQty, sku_count: skuSet.size,

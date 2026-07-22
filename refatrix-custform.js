@@ -35,6 +35,10 @@
       +'<div class="rcf-f"><label>지점 수</label><input id="rcf-branches" type="number" min="0" placeholder="예: 3"></div>'
     +'</div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>메모</label><input id="rcf-memo" type="text"></div></div>'
+    +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>배송지 (Dirección de envío) — 포장 라벨·패킹리스트에 인쇄됩니다. 등록 주소와 달라도 됩니다.</label>'
+      +'<textarea id="rcf-ship" rows="2" placeholder="예: Av. Insurgentes Sur 1234, Col. Del Valle, C.P. 03100, Benito Juárez, CDMX"></textarea>'
+      +'<div class="rcf-shipbar"><button type="button" class="btn" id="rcf-shipsave" style="display:none">배송지 즉시 저장</button><span class="rcf-msg" id="rcf-shipmsg"></span></div>'
+    +'</div></div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>Constancia de Situación Fiscal (세무 등록상태)</label><input id="rcf-constancia" type="text" placeholder="예: RFC · Régimen · 등록상태"></div></div>'
     +'<div class="rcf-actions">'
       +'<button class="btn" id="rcf-save">저장</button>'
@@ -51,7 +55,10 @@
     +'.rcf-f{flex:1;min-width:130px;display:flex;flex-direction:column;gap:3px}'
     +'.rcf-f.rcf-grow{flex:2.5}'
     +'.rcf-f label{font-size:11px;color:#6f6a60;font-weight:600}'
-    +'.rcf-f input,.rcf-f select{padding:8px 9px;border:1px solid #ddd6c6;border-radius:7px;font-size:13px;background:#fff;font-family:inherit}'
+    +'.rcf-f input,.rcf-f select,.rcf-f textarea{padding:8px 9px;border:1px solid #ddd6c6;border-radius:7px;font-size:13px;background:#fff;font-family:inherit}'
+    +'.rcf-f textarea{resize:vertical;min-height:44px;line-height:1.45}'
+    +'.rcf-shipbar{display:flex;align-items:center;gap:8px;margin-top:4px}'
+    +'.rcf-shipbar .btn{padding:5px 10px;font-size:12px}'
     +'.rcf-actions{display:flex;align-items:center;gap:10px;margin-top:4px}'
     +'.rcf-msg{font-size:12px}'
     +'.rcf-msg.ok{color:#1a7f4b}.rcf-msg.err{color:#B23A2E}.rcf-msg.pend{color:#9a6a1a}';
@@ -68,12 +75,29 @@
   }
 
   function setMsg(cls,txt){ var m=$('rcf-msg'); if(m){ m.className='rcf-msg '+(cls||''); m.textContent=txt||''; } }
+  function setShipMsg(cls,txt){ var m=$('rcf-shipmsg'); if(m){ m.className='rcf-msg '+(cls||''); m.textContent=txt||''; } }
+
+  // 배송지 즉시 저장 — 승인 플로우 없이 바로 반영(라벨 인쇄용 운영 정보).
+  async function saveShipAddress(){
+    if(!editingId){ setShipMsg('pend','고객 등록 시 함께 저장됩니다.'); return true; }
+    var v=$('rcf-ship')?$('rcf-ship').value.trim():'';
+    var btn=$('rcf-shipsave'); if(btn) btn.disabled=true;
+    try{
+      var res=await fetch(api('/api/customers/'+editingId+'/ship-address'),{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ship_address:v||null})});
+      var d=await res.json();
+      if(!res.ok||d.error){ setShipMsg('err','배송지 저장 실패: '+(d.error||res.status)); if(btn)btn.disabled=false; return false; }
+      setShipMsg('ok', v?'배송지 저장됨 (라벨에 인쇄됩니다)':'배송지 비움');
+      if(btn)btn.disabled=false; return true;
+    }catch(e){ setShipMsg('err','서버에 연결할 수 없습니다.'); if(btn)btn.disabled=false; return false; }
+  }
 
   async function fillNew(){
     editingId=null;
     $('rcf-code').value='자동…'; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     try{ var d=await fetch(api('/api/customers/next-code'),{headers:auth()}).then(r=>r.json()); $('rcf-code').value=d.code||''; }catch(e){ $('rcf-code').value=''; }
-    ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-memo','rcf-constancia'].forEach(function(id){ if($(id))$(id).value=''; });
+    ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-memo','rcf-constancia','rcf-ship'].forEach(function(id){ if($(id))$(id).value=''; });
+    if($('rcf-shipsave')) $('rcf-shipsave').style.display='none';
+    setShipMsg('','');
     if($('rcf-team')) $('rcf-team').value=(teams[0]&&teams[0].id)||'';
     if($('rcf-type')) $('rcf-type').value=''; if($('rcf-owner')) $('rcf-owner').value=''; if($('rcf-stage')) $('rcf-stage').value='';
     if($('rcf-discount')) $('rcf-discount').value=0; if($('rcf-credit')) $('rcf-credit').value=0;
@@ -87,6 +111,9 @@
     $('rcf-code').value=c.code||''; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     $('rcf-name').value=c.name||''; $('rcf-rfc').value=c.rfc||''; $('rcf-contact').value=c.contact||'';
     $('rcf-phone').value=c.phone||''; $('rcf-memo').value=c.memo||''; $('rcf-constancia').value=c.constancia_fiscal||'';
+    if($('rcf-ship')) $('rcf-ship').value=c.ship_address||'';
+    if($('rcf-shipsave')) $('rcf-shipsave').style.display='';
+    setShipMsg('','');
     if($('rcf-team')) $('rcf-team').value=c.team_id||''; if($('rcf-type')) $('rcf-type').value=c.customer_type||'';
     if($('rcf-owner')) $('rcf-owner').value=c.owner_id||''; if($('rcf-stage')) $('rcf-stage').value=c.stage_id||'';
     if($('rcf-discount')) $('rcf-discount').value=(c.discount!=null?c.discount:0);
@@ -108,6 +135,7 @@
       discount:Number($('rcf-discount').value)||0, credit_days:Number($('rcf-credit').value)||0,
       branch_count:($('rcf-branches')&&$('rcf-branches').value!=='')?Number($('rcf-branches').value):null,
       memo:$('rcf-memo').value.trim()||null, constancia_fiscal:$('rcf-constancia').value.trim()||null,
+      ship_address:($('rcf-ship')&&$('rcf-ship').value.trim())||null,
     };
   }
 
@@ -117,6 +145,8 @@
     if(!b.team_id){ setMsg('err','팀을 선택하세요.'); return; }
     $('rcf-save').disabled=true;
     try{
+      // 수정 모드: 배송지는 승인 대기 없이 즉시 저장(전용 엔드포인트) — 나머지 필드는 기존 흐름 유지.
+      if(editingId) await saveShipAddress();
       var url=editingId?api('/api/customers/'+editingId):api('/api/customers');
       var method=editingId?'PATCH':'POST';
       var res=await fetch(url,{method:method,headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(b)});
@@ -142,6 +172,7 @@
       hostEl=document.getElementById(hostId); if(!hostEl) return;
       hostEl.innerHTML=formHTML();
       $('rcf-save').addEventListener('click', save);
+      var sb=$('rcf-shipsave'); if(sb) sb.addEventListener('click', saveShipAddress);
       var cb=$('rcf-cancel'); if(cb) cb.addEventListener('click', function(){ if(opts&&opts.onCancel)opts.onCancel(); fillNew(); });
       await loadRefs();
       await fillNew();
@@ -150,5 +181,5 @@
     editCustomer:function(c){ fillEdit(c); },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260618f loaded (이름 포함 수정 가능)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260722a loaded (배송지 ship_address 즉시저장)'); }catch(e){}
 })();

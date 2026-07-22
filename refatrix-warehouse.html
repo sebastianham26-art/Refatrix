@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0632k</title>
+<title>Refatrix · 창고 포장 · build 0633a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -114,6 +114,8 @@
   .scard .satwarn{display:inline-block;background:#fbe9e5;color:#a33b27;font-weight:800;font-size:12.5px;border-radius:999px;padding:5px 12px}
   #shipPanel .shiptop{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
   #shipPanel .shiptop #shipPrintLabels,#shipPanel .shiptop #shipPrintList{border:none;border-radius:9px;padding:7px 13px;font-size:13px;font-weight:800;cursor:pointer}
+  .shipadr{margin-top:6px;font-size:13px;font-weight:700;color:#2d4a3e;background:#eef5f0;border:1px solid #cfe3d6;border-radius:8px;padding:6px 10px;white-space:pre-wrap;word-break:break-word}
+  .shipadr.none{color:#8a6d1a;background:#fbf4df;border-color:#eadfb8;font-weight:600}
   #shipPanel #shipPrintLabels{background:#33495c;color:#fff} #shipPanel #shipPrintList{background:#3E7D5A;color:#fff}
   .shipchips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px;position:sticky;top:0;background:var(--paper);padding:6px 0;z-index:2}
   .sbox{scroll-margin-top:58px}
@@ -304,7 +306,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0632k — 박스사진 지연로드(썸네일 표시 복구)'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0633a — 라벨(etiqueta)·패킹리스트에 배송지(ship_address) 인쇄, 잘림 방지 자동 줄바꿈'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -428,6 +430,7 @@
     ['확인','Confirmar'],
     ['패킹리스트','Lista de empaque'],
     ['라벨','Etiquetas'],
+    ['배송지 미입력 — 고객마스터(고객 수정)에서 배송지를 입력하면 라벨에 인쇄됩니다','Sin dirección de envío — captúrela en el maestro de clientes para imprimirla en la etiqueta'],
     ['사진','Foto'],
     ['삭제','Eliminar'],
     ['수량','Cant.'],
@@ -598,7 +601,10 @@
     }).catch(function(){ alert('불러오기 실패(통신)'); });
   }
   function renderShipDetail(d){
-    $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' \u00b7 박스 '+d.box_count+' \u00b7 '+d.total_qty+'피스</span>';
+    $('shipHead').innerHTML='<span class="no">'+esc(d.quote_no)+'</span><span class="cu">'+esc(d.customer)+'</span><span class="el">'+(d.has_sat?('No. factura '+esc(d.sat_no)):'\u26a0 SAT 번호를 넣으세요')+' \u00b7 박스 '+d.box_count+' \u00b7 '+d.total_qty+'피스</span>'
+      +(d.ship_address
+        ?'<div class="shipadr">\ud83d\udccd '+esc(d.ship_address)+'</div>'
+        :'<div class="shipadr none">\ud83d\udccd 배송지 미입력 — 고객마스터(고객 수정)에서 배송지를 입력하면 라벨에 인쇄됩니다</div>');
     var chips='<div id="shipChips" class="shipchips">'+d.boxes.map(function(b){
       var cam=((SHIP_PHOTOS[b.box_id]||[]).length>0)?' <span class="cam">\ud83d\udcf7</span>':'';
       return '<button class="bchip" data-bn="'+b.box_no+'">Box '+b.box_no+cam+'</button>';
@@ -644,6 +650,7 @@
       return '<section class="lbl"><div class="lhdr"><div class="bx">CAJA '+b.box_no+' / '+M+'</div><div class="dt">'+esc(d.inv_date||d.quote_date||'')+'</div></div>'
         +'<div class="cust">'+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</div>'
         +'<div class="meta"><b>No. de factura:</b> '+esc(d.sat_no||'PENDIENTE')+'</div>'
+        +(d.ship_address?'<div class="shipto"><span class="stl">ENTREGAR EN:</span><br>'+esc(d.ship_address)+'</div>':'')
         +'<div class="meta"><b>Pedido:</b> '+esc(d.quote_no)+' &nbsp; SKU: '+b.box_sku+' &nbsp; Pzas: '+b.box_qty+'</div>'
         +'<div class="bc">'+bc+'</div>'
         +'<table class="lt"><thead><tr><th>CTR</th><th>Competidor</th><th class="q">Cant.</th></tr></thead><tbody>'+lines+'</tbody></table></section>';
@@ -654,6 +661,7 @@
       +'.lhdr{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:2mm}'
       +'.lhdr .bx{font-size:21pt;font-weight:800}.lhdr .dt{font-size:9.5pt}'
       +'.cust{font-size:14pt;font-weight:700;margin:2mm 0 1mm}.meta{font-size:10pt;margin:0.6mm 0}'
+      +'.shipto{font-size:9.5pt;line-height:1.35;margin:1mm 0;word-break:break-word;white-space:pre-wrap}.shipto .stl{font-weight:800;font-size:8pt}'
       +'.bc{text-align:center;margin:2mm 0}.bc svg{max-width:100%}'
       +'.lt{width:100%;border-collapse:collapse;font-size:9pt;margin-top:1mm}.lt th,.lt td{border:1px solid #999;padding:1mm;text-align:left}.lt .q{text-align:right;font-weight:700}'
       +'</style></head><body>'+pages+'</body></html>';
@@ -679,7 +687,9 @@
       return '<section class="pg">'+cohead+'<div class="top"><div class="title">LISTA DE EMPAQUE</div><div class="cp">'+tag+'</div></div>'
         +'<table class="hd"><tr><td><b>Cliente:</b> '+esc(d.customer)+(d.customer_code?' ('+esc(d.customer_code)+')':'')+'</td><td><b>No. de factura:</b> '+esc(d.sat_no||'PENDIENTE')+'</td></tr>'
         +'<tr><td><b>RFC:</b> '+esc(d.customer_rfc||'-')+'</td><td><b>Pedido:</b> '+esc(d.quote_no)+'</td></tr>'
-        +'<tr><td><b>Fecha:</b> '+esc(d.inv_date||d.quote_date||'')+'</td><td><b>Cajas:</b> '+d.box_count+' \u00b7 <b>SKU:</b> '+d.sku_count+' \u00b7 <b>Piezas:</b> '+d.total_qty+'</td></tr></table>'
+        +'<tr><td><b>Fecha:</b> '+esc(d.inv_date||d.quote_date||'')+'</td><td><b>Cajas:</b> '+d.box_count+' \u00b7 <b>SKU:</b> '+d.sku_count+' \u00b7 <b>Piezas:</b> '+d.total_qty+'</td></tr>'
+        +(d.ship_address?'<tr><td colspan="2"><b>Entregar en (direcci\u00f3n de env\u00edo):</b> '+esc(d.ship_address)+'</td></tr>':'')
+        +'</table>'
         +boxes
         +'<div class="tot">Total: '+d.box_count+' cajas \u00b7 '+d.sku_count+' SKU \u00b7 '+d.total_qty+' piezas</div>'
         +'<div class="sign"><div class="sb"><div class="ln"></div>Entreg\u00f3 (Almac\u00e9n)</div><div class="sb"><div class="ln"></div>Recib\u00ed conforme (Cliente)</div></div></section>';
@@ -762,7 +772,23 @@
     var JS=(window.jspdf&&window.jspdf.jsPDF); if(!JS) return null;
     var GAP=3, PITCH=labelPitch(), TADJ=labelTop();   // 페이지=피치(보정값), 내용은 라벨 본체 안
     var doc=new JS({unit:'mm', format:[100,PITCH], orientation:'portrait'});
-    var W=100, M=4, MAXROWS=14;                        // 한 라벨당 최대 14줄, 15번째부터 새 라벨(헤더 반복)
+    var W=100, M=4;
+    // ===== 배송지(ENTREGAR EN) — 고객마스터 ship_address. 길어도 잘리지 않게 =====
+    //   ① splitTextToSize 로 라벨 폭에 맞춰 자동 줄바꿈(글자 잘림 없음)
+    //   ② 주소 줄수만큼 표(품목) 최대 행수를 줄여 라벨 아래로 넘치지 않게 동적 계산
+    doc.setFont('helvetica','bold'); doc.setFontSize(12);
+    var custStr=String(d.customer||'')+(d.customer_code?' ('+d.customer_code+')':'');
+    var custL=doc.splitTextToSize(custStr, W-2*M);
+    var adrL=null;
+    if(d.ship_address){
+      doc.setFont('helvetica','normal'); doc.setFontSize(9);
+      adrL=doc.splitTextToSize(String(d.ship_address), W-2*M-1);
+      if(adrL.length>16) adrL=adrL.slice(0,16);        // 안전상한(실주소는 도달 불가) — 기하 보장용
+    }
+    // 헤더 총높이(표 머리글까지) = 고정부 + 고객명 줄수 + 주소 줄수 (아래 그리기 코드와 동일 수치)
+    var headH=(M+6)+2.5+6 + (custL.length*5+1.5) + 4.6 + (adrL?(3.6+adrL.length*3.8+1.6):0) + 3.5 + 17.5 + 6;
+    var LIMIT=(PITCH-3)-3;                             // 라벨 본체 끝에서 3mm 여유
+    var MAXROWS=Math.min(14, Math.max(3, Math.floor((LIMIT-headH)/5.4)));  // 주소 길면 행수 자동 축소
     var first=true;
     (d.boxes||[]).forEach(function(b){
       var lines=b.lines||[];
@@ -778,10 +804,16 @@
         doc.text(String(d.inv_date||d.quote_date||''), W-M, y, {align:'right'});
         y+=2.5; doc.setLineWidth(0.6); doc.line(M, y, W-M, y); y+=6;
         doc.setFont('helvetica','bold'); doc.setFontSize(12);
-        var cust=String(d.customer||'')+(d.customer_code?' ('+d.customer_code+')':'');
-        var cl=doc.splitTextToSize(cust, W-2*M); doc.text(cl, M, y); y+=cl.length*5+1.5;
+        doc.text(custL, M, y); y+=custL.length*5+1.5;
         doc.setFontSize(9.5);
         doc.text('No. de factura: '+(d.sat_no||'PENDIENTE'), M, y); y+=4.6;
+        // ===== 배송지 블록(매 라벨 반복) — 자동 줄바꿈, 잘림 없음 =====
+        if(adrL){
+          doc.setFont('helvetica','bold'); doc.setFontSize(8);
+          doc.text('ENTREGAR EN:', M, y); y+=3.6;
+          doc.setFont('helvetica','normal'); doc.setFontSize(9);
+          doc.text(adrL, M, y); y+=adrL.length*3.8+1.6;
+        }
         doc.setFont('helvetica','normal'); doc.setFontSize(9);
         var sLines=lines.slice(sh*MAXROWS, (sh+1)*MAXROWS);
         var bSku=lines.length, bQty=lines.reduce(function(a,l){ return a+(Number(l.qty)||0); },0);
