@@ -421,9 +421,10 @@
   // ===== 견적 상세 / 편집 =====
   let dtId=null, dtData=null, dtEdit=false;
   let dtSort={key:'ctr',dir:'asc'};                 // 상세 라인 정렬 (기본: CTR 알파벳)
-  // 출력 열 선택(중복선택): 가용재고(Existencia) · 운송중(En tránsito) — PDF·엑셀 공통. 기본 둘 다 표시.
-  let dtColExist=true, dtColTransit=true;
-  function dtToggleCol(which,on){ if(which==='exist') dtColExist=!!on; else if(which==='transit') dtColTransit=!!on; }
+  // 출력 열 선택(중복선택): 가용재고(Existencia) · 운송중(En tránsito) · backorder(발주잔량) — PDF·엑셀 공통.
+  // 기본: 가용재고·운송중 표시, backorder 숨김.
+  let dtColExist=true, dtColTransit=true, dtColBack=false;
+  function dtToggleCol(which,on){ if(which==='exist') dtColExist=!!on; else if(which==='transit') dtColTransit=!!on; else if(which==='back') dtColBack=!!on; }
   const dtCtr=l=>String((l&&(l.ctr_code||l.input_code))||'').trim();
   function dtSortedLines(){
     const arr=(dtData&&dtData.lines)?dtData.lines.slice():[];
@@ -468,15 +469,17 @@
     const custName=q.party_name||'';
     const date=q.quote_date||'';
     const isMatched=(l)=> !!(l.product_name) && Number(l.final_price)>0;
-    const showExist=dtColExist, showTransit=dtColTransit;   // 선택한 열만 출력(중복선택)
+    const showExist=dtColExist, showTransit=dtColTransit, showBack=dtColBack;   // 선택한 열만 출력(중복선택)
     const rowsHtml=lines.map(l=>{
       const short=isShortLine(l);
       const fl= short ? '재고부족' : (!l.product_name ? '개발' : '');
       const tq=inTransitQty(l), teta=inTransitEta(l);   // 운송중(입고예정) 수량·ETA
+      const bo=backorderNet(l);                          // 순수 발주잔량(운송중 제외)
       const mt=isMatched(l);
       let extra='';
       if(showExist) extra+='<td class="r">'+(liveAvail(l)==null?'—':fmtq(liveAvail(l)))+(fl?' <span class="warn">'+fl+'</span>':'')+'</td>';
       if(showTransit) extra+='<td class="r">'+(tq>0?fmtq(tq)+(teta?'<br><span class="transit">ETA '+esc(teta)+'</span>':''):'—')+'</td>';
+      if(showBack) extra+='<td class="r">'+(bo>0?fmtq(bo):'—')+'</td>';
       return '<tr>'
         +'<td>'+esc(l.ctr_code||l.input_code||'—')+'</td>'
         +'<td>'+esc(l.syd_codes||'—')+'</td>'
@@ -490,7 +493,7 @@
         +extra
         +'</tr>';
     }).join('');
-    const thExtra=(showExist?'<th>Existencia</th>':'')+(showTransit?'<th>En tránsito</th>':'');
+    const thExtra=(showExist?'<th>Existencia</th>':'')+(showTransit?'<th>En tránsito</th>':'')+(showBack?'<th>Backorder</th>':'');
     const bankParts=[];
     if(co.bank_name)bankParts.push('Banco: '+esc(co.bank_name));
     if(co.bank_account)bankParts.push('Cuenta: '+esc(co.bank_account));
@@ -562,6 +565,8 @@
   // 운송중(입고예정) 수량·ETA — 상세 API의 incoming_qty/incoming_eta (구버전 응답이면 0/없음).
   function inTransitQty(l){ return Number(l.incoming_qty)||0; }
   function inTransitEta(l){ return l.incoming_eta||null; }
+  // backorder(발주 미입고 잔량) 순수분 = 전체 backorder − 운송중(입고예정). 음수는 0. → 가용·운송중과 겹치지 않게 구분.
+  function backorderNet(l){ return Math.max(0, (Number(l.backorder_qty)||0) - inTransitQty(l)); }
 
   // ===== 엑셀 다운로드 (스페인어 견적양식 · 현재 재고 있는 항목만 · 수식) — 상세 모달 =====
   // 고객이 Cantidad(수량)를 입력하면 Importe=Precio×Cantidad, Subtotal/IVA/Total이 자동 재계산.
@@ -579,6 +584,7 @@
     const fHeadExist={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:'0F6E56'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
     const fHeadQty={font:{bold:true,color:{rgb:'5A4A12'},sz:10},fill:{fgColor:{rgb:'F2C14E'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
     const fHeadTransit={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:'3A7CA5'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
+    const fHeadBack={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:'8A6D3B'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};
     const cL={alignment:{horizontal:'left',vertical:'center',wrapText:true},border,font:{sz:10}};
     const cC={alignment:{horizontal:'center',vertical:'center'},border,font:{sz:10}};
     const cMoney={alignment:{horizontal:'right',vertical:'center'},border,font:{sz:10},numFmt:'#,##0.00'};
@@ -586,6 +592,8 @@
     const cQty={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'FFF6DA'}},font:{bold:true,sz:10}};
     const cTransit={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'E7F0F4'}},font:{bold:true,color:{rgb:'2C5F72'},sz:10}};
     const cTransitEmpty={alignment:{horizontal:'center',vertical:'center'},border,font:{sz:10,color:{rgb:'BBBBBB'}}};
+    const cBack={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0',fill:{fgColor:{rgb:'F1ECE0'}},font:{bold:true,color:{rgb:'6B5A2E'},sz:10}};
+    const cBackEmpty={alignment:{horizontal:'center',vertical:'center'},border,font:{sz:10,color:{rgb:'BBBBBB'}}};
     const cTotLbl={alignment:{horizontal:'right',vertical:'center'},font:{bold:true,sz:11}};
     const cTotVal={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0.00',font:{bold:true,sz:11}};
     const cTotBig={alignment:{horizontal:'right',vertical:'center'},border,numFmt:'#,##0.00',font:{bold:true,sz:12,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}}};
@@ -593,11 +601,11 @@
     const cMeta={font:{sz:10,color:{rgb:'444444'}},alignment:{horizontal:'left',vertical:'center'}};
     const cNote={font:{italic:true,sz:9,color:{rgb:'0F6E56'}},alignment:{horizontal:'left',vertical:'center'}};
 
-    const showExist=dtColExist, showTransit=dtColTransit;   // 선택한 열만 출력(중복선택)
+    const showExist=dtColExist, showTransit=dtColTransit, showBack=dtColBack;   // 선택한 열만 출력(중복선택)
     const ws={};
     const set=(addr,v,s,f)=>{ const c={t:(typeof v==='number')?'n':'s',v}; if(f)c.f=f; if(s)c.s=s; ws[addr]=c; };
 
-    // 열 구성(선택 반영): #·CTR·SYD·Producto·Aplicación·[Existencia]·[En tránsito]·Precio·Cantidad·Importe
+    // 열 구성(선택 반영): #·CTR·SYD·Producto·Aplicación·[Existencia]·[En tránsito]·[Backorder]·Precio·Cantidad·Importe
     const colDefs=[
       {key:'idx',  h:'#',           w:4,  hs:fHead},
       {key:'ctr',  h:'Clave CTR',   w:16, hs:fHead},
@@ -607,6 +615,7 @@
     ];
     if(showExist)   colDefs.push({key:'exist',  h:'Existencia',  w:11, hs:fHeadExist});
     if(showTransit) colDefs.push({key:'transit',h:'En tránsito', w:11, hs:fHeadTransit});
+    if(showBack)    colDefs.push({key:'back',   h:'Backorder',   w:11, hs:fHeadBack});
     colDefs.push({key:'price',  h:'Precio unit. (sin IVA)', w:14, hs:fHead});
     colDefs.push({key:'qty',    h:'Cantidad',               w:10, hs:fHeadQty});
     colDefs.push({key:'importe',h:'Importe (sin IVA)',      w:16, hs:fHead});
@@ -620,6 +629,7 @@
     const noteParts=['Cantidad = cantidad cotizada (editable). El Importe, IVA y Total se recalculan automáticamente.'];
     if(showExist)   noteParts.push('Existencia = stock disponible.');
     if(showTransit) noteParts.push('En tránsito = cantidad en camino.');
+    if(showBack)    noteParts.push('Backorder = pedido pendiente por embarcar (sin incluir lo que ya está en tránsito).');
     set('A4',noteParts.join(' '),cNote);
 
     // 표 헤더 (행 6)
@@ -629,7 +639,7 @@
     // 데이터 (Cantidad = 견적 수량 자동기입, Importe = Precio×Cantidad 수식)
     const first=HR+1;
     rows.forEach((l,idx)=>{
-      const r=first+idx; const cp=codePair(l); const tq=inTransitQty(l);
+      const r=first+idx; const cp=codePair(l); const tq=inTransitQty(l); const bo=backorderNet(l);
       set(L.idx+r,  idx+1, cC);
       set(L.ctr+r,  cp.ctr||'', cL);
       set(L.syd+r,  cp.syd||'', cL);
@@ -637,6 +647,7 @@
       set(L.app+r,  l.app_text||'', cL);
       if(showExist)   set(L.exist+r, Number(liveAvail(l))||0, cExist);        // 가용재고(라이브: 현재고−타예약)
       if(showTransit){ if(tq>0) set(L.transit+r, tq, cTransit); else set(L.transit+r, '', cTransitEmpty); }  // 운송중(입고예정)
+      if(showBack){ if(bo>0) set(L.back+r, bo, cBack); else set(L.back+r, '', cBackEmpty); }                 // 순수 발주잔량(운송중 제외)
       set(L.price+r, Number(l.final_price)||0, cMoney);                       // 단가(할인 반영, IVA 미포함)
       set(L.qty+r,   Number(l.qty)||0, cQty);                                 // 수량 = 견적 수량
       set(L.importe+r, 0, cMoney, L.price+r+'*'+L.qty+r);                     // Importe = Precio × Cantidad
@@ -676,6 +687,7 @@
       +'<span style="color:#666">출력 열:</span>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColExist?'checked':'')+' onchange="dtToggleCol(\'exist\',this.checked)"> 가용재고</label>'
       +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(dtColTransit?'checked':'')+' onchange="dtToggleCol(\'transit\',this.checked)"> 운송중</label>'
+      +'<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" title="발주 미입고 잔량에서 운송중을 뺀 순수 발주잔량"><input type="checkbox" '+(dtColBack?'checked':'')+' onchange="dtToggleCol(\'back\',this.checked)"> backorder</label>'
       +'</span>';
     actions+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
     actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="재고분(가용재고>0) 항목을 엑셀로 다운로드 · 선택한 열 포함">📥 엑셀 (재고분)</button>';
@@ -1146,6 +1158,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260722tr2"></script>
+<script src="refatrix-nav.js?v=20260722tr3"></script>
 </body>
 </html>

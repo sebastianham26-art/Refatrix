@@ -574,6 +574,7 @@ export default async function quoteRoutes(app) {
     const lines = (await query(
       `SELECT ql.*, p.stock_qty AS cur_stock_raw,
               COALESCE(inc.incoming_qty,0) AS incoming_qty_raw, inc.incoming_eta::text AS incoming_eta_raw,
+              COALESCE(bo.backorder_qty,0) AS backorder_qty_raw,
               COALESCE((SELECT SUM(ql2.reserved_qty)
                           FROM quote_lines ql2 JOIN quotes q2 ON q2.id = ql2.quote_id
                          WHERE ql2.product_id = ql.product_id
@@ -584,6 +585,7 @@ export default async function quoteRoutes(app) {
          FROM quote_lines ql
          LEFT JOIN products p ON p.id = ql.product_id
          LEFT JOIN v_incoming_stock inc ON inc.product_id = ql.product_id
+         LEFT JOIN v_backorder bo ON bo.product_id = ql.product_id
         WHERE ql.quote_id=$1 ORDER BY ql.line_no, ql.id`, [id])).rows;
     const cls = { ok: 0, short: 0, dev: 0, ok_qty: 0, short_qty: 0, dev_qty: 0, ok_sub: 0, short_sub: 0, ok_amt: 0, short_amt: 0 };
     const outLines = lines.map((l) => {
@@ -617,6 +619,8 @@ export default async function quoteRoutes(app) {
         // 운송중(입고예정): 아직 마감 안 된 선적의 SKU별 예상 수량 + 가장 이른 ETA (v_incoming_stock)
         incoming_qty: Number(l.incoming_qty_raw) || 0,
         incoming_eta: l.incoming_eta_raw || null,
+        // 발주 미입고 잔량(v_backorder) — 운송중(incoming)을 포함한 전체. 프런트에서 운송중을 빼 순수 발주잔량을 구분 표시.
+        backorder_qty: Number(l.backorder_qty_raw) || 0,
       };
     });
     // 현장재고조사 전환 여부 + (디렉터에게만) 현장 위치 좌표
