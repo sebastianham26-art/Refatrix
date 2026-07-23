@@ -169,23 +169,29 @@ export default async function customerRoutes(app) {
       const stageId = p.stage ? (resolve.stageByName[p.stage.toLowerCase()] || null) : null;
       const isUpdate = p.code && resolve.existingByCode.has(p.code.toLowerCase());
       if (isUpdate) {
+        // 기본할인·외상일은 엑셀 일괄수정에서 제외 — 반드시 고객 폼(수정이유·제공조건 + 디렉터 승인)으로만 변경
         await query(
-          `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
-             team_id=$7, stage_id=COALESCE($8,stage_id), owner_id=COALESCE($9,owner_id),
-             customer_type=COALESCE($10,customer_type), memo=COALESCE($11,memo), updated_by=$12
-           WHERE lower(code)=lower($13) AND deleted_at IS NULL`,
-          [p.name, p.rfc, p.contact, p.phone, p.discount, p.credit_days, teamId, stageId, ownerId, p.customer_type, p.memo, userId, p.code]);
+          `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4,
+             team_id=$5, stage_id=COALESCE($6,stage_id), owner_id=COALESCE($7,owner_id),
+             customer_type=COALESCE($8,customer_type), memo=COALESCE($9,memo), updated_by=$10
+           WHERE lower(code)=lower($11) AND deleted_at IS NULL`,
+          [p.name, p.rfc, p.contact, p.phone, teamId, stageId, ownerId, p.customer_type, p.memo, userId, p.code]);
         updated++;
       } else {
         let code = p.code, ok = false;
         for (let attempt = 0; attempt < 5 && !ok; attempt++) {
           if (!code || attempt > 0) code = await computeNextCode();
           try {
-            await query(
+            const ins = (await query(
               `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, stage_since, created_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13)`,
-              [code, p.name, p.rfc, p.contact, p.phone, p.discount, p.credit_days, teamId, stageId, ownerId, p.customer_type, p.memo, userId]);
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id`,
+              [code, p.name, p.rfc, p.contact, p.phone, p.discount, p.credit_days, teamId, stageId, ownerId, p.customer_type, p.memo, userId])).rows[0];
             ok = true; resolve.existingByCode.add(String(code).toLowerCase());
+            // 신규 고객 초기 할인/외상일 이력(0이 아니면)
+            const initT = [];
+            if ((Number(p.discount) || 0) !== 0) initT.push({ field: 'discount', old: null, nv: Number(p.discount) || 0 });
+            if ((Number(p.credit_days) || 0) !== 0) initT.push({ field: 'credit_days', old: null, nv: Number(p.credit_days) || 0 });
+            if (initT.length) { try { await logTermsHistory(ins.id, initT, { reason: '엑셀 일괄 등록 초기값', conditions: null, changedBy: userId, approvedBy: null }); } catch (_) {} }
           } catch (e) { if (!String(e.message || '').match(/unique|duplicate/)) throw e; }
         }
         if (ok) created++; else skipped++;
@@ -432,6 +438,55 @@ export default async function customerRoutes(app) {
     };
   });
 
+  // ===== 기본할인(%)·외상일 변경 통제 헬퍼 =====
+  // 숫자 정규화: 빈값/무효 → 현재값 유지(applyCustomerUpdate 의 keepNum 과 동일 의미)
+  function termsNum(v, cur) {
+    if (v === undefined || v === '' || v === null) return Number(cur) || 0;
+    const n = Number(v); return Number.isFinite(n) ? n : (Number(cur) || 0);
+  }
+  // 요청 본문 b 를 현재값 c 와 비교해 할인/외상일 실변경 목록 반환
+  function detectTermsChanges(c, b) {
+    const out = [];
+    const nd = termsNum(b.discount, c.discount);
+    const nc = termsNum(b.credit_days, c.credit_days);
+    if (nd !== (Number(c.discount) || 0)) out.push({ field: 'discount', old: Number(c.discount) || 0, nv: nd });
+    if (nc !== (Number(c.credit_days) || 0)) out.push({ field: 'credit_days', old: Number(c.credit_days) || 0, nv: nc });
+    return out;
+  }
+  // 변경이력 기록(변경 필드당 1행, 같은 이유·조건 공유)
+  async function logTermsHistory(customerId, changes, { reason, conditions, changedBy, approvedBy }) {
+    for (const ch of changes) {
+      await query(
+        `INSERT INTO customer_terms_history (customer_id, field, old_value, new_value, reason, conditions, changed_by, approved_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [customerId, ch.field, ch.old, ch.nv, reason || null, conditions || null, changedBy || null, approvedBy || null]);
+    }
+  }
+
+  // 기본할인·외상일 변경이력 — 고객을 볼 수 있으면 열람 가능
+  app.get('/api/customers/:id/terms-history', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(req.ctx.perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    const rows = (await query(
+      `SELECT h.id, h.field, h.old_value, h.new_value, h.reason, h.conditions,
+              to_char(h.changed_at,'YYYY-MM-DD HH24:MI') AS changed_at,
+              cb.name AS changed_by_name, ab.name AS approved_by_name
+         FROM customer_terms_history h
+         LEFT JOIN users cb ON cb.id=h.changed_by
+         LEFT JOIN users ab ON ab.id=h.approved_by
+        WHERE h.customer_id=$1
+        ORDER BY h.changed_at DESC, h.id DESC LIMIT 200`, [id])).rows;
+    return { items: rows.map((r) => ({
+      id: Number(r.id), field: r.field,
+      old_value: r.old_value == null ? null : Number(r.old_value),
+      new_value: r.new_value == null ? null : Number(r.new_value),
+      reason: r.reason, conditions: r.conditions, changed_at: r.changed_at,
+      changed_by_name: r.changed_by_name, approved_by_name: r.approved_by_name,
+    })) };
+  });
+
   // 고객 등록: 코드 서버 자동생성(고정), 팀 지정 필수.
   app.post('/api/customers', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const b = req.body || {};
@@ -455,6 +510,13 @@ export default async function customerRoutes(app) {
       } catch (e) { lastErr = e; if (!String(e.message || '').includes('unique') && !String(e.message || '').includes('duplicate')) throw e; }
     }
     if (!row) return reply.code(409).send({ error: 'code_generation_failed' });
+    // 초기 할인/외상일이 0이 아니면 이력에 "신규 등록 초기값"으로 남김(추후 변경분과 함께 조회)
+    const initTerms = [];
+    if ((Number(b.discount) || 0) !== 0) initTerms.push({ field: 'discount', old: null, nv: Number(b.discount) || 0 });
+    if ((Number(b.credit_days) || 0) !== 0) initTerms.push({ field: 'credit_days', old: null, nv: Number(b.credit_days) || 0 });
+    if (initTerms.length) {
+      try { await logTermsHistory(row.id, initTerms, { reason: '신규 등록 초기값', conditions: null, changedBy: req.ctx.perm.userId, approvedBy: null }); } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
+    }
     await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `customer:${row.id}` });
     return { ok: true, id: row.id, code: row.code };
   });
@@ -504,9 +566,20 @@ export default async function customerRoutes(app) {
     if (b.team_id != null && Number(b.team_id) !== c.team_id) {
       if (!canEditTeam(perm, Number(b.team_id))) return reply.code(403).send({ error: 'forbidden_team_move' });
     }
-    // 디렉터: 즉시 반영 / 그 외: 디렉터 승인 대기로 보관
+    // 기본할인(%)·외상일 변경은 수정이유 + 제공 조건 작성이 필수(디렉터 포함)
+    const termsChanges = detectTermsChanges(c, b);
+    const termsReason = String(b.terms_reason || b.reason || '').trim();
+    const termsConditions = String(b.terms_conditions || '').trim();
+    if (termsChanges.length && (!termsReason || !termsConditions)) {
+      return reply.code(400).send({ error: 'terms_reason_required',
+        note: '기본할인(%)·외상일을 변경할 때는 수정이유와 제공 조건을 반드시 입력해야 합니다.' });
+    }
+    // 디렉터: 즉시 반영(+이력 기록) / 그 외: 디렉터 승인 대기로 보관
     if (perm.role === 'director') {
       await applyCustomerUpdate(id, c, b, perm.userId);
+      if (termsChanges.length) {
+        await logTermsHistory(id, termsChanges, { reason: termsReason, conditions: termsConditions, changedBy: perm.userId, approvedBy: perm.userId });
+      }
       await safeLog({ userId: perm.userId, action: 'update', target: `customer:${id}` });
       return { ok: true };
     }
@@ -518,11 +591,11 @@ export default async function customerRoutes(app) {
     };
     const existing = (await query(`SELECT id FROM customer_change_requests WHERE customer_id=$1 AND status='pending'`, [id])).rows[0];
     if (existing) {
-      await query(`UPDATE customer_change_requests SET proposed=$1, requested_by=$2, reason=$3, created_at=now() WHERE id=$4`,
-        [JSON.stringify(proposed), perm.userId, b.reason || null, existing.id]);
+      await query(`UPDATE customer_change_requests SET proposed=$1, requested_by=$2, reason=$3, conditions=$4, created_at=now() WHERE id=$5`,
+        [JSON.stringify(proposed), perm.userId, termsReason || null, termsConditions || null, existing.id]);
     } else {
-      await query(`INSERT INTO customer_change_requests (customer_id, proposed, requested_by, reason) VALUES ($1,$2,$3,$4)`,
-        [id, JSON.stringify(proposed), perm.userId, b.reason || null]);
+      await query(`INSERT INTO customer_change_requests (customer_id, proposed, requested_by, reason, conditions) VALUES ($1,$2,$3,$4,$5)`,
+        [id, JSON.stringify(proposed), perm.userId, termsReason || null, termsConditions || null]);
     }
     await safeLog({ userId: perm.userId, action: 'change_request', target: `customer:${id}` });
     return { ok: true, pending: true };
@@ -586,7 +659,7 @@ export default async function customerRoutes(app) {
     const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
     const cid = req.query.customer_id ? Number(req.query.customer_id) : null;
     const rows = (await query(
-      `SELECT r.id, r.customer_id, r.proposed, r.status, r.reason, r.created_at,
+      `SELECT r.id, r.customer_id, r.proposed, r.status, r.reason, r.conditions, r.created_at,
               c.code AS customer_code, c.name AS customer_name,
               c.name AS cur_name, c.rfc AS cur_rfc, c.contact AS cur_contact, c.phone AS cur_phone,
               c.discount AS cur_discount, c.credit_days AS cur_credit_days, c.branch_count AS cur_branch_count,
@@ -615,7 +688,7 @@ export default async function customerRoutes(app) {
     const stageNames = await nameMap('stages', stageIds);
     const ownerNames = await nameMap('users', ownerIds);
 
-    const LABELS = { name: '고객명', rfc: 'RFC', contact: '연락처', phone: '전화', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)' };
+    const LABELS = { name: '고객명', rfc: 'RFC', contact: '이메일 주소', phone: '전화', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)' };
     const NUMERIC = new Set(['discount', 'credit_days', 'branch_count', 'team_id', 'stage_id', 'owner_id']);
     const isEmpty = (v) => v == null || v === '';
     const disp = (field, val) => {
@@ -651,7 +724,7 @@ export default async function customerRoutes(app) {
       }
       return {
         id: r.id, customer_id: r.customer_id, customer_code: r.customer_code, customer_name: r.customer_name,
-        proposed: r.proposed, status: r.status, reason: r.reason,
+        proposed: r.proposed, status: r.status, reason: r.reason, conditions: r.conditions,
         requested_by_name: r.requested_by_name, created_at: r.created_at, changes,
       };
     });
@@ -665,7 +738,15 @@ export default async function customerRoutes(app) {
     if (!r) return reply.code(404).send({ error: 'not_found' });
     const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [r.customer_id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'customer_gone' });
+    // 승인 전 현재값 기준으로 할인/외상일 실변경 산출 → 반영 후 이력 기록
+    const approvedTerms = detectTermsChanges(c, r.proposed || {});
     await applyCustomerUpdate(r.customer_id, c, r.proposed, req.ctx.perm.userId);
+    if (approvedTerms.length) {
+      await logTermsHistory(r.customer_id, approvedTerms, {
+        reason: r.reason, conditions: r.conditions,
+        changedBy: r.requested_by, approvedBy: req.ctx.perm.userId,
+      });
+    }
     await query(`UPDATE customer_change_requests SET status='approved', decided_by=$1, decided_at=now() WHERE id=$2`, [req.ctx.perm.userId, id]);
     await safeLog({ userId: req.ctx.perm.userId, action: 'approve_change', target: `customer:${r.customer_id}` });
     return { ok: true };

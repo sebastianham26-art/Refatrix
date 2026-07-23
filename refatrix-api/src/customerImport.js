@@ -12,7 +12,7 @@ export const CUST_COLUMNS = [
   { field: 'rfc',           ko: 'RFC',      es: 'RFC' },
   { field: 'owner',         ko: '담당자',   es: 'Responsable' },
   { field: 'stage',         ko: '단계',     es: 'Etapa' },
-  { field: 'contact',       ko: '연락처',   es: 'Contacto' },
+  { field: 'contact',       ko: '이메일 주소', es: 'Email' },
   { field: 'phone',         ko: '전화',     es: 'Teléfono' },
   { field: 'discount',      ko: '할인율',   es: 'Descuento %' },
   { field: 'credit_days',   ko: '외상일',   es: 'Días crédito' },
@@ -62,6 +62,15 @@ const HEADER_LOOKUP = (() => {
     ['discount', 'Descuento'],
     ['credit_days', 'Días de crédito'],
     ['code', 'Código cliente'],
+    // 연락처 → 이메일 주소 개명에 따른 하위호환(기존 양식·표기 전부 인식)
+    ['contact', '연락처'],
+    ['contact', 'Contacto'],
+    ['contact', '연락처 (Contacto)'],
+    ['contact', 'Contacto (연락처)'],
+    ['contact', '이메일'],
+    ['contact', 'E-mail'],
+    ['contact', 'Correo'],
+    ['contact', 'Correo electrónico'],
   ];
   for (const [field, alias] of EXTRA) put(alias, field);
   return m;
@@ -117,9 +126,10 @@ export function buildCustPreview(parsedRows, resolve) {
   // resolve: { teamByName:{}, ownerByName:{}, stageByName:{}, existingByCode:Set, existingByCodeData:{} }
   const result = { create: [], update: [], errors: [] };
   const existData = resolve.existingByCodeData || {};
+  // 할인율·외상일은 엑셀 일괄수정 대상에서 제외(고객 폼의 이유·조건 + 디렉터 승인 경로로만 변경)
   const CMP = [
     ['name', '고객명'], ['rfc', 'RFC'], ['customer_type', '회사종류'],
-    ['contact', '연락처'], ['phone', '전화'], ['discount', '할인율'], ['credit_days', '외상일'], ['memo', '메모'],
+    ['contact', '이메일 주소'], ['phone', '전화'], ['memo', '메모'],
   ];
   for (const p of parsedRows) {
     const errs = validateCustRow(p);
@@ -142,7 +152,10 @@ export function buildCustPreview(parsedRows, resolve) {
       }
       // 팀 변경
       if (cur.team_id != null && Number(cur.team_id) !== Number(teamId)) changes.push({ field: '팀', from: cur.team_name, to: p.team });
-      result.update.push({ code: p.code, name: p.name, team: p.team, customer_type: p.customer_type, changes, unchanged: changes.length === 0 });
+      // 할인/외상일이 다르게 입력됐어도 적용되지 않음을 미리보기에 안내
+      const termsSkipped = (Number(p.discount) || 0) !== (Number(cur.discount) || 0)
+        || (parseInt(p.credit_days, 10) || 0) !== (parseInt(cur.credit_days, 10) || 0);
+      result.update.push({ code: p.code, name: p.name, team: p.team, customer_type: p.customer_type, changes, unchanged: changes.length === 0, terms_skipped: termsSkipped });
     } else {
       result.create.push({ code: p.code, name: p.name, team: p.team, customer_type: p.customer_type });
     }
