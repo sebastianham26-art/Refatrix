@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0708i</title>
+<title>Refatrix ERP · 재무 · build fin-0723b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -214,7 +214,9 @@
         </div>
         <div class="row">
           <div style="flex:3"><label>송금인/적요 <span style="color:var(--muted);font-weight:400">(영업지원 매칭 단서)</span></label><input id="bd-memo" type="text" placeholder="예: 고객명·송금인·참조번호"></div>
+          <div style="flex:2"><label>은행 입금내역 캡처 <span style="color:var(--expense);font-weight:700">(필수)</span></label><input id="bd-file" type="file" accept="image/*,application/pdf"></div>
         </div>
+        <div class="hint" style="margin:4px 0 0">은행계좌 입금내역을 스크린캡처(이미지 또는 PDF, 8MB 이하)해서 첨부해야 등록됩니다.</div>
         <button class="btn gold" id="bd-save" style="margin-top:10px">입금 통지 등록</button>
         <div class="msg" id="bd-msg"></div>
         <div style="margin-top:12px"><div class="hint" style="margin:0 0 4px;font-weight:700">미배분(대기) 입금 <span style="font-weight:400;color:var(--muted)">— 각 항목: 수입 전환(디렉터) · 수정 · 삭제</span></div><div id="bd-list"><div class="hint" style="margin:0">불러오는 중…</div></div><div id="bd-panel"></div></div>
@@ -223,14 +225,23 @@
 
       <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <h2 style="margin:0">예정 내역 (실적 처리)</h2>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button class="btn ghost sm" id="pp-prev">◀</button>
-            <b id="pp-month" style="font-size:13px"></b>
-            <button class="btn ghost sm" id="pp-next">▶</button>
+          <h2 style="margin:0">예정 내역 (실적 처리) <span id="pp-count" style="font-size:12px;font-weight:600;color:var(--muted)"></span></h2>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <input id="pp-search" type="text" placeholder="찾기: 고객·계정과목·메모·SAT·금액" style="width:220px">
+            <button class="btn ghost sm" id="pp-filter-toggle">연·월 필터 ▾</button>
           </div>
         </div>
-        <div class="hint" style="margin-top:4px">선택한 달의 예정과, 과거에 예정됐지만 아직 실적으로 처리 안 된 건(경과)을 함께 보여줍니다. “실적 처리”를 누르면 실제 날짜·금액으로 전환됩니다.</div>
+        <div id="pp-filter-panel" class="hidden" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;background:#fbfbf7">
+          <div id="pp-years" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
+          <div id="pp-months" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <button class="btn ghost sm" id="pp-this-month">이번 달만</button>
+            <button class="btn ghost sm" id="pp-all-months">월 전체</button>
+            <button class="btn ghost sm" id="pp-clear-months">월 해제</button>
+            <label style="display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;margin-left:auto"><input id="pp-overdue" type="checkbox" checked style="width:auto"> 경과(미처리) 항상 표시</label>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:4px">기본은 <b>이번 달 + 경과(미처리)</b>만 표시합니다. 다른 기간은 연·월 필터에서 여러 개 선택할 수 있고, 찾기에 입력하면 <b>필터와 무관하게 전체 예정에서</b> 검색합니다. “실적 처리”를 누르면 실제 날짜·금액으로 전환됩니다.</div>
         <div id="ppBody"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
@@ -2519,16 +2530,48 @@
   }
 
   // ===== 거래 등록 탭: 예정 내역(실적 처리) =====
-  let ppMonth=new Date().toISOString().slice(0,7);
+  // 연·월 다중선택 필터 + 찾기 (fin-0710a 스펙): 서버는 all=1로 전체를 주고, 필터·검색은 클라이언트에서.
+  const ppNow=new Date().toISOString().slice(0,10);
+  const ppCurYear=Number(ppNow.slice(0,4)), ppCurMonth=Number(ppNow.slice(5,7));
+  let ppSelYears=new Set([ppCurYear]), ppSelMonths=new Set([ppCurMonth]), ppShowOverdue=true, ppQuery='';
   async function loadPendingPlans(){
     const b=$('ppBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
-    $('pp-month').textContent=ppMonth;
     try{
-      const d=await fetch(`${session.api}/api/transactions/pending-plans?month=${ppMonth}`,{headers:auth()}).then(r=>r.json());
-      if(!d.items.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';return;}
-      ppItems=d.items;
+      const d=await fetch(`${session.api}/api/transactions/pending-plans?all=1`,{headers:auth()}).then(r=>r.json());
+      ppItems=d.items||[];
+      renderPpFilterPanel();
       renderPendingPlans();
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function ppYearsInData(){
+    const ys=new Set([ppCurYear]);
+    ppItems.forEach(t=>{const y=Number(String(t.plan_date||'').slice(0,4));if(y)ys.add(y);});
+    ppSelYears.forEach(y=>ys.add(y));
+    return [...ys].sort((a,z)=>a-z);
+  }
+  function ppChip(label,on,attrs){
+    return '<button type="button" class="btn sm" '+attrs+' style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
+      +(on?'var(--brand);background:var(--brand);color:#fff':'var(--line);background:#fff;color:var(--muted)')+'">'+label+'</button>';
+  }
+  function renderPpFilterPanel(){
+    const ye=$('pp-years'), me=$('pp-months'); if(!ye||!me) return;
+    ye.innerHTML=ppYearsInData().map(y=>ppChip(y+'년',ppSelYears.has(y),'data-ppyear="'+y+'"')).join('');
+    me.innerHTML=Array.from({length:12},(_,i)=>i+1).map(m=>ppChip(m+'월',ppSelMonths.has(m),'data-ppmonth="'+m+'"')).join('');
+  }
+  function ppMatchQuery(t,q){
+    const amt=t.plan_amount!=null?t.plan_amount:t.amount;
+    const hay=[t.customer_name,t.category_name,t.category_code,t.memo,t.sat_no,t.currency,t.plan_date,
+      amt==null?'':String(amt),amt==null?'':fmt(amt)];
+    return hay.some(h=>String(h==null?'':h).toLowerCase().includes(q));
+  }
+  function ppFilteredItems(){
+    const q=ppQuery.trim().toLowerCase();
+    if(q) return ppItems.filter(t=>ppMatchQuery(t,q)); // 검색 시 연·월 필터 무시(전체에서 찾기)
+    return ppItems.filter(t=>{
+      if(ppShowOverdue&&t.overdue) return true;
+      const d=String(t.plan_date||'');
+      return ppSelYears.has(Number(d.slice(0,4)))&&ppSelMonths.has(Number(d.slice(5,7)));
+    });
   }
   // 예정 내역 정렬(거래목록과 동일 3단계: 문자 오름→내림→기본 / 숫자 내림→오름→기본)
   let ppItems=[]; let ppSort={key:null,dir:1};
@@ -2555,10 +2598,14 @@
   }
   function renderPendingPlans(){
       const b=$('ppBody');
-      let items=ppItems;
+      const cnt=$('pp-count');
+      let items=ppFilteredItems();
+      if(cnt) cnt.textContent=ppItems.length?('— '+items.length+'건 표시 / 전체 '+ppItems.length+'건'):'';
+      if(!ppItems.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';return;}
+      if(!items.length){b.innerHTML='<div class="hint">'+(ppQuery.trim()?'검색 결과가 없습니다.':'선택한 연·월에 해당하는 예정이 없습니다. (연·월 필터에서 조정)')+'</div>';return;}
       if(ppSort.key){
         const k=ppSort.key,dd=ppSort.dir,isNum=!!PP_NUM[k];
-        items=ppItems.slice().sort((a,z)=>{
+        items=items.slice().sort((a,z)=>{
           const va=ppSortVal(a,k),vz=ppSortVal(z,k);
           const ea=(va===''||va==null),ez=(vz===''||vz==null);
           if(ea!==ez)return ea?1:-1;
@@ -2661,6 +2708,34 @@
   function bdFind(id){ return bdItems.find(x=>String(x.id)===String(id)); }
   function bdClosePanel(){ const p=$('bd-panel'); if(p) p.innerHTML=''; }
   function bdDateStr(v){ return v?String(v).slice(0,10):''; }
+  // 캡처 파일 헬퍼: 검증(이미지/PDF, 8MB↓) → data URL 읽기 / 보기(fetch→Blob→새 창: <a href>는 토큰을 못 실음)
+  function bdCheckFile(f){
+    if(!f) return '은행 입금내역 캡처를 첨부하세요.';
+    if(!/^image\//.test(f.type)&&f.type!=='application/pdf') return '이미지(JPG/PNG 등) 또는 PDF만 첨부할 수 있습니다.';
+    if(f.size>8*1024*1024) return '파일이 8MB를 초과합니다. 캡처를 줄여서 다시 첨부하세요.';
+    return null;
+  }
+  function bdReadFile(inp){
+    return new Promise((resolve,reject)=>{
+      const f=inp&&inp.files&&inp.files[0]; if(!f){resolve(null);return;}
+      const r=new FileReader();
+      r.onload=()=>resolve({name:f.name,data:r.result});
+      r.onerror=()=>reject(new Error('read_fail'));
+      r.readAsDataURL(f);
+    });
+  }
+  async function bdViewFile(id){
+    try{
+      const d=await fetch(session.api+'/api/bank-deposits/'+id+'/file',{headers:auth()}).then(r=>r.json());
+      if(!d||!d.file_data){ alert('캡처 파일이 없습니다.'); return; }
+      const m=/^data:([^;]+);base64,(.*)$/.exec(d.file_data);
+      if(!m){ alert('파일 형식을 해석할 수 없습니다.'); return; }
+      const bin=atob(m[2]); const arr=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:m[1]||'application/octet-stream'}));
+      window.open(url,'_blank');
+    }catch(e){ alert('캡처를 불러오지 못했습니다.'); }
+  }
   async function loadBdp(){
     const box=$('bd-list'); if(!box) return;
     if($('bd-acc')) $('bd-acc').innerHTML=accOptions('');
@@ -2670,12 +2745,15 @@
       bdItems=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
       if(!bdItems.length){ box.innerHTML='<div class="hint" style="margin:0">대기 중인 미배분 입금이 없습니다.</div>'; return; }
       const dir=isDirector();
-      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>등록자</th><th></th></tr></thead><tbody>'
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>캡처</th><th>등록자</th><th></th></tr></thead><tbody>'
         +bdItems.map(d=>{
           const acts=(dir?'<button class="btn gold" style="padding:4px 10px;font-size:11.5px" data-bd="book" data-id="'+d.id+'">수입 전환</button> ':'')
             +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="edit" data-id="'+d.id+'">수정</button> '
             +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" data-bd="del" data-id="'+d.id+'">삭제</button>';
-          return '<tr><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
+          const fcell=d.has_file
+            ?'<button class="btn" style="padding:3px 9px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="file" data-id="'+d.id+'">👁 보기</button>'
+            :'<span style="color:var(--expense);font-size:11.5px;font-weight:600">없음</span>';
+          return '<tr><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+fcell+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
         }).join('')
         +'</tbody></table>';
     }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
@@ -2732,12 +2810,18 @@
         +'<div><label>입금일</label><input id="ed-date" type="date" value="'+dd+'"></div>'
         +'<div><label>금액(MXN)</label><input id="ed-amt" type="number" step="0.01" value="'+Number(d.amount)+'"></div>'
       +'</div>'
-      +'<div class="row"><div style="flex:3"><label>송금인/적요</label><input id="ed-memo" type="text" value="'+bdEsc(d.payer_memo||'')+'"></div></div>'
+      +'<div class="row"><div style="flex:3"><label>송금인/적요</label><input id="ed-memo" type="text" value="'+bdEsc(d.payer_memo||'')+'"></div>'
+        +'<div style="flex:2"><label>은행 입금내역 캡처 '+(d.has_file
+            ?'<span style="color:var(--muted);font-weight:400">(교체 시에만 선택)</span>'
+            :'<span style="color:var(--expense);font-weight:700">(없음 — 첨부 필수)</span>')
+          +'</label><input id="ed-file" type="file" accept="image/*,application/pdf"></div></div>'
       +'<div style="margin-top:10px;display:flex;gap:8px">'
         +'<button class="btn gold" id="ed-go">저장</button>'
+        +(d.has_file?'<button class="btn" id="ed-view" style="background:#fff;color:var(--muted);border:1px solid var(--line)">👁 캡처 보기</button>':'')
         +'<button class="btn" id="ed-close" style="background:#fff;color:var(--muted);border:1px solid var(--line)">닫기</button>'
       +'</div><div class="msg" id="ed-msg"></div></div>';
     $('ed-go').addEventListener('click',()=>bdSubmitEdit(id));
+    if($('ed-view')) $('ed-view').addEventListener('click',()=>bdViewFile(id));
     $('ed-close').addEventListener('click',bdClosePanel);
   }
   async function bdSubmitEdit(id){
@@ -2746,11 +2830,21 @@
     if(!body.account_id){ if(m){m.className='msg err';m.textContent='계좌를 선택하세요.';} return; }
     if(!body.deposit_date){ if(m){m.className='msg err';m.textContent='입금일을 입력하세요.';} return; }
     if(!(body.amount>0)){ if(m){m.className='msg err';m.textContent='금액을 입력하세요(양수).';} return; }
+    const fEl=$('ed-file'), f=fEl&&fEl.files&&fEl.files[0];
+    const cur=bdFind(id);
+    if(f){ // 새 캡처 선택됨 → 검증 후 교체
+      const ferr=bdCheckFile(f);
+      if(ferr){ if(m){m.className='msg err';m.textContent=ferr;} return; }
+    } else if(cur&&!cur.has_file){ // 캡처 없는 레거시 통지는 첨부해야 저장 가능
+      if(m){m.className='msg err';m.textContent='이 통지는 캡처가 없습니다. 은행 입금내역 캡처를 첨부해야 저장됩니다.';}
+      return;
+    }
     $('ed-go').disabled=true;
     try{
+      if(f){ const fo=await bdReadFile(fEl); body.file=fo.data; body.file_name=fo.name; }
       const res=await fetch(session.api+'/api/bank-deposits/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='수정 실패: '+(d.error||res.status);} return; }
+      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='수정 실패: '+(d.note||d.detail||d.error||res.status);} return; }
       bdClosePanel(); loadBdp();
     }catch(e){ if(m){m.className='msg err';m.textContent='서버 연결 실패';} }
     finally{ if($('ed-go'))$('ed-go').disabled=false; }
@@ -2771,13 +2865,17 @@
     if(!acc){ m.className='msg err'; m.textContent='입금 계좌를 선택하세요.'; return; }
     if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
     if(!(amt>0)){ m.className='msg err'; m.textContent='금액을 입력하세요(양수).'; return; }
+    const fEl=$('bd-file'), f=fEl&&fEl.files&&fEl.files[0];
+    const ferr=bdCheckFile(f);
+    if(ferr){ m.className='msg err'; m.textContent=ferr; return; }
     $('bd-save').disabled=true;
     try{
-      const res=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null})});
+      const fileObj=await bdReadFile(fEl);
+      const res=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null,file:fileObj.data,file_name:fileObj.name})});
       const d=await res.json();
-      if(!res.ok||d.error){ m.className='msg err'; m.textContent='등록 실패: '+(d.error||res.status); return; }
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='등록 실패: '+(d.note||d.detail||d.error||res.status); return; }
       m.className='msg ok'; m.textContent='입금 통지 등록됨 — 영업지원에게 알림이 갑니다. (거래·잔액은 반제 시 반영)';
-      $('bd-amt').value=''; $('bd-memo').value='';
+      $('bd-amt').value=''; $('bd-memo').value=''; if(fEl) fEl.value='';
       loadBdp();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ $('bd-save').disabled=false; }
@@ -2790,6 +2888,7 @@
       if(act==='book') bdOpenBook(id);
       else if(act==='edit') bdOpenEdit(id);
       else if(act==='del') bdDelete(id);
+      else if(act==='file') bdViewFile(id);
     });
   })();
 
@@ -2977,8 +3076,22 @@
   $('txnBackAcc').addEventListener('click',()=>{ $('f-acc').value=''; $('f-status').value=''; $('f-dir').value=''; showTab('acc'); });
   $('cashDueBtn').addEventListener('click',()=>{ const box=$('cashDueBox'); if(box.classList.contains('hidden'))loadCashDue(true); else box.classList.add('hidden'); });
   $('t-dir').addEventListener('change',()=>{ $('t-cashdue-row').style.display = $('t-dir').value==='out' ? '' : 'none'; if($('t-dir').value!=='out')$('t-cashdue').checked=false; });
-  $('pp-prev').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,7);loadPendingPlans();});
-  $('pp-next').addEventListener('click',()=>{const [y,m]=ppMonth.split('-').map(Number);ppMonth=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);loadPendingPlans();});
+  $('pp-filter-toggle').addEventListener('click',()=>{
+    const p=$('pp-filter-panel'); p.classList.toggle('hidden');
+    $('pp-filter-toggle').textContent='연·월 필터 '+(p.classList.contains('hidden')?'▾':'▴');
+  });
+  $('pp-search').addEventListener('input',()=>{ppQuery=$('pp-search').value;renderPendingPlans();});
+  $('pp-overdue').addEventListener('change',()=>{ppShowOverdue=$('pp-overdue').checked;renderPendingPlans();});
+  $('pp-this-month').addEventListener('click',()=>{ppSelYears=new Set([ppCurYear]);ppSelMonths=new Set([ppCurMonth]);renderPpFilterPanel();renderPendingPlans();});
+  $('pp-all-months').addEventListener('click',()=>{ppSelMonths=new Set(Array.from({length:12},(_,i)=>i+1));renderPpFilterPanel();renderPendingPlans();});
+  $('pp-clear-months').addEventListener('click',()=>{ppSelMonths=new Set();renderPpFilterPanel();renderPendingPlans();});
+  $('pp-filter-panel').addEventListener('click',(e)=>{
+    const yb=e.target.closest('button[data-ppyear]'), mb=e.target.closest('button[data-ppmonth]');
+    if(yb){const y=Number(yb.getAttribute('data-ppyear'));ppSelYears.has(y)?ppSelYears.delete(y):ppSelYears.add(y);}
+    else if(mb){const m=Number(mb.getAttribute('data-ppmonth'));ppSelMonths.has(m)?ppSelMonths.delete(m):ppSelMonths.add(m);}
+    else return;
+    renderPpFilterPanel();renderPendingPlans();
+  });
   $('tabNew').addEventListener('click',()=>showTab('new'));
   $('bd-save').addEventListener('click',saveBdp);
   $('tabTxn').addEventListener('click',()=>showTab('txn'));
