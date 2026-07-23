@@ -475,9 +475,9 @@
           <td class="c-id">${u.login_id||'—'}</td>
           <td class="c-id"><span class="rolepill">${u.role}</span></td>
           <td class="c-id"><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
-            <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
+            <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${Number(u.team_id)===Number(t.id)?'selected':''}>${t.name}</option>`).join('')}</select></td>
           <td style="white-space:normal;max-width:200px">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':teams.map(t=>{
-            const granted=(u.team_access||[]).includes(t.id); const own=u.team_id===t.id;
+            const granted=(u.team_access||[]).map(Number).includes(Number(t.id)); const own=Number(u.team_id)===Number(t.id);
             if(own) return `<span class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;background:#eef0f2;color:#888">${t.name} (소속)</span>`;
             return `<label class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${granted?'#0F6E56':'#ccc'};background:${granted?'#e6f3ee':'#fff'};color:${granted?'#0F6E56':'#666'}"><input type="checkbox" ${granted?'checked':''} onchange="toggleTeamAccess(${u.id},${t.id},this.checked)" style="vertical-align:middle;margin-right:3px">${t.name}</label>`;
           }).join('')}</td>

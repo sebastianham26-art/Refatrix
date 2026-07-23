@@ -783,17 +783,33 @@ export default async function customerRoutes(app) {
       `SELECT a.user_id, a.team_id, a.can_edit, t.name AS team_name
          FROM user_team_access a JOIN sales_teams t ON t.id=a.team_id`)).rows;
     const grantsByUser = {};
-    for (const g of grants) (grantsByUser[g.user_id] ||= []).push({ team_id: g.team_id, team_name: g.team_name, can_edit: g.can_edit });
-    return { items: users.map((u) => ({ ...u, grants: grantsByUser[u.id] || [] })) };
+    // ★ BIGINT는 pg가 문자열로 반환 → Number로 정규화(프런트 === 비교가 어긋나 저장값이 '미지정'으로 보이던 원인)
+    for (const g of grants) (grantsByUser[String(g.user_id)] ||= []).push({ team_id: Number(g.team_id), team_name: g.team_name, can_edit: g.can_edit });
+    return {
+      items: users.map((u) => ({
+        id: Number(u.id), name: u.name, role: u.role,
+        team_id: u.team_id == null ? null : Number(u.team_id),
+        team_name: u.team_name,
+        grants: grantsByUser[String(u.id)] || [],
+      })),
+    };
   });
 
   // 사용자 소속팀 지정(디렉터)
   app.patch('/api/team-admin/users/:id/team', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const teamId = req.body?.team_id != null ? Number(req.body.team_id) : null;
-    await query(`UPDATE users SET team_id=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`, [teamId, req.ctx.perm.userId, id]);
+    // 존재하지 않는 팀/사용자면 FK 500 대신 명확한 오류 반환(프런트가 사유를 표시하고 원복)
+    let teamName = null;
+    if (teamId != null) {
+      const t = (await query(`SELECT id, name FROM sales_teams WHERE id=$1 AND deleted_at IS NULL`, [teamId])).rows[0];
+      if (!t) return reply.code(400).send({ error: 'team_not_found' });
+      teamName = t.name;
+    }
+    const up = await query(`UPDATE users SET team_id=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`, [teamId, req.ctx.perm.userId, id]);
+    if (up.rowCount === 0) return reply.code(404).send({ error: 'user_not_found' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user_team:${id}`, detail: { team_id: teamId } });
-    return { ok: true };
+    return { ok: true, team_id: teamId, team_name: teamName };
   });
 
   // 상대팀 열람 권한 부여/회수(디렉터)
@@ -802,6 +818,10 @@ export default async function customerRoutes(app) {
     const teamId = Number(req.body?.team_id);
     const canEdit = !!req.body?.can_edit;
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
+    const t = (await query(`SELECT id FROM sales_teams WHERE id=$1 AND deleted_at IS NULL`, [teamId])).rows[0];
+    if (!t) return reply.code(400).send({ error: 'team_not_found' });
+    const usr = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!usr) return reply.code(404).send({ error: 'user_not_found' });
     await query(
       `INSERT INTO user_team_access (user_id, team_id, can_edit, created_by) VALUES ($1,$2,$3,$4)
        ON CONFLICT (user_id, team_id) DO UPDATE SET can_edit=$3`, [id, teamId, canEdit, req.ctx.perm.userId]);

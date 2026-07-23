@@ -759,35 +759,88 @@
   }
 
   // ===== 팀 권한 관리(디렉터) =====
+  // ★ 개선: 저장 시 화면 전체를 다시 그리지 않고 해당 줄만 그 자리에서 갱신.
+  //   선택한 값이 그대로 고정 표시되고, 「현재」 상태줄 + 「저장됨 ✓ 시각」 배지가 남는다.
+  //   실패하면 이전 값으로 되돌리고 사유를 alert로 표시.
+  //   비교는 전부 Number 정규화(BIGINT가 문자열로 와서 ===가 어긋나던 버그 방지).
+  let taUsers=[];
+  const taNum=(v)=>(v==null||v==='')?null:Number(v);
+  function taTeamName(tid){ const t=adminTeams.find(x=>Number(x.id)===Number(tid)); return t?t.name:null; }
+  function taRowHtml(u,saved){
+    const own=taNum(u.team_id);
+    const ownName=taTeamName(own);
+    const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    const savedBadge=(k)=>saved===k?` · <span style="color:#0F6E56;font-weight:800">저장됨 ✓ ${now}</span>`:'';
+    const grantNames=(u.grants||[]).map(g=>taTeamName(g.team_id)).filter(Boolean);
+    const dis=u._saving?'disabled':'';
+    return `
+      <td><b>${esc(u.name)}</b></td><td>${esc(u.role||'')}</td>
+      <td>
+        <select onchange="setTeam(${u.id},this.value)" ${dis} style="width:auto;padding:5px 8px;border:2px solid ${own!=null?'#0F6E56':'#ccc'};border-radius:6px">
+          <option value="">미지정</option>
+          ${adminTeams.map(t=>`<option value="${t.id}" ${own===Number(t.id)?'selected':''}>${esc(t.name)}</option>`).join('')}
+        </select>
+        <div style="font-size:11px;margin-top:3px;color:${own!=null?'#0F6E56':'#999'}">현재: <b>${ownName?esc(ownName):'미지정'}</b>${u._saving?' · 저장 중…':savedBadge('team')}</div>
+      </td>
+      <td>
+        ${adminTeams.filter(t=>t.is_sales!==false).map(t=>{
+          const tid=Number(t.id);
+          if(own===tid)return `<span class="hint" style="margin:0 8px 0 0">${esc(t.name)}(소속)</span>`;
+          const g=(u.grants||[]).some(x=>Number(x.team_id)===tid);
+          return `<label style="display:inline-block;font-size:12px;margin:2px 8px 2px 0;padding:2px 9px;border-radius:999px;border:1px solid ${g?'#0F6E56':'#ccc'};background:${g?'#e6f3ee':'#fff'};color:${g?'#0F6E56':'#666'};cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:middle" ${g?'checked':''} ${dis} onchange="toggleGrant(${u.id},${tid},this.checked)"> ${esc(t.name)}</label>`;
+        }).join('')}
+        <div style="font-size:11px;margin-top:3px;color:#666">현재 열람 가능: <b>${[ownName?ownName+'(소속)':null].concat(grantNames).filter(Boolean).map(esc).join(', ')||'없음'}</b>${u._saving?' · 저장 중…':savedBadge('grant')}</div>
+      </td>`;
+  }
+  function taRender(uid,saved){
+    const u=taUsers.find(x=>x.id===Number(uid)); if(!u)return;
+    const tr=document.getElementById('ta-row-'+u.id); if(!tr)return;
+    tr.innerHTML=taRowHtml(u,saved);
+  }
   async function loadTeamUsers(){
     const b=$('teamUsers');b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
       const d=await fetch(session.api+'/api/team-admin/users',{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
+      taUsers=(d.items||[]).map(u=>({...u,id:Number(u.id),team_id:taNum(u.team_id),
+        grants:(u.grants||[]).map(g=>({...g,team_id:Number(g.team_id)}))}));
       b.innerHTML=`<table><thead><tr><th>이름</th><th>역할</th><th>소속 팀</th><th>상대팀 열람</th></tr></thead>
-        <tbody>${items.map(u=>`<tr>
-          <td><b>${u.name}</b></td><td>${u.role}</td>
-          <td><select onchange="setTeam(${u.id},this.value)" style="width:auto;padding:5px 8px">
-            <option value="">미지정</option>${adminTeams.map(t=>`<option value="${t.id}" ${u.team_id===t.id?'selected':''}>${t.name}</option>`).join('')}</select></td>
-          <td>${adminTeams.filter(t=>t.is_sales!==false).map(t=>{
-            const g=(u.grants||[]).find(x=>x.team_id===t.id);
-            const isOwn=u.team_id===t.id;
-            if(isOwn)return `<span class="hint" style="margin:0">${t.name}(소속) </span>`;
-            return `<label style="font-size:12px;margin-right:8px"><input type="checkbox" style="width:auto" ${g?'checked':''} onchange="toggleGrant(${u.id},${t.id},this.checked)"> ${t.name}</label>`;
-          }).join('')}</td>
-        </tr>`).join('')}</tbody></table>
-        <div class="hint">소속 팀을 정하면 그 팀 고객을 봅니다. 상대팀 체크 시 그 팀도 열람할 수 있습니다(디렉터 부여).</div>`;
+        <tbody>${taUsers.map(u=>`<tr id="ta-row-${u.id}">${taRowHtml(u)}</tr>`).join('')}</tbody></table>
+        <div class="hint">소속 팀을 정하면 그 팀 고객을 봅니다. 상대팀 체크 시 그 팀도 열람할 수 있습니다(디렉터 부여).<br>
+        변경은 선택 즉시 저장되며, 선택값이 그대로 고정 표시되고 해당 줄에 <b style="color:#0F6E56">저장됨 ✓ 시각</b>이 남습니다. 저장에 실패하면 이전 값으로 되돌리고 사유를 알려줍니다.</div>`;
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+  async function taCall(url,opt){
+    try{
+      const res=await fetch(url,opt);
+      let d=null; try{d=await res.json();}catch(e){}
+      if(!res.ok||(d&&d.error))return {ok:false,msg:(d&&(d.error||d.message))||('HTTP '+res.status)};
+      return {ok:true,d};
+    }catch(e){return {ok:false,msg:'서버 연결 실패'};}
+  }
   async function setTeam(userId,teamId){
-    try{await fetch(session.api+'/api/team-admin/users/'+userId+'/team',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId?Number(teamId):null})});loadTeamUsers();}catch(e){alert('실패');}
+    const u=taUsers.find(x=>x.id===Number(userId)); if(!u)return;
+    const next=taNum(teamId);
+    u._saving=true; taRender(u.id);
+    const r=await taCall(session.api+'/api/team-admin/users/'+u.id+'/team',
+      {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:next})});
+    u._saving=false;
+    if(r.ok){ u.team_id=next; taRender(u.id,'team'); }
+    else { taRender(u.id); alert('소속팀 저장 실패: '+r.msg); }
   }
   async function toggleGrant(userId,teamId,on){
-    try{
-      if(on)await fetch(session.api+'/api/team-admin/users/'+userId+'/grant',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId})});
-      else await fetch(session.api+'/api/team-admin/users/'+userId+'/grant/'+teamId,{method:'DELETE',headers:auth()});
-      loadTeamUsers();
-    }catch(e){alert('실패');}
+    const u=taUsers.find(x=>x.id===Number(userId)); if(!u)return;
+    const tid=Number(teamId);
+    u._saving=true; taRender(u.id);
+    const r=on
+      ?await taCall(session.api+'/api/team-admin/users/'+u.id+'/grant',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:tid})})
+      :await taCall(session.api+'/api/team-admin/users/'+u.id+'/grant/'+tid,{method:'DELETE',headers:auth()});
+    u._saving=false;
+    if(r.ok){
+      u.grants=(u.grants||[]).filter(g=>Number(g.team_id)!==tid);
+      if(on)u.grants.push({team_id:tid,team_name:taTeamName(tid),can_edit:false});
+      taRender(u.id,'grant');
+    } else { taRender(u.id); alert('상대팀 열람 저장 실패: '+r.msg); }
   }
 
   // 탭 전환
