@@ -113,7 +113,7 @@
         <button class="btn" onclick="doArSearch()">🔍 검색</button>
         <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
         <span id="arSearchInfo" class="hint"></span>
-        <button class="btn" id="arClosedToggle" style="margin-left:auto;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleClosed()" title="100% 반제(완납)되어 마감된 인보이스도 목록에 표시">완납(closing) 포함: 끔</button>
+        <button class="btn" id="arClosedToggle" style="margin-left:auto;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleClosed()" title="100% 반제(완납)되어 마감된 인보이스도 목록·그룹 표에 표시(완납만 있는 고객 포함)">완납(closing) 포함: 끔</button>
       </div>
       <div id="bdCtxBanner" class="msg" style="display:none;margin:8px 0;background:#eef6f1;color:var(--brand);border:1px solid var(--line)"></div>
       <div id="bdCartBox" style="display:none;margin:8px 0"></div>
@@ -528,7 +528,9 @@
     if(!arItems.length){ $('arStats').innerHTML=''; $('arGroupBox').innerHTML=''; $('arListBox').innerHTML='<div class="hint">미수금(오픈 인보이스)이 없습니다.</div>'; return; }
     const groups={};
     // 그룹 집계(건수·잔액·연체)는 미수(오픈) 건만 대상 — 완납 건은 제외.
-    arItems.forEach(it=>{ if(it.paid_full)return; const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0}; const g=groups[k.key]; g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
+    // 단, 「완납 포함」 토글이 켜져 있으면 완납 건도 그룹에 잡아(완납 N건),
+    // 완납만 있는 고객(잔액 0)도 고객별/팀별/담당자별 표에 나타난다.
+    arItems.forEach(it=>{ const cf=it.paid_full; if(cf&&!arIncludeClosed)return; const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0,closed:0}; const g=groups[k.key]; if(cf){ g.closed++; return; } g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
     // 목록: 그룹 필터 적용 후, 미수 → 완납 순으로 정렬(완납을 아래로).
     const filtered=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
     // 정렬 헤더가 활성화되면 그 기준으로, 아니면 기본(미수→완납).
@@ -545,10 +547,11 @@
       +(arIncludeClosed?'<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:var(--income)">'+closedCount+'건</div></div>':'');
     if(arGroup==='company'){ $('arGroupBox').innerHTML=''; }
     else {
-      const gk=Object.keys(groups).sort((a,b)=>groups[b].outstanding-groups[a].outstanding);
+      const gk=Object.keys(groups).sort((a,b)=>(groups[b].outstanding-groups[a].outstanding)||((groups[b].closed||0)-(groups[a].closed||0))||String(groups[a].label).localeCompare(String(groups[b].label)));
       const head = arGroup==='team'?'팀':(arGroup==='owner'?'영업담당자':'고객');
-      let hg='<table><thead><tr><th>'+head+'</th><th>건수</th><th>총 잔액</th><th>연체 잔액</th></tr></thead><tbody>';
-      gk.forEach(k=>{ const g=groups[k]; const on=arFilter===k; hg+='<tr style="cursor:pointer'+(on?';background:#eef4f1':'')+'" onclick="pickArFilter(\''+k+'\')"><td>'+(on?'▸ ':'')+esc(g.label)+'</td><td>'+g.count+'</td><td><b>'+fmt(g.outstanding)+'</b></td><td style="color:var(--expense)">'+fmt(g.overdue)+'</td></tr>'; });
+      let hg='<table><thead><tr><th>'+head+'</th><th>건수</th><th>총 잔액</th><th>연체 잔액</th>'+(arIncludeClosed?'<th>완납</th>':'')+'</tr></thead><tbody>';
+      gk.forEach(k=>{ const g=groups[k]; const on=arFilter===k; const paidOnly=(g.count===0&&(g.closed||0)>0);
+        hg+='<tr style="cursor:pointer'+(on?';background:#eef4f1':(paidOnly?';background:#f4f7f4;color:var(--muted)':''))+'" onclick="pickArFilter(\''+k+'\')"><td>'+(on?'▸ ':'')+esc(g.label)+(paidOnly?' <span class="chip chip-paid">완납</span>':'')+'</td><td>'+g.count+'</td><td><b>'+fmt(g.outstanding)+'</b></td><td style="color:var(--expense)">'+fmt(g.overdue)+'</td>'+(arIncludeClosed?'<td style="color:var(--income)">'+(g.closed||0)+'건</td>':'')+'</tr>'; });
       hg+='</tbody></table><div class="hint" style="margin-top:4px">행을 누르면 아래 목록이 해당 '+head+'(으)로 좁혀집니다.'+(arFilter?' · <a href="#" onclick="pickArFilter(null);return false">전체 보기</a>':'')+'</div>';
       $('arGroupBox').innerHTML=hg;
     }
