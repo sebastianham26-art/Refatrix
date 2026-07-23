@@ -7,7 +7,7 @@
    수정 저장은 비디렉터면 디렉터 승인 대기로 전송됩니다. */
 (function(){
   var cfg={api:'',token:'',isDirector:false,onSaved:null};
-  var teams=[], stages=[], owners=[], editingId=null, hostEl=null;
+  var teams=[], stages=[], owners=[], editingId=null, hostEl=null, origTerms=null;
   function auth(){ return {'Authorization':'Bearer '+cfg.token}; }
   function api(p){ return (cfg.api||'').replace(/\/+$/,'')+p; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -28,11 +28,19 @@
       +'<div class="rcf-f"><label>단계</label><select id="rcf-stage"><option value="">미지정</option></select></div>'
     +'</div>'
     +'<div class="rcf-row">'
-      +'<div class="rcf-f"><label>연락처</label><input id="rcf-contact" type="text"></div>'
+      +'<div class="rcf-f"><label>이메일 주소</label><input id="rcf-contact" type="email" placeholder="ejemplo@correo.com"></div>'
       +'<div class="rcf-f"><label>전화</label><input id="rcf-phone" type="text"></div>'
       +'<div class="rcf-f"><label>기본 할인(%)</label><input id="rcf-discount" type="number" step="0.01" value="0"></div>'
       +'<div class="rcf-f"><label>외상일(일)</label><input id="rcf-credit" type="number" value="0"></div>'
       +'<div class="rcf-f"><label>지점 수</label><input id="rcf-branches" type="number" min="0" placeholder="예: 3"></div>'
+    +'</div>'
+    +'<div id="rcf-termsbox" style="display:none;border:1px solid #e3b04b;background:#fffaf0;border-radius:9px;padding:10px 12px">'
+      +'<div style="font-size:12px;font-weight:700;color:#9a6512;margin-bottom:6px">⚠ 기본 할인(%)·외상일 변경 — 수정이유와 제공 조건을 반드시 작성해야 합니다. <span id="rcf-termswhat"></span></div>'
+      +'<div class="rcf-row">'
+        +'<div class="rcf-f rcf-grow"><label>수정이유 *</label><textarea id="rcf-treason" rows="2" placeholder="예: 월 구매액 증가에 따른 할인율 상향"></textarea></div>'
+        +'<div class="rcf-f rcf-grow"><label>제공 조건 *</label><textarea id="rcf-tcond" rows="2" placeholder="예: 월 최소 매입 $50,000 MXN 유지 조건"></textarea></div>'
+      +'</div>'
+      +'<div class="rcf-msg" id="rcf-termshint" style="color:#9a6512"></div>'
     +'</div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>메모</label><input id="rcf-memo" type="text"></div></div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>배송지 (Dirección de envío) — 포장 라벨·패킹리스트에 인쇄됩니다. 등록 주소와 달라도 됩니다.</label>'
@@ -77,6 +85,29 @@
   function setMsg(cls,txt){ var m=$('rcf-msg'); if(m){ m.className='rcf-msg '+(cls||''); m.textContent=txt||''; } }
   function setShipMsg(cls,txt){ var m=$('rcf-shipmsg'); if(m){ m.className='rcf-msg '+(cls||''); m.textContent=txt||''; } }
 
+  // ===== 기본 할인(%)·외상일 변경 통제 =====
+  function validEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
+  // 수정 모드에서 할인/외상일이 원래 값과 달라졌는지 + 어떤 변경인지
+  function termsDiff(){
+    if(!editingId||!origTerms) return null;
+    var nd=Number($('rcf-discount')&&$('rcf-discount').value)||0;
+    var nc=Number($('rcf-credit')&&$('rcf-credit').value)||0;
+    var parts=[];
+    if(nd!==origTerms.discount) parts.push('기본할인 '+origTerms.discount+'% → '+nd+'%');
+    if(nc!==origTerms.credit) parts.push('외상일 '+origTerms.credit+'일 → '+nc+'일');
+    return parts.length?{parts:parts}:null;
+  }
+  // 변경 감지 시 수정이유·제공조건 입력 박스 표시/숨김
+  function updateTermsBox(){
+    var box=$('rcf-termsbox'); if(!box) return;
+    var d=termsDiff();
+    box.style.display=d?'':'none';
+    var w=$('rcf-termswhat'); if(w) w.textContent=d?('('+d.parts.join(' · ')+')'):'';
+    var h=$('rcf-termshint');
+    if(h) h.textContent=d?(cfg.isDirector?'디렉터 수정: 작성 즉시 반영되며 변경이력에 기록됩니다.':'저장 시 디렉터 승인 대기로 전송되며, 승인 후 변경이력에 기록됩니다.'):'';
+  }
+  function clearTermsInputs(){ if($('rcf-treason'))$('rcf-treason').value=''; if($('rcf-tcond'))$('rcf-tcond').value=''; updateTermsBox(); }
+
   // 배송지 즉시 저장 — 승인 플로우 없이 바로 반영(라벨 인쇄용 운영 정보).
   async function saveShipAddress(){
     if(!editingId){ setShipMsg('pend','고객 등록 시 함께 저장됩니다.'); return true; }
@@ -102,6 +133,7 @@
     if($('rcf-type')) $('rcf-type').value=''; if($('rcf-owner')) $('rcf-owner').value=''; if($('rcf-stage')) $('rcf-stage').value='';
     if($('rcf-discount')) $('rcf-discount').value=0; if($('rcf-credit')) $('rcf-credit').value=0;
     if($('rcf-branches')) $('rcf-branches').value='';
+    origTerms=null; clearTermsInputs();
     $('rcf-save').textContent='고객 등록';
     if($('rcf-cancel')) $('rcf-cancel').style.display='none';
     setMsg('','');
@@ -119,6 +151,8 @@
     if($('rcf-discount')) $('rcf-discount').value=(c.discount!=null?c.discount:0);
     if($('rcf-credit')) $('rcf-credit').value=(c.credit_days!=null?c.credit_days:0);
     if($('rcf-branches')) $('rcf-branches').value=(c.branch_count!=null?c.branch_count:'');
+    origTerms={discount:Number(c.discount)||0, credit:Number(c.credit_days)||0};
+    clearTermsInputs();
     $('rcf-save').textContent=cfg.isDirector?'수정 저장':'수정 요청(디렉터 승인)';
     if($('rcf-cancel')) $('rcf-cancel').style.display='';
     setMsg('','');
@@ -143,6 +177,15 @@
     var b=readBody();
     if(!b.name){ setMsg('err','고객명을 입력하세요.'); return; }
     if(!b.team_id){ setMsg('err','팀을 선택하세요.'); return; }
+    if(b.contact&&!validEmail(b.contact)){ setMsg('err','이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)'); return; }
+    // 기본할인·외상일 변경 → 수정이유·제공조건 필수
+    var td=termsDiff();
+    if(td){
+      var tr=$('rcf-treason')?$('rcf-treason').value.trim():'';
+      var tc=$('rcf-tcond')?$('rcf-tcond').value.trim():'';
+      if(!tr||!tc){ updateTermsBox(); setMsg('err','기본할인·외상일 변경 시 수정이유와 제공 조건을 모두 작성해야 합니다.'); return; }
+      b.terms_reason=tr; b.terms_conditions=tc;
+    }
     $('rcf-save').disabled=true;
     try{
       // 수정 모드: 배송지는 승인 대기 없이 즉시 저장(전용 엔드포인트) — 나머지 필드는 기존 흐름 유지.
@@ -154,11 +197,12 @@
       if(!res.ok||d.error){
         var msg=d.error==='code_exists'||d.error==='code_taken'?'이미 있는 고객코드입니다.'
           :d.error==='forbidden_team'?'그 팀의 고객을 만들/수정할 권한이 없습니다.'
+          :d.error==='terms_reason_required'?(d.note||'기본할인·외상일 변경 시 수정이유와 제공 조건을 반드시 입력해야 합니다.')
           :('실패: '+(d.detail||d.error||res.status));
         setMsg('err',msg); $('rcf-save').disabled=false; return;
       }
-      if(d.pending){ setMsg('pend','수정 요청을 보냈습니다. 디렉터 승인 후 반영됩니다.'); }
-      else { setMsg('ok', editingId?'수정되었습니다.':('등록되었습니다: '+(d.code||b.code||'')+' · '+b.name)); }
+      if(d.pending){ setMsg('pend', td?'수정 요청을 보냈습니다. 할인·외상일 변경은 디렉터 승인 후 반영·이력 기록됩니다.':'수정 요청을 보냈습니다. 디렉터 승인 후 반영됩니다.'); }
+      else { setMsg('ok', editingId?(td?'수정되었습니다. 할인·외상일 변경이 이력에 기록되었습니다.':'수정되었습니다.'):('등록되었습니다: '+(d.code||b.code||'')+' · '+b.name)); }
       $('rcf-save').disabled=false;
       if(typeof cfg.onSaved==='function') cfg.onSaved(d, editingId, !!d.pending);
       if(!editingId) fillNew();
@@ -172,6 +216,8 @@
       hostEl=document.getElementById(hostId); if(!hostEl) return;
       hostEl.innerHTML=formHTML();
       $('rcf-save').addEventListener('click', save);
+      var di=$('rcf-discount'); if(di) di.addEventListener('input', updateTermsBox);
+      var ci=$('rcf-credit'); if(ci) ci.addEventListener('input', updateTermsBox);
       var sb=$('rcf-shipsave'); if(sb) sb.addEventListener('click', saveShipAddress);
       var cb=$('rcf-cancel'); if(cb) cb.addEventListener('click', function(){ if(opts&&opts.onCancel)opts.onCancel(); fillNew(); });
       await loadRefs();
@@ -181,5 +227,5 @@
     editCustomer:function(c){ fillEdit(c); },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260722a loaded (배송지 ship_address 즉시저장)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260723b loaded (이메일 주소 + 할인·외상일 이유/조건 필수)'); }catch(e){}
 })();

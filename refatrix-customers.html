@@ -133,6 +133,7 @@
         </div>
         <div id="d-info"></div>
         <div id="d-approval"></div>
+        <div id="d-termshist"></div>
         <div style="font-weight:700;margin-top:14px">증빙서류 (Constancia·세무증명 등 · PDF/JPEG/PNG, 5MB 이하)</div>
         <div id="d-docs"><div class="hint">불러오는 중…</div></div>
         <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -151,7 +152,7 @@
           <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
           <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
         </div>
-        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico.<br><span style="color:var(--muted)">Descargue la plantilla, llénela y súbala: con <b>Código</b> actualiza, vacío crea (código automático). <b>Nombre</b> y <b>Equipo</b> son obligatorios (nombre exacto del equipo, p. ej. 01_Monterrey).</span></div>
+        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico. <b style="color:#9a6512">기존 고객의 할인율·외상일은 엑셀로 수정되지 않습니다</b>(고객 수정 폼에서 수정이유·제공조건 작성 + 디렉터 승인 필요).<br><span style="color:var(--muted)">Descargue la plantilla, llénela y súbala: con <b>Código</b> actualiza, vacío crea (código automático). <b>Nombre</b> y <b>Equipo</b> son obligatorios (nombre exacto del equipo, p. ej. 01_Monterrey).</span></div>
         <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
           <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
           <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
@@ -509,13 +510,43 @@
       box.innerHTML=`<div style="border:1px solid var(--gold);border-radius:10px;padding:12px;margin-top:12px;background:#fffaf0">
         <div style="font-weight:800;color:#9a6512;margin-bottom:6px">⚠ 승인 필요 — 고객 수정 요청${r.requested_by_name?(' ('+esc(r.requested_by_name)+')'):''}</div>
         <table>${rows||'<tr><td class="hint">변경 내용 없음</td></tr>'}</table>
-        ${r.reason?`<div class="hint" style="margin-top:6px">요청 메모: ${esc(r.reason)}</div>`:''}
+        ${r.reason?`<div class="hint" style="margin-top:6px"><b style="color:#9a6512">수정이유:</b> ${esc(r.reason)}</div>`:''}
+        ${r.conditions?`<div class="hint" style="margin-top:2px"><b style="color:#9a6512">제공 조건:</b> ${esc(r.conditions)}</div>`:''}
         <div style="margin-top:10px;display:flex;gap:8px">
           <button class="btn sm" onclick="approveChangeDetail(${r.id},${custId})">승인</button>
           <button class="btn ghost sm" onclick="rejectChangeDetail(${r.id},${custId})">반려</button>
         </div></div>`;
     }catch(e){ box.innerHTML=''; }
   }
+  // ===== 기본할인·외상일 변경이력 (고객 상세) =====
+  const TERMS_FIELD_LABEL={discount:'기본할인(%)',credit_days:'외상일'};
+  function termsVal(field,v){ if(v==null)return '—'; return field==='discount'?(v+'%'):(v+'일'); }
+  async function loadTermsHistory(custId){
+    const box=$('d-termshist'); if(!box) return; box.innerHTML='';
+    try{
+      const d=await fetch(session.api+'/api/customers/'+custId+'/terms-history',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[]; if(!items.length){ box.innerHTML=''; return; }
+      box.innerHTML=`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#fbfaf6">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer" onclick="const t=$('termsHistBody');t.style.display=t.style.display==='none'?'':'none';this.querySelector('.thArrow').textContent=t.style.display==='none'?'▸':'▾'">
+          <span class="thArrow" style="color:#9a6512">▾</span>
+          <b style="color:#9a6512">📜 기본할인 · 외상일 변경이력</b>
+          <span class="hint" style="margin:0">${items.length}건 — 날짜 · 변경 · 수정이유 · 제공 조건</span>
+        </div>
+        <div id="termsHistBody" style="margin-top:8px;overflow-x:auto">
+          <table style="font-size:12.5px"><thead><tr><th>일시</th><th>항목</th><th>변경</th><th>수정이유</th><th>제공 조건</th><th>수정자</th><th>승인</th></tr></thead>
+          <tbody>${items.map(h=>`<tr>
+            <td style="white-space:nowrap">${esc(h.changed_at||'')}</td>
+            <td style="white-space:nowrap">${TERMS_FIELD_LABEL[h.field]||esc(h.field)}</td>
+            <td style="white-space:nowrap"><span class="hint" style="margin:0">${termsVal(h.field,h.old_value)}</span> <span style="color:#9a6512;font-weight:700">→</span> <b>${termsVal(h.field,h.new_value)}</b></td>
+            <td>${esc(h.reason||'—')}</td>
+            <td>${esc(h.conditions||'—')}</td>
+            <td style="white-space:nowrap">${esc(h.changed_by_name||'—')}</td>
+            <td style="white-space:nowrap">${h.approved_by_name?esc(h.approved_by_name):'<span class="hint" style="margin:0">—</span>'}</td>
+          </tr>`).join('')}</tbody></table>
+        </div></div>`;
+    }catch(e){ box.innerHTML=''; }
+  }
+
   async function approveChangeDetail(id,custId){
     const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
     if(res.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('승인 실패');
@@ -607,7 +638,7 @@
       if(n>0){b.textContent=n;b.classList.remove('hidden');}else b.classList.add('hidden');
     }catch(e){}
   }
-  const FIELD_LABELS={name:'고객명',rfc:'RFC',contact:'연락처',phone:'전화',discount:'할인(%)',credit_days:'외상일',branch_count:'지점 수',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록'};
+  const FIELD_LABELS={name:'고객명',rfc:'RFC',contact:'이메일 주소',phone:'전화',discount:'할인(%)',credit_days:'외상일',branch_count:'지점 수',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록'};
   // 변경 요청을 "현재 → 변경" 형태로 친절하게 렌더(서버가 이름까지 풀어서 changes로 내려줌)
   function renderChanges(r){
     const ch=r.changes;
@@ -634,6 +665,8 @@
             <span class="hint" style="margin:0">· 요청: ${esc(r.requested_by_name||'-')}</span>
           </div>
           <table style="margin:8px 0;font-size:13px"><tbody>${rows||'<tr><td class="hint">변경 항목 없음</td></tr>'}</tbody></table>
+          ${r.reason?`<div class="hint" style="margin:0 0 2px"><b style="color:#9a6512">수정이유:</b> ${esc(r.reason)}</div>`:''}
+          ${r.conditions?`<div class="hint" style="margin:0 0 8px"><b style="color:#9a6512">제공 조건:</b> ${esc(r.conditions)}</div>`:''}
           <div style="display:flex;gap:8px">
             <button class="btn sm" onclick="approveChange(${r.id})">승인</button>
             <button class="btn ghost sm" onclick="rejectChange(${r.id})">반려</button>
@@ -702,7 +735,7 @@
       $('d-info').innerHTML=`<table>
         <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
         <tr><th>회사 종류</th><td>${c.customer_type||'—'}</td><th>RFC</th><td>${c.rfc||'—'}</td></tr>
-        <tr><th>연락처</th><td>${c.contact||'—'} ${c.phone?'· '+c.phone:''}</td><th>기본할인 / 외상일</th><td>${c.discount}% / ${c.credit_days}일${c.branch_count!=null?(" · 지점 "+c.branch_count):""}</td></tr>
+        <tr><th>이메일 주소</th><td>${c.contact||'—'} ${c.phone?'· '+c.phone:''}</td><th>기본할인 / 외상일</th><td>${c.discount}% / ${c.credit_days}일${c.branch_count!=null?(" · 지점 "+c.branch_count):""}</td></tr>
         <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
         <tr><th>${sm.year||''} 누적 실적</th><td><b style="color:var(--income)">${fmt(actual)}</b></td><th>연말 매출목표</th><td>${target!=null?fmt(target):'<span class="hint" style="margin:0">미설정</span>'}</td></tr>
         ${progressRow}
@@ -713,6 +746,7 @@
       </table>`;
       loadDocs(c.id);
       loadDetailApproval(c.id);
+      loadTermsHistory(c.id);
       if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
       $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
         <tbody>${d.invoices.map(i=>`<tr>
@@ -786,11 +820,11 @@
   // ===== 엑셀 일괄 등록 =====
   let upRows=null;
   async function downloadTemplate(){
-    let headers=['고객코드 (Código)','고객명 (Nombre)','팀 (Equipo)','회사종류 (Tipo)','RFC','담당자 (Responsable)','단계 (Etapa)','연락처 (Contacto)','전화 (Teléfono)','할인율 (Descuento %)','외상일 (Días crédito)','메모 (Nota)'];
+    let headers=['고객코드 (Código)','고객명 (Nombre)','팀 (Equipo)','회사종류 (Tipo)','RFC','담당자 (Responsable)','단계 (Etapa)','이메일 주소 (Email)','전화 (Teléfono)','할인율 (Descuento %)','외상일 (Días crédito)','메모 (Nota)'];
     try{const d=await fetch(session.api+'/api/customers/template',{headers:auth()}).then(r=>r.json());if(d.headers)headers=d.headers;}catch(e){}
     const teamNames=(teams||[]).map(t=>t.name).join(' / ')||'01_Monterrey / 02_Merida';
     const ws=XLSX.utils.aoa_to_sheet([headers,
-      ['', '예시고객', (teams[0]?.name||'01_Monterrey'), 'Mayoreo','XAXX010101000','', '01_잠재','담당연락','8112345678','5','30','메모예시']]);
+      ['', '예시고객', (teams[0]?.name||'01_Monterrey'), 'Mayoreo','XAXX010101000','', '01_잠재','ejemplo@correo.com','8112345678','5','30','메모예시']]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'고객');
     XLSX.writeFile(wb,'refatrix_고객양식.xlsx');
   }
@@ -826,7 +860,10 @@
     if(changedUps.length){
       html+='<div style="font-weight:700;margin-top:10px;font-size:13px">기존 고객 변경 내역</div><table><thead><tr><th>고객(코드)</th><th>변경 항목</th></tr></thead><tbody>'+
         changedUps.map(u=>`<tr><td>${u.name} <span class="hint" style="margin:0">${u.code}</span></td>
-          <td>${u.changes.map(ch=>`<div><b>${ch.field}</b>: <span style="color:var(--muted)">${ch.from??'(빈값)'}</span> → <b>${ch.to??'(빈값)'}</b></div>`).join('')}</td></tr>`).join('')+'</tbody></table>';
+          <td>${u.changes.map(ch=>`<div><b>${ch.field}</b>: <span style="color:var(--muted)">${ch.from??'(빈값)'}</span> → <b>${ch.to??'(빈값)'}</b></div>`).join('')}${u.terms_skipped?'<div class="hint" style="margin:2px 0 0;color:#9a6512">⚠ 할인율·외상일 값 차이는 반영되지 않습니다(고객 폼 승인 경로 전용)</div>':''}</td></tr>`).join('')+'</tbody></table>';
+    }
+    if(ups.some(u=>u.unchanged&&u.terms_skipped)){
+      html+='<div class="hint" style="color:#9a6512">⚠ 일부 행의 할인율·외상일이 현재값과 다르지만, 엑셀로는 반영되지 않습니다(고객 수정 폼에서 승인 필요).</div>';
     }
     if(sameUps.length){
       html+=`<div class="hint">변동 없는 기존 고객 ${sameUps.length}건은 그대로 둡니다: ${sameUps.map(u=>u.name).join(', ')}</div>`;
@@ -875,7 +912,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260722a"></script>
+<script src="refatrix-custform.js?v=20260723b"></script>
 <script src="refatrix-nav.js?v=20260723a"></script>
 </body>
 </html>
