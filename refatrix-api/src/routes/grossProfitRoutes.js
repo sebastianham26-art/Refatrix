@@ -110,18 +110,29 @@ async function commissionRows(range) {
   }));
 }
 
-// 매출출고 운반비(6160) — 실제·승인 지출만. customer_id NULL = 미태그(공통).
+// 매출출고 운반비(6160) — 실제·승인 지출만.
+//   인보이스 배분행(transaction_freight_allocations)이 있는 거래는 배분행 기준(인보이스별 균등분 → 고객),
+//   없는 거래는 거래의 customer_id 기준(NULL = 미태그·공통 → 매출비중 배분).
 async function freightRows(range) {
   const params = [FREIGHT_OUT_CODE];
   let where = '';
   if (range.from) { params.push(range.from); where += ` AND t.txn_date >= $${params.length}`; }
   if (range.to)   { params.push(range.to);   where += ` AND t.txn_date <= $${params.length}`; }
+  const base = `t.deleted_at IS NULL AND t.status = 'actual' AND t.direction = 'out'
+        AND t.approved = true AND t.category_code = $1${where}`;
   const rows = (await query(
-    `SELECT t.customer_id, to_char(t.txn_date,'YYYY-MM') AS ym, SUM(t.amount_mxn) AS amt
-       FROM transactions t
-      WHERE t.deleted_at IS NULL AND t.status = 'actual' AND t.direction = 'out'
-        AND t.approved = true AND t.category_code = $1${where}
-      GROUP BY t.customer_id, to_char(t.txn_date,'YYYY-MM')`, params)).rows;
+    `SELECT x.customer_id, x.ym, SUM(x.amt) AS amt FROM (
+       SELECT a.customer_id, to_char(t.txn_date,'YYYY-MM') AS ym, a.amount_mxn AS amt
+         FROM transaction_freight_allocations a
+         JOIN transactions t ON t.id = a.transaction_id
+        WHERE ${base}
+       UNION ALL
+       SELECT t.customer_id, to_char(t.txn_date,'YYYY-MM') AS ym, t.amount_mxn AS amt
+         FROM transactions t
+        WHERE ${base}
+          AND NOT EXISTS (SELECT 1 FROM transaction_freight_allocations a WHERE a.transaction_id = t.id)
+     ) x
+     GROUP BY x.customer_id, x.ym`, params)).rows;
   return rows.map((r) => ({
     customer_id: r.customer_id == null ? null : Number(r.customer_id),
     ym: r.ym,
