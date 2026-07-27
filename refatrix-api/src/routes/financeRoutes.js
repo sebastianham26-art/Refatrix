@@ -219,8 +219,9 @@ export default async function financeRoutes(app) {
       else fx = (await getUsdMxnRate()).rate;
     }
     const amountMxn = r2(amount * fx);
-    // 고객 태그(선택) — 매출출고 운반비(6160) 등 지출을 고객별 P&L에 직접 귀속시키기 위함.
-    //   유효하지 않은 고객 id면 400. 미지정(null)은 손익 화면에서 매출 비중으로 자동 배분.
+    // 고객·인보이스 태그(선택) — 매출출고 운반비(6160) 등 지출을 고객별 P&L에 직접 귀속시키기 위함.
+    //   유효하지 않은 id면 400. 미지정(null)은 손익 화면에서 매출 비중으로 자동 배분.
+    //   인보이스 태그는 전용 컬럼 freight_invoice_id 사용 — sales_invoice_id(AR 수금 연계, 수정잠금)와 격리.
     let customerId = null;
     if (b.customer_id != null && b.customer_id !== '') {
       customerId = Number(b.customer_id);
@@ -228,16 +229,28 @@ export default async function financeRoutes(app) {
       const cu = await query(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId]);
       if (!cu.rows.length) return reply.code(400).send({ error: 'bad_customer' });
     }
+    let freightInvoiceId = null;
+    if (b.freight_invoice_id != null && b.freight_invoice_id !== '') {
+      freightInvoiceId = Number(b.freight_invoice_id);
+      if (!Number.isInteger(freightInvoiceId) || freightInvoiceId <= 0) return reply.code(400).send({ error: 'bad_invoice' });
+      const inv = (await query(
+        `SELECT id, customer_id FROM sales_invoices WHERE id=$1 AND status='posted' AND deleted_at IS NULL`,
+        [freightInvoiceId])).rows[0];
+      if (!inv) return reply.code(400).send({ error: 'bad_invoice' });
+      const invCust = Number(inv.customer_id);
+      if (customerId != null && customerId !== invCust) return reply.code(400).send({ error: 'invoice_customer_mismatch' });
+      customerId = invCust;   // 인보이스를 태그하면 고객은 인보이스에서 자동 확정
+    }
     // 승인 규칙: 지출 + 담당자 → 미승인(approved=false). 그 외 → 승인.
     const approved = !(direction === 'out' && !isDirector);
     const r = await query(
       `INSERT INTO transactions
-         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due, customer_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16,$17) RETURNING id`,
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due, customer_id, freight_invoice_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16,$17,$18) RETURNING id`,
       [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
        status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null,
        (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null,
-       direction === 'out' && b.cash_due === true, customerId]);
+       direction === 'out' && b.cash_due === true, customerId, freightInvoiceId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
   });
@@ -248,6 +261,20 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT id, name FROM customers WHERE deleted_at IS NULL ORDER BY name ASC`)).rows;
     return { items: rows.map((c) => ({ id: Number(c.id), name: c.name })) };
+  });
+
+  // 거래등록 운반비 인보이스 태그용 — 선택 고객의 최근 게시 인보이스 목록(최근 50건).
+  app.get('/api/finance/customer-invoices', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const cid = Number(req.query.customer_id);
+    if (!Number.isInteger(cid) || cid <= 0) return reply.code(400).send({ error: 'bad_customer' });
+    const rows = (await query(
+      `SELECT id, sat_no, to_char(inv_date,'YYYY-MM-DD') AS inv_date, total_mxn
+         FROM sales_invoices
+        WHERE customer_id=$1 AND status='posted' AND deleted_at IS NULL
+        ORDER BY inv_date DESC, id DESC
+        LIMIT 50`, [cid])).rows;
+    return { items: rows.map((i) => ({
+      id: Number(i.id), sat_no: i.sat_no || null, inv_date: i.inv_date, total_mxn: Number(i.total_mxn) })) };
   });
 
   // 거래 일괄 등록(엑셀 업로드 — 과거자료 마이그레이션).

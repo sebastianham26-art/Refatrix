@@ -184,7 +184,8 @@
         <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
       <div class="row" id="t-custRow" style="display:none;align-items:flex-end">
         <div style="flex:2"><label>고객 (운반비 귀속 — 손익 화면 P&L용)</label><select id="t-cust"><option value="">(공통 — 미지정, 매출비중 자동배분)</option></select></div>
-        <span class="hint" style="margin:0 0 9px">이 배송비가 <b>특정 고객 출고</b> 건이면 고객을 선택하세요. 손익(매출총이익) 화면의 고객별/팀별 공헌이익에 직접 귀속됩니다. 여러 고객 혼적 등 공통 건이면 미지정으로 두면 매출 비중으로 자동 배분됩니다.</span>
+        <div style="flex:2"><label>인보이스 (선택 — 출고 건 단위 정밀 귀속)</label><select id="t-inv" disabled><option value="">(고객을 먼저 선택)</option></select></div>
+        <span class="hint" style="margin:0 0 9px;flex:2">특정 고객 출고 건이면 고객을, 어느 인보이스 출고인지도 알면 인보이스까지 선택하세요(고객별/팀별 공헌이익에 직접 귀속). 여러 고객 혼적 등 공통 건은 미지정 → 매출 비중 자동 배분.</span>
       </div>
       <div class="row" id="t-cashdue-row" style="margin-top:2px;align-items:center">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:var(--brand);margin:0"><input type="checkbox" id="t-cashdue" style="width:16px;height:16px;margin:0"> 💰 현금받아야함</label>
@@ -629,9 +630,10 @@
     updateTxCustRow();
   }
 
-  // ── 거래등록 고객 태그(운반비 6160 전용) — 손익 화면 고객별/팀별 공헌이익 귀속용 ──
+  // ── 거래등록 고객·인보이스 태그(운반비 6160 전용) — 손익 화면 고객별/팀별 공헌이익 귀속용 ──
   const FREIGHT_OUT_CODE='6160';
-  let finCustomers=null;   // {id,name}[] 캐시(최초 1회 로딩)
+  let finCustomers=null;         // {id,name}[] 캐시(최초 1회 로딩)
+  let finInvCache={};            // 고객별 인보이스 목록 캐시 {customerId:[{id,sat_no,inv_date,total_mxn}]}
   async function loadFinCustomers(){
     if(finCustomers)return finCustomers;
     try{
@@ -643,12 +645,37 @@
   async function updateTxCustRow(){
     const show=$('t-cat').value===FREIGHT_OUT_CODE;
     $('t-custRow').style.display=show?'':'none';
-    if(!show){ $('t-cust').value=''; return; }
+    if(!show){ $('t-cust').value=''; resetTxInv(); return; }
     const list=await loadFinCustomers();
     if($('t-cust').options.length<=1){
       $('t-cust').innerHTML='<option value="">(공통 — 미지정, 매출비중 자동배분)</option>'
         +list.map(c=>`<option value="${c.id}">${String(c.name).replace(/</g,'&lt;')}</option>`).join('');
     }
+  }
+  function resetTxInv(){
+    $('t-inv').innerHTML='<option value="">(고객을 먼저 선택)</option>';
+    $('t-inv').disabled=true;
+  }
+  async function updateTxInvOptions(){
+    const cid=Number($('t-cust').value)||0;
+    if(!cid){ resetTxInv(); return; }
+    $('t-inv').disabled=true;
+    $('t-inv').innerHTML='<option value="">불러오는 중…</option>';
+    if(!finInvCache[cid]){
+      try{
+        const d=await fetch(session.api+'/api/finance/customer-invoices?customer_id='+cid,{headers:auth()}).then(r=>r.json());
+        finInvCache[cid]=(d&&d.items)||[];
+      }catch(e){ finInvCache[cid]=[]; }
+    }
+    if(Number($('t-cust').value)!==cid) return;   // 로딩 중 고객이 바뀌면 무시
+    const list=finInvCache[cid];
+    $('t-inv').innerHTML='<option value="">(인보이스 미지정 — 고객 공통)</option>'
+      +list.map(i=>{
+        const sat=i.sat_no?String(i.sat_no).replace(/</g,'&lt;'):'미발급';
+        return `<option value="${i.id}">${i.inv_date} · ${sat} · MX$${fmt(i.total_mxn)}</option>`;
+      }).join('');
+    $('t-inv').disabled=false;
+    if(!list.length){ $('t-inv').innerHTML='<option value="">(게시 인보이스 없음 — 고객 공통으로 저장)</option>'; $('t-inv').disabled=true; }
   }
 
   // 화면에 보이는 계좌들의 MXN 환산 총합. USD 계좌는 오늘 환율(fxRate)로 환산.
@@ -876,7 +903,8 @@
       category_code:$('t-cat').value||null,status:$('t-status').value,memo:$('t-memo').value.trim()||null,
       receipt_no:$('t-receipt').value.trim()||null,
       cash_due:($('t-dir').value==='out' && $('t-cashdue').checked),
-      customer_id:($('t-cat').value===FREIGHT_OUT_CODE && $('t-cust').value)?Number($('t-cust').value):null};
+      customer_id:($('t-cat').value===FREIGHT_OUT_CODE && $('t-cust').value)?Number($('t-cust').value):null,
+      freight_invoice_id:($('t-cat').value===FREIGHT_OUT_CODE && $('t-inv').value)?Number($('t-inv').value):null};
     $('t-save').disabled=true;$('t-save').textContent='등록 중…';
     try{
       const res=await fetch(session.api+'/api/transactions',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
@@ -884,7 +912,8 @@
       if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error==='account_required_for_actual'?'실제 거래는 계좌가 필요합니다.':(d.error||res.status));return;}
       m.className='msg ok';
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
-      $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';$('t-cashdue').checked=false;previewTxn();
+      $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';$('t-cashdue').checked=false;
+      $('t-cust').value='';resetTxInv();previewTxn();
       await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
@@ -3195,6 +3224,7 @@
   ['t-cur','t-amt','t-fx','t-status'].forEach(id=>$(id).addEventListener('input',previewTxn));
   $('t-dir').addEventListener('change',refreshCatOptions);
   $('t-cat').addEventListener('change',updateTxCustRow);
+  $('t-cust').addEventListener('change',updateTxInvOptions);
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
