@@ -130,7 +130,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출총이익 · SKU별 / 고객별</div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출총이익·손익 · SKU별 / 고객별 / 팀별 / 월별</div></div>
     <a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
@@ -153,6 +153,8 @@
           <span class="seg" id="viewSeg">
             <button data-view="sku" class="on">SKU별</button>
             <button data-view="cust">고객별</button>
+            <button data-view="team">팀별</button>
+            <button data-view="month">월별</button>
           </span>
           <span class="hint" id="viewHint" style="margin:0">제품(SKU) 단위 매출총이익</span>
           <span style="margin-left:auto"><span class="seg" id="yearSeg"></span></span>
@@ -219,6 +221,34 @@
           <div id="custResult"></div>
         </div>
       </div><!-- /custView -->
+
+      <!-- ══ 팀별 뷰 (손익) ══ -->
+      <div id="teamView" class="hidden">
+        <div class="card">
+          <div class="card-h">팀별 손익 <span class="src">매출·원가=게시 인보이스 · 커미션=발행 월 인식 · 운반비=태그 직접 귀속+미태그 매출비중 배분 · ex-IVA</span></div>
+          <div class="gpcards" id="teamGpCards">
+            <div class="gpc rev"><div class="lab">총매출액 <span class="note">(IVA 불포함)</span></div><div class="val" id="teamRevV">—</div><div class="sub" id="teamPeriodLbl">선택 기간</div></div>
+            <div class="gpc cogs"><div class="lab">커미션 + 운반비</div><div class="val" id="teamSellV">—</div><div class="sub" id="teamSellSub">판매 직접비 합계</div></div>
+            <div class="gpc mgn"><div class="lab">공헌이익률</div><div class="val" id="teamCtbV">—</div><div class="sub">(매출총이익 − 커미션 − 운반비) ÷ 매출</div></div>
+          </div>
+          <div id="teamResult"></div>
+          <div class="hint" style="margin-top:8px">팀 = 고객 소속 영업팀(customers.team_id). <b>공헌이익 = 매출총이익 − 커미션 − 매출출고 운반비</b>. 미태그 운반비는 기간 매출 비중으로 각 팀에 안분됩니다.</div>
+        </div>
+      </div><!-- /teamView -->
+
+      <!-- ══ 월별 뷰 (손익 추이) ══ -->
+      <div id="monthView" class="hidden">
+        <div class="card">
+          <div class="card-h">월별 손익 추이 <span class="src">매출·원가·커미션=발행 월 · 운반비=지출 월 · ex-IVA</span></div>
+          <div class="gpcards" id="monthGpCards">
+            <div class="gpc rev"><div class="lab">총매출액 <span class="note">(IVA 불포함)</span></div><div class="val" id="monRevV">—</div><div class="sub" id="monPeriodLbl">선택 기간</div></div>
+            <div class="gpc cogs"><div class="lab">커미션 + 운반비</div><div class="val" id="monSellV">—</div><div class="sub">판매 직접비 합계</div></div>
+            <div class="gpc mgn"><div class="lab">공헌이익률</div><div class="val" id="monCtbV">—</div><div class="sub">(매출총이익 − 커미션 − 운반비) ÷ 매출</div></div>
+          </div>
+          <div id="monthResult"></div>
+          <div class="hint" style="margin-top:8px">커미션은 <b>인보이스 발행 월</b>에 인식(수익-비용 대응), 운반비는 <b>실제 지출 월</b> 기준입니다.</div>
+        </div>
+      </div><!-- /monthView -->
     </div><!-- /gpSection -->
     <div class="msg" id="errMsg"></div>
   </div>
@@ -260,6 +290,8 @@
   let CUST=null;               // 고객별 서버 응답 캐시
   let custSort='revenue', custDir='desc', custQ='';
   let custOpen=new Set(), custCache={};      // 고객 행 드릴다운(SKU별 내역) 상태
+  // ── 팀별/월별 손익 뷰 상태 ──
+  let TEAM=null, MONTH=null;   // 서버 응답 캐시(기간 토글 시 무효화)
 
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -345,21 +377,30 @@
   }
   function pickYear(y){
     year=String(y); renderYearSeg();
-    // 기간이 바뀌면 두 뷰 캐시를 모두 무효화하고, 활성 뷰만 즉시 재로딩(다른 뷰는 전환 시 로딩).
+    // 기간이 바뀌면 모든 뷰 캐시를 무효화하고, 활성 뷰만 즉시 재로딩(다른 뷰는 전환 시 로딩).
     DATA=null; openDrill.clear(); drillCache={};
     CUST=null; custOpen.clear(); custCache={};
-    if(curView==='cust') loadCust(); else load();
+    TEAM=null; MONTH=null;
+    if(curView==='cust') loadCust();
+    else if(curView==='team') loadTeam();
+    else if(curView==='month') loadMonth();
+    else load();
   }
   window.pickYear=pickYear;
 
+  const VIEW_HINTS={sku:'제품(SKU) 단위 매출총이익',cust:'고객(거래처) 단위 손익 — 공헌이익까지',team:'영업팀 단위 손익 — 공헌이익까지',month:'월별 손익 추이 — 공헌이익까지'};
   function pickView(v){
     curView=v;
     $('viewSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.getAttribute('data-view')===v));
     $('skuView').classList.toggle('hidden', v!=='sku');
     $('custView').classList.toggle('hidden', v!=='cust');
-    $('viewHint').textContent = v==='cust' ? '고객(거래처) 단위 매출총이익' : '제품(SKU) 단위 매출총이익';
+    $('teamView').classList.toggle('hidden', v!=='team');
+    $('monthView').classList.toggle('hidden', v!=='month');
+    $('viewHint').textContent = VIEW_HINTS[v]||VIEW_HINTS.sku;
     if(v==='sku' && DATA===null) load();
     if(v==='cust' && CUST===null) loadCust();
+    if(v==='team' && TEAM===null) loadTeam();
+    if(v==='month' && MONTH===null) loadMonth();
   }
   window.pickView=pickView;
 
@@ -456,7 +497,12 @@
       +' · 총매출 <span style="font-size:.85em;color:var(--muted)">(IVA 불포함)</span> <b>MX$'+fmt(t.revenue)+'</b>'
       +' · 총매출원가 <b>MX$'+fmt(t.cogs)+'</b>'
       +' · 총매출총이익 <b>MX$'+fmt(t.profit)+'</b>'
-      +' · 전체 이익률 <b>'+pct(t.margin_pct)+'</b>';
+      +' · 전체 이익률 <b>'+pct(t.margin_pct)+'</b>'
+      +'<br>커미션 <b>MX$'+fmt(t.commission)+'</b>'
+      +' · 운반비(매출출고) <b>MX$'+fmt(t.freight)+'</b>'
+      +(t.freight_untagged?(' <span style="color:var(--muted)">(미태그 MX$'+fmt(t.freight_untagged)+' 매출비중 배분)</span>'):'')
+      +' · <b style="color:var(--brand)">공헌이익 MX$'+fmt(t.contribution)+'</b>'
+      +' · 공헌이익률 <b>'+pct(t.contrib_pct)+'</b>';
     if(pr.count){
       h+='<br><span style="color:var(--gold)">★ 파레토 상위 20% — 매출총이익 금액 상위 <b>'+pr.count+'</b>개 고객'
         +'('+(pr.sku_total?Math.round(pr.count/pr.sku_total*100):20)+'%)가 '
@@ -481,6 +527,9 @@
       revenue:(a,b)=>a.revenue-b.revenue, profit:(a,b)=>a.profit-b.profit,
       margin:(a,b)=>((a.margin_pct==null?-1e9:a.margin_pct)-(b.margin_pct==null?-1e9:b.margin_pct)),
       qty:(a,b)=>a.qty-b.qty, inv:(a,b)=>a.inv_count-b.inv_count, sku:(a,b)=>a.sku_count-b.sku_count,
+      comm:(a,b)=>(a.commission||0)-(b.commission||0), freight:(a,b)=>(a.freight||0)-(b.freight||0),
+      ctb:(a,b)=>(a.contribution||0)-(b.contribution||0),
+      ctbpct:(a,b)=>((a.contrib_pct==null?-1e9:a.contrib_pct)-(b.contrib_pct==null?-1e9:b.contrib_pct)),
     }[custSort]||((a,b)=>0);
     items.sort((a,b)=>keyf(a,b)*dir);
     return items;
@@ -493,11 +542,13 @@
       +'<th class="l" data-csort="name">고객(거래처)'+(custSort==='name'?('<span class="ar">'+(custDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>'
       +sh('inv','거래건수')+sh('qty','판매수량')+sh('sku','취급SKU')
       +sh('revenue','매출(ex-IVA)')+'<th class="n">매출원가</th>'+sh('profit','매출총이익')+sh('margin','이익률')
+      +sh('comm','커미션')+sh('freight','운반비')+sh('ctb','공헌이익')+sh('ctbpct','공헌률')
       +'<th class="n">최근거래</th></tr></thead><tbody>';
     items.forEach(c=>{
       const tk=tierOf(c.margin_pct);
       const imp=impSet.has(c.id);
       const isOpen=custOpen.has(c.id);
+      const frTitle='직접 '+fmt(c.freight_direct||0)+' + 배분 '+fmt(c.freight_alloc||0);
       h+='<tr class="'+(tk?('r-'+tk):'')+'">'
         +'<td class="l drillcell" data-cid="'+c.id+'"><span class="bdrill">'+(isOpen?'▾':'▸')+'</span>'+esc(c.name)+(imp?'<span class="chip chip-imp" title="파레토 상위 20%: 매출총이익 금액 상위 20% 고객">★ 상위20%</span>':'')+'</td>'
         +'<td class="n">'+fmt(c.inv_count)+'</td>'
@@ -507,9 +558,13 @@
         +'<td class="n">'+fmt(c.cogs)+'</td>'
         +'<td class="n">'+fmt(c.profit)+'</td>'
         +'<td class="n mg">'+(c.margin_pct==null?'<span style="color:var(--muted)">—</span>':pct(c.margin_pct))+'</td>'
+        +'<td class="n">'+fmt(c.commission||0)+'</td>'
+        +'<td class="n" title="'+frTitle+'">'+fmt(c.freight||0)+'</td>'
+        +'<td class="n" style="font-weight:800;'+((c.contribution||0)<0?'color:var(--t4)':'color:var(--brand)')+'">'+fmt(c.contribution||0)+'</td>'
+        +'<td class="n">'+(c.contrib_pct==null?'<span style="color:var(--muted)">—</span>':pct(c.contrib_pct))+'</td>'
         +'<td class="n" style="color:var(--muted)">'+(c.last_date||'—')+'</td>'
         +'</tr>';
-      if(isOpen){ h+='<tr class="drill-row"><td colspan="9">'+renderCustDrill(c)+'</td></tr>'; }
+      if(isOpen){ h+='<tr class="drill-row"><td colspan="13">'+renderCustDrill(c)+'</td></tr>'; }
     });
     h+='</tbody></table>';
     $('custResult').innerHTML=items.length?h:'<div class="nores">일치하는 고객이 없습니다.</div>';
@@ -578,6 +633,80 @@
       }catch(e){ custCache[id]={__err:'서버에 연결할 수 없습니다.'}; }
       if(custOpen.has(id)) renderCustList();
     }
+  }
+
+  // ════════════════════════════ 팀별 손익 뷰 ════════════════════════════
+  async function loadTeam(){
+    const err=$('errMsg'); err.className='msg';
+    try{
+      let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const d=await fetch(session.api+'/api/gross-profit/by-team'+qs,{headers:auth()}).then(r=>r.json());
+      if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
+      if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
+      TEAM=d; renderTeam();
+    }catch(e){ err.className='msg err'; err.textContent='서버에 연결할 수 없습니다.'; }
+  }
+  function pnlRowTds(x){
+    return '<td class="n">'+fmt(x.revenue)+'</td>'
+      +'<td class="n">'+fmt(x.cogs)+'</td>'
+      +'<td class="n">'+fmt(x.profit)+'</td>'
+      +'<td class="n mg">'+(x.margin_pct==null?'<span style="color:var(--muted)">—</span>':pct(x.margin_pct))+'</td>'
+      +'<td class="n">'+fmt(x.commission||0)+'</td>'
+      +'<td class="n"'+(x.freight_alloc!=null?(' title="직접 '+fmt(x.freight_direct||0)+' + 배분 '+fmt(x.freight_alloc||0)+'"'):'')+'>'+fmt(x.freight||0)+'</td>'
+      +'<td class="n" style="font-weight:800;'+((x.contribution||0)<0?'color:var(--t4)':'color:var(--brand)')+'">'+fmt(x.contribution||0)+'</td>'
+      +'<td class="n">'+(x.contrib_pct==null?'<span style="color:var(--muted)">—</span>':pct(x.contrib_pct))+'</td>';
+  }
+  function renderTeam(){
+    const t=TEAM.totals||{};
+    $('teamRevV').innerHTML='<span class="cur">MX$</span>'+fmt(t.revenue);
+    $('teamSellV').innerHTML='<span class="cur">MX$</span>'+fmt((t.commission||0)+(t.freight||0));
+    $('teamSellSub').textContent='커미션 MX$'+fmt(t.commission)+' · 운반비 MX$'+fmt(t.freight);
+    $('teamCtbV').textContent=pct(t.contrib_pct);
+    $('teamPeriodLbl').textContent=(year?(year+'년'):'전체 기간');
+    const items=TEAM.items||[];
+    let h='<table><thead><tr><th class="l">팀</th><th class="n">거래처</th><th class="n">거래건수</th>'
+      +'<th class="n">매출(ex-IVA)</th><th class="n">매출원가</th><th class="n">매출총이익</th><th class="n">이익률</th>'
+      +'<th class="n">커미션</th><th class="n">운반비</th><th class="n">공헌이익</th><th class="n">공헌률</th></tr></thead><tbody>';
+    items.forEach(x=>{
+      h+='<tr><td class="l"><b>'+esc(x.name)+'</b></td>'
+        +'<td class="n">'+fmt(x.cust_count||0)+'</td>'
+        +'<td class="n">'+fmt(x.inv_count||0)+'</td>'
+        +pnlRowTds(x)+'</tr>';
+    });
+    h+='<tr class="drill-tot"><td class="l">합계</td><td></td><td></td>'+pnlRowTds({...t,freight_alloc:null})+'</tr>';
+    h+='</tbody></table>';
+    $('teamResult').innerHTML=items.length?h:'<div class="nores">이 기간에 판매 기록이 없습니다.</div>';
+  }
+
+  // ════════════════════════════ 월별 손익 뷰 ════════════════════════════
+  async function loadMonth(){
+    const err=$('errMsg'); err.className='msg';
+    try{
+      let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const d=await fetch(session.api+'/api/gross-profit/by-month'+qs,{headers:auth()}).then(r=>r.json());
+      if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
+      if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
+      MONTH=d; renderMonth();
+    }catch(e){ err.className='msg err'; err.textContent='서버에 연결할 수 없습니다.'; }
+  }
+  function renderMonth(){
+    const t=MONTH.totals||{};
+    $('monRevV').innerHTML='<span class="cur">MX$</span>'+fmt(t.revenue);
+    $('monSellV').innerHTML='<span class="cur">MX$</span>'+fmt((t.commission||0)+(t.freight||0));
+    $('monCtbV').textContent=pct(t.contrib_pct);
+    $('monPeriodLbl').textContent=(year?(year+'년'):'전체 기간');
+    const items=(MONTH.items||[]).slice().reverse();   // 최신 월이 위
+    let h='<table><thead><tr><th class="l">월</th><th class="n">거래건수</th>'
+      +'<th class="n">매출(ex-IVA)</th><th class="n">매출원가</th><th class="n">매출총이익</th><th class="n">이익률</th>'
+      +'<th class="n">커미션</th><th class="n">운반비</th><th class="n">공헌이익</th><th class="n">공헌률</th></tr></thead><tbody>';
+    items.forEach(x=>{
+      h+='<tr><td class="l"><b>'+esc(x.ym)+'</b></td>'
+        +'<td class="n">'+fmt(x.inv_count||0)+'</td>'
+        +pnlRowTds(x)+'</tr>';
+    });
+    h+='<tr class="drill-tot"><td class="l">합계</td><td></td>'+pnlRowTds({...t,freight_alloc:null})+'</tr>';
+    h+='</tbody></table>';
+    $('monthResult').innerHTML=items.length?h:'<div class="nores">이 기간에 데이터가 없습니다.</div>';
   }
 
   // ── 자재내역 토글/렌더 ──
@@ -864,9 +993,10 @@
       openChart, drawChart, setScope:(s)=>{chartScope=s;}, renderList, setSort:(k,d)=>{listSort=k;listDir=d;},
       highlightPoint, hideChartTip, getPts:()=>chartPts,
       setCust:(d)=>{CUST=d;}, renderCustTiers, renderCustTotals, renderCustCards, renderCustList,
-      sortedCust, setCustSort:(k,d)=>{custSort=k;custDir=d;}, setCustQ:(q)=>{custQ=q;}, pickView };
+      sortedCust, setCustSort:(k,d)=>{custSort=k;custDir=d;}, setCustQ:(q)=>{custQ=q;}, pickView,
+      setTeam:(d)=>{TEAM=d;}, renderTeam, setMonth:(d)=>{MONTH=d;}, renderMonth };
   }
 </script>
-<script src="refatrix-nav.js?v=20260710pr"></script>
+<script src="refatrix-nav.js?v=20260725a"></script>
 </body>
 </html>

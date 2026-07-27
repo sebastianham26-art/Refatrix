@@ -63,6 +63,112 @@ export function computePareto(soldItems, totalProfit) {
   };
 }
 
+// ══════════ P&L 확장(공헌이익): 커미션 + 매출출고 운반비 ══════════
+// 손익 뷰 원칙(디렉터 확정 2026-07-25):
+//   · 커미션 인식 시점 = 인보이스 발행 월(수익-비용 대응). 지급 여부 무관, 이미 지급된 건은 지급액으로 동결.
+//   · 매출출고 운반비(6160) = 거래등록의 고객 태그分은 그 고객 직접 귀속,
+//     미태그分은 기간 매출 비중으로 자동 배분. 실제(actual)·승인(approved) 지출만 집계.
+//   · 공헌이익 = 매출총이익 − 커미션 − 운반비.
+const FREIGHT_OUT_CODE = '6160';
+
+function dateRange(req) {
+  const from = (req.query.from || '').trim();
+  const to = (req.query.to || '').trim();
+  return {
+    from: /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
+    to: /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : null,
+  };
+}
+
+// 인보이스별 커미션(발행 월 인식). 요율 = 고객 예외율 우선, 없으면 기간율(0143).
+// 이미 지급된 건은 지급 시점 금액(commission_payouts.amount)으로 동결(commissionRoutes와 동일 원칙).
+async function commissionRows(range) {
+  const params = [];
+  let where = '';
+  if (range.from) { params.push(range.from); where += ` AND i.inv_date >= $${params.length}`; }
+  if (range.to)   { params.push(range.to);   where += ` AND i.inv_date <= $${params.length}`; }
+  const rows = (await query(
+    `SELECT i.customer_id, to_char(i.inv_date,'YYYY-MM') AS ym, i.subtotal_mxn,
+            per.rate AS period_rate, ccr.rate AS cust_rate,
+            cp.paid AS payout_paid, cp.amount AS payout_amount
+       FROM sales_invoices i
+       JOIN commission_agents ca ON ca.user_id = i.owner_id AND ca.active = true
+       LEFT JOIN commission_customer_rates ccr ON ccr.user_id = i.owner_id AND ccr.customer_id = i.customer_id
+       LEFT JOIN LATERAL (
+         SELECT cap.rate FROM commission_agent_periods cap
+          WHERE cap.user_id = i.owner_id AND i.inv_date >= cap.start_date
+            AND (cap.end_date IS NULL OR i.inv_date <= cap.end_date)
+          ORDER BY cap.start_date DESC LIMIT 1) per ON true
+       LEFT JOIN commission_payouts cp ON cp.invoice_id = i.id
+      WHERE i.status = 'posted' AND i.deleted_at IS NULL AND per.rate IS NOT NULL${where}`, params)).rows;
+  return rows.map((r) => ({
+    customer_id: Number(r.customer_id),
+    ym: r.ym,
+    amount: (r.payout_paid === true && r.payout_amount != null)
+      ? Number(r.payout_amount)
+      : r2(Number(r.subtotal_mxn) * Number(r.cust_rate != null ? r.cust_rate : r.period_rate) / 100),
+  }));
+}
+
+// 매출출고 운반비(6160) — 실제·승인 지출만. customer_id NULL = 미태그(공통).
+async function freightRows(range) {
+  const params = [FREIGHT_OUT_CODE];
+  let where = '';
+  if (range.from) { params.push(range.from); where += ` AND t.txn_date >= $${params.length}`; }
+  if (range.to)   { params.push(range.to);   where += ` AND t.txn_date <= $${params.length}`; }
+  const rows = (await query(
+    `SELECT t.customer_id, to_char(t.txn_date,'YYYY-MM') AS ym, SUM(t.amount_mxn) AS amt
+       FROM transactions t
+      WHERE t.deleted_at IS NULL AND t.status = 'actual' AND t.direction = 'out'
+        AND t.approved = true AND t.category_code = $1${where}
+      GROUP BY t.customer_id, to_char(t.txn_date,'YYYY-MM')`, params)).rows;
+  return rows.map((r) => ({
+    customer_id: r.customer_id == null ? null : Number(r.customer_id),
+    ym: r.ym,
+    amount: Number(r.amt),
+  }));
+}
+
+// 순수: 항목 배열(각 {id, revenue, profit})에 커미션·운반비·공헌이익을 부여한다.
+//   keyOf(row) → 항목 id 매핑 함수(고객별=customer_id, 팀별=팀 id 변환).
+//   미태그 운반비는 매출 비중으로 배분. 항목에 없는 키의 잔여분은 leftover로 반환.
+export function applyPnl(items, commRows, frRows, keyOf) {
+  const kf = keyOf || ((r) => r.customer_id);
+  const comm = new Map();
+  const direct = new Map();
+  let untagged = 0;
+  for (const c of commRows) {
+    const k = kf(c);
+    comm.set(k, r2((comm.get(k) || 0) + c.amount));
+  }
+  for (const f of frRows) {
+    const k = f.customer_id == null ? null : kf(f);
+    if (k == null) untagged = r2(untagged + f.amount);
+    else direct.set(k, r2((direct.get(k) || 0) + f.amount));
+  }
+  const totalRevenue = items.reduce((s, x) => s + x.revenue, 0);
+  for (const it of items) {
+    it.commission = comm.get(it.id) || 0;
+    it.freight_direct = direct.get(it.id) || 0;
+    it.freight_alloc = (untagged > 0 && totalRevenue > 0) ? r2(untagged * it.revenue / totalRevenue) : 0;
+    it.freight = r2(it.freight_direct + it.freight_alloc);
+    it.contribution = r2(it.profit - it.commission - it.freight);
+    it.contrib_pct = it.revenue > 0 ? r2(it.contribution / it.revenue * 100) : null;
+    comm.delete(it.id); direct.delete(it.id);
+  }
+  return { untagged, leftoverComm: comm, leftoverFreight: direct, totalRevenue };
+}
+
+// 순수: P&L 합계(항목 + 미배분 잔여 포함)
+export function pnlTotals(items, pn) {
+  const commission = r2(items.reduce((s, x) => s + (x.commission || 0), 0)
+    + [...pn.leftoverComm.values()].reduce((s, v) => s + v, 0));
+  const freight = r2(items.reduce((s, x) => s + (x.freight || 0), 0)
+    + [...pn.leftoverFreight.values()].reduce((s, v) => s + v, 0)
+    + (pn.totalRevenue > 0 ? 0 : pn.untagged));   // 매출 0인 기간엔 미태그분 배분 불가 → 합계에만 포함
+  return { commission, freight };
+}
+
 // 요청의 from/to(YYYY-MM-DD)를 파라미터 배열에 이어 붙여 WHERE 절 조각을 만든다.
 function buildDateWhere(req, params) {
   const from = (req.query.from || '').trim();
@@ -255,12 +361,36 @@ export default async function grossProfitRoutes(app) {
       };
     });
 
+    // ── P&L 확장: 커미션(발행 월) + 매출출고 운반비(태그 직접 귀속 / 미태그 매출비중 배분) ──
+    const range = dateRange(req);
+    const [commR, frR] = await Promise.all([commissionRows(range), freightRows(range)]);
+    const pn = applyPnl(items, commR, frR);
+    // 이 기간 매출이 없는 고객에 태그된 운반비/커미션 → 0매출 행으로 추가(비용 누락 방지).
+    const leftoverIds = [...new Set([...pn.leftoverComm.keys(), ...pn.leftoverFreight.keys()])];
+    if (leftoverIds.length) {
+      const nm = (await query(`SELECT id, name FROM customers WHERE id = ANY($1)`, [leftoverIds])).rows;
+      const nameOf = new Map(nm.map((x) => [Number(x.id), x.name]));
+      for (const id of leftoverIds) {
+        const cAmt = pn.leftoverComm.get(id) || 0;
+        const fAmt = pn.leftoverFreight.get(id) || 0;
+        items.push({
+          id, name: nameOf.get(id) || ('고객#' + id),
+          qty: 0, inv_count: 0, sku_count: 0, revenue: 0, cogs: 0, profit: 0,
+          margin_pct: null, avg_ticket: null, last_date: null,
+          commission: cAmt, freight_direct: fAmt, freight_alloc: 0, freight: fAmt,
+          contribution: r2(-(cAmt + fAmt)), contrib_pct: null,
+        });
+      }
+    }
+
     const summary = summarizeTiers(items);
     const totalRevenue = r2(items.reduce((s, x) => s + x.revenue, 0));
     const totalCogs = r2(items.reduce((s, x) => s + x.cogs, 0));
     const totalProfit = r2(totalRevenue - totalCogs);
     const sold = items.filter((x) => x.margin_pct != null);
     const P = computePareto(sold, totalProfit);
+    const ex = pnlTotals(items, pn);
+    const totalContribution = r2(totalProfit - ex.commission - ex.freight);
 
     await logPageView(perm.userId, 'grossprofit');
     return {
@@ -272,7 +402,10 @@ export default async function grossProfitRoutes(app) {
       important_ids: P.ids,
       pareto: P.pareto,
       totals: { revenue: totalRevenue, cogs: totalCogs, profit: totalProfit,
-        margin_pct: totalRevenue > 0 ? r2(totalProfit / totalRevenue * 100) : null },
+        margin_pct: totalRevenue > 0 ? r2(totalProfit / totalRevenue * 100) : null,
+        commission: ex.commission, freight: ex.freight, freight_untagged: pn.untagged,
+        contribution: totalContribution,
+        contrib_pct: totalRevenue > 0 ? r2(totalContribution / totalRevenue * 100) : null },
     };
   });
 
@@ -329,6 +462,144 @@ export default async function grossProfitRoutes(app) {
         margin_pct: tRev > 0 ? r2(tProfit / tRev * 100) : null,
       },
       note: '매출원가(COGS)는 판매 시점에 동결된 적용원가 기준입니다.',
+    };
+  });
+
+  // ── 팀별 손익 — 고객 소속 팀(customers.team_id, 0030 방식 A) 기준 합산 ─────────────────────────
+  //   매출/원가 = 게시 인보이스 라인, 커미션 = 발행 월 인식, 운반비 = 태그 직접 + 미태그 매출비중 배분.
+  app.get('/api/gross-profit/by-team', { preHandler: [authGuard, requirePage('grossprofit')] }, async (req) => {
+    const { perm } = req.ctx;
+    const params = [];
+    const dateWhere = buildDateWhere(req, params);
+
+    const rows = (await query(
+      `SELECT COALESCE(st.id, 0) AS team_id, COALESCE(st.name, '미지정') AS team_name,
+              COUNT(DISTINCT cu.id)                                           AS cust_count,
+              COUNT(DISTINCT si.id)                                           AS inv_count,
+              SUM(sil.line_amount_mxn)                                        AS revenue,
+              SUM(COALESCE(sil.cogs_mxn, sil.qty * sil.applied_unit_cost, 0)) AS cogs
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id = sil.invoice_id
+         JOIN customers cu ON cu.id = si.customer_id
+         LEFT JOIN sales_teams st ON st.id = cu.team_id
+        WHERE si.status = 'posted' AND si.deleted_at IS NULL${dateWhere}
+        GROUP BY COALESCE(st.id, 0), COALESCE(st.name, '미지정')
+        ORDER BY SUM(sil.line_amount_mxn) DESC`, params)).rows;
+
+    const items = rows.map((t) => {
+      const revenue = r2(Number(t.revenue)), cogs = r2(Number(t.cogs));
+      const profit = r2(revenue - cogs);
+      return {
+        id: Number(t.team_id), name: t.team_name,
+        cust_count: Number(t.cust_count || 0), inv_count: Number(t.inv_count || 0),
+        revenue, cogs, profit,
+        margin_pct: revenue > 0 ? r2(profit / revenue * 100) : null,
+      };
+    });
+
+    // 고객 → 팀 매핑(운반비 태그·커미션을 팀으로 접는 키)
+    const cuTeam = new Map((await query(
+      `SELECT id, COALESCE(team_id, 0) AS tid FROM customers`)).rows
+      .map((x) => [Number(x.id), Number(x.tid)]));
+    const range = dateRange(req);
+    const [commR, frR] = await Promise.all([commissionRows(range), freightRows(range)]);
+    const pn = applyPnl(items, commR, frR, (r) => (cuTeam.has(r.customer_id) ? cuTeam.get(r.customer_id) : 0));
+    // 매출 없는 팀에 태그된 잔여분 → 0매출 행 추가
+    const leftIds = [...new Set([...pn.leftoverComm.keys(), ...pn.leftoverFreight.keys()])];
+    if (leftIds.length) {
+      const tn = new Map((await query(`SELECT id, name FROM sales_teams`)).rows.map((x) => [Number(x.id), x.name]));
+      tn.set(0, '미지정');
+      for (const id of leftIds) {
+        const cAmt = pn.leftoverComm.get(id) || 0;
+        const fAmt = pn.leftoverFreight.get(id) || 0;
+        items.push({
+          id, name: tn.get(id) || ('팀#' + id), cust_count: 0, inv_count: 0,
+          revenue: 0, cogs: 0, profit: 0, margin_pct: null,
+          commission: cAmt, freight_direct: fAmt, freight_alloc: 0, freight: fAmt,
+          contribution: r2(-(cAmt + fAmt)), contrib_pct: null,
+        });
+      }
+    }
+
+    const totalRevenue = r2(items.reduce((s, x) => s + x.revenue, 0));
+    const totalCogs = r2(items.reduce((s, x) => s + x.cogs, 0));
+    const totalProfit = r2(totalRevenue - totalCogs);
+    const ex = pnlTotals(items, pn);
+    const totalContribution = r2(totalProfit - ex.commission - ex.freight);
+
+    await logPageView(perm.userId, 'grossprofit');
+    return {
+      items,
+      team_count: items.length,
+      totals: { revenue: totalRevenue, cogs: totalCogs, profit: totalProfit,
+        margin_pct: totalRevenue > 0 ? r2(totalProfit / totalRevenue * 100) : null,
+        commission: ex.commission, freight: ex.freight, freight_untagged: pn.untagged,
+        contribution: totalContribution,
+        contrib_pct: totalRevenue > 0 ? r2(totalContribution / totalRevenue * 100) : null },
+      note: '커미션=인보이스 발행 월 인식 · 운반비=태그 직접 귀속+미태그 매출비중 배분 · 팀=고객 소속 팀',
+    };
+  });
+
+  // ── 월별 손익 추이 — 매출/원가(inv_date 월) · 커미션(발행 월) · 운반비(지출 월) ────────────────
+  app.get('/api/gross-profit/by-month', { preHandler: [authGuard, requirePage('grossprofit')] }, async (req) => {
+    const { perm } = req.ctx;
+    const params = [];
+    const dateWhere = buildDateWhere(req, params);
+
+    const revRows = (await query(
+      `SELECT to_char(si.inv_date,'YYYY-MM') AS ym,
+              COUNT(DISTINCT si.id)                                           AS inv_count,
+              SUM(sil.line_amount_mxn)                                        AS revenue,
+              SUM(COALESCE(sil.cogs_mxn, sil.qty * sil.applied_unit_cost, 0)) AS cogs
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id = sil.invoice_id
+        WHERE si.status = 'posted' AND si.deleted_at IS NULL${dateWhere}
+        GROUP BY to_char(si.inv_date,'YYYY-MM')`, params)).rows;
+
+    const range = dateRange(req);
+    const [commR, frR] = await Promise.all([commissionRows(range), freightRows(range)]);
+
+    const byYm = new Map();
+    const ensure = (ym) => {
+      if (!byYm.has(ym)) byYm.set(ym, { ym, inv_count: 0, revenue: 0, cogs: 0, commission: 0, freight: 0 });
+      return byYm.get(ym);
+    };
+    for (const rrow of revRows) {
+      const m = ensure(rrow.ym);
+      m.inv_count = Number(rrow.inv_count || 0);
+      m.revenue = r2(Number(rrow.revenue));
+      m.cogs = r2(Number(rrow.cogs));
+    }
+    for (const c of commR) { const m = ensure(c.ym); m.commission = r2(m.commission + c.amount); }
+    for (const f of frR)   { const m = ensure(f.ym); m.freight = r2(m.freight + f.amount); }
+
+    const items = [...byYm.values()].sort((a, b) => (a.ym > b.ym ? 1 : -1)).map((m) => {
+      const profit = r2(m.revenue - m.cogs);
+      const contribution = r2(profit - m.commission - m.freight);
+      return {
+        ...m, profit,
+        margin_pct: m.revenue > 0 ? r2(profit / m.revenue * 100) : null,
+        contribution,
+        contrib_pct: m.revenue > 0 ? r2(contribution / m.revenue * 100) : null,
+      };
+    });
+
+    const totalRevenue = r2(items.reduce((s, x) => s + x.revenue, 0));
+    const totalCogs = r2(items.reduce((s, x) => s + x.cogs, 0));
+    const totalProfit = r2(totalRevenue - totalCogs);
+    const totalComm = r2(items.reduce((s, x) => s + x.commission, 0));
+    const totalFreight = r2(items.reduce((s, x) => s + x.freight, 0));
+    const totalContribution = r2(totalProfit - totalComm - totalFreight);
+
+    await logPageView(perm.userId, 'grossprofit');
+    return {
+      items,
+      month_count: items.length,
+      totals: { revenue: totalRevenue, cogs: totalCogs, profit: totalProfit,
+        margin_pct: totalRevenue > 0 ? r2(totalProfit / totalRevenue * 100) : null,
+        commission: totalComm, freight: totalFreight, contribution: totalContribution,
+        contrib_pct: totalRevenue > 0 ? r2(totalContribution / totalRevenue * 100) : null },
+      note: '매출·원가=인보이스 발행 월 · 커미션=발행 월 인식 · 운반비=실제 지출 월(태그·미태그 모두 포함)',
     };
   });
 }

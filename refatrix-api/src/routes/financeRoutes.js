@@ -219,18 +219,35 @@ export default async function financeRoutes(app) {
       else fx = (await getUsdMxnRate()).rate;
     }
     const amountMxn = r2(amount * fx);
+    // 고객 태그(선택) — 매출출고 운반비(6160) 등 지출을 고객별 P&L에 직접 귀속시키기 위함.
+    //   유효하지 않은 고객 id면 400. 미지정(null)은 손익 화면에서 매출 비중으로 자동 배분.
+    let customerId = null;
+    if (b.customer_id != null && b.customer_id !== '') {
+      customerId = Number(b.customer_id);
+      if (!Number.isInteger(customerId) || customerId <= 0) return reply.code(400).send({ error: 'bad_customer' });
+      const cu = await query(`SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId]);
+      if (!cu.rows.length) return reply.code(400).send({ error: 'bad_customer' });
+    }
     // 승인 규칙: 지출 + 담당자 → 미승인(approved=false). 그 외 → 승인.
     const approved = !(direction === 'out' && !isDirector);
     const r = await query(
       `INSERT INTO transactions
-         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16) RETURNING id`,
+         (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, memo, created_by, plan_amount, plan_date, receipt_no, cash_due, customer_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'general',$10,$11,$12,$11,$13,$14,$15,$16,$17) RETURNING id`,
       [b.account_id || null, b.txn_date, direction, r2(amount), currency, fx, amountMxn, b.category_code || null, status, approved, req.ctx.perm.userId, b.memo || null,
        status === 'plan' ? r2(amount) : null, status === 'plan' ? b.txn_date : null,
        (b.receipt_no && String(b.receipt_no).trim()) ? String(b.receipt_no).trim().slice(0, 60) : null,
-       direction === 'out' && b.cash_due === true]);
+       direction === 'out' && b.cash_due === true, customerId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `transaction:${r.rows[0].id}`, detail: { direction, approved } });
     return { id: r.rows[0].id, approved, amount_mxn: amountMxn, fx_rate: fx };
+  });
+
+  // 거래등록 화면의 고객 태그용 경량 고객 목록(id·이름만).
+  //   'transactions' 페이지 권한만 있으면 조회 가능 — 고객 관리 화면 권한과 무관.
+  app.get('/api/finance/customers', { preHandler: [authGuard, requirePage('transactions')] }, async () => {
+    const rows = (await query(
+      `SELECT id, name FROM customers WHERE deleted_at IS NULL ORDER BY name ASC`)).rows;
+    return { items: rows.map((c) => ({ id: Number(c.id), name: c.name })) };
   });
 
   // 거래 일괄 등록(엑셀 업로드 — 과거자료 마이그레이션).
