@@ -403,18 +403,45 @@ export default async function financeRoutes(app) {
               t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
               t.cash_due, t.cash_due_done_at,
               si.sat_no AS sat_no, c.name AS customer_name,
+              t.customer_id, fc.name AS freight_customer_name,
+              (SELECT COUNT(*) FROM transaction_freight_allocations fa WHERE fa.transaction_id=t.id) AS freight_alloc_n,
               (SELECT COUNT(*) FROM txn_change_requests cr WHERE cr.txn_id=t.id AND cr.req_type='edit' AND cr.status='approved') AS edit_count
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
          LEFT JOIN customers c ON c.id=si.customer_id
+         LEFT JOIN customers fc ON fc.id=t.customer_id
         WHERE ${cond.join(' AND ')}
         ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
     return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
+      freight_alloc_n: Number(t.freight_alloc_n || 0),
       editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
+  });
+
+  // 운반비 인보이스 배분 내역(거래 드릴다운) — 거래 1건의 균등 배분 결과.
+  app.get('/api/transactions/:id/freight-allocations', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const rows = (await query(
+      `SELECT fa.sales_invoice_id, fa.amount_mxn, fa.customer_id,
+              c.name AS customer_name, si.sat_no, to_char(si.inv_date,'YYYY-MM-DD') AS inv_date, si.total_mxn AS invoice_total_mxn
+         FROM transaction_freight_allocations fa
+         JOIN sales_invoices si ON si.id = fa.sales_invoice_id
+         JOIN customers c ON c.id = fa.customer_id
+        WHERE fa.transaction_id = $1
+        ORDER BY fa.id`, [id])).rows;
+    return { items: rows.map((x) => ({
+      sales_invoice_id: Number(x.sales_invoice_id),
+      amount_mxn: Number(x.amount_mxn),
+      customer_id: Number(x.customer_id),
+      customer_name: x.customer_name,
+      sat_no: x.sat_no || null,
+      inv_date: x.inv_date,
+      invoice_total_mxn: Number(x.invoice_total_mxn),
+    })), total_mxn: rows.reduce((s, x) => s + Number(x.amount_mxn), 0) };
   });
 
   // 승인 대기(디렉터) — 담당자가 올린 미승인 지출

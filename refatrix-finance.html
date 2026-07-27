@@ -182,12 +182,58 @@
       </div>
       <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div>
         <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
-      <div class="row" id="t-custRow" style="display:none;align-items:flex-start">
-        <div style="flex:2"><label>고객 (운반비 귀속 — 손익 화면 P&L용)</label><select id="t-cust"><option value="">(공통 — 미지정, 매출비중 자동배분)</option></select>
-          <div class="hint" style="margin-top:5px">특정 고객/인보이스 출고 건이면 태그하세요. 공통 건은 미지정 → 매출 비중 자동 배분.</div></div>
-        <div style="flex:3"><label>인보이스 (복수 선택 가능 — 금액을 건수로 균등 배분)</label>
-          <div id="t-invList" style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 9px;background:#fff;font-size:12.5px"><span style="color:var(--muted)">고객을 먼저 선택하세요.</span></div>
-          <div class="hint" id="t-invSummary" style="margin-top:5px"></div></div>
+      <div id="t-custRow" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
+        <style>
+          #t-custRow .fi-selbox{border:1.5px solid var(--brand);border-radius:8px;background:#f7faf8;padding:9px 12px;margin:10px 0}
+          #t-custRow .fi-selh{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+          #t-custRow .fi-selh b{font-size:12.5px;color:var(--brand)}
+          #t-custRow .fi-per{margin-left:auto;font-size:12px;color:var(--income);font-weight:800}
+          #t-custRow .fi-chips{display:flex;flex-wrap:wrap;gap:6px}
+          #t-custRow .fi-chip{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 10px;font-size:12px;line-height:1.3}
+          #t-custRow .fi-chip .no{font-weight:800;color:var(--brand)}
+          #t-custRow .fi-chip .cu{color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          #t-custRow .fi-chip .amt{font-variant-numeric:tabular-nums}
+          #t-custRow .fi-chip .x{border:none;background:#f1ede4;color:var(--muted);width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0}
+          #t-custRow .fi-chip .x:hover{background:#F6E7E4;color:var(--expense)}
+          #t-custRow .fi-invtbl{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+          #t-custRow .fi-thead,#t-custRow .fi-invrow{display:grid;grid-template-columns:36px 80px 1fr 88px 112px;align-items:center}
+          #t-custRow .fi-thead{background:#faf8f3;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);font-weight:700;padding:6px 0}
+          #t-custRow .fi-thead span{padding:0 9px}
+          #t-custRow .fi-r{text-align:right}
+          #t-custRow .fi-invscroll{max-height:210px;overflow:auto}
+          #t-custRow .fi-invrow{padding:7px 0;border-bottom:1px solid #f0ece3;cursor:pointer;font-size:13px}
+          #t-custRow .fi-invrow:hover{background:#f7f5ef}
+          #t-custRow .fi-invrow.on{background:#E4F0EB}
+          #t-custRow .fi-invrow>*{padding:0 9px;min-width:0}
+          #t-custRow .fi-invrow input{width:15px;height:15px;margin:0 0 0 9px;accent-color:var(--brand);cursor:pointer}
+          #t-custRow .fi-invrow .no{font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+          #t-custRow .fi-invrow .sat{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          #t-custRow .fi-invrow .date{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12.5px}
+          #t-custRow .fi-invrow .amt{font-variant-numeric:tabular-nums;font-weight:600}
+          #t-custRow .fi-badge{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px}
+          #t-custRow .fi-badge.tmp{background:#fbf1dc;color:#9A6A12;border:1px solid #ecd9a0}
+          #t-custRow .fi-badge.none{background:#f1ede4;color:var(--muted);border:1px solid var(--line)}
+          #t-custRow .fi-grouph{background:#f1ede4;font-size:11px;font-weight:800;color:var(--muted);padding:4px 11px;border-bottom:1px solid var(--line)}
+          #t-custRow .fi-nores{font-size:12.5px;color:var(--muted);padding:12px 11px}
+          #t-custRow .fi-splitbar{display:flex;align-items:center;gap:14px;margin-top:9px;background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap}
+          #t-custRow .fi-splitbar b{color:var(--brand)}
+          #t-custRow .fi-warn{color:#B8893B;font-weight:700}
+        </style>
+        <div style="font-size:13px;font-weight:800;color:var(--brand);margin-bottom:8px">🚚 운반비 귀속 — 인보이스 선택 <span style="font-weight:500;font-size:11px;color:var(--muted)">복수 선택 시 금액을 건수로 균등 배분 · 손익 화면 P&L용</span></div>
+        <div class="row" style="margin:0 0 2px">
+          <div style="flex:2"><label>고객 선택 → 아래에 그 고객의 인보이스 목록</label><select id="t-cust"><option value="">(공통 — 미지정, 매출비중 자동배분)</option></select></div>
+          <div style="flex:3"><label>인보이스 검색</label><input id="t-invq" type="text" placeholder="🔍 인보이스 No. · SAT 번호로 검색"></div>
+        </div>
+        <div class="fi-selbox">
+          <div class="fi-selh"><b>선택된 인보이스</b><span id="t-selCnt" style="font-size:12px;color:var(--muted)"></span><span class="fi-per" id="t-selPer"></span></div>
+          <div class="fi-chips" id="t-chips"></div>
+        </div>
+        <div class="fi-invtbl">
+          <div class="fi-thead"><span></span><span>No.</span><span>SAT 번호</span><span>날짜</span><span class="fi-r">금액 (MX$)</span></div>
+          <div class="fi-invscroll" id="t-invList"><div class="fi-nores">고객을 먼저 선택하세요.</div></div>
+        </div>
+        <div class="fi-splitbar" id="t-invSummary"></div>
+        <div class="hint" style="margin-top:7px">· <b>No.</b> = 시스템 인보이스 번호(#) — SAT가 임시(TMP)·미발급이어도 이 번호로 식별합니다. · 다른 고객 인보이스를 함께 선택(혼적)해도 유지되며 칩에 고객명이 표시됩니다. · 마지막 건이 반올림 잔액을 흡수해 배분 합계 = 거래 금액.</div>
       </div>
       <div class="row" id="t-cashdue-row" style="margin-top:2px;align-items:center">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:var(--brand);margin:0"><input type="checkbox" id="t-cashdue" style="width:16px;height:16px;margin:0"> 💰 현금받아야함</label>
@@ -655,72 +701,109 @@
     }
   }
   // 선택된 인보이스(복수, 고객 전환해도 유지 — 혼적 지원). id → {cid, cn(고객명), i(인보이스)}.
-  let txInvSel=new Map();
+  let txInvSel=new Map(), txInvQ='';
+  const invEsc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function resetTxInv(){
-    txInvSel.clear();
-    $('t-invList').innerHTML='<span style="color:var(--muted)">고객을 먼저 선택하세요.</span>';
+    txInvSel.clear(); txInvQ=''; if($('t-invq'))$('t-invq').value='';
+    $('t-invList').innerHTML='<div class="fi-nores">고객을 먼저 선택하세요.</div>';
     updateTxInvSummary();
   }
-  const invEsc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  // 정렬된 행(컬럼 고정폭): [체크] [고객 120px?] [날짜 80px] [SAT flex] [금액 110px 우측]
-  function invRowHtml(id,cid,i,custName,checked){
-    const sat=i.sat_no?invEsc(i.sat_no):'<span style="color:var(--muted)">미발급</span>';
-    return '<label style="display:flex;gap:8px;align-items:center;margin:2px 0;cursor:pointer;line-height:1.7">'
-      +'<input type="checkbox"'+(checked?' checked':'')+' data-inv="'+id+'" data-cid="'+cid+'" style="margin:0;flex:none">'
-      +(custName!=null?('<span style="flex:none;width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700" title="'+invEsc(custName)+'">'+invEsc(custName)+'</span>'):'')
-      +'<span style="flex:none;width:80px;color:var(--muted);font-variant-numeric:tabular-nums">'+i.inv_date+'</span>'
-      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Menlo,monospace;font-size:12px">'+sat+'</span>'
-      +'<span style="flex:none;width:110px;text-align:right;font-variant-numeric:tabular-nums">MX$'+fmt(i.total_mxn)+'</span>'
-      +'</label>';
+  // 균등 분할(백엔드 splitEqual과 동일 규칙) — 마지막 항이 반올림 잔액 흡수.
+  function fiSplit(total,n){
+    const t=Math.round((Number(total)+Number.EPSILON)*100)/100; if(!(n>=1))return[];
+    const per=Math.round(t/n*100)/100;
+    const parts=Array.from({length:n},()=>per);
+    parts[n-1]=Math.round((t-per*(n-1))*100)/100;
+    return parts;
+  }
+  function fiSat(s){
+    if(!s) return '<span class="fi-badge none">미발급</span>';
+    if(String(s).startsWith('TMP')) return invEsc(s)+' <span class="fi-badge tmp">TMP</span>';
+    return invEsc(s);
+  }
+  function fiRowHtml(i,cid,checked,custName){
+    return '<div class="fi-invrow'+(checked?' on':'')+'" data-inv="'+i.id+'" data-cid="'+cid+'">'
+      +'<input type="checkbox"'+(checked?' checked':'')+'>'
+      +'<span class="no">#'+i.id+'</span>'
+      +'<span class="sat">'+fiSat(i.sat_no)+(custName?' <span style="color:var(--muted);font-family:inherit;font-size:11px">· '+invEsc(custName)+'</span>':'')+'</span>'
+      +'<span class="date">'+String(i.inv_date).slice(5)+'</span>'
+      +'<span class="amt fi-r">'+fmt(i.total_mxn)+'</span></div>';
   }
   async function updateTxInvOptions(){
     const cid=Number($('t-cust').value)||0;
-    if(!cid){ if(!txInvSel.size)resetTxInv(); renderTxInvList(0,[]); return; }
-    $('t-invList').innerHTML='<span style="color:var(--muted)">불러오는 중…</span>';
-    if(!finInvCache[cid]){
+    if(cid&&!finInvCache[cid]){
+      $('t-invList').innerHTML='<div class="fi-nores">불러오는 중…</div>';
       try{
         const d=await fetch(session.api+'/api/finance/customer-invoices?customer_id='+cid,{headers:auth()}).then(r=>r.json());
         finInvCache[cid]=(d&&d.items)||[];
       }catch(e){ finInvCache[cid]=[]; }
+      if(Number($('t-cust').value)!==cid) return;   // 로딩 중 고객이 바뀌면 무시
     }
-    if(Number($('t-cust').value)!==cid) return;   // 로딩 중 고객이 바뀌면 무시
-    renderTxInvList(cid,finInvCache[cid]);
+    renderTxInvList();
   }
-  function renderTxInvList(cid,list){
+  function renderTxInvList(){
+    const cid=Number($('t-cust').value)||0;
+    const q=txInvQ.toLowerCase();
     let h='';
-    // 다른 고객에서 이미 선택된 건(혼적) — 목록 상단에 고정 표시(해제 가능, 고객명 컬럼 포함)
+    // 다른 고객에서 이미 선택된 건(혼적) — 그룹 헤더로 구분, 고객명 병기
     const foreign=[...txInvSel.entries()].filter(([id,v])=>v.cid!==cid);
     if(foreign.length){
-      h+='<div style="font-weight:700;color:var(--brand);margin-bottom:3px;font-size:11.5px">이미 선택됨 (다른 고객)</div>';
-      foreign.forEach(([id,v])=>{ h+=invRowHtml(id,v.cid,v.i,v.cn,true); });
-      if(cid)h+='<div style="border-top:1px solid var(--line);margin:6px 0"></div>';
+      h+='<div class="fi-grouph">다른 고객에서 선택됨 · '+foreign.length+'건 (체크 해제 가능)</div>';
+      foreign.forEach(([id,v])=>{ h+=fiRowHtml(v.i,v.cid,true,v.cn); });
     }
-    if(!cid&&!foreign.length){ $('t-invList').innerHTML='<span style="color:var(--muted)">고객을 먼저 선택하세요.</span>'; return; }
-    if(cid&&(!list||!list.length)){ h+='<span style="color:var(--muted)">이 고객의 게시 인보이스가 없습니다 — 고객 공통으로 저장됩니다.</span>'; }
-    (list||[]).forEach(i=>{ h+=invRowHtml(i.id,cid,i,null,txInvSel.has(Number(i.id))); });
+    if(cid){
+      const cn=(finCustomers||[]).find(c=>Number(c.id)===cid)?.name||'';
+      if(foreign.length) h+='<div class="fi-grouph">'+invEsc(cn)+'</div>';
+      let rows=(finInvCache[cid]||[]).filter(i=>!q || String(i.id).includes(q) || String(i.sat_no||'').toLowerCase().includes(q));
+      if(!rows.length) h+='<div class="fi-nores">'+(q?'검색 결과가 없습니다.':'이 고객의 게시 인보이스가 없습니다 — 고객 공통으로 저장됩니다.')+'</div>';
+      rows.forEach(i=>{ h+=fiRowHtml(i,cid,txInvSel.has(Number(i.id)),null); });
+    } else if(!foreign.length){
+      h='<div class="fi-nores">고객을 먼저 선택하세요.</div>';
+    }
     $('t-invList').innerHTML=h;
-    $('t-invList').querySelectorAll('input[type=checkbox]').forEach(cb=>{
-      cb.addEventListener('change',()=>{
-        const id=Number(cb.getAttribute('data-inv'));
+    $('t-invList').querySelectorAll('.fi-invrow').forEach(r=>{
+      r.addEventListener('click',(e)=>{
+        const cb=r.querySelector('input');
+        if(e.target!==cb) cb.checked=!cb.checked;
+        const id=Number(r.getAttribute('data-inv')), ccid=Number(r.getAttribute('data-cid'))||0;
         if(cb.checked){
-          const ccid=Number(cb.getAttribute('data-cid'))||0;
           const src=(finInvCache[ccid]||[]).find(x=>Number(x.id)===id);
           const cn=(finCustomers||[]).find(c=>Number(c.id)===ccid)?.name||'';
           if(src)txInvSel.set(id,{cid:ccid,cn,i:src});
-        } else { txInvSel.delete(id); }
-        updateTxInvSummary();
+        } else txInvSel.delete(id);
+        renderTxInvList(); updateTxInvSummary();
       });
     });
     updateTxInvSummary();
   }
   function updateTxInvSummary(){
-    const n=txInvSel.size;
-    if(!n){ $('t-invSummary').textContent=''; return; }
-    const amt=Number($('t-amt').value)||0;
-    const per=amt>0?(amt/n):0;
-    $('t-invSummary').innerHTML='선택 <b>'+n+'</b>건'
-      +(amt>0?(' → 건당 균등 배분 약 <b>'+per.toLocaleString('es-MX',{maximumFractionDigits:2})+'</b> ('+$('t-cur').value+', 마지막 건이 반올림 잔액 흡수)'):' — 금액 입력 시 건당 배분액이 표시됩니다')
-      +' · 고객 귀속은 인보이스에서 자동 확정됩니다.';
+    if(!$('t-chips'))return;
+    const n=txInvSel.size, amt=Number($('t-amt').value)||0, cur=$('t-cur')?$('t-cur').value:'MXN';
+    $('t-selCnt').textContent=n?('· '+n+'건'):'';
+    if(!n){
+      $('t-chips').innerHTML='<span style="font-size:12px;color:var(--muted)">아직 선택 없음 — 목록에서 체크하거나, 미선택 시 "고객 공통"(고객 선택 시) 또는 "미지정"(매출비중 자동배분)으로 저장됩니다.</span>';
+      $('t-selPer').textContent='';
+      $('t-invSummary').innerHTML='<span style="color:var(--muted)">인보이스를 선택하지 않으면 → <b>고객 공통</b>(고객만 태그) 또는 <b>미지정</b>(매출비중 자동배분)으로 저장됩니다.</span>';
+      return;
+    }
+    const parts=fiSplit(amt,n);
+    const custCnt=new Set([...txInvSel.values()].map(v=>v.cid)).size;
+    $('t-selPer').textContent=amt>0?('건당 '+fmt(parts[0])+' '+cur):'';
+    let h='',k=0;
+    for(const [id,v] of txInvSel){
+      h+='<span class="fi-chip"><span class="no">#'+id+'</span><span class="cu" title="'+invEsc(v.cn)+'">'+invEsc(v.cn)+'</span>'
+        +(amt>0?('<span class="amt">'+fmt(parts[k])+'</span>'):'')
+        +'<button type="button" class="x" data-x="'+id+'" title="선택 해제">✕</button></span>';
+      k++;
+    }
+    $('t-chips').innerHTML=h;
+    $('t-chips').querySelectorAll('.x').forEach(b=>b.addEventListener('click',()=>{ txInvSel.delete(Number(b.getAttribute('data-x'))); renderTxInvList(); updateTxInvSummary(); }));
+    $('t-invSummary').innerHTML=
+      '<span>선택 <b>'+n+'건</b>'+(custCnt>1?(' <span class="fi-warn">· 고객 '+custCnt+'곳 혼적</span>'):'')+'</span>'
+      +(amt>0
+        ?('<span style="color:var(--muted)">'+fmt(amt)+' '+cur+' ÷ '+n+' = <b>'+fmt(parts[0])+'</b>/건'
+          +(parts[n-1]!==parts[0]?(' (마지막 건 '+fmt(parts[n-1])+' — 반올림 잔액 흡수)'):'')+'</span>')
+        :'<span class="fi-warn">금액을 입력하면 건당 배분액이 표시됩니다</span>');
   }
 
   // 화면에 보이는 계좌들의 MXN 환산 총합. USD 계좌는 오늘 환율(fxRate)로 환산.
@@ -1242,7 +1325,7 @@
           <tr class="txn-det hidden" data-id="${t.id}"><td colspan="9" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
         const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
-        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));}
+        if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));appendFreightAlloc(Number(id),det.querySelector('.txn-det-body'));}
         else det.classList.add('hidden');
       });
       [...b.querySelectorAll('th[data-sort]')].forEach(h=>h.onclick=()=>txnHeadClick(h.dataset.sort));
@@ -1331,6 +1414,44 @@
     const list=activeAccounts().slice();
     if(cur&&cur.disabled)list.push(cur);
     return '<option value="">(미지정)</option>'+list.map(a=>`<option value="${a.id}" ${String(a.id)===String(sel)?'selected':''}>${a.name} (${a.currency})${a.disabled?' — 안씀':''}</option>`).join('');
+  }
+
+  // 운반비(6160) 거래 드릴다운 — 태그된 고객/인보이스 배분 내역을 세부 박스 하단에 표시.
+  async function appendFreightAlloc(id,box){
+    const t=txnMap[id]; if(!t||!box)return;
+    const hasAlloc=Number(t.freight_alloc_n)>0;
+    const hasCust=!!t.customer_id;
+    if(!hasAlloc&&!hasCust)return;
+    const div=document.createElement('div');
+    div.style.cssText='margin-top:12px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:12px 14px';
+    if(!hasAlloc){
+      div.innerHTML='<b style="font-size:12.5px;color:var(--brand)">🚚 운반비 귀속</b> <span class="hint" style="margin:0">고객: <b>'
+        +(t.freight_customer_name?String(t.freight_customer_name).replace(/</g,'&lt;'):('#'+t.customer_id))
+        +'</b> (인보이스 미지정 — 고객 공통, 손익 화면에서 이 고객에 직접 귀속)</span>';
+      box.appendChild(div); return;
+    }
+    div.innerHTML='<b style="font-size:12.5px;color:var(--brand)">🚚 운반비 인보이스 배분</b><div class="hint" style="margin:4px 0 0">불러오는 중…</div>';
+    box.appendChild(div);
+    try{
+      const d=await fetch(session.api+'/api/transactions/'+id+'/freight-allocations',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length){ div.querySelector('.hint').textContent='배분 내역이 없습니다.'; return; }
+      let h='<b style="font-size:12.5px;color:var(--brand)">🚚 운반비 인보이스 배분 ('+items.length+'건 균등 · 손익 화면 P&L 귀속)</b>'
+        +'<table style="margin-top:8px"><thead><tr><th>No.</th><th>SAT 번호</th><th>날짜</th><th>고객</th><th class="num">인보이스 금액</th><th class="num">배분액 (MXN)</th></tr></thead><tbody>';
+      items.forEach(x=>{
+        const sat=x.sat_no?(String(x.sat_no).startsWith('TMP')?'<span style="color:var(--muted)">'+x.sat_no+' (임시)</span>':'<span style="font-family:monospace">'+x.sat_no+'</span>'):'<span style="color:var(--muted)">미발급</span>';
+        h+='<tr><td style="font-weight:700;color:var(--brand)">#'+x.sales_invoice_id+'</td>'
+          +'<td style="font-size:12px">'+sat+'</td>'
+          +'<td style="white-space:nowrap">'+(x.inv_date||'')+'</td>'
+          +'<td>'+String(x.customer_name||'').replace(/</g,'&lt;')+'</td>'
+          +'<td class="num" style="color:var(--muted)">'+fmt(x.invoice_total_mxn)+'</td>'
+          +'<td class="num" style="font-weight:700">'+fmt(x.amount_mxn)+'</td></tr>';
+      });
+      h+='<tr><td colspan="5" style="text-align:right;font-weight:700;border-top:2px solid var(--line)">배분 합계</td>'
+        +'<td class="num" style="font-weight:800;border-top:2px solid var(--line)">'+fmt(d.total_mxn||0)+'</td></tr>';
+      h+='</tbody></table>';
+      div.innerHTML=h;
+    }catch(e){ const hh=div.querySelector('.hint'); if(hh)hh.textContent='배분 내역을 불러오지 못했습니다.'; }
   }
 
   function renderTxnDetail(id,box){
@@ -3271,6 +3392,8 @@
   $('t-cat').addEventListener('change',updateTxCustRow);
   $('t-cust').addEventListener('change',updateTxInvOptions);
   $('t-amt').addEventListener('input',updateTxInvSummary);
+  $('t-cur').addEventListener('change',updateTxInvSummary);
+  $('t-invq').addEventListener('input',()=>{ txInvQ=$('t-invq').value.trim(); renderTxInvList(); });
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
