@@ -150,6 +150,28 @@ export default async function warehouseRoutes(app) {
     return out;
   }
 
+  // 경쟁사(SYD) 코드 매핑 — 재고 조건 없이 견적 라인 전체 기준.
+  //   ★ 라벨·패킹리스트 출력은 매출전환(재고 차감) 이후에 일어나므로, packableLines의
+  //     즉시재고 필터(min(reserved, 현재고) >= qty)를 쓰면 재고가 소진된 라인이 탈락해
+  //     경쟁사 번호만 빈칸으로 출력되는 버그가 있었음(예: 주문이 마지막 재고를 가져간 SKU).
+  //   폴백 순서: 견적 스냅샷(quote_lines.syd_codes) → products.scode → product_syd_codes 집계.
+  async function sydMapAllLines(quoteId, exec = query) {
+    const rows = (await exec(
+      `SELECT l.product_id,
+              COALESCE(
+                NULLIF(TRIM(l.syd_codes), ''),
+                NULLIF(TRIM(p.scode), ''),
+                (SELECT string_agg(TRIM(sc.syd_code), ' / ' ORDER BY TRIM(sc.syd_code))
+                   FROM product_syd_codes sc WHERE sc.product_id = l.product_id)
+              ) AS syd
+         FROM quote_lines l
+         LEFT JOIN products p ON p.id = l.product_id
+        WHERE l.quote_id = $1 AND l.product_id IS NOT NULL`, [quoteId])).rows;
+    const map = {};
+    rows.forEach((r) => { const pid = Number(r.product_id); if (!map[pid]) map[pid] = (r.syd || '').trim(); });
+    return map;
+  }
+
   // EAN-13 매칭(리더기 앞자리 0 가감 폴백)
   async function findProductByEan(ean, exec = query) {
     const e = String(ean || '').trim();
@@ -183,9 +205,8 @@ export default async function warehouseRoutes(app) {
                rack_location: l.rack_location, required: l.required, scanned: sc, remaining: Math.max(0, l.required - sc) };
     });
 
-    // product_id → 경쟁사 코드(SYD) 매핑(포장목록 기준)
-    const sydMap = {};
-    req2.forEach((l) => { sydMap[l.product_id] = l.syd_code || ''; });
+    // product_id → 경쟁사 코드(SYD) 매핑 — 재고 조건 없이 전체 라인 기준(빈칸 버그 방지)
+    const sydMap = await sydMapAllLines(id);
 
     const boxes = (await query(`SELECT id, box_no, sealed_at FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
     const blines = (await query(
@@ -518,9 +539,9 @@ export default async function warehouseRoutes(app) {
     const realSat = q.invoice_id && q.sat_no && String(q.sat_no) !== '' && !String(q.sat_no).startsWith('TMP-');
     if (!q.packed_at) return reply.code(409).send({ error: 'not_shippable', note: '포장완료 후 출력할 수 있습니다.' });
 
-    // 경쟁사(SYD) 매핑 — 포장목록 기준
-    const sydMap = {};
-    (await packableLines(id)).forEach((l) => { sydMap[l.product_id] = l.syd_code || ''; });
+    // 경쟁사(SYD) 매핑 — 재고 조건 없이 전체 라인 기준
+    //   (매출전환 후 재고 차감으로 packableLines에서 라인이 탈락하면 경쟁사 번호가 빈칸이 되던 버그 수정)
+    const sydMap = await sydMapAllLines(id);
 
     const boxes = (await query(`SELECT id, box_no FROM packing_box WHERE quote_id=$1 ORDER BY box_no`, [id])).rows;
     const blines = (await query(
