@@ -49,6 +49,20 @@ export default async function visitRoutes(app) {
     return `${alias}.created_by = $${params.length}`;
   }
 
+  // ── 영업사원 필터 옵션(디렉터 전용) — 프런트 vlInit가 호출하는 /api/pipeline/salespeople (b20260717a 신설) ──
+  // 방문 기록이 1건 이상 있는 사용자만 반환(기록 없는 계정은 필터 의미가 없음).
+  app.get('/api/pipeline/salespeople', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const rows = (await query(
+      `SELECT DISTINCT u.id, u.name
+         FROM sales_visits v
+         JOIN users u ON u.id = v.created_by
+        WHERE v.deleted_at IS NULL AND u.deleted_at IS NULL
+        ORDER BY u.name`)).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), name: r.name })) };
+  });
+
   // ── 체크인용 고객 옵션(pipeline 권한 범위) ──
   app.get('/api/visits/customer-options', { preHandler: [authGuard, requirePage('pipeline')] }, async (req) => {
     const vis = visibleTeamIds(req.ctx.perm);
