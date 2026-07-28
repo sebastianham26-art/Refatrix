@@ -201,6 +201,7 @@
       <div class="calbar" style="margin-top:-4px">
         <span class="seg" id="calDaysSeg"><button id="cal7Btn" class="on" onclick="setCalDays(7)">7일</button><button id="cal5Btn" onclick="setCalDays(5)">평일</button></span>
         <span class="seg"><button id="calAllBtn" class="on" onclick="setCalScope('all')">모두</button><button id="calCompBtn" onclick="setCalScope('company')">회사 전체</button><button id="calShareBtn" onclick="setCalScope('shared')">개인별 공유</button><button id="calPersBtn" onclick="setCalScope('personal')">내 개인</button></span>
+        <select id="calUserSel" class="hidden" onchange="setCalUser(this.value)" style="padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-weight:700;color:var(--brand);background:#fff;cursor:pointer"><option value="">직원 전체</option></select>
       </div>
       <div id="calGrid"><div class="hint">불러오는 중…</div></div>
       <div class="hint" style="margin-top:8px"><span class="chip ev" style="display:inline-block">초록</span> 일정 · <span class="chip td" style="display:inline-block">파랑</span> 할 일(마감) · 날짜 칸을 누르면 그날 상세·추가</div>
@@ -274,6 +275,7 @@
       // 할 일 배정/협조용 사용자 목록(누구나)
       try{ users=(await fetch(session.api+'/api/todo-users',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){users=[];}
       if(isDirector){ try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[]; }catch(e){teams=[];} }
+      initCalUserSel();
       renderForms();loadCal();loadNotices();loadTodos();checkCalMemoPopup();startCalMemoPoll();
       applyHashTab();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
@@ -373,6 +375,7 @@
   let calEvents=[], calTodos=[];
   let calDays=7;     // 7=일~토, 5=평일(월~금)
   let calScope='all'; // 'all'=모두 / 'company'=회사전체 / 'shared'=개인별공유 / 'personal'=내개인
+  let calUser=null;   // 디렉터 전용 직원 필터: null=전체 / userId=그 직원 관련 일정만
   const DOW=['일','월','화','수','목','금','토'];
   // 유저별 고정 배색(작성자 식별). id 기반 결정적 → 같은 사람은 항상 같은 색.
   const USERPAL=[
@@ -412,6 +415,24 @@
     $('calShareBtn').classList.toggle('on',s==='shared');
     $('calPersBtn').classList.toggle('on',s==='personal');
     loadCal(); }
+  // ===== 직원별 필터 (디렉터 전용) =====
+  // 디렉터는 서버에서 전 직원 일정을 이미 받으므로 화면에서만 거른다.
+  function initCalUserSel(){
+    const sel=$('calUserSel'); if(!sel) return;
+    if(!isDirector){ sel.classList.add('hidden'); return; }
+    sel.innerHTML='<option value="">직원 전체</option>'+(users||[]).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' ('+esc(ROLE[u.role]||u.role||'')+')</option>').join('');
+    sel.classList.remove('hidden');
+  }
+  function setCalUser(v){ calUser=v?Number(v):null; loadCal(); }
+  function calUserName(){ if(!calUser) return ''; const u=(users||[]).find(x=>Number(x.id)===calUser); return u?u.name:''; }
+  // 그 직원 '관련' 일정: 본인 개인일정 + 본인이 만든 일정 + 공유 대상으로 지정된 일정
+  function userOk(e){
+    if(!calUser) return true;
+    if(e.scope==='personal' && Number(e.owner_id)===calUser) return true;
+    if(e.created_by!=null && Number(e.created_by)===calUser) return true;
+    if(e.scope==='shared' && Array.isArray(e.target_ids) && e.target_ids.map(Number).includes(calUser)) return true;
+    return false;
+  }
   function calShift(dir){
     if(calView==='month') calCursor=new Date(calCursor.getFullYear(),calCursor.getMonth()+dir,1);
     else if(calView==='week') calCursor=cAddDays(calCursor,dir*7);
@@ -442,15 +463,17 @@
     } else {
       $('calTitle').textContent=(from.getMonth()+1)+'/'+from.getDate()+' – '+(to.getMonth()+1)+'/'+to.getDate();
     }
+    if(calUser){ const _un=calUserName(); if(_un) $('calTitle').textContent+=' · '+_un; }
     try{
       const [cal,td]=await Promise.all([
         fetch(session.api+'/api/calendar?from='+cYmd(cAddDays(from,-1))+'&to='+cYmd(cAddDays(to,1)),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
       calEvents=cal.items||[];
-      // 할 일: '모두'면 전체, '내 일정만'/'개인일정'이면 내게 배정된 것만
+      // 할 일: 직원 필터 중이면 그 직원에게 배정된 것만 / '모두'면 전체 / 그 외 필터면 내게 배정된 것만
       let tds=(td.items||[]).filter(t=>t.due_date);
-      if(calScope!=='all'){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||t.assignee_name===me); }
+      if(calUser){ const un=calUserName(); tds=tds.filter(t=>un&&t.assignee_name===un); }
+      else if(calScope!=='all'){ const me=(session.user&&session.user.name); tds=tds.filter(t=>!me||t.assignee_name===me); }
       calTodos=tds;
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -511,7 +534,7 @@
     if($('dm-saveBtn')) $('dm-saveBtn').textContent='수정 저장';
     const f=$('dm-formTitle'); if(f&&f.scrollIntoView) f.scrollIntoView({block:'nearest'});
   }
-  function eventsOn(key){ return calEvents.filter(e=>evKey(e)===key && scopeOk(e)).sort((a,b)=>evHM(a).localeCompare(evHM(b))); }
+  function eventsOn(key){ return calEvents.filter(e=>evKey(e)===key && scopeOk(e) && userOk(e)).sort((a,b)=>evHM(a).localeCompare(evHM(b))); }
   function todosOn(key){ return calTodos.filter(t=>t.due_date===key); }
 
   function renderCal(from,to){
