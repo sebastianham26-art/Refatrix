@@ -19,7 +19,7 @@ export function splitEqual(total, n) {
 }
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -2112,7 +2112,46 @@ export default async function financeRoutes(app) {
         balance: r2(cumActual), balance_proj: r2(cumProj) };
     });
     const breakdown = monthBreakdown(mapped, month, today);
-    return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, ...breakdown };
+    // ===== 계정별 월 예산 예측 (forecast=1일 때만 — 월간달력 전용. 주간달력 호출은 비용 절약을 위해 미계산) =====
+    // 근거: ① 등록된 예정(plan) 거래(권한 필터 = mapped) ② 아직 [생성]하지 않은 고정비 회차 자동전개
+    //       ③ 미수 인보이스(invRows — 그 달 만기 + 이번 달 조회 시 지난 만기 이월). 집계는 순수 함수.
+    let forecast = null;
+    if (String(req.query.forecast || '') === '1') {
+      const privCond = req.ctx.perm.role === 'director' ? '' : ' AND r.is_private=false'; // 비공개 고정비: 디렉터만 (loadCashTxns와 동일 정책)
+      const rules = (await query(
+        `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
+                r.account_id, r.freq, r.weekday, r.day_of_month, to_char(r.start_date,'YYYY-MM-DD') AS start_date, r.end_month
+           FROM recurring_rules r
+           LEFT JOIN categories cat ON cat.code=r.category_code
+          WHERE r.deleted_at IS NULL AND r.active=true${privCond}`)).rows;
+      // 계좌 권한: loadCashTxns와 동일 원칙 — 계좌미지정(NULL)은 통과, 예정(plan)은 세부차단 계좌도 통과("계획은 계획으로 반영").
+      const allowFc = allowedDetailAccountIds(req.ctx.perm);
+      const visRules = rules.filter((r) => allowFc === null || r.account_id == null || allowFc.includes(Number(r.account_id)));
+      const projections = [];
+      if (visRules.length) {
+        // 이미 회차 거래가 존재하는 period는 제외 — 삭제분 포함(삭제 의도 보존: 지운 회차는 예측에도 안 살림)
+        const existing = new Set((await query(
+          `SELECT recurring_rule_id AS rid, recurring_period AS p FROM transactions
+            WHERE recurring_rule_id = ANY($1) AND (recurring_period = $2 OR recurring_period LIKE 'W' || $2 || '%')`,
+          [visRules.map((r) => r.id), month])).rows.map((r) => `${r.rid}|${r.p}`));
+        const usdFc = (await getUsdMxnRate()).rate; // USD 고정비 환산: 오늘 환율(현금흐름·잔액과 동일 기준)
+        const monthEndFc = `${month}-${String(daysIn).padStart(2, '0')}`;
+        for (const r of visRules) {
+          const occ = expandBetween({
+            freq: r.freq, start_date: r.start_date,
+            day_of_month: r.day_of_month == null ? null : Number(r.day_of_month),
+            weekday: r.weekday == null ? null : Number(r.weekday), end_month: r.end_month,
+          }, monthStart, monthEndFc);
+          for (const o of occ) {
+            if (existing.has(`${r.id}|${o.period}`)) continue;
+            projections.push({ direction: r.direction, category_code: r.category_code, category_name: r.category_name,
+              date: o.date, amount_mxn: r2(Number(r.amount) * (r.currency === 'USD' ? usdFc : 1)), rule_name: r.name });
+          }
+        }
+      }
+      forecast = monthForecastByCategory(mapped, projections, invRows, month, today);
+    }
+    return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, forecast, ...breakdown };
   });
 
   // ===== 월 자금 리포트 (디렉터 전용) =====

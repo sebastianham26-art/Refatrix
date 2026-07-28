@@ -340,3 +340,75 @@ export function planNetBefore(planIn, planOut, hidden, monthStart) {
   }
   return round2(net);
 }
+
+// ===== 계정별 월 예산 예측 (2026-07-28) — 순수 함수 =====
+// 선택한 월에 계정과목별로 "지출될 돈 / 들어올 돈"을 미리 집계한다.
+//  txns        : loadCashTxns 결과(권한 필터 완료) — plan/actual 혼재. 계획이 있는 거래만 집계.
+//  projections : 아직 [생성]되지 않은 고정비 회차 자동전개
+//                [{ direction, category_code, category_name, date:'YYYY-MM-DD', amount_mxn, rule_name }]
+//  arInvoices  : 미수 인보이스(그 달 만기 + 이번 달 조회 시 지난 만기 이월) [{ due_date, outstanding, customer_name, sat_no }]
+//  monthStr    : 'YYYY-MM' / today: 'YYYY-MM-DD'
+// 행 의미: planned=계획총액 · processed=실적화 금액 · remaining=미처리 예정 잔액(그중 overdue=경과)
+//          projected=미생성 고정비 자동전개 · expected=processed+remaining+projected (그 달 예상 현금 흐름액)
+// 이중계상 방지: 인보이스 연계 수금계획(sales_invoice_id)은 제외하고 AR(미수 인보이스) 행으로만 잡는다.
+export function monthForecastByCategory(txns, projections, arInvoices, monthStr, today) {
+  const inMonth = (d) => d && String(d).slice(0, 7) === monthStr;
+  const groups = { in: new Map(), out: new Map() };
+  const grp = (dir, code, name) => {
+    const key = code || '(미지정)';
+    const m = groups[dir === 'in' ? 'in' : 'out'];
+    if (!m.has(key)) {
+      m.set(key, { category_code: code || null, category_name: name || code || '(미지정)', n: 0,
+        planned: 0, processed: 0, remaining: 0, overdue: 0, projected: 0, expected: 0, items: [] });
+    }
+    return m.get(key);
+  };
+  for (const t of txns || []) {
+    if (t.status !== 'plan' && t.plan_amount_mxn == null) continue;      // 계획이 있는 거래만
+    if (t.direction === 'in' && t.sales_invoice_id) continue;            // 인보이스 수금계획은 AR 행으로 (이중계상 방지)
+    const planDate = String(t.plan_date || t.txn_date).slice(0, 10);
+    if (!inMonth(planDate)) continue;
+    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : (Number(t.amount_mxn) || 0);
+    const amt = Number(t.amount_mxn) || 0;
+    const g = grp(t.direction, t.category_code, t.category_name);
+    g.n += 1; g.planned += planAmt;
+    if (t.status === 'actual') {
+      g.processed += amt;
+      g.items.push({ date: planDate, memo: t.memo || '', amount: round2(amt), state: 'processed' });
+    } else {
+      const od = planDate < today;
+      g.remaining += amt; if (od) g.overdue += amt;
+      g.items.push({ date: planDate, memo: t.memo || '', amount: round2(amt), state: od ? 'overdue' : 'upcoming' });
+    }
+  }
+  for (const p of projections || []) {
+    if (!inMonth(p.date)) continue;
+    const a = Number(p.amount_mxn) || 0;
+    const g = grp(p.direction, p.category_code, p.category_name);
+    g.n += 1; g.projected += a; g.planned += a;
+    g.items.push({ date: String(p.date).slice(0, 10), memo: `[고정비] ${p.rule_name || ''}`.trim(), amount: round2(a), state: 'projected' });
+  }
+  // AR: 미수 인보이스 잔액 → 수입 쪽 가상 계정 행 (완납=outstanding 0은 자동 제외)
+  for (const x of arInvoices || []) {
+    const a = Number(x.outstanding) || 0;
+    if (a <= 0) continue;
+    const due = String(x.due_date).slice(0, 10);
+    const g = grp('in', '__AR__', '매출 수금 (미수 인보이스)');
+    const od = due < today;
+    g.n += 1; g.planned += a; g.remaining += a; if (od) g.overdue += a;
+    g.items.push({ date: due, memo: `${x.customer_name || ''}${x.sat_no ? ' · ' + x.sat_no : ''}`, amount: round2(a), state: od ? 'overdue' : 'upcoming' });
+  }
+  const finish = (m) => {
+    const rows = [...m.values()].map((g) => {
+      for (const k of ['planned', 'processed', 'remaining', 'overdue', 'projected']) g[k] = round2(g[k]);
+      g.expected = round2(g.processed + g.remaining + g.projected);
+      g.items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      return g;
+    }).sort((a, b) => b.expected - a.expected || (a.category_name < b.category_name ? -1 : 1));
+    const total = { n: 0, planned: 0, processed: 0, remaining: 0, overdue: 0, projected: 0, expected: 0 };
+    for (const g of rows) { for (const k of Object.keys(total)) total[k] = round2(total[k] + g[k]); }
+    return { rows, total };
+  };
+  const fin = finish(groups.in), fout = finish(groups.out);
+  return { month: monthStr, in: fin, out: fout, net: round2(fin.total.expected - fout.total.expected) };
+}
