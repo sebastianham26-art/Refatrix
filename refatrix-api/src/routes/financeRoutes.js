@@ -2120,9 +2120,10 @@ export default async function financeRoutes(app) {
       const privCond = req.ctx.perm.role === 'director' ? '' : ' AND r.is_private=false'; // 비공개 고정비: 디렉터만 (loadCashTxns와 동일 정책)
       const rules = (await query(
         `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
-                r.account_id, r.freq, r.weekday, r.day_of_month, to_char(r.start_date,'YYYY-MM-DD') AS start_date, r.end_month
+                r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, to_char(r.start_date,'YYYY-MM-DD') AS start_date, r.end_month
            FROM recurring_rules r
            LEFT JOIN categories cat ON cat.code=r.category_code
+           LEFT JOIN accounts a ON a.id=r.account_id
           WHERE r.deleted_at IS NULL AND r.active=true${privCond}`)).rows;
       // 계좌 권한: loadCashTxns와 동일 원칙 — 계좌미지정(NULL)은 통과, 예정(plan)은 세부차단 계좌도 통과("계획은 계획으로 반영").
       const allowFc = allowedDetailAccountIds(req.ctx.perm);
@@ -2145,6 +2146,7 @@ export default async function financeRoutes(app) {
           for (const o of occ) {
             if (existing.has(`${r.id}|${o.period}`)) continue;
             projections.push({ direction: r.direction, category_code: r.category_code, category_name: r.category_name,
+              account_id: r.account_id, account_name: r.account_name,
               date: o.date, amount_mxn: r2(Number(r.amount) * (r.currency === 'USD' ? usdFc : 1)), rule_name: r.name });
           }
         }

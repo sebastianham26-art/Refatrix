@@ -342,73 +342,104 @@ export function planNetBefore(planIn, planOut, hidden, monthStart) {
 }
 
 // ===== 계정별 월 예산 예측 (2026-07-28) — 순수 함수 =====
-// 선택한 월에 계정과목별로 "지출될 돈 / 들어올 돈"을 미리 집계한다.
+// 선택한 월에 "지출될 돈 / 들어올 돈"을 미리 집계한다. 그룹핑 2종: 계정과목별(기본) + 은행계좌별(by_account).
 //  txns        : loadCashTxns 결과(권한 필터 완료) — plan/actual 혼재. 계획이 있는 거래만 집계.
+//                (account_id/account_name 포함 — 계좌별 그룹핑·내역 병기에 사용)
 //  projections : 아직 [생성]되지 않은 고정비 회차 자동전개
-//                [{ direction, category_code, category_name, date:'YYYY-MM-DD', amount_mxn, rule_name }]
+//                [{ direction, category_code, category_name, account_id, account_name, date:'YYYY-MM-DD', amount_mxn, rule_name }]
 //  arInvoices  : 미수 인보이스(그 달 만기 + 이번 달 조회 시 지난 만기 이월) [{ due_date, outstanding, customer_name, sat_no }]
 //  monthStr    : 'YYYY-MM' / today: 'YYYY-MM-DD'
 // 행 의미: planned=계획총액 · processed=실적화 금액 · remaining=미처리 예정 잔액(그중 overdue=경과)
 //          projected=미생성 고정비 자동전개 · expected=processed+remaining+projected (그 달 예상 현금 흐름액)
 // 이중계상 방지: 인보이스 연계 수금계획(sales_invoice_id)은 제외하고 AR(미수 인보이스) 행으로만 잡는다.
+// AR 은 입금계좌가 확정되지 않으므로 계좌별 뷰에서도 전용 행('__AR__')으로 분리(계좌미지정 계획과 섞지 않음).
+// 내역 item 은 date/state/memo/amount 에 더해 category_name·account_name 을 항상 포함
+//  → 계정과목별 뷰에서는 계좌를, 계좌별 뷰에서는 계정과목을 병기할 수 있다.
 export function monthForecastByCategory(txns, projections, arInvoices, monthStr, today) {
   const inMonth = (d) => d && String(d).slice(0, 7) === monthStr;
-  const groups = { in: new Map(), out: new Map() };
-  const grp = (dir, code, name) => {
-    const key = code || '(미지정)';
-    const m = groups[dir === 'in' ? 'in' : 'out'];
-    if (!m.has(key)) {
-      m.set(key, { category_code: code || null, category_name: name || code || '(미지정)', n: 0,
-        planned: 0, processed: 0, remaining: 0, overdue: 0, projected: 0, expected: 0, items: [] });
+  // keyOf: 엔트리 → { code, name } (그룹 키). 두 그룹핑을 같은 로직으로 만든다.
+  const build = (keyOf) => {
+    const groups = { in: new Map(), out: new Map() };
+    const grp = (dir, code, name) => {
+      const key = code || '(미지정)';
+      const m = groups[dir === 'in' ? 'in' : 'out'];
+      if (!m.has(key)) {
+        m.set(key, { group_code: code || null, group_name: name || code || '(미지정)', n: 0,
+          planned: 0, processed: 0, remaining: 0, overdue: 0, projected: 0, expected: 0, items: [] });
+      }
+      return m.get(key);
+    };
+    for (const t of txns || []) {
+      if (t.status !== 'plan' && t.plan_amount_mxn == null) continue;      // 계획이 있는 거래만
+      if (t.direction === 'in' && t.sales_invoice_id) continue;            // 인보이스 수금계획은 AR 행으로 (이중계상 방지)
+      const planDate = String(t.plan_date || t.txn_date).slice(0, 10);
+      if (!inMonth(planDate)) continue;
+      const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : (Number(t.amount_mxn) || 0);
+      const amt = Number(t.amount_mxn) || 0;
+      const k = keyOf({ kind: 'txn', category_code: t.category_code, category_name: t.category_name, account_id: t.account_id, account_name: t.account_name });
+      const g = grp(t.direction, k.code, k.name);
+      g.n += 1; g.planned += planAmt;
+      const base = { date: planDate, memo: t.memo || '', category_name: t.category_name || t.category_code || null, account_name: t.account_name || null };
+      if (t.status === 'actual') {
+        g.processed += amt;
+        g.items.push({ ...base, amount: round2(amt), state: 'processed' });
+      } else {
+        const od = planDate < today;
+        g.remaining += amt; if (od) g.overdue += amt;
+        g.items.push({ ...base, amount: round2(amt), state: od ? 'overdue' : 'upcoming' });
+      }
     }
-    return m.get(key);
-  };
-  for (const t of txns || []) {
-    if (t.status !== 'plan' && t.plan_amount_mxn == null) continue;      // 계획이 있는 거래만
-    if (t.direction === 'in' && t.sales_invoice_id) continue;            // 인보이스 수금계획은 AR 행으로 (이중계상 방지)
-    const planDate = String(t.plan_date || t.txn_date).slice(0, 10);
-    if (!inMonth(planDate)) continue;
-    const planAmt = t.plan_amount_mxn != null ? Number(t.plan_amount_mxn) : (Number(t.amount_mxn) || 0);
-    const amt = Number(t.amount_mxn) || 0;
-    const g = grp(t.direction, t.category_code, t.category_name);
-    g.n += 1; g.planned += planAmt;
-    if (t.status === 'actual') {
-      g.processed += amt;
-      g.items.push({ date: planDate, memo: t.memo || '', amount: round2(amt), state: 'processed' });
-    } else {
-      const od = planDate < today;
-      g.remaining += amt; if (od) g.overdue += amt;
-      g.items.push({ date: planDate, memo: t.memo || '', amount: round2(amt), state: od ? 'overdue' : 'upcoming' });
+    for (const p of projections || []) {
+      if (!inMonth(p.date)) continue;
+      const a = Number(p.amount_mxn) || 0;
+      const k = keyOf({ kind: 'proj', category_code: p.category_code, category_name: p.category_name, account_id: p.account_id, account_name: p.account_name });
+      const g = grp(p.direction, k.code, k.name);
+      g.n += 1; g.projected += a; g.planned += a;
+      g.items.push({ date: String(p.date).slice(0, 10), memo: `[고정비] ${p.rule_name || ''}`.trim(),
+        category_name: p.category_name || p.category_code || null, account_name: p.account_name || null,
+        amount: round2(a), state: 'projected' });
     }
-  }
-  for (const p of projections || []) {
-    if (!inMonth(p.date)) continue;
-    const a = Number(p.amount_mxn) || 0;
-    const g = grp(p.direction, p.category_code, p.category_name);
-    g.n += 1; g.projected += a; g.planned += a;
-    g.items.push({ date: String(p.date).slice(0, 10), memo: `[고정비] ${p.rule_name || ''}`.trim(), amount: round2(a), state: 'projected' });
-  }
-  // AR: 미수 인보이스 잔액 → 수입 쪽 가상 계정 행 (완납=outstanding 0은 자동 제외)
-  for (const x of arInvoices || []) {
-    const a = Number(x.outstanding) || 0;
-    if (a <= 0) continue;
-    const due = String(x.due_date).slice(0, 10);
-    const g = grp('in', '__AR__', '매출 수금 (미수 인보이스)');
-    const od = due < today;
-    g.n += 1; g.planned += a; g.remaining += a; if (od) g.overdue += a;
-    g.items.push({ date: due, memo: `${x.customer_name || ''}${x.sat_no ? ' · ' + x.sat_no : ''}`, amount: round2(a), state: od ? 'overdue' : 'upcoming' });
-  }
-  const finish = (m) => {
-    const rows = [...m.values()].map((g) => {
-      for (const k of ['planned', 'processed', 'remaining', 'overdue', 'projected']) g[k] = round2(g[k]);
-      g.expected = round2(g.processed + g.remaining + g.projected);
-      g.items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-      return g;
-    }).sort((a, b) => b.expected - a.expected || (a.category_name < b.category_name ? -1 : 1));
-    const total = { n: 0, planned: 0, processed: 0, remaining: 0, overdue: 0, projected: 0, expected: 0 };
-    for (const g of rows) { for (const k of Object.keys(total)) total[k] = round2(total[k] + g[k]); }
-    return { rows, total };
+    // AR: 미수 인보이스 잔액 → 수입 쪽 전용 행 (완납=outstanding 0은 자동 제외). 두 뷰 모두 '__AR__' 고정.
+    for (const x of arInvoices || []) {
+      const a = Number(x.outstanding) || 0;
+      if (a <= 0) continue;
+      const due = String(x.due_date).slice(0, 10);
+      const k = keyOf({ kind: 'ar' });
+      const g = grp('in', k.code, k.name);
+      const od = due < today;
+      g.n += 1; g.planned += a; g.remaining += a; if (od) g.overdue += a;
+      g.items.push({ date: due, memo: `${x.customer_name || ''}${x.sat_no ? ' · ' + x.sat_no : ''}`,
+        category_name: '매출 수금', account_name: null, amount: round2(a), state: od ? 'overdue' : 'upcoming' });
+    }
+    const finish = (m) => {
+      const rows = [...m.values()].map((g) => {
+        for (const kk of ['planned', 'processed', 'remaining', 'overdue', 'projected']) g[kk] = round2(g[kk]);
+        g.expected = round2(g.processed + g.remaining + g.projected);
+        g.items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+        return g;
+      }).sort((a, b) => b.expected - a.expected || (a.group_name < b.group_name ? -1 : 1));
+      const total = { n: 0, planned: 0, processed: 0, remaining: 0, overdue: 0, projected: 0, expected: 0 };
+      for (const g of rows) { for (const kk of Object.keys(total)) total[kk] = round2(total[kk] + g[kk]); }
+      return { rows, total };
+    };
+    const fin = finish(groups.in), fout = finish(groups.out);
+    return { in: fin, out: fout, net: round2(fin.total.expected - fout.total.expected) };
   };
-  const fin = finish(groups.in), fout = finish(groups.out);
-  return { month: monthStr, in: fin, out: fout, net: round2(fin.total.expected - fout.total.expected) };
+  // ① 계정과목별 (기본)
+  const byCat = build((e) => e.kind === 'ar'
+    ? { code: '__AR__', name: '매출 수금 (미수 인보이스)' }
+    : { code: e.category_code, name: e.category_name || e.category_code });
+  // ② 은행계좌별 — 계좌미지정(NULL)은 '(계좌 미지정)', AR 은 전용 행(입금계좌 미정)
+  const byAcc = build((e) => e.kind === 'ar'
+    ? { code: '__AR__', name: '매출 수금 (입금계좌 미정)' }
+    : e.account_id != null
+      ? { code: `acc:${e.account_id}`, name: e.account_name || `계좌#${e.account_id}` }
+      : { code: null, name: '(계좌 미지정)' });
+  // 하위호환: 기존 프런트가 쓰는 category_code/category_name 필드를 계정과목별 행에 유지
+  for (const dir of ['in', 'out']) {
+    for (const g of byCat[dir].rows) { g.category_code = g.group_code; g.category_name = g.group_name; }
+    for (const g of byAcc[dir].rows) { g.account_code = g.group_code; g.account_name_row = g.group_name; }
+  }
+  return { month: monthStr, in: byCat.in, out: byCat.out, net: byCat.net,
+    by_account: { in: byAcc.in, out: byAcc.out, net: byAcc.net } };
 }

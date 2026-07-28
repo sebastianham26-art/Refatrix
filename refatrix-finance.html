@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0728a</title>
+<title>Refatrix ERP · 재무 · build fin-0728b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -2472,7 +2472,9 @@
   }
   // ===== 계정별 월 예산 예측 (달력 위 요약 + 펼치기) =====
   // 근거: 등록된 예정(plan) + 아직 [생성]하지 않은 고정비 회차 자동전개 + 미수 인보이스(AR). 서버 forecast=1 응답 사용.
+  // 보기 2종: 계정과목별(기본) / 은행계좌별(forecast.by_account) — 합계는 두 뷰가 동일(같은 데이터의 재그룹).
   let cfFcOpen=false;      // 펼침 상태 — 월 이동해도 유지
+  let cfFcView='cat';      // 'cat'=계정과목별 | 'acc'=은행계좌별 — 월 이동해도 유지
   let cfFcData=null;       // 현재 월 forecast (행 드릴다운용)
   function renderCfForecast(d){
     cfFcData=d.forecast||null;
@@ -2488,15 +2490,24 @@
         ${odSum?`<span style="color:#c0392b;font-size:12px">경과 미처리 ${fmt(odSum)}</span>`:''}
         <span class="hint" id="cfFcTgl" style="margin:0 0 0 auto">${cfFcOpen?'접기 ▴':'계정별 자세히 ▾'}</span>
       </div>
-      <div id="cfFcBody" class="${cfFcOpen?'':'hidden'}" style="margin-top:8px">
-        <div class="hint" style="margin:0 0 8px">선택한 달에 계정과목별로 나갈 돈·들어올 돈을 미리 집계합니다. <b>예상 합계 = 처리됨(실적화) + 남은 예정 + 자동전개</b>. <b style="color:#7a4fb0">자동전개</b>는 아직 [생성]하지 않은 고정비 회차를 규칙에서 미리 전개한 금액(이미 생성했거나 삭제한 회차는 제외), 수입의 「매출 수금」은 이 달 만기 미수 인보이스 잔액(이번 달 조회 시 지난 만기 이월 포함)입니다. 행을 클릭하면 개별 내역이 열립니다.</div>
-        ${cfFcTable('in')}${cfFcTable('out')}
-      </div>
+      <div id="cfFcBody" class="${cfFcOpen?'':'hidden'}" style="margin-top:8px">${cfFcBodyHtml()}</div>
     </div>`;
+  }
+  function cfFcBodyHtml(){
+    const f=cfFcData;if(!f)return '';
+    const hasAcc=!!f.by_account;   // 구백엔드 하위호환: by_account 없으면 토글 숨김
+    const seg=hasAcc?`<div class="seg" style="height:30px">
+        <button class="segb${cfFcView==='cat'?' on':''}" type="button" onclick="cfFcSetView('cat')">계정과목별</button>
+        <button class="segb${cfFcView==='acc'?' on':''}" type="button" onclick="cfFcSetView('acc')">은행계좌별</button>
+      </div>`:'';
+    return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 8px">${seg}
+        <span class="hint" style="margin:0;flex:1;min-width:260px">선택한 달에 ${cfFcView==='acc'?'<b>은행계좌별</b>':'<b>계정과목별</b>'}로 나갈 돈·들어올 돈을 미리 집계합니다. <b>예상 합계 = 처리됨(실적화) + 남은 예정 + 자동전개</b>. <b style="color:#7a4fb0">자동전개</b>는 아직 [생성]하지 않은 고정비 회차를 규칙에서 미리 전개한 금액(이미 생성했거나 삭제한 회차는 제외), 수입의 「매출 수금」은 이 달 만기 미수 인보이스 잔액(이번 달 조회 시 지난 만기 이월 포함${cfFcView==='acc'?' — 입금계좌 미정이라 별도 행':''})입니다. 행을 클릭하면 개별 내역이 열립니다.</span></div>
+      ${cfFcTable('in')}${cfFcTable('out')}`;
   }
   function cfFcTable(dir){
     const f=cfFcData;if(!f)return '';
-    const s=f[dir];const isIn=dir==='in';
+    const acc=cfFcView==='acc'&&f.by_account;
+    const s=acc?f.by_account[dir]:f[dir];const isIn=dir==='in';
     const col=isIn?'var(--income)':'var(--expense)';const sign=isIn?'+':'-';
     const title=`<div style="font-weight:700;margin:${isIn?'0':'14px'} 0 2px">${isIn?'수입 (들어올 돈)':'지출 (나갈 돈)'}</div>`;
     if(!s.rows.length)return `${title}<div class="hint">예측할 내역이 없습니다.</div>`;
@@ -2505,23 +2516,31 @@
       :st==='projected'?'<span class="pill" style="background:#efe7f8;color:#7a4fb0">자동전개</span>'
       :'<span class="pill" style="background:#eef1f5;color:#5a6b7b">예정</span>';
     const rows=s.rows.map((g,i)=>{
-      const items=g.items.map(it=>`<tr><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.memo||'')}</td><td class="num" style="color:${col}">${sign}${fmt(it.amount)}</td></tr>`).join('');
+      const code=g.group_code!==undefined?g.group_code:g.category_code;                 // 신·구 응답 호환
+      const name=g.group_name!==undefined?g.group_name:g.category_name;
+      const isAR=code==='__AR__';
+      const showCode=!acc&&code&&!isAR;                                                 // 계정과목 코드만 병기(계좌 키는 내부용)
+      const items=g.items.map(it=>{
+        const sub=acc?(it.category_name||''):(it.account_name||'');                     // 뷰 반대축 병기: 계좌별→계정과목 / 계정과목별→계좌
+        return `<tr><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.memo||'')}</td><td style="width:150px" class="hint">${escH(sub||(acc?'':'계좌 미지정'))}</td><td class="num" style="color:${col}">${sign}${fmt(it.amount)}</td></tr>`;
+      }).join('');
       return `<tr style="cursor:pointer" onclick="cfFcRow('${dir}',${i})" title="클릭하면 개별 내역이 열립니다">
-        <td>${g.category_code==='__AR__'?'🧾 ':''}${escH(g.category_name)}${g.category_code&&g.category_code!=='__AR__'?` <span class="hint" style="margin:0;font-size:11px;display:inline">${escH(g.category_code)}</span>`:''}</td>
+        <td>${isAR?'🧾 ':(acc?'🏦 ':'')}${escH(name)}${showCode?` <span class="hint" style="margin:0;font-size:11px;display:inline">${escH(code)}</span>`:''}</td>
         <td class="num">${g.n}</td>
         <td class="num">${g.processed?fmt(g.processed):''}</td>
         <td class="num">${g.remaining?fmt(g.remaining):''}${g.overdue?` <span style="color:#c0392b;font-size:11px">(경과 ${fmt(g.overdue)})</span>`:''}</td>
         <td class="num" style="color:#7a4fb0">${g.projected?fmt(g.projected):''}</td>
         <td class="num" style="font-weight:700;color:${col}">${sign}${fmt(g.expected)}</td></tr>
-      <tr class="hidden" id="fc-sub-${dir}-${i}"><td colspan="6" style="background:#fbfcfe;padding:4px 10px"><table style="margin:0"><tbody>${items}</tbody></table></td></tr>`;
+      <tr class="hidden" id="fc-sub-${dir}-${i}"><td colspan="6" style="background:#fbfcfe;padding:4px 10px"><table style="margin:0"><thead><tr><th>날짜</th><th>상태</th><th>내용</th><th>${acc?'계정과목':'계좌'}</th><th class="num">금액</th></tr></thead><tbody>${items}</tbody></table></td></tr>`;
     }).join('');
     const t=s.total;
     return `${title}
-      <table><thead><tr><th>계정과목</th><th class="num">건수</th><th class="num">처리됨</th><th class="num">남은 예정</th><th class="num" style="color:#7a4fb0">자동전개</th><th class="num">예상 합계</th></tr></thead>
+      <table><thead><tr><th>${acc?'은행계좌':'계정과목'}</th><th class="num">건수</th><th class="num">처리됨</th><th class="num">남은 예정</th><th class="num" style="color:#7a4fb0">자동전개</th><th class="num">예상 합계</th></tr></thead>
       <tbody>${rows}
       <tr style="border-top:2px solid var(--line);font-weight:700"><td>합계</td><td class="num">${t.n}</td><td class="num">${t.processed?fmt(t.processed):''}</td><td class="num">${t.remaining?fmt(t.remaining):''}${t.overdue?` <span style="color:#c0392b;font-size:11px;font-weight:400">(경과 ${fmt(t.overdue)})</span>`:''}</td><td class="num" style="color:#7a4fb0">${t.projected?fmt(t.projected):''}</td><td class="num" style="color:${col}">${sign}${fmt(t.expected)}</td></tr></tbody></table>`;
   }
   function cfFcToggle(){cfFcOpen=!cfFcOpen;const b=$('cfFcBody');if(b)b.classList.toggle('hidden',!cfFcOpen);const t=$('cfFcTgl');if(t)t.textContent=cfFcOpen?'접기 ▴':'계정별 자세히 ▾';}
+  function cfFcSetView(v){if(cfFcView===v)return;cfFcView=v;const b=$('cfFcBody');if(b)b.innerHTML=cfFcBodyHtml();}
   function cfFcRow(dir,i){const el=$(`fc-sub-${dir}-${i}`);if(el)el.classList.toggle('hidden');}
 
   function dirItemRow(t){
