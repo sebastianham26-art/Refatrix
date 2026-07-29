@@ -1777,7 +1777,22 @@ export default async function financeRoutes(app) {
     let fx = Number(t.fx_rate) || 1;
     if (t.currency === 'USD') fx = Number(b.fx_rate) > 0 ? Number(b.fx_rate) : (await getUsdMxnRate()).rate;
     const amountMxn = r2(newAmount * fx);
-    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date);
+    // 자금출처(계좌) 수정 (2026-07-29): body에 account_id 키가 있으면 함께 변경. null=(미지정).
+    // 새 계좌도 운영 권한(canOperateAccount) 검사 — 거래등록과 동일 원칙.
+    const oldAccId = t.account_id == null ? null : Number(t.account_id);
+    let newAccId = oldAccId; let accChanged = false;
+    if ('account_id' in b) {
+      const reqAcc = b.account_id == null || b.account_id === '' ? null : Number(b.account_id);
+      if (reqAcc != null) {
+        if (!Number.isInteger(reqAcc)) return reply.code(400).send({ error: 'bad_account_id' });
+        const acc = (await query(`SELECT id FROM accounts WHERE id=$1 AND deleted_at IS NULL`, [reqAcc])).rows[0];
+        if (!acc) return reply.code(400).send({ error: 'bad_account_id' });
+      }
+      accChanged = reqAcc !== oldAccId;
+      if (accChanged && !canOperateAccount(req.ctx.perm, reqAcc)) return reply.code(403).send({ error: 'account_not_operable' });
+      newAccId = reqAcc;
+    }
+    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date) || accChanged;
     const memo = b.memo ? String(b.memo).trim() : null;
     const newCount = Number(t.change_count || 0) + (changed ? 1 : 0);
     const planMemo = changed && memo
@@ -1786,10 +1801,10 @@ export default async function financeRoutes(app) {
     // 예정 거래는 계획=현재값이므로 txn_date/amount와 plan_date/plan_amount를 함께 갱신
     await query(
       `UPDATE transactions SET txn_date=$1, amount=$2, fx_rate=$3, amount_mxn=$4, plan_amount=$2, plan_date=$1,
-         change_count=$5, plan_memo=$6, updated_by=$7 WHERE id=$8`,
-      [newDate, newAmount, fx, amountMxn, newCount, planMemo, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { plan_edit: true, changed } });
-    return { ok: true, changed, change_count: newCount };
+         change_count=$5, plan_memo=$6, updated_by=$7, account_id=$9 WHERE id=$8`,
+      [newDate, newAmount, fx, amountMxn, newCount, planMemo, req.ctx.perm.userId, id, newAccId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { plan_edit: true, changed, account_changed: accChanged, account_id: newAccId } });
+    return { ok: true, changed, change_count: newCount, account_changed: accChanged };
   });
 
   // ===== 잔액 보완 스트림 =====
