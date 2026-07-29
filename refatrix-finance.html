@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0728b</title>
+<title>Refatrix ERP · 재무 · build fin-0729a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1884,7 +1884,7 @@
         <button class="btn ghost re-cancel">닫기</button>
       </div>
       <div class="msg re-msg" style="display:none"></div>
-      <div class="hint" style="margin-top:4px">구분·주기·통화·시작일은 이미 생성된 예정/실적과의 정합성 때문에 수정 불가입니다. 바꾸려면 삭제 후 새로 등록하세요. 금액·계정 변경은 이후 새로 생성되는 예정부터 적용됩니다.</div>
+      <div class="hint" style="margin-top:4px">구분·주기·통화·시작일은 이미 생성된 예정/실적과의 정합성 때문에 수정 불가입니다. 바꾸려면 삭제 후 새로 등록하세요. 금액·계정과목 변경은 이후 새로 생성되는 예정부터 적용됩니다. <b>계좌 변경은 아직 실행되지 않은 예정 회차 전체에 즉시 적용</b>됩니다(이미 지급된 실적의 계좌는 그대로).</div>
       <div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:12px">
         <div style="font-weight:700;margin-bottom:6px">예정 생성</div>
         ${through?`<div class="hint" style="margin:0 0 6px">~${through}까지 생성됨</div>`:'<div class="hint" style="margin:0 0 6px">아직 생성된 예정이 없습니다.</div>'}
@@ -1913,9 +1913,13 @@
     try{
       const res=await fetch(session.api+'/api/recurring/'+id,{method:'PATCH',headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify(payload)});
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||('HTTP '+res.status));}
-      m.className='msg ok re-msg';m.style.display='block';m.textContent='저장되었습니다.';
-      p.classList.add('hidden');p.innerHTML='';
+      const data=await res.json().catch(()=>({}));
+      const synced=Number(data.account_synced)||0;
+      m.className='msg ok re-msg';m.style.display='block';
+      m.textContent='저장되었습니다.'+(synced>0?` 미실행 예정 회차 ${synced}건의 계좌도 함께 변경했습니다.`:'');
       loadFixed();loadFixedMonthly();
+      if(synced>0){setTimeout(()=>{p.classList.add('hidden');p.innerHTML='';},2200);}
+      else{p.classList.add('hidden');p.innerHTML='';}
     }catch(err){m.className='msg err re-msg';m.style.display='block';m.textContent='저장 실패: '+err.message;}
   }
 

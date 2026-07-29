@@ -1455,7 +1455,20 @@ export default async function financeRoutes(app) {
     if (newPriv != null) {
       await query(`UPDATE transactions SET is_private=$1 WHERE recurring_rule_id=$2`, [newPriv, id]);
     }
-    return { ok: true, is_private: r.rows[0].is_private };
+    // 계좌 변경 시, 아직 미실행(plan) 회차의 계좌를 함께 동기화 — 현금흐름·예산예측의 은행계좌별
+    // 구분이 규칙과 어긋나던 문제 해결(2026-07-29). 실적(actual)은 실제 출금 계좌 이력이므로 불변.
+    let accountSynced = 0;
+    if (b.account_id != null) {
+      const s = await query(
+        `UPDATE transactions SET account_id=$1, updated_by=$2
+          WHERE recurring_rule_id=$3 AND status='plan' AND deleted_at IS NULL AND (account_id IS NULL OR account_id <> $1)`,
+        [Number(b.account_id), req.ctx.perm.userId, id]);
+      accountSynced = s.rowCount || 0;
+      if (accountSynced > 0) {
+        await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `recurring_rule:${id}`, detail: { account_id: Number(b.account_id), plan_account_synced: accountSynced } });
+      }
+    }
+    return { ok: true, is_private: r.rows[0].is_private, account_synced: accountSynced };
   });
 
   // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거. 비디렉터는 공개 규칙만.
