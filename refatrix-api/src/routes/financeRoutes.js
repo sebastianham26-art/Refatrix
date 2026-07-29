@@ -19,7 +19,7 @@ export function splitEqual(total, n) {
 }
 import { validateReceiptDataUrl } from '../ar.js';
 import { expandRule, expandBetween } from '../recurring.js';
-import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory } from '../cashflow.js';
+import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
@@ -1455,20 +1455,7 @@ export default async function financeRoutes(app) {
     if (newPriv != null) {
       await query(`UPDATE transactions SET is_private=$1 WHERE recurring_rule_id=$2`, [newPriv, id]);
     }
-    // 계좌 변경 시, 아직 미실행(plan) 회차의 계좌를 함께 동기화 — 현금흐름·예산예측의 은행계좌별
-    // 구분이 규칙과 어긋나던 문제 해결(2026-07-29). 실적(actual)은 실제 출금 계좌 이력이므로 불변.
-    let accountSynced = 0;
-    if (b.account_id != null) {
-      const s = await query(
-        `UPDATE transactions SET account_id=$1, updated_by=$2
-          WHERE recurring_rule_id=$3 AND status='plan' AND deleted_at IS NULL AND (account_id IS NULL OR account_id <> $1)`,
-        [Number(b.account_id), req.ctx.perm.userId, id]);
-      accountSynced = s.rowCount || 0;
-      if (accountSynced > 0) {
-        await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `recurring_rule:${id}`, detail: { account_id: Number(b.account_id), plan_account_synced: accountSynced } });
-      }
-    }
-    return { ok: true, is_private: r.rows[0].is_private, account_synced: accountSynced };
+    return { ok: true, is_private: r.rows[0].is_private };
   });
 
   // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거. 비디렉터는 공개 규칙만.
@@ -1777,22 +1764,7 @@ export default async function financeRoutes(app) {
     let fx = Number(t.fx_rate) || 1;
     if (t.currency === 'USD') fx = Number(b.fx_rate) > 0 ? Number(b.fx_rate) : (await getUsdMxnRate()).rate;
     const amountMxn = r2(newAmount * fx);
-    // 자금출처(계좌) 수정 (2026-07-29): body에 account_id 키가 있으면 함께 변경. null=(미지정).
-    // 새 계좌도 운영 권한(canOperateAccount) 검사 — 거래등록과 동일 원칙.
-    const oldAccId = t.account_id == null ? null : Number(t.account_id);
-    let newAccId = oldAccId; let accChanged = false;
-    if ('account_id' in b) {
-      const reqAcc = b.account_id == null || b.account_id === '' ? null : Number(b.account_id);
-      if (reqAcc != null) {
-        if (!Number.isInteger(reqAcc)) return reply.code(400).send({ error: 'bad_account_id' });
-        const acc = (await query(`SELECT id FROM accounts WHERE id=$1 AND deleted_at IS NULL`, [reqAcc])).rows[0];
-        if (!acc) return reply.code(400).send({ error: 'bad_account_id' });
-      }
-      accChanged = reqAcc !== oldAccId;
-      if (accChanged && !canOperateAccount(req.ctx.perm, reqAcc)) return reply.code(403).send({ error: 'account_not_operable' });
-      newAccId = reqAcc;
-    }
-    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date) || accChanged;
+    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date);
     const memo = b.memo ? String(b.memo).trim() : null;
     const newCount = Number(t.change_count || 0) + (changed ? 1 : 0);
     const planMemo = changed && memo
@@ -1801,10 +1773,10 @@ export default async function financeRoutes(app) {
     // 예정 거래는 계획=현재값이므로 txn_date/amount와 plan_date/plan_amount를 함께 갱신
     await query(
       `UPDATE transactions SET txn_date=$1, amount=$2, fx_rate=$3, amount_mxn=$4, plan_amount=$2, plan_date=$1,
-         change_count=$5, plan_memo=$6, updated_by=$7, account_id=$9 WHERE id=$8`,
-      [newDate, newAmount, fx, amountMxn, newCount, planMemo, req.ctx.perm.userId, id, newAccId]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { plan_edit: true, changed, account_changed: accChanged, account_id: newAccId } });
-    return { ok: true, changed, change_count: newCount, account_changed: accChanged };
+         change_count=$5, plan_memo=$6, updated_by=$7 WHERE id=$8`,
+      [newDate, newAmount, fx, amountMxn, newCount, planMemo, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { plan_edit: true, changed } });
+    return { ok: true, changed, change_count: newCount };
   });
 
   // ===== 잔액 보완 스트림 =====
@@ -1872,6 +1844,51 @@ export default async function financeRoutes(app) {
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN accounts a ON a.id=t.account_id
         WHERE ${cond}`, args)).rows;
+  }
+  // 미생성 고정비 회차 자동전개 (월 예산 예측 · 은행계좌별 필요자금 공용).
+  // months: ['YYYY-MM', ...]. 활성 규칙 → 각 달 전개 → 이미 회차 거래가 존재하는 (rule_id, period) 제외
+  // — 삭제분 포함(삭제 의도 보존: 지운 회차는 예측에도 안 살림. deleted_at 조건 없이 조회).
+  // 권한: 비공개(is_private) 규칙은 디렉터만(loadCashTxns의 비공개 고정비 정책과 동일),
+  //       계좌미지정(NULL) 규칙 통과, 비디렉터는 detail 허용 계좌만("계획은 계획으로 반영" 원칙).
+  // USD 규칙 환산: 오늘 환율(현금흐름·잔액과 동일 기준).
+  async function recurringProjections(perm, months) {
+    if (!months || !months.length) return [];
+    const privCond = perm.role === 'director' ? '' : ' AND r.is_private=false';
+    const rules = (await query(
+      `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
+              r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, to_char(r.start_date,'YYYY-MM-DD') AS start_date, r.end_month
+         FROM recurring_rules r
+         LEFT JOIN categories cat ON cat.code=r.category_code
+         LEFT JOIN accounts a ON a.id=r.account_id
+        WHERE r.deleted_at IS NULL AND r.active=true${privCond}`)).rows;
+    const allow = allowedDetailAccountIds(perm);
+    const visRules = rules.filter((r) => allow === null || r.account_id == null || allow.includes(Number(r.account_id)));
+    if (!visRules.length) return [];
+    const ors = months.map((_, i) => `recurring_period = $${i + 2} OR recurring_period LIKE 'W' || $${i + 2} || '%'`).join(' OR ');
+    const existing = new Set((await query(
+      `SELECT recurring_rule_id AS rid, recurring_period AS p FROM transactions
+        WHERE recurring_rule_id = ANY($1) AND (${ors})`,
+      [visRules.map((r) => r.id), ...months])).rows.map((r) => `${r.rid}|${r.p}`));
+    const usd = (await getUsdMxnRate()).rate;
+    const projections = [];
+    for (const m of months) {
+      const [my, mm] = m.split('-').map(Number);
+      const mEnd = `${m}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, '0')}`;
+      for (const r of visRules) {
+        const occ = expandBetween({
+          freq: r.freq, start_date: r.start_date,
+          day_of_month: r.day_of_month == null ? null : Number(r.day_of_month),
+          weekday: r.weekday == null ? null : Number(r.weekday), end_month: r.end_month,
+        }, `${m}-01`, mEnd);
+        for (const o of occ) {
+          if (existing.has(`${r.id}|${o.period}`)) continue;
+          projections.push({ direction: r.direction, category_code: r.category_code, category_name: r.category_name,
+            account_id: r.account_id, account_name: r.account_name,
+            date: o.date, amount_mxn: r2(Number(r.amount) * (r.currency === 'USD' ? usd : 1)), rule_name: r.name });
+        }
+      }
+    }
+    return projections;
   }
   async function openingBalanceMxn(perm) {
     const usd = (await getUsdMxnRate()).rate;
@@ -2145,43 +2162,52 @@ export default async function financeRoutes(app) {
     //       ③ 미수 인보이스(invRows — 그 달 만기 + 이번 달 조회 시 지난 만기 이월). 집계는 순수 함수.
     let forecast = null;
     if (String(req.query.forecast || '') === '1') {
-      const privCond = req.ctx.perm.role === 'director' ? '' : ' AND r.is_private=false'; // 비공개 고정비: 디렉터만 (loadCashTxns와 동일 정책)
-      const rules = (await query(
-        `SELECT r.id, r.name, r.category_code, cat.name AS category_name, r.amount, r.direction, r.currency,
-                r.account_id, a.name AS account_name, r.freq, r.weekday, r.day_of_month, to_char(r.start_date,'YYYY-MM-DD') AS start_date, r.end_month
-           FROM recurring_rules r
-           LEFT JOIN categories cat ON cat.code=r.category_code
-           LEFT JOIN accounts a ON a.id=r.account_id
-          WHERE r.deleted_at IS NULL AND r.active=true${privCond}`)).rows;
-      // 계좌 권한: loadCashTxns와 동일 원칙 — 계좌미지정(NULL)은 통과, 예정(plan)은 세부차단 계좌도 통과("계획은 계획으로 반영").
-      const allowFc = allowedDetailAccountIds(req.ctx.perm);
-      const visRules = rules.filter((r) => allowFc === null || r.account_id == null || allowFc.includes(Number(r.account_id)));
-      const projections = [];
-      if (visRules.length) {
-        // 이미 회차 거래가 존재하는 period는 제외 — 삭제분 포함(삭제 의도 보존: 지운 회차는 예측에도 안 살림)
-        const existing = new Set((await query(
-          `SELECT recurring_rule_id AS rid, recurring_period AS p FROM transactions
-            WHERE recurring_rule_id = ANY($1) AND (recurring_period = $2 OR recurring_period LIKE 'W' || $2 || '%')`,
-          [visRules.map((r) => r.id), month])).rows.map((r) => `${r.rid}|${r.p}`));
-        const usdFc = (await getUsdMxnRate()).rate; // USD 고정비 환산: 오늘 환율(현금흐름·잔액과 동일 기준)
-        const monthEndFc = `${month}-${String(daysIn).padStart(2, '0')}`;
-        for (const r of visRules) {
-          const occ = expandBetween({
-            freq: r.freq, start_date: r.start_date,
-            day_of_month: r.day_of_month == null ? null : Number(r.day_of_month),
-            weekday: r.weekday == null ? null : Number(r.weekday), end_month: r.end_month,
-          }, monthStart, monthEndFc);
-          for (const o of occ) {
-            if (existing.has(`${r.id}|${o.period}`)) continue;
-            projections.push({ direction: r.direction, category_code: r.category_code, category_name: r.category_name,
-              account_id: r.account_id, account_name: r.account_name,
-              date: o.date, amount_mxn: r2(Number(r.amount) * (r.currency === 'USD' ? usdFc : 1)), rule_name: r.name });
-          }
-        }
-      }
+      const projections = await recurringProjections(req.ctx.perm, [month]);
       forecast = monthForecastByCategory(mapped, projections, invRows, month, today);
     }
     return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, forecast, ...breakdown };
+  });
+
+  // ===== 은행계좌별 필요자금 (이번 달 잔여 + 익월) =====
+  // "각 은행계좌별로 익월까지 자금이 얼마나 필요한가/남는가" — 오늘 기준 고정(달력 월 이동과 무관).
+  // 지출 반영 후 = 현재 잔고(MXN 환산, /api/accounts와 동일 산식) − 이번 달 남은 지출(경과 이월 포함)
+  //               − 익월 지출 예정(등록 예정 + 미생성 고정비 자동전개). 음수면 그만큼 이체/충전 필요.
+  // 수입은 참고(불확실): 계좌지정 예정수입만 표에, AR(입금계좌 미정)은 별도 참고 합계.
+  app.get('/api/cashflow/funding', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const thisMonth = today.slice(0, 7);
+    const [ty, tmm] = thisMonth.split('-').map(Number);
+    const nextMonth = new Date(Date.UTC(ty, tmm, 1)).toISOString().slice(0, 7);
+    const nextMonthEnd = `${nextMonth}-${String(new Date(Date.UTC(ty, tmm + 1, 0)).getUTCDate()).padStart(2, '0')}`;
+    const usd = (await getUsdMxnRate()).rate;
+    // 계좌 + MXN 환산 잔액 — 잔액 열람 가능 계좌(viewIds), 비활성 제외. 산식은 /api/accounts와 동일.
+    const allowAcc = allowedAccountIds(req.ctx.perm);
+    const args = []; let acccond = '';
+    if (allowAcc !== null) {
+      if (allowAcc.length === 0) return { rows: [], unassigned: null, total: null, today, this_month: thisMonth, next_month: nextMonth, fx_rate: usd, ar_reference: { n: 0, total: 0 } };
+      args.push(allowAcc); acccond = ` AND a.id = ANY($${args.length})`;
+    }
+    const accRows = (await query(
+      `SELECT a.id, a.name, a.currency, a.open_balance,
+              COALESCE((SELECT SUM(CASE WHEN t.direction='in' THEN t.amount_mxn ELSE -t.amount_mxn END)
+                 FROM transactions t WHERE t.account_id=a.id AND t.status='actual' AND t.approved=true AND t.deleted_at IS NULL),0) AS mxn_txn_sum
+         FROM accounts a WHERE a.deleted_at IS NULL AND a.disabled IS NOT TRUE${acccond} ORDER BY a.id`, args)).rows;
+    const accounts = accRows.map((a) => ({
+      id: a.id, name: a.name, currency: a.currency,
+      can_detail: canViewDetail(req.ctx.perm, a.id),
+      balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
+    }));
+    const txns = await loadCashTxns(req.ctx.perm);
+    const projections = await recurringProjections(req.ctx.perm, [thisMonth, nextMonth]);
+    const funding = accountFundingPlan(accounts, txns, projections, thisMonth, nextMonth, today);
+    // 참고: AR(미수 인보이스, 입금계좌 미정) — 익월 말까지 만기(경과 포함) 잔액 합
+    const arRef = (await query(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(si.total_mxn - COALESCE(p.paid,0)),0) AS total
+         FROM sales_invoices si
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id = si.id
+        WHERE si.status='posted' AND si.deleted_at IS NULL AND si.due_date <= $1
+          AND (si.total_mxn - COALESCE(p.paid,0)) > 0`, [nextMonthEnd])).rows[0];
+    return { ...funding, today, fx_rate: usd, ar_reference: { n: Number(arRef.n), total: r2(Number(arRef.total)) } };
   });
 
   // ===== 월 자금 리포트 (디렉터 전용) =====

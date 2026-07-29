@@ -443,3 +443,91 @@ export function monthForecastByCategory(txns, projections, arInvoices, monthStr,
   return { month: monthStr, in: byCat.in, out: byCat.out, net: byCat.net,
     by_account: { in: byAcc.in, out: byAcc.out, net: byAcc.net } };
 }
+
+// ===== 은행계좌별 필요자금 (2026-07-28) — 순수 함수 =====
+// 목적: "각 은행계좌별로 익월까지 자금이 얼마나 필요한가/남는가".
+//   지출 반영 후 = 현재 잔고 − 이번 달 남은 지출 − 익월 지출 예정. 음수면 그만큼 이체/충전 필요.
+//  accounts    : [{ id, name, currency, balance_mxn, can_detail }] — 권한 필터 완료(잔액 열람 계좌), MXN 환산 잔액.
+//  txns        : loadCashTxns 결과. 미지급 예정(plan)만 사용. 인보이스 연계 수금계획은 제외(입금계좌 미확정).
+//  projections : 미생성 고정비 자동전개 — 이번 달~익월 2개월치. (forecast와 동일 규칙으로 호출부에서 생성)
+//  thisMonth/nextMonth: 'YYYY-MM' / today: 'YYYY-MM-DD'
+// 윈도 규칙:
+//  - '이번 달 남은'(out_this/in_this) = 유효일 < 익월 1일 인 모든 미지급 예정 — 지난 달 경과(이월)분 포함.
+//    (이월 원칙과 동일: 안 낸 돈은 여전히 내야 할 돈. 자동전개는 이번 달 발생분만.)
+//  - '익월'(out_next/in_next) = 유효일이 익월인 예정 + 익월 자동전개.
+//  - 익월 이후 예정은 제외(이 뷰의 지평은 익월까지).
+// 수입(in_*)은 '참고'(불확실) — 핵심 지표 after_out 은 지출만 반영, after_all 은 계좌지정 수입까지 반영.
+// 계좌미지정(NULL) 예정은 unassigned 로 분리(회사 전체 합계에는 포함 — 어느 계좌든 결국 나갈 돈).
+export function accountFundingPlan(accounts, txns, projections, thisMonth, nextMonth, today) {
+  const nextMonthStart = nextMonth + '-01';
+  const monthOf = (d) => String(d).slice(0, 7);
+  const mk = (acc) => ({
+    account_id: acc ? Number(acc.id) : null, name: acc ? acc.name : '(계좌 미지정)', currency: acc ? acc.currency : null,
+    can_detail: acc ? acc.can_detail !== false : true,
+    balance: acc ? round2(Number(acc.balance_mxn) || 0) : null,
+    out_this: 0, out_next: 0, in_this: 0, in_next: 0, after_out: null, after_all: null, items: [],
+  });
+  const rows = new Map();
+  for (const a of accounts || []) rows.set(Number(a.id), mk(a));
+  const unk = mk(null);
+  const put = (accId) => (accId != null && rows.has(Number(accId))) ? rows.get(Number(accId)) : unk;
+  const add = (r, direction, win, amt, item) => {
+    if (direction === 'out') { if (win === 'this') r.out_this += amt; else r.out_next += amt; }
+    else { if (win === 'this') r.in_this += amt; else r.in_next += amt; }
+    r.items.push(item);
+  };
+  for (const t of txns || []) {
+    if (t.status !== 'plan') continue;                                   // 미지급/미수취 예정만 (실적은 잔고에 이미 반영)
+    if (t.direction === 'in' && t.sales_invoice_id) continue;            // 인보이스 수금계획: 입금계좌 미확정 → AR 참고로만
+    const d = String(t.plan_date || t.txn_date).slice(0, 10);
+    let win = null;
+    if (monthOf(d) === nextMonth) win = 'next';
+    else if (d < nextMonthStart) win = 'this';                           // 이번 달 + 과거 경과(이월) 전부 '이번 달 남은'
+    if (!win) continue;
+    const amt = Number(t.amount_mxn) || 0;
+    add(put(t.account_id), t.direction, win, amt, {
+      date: d, win, direction: t.direction, memo: t.memo || '',
+      category_name: t.category_name || t.category_code || null,
+      amount: round2(amt), state: d < today ? 'overdue' : 'upcoming',
+    });
+  }
+  for (const p of projections || []) {
+    const d = String(p.date).slice(0, 10);
+    let win = null;
+    if (monthOf(d) === nextMonth) win = 'next';
+    else if (monthOf(d) === thisMonth) win = 'this';
+    else continue;
+    const amt = Number(p.amount_mxn) || 0;
+    add(put(p.account_id), p.direction, win, amt, {
+      date: d, win, direction: p.direction, memo: `[고정비] ${p.rule_name || ''}`.trim(),
+      category_name: p.category_name || p.category_code || null,
+      amount: round2(amt), state: 'projected',
+    });
+  }
+  const fin = (r) => {
+    for (const k of ['out_this', 'out_next', 'in_this', 'in_next']) r[k] = round2(r[k]);
+    if (r.balance != null) {
+      r.after_out = round2(r.balance - r.out_this - r.out_next);
+      r.after_all = round2(r.after_out + r.in_this + r.in_next);
+    }
+    r.items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return r;
+  };
+  const list = [...rows.values()].map(fin);
+  fin(unk);
+  list.sort((a, b) => (a.after_out ?? Infinity) - (b.after_out ?? Infinity));   // 부족(음수 큰 순) 먼저
+  const total = { balance: 0, out_this: 0, out_next: 0, in_this: 0, in_next: 0, after_out: 0, after_all: 0 };
+  for (const r of list) {
+    total.balance += r.balance || 0;
+    total.out_this += r.out_this; total.out_next += r.out_next;
+    total.in_this += r.in_this; total.in_next += r.in_next;
+  }
+  // 계좌미지정 예정도 회사 전체 필요자금에는 포함 (어느 계좌에서든 결국 집행됨)
+  total.out_this = round2(total.out_this + unk.out_this); total.out_next = round2(total.out_next + unk.out_next);
+  total.in_this = round2(total.in_this + unk.in_this); total.in_next = round2(total.in_next + unk.in_next);
+  total.balance = round2(total.balance);
+  total.after_out = round2(total.balance - total.out_this - total.out_next);
+  total.after_all = round2(total.after_out + total.in_this + total.in_next);
+  const hasUnk = (unk.out_this || unk.out_next || unk.in_this || unk.in_next) ? unk : null;
+  return { this_month: thisMonth, next_month: nextMonth, rows: list, unassigned: hasUnk, total };
+}

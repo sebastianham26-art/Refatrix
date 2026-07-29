@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0729b</title>
+<title>Refatrix ERP · 재무 · build fin-0728c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -412,6 +412,17 @@
         <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
       </div>
       <div id="cashBody"><div class="hint">불러오는 중…</div></div>
+
+      <!-- 은행계좌별 필요자금 (이번 달 잔여 + 익월) -->
+      <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:12px" id="fundSec">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <h2 style="margin:0">💰 은행계좌별 필요자금</h2>
+          <span class="hint" id="fundTitleHint" style="margin:0"></span>
+          <button class="btn ghost sm" id="fund-reload" style="margin-left:auto">새로고침</button>
+        </div>
+        <div class="hint" style="margin-top:4px"><b>지출 반영 후 = 현재 잔고 − 이번 달 남은 지출(경과 이월 포함) − 익월 지출 예정</b>(등록 예정 + 아직 [생성] 전 고정비 자동전개). 음수(<span style="color:#c0392b;font-weight:700">부족</span>)면 익월까지 그 계좌에 그만큼 이체/충전이 필요합니다. 수입은 불확실하므로 참고 열로만 표시(계좌지정 예정수입만 — 매출 수금은 입금계좌 미정이라 표 아래 별도). 행을 클릭하면 지출·수입 내역이 열립니다.</div>
+        <div id="fundBody" style="margin-top:8px"><div class="hint">불러오는 중…</div></div>
+      </div>
 
       <!-- 현금잔액 워터폴 -->
       <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:12px">
@@ -1487,9 +1498,8 @@
             <button class="btn ghost cf-cancel">닫기</button>
           </div>
           <div class="planedit hidden" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
-            <div class="hint" style="margin-top:0">아직 실제로 전환되지 않은 예정의 <b>계획 금액·날짜·자금출처 계좌</b>를 직접 수정합니다(현금흐름 계획선·은행계좌별 구분에 반영). 매출에서 온 수금 계획은 인보이스에 묶여 수정할 수 없습니다.</div>
+            <div class="hint" style="margin-top:0">아직 실제로 전환되지 않은 예정의 <b>계획 금액·날짜</b>를 직접 수정합니다(현금흐름 계획선에 반영). 매출에서 온 수금 계획은 인보이스에 묶여 수정할 수 없습니다.</div>
             <div class="row" style="margin-top:6px">
-              <div style="flex:2"><label>자금출처 계좌</label><select class="pe-acc">${accOptions(t.account_id)}</select></div>
               <div><label>계획일</label><input class="pe-date" type="date" value="${(t.plan_date?String(t.plan_date):String(t.txn_date)).slice(0,10)}"></div>
               <div><label>계획 금액</label><input class="pe-amt" type="number" step="0.01" value="${t.plan_amount!=null?t.plan_amount:t.amount}"></div>
               ${t.currency==='USD'?'<div><label>환율(USD)</label><input class="pe-fx" type="number" step="0.0001" placeholder="오늘 환율"></div>':''}
@@ -1885,7 +1895,7 @@
         <button class="btn ghost re-cancel">닫기</button>
       </div>
       <div class="msg re-msg" style="display:none"></div>
-      <div class="hint" style="margin-top:4px">구분·주기·통화·시작일은 이미 생성된 예정/실적과의 정합성 때문에 수정 불가입니다. 바꾸려면 삭제 후 새로 등록하세요. 금액·계정과목 변경은 이후 새로 생성되는 예정부터 적용됩니다. <b>계좌 변경은 아직 실행되지 않은 예정 회차 전체에 즉시 적용</b>됩니다(이미 지급된 실적의 계좌는 그대로).</div>
+      <div class="hint" style="margin-top:4px">구분·주기·통화·시작일은 이미 생성된 예정/실적과의 정합성 때문에 수정 불가입니다. 바꾸려면 삭제 후 새로 등록하세요. 금액·계정 변경은 이후 새로 생성되는 예정부터 적용됩니다.</div>
       <div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:12px">
         <div style="font-weight:700;margin-bottom:6px">예정 생성</div>
         ${through?`<div class="hint" style="margin:0 0 6px">~${through}까지 생성됨</div>`:'<div class="hint" style="margin:0 0 6px">아직 생성된 예정이 없습니다.</div>'}
@@ -1914,13 +1924,9 @@
     try{
       const res=await fetch(session.api+'/api/recurring/'+id,{method:'PATCH',headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify(payload)});
       if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||('HTTP '+res.status));}
-      const data=await res.json().catch(()=>({}));
-      const synced=Number(data.account_synced)||0;
-      m.className='msg ok re-msg';m.style.display='block';
-      m.textContent='저장되었습니다.'+(synced>0?` 미실행 예정 회차 ${synced}건의 계좌도 함께 변경했습니다.`:'');
+      m.className='msg ok re-msg';m.style.display='block';m.textContent='저장되었습니다.';
+      p.classList.add('hidden');p.innerHTML='';
       loadFixed();loadFixedMonthly();
-      if(synced>0){setTimeout(()=>{p.classList.add('hidden');p.innerHTML='';},2200);}
-      else{p.classList.add('hidden');p.innerHTML='';}
     }catch(err){m.className='msg err re-msg';m.style.display='block';m.textContent='저장 실패: '+err.message;}
   }
 
@@ -2094,15 +2100,14 @@
   async function savePlanEdit(id,box){
     const m=box.querySelector('.cf-msg');m.className='msg cf-msg';m.style.display='none';
     const body={plan_date:box.querySelector('.pe-date').value,amount:Number(box.querySelector('.pe-amt').value)||0};
-    const accEl=box.querySelector('.pe-acc');if(accEl)body.account_id=accEl.value?Number(accEl.value):null;
     const memoEl=box.querySelector('.pe-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
     const fxEl=box.querySelector('.pe-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
     if(!(body.amount>0)){m.className='msg cf-msg err';m.style.display='block';m.textContent='계획 금액을 입력하세요.';return;}
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/plan',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='sales_linked'?'매출에서 온 계획은 수정할 수 없습니다.':(d.error==='account_not_operable'?'이 계좌에 등록(운영) 권한이 없습니다.':(d.error==='bad_account_id'?'계좌를 다시 선택하세요.':(d.error||res.status))));return;}
-      alert('계획이 수정되었습니다. 현금흐름 계획선'+(d.account_changed?'과 은행계좌별 구분':'')+'에 반영됩니다.');
+      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='sales_linked'?'매출에서 온 계획은 수정할 수 없습니다.':(d.error||res.status));return;}
+      alert('계획이 수정되었습니다. 현금흐름 계획선에 반영됩니다.');
       loadTxns();
     }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
@@ -2549,6 +2554,76 @@
   function cfFcSetView(v){if(cfFcView===v)return;cfFcView=v;const b=$('cfFcBody');if(b)b.innerHTML=cfFcBodyHtml();}
   function cfFcRow(dir,i){const el=$(`fc-sub-${dir}-${i}`);if(el)el.classList.toggle('hidden');}
 
+  // ===== 은행계좌별 필요자금 (이번 달 잔여 + 익월) — 오늘 기준 고정 =====
+  let fundData=null;
+  async function loadFunding(){
+    const b=$('fundBody');if(!b)return;
+    b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(`${session.api}/api/cashflow/funding`,{headers:auth()});
+      if(!res.ok){b.innerHTML=`<div class="hint">필요자금을 불러오지 못했습니다 (HTTP ${res.status}).${res.status===404?' 최신 백엔드(필요자금 API)가 배포되었는지 확인하세요.':''}</div>`;return;}
+      fundData=await res.json();
+      renderFunding();
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function fundMonLabel(m){return `${Number(String(m).slice(5,7))}월`;}
+  function renderFunding(){
+    const b=$('fundBody');const d=fundData;if(!b||!d)return;
+    const th=$('fundTitleHint');if(th)th.textContent=`— ${fundMonLabel(d.this_month)} 잔여 + ${fundMonLabel(d.next_month)}(익월), 오늘 ${d.today} 기준 · MXN 환산`;
+    if(!d.total){b.innerHTML='<div class="hint">잔액을 볼 수 있는 계좌가 없습니다.</div>';return;}
+    const needCell=(v)=>v==null?'<td class="num">—</td>'
+      :v<0?`<td class="num" style="font-weight:800;color:#c0392b">부족 ${fmt(-v)}</td>`
+      :`<td class="num" style="font-weight:700;color:var(--income)">여유 ${fmt(v)}</td>`;
+    const stB=(st)=>st==='overdue'?'<span class="pill" style="background:#fde2e0;color:#c0392b">경과</span>'
+      :st==='projected'?'<span class="pill" style="background:#efe7f8;color:#7a4fb0">자동전개</span>'
+      :'<span class="pill" style="background:#eef1f5;color:#5a6b7b">예정</span>';
+    const itemsTbl=(r)=>{
+      if(!r.items.length)return '<div class="hint" style="padding:4px 0">이번 달 잔여·익월 예정 내역이 없습니다.</div>';
+      const row=(it)=>`<tr><td style="width:70px">${it.win==='this'?`<b>${fundMonLabel(fundData.this_month)}</b>`:`<b style="color:#0c447c">${fundMonLabel(fundData.next_month)}</b>`}</td><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.category_name||'')}</td><td>${escH(it.memo||'')}</td><td class="num" style="color:${it.direction==='in'?'var(--income)':'var(--expense)'}">${it.direction==='in'?'+':'-'}${fmt(it.amount)}</td></tr>`;
+      return `<table style="margin:0"><thead><tr><th>구분</th><th>날짜</th><th>상태</th><th>계정과목</th><th>내용</th><th class="num">금액</th></tr></thead><tbody>${r.items.map(row).join('')}</tbody></table>`;
+    };
+    const accRow=(r,i)=>`<tr style="cursor:pointer" onclick="fundRow(${i})" title="클릭하면 개별 내역이 열립니다">
+        <td>🏦 ${escH(r.name)}${r.currency==='USD'?' <span class="hint" style="margin:0;font-size:11px;display:inline">USD</span>':''}${r.can_detail===false?' <span class="hint" style="margin:0;font-size:11px;display:inline">(세부 비공개 — 지출예정 미집계)</span>':''}</td>
+        <td class="num">${fmt(r.balance)}</td>
+        <td class="num" style="color:var(--expense)">${r.out_this?'-'+fmt(r.out_this):''}</td>
+        <td class="num" style="color:var(--expense)">${r.out_next?'-'+fmt(r.out_next):''}</td>
+        ${needCell(r.after_out)}
+        <td class="num" style="color:var(--income)">${(r.in_this||r.in_next)?'+'+fmt(Math.round((r.in_this+r.in_next)*100)/100):''}</td>
+        <td class="num" style="color:${r.after_all!=null&&r.after_all<0?'#c0392b':'var(--muted)'}">${r.after_all!=null?fmt(r.after_all):'—'}</td></tr>
+      <tr class="hidden" id="fund-sub-${i}"><td colspan="7" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(r)}</td></tr>`;
+    let rows=d.rows.map(accRow).join('');
+    let unkIdx=null;
+    if(d.unassigned){
+      unkIdx=d.rows.length;
+      const u=d.unassigned;
+      rows+=`<tr style="cursor:pointer;background:#fffdf2" onclick="fundRow(${unkIdx})" title="어느 계좌에서 나갈지 아직 정하지 않은 예정 — 회사 전체 합계에는 포함됩니다">
+        <td>❓ (계좌 미지정 예정)</td><td class="num">—</td>
+        <td class="num" style="color:var(--expense)">${u.out_this?'-'+fmt(u.out_this):''}</td>
+        <td class="num" style="color:var(--expense)">${u.out_next?'-'+fmt(u.out_next):''}</td>
+        <td class="num">—</td>
+        <td class="num" style="color:var(--income)">${(u.in_this||u.in_next)?'+'+fmt(Math.round((u.in_this+u.in_next)*100)/100):''}</td>
+        <td class="num">—</td></tr>
+      <tr class="hidden" id="fund-sub-${unkIdx}"><td colspan="7" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(u)}</td></tr>`;
+    }
+    const t=d.total;
+    const totalRow=`<tr style="border-top:2px solid var(--line);font-weight:800">
+        <td>합계 (전 계좌${d.unassigned?' + 미지정':''})</td>
+        <td class="num">${fmt(t.balance)}</td>
+        <td class="num" style="color:var(--expense)">${t.out_this?'-'+fmt(t.out_this):''}</td>
+        <td class="num" style="color:var(--expense)">${t.out_next?'-'+fmt(t.out_next):''}</td>
+        ${needCell(t.after_out)}
+        <td class="num" style="color:var(--income)">${(t.in_this||t.in_next)?'+'+fmt(Math.round((t.in_this+t.in_next)*100)/100):''}</td>
+        <td class="num" style="color:${t.after_all<0?'#c0392b':'var(--muted)'}">${fmt(t.after_all)}</td></tr>`;
+    const shortCnt=d.rows.filter(r=>r.after_out!=null&&r.after_out<0).length;
+    const alert=shortCnt?`<div style="margin:0 0 8px;padding:8px 12px;border-radius:8px;background:#fde2e0;color:#c0392b;font-weight:700">⚠ 익월까지 자금이 부족한 계좌 ${shortCnt}개 — 부족 계좌가 위쪽에 정렬되어 있습니다. 여유 계좌에서 이체하거나 수금 일정을 앞당기세요.</div>`:'';
+    b.innerHTML=`${alert}
+      <table><thead><tr><th>은행계좌</th><th class="num">현재 잔고Ⓐ</th><th class="num">${fundMonLabel(d.this_month)} 남은 지출Ⓑ</th><th class="num">${fundMonLabel(d.next_month)}(익월) 지출Ⓒ</th><th class="num">지출 반영 후 Ⓐ−Ⓑ−Ⓒ</th><th class="num">참고: 예정수입</th><th class="num">수입 반영 시</th></tr></thead>
+      <tbody>${rows}${totalRow}</tbody></table>
+      <div class="hint" style="margin-top:6px">경과(지급일이 지난 미지급)는 「${fundMonLabel(d.this_month)} 남은 지출」에 포함됩니다. 익월 이후 예정은 이 표에 없습니다(지평 = 익월까지).
+      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, 익월 말까지 만기·경과 포함) — 입금계좌 미정이라 위 표 수입에 미포함.`:''}</div>`;
+  }
+  function fundRow(i){const el=$(`fund-sub-${i}`);if(el)el.classList.toggle('hidden');}
+
   function dirItemRow(t){
     const amt=Number(t.amount_mxn)||0;
     return `<tr style="${t.status==='actual'?'background:#f4f2ec':''}"><td>${(t.status==='actual'?t.txn_date:(t.plan_date||t.txn_date)||'').slice(0,10)}</td>
@@ -2761,7 +2836,7 @@
       b.innerHTML=cur+byc+hist;
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  function loadCashAll(){loadCashflow();loadWaterfall();loadPlanActual();loadOverdue();}
+  function loadCashAll(){loadCashflow();loadFunding();loadWaterfall();loadPlanActual();loadOverdue();}
 
   // ===== 환율 요약 =====
   const fmtRate=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:4,maximumFractionDigits:4});
@@ -3410,6 +3485,7 @@
     if($('fxg-12'))$('fxg-12').addEventListener('click',()=>setN(12));
   })();
   $('tabCash').addEventListener('click',()=>showTab('cash'));
+  $('fund-reload').addEventListener('click',loadFunding);
   $('tabFx').addEventListener('click',()=>showTab('fx'));
   $('tabReport').addEventListener('click',()=>showTab('report'));
   $('rp-prev').addEventListener('click',()=>rpShift(-1));
