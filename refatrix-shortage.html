@@ -39,6 +39,16 @@
   .mrow .ml{font-size:12px;color:#6f6a60;font-weight:600;margin-right:4px}
   .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line,#e0dccb);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:#8a8676;cursor:pointer}
   .mbtn.on{background:var(--brand,#143D34);color:#fff;border-color:var(--brand,#143D34)}
+  .tabs{display:flex;gap:6px;margin-top:16px}
+  .tabbtn{padding:9px 16px;border:1px solid var(--line);border-bottom:none;background:#efece3;border-radius:10px 10px 0 0;font-size:13px;font-weight:800;color:var(--muted);cursor:pointer}
+  .tabbtn.on{background:var(--card);color:var(--brand)}
+  .tabs+.card{margin-top:0;border-top-left-radius:0}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800}
+  .pill.ready{background:#fdf3d7;color:#8a6d1a}.pill.sent{background:var(--income-bg);color:var(--income)}.pill.cancelled{background:#eee;color:#888}
+  .modalBg{position:fixed;inset:0;background:rgba(20,30,25,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;z-index:50;overflow:auto}
+  .modal{background:var(--card);border-radius:14px;max-width:860px;width:100%;padding:20px}
+  .btn.wa{background:#25D366}
+  .btn.danger{background:var(--expense)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -55,6 +65,11 @@
   </div>
 
   <div class="hidden" id="app">
+    <div class="tabs">
+      <button class="tabbtn on" id="tabBtnShort" onclick="showTab('short')">부족분 집계</button>
+      <button class="tabbtn" id="tabBtnOffer" onclick="showTab('offer')">📄 Offer Sheet <span id="osBadge"></span></button>
+    </div>
+    <div id="tabShort">
     <div class="card">
       <div class="card-h">미해소 부족분 (open) — SKU별 합계
         <button class="btn ghost sm" style="float:right" onclick="exportExcel()">엑셀 다운로드</button>
@@ -64,8 +79,29 @@
       <div class="mrow" id="months" style="margin:8px 0 4px"></div>
       <div id="listWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
     </div>
+    </div>
+    <div id="tabOffer" class="hidden">
+    <div class="card">
+      <div class="card-h">Offer Sheet — 부족분 입고 알림·재오퍼 (고객별)
+        <button class="btn ghost sm" style="float:right" onclick="osLoad()">새로고침</button>
+        <button class="btn sm" style="float:right;margin-right:6px" onclick="osGenerate()">🔄 스캔·생성</button>
+      </div>
+      <div class="hint">부족분으로 남았던 제품이 <b>입고(수입입고 승인 → 재고 등재)</b>되면 자동으로 고객별 오퍼 시트가 만들어집니다.
+        [스캔·생성]은 지금 재고가 있는 미해소 부족분 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
+        시트를 열어 <b>PDF 출력 → WhatsApp 전송(첨부는 수동) → 발송완료</b> 순서로 처리하세요.</div>
+      <div style="margin:8px 0 4px">
+        <label style="display:inline">상태</label>
+        <select id="osFilter" onchange="osRender()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
+          <option value="all">전체</option><option value="ready" selected>발송 대기</option><option value="sent">발송 완료</option><option value="cancelled">취소됨</option>
+        </select>
+      </div>
+      <div id="osWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+    </div>
   </div>
 </div>
+
+<div class="modalBg" id="osModal" onclick="if(event.target===this)osClose()"><div class="modal" id="osModalBody"></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -96,7 +132,7 @@
       try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
-      renderMonths(); load();
+      renderMonths(); load(); osLoad();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -161,6 +197,205 @@
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Faltantes');
     XLSX.writeFile(wb,'faltantes_por_sku.xlsx');
   }
+
+  // ===================== Offer Sheet (부족분 입고 알림·재오퍼) =====================
+  let osItems=[], osSummary=null, osDetail=null, companyCache=null;
+  function showTab(t){
+    const isOffer=(t==='offer');
+    $('tabShort').classList.toggle('hidden',isOffer); $('tabOffer').classList.toggle('hidden',!isOffer);
+    $('tabBtnShort').classList.toggle('on',!isOffer); $('tabBtnOffer').classList.toggle('on',isOffer);
+    if(isOffer) osLoad();
+  }
+  async function getCompany(){
+    if(companyCache) return companyCache;
+    try{ companyCache=await fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()); }catch(e){ companyCache={}; }
+    return companyCache;
+  }
+  async function osLoad(){
+    try{
+      const d=await fetch(session.api+'/api/offersheets?status=all',{headers:auth()}).then(r=>r.json());
+      osItems=d.items||[]; osSummary=d.summary||null;
+      $('osBadge').textContent=(osSummary&&osSummary.ready>0)?('('+osSummary.ready+')'):'';
+      osRender();
+    }catch(e){ $('osWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function osStatusPill(s){ const t={ready:'발송 대기',sent:'발송 완료',cancelled:'취소됨'}[s]||s; return '<span class="pill '+esc(s)+'">'+t+'</span>'; }
+  const d10=(s)=> s?String(s).slice(0,10):'—';
+  function osRender(){
+    const f=$('osFilter').value;
+    const list=osItems.filter(x=>f==='all'||x.status===f);
+    let head='';
+    if(osSummary){
+      head='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 6px">'
+        +'<div class="sb"><div class="v" style="color:#8a6d1a">'+osSummary.ready+'</div><div class="l">발송 대기</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--income)">'+osSummary.sent+'</div><div class="l">발송 완료</div></div>'
+        +'</div>';
+    }
+    if(!list.length){ $('osWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">해당 상태의 offer sheet가 없습니다. 입고 승인 시 자동 생성되며, [스캔·생성]으로 수동 생성할 수도 있습니다.</div>'; return; }
+    let html=head+'<table><thead><tr><th>상태</th><th>번호</th><th>고객</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액(IVA포함)</th><th>생성</th><th>발송</th><th>구분</th></tr></thead><tbody>';
+    list.forEach(r=>{
+      html+='<tr style="cursor:pointer" onclick="osOpen('+r.id+')">'
+        +'<td>'+osStatusPill(r.status)+'</td>'
+        +'<td><b>'+esc(r.offer_no||('#'+r.id))+'</b></td>'
+        +'<td>'+esc(r.customer_name||'')+(r.customer_phone?'':' <span class="hint">(전화 미등록)</span>')+'</td>'
+        +'<td class="r">'+r.item_count+'</td>'
+        +'<td class="r">'+fmtq(r.total_qty)+'</td>'
+        +'<td class="r" style="font-weight:800">'+fmtm(r.total_mxn)+'</td>'
+        +'<td>'+d10(r.created_at)+'</td>'
+        +'<td>'+(r.sent_at?d10(r.sent_at)+(r.sent_by_name?' ('+esc(r.sent_by_name)+')':''):'—')+'</td>'
+        +'<td class="hint">'+(r.origin==='auto'?'입고 자동':'수동')+'</td>'
+        +'</tr>';
+    });
+    html+='</tbody></table>';
+    $('osWrap').innerHTML=html;
+  }
+  async function osGenerate(){
+    if(!confirm('지금 재고가 있는 미해소 부족분 전체를 스캔해 고객별 offer sheet를 생성합니다.\n(이미 살아있는 시트에 담긴 부족분은 제외 — 중복 생성 없음)'))return;
+    try{
+      const res=await fetch(session.api+'/api/offersheets/generate',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('생성 실패: '+(d.error||res.status)); return; }
+      alert(d.sheets>0?('offer sheet '+d.sheets+'건(라인 '+d.items+'개) 생성됨'):'새로 생성할 대상이 없습니다.\n(재고 있는 미해소 부족분이 없거나, 이미 전부 시트에 담겨 있습니다)');
+      osLoad();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  async function osOpen(id){
+    $('osModal').style.display='flex'; $('osModalBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{ osDetail=await fetch(session.api+'/api/offersheets/'+id,{headers:auth()}).then(r=>r.json()); }
+    catch(e){ $('osModalBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; return; }
+    if(!osDetail||!osDetail.sheet){ $('osModalBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; return; }
+    osRenderDetail();
+  }
+  function osClose(){ $('osModal').style.display='none'; osDetail=null; }
+  function osRenderDetail(){
+    const s=osDetail.sheet, lines=osDetail.lines||[];
+    let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<div style="font-size:16px;font-weight:800;color:var(--brand)">'+esc(s.offer_no||('#'+s.id))+'</div>'+osStatusPill(s.status)
+      +'<div class="hint">생성 '+d10(s.created_at)+(s.origin==='auto'?' · 입고 자동'+(s.import_batch_no?' (배치 '+esc(s.import_batch_no)+')':''):' · 수동')+'</div>'
+      +'<button class="btn ghost sm" style="margin-left:auto" onclick="osClose()">닫기 ✕</button></div>'
+      +'<div style="margin-top:8px;font-size:13px"><b>'+esc(s.customer_name||'')+'</b>'
+      +(s.customer_contact?' · '+esc(s.customer_contact):'')
+      +(s.customer_phone?' · 📞 '+esc(s.customer_phone):' · <span style="color:var(--expense)">전화 미등록 — 고객관리에서 등록하면 WhatsApp 버튼 활성화</span>')+'</div>';
+    h+='<div style="margin:12px 0 4px;display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn" onclick="osPrintPdf()">🧾 Offer Sheet PDF 출력</button>'
+      +(s.customer_phone?'<button class="btn wa" onclick="osWhatsapp()">💚 WhatsApp 열기</button>':'')
+      +(s.status==='ready'?'<button class="btn ghost" onclick="osMarkSent()">✅ 발송완료 처리</button>':'')
+      +(s.status!=='cancelled'?'<button class="btn danger" onclick="osCancel()">✖ 취소</button>':'')
+      +'</div>'
+      +'<div class="hint">WhatsApp 버튼은 안내 문구가 채워진 채팅을 엽니다. PDF는 [PDF 출력]으로 저장한 뒤 채팅에 직접 첨부하세요. (API 자동발송은 추후)</div>';
+    h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생</th></tr></thead><tbody>';
+    lines.forEach(l=>{
+      h+='<tr><td><b>'+esc(l.ctr_code||'')+'</b></td><td>'+esc(l.product_name||'')+'</td>'
+        +'<td class="r">'+fmtq(l.stock_qty)+'</td>'
+        +'<td class="r" style="font-weight:800">'+fmtq(l.offer_qty)+'</td>'
+        +'<td class="r">'+fmtm(l.list_price)+'</td>'
+        +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
+        +'<td class="r">'+fmtm(l.unit_price)+'</td>'
+        +'<td class="r">'+fmtm(l.line_subtotal)+'</td>'
+        +'<td class="hint">'+d10(l.first_occurred)+'</td></tr>';
+    });
+    h+='</tbody></table>'
+      +'<div style="text-align:right;margin-top:10px;font-size:13.5px">Subtotal '+fmtm(s.subtotal_mxn)+' · IVA '+fmtm(s.iva_mxn)+' · <b style="color:var(--brand)">Total '+fmtm(s.total_mxn)+'</b></div>';
+    if(s.sent_at) h+='<div class="hint" style="margin-top:6px">발송: '+d10(s.sent_at)+' · '+esc(s.sent_channel||'')+(s.sent_by_name?' · '+esc(s.sent_by_name):'')+'</div>';
+    $('osModalBody').innerHTML=h;
+  }
+  async function osMarkSent(){
+    if(!osDetail)return;
+    if(!confirm('이 offer sheet를 발송 완료(WhatsApp)로 기록할까요?'))return;
+    const res=await fetch(session.api+'/api/offersheets/'+osDetail.sheet.id+'/mark-sent',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify({channel:'whatsapp'})});
+    const d=await res.json();
+    if(!res.ok||d.error){ alert('처리 실패: '+(d.note||d.error||res.status)); return; }
+    await osLoad(); osOpen(osDetail.sheet.id);
+  }
+  async function osCancel(){
+    if(!osDetail)return;
+    if(!confirm('이 offer sheet를 취소할까요?\n취소하면 담겨 있던 부족분은 다음 입고·스캔 때 다시 생성 대상이 됩니다.'))return;
+    const res=await fetch(session.api+'/api/offersheets/'+osDetail.sheet.id+'/cancel',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+    const d=await res.json();
+    if(!res.ok||d.error){ alert('처리 실패: '+(d.error||res.status)); return; }
+    osClose(); osLoad();
+  }
+  function osWaDigits(phone){
+    let dg=String(phone||'').replace(/\D/g,'');
+    if(!dg) return null;
+    if(dg.length===10) dg='52'+dg;             // 멕시코 국번 자동
+    return dg;
+  }
+  function osWhatsapp(){
+    if(!osDetail)return;
+    const s=osDetail.sheet, lines=osDetail.lines||[];
+    const dg=osWaDigits(s.customer_phone);
+    if(!dg){ alert('고객 전화번호가 없습니다.'); return; }
+    const items=lines.map(l=>'• '+(l.ctr_code||'')+' — '+(l.product_name||'')+' × '+fmtq(l.offer_qty)).join('\n');
+    const msg='Hola'+(s.customer_contact?' '+s.customer_contact:'')+', le saludamos de parte de '+((companyCache&&companyCache.emisor)||'CTR')+'. 🎉\n\n'
+      +'¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n'
+      +items+'\n\nTotal con IVA: '+fmtm(s.total_mxn)+' MXN\n\n'
+      +'Le enviamos la oferta en PDF ('+(s.offer_no||'')+'). Sujeto a existencia disponible — le recomendamos confirmar su pedido pronto. ¡Gracias!';
+    getCompany().then(()=>{ window.open('https://wa.me/'+dg+'?text='+encodeURIComponent(msg),'_blank'); });
+  }
+  async function osPrintPdf(){
+    if(!osDetail)return;
+    const s=osDetail.sheet, lines=osDetail.lines||[];
+    const co=await getCompany();
+    const logo=co.logo_data?'<img src="'+co.logo_data+'" style="height:52px">':'';
+    const rowsHtml=lines.map(l=>'<tr>'
+      +'<td>'+esc(l.ctr_code||'')+'</td>'
+      +'<td>'+esc(l.syd_codes||'—')+'</td>'
+      +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+      +'<td class="r">'+fmtq(l.offer_qty)+'</td>'
+      +'<td class="r">'+fmtm(l.list_price)+'</td>'
+      +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
+      +'<td class="r">'+fmtm(l.unit_price)+'</td>'
+      +'<td class="r">'+fmtm(l.line_subtotal)+'</td>'
+      +'</tr>').join('');
+    const bankParts=[];
+    if(co.bank_name)bankParts.push('Banco: '+esc(co.bank_name));
+    if(co.bank_account)bankParts.push('Cuenta: '+esc(co.bank_account));
+    if(co.bank_clabe)bankParts.push('CLABE: '+esc(co.bank_clabe));
+    if(co.bank_holder)bankParts.push('Beneficiario: '+esc(co.bank_holder));
+    const today=new Date().toISOString().slice(0,10);
+    const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(s.offer_no||'Oferta')+'</title><style>'
+      +'body{font-family:Arial,Helvetica,sans-serif;color:#1C1B19;margin:26px;font-size:12px}'
+      +'.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #143D34;padding-bottom:10px}'
+      +'.co{font-size:11px;color:#555;line-height:1.5;text-align:right}'
+      +'h1{font-size:19px;color:#143D34;margin:4px 0 2px}'
+      +'.sub{font-size:12px;color:#0F6E56;font-weight:bold}'
+      +'.meta{margin:12px 0;font-size:12px;line-height:1.6}'
+      +'.banner{background:#E4F0EB;border:1px solid #0F6E56;border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;line-height:1.55}'
+      +'table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}'
+      +'thead{display:table-header-group}'
+      +'th{background:#143D34;color:#fff;padding:6px 7px;text-align:left;font-size:10px}'
+      +'td{padding:6px 7px;border-bottom:1px solid #ddd;vertical-align:top}'
+      +'td.r,th.r{text-align:right}td.l{text-align:left}'
+      +'.ap{color:#777;font-size:10px}'
+      +'tr{page-break-inside:avoid}'
+      +'.totwrap{page-break-inside:avoid;margin-top:12px;display:flex;justify-content:flex-end}'
+      +'.tot{min-width:250px;font-size:12.5px}.tot div{display:flex;justify-content:space-between;padding:3px 0}'
+      +'.tot .g{font-weight:bold;font-size:14.5px;color:#143D34;border-top:2px solid #143D34;padding-top:6px}'
+      +'.ft{margin-top:16px;font-size:10.5px;color:#666;line-height:1.6;border-top:1px solid #ddd;padding-top:8px}'
+      +'@page{margin:14mm}'
+      +'</style></head><body>'
+      +'<div class="hd"><div>'+logo+'<h1>OFERTA — PRODUCTOS YA DISPONIBLES</h1><div class="sub">'+esc(s.offer_no||'')+'</div></div>'
+      +'<div class="co"><b>'+esc(co.emisor||'')+'</b><br>'+esc(co.domicilio||'')+'<br>'+(co.rfc?'RFC: '+esc(co.rfc)+'<br>':'')+(co.phone?'Tel/WhatsApp: '+esc(co.phone)+'<br>':'')+esc(co.homepage||'')+'</div></div>'
+      +'<div class="meta"><b>Cliente:</b> '+esc(s.customer_name||'')+(s.customer_rfc?' · RFC: '+esc(s.customer_rfc):'')+(s.customer_contact?'<br><b>Atención:</b> '+esc(s.customer_contact):'')+'<br><b>Fecha:</b> '+today+'</div>'
+      +'<div class="banner">📦 <b>¡Buenas noticias!</b> Los productos que usted solicitó y que se encontraban <b>agotados ya están disponibles</b> en nuestro almacén. '
+      +'Le presentamos esta oferta con su precio aplicado. <b>Sujeto a existencia disponible</b> — le recomendamos confirmar su pedido a la brevedad.</div>'
+      +'<table><thead><tr><th>Código CTR</th><th>Código SYD</th><th>Producto / Aplicación</th><th class="r">Cantidad</th><th class="r">Precio lista</th><th class="r">Desc.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>'
+      +'<tbody>'+rowsHtml+'</tbody></table>'
+      +'<div class="totwrap"><div class="tot">'
+      +'<div><span>Subtotal</span><span>'+fmtm(s.subtotal_mxn)+'</span></div>'
+      +'<div><span>IVA (16%)</span><span>'+fmtm(s.iva_mxn)+'</span></div>'
+      +'<div class="g"><span>TOTAL MXN</span><span>'+fmtm(s.total_mxn)+'</span></div>'
+      +'</div></div>'
+      +'<div class="ft">'+(bankParts.length?bankParts.join(' · ')+'<br>':'')
+      +'Precios en MXN. Oferta informativa generada a partir de sus pedidos pendientes por falta de existencia; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido.</div>'
+      +'<scr'+'ipt>window.onload=function(){window.print();};</scr'+'ipt>'
+      +'</body></html>';
+    const w=window.open('','_blank');
+    if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+  console.log('[refatrix-shortage] build sh-0730a');
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

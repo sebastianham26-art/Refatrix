@@ -5,6 +5,7 @@ import { logEvent } from '../audit.js';
 import { fieldVisible, flatAvgCostEnabled } from '../permissions.js';
 import { flatAvgCost } from '../flatAvgCost.js';
 import { consumeBackorder } from '../poBackorder.js';
+import { generateOfferSheets } from '../offerSheets.js';
 
 export default async function importRoutes(app) {
   // 수입 입고 작성(영업지원). 라인(SKU별) + 부대비용(명목·인보이스별).
@@ -123,6 +124,25 @@ export default async function importRoutes(app) {
 
     if (out.error) return reply.code(409).send({ error: out.error });
     await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'update', target: `import_batch:${id}`, detail: { approved: true } });
+    // ── Offer Sheet 자동 생성 ──────────────────────────────────────
+    //   재고 등재가 확정된 직후, 이번 배치로 입고된 SKU의 미해소 부족분
+    //   (stock_shortages open, 고객 있음)을 고객별 오퍼 시트로 생성.
+    //   승인 트랜잭션과 분리(승인은 이미 확정) + 실패해도 승인에는 영향 없음(best-effort).
+    try {
+      const pidsIn = [...new Set((out.lines || []).map((l) => Number(l.product_id)))];
+      if (pidsIn.length) {
+        const gen = await withTx(async (c) => generateOfferSheets(c.query.bind(c), {
+          productIds: pidsIn, importBatchId: id, origin: 'auto', userId,
+        }));
+        out.offer_sheets = { sheets: gen.sheets, items: gen.items };
+        if (gen.sheets > 0) {
+          await logEvent({ userId, action: 'create', target: 'offer_sheets', detail: { import_batch: id, sheets: gen.sheets, items: gen.items } });
+        }
+      }
+    } catch (e) {
+      app.log?.error?.({ err: e }, 'offer sheet auto-generate failed');
+      out.offer_sheets = { error: 'generate_failed' };
+    }
     return out;
   });
 

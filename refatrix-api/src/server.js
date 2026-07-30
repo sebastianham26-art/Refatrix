@@ -46,6 +46,7 @@ import stockCountRoutes from './routes/stockCountRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
 import inboundRoutes from './routes/inboundRoutes.js';
 import visitRoutes from './routes/visitRoutes.js';
+import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
 export function buildApp() {
@@ -111,6 +112,7 @@ export function buildApp() {
   app.register(stockCountRoutes);
   app.register(purchaseRoutes);
   app.register(visitRoutes);
+  app.register(offerSheetRoutes);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {
