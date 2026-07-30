@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0728d</title>
+<title>Refatrix ERP · 재무 · build fin-0730a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -420,7 +420,11 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <h2 style="margin:0">💰 은행계좌별 필요자금</h2>
           <span class="hint" id="fundTitleHint" style="margin:0"></span>
-          <button class="btn ghost sm" id="fund-reload" style="margin-left:auto">새로고침</button>
+          <div class="seg" style="height:30px;margin-left:auto">
+            <button class="segb" id="fund-proj-on" type="button" onclick="cfProjSet(true)" title="아직 [생성] 전인 고정비 회차를 규칙에서 미리 전개해 포함합니다">자동전개 포함</button>
+            <button class="segb" id="fund-proj-off" type="button" onclick="cfProjSet(false)" title="등록된 예정·실적만 집계합니다 (자동전개 숨김)">자동전개 제외</button>
+          </div>
+          <button class="btn ghost sm" id="fund-reload">새로고침</button>
         </div>
         <div class="hint" style="margin-top:4px">각 은행계좌별로 <b>당월 말에 얼마 남을 예정</b>이고 <b>익월에 얼마 쓸 예정</b>인지 → 그래서 <b>익월 말에 부족한지/남는지</b>를 봅니다. <span style="color:#c0392b;font-weight:700">부족</span>이면 익월까지 그 계좌에 그만큼 이체/충전이 필요합니다(부족 계좌가 위쪽 정렬). 익월 지출에는 아직 [생성] 전 고정비 자동전개분도 포함됩니다. 행을 클릭하면 개별 내역이 열립니다.</div>
         <div id="fundBody" style="margin-top:8px"><div class="hint">불러오는 중…</div></div>
@@ -2440,7 +2444,7 @@
   async function renderMonthFromApi(){
     const b=$('cashBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const res=await fetch(`${session.api}/api/cashflow/month?month=${calMonth}&forecast=1`,{headers:auth()});
+      const res=await fetch(`${session.api}/api/cashflow/month?month=${calMonth}&forecast=1&proj=${cfProjOn?'1':'0'}`,{headers:auth()});
       if(!res.ok){b.innerHTML=`<div class="hint">월간달력을 불러오지 못했습니다 (HTTP ${res.status}).${res.status===404?' 최신 백엔드(현금흐름 월별 API)가 배포되었는지 확인하세요.':''}</div>`;return;}
       const d=await res.json();
       calCarry=d.carry||null;   // 이월(지난 미실현 AR/AP → 오늘 합산) — 셀·상세에서 사용
@@ -2483,6 +2487,24 @@
       [...b.querySelectorAll('.cal-cell[data-day]')].forEach(el=>el.onclick=()=>showDayDetail(el.dataset.day,dayMap[el.dataset.day]));
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+  // ===== 자동전개 포함/제외 토글 (예측 박스·필요자금 공용, localStorage 유지) =====
+  // "생성 전 고정비를 미리 전개해 보여주는" 자동전개가 실데이터(중복 규칙·수동 등록 등)와 겹쳐
+  // 혼란스러우면 사용자가 직접 끌 수 있다 — proj=0으로 서버에서 아예 계산 제외.
+  let cfProjOn=(function(){try{return localStorage.getItem('rfx_proj')!=='0';}catch(e){return true;}})();
+  function cfProjSet(v){
+    if(cfProjOn===v)return;
+    cfProjOn=v;
+    try{localStorage.setItem('rfx_proj',v?'1':'0');}catch(e){}
+    cfProjPaint();
+    loadFunding();
+    if(!$('cashCard').classList.contains('hidden')&&cfState.view==='cal')renderMonthFromApi();
+  }
+  function cfProjPaint(){
+    const a=$('fund-proj-on'),b=$('fund-proj-off');
+    if(a)a.classList.toggle('on',cfProjOn);
+    if(b)b.classList.toggle('on',!cfProjOn);
+  }
+
   // ===== 계정별 월 예산 예측 (달력 위 요약 + 펼치기) =====
   // 근거: 등록된 예정(plan) + 아직 [생성]하지 않은 고정비 회차 자동전개 + 미수 인보이스(AR). 서버 forecast=1 응답 사용.
   // 보기 2종: 계정과목별(기본) / 은행계좌별(forecast.by_account) — 합계는 두 뷰가 동일(같은 데이터의 재그룹).
@@ -2513,7 +2535,11 @@
         <button class="segb${cfFcView==='cat'?' on':''}" type="button" onclick="cfFcSetView('cat')">계정과목별</button>
         <button class="segb${cfFcView==='acc'?' on':''}" type="button" onclick="cfFcSetView('acc')">은행계좌별</button>
       </div>`:'';
-    return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 8px">${seg}
+    const projSeg=`<div class="seg" style="height:30px">
+        <button class="segb${cfProjOn?' on':''}" type="button" onclick="cfProjSet(true)" title="아직 [생성] 전인 고정비 회차를 규칙에서 미리 전개해 포함합니다">자동전개 포함</button>
+        <button class="segb${cfProjOn?'':' on'}" type="button" onclick="cfProjSet(false)" title="등록된 예정·실적만 집계합니다 (자동전개 숨김)">자동전개 제외</button>
+      </div>`;
+    return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 8px">${seg}${projSeg}${cfProjOn?'':'<span class="hint" style="margin:0"><b>자동전개 제외 중</b></span>'}
         <span class="hint" style="margin:0;flex:1;min-width:260px">선택한 달에 ${cfFcView==='acc'?'<b>은행계좌별</b>':'<b>계정과목별</b>'}로 나갈 돈·들어올 돈을 미리 집계합니다. <b>예상 합계 = 처리됨(실적화) + 남은 예정 + 자동전개</b>. <b style="color:#7a4fb0">자동전개</b>는 아직 [생성]하지 않은 고정비 회차를 규칙에서 미리 전개한 금액(이미 생성했거나 삭제한 회차는 제외), 수입의 「매출 수금」은 이 달 만기 미수 인보이스 잔액(이번 달 조회 시 지난 만기 이월 포함${cfFcView==='acc'?' — 입금계좌 미정이라 별도 행':''})입니다. 행을 클릭하면 개별 내역이 열립니다.</span></div>
       ${cfFcTable('in')}${cfFcTable('out')}`;
   }
@@ -2564,7 +2590,7 @@
     const b=$('fundBody');if(!b)return;
     b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const res=await fetch(`${session.api}/api/cashflow/funding`,{headers:auth()});
+      const res=await fetch(`${session.api}/api/cashflow/funding?proj=${cfProjOn?'1':'0'}`,{headers:auth()});
       if(!res.ok){b.innerHTML=`<div class="hint">필요자금을 불러오지 못했습니다 (HTTP ${res.status}).${res.status===404?' 최신 백엔드(필요자금 API)가 배포되었는지 확인하세요.':''}</div>`;return;}
       fundData=await res.json();
       renderFunding();
@@ -2587,7 +2613,8 @@
   }
   function renderFunding(){
     const b=$('fundBody');const d=fundData;if(!b||!d)return;
-    const th=$('fundTitleHint');if(th)th.textContent=`— 오늘 ${d.today} 기준 · MXN 환산`;
+    cfProjPaint();
+    const th=$('fundTitleHint');if(th)th.textContent=`— 오늘 ${d.today} 기준 · MXN 환산${cfProjOn?'':' · 자동전개 제외 중'}`;
     if(!d.total){b.innerHTML='<div class="hint">잔액을 볼 수 있는 계좌가 없습니다.</div>';return;}
     renderFundAlert(d);
     const TM=fundMonLabel(d.this_month),NM=fundMonLabel(d.next_month);
@@ -2635,7 +2662,7 @@
         ${endCell(t.end_this)}
         <td class="num" style="color:var(--expense)">${t.out_next?'-'+fmt(t.out_next):'0'}</td>
         ${needCell(t.after_out)}</tr>`;
-    b.innerHTML=`<table><thead><tr>
+    b.innerHTML=`${cfProjOn?'':'<div class="hint" style="margin:0 0 6px"><b>자동전개 제외 중</b> — 아직 [생성] 전인 고정비 회차는 집계에 포함되지 않습니다. 고정비 탭에서 [생성]한 예정만 반영됩니다.</div>'}<table><thead><tr>
         <th>은행계좌</th><th class="num">현재 잔고</th>
         <th class="num">${TM} 남은 지출</th>
         <th class="num" style="background:#f4f7fb">★ ${TM} 말 남을 예정</th>

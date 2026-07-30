@@ -2185,7 +2185,8 @@ export default async function financeRoutes(app) {
     //       ③ 미수 인보이스(invRows — 그 달 만기 + 이번 달 조회 시 지난 만기 이월). 집계는 순수 함수.
     let forecast = null;
     if (String(req.query.forecast || '') === '1') {
-      const projections = await recurringProjections(req.ctx.perm, [month]);
+      // proj=0 → 자동전개(미생성 고정비 전개) 제외 — 등록된 예정만 집계 (프런트 토글)
+      const projections = String(req.query.proj || '1') !== '0' ? await recurringProjections(req.ctx.perm, [month]) : [];
       forecast = monthForecastByCategory(mapped, projections, invRows, month, today);
     }
     return { month, today, opening_before_month: r2(runBefore), opening_before_month_proj: r2(runBeforeProj), days, carry: carry || null, forecast, ...breakdown };
@@ -2221,7 +2222,8 @@ export default async function financeRoutes(app) {
       balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
     }));
     const txns = await loadCashTxns(req.ctx.perm);
-    const projections = await recurringProjections(req.ctx.perm, [thisMonth, nextMonth]);
+    // proj=0 → 자동전개(미생성 고정비 전개) 제외 — 등록된 예정만 집계 (프런트 토글)
+    const projections = String(req.query.proj || '1') !== '0' ? await recurringProjections(req.ctx.perm, [thisMonth, nextMonth]) : [];
     const funding = accountFundingPlan(accounts, txns, projections, thisMonth, nextMonth, today);
     // 참고: AR(미수 인보이스, 입금계좌 미정) — 익월 말까지 만기(경과 포함) 잔액 합
     const arRef = (await query(
