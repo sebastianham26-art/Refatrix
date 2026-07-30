@@ -115,4 +115,17 @@ export function expandBetween(rule, fromStr, toStr) {
   return out;
 }
 
+// ===== 자동전개 제외 판단 (2026-07-30) — 순수 함수 =====
+// "이미 회차가 존재하는가?"를 period 하나에만 의존하지 않는다(구버전 생성분·수정 흐름에서
+// recurring_period가 비거나 형식이 다르면 생성된 회차가 자동전개로 이중 표시되는 사고 방지).
+//  sets: { periods:Set('ruleId|period'), months:Set('ruleId|YYYY-MM'), dates:Set('ruleId|YYYY-MM-DD') }
+//        — months/dates 는 그 규칙 거래의 유효일(plan_date||txn_date) 기준(삭제분 포함).
+//  판단: ① period 일치 → 존재. ② 월반복: 같은 달에 그 규칙 거래가 하나라도 있으면 존재
+//        (월 1회 규칙이므로 충분). ③ 주반복: 같은 날짜 거래가 있으면 존재.
+export function occurrenceExists(sets, rule, occ) {
+  if (sets.periods.has(`${rule.id}|${occ.period}`)) return true;
+  if (rule.freq === 'week') return sets.dates.has(`${rule.id}|${String(occ.date).slice(0, 10)}`);
+  return sets.months.has(`${rule.id}|${String(occ.date).slice(0, 7)}`);
+}
+
 export { ymd, parseYMD, clampDay };

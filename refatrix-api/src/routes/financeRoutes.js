@@ -18,7 +18,7 @@ export function splitEqual(total, n) {
   return parts;
 }
 import { validateReceiptDataUrl } from '../ar.js';
-import { expandRule, expandBetween } from '../recurring.js';
+import { expandRule, expandBetween, occurrenceExists } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
@@ -1864,11 +1864,23 @@ export default async function financeRoutes(app) {
     const allow = allowedDetailAccountIds(perm);
     const visRules = rules.filter((r) => allow === null || r.account_id == null || allow.includes(Number(r.account_id)));
     if (!visRules.length) return [];
-    const ors = months.map((_, i) => `recurring_period = $${i + 2} OR recurring_period LIKE 'W' || $${i + 2} || '%'`).join(' OR ');
-    const existing = new Set((await query(
-      `SELECT recurring_rule_id AS rid, recurring_period AS p FROM transactions
-        WHERE recurring_rule_id = ANY($1) AND (${ors})`,
-      [visRules.map((r) => r.id), ...months])).rows.map((r) => `${r.rid}|${r.p}`));
+    // 기존 회차 조회 — period 일치 "또는" 유효일(plan_date||txn_date)이 대상 달인 거래 전부.
+    // period에만 의존하면 구버전 생성분·수정 흐름에서 period가 비거나 형식이 달라
+    // 이미 생성된 회차가 자동전개로 이중 표시될 수 있다 → 유효일 기준을 함께 본다(occurrenceExists).
+    const pOrs = months.map((_, i) => `recurring_period = $${i + 2} OR recurring_period LIKE 'W' || $${i + 2} || '%'`).join(' OR ');
+    const mIn = months.map((_, i) => `$${i + 2}`).join(',');
+    const exRows = (await query(
+      `SELECT recurring_rule_id AS rid, recurring_period AS p,
+              to_char(COALESCE(plan_date, txn_date),'YYYY-MM-DD') AS eff
+         FROM transactions
+        WHERE recurring_rule_id = ANY($1)
+          AND (${pOrs} OR to_char(COALESCE(plan_date, txn_date),'YYYY-MM') IN (${mIn}))`,
+      [visRules.map((r) => r.id), ...months])).rows;
+    const sets = { periods: new Set(), months: new Set(), dates: new Set() };
+    for (const r of exRows) {
+      if (r.p != null) sets.periods.add(`${r.rid}|${r.p}`);
+      if (r.eff) { sets.months.add(`${r.rid}|${r.eff.slice(0, 7)}`); sets.dates.add(`${r.rid}|${r.eff}`); }
+    }
     const usd = (await getUsdMxnRate()).rate;
     const projections = [];
     for (const m of months) {
@@ -1881,7 +1893,7 @@ export default async function financeRoutes(app) {
           weekday: r.weekday == null ? null : Number(r.weekday), end_month: r.end_month,
         }, `${m}-01`, mEnd);
         for (const o of occ) {
-          if (existing.has(`${r.id}|${o.period}`)) continue;
+          if (occurrenceExists(sets, r, o)) continue;
           projections.push({ direction: r.direction, category_code: r.category_code, category_name: r.category_name,
             account_id: r.account_id, account_name: r.account_name,
             date: o.date, amount_mxn: r2(Number(r.amount) * (r.currency === 'USD' ? usd : 1)), rule_name: r.name });
