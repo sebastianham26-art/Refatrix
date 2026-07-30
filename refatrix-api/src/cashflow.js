@@ -507,8 +507,11 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
   const fin = (r) => {
     for (const k of ['out_this', 'out_next', 'in_this', 'in_next']) r[k] = round2(r[k]);
     if (r.balance != null) {
-      r.after_out = round2(r.balance - r.out_this - r.out_next);
+      r.end_this = round2(r.balance - r.out_this);                 // ★ 당월 말 남을 예정 (지출만 반영)
+      r.after_out = round2(r.balance - r.out_this - r.out_next);   // ★ 익월 말 부족/여유
       r.after_all = round2(r.after_out + r.in_this + r.in_next);
+    } else {
+      r.end_this = null;
     }
     r.items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     return r;
@@ -526,6 +529,7 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
   total.out_this = round2(total.out_this + unk.out_this); total.out_next = round2(total.out_next + unk.out_next);
   total.in_this = round2(total.in_this + unk.in_this); total.in_next = round2(total.in_next + unk.in_next);
   total.balance = round2(total.balance);
+  total.end_this = round2(total.balance - total.out_this);
   total.after_out = round2(total.balance - total.out_this - total.out_next);
   total.after_all = round2(total.after_out + total.in_this + total.in_next);
   const hasUnk = (unk.out_this || unk.out_next || unk.in_this || unk.in_next) ? unk : null;

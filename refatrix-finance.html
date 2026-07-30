@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0728c</title>
+<title>Refatrix ERP · 재무 · build fin-0728d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -411,6 +411,8 @@
         <div class="seg"><button class="segb on" id="cf-show-act">실적 표시</button><button class="segb on" id="cf-show-plan">예정 표시</button></div>
         <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
       </div>
+      <!-- 필요자금 경고 배너: fundBody 재로딩과 무관하게 유지되는 고정 요소 (성공 로드시에만 갱신) -->
+      <div id="fundAlert" class="hidden" style="margin:0 0 10px;padding:10px 14px;border-radius:9px;font-weight:700;cursor:pointer" title="클릭하면 은행계좌별 필요자금 표로 이동합니다"></div>
       <div id="cashBody"><div class="hint">불러오는 중…</div></div>
 
       <!-- 은행계좌별 필요자금 (이번 달 잔여 + 익월) -->
@@ -420,7 +422,7 @@
           <span class="hint" id="fundTitleHint" style="margin:0"></span>
           <button class="btn ghost sm" id="fund-reload" style="margin-left:auto">새로고침</button>
         </div>
-        <div class="hint" style="margin-top:4px"><b>지출 반영 후 = 현재 잔고 − 이번 달 남은 지출(경과 이월 포함) − 익월 지출 예정</b>(등록 예정 + 아직 [생성] 전 고정비 자동전개). 음수(<span style="color:#c0392b;font-weight:700">부족</span>)면 익월까지 그 계좌에 그만큼 이체/충전이 필요합니다. 수입은 불확실하므로 참고 열로만 표시(계좌지정 예정수입만 — 매출 수금은 입금계좌 미정이라 표 아래 별도). 행을 클릭하면 지출·수입 내역이 열립니다.</div>
+        <div class="hint" style="margin-top:4px">각 은행계좌별로 <b>당월 말에 얼마 남을 예정</b>이고 <b>익월에 얼마 쓸 예정</b>인지 → 그래서 <b>익월 말에 부족한지/남는지</b>를 봅니다. <span style="color:#c0392b;font-weight:700">부족</span>이면 익월까지 그 계좌에 그만큼 이체/충전이 필요합니다(부족 계좌가 위쪽 정렬). 익월 지출에는 아직 [생성] 전 고정비 자동전개분도 포함됩니다. 행을 클릭하면 개별 내역이 열립니다.</div>
         <div id="fundBody" style="margin-top:8px"><div class="hint">불러오는 중…</div></div>
       </div>
 
@@ -2555,6 +2557,8 @@
   function cfFcRow(dir,i){const el=$(`fc-sub-${dir}-${i}`);if(el)el.classList.toggle('hidden');}
 
   // ===== 은행계좌별 필요자금 (이번 달 잔여 + 익월) — 오늘 기준 고정 =====
+  // 핵심 흐름(한 행에 이야기 순서대로): 현재 잔고 → 당월 남은 지출 → ★당월 말 남을 예정 → 익월 지출 예정 → ★익월 말 부족/여유.
+  // 경고 배너(fundAlert)는 fundBody 밖 고정 요소 — 재로딩('불러오는 중')·에러에도 지워지지 않고, 성공 로드시에만 갱신.
   let fundData=null;
   async function loadFunding(){
     const b=$('fundBody');if(!b)return;
@@ -2567,60 +2571,79 @@
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
   function fundMonLabel(m){return `${Number(String(m).slice(5,7))}월`;}
+  function renderFundAlert(d){
+    const a=$('fundAlert');if(!a)return;
+    const shortRows=d.rows.filter(r=>r.after_out!=null&&r.after_out<0);
+    a.classList.remove('hidden');
+    a.onclick=()=>{const s=$('fundSec');if(s)s.scrollIntoView({behavior:'smooth',block:'start'});};
+    if(shortRows.length){
+      const worst=shortRows.map(r=>`${escH(r.name)} 부족 ${fmt(-r.after_out)}`).slice(0,3).join(' · ');
+      a.style.background='#fde2e0';a.style.color='#c0392b';a.style.border='1px solid #f3b8b3';
+      a.innerHTML=`⚠ ${fundMonLabel(d.next_month)}(익월)까지 자금이 부족한 계좌 <b style="font-size:15px">${shortRows.length}개</b> — ${worst}${shortRows.length>3?' 외':''}. 여유 계좌에서 이체하거나 수금 일정을 앞당기세요. <span style="font-weight:400;font-size:12px">(아래 필요자금 표로 이동 ↓)</span>`;
+    }else{
+      a.style.background='#e7f3ee';a.style.color='#2f8f5b';a.style.border='1px solid #bfe0cf';
+      a.innerHTML=`✅ ${fundMonLabel(d.next_month)}(익월)까지 전 계좌 자금 여유 — 오늘 ${d.today} 기준. <span style="font-weight:400;font-size:12px">(아래 필요자금 표 ↓)</span>`;
+    }
+  }
   function renderFunding(){
     const b=$('fundBody');const d=fundData;if(!b||!d)return;
-    const th=$('fundTitleHint');if(th)th.textContent=`— ${fundMonLabel(d.this_month)} 잔여 + ${fundMonLabel(d.next_month)}(익월), 오늘 ${d.today} 기준 · MXN 환산`;
+    const th=$('fundTitleHint');if(th)th.textContent=`— 오늘 ${d.today} 기준 · MXN 환산`;
     if(!d.total){b.innerHTML='<div class="hint">잔액을 볼 수 있는 계좌가 없습니다.</div>';return;}
-    const needCell=(v)=>v==null?'<td class="num">—</td>'
-      :v<0?`<td class="num" style="font-weight:800;color:#c0392b">부족 ${fmt(-v)}</td>`
-      :`<td class="num" style="font-weight:700;color:var(--income)">여유 ${fmt(v)}</td>`;
+    renderFundAlert(d);
+    const TM=fundMonLabel(d.this_month),NM=fundMonLabel(d.next_month);
+    // ★ 두 핵심 열 강조 셀
+    const endCell=(v)=>v==null?'<td class="num" style="background:#f4f7fb">—</td>'
+      :`<td class="num" style="background:#f4f7fb;font-weight:800;color:${v<0?'#c0392b':'var(--brand)'}">${fmt(v)}</td>`;
+    const needCell=(v)=>v==null?'<td class="num" style="background:#fdf6ee">—</td>'
+      :v<0?`<td class="num" style="background:#fdf6ee;font-weight:800;color:#c0392b">부족 ${fmt(-v)}</td>`
+      :`<td class="num" style="background:#fdf6ee;font-weight:800;color:var(--income)">여유 ${fmt(v)}</td>`;
     const stB=(st)=>st==='overdue'?'<span class="pill" style="background:#fde2e0;color:#c0392b">경과</span>'
       :st==='projected'?'<span class="pill" style="background:#efe7f8;color:#7a4fb0">자동전개</span>'
       :'<span class="pill" style="background:#eef1f5;color:#5a6b7b">예정</span>';
     const itemsTbl=(r)=>{
-      if(!r.items.length)return '<div class="hint" style="padding:4px 0">이번 달 잔여·익월 예정 내역이 없습니다.</div>';
-      const row=(it)=>`<tr><td style="width:70px">${it.win==='this'?`<b>${fundMonLabel(fundData.this_month)}</b>`:`<b style="color:#0c447c">${fundMonLabel(fundData.next_month)}</b>`}</td><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.category_name||'')}</td><td>${escH(it.memo||'')}</td><td class="num" style="color:${it.direction==='in'?'var(--income)':'var(--expense)'}">${it.direction==='in'?'+':'-'}${fmt(it.amount)}</td></tr>`;
-      return `<table style="margin:0"><thead><tr><th>구분</th><th>날짜</th><th>상태</th><th>계정과목</th><th>내용</th><th class="num">금액</th></tr></thead><tbody>${r.items.map(row).join('')}</tbody></table>`;
+      const inSum=Math.round(((r.in_this||0)+(r.in_next||0))*100)/100;
+      const incomeNote=inSum?`<div class="hint" style="margin:4px 0 2px">참고: 이 계좌 예정수입 <b style="color:var(--income)">+${fmt(inSum)}</b>${r.after_all!=null?` — 수입까지 들어오면 ${NM} 말 <b>${fmt(r.after_all)}</b>`:''} (수입은 불확실해 본표 계산엔 미반영)</div>`:'';
+      if(!r.items.length)return incomeNote||'<div class="hint" style="padding:4px 0">이번 달 잔여·익월 예정 내역이 없습니다.</div>';
+      const row=(it)=>`<tr><td style="width:70px">${it.win==='this'?`<b>${TM}</b>`:`<b style="color:#0c447c">${NM}</b>`}</td><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.category_name||'')}</td><td>${escH(it.memo||'')}</td><td class="num" style="color:${it.direction==='in'?'var(--income)':'var(--expense)'}">${it.direction==='in'?'+':'-'}${fmt(it.amount)}</td></tr>`;
+      return `${incomeNote}<table style="margin:0"><thead><tr><th>구분</th><th>날짜</th><th>상태</th><th>계정과목</th><th>내용</th><th class="num">금액</th></tr></thead><tbody>${r.items.map(row).join('')}</tbody></table>`;
     };
-    const accRow=(r,i)=>`<tr style="cursor:pointer" onclick="fundRow(${i})" title="클릭하면 개별 내역이 열립니다">
-        <td>🏦 ${escH(r.name)}${r.currency==='USD'?' <span class="hint" style="margin:0;font-size:11px;display:inline">USD</span>':''}${r.can_detail===false?' <span class="hint" style="margin:0;font-size:11px;display:inline">(세부 비공개 — 지출예정 미집계)</span>':''}</td>
+    const accRow=(r,i)=>`<tr style="cursor:pointer${r.after_out!=null&&r.after_out<0?';background:#fff5f4':''}" onclick="fundRow(${i})" title="클릭하면 개별 내역이 열립니다">
+        <td>🏦 <b>${escH(r.name)}</b>${r.currency==='USD'?' <span class="hint" style="margin:0;font-size:11px;display:inline">USD</span>':''}${r.can_detail===false?' <span class="hint" style="margin:0;font-size:11px;display:inline">(세부 비공개 — 지출예정 미집계)</span>':''}</td>
         <td class="num">${fmt(r.balance)}</td>
-        <td class="num" style="color:var(--expense)">${r.out_this?'-'+fmt(r.out_this):''}</td>
-        <td class="num" style="color:var(--expense)">${r.out_next?'-'+fmt(r.out_next):''}</td>
-        ${needCell(r.after_out)}
-        <td class="num" style="color:var(--income)">${(r.in_this||r.in_next)?'+'+fmt(Math.round((r.in_this+r.in_next)*100)/100):''}</td>
-        <td class="num" style="color:${r.after_all!=null&&r.after_all<0?'#c0392b':'var(--muted)'}">${r.after_all!=null?fmt(r.after_all):'—'}</td></tr>
-      <tr class="hidden" id="fund-sub-${i}"><td colspan="7" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(r)}</td></tr>`;
+        <td class="num" style="color:var(--expense)">${r.out_this?'-'+fmt(r.out_this):'0'}</td>
+        ${endCell(r.end_this)}
+        <td class="num" style="color:var(--expense)">${r.out_next?'-'+fmt(r.out_next):'0'}</td>
+        ${needCell(r.after_out)}</tr>
+      <tr class="hidden" id="fund-sub-${i}"><td colspan="6" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(r)}</td></tr>`;
     let rows=d.rows.map(accRow).join('');
-    let unkIdx=null;
     if(d.unassigned){
-      unkIdx=d.rows.length;
+      const unkIdx=d.rows.length;
       const u=d.unassigned;
       rows+=`<tr style="cursor:pointer;background:#fffdf2" onclick="fundRow(${unkIdx})" title="어느 계좌에서 나갈지 아직 정하지 않은 예정 — 회사 전체 합계에는 포함됩니다">
         <td>❓ (계좌 미지정 예정)</td><td class="num">—</td>
-        <td class="num" style="color:var(--expense)">${u.out_this?'-'+fmt(u.out_this):''}</td>
-        <td class="num" style="color:var(--expense)">${u.out_next?'-'+fmt(u.out_next):''}</td>
-        <td class="num">—</td>
-        <td class="num" style="color:var(--income)">${(u.in_this||u.in_next)?'+'+fmt(Math.round((u.in_this+u.in_next)*100)/100):''}</td>
-        <td class="num">—</td></tr>
-      <tr class="hidden" id="fund-sub-${unkIdx}"><td colspan="7" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(u)}</td></tr>`;
+        <td class="num" style="color:var(--expense)">${u.out_this?'-'+fmt(u.out_this):'0'}</td>
+        <td class="num" style="background:#f4f7fb">—</td>
+        <td class="num" style="color:var(--expense)">${u.out_next?'-'+fmt(u.out_next):'0'}</td>
+        <td class="num" style="background:#fdf6ee">—</td></tr>
+      <tr class="hidden" id="fund-sub-${unkIdx}"><td colspan="6" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(u)}</td></tr>`;
     }
     const t=d.total;
     const totalRow=`<tr style="border-top:2px solid var(--line);font-weight:800">
         <td>합계 (전 계좌${d.unassigned?' + 미지정':''})</td>
         <td class="num">${fmt(t.balance)}</td>
-        <td class="num" style="color:var(--expense)">${t.out_this?'-'+fmt(t.out_this):''}</td>
-        <td class="num" style="color:var(--expense)">${t.out_next?'-'+fmt(t.out_next):''}</td>
-        ${needCell(t.after_out)}
-        <td class="num" style="color:var(--income)">${(t.in_this||t.in_next)?'+'+fmt(Math.round((t.in_this+t.in_next)*100)/100):''}</td>
-        <td class="num" style="color:${t.after_all<0?'#c0392b':'var(--muted)'}">${fmt(t.after_all)}</td></tr>`;
-    const shortCnt=d.rows.filter(r=>r.after_out!=null&&r.after_out<0).length;
-    const alert=shortCnt?`<div style="margin:0 0 8px;padding:8px 12px;border-radius:8px;background:#fde2e0;color:#c0392b;font-weight:700">⚠ 익월까지 자금이 부족한 계좌 ${shortCnt}개 — 부족 계좌가 위쪽에 정렬되어 있습니다. 여유 계좌에서 이체하거나 수금 일정을 앞당기세요.</div>`:'';
-    b.innerHTML=`${alert}
-      <table><thead><tr><th>은행계좌</th><th class="num">현재 잔고Ⓐ</th><th class="num">${fundMonLabel(d.this_month)} 남은 지출Ⓑ</th><th class="num">${fundMonLabel(d.next_month)}(익월) 지출Ⓒ</th><th class="num">지출 반영 후 Ⓐ−Ⓑ−Ⓒ</th><th class="num">참고: 예정수입</th><th class="num">수입 반영 시</th></tr></thead>
+        <td class="num" style="color:var(--expense)">${t.out_this?'-'+fmt(t.out_this):'0'}</td>
+        ${endCell(t.end_this)}
+        <td class="num" style="color:var(--expense)">${t.out_next?'-'+fmt(t.out_next):'0'}</td>
+        ${needCell(t.after_out)}</tr>`;
+    b.innerHTML=`<table><thead><tr>
+        <th>은행계좌</th><th class="num">현재 잔고</th>
+        <th class="num">${TM} 남은 지출</th>
+        <th class="num" style="background:#f4f7fb">★ ${TM} 말 남을 예정</th>
+        <th class="num">${NM}(익월) 지출 예정</th>
+        <th class="num" style="background:#fdf6ee">★ ${NM} 말 부족/여유</th></tr></thead>
       <tbody>${rows}${totalRow}</tbody></table>
-      <div class="hint" style="margin-top:6px">경과(지급일이 지난 미지급)는 「${fundMonLabel(d.this_month)} 남은 지출」에 포함됩니다. 익월 이후 예정은 이 표에 없습니다(지평 = 익월까지).
-      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, 익월 말까지 만기·경과 포함) — 입금계좌 미정이라 위 표 수입에 미포함.`:''}</div>`;
+      <div class="hint" style="margin-top:6px"><b>${TM} 말 남을 예정 = 현재 잔고 − ${TM} 남은 지출</b>(경과 미지급 포함) · <b>${NM} 말 부족/여유 = ${TM} 말 남을 예정 − ${NM} 지출 예정</b>(등록 예정 + 고정비 자동전개). 수입은 불확실해 본표에 미반영 — 행을 클릭하면 계좌별 예정수입과 개별 내역이 보입니다.
+      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, ${NM} 말까지 만기·경과 포함) — 입금계좌 미정.`:''}</div>`;
   }
   function fundRow(i){const el=$(`fund-sub-${i}`);if(el)el.classList.toggle('hidden');}
 
