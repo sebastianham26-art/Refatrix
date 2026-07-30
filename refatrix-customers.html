@@ -735,7 +735,8 @@
       $('d-info').innerHTML=`<table>
         <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
         <tr><th>회사 종류</th><td>${c.customer_type||'—'}</td><th>RFC</th><td>${c.rfc||'—'}</td></tr>
-        <tr><th>이메일 주소</th><td>${c.contact||'—'} ${c.phone?'· '+c.phone:''}</td><th>기본할인 / 외상일</th><td>${c.discount}% / ${c.credit_days}일${c.branch_count!=null?(" · 지점 "+c.branch_count):""}</td></tr>
+        <tr><th>이메일 주소</th><td>${c.contact||'—'}</td><th>전화</th><td>${c.phone||'—'}</td></tr>
+        <tr><th>기본할인 / 외상일</th><td colspan="3">${c.discount}% / ${c.credit_days}일${c.branch_count!=null?(" · 지점 "+c.branch_count):""}</td></tr>
         <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
         <tr><th>${sm.year||''} 누적 실적</th><td><b style="color:var(--income)">${fmt(actual)}</b></td><th>연말 매출목표</th><td>${target!=null?fmt(target):'<span class="hint" style="margin:0">미설정</span>'}</td></tr>
         ${progressRow}
