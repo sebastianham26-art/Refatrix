@@ -128,4 +128,23 @@ export function occurrenceExists(sets, rule, occ) {
   return sets.months.has(`${rule.id}|${String(occ.date).slice(0, 7)}`);
 }
 
+// ===== 자동전개 시그니처 중복 판단 (2026-07-30) — 순수 함수 =====
+// occurrenceExists는 "같은 규칙"의 회차만 본다. 그런데 실무에서는
+//  ① 같은 고정비가 규칙 2개로 중복 등록(하나만 생성됨 → 미생성 규칙이 자동전개로 이중 표시)
+//  ② 회차를 규칙과 연결 없이 거래등록으로 수동 등록
+// 인 경우 규칙 단위로는 못 잡는다 → 그 달의 '살아있는' 거래 전체에서
+// 방향·계정과목·통화·금액이 같은 거래(계좌 일치 또는 계좌미지정 거래)가 이미 있으면 전개하지 않는다.
+// (이중 집계 방지 우선 — 진짜 별개 지출이 우연히 겹치면 전개가 억제될 수 있으나,
+//  실제 예정 거래 자체는 그대로 집계되므로 최소 1회는 반드시 잡힌다. [생성]하면 정확해짐.)
+//  sigs: Set('dir|cat|cur|amt2|YYYY-MM|accId')  — amt2=금액 소수2자리 고정, accId=''이면 계좌미지정
+export function sigKey(direction, categoryCode, currency, amount, month, accountId) {
+  return `${direction}|${categoryCode || ''}|${currency || 'MXN'}|${Number(amount).toFixed(2)}|${month}|${accountId == null || accountId === '' ? '' : Number(accountId)}`;
+}
+export function occurrenceDuplicated(sigs, rule, occ) {
+  const m = String(occ.date).slice(0, 7);
+  if (sigs.has(sigKey(rule.direction, rule.category_code, rule.currency, rule.amount, m, rule.account_id))) return true;
+  // 계좌미지정으로 수동 등록된 같은 지출과도 매칭
+  return sigs.has(sigKey(rule.direction, rule.category_code, rule.currency, rule.amount, m, null));
+}
+
 export { ymd, parseYMD, clampDay };

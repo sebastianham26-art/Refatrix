@@ -18,7 +18,7 @@ export function splitEqual(total, n) {
   return parts;
 }
 import { validateReceiptDataUrl } from '../ar.js';
-import { expandRule, expandBetween, occurrenceExists } from '../recurring.js';
+import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
@@ -1881,6 +1881,16 @@ export default async function financeRoutes(app) {
       if (r.p != null) sets.periods.add(`${r.rid}|${r.p}`);
       if (r.eff) { sets.months.add(`${r.rid}|${r.eff.slice(0, 7)}`); sets.dates.add(`${r.rid}|${r.eff}`); }
     }
+    // 시그니처 셋: 그 달들의 '살아있는' 모든 거래(규칙 연결 여부 무관) — 중복 규칙·수동 등록 이중 방지용.
+    // 삭제분은 제외(지운 거래가 전개를 계속 막으면 안 됨). occurrenceDuplicated 참고.
+    const sigRows = (await query(
+      `SELECT direction, category_code, account_id, currency, amount,
+              to_char(COALESCE(plan_date, txn_date),'YYYY-MM') AS m
+         FROM transactions
+        WHERE deleted_at IS NULL
+          AND to_char(COALESCE(plan_date, txn_date),'YYYY-MM') IN (${months.map((_, i) => `$${i + 1}`).join(',')})`,
+      months)).rows;
+    const sigs = new Set(sigRows.map((t) => sigKey(t.direction, t.category_code, t.currency, t.amount, t.m, t.account_id)));
     const usd = (await getUsdMxnRate()).rate;
     const projections = [];
     for (const m of months) {
@@ -1893,9 +1903,10 @@ export default async function financeRoutes(app) {
           weekday: r.weekday == null ? null : Number(r.weekday), end_month: r.end_month,
         }, `${m}-01`, mEnd);
         for (const o of occ) {
-          if (occurrenceExists(sets, r, o)) continue;
+          if (occurrenceExists(sets, r, o)) continue;          // 같은 규칙의 회차 존재(period/유효일)
+          if (occurrenceDuplicated(sigs, r, o)) continue;      // 중복 규칙·수동 등록 등 같은 지출이 이미 있음
           projections.push({ direction: r.direction, category_code: r.category_code, category_name: r.category_name,
-            account_id: r.account_id, account_name: r.account_name,
+            account_id: r.account_id, account_name: r.account_name, rule_id: Number(r.id),
             date: o.date, amount_mxn: r2(Number(r.amount) * (r.currency === 'USD' ? usd : 1)), rule_name: r.name });
         }
       }

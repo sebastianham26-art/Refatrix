@@ -395,7 +395,8 @@ export function monthForecastByCategory(txns, projections, arInvoices, monthStr,
       const k = keyOf({ kind: 'proj', category_code: p.category_code, category_name: p.category_name, account_id: p.account_id, account_name: p.account_name });
       const g = grp(p.direction, k.code, k.name);
       g.n += 1; g.projected += a; g.planned += a;
-      g.items.push({ date: String(p.date).slice(0, 10), memo: `[고정비] ${p.rule_name || ''}`.trim(),
+      g.items.push({ date: String(p.date).slice(0, 10),
+        memo: `[고정비] ${p.rule_name || ''}${p.rule_id ? ` (규칙#${p.rule_id})` : ''}`.trim(),   // 규칙# = 어느 규칙의 자동전개인지 추적용
         category_name: p.category_name || p.category_code || null, account_name: p.account_name || null,
         amount: round2(a), state: 'projected' });
     }
@@ -499,7 +500,8 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
     else continue;
     const amt = Number(p.amount_mxn) || 0;
     add(put(p.account_id), p.direction, win, amt, {
-      date: d, win, direction: p.direction, memo: `[고정비] ${p.rule_name || ''}`.trim(),
+      date: d, win, direction: p.direction,
+      memo: `[고정비] ${p.rule_name || ''}${p.rule_id ? ` (규칙#${p.rule_id})` : ''}`.trim(),   // 규칙# = 어느 규칙의 자동전개인지 추적용
       category_name: p.category_name || p.category_code || null,
       amount: round2(amt), state: 'projected',
     });
