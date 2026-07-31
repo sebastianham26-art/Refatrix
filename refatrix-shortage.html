@@ -87,7 +87,7 @@
         <button class="btn sm" style="float:right;margin-right:6px" onclick="osGenerate()">🔄 스캔·생성</button>
       </div>
       <div class="hint">부족분으로 남았던 제품이 <b>입고(수입입고 승인 → 재고 등재)</b>되면 자동으로 고객별 오퍼 시트가 만들어집니다.
-        대상: ① 전환확정(인보이스 발행)·매출등록·견적만료 시 기록된 부족분 + ② <b>아직 전환 전인 견적서의 부족 라인(최초 견적 부족분)</b>.
+        대상: ① 전환확정(인보이스 발행)·매출등록·견적만료 시 기록된 부족분 + ② <b>견적서의 부족 라인(최초 견적 부족분 — 전환 전 견적 및 최근 90일 내 만료 견적 포함)</b>.
         [스캔·생성]은 지금 재고가 있는 대기 수요 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
         시트를 열어 <b>PDF 출력 → WhatsApp 전송(첨부는 수동) → 발송완료</b> 순서로 처리하세요.</div>
       <div style="margin:8px 0 4px">
@@ -396,7 +396,7 @@
     if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
     w.document.open(); w.document.write(html); w.document.close();
   }
-  console.log('[refatrix-shortage] build sh-0731a');
+  console.log('[refatrix-shortage] build sh-0731b');
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

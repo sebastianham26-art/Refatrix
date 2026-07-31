@@ -4,8 +4,12 @@
 //   고객별로 offer_sheets(+items)를 생성한다.
 //   ① 부족 기록(stock_shortages, status=open, 고객 있음)
 //      — 매출등록 부족·견적 전환확정(인보이스 발행) 미확보분·견적 만료 백로그.
-//   ② 살아있는 견적의 부족 라인(quotes draft/confirmed, 미삭제, 고객 있음,
-//      qty > reserved_qty) — 아직 전환·만료 전이라 부족 기록이 없는 "최초 견적 부족분".
+//   ② 견적의 부족 라인(미삭제, 고객 있음, qty > reserved_qty) — "최초 견적 부족분".
+//      - draft/confirmed(살아있는 견적): 아직 전환·만료 전이라 부족 기록이 없는 것.
+//      - expired(만료 견적, 최근 90일): "견적 부족 → 입고 → 만료" 순서로 진행되면
+//        만료 스위퍼가 (만료 시점 재고 기준) 부족 0으로 판단해 기록을 안 남긴다 —
+//        그 사각지대를 여기서 커버. 단, 같은 (견적,SKU)로 부족 기록이 이미
+//        존재(전환·만료 전이)하면 그 기록의 수명주기를 따르므로 제외(anti-join).
 //   · 호출처: 수입입고 승인(importRoutes /approve) 직후 + 부족분 화면 수동 [스캔·생성]
 //   · 단가: 현재 정가(products.list_price) × (1 − customers.discount%) — IVA는 제품 iva_rate.
 //   · 중복 가드(살아있는 시트 기준 — 취소하면 재생성 대상으로 복귀):
@@ -67,8 +71,14 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
         ${pidCond('sh.product_id')}
       ORDER BY sh.customer_id, sh.product_id, sh.occurred_at, sh.id`, pidArgs)).rows;
 
-  // ② 살아있는 견적의 부족 라인(최초 견적 부족분 — 전환·만료 전)
-  //    부족 = 요청수량 − 예약확보분. 전환·만료되면 ①로 넘어가므로 여기서는 draft/confirmed 만.
+  // ② 견적의 부족 라인(최초 견적 부족분)
+  //    부족 = 요청수량 − 예약확보분. draft/confirmed + 최근 90일 내 만료(expired) 견적.
+  //    만료 견적은 "입고 후 만료"라 부족 기록이 안 남은 사각지대 커버용 —
+  //    부족 기록으로 전이된 (견적,SKU)는 tsh anti-join 으로 제외(①의 수명주기를 따름).
+  const quoteCutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const args2 = pids ? pids.slice() : [];
+  args2.push(quoteCutoff);
+  const cutRef = `$${args2.length}`;
   const quoteRows = (await q(
     `SELECT NULL AS shortage_id, qt.customer_id, ql.product_id,
             (ql.qty - COALESCE(ql.reserved_qty,0)) AS demand_qty,
@@ -86,15 +96,21 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
                    WHERE os.status <> 'cancelled' AND os.deleted_at IS NULL
                      AND oi.quote_line_id IS NOT NULL) ub
               ON ub.quote_line_id = ql.id
-      WHERE qt.status IN ('draft','confirmed')
+       LEFT JOIN (SELECT DISTINCT sh2.source_quote_id, sh2.product_id
+                    FROM stock_shortages sh2
+                   WHERE sh2.source_quote_id IS NOT NULL) tsh
+              ON tsh.source_quote_id = qt.id AND tsh.product_id = ql.product_id
+      WHERE qt.status IN ('draft','confirmed','expired')
+        AND (qt.status <> 'expired' OR qt.quote_date >= ${cutRef})
         AND qt.deleted_at IS NULL
         AND qt.customer_id IS NOT NULL
         AND ql.product_id IS NOT NULL
         AND (ql.qty - COALESCE(ql.reserved_qty,0)) > 0
         AND p.stock_qty > 0
         AND ub.quote_line_id IS NULL
+        AND tsh.source_quote_id IS NULL
         ${pidCond('ql.product_id')}
-      ORDER BY qt.customer_id, ql.product_id, qt.quote_date, ql.id`, pidArgs)).rows;
+      ORDER BY qt.customer_id, ql.product_id, qt.quote_date, ql.id`, args2)).rows;
 
   const rows = shortRows.concat(quoteRows);
   if (!rows.length) return { sheets: 0, items: 0, customers: [] };
