@@ -1,11 +1,18 @@
 // =====================================================================
 // Offer Sheet 자동 생성기
-//   부족 기록(stock_shortages, status=open, 고객 있음) 중 지금 재고가 있는
-//   SKU를 찾아 고객별로 offer_sheets(+items)를 생성한다.
-//   · 호출처: ① 수입입고 승인(importRoutes /approve) 직후  ② 부족분 화면 수동 [스캔·생성]
+//   입고(재고 등재)된 SKU 에 대해 "기다리고 있던 수요"를 두 곳에서 찾아
+//   고객별로 offer_sheets(+items)를 생성한다.
+//   ① 부족 기록(stock_shortages, status=open, 고객 있음)
+//      — 매출등록 부족·견적 전환확정(인보이스 발행) 미확보분·견적 만료 백로그.
+//   ② 살아있는 견적의 부족 라인(quotes draft/confirmed, 미삭제, 고객 있음,
+//      qty > reserved_qty) — 아직 전환·만료 전이라 부족 기록이 없는 "최초 견적 부족분".
+//   · 호출처: 수입입고 승인(importRoutes /approve) 직후 + 부족분 화면 수동 [스캔·생성]
 //   · 단가: 현재 정가(products.list_price) × (1 − customers.discount%) — IVA는 제품 iva_rate.
-//   · 중복 가드: 이미 살아있는(취소 아님) 시트에 담긴 부족 기록은 제외.
-//     → 같은 부족분으로 오퍼가 두 번 만들어지지 않는다. 시트를 취소하면 재생성 대상으로 복귀.
+//   · 중복 가드(살아있는 시트 기준 — 취소하면 재생성 대상으로 복귀):
+//       - 부족 기록: shortage_id 가 이미 담겨 있으면 제외.
+//         + 그 부족 기록의 (source_quote_id, product_id) 조합이 견적 단계에서
+//           이미 오퍼된 경우 제외 — 견적 오퍼 후 전환·만료돼도 이중 오퍼 없음.
+//       - 견적 라인: quote_line_id 가 이미 담겨 있으면 제외.
 //   · advisory lock 으로 동시 생성 직렬화(승인 연타·수동 버튼 동시 클릭 대비).
 // =====================================================================
 
@@ -26,10 +33,14 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
   await q(`SELECT pg_advisory_xact_lock($1)`, [OFFER_LOCK_KEY]);
 
   const pids = Array.isArray(productIds) && productIds.length ? productIds.map(Number) : null;
-  // SKU 필터는 조건부로 조립(pg-mem 호환 — ANY(NULL) 미사용). 수동 스캔이면 전체.
-  const pidCond = pids ? `AND sh.product_id IN (${pids.map((_, i) => `$${i + 1}`).join(',')})` : '';
-  const rows = (await q(
-    `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id, sh.shortage_qty, sh.occurred_at::text AS occurred_at,
+  const pidCond = (col) => (pids ? `AND ${col} IN (${pids.map((_, i) => `$${i + 1}`).join(',')})` : '');
+  const pidArgs = pids || [];
+
+  // ① 부족 기록(전환확정·매출등록·만료) — 살아있는 시트에 없는 것만
+  const shortRows = (await q(
+    `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id, sh.shortage_qty AS demand_qty,
+            sh.occurred_at::text AS occurred_at,
+            NULL AS quote_id, NULL AS quote_line_id,
             p.list_price, p.iva_rate,
             c.discount AS cust_discount
        FROM stock_shortages sh
@@ -38,16 +49,54 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
        LEFT JOIN (SELECT DISTINCT oi.shortage_id
                     FROM offer_sheet_items oi
                     JOIN offer_sheets os ON os.id = oi.offer_sheet_id
-                   WHERE os.status <> 'cancelled' AND os.deleted_at IS NULL) used
+                   WHERE os.status <> 'cancelled' AND os.deleted_at IS NULL
+                     AND oi.shortage_id IS NOT NULL) used
               ON used.shortage_id = sh.id
+       LEFT JOIN (SELECT DISTINCT oi2.quote_id, oi2.product_id
+                    FROM offer_sheet_items oi2
+                    JOIN offer_sheets os2 ON os2.id = oi2.offer_sheet_id
+                   WHERE os2.status <> 'cancelled' AND os2.deleted_at IS NULL
+                     AND oi2.quote_id IS NOT NULL) uq
+              ON uq.quote_id = sh.source_quote_id AND uq.product_id = sh.product_id
       WHERE sh.status = 'open'
         AND sh.customer_id IS NOT NULL
         AND sh.shortage_qty > 0
         AND p.stock_qty > 0
         AND used.shortage_id IS NULL
-        ${pidCond}
-      ORDER BY sh.customer_id, sh.product_id, sh.occurred_at, sh.id`, pids || [])).rows;
+        AND uq.quote_id IS NULL
+        ${pidCond('sh.product_id')}
+      ORDER BY sh.customer_id, sh.product_id, sh.occurred_at, sh.id`, pidArgs)).rows;
 
+  // ② 살아있는 견적의 부족 라인(최초 견적 부족분 — 전환·만료 전)
+  //    부족 = 요청수량 − 예약확보분. 전환·만료되면 ①로 넘어가므로 여기서는 draft/confirmed 만.
+  const quoteRows = (await q(
+    `SELECT NULL AS shortage_id, qt.customer_id, ql.product_id,
+            (ql.qty - COALESCE(ql.reserved_qty,0)) AS demand_qty,
+            qt.quote_date::text AS occurred_at,
+            qt.id AS quote_id, ql.id AS quote_line_id,
+            p.list_price, p.iva_rate,
+            c.discount AS cust_discount
+       FROM quote_lines ql
+       JOIN quotes qt ON qt.id = ql.quote_id
+       JOIN products  p ON p.id = ql.product_id AND p.deleted_at IS NULL
+       JOIN customers c ON c.id = qt.customer_id AND c.deleted_at IS NULL
+       LEFT JOIN (SELECT DISTINCT oi.quote_line_id
+                    FROM offer_sheet_items oi
+                    JOIN offer_sheets os ON os.id = oi.offer_sheet_id
+                   WHERE os.status <> 'cancelled' AND os.deleted_at IS NULL
+                     AND oi.quote_line_id IS NOT NULL) ub
+              ON ub.quote_line_id = ql.id
+      WHERE qt.status IN ('draft','confirmed')
+        AND qt.deleted_at IS NULL
+        AND qt.customer_id IS NOT NULL
+        AND ql.product_id IS NOT NULL
+        AND (ql.qty - COALESCE(ql.reserved_qty,0)) > 0
+        AND p.stock_qty > 0
+        AND ub.quote_line_id IS NULL
+        ${pidCond('ql.product_id')}
+      ORDER BY qt.customer_id, ql.product_id, qt.quote_date, ql.id`, pidArgs)).rows;
+
+  const rows = shortRows.concat(quoteRows);
   if (!rows.length) return { sheets: 0, items: 0, customers: [] };
 
   // 고객별 그룹
@@ -62,7 +111,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
   for (const [custId, list] of byCust) {
     let subtotal = 0; let iva = 0;
     const items = list.map((r) => {
-      const qty = Number(r.shortage_qty) || 0;
+      const qty = Number(r.demand_qty) || 0;
       const listPrice = r2(r.list_price);
       const disc = Number(r.cust_discount) || 0;
       const unit = r2(listPrice * (1 - disc / 100));
@@ -70,7 +119,10 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
       const li = r2(sub * ((Number(r.iva_rate) || 0) / 100));
       subtotal += sub; iva += li;
       return {
-        shortage_id: Number(r.shortage_id), product_id: Number(r.product_id), qty,
+        shortage_id: r.shortage_id != null ? Number(r.shortage_id) : null,
+        quote_id: r.quote_id != null ? Number(r.quote_id) : null,
+        quote_line_id: r.quote_line_id != null ? Number(r.quote_line_id) : null,
+        product_id: Number(r.product_id), qty,
         list_price: listPrice, discount_rate: disc, unit_price: unit,
         sub, iva: li, total: r2(sub + li), occurred_at: r.occurred_at,
       };
@@ -86,10 +138,10 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
 
     for (const it of items) {
       await q(
-        `INSERT INTO offer_sheet_items (offer_sheet_id, shortage_id, product_id, offer_qty,
+        `INSERT INTO offer_sheet_items (offer_sheet_id, shortage_id, quote_id, quote_line_id, product_id, offer_qty,
                                         list_price, discount_rate, unit_price, line_subtotal, line_iva, line_total, occurred_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-        [sheetId, it.shortage_id, it.product_id, it.qty, it.list_price, it.discount_rate,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [sheetId, it.shortage_id, it.quote_id, it.quote_line_id, it.product_id, it.qty, it.list_price, it.discount_rate,
          it.unit_price, it.sub, it.iva, it.total, it.occurred_at]);
       itemCount += 1;
     }

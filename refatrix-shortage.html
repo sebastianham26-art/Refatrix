@@ -87,7 +87,8 @@
         <button class="btn sm" style="float:right;margin-right:6px" onclick="osGenerate()">🔄 스캔·생성</button>
       </div>
       <div class="hint">부족분으로 남았던 제품이 <b>입고(수입입고 승인 → 재고 등재)</b>되면 자동으로 고객별 오퍼 시트가 만들어집니다.
-        [스캔·생성]은 지금 재고가 있는 미해소 부족분 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
+        대상: ① 전환확정(인보이스 발행)·매출등록·견적만료 시 기록된 부족분 + ② <b>아직 전환 전인 견적서의 부족 라인(최초 견적 부족분)</b>.
+        [스캔·생성]은 지금 재고가 있는 대기 수요 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
         시트를 열어 <b>PDF 출력 → WhatsApp 전송(첨부는 수동) → 발송완료</b> 순서로 처리하세요.</div>
       <div style="margin:8px 0 4px">
         <label style="display:inline">상태</label>
@@ -283,7 +284,7 @@
       +(s.status!=='cancelled'?'<button class="btn danger" onclick="osCancel()">✖ 취소</button>':'')
       +'</div>'
       +'<div class="hint">WhatsApp 버튼은 안내 문구가 채워진 채팅을 엽니다. PDF는 [PDF 출력]으로 저장한 뒤 채팅에 직접 첨부하세요. (API 자동발송은 추후)</div>';
-    h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생 · 출처</th></tr></thead><tbody>';
     lines.forEach(l=>{
       h+='<tr><td><b>'+esc(l.ctr_code||'')+'</b></td><td>'+esc(l.product_name||'')+'</td>'
         +'<td class="r">'+fmtq(l.stock_qty)+'</td>'
@@ -292,7 +293,7 @@
         +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
         +'<td class="r">'+fmtm(l.unit_price)+'</td>'
         +'<td class="r">'+fmtm(l.line_subtotal)+'</td>'
-        +'<td class="hint">'+d10(l.first_occurred)+'</td></tr>';
+        +'<td class="hint">'+d10(l.first_occurred)+((l.sources&&l.sources.length)?' · '+esc(l.sources.join(', ')):'')+'</td></tr>';
     });
     h+='</tbody></table>'
       +'<div style="text-align:right;margin-top:10px;font-size:13.5px">Subtotal '+fmtm(s.subtotal_mxn)+' · IVA '+fmtm(s.iva_mxn)+' · <b style="color:var(--brand)">Total '+fmtm(s.total_mxn)+'</b></div>';
@@ -395,7 +396,7 @@
     if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
     w.document.open(); w.document.write(html); w.document.close();
   }
-  console.log('[refatrix-shortage] build sh-0730a');
+  console.log('[refatrix-shortage] build sh-0731a');
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

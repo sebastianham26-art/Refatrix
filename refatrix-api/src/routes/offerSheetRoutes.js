@@ -62,11 +62,13 @@ export default async function offerSheetRoutes(app) {
     if (!os) return reply.code(404).send({ error: 'not_found' });
     // 라인: 부족 기록 1건=1행이지만, 화면·PDF용으로 제품별 합산본도 함께 내려준다.
     const items = (await query(
-      `SELECT oi.id, oi.shortage_id, oi.product_id, oi.offer_qty, oi.list_price, oi.discount_rate,
+      `SELECT oi.id, oi.shortage_id, oi.quote_id, oi.quote_line_id, oi.product_id, oi.offer_qty, oi.list_price, oi.discount_rate,
               oi.unit_price, oi.line_subtotal, oi.line_iva, oi.line_total, oi.occurred_at::text AS occurred_at,
-              p.code AS ctr_code, p.scode AS syd_codes, p.name AS product_name, p.app AS app_text, p.stock_qty
+              p.code AS ctr_code, p.scode AS syd_codes, p.name AS product_name, p.app AS app_text, p.stock_qty,
+              qt.quote_no AS quote_no
          FROM offer_sheet_items oi
          JOIN products p ON p.id = oi.product_id
+         LEFT JOIN quotes qt ON qt.id = oi.quote_id
         WHERE oi.offer_sheet_id = $1
         ORDER BY p.code, oi.occurred_at, oi.id`, [id])).rows;
     const grouped = {};
@@ -78,7 +80,7 @@ export default async function offerSheetRoutes(app) {
           app_text: it.app_text, stock_qty: Number(it.stock_qty),
           offer_qty: 0, list_price: Number(it.list_price), discount_rate: Number(it.discount_rate),
           unit_price: Number(it.unit_price), line_subtotal: 0, line_iva: 0, line_total: 0,
-          first_occurred: it.occurred_at, shortage_ids: [],
+          first_occurred: it.occurred_at, shortage_ids: [], sources: [],
         };
       }
       const g = grouped[k];
@@ -87,7 +89,10 @@ export default async function offerSheetRoutes(app) {
       g.line_iva += Number(it.line_iva);
       g.line_total += Number(it.line_total);
       if (it.occurred_at && (!g.first_occurred || it.occurred_at < g.first_occurred)) g.first_occurred = it.occurred_at;
-      g.shortage_ids.push(Number(it.shortage_id));
+      if (it.shortage_id != null) g.shortage_ids.push(Number(it.shortage_id));
+      // 출처 라벨: 견적 라인(전환·만료 전) vs 부족 기록(전환확정·매출·만료)
+      const src = it.quote_line_id != null ? ('견적' + (it.quote_no ? ' ' + it.quote_no : '')) : '부족기록';
+      if (!g.sources.includes(src)) g.sources.push(src);
     }
     return {
       sheet: {
@@ -101,7 +106,10 @@ export default async function offerSheetRoutes(app) {
         customer_phone: os.customer_phone, customer_contact: os.customer_contact, customer_rfc: os.customer_rfc,
       },
       items: items.map((r) => ({
-        ...r, product_id: Number(r.product_id), shortage_id: Number(r.shortage_id),
+        ...r, product_id: Number(r.product_id),
+        shortage_id: r.shortage_id != null ? Number(r.shortage_id) : null,
+        quote_id: r.quote_id != null ? Number(r.quote_id) : null,
+        quote_line_id: r.quote_line_id != null ? Number(r.quote_line_id) : null,
         offer_qty: Number(r.offer_qty), list_price: Number(r.list_price), discount_rate: Number(r.discount_rate),
         unit_price: Number(r.unit_price), line_subtotal: Number(r.line_subtotal),
         line_iva: Number(r.line_iva), line_total: Number(r.line_total), stock_qty: Number(r.stock_qty),
