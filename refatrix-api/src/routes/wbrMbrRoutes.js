@@ -14,6 +14,7 @@ import { query } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { buildMbrPrompt, extractText } from '../mbrSummary.js';
+import { gatherMonthly, buildReportKo, buildReportEs } from '../monthlyReport.js';
 
 const MODEL = process.env.WBR_MBR_MODEL || 'claude-sonnet-4-5-20250929';
 const MAX_SNAPSHOTS = 12;          // 한 번에 요약할 최대 저장본 수(월간이면 4~5건이 보통)
@@ -133,6 +134,23 @@ export default async function wbrMbrRoutes(app) {
       model: r.model, content_md: r.content_md, created_at: r.created_at,
       created_by_name: r.created_by_name || null,
     };
+  });
+
+  // ── 월간 WhatsApp 보고 — 숫자는 SQL 확정치(AI 미사용), 본문 한국어/스페인어 동시 생성 ──
+  //   디렉터 전용. ?ym=YYYY-MM. wa.me 원클릭 발송용 텍스트(text_ko/text_es) + 근거 데이터 반환.
+  app.get('/api/wbr/mbr/monthly-report', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const ym = String(req.query.ym || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(ym)) return reply.code(400).send({ error: 'bad_ym', note: 'ym=YYYY-MM 형식이어야 합니다.' });
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const d = await gatherMonthly(query, ym, today);
+      logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_monthly_report', target: `wbr_monthly:${ym}` });
+      return { ym, data: d, text_ko: buildReportKo(d), text_es: buildReportEs(d) };
+    } catch (e) {
+      if (e && e.message === 'bad_ym') return reply.code(400).send({ error: 'bad_ym' });
+      req.log.error({ err: e }, 'monthly report failed');
+      return reply.code(500).send({ error: 'report_failed' });
+    }
   });
 
   // ── 삭제 — 디렉터 전용 ──

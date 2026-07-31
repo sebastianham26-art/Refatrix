@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0731a</title>
+<title>Refatrix ERP · WBR · build wbr-0731b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -158,6 +158,14 @@
   .mdbody li{font-size:13px;line-height:1.65;margin:2px 0}
   .mdbody p{font-size:13px;line-height:1.7;margin:6px 0}
   @media print{ #mbrCard{display:none!important} }
+  /* ===== 월간 WhatsApp 보고 ===== */
+  .warep2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
+  @media(max-width:860px){.warep2{grid-template-columns:1fr}}
+  .warepbox{border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:#fbfaf6;display:flex;flex-direction:column;gap:8px}
+  .warepbox .wrh{font-size:12px;font-weight:800;color:var(--brand-soft)}
+  .warepbox textarea{width:100%;min-height:280px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:12.5px;line-height:1.6;background:#fff;resize:vertical;box-sizing:border-box}
+  .wabtn{background:#25D366!important;color:#fff!important}
+  @media print{ #waRepCard{display:none!important} }
   /* ===== 인쇄(PDF 저장) ===== */
   @media print{
     @page{margin:12mm}
@@ -357,11 +365,44 @@
         <div id="mbrView" class="hidden mbrview"></div>
       </div>
     </div>
+
+    <!-- 월간 WhatsApp 보고 (숫자=DB 확정치 · 원클릭 wa.me · 디렉터 전용) -->
+    <div class="card hidden" id="waRepCard">
+      <div class="card-h">📱 월간 WhatsApp 보고 <span class="src">매출·수금·견적 숫자는 DB에서 그대로 산출 · 부서별 이슈는 WBR 보드에서</span>
+        <span class="lnk no-print" id="waRepToggle" style="margin-left:auto">감추기</span></div>
+      <div id="waRepCollapse">
+        <div class="mrow no-print">
+          <span class="ml">보고 월</span>
+          <select id="waRepYm" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;font:inherit;font-size:13px"></select>
+          <button class="btn gold" id="waRepGenBtn">📊 보고서 생성</button>
+          <span class="hint" id="waRepHint"></span>
+        </div>
+        <div class="hidden" id="waRepOut">
+          <div class="hint" style="margin-top:8px">보내기 전에 아래 내용을 자유롭게 수정할 수 있습니다. 💚 버튼을 누르면 WhatsApp이 열리고 메시지가 채워진 상태로 나옵니다 — 받는 사람(개인/그룹방)을 골라 전송만 누르세요.</div>
+          <div class="warep2">
+            <div class="warepbox"><div class="wrh">🇰🇷 한국어</div>
+              <textarea id="waRepKo"></textarea>
+              <div style="display:flex;gap:8px" class="no-print">
+                <button class="btn sm wabtn" id="waSendKo">💚 WhatsApp로 보내기</button>
+                <button class="btn sm" id="waCopyKo" style="background:var(--brand-soft)">📋 복사</button>
+              </div>
+            </div>
+            <div class="warepbox"><div class="wrh">🇲🇽 Español</div>
+              <textarea id="waRepEs"></textarea>
+              <div style="display:flex;gap:8px" class="no-print">
+                <button class="btn sm wabtn" id="waSendEs">💚 Enviar por WhatsApp</button>
+                <button class="btn sm" id="waCopyEs" style="background:var(--brand-soft)">📋 Copiar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0731a');
+  console.log('[wbr] build wbr-0731b');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -419,6 +460,7 @@
       refreshAll();
       loadSnapList('');
       loadMbrList();
+      initWaReport();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -1423,6 +1465,48 @@
     return out.join('');
   }
 
+  // ===== 월간 WhatsApp 보고 (숫자=DB 확정치 · wa.me 원클릭) =====
+  let waRepOpen=true;
+  function initWaReport(){
+    if(!isDirector) return;                    // 디렉터 전용 카드
+    $('waRepCard').classList.remove('hidden');
+    const sel=$('waRepYm'); if(sel.options.length>1) return;   // 재로그인 시 중복 방지
+    const d=new Date(); let h='';
+    for(let i=0;i<12;i++){
+      const t=new Date(d.getFullYear(), d.getMonth()-i, 1);
+      const ym=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0');
+      h+='<option value="'+ym+'"'+(i===0?' selected':'')+'>'+ym+'</option>';
+    }
+    sel.innerHTML=h;
+  }
+  async function generateWaReport(){
+    if(!isDirector) return;
+    const ym=$('waRepYm').value;
+    const hint=$('waRepHint'); hint.style.color=''; hint.textContent='생성 중…';
+    const btn=$('waRepGenBtn'); btn.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/wbr/mbr/monthly-report?ym='+encodeURIComponent(ym),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ hint.style.color='var(--expense)'; hint.textContent='생성 실패: '+(d.error||res.status); return; }
+      $('waRepKo').value=d.text_ko||'';
+      $('waRepEs').value=d.text_es||'';
+      $('waRepOut').classList.remove('hidden');
+      hint.style.color='var(--income)'; hint.textContent=ym+' 보고서 생성 완료 — 내용 확인 후 발송하세요.';
+    }catch(e){ hint.style.color='var(--expense)'; hint.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ btn.disabled=false; }
+  }
+  function waSend(taId){
+    const txt=($(taId).value||'').trim();
+    if(!txt) return;
+    window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank','noopener');
+  }
+  function waCopy(taId,btnId){
+    const txt=$(taId).value||''; const b=$(btnId); const t=b?b.textContent:'';
+    const done=()=>{ if(b){ b.textContent='복사됨!'; setTimeout(()=>{ if(b) b.textContent=t; },1200); } };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>vcFallbackCopy(txt,done)); }
+    else vcFallbackCopy(txt,done);
+  }
+
 
   // 바인딩
   $('go').addEventListener('click',login);
@@ -1442,6 +1526,12 @@
   $('slaToggle').addEventListener('click',()=>{ slaOpen=!slaOpen; applyToggle(slaOpen,'slaBody','slaToggle'); });
   $('mbrToggle').addEventListener('click',()=>{ mbrOpen=!mbrOpen; applyToggle(mbrOpen,'mbrCollapse','mbrToggle'); });
   $('mbrGenBtn').addEventListener('click',generateMbr);
+  $('waRepToggle').addEventListener('click',()=>{ waRepOpen=!waRepOpen; applyToggle(waRepOpen,'waRepCollapse','waRepToggle'); });
+  $('waRepGenBtn').addEventListener('click',generateWaReport);
+  $('waSendKo').addEventListener('click',()=>waSend('waRepKo'));
+  $('waSendEs').addEventListener('click',()=>waSend('waRepEs'));
+  $('waCopyKo').addEventListener('click',()=>waCopy('waRepKo','waCopyKo'));
+  $('waCopyEs').addEventListener('click',()=>waCopy('waRepEs','waCopyEs'));
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
