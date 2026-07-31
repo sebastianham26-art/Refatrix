@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0731b</title>
+<title>Refatrix ERP · WBR · build wbr-0731c</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -157,6 +157,10 @@
   .mdbody ul{margin:4px 0 8px;padding-left:19px}
   .mdbody li{font-size:13px;line-height:1.65;margin:2px 0}
   .mdbody p{font-size:13px;line-height:1.7;margin:6px 0}
+  .mdbody mark{background:#ffe86b;padding:0 1px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .mdbody.hlmode{cursor:text}
+  .mdbody.hlmode ::selection{background:#ffe86b}
+  #mbrHlBtn.on{background:#c9a227!important;box-shadow:0 0 0 2px #f2dd8b}
   @media print{ #mbrCard{display:none!important} }
   /* ===== 월간 WhatsApp 보고 ===== */
   .warep2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
@@ -402,7 +406,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0731b');
+  console.log('[wbr] build wbr-0731c');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -1382,22 +1386,93 @@
   }
   let mbrCurrent=null;
   function renderMbrView(d){
-    mbrCurrent=d;
+    mbrCurrent=d; hlMode=false;
     const v=$('mbrView'); v.classList.remove('hidden');
     const lbls=(d.snapshot_labels||[]);
     v.innerHTML='<div class="mvhead"><b>'+esc(d.title)+'</b>'
       +'<span class="meta">'+fmtDateTime(d.created_at)+(d.created_by_name?' · '+esc(d.created_by_name):'')+' · '+lbls.length+'개 회의</span>'
-      +'<span style="margin-left:auto;display:flex;gap:6px" class="no-print">'
+      +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap" class="no-print">'
+        +'<span class="saveind" id="mbrHlInd"></span>'
+        +(isDirector?'<button class="btn sm" id="mbrHlBtn" style="background:#a08420">🖍 형광펜</button>':'')
         +'<button class="btn sm gold" id="mbrPdfBtn">🧾 PDF/인쇄</button>'
         +'<button class="btn sm" id="mbrCopyBtn" style="background:var(--brand-soft)">📋 복사</button>'
         +'<button class="btn sm" id="mbrCloseBtn" style="background:#8b8577">닫기</button>'
       +'</span></div>'
       +(lbls.length?'<div class="hint" style="margin-bottom:4px">근거 회의: '+esc(lbls.join(' · '))+'</div>':'')
-      +'<div class="mdbody">'+mdToHtml(d.content_md||'')+'</div>';
+      +'<div class="hint hidden" id="mbrHlHint" style="margin-bottom:4px;color:#8a6512">🖍 형광펜 모드: 강조할 부분을 드래그하면 형광색으로 표시됩니다 · 표시된 부분을 클릭하면 지워집니다 · 자동 저장</div>'
+      +'<div class="mdbody" id="mbrBody">'+(d.content_html?sanitizeHtml(d.content_html):mdToHtml(d.content_md||''))+'</div>';
     $('mbrPdfBtn').addEventListener('click',printMbr);
     $('mbrCopyBtn').addEventListener('click',copyMbr);
-    $('mbrCloseBtn').addEventListener('click',()=>{ $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; });
+    $('mbrCloseBtn').addEventListener('click',()=>{ hlMode=false; $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; });
+    const hb=document.getElementById('mbrHlBtn');
+    if(hb) hb.addEventListener('click',toggleHlMode);
+    $('mbrBody').addEventListener('mouseup',onMbrBodyMouseUp);
     v.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  // ===== 형광펜(하이라이트) — 드래그=표시 · 표시 클릭=지움 · 자동 저장(디렉터) =====
+  let hlMode=false, hlTimer=null;
+  function sanitizeHtml(html){
+    const t=document.createElement('div'); t.innerHTML=String(html||'');
+    t.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el=>el.remove());
+    t.querySelectorAll('*').forEach(el=>{
+      Array.from(el.attributes).forEach(a=>{
+        const n=a.name.toLowerCase();
+        if(n.indexOf('on')===0) el.removeAttribute(a.name);
+        else if((n==='href'||n==='src')&&/^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+      });
+    });
+    return t.innerHTML;
+  }
+  function toggleHlMode(){
+    hlMode=!hlMode;
+    const hb=document.getElementById('mbrHlBtn'); if(hb) hb.classList.toggle('on',hlMode);
+    const body=document.getElementById('mbrBody'); if(body) body.classList.toggle('hlmode',hlMode);
+    const hint=document.getElementById('mbrHlHint'); if(hint) hint.classList.toggle('hidden',!hlMode);
+  }
+  function unwrapMark(mk){
+    const p=mk.parentNode; if(!p) return;
+    while(mk.firstChild) p.insertBefore(mk.firstChild,mk);
+    p.removeChild(mk); p.normalize&&p.normalize();
+  }
+  function onMbrBodyMouseUp(e){
+    if(!hlMode||!isDirector) return;
+    const body=document.getElementById('mbrBody'); if(!body) return;
+    const sel=window.getSelection();
+    if(!sel||sel.isCollapsed||!String(sel.toString()).trim()){
+      // 드래그가 아니라 클릭 → 기존 형광 표시면 지움
+      const t=e.target;
+      const mk=(t&&t.closest)?t.closest('mark'):null;
+      if(mk&&body.contains(mk)){ unwrapMark(mk); scheduleHlSave(); }
+      return;
+    }
+    try{
+      const r=sel.getRangeAt(0);
+      if(!body.contains(r.commonAncestorContainer)) return;
+      const mark=document.createElement('mark');
+      mark.appendChild(r.extractContents());
+      r.insertNode(mark);
+      sel.removeAllRanges();
+      // 빈 mark 정리(경계 케이스)
+      body.querySelectorAll('mark').forEach(m=>{ if(!m.textContent) unwrapMark(m); });
+      scheduleHlSave();
+    }catch(err){ /* 복잡한 선택 범위 실패 시 무시 */ }
+  }
+  function scheduleHlSave(){
+    if(!isDirector||!mbrCurrent) return;
+    const ind=document.getElementById('mbrHlInd'); if(ind){ ind.className='saveind'; ind.textContent='표시 저장 중…'; }
+    clearTimeout(hlTimer);
+    hlTimer=setTimeout(async()=>{
+      const body=document.getElementById('mbrBody'); if(!body||!mbrCurrent) return;
+      const htmlNow=body.innerHTML;
+      try{
+        const res=await fetch(session.api+'/api/wbr/mbr/summaries/'+mbrCurrent.id+'/highlights',{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({content_html:htmlNow})});
+        const d=await res.json();
+        if(!res.ok||d.error) throw new Error(d.error||res.status);
+        mbrCurrent.content_html=htmlNow;
+        if(ind){ ind.className='saveind ok'; ind.textContent='표시 저장됨'; setTimeout(()=>{ if(ind&&ind.textContent==='표시 저장됨') ind.textContent=''; },2000); }
+      }catch(e){ if(ind){ ind.className='saveind'; ind.style.color='var(--expense)'; ind.textContent='표시 저장 실패'; } }
+    },800);
   }
   async function deleteMbr(id){
     if(!isDirector) return;
@@ -1431,6 +1506,7 @@
       +'h4{font-size:13.5px;color:#1E5247;margin:12px 0 4px}'
       +'ul{margin:4px 0 10px;padding-left:20px}li{margin:2px 0}'
       +'.meta{font-size:11.5px;color:#6F6A60;margin-bottom:14px}'
+      +'mark{background:#ffe86b;padding:0 1px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'@page{margin:14mm}</style></head><body>'
       +'<h1>'+esc(mbrCurrent.title)+'</h1>'
       +'<div class="meta">Refatrix ERP · MBR AI 요약 · 생성 '+fmtDateTime(mbrCurrent.created_at)

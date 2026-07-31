@@ -124,16 +124,38 @@ export default async function wbrMbrRoutes(app) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
     const r = (await query(
-      `SELECT m.id, m.title, m.snapshot_labels, m.model, m.content_md, m.created_at, u.name AS created_by_name
+      `SELECT m.id, m.title, m.snapshot_labels, m.model, m.content_md, m.content_html, m.created_at, u.name AS created_by_name
          FROM wbr_mbr_summaries m LEFT JOIN users u ON u.id = m.created_by
         WHERE m.id=$1`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
     return {
       id: Number(r.id), title: r.title,
       snapshot_labels: Array.isArray(r.snapshot_labels) ? r.snapshot_labels : [],
-      model: r.model, content_md: r.content_md, created_at: r.created_at,
-      created_by_name: r.created_by_name || null,
+      model: r.model, content_md: r.content_md, content_html: r.content_html || null,
+      created_at: r.created_at, created_by_name: r.created_by_name || null,
     };
+  });
+
+  // ── 형광펜 표시 저장 — 디렉터 전용. content_html(<mark> 포함 렌더 HTML) 저장/해제(null) ──
+  app.put('/api/wbr/mbr/summaries/:id/highlights', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    let html = b.content_html;
+    if (html != null && typeof html !== 'string') return reply.code(400).send({ error: 'bad_html' });
+    if (html != null) {
+      if (html.length > 500000) return reply.code(413).send({ error: 'too_large' });
+      // 방어: 스크립트/이벤트핸들러 서버측 제거(표시는 <mark> 만 필요)
+      html = html.replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+                 .replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*\/?\s*>/gi, '')
+                 .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+                 .replace(/(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '');
+    }
+    const r = (await query(
+      `UPDATE wbr_mbr_summaries SET content_html=$1 WHERE id=$2 RETURNING id`, [html || null, id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_mbr_highlight_save', target: `wbr_mbr:${id}` });
+    return { ok: true, id };
   });
 
   // ── 월간 WhatsApp 보고 — 숫자는 SQL 확정치(AI 미사용), 본문 한국어/스페인어 동시 생성 ──
