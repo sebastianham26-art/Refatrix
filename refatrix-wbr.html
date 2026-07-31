@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0731d</title>
+<title>Refatrix ERP · WBR · build wbr-0731e</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -162,6 +162,18 @@
   .mdbody.hlmode ::selection{background:#ffe86b}
   #mbrHlBtn.on{background:#c9a227!important;box-shadow:0 0 0 2px #f2dd8b}
   #mbrTtsBtn.on{background:#b4561f!important;box-shadow:0 0 0 2px #ecc9b0}
+  /* 한 문장 총평(맨 앞 문단) 히어로 스타일 */
+  .mdbody>p:first-child{background:#eef4f1;border-left:4px solid var(--brand);border-radius:8px;padding:10px 14px;font-size:14.5px;line-height:1.65}
+  .mdbody>p:first-child b{color:var(--brand)}
+  /* ✏️ 본문 수정 모드 */
+  .mdbody.editmode{outline:2px dashed #7fa8c9;outline-offset:6px;border-radius:6px;background:#fcfeff}
+  #mbrEditBtn.on{background:#1F6FB2!important;box-shadow:0 0 0 2px #bcd8ee}
+  /* 📝 요약 메모 */
+  .mbrmemo{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  .mbrmemo .mmh{font-size:12px;font-weight:800;color:var(--brand-soft);display:flex;align-items:center;gap:8px}
+  #mbrMemo{min-height:70px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.7;background:#fffef4;margin-top:6px;white-space:pre-wrap;outline:none}
+  #mbrMemo:empty:before{content:attr(data-ph);color:#b4b0a6}
+  #mbrMemo[contenteditable="true"]:focus{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
   @media print{ #mbrCard{display:none!important} }
   /* ===== 월간 WhatsApp 보고 ===== */
   .warep2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
@@ -407,7 +419,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0731d');
+  console.log('[wbr] build wbr-0731e');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -1388,7 +1400,7 @@
   let mbrCurrent=null;
   function renderMbrView(d){
     stopTts();
-    mbrCurrent=d; hlMode=false;
+    mbrCurrent=d; hlMode=false; editMode=false;
     const v=$('mbrView'); v.classList.remove('hidden');
     const lbls=(d.snapshot_labels||[]);
     v.innerHTML='<div class="mvhead"><b>'+esc(d.title)+'</b>'
@@ -1397,21 +1409,63 @@
         +'<span class="saveind" id="mbrHlInd"></span>'
         +'<button class="btn sm" id="mbrTtsBtn" style="background:#4a6d64">🔊 읽어주기</button>'
         +(isDirector?'<button class="btn sm" id="mbrHlBtn" style="background:#a08420">🖍 형광펜</button>':'')
+        +(isDirector?'<button class="btn sm" id="mbrEditBtn" style="background:#3d6a94">✏️ 수정</button>':'')
         +'<button class="btn sm gold" id="mbrPdfBtn">🧾 PDF/인쇄</button>'
         +'<button class="btn sm" id="mbrCopyBtn" style="background:var(--brand-soft)">📋 복사</button>'
         +'<button class="btn sm" id="mbrCloseBtn" style="background:#8b8577">닫기</button>'
       +'</span></div>'
       +(lbls.length?'<div class="hint" style="margin-bottom:4px">근거 회의: '+esc(lbls.join(' · '))+'</div>':'')
       +'<div class="hint hidden" id="mbrHlHint" style="margin-bottom:4px;color:#8a6512">🖍 형광펜 모드: 강조할 부분을 드래그하면 형광색으로 표시됩니다 · 표시된 부분을 클릭하면 지워집니다 · 자동 저장</div>'
-      +'<div class="mdbody" id="mbrBody">'+(d.content_html?sanitizeHtml(d.content_html):mdToHtml(d.content_md||''))+'</div>';
+      +'<div class="hint hidden" id="mbrEditHint" style="margin-bottom:4px;color:#1F6FB2">✏️ 수정 모드: 본문을 직접 고칠 수 있습니다 · 입력을 멈추면 자동 저장됩니다 · 다시 누르면 수정 종료</div>'
+      +'<div class="mdbody" id="mbrBody">'+(d.content_html?sanitizeHtml(d.content_html):mdToHtml(d.content_md||''))+'</div>'
+      +'<div class="mbrmemo"><div class="mmh">📝 메모'+(isDirector?' <span class="hint" style="display:inline;margin:0">— 자유 기록 · 자동 저장</span>':'')+'</div>'
+      +'<div id="mbrMemo" data-ph="'+(isDirector?'이 요약에 대한 메모를 남겨보세요… (MBR 회의 결정사항, 후속 지시 등)':'등록된 메모가 없습니다.')+'"></div></div>';
     $('mbrPdfBtn').addEventListener('click',printMbr);
     $('mbrCopyBtn').addEventListener('click',copyMbr);
     $('mbrCloseBtn').addEventListener('click',()=>{ stopTts(); hlMode=false; $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; });
     $('mbrTtsBtn').addEventListener('click',toggleTts);
     const hb=document.getElementById('mbrHlBtn');
     if(hb) hb.addEventListener('click',toggleHlMode);
+    const eb=document.getElementById('mbrEditBtn');
+    if(eb) eb.addEventListener('click',toggleEditMode);
     $('mbrBody').addEventListener('mouseup',onMbrBodyMouseUp);
+    $('mbrBody').addEventListener('input',()=>{ if(editMode) scheduleHlSave(); });
+    // 메모: 값 채우기 + 디렉터만 편집
+    const memoEl=$('mbrMemo');
+    memoEl.textContent=d.memo||'';
+    memoEl.setAttribute('contenteditable', isDirector?'true':'false');
+    if(isDirector) memoEl.addEventListener('input',scheduleMemoSave);
     v.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  // ✏️ 본문 수정 모드 — 형광펜과 배타적. contenteditable + 입력 자동 저장(같은 content_html 저장 경로)
+  let editMode=false;
+  function toggleEditMode(){
+    if(!isDirector) return;
+    editMode=!editMode;
+    if(editMode&&hlMode) toggleHlMode();          // 형광펜 끄기
+    const body=document.getElementById('mbrBody');
+    if(body){ body.setAttribute('contenteditable', editMode?'true':'false'); body.classList.toggle('editmode',editMode); }
+    const eb=document.getElementById('mbrEditBtn'); if(eb){ eb.classList.toggle('on',editMode); eb.textContent=editMode?'✏️ 수정 종료':'✏️ 수정'; }
+    const hint=document.getElementById('mbrEditHint'); if(hint) hint.classList.toggle('hidden',!editMode);
+    if(!editMode) scheduleHlSave();               // 종료 시 마지막 상태 저장
+  }
+  let memoTimer=null;
+  function scheduleMemoSave(){
+    if(!isDirector||!mbrCurrent) return;
+    const ind=document.getElementById('mbrHlInd'); if(ind){ ind.className='saveind'; ind.textContent='메모 저장 중…'; }
+    clearTimeout(memoTimer);
+    memoTimer=setTimeout(async()=>{
+      const memoEl=document.getElementById('mbrMemo'); if(!memoEl||!mbrCurrent) return;
+      const memoNow=(memoEl.innerText!=null?memoEl.innerText:memoEl.textContent)||'';
+      try{
+        const res=await fetch(session.api+'/api/wbr/mbr/summaries/'+mbrCurrent.id+'/highlights',{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({memo:memoNow})});
+        const d=await res.json();
+        if(!res.ok||d.error) throw new Error(d.error||res.status);
+        mbrCurrent.memo=memoNow;
+        if(ind){ ind.className='saveind ok'; ind.textContent='메모 저장됨'; setTimeout(()=>{ if(ind&&ind.textContent==='메모 저장됨') ind.textContent=''; },2000); }
+      }catch(e){ if(ind){ ind.className='saveind'; ind.style.color='var(--expense)'; ind.textContent='메모 저장 실패'; } }
+    },800);
   }
 
   // ===== 형광펜(하이라이트) — 드래그=표시 · 표시 클릭=지움 · 자동 저장(디렉터) =====
@@ -1430,6 +1484,7 @@
   }
   function toggleHlMode(){
     hlMode=!hlMode;
+    if(hlMode&&editMode) toggleEditMode();     // 수정 모드와 배타
     const hb=document.getElementById('mbrHlBtn'); if(hb) hb.classList.toggle('on',hlMode);
     const body=document.getElementById('mbrBody'); if(body) body.classList.toggle('hlmode',hlMode);
     const hint=document.getElementById('mbrHlHint'); if(hint) hint.classList.toggle('hidden',!hlMode);
@@ -1440,6 +1495,7 @@
     p.removeChild(mk); p.normalize&&p.normalize();
   }
   function onMbrBodyMouseUp(e){
+    if(editMode) return;                       // 수정 모드에선 형광 동작 없음
     if(!hlMode||!isDirector) return;
     const body=document.getElementById('mbrBody'); if(!body) return;
     const sel=window.getSelection();
@@ -1554,7 +1610,10 @@
   }
   function copyMbr(){
     if(!mbrCurrent) return;
-    const txt=mbrCurrent.content_md||'';
+    // 수정본이 있으면 화면에 보이는 텍스트를, 아니면 원본 마크다운을 복사
+    const body=document.getElementById('mbrBody');
+    const edited=!!mbrCurrent.content_html && body;
+    const txt=edited?((body.innerText!=null?body.innerText:body.textContent)||''):(mbrCurrent.content_md||'');
     const b=$('mbrCopyBtn'); const t=b?b.textContent:'';
     const done=()=>{ if(b){ b.textContent='복사됨!'; setTimeout(()=>{ if(b) b.textContent=t; },1200); } };
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>vcFallbackCopy(txt,done)); }
@@ -1564,6 +1623,11 @@
     if(!mbrCurrent) return;
     const name='Refatrix_MBR_'+String(mbrCurrent.title||'summary').replace(/[^0-9A-Za-z가-힣._-]+/g,'_').replace(/^_+|_+$/g,'');
     const lbls=(mbrCurrent.snapshot_labels||[]).join(' · ');
+    // 화면의 현재 상태(형광 표시·수정 반영)를 그대로 인쇄
+    const liveBody=document.getElementById('mbrBody');
+    const bodyHtml=liveBody?liveBody.innerHTML:(mbrCurrent.content_html?sanitizeHtml(mbrCurrent.content_html):mdToHtml(mbrCurrent.content_md||''));
+    const memoEl=document.getElementById('mbrMemo');
+    const memoTxt=(memoEl?((memoEl.innerText!=null?memoEl.innerText:memoEl.textContent)||''):(mbrCurrent.memo||'')).trim();
     const w=window.open('','_blank');
     if(!w){ alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해주세요.'); return; }
     w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+esc(name)+'</title>'
@@ -1574,12 +1638,18 @@
       +'ul{margin:4px 0 10px;padding-left:20px}li{margin:2px 0}'
       +'.meta{font-size:11.5px;color:#6F6A60;margin-bottom:14px}'
       +'mark{background:#ffe86b;padding:0 1px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'.md>p:first-child{background:#eef4f1;border-left:4px solid #143D34;border-radius:8px;padding:10px 14px;font-size:14.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'.md>p:first-child b{color:#143D34}'
+      +'.memo{margin-top:18px;border-top:1px dashed #E6E1D6;padding-top:10px}'
+      +'.memo .mh{font-size:12.5px;font-weight:800;color:#1E5247;margin-bottom:4px}'
+      +'.memo .mb{background:#fffef4;border:1px solid #E6E1D6;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'@page{margin:14mm}</style></head><body>'
       +'<h1>'+esc(mbrCurrent.title)+'</h1>'
       +'<div class="meta">Refatrix ERP · MBR AI 요약 · 생성 '+fmtDateTime(mbrCurrent.created_at)
       +(mbrCurrent.created_by_name?' · '+esc(mbrCurrent.created_by_name):'')
       +(lbls?'<br>근거 회의: '+esc(lbls):'')+'</div>'
-      +mdToHtml(mbrCurrent.content_md||'')
+      +'<div class="md">'+bodyHtml+'</div>'
+      +(memoTxt?('<div class="memo"><div class="mh">📝 메모</div><div class="mb">'+esc(memoTxt)+'</div></div>'):'')
       +'</body></html>');
     w.document.close();
     setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },400);

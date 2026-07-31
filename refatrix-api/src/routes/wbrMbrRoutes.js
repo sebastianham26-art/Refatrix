@@ -124,7 +124,7 @@ export default async function wbrMbrRoutes(app) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
     const r = (await query(
-      `SELECT m.id, m.title, m.snapshot_labels, m.model, m.content_md, m.content_html, m.created_at, u.name AS created_by_name
+      `SELECT m.id, m.title, m.snapshot_labels, m.model, m.content_md, m.content_html, m.memo, m.created_at, u.name AS created_by_name
          FROM wbr_mbr_summaries m LEFT JOIN users u ON u.id = m.created_by
         WHERE m.id=$1`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
@@ -132,29 +132,43 @@ export default async function wbrMbrRoutes(app) {
       id: Number(r.id), title: r.title,
       snapshot_labels: Array.isArray(r.snapshot_labels) ? r.snapshot_labels : [],
       model: r.model, content_md: r.content_md, content_html: r.content_html || null,
+      memo: r.memo || '',
       created_at: r.created_at, created_by_name: r.created_by_name || null,
     };
   });
 
-  // ── 형광펜 표시 저장 — 디렉터 전용. content_html(<mark> 포함 렌더 HTML) 저장/해제(null) ──
+  // ── 표시·수정·메모 저장 — 디렉터 전용. 부분 업데이트: {content_html?} {memo?} 준 것만 갱신 ──
+  //   content_html = 형광 표시(<mark>)·본문 수정이 반영된 렌더 HTML(null 이면 원본 md 로 복귀)
   app.put('/api/wbr/mbr/summaries/:id/highlights', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
     const b = req.body || {};
-    let html = b.content_html;
-    if (html != null && typeof html !== 'string') return reply.code(400).send({ error: 'bad_html' });
-    if (html != null) {
-      if (html.length > 500000) return reply.code(413).send({ error: 'too_large' });
-      // 방어: 스크립트/이벤트핸들러 서버측 제거(표시는 <mark> 만 필요)
-      html = html.replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
-                 .replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*\/?\s*>/gi, '')
-                 .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-                 .replace(/(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '');
+    const sets = []; const vals = [];
+    if (Object.prototype.hasOwnProperty.call(b, 'content_html')) {
+      let html = b.content_html;
+      if (html != null && typeof html !== 'string') return reply.code(400).send({ error: 'bad_html' });
+      if (html != null) {
+        if (html.length > 500000) return reply.code(413).send({ error: 'too_large' });
+        // 방어: 스크립트/이벤트핸들러 서버측 제거(표시·수정엔 불필요)
+        html = html.replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+                   .replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*\/?\s*>/gi, '')
+                   .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+                   .replace(/(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '');
+      }
+      vals.push(html || null); sets.push(`content_html=$${vals.length}`);
     }
+    if (Object.prototype.hasOwnProperty.call(b, 'memo')) {
+      let memo = b.memo;
+      if (memo != null && typeof memo !== 'string') return reply.code(400).send({ error: 'bad_memo' });
+      if (memo != null && memo.length > 20000) return reply.code(413).send({ error: 'memo_too_large' });
+      vals.push((memo && memo.trim()) ? memo : null); sets.push(`memo=$${vals.length}`);
+    }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    vals.push(id);
     const r = (await query(
-      `UPDATE wbr_mbr_summaries SET content_html=$1 WHERE id=$2 RETURNING id`, [html || null, id])).rows[0];
+      `UPDATE wbr_mbr_summaries SET ${sets.join(', ')} WHERE id=$${vals.length} RETURNING id`, vals)).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
-    logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_mbr_highlight_save', target: `wbr_mbr:${id}` });
+    logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_mbr_annotation_save', target: `wbr_mbr:${id}` });
     return { ok: true, id };
   });
 
