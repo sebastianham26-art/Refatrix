@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0731c</title>
+<title>Refatrix ERP · WBR · build wbr-0731d</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -161,6 +161,7 @@
   .mdbody.hlmode{cursor:text}
   .mdbody.hlmode ::selection{background:#ffe86b}
   #mbrHlBtn.on{background:#c9a227!important;box-shadow:0 0 0 2px #f2dd8b}
+  #mbrTtsBtn.on{background:#b4561f!important;box-shadow:0 0 0 2px #ecc9b0}
   @media print{ #mbrCard{display:none!important} }
   /* ===== 월간 WhatsApp 보고 ===== */
   .warep2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
@@ -406,7 +407,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0731c');
+  console.log('[wbr] build wbr-0731d');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -1386,6 +1387,7 @@
   }
   let mbrCurrent=null;
   function renderMbrView(d){
+    stopTts();
     mbrCurrent=d; hlMode=false;
     const v=$('mbrView'); v.classList.remove('hidden');
     const lbls=(d.snapshot_labels||[]);
@@ -1393,6 +1395,7 @@
       +'<span class="meta">'+fmtDateTime(d.created_at)+(d.created_by_name?' · '+esc(d.created_by_name):'')+' · '+lbls.length+'개 회의</span>'
       +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap" class="no-print">'
         +'<span class="saveind" id="mbrHlInd"></span>'
+        +'<button class="btn sm" id="mbrTtsBtn" style="background:#4a6d64">🔊 읽어주기</button>'
         +(isDirector?'<button class="btn sm" id="mbrHlBtn" style="background:#a08420">🖍 형광펜</button>':'')
         +'<button class="btn sm gold" id="mbrPdfBtn">🧾 PDF/인쇄</button>'
         +'<button class="btn sm" id="mbrCopyBtn" style="background:var(--brand-soft)">📋 복사</button>'
@@ -1403,7 +1406,8 @@
       +'<div class="mdbody" id="mbrBody">'+(d.content_html?sanitizeHtml(d.content_html):mdToHtml(d.content_md||''))+'</div>';
     $('mbrPdfBtn').addEventListener('click',printMbr);
     $('mbrCopyBtn').addEventListener('click',copyMbr);
-    $('mbrCloseBtn').addEventListener('click',()=>{ hlMode=false; $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; });
+    $('mbrCloseBtn').addEventListener('click',()=>{ stopTts(); hlMode=false; $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; });
+    $('mbrTtsBtn').addEventListener('click',toggleTts);
     const hb=document.getElementById('mbrHlBtn');
     if(hb) hb.addEventListener('click',toggleHlMode);
     $('mbrBody').addEventListener('mouseup',onMbrBodyMouseUp);
@@ -1474,6 +1478,69 @@
       }catch(e){ if(ind){ ind.className='saveind'; ind.style.color='var(--expense)'; ind.textContent='표시 저장 실패'; } }
     },800);
   }
+
+  // ===== MBR 읽어주기 (브라우저 내장 TTS · 설치/키 불필요) =====
+  let ttsActive=false, ttsQueue=[], ttsIdx=0;
+  function ttsSupported(){ return !!(window.speechSynthesis && window.SpeechSynthesisUtterance); }
+  // 화면 본문 → 읽기용 평문(마크다운 기호·이모지 정리)
+  function mbrPlainText(){
+    const body=document.getElementById('mbrBody');
+    let t=body?(body.innerText!=null?body.innerText:body.textContent):'';
+    return String(t||'')
+      .replace(/[#*`>|]/g,' ')
+      .replace(/[✅⏳▶📈🖍🔊📊📱💚🧾📋📚🤖]/g,' ')
+      .replace(/\s+/g,' ').trim();
+  }
+  // 문장 경계 기준 160자 이내 조각(크롬 장문 TTS 끊김 방지)
+  function ttsChunks(text){
+    const norm=String(text||'').replace(/([.!?…。])\s+/g,'$1\n');
+    const parts=norm.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+    const out=[]; let cur='';
+    for(const p of parts){
+      if(cur && (cur.length+p.length+1)>160){ out.push(cur); cur=p; }
+      else cur=(cur?cur+' ':'')+p;
+      while(cur.length>320){ out.push(cur.slice(0,320)); cur=cur.slice(320); }  // 문장부호 없는 초장문 방어
+    }
+    if(cur) out.push(cur);
+    return out;
+  }
+  function pickKoVoice(){
+    try{
+      const vs=window.speechSynthesis.getVoices()||[];
+      return vs.find(v=>/^ko/i.test(v.lang||''))||null;
+    }catch(e){ return null; }
+  }
+  function speakNext(){
+    if(!ttsActive||ttsIdx>=ttsQueue.length){ stopTts(); return; }
+    const u=new SpeechSynthesisUtterance(ttsQueue[ttsIdx++]);
+    u.lang='ko-KR'; u.rate=1.02;
+    const v=pickKoVoice(); if(v) u.voice=v;
+    u.onend=function(){ if(ttsActive) speakNext(); };
+    u.onerror=function(){ stopTts(); };
+    window.speechSynthesis.speak(u);
+  }
+  function startTts(){
+    if(!ttsSupported()){ alert('이 브라우저는 음성 읽기를 지원하지 않습니다. (Chrome 사용 권장)'); return; }
+    stopTts();
+    const title=(mbrCurrent&&mbrCurrent.title)?(mbrCurrent.title+'. '):'';
+    const chunks=ttsChunks(title+mbrPlainText());
+    if(!chunks.length) return;
+    ttsActive=true; ttsQueue=chunks; ttsIdx=0;
+    const b=document.getElementById('mbrTtsBtn'); if(b){ b.textContent='⏹ 중지'; b.classList.add('on'); }
+    // 일부 크롬은 getVoices 가 늦게 채워짐 → 비어 있으면 한 번 기다렸다 시작
+    if(window.speechSynthesis.getVoices && !(window.speechSynthesis.getVoices()||[]).length && 'onvoiceschanged' in window.speechSynthesis){
+      let started=false;
+      const go=()=>{ if(!started){ started=true; if(ttsActive) speakNext(); } };
+      window.speechSynthesis.onvoiceschanged=go;
+      setTimeout(go,400);
+    } else speakNext();
+  }
+  function stopTts(){
+    ttsActive=false; ttsQueue=[]; ttsIdx=0;
+    try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+    const b=document.getElementById('mbrTtsBtn'); if(b){ b.textContent='🔊 읽어주기'; b.classList.remove('on'); }
+  }
+  function toggleTts(){ if(ttsActive) stopTts(); else startTts(); }
   async function deleteMbr(id){
     if(!isDirector) return;
     if(!confirm('이 요약을 영구 삭제할까요? (복구 불가)')) return;
