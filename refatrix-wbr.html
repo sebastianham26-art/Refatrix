@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0708d</title>
+<title>Refatrix ERP · WBR · build wbr-0731a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -138,6 +138,26 @@
   .snapbanner .bk{margin-left:auto}
   .viewlocked{pointer-events:none;opacity:.55}
   @media print{ #snapRow{display:none!important} }
+  /* ===== MBR AI 요약 ===== */
+  .mbrsnaps{display:flex;flex-direction:column;gap:4px;max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fbfaf6}
+  .mbrsnaps label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);margin:0;font-weight:600;cursor:pointer}
+  .mbrsnaps label input{width:auto;margin:0;padding:0}
+  .mbrsnaps label .meta{color:var(--muted);font-weight:500;font-size:11.5px}
+  table.mbrtab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  table.mbrtab th{font-size:11px;font-weight:700;color:var(--muted);background:#faf8f3;text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.mbrtab td{padding:7px 9px;border-bottom:1px solid #f1ede4;text-align:left;vertical-align:top}
+  table.mbrtab td.t{font-weight:700;color:var(--brand-soft)}
+  table.mbrtab td .snlbls{font-size:11px;color:var(--muted);font-weight:500}
+  .mbrview{margin-top:14px;border:1px solid var(--gold);border-radius:12px;padding:16px 18px;background:#fffdf6}
+  .mbrview .mvhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .mbrview .mvhead b{font-size:14px;color:var(--brand)}
+  .mbrview .mvhead .meta{font-size:11.5px;color:var(--muted)}
+  .mdbody h3{font-size:14px;color:var(--brand);margin:14px 0 5px;border-bottom:1px solid var(--line);padding-bottom:3px}
+  .mdbody h4{font-size:13px;color:var(--brand-soft);margin:10px 0 4px}
+  .mdbody ul{margin:4px 0 8px;padding-left:19px}
+  .mdbody li{font-size:13px;line-height:1.65;margin:2px 0}
+  .mdbody p{font-size:13px;line-height:1.7;margin:6px 0}
+  @media print{ #mbrCard{display:none!important} }
   /* ===== 인쇄(PDF 저장) ===== */
   @media print{
     @page{margin:12mm}
@@ -314,10 +334,34 @@
         <span class="saveind no-print" id="memoSave" style="margin-left:auto"></span></div>
       <div id="memo" contenteditable="true" data-ph="여기에 회의 중 메모를 자유롭게 작성하세요…"></div>
     </div>
+
+    <!-- MBR AI 요약 (저장된 회의 선택 → 원클릭 월간 요약) -->
+    <div class="card" id="mbrCard">
+      <div class="card-h">🤖 MBR AI 요약 <span class="src">저장된 WBR 회의를 골라 월간 보고(MBR)용으로 자동 요약</span>
+        <span class="lnk no-print" id="mbrToggle" style="margin-left:auto">감추기</span></div>
+      <div id="mbrCollapse">
+        <div id="mbrGen" class="no-print hidden">
+          <div class="hint" style="margin-bottom:6px">요약할 회의 저장본을 체크하세요 (한 번에 최대 12개 · 시간순으로 자동 정렬되어 요약됩니다)</div>
+          <div id="mbrSnapList" class="mbrsnaps"><div class="hint">저장된 회의를 불러오는 중…</div></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+            <input id="mbrTitle" type="text" placeholder="요약 제목 (예: 2026-07 MBR 요약)" style="min-width:230px">
+            <button class="btn gold" id="mbrGenBtn">🤖 선택한 회의 AI 요약</button>
+            <span class="hint" id="mbrGenHint"></span>
+          </div>
+          <div class="hint hidden" id="mbrNoKey" style="margin-top:6px;color:var(--expense)">⚠ 서버에 ANTHROPIC_API_KEY 가 설정되지 않아 AI 요약을 사용할 수 없습니다. (Railway → Variables 에 키 등록)</div>
+        </div>
+        <div style="margin-top:14px">
+          <div style="font-size:12px;font-weight:800;color:var(--brand-soft)">📚 요약 보관함</div>
+          <div id="mbrList"><div class="hint">불러오는 중…</div></div>
+        </div>
+        <div id="mbrView" class="hidden mbrview"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
+  console.log('[wbr] build wbr-0731a');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -374,6 +418,7 @@
       loadBoard();
       refreshAll();
       loadSnapList('');
+      loadMbrList();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -1093,6 +1138,7 @@
       h+=items.map(it=>'<option value="'+it.id+'">'+esc(it.label)+(it.period_label?' · '+esc(it.period_label):'')+'</option>').join('');
       const sel=$('snapSel'); sel.innerHTML=h;
       sel.value = selectId!=null ? String(selectId) : (viewMode?String(viewMode.id):'');
+      snapCache=items; renderMbrSnapChecks();
     }catch(e){ /* 권한·네트워크 실패 시 드롭다운은 라이브만 */ }
   }
 
@@ -1202,6 +1248,181 @@
     else{ enterView(Number(v)); }
   }
 
+  // ===== MBR AI 요약 (저장된 회의 체크 선택 → 원클릭 요약 → 보관함) =====
+  let snapCache=[];            // 저장된 회의 목록(체크박스용) — loadSnapList 에서 채움
+  let mbrAiEnabled=false;      // 서버 ANTHROPIC_API_KEY 설정 여부
+  let mbrItems=[];             // 보관함 목록
+  let mbrOpen=true;
+
+  function renderMbrSnapChecks(){
+    const box=$('mbrSnapList'); if(!box) return;
+    if(!snapCache.length){ box.innerHTML='<div class="hint">저장된 회의가 아직 없습니다. 먼저 「💾 이번 회의 저장」으로 주간 회의를 저장하세요.</div>'; return; }
+    box.innerHTML=snapCache.map(it=>
+      '<label><input type="checkbox" class="mbrck" value="'+it.id+'"> '
+      +'<span>'+esc(it.label)+'</span>'
+      +(it.period_label?'<span class="meta">'+esc(it.period_label)+'</span>':'')
+      +'</label>').join('');
+  }
+  function mbrCheckedIds(){
+    return Array.from(document.querySelectorAll('.mbrck:checked')).map(el=>Number(el.value)).filter(n=>Number.isInteger(n)&&n>0);
+  }
+  function defaultMbrTitle(){
+    const d=new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+' MBR 요약';
+  }
+
+  async function loadMbrList(){
+    try{
+      const d=await fetch(session.api+'/api/wbr/mbr/summaries',{headers:auth()}).then(r=>r.json());
+      mbrAiEnabled=!!(d&&d.ai_enabled);
+      mbrItems=(d&&d.items)||[];
+      // 생성 UI는 디렉터에게만
+      $('mbrGen').classList.toggle('hidden', !isDirector);
+      $('mbrNoKey').classList.toggle('hidden', !(isDirector&&!mbrAiEnabled));
+      if(isDirector){ $('mbrGenBtn').disabled=!mbrAiEnabled; if(!$('mbrTitle').value) $('mbrTitle').value=defaultMbrTitle(); }
+      renderMbrList();
+    }catch(e){ $('mbrList').innerHTML='<div class="hint">요약 보관함을 불러오지 못했습니다.</div>'; }
+  }
+  function renderMbrList(){
+    const box=$('mbrList');
+    if(!mbrItems.length){ box.innerHTML='<div class="hint" style="padding:6px 2px">저장된 요약이 아직 없습니다.</div>'; return; }
+    const rows=mbrItems.map(it=>{
+      const lbls=(it.snapshot_labels||[]);
+      const lblTxt=lbls.length?lbls.slice(0,6).join(' · ')+(lbls.length>6?' 외 '+(lbls.length-6)+'건':''):'-';
+      return '<tr>'
+        +'<td class="t">'+esc(it.title)+'<div class="snlbls">'+esc(lblTxt)+' ('+lbls.length+'개 회의)</div></td>'
+        +'<td style="white-space:nowrap">'+fmtDateTime(it.created_at)+(it.created_by_name?'<div class="snlbls">'+esc(it.created_by_name)+'</div>':'')+'</td>'
+        +'<td style="white-space:nowrap;text-align:right">'
+          +'<button class="btn sm mbr-open" data-id="'+it.id+'" style="background:var(--brand-soft)">열람</button> '
+          +(isDirector?'<button class="btn sm mbr-del no-print" data-id="'+it.id+'" style="background:#b4561f">🗑</button>':'')
+        +'</td></tr>';
+    }).join('');
+    box.innerHTML='<table class="mbrtab"><thead><tr><th>제목</th><th>생성일</th><th style="text-align:right">동작</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    box.querySelectorAll('.mbr-open').forEach(b=>b.addEventListener('click',()=>openMbr(Number(b.dataset.id))));
+    box.querySelectorAll('.mbr-del').forEach(b=>b.addEventListener('click',()=>deleteMbr(Number(b.dataset.id))));
+  }
+
+  async function generateMbr(){
+    if(!isDirector) return;
+    const ids=mbrCheckedIds();
+    const hint=$('mbrGenHint'); hint.style.color='';
+    if(!ids.length){ hint.style.color='var(--expense)'; hint.textContent='요약할 회의를 1개 이상 체크하세요.'; return; }
+    if(ids.length>12){ hint.style.color='var(--expense)'; hint.textContent='한 번에 최대 12개까지 선택할 수 있습니다.'; return; }
+    const title=($('mbrTitle').value||'').trim()||defaultMbrTitle();
+    const btn=$('mbrGenBtn'); const prev=btn.textContent;
+    btn.disabled=true; btn.textContent='🤖 AI 요약 생성 중…';
+    hint.textContent=ids.length+'개 회의를 요약하고 있습니다. 30초~2분 정도 걸립니다.';
+    try{
+      const res=await fetch(session.api+'/api/wbr/mbr/summaries',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({snapshot_ids:ids,title})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        hint.style.color='var(--expense)';
+        hint.textContent= d.error==='no_api_key' ? 'API 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)'
+          : d.error==='ai_failed' ? 'AI 호출 실패: '+(d.detail||'') : '생성 실패: '+(d.error||res.status);
+        return;
+      }
+      hint.style.color='var(--income)'; hint.textContent='요약이 저장되었습니다.';
+      $('mbrTitle').value='';
+      await loadMbrList();
+      renderMbrView(d);
+    }catch(e){ hint.style.color='var(--expense)'; hint.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ btn.disabled=!mbrAiEnabled?true:false; btn.textContent=prev; }
+  }
+
+  async function openMbr(id){
+    const v=$('mbrView'); v.classList.remove('hidden'); v.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/wbr/mbr/summaries/'+id,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      renderMbrView(d);
+    }catch(e){ v.innerHTML='<div class="hint">요약을 불러오지 못했습니다.</div>'; }
+  }
+  let mbrCurrent=null;
+  function renderMbrView(d){
+    mbrCurrent=d;
+    const v=$('mbrView'); v.classList.remove('hidden');
+    const lbls=(d.snapshot_labels||[]);
+    v.innerHTML='<div class="mvhead"><b>'+esc(d.title)+'</b>'
+      +'<span class="meta">'+fmtDateTime(d.created_at)+(d.created_by_name?' · '+esc(d.created_by_name):'')+' · '+lbls.length+'개 회의</span>'
+      +'<span style="margin-left:auto;display:flex;gap:6px" class="no-print">'
+        +'<button class="btn sm gold" id="mbrPdfBtn">🧾 PDF/인쇄</button>'
+        +'<button class="btn sm" id="mbrCopyBtn" style="background:var(--brand-soft)">📋 복사</button>'
+        +'<button class="btn sm" id="mbrCloseBtn" style="background:#8b8577">닫기</button>'
+      +'</span></div>'
+      +(lbls.length?'<div class="hint" style="margin-bottom:4px">근거 회의: '+esc(lbls.join(' · '))+'</div>':'')
+      +'<div class="mdbody">'+mdToHtml(d.content_md||'')+'</div>';
+    $('mbrPdfBtn').addEventListener('click',printMbr);
+    $('mbrCopyBtn').addEventListener('click',copyMbr);
+    $('mbrCloseBtn').addEventListener('click',()=>{ $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; });
+    v.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  async function deleteMbr(id){
+    if(!isDirector) return;
+    if(!confirm('이 요약을 영구 삭제할까요? (복구 불가)')) return;
+    try{
+      const res=await fetch(session.api+'/api/wbr/mbr/summaries/'+id,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+    }catch(e){ alert('삭제 실패: 서버에 연결할 수 없습니다.'); return; }
+    if(mbrCurrent&&mbrCurrent.id===id){ $('mbrView').classList.add('hidden'); $('mbrView').innerHTML=''; mbrCurrent=null; }
+    loadMbrList();
+  }
+  function copyMbr(){
+    if(!mbrCurrent) return;
+    const txt=mbrCurrent.content_md||'';
+    const b=$('mbrCopyBtn'); const t=b?b.textContent:'';
+    const done=()=>{ if(b){ b.textContent='복사됨!'; setTimeout(()=>{ if(b) b.textContent=t; },1200); } };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>vcFallbackCopy(txt,done)); }
+    else vcFallbackCopy(txt,done);
+  }
+  function printMbr(){
+    if(!mbrCurrent) return;
+    const name='Refatrix_MBR_'+String(mbrCurrent.title||'summary').replace(/[^0-9A-Za-z가-힣._-]+/g,'_').replace(/^_+|_+$/g,'');
+    const lbls=(mbrCurrent.snapshot_labels||[]).join(' · ');
+    const w=window.open('','_blank');
+    if(!w){ alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해주세요.'); return; }
+    w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+esc(name)+'</title>'
+      +'<style>body{font-family:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;color:#1C1B19;max-width:860px;margin:24px auto;padding:0 18px;line-height:1.7;font-size:13px}'
+      +'h1{font-size:19px;color:#143D34;border-bottom:2px solid #143D34;padding-bottom:8px}'
+      +'h3{font-size:14.5px;color:#143D34;border-bottom:1px solid #E6E1D6;padding-bottom:3px;margin:18px 0 6px}'
+      +'h4{font-size:13.5px;color:#1E5247;margin:12px 0 4px}'
+      +'ul{margin:4px 0 10px;padding-left:20px}li{margin:2px 0}'
+      +'.meta{font-size:11.5px;color:#6F6A60;margin-bottom:14px}'
+      +'@page{margin:14mm}</style></head><body>'
+      +'<h1>'+esc(mbrCurrent.title)+'</h1>'
+      +'<div class="meta">Refatrix ERP · MBR AI 요약 · 생성 '+fmtDateTime(mbrCurrent.created_at)
+      +(mbrCurrent.created_by_name?' · '+esc(mbrCurrent.created_by_name):'')
+      +(lbls?'<br>근거 회의: '+esc(lbls):'')+'</div>'
+      +mdToHtml(mbrCurrent.content_md||'')
+      +'</body></html>');
+    w.document.close();
+    setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },400);
+  }
+
+  // 초경량 마크다운 렌더러(요약 표시용): 이스케이프 후 ###/####·**굵게**·불릿(-)만 지원.
+  function mdToHtml(md){
+    const lines=String(md||'').split(/\r?\n/);
+    const out=[]; let inUl=false;
+    const inline=(s)=>esc(s).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+    const closeUl=()=>{ if(inUl){ out.push('</ul>'); inUl=false; } };
+    for(const raw of lines){
+      const line=raw.replace(/\s+$/,'');
+      const t=line.trim();
+      if(!t){ closeUl(); continue; }
+      let m;
+      if((m=/^####\s+(.*)$/.exec(t))){ closeUl(); out.push('<h4>'+inline(m[1])+'</h4>'); continue; }
+      if((m=/^###\s+(.*)$/.exec(t))){ closeUl(); out.push('<h3>'+inline(m[1])+'</h3>'); continue; }
+      if((m=/^##\s+(.*)$/.exec(t))){ closeUl(); out.push('<h3>'+inline(m[1])+'</h3>'); continue; }
+      if((m=/^#\s+(.*)$/.exec(t))){ closeUl(); out.push('<h3>'+inline(m[1])+'</h3>'); continue; }
+      if((m=/^[-*•]\s+(.*)$/.exec(t))){ if(!inUl){ out.push('<ul>'); inUl=true; } out.push('<li>'+inline(m[1])+'</li>'); continue; }
+      if((m=/^(\d+)[.)]\s+(.*)$/.exec(t))){ if(!inUl){ out.push('<ul>'); inUl=true; } out.push('<li><b>'+m[1]+'.</b> '+inline(m[2])+'</li>'); continue; }
+      closeUl(); out.push('<p>'+inline(t)+'</p>');
+    }
+    closeUl();
+    return out.join('');
+  }
+
 
   // 바인딩
   $('go').addEventListener('click',login);
@@ -1219,6 +1440,8 @@
   $('cfwf-gran').addEventListener('change',()=>{ cfwfState.gran=$('cfwf-gran').value; if(!viewMode) loadCfWaterfall(); });
   $('cfwf-plan').addEventListener('click',()=>{ if(viewMode)return; cfwfState.plan=!cfwfState.plan; updateCfPlanBtn(); loadCfWaterfall(); });
   $('slaToggle').addEventListener('click',()=>{ slaOpen=!slaOpen; applyToggle(slaOpen,'slaBody','slaToggle'); });
+  $('mbrToggle').addEventListener('click',()=>{ mbrOpen=!mbrOpen; applyToggle(mbrOpen,'mbrCollapse','mbrToggle'); });
+  $('mbrGenBtn').addEventListener('click',generateMbr);
   $('memo').addEventListener('input',()=>{ const el=$('memo'); board.memo=(el.innerText!=null?el.innerText:el.textContent); saveBoard('memo'); });
   $('photoInput').addEventListener('change', onPhotoSelected);
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();

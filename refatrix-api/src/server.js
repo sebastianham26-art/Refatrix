@@ -31,6 +31,7 @@ import devRequestRoutes from './routes/devRequestRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import commissionRoutes from './routes/commissionRoutes.js';
 import wbrRoutes from './routes/wbrRoutes.js';
+import wbrMbrRoutes from './routes/wbrMbrRoutes.js';
 import presenceRoutes from './routes/presenceRoutes.js';
 import notaCreditoRoutes from './routes/notaCreditoRoutes.js';
 import fieldSurveyRoutes from './routes/fieldSurveyRoutes.js';
@@ -98,6 +99,7 @@ export function buildApp() {
   app.register(userRoutes);
   app.register(commissionRoutes);
   app.register(wbrRoutes);
+  app.register(wbrMbrRoutes);
   app.register(presenceRoutes);
   app.register(notaCreditoRoutes);
   app.register(fieldSurveyRoutes);
