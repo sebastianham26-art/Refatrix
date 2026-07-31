@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260731a</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260731b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -242,8 +242,41 @@
     function col(){ var ns=[].slice.call(arguments); for(var k=0;k<ns.length;k++){var i=H.indexOf(ns[k]);if(i>=0)return i;} for(var k2=0;k2<ns.length;k2++){for(var j=0;j<H.length;j++)if(H[j].indexOf(ns[k2])>=0)return j;} return -1; }
     var cOrd=col('ORDER NO','ORDER'),cPl=col('PL NO'),cFr=col('FROM'),cTo=col('TO'),cSku=col('CTR NO'),cDesc=col('DESCRIPTION'),cQty=col('TOTAL QTY','QTY');
     if([cOrd,cPl,cFr,cTo,cSku,cQty].some(function(x){return x<0;})) throw new Error(L('필수 열이 없습니다(ORDER NO·PL NO·FROM·TO·CTR NO·QTY)','Faltan columnas requeridas'));
+    // 인보이스 번호 추출(2026-07-31 강화): 같은 셀("INVOICE NO: X") · 오른쪽 셀 · 아랫줄 셀까지 인식.
+    //   라벨 단어(NO/DATE 등)만 있는 셀은 값으로 안 봄. 못 찾으면 미리보기에서 직접 입력.
     var inv=null;
-    for(var r0=0;r0<hi;r0++){ var rr=rows[r0]||[]; for(var j=0;j<rr.length;j++){ if(/INVOICE/i.test(String(rr[j]||''))){ for(var k=j+1;k<rr.length;k++) if(rr[k]){inv=String(rr[k]).trim();break;} } } }
+    var SEP=/^(?:NO|N[Oº°]\.?|NUM\w*|#|[-:.：]+)$/i;      // 라벨 뒤 구분어("NO" 등) — 건너뜀
+    // 다른 라벨 문구 = 숫자가 없고 라벨 단어를 포함(순수 텍스트) — 숫자가 섞인 값(CTR-2607-88 등)은 라벨로 안 봄
+    function isLbl(t){ return !/\d/.test(t)&&/(?:INVOICE|FACTURA|COMMERCIAL|PACKING|LIST|DATE|FECHA|ORDER|TOTAL|QTY|DESCRIPTION)/i.test(t); }
+    function invVal(s){
+      if(s==null) return null;
+      var t=String(s).trim();
+      if(t===''||SEP.test(t)||isLbl(t)) return null;
+      if(/\s/.test(t)) return null;                       // 공백 포함 문구는 번호로 안 봄
+      if(!/\d/.test(t)&&t.length<4) return null;          // 너무 짧은 비숫자
+      return t.slice(0,60);
+    }
+    outer:
+    for(var r0=0;r0<hi;r0++){ var rr=rows[r0]||[]; var rrN=(r0+1<hi)?(rows[r0+1]||[]):[];
+      for(var j=0;j<rr.length;j++){
+        var cell=String(rr[j]==null?'':rr[j]);
+        if(!/INVOICE|FACTURA/i.test(cell)) continue;
+        // ① 같은 셀 안: "INVOICE NO: ABC-123" / "COMMERCIAL INVOICE CI2026015"
+        var same=invVal(cell.replace(/^[\s\S]*?(?:INVOICE|FACTURA)\s*(?:NO|N[Oº°]|NUM\w*|#)?\.?\s*[:：\-]?\s*/i,''));
+        if(same){ inv=same; break outer; }
+        // ② 같은 행 오른쪽 셀들 — 구분어("NO")는 건너뛰고, 다른 라벨(DATE 등)을 만나면 중단
+        for(var k=j+1;k<rr.length;k++){
+          var c2=rr[k]; if(c2==null||String(c2).trim()==='') continue;
+          var t2=String(c2).trim();
+          if(SEP.test(t2)) continue;
+          if(isLbl(t2)) break;                             // 다음 라벨 구역 — 그 뒤 값은 남의 값
+          var v=invVal(t2); if(v){ inv=v; break outer; } break;
+        }
+        // ③ 아랫줄 같은 열·오른쪽 열 (헤더행 전까지만)
+        var b1=invVal(rrN[j]), b2=invVal(rrN[j+1]);
+        if(b1||b2){ inv=b1||b2; break outer; }
+      }
+    }
     // ▼ 수량 누락 방지(2026-07-31):
     //   ① ORDER NO·PL NO 병합셀(빈칸) → 직전 값으로 채움(단, CTR NO·수량이 있는 데이터 행만)
     //   ② FROM/TO(카톤번호) 없는 행(혼적 카톤 병합셀·낱개 등) → 제외하지 않고 카톤 0 으로 포함
@@ -281,7 +314,10 @@
     api('/api/inbound/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:res.rows,invoice_no:res.invoice_no})}).then(function(o){
       if(!o.ok||o.body.error){ $('pout').innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)">'+L('검증 실패','Error de validación')+': '+(o.body.error||o.status)+'</div>'; return; }
       var s=o.body.summary;
-      $('pout').innerHTML='<div class="note green" style="margin-top:12px">✔ <b>'+esc(fname)+'</b> · '+L('인보이스','Factura')+' <b class="mono">'+esc(o.body.invoice_no||'—')+'</b></div>'
+      var invGuess=o.body.invoice_no||res.invoice_no||'';
+      $('pout').innerHTML='<div class="note green" style="margin-top:12px">✔ <b>'+esc(fname)+'</b> · '+L('인보이스','Factura')+' '
+          +'<input id="invNo" type="text" class="mono" style="padding:5px 9px;font-size:13px;width:180px" value="'+esc(invGuess)+'" placeholder="'+L('인보이스 번호 입력','Núm. de factura')+'">'
+          +(invGuess?'':' <b style="color:var(--red)">⚠ '+L('파일에서 못 찾음 — 직접 입력하세요','no encontrado — ingrese manualmente')+'</b>')+'</div>'
         +'<div class="kpis" style="margin-top:9px">'
         +'<div class="kpi"><div class="l">'+L('팔렛','Pallets')+'</div><div class="v">'+s.pallets+'</div></div>'
         +'<div class="kpi"><div class="l">'+L('카톤','Cajas')+'</div><div class="v">'+fmt(s.cartons)+'</div></div>'
@@ -306,7 +342,8 @@
     var eta=$('eta').value;
     if(!eta){ toast(L('도착 예정일(ETA)을 입력하세요','Ingrese la fecha estimada (ETA)')); $('eta').focus(); return; }
     $('btnCreate').disabled=true;
-    api('/api/inbound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:parsed.rows,invoice_no:parsed.invoice_no,eta:eta})}).then(function(o){
+    var invEl=$('invNo'); var invNo=(invEl&&invEl.value.trim())||parsed.invoice_no||null;
+    api('/api/inbound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:parsed.rows,invoice_no:invNo,eta:eta})}).then(function(o){
       if(!o.ok||o.body.error){ toast(L('생성 실패','Error')+': '+(o.body.error||o.status)); $('btnCreate').disabled=false; return; }
       toast(L('✔ 선적 생성 — 입고예정 재고가 판매팀에 반영됩니다','✔ Creado — stock entrante visible para ventas'));
       openShip(o.body.id);
@@ -333,7 +370,8 @@
     var s=DETAIL.shipment, st=palStats();
     var stName={incoming:L('운송중','En tránsito'),receiving:L('입고중','Recibiendo'),closed:L('마감','Cerrado')}[s.status]||s.status;
     var html='<div class="card"><div class="row" style="justify-content:space-between">'
-      +'<div><h2 style="margin:0">'+L('선적','Embarque')+' <span class="mono" style="font-weight:400;color:var(--muted)">'+esc(s.invoice_no||('#'+s.id))+'</span></h2>'
+      +'<div><h2 style="margin:0">'+L('선적','Embarque')+' <span class="mono" style="font-weight:400;color:'+(s.invoice_no?'var(--muted)':'var(--red)')+'">'+esc(s.invoice_no||L('인보이스 미입력','sin factura'))+'</span>'
+      +(s.status!=='closed'?' <button class="btn ghost sm" id="btnInvEdit" title="'+L('인보이스 번호 입력·수정','Editar factura')+'">✎</button>':'')+'</h2>'
       +'<div class="hint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span></div></div>'
       +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
       +'<div class="steps">'
@@ -344,6 +382,17 @@
       +'</div><div id="stepbody"></div></div>';
     $('app').innerHTML=html;
     $('btnBack').addEventListener('click',loadList);
+    var invBtn=$('btnInvEdit');
+    if(invBtn) invBtn.addEventListener('click',function(){
+      var cur=DETAIL.shipment.invoice_no||'';
+      var v=prompt(L('패킹리스트 인보이스 번호','Número de factura del packing list'),cur);
+      if(v==null) return;
+      api('/api/inbound/'+SHIP,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({invoice_no:v.trim()})}).then(function(o){
+        if(!o.ok||o.body.error){ toast(L('저장 실패','Error')+': '+(o.body.error||o.status)); return; }
+        toast('✔ '+L('인보이스 번호 저장됨','Factura guardada'));
+        openShip(SHIP);
+      });
+    });
     document.querySelectorAll('.step').forEach(function(b){ b.addEventListener('click',function(){ STEP=b.dataset.s; if(STEP==='check')scanReset(); if(STEP==='put'){curZone=null;curRack=null;} renderStep(); }); });
     renderStep();
   }

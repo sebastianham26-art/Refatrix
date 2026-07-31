@@ -293,6 +293,30 @@ export default async function inboundRoutes(app) {
     });
   });
 
+  // 선적 정보 수정(인보이스 번호·ETA) — 마감 전 선적만. 업로드 때 못 채운 번호를 나중에 입력/수정.
+  app.patch('/api/inbound/:id', g, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const sets = []; const args = [];
+    if (req.body && req.body.invoice_no !== undefined) {
+      const v = String(req.body.invoice_no || '').trim().slice(0, 60) || null;
+      args.push(v); sets.push(`invoice_no=$${args.length}`);
+    }
+    if (req.body && req.body.eta !== undefined) {
+      const e = String(req.body.eta || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(e)) return reply.code(400).send({ error: 'bad_eta' });
+      args.push(e); sets.push(`eta=$${args.length}`);
+    }
+    if (!sets.length) return reply.code(400).send({ error: 'nothing_to_update' });
+    args.push(id);
+    const r = await query(
+      `UPDATE inbound_shipments SET ${sets.join(', ')}
+        WHERE id=$${args.length} AND deleted_at IS NULL AND status <> 'closed' RETURNING id, invoice_no, eta`, args);
+    if (!r.rows.length) return reply.code(409).send({ error: 'bad_state' });
+    await logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'inbound_update', target: 'inbound:' + id, detail: { invoice_no: r.rows[0].invoice_no, eta: r.rows[0].eta } });
+    return { ok: true, invoice_no: r.rows[0].invoice_no, eta: r.rows[0].eta };
+  });
+
   // 선적 취소(디렉터) ------------------------------------------------
   app.delete('/api/inbound/:id', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const uid = req.ctx.perm.userId;
