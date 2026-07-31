@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageAny } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 
@@ -65,6 +65,17 @@ function summarize(pallets, pmap) {
 
 export default async function inboundRoutes(app) {
   const g = { preHandler: [authGuard, requirePage('warehouse')] };
+  const gView = { preHandler: [authGuard, requirePageAny(['warehouse', 'purchase'])] }; // 파일 열람: 창고+구매
+
+  // 패킹리스트 원본 파일 검증(data URL base64) — bodyLimit 12MB 안에서 원본 약 8MB까지
+  function validFile(b) {
+    const name = String(b?.file_name || '').trim().slice(0, 200);
+    const data = String(b?.file_data || '');
+    if (!name || !data.startsWith('data:')) return null;
+    if (data.length > 11.5 * 1024 * 1024) return { error: 'file_too_large' };
+    const mime = (data.slice(5).split(/[;,]/)[0] || '').slice(0, 100) || null;
+    return { name, data, mime, size: Math.round((data.length - (data.indexOf(',') + 1)) * 3 / 4) };
+  }
 
   // 패킹리스트 미리보기(검증만, 저장 안 함) --------------------------
   app.post('/api/inbound/preview', g, async (req) => {
@@ -86,11 +97,20 @@ export default async function inboundRoutes(app) {
     const codes = []; pallets.forEach((p) => p.items.forEach((i) => codes.push(i.code)));
     const pmap = await matchProducts(query, codes);
 
+    // 패킹리스트 원본 파일(선택) — 함께 저장해 ERP에서 재다운로드 가능하게
+    const pf = (req.body && req.body.file_data) ? validFile(req.body) : null;
+    if (pf && pf.error) return { error: pf.error };
+
     const shipmentId = await withTx(async (c) => {
       const q = c.query.bind(c);
       const s = (await q(
         `INSERT INTO inbound_shipments (invoice_no, eta, status, created_by)
          VALUES ($1,$2,'incoming',$3) RETURNING id`, [invoice_no, eta, uid])).rows[0];
+      if (pf) {
+        await q(
+          `INSERT INTO inbound_packing_files (shipment_id, file_name, mime_type, file_data, file_size, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`, [s.id, pf.name, pf.mime, pf.data, pf.size, uid]);
+      }
       for (const p of pallets) {
         const cartons = p.items.reduce((a, i) => a + i.cartons, 0);
         const qty = p.items.reduce((a, i) => a + i.qty, 0);
@@ -291,6 +311,43 @@ export default async function inboundRoutes(app) {
       await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'inbound_close', target: 'inbound:' + id, detail: { po_lines_updated: updated } });
       return { ok: true, po_lines_updated: updated, orders: perOrder };
     });
+  });
+
+  // 패킹리스트 파일 추가 첨부(기존 선적) — 업로드 때 못 넣은 파일을 나중에 첨부
+  app.post('/api/inbound/:id/file', g, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const s = (await query(`SELECT id FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    const pf = validFile(req.body);
+    if (!pf) return reply.code(400).send({ error: 'file_required' });
+    if (pf.error) return reply.code(413).send({ error: pf.error });
+    const r = (await query(
+      `INSERT INTO inbound_packing_files (shipment_id, file_name, mime_type, file_data, file_size, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [id, pf.name, pf.mime, pf.data, pf.size, req.ctx.perm.userId])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'inbound_file', target: 'inbound:' + id, detail: { file: pf.name, size: pf.size } });
+    return { ok: true, id: Number(r.id) };
+  });
+
+  // 패킹리스트 파일 목록(메타만 — file_data 제외). 창고+구매 열람.
+  app.get('/api/inbound/:id/files', gView, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const rows = (await query(
+      `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_at, u.name AS uploaded_by_name
+         FROM inbound_packing_files f LEFT JOIN users u ON u.id=f.uploaded_by
+        WHERE f.shipment_id=$1 ORDER BY f.uploaded_at DESC, f.id DESC`, [id])).rows;
+    return { items: rows.map((r) => ({ id: Number(r.id), file_name: r.file_name, mime_type: r.mime_type, file_size: r.file_size == null ? null : Number(r.file_size), uploaded_at: r.uploaded_at, uploaded_by_name: r.uploaded_by_name || null })) };
+  });
+
+  // 패킹리스트 파일 다운로드(data URL). 창고+구매 열람.
+  app.get('/api/inbound/files/:fileId', gView, async (req, reply) => {
+    const fid = Number(req.params.fileId);
+    if (!fid) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(
+      `SELECT id, shipment_id, file_name, mime_type, file_data FROM inbound_packing_files WHERE id=$1`, [fid])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { id: Number(r.id), shipment_id: Number(r.shipment_id), file_name: r.file_name, mime_type: r.mime_type, file_data: r.file_data };
   });
 
   // 선적 정보 수정(인보이스 번호·ETA) — 마감 전 선적만. 업로드 때 못 채운 번호를 나중에 입력/수정.

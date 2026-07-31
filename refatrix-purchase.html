@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0731b</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0731c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -268,7 +268,7 @@
       const key='S'+sh.id;
       h+='<tr class="incRow" data-k="'+key+'">'
         +'<td>'+etaTag(sh)+'</td>'
-        +'<td><b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b></td>'
+        +'<td><b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b>'+((sh.files&&sh.files.length)?' 📎':'')+'</td>'
         +'<td>'+esc(sh.uploaded_at||'—')+'</td>'
         +'<td>'+(sh.status==='receiving'?'입고중':'선적중')+'</td>'
         +'<td class="num">'+sh.sku_count+'</td>'
@@ -276,7 +276,10 @@
         +'<td class="num">'+num(sh.cartons)+'</td>'
         +'<td>'+esc((sh.refs||[]).join(', '))+'</td></tr>';
       if(incOpen[key]){
-        let dh='<div style="font-size:12px;color:var(--muted);margin-bottom:2px">패킹리스트 <b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b> · 업로드 '+esc(sh.uploaded_at||'—')+' · 총 <b>'+num(sh.total_qty)+'</b>개 · SKU '+sh.sku_count+'종</div>';
+        let dh='<div style="font-size:12px;color:var(--muted);margin-bottom:2px">패킹리스트 <b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b> · 업로드 '+esc(sh.uploaded_at||'—')+' · 총 <b>'+num(sh.total_qty)+'</b>개 · SKU '+sh.sku_count+'종'
+          +((sh.files||[]).map(f=>' · <a href="#" class="pkfile" data-fid="'+f.id+'" style="color:var(--brand);font-weight:700">📎 '+esc(f.file_name||('file#'+f.id))+' 다운로드</a>').join(''))
+          +((sh.files&&sh.files.length)?'':' · <span style="color:#b0ab9e">원본 파일 없음(창고 입고화면에서 첨부 가능)</span>')
+          +'</div>';
         dh+='<table><tr><th>제품코드</th><th>제품명</th><th class="num">도착 수량</th><th class="num">카톤</th><th class="num">현재고</th><th class="num">입고후 예상</th></tr>';
         for(const l of (sh.lines||[])){
           const proj=(l.stock_qty==null)?null:(Math.round((l.stock_qty+l.qty)*1000)/1000);
@@ -319,6 +322,20 @@
     $('incTable').querySelectorAll('tr.incRow').forEach(tr=>tr.addEventListener('click',()=>{
       const k=tr.dataset.k; if(incOpen[k]) delete incOpen[k]; else incOpen[k]=true; renderIncoming();
     }));
+    $('incTable').querySelectorAll('a.pkfile').forEach(a=>a.addEventListener('click',ev=>{
+      ev.preventDefault(); ev.stopPropagation(); dlPackingFile(a.dataset.fid);
+    }));
+  }
+  // 패킹리스트 원본 다운로드(창고 업로드 파일 — 구매 권한으로 열람)
+  async function dlPackingFile(fid){
+    try{
+      const res=await fetch(session.api+'/api/inbound/files/'+fid,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||!d.file_data){ alert('다운로드 실패: '+(d.error||res.status)); return; }
+      const a=document.createElement('a');
+      a.href=d.file_data; a.download=d.file_name||('packing_'+fid);
+      document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
   }
 
   // ---- 엑셀 파싱 → 미리보기 ----

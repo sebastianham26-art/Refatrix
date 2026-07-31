@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260731b</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260731d</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -260,9 +260,9 @@
     for(var r0=0;r0<hi;r0++){ var rr=rows[r0]||[]; var rrN=(r0+1<hi)?(rows[r0+1]||[]):[];
       for(var j=0;j<rr.length;j++){
         var cell=String(rr[j]==null?'':rr[j]);
-        if(!/INVOICE|FACTURA/i.test(cell)) continue;
-        // ① 같은 셀 안: "INVOICE NO: ABC-123" / "COMMERCIAL INVOICE CI2026015"
-        var same=invVal(cell.replace(/^[\s\S]*?(?:INVOICE|FACTURA)\s*(?:NO|N[Oº°]|NUM\w*|#)?\.?\s*[:：\-]?\s*/i,''));
+        if(!/INVOICE|FACTURA|REF(?:ERENCE|ERENCIA)?\b/i.test(cell)) continue;
+        // ① 같은 셀 안: "INVOICE NO: ABC-123" / "COMMERCIAL INVOICE CI2026015" / "REF: D2607001"
+        var same=invVal(cell.replace(/^[\s\S]*?(?:INVOICE|FACTURA|REF(?:ERENCE|ERENCIA)?)\s*(?:NO|N[Oº°]|NUM\w*|#)?\.?\s*[:：\-]?\s*/i,''));
         if(same){ inv=same; break outer; }
         // ② 같은 행 오른쪽 셀들 — 구분어("NO")는 건너뛰고, 다른 라벨(DATE 등)을 만나면 중단
         for(var k=j+1;k<rr.length;k++){
@@ -276,6 +276,21 @@
         var b1=invVal(rrN[j]), b2=invVal(rrN[j+1]);
         if(b1||b2){ inv=b1||b2; break outer; }
       }
+    }
+    // ④ 폴백: 라벨이 아예 없는 양식 — 헤더 위 영역에서 "문서번호처럼 생긴" 단독 토큰을 찾는다.
+    //    영문 1~4자로 시작 + 숫자 총 4자리 이상 (예: D26-81319563 · D2607001 · CI2026015). D+숫자(디스패치 레퍼런스) 우선.
+    if(!inv){
+      var cand=[];
+      for(var rf=0;rf<hi;rf++){ var rrF=rows[rf]||[];
+        for(var jf=0;jf<rrF.length;jf++){
+          var tf=rrF[jf]==null?'':String(rrF[jf]).trim();
+          if(tf===''||/\s/.test(tf)||SEP.test(tf)||isLbl(tf)) continue;
+          if(/^[A-Za-z]{1,4}\d[A-Za-z0-9\-._\/]{3,}$/.test(tf)&&(tf.match(/\d/g)||[]).length>=4) cand.push(tf.slice(0,60));
+        }
+      }
+      inv=null;
+      for(var ci=0;ci<cand.length;ci++){ if(/^D\d/i.test(cand[ci])){ inv=cand[ci]; break; } } // D26… 우선
+      if(!inv&&cand.length===1) inv=cand[0];              // 후보가 하나뿐일 때만 채택(오인 방지)
     }
     // ▼ 수량 누락 방지(2026-07-31):
     //   ① ORDER NO·PL NO 병합셀(빈칸) → 직전 값으로 채움(단, CTR NO·수량이 있는 데이터 행만)
@@ -301,11 +316,23 @@
     }
     return {rows:out,invoice_no:inv,skipped:noCarton,skipQ:noCartonQ,dropped:dropped,droppedQ:droppedQ,fileQty:fileQty};
   }
+  function bufToB64(buf){ // ArrayBuffer → base64 (청크 처리로 대용량 안전)
+    var u8=new Uint8Array(buf), s='', CH=32768;
+    for(var i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+    return btoa(s);
+  }
+  var FILE_MAX=8*1024*1024; // 원본 8MB 까지 첨부(base64 ≈10.7MB, 서버 한도 12MB)
   function readFile(f){
     var r=new FileReader();
     r.onload=function(e){ try{
       var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-      var res=parseWorkbook(wb); doPreview(res,f.name);
+      var res=parseWorkbook(wb);
+      // 원본 파일 보존 → 선적 생성 시 함께 저장(ERP에서 재다운로드용)
+      if(f.size<=FILE_MAX){
+        var mime=f.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        res._file={name:f.name,size:f.size,data:'data:'+mime+';base64,'+bufToB64(e.target.result)};
+      } else { res._file=null; res._fileTooBig=true; }
+      doPreview(res,f.name);
     }catch(err){ $('pout').innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)"><b>'+L('읽지 못했습니다','No se pudo leer')+'</b> — '+esc(err.message)+'</div>'; } };
     r.readAsArrayBuffer(f);
   }
@@ -317,7 +344,8 @@
       var invGuess=o.body.invoice_no||res.invoice_no||'';
       $('pout').innerHTML='<div class="note green" style="margin-top:12px">✔ <b>'+esc(fname)+'</b> · '+L('인보이스','Factura')+' '
           +'<input id="invNo" type="text" class="mono" style="padding:5px 9px;font-size:13px;width:180px" value="'+esc(invGuess)+'" placeholder="'+L('인보이스 번호 입력','Núm. de factura')+'">'
-          +(invGuess?'':' <b style="color:var(--red)">⚠ '+L('파일에서 못 찾음 — 직접 입력하세요','no encontrado — ingrese manualmente')+'</b>')+'</div>'
+          +(invGuess?'':' <b style="color:var(--red)">⚠ '+L('파일에서 못 찾음 — 직접 입력하세요','no encontrado — ingrese manualmente')+'</b>')
+          +(res._file?' · 📎 '+L('원본 파일 함께 저장됨','archivo original se guardará'):(res._fileTooBig?' · <span style="color:var(--red)">📎 8MB 초과 — 원본 미저장</span>':''))+'</div>'
         +'<div class="kpis" style="margin-top:9px">'
         +'<div class="kpi"><div class="l">'+L('팔렛','Pallets')+'</div><div class="v">'+s.pallets+'</div></div>'
         +'<div class="kpi"><div class="l">'+L('카톤','Cajas')+'</div><div class="v">'+fmt(s.cartons)+'</div></div>'
@@ -343,7 +371,9 @@
     if(!eta){ toast(L('도착 예정일(ETA)을 입력하세요','Ingrese la fecha estimada (ETA)')); $('eta').focus(); return; }
     $('btnCreate').disabled=true;
     var invEl=$('invNo'); var invNo=(invEl&&invEl.value.trim())||parsed.invoice_no||null;
-    api('/api/inbound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:parsed.rows,invoice_no:invNo,eta:eta})}).then(function(o){
+    var body={rows:parsed.rows,invoice_no:invNo,eta:eta};
+    if(parsed._file){ body.file_name=parsed._file.name; body.file_data=parsed._file.data; }
+    api('/api/inbound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(o){
       if(!o.ok||o.body.error){ toast(L('생성 실패','Error')+': '+(o.body.error||o.status)); $('btnCreate').disabled=false; return; }
       toast(L('✔ 선적 생성 — 입고예정 재고가 판매팀에 반영됩니다','✔ Creado — stock entrante visible para ventas'));
       openShip(o.body.id);
@@ -359,6 +389,48 @@
       renderDetail();
     });
   }
+
+  /* ---- 패킹리스트 원본 파일 (다운로드·추가 첨부) ---- */
+  function loadShipFiles(){
+    var el=$('shipFiles'); if(!el) return;
+    api('/api/inbound/'+SHIP+'/files').then(function(o){
+      if(!o.ok||!o.body.items){ el.textContent=''; return; }
+      var items=o.body.items;
+      var h=items.map(function(f){
+        return '<a href="#" data-fid="'+f.id+'" class="mono" style="color:var(--steel-d)">📎 '+esc(f.file_name||('file#'+f.id))+'</a>';
+      }).join(' · ');
+      h+=(items.length?' · ':'')+'<a href="#" id="fileAttach" style="color:var(--muted)">'+(items.length?'＋':L('📎 패킹리스트 파일 첨부','📎 adjuntar archivo'))+'</a>';
+      el.innerHTML=h;
+      el.querySelectorAll('a[data-fid]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); dlShipFile(a.dataset.fid); }); });
+      var at=$('fileAttach'); if(at) at.addEventListener('click',function(ev){ ev.preventDefault(); attachShipFile(); });
+    });
+  }
+  function dlShipFile(fid){
+    api('/api/inbound/files/'+fid).then(function(o){
+      if(!o.ok||!o.body.file_data){ toast(L('다운로드 실패','Error de descarga')); return; }
+      var a=document.createElement('a');
+      a.href=o.body.file_data; a.download=o.body.file_name||('packing_'+fid);
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+  }
+  function attachShipFile(){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv,.pdf';
+    inp.addEventListener('change',function(){
+      var f=inp.files[0]; if(!f) return;
+      if(f.size>FILE_MAX){ toast(L('8MB 이하 파일만 첨부됩니다','máx. 8MB')); return; }
+      var r=new FileReader();
+      r.onload=function(e){
+        var mime=f.type||'application/octet-stream';
+        api('/api/inbound/'+SHIP+'/file',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({file_name:f.name,file_data:'data:'+mime+';base64,'+bufToB64(e.target.result)})}).then(function(o){
+          if(!o.ok||o.body.error){ toast(L('첨부 실패','Error')+': '+(o.body.error||o.status)); return; }
+          toast('✔ '+L('파일 첨부됨','Archivo adjuntado')); loadShipFiles();
+        });
+      };
+      r.readAsArrayBuffer(f);
+    });
+    inp.click();
+  }
   function refreshDetail(cb){ api('/api/inbound/'+SHIP).then(function(o){ if(o.ok&&!o.body.error){ DETAIL=o.body; } if(cb)cb(); else renderDetail(); }); }
   function palStats(){
     var p=DETAIL.pallets, N=p.length;
@@ -372,7 +444,7 @@
     var html='<div class="card"><div class="row" style="justify-content:space-between">'
       +'<div><h2 style="margin:0">'+L('선적','Embarque')+' <span class="mono" style="font-weight:400;color:'+(s.invoice_no?'var(--muted)':'var(--red)')+'">'+esc(s.invoice_no||L('인보이스 미입력','sin factura'))+'</span>'
       +(s.status!=='closed'?' <button class="btn ghost sm" id="btnInvEdit" title="'+L('인보이스 번호 입력·수정','Editar factura')+'">✎</button>':'')+'</h2>'
-      +'<div class="hint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span></div></div>'
+      +'<div class="hint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span> · <span id="shipFiles">📎 …</span></div></div>'
       +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
       +'<div class="steps">'
       +stepBtn('unload',L('하차','Descarga'),st.unloaded+'/'+st.N)
@@ -382,6 +454,7 @@
       +'</div><div id="stepbody"></div></div>';
     $('app').innerHTML=html;
     $('btnBack').addEventListener('click',loadList);
+    loadShipFiles();
     var invBtn=$('btnInvEdit');
     if(invBtn) invBtn.addEventListener('click',function(){
       var cur=DETAIL.shipment.invoice_no||'';

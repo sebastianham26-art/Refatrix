@@ -347,6 +347,13 @@ export default async function purchaseRoutes(app) {
         WHERE s.deleted_at IS NULL AND s.status IN ('incoming','receiving')
         GROUP BY pi.shipment_id, COALESCE(pr.code, pi.input_code), pr.name, pi.product_id IS NOT NULL, pr.stock_qty
         ORDER BY sku`)).rows;
+    // ① 첨부: 선적별 패킹리스트 원본 파일 메타(다운로드 버튼용 — file_data 는 다운로드 API에서)
+    const fileRows = (await query(
+      `SELECT f.id, f.shipment_id, f.file_name, f.file_size
+         FROM inbound_packing_files f
+         JOIN inbound_shipments s ON s.id=f.shipment_id
+        WHERE s.deleted_at IS NULL AND s.status IN ('incoming','receiving')
+        ORDER BY f.uploaded_at DESC, f.id DESC`)).rows;
     // ② 발주 backorder 중 활성 선적에 안 담긴 잔량(선적 미정)
     const unshipped = (await query(
       `WITH bo AS (
@@ -375,6 +382,10 @@ export default async function purchaseRoutes(app) {
         WHERE bo.backorder - COALESCE(inc.qty,0) > 0
         ORDER BY unshipped_qty DESC, sku`)).rows;
     const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+    const filesByShip = {};
+    for (const f of fileRows) {
+      (filesByShip[f.shipment_id] ||= []).push({ id: Number(f.id), file_name: f.file_name, file_size: f.file_size == null ? null : Number(f.file_size) });
+    }
     const linesByShip = {};
     for (const l of lines) {
       (linesByShip[l.shipment_id] ||= []).push({
@@ -390,6 +401,7 @@ export default async function purchaseRoutes(app) {
       status: s.status, note: s.note || null,
       sku_count: Number(s.sku_count) || 0, total_qty: r3(s.total_qty), cartons: Number(s.cartons) || 0,
       refs: s.refs || [],
+      files: filesByShip[s.id] || [],
       lines: linesByShip[s.id] || [],
     }));
     const un = unshipped.map((u) => ({
