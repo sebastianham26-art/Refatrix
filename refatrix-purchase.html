@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0731a</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0731b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -259,9 +259,9 @@
       sb(s.shipment_count||0,'선적 건')+
       sb(num(s.unshipped_qty),'발주됨 · 선적 미정')+
       sb(s.unshipped_sku||0,'미선적 SKU');
-    let h='<tr><th>도착 예정</th><th>선적(인보이스)</th><th>구분</th><th class="num">SKU</th><th class="num">수량</th><th class="num">카톤</th><th>구매참조번호</th></tr>';
+    let h='<tr><th>도착 예정</th><th>선적(패킹리스트 인보이스)</th><th>업로드일</th><th>구분</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">카톤</th><th>구매참조번호</th></tr>';
     if(!(d.shipments||[]).length && !(d.unshipped||[]).length){
-      h+='<tr><td colspan="7" style="color:var(--muted)">입고 예정이 없습니다. (선적 등록·발주 backorder 없음)</td></tr>';
+      h+='<tr><td colspan="8" style="color:var(--muted)">입고 예정이 없습니다. (선적 등록·발주 backorder 없음)</td></tr>';
       $('incTable').innerHTML=h; return;
     }
     for(const sh of (d.shipments||[])){
@@ -269,13 +269,15 @@
       h+='<tr class="incRow" data-k="'+key+'">'
         +'<td>'+etaTag(sh)+'</td>'
         +'<td><b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b></td>'
+        +'<td>'+esc(sh.uploaded_at||'—')+'</td>'
         +'<td>'+(sh.status==='receiving'?'입고중':'선적중')+'</td>'
         +'<td class="num">'+sh.sku_count+'</td>'
         +'<td class="num"><b>'+num(sh.total_qty)+'</b></td>'
         +'<td class="num">'+num(sh.cartons)+'</td>'
         +'<td>'+esc((sh.refs||[]).join(', '))+'</td></tr>';
       if(incOpen[key]){
-        let dh='<table><tr><th>제품코드</th><th>제품명</th><th class="num">도착 수량</th><th class="num">카톤</th><th class="num">현재고</th><th class="num">입고후 예상</th></tr>';
+        let dh='<div style="font-size:12px;color:var(--muted);margin-bottom:2px">패킹리스트 <b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b> · 업로드 '+esc(sh.uploaded_at||'—')+' · 총 <b>'+num(sh.total_qty)+'</b>개 · SKU '+sh.sku_count+'종</div>';
+        dh+='<table><tr><th>제품코드</th><th>제품명</th><th class="num">도착 수량</th><th class="num">카톤</th><th class="num">현재고</th><th class="num">입고후 예상</th></tr>';
         for(const l of (sh.lines||[])){
           const proj=(l.stock_qty==null)?null:(Math.round((l.stock_qty+l.qty)*1000)/1000);
           dh+='<tr><td><b>'+esc(l.sku)+'</b>'+(l.matched?'':' <span class="pill no">미매칭</span>')+'</td>'
@@ -286,13 +288,14 @@
             +'<td class="num">'+(proj==null?'—':num(proj))+'</td></tr>';
         }
         dh+='</table>';
-        h+='<tr class="incDet"><td colspan="7"><div class="incDetIn">'+dh+'</div></td></tr>';
+        h+='<tr class="incDet"><td colspan="8"><div class="incDetIn">'+dh+'</div></td></tr>';
       }
     }
     if((d.unshipped||[]).length){
       h+='<tr class="incRow" data-k="UN">'
         +'<td><span class="etaTag none">일정 미정</span></td>'
         +'<td><b>발주됨 · 선적 미정</b></td>'
+        +'<td>—</td>'
         +'<td>발주만</td>'
         +'<td class="num">'+(d.summary.unshipped_sku||0)+'</td>'
         +'<td class="num"><b>'+num(d.summary.unshipped_qty)+'</b></td>'
@@ -309,7 +312,7 @@
             +'<td>'+esc((u.refs||[]).join(', '))+'</td></tr>';
         }
         dh+='</table>';
-        h+='<tr class="incDet"><td colspan="7"><div class="incDetIn">'+dh+'</div></td></tr>';
+        h+='<tr class="incDet"><td colspan="8"><div class="incDetIn">'+dh+'</div></td></tr>';
       }
     }
     $('incTable').innerHTML=h;

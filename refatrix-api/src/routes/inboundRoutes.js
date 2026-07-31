@@ -19,9 +19,9 @@ function aggregate(rows) {
     const code = String(r.code || '').trim();
     if (!order_no || !code) continue;
     const pl_no = int(r.pl_no);
-    const cartons = int(r.cartons);
+    const cartons = Math.max(0, int(r.cartons)); // 0 허용(2026-07-31): 카톤번호 없는 행(혼적 병합셀·낱개)도 수량 집계에 포함 — 스캔 대상만 아님
     const qty = num(r.qty);
-    if (cartons <= 0 || qty <= 0) continue;
+    if (qty <= 0) continue;
     const pk = order_no + '|' + pl_no;
     if (!pallets.has(pk)) pallets.set(pk, { order_no, pl_no, items: new Map() });
     const items = pallets.get(pk).items;

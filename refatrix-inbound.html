@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260718b</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260731a</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -244,14 +244,29 @@
     if([cOrd,cPl,cFr,cTo,cSku,cQty].some(function(x){return x<0;})) throw new Error(L('필수 열이 없습니다(ORDER NO·PL NO·FROM·TO·CTR NO·QTY)','Faltan columnas requeridas'));
     var inv=null;
     for(var r0=0;r0<hi;r0++){ var rr=rows[r0]||[]; for(var j=0;j<rr.length;j++){ if(/INVOICE/i.test(String(rr[j]||''))){ for(var k=j+1;k<rr.length;k++) if(rr[k]){inv=String(rr[k]).trim();break;} } } }
-    var out=[]; var skipped=0, skipQ=0;
-    for(var i2=hi+1;i2<rows.length;i2++){ var r=rows[i2]||[]; var o=r[cOrd]; if(o==null||String(o).trim()==='')continue;
+    // ▼ 수량 누락 방지(2026-07-31):
+    //   ① ORDER NO·PL NO 병합셀(빈칸) → 직전 값으로 채움(단, CTR NO·수량이 있는 데이터 행만)
+    //   ② FROM/TO(카톤번호) 없는 행(혼적 카톤 병합셀·낱개 등) → 제외하지 않고 카톤 0 으로 포함
+    //   ③ 파일 수량 합계(fileQty)와 등재 합계를 함께 반환 → 미리보기에서 대사(對査) 표시
+    var out=[]; var noCarton=0, noCartonQ=0, dropped=0, droppedQ=0, fileQty=0;
+    var lastOrd=null, lastPl=null;
+    for(var i2=hi+1;i2<rows.length;i2++){ var r=rows[i2]||[];
+      var code=String(r[cSku]==null?'':r[cSku]).trim();
+      var qty=Number(r[cQty]||0);
+      var o=r[cOrd]; var oS=(o==null?'':String(o).trim());
+      var isData=(code!==''&&qty>0);
+      if(oS!==''){ lastOrd=oS; if(r[cPl]!=null&&String(r[cPl]).trim()!=='') lastPl=Number(r[cPl]); }
+      else if(isData&&lastOrd!=null){ oS=lastOrd; } // 병합셀 이어받기
+      if(!isData){ if(qty>0&&oS===''){ /* TOTAL 행 등 — 합계에 미포함 */ } continue; }
+      fileQty+=qty;
+      if(oS===''){ dropped++; droppedQ+=qty; continue; }   // ORDER NO 를 끝내 못 찾은 행
+      var pl=(r[cPl]!=null&&String(r[cPl]).trim()!=='')?Number(r[cPl]):(lastPl||0);
       var fr=r[cFr],to=r[cTo];
-      if(fr==null||to==null){ skipped++; skipQ+=Number(r[cQty]||0); continue; }
-      out.push({order_no:String(o).trim(),pl_no:Number(r[cPl]||0),code:String(r[cSku]||'').trim(),
-        cartons:Number(to)-Number(fr)+1,qty:Number(r[cQty]||0),desc:String(r[cDesc]||'').trim()});
+      var cartons=(fr==null||to==null)?0:Math.max(0,Number(to)-Number(fr)+1);
+      if(cartons===0){ noCarton++; noCartonQ+=qty; }       // 카톤번호 없음 — 수량은 포함, 스캔 대상 아님
+      out.push({order_no:oS,pl_no:pl,code:code,cartons:cartons,qty:qty,desc:String(r[cDesc]||'').trim()});
     }
-    return {rows:out,invoice_no:inv,skipped:skipped,skipQ:skipQ};
+    return {rows:out,invoice_no:inv,skipped:noCarton,skipQ:noCartonQ,dropped:dropped,droppedQ:droppedQ,fileQty:fileQty};
   }
   function readFile(f){
     var r=new FileReader();
@@ -275,7 +290,11 @@
         +'<div class="kpi"><div class="l">ORDER NO</div><div class="v">'+s.orders.length+'</div></div></div>'
         +'<div class="vbox">'
         +'<div class="vrow">✅ <b>ORDER NO '+s.orders.length+'</b> <span class="mono" style="color:var(--muted);font-size:11px">'+esc(s.orders.slice(0,4).join(' · '))+(s.orders.length>4?' …':'')+'</span><span style="margin-left:auto"><span class="tag g">'+L('구매 매칭','Compras')+'</span></span></div>'
-        +(res.skipped?'<div class="vrow">⏭ <b>'+L('재고 제외','Excluido')+' '+res.skipped+'</b> <span style="color:var(--muted)">'+fmt(res.skipQ)+' EA — '+L('카톤번호 없음','sin número de caja')+'</span></div>':'')
+        +((res.fileQty!=null)?('<div class="vrow">'+(Math.abs((res.fileQty||0)-(s.qty||0))<0.001
+            ?('✅ <b>'+L('수량 대사 일치','Cantidad conciliada')+'</b> <span style="color:var(--muted)">'+L('파일 합계','Total archivo')+' '+fmt(res.fileQty)+' EA = '+L('등재','Registrado')+' '+fmt(s.qty)+' EA</span>')
+            :('⚠️ <b style="color:var(--red)">'+L('수량 불일치','Cantidad no concilia')+'</b> <span style="color:var(--red)">'+L('파일 합계','Total archivo')+' '+fmt(res.fileQty)+' EA ≠ '+L('등재','Registrado')+' '+fmt(s.qty)+' EA — '+L('제외된 행을 확인하세요','revise filas excluidas')+'</span>'))+'</div>'):'')
+        +(res.skipped?'<div class="vrow">📦 <b>'+L('카톤번호 없음','Sin número de caja')+' '+res.skipped+'</b> <span style="color:var(--muted)">'+fmt(res.skipQ)+' EA — '+L('수량에 포함됨(카톤 스캔 대상 아님)','incluido en cantidad, sin escaneo')+'</span></div>':'')
+        +(res.dropped?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('제외된 행','Filas excluidas')+' '+res.dropped+'</b> <span style="color:var(--red)">'+fmt(res.droppedQ)+' EA — '+L('ORDER NO 를 찾지 못함(파일 확인 필요)','sin ORDER NO')+'</span></div>':'')
         +(s.unmatched.length?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('미등록 SKU','SKU no registrado')+' '+s.unmatched.length+'</b> <span class="mono" style="color:var(--muted);font-size:11px">'+esc(s.unmatched.slice(0,5).join(' · '))+(s.unmatched.length>5?' …':'')+'</span></div>':'')
         +(s.norack.length?'<div class="vrow">🆕 <b>'+L('랙 미지정','Sin ubicación')+' '+s.norack.length+'</b> <span style="color:var(--muted)">'+L('도착 전에 자리를 정해두면 적치가 빨라집니다','defina ubicación antes de llegar')+'</span></div>':'')
         +'</div>'

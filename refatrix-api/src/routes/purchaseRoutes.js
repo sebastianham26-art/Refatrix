@@ -386,6 +386,7 @@ export default async function purchaseRoutes(app) {
     const shipments = ships.map((s) => ({
       id: Number(s.id), invoice_no: s.invoice_no || null,
       eta: s.eta ? String(s.eta).slice(0, 10) : null,
+      uploaded_at: s.created_at ? String(s.created_at instanceof Date ? s.created_at.toISOString() : s.created_at).slice(0, 10) : null, // 패킹리스트 업로드일
       status: s.status, note: s.note || null,
       sku_count: Number(s.sku_count) || 0, total_qty: r3(s.total_qty), cartons: Number(s.cartons) || 0,
       refs: s.refs || [],
