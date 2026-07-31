@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 포털 · build 20260706b</title>
+<title>Refatrix ERP · 포털 · build 20260731a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -111,6 +111,16 @@
   .pend{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;cursor:pointer;font-size:13px}
   .pend:hover{border-color:var(--brand)}
   .pend b.n{color:var(--expense)}
+  /* AI 미결 스캐너 */
+  .aisg{border:1px solid #d9d0ea;background:#faf8fd;border-radius:9px;padding:9px 11px;margin-top:7px;font-size:12.5px}
+  .aisg .t{font-weight:800;color:#4a3a76}
+  .aisg .rsn{display:inline-block;font-size:10.5px;font-weight:700;color:#6a5a96;background:#eee8f8;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:1px}
+  .aisg .srcx{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+  .aisg .actrow{margin-top:6px;display:flex;gap:6px;align-items:center}
+  .aisg .actrow button{padding:5px 11px;font-size:12px;border:none;border-radius:7px;background:var(--brand);color:#fff;font-weight:700;cursor:pointer}
+  .aisg .actrow button:disabled{background:#9db3a9;cursor:default}
+  #aiScanBtn{background:#5b4a8a}
+  #aiScanBtn:disabled{opacity:.6;cursor:default}
   /* 수주 단계 SLA — 4분면 흐름 카드 v4 (섹션별 스탯·SKU/수량) */
   .slaquad{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
   .slaq-cell{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:11px;overflow:hidden;display:flex;flex-direction:column;background:#fff;min-width:0;height:360px}
@@ -208,8 +218,13 @@
 
     <!-- 해야 할 일 (펜딩 요약) -->
     <div class="card" id="pendCard">
-      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">지금 해야 할 일</h2><button class="btn" id="pendDashBtn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">지금 해야 할 일</h2>
+        <span style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn hidden" id="aiScanBtn" style="padding:7px 13px;font-size:12px" title="최근 14일 일정·회의메모·지시에서 놓친 미결 액션을 AI가 찾아 제안합니다">🤖 AI 미결 스캔</button>
+          <button class="btn" id="pendDashBtn" style="padding:7px 13px;font-size:12px" onclick="goScreen('dashboard')">내 대시보드 열기 →</button>
+        </span></div>
       <div class="pendlist" id="pendList"></div>
+      <div class="hidden" id="aiScanBox"></div>
     </div>
 
     <!-- 트리 패널 (탭은 상단 고정 바) -->
@@ -1216,6 +1231,60 @@
     add(b.overdue_customers,'연체 AR 고객','customers');
     $('pendList').innerHTML=items.length?items.map(i=>`<div class="pend" onclick="goScreen('${i.key}')"><span>${i.label}</span><b class="n">${i.n}건</b></div>`).join('')
       :'<div class="hint">처리할 건이 없습니다. 모두 정리되어 있습니다 ✓</div>';
+    // AI 미결 스캔 버튼은 디렉터에게만
+    const ab=$('aiScanBtn'); if(ab) ab.classList.toggle('hidden', !(sum&&sum.isDirector));
+  }
+
+  // ===== AI 미결 스캐너 (디렉터 전용 · 제안만, 등록은 확인 후) =====
+  async function runAiScan(){
+    const box=$('aiScanBox'), btn=$('aiScanBtn');
+    box.classList.remove('hidden');
+    box.innerHTML='<div class="hint" style="margin-top:8px">🤖 최근 14일 일정·회의메모·지시 기록을 AI가 읽는 중… (10~30초)</div>';
+    btn.disabled=true; const prev=btn.textContent; btn.textContent='🤖 스캔 중…';
+    try{
+      const res=await fetch(session.api+'/api/portal/pending/ai-scan',{headers:auth()});
+      const d=await res.json();
+      if(!d||d.enabled===false){
+        const why=d&&d.reason==='no_api_key'?'서버에 ANTHROPIC_API_KEY 가 설정되지 않았습니다. (Railway → Variables)'
+          :d&&d.reason==='director_only'?'디렉터 전용 기능입니다.'
+          :d&&d.reason==='off'?'AI_SCAN_ENABLED=0 으로 꺼져 있습니다.':'사용할 수 없습니다.';
+        box.innerHTML='<div class="hint" style="margin-top:8px;color:var(--expense)">⚠ '+escp(why)+'</div>';
+        return;
+      }
+      if(d.error){ box.innerHTML='<div class="hint" style="margin-top:8px;color:var(--expense)">⚠ AI 호출에 실패했습니다. 잠시 후 다시 시도하세요.</div>'; return; }
+      renderAiSuggestions(d);
+    }catch(e){ box.innerHTML='<div class="hint" style="margin-top:8px;color:var(--expense)">⚠ 서버에 연결할 수 없습니다.</div>'; }
+    finally{ btn.disabled=false; btn.textContent=prev; }
+  }
+  function renderAiSuggestions(d){
+    const box=$('aiScanBox');
+    const sg=Array.isArray(d.suggestions)?d.suggestions:[];
+    const head='<div class="hint" style="margin-top:8px">🤖 AI 제안 — 기록 '+(d.scanned||0)+'건 스캔 · 등록 버튼을 눌러야만 할 일이 됩니다 (자동 등록 없음)</div>';
+    if(!sg.length){ box.innerHTML=head+'<div class="hint" style="margin-top:6px">놓친 미결 액션을 찾지 못했습니다 ✓</div>'; return; }
+    box.innerHTML=head+sg.map((s,i)=>{
+      const src=(s.source_kind?('['+s.source_kind+(s.source_date?' '+s.source_date:'')+'] '):'')+(s.source_text||'');
+      return '<div class="aisg" data-i="'+i+'">'
+        +'<span class="t">'+escp(s.title)+'</span>'+(s.reason?'<span class="rsn">'+escp(s.reason)+'</span>':'')
+        +(src?'<div class="srcx">근거: '+escp(src)+'</div>':'')
+        +'<div class="actrow"><button type="button" class="aiReg" data-i="'+i+'">➕ 할 일로 등록</button><span class="hint aiMsg"></span></div>'
+        +'</div>';
+    }).join('');
+    window.__aiSuggestions=sg;
+    box.querySelectorAll('.aiReg').forEach(b=>b.addEventListener('click',()=>aiRegisterTodo(Number(b.dataset.i), b)));
+  }
+  async function aiRegisterTodo(i, btn){
+    const sg=(window.__aiSuggestions||[])[i]; if(!sg) return;
+    btn.disabled=true; btn.textContent='등록 중…';
+    const msg=btn.parentNode.querySelector('.aiMsg');
+    const detail=((sg.source_kind?('['+sg.source_kind+(sg.source_date?' '+sg.source_date:'')+'] '):'')+(sg.source_text||'')+(sg.reason?(' · 근거: '+sg.reason):'')).slice(0,480);
+    try{
+      const res=await fetch(session.api+'/api/portal/pending/ai-todo',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({title:sg.title, detail:detail||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ btn.disabled=false; btn.textContent='➕ 할 일로 등록'; if(msg){msg.style.color='var(--expense)'; msg.textContent='등록 실패: '+(d.error||res.status);} return; }
+      btn.textContent='✓ 등록됨';
+      if(msg){ msg.style.color='var(--income)'; msg.textContent='내 할 일에 추가되었습니다 (오늘 마감)'; }
+      loadBoardMini();   // 상단 할 일 배지 갱신
+    }catch(e){ btn.disabled=false; btn.textContent='➕ 할 일로 등록'; if(msg){msg.style.color='var(--expense)'; msg.textContent='서버 연결 실패';} }
   }
 
   function renderPerf(){
@@ -1228,6 +1297,7 @@
   function renderPipe(){ /* 파이프라인 요약은 영업 대시보드로 이동 */ }
 
   $('go').addEventListener('click',login);
+  $('aiScanBtn').addEventListener('click',runAiScan);
   $('pcalPrev').addEventListener('click',()=>{ pcalCursor=new Date(pcalCursor.getFullYear(),pcalCursor.getMonth()-1,1); loadPortalCal(); });
   $('pcalNext').addEventListener('click',()=>{ pcalCursor=new Date(pcalCursor.getFullYear(),pcalCursor.getMonth()+1,1); loadPortalCal(); });
 
