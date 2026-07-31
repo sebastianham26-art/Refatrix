@@ -42,7 +42,8 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
 
   // ① 부족 기록(전환확정·매출등록·만료) — 살아있는 시트에 없는 것만
   const shortRows = (await q(
-    `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id, sh.shortage_qty AS demand_qty,
+    `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id,
+            (sh.shortage_qty - sh.resolved_qty) AS demand_qty,
             sh.occurred_at::text AS occurred_at,
             NULL AS quote_id, NULL AS quote_line_id,
             p.list_price, p.iva_rate,
@@ -64,7 +65,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
               ON uq.quote_id = sh.source_quote_id AND uq.product_id = sh.product_id
       WHERE sh.status = 'open'
         AND sh.customer_id IS NOT NULL
-        AND sh.shortage_qty > 0
+        AND (sh.shortage_qty - sh.resolved_qty) > 0
         AND p.stock_qty > 0
         AND used.shortage_id IS NULL
         AND uq.quote_id IS NULL

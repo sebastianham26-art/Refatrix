@@ -33,23 +33,26 @@ export default async function stockRoutes(app) {
     const _a = [];
     let monthCond = '';
     if (months.length) { _a.push(months); monthCond = ` AND to_char(sh.occurred_at,'YYYY-MM') = ANY($${_a.length})`; }
+    // 잔여(발생 − 해소) 기준: 부분 해소된 open 기록은 잔여만 집계. 금액도 잔여 비율로 환산.
     const rows = (await query(
       `SELECT sh.product_id, p.code AS ctr_code, p.name AS product_name, p.stock_qty,
-              SUM(sh.shortage_qty)::numeric AS total_shortage,
-              SUM(sh.shortage_amount_mxn)::numeric AS total_amount_mxn,
+              SUM(sh.shortage_qty - sh.resolved_qty)::numeric AS total_shortage,
+              SUM(CASE WHEN sh.shortage_qty > 0
+                       THEN sh.shortage_amount_mxn * (sh.shortage_qty - sh.resolved_qty) / sh.shortage_qty
+                       ELSE 0 END)::numeric AS total_amount_mxn,
               COUNT(*)::int AS cnt,
               MIN(sh.occurred_at) AS first_at, MAX(sh.occurred_at) AS last_at
          FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
-        WHERE sh.status='open'${monthCond}
+        WHERE sh.status='open' AND (sh.shortage_qty - sh.resolved_qty) > 0${monthCond}
         GROUP BY sh.product_id, p.code, p.name, p.stock_qty
         ORDER BY total_shortage DESC`, _a)).rows;
-    // 요약: 미발주(open) vs 발주됨(resolved)
+    // 요약: 미해소 잔여(open) vs 해소 누적(판매·수동, cancelled 제외)
     const sm = (await query(
       `SELECT
-         COUNT(DISTINCT product_id) FILTER (WHERE status='open')::int AS open_sku,
-         COALESCE(SUM(shortage_qty) FILTER (WHERE status='open'),0)::numeric AS open_qty,
-         COUNT(DISTINCT product_id) FILTER (WHERE status='resolved')::int AS ordered_sku,
-         COALESCE(SUM(shortage_qty) FILTER (WHERE status='resolved'),0)::numeric AS ordered_qty
+         COUNT(DISTINCT product_id) FILTER (WHERE status='open' AND shortage_qty - resolved_qty > 0)::int AS open_sku,
+         COALESCE(SUM(shortage_qty - resolved_qty) FILTER (WHERE status='open'),0)::numeric AS open_qty,
+         COUNT(DISTINCT product_id) FILTER (WHERE resolved_qty > 0 AND status <> 'cancelled')::int AS ordered_sku,
+         COALESCE(SUM(resolved_qty) FILTER (WHERE status <> 'cancelled'),0)::numeric AS ordered_qty
        FROM stock_shortages`)).rows[0];
     return {
       summary: {

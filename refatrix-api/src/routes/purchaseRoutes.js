@@ -207,7 +207,7 @@ export default async function purchaseRoutes(app) {
                   WHERE si.status='posted' AND si.deleted_at IS NULL
                   GROUP BY sil.product_id) sold ON sold.product_id=p.id
       LEFT JOIN v_backorder bo ON bo.product_id=p.id
-      LEFT JOIN (SELECT product_id, SUM(shortage_qty) AS qty
+      LEFT JOIN (SELECT product_id, SUM(shortage_qty - resolved_qty) AS qty
                    FROM stock_shortages WHERE status='open' GROUP BY product_id) sh ON sh.product_id=p.id`;
     let where2 = where;
     if (onlyDemand) where2 += ' AND (COALESCE(bo.backorder_qty,0) > 0 OR COALESCE(sh.qty,0) > 0)';
@@ -316,6 +316,99 @@ export default async function purchaseRoutes(app) {
         net: Math.round((inQty - outQty + adjQty) * 1000) / 1000,
       },
       items, capped: rows.length >= 5000,
+    };
+  });
+
+  // 입고예정 요약(언제·얼만큼 도착): 선적(ETA)별 요약 + SKU 드릴다운 + 미선적(발주만) 잔량.
+  //   출처: ① inbound_shipments(incoming/receiving) — 패킹리스트 기반, ETA 보유(도착 예정)
+  //         ② 발주 backorder 중 활성 선적에 안 담긴 잔량 — "발주됨·선적 미정"
+  app.get('/api/purchases/incoming', gate, async () => {
+    // ① 활성 선적 헤더(ETA·상태·규모)
+    const ships = (await query(
+      `SELECT s.id, s.invoice_no, s.eta, s.status, s.note, s.created_at,
+              COUNT(DISTINCT COALESCE(pr.code, pi.input_code)) FILTER (WHERE pi.id IS NOT NULL)::int AS sku_count,
+              COALESCE(SUM(pi.qty),0)      AS total_qty,
+              COALESCE(SUM(pi.cartons),0)  AS cartons,
+              (SELECT COALESCE(array_agg(DISTINCT ip.order_no), '{}') FROM inbound_pallets ip WHERE ip.shipment_id=s.id) AS refs
+         FROM inbound_shipments s
+         LEFT JOIN inbound_pallet_items pi ON pi.shipment_id=s.id
+         LEFT JOIN products pr ON pr.id=pi.product_id
+        WHERE s.deleted_at IS NULL AND s.status IN ('incoming','receiving')
+        GROUP BY s.id
+        ORDER BY s.eta ASC NULLS LAST, s.id ASC`)).rows;
+    // ① 드릴다운: 선적별 SKU 라인
+    const lines = (await query(
+      `SELECT pi.shipment_id, COALESCE(pr.code, pi.input_code) AS sku, pr.name AS product_name,
+              (pi.product_id IS NOT NULL) AS matched, pr.stock_qty,
+              SUM(pi.qty) AS qty, SUM(pi.cartons)::int AS cartons
+         FROM inbound_pallet_items pi
+         JOIN inbound_shipments s ON s.id=pi.shipment_id
+         LEFT JOIN products pr ON pr.id=pi.product_id
+        WHERE s.deleted_at IS NULL AND s.status IN ('incoming','receiving')
+        GROUP BY pi.shipment_id, COALESCE(pr.code, pi.input_code), pr.name, pi.product_id IS NOT NULL, pr.stock_qty
+        ORDER BY sku`)).rows;
+    // ② 발주 backorder 중 활성 선적에 안 담긴 잔량(선적 미정)
+    const unshipped = (await query(
+      `WITH bo AS (
+         SELECT l.product_id, SUM(l.qty - l.received_qty) AS backorder,
+                MIN(p.order_date) AS first_order,
+                array_agg(DISTINCT p.ref_no) AS refs
+           FROM purchase_order_lines l
+           JOIN purchase_orders p ON p.id=l.po_id
+          WHERE p.deleted_at IS NULL AND p.status <> 'cancelled'
+            AND l.product_id IS NOT NULL AND (l.qty - l.received_qty) > 0
+          GROUP BY l.product_id),
+       inc AS (
+         SELECT pi.product_id, SUM(pi.qty) AS qty
+           FROM inbound_pallet_items pi
+           JOIN inbound_shipments s ON s.id=pi.shipment_id
+          WHERE s.deleted_at IS NULL AND s.status IN ('incoming','receiving')
+            AND pi.product_id IS NOT NULL
+          GROUP BY pi.product_id)
+       SELECT bo.product_id, pr.code AS sku, pr.name AS product_name, pr.stock_qty,
+              bo.backorder, COALESCE(inc.qty,0) AS incoming_qty,
+              GREATEST(bo.backorder - COALESCE(inc.qty,0), 0) AS unshipped_qty,
+              bo.first_order, bo.refs
+         FROM bo
+         LEFT JOIN inc ON inc.product_id=bo.product_id
+         JOIN products pr ON pr.id=bo.product_id
+        WHERE bo.backorder - COALESCE(inc.qty,0) > 0
+        ORDER BY unshipped_qty DESC, sku`)).rows;
+    const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+    const linesByShip = {};
+    for (const l of lines) {
+      (linesByShip[l.shipment_id] ||= []).push({
+        sku: l.sku, product_name: l.product_name || null, matched: !!l.matched,
+        stock_qty: l.stock_qty == null ? null : Number(l.stock_qty),
+        qty: r3(l.qty), cartons: Number(l.cartons) || 0,
+      });
+    }
+    const shipments = ships.map((s) => ({
+      id: Number(s.id), invoice_no: s.invoice_no || null,
+      eta: s.eta ? String(s.eta).slice(0, 10) : null,
+      status: s.status, note: s.note || null,
+      sku_count: Number(s.sku_count) || 0, total_qty: r3(s.total_qty), cartons: Number(s.cartons) || 0,
+      refs: s.refs || [],
+      lines: linesByShip[s.id] || [],
+    }));
+    const un = unshipped.map((u) => ({
+      product_id: Number(u.product_id), sku: u.sku, product_name: u.product_name,
+      stock_qty: u.stock_qty == null ? null : Number(u.stock_qty),
+      backorder: r3(u.backorder), incoming_qty: r3(u.incoming_qty), unshipped_qty: r3(u.unshipped_qty),
+      first_order: u.first_order ? String(u.first_order).slice(0, 10) : null,
+      refs: u.refs || [],
+    }));
+    return {
+      shipments,
+      unshipped: un,
+      summary: {
+        shipment_count: shipments.length,
+        arriving_qty: r3(shipments.reduce((a, s) => a + s.total_qty, 0)),
+        arriving_sku: new Set(lines.map((l) => l.sku)).size,
+        next_eta: shipments.find((s) => s.eta)?.eta || null,
+        unshipped_qty: r3(un.reduce((a, u) => a + u.unshipped_qty, 0)),
+        unshipped_sku: un.length,
+      },
     };
   });
 

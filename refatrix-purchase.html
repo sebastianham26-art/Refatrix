@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0710f</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0731a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -57,6 +57,14 @@
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   .toolbar>div{flex:0 0 auto}
   .detailbox{background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:10px}
+  /* 입고예정 요약 */
+  .etaTag{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:8px;background:#e4f0eb;color:var(--income)}
+  .etaTag.none{background:#f1efe8;color:var(--muted)}
+  .etaTag.recv{background:#fdf3d7;color:#8a6d1a}
+  tr.incRow{cursor:pointer}tr.incRow:hover{background:#f7f5ef}
+  tr.incDet td{background:#faf8f3;padding:0}
+  .incDetIn{padding:10px 12px}
+  .incDetIn table{margin-top:4px;font-size:12px}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
@@ -104,6 +112,14 @@
         <button class="btn ghost sm" id="cancelBtn" type="button">취소</button>
       </div>
     </div>
+  </div>
+
+  <!-- 입고예정 요약 (언제·얼마나 도착) -->
+  <div class="card hidden" id="incCard">
+    <h2>입고예정 — 언제·얼마나 도착 <button class="btn ghost sm" style="float:right" onclick="loadIncoming()">새로고침</button></h2>
+    <div class="cdesc">선적(패킹리스트) 기준 도착 예정일(ETA)별 요약입니다. 행을 누르면 SKU별 세부 리스트가 열립니다. 선적에 아직 안 담긴 발주 잔량은 「발주됨 · 선적 미정」으로 표시됩니다.</div>
+    <div class="sbrow" id="incSummary"></div>
+    <div style="max-height:420px;overflow:auto"><table id="incTable"></table></div>
   </div>
 
   <!-- 조회 -->
@@ -212,7 +228,94 @@
     canCost=(user?.role==='director'||user?.role==='socio');
     $('loginCard').classList.add('hidden');
     $('upCard').classList.remove('hidden'); $('listCard').classList.remove('hidden');
-    loadList();
+    $('incCard').classList.remove('hidden');
+    loadIncoming(); loadList();
+  }
+
+  // ---- 입고예정 요약 (언제·얼마나 도착) ----
+  let incData=null, incOpen={};   // incOpen: 'S<id>' | 'UN' → 펼침
+  async function loadIncoming(){
+    try{
+      const res=await fetch(session.api+'/api/purchases/incoming',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('incTable').innerHTML='<tr><td>불러오기 실패: '+esc(d.error||res.status)+'</td></tr>'; return; }
+      incData=d; incOpen={}; renderIncoming();
+    }catch(e){ $('incTable').innerHTML='<tr><td>서버에 연결할 수 없습니다.</td></tr>'; }
+  }
+  function etaTag(s){
+    if(s.status==='receiving') return '<span class="etaTag recv">입고 진행중</span>';
+    if(!s.eta) return '<span class="etaTag none">ETA 미정</span>';
+    const dd=Math.round((new Date(s.eta+'T00:00:00')-new Date(new Date().toISOString().slice(0,10)+'T00:00:00'))/86400000);
+    const rel=dd===0?'오늘':(dd>0?('D-'+dd):('지연 '+Math.abs(dd)+'일'));
+    return '<span class="etaTag">'+esc(s.eta)+' · '+rel+'</span>';
+  }
+  function renderIncoming(){
+    const d=incData; if(!d) return;
+    const s=d.summary||{};
+    $('incSummary').innerHTML=
+      sb(esc(s.next_eta||'—'),'다음 도착 예정일')+
+      sb(num(s.arriving_qty),'선적중 수량(도착 예정)')+
+      sb(s.arriving_sku||0,'선적중 SKU')+
+      sb(s.shipment_count||0,'선적 건')+
+      sb(num(s.unshipped_qty),'발주됨 · 선적 미정')+
+      sb(s.unshipped_sku||0,'미선적 SKU');
+    let h='<tr><th>도착 예정</th><th>선적(인보이스)</th><th>구분</th><th class="num">SKU</th><th class="num">수량</th><th class="num">카톤</th><th>구매참조번호</th></tr>';
+    if(!(d.shipments||[]).length && !(d.unshipped||[]).length){
+      h+='<tr><td colspan="7" style="color:var(--muted)">입고 예정이 없습니다. (선적 등록·발주 backorder 없음)</td></tr>';
+      $('incTable').innerHTML=h; return;
+    }
+    for(const sh of (d.shipments||[])){
+      const key='S'+sh.id;
+      h+='<tr class="incRow" data-k="'+key+'">'
+        +'<td>'+etaTag(sh)+'</td>'
+        +'<td><b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b></td>'
+        +'<td>'+(sh.status==='receiving'?'입고중':'선적중')+'</td>'
+        +'<td class="num">'+sh.sku_count+'</td>'
+        +'<td class="num"><b>'+num(sh.total_qty)+'</b></td>'
+        +'<td class="num">'+num(sh.cartons)+'</td>'
+        +'<td>'+esc((sh.refs||[]).join(', '))+'</td></tr>';
+      if(incOpen[key]){
+        let dh='<table><tr><th>제품코드</th><th>제품명</th><th class="num">도착 수량</th><th class="num">카톤</th><th class="num">현재고</th><th class="num">입고후 예상</th></tr>';
+        for(const l of (sh.lines||[])){
+          const proj=(l.stock_qty==null)?null:(Math.round((l.stock_qty+l.qty)*1000)/1000);
+          dh+='<tr><td><b>'+esc(l.sku)+'</b>'+(l.matched?'':' <span class="pill no">미매칭</span>')+'</td>'
+            +'<td>'+esc(l.product_name||'—')+'</td>'
+            +'<td class="num"><b>'+num(l.qty)+'</b></td>'
+            +'<td class="num">'+num(l.cartons)+'</td>'
+            +'<td class="num">'+(l.stock_qty==null?'—':num(l.stock_qty))+'</td>'
+            +'<td class="num">'+(proj==null?'—':num(proj))+'</td></tr>';
+        }
+        dh+='</table>';
+        h+='<tr class="incDet"><td colspan="7"><div class="incDetIn">'+dh+'</div></td></tr>';
+      }
+    }
+    if((d.unshipped||[]).length){
+      h+='<tr class="incRow" data-k="UN">'
+        +'<td><span class="etaTag none">일정 미정</span></td>'
+        +'<td><b>발주됨 · 선적 미정</b></td>'
+        +'<td>발주만</td>'
+        +'<td class="num">'+(d.summary.unshipped_sku||0)+'</td>'
+        +'<td class="num"><b>'+num(d.summary.unshipped_qty)+'</b></td>'
+        +'<td class="num">—</td>'
+        +'<td class="hint">아직 패킹리스트(선적)에 안 담긴 발주 잔량</td></tr>';
+      if(incOpen['UN']){
+        let dh='<table><tr><th>제품코드</th><th>제품명</th><th class="num">발주잔량</th><th class="num">선적중</th><th class="num">미선적</th><th>최초 발주일</th><th>구매참조번호</th></tr>';
+        for(const u of d.unshipped){
+          dh+='<tr><td><b>'+esc(u.sku)+'</b></td><td>'+esc(u.product_name||'—')+'</td>'
+            +'<td class="num">'+num(u.backorder)+'</td>'
+            +'<td class="num">'+num(u.incoming_qty)+'</td>'
+            +'<td class="num"><b>'+num(u.unshipped_qty)+'</b></td>'
+            +'<td>'+esc(u.first_order||'—')+'</td>'
+            +'<td>'+esc((u.refs||[]).join(', '))+'</td></tr>';
+        }
+        dh+='</table>';
+        h+='<tr class="incDet"><td colspan="7"><div class="incDetIn">'+dh+'</div></td></tr>';
+      }
+    }
+    $('incTable').innerHTML=h;
+    $('incTable').querySelectorAll('tr.incRow').forEach(tr=>tr.addEventListener('click',()=>{
+      const k=tr.dataset.k; if(incOpen[k]) delete incOpen[k]; else incOpen[k]=true; renderIncoming();
+    }));
   }
 
   // ---- 엑셀 파싱 → 미리보기 ----

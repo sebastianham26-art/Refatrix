@@ -6,6 +6,7 @@ import { isClosedMonth } from '../importCost.js';
 import { round2, allowPastMonthSalesEdit } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { autoStage } from '../stageAuto.js';
+import { allocateShortagesOnSale, reverseInvoiceResolutions, scanResolveShortages } from '../shortageResolve.js';
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -108,6 +109,15 @@ export default async function salesRoutes(app) {
           `INSERT INTO stock_shortages (product_id, customer_id, sales_invoice_id, requested_qty, fulfilled_qty, shortage_qty, shortage_amount_mxn, occurred_at, created_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
           [s.product_id, customer_id, inv.id, s.requested, r3(s.requested - s.shortage), s.shortage, s.amount_mxn || 0, inv_date, userId]);
+      }
+
+      // 부족분 해소: 이 판매(출고분)로 같은 고객+제품의 과거 open 부족분을 FIFO 해소.
+      // 이 인보이스가 방금 만든 부족 기록은 엔진이 자체 제외(sales_invoice_id 비교).
+      for (const ln of computed) {
+        await allocateShortagesOnSale(c.query.bind(c), {
+          productId: ln.product_id, customerId: customer_id, qty: ln.qty,
+          invDate: inv_date, invoiceId: inv.id, userId, source: 'sale',
+        });
       }
 
       // 입금 예정(AR) — transactions plan, 인보이스당 한 건, 총액(IVA 포함)
@@ -548,11 +558,11 @@ export default async function salesRoutes(app) {
       base_credit_days: Number(r.base_credit_days) || 0, total_mxn: Number(r.total_mxn) || 0 })) };
   });
 
-  // ---- 부족 기록: 제품별 합계(주문용) ----
+  // ---- 부족 기록: 제품별 합계(주문용) — 잔여(발생 − 해소) 기준 ----
   app.get('/api/shortages/summary', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async () => {
     const rows = (await query(
       `SELECT sh.product_id, p.code, p.name, p.stock_qty,
-              SUM(sh.shortage_qty) AS open_shortage,
+              SUM(sh.shortage_qty - sh.resolved_qty) AS open_shortage,
               COUNT(*) AS records,
               MAX(sh.occurred_at) AS last_occurred
          FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
@@ -562,30 +572,139 @@ export default async function salesRoutes(app) {
     return { items: rows.map((r) => ({ ...r, open_shortage: Number(r.open_shortage), stock_qty: Number(r.stock_qty), records: Number(r.records) })) };
   });
 
-  // ---- 부족 기록: 원장(영업용, 누가·언제·얼마) ----
+  // ---- 부족 기록: 원장(영업용, 누가·언제·얼마) + 해소·잔여. 필터: status, customer_id, month(YYYY-MM), product_id ----
   app.get('/api/shortages', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async (req) => {
     const status = req.query.status || 'open';
+    const args = [status];
+    const conds = [`($1='all' OR sh.status=$1)`];
+    if (req.query.customer_id && /^\d+$/.test(String(req.query.customer_id))) {
+      args.push(Number(req.query.customer_id)); conds.push(`sh.customer_id=$${args.length}`);
+    }
+    if (/^\d{4}-\d{2}$/.test(String(req.query.month || ''))) {
+      args.push(String(req.query.month)); conds.push(`to_char(sh.occurred_at,'YYYY-MM')=$${args.length}`);
+    }
+    if (req.query.product_id && /^\d+$/.test(String(req.query.product_id))) {
+      args.push(Number(req.query.product_id)); conds.push(`sh.product_id=$${args.length}`);
+    }
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
     const rows = (await query(
-      `SELECT sh.id, sh.occurred_at, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.status,
-              p.code, p.name, c.code AS customer_code, c.name AS customer_name, sh.sales_invoice_id
+      `SELECT sh.id, sh.occurred_at, sh.requested_qty, sh.fulfilled_qty, sh.shortage_qty, sh.resolved_qty,
+              (sh.shortage_qty - sh.resolved_qty) AS remaining_qty, sh.status, sh.resolved_at,
+              sh.product_id, p.code, p.name, sh.customer_id, c.code AS customer_code, c.name AS customer_name,
+              sh.sales_invoice_id, sh.shortage_amount_mxn
          FROM stock_shortages sh
          JOIN products p ON p.id=sh.product_id
          LEFT JOIN customers c ON c.id=sh.customer_id
-        WHERE ($1='all' OR sh.status=$1)
-        ORDER BY sh.occurred_at DESC, sh.id DESC LIMIT 200`, [status])).rows;
-    return { items: rows };
+        WHERE ${conds.join(' AND ')}
+        ORDER BY sh.occurred_at DESC, sh.id DESC LIMIT ${limit}`, args)).rows;
+    return { items: rows.map((r) => ({ ...r,
+      requested_qty: Number(r.requested_qty), fulfilled_qty: Number(r.fulfilled_qty),
+      shortage_qty: Number(r.shortage_qty), resolved_qty: Number(r.resolved_qty),
+      remaining_qty: Number(r.remaining_qty), shortage_amount_mxn: Number(r.shortage_amount_mxn || 0) })) };
   });
 
-  // ---- 부족 기록 해소/취소(디렉터) ----
+  // ---- 부족분 고객별×월별 요약: 발생·해소·잔여 매트릭스 (부족분 화면 「고객별 요약」 탭) ----
+  //   year=YYYY (기본 올해). cancelled 제외. 발생월 기준으로 집계.
+  app.get('/api/shortages/by-customer-month', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async (req) => {
+    const year = /^\d{4}$/.test(String(req.query.year || '')) ? String(req.query.year) : String(new Date().getFullYear());
+    const rows = (await query(
+      `SELECT sh.customer_id, COALESCE(c.name,'(고객미상)') AS customer_name, c.code AS customer_code,
+              to_char(sh.occurred_at,'YYYY-MM') AS ym,
+              SUM(sh.shortage_qty)::numeric                    AS occurred_qty,
+              SUM(sh.resolved_qty)::numeric                    AS resolved_qty,
+              SUM(sh.shortage_qty - sh.resolved_qty)::numeric  AS remaining_qty,
+              SUM(sh.shortage_amount_mxn)::numeric             AS occurred_amount_mxn,
+              SUM(CASE WHEN sh.shortage_qty > 0
+                       THEN sh.shortage_amount_mxn * (sh.shortage_qty - sh.resolved_qty) / sh.shortage_qty
+                       ELSE 0 END)::numeric                    AS remaining_amount_mxn,
+              COUNT(*)::int AS cnt
+         FROM stock_shortages sh
+         LEFT JOIN customers c ON c.id=sh.customer_id
+        WHERE sh.status <> 'cancelled'
+          AND to_char(sh.occurred_at,'YYYY') = $1
+        GROUP BY sh.customer_id, c.name, c.code, to_char(sh.occurred_at,'YYYY-MM')
+        ORDER BY customer_name, ym`, [year])).rows;
+    const total = (await query(
+      `SELECT SUM(sh.shortage_qty)::numeric AS occurred_qty,
+              SUM(sh.resolved_qty)::numeric AS resolved_qty,
+              SUM(sh.shortage_qty - sh.resolved_qty)::numeric AS remaining_qty
+         FROM stock_shortages sh
+        WHERE sh.status <> 'cancelled' AND to_char(sh.occurred_at,'YYYY') = $1`, [year])).rows[0];
+    return {
+      year,
+      items: rows.map((r) => ({
+        customer_id: r.customer_id == null ? null : Number(r.customer_id),
+        customer_name: r.customer_name, customer_code: r.customer_code,
+        ym: r.ym, cnt: r.cnt,
+        occurred_qty: Number(r.occurred_qty) || 0,
+        resolved_qty: Number(r.resolved_qty) || 0,
+        remaining_qty: Number(r.remaining_qty) || 0,
+        occurred_amount_mxn: Math.round((Number(r.occurred_amount_mxn) || 0) * 100) / 100,
+        remaining_amount_mxn: Math.round((Number(r.remaining_amount_mxn) || 0) * 100) / 100,
+      })),
+      summary: {
+        occurred_qty: Number(total.occurred_qty) || 0,
+        resolved_qty: Number(total.resolved_qty) || 0,
+        remaining_qty: Number(total.remaining_qty) || 0,
+      },
+    };
+  });
+
+  // ---- 부족 기록 1건의 해소 원장(언제·어느 인보이스로·몇 개) ----
+  app.get('/api/shortages/:id/resolutions', { preHandler: [authGuard, requirePageAny(['shortage','sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_id' });
+    const sh = (await query(
+      `SELECT sh.id, sh.shortage_qty, sh.resolved_qty, (sh.shortage_qty - sh.resolved_qty) AS remaining_qty,
+              sh.status, sh.occurred_at, p.code, p.name, c.name AS customer_name
+         FROM stock_shortages sh JOIN products p ON p.id=sh.product_id
+         LEFT JOIN customers c ON c.id=sh.customer_id WHERE sh.id=$1`, [id])).rows[0];
+    if (!sh) return reply.code(404).send({ error: 'not_found' });
+    const rows = (await query(
+      `SELECT r.id, r.qty, r.source, r.sales_invoice_id, r.resolved_at, r.note,
+              si.sat_no, si.inv_date, u.name AS resolved_by_name
+         FROM stock_shortage_resolutions r
+         LEFT JOIN sales_invoices si ON si.id=r.sales_invoice_id
+         LEFT JOIN users u ON u.id=r.resolved_by
+        WHERE r.shortage_id=$1 ORDER BY r.resolved_at, r.id`, [id])).rows;
+    return {
+      shortage: { ...sh, shortage_qty: Number(sh.shortage_qty), resolved_qty: Number(sh.resolved_qty), remaining_qty: Number(sh.remaining_qty) },
+      items: rows.map((r) => ({ ...r, qty: Number(r.qty) })),
+    };
+  });
+
+  // ---- 소급 해소 스캔(디렉터): 과거 판매 이력을 훑어 open 부족분을 해소. 멱등(재실행 무해) ----
+  app.post('/api/shortages/resolve-scan', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const out = await withTx(async (c) => scanResolveShortages(c.query.bind(c), { userId: req.ctx.perm.userId }));
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'shortage:resolve-scan', detail: out });
+    return { ok: true, ...out };
+  });
+
+  // ---- 부족 기록 해소/취소(디렉터) — 수동 해소도 원장에 남긴다 ----
   app.post('/api/shortages/:id/resolve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const status = (req.body?.status === 'cancelled') ? 'cancelled' : 'resolved';
-    const r = await query(
-      `UPDATE stock_shortages SET status=$1, resolved_at=now(), resolved_by=$2 WHERE id=$3 AND status='open' RETURNING id`,
-      [status, req.ctx.perm.userId, id]);
-    if (!r.rows[0]) return reply.code(409).send({ error: 'not_open' });
+    const out = await withTx(async (c) => {
+      const sh = (await c.query(
+        `SELECT id, shortage_qty, resolved_qty FROM stock_shortages WHERE id=$1 AND status='open' FOR UPDATE`, [id])).rows[0];
+      if (!sh) return { error: 'not_open' };
+      const remaining = Math.round((Number(sh.shortage_qty) - Number(sh.resolved_qty)) * 1000) / 1000;
+      if (status === 'resolved' && remaining > 0) {
+        await c.query(
+          `INSERT INTO stock_shortage_resolutions (shortage_id, qty, source, resolved_by, note)
+           VALUES ($1,$2,'manual',$3,$4)`,
+          [id, remaining, req.ctx.perm.userId, req.body?.note || '디렉터 수동 해소']);
+      }
+      await c.query(
+        `UPDATE stock_shortages
+            SET status=$1, resolved_at=now(), resolved_by=$2,
+                resolved_qty = CASE WHEN $1='resolved' THEN shortage_qty ELSE resolved_qty END
+          WHERE id=$3`, [status, req.ctx.perm.userId, id]);
+      return { ok: true, status };
+    });
+    if (out.error) return reply.code(409).send(out);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `shortage:${id}`, detail: { status } });
-    return { ok: true, status };
+    return out;
   });
 
   // ===== 매출 수정·삭제 승인 워크플로 (원본 격리, 디렉터 승인 시 반영) =====
@@ -663,6 +782,8 @@ export default async function salesRoutes(app) {
       }
       // 입금예정(AR) 취소
       if (inv.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.txn_id]);
+      // 이 인보이스가 해소했던 부족분 되돌림(원장 삭제 + 잔여 복원) → 그 다음 이 인보이스의 부족 기록 삭제
+      await reverseInvoiceResolutions(c.query.bind(c), id, userId);
       // 이 인보이스에 연결된 부족분 기록 / 미지급 커미션 정리
       await c.query(`DELETE FROM stock_shortages WHERE sales_invoice_id=$1`, [id]);
       await c.query(`DELETE FROM commission_payouts WHERE invoice_id=$1 AND paid=false`, [id]);
@@ -810,6 +931,8 @@ export default async function salesRoutes(app) {
       if (cr.req_type === 'delete') {
         const rev = computeDeleteReversal({ origLines: inv._lines, closedMonth: closed });
         await reverseOriginalStock();
+        // 이 인보이스가 해소했던 부족분 되돌림(판매가 사라지므로 잔여 복원)
+        await reverseInvoiceResolutions(c.query.bind(c), inv.id, userId);
         // AR(입금예정) 취소
         if (inv.txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2`, [userId, inv.txn_id]);
         // 원장 out 무효화 표시는 reverse 'in'으로 상쇄됨. 인보이스 소프트 삭제.
@@ -848,8 +971,9 @@ export default async function salesRoutes(app) {
       }
       if (shortages.length) return { error: 'stock_short', shortages };
 
-      // 1) 원본 되돌림(재고 복원)
+      // 1) 원본 되돌림(재고 복원) + 이 인보이스가 해소했던 부족분 되돌림(새 라인 기준으로 재배분)
       await reverseOriginalStock();
+      await reverseInvoiceResolutions(c.query.bind(c), inv.id, userId);
       // 2) 기존 라인 제거 전, 그 라인을 참조하는 재고이동(out)의 line 참조를 끊는다(원장 행은 이력으로 보존).
       await c.query(`UPDATE stock_movements SET sales_invoice_line_id=NULL WHERE sales_invoice_id=$1 AND sales_invoice_line_id IS NOT NULL`, [inv.id]);
       await c.query(`DELETE FROM sales_invoice_lines WHERE invoice_id=$1`, [inv.id]);
@@ -865,6 +989,13 @@ export default async function salesRoutes(app) {
           `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, sales_invoice_id, sales_invoice_line_id, moved_at, created_by)
            VALUES ($1,'out',$2,$3,$4,$5,$6,$7,$8)`,
           [ln.product_id, ln.qty, ln.appliedUnitCost, `sales:${inv.id}`, inv.id, lineRow.id, inv.inv_date, userId]);
+      }
+      // 3.5) 수정된 출고분 기준으로 부족분 해소 재배분(같은 고객+제품 open 부족분 FIFO)
+      for (const ln of newComputed) {
+        await allocateShortagesOnSale(c.query.bind(c), {
+          productId: ln.product_id, customerId: inv.customer_id, qty: ln.qty,
+          invDate: ymd(payload.inv_date || inv.inv_date), invoiceId: inv.id, userId, source: 'sale',
+        });
       }
       // 4) 외상일/예외(디렉터 수정승인에 흡수: 예외라도 승인된 것으로 확정)
       const appliedDays = (payload.credit_days == null || payload.credit_days === '') ? baseDays : Number(payload.credit_days);
