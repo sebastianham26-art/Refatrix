@@ -171,7 +171,8 @@ export async function collectDayDigest(dateStr) {
                     FROM todos t
                     LEFT JOIN users cb ON cb.id = t.created_by
                     LEFT JOIN users au ON au.id = t.assignee_id
-                   WHERE t.deleted_at IS NULL`;
+                   WHERE t.deleted_at IS NULL
+                     AND COALESCE(t.kind,'') NOT IN ('dev_review','dev_complete')`;
     const created = await withAssignees((await query(
       `${base} AND t.created_at >= $1 AND t.created_at < $2 ORDER BY t.id`, [from, to])).rows);
     const due = await withAssignees((await query(

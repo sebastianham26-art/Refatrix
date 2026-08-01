@@ -6,6 +6,7 @@ import { logEvent } from '../audit.js';
 import { mxTodayStr } from '../workingHours.js';
 import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
+import { groupDemand, attachVehicleVio, sortDemand, normCode } from '../devDemand.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -38,26 +39,14 @@ function withDurations(r) {
   };
 }
 
-// 제품·마케팅 담당(역할 marketing/ops 또는 products/marketing 페이지 권한) 알림 todo 생성
-export async function notifyProductMarketing(c, { title, detail, createdBy }) {
-  const rows = (await c.query(
-    `SELECT DISTINCT u.id FROM users u
-       LEFT JOIN user_page_access pa ON pa.user_id=u.id AND pa.page_key IN ('products','marketing') AND COALESCE(pa.device_req,'') <> 'blocked'
-      WHERE u.deleted_at IS NULL AND (u.role IN ('marketing','ops') OR pa.user_id IS NOT NULL)`)).rows;
-  let recipients = rows.map((r) => Number(r.id));
-  if (!recipients.length) {
-    // 폴백: 담당자가 없으면 디렉터에게
-    const dirs = (await c.query(`SELECT id FROM users WHERE role='director' AND deleted_at IS NULL`)).rows;
-    recipients = dirs.map((r) => Number(r.id));
-  }
-  const ids = [];
-  for (const uid of recipients) {
-    const t = (await c.query(
-      `INSERT INTO todos (title, detail, assignee_id, due_date, kind, created_by) VALUES ($1,$2,$3,CURRENT_DATE,'dev_review',$4) RETURNING id`,
-      [title, detail, uid, createdBy])).rows[0];
-    ids.push(t.id);
-  }
-  return ids;
+// 개발검토 요청 알림 — 2026-08-01 디렉터 확정으로 **할일 fan-out 폐지**.
+//   기존: 제품/마케팅 권한자 전원(10명)에게 kind='dev_review' 할일 복제 배정 → 업무 혼선.
+//   변경: 아무 할일도 만들지 않음. 요청은 이미 product_dev_requests(개발요청 대장)에
+//         적재되며, 「개발필요내용」 수요 집계(GET /api/dev-requests/demand)가 대체.
+//   시그니처는 호출부(quoteRoutes·fieldSurveyRoutes) 호환을 위해 유지(no-op).
+//   ※ dev_complete(개발완료 알림·담당영업+디렉터 소수 대상)는 그대로 유지.
+export async function notifyProductMarketing(_c, _info) {
+  return [];
 }
 
 export default async function devRequestRoutes(app) {
@@ -80,6 +69,86 @@ export default async function devRequestRoutes(app) {
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `dev_request:${result.id}`, detail: { notified: result.todos } });
     return result;
+  });
+
+  // ── 개발필요내용 — SKU 수요 집계 + 차종/연식 + VIO 중요도 (부족분 대장과 같은 기록 중심 뷰) ──
+  //    ?scope=open(기본: 미완료만) | all(취소 제외 전체) · ?sort=vio(기본)|demand|recent
+  app.get('/api/dev-requests/demand', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const scope = req.query.scope === 'all' ? 'all' : 'open';
+    const sortMode = ['vio', 'demand', 'recent'].includes(String(req.query.sort)) ? String(req.query.sort) : 'vio';
+    const statusCond = scope === 'all'
+      ? `d.status <> 'cancelled'`
+      : `d.status IN ('received','reviewed','factory_requested')`;
+    const rows = (await query(
+      `SELECT d.id, d.input_code, d.requested_qty, d.requested_at, d.status, d.order_memo,
+              d.field_survey_id, d.reviewed_at,
+              d.review_maker, d.review_model, d.review_year, d.review_app,
+              c.name AS customer_name, q.quote_no
+         FROM product_dev_requests d
+         LEFT JOIN customers c ON c.id = d.customer_id
+         LEFT JOIN quotes q ON q.id = d.source_quote_id
+        WHERE d.deleted_at IS NULL AND ${statusCond}
+        ORDER BY d.requested_at DESC, d.id DESC`)).rows;
+    const groups = groupDemand(rows);
+
+    // 코드 → 기존 제품 매칭(CTR 직접 > SYD > 교차참조) → 제품 적용차종 + ctr_vio_rank 직결
+    const norms = new Set(groups.map((g) => g.norm));
+    const productHit = {};
+    if (norms.size) {
+      const byProduct = new Map();   // product_id → { norm 들, pri }
+      const claim = (norm, productId, pri) => {
+        if (!norms.has(norm)) return;
+        const cur = productHit[norm];
+        if (cur && cur._pri <= pri) return;
+        productHit[norm] = { _pri: pri, product_id: Number(productId) };
+        byProduct.set(Number(productId), true);
+      };
+      try {
+        const prods = (await query(`SELECT id, code, app FROM products WHERE deleted_at IS NULL`)).rows;
+        const prodInfo = new Map();
+        for (const p of prods) {
+          prodInfo.set(Number(p.id), { code: p.code, app: p.app || null });
+          claim(normCode(p.code), p.id, 1);
+        }
+        const syds = (await query(`SELECT product_id, syd_code FROM product_syd_codes`)).rows;
+        for (const s of syds) claim(normCode(s.syd_code), s.product_id, 2);
+        try {
+          const xrefs = (await query(`SELECT product_id, norm_code FROM product_xref_codes`)).rows;
+          for (const x of xrefs) claim(String(x.norm_code || ''), x.product_id, 3);
+        } catch (_) { /* 0130 미적용 시 무시 */ }
+        // 매칭된 제품의 CTR 코드로 VIO 직결
+        const hitCodes = [];
+        for (const k of Object.keys(productHit)) {
+          const info = prodInfo.get(productHit[k].product_id);
+          if (!info) { delete productHit[k]; continue; }
+          productHit[k] = { ctr_code: info.code, app: info.app, vio_rank: null, vio_units: null, vio_model: null, vio_year: null };
+          hitCodes.push(info.code);
+        }
+        if (hitCodes.length) {
+          const ph = hitCodes.map((_, i) => '$' + (i + 1)).join(',');
+          const vios = (await query(
+            `SELECT ctr_code, vio_rank, vio_units, vio_model, vio_year FROM ctr_vio_rank WHERE ctr_code IN (${ph})`,
+            hitCodes)).rows;
+          const vmap = new Map(vios.map((v) => [v.ctr_code, v]));
+          for (const k of Object.keys(productHit)) {
+            const v = vmap.get(productHit[k].ctr_code);
+            if (v) Object.assign(productHit[k], { vio_rank: v.vio_rank, vio_units: v.vio_units, vio_model: v.vio_model, vio_year: v.vio_year });
+          }
+        }
+      } catch (_) { /* 제품 매칭 실패해도 수요 집계는 반환 */ }
+    }
+
+    // VIO 모델 요약(검토 입력 차종명 퍼지 매칭용)
+    let vioModels = [];
+    try {
+      vioModels = (await query(
+        `SELECT vio_model AS model, vio_year AS years, MIN(vio_rank) AS rank, MAX(vio_units) AS units
+           FROM ctr_vio_rank GROUP BY vio_model, vio_year`)).rows;
+    } catch (_) { /* 0078 미적용 시 무시 */ }
+
+    const items = sortDemand(attachVehicleVio(groups, productHit, vioModels), sortMode)
+      .map((g) => ({ ...g, events: g.events.slice(0, 50) }));
+    return { scope, sort: sortMode, count: items.length, items };
   });
 
   // 목록 + 소요기간

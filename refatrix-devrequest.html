@@ -80,6 +80,23 @@
       </div>
     </div>
 
+    <!-- 개발필요내용 — SKU 수요 집계 · VIO 중요도 (부족분 대장과 같은 기록 중심 관리) -->
+    <div class="card">
+      <div class="card-h">📌 개발필요내용 <span class="hint" style="font-weight:500">— 어떤 SKU가 누구로부터 언제 수요됐는지 · 적용차종/연식 · VIO 연결 중요도순. 개발검토 요청은 더 이상 개인 할일로 배정되지 않고 여기에 기록·관리됩니다.</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <span class="mrow"><span class="ml">정렬</span>
+          <button class="mbtn on" id="dmSortVio">VIO 중요도</button>
+          <button class="mbtn" id="dmSortDemand">수요량</button>
+          <button class="mbtn" id="dmSortRecent">최근 수요</button></span>
+        <span class="mrow"><span class="ml">범위</span>
+          <button class="mbtn on" id="dmScopeOpen">미완료만</button>
+          <button class="mbtn" id="dmScopeAll">전체</button></span>
+        <button class="btn ghost sm" id="dmReload">새로고침</button>
+        <span class="hint" id="dmInfo"></span>
+      </div>
+      <div id="dmWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+
     <!-- 신규 접수 -->
     <div class="card">
       <div class="card-h">① 오더 접수 (영업) <span class="hint" style="font-weight:500">— 경쟁사 코드로 고객 요청을 접수합니다</span></div>
@@ -115,6 +132,7 @@
 </div>
 
 <script>
+  console.log('[devrequest] build devreq-0801a (개발필요내용 수요 집계)');
   let session={token:null,user:null,api:''};
   let custList=[], cur=null;
   const $=(id)=>document.getElementById(id);
@@ -149,10 +167,71 @@
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       try{ const p=new URLSearchParams(location.hash.slice(1)); if(p.get('view')==='developed'){ $('fStatus').value='developed'; } }catch(e){}
-      loadCustomers(); renderMonths(); loadKpi(); load();
+      loadCustomers(); renderMonths(); loadKpi(); load(); loadDemand();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
+
+  // ===== 개발필요내용 (SKU 수요 집계 · VIO 중요도) =====
+  let dmSort='vio', dmScope='open', dmItems=[], dmOpenRows={};
+  const fmtN=(v)=> v==null?'–':Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
+  function dmSetSort(s){ dmSort=s; ['dmSortVio','dmSortDemand','dmSortRecent'].forEach(id=>$(id).classList.remove('on'));
+    $(s==='vio'?'dmSortVio':(s==='demand'?'dmSortDemand':'dmSortRecent')).classList.add('on'); loadDemand(); }
+  function dmSetScope(s){ dmScope=s; $('dmScopeOpen').classList.toggle('on',s==='open'); $('dmScopeAll').classList.toggle('on',s==='all'); loadDemand(); }
+  async function loadDemand(){
+    try{
+      const d=await fetch(session.api+'/api/dev-requests/demand?scope='+dmScope+'&sort='+dmSort,{headers:auth()}).then(r=>r.json());
+      dmItems=d.items||[]; dmOpenRows={};
+      $('dmInfo').textContent=dmItems.length+'개 SKU · '+(dmScope==='open'?'미완료 수요만':'취소 제외 전체');
+      renderDemand();
+    }catch(e){ $('dmWrap').innerHTML='<div class="hint" style="margin-top:10px">개발필요내용을 불러오지 못했습니다.</div>'; }
+  }
+  function vehicleCell(g){
+    const v=g.vehicle;
+    if(!v||(!v.text&&!v.model)) return '<span class="hint">미확인</span>';
+    const label=esc(v.text||[v.maker,v.model,v.year].filter(Boolean).join(' '));
+    const src=v.source==='product'?'제품매칭'+(v.matched_ctr?(' '+esc(v.matched_ctr)):''):'검토입력';
+    return label+' <span class="st received" style="font-size:9.5px">'+src+'</span>';
+  }
+  function vioCell(g){
+    const v=g.vio;
+    if(!v) return '<span class="hint">–</span>';
+    return '<b>'+fmtN(v.units)+'대</b> <span class="hint">(#'+v.rank+(v.model?' · '+esc(v.model):'')+(v.year?' '+esc(v.year):'')+')</span>';
+  }
+  function renderDemand(){
+    if(!dmItems.length){ $('dmWrap').innerHTML='<div class="hint" style="margin-top:10px">기록된 개발 수요가 없습니다.</div>'; return; }
+    let h='<table><thead><tr><th class="r">중요도</th><th>코드(SKU)</th><th>적용차종 · 연식</th><th>VIO 등록대수</th><th class="r">누적수량</th><th class="r">고객수</th><th>최근수요</th><th>진행</th><th></th></tr></thead><tbody>';
+    dmItems.forEach((g,i)=>{
+      h+='<tr><td class="r"><b>'+g.rank+'</b></td>'
+        +'<td><b>'+esc(g.code)+'</b></td>'
+        +'<td style="white-space:normal;max-width:260px">'+vehicleCell(g)+'</td>'
+        +'<td>'+vioCell(g)+'</td>'
+        +'<td class="r">'+fmtN(g.total_qty)+'</td>'
+        +'<td class="r">'+fmtN(g.customer_count)+'</td>'
+        +'<td>'+esc(g.last_at||'–')+'</td>'
+        +'<td>'+(g.open_count?('<span class="st received">진행 '+g.open_count+'</span> '):'')+(g.developed_count?('<span class="st developed">완료 '+g.developed_count+'</span>'):'')+'</td>'
+        +'<td><button class="btn ghost sm dm-tg" data-i="'+i+'">이력 '+g.events.length+'건</button></td></tr>';
+      h+='<tr class="dm-ev hidden" data-i="'+i+'"><td></td><td colspan="8" style="white-space:normal">'
+        +'<table style="margin:4px 0 8px"><thead><tr><th>고객</th><th>수요일</th><th class="r">수량</th><th>출처</th><th>상태</th><th>메모</th></tr></thead><tbody>'
+        +g.events.map(e=>'<tr><td>'+esc(e.customer)+'</td><td>'+esc(e.date||'–')+'</td><td class="r">'+fmtN(e.qty)+'</td><td>'+esc(e.source)+'</td>'
+          +'<td><span class="st '+esc(e.status)+'">'+esc(dmStLbl(e.status))+'</span></td><td style="white-space:normal">'+esc(e.memo||'')+'</td></tr>').join('')
+        +'</tbody></table></td></tr>';
+    });
+    h+='</tbody></table>';
+    $('dmWrap').innerHTML=h;
+    $('dmWrap').querySelectorAll('.dm-tg').forEach(b=>b.addEventListener('click',()=>{
+      const i=b.getAttribute('data-i');
+      const row=$('dmWrap').querySelector('.dm-ev[data-i="'+i+'"]');
+      if(row) row.classList.toggle('hidden');
+    }));
+  }
+  function dmStLbl(s){ return {received:'접수',reviewed:'검토완료',factory_requested:'공장요청',developed:'개발완료',cancelled:'취소'}[s]||s; }
+  $('dmSortVio').addEventListener('click',()=>dmSetSort('vio'));
+  $('dmSortDemand').addEventListener('click',()=>dmSetSort('demand'));
+  $('dmSortRecent').addEventListener('click',()=>dmSetSort('recent'));
+  $('dmScopeOpen').addEventListener('click',()=>dmSetScope('open'));
+  $('dmScopeAll').addEventListener('click',()=>dmSetScope('all'));
+  $('dmReload').addEventListener('click',loadDemand);
 
   async function loadCustomers(){
     try{ const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json()); custList=d.items||[];
