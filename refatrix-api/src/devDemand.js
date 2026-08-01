@@ -10,6 +10,32 @@
 
 export const normCode = (s) => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
+// ── 품목 카테고리 (차종별 부품 화면과 동일 체계: 6대 품목 + 기타) ──
+export const DEV_CATS = [
+  { key: 'rotula', es: 'Rótula', ko: '볼조인트' },
+  { key: 'terminal_ext', es: 'Terminal exterior', ko: '타이로드엔드(외측)' },
+  { key: 'terminal_int', es: 'Terminal interior', ko: '타이로드엔드(내측)' },
+  { key: 'horquilla', es: 'Horquilla', ko: '컨트롤암(로어암)' },
+  { key: 'buje', es: 'Buje', ko: '부싱' },
+  { key: 'tornillo', es: 'Tornillo estabilizador', ko: '스태빌라이저 링크' },
+  { key: 'otros', es: 'Otros', ko: '기타' },
+];
+export const DEV_CAT_KEYS = DEV_CATS.map((c) => c.key);
+
+// 제품명(스페인어) 기반 자동 분류 — vehicleparts 매트릭스의 classify 와 동일 규칙(6대+기타).
+export function classifyCategory(name, code) {
+  const n2 = String(name || '').toUpperCase();
+  if (/ROTULA/.test(n2)) return 'rotula';
+  if (/TERMINAL/.test(n2) && /EXTERIOR/.test(n2)) return 'terminal_ext';
+  if (/TERMINAL/.test(n2) && /INTERIOR/.test(n2)) return 'terminal_int';
+  if (/HORQUILLA/.test(n2)) return 'horquilla';
+  if (/BUJE/.test(n2)) return 'buje';
+  if (/TORNILLO/.test(n2) && /ESTABILIZADOR/.test(n2)) return 'tornillo';
+  if (n2) return 'otros';
+  if (/^CB/i.test(String(code || ''))) return 'rotula';   // CB* 코드 = Rótula
+  return null;                                             // 이름 정보 없음 → 미지정
+}
+
 function n(v) { return Number(v) || 0; }
 function d10(v) { if (!v) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v).slice(0, 10); }
 
@@ -30,6 +56,7 @@ export function groupDemand(rows) {
         first_at: null, last_at: null,
         open_count: 0, developed_count: 0,
         review: { maker: null, model: null, year: null, app: null },
+        category_manual: null,
         _customers: new Set(), _latestReviewAt: null,
       };
       map.set(norm, g);
@@ -48,6 +75,7 @@ export function groupDemand(rows) {
       if (!g.first_at || date < g.first_at) g.first_at = date;
       if (!g.last_at || date > g.last_at) g.last_at = date;
     }
+    if (!g.category_manual && r.category && DEV_CAT_KEYS.includes(r.category)) g.category_manual = r.category; // 최신 행 우선(조회가 최신순)
     if (['received', 'reviewed', 'factory_requested'].includes(r.status)) g.open_count++;
     if (r.status === 'developed') g.developed_count++;
     // 검토 입력(차종·연식)은 가장 최근 검토된 행 우선
@@ -108,7 +136,18 @@ export function attachVehicleVio(groups, productHit, vioModels) {
       }
       if (best) vio = { rank: n(best.rank), units: best.units != null ? n(best.units) : null, model: best.model, year: best.years || null, via: 'model_match' };
     }
-    return { ...g, vehicle, vio };
+    // 품목 카테고리: 수동 지정 > 제품명 자동 분류 > 코드 접두 추정 > 미지정(null)
+    let category = null;
+    if (g.category_manual) category = { key: g.category_manual, source: 'manual' };
+    else if (hit) {
+      const k = classifyCategory(hit.name, hit.ctr_code);
+      if (k) category = { key: k, source: 'auto' };
+    }
+    if (!category) {
+      const k = classifyCategory(null, g.code);
+      if (k) category = { key: k, source: 'auto' };
+    }
+    return { ...g, vehicle, vio, category };
   });
 }
 

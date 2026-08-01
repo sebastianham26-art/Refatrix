@@ -84,16 +84,14 @@
     <div class="card">
       <div class="card-h">📌 개발필요내용 <span class="hint" style="font-weight:500">— 어떤 SKU가 누구로부터 언제 수요됐는지 · 적용차종/연식 · VIO 연결 중요도순. 개발검토 요청은 더 이상 개인 할일로 배정되지 않고 여기에 기록·관리됩니다.</span></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <span class="mrow"><span class="ml">정렬</span>
-          <button class="mbtn on" id="dmSortVio">VIO 중요도</button>
-          <button class="mbtn" id="dmSortDemand">수요량</button>
-          <button class="mbtn" id="dmSortRecent">최근 수요</button></span>
         <span class="mrow"><span class="ml">범위</span>
           <button class="mbtn on" id="dmScopeOpen">미완료만</button>
           <button class="mbtn" id="dmScopeAll">전체</button></span>
         <button class="btn ghost sm" id="dmReload">새로고침</button>
         <span class="hint" id="dmInfo"></span>
       </div>
+      <div class="mrow" id="dmCatChips" style="margin-top:8px"><span class="ml">품목</span></div>
+      <div class="hint" style="margin-top:6px">표 제목(열 이름)을 클릭하면 그 기준으로 정렬됩니다(다시 클릭 = 역순). 카테고리는 접수 시 선택하거나 표에서 바로 지정할 수 있고, 코드가 기존 제품과 매칭되면 자동 분류됩니다.</div>
       <div id="dmWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
     </div>
 
@@ -102,6 +100,7 @@
       <div class="card-h">① 오더 접수 (영업) <span class="hint" style="font-weight:500">— 경쟁사 코드로 고객 요청을 접수합니다</span></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div><label>경쟁사 코드 *</label><input id="nCode" type="text" placeholder="예: COMP-XYZ" style="width:150px"></div>
+        <div><label>품목 카테고리</label><select id="nCat" style="width:170px"></select></div>
         <div><label>고객</label><select id="nCust" style="width:200px"></select></div>
         <div><label>요청수량</label><input id="nQty" type="number" step="1" style="width:100px"></div>
         <div style="flex:1;min-width:160px"><label>접수 메모</label><input id="nMemo" type="text" style="width:100%"></div>
@@ -132,7 +131,7 @@
 </div>
 
 <script>
-  console.log('[devrequest] build devreq-0801a (개발필요내용 수요 집계)');
+  console.log('[devrequest] build devreq-0801b (개발필요내용: 6대 품목 카테고리·헤더 정렬)');
   let session={token:null,user:null,api:''};
   let custList=[], cur=null;
   const $=(id)=>document.getElementById(id);
@@ -172,19 +171,78 @@
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  // ===== 개발필요내용 (SKU 수요 집계 · VIO 중요도) =====
-  let dmSort='vio', dmScope='open', dmItems=[], dmOpenRows={};
+  // ===== 개발필요내용 (SKU 수요 집계 · 6대 품목 카테고리 · VIO 중요도) =====
+  let dmScope='open', dmItems=[], dmCat='all', dmHdrKey='rank', dmHdrDir='asc';
   const fmtN=(v)=> v==null?'–':Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
-  function dmSetSort(s){ dmSort=s; ['dmSortVio','dmSortDemand','dmSortRecent'].forEach(id=>$(id).classList.remove('on'));
-    $(s==='vio'?'dmSortVio':(s==='demand'?'dmSortDemand':'dmSortRecent')).classList.add('on'); loadDemand(); }
+  // 6대 품목 + 기타 (백엔드 DEV_CATS 와 동일 키)
+  const DM_CATS=[
+    {key:'rotula',es:'Rótula',ko:'볼조인트',bg:'#e4f0eb',fg:'#0F6E56'},
+    {key:'terminal_ext',es:'Terminal ext.',ko:'타이로드엔드(외측)',bg:'#e8eefb',fg:'#2f5db2'},
+    {key:'terminal_int',es:'Terminal int.',ko:'타이로드엔드(내측)',bg:'#e3f2f8',fg:'#1a6e8a'},
+    {key:'horquilla',es:'Horquilla',ko:'컨트롤암(로어암)',bg:'#f3ecf9',fg:'#6B4FB0'},
+    {key:'buje',es:'Buje',ko:'부싱',bg:'#fdf3e3',fg:'#9a6512'},
+    {key:'tornillo',es:'Tornillo est.',ko:'스태빌라이저 링크',bg:'#fbeae6',fg:'#B23A2E'},
+    {key:'otros',es:'Otros',ko:'기타',bg:'#eef0f2',fg:'#555'}
+  ];
+  const dmCatOf=(k)=>DM_CATS.find(c=>c.key===k)||null;
+  function dmCatPill(g){
+    const k=g.category&&g.category.key; const c=dmCatOf(k);
+    if(!c) return '<span class="hint">미지정</span>';
+    return '<span class="st" style="background:'+c.bg+';color:'+c.fg+'" title="'+esc(c.ko)+'">'+esc(c.es)+'</span>'
+      +(g.category.source==='auto'?' <span class="hint" style="font-size:9.5px">자동</span>':'');
+  }
   function dmSetScope(s){ dmScope=s; $('dmScopeOpen').classList.toggle('on',s==='open'); $('dmScopeAll').classList.toggle('on',s==='all'); loadDemand(); }
   async function loadDemand(){
     try{
-      const d=await fetch(session.api+'/api/dev-requests/demand?scope='+dmScope+'&sort='+dmSort,{headers:auth()}).then(r=>r.json());
-      dmItems=d.items||[]; dmOpenRows={};
-      $('dmInfo').textContent=dmItems.length+'개 SKU · '+(dmScope==='open'?'미완료 수요만':'취소 제외 전체');
-      renderDemand();
+      const d=await fetch(session.api+'/api/dev-requests/demand?scope='+dmScope+'&sort=vio',{headers:auth()}).then(r=>r.json());
+      dmItems=d.items||[];
+      renderCatChips(); renderDemand();
     }catch(e){ $('dmWrap').innerHTML='<div class="hint" style="margin-top:10px">개발필요내용을 불러오지 못했습니다.</div>'; }
+  }
+  // ── 카테고리 필터 칩 ──
+  function renderCatChips(){
+    const wrap=$('dmCatChips');
+    const cnt={all:dmItems.length,none:0};
+    for(const c of DM_CATS) cnt[c.key]=0;
+    for(const g of dmItems){ const k=g.category&&g.category.key; if(k&&cnt[k]!=null) cnt[k]++; else cnt.none++; }
+    let h='<span class="ml">품목</span>';
+    const mk=(key,label,n)=>'<button class="mbtn dm-cat'+(dmCat===key?' on':'')+'" data-c="'+key+'">'+label+' '+n+'</button>';
+    h+=mk('all','전체',cnt.all);
+    for(const c of DM_CATS) h+=mk(c.key,esc(c.es),cnt[c.key]);
+    h+=mk('none','미지정',cnt.none);
+    wrap.innerHTML=h;
+    wrap.querySelectorAll('.dm-cat').forEach(b=>b.addEventListener('click',()=>{ dmCat=b.getAttribute('data-c'); renderCatChips(); renderDemand(); }));
+  }
+  function dmFiltered(){
+    if(dmCat==='all') return dmItems;
+    if(dmCat==='none') return dmItems.filter(g=>!(g.category&&g.category.key));
+    return dmItems.filter(g=>g.category&&g.category.key===dmCat);
+  }
+  // ── 헤더 클릭 정렬 ──
+  const DM_COLS=[
+    {k:'rank', label:'중요도', num:true, def:'asc',  val:g=>g.rank},
+    {k:'code', label:'코드(SKU)', num:false, def:'asc', val:g=>String(g.code||'')},
+    {k:'cat',  label:'품목', num:false, def:'asc', val:g=>{const c=dmCatOf(g.category&&g.category.key); return c?c.es:'힣힣';}},
+    {k:'veh',  label:'적용차종 · 연식', num:false, def:'asc', val:g=>(g.vehicle&&(g.vehicle.text||''))||'힣힣'},
+    {k:'vio',  label:'VIO 등록대수', num:true, def:'desc', val:g=>(g.vio&&g.vio.units!=null)?Number(g.vio.units):-1},
+    {k:'qty',  label:'누적수량', num:true, def:'desc', val:g=>Number(g.total_qty)||0},
+    {k:'cust', label:'고객수', num:true, def:'desc', val:g=>Number(g.customer_count)||0},
+    {k:'last', label:'최근수요', num:false, def:'desc', val:g=>String(g.last_at||'')}
+  ];
+  function dmSorted(list){
+    const col=DM_COLS.find(c=>c.k===dmHdrKey)||DM_COLS[0];
+    const dir=dmHdrDir==='desc'?-1:1;
+    return [...list].sort((a,b)=>{
+      const va=col.val(a), vb=col.val(b);
+      const r=col.num?(va-vb):String(va).localeCompare(String(vb));
+      return r*dir || (a.rank-b.rank);
+    });
+  }
+  function dmClickHdr(k){
+    const col=DM_COLS.find(c=>c.k===k); if(!col) return;
+    if(dmHdrKey===k){ dmHdrDir=dmHdrDir==='asc'?'desc':'asc'; }
+    else{ dmHdrKey=k; dmHdrDir=col.def; }
+    renderDemand();
   }
   function vehicleCell(g){
     const v=g.vehicle;
@@ -198,20 +256,35 @@
     if(!v) return '<span class="hint">–</span>';
     return '<b>'+fmtN(v.units)+'대</b> <span class="hint">(#'+v.rank+(v.model?' · '+esc(v.model):'')+(v.year?' '+esc(v.year):'')+')</span>';
   }
+  function dmCatSelCell(g){
+    const cur=g.category&&g.category.key||'';
+    let h='<select class="dm-catsel" data-code="'+esc(g.code)+'" style="font-size:11px;padding:3px 5px;max-width:150px">';
+    h+='<option value="">미지정</option>';
+    for(const c of DM_CATS) h+='<option value="'+c.key+'"'+(cur===c.key?' selected':'')+'>'+esc(c.es)+' · '+esc(c.ko)+'</option>';
+    h+='</select>';
+    return h;
+  }
   function renderDemand(){
-    if(!dmItems.length){ $('dmWrap').innerHTML='<div class="hint" style="margin-top:10px">기록된 개발 수요가 없습니다.</div>'; return; }
-    let h='<table><thead><tr><th class="r">중요도</th><th>코드(SKU)</th><th>적용차종 · 연식</th><th>VIO 등록대수</th><th class="r">누적수량</th><th class="r">고객수</th><th>최근수요</th><th>진행</th><th></th></tr></thead><tbody>';
-    dmItems.forEach((g,i)=>{
+    const list=dmSorted(dmFiltered());
+    $('dmInfo').textContent=list.length+'/'+dmItems.length+'개 SKU · '+(dmScope==='open'?'미완료 수요만':'취소 제외 전체');
+    if(!list.length){ $('dmWrap').innerHTML='<div class="hint" style="margin-top:10px">'+(dmItems.length?'선택한 품목 카테고리에 해당하는 수요가 없습니다.':'기록된 개발 수요가 없습니다.')+'</div>'; return; }
+    const arrow=(k)=> dmHdrKey===k?(dmHdrDir==='asc'?' ▲':' ▼'):'';
+    let h='<table><thead><tr>'
+      +DM_COLS.map(c=>'<th class="dm-hd'+(c.num&&c.k!=='rank'?' r':'')+'" data-k="'+c.k+'" style="cursor:pointer" title="클릭하여 정렬">'+c.label+arrow(c.k)+'</th>').join('')
+      +'<th>진행</th><th></th></tr></thead><tbody>';
+    list.forEach((g)=>{
+      const i=dmItems.indexOf(g);
       h+='<tr><td class="r"><b>'+g.rank+'</b></td>'
         +'<td><b>'+esc(g.code)+'</b></td>'
-        +'<td style="white-space:normal;max-width:260px">'+vehicleCell(g)+'</td>'
+        +'<td style="white-space:normal">'+dmCatPill(g)+'<br>'+dmCatSelCell(g)+'</td>'
+        +'<td style="white-space:normal;max-width:240px">'+vehicleCell(g)+'</td>'
         +'<td>'+vioCell(g)+'</td>'
         +'<td class="r">'+fmtN(g.total_qty)+'</td>'
         +'<td class="r">'+fmtN(g.customer_count)+'</td>'
         +'<td>'+esc(g.last_at||'–')+'</td>'
         +'<td>'+(g.open_count?('<span class="st received">진행 '+g.open_count+'</span> '):'')+(g.developed_count?('<span class="st developed">완료 '+g.developed_count+'</span>'):'')+'</td>'
         +'<td><button class="btn ghost sm dm-tg" data-i="'+i+'">이력 '+g.events.length+'건</button></td></tr>';
-      h+='<tr class="dm-ev hidden" data-i="'+i+'"><td></td><td colspan="8" style="white-space:normal">'
+      h+='<tr class="dm-ev hidden" data-i="'+i+'"><td></td><td colspan="9" style="white-space:normal">'
         +'<table style="margin:4px 0 8px"><thead><tr><th>고객</th><th>수요일</th><th class="r">수량</th><th>출처</th><th>상태</th><th>메모</th></tr></thead><tbody>'
         +g.events.map(e=>'<tr><td>'+esc(e.customer)+'</td><td>'+esc(e.date||'–')+'</td><td class="r">'+fmtN(e.qty)+'</td><td>'+esc(e.source)+'</td>'
           +'<td><span class="st '+esc(e.status)+'">'+esc(dmStLbl(e.status))+'</span></td><td style="white-space:normal">'+esc(e.memo||'')+'</td></tr>').join('')
@@ -219,19 +292,32 @@
     });
     h+='</tbody></table>';
     $('dmWrap').innerHTML=h;
+    $('dmWrap').querySelectorAll('.dm-hd').forEach(th=>th.addEventListener('click',()=>dmClickHdr(th.getAttribute('data-k'))));
     $('dmWrap').querySelectorAll('.dm-tg').forEach(b=>b.addEventListener('click',()=>{
       const i=b.getAttribute('data-i');
       const row=$('dmWrap').querySelector('.dm-ev[data-i="'+i+'"]');
       if(row) row.classList.toggle('hidden');
     }));
+    $('dmWrap').querySelectorAll('.dm-catsel').forEach(sel=>sel.addEventListener('change',()=>dmSaveCat(sel)));
+  }
+  async function dmSaveCat(sel){
+    const code=sel.getAttribute('data-code'); const cat=sel.value||null;
+    sel.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/demand/category',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({code,category:cat})});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      const g=dmItems.find(x=>x.code===code);
+      if(g) g.category=cat?{key:cat,source:'manual'}:null;
+      renderCatChips(); renderDemand();
+    }catch(e){ alert('카테고리 저장 실패: '+e.message); sel.disabled=false; }
   }
   function dmStLbl(s){ return {received:'접수',reviewed:'검토완료',factory_requested:'공장요청',developed:'개발완료',cancelled:'취소'}[s]||s; }
-  $('dmSortVio').addEventListener('click',()=>dmSetSort('vio'));
-  $('dmSortDemand').addEventListener('click',()=>dmSetSort('demand'));
-  $('dmSortRecent').addEventListener('click',()=>dmSetSort('recent'));
   $('dmScopeOpen').addEventListener('click',()=>dmSetScope('open'));
   $('dmScopeAll').addEventListener('click',()=>dmSetScope('all'));
   $('dmReload').addEventListener('click',loadDemand);
+  // 접수 폼 품목 카테고리 옵션
+  (function(){ const s=$('nCat'); if(s) s.innerHTML='<option value="">— 미지정 —</option>'+DM_CATS.map(c=>'<option value="'+c.key+'">'+esc(c.es)+' · '+esc(c.ko)+'</option>').join(''); })();
 
   async function loadCustomers(){
     try{ const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json()); custList=d.items||[];
@@ -248,13 +334,13 @@
     const code=$('nCode').value.trim();
     if(!code){m.className='msg err';m.textContent='경쟁사 코드를 입력하세요.';return;}
     try{
-      const body={input_code:code,customer_id:$('nCust').value?Number($('nCust').value):null,requested_qty:Number($('nQty').value)||null,order_memo:$('nMemo').value.trim()||null};
+      const body={input_code:code,customer_id:$('nCust').value?Number($('nCust').value):null,requested_qty:Number($('nQty').value)||null,order_memo:$('nMemo').value.trim()||null,category:$('nCat').value||null};
       const res=await fetch(session.api+'/api/dev-requests',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){m.className='msg err';m.textContent='등록 실패: '+(d.error||res.status);return;}
       m.className='msg ok';m.textContent='접수 등록되었습니다.';
-      $('nCode').value='';$('nQty').value='';$('nMemo').value='';
-      load(); loadKpi();
+      $('nCode').value='';$('nQty').value='';$('nMemo').value='';$('nCat').value='';
+      load(); loadKpi(); loadDemand();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
   }
 

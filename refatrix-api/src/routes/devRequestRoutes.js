@@ -6,7 +6,7 @@ import { logEvent } from '../audit.js';
 import { mxTodayStr } from '../workingHours.js';
 import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
-import { groupDemand, attachVehicleVio, sortDemand, normCode } from '../devDemand.js';
+import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -53,11 +53,12 @@ export default async function devRequestRoutes(app) {
   // 생성(오더 접수) — 영업. 생성 즉시 제품·마케팅 담당에게 검토 알림(todo)
   app.post('/api/dev-requests', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
     const b = req.body || {};
+    const cat = (b.category && DEV_CAT_KEYS.includes(String(b.category))) ? String(b.category) : null;
     const result = await withTx(async (c) => {
       const r = (await c.query(
-        `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, created_by)
-         VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7) RETURNING id`,
-        [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, req.ctx.perm.userId])).rows[0];
+        `INSERT INTO product_dev_requests (input_code, customer_id, requested_qty, order_memo, requested_at, source_quote_id, status, category, created_by)
+         VALUES ($1,$2,$3,$4,COALESCE($5,CURRENT_DATE),$6,'received',$7,$8) RETURNING id`,
+        [b.input_code || null, b.customer_id || null, b.requested_qty || null, b.order_memo || null, b.requested_at || null, b.source_quote_id || null, cat, req.ctx.perm.userId])).rows[0];
       let custName = '';
       if (b.customer_id) custName = (await c.query(`SELECT name FROM customers WHERE id=$1`, [b.customer_id])).rows[0]?.name || '';
       const todos = await notifyProductMarketing(c, {
@@ -81,7 +82,7 @@ export default async function devRequestRoutes(app) {
       : `d.status IN ('received','reviewed','factory_requested')`;
     const rows = (await query(
       `SELECT d.id, d.input_code, d.requested_qty, d.requested_at, d.status, d.order_memo,
-              d.field_survey_id, d.reviewed_at,
+              d.field_survey_id, d.reviewed_at, d.category,
               d.review_maker, d.review_model, d.review_year, d.review_app,
               c.name AS customer_name, q.quote_no
          FROM product_dev_requests d
@@ -104,10 +105,10 @@ export default async function devRequestRoutes(app) {
         byProduct.set(Number(productId), true);
       };
       try {
-        const prods = (await query(`SELECT id, code, app FROM products WHERE deleted_at IS NULL`)).rows;
+        const prods = (await query(`SELECT id, code, name, app FROM products WHERE deleted_at IS NULL`)).rows;
         const prodInfo = new Map();
         for (const p of prods) {
-          prodInfo.set(Number(p.id), { code: p.code, app: p.app || null });
+          prodInfo.set(Number(p.id), { code: p.code, name: p.name || null, app: p.app || null });
           claim(normCode(p.code), p.id, 1);
         }
         const syds = (await query(`SELECT product_id, syd_code FROM product_syd_codes`)).rows;
@@ -121,7 +122,7 @@ export default async function devRequestRoutes(app) {
         for (const k of Object.keys(productHit)) {
           const info = prodInfo.get(productHit[k].product_id);
           if (!info) { delete productHit[k]; continue; }
-          productHit[k] = { ctr_code: info.code, app: info.app, vio_rank: null, vio_units: null, vio_model: null, vio_year: null };
+          productHit[k] = { ctr_code: info.code, name: info.name, app: info.app, vio_rank: null, vio_units: null, vio_model: null, vio_year: null };
           hitCodes.push(info.code);
         }
         if (hitCodes.length) {
@@ -149,6 +150,23 @@ export default async function devRequestRoutes(app) {
     const items = sortDemand(attachVehicleVio(groups, productHit, vioModels), sortMode)
       .map((g) => ({ ...g, events: g.events.slice(0, 50) }));
     return { scope, sort: sortMode, count: items.length, items };
+  });
+
+  // ── 개발필요내용: SKU(코드) 단위 품목 카테고리 지정 — 같은 정규화 코드의 대장 행 전체에 반영 ──
+  app.put('/api/dev-requests/demand/category', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
+    const b = req.body || {};
+    const norm = normCode(b.code);
+    if (!norm) return reply.code(400).send({ error: 'bad_code' });
+    const cat = (b.category == null || b.category === '') ? null : String(b.category);
+    if (cat != null && !DEV_CAT_KEYS.includes(cat)) return reply.code(400).send({ error: 'bad_category', allowed: DEV_CAT_KEYS });
+    const rows = (await query(`SELECT id, input_code FROM product_dev_requests WHERE deleted_at IS NULL`)).rows;
+    const ids = rows.filter((r) => normCode(r.input_code) === norm).map((r) => Number(r.id));
+    if (!ids.length) return reply.code(404).send({ error: 'not_found' });
+    await query(
+      `UPDATE product_dev_requests SET category=$1, updated_by=$2, updated_at=now() WHERE id IN (${ids.join(',')})`,
+      [cat, req.ctx.perm.userId]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_demand:${norm}`, detail: { category: cat, rows: ids.length } });
+    return { ok: true, updated: ids.length, category: cat };
   });
 
   // 목록 + 소요기간
