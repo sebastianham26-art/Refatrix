@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 오늘 요약 · build daily-0801a</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .card-h .src{font-size:11px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .btn.gold{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  /* ── 달력(날짜 다중 선택) ── */
+  .calhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .calhead b{font-size:15px;color:var(--brand)}
+  .calnav{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 11px;font-size:14px;font-weight:800;color:var(--brand-soft);cursor:pointer}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .caldow{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:4px 0}
+  .calday{position:relative;min-height:44px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:13px;font-weight:600;color:var(--ink);padding:4px 0}
+  .calday:hover{border-color:var(--brand-soft)}
+  .calday.out{visibility:hidden}
+  .calday.future{opacity:.35;cursor:not-allowed}
+  .calday.today{outline:2px solid var(--gold)}
+  .calday.sel{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .calday .dot{width:6px;height:6px;border-radius:50%;background:var(--income)}
+  .calday.sel .dot{background:#ffe08a}
+  .calday .nodot{width:6px;height:6px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--brand-soft);cursor:pointer}
+  .chip:hover{background:#f4f1e8}
+  .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:8px;align-items:center;flex-wrap:wrap}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:-1px;margin-right:4px}
+  .genrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  /* ── 보관함 ── */
+  table.arch{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  table.arch th{font-size:11px;font-weight:700;color:var(--muted);background:#faf8f3;text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.arch td{padding:7px 9px;border-bottom:1px solid #f1ede4;vertical-align:top}
+  table.arch td.t{font-weight:700;color:var(--brand-soft);white-space:nowrap}
+  table.arch td .st{font-size:11px;color:var(--muted)}
+  .mchip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:#fdf3d8;color:#8a6512;margin-left:5px}
+  /* ── 열람 뷰 ── */
+  .sumview{margin-top:14px;border:1px solid var(--gold);border-radius:12px;padding:16px 18px;background:#fffdf6}
+  .sumview .svhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .sumview .svhead b{font-size:15px;color:var(--brand)}
+  .sumview .svhead .meta{font-size:11.5px;color:var(--muted)}
+  .mdbody{font-size:13px;line-height:1.75}
+  .mdbody h3{font-size:14px;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:3px;margin:16px 0 6px}
+  .mdbody h4{font-size:13px;color:var(--brand-soft);margin:12px 0 4px}
+  .mdbody ul{margin:4px 0 10px;padding-left:20px}.mdbody li{margin:2px 0}
+  .mdbody>p:first-child{background:#eef4f1;border-left:4px solid var(--brand);border-radius:8px;padding:10px 14px}
+  /* ── 원본 기록 ── */
+  .rawwrap{margin-top:14px;border-top:2px dashed var(--line);padding-top:10px}
+  .rawsec{margin-top:12px}
+  .rawsec .rh{font-size:12.5px;font-weight:800;color:var(--brand-soft);margin-bottom:5px}
+  table.raw{width:100%;border-collapse:collapse;font-size:12px}
+  table.raw th{font-size:10.5px;font-weight:700;color:var(--muted);background:#faf8f3;text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.raw td{padding:5px 8px;border-bottom:1px solid #f1ede4;vertical-align:top}
+  .rawlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+  .rawlist li{font-size:12px;line-height:1.5;background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+  .rawlist li b{color:var(--brand-soft)}
+  .scopepill{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;margin-right:4px;background:#eef2ef;color:#4a5a52}
+  .scopepill.personal{background:#f3ecf9;color:#6b4f8f}
+  .scopepill.company{background:#e4f0eb;color:#0F6E56}
+  .scopepill.shared{background:#fdeedd;color:#9a6a1f}
+  /* 메모 */
+  .summemo{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  .summemo .mmh{font-size:12px;font-weight:800;color:var(--brand-soft);display:flex;align-items:center;gap:8px}
+  #sumMemo{min-height:60px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.7;background:#fffef4;margin-top:6px;white-space:pre-wrap;outline:none}
+  #sumMemo:empty:before{content:attr(data-ph);color:#b4b0a6}
+  #sumMemo:focus{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+  .saveind{font-size:11px;color:var(--muted);font-weight:600}
+  .saveind.ok{color:var(--income)}
+  .no-print{}
+  @media print{ .no-print{display:none!important} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>📋 오늘 요약</h1>
+    <span class="sub">디렉터 전용 · 선택한 날짜의 ERP 기록 전체를 AI 요약 · 일자별 누적 보관</span>
+    <a class="portalBtn" href="refatrix-portal.html">🏠 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="noDir">
+    <div class="card-h">⛔ 접근 권한 없음</div>
+    <div class="hint">「오늘 요약」은 디렉터 전용 화면입니다.</div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 날짜 선택 -->
+    <div class="card no-print">
+      <div class="card-h">🗓 날짜 선택 <span class="src">여러 날짜를 눌러 함께 선택할 수 있습니다 · <i style="font-style:normal;color:var(--income)">●</i> 표시 = 이미 요약이 보관된 날</span></div>
+      <div class="calhead">
+        <button class="calnav" id="calPrev">‹</button>
+        <b id="calTitle"></b>
+        <button class="calnav" id="calNext">›</button>
+        <span class="hint" id="selInfo" style="margin-left:auto"></span>
+      </div>
+      <div class="calgrid" id="calGrid"></div>
+      <div class="chips">
+        <span class="chip" id="chipToday">오늘</span>
+        <span class="chip" id="chipYest">어제</span>
+        <span class="chip" id="chipWeek">최근 7일</span>
+        <span class="chip" id="chipClear">선택 지우기</span>
+      </div>
+      <div class="genrow">
+        <button class="btn gold" id="genBtn">🤖 선택한 날짜 AI 요약 생성</button>
+        <span class="hint" id="genHint"></span>
+      </div>
+      <div class="hint hidden" id="noKey" style="margin-top:6px;color:var(--expense)">⚠ 서버에 ANTHROPIC_API_KEY 가 설정되지 않아 AI 요약을 사용할 수 없습니다. (Railway → Variables 에 키 등록)</div>
+      <div class="hint" style="margin-top:6px">같은 날짜를 다시 생성하면 그날의 요약이 <b>최신 기록으로 갱신</b>됩니다(날짜당 1건 보관). 한 번에 여러 날짜 선택 시 순서대로 생성됩니다(날짜당 30초~2분).</div>
+    </div>
+
+    <!-- 일자별 보관함 -->
+    <div class="card">
+      <div class="card-h">📚 일자별 보관함 <span class="src">누적 기록 · 날짜당 1건 · 재생성 시 갱신</span></div>
+      <div id="archList"><div class="hint">불러오는 중…</div></div>
+      <div id="sumView" class="hidden sumview"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  console.log('[daily] build daily-0801a');
+  let session={token:null,user:null,api:''};
+  let isDirector=false, aiEnabled=false;
+  let selDates=new Set();            // 선택된 날짜(YYYY-MM-DD, 월 이동해도 유지)
+  let sumMap={};                     // 날짜 → 보관함 메타
+  let items=[];                      // 보관함 목록
+  let curView=null;                  // 열람 중 1건
+  let curMonth=(function(){const d=new Date();return {y:d.getFullYear(),m:d.getMonth()};})();
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('en-US',{maximumFractionDigits:0});
+  const DOW7=['일','월','화','수','목','금','토'];
+  function pad(n){return String(n).padStart(2,'0');}
+  function ymd(y,m,d){return y+'-'+pad(m+1)+'-'+pad(d);}
+  function todayYmd(){const d=new Date();return ymd(d.getFullYear(),d.getMonth(),d.getDate());}
+  function shiftYmdStr(s,days){const p=s.split('-').map(Number);const t=new Date(Date.UTC(p[0],p[1]-1,p[2]));t.setUTCDate(t.getUTCDate()+days);return t.toISOString().slice(0,10);}
+  function krDate(s){const p=String(s||'').split('-').map(Number);if(p.length<3)return s;const w=DOW7[new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay()];return p[0]+'년 '+p[1]+'월 '+p[2]+'일 ('+w+')';}
+  function fmtDateTime(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes()); }
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    const ps=portalSession();
+    if(!ps&&(!login_id||!pin)){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');
+      isDirector=((d.user&&d.user.role)==='director');
+      if(!isDirector){ $('noDir').classList.remove('hidden'); return; }
+      $('app').classList.remove('hidden');
+      renderCal();
+      await loadList();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ===== 달력(다중 선택) =====
+  function renderCal(){
+    const {y,m}=curMonth;
+    $('calTitle').textContent=y+'년 '+(m+1)+'월';
+    const first=new Date(y,m,1).getDay();
+    const days=new Date(y,m+1,0).getDate();
+    const today=todayYmd();
+    let h='';
+    for(const w of DOW7) h+='<div class="caldow">'+w+'</div>';
+    for(let i=0;i<first;i++) h+='<div class="calday out"></div>';
+    for(let d=1;d<=days;d++){
+      const key=ymd(y,m,d);
+      const future=key>today;
+      const cls=['calday'];
+      if(future) cls.push('future');
+      if(key===today) cls.push('today');
+      if(selDates.has(key)) cls.push('sel');
+      const dot=sumMap[key]?'<span class="dot" title="요약 보관됨"></span>':'<span class="nodot"></span>';
+      h+='<div class="'+cls.join(' ')+'" data-d="'+key+'"'+(future?'':' tabindex="0"')+'><span>'+d+'</span>'+dot+'</div>';
+    }
+    $('calGrid').innerHTML=h;
+    $('calGrid').querySelectorAll('.calday[data-d]').forEach(el=>{
+      if(el.classList.contains('future')) return;
+      el.addEventListener('click',()=>{ toggleDate(el.getAttribute('data-d')); });
+    });
+    updateSelInfo();
+  }
+  function toggleDate(key){
+    if(selDates.has(key)) selDates.delete(key); else selDates.add(key);
+    renderCal();
+  }
+  function updateSelInfo(){
+    const n=selDates.size;
+    $('selInfo').textContent=n?('선택 '+n+'개 날짜'):'날짜를 선택하세요';
+    $('genBtn').disabled=!aiEnabled||!n;
+  }
+  $('calPrev').addEventListener('click',()=>{ curMonth.m--; if(curMonth.m<0){curMonth.m=11;curMonth.y--;} renderCal(); });
+  $('calNext').addEventListener('click',()=>{ curMonth.m++; if(curMonth.m>11){curMonth.m=0;curMonth.y++;} renderCal(); });
+  $('chipToday').addEventListener('click',()=>{ selDates.add(todayYmd()); syncCalToSel(todayYmd()); });
+  $('chipYest').addEventListener('click',()=>{ const d=shiftYmdStr(todayYmd(),-1); selDates.add(d); syncCalToSel(d); });
+  $('chipWeek').addEventListener('click',()=>{ const t=todayYmd(); for(let i=0;i<7;i++) selDates.add(shiftYmdStr(t,-i)); syncCalToSel(t); });
+  $('chipClear').addEventListener('click',()=>{ selDates.clear(); renderCal(); });
+  function syncCalToSel(key){ const p=key.split('-').map(Number); curMonth={y:p[0],m:p[1]-1}; renderCal(); }
+
+  // ===== 생성 (서버는 호출당 최대 7일 → 초과분은 순차 분할) =====
+  $('genBtn').addEventListener('click',generate);
+  async function generate(){
+    const dates=[...selDates].sort();
+    if(!dates.length) return;
+    const hint=$('genHint'); const btn=$('genBtn'); const prev=btn.textContent;
+    btn.disabled=true; hint.style.color='var(--muted)';
+    const CHUNK=7; const all=[];
+    try{
+      for(let i=0;i<dates.length;i+=CHUNK){
+        const part=dates.slice(i,i+CHUNK);
+        btn.textContent='🤖 생성 중… ('+Math.min(i+part.length,dates.length)+'/'+dates.length+')';
+        hint.textContent=part.join(', ')+' 요약을 생성하고 있습니다. 날짜당 30초~2분 걸립니다.';
+        const res=await fetch(session.api+'/api/daily-summary/generate',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({dates:part})});
+        const d=await res.json();
+        if(!res.ok||d.error){
+          hint.style.color='var(--expense)';
+          hint.textContent= d.error==='no_api_key' ? 'API 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)' : '생성 실패: '+(d.error||res.status);
+          return;
+        }
+        all.push(...(d.results||[]));
+      }
+      const ok=all.filter(r=>r.ok), bad=all.filter(r=>!r.ok);
+      hint.style.color=bad.length?'var(--expense)':'var(--income)';
+      hint.textContent=ok.length+'개 날짜 요약 저장'+(bad.length?(' · 실패 '+bad.length+'건: '+bad.map(r=>r.date+'('+(r.detail||r.error)+')').join(', ')):'');
+      selDates.clear();
+      await loadList();
+      if(ok.length===1) openSum(ok[0].date);
+    }catch(e){ hint.style.color='var(--expense)'; hint.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ btn.textContent=prev; updateSelInfo(); }
+  }
+
+  // ===== 보관함 =====
+  async function loadList(){
+    try{
+      const res=await fetch(session.api+'/api/daily-summary/list',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      aiEnabled=!!d.ai_enabled;
+      $('noKey').classList.toggle('hidden', aiEnabled);
+      items=d.items||[];
+      sumMap={};
+      for(const it of items) sumMap[it.summary_date]=it;
+      renderArch(); renderCal();
+    }catch(e){ $('archList').innerHTML='<div class="hint">보관함을 불러오지 못했습니다.</div>'; }
+  }
+  function statLine(st){
+    st=st||{};
+    const p=[];
+    if(st.schedule) p.push('일정 '+st.schedule);
+    if(st.todos) p.push('할일 '+st.todos);
+    if(st.quotes) p.push('견적 '+st.quotes);
+    if(st.invoices) p.push('매출 '+st.invoices);
+    if(st.txn_in) p.push('입금 $'+fmt(st.txn_in));
+    if(st.txn_out) p.push('출금 $'+fmt(st.txn_out));
+    if(st.activity) p.push('활동 '+st.activity);
+    return p.join(' · ')||'기록 없음';
+  }
+  function renderArch(){
+    if(!items.length){ $('archList').innerHTML='<div class="hint">아직 보관된 요약이 없습니다. 위에서 날짜를 선택해 첫 요약을 생성해보세요.</div>'; return; }
+    let h='<table class="arch"><thead><tr><th>날짜</th><th>그날의 기록</th><th>생성</th><th style="width:120px"></th></tr></thead><tbody>';
+    for(const it of items){
+      h+='<tr><td class="t">'+esc(krDate(it.summary_date))+(it.has_memo?'<span class="mchip">메모</span>':'')+'</td>'
+        +'<td><span class="st">'+esc(statLine(it.stats))+'</span></td>'
+        +'<td><span class="st">'+fmtDateTime(it.updated_at||it.created_at)+(it.created_by_name?'<br>'+esc(it.created_by_name):'')+'</span></td>'
+        +'<td style="white-space:nowrap"><button class="btn sm arch-open" data-d="'+it.summary_date+'">열람</button> '
+        +'<button class="btn sm arch-del no-print" data-d="'+it.summary_date+'" style="background:#b4561f">🗑</button></td></tr>';
+    }
+    h+='</tbody></table>';
+    $('archList').innerHTML=h;
+    $('archList').querySelectorAll('.arch-open').forEach(b=>b.addEventListener('click',()=>openSum(b.getAttribute('data-d'))));
+    $('archList').querySelectorAll('.arch-del').forEach(b=>b.addEventListener('click',()=>delSum(b.getAttribute('data-d'))));
+  }
+  async function delSum(dt){
+    if(!confirm(krDate(dt)+' 요약을 삭제할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/daily-summary/'+dt,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(curView&&curView.summary_date===dt) closeSum();
+      await loadList();
+    }catch(e){ alert('삭제 실패: '+e.message); }
+  }
+
+  // ===== 열람 =====
+  async function openSum(dt){
+    const v=$('sumView'); v.classList.remove('hidden'); v.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/daily-summary/'+dt,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      renderSumView(d);
+    }catch(e){ v.innerHTML='<div class="hint">요약을 불러오지 못했습니다.</div>'; }
+  }
+  let rawOpen=false;
+  function renderSumView(d){
+    curView=d; rawOpen=false;
+    const v=$('sumView'); v.classList.remove('hidden');
+    v.innerHTML='<div class="svhead"><b>📋 '+esc(krDate(d.summary_date))+' 요약</b>'
+      +'<span class="meta">생성 '+fmtDateTime(d.updated_at||d.created_at)+(d.created_by_name?' · '+esc(d.created_by_name):'')+(d.model?' · '+esc(d.model):'')+'</span>'
+      +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap" class="no-print">'
+        +'<span class="saveind" id="memoInd"></span>'
+        +'<button class="btn sm" id="rawBtn" style="background:#4a6d64">📄 원본 기록 보기</button>'
+        +'<button class="btn sm gold" id="pdfBtn">🧾 PDF/인쇄</button>'
+        +'<button class="btn sm" id="copyBtn" style="background:var(--brand-soft)">📋 복사</button>'
+        +'<button class="btn sm" id="closeBtn" style="background:#8b8577">닫기</button>'
+      +'</span></div>'
+      +'<div class="mdbody" id="sumBody">'+mdToHtml(d.content_md||'')+'</div>'
+      +'<div class="rawwrap hidden" id="rawWrap"><div class="rh" style="font-size:13px;font-weight:800;color:var(--brand)">📄 원본 기록 (그날 수집된 ERP 데이터)</div><div id="rawBody"></div></div>'
+      +'<div class="summemo"><div class="mmh">📝 메모 <span class="hint" style="display:inline;margin:0">— 자유 기록 · 자동 저장</span></div>'
+      +'<div id="sumMemo" contenteditable="true" data-ph="이 날짜에 대한 메모를 남겨보세요… (지시사항, 후속 확인 등)"></div></div>';
+    $('sumMemo').textContent=d.memo||'';
+    $('sumMemo').addEventListener('input',scheduleMemoSave);
+    $('rawBtn').addEventListener('click',toggleRaw);
+    $('pdfBtn').addEventListener('click',printSum);
+    $('copyBtn').addEventListener('click',copySum);
+    $('closeBtn').addEventListener('click',closeSum);
+    v.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function closeSum(){ $('sumView').classList.add('hidden'); $('sumView').innerHTML=''; curView=null; }
+  function toggleRaw(){
+    rawOpen=!rawOpen;
+    $('rawWrap').classList.toggle('hidden',!rawOpen);
+    $('rawBtn').textContent=rawOpen?'📄 원본 기록 접기':'📄 원본 기록 보기';
+    if(rawOpen&&!$('rawBody').innerHTML) $('rawBody').innerHTML=renderDigest(curView.digest||{});
+  }
+
+  // ===== 원본(digest) 렌더 =====
+  const SCOPE_LBL={company:'회사전체',team:'팀',personal:'개인',shared:'지정공유'};
+  const TODO_LEVEL={assigned:'지시',self:'자가등록',coop:'협조요청'};
+  function scopePill(sc){ return '<span class="scopepill '+esc(sc||'')+'">'+esc(SCOPE_LBL[sc]||sc||'개인')+'</span>'; }
+  function rsec(title,inner){ return inner?'<div class="rawsec"><div class="rh">'+title+'</div>'+inner+'</div>':''; }
+  function rtable(heads,rows){
+    if(!rows.length) return '';
+    return '<table class="raw"><thead><tr>'+heads.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'
+      +rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+  }
+  function rlist(arr){ return arr.length?('<ul class="rawlist">'+arr.map(x=>'<li>'+x+'</li>').join('')+'</ul>'):''; }
+  function renderDigest(dg){
+    dg=dg||{}; const out=[];
+    const sch=dg.schedule||[];
+    out.push(rsec('📅 일정 ('+sch.length+'건)', rtable(['시간','구분','내용','작성','공유대상','메모'],
+      sch.map(e=>[esc(e.time||'종일'),scopePill(e.scope)+(e.team?esc(e.team):''),esc(e.content||''),
+        esc(e.owner||e.created_by||'—')+(e.owner&&e.created_by&&e.owner!==e.created_by?'<br><span class="hint">등록:'+esc(e.created_by)+'</span>':''),
+        esc((e.targets||[]).join(', ')||'—'), e.memo_count?String(e.memo_count)+'개':'—']))));
+    const cm=dg.calendar_memos||[];
+    out.push(rsec('💬 이날 작성된 일정 메모 ('+cm.length+'건)', rlist(cm.map(m=>'<b>'+esc(m.author||'?')+'</b> → 「'+esc(m.event_content||'')+'」 : '+esc(m.body||'')+(m.time?' <span class="hint">('+esc(m.time)+')</span>':'')))));
+    const td=dg.todos||{};
+    function todoRow(t){ return ['<b>'+esc(t.title||'')+'</b>'+(t.detail?'<br><span class="hint">'+esc(t.detail)+'</span>':''),
+      esc((t.assignees||[]).join(', ')||'전체'), esc(TODO_LEVEL[t.level]||t.level||'—'), esc(t.due_date||'—'),
+      esc(t.created_by||'—')+(t.done_note?'<br><span class="hint">완료메모: '+esc(t.done_note)+'</span>':'')]; }
+    const tdHeads=['할일','담당','유형','마감','등록/비고'];
+    out.push(rsec('✅ 할일 — 신규 등록 ('+(td.created||[]).length+'건)', rtable(tdHeads,(td.created||[]).map(todoRow))));
+    out.push(rsec('⏰ 할일 — 이날 마감 ('+(td.due||[]).length+'건)', rtable(tdHeads,(td.due||[]).map(todoRow))));
+    out.push(rsec('🏁 할일 — 완료 처리 ('+(td.done||[]).length+'건)', rtable(tdHeads,(td.done||[]).map(todoRow))));
+    out.push(rsec('💬 할일 릴레이 메모 ('+(td.memos||[]).length+'건)', rlist((td.memos||[]).map(m=>'<b>'+esc(m.author||'?')+'</b> → 「'+esc(m.todo_title||'')+'」 : '+esc(m.body||'')))));
+    const nt=dg.notices||[];
+    out.push(rsec('📢 공지 ('+nt.length+'건)', rlist(nt.map(x=>'<b>'+esc(x.title||'')+'</b> (작성:'+esc(x.author||'?')+(x.pinned?' · 고정':'')+')'))));
+    const q=dg.quotes||{};
+    out.push(rsec('📝 견적 ('+(q.count||0)+'건 · $'+fmt(q.total_mxn||0)+')', rtable(['고객','금액(MXN)','SKU','상태','작성'],
+      (q.items||[]).map(x=>[esc(x.customer||''),'$'+fmt(x.total_mxn),String(x.sku_count||0),esc(x.status||'—'),esc(x.by||'—')]))));
+    const mt=dg.meetings||{};
+    out.push(rsec('🤝 영업활동 ('+(mt.count||0)+'건)', rlist((mt.items||[]).map(x=>'<b>'+esc(x.customer||'')+'</b> · 담당 '+esc(x.by||'?')+(x.stage_move?' · 단계 '+esc(x.stage_move):'')+(x.note?'<br><span class="hint">'+esc(x.note)+'</span>':'')))));
+    const inv=dg.invoices||{};
+    out.push(rsec('🧾 매출 인보이스 ('+(inv.count||0)+'건 · $'+fmt(inv.total_mxn||0)+')', rtable(['SAT 번호','고객','금액(MXN)','담당'],
+      (inv.items||[]).map(x=>[esc(x.sat_no||'—'),esc(x.customer||''),'$'+fmt(x.total_mxn),esc(x.owner||'—')]))));
+    const tx=dg.transactions||{};
+    out.push(rsec('💰 입출금 확정 — 입금 $'+fmt(tx.in_mxn||0)+'('+(tx.in_count||0)+'건) · 출금 $'+fmt(tx.out_mxn||0)+'('+(tx.out_count||0)+'건)',
+      rtable(['구분','금액(MXN)','계정','메모'],(tx.items||[]).map(x=>[x.direction==='in'?'입금':'출금','$'+fmt(x.amount_mxn),esc(x.category||'—'),esc(x.memo||'—')+(x.approved===false?' <span class="hint">(승인대기)</span>':'')]))));
+    const nc=dg.new_customers||[];
+    out.push(rsec('🆕 신규 고객 ('+nc.length+'건)', rlist(nc.map(x=>'<b>'+esc(x.code||'')+' '+esc(x.name||'')+'</b> · 담당 '+esc(x.owner||'?')+' · 등록 '+esc(x.by||'?')))));
+    const mk=dg.marketing||{};
+    const mkl=[...(mk.events||[]).map(x=>'행사: <b>'+esc(x.title||'')+'</b>'+(x.category?' ('+esc(x.category)+')':'')),
+               ...(mk.lines||[]).map(x=>'집행: '+esc(x.plan||'')+' · '+esc(x.item||'')+' · '+esc(x.kind_label||'')+' $'+fmt(x.amount))];
+    out.push(rsec('📣 마케팅 ('+mkl.length+'건)', rlist(mkl)));
+    const act=dg.activity||{};
+    const ACT={create:'생성',update:'수정',delete:'삭제',print:'출력',export:'내보내기',login:'로그인',login_fail:'로그인실패',price_change:'가격변경',permission_change:'권한변경',delete_request:'삭제요청',delete_approve:'삭제승인',delete_reject:'삭제반려',change_request:'수정요청',approve_change:'수정승인',period_close:'마감'};
+    out.push(rsec('🖥 시스템 활동 (감사로그 · 총 '+(act.total||0)+'건)', rtable(['직원','부서','건수','내역'],
+      (act.users||[]).map(u=>[esc(u.name||'?'),esc(u.dept||'—'),String(u.total||0),
+        esc(Object.entries(u.by_action||{}).sort((a,b)=>b[1]-a[1]).map(([k,v])=>(ACT[k]||k)+' '+v).join(' · '))]))));
+    const body=out.filter(Boolean).join('');
+    return body||'<div class="hint">이날 수집된 기록이 없습니다.</div>';
+  }
+
+  // ===== 메모 자동 저장 =====
+  let memoTimer=null;
+  function scheduleMemoSave(){
+    if(!curView) return;
+    const ind=$('memoInd'); if(ind){ ind.className='saveind'; ind.textContent='메모 저장 중…'; }
+    clearTimeout(memoTimer);
+    memoTimer=setTimeout(async()=>{
+      const el=$('sumMemo'); if(!el||!curView) return;
+      const memo=(el.innerText!=null?el.innerText:el.textContent)||'';
+      try{
+        const res=await fetch(session.api+'/api/daily-summary/'+curView.summary_date+'/memo',{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({memo})});
+        const d=await res.json();
+        if(!res.ok||d.error) throw new Error(d.error||res.status);
+        curView.memo=memo;
+        if(sumMap[curView.summary_date]) sumMap[curView.summary_date].has_memo=!!memo.trim();
+        if(ind){ ind.className='saveind ok'; ind.textContent='메모 저장됨'; setTimeout(()=>{ if(ind&&ind.textContent==='메모 저장됨') ind.textContent=''; },2000); }
+      }catch(e){ if(ind){ ind.className='saveind'; ind.style.color='var(--expense)'; ind.textContent='메모 저장 실패'; } }
+    },800);
+  }
+
+  // ===== 복사 · PDF =====
+  function copySum(){
+    if(!curView) return;
+    const memo=(curView.memo||'').trim();
+    const txt='['+krDate(curView.summary_date)+' 오늘 요약]\n\n'+(curView.content_md||'')+(memo?('\n\n[메모]\n'+memo):'');
+    (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(
+      ()=>{ const b=$('copyBtn'); if(b){ const p=b.textContent; b.textContent='✅ 복사됨'; setTimeout(()=>{b.textContent=p;},1500); } },
+      ()=>{ alert('복사에 실패했습니다.'); });
+  }
+  function printSum(){
+    if(!curView) return;
+    const name='Refatrix_DailySummary_'+curView.summary_date.replace(/-/g,'');
+    const memoEl=$('sumMemo');
+    const memoTxt=(memoEl?((memoEl.innerText!=null?memoEl.innerText:memoEl.textContent)||''):(curView.memo||'')).trim();
+    const rawHtml=rawOpen?$('rawBody').innerHTML:'';
+    const w=window.open('','_blank');
+    if(!w){ alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해주세요.'); return; }
+    w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+esc(name)+'</title>'
+      +'<style>body{font-family:"IBM Plex Sans KR",system-ui,"Malgun Gothic",sans-serif;color:#1C1B19;max-width:860px;margin:24px auto;padding:0 18px;line-height:1.7;font-size:13px}'
+      +'h1{font-size:19px;color:#143D34;border-bottom:2px solid #143D34;padding-bottom:8px}'
+      +'h3{font-size:14.5px;color:#143D34;border-bottom:1px solid #E6E1D6;padding-bottom:3px;margin:18px 0 6px}'
+      +'h4{font-size:13.5px;color:#1E5247;margin:12px 0 4px}'
+      +'ul{margin:4px 0 10px;padding-left:20px}li{margin:2px 0}'
+      +'.meta{font-size:11.5px;color:#6F6A60;margin-bottom:14px}'
+      +'.md>p:first-child{background:#eef4f1;border-left:4px solid #143D34;border-radius:8px;padding:10px 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'table{width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0}'
+      +'th{font-size:10.5px;color:#6F6A60;background:#faf8f3;text-align:left;padding:4px 7px;border-bottom:1px solid #E6E1D6;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'td{padding:4px 7px;border-bottom:1px solid #f1ede4;vertical-align:top}'
+      +'.rawsec{margin-top:10px}.rh{font-size:12.5px;font-weight:800;color:#1E5247;margin:10px 0 4px}'
+      +'.rawlist{list-style:none;margin:0;padding:0}.rawlist li{border:1px solid #E6E1D6;border-radius:7px;padding:4px 8px;margin:3px 0;font-size:11.5px}'
+      +'.scopepill{font-size:9.5px;font-weight:700;padding:0 6px;border-radius:999px;background:#eef2ef;color:#4a5a52;margin-right:3px}'
+      +'.hint{font-size:10.5px;color:#6F6A60}'
+      +'.memo{margin-top:18px;border-top:1px dashed #E6E1D6;padding-top:10px}'
+      +'.memo .mh{font-size:12.5px;font-weight:800;color:#1E5247;margin-bottom:4px}'
+      +'.memo .mb{background:#fffef4;border:1px solid #E6E1D6;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      +'@page{margin:14mm}</style></head><body>'
+      +'<h1>📋 '+esc(krDate(curView.summary_date))+' 오늘 요약</h1>'
+      +'<div class="meta">Refatrix ERP · 디렉터 전용 일일 요약 · 생성 '+fmtDateTime(curView.updated_at||curView.created_at)
+      +(curView.created_by_name?' · '+esc(curView.created_by_name):'')+'</div>'
+      +'<div class="md">'+mdToHtml(curView.content_md||'')+'</div>'
+      +(memoTxt?('<div class="memo"><div class="mh">📝 메모</div><div class="mb">'+esc(memoTxt)+'</div></div>'):'')
+      +(rawHtml?('<h3 style="margin-top:22px">📄 원본 기록</h3>'+rawHtml):'')
+      +'</body></html>');
+    w.document.close();
+    w.focus();
+    setTimeout(()=>{ try{w.print();}catch(e){} },400);
+  }
+
+  // ===== 초경량 마크다운 렌더러(이스케이프 우선 · XSS 방어) =====
+  function mdToHtml(md){
+    const lines=String(md||'').split(/\r?\n/);
+    const out=[]; let inUl=false;
+    const inline=(s)=>esc(s).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+    const closeUl=()=>{ if(inUl){ out.push('</ul>'); inUl=false; } };
+    for(const raw of lines){
+      const t=raw.replace(/\s+$/,'').trim();
+      if(!t){ closeUl(); continue; }
+      let m;
+      if((m=/^####\s+(.*)$/.exec(t))){ closeUl(); out.push('<h4>'+inline(m[1])+'</h4>'); continue; }
+      if((m=/^###\s+(.*)$/.exec(t))){ closeUl(); out.push('<h3>'+inline(m[1])+'</h3>'); continue; }
+      if((m=/^##\s+(.*)$/.exec(t))){ closeUl(); out.push('<h3>'+inline(m[1])+'</h3>'); continue; }
+      if((m=/^#\s+(.*)$/.exec(t))){ closeUl(); out.push('<h3>'+inline(m[1])+'</h3>'); continue; }
+      if((m=/^[-*•]\s+(.*)$/.exec(t))){ if(!inUl){ out.push('<ul>'); inUl=true; } out.push('<li>'+inline(m[1])+'</li>'); continue; }
+      if((m=/^(\d+)[.)]\s+(.*)$/.exec(t))){ if(!inUl){ out.push('<ul>'); inUl=true; } out.push('<li><b>'+m[1]+'.</b> '+inline(m[2])+'</li>'); continue; }
+      closeUl(); out.push('<p>'+inline(t)+'</p>');
+    }
+    closeUl();
+    return out.join('');
+  }
+
+  // ===== 부팅 =====
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  (function boot(){
+    const ps=portalSession();
+    if(ps&&ps.token){ login(); }
+  })();
+</script>
+<script src="refatrix-nav.js?v=20260801ds"></script>
+</body>
+</html>

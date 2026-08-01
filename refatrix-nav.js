@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260718in loaded (inbound receiving)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260801ds loaded (daily summary)'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -13,6 +13,7 @@
     boardNotice:{file:'refatrix-board.html',name:'공지',desc:'공지사항',tab:'notice'},
     boardTodo:{file:'refatrix-board.html',name:'할 일',desc:'todo',tab:'todo'},
     wbr:{file:'refatrix-wbr.html',name:'WBR',desc:'주간 비즈니스 리뷰'},
+    daily:{file:'refatrix-daily.html',name:'오늘 요약',desc:'일자별 ERP 기록 AI 요약(디렉터)'},
     quote:{file:'refatrix-quote.html',name:'견적 작성',desc:'견적·매출전환'},
     quotelist:{file:'refatrix-quotelist.html',name:'견적·매출 추적',desc:'목록·전환'},
     fieldsurvey:{file:'refatrix-fieldsurvey.html',name:'현장재고조사',desc:'고객창고 경쟁사 재고→오퍼'},
@@ -77,7 +78,7 @@
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
     pipeline:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
-    boardNotice:null, boardTodo:null, wbr:'wbr',
+    boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
@@ -93,7 +94,7 @@
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','prodFind','prodUpload']},
-    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr']},
+    {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound']},
     {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','processKpi']}
   ];
