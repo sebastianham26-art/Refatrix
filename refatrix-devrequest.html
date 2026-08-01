@@ -88,10 +88,12 @@
           <button class="mbtn on" id="dmScopeOpen">미완료만</button>
           <button class="mbtn" id="dmScopeAll">전체</button></span>
         <button class="btn ghost sm" id="dmReload">새로고침</button>
+        <button class="btn sm" id="dmSweep" title="제품마스터·교차참조 카탈로그와 대조해 매칭되는 경쟁사 코드를 자동 개발완료 처리">🔄 카탈로그 매칭 점검</button>
         <span class="hint" id="dmInfo"></span>
       </div>
       <div class="mrow" id="dmCatChips" style="margin-top:8px"><span class="ml">품목</span></div>
-      <div class="hint" style="margin-top:6px">표 제목(열 이름)을 클릭하면 그 기준으로 정렬됩니다(다시 클릭 = 역순). 카테고리는 접수 시 선택하거나 표에서 바로 지정할 수 있고, 코드가 기존 제품과 매칭되면 자동 분류됩니다.</div>
+      <div class="hint" style="margin-top:6px">표 제목(열 이름)을 클릭하면 그 기준으로 정렬됩니다(다시 클릭 = 역순). 카테고리는 접수 시 선택하거나 표에서 바로 지정할 수 있고, 코드가 기존 제품과 매칭되면 자동 분류됩니다. <b>제품마스터·카탈로그가 업데이트되어 경쟁사 코드가 우리 제품과 매칭되면 자동으로 우리 코드가 붙고 개발완료 처리됩니다</b>(업로드 직후 + 12시간 주기, 버튼으로 즉시 점검 가능).</div>
+      <div class="msg" id="dmSweepMsg"></div>
       <div id="dmWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
     </div>
 
@@ -131,7 +133,7 @@
 </div>
 
 <script>
-  console.log('[devrequest] build devreq-0801b (개발필요내용: 6대 품목 카테고리·헤더 정렬)');
+  console.log('[devrequest] build devreq-0801c (개발필요내용: 카테고리·헤더 정렬 + 카탈로그 자동 매칭)');
   let session={token:null,user:null,api:''};
   let custList=[], cur=null;
   const $=(id)=>document.getElementById(id);
@@ -316,6 +318,25 @@
   $('dmScopeOpen').addEventListener('click',()=>dmSetScope('open'));
   $('dmScopeAll').addEventListener('click',()=>dmSetScope('all'));
   $('dmReload').addEventListener('click',loadDemand);
+  $('dmSweep').addEventListener('click',dmRunSweep);
+  async function dmRunSweep(){
+    const btn=$('dmSweep'); const m=$('dmSweepMsg'); m.className='msg';
+    btn.disabled=true; const prev=btn.textContent; btn.textContent='🔄 점검 중…';
+    try{
+      const res=await fetch(session.api+'/api/dev-requests/match-sweep',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(d.matched>0){
+        const lines=(d.items||[]).slice(0,8).map(it=>esc(it.input_code)+' → <b>'+esc(it.ctr_code)+'</b>'+(it.customer_name?' ('+esc(it.customer_name)+')':''));
+        m.className='msg ok';
+        m.innerHTML='✅ '+d.matched+'건 자동 개발완료: '+lines.join(' · ')+((d.items||[]).length>8?' 외 '+((d.items||[]).length-8)+'건':'');
+      }else{
+        m.className='msg ok'; m.textContent='점검 완료 — 새로 매칭된 코드가 없습니다. (미완료 '+d.checked+'건 대조)';
+      }
+      loadDemand(); load(); loadKpi();
+    }catch(e){ m.className='msg err'; m.textContent='매칭 점검 실패: '+e.message; }
+    finally{ btn.disabled=false; btn.textContent=prev; }
+  }
   // 접수 폼 품목 카테고리 옵션
   (function(){ const s=$('nCat'); if(s) s.innerHTML='<option value="">— 미지정 —</option>'+DM_CATS.map(c=>'<option value="'+c.key+'">'+esc(c.es)+' · '+esc(c.ko)+'</option>').join(''); })();
 

@@ -7,6 +7,7 @@ import { mxTodayStr } from '../workingHours.js';
 import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
 import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
+import { sweepDevRequestMatches } from '../devMatchSweep.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -167,6 +168,13 @@ export default async function devRequestRoutes(app) {
       [cat, req.ctx.perm.userId]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_demand:${norm}`, detail: { category: cat, rows: ids.length } });
     return { ok: true, updated: ids.length, category: cat };
+  });
+
+  // ── 개발목록 ↔ 카탈로그 수동 매칭 점검 — 미완료 경쟁사 코드가 우리 제품과 매칭되면 자동 개발완료 ──
+  app.post('/api/dev-requests/match-sweep', { preHandler: [authGuard, requireDevAccess()] }, async (req) => {
+    const out = await sweepDevRequestMatches({ userId: req.ctx.perm.userId, notify: true });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'dev_match_sweep', detail: { checked: out.checked, matched: out.matched } });
+    return out;
   });
 
   // 목록 + 소요기간
@@ -717,5 +725,15 @@ export default async function devRequestRoutes(app) {
   if (!globalThis.__refatrixStageAlertSweeper) {
     globalThis.__refatrixStageAlertSweeper = setInterval(() => { sweepStageAlerts().catch(() => {}); }, 300000);
     setTimeout(() => { sweepStageAlerts().catch(() => {}); }, 15000);
+  }
+
+  // 개발목록 ↔ 카탈로그 자동 매칭 sweep (12시간 주기 + 시작 30초 후 1회).
+  //  · 디렉터 확정(2026-08-01): 통상업무 중 서버 부하를 피하기 위해 1시간 → 12시간.
+  //    업로드 직후 훅이 즉시 처리하고, 필요 시 화면의 [카탈로그 매칭 점검] 버튼으로 수동 점검.
+  //  · 제품마스터/교차참조 업로드 훅이 즉시 처리하지만, 그 외 경로(SYD 자동매핑 등)를 주기 점검으로 보강.
+  //  · 완료 전환은 상태 조건부 UPDATE 라 중복 실행 무해(멱등).
+  if (!globalThis.__refatrixDevMatchSweeper) {
+    globalThis.__refatrixDevMatchSweeper = setInterval(() => { sweepDevRequestMatches({ notify: true }).catch(() => {}); }, 43200000);
+    setTimeout(() => { sweepDevRequestMatches({ notify: true }).catch(() => {}); }, 30000);
   }
 }

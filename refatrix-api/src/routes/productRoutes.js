@@ -4,6 +4,7 @@ import { minimizeProduct, fieldVisible } from '../permissions.js';
 import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
 import { visibleTeamIds } from '../teams.js';
+import { sweepDevRequestMatches } from '../devMatchSweep.js';
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -438,7 +439,10 @@ export default async function productRoutes(app) {
       return r;
     });
     await logEvent({ userId, action: 'create', target: 'product_manual', detail: { code, name } });
-    return { ok: true, id: Number(created.id), code };
+    // 신규 제품 생성 → 개발목록 자동 매칭 점검(매칭 시 개발완료 전환) — 실패해도 생성은 유지
+    let devMatch = null;
+    try { devMatch = await sweepDevRequestMatches({ userId }); } catch (_) {}
+    return { ok: true, id: Number(created.id), code, dev_match: devMatch ? { matched: devMatch.matched } : null };
   });
 
   // 제품 화면 수정 — 보낸 필드만 비교해 변경분만 반영. 재고·평균원가는 절대 불변.
@@ -625,7 +629,10 @@ export default async function productRoutes(app) {
     }
 
     await logEvent({ userId, action: 'create', target: 'product_import', detail: { created, updated, unchanged, skipped } });
-    return { ok: true, created, updated, unchanged, skipped };
+    // 마스터 업로드 커밋 → 개발목록 자동 매칭 점검(신규 CTR/SYD 코드가 개발요청과 매칭되면 개발완료 전환)
+    let devMatch = null;
+    try { devMatch = await sweepDevRequestMatches({ userId }); } catch (_) {}
+    return { ok: true, created, updated, unchanged, skipped, dev_match: devMatch ? { matched: devMatch.matched } : null };
   });
 
   // ===== 소재(material) 지정 =====

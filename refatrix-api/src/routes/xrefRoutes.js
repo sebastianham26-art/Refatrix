@@ -1,6 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
+import { sweepDevRequestMatches } from '../devMatchSweep.js';
 
 // 경쟁사 교차참조 (product_xref_codes)
 //  · 업로드 엑셀(예: LISTA GENERAL — BAW·SYD1~3·GROB·VASLO·KYB·MOOG·YOKOMITSU)의 각 행을
@@ -122,6 +123,8 @@ export default async function xrefRoutes(app) {
 
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_xref_codes',
       detail: { bulk: true, rows: out.rows, matched: out.matchedRows, inserted: out.inserted } });
+    // 카탈로그(교차참조) 업로드 → 개발목록 자동 매칭 점검(매칭 시 개발완료 전환)
+    try { out.dev_match = { matched: (await sweepDevRequestMatches({ userId: req.ctx.perm.userId })).matched }; } catch (_) { out.dev_match = null; }
     return out;
   });
 
@@ -196,6 +199,8 @@ export default async function xrefRoutes(app) {
     });
     if (out.error) return reply.code(404).send(out);
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: 'product_xref_codes', detail: { restore_from: sid, restored: out.restored, pre_backup: out.pre_backup.id } });
+    // 스냅샷 복원도 카탈로그 변경 → 개발목록 자동 매칭 점검
+    try { out.dev_match = { matched: (await sweepDevRequestMatches({ userId: req.ctx.perm.userId })).matched }; } catch (_) { out.dev_match = null; }
     return out;
   });
 
