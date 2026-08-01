@@ -337,8 +337,10 @@
     }
   }
   function applyHashTab(){
-    var t='find'; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'find'; }catch(e){}
+    var t='find', q0=''; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'find'; q0=p.get('q')||''; }catch(e){}
     showTab(t==='upload'?'upload':'find');
+    // 딥링크 검색(q=코드) — 개발요청 화면 「카탈로그 보기」 등에서 진입 시 해당 자재 즉시 조회
+    if(q0 && $('q')){ $('q').value=q0; doSearch(); }
   }
   window.addEventListener('hashchange',function(){ if($('loginCard').classList.contains('hidden')) applyHashTab(); });
 

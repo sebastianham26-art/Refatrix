@@ -7,7 +7,7 @@ import { mxTodayStr } from '../workingHours.js';
 import { computeQuoteStage } from '../quoteStage.js';
 import { sweepStageAlerts } from '../stageAlerts.js';
 import { groupDemand, attachVehicleVio, sortDemand, normCode, DEV_CAT_KEYS } from '../devDemand.js';
-import { sweepDevRequestMatches } from '../devMatchSweep.js';
+import { sweepDevRequestMatches, pushDevDemandAndOffer } from '../devMatchSweep.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 function daysBetween(a, b) {
@@ -192,7 +192,49 @@ export default async function devRequestRoutes(app) {
          LEFT JOIN products p ON p.id=d.result_product_id
         WHERE ${conds.join(' AND ')}
         ORDER BY d.requested_at DESC, d.id DESC`, args)).rows;
-    return { items: rows.map((r) => ({ ...withDurations(r), customer_name: r.customer_name })) };
+    // 개발완료 행 보강: 결과 제품의 현재 재고 · 누적 판매 · 살아있는 오퍼시트 수
+    //   (최종 목적 = 개발된 제품의 오퍼·판매 추적. 조회 실패 시에도 목록은 반환)
+    const stockMap = {}, soldMap = {}, offerMap = {};
+    const pids = [...new Set(rows.map((r) => Number(r.result_product_id)).filter(Number.isInteger))];
+    if (pids.length) {
+      const inP = pids.join(',');
+      try {
+        for (const p of (await query(`SELECT id, stock_qty FROM products WHERE id IN (${inP})`)).rows) {
+          stockMap[Number(p.id)] = p.stock_qty != null ? Number(p.stock_qty) : 0;
+        }
+      } catch (_) {}
+      try {
+        for (const s of (await query(
+          `SELECT l.product_id, SUM(l.qty) AS sold
+             FROM sales_invoice_lines l
+             JOIN sales_invoices si ON si.id = l.invoice_id
+            WHERE si.deleted_at IS NULL AND si.status <> 'deleted' AND l.product_id IN (${inP})
+            GROUP BY l.product_id`)).rows) {
+          soldMap[Number(s.product_id)] = Number(s.sold) || 0;
+        }
+      } catch (_) {}
+      try {
+        for (const o of (await query(
+          `SELECT oi.product_id, COUNT(DISTINCT oi.offer_sheet_id) AS sheets
+             FROM offer_sheet_items oi
+             JOIN offer_sheets os ON os.id = oi.offer_sheet_id
+            WHERE os.deleted_at IS NULL AND os.status <> 'cancelled' AND oi.product_id IN (${inP})
+            GROUP BY oi.product_id`)).rows) {
+          offerMap[Number(o.product_id)] = Number(o.sheets) || 0;
+        }
+      } catch (_) { /* 0151 미적용 시 무시 */ }
+    }
+    return {
+      items: rows.map((r) => {
+        const pid = Number(r.result_product_id);
+        return {
+          ...withDurations(r), customer_name: r.customer_name,
+          result_stock_qty: Number.isInteger(pid) && pid in stockMap ? stockMap[pid] : null,
+          result_sold_qty: Number.isInteger(pid) ? (soldMap[pid] || 0) : null,
+          result_offer_sheets: Number.isInteger(pid) ? (offerMap[pid] || 0) : null,
+        };
+      }),
+    };
   });
 
   app.get('/api/dev-requests/:id', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
@@ -275,7 +317,16 @@ export default async function devRequestRoutes(app) {
       }
     });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `dev_request:${id}`, detail: { step: 'developed', ctr: prod.code, todos: todos.length } });
-    return { ok: true, mapped_to: prod.code, todos_created: todos.length };
+    // 개발완료 후속: 수요 → 부족분 대장 + 재고검증 → (재고 있으면) 고객 오퍼시트 / (없으면) 구매 제안
+    let followup = null;
+    try {
+      followup = await pushDevDemandAndOffer({
+        productId: Number(prod.id),
+        rows: [{ id, input_code: d.input_code, customer_id: d.customer_id, requested_qty: d.requested_qty, source_quote_id: d.source_quote_id }],
+        userId: req.ctx.perm.userId,
+      });
+    } catch (_) { /* best-effort — 완료 처리 자체는 유지 */ }
+    return { ok: true, mapped_to: prod.code, todos_created: todos.length, followup };
   });
 
   app.put('/api/dev-requests/:id/cancel', { preHandler: [authGuard, requireDevAccess()] }, async (req, reply) => {
