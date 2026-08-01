@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 오늘 요약 · build daily-0801a</title>
+<title>Refatrix ERP · 오늘 요약 · build daily-0801b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -146,6 +146,21 @@
       <div class="hint" style="margin-top:6px">같은 날짜를 다시 생성하면 그날의 요약이 <b>최신 기록으로 갱신</b>됩니다(날짜당 1건 보관). 한 번에 여러 날짜 선택 시 순서대로 생성됩니다(날짜당 30초~2분).</div>
     </div>
 
+    <!-- WhatsApp 자동 발송 -->
+    <div class="card">
+      <div class="card-h">📲 WhatsApp 자동 발송 <span class="src">멕시코 기준 매일 오전 5시 · 전일 요약을 자동 생성해 디렉터 번호로 발송</span></div>
+      <div id="waBox"><div class="hint">상태 확인 중…</div></div>
+      <div class="genrow no-print">
+        <button class="btn" id="waTestBtn" disabled>📲 어제 요약 지금 발송 (테스트)</button>
+        <span class="hint" id="waHint"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">
+        발송 성공 시 하루 1회만 발송되며, 실패하면 5분 간격으로 최대 5회 재시도합니다. 자유 텍스트는 WhatsApp 정책상
+        <b>디렉터 폰에서 이 비즈니스 번호로 최근 24시간 내 메시지를 보낸 경우</b>에 도달합니다 — 매일 확실히 받으려면
+        가끔 아무 메시지나 답장해 두시거나, 본문 <code>{{1}}</code> 템플릿을 승인받아 <code>WHATSAPP_TEMPLATE</code> 에 등록하세요(자동 폴백).
+      </div>
+    </div>
+
     <!-- 일자별 보관함 -->
     <div class="card">
       <div class="card-h">📚 일자별 보관함 <span class="src">누적 기록 · 날짜당 1건 · 재생성 시 갱신</span></div>
@@ -156,7 +171,7 @@
 </div>
 
 <script>
-  console.log('[daily] build daily-0801a');
+  console.log('[daily] build daily-0801b (WhatsApp 05:00 자동 발송)');
   let session={token:null,user:null,api:''};
   let isDirector=false, aiEnabled=false;
   let selDates=new Set();            // 선택된 날짜(YYYY-MM-DD, 월 이동해도 유지)
@@ -202,6 +217,7 @@
       $('app').classList.remove('hidden');
       renderCal();
       await loadList();
+      loadWaStatus();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
@@ -312,7 +328,8 @@
     if(!items.length){ $('archList').innerHTML='<div class="hint">아직 보관된 요약이 없습니다. 위에서 날짜를 선택해 첫 요약을 생성해보세요.</div>'; return; }
     let h='<table class="arch"><thead><tr><th>날짜</th><th>그날의 기록</th><th>생성</th><th style="width:120px"></th></tr></thead><tbody>';
     for(const it of items){
-      h+='<tr><td class="t">'+esc(krDate(it.summary_date))+(it.has_memo?'<span class="mchip">메모</span>':'')+'</td>'
+      h+='<tr><td class="t">'+esc(krDate(it.summary_date))+(it.has_memo?'<span class="mchip">메모</span>':'')
+        +(it.wa_sent_at?'<span class="mchip" style="background:#e4f0eb;color:#0F6E56" title="WhatsApp 발송됨 '+fmtDateTime(it.wa_sent_at)+'">📲</span>':'')+'</td>'
         +'<td><span class="st">'+esc(statLine(it.stats))+'</span></td>'
         +'<td><span class="st">'+fmtDateTime(it.updated_at||it.created_at)+(it.created_by_name?'<br>'+esc(it.created_by_name):'')+'</span></td>'
         +'<td style="white-space:nowrap"><button class="btn sm arch-open" data-d="'+it.summary_date+'">열람</button> '
@@ -523,6 +540,52 @@
     closeUl();
     return out.join('');
   }
+
+  // ===== WhatsApp 자동 발송 상태 · 테스트 =====
+  async function loadWaStatus(){
+    try{
+      const res=await fetch(session.api+'/api/daily-summary/wa/status',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      let h='';
+      if(d.enabled){
+        h+='<div class="hint" style="font-size:12.5px;color:var(--income)"><b>✅ 자동 발송 사용 중</b> — 매일 멕시코 시각 오전 '+d.send_hour_mx+'시, 전일 요약 → <b>'+esc(d.to_masked||'?')+'</b>'
+          +(d.template?' · 템플릿 폴백: '+esc(d.template)+' ('+esc(d.template_lang)+')':' · 템플릿 폴백 미설정')+'</div>';
+      }else{
+        h+='<div class="hint" style="font-size:12.5px;color:var(--expense)"><b>⚠ 자동 발송 미설정</b> — Railway 환경변수 필요: '
+          +(d.token_set?'':'<code>WHATSAPP_TOKEN</code> ')+(d.phone_id_set?'':'<code>WHATSAPP_PHONE_ID</code> ')
+          +(d.to_masked?'':'<code>DAILY_SUMMARY_WA_TO</code>(수신번호) ')
+          +(d.ai_enabled?'':'<code>ANTHROPIC_API_KEY</code> ')+'</div>';
+      }
+      const rec=(d.recent||[]).filter(r=>r.wa_sent_at||r.wa_status||r.wa_attempts>0);
+      if(rec.length){
+        h+='<table class="arch" style="margin-top:8px"><thead><tr><th>날짜</th><th>발송</th><th>상태</th><th>시도</th></tr></thead><tbody>';
+        for(const r of rec){
+          const okRow=!!r.wa_sent_at;
+          h+='<tr><td class="t">'+esc(r.summary_date)+'</td><td><span class="st">'+(okRow?fmtDateTime(r.wa_sent_at):'—')+'</span></td>'
+            +'<td>'+(okRow?'<span class="mchip" style="background:#e4f0eb;color:#0F6E56">'+esc(r.wa_status||'sent')+'</span>'
+                        :(r.wa_status?'<span class="mchip" style="background:#F6E7E4;color:#B23A2E" title="'+esc(r.wa_error||'')+'">'+esc(r.wa_status)+'</span>':'—'))+'</td>'
+            +'<td>'+(r.wa_attempts||0)+'</td></tr>';
+        }
+        h+='</tbody></table>';
+      }
+      $('waBox').innerHTML=h;
+      $('waTestBtn').disabled=!(d.enabled&&d.ai_enabled);
+    }catch(e){ $('waBox').innerHTML='<div class="hint">발송 상태를 불러오지 못했습니다.</div>'; }
+  }
+  $('waTestBtn').addEventListener('click',async()=>{
+    const btn=$('waTestBtn'); const hint=$('waHint');
+    btn.disabled=true; const prev=btn.textContent; btn.textContent='📲 발송 중…';
+    hint.style.color='var(--muted)'; hint.textContent='어제 요약을 확보해 발송하고 있습니다 (요약이 없으면 생성 — 최대 2분).';
+    try{
+      const res=await fetch(session.api+'/api/daily-summary/wa/send',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ hint.style.color='var(--expense)'; hint.textContent='발송 실패: '+(d.detail||d.error||res.status); }
+      else{ hint.style.color='var(--income)'; hint.textContent='✅ '+d.date+' 요약 발송 완료 ('+(d.mode==='template'?'템플릿 헤드라인':'전체 텍스트')+')'; }
+      loadWaStatus(); loadList();
+    }catch(e){ hint.style.color='var(--expense)'; hint.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ btn.textContent=prev; btn.disabled=false; }
+  });
 
   // ===== 부팅 =====
   $('go').addEventListener('click',login);

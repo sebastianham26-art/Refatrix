@@ -54,6 +54,11 @@
   .mrow .ml{font-size:12px;color:#6f6a60;font-weight:600;margin-right:4px}
   .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line,#e0dccb);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:#8a8676;cursor:pointer}
   .mbtn.on{background:var(--brand,#143D34);color:#fff;border-color:var(--brand,#143D34)}
+  /* 긴 표: 컨테이너 안에서 스크롤 + 열 제목(헤더) 고정 */
+  #dmWrap,#listWrap{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+  #dmWrap:empty,#listWrap:empty{border:none}
+  #dmWrap>table,#listWrap>table{margin-top:0}
+  #dmWrap>table>thead th,#listWrap>table>thead th{position:sticky;top:0;z-index:3;background:#faf8f3;box-shadow:0 1px 0 var(--line)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -133,7 +138,7 @@
 </div>
 
 <script>
-  console.log('[devrequest] build devreq-0801d (목록 헤더정렬·카탈로그 링크·재고/판매/오퍼 추적·개발완료 오퍼/구매 연동)');
+  console.log('[devrequest] build devreq-0801e (표 스크롤+헤더 고정)');
   let session={token:null,user:null,api:''};
   let custList=[], cur=null;
   const $=(id)=>document.getElementById(id);

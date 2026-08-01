@@ -19,7 +19,8 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { MX_OFFSET_MIN } from '../workingHours.js';
-import { buildDailyPrompt, digestStats, extractText, clip } from '../dayDigest.js';
+import { buildDailyPrompt, digestStats, extractText, clip, krDate } from '../dayDigest.js';
+import { waEnabled, waConfig, sendDailySummaryWa } from '../waSend.js';
 
 const MODEL = process.env.DAILY_SUMMARY_MODEL || 'claude-sonnet-4-5-20250929';
 const MAX_DATES = 7;               // 한 번에 생성할 최대 날짜 수(순차 처리)
@@ -374,6 +375,67 @@ async function callAnthropic(prompt) {
   } finally { clearTimeout(timer); }
 }
 
+// 수집 → AI → 저장 한 번에 (POST generate 루프·05시 자동 발송 공용)
+async function generateAndStore(dateStr, userId) {
+  const digest = await collectDayDigest(dateStr);
+  const ai = await callAnthropic(buildDailyPrompt(dateStr, digest));
+  if (!ai.ok) return { ok: false, error: 'ai_failed', detail: ai.error };
+  const content = (ai.text || '').trim();
+  if (!content) return { ok: false, error: 'ai_empty' };
+  const saved = await upsertSummary(dateStr, content, digest, userId);
+  return { ok: true, id: saved.id, regenerated: saved.regenerated, content_md: content, digest };
+}
+
+// ── WhatsApp 자동 발송 (멕시코 05:00 · 전일 요약) ─────────────────────
+const WA_SEND_HOUR_MX = 5;      // MX 현지 05:00 이후 발송
+const WA_MAX_ATTEMPTS = 5;      // 하루 최대 재시도(5분 간격 체크)
+
+function mxNowParts() {
+  const m = new Date(Date.now() + MX_OFFSET_MIN * 60000);
+  return { ymd: m.toISOString().slice(0, 10), hour: m.getUTCHours() };
+}
+
+// force=true(수동 테스트): 발송 이력·시도 상한 무시, 기존 요약 있으면 재사용.
+// force=false(스케줄러): 어제 요약을 새로 생성(하루 확정본) 후 1회만 발송.
+export async function runDailyWaJob({ force = false, dateStr = null, userId = null } = {}) {
+  if (!waEnabled()) return { ok: false, error: 'wa_not_configured' };
+  if (!aiEnabled()) return { ok: false, error: 'no_api_key' };
+  const target = (dateStr && DATE_RE.test(dateStr)) ? dateStr : shiftYmd(mxNowParts().ymd, -1);
+
+  const row = (await query(
+    `SELECT id, content_md, digest, wa_sent_at, COALESCE(wa_attempts,0) AS wa_attempts
+       FROM daily_summaries WHERE summary_date=$1`, [target])).rows[0];
+  if (!force && row && row.wa_sent_at) return { ok: true, skipped: 'already_sent', date: target };
+  if (!force && row && Number(row.wa_attempts) >= WA_MAX_ATTEMPTS) return { ok: false, error: 'max_attempts', date: target };
+
+  // 요약 확보 — 스케줄러는 항상 재생성(하루 전체 확정 데이터), 수동은 있으면 재사용
+  let content, digest;
+  if (force && row && row.content_md) {
+    content = row.content_md;
+    digest = typeof row.digest === 'string' ? safeParse(row.digest) : (row.digest || {});
+  } else {
+    const gen = await generateAndStore(target, userId);
+    if (!gen.ok) {
+      await query(`UPDATE daily_summaries SET wa_attempts=COALESCE(wa_attempts,0)+1, wa_status='failed', wa_error=$2 WHERE summary_date=$1`, [target, 'generate: ' + (gen.detail || gen.error)]).catch(() => {});
+      return { ok: false, error: gen.error, detail: gen.detail, date: target };
+    }
+    content = gen.content_md; digest = gen.digest;
+  }
+
+  const res = await sendDailySummaryWa({ dateLabel: krDate(target), content_md: content, stats: digestStats(digest) });
+  if (res.ok) {
+    await query(
+      `UPDATE daily_summaries SET wa_sent_at=now(), wa_status=$2, wa_error=NULL, wa_attempts=COALESCE(wa_attempts,0)+1 WHERE summary_date=$1`,
+      [target, 'sent_' + res.mode]);
+    logEvent({ userId, action: 'export', target: `daily_summary_wa:${target}`, detail: { mode: res.mode } });
+    return { ok: true, date: target, mode: res.mode };
+  }
+  await query(
+    `UPDATE daily_summaries SET wa_status='failed', wa_error=$2, wa_attempts=COALESCE(wa_attempts,0)+1 WHERE summary_date=$1`,
+    [target, String(res.error || '').slice(0, 400)]);
+  return { ok: false, error: 'send_failed', detail: res.error, date: target };
+}
+
 // 날짜당 1건 유지: UPDATE 먼저, 없으면 INSERT (pg-mem 호환 위해 ON CONFLICT 미사용)
 async function upsertSummary(dateStr, content, digest, uid) {
   const dj = JSON.stringify(digest);
@@ -407,14 +469,10 @@ export default async function dailySummaryRoutes(app) {
     const results = [];
     for (const d of dates) {              // 순차 — API rate limit·DB 부하 방지
       try {
-        const digest = await collectDayDigest(d);
-        const ai = await callAnthropic(buildDailyPrompt(d, digest));
-        if (!ai.ok) { results.push({ date: d, ok: false, error: 'ai_failed', detail: ai.error }); continue; }
-        const content = (ai.text || '').trim();
-        if (!content) { results.push({ date: d, ok: false, error: 'ai_empty' }); continue; }
-        const saved = await upsertSummary(d, content, digest, uid);
-        logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'create', target: `daily_summary:${d}`, detail: { regenerated: saved.regenerated } });
-        results.push({ date: d, ok: true, id: saved.id, regenerated: saved.regenerated, stats: digestStats(digest) });
+        const gen = await generateAndStore(d, uid);
+        if (!gen.ok) { results.push({ date: d, ok: false, error: gen.error, detail: gen.detail }); continue; }
+        logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'create', target: `daily_summary:${d}`, detail: { regenerated: gen.regenerated } });
+        results.push({ date: d, ok: true, id: gen.id, regenerated: gen.regenerated, stats: digestStats(gen.digest) });
       } catch (e) {
         req.log.error({ err: e, date: d }, 'daily summary generate failed');
         results.push({ date: d, ok: false, error: 'generate_failed' });
@@ -427,21 +485,45 @@ export default async function dailySummaryRoutes(app) {
   app.get('/api/daily-summary/list', { preHandler: [authGuard, requireDirector] }, async (req) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || 180, 1), 400);
     const rows = (await query(
-      `SELECT s.id, s.summary_date, s.digest, s.model, s.memo, s.created_at, s.updated_at, u.name AS created_by_name
+      `SELECT s.id, s.summary_date, s.digest, s.model, s.memo, s.created_at, s.updated_at, u.name AS created_by_name,
+              s.wa_sent_at, s.wa_status
          FROM daily_summaries s
          LEFT JOIN users u ON u.id = s.created_by
         ORDER BY s.summary_date DESC
         LIMIT ${limit}`)).rows;
     return {
       ai_enabled: aiEnabled(),
+      wa_enabled: waEnabled(),
       items: rows.map((r) => ({
         id: Number(r.id), summary_date: d10(r.summary_date), model: r.model,
         has_memo: !!(r.memo && String(r.memo).trim()),
         created_by_name: r.created_by_name || null,
         created_at: r.created_at, updated_at: r.updated_at,
+        wa_sent_at: r.wa_sent_at || null, wa_status: r.wa_status || null,
         stats: digestStats(typeof r.digest === 'string' ? safeParse(r.digest) : r.digest),
       })),
     };
+  });
+
+  // ── WhatsApp 자동 발송: 설정·최근 상태 — 디렉터 전용 ──
+  app.get('/api/daily-summary/wa/status', { preHandler: [authGuard, requireDirector] }, async () => {
+    let recent = [];
+    try {
+      recent = (await query(
+        `SELECT summary_date, wa_sent_at, wa_status, wa_error, COALESCE(wa_attempts,0) AS wa_attempts
+           FROM daily_summaries ORDER BY summary_date DESC LIMIT 7`)).rows
+        .map((r) => ({ summary_date: d10(r.summary_date), wa_sent_at: r.wa_sent_at, wa_status: r.wa_status, wa_error: r.wa_error, wa_attempts: Number(r.wa_attempts) }));
+    } catch (_) { /* 0161 미적용 시 */ }
+    return { ...waConfig(), ai_enabled: aiEnabled(), send_hour_mx: WA_SEND_HOUR_MX, recent };
+  });
+
+  // ── WhatsApp 즉시(테스트) 발송 — 디렉터 전용. body {date?} 기본=MX 어제 ──
+  app.post('/api/daily-summary/wa/send', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const d = req.body && req.body.date ? String(req.body.date) : null;
+    if (d && !DATE_RE.test(d)) return reply.code(400).send({ error: 'bad_date' });
+    const out = await runDailyWaJob({ force: true, dateStr: d, userId: req.ctx.perm.userId });
+    if (!out.ok) return reply.code(502).send(out);
+    return out;
   });
 
   // ── 1건 전체(요약 + 원본 digest) — 디렉터 전용 ──
@@ -486,6 +568,20 @@ export default async function dailySummaryRoutes(app) {
     logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'delete', target: `daily_summary:${d}` });
     return { ok: true, id: Number(r.id) };
   });
+
+  // ── 매일 MX 05:00 전일 요약 → WhatsApp 자동 발송 스케줄러 (5분 주기 체크) ──
+  //   · 05:00 이후 첫 체크에서 발송(서버 재시작으로 놓쳐도 그날 안에 따라잡음).
+  //   · 발송 성공(wa_sent_at) 시 하루 1회 가드 · 실패는 5분 간격 재시도(최대 5회).
+  //   · WHATSAPP_* 환경변수 미설정이면 아무것도 하지 않음(무해).
+  if (!globalThis.__refatrixDailyWaScheduler) {
+    const tick = async () => {
+      if (!waEnabled() || !aiEnabled()) return;
+      if (mxNowParts().hour < WA_SEND_HOUR_MX) return;
+      await runDailyWaJob({});
+    };
+    globalThis.__refatrixDailyWaScheduler = setInterval(() => { tick().catch(() => {}); }, 300000);
+    setTimeout(() => { tick().catch(() => {}); }, 20000);
+  }
 }
 
 function safeParse(s) { try { return JSON.parse(s); } catch (_) { return {}; } }
