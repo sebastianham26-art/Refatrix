@@ -29,6 +29,22 @@ export function waEnabled() {
   return !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID && process.env.DAILY_SUMMARY_WA_TO);
 }
 
+// 토큰·발신번호만 있으면 임의 수신자 발송 가능(오퍼시트 등 — 수신번호는 호출 시 지정)
+export function waApiReady() {
+  return !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID);
+}
+
+// 전화번호 → WhatsApp 수신 형식(숫자만). 멕시코 규칙:
+//   10자리(로컬) → 521+10자리 · '52'+10자리(12자리) → 521 로 보정 · 이미 521+10자리(13)면 그대로.
+export function normalizeWaNumber(phone) {
+  let d = String(phone || '').replace(/\D/g, '');
+  if (!d) return null;
+  if (d.length === 10) d = '521' + d;
+  else if (d.length === 12 && d.startsWith('52')) d = '521' + d.slice(2);
+  if (d.length < 11 || d.length > 15) return null;
+  return d;
+}
+
 export function waConfig() {
   const to = String(process.env.DAILY_SUMMARY_WA_TO || '');
   return {
@@ -100,28 +116,40 @@ async function callGraph(payload) {
   } finally { clearTimeout(timer); }
 }
 
-export async function sendWaText(text) {
+export async function sendWaText(text, to = null) {
   return callGraph({
     messaging_product: 'whatsapp',
-    to: String(process.env.DAILY_SUMMARY_WA_TO),
+    to: String(to || process.env.DAILY_SUMMARY_WA_TO),
     type: 'text',
     text: { body: String(text || '').slice(0, 4096), preview_url: false },
   });
 }
 
-export async function sendWaTemplate(param) {
-  const name = process.env.WHATSAPP_TEMPLATE;
+export async function sendWaTemplate(param, opts = {}) {
+  const name = opts.name || process.env.WHATSAPP_TEMPLATE;
   if (!name) return { ok: false, code: null, error: 'no_template' };
   return callGraph({
     messaging_product: 'whatsapp',
-    to: String(process.env.DAILY_SUMMARY_WA_TO),
+    to: String(opts.to || process.env.DAILY_SUMMARY_WA_TO),
     type: 'template',
     template: {
       name,
-      language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' },
+      language: { code: opts.lang || process.env.WHATSAPP_TEMPLATE_LANG || 'es_MX' },
       components: [{ type: 'body', parameters: [{ type: 'text', text: String(param || '').replace(/[\n\t]+/g, ' ').slice(0, 1024) }] }],
     },
   });
+}
+
+// 임의 수신자 발송(오퍼시트 등): ① 텍스트 → ② 실패 시 템플릿 헤드라인 폴백
+//   templateName 우선순위: 인자 > OFFERSHEET_WA_TEMPLATE(호출부에서 지정) > WHATSAPP_TEMPLATE
+export async function sendWaTo({ to, text, headline, templateName = null, templateLang = null }) {
+  if (!waApiReady()) return { ok: false, mode: null, error: 'wa_not_configured' };
+  if (!to) return { ok: false, mode: null, error: 'no_recipient' };
+  const first = await sendWaText(text, to);
+  if (first.ok) return { ok: true, mode: 'text', message_id: first.message_id };
+  const fb = await sendWaTemplate(headline, { to, name: templateName || process.env.WHATSAPP_TEMPLATE, lang: templateLang });
+  if (fb.ok) return { ok: true, mode: 'template', message_id: fb.message_id, text_error: first.error };
+  return { ok: false, mode: null, error: `text: ${first.error}` + (fb.error !== 'no_template' ? ` / template: ${fb.error}` : ''), code: first.code };
 }
 
 // 요약 1건 발송: ① 자유 텍스트 → ② 실패 시(24h 창 밖 등) 템플릿 헤드라인 폴백

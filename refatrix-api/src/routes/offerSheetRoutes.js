@@ -8,6 +8,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { generateOfferSheets } from '../offerSheets.js';
+import { waApiReady, normalizeWaNumber, sendWaTo } from '../waSend.js';
 
 export default async function offerSheetRoutes(app) {
   // ---- 목록 ----
@@ -18,6 +19,7 @@ export default async function offerSheetRoutes(app) {
       `SELECT os.id, os.offer_no, os.status, os.origin, os.import_batch_id,
               os.subtotal_mxn, os.iva_mxn, os.total_mxn,
               os.created_at, os.sent_at, os.sent_channel,
+              os.wa_sent_at, os.wa_status, os.wa_error, os.wa_to,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.phone AS customer_phone,
               us.name AS sent_by_name,
               (SELECT COUNT(*)             FROM offer_sheet_items oi WHERE oi.offer_sheet_id = os.id) AS item_count,
@@ -39,11 +41,13 @@ export default async function offerSheetRoutes(app) {
         import_batch_id: r.import_batch_id != null ? Number(r.import_batch_id) : null,
         subtotal_mxn: Number(r.subtotal_mxn), iva_mxn: Number(r.iva_mxn), total_mxn: Number(r.total_mxn),
         created_at: r.created_at, sent_at: r.sent_at, sent_channel: r.sent_channel, sent_by_name: r.sent_by_name,
+        wa_sent_at: r.wa_sent_at || null, wa_status: r.wa_status || null, wa_error: r.wa_error || null, wa_to: r.wa_to || null,
         customer_id: Number(r.customer_id), customer_code: r.customer_code,
         customer_name: r.customer_name, customer_phone: r.customer_phone,
         item_count: Number(r.item_count), total_qty: Number(r.total_qty),
       })),
       summary: { ready: Number(summary.ready) || 0, sent: Number(summary.sent) || 0 },
+      wa: { api_ready: waApiReady(), template: process.env.OFFERSHEET_WA_TEMPLATE || process.env.WHATSAPP_TEMPLATE || null },
     };
   });
 
@@ -101,6 +105,8 @@ export default async function offerSheetRoutes(app) {
         import_batch_no: os.import_batch_no,
         subtotal_mxn: Number(os.subtotal_mxn), iva_mxn: Number(os.iva_mxn), total_mxn: Number(os.total_mxn),
         created_at: os.created_at, sent_at: os.sent_at, sent_channel: os.sent_channel, sent_by_name: os.sent_by_name,
+        wa_sent_at: os.wa_sent_at || null, wa_status: os.wa_status || null, wa_error: os.wa_error || null,
+        wa_to: os.wa_to || null, wa_message_id: os.wa_message_id || null,
         note: os.note,
         customer_id: Number(os.customer_id), customer_code: os.customer_code, customer_name: os.customer_name,
         customer_phone: os.customer_phone, customer_contact: os.customer_contact, customer_rfc: os.customer_rfc,
@@ -128,6 +134,60 @@ export default async function offerSheetRoutes(app) {
       await logEvent({ userId, action: 'create', target: 'offer_sheets', detail: { manual: true, sheets: out.sheets, items: out.items } });
     }
     return { ok: true, ...out };
+  });
+
+  // ---- WhatsApp API 자동발송 (버튼 한 번 → 고객 번호로 직접 발송 + 추적 기록) ----
+  //   ① 텍스트(오퍼 문구 전체) → ② 실패 시 OFFERSHEET_WA_TEMPLATE(없으면 WHATSAPP_TEMPLATE)
+  //      {{1}} 한 줄 헤드라인 폴백(고객이 24h 창 밖일 때).
+  //   성공: status=sent + sent_*(기존 추적) + wa_*(API 원장) 기록. 재발송 허용(ready/sent).
+  app.post('/api/offersheets/:id/wa-send', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
+    if (!waApiReady()) {
+      return reply.code(503).send({ error: 'wa_not_configured', note: 'Railway 환경변수 WHATSAPP_TOKEN · WHATSAPP_PHONE_ID 를 설정해야 자동발송을 사용할 수 있습니다. (설정 가이드: 화면의 「자동발송 설정 방법」 참고)' });
+    }
+    const id = Number(req.params.id);
+    const os = (await query(
+      `SELECT os.*, c.name AS customer_name, c.phone AS customer_phone, c.contact AS customer_contact
+         FROM offer_sheets os JOIN customers c ON c.id = os.customer_id
+        WHERE os.id = $1 AND os.deleted_at IS NULL`, [id])).rows[0];
+    if (!os) return reply.code(404).send({ error: 'not_found' });
+    if (os.status === 'cancelled') return reply.code(409).send({ error: 'cancelled_sheet' });
+    const to = normalizeWaNumber(req.body && req.body.to ? req.body.to : os.customer_phone);
+    if (!to) return reply.code(400).send({ error: 'no_phone', note: '고객 전화번호가 없거나 형식이 올바르지 않습니다. 고객관리에서 번호를 확인하세요.' });
+
+    // 제품별 합산 라인(상세와 동일 기준)
+    const lines = (await query(
+      `SELECT p.code AS ctr_code, p.name AS product_name, SUM(oi.offer_qty) AS qty,
+              MAX(oi.unit_price) AS unit_price
+         FROM offer_sheet_items oi JOIN products p ON p.id = oi.product_id
+        WHERE oi.offer_sheet_id = $1
+        GROUP BY p.code, p.name ORDER BY p.code`, [id])).rows;
+    let emisor = 'CTR';
+    try { emisor = (await query(`SELECT emisor FROM company_settings WHERE id=1`)).rows[0]?.emisor || 'CTR'; } catch (_) {}
+    const fmtm = (n) => '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const itemsTxt = lines.map((l) => `• ${l.ctr_code || ''} — ${l.product_name || ''} × ${Number(l.qty) || 0}  (${fmtm(l.unit_price)} c/u)`).join('\n');
+    const text = `Hola${os.customer_contact ? ' ' + os.customer_contact : ''}, le saludamos de parte de ${emisor}. 🎉\n\n`
+      + `¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n`
+      + itemsTxt
+      + `\n\nSubtotal: ${fmtm(os.subtotal_mxn)} · IVA: ${fmtm(os.iva_mxn)} · *Total: ${fmtm(os.total_mxn)} MXN*`
+      + `\n\nOferta ${os.offer_no || ''} — sujeto a existencia disponible. ¡Le recomendamos confirmar su pedido pronto, gracias!`;
+    const headline = `${emisor}: ${lines.length} producto(s) que solicitó ya están disponibles. Oferta ${os.offer_no || ''}, total ${fmtm(os.total_mxn)} MXN. Responda este mensaje para recibir el detalle.`;
+
+    const res = await sendWaTo({ to, text, headline, templateName: process.env.OFFERSHEET_WA_TEMPLATE || null });
+    if (res.ok) {
+      await query(
+        `UPDATE offer_sheets
+            SET status = CASE WHEN status='ready' THEN 'sent' ELSE status END,
+                sent_at = COALESCE(sent_at, now()), sent_by = COALESCE(sent_by, $2), sent_channel = 'whatsapp_api',
+                wa_sent_at = now(), wa_status = $3, wa_error = NULL, wa_to = $4, wa_message_id = $5, updated_at = now()
+          WHERE id = $1`, [id, req.ctx.perm.userId, 'sent_' + res.mode, to, res.message_id || null]);
+      await logEvent({ userId: req.ctx.perm.userId, action: 'export', target: `offer_sheet:${id}`, detail: { wa_send: true, mode: res.mode, to: to.slice(0, 3) + '****' } });
+      return { ok: true, mode: res.mode, to_masked: to.slice(0, 3) + '****' + to.slice(-4), status: os.status === 'ready' ? 'sent' : os.status };
+    }
+    await query(
+      `UPDATE offer_sheets SET wa_status='failed', wa_error=$2, wa_to=$3, updated_at=now() WHERE id=$1`,
+      [id, String(res.error || '').slice(0, 400), to]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'export', target: `offer_sheet:${id}`, detail: { wa_send: false, error: String(res.error || '').slice(0, 120) }, result: 'denied' });
+    return reply.code(502).send({ error: 'send_failed', detail: res.error });
   });
 
   // ---- 발송 완료 기록 (수동 — WhatsApp 으로 보낸 뒤 확인 처리) ----

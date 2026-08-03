@@ -109,7 +109,20 @@
       <div class="hint">부족분으로 남았던 제품이 <b>입고(수입입고 승인 → 재고 등재)</b>되면 자동으로 고객별 오퍼 시트가 만들어집니다.
         대상: ① 전환확정(인보이스 발행)·매출등록·견적만료 시 기록된 부족분 + ② <b>견적서의 부족 라인(최초 견적 부족분 — 전환 전 견적 및 최근 90일 내 만료 견적 포함)</b>.
         [스캔·생성]은 지금 재고가 있는 대기 수요 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
-        시트를 열어 <b>PDF 출력 → WhatsApp 전송(첨부는 수동) → 발송완료</b> 순서로 처리하세요.</div>
+        시트를 열어 <b>📲 WhatsApp 자동발송</b>(버튼 한 번, 발송 이력 자동 기록) 또는 <b>PDF 출력 → 💚 수동 전송 → 발송완료 처리</b>로 보내세요.</div>
+      <details style="margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#fbfaf6">
+        <summary style="cursor:pointer;font-weight:800;font-size:12.5px;color:var(--brand)">📲 WhatsApp 자동발송 설정 방법 (토큰 발급 — 클릭 단위 안내)</summary>
+        <div class="hint" style="margin-top:8px;line-height:1.8">
+          <b>준비물:</b> Facebook 계정 · 회사용 전화번호 1개(기존 WhatsApp 앱에서 <u>사용 중이지 않은</u> 번호 권장)<br>
+          <b>① Meta 개발자 앱 만들기</b> — <b>developers.facebook.com</b> 접속 → 우상단 [My Apps] → [Create App] → 유형 <b>Business</b> 선택 → 앱 이름(예: Refatrix) 입력 → [Create App]<br>
+          <b>② WhatsApp 추가</b> — 앱 대시보드에서 <b>WhatsApp</b> 카드의 [Set up] 클릭 → 비즈니스 포트폴리오 선택(없으면 새로 만들기)<br>
+          <b>③ 발신번호 등록</b> — 좌측 <b>WhatsApp → API Setup</b> → [Add phone number] → 회사 번호 입력·SMS 인증 → 화면의 <b>Phone number ID</b> 를 복사 → Railway 변수 <code>WHATSAPP_PHONE_ID</code><br>
+          <b>④ 영구 토큰 발급</b> — <b>business.facebook.com → 설정(Business Settings) → 사용자 → 시스템 사용자</b> → [추가](이름 예: refatrix-bot, 역할 관리자) → [자산 추가]에서 위 앱 선택(전체 제어) → [토큰 생성] → 앱 선택 → 만료 <b>없음</b> → 권한 <b>whatsapp_business_messaging</b> + <b>whatsapp_business_management</b> 체크 → 생성된 토큰 복사 → Railway 변수 <code>WHATSAPP_TOKEN</code> <span style="color:var(--expense)">(API Setup 화면의 임시 토큰은 24시간만 유효 — 반드시 시스템 사용자 영구 토큰 사용)</span><br>
+          <b>⑤ Railway 등록</b> — Railway → 서비스 → Variables 에 <code>WHATSAPP_TOKEN</code>·<code>WHATSAPP_PHONE_ID</code> 저장 → 자동 재배포 후 이 화면 새로고침 → 📲 버튼 활성<br>
+          <b>⑥ (권장) 템플릿 승인</b> — <b>business.facebook.com → WhatsApp Manager → 메시지 템플릿 → 템플릿 만들기</b> → 카테고리 <b>유틸리티</b> · 언어 스페인어(MEX) · 본문에 <code>{{1}}</code> 하나만 넣고 제출 → 승인(수 분~수 시간) 후 템플릿 이름을 Railway 변수 <code>OFFERSHEET_WA_TEMPLATE</code> 에 저장. 고객이 24시간 내 회신한 적 없어도 헤드라인 요약이 도달합니다.<br>
+          <b>참고:</b> 발신번호 미보유 시 API Setup 의 테스트 번호로 먼저 검증 가능(수신자 5명 제한). 오늘 요약 05시 자동 보고와 같은 토큰을 공유합니다.
+        </div>
+      </details>
       <div style="margin:8px 0 4px">
         <label style="display:inline">상태</label>
         <select id="osFilter" onchange="osRender()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
@@ -349,7 +362,7 @@
   }
 
   // ===================== Offer Sheet (부족분 입고 알림·재오퍼) =====================
-  let osItems=[], osSummary=null, osDetail=null, companyCache=null;
+  let osItems=[], osSummary=null, osDetail=null, companyCache=null, osWaCfg={api_ready:false,template:null};
   function showTab(t){
     $('tabShort').classList.toggle('hidden',t!=='short'); $('tabCust').classList.toggle('hidden',t!=='cust'); $('tabOffer').classList.toggle('hidden',t!=='offer');
     $('tabBtnShort').classList.toggle('on',t==='short'); $('tabBtnCust').classList.toggle('on',t==='cust'); $('tabBtnOffer').classList.toggle('on',t==='offer');
@@ -364,12 +377,21 @@
   async function osLoad(){
     try{
       const d=await fetch(session.api+'/api/offersheets?status=all',{headers:auth()}).then(r=>r.json());
-      osItems=d.items||[]; osSummary=d.summary||null;
+      osItems=d.items||[]; osSummary=d.summary||null; osWaCfg=d.wa||{api_ready:false,template:null};
       $('osBadge').textContent=(osSummary&&osSummary.ready>0)?('('+osSummary.ready+')'):'';
       osRender();
     }catch(e){ $('osWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
   function osStatusPill(s){ const t={ready:'발송 대기',sent:'발송 완료',cancelled:'취소됨'}[s]||s; return '<span class="pill '+esc(s)+'">'+t+'</span>'; }
+  // WhatsApp API 발송 추적 셀: 성공=📲 시각·모드, 실패=⚠ 사유(툴팁)
+  function osWaCell(r){
+    if(r.wa_sent_at){
+      const mode=r.wa_status==='sent_template'?'템플릿':'텍스트';
+      return '<span class="pill sent" title="'+esc(r.wa_to||'')+' · '+mode+'">📲 '+d10(r.wa_sent_at)+'</span>';
+    }
+    if(r.wa_status==='failed') return '<span class="pill cancelled" title="'+esc(r.wa_error||'')+'">⚠ 실패</span>';
+    return '<span class="hint">—</span>';
+  }
   const d10=(s)=> s?String(s).slice(0,10):'—';
   function osRender(){
     const f=$('osFilter').value;
@@ -382,7 +404,7 @@
         +'</div>';
     }
     if(!list.length){ $('osWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">해당 상태의 offer sheet가 없습니다. 입고 승인 시 자동 생성되며, [스캔·생성]으로 수동 생성할 수도 있습니다.</div>'; return; }
-    let html=head+'<table><thead><tr><th>상태</th><th>번호</th><th>고객</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액(IVA포함)</th><th>생성</th><th>발송</th><th>구분</th></tr></thead><tbody>';
+    let html=head+'<table><thead><tr><th>상태</th><th>번호</th><th>고객</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액(IVA포함)</th><th>생성</th><th>발송</th><th>📲 WhatsApp</th><th>구분</th></tr></thead><tbody>';
     list.forEach(r=>{
       html+='<tr style="cursor:pointer" onclick="osOpen('+r.id+')">'
         +'<td>'+osStatusPill(r.status)+'</td>'
@@ -393,6 +415,7 @@
         +'<td class="r" style="font-weight:800">'+fmtm(r.total_mxn)+'</td>'
         +'<td>'+d10(r.created_at)+'</td>'
         +'<td>'+(r.sent_at?d10(r.sent_at)+(r.sent_by_name?' ('+esc(r.sent_by_name)+')':''):'—')+'</td>'
+        +'<td>'+osWaCell(r)+'</td>'
         +'<td class="hint">'+(r.origin==='auto'?'입고 자동':'수동')+'</td>'
         +'</tr>';
     });
@@ -428,11 +451,23 @@
       +(s.customer_phone?' · 📞 '+esc(s.customer_phone):' · <span style="color:var(--expense)">전화 미등록 — 고객관리에서 등록하면 WhatsApp 버튼 활성화</span>')+'</div>';
     h+='<div style="margin:12px 0 4px;display:flex;gap:8px;flex-wrap:wrap">'
       +'<button class="btn" onclick="osPrintPdf()">🧾 Offer Sheet PDF 출력</button>'
-      +(s.customer_phone?'<button class="btn wa" onclick="osWhatsapp()">💚 WhatsApp 열기</button>':'')
+      +(s.customer_phone&&s.status!=='cancelled'
+        ?(osWaCfg.api_ready
+          ?'<button class="btn wa" onclick="osWaSend()">📲 WhatsApp 자동발송</button>'
+          :'<button class="btn wa" disabled title="Railway 환경변수 WHATSAPP_TOKEN·WHATSAPP_PHONE_ID 필요 — 아래 「자동발송 설정 방법」 참고">📲 자동발송(미설정)</button>')
+        :'')
+      +(s.customer_phone?'<button class="btn ghost" onclick="osWhatsapp()">💚 수동으로 열기</button>':'')
       +(s.status==='ready'?'<button class="btn ghost" onclick="osMarkSent()">✅ 발송완료 처리</button>':'')
       +(s.status!=='cancelled'?'<button class="btn danger" onclick="osCancel()">✖ 취소</button>':'')
       +'</div>'
-      +'<div class="hint">WhatsApp 버튼은 안내 문구가 채워진 채팅을 엽니다. PDF는 [PDF 출력]으로 저장한 뒤 채팅에 직접 첨부하세요. (API 자동발송은 추후)</div>';
+      +'<div class="hint">📲 자동발송 = 버튼 한 번으로 고객 번호에 오퍼 문구가 바로 전송되고 발송 이력이 기록됩니다'
+      +(osWaCfg.template?' (24시간 창 밖이면 템플릿 '+esc(osWaCfg.template)+' 헤드라인으로 자동 폴백)':' (템플릿 미설정 — 고객이 24시간 내 회신한 적 없으면 도달 안 될 수 있음)')
+      +'. 💚 수동 = 문구가 채워진 채팅창만 열림(PDF 첨부는 수동).</div>';
+    if(s.wa_sent_at||s.wa_status){
+      h+='<div class="hint" style="margin-top:4px">'
+        +(s.wa_sent_at?('📲 API 발송: '+d10(s.wa_sent_at)+' · '+(s.wa_status==='sent_template'?'템플릿':'텍스트')+' · '+esc(s.wa_to||'')+(s.wa_message_id?' · id '+esc(String(s.wa_message_id).slice(0,24))+'…':'')):('⚠ API 발송 실패: '+esc(s.wa_error||'')))
+        +'</div>';
+    }
     h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생 · 출처</th></tr></thead><tbody>';
     lines.forEach(l=>{
       h+='<tr><td><b>'+esc(l.ctr_code||'')+'</b></td><td>'+esc(l.product_name||'')+'</td>'
@@ -448,6 +483,18 @@
       +'<div style="text-align:right;margin-top:10px;font-size:13.5px">Subtotal '+fmtm(s.subtotal_mxn)+' · IVA '+fmtm(s.iva_mxn)+' · <b style="color:var(--brand)">Total '+fmtm(s.total_mxn)+'</b></div>';
     if(s.sent_at) h+='<div class="hint" style="margin-top:6px">발송: '+d10(s.sent_at)+' · '+esc(s.sent_channel||'')+(s.sent_by_name?' · '+esc(s.sent_by_name):'')+'</div>';
     $('osModalBody').innerHTML=h;
+  }
+  async function osWaSend(){
+    if(!osDetail)return;
+    const s=osDetail.sheet;
+    if(!confirm('고객 '+(s.customer_name||'')+' ('+(s.customer_phone||'')+') 에게 이 오퍼시트를 WhatsApp 으로 바로 발송할까요?\n발송 결과는 자동으로 기록됩니다.'))return;
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+s.id+'/wa-send',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('발송 실패: '+(d.detail||d.note||d.error||res.status)); await osLoad(); osOpen(s.id); return; }
+      alert('✅ 발송 완료 ('+(d.mode==='template'?'템플릿 헤드라인':'전체 텍스트')+' · '+(d.to_masked||'')+')');
+      await osLoad(); osOpen(s.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
   }
   async function osMarkSent(){
     if(!osDetail)return;
