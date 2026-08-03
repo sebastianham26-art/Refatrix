@@ -23,18 +23,37 @@ export default async function offerSheetRoutes(app) {
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.phone AS customer_phone,
               us.name AS sent_by_name,
               (SELECT COUNT(*)             FROM offer_sheet_items oi WHERE oi.offer_sheet_id = os.id) AS item_count,
-              (SELECT COALESCE(SUM(oi.offer_qty),0) FROM offer_sheet_items oi WHERE oi.offer_sheet_id = os.id) AS total_qty
+              (SELECT COALESCE(SUM(oi.offer_qty),0) FROM offer_sheet_items oi WHERE oi.offer_sheet_id = os.id) AS total_qty,
+              (SELECT COUNT(*) FROM offer_sheet_replies rr WHERE rr.offer_sheet_id = os.id) AS reply_count,
+              lr.reply_type AS last_reply_type, lr.created_at AS last_reply_at,
+              LEFT(COALESCE(lr.note,''), 120) AS last_reply_note
          FROM offer_sheets os
          JOIN customers c ON c.id = os.customer_id
          LEFT JOIN users us ON us.id = os.sent_by
+         LEFT JOIN LATERAL (
+           SELECT r2.reply_type, r2.created_at, r2.note
+             FROM offer_sheet_replies r2
+            WHERE r2.offer_sheet_id = os.id AND r2.reply_type <> 'note'
+            ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1
+         ) lr ON true
         WHERE os.deleted_at IS NULL
           AND ($1 = 'all' OR os.status = $1)
         ORDER BY os.created_at DESC, os.id DESC
         LIMIT 300`, [status])).rows;
+    // 요약: 발송대기/발송 + 회신 현황(발송된 시트 기준 — 실질 회신(note 제외) 유무·주문 전환)
     const summary = (await query(
-      `SELECT COUNT(*) FILTER (WHERE status='ready') AS ready,
-              COUNT(*) FILTER (WHERE status='sent')  AS sent
-         FROM offer_sheets WHERE deleted_at IS NULL`)).rows[0];
+      `SELECT COUNT(*) FILTER (WHERE os.status='ready') AS ready,
+              COUNT(*) FILTER (WHERE os.status='sent')  AS sent,
+              COUNT(*) FILTER (WHERE os.status='sent' AND lr.reply_type IS NOT NULL) AS replied,
+              COUNT(*) FILTER (WHERE os.status='sent' AND lr.reply_type IS NULL) AS no_reply,
+              COUNT(*) FILTER (WHERE os.status='sent' AND lr.reply_type IN ('ordered','partial')) AS ordered
+         FROM offer_sheets os
+         LEFT JOIN LATERAL (
+           SELECT r2.reply_type FROM offer_sheet_replies r2
+            WHERE r2.offer_sheet_id = os.id AND r2.reply_type <> 'note'
+            ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1
+         ) lr ON true
+        WHERE os.deleted_at IS NULL`)).rows[0];
     return {
       items: rows.map((r) => ({
         id: Number(r.id), offer_no: r.offer_no, status: r.status, origin: r.origin,
@@ -45,8 +64,16 @@ export default async function offerSheetRoutes(app) {
         customer_id: Number(r.customer_id), customer_code: r.customer_code,
         customer_name: r.customer_name, customer_phone: r.customer_phone,
         item_count: Number(r.item_count), total_qty: Number(r.total_qty),
+        reply_count: Number(r.reply_count) || 0,
+        last_reply_type: r.last_reply_type || null,
+        last_reply_at: r.last_reply_at || null,
+        last_reply_note: r.last_reply_note || null,
       })),
-      summary: { ready: Number(summary.ready) || 0, sent: Number(summary.sent) || 0 },
+      summary: {
+        ready: Number(summary.ready) || 0, sent: Number(summary.sent) || 0,
+        replied: Number(summary.replied) || 0, no_reply: Number(summary.no_reply) || 0,
+        ordered: Number(summary.ordered) || 0,
+      },
       wa: { api_ready: waApiReady(), template: process.env.OFFERSHEET_WA_TEMPLATE || process.env.WHATSAPP_TEMPLATE || null },
     };
   });
@@ -121,7 +148,44 @@ export default async function offerSheetRoutes(app) {
         line_iva: Number(r.line_iva), line_total: Number(r.line_total), stock_qty: Number(r.stock_qty),
       })),
       lines: Object.values(grouped),
+      // 고객 회신 원장(최신순) — 화면에서 타임라인으로 표시
+      replies: (await query(
+        `SELECT r.id, r.reply_type, r.note, r.created_at, u.name AS created_by_name
+           FROM offer_sheet_replies r LEFT JOIN users u ON u.id=r.created_by
+          WHERE r.offer_sheet_id=$1 ORDER BY r.created_at DESC, r.id DESC`, [id])).rows.map((r) => ({
+        id: Number(r.id), reply_type: r.reply_type, note: r.note, created_at: r.created_at,
+        created_by_name: r.created_by_name || null,
+      })),
     };
+  });
+
+  // ---- 고객 회신 기록 추가 ----
+  //   body: { reply_type: ordered|partial|considering|declined|no_answer|note, note? }
+  //   ordered=주문함 / partial=일부 주문 / considering=검토중 / declined=거절 / no_answer=무응답 / note=단순 메모
+  const REPLY_TYPES = ['ordered', 'partial', 'considering', 'declined', 'no_answer', 'note'];
+  app.post('/api/offersheets/:id/replies', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const type = String(req.body?.reply_type || 'note');
+    const note = String(req.body?.note || '').trim().slice(0, 2000) || null;
+    if (!REPLY_TYPES.includes(type)) return reply.code(400).send({ error: 'bad_reply_type' });
+    if (type === 'note' && !note) return reply.code(400).send({ error: 'note_required', note: '메모 유형은 내용이 필요합니다.' });
+    const os = (await query(`SELECT id, status FROM offer_sheets WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!os) return reply.code(404).send({ error: 'not_found' });
+    const r = (await query(
+      `INSERT INTO offer_sheet_replies (offer_sheet_id, reply_type, note, created_by)
+       VALUES ($1,$2,$3,$4) RETURNING id, created_at`, [id, type, note, req.ctx.perm.userId])).rows[0];
+    await logEvent({ userId: req.ctx.perm.userId, action: 'create', target: `offer_sheet_reply:${r.id}`, detail: { sheet: id, reply_type: type } });
+    return { ok: true, id: Number(r.id), created_at: r.created_at };
+  });
+
+  // ---- 회신 기록 삭제(디렉터 — 오기입 정정) ----
+  app.delete('/api/offersheets/replies/:replyId', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const rid = Number(req.params.replyId);
+    const r = await query(`DELETE FROM offer_sheet_replies WHERE id=$1 RETURNING offer_sheet_id`, [rid]);
+    if (!r.rows.length) return reply.code(404).send({ error: 'not_found' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `offer_sheet_reply:${rid}`, detail: { sheet: Number(r.rows[0].offer_sheet_id) } });
+    return { ok: true };
   });
 
   // ---- 수동 스캔·생성 ----
