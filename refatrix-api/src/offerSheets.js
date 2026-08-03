@@ -12,6 +12,13 @@
 //        존재(전환·만료 전이)하면 그 기록의 수명주기를 따르므로 제외(anti-join).
 //   · 호출처: 수입입고 승인(importRoutes /approve) 직후 + 부족분 화면 수동 [스캔·생성]
 //   · 단가: 현재 정가(products.list_price) × (1 − customers.discount%) — IVA는 제품 iva_rate.
+//   · 제안수량 캡(디렉터 확정 2026-08-03): 제안수량 = min(부족수량, 현재고 스냅샷).
+//       실제 없는 수량을 오퍼해 "또 재고가 부족하다"는 말이 나오지 않게 한다.
+//       캡은 고객별·SKU별 누적 적용(같은 고객의 같은 SKU 부족 기록이 여러 건이면
+//       합계가 현재고를 넘지 않음). 고객 간에는 배분하지 않는다 — 모든 고객에게
+//       같은 재고를 오퍼하고 선착순 판매(오퍼시트 하단 면책문구로 안내).
+//       캡으로 0이 된 기록도 시트에 담아(수량 0) 중복가드를 유지한다 —
+//       시트 취소 후 재스캔하면 그 시점 재고로 다시 계산된다.
 //   · 중복 가드(살아있는 시트 기준 — 취소하면 재생성 대상으로 복귀):
 //       - 부족 기록: shortage_id 가 이미 담겨 있으면 제외.
 //         + 그 부족 기록의 (source_quote_id, product_id) 조합이 견적 단계에서
@@ -46,7 +53,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
             (sh.shortage_qty - sh.resolved_qty) AS demand_qty,
             sh.occurred_at::text AS occurred_at,
             NULL AS quote_id, NULL AS quote_line_id,
-            p.list_price, p.iva_rate,
+            p.list_price, p.iva_rate, p.stock_qty,
             c.discount AS cust_discount
        FROM stock_shortages sh
        JOIN products  p ON p.id = sh.product_id AND p.deleted_at IS NULL
@@ -85,7 +92,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
             (ql.qty - COALESCE(ql.reserved_qty,0)) AS demand_qty,
             qt.quote_date::text AS occurred_at,
             qt.id AS quote_id, ql.id AS quote_line_id,
-            p.list_price, p.iva_rate,
+            p.list_price, p.iva_rate, p.stock_qty,
             c.discount AS cust_discount
        FROM quote_lines ql
        JOIN quotes qt ON qt.id = ql.quote_id
@@ -127,8 +134,14 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
   let sheetCount = 0; let itemCount = 0; const customers = [];
   for (const [custId, list] of byCust) {
     let subtotal = 0; let iva = 0;
+    // 제안수량 캡: SKU별 남은 오퍼 가능량(현재고 스냅샷)에서 차감하며 min(부족수량, 남은량).
+    const remaining = new Map();
     const items = list.map((r) => {
-      const qty = Number(r.demand_qty) || 0;
+      const pid = Number(r.product_id);
+      if (!remaining.has(pid)) remaining.set(pid, Math.max(0, Number(r.stock_qty) || 0));
+      const demand = Number(r.demand_qty) || 0;
+      const qty = Math.min(demand, remaining.get(pid));
+      remaining.set(pid, remaining.get(pid) - qty);
       const listPrice = r2(r.list_price);
       const disc = Number(r.cust_discount) || 0;
       const unit = r2(listPrice * (1 - disc / 100));

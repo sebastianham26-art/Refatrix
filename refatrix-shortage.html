@@ -69,6 +69,7 @@
       <button class="tabbtn on" id="tabBtnShort" onclick="showTab('short')">부족분 집계</button>
       <button class="tabbtn" id="tabBtnCust" onclick="showTab('cust')">👥 고객별 요약</button>
       <button class="tabbtn" id="tabBtnOffer" onclick="showTab('offer')">📄 Offer Sheet <span id="osBadge"></span></button>
+      <button class="tabbtn" id="tabBtnKpi" onclick="showTab('kpi')">🏆 오퍼 KPI·Bono</button>
     </div>
     <div id="tabShort">
     <div class="card">
@@ -135,6 +136,25 @@
         </select>
       </div>
       <div id="osWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+    </div>
+    <div id="tabKpi" class="hidden">
+    <div class="card">
+      <div class="card-h">🏆 오퍼시트 KPI — 부족분 → 오퍼 발송 → 매출 전환 (월별·직원별)
+        <button class="btn ghost sm" style="float:right" onclick="kpiLoad()">새로고침</button>
+        <button class="btn ghost sm" style="float:right;margin-right:6px" onclick="kpiExport()">엑셀 다운로드</button>
+      </div>
+      <div class="hint">발송된 오퍼시트의 <b>고객+SKU 인보이스</b>가 발송 후 <b>30일 안</b>에 발행되면 자동으로 그 시트의 실적으로 잡힙니다
+        (제안수량까지만 귀속 · 시트가 여럿이면 먼저 발송한 시트부터 · 이중 집계 없음). 금액은 <b>IVA 제외</b>, 귀속 직원은 <b>시트 발송자</b> 기준.
+        월 목표(bono) 이상 달성한 직원에게 정해진 상품을 지급하세요.</div>
+      <div class="mrow" style="margin:10px 0 4px">
+        <span class="ml">인보이스 발행 월</span>
+        <button class="mbtn" onclick="kpiMonth(-1)">◀</button>
+        <span id="kpiYmLbl" style="font-weight:800"></span>
+        <button class="mbtn" onclick="kpiMonth(1)">▶</button>
+      </div>
+      <div id="kpiPromo"></div>
+      <div id="kpiWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
     </div>
     </div>
   </div>
@@ -369,10 +389,11 @@
   // ===================== Offer Sheet (부족분 입고 알림·재오퍼) =====================
   let osItems=[], osSummary=null, osDetail=null, companyCache=null, osWaCfg={api_ready:false,template:null};
   function showTab(t){
-    $('tabShort').classList.toggle('hidden',t!=='short'); $('tabCust').classList.toggle('hidden',t!=='cust'); $('tabOffer').classList.toggle('hidden',t!=='offer');
-    $('tabBtnShort').classList.toggle('on',t==='short'); $('tabBtnCust').classList.toggle('on',t==='cust'); $('tabBtnOffer').classList.toggle('on',t==='offer');
+    $('tabShort').classList.toggle('hidden',t!=='short'); $('tabCust').classList.toggle('hidden',t!=='cust'); $('tabOffer').classList.toggle('hidden',t!=='offer'); $('tabKpi').classList.toggle('hidden',t!=='kpi');
+    $('tabBtnShort').classList.toggle('on',t==='short'); $('tabBtnCust').classList.toggle('on',t==='cust'); $('tabBtnOffer').classList.toggle('on',t==='offer'); $('tabBtnKpi').classList.toggle('on',t==='kpi');
     if(t==='offer') osLoad();
     if(t==='cust') cmLoad();
+    if(t==='kpi') kpiLoad();
   }
   async function getCompany(){
     if(companyCache) return companyCache;
@@ -447,7 +468,7 @@
     $('osWrap').innerHTML=html;
   }
   async function osGenerate(){
-    if(!confirm('지금 재고가 있는 미해소 부족분 전체를 스캔해 고객별 offer sheet를 생성합니다.\n(이미 살아있는 시트에 담긴 부족분은 제외 — 중복 생성 없음)'))return;
+    if(!confirm('지금 재고가 있는 미해소 부족분 전체를 스캔해 고객별 offer sheet를 생성합니다.\n(이미 살아있는 시트에 담긴 부족분은 제외 — 중복 생성 없음)\n\n제안 수량은 현재 재고를 넘지 않게 생성됩니다 (min(부족수량, 현재고) — 선착순 판매 안내 포함).'))return;
     try{
       const res=await fetch(session.api+'/api/offersheets/generate',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
       const d=await res.json();
@@ -585,7 +606,7 @@
     const msg='Hola'+(s.customer_contact?' '+s.customer_contact:'')+', le saludamos de parte de '+((companyCache&&companyCache.emisor)||'CTR')+'. 🎉\n\n'
       +'¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n'
       +items+'\n\nTotal con IVA: '+fmtm(s.total_mxn)+' MXN\n\n'
-      +'Le enviamos la oferta en PDF ('+(s.offer_no||'')+'). Sujeto a existencia disponible — le recomendamos confirmar su pedido pronto. ¡Gracias!';
+      +'Le enviamos la oferta en PDF ('+(s.offer_no||'')+'). Las cantidades ofrecidas corresponden a nuestra existencia actual. La venta es por orden de llegada, por lo que las existencias pueden agotarse — le recomendamos confirmar su pedido pronto. ¡Gracias!';
     getCompany().then(()=>{ window.open('https://wa.me/'+dg+'?text='+encodeURIComponent(msg),'_blank'); });
   }
   async function osPrintPdf(){
@@ -628,6 +649,7 @@
       +'.tot{min-width:250px;font-size:12.5px}.tot div{display:flex;justify-content:space-between;padding:3px 0}'
       +'.tot .g{font-weight:bold;font-size:14.5px;color:#143D34;border-top:2px solid #143D34;padding-top:6px}'
       +'.ft{margin-top:16px;font-size:10.5px;color:#666;line-height:1.6;border-top:1px solid #ddd;padding-top:8px}'
+      +'.fcfs{page-break-inside:avoid;margin-top:14px;background:#FBF3E2;border:1px solid #B8893B;border-radius:8px;padding:9px 12px;font-size:11.5px;color:#6B5416;line-height:1.55}'
       +'@page{margin:14mm}'
       +'</style></head><body>'
       +'<div class="hd"><div>'+logo+'<h1>OFERTA — PRODUCTOS YA DISPONIBLES</h1><div class="sub">'+esc(s.offer_no||'')+'</div></div>'
@@ -642,15 +664,118 @@
       +'<div><span>IVA (16%)</span><span>'+fmtm(s.iva_mxn)+'</span></div>'
       +'<div class="g"><span>TOTAL MXN</span><span>'+fmtm(s.total_mxn)+'</span></div>'
       +'</div></div>'
+      +'<div class="fcfs">⚠️ <b>Venta por orden de llegada:</b> las cantidades de esta oferta corresponden a nuestra existencia actual y los pedidos se surten conforme se van confirmando, por lo que <b>las existencias pueden agotarse</b>. Le recomendamos confirmar su pedido lo antes posible.</div>'
       +'<div class="ft">'+(bankParts.length?bankParts.join(' · ')+'<br>':'')
-      +'Precios en MXN. Oferta informativa generada a partir de sus pedidos pendientes por falta de existencia; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido.</div>'
+      +'Precios en MXN. Oferta informativa generada a partir de sus pedidos pendientes por falta de existencia; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido — la venta es por orden de llegada.</div>'
       +'<scr'+'ipt>window.onload=function(){window.print();};</scr'+'ipt>'
       +'</body></html>';
     const w=window.open('','_blank');
     if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
     w.document.open(); w.document.write(html); w.document.close();
   }
-  console.log('[refatrix-shortage] build sh-0803a');
+  // ===================== 오퍼 KPI · Bono (월별·직원별 전환 실적) =====================
+  let KPI_YM=(function(){const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0');})();
+  let kpiData=null;
+  function kpiMonth(d){
+    let[y,m]=KPI_YM.split('-').map(Number); m+=d;
+    if(m<1){m=12;y--;} if(m>12){m=1;y++;}
+    KPI_YM=y+'-'+String(m).padStart(2,'0'); kpiLoad();
+  }
+  async function kpiLoad(){
+    $('kpiYmLbl').textContent=KPI_YM;
+    try{ kpiData=await fetch(session.api+'/api/offersheets/kpi?ym='+KPI_YM,{headers:auth()}).then(r=>r.json()); }
+    catch(e){ $('kpiWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; return; }
+    if(!kpiData||kpiData.error){ $('kpiWrap').innerHTML='<div class="hint">불러오지 못했습니다: '+esc((kpiData&&kpiData.error)||'')+'</div>'; return; }
+    kpiRenderPromo(); kpiRender();
+  }
+  function kpiRenderPromo(){
+    const p=kpiData.promo, isDir=session.user&&session.user.role==='director';
+    let h='<div style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:8px 0;background:#fbfaf6">'
+      +'<b style="color:var(--brand)">🎁 '+esc(KPI_YM)+' Bono 프로모션</b> — ';
+    if(p&&p.active&&Number(p.goal_amount_mxn)>0){
+      h+='직원별 오퍼 매출(IVA 제외) <b>'+fmtm(p.goal_amount_mxn)+'</b> 이상 달성 시: <b style="color:var(--income)">'+esc(p.prize_text||'(상품 미입력)')+'</b>';
+    } else if(p&&!p.active){ h+='<span class="hint">비활성화됨 ('+fmtm(p.goal_amount_mxn)+' · '+esc(p.prize_text||'')+')</span>'; }
+    else { h+='<span class="hint">이 달 프로모션이 설정되지 않았습니다.'+(isDir?' 아래에서 설정하세요.':'')+'</span>'; }
+    if(isDir){
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">'
+        +'<label style="display:inline">목표 금액(MXN·IVA제외)</label><input id="kpiGoal" type="number" min="0" step="100" value="'+(p?Number(p.goal_amount_mxn):10000)+'" style="width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:8px">'
+        +'<label style="display:inline">상품(bono)</label><input id="kpiPrize" type="text" placeholder="예: Tarjeta de supermercado $500 × 2" value="'+esc(p?p.prize_text||'':'')+'" style="flex:1;min-width:220px;padding:6px 8px;border:1px solid var(--line);border-radius:8px">'
+        +'<label style="display:inline"><input id="kpiActive" type="checkbox" '+(p&&!p.active?'':'checked')+'> 활성</label>'
+        +'<button class="btn sm" onclick="kpiSavePromo()">저장</button></div>';
+    }
+    h+='</div>';
+    $('kpiPromo').innerHTML=h;
+  }
+  async function kpiSavePromo(){
+    const body={goal_amount_mxn:Number($('kpiGoal').value)||0,prize_text:$('kpiPrize').value.trim(),active:$('kpiActive').checked};
+    try{
+      const res=await fetch(session.api+'/api/offersheets/promos/'+KPI_YM,{method:'PUT',headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('저장 실패: '+(d.note||d.error||res.status)); return; }
+      kpiLoad();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  function kpiRender(){
+    const d=kpiData, t=d.totals||{}, goal=d.promo&&d.promo.active?Number(d.promo.goal_amount_mxn):0;
+    let h='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 6px">'
+      +'<div class="sb"><div class="v">'+(t.sheets_sent||0)+'</div><div class="l">이 달 발송 시트</div></div>'
+      +'<div class="sb"><div class="v">'+(t.sheets_matched||0)+'</div><div class="l">매출 전환 시트</div></div>'
+      +'<div class="sb"><div class="v" style="color:var(--income)">'+fmtm(t.matched_amount_mxn)+'</div><div class="l">오퍼 귀속 매출 (IVA 제외)</div></div>'
+      +'</div>';
+    const staff=d.staff||[];
+    if(!staff.length){ $('kpiWrap').innerHTML=h+'<div class="hint" style="margin-top:10px">이 달 발송·전환 기록이 없습니다.</div>'; return; }
+    h+='<table><thead><tr><th>직원</th><th class="r">발송 시트</th><th class="r">전환 시트</th><th class="r">매칭 인보이스</th><th class="r">오퍼 매출(IVA제외)</th>'+(goal>0?'<th>목표 달성</th>':'')+'</tr></thead><tbody>';
+    staff.forEach(s=>{
+      let ach='';
+      if(goal>0){
+        const pct=Math.min(100,Math.round(s.matched_amount_mxn/goal*100));
+        ach='<td>'+(s.achieved
+          ?'<span class="pill sent">🎉 달성 — '+esc((d.promo&&d.promo.prize_text)||'bono')+'</span>'
+          :'<div style="min-width:120px"><div style="background:#eee9dd;border-radius:6px;height:8px;overflow:hidden"><div style="width:'+pct+'%;height:8px;background:var(--brand)"></div></div><span class="hint">'+pct+'%</span></div>')+'</td>';
+      }
+      h+='<tr><td><b>'+esc(s.staff_name||'')+'</b></td>'
+        +'<td class="r">'+s.sheets_sent+'</td>'
+        +'<td class="r">'+s.sheets_matched+'</td>'
+        +'<td class="r">'+s.invoices+'</td>'
+        +'<td class="r" style="font-weight:800;color:var(--income)">'+fmtm(s.matched_amount_mxn)+'</td>'
+        +ach+'</tr>';
+    });
+    h+='</tbody></table>';
+    const ms=d.matches||[];
+    h+='<div style="margin-top:14px;font-weight:800;color:var(--brand);font-size:13px">전환 내역 ('+ms.length+'건) — 오퍼시트 → 인보이스 매칭</div>';
+    if(ms.length){
+      h+='<table><thead><tr><th>인보이스일</th><th>인보이스</th><th>오퍼시트</th><th>고객</th><th>CTR 코드</th><th>제품</th><th class="r">귀속 수량</th><th class="r">금액(IVA제외)</th><th>직원</th></tr></thead><tbody>';
+      ms.forEach(m=>{
+        h+='<tr><td>'+esc(m.inv_date||'')+'</td>'
+          +'<td>'+esc(m.sat_no||('#'+m.invoice_id))+'</td>'
+          +'<td><b>'+esc(m.offer_no||('#'+m.offer_sheet_id))+'</b></td>'
+          +'<td>'+esc(m.customer_name||'')+'</td>'
+          +'<td>'+esc(m.ctr_code||'')+'</td>'
+          +'<td>'+esc(m.product_name||'')+'</td>'
+          +'<td class="r">'+fmtq(m.qty)+'</td>'
+          +'<td class="r" style="font-weight:700">'+fmtm(m.amount_mxn)+'</td>'
+          +'<td>'+esc(m.staff_name||'(미지정)')+'</td></tr>';
+      });
+      h+='</tbody></table>';
+    } else {
+      h+='<div class="hint" style="margin-top:6px">아직 매칭된 인보이스가 없습니다. (발송 후 30일 안에 같은 고객·같은 SKU 인보이스가 발행되면 자동으로 잡힙니다)</div>';
+    }
+    $('kpiWrap').innerHTML=h;
+  }
+  function kpiExport(){
+    if(!kpiData){ alert('내보낼 데이터가 없습니다.'); return; }
+    const aoa=[['Refatrix — Offer KPI '+KPI_YM+' (IVA 제외 · 발송 후 30일 매칭)'],[]];
+    aoa.push(['[직원별]','발송 시트','전환 시트','매칭 인보이스','오퍼 매출','달성']);
+    (kpiData.staff||[]).forEach(s=>aoa.push([s.staff_name,s.sheets_sent,s.sheets_matched,s.invoices,s.matched_amount_mxn,s.achieved?'SÍ':'']));
+    aoa.push([]);
+    aoa.push(['[전환 내역]','인보이스','오퍼시트','고객','CTR','제품','수량','금액','직원']);
+    (kpiData.matches||[]).forEach(m=>aoa.push([m.inv_date,m.sat_no||('#'+m.invoice_id),m.offer_no||'',m.customer_name,m.ctr_code,m.product_name,m.qty,m.amount_mxn,m.staff_name||'']));
+    const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:16},{wch:14},{wch:14},{wch:26},{wch:12},{wch:26},{wch:8},{wch:12},{wch:12}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'OfferKPI');
+    XLSX.writeFile(wb,'offer_kpi_'+KPI_YM+'.xlsx');
+  }
+
+  console.log('[refatrix-shortage] build sh-0803c');
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

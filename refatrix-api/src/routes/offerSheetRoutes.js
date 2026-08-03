@@ -8,6 +8,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { generateOfferSheets } from '../offerSheets.js';
+import { loadOfferKpi } from '../offerKpi.js';
 import { waApiReady, normalizeWaNumber, sendWaTo } from '../waSend.js';
 
 export default async function offerSheetRoutes(app) {
@@ -233,7 +234,7 @@ export default async function offerSheetRoutes(app) {
       + `¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n`
       + itemsTxt
       + `\n\nSubtotal: ${fmtm(os.subtotal_mxn)} · IVA: ${fmtm(os.iva_mxn)} · *Total: ${fmtm(os.total_mxn)} MXN*`
-      + `\n\nOferta ${os.offer_no || ''} — sujeto a existencia disponible. ¡Le recomendamos confirmar su pedido pronto, gracias!`;
+      + `\n\nOferta ${os.offer_no || ''} — las cantidades ofrecidas corresponden a nuestra existencia actual. La venta es por orden de llegada, por lo que las existencias pueden agotarse. ¡Le recomendamos confirmar su pedido pronto, gracias!`;
     const headline = `${emisor}: ${lines.length} producto(s) que solicitó ya están disponibles. Oferta ${os.offer_no || ''}, total ${fmtm(os.total_mxn)} MXN. Responda este mensaje para recibir el detalle.`;
 
     const res = await sendWaTo({ to, text, headline, templateName: process.env.OFFERSHEET_WA_TEMPLATE || null });
@@ -252,6 +253,36 @@ export default async function offerSheetRoutes(app) {
       [id, String(res.error || '').slice(0, 400), to]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'export', target: `offer_sheet:${id}`, detail: { wa_send: false, error: String(res.error || '').slice(0, 120) }, result: 'denied' });
     return reply.code(502).send({ error: 'send_failed', detail: res.error });
+  });
+
+  // ---- KPI: 부족분 → 오퍼시트 → 매출(인보이스) 전환 실적 (월별·직원별) ----
+  //   자동 매칭: 발송된 시트의 고객+SKU 인보이스가 발송 후 30일 내면 귀속(제안수량 캡·이중 집계 없음).
+  //   금액은 IVA 제외(qty × unit_price). 프로모(offer_promos) 목표·상품과 달성 여부 포함.
+  app.get('/api/offersheets/kpi', { preHandler: [authGuard, requirePageAny(['shortage', 'sales'])] }, async (req, reply) => {
+    const ym = String(req.query.ym || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(ym)) return reply.code(400).send({ error: 'bad_ym', note: 'ym=YYYY-MM 형식으로 요청하세요.' });
+    return loadOfferKpi(query, ym);
+  });
+
+  // ---- 프로모(bono) 설정 — 디렉터 전용 업서트 ----
+  //   body: { goal_amount_mxn, prize_text, active }
+  app.put('/api/offersheets/promos/:ym', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
+    if (req.ctx.perm.role !== 'director') return reply.code(403).send({ error: 'director_only' });
+    const ym = String(req.params.ym || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(ym)) return reply.code(400).send({ error: 'bad_ym' });
+    const goal = Math.max(0, Number(req.body?.goal_amount_mxn) || 0);
+    const prize = String(req.body?.prize_text || '').trim().slice(0, 300) || null;
+    const active = req.body?.active !== false;
+    const upd = await query(
+      `UPDATE offer_promos SET goal_amount_mxn=$2, prize_text=$3, active=$4, updated_at=now() WHERE ym=$1 RETURNING id`,
+      [ym, goal, prize, active]);
+    if (!upd.rows.length) {
+      await query(
+        `INSERT INTO offer_promos (ym, goal_amount_mxn, prize_text, active, created_by) VALUES ($1,$2,$3,$4,$5)`,
+        [ym, goal, prize, active, req.ctx.perm.userId]);
+    }
+    await logEvent({ userId: req.ctx.perm.userId, action: upd.rows.length ? 'update' : 'create', target: `offer_promo:${ym}`, detail: { goal, prize, active } });
+    return { ok: true, ym, goal_amount_mxn: goal, prize_text: prize || '', active };
   });
 
   // ---- 발송 완료 기록 (수동 — WhatsApp 으로 보낸 뒤 확인 처리) ----
