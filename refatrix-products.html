@@ -150,7 +150,7 @@
 <div class="card hidden" id="searchCard">
     <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <h2 style="margin-bottom:0">제품 검색 (코드·경쟁사코드·차종 통합)</h2>
-      <button class="btn" id="dlMaster" type="button" style="padding:7px 13px;font-size:12px" title="전체 제품 마스터를 엑셀(.xlsx)로 내려받습니다. 업로드와 같은 컬럼 구성이라 수정 후 재업로드할 수 있습니다.">⬇ 제품 마스터 다운로드</button>
+      <button class="btn" id="dlMaster" type="button" style="padding:7px 13px;font-size:12px" title="전체 제품 마스터를 엑셀(.xlsx)로 내려받습니다. 현재 재고·Backorder(미입고 발주잔량) 포함. 업로드와 같은 컬럼 구성이라 수정 후 재업로드할 수 있습니다.">⬇ 제품 마스터 다운로드</button>
     </div>
     <div class="row">
       <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
@@ -1018,7 +1018,8 @@
   // ===== 제품 마스터 다운로드 (엑셀) =====
   // 업로드(COLUMN_MAP)와 같은 헤더명으로 시트를 만들어, 내려받아 수정 후 그대로 재업로드 가능.
   // 가격류 컬럼은 백엔드가 sale_price 권한 없으면 필드를 생략 → 헤더 자체를 뺀다.
-  // Rack·Stock은 정보용(업로드는 재고·평균원가를 절대 건드리지 않음).
+  // Rack·Stock·Backorder는 정보용(업로드는 재고·평균원가를 절대 건드리지 않음 — Backorder 헤더는 업로드 파서가 무시).
+  // Backorder = 미입고 발주잔량(v_backorder) — 목록 화면의 Backorder 열과 동일 기준.
   function masterSheetRows(items, priceIncluded){
     const cols=[
       ['Clave CTR','code'],['Clave SyD','scode'],
@@ -1028,7 +1029,7 @@
     if(priceIncluded) cols.push(['List Price','list_price']);
     cols.push(['IVA','iva_rate'],['Barcode (EAN13)','ean'],['Fast Movement Location','location']);
     if(priceIncluded) cols.push(['List Price de SYD','list_price_syd'],['Precio Cliente de SYD','price_customer_syd'],['Precio Cliente de CTR','price_customer_ctr']);
-    cols.push(['Material','material'],['Rack','rack_location'],['Stock','stock_qty']);
+    cols.push(['Material','material'],['Rack','rack_location'],['Stock','stock_qty'],['Backorder','backorder_qty']);
     const header=cols.map(c=>c[0]);
     const rows=(items||[]).map(p=>cols.map(c=>{ const v=p[c[1]]; return v==null?'':v; }));
     return [header].concat(rows);
@@ -1287,6 +1288,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260801ds"></script>
+<script src="refatrix-nav.js?v=20260803bo"></script>
 </body>
 </html>

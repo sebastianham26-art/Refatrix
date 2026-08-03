@@ -182,14 +182,18 @@ export default async function productRoutes(app) {
   //   - 컬럼은 마스터 "업로드"와 같은 필드 구성 → 내려받아 수정 후 그대로 재업로드 가능.
   //   - 가격류(List Price·SYD/CTR 고객가)는 sale_price 권한 있을 때만 포함(없으면 필드 자체 생략).
   //   - 재고·랙은 정보용으로 포함(업로드는 어차피 재고·평균원가를 절대 건드리지 않음). 원가는 미포함.
+  //   - Backorder(미입고 발주잔량, v_backorder)도 정보용 포함 — 목록 화면의 Backorder 열과 동일 기준.
+  //     업로드 파서(COLUMN_MAP)에 없는 헤더라 재업로드 시 자동 무시됨(Stock·Rack과 동일).
   app.get('/api/products/master-export', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
     const { perm } = req.ctx;
     const rows = (await query(
       `SELECT p.code, p.scode, p.app, p.name, p.sat_code, p.origin,
               p.list_price, p.iva_rate, p.ean, p.location,
               p.list_price_syd, p.price_customer_syd, p.price_customer_ctr,
-              p.material, p.rack_location, p.stock_qty
+              p.material, p.rack_location, p.stock_qty,
+              COALESCE(bo.backorder_qty, 0) AS backorder_qty
          FROM products p
+         LEFT JOIN v_backorder bo ON bo.product_id = p.id
         WHERE p.deleted_at IS NULL
         ORDER BY p.code ASC`)).rows;
     const canPrice = fieldVisible(perm, 'sale_price');
@@ -200,6 +204,7 @@ export default async function productRoutes(app) {
         sat_code: r.sat_code, origin: r.origin, iva_rate: num(r.iva_rate),
         ean: r.ean, location: r.location, material: r.material,
         rack_location: r.rack_location, stock_qty: num(r.stock_qty) || 0,
+        backorder_qty: num(r.backorder_qty) || 0,
       };
       if (canPrice) {
         o.list_price = num(r.list_price);
