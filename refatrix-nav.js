@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260801ds loaded (daily summary)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260803dk loaded (draft keeper)'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -574,3 +574,144 @@
   if(g.document && g.document.readyState==='loading') g.document.addEventListener('DOMContentLoaded',go);
   else go();
 })(typeof window!=='undefined'?window:globalThis);
+
+/* ═══════════════════════════════════════════════════════════════════
+   Refatrix DraftKeeper — 모바일 앱 전환(WhatsApp 등)으로 페이지가
+   재로딩되어도 작성 중이던 입력값을 자동 저장·복원한다.
+   - 대상: text류 input + textarea (id 또는 name 있는 필드만)
+   - 제외: password/hidden/file/checkbox/radio/select, 로그인 필드(lid/pin/api)
+   - 저장: localStorage, 키 rfxdraft::<페이지>::<사용자>
+   - 복원: 페이지 로드 + 동적 모달 생성 감시(MutationObserver),
+           "비어 있는" 필드에만 채움(앱이 미리 채운 값은 건드리지 않음)
+   - 삭제: 서버 저장 성공(POST/PUT/PATCH/DELETE 응답 ok) 시 페이지 초안 전체 삭제,
+           필드를 비우면 해당 필드 삭제, 12시간 지나면 자동 만료
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  if(window.__refxDraft) return; window.__refxDraft=true;
+  try{
+  var PAGE=(location.pathname.split('/').pop()||'index').replace(/\.html?$/,'');
+  if(!PAGE || PAGE==='refatrix-login') return;
+  var TTL=12*60*60*1000;        // 필드 초안 유지 12시간
+  var PURGE=3*24*60*60*1000;    // 오래된 페이지 키 정리 3일
+  var SKIP_IDS={lid:1,pin:1,api:1};
+  var mem=null, saveTimer=null, moTimer=null, restored={}, toastShown=false;
+
+  function uid(){
+    try{ var s=JSON.parse(sessionStorage.getItem('refatrix_session')||'null');
+         return (s&&s.user&&(s.user.login_id||s.user.id||s.user.name))||'anon'; }catch(e){ return 'anon'; }
+  }
+  function key(){ return 'rfxdraft::'+PAGE+'::'+uid(); }
+  function load(){
+    if(mem) return mem;
+    try{ mem=JSON.parse(localStorage.getItem(key())||'null'); }catch(e){ mem=null; }
+    if(!mem||typeof mem!=='object'||!mem.f) mem={t:0,f:{}};
+    var now=Date.now();
+    for(var k in mem.f){ if(now-(mem.f[k].t||0)>TTL) delete mem.f[k]; }
+    return mem;
+  }
+  function persist(){
+    try{
+      if(!mem) return;
+      if(Object.keys(mem.f).length===0){ localStorage.removeItem(key()); }
+      else { mem.t=Date.now(); localStorage.setItem(key(),JSON.stringify(mem)); }
+    }catch(e){}
+  }
+  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(persist,250); }
+  function flush(){ clearTimeout(saveTimer); persist(); }
+
+  function eligible(el){
+    if(!el||!el.tagName) return false;
+    if(el.tagName==='TEXTAREA') return true;
+    if(el.tagName!=='INPUT') return false;
+    var t=(el.type||'text').toLowerCase();
+    return !(t==='password'||t==='hidden'||t==='file'||t==='checkbox'||t==='radio'
+           ||t==='button'||t==='submit'||t==='reset'||t==='range'||t==='color'||t==='image');
+  }
+  function fieldKey(el){ var k=el.id||el.getAttribute('name'); return (k&&!SKIP_IDS[k])?k:null; }
+
+  function onEdit(e){
+    var el=e.target; if(!eligible(el)) return;
+    var k=fieldKey(el); if(!k) return;
+    var m=load();
+    if(el.value===''){ delete m.f[k]; }
+    else { m.f[k]={v:el.value,t:Date.now()}; }
+    scheduleSave();
+  }
+  document.addEventListener('input',onEdit,true);
+  document.addEventListener('change',onEdit,true);
+
+  // 앱 전환 직전 마지막 입력까지 즉시 저장
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') flush(); });
+  window.addEventListener('pagehide',flush);
+
+  function toast(){
+    if(toastShown) return; toastShown=true;
+    try{
+      var d=document.createElement('div');
+      d.textContent='✎ 작성 중이던 내용을 복원했습니다 · Se restauró lo que estabas escribiendo';
+      d.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);max-width:92vw;'
+        +'background:#1f2937;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;'
+        +'z-index:2147483000;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:0;transition:opacity .3s';
+      (document.body||document.documentElement).appendChild(d);
+      setTimeout(function(){ d.style.opacity='1'; },30);
+      setTimeout(function(){ d.style.opacity='0'; setTimeout(function(){ try{d.remove();}catch(e){} },400); },4000);
+    }catch(e){}
+  }
+
+  function findEl(k){
+    var el=document.getElementById(k);
+    if(el) return el;
+    try{ return document.querySelector('[name="'+(window.CSS&&CSS.escape?CSS.escape(k):k)+'"]'); }catch(e){ return null; }
+  }
+  function tryRestore(){
+    var m=load(), did=false;
+    for(var k in m.f){
+      if(restored[k]) continue;
+      var el=findEl(k);
+      if(!el||!eligible(el)) continue;
+      if(el.value!==''){ if(el.value===m.f[k].v) restored[k]=1; continue; } // 이미 값 있으면 보존
+      el.value=m.f[k].v;
+      try{ el.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){}
+      restored[k]=1; did=true;
+    }
+    if(did) toast();
+  }
+
+  // 서버 저장이 성공하면(쓰기 요청) 이 페이지의 초안은 더 이상 필요 없음
+  if(window.fetch){
+    var _fetch=window.fetch;
+    window.fetch=function(input,init){
+      var method='GET';
+      try{ method=((init&&init.method)||(input&&input.method)||'GET').toUpperCase(); }catch(e){}
+      var p=_fetch.apply(this,arguments);
+      if(method!=='GET'&&method!=='HEAD'){
+        p.then(function(res){
+          if(res&&res.ok){ try{ mem={t:0,f:{}}; restored={}; flush(); }catch(e){} }
+        }).catch(function(){});
+      }
+      return p;
+    };
+  }
+
+  // 오래된 초안 키 정리(3일)
+  try{
+    var now=Date.now();
+    for(var i=localStorage.length-1;i>=0;i--){
+      var lk=localStorage.key(i);
+      if(lk&&lk.indexOf('rfxdraft::')===0){
+        var o=null; try{ o=JSON.parse(localStorage.getItem(lk)||'null'); }catch(e){}
+        if(!o||now-(o.t||0)>PURGE) localStorage.removeItem(lk);
+      }
+    }
+  }catch(e){}
+
+  function startObserver(){
+    if(!document.body||!window.MutationObserver) return;
+    var mo=new MutationObserver(function(){ clearTimeout(moTimer); moTimer=setTimeout(tryRestore,180); });
+    mo.observe(document.body,{childList:true,subtree:true});
+  }
+  function init(){ tryRestore(); startObserver(); try{ console.log('[refatrix-draft] keeper active ('+PAGE+')'); }catch(e){} }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
+  else init();
+  }catch(e){ try{ console.warn('[refatrix-draft] init fail',e); }catch(_){}}
+})();
