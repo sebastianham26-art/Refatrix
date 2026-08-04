@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260803vr)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260804vr2)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -213,8 +213,7 @@
         <div style="flex:1;min-width:160px"><label>핸드폰 번호</label><input id="vl-phone" type="tel" inputmode="tel" placeholder="81-1234-5678" style="width:100%"></div>
         <div style="flex:1;min-width:180px"><label>이메일 주소</label><input id="vl-email" type="email" inputmode="email" placeholder="correo@ejemplo.mx" style="width:100%"></div>
       </div>
-      <label>무슨 이야기를 했나 (대화 내용)</label><textarea id="vl-talk" rows="2" style="width:100%"></textarea>
-      <label>새로배운 내용/파악한 내용 (인사이트)</label><textarea id="vl-insight" rows="2" style="width:100%"></textarea>
+      <label>무슨 이야기를 할 것인가?</label><textarea id="vl-talk" rows="2" style="width:100%" placeholder="방문 목적·논의할 내용을 간단히 (미팅 후 녹음 AI 요약이 자동으로 채워집니다)"></textarea>
       <label>📷 사진 (명함·가게 등 · 최대 10장 · 자동 1600px 압축)</label>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <select id="vl-photoKind"><option value="card">명함</option><option value="store">가게</option><option value="other" selected>기타</option></select>
@@ -668,7 +667,7 @@
     if(!navigator.geolocation){ m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 위치를 지원하지 않습니다.'; return; }
     const isNew=$('vl-segNew').classList.contains('on');
     const body={ geo_lat:null, geo_lng:null, geo_accuracy:null,
-      met_person:$('vl-who').value.trim()||null, talk_note:$('vl-talk').value.trim()||null, insight_note:$('vl-insight').value.trim()||null,
+      met_person:$('vl-who').value.trim()||null, talk_note:$('vl-talk').value.trim()||null, insight_note:null,
       contact_phone:$('vl-phone').value.trim()||null, contact_email:$('vl-email').value.trim()||null,
       pendings:[], photos:vlPhotos };
     if(isNew){ const pn=$('vl-place').value.trim(); if(!pn){ m.className='msg err'; m.style.display='block'; m.textContent='방문처 이름을 입력하세요.'; return; } body.place_name=pn; }
@@ -695,7 +694,7 @@
       if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+(d.error==='forbidden_team'?'이 고객을 편집할 권한이 없습니다.':(d.error==='location_required'?'위치가 필요합니다.':(d.error||res.status))); return; }
       m.className='msg ok'; m.style.display='block';
       m.textContent='✔ 방문 저장됨'+(d.meeting_saved?' · 고객 미팅기록에도 보존됨':'')+(body.pendings.length?(' · 펜딩 '+body.pendings.length+'건'):'')+(d.photo_ok?(' · 사진 '+d.photo_ok+'장'+(d.photo_fail?(' (실패 '+d.photo_fail+')'):'')):'')+(usedPrev?' · ⚠ 새 위치 확보 실패로 2분 내 직전 위치 사용':'');
-      $('vl-who').value='';$('vl-talk').value='';$('vl-insight').value='';$('vl-place').value='';$('vl-cust').value='';
+      $('vl-who').value='';$('vl-talk').value='';$('vl-place').value='';$('vl-cust').value='';
       $('vl-phone').value='';$('vl-email').value='';
       $('vl-pends').innerHTML=''; vlAddPendRow(); vlPhotos=[]; vlRenderThumbs();
       vlSel.clear(); await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
