@@ -47,6 +47,7 @@ import stockCountRoutes from './routes/stockCountRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
 import inboundRoutes from './routes/inboundRoutes.js';
 import visitRoutes from './routes/visitRoutes.js';
+import visitRecRoutes from './routes/visitRecRoutes.js';
 import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
 import { installPerfMonitor } from './perfMonitor.js';
@@ -115,6 +116,7 @@ export function buildApp() {
   app.register(stockCountRoutes);
   app.register(purchaseRoutes);
   app.register(visitRoutes);
+  app.register(visitRecRoutes);
   app.register(offerSheetRoutes);
   app.register(dailySummaryRoutes);
 

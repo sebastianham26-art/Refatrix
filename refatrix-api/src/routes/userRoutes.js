@@ -10,7 +10,7 @@ export default async function userRoutes(app) {
   // 사용자 목록(디렉터): 역할·팀·페이지 권한
   app.get('/api/users', { preHandler: [authGuard, requireDirector] }, async () => {
     const users = (await query(
-      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, u.restrict_cash_detail, u.device_locked, t.name AS team_name
+      `SELECT u.id, u.name, u.login_id, u.role, u.dept, u.team_id, u.restrict_cash_detail, u.device_locked, u.wa_phone, t.name AS team_name
          FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
         WHERE u.deleted_at IS NULL ORDER BY u.role, u.name`)).rows;
     const pages = (await query(`SELECT user_id, page_key, access FROM user_page_access`)).rows;
@@ -87,6 +87,25 @@ export default async function userRoutes(app) {
     await query(`UPDATE users SET restrict_cash_detail=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
     await logEvent({ userId: req.ctx.perm.userId, action: 'permission_change', target: `user:${id}`, detail: { restrict_cash_detail: value } });
     return { ok: true, id, restrict_cash_detail: value };
+  });
+
+  // WhatsApp 수신번호 설정(디렉터) — 아침 브리핑 수신용. 빈 값이면 해제(발송 대상 제외).
+  //   멕시코 휴대폰: 10자리 로컬/52·521 국가코드 어떤 형식이든 저장 시 521+10자리로 정규화.
+  app.patch('/api/users/:id/wa-phone', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id', got: String(req.params.id) });
+    const u = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'not_found' });
+    const raw = String((req.body || {}).wa_phone || '').trim();
+    let value = null;
+    if (raw) {
+      const { normalizeWaNumber } = await import('../waSend.js');
+      value = normalizeWaNumber(raw);
+      if (!value) return reply.code(400).send({ error: 'bad_phone', hint: '숫자 10자리(로컬) 또는 521+10자리 형식' });
+    }
+    await query(`UPDATE users SET wa_phone=$1, updated_by=$2 WHERE id=$3`, [value, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `user:${id}`, detail: { wa_phone: value ? (value.slice(0, 3) + '****' + value.slice(-4)) : null } });
+    return { ok: true, id, wa_phone: value };
   });
 
   // 기기 접속 제한 토글(디렉터) — true 면 이 사용자는 '승인된 기기'에서만 로그인 가능.

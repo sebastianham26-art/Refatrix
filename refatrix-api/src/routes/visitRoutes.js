@@ -124,6 +124,22 @@ export default async function visitRoutes(app) {
           WHERE visit_id = ANY($1) ORDER BY id`, [ids])).rows;
       pend.forEach((p) => { (pendByVisit[p.visit_id] ||= []).push({ id: Number(p.id), content: p.content, due_date: p.due_date, done: !!p.done }); });
     }
+    // 상담 녹음 상태(0165 미적용 시 안전 무시)
+    let recByVisit = {};
+    if (ids.length) {
+      try {
+        const recs = (await query(
+          `SELECT visit_id, COUNT(*) AS cnt, MAX(id) AS last_id FROM sales_visit_recordings
+            WHERE visit_id = ANY($1) GROUP BY visit_id`, [ids])).rows;
+        const lastIds = recs.map((r) => Number(r.last_id)).filter(Boolean);
+        const statusById = {};
+        if (lastIds.length) {
+          (await query(`SELECT id, status FROM sales_visit_recordings WHERE id = ANY($1)`, [lastIds])).rows
+            .forEach((r) => { statusById[Number(r.id)] = r.status; });
+        }
+        recs.forEach((r) => { recByVisit[r.visit_id] = { cnt: Number(r.cnt), status: statusById[Number(r.last_id)] || null }; });
+      } catch (_) { /* 0165 미적용 */ }
+    }
     return {
       items: rows.map((r) => ({
         id: Number(r.id), visit_date: r.visit_date, visited_at: r.visited_at,
@@ -135,6 +151,7 @@ export default async function visitRoutes(app) {
         contact_email: r.contact_email, contact_phone: r.contact_phone,
         created_by: Number(r.created_by), by_name: r.by_name,
         photo_cnt: Number(r.photo_cnt), pendings: pendByVisit[r.id] || [],
+        rec_cnt: (recByVisit[r.id] || {}).cnt || 0, last_rec_status: (recByVisit[r.id] || {}).status || null,
       })),
     };
   });

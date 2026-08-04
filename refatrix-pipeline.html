@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260716b)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260803vr)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -224,8 +224,30 @@
       <label>펜딩 · 할 일 (후속조치)</label>
       <div id="vl-pends"></div>
       <button class="btn ghost sm" type="button" id="vl-addPend" style="margin-top:6px">＋ 항목 추가</button>
-      <div style="margin-top:12px"><button class="btn" id="vl-save">방문 저장 (체크인)</button> <span class="hint" style="margin:0">저장 즉시 동선 지도에 순번이 찍힙니다</span></div>
+      <div style="margin-top:12px"><button class="btn" id="vl-save">방문 저장 (체크인)</button> <span class="hint" style="margin:0">저장 즉시 동선 지도에 순번이 찍히고, 아래 🎙 상담 녹음을 붙일 수 있습니다</span></div>
       <div class="msg" id="vl-msg"></div>
+    </div>
+
+    <!-- 상담 녹음 → AI 요약 -->
+    <div class="card hidden" id="vl-recCard">
+      <h2>🎙 상담 녹음 · AI 요약 <span class="hint" style="margin:0" id="vl-recTarget"></span></h2>
+      <div class="hint" style="margin-top:0">녹음이 끝나면 서버가 자동으로 <b>전사 → 분류 요약</b>하여 이 방문의 <b>대화/인사이트</b>를 채우고, <b>해야 할 일은 펜딩에 자동 등록</b>됩니다. 고객에게 "메모 목적으로 녹음하겠다"고 안내하세요. <b>녹음 중 화면이 꺼지면 끊길 수 있습니다.</b></div>
+      <div class="vl-segment" style="margin-top:8px"><button type="button" id="vl-recModeMemo" class="on">🗣 음성 메모 (미팅 직후 2~3분 요점)</button><button type="button" id="vl-recModeFull">🎧 상담 전체 녹음</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+        <button class="btn" type="button" id="vl-recStart">● 녹음 시작</button>
+        <button class="btn ghost hidden" type="button" id="vl-recPause">⏸ 일시정지</button>
+        <button class="btn gold hidden" type="button" id="vl-recStop">⏹ 종료</button>
+        <span id="vl-recTimer" style="font-weight:800;font-variant-numeric:tabular-nums"></span>
+      </div>
+      <div id="vl-recReady" class="hidden" style="margin-top:10px">
+        <span id="vl-recInfo" class="hint" style="margin:0"></span>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button class="btn" type="button" id="vl-recUpload">⬆ 업로드 &amp; AI 요약</button>
+          <button class="btn ghost" type="button" id="vl-recDiscard">다시 녹음</button>
+        </div>
+      </div>
+      <div class="msg" id="vl-recMsg"></div>
+      <div id="vl-recList" style="margin-top:10px"></div>
     </div>
 
     <!-- 동선 지도 -->
@@ -239,8 +261,29 @@
 
     <!-- 후속조치(펜딩) -->
     <div class="card">
-      <h2>📌 후속조치 (펜딩) <span class="hint" style="margin:0">— 방문에서 남긴 할 일 모아보기</span></h2>
+      <h2>📌 후속조치 (펜딩) <span class="hint" style="margin:0">— 방문에서 남긴 할 일 모아보기 (녹음 AI 요약의 할 일도 자동 등록됨)</span></h2>
       <div id="vl-pendTable"></div>
+    </div>
+
+    <!-- 아침 브리핑 -->
+    <div class="card">
+      <h2>📲 아침 브리핑 <span class="hint" style="margin:0">— 매일 아침 WhatsApp 으로 오늘 일정·펜딩·어제 상담 요약</span></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn ghost sm" type="button" id="vl-brPreview">👁 내 브리핑 미리보기</button>
+        <span id="vl-brSelfHint" class="hint" style="margin:0"></span>
+      </div>
+      <pre id="vl-brText" class="hidden" style="white-space:pre-wrap;background:var(--bg,#f6f6f4);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13px;margin-top:8px"></pre>
+      <div id="vl-brDir" class="hidden" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+        <div style="font-weight:700">발송 관리 (디렉터)</div>
+        <div id="vl-brStatus" class="hint" style="margin-top:4px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <select id="vl-brUser"><option value="">사원 선택…</option></select>
+          <button class="btn sm" type="button" id="vl-brSend">📲 지금 발송 (테스트)</button>
+          <span class="hint" style="margin:0">수신번호는 사용자·권한 화면의 WhatsApp 번호로 설정</span>
+        </div>
+        <div id="vl-brSends" style="margin-top:8px"></div>
+      </div>
+      <div class="msg" id="vl-brMsg"></div>
     </div>
 
     <!-- 미등록 방문처 → 고객 등록/연결 -->
@@ -547,6 +590,7 @@
     vlLoadCustOptions();
     vlAddPendRow();
     await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
+    vlBrLoadDir();
   }
 
   function vlRequestGeo(){
@@ -656,6 +700,7 @@
       $('vl-pends').innerHTML=''; vlAddPendRow(); vlPhotos=[]; vlRenderThumbs();
       vlSel.clear(); await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
       vlRequestGeo();
+      if(d.id) vlShowRec(d.id, d.place_name||body.place_name||'');   // 저장 직후 상담 녹음 패널 오픈
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
     finally{ btn.disabled=false; btn.textContent='방문 저장 (체크인)'; }
   }
@@ -716,6 +761,8 @@
             <span class="tag ${ex?'ex':'nw'}">${ex?'기존고객':'신규 방문처'}</span>
             <span class="hint" style="margin:0">${vlDayLabel(v.visit_date)}${v.by_name?(' · '+vlEsc(v.by_name)):''}</span>
             ${v.photo_cnt?`<button type="button" class="btn ghost sm vl-ph" data-id="${v.id}">📷 명함/사진 ${v.photo_cnt}</button>`:''}
+            ${v.rec_cnt?`<span class="hint" style="margin:0">🎙 ${v.rec_cnt}${v.last_rec_status==='done'?' ✅':(v.last_rec_status==='failed'?' ❌':' ⏳')}</span>`:''}
+            ${(isDirector()||(session.user&&Number(session.user.id)===Number(v.created_by)))?`<button type="button" class="btn ghost sm vl-rec" data-id="${v.id}" data-p="${vlEsc(v.place_name)}">🎙 녹음/요약</button>`:''}
           </div>
           <div class="body">
             ${v.met_person?('만남: '+vlEsc(v.met_person)+'<br>'):''}
@@ -730,7 +777,161 @@
       $('vl-list').querySelectorAll('.vl-visit').forEach(el=>{ el.onclick=(e)=>{ if(e.target.closest('button'))return; el.classList.toggle('open'); }; });
       $('vl-list').querySelectorAll('.vl-del').forEach(b=>b.onclick=()=>vlDelete(Number(b.dataset.id)));
       $('vl-list').querySelectorAll('.vl-ph').forEach(b=>b.onclick=()=>vlLoadPhotos(Number(b.dataset.id)));
+      $('vl-list').querySelectorAll('.vl-rec').forEach(b=>b.onclick=()=>vlShowRec(Number(b.dataset.id),b.dataset.p));
     }catch(e){ $('vl-list').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  // ===== 상담 녹음 · AI 요약 (build vr-20260803a) =====
+  let vlRecVisit=null;            // {id, place}
+  let vlRecMode='memo';
+  let vlRec=null, vlRecChunks=[], vlRecBlob=null, vlRecMime='', vlRecSec=0, vlRecTimerIv=null, vlRecPollIv=null;
+
+  function vlRecFmt(s){ s=Math.max(0,Math.round(s)); const m=Math.floor(s/60), ss=s%60; return String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
+  function vlRecPickMime(){
+    if(typeof MediaRecorder==='undefined') return null;
+    const cands=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];
+    for(const c of cands){ try{ if(MediaRecorder.isTypeSupported(c)) return c; }catch(e){} }
+    return '';                     // 브라우저 기본
+  }
+  function vlRecSetMode(m){ vlRecMode=m;
+    $('vl-recModeMemo').classList.toggle('on',m==='memo'); $('vl-recModeFull').classList.toggle('on',m==='full'); }
+
+  function vlShowRec(visitId,place){
+    vlRecVisit={id:visitId,place:place||''};
+    const card=$('vl-recCard'); card.classList.remove('hidden');
+    $('vl-recTarget').textContent='— '+(place||('방문 #'+visitId));
+    vlRecReset(); vlLoadRecs(true);
+    try{ card.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  }
+  function vlRecReset(){
+    if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
+    vlRec=null; vlRecChunks=[]; vlRecBlob=null; vlRecSec=0;
+    $('vl-recTimer').textContent=''; $('vl-recReady').classList.add('hidden');
+    $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
+    $('vl-recPause').textContent='⏸ 일시정지';
+    const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+  }
+  async function vlRecStart(){
+    const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+    if(!vlRecVisit){ m.className='msg err'; m.style.display='block'; m.textContent='먼저 방문을 저장(체크인)하거나 목록에서 🎙 버튼으로 방문을 선택하세요.'; return; }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof MediaRecorder==='undefined'){
+      m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 녹음을 지원하지 않습니다. 폰 녹음앱으로 녹음 후 전사 텍스트를 대화 칸에 붙여넣어 주세요.'; return; }
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,noiseSuppression:true,echoCancellation:true}});
+      vlRecMime=vlRecPickMime()||'';
+      const opt=vlRecMime?{mimeType:vlRecMime,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000};
+      vlRec=new MediaRecorder(stream,opt); vlRecChunks=[]; vlRecBlob=null; vlRecSec=0;
+      vlRec.ondataavailable=(e)=>{ if(e.data&&e.data.size) vlRecChunks.push(e.data); };
+      vlRec.onstop=()=>{ stream.getTracks().forEach(t=>t.stop());
+        vlRecBlob=new Blob(vlRecChunks,{type:vlRecMime||(vlRecChunks[0]&&vlRecChunks[0].type)||'audio/webm'});
+        if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
+        $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
+        const mb=(vlRecBlob.size/1048576);
+        $('vl-recInfo').textContent='녹음 '+vlRecFmt(vlRecSec)+' · '+mb.toFixed(1)+'MB'+(mb>24?' — ⚠ 25MB 초과: 업로드가 거부될 수 있습니다':'');
+        $('vl-recReady').classList.remove('hidden'); };
+      vlRec.start(1000);
+      vlRecTimerIv=setInterval(()=>{ if(vlRec&&vlRec.state==='recording'){ vlRecSec++; $('vl-recTimer').textContent='● '+vlRecFmt(vlRecSec)+(vlRecMode==='full'?' (화면을 켜두세요)':''); } },1000);
+      $('vl-recStart').classList.add('hidden'); $('vl-recPause').classList.remove('hidden'); $('vl-recStop').classList.remove('hidden');
+      $('vl-recReady').classList.add('hidden');
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='마이크 권한이 필요합니다 — 브라우저 설정에서 마이크를 허용해 주세요.'; }
+  }
+  function vlRecPause(){
+    if(!vlRec)return;
+    if(vlRec.state==='recording'){ vlRec.pause(); $('vl-recPause').textContent='▶ 계속'; }
+    else if(vlRec.state==='paused'){ vlRec.resume(); $('vl-recPause').textContent='⏸ 일시정지'; }
+  }
+  function vlRecStop(){ if(vlRec&&vlRec.state!=='inactive') vlRec.stop(); }
+  async function vlRecUpload(){
+    const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+    if(!vlRecBlob||!vlRecVisit) return;
+    const btn=$('vl-recUpload'); btn.disabled=true; btn.textContent='업로드 중…';
+    try{
+      const durl=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(vlRecBlob); });
+      const res=await fetch(session.api+'/api/visits/'+vlRecVisit.id+'/recordings',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({data_url:durl,mode:vlRecMode,duration_sec:vlRecSec})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block';
+        m.textContent='업로드 실패: '+(d.error==='too_large'?'파일이 25MB를 넘습니다 — 더 짧게 나눠 녹음하세요.':(d.error==='rec_disabled'?'녹음 기능이 꺼져 있습니다.':(d.error||res.status))); return; }
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='✔ 업로드됨 — 전사·요약 처리 중입니다'+(!d.stt_ready?' · ⚠ OPENAI_API_KEY 미설정(전사 불가)':'')+(!d.ai_ready?' · ⚠ ANTHROPIC_API_KEY 미설정':'');
+      $('vl-recReady').classList.add('hidden'); vlRecBlob=null;
+      vlLoadRecs(true); vlRecStartPoll();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; btn.textContent='⬆ 업로드 & AI 요약'; }
+  }
+  function vlRecStartPoll(){
+    if(vlRecPollIv) clearInterval(vlRecPollIv);
+    let ticks=0;
+    vlRecPollIv=setInterval(async()=>{ ticks++;
+      const busy=await vlLoadRecs(false);
+      if(!busy||ticks>240){ clearInterval(vlRecPollIv); vlRecPollIv=null;
+        if(!busy){ vlLoadDates(); vlLoadPendings(); } }   // 완료 → 노트·펜딩 갱신 반영
+    },5000);
+  }
+  const VL_REC_ST={queued:'⏳ 대기',transcribing:'🎧 전사 중',summarizing:'🤖 요약 중',done:'✅ 완료',failed:'❌ 실패'};
+  async function vlLoadRecs(showEmpty){
+    if(!vlRecVisit) return false;
+    try{
+      const d=await fetch(session.api+'/api/visits/'+vlRecVisit.id+'/recordings',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ if(showEmpty)$('vl-recList').innerHTML='<div class="hint">이 방문에 아직 녹음이 없습니다.</div>'; return false; }
+      $('vl-recList').innerHTML=items.map(r=>{
+        const s=r.summary||{};
+        const acts=(s.action_items||[]).map(a=>'· '+vlEsc(a.content)+(a.due_date?(' <b>('+a.due_date+')</b>'):'')).join('<br>');
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px">
+          <div><b>${VL_REC_ST[r.status]||vlEsc(r.status)}</b> · ${r.mode==='full'?'상담 전체':'음성 메모'}${r.duration_sec?(' · '+vlRecFmt(r.duration_sec)):''}
+            ${r.status==='failed'?('<span style="color:var(--expense)"> — '+vlEsc(r.error||'오류')+'</span> <button type="button" class="btn ghost sm vl-recRetry" data-id="'+r.id+'">↻ 재시도</button>'):''}</div>
+          ${s.resumen?('<div style="margin-top:6px"><b>요약:</b> '+vlEsc(s.resumen)+'</div>'):''}
+          ${s.insights?('<div style="margin-top:4px"><b>파악:</b> '+vlEsc(s.insights)+'</div>'):''}
+          ${acts?('<div style="margin-top:4px"><b>해야 할 일 (펜딩 자동 등록됨):</b><br>'+acts+'</div>'):''}
+          ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
+          ${s.next_step?('<div style="margin-top:4px"><b>다음:</b> '+vlEsc(s.next_step)+'</div>'):''}
+          ${r.transcript&&r.status==='done'?('<details style="margin-top:6px"><summary class="hint" style="margin:0;cursor:pointer">전사 원문 보기</summary><div style="white-space:pre-wrap;font-size:12px;margin-top:4px">'+vlEsc(r.transcript)+'</div></details>'):''}
+        </div>`; }).join('');
+      $('vl-recList').querySelectorAll('.vl-recRetry').forEach(b=>b.onclick=async()=>{ b.disabled=true;
+        try{ await fetch(session.api+'/api/visits/recordings/'+b.dataset.id+'/retry',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'}); vlLoadRecs(true); vlRecStartPoll(); }catch(e){} });
+      return items.some(r=>r.status==='queued'||r.status==='transcribing'||r.status==='summarizing');
+    }catch(e){ return false; }
+  }
+
+  // ===== 아침 브리핑 =====
+  async function vlBrPreview(){
+    const m=$('vl-brMsg'); m.className='msg'; m.style.display='none';
+    try{
+      const d=await fetch(session.api+'/api/visits/briefing/preview',{headers:auth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.style.display='block'; m.textContent='미리보기 실패: '+d.error; return; }
+      const t=$('vl-brText'); t.classList.remove('hidden'); t.textContent=d.text||'';
+      $('vl-brSelfHint').textContent=(d.wa_phone_set?'✅ 내 WhatsApp 번호 설정됨 · 매일 MX '+String(d.hour).padStart(2,'0')+':00 발송':'⚠ 내 WhatsApp 번호 미설정 — 디렉터에게 등록을 요청하세요')+(d.wa_enabled?'':' · (WhatsApp 발송 미구성)');
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+  async function vlBrLoadDir(){
+    if(!isDirector())return;
+    $('vl-brDir').classList.remove('hidden');
+    try{
+      const d=await fetch(session.api+'/api/visits/briefing/status',{headers:auth()}).then(r=>r.json());
+      $('vl-brStatus').textContent=(d.enabled?('✅ 자동 발송 사용 중 · 매일 MX '+String(d.hour).padStart(2,'0')+':00'):'⚠ 발송 비활성 (WHATSAPP_TOKEN/PHONE_ID 확인)')
+        +' · 수신자 '+(d.recipients||[]).length+'명'
+        +(d.stt_ready?'':' · ⚠ OPENAI_API_KEY 미설정(녹음 전사 불가)');
+      $('vl-brUser').innerHTML='<option value="">사원 선택…</option>'+(d.recipients||[]).map(u=>`<option value="${u.id}">${vlEsc(u.name)} (${u.wa_masked})</option>`).join('');
+      const sends=d.sends||[];
+      $('vl-brSends').innerHTML=sends.length?('<table><thead><tr><th>날짜</th><th>사원</th><th>상태</th><th>시도</th></tr></thead><tbody>'+
+        sends.slice(0,20).map(s=>`<tr><td>${s.brief_date}</td><td>${vlEsc(s.name)}</td><td>${s.status&&s.status.startsWith('sent')?'✅ '+s.status:('❌ '+vlEsc(s.error||'실패'))}</td><td>${s.attempts}</td></tr>`).join('')+'</tbody></table>'):'<div class="hint">최근 7일 발송 이력이 없습니다.</div>';
+    }catch(e){ $('vl-brStatus').textContent='발송 현황을 불러오지 못했습니다.'; }
+  }
+  async function vlBrSend(){
+    const m=$('vl-brMsg'); m.className='msg'; m.style.display='none';
+    const uid=$('vl-brUser').value;
+    if(!uid){ m.className='msg err'; m.style.display='block'; m.textContent='발송할 사원을 선택하세요.'; return; }
+    const btn=$('vl-brSend'); btn.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/visits/briefing/send',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:Number(uid)})});
+      const d=await res.json();
+      const r=(d.results||[])[0]||{};
+      if(res.ok&&r.ok){ m.className='msg ok'; m.style.display='block'; m.textContent='✔ 발송됨 ('+(r.mode==='template'?'템플릿 헤드라인':'전체 텍스트')+')'; }
+      else { m.className='msg err'; m.style.display='block'; m.textContent='발송 실패: '+(r.error||d.error||res.status); }
+      vlBrLoadDir();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; }
   }
 
   async function vlLoadPhotos(id){
@@ -839,11 +1040,22 @@
     $('vl-addPend').addEventListener('click',()=>vlAddPendRow());
     $('vl-photoInput').addEventListener('change',vlOnPhoto);
     $('vl-save').addEventListener('click',vlSave);
+    // 상담 녹음
+    $('vl-recModeMemo').addEventListener('click',()=>vlRecSetMode('memo'));
+    $('vl-recModeFull').addEventListener('click',()=>vlRecSetMode('full'));
+    $('vl-recStart').addEventListener('click',vlRecStart);
+    $('vl-recPause').addEventListener('click',vlRecPause);
+    $('vl-recStop').addEventListener('click',vlRecStop);
+    $('vl-recUpload').addEventListener('click',vlRecUpload);
+    $('vl-recDiscard').addEventListener('click',vlRecReset);
+    // 아침 브리핑
+    $('vl-brPreview').addEventListener('click',vlBrPreview);
+    $('vl-brSend').addEventListener('click',vlBrSend);
   })();
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260803dk"></script>
+<script src="refatrix-nav.js?v=20260801ds"></script>
 </body>
 </html>
