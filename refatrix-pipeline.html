@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 (b20260804vr2)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 · 방문리뷰 (b20260804vr3)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -139,6 +139,7 @@
   <div class="vl-tabbar">
     <button type="button" id="vt-pipe" class="vl-tab on">단계관리</button>
     <button type="button" id="vt-visit" class="vl-tab">🧭 방문·동선</button>
+    <button type="button" id="vt-review" class="vl-tab">📋 방문 리뷰</button>
   </div>
   <div id="viewPipe">
     <div class="card">
@@ -291,6 +292,21 @@
       <div class="hint" style="margin-top:0">아래 미등록 방문처를 선택하면 신규 고객으로 등록하거나 이미 등록된 고객에 연결할 수 있습니다. 연결 시 그 방문처의 방문기록 전건이 고객 미팅기록에 소급 연결됩니다.</div>
       <div id="vl-places"></div>
       <div id="vl-regForm" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- 방문 리뷰 (검수) -->
+  <div id="viewReview" class="hidden">
+    <div class="card">
+      <h2>📋 방문 리뷰 <span class="hint" style="margin:0">— 날짜별 방문·미팅 요약·펜딩 F/UP 검수. 행을 클릭하면 상세가 열립니다.</span></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:6px">
+        <div><label>시작일</label><input type="date" id="rv-from"></div>
+        <div><label>종료일</label><input type="date" id="rv-to"></div>
+        <div id="rv-userWrap" class="hidden"><label>영업사원</label><select id="rv-user"><option value="">전체</option></select></div>
+        <button class="btn sm" type="button" id="rv-load">조회</button>
+        <span class="hint" style="margin:0" id="rv-count"></span>
+      </div>
+      <div id="rv-table" style="margin-top:10px"><div class="hint">기간을 선택하고 조회를 누르세요.</div></div>
     </div>
   </div>
 
@@ -572,11 +588,13 @@
 
   function vlUserQ(){ const el=$('vl-userFilter'); const v=el?el.value:''; return (isDirector()&&v)?('&user_id='+encodeURIComponent(v)):''; }
 
-  // 뷰탭 전환
+  // 뷰탭 전환 (단계관리 / 방문·동선 / 방문 리뷰)
   function showView(which){
-    const vp=$('viewPipe'), vv=$('viewVisit');
-    if(which==='visit'){ vp.classList.add('hidden'); vv.classList.remove('hidden'); $('vt-visit').classList.add('on'); $('vt-pipe').classList.remove('on'); vlInit(); }
-    else { vv.classList.add('hidden'); vp.classList.remove('hidden'); $('vt-pipe').classList.add('on'); $('vt-visit').classList.remove('on'); }
+    const views={pipe:'viewPipe',visit:'viewVisit',review:'viewReview'};
+    const tabs={pipe:'vt-pipe',visit:'vt-visit',review:'vt-review'};
+    Object.keys(views).forEach(k=>{ $(views[k]).classList.toggle('hidden',k!==which); const t=$(tabs[k]); if(t)t.classList.toggle('on',k===which); });
+    if(which==='visit') vlInit();
+    if(which==='review') rvInit();
   }
 
   async function vlInit(){
@@ -893,6 +911,85 @@
     }catch(e){ return false; }
   }
 
+  // ===== 방문 리뷰 (검수) =====
+  let rvInited=false, rvOpen=new Set();
+  const RV_FUP={ done:['✅ F/UP 완료','#0F6E56','#e6f3ee'], overdue:['⚠ 연체','#B23A2E','#f8dcdc'],
+                 open:['⏳ 진행 중','#9a6512','#fdf3e0'], none:['— 펜딩 없음','#888','#eef0f2'] };
+  function rvShift(ymd,days){ const p=String(ymd).split('-').map(Number); const t=new Date(Date.UTC(p[0],p[1]-1,p[2])); t.setUTCDate(t.getUTCDate()+days); return t.toISOString().slice(0,10); }
+  async function rvInit(){
+    if(rvInited){ return; } rvInited=true;
+    const today=vlMxToday||new Date().toISOString().slice(0,10);
+    $('rv-to').value=today; $('rv-from').value=rvShift(today,-6);
+    if(isDirector()){ $('rv-userWrap').classList.remove('hidden');
+      try{ const u=(await fetch(session.api+'/api/pipeline/salespeople',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[];
+        $('rv-user').innerHTML='<option value="">전체</option>'+u.map(x=>`<option value="${x.id}">${vlEsc(x.name)}</option>`).join(''); }catch(e){}
+      $('rv-user').onchange=()=>rvLoad(); }
+    $('rv-load').onclick=()=>rvLoad();
+    rvLoad();
+  }
+  function rvDayLabel(d){ const p=String(d).split('-').map(Number);
+    const w=['일','월','화','수','목','금','토'][new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay()];
+    return p[1]+'/'+p[2]+' ('+w+')'; }
+  async function rvLoad(){
+    const box=$('rv-table'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    rvOpen.clear();
+    try{
+      const q=['from='+encodeURIComponent($('rv-from').value),'to='+encodeURIComponent($('rv-to').value)];
+      if(isDirector()&&$('rv-user').value) q.push('user_id='+encodeURIComponent($('rv-user').value));
+      const d=await fetch(session.api+'/api/visits/review?'+q.join('&'),{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">불러오지 못했습니다: '+vlEsc(d.error)+'</div>'; return; }
+      window.__rvData=d;
+      const days=d.days||[];
+      const nAll=days.reduce((s,x)=>s+x.visits.length,0);
+      $('rv-count').textContent=nAll?('방문 '+nAll+'건 · '+days.length+'일'):'';
+      if(!nAll){ box.innerHTML='<div class="hint">이 기간에 방문 기록이 없습니다.</div>'; return; }
+      let html='<table style="width:100%"><thead><tr><th style="width:36px">#</th><th>고객/방문처</th><th>미팅 함축</th><th style="width:200px">펜딩 함축</th><th style="width:110px">F/UP</th></tr></thead><tbody>';
+      for(const day of days){
+        html+=`<tr><td colspan="5" style="background:#f2f4f3;font-weight:800;padding:7px 10px">📅 ${rvDayLabel(day.date)} · 방문 ${day.visits.length}건</td></tr>`;
+        day.visits.forEach((v,i)=>{
+          const f=RV_FUP[v.fup]||RV_FUP.none;
+          const pendTxt=v.pend_total? (v.pend_total+'건 · 완료 '+v.pend_done+(v.pend_overdue?(' · <b style="color:#B23A2E">연체 '+v.pend_overdue+'</b>'):'')+(v.pend_head?('<br><span class="hint" style="margin:0">'+vlEsc(v.pend_head)+(v.pend_total>1?' 외':'')+'</span>'):'')) : '—';
+          html+=`<tr class="rv-row" data-id="${v.id}" style="cursor:pointer">
+            <td>${i+1}</td>
+            <td><b>${vlEsc(v.name)}</b>${v.is_customer?'':' <span class="hint" style="margin:0">(미등록)</span>'}<br><span class="hint" style="margin:0">${vlEsc(v.by_name||'')}${v.met_person?(' · '+vlEsc(v.met_person)):''}</span></td>
+            <td>${v.headline?vlEsc(v.headline):'<span class="hint" style="margin:0">기록 없음</span>'}${v.has_ai?' <span title="녹음 AI 요약">🎙</span>':''}</td>
+            <td>${pendTxt}</td>
+            <td><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;color:${f[1]};background:${f[2]}">${f[0]}</span></td>
+          </tr>
+          <tr class="rv-detail hidden" data-for="${v.id}"><td colspan="5" style="background:#fbfcfb;padding:10px 14px" id="rv-det-${v.id}"></td></tr>`;
+        });
+      }
+      html+='</tbody></table>';
+      box.innerHTML=html;
+      box.querySelectorAll('.rv-row').forEach(tr=>tr.onclick=()=>rvToggle(Number(tr.dataset.id)));
+    }catch(e){ box.innerHTML='<div class="hint">서버 연결 실패</div>'; }
+  }
+  function rvFind(id){ const d=window.__rvData||{days:[]};
+    for(const day of (d.days||[])){ const v=day.visits.find(x=>Number(x.id)===Number(id)); if(v) return {v,date:day.date}; } return null; }
+  function rvToggle(id){
+    const det=document.querySelector('.rv-detail[data-for="'+id+'"]'); if(!det)return;
+    const open=!det.classList.contains('hidden');
+    if(open){ det.classList.add('hidden'); rvOpen.delete(id); return; }
+    const hit=rvFind(id); if(!hit)return;
+    const v=hit.v, s=v.summary||{};
+    const pendRows=(v.pendings||[]).map(p=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;cursor:pointer">
+        <input type="checkbox" ${p.done?'checked':''} onchange="rvTogglePend(${p.id},this.checked)" style="margin-top:3px">
+        <span style="${p.done?'text-decoration:line-through;color:#888':''}">${vlEsc(p.content)}${p.due_date?(' <b>('+p.due_date+')</b>'):''}${p.overdue?(' <b style="color:#B23A2E">⚠ '+p.overdue+'일 초과</b>'):''}</span></label>`).join('');
+    $('rv-det-'+id).innerHTML=`
+      ${v.plan?('<div><b>사전 계획(할 이야기):</b> '+vlEsc(v.plan)+'</div>'):''}
+      ${s.resumen?('<div style="margin-top:6px"><b>🎙 미팅 요약(AI):</b> '+vlEsc(s.resumen)+'</div>'):'<div style="margin-top:6px" class="hint">녹음 AI 요약이 없습니다'+(v.rec_status&&v.rec_status!=='done'?(' (녹음 상태: '+vlEsc(v.rec_status)+')'):' — 수기 기록만')+'</div>'}
+      ${v.insight?('<div style="margin-top:4px"><b>파악한 내용:</b> '+vlEsc(v.insight)+'</div>'):''}
+      ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
+      ${s.next_step?('<div style="margin-top:4px"><b>다음 계획:</b> '+vlEsc(s.next_step)+'</div>'):''}
+      <div style="margin-top:8px"><b>📌 후속조치 (F/UP ${v.pend_done}/${v.pend_total})</b>${v.pend_total?'':' <span class="hint" style="margin:0">— 등록된 펜딩 없음</span>'}</div>${pendRows}`;
+    det.classList.remove('hidden'); rvOpen.add(id);
+  }
+  async function rvTogglePend(id,done){
+    try{ await fetch(session.api+'/api/visits/pendings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done})});
+      const openIds=[...rvOpen]; await rvLoad(); openIds.forEach(x=>rvToggle(x));
+    }catch(e){ alert('저장 실패'); }
+  }
+
   // ===== 아침 브리핑 =====
   async function vlBrPreview(){
     const m=$('vl-brMsg'); m.className='msg'; m.style.display='none';
@@ -1034,6 +1131,7 @@
     const vp=$('vt-pipe'), vv=$('vt-visit'); if(!vp)return;
     vp.addEventListener('click',()=>showView('pipe'));
     vv.addEventListener('click',()=>showView('visit'));
+    const vr=$('vt-review'); if(vr)vr.addEventListener('click',()=>showView('review'));
     $('vl-segCust').addEventListener('click',()=>vlSegment('cust'));
     $('vl-segNew').addEventListener('click',()=>vlSegment('new'));
     $('vl-addPend').addEventListener('click',()=>vlAddPendRow());

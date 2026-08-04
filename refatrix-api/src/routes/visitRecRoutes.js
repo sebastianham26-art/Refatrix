@@ -387,6 +387,98 @@ async function upsertSend(userId, briefDate, status, error) {
 }
 
 // =====================================================================
+// 방문 리뷰(디렉터 검수) 데이터 — 날짜별 방문 순서 + 미팅/펜딩 함축 + F/UP 상태
+//   perm: { userId, role } · opts: { from, to, userId(디렉터 필터) }
+// =====================================================================
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export async function buildVisitReview(perm, opts = {}) {
+  const mxToday = mxTodayStr(new Date());
+  let to = DATE_RE.test(String(opts.to)) ? String(opts.to) : mxToday;
+  let from = DATE_RE.test(String(opts.from)) ? String(opts.from) : shiftYmd(to, -6);
+  if (daysBetween(to, from) > 31) from = shiftYmd(to, -31);   // 최대 31일 창
+  if (daysBetween(to, from) < 0) from = to;
+
+  const params = [from, to];
+  const conds = ['v.deleted_at IS NULL', 'v.visit_date >= $1', 'v.visit_date <= $2'];
+  if (perm.role !== 'director') { params.push(perm.userId); conds.push(`v.created_by = $${params.length}`); }
+  else if (opts.userId) { params.push(Number(opts.userId)); conds.push(`v.created_by = $${params.length}`); }
+
+  const rows = (await query(
+    `SELECT v.id, v.visit_date, v.visited_at, v.customer_id, v.place_name, v.met_person,
+            v.talk_note, v.insight_note, u.name AS by_name, c.name AS customer_name
+       FROM sales_visits v
+       LEFT JOIN users u ON u.id = v.created_by
+       LEFT JOIN customers c ON c.id = v.customer_id
+      WHERE ${conds.join(' AND ')}
+      ORDER BY v.visit_date ASC, v.visited_at ASC, v.id ASC`, params)).rows;
+  const ids = rows.map((r) => Number(r.id));
+
+  // 펜딩 전건
+  const pendByVisit = {};
+  if (ids.length) {
+    const pend = (await query(
+      `SELECT id, visit_id, content, due_date, done FROM sales_visit_pendings
+        WHERE visit_id = ANY($1) ORDER BY done ASC, (due_date IS NULL) ASC, due_date ASC, id ASC`, [ids])).rows;
+    for (const p of pend) {
+      (pendByVisit[Number(p.visit_id)] ||= []).push({
+        id: Number(p.id), content: p.content, due_date: d10(p.due_date), done: !!p.done,
+        overdue: (!p.done && p.due_date && daysBetween(mxToday, d10(p.due_date)) > 0) ? daysBetween(mxToday, d10(p.due_date)) : 0,
+      });
+    }
+  }
+  // 녹음 AI 요약(완료건 최신) + 진행 상태
+  const sjByVisit = {}; const recStByVisit = {};
+  if (ids.length) {
+    try {
+      const recs = (await query(
+        `SELECT id, visit_id, status, summary_json FROM sales_visit_recordings
+          WHERE visit_id = ANY($1) ORDER BY id ASC`, [ids])).rows;
+      for (const r of recs) {
+        const vid = Number(r.visit_id);
+        recStByVisit[vid] = r.status;                                  // 마지막(최신) 상태
+        if (r.status === 'done' && r.summary_json) sjByVisit[vid] = r.summary_json;
+      }
+    } catch (_) { /* 0165 미적용 */ }
+  }
+
+  const days = {};
+  for (const r of rows) {
+    const vid = Number(r.id);
+    let summary = null;
+    const sj = sjByVisit[vid];
+    if (sj) { try { summary = typeof sj === 'string' ? JSON.parse(sj) : sj; } catch (_) {} }
+    const pendings = pendByVisit[vid] || [];
+    const total = pendings.length;
+    const done = pendings.filter((p) => p.done).length;
+    const overdue = pendings.filter((p) => p.overdue > 0).length;
+    const fup = !total ? 'none' : (done === total ? 'done' : (overdue ? 'overdue' : 'open'));
+    // 사전 계획(체크인 입력)과 AI 블록 분리
+    const talk = String(r.talk_note || '');
+    const aiIdx = talk.indexOf('[AI요약]');
+    const plan = (aiIdx >= 0 ? talk.slice(0, aiIdx) : talk).trim() || null;
+    const headline = clip((summary && summary.resumen) || (aiIdx >= 0 ? talk.slice(aiIdx + 6) : talk), 140) || null;
+
+    const dkey = d10(r.visit_date);
+    (days[dkey] ||= []).push({
+      id: vid, visited_at: r.visited_at,
+      customer_id: r.customer_id != null ? Number(r.customer_id) : null,
+      name: r.customer_name || r.place_name, is_customer: r.customer_id != null,
+      by_name: r.by_name || null, met_person: r.met_person || null,
+      headline, has_ai: !!summary, rec_status: recStByVisit[vid] || null,
+      plan, summary,
+      insight: (summary && summary.insights) || clip(r.insight_note, 500) || null,
+      pend_total: total, pend_done: done, pend_overdue: overdue,
+      pend_head: total ? clip(pendings[0].content, 60) : null,
+      fup, pendings,
+    });
+  }
+  return {
+    mx_today: mxToday, from, to,
+    days: Object.keys(days).sort().reverse().map((d) => ({ date: d, visits: days[d] })),
+  };
+}
+
+// =====================================================================
 // 라우트
 // =====================================================================
 export default async function visitRecRoutes(app) {
@@ -461,6 +553,13 @@ export default async function visitRecRoutes(app) {
     await query(`UPDATE sales_visit_recordings SET status='queued', error=NULL WHERE id=$1`, [id]);
     setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
     return { ok: true, id, status: 'queued' };
+  });
+
+  // ── 방문 리뷰(날짜별 표 + 드릴다운 데이터 일체) — 영업사원 본인 · 디렉터 전체(+user_id 필터) ──
+  app.get('/api/visits/review', { preHandler: [authGuard, requirePage('pipeline')] }, async (req) => {
+    return buildVisitReview(req.ctx.perm, {
+      from: req.query.from, to: req.query.to, userId: req.query.user_id,
+    });
   });
 
   // ── 아침 브리핑 미리보기(본인 · 디렉터는 ?user_id=) ──

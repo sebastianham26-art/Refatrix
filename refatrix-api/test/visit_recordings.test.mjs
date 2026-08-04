@@ -69,9 +69,9 @@ function seedBase() {
     INSERT INTO users VALUES (2,'Oscar','sales',5,'8112345678',NULL,NULL);
     INSERT INTO users VALUES (3,'Maria','sales',5,NULL,NULL,NULL);
     INSERT INTO customers VALUES (10,'Refaccionaria Aguila',5,NULL);
-    INSERT INTO customer_meetings VALUES (77,10,'2026-08-03','[현장방문]' || E'\\n' || '만남: Sr. Juan',NULL,NULL,2);
+    INSERT INTO customer_meetings VALUES (77,10,'2026-01-02','[현장방문]' || E'\\n' || '만남: Sr. Juan',NULL,NULL,2);
     INSERT INTO sales_visits (id, visit_date, customer_id, place_name, geo_lat, geo_lng, met_person, talk_note, meeting_id, created_by)
-      VALUES (100,'2026-08-03',10,'Refaccionaria Aguila',25.6,-100.3,'Sr. Juan','수기 메모',77,2);
+      VALUES (100,'2026-01-02',10,'Refaccionaria Aguila',25.6,-100.3,'Sr. Juan','수기 메모',77,2);
   `);
 }
 const SUMMARY = {
@@ -352,4 +352,57 @@ test('buildBriefingText/briefingHeadline: 빈 데이터·줄바꿈 금지·날�
   assert.ok(!hl.includes('\n') && hl.includes('agenda 1') && hl.includes('vencidos 2'));
   assert.equal(esDateLabel('2026-08-03'), 'lunes 03/08/2026');
   assert.equal(clip('abcdef', 4), 'abc…');
+});
+
+// ── ⑥ 방문 리뷰(buildVisitReview) ─────────────────────────────────────
+test('buildVisitReview: 날짜별 순서·함축·F/UP 상태·권한 스코프', async () => {
+  const { buildVisitReview } = await import('../src/routes/visitRecRoutes.js');
+  seedBase();
+  const { mxTodayStr } = await import('../src/workingHours.js');
+  const mxToday = mxTodayStr(new Date());
+  // 방문 3건: 오늘 오스카 2건(순서 확인) + 오늘 마리아 1건(권한 확인)
+  pub.none(`
+    UPDATE sales_visits SET visit_date='${mxToday}', visited_at='2026-08-04T15:00:00Z' WHERE id=100;
+    INSERT INTO sales_visits (id, visit_date, visited_at, customer_id, place_name, geo_lat, geo_lng, talk_note, created_by)
+      VALUES (101,'${mxToday}','2026-08-04T13:00:00Z',NULL,'Nueva Tienda',25.7,-100.4,'사전계획 텍스트',2);
+    INSERT INTO sales_visits (id, visit_date, visited_at, customer_id, place_name, geo_lat, geo_lng, created_by)
+      VALUES (102,'${mxToday}','2026-08-04T14:00:00Z',10,'Refaccionaria Aguila',25.6,-100.3,3);
+    INSERT INTO sales_visit_recordings (visit_id, mode, status, summary_json, created_by)
+      VALUES (100,'memo','done','${JSON.stringify(SUMMARY).replace(/'/g, "''")}',2);
+    INSERT INTO sales_visit_pendings (visit_id, content, due_date, done) VALUES (100,'A 완료된 일','2026-08-01',TRUE);
+    INSERT INTO sales_visit_pendings (visit_id, content, due_date, done) VALUES (100,'B 연체된 일','2026-01-05',FALSE);
+    INSERT INTO sales_visit_pendings (visit_id, content, done) VALUES (101,'C 열린 일',FALSE);
+  `);
+  // 디렉터: 전체
+  const dir = await buildVisitReview({ userId: 1, role: 'director' }, {});
+  const day = dir.days.find((d) => d.date === mxToday);
+  assert.ok(day && day.visits.length === 3);
+  assert.deepEqual(day.visits.map((v) => v.id), [101, 102, 100], 'visited_at 오름차순(방문 순서)');
+  const v100 = day.visits.find((v) => v.id === 100);
+  assert.equal(v100.has_ai, true);
+  assert.equal(v100.headline, SUMMARY.resumen, 'AI resumen 이 함축으로');
+  assert.equal(v100.fup, 'overdue', '연체 펜딩 있으면 overdue');
+  assert.equal(v100.pend_total, 2); assert.equal(v100.pend_done, 1); assert.equal(v100.pend_overdue, 1);
+  const v101 = day.visits.find((v) => v.id === 101);
+  assert.equal(v101.fup, 'open'); assert.equal(v101.plan, '사전계획 텍스트');
+  assert.equal(v101.headline, '사전계획 텍스트', 'AI 없으면 수기 함축');
+  const v102 = day.visits.find((v) => v.id === 102);
+  assert.equal(v102.fup, 'none'); assert.equal(v102.name, 'Refaccionaria Aguila');
+  // 영업사원(오스카): 본인 것만
+  const own = await buildVisitReview({ userId: 2, role: 'sales' }, {});
+  assert.deepEqual(own.days.find((d) => d.date === mxToday).visits.map((v) => v.id), [101, 100]);
+  // 디렉터 + user_id 필터
+  const filt = await buildVisitReview({ userId: 1, role: 'director' }, { userId: 3 });
+  assert.deepEqual(filt.days.find((d) => d.date === mxToday).visits.map((v) => v.id), [102]);
+});
+
+test('buildVisitReview: 기간 검증(31일 캡·역순 보정·기본 7일)', async () => {
+  const { buildVisitReview } = await import('../src/routes/visitRecRoutes.js');
+  seedBase();
+  const r1 = await buildVisitReview({ userId: 1, role: 'director' }, { from: '2026-01-01', to: '2026-08-01' });
+  assert.equal(r1.from, '2026-07-01', '31일 초과 → to-31 로 캡');
+  const r2 = await buildVisitReview({ userId: 1, role: 'director' }, { from: '2026-08-10', to: '2026-08-01' });
+  assert.equal(r2.from, r2.to, '역순 입력 보정');
+  const r3 = await buildVisitReview({ userId: 1, role: 'director' }, {});
+  assert.equal(r3.to, (await import('../src/workingHours.js')).mxTodayStr(new Date()), '기본 to=오늘');
 });

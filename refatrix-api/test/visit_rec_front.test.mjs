@@ -178,3 +178,68 @@ test('타인 방문(영업사원 시점): 🎙 버튼 없음', async () => {
   await tick(30);
   assert.ok(!$('vl-list').querySelector('.vl-rec'));
 });
+
+// ── 방문 리뷰 탭 ──────────────────────────────────────────────────────
+function seedReviewRoutes() {
+  route('GET', '/api/pipeline/salespeople', { items: [{ id: 2, name: 'Oscar' }] });
+  route('GET', '/api/visits/review', {
+    mx_today: '2026-08-04', from: '2026-07-29', to: '2026-08-04',
+    days: [{ date: '2026-08-04', visits: [
+      { id: 100, name: 'Refaccionaria Aguila', is_customer: true, by_name: 'Oscar', met_person: 'Sr. Juan',
+        headline: 'Habló de balatas y precios.', has_ai: true, rec_status: 'done',
+        plan: '사전 계획 텍스트', insight: 'Cliente compra a competidor X.',
+        summary: { resumen: 'Habló de balatas y precios.', insights: 'Cliente compra a competidor X.',
+          products: ['CL0001'], next_step: 'Visitar lunes',
+          action_items: [{ content: 'Enviar cotización', due_date: '2026-08-05' }] },
+        pend_total: 2, pend_done: 1, pend_overdue: 1, pend_head: 'Enviar cotización', fup: 'overdue',
+        pendings: [
+          { id: 11, content: 'Enviar cotización', due_date: '2026-08-05', done: false, overdue: 3 },
+          { id: 12, content: 'Hecho ya', due_date: null, done: true, overdue: 0 },
+        ] },
+      { id: 101, name: 'Nueva Tienda', is_customer: false, by_name: 'Oscar', met_person: null,
+        headline: null, has_ai: false, rec_status: null, plan: null, insight: null, summary: null,
+        pend_total: 0, pend_done: 0, pend_overdue: 0, pend_head: null, fup: 'none', pendings: [] },
+    ] }],
+  });
+  route('PATCH', '/api/visits/pendings/11', { ok: true, done: true });
+}
+
+test('방문 리뷰: 탭 전환 → 표 렌더(날짜 그룹·함축·F/UP 배지)', async () => {
+  seedReviewRoutes();
+  win.document.getElementById('vt-review').click();
+  await tick(40);
+  assert.ok(!$('viewReview').classList.contains('hidden'), '리뷰 뷰 표시');
+  assert.ok($('viewVisit').classList.contains('hidden') && $('viewPipe').classList.contains('hidden'));
+  const t = $('rv-table').innerHTML;
+  assert.ok(t.includes('8/4') && t.includes('방문 2건'), '날짜 그룹 헤더');
+  assert.ok(t.includes('Refaccionaria Aguila') && t.includes('Nueva Tienda'));
+  assert.ok(t.includes('Habló de balatas'), '미팅 함축');
+  assert.ok(t.includes('연체 1'), '펜딩 함축');
+  assert.ok(t.includes('⚠ 연체') && t.includes('— 펜딩 없음'), 'F/UP 배지');
+  assert.ok($('rv-count').textContent.includes('방문 2건'));
+});
+
+test('방문 리뷰 드릴다운: 상세(AI 요약·펜딩 체크리스트) + 펜딩 토글 PATCH', async () => {
+  seedReviewRoutes();
+  win.document.getElementById('vt-review').click();
+  await tick(40);
+  const row = $('rv-table').querySelector('.rv-row[data-id="100"]');
+  row.click();
+  const det = $('rv-det-100').innerHTML;
+  assert.ok(det.includes('사전 계획') && det.includes('사전 계획 텍스트'));
+  assert.ok(det.includes('미팅 요약(AI)') && det.includes('balatas'));
+  assert.ok(det.includes('competidor X') && det.includes('CL0001') && det.includes('Visitar lunes'));
+  assert.ok(det.includes('F/UP 1/2') && det.includes('⚠ 3일 초과'));
+  // 펜딩 체크 → PATCH
+  const cb = $('rv-det-100').querySelector('input[type=checkbox]:not(:checked)');
+  cb.checked = true; cb.dispatchEvent(new win.Event('change'));
+  await tick(40);
+  const patch = fetchLog.find((f) => f.method === 'PATCH' && f.url.includes('/api/visits/pendings/11'));
+  assert.ok(patch && JSON.parse(patch.body).done === true);
+  // 다시 클릭하면 닫힘
+  const row2 = $('rv-table').querySelector('.rv-row[data-id="101"]');
+  row2.click();
+  assert.ok($('rv-det-101').innerHTML.includes('녹음 AI 요약이 없습니다'), '녹음 없음 안내');
+  row2.click();
+  assert.ok(win.document.querySelector('.rv-detail[data-for="101"]').classList.contains('hidden'), '토글 닫힘');
+});
