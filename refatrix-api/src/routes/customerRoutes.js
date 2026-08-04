@@ -237,7 +237,7 @@ export default async function customerRoutes(app) {
     }
     if (q) { params.push(`%${q}%`); conds.push(`(c.name ILIKE $${params.length} OR c.code ILIKE $${params.length} OR c.rfc ILIKE $${params.length})`); }
     const rows = (await query(
-      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.discount, c.credit_days, c.customer_type, c.branch_count,
+      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone, c.discount, c.credit_days, c.customer_type, c.branch_count,
               c.ship_address,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
@@ -305,6 +305,7 @@ export default async function customerRoutes(app) {
     }
     return { items: rows.map((c) => ({
       id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
+      buyer_name: c.buyer_name || null, buyer_phone: c.buyer_phone || null,
       discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
       branch_count: c.branch_count == null ? null : Number(c.branch_count),
       ship_address: c.ship_address || null,
@@ -419,6 +420,7 @@ export default async function customerRoutes(app) {
     return {
       customer: {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
+        buyer_name: c.buyer_name || null, buyer_phone: c.buyer_phone || null,
         discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
         constancia_fiscal: c.constancia_fiscal || null,
         ship_address: c.ship_address || null,
@@ -500,12 +502,14 @@ export default async function customerRoutes(app) {
       const code = await computeNextCode();
       try {
         row = (await query(
-          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, branch_count, ship_address, stage_since, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14,$15, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
+          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, branch_count, ship_address, buyer_name, buyer_phone, stage_since, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14,$15,$16,$17, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
           [code, b.name, b.rfc || null, b.contact || null, b.phone || null, Number(b.discount) || 0,
            Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.customer_type || null, b.memo || null, req.ctx.perm.userId,
            (b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count),
-           (b.ship_address == null || String(b.ship_address).trim() === '') ? null : String(b.ship_address).trim()])).rows[0];
+           (b.ship_address == null || String(b.ship_address).trim() === '') ? null : String(b.ship_address).trim(),
+           (b.buyer_name == null || String(b.buyer_name).trim() === '') ? null : String(b.buyer_name).trim(),
+           (b.buyer_phone == null || String(b.buyer_phone).trim() === '') ? null : String(b.buyer_phone).trim()])).rows[0];
         break;
       } catch (e) { lastErr = e; if (!String(e.message || '').includes('unique') && !String(e.message || '').includes('duplicate')) throw e; }
     }
@@ -544,6 +548,7 @@ export default async function customerRoutes(app) {
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
          team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15, branch_count=$16,
+         buyer_name=$17, buyer_phone=$18,
          stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
       [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
        b.phone !== undefined ? b.phone : c.phone, keepNum(b.discount, c.discount),
@@ -552,7 +557,9 @@ export default async function customerRoutes(app) {
        b.customer_type !== undefined ? b.customer_type : c.customer_type,
        b.memo !== undefined ? b.memo : c.memo, stageChanged, userId, id,
        b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal,
-       nullNum(b.branch_count, c.branch_count)]);
+       nullNum(b.branch_count, c.branch_count),
+       b.buyer_name !== undefined ? b.buyer_name : c.buyer_name,
+       b.buyer_phone !== undefined ? b.buyer_phone : c.buyer_phone]);
   }
 
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
@@ -662,6 +669,7 @@ export default async function customerRoutes(app) {
       `SELECT r.id, r.customer_id, r.proposed, r.status, r.reason, r.conditions, r.created_at,
               c.code AS customer_code, c.name AS customer_name,
               c.name AS cur_name, c.rfc AS cur_rfc, c.contact AS cur_contact, c.phone AS cur_phone,
+              c.buyer_name AS cur_buyer_name, c.buyer_phone AS cur_buyer_phone,
               c.discount AS cur_discount, c.credit_days AS cur_credit_days, c.branch_count AS cur_branch_count,
               c.team_id AS cur_team_id, c.stage_id AS cur_stage_id, c.owner_id AS cur_owner_id,
               c.customer_type AS cur_customer_type, c.memo AS cur_memo, c.constancia_fiscal AS cur_constancia_fiscal,
@@ -688,7 +696,7 @@ export default async function customerRoutes(app) {
     const stageNames = await nameMap('stages', stageIds);
     const ownerNames = await nameMap('users', ownerIds);
 
-    const LABELS = { name: '고객명', rfc: 'RFC', contact: '이메일 주소', phone: '전화', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)' };
+    const LABELS = { name: '고객명', rfc: 'RFC', contact: '이메일 주소', phone: '전화', buyer_name: '구매결정권자', buyer_phone: '구매결정권자 전화(WhatsApp)', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)' };
     const NUMERIC = new Set(['discount', 'credit_days', 'branch_count', 'team_id', 'stage_id', 'owner_id']);
     const isEmpty = (v) => v == null || v === '';
     const disp = (field, val) => {
@@ -705,6 +713,7 @@ export default async function customerRoutes(app) {
       const p = r.proposed || {};
       const cur = {
         name: r.cur_name, rfc: r.cur_rfc, contact: r.cur_contact, phone: r.cur_phone,
+        buyer_name: r.cur_buyer_name, buyer_phone: r.cur_buyer_phone,
         discount: r.cur_discount, credit_days: r.cur_credit_days, branch_count: r.cur_branch_count,
         team_id: r.cur_team_id, stage_id: r.cur_stage_id, owner_id: r.cur_owner_id,
         customer_type: r.cur_customer_type, memo: r.cur_memo, constancia_fiscal: r.cur_constancia_fiscal,

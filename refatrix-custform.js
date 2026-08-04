@@ -29,7 +29,9 @@
     +'</div>'
     +'<div class="rcf-row">'
       +'<div class="rcf-f"><label>이메일 주소</label><input id="rcf-contact" type="email" placeholder="ejemplo@correo.com"></div>'
-      +'<div class="rcf-f"><label>전화</label><input id="rcf-phone" type="text"></div>'
+      +'<div class="rcf-f"><label>전화 (인보이스 수신)</label><input id="rcf-phone" type="text"></div>'
+      +'<div class="rcf-f"><label>구매결정권자 이름</label><input id="rcf-buyername" type="text" placeholder="오퍼시트 수신인"></div>'
+      +'<div class="rcf-f"><label>구매결정권자 전화(WhatsApp)</label><input id="rcf-buyerphone" type="text" placeholder="없으면 기본 전화로 발송"></div>'
       +'<div class="rcf-f"><label>기본 할인(%)</label><input id="rcf-discount" type="number" step="0.01" value="0"></div>'
       +'<div class="rcf-f"><label>외상일(일)</label><input id="rcf-credit" type="number" value="0"></div>'
       +'<div class="rcf-f"><label>지점 수</label><input id="rcf-branches" type="number" min="0" placeholder="예: 3"></div>'
@@ -126,7 +128,7 @@
     editingId=null;
     $('rcf-code').value='자동…'; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     try{ var d=await fetch(api('/api/customers/next-code'),{headers:auth()}).then(r=>r.json()); $('rcf-code').value=d.code||''; }catch(e){ $('rcf-code').value=''; }
-    ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-memo','rcf-constancia','rcf-ship'].forEach(function(id){ if($(id))$(id).value=''; });
+    ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-buyername','rcf-buyerphone','rcf-memo','rcf-constancia','rcf-ship'].forEach(function(id){ if($(id))$(id).value=''; });
     if($('rcf-shipsave')) $('rcf-shipsave').style.display='none';
     setShipMsg('','');
     if($('rcf-team')) $('rcf-team').value=(teams[0]&&teams[0].id)||'';
@@ -143,6 +145,8 @@
     $('rcf-code').value=c.code||''; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     $('rcf-name').value=c.name||''; $('rcf-rfc').value=c.rfc||''; $('rcf-contact').value=c.contact||'';
     $('rcf-phone').value=c.phone||''; $('rcf-memo').value=c.memo||''; $('rcf-constancia').value=c.constancia_fiscal||'';
+    if($('rcf-buyername'))$('rcf-buyername').value=c.buyer_name||'';
+    if($('rcf-buyerphone'))$('rcf-buyerphone').value=c.buyer_phone||'';
     if($('rcf-ship')) $('rcf-ship').value=c.ship_address||'';
     if($('rcf-shipsave')) $('rcf-shipsave').style.display='';
     setShipMsg('','');
@@ -166,6 +170,8 @@
       owner_id:$('rcf-owner').value?Number($('rcf-owner').value):null,
       stage_id:$('rcf-stage').value?Number($('rcf-stage').value):null,
       contact:$('rcf-contact').value.trim()||null, phone:$('rcf-phone').value.trim()||null,
+      buyer_name:($('rcf-buyername')&&$('rcf-buyername').value.trim())||null,
+      buyer_phone:($('rcf-buyerphone')&&$('rcf-buyerphone').value.trim())||null,
       discount:Number($('rcf-discount').value)||0, credit_days:Number($('rcf-credit').value)||0,
       branch_count:($('rcf-branches')&&$('rcf-branches').value!=='')?Number($('rcf-branches').value):null,
       memo:$('rcf-memo').value.trim()||null, constancia_fiscal:$('rcf-constancia').value.trim()||null,
