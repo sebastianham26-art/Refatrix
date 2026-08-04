@@ -1810,7 +1810,7 @@ export default async function financeRoutes(app) {
     }
     const cond = ors.length ? `${baseCond} AND (${ors.join(' OR ')})` : baseCond;
     return (await query(
-      `SELECT t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date,
+      `SELECT t.account_id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date,
               to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.amount_mxn
          FROM transactions t
         WHERE ${cond}`, args)).rows;
@@ -1913,7 +1913,9 @@ export default async function financeRoutes(app) {
     }
     return projections;
   }
-  async function openingBalanceMxn(perm) {
+  // accountIds(선택): 지정 시 그 계좌들로만 기초잔고를 좁힌다(현금잔액 워터폴의 계좌별 세분화용).
+  // 여전히 권한(allow)과의 교집합만 반영 — 권한 밖 계좌를 넘겨도 무시됨.
+  async function openingBalanceMxn(perm, accountIds) {
     const usd = (await getUsdMxnRate()).rate;
     // 잔액 열람(viewIds) 기준 — '잔액만' 계좌·세부차단(현금·불공제) 계좌도 기초잔고에 포함.
     // (현금흐름 잔고 = 잔액 열람 가능 계좌들의 실제 잔액 합. 세부내역만 detail 기준으로 숨긴다.)
@@ -1924,18 +1926,30 @@ export default async function financeRoutes(app) {
       if (allow.length === 0) return 0;
       args.push(allow); cond += ` AND id = ANY($${args.length})`;
     }
+    if (accountIds && accountIds.length) {
+      args.push(accountIds); cond += ` AND id = ANY($${args.length})`;
+    }
     const accs = (await query(`SELECT currency, open_balance FROM accounts WHERE ${cond}`, args)).rows;
     return accs.reduce((s, a) => s + Number(a.open_balance) * (a.currency === 'USD' ? usd : 1), 0);
   }
 
   // 현금흐름 집계: 기간별 유입/유출/순액/누적잔고
   // query: granularity=month|week|day, includePlan=0|1  (day = 현금잔액 워터폴용)
+  //        accounts=1,3,5 (선택) — 지정 시 그 은행계좌들만 집계(계좌미지정 공용 예정 항목은 제외).
+  //        미지정이면 기존과 동일하게 권한 내 전체 계좌 합산.
   app.get('/api/cashflow', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
     const granularity = (req.query.granularity === 'week' || req.query.granularity === 'day') ? req.query.granularity : 'month';
     const includePlan = req.query.includePlan === '1' || req.query.includePlan === 'true';
-    const txns = await loadCashTxns(req.ctx.perm);
-    const opening = await openingBalanceMxn(req.ctx.perm);
-    const hidden = await loadHiddenBalanceTxns(req.ctx.perm); // 잔액 보완분(항목 미노출, 누적잔고에만 합산)
+    let selAccIds = null;
+    if (req.query.accounts != null && String(req.query.accounts).trim() !== '') {
+      selAccIds = String(req.query.accounts).split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n));
+      if (!selAccIds.length) selAccIds = null;
+    }
+    const txnsAll = await loadCashTxns(req.ctx.perm);
+    const txns = selAccIds ? txnsAll.filter((t) => t.account_id != null && selAccIds.includes(Number(t.account_id))) : txnsAll;
+    const opening = await openingBalanceMxn(req.ctx.perm, selAccIds);
+    const hiddenAll = await loadHiddenBalanceTxns(req.ctx.perm); // 잔액 보완분(항목 미노출, 누적잔고에만 합산)
+    const hidden = selAccIds ? hiddenAll.filter((t) => t.account_id != null && selAccIds.includes(Number(t.account_id))) : hiddenAll;
     const mappedTx = txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
@@ -2009,7 +2023,7 @@ export default async function financeRoutes(app) {
       r.cumulative_actual = cumActualByPeriod[r.period];
       r.cumulative = r2(r.cumulative + (cumHiddenByPeriod[r.period] || 0));
     }
-    return { granularity, includePlan, opening_balance: r2(opening), rows, ...(breakdown ? { breakdown } : {}) };
+    return { granularity, includePlan, opening_balance: r2(opening), rows, accounts_filter: selAccIds, ...(breakdown ? { breakdown } : {}) };
   });
 
   // 계획 대비 실적(수입/지출 분리): query granularity, filter=all|recurring|other

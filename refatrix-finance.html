@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0804b</title>
+<title>Refatrix ERP · 재무 · build fin-0804c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -451,7 +451,8 @@
           <button class="btn ghost sm" id="wf-go">조회</button>
           <button class="btn ghost sm no-print" id="wf-zoom" title="렌즈형 돋보기: 켠 뒤 그래프 위에서 마우스를 움직이세요. 휠로 배율 조절.">🔍 돋보기</button>
         </div>
-        <div class="hint" style="margin-top:4px">기간 시작 시점의 현금잔액(<span style="color:#2f8f5b;font-weight:700">기준 · 초록</span>)에서 출발해, 기간별 변화가 직전 잔액 위에서 <span style="color:#c0392b;font-weight:700">증가(+) 빨강</span> / <span style="color:#0c447c;font-weight:700">감소(−) 파랑</span>으로 이어집니다. 위 「실제만/예정 포함」 토글을 따릅니다. <span class="no-print">🔍 <b>돋보기</b>를 켜면 그래프를 렌즈로 확대(마우스 휠로 배율).</span></div>
+        <div id="wf-accs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+        <div class="hint" style="margin-top:4px">기간 시작 시점의 현금잔액(<span style="color:#2f8f5b;font-weight:700">기준 · 초록</span>)에서 출발해, 기간별 변화가 직전 잔액 위에서 <span style="color:#c0392b;font-weight:700">증가(+) 빨강</span> / <span style="color:#0c447c;font-weight:700">감소(−) 파랑</span>으로 이어집니다. 위 「실제만/예정 포함」 토글을 따릅니다. <b>은행계좌</b> 칩을 하나 이상 선택하면 그 계좌들만 합산(중복 선택 가능) — 미선택 시 전체 계좌. <span class="no-print">🔍 <b>돋보기</b>를 켜면 그래프를 렌즈로 확대(마우스 휠로 배율).</span></div>
         <div id="wfChart" style="margin-top:8px;overflow-x:auto"><div class="hint">불러오는 중…</div></div>
       </div>
 
@@ -2223,7 +2224,17 @@
   // ===== 현금잔액 워터폴 =====
   // 기준(초록) → 기간별 변화(+빨강/−파랑, 직전 잔액 위에서 시작) → 기말(초록)
   const WF_GREEN='#2f8f5b', WF_RED='#c0392b', WF_BLUE='#0c447c';
-  const wfState={gran:'auto'};
+  const wfState={gran:'auto', accIds:new Set()};
+  // 은행계좌 칩(중복선택) — 비어있으면 전체 계좌 합산(기존 동작과 동일)
+  function wfAccChips(){
+    const box=$('wf-accs'); if(!box)return;
+    const list=(accounts||[]).filter(a=>!a.disabled||wfState.accIds.has(Number(a.id)));
+    if(!list.length){box.innerHTML='';return;}
+    const chip=(key,label,on)=>'<button type="button" class="btn sm" data-wfacc="'+key+'" style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
+      +(on?'var(--brand);background:var(--brand);color:#fff':'var(--line);background:#fff;color:var(--muted)')+'">'+label+'</button>';
+    box.innerHTML=chip('all','전체 계좌',wfState.accIds.size===0)
+      +list.map(a=>chip(a.id,escH(a.name)+(a.disabled?' (안씀)':''),wfState.accIds.has(Number(a.id)))).join('');
+  }
   function wfDefaultRange(){
     if($('wf-from').value && $('wf-to').value) return;
     const t=new Date();
@@ -2256,12 +2267,14 @@
   async function loadWaterfall(){
     const box=$('wfChart'); if(!box)return;
     wfDefaultRange();
+    wfAccChips();
     const from=$('wf-from').value, to=$('wf-to').value;
     if(!from||!to||from>to){box.innerHTML='<div class="hint">기간을 올바르게 선택하세요 (시작일 ≤ 종료일).</div>';return;}
     box.innerHTML='<div class="hint">불러오는 중…</div>';
     const g=wfResolveGran(from,to);
     try{
-      const url=`${session.api}/api/cashflow?granularity=${g}&includePlan=${cfState.mode==='plan'?1:0}&breakdown=1`;
+      const accParam=wfState.accIds.size?`&accounts=${Array.from(wfState.accIds).join(',')}`:'';
+      const url=`${session.api}/api/cashflow?granularity=${g}&includePlan=${cfState.mode==='plan'?1:0}&breakdown=1${accParam}`;
       const res=await fetch(url,{headers:auth()});
       const d=await res.json();
       if(!res.ok||d.error)throw new Error(d.error||res.status);
@@ -2275,7 +2288,9 @@
         else if(r.period<=ek && Math.abs(net)>0.005)items.push({label:r.period,delta:net,inflow:Number(r.inflow)||0,outflow:Number(r.outflow)||0,cats:(d.breakdown&&d.breakdown[r.period])||[]});
       }
       const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
-      box.innerHTML=svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
+      const accNames=wfState.accIds.size?Array.from(wfState.accIds).map(id=>{const a=(accounts||[]).find(x=>Number(x.id)===id);return a?a.name:null;}).filter(Boolean):[];
+      const accLine=accNames.length?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: ${accNames.map(escH).join(', ')}</div>`:'';
+      box.innerHTML=accLine+svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
       setupWfMagnifier();
     }catch(e){box.innerHTML='<div class="hint">워터폴을 불러오지 못했습니다.</div>';}
   }
@@ -3588,6 +3603,13 @@
   $('wf-to').addEventListener('change',loadWaterfall);
   $('wf-gran').addEventListener('change',()=>{wfState.gran=$('wf-gran').value;loadWaterfall();});
   $('wf-zoom').addEventListener('click',()=>{ wfMag.on=!wfMag.on; if(wfMagSync)wfMagSync(); updateWfZoomBtn(); });
+  $('wf-accs').addEventListener('click',(e)=>{
+    const b=e.target.closest('button[data-wfacc]'); if(!b)return;
+    const v=b.getAttribute('data-wfacc');
+    if(v==='all'){ wfState.accIds=new Set(); }
+    else { const id=Number(v); if(wfState.accIds.has(id))wfState.accIds.delete(id); else wfState.accIds.add(id); }
+    loadWaterfall();
+  });
   ['pa-all','pa-rec','pa-oth'].forEach(id=>$(id).addEventListener('click',()=>{
     ['pa-all','pa-rec','pa-oth'].forEach(i=>$(i).classList.remove('on'));$(id).classList.add('on');paState.filter=$(id).dataset.v;loadPlanActual();}));
   $('rxAddBtn').addEventListener('click',async ()=>{
@@ -3629,6 +3651,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260803dk"></script>
+<script src="refatrix-nav.js?v=20260804a"></script>
 </body>
 </html>
