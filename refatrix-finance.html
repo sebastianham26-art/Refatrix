@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0806c</title>
+<title>Refatrix ERP · 재무 · build fin-0806d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -2265,22 +2265,29 @@
     if($('wf-to')) $('wf-to').value=mx+'-'+String(new Date(Date.UTC(y,m,0)).getUTCDate()).padStart(2,'0');
   }
   // ---- 입금예정 그룹 칩(고정 3종: 매출입금·차입금·기타, WBR과 동일 규칙) ----
-  // 계정과목명 '매출' 포함 → 매출입금, '차입' 포함 → 차입금, 나머지 전부(기타수익·미분류 등) → 기타.
+  // 분류: 계정과목 코드 4010(매출·AR 수금예정) 또는 이름 '매출' 포함 → 매출입금 / '차입' 포함 → 차입금 / 나머지 전부 → 기타.
+  // 코드 매칭을 함께 봐서 계정과목명이 바뀌어도 매출입금으로 정확히 분류(cats는 초기 로드된 /api/categories 캐시).
+  const wfCodeOf=(n)=>{ const c=(cats||[]).find(x=>x.name===n); return c?String(c.code):undefined; };
   const WF_GROUPS=[
-    {key:'sales', label:'매출입금', match:(n)=>String(n).includes('매출')},
+    {key:'sales', label:'매출입금', match:(n)=>wfCodeOf(n)==='4010'||String(n).includes('매출')},
     {key:'loan',  label:'차입금',  match:(n)=>String(n).includes('차입')},
     {key:'etc',   label:'기타',    match:()=>true}
   ];
-  function wfPlanCats(d){
-    const agg={};
+  // ek(표시 마지막 버킷)까지 = 그래프에 실제 반영(total), 이후 = 기간 밖(beyond, 미반영)
+  function wfPlanCats(d,ek){
+    const agg={}, aggB={};
     const bd=(d&&d.breakdown)||{};
-    for(const k of Object.keys(bd)) for(const c of bd[k]){ const p=Number(c.plan_in)||0; if(p>0.005) agg[c.name]=(agg[c.name]||0)+p; }
-    const groups=WF_GROUPS.map(g=>({key:g.key,label:g.label,total:0,names:[]}));
-    for(const n of Object.keys(agg)){
-      const gi=WF_GROUPS.findIndex(x=>x.match(n));
-      groups[gi].names.push(n); groups[gi].total+=agg[n];
+    for(const k of Object.keys(bd)) for(const c of bd[k]){
+      const p=Number(c.plan_in)||0; if(p<=0.005) continue;
+      const tgt=(ek==null||k<=ek)?agg:aggB;
+      tgt[c.name]=(tgt[c.name]||0)+p;
     }
-    for(const g of groups) g.total=Math.round(g.total*100)/100;
+    const groups=WF_GROUPS.map(g=>({key:g.key,label:g.label,total:0,beyond:0,names:[]}));
+    for(const n of new Set([...Object.keys(agg),...Object.keys(aggB)])){
+      const gi=WF_GROUPS.findIndex(x=>x.match(n));
+      groups[gi].names.push(n); groups[gi].total+=(agg[n]||0); groups[gi].beyond+=(aggB[n]||0);
+    }
+    for(const g of groups){ g.total=Math.round(g.total*100)/100; g.beyond=Math.round(g.beyond*100)/100; }
     return groups;
   }
   function wfExcludedNames(groups){
@@ -2297,7 +2304,9 @@
     box.innerHTML='<span class="hint" style="margin:0;font-weight:700;color:var(--brand)">예정입금 반영:</span>'
       +chip('__all__','전체',wfState.exCats.size===0,'모든 예정입금 반영')
       +groups.map(g=>chip(g.key,escH(g.label),!wfState.exCats.has(g.key),
-        '예정입금 합 '+fmt(g.total)+' MXN'+(g.names.length?' — '+g.names.join(', '):' (표시 기간에 예정입금 없음)')+' · 끄면 이 그룹의 예정입금 제외')).join('')
+        '조회 기간 내 예정입금 '+fmt(g.total)+' MXN'
+        +((g.beyond||0)>0.005?' · 기간 밖 +'+fmt(g.beyond)+' MXN(그래프 미반영 — 기간을 늘리세요)':'')
+        +(g.names.length?' — '+g.names.join(', '):' (예정입금 없음)')+' · 끄면 이 그룹의 예정입금 제외')).join('')
       +'<span class="hint" style="margin:0">끈 항목의 예정입금은 잔액에서 제외 — 예: 매출입금을 끄면 「매출이 입금 안 될 때」 예상잔고</span>';
   }
   // 은행계좌 칩(중복선택) — 비어있으면 전체 계좌 합산(기존 동작과 동일)
@@ -2365,12 +2374,12 @@
     const L=wfLast; if(!L) return;
     const d=L.d, from=L.from, to=L.to, g=L.g;
     const box=$('wfChart'); if(!box)return;
-    const groups=cfState.mode==='plan'?wfPlanCats(d):[];
+    const sk=wfBucket(from,g), ek=wfBucket(to,g);
+    const groups=cfState.mode==='plan'?wfPlanCats(d,ek):[];
     wfCatChips(groups);
     const ex=cfState.mode==='plan'?wfExcludedNames(groups):new Set();
     const bd=d.breakdown||{};
     const exAmtOf=(p)=>{ if(!ex.size)return 0; let s=0; for(const c of (bd[p]||[])){ if(ex.has(c.name)) s+=Number(c.plan_in)||0; } return s; };
-    const sk=wfBucket(from,g), ek=wfBucket(to,g);
     let base=Number(d.opening_balance)||0; const items=[]; let exShown=0;
     for(const r of (d.rows||[])){
       const exAmt=exAmtOf(r.period);
@@ -2392,7 +2401,16 @@
     const accLine=accNames.length?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: ${accNames.map(escH).join(', ')}</div>`:'';
     const exLabels=groups.filter(gr=>wfState.exCats.has(gr.key)).map(gr=>gr.label);
     const exLine=(cfState.mode==='plan'&&exLabels.length)?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: ${exLabels.map(escH).join(', ')} <span style="font-weight:400">(표시구간 제외 합 −${fmt(Math.round(exShown*100)/100)} MXN)</span></div>`:'';
-    box.innerHTML=accLine+exLine+svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
+    // 기간 밖 예정입금 경고 — 만기가 조회 종료일 이후인 예정(예: 미래 만기 매출 AR)은 그래프·토글에 반영되지 않음
+    let beyondLine='';
+    if(cfState.mode==='plan'){
+      const beyondTot=Math.round(groups.reduce((s,gr)=>s+(gr.beyond||0),0)*100)/100;
+      if(beyondTot>0.005){
+        const parts=groups.filter(gr=>(gr.beyond||0)>0.005).map(gr=>escH(gr.label)+' +'+fmt(gr.beyond));
+        beyondLine=`<div class="hint" style="margin:0 0 4px;font-weight:700;color:#a08420">⚠ 조회 기간(${escH(to)}) 이후 만기 예정입금 +${fmt(beyondTot)} MXN은 그래프·토글에 미반영 — ${parts.join(' · ')}. 위 연도·월 칩으로 기간을 늘리면 반영됩니다.</div>`;
+      }
+    }
+    box.innerHTML=accLine+exLine+beyondLine+svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
     setupWfMagnifier();
   }
   // ===== 현금잔액 워터폴 — 렌즈형 돋보기(줌) =====
