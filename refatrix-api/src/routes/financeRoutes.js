@@ -1916,6 +1916,33 @@ export default async function financeRoutes(app) {
     }
     return projections;
   }
+  // AR(인보이스 수금예정) 금액을 '미수 잔액' 기준으로 보정 (2026-08-06 디렉터 확정, 워터폴·필요자금 공용):
+  // 수금예정 거래는 발행 시 인보이스 총액으로 생성되고 반제(입금) 후에도 금액이 줄지 않으므로,
+  // 그대로 쓰면 기수금분까지 예정으로 이중 반영된다. → 수금/정산 화면과 동일한 잔액식
+  // (총액 − Σ sales_payment_allocations, NC 비현금 반제 포함)으로 치환하고,
+  // 완납·미발행(posted 아님)·삭제 인보이스의 예정은 제거. 「매출입금 예정」 = 수금/정산의 수금잔액과 일치.
+  async function adjustArPlansToOutstanding(txnsAll) {
+    const arPlan = (t) => t.status === 'plan' && t.direction === 'in' && t.sales_invoice_id != null;
+    const invIds = [...new Set(txnsAll.filter(arPlan).map((t) => Number(t.sales_invoice_id)))];
+    if (!invIds.length) return;
+    const osRows = (await query(
+      `SELECT si.id, CASE WHEN si.status='posted' AND si.deleted_at IS NULL
+                          THEN (si.total_mxn - COALESCE(pa.paid,0)) ELSE 0 END AS outstanding
+         FROM sales_invoices si
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=si.id
+        WHERE si.id = ANY($1)`, [invIds])).rows;
+    const osMap = new Map(osRows.map((r) => [Number(r.id), Number(r.outstanding)]));
+    const seenInv = new Set();   // 같은 인보이스에 예정이 중복이면 첫 건에만 잔액 배정(이중 방지)
+    for (let i = txnsAll.length - 1; i >= 0; i--) {
+      const t = txnsAll[i];
+      if (!arPlan(t)) continue;
+      const invId = Number(t.sales_invoice_id);
+      const rem = (!seenInv.has(invId) && osMap.has(invId)) ? osMap.get(invId) : 0;
+      seenInv.add(invId);
+      if (rem > 0.005) t.amount_mxn = r2(rem);
+      else txnsAll.splice(i, 1);
+    }
+  }
   // accountIds(선택): 지정 시 그 계좌들로만 기초잔고를 좁힌다(현금잔액 워터폴의 계좌별 세분화용).
   // 여전히 권한(allow)과의 교집합만 반영 — 권한 밖 계좌를 넘겨도 무시됨.
   async function openingBalanceMxn(perm, accountIds) {
@@ -1949,34 +1976,7 @@ export default async function financeRoutes(app) {
       if (!selAccIds.length) selAccIds = null;
     }
     const txnsAll = await loadCashTxns(req.ctx.perm);
-    // AR(인보이스 수금예정) 금액을 '미수 잔액' 기준으로 보정 (2026-08-06 디렉터 확정):
-    // 수금예정 거래는 발행 시 인보이스 총액으로 생성되고 반제(입금) 후에도 금액이 줄지 않으므로,
-    // 그대로 쓰면 일부 수금된 인보이스의 기수금분까지 예정으로 이중 반영된다.
-    // → 수금/정산 화면과 동일한 잔액식(총액 − Σ sales_payment_allocations, NC 비현금 반제 포함)으로 치환하고,
-    //   완납·미발행(posted 아님)·삭제 인보이스의 예정은 제외. 워터폴 「매출입금 예정」 = 수금/정산의 수금잔액과 일치.
-    {
-      const arPlan = (t) => t.status === 'plan' && t.direction === 'in' && t.sales_invoice_id != null;
-      const invIds = [...new Set(txnsAll.filter(arPlan).map((t) => Number(t.sales_invoice_id)))];
-      if (invIds.length) {
-        const osRows = (await query(
-          `SELECT si.id, CASE WHEN si.status='posted' AND si.deleted_at IS NULL
-                              THEN (si.total_mxn - COALESCE(pa.paid,0)) ELSE 0 END AS outstanding
-             FROM sales_invoices si
-             LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=si.id
-            WHERE si.id = ANY($1)`, [invIds])).rows;
-        const osMap = new Map(osRows.map((r) => [Number(r.id), Number(r.outstanding)]));
-        const seenInv = new Set();   // 같은 인보이스에 예정이 중복이면 첫 건에만 잔액 배정(이중 방지)
-        for (let i = txnsAll.length - 1; i >= 0; i--) {
-          const t = txnsAll[i];
-          if (!arPlan(t)) continue;
-          const invId = Number(t.sales_invoice_id);
-          const rem = (!seenInv.has(invId) && osMap.has(invId)) ? osMap.get(invId) : 0;
-          seenInv.add(invId);
-          if (rem > 0.005) t.amount_mxn = r2(rem);
-          else txnsAll.splice(i, 1);
-        }
-      }
-    }
+    await adjustArPlansToOutstanding(txnsAll);
     // 계좌미지정 예정의 계좌 귀속 (2026-08-06 디렉터 확정): 수금예정(AR)뿐 아니라
     // 계좌미지정(NULL) '모든' 예정 거래(수동 예정 수입/지출·마케팅 계획 등)를
     // 「수금 기본계좌」(accounts.ar_default=true, 현재 BBVA)로 귀속한다 —
@@ -2379,6 +2379,17 @@ export default async function financeRoutes(app) {
       balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
     }));
     const txns = await loadCashTxns(req.ctx.perm);
+    // (2026-08-06) 입금예정 반영: AR(인보이스 수금예정)을 미수잔액 기준으로 보정해 포함하고,
+    // 계좌미지정 '수입' 예정(AR 포함)은 수금 기본계좌(ar_default, 현재 BBVA)로 귀속한다.
+    // 계좌미지정 '지출' 예정은 종전대로 「(계좌 미지정 예정)」 행 유지.
+    // 수입 반영 여부/그룹(매출입금·차입금·기타) 선택은 프런트 칩에서 — 백엔드는 그룹별 금액(in_g)만 내려준다.
+    await adjustArPlansToOutstanding(txns);
+    {
+      const arAcc = (await query(`SELECT id, name FROM accounts WHERE ar_default=true AND deleted_at IS NULL LIMIT 1`)).rows[0];
+      if (arAcc) for (const t of txns) {
+        if (t.status === 'plan' && t.direction === 'in' && t.account_id == null) { t.account_id = Number(arAcc.id); t.account_name = arAcc.name; }
+      }
+    }
     // proj=0 → 자동전개(미생성 고정비 전개) 제외 — 등록된 예정만 집계 (프런트 토글)
     const projections = String(req.query.proj || '1') !== '0' ? await recurringProjections(req.ctx.perm, [thisMonth, ...monthsList]) : [];
     const funding = accountFundingPlan(accounts, txns, projections, thisMonth, monthsList, today);

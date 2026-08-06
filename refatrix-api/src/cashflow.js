@@ -474,24 +474,36 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
     can_detail: acc ? acc.can_detail !== false : true,
     balance: acc ? round2(Number(acc.balance_mxn) || 0) : null,
     out_this: 0, out_next: 0, in_this: 0, in_next: 0, after_out: null, after_all: null, items: [],
+    in_this_g: { sales: 0, loan: 0, etc: 0 },
     _outM: Object.fromEntries(monthsList.map((m) => [m, 0])),
     _inM: Object.fromEntries(monthsList.map((m) => [m, 0])),
+    _inGM: Object.fromEntries(monthsList.map((m) => [m, { sales: 0, loan: 0, etc: 0 }])),
   });
+  // 예정입금 그룹(워터폴과 동일 규칙): 코드 4010(매출·AR) 또는 이름 '매출' 포함 → sales / '차입' 포함 → loan / 그 외 → etc
+  const planGroupOf = (code, name) => {
+    if (String(code || '') === '4010' || String(name || '').includes('매출')) return 'sales';
+    if (String(name || '').includes('차입')) return 'loan';
+    return 'etc';
+  };
   const rows = new Map();
   for (const a of accounts || []) rows.set(Number(a.id), mk(a));
   const unk = mk(null);
   const put = (accId) => (accId != null && rows.has(Number(accId))) ? rows.get(Number(accId)) : unk;
-  const add = (r, direction, win, amt, item) => {
-    if (win === 'this') { if (direction === 'out') r.out_this += amt; else r.in_this += amt; }
-    else {
-      if (direction === 'out') r._outM[win] += amt; else r._inM[win] += amt;
+  const add = (r, direction, win, amt, item, grp) => {
+    if (win === 'this') {
+      if (direction === 'out') r.out_this += amt;
+      else { r.in_this += amt; r.in_this_g[grp] += amt; }
+    } else {
+      if (direction === 'out') r._outM[win] += amt;
+      else { r._inM[win] += amt; r._inGM[win][grp] += amt; }
       if (win === nextMonth) { if (direction === 'out') r.out_next += amt; else r.in_next += amt; }   // 첫 달 = 기존 익월 필드(하위호환)
     }
     r.items.push(item);
   };
   for (const t of txns || []) {
     if (t.status !== 'plan') continue;                                   // 미지급/미수취 예정만 (실적은 잔고에 이미 반영)
-    if (t.direction === 'in' && t.sales_invoice_id) continue;            // 인보이스 수금계획: 입금계좌 미확정 → AR 참고로만
+    // (2026-08-06) 인보이스 수금계획(AR)도 포함 — 호출부(funding 라우트)에서 미수잔액으로 보정하고
+    // 수금 기본계좌로 귀속해서 넘겨준다. 과거처럼 제외하지 않는다(디렉터: "입금예정도 반영해라").
     const d = String(t.plan_date || t.txn_date).slice(0, 10);
     let win = null;
     if (d < nextMonthStart) win = 'this';                                // 이번 달 + 과거 경과(이월) 전부 '이번 달 남은'
@@ -502,7 +514,7 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
       date: d, win, direction: t.direction, memo: t.memo || '',
       category_name: t.category_name || t.category_code || null,
       amount: round2(amt), state: d < today ? 'overdue' : 'upcoming',
-    });
+    }, planGroupOf(t.category_code, t.category_name));
   }
   for (const p of projections || []) {
     const d = String(p.date).slice(0, 10);
@@ -516,22 +528,26 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
       memo: `[고정비] ${p.rule_name || ''}${p.rule_id ? ` (규칙#${p.rule_id})` : ''}`.trim(),   // 규칙# = 어느 규칙의 자동전개인지 추적용
       category_name: p.category_name || p.category_code || null,
       amount: round2(amt), state: 'projected',
-    });
+    }, planGroupOf(p.category_code, p.category_name));
   }
-  const monthsArr = (r) => {                       // 월별 {out,in,누적 말잔액} — balance 없는 행(미지정)은 end null
+  const monthsArr = (r) => {                       // 월별 {out,in,그룹별 in_g,누적 말잔액} — balance 없는 행(미지정)은 end null
     let cum = r.balance != null ? r.balance - r.out_this : null;
     let cumIn = r.in_this;
     return monthsList.map((m) => {
       const out = round2(r._outM[m]), inc = round2(r._inM[m]);
+      const g = r._inGM[m];
       if (cum != null) cum = round2(cum - out);
       cumIn = round2(cumIn + inc);
-      return { month: m, out, in: inc, end: cum, end_all: cum != null ? round2(cum + cumIn) : null };
+      return { month: m, out, in: inc,
+        in_g: { sales: round2(g.sales), loan: round2(g.loan), etc: round2(g.etc) },
+        end: cum, end_all: cum != null ? round2(cum + cumIn) : null };
     });
   };
   const fin = (r) => {
     for (const k of ['out_this', 'out_next', 'in_this', 'in_next']) r[k] = round2(r[k]);
+    for (const k of ['sales', 'loan', 'etc']) r.in_this_g[k] = round2(r.in_this_g[k]);
     r.months = monthsArr(r);
-    delete r._outM; delete r._inM;
+    delete r._outM; delete r._inM; delete r._inGM;
     if (r.balance != null) {
       r.end_this = round2(r.balance - r.out_this);                 // ★ 당월 말 남을 예정 (지출만 반영)
       r.after_out = round2(r.balance - r.out_this - r.out_next);   // ★ 익월(첫 달) 말 부족/여유 — 하위호환
@@ -561,12 +577,16 @@ export function accountFundingPlan(accounts, txns, projections, thisMonth, nextM
   total.after_all = round2(total.after_out + total.in_this + total.in_next);
   {                                                // 합계의 월별 누적(미지정 포함)
     let cum = total.end_this; let cumIn = total.in_this;
+    total.in_this_g = { sales: 0, loan: 0, etc: 0 };
+    for (const r of [...list, unk]) for (const k of ['sales', 'loan', 'etc']) total.in_this_g[k] = round2(total.in_this_g[k] + (r.in_this_g ? r.in_this_g[k] : 0));
     total.months = monthsList.map((m, i) => {
-      let out = 0, inc = 0;
-      for (const r of [...list, unk]) { out += r.months[i].out; inc += r.months[i].in; }
+      let out = 0, inc = 0; const g = { sales: 0, loan: 0, etc: 0 };
+      for (const r of [...list, unk]) { out += r.months[i].out; inc += r.months[i].in;
+        if (r.months[i].in_g) for (const k of ['sales', 'loan', 'etc']) g[k] += r.months[i].in_g[k]; }
       out = round2(out); inc = round2(inc);
+      for (const k of ['sales', 'loan', 'etc']) g[k] = round2(g[k]);
       cum = round2(cum - out); cumIn = round2(cumIn + inc);
-      return { month: m, out, in: inc, end: cum, end_all: round2(cum + cumIn) };
+      return { month: m, out, in: inc, in_g: g, end: cum, end_all: round2(cum + cumIn) };
     });
   }
   const hasUnk = (unk.out_this || unk.in_this || unk.months.some((m) => m.out || m.in)) ? unk : null;   // 뒷월만 있는 미지정도 유지
