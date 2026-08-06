@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0806e</title>
+<title>Refatrix ERP · WBR · build wbr-0806f</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -422,7 +422,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0806e');
+  console.log('[wbr] build wbr-0806f');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -844,7 +844,7 @@
     const chip=(key,label,on)=>'<button type="button" class="btn sm" data-cfwfacc="'+key+'" style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
       +(on?'var(--brand);background:var(--brand);color:#fff':'var(--line);background:#fff;color:var(--muted)')+'">'+label+'</button>';
     box.innerHTML=chip('all','전체 계좌',cfwfState.accIds.size===0)
-      +list.map(a=>chip(a.id,esc(a.name)+(a.disabled?' (안씀)':''),cfwfState.accIds.has(Number(a.id)))).join('');
+      +list.map(a=>chip(a.id,(a.ar_default?'💰 ':'')+esc(a.name)+(a.disabled?' (안씀)':''),cfwfState.accIds.has(Number(a.id)))).join('');
   }
   // ---- 입금예정 그룹 칩(고정 3종: 매출입금·차입금·기타) — 켠 그룹의 예정입금만 잔액에 반영 ----
   // 분류: 계정과목 코드 4010(매출·AR 수금예정) 또는 이름에 '매출' 포함 → 매출입금 / '차입' 포함 → 차입금 / 나머지 전부 → 기타.
@@ -1041,7 +1041,7 @@
       catList:catInfo.map(g=>({key:g.key,label:g.label,total:g.total,names:g.names.slice()}))};
     lastCfWaterfall={base,items,opts};
     let info='';
-    if(accNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: '+accNames.map(esc).join(', ')+' <span style="font-weight:400">· 계좌미지정 공용 예정(수금예정 등)은 계좌별 보기에서 제외됨</span></div>';
+    if(accNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: '+accNames.map(esc).join(', ')+' <span style="font-weight:400">· 매출 수금예정은 수금 기본계좌(💰)로 귀속 · 그 외 계좌미지정 예정은 계좌별 보기에서 제외</span></div>';
     if(cfwfState.plan&&exLabels.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+exLabels.map(esc).join(', ')+' <span style="font-weight:400">(표시구간 제외 합 −'+cfFmtMxn(Math.round(exShown*100)/100)+' MXN)</span></div>';
     // 기간 밖 예정입금 경고 — 만기가 조회 종료일 이후인 예정(예: 미래 만기 매출 AR)은 그래프·토글에 반영되지 않음을 명시
     if(cfwfState.plan){

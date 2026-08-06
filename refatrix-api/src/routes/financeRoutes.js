@@ -73,7 +73,7 @@ export default async function financeRoutes(app) {
       acccond = ` AND a.id = ANY($${args.length})`;
     }
     const rows = (await query(
-      `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date, a.non_deductible, a.disabled,
+      `SELECT a.id, a.name, a.type, a.currency, a.open_balance, a.open_date, a.non_deductible, a.disabled, a.ar_default,
               a.open_balance + COALESCE((
                 SELECT SUM(CASE WHEN t.direction='in' THEN t.amount ELSE -t.amount END)
                   FROM transactions t
@@ -86,7 +86,7 @@ export default async function financeRoutes(app) {
               ),0) AS mxn_txn_sum
          FROM accounts a WHERE a.deleted_at IS NULL${acccond} ORDER BY a.id`, args)).rows;
     return { items: rows.map((a) => ({
-      ...a, non_deductible: a.non_deductible === true, disabled: a.disabled === true, can_detail: canViewDetail(req.ctx.perm, a.id),
+      ...a, non_deductible: a.non_deductible === true, disabled: a.disabled === true, ar_default: a.ar_default === true, can_detail: canViewDetail(req.ctx.perm, a.id),
       open_balance: Number(a.open_balance), balance: Number(a.balance),
       // MXN 환산 잔액: 거래는 거래당시 환율로 확정 저장된 amount_mxn, 기초잔액(USD)은 오늘 환율. → 현금흐름·장부와 동일 기준.
       balance_mxn: r2(Number(a.open_balance) * (a.currency === 'USD' ? usd : 1) + Number(a.mxn_txn_sum)),
@@ -108,7 +108,10 @@ export default async function financeRoutes(app) {
   // 계좌 수정(디렉터)
   app.patch('/api/accounts/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
-    const { name, type, open_balance, open_date, non_deductible, disabled } = req.body || {};
+    const { name, type, open_balance, open_date, non_deductible, disabled, ar_default } = req.body || {};
+    // 수금 기본계좌 지정: 항상 최대 1개 — true로 지정 시 기존 지정 해제(부분 유니크 인덱스와 함께 이중 보장)
+    if (ar_default === true) { await query(`UPDATE accounts SET ar_default=false WHERE ar_default=true AND id<>$1`, [id]); await query(`UPDATE accounts SET ar_default=true WHERE id=$1 AND deleted_at IS NULL`, [id]); }
+    else if (ar_default === false) { await query(`UPDATE accounts SET ar_default=false WHERE id=$1`, [id]); }
     const r = await query(
       `UPDATE accounts SET name=COALESCE($1,name), type=COALESCE($2,type),
          open_balance=COALESCE($3,open_balance), open_date=COALESCE($4,open_date),
@@ -1971,6 +1974,21 @@ export default async function financeRoutes(app) {
           seenInv.add(invId);
           if (rem > 0.005) t.amount_mxn = r2(rem);
           else txnsAll.splice(i, 1);
+        }
+      }
+    }
+    // 수금예정(AR) 계좌 귀속 (2026-08-06 디렉터 확정): AR 예정은 계좌미지정으로 생성되지만
+    // 「수금 기본계좌」(accounts.ar_default=true, 현재 BBVA)로 입금된다고 간주 →
+    // 계좌 칩으로 그 계좌를 선택하면 수금예정이 포함되고, 다른 계좌에는 잡히지 않는다.
+    // (전체 계좌 보기는 기존과 동일 — 어차피 전부 합산)
+    {
+      const arAcc = (await query(`SELECT id, name FROM accounts WHERE ar_default=true AND deleted_at IS NULL LIMIT 1`)).rows[0];
+      if (arAcc) {
+        for (const t of txnsAll) {
+          if (t.status === 'plan' && t.direction === 'in' && t.sales_invoice_id != null && t.account_id == null) {
+            t.account_id = Number(arAcc.id);
+            t.account_name = arAcc.name;
+          }
         }
       }
     }
