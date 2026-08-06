@@ -1946,6 +1946,34 @@ export default async function financeRoutes(app) {
       if (!selAccIds.length) selAccIds = null;
     }
     const txnsAll = await loadCashTxns(req.ctx.perm);
+    // AR(인보이스 수금예정) 금액을 '미수 잔액' 기준으로 보정 (2026-08-06 디렉터 확정):
+    // 수금예정 거래는 발행 시 인보이스 총액으로 생성되고 반제(입금) 후에도 금액이 줄지 않으므로,
+    // 그대로 쓰면 일부 수금된 인보이스의 기수금분까지 예정으로 이중 반영된다.
+    // → 수금/정산 화면과 동일한 잔액식(총액 − Σ sales_payment_allocations, NC 비현금 반제 포함)으로 치환하고,
+    //   완납·미발행(posted 아님)·삭제 인보이스의 예정은 제외. 워터폴 「매출입금 예정」 = 수금/정산의 수금잔액과 일치.
+    {
+      const arPlan = (t) => t.status === 'plan' && t.direction === 'in' && t.sales_invoice_id != null;
+      const invIds = [...new Set(txnsAll.filter(arPlan).map((t) => Number(t.sales_invoice_id)))];
+      if (invIds.length) {
+        const osRows = (await query(
+          `SELECT si.id, CASE WHEN si.status='posted' AND si.deleted_at IS NULL
+                              THEN (si.total_mxn - COALESCE(pa.paid,0)) ELSE 0 END AS outstanding
+             FROM sales_invoices si
+             LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=si.id
+            WHERE si.id = ANY($1)`, [invIds])).rows;
+        const osMap = new Map(osRows.map((r) => [Number(r.id), Number(r.outstanding)]));
+        const seenInv = new Set();   // 같은 인보이스에 예정이 중복이면 첫 건에만 잔액 배정(이중 방지)
+        for (let i = txnsAll.length - 1; i >= 0; i--) {
+          const t = txnsAll[i];
+          if (!arPlan(t)) continue;
+          const invId = Number(t.sales_invoice_id);
+          const rem = (!seenInv.has(invId) && osMap.has(invId)) ? osMap.get(invId) : 0;
+          seenInv.add(invId);
+          if (rem > 0.005) t.amount_mxn = r2(rem);
+          else txnsAll.splice(i, 1);
+        }
+      }
+    }
     const txns = selAccIds ? txnsAll.filter((t) => t.account_id != null && selAccIds.includes(Number(t.account_id))) : txnsAll;
     const opening = await openingBalanceMxn(req.ctx.perm, selAccIds);
     const hiddenAll = await loadHiddenBalanceTxns(req.ctx.perm); // 잔액 보완분(항목 미노출, 누적잔고에만 합산)
