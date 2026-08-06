@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0806c</title>
+<title>Refatrix ERP · WBR · build wbr-0806d</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -314,7 +314,7 @@
       </div>
     </div>
 
-    <!-- 현금잔액 워터폴 (디렉터 전용) -->
+    <!-- 현금잔액 워터폴 (디렉터·소시오) -->
     <div class="card hidden" id="cfwfCard">
       <div class="card-h"><span id="cfwfTitle">현금잔액 워터폴</span>
         <span class="src">재무 현금흐름과 동일 계산 · 같은 조건이면 숫자 일치 · 월·계좌·예정입금 카테고리 선택 가능(팀 무관)</span>
@@ -422,7 +422,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0806c');
+  console.log('[wbr] build wbr-0806d');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -450,6 +450,7 @@
   let viewMode=null;                // 열람 중인 스냅샷 객체(null=라이브)
   let liveBackup=null;              // 열람 진입 시 라이브 상태 백업
   let isDirector=false;             // 디렉터만 저장/삭제 가능
+  let isSocio=false;                // 소시오 — 현금잔액 워터폴 열람 가능(저장/삭제는 불가)
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -472,6 +473,7 @@
       $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
       isDirector=((d.user&&d.user.role)==='director');
+      isSocio=((d.user&&d.user.role)==='socio');
       $('snapSaveBtn').classList.toggle('hidden', !isDirector);
       renderMonthBtns();
       initMeetingUI();
@@ -770,7 +772,7 @@
       +'<div class="wfsum">누적 실적 <b>MX$'+fmt(wk.cumActual)+'</b> / 목표 <b>MX$'+fmt(target)+'</b> ('+(wk.progress==null?'—':wk.progress+'%')+')</div>';
   }
 
-  // ===== 현금잔액 워터폴 (재무 SVG 워터폴 재사용 · 디렉터 전용 · 기간/단위/실적·예정 직접 선택) =====
+  // ===== 현금잔액 워터폴 (재무 SVG 워터폴 재사용 · 디렉터·소시오 열람 · 기간/단위/실적·예정 직접 선택) =====
   const CFWF_GREEN='#2f8f5b', CFWF_RED='#c0392b', CFWF_BLUE='#0c447c';
   const cfFmtMxn=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   function cfFmtK(n){ const a=Math.abs(n);
@@ -793,7 +795,7 @@
     const week=1+Math.round(((dt-firstThu)/86400000-3+((firstThu.getUTCDay()+6)%7))/7);
     return dt.getUTCFullYear()+'-W'+String(week).padStart(2,'0'); }
   const cfwfState={gran:'auto', plan:true, months:new Set(), accIds:new Set(), exCats:new Set()};
-  let cfwfAccounts=null;   // /api/accounts 캐시 (디렉터 전용 카드라 권한 문제 없음)
+  let cfwfAccounts=null;   // /api/accounts 캐시 (디렉터·소시오 — 둘 다 전 계좌 열람 권한, 재무 열람 페이지 권한 없으면 빈 목록으로 안전 처리)
   let cfwfLast=null;       // 마지막 /api/cashflow 응답 캐시 {d,from,to,g} — 카테고리 토글 시 재조회 없이 재계산
   function updateCfPlanBtn(){ const b=$('cfwf-plan'); if(!b)return; b.textContent=cfwfState.plan?'예정 포함':'실적만'; }
   // ---- 연도·월 분리 토글(중복선택) — 연도(올해·내년) 선택 후 월 클릭. 선택 최소~최대 월로 기간 자동 설정(사이 월 자동 포함) ----
@@ -963,9 +965,10 @@
   }
 
   let lastCfWaterfall=null;
+  const canSeeCashWf=()=>isDirector||isSocio;   // 디렉터·소시오 열람(2026-08-06 디렉터 확정)
   async function loadCfWaterfall(){
     const card=$('cfwfCard');
-    if(!isDirector){ if(card) card.classList.add('hidden'); lastCfWaterfall=null; return; }
+    if(!canSeeCashWf()){ if(card) card.classList.add('hidden'); lastCfWaterfall=null; return; }
     if(card) card.classList.remove('hidden');
     $('cfwfTitle').textContent='현금잔액 워터폴';
     cfWfDefaultRange(); updateCfPlanBtn();
@@ -986,7 +989,7 @@
     }catch(e){ box.innerHTML='<div class="hint">현금잔액 워터폴을 불러오지 못했습니다. (재무 열람 권한이 필요합니다.)</div>'; lastCfWaterfall=null; }
   }
   // 캐시된 응답으로 렌더 — 예정입금 카테고리 제외를 클라이언트에서 계산(끈 카테고리의 plan_in을 각 구간 순변화에서 차감).
-  // breakdown은 디렉터 기준 전체 거래를 담으므로(보완분 없음) rows.net = Σ breakdown[period].net 이 성립한다.
+  // rows.net = Σ breakdown[period].net (둘 다 detail 스트림 기준 — 디렉터·소시오 모두 성립. 소시오는 정책상 비공개 고정비만 제외된 스트림).
   function cfwfApplyRender(){
     const L=cfwfLast; if(!L) return;
     const d=L.d, from=L.from, to=L.to, g=L.g;
@@ -1028,7 +1031,7 @@
   }
   function renderCfWaterfallFrozen(cf){
     const card=$('cfwfCard');
-    if(!isDirector){ if(card) card.classList.add('hidden'); return; }
+    if(!canSeeCashWf()){ if(card) card.classList.add('hidden'); return; }
     if(card) card.classList.remove('hidden');
     $('cfwfTitle').textContent='현금잔액 워터폴';
     if(cf&&Array.isArray(cf.items)){
