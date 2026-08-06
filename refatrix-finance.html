@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0806b</title>
+<title>Refatrix ERP · 재무 · build fin-0806c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -417,6 +417,7 @@
         <span class="hint" id="cf-open" style="margin:0 0 0 auto"></span>
       </div>
       <!-- 필요자금 경고 배너: fundBody 재로딩과 무관하게 유지되는 고정 요소 (성공 로드시에만 갱신) -->
+      <div id="fund-months-top" class="no-print" style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:0 0 8px"></div>
       <div id="fundAlert" class="hidden" style="margin:0 0 10px;padding:10px 14px;border-radius:9px;font-weight:700;cursor:pointer" title="클릭하면 은행계좌별 필요자금 표로 이동합니다"></div>
       <div id="cashBody"><div class="hint">불러오는 중…</div></div>
 
@@ -2729,22 +2730,33 @@
   let fundData=null;
   const fundMonths=new Set();          // 선택 월 'YYYY-MM' (비어있으면 익월로 초기화)
   function fundNextYm(n){ const t=new Date(); return new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+n,1)).toISOString().slice(0,7); }
-  function fundMonthList(){ return Array.from({length:12},(_,i)=>fundNextYm(i+1)); }   // 익월부터 12개월
   function fundSelMonths(){ if(!fundMonths.size) fundMonths.add(fundNextYm(1)); return Array.from(fundMonths).sort(); }
+  // 연도·월 분리 토글(워터폴과 동일한 방식) — 화면 맨 위(#fund-months-top)와 필요자금 섹션(#fund-months) 두 곳에 같은 칩을 렌더.
+  // 선택 가능 범위 = 익월~12개월 앞(백엔드 지평 한도와 동일). 그 밖(지난 달·당월·13개월 이후)은 회색 비활성.
+  let fundYear=(new Date()).getUTCFullYear();
+  function fundYearList(){ const y=(new Date()).getUTCFullYear(); return [y,y+1]; }
+  function fundValidYm(m){ return m>fundNextYm(0) && m<=fundNextYm(12); }
   function fundMonthChips(){
-    const box=$('fund-months'); if(!box)return;
     const sel=new Set(fundSelMonths());
     const sorted=Array.from(sel).sort(); const mn=sorted[0], mx=sorted[sorted.length-1];
-    const chip=(m,label,on,mid)=>'<button type="button" class="btn sm" data-fundm="'+m+'" title="'+m+(mid?' · 선택 월 사이(지출은 잔액 누적에 반영, 열은 표시 안 함)':'')+'" style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
-      +(on?'var(--brand);background:var(--brand);color:#fff':(mid?'#dcefe6;background:#dcefe6;color:#2f8f5b':'var(--line);background:#fff;color:var(--muted)'))+'">'+label+'</button>';
-    let prevY='';
-    box.innerHTML='<span class="hint" style="margin:0;font-weight:700;color:var(--brand)">부족/여유 볼 월:</span>'
-      +fundMonthList().map(m=>{
-        const y=m.slice(2,4); const lbl=(y!==prevY?y+'년 ':'')+Number(m.slice(5))+'월'; prevY=y;
-        const on=sel.has(m); const mid=!on&&m>mn&&m<mx;
-        return chip(m,lbl,on,mid);
-      }).join(' ')
-      +'<span class="hint" style="margin:0">중복선택 가능 · 선택한 월마다 「지출 예정 + 말 부족/여유」 열이 표에 추가됩니다</span>';
+    const years=fundYearList(); if(!years.includes(fundYear)) fundYear=years[0];
+    const chip=(attr,label,on,style,title)=>'<button type="button" class="btn sm" '+attr+(title?' title="'+escH(title)+'"':'')
+      +' style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
+      +(on?'var(--brand);background:var(--brand);color:#fff':(style||'var(--line);background:#fff;color:var(--muted)'))+'">'+label+'</button>';
+    const ybtns=years.map(y=>{
+      const cnt=sorted.filter(m=>m.slice(0,4)===String(y)).length;
+      return chip('data-fundy="'+y+'"',String(y).slice(2)+'년'+(cnt?' ·'+cnt:''),fundYear===y,null,y+'년 월 선택으로 전환'+(cnt?' · '+cnt+'개월 선택됨':''));
+    }).join(' ');
+    const mbtns=Array.from({length:12},(_,i)=>{
+      const m=String(fundYear)+'-'+String(i+1).padStart(2,'0');
+      if(!fundValidYm(m)) return '<button type="button" class="btn sm" disabled style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid var(--line);background:#f3f1ec;color:#c8c2b6;cursor:default" title="'+m+' · 선택 불가(익월~12개월 앞만)">'+(i+1)+'월</button>';
+      const on=sel.has(m); const mid=!on&&mn&&m>mn&&m<mx;
+      return chip('data-fundm="'+m+'"',(i+1)+'월',on,mid?'#dcefe6;background:#dcefe6;color:#2f8f5b':null,m+(mid?' · 선택 월 사이(지출은 잔액 누적에 반영, 열은 표시 안 함)':''));
+    }).join(' ');
+    const htmlStr='<span class="hint" style="margin:0;font-weight:700;color:var(--brand)">부족/여유 볼 월:</span>'
+      +ybtns+' <span style="color:var(--line)">|</span> '+mbtns
+      +'<span class="hint" style="margin:0">'+sorted.map(m=>Number(m.slice(2,4))+'년 '+Number(m.slice(5))+'월').join(', ')+' 선택 · 중복선택 가능 — 위 요약 배너와 필요자금 표가 선택 월 기준으로 갱신</span>';
+    ['fund-months-top','fund-months'].forEach(id=>{ const box=$(id); if(box) box.innerHTML=htmlStr; });
   }
   async function loadFunding(){
     const b=$('fundBody');if(!b)return;
@@ -3722,13 +3734,17 @@
   })();
   $('tabCash').addEventListener('click',()=>showTab('cash'));
   $('fund-reload').addEventListener('click',loadFunding);
-  $('fund-months').addEventListener('click',(e)=>{
+  function fundMonthsClick(e){
+    const yb=e.target.closest('button[data-fundy]');
+    if(yb){ fundYear=Number(yb.getAttribute('data-fundy')); fundMonthChips(); return; }   // 연도 전환은 표시만(재조회 없음)
     const b=e.target.closest('button[data-fundm]'); if(!b)return;
     const m=b.getAttribute('data-fundm');
     if(fundMonths.has(m)){ fundMonths.delete(m); if(!fundMonths.size) fundMonths.add(fundNextYm(1)); }   // 최소 1개 유지(비면 익월)
     else fundMonths.add(m);
     loadFunding();
-  });
+  }
+  $('fund-months').addEventListener('click',fundMonthsClick);
+  $('fund-months-top').addEventListener('click',fundMonthsClick);
   $('tabFx').addEventListener('click',()=>showTab('fx'));
   $('tabReport').addEventListener('click',()=>showTab('report'));
   $('rp-prev').addEventListener('click',()=>rpShift(-1));
