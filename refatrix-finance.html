@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0806f</title>
+<title>Refatrix ERP · 재무 · build fin-0806g</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -2900,9 +2900,82 @@
         ${mHeads}</tr></thead>
       <tbody>${rows}${totalRow}</tbody></table>
       <div class="hint" style="margin-top:6px"><b>${TM} 말 남을 예정 = 현재 잔고 − ${TM} 남은 지출</b>(경과 미지급 포함) · <b>각 월 말 부족/여유 = 직전 잔액 − 그 월 지출 예정</b>(등록 예정 + 고정비 자동전개, 익월부터 누적). 수입은 불확실해 본표에 미반영 — 행을 클릭하면 계좌별 예정수입과 개별 내역이 보입니다.
-      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, ${HL} 말까지 만기·경과 포함) — 입금계좌 미정.`:''}</div>`;
+      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, ${HL} 말까지 만기·경과 포함) — 입금계좌 미정.`:''}</div>${fundTransferHtml(d)}`;
   }
   function fundRow(i){const el=$(`fund-sub-${i}`);if(el)el.classList.toggle('hidden');}
+
+  // ===== 🔁 계좌 간 이체 제안 =====
+  // 기간(당월 말 + 지평 각 월 말)별 계좌 잔액 궤적을 만들고, 어떤 계좌가 마이너스가 되는 시점에
+  // 여유 계좌(그 시점 이후 최소잔액이 양수)에서 부족액만큼 이체를 제안 — 전 계좌 잔액 ≥ 0 목표.
+  // 기본은 필요자금 표와 동일하게 '지출만' 반영(수입 불확실 원칙), 토글로 예정수입 포함 가능.
+  // 계좌미지정 예정은 워터폴과 동일 원칙으로 수금 기본계좌(💰)에 귀속해 계산.
+  let fundXferMode='out';   // 'out'=지출만 | 'all'=예정수입 포함
+  function fundTransferHtml(d){
+    if(!d||!d.total||!Array.isArray(d.total.months)||!d.rows||!d.rows.length) return '';
+    const useAll=fundXferMode==='all';
+    const months=(Array.isArray(d.horizon)&&d.horizon.length)?d.horizon:d.total.months.map(x=>x.month);
+    const TM=fundMonLabel(d.this_month);
+    const arAccId=((accounts||[]).find(a=>a.ar_default)||{}).id;
+    // 계좌별 기간 순변화: [0]=당월(현재잔고 이후), [i+1]=지평 i번째 월
+    const accs=d.rows.filter(r=>r.balance!=null&&Array.isArray(r.months)).map(r=>{
+      const flows=[(useAll?(r.in_this||0):0)-(r.out_this||0),
+        ...months.map((m)=>{const mm=(r.months||[]).find(x=>x.month===m)||{};return (useAll?(mm.in||0):0)-(mm.out||0);})];
+      return {id:r.account_id,name:r.name,start:Number(r.balance)||0,flows,noDetail:r.can_detail===false};
+    });
+    if(!accs.length) return '';
+    // 미지정 예정 → 수금 기본계좌 귀속(없으면 첫 계좌)
+    if(d.unassigned){
+      const tgt=accs.find(a=>Number(a.id)===Number(arAccId))||accs[0];
+      tgt.flows[0]+=(useAll?(d.unassigned.in_this||0):0)-(d.unassigned.out_this||0);
+      months.forEach((m,i)=>{const mm=(d.unassigned.months||[]).find(x=>x.month===m)||{};tgt.flows[i+1]+=(useAll?(mm.in||0):0)-(mm.out||0);});
+      tgt.unassigned=true;
+    }
+    const P=months.length+1;
+    for(const a of accs){ a.bal=[]; let c=a.start; for(let p=0;p<P;p++){ c=Math.round((c+a.flows[p])*100)/100; a.bal.push(c); } }
+    const before=accs.map(a=>({name:a.name,min:Math.min(...a.bal)}));
+    const whenLbl=(p)=>p===0?('즉시 (~'+TM+' 말)'):(fundMonLabel(months[p-1])+' 중');
+    const transfers=[]; let unresolved=0;
+    for(let p=0;p<P;p++){
+      const needs=accs.filter(a=>a.bal[p]<-0.005).sort((x,y)=>x.bal[p]-y.bal[p]);
+      for(const need of needs){
+        let short=-need.bal[p];
+        const donors=accs.filter(a=>a!==need).map(a=>({a,avail:Math.min(...a.bal.slice(p))})).filter(x=>x.avail>0.005).sort((x,y)=>y.avail-x.avail);
+        for(const dn of donors){
+          if(short<=0.005) break;
+          const amt=Math.round(Math.min(short,dn.avail)*100)/100;
+          for(let q=p;q<P;q++){ need.bal[q]=Math.round((need.bal[q]+amt)*100)/100; dn.a.bal[q]=Math.round((dn.a.bal[q]-amt)*100)/100; }
+          transfers.push({p,when:whenLbl(p),from:dn.a.name,to:need.name,amount:amt,toAfter:need.bal[p],fromAfter:Math.min(...dn.a.bal.slice(p))});
+          short=Math.round((short-amt)*100)/100;
+        }
+        if(short>0.005) unresolved=Math.max(unresolved,short);
+      }
+    }
+    const seg=(v,on)=>'<button type="button" class="btn ghost sm" data-fxfer="'+v+'" style="padding:3px 10px;font-size:12px;border-radius:999px;'+(on?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'">'+(v==='out'?'지출만 기준':'예정수입 포함')+'</button>';
+    const head='<div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:10px">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:800;font-size:13.5px">🔁 계좌 간 이체 제안</span>'
+      +'<span class="hint" style="margin:0">부족 계좌를 여유 계좌에서 채워 지평 내 전 계좌 잔액 ≥ 0</span>'
+      +'<span class="no-print" style="margin-left:auto;display:flex;gap:6px">'+seg('out',!useAll)+seg('all',useAll)+'</span></div>';
+    const noteBits=[];
+    if(d.unassigned) noteBits.push('계좌미지정 예정은 수금 기본계좌(💰)에 귀속해 계산');
+    if(accs.some(a=>a.noDetail)) noteBits.push('세부 비공개 계좌는 지출예정 미집계라 여유가 과대평가될 수 있음');
+    noteBits.push(useAll?'예정수입(수금예정 포함)까지 반영한 낙관 기준':'수입 미반영(불확실) — 필요자금 표와 동일한 보수 기준');
+    const note='<div class="hint" style="margin:2px 0 6px">'+noteBits.join(' · ')+' · USD 계좌는 MXN 환산 기준</div>';
+    let body;
+    if(!transfers.length&&unresolved<=0.005){
+      body='<div style="padding:8px 12px;background:#e7f3ee;color:#2f8f5b;border:1px solid #bfe0cf;border-radius:8px;font-weight:700">✅ 지평 내 모든 계좌 잔액 여유 — 이체가 필요 없습니다.</div>';
+    }else{
+      const rows=transfers.map((t,i)=>'<tr><td>'+(i+1)+'</td><td style="white-space:nowrap"><b>'+escH(t.when)+'</b></td>'
+        +'<td>'+escH(t.from)+'</td><td style="text-align:center">→</td><td><b>'+escH(t.to)+'</b></td>'
+        +'<td class="num" style="font-weight:800;color:var(--brand)">'+fmt(t.amount)+'</td>'
+        +'<td class="hint" style="margin:0">받는 계좌 그 시점 잔액 '+fmt(t.toAfter)+' · 보내는 계좌 이후 최소잔액 '+fmt(t.fromAfter)+'</td></tr>').join('');
+      body=(transfers.length?'<table style="margin:0"><thead><tr><th>#</th><th>이체 시점</th><th>보내는 계좌</th><th></th><th>받는 계좌</th><th class="num">금액 (MXN)</th><th>이체 후</th></tr></thead><tbody>'+rows+'</tbody></table>':'')
+        +(unresolved>0.005
+          ?'<div style="margin-top:6px;padding:8px 12px;background:#fde2e0;color:#c0392b;border:1px solid #f3b8b3;border-radius:8px;font-weight:700">⚠ 이체만으로는 부족 — 회사 전체가 최대 MX$'+fmt(unresolved)+' 모자랍니다. 수금 일정 앞당기기 또는 차입이 필요합니다.</div>'
+          :'<div style="margin-top:6px;padding:8px 12px;background:#e7f3ee;color:#2f8f5b;border:1px solid #bfe0cf;border-radius:8px;font-weight:700">✅ 위 '+transfers.length+'건 이체 시 지평 내 전 계좌 잔액 ≥ 0 유지'
+            +' <span style="font-weight:400;font-size:12px">(이체 전 최저: '+before.filter(b=>b.min<-0.005).map(b=>escH(b.name)+' '+fmt(b.min)).join(' · ')+')</span></div>');
+    }
+    return head+note+body+'</div>';
+  }
 
   function dirItemRow(t){
     const amt=Number(t.amount_mxn)||0;
@@ -3777,6 +3850,11 @@
   }
   $('fund-months').addEventListener('click',fundMonthsClick);
   $('fund-months-top').addEventListener('click',fundMonthsClick);
+  $('fundBody').addEventListener('click',(e)=>{   // 이체 제안 기준 토글(지출만/예정수입 포함) — 재조회 없이 재계산
+    const b=e.target.closest('button[data-fxfer]'); if(!b)return;
+    fundXferMode=b.getAttribute('data-fxfer')==='all'?'all':'out';
+    renderFunding();
+  });
   $('tabFx').addEventListener('click',()=>showTab('fx'));
   $('tabReport').addEventListener('click',()=>showTab('report'));
   $('rp-prev').addEventListener('click',()=>rpShift(-1));
