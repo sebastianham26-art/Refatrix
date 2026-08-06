@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0806a</title>
+<title>Refatrix ERP · WBR · build wbr-0806b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -422,7 +422,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0806a');
+  console.log('[wbr] build wbr-0806b');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -796,25 +796,30 @@
   let cfwfAccounts=null;   // /api/accounts 캐시 (디렉터 전용 카드라 권한 문제 없음)
   let cfwfLast=null;       // 마지막 /api/cashflow 응답 캐시 {d,from,to,g} — 카테고리 토글 시 재조회 없이 재계산
   function updateCfPlanBtn(){ const b=$('cfwf-plan'); if(!b)return; b.textContent=cfwfState.plan?'예정 포함':'실적만'; }
-  // ---- 월 토글 칩(중복선택) — 선택 최소~최대 월로 기간 자동 설정(사이 월 자동 포함) ----
-  function cfwfMonthList(){ const t=new Date(); const arr=[];
-    for(let i=-11;i<=3;i++) arr.push(new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+i,1)).toISOString().slice(0,7));
-    return arr; }
+  // ---- 연도·월 분리 토글(중복선택) — 연도(올해·내년) 선택 후 월 클릭. 선택 최소~최대 월로 기간 자동 설정(사이 월 자동 포함) ----
+  let cfwfYear=(new Date()).getUTCFullYear();          // 표시 중인 연도(칩 12개의 기준)
+  function cfwfYearList(){ const y=(new Date()).getUTCFullYear(); return [y,y+1]; }   // 올해·내년 (2026 기준: 26년·27년)
   function renderCfwfMonths(){
     const box=$('cfwf-months'); if(!box)return;
-    const ms=cfwfMonthList(); const sel=cfwfState.months;
+    const sel=cfwfState.months;
     const sorted=Array.from(sel).sort(); const mn=sorted[0], mx=sorted[sorted.length-1];
-    let prevY='';
-    box.innerHTML=ms.map(m=>{
+    const years=cfwfYearList();
+    if(!years.includes(cfwfYear)) cfwfYear=years[0];
+    const ybtns=years.map(y=>{
+      const cnt=sorted.filter(m=>m.slice(0,4)===String(y)).length;
+      return '<button type="button" class="mbtn'+(cfwfYear===y?' on':'')+'" data-cfwfy="'+y+'" title="'+y+'년 월 선택으로 전환'+(cnt?' · '+cnt+'개월 선택됨':'')+'">'+String(y).slice(2)+'년'+(cnt?' ·'+cnt:'')+'</button>';
+    }).join(' ');
+    const mbtns=Array.from({length:12},(_,i)=>{
+      const m=String(cfwfYear)+'-'+String(i+1).padStart(2,'0');
       const on=sel.has(m);
-      const mid=!on&&mn&&m>mn&&m<mx;   // 선택 월 사이 자동 포함 구간
-      const y=m.slice(2,4); const lbl=(y!==prevY?y+'년 ':'')+Number(m.slice(5))+'월'; prevY=y;
+      const mid=!on&&mn&&m>mn&&m<mx;   // 선택 월 사이 자동 포함 구간(연도 걸침 포함)
       return '<button type="button" class="mbtn'+(on?' on':'')+'" data-cfwfm="'+m+'"'
         +(mid?' style="background:var(--income-bg);border-color:var(--income-bg);color:var(--income)"':'')
-        +' title="'+m+(mid?' · 선택 월 사이 자동 포함':'')+'">'+lbl+'</button>';
-    }).join(' ')
-    +(sel.size?'<span class="hint" style="align-self:center">선택 월 기준 기간 자동 설정 (사이 월 포함)</span>'
-              :'<span class="hint" style="align-self:center">월 클릭으로 기간 선택(중복선택 가능) · 미선택 시 아래 날짜 입력 사용</span>');
+        +' title="'+m+(mid?' · 선택 월 사이 자동 포함':'')+'">'+(i+1)+'월</button>';
+    }).join(' ');
+    box.innerHTML=ybtns+' <span style="color:var(--line)">|</span> '+mbtns
+    +(sel.size?'<span class="hint" style="align-self:center">'+sorted.map(m=>Number(m.slice(2,4))+'년 '+Number(m.slice(5))+'월').join(', ')+' · 기간 자동 설정(사이 월 포함)</span>'
+              :'<span class="hint" style="align-self:center">연도·월 클릭으로 기간 선택(중복선택·연도 걸침 가능) · 미선택 시 아래 날짜 입력 사용</span>');
   }
   function cfwfApplyMonthsRange(){
     if(!cfwfState.months.size) return;
@@ -839,23 +844,41 @@
     box.innerHTML=chip('all','전체 계좌',cfwfState.accIds.size===0)
       +list.map(a=>chip(a.id,esc(a.name)+(a.disabled?' (안씀)':''),cfwfState.accIds.has(Number(a.id)))).join('');
   }
-  // ---- 입금예정 카테고리 칩 — 켠 카테고리의 예정입금만 잔액에 반영(끄면 '그 입금이 안 될 때' 시나리오) ----
+  // ---- 입금예정 카테고리 칩 — 켠 항목의 예정입금만 잔액에 반영(끄면 '그 입금이 안 될 때' 시나리오) ----
+  // 이름 있는 카테고리(금액 큰 순 최대 5개) + 「기타」(그 외 카테고리·미분류 전부, 항상 표시) 로 구성 —
+  // 어떤 수익이 새로 생겨도 기타로 잡혀 누락 없이 토글 가능.
+  const CFWF_ETC='__etc__', CFWF_ETC_MAXNAMED=5;
   function cfwfPlanCats(d){
     const agg={};
     const bd=(d&&d.breakdown)||{};
     for(const k of Object.keys(bd)) for(const c of bd[k]){ const p=Number(c.plan_in)||0; if(p>0.005) agg[c.name]=(agg[c.name]||0)+p; }
-    return Object.keys(agg).map(n=>({name:n,total:Math.round(agg[n]*100)/100})).sort((a,b)=>b.total-a.total);
+    const all=Object.keys(agg).map(n=>({name:n,total:Math.round(agg[n]*100)/100})).sort((a,b)=>b.total-a.total);
+    const named=all.filter(c=>c.name!=='(계정없음)').slice(0,CFWF_ETC_MAXNAMED);
+    const namedSet=new Set(named.map(c=>c.name));
+    const others=all.filter(c=>!namedSet.has(c.name));   // 6번째 이후 + 미분류('(계정없음)')
+    return { named, otherNames:others.map(c=>c.name),
+      othersTotal:Math.round(others.reduce((s,c)=>s+c.total,0)*100)/100 };
   }
-  function renderCfwfCats(catList){
+  // exCats(키: 카테고리명 또는 __etc__) → 실제 제외할 카테고리명 Set
+  function cfwfExcludedNames(cats){
+    const exn=new Set();
+    for(const c of (cats.named||[])) if(cfwfState.exCats.has(c.name)) exn.add(c.name);
+    if(cfwfState.exCats.has(CFWF_ETC)) for(const n of (cats.otherNames||[])) exn.add(n);
+    return exn;
+  }
+  function renderCfwfCats(cats){
     const box=$('cfwf-cats'); if(!box)return;
-    if(!cfwfState.plan||!catList||!catList.length){ box.innerHTML=''; return; }
+    const named=(cats&&cats.named)||[], others=(cats&&cats.otherNames)||[];
+    if(!cfwfState.plan||(!named.length&&!others.length)){ box.innerHTML=''; return; }
     const chip=(key,label,on,title)=>'<button type="button" class="btn sm" data-cfwfcat="'+esc(key)+'"'+(title?' title="'+esc(title)+'"':'')
       +' style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
       +(on?'var(--income);background:var(--income);color:#fff':'var(--line);background:#fff;color:var(--muted)')+'">'+label+'</button>';
     box.innerHTML='<span class="hint" style="font-weight:700;color:var(--brand)">예정입금 반영:</span>'
-      +chip('__all__','전체',cfwfState.exCats.size===0,'모든 카테고리의 예정입금 반영')
-      +catList.map(c=>chip(c.name,esc(c.name),!cfwfState.exCats.has(c.name),'예정입금 합 '+cfFmtMxn(c.total)+' MXN · 끄면 이 카테고리의 예정입금 제외')).join('')
-      +'<span class="hint">끈 카테고리의 예정입금은 잔액에서 제외 — 예: 매출입금을 끄면 「매출이 입금 안 될 때」 예상잔고</span>';
+      +chip('__all__','전체',cfwfState.exCats.size===0,'모든 예정입금 반영')
+      +named.map(c=>chip(c.name,esc(c.name),!cfwfState.exCats.has(c.name),'예정입금 합 '+cfFmtMxn(c.total)+' MXN · 끄면 이 카테고리의 예정입금 제외')).join('')
+      +chip(CFWF_ETC,'기타',!cfwfState.exCats.has(CFWF_ETC),
+        '그 외 카테고리·미분류 예정입금 합 '+cfFmtMxn(cats.othersTotal||0)+' MXN'+(others.length?' — '+others.join(', '):' (현재 없음 — 새 수익이 생기면 여기로 잡힘)'))
+      +'<span class="hint">끈 항목의 예정입금은 잔액에서 제외 — 예: 매출입금을 끄면 「매출이 입금 안 될 때」 예상잔고</span>';
   }
   function cfWfDefaultRange(){
     if($('cfwf-from').value && $('cfwf-to').value) return;
@@ -960,9 +983,9 @@
     const L=cfwfLast; if(!L) return;
     const d=L.d, from=L.from, to=L.to, g=L.g;
     const box=$('cfwfBody'); if(!box) return;
-    const catList=cfwfState.plan?cfwfPlanCats(d):[];
-    renderCfwfCats(catList);
-    const ex=cfwfState.plan?cfwfState.exCats:new Set();
+    const catInfo=cfwfState.plan?cfwfPlanCats(d):{named:[],otherNames:[],othersTotal:0};
+    renderCfwfCats(catInfo);
+    const ex=cfwfState.plan?cfwfExcludedNames(catInfo):new Set();
     const bd=d.breakdown||{};
     const exAmtOf=(p)=>{ if(!ex.size)return 0; let s=0; for(const c of (bd[p]||[])){ if(ex.has(c.name)) s+=Number(c.plan_in)||0; } return s; };
     const sk=cfWfBucket(from,g), ek=cfWfBucket(to,g);
@@ -984,14 +1007,16 @@
     }
     const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
     const accNames=cfwfState.accIds.size?Array.from(cfwfState.accIds).map(id=>{const a=(cfwfAccounts||[]).find(x=>Number(x.id)===id);return a?a.name:('계좌#'+id);}):[];
-    const exNames=Array.from(ex);
+    const exLabels=(catInfo.named||[]).filter(c=>cfwfState.exCats.has(c.name)).map(c=>c.name);
+    if(cfwfState.plan&&cfwfState.exCats.has(CFWF_ETC)) exLabels.push('기타(그 외·미분류)');
     const opts={from,to,granLabel,gran:g,plan:cfwfState.plan,
       months:Array.from(cfwfState.months).sort(), accIds:Array.from(cfwfState.accIds), accNames:accNames.slice(),
-      exCats:exNames.slice(), catList:catList.map(c=>({name:c.name,total:c.total}))};
+      exCats:Array.from(cfwfState.exCats), exLabels:exLabels.slice(),
+      catList:{named:(catInfo.named||[]).map(c=>({name:c.name,total:c.total})),otherNames:(catInfo.otherNames||[]).slice(),othersTotal:catInfo.othersTotal||0}};
     lastCfWaterfall={base,items,opts};
     let info='';
     if(accNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: '+accNames.map(esc).join(', ')+' <span style="font-weight:400">· 계좌미지정 공용 예정(수금예정 등)은 계좌별 보기에서 제외됨</span></div>';
-    if(cfwfState.plan&&exNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+exNames.map(esc).join(', ')+' <span style="font-weight:400">(표시구간 제외 합 −'+cfFmtMxn(Math.round(exShown*100)/100)+' MXN)</span></div>';
+    if(cfwfState.plan&&exLabels.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+exLabels.map(esc).join(', ')+' <span style="font-weight:400">(표시구간 제외 합 −'+cfFmtMxn(Math.round(exShown*100)/100)+' MXN)</span></div>';
     box.innerHTML=info+cfSvgWaterfall(base,items,{from,to,granLabel,gran:g});
   }
   function renderCfWaterfallFrozen(cf){
@@ -1009,13 +1034,17 @@
       cfwfState.months=new Set(Array.isArray(o.months)?o.months:[]);
       cfwfState.accIds=new Set(Array.isArray(o.accIds)?o.accIds.map(Number):[]);
       cfwfState.exCats=new Set(Array.isArray(o.exCats)?o.exCats:[]);
+      const fm=Array.from(cfwfState.months).sort()[0];
+      if(fm&&cfwfYearList().includes(Number(fm.slice(0,4)))) cfwfYear=Number(fm.slice(0,4));
       renderCfwfMonths();
       if($('cfwf-accs')) $('cfwf-accs').innerHTML=(Array.isArray(o.accNames)&&o.accNames.length)
         ?'<span class="hint">선택 계좌(저장 당시): '+o.accNames.map(esc).join(', ')+'</span>':'';
-      renderCfwfCats(Array.isArray(o.catList)?o.catList:[]);
+      // catList: 구형(0806a)=배열, 신형=객체 — 둘 다 수용
+      renderCfwfCats(Array.isArray(o.catList)?{named:o.catList,otherNames:[],othersTotal:0}:(o.catList||{named:[],otherNames:[],othersTotal:0}));
+      const exLbls=Array.isArray(o.exLabels)?o.exLabels:(Array.isArray(o.exCats)?o.exCats.map(k=>k==='__etc__'?'기타(그 외·미분류)':k):[]);
       let info='';
       if(Array.isArray(o.accNames)&&o.accNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: '+o.accNames.map(esc).join(', ')+'</div>';
-      if(o.plan&&Array.isArray(o.exCats)&&o.exCats.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+o.exCats.map(esc).join(', ')+'</div>';
+      if(o.plan&&exLbls.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+exLbls.map(esc).join(', ')+'</div>';
       $('cfwfBody').innerHTML=info+cfSvgWaterfall(Number(cf.base)||0,cf.items,o);
     } else $('cfwfBody').innerHTML='<div class="hint">이 저장본에는 현금잔액 워터폴 기록이 없습니다.</div>';
   }
@@ -1848,6 +1877,8 @@
   $('cfwf-plan').addEventListener('click',()=>{ if(viewMode)return; cfwfState.plan=!cfwfState.plan; updateCfPlanBtn(); loadCfWaterfall(); });
   $('cfwf-months').addEventListener('click',(e)=>{
     if(viewMode)return;
+    const yb=e.target.closest('button[data-cfwfy]');
+    if(yb){ cfwfYear=Number(yb.getAttribute('data-cfwfy')); renderCfwfMonths(); return; }   // 연도 전환은 표시만(재조회 없음)
     const b=e.target.closest('button[data-cfwfm]'); if(!b)return;
     const m=b.getAttribute('data-cfwfm');
     if(cfwfState.months.has(m)) cfwfState.months.delete(m); else cfwfState.months.add(m);
