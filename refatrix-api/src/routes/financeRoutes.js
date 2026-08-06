@@ -1950,6 +1950,11 @@ export default async function financeRoutes(app) {
     const opening = await openingBalanceMxn(req.ctx.perm, selAccIds);
     const hiddenAll = await loadHiddenBalanceTxns(req.ctx.perm); // 잔액 보완분(항목 미노출, 누적잔고에만 합산)
     const hidden = selAccIds ? hiddenAll.filter((t) => t.account_id != null && selAccIds.includes(Number(t.account_id))) : hiddenAll;
+    // 이월 규칙 기준일 — ⚠ 반드시 아래 hidden 루프보다 먼저 선언할 것.
+    // (2026-08-06 수정: 기존엔 이 선언이 hidden 루프 뒤에 있어 TDZ ReferenceError →
+    //  보완분에 예정(비공개 고정비 plan)이 있는 비디렉터(소시오·재무 등)에서만 /api/cashflow 가 500으로 죽었음.
+    //  디렉터는 보완분이 항상 빈 배열이라 루프가 안 돌아 드러나지 않던 버그.)
+    const todayStrCF = new Date().toISOString().slice(0, 10);
     const mappedTx = txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
@@ -1965,7 +1970,6 @@ export default async function financeRoutes(app) {
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
     }));
     // 이월 규칙: 예정(plan)의 유효일이 오늘보다 과거면 '오늘'로 귀속(집계·세부표 공통) — 데이터 불변, 계산만 이동
-    const todayStrCF = new Date().toISOString().slice(0, 10);
     for (const t of mappedTx) {
       if (t.status !== 'plan') continue;
       const eff = String(t.plan_date || t.txn_date).slice(0, 10);
