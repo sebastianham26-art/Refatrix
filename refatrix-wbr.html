@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0806f</title>
+<title>Refatrix ERP · WBR · build wbr-0806g</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -422,7 +422,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0806f');
+  console.log('[wbr] build wbr-0806g');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -894,10 +894,14 @@
       +(on?'var(--income);background:var(--income);color:#fff':'var(--line);background:#fff;color:var(--muted)')+'">'+label+'</button>';
     box.innerHTML='<span class="hint" style="font-weight:700;color:var(--brand)">예정입금 반영:</span>'
       +chip('__all__','전체',cfwfState.exCats.size===0,'모든 예정입금 반영')
-      +groups.map(g=>chip(g.key,esc(g.label),!cfwfState.exCats.has(g.key),
-        '조회 기간 내 예정입금 '+cfFmtMxn(g.total)+' MXN'
-        +((g.beyond||0)>0.005?' · 기간 밖 +'+cfFmtMxn(g.beyond)+' MXN(그래프 미반영 — 기간을 늘리세요)':'')
-        +(g.names.length?' — '+g.names.join(', '):' (예정입금 없음)')+' · 끄면 이 그룹의 예정입금 제외')).join('')
+      +groups.map(g=>{
+        const off=cfwfState.exCats.has(g.key);
+        const lbl=esc(g.label)+(off&&g.total>0.005?' −'+cfFmtK(g.total):'');   // 끈 칩에 제외 금액 표기
+        return chip(g.key,lbl,!off,
+          '조회 기간 내 예정입금 '+cfFmtMxn(g.total)+' MXN'+(off?' (현재 제외 중)':'')
+          +((g.beyond||0)>0.005?' · 기간 밖 +'+cfFmtMxn(g.beyond)+' MXN(그래프 미반영 — 기간을 늘리세요)':'')
+          +(g.names.length?' — '+g.names.join(', '):' (예정입금 없음)')+' · 끄면 이 그룹의 예정입금 제외');
+      }).join('')
       +'<span class="hint">끈 항목의 예정입금은 잔액에서 제외 — 예: 매출입금을 끄면 「매출이 입금 안 될 때」 예상잔고</span>';
   }
   // 저장본 catList 형식 변환(하위호환): 신형=그룹 배열[{key,label,total,names}], 0806b=객체{named,...}, 0806a=배열[{name,total}]
@@ -1034,15 +1038,16 @@
     }
     const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
     const accNames=cfwfState.accIds.size?Array.from(cfwfState.accIds).map(id=>{const a=(cfwfAccounts||[]).find(x=>Number(x.id)===id);return a?a.name:('계좌#'+id);}):[];
-    const exLabels=cfwfState.plan?catInfo.filter(g=>cfwfState.exCats.has(g.key)).map(g=>g.label):[];
+    const exGroups=cfwfState.plan?catInfo.filter(g=>cfwfState.exCats.has(g.key)):[];
+    const exLabels=exGroups.map(g=>g.label+(g.total>0.005?' −'+cfFmtMxn(g.total):' (기간 내 0)'));   // 그룹별 제외 금액 명시
     const opts={from,to,granLabel,gran:g,plan:cfwfState.plan,
       months:Array.from(cfwfState.months).sort(), accIds:Array.from(cfwfState.accIds), accNames:accNames.slice(),
       exCats:Array.from(cfwfState.exCats), exLabels:exLabels.slice(),
       catList:catInfo.map(g=>({key:g.key,label:g.label,total:g.total,names:g.names.slice()}))};
     lastCfWaterfall={base,items,opts};
     let info='';
-    if(accNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: '+accNames.map(esc).join(', ')+' <span style="font-weight:400">· 매출 수금예정은 수금 기본계좌(💰)로 귀속 · 그 외 계좌미지정 예정은 계좌별 보기에서 제외</span></div>';
-    if(cfwfState.plan&&exLabels.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+exLabels.map(esc).join(', ')+' <span style="font-weight:400">(표시구간 제외 합 −'+cfFmtMxn(Math.round(exShown*100)/100)+' MXN)</span></div>';
+    if(accNames.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: '+accNames.map(esc).join(', ')+' <span style="font-weight:400">· 계좌미지정 예정(수금예정·수동 예정 등)은 수금 기본계좌(💰)로 귀속</span></div>';
+    if(cfwfState.plan&&exLabels.length) info+='<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: '+exLabels.map(esc).join(' · ')+' <span style="font-weight:400">(합 −'+cfFmtMxn(Math.round(exShown*100)/100)+' MXN · 표시구간 기준)</span></div>';
     // 기간 밖 예정입금 경고 — 만기가 조회 종료일 이후인 예정(예: 미래 만기 매출 AR)은 그래프·토글에 반영되지 않음을 명시
     if(cfwfState.plan){
       const beyondTot=Math.round(catInfo.reduce((s,gr)=>s+(gr.beyond||0),0)*100)/100;

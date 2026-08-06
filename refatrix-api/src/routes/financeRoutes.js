@@ -1977,15 +1977,16 @@ export default async function financeRoutes(app) {
         }
       }
     }
-    // 수금예정(AR) 계좌 귀속 (2026-08-06 디렉터 확정): AR 예정은 계좌미지정으로 생성되지만
-    // 「수금 기본계좌」(accounts.ar_default=true, 현재 BBVA)로 입금된다고 간주 →
-    // 계좌 칩으로 그 계좌를 선택하면 수금예정이 포함되고, 다른 계좌에는 잡히지 않는다.
-    // (전체 계좌 보기는 기존과 동일 — 어차피 전부 합산)
+    // 계좌미지정 예정의 계좌 귀속 (2026-08-06 디렉터 확정): 수금예정(AR)뿐 아니라
+    // 계좌미지정(NULL) '모든' 예정 거래(수동 예정 수입/지출·마케팅 계획 등)를
+    // 「수금 기본계좌」(accounts.ar_default=true, 현재 BBVA)로 귀속한다 —
+    // 계좌 칩으로 그 계좌를 선택하면 전부 포함, 다른 계좌에는 잡히지 않음(제외 대신 기본계좌 귀속).
+    // 전체 계좌 보기는 기존과 동일(어차피 전부 합산). 원본 데이터 불변 — 표시 계산에서만 귀속.
     {
       const arAcc = (await query(`SELECT id, name FROM accounts WHERE ar_default=true AND deleted_at IS NULL LIMIT 1`)).rows[0];
       if (arAcc) {
         for (const t of txnsAll) {
-          if (t.status === 'plan' && t.direction === 'in' && t.sales_invoice_id != null && t.account_id == null) {
+          if (t.status === 'plan' && t.account_id == null) {
             t.account_id = Number(arAcc.id);
             t.account_name = arAcc.name;
           }

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0806e</title>
+<title>Refatrix ERP · 재무 · build fin-0806f</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1009,7 +1009,7 @@
   // 수금 기본계좌 지정 — 매출 수금예정(AR)이 이 계좌로 입금된다고 간주(한 계좌만, 기존 지정 자동 해제)
   async function setArDefault(id){
     const a=accounts.find(x=>String(x.id)===String(id));
-    if(!confirm(`'${a?a.name:('#'+id)}' 계좌를 수금 기본계좌로 지정합니다.\n\n- 매출 수금예정(인보이스 자동 예정)이 이 계좌로 입금된다고 간주됩니다.\n- 현금잔액 워터폴에서 이 계좌를 선택하면 수금예정이 포함됩니다.\n- 기존 지정 계좌는 자동 해제됩니다.\n\n진행할까요?`))return;
+    if(!confirm(`'${a?a.name:('#'+id)}' 계좌를 수금 기본계좌로 지정합니다.\n\n- 매출 수금예정(인보이스 자동 예정)과 계좌미지정 수동 예정이 이 계좌로 귀속됩니다.\n- 현금잔액 워터폴에서 이 계좌를 선택하면 그 예정들이 포함됩니다.\n- 기존 지정 계좌는 자동 해제됩니다.\n\n진행할까요?`))return;
     try{
       const res=await fetch(session.api+'/api/accounts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ar_default:true})});
       if(!res.ok)throw 0;
@@ -2313,10 +2313,14 @@
       +(on?'#2f8f5b;background:#2f8f5b;color:#fff':'var(--line);background:#fff;color:var(--muted)')+'">'+label+'</button>';
     box.innerHTML='<span class="hint" style="margin:0;font-weight:700;color:var(--brand)">예정입금 반영:</span>'
       +chip('__all__','전체',wfState.exCats.size===0,'모든 예정입금 반영')
-      +groups.map(g=>chip(g.key,escH(g.label),!wfState.exCats.has(g.key),
-        '조회 기간 내 예정입금 '+fmt(g.total)+' MXN'
-        +((g.beyond||0)>0.005?' · 기간 밖 +'+fmt(g.beyond)+' MXN(그래프 미반영 — 기간을 늘리세요)':'')
-        +(g.names.length?' — '+g.names.join(', '):' (예정입금 없음)')+' · 끄면 이 그룹의 예정입금 제외')).join('')
+      +groups.map(g=>{
+        const off=wfState.exCats.has(g.key);
+        const lbl=escH(g.label)+(off&&g.total>0.005?' −'+fmtK(g.total):'');   // 끈 칩에 제외 금액 표기
+        return chip(g.key,lbl,!off,
+          '조회 기간 내 예정입금 '+fmt(g.total)+' MXN'+(off?' (현재 제외 중)':'')
+          +((g.beyond||0)>0.005?' · 기간 밖 +'+fmt(g.beyond)+' MXN(그래프 미반영 — 기간을 늘리세요)':'')
+          +(g.names.length?' — '+g.names.join(', '):' (예정입금 없음)')+' · 끄면 이 그룹의 예정입금 제외');
+      }).join('')
       +'<span class="hint" style="margin:0">끈 항목의 예정입금은 잔액에서 제외 — 예: 매출입금을 끄면 「매출이 입금 안 될 때」 예상잔고</span>';
   }
   // 은행계좌 칩(중복선택) — 비어있으면 전체 계좌 합산(기존 동작과 동일)
@@ -2408,9 +2412,9 @@
     }
     const granLabel=g==='day'?'일별':(g==='week'?'주별':'월별');
     const accNames=wfState.accIds.size?Array.from(wfState.accIds).map(id=>{const a=(accounts||[]).find(x=>Number(x.id)===id);return a?a.name:null;}).filter(Boolean):[];
-    const accLine=accNames.length?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: ${accNames.map(escH).join(', ')} <span style="font-weight:400">· 매출 수금예정은 수금 기본계좌(💰)로 귀속 · 그 외 계좌미지정 예정은 계좌별 보기에서 제외</span></div>`:'';
-    const exLabels=groups.filter(gr=>wfState.exCats.has(gr.key)).map(gr=>gr.label);
-    const exLine=(cfState.mode==='plan'&&exLabels.length)?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: ${exLabels.map(escH).join(', ')} <span style="font-weight:400">(표시구간 제외 합 −${fmt(Math.round(exShown*100)/100)} MXN)</span></div>`:'';
+    const accLine=accNames.length?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--brand)">선택 계좌: ${accNames.map(escH).join(', ')} <span style="font-weight:400">· 계좌미지정 예정(수금예정·수동 예정 등)은 수금 기본계좌(💰)로 귀속</span></div>`:'';
+    const exLabels=groups.filter(gr=>wfState.exCats.has(gr.key)).map(gr=>gr.label+(gr.total>0.005?' −'+fmt(gr.total):' (기간 내 0)'));   // 그룹별 제외 금액 명시
+    const exLine=(cfState.mode==='plan'&&exLabels.length)?`<div class="hint" style="margin:0 0 4px;font-weight:700;color:var(--expense)">예정입금 제외: ${exLabels.map(escH).join(' · ')} <span style="font-weight:400">(합 −${fmt(Math.round(exShown*100)/100)} MXN · 표시구간 기준)</span></div>`:'';
     // 기간 밖 예정입금 경고 — 만기가 조회 종료일 이후인 예정(예: 미래 만기 매출 AR)은 그래프·토글에 반영되지 않음
     let beyondLine='';
     if(cfState.mode==='plan'){
