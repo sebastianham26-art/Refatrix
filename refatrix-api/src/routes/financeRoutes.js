@@ -2292,8 +2292,23 @@ export default async function financeRoutes(app) {
     const today = new Date().toISOString().slice(0, 10);
     const thisMonth = today.slice(0, 7);
     const [ty, tmm] = thisMonth.split('-').map(Number);
-    const nextMonth = new Date(Date.UTC(ty, tmm, 1)).toISOString().slice(0, 7);
-    const nextMonthEnd = `${nextMonth}-${String(new Date(Date.UTC(ty, tmm + 1, 0)).getUTCDate()).padStart(2, '0')}`;
+    const ymAt = (n) => new Date(Date.UTC(ty, tmm - 1 + n, 1)).toISOString().slice(0, 7);   // thisMonth 기준 +n개월
+    const nextMonth = ymAt(1);
+    // months=2026-09,2026-11 (선택, 2026-08-06): 보고 싶은 미래 월들 — 지평 = 최대 선택 월.
+    // 누적 정확성을 위해 익월~지평까지 '연속' 월 리스트로 계산(건너뛴 월의 지출도 잔액에는 반영). 최대 12개월 앞.
+    // 미지정 시 [익월]만 — 기존 동작·응답과 100% 동일(하위호환).
+    let monthsList = [nextMonth];
+    if (req.query.months != null && String(req.query.months).trim() !== '') {
+      const sel = String(req.query.months).split(',').map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s) && s > thisMonth);
+      if (sel.length) {
+        const maxSel = sel.sort()[sel.length - 1];
+        monthsList = [];
+        for (let n = 1; n <= 12; n++) { const m = ymAt(n); monthsList.push(m); if (m >= maxSel) break; }
+      }
+    }
+    const horizonMonth = monthsList[monthsList.length - 1];
+    const [hy, hmm] = horizonMonth.split('-').map(Number);
+    const horizonEnd = `${horizonMonth}-${String(new Date(Date.UTC(hy, hmm, 0)).getUTCDate()).padStart(2, '0')}`;
     const usd = (await getUsdMxnRate()).rate;
     // 계좌 + MXN 환산 잔액 — 잔액 열람 가능 계좌(viewIds), 비활성 제외. 산식은 /api/accounts와 동일.
     const allowAcc = allowedAccountIds(req.ctx.perm);
@@ -2314,15 +2329,15 @@ export default async function financeRoutes(app) {
     }));
     const txns = await loadCashTxns(req.ctx.perm);
     // proj=0 → 자동전개(미생성 고정비 전개) 제외 — 등록된 예정만 집계 (프런트 토글)
-    const projections = String(req.query.proj || '1') !== '0' ? await recurringProjections(req.ctx.perm, [thisMonth, nextMonth]) : [];
-    const funding = accountFundingPlan(accounts, txns, projections, thisMonth, nextMonth, today);
-    // 참고: AR(미수 인보이스, 입금계좌 미정) — 익월 말까지 만기(경과 포함) 잔액 합
+    const projections = String(req.query.proj || '1') !== '0' ? await recurringProjections(req.ctx.perm, [thisMonth, ...monthsList]) : [];
+    const funding = accountFundingPlan(accounts, txns, projections, thisMonth, monthsList, today);
+    // 참고: AR(미수 인보이스, 입금계좌 미정) — 지평 말까지 만기(경과 포함) 잔액 합
     const arRef = (await query(
       `SELECT COUNT(*) AS n, COALESCE(SUM(si.total_mxn - COALESCE(p.paid,0)),0) AS total
          FROM sales_invoices si
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id = si.id
         WHERE si.status='posted' AND si.deleted_at IS NULL AND si.due_date <= $1
-          AND (si.total_mxn - COALESCE(p.paid,0)) > 0`, [nextMonthEnd])).rows[0];
+          AND (si.total_mxn - COALESCE(p.paid,0)) > 0`, [horizonEnd])).rows[0];
     return { ...funding, today, fx_rate: usd, ar_reference: { n: Number(arRef.n), total: r2(Number(arRef.total)) } };
   });
 

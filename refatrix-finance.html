@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0806a</title>
+<title>Refatrix ERP · 재무 · build fin-0806b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -431,7 +431,8 @@
           </div>
           <button class="btn ghost sm" id="fund-reload">새로고침</button>
         </div>
-        <div class="hint" style="margin-top:4px">각 은행계좌별로 <b>당월 말에 얼마 남을 예정</b>이고 <b>익월에 얼마 쓸 예정</b>인지 → 그래서 <b>익월 말에 부족한지/남는지</b>를 봅니다. <span style="color:#c0392b;font-weight:700">부족</span>이면 익월까지 그 계좌에 그만큼 이체/충전이 필요합니다(부족 계좌가 위쪽 정렬). 익월 지출에는 아직 [생성] 전 고정비 자동전개분도 포함됩니다. 행을 클릭하면 개별 내역이 열립니다.</div>
+        <div id="fund-months" class="no-print" style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:8px"></div>
+        <div class="hint" style="margin-top:4px">각 은행계좌별로 <b>당월 말에 얼마 남을 예정</b>이고, <b>선택한 월(중복선택 가능)에 얼마 쓸 예정</b>인지 → 그래서 <b>그 월 말에 부족한지/남는지</b>를 봅니다. 위 월 칩으로 볼 월을 고르세요(기본 익월). 사이에 건너뛴 월의 지출도 잔액 누적에는 반영됩니다. <span style="color:#c0392b;font-weight:700">부족</span>이면 그때까지 그 계좌에 그만큼 이체/충전이 필요합니다(부족 계좌가 위쪽 정렬). 지출 예정에는 아직 [생성] 전 고정비 자동전개분도 포함됩니다. 행을 클릭하면 개별 내역이 열립니다.</div>
         <div id="fundBody" style="margin-top:8px"><div class="hint">불러오는 중…</div></div>
       </div>
 
@@ -2721,34 +2722,67 @@
   function cfFcSetView(v){if(cfFcView===v)return;cfFcView=v;const b=$('cfFcBody');if(b)b.innerHTML=cfFcBodyHtml();}
   function cfFcRow(dir,i){const el=$(`fc-sub-${dir}-${i}`);if(el)el.classList.toggle('hidden');}
 
-  // ===== 은행계좌별 필요자금 (이번 달 잔여 + 익월) — 오늘 기준 고정 =====
-  // 핵심 흐름(한 행에 이야기 순서대로): 현재 잔고 → 당월 남은 지출 → ★당월 말 남을 예정 → 익월 지출 예정 → ★익월 말 부족/여유.
+  // ===== 은행계좌별 필요자금 (이번 달 잔여 + 선택 월들) — 오늘 기준 고정 =====
+  // 핵심 흐름(한 행에 이야기 순서대로): 현재 잔고 → 당월 남은 지출 → ★당월 말 남을 예정 → 선택 월별 지출 예정 → ★그 월 말 부족/여유(누적).
+  // 월 칩(중복선택, 기본 익월)으로 볼 월을 고른다. 건너뛴 사이 월의 지출도 누적 잔액에는 반영(백엔드가 연속 계산).
   // 경고 배너(fundAlert)는 fundBody 밖 고정 요소 — 재로딩('불러오는 중')·에러에도 지워지지 않고, 성공 로드시에만 갱신.
   let fundData=null;
+  const fundMonths=new Set();          // 선택 월 'YYYY-MM' (비어있으면 익월로 초기화)
+  function fundNextYm(n){ const t=new Date(); return new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth()+n,1)).toISOString().slice(0,7); }
+  function fundMonthList(){ return Array.from({length:12},(_,i)=>fundNextYm(i+1)); }   // 익월부터 12개월
+  function fundSelMonths(){ if(!fundMonths.size) fundMonths.add(fundNextYm(1)); return Array.from(fundMonths).sort(); }
+  function fundMonthChips(){
+    const box=$('fund-months'); if(!box)return;
+    const sel=new Set(fundSelMonths());
+    const sorted=Array.from(sel).sort(); const mn=sorted[0], mx=sorted[sorted.length-1];
+    const chip=(m,label,on,mid)=>'<button type="button" class="btn sm" data-fundm="'+m+'" title="'+m+(mid?' · 선택 월 사이(지출은 잔액 누적에 반영, 열은 표시 안 함)':'')+'" style="padding:3px 10px;font-size:12px;border-radius:999px;border:1px solid '
+      +(on?'var(--brand);background:var(--brand);color:#fff':(mid?'#dcefe6;background:#dcefe6;color:#2f8f5b':'var(--line);background:#fff;color:var(--muted)'))+'">'+label+'</button>';
+    let prevY='';
+    box.innerHTML='<span class="hint" style="margin:0;font-weight:700;color:var(--brand)">부족/여유 볼 월:</span>'
+      +fundMonthList().map(m=>{
+        const y=m.slice(2,4); const lbl=(y!==prevY?y+'년 ':'')+Number(m.slice(5))+'월'; prevY=y;
+        const on=sel.has(m); const mid=!on&&m>mn&&m<mx;
+        return chip(m,lbl,on,mid);
+      }).join(' ')
+      +'<span class="hint" style="margin:0">중복선택 가능 · 선택한 월마다 「지출 예정 + 말 부족/여유」 열이 표에 추가됩니다</span>';
+  }
   async function loadFunding(){
     const b=$('fundBody');if(!b)return;
+    fundMonthChips();
     b.innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      const res=await fetch(`${session.api}/api/cashflow/funding?proj=${cfProjOn?'1':'0'}`,{headers:auth()});
+      const res=await fetch(`${session.api}/api/cashflow/funding?proj=${cfProjOn?'1':'0'}&months=${fundSelMonths().join(',')}`,{headers:auth()});
       if(!res.ok){b.innerHTML=`<div class="hint">필요자금을 불러오지 못했습니다 (HTTP ${res.status}).${res.status===404?' 최신 백엔드(필요자금 API)가 배포되었는지 확인하세요.':''}</div>`;return;}
       fundData=await res.json();
       renderFunding();
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
-  function fundMonLabel(m){return `${Number(String(m).slice(5,7))}월`;}
+  function fundMonLabel(m){ const y=String(m).slice(0,4), n=Number(String(m).slice(5,7));
+    return (y!==String(new Date().getUTCFullYear())?y.slice(2)+'년 ':'')+n+'월'; }
+  // 행의 특정 월 데이터: 신백엔드 months 배열에서 찾고, 없으면(구백엔드) 익월 한정 레거시 필드로 폴백
+  function fundMonthOf(r,m){
+    if(Array.isArray(r.months)){ const e=r.months.find(x=>x.month===m); if(e)return e; return null; }
+    if(fundData&&m===fundData.next_month) return {month:m,out:r.out_next,in:r.in_next,end:r.after_out,end_all:r.after_all};
+    return null;
+  }
   function renderFundAlert(d){
     const a=$('fundAlert');if(!a)return;
-    const shortRows=d.rows.filter(r=>r.after_out!=null&&r.after_out<0);
+    const selM=fundSelMonths();
+    const horizon=Array.isArray(d.horizon)?d.horizon[d.horizon.length-1]:d.next_month;
+    const endOf=(r)=>{ const e=fundMonthOf(r,horizon); return e?e.end:r.after_out; };
+    const shortRows=d.rows.filter(r=>endOf(r)!=null&&endOf(r)<0);
+    const L=fundMonLabel(horizon)+(horizon===d.next_month?'(익월)':'');
     a.classList.remove('hidden');
     a.onclick=()=>{const s=$('fundSec');if(s)s.scrollIntoView({behavior:'smooth',block:'start'});};
     if(shortRows.length){
-      const worst=shortRows.map(r=>`${escH(r.name)} 부족 ${fmt(-r.after_out)}`).slice(0,3).join(' · ');
+      const worst=shortRows.map(r=>`${escH(r.name)} 부족 ${fmt(-endOf(r))}`).slice(0,3).join(' · ');
       a.style.background='#fde2e0';a.style.color='#c0392b';a.style.border='1px solid #f3b8b3';
-      a.innerHTML=`⚠ ${fundMonLabel(d.next_month)}(익월)까지 자금이 부족한 계좌 <b style="font-size:15px">${shortRows.length}개</b> — ${worst}${shortRows.length>3?' 외':''}. 여유 계좌에서 이체하거나 수금 일정을 앞당기세요. <span style="font-weight:400;font-size:12px">(아래 필요자금 표로 이동 ↓)</span>`;
+      a.innerHTML=`⚠ ${L}까지 자금이 부족한 계좌 <b style="font-size:15px">${shortRows.length}개</b> — ${worst}${shortRows.length>3?' 외':''}. 여유 계좌에서 이체하거나 수금 일정을 앞당기세요. <span style="font-weight:400;font-size:12px">(아래 필요자금 표로 이동 ↓)</span>`;
     }else{
       a.style.background='#e7f3ee';a.style.color='#2f8f5b';a.style.border='1px solid #bfe0cf';
-      a.innerHTML=`✅ ${fundMonLabel(d.next_month)}(익월)까지 전 계좌 자금 여유 — 오늘 ${d.today} 기준. <span style="font-weight:400;font-size:12px">(아래 필요자금 표 ↓)</span>`;
+      a.innerHTML=`✅ ${L}까지 전 계좌 자금 여유 — 오늘 ${d.today} 기준. <span style="font-weight:400;font-size:12px">(아래 필요자금 표 ↓)</span>`;
     }
+    if(selM.length>1&&!Array.isArray(d.rows[0]&&d.rows[0].months)) a.innerHTML+=' <span style="font-weight:400;font-size:12px">⚠ 여러 월 보기는 최신 백엔드 배포 후 정확히 표시됩니다.</span>';
   }
   function renderFunding(){
     const b=$('fundBody');const d=fundData;if(!b||!d)return;
@@ -2756,8 +2790,15 @@
     const th=$('fundTitleHint');if(th)th.textContent=`— 오늘 ${d.today} 기준 · MXN 환산${cfProjOn?'':' · 자동전개 제외 중'}`;
     if(!d.total){b.innerHTML='<div class="hint">잔액을 볼 수 있는 계좌가 없습니다.</div>';return;}
     renderFundAlert(d);
-    const TM=fundMonLabel(d.this_month),NM=fundMonLabel(d.next_month);
-    // ★ 두 핵심 열 강조 셀
+    const TM=fundMonLabel(d.this_month);
+    const hasM=Array.isArray(d.total.months);                                   // 신백엔드: 월별 배열 제공
+    let selM=hasM?fundSelMonths().filter(m=>d.total.months.some(x=>x.month===m)):[d.next_month];
+    if(!selM.length) selM=[d.next_month];                                       // 구백엔드/불일치 → 익월만(기존 화면)
+    const horizon=selM[selM.length-1];
+    const HL=fundMonLabel(horizon);
+    const mLbl=(m)=>fundMonLabel(m)+(m===d.next_month?'(익월)':'');
+    const NC=4+selM.length*2;                                                   // 총 열 수(하위 내역 colspan)
+    // ★ 핵심 열 강조 셀
     const endCell=(v)=>v==null?'<td class="num" style="background:#f4f7fb">—</td>'
       :`<td class="num" style="background:#f4f7fb;font-weight:800;color:${v<0?'#c0392b':'var(--brand)'}">${fmt(v)}</td>`;
     const needCell=(v)=>v==null?'<td class="num" style="background:#fdf6ee">—</td>'
@@ -2766,21 +2807,28 @@
     const stB=(st)=>st==='overdue'?'<span class="pill" style="background:#fde2e0;color:#c0392b">경과</span>'
       :st==='projected'?'<span class="pill" style="background:#efe7f8;color:#7a4fb0">자동전개</span>'
       :'<span class="pill" style="background:#eef1f5;color:#5a6b7b">예정</span>';
+    const horEnd=(r)=>{const e=fundMonthOf(r,horizon);return e?e.end:r.after_out;};
     const itemsTbl=(r)=>{
-      const inSum=Math.round(((r.in_this||0)+(r.in_next||0))*100)/100;
-      const incomeNote=inSum?`<div class="hint" style="margin:4px 0 2px">참고: 이 계좌 예정수입 <b style="color:var(--income)">+${fmt(inSum)}</b>${r.after_all!=null?` — 수입까지 들어오면 ${NM} 말 <b>${fmt(r.after_all)}</b>`:''} (수입은 불확실해 본표 계산엔 미반영)</div>`:'';
-      if(!r.items.length)return incomeNote||'<div class="hint" style="padding:4px 0">이번 달 잔여·익월 예정 내역이 없습니다.</div>';
-      const row=(it)=>`<tr><td style="width:70px">${it.win==='this'?`<b>${TM}</b>`:`<b style="color:#0c447c">${NM}</b>`}</td><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.category_name||'')}</td><td>${escH(it.memo||'')}</td><td class="num" style="color:${it.direction==='in'?'var(--income)':'var(--expense)'}">${it.direction==='in'?'+':'-'}${fmt(it.amount)}</td></tr>`;
+      const hEntry=fundMonthOf(r,horizon)||{};
+      const inSum=Math.round(((r.in_this||0)+(hasM?(r.months||[]).reduce((s,x)=>s+(x.in||0),0):(r.in_next||0)))*100)/100;
+      const endAll=hEntry.end_all!=null?hEntry.end_all:r.after_all;
+      const incomeNote=inSum?`<div class="hint" style="margin:4px 0 2px">참고: 이 계좌 예정수입 <b style="color:var(--income)">+${fmt(inSum)}</b>${endAll!=null?` — 수입까지 들어오면 ${HL} 말 <b>${fmt(endAll)}</b>`:''} (수입은 불확실해 본표 계산엔 미반영)</div>`:'';
+      if(!r.items.length)return incomeNote||'<div class="hint" style="padding:4px 0">이번 달 잔여·선택 월 예정 내역이 없습니다.</div>';
+      const winLbl=(w)=>w==='this'?`<b>${TM}</b>`:`<b style="color:#0c447c">${w==='next'?fundMonLabel(d.next_month):fundMonLabel(w)}</b>`;
+      const row=(it)=>`<tr><td style="width:70px">${winLbl(it.win)}</td><td style="width:92px">${it.date}</td><td style="width:80px">${stB(it.state)}</td><td>${escH(it.category_name||'')}</td><td>${escH(it.memo||'')}</td><td class="num" style="color:${it.direction==='in'?'var(--income)':'var(--expense)'}">${it.direction==='in'?'+':'-'}${fmt(it.amount)}</td></tr>`;
       return `${incomeNote}<table style="margin:0"><thead><tr><th>구분</th><th>날짜</th><th>상태</th><th>계정과목</th><th>내용</th><th class="num">금액</th></tr></thead><tbody>${r.items.map(row).join('')}</tbody></table>`;
     };
-    const accRow=(r,i)=>`<tr style="cursor:pointer${r.after_out!=null&&r.after_out<0?';background:#fff5f4':''}" onclick="fundRow(${i})" title="클릭하면 개별 내역이 열립니다">
+    const mCells=(r)=>selM.map(m=>{const e=fundMonthOf(r,m);
+      return `<td class="num" style="color:var(--expense)">${e&&e.out?'-'+fmt(e.out):'0'}</td>${needCell(e?e.end:null)}`;}).join('');
+    const unkMCells=(u)=>selM.map(m=>{const e=fundMonthOf(u,m);
+      return `<td class="num" style="color:var(--expense)">${e&&e.out?'-'+fmt(e.out):'0'}</td><td class="num" style="background:#fdf6ee">—</td>`;}).join('');
+    const accRow=(r,i)=>`<tr style="cursor:pointer${horEnd(r)!=null&&horEnd(r)<0?';background:#fff5f4':''}" onclick="fundRow(${i})" title="클릭하면 개별 내역이 열립니다">
         <td>🏦 <b>${escH(r.name)}</b>${r.currency==='USD'?' <span class="hint" style="margin:0;font-size:11px;display:inline">USD</span>':''}${r.can_detail===false?' <span class="hint" style="margin:0;font-size:11px;display:inline">(세부 비공개 — 지출예정 미집계)</span>':''}</td>
         <td class="num">${fmt(r.balance)}</td>
         <td class="num" style="color:var(--expense)">${r.out_this?'-'+fmt(r.out_this):'0'}</td>
         ${endCell(r.end_this)}
-        <td class="num" style="color:var(--expense)">${r.out_next?'-'+fmt(r.out_next):'0'}</td>
-        ${needCell(r.after_out)}</tr>
-      <tr class="hidden" id="fund-sub-${i}"><td colspan="6" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(r)}</td></tr>`;
+        ${mCells(r)}</tr>
+      <tr class="hidden" id="fund-sub-${i}"><td colspan="${NC}" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(r)}</td></tr>`;
     let rows=d.rows.map(accRow).join('');
     if(d.unassigned){
       const unkIdx=d.rows.length;
@@ -2789,9 +2837,8 @@
         <td>❓ (계좌 미지정 예정)</td><td class="num">—</td>
         <td class="num" style="color:var(--expense)">${u.out_this?'-'+fmt(u.out_this):'0'}</td>
         <td class="num" style="background:#f4f7fb">—</td>
-        <td class="num" style="color:var(--expense)">${u.out_next?'-'+fmt(u.out_next):'0'}</td>
-        <td class="num" style="background:#fdf6ee">—</td></tr>
-      <tr class="hidden" id="fund-sub-${unkIdx}"><td colspan="6" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(u)}</td></tr>`;
+        ${unkMCells(u)}</tr>
+      <tr class="hidden" id="fund-sub-${unkIdx}"><td colspan="${NC}" style="background:#fbfcfe;padding:4px 10px">${itemsTbl(u)}</td></tr>`;
     }
     const t=d.total;
     const totalRow=`<tr style="border-top:2px solid var(--line);font-weight:800">
@@ -2799,17 +2846,17 @@
         <td class="num">${fmt(t.balance)}</td>
         <td class="num" style="color:var(--expense)">${t.out_this?'-'+fmt(t.out_this):'0'}</td>
         ${endCell(t.end_this)}
-        <td class="num" style="color:var(--expense)">${t.out_next?'-'+fmt(t.out_next):'0'}</td>
-        ${needCell(t.after_out)}</tr>`;
-    b.innerHTML=`${cfProjOn?'':'<div class="hint" style="margin:0 0 6px"><b>자동전개 제외 중</b> — 아직 [생성] 전인 고정비 회차는 집계에 포함되지 않습니다. 고정비 탭에서 [생성]한 예정만 반영됩니다.</div>'}<table><thead><tr>
+        ${mCells(t)}</tr>`;
+    const mHeads=selM.map(m=>`<th class="num">${mLbl(m)} 지출 예정</th><th class="num" style="background:#fdf6ee">★ ${fundMonLabel(m)} 말 부족/여유</th>`).join('');
+    const gapNote=(hasM&&d.total.months.length>selM.length)?`<div class="hint" style="margin:0 0 6px">선택하지 않은 사이 월(${d.total.months.map(x=>x.month).filter(m=>!selM.includes(m)).map(fundMonLabel).join('·')})의 지출도 <b>잔액 누적에는 반영</b>되어 있습니다(열만 숨김).</div>`:'';
+    b.innerHTML=`${cfProjOn?'':'<div class="hint" style="margin:0 0 6px"><b>자동전개 제외 중</b> — 아직 [생성] 전인 고정비 회차는 집계에 포함되지 않습니다. 고정비 탭에서 [생성]한 예정만 반영됩니다.</div>'}${gapNote}<table><thead><tr>
         <th>은행계좌</th><th class="num">현재 잔고</th>
         <th class="num">${TM} 남은 지출</th>
         <th class="num" style="background:#f4f7fb">★ ${TM} 말 남을 예정</th>
-        <th class="num">${NM}(익월) 지출 예정</th>
-        <th class="num" style="background:#fdf6ee">★ ${NM} 말 부족/여유</th></tr></thead>
+        ${mHeads}</tr></thead>
       <tbody>${rows}${totalRow}</tbody></table>
-      <div class="hint" style="margin-top:6px"><b>${TM} 말 남을 예정 = 현재 잔고 − ${TM} 남은 지출</b>(경과 미지급 포함) · <b>${NM} 말 부족/여유 = ${TM} 말 남을 예정 − ${NM} 지출 예정</b>(등록 예정 + 고정비 자동전개). 수입은 불확실해 본표에 미반영 — 행을 클릭하면 계좌별 예정수입과 개별 내역이 보입니다.
-      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, ${NM} 말까지 만기·경과 포함) — 입금계좌 미정.`:''}</div>`;
+      <div class="hint" style="margin-top:6px"><b>${TM} 말 남을 예정 = 현재 잔고 − ${TM} 남은 지출</b>(경과 미지급 포함) · <b>각 월 말 부족/여유 = 직전 잔액 − 그 월 지출 예정</b>(등록 예정 + 고정비 자동전개, 익월부터 누적). 수입은 불확실해 본표에 미반영 — 행을 클릭하면 계좌별 예정수입과 개별 내역이 보입니다.
+      ${d.ar_reference&&d.ar_reference.total?` · <b>참고: 매출 수금 예정(미수 인보이스) +${fmt(d.ar_reference.total)}</b> (${d.ar_reference.n}건, ${HL} 말까지 만기·경과 포함) — 입금계좌 미정.`:''}</div>`;
   }
   function fundRow(i){const el=$(`fund-sub-${i}`);if(el)el.classList.toggle('hidden');}
 
@@ -3675,6 +3722,13 @@
   })();
   $('tabCash').addEventListener('click',()=>showTab('cash'));
   $('fund-reload').addEventListener('click',loadFunding);
+  $('fund-months').addEventListener('click',(e)=>{
+    const b=e.target.closest('button[data-fundm]'); if(!b)return;
+    const m=b.getAttribute('data-fundm');
+    if(fundMonths.has(m)){ fundMonths.delete(m); if(!fundMonths.size) fundMonths.add(fundNextYm(1)); }   // 최소 1개 유지(비면 익월)
+    else fundMonths.add(m);
+    loadFunding();
+  });
   $('tabFx').addEventListener('click',()=>showTab('fx'));
   $('tabReport').addEventListener('click',()=>showTab('report'));
   $('rp-prev').addEventListener('click',()=>rpShift(-1));
