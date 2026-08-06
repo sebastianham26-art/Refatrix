@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt0806vs3</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt0806vs9</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -622,14 +622,18 @@
     }catch(e){ m.className='msg err';m.textContent=LBL+' 견적 다운로드 실패: '+(e&&e.message||e); }
   }
 
-  // ===== CTR vs SYD 커버리지 비교 엑셀 (대표·소시오 전용 · qt0806vs3) =====
+  // ===== CTR vs SYD 커버리지 비교 엑셀 (대표·소시오 전용 · qt0806vs9) =====
   // 데이터 소스: 공통>커버리지(mx_parts_coverage_dashboard.html)의 const DATA — viofinder와 동일한 단일 소스(같은 도메인 fetch).
-  // 차종 = 메이커·모델·세대(generation label). 커버리지가 같은 세대를 연식 밴드로 나눠 놓은 경우(예: Civic 2001-2005 / 2006-2015 / 2016-2025)
-  //   **하나의 차종 = 한 행으로 병합**: VIO = 밴드 합산, 연식 = 전체 범위(min-max), 부품 = 합집합(CTR|SYD 코드쌍 기준 중복 제거).
-  // 행 = 병합된 차종을 **그 차종 VIO 내림차순으로 플랫 정렬**.
-  // 열 = 6대 품군 × (Código CTR | $ CTR | Código SYD | $ SYD) — 코드열과 정가(MXN)열 분리.
-  // 셀 안의 N번째 줄은 같은 부품 자리('—' = 코드 없음, 코드는 있는데 정가 없으면 빈 줄).
-  // SYD 코드는 있는데 CTR 코드가 없는 칸(코드·정가열 모두)은 빨강. 마지막 열 = 그 행의 CTR 누락 부품 수(필터·정렬용).
+  // 차종 = 메이커·모델·세대(generation label). 같은 세대의 연식 밴드는 **한 행으로 병합**(VIO 합산·연식 min-max·부품 합집합) 후 VIO 내림차순 플랫 정렬.
+  // 열 = 6대 품군 × 좌(Izq.)/우(Der.)/공용(Común) × (Código CTR | $ CTR | Código SYD | $ SYD) = 72열 + 맨 우측 Cobertura CTR/SYD 2열.
+  //   좌우 판정: 제품명 "RL"·R/L=공용 → (L)·"L"·IZQ=좌 → (R)·"R"·DER=우 → CTR 코드 끝 L/R 폴백.
+  //   L/R 구분 부품은 해당 쪽 셀에만, 구분 없는 부품은 Común 셀에 한 번만(중복 표기 없음).
+  // 커버리지(엑셀 수식): 행마다 「Piezas base(모수)·CTR n.º·SYD n.º」 숫자열 + 「CTR %·SYD %」는 수식(=n.º/base).
+  //   모수 규칙(사용자 지정): 품군에 공용품이 있으면 그 품군은 공용품만 모수로 집계하고 L/R은 모수에서 제외(공용 1개가 좌우 커버).
+  //   공용품이 없으면 L/R 부품으로 집계.
+  // 셀 안의 N번째 줄은 그 품군·그 쪽 4개 열에서 같은 부품 자리('—' = 코드 없음, 코드는 있는데 정가 없으면 빈 줄).
+  // 빨강 = SYD 있고 CTR 없음(우리 라인업 공백) · 파랑 채움 = CTR 있고 SYD 없음(우리만 있는 품목).
+  // Cobertura = 그 행의 부품 자리(고유) 중 각 브랜드 코드 보유율(%). CTR<SYD면 CTR% 칸 빨강, SYD<CTR면 SYD% 칸 파랑.
   const VS_SYD_ROLES=['director','socio'];
   function canVsSyd(){ return VS_SYD_ROLES.indexOf(String((session&&session.user&&session.user.role)||''))>=0; }
   function updateVsSydBtn(){ const b=$('btnVsSyd'); if(b) b.classList.toggle('hidden', !canVsSyd()); }
@@ -658,7 +662,19 @@
       :[['ball_joint','Ball Joint','볼조인트'],['term_ext','Terminal Exterior','타이로드엔드 외측'],['term_int','Terminal Interior','타이로드엔드 내측'],['stab_link','Stabilizer Link','스태빌라이저 링크'],['control_arm','Control Arm','컨트롤암'],['bush','Bush','부싱']];
     const vehicles=((D&&D.vehicles)||[]).slice().sort((a,b)=>(Number(b.units)||0)-(Number(a.units)||0));
     const price=v=>(v==null||v===''||isNaN(Number(v)))?'':('$'+Number(v).toLocaleString('en-US'));
-    const drows=[]; let totMiss=0, totParts=0;
+    // 좌우 판정: 제품명 우선(공용 "RL"/R/L 먼저) → CTR 코드 끝 L/R 폴백. ''=공용/무구분
+    const sideOf=p=>{
+      const n=String(p.d||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(/"RL"|"LR"|\bR\/L\b|\bL\/R\b/.test(n)) return '';
+      if(/\(L\)|"L"|IZQUIERD|\bIZQ\b/.test(n)) return 'L';
+      if(/\(R\)|"R"|DERECH|\bDER\b/.test(n)) return 'R';
+      const c=String(p.cpn||'').trim().toUpperCase();
+      if(/L$/.test(c)) return 'L';
+      if(/R$/.test(c)) return 'R';
+      return '';
+    };
+    const newSide=()=>({ctrC:[],ctrP:[],sydC:[],sydP:[],miss:0,sydMiss:0,ctrHas:false,n:0,nCtr:0,nSyd:0});
+    const drows=[]; let totMiss=0, totParts=0, totBase=0, totCtrCov=0, totSydCov=0;
     vehicles.forEach(v=>{
       const gensRaw=(v.gens&&v.gens.length)?v.gens:null;
       if(!gensRaw){
@@ -666,7 +682,7 @@
         let ys=null,ye=null;
         (v.years||[]).forEach(y=>{ if((Number(y.u)||0)>0){ const yy=Number(y.y)||null; if(yy){ ys=(ys==null?yy:Math.min(ys,yy)); ye=(ye==null?yy:Math.max(ye,yy)); } } });
         drows.push({marca:v.marca||'',modelo:v.modelo||'',gen:((ys&&ye)?(ys+'-'+ye+' · '):'')+'sin catálogo (ni SYD ni CTR)',units:Number(v.units)||0,
-          cats:CATS.map(()=>({ctrC:[],ctrP:[],sydC:[],sydP:[],miss:0,ctrHas:false})),miss:0});
+          cats:CATS.map(()=>({L:newSide(),R:newSide(),C:newSide()})),base:0,nCtr:0,nSyd:0});
         return;
       }
       // 같은 세대(label)가 연식 밴드로 나뉜 경우 → 하나의 차종으로 병합 (VIO 합산 · 연식 min-max · 부품 합집합)
@@ -690,47 +706,68 @@
       });
       order.forEach(k=>{
         const g=byLabel[k];
-        const byk=g.cats;
-        let rowMiss=0;
         const cats=CATS.map(cm=>{
-          const c=byk[cm[0]]||{}; const parts=c.parts||[];
-          const ctrC=[],ctrP=[],sydC=[],sydP=[]; let miss=0;
+          const parts=(g.cats[cm[0]]||{}).parts||[];
+          const L=newSide(), R=newSide(), C=newSide();
           parts.forEach(p=>{
             const cpn=String(p.cpn||'').trim(), spn=String(p.spn||'').trim();
             if(!cpn&&!spn) return;
             totParts++;
-            ctrC.push(cpn||'—'); ctrP.push(cpn?(price(p.cpr)||''):'—');
-            sydC.push(spn||'—'); sydP.push(spn?(price(p.spr)||''):'—');
-            if(spn&&!cpn) miss++;
+            if(spn&&!cpn) totMiss++;
+            const s=sideOf(p);
+            const t=(s==='L')?L:((s==='R')?R:C); // 구분 없으면 Común 한 곳에만
+            t.ctrC.push(cpn||'—'); t.ctrP.push(cpn?(price(p.cpr)||''):'—');
+            t.sydC.push(spn||'—'); t.sydP.push(spn?(price(p.spr)||''):'—');
+            t.n++; if(cpn) t.nCtr++; if(spn) t.nSyd++;
+            if(spn&&!cpn) t.miss++;
+            if(cpn&&!spn) t.sydMiss++;
+            if(cpn) t.ctrHas=true;
           });
-          rowMiss+=miss;
-          return {ctrC:ctrC,ctrP:ctrP,sydC:sydC,sydP:sydP,miss:miss,ctrHas:ctrC.some(x=>x!=='—')};
+          return {L:L,R:R,C:C};
         });
-        totMiss+=rowMiss;
-        drows.push({marca:v.marca||'',modelo:v.modelo||'',gen:(g.label||'')+((g.ys&&g.ye)?(' · '+g.ys+'-'+g.ye):''),units:Number(g.units)||0,cats:cats,miss:rowMiss});
+        // 모수 규칙: 품군에 공용품(Común)이 있으면 공용품만 모수로, L/R은 제외. 없으면 L/R 합산.
+        let base=0, nCtr=0, nSyd=0;
+        cats.forEach(c=>{
+          if(c.C.n>0){ base+=c.C.n; nCtr+=c.C.nCtr; nSyd+=c.C.nSyd; }
+          else { base+=c.L.n+c.R.n; nCtr+=c.L.nCtr+c.R.nCtr; nSyd+=c.L.nSyd+c.R.nSyd; }
+        });
+        totBase+=base; totCtrCov+=nCtr; totSydCov+=nSyd;
+        drows.push({marca:v.marca||'',modelo:v.modelo||'',gen:(g.label||'')+((g.ys&&g.ye)?(' · '+g.ys+'-'+g.ye):''),units:Number(g.units)||0,
+          cats:cats,base:base,nCtr:nCtr,nSyd:nSyd});
       });
     });
-    // 메이커·모델·세대 = 독립 차종으로 보고 전체를 세대 VIO 내림차순 플랫 정렬 (동VIO는 메이커·모델·세대명순)
+    // 메이커·모델·세대 = 하나의 차종(1행), 전체를 차종 VIO 내림차순 플랫 정렬 (동VIO는 메이커·모델·세대명순)
     drows.sort((a,b)=>((Number(b.units)||0)-(Number(a.units)||0))
       || (a.marca+' '+a.modelo).localeCompare(b.marca+' '+b.modelo,'es')
       || a.gen.localeCompare(b.gen,'es'));
+    drows.forEach((dr,i)=>{ dr.rank=i+1; }); // VIO 순위 — 메이커·모델·제네레이션(=1행) 단위 연속 번호
     // ---- aoa ----
     const today=new Date(); const pad=n=>String(n).padStart(2,'0');
     const fechaStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
+    const pctAll=totBase?Math.round(totCtrCov/totBase*100):0, pctSydAll=totBase?Math.round(totSydCov/totBase*100):0;
     const rows=[];
     rows.push(['REFATRIX']);
     rows.push(['CTR vs SYD — Cobertura por vehículo (VIO) y precios de lista']);
-    rows.push(['Generado: '+fechaStr+' · '+vehicles.length+' vehículos · '+drows.length+' renglones (modelo × generación) · Piezas con SYD y sin CTR: '+totMiss.toLocaleString('en-US')+' de '+totParts.toLocaleString('en-US')+' · Precios de lista MXN (sin IVA) · Solo dirección y socios']);
-    rows.push(['Un renglón = un vehículo (marca·modelo·generación; bandas de años de la misma generación consolidadas: VIO sumado, años min-max, piezas unificadas). Ordenado por VIO (mayor → menor). Celda ROJA en columnas CTR = SYD tiene la pieza y CTR no. Dentro de cada celda, el renglón N corresponde al mismo renglón de las demás columnas de esa familia ("—" = sin código).']);
+    rows.push(['Generado: '+fechaStr+' · '+vehicles.length+' vehículos · '+drows.length+' renglones (marca·modelo·generación) · Piezas '+totParts.toLocaleString('en-US')+' (base cobertura '+totBase.toLocaleString('en-US')+') — cobertura global CTR '+pctAll+'% / SYD '+pctSydAll+'% · Precios de lista MXN (sin IVA) · Solo dirección y socios']);
+    rows.push(['Un renglón = un vehículo (bandas de años de la misma generación consolidadas: VIO sumado, años min-max, piezas unificadas), ordenado por VIO. Cada familia se divide en Izq./Der./Común: piezas con lado (L/R en código o nombre) van a su lado; sin lado van a Común, una sola vez. ROJO = SYD tiene y CTR no · AZUL = CTR tiene y SYD no · "—" = sin código. Cobertura por FÓRMULA: base = piezas comunes de la familia si existen (una común cubre L y R; las L/R no cuentan en la base), si no, las piezas L/R; % = n.º con código ÷ base.']);
     rows.push([]);
-    const h1=['','','','']; const h2=['Marca','Modelo','Generación · Años','VIO (unid.)'];
-    CATS.forEach(cm=>{ h1.push(String(cm[1]||cm[0])+(cm[2]?(' · '+cm[2]):'')); h1.push(''); h1.push(''); h1.push(''); h2.push('Código CTR'); h2.push('$ CTR'); h2.push('Código SYD'); h2.push('$ SYD'); });
-    h1.push(''); h2.push('Faltantes CTR');
-    rows.push(h1); rows.push(h2); // 엑셀 6·7행
+    const h1=['','','','','']; const h2=['','','','','']; const h3=['Rango','Marca','Modelo','Generación · Años','VIO (unid.)'];
+    CATS.forEach(cm=>{
+      h1.push(String(cm[1]||cm[0])+(cm[2]?(' · '+cm[2]):'')); for(let i=0;i<11;i++) h1.push('');
+      h2.push('Izq. (L)'); for(let i=0;i<3;i++) h2.push('');
+      h2.push('Der. (R)'); for(let i=0;i<3;i++) h2.push('');
+      h2.push('Común (L/R)'); for(let i=0;i<3;i++) h2.push('');
+      for(let i=0;i<3;i++){ h3.push('Código CTR'); h3.push('$ CTR'); h3.push('Código SYD'); h3.push('$ SYD'); }
+    });
+    h1.push('Cobertura (fórmula)'); for(let i=0;i<4;i++) h1.push('');
+    for(let i=0;i<5;i++) h2.push('');
+    h3.push('Piezas base'); h3.push('CTR n.º'); h3.push('SYD n.º'); h3.push('CTR %'); h3.push('SYD %');
+    rows.push(h1); rows.push(h2); rows.push(h3); // 엑셀 6·7·8행
     drows.forEach(dr=>{
-      const r=[dr.marca,dr.modelo,dr.gen,dr.units];
-      dr.cats.forEach(c=>{ r.push(c.ctrC.join('\n')); r.push(c.ctrP.join('\n')); r.push(c.sydC.join('\n')); r.push(c.sydP.join('\n')); });
-      r.push(dr.miss);
+      const r=[dr.rank,dr.marca,dr.modelo,dr.gen,dr.units];
+      dr.cats.forEach(c=>{ [c.L,c.R,c.C].forEach(s=>{ r.push(s.ctrC.join('\n')); r.push(s.ctrP.join('\n')); r.push(s.sydC.join('\n')); r.push(s.sydP.join('\n')); }); });
+      r.push(dr.base||0); r.push(dr.nCtr||0); r.push(dr.nSyd||0);
+      r.push(dr.base?(dr.nCtr/dr.base):''); r.push(dr.base?(dr.nSyd/dr.base):'');
       rows.push(r);
     });
     const ws=XLSX.utils.aoa_to_sheet(rows);
@@ -741,66 +778,167 @@
     if(ws['A2'])ws['A2'].s={font:{color:{rgb:RED},bold:true,sz:13}};
     if(ws['A3'])ws['A3'].s={font:{color:{rgb:GREY},sz:10}};
     if(ws['A4'])ws['A4'].s={font:{color:{rgb:'B42318'},bold:true,sz:10}};
-    const nCols=4+CATS.length*4+1; // 29 (A~AC)
+    const nCats=CATS.length;
+    const nCols=5+nCats*12+5; // 82 (A~CD) — A열 = VIO 순위(Rango)
     const col=i=>XLSX.utils.encode_col(i);
     const sCatH={fill:{fgColor:{rgb:INK}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
+    const sSideH={fill:{fgColor:{rgb:'E8E1D5'}},font:{color:{rgb:INK},bold:true,sz:9.5},alignment:{horizontal:'center',vertical:'center'},border:bAll};
     const sHdA={fill:{fgColor:{rgb:'F3EDE3'}},font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
-    const sHdCtr={fill:{fgColor:{rgb:RED}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
-    const sHdSyd={fill:{fgColor:{rgb:BLUE}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
+    const sHdCtr={fill:{fgColor:{rgb:RED}},font:{color:{rgb:'FFFFFF'},bold:true,sz:9.5},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
+    const sHdSyd={fill:{fgColor:{rgb:BLUE}},font:{color:{rgb:'FFFFFF'},bold:true,sz:9.5},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
     for(let c=0;c<nCols;c++){
-      const a6=col(c)+'6', a7=col(c)+'7';
-      if(!ws[a6]) ws[a6]={t:'s',v:''};
-      if(!ws[a7]) ws[a7]={t:'s',v:''};
-      ws[a6].s=(c>=4&&c<4+CATS.length*4)?sCatH:sHdA;
-      ws[a7].s=(c<4||c===nCols-1)?sHdA:(((c-4)%4<2)?sHdCtr:sHdSyd);
+      for(const rr of [6,7,8]){ const a=col(c)+rr; if(!ws[a]) ws[a]={t:'s',v:''}; }
+      ws[col(c)+'6'].s=(c>=5)?sCatH:sHdA;
+      ws[col(c)+'7'].s=(c>=5&&c<5+nCats*12)?sSideH:sHdA;
+      ws[col(c)+'8'].s=(c<5)?sHdA:((c>=nCols-5)?((c===nCols-2)?sHdCtr:(c===nCols-1?sHdSyd:sHdA)):((((c-5)%4)<2)?sHdCtr:sHdSyd));
     }
     const sMar={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'top'},border:bAll};
     const sMod={font:{color:{rgb:INK},bold:true,sz:10},alignment:{vertical:'top'},border:bAll};
     const sGen={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'top',wrapText:true},border:bAll};
     const sVioC={font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'top'},numFmt:'#,##0',border:bAll};
-    const sCtrC={font:{color:{rgb:INK},sz:9},alignment:{vertical:'top',wrapText:true},border:bAll};
-    const sSydC={font:{color:{rgb:BLUE},sz:9},alignment:{vertical:'top',wrapText:true},border:bAll};
-    const sCtrMiss={fill:{fgColor:{rgb:'FDE3E3'}},font:{color:{rgb:'B42318'},bold:true,sz:9},alignment:{vertical:'top',wrapText:true},border:bAll};   // 일부 누락
-    const sCtrHueco={fill:{fgColor:{rgb:'F5B5B5'}},font:{color:{rgb:'8A1B12'},bold:true,sz:9},alignment:{vertical:'top',wrapText:true},border:bAll};  // 전부 누락(카테고리 통째 공백)
-    const sCtrP={font:{color:{rgb:INK},sz:9},alignment:{horizontal:'right',vertical:'top',wrapText:true},border:bAll};
-    const sSydP={font:{color:{rgb:BLUE},sz:9},alignment:{horizontal:'right',vertical:'top',wrapText:true},border:bAll};
-    const sCtrMissP={fill:{fgColor:{rgb:'FDE3E3'}},font:{color:{rgb:'B42318'},bold:true,sz:9},alignment:{horizontal:'right',vertical:'top',wrapText:true},border:bAll};
-    const sCtrHuecoP={fill:{fgColor:{rgb:'F5B5B5'}},font:{color:{rgb:'8A1B12'},bold:true,sz:9},alignment:{horizontal:'right',vertical:'top',wrapText:true},border:bAll};
-    const sM0={font:{color:{rgb:GREY},sz:9.5},alignment:{horizontal:'center',vertical:'top'},border:bAll};
-    const sM1={fill:{fgColor:{rgb:'FDE3E3'}},font:{color:{rgb:'B42318'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'#,##0',border:bAll};
-    const firstData=8, lastData=7+drows.length; // 1-based
-    const rowHts=[{hpt:24},{hpt:18},{hpt:14},{hpt:14},{hpt:6},{hpt:20},{hpt:16}];
+    const sRank={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'#,##0',border:bAll};
+    const A_L={vertical:'top',wrapText:true}, A_R={horizontal:'right',vertical:'top',wrapText:true};
+    const sCtrC={font:{color:{rgb:INK},sz:9},alignment:A_L,border:bAll};
+    const sSydC={font:{color:{rgb:BLUE},sz:9},alignment:A_L,border:bAll};
+    const sCtrMiss={fill:{fgColor:{rgb:'FDE3E3'}},font:{color:{rgb:'B42318'},bold:true,sz:9},alignment:A_L,border:bAll};   // 일부 누락
+    const sCtrHueco={fill:{fgColor:{rgb:'F5B5B5'}},font:{color:{rgb:'8A1B12'},bold:true,sz:9},alignment:A_L,border:bAll};  // 전부 누락
+    const sSydMiss={fill:{fgColor:{rgb:'DCE9F7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:9},alignment:A_L,border:bAll};   // SYD 없음(CTR-only)
+    const sCtrP={font:{color:{rgb:INK},sz:9},alignment:A_R,border:bAll};
+    const sSydP={font:{color:{rgb:BLUE},sz:9},alignment:A_R,border:bAll};
+    const sCtrMissP={fill:{fgColor:{rgb:'FDE3E3'}},font:{color:{rgb:'B42318'},bold:true,sz:9},alignment:A_R,border:bAll};
+    const sCtrHuecoP={fill:{fgColor:{rgb:'F5B5B5'}},font:{color:{rgb:'8A1B12'},bold:true,sz:9},alignment:A_R,border:bAll};
+    const sSydMissP={fill:{fgColor:{rgb:'DCE9F7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:9},alignment:A_R,border:bAll};
+    const sCovCtr={font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'0%',border:bAll};
+    const sCovCtrBad={fill:{fgColor:{rgb:'FDE3E3'}},font:{color:{rgb:'B42318'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'0%',border:bAll};
+    const sCovSyd={font:{color:{rgb:BLUE},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'0%',border:bAll};
+    const sCovSydBad={fill:{fgColor:{rgb:'DCE9F7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'0%',border:bAll};
+    const sEmpty={font:{color:{rgb:GREY},sz:9.5},alignment:{horizontal:'center',vertical:'top'},border:bAll};
+    const firstData=9, lastData=8+drows.length; // 1-based
+    const rowHts=[{hpt:24},{hpt:18},{hpt:14},{hpt:26},{hpt:6},{hpt:20},{hpt:14},{hpt:24}];
     drows.forEach((dr,i)=>{
       const r=firstData+i;
-      if(ws['A'+r])ws['A'+r].s=sMar; if(ws['B'+r])ws['B'+r].s=sMod;
-      if(ws['C'+r])ws['C'+r].s=sGen; if(ws['D'+r])ws['D'+r].s=sVioC;
+      if(ws['A'+r])ws['A'+r].s=sRank;
+      if(ws['B'+r])ws['B'+r].s=sMar; if(ws['C'+r])ws['C'+r].s=sMod;
+      if(ws['D'+r])ws['D'+r].s=sGen; if(ws['E'+r])ws['E'+r].s=sVioC;
       let lines=1;
       dr.cats.forEach((c,j)=>{
-        lines=Math.max(lines,c.ctrC.length);
-        const base=4+j*4;
-        const aC=col(base)+r, aP=col(base+1)+r, aS=col(base+2)+r, aQ=col(base+3)+r;
-        const missy=c.miss>0;
-        if(ws[aC]) ws[aC].s=missy?(c.ctrHas?sCtrMiss:sCtrHueco):sCtrC;
-        if(ws[aP]) ws[aP].s=missy?(c.ctrHas?sCtrMissP:sCtrHuecoP):sCtrP;
-        if(ws[aS]) ws[aS].s=sSydC;
-        if(ws[aQ]) ws[aQ].s=sSydP;
+        [c.L,c.R,c.C].forEach((s,si)=>{
+          lines=Math.max(lines,s.ctrC.length);
+          const base=5+j*12+si*4;
+          const aC=col(base)+r, aP=col(base+1)+r, aS=col(base+2)+r, aQ=col(base+3)+r;
+          if(ws[aC]) ws[aC].s=(s.miss>0)?(s.ctrHas?sCtrMiss:sCtrHueco):sCtrC;
+          if(ws[aP]) ws[aP].s=(s.miss>0)?(s.ctrHas?sCtrMissP:sCtrHuecoP):sCtrP;
+          if(ws[aS]) ws[aS].s=(s.sydMiss>0)?sSydMiss:sSydC;
+          if(ws[aQ]) ws[aQ].s=(s.sydMiss>0)?sSydMissP:sSydP;
+        });
       });
-      const aM=col(nCols-1)+r;
-      if(ws[aM]) ws[aM].s=(dr.miss>0?sM1:sM0);
+      const cB=col(nCols-5), cNc=col(nCols-4), cNs=col(nCols-3);
+      const aB=cB+r, aNc=cNc+r, aNs=cNs+r, aCc=col(nCols-2)+r, aCs=col(nCols-1)+r;
+      const sNum={font:{color:{rgb:GREY},sz:9.5},alignment:{horizontal:'center',vertical:'top'},numFmt:'#,##0',border:bAll};
+      if(ws[aB]) ws[aB].s=sNum; if(ws[aNc]) ws[aNc].s=sNum; if(ws[aNs]) ws[aNs].s=sNum;
+      const fc=dr.base?(dr.nCtr/dr.base):null, fsd=dr.base?(dr.nSyd/dr.base):null;
+      if(ws[aCc]){ ws[aCc].s=(fc==null)?sEmpty:((fsd!=null&&fc<fsd)?sCovCtrBad:sCovCtr);
+        if(dr.base){ ws[aCc].t='n'; ws[aCc].v=fc; ws[aCc].f=cNc+r+'/'+cB+r; } }
+      if(ws[aCs]){ ws[aCs].s=(fsd==null)?sEmpty:((fc!=null&&fsd<fc)?sCovSydBad:sCovSyd);
+        if(dr.base){ ws[aCs].t='n'; ws[aCs].v=fsd; ws[aCs].f=cNs+r+'/'+cB+r; } }
       rowHts.push({hpt:Math.min(200,Math.max(14,lines*10.5+4))});
     });
     ws['!rows']=rowHts;
     const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:nCols-1}},{s:{r:2,c:0},e:{r:2,c:nCols-1}},{s:{r:3,c:0},e:{r:3,c:nCols-1}}];
-    for(let j=0;j<CATS.length;j++) merges.push({s:{r:5,c:4+j*4},e:{r:5,c:7+j*4}});
+    for(let j=0;j<nCats;j++){
+      merges.push({s:{r:5,c:5+j*12},e:{r:5,c:16+j*12}});
+      merges.push({s:{r:6,c:5+j*12},e:{r:6,c:8+j*12}});
+      merges.push({s:{r:6,c:9+j*12},e:{r:6,c:12+j*12}});
+      merges.push({s:{r:6,c:13+j*12},e:{r:6,c:16+j*12}});
+    }
+    merges.push({s:{r:5,c:nCols-5},e:{r:6,c:nCols-1}});
     ws['!merges']=merges;
-    ws['!autofilter']={ref:'A7:'+col(nCols-1)+lastData};
-    const cols=[{wch:13},{wch:16},{wch:24},{wch:11}];
-    for(let j=0;j<CATS.length;j++){ cols.push({wch:13.5}); cols.push({wch:8.5}); cols.push({wch:13.5}); cols.push({wch:8.5}); }
-    cols.push({wch:12});
+    ws['!autofilter']={ref:'A8:'+col(nCols-1)+lastData};
+    const cols=[{wch:7},{wch:13},{wch:16},{wch:24},{wch:11}];
+    for(let j=0;j<nCats*3;j++){ cols.push({wch:13.5}); cols.push({wch:8.5}); cols.push({wch:13.5}); cols.push({wch:8.5}); }
+    cols.push({wch:9}); cols.push({wch:8}); cols.push({wch:8}); cols.push({wch:9.5}); cols.push({wch:9.5});
     ws['!cols']=cols;
+    // ---- 시트2: 6대 품군 세로 배치 (행 = 차종 × 품군 × 좌/우/공통, A=VIO 순위 · F=품군명 · G=Lado) ----
+    const rows2=[];
+    rows2.push(['REFATRIX']);
+    rows2.push(['CTR vs SYD — por familia y lado (vertical) · misma base y reglas que la hoja "CTR vs SYD"']);
+    rows2.push([rows[2][0]]);
+    rows2.push(['Un renglón = vehículo × familia × lado (Izq./Der./Común — solo lados con piezas). «En base» = Sí → cuenta en la cobertura (regla: si la familia tiene piezas comunes, los renglones L/R quedan FUERA de la base). CTR %/SYD % por FÓRMULA (=n.º ÷ Piezas), solo en renglones En base=Sí. ROJO = SYD tiene y CTR no · AZUL = CTR tiene y SYD no.']);
+    rows2.push([]);
+    rows2.push(['Rango','Marca','Modelo','Generación · Años','VIO (unid.)','Familia','Lado','Código CTR','$ CTR','Código SYD','$ SYD','Piezas','CTR n.º','SYD n.º','En base','CTR %','SYD %']); // 6행 헤더
+    const meta2=[];
+    const SIDES=[['L','Izq. (L)'],['R','Der. (R)'],['C','Común (L/R)']];
+    drows.forEach(dr=>{
+      let any=false;
+      dr.cats.forEach((c,j)=>{
+        SIDES.forEach(sd=>{
+          const s=c[sd[0]];
+          if(!s.n) return;
+          any=true;
+          const inBase=(sd[0]==='C')?true:(c.C.n===0); // 모수 규칙: 공용품 있으면 L/R 제외
+          rows2.push([dr.rank,dr.marca,dr.modelo,dr.gen,dr.units,
+            String(CATS[j][1]||CATS[j][0])+(CATS[j][2]?(' · '+CATS[j][2]):''),sd[1],
+            s.ctrC.join('\n'),s.ctrP.join('\n'),s.sydC.join('\n'),s.sydP.join('\n'),
+            s.n,s.nCtr,s.nSyd,(inBase?'Sí':'No'),
+            (inBase&&s.n)?(s.nCtr/s.n):'',(inBase&&s.n)?(s.nSyd/s.n):'']);
+          meta2.push({s:s,inBase:inBase});
+        });
+      });
+      if(!any){
+        rows2.push([dr.rank,dr.marca,dr.modelo,dr.gen,dr.units,'(sin catálogo)','','','','','',0,0,0,'','','']);
+        meta2.push({s:null,inBase:false});
+      }
+    });
+    const ws2=XLSX.utils.aoa_to_sheet(rows2);
+    const nCols2=17; // A~Q — A열 = VIO 순위(Rango)
+    if(ws2['A1'])ws2['A1'].s={font:{color:{rgb:RED},bold:true,sz:18}};
+    if(ws2['A2'])ws2['A2'].s={font:{color:{rgb:RED},bold:true,sz:13}};
+    if(ws2['A3'])ws2['A3'].s={font:{color:{rgb:GREY},sz:10}};
+    if(ws2['A4'])ws2['A4'].s={font:{color:{rgb:'B42318'},bold:true,sz:10}};
+    for(let c=0;c<nCols2;c++){
+      const a=col(c)+'6'; if(!ws2[a]) ws2[a]={t:'s',v:''};
+      ws2[a].s=(c>=7&&c<11)?((((c-7)%4)<2)?sHdCtr:sHdSyd):((c===15)?sHdCtr:(c===16?sHdSyd:sHdA));
+    }
+    const sFam={font:{color:{rgb:INK},bold:true,sz:9.5},alignment:{vertical:'top',wrapText:true},border:bAll};
+    const sLado={font:{color:{rgb:INK},sz:9.5},alignment:{horizontal:'center',vertical:'top'},border:bAll};
+    const sNum2={font:{color:{rgb:GREY},sz:9.5},alignment:{horizontal:'center',vertical:'top'},numFmt:'#,##0',border:bAll};
+    const sSi={font:{color:{rgb:'0F6E56'},bold:true,sz:9.5},alignment:{horizontal:'center',vertical:'top'},border:bAll};
+    const sNo={font:{color:{rgb:GREY},sz:9.5},alignment:{horizontal:'center',vertical:'top'},border:bAll};
+    const rowHts2=[{hpt:24},{hpt:18},{hpt:14},{hpt:28},{hpt:6},{hpt:24}];
+    const first2=7;
+    meta2.forEach((m,i)=>{
+      const r=first2+i;
+      if(ws2['A'+r])ws2['A'+r].s=sRank;
+      if(ws2['B'+r])ws2['B'+r].s=sMar; if(ws2['C'+r])ws2['C'+r].s=sMod;
+      if(ws2['D'+r])ws2['D'+r].s=sGen; if(ws2['E'+r])ws2['E'+r].s=sVioC;
+      if(ws2['F'+r])ws2['F'+r].s=sFam; if(ws2['G'+r])ws2['G'+r].s=sLado;
+      let lines=1;
+      const s=m.s;
+      if(s){
+        lines=Math.max(lines,s.ctrC.length);
+        if(ws2['H'+r]) ws2['H'+r].s=(s.miss>0)?(s.ctrHas?sCtrMiss:sCtrHueco):sCtrC;
+        if(ws2['I'+r]) ws2['I'+r].s=(s.miss>0)?(s.ctrHas?sCtrMissP:sCtrHuecoP):sCtrP;
+        if(ws2['J'+r]) ws2['J'+r].s=(s.sydMiss>0)?sSydMiss:sSydC;
+        if(ws2['K'+r]) ws2['K'+r].s=(s.sydMiss>0)?sSydMissP:sSydP;
+      } else { ['H','I','J','K'].forEach(cl=>{ if(ws2[cl+r]) ws2[cl+r].s=sCtrC; }); }
+      ['L','M','N'].forEach(cl=>{ if(ws2[cl+r]) ws2[cl+r].s=sNum2; });
+      if(ws2['O'+r]) ws2['O'+r].s=(String(ws2['O'+r].v)==='Sí')?sSi:sNo;
+      const ok=m.inBase&&s&&s.n>0;
+      const fc=ok?(s.nCtr/s.n):null, fsd=ok?(s.nSyd/s.n):null;
+      if(ws2['P'+r]){ ws2['P'+r].s=(fc==null)?sEmpty:((fsd!=null&&fc<fsd)?sCovCtrBad:sCovCtr);
+        if(ok){ ws2['P'+r].t='n'; ws2['P'+r].v=fc; ws2['P'+r].f='M'+r+'/L'+r; } }
+      if(ws2['Q'+r]){ ws2['Q'+r].s=(fsd==null)?sEmpty:((fc!=null&&fsd<fc)?sCovSydBad:sCovSyd);
+        if(ok){ ws2['Q'+r].t='n'; ws2['Q'+r].v=fsd; ws2['Q'+r].f='N'+r+'/L'+r; } }
+      rowHts2.push({hpt:Math.min(200,Math.max(14,lines*10.5+4))});
+    });
+    ws2['!rows']=rowHts2;
+    ws2['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:nCols2-1}},{s:{r:2,c:0},e:{r:2,c:nCols2-1}},{s:{r:3,c:0},e:{r:3,c:nCols2-1}}];
+    ws2['!autofilter']={ref:'A6:Q'+(6+meta2.length)};
+    ws2['!cols']=[{wch:7},{wch:13},{wch:16},{wch:24},{wch:11},{wch:22},{wch:11},{wch:13.5},{wch:8.5},{wch:13.5},{wch:8.5},{wch:7.5},{wch:7.5},{wch:7.5},{wch:8},{wch:9.5},{wch:9.5}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'CTR vs SYD');
-    return {wb:wb, stats:{vehicles:vehicles.length, rows:drows.length, miss:totMiss, parts:totParts}};
+    XLSX.utils.book_append_sheet(wb,ws2,'Por familia');
+    return {wb:wb, stats:{vehicles:vehicles.length, rows:drows.length, rows2:meta2.length, miss:totMiss, parts:totParts, covCtr:pctAll, covSyd:pctSydAll}};
   }
   async function downloadVsSyd(){
     const m=$('lineMsg'); m.className='msg';
@@ -813,7 +951,7 @@
       const b=buildVsSydWb(D);
       const t=new Date(); const pad=n=>String(n).padStart(2,'0');
       XLSX.writeFile(b.wb,'ctr_vs_syd_cobertura_'+t.getFullYear()+pad(t.getMonth()+1)+pad(t.getDate())+'.xlsx');
-      m.className='msg ok'; m.textContent='CTR vs SYD 다운로드 완료 — 차종·세대 '+b.stats.rows+'행 · SYD만 있고 CTR 없는 부품 '+b.stats.miss.toLocaleString('en-US')+'개(빨간 칸) / 전체 '+b.stats.parts.toLocaleString('en-US')+'개.';
+      m.className='msg ok'; m.textContent='CTR vs SYD 다운로드 완료 — 시트1 차종 '+b.stats.rows+'행 · 시트2(품군 세로) '+b.stats.rows2+'행 · 부품 '+b.stats.parts.toLocaleString('en-US')+'개 · 전체 커버리지 CTR '+b.stats.covCtr+'% / SYD '+b.stats.covSyd+'% · SYD만 있고 CTR 없는 부품 '+b.stats.miss.toLocaleString('en-US')+'개(빨간 칸).';
     }catch(e){ m.className='msg err'; m.textContent='CTR vs SYD 다운로드 실패: '+((e&&e.message)||e); }
   }
 
