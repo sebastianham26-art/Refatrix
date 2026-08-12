@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0806h</title>
+<title>Refatrix ERP · 재무 · build fin-0812a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -65,6 +65,19 @@
   .acct-chip.low{background:#e6eef8;color:#2f5c96;border:1px solid #cbddf2}   /* 파랑: 0 < 잔고 ≤ 10,000 */
   .acct-chip.neg{background:#fbe9e7;color:#B23A2E;border:1px solid #f0c5bf}   /* 빨강: 잔고 ≤ 0 */
   .acct-chip.more{background:#eee;color:#666;border:1px solid #ddd}
+  /* 워터폴 구간별 세부내역 — 집행/예정 구분 + 집행 메모 툴팁 (2026-08-12) */
+  .wfcat{display:inline-block;margin:1px 8px 1px 0;font-size:12px;border-radius:6px;padding:0 3px;cursor:help}
+  .wfcat:hover{background:#f3efe4;outline:1px solid #e4dcc8}
+  .wfp{color:#7a4fb0;font-weight:700;border-bottom:1px dashed #b9a1d8}   /* 예정분 — 달력 '예상'과 동일 보라 */
+  .wfamt{cursor:help;border-bottom:1px dotted transparent}
+  .wfamt:hover{border-bottom-color:currentColor}
+  #wfTip{position:fixed;z-index:80;max-width:420px;background:#2a251d;color:#f6f3ec;border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.5;box-shadow:0 10px 28px rgba(0,0,0,.32);display:none;pointer-events:none}
+  #wfTip .tt-h{font-weight:700;margin-bottom:4px;color:#ffd98a}
+  #wfTip .tt-r{display:flex;gap:6px;align-items:baseline;white-space:nowrap}
+  #wfTip .tt-b{flex:0 0 auto;font-size:10px;font-weight:700;padding:0 5px;border-radius:999px;line-height:15px}
+  #wfTip .tt-b.a{background:#2f8f5b;color:#fff}
+  #wfTip .tt-b.p{background:transparent;color:#c9aef0;border:1px solid #8d6cc0}
+  #wfTip .tt-m{color:#cfc7b6;margin:0 0 5px 44px;white-space:normal;word-break:break-word}
   .cal-slot{display:flex;justify-content:space-between;padding:1px 4px;line-height:1.5;border-top:1px solid #f0ede6}
   .cal-slot .k{color:var(--muted);font-size:9px}
   .cal-dow{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:2px}
@@ -2403,7 +2416,8 @@
         exShown+=exAmt;
         if(Math.abs(net)>0.005){
           const cats=(bd[r.period]||[])
-            .map(c=>ex.has(c.name)?{...c,net:Math.round((Number(c.net)-(Number(c.plan_in)||0))*100)/100}:c)
+            // 제외 그룹: 예정입금(plan_in)을 순변화에서 빼고, plan_in·해당 예정 거래(툴팁 txs)도 함께 제거해 표기 일관 유지
+            .map(c=>ex.has(c.name)?{...c,net:Math.round((Number(c.net)-(Number(c.plan_in)||0))*100)/100,plan_in:0,txs:Array.isArray(c.txs)?c.txs.filter(x=>!(x.st==='p'&&x.dir==='in')):c.txs}:c)
             .filter(c=>Math.abs(Number(c.net))>0.005)
             .sort((a,b)=>Math.abs(Number(b.net))-Math.abs(Number(a.net)));
           items.push({label:r.period,delta:net,inflow:Math.round(((Number(r.inflow)||0)-exAmt)*100)/100,outflow:Number(r.outflow)||0,cats});
@@ -2425,6 +2439,7 @@
       }
     }
     box.innerHTML=accLine+exLine+beyondLine+svgWaterfall(base,items,{from,to,granLabel,gran:g})+wfDetailTable(base,items,g);
+    wfTipBind(box);   // 집행 메모 툴팁 위임 바인딩(1회)
     setupWfMagnifier();
   }
   // ===== 현금잔액 워터폴 — 렌즈형 돋보기(줌) =====
@@ -2486,24 +2501,110 @@
   function wfCatLines(cats,n){
     return (cats||[]).slice(0,n).map(c=>`${c.name} ${c.net>=0?'+':'−'}${fmt(Math.abs(c.net))}`);
   }
-  // 워터폴 아래 세부내역 표
+  // ===== 구간별 세부내역 — 집행 메모 툴팁 + 집행/예정 구분 (2026-08-12) =====
+  // 백엔드 breakdown 셀의 txs(개별 거래: d·st(a/p)·dir·amt·memo·acct)를 렌더 시 wfTipStore에 등록하고,
+  // 금액 요소에 data-wftip="인덱스"만 심는다(HTML 속성에 JSON 임베드 금지 — 메모에 어떤 문자가 와도 안전).
+  let wfTipStore=[], wfTipCur=-1;
+  function wfTipPush(title,rows,more,note){ return wfTipStore.push({title,rows,more:more||0,note:note||''})-1; }
+  function wfTipEl(){
+    let el=document.getElementById('wfTip');
+    if(!el){ el=document.createElement('div'); el.id='wfTip'; el.className='no-print'; document.body.appendChild(el); }
+    return el;
+  }
+  function wfTipRowsHtml(rows,more){
+    const MAXR=14, shown=rows.slice(0,MAXR);
+    let h=shown.map(t=>{
+      const inFlow=t.dir==='in';
+      return `<div class="tt-r"><span class="tt-b ${t.st==='a'?'a':'p'}">${t.st==='a'?'집행':'예정'}</span>`
+        +`<span style="color:#bdb49f">${escH(String(t.d||'').slice(5))}</span>`
+        +`<b style="color:${inFlow?'#9fd9b8':'#f2b8ae'}">${inFlow?'+':'−'}${fmt(Math.abs(Number(t.amt)||0))}</b>`
+        +(t.cat?`<span style="color:#bdb49f;overflow:hidden;text-overflow:ellipsis">${escH(t.cat)}</span>`:'')
+        +(t.acct?`<span style="color:#8f877a;font-size:11px;overflow:hidden;text-overflow:ellipsis">${escH(t.acct)}</span>`:'')
+        +`</div>`
+        +(t.memo?`<div class="tt-m">${escH(t.memo)}</div>`:'');
+    }).join('');
+    const rest=(rows.length-shown.length)+(more||0);
+    if(rest>0)h+=`<div style="color:#bdb49f;margin-top:2px">외 ${rest}건 — 전체는 거래목록에서 확인</div>`;
+    return h;
+  }
+  function wfTipShowAt(idx,x,y){
+    const t=wfTipStore[idx]; if(!t){ wfTipHide(); return; }
+    const el=wfTipEl();
+    let body;
+    if(t.note)body=`<div style="color:#cfc7b6">${escH(t.note)}</div>`;
+    else if(!t.rows.length)body=`<div style="color:#cfc7b6">개별 거래 없음</div>`;
+    else body=wfTipRowsHtml(t.rows,t.more);
+    el.innerHTML=`<div class="tt-h">${escH(t.title)}</div>`+body
+      +`<div style="color:#8f877a;font-size:10.5px;margin-top:5px">집행 = 실제 거래(실적) · 예정 = 계획일 기준 · 금액 MXN</div>`;
+    el.style.display='block';
+    wfTipMove(x,y);
+  }
+  function wfTipMove(x,y){
+    const el=wfTipEl(); if(el.style.display!=='block')return;
+    const r=el.getBoundingClientRect();
+    let L=x+14, T=y+16;
+    if(L+r.width>window.innerWidth-8)L=Math.max(8,x-r.width-14);
+    if(T+r.height>window.innerHeight-8)T=Math.max(8,y-r.height-16);
+    el.style.left=L+'px'; el.style.top=T+'px';
+  }
+  function wfTipHide(){ const el=document.getElementById('wfTip'); if(el)el.style.display='none'; wfTipCur=-1; }
+  // 이벤트 위임(1회 바인딩) — 재렌더로 innerHTML이 바뀌어도 유지. click은 터치(탭) 토글용.
+  function wfTipBind(box){
+    if(box.__wfTip)return; box.__wfTip=true;
+    box.addEventListener('mouseover',(e)=>{
+      const s=e.target.closest?e.target.closest('[data-wftip]'):null;
+      if(!s){ if(wfTipCur>=0)wfTipHide(); return; }
+      const i=Number(s.dataset.wftip);
+      if(i!==wfTipCur){ wfTipCur=i; wfTipShowAt(i,e.clientX,e.clientY); }
+    });
+    box.addEventListener('mousemove',(e)=>{ if(wfTipCur>=0)wfTipMove(e.clientX,e.clientY); });
+    box.addEventListener('mouseleave',()=>wfTipHide());
+    box.addEventListener('click',(e)=>{
+      const s=e.target.closest?e.target.closest('[data-wftip]'):null;
+      if(!s)return;
+      const i=Number(s.dataset.wftip);
+      const el=document.getElementById('wfTip');
+      if(wfTipCur===i&&el&&el.style.display==='block')wfTipHide();
+      else { wfTipCur=i; wfTipShowAt(i,e.clientX,e.clientY); }
+    });
+  }
+  // 워터폴 아래 세부내역 표 — 계정과목 금액을 실제 집행(진한색)과 예정(보라 「예」)으로 분리 표기,
+  // 금액 hover(터치: 탭) 시 그 구간·계정의 개별 거래와 집행 메모 툴팁.
   function wfDetailTable(base,items,g){
     if(!items.length)return '';
+    wfTipStore=[]; wfTipHide();   // 렌더마다 리셋 — data-wftip 인덱스와 1:1 유지
+    const hasTx=(items||[]).some(it=>(it.cats||[]).some(c=>Array.isArray(c.txs)));   // 구백엔드(메모 미지원) 감지
+    const OLD_NOTE='개별 거래·메모 표시는 최신 백엔드 배포 후 지원됩니다.';
     let bal=base;
     const rows=items.map(it=>{
       bal=Math.round((bal+it.delta)*100)/100;
       const sub=g==='week'?` <span class="hint" style="margin:0">(${wfWeekMonday(it.label)}~)</span>`:'';
-      const catCells=(it.cats||[]).map(c=>`<span style="display:inline-block;margin:1px 8px 1px 0;font-size:12px"><span style="color:var(--muted)">${c.name}</span> <b style="color:${c.net>=0?'var(--income)':'var(--expense)'}">${c.net>=0?'+':'−'}${fmt(Math.abs(c.net))}</b>${(c.plan_in||c.plan_out)?'<span class="hint" style="margin:0;font-size:10.5px"> (예정포함)</span>':''}</span>`).join('');
+      const catCells=(it.cats||[]).map(c=>{
+        const act=Math.round(((Number(c.in)||0)-(Number(c.out)||0))*100)/100;
+        const plan=Math.round(((Number(c.plan_in)||0)-(Number(c.plan_out)||0))*100)/100;
+        const parts=[];
+        if(Math.abs(act)>0.005)parts.push(`<b style="color:${act>=0?'var(--income)':'var(--expense)'}">${act>=0?'+':'−'}${fmt(Math.abs(act))}</b>`);
+        if(Math.abs(plan)>0.005)parts.push(`<span class="wfp">예 ${plan>=0?'+':'−'}${fmt(Math.abs(plan))}</span>`);
+        if(!parts.length)parts.push(`<b style="color:${c.net>=0?'var(--income)':'var(--expense)'}">${c.net>=0?'+':'−'}${fmt(Math.abs(c.net))}</b>`);
+        const tip=hasTx?wfTipPush(`${it.label} · ${c.name}`,(c.txs||[]),c.txs_more||0)
+                       :wfTipPush(`${it.label} · ${c.name}`,[],0,OLD_NOTE);
+        return `<span class="wfcat" data-wftip="${tip}"><span style="color:var(--muted)">${escH(c.name)}</span> ${parts.join(' ')}</span>`;
+      }).join('');
+      // 유입/유출 합계 셀 툴팁 — 그 구간 전체 거래(방향별, 계정과목명 병기), 금액 큰 순
+      const allT=(it.cats||[]).flatMap(c=>(c.txs||[]).map(x=>({...x,cat:c.name})));
+      const byAmt=(a,b)=>Math.abs(Number(b.amt)||0)-Math.abs(Number(a.amt)||0);
+      const tipIn=hasTx?wfTipPush(`${it.label} · 유입 합계`,allT.filter(x=>x.dir==='in').sort(byAmt),0):wfTipPush(`${it.label} · 유입 합계`,[],0,OLD_NOTE);
+      const tipOut=hasTx?wfTipPush(`${it.label} · 유출 합계`,allT.filter(x=>x.dir==='out').sort(byAmt),0):wfTipPush(`${it.label} · 유출 합계`,[],0,OLD_NOTE);
       return `<tr>
         <td style="white-space:nowrap">${it.label}${sub}</td>
-        <td class="num" style="color:var(--income)">+${fmt(it.inflow)}</td>
-        <td class="num" style="color:var(--expense)">−${fmt(it.outflow)}</td>
+        <td class="num" style="color:var(--income)"><span class="wfamt" data-wftip="${tipIn}">+${fmt(it.inflow)}</span></td>
+        <td class="num" style="color:var(--expense)"><span class="wfamt" data-wftip="${tipOut}">−${fmt(it.outflow)}</span></td>
         <td class="num" style="font-weight:700;color:${it.delta>0?WF_RED:WF_BLUE}">${it.delta>0?'+':''}${fmt(it.delta)}</td>
         <td class="num" style="font-weight:700">${fmt(bal)}</td>
         <td>${catCells||'<span class="hint" style="margin:0">—</span>'}</td></tr>`;
     }).join('');
     return `<div style="margin-top:14px"><div style="font-weight:700;font-size:13.5px;margin-bottom:2px">구간별 세부내역</div>
-      <div class="hint" style="margin-top:0">계정과목별 순변화(유입−유출). 「예정 포함」 모드에서는 예정분이 합산되며 (예정포함)으로 표기됩니다.</div>
+      <div class="hint" style="margin-top:0">계정과목별 순변화(유입−유출) — 진한색 = 실제 집행분, <span class="wfp" style="font-size:11px">예 ±금액</span> = 예정분(「예정 포함」 모드). 금액에 마우스를 올리면(모바일: 탭) 개별 거래와 집행 메모가 표시됩니다.</div>
       <table><thead><tr><th>구간</th><th class="num">유입</th><th class="num">유출</th><th class="num">순변화</th><th class="num">잔액</th><th>세부 (계정과목별)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function svgWaterfall(base,items,opts={}){

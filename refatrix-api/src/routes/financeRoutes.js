@@ -2035,14 +2035,24 @@ export default async function financeRoutes(app) {
         const key = bucketKey(date, granularity);
         const name = t.category_name || t.category_code || '(계정없음)';
         const arr = (breakdown[key] = breakdown[key] || {});
-        const cell = (arr[name] = arr[name] || { name, in: 0, out: 0, plan_in: 0, plan_out: 0 });
+        const cell = (arr[name] = arr[name] || { name, in: 0, out: 0, plan_in: 0, plan_out: 0, txs: [] });
         const amt = Number(t.amount_mxn) || 0;
         const f = t.status === 'actual' ? (t.direction === 'in' ? 'in' : 'out') : (t.direction === 'in' ? 'plan_in' : 'plan_out');
         cell[f] = r2(cell[f] + amt);
+        // 개별 거래 목록 (2026-08-12): 구간별 세부내역 표 금액 hover 시 집행 메모·실적/예정 구분 표시용.
+        // d=집계에 쓴 유효일(실적=거래일, 예정=계획일·이월 반영), st: a=집행(actual)/p=예정(plan).
+        // memo는 240자 컷(툴팁용) — 전문은 거래목록에서. loadCashTxns가 이미 세부열람 권한으로 걸러진 스트림이라 추가 노출 없음.
+        cell.txs.push({ d: date, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
+          memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240), acct: t.account_name || null });
       }
       for (const k of Object.keys(breakdown)) {
         breakdown[k] = Object.values(breakdown[k])
-          .map((c) => ({ ...c, net: r2(c.in + c.plan_in - c.out - c.plan_out) }))
+          .map((c) => {
+            // 날짜순 → 같은 날짜는 금액 큰 순. 셀당 40건 컷(payload 보호) — 잘린 건수는 txs_more로 전달.
+            c.txs.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : Math.abs(b.amt) - Math.abs(a.amt)));
+            if (c.txs.length > 40) { c.txs_more = c.txs.length - 40; c.txs = c.txs.slice(0, 40); }
+            return { ...c, net: r2(c.in + c.plan_in - c.out - c.plan_out) };
+          })
           .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
       }
     }
