@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 · 방문리뷰 (b20260804vr3)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 · 방문리뷰 (b20260813rec1)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -231,7 +231,7 @@
     <!-- 상담 녹음 → AI 요약 -->
     <div class="card hidden" id="vl-recCard">
       <h2>🎙 상담 녹음 · AI 요약 <span class="hint" style="margin:0" id="vl-recTarget"></span></h2>
-      <div class="hint" style="margin-top:0">녹음이 끝나면 서버가 자동으로 <b>전사 → 분류 요약</b>하여 이 방문의 <b>대화/인사이트</b>를 채우고, <b>해야 할 일은 펜딩에 자동 등록</b>됩니다. 고객에게 "메모 목적으로 녹음하겠다"고 안내하세요. <b>녹음 중 화면이 꺼지면 끊길 수 있습니다.</b></div>
+      <div class="hint" style="margin-top:0">녹음이 끝나면 서버가 자동으로 <b>전사 → 분류 요약</b>하여 이 방문의 <b>대화/인사이트</b>를 채우고, <b>해야 할 일은 펜딩에 자동 등록</b>됩니다. 고객에게 "메모 목적으로 녹음하겠다"고 안내하세요. <b>녹음을 시작하면 ⏹ 종료를 누를 때까지 유지됩니다</b> — 화면 자동 꺼짐을 막고, 다른 화면으로 갔다 와서 끊겨도 그때까지 내용은 보존되고 자동으로 이어서 녹음합니다.</div>
       <div class="vl-segment" style="margin-top:8px"><button type="button" id="vl-recModeMemo" class="on">🗣 음성 메모 (미팅 직후 2~3분 요점)</button><button type="button" id="vl-recModeFull">🎧 상담 전체 녹음</button></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
         <button class="btn" type="button" id="vl-recStart">● 녹음 시작</button>
@@ -798,10 +798,31 @@
     }catch(e){ $('vl-list').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
 
-  // ===== 상담 녹음 · AI 요약 (build vr-20260803a) =====
+  // ===== 상담 녹음 · AI 요약 (build vr-20260813rec1) =====
+  //  화면 꺼짐/앱 전환에도 녹음 유지: ① Wake Lock(화면 자동꺼짐 방지)
+  //  ② 1초 단위 청크 수집(끊겨도 그때까지 보존) ③ 중단 감지 → 자동 이어녹음(구간 분할)
+  //  ⏹ 종료 버튼을 누르기 전까지는 녹음 상태를 유지한다.
   let vlRecVisit=null;            // {id, place}
   let vlRecMode='memo';
-  let vlRec=null, vlRecChunks=[], vlRecBlob=null, vlRecMime='', vlRecSec=0, vlRecTimerIv=null, vlRecPollIv=null;
+  let vlRec=null, vlRecBlob=null, vlRecMime='', vlRecSec=0, vlRecTimerIv=null, vlRecPollIv=null;
+  let vlRecSegs=[];               // 완료된 구간 Blob 목록(중단 시 자동 분할)
+  let vlRecStream=null;           // 현재 마이크 스트림
+  let vlRecActive=false;          // 시작~종료버튼 사이 true (녹음 의도)
+  let vlRecUserStop=false;        // 사용자가 ⏹ 종료를 눌렀는가
+  let vlRecResuming=false;        // 자동 이어녹음 재시도 중 가드
+  let vlWakeLock=null;            // Screen Wake Lock
+
+  async function vlWakeAcquire(){
+    try{
+      if(navigator.wakeLock&&navigator.wakeLock.request&&document.visibilityState!=='hidden'){
+        const wl=await navigator.wakeLock.request('screen');
+        vlWakeLock=wl;
+        try{ wl.addEventListener('release',()=>{ if(vlWakeLock===wl) vlWakeLock=null;
+          if(vlRecActive&&document.visibilityState==='visible') vlWakeAcquire(); }); }catch(e){}
+      }
+    }catch(e){ vlWakeLock=null; }
+  }
+  function vlWakeRelease(){ try{ if(vlWakeLock) vlWakeLock.release(); }catch(e){} vlWakeLock=null; }
 
   function vlRecFmt(s){ s=Math.max(0,Math.round(s)); const m=Math.floor(s/60), ss=s%60; return String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
   function vlRecPickMime(){
@@ -814,6 +835,9 @@
     $('vl-recModeMemo').classList.toggle('on',m==='memo'); $('vl-recModeFull').classList.toggle('on',m==='full'); }
 
   function vlShowRec(visitId,place){
+    if(vlRecActive&&vlRecVisit&&Number(vlRecVisit.id)!==Number(visitId)){
+      if(!confirm('다른 방문의 녹음이 진행 중입니다. 지금 녹음을 버리고 이동할까요?')) return;
+    }
     vlRecVisit={id:visitId,place:place||''};
     const card=$('vl-recCard'); card.classList.remove('hidden');
     $('vl-recTarget').textContent='— '+(place||('방문 #'+visitId));
@@ -822,11 +846,83 @@
   }
   function vlRecReset(){
     if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
-    vlRec=null; vlRecChunks=[]; vlRecBlob=null; vlRecSec=0;
+    vlRecActive=false; vlRecUserStop=false; vlRecResuming=false; vlWakeRelease();
+    try{ if(vlRec&&vlRec.state!=='inactive') vlRec.stop(); }catch(e){}
+    try{ if(vlRecStream) vlRecStream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} }); }catch(e){}
+    vlRec=null; vlRecStream=null; vlRecSegs=[]; vlRecBlob=null; vlRecSec=0;
     $('vl-recTimer').textContent=''; $('vl-recReady').classList.add('hidden');
     $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
     $('vl-recPause').textContent='⏸ 일시정지';
     const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+  }
+  // 마이크 열고 레코더 1구간 시작(시작·자동 이어녹음 공용). 실패 시 throw.
+  async function vlRecOpenRecorder(){
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,noiseSuppression:true,echoCancellation:true}});
+    if(!vlRecMime) vlRecMime=vlRecPickMime()||'';
+    const opt=vlRecMime?{mimeType:vlRecMime,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000};
+    const rec=new MediaRecorder(stream,opt);
+    rec._chunks=[]; rec._done=false;
+    rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) rec._chunks.push(e.data); };
+    const close=()=>{ if(rec._done) return; rec._done=true; vlRecSegClose(rec,stream); };
+    rec._close=close;
+    rec.onstop=close;
+    rec.onerror=()=>{ try{ if(rec.state!=='inactive'){ rec.stop(); return; } }catch(e){} close(); };
+    // 마이크 트랙이 죽으면(권한 회수·OS 중단 등) 구간을 닫고 자동 이어녹음
+    try{
+      const trs=(stream.getAudioTracks?stream.getAudioTracks():stream.getTracks())||[];
+      if(trs[0]) trs[0].onended=()=>{ try{ if(rec.state!=='inactive'){ rec.stop(); return; } }catch(e){} close(); };
+    }catch(e){}
+    rec.start(1000);                 // 1초 청크 — 끊겨도 그때까지 데이터 보존
+    vlRec=rec; vlRecStream=stream;
+    return rec;
+  }
+  // 구간 종료 처리: 청크 → Blob 보관 후, 사용자 종료면 마무리 / 아니면 자동 이어녹음
+  function vlRecSegClose(rec,stream){
+    try{ if(stream) stream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} }); }catch(e){}
+    if(rec!==vlRec) return;          // 이미 다음 구간으로 넘어감
+    vlRec=null; vlRecStream=null;
+    if(rec._chunks&&rec._chunks.length){
+      vlRecSegs.push(new Blob(rec._chunks,{type:vlRecMime||(rec._chunks[0]&&rec._chunks[0].type)||'audio/webm'}));
+      rec._chunks=null;
+    }
+    if(vlRecUserStop||!vlRecActive) vlRecFinish(false);
+    else vlRecAutoResume();
+  }
+  // 예기치 못한 중단(절전·앱 전환·마이크 회수) → 새 구간으로 자동 이어녹음
+  async function vlRecAutoResume(){
+    if(vlRecResuming||!vlRecActive) return;
+    vlRecResuming=true;
+    try{
+      const rec=await vlRecOpenRecorder();
+      if(!vlRecActive){ try{ rec.stop(); }catch(e){ if(rec._close) rec._close(); } return; }  // 재개 대기 중 ⏹ 종료됨
+      vlWakeAcquire();
+      const m=$('vl-recMsg'); m.className='msg'; m.style.display='block';
+      m.textContent='⚠ 녹음이 잠시 끊겨 자동으로 이어서 녹음 중입니다 (구간 '+(vlRecSegs.length+1)+'). 그때까지 내용은 보존됐어요.';
+    }catch(e){
+      // 마이크를 다시 못 얻음 — 지금까지 구간은 보존하고 종료 상태로 전환
+      vlRecActive=false;
+      vlRecFinish(true);
+    }finally{ vlRecResuming=false; }
+  }
+  // 녹음 종료 마무리(정상 종료 또는 재개 실패)
+  function vlRecFinish(interrupted){
+    vlRecActive=false; vlRecUserStop=false; vlWakeRelease();
+    if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
+    $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
+    $('vl-recPause').textContent='⏸ 일시정지'; $('vl-recTimer').textContent='';
+    const m=$('vl-recMsg');
+    if(!vlRecSegs.length){
+      vlRecBlob=null; $('vl-recReady').classList.add('hidden');
+      m.className='msg err'; m.style.display='block'; m.textContent='녹음된 내용이 없습니다 — 다시 시도해 주세요.'; return;
+    }
+    vlRecBlob=vlRecSegs.length===1?vlRecSegs[0]:null;   // 1구간이면 기존 단일 업로드 경로
+    const total=vlRecSegs.reduce((s,b)=>s+(b.size||0),0), mb=total/1048576;
+    $('vl-recInfo').textContent='녹음 '+vlRecFmt(vlRecSec)+' · '+mb.toFixed(1)+'MB'
+      +(vlRecSegs.length>1?(' · 구간 '+vlRecSegs.length+'개(끊김 구간 자동 보존)'):'')
+      +(mb>24?' — ⚠ 25MB 초과: 업로드가 거부될 수 있습니다':'');
+    $('vl-recReady').classList.remove('hidden');
+    if(interrupted){ m.className='msg err'; m.style.display='block';
+      m.textContent='⚠ 마이크가 끊겨 이어 녹음하지 못했습니다 — 지금까지 녹음된 내용은 보존되어 바로 업로드할 수 있습니다.'; }
   }
   async function vlRecStart(){
     const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
@@ -834,20 +930,22 @@
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof MediaRecorder==='undefined'){
       m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 녹음을 지원하지 않습니다. 폰 녹음앱으로 녹음 후 전사 텍스트를 대화 칸에 붙여넣어 주세요.'; return; }
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,noiseSuppression:true,echoCancellation:true}});
-      vlRecMime=vlRecPickMime()||'';
-      const opt=vlRecMime?{mimeType:vlRecMime,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000};
-      vlRec=new MediaRecorder(stream,opt); vlRecChunks=[]; vlRecBlob=null; vlRecSec=0;
-      vlRec.ondataavailable=(e)=>{ if(e.data&&e.data.size) vlRecChunks.push(e.data); };
-      vlRec.onstop=()=>{ stream.getTracks().forEach(t=>t.stop());
-        vlRecBlob=new Blob(vlRecChunks,{type:vlRecMime||(vlRecChunks[0]&&vlRecChunks[0].type)||'audio/webm'});
-        if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
-        $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
-        const mb=(vlRecBlob.size/1048576);
-        $('vl-recInfo').textContent='녹음 '+vlRecFmt(vlRecSec)+' · '+mb.toFixed(1)+'MB'+(mb>24?' — ⚠ 25MB 초과: 업로드가 거부될 수 있습니다':'');
-        $('vl-recReady').classList.remove('hidden'); };
-      vlRec.start(1000);
-      vlRecTimerIv=setInterval(()=>{ if(vlRec&&vlRec.state==='recording'){ vlRecSec++; $('vl-recTimer').textContent='● '+vlRecFmt(vlRecSec)+(vlRecMode==='full'?' (화면을 켜두세요)':''); } },1000);
+      vlRecSegs=[]; vlRecBlob=null; vlRecSec=0; vlRecMime='';
+      vlRecUserStop=false; vlRecResuming=false;
+      await vlRecOpenRecorder();
+      vlRecActive=true;
+      vlWakeAcquire();               // 화면 자동 꺼짐 방지(지원 브라우저)
+      if(vlRecTimerIv) clearInterval(vlRecTimerIv);
+      vlRecTimerIv=setInterval(()=>{
+        if(!vlRecActive) return;
+        if(vlRec&&vlRec.state==='recording'){
+          vlRecSec++;
+          $('vl-recTimer').textContent='● '+vlRecFmt(vlRecSec)
+            +(vlRecSegs.length?(' · 구간 '+(vlRecSegs.length+1)):'')
+            +(vlWakeLock?' · 화면꺼짐방지 ON':(vlRecMode==='full'?' (화면을 켜두세요)':''));
+        }else if(vlRec&&vlRec.state==='inactive'){ if(vlRec._close) vlRec._close(); }   // 소리 없이 죽은 레코더 감지
+        else if(!vlRec&&!vlRecResuming){ vlRecAutoResume(); }                            // 구간 사이 공백 감시
+      },1000);
       $('vl-recStart').classList.add('hidden'); $('vl-recPause').classList.remove('hidden'); $('vl-recStop').classList.remove('hidden');
       $('vl-recReady').classList.add('hidden');
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='마이크 권한이 필요합니다 — 브라우저 설정에서 마이크를 허용해 주세요.'; }
@@ -857,21 +955,48 @@
     if(vlRec.state==='recording'){ vlRec.pause(); $('vl-recPause').textContent='▶ 계속'; }
     else if(vlRec.state==='paused'){ vlRec.resume(); $('vl-recPause').textContent='⏸ 일시정지'; }
   }
-  function vlRecStop(){ if(vlRec&&vlRec.state!=='inactive') vlRec.stop(); }
+  function vlRecStop(){
+    vlRecUserStop=true;
+    if(vlRec&&vlRec.state!=='inactive') vlRec.stop();
+    else if(vlRec&&vlRec._close) vlRec._close();
+    else if(vlRecActive) vlRecFinish(false);         // 구간 사이 공백 중 종료 눌림
+  }
+  // 화면 복귀 시: Wake Lock 재획득 + 죽은 트랙/레코더면 즉시 이어녹음
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState!=='visible'||!vlRecActive) return;
+    if(!vlWakeLock) vlWakeAcquire();
+    setTimeout(()=>{ try{
+      if(!vlRecActive) return;
+      if(vlRec&&vlRec.state==='inactive'){ if(vlRec._close) vlRec._close(); return; }
+      if(!vlRec){ if(!vlRecResuming) vlRecAutoResume(); return; }
+      const trs=vlRecStream&&((vlRecStream.getAudioTracks?vlRecStream.getAudioTracks():vlRecStream.getTracks())||[]);
+      const tr=trs&&trs[0];
+      if(tr&&(tr.readyState==='ended'||tr.muted===true)){ try{ vlRec.stop(); }catch(e){ if(vlRec._close) vlRec._close(); } }
+    }catch(e){} },1200);
+  });
+  // 녹음 중 페이지 이탈(새로고침·탭 닫기) 경고
+  window.addEventListener('beforeunload',(e)=>{
+    if(vlRecActive||(vlRecSegs.length&&!$('vl-recReady').classList.contains('hidden'))){ e.preventDefault(); e.returnValue=''; }
+  });
   async function vlRecUpload(){
     const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
-    if(!vlRecBlob||!vlRecVisit) return;
+    if(!vlRecVisit) return;
+    if(!vlRecSegs.length){ if(!vlRecBlob) return; vlRecSegs=[vlRecBlob]; }   // 방어(구버전 경로)
     const btn=$('vl-recUpload'); btn.disabled=true; btn.textContent='업로드 중…';
     try{
-      const durl=await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(vlRecBlob); });
+      const toDurl=(b)=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(b); });
+      const urls=[]; for(const b of vlRecSegs){ urls.push(await toDurl(b)); }
+      const body=urls.length>1
+        ? {data_urls:urls,mode:vlRecMode,duration_sec:vlRecSec}
+        : {data_url:urls[0],mode:vlRecMode,duration_sec:vlRecSec};
       const res=await fetch(session.api+'/api/visits/'+vlRecVisit.id+'/recordings',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
-        body:JSON.stringify({data_url:durl,mode:vlRecMode,duration_sec:vlRecSec})});
+        body:JSON.stringify(body)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.style.display='block';
         m.textContent='업로드 실패: '+(d.error==='too_large'?'파일이 25MB를 넘습니다 — 더 짧게 나눠 녹음하세요.':(d.error==='rec_disabled'?'녹음 기능이 꺼져 있습니다.':(d.error||res.status))); return; }
       m.className='msg ok'; m.style.display='block';
       m.textContent='✔ 업로드됨 — 전사·요약 처리 중입니다'+(!d.stt_ready?' · ⚠ OPENAI_API_KEY 미설정(전사 불가)':'')+(!d.ai_ready?' · ⚠ ANTHROPIC_API_KEY 미설정':'');
-      $('vl-recReady').classList.add('hidden'); vlRecBlob=null;
+      $('vl-recReady').classList.add('hidden'); vlRecBlob=null; vlRecSegs=[];
       vlLoadRecs(true); vlRecStartPoll();
     }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
     finally{ btn.disabled=false; btn.textContent='⬆ 업로드 & AI 요약'; }

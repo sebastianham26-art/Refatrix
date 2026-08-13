@@ -243,3 +243,84 @@ test('방문 리뷰 드릴다운: 상세(AI 요약·펜딩 체크리스트) + �
   row2.click();
   assert.ok(win.document.querySelector('.rv-detail[data-for="101"]').classList.contains('hidden'), '토글 닫힘');
 });
+
+// ── 녹음 유지(화면꺼짐/앱전환 대응 · b20260813rec1) ──────────────────
+test('중단 자동 이어녹음: 예기치 못한 stop → 새 구간 재개 → 종료 → data_urls 2개 업로드', async () => {
+  route('GET', '/api/visits/100/recordings', { items: [] });
+  route('POST', '/api/visits/100/recordings', { id: 9, status: 'queued', stt_ready: true, ai_ready: true });
+  win.vlShowRec(100, 'Aguila');
+  await tick();
+  await win.vlRecStart();
+  const rec1 = win.__lastRec;
+  rec1.ondataavailable({ data: new win.Blob(['seg1'], { type: 'audio/webm' }) });
+  // 예기치 못한 중단(절전·앱 전환) — 사용자가 종료를 누르지 않았는데 recorder 가 멈춤
+  rec1.stop();
+  await tick(40);
+  const rec2 = win.__lastRec;
+  assert.notEqual(rec2, rec1, '새 레코더로 자동 재개');
+  assert.equal(rec2.state, 'recording');
+  assert.ok($('vl-recMsg').textContent.includes('이어서'), '이어녹음 안내 표시');
+  assert.ok(!$('vl-recStop').classList.contains('hidden'), '종료 전이므로 녹음 UI 유지');
+  rec2.ondataavailable({ data: new win.Blob(['seg2'], { type: 'audio/webm' }) });
+  win.vlRecStop();
+  await tick();
+  assert.ok(!$('vl-recReady').classList.contains('hidden'), '업로드 패널');
+  assert.ok($('vl-recInfo').textContent.includes('구간 2개'), '구간 수 안내');
+  await win.vlRecUpload();
+  await tick(40);
+  const post = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/api/visits/100/recordings'));
+  assert.ok(post, '업로드 POST');
+  const body = JSON.parse(post.body);
+  assert.ok(Array.isArray(body.data_urls) && body.data_urls.length === 2, '구간 2개가 data_urls 로 전송');
+  assert.ok(body.data_urls.every((u) => String(u).startsWith('data:audio/webm')));
+  assert.equal(body.data_url, undefined, '다중 구간이면 data_url 미사용');
+});
+
+test('Wake Lock: 녹음 시작 시 화면꺼짐 방지 획득 · 종료 시 해제', async () => {
+  let acquired = 0, released = 0;
+  const sentinel = { release() { released++; if (this._f) this._f(); }, addEventListener(ev, fn) { if (ev === 'release') this._f = fn; } };
+  win.navigator.wakeLock = { request: async () => { acquired++; return sentinel; } };
+  route('GET', '/api/visits/100/recordings', { items: [] });
+  win.vlShowRec(100, 'Aguila');
+  await tick();
+  await win.vlRecStart();
+  await tick();
+  assert.equal(acquired, 1, '시작 시 wake lock 요청');
+  win.__lastRec.ondataavailable({ data: new win.Blob(['a'], { type: 'audio/webm' }) });
+  win.vlRecStop();
+  await tick();
+  assert.ok(released >= 1, '종료 시 해제');
+  assert.equal(acquired, 1, '종료 후 재획득 없음');
+});
+
+test('재개 실패(마이크 재획득 불가): 지금까지 구간 보존 + 업로드 패널 전환', async () => {
+  route('GET', '/api/visits/100/recordings', { items: [] });
+  win.vlShowRec(100, 'Aguila');
+  await tick();
+  await win.vlRecStart();
+  const rec1 = win.__lastRec;
+  rec1.ondataavailable({ data: new win.Blob(['seg1'], { type: 'audio/webm' }) });
+  win.navigator.mediaDevices.getUserMedia = async () => { throw new Error('denied'); };
+  rec1.stop();                                   // 사용자 종료 아님 → 자동 재개 시도 → 실패
+  await tick(40);
+  assert.ok(!$('vl-recReady').classList.contains('hidden'), '보존 구간 업로드 패널 표시');
+  assert.ok($('vl-recMsg').textContent.includes('보존'), '보존 안내 문구');
+  assert.ok($('vl-recStop').classList.contains('hidden'), '녹음 UI 는 종료 상태');
+});
+
+test('단일 구간(중단 없음): 기존 방식 그대로 data_url 단일 필드 업로드', async () => {
+  route('GET', '/api/visits/100/recordings', { items: [] });
+  route('POST', '/api/visits/100/recordings', { id: 9, status: 'queued', stt_ready: true, ai_ready: true });
+  win.vlShowRec(100, 'Aguila');
+  await tick();
+  await win.vlRecStart();
+  win.__lastRec.ondataavailable({ data: new win.Blob(['aaa'], { type: 'audio/webm' }) });
+  win.vlRecStop();
+  await tick();
+  await win.vlRecUpload();
+  await tick(40);
+  const post = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/api/visits/100/recordings'));
+  const body = JSON.parse(post.body);
+  assert.ok(String(body.data_url).startsWith('data:audio/webm'), '단일 구간은 data_url');
+  assert.equal(body.data_urls, undefined);
+});

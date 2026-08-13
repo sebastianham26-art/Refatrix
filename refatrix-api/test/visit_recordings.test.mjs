@@ -126,6 +126,40 @@ test('processOne: 전사→요약→노트 병합→펜딩 자동 등록→미�
   assert.ok(meet.note.startsWith('[현장방문]') && meet.note.includes(AI_MARK), '자동 미팅 노트에 AI 블록');
 });
 
+// ── ①-b 다중 구간(절전/앱전환 중단 후 자동 이어녹음) ─────────────────
+test('processOne 다중 구간: 구간별 Whisper 전사 후 이어붙임 · done', async () => {
+  seedBase();
+  const P1 = Buffer.from('parte-uno').toString('base64');
+  const P2 = Buffer.from('parte-dos').toString('base64');
+  pub.none(`INSERT INTO sales_visit_recordings (visit_id, mode, mime, audio_b64, created_by)
+            VALUES (100,'full','audio/webm','${P1}|${P2}',2)`);
+  const calls = [];
+  ai.transcribe = async ({ b64 }) => { calls.push(b64); return { ok: true, text: calls.length === 1 ? 'primera parte' : 'segunda parte' }; };
+  const row = await claimRow(1);
+  const ok = await processOne(row);
+  assert.equal(ok, true);
+  assert.equal(calls.length, 2, '구간별로 Whisper 2회 호출');
+  assert.deepEqual(calls, [P1, P2], '각 구간의 base64 가 그대로 전달');
+  const rec = pub.one(`SELECT status, transcript FROM sales_visit_recordings WHERE id=1`);
+  assert.equal(rec.status, 'done');
+  assert.equal(rec.transcript, 'primera parte\nsegunda parte', '전사문 이어붙임');
+});
+
+test('processOne 다중 구간: 한 구간 일시 오류 → 자동 재큐(전체 재시도)', async () => {
+  seedBase();
+  const P1 = Buffer.from('a').toString('base64');
+  const P2 = Buffer.from('b').toString('base64');
+  pub.none(`INSERT INTO sales_visit_recordings (visit_id, mode, mime, audio_b64, created_by)
+            VALUES (100,'memo','audio/webm','${P1}|${P2}',2)`);
+  let n = 0;
+  ai.transcribe = async () => { n++; return n === 2 ? { ok: false, error: 'stt: network', transient: true } : { ok: true, text: 'ok' }; };
+  const row = await claimRow(1);
+  await processOne(row);
+  const rec = pub.one(`SELECT status, error, audio_b64 FROM sales_visit_recordings WHERE id=1`);
+  assert.equal(rec.status, 'queued', '일시 오류 → 자동 재큐');
+  assert.ok(rec.audio_b64.includes('|'), '오디오 구간 보존(재시도 가능)');
+});
+
 test('processOne 재처리: 기존 AI 블록 교체(중복 누적 없음)', async () => {
   seedBase();
   pub.none(`INSERT INTO sales_visit_recordings (visit_id, mode, mime, audio_b64, created_by)

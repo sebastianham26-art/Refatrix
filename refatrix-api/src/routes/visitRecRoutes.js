@@ -3,6 +3,8 @@
 //   (디렉터 요청 2026-08-03)
 //
 //   ① 상담 녹음: 방문 체크인(sales_visits) 뒤 화면에서 녹음 → 업로드(queued)
+//      (2026-08-13) 절전/앱전환 중단 대응 — 프런트가 자동 이어녹음한 다중 구간을
+//      data_urls[] 로 받아 '|' 구분으로 저장, 전사 시 구간별 Whisper 후 이어붙임.
 //      → 백그라운드 처리: Whisper 전사(transcribing) → Claude 분류 요약(summarizing)
 //      → done: 방문 talk_note/insight_note 에 [AI요약] 블록 병합 + action_items 를
 //        sales_visit_pendings 에 자동 등록 + 자동 생성 미팅기록([현장방문]) 노트 갱신.
@@ -39,7 +41,8 @@ const AI_MODEL = () => process.env.VISIT_AI_MODEL || 'claude-sonnet-4-5-20250929
 const KEEP_AUDIO = () => process.env.VISIT_KEEP_AUDIO === '1';
 const BRIEF_HOUR = () => Number(process.env.SALES_BRIEFING_HOUR || 7);
 
-const AUDIO_B64_MAX = 34 * 1024 * 1024;   // base64 문자 길이 ≈ 25MB 바이너리(Whisper 한도)
+const AUDIO_B64_MAX = 34 * 1024 * 1024;   // base64 문자 길이 ≈ 25MB 바이너리(Whisper 한도) — 다중 구간 합산
+const AUDIO_PARTS_MAX = 40;               // 자동 이어녹음 구간 수 상한
 const DURATION_MAX = 2 * 3600;            // 2시간
 const TRANSCRIPT_PROMPT_MAX = 24000;      // Claude 프롬프트에 넣는 전사문 최대 길이
 const STT_TIMEOUT_MS = 300000;            // 긴 녹음 대비 5분
@@ -180,13 +183,19 @@ export async function processOne(row) {
   if (!v) return markFailed(recId, 'visit_not_found', false, row.attempts);
 
   // ① 전사(이미 전사돼 있으면 건너뜀 — 요약 단계 재시도 시 STT 비용 없음)
+  //    다중 구간('|' 구분 — 절전/앱전환 중단 후 자동 이어녹음)은 구간별 전사 후 이어붙임.
   let transcript = String(row.transcript || '').trim();
   if (!transcript) {
     if (!sttReady()) return markFailed(recId, 'no_openai_key', false, row.attempts);
     if (!row.audio_b64) return markFailed(recId, 'no_audio', false, row.attempts);
-    const st = await ai.transcribe({ b64: row.audio_b64, mime: row.mime });
-    if (!st.ok) return markFailed(recId, st.error, st.transient, row.attempts);
-    transcript = st.text;
+    const partList = String(row.audio_b64).split('|').filter(Boolean);
+    const texts = [];
+    for (const p of partList) {
+      const st = await ai.transcribe({ b64: p, mime: row.mime });
+      if (!st.ok) return markFailed(recId, st.error, st.transient, row.attempts);
+      if (st.text) texts.push(st.text);
+    }
+    transcript = texts.join('\n').trim();
     if (!transcript) return markFailed(recId, 'empty_transcript', false, row.attempts);
     await query(
       `UPDATE sales_visit_recordings
@@ -499,19 +508,28 @@ export default async function visitRecRoutes(app) {
       const v = await ownVisit(perm, req.params.id);
       if (!v) return reply.code(404).send({ error: 'not_found' });
       const b = req.body || {};
-      const m = /^data:((?:audio|video)\/[\w.+-]+)(?:;codecs=[^;]*)?;base64,([A-Za-z0-9+/=]+)$/.exec(String(b.data_url || ''));
-      if (!m) return reply.code(400).send({ error: 'bad_audio' });
-      const mime = m[1], b64 = m[2];
-      if (b64.length > AUDIO_B64_MAX) return reply.code(400).send({ error: 'too_large', max_mb: 25 });
+      // 단일(data_url) 또는 다중 구간(data_urls — 절전/앱전환 중단 후 자동 이어녹음 산출물)
+      const urls = Array.isArray(b.data_urls) && b.data_urls.length ? b.data_urls : (b.data_url ? [b.data_url] : []);
+      if (!urls.length || urls.length > AUDIO_PARTS_MAX) return reply.code(400).send({ error: 'bad_audio' });
+      const RE = /^data:((?:audio|video)\/[\w.+-]+)(?:;codecs=[^;]*)?;base64,([A-Za-z0-9+/=]+)$/;
+      let mime = null; const parts = []; let totalB64 = 0;
+      for (const u of urls) {
+        const m = RE.exec(String(u || ''));
+        if (!m) return reply.code(400).send({ error: 'bad_audio' });
+        if (!mime) mime = m[1];
+        parts.push(m[2]); totalB64 += m[2].length;
+      }
+      if (totalB64 > AUDIO_B64_MAX) return reply.code(400).send({ error: 'too_large', max_mb: 25 });
       const dur = Number(b.duration_sec) || null;
       if (dur && dur > DURATION_MAX) return reply.code(400).send({ error: 'too_long', max_sec: DURATION_MAX });
       const mode = b.mode === 'full' ? 'full' : 'memo';
+      // 구간은 '|' 로 이어 저장(base64 문자셋에 없음 → 안전한 구분자, 단일 구간은 기존과 동일)
       const r = (await query(
         `INSERT INTO sales_visit_recordings (visit_id, mode, mime, duration_sec, size_bytes, audio_b64, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [Number(v.id), mode, mime, dur, Math.round(b64.length * 3 / 4), b64, perm.userId])).rows[0];
+        [Number(v.id), mode, mime, dur, Math.round(totalB64 * 3 / 4), parts.join('|'), perm.userId])).rows[0];
       await logEvent({ userId: perm.userId, action: 'create', target: `visit_recording:${r.id}`,
-        detail: { visit_id: Number(v.id), mode, duration_sec: dur } });
+        detail: { visit_id: Number(v.id), mode, duration_sec: dur, parts: parts.length } });
       setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
       return { id: Number(r.id), status: 'queued', stt_ready: sttReady(), ai_ready: aiReady() };
     });
