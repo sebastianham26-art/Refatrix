@@ -2023,6 +2023,24 @@ export default async function financeRoutes(app) {
       if (eff < todayStrCF) t.plan_date = todayStrCF;
     }
     const rows = aggregateCashflow(mappedTx, { granularity, includePlan, openingBalance: opening });
+    // plans=1 (2026-08-13): 「예정 포함」 모드에서 개별 예정 거래 목록(전체 리스트업 + 중복선택 제외용).
+    // 집계와 동일 스트림(txns = AR 미수잔액 보정·계좌귀속·계좌칩 필터 후) + 동일 이월 규칙이라
+    // 프런트에서 항목 단위로 빼면 rows/breakdown과 수치가 정확히 맞는다.
+    // memo는 breakdown txs와 동일하게 detail 권한으로 걸러진 스트림 — 추가 노출 없음. 240자 컷.
+    let planItems = null;
+    if (req.query.plans === '1' && includePlan) {
+      planItems = txns
+        .filter((t) => t.status !== 'actual')
+        .map((t) => {
+          const od = String(t.plan_date || t.txn_date).slice(0, 10);
+          const d = od < todayStrCF ? todayStrCF : od;   // 이월 규칙 동일 적용(od=원래 계획일)
+          return { id: Number(t.id), d, od, dir: t.direction, amt: r2(Number(t.amount_mxn) || 0),
+            cat: t.category_name || t.category_code || '(계정없음)', acct: t.account_name || null,
+            memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240),
+            inv: t.sales_invoice_id != null ? Number(t.sales_invoice_id) : null };
+        })
+        .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : Math.abs(b.amt) - Math.abs(a.amt)));
+    }
     // breakdown=1: 기간별 계정과목 유입/유출 합 (현금잔액 워터폴의 툴팁·세부 표용)
     // aggregateCashflow와 동일 규칙: 실적=거래일, 예정=계획일(includePlan일 때만 포함). 보완분(hidden) 제외 — 항목화 금지 원칙.
     let breakdown = null;
@@ -2042,7 +2060,7 @@ export default async function financeRoutes(app) {
         // 개별 거래 목록 (2026-08-12): 구간별 세부내역 표 금액 hover 시 집행 메모·실적/예정 구분 표시용.
         // d=집계에 쓴 유효일(실적=거래일, 예정=계획일·이월 반영), st: a=집행(actual)/p=예정(plan).
         // memo는 240자 컷(툴팁용) — 전문은 거래목록에서. loadCashTxns가 이미 세부열람 권한으로 걸러진 스트림이라 추가 노출 없음.
-        cell.txs.push({ d: date, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
+        cell.txs.push({ id: Number(t.id), d: date, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
           memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240), acct: t.account_name || null });
       }
       for (const k of Object.keys(breakdown)) {
@@ -2084,7 +2102,8 @@ export default async function financeRoutes(app) {
       r.cumulative_actual = cumActualByPeriod[r.period];
       r.cumulative = r2(r.cumulative + (cumHiddenByPeriod[r.period] || 0));
     }
-    return { granularity, includePlan, opening_balance: r2(opening), rows, accounts_filter: selAccIds, ...(breakdown ? { breakdown } : {}) };
+    return { granularity, includePlan, opening_balance: r2(opening), rows, accounts_filter: selAccIds,
+      ...(breakdown ? { breakdown } : {}), ...(planItems ? { plan_items: planItems } : {}) };
   });
 
   // 계획 대비 실적(수입/지출 분리): query granularity, filter=all|recurring|other
