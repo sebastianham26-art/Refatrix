@@ -1838,6 +1838,14 @@ export default async function financeRoutes(app) {
     if (block.length) { args.push(block); cond += ` AND (t.account_id IS NULL OR t.account_id <> ALL($${args.length}) OR t.status='plan')`; }
     // 비공개 고정비 거래(예정·실적): 디렉터 외 현금흐름·계획대비실적에서 제외
     cond += privTxnCond(perm);
+    // 비활성(active=false) 고정비의 '미실행(plan)' 회차는 자금계획에서 제외 (2026-08-14 디렉터 요청)
+    //  — 고정비를 껐는데 이미 [생성]된 예정 회차가 남아 현금흐름 그래프·워터폴에 계속 지출로 잡히던 문제.
+    //    자동전개(recurringProjections)는 이미 active=true 만 보므로 이걸로 두 경로의 기준이 일치한다.
+    //    ⚠ 데이터는 그대로 두고 '표시에서만' 제외 → 규칙을 다시 켜면 회차가 즉시 되살아난다(삭제 아님).
+    //    실적(actual)은 실제 집행 이력이므로 규칙 상태와 무관하게 항상 포함.
+    cond += ` AND (t.recurring_rule_id IS NULL OR t.status='actual'
+                   OR EXISTS (SELECT 1 FROM recurring_rules rr
+                               WHERE rr.id=t.recurring_rule_id AND rr.active=true AND rr.deleted_at IS NULL))`;
     return (await query(
       `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
               t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
@@ -1977,6 +1985,56 @@ export default async function financeRoutes(app) {
     }
     const txnsAll = await loadCashTxns(req.ctx.perm);
     await adjustArPlansToOutstanding(txnsAll);
+    // 이월 규칙 기준일 — ⚠ 반드시 아래 hidden 루프보다 먼저 선언할 것.
+    // (2026-08-06 수정: 기존엔 이 선언이 hidden 루프 뒤에 있어 TDZ ReferenceError →
+    //  보완분에 예정(비공개 고정비 plan)이 있는 비디렉터(소시오·재무 등)에서만 /api/cashflow 가 500으로 죽었음.
+    //  디렉터는 보완분이 항상 빈 배열이라 루프가 안 돌아 드러나지 않던 버그.)
+    // (2026-08-14: 자동전개 블록에서도 쓰므로 선언을 더 위로 올림 — 아래 사용처보다 항상 먼저.)
+    const todayStrCF = new Date().toISOString().slice(0, 10);
+    // ===== 미생성 고정비 자동전개 합류 (2026-08-14 디렉터 요청) =====
+    // 지금까지 현금흐름 그래프·현금잔액 워터폴은 transactions(=[생성]된 예정)만 봤다.
+    // → 고정비를 새로 등록하고 [생성]을 누르지 않으면 달력 「월 예산 예측」·「은행계좌별 필요자금」에는
+    //   보이는데 그래프·워터폴에는 전혀 안 나오는 불일치가 있었다. 두 화면이 쓰는 것과 '같은'
+    //   recurringProjections 를 여기서도 합류시켜 기준을 일원화한다.
+    // 규칙: ① 「예정 포함」 모드에서만(실적만 모드는 불변) ② 오늘이 속한 달부터 — 과거 달은 실적 확정이라 전개 금지
+    //       ③ 지평 = 기존 거래의 최종 유효월까지(최대 24개월) → 그래프 x축이 자동전개 때문에 늘어나지 않음
+    //       ④ proj=0 이면 제외 — 달력·필요자금의 「자동전개 포함/제외」 토글과 동일한 파라미터
+    // 중복 방지는 recurringProjections 내부(occurrenceExists/occurrenceDuplicated)가 담당 — 이미 생성했거나
+    // 삭제한 회차, 같은 지출의 수동 등록분은 전개되지 않는다.
+    if (includePlan && String(req.query.proj == null ? '1' : req.query.proj) !== '0') {
+      const thisMonth = todayStrCF.slice(0, 7);
+      let maxM = thisMonth;
+      for (const t of txnsAll) {
+        const eff = String(t.status === 'actual' ? t.txn_date : (t.plan_date || t.txn_date) || '').slice(0, 7);
+        if (eff && eff > maxM) maxM = eff;
+      }
+      const [y0, m0] = thisMonth.split('-').map(Number);
+      const [y1, m1] = maxM.split('-').map(Number);
+      const span = Math.max(0, Math.min(23, (y1 - y0) * 12 + (m1 - m0)));
+      const months = [];
+      for (let i = 0; i <= span; i++) months.push(new Date(Date.UTC(y0, m0 - 1 + i, 1)).toISOString().slice(0, 7));
+      const projs = await recurringProjections(req.ctx.perm, months);
+      for (const p of projs) {
+        const amt = r2(Number(p.amount_mxn) || 0);
+        // 합성 id: 실제 transactions.id(양수)와 절대 겹치지 않도록 음수. (규칙, 날짜)로 결정적 —
+        // 워터폴 「예정 개별 선택」의 제외 집합(exIds)이 재조회 후에도 같은 항목을 가리킨다.
+        const ymd = String(p.date);
+        const dn = Number(ymd.slice(2, 4) + ymd.slice(5, 7) + ymd.slice(8, 10));   // YYMMDD
+        txnsAll.push({
+          id: -(Number(p.rule_id) * 1000000 + dn),
+          direction: p.direction, status: 'plan',
+          txn_date: ymd, plan_date: ymd,
+          amount: amt, currency: 'MXN', fx_rate: 1, amount_mxn: amt,
+          plan_amount: amt, plan_amount_mxn: amt,
+          category_code: p.category_code, category_name: p.category_name,
+          recurring_rule_id: Number(p.rule_id), sales_invoice_id: null,
+          account_id: p.account_id == null ? null : Number(p.account_id),
+          account_name: p.account_name || null,
+          memo: `자동전개 · ${p.rule_name || '고정비'}`,
+          approved: true, report_excluded: false, projected: true,
+        });
+      }
+    }
     // 계좌미지정 예정의 계좌 귀속 (2026-08-06 디렉터 확정): 수금예정(AR)뿐 아니라
     // 계좌미지정(NULL) '모든' 예정 거래(수동 예정 수입/지출·마케팅 계획 등)를
     // 「수금 기본계좌」(accounts.ar_default=true, 현재 BBVA)로 귀속한다 —
@@ -1997,11 +2055,6 @@ export default async function financeRoutes(app) {
     const opening = await openingBalanceMxn(req.ctx.perm, selAccIds);
     const hiddenAll = await loadHiddenBalanceTxns(req.ctx.perm); // 잔액 보완분(항목 미노출, 누적잔고에만 합산)
     const hidden = selAccIds ? hiddenAll.filter((t) => t.account_id != null && selAccIds.includes(Number(t.account_id))) : hiddenAll;
-    // 이월 규칙 기준일 — ⚠ 반드시 아래 hidden 루프보다 먼저 선언할 것.
-    // (2026-08-06 수정: 기존엔 이 선언이 hidden 루프 뒤에 있어 TDZ ReferenceError →
-    //  보완분에 예정(비공개 고정비 plan)이 있는 비디렉터(소시오·재무 등)에서만 /api/cashflow 가 500으로 죽었음.
-    //  디렉터는 보완분이 항상 빈 배열이라 루프가 안 돌아 드러나지 않던 버그.)
-    const todayStrCF = new Date().toISOString().slice(0, 10);
     const mappedTx = txns.map((t) => ({
       direction: t.direction, status: t.status, amount_mxn: Number(t.amount_mxn) || 0,
       txn_date: String(t.txn_date).slice(0, 10), plan_date: t.plan_date ? String(t.plan_date).slice(0, 10) : null,
@@ -2037,6 +2090,7 @@ export default async function financeRoutes(app) {
           return { id: Number(t.id), d, od, dir: t.direction, amt: r2(Number(t.amount_mxn) || 0),
             cat: t.category_name || t.category_code || '(계정없음)', acct: t.account_name || null,
             memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240),
+            pj: t.projected ? 1 : 0,   // 1 = 아직 [생성] 안 한 고정비 자동전개분(2026-08-14)
             inv: t.sales_invoice_id != null ? Number(t.sales_invoice_id) : null };
         })
         .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : Math.abs(b.amt) - Math.abs(a.amt)));
@@ -2061,6 +2115,7 @@ export default async function financeRoutes(app) {
         // d=집계에 쓴 유효일(실적=거래일, 예정=계획일·이월 반영), st: a=집행(actual)/p=예정(plan).
         // memo는 240자 컷(툴팁용) — 전문은 거래목록에서. loadCashTxns가 이미 세부열람 권한으로 걸러진 스트림이라 추가 노출 없음.
         cell.txs.push({ id: Number(t.id), d: date, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
+          pj: t.projected ? 1 : 0,
           memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240), acct: t.account_name || null });
       }
       for (const k of Object.keys(breakdown)) {
