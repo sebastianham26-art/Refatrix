@@ -1888,11 +1888,13 @@ export default async function financeRoutes(app) {
     return (await query(
       `SELECT t.id, t.direction, t.status, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.amount, t.currency, t.fx_rate, t.amount_mxn,
               t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.category_code, cat.name AS category_name,
-              t.recurring_rule_id, t.sales_invoice_id, t.account_id, a.name AS account_name, t.memo, t.approved, t.report_excluded,
+              t.recurring_rule_id, rr.name AS rule_name, rr.active AS rule_active,
+              t.sales_invoice_id, t.account_id, a.name AS account_name, t.memo, t.approved, t.report_excluded,
               (t.plan_amount * (CASE WHEN t.currency='USD' THEN t.fx_rate ELSE 1 END)) AS plan_amount_mxn
          FROM transactions t
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
         WHERE ${cond}`, args)).rows;
   }
   // 미생성 고정비 회차 자동전개 (월 예산 예측 · 은행계좌별 필요자금 공용).
@@ -2047,6 +2049,11 @@ export default async function financeRoutes(app) {
         const eff = String(t.status === 'actual' ? t.txn_date : (t.plan_date || t.txn_date) || '').slice(0, 7);
         if (eff && eff > maxM) maxM = eff;
       }
+      // until=YYYY-MM (2026-08-14 v2): 화면이 보고 있는 종료월. 워터폴은 사용자가 미래 달(예: 12월)을
+      // 직접 고를 수 있는데, 지평을 '기존 거래의 최종 유효월'로만 잡으면 그 이후 달에는 고정비가 통째로
+      // 비어 「고정비 목록에는 있는데 현금흐름엔 없다」가 된다. 표시 종료월까지 전개한다(상한 24개월은 유지).
+      const until = String(req.query.until || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(until) && until > maxM) maxM = until;
       const [y0, m0] = thisMonth.split('-').map(Number);
       const [y1, m1] = maxM.split('-').map(Number);
       const span = Math.max(0, Math.min(23, (y1 - y0) * 12 + (m1 - m0)));
@@ -2066,7 +2073,8 @@ export default async function financeRoutes(app) {
           amount: amt, currency: 'MXN', fx_rate: 1, amount_mxn: amt,
           plan_amount: amt, plan_amount_mxn: amt,
           category_code: p.category_code, category_name: p.category_name,
-          recurring_rule_id: Number(p.rule_id), sales_invoice_id: null,
+          recurring_rule_id: Number(p.rule_id), rule_name: p.rule_name || null, rule_active: true,
+          sales_invoice_id: null,
           account_id: p.account_id == null ? null : Number(p.account_id),
           account_name: p.account_name || null,
           memo: `자동전개 · ${p.rule_name || '고정비'}`,
@@ -2114,6 +2122,10 @@ export default async function financeRoutes(app) {
       const eff = String(t.plan_date || t.txn_date).slice(0, 10);
       if (eff < todayStrCF) t.plan_date = todayStrCF;
     }
+    // 출처 태그 (2026-08-14 v2) — 「고정비 목록과 현금흐름이 안 맞는다」를 화면이 스스로 설명하도록,
+    // 모든 항목에 어디서 온 돈인지 붙인다. auto=미생성 고정비 자동전개 / fx=고정비가 [생성]한 회차 /
+    // ar=매출 인보이스 수금예정 / man=수동 등록(고정비 아님).
+    const srcOf = (t) => (t.projected ? 'auto' : t.recurring_rule_id != null ? 'fx' : t.sales_invoice_id != null ? 'ar' : 'man');
     const rows = aggregateCashflow(mappedTx, { granularity, includePlan, openingBalance: opening });
     // plans=1 (2026-08-13): 「예정 포함」 모드에서 개별 예정 거래 목록(전체 리스트업 + 중복선택 제외용).
     // 집계와 동일 스트림(txns = AR 미수잔액 보정·계좌귀속·계좌칩 필터 후) + 동일 이월 규칙이라
@@ -2130,6 +2142,9 @@ export default async function financeRoutes(app) {
             cat: t.category_name || t.category_code || '(계정없음)', acct: t.account_name || null,
             memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240),
             pj: t.projected ? 1 : 0,   // 1 = 아직 [생성] 안 한 고정비 자동전개분(2026-08-14)
+            src: srcOf(t),             // auto | fx | ar | man  (2026-08-14 v2 — 고정비 대사용)
+            rid: t.recurring_rule_id != null ? Number(t.recurring_rule_id) : null,
+            rn: t.rule_name || null,
             inv: t.sales_invoice_id != null ? Number(t.sales_invoice_id) : null };
         })
         .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : Math.abs(b.amt) - Math.abs(a.amt)));
@@ -2154,7 +2169,8 @@ export default async function financeRoutes(app) {
         // d=집계에 쓴 유효일(실적=거래일, 예정=계획일·이월 반영), st: a=집행(actual)/p=예정(plan).
         // memo는 240자 컷(툴팁용) — 전문은 거래목록에서. loadCashTxns가 이미 세부열람 권한으로 걸러진 스트림이라 추가 노출 없음.
         cell.txs.push({ id: Number(t.id), d: date, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
-          pj: t.projected ? 1 : 0,
+          pj: t.projected ? 1 : 0, src: srcOf(t),
+          rid: t.recurring_rule_id != null ? Number(t.recurring_rule_id) : null, rn: t.rule_name || null,
           memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240), acct: t.account_name || null });
       }
       for (const k of Object.keys(breakdown)) {
