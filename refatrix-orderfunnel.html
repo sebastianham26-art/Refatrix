@@ -64,12 +64,20 @@
   .tgb{padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
   .tgb.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .chartbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:8px 6px 4px}
+  /* 기간 합계 요약 바 */
+  .sumbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:0 0 10px;padding:9px 12px;background:#faf8f3;border:1px solid var(--line);border-radius:10px}
+  .sumbar .sl{font-size:11px;font-weight:800;color:var(--muted);white-space:nowrap}
+  .sumbar .sbox{display:inline-flex;flex-direction:column;gap:1px;padding:2px 10px;border-left:1px solid var(--line)}
+  .sumbar .sk{font-size:10px;font-style:normal;font-weight:700;color:var(--muted);white-space:nowrap}
+  .sumbar .sv{font-size:14px;font-weight:800;white-space:nowrap}
+  .sumbar .snote{font-size:10px;color:var(--muted);margin-left:auto}
+  tfoot tr.sumrow td{background:#f3efe6;border-top:2px solid var(--line);font-weight:800}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수주 흐름 월별 추이 · 즉시매출 비중 KPI</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수주 흐름 월별 추이 · 즉시매출 비중 KPI <span style="opacity:.6">build of-0814a</span></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
 
   <div class="card" id="loginCard">
     <div class="card-h">로그인</div>
@@ -348,6 +356,51 @@
     return '<div class="stagecell" title="'+esc(tl)+'"><div class="sdots">'+dots+'</div>'+badge+dl+'</div>';
   }
 
+  // 선택한 기간(표시 중인 행) 합계 — 백엔드 추가 호출 없이 rows 합산
+  function sumRows(rows){
+    const t={n:rows.length,req_sku:0,req_qty:0,ok_qty:0,short_qty:0,dev_qty:0,ok_amt:0,short_amt:0};
+    rows.forEach(r=>{
+      t.req_sku+=Number(r.req_sku)||0; t.req_qty+=Number(r.req_qty)||0;
+      t.ok_qty+=Number(r.ok_qty)||0; t.short_qty+=Number(r.short_qty)||0; t.dev_qty+=Number(r.dev_qty)||0;
+      t.ok_amt+=Number(r.ok_amt)||0; t.short_amt+=Number(r.short_amt)||0;
+    });
+    t.ok_pct=pct(t.ok_qty,t.req_qty); t.short_pct=pct(t.short_qty,t.req_qty); t.dev_pct=pct(t.dev_qty,t.req_qty);
+    t.tot_amt=t.ok_amt+t.short_amt;
+    t.ok_amt_pct=pct(t.ok_amt,t.tot_amt);
+    return t;
+  }
+  function periodLabel(t){
+    const n=period[viewBy];
+    return viewBy==='month' ? ('최근 '+n+'개월 · 데이터 '+t.n+'개월') : ('최근 '+t.n+'건');
+  }
+  function sumBarHtml(t){
+    if(!t.n) return '';
+    return '<div class="sumbar">'
+      +'<span class="sl">기간 합계<br>'+esc(periodLabel(t))+'</span>'
+      +'<span class="sbox"><i class="sk">즉시 매출가능액</i><b class="sv" style="color:var(--income)">'+mf(t.ok_amt)+'</b></span>'
+      +'<span class="sbox"><i class="sk">재고부족분 매출액</i><b class="sv" style="color:var(--gold)">'+mf(t.short_amt)+'</b></span>'
+      +'<span class="sbox"><i class="sk">합계 (즉시+부족)</i><b class="sv" style="color:var(--brand)">'+mf(t.tot_amt)+'</b></span>'
+      +'<span class="sbox"><i class="sk">즉시 비중 (금액)</i><b class="sv">'+t.ok_amt_pct+'%</b></span>'
+      +'<span class="sbox"><i class="sk">요청 수량</i><b class="sv">'+nf(t.req_qty)+'</b></span>'
+      +'<span class="snote">금액 IVA 포함 · 개발필요는 미등록 제품이라 금액 없음</span>'
+      +'</div>';
+  }
+  function sumFootHtml(t){
+    if(!t.n) return '';
+    const oi=t.ok_pct, ss=t.short_pct, dd=t.dev_pct;
+    return '<tfoot><tr class="sumrow">'
+      +'<td style="text-align:left">합계</td>'
+      +(viewBy==='order'?'<td colspan="3" style="text-align:left;font-weight:700;color:var(--muted)">'+nf(t.n)+'건</td>':'')
+      +'<td>'+nf(t.req_sku)+'</td>'
+      +'<td>'+nf(t.req_qty)+'</td>'
+      +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span>'
+        +'<div class="bamt"><span class="ao" title="기간 합계 — 즉시 매출가능 금액(IVA 포함)">즉시 '+mf(t.ok_amt)+'</span><span class="sep">·</span><span class="as" title="기간 합계 — 재고부족분 금액(IVA 포함)">부족 '+mf(t.short_amt)+'</span></div></td>'
+      +'<td class="okpct">'+oi+'%</td>'
+      +'<td style="color:var(--gold)">'+ss+'%</td>'
+      +'<td style="color:var(--purple)">'+dd+'%</td>'
+      +'</tr></tfoot>';
+  }
+
   function render(rows){
     lastRows=rows;
     const withData=rows.filter(r=>r.req_qty>0);
@@ -370,7 +423,8 @@
 
     if(!withData.length){ $('trendWrap').innerHTML='<div class="hint" style="margin-top:10px">'+(viewBy==='month'?'견적 데이터가 있는 달이 없습니다.':'견적(오더)이 없습니다.')+'</div>'; return; }
     const col1=(viewBy==='month'?'월':'견적(오더)');
-    let h='<div style="overflow-x:auto"><table><thead><tr>'+sortableHead(col1)+'</tr></thead><tbody>';
+    const tot=sumRows(withData);
+    let h=sumBarHtml(tot)+'<div style="overflow-x:auto"><table><thead><tr>'+sortableHead(col1)+'</tr></thead><tbody>';
     applySort(withData).forEach(r=>{
       const oi=r.ok_qty_pct, ss=r.short_qty_pct, dd=r.dev_qty_pct;
       const clickable = viewBy==='order' && r.quote_id;
@@ -388,7 +442,7 @@
         +'</tr>';
       if(open){ h+='<tr><td colspan="10" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
     });
-    h+='</tbody></table></div>';
+    h+='</tbody>'+sumFootHtml(tot)+'</table></div>';
     $('trendWrap').innerHTML=h;
     if(viewBy==='order'){ $('trendWrap').insertAdjacentHTML('afterbegin','<div class="hint" style="margin-bottom:6px">오더(견적) 행을 클릭하면 아이템 목록(최초 수량 · 매출가능/부족/개발필요)을 펼칩니다.</div>'); }
   }
