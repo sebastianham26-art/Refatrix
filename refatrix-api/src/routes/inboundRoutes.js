@@ -206,6 +206,41 @@ export default async function inboundRoutes(app) {
     return { ok: true };
   });
 
+  // 하차 취소 — 잘못 누른 하차를 대기로 되돌린다 ---------------------
+  //   되돌릴 수 있는 조건: 팔렛 status='unloaded' + 스캔/적치 기록 0 + 선적 미마감.
+  //   (검수·적치가 시작된 팔렛은 기록이 있으므로 되돌리지 않는다 — 자료 유실 방지)
+  app.post('/api/inbound/:id/pallets/:pid/unload-cancel', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id), pid = Number(req.params.pid);
+    return await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(
+        `SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.status === 'closed') return { error: 'closed' };
+      const pal = (await q(
+        `SELECT id, status FROM inbound_pallets WHERE id=$1 AND shipment_id=$2 FOR UPDATE`, [pid, id])).rows[0];
+      if (!pal) return { error: 'not_found' };
+      if (pal.status === 'wait') return { ok: true, already: true };   // 멱등
+      if (pal.status !== 'unloaded') return { error: 'bad_state' };    // checking/checked/done
+      const sc = (await q(
+        `SELECT COALESCE(SUM(scanned_cartons),0)::int AS sc, COALESCE(SUM(put_cartons),0)::int AS pc
+           FROM inbound_pallet_items WHERE pallet_id=$1`, [pid])).rows[0];
+      if (num(sc.sc) > 0 || num(sc.pc) > 0) return { error: 'has_scan' };
+      await q(`UPDATE inbound_pallets SET status='wait', checked_by=NULL, checked_at=NULL WHERE id=$1`, [pid]);
+      // 진행 중인 팔렛이 하나도 없으면 선적도 '운송중'으로 되돌린다
+      const rem = (await q(
+        `SELECT COUNT(*)::int AS n FROM inbound_pallets WHERE shipment_id=$1 AND status<>'wait'`, [id])).rows[0].n;
+      let reverted = false;
+      if (rem === 0) {
+        const r = await q(`UPDATE inbound_shipments SET status='incoming' WHERE id=$1 AND status='receiving' RETURNING id`, [id]);
+        reverted = r.rows.length > 0;
+      }
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound_pallet:' + pid, detail: { shipment: id, unload_cancel: true, shipment_reverted: reverted } });
+      return { ok: true, shipment_reverted: reverted };
+    });
+  });
+
   // 검수 확정(프론트가 카톤 스캔으로 채운 카톤수 반영) ----------------
   //   body: { items: [{item_id, scanned_cartons}] }
   app.post('/api/inbound/:id/pallets/:pid/check', g, async (req) => {
