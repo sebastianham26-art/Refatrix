@@ -1500,6 +1500,90 @@ export default async function financeRoutes(app) {
     return { ok: true, is_private: r.rows[0].is_private, plan_synced: planSynced };
   });
 
+  // ===== 고정비 잔여(고아) 예정 회차 점검 · 정리 (2026-08-14 v3) =====
+  // 운영 사례: "고정비에서 지운 Nomina vendedor_1 (5,000×3) 이 구간별 세부내역·워터폴에 계속 보인다".
+  // 규칙 DELETE 는 자기 회차를 소프트 삭제하고, 현금흐름도 삭제·비활성 규칙의 예정을 숨긴다(2026-08-14 v1).
+  // 그래도 남는 경우가 있다 — **거래의 recurring_rule_id 링크가 끊긴 회차**.
+  //   ([생성] 당시 메모는 '[고정비] 규칙명' 으로 남지만 링크가 없으면 규칙을 지워도 그 회차는 남고,
+  //    현금흐름에서는 '수동 등록 예정'으로 보인다. 과거 데이터 이관·수동 편집 등으로 생길 수 있음.)
+  // 여기서 미실행(plan) 예정 중 다음을 찾아 사유와 함께 돌려준다:
+  //   rule_deleted  — 규칙이 삭제됨(회차만 남음)
+  //   rule_inactive — 규칙이 꺼짐(회차만 남음)
+  //   orphan_memo   — '[고정비] X' 메모인데 살아있는 규칙 X 가 없음  ← 위 사례의 정체
+  //   unlinked      — '[고정비] X' 메모 + 살아있는 규칙 X 는 있는데 링크만 끊김(참고용, 정리 대상 아님)
+  const FX_MEMO_PREFIX = '[고정비] ';
+  async function orphanPlanRows(perm) {
+    const priv = perm.role === 'director' ? '' : ' AND t.is_private=false';
+    return (await query(
+      `SELECT t.id, to_char(COALESCE(t.plan_date, t.txn_date),'YYYY-MM-DD') AS d,
+              t.direction, t.amount_mxn, t.memo, t.category_code, cat.name AS category_name,
+              t.account_id, a.name AS account_name, t.recurring_rule_id AS rid,
+              rr.name AS rule_name, (rr.deleted_at IS NOT NULL) AS rule_deleted, rr.active AS rule_active,
+              live.id AS live_rule_id, live.name AS live_rule_name
+         FROM transactions t
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
+         LEFT JOIN LATERAL (
+           SELECT r2.id, r2.name FROM recurring_rules r2
+            WHERE r2.deleted_at IS NULL AND t.memo = $1 || r2.name LIMIT 1
+         ) live ON TRUE
+        WHERE t.deleted_at IS NULL AND t.status='plan'${priv}
+          AND (t.recurring_rule_id IS NOT NULL OR t.memo LIKE $2)
+        ORDER BY COALESCE(t.plan_date, t.txn_date), t.id`,
+      [FX_MEMO_PREFIX, FX_MEMO_PREFIX + '%'])).rows;
+  }
+  function classifyOrphan(r) {
+    if (r.rid != null) {
+      if (r.rule_deleted) return 'rule_deleted';
+      if (r.rule_active === false) return 'rule_inactive';
+      return null;                              // 정상 — 살아있는 규칙의 회차
+    }
+    if (!String(r.memo || '').startsWith(FX_MEMO_PREFIX)) return null;
+    return r.live_rule_id == null ? 'orphan_memo' : 'unlinked';
+  }
+  app.get('/api/recurring/orphan-plans', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const rows = await orphanPlanRows(req.ctx.perm);
+    const items = [];
+    for (const r of rows) {
+      const reason = classifyOrphan(r);
+      if (!reason) continue;
+      items.push({ id: Number(r.id), d: r.d, dir: r.direction, amt: r2(Number(r.amount_mxn) || 0),
+        cat: r.category_name || r.category_code || '(계정없음)', acct: r.account_name || null,
+        memo: String(r.memo == null ? '' : r.memo).slice(0, 200),
+        rid: r.rid == null ? null : Number(r.rid), rule_name: r.rule_name || r.live_rule_name || null, reason });
+    }
+    const sumBy = (rs) => r2(rs.reduce((s, x) => s + x.amt, 0));
+    const purgeable = items.filter((x) => x.reason !== 'unlinked');
+    return { items,
+      summary: { total: items.length, total_amt: sumBy(items), purgeable: purgeable.length, purgeable_amt: sumBy(purgeable),
+        by_reason: ['rule_deleted', 'rule_inactive', 'orphan_memo', 'unlinked'].map((k) => {
+          const rs = items.filter((x) => x.reason === k); return { reason: k, count: rs.length, amt: sumBy(rs) };
+        }).filter((x) => x.count) } };
+  });
+  // 정리: 지정한 잔여 예정만 소프트 삭제. 서버가 사유를 다시 판정해 '정상' 회차는 절대 지우지 않는다
+  // (프런트가 잘못된 id 를 보내도 살아있는 고정비의 예정은 안전). unlinked 는 기본 제외 —
+  // 살아있는 규칙과 같은 지출이라 지우면 계획이 사라지므로, force_unlinked=true 일 때만 포함.
+  app.post('/api/recurring/orphan-plans/purge', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : null;
+    const forceUnlinked = req.body?.force_unlinked === true;
+    const rows = await orphanPlanRows(req.ctx.perm);
+    const target = [];
+    for (const r of rows) {
+      const reason = classifyOrphan(r);
+      if (!reason) continue;
+      if (reason === 'unlinked' && !forceUnlinked) continue;
+      if (ids && !ids.includes(Number(r.id))) continue;
+      target.push({ id: Number(r.id), reason });
+    }
+    if (!target.length) return { ok: true, deleted: 0, items: [] };
+    await query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id = ANY($2) AND status='plan' AND deleted_at IS NULL`,
+      [req.ctx.perm.userId, target.map((t) => t.id)]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: 'recurring_orphan_plans',
+      detail: { count: target.length, ids: target.map((t) => t.id).slice(0, 50), reasons: target.map((t) => t.reason) } });
+    return { ok: true, deleted: target.length, items: target };
+  });
+
   // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거. 비디렉터는 공개 규칙만.
   app.delete('/api/recurring/:id', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
