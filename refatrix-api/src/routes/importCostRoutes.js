@@ -16,10 +16,41 @@ async function closedPeriods(c) {
   return (await c.query(`SELECT period FROM period_closings`)).rows.map((r) => r.period);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 재무 실적 → 부대비용 가져오기 (2026-08-14)
+//   재무 > 거래등록에 이미 등록된 "실제 지불 내역" 중 원가에 해당하는 것을 골라
+//   부대비용 명세 줄로 가져온다. 가져온 줄은 import_cost_lines.transaction_id 로 연결되어
+//   같은 거래를 두 번 원가에 반영하는 사고를 막는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 원가로 볼 계정과목(2026-07-25 정비분)
+//   5010 물품구매비용 / 5030 수입부대비용 / 5040 수입운송비
+const COST_CATEGORY_CODES = ['5010', '5030', '5040'];
+
+// transactions 의 "거래 일자" 컬럼명은 운영 스키마에서 확인해 자동 선택한다.
+//   (배포 환경마다 이름이 다를 수 있어 하드코딩하지 않음 — 최초 1회 조회 후 캐시)
+const TXN_DATE_CANDIDATES = [
+  'tx_date', 'txn_date', 'trans_date', 'value_date', 'eff_date',
+  'paid_at', 'paid_date', 'actual_date', 'plan_date', 'occurred_at', 'created_at',
+];
+let _txnDateCol = null;
+async function txnDateCol() {
+  if (_txnDateCol) return _txnDateCol;
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'transactions' AND column_name = ANY($1)`, [TXN_DATE_CANDIDATES]);
+  const have = new Set(r.rows.map((x) => x.column_name));
+  _txnDateCol = TXN_DATE_CANDIDATES.find((c) => have.has(c)) || 'created_at';
+  return _txnDateCol;
+}
+
 // 승인 시 적용될 제품별 효과를 계산(읽기 전용). preview / approve 공용.
 // NOTE: 매출(판매) 모듈 도입 전이므로 "이미 팔린 수량 = 0"으로 본다.
 //   → 현재는 전액 재고가산(평균원가 상승), 정산차액/소급COGS = 0.
 //   → 매출 원장이 쌓이면 동일 로직에서 분리·정정이 자동 적용된다.
+// ⚠ 2026-08-14 검토: 매출 모듈은 이미 가동 중이므로 이 가정은 낡았다.
+//   부대비용 승인 시점에 그 배치 물량이 이미 팔려 있으면 팔린 몫까지 남은 재고에 실려
+//   평균원가가 과대 계상된다. 별건으로 다룰 것(이번 변경 범위 아님).
 async function computeDoc(c, docId) {
   const doc = (await c.query(`SELECT * FROM import_cost_docs WHERE id=$1 AND deleted_at IS NULL`, [docId])).rows[0];
   if (!doc) return { error: 'not_found' };
@@ -502,21 +533,114 @@ export default async function importCostRoutes(app) {
     return out;
   });
 
+  // ───────────────────────────────────────────────────────────────────────
+  // 재무 실적 후보 목록 — 부대비용 명세로 "가져올" 수 있는 실제 지불 내역 (2026-08-14 신규)
+  //   대상: 미삭제 · 지출(out) · 실적(actual) · 계정과목 5010/5030/5040
+  //   이미 다른 부대비용 문서에 쓰인 건은 used_* 로 표시해 화면에서 잠근다.
+  //   금액은 거래에 박제된 실제 환율의 amount_mxn 을 그대로 쓴다(문서 fx_rate 재적용 금지).
+  // ───────────────────────────────────────────────────────────────────────
+  app.get('/api/import-costs/finance-candidates', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const dateCol = await txnDateCol();
+    const q = String((req.query && req.query.q) || '').trim();
+    const onlyUnused = String((req.query && req.query.only_unused) || '') === '1';
+
+    const params = [COST_CATEGORY_CODES];
+    let where = `t.deleted_at IS NULL AND t.direction='out' AND t.status='actual' AND t.category_code = ANY($1)`;
+    if (q) {
+      params.push('%' + q + '%');
+      where += ` AND (COALESCE(t.memo,'') ILIKE $${params.length} OR COALESCE(t.category_code,'') ILIKE $${params.length})`;
+    }
+
+    const rows = (await query(
+      `SELECT t.id, t.${dateCol} AS tx_date, t.category_code, c.name AS category_name,
+              t.amount, t.currency, t.fx_rate, t.amount_mxn, t.memo,
+              u.doc_id AS used_doc_id, u.doc_no AS used_doc_no, u.status AS used_doc_status
+         FROM transactions t
+         LEFT JOIN categories c ON c.code = t.category_code
+         LEFT JOIN LATERAL (
+           SELECT l.doc_id, d.doc_no, d.status
+             FROM import_cost_lines l
+             JOIN import_cost_docs d ON d.id = l.doc_id AND d.deleted_at IS NULL
+            WHERE l.transaction_id = t.id
+            ORDER BY l.id LIMIT 1
+         ) u ON true
+        WHERE ${where}
+        ORDER BY t.${dateCol} DESC NULLS LAST, t.id DESC
+        LIMIT 300`, params)).rows;
+
+    const items = rows.map((r) => {
+      const amountMxn = round2(Number(r.amount_mxn || 0));
+      return {
+        id: Number(r.id),
+        tx_date: r.tx_date ? String(r.tx_date).slice(0, 10) : '',
+        category_code: r.category_code,
+        category_name: r.category_name || r.category_code,
+        amount: r.amount == null ? null : Number(r.amount),
+        currency: r.currency || 'MXN',
+        fx_rate: r.fx_rate == null ? null : Number(r.fx_rate),
+        amount_mxn: amountMxn,
+        memo: r.memo || '',
+        used: r.used_doc_id != null,
+        used_doc_id: r.used_doc_id == null ? null : Number(r.used_doc_id),
+        used_doc_no: r.used_doc_no || null,
+        used_doc_status: r.used_doc_status || null,
+      };
+    });
+
+    const unused = items.filter((x) => !x.used);
+    return {
+      items: onlyUnused ? unused : items,
+      count: items.length,
+      unused_count: unused.length,
+      unused_total_mxn: round2(unused.reduce((s, x) => s + x.amount_mxn, 0)),
+      date_column: dateCol,          // 진단용 — 어떤 컬럼을 일자로 썼는지
+      category_codes: COST_CATEGORY_CODES,
+    };
+  });
+
   app.post('/api/import-costs', { preHandler: [authGuard, requirePage('inventory')] }, async (req, reply) => {
     const { doc_no, cost_date, fx_rate, lines = [], batch_ids = [], note } = req.body || {};
     if (!cost_date || !fx_rate || !lines.length || !batch_ids.length) {
       return reply.code(400).send({ error: 'cost_date_fx_lines_batches_required' });
     }
     const userId = req.ctx.perm.userId;
-    const id = await withTx(async (c) => {
+
+    // 재무 연결 줄의 거래 id 수집 + 같은 요청 안에서의 중복 검사
+    const txnIds = lines
+      .map((l) => (l && l.transaction_id != null && l.transaction_id !== '' ? Number(l.transaction_id) : null))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    const seen = new Set(); const dupInBody = new Set();
+    for (const id of txnIds) { if (seen.has(id)) dupInBody.add(id); seen.add(id); }
+    if (dupInBody.size) {
+      return reply.code(409).send({ error: 'duplicate_transaction_in_lines', transaction_ids: [...dupInBody] });
+    }
+
+    const out = await withTx(async (c) => {
+      // 이미 살아있는 다른 부대비용 문서에서 쓴 거래인지 확인 → 원가 이중반영 차단
+      if (txnIds.length) {
+        const used = (await c.query(
+          `SELECT l.transaction_id, d.id AS doc_id, d.doc_no, d.status
+             FROM import_cost_lines l
+             JOIN import_cost_docs d ON d.id = l.doc_id AND d.deleted_at IS NULL
+            WHERE l.transaction_id = ANY($1)`, [txnIds])).rows;
+        if (used.length) {
+          return { error: 'transaction_already_used', items: used.map((r) => ({
+            transaction_id: Number(r.transaction_id), doc_id: Number(r.doc_id), doc_no: r.doc_no, status: r.status,
+          })) };
+        }
+      }
+
       const doc = (await c.query(
         `INSERT INTO import_cost_docs (doc_no, cost_date, fx_rate, status, created_by, note)
          VALUES ($1,$2,$3,'pending',$4,$5) RETURNING id`,
         [doc_no || null, cost_date, fx_rate, userId, note || null])).rows[0];
       for (const l of lines) {
+        const txnId = (l && l.transaction_id != null && l.transaction_id !== '' && Number(l.transaction_id) > 0)
+          ? Number(l.transaction_id) : null;
         await c.query(
-          `INSERT INTO import_cost_lines (doc_id, label, amount, currency, invoice_no)
-           VALUES ($1,$2,$3,$4,$5)`, [doc.id, l.label || '부대비용', l.amount, l.currency || 'USD', l.invoice_no || null]);
+          `INSERT INTO import_cost_lines (doc_id, label, amount, currency, invoice_no, transaction_id)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [doc.id, l.label || '부대비용', l.amount, l.currency || 'USD', l.invoice_no || null, txnId]);
       }
       // 분배: 선택된 입고 건들의 총수량 비율로 배분(스냅샷 저장)
       const total = costDocTotalMxn(lines, fx_rate);
@@ -528,10 +652,12 @@ export default async function importCostRoutes(app) {
           `INSERT INTO import_cost_allocations (doc_id, batch_id, batch_qty, ratio, alloc_amount_mxn)
            VALUES ($1,$2,$3,$4,$5)`, [doc.id, a.batchId, a.qty, a.ratio, a.allocMxn]);
       }
-      return doc.id;
+      return { id: doc.id, linked: txnIds.length };
     });
-    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `import_cost:${id}` });
-    return { id, status: 'pending' };
+
+    if (out.error) return reply.code(409).send(out);
+    await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `import_cost:${out.id}`, detail: { linked_transactions: out.linked } });
+    return { id: out.id, status: 'pending', linked_transactions: out.linked };
   });
 
   // 미리보기(반영 없음) — 디렉터 검토 화면 데이터
