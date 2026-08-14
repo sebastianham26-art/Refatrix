@@ -1458,7 +1458,46 @@ export default async function financeRoutes(app) {
     if (newPriv != null) {
       await query(`UPDATE transactions SET is_private=$1 WHERE recurring_rule_id=$2`, [newPriv, id]);
     }
-    return { ok: true, is_private: r.rows[0].is_private };
+    // ===== 규칙 수정 → 미실행(plan) 회차 동기화 (2026-08-14 디렉터 요청) =====
+    // 증상: 고정비 금액을 고쳤는데 현금흐름 「구간별 세부내역」·워터폴의 급여 예정이 옛 금액 그대로.
+    // 원인: 예정 회차는 [생성] 시점 값이 거래 행에 박제 — 규칙만 고치면 이미 생성된 회차는 그대로였다.
+    //   (기존 정책 "새로 생성되는 예정부터"). 이제 금액·계정과목·자금출처 계좌를 그 규칙의
+    //   '미실행(plan)·미삭제' 회차 전체에 반영한다.
+    // 원칙:
+    //   · 실적(actual)은 실제 집행 이력 → 절대 불변.
+    //   · 개별 [계획 수정]으로 예외 지정한 회차도 규칙 값으로 덮음(2026-07-29 확정: 고정비 회차는
+    //     기본적으로 규칙을 따른다 — 예외가 필요하면 규칙 저장 후 다시 [계획 수정]).
+    //   · 규칙 값이 NULL 인 항목(계정과목·계좌 미지정)은 건드리지 않음 — 회차의 개별 지정을 지우지 않기 위해.
+    //   · USD 규칙은 회차에 박제된 fx_rate 로 환산(금액만 갱신, 환율 이력 보존).
+    const cur = (await query(
+      `SELECT amount, category_code, account_id FROM recurring_rules WHERE id=$1`, [id])).rows[0];
+    let planSynced = 0;
+    if (cur) {
+      const sets = ['amount=$1', 'plan_amount=$1', 'amount_mxn=ROUND($1 * t.fx_rate, 2)'];
+      const diffs = ['t.amount IS DISTINCT FROM $1'];
+      const params = [r2(cur.amount)];
+      if (cur.category_code != null) {
+        params.push(cur.category_code);
+        sets.push(`category_code=$${params.length}`); diffs.push(`t.category_code IS DISTINCT FROM $${params.length}`);
+      }
+      if (cur.account_id != null) {
+        params.push(Number(cur.account_id));
+        sets.push(`account_id=$${params.length}`); diffs.push(`t.account_id IS DISTINCT FROM $${params.length}`);
+      }
+      params.push(req.ctx.perm.userId); const pUser = params.length;
+      params.push(id); const pId = params.length;
+      const up = await query(
+        `UPDATE transactions t SET ${sets.join(', ')}, updated_by=$${pUser}, updated_at=now()
+          WHERE t.recurring_rule_id=$${pId} AND t.status='plan' AND t.deleted_at IS NULL
+            AND (${diffs.join(' OR ')})
+          RETURNING t.id`, params);
+      planSynced = up.rowCount || 0;
+    }
+    if (planSynced) {
+      await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `recurring_rule:${id}`,
+        detail: { plan_synced: planSynced } });
+    }
+    return { ok: true, is_private: r.rows[0].is_private, plan_synced: planSynced };
   });
 
   // 규칙 삭제(소프트) + 아직 미지급(plan)인 미래 생성분 제거. 비디렉터는 공개 규칙만.
