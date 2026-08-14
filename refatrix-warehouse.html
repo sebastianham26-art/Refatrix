@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0633a</title>
+<title>Refatrix · 창고 포장 · build 0633b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -306,7 +306,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0633a — 라벨(etiqueta)·패킹리스트에 배송지(ship_address) 인쇄, 잘림 방지 자동 줄바꿈'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0633b — 출고완료/되돌리기 버튼 권한 확대(디렉터 + Maria)'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -440,6 +440,14 @@
   ];
   I18N.sort(function(a,b){ return b[0].length - a[0].length; });
   var IS_DIRECTOR=!!(S&&S.user&&S.user.role==='director');
+  // 출고완료/되돌리기 권한: 디렉터 + 지정 사용자(이름 화이트리스트).
+  //   포털 isSlimPortalUser 와 동일한 이름 기준 패턴. 백엔드는 이미 창고 권한이면 통과(requirePage('warehouse')).
+  var SHIP_ACTOR_NAMES=['maria'];
+  var CAN_SHIP=(function(){
+    if(IS_DIRECTOR) return true;
+    var n=String((S&&S.user&&S.user.name)||'').trim().toLowerCase();
+    return !!n && SHIP_ACTOR_NAMES.some(function(x){ return n.indexOf(x)===0; });
+  })();
   var SHIP_STATUS='pending';
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
   function tr(str){ if(LANG!=='es'||!str) return str; var s=str; for(var i=0;i<I18N.length;i++){ if(s.indexOf(I18N[i][0])>=0){ s=s.split(I18N[i][0]).join(I18N[i][1]); } } return s; }
@@ -569,7 +577,7 @@
       var satHtml=(it.has_sat?'<div class="sat"><span class="lab">No. factura</span> <b>'+esc(it.sat_no)+'</b></div>':'<div class="sat nosat"><span class="satwarn">\u26a0 SAT 번호를 넣으세요</span></div>');
       var shipdt=(status==='shipped'&&it.shipped_at)?'<div class="shipdt">\u2713 출고완료 '+esc(String(it.shipped_at).slice(0,10))+'</div>':'';
       var actBtn='';
-      if(IS_DIRECTOR){
+      if(CAN_SHIP){
         actBtn=(status==='shipped')
           ? '<button class="unship" data-id="'+it.quote_id+'">\u21a9 대기로</button>'
           : '<button class="doship" data-id="'+it.quote_id+'">\u2713 출고완료</button>';
