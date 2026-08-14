@@ -2252,7 +2252,10 @@ export default async function financeRoutes(app) {
         // 개별 거래 목록 (2026-08-12): 구간별 세부내역 표 금액 hover 시 집행 메모·실적/예정 구분 표시용.
         // d=집계에 쓴 유효일(실적=거래일, 예정=계획일·이월 반영), st: a=집행(actual)/p=예정(plan).
         // memo는 240자 컷(툴팁용) — 전문은 거래목록에서. loadCashTxns가 이미 세부열람 권한으로 걸러진 스트림이라 추가 노출 없음.
-        cell.txs.push({ id: Number(t.id), d: date, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
+        // od = 원래 계획일(이월 전). d 와 다르면 「이월」 — 같은 규칙의 서로 다른 달 미지급분이 오늘로 몰린 것이라
+        // 툴팁에서 똑같아 보이던 문제(2026-08-14 운영 보고)를 od 표시로 구분한다.
+        const od = t.status === 'actual' ? String(t.txn_date).slice(0, 10) : String(t.plan_date || t.txn_date).slice(0, 10);
+        cell.txs.push({ id: Number(t.id), d: date, od, st: t.status === 'actual' ? 'a' : 'p', dir: t.direction, amt: r2(amt),
           pj: t.projected ? 1 : 0, src: srcOf(t),
           rid: t.recurring_rule_id != null ? Number(t.recurring_rule_id) : null, rn: t.rule_name || null,
           memo: String(t.memo == null ? '' : t.memo).trim().slice(0, 240), acct: t.account_name || null });
