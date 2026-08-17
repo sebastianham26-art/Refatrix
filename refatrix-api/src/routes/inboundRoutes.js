@@ -452,8 +452,11 @@ export default async function inboundRoutes(app) {
 
   // ===== 검수 개편(2026-08-17, 0174): "스캔은 기록, 판정은 보고서" =====
   // ① 스캔 즉시 저장 — 검증·차단 없음. 스캔 1건 = 1행. 서버가 유일한 진실.
-  //    body { scans:[{code, qty, matched}], undo_code? }
+  //    body { scans:[{code, qty, matched, k}], undo_code?, undo_qty?, undo_k? }
   //    묶음 전송 허용(네트워크 재시도 큐). undo_code 는 해당 코드의 최근 1건 취소([-] 버튼).
+  //    ⚠ 멱등(0175): k(client_key)가 같은 스캔은 몇 번을 다시 보내도 1행만 기록된다.
+  //      저장은 됐는데 응답이 유실되어 재시도하는 경우(한 순간에 2회 집계되던 버그)를 막는다.
+  //      undo 도 undo_k 로 동일 — 재시도가 두 건을 지우지 않는다.
   //    응답 tally = 이 팔렛의 유효 스캔 누적(다른 기기 분까지 합산) — 프런트가 화면을 서버 기준으로 맞춘다.
   app.post('/api/inbound/:id/pallets/:pid/scan', g, async (req) => {
     const uid = req.ctx.perm.userId;
@@ -469,18 +472,25 @@ export default async function inboundRoutes(app) {
         const code = String(sc?.code || '').trim().slice(0, 60);
         if (!code) continue;
         const qv = sc?.qty == null ? null : (Math.max(0, int(sc.qty)) || null);
+        const key = sc?.k ? String(sc.k).slice(0, 40) : null;
         await q(
-          `INSERT INTO inbound_scans (shipment_id, pallet_id, code, qty, matched, scanned_by)
-           VALUES ($1,$2,$3,$4,$5,$6)`, [id, pid, code, qv, sc?.matched !== false, uid]);
+          `INSERT INTO inbound_scans (shipment_id, pallet_id, code, qty, matched, scanned_by, client_key)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (client_key) WHERE client_key IS NOT NULL DO NOTHING`,
+          [id, pid, code, qv, sc?.matched !== false, uid, key]);
       }
       if (undo) {
-        // 같은 코드라도 라벨 소입수량(qty)이 다르면 다른 집계 행 — qty 까지 맞는 최근 1건만 취소
+        // 같은 코드라도 라벨 소입수량(qty)이 다르면 다른 집계 행 — qty 까지 맞는 최근 1건만 취소.
+        // void_key 가 이미 기록돼 있으면(재시도) 아무것도 하지 않는다.
         const uq = req.body?.undo_qty == null ? null : (Math.max(0, int(req.body.undo_qty)) || null);
+        const uk = req.body?.undo_k ? String(req.body.undo_k).slice(0, 40) : null;
         await q(
-          `UPDATE inbound_scans SET voided_at=now()
+          `UPDATE inbound_scans SET voided_at=now(), void_key=$4
             WHERE id = (SELECT id FROM inbound_scans
                          WHERE pallet_id=$1 AND code=$2 AND qty IS NOT DISTINCT FROM $3 AND voided_at IS NULL
-                         ORDER BY id DESC LIMIT 1)`, [pid, undo, uq]);
+                         ORDER BY id DESC LIMIT 1)
+              AND ($4::text IS NULL OR NOT EXISTS (SELECT 1 FROM inbound_scans WHERE void_key=$4::text))`,
+          [pid, undo, uq, uk]);
       }
       if (list.length && pal.status === 'unloaded') {
         await q(`UPDATE inbound_pallets SET status='checking' WHERE id=$1`, [pid]);
@@ -614,10 +624,12 @@ export default async function inboundRoutes(app) {
         const rack = row.rack ? String(row.rack).trim().slice(0, 40) : null;
         // rack 이 없으면 기존 rack_saved 를 지우지 않는다(COALESCE)
         if (row.put_delta !== undefined) {
-          const d = Math.max(0, int(row.put_delta));
+          // 음수 delta 허용(2026-08-17 적치 수정): 이미 올린 박스를 빼거나 위치를 바꿀 때 쓴다.
+          // 바닥은 0, 천장은 목표 카톤 — 두 사람이 동시에 빼도 0 밑으로 내려가지 않는다.
+          const d = int(row.put_delta);
           await q(
             `UPDATE inbound_pallet_items
-                SET put_cartons = LEAST(put_cartons + $1, $2), rack_saved = COALESCE($3, rack_saved)
+                SET put_cartons = GREATEST(0, LEAST(put_cartons + $1, $2)), rack_saved = COALESCE($3, rack_saved)
               WHERE id=$4`, [d, cap, rack, iid]);
         } else {
           const pc = Math.max(0, Math.min(int(row.put_cartons), cap));

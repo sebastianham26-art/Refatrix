@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817n</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817p</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -198,7 +198,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817n';
+  var BUILD='20260817p';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -444,6 +444,7 @@
   var VIEW='list', SHIP=null, DETAIL=null, STEP='unload';
   var scanLbl=null, parsed=null;   // 마지막 라벨 해석 결과 / 업로드 파싱 결과
   var putPal=null, putRack=null, putAdd={}, putSaveRack={}, putLast=null, putWarn=null, putSaving=false, putFlushT=null;
+  var putNoMaster={}, putEdit=null;   // 적치 수정(2026-08-17): 마스터 미반영 위치변경 표시 / 열려 있는 ✎ 편집 라인
   /* 자동 갱신(다수 작업자 동시 작업) — 25초. 스캔·미저장 중엔 건너뛰고, 데이터가 바뀔 때만 다시 그린다. */
   var POLL_MS=25000, pollT=null, pollSig='', pollBusy=false, WORK_PID=null, WORK_STEP=null;
   var undoSel={}, CURGROUPS=[];   // 하차 취소 개별 선택 {palletId:true} + 현재 화면 그룹
@@ -1473,8 +1474,9 @@
         || String(a.p.order_no).localeCompare(String(b.p.order_no)) || a.p.pl_no-b.p.pl_no; });
   }
   function curPutPal(){ return DETAIL.pallets.filter(function(p){return p.id===putPal;})[0]||null; }
-  function putReset(){ putPal=null; putRack=null; putAdd={}; putSaveRack={}; putLast=null; putWarn=null; }
-  function putPending(){ var n=0; Object.keys(putAdd).forEach(function(k){ n+=putAdd[k]||0; }); return n; }
+  function putReset(){ putPal=null; putRack=null; putAdd={}; putSaveRack={}; putLast=null; putWarn=null; putNoMaster={}; putEdit=null; }
+  // 미저장 변경 수 — 빼기(음수)도 저장할 변경이므로 절대값으로 센다(적치 수정 2026-08-17)
+  function putPending(){ var n=0; Object.keys(putAdd).forEach(function(k){ n+=Math.abs(putAdd[k]||0); }); return n+Object.keys(putSaveRack).length; }
 
   function renderPut(){ if(putPal==null) renderPutList(); else renderPutWork(); }
 
@@ -1553,7 +1555,7 @@
       +'<div class="hint">'+L('카톤','Cajas')+' <b>'+s.put+'/'+s.cap+'</b> · SKU '+p.items.filter(function(i){return itemCap(p,i)>0&&itemLeft(p,i)<=0;}).length+'/'+s.skus+'</div>'
       +'<div class="skulist" id="putsku"></div>'
       +'<div class="row" style="margin-top:9px">'
-      +'<button class="btn" id="btnPutSave"'+(putPending()?'':' disabled')+'>✔ '+L('적치 저장','Guardar')+(putPending()?' ('+putPending()+L('카톤','cajas')+')':'')+'</button>'
+      +'<button class="btn" id="btnPutSave"'+(putPending()?'':' disabled')+'>✔ '+L('적치 저장','Guardar')+(putPending()?' ('+putPending()+L('건',' cambios')+')':'')+'</button>'
       +'<button class="btn ghost sm" id="btnPutUndo"'+(putPending()?'':' disabled')+'>↺ '+L('이번 스캔 취소','Descartar escaneos')+'</button></div>';
     b.innerHTML=h;
     $('btnPutBack').addEventListener('click',function(){ putFlush(function(){ clearWorking(); putReset(); renderPutList(); }); });
@@ -1562,7 +1564,7 @@
     var fireP=wireScanInput(inp,putScan);
     $('btnPutGo2').addEventListener('click',fireP);
     $('btnPutSave').addEventListener('click',function(){ putFlush(); });
-    $('btnPutUndo').addEventListener('click',function(){ putAdd={}; putSaveRack={}; putLast=null; putWarn=null; renderPutWork(); });
+    $('btnPutUndo').addEventListener('click',function(){ putAdd={}; putSaveRack={}; putNoMaster={}; putLast=null; putWarn=null; renderPutWork(); });
     renderPutRes(); renderPutSku();
     inp.focus();
   }
@@ -1578,12 +1580,65 @@
       .sort(function(a,b){ return itemLeft(p,b)-itemLeft(p,a)||a.code.localeCompare(b.code); })
       .map(function(i){
         var cap=itemCap(p,i), put=Math.min(itemPut(i),cap), ok=(put>=cap), r=itemRack(i);
-        return '<div class="skurow '+(ok?'done':'')+'"><span class="s mono">'+esc(i.code)+'</span>'
+        var row='<div class="skurow '+(ok?'done':'')+'"><span class="s mono">'+esc(i.code)+'</span>'
           +'<span class="z2">'+(zoneOf(r)==='NEW'?'🆕':esc(zoneOf(r)))+'</span>'
           +'<span style="color:var(--muted)">'+esc(i.name||'')+'</span>'
           +'<span style="font-weight:700;margin-left:6px;color:'+(r?'var(--steel-d)':'var(--gold)')+'">'+(r?'📍 '+esc(r):'🆕 '+L('미지정','Sin ubic.'))+'</span>'
+          +'<button class="btn ghost sm" data-pe="'+i.id+'" title="'+L('적치 수정 — 위치 변경·박스 빼기','Editar acomodo')+'" style="padding:1px 8px">'+(putEdit===i.id?'▲':'✎')+'</button>'
           +'<span class="c '+(ok?'ok':'')+'">'+put+'/'+cap+'</span></div>';
+        /* ✎ 적치 수정(2026-08-17) — 이미 올린 박스의 위치 변경/빼기. 변경은 자동 저장 대기에 올라간다. */
+        if(putEdit===i.id){
+          row+='<div style="border:1.5px solid var(--gold);background:#FDF8EE;border-radius:9px;padding:10px;margin:2px 0 8px">'
+            +'<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">'
+            +'<b class="mono">'+esc(i.code)+'</b><span>'+L('적치','Acomodado')+' <b>'+put+'</b>/'+cap+'</span>'
+            +'<button class="btn ghost sm" id="peMinus"'+(itemPut(i)>0?'':' disabled')+'>−1 '+L('빼기','quitar')+'</button>'
+            +'<button class="btn ghost sm" id="pePlus"'+(itemLeft(p,i)>0?'':' disabled')+'>+1 '+L('추가','agregar')+'</button></div>'
+            +'<div class="row" style="gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">'
+            +'<span style="font-weight:700">📍 '+L('위치','Ubic.')+'</span>'
+            +'<input type="text" id="peRack" class="mono" value="'+esc(r||'')+'" style="width:130px;padding:6px 9px" placeholder="'+L('새 랙 스캔/입력','Nueva ubicación')+'" autocomplete="off">'
+            +'<label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="peMaster" checked>'+L('제품 기본 위치도 변경','También ubicación maestra')+'</label>'
+            +'<button class="btn sm" id="peApply">'+L('위치 적용','Aplicar')+'</button>'
+            +'<button class="btn ghost sm" id="peClose">'+L('닫기','Cerrar')+'</button></div>'
+            +'<div class="hint" style="margin:6px 0 0">'+L('빼기: 랙에서 내린 박스만큼 누르세요. 위치 적용: 이 선적의 적치 위치가 바뀌고, 체크 시 제품 마스터 위치도 함께 바뀝니다(감사로그 기록).','Quitar: por cada caja bajada. Aplicar: cambia la ubicación de este embarque; con la casilla también la maestra.')+'</div></div>';
+        }
+        return row;
       }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('[data-pe]'),function(bt){
+      bt.addEventListener('click',function(ev){ ev.stopPropagation();
+        putEdit=(putEdit===+bt.dataset.pe)?null:+bt.dataset.pe; renderPutSku(); });
+    });
+    if(putEdit!=null){
+      var it=null; p.items.forEach(function(x){ if(x.id===putEdit) it=x; });
+      var mi=$('peMinus'), pl2=$('pePlus'), ap=$('peApply'), cl=$('peClose'), rk=$('peRack');
+      if(it&&rk){
+        liveNorm(rk);
+        rk.addEventListener('keydown',function(ev){ if(ev.key==='Enter'||ev.keyCode===13){ ev.preventDefault(); if(ap) ap.click(); } });
+        if(mi) mi.addEventListener('click',function(){
+          if(itemPut(it)<=0) return;
+          putAdd[it.id]=(putAdd[it.id]||0)-1;
+          sndInfo(); logScan(it.code,L('적치 −1 (수정)','acomodo −1'));
+          schedFlush(); renderPutWork();
+        });
+        if(pl2) pl2.addEventListener('click',function(){
+          if(itemLeft(p,it)<=0) return;
+          putAdd[it.id]=(putAdd[it.id]||0)+1;
+          sndOk(); logScan(it.code,L('적치 +1 (수정)','acomodo +1'));
+          schedFlush(); renderPutWork();
+        });
+        if(ap) ap.addEventListener('click',function(){
+          var nr=normScan(rk.value);
+          if(!nr){ sndWarn(); toast(L('랙 번호를 입력하세요','Ingrese la ubicación')); return; }
+          putSaveRack[it.id]=nr;
+          var master=$('peMaster')&&$('peMaster').checked;
+          if(master) delete putNoMaster[it.id]; else putNoMaster[it.id]=true;
+          putEdit=null; sndInfo();
+          toast('📍 '+it.code+' → '+nr+(master?'':' ('+L('이 선적만','solo este embarque')+')'));
+          logScan(it.code,L('위치 변경','ubic. cambiada')+' → '+nr);
+          schedFlush(); renderPutWork();
+        });
+        if(cl) cl.addEventListener('click',function(){ putEdit=null; renderPutSku(); });
+      }
+    }
   }
   function renderPutRes(){
     var el=$('putres'); if(!el) return;
@@ -1673,9 +1728,10 @@
   function schedFlush(){ clearTimeout(putFlushT); putFlushT=setTimeout(function(){ putFlush(); },2500); }
   function putPayload(){
     var p=curPutPal(); if(!p) return [];
-    return p.items.filter(function(i){ return (putAdd[i.id]||0)>0 || putSaveRack[i.id]; }).map(function(i){
-      // 증분(delta) 전송 — 같은 팔렛을 둘이 동시에 적치해도 서버에서 합산된다
-      return { item_id:i.id, put_delta:(putAdd[i.id]||0), rack:itemRack(i), save_rack:!!putSaveRack[i.id] };
+    return p.items.filter(function(i){ return (putAdd[i.id]||0)!==0 || putSaveRack[i.id]; }).map(function(i){
+      // 증분(delta) 전송 — 같은 팔렛을 둘이 동시에 적치해도 서버에서 합산된다. 음수 = 적치 빼기(수정).
+      // save_rack: 제품 마스터 위치까지 갱신할지 — 수정 편집기에서 체크 해제하면 이 선적만 바뀐다.
+      return { item_id:i.id, put_delta:(putAdd[i.id]||0), rack:itemRack(i), save_rack:!!putSaveRack[i.id]&&!putNoMaster[i.id] };
     });
   }
   function putFlush(cb){
@@ -1688,7 +1744,7 @@
       putSaving=false;
       if(!o.ok||o.body.error){ sndErr(); toast(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)); putSaveSync(); if(cb)cb(); return; }
       sndSaved();
-      putAdd={}; putSaveRack={};
+      putAdd={}; putSaveRack={}; putNoMaster={};
       var wasDone=o.body.done;
       refreshDetail(function(){
         if(wasDone) toast('✔ '+L('팔렛 적치 완료','Pallet acomodado'));

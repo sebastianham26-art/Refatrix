@@ -38,7 +38,7 @@ function fixture() {
 
 /* ---------- 가짜 서버 — inbound_scans 의미 재현 ---------- */
 function makeServer(SHIP) {
-  const srv = { scans: [], calls: [], failScan: false };
+  const srv = { scans: [], calls: [], failScan: false, lostResponse: false, seenKeys: new Set() };
   srv.tally = (pid) => {
     const t = {}, order = [];
     srv.scans.filter(e => e.pid === pid).forEach(e => {
@@ -57,13 +57,21 @@ function makeServer(SHIP) {
     if ((m = u.match(/\/pallets\/(\d+)\/scan$/))) {
       if (srv.failScan) return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: 'down' }) });
       const pid = +m[1];
-      (body.scans || []).forEach(s => srv.scans.push({ pid, code: s.code, qty: s.qty == null ? 0 : s.qty, matched: s.matched }));
-      if (body.undo_code) {
+      // 0175 멱등: 같은 client_key(k)는 다시 와도 기록하지 않는다
+      (body.scans || []).forEach(s => {
+        if (s.k && srv.seenKeys.has(s.k)) return;
+        if (s.k) srv.seenKeys.add(s.k);
+        srv.scans.push({ pid, code: s.code, qty: s.qty == null ? 0 : s.qty, matched: s.matched, k: s.k });
+      });
+      if (body.undo_code && !(body.undo_k && srv.seenKeys.has(body.undo_k))) {
+        if (body.undo_k) srv.seenKeys.add(body.undo_k);
         for (let i = srv.scans.length - 1; i >= 0; i--) {
           const e = srv.scans[i];
           if (e.pid === pid && e.code === body.undo_code && (e.qty || 0) === (body.undo_qty || 0)) { srv.scans.splice(i, 1); break; }
         }
       }
+      // 저장은 됐는데 응답이 유실되는 현장 상황 재현
+      if (srv.lostResponse) return Promise.resolve({ ok: false, status: 0, json: () => Promise.resolve({}) });
       res = { ok: true, tally: srv.tally(pid) };
     } else if ((m = u.match(/\/pallets\/(\d+)\/confirm$/))) {
       const pid = +m[1];
@@ -247,6 +255,36 @@ const scanCalls = (srv) => srv.calls.filter(c => /\/scan$/.test(c.u));
     b3.t.openShip(1); await sleep(30);
     b3.t.resetCheck(); await sleep(10);
     ok('POST 미발생', b3.srv.calls.filter(c => /reset-check$/.test(c.u)).length === 0);
+  }
+
+  console.log('\n⑬ 멱등 키 — 저장됐는데 응답이 유실돼도 이중 기록 없음("한 순간에 2회" 버그)');
+  {
+    const b4 = await boot('warehouse');
+    b4.t.setTiming(0, 0);
+    b4.t.openShip(1); await sleep(30);
+    b4.t.setStep('check'); b4.t.renderCheck(); await sleep(10);
+    b4.t.lockPallet(11);
+    const sc0 = scanCalls(b4.srv)[0];
+    b4.t.doScan('CTR-CE0796-16'); await sleep(20);
+    const firstK = scanCalls(b4.srv)[0].body.scans[0].k;
+    ok('스캔마다 고유 키(k) 전송', !!firstK, scanCalls(b4.srv)[0].body.scans[0]);
+    // 서버는 저장했지만 응답이 끊긴다 → 클라이언트는 실패로 알고 재시도
+    b4.srv.lostResponse = true;
+    b4.t.doScan('CTR-CE0796-12'); await sleep(20);
+    ok('서버에는 이미 기록됨', b4.srv.scans.length === 2, b4.srv.scans.length);
+    ok('클라이언트는 실패로 보고 큐 유지', b4.t.getQ().length === 1);
+    b4.srv.lostResponse = false;
+    b4.t.flush(); await sleep(20);
+    ok('재전송해도 서버 기록은 그대로 1건(이중 기록 없음)', b4.srv.scans.filter(e => e.qty === 12).length === 1, b4.srv.scans);
+    ok('큐 비움 + 화면 합계 2박스(3 아님)', b4.t.getQ().length === 0 && b4.t.getTotal().n === 2, b4.t.getTotal());
+    // 취소도 동일 — 응답 유실 후 재시도해도 1건만 취소
+    const before = b4.srv.scans.length;
+    b4.srv.lostResponse = true;
+    const btn4 = b4.doc.querySelector('[data-bdel="CE0796|16"]');
+    btn4.click(); await sleep(20);
+    b4.srv.lostResponse = false;
+    b4.t.flush(); await sleep(20);
+    ok('취소 재시도에도 1건만 취소', b4.srv.scans.length === before - 1 && b4.t.getTotal().n === 1, b4.t.getTotal());
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

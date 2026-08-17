@@ -124,6 +124,54 @@ async function main() {
   const a2 = allocScans([{ id: it1, input_code: 'CE0796', cartons: 20, qty: 320 }, { id: it2, input_code: 'CE0796', cartons: 3, qty: 36 }], scans2);
   ok(scans2.length === 2 && a2.alloc[it1] === 2 && !a2.alloc[it2], '옛 스캔이 되살아나지 않고 새 스캔만 배정', a2.alloc);
 
+  console.log('\n⑥ 멱등 키(0175) — 재전송이 이중 기록되지 않는다("한 순간에 2회" 버그 수정)');
+  const insByKey = (key) => q(
+    `INSERT INTO inbound_scans (shipment_id, pallet_id, code, qty, matched, scanned_by, client_key)
+     VALUES ($1,$2,'CE0796',16,true,NULL,$3)
+     ON CONFLICT (client_key) WHERE client_key IS NOT NULL DO NOTHING`, [sid, pal, key]);
+  const liveN = async () => (await q(`SELECT COUNT(*)::int AS n FROM inbound_scans WHERE pallet_id=$1 AND voided_at IS NULL`, [pal])).rows[0].n;
+  const base = await liveN();
+  await insByKey('k-aaa'); await insByKey('k-aaa'); await insByKey('k-aaa');   // 응답 유실 → 같은 배치 3회 재전송 상황
+  ok(await liveN() === base + 1, '같은 client_key 3회 전송 → 1행만 기록', await liveN() - base);
+  await insByKey('k-bbb');
+  ok(await liveN() === base + 2, '다른 키는 정상 기록');
+  await insByKey(null); await insByKey(null);                                   // 구버전 클라이언트(키 없음)는 기존 동작
+  ok(await liveN() === base + 4, '키 없는(NULL) 스캔은 유니크 제약을 받지 않음', await liveN() - base);
+
+  // 취소(undo) 멱등 — 같은 void_key 재시도가 두 건을 지우지 않는다
+  const undoByKey = (vk) => q(
+    `UPDATE inbound_scans SET voided_at=now(), void_key=$4
+      WHERE id = (SELECT id FROM inbound_scans
+                   WHERE pallet_id=$1 AND code=$2 AND qty IS NOT DISTINCT FROM $3 AND voided_at IS NULL
+                   ORDER BY id DESC LIMIT 1)
+        AND ($4::text IS NULL OR NOT EXISTS (SELECT 1 FROM inbound_scans WHERE void_key=$4::text))`,
+    [pal, 'CE0796', 16, vk]);
+  const beforeUndo = await liveN();
+  await undoByKey('u-111'); await undoByKey('u-111'); await undoByKey('u-111'); // 취소 응답 유실 → 3회 재전송
+  ok(await liveN() === beforeUndo - 1, '같은 void_key 3회 → 1건만 취소', beforeUndo - await liveN());
+  await undoByKey('u-222');
+  ok(await liveN() === beforeUndo - 2, '다른 키의 취소는 정상 동작');
+
+  console.log('\n⑦ 적치 수정(음수 delta) — GREATEST(0, LEAST(put+d, cap)) 의미');
+  await q(`UPDATE inbound_pallet_items SET scanned_cartons=5, put_cartons=3 WHERE id=$1`, [it1]);
+  const putUpd = (d, cap) => q(
+    `UPDATE inbound_pallet_items
+        SET put_cartons = GREATEST(0, LEAST(put_cartons + $1, $2)), rack_saved = COALESCE($3, rack_saved)
+      WHERE id=$4`, [d, cap, null, it1]);
+  await putUpd(-2, 5);
+  let pv = (await q(`SELECT put_cartons FROM inbound_pallet_items WHERE id=$1`, [it1])).rows[0];
+  ok(pv.put_cartons === 1, '−2 빼기 → 3에서 1로', pv);
+  await putUpd(-5, 5);
+  pv = (await q(`SELECT put_cartons FROM inbound_pallet_items WHERE id=$1`, [it1])).rows[0];
+  ok(pv.put_cartons === 0, '과도한 빼기도 0 바닥에서 멈춤', pv);
+  await putUpd(9, 5);
+  pv = (await q(`SELECT put_cartons FROM inbound_pallet_items WHERE id=$1`, [it1])).rows[0];
+  ok(pv.put_cartons === 5, '더하기는 목표(cap) 천장 유지', pv);
+  await q(`UPDATE inbound_pallet_items SET rack_saved='C-03-05' WHERE id=$1`, [it1]);
+  await putUpd(0, 5);   // 위치만 바꿀 때 delta 0 — rack COALESCE(null) 이 기존 값을 지우지 않는다
+  pv = (await q(`SELECT put_cartons, rack_saved FROM inbound_pallet_items WHERE id=$1`, [it1])).rows[0];
+  ok(pv.put_cartons === 5 && pv.rack_saved === 'C-03-05', 'delta 0 은 수량 불변 + 랙 보존', pv);
+
   await q('ROLLBACK');
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
   await pool.end();
