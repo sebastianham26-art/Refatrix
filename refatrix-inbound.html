@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817m</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817n</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -198,7 +198,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817m';
+  var BUILD='20260817n';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -239,7 +239,7 @@
      · 같은 코드가 DUP_MS 안에 또 들어오면 이중 리딩 → 조용히 무시(카운트 중복 방지)
      · 정상 집계 직후 GRACE_MS(0.4초) 안에 들어온 "모르는 코드"는 카톤에 같이 붙은 부속 바코드(EAN 등) → 조용히 무시
      · 그 외 모르는 코드도 GRACE_MS 만큼 기다렸다가 오류 표시 — 그 사이 정상 코드가 오면 취소(순서 뒤바뀜 대응) */
-  var DUP_MS=250, GRACE_MS=400;   // 한 트리거의 다중 코드는 보통 50~150ms 간격 — 정상 연속 스캔(1초 안팎)은 걸리지 않게 짧게
+  var DUP_MS=450, GRACE_MS=400;   // 한 트리거의 다중/재전송 리딩은 보통 50~300ms 간격 — 정상 연속 스캔(다음 박스 조준까지 0.7초+)은 걸리지 않는 선
   var dupCode='', dupAt=0, lastGoodAt=0;
   var dupWarned=false;
   function dupScan(norm){
@@ -1209,7 +1209,10 @@
      전송 실패분은 큐(localStorage 보존)에 남아 3초 간격 자동 재시도. */
   var selPal=null;          // 선택된 팔렛 id — 선택해야 스캔 시작
   var srvTally=[];          // 서버가 확인해준 누적 [{code,qty,n}]
-  var scanQ=[];             // 미전송 큐 [{code,qty,matched} | {undo,qty}]
+  var scanQ=[];             // 미전송 큐 [{code,qty,matched,k} | {undo,qty,k}]
+  /* 스캔 1건의 멱등 키(0175) — 응답 유실로 같은 스캔을 다시 보내도 서버가 1회만 기록.
+     "한 순간에 두 번 집계"되던 이중 기록 버그의 근본 수정. */
+  function scanKey(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10); }
   var scanBusy=false, scanRetryT=null, reconOn=false, wasOffline=false;
   function scanReset(){ selPal=null; srvTally=[]; scanQ=[]; scanBusy=false; reconOn=false; wasOffline=false; scanLbl=null; clearTimeout(scanRetryT); }
   function curSelPal(){ return (DETAIL&&DETAIL.pallets.filter(function(p){return p.id===selPal;})[0])||null; }
@@ -1224,8 +1227,8 @@
     else{ for(var i=0;i<scanQ.length&&i<200;i++){ if(scanQ[i].undo) break; sendScans.push(scanQ[i]); } }
     scanBusy=true; updSync();
     var body={};
-    if(sendScans.length) body.scans=sendScans.map(function(e){ return {code:e.code,qty:e.qty||null,matched:e.matched!==false}; });
-    if(sendUndo){ body.undo_code=sendUndo.undo; body.undo_qty=sendUndo.qty||null; }
+    if(sendScans.length) body.scans=sendScans.map(function(e){ return {code:e.code,qty:e.qty||null,matched:e.matched!==false,k:e.k||null}; });
+    if(sendUndo){ body.undo_code=sendUndo.undo; body.undo_qty=sendUndo.qty||null; body.undo_k=sendUndo.k||null; }
     api('/api/inbound/'+SHIP+'/pallets/'+selPal+'/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
       .then(function(o){
         scanBusy=false;
@@ -1340,7 +1343,7 @@
     if(dupScan(lbl.norm)) return;              // 스캐너 이중/연쇄 리딩만 거른다(경고음은 연쇄당 1번)
     var inPal=!!findItem(pal.items,code);
     if(!inPal&&looksCompanion(code)){ logScan(code,L('부속 무시','ignorado')); return; }
-    scanQ.push({code:code,qty:lbl.qty||0,matched:inPal}); saveQ();
+    scanQ.push({code:code,qty:lbl.qty||0,matched:inPal,k:scanKey()}); saveQ();
     goodScanMark();
     var it=findItem(pal.items,code)||findAnyItem(code);
     if(!inPal){
@@ -1390,7 +1393,7 @@
     Array.prototype.forEach.call(el.querySelectorAll('[data-bdel]'),function(bt){
       bt.addEventListener('click',function(ev){ ev.stopPropagation();
         var kv=bt.dataset.bdel.split('|'), c=kv[0], q=+kv[1];
-        scanQ.push({undo:c,qty:q}); saveQ();
+        scanQ.push({undo:c,qty:q,k:scanKey()}); saveQ();
         sndInfo(); logScan(c,L('수동 −1','ajuste −1')); renderScanState(); flushScans(); });
     });
     renderPalPick();
