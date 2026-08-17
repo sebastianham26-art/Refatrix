@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817k</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817m</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -198,7 +198,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817k';
+  var BUILD='20260817m';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -442,8 +442,7 @@
 
   /* ============ 상태 ============ */
   var VIEW='list', SHIP=null, DETAIL=null, STEP='unload';
-  // scanCounts/scanQty 는 라인(item id) 기준 — 같은 SKU 라도 라인(카톤 묶음)별로 따로 센다(2026-08-17)
-  var scanLock=null, scanCounts={}, scanQty={}, scanLbl=null, parsed=null;   // 일괄 스캔: 배정 결과 컨테이너
+  var scanLbl=null, parsed=null;   // 마지막 라벨 해석 결과 / 업로드 파싱 결과
   var putPal=null, putRack=null, putAdd={}, putSaveRack={}, putLast=null, putWarn=null, putSaving=false, putFlushT=null;
   /* 자동 갱신(다수 작업자 동시 작업) — 25초. 스캔·미저장 중엔 건너뛰고, 데이터가 바뀔 때만 다시 그린다. */
   var POLL_MS=25000, pollT=null, pollSig='', pollBusy=false, WORK_PID=null, WORK_STEP=null;
@@ -728,12 +727,19 @@
       if(needRelines()) h+=' · <a href="#" id="fileRelines" style="color:#8A6300;font-weight:700" title="'
         +L('이 선적은 라인별 저장 이전에 등재되어 같은 SKU 라인이 합산돼 있습니다. 원본 파일을 다시 읽어 라인별로 교체합니다(하차 상태 보존).','Reprocesar el archivo para registrar línea por línea')+'">🔀 '
         +L('라인 재분할','Re-dividir líneas')+'</a>';
+      if(isDir&&DETAIL&&DETAIL.pallets&&DETAIL.pallets.some(function(p){
+          return p.checked_at||(p.scans||[]).length
+            ||(p.items||[]).some(function(i){return (i.scanned_cartons||0)>0||(i.put_cartons||0)>0;}); }))
+        h+=' · <a href="#" id="fileReset" style="color:var(--red);font-weight:700" title="'
+          +L('검수·적치·스캔 기록을 초기화하고 처음부터 다시 스캔합니다(디렉터 전용, 기록은 감사용으로 보존)','Reiniciar toda la verificación (solo director)')+'">🧹 '
+          +L('검수 리셋','Reiniciar verificación')+'</a>';
       el.innerHTML=h;
       el.querySelectorAll('a[data-view]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); viewShipFile(a.dataset.view,a.dataset.fn); }); });
       el.querySelectorAll('a[data-fid]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); dlShipFile(a.dataset.fid); }); });
       var rg=$('fileReg'); if(rg) rg.addEventListener('click',function(ev){ ev.preventDefault(); viewRegistered(); });
       var at=$('fileAttach'); if(at) at.addEventListener('click',function(ev){ ev.preventDefault(); attachShipFile(); });
       var rl=$('fileRelines'); if(rl) rl.addEventListener('click',function(ev){ ev.preventDefault(); reSplitLines(items); });
+      var rs=$('fileReset'); if(rs) rs.addEventListener('click',function(ev){ ev.preventDefault(); resetCheck(); });
     });
   }
   /* ===== 라인 재분할(2026-08-17) — 합산 저장된 기존 선적을 원본 파일 기준 라인별로 교체 =====
@@ -761,6 +767,25 @@
       var skip=(o.body.skipped&&o.body.skipped.length)?(' · '+L('건너뜀(검수 진행)','omitidos')+' '+o.body.skipped.length):'';
       toast('✔ '+L('라인 재분할 완료','Líneas re-divididas')+' — '+o.body.before_lines+' → '+o.body.lines+L('라인',' líneas')+skip);
       openShip(SHIP);
+    });
+  }
+  /* ===== 검수 리셋(디렉터, 0174) — 잘못 저장된 검수·적치·스캔을 초기화하고 처음부터 =====
+     서버는 스캔 행을 지우지 않고 voided 처리(감사 추적). 리셋 후 [라인 재분할]이 다시 가능해져
+     구파서(FROM/TO)로 등재된 카톤 수를 CARTON UNIT 기준으로 교정할 수 있다. */
+  function resetCheck(){
+    if(!isDir){ toast(L('디렉터만 가능합니다','Solo director')); return; }
+    if(!confirm(L('이 선적의 검수·적치·스캔 기록을 전부 초기화합니다.\n팔렛은 "하차됨" 상태로 돌아가고, 처음부터 다시 스캔합니다.\n(기록은 삭제되지 않고 감사용으로 보존됩니다)\n\n계속할까요?','¿Reiniciar toda la verificación de este embarque?\nLos pallets vuelven a "descargado" y se escanea de nuevo.'))) return;
+    api('/api/inbound/'+SHIP+'/reset-check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(function(o){
+      if(!o.ok||o.body.error){
+        sndErr();
+        toast('⚠ '+L('리셋 실패','Error')+': '+(o.body.error==='director_only'?L('디렉터만 가능합니다','Solo director'):(o.body.error||o.status)));
+        return;
+      }
+      // 이 선적의 미전송 스캔 큐도 비운다 — 리셋 후 옛 스캔이 되살아나지 않게
+      try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf('inb_scanq_'+SHIP+'_')===0) localStorage.removeItem(k); }); }catch(e){}
+      var n=(o.body.reset||[]).length;
+      sndSaved(); toast('🧹 '+L('검수 리셋 완료','Reiniciado')+' — '+n+L('팔렛',' pallets')+' · '+L('이제 [🔀 라인 재분할]을 실행하세요','ahora re-divida las líneas'));
+      scanReset(); openShip(SHIP);
     });
   }
   function reSplitParse(buf){
@@ -1175,50 +1200,94 @@
     });
   }
 
-  /* ---- 검수(일괄 스캔) — 2026-08-17 디렉터 재설계 ----
-     "박스는 자유롭게 전부 스캔하고, 마지막에 [팔렛 처리] 버튼으로 계산한다."
-     · 스캔 중에는 검증·차단 없음 — 존 안내 + 등록음 + 누적 집계만 (기다림 제거)
-     · [팔렛 처리] → 팔렛 자동 판별(모호하면 칩 선택) → 라인별 정산표(예상/스캔/차이) → 저장
-     · 저장은 기존과 동일한 라인별 증분 전송(checkDone) — 서버 계약 무변경 */
-  function scanReset(){ scanLock=null; scanCounts={}; scanQty={}; scanLbl=null; batchScans=[]; unknownTally={}; selPal=null; reconOn=false; lastCands=[]; }
-  var batchScans=[];      // 자유 스캔 누적 [{code, qty}] — 파렛 처리 때 라인에 배정
-  var unknownTally={};    // 선적 어디에도 없는 코드 (참고 표시용)
-  var selPal=null;        // 작업자가 칩으로 고른 팔렛(선택)
-  var reconOn=false;      // 정산표 표시 중
-  var lastCands=[];
-  function batchTally(){
+  /* ---- 검수(개편 2026-08-17m): "스캔은 기록, 판정은 보고서" ----
+     ① 팔렛을 먼저 선택한다(시스템 추측 제거 — 어느 팔렛인지는 작업자가 안다)
+     ② 스캔은 무조건 즉시 서버에 기록(0174 inbound_scans) — 어떤 경우에도 차단하지 않는다
+     ③ [대조] = 서버가 패킹리스트와 비교한 보고서(예상/스캔/차이) — 보여줄 뿐 막지 않는다
+     ④ [입고 확정] = 실제 스캔 수 그대로 저장(클램프 없음), 차이는 기록으로 남는다
+     서버가 유일한 진실 — 새로고침·기기 교체·다중 작업자·브라우저 캐시와 무관하게 이어진다.
+     전송 실패분은 큐(localStorage 보존)에 남아 3초 간격 자동 재시도. */
+  var selPal=null;          // 선택된 팔렛 id — 선택해야 스캔 시작
+  var srvTally=[];          // 서버가 확인해준 누적 [{code,qty,n}]
+  var scanQ=[];             // 미전송 큐 [{code,qty,matched} | {undo,qty}]
+  var scanBusy=false, scanRetryT=null, reconOn=false, wasOffline=false;
+  function scanReset(){ selPal=null; srvTally=[]; scanQ=[]; scanBusy=false; reconOn=false; wasOffline=false; scanLbl=null; clearTimeout(scanRetryT); }
+  function curSelPal(){ return (DETAIL&&DETAIL.pallets.filter(function(p){return p.id===selPal;})[0])||null; }
+  function qKey(){ return 'inb_scanq_'+SHIP+'_'+selPal; }
+  function saveQ(){ try{ if(selPal!=null) localStorage.setItem(qKey(),JSON.stringify(scanQ)); }catch(e){} }
+  function loadQ(){ try{ scanQ=JSON.parse(localStorage.getItem(qKey())||'[]')||[]; }catch(e){ scanQ=[]; } }
+  /* 전송 — 큐 앞쪽의 연속 스캔(또는 취소 1건)을 보내고, 성공하면 서버 tally 로 화면을 맞춘다 */
+  function flushScans(){
+    if(scanBusy||selPal==null||!scanQ.length){ updSync(); return; }
+    var sendScans=[], sendUndo=null;
+    if(scanQ[0].undo){ sendUndo=scanQ[0]; }
+    else{ for(var i=0;i<scanQ.length&&i<200;i++){ if(scanQ[i].undo) break; sendScans.push(scanQ[i]); } }
+    scanBusy=true; updSync();
+    var body={};
+    if(sendScans.length) body.scans=sendScans.map(function(e){ return {code:e.code,qty:e.qty||null,matched:e.matched!==false}; });
+    if(sendUndo){ body.undo_code=sendUndo.undo; body.undo_qty=sendUndo.qty||null; }
+    api('/api/inbound/'+SHIP+'/pallets/'+selPal+'/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(o){
+        scanBusy=false;
+        if(o.ok&&o.body&&o.body.ok){
+          scanQ.splice(0,sendUndo?1:sendScans.length); saveQ();
+          srvTally=o.body.tally||[];
+          if(wasOffline&&!scanQ.length){ wasOffline=false; sndInfo(); toast('✔ '+L('밀린 스캔이 서버에 저장되었습니다','Lecturas pendientes guardadas')); }
+          renderScanState();
+          if(scanQ.length) flushScans(); else updSync();
+        }else{
+          if(!wasOffline){ wasOffline=true; sndWarn(); }
+          updSync();
+          clearTimeout(scanRetryT); scanRetryT=setTimeout(flushScans,3000);
+        }
+      });
+  }
+  function updSync(){
+    var el=$('syncst'); if(!el) return;
+    if(!scanQ.length&&!scanBusy) el.innerHTML='<span style="opacity:.95">● '+L('서버 저장됨','guardado')+'</span>';
+    else if(wasOffline) el.innerHTML='<span style="color:#FFD9CF">● '+L('전송 대기','pendiente')+' '+scanQ.length+L('건','')+' — '+L('자동 재시도 중','reintentando')+'</span>';
+    else el.innerHTML='<span style="opacity:.8">● '+L('전송 중','enviando')+'…</span>';
+  }
+  /* 화면 표시용 누적 = 서버 확인분 + 아직 안 보낸 큐(낙관 반영) */
+  function combTally(){
     var t={}, order=[];
-    batchScans.forEach(function(e){ var k=e.code+'|'+(e.qty||0);
-      if(!t[k]){ t[k]={code:e.code,qty:e.qty||0,n:0}; order.push(k); } t[k].n++; });
-    return order.map(function(k){return t[k];});
+    function add(code,qty,d){ var k=code+'|'+(qty||0); if(!t[k]){ t[k]={code:code,qty:qty||0,n:0}; order.push(k); } t[k].n+=d; }
+    srvTally.forEach(function(e){ add(e.code,e.qty||0,e.n); });
+    scanQ.forEach(function(e){ if(e.undo) add(e.undo,e.qty||0,-1); else add(e.code,e.qty||0,1); });
+    return order.map(function(k){ return t[k]; }).filter(function(e){ return e.n>0; });
   }
-  function candidatePallets(){
-    var codes={}; batchScans.forEach(function(e){codes[e.code]=1;});
-    var list=Object.keys(codes);
-    return DETAIL.pallets.filter(function(p){
-      if(p.status==='wait'||p.status==='done')return false;
-      return list.every(function(c){ return linesFor(p.items,c).length>0; });
-    });
+  function tallyTotal(){
+    var pal=curSelPal(), n=0, q=0;
+    combTally().forEach(function(e){ n+=e.n;
+      var it=pal?(findItem(pal.items,e.code)||findAnyItem(e.code)):findAnyItem(e.code);
+      q+=e.n*(e.qty||perCarton(it)); });
+    return {n:n,q:q};
   }
-  // 팔렛 직접 선택(칩) — 스캔 전 미리 골라두거나, 모호할 때 확정
+  /* 팔렛 선택/해제 — 스캔 시작점. 전송 대기분이 있으면 팔렛을 못 바꾼다(기록 유실 방지). */
   function lockPallet(pid){
+    if(reconOn) return;
+    if(selPal===pid){
+      if(scanQ.length){ sndWarn(); toast(L('전송이 끝나지 않았습니다 — 잠시 후 다시 시도하세요','Aún enviando — espere')); return; }
+      clearWorking(); selPal=null; srvTally=[]; renderCheck(); return;
+    }
+    if(selPal!=null&&scanQ.length){ sndWarn(); toast(L('전송이 끝나지 않았습니다 — 잠시 후 팔렛을 바꾸세요','Aún enviando — espere')); return; }
     var p=DETAIL.pallets.filter(function(x){return x.id===pid;})[0];
     if(!p||p.status==='wait'||p.status==='done') return;
-    selPal=(selPal===pid)?null:pid;            // 다시 누르면 해제
-    if(selPal){ sndInfo(); pingWorking(pid,'check'); }
-    if(selPal&&batchScans.length&&lastCands.length) processBatch();   // 모호 상태에서 고르면 바로 정산
-    else renderScanState();
+    selPal=pid; srvTally=(p.scans||[]).slice(); loadQ();
+    sndInfo(); pingWorking(pid,'check');
+    renderCheck(); flushScans();
   }
   function renderPalPick(){
     var el=$('palpick'); if(!el) return;
-    var avail=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking';});
-    var candIds={}; lastCands.forEach(function(c){candIds[c.id]=1;});
+    var avail=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking'||p.status==='checked';});
     el.innerHTML=avail.map(function(p){
       var on=(selPal===p.id);
-      return '<span class="pchip'+(candIds[p.id]?' cand':'')+(on?' on':'')+'" data-lp="'+p.id+'" role="button" tabindex="0">'
-        +(on?'✔ ':'')+'<span class="n">'+esc(String(p.pl_no))+'</span>'
+      var sc=(p.scans||[]).reduce(function(a,e){return a+e.n;},0);
+      if(on) sc=tallyTotal().n;
+      return '<span class="pchip'+(on?' on':'')+'" data-lp="'+p.id+'" role="button" tabindex="0">'
+        +(on?'✔ ':(p.status==='checked'?'✓ ':''))+'<span class="n">'+esc(String(p.pl_no))+'</span>'
         +'<span>'+esc(shortPo(p.order_no))+'</span>'
-        +'<small>'+fmt(p.cartons_expected)+L('카톤','cajas')+'</small></span>';
+        +'<small>'+(sc?fmt(sc)+'/':'')+fmt(p.cartons_expected)+L('카톤','cajas')+'</small></span>';
     }).join('');
     Array.prototype.forEach.call(el.querySelectorAll('[data-lp]'),function(ch){
       ch.addEventListener('click',function(){ lockPallet(+ch.dataset.lp); });
@@ -1229,65 +1298,70 @@
 
   function renderCheck(){
     var b=$('stepbody');
-    var avail=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking';});
-    b.innerHTML='<p class="hint">'+L('팔렛의 박스를 <b>전부 자유롭게 스캔</b>하세요 — 순서·구분은 시스템이 맞춥니다. 스캔마다 <b>옮길 존</b>이 표시되니 박스를 그 존 팔렛에 올리고, 다 끝나면 <b>[🧮 팔렛 처리]</b> 를 누르세요.','Escanee <b>todas las cajas</b> del pallet libremente — cada escaneo muestra <b>la zona destino</b>. Al terminar presione <b>[🧮 Procesar pallet]</b>.')+'</p>'
-      +'<div id="lockbox"></div>'
+    var avail=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking'||p.status==='checked';});
+    var pal=curSelPal();
+    if(!pal){
+      b.innerHTML='<p class="hint">'+L('<b>① 팔렛 선택</b> → <b>② 박스 전부 스캔</b>(모든 스캔은 즉시 서버에 기록 — 아무것도 막지 않습니다) → <b>③ [대조]</b>로 패킹리스트와 비교 → <b>④ [입고 확정]</b>. 스캔마다 옮길 <b>존</b>이 표시됩니다.','<b>① Elija el pallet</b> → <b>② escanee todas sus cajas</b> (cada lectura se guarda al instante) → <b>③ [Comparar]</b> → <b>④ [Confirmar]</b>.')+'</p>'
+        +'<div class="palpick" id="palpick"></div>'
+        +(avail.length?'':'<div class="scanbox"><div class="idle">'+L('하차된 팔렛이 없습니다 — 먼저 하차하세요','Sin pallets descargados — descargue primero')+'</div></div>');
+      renderPalPick(); return;
+    }
+    b.innerHTML='<div class="locked"><div class="a">'+L('검수 중','Verificando')+' · <span id="syncst"></span></div>'
+      +'<div class="b">'+esc(pal.order_no)+' · '+L('팔렛','Pallet')+' '+pal.pl_no+'</div>'
+      +'<div class="c">'+L('예상','Esp.')+' '+fmt(pal.cartons_expected)+L('카톤','cajas')+' · '+fmt(pal.qty_expected)+' EA'+(pal.status==='checked'?' · ✓ '+L('확정됨 — 더 스캔하고 재확정 가능','confirmado'):'')+'</div></div>'
       +'<div class="scanbox" id="scanres"><div class="idle">'+L('카톤을 스캔하세요','Escanee una caja')+'</div></div>'
       +'<div class="scaninput"><input type="text" id="scanIn" placeholder="'+L('카톤 라벨 스캔 (예: CTR-CE0796-16)','Escanee la etiqueta (ej. CTR-CE0796-16)')+'" autocomplete="off"><button class="btn g" id="btnScanGo">'+L('스캔','Escanear')+'</button></div>'
-      +'<div class="palpick" id="palpick"></div>'
       +'<div class="pbar"><i id="cbar"></i></div><div class="hint" id="ctxt"></div>'
       +'<div class="row" style="margin:8px 0">'
-      +'<button class="btn" id="btnProc" disabled>🧮 '+L('팔렛 처리','Procesar pallet')+'</button>'
-      +'<button class="btn ghost sm" id="btnScanReset">↺ '+L('비우기','Vaciar')+'</button>'
+      +'<button class="btn" id="btnRecon">📋 '+L('대조','Comparar')+'</button>'
+      +'<button class="btn ghost sm" id="btnPalChg">⇄ '+L('팔렛 변경','Cambiar pallet')+'</button>'
       +'<button class="btn ghost sm" id="btnSlog">🕒 '+L('스캔 이력','Historial')+'</button></div>'
       +'<div id="slogbox" style="display:none;max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:9px;background:#fff;margin-bottom:8px"></div>'
-      +'<div class="skulist" id="sklist"></div>';
+      +'<div class="skulist" id="sklist"></div>'
+      +'<div class="palpick" id="palpick" style="margin-top:10px"></div>';
     var inp=$('scanIn');
     var fire=wireScanInput(inp,doScan);
     $('btnScanGo').addEventListener('click',fire);
-    $('btnScanReset').addEventListener('click',function(){
-      if(batchScans.length&&!confirm(L('스캔 '+batchScans.length+'건을 비웁니다. 계속할까요?','¿Vaciar '+batchScans.length+' lecturas?'))) return;
-      clearWorking(); scanReset(); renderCheck(); });
+    $('btnRecon').addEventListener('click',reconShow);
+    $('btnPalChg').addEventListener('click',function(){ lockPallet(selPal); });
     $('btnSlog').addEventListener('click',function(){ var el=$('slogbox');
       el.style.display=(el.style.display==='none')?'block':'none'; if(el.style.display!=='none') renderScanLog(); });
-    $('btnProc').addEventListener('click',processBatch);
-    if(!avail.length){ $('scanres').innerHTML='<div class="idle">'+L('하차된 팔렛이 없습니다 — 먼저 하차하세요','Sin pallets descargados — descargue primero')+'</div>'; }
     inp.focus();
-    renderScanState();
+    renderScanState(); updSync();
   }
-  // 자유 스캔 — 검증 없음. 존 안내 + 누적만.
+  /* 스캔 = 기록 — 판정·차단 없음. 존 안내 + 누적 + 즉시 서버 전송. */
   function doScan(input){
     if(!input) return;
-    if(reconOn) return;                        // 정산표 화면에서는 스캔 잠금([← 계속 스캔]으로 복귀)
-    var lbl=parseLabel(input);
-    scanLbl=lbl;
-    var code=lbl.code;
-    if(!code) return;
-    if(dupScan(lbl.norm)) return;              // 이중/연쇄 리딩 — 무시(경고음은 연쇄당 1번)
-    if(!lbl.matched){                          // 선적 어디에도 없는 코드
-      if(looksCompanion(code)){ logScan(code,L('부속 무시','ignorado')); return; }
-      unknownTally[code]=(unknownTally[code]||0)+1;
-      sndErr(); logScan(code,L('미확인 코드','desconocido'));
-      showScan(code,'warn',L('선적에 없는 코드 — 미확인으로 기록','Código desconocido — anotado'));
-      renderScanState(); return;
-    }
-    batchScans.push({code:code,qty:lbl.qty||0});
+    if(reconOn) return;                        // 대조 화면에서는 스캔 잠금([← 계속 스캔]으로 복귀)
+    var pal=curSelPal();
+    if(!pal){ sndWarn(); toast(L('팔렛을 먼저 선택하세요','Elija un pallet primero')); return; }
+    var lbl=parseLabel(input); scanLbl=lbl;
+    var code=lbl.code; if(!code) return;
+    if(dupScan(lbl.norm)) return;              // 스캐너 이중/연쇄 리딩만 거른다(경고음은 연쇄당 1번)
+    var inPal=!!findItem(pal.items,code);
+    if(!inPal&&looksCompanion(code)){ logScan(code,L('부속 무시','ignorado')); return; }
+    scanQ.push({code:code,qty:lbl.qty||0,matched:inPal}); saveQ();
     goodScanMark();
-    var it=findAnyItem(code);
-    var mm=qtyMismatch(it,lbl.qty);
-    if(mm||zoneNo(it)==null) sndWarn(); else sndOk();
-    logScan(code,L('스캔','leída')+' #'+batchScans.length+(lbl.qty?' ×'+lbl.qty:''));
-    showScan(code,'ok',null,null,it);
-    renderScanState();
+    var it=findItem(pal.items,code)||findAnyItem(code);
+    if(!inPal){
+      sndWarn(); logScan(code,L('라인에 없음(기록됨)','no en lista (anotada)'));
+      showScan(code,'warn',L('이 팔렛의 패킹리스트에 없는 코드 — 기록해 두었습니다. [대조]에서 표시됩니다.','No está en la lista de este pallet — quedó registrado.'));
+    }else{
+      var mm=qtyMismatch(it,lbl.qty);
+      if(mm||zoneNo(it)==null) sndWarn(); else sndOk();
+      logScan(code,L('기록','registrada')+(lbl.qty?' ×'+lbl.qty:''));
+      showScan(code,'ok',null,null,it);
+    }
+    renderScanState(); flushScans();
   }
-  // 스캔 결과 표시 — 존 안내가 핵심. 카운트는 "이 코드 누적 n회".
+  /* 스캔 결과 표시 — 존 안내가 핵심. 카운트는 "이 코드 누적 n회". */
   function showScan(code,cls,warn,candN,line){
     var box=$('scanres'); if(!box) return;
     box.className='scanbox '+(cls||'');
     var it=line||findAnyItem(code), nm=it?(it.name||''):'';
     if(warn){ box.innerHTML='<div class="sku" style="color:var(--red)">⚠ '+esc(code)+'</div><div class="nm">'+esc(nm)+'</div><div class="z"><b style="color:var(--red)">'+esc(warn)+'</b></div>'+labelHint(); return; }
     var rack=it?it.rack:null, z=zoneOf(rack), isNew=(z==='NEW');
-    var n=batchScans.filter(function(e){return e.code===(it?it.code:code);}).length;
+    var n=0; combTally().forEach(function(e){ if(e.code===(it?it.code:code)) n+=e.n; });
     var mm=qtyMismatch(it,scanLbl&&scanLbl.qty);
     box.innerHTML='<div class="sku">'+esc(it?it.code:code)+(scanLbl&&scanLbl.qty?' <span style="font-size:15px;color:var(--muted)">× '+fmt(scanLbl.qty)+' EA</span>':'')+'</div><div class="nm">'+esc(nm)+'</div>'
       +zoneBigHtml(it)
@@ -1297,127 +1371,80 @@
       +(mm?'<div class="z"><b style="color:#C0533B">⚠ '+L('소입수 불일치','Cant./caja distinta')+' — '+L('라벨','etiqueta')+' '+fmt(mm.got)+' EA · '+L('패킹리스트','lista')+' '+fmt(mm.exp)+' EA</b></div>':'')
       +labelHint();
   }
-  // 하단: 누적 집계표 (+ 행별 −1 보정)
+  /* 하단: 누적 집계표 (+ 행별 −1 보정 — 취소도 서버에 기록된다) */
   function renderScanState(){
-    var lb=$('lockbox'); if(lb) lb.innerHTML='';
-    var total=batchScans.length;
-    var unknownN=Object.keys(unknownTally).reduce(function(a,c){return a+unknownTally[c];},0);
-    var qsum=0; batchScans.forEach(function(e){ if(e.qty) qsum+=e.qty; else { var it=findAnyItem(e.code); qsum+=perCarton(it); } });
-    var ct=$('ctxt'); if(ct) ct.innerHTML=L('스캔','Lecturas')+' <b>'+fmt(total)+'</b>'+L('박스','')+' · '+fmt(qsum)+' EA'
-      +(unknownN?' · <b style="color:var(--red)">'+L('미확인','desc.')+' '+unknownN+'</b>':'')
-      +(selPal?' · '+L('선택 팔렛','pallet')+' <b>'+esc(String((DETAIL.pallets.filter(function(p){return p.id===selPal;})[0]||{}).pl_no||''))+'</b>':'');
-    var cb=$('cbar'); if(cb) cb.style.width='0%';
-    var bp=$('btnProc'); if(bp){ bp.disabled=!total; bp.textContent='🧮 '+L('팔렛 처리','Procesar')+(total?' ('+total+L('박스','cajas')+')':''); }
+    var pal=curSelPal(); if(!pal){ renderPalPick(); return; }
+    var tt=tallyTotal();
+    var ct=$('ctxt'); if(ct) ct.innerHTML=L('스캔','Lecturas')+' <b>'+fmt(tt.n)+'</b> / '+fmt(pal.cartons_expected)+L('박스','cajas')+' · '+fmt(tt.q)+' EA';
+    var cb=$('cbar'); if(cb) cb.style.width=Math.min(100,pal.cartons_expected?Math.round(tt.n*100/pal.cartons_expected):0)+'%';
+    var br=$('btnRecon'); if(br) br.textContent='📋 '+L('대조','Comparar')+(tt.n?' ('+tt.n+L('박스','cajas')+')':'');
     var el=$('sklist'); if(!el) return;
-    var rows=batchTally().map(function(t){
-      var it=findAnyItem(t.code);
-      return '<div class="skurow"><span class="s">'+esc(t.code)+(t.qty?' <span class="mono" style="font-size:10.5px;color:var(--muted)">×'+fmt(t.qty)+'</span>':'')+'</span>'
+    var rows=combTally().map(function(t){
+      var it=findItem(pal.items,t.code), known=!!it; if(!it) it=findAnyItem(t.code);
+      return '<div class="skurow"><span class="s"'+(known?'':' style="color:var(--red)"')+'>'+(known?'':'⚠ ')+esc(t.code)+(t.qty?' <span class="mono" style="font-size:10.5px;color:var(--muted)">×'+fmt(t.qty)+'</span>':'')+'</span>'
         +'<span class="z2">'+(it?(zoneOf(it.rack)==='NEW'?'🆕':zoneOf(it.rack)):'')+(it?zoneChip(it):'')+'</span>'
         +'<button class="btn ghost sm" data-bdel="'+esc(t.code)+'|'+t.qty+'" title="'+L('한 개 빼기(오스캔 보정)','quitar 1')+'" style="padding:1px 8px">−</button>'
-        +'<span class="c">'+t.n+L('회','')+'</span></div>';
-    });
-    Object.keys(unknownTally).forEach(function(c){
-      rows.push('<div class="skurow"><span class="s" style="color:var(--red)">⚠ '+esc(c)+'</span><span class="z2"></span>'
-        +'<button class="btn ghost sm" data-udel="'+esc(c)+'" style="padding:1px 8px">−</button>'
-        +'<span class="c" style="color:var(--red)">'+unknownTally[c]+L('회','')+'</span></div>');
+        +'<span class="c"'+(known?'':' style="color:var(--red)"')+'>'+t.n+L('회','')+'</span></div>';
     });
     el.innerHTML=rows.join('');
     Array.prototype.forEach.call(el.querySelectorAll('[data-bdel]'),function(bt){
       bt.addEventListener('click',function(ev){ ev.stopPropagation();
         var kv=bt.dataset.bdel.split('|'), c=kv[0], q=+kv[1];
-        for(var i=batchScans.length-1;i>=0;i--){ if(batchScans[i].code===c&&(batchScans[i].qty||0)===q){ batchScans.splice(i,1); break; } }
-        sndInfo(); logScan(c,L('수동 −1','ajuste −1')); renderScanState(); });
-    });
-    Array.prototype.forEach.call(el.querySelectorAll('[data-udel]'),function(bt){
-      bt.addEventListener('click',function(ev){ ev.stopPropagation();
-        var c=bt.dataset.udel; if(--unknownTally[c]<=0) delete unknownTally[c];
-        sndInfo(); renderScanState(); });
+        scanQ.push({undo:c,qty:q}); saveQ();
+        sndInfo(); logScan(c,L('수동 −1','ajuste −1')); renderScanState(); flushScans(); });
     });
     renderPalPick();
   }
-  /* ===== [팔렛 처리] — 팔렛 판별 → 라인 배정 → 정산표 ===== */
-  function checkRoom(i){ return Math.max(0,(i.cartons||0)-(i.scanned_cartons||0)-(scanCounts[i.id]||0)); }
-  function processBatch(){
-    if(!batchScans.length) return;
-    var pal=null;
-    if(selPal){ pal=DETAIL.pallets.filter(function(p){return p.id===selPal;})[0]; }
-    else{
-      var cands=candidatePallets();
-      if(cands.length===1) pal=cands[0];
-      else if(cands.length===0){ lastCands=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking';});
-        sndWarn(); toast('⚠ '+L('스캔 구성과 일치하는 팔렛이 없습니다 — 아래에서 팔렛을 직접 선택하세요','Ningún pallet coincide — elija abajo'));
-        renderScanState(); return; }
-      else { lastCands=cands; sndWarn();
-        toast(L('후보 팔렛이 '+cands.length+'개 — 아래에서 선택하세요','Hay '+cands.length+' pallets — elija abajo'));
-        renderScanState(); return; }
-    }
-    if(!pal){ sndErr(); return; }
-    lastCands=[];
-    // 스캔을 라인에 배정 (소입수 일치 라인 우선 → 파일 순서 → 상한 초과분은 extras)
-    scanLock=pal; scanCounts={}; scanQty={};
-    var extras={};
-    batchScans.forEach(function(e){
-      var pk=pickLine(pal.items,e.code,e.qty||0,checkRoom);
-      if(!pk||pk.full){ extras[e.code]=(extras[e.code]||0)+1; return; }
-      var it=pk.it;
-      scanCounts[it.id]=(scanCounts[it.id]||0)+1;
-      scanQty[it.id]=(scanQty[it.id]||0)+(e.qty||perCarton(it));
-    });
-    reconOn=true; pingWorking(pal.id,'check');
-    renderRecon(pal,extras);
+  /* ===== [대조] — 서버 보고서(저장 없음) → [입고 확정] — 실측 저장 ===== */
+  function reconShow(){
+    var pal=curSelPal(); if(!pal) return;
+    if(scanQ.length){ sndWarn(); toast(L('스캔 전송 중 — 잠시 후 다시 누르세요','Enviando lecturas — espere')); flushScans(); return; }
+    api('/api/inbound/'+SHIP+'/pallets/'+pal.id+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry:true})})
+      .then(function(o){
+        if(!o.ok||o.body.error){ sndErr(); toast(L('대조 실패','Error')+': '+(o.body.error||o.status)); return; }
+        reconOn=true; renderRecon(pal,o.body);
+      });
   }
-  function renderRecon(pal,extras){
+  function renderRecon(pal,rep){
     var b=$('stepbody');
-    var rows='', diffN=0, cScan=0, cExp=0, qScan=0, qExp=0;
-    pal.items.forEach(function(i){
-      var c=scanCounts[i.id]||0, pre=(i.scanned_cartons||0), exp=i.cartons||0;
-      var q=scanQty[i.id]||0, d=(c+pre)-exp;
-      cScan+=c; cExp+=Math.max(0,exp-pre); qScan+=q; qExp+=(i.qty||0);
-      if(d!==0) diffN++;
-      var tag=lineTag(i), multi=linesFor(pal.items,i.code).length>1;
+    var rows='', diffN=0;
+    (rep.lines||[]).forEach(function(l){
+      var d=l.diff; if(d!==0) diffN++;
+      var pc=(l.cartons>0?Math.round(l.qty/l.cartons):0);
       rows+='<tr'+(d!==0?' style="background:#FDF3F1"':'')+'>'
-        +'<td class="mono" style="padding:5px 8px">'+esc(i.code)+(multi&&tag?' <small style="color:var(--muted)">'+esc(tag)+' ×'+fmt(perCarton(i))+'</small>':'')+'</td>'
-        +'<td style="text-align:right;padding:5px 8px">'+exp+'</td>'
-        +'<td style="text-align:right;padding:5px 8px;font-weight:700">'+(c+pre)+(pre?' <small style="color:var(--muted)">(+'+pre+')</small>':'')+'</td>'
+        +'<td class="mono" style="padding:5px 8px">'+esc(l.code)+(pc?' <small style="color:var(--muted)">×'+fmt(pc)+'</small>':'')+'</td>'
+        +'<td style="text-align:right;padding:5px 8px">'+l.cartons+'</td>'
+        +'<td style="text-align:right;padding:5px 8px;font-weight:700">'+l.scanned+'</td>'
         +'<td style="text-align:right;padding:5px 8px;font-weight:800;color:'+(d===0?'var(--green)':'var(--red)')+'">'+(d===0?'✓':(d>0?'+'+d:d))+'</td></tr>';
     });
-    var exRows=Object.keys(extras).map(function(c){ diffN++;
-      return '<tr style="background:#FDF3F1"><td class="mono" style="padding:5px 8px">'+esc(c)+' <small style="color:var(--red)">'+L('초과 스캔','exceso')+'</small></td><td style="text-align:right;padding:5px 8px">—</td><td style="text-align:right;padding:5px 8px;font-weight:700">+'+extras[c]+'</td><td style="text-align:right;padding:5px 8px;color:var(--red)">⚠</td></tr>'; }).join('');
-    var unRows=Object.keys(unknownTally).map(function(c){
-      return '<tr style="background:#FDF8EE"><td class="mono" style="padding:5px 8px">'+esc(c)+' <small style="color:#8A6300">'+L('미확인 코드','desconocido')+'</small></td><td style="text-align:right;padding:5px 8px">—</td><td style="text-align:right;padding:5px 8px">'+unknownTally[c]+'</td><td style="text-align:right;padding:5px 8px">?</td></tr>'; }).join('');
-    var okAll=(diffN===0&&!Object.keys(extras).length);
-    b.innerHTML='<div class="locked" style="background:'+(okAll?'var(--green)':'#8A6300')+'"><div class="a">'+L('팔렛 정산','Conciliación')+'</div>'
+    var unknown=rep.unknown||{};
+    var unRows=Object.keys(unknown).map(function(c){
+      return '<tr style="background:#FDF8EE"><td class="mono" style="padding:5px 8px">'+esc(c)+' <small style="color:#8A6300">'+L('라인에 없음','no en lista')+'</small></td><td style="text-align:right;padding:5px 8px">—</td><td style="text-align:right;padding:5px 8px">'+unknown[c]+'</td><td style="text-align:right;padding:5px 8px">?</td></tr>'; }).join('');
+    var tt=tallyTotal();
+    var okAll=(diffN===0&&!unRows);
+    b.innerHTML='<div class="locked" style="background:'+(okAll?'var(--green)':'#8A6300')+'"><div class="a">'+L('대조 — 패킹리스트 vs 실제 스캔','Comparación — lista vs leído')+'</div>'
       +'<div class="b">'+esc(pal.order_no)+' · '+L('팔렛','Pallet')+' '+pal.pl_no+'</div>'
-      +'<div class="c">'+L('스캔','Lecturas')+' '+fmt(batchScans.length)+L('박스','')+' · '+fmt(qScan)+'/'+fmt(qExp)+' EA'+(okAll?' · ✓ '+L('전부 일치','todo coincide'):' · ⚠ '+L('차이 있는 라인','líneas con dif.')+' '+diffN)+'</div></div>'
+      +'<div class="c">'+L('스캔','Leído')+' '+fmt(rep.total_scanned)+' / '+fmt(rep.total_expected)+L('박스','cajas')+' · '+fmt(tt.q)+' EA'
+      +(okAll?' · ✓ '+L('전부 일치','todo coincide'):' · ⚠ '+L('차이','dif.')+' '+diffN+L('라인',' líneas'))+'</div></div>'
       +'<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:9px;overflow:hidden">'
       +'<thead><tr style="background:#F0EDE4;font-size:11px;color:var(--muted)"><th style="text-align:left;padding:6px 8px">'+L('라인','Línea')+'</th><th style="text-align:right;padding:6px 8px">'+L('예상','Esp.')+'</th><th style="text-align:right;padding:6px 8px">'+L('스캔','Leído')+'</th><th style="text-align:right;padding:6px 8px">'+L('차이','Dif.')+'</th></tr></thead>'
-      +'<tbody>'+rows+exRows+unRows+'</tbody></table>'
+      +'<tbody>'+rows+unRows+'</tbody></table>'
       +'<div class="row" style="margin-top:12px">'
-      +'<button class="btn" id="btnReconSave">✔ '+L('검수 저장','Guardar verificación')+'</button>'
-      +'<button class="btn ghost" id="btnReconBack">← '+L('계속 스캔 (수정)','Seguir escaneando')+'</button></div>'
-      +(okAll?'':'<p class="hint" style="margin-top:8px">'+L('차이가 있어도 저장할 수 있습니다(부족 검수 허용). 초과 스캔분은 저장되지 않습니다 — 실물을 다시 확인하세요.','Puede guardar con diferencias. Los excesos no se guardan.')+'</p>');
-    $('btnReconBack').addEventListener('click',function(){ reconOn=false; scanLock=null; renderCheck(); });
-    $('btnReconSave').addEventListener('click',function(){ checkDone(); });
+      +'<button class="btn" id="btnConfirm">✔ '+L('입고 확정 (실측 스캔 기준)','Confirmar recepción')+'</button>'
+      +'<button class="btn ghost" id="btnReconBack">← '+L('계속 스캔','Seguir escaneando')+'</button></div>'
+      +(okAll?'':'<p class="hint" style="margin-top:8px">'+L('차이가 있어도 확정할 수 있습니다 — 실제 스캔한 수가 그대로 저장되고, 차이는 기록으로 남습니다. 부족분은 나중에 더 스캔하고 다시 확정하면 됩니다.','Puede confirmar con diferencias — se guarda lo realmente leído; puede escanear más y reconfirmar.')+'</p>');
+    $('btnReconBack').addEventListener('click',function(){ reconOn=false; renderCheck(); });
+    $('btnConfirm').addEventListener('click',doConfirm);
   }
-  function checkDone(){
-    if(!scanLock) return;
-    var qdone=Object.keys(scanQty).reduce(function(a,c){return a+(scanQty[c]||0);},0);
-    var qexp=scanLock.qty_expected||scanLock.items.reduce(function(a,i){return a+(i.qty||0);},0);
-    var cdone=Object.keys(scanCounts).reduce(function(a,c){return a+scanCounts[c];},0);
-    var cexp=scanLock.items.reduce(function(a,i){return a+Math.max(0,(i.cartons||0)-(i.scanned_cartons||0));},0);
-    if(cdone!==cexp||Math.abs(qdone-qexp)>0.001){
-      sndWarn();
-      if(!confirm(L('스캔과 패킹리스트가 다릅니다.','La lectura no coincide con la lista.')
-        +'\n'+L('카톤','Cajas')+' '+cdone+' / '+cexp+' · '+L('수량','Cant.')+' '+fmt(qdone)+' / '+fmt(qexp)+' EA'
-        +'\n\n'+L('그래도 검수로 저장할까요? (부족분은 부족 검수로 기록됩니다)','¿Guardar de todos modos?'))) return;
-    }
-    var items=scanLock.items.map(function(i){ return {item_id:i.id, scanned_delta:(scanCounts[i.id]||0)}; })
-      .filter(function(r){ return r.scanned_delta>0; });
-    api('/api/inbound/'+SHIP+'/pallets/'+scanLock.id+'/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:items})}).then(function(o){
-      if(!o.ok||o.body.error){ sndErr(); toast(L('저장 실패','Error')+': '+(o.body.error||o.status)); return; }
-      sndSaved(); toast(L('✔ 팔렛 검수 완료','✔ Pallet verificado'));
-      clearWorking(); scanReset(); refreshDetail(renderDetail);
-    });
+  function doConfirm(){
+    var pal=curSelPal(); if(!pal) return;
+    api('/api/inbound/'+SHIP+'/pallets/'+pal.id+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+      .then(function(o){
+        if(!o.ok||o.body.error){ sndErr(); toast(L('확정 실패','Error')+': '+(o.body.error||o.status)); return; }
+        sndSaved(); toast('✔ '+L('입고 확정 — 실측 '+fmt(o.body.total_scanned)+'박스 저장','Confirmado — '+fmt(o.body.total_scanned)+' cajas'));
+        try{ localStorage.removeItem(qKey()); }catch(e){}
+        clearWorking(); scanReset(); refreshDetail(renderDetail);
+      });
   }
 
   /* ---- 적치 — 팔렛 목록 → 박스 스캔(위치 안내) → 랙 스캔 잠금 → 박스 1개당 1스캔 ---- */
@@ -1720,7 +1747,7 @@
     if(document.querySelector('.delrow')) return true;      // 삭제 PIN 입력 중
     if(VIEW==='upload') return true;                        // 업로드/미리보기 중
     if(VIEW==='detail'){
-      if(scanLock) return true;                             // 검수 진행 중
+      if(selPal!=null) return true;                         // 검수 진행 중(팔렛 잡고 스캔)
       if(putSaving||putPending()) return true;              // 적치 미저장분 있음
       var el=document.activeElement;
       if(el&&el.tagName==='INPUT'&&el.value) return true;    // 입력 중

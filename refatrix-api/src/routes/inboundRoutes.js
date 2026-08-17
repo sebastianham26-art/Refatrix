@@ -1,5 +1,5 @@
 import { query, withTx } from '../db.js';
-import { authGuard, requirePage, requirePageAny } from '../middleware/authGuard.js';
+import { authGuard, requirePage, requirePageAny, requireDirector } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
 import { NEW_KEY } from './zoneRoutes.js';
@@ -129,6 +129,31 @@ export async function applyRelines(q, shipmentId, pallets, pmap) {
   }
   if (!replaced) return { error: 'already_scanned', skipped };
   return { ok: true, pallets: replaced, skipped, lines, before_lines: before };
+}
+
+// ===== 검수 확정 배정(2026-08-17, 0174) =====
+// 스캔 기록([{code,qty}] 시간순)을 팔렛 라인(id 순 = 파일 순)에 배정한다.
+//   ⓐ 여유 있는 라인 중 소입수(qty÷cartons)가 라벨 수량과 같은 라인
+//   ⓑ 여유 있는 첫 라인(파일 순서) ⓒ 전부 차면 그 코드의 마지막 라인에 초과분 누적(실측 보존)
+// 코드 비교는 구분자·대소문자 차이를 무시(bare). 라인이 없는 코드는 unknown 으로만 집계.
+export function allocScans(items, scans) {
+  const bare = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const byCode = {};
+  for (const it of items) (byCode[bare(it.input_code)] = byCode[bare(it.input_code)] || []).push(it);
+  const alloc = {}, extras = {}, unknown = {};
+  const room = (l) => l.cartons - (alloc[l.id] || 0);
+  const per = (l) => (l.cartons > 0 ? Math.round(num(l.qty) / l.cartons) : 0);
+  let known = 0;
+  for (const sc of scans) {
+    const ls = byCode[bare(sc.code)];
+    if (!ls) { unknown[sc.code] = (unknown[sc.code] || 0) + 1; continue; }
+    known++;
+    const lbl = sc.qty == null ? 0 : Number(sc.qty);
+    let t = (lbl > 0 ? ls.find((l) => room(l) > 0 && per(l) === lbl) : null) || ls.find((l) => room(l) > 0);
+    if (!t) { t = ls[ls.length - 1]; extras[sc.code] = (extras[sc.code] || 0) + 1; }
+    alloc[t.id] = (alloc[t.id] || 0) + 1;
+  }
+  return { alloc, extras, unknown, known };
 }
 
 export default async function inboundRoutes(app) {
@@ -275,6 +300,16 @@ export default async function inboundRoutes(app) {
       `SELECT rz.zone, wz.name FROM rack_zones rz
          JOIN warehouse_zones wz ON wz.zone = rz.zone
         WHERE rz.rack = $1`, [NEW_KEY])).rows[0] || null;
+    // 스캔 기록 집계(0174) — 기기·작업자와 무관한 서버 기준 누적. 프런트 검수 화면이 이걸로 이어서 작업한다.
+    const scRows = (await query(
+      `SELECT pallet_id, code, qty, COUNT(*)::int AS n
+         FROM inbound_scans WHERE shipment_id=$1 AND voided_at IS NULL
+        GROUP BY pallet_id, code, qty ORDER BY MIN(id)`, [id])).rows;
+    const scanByPal = {};
+    for (const r of scRows) {
+      (scanByPal[r.pallet_id] = scanByPal[r.pallet_id] || []).push({
+        code: r.code, n: r.n, qty: r.qty == null ? null : Number(r.qty) });
+    }
     const byPal = {};
     for (const it of items) {
       (byPal[it.pallet_id] = byPal[it.pallet_id] || []).push({
@@ -303,6 +338,7 @@ export default async function inboundRoutes(app) {
         working_by_name: p.working ? (p.working_by_name || null) : null,
         working_is_me: !!(p.working && Number(p.working_by) === Number(me)),
         items: byPal[p.id] || [],
+        scans: scanByPal[p.id] || [],   // [{code,n,qty}] 유효 스캔 누적(0174)
       })),
     };
   });
@@ -412,6 +448,137 @@ export default async function inboundRoutes(app) {
       await q(`UPDATE inbound_pallets SET status='checked', checked_by=$1, checked_at=now() WHERE id=$2`, [uid, pid]);
       return { ok: true };
     });
+  });
+
+  // ===== 검수 개편(2026-08-17, 0174): "스캔은 기록, 판정은 보고서" =====
+  // ① 스캔 즉시 저장 — 검증·차단 없음. 스캔 1건 = 1행. 서버가 유일한 진실.
+  //    body { scans:[{code, qty, matched}], undo_code? }
+  //    묶음 전송 허용(네트워크 재시도 큐). undo_code 는 해당 코드의 최근 1건 취소([-] 버튼).
+  //    응답 tally = 이 팔렛의 유효 스캔 누적(다른 기기 분까지 합산) — 프런트가 화면을 서버 기준으로 맞춘다.
+  app.post('/api/inbound/:id/pallets/:pid/scan', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id), pid = Number(req.params.pid);
+    const list = Array.isArray(req.body?.scans) ? req.body.scans.slice(0, 500) : [];
+    const undo = req.body?.undo_code ? String(req.body.undo_code).trim().slice(0, 60) : null;
+    return await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const pal = (await q(
+        `SELECT id, status FROM inbound_pallets WHERE id=$1 AND shipment_id=$2 FOR UPDATE`, [pid, id])).rows[0];
+      if (!pal) return { error: 'not_found' };
+      for (const sc of list) {
+        const code = String(sc?.code || '').trim().slice(0, 60);
+        if (!code) continue;
+        const qv = sc?.qty == null ? null : (Math.max(0, int(sc.qty)) || null);
+        await q(
+          `INSERT INTO inbound_scans (shipment_id, pallet_id, code, qty, matched, scanned_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`, [id, pid, code, qv, sc?.matched !== false, uid]);
+      }
+      if (undo) {
+        // 같은 코드라도 라벨 소입수량(qty)이 다르면 다른 집계 행 — qty 까지 맞는 최근 1건만 취소
+        const uq = req.body?.undo_qty == null ? null : (Math.max(0, int(req.body.undo_qty)) || null);
+        await q(
+          `UPDATE inbound_scans SET voided_at=now()
+            WHERE id = (SELECT id FROM inbound_scans
+                         WHERE pallet_id=$1 AND code=$2 AND qty IS NOT DISTINCT FROM $3 AND voided_at IS NULL
+                         ORDER BY id DESC LIMIT 1)`, [pid, undo, uq]);
+      }
+      if (list.length && pal.status === 'unloaded') {
+        await q(`UPDATE inbound_pallets SET status='checking' WHERE id=$1`, [pid]);
+      }
+      const tally = (await q(
+        `SELECT code, qty, COUNT(*)::int AS n
+           FROM inbound_scans WHERE pallet_id=$1 AND voided_at IS NULL
+          GROUP BY code, qty ORDER BY MIN(id)`, [pid])).rows;
+      return { ok: true, tally: tally.map((t) => ({ code: t.code, qty: t.qty == null ? null : Number(t.qty), n: t.n })) };
+    });
+  });
+
+  // ② 검수 확정 — 서버가 스캔 기록을 라인에 배정해 실측치를 저장하고 대조 보고서를 돌려준다.
+  //    배정 규칙(프런트 pickLine 과 동일): ⓐ 여유 있는 라인 중 소입수(qty÷cartons)가 라벨 수량과 같은 라인
+  //    ⓑ 여유 있는 첫 라인(파일 순서) ⓒ 전부 차면 그 코드의 마지막 라인에 초과분 누적(실측 보존).
+  //    scanned_cartons 는 실제 스캔 수 그대로 — 상한 클램프 없음. 차이는 막지 않고 보고서가 보여준다.
+  //    재확정 가능(절대값 재계산·멱등): 부족분을 더 스캔한 뒤 다시 눌러도 된다.
+  //    body { dry:true } = [대조] — 보고서만 계산하고 아무것도 저장하지 않는다.
+  app.post('/api/inbound/:id/pallets/:pid/confirm', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id), pid = Number(req.params.pid);
+    const dry = !!(req.body && req.body.dry);
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const pal = (await q(
+        `SELECT id, status FROM inbound_pallets WHERE id=$1 AND shipment_id=$2 FOR UPDATE`, [pid, id])).rows[0];
+      if (!pal) return { error: 'not_found' };
+      if (pal.status === 'done') return { error: 'already_done' };
+      const items = (await q(
+        `SELECT id, input_code, cartons, qty FROM inbound_pallet_items WHERE pallet_id=$1 ORDER BY id`, [pid])).rows;
+      const scans = (await q(
+        `SELECT code, qty FROM inbound_scans WHERE pallet_id=$1 AND voided_at IS NULL ORDER BY id`, [pid])).rows;
+      const { alloc, extras, unknown, known } = allocScans(items, scans);
+      if (!dry) {
+        for (const it of items) {
+          await q(`UPDATE inbound_pallet_items SET scanned_cartons=$1 WHERE id=$2`, [alloc[it.id] || 0, it.id]);
+        }
+        await q(`UPDATE inbound_pallets SET status='checked', checked_by=$1, checked_at=now() WHERE id=$2`, [uid, pid]);
+      }
+      return {
+        ok: true, dry,
+        lines: items.map((it) => ({
+          id: Number(it.id), code: it.input_code, cartons: it.cartons, qty: num(it.qty),
+          scanned: alloc[it.id] || 0, diff: (alloc[it.id] || 0) - it.cartons,
+        })),
+        extras, unknown,
+        total_expected: items.reduce((a, i) => a + i.cartons, 0),
+        total_scanned: known,
+      };
+    });
+    if (out && out.ok && !dry) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound_pallet:' + pid,
+        detail: { shipment: id, confirm: true, scanned: out.total_scanned, expected: out.total_expected } });
+    }
+    return out;
+  });
+
+  // ③ 검수 리셋(디렉터 전용) — 잘못 저장된 검수를 초기화하고 처음부터 다시 스캔한다.
+  //    스캔 기록은 지우지 않고 voided_at 처리(감사 추적). 적치 수량도 함께 0 (실측을 다시 잡는 것이므로).
+  //    body { pallet_ids?: [..] } — 없으면 선적 전체. 마감(closed) 선적은 불가.
+  app.post('/api/inbound/:id/reset-check', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id);
+    const ids = Array.isArray(req.body?.pallet_ids)
+      ? req.body.pallet_ids.map(Number).filter((n) => Number.isFinite(n) && n > 0) : null;
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(
+        `SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.status === 'closed') return { error: 'closed' };
+      const pals = (await q(
+        `SELECT id, order_no, pl_no, status FROM inbound_pallets
+          WHERE shipment_id=$1` + (ids && ids.length ? ` AND id = ANY($2)` : ``) + ` ORDER BY order_no, pl_no FOR UPDATE`,
+        ids && ids.length ? [id, ids] : [id])).rows;
+      if (!pals.length) return { error: 'not_found' };
+      const reset = [];
+      for (const p of pals) {
+        const had = (await q(
+          `SELECT COALESCE(SUM(scanned_cartons),0)::int AS sc, COALESCE(SUM(put_cartons),0)::int AS pc
+             FROM inbound_pallet_items WHERE pallet_id=$1`, [p.id])).rows[0];
+        const v = (await q(
+          `UPDATE inbound_scans SET voided_at=now() WHERE pallet_id=$1 AND voided_at IS NULL RETURNING id`, [p.id])).rows.length;
+        const dirty = v > 0 || num(had.sc) > 0 || num(had.pc) > 0 || ['checking', 'checked', 'done'].includes(p.status);
+        if (!dirty) continue;   // 손댈 게 없는 팔렛은 그대로
+        await q(`UPDATE inbound_pallet_items SET scanned_cartons=0, put_cartons=0 WHERE pallet_id=$1`, [p.id]);
+        await q(
+          `UPDATE inbound_pallets SET status = CASE WHEN status='wait' THEN 'wait' ELSE 'unloaded' END,
+                  checked_by=NULL, checked_at=NULL WHERE id=$1`, [p.id]);
+        reset.push({ pallet: p.order_no + '/' + p.pl_no, scans_voided: v, scanned_was: num(had.sc), put_was: num(had.pc) });
+      }
+      return { ok: true, reset };
+    });
+    if (out && out.ok) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { reset_check: true, pallets: out.reset.map((r) => r.pallet) } });
+    }
+    return out;
   });
 
   // 적치(랙 스캔 결과 반영, 랙 미지정/변경 시 제품 마스터 저장) -------
