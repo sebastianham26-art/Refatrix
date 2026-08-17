@@ -81,6 +81,54 @@ async function main() {
   const sc = (await q(`SELECT box_from, scanned_cartons FROM inbound_pallet_items WHERE shipment_id=$1 ORDER BY id`, [sid])).rows;
   ok(sc[0].scanned_cartons === 0 && sc[1].scanned_cartons === 2, '라인별 검수 증분 독립(다른 라인 무영향)', sc);
 
+  console.log('\n④ 라인 재분할(applyRelines) — 합산 저장된 기존 선적을 라인별로 교체');
+  {
+    const { applyRelines } = await import('../src/routes/inboundRoutes.js');
+    // 합산 저장된 선적 재현: CE0796 23카톤 356EA 한 행(구버전 형태)
+    await q('BEGIN');
+    await q('DELETE FROM inbound_pallet_items'); await q('DELETE FROM inbound_pallets'); await q('DELETE FROM inbound_shipments');
+    const pid2 = (await q(`SELECT id FROM products WHERE code='CE0796'`)).rows[0].id;
+    const sid2 = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('D26-81319563','receiving') RETURNING id`)).rows[0].id;
+    const palA = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected)
+                           VALUES ($1,'100RA25K2C',12,'unloaded',23,356) RETURNING id`, [sid2])).rows[0].id;
+    await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty)
+             VALUES ($1,$2,$3,'CE0796',23,356)`, [palA, sid2, pid2]);
+    await q('COMMIT');
+
+    // 원본 파일 기준 라인(합계 동일: 20×16 + 3×12 = 23카톤 356EA)
+    const filePallets = aggregate([
+      { order_no: '100RA25K2C', pl_no: 12, code: 'CE0796', cartons: 20, qty: 320, box_from: 1, box_to: 20 },
+      { order_no: '100RA25K2C', pl_no: 12, code: 'CE0796', cartons: 3, qty: 36, box_from: 21, box_to: 23 },
+    ]);
+    const pmap = { CE0796: { id: Number(pid2), rack: 'A-01-03' } };
+
+    // ⚠ 다른 파일(합계 불일치)은 거부
+    const bad = await applyRelines(q, sid2, aggregate([
+      { order_no: '100RA25K2C', pl_no: 12, code: 'CE0796', cartons: 22, qty: 356, box_from: 1, box_to: 22 },
+    ]), pmap);
+    ok(bad.error === 'file_mismatch', '합계가 다른 파일은 file_mismatch 거부', bad);
+    // ⚠ 팔렛 구성이 다른 파일 거부
+    const bad2 = await applyRelines(q, sid2, aggregate([
+      { order_no: '100RA25K2C', pl_no: 99, code: 'CE0796', cartons: 23, qty: 356 },
+    ]), pmap);
+    ok(bad2.error === 'file_mismatch', '팔렛이 다른 파일도 거부', bad2);
+
+    // 정상 재분할
+    const r = await applyRelines(q, sid2, filePallets, pmap);
+    ok(r.ok && r.before_lines === 1 && r.lines === 2, '1행(합산) → 2라인 교체', r);
+    const after = (await q(`SELECT input_code, cartons, qty, box_from, box_to, pallet_id FROM inbound_pallet_items WHERE shipment_id=$1 ORDER BY id`, [sid2])).rows;
+    ok(after.length === 2 && after[0].cartons === 20 && after[1].cartons === 3, '라인별 카톤 유지', after.map((x) => x.cartons));
+    ok(after[0].box_from === 1 && after[1].box_from === 21, 'box 범위 저장');
+    ok(after.every((x) => Number(x.pallet_id) === Number(palA)), '팔렛 id 보존(하차 상태 유지)');
+    const pal = (await q(`SELECT status, cartons_expected, qty_expected FROM inbound_pallets WHERE id=$1`, [palA])).rows[0];
+    ok(pal.status === 'unloaded' && pal.cartons_expected === 23, '팔렛 상태·예상 카톤 무변경', pal);
+
+    // ⚠ 검수가 진행된 선적은 거부
+    await q(`UPDATE inbound_pallet_items SET scanned_cartons=1 WHERE shipment_id=$1 AND box_from=1`, [sid2]);
+    const bad3 = await applyRelines(q, sid2, filePallets, pmap);
+    ok(bad3.error === 'already_scanned', '검수 진행분이 있으면 already_scanned 거부', bad3);
+  }
+
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
   await pool.end();
   process.exit(fail ? 1 : 0);

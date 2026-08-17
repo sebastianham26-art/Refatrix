@@ -44,7 +44,7 @@ async function boot(SHIP) {
   const script = html.match(/<script>\s*\(function\(\)\{[\s\S]*?<\/script>/g).pop()
     .replace(/^<script>/, '').replace(/<\/script>$/, '');
   w.eval(script.replace(/\}\)\(\);\s*$/,
-    'window.__t={normScan:normScan,parseLabel:parseLabel,perCarton:perCarton,openShip:openShip,'
+    'window.__t={normScan:normScan,parseLabel:parseLabel,perCarton:perCarton,openShip:openShip,needRelines:needRelines,reSplitSend:reSplitSend,'
     + 'renderCheck:renderCheck,renderDetail:renderDetail,setStep:function(x){STEP=x;},checkDone:checkDone,'
     + 'getCounts:function(){return scanCounts;},getQty:function(){return scanQty;},'
     + 'getLock:function(){return scanLock;},setDetail:function(d){DETAIL=d;},openPutPal:openPutPal,putListScan:putListScan,renderPut:renderPut,getPutAdd:function(){return putAdd;},getPutRack:function(){return putRack;},getSaveRack:function(){return putSaveRack;}};\n})();'));
@@ -248,6 +248,45 @@ async function openCheck(SHIP) {
     ok('검수완료: 라인별 증분 따로 전송', post && post.body.items.length === 2
       && post.body.items.find(i => i.item_id === 201).scanned_delta === 2
       && post.body.items.find(i => i.item_id === 202).scanned_delta === 3, post && JSON.stringify(post.body));
+  }
+
+  console.log('\n⑨ 라인 재분할 링크 — 합산 저장된 선적에만 노출 + 전송');
+  {
+    // 합산 저장 형태: box_from 없음 · 스캔 0
+    const SHIP = mkShip();
+    SHIP.pallets[0].items = [{ id: 301, code: 'CE0796', name: 'T', cartons: 23, qty: 356, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0 }];
+    const ctx = await boot(SHIP);
+    ctx.w.fetchFiles = true;
+    const origFetch = ctx.w.fetch;
+    ctx.w.fetch = (u, o) => {
+      if (/\/api\/inbound\/1\/files$/.test(String(u))) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [{ id: 7, file_name: 'PL.xlsx', file_size: 1000 }] }) });
+      return origFetch(u, o);
+    };
+    ctx.t.openShip(1); await new Promise(r => setTimeout(r, 60));
+    ok('needRelines = true (합산 선적)', ctx.t.needRelines() === true);
+    ok('🔀 라인 재분할 링크 노출', !!ctx.doc.getElementById('fileRelines'), ctx.doc.getElementById('shipFiles') && ctx.doc.getElementById('shipFiles').textContent);
+    // 전송 함수: rows → POST /relines → 성공 시 선적 재조회
+    ctx.t.reSplitSend([{ order_no: 'PO', pl_no: 1, code: 'CE0796', cartons: 20, qty: 320, box_from: 1, box_to: 20 }]);
+    await new Promise(r => setTimeout(r, 40));
+    const post = ctx.sent.filter(x => /\/relines$/.test(x.url))[0];
+    ok('POST /relines 전송 + rows 포함', post && post.body.rows.length === 1 && post.body.rows[0].box_from === 1, post && JSON.stringify(post.body).slice(0, 120));
+  }
+  {
+    // 라인별 저장된 선적(box_from 있음) → 링크 없음
+    const SHIP = mkShip();
+    SHIP.pallets[0].items = [{ id: 302, code: 'CE0796', name: 'T', cartons: 20, qty: 320, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0, box_from: 1, box_to: 20 }];
+    const ctx = await boot(SHIP);
+    ctx.t.openShip(1); await new Promise(r => setTimeout(r, 60));
+    ok('라인별 선적에는 needRelines = false', ctx.t.needRelines() === false);
+    ok('링크 미노출', !ctx.doc.getElementById('fileRelines'));
+  }
+  {
+    // 검수가 진행된 합산 선적 → 링크 없음(스캔 기록 보호)
+    const SHIP = mkShip();
+    SHIP.pallets[0].items = [{ id: 303, code: 'CE0796', name: 'T', cartons: 23, qty: 356, rack: 'A-01-03', scanned_cartons: 5, put_cartons: 0 }];
+    const ctx = await boot(SHIP);
+    ctx.t.openShip(1); await new Promise(r => setTimeout(r, 60));
+    ok('검수 진행 선적은 needRelines = false', ctx.t.needRelines() === false);
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

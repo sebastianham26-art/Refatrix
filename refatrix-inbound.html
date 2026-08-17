@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817d</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817e</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -190,7 +190,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817d';
+  var BUILD='20260817e';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -600,12 +600,76 @@
       }).join(' · ');
       h+=(items.length?' · ':'')+'<a href="#" id="fileReg" class="flnk">📋 '+L('등재 내역','Registro ERP')+'</a>';
       h+=' · <a href="#" id="fileAttach" style="color:var(--muted)">'+(items.length?'＋':L('📎 패킹리스트 파일 첨부','📎 adjuntar archivo'))+'</a>';
+      if(needRelines()) h+=' · <a href="#" id="fileRelines" style="color:#8A6300;font-weight:700" title="'
+        +L('이 선적은 라인별 저장 이전에 등재되어 같은 SKU 라인이 합산돼 있습니다. 원본 파일을 다시 읽어 라인별로 교체합니다(하차 상태 보존).','Reprocesar el archivo para registrar línea por línea')+'">🔀 '
+        +L('라인 재분할','Re-dividir líneas')+'</a>';
       el.innerHTML=h;
       el.querySelectorAll('a[data-view]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); viewShipFile(a.dataset.view,a.dataset.fn); }); });
       el.querySelectorAll('a[data-fid]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); dlShipFile(a.dataset.fid); }); });
       var rg=$('fileReg'); if(rg) rg.addEventListener('click',function(ev){ ev.preventDefault(); viewRegistered(); });
       var at=$('fileAttach'); if(at) at.addEventListener('click',function(ev){ ev.preventDefault(); attachShipFile(); });
+      var rl=$('fileRelines'); if(rl) rl.addEventListener('click',function(ev){ ev.preventDefault(); reSplitLines(items); });
     });
+  }
+  /* ===== 라인 재분할(2026-08-17) — 합산 저장된 기존 선적을 원본 파일 기준 라인별로 교체 =====
+     노출 조건: 마감 전 + box 범위가 전무(=라인별 저장 이전 등재) + 검수/적치 스캔 0. 서버도 같은 가드를 강제한다. */
+  function needRelines(){
+    if(!DETAIL||!DETAIL.pallets||!DETAIL.pallets.length) return false;
+    if(DETAIL.shipment.status==='closed') return false;
+    var hasItem=false, hasBox=false, touched=false;
+    DETAIL.pallets.forEach(function(p){
+      if(p.checked_at) touched=true;
+      (p.items||[]).forEach(function(i){ hasItem=true;
+        if(i.box_from!=null) hasBox=true;
+        if((i.scanned_cartons||0)>0||(i.put_cartons||0)>0) touched=true; });
+    });
+    return hasItem && !hasBox && !touched;
+  }
+  function reSplitSend(rows){
+    api('/api/inbound/'+SHIP+'/relines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:rows})}).then(function(o){
+      if(!o.ok||o.body.error){
+        var msg={already_scanned:L('검수·적치가 이미 진행되어 재분할할 수 없습니다','Ya hay escaneos — no se puede re-dividir'),
+                 file_mismatch:L('파일이 이 선적과 다릅니다(팔렛·수량 불일치)','El archivo no coincide con este embarque'),
+                 bad_state:L('마감/취소된 선적입니다','Embarque cerrado/cancelado')}[o.body.error]||o.body.error||o.status;
+        toast('⚠ '+msg); return;
+      }
+      toast('✔ '+L('라인 재분할 완료','Líneas re-divididas')+' — '+o.body.before_lines+' → '+o.body.lines+L('라인',' líneas'));
+      openShip(SHIP);
+    });
+  }
+  function reSplitParse(buf){
+    try{
+      var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      var res=parseWorkbook(wb);
+      if(!res.rows||!res.rows.length){ toast('⚠ '+L('파일에서 라인을 읽지 못했습니다','No se pudo leer el archivo')); return; }
+      reSplitSend(res.rows);
+    }catch(err){ toast('⚠ '+L('파일 읽기 실패','Error al leer')+': '+err.message); }
+  }
+  function reSplitLines(files){
+    if(!confirm(L('원본 패킹리스트를 다시 읽어 같은 SKU 라인을 합산 없이 라인별로 다시 등재합니다.\n하차 상태·ETA·파일은 그대로 유지됩니다. 진행할까요?',
+      'Se volverá a leer el packing list para registrar línea por línea. ¿Continuar?'))) return;
+    var xf=(files||[]).filter(function(f){ return /\.xlsx?$/i.test(f.file_name||''); })[0];
+    if(xf){   // 첨부된 원본 엑셀을 서버에서 받아 재파싱
+      api('/api/inbound/files/'+xf.id).then(function(o){
+        if(!o.ok||!o.body.file_data){ toast('⚠ '+L('원본 파일을 받지 못했습니다 — 파일을 직접 선택하세요','No se pudo descargar — elija el archivo')); reSplitPick(); return; }
+        try{
+          var b64=String(o.body.file_data).split(',')[1]||'';
+          var bin=atob(b64), u8=new Uint8Array(bin.length);
+          for(var i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+          reSplitParse(u8.buffer);
+        }catch(e){ toast('⚠ '+L('파일 해석 실패','Error')); }
+      });
+    } else reSplitPick();   // 원본 미보관(8MB 초과 등) → 직접 선택
+  }
+  function reSplitPick(){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls';
+    inp.addEventListener('change',function(){
+      var f=inp.files[0]; if(!f) return;
+      var r=new FileReader();
+      r.onload=function(e){ reSplitParse(e.target.result); };
+      r.readAsArrayBuffer(f);
+    });
+    inp.click();
   }
 
   /* ---- 패킹리스트 새 창 보기(다운로드 아님) ---- */

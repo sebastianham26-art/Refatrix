@@ -70,6 +70,61 @@ function summarize(pallets, pmap) {
   };
 }
 
+
+// ===== 라인 재분할(2026-08-17) =====
+// 라인별 저장(합산 제거) 이전에 등재된 선적을, 원본 패킹리스트를 다시 읽어
+// 라인별 행으로 교체한다. 하차 상태·팔렛·ETA·파일은 그대로 보존한다.
+//   안전 가드: 검수/적치가 하나라도 진행된 선적은 거부(스캔 기록 귀속을 임의로 나눌 수 없으므로).
+//   같은 파일인지 검증: 팔렛 집합(ORDER NO+PL NO)과 팔렛별 카톤·수량 합계가 기존과 일치해야 한다.
+// 테스트를 위해 core 를 분리 export — 라우트는 withTx 안에서 이 함수를 부른다.
+export async function applyRelines(q, shipmentId, pallets, pmap) {
+  const existing = (await q(
+    `SELECT id, order_no, pl_no, cartons_expected, qty_expected, checked_at
+       FROM inbound_pallets WHERE shipment_id=$1`, [shipmentId])).rows;
+  if (!existing.length) return { error: 'no_pallets' };
+  if (existing.some((p) => p.checked_at)) return { error: 'already_scanned' };
+
+  const scanned = (await q(
+    `SELECT COUNT(*)::int AS n FROM inbound_pallet_items
+      WHERE shipment_id=$1 AND (scanned_cartons > 0 OR put_cartons > 0)`, [shipmentId])).rows[0];
+  if (Number(scanned.n) > 0) return { error: 'already_scanned' };
+
+  const byKey = new Map();
+  for (const p of existing) byKey.set(p.order_no + '|' + p.pl_no, p);
+
+  // 파일 ↔ 기존 팔렛 대조
+  const mismatch = [];
+  if (pallets.length !== existing.length) mismatch.push('pallet_count ' + pallets.length + '!=' + existing.length);
+  for (const p of pallets) {
+    const ex = byKey.get(p.order_no + '|' + p.pl_no);
+    if (!ex) { mismatch.push('missing ' + p.order_no + '/' + p.pl_no); continue; }
+    const cartons = p.items.reduce((a, i) => a + i.cartons, 0);
+    const qty = p.items.reduce((a, i) => a + i.qty, 0);
+    if (cartons !== Number(ex.cartons_expected) || Math.abs(qty - Number(ex.qty_expected)) > 0.001) {
+      mismatch.push('totals ' + p.order_no + '/' + p.pl_no + ' ' + cartons + 'x' + qty + '!=' + ex.cartons_expected + 'x' + ex.qty_expected);
+    }
+  }
+  if (mismatch.length) return { error: 'file_mismatch', detail: mismatch.slice(0, 8) };
+
+  const before = Number((await q(
+    `SELECT COUNT(*)::int AS n FROM inbound_pallet_items WHERE shipment_id=$1`, [shipmentId])).rows[0].n);
+  await q(`DELETE FROM inbound_pallet_items WHERE shipment_id=$1`, [shipmentId]);
+  let lines = 0;
+  for (const p of pallets) {
+    const ex = byKey.get(p.order_no + '|' + p.pl_no);
+    for (const it of p.items) {
+      const pid = pmap[it.code] ? pmap[it.code].id : null;
+      await q(
+        `INSERT INTO inbound_pallet_items
+           (pallet_id, shipment_id, product_id, input_code, cartons, qty, box_from, box_to)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [ex.id, shipmentId, pid, it.code, it.cartons, it.qty, it.box_from, it.box_to]);
+      lines++;
+    }
+  }
+  return { ok: true, pallets: pallets.length, lines, before_lines: before };
+}
+
 export default async function inboundRoutes(app) {
   const g = { preHandler: [authGuard, requirePage('warehouse')] };
   const gView = { preHandler: [authGuard, requirePageAny(['warehouse', 'purchase'])] }; // 파일 열람: 창고+구매
@@ -138,6 +193,24 @@ export default async function inboundRoutes(app) {
     });
     await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'inbound_create', target: 'inbound:' + shipmentId, detail: { invoice_no, pallets: pallets.length } });
     return { ok: true, id: shipmentId };
+  });
+
+  // 라인 재분할 — 합산 저장된 기존 선적을 원본 파일 기준 라인별 행으로 교체 ----
+  app.post('/api/inbound/:id/relines', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id);
+    const s = (await query(`SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!s) return { error: 'not_found' };
+    if (!['incoming', 'receiving'].includes(s.status)) return { error: 'bad_state' };
+    const pallets = aggregate(req.body?.rows);
+    if (!pallets.length) return { error: 'empty' };
+    const codes = []; pallets.forEach((p) => p.items.forEach((i) => codes.push(i.code)));
+    const pmap = await matchProducts(query, codes);
+    const r = await withTx(async (c) => applyRelines(c.query.bind(c), id, pallets, pmap));
+    if (r.error) return r;
+    await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+      detail: { relines: true, lines: r.lines, before_lines: r.before_lines } });
+    return r;
   });
 
   // 선적 목록 --------------------------------------------------------
