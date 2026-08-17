@@ -46,6 +46,7 @@ import briefingAiRoutes from './routes/briefingAiRoutes.js';
 import stockCountRoutes from './routes/stockCountRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
 import inboundRoutes from './routes/inboundRoutes.js';
+import zoneRoutes from './routes/zoneRoutes.js';
 import visitRoutes from './routes/visitRoutes.js';
 import visitRecRoutes from './routes/visitRecRoutes.js';
 import offerSheetRoutes from './routes/offerSheetRoutes.js';
@@ -97,6 +98,7 @@ export function buildApp() {
   app.register(quoteRoutes);
   app.register(stockRoutes);
   app.register(inboundRoutes);
+  app.register(zoneRoutes);
   app.register(devRequestRoutes);
   app.register(userRoutes);
   app.register(commissionRoutes);

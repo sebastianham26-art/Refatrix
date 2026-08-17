@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageAny } from '../middleware/authGuard.js';
 import { verifyPin } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { NEW_KEY } from './zoneRoutes.js';
 
 // build 20260718a-inbound
 // 수입 입고(Recepción): 패킹리스트 업로드 → 팔렛/검수/적치 → 마감(구매 received_qty 연동)
@@ -14,8 +15,10 @@ const int = (v) => Math.round(num(v));
 // 하트비트가 끊기면(탭 닫힘·이동) 이 시간이 지나 자동으로 "작업 중"이 사라진다.
 const WORKING_WINDOW_SECONDS = 120;
 
-// 패킹리스트 원본 rows([{order_no, pl_no, code, cartons, qty, desc}])를
-// 팔렛(ORDER NO+PL NO) → SKU별로 집계. code→product 매칭은 호출부에서 주입.
+// 패킹리스트 원본 rows([{order_no, pl_no, code, cartons, qty, desc, box_from, box_to}])를
+// 팔렛(ORDER NO+PL NO)으로 묶는다. code→product 매칭은 호출부에서 주입.
+// ⚠ 라인을 합산하지 않는다(2026-08-17): 같은 SKU 라도 파일의 각 라인이 곧 카톤 묶음이고
+//   라인마다 소입수량(qty÷cartons)이 다를 수 있다. 파일에 적힌 그대로 한 줄 = 한 행으로 보존한다.
 function aggregate(rows) {
   const pallets = new Map(); // key: order_no|pl_no
   for (const r of rows || []) {
@@ -27,15 +30,15 @@ function aggregate(rows) {
     const qty = num(r.qty);
     if (qty <= 0) continue;
     const pk = order_no + '|' + pl_no;
-    if (!pallets.has(pk)) pallets.set(pk, { order_no, pl_no, items: new Map() });
-    const items = pallets.get(pk).items;
-    if (!items.has(code)) items.set(code, { code, cartons: 0, qty: 0, desc: String(r.desc || '').slice(0, 60) });
-    const it = items.get(code);
-    it.cartons += cartons; it.qty += qty;
+    if (!pallets.has(pk)) pallets.set(pk, { order_no, pl_no, items: [] });
+    pallets.get(pk).items.push({
+      code, cartons, qty, desc: String(r.desc || '').slice(0, 60),
+      box_from: r.box_from == null ? null : int(r.box_from),
+      box_to: r.box_to == null ? null : int(r.box_to),
+    });
   }
   return [...pallets.values()].map((p) => ({
-    order_no: p.order_no, pl_no: p.pl_no,
-    items: [...p.items.values()],
+    order_no: p.order_no, pl_no: p.pl_no, items: p.items,   // 파일 등장 순서 유지
   })).sort((a, b) => a.order_no.localeCompare(b.order_no) || a.pl_no - b.pl_no);
 }
 
@@ -126,9 +129,9 @@ export default async function inboundRoutes(app) {
           const pid = pmap[it.code] ? pmap[it.code].id : null;
           await q(
             `INSERT INTO inbound_pallet_items
-               (pallet_id, shipment_id, product_id, input_code, cartons, qty)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-            [pal.id, s.id, pid, it.code, it.cartons, it.qty]);
+               (pallet_id, shipment_id, product_id, input_code, cartons, qty, box_from, box_to)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [pal.id, s.id, pid, it.code, it.cartons, it.qty, it.box_from, it.box_to]);
         }
       }
       return s.id;
@@ -178,19 +181,34 @@ export default async function inboundRoutes(app) {
     const me = req.ctx.perm.userId;
     const items = (await query(
       `SELECT pi.id, pi.pallet_id, pi.product_id, pi.input_code, pi.cartons, pi.qty,
-              pi.scanned_cartons, pi.put_cartons, pi.rack_saved,
-              p.name AS product_name, p.rack_location
+              pi.scanned_cartons, pi.put_cartons, pi.rack_saved, pi.box_from, pi.box_to,
+              p.name AS product_name, p.rack_location,
+              rz.zone AS rack_zone, wz.name AS rack_zone_name
          FROM inbound_pallet_items pi
          LEFT JOIN products p ON p.id = pi.product_id
-        WHERE pi.shipment_id=$1`, [id])).rows;
+         LEFT JOIN rack_zones rz
+                ON UPPER(rz.rack) = UPPER(TRIM(COALESCE(NULLIF(TRIM(pi.rack_saved), ''), p.rack_location)))
+         LEFT JOIN warehouse_zones wz ON wz.zone = rz.zone
+        WHERE pi.shipment_id=$1
+        ORDER BY pi.id`, [id])).rows;   // id 순 = 패킹리스트 라인 순(생성 시 파일 순서대로 INSERT)
+    // 랙이 없는 신규 SKU 는 '__NEW__' 로 지정된 기본 존으로 안내한다(0172)
+    const nz = (await query(
+      `SELECT rz.zone, wz.name FROM rack_zones rz
+         JOIN warehouse_zones wz ON wz.zone = rz.zone
+        WHERE rz.rack = $1`, [NEW_KEY])).rows[0] || null;
     const byPal = {};
     for (const it of items) {
       (byPal[it.pallet_id] = byPal[it.pallet_id] || []).push({
         id: Number(it.id), product_id: it.product_id ? Number(it.product_id) : null,
         code: it.input_code, name: it.product_name || null,
         cartons: it.cartons, qty: num(it.qty),
+        box_from: it.box_from, box_to: it.box_to,   // 패킹리스트의 카톤 번호 범위(라인 구분용)
         scanned_cartons: it.scanned_cartons, put_cartons: it.put_cartons,
         rack: it.rack_saved || it.rack_location || null,
+        // 존 이동용 임시 팔렛 번호(0172). 랙에 지정된 존 → 없으면 신규 기본 존 → 그것도 없으면 null
+        zone: it.rack_zone != null ? Number(it.rack_zone) : (nz ? Number(nz.zone) : null),
+        zone_name: it.rack_zone != null ? (it.rack_zone_name || null) : (nz ? nz.name : null),
+        zone_is_default: it.rack_zone == null && !!nz,   // 랙이 아니라 신규 기본값으로 정해진 존
         registered: it.product_id != null,
       });
     }

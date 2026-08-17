@@ -106,13 +106,13 @@ async function openCheck(SHIP) {
     const box = ctx.doc.getElementById('scanres').textContent;
     ok('"패킹리스트에 없는 카톤" 사라짐', !/없는 카톤/.test(box), box.slice(0, 70));
     ok('팔렛 자동 확정', !!ctx.t.getLock() && ctx.t.getLock().id === 11);
-    ok('카톤 1 집계', ctx.t.getCounts()['CE0796'] === 1, JSON.stringify(ctx.t.getCounts()));
-    ok('수량 16 EA 집계', ctx.t.getQty()['CE0796'] === 16, JSON.stringify(ctx.t.getQty()));
+    ok('카톤 1 집계(라인 id 키)', ctx.t.getCounts()[101] === 1, JSON.stringify(ctx.t.getCounts()));
+    ok('수량 16 EA 집계(라인 id 키)', ctx.t.getQty()[101] === 16, JSON.stringify(ctx.t.getQty()));
     ok('결과칸에 제품번호 표시', /CE0796/.test(box));
     ok('결과칸에 수량 16 EA 표시', /16 EA/.test(box), box.slice(0, 90));
     ctx.scan(asScanner('CTR-CE0796-16'));
-    ok('2번째 스캔 → 카톤 2 · 32 EA', ctx.t.getCounts()['CE0796'] === 2 && ctx.t.getQty()['CE0796'] === 32,
-      ctx.t.getCounts()['CE0796'] + '/' + ctx.t.getQty()['CE0796']);
+    ok('2번째 스캔 → 카톤 2 · 32 EA', ctx.t.getCounts()[101] === 2 && ctx.t.getQty()[101] === 32,
+      ctx.t.getCounts()[101] + '/' + ctx.t.getQty()[101]);
     const ctxt = ctx.doc.getElementById('ctxt').textContent;
     ok('진행 표시에 수량 대사', /2\/36/.test(ctxt) && /32\/576 EA/.test(ctxt), ctxt);
   }
@@ -123,8 +123,8 @@ async function openCheck(SHIP) {
     const ctx = await openCheck(SHIP);
     ctx.scan('CTR-CE0796-12');
     const box = ctx.doc.getElementById('scanres').textContent;
-    ok('카톤은 집계됨', ctx.t.getCounts()['CE0796'] === 1);
-    ok('라벨 수량 12 로 집계', ctx.t.getQty()['CE0796'] === 12, ctx.t.getQty()['CE0796']);
+    ok('카톤은 집계됨', ctx.t.getCounts()[101] === 1);
+    ok('라벨 수량 12 로 집계', ctx.t.getQty()[101] === 12, ctx.t.getQty()[101]);
     ok('소입수 불일치 경고 표시', /소입수 불일치/.test(box), box.slice(0, 120));
     ok('경고에 라벨/패킹리스트 수량 병기', /12 EA/.test(box) && /16 EA/.test(box));
   }
@@ -139,7 +139,7 @@ async function openCheck(SHIP) {
     ok('팔렛 잠기지 않음', ctx.t.getLock() === null);
     ok('실패 원인 진단 표시(제품번호)', /ZZ9999/.test(box), box.slice(0, 120));
     ctx.scan(asScanner('CTR-CE0796-16'));
-    ok('실패 후 정상 스캔은 그대로 동작', !!ctx.t.getLock() && ctx.t.getCounts()['CE0796'] === 1);
+    ok('실패 후 정상 스캔은 그대로 동작', !!ctx.t.getLock() && ctx.t.getCounts()[101] === 1);
   }
 
   console.log('\n⑤ 초과 스캔 차단 · 검수 완료 전송(증분)');
@@ -149,9 +149,9 @@ async function openCheck(SHIP) {
     SHIP.pallets[0].cartons_expected = 2; SHIP.pallets[0].qty_expected = 32;
     const ctx = await openCheck(SHIP);
     ctx.scan('CTR-CE0796-16'); ctx.scan('CTR-CE0796-16');
-    ok('2/2 카톤 · 32/32 EA', ctx.t.getCounts()['CE0796'] === 2 && ctx.t.getQty()['CE0796'] === 32);
+    ok('2/2 카톤 · 32/32 EA', ctx.t.getCounts()[101] === 2 && ctx.t.getQty()[101] === 32);
     ctx.scan('CTR-CE0796-16');
-    ok('3번째는 초과로 차단', ctx.t.getCounts()['CE0796'] === 2);
+    ok('3번째는 초과로 차단', ctx.t.getCounts()[101] === 2);
     ok('초과 경고 표시', /초과 스캔/.test(ctx.doc.getElementById('scanres').textContent));
     ctx.t.checkDone();
     await new Promise(r => setTimeout(r, 30));
@@ -211,6 +211,43 @@ async function openCheck(SHIP) {
     ok('목표 초과는 차단', ctx.t.getPutAdd()[101] === 2);
     box = ctx.doc.getElementById('putres').textContent;
     ok('완료/초과 안내 표시', /이미 다 적치|Ya está acomodado/.test(box), box.slice(0, 90));
+  }
+
+  console.log('\n⑧ 라인별 저장 — 같은 SKU 두 라인(16EA·12EA), 라벨 수량으로 라인 자동 선택');
+  {
+    const SHIP = mkShip();
+    SHIP.pallets[0].items = [
+      { id: 201, code: 'CE0796', name: 'T', cartons: 2, qty: 32, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0, box_from: 1, box_to: 2 },   // ×16
+      { id: 202, code: 'CE0796', name: 'T', cartons: 3, qty: 36, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0, box_from: 3, box_to: 5 },   // ×12
+    ];
+    SHIP.pallets[0].cartons_expected = 5; SHIP.pallets[0].qty_expected = 68;
+    const ctx = await openCheck(SHIP);
+    ctx.scan('CTR-CE0796-12');                       // 소입수 12 라벨 → 두번째 라인(202)에 붙어야 함
+    ok('12EA 라벨 → ×12 라인(202)에 배정', ctx.t.getCounts()[202] === 1 && !ctx.t.getCounts()[201], JSON.stringify(ctx.t.getCounts()));
+    ok('소입수 불일치 경고 없음', !/소입수 불일치/.test(ctx.doc.getElementById('scanres').textContent));
+    ctx.scan('CTR-CE0796-16');
+    ok('16EA 라벨 → ×16 라인(201)에 배정', ctx.t.getCounts()[201] === 1, JSON.stringify(ctx.t.getCounts()));
+    ctx.scan('CTR-CE0796-16'); ctx.scan('CTR-CE0796-16');   // ×16 라인은 2카톤뿐 → 3번째 16EA는 ×12 라인으로 넘어감(여유 라인)
+    ok('×16 라인 2/2 차면 여유 라인으로', ctx.t.getCounts()[201] === 2 && ctx.t.getCounts()[202] === 2, JSON.stringify(ctx.t.getCounts()));
+    const box = ctx.doc.getElementById('scanres').textContent;
+    ok('넘어간 스캔엔 소입수 불일치 경고', /소입수 불일치/.test(box), box.slice(0, 140));
+    ok('결과칸에 라인 구분(#3–5) 표시', /#3–5/.test(box), box.slice(0, 100));
+    ctx.scan('CTR-CE0796-12');                       // 총 5/5
+    ctx.scan('CTR-CE0796-12');
+    ok('전 라인 차면 초과 차단', ctx.t.getCounts()[201] === 2 && ctx.t.getCounts()[202] === 3, JSON.stringify(ctx.t.getCounts()));
+    ok('초과 경고 표시', /초과 스캔/.test(ctx.doc.getElementById('scanres').textContent));
+    const sk = ctx.doc.getElementById('sklist').textContent;
+    ok('SKU 목록에 두 라인 각각(#1–2 · #3–5)', /#1–2/.test(sk) && /#3–5/.test(sk), sk.slice(0, 160));
+    ok('라인별 소입수 표기(×16 · ×12)', /×16/.test(sk) && /×12/.test(sk));
+    const ctxt = ctx.doc.getElementById('ctxt').textContent;
+    // 라벨 합계 = 12+16+16+16+12 = 72 vs 패킹리스트 68 → 차이 4 를 정직하게 경고(3번째 16EA 가 ×12 라인으로 간 것)
+    ok('진행: 카톤 5/5 + 수량 차이 4 경고', /5\/5/.test(ctxt) && /72\/68 EA/.test(ctxt) && /차이/.test(ctxt), ctxt);
+    ctx.t.checkDone();
+    await new Promise(r => setTimeout(r, 30));
+    const post = ctx.sent.filter(x => /\/check$/.test(x.url))[0];
+    ok('검수완료: 라인별 증분 따로 전송', post && post.body.items.length === 2
+      && post.body.items.find(i => i.item_id === 201).scanned_delta === 2
+      && post.body.items.find(i => i.item_id === 202).scanned_delta === 3, post && JSON.stringify(post.body));
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
