@@ -10,7 +10,7 @@ import { logEvent } from '../audit.js';
 const num = (v) => (v == null ? 0 : Number(v));
 const int = (v) => Math.round(num(v));
 
-// 팔렛 점유 표시(0167) 유효 시간(초). 프런트 자동 갱신 주기 25초의 약 4배 + 여유.
+// 팔렛 점유 표시(0171) 유효 시간(초). 프런트 자동 갱신 주기 25초의 약 4배 + 여유.
 // 하트비트가 끊기면(탭 닫힘·이동) 이 시간이 지나 자동으로 "작업 중"이 사라진다.
 const WORKING_WINDOW_SECONDS = 120;
 
