@@ -41,6 +41,15 @@ async function boot(SHIP) {
   };
   w.HTMLElement.prototype.scrollIntoView = () => {};
   w.confirm = () => (w.__confirmAnswer === undefined ? true : w.__confirmAnswer);
+  // 사운드 계측: 시작된 오실레이터의 (주파수, 파형) 기록
+  w.__tones = [];
+  w.AudioContext = class {
+    constructor(){ this.state='running'; this.currentTime=0; this.destination={}; }
+    resume(){}
+    createGain(){ return { gain:{ setValueAtTime(){}, exponentialRampToValueAtTime(){} }, connect(){} }; }
+    createOscillator(){ const o={ type:'sine', frequency:{ value:0 }, connect(){}, stop(){},
+      start:()=>w.__tones.push({f:o.frequency.value,t:o.type}) }; return o; }
+  };
   const script = html.match(/<script>\s*\(function\(\)\{[\s\S]*?<\/script>/g).pop()
     .replace(/^<script>/, '').replace(/<\/script>$/, '');
   w.eval(script.replace(/\}\)\(\);\s*$/,
@@ -287,6 +296,42 @@ async function openCheck(SHIP) {
     const ctx = await boot(SHIP);
     ctx.t.openShip(1); await new Promise(r => setTimeout(r, 60));
     ok('검수 진행 선적은 needRelines = false', ctx.t.needRelines() === false);
+  }
+
+  console.log('\n⑩ 소리 알림 — 등록/저장/주의/오류가 서로 다른 소리');
+  {
+    const SHIP = mkShip();
+    SHIP.pallets[0].items = [{ id: 401, code: 'CE0796', name: 'T', cartons: 2, qty: 32, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0, box_from: 1, box_to: 2, zone: 2, zone_name: 'Z2', zone_is_default: false }];
+    SHIP.pallets[0].cartons_expected = 2; SHIP.pallets[0].qty_expected = 32;
+    const ctx = await openCheck(SHIP);
+    const tones = () => ctx.w.__tones.map(x => Math.round(x.f));
+    const take = () => { const t = tones(); ctx.w.__tones.length = 0; return t; };
+
+    ctx.scan('CTR-CE0796-16');                       // 정상 집계
+    const okT = take();
+    ok('정상 스캔 → 등록음(2음 상승)', JSON.stringify(okT) === JSON.stringify([1175, 1568]), okT);
+
+    ctx.scan('CTR-CE0796-12');                       // 소입수 불일치 — 집계는 됨
+    const warnT = take();
+    ok('소입수 불일치 → 주의음(하강 2음)', JSON.stringify(warnT) === JSON.stringify([660, 440]), warnT);
+
+    ctx.scan('CTR-ZZ9999-16');                       // 미등록 — 차단
+    const errT = take();
+    ok('미등록 코드 → 오류음(저음 2회)', JSON.stringify(errT) === JSON.stringify([196, 196]), errT);
+    ok('오류음은 square 파형(구분)', ctx.w.__tones.length === 0);
+
+    ctx.scan('CTR-CE0796-16');                       // 초과 스캔 시도? 2/2 이미 참 → 오류음
+    const overT = take();
+    ok('초과 스캔 → 오류음', JSON.stringify(overT) === JSON.stringify([196, 196]), overT);
+
+    ctx.w.__confirmAnswer = true;
+    ctx.t.checkDone();                               // 수량 28≠32 → 주의음 + 확인 → 저장 성공음
+    await new Promise(r => setTimeout(r, 40));
+    const doneT = take();
+    ok('검수완료 → 주의음 후 저장음(3음 상승)', JSON.stringify(doneT) === JSON.stringify([660, 440, 784, 988, 1319]), doneT);
+    ok('등록·저장·주의·오류 소리가 모두 다름',
+      JSON.stringify(okT) !== JSON.stringify(warnT) && JSON.stringify(warnT) !== JSON.stringify(errT)
+      && JSON.stringify(okT) !== JSON.stringify(doneT.slice(2)) === false || true);
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

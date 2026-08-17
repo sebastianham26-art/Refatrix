@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817e</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817f</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -190,7 +190,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817e';
+  var BUILD='20260817f';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -200,6 +200,32 @@
   var fmt=function(n){return Number(n||0).toLocaleString(LANG==='es'?'es-MX':'ko-KR');};
   var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
   var toastT; function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on');},1900);}
+  /* ===== 스캔 소리 알림(2026-08-17) — 스캐너 자체 삑소리와 별개로, 시스템이 "결과"를 소리로 알린다.
+     ✔ 등록음(2음 상승)  = 스캔이 정상 집계됨 → 바로 다음 박스 스캔 가능
+     ✔ 저장음(3음 상승)  = 서버 저장 완료(검수완료·적치저장)
+     ⚠ 주의음(하강 1음)  = 집계는 됐지만 확인 필요(소입수 불일치·존/랙 미지정·후보 대기)
+     ✖ 오류음(저음 2회)  = 차단됨 — 집계 안 됨(미등록·초과·불일치·저장 실패)
+     · 안내음(단음)      = 위치 안내·랙 잠금 등 정보성 확인 */
+  var AC=null;
+  function tone(freq,dur,delay,type,vol){
+    try{
+      var Ctx=window.AudioContext||window.webkitAudioContext; if(!Ctx) return;
+      if(!AC) AC=new Ctx();
+      if(AC.state==='suspended'&&AC.resume) AC.resume();
+      var t0=AC.currentTime+(delay||0)/1000;
+      var o=AC.createOscillator(), g=AC.createGain();
+      o.type=type||'sine'; o.frequency.value=freq;
+      g.gain.setValueAtTime(vol||0.28,t0);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+dur/1000);
+      o.connect(g); g.connect(AC.destination);
+      o.start(t0); o.stop(t0+dur/1000+0.02);
+    }catch(e){}
+  }
+  function sndOk(){ tone(1175,70,0); tone(1568,90,85); }                       // 삐빅↑ 등록됨
+  function sndSaved(){ tone(784,90,0); tone(988,90,100); tone(1319,140,200); } // 따라란↑ 저장됨
+  function sndWarn(){ tone(660,110,0,'triangle'); tone(440,220,110,'triangle'); } // 뚜-웅↓ 확인 필요
+  function sndErr(){ tone(196,160,0,'square',0.2); tone(196,200,220,'square',0.2); } // 뻑뻑 차단
+  function sndInfo(){ tone(880,80,0); }                                        // 안내
   /* ===== 스캐너 입력 보정 =====
      스캐너는 US 자판 키코드를 흘려보내는데 현장 PC 자판은 스페인어(라틴아메리카)라
      바코드의 `-` 가 `'` 로 들어온다. 변종 따옴표(’ ‘ ´ ` ʼ)까지 모두 `-` 로 되돌린다.
@@ -1130,10 +1156,11 @@
   function showScan(code,cls,warn,candN,line){
     var box=$('scanres'); box.className='scanbox '+(cls||'');
     var p=scanLock, it=line||(p?findItem(p.items,code):null), nm=it?(it.name||''):'';
-    if(warn){ box.innerHTML='<div class="sku" style="color:var(--red)">⚠ '+esc(code)+'</div><div class="nm">'+esc(nm)+'</div><div class="z"><b style="color:var(--red)">'+esc(warn)+'</b></div>'+labelHint(); return; }
-    if(!scanLock){ box.innerHTML='<div class="sku">'+esc(code)+'</div><div class="z"><span class="tag s">'+L('후보 팔렛','Candidatos')+' '+candN+'</span> <b>'+L('한 번 더 스캔','Escanee otra vez')+'</b></div>'+labelHint(); return; }
+    if(warn){ sndErr(); box.innerHTML='<div class="sku" style="color:var(--red)">⚠ '+esc(code)+'</div><div class="nm">'+esc(nm)+'</div><div class="z"><b style="color:var(--red)">'+esc(warn)+'</b></div>'+labelHint(); return; }
+    if(!scanLock){ sndWarn(); box.innerHTML='<div class="sku">'+esc(code)+'</div><div class="z"><span class="tag s">'+L('후보 팔렛','Candidatos')+' '+candN+'</span> <b>'+L('한 번 더 스캔','Escanee otra vez')+'</b></div>'+labelHint(); return; }
     var rack=it.rack, z=zoneOf(rack), isNew=(z==='NEW'), cnt=scanCounts[it.id]||0, q=scanQty[it.id]||0;
     var mm=qtyMismatch(it,scanLbl&&scanLbl.qty);
+    if(mm||zoneNo(it)==null) sndWarn(); else sndOk();   // 집계됨 — 깨끗하면 등록음, 확인거리 있으면 주의음
     var multi=linesFor(p.items,it.code).length>1, tag=lineTag(it);
     box.innerHTML='<div class="sku">'+esc(it.code)+(scanLbl&&scanLbl.qty?' <span style="font-size:15px;color:var(--muted)">× '+fmt(scanLbl.qty)+' EA</span>':'')
       +((multi&&tag)?' <span class="tag s mono" title="'+L('패킹리스트 라인(카톤 번호)','Línea de la lista (cajas)')+'">'+esc(tag)+'</span>':'')
@@ -1182,6 +1209,7 @@
     var qdone=Object.keys(scanQty).reduce(function(a,c){return a+(scanQty[c]||0);},0);
     var qexp=scanLock.qty_expected||scanLock.items.reduce(function(a,i){return a+(i.qty||0);},0);
     if(cdone>=scanLock.cartons_expected && qdone && qexp && qdone!==qexp){
+      sndWarn();
       if(!confirm(L('라벨 수량 합계가 패킹리스트와 다릅니다.','La cantidad de las etiquetas no coincide con la lista.')
         +'\n'+L('스캔','Escaneado')+' '+fmt(qdone)+' EA  ≠  '+L('패킹리스트','Lista')+' '+fmt(qexp)+' EA'
         +'\n\n'+L('그래도 검수 완료로 저장할까요?','¿Guardar la verificación de todos modos?'))) return;
@@ -1190,8 +1218,8 @@
     var items=scanLock.items.map(function(i){ return {item_id:i.id, scanned_delta:(scanCounts[i.id]||0)}; })
       .filter(function(r){ return r.scanned_delta>0; });
     api('/api/inbound/'+SHIP+'/pallets/'+scanLock.id+'/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:items})}).then(function(o){
-      if(!o.ok||o.body.error){ toast(L('저장 실패','Error')+': '+(o.body.error||o.status)); return; }
-      toast(L('✔ 팔렛 검수 완료','✔ Pallet verificado'));
+      if(!o.ok||o.body.error){ sndErr(); toast(L('저장 실패','Error')+': '+(o.body.error||o.status)); return; }
+      sndSaved(); toast(L('✔ 팔렛 검수 완료','✔ Pallet verificado'));
       clearWorking(); scanReset(); refreshDetail(renderDetail);
     });
   }
@@ -1268,8 +1296,8 @@
     var lbl=parseLabel(input); var code=lbl.matched?lbl.code:normScan(input);   // 매칭 안 되면 랙 라벨일 수 있으니 원문 유지
     var cands=putQueue().filter(function(s){
       return s.left>0 && linesFor(s.p.items,code).some(function(m){ return itemLeft(s.p,m)>0; }); });
-    if(!cands.length){ toast(L('적치 대상 카톤이 아닙니다','No es una caja por acomodar')+': '+code); return; }
-    if(cands.length>1){ toast(L('여러 팔렛에 있는 품목입니다 — 팔렛을 골라주세요','Está en varios pallets — elija uno')+' ('+cands.length+')'); return; }
+    if(!cands.length){ sndErr(); toast(L('적치 대상 카톤이 아닙니다','No es una caja por acomodar')+': '+code); return; }
+    if(cands.length>1){ sndWarn(); toast(L('여러 팔렛에 있는 품목입니다 — 팔렛을 골라주세요','Está en varios pallets — elija uno')+' ('+cands.length+')'); return; }
     putPal=cands[0].p.id; putRack=null; putLast=null; putWarn=null; pingWorking(putPal,'put');
     renderPutWork(); putScan(code);
   }
@@ -1347,7 +1375,7 @@
         +'<div class="hint" style="margin:8px 0 0">'+L('변경하면 제품 기본 위치도 함께 갱신되고 감사로그에 남습니다.','Al cambiar se actualiza la ubicación maestra del producto y se registra en auditoría.')+'</div></div>';
       $('btnRackMove').addEventListener('click',function(){ var it=putWarn.item; putWarn=null;
         putSaveRack[it.id]=putRack; putAdd[it.id]=(putAdd[it.id]||0)+1;
-        putLast={item:it,ok:true,moved:true}; schedFlush(); renderPutWork(); });
+        putLast={item:it,ok:true,moved:true}; sndOk(); schedFlush(); renderPutWork(); });
       $('btnRackSkip').addEventListener('click',function(){ putWarn=null; putLast=null; renderPutWork(); });
       return;
     }
@@ -1392,24 +1420,24 @@
     var pk=pickLine(p.items,code,(lbl.matched&&lbl.qty)||0,function(i){ return itemLeft(p,i); });
     var it=pk?pk.it:null;
     if(!it){ setPutRack(code); return; }
-    if(itemCap(p,it)<=0){ putLast={item:it,warn:L('검수된 카톤이 없는 품목','Sin cajas verificadas'),code:code}; renderPutRes(); return; }
-    if(itemLeft(p,it)<=0){ putLast={item:it,warn:L('이미 다 적치했습니다','Ya está acomodado'),code:code}; renderPutRes(); renderPutSku(); return; }
+    if(itemCap(p,it)<=0){ sndErr(); putLast={item:it,warn:L('검수된 카톤이 없는 품목','Sin cajas verificadas'),code:code}; renderPutRes(); return; }
+    if(itemLeft(p,it)<=0){ sndErr(); putLast={item:it,warn:L('이미 다 적치했습니다','Ya está acomodado'),code:code}; renderPutRes(); renderPutSku(); return; }
     var r=itemRack(it);
     if(!r){                                    // 랙 미지정
-      if(!putRack){ putLast={item:it,need:true}; renderPutRes(); return; }
+      if(!putRack){ sndWarn(); putLast={item:it,need:true}; renderPutRes(); return; }
       putSaveRack[it.id]=putRack;              // 작업 랙을 이 SKU 기본 위치로 저장
       putAdd[it.id]=(putAdd[it.id]||0)+1; putLast={item:it,assigned:true};
-      schedFlush(); renderPutRes(); renderPutSku(); putSaveSync(); return;
+      sndOk(); schedFlush(); renderPutRes(); renderPutSku(); putSaveSync(); return;
     }
-    if(!putRack){ putLast={item:it,guide:true}; renderPutRes(); return; }   // 위치만 안내
-    if(!bareEq(putRack,r)){ putWarn={item:it}; renderPutRes(); return; }
+    if(!putRack){ sndInfo(); putLast={item:it,guide:true}; renderPutRes(); return; }   // 위치만 안내
+    if(!bareEq(putRack,r)){ sndErr(); putWarn={item:it}; renderPutRes(); return; }
     putAdd[it.id]=(putAdd[it.id]||0)+1; putLast={item:it};
-    schedFlush(); renderPutRes(); renderPutSku(); putSaveSync();
+    sndOk(); schedFlush(); renderPutRes(); renderPutSku(); putSaveSync();
   }
   function setPutRack(rack){
     if(!rack) return;
-    if(putRack&&bareEq(putRack,rack)){ toast(L('이미 이 랙입니다','Ya es esta ubicación')+' '+rack); return; }
-    putFlush(function(){ putRack=rack; putLast=null; putWarn=null; toast('📍 '+L('작업 랙','Ubicación')+' '+rack); renderPutWork(); });
+    if(putRack&&bareEq(putRack,rack)){ sndWarn(); toast(L('이미 이 랙입니다','Ya es esta ubicación')+' '+rack); return; }
+    putFlush(function(){ putRack=rack; putLast=null; putWarn=null; sndInfo(); toast('📍 '+L('작업 랙','Ubicación')+' '+rack); renderPutWork(); });
   }
   /* 저장 — 스캔 흐름을 끊지 않도록 유휴 2.5초 뒤 자동 저장 + 버튼/랙변경/이탈 시 즉시 */
   function schedFlush(){ clearTimeout(putFlushT); putFlushT=setTimeout(function(){ putFlush(); },2500); }
@@ -1428,7 +1456,8 @@
     api('/api/inbound/'+SHIP+'/pallets/'+p.id+'/putaway',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({items:items})}).then(function(o){
       putSaving=false;
-      if(!o.ok||o.body.error){ toast(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)); putSaveSync(); if(cb)cb(); return; }
+      if(!o.ok||o.body.error){ sndErr(); toast(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)); putSaveSync(); if(cb)cb(); return; }
+      sndSaved();
       putAdd={}; putSaveRack={};
       var wasDone=o.body.done;
       refreshDetail(function(){

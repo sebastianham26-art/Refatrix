@@ -1,8 +1,8 @@
 # REFATRIX 인수인계 — 패킹리스트 라인별 저장(합산 제거) + 검수·적치 라인 단위 스캔 2026-08-17
 
 **⚠ 마이그레이션 0173 (신규 — `npm run migrate` 필수, 0172 와 함께)** · **백엔드 1 + 마이그레이션 1 + 프런트 1**
-**산출물 zip**: `refatrix_inbound_line_v3.zip` (**오늘 존 지정 작업(0172)까지 누적** — zone v1 대체)
-**빌드**: `refatrix-inbound.html` **20260817c → 20260817e**
+**산출물 zip**: `refatrix_inbound_line_v4.zip` (**오늘 존 지정 작업(0172)까지 누적** — zone v1 대체)
+**빌드**: `refatrix-inbound.html` **20260817c → 20260817f**
 
 > 같은 날 앞선 작업: ① 카톤 라벨 파싱(`..._2026-08-17_inbound_carton_label_scan.md`)
 > ② 존 지정(`..._2026-08-17b_warehouse_zone_sorting.md`). **이 zip 은 둘 다 포함**한다.
@@ -59,13 +59,13 @@
 2. Railway APP 콘솔 **`npm run migrate`** → `apply 0172_...` + `apply 0173_inbound_line_boxes.sql` 확인.
    (0173 없이 새 백엔드가 돌면 선적 생성 INSERT 가 box_from 컬럼 부재로 **500** — 반드시 실행.)
 3. **프런트**: `refatrix-zones.html`(신규) · `refatrix-nav.js` · `refatrix-inbound.html` + nav 토큰 갱신 HTML 43장 → Push → Pages 1~2분.
-4. **Ctrl+Shift+R** → 콘솔 `[refatrix-nav] v20260817z` · `[refatrix-inbound] build 20260817e` · `[refatrix-zones] build zone-0817a`.
+4. **Ctrl+Shift+R** → 콘솔 `[refatrix-nav] v20260817z` · `[refatrix-inbound] build 20260817f` · `[refatrix-zones] build zone-0817a`.
 
 배포 확인:
 ```
 curl -s ".../main/refatrix-api/migrations/0173_inbound_line_boxes.sql?nc=$(date +%s)" | grep -c "box_from"   # 1+
 curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c "라인을 합산하지 않는다"  # 1
-curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "20260817e"                                # 2
+curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "20260817f"                                # 2
 curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c "applyRelines"          # 3
 curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "pickLine"                                 # 3+
 ```
@@ -91,6 +91,22 @@ curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "pickLine"    
   다른 파일이면 `file_mismatch` 거부 — 무엇이 다른지 detail 로 알려준다.
 - 팔렛 행(id·하차 상태·예상 카톤)은 건드리지 않는다. 감사로그 `update` + `target inbound:<id>` (before/after 라인 수).
 
+
+## ③-2 스캔 소리 알림 (build `20260817f` 추가 — 디렉터 지시)
+
+스캐너 자체의 "읽었다" 삑소리와 별개로, **시스템이 스캔 결과를 소리로** 알린다(WebAudio — 파일·네트워크 불필요).
+
+| 소리 | 언제 | 뜻 |
+|---|---|---|
+| **등록음** 삐빅↑ (2음 상승) | 스캔이 정상 집계된 직후 | **다음 박스 스캔해도 됨** |
+| **저장음** 따라란↑ (3음 상승) | 검수완료·적치 저장이 서버에 성공 | 서버 기록 완료 |
+| **주의음** 뚜웅↓ (하강) | 집계는 됐지만 확인 필요(소입수 불일치·존/랙 미지정·후보 대기·수량차 확인창) | 화면 확인 |
+| **오류음** 뻑뻑 (저음 2회, square) | 차단됨 — 집계 안 됨(미등록·초과·랙 불일치·저장 실패) | 다시 확인 후 스캔 |
+| 안내음 (단음) | 위치 안내·랙 잠금 | 정보성 |
+
+- 소리는 **이벤트 시점에만** 발생(폴링 재렌더에서 중복 재생 없음 — showScan/putScan 등 이벤트 핸들러에 훅).
+- 검수·적치·저장 실패까지 전 지점 커버. 볼륨은 현장용으로 크게(오류음은 파형 자체가 달라 멀리서도 구분).
+
 ## ④ 테스트 (운영 스모크)
 
 1. 같은 SKU 가 여러 라인인 패킹리스트 업로드 → 미리보기 수량 대사 ✅ → 선적 생성.
@@ -101,12 +117,12 @@ curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "pickLine"    
 6. 적치에서 같은 SKU 스캔 → 남은 라인부터 소진되는지. 마감 후 발주 입고 수량이 파일 합계와 같은지.
 7. 존 지정·자판 보정 등 오늘 앞선 기능 회귀 없음.
 
-## ⑤ 검증 (이 세션 — 누적 182/182 ✅)
+## ⑤ 검증 (이 세션 — 누적 189/189 ✅)
 
 - **`refatrix-api/test/inbound_lines.test.js` 25/25 (신규)** — ④ 라인 재분할 8건 포함(운영 `applyRelines` 를 직접 import 해 실 Postgres 로 실행): 합산 1행 → 2라인 교체 · 팔렛 id/상태 보존 · 다른 파일 거부(합계·팔렛) · 검수 진행 시 거부. — **운영 소스에서 `aggregate()`·INSERT·GET SQL 을 추출해 실행**:
   같은 SKU 3라인 비합산·순서·box 범위·카톤0 낱개 라인 / 실 Postgres 에 같은 SKU 2행 저장(유니크 제약 없음 실증) /
   GET 쿼리 0173 컬럼·id 순 / `SUM(qty)` 마감 연동 동일 / 라인별 검수 증분 독립.
-- **`scan_label.test.js` 61/61** — ⑨ 라인 재분할 링크 노출 조건 3종 + POST 전송 포함. — 기존 43건 회귀(카운트 키를 라인 id 로 갱신) + **⑧ 멀티라인 12건**:
+- **`scan_label.test.js` 68/68** — ⑩ 소리 7건(등록/주의/오류/저장음 구분·이벤트 시점) 포함. — ⑨ 라인 재분할 링크 노출 조건 3종 + POST 전송 포함. — 기존 43건 회귀(카운트 키를 라인 id 로 갱신) + **⑧ 멀티라인 12건**:
   12EA 라벨 → ×12 라인 배정 · 16EA → ×16 라인 · 라인 차면 여유 라인 이월 + 불일치 경고 · 전 라인 초과 차단 ·
   라인 표식(#f–t)·소입수(×n) 표기 · **검수완료 라인별 증분 전송** · 수량 차이 정직 경고(72≠68).
 - 회귀: `scan_hyphen` **23/23** · `zone_ui` **46/46** · `zones` **27/27** (0173 포함 전체 마이그레이션 173개 적용 후).
