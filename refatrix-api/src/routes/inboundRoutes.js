@@ -10,6 +10,10 @@ import { logEvent } from '../audit.js';
 const num = (v) => (v == null ? 0 : Number(v));
 const int = (v) => Math.round(num(v));
 
+// 팔렛 점유 표시(0167) 유효 시간(초). 프런트 자동 갱신 주기 25초의 약 4배 + 여유.
+// 하트비트가 끊기면(탭 닫힘·이동) 이 시간이 지나 자동으로 "작업 중"이 사라진다.
+const WORKING_WINDOW_SECONDS = 120;
+
 // 패킹리스트 원본 rows([{order_no, pl_no, code, cartons, qty, desc}])를
 // 팔렛(ORDER NO+PL NO) → SKU별로 집계. code→product 매칭은 호출부에서 주입.
 function aggregate(rows) {
@@ -164,8 +168,14 @@ export default async function inboundRoutes(app) {
     const s = (await query(`SELECT * FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!s) return { error: 'not_found' };
     const pals = (await query(
-      `SELECT id, order_no, pl_no, status, cartons_expected, qty_expected, checked_at
-         FROM inbound_pallets WHERE shipment_id=$1 ORDER BY order_no, pl_no`, [id])).rows;
+      `SELECT pl.id, pl.order_no, pl.pl_no, pl.status, pl.cartons_expected, pl.qty_expected, pl.checked_at,
+              pl.working_by, pl.working_step, pl.working_at,
+              (pl.working_at IS NOT NULL AND pl.working_at > now() - ($2 || ' seconds')::interval) AS working,
+              u.name AS working_by_name
+         FROM inbound_pallets pl
+         LEFT JOIN users u ON u.id = pl.working_by
+        WHERE pl.shipment_id=$1 ORDER BY pl.order_no, pl.pl_no`, [id, WORKING_WINDOW_SECONDS])).rows;
+    const me = req.ctx.perm.userId;
     const items = (await query(
       `SELECT pi.id, pi.pallet_id, pi.product_id, pi.input_code, pi.cartons, pi.qty,
               pi.scanned_cartons, pi.put_cartons, pi.rack_saved,
@@ -189,6 +199,12 @@ export default async function inboundRoutes(app) {
       pallets: pals.map((p) => ({
         id: Number(p.id), order_no: p.order_no, pl_no: p.pl_no, status: p.status,
         cartons_expected: p.cartons_expected, qty_expected: num(p.qty_expected),
+        checked_at: p.checked_at,   // 적치 목표(검수된 카톤) 판정용 — 프런트가 같은 기준을 쓴다
+        // 점유 표시(소프트 락) — 최근 하트비트가 있는 동안만 working=true
+        working: !!p.working, working_step: p.working ? (p.working_step || null) : null,
+        working_by: p.working ? Number(p.working_by) : null,
+        working_by_name: p.working ? (p.working_by_name || null) : null,
+        working_is_me: !!(p.working && Number(p.working_by) === Number(me)),
         items: byPal[p.id] || [],
       })),
     };
@@ -241,8 +257,34 @@ export default async function inboundRoutes(app) {
     });
   });
 
+  // 팔렛 점유 표시(소프트 락) — 다수 작업자 동시 작업용 -----------------
+  //   POST .../working        body { step:'check'|'put' }  — 열 때 1회 + 25초 자동갱신마다 하트비트
+  //   POST .../working/clear  — 내가 잡고 있던 것만 해제(남의 점유는 건드리지 않음)
+  //   막지 않는다(강제 락 아님). 같은 팔렛을 굳이 잡아도 증분 저장으로 합산된다.
+  app.post('/api/inbound/:id/pallets/:pid/working', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const step = ['check', 'put', 'unload'].includes(String(req.body?.step)) ? String(req.body.step) : null;
+    const r = await query(
+      `UPDATE inbound_pallets SET working_by=$1, working_step=$2, working_at=now()
+        WHERE id=$3 AND shipment_id=$4 RETURNING id`,
+      [uid, step, Number(req.params.pid), Number(req.params.id)]);
+    if (!r.rows.length) return { error: 'not_found' };
+    return { ok: true };
+  });
+  app.post('/api/inbound/:id/pallets/:pid/working/clear', g, async (req) => {
+    await query(
+      `UPDATE inbound_pallets SET working_by=NULL, working_step=NULL, working_at=NULL
+        WHERE id=$1 AND shipment_id=$2 AND working_by=$3`,
+      [Number(req.params.pid), Number(req.params.id), req.ctx.perm.userId]);
+    return { ok: true };
+  });
+
   // 검수 확정(프론트가 카톤 스캔으로 채운 카톤수 반영) ----------------
-  //   body: { items: [{item_id, scanned_cartons}] }
+  //   body: { items: [{item_id, scanned_delta}] }   ← 권장(증분)
+  //         { items: [{item_id, scanned_cartons}] } ← 구버전(절대값, 하위호환)
+  //   ⚠ 증분(delta)이 있으면 scanned_cartons = LEAST(기존 + delta, 예상 카톤) 로 **더한다**.
+  //     두 사람이 같은 팔렛을 나눠 스캔해도 합산되어 서로의 스캔을 덮어쓰지 않는다.
+  //     (절대값 방식은 나중 저장이 앞의 스캔을 지우는 문제가 있었다 — 2026-08-14)
   app.post('/api/inbound/:id/pallets/:pid/check', g, async (req) => {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id), pid = Number(req.params.pid);
@@ -258,45 +300,87 @@ export default async function inboundRoutes(app) {
       for (const row of list) {
         const iid = Number(row.item_id);
         if (!(iid in exp)) continue;
-        const sc = Math.max(0, Math.min(int(row.scanned_cartons), exp[iid])); // 초과 스캔 차단
-        await q(`UPDATE inbound_pallet_items SET scanned_cartons=$1 WHERE id=$2`, [sc, iid]);
+        if (row.scanned_delta !== undefined) {
+          const d = Math.max(0, int(row.scanned_delta));
+          if (!d) continue;
+          await q(
+            `UPDATE inbound_pallet_items
+                SET scanned_cartons = LEAST(scanned_cartons + $1, cartons)
+              WHERE id=$2`, [d, iid]);
+        } else {
+          const sc = Math.max(0, Math.min(int(row.scanned_cartons), exp[iid])); // 초과 스캔 차단
+          await q(`UPDATE inbound_pallet_items SET scanned_cartons=$1 WHERE id=$2`, [sc, iid]);
+        }
       }
       await q(`UPDATE inbound_pallets SET status='checked', checked_by=$1, checked_at=now() WHERE id=$2`, [uid, pid]);
       return { ok: true };
     });
   });
 
-  // 적치(존→랙 스캔 결과 반영, 신규 SKU 랙 저장) ---------------------
-  //   body: { items: [{item_id, put_cartons, rack, save_rack}] }
+  // 적치(랙 스캔 결과 반영, 랙 미지정/변경 시 제품 마스터 저장) -------
+  //   body: { items: [{item_id, put_delta, rack, save_rack}] }   ← 권장(증분)
+  //         { items: [{item_id, put_cartons, ...}] }             ← 구버전(절대값, 하위호환)
+  //   ⚠ 증분(delta)이 있으면 put_cartons = LEAST(기존 + delta, 목표) 로 **더한다**.
+  //     두 사람이 같은 팔렛을 동시에 적치해도 합산되어 서로의 스캔이 사라지지 않는다.
+  //   ⚠ 적치 목표 카톤 = **검수된 카톤(scanned_cartons)** — 실제로 도착한 분량.
+  //     검수 전 팔렛만 예상 카톤(cartons)으로 대체한다. (예전에는 항상 cartons 기준이어서
+  //     부족 검수된 팔렛이 적치를 다 해도 done 이 되지 않았다 — 2026-08-14 수정)
   app.post('/api/inbound/:id/pallets/:pid/putaway', g, async (req) => {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id), pid = Number(req.params.pid);
     const list = Array.isArray(req.body?.items) ? req.body.items : [];
-    return await withTx(async (c) => {
+    const out = await withTx(async (c) => {
       const q = c.query.bind(c);
       const pal = (await q(
-        `SELECT id, status FROM inbound_pallets WHERE id=$1 AND shipment_id=$2 FOR UPDATE`, [pid, id])).rows[0];
+        `SELECT id, status, checked_at FROM inbound_pallets WHERE id=$1 AND shipment_id=$2 FOR UPDATE`, [pid, id])).rows[0];
       if (!pal) return { error: 'not_found' };
+      const byScan = pal.checked_at != null;   // 검수 확정분 기준
       const items = (await q(
-        `SELECT id, product_id, cartons FROM inbound_pallet_items WHERE pallet_id=$1`, [pid])).rows;
+        `SELECT pi.id, pi.product_id, pi.cartons, pi.scanned_cartons, pi.rack_saved,
+                p.rack_location, p.code AS product_code
+           FROM inbound_pallet_items pi
+           LEFT JOIN products p ON p.id = pi.product_id
+          WHERE pi.pallet_id=$1`, [pid])).rows;
       const map = {}; items.forEach((i) => (map[Number(i.id)] = i));
+      const rackChanges = [];
       for (const row of list) {
         const iid = Number(row.item_id); const it = map[iid];
         if (!it) continue;
-        const pc = Math.max(0, Math.min(int(row.put_cartons), it.cartons));
+        const cap = byScan ? int(it.scanned_cartons) : int(it.cartons);
         const rack = row.rack ? String(row.rack).trim().slice(0, 40) : null;
-        await q(`UPDATE inbound_pallet_items SET put_cartons=$1, rack_saved=$2 WHERE id=$3`, [pc, rack, iid]);
-        // 랙 저장: 제품 마스터 위치 갱신(신규/변경) — 재고실사와 동일하게 위치만
+        // rack 이 없으면 기존 rack_saved 를 지우지 않는다(COALESCE)
+        if (row.put_delta !== undefined) {
+          const d = Math.max(0, int(row.put_delta));
+          await q(
+            `UPDATE inbound_pallet_items
+                SET put_cartons = LEAST(put_cartons + $1, $2), rack_saved = COALESCE($3, rack_saved)
+              WHERE id=$4`, [d, cap, rack, iid]);
+        } else {
+          const pc = Math.max(0, Math.min(int(row.put_cartons), cap));
+          await q(`UPDATE inbound_pallet_items SET put_cartons=$1, rack_saved=COALESCE($2, rack_saved) WHERE id=$3`, [pc, rack, iid]);
+        }
+        // 랙 저장: 제품 마스터 위치 갱신(미지정 신규 / 현장 변경) — 재고실사와 동일하게 위치만
         if (row.save_rack && rack && it.product_id) {
+          const prev = it.rack_location || null;
+          if (prev !== rack) rackChanges.push({ code: it.product_code || null, from: prev, to: rack });
           await q(`UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3`, [rack, uid, it.product_id]);
         }
       }
-      // 모든 라인이 적치되면 done
+      // 목표 카톤을 모두 적치하면 done (검수 0인 라인은 목표 0 → 완료를 막지 않음)
       const rem = (await q(
-        `SELECT COUNT(*)::int AS n FROM inbound_pallet_items WHERE pallet_id=$1 AND put_cartons < cartons`, [pid])).rows[0].n;
+        `SELECT COUNT(*)::int AS n FROM inbound_pallet_items
+          WHERE pallet_id=$1
+            AND put_cartons < (CASE WHEN $2::boolean THEN scanned_cartons ELSE cartons END)`, [pid, byScan])).rows[0].n;
       await q(`UPDATE inbound_pallets SET status=$1 WHERE id=$2`, [rem === 0 ? 'done' : 'checking', pid]);
-      return { ok: true, done: rem === 0 };
+      return { ok: true, done: rem === 0, _rackChanges: rackChanges };
     });
+    // 랙 변경(제품 기본 위치 변경)은 감사로그에 남긴다 — 실물과 마스터가 어긋난 이력을 추적
+    if (out && out.ok && out._rackChanges && out._rackChanges.length) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update',
+        target: 'inbound_pallet:' + pid, detail: { shipment: id, rack_changes: out._rackChanges } });
+    }
+    if (out) delete out._rackChanges;
+    return out;
   });
 
   // 마감 — 디렉터 PIN → 구매 received_qty 연동 -----------------------
