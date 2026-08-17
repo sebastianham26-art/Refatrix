@@ -56,7 +56,7 @@ async function boot(SHIP) {
     'window.__t={normScan:normScan,parseLabel:parseLabel,perCarton:perCarton,openShip:openShip,needRelines:needRelines,reSplitSend:reSplitSend,'
     + 'renderCheck:renderCheck,renderDetail:renderDetail,setStep:function(x){STEP=x;},checkDone:checkDone,'
     + 'getCounts:function(){return scanCounts;},getQty:function(){return scanQty;},'
-    + 'getLock:function(){return scanLock;},setDetail:function(d){DETAIL=d;},openPutPal:openPutPal,putListScan:putListScan,renderPut:renderPut,getPutAdd:function(){return putAdd;},getPutRack:function(){return putRack;},getSaveRack:function(){return putSaveRack;}};\n})();'));
+    + 'getLock:function(){return scanLock;},setDetail:function(d){DETAIL=d;},openPutPal:openPutPal,putListScan:putListScan,renderPut:renderPut,lockPallet:lockPallet,setTiming:function(d,g){DUP_MS=d;GRACE_MS=g;},getPutAdd:function(){return putAdd;},getPutRack:function(){return putRack;},getSaveRack:function(){return putSaveRack;}};\n})();'));
   await new Promise(r => setTimeout(r, 50));
   return { w, t: w.__t, sent, doc: w.document };
 }
@@ -70,6 +70,7 @@ async function openCheck(SHIP) {
   await new Promise(r => setTimeout(r, 40));
   ctx.t.setStep('check');                  // 검수 탭으로 이동
   ctx.t.renderDetail();
+  ctx.t.setTiming(0, 0);   // 테스트는 빠르게 연속 스캔하므로 이중리딩/부속바코드 창을 끔(전용 섹션에서 따로 검증)
   ctx.scan = (raw) => {
     const inp = ctx.doc.getElementById('scanIn');
     inp.value = raw;
@@ -196,6 +197,7 @@ async function openCheck(SHIP) {
     SHIP.pallets[0].items = [{ id: 101, code: 'CE0796', name: 'T', cartons: 2, qty: 32, rack: 'A-01-03', scanned_cartons: 2, put_cartons: 0 }];
     SHIP.pallets[0].cartons_expected = 2; SHIP.pallets[0].qty_expected = 32;
     const ctx = await boot(SHIP);
+    ctx.t.setTiming(0, 0);   // 테스트는 같은 코드를 빠르게 연속 스캔
     ctx.t.openShip(1); await new Promise(r => setTimeout(r, 40));
     ctx.t.setStep('put'); ctx.t.renderDetail();
     const putScanIn = (raw) => {
@@ -332,6 +334,75 @@ async function openCheck(SHIP) {
     ok('등록·저장·주의·오류 소리가 모두 다름',
       JSON.stringify(okT) !== JSON.stringify(warnT) && JSON.stringify(warnT) !== JSON.stringify(errT)
       && JSON.stringify(okT) !== JSON.stringify(doneT.slice(2)) === false || true);
+  }
+
+  console.log('\n⑪ 현장 스캔 위생 — 이중 리딩·부속 바코드·팔렛 직접 선택');
+  {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const SHIP = mkShip();
+    SHIP.pallets[0].items = [{ id: 501, code: 'CE0796', name: 'T', cartons: 5, qty: 80, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0, box_from: 1, box_to: 5, zone: 2, zone_name: 'Z2', zone_is_default: false }];
+    SHIP.pallets[0].cartons_expected = 5; SHIP.pallets[0].qty_expected = 80;
+    const ctx = await openCheck(SHIP);
+    ctx.t.setTiming(250, 400);                        // 운영 기본값으로 복원
+
+    // ① 팔렛 직접 선택 칩 — 스캔 없이 탭으로 시작
+    ok('팔렛 선택 칩 표시', ctx.doc.querySelectorAll('#palpick .pchip').length === 1,
+      ctx.doc.getElementById('palpick') && ctx.doc.getElementById('palpick').innerHTML.slice(0, 80));
+    ctx.doc.querySelector('#palpick .pchip').dispatchEvent(new ctx.w.Event('click', { bubbles: true }));
+    ok('칩 탭 → 팔렛 즉시 잠금(대기 없음)', !!ctx.t.getLock() && ctx.t.getLock().id === 11);
+    ok('잠금 후 칩 숨김', ctx.doc.getElementById('palpick').innerHTML === '');
+
+    // ② 한 트리거에 두 코드: 정상 라벨 + 부속 EAN — 오류음 없이 1카톤만
+    ctx.w.__tones.length = 0;
+    ctx.scan('CTR-CE0796-16');
+    ctx.scan('7501234567890');                        // 같이 읽힌 상품 EAN(숫자 13자리)
+    await sleep(400);
+    ok('정상 1카톤만 집계', ctx.t.getCounts()[501] === 1, JSON.stringify(ctx.t.getCounts()));
+    const tones1 = ctx.w.__tones.map(x => Math.round(x.f));
+    ok('부속 바코드에 오류음 없음(등록음만)', JSON.stringify(tones1) === JSON.stringify([1175, 1568]), tones1);
+
+    // ③ 이중 리딩: 같은 라벨이 250ms 안에 두 번 → 1카톤만
+    await sleep(300);
+    ctx.scan('CTR-CE0796-16'); ctx.scan('CTR-CE0796-16');
+    ok('이중 리딩 무시 — 2가 아니라 +1', ctx.t.getCounts()[501] === 2, ctx.t.getCounts()[501]);
+    await sleep(300);
+    ctx.scan('CTR-CE0796-16');                        // 간격을 두면 정상 집계
+    ok('간격을 둔 재스캔은 정상 집계', ctx.t.getCounts()[501] === 3);
+
+    // ④ 순서 뒤바뀜: 모르는 코드가 먼저, 정상 라벨이 바로 뒤 → 오류 표시 자체가 안 뜸
+    await sleep(500);
+    ctx.w.__tones.length = 0;
+    ctx.scan('XX-BAD-CODE');                          // 글자 포함 미등록(부속으로 못 거름) — 300ms 유예
+    ctx.scan('CTR-CE0796-16');                        // 유예 중 정상 스캔 도착 → 오류 취소
+    await sleep(450);
+    ok('유예 중 정상 스캔 → 오류 취소·집계 정상', ctx.t.getCounts()[501] === 4, ctx.t.getCounts()[501]);
+    ok('오류음 없이 등록음만', !ctx.w.__tones.some(x => Math.round(x.f) === 196), ctx.w.__tones.map(x => x.f));
+
+    // ⑤ 단독으로 들어온 모르는 코드는 유예 후 정상적으로 오류 표시
+    await sleep(500);
+    ctx.w.__tones.length = 0;
+    ctx.scan('XX-BAD-CODE');
+    ok('유예 직후엔 아직 조용', !ctx.w.__tones.length);
+    await sleep(400);
+    ok('단독 오류는 유예 후 오류음', ctx.w.__tones.some(x => Math.round(x.f) === 196), ctx.w.__tones.map(x => x.f));
+    ok('오류 문구 표시', /없는 품목|없는 카톤/.test(ctx.doc.getElementById('scanres').textContent));
+  }
+  {
+    // ⑥ 모호 스캔(같은 SKU 가 두 팔렛에) → 후보 칩 강조 + 탭 확정(쌓인 스캔 반영)
+    const SHIP = mkShip();
+    SHIP.pallets = [0, 1].map((k) => ({
+      id: 21 + k, pl_no: String(12 + k), order_no: '100RA25K2C', status: 'unloaded',
+      cartons_expected: 5, qty_expected: 80, checked_at: null, working: false,
+      items: [{ id: 601 + k, code: 'CE0796', name: 'T', cartons: 5, qty: 80, rack: 'A-01-03', scanned_cartons: 0, put_cartons: 0 }],
+    }));
+    const ctx = await openCheck(SHIP);
+    ctx.scan('CTR-CE0796-16');                        // 두 팔렛 모두 후보 → 대기
+    ok('후보 안내(팔렛을 누르세요)', /팔렛을 누르세요/.test(ctx.doc.getElementById('scanres').textContent),
+      ctx.doc.getElementById('scanres').textContent.slice(0, 80));
+    ok('후보 칩 2개 강조', ctx.doc.querySelectorAll('#palpick .pchip.cand').length === 2);
+    ctx.doc.querySelector('#palpick .pchip[data-lp="22"]').dispatchEvent(new ctx.w.Event('click', { bubbles: true }));
+    ok('후보 탭 → 잠금 + 보류 스캔 반영', ctx.t.getLock().id === 22 && ctx.t.getCounts()[602] === 1,
+      JSON.stringify(ctx.t.getCounts()));
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

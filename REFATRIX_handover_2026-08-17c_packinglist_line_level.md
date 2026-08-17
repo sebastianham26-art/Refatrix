@@ -1,8 +1,8 @@
 # REFATRIX 인수인계 — 패킹리스트 라인별 저장(합산 제거) + 검수·적치 라인 단위 스캔 2026-08-17
 
 **⚠ 마이그레이션 0173 (신규 — `npm run migrate` 필수, 0172 와 함께)** · **백엔드 1 + 마이그레이션 1 + 프런트 1**
-**산출물 zip**: `refatrix_inbound_line_v4.zip` (**오늘 존 지정 작업(0172)까지 누적** — zone v1 대체)
-**빌드**: `refatrix-inbound.html` **20260817c → 20260817f**
+**산출물 zip**: `refatrix_inbound_line_v5.zip` (**오늘 존 지정 작업(0172)까지 누적** — zone v1 대체)
+**빌드**: `refatrix-inbound.html` **20260817c → 20260817g**
 
 > 같은 날 앞선 작업: ① 카톤 라벨 파싱(`..._2026-08-17_inbound_carton_label_scan.md`)
 > ② 존 지정(`..._2026-08-17b_warehouse_zone_sorting.md`). **이 zip 은 둘 다 포함**한다.
@@ -59,13 +59,13 @@
 2. Railway APP 콘솔 **`npm run migrate`** → `apply 0172_...` + `apply 0173_inbound_line_boxes.sql` 확인.
    (0173 없이 새 백엔드가 돌면 선적 생성 INSERT 가 box_from 컬럼 부재로 **500** — 반드시 실행.)
 3. **프런트**: `refatrix-zones.html`(신규) · `refatrix-nav.js` · `refatrix-inbound.html` + nav 토큰 갱신 HTML 43장 → Push → Pages 1~2분.
-4. **Ctrl+Shift+R** → 콘솔 `[refatrix-nav] v20260817z` · `[refatrix-inbound] build 20260817f` · `[refatrix-zones] build zone-0817a`.
+4. **Ctrl+Shift+R** → 콘솔 `[refatrix-nav] v20260817z` · `[refatrix-inbound] build 20260817g` · `[refatrix-zones] build zone-0817a`.
 
 배포 확인:
 ```
 curl -s ".../main/refatrix-api/migrations/0173_inbound_line_boxes.sql?nc=$(date +%s)" | grep -c "box_from"   # 1+
 curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c "라인을 합산하지 않는다"  # 1
-curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "20260817f"                                # 2
+curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "20260817g"                                # 2
 curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c "applyRelines"          # 3
 curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "pickLine"                                 # 3+
 ```
@@ -107,6 +107,27 @@ curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "pickLine"    
 - 소리는 **이벤트 시점에만** 발생(폴링 재렌더에서 중복 재생 없음 — showScan/putScan 등 이벤트 핸들러에 훅).
 - 검수·적치·저장 실패까지 전 지점 커버. 볼륨은 현장용으로 크게(오류음은 파형 자체가 달라 멀리서도 구분).
 
+
+## ③-3 현장 스캔 흐름 개선 (build `20260817g` — 디렉터 보고 2건 반영)
+
+**증상 ① "스캔해도 넘어가지 않고 기다린다"** — 같은 SKU 가 여러 팔렛에 있으면 "후보 팔렛 N — 한 번 더 스캔"
+상태로 멈췄고, 같은 SKU 를 또 스캔해도 후보가 안 줄어 무한 대기였다.
+
+- **팔렛 선택 칩 신설** — 검수 화면 스캔칸 아래에 하차된 팔렛들이 칩(`[12] 100RA25K2C · 37카톤`)으로 항상 표시.
+  **탭 한 번으로 즉시 잠금** — 스캔 없이도 시작 가능, 그동안 쌓인 보류 스캔은 그대로 반영된다.
+- 모호 스캔 시 안내 문구를 "아래에서 작업 중인 팔렛을 누르세요"로 바꾸고 **후보 팔렛 칩을 노랗게 강조**.
+
+**증상 ② "한 번 스캔에 코드가 2개 이상 읽힌다"** — 카톤에 CTR 라벨 외 다른 바코드(상품 EAN 등)가 붙어 있어
+스캐너가 함께 읽으면 매번 오류음이 났다. 3중 방어를 넣었다(모두 프런트, 이벤트 시점):
+
+1. **이중 리딩 무시** — 같은 코드가 0.25초 안에 또 들어오면 한 트리거의 중복 디코드로 보고 조용히 무시(카운트 중복 방지).
+2. **부속 바코드 무시** — ⓐ 숫자만 8자리 이상(상품 EAN 등)은 어디서든 무시 ⓑ 정상 집계 직후 0.4초 안에 온 미등록 코드도 무시.
+   적치에서는 이런 코드를 **랙으로 오인해 잠그던 위험**까지 차단(랙 번호에는 글자가 있음).
+3. **오류 유예 0.3초** — 부속 코드가 정상 라벨보다 먼저 들어오는 순서 뒤바뀜 대응. 유예 중 정상 코드가 오면 오류를 취소,
+   단독으로 온 진짜 미등록 코드는 유예 후 정상적으로 오류음·표시.
+
+정상 연속 스캔(초당 1박스 안팎)은 어느 방어에도 걸리지 않는다.
+
 ## ④ 테스트 (운영 스모크)
 
 1. 같은 SKU 가 여러 라인인 패킹리스트 업로드 → 미리보기 수량 대사 ✅ → 선적 생성.
@@ -117,12 +138,12 @@ curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "pickLine"    
 6. 적치에서 같은 SKU 스캔 → 남은 라인부터 소진되는지. 마감 후 발주 입고 수량이 파일 합계와 같은지.
 7. 존 지정·자판 보정 등 오늘 앞선 기능 회귀 없음.
 
-## ⑤ 검증 (이 세션 — 누적 189/189 ✅)
+## ⑤ 검증 (이 세션 — 누적 204/204 ✅)
 
 - **`refatrix-api/test/inbound_lines.test.js` 25/25 (신규)** — ④ 라인 재분할 8건 포함(운영 `applyRelines` 를 직접 import 해 실 Postgres 로 실행): 합산 1행 → 2라인 교체 · 팔렛 id/상태 보존 · 다른 파일 거부(합계·팔렛) · 검수 진행 시 거부. — **운영 소스에서 `aggregate()`·INSERT·GET SQL 을 추출해 실행**:
   같은 SKU 3라인 비합산·순서·box 범위·카톤0 낱개 라인 / 실 Postgres 에 같은 SKU 2행 저장(유니크 제약 없음 실증) /
   GET 쿼리 0173 컬럼·id 순 / `SUM(qty)` 마감 연동 동일 / 라인별 검수 증분 독립.
-- **`scan_label.test.js` 68/68** — ⑩ 소리 7건(등록/주의/오류/저장음 구분·이벤트 시점) 포함. — ⑨ 라인 재분할 링크 노출 조건 3종 + POST 전송 포함. — 기존 43건 회귀(카운트 키를 라인 id 로 갱신) + **⑧ 멀티라인 12건**:
+- **`scan_label.test.js` 83/83** — ⑪ 스캔 위생 15건(칩 잠금·이중리딩·부속 EAN·유예 취소/확정·후보 칩) 포함. — ⑩ 소리 7건(등록/주의/오류/저장음 구분·이벤트 시점) 포함. — ⑨ 라인 재분할 링크 노출 조건 3종 + POST 전송 포함. — 기존 43건 회귀(카운트 키를 라인 id 로 갱신) + **⑧ 멀티라인 12건**:
   12EA 라벨 → ×12 라인 배정 · 16EA → ×16 라인 · 라인 차면 여유 라인 이월 + 불일치 경고 · 전 라인 초과 차단 ·
   라인 표식(#f–t)·소입수(×n) 표기 · **검수완료 라인별 증분 전송** · 수량 차이 정직 경고(72≠68).
 - 회귀: `scan_hyphen` **23/23** · `zone_ui` **46/46** · `zones` **27/27** (0173 포함 전체 마이그레이션 173개 적용 후).

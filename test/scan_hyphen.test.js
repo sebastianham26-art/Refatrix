@@ -52,7 +52,7 @@ async function boot() {
   // 내부 함수를 테스트에서 집어보기 위해 노출 훅을 덧붙인다(운영 코드 무변경)
   w.eval(script.replace(/\}\)\(\);\s*$/,
     'window.__t={normScan:normScan,bare:bare,bareEq:bareEq,findItem:findItem,parseLabel:parseLabel,'
-    + 'doScan:doScan,putScan:putScan,openShip:openShip,setStep:function(s){STEP=s;},'
+    + 'doScan:doScan,putScan:putScan,openShip:openShip,setStep:function(s){STEP=s;},setTiming:function(d,g){DUP_MS=d;GRACE_MS=g;},'
     + 'getScanCounts:function(){return scanCounts;},getScanLock:function(){return scanLock;},'
     + 'getDetail:function(){return DETAIL;},setDetail:function(d){DETAIL=d;},'
     + 'getPutAdd:function(){return putAdd;},setPutPal:function(i){putPal=i;},setPutRack:function(r){putRack=r;}};\n})();'));
@@ -62,6 +62,7 @@ async function boot() {
 
 (async () => {
   const { w, t } = await boot();
+  t.setTiming(0,0);
 
   console.log('\n① normScan — 자판 변종 따옴표를 모두 하이픈으로');
   ok("' (U+0027) → -", t.normScan("A'01'03") === 'A-01-03', t.normScan("A'01'03"));
