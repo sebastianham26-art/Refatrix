@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 검토 · build pr-0710b</title>
+<title>Refatrix ERP · 구매 검토 · build pr-0817a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -63,6 +63,7 @@
   .bar>em{position:relative;font-style:normal;font-size:10.5px;color:#333;padding-left:5px;line-height:14px}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -95,6 +96,7 @@
       <div><label style="visibility:hidden">.</label><label class="chk"><input type="checkbox" id="demandOnly"> 수요만(backorder&gt;0 또는 부족&gt;0)</label></div>
       <div><label>페이지당</label><select id="pageSize"><option value="200">200</option><option value="500">500</option><option value="2000">2000</option></select></div>
       <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
+      <div><button class="btn ghost sm" id="xlsxBtn" type="button" style="margin-top:22px">⬇ 엑셀 다운로드</button></div>
     </div>
     <div class="sbrow" id="summary" style="margin-top:12px"></div>
     <div class="msg" id="msg"></div>
@@ -105,13 +107,15 @@
       <span id="pageInfo">—</span>
       <button class="btn ghost sm" id="nextBtn" type="button">다음 ▶</button>
     </div>
-    <div class="hint">※ 누적판매=발행(posted) 매출 합계(전사 기준). backorder=미입고 발주잔량(구매내역). 견적부족=재고부족으로 기록된 미해소(open) 수량. 열 제목(숫자·CTR) 클릭으로 정렬합니다.</div>
+    <div class="hint">※ 누적판매=발행(posted) 매출 합계(전사 기준). backorder=미입고 발주잔량(구매내역). 견적부족=재고부족으로 기록된 미해소(open) 수량. 열 제목(숫자·CTR) 클릭으로 정렬합니다.<br>※ [⬇ 엑셀 다운로드]는 <b>현재 조회 조건(검색어·수요만·정렬)의 전체 SKU</b>를 페이지 구분 없이 모두 받습니다. 적용차종은 화면과 달리 <b>전체 문구</b>가 들어갑니다.</div>
   </div>
 </div>
 
 <script>
   let session={token:null,user:null,api:''};
   let sortKey='code', sortDir='asc', offset=0, total=0;
+  // 마지막으로 실제 조회한 조건(엑셀 다운로드는 화면에 보이는 이 조건을 그대로 사용)
+  let lastCriteria={q:'',demand:false,sort:'code',dir:'asc'};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const num=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
@@ -151,6 +155,7 @@
 
   async function load(){
     const q=$('q').value.trim(), demand=$('demandOnly').checked;
+    lastCriteria={q,demand,sort:sortKey,dir:sortDir};
     const p=new URLSearchParams();
     if(q)p.set('q',q); if(demand)p.set('demand','1');
     p.set('sort',sortKey); p.set('dir',sortDir);
@@ -268,6 +273,65 @@
     }));
   }
 
+  // ---- 엑셀 다운로드: 현재 조회 조건의 전체 SKU(모든 페이지) ----
+  const XLS_CHUNK=5000;      // 서버 limit 상한과 동일
+  const XLS_MAX_PAGES=40;    // 안전장치(최대 20만 행)
+  let exporting=false;
+
+  function xlsRow(it){
+    return {
+      'CTR': it.ctr||'',
+      '제품명': it.name||'',
+      'SYD': (it.syd&&it.syd.length)?it.syd.join(', '):'',
+      '적용차종': (it.applications&&it.applications.length)?it.applications.join(' / '):'',
+      '현재재고': Number(it.stock_qty)||0,
+      'backorder': Number(it.backorder_qty)||0,
+      '누적판매': Number(it.sold_qty)||0,
+      '견적부족': Number(it.shortage_qty)||0,
+    };
+  }
+  function xlsFileName(){
+    const d=new Date();
+    const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    return 'refatrix_purchase_review_'+ymd+'.xlsx';
+  }
+  async function fetchReviewChunk(limit,off){
+    const p=new URLSearchParams();
+    if(lastCriteria.q)p.set('q',lastCriteria.q);
+    if(lastCriteria.demand)p.set('demand','1');
+    p.set('sort',lastCriteria.sort); p.set('dir',lastCriteria.dir);
+    p.set('limit',limit); p.set('offset',off);
+    const res=await fetch(session.api+'/api/purchases/review?'+p.toString(),{headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error) throw new Error(d.error||('HTTP '+res.status));
+    return d;
+  }
+  async function exportExcel(){
+    if(exporting) return;
+    const btn=$('xlsxBtn'), m=$('msg'); m.className='msg';
+    if(typeof XLSX==='undefined'){ m.className='msg err'; m.textContent='엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'; return; }
+    const label=btn.textContent; exporting=true; btn.disabled=true;
+    try{
+      const rows=[]; let off=0, tot=0, page=0;
+      while(page<XLS_MAX_PAGES){
+        const d=await fetchReviewChunk(XLS_CHUNK,off);
+        tot=Number(d.total)||0;
+        const items=d.items||[];
+        for(const it of items) rows.push(it);
+        off+=items.length; page++;
+        btn.textContent='내려받는 중… '+rows.length.toLocaleString()+(tot?(' / '+tot.toLocaleString()):'');
+        if(!items.length||rows.length>=tot) break;
+      }
+      if(!rows.length){ m.className='msg err'; m.textContent='내보낼 데이터가 없습니다.'; return; }
+      const ws=XLSX.utils.json_to_sheet(rows.map(xlsRow));
+      ws['!cols']=[{wch:14},{wch:30},{wch:18},{wch:48},{wch:11},{wch:12},{wch:11},{wch:11}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매검토');
+      XLSX.writeFile(wb,xlsFileName());
+      if(tot&&rows.length<tot){ m.className='msg err'; m.textContent='※ 안전 상한에 걸려 '+rows.length.toLocaleString()+'행만 받았습니다(전체 '+tot.toLocaleString()+'). 검색어로 범위를 좁혀 다시 받으세요.'; }
+    }catch(e){ m.className='msg err'; m.textContent='엑셀 다운로드 실패: '+e.message; }
+    finally{ exporting=false; btn.disabled=false; btn.textContent=label; }
+  }
+
   function updatePager(shown){
     const from=total===0?0:offset+1, to=offset+shown;
     $('pageInfo').textContent=total? (from.toLocaleString()+'–'+to.toLocaleString()+' / '+total.toLocaleString()+' SKU') : '0 SKU';
@@ -282,6 +346,7 @@
   $('pageSize').addEventListener('change',()=>{ offset=0; load(); });
   $('prevBtn').addEventListener('click',()=>{ offset=Math.max(0,offset-pageSize()); load(); });
   $('nextBtn').addEventListener('click',()=>{ offset=offset+pageSize(); load(); });
+  $('xlsxBtn').addEventListener('click',exportExcel);
 
   // 포털 세션 자동 로그인
   function portalSession(){
