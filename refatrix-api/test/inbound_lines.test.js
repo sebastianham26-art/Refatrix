@@ -81,52 +81,52 @@ async function main() {
   const sc = (await q(`SELECT box_from, scanned_cartons FROM inbound_pallet_items WHERE shipment_id=$1 ORDER BY id`, [sid])).rows;
   ok(sc[0].scanned_cartons === 0 && sc[1].scanned_cartons === 2, '라인별 검수 증분 독립(다른 라인 무영향)', sc);
 
-  console.log('\n④ 라인 재분할(applyRelines) — 합산 저장된 기존 선적을 라인별로 교체');
+  console.log('\n④ 라인 재분할(applyRelines) — 수량 불변·카톤 교정·팔렛별 보호');
   {
     const { applyRelines } = await import('../src/routes/inboundRoutes.js');
-    // 합산 저장된 선적 재현: CE0796 23카톤 356EA 한 행(구버전 형태)
     await q('BEGIN');
     await q('DELETE FROM inbound_pallet_items'); await q('DELETE FROM inbound_pallets'); await q('DELETE FROM inbound_shipments');
     const pid2 = (await q(`SELECT id FROM products WHERE code='CE0796'`)).rows[0].id;
-    const sid2 = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('D26-81319563','receiving') RETURNING id`)).rows[0].id;
+    const sid2 = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('26B2C','receiving') RETURNING id`)).rows[0].id;
+    // 팔렛4: FROM/TO 기준으로 잘못 등재(1카톤 24EA) — 실제는 CARTON UNIT 2 × 12EA
     const palA = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected)
-                           VALUES ($1,'100RA25K2C',12,'unloaded',23,356) RETURNING id`, [sid2])).rows[0].id;
+                           VALUES ($1,'26B2C',4,'unloaded',1,24) RETURNING id`, [sid2])).rows[0].id;
     await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty)
-             VALUES ($1,$2,$3,'CE0796',23,356)`, [palA, sid2, pid2]);
+             VALUES ($1,$2,$3,'CE0796',1,24)`, [palA, sid2, pid2]);
+    // 팔렛5: 이미 검수 진행 — 보호 대상
+    const palB = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected)
+                           VALUES ($1,'26B2C',5,'checking',2,32) RETURNING id`, [sid2])).rows[0].id;
+    await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
+             VALUES ($1,$2,$3,'CE0796',2,32,1)`, [palB, sid2, pid2]);
     await q('COMMIT');
 
-    // 원본 파일 기준 라인(합계 동일: 20×16 + 3×12 = 23카톤 356EA)
-    const filePallets = aggregate([
-      { order_no: '100RA25K2C', pl_no: 12, code: 'CE0796', cartons: 20, qty: 320, box_from: 1, box_to: 20 },
-      { order_no: '100RA25K2C', pl_no: 12, code: 'CE0796', cartons: 3, qty: 36, box_from: 21, box_to: 23 },
-    ]);
     const pmap = { CE0796: { id: Number(pid2), rack: 'A-01-03' } };
+    // 교정된 파서 결과: 팔렛4 = 2카톤 ×12 = 24EA (수량 동일·카톤 1→2)
+    const filePallets = aggregate([
+      { order_no: '26B2C', pl_no: 4, code: 'CE0796', cartons: 2, qty: 24, box_from: 1, box_to: 2 },
+      { order_no: '26B2C', pl_no: 5, code: 'CE0796', cartons: 2, qty: 32, box_from: 3, box_to: 4 },
+    ]);
 
-    // ⚠ 다른 파일(합계 불일치)은 거부
+    // ⚠ 수량이 다른 파일은 거부(불변식)
     const bad = await applyRelines(q, sid2, aggregate([
-      { order_no: '100RA25K2C', pl_no: 12, code: 'CE0796', cartons: 22, qty: 356, box_from: 1, box_to: 22 },
+      { order_no: '26B2C', pl_no: 4, code: 'CE0796', cartons: 2, qty: 30 },
+      { order_no: '26B2C', pl_no: 5, code: 'CE0796', cartons: 2, qty: 32 },
     ]), pmap);
-    ok(bad.error === 'file_mismatch', '합계가 다른 파일은 file_mismatch 거부', bad);
-    // ⚠ 팔렛 구성이 다른 파일 거부
-    const bad2 = await applyRelines(q, sid2, aggregate([
-      { order_no: '100RA25K2C', pl_no: 99, code: 'CE0796', cartons: 23, qty: 356 },
-    ]), pmap);
-    ok(bad2.error === 'file_mismatch', '팔렛이 다른 파일도 거부', bad2);
+    ok(bad.error === 'file_mismatch', '수량 다른 파일 거부', bad);
 
-    // 정상 재분할
     const r = await applyRelines(q, sid2, filePallets, pmap);
-    ok(r.ok && r.before_lines === 1 && r.lines === 2, '1행(합산) → 2라인 교체', r);
-    const after = (await q(`SELECT input_code, cartons, qty, box_from, box_to, pallet_id FROM inbound_pallet_items WHERE shipment_id=$1 ORDER BY id`, [sid2])).rows;
-    ok(after.length === 2 && after[0].cartons === 20 && after[1].cartons === 3, '라인별 카톤 유지', after.map((x) => x.cartons));
-    ok(after[0].box_from === 1 && after[1].box_from === 21, 'box 범위 저장');
-    ok(after.every((x) => Number(x.pallet_id) === Number(palA)), '팔렛 id 보존(하차 상태 유지)');
-    const pal = (await q(`SELECT status, cartons_expected, qty_expected FROM inbound_pallets WHERE id=$1`, [palA])).rows[0];
-    ok(pal.status === 'unloaded' && pal.cartons_expected === 23, '팔렛 상태·예상 카톤 무변경', pal);
+    ok(r.ok && r.pallets === 1 && r.skipped.length === 1, '미스캔 팔렛만 교체 + 검수 진행 팔렛 건너뜀', r);
+    const a4 = (await q(`SELECT cartons, qty, box_from FROM inbound_pallet_items WHERE pallet_id=$1`, [palA])).rows[0];
+    ok(a4.cartons === 2 && Number(a4.qty) === 24, '카톤 1→2 교정(소입수 12 복원)', a4);
+    const pal4 = (await q(`SELECT cartons_expected, qty_expected FROM inbound_pallets WHERE id=$1`, [palA])).rows[0];
+    ok(pal4.cartons_expected === 2 && Number(pal4.qty_expected) === 24, '팔렛 예상 카톤도 갱신·수량 유지', pal4);
+    const b5 = (await q(`SELECT cartons, scanned_cartons FROM inbound_pallet_items WHERE pallet_id=$1`, [palB])).rows[0];
+    ok(b5.cartons === 2 && b5.scanned_cartons === 1, '검수 진행 팔렛은 원본 그대로 보호', b5);
 
-    // ⚠ 검수가 진행된 선적은 거부
-    await q(`UPDATE inbound_pallet_items SET scanned_cartons=1 WHERE shipment_id=$1 AND box_from=1`, [sid2]);
-    const bad3 = await applyRelines(q, sid2, filePallets, pmap);
-    ok(bad3.error === 'already_scanned', '검수 진행분이 있으면 already_scanned 거부', bad3);
+    // 전 팔렛이 진행 중이면 already_scanned
+    await q(`UPDATE inbound_pallet_items SET scanned_cartons=1 WHERE pallet_id=$1`, [palA]);
+    const r2 = await applyRelines(q, sid2, filePallets, pmap);
+    ok(r2.error === 'already_scanned', '교체 가능한 팔렛이 없으면 already_scanned', r2);
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

@@ -82,36 +82,38 @@ export async function applyRelines(q, shipmentId, pallets, pmap) {
     `SELECT id, order_no, pl_no, cartons_expected, qty_expected, checked_at
        FROM inbound_pallets WHERE shipment_id=$1`, [shipmentId])).rows;
   if (!existing.length) return { error: 'no_pallets' };
-  if (existing.some((p) => p.checked_at)) return { error: 'already_scanned' };
-
-  const scanned = (await q(
-    `SELECT COUNT(*)::int AS n FROM inbound_pallet_items
-      WHERE shipment_id=$1 AND (scanned_cartons > 0 OR put_cartons > 0)`, [shipmentId])).rows[0];
-  if (Number(scanned.n) > 0) return { error: 'already_scanned' };
 
   const byKey = new Map();
   for (const p of existing) byKey.set(p.order_no + '|' + p.pl_no, p);
 
-  // 파일 ↔ 기존 팔렛 대조
+  // 팔렛 집합은 같아야 한다(다른 파일 방지). 수량(qty) 합계가 불변식 —
+  // 카톤 수는 파서 개선(CARTON UNIT 열, 2026-08-17)으로 "교정 대상"이라 달라도 허용하고 expected 를 갱신한다.
   const mismatch = [];
   if (pallets.length !== existing.length) mismatch.push('pallet_count ' + pallets.length + '!=' + existing.length);
   for (const p of pallets) {
     const ex = byKey.get(p.order_no + '|' + p.pl_no);
     if (!ex) { mismatch.push('missing ' + p.order_no + '/' + p.pl_no); continue; }
-    const cartons = p.items.reduce((a, i) => a + i.cartons, 0);
     const qty = p.items.reduce((a, i) => a + i.qty, 0);
-    if (cartons !== Number(ex.cartons_expected) || Math.abs(qty - Number(ex.qty_expected)) > 0.001) {
-      mismatch.push('totals ' + p.order_no + '/' + p.pl_no + ' ' + cartons + 'x' + qty + '!=' + ex.cartons_expected + 'x' + ex.qty_expected);
+    if (Math.abs(qty - Number(ex.qty_expected)) > 0.001) {
+      mismatch.push('qty ' + p.order_no + '/' + p.pl_no + ' ' + qty + '!=' + ex.qty_expected);
     }
   }
   if (mismatch.length) return { error: 'file_mismatch', detail: mismatch.slice(0, 8) };
 
-  const before = Number((await q(
-    `SELECT COUNT(*)::int AS n FROM inbound_pallet_items WHERE shipment_id=$1`, [shipmentId])).rows[0].n);
-  await q(`DELETE FROM inbound_pallet_items WHERE shipment_id=$1`, [shipmentId]);
-  let lines = 0;
+  // 팔렛별로 처리: 검수/적치가 진행된 팔렛은 건너뛰고(스캔 기록 보호), 나머지만 교체한다.
+  let replaced = 0, lines = 0, before = 0;
+  const skipped = [];
   for (const p of pallets) {
     const ex = byKey.get(p.order_no + '|' + p.pl_no);
+    const touched = (await q(
+      `SELECT COUNT(*)::int AS n FROM inbound_pallet_items
+        WHERE pallet_id=$1 AND (scanned_cartons > 0 OR put_cartons > 0)`, [ex.id])).rows[0];
+    if (ex.checked_at || Number(touched.n) > 0) { skipped.push(p.order_no + '/' + p.pl_no); continue; }
+
+    before += Number((await q(
+      `SELECT COUNT(*)::int AS n FROM inbound_pallet_items WHERE pallet_id=$1`, [ex.id])).rows[0].n);
+    await q(`DELETE FROM inbound_pallet_items WHERE pallet_id=$1`, [ex.id]);
+    const cartons = p.items.reduce((a, i) => a + i.cartons, 0);
     for (const it of p.items) {
       const pid = pmap[it.code] ? pmap[it.code].id : null;
       await q(
@@ -121,8 +123,12 @@ export async function applyRelines(q, shipmentId, pallets, pmap) {
         [ex.id, shipmentId, pid, it.code, it.cartons, it.qty, it.box_from, it.box_to]);
       lines++;
     }
+    // 카톤 기준이 교정됐을 수 있으므로 예상 카톤도 파일 기준으로 갱신(수량은 검증됐으니 그대로)
+    await q(`UPDATE inbound_pallets SET cartons_expected=$2 WHERE id=$1`, [ex.id, cartons]);
+    replaced++;
   }
-  return { ok: true, pallets: pallets.length, lines, before_lines: before };
+  if (!replaced) return { error: 'already_scanned', skipped };
+  return { ok: true, pallets: replaced, skipped, lines, before_lines: before };
 }
 
 export default async function inboundRoutes(app) {

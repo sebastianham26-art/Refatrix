@@ -92,7 +92,7 @@ async function openCheck(SHIP) {
     const b3 = ctx.doc.getElementById('scanres');
     ok('존 미지정은 빨간 경고', b3.querySelector('.zbig').className.indexOf('none') >= 0, b3.querySelector('.zbig').className);
     ok('존 지정 요청 안내', /존 지정/.test(b3.textContent), b3.textContent.slice(0, 140));
-    ok('그래도 카톤은 집계됨(작업 중단 없음)', /1\/1/.test(b3.textContent), b3.textContent.slice(0, 160));
+    ok('그래도 스캔은 누적됨(작업 중단 없음)', /누적 1/.test(b3.textContent.replace(/\s+/g,' ')), b3.textContent.slice(0, 160));
 
     const sk = ctx.doc.getElementById('sklist').textContent;
     ok('SKU 목록에 존 칩', /2/.test(sk) && ctx.doc.querySelectorAll('#sklist .zchip2').length === 3,

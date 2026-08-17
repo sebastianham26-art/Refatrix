@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 라인 재분할 도구 (독립 실행) · v2 — CARTON UNIT 지원</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--gold:#8A6300;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:22px}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;color:var(--brand);margin:0 0 4px}
+  .sub{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.6}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:14px}
+  .card h2{font-size:14px;color:var(--brand);margin:0 0 10px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+  input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:12px}
+  .btn.g{background:var(--green)} .btn.o{background:var(--gold)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none;line-height:1.55}
+  .msg.err{display:block;background:var(--red-bg);color:var(--red)}
+  .msg.ok{display:block;background:var(--green-bg);color:var(--green)}
+  .msg.info{display:block;background:#EFF3F7;color:#3A5A78}
+  .ship{border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-top:8px;cursor:pointer;display:flex;gap:10px;align-items:center}
+  .ship:hover{border-color:var(--brand)} .ship.sel{border-color:var(--brand);background:#F2F6F4;box-shadow:inset 3px 0 0 var(--brand)}
+  .ship .inv{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700}
+  .ship .meta{font-size:12px;color:var(--muted);margin-left:auto;text-align:right}
+  .tag{font-size:11px;padding:2px 8px;border-radius:999px;background:#EFEDE6;color:var(--muted);font-weight:700}
+  .tag.g{background:var(--green-bg);color:var(--green)} .tag.r{background:var(--red-bg);color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{border-bottom:1px solid #F1EDE3;padding:5px 8px;text-align:left}
+  thead th{font-size:11px;color:var(--muted)}
+  td.num{text-align:right}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .hidden{display:none}
+  .steps{font-size:12px;color:var(--muted);margin-bottom:14px}
+  .steps b{color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔀 Refatrix 라인 재분할 도구</h1>
+  <div class="sub">패킹리스트 합산 저장된 기존 선적을 <b>라인별 기록</b>으로 교체합니다 (서버에 직접 접속 — 화면 배포와 무관).<br>
+  하차 상태·ETA·첨부파일은 그대로 보존되고, 검수·적치가 진행된 선적은 서버가 자동으로 거부합니다.</div>
+
+  <div class="card" id="stepLogin">
+    <h2>1단계 · 로그인 (디렉터)</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" autocomplete="username"></div>
+      <div><label>PIN</label><input id="pin" type="password" autocomplete="current-password"></div>
+    </div>
+    <label>서버 주소 (그대로 두세요)</label>
+    <input id="api" type="text" value="https://refatrix-production.up.railway.app">
+    <button class="btn" id="btnLogin">로그인</button>
+    <div class="msg" id="mLogin"></div>
+  </div>
+
+  <div class="card hidden" id="stepShip">
+    <h2>2단계 · 재분할할 선적 선택</h2>
+    <div id="shipList"><div class="msg info" style="display:block">불러오는 중…</div></div>
+    <div class="msg" id="mShip"></div>
+  </div>
+
+  <div class="card hidden" id="stepRun">
+    <h2>3단계 · 원본 파일 확인 → 실행</h2>
+    <div id="fileInfo"></div>
+    <div id="preview"></div>
+    <button class="btn o hidden" id="btnPick">📂 원본 엑셀 직접 선택 (서버에 원본이 없을 때)</button>
+    <button class="btn g hidden" id="btnRun">🔀 라인 재분할 실행</button>
+    <div class="msg" id="mRun"></div>
+    <div id="result"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var fmt=function(n){return Number(n||0).toLocaleString('ko-KR');};
+  function L(ko,es){ return ko; }   // parseWorkbook 이 쓰는 메시지 헬퍼(한국어 고정)
+  function msg(id,cls,text){ var m=$(id); m.className='msg '+cls; m.innerHTML=text; }
+
+  var API='', TOKEN='', SHIPS=[], SEL=null, PARSED=null;
+
+  function api(path,opt){
+    opt=opt||{}; opt.headers=Object.assign({},TOKEN?{Authorization:'Bearer '+TOKEN}:{},opt.headers||{});
+    return fetch(API+path,opt).then(function(r){
+      return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j||{}}; })
+        .catch(function(){ return {ok:r.ok,status:r.status,body:{}}; });
+    });
+  }
+
+  /* ===== 1단계 로그인 ===== */
+  $('btnLogin').addEventListener('click',login);
+  $('pin').addEventListener('keydown',function(e){ if(e.key==='Enter') login(); });
+  function login(){
+    API=$('api').value.trim().replace(/\/+$/,'');
+    var body={login_id:$('lid').value.trim(),pin:$('pin').value};
+    if(!body.login_id||!body.pin){ msg('mLogin','err','아이디와 PIN 을 입력하세요.'); return; }
+    $('btnLogin').disabled=true; msg('mLogin','info','접속 중…');
+    fetch(API+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d||d.error||!d.token){ msg('mLogin','err','로그인 실패: '+esc((d&&d.error)||'서버 응답 없음')); $('btnLogin').disabled=false; return; }
+        if(!d.user||d.user.role!=='director'){ msg('mLogin','err','디렉터 계정으로만 실행할 수 있습니다. (현재: '+esc((d.user&&d.user.role)||'?')+')'); $('btnLogin').disabled=false; return; }
+        TOKEN=d.token;
+        msg('mLogin','ok','✔ '+esc(d.user.name||body.login_id)+' 님 — 접속됨');
+        $('stepShip').classList.remove('hidden');
+        loadShips();
+      })
+      .catch(function(){ msg('mLogin','err','서버에 연결할 수 없습니다. 주소와 인터넷 연결을 확인하세요.'); $('btnLogin').disabled=false; });
+  }
+
+  /* ===== 2단계 선적 목록 ===== */
+  function loadShips(){
+    api('/api/inbound').then(function(o){
+      var items=(o.body&&o.body.items)||[];
+      SHIPS=items.filter(function(s){ return s.status==='incoming'||s.status==='receiving'; });
+      if(!SHIPS.length){ $('shipList').innerHTML='<div class="msg err" style="display:block">진행 중(마감 전) 선적이 없습니다.</div>'; return; }
+      $('shipList').innerHTML=SHIPS.map(function(s,i){
+        return '<div class="ship" data-i="'+i+'"><span class="inv">'+esc(s.invoice_no||('#'+s.id))+'</span>'
+          +'<span class="tag">'+esc(s.status==='receiving'?'입고중':'운송중')+'</span>'
+          +'<span class="meta">팔렛 '+esc(s.pallets||0)+' · 카톤 '+fmt(s.cartons||0)+' · '+fmt(s.qty||0)+' EA</span></div>';
+      }).join('');
+      Array.prototype.forEach.call(document.querySelectorAll('.ship'),function(el){
+        el.addEventListener('click',function(){ pickShip(+el.dataset.i, el); });
+      });
+    });
+  }
+  function pickShip(i, el){
+    Array.prototype.forEach.call(document.querySelectorAll('.ship'),function(e){ e.classList.remove('sel'); });
+    el.classList.add('sel');
+    SEL=SHIPS[i]; PARSED=null;
+    $('stepRun').classList.remove('hidden');
+    $('btnRun').classList.add('hidden'); $('btnPick').classList.add('hidden');
+    $('preview').innerHTML=''; $('result').innerHTML=''; msg('mRun','info','선적 상태 확인 중…');
+    // 스캔 진행 여부 + 원본 파일 확인
+    api('/api/inbound/'+SEL.id).then(function(o){
+      if(!o.ok||o.body.error){ msg('mRun','err','선적을 불러오지 못했습니다: '+esc(o.body.error||o.status)); return; }
+      var touched=false, hasBox=false, lines=0;
+      (o.body.pallets||[]).forEach(function(p){
+        if(p.checked_at) touched=true;
+        (p.items||[]).forEach(function(it){ lines++;
+          if(it.box_from!=null) hasBox=true;
+          if((it.scanned_cartons||0)>0||(it.put_cartons||0)>0) touched=true; });
+      });
+      if(touched){ msg('mRun','err','⚠ 이 선적은 검수/적치가 이미 진행되어 재분할할 수 없습니다.<br>그대로 검수를 마치면 됩니다(수량 정합엔 문제 없음).'); return; }
+      if(hasBox){ msg('mRun','ok','이 선적은 이미 라인별로 저장되어 있습니다 — 재분할이 필요 없습니다.'); return; }
+      $('fileInfo').innerHTML='<div class="msg info" style="display:block">현재 등재: <b>'+fmt(lines)+'라인</b> (합산 저장 상태) · 원본 파일 확인 중…</div>';
+      api('/api/inbound/'+SEL.id+'/files').then(function(fo){
+        var xf=((fo.body&&fo.body.items)||[]).filter(function(f){ return /\.xlsx?$/i.test(f.file_name||''); })[0];
+        if(xf){
+          $('fileInfo').innerHTML='<div class="msg info" style="display:block">📎 서버에 저장된 원본: <b class="mono">'+esc(xf.file_name)+'</b> — 자동으로 읽습니다.</div>';
+          api('/api/inbound/files/'+xf.id).then(function(df){
+            if(!df.ok||!df.body.file_data){ needPick('원본 파일을 내려받지 못했습니다 — 직접 선택해주세요.'); return; }
+            try{
+              var b64=String(df.body.file_data).split(',')[1]||'';
+              var bin=atob(b64), u8=new Uint8Array(bin.length);
+              for(var i2=0;i2<bin.length;i2++) u8[i2]=bin.charCodeAt(i2);
+              parseBuf(u8.buffer);
+            }catch(e){ needPick('파일 해석 실패 — 직접 선택해주세요.'); }
+          });
+        } else needPick('서버에 원본 엑셀이 없습니다(8MB 초과 등) — 같은 패킹리스트 파일을 직접 선택해주세요.');
+      });
+    });
+  }
+  function needPick(t){ msg('mRun','info',esc(t)); $('btnPick').classList.remove('hidden'); }
+  $('btnPick').addEventListener('click',function(){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls';
+    inp.addEventListener('change',function(){
+      var f=inp.files[0]; if(!f) return;
+      var r=new FileReader();
+      r.onload=function(e){ parseBuf(e.target.result); };
+      r.readAsArrayBuffer(f);
+    });
+    inp.click();
+  });
+
+  /* ===== 3단계 파싱 → 미리보기 → 실행 ===== */
+  function parseBuf(buf){
+    try{
+      if(typeof XLSX==='undefined'){ msg('mRun','err','엑셀 라이브러리를 불러오지 못했습니다 — 인터넷 연결 확인 후 새로고침하세요.'); return; }
+      var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      var res=parseWorkbook(wb);
+      if(!res.rows||!res.rows.length){ msg('mRun','err','파일에서 라인을 읽지 못했습니다.'); return; }
+      PARSED=res;
+      var pallets={}; res.rows.forEach(function(r){ pallets[r.order_no+'|'+r.pl_no]=1; });
+      var qty=res.rows.reduce(function(a,r){return a+r.qty;},0);
+      $('preview').innerHTML='<table><thead><tr><th>파일에서 읽음</th><th class="num">값</th></tr></thead><tbody>'
+        +'<tr><td>라인 수</td><td class="num"><b>'+fmt(res.rows.length)+'</b></td></tr>'
+        +'<tr><td>팔렛 수</td><td class="num">'+fmt(Object.keys(pallets).length)+'</td></tr>'
+        +'<tr><td>수량 합계</td><td class="num">'+fmt(qty)+' EA</td></tr>'
+        +'<tr><td>인보이스</td><td class="num mono">'+esc(res.invoice_no||'—')+'</td></tr></tbody></table>';
+      msg('mRun','info','파일을 읽었습니다. 아래 버튼을 누르면 서버가 <b>팔렛·수량이 등재분과 정확히 일치하는지 검증한 뒤</b> 라인별로 교체합니다.');
+      $('btnRun').classList.remove('hidden');
+    }catch(err){ msg('mRun','err','파일 읽기 실패: '+esc(err.message)); }
+  }
+
+  $('btnRun').addEventListener('click',function(){
+    if(!SEL||!PARSED) return;
+    if(!confirm('선적 '+(SEL.invoice_no||('#'+SEL.id))+' 를 라인별 기록으로 교체합니다.\n하차 상태·ETA·파일은 유지됩니다. 진행할까요?')) return;
+    $('btnRun').disabled=true; msg('mRun','info','실행 중…');
+    api('/api/inbound/'+SEL.id+'/relines',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({rows:PARSED.rows})}).then(function(o){
+      $('btnRun').disabled=false;
+      if(!o.ok||o.body.error){
+        var m={already_scanned:'검수·적치가 이미 진행되어 재분할할 수 없습니다.',
+               file_mismatch:'파일이 이 선적과 다릅니다(팔렛·수량 불일치): '+esc(JSON.stringify(o.body.detail||'')),
+               bad_state:'마감/취소된 선적입니다.', not_found:'선적을 찾을 수 없습니다.',
+               director_only:'디렉터 전용입니다.'}[o.body.error]||esc(o.body.error||o.status);
+        msg('mRun','err','⚠ '+m); return;
+      }
+      msg('mRun','ok','');
+      $('result').innerHTML='<div class="msg ok" style="display:block;font-size:15px">✔ <b>라인 재분할 완료</b> — '
+        +fmt(o.body.before_lines)+'라인(합산) → <b>'+fmt(o.body.lines)+'라인</b> · 팔렛 '+fmt(o.body.pallets)+'개 유지<br>'
+        +'<span style="font-size:12.5px">이제 창고 화면(수입입고 › 검수)에서 같은 SKU 가 카톤 묶음별로 나뉘어 표시됩니다. 이 창은 닫으셔도 됩니다.</span></div>';
+      $('btnRun').classList.add('hidden');
+    });
+  });
+
+  /* ===== 운영 화면과 동일한 패킹리스트 파서 (refatrix-inbound.html build 20260817e 에서 이식) ===== */
+function parseWorkbook(wb){
+    var name=wb.SheetNames.filter(function(n){return /packing/i.test(n)&&/detail/i.test(n);})[0]
+          || wb.SheetNames.filter(function(n){return /packing/i.test(n);})[0];
+    if(!name) throw new Error(L("'packing list_details' 시트를 찾지 못했습니다","No se encontró la hoja 'packing list_details'"));
+    var rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,raw:true});
+    var hi=-1;
+    for(var i=0;i<Math.min(rows.length,15);i++){ var t=(rows[i]||[]).map(function(c){return String(c==null?'':c).replace(/\s+/g,' ').toUpperCase();});
+      if(t.some(function(x){return x.indexOf('ORDER')>=0;})&&t.some(function(x){return x.indexOf('CTR NO')>=0;})){hi=i;break;} }
+    if(hi<0) throw new Error(L('헤더행(ORDER NO / CTR NO)을 찾지 못했습니다','No se encontró el encabezado'));
+    var H=(rows[hi]||[]).map(function(c){return String(c==null?'':c).replace(/\s+/g,' ').trim().toUpperCase();});
+    function col(){ var ns=[].slice.call(arguments); for(var k=0;k<ns.length;k++){var i=H.indexOf(ns[k]);if(i>=0)return i;} for(var k2=0;k2<ns.length;k2++){for(var j=0;j<H.length;j++)if(H[j].indexOf(ns[k2])>=0)return j;} return -1; }
+    var cOrd=col('ORDER NO','ORDER'),cPl=col('PL NO'),cFr=col('FROM'),cTo=col('TO'),cSku=col('CTR NO'),cDesc=col('DESCRIPTION'),cQty=col('TOTAL QTY','QTY');
+    // 카톤 수·소입수 열(2026-08-17 디렉터 확인): CARTON UNIT = 카톤 수, QTY PER C/T = 박스당 수량.
+    //   예) CARTON UNIT 2 · QTY PER C/T 12 → 12개들이 2박스 = 24개. FROM/TO 는 번호 범위일 뿐
+    //   카톤 수와 다를 수 있다(혼적·병합) — CARTON UNIT 이 있으면 그걸 우선한다.
+    var cCU=col('CARTON UNIT','CTN UNIT','CARTON QTY','C/T UNIT','CTNS');
+    var cQPC=col('QTY PER C/T',"Q'TY PER C/T",'QTY PER CTN','QTY/C/T','QTY/CTN','PCS/CTN','PER C/T');
+    if([cOrd,cPl,cFr,cTo,cSku,cQty].some(function(x){return x<0;})) throw new Error(L('필수 열이 없습니다(ORDER NO·PL NO·FROM·TO·CTR NO·QTY)','Faltan columnas requeridas'));
+    // 인보이스 번호 추출(2026-07-31 강화): 같은 셀("INVOICE NO: X") · 오른쪽 셀 · 아랫줄 셀까지 인식.
+    //   라벨 단어(NO/DATE 등)만 있는 셀은 값으로 안 봄. 못 찾으면 미리보기에서 직접 입력.
+    var inv=null;
+    var SEP=/^(?:NO|N[Oº°]\.?|NUM\w*|#|[-:.：]+)$/i;      // 라벨 뒤 구분어("NO" 등) — 건너뜀
+    // 다른 라벨 문구 = 숫자가 없고 라벨 단어를 포함(순수 텍스트) — 숫자가 섞인 값(CTR-2607-88 등)은 라벨로 안 봄
+    function isLbl(t){ return !/\d/.test(t)&&/(?:INVOICE|FACTURA|COMMERCIAL|PACKING|LIST|DATE|FECHA|ORDER|TOTAL|QTY|DESCRIPTION)/i.test(t); }
+    function invVal(s){
+      if(s==null) return null;
+      var t=String(s).trim();
+      if(t===''||SEP.test(t)||isLbl(t)) return null;
+      if(/\s/.test(t)) return null;                       // 공백 포함 문구는 번호로 안 봄
+      if(!/\d/.test(t)&&t.length<4) return null;          // 너무 짧은 비숫자
+      return t.slice(0,60);
+    }
+    outer:
+    for(var r0=0;r0<hi;r0++){ var rr=rows[r0]||[]; var rrN=(r0+1<hi)?(rows[r0+1]||[]):[];
+      for(var j=0;j<rr.length;j++){
+        var cell=String(rr[j]==null?'':rr[j]);
+        if(!/INVOICE|FACTURA|REF(?:ERENCE|ERENCIA)?\b/i.test(cell)) continue;
+        // ① 같은 셀 안: "INVOICE NO: ABC-123" / "COMMERCIAL INVOICE CI2026015" / "REF: D2607001"
+        var same=invVal(cell.replace(/^[\s\S]*?(?:INVOICE|FACTURA|REF(?:ERENCE|ERENCIA)?)\s*(?:NO|N[Oº°]|NUM\w*|#)?\.?\s*[:：\-]?\s*/i,''));
+        if(same){ inv=same; break outer; }
+        // ② 같은 행 오른쪽 셀들 — 구분어("NO")는 건너뛰고, 다른 라벨(DATE 등)을 만나면 중단
+        for(var k=j+1;k<rr.length;k++){
+          var c2=rr[k]; if(c2==null||String(c2).trim()==='') continue;
+          var t2=String(c2).trim();
+          if(SEP.test(t2)) continue;
+          if(isLbl(t2)) break;                             // 다음 라벨 구역 — 그 뒤 값은 남의 값
+          var v=invVal(t2); if(v){ inv=v; break outer; } break;
+        }
+        // ③ 아랫줄 같은 열·오른쪽 열 (헤더행 전까지만)
+        var b1=invVal(rrN[j]), b2=invVal(rrN[j+1]);
+        if(b1||b2){ inv=b1||b2; break outer; }
+      }
+    }
+    // ④ 폴백: 라벨이 아예 없는 양식 — 헤더 위 영역에서 "문서번호처럼 생긴" 단독 토큰을 찾는다.
+    //    영문 1~4자로 시작 + 숫자 총 4자리 이상 (예: D26-81319563 · D2607001 · CI2026015). D+숫자(디스패치 레퍼런스) 우선.
+    if(!inv){
+      var cand=[];
+      for(var rf=0;rf<hi;rf++){ var rrF=rows[rf]||[];
+        for(var jf=0;jf<rrF.length;jf++){
+          var tf=rrF[jf]==null?'':String(rrF[jf]).trim();
+          if(tf===''||/\s/.test(tf)||SEP.test(tf)||isLbl(tf)) continue;
+          if(/^[A-Za-z]{1,4}\d[A-Za-z0-9\-._\/]{3,}$/.test(tf)&&(tf.match(/\d/g)||[]).length>=4) cand.push(tf.slice(0,60));
+        }
+      }
+      inv=null;
+      for(var ci=0;ci<cand.length;ci++){ if(/^D\d/i.test(cand[ci])){ inv=cand[ci]; break; } } // D26… 우선
+      if(!inv&&cand.length===1) inv=cand[0];              // 후보가 하나뿐일 때만 채택(오인 방지)
+    }
+    // ▼ 수량 누락 방지(2026-07-31):
+    //   ① ORDER NO·PL NO 병합셀(빈칸) → 직전 값으로 채움(단, CTR NO·수량이 있는 데이터 행만)
+    //   ② FROM/TO(카톤번호) 없는 행(혼적 카톤 병합셀·낱개 등) → 제외하지 않고 카톤 0 으로 포함
+    //   ③ 파일 수량 합계(fileQty)와 등재 합계를 함께 반환 → 미리보기에서 대사(對査) 표시
+    var out=[]; var noCarton=0, noCartonQ=0, dropped=0, droppedQ=0, fileQty=0, cuMismatch=[];
+    var lastOrd=null, lastPl=null;
+    for(var i2=hi+1;i2<rows.length;i2++){ var r=rows[i2]||[];
+      var code=String(r[cSku]==null?'':r[cSku]).trim();
+      var qty=Number(r[cQty]||0);
+      // 카톤 수·소입수는 TOTAL 판정보다 먼저 읽는다 — TOTAL 열이 빈 양식은 CU×QPC 로 수량을 채워야 하므로
+      var cu=(cCU>=0&&r[cCU]!=null&&String(r[cCU]).trim()!=='')?Math.max(0,Number(r[cCU])||0):null;
+      var qpc=(cQPC>=0&&r[cQPC]!=null&&String(r[cQPC]).trim()!=='')?Math.max(0,Number(r[cQPC])||0):null;
+      if(qty<=0&&cu&&qpc) qty=cu*qpc;                      // TOTAL 빈 양식 — 카톤수×소입수
+      var o=r[cOrd]; var oS=(o==null?'':String(o).trim());
+      var isData=(code!==''&&qty>0);
+      if(oS!==''){ lastOrd=oS; if(r[cPl]!=null&&String(r[cPl]).trim()!=='') lastPl=Number(r[cPl]); }
+      else if(isData&&lastOrd!=null){ oS=lastOrd; } // 병합셀 이어받기
+      if(!isData){ if(qty>0&&oS===''){ /* TOTAL 행 등 — 합계에 미포함 */ } continue; }
+      fileQty+=qty;
+      if(oS===''){ dropped++; droppedQ+=qty; continue; }   // ORDER NO 를 끝내 못 찾은 행
+      var pl=(r[cPl]!=null&&String(r[cPl]).trim()!=='')?Number(r[cPl]):(lastPl||0);
+      var fr=r[cFr],to=r[cTo];
+      // 카톤 수: ① CARTON UNIT 열 → ② FROM/TO 범위 → ③ 0(낱개·병합)
+      var cartons=(cu!=null)?cu:((fr==null||to==null)?0:Math.max(0,Number(to)-Number(fr)+1));
+      if(cartons===0){ noCarton++; noCartonQ+=qty; }       // 카톤 없음 — 수량은 포함, 스캔 대상 아님
+      // 대사: CARTON UNIT×QTY PER C/T 가 TOTAL 과 다르면 그 행을 경고 목록에 (파일 오류 조기 발견)
+      if(cu&&qpc&&qty>0&&Math.abs(cu*qpc-qty)>0.001) cuMismatch.push(code+': '+cu+'×'+qpc+'≠'+qty);
+      out.push({order_no:oS,pl_no:pl,code:code,cartons:cartons,qty:qty,desc:String(r[cDesc]||'').trim(),
+        box_from:(fr==null?null:Number(fr)),box_to:(to==null?null:Number(to))});   // 라인별 저장(합산 안 함) — 카톤 범위 보존
+    }
+    return {rows:out,invoice_no:inv,skipped:noCarton,skipQ:noCartonQ,dropped:dropped,droppedQ:droppedQ,fileQty:fileQty,
+      cartonBasis:(cCU>=0?'CARTON UNIT':'FROM/TO'),cuMismatch:cuMismatch};   // 미리보기 표시용
+  }
+})();
+</script>
+</body>
+</html>
