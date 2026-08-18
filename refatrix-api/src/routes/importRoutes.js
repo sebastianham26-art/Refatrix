@@ -56,12 +56,17 @@ export default async function importRoutes(app) {
   // "수입원가 등록 때 분배 대상(입고한 인보이스)을 보여주고 선택" — 디렉터 요구 절차.
   // ① 목록: 마감(입고 반영)된 선적 + 배치 등록 여부
   app.get('/api/imports/from-inbound', { preHandler: [authGuard, requirePage('inventory')] }, async () => {
+    // 진행 중(마감 전) 선적도 함께 내려준다(ready=false) — "지금 입고하는 선적이 목록에 안 보인다"
+    // 는 혼선 방지: 화면에 보이되 선택은 마감 후에만 가능하게(2026-08-18 저녁).
     const rows = (await query(
-      `SELECT s.id, s.invoice_no, s.eta, s.closed_at,
-              COUNT(DISTINCT pi.product_id) FILTER (WHERE pi.product_id IS NOT NULL)::int AS sku_count,
-              COALESCE(SUM(CASE WHEN pi.product_id IS NOT NULL THEN
+      `SELECT s.id, s.invoice_no, s.eta, s.closed_at, s.status,
+              COUNT(DISTINCT pl.id) FILTER (WHERE pl.received_at IS NOT NULL)::int AS received_pallets,
+              COUNT(DISTINCT pl.id)::int AS pallet_count,
+              COUNT(DISTINCT pi.product_id) FILTER (WHERE pi.product_id IS NOT NULL AND pl.received_at IS NOT NULL)::int AS sku_count,
+              COALESCE(SUM(CASE WHEN pl.received_at IS NOT NULL AND pi.product_id IS NOT NULL THEN
                 (CASE WHEN pi.cartons > 0 THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons ELSE pi.qty END)
                 ELSE 0 END),0) AS measured_qty,
+              COALESCE(SUM(CASE WHEN pi.product_id IS NOT NULL THEN pi.qty ELSE 0 END),0) AS expected_qty,
               (SELECT b.id FROM import_batches b
                 WHERE b.inbound_shipment_id = s.id AND b.deleted_at IS NULL AND b.status <> 'rejected'
                 ORDER BY b.id DESC LIMIT 1) AS batch_id,
@@ -69,16 +74,20 @@ export default async function importRoutes(app) {
                 WHERE b.inbound_shipment_id = s.id AND b.deleted_at IS NULL AND b.status <> 'rejected'
                 ORDER BY b.id DESC LIMIT 1) AS batch_status
          FROM inbound_shipments s
-         JOIN inbound_pallets pl ON pl.shipment_id = s.id AND pl.received_at IS NOT NULL
+         LEFT JOIN inbound_pallets pl ON pl.shipment_id = s.id
          LEFT JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
-        WHERE s.deleted_at IS NULL
+        WHERE s.deleted_at IS NULL AND s.status <> 'cancelled'
         GROUP BY s.id
-        ORDER BY s.closed_at DESC NULLS LAST, s.id DESC
+        HAVING COUNT(pl.id) > 0
+        ORDER BY (CASE WHEN COUNT(DISTINCT pl.id) FILTER (WHERE pl.received_at IS NOT NULL) > 0 THEN 0 ELSE 1 END),
+                 s.closed_at DESC NULLS LAST, s.id DESC
         LIMIT 30`)).rows;
     return {
       items: rows.map((r) => ({
-        id: Number(r.id), invoice_no: r.invoice_no, eta: r.eta, closed_at: r.closed_at,
+        id: Number(r.id), invoice_no: r.invoice_no, eta: r.eta, closed_at: r.closed_at, status: r.status,
+        ready: Number(r.received_pallets) > 0,                 // 마감(입고 반영)된 팔렛이 있어야 배치 생성 가능
         sku_count: r.sku_count, measured_qty: Number(r.measured_qty),
+        expected_qty: Number(r.expected_qty),
         batch_id: r.batch_id ? Number(r.batch_id) : null, batch_status: r.batch_status || null,
       })),
     };

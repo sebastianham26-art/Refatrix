@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수입 입고 · build imp-0818a</title>
+<title>Refatrix ERP · 수입 입고 · build imp-0818b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -432,12 +432,18 @@
     const sel=$('fromShip'); if(!sel) return;
     try{
       const res=await fetch(session.api+'/api/imports/from-inbound',{headers:auth()});
+      if(res.status===404){ sel.innerHTML='<option value="">서버에 새 API 없음 — 백엔드(importRoutes.js) 배포와 npm run migrate(0178)를 확인하세요</option>'; return; }
       const d=await res.json();
       if(!res.ok||d.error){ sel.innerHTML='<option value="">목록 실패: '+(d.error||res.status)+'</option>'; return; }
       const items=d.items||[];
+      if(!items.length){ sel.innerHTML='<option value="">선적이 없습니다 — 창고에서 패킹리스트 업로드·마감 후 나타납니다</option>'; return; }
       sel.innerHTML='<option value="">선적(인보이스)을 선택하세요…</option>'+items.map(s=>{
+        const name=(s.invoice_no||('선적#'+s.id));
+        if(!s.ready){   // 아직 마감 전 — 보이되 선택 불가("지금 입고 중인 선적이 안 보인다" 방지)
+          return '<option value="" disabled>'+name+' · 입고 진행 중(예상 '+Number(s.expected_qty).toLocaleString()+'개) — 창고 마감 후 선택 가능</option>';
+        }
         const tag=s.batch_id?(' — 원가 '+(s.batch_status==='approved'?'승인됨':'등록됨')+' (배치 #'+s.batch_id+')'):'';
-        const label=(s.invoice_no||('선적#'+s.id))+' · SKU '+s.sku_count+' · '+Number(s.measured_qty).toLocaleString()+'개'
+        const label=name+' · SKU '+s.sku_count+' · '+Number(s.measured_qty).toLocaleString()+'개'
           +(s.closed_at?(' · 마감 '+String(s.closed_at).slice(0,10)):'')+tag;
         return '<option value="'+s.id+'"'+(s.batch_id?' disabled':'')+'>'+label+'</option>';
       }).join('');

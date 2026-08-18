@@ -28,8 +28,8 @@
    - `refatrix-inbound.html` (build 20260818b)
    - `refatrix-inbound2.html` (같은 내용 — 캐시 우회용 주소)
    - `refatrix-purchase.html` (build pur-0818a — [입고]·[미입고] 열 추가)
-   - `refatrix-import.html` (build imp-0818a — 입고 선적에서 원가 분배 대상 불러오기)
-   - `refatrix-importcost.html` (build ic-0818a — 분배 대상에 없는 마감 선적 안내)
+   - `refatrix-import.html` (build imp-0818b — 입고 선적에서 원가 분배 대상 불러오기)
+   - `refatrix-importcost.html` (build ic-0818b — 분배 대상에 없는 선적 안내)
 2. 배포 후 접속. 캐시가 의심되면 `.../refatrix-inbound2.html` 주소 사용
 3. F12 콘솔에서 `[refatrix-inbound] build 20260818b` 확인
 
@@ -156,3 +156,12 @@
 ③ 그 다음 수입 부대비용 분배 화면의 분배 대상에 인보이스 번호(batch_no)로 나타남 → 비용 배분.
 ic-0818a 부터는 분배 대상 위에 "입고됐지만 아직 분배 대상에 없는 선적"이 노란 박스로 표시되고,
 배치 미등록/승인 대기 중 어떤 단계가 남았는지 안내합니다.
+
+## 2026-08-18f — "지금 입고하는 선적이 드롭다운에 안 보임"
+
+원인 두 가지를 화면에서 바로 알 수 있게 했습니다(imp-0818b, ic-0818b + importRoutes.js 재배포):
+1. **아직 마감 전인 선적** — 이제 드롭다운에 "입고 진행 중(예상 n개) — 창고 마감 후 선택 가능"으로
+   표시됩니다(회색, 선택 불가). 창고에서 검수·마감을 마치면 실측 수량과 함께 선택 가능해집니다.
+2. **백엔드 미배포** — importRoutes.js/0178 이 서버에 없으면 드롭다운에
+   "서버에 새 API 없음 — 백엔드 배포와 npm run migrate(0178) 확인"이 표시됩니다.
+비용 분배 화면의 노란 안내 박스도 "입고 진행 중" 단계를 함께 보여줍니다.
