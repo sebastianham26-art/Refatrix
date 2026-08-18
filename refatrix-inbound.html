@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260818a</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260818b</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -198,7 +198,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260818a';
+  var BUILD='20260818b';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -1854,13 +1854,38 @@
       +'</tbody></table></div>';
     // 직전 마감의 경고(구매 미매칭·미등록 SKU·실측 0) — 문제가 조용히 넘어가지 않게 화면에 남긴다
     if(lastCloseRes&&((lastCloseRes.unmatched||[]).length||(lastCloseRes.unregistered||[]).length)){
-      var rowsW=(lastCloseRes.unmatched||[]).map(function(u){
+      var unm=(lastCloseRes.unmatched||[]);
+      var nPo=unm.filter(function(u){return u.reason==='no_po_line';}).length;
+      var rowsW=unm.slice(0,15).map(function(u){
         return '· <b class="mono">'+esc(u.code||'')+'</b> ('+esc(u.order_no||'')+') — '
-          +(u.reason==='no_po_line'?L('구매 발주에서 못 찾음(ORDER NO·제품 확인)','sin línea de compra'):L('실측 스캔 0 — 검수 기록 확인','0 escaneado')); });
+          +(u.reason==='no_po_line'?L('구매 발주에서 못 찾음','sin línea de compra')
+           :u.reason==='other_po'?L('다른 발주로 반영','otra OC')+': '+esc(u.po_ref||'')
+           :L('실측 스캔 0 — 검수 기록 확인','0 escaneado')); });
+      if(unm.length>15) rowsW.push('… '+L('외','y')+' '+(unm.length-15)+L('건',''));
       (lastCloseRes.unregistered||[]).forEach(function(c){ rowsW.push('· <b class="mono">'+esc(c)+'</b> — '+L('미등록 SKU(제품 마스터에 없음) — 재고·구매 미반영','SKU no registrado')); });
-      b.innerHTML+='<div class="note" style="margin-top:10px;border-color:var(--red)"><b style="color:var(--red)">⚠ '+L('입고에서 빠진 항목','No aplicado')+'</b><br>'+rowsW.join('<br>')+'</div>';
+      b.innerHTML+='<div class="note" style="margin-top:10px;border-color:var(--red)"><b style="color:var(--red)">⚠ '+L('구매 연동에서 빠진 항목','No aplicado a compras')+' ('+unm.length+L('건','')+')</b>'
+        +' — <span style="color:var(--muted)">'+L('재고는 정상 반영됨. 발주번호 표기 차이/발주 라인 제품 미매칭이 원인일 수 있음','el stock sí se aplicó')+'</span><br>'+rowsW.join('<br>')
+        +(isDir&&nPo?'<div class="row" style="margin-top:8px"><button class="btn o sm" id="btnRematch">🔧 '+L('구매 재매칭 (부족분만 안전 반영)','Reconciliar compras')+'</button></div>':'')+'</div>';
+      var brm=$('btnRematch'); if(brm) brm.addEventListener('click',doPoRematch);
+    } else if(isDir&&DETAIL.pallets.some(function(p){return p.received_at;})){
+      // 마감 이력이 있으면 언제든 재매칭 가능(새로고침으로 경고를 잃어도)
+      b.innerHTML+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="btnRematch">🔧 '+L('구매 재매칭 (마감분 구매 연동 점검·복구)','Reconciliar compras')+'</button></div>';
+      var brm2=$('btnRematch'); if(brm2) brm2.addEventListener('click',doPoRematch);
     }
     var noteChain='<div class="note">'+L('입고(마감)하면: ① 실재고(stock)가 <b>실측 스캔 수량</b>만큼 즉시 늘어나 판매 대응 가능 ② 구매 received_qty 갱신(Back Order 감소) ③ 원가는 이후 수입원가 승인에서 반영(수량은 이중 반영되지 않음). 적치는 마감과 무관하게 계속 가능합니다.','Al cerrar: stock sube de inmediato con lo escaneado; compras se actualiza; el costo se aprueba después (sin duplicar cantidades).')+'</div>';
+    /* 구매 재매칭(0177) — 마감 때 구매 연동에서 빠진 수량을 부족분만 안전하게 추가 반영 */
+    function doPoRematch(){
+      api('/api/inbound/'+SHIP+'/po-rematch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(function(o){
+        if(!o.ok||o.body.error){ sndErr(); toast('⚠ '+L('재매칭 실패','Error')+': '+(o.body.error==='director_only'?L('디렉터만 가능합니다','Solo director'):(o.body.error||o.status))); return; }
+        var f=o.body.fixed||[], st2=o.body.still_unmatched||[];
+        var q2=f.reduce(function(a,x){return a+(x.qty||0);},0);
+        sndSaved();
+        toast('🔧 '+L('구매 재매칭 완료 — '+f.length+'개 라인 · +'+fmt(q2)+'EA 반영'+(st2.length?' · 미해결 '+st2.length+'건':''),'Reconciliado: '+f.length+' líneas'+(st2.length?' · pendientes '+st2.length:'')));
+        if(st2.length){ sndWarn(); toast('⚠ '+L('미해결 '+st2.length+'건 — 구매 모듈에 해당 발주가 없습니다(발주 업로드 확인)','Sin OC en compras: '+st2.length)); }
+        if(lastCloseRes){ lastCloseRes.unmatched=st2.map(function(u){return {order_no:u.order_no,code:u.code,reason:'no_po_line'};}); }
+        refreshDetail(renderDetail);
+      }).catch(function(){ sndErr(); toast(L('재매칭 실패 — 네트워크를 확인하세요','Error de red')); });
+    }
     function wireCloseBtn(label){
       b.innerHTML+=noteChain
         +'<div class="row"><input type="password" id="pin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px"><button class="btn o" id="btnClose">'+label+'</button></div>';

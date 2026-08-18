@@ -142,7 +142,8 @@ async function boot(SHIP) {
     doc.getElementById('btnClose').click(); await sleep(40);
     body = doc.getElementById('stepbody').textContent;
     ok('마감 후 입고됨 표시', /입고됨/.test(body), body.slice(0, 250));
-    ok('미반영 경고 표시(구매 미매칭 SKU)', /입고에서 빠진 항목/.test(body) && /CB0318/.test(body));
+    ok('미반영 경고 표시(구매 미매칭 SKU)', /구매 연동에서 빠진 항목/.test(body) && /CB0318/.test(body));
+    ok('재고는 반영됨 안내 + [🔧 구매 재매칭] 버튼(디렉터)', /재고는 정상 반영됨/.test(body) && !!doc.getElementById('btnRematch'));
     // 나중에 팔렛 B 검수 완료 → 재마감 버튼
     SHIP.pallets[1].status = 'checked'; SHIP.pallets[1].checked_at = 'y'; SHIP.pallets[1].items[0].scanned_cartons = 2;
     t.renderClose(); await sleep(5);

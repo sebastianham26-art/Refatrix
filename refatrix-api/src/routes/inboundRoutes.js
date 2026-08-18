@@ -156,6 +156,53 @@ export function allocScans(items, scans) {
   return { alloc, extras, unknown, known };
 }
 
+// ===== 구매 발주 라인 찾기(2026-08-18) — 마감→구매 연동의 관대한 4단계 매칭 =====
+// 현장에서 "구매 발주에서 못 찾음"이 대량 발생 — 원인은 ① 발주번호 표기 차이(공백·기호·대소문자)
+// ② 발주 업로드 당시 제품 미매칭(product_id NULL) ③ 다른 발주번호로 등록된 같은 제품.
+//   ① 엄격: ref_no 정확 일치 + product_id
+//   ② ref_no 느슨(영숫자만 비교) + product_id
+//   ③ ref_no 느슨 + 미매칭 라인(product_id NULL)의 input_code 일치 → 그 라인 product_id 백필
+//   ④ 발주번호 무관, 그 제품의 잔량 있는 열린 발주 라인(오래된 순) — backorder 는 소진되도록
+// 반환 {line, mode} — mode: 'strict'|'fuzzy'|'code'|'any_po'|null
+export async function findPoLine(q, orderNo, productId, inputCode) {
+  const bareRef = String(orderNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const bareCode = String(inputCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const strict = (await q(
+    `SELECT l.id, l.qty, l.received_qty, po.ref_no FROM purchase_order_lines l
+       JOIN purchase_orders po ON po.id = l.po_id
+      WHERE po.ref_no=$1 AND l.product_id=$2 AND po.deleted_at IS NULL AND po.status<>'cancelled'
+      ORDER BY (l.qty - l.received_qty) DESC LIMIT 1`, [orderNo, productId])).rows[0];
+  if (strict) return { line: strict, mode: 'strict' };
+  const fuzzy = (await q(
+    `SELECT l.id, l.qty, l.received_qty, po.ref_no FROM purchase_order_lines l
+       JOIN purchase_orders po ON po.id = l.po_id
+      WHERE UPPER(REGEXP_REPLACE(po.ref_no,'[^A-Za-z0-9]','','g'))=$1
+        AND l.product_id=$2 AND po.deleted_at IS NULL AND po.status<>'cancelled'
+      ORDER BY (l.qty - l.received_qty) DESC LIMIT 1`, [bareRef, productId])).rows[0];
+  if (fuzzy) return { line: fuzzy, mode: 'fuzzy' };
+  const byCode = (await q(
+    `SELECT l.id, l.qty, l.received_qty, po.ref_no FROM purchase_order_lines l
+       JOIN purchase_orders po ON po.id = l.po_id
+      WHERE UPPER(REGEXP_REPLACE(po.ref_no,'[^A-Za-z0-9]','','g'))=$1
+        AND l.product_id IS NULL
+        AND UPPER(REGEXP_REPLACE(l.input_code,'[^A-Za-z0-9]','','g'))=$2
+        AND po.deleted_at IS NULL AND po.status<>'cancelled'
+      ORDER BY (l.qty - l.received_qty) DESC LIMIT 1`, [bareRef, bareCode])).rows[0];
+  if (byCode) {
+    // 발주 라인 제품 백필 — 이후 화면·통계에서도 이 라인이 제품과 연결된다
+    await q(`UPDATE purchase_order_lines SET product_id=$1 WHERE id=$2`, [productId, byCode.id]);
+    return { line: byCode, mode: 'code' };
+  }
+  const anyPo = (await q(
+    `SELECT l.id, l.qty, l.received_qty, po.ref_no FROM purchase_order_lines l
+       JOIN purchase_orders po ON po.id = l.po_id
+      WHERE l.product_id=$1 AND po.deleted_at IS NULL AND po.status<>'cancelled'
+        AND l.qty > l.received_qty
+      ORDER BY po.id LIMIT 1`, [productId])).rows[0];
+  if (anyPo) return { line: anyPo, mode: 'any_po' };
+  return { line: null, mode: null };
+}
+
 export default async function inboundRoutes(app) {
   const g = { preHandler: [authGuard, requirePage('warehouse')] };
   const gView = { preHandler: [authGuard, requirePageAny(['warehouse', 'purchase'])] }; // 파일 열람: 창고+구매
@@ -711,20 +758,21 @@ export default async function inboundRoutes(app) {
         if (qty <= 0) { unmatched.push({ order_no: r.order_no, code: r.code, reason: 'zero_scanned' }); continue; }
         perOrder[r.order_no] = (perOrder[r.order_no] || 0) + qty;
         stockByProduct[r.product_id] = (stockByProduct[r.product_id] || 0) + qty;
-        // 구매 라인 반영(ORDER NO = ref_no, 잔량 한도)
-        const line = (await q(
-          `SELECT l.id, l.qty, l.received_qty
-             FROM purchase_order_lines l
-             JOIN purchase_orders po ON po.id = l.po_id
-            WHERE po.ref_no=$1 AND l.product_id=$2 AND po.deleted_at IS NULL AND po.status<>'cancelled'
-            ORDER BY (l.qty - l.received_qty) DESC
-            LIMIT 1`, [r.order_no, r.product_id])).rows[0];
+        // 구매 라인 반영 — 4단계 관대한 매칭(findPoLine) + 반영량 기록(0177, 재매칭 이중 방지)
+        const { line, mode } = await findPoLine(q, r.order_no, r.product_id, r.code);
         if (line) {
           const room = num(line.qty) - num(line.received_qty);
           const add = Math.max(0, Math.min(qty, room));
           if (add > 0) {
             await q(`UPDATE purchase_order_lines SET received_qty = received_qty + $1 WHERE id=$2`, [add, line.id]);
+            await q(
+              `INSERT INTO inbound_po_applied (shipment_id, order_no, product_id, qty) VALUES ($1,$2,$3,$4)
+               ON CONFLICT (shipment_id, order_no, product_id) DO UPDATE SET qty = inbound_po_applied.qty + $4, updated_at = now()`,
+              [id, r.order_no, r.product_id, add]);
             updated += 1;
+          }
+          if (mode === 'any_po' && String(line.ref_no) !== String(r.order_no)) {
+            unmatched.push({ order_no: r.order_no, code: r.code, reason: 'other_po', po_ref: line.ref_no });
           }
         } else {
           unmatched.push({ order_no: r.order_no, code: r.code, reason: 'no_po_line' });
@@ -751,6 +799,57 @@ export default async function inboundRoutes(app) {
         detail: { close: true, first: out.first, po_lines_updated: out.po_lines_updated,
                   pallets_received: out.pallets_received, stock_applied: out.stock_applied,
                   unmatched: out.unmatched.length, unregistered: out.unregistered.length } });
+    }
+    return out;
+  });
+
+  // 구매 재매칭(디렉터, 0177) — 이미 입고 반영된(received_at) 팔렛의 구매 연동을 복구한다.
+  //   마감 당시 매칭 실패("구매 발주에서 못 찾음")로 received_qty 에 못 들어간 수량을,
+  //   관대한 매칭(findPoLine)으로 다시 찾아 "부족분만" 추가한다.
+  //   부족분 = 실측 누적 − 이미 반영된 기록(inbound_po_applied) → 몇 번을 눌러도 이중 반영 없음.
+  //   재고(stock)는 건드리지 않는다 — 마감이 이미 반영했다.
+  app.post('/api/inbound/:id/po-rematch', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id);
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(`SELECT id FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      const rows = (await q(
+        `SELECT pl.order_no, pi.product_id, MIN(pi.input_code) AS code,
+                SUM(CASE WHEN pi.cartons > 0
+                         THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons
+                         ELSE pi.qty END) AS qty
+           FROM inbound_pallets pl
+           JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
+          WHERE pl.shipment_id=$1 AND pl.received_at IS NOT NULL AND pi.product_id IS NOT NULL
+          GROUP BY pl.order_no, pi.product_id`, [id])).rows;
+      const fixed = [], still = [];
+      for (const r of rows) {
+        const target = num(r.qty);
+        if (target <= 0) continue;
+        const ap = (await q(
+          `SELECT qty FROM inbound_po_applied WHERE shipment_id=$1 AND order_no=$2 AND product_id=$3 FOR UPDATE`,
+          [id, r.order_no, r.product_id])).rows[0];
+        const need = target - (ap ? num(ap.qty) : 0);
+        if (need <= 0) continue;                                   // 이미 전량 반영됨
+        const { line, mode } = await findPoLine(q, r.order_no, r.product_id, r.code);
+        if (!line) { still.push({ order_no: r.order_no, code: r.code }); continue; }
+        const room = num(line.qty) - num(line.received_qty);
+        const add = Math.max(0, Math.min(need, room));
+        if (add <= 0) { still.push({ order_no: r.order_no, code: r.code, reason: 'no_room' }); continue; }
+        await q(`UPDATE purchase_order_lines SET received_qty = received_qty + $1 WHERE id=$2`, [add, line.id]);
+        await q(
+          `INSERT INTO inbound_po_applied (shipment_id, order_no, product_id, qty) VALUES ($1,$2,$3,$4)
+           ON CONFLICT (shipment_id, order_no, product_id) DO UPDATE SET qty = inbound_po_applied.qty + $4, updated_at = now()`,
+          [id, r.order_no, r.product_id, add]);
+        fixed.push({ order_no: r.order_no, code: r.code, qty: add, po_ref: line.ref_no, mode });
+      }
+      return { ok: true, fixed, still_unmatched: still };
+    });
+    if (out && out.ok) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { po_rematch: true, fixed: out.fixed.length, still: out.still_unmatched.length } });
     }
     return out;
   });

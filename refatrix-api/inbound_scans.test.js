@@ -244,6 +244,68 @@ async function main() {
   const pool9 = (await q(`SELECT qty FROM inbound_prestock WHERE product_id=$1`, [prod9])).rows[0];
   ok(Number(pool9.qty) === 0, '선반영 풀 소진', pool9);
 
+  console.log('\n⑩ 구매 매칭 4단계(findPoLine) + 재매칭 멱등(0177)');
+  const { findPoLine } = await import('../src/routes/inboundRoutes.js');
+  const pA = (await q(`INSERT INTO products (code, name) VALUES ('CQ0467L','P1') RETURNING id`)).rows[0].id;
+  const pB = (await q(`INSERT INTO products (code, name) VALUES ('GV0828','P2') RETURNING id`)).rows[0].id;
+  const pC = (await q(`INSERT INTO products (code, name) VALUES ('CE0342R','P3') RETURNING id`)).rows[0].id;
+  const pD = (await q(`INSERT INTO products (code, name) VALUES ('ZZTEST','P4') RETURNING id`)).rows[0].id;
+  // 발주: ref_no 에 공백/기호가 섞임 + 한 라인은 product 미매칭(NULL)
+  const po1 = (await q(`INSERT INTO purchase_orders (ref_no, status) VALUES ('100RA25K2C', 'shipped') RETURNING id`)).rows[0].id;
+  const po2 = (await q(`INSERT INTO purchase_orders (ref_no, status) VALUES ('100RA26A1C ', 'shipped') RETURNING id`)).rows[0].id;   // 뒤 공백
+  const po3 = (await q(`INSERT INTO purchase_orders (ref_no, status) VALUES ('OTRA-PO', 'shipped') RETURNING id`)).rows[0].id;
+  const l1 = (await q(`INSERT INTO purchase_order_lines (po_id, product_id, input_code, qty, unit_cost_usd, amount_usd) VALUES ($1,$2,'CQ0467L',100,1,100) RETURNING id`, [po1, pA])).rows[0].id;
+  const l2 = (await q(`INSERT INTO purchase_order_lines (po_id, product_id, input_code, qty, unit_cost_usd, amount_usd) VALUES ($1,NULL,'GV-0828',50,1,50) RETURNING id`, [po2])).rows[0].id;
+  const l3 = (await q(`INSERT INTO purchase_order_lines (po_id, product_id, input_code, qty, unit_cost_usd, amount_usd) VALUES ($1,$2,'CE0342R',30,1,30) RETURNING id`, [po3, pC])).rows[0].id;
+  let m = await findPoLine(q, '100RA25K2C', pA, 'CQ0467L');
+  ok(m.mode === 'strict' && Number(m.line.id) === Number(l1), '① 엄격 일치', m.mode);
+  m = await findPoLine(q, '100RA26A1C', pB, 'GV0828');
+  ok(m.mode === 'code' && Number(m.line.id) === Number(l2), '③ ref 느슨(공백) + 미매칭 라인 input_code 로 발견', m.mode);
+  const bf = (await q(`SELECT product_id FROM purchase_order_lines WHERE id=$1`, [l2])).rows[0];
+  ok(String(bf.product_id) === String(pB), '   → 발주 라인 product_id 백필');
+  m = await findPoLine(q, '100RA26A1C', pB, 'GV0828');
+  ok(m.mode === 'fuzzy', '② 백필 후엔 느슨 일치로 발견', m.mode);
+  m = await findPoLine(q, '100RA26D1C', pC, 'CE0342R');
+  ok(m.mode === 'any_po' && String(m.line.ref_no).indexOf('OTRA') === 0, '④ 발주번호 달라도 열린 발주로 소진', m.mode);
+  m = await findPoLine(q, '100RA26A1C', pD, 'ZZTEST');
+  ok(m.line === null, '어디에도 없으면 null(미해결 보고)', m.mode);
+  // 재매칭 멱등: target-applied 부족분만 — 두 번 실행해도 이중 반영 없음
+  const sidR = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('D26-R','closed') RETURNING id`)).rows[0].id;
+  const palR = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected, checked_at, received_at)
+                         VALUES ($1,'100RA25K2C',1,'checking',2,40,now(),now()) RETURNING id`, [sidR])).rows[0].id;
+  await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
+           VALUES ($1,$2,$3,'CQ0467L',2,40,2)`, [palR, sidR, pA]);
+  const num2 = (v) => (v == null ? 0 : Number(v));
+  const rematchOnce = async () => {
+    const rows = (await q(
+      `SELECT pl.order_no, pi.product_id, MIN(pi.input_code) AS code,
+              SUM(CASE WHEN pi.cartons>0 THEN ROUND(pi.qty/pi.cartons)*pi.scanned_cartons ELSE pi.qty END) AS qty
+         FROM inbound_pallets pl JOIN inbound_pallet_items pi ON pi.pallet_id=pl.id
+        WHERE pl.shipment_id=$1 AND pl.received_at IS NOT NULL AND pi.product_id IS NOT NULL
+        GROUP BY pl.order_no, pi.product_id`, [sidR])).rows;
+    let added = 0;
+    for (const r of rows) {
+      const ap = (await q(`SELECT qty FROM inbound_po_applied WHERE shipment_id=$1 AND order_no=$2 AND product_id=$3`, [sidR, r.order_no, r.product_id])).rows[0];
+      const need = num2(r.qty) - (ap ? num2(ap.qty) : 0);
+      if (need <= 0) continue;
+      const mm = await findPoLine(q, r.order_no, r.product_id, r.code);
+      if (!mm.line) continue;
+      const add = Math.min(need, num2(mm.line.qty) - num2(mm.line.received_qty));
+      if (add <= 0) continue;
+      await q(`UPDATE purchase_order_lines SET received_qty = received_qty + $1 WHERE id=$2`, [add, mm.line.id]);
+      await q(`INSERT INTO inbound_po_applied (shipment_id, order_no, product_id, qty) VALUES ($1,$2,$3,$4)
+               ON CONFLICT (shipment_id, order_no, product_id) DO UPDATE SET qty = inbound_po_applied.qty + $4`, [sidR, r.order_no, r.product_id, add]);
+      added += add;
+    }
+    return added;
+  };
+  const rm1 = await rematchOnce();
+  ok(rm1 === 40, '1차 재매칭 — 부족분 40 반영', rm1);
+  const rm2 = await rematchOnce();
+  ok(rm2 === 0, '2차 재매칭 — 이중 반영 없음(멱등)', rm2);
+  const rq = (await q(`SELECT received_qty FROM purchase_order_lines WHERE id=$1`, [l1])).rows[0];
+  ok(num2(rq.received_qty) === 40, '발주 received_qty = 40 정확', rq);
+
   await q('ROLLBACK');
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
   await pool.end();

@@ -1,4 +1,4 @@
-# 검수 개편(build 20260818a) 배포 순서 — 반드시 이 순서대로
+# 검수 개편(build 20260818b) 배포 순서 — 반드시 이 순서대로
 
 "스캔은 기록, 판정은 보고서" 개편 + **이중 스캔 기록 수정**입니다.
 스캔 시점 판정·차단이 전부 사라지고, 모든 스캔이 즉시 서버(inbound_scans)에 저장되며,
@@ -14,18 +14,19 @@
    - `refatrix-api/migrations/0174_inbound_scans.sql` (새 파일)
    - `refatrix-api/migrations/0175_inbound_scan_idempotency.sql` (새 파일)
    - `refatrix-api/migrations/0176_inbound_close_stock.sql` (새 파일 — 마감 즉시 재고 반영)
+   - `refatrix-api/migrations/0177_inbound_po_applied.sql` (새 파일 — 구매 재매칭)
    - `refatrix-api/src/routes/inboundRoutes.js` (교체)
    - `refatrix-api/src/routes/importRoutes.js` (교체 — 수입원가 승인 이중 방지)
 2. Railway 가 자동 재배포될 때까지 대기 (Deployments 초록색)
-3. Railway 콘솔에서: `npm run migrate`  ← **0174 + 0175 + 0176 적용 필수**
+3. Railway 콘솔에서: `npm run migrate`  ← **0174~0177 적용 필수**
 
 ## ② 프런트 (GitHub Pages / Cloudflare Pages)
 
 1. 저장소 루트에 덮어쓰기 업로드:
-   - `refatrix-inbound.html` (build 20260818a)
+   - `refatrix-inbound.html` (build 20260818b)
    - `refatrix-inbound2.html` (같은 내용 — 캐시 우회용 주소)
 2. 배포 후 접속. 캐시가 의심되면 `.../refatrix-inbound2.html` 주소 사용
-3. F12 콘솔에서 `[refatrix-inbound] build 20260818a` 확인
+3. F12 콘솔에서 `[refatrix-inbound] build 20260818b` 확인
 
 ## 이중 스캔이 이미 기록된 팔렛 정리
 
@@ -100,3 +101,20 @@
 **오늘 발생한 26B2C 건 복구**: 배포 후 마감 탭에 [➕ 추가 입고 반영] 버튼이 보이면 한 번 눌러주세요 —
 빠졌던 팔렛(적치중이던 것 포함)의 실측 수량이 재고와 구매에 반영됩니다.
 "주문 수량 0" SKU는 반영 후에도 경고 목록에 남으면 ORDER NO ↔ 구매 발주번호 불일치이니 알려주세요.
+
+## 2026-08-18b — "구매 발주에서 못 찾음" 대량 경고 해결
+
+마감은 성공했고 **재고는 정상 반영**되었습니다. 경고는 구매 발주 연동만 실패한 것으로,
+원인은 발주번호 표기 차이(공백·기호) 또는 발주 업로드 당시 제품 미매칭(product NULL)입니다.
+
+- 구매 매칭을 4단계로 확장: 정확 일치 → 표기 차이 무시 → 발주 라인 제품코드로 발견(+백필)
+  → 발주번호 달라도 그 제품의 열린 발주에서 소진.
+- **[🔧 구매 재매칭]** 버튼(마감 탭, 디렉터): 이미 마감된 팔렛의 구매 연동을 "부족분만" 다시 반영.
+  반영량이 기록(0177)되므로 몇 번을 눌러도 이중 반영되지 않습니다.
+
+### 이번 건 처리 순서
+1. 백엔드(0177 + inboundRoutes.js) 업로드 → 재배포 → `npm run migrate`
+2. 프런트 2개 파일 업로드 (build 20260818b)
+3. 해당 선적 → 마감 탭 → **[🔧 구매 재매칭]** 클릭 → 반영 결과 확인
+4. 그래도 "미해결"로 남는 건 = 구매 모듈에 그 발주 자체가 없는 것 → 발주 업로드 후 다시 재매칭
+5. 미등록 SKU 3건(CE0088L·CE0910L·CL0211L)은 제품 마스터 등록이 먼저 필요합니다(등록 후 알려주시면 반영 경로 추가)
