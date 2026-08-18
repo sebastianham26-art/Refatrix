@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0731c</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0818a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -261,7 +261,7 @@
       sb(s.unshipped_sku||0,'미선적 SKU');
     let h='<tr><th>도착 예정</th><th>선적(패킹리스트 인보이스)</th><th>업로드일</th><th>구분</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">카톤</th><th>구매참조번호</th></tr>';
     if(!(d.shipments||[]).length && !(d.unshipped||[]).length){
-      h+='<tr><td colspan="8" style="color:var(--muted)">입고 예정이 없습니다. (선적 등록·발주 backorder 없음)</td></tr>';
+      h+='<tr><td colspan="8" style="color:var(--muted)">입고 예정이 없습니다. 창고에서 <b>마감(입고 완료)</b>된 선적과 채워진 발주는 이 목록에서 빠집니다 — 입고된 수량은 아래 <b>구매내역 조회</b>의 [입고] 열과 발주 상세에서 확인하세요.</td></tr>';
       $('incTable').innerHTML=h; return;
     }
     for(const sh of (d.shipments||[])){
@@ -413,6 +413,8 @@
     {k:'ref_no',t:'참조번호',num:false},
     {k:'line_count',t:'라인',num:true},
     {k:'total_qty',t:'수량',num:true},
+    {k:'total_received',t:'입고',num:true},      // 창고 마감이 채운 수량(2026-08-18)
+    {k:'backorder_qty',t:'미입고',num:true},
     {k:'total_usd',t:'금액(USD)',num:true,cost:true},
     {k:'matched_cnt',t:'매칭',num:true},
     {k:'note',t:'메모',num:false},
@@ -450,6 +452,7 @@
   const DETAIL_COLS=[
     {k:'sku',t:'제품코드'},{k:'product_name',t:'제품명'},{k:'matched',t:'매칭'},
     {k:'qty',t:'수량',num:true},
+    {k:'received_qty',t:'입고수량',num:true},
     {k:'unit_cost_usd',t:'구매원가(USD)',num:true,cost:true},{k:'amount_usd',t:'금액(USD)',num:true,cost:true},
     {k:'stock_qty',t:'현재고',num:true},{k:'incoming',t:'입고예정(재고↑)',num:true},{k:'projected',t:'입고후 예상재고',num:true},
   ];
@@ -491,6 +494,11 @@
         if(c.k==='ref_no') h+='<td><b>'+esc(it.ref_no)+'</b></td>';
         else if(c.k==='total_usd') h+='<td class="num">'+usd(it.total_usd)+'</td>';
         else if(c.k==='total_qty') h+='<td class="num">'+num(it.total_qty)+'</td>';
+        else if(c.k==='total_received'){
+          const done=(it.total_qty>0&&(it.backorder_qty||0)<=0);
+          h+='<td class="num">'+num(it.total_received||0)+(done?' <span class="pill ok">✔ 입고완료</span>':'')+'</td>';
+        }
+        else if(c.k==='backorder_qty') h+='<td class="num"'+((it.backorder_qty||0)>0?' style="color:#B23B2E;font-weight:700"':' style="color:var(--muted)"')+'>'+((it.backorder_qty||0)>0?num(it.backorder_qty):'—')+'</td>';
         else if(c.k==='line_count') h+='<td class="num">'+it.line_count+'</td>';
         else if(c.k==='matched_cnt') h+='<td class="num">'+it.matched_cnt+(it.unmatched_cnt?(' <span class="pill no">미'+it.unmatched_cnt+'</span>'):'')+'</td>';
         else if(c.k==='order_date') h+='<td>'+esc(it.order_date)+'</td>';
@@ -516,7 +524,7 @@
     canCost=!!d.cost_visible;
     d.rows=(d.lines||[]).map(l=>({
       sku:l.matched?l.matched_code:l.input_code, product_name:l.product_name, matched:l.matched,
-      qty:Number(l.qty), unit_cost_usd:l.unit_cost_usd, amount_usd:l.amount_usd,
+      qty:Number(l.qty), received_qty:Number(l.received_qty)||0, unit_cost_usd:l.unit_cost_usd, amount_usd:l.amount_usd,
       stock_qty:l.stock_qty==null?null:Number(l.stock_qty),
       incoming:Number(l.backorder_qty)||0,                                   // 입고되면 재고에 더해질 미입고 수량(qty−received)
       projected:(l.stock_qty==null)?null:((Number(l.stock_qty)||0)+(Number(l.backorder_qty)||0)), // 입고후 예상재고
@@ -541,6 +549,7 @@
         else if(c.k==='product_name') h+='<td>'+esc(r.product_name||'—')+'</td>';
         else if(c.k==='matched') h+='<td>'+(r.matched?'<span class="pill ok">매칭</span>':'<span class="pill no">미매칭</span>')+'</td>';
         else if(c.k==='qty') h+='<td class="num">'+num(r.qty)+'</td>';
+        else if(c.k==='received_qty') h+='<td class="num"'+((r.received_qty||0)>=r.qty&&r.qty>0?' style="color:#2E7D46;font-weight:700"':'')+'>'+num(r.received_qty||0)+'</td>';
         else if(c.k==='unit_cost_usd') h+='<td class="num">'+usd(r.unit_cost_usd)+'</td>';
         else if(c.k==='amount_usd') h+='<td class="num">'+usd(r.amount_usd)+'</td>';
         else if(c.k==='stock_qty') h+='<td class="num">'+(r.stock_qty==null?'—':num(r.stock_qty))+'</td>';

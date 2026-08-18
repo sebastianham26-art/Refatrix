@@ -157,6 +157,7 @@ export default async function purchaseRoutes(app) {
               u.name AS created_by_name,
               COUNT(l.id)::int AS line_count,
               COALESCE(SUM(l.qty),0) AS total_qty,
+              COALESCE(SUM(l.received_qty),0) AS total_received,
               COALESCE(SUM(l.amount_usd),0) AS total_usd,
               SUM(CASE WHEN l.product_id IS NOT NULL THEN 1 ELSE 0 END)::int AS matched_cnt,
               SUM(CASE WHEN l.product_id IS NULL THEN 1 ELSE 0 END)::int AS unmatched_cnt
@@ -172,6 +173,9 @@ export default async function purchaseRoutes(app) {
       id: Number(x.id), ref_no: x.ref_no, order_date: x.order_date, currency: x.currency,
       status: x.status, note: x.note, created_at: x.created_at, created_by_name: x.created_by_name,
       line_count: Number(x.line_count), total_qty: Number(x.total_qty),
+      // 입고 현황(2026-08-18) — 창고 마감이 received_qty 를 채우면 목록에서 바로 보이게
+      total_received: Number(x.total_received),
+      backorder_qty: Math.round((Number(x.total_qty) - Number(x.total_received)) * 1000) / 1000,
       total_usd: seeCost ? Number(x.total_usd) : null,        // 구매단가 비공개
       matched_cnt: Number(x.matched_cnt), unmatched_cnt: Number(x.unmatched_cnt),
     }));
