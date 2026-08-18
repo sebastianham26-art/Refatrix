@@ -55,7 +55,8 @@ function makeServer(SHIP) {
     let res = {};
     let m;
     if ((m = u.match(/\/pallets\/(\d+)\/scan$/))) {
-      if (srv.failScan) return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: 'down' }) });
+      if (srv.throwNet) return Promise.reject(new Error('network down'));
+      if (srv.failScan) return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) });
       const pid = +m[1];
       // 0175 멱등: 같은 client_key(k)는 다시 와도 기록하지 않는다
       (body.scans || []).forEach(s => {
@@ -285,6 +286,29 @@ const scanCalls = (srv) => srv.calls.filter(c => /\/scan$/.test(c.u));
     b4.srv.lostResponse = false;
     b4.t.flush(); await sleep(20);
     ok('취소 재시도에도 1건만 취소', b4.srv.scans.length === before - 1 && b4.t.getTotal().n === 1, b4.t.getTotal());
+  }
+
+  console.log('\n⑭ 전송 실패 원인 표시 + 네트워크 단절(응답 없음) 복구');
+  {
+    const b5 = await boot('warehouse');
+    b5.t.setTiming(0, 0);
+    b5.t.openShip(1); await sleep(30);
+    b5.t.setStep('check'); b5.t.renderCheck(); await sleep(10);
+    b5.t.lockPallet(11);
+    // ⓐ 서버 500 (마이그레이션 누락 등) — 원인과 조치가 배너에 보인다
+    b5.srv.failScan = true;
+    b5.t.doScan('CTR-CE0796-16'); await sleep(20);
+    const st = b5.doc.getElementById('syncst');
+    ok('전송 대기 + HTTP 500 원인 표시', /전송 대기/.test(st.textContent) && /HTTP 500/.test(st.textContent), st.textContent);
+    ok('조치 안내(마이그레이션 확인)', /마이그레이션/.test(st.textContent), st.textContent);
+    // ⓑ 응답 자체가 없는 완전 단절 — scanBusy 가 잠기지 않고 복구된다
+    b5.srv.failScan = false; b5.srv.throwNet = true;
+    b5.t.flush(); await sleep(20);
+    ok('네트워크 없음 표시', /네트워크 없음/.test(b5.doc.getElementById('syncst').textContent), b5.doc.getElementById('syncst').textContent);
+    b5.srv.throwNet = false;
+    b5.t.flush(); await sleep(20);
+    ok('연결 복구 → 큐 비움(잠김 없음)', b5.t.getQ().length === 0 && b5.t.getTotal().n === 1, b5.t.getTotal());
+    ok('복구 후 저장됨 표시', /서버 저장됨/.test(b5.doc.getElementById('syncst').textContent));
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

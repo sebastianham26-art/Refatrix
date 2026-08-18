@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817p</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817q</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -198,7 +198,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817p';
+  var BUILD='20260817q';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -1214,8 +1214,8 @@
   /* 스캔 1건의 멱등 키(0175) — 응답 유실로 같은 스캔을 다시 보내도 서버가 1회만 기록.
      "한 순간에 두 번 집계"되던 이중 기록 버그의 근본 수정. */
   function scanKey(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10); }
-  var scanBusy=false, scanRetryT=null, reconOn=false, wasOffline=false;
-  function scanReset(){ selPal=null; srvTally=[]; scanQ=[]; scanBusy=false; reconOn=false; wasOffline=false; scanLbl=null; clearTimeout(scanRetryT); }
+  var scanBusy=false, scanRetryT=null, reconOn=false, wasOffline=false, lastSendErr='';
+  function scanReset(){ selPal=null; srvTally=[]; scanQ=[]; scanBusy=false; reconOn=false; wasOffline=false; lastSendErr=''; scanLbl=null; clearTimeout(scanRetryT); }
   function curSelPal(){ return (DETAIL&&DETAIL.pallets.filter(function(p){return p.id===selPal;})[0])||null; }
   function qKey(){ return 'inb_scanq_'+SHIP+'_'+selPal; }
   function saveQ(){ try{ if(selPal!=null) localStorage.setItem(qKey(),JSON.stringify(scanQ)); }catch(e){} }
@@ -1234,22 +1234,44 @@
       .then(function(o){
         scanBusy=false;
         if(o.ok&&o.body&&o.body.ok){
+          lastSendErr='';
           scanQ.splice(0,sendUndo?1:sendScans.length); saveQ();
           srvTally=o.body.tally||[];
           if(wasOffline&&!scanQ.length){ wasOffline=false; sndInfo(); toast('✔ '+L('밀린 스캔이 서버에 저장되었습니다','Lecturas pendientes guardadas')); }
           renderScanState();
           if(scanQ.length) flushScans(); else updSync();
         }else{
+          // 서버가 응답은 했지만 거부 — 원인을 화면에 보여준다(마이그레이션 누락·구버전 API 등)
+          lastSendErr=(o.body&&o.body.error)?String(o.body.error):('HTTP '+o.status);
           if(!wasOffline){ wasOffline=true; sndWarn(); }
           updSync();
           clearTimeout(scanRetryT); scanRetryT=setTimeout(flushScans,3000);
         }
+      })
+      .catch(function(){
+        // 응답 자체가 없음(네트워크 단절·서버 다운) — 재시도 루프가 멈추지 않게 반드시 복구
+        scanBusy=false;
+        lastSendErr=L('네트워크 없음','sin red');
+        if(!wasOffline){ wasOffline=true; sndWarn(); }
+        updSync();
+        clearTimeout(scanRetryT); scanRetryT=setTimeout(flushScans,3000);
       });
+  }
+  // 전송 실패 원인 → 현장에서 바로 조치할 수 있는 안내문
+  function sendErrHint(){
+    var e=lastSendErr; if(!e) return '';
+    var m;
+    if(/^HTTP 5/.test(e)) m=L('서버 오류 — 백엔드 마이그레이션(npm run migrate) 실행 여부를 확인하세요','error del servidor — verifique la migración del backend');
+    else if(/^HTTP 404/.test(e)) m=L('서버에 새 API 가 없음 — 백엔드(inboundRoutes.js) 배포를 확인하세요','API no encontrada — verifique el despliegue del backend');
+    else if(/^HTTP 401|^HTTP 403/.test(e)) m=L('로그인 만료 — 포털에서 다시 여세요','sesión expirada — vuelva a abrir');
+    else if(/네트워크|sin red/.test(e)) m=L('와이파이/인터넷 연결을 확인하세요','verifique la conexión');
+    else m=e;
+    return ' · <b>'+esc(e)+'</b> — '+m;
   }
   function updSync(){
     var el=$('syncst'); if(!el) return;
     if(!scanQ.length&&!scanBusy) el.innerHTML='<span style="opacity:.95">● '+L('서버 저장됨','guardado')+'</span>';
-    else if(wasOffline) el.innerHTML='<span style="color:#FFD9CF">● '+L('전송 대기','pendiente')+' '+scanQ.length+L('건','')+' — '+L('자동 재시도 중','reintentando')+'</span>';
+    else if(wasOffline) el.innerHTML='<span style="color:#FFD9CF">● '+L('전송 대기','pendiente')+' '+scanQ.length+L('건','')+' — '+L('자동 재시도 중','reintentando')+sendErrHint()+'</span>';
     else el.innerHTML='<span style="opacity:.8">● '+L('전송 중','enviando')+'…</span>';
   }
   /* 화면 표시용 누적 = 서버 확인분 + 아직 안 보낸 큐(낙관 반영) */
@@ -1407,7 +1429,8 @@
       .then(function(o){
         if(!o.ok||o.body.error){ sndErr(); toast(L('대조 실패','Error')+': '+(o.body.error||o.status)); return; }
         reconOn=true; renderRecon(pal,o.body);
-      });
+      })
+      .catch(function(){ sndErr(); toast(L('대조 실패 — 네트워크를 확인하세요','Error de red')); });
   }
   function renderRecon(pal,rep){
     var b=$('stepbody');
@@ -1448,7 +1471,8 @@
         sndSaved(); toast('✔ '+L('입고 확정 — 실측 '+fmt(o.body.total_scanned)+'박스 저장','Confirmado — '+fmt(o.body.total_scanned)+' cajas'));
         try{ localStorage.removeItem(qKey()); }catch(e){}
         clearWorking(); scanReset(); refreshDetail(renderDetail);
-      });
+      })
+      .catch(function(){ sndErr(); toast(L('확정 실패 — 네트워크를 확인하세요','Error de red')); });
   }
 
   /* ---- 적치 — 팔렛 목록 → 박스 스캔(위치 안내) → 랙 스캔 잠금 → 박스 1개당 1스캔 ---- */
@@ -1740,7 +1764,9 @@
     if(!p||!items.length||putSaving){ if(cb)cb(); return; }
     putSaving=true; putSaveSync();
     api('/api/inbound/'+SHIP+'/pallets/'+p.id+'/putaway',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({items:items})}).then(function(o){
+      body:JSON.stringify({items:items})}).catch(function(){
+        return {ok:false,status:0,body:{error:L('네트워크 없음','sin red')}};   // 네트워크 단절 — putSaving 이 잠기지 않게 정상 실패로 변환
+      }).then(function(o){
       putSaving=false;
       if(!o.ok||o.body.error){ sndErr(); toast(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)); putSaveSync(); if(cb)cb(); return; }
       sndSaved();

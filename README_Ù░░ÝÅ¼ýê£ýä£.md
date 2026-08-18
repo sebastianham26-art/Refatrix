@@ -1,4 +1,4 @@
-# 검수 개편(build 20260817p) 배포 순서 — 반드시 이 순서대로
+# 검수 개편(build 20260817q) 배포 순서 — 반드시 이 순서대로
 
 "스캔은 기록, 판정은 보고서" 개편 + **이중 스캔 기록 수정**입니다.
 스캔 시점 판정·차단이 전부 사라지고, 모든 스캔이 즉시 서버(inbound_scans)에 저장되며,
@@ -18,10 +18,10 @@
 ## ② 프런트 (GitHub Pages / Cloudflare Pages)
 
 1. 저장소 루트에 덮어쓰기 업로드:
-   - `refatrix-inbound.html` (build 20260817p)
+   - `refatrix-inbound.html` (build 20260817q)
    - `refatrix-inbound2.html` (같은 내용 — 캐시 우회용 주소)
 2. 배포 후 접속. 캐시가 의심되면 `.../refatrix-inbound2.html` 주소 사용
-3. F12 콘솔에서 `[refatrix-inbound] build 20260817p` 확인
+3. F12 콘솔에서 `[refatrix-inbound] build 20260817q` 확인
 
 ## 이중 스캔이 이미 기록된 팔렛 정리
 
@@ -50,7 +50,7 @@
 
 ## 테스트 (모두 통과 확인됨)
 
-- tests/scan_label.test.js — 새 검수 흐름 + 이중 기록 방지 43/43
+- tests/scan_label.test.js — 새 검수 흐름 + 이중 기록 방지 + 오류표시/복구 48/48
 - tests/put_edit.test.js — 적치 수정(빼기·위치 변경) 11/11
 - tests/scan_hyphen.test.js — 자판 보정 회귀 23/23
 - tests/zone_ui.test.js — 존 표시 46/46
