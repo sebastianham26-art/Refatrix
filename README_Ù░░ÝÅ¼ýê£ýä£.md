@@ -15,16 +15,20 @@
    - `refatrix-api/migrations/0175_inbound_scan_idempotency.sql` (새 파일)
    - `refatrix-api/migrations/0176_inbound_close_stock.sql` (새 파일 — 마감 즉시 재고 반영)
    - `refatrix-api/migrations/0177_inbound_po_applied.sql` (새 파일 — 구매 재매칭)
+   - `refatrix-api/migrations/0178_import_batch_shipment_link.sql` (새 파일 — 수입원가↔선적 연결)
    - `refatrix-api/src/routes/inboundRoutes.js` (교체)
    - `refatrix-api/src/routes/importRoutes.js` (교체 — 수입원가 승인 이중 방지)
+   - `refatrix-api/src/routes/purchaseRoutes.js` (교체 — 구매 목록 입고 현황)
 2. Railway 가 자동 재배포될 때까지 대기 (Deployments 초록색)
-3. Railway 콘솔에서: `npm run migrate`  ← **0174~0177 적용 필수**
+3. Railway 콘솔에서: `npm run migrate`  ← **0174~0178 적용 필수**
 
 ## ② 프런트 (GitHub Pages / Cloudflare Pages)
 
 1. 저장소 루트에 덮어쓰기 업로드:
    - `refatrix-inbound.html` (build 20260818b)
    - `refatrix-inbound2.html` (같은 내용 — 캐시 우회용 주소)
+   - `refatrix-purchase.html` (build pur-0818a — [입고]·[미입고] 열 추가)
+   - `refatrix-import.html` (build imp-0818a — 입고 선적에서 원가 분배 대상 불러오기)
 2. 배포 후 접속. 캐시가 의심되면 `.../refatrix-inbound2.html` 주소 사용
 3. F12 콘솔에서 `[refatrix-inbound] build 20260818b` 확인
 
@@ -118,3 +122,28 @@
 3. 해당 선적 → 마감 탭 → **[🔧 구매 재매칭]** 클릭 → 반영 결과 확인
 4. 그래도 "미해결"로 남는 건 = 구매 모듈에 그 발주 자체가 없는 것 → 발주 업로드 후 다시 재매칭
 5. 미등록 SKU 3건(CE0088L·CE0910L·CL0211L)은 제품 마스터 등록이 먼저 필요합니다(등록 후 알려주시면 반영 경로 추가)
+
+## 2026-08-18c — "마감했더니 구매내역이 사라짐" 설명 + 입고 현황 표시
+
+**데이터는 삭제되지 않았습니다.** 마감 = 입고 완료 처리이므로,
+"입고 예정"과 "미입고(backorder)" 목록은 **아직 안 들어온 것만** 보여주는 화면이라
+마감된 선적·채워진 발주가 거기서 빠지는 것은 정상 동작입니다.
+
+입고된 발주를 확인할 수 있도록 구매 화면을 보강했습니다(build pur-0818a):
+- 구매내역 조회 목록에 **[입고]·[미입고] 열** 추가 — 전량 입고되면 "✔ 입고완료" 표시
+- 발주를 클릭한 상세에 **[입고수량] 열** 추가(라인별, 전량 입고 시 녹색)
+- 입고 예정 목록이 비면 "마감된 선적은 여기서 빠집니다 → 구매내역 조회에서 확인" 안내 표시
+
+## 2026-08-18d — 수입원가 절차 (디렉터 질문 답변 반영)
+
+**Q. 마감한 재고는 수입원가 등록해야 가용재고가 되나?**
+→ 아니요. 20260818a 부터 **마감 즉시 실측 수량이 가용재고(stock)에 반영**됩니다.
+수입원가 등록·승인은 **원가(평균원가·재고원장)만** 반영하며 수량은 이중 반영되지 않습니다.
+
+**Q. 수입원가 등록 때 분배 대상(입고 인보이스)을 선택하게.**
+→ 수입 입고(원가) 화면 상단에 **"📦 입고(마감) 선적에서 불러오기"** 추가(imp-0818a):
+- 마감된 선적이 인보이스 번호·SKU 수·실측 수량과 함께 드롭다운에 나타남
+- 선택 → [불러오기] → 실측 수량 + 구매 발주 단가가 라인에 자동 채워짐(단가 없으면 표시 후 직접 입력)
+- 부대비용(운임 등) 입력 → 작성+미리보기 → 디렉터 승인 = 그 인보이스 수입에 원가 배부
+- 배치가 선적에 연결(0178)되어, 같은 선적으로 이중 등록하면 차단됨("이미 원가 배치 등록됨")
+- 이미 등록된 선적은 목록에 "원가 등록됨/승인됨"으로 표시

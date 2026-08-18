@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수입 입고</title>
+<title>Refatrix ERP · 수입 입고 · build imp-0818a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -85,6 +85,19 @@
   <div class="card hidden" id="formCard">
     <h2>수입 입고 작성</h2>
 
+    <div style="background:#EEF3EC;border:1.5px solid #7FA588;border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12.5px;font-weight:700">📦 입고(마감) 선적에서 불러오기 — 분배 대상 선택:</span>
+        <select id="fromShip" style="min-width:280px;padding:6px 8px"><option value="">선적(인보이스)을 선택하세요…</option></select>
+        <button class="btn ghost sm" id="fromShipLoad">불러오기</button>
+        <button class="btn ghost sm" id="fromShipRefresh" title="목록 새로고침">↻</button>
+      </div>
+      <div class="hint" style="margin:6px 0 0">창고에서 <b>마감(입고 완료)</b>된 선적의 실측 수량·SKU·구매단가가 자동으로 채워집니다.
+        수량은 마감 때 이미 재고 반영됐으므로, 이 등록은 <b>원가 배부용</b>입니다(승인 시 원가만 반영 — 수량 이중 반영 없음).
+        이미 배치가 등록된 선적은 "원가 등록됨"으로 표시되고 다시 선택할 수 없습니다.</div>
+      <div class="msg" id="fromShipMsg"></div>
+    </div>
+
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <span style="font-size:12.5px;color:var(--muted);font-weight:600">엑셀로 대량 입력:</span>
       <button class="btn ghost sm" id="dlTpl">① 빈 양식 내려받기</button>
@@ -127,6 +140,7 @@
   let prodCache = {};         // id -> {id, code, name, stock_qty, avg_cost}
   let currentBatchId = null;
   let isDirector = false;
+  let linkedShipment = null;  // 선택한 입고 선적 {id, invoice_no} — POST 에 inbound_shipment_id 로 전송(0178)
   const $ = (id)=>document.getElementById(id);
   const fmt = (n)=> n==null ? '—' : Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
   const H = (h)=>{ const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
@@ -148,6 +162,7 @@
       $('stateCard').classList.remove('hidden'); $('formCard').classList.remove('hidden');
       $('idate').value=new Date().toISOString().slice(0,10);
       addLine(); addOh();
+      loadFromInbound();
       isDirector=(d.user?.role==='director'); document.body.classList.toggle('emp', !isDirector);
       $('pendRole').textContent=isDirector?'(디렉터 — 승인 가능)':'(디렉터 승인 대기 — 보기 전용)';
       loadPending();
@@ -412,19 +427,75 @@
     }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
   }
 
+  // ---- 입고 선적에서 불러오기(0178) — 분배 대상(인보이스) 선택 → 실측 수량·구매단가 프리필 ----
+  async function loadFromInbound(){
+    const sel=$('fromShip'); if(!sel) return;
+    try{
+      const res=await fetch(session.api+'/api/imports/from-inbound',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ sel.innerHTML='<option value="">목록 실패: '+(d.error||res.status)+'</option>'; return; }
+      const items=d.items||[];
+      sel.innerHTML='<option value="">선적(인보이스)을 선택하세요…</option>'+items.map(s=>{
+        const tag=s.batch_id?(' — 원가 '+(s.batch_status==='approved'?'승인됨':'등록됨')+' (배치 #'+s.batch_id+')'):'';
+        const label=(s.invoice_no||('선적#'+s.id))+' · SKU '+s.sku_count+' · '+Number(s.measured_qty).toLocaleString()+'개'
+          +(s.closed_at?(' · 마감 '+String(s.closed_at).slice(0,10)):'')+tag;
+        return '<option value="'+s.id+'"'+(s.batch_id?' disabled':'')+'>'+label+'</option>';
+      }).join('');
+    }catch(e){ sel.innerHTML='<option value="">서버에 연결할 수 없습니다</option>'; }
+  }
+  async function pickFromInbound(){
+    const m=$('fromShipMsg'); m.className='msg';
+    const sid=Number($('fromShip').value);
+    if(!sid){ m.className='msg err'; m.textContent='선적을 먼저 선택하세요.'; return; }
+    try{
+      const res=await fetch(session.api+'/api/imports/from-inbound/'+sid,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='불러오기 실패: '+(d.error||res.status); return; }
+      const lines=d.lines||[];
+      if(!lines.length){ m.className='msg err'; m.textContent='이 선적에서 불러올 실측 라인이 없습니다.'; return; }
+      // 제품 캐시 채우기(검색줄 프리필용) — lookup 재사용
+      const codes=[...new Set(lines.map(l=>l.code))];
+      const lr=await fetch(session.api+'/api/products/lookup',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes})});
+      const ld=await lr.json(); const found=ld.found||{};
+      $('lines').innerHTML='';
+      let added=0, noPrice=0;
+      for(const l of lines){
+        const f=found[l.code]||{id:l.product_id,code:l.code,name:l.name};
+        addLine({id:f.id,code:f.code,name:f.name,qty:l.qty,price:l.po_price!=null?l.po_price:'',currency:'USD',invoice_no:d.shipment.invoice_no||''});
+        if(l.po_price==null) noPrice++;
+        added++;
+      }
+      linkedShipment=d.shipment;
+      renderState&&renderState();
+      m.className='msg ok';
+      m.innerHTML='<b>'+(d.shipment.invoice_no||('선적#'+d.shipment.id))+'</b> 실측 '+added+'개 SKU 를 분배 대상으로 불러왔습니다.'
+        +(noPrice?' <b style="color:#B23B2E">단가 미확인 '+noPrice+'건</b> — 구매 발주가 없어 비어 있으니 직접 입력하세요.':'')
+        +' 부대비용(운임 등)을 입력하고 ①작성+미리보기를 누르세요. 승인 시 <b>원가만</b> 반영됩니다(수량은 마감 때 이미 재고 반영).';
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+  }
+
   // ---- 작성 + 미리보기 ----
   async function createAndPreview(){
     const m=$('formMsg'); m.className='msg'; $('previewTable').innerHTML='';
     const {lines,missing}=gatherLines();
     if(missing.length){m.className='msg err';m.textContent=missing.length+'번째 줄: 검색 후 목록에서 제품을 선택하세요(타이핑만으로는 안 됩니다).';return;}
     if(!lines.length){m.className='msg err';m.textContent='입고 라인을 1개 이상 입력하세요.';return;}
-    const body={import_date:$('idate').value,currency:$('cur').value,fx_rate:Number($('fx').value),lines,overheads:gatherOhs(),batch_no:'TEST-'+Date.now()};
+    const body={import_date:$('idate').value,currency:$('cur').value,fx_rate:Number($('fx').value),lines,overheads:gatherOhs(),
+      batch_no:linkedShipment?String(linkedShipment.invoice_no||('SHIP-'+linkedShipment.id)):('TEST-'+Date.now()),
+      inbound_shipment_id:linkedShipment?linkedShipment.id:null};
     $('preview').disabled=true;$('preview').textContent='작성 중…';
     try{
       const res=await fetch(session.api+'/api/imports',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='작성 실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){
+        m.className='msg err';
+        m.textContent=d.error==='shipment_already_costed'
+          ?('작성 실패: 이 선적은 이미 원가 배치(#'+(d.batch_id||'?')+')가 등록되어 있습니다.')
+          :('작성 실패: '+(d.error||res.status));
+        return;
+      }
       currentBatchId=d.id;
+      if(linkedShipment) loadFromInbound();   // 등록됨 표시 갱신
       const pv=await fetch(session.api+'/api/imports/'+d.id+'/preview',{headers:auth()});
       const pd=await pv.json();
       if(pd.error){m.className='msg err';m.textContent='미리보기 실패: '+pd.error;return;}
@@ -468,6 +539,8 @@
   $('addOh').addEventListener('click',()=>addOh());
   $('preview').addEventListener('click',createAndPreview);
   $('reloadPend').addEventListener('click',loadPending);
+  $('fromShipLoad').addEventListener('click',pickFromInbound);
+  $('fromShipRefresh').addEventListener('click',loadFromInbound);
   $('approve').addEventListener('click',approve);
   $('dlTpl').addEventListener('click',downloadTemplate);
   $('upBtn').addEventListener('click',()=>$('upFile').click());

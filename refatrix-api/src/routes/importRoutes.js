@@ -11,16 +11,24 @@ export default async function importRoutes(app) {
   // 수입 입고 작성(영업지원). 라인(SKU별) + 부대비용(명목·인보이스별).
   // 작성 시점에는 재고/평균원가에 영향 없음(status=pending).
   app.post('/api/imports', { preHandler: [authGuard, requirePage('inventory')] }, async (req, reply) => {
-    const { batch_no, import_date, currency = 'USD', fx_rate, lines = [], overheads = [], note } = req.body || {};
+    const { batch_no, import_date, currency = 'USD', fx_rate, lines = [], overheads = [], note, inbound_shipment_id } = req.body || {};
     if (!import_date || !fx_rate || !lines.length) {
       return reply.code(400).send({ error: 'import_date_fx_lines_required' });
     }
     const userId = req.ctx.perm.userId;
+    const shipId = inbound_shipment_id ? Number(inbound_shipment_id) : null;
+    // 선적 연결(0178) — 같은 선적으로 배치를 이중 등록하지 않게 막는다(반려된 배치는 제외)
+    if (shipId) {
+      const dup = (await query(
+        `SELECT id FROM import_batches
+          WHERE inbound_shipment_id=$1 AND deleted_at IS NULL AND status <> 'rejected'`, [shipId])).rows[0];
+      if (dup) return reply.code(409).send({ error: 'shipment_already_costed', batch_id: Number(dup.id) });
+    }
     const result = await withTx(async (c) => {
       const b = (await c.query(
-        `INSERT INTO import_batches (batch_no, import_date, currency, fx_rate, status, created_by, note)
-         VALUES ($1,$2,$3,$4,'pending',$5,$6) RETURNING id`,
-        [batch_no, import_date, currency, fx_rate, userId, note])).rows[0];
+        `INSERT INTO import_batches (batch_no, import_date, currency, fx_rate, status, created_by, note, inbound_shipment_id)
+         VALUES ($1,$2,$3,$4,'pending',$5,$6,$7) RETURNING id`,
+        [batch_no, import_date, currency, fx_rate, userId, note, shipId])).rows[0];
       for (const l of lines) {
         await c.query(
           `INSERT INTO import_lines (batch_id, product_id, qty, import_price, currency, invoice_no)
@@ -42,6 +50,70 @@ export default async function importRoutes(app) {
     const stockValueMxn = Math.round((baseCur * (currency === 'USD' ? fx : 1) + ohMxn) * 100) / 100;
     const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
     return { id: result, status: 'pending', sku_count: skuCount, total_qty: totalQty, stock_value_mxn: seeCost ? stockValueMxn : null };
+  });
+
+  // ===== 입고 선적에서 불러오기(0178, 2026-08-18) =====
+  // "수입원가 등록 때 분배 대상(입고한 인보이스)을 보여주고 선택" — 디렉터 요구 절차.
+  // ① 목록: 마감(입고 반영)된 선적 + 배치 등록 여부
+  app.get('/api/imports/from-inbound', { preHandler: [authGuard, requirePage('inventory')] }, async () => {
+    const rows = (await query(
+      `SELECT s.id, s.invoice_no, s.eta, s.closed_at,
+              COUNT(DISTINCT pi.product_id) FILTER (WHERE pi.product_id IS NOT NULL)::int AS sku_count,
+              COALESCE(SUM(CASE WHEN pi.product_id IS NOT NULL THEN
+                (CASE WHEN pi.cartons > 0 THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons ELSE pi.qty END)
+                ELSE 0 END),0) AS measured_qty,
+              (SELECT b.id FROM import_batches b
+                WHERE b.inbound_shipment_id = s.id AND b.deleted_at IS NULL AND b.status <> 'rejected'
+                ORDER BY b.id DESC LIMIT 1) AS batch_id,
+              (SELECT b.status FROM import_batches b
+                WHERE b.inbound_shipment_id = s.id AND b.deleted_at IS NULL AND b.status <> 'rejected'
+                ORDER BY b.id DESC LIMIT 1) AS batch_status
+         FROM inbound_shipments s
+         JOIN inbound_pallets pl ON pl.shipment_id = s.id AND pl.received_at IS NOT NULL
+         LEFT JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
+        WHERE s.deleted_at IS NULL
+        GROUP BY s.id
+        ORDER BY s.closed_at DESC NULLS LAST, s.id DESC
+        LIMIT 30`)).rows;
+    return {
+      items: rows.map((r) => ({
+        id: Number(r.id), invoice_no: r.invoice_no, eta: r.eta, closed_at: r.closed_at,
+        sku_count: r.sku_count, measured_qty: Number(r.measured_qty),
+        batch_id: r.batch_id ? Number(r.batch_id) : null, batch_status: r.batch_status || null,
+      })),
+    };
+  });
+  // ② 라인 프리필: 선적의 실측 수량(SKU별) + 구매 단가 제안(그 제품의 최근 발주가)
+  app.get('/api/imports/from-inbound/:sid', { preHandler: [authGuard, requirePage('inventory')] }, async (req, reply) => {
+    const sid = Number(req.params.sid);
+    const s = (await query(`SELECT id, invoice_no FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [sid])).rows[0];
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    const rows = (await query(
+      `SELECT pi.product_id, pr.code, pr.name,
+              SUM(CASE WHEN pi.cartons > 0 THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons ELSE pi.qty END) AS qty,
+              po.unit_cost_usd AS po_price, po.ref_no AS po_ref
+         FROM inbound_pallets pl
+         JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
+         JOIN products pr ON pr.id = pi.product_id
+         LEFT JOIN LATERAL (
+           SELECT l.unit_cost_usd, p.ref_no
+             FROM purchase_order_lines l JOIN purchase_orders p ON p.id = l.po_id
+            WHERE l.product_id = pi.product_id AND p.deleted_at IS NULL AND p.status <> 'cancelled'
+            ORDER BY p.order_date DESC, l.id DESC LIMIT 1
+         ) po ON true
+        WHERE pl.shipment_id=$1 AND pl.received_at IS NOT NULL AND pi.product_id IS NOT NULL
+        GROUP BY pi.product_id, pr.code, pr.name, po.unit_cost_usd, po.ref_no
+        ORDER BY pr.code`, [sid])).rows;
+    const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
+    return {
+      shipment: { id: Number(s.id), invoice_no: s.invoice_no },
+      lines: rows.filter((r) => Number(r.qty) > 0).map((r) => ({
+        product_id: Number(r.product_id), code: r.code, name: r.name,
+        qty: Number(r.qty),
+        po_price: seeCost && r.po_price != null ? Number(r.po_price) : null,   // 제안가(수정 가능)
+        po_ref: r.po_ref || null,
+      })),
+    };
   });
 
   // 미리보기: 승인 시 적용될 단위원가·평균원가를 계산해서 보여줌(반영 없음)
