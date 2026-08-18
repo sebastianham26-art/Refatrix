@@ -591,9 +591,14 @@ export default async function customerRoutes(app) {
       return { ok: true };
     }
     // 같은 고객에 이미 대기중인 요청이 있으면 갱신(최신으로 덮어씀)
+    // ⚠ 여기에 빠진 필드는 승인해도 절대 반영되지 않는다(diff에도 안 뜸).
+    //    승인 화면 LABELS / applyCustomerUpdate 와 항상 같은 집합을 유지할 것.
+    //    2026-08-18: buyer_name·buyer_phone(구매결정권자 WhatsApp)·branch_count 누락 수정.
     const proposed = {
-      name: b.name, rfc: b.rfc, contact: b.contact, phone: b.phone, discount: b.discount,
-      credit_days: b.credit_days, team_id: b.team_id, stage_id: b.stage_id, owner_id: b.owner_id,
+      name: b.name, rfc: b.rfc, contact: b.contact, phone: b.phone,
+      buyer_name: b.buyer_name, buyer_phone: b.buyer_phone,
+      discount: b.discount, credit_days: b.credit_days, branch_count: b.branch_count,
+      team_id: b.team_id, stage_id: b.stage_id, owner_id: b.owner_id,
       customer_type: b.customer_type, memo: b.memo, constancia_fiscal: b.constancia_fiscal,
     };
     const existing = (await query(`SELECT id FROM customer_change_requests WHERE customer_id=$1 AND status='pending'`, [id])).rows[0];
