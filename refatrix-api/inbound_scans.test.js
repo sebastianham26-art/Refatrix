@@ -172,6 +172,29 @@ async function main() {
   pv = (await q(`SELECT put_cartons, rack_saved FROM inbound_pallet_items WHERE id=$1`, [it1])).rows[0];
   ok(pv.put_cartons === 5 && pv.rack_saved === 'C-03-05', 'delta 0 은 수량 불변 + 랙 보존', pv);
 
+  console.log('\n⑧ 마감(입고) 집계 — 실측 스캔 기준 (운영 SQL 추출 실행)');
+  // 운영 소스에서 마감 집계 SELECT 를 그대로 추출해 실행한다(복붙 아님 — 드리프트 감지)
+  const fs2 = await import('node:fs');
+  const SRC = fs2.readFileSync(new URL('../src/routes/inboundRoutes.js', import.meta.url), 'utf8');
+  const mClose = SRC.match(/`(SELECT pl\.order_no, pi\.product_id,[\s\S]*?GROUP BY pl\.order_no, pi\.product_id)`/);
+  ok(!!mClose, '마감 집계 SQL 추출(실측 CASE 포함)', !!mClose);
+  ok(/CASE WHEN pi\.cartons > 0/.test(mClose[1]) && /scanned_cartons/.test(mClose[1]), '집계가 scanned_cartons 실측 기준');
+  // 픽스처: 검수된 팔렛 — 20ct×320(16/box) 중 18카톤 실측, 3ct×36(12/box) 초과 4카톤, 낱개 qty 10
+  const prod = (await q(`INSERT INTO products (code, name) VALUES ('CE0796','TERMINAL') RETURNING id`)).rows[0].id;
+  const sid3 = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('D26-3','receiving') RETURNING id`)).rows[0].id;
+  const pal3 = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected)
+                         VALUES ($1,'26B2C',7,'checked',23,366) RETURNING id`, [sid3])).rows[0].id;
+  const palU = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected)
+                         VALUES ($1,'26B2C',8,'unloaded',2,32) RETURNING id`, [sid3])).rows[0].id;
+  await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
+           VALUES ($1,$2,$3,'CE0796',20,320,18), ($1,$2,$3,'CE0796',3,36,4), ($1,$2,$3,'CE0796',0,10,0)`, [pal3, sid3, prod]);
+  await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
+           VALUES ($1,$2,$3,'CE0796',2,32,0)`, [palU, sid3, prod]);   // 미검수 팔렛 — 집계 제외
+  const agg = (await q(mClose[1], [sid3])).rows;
+  ok(agg.length === 1, '검수된 팔렛만 집계(미검수 제외)', agg);
+  // 18×16 + 4×12 + 10(낱개) = 288 + 48 + 10 = 346 (부족·초과·낱개 모두 실측대로)
+  ok(Number(agg[0].qty) === 346, '실측 수량 346 (부족 288 + 초과 48 + 낱개 10)', agg[0]);
+
   await q('ROLLBACK');
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
   await pool.end();

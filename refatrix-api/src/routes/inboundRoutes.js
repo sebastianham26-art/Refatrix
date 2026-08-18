@@ -673,8 +673,14 @@ export default async function inboundRoutes(app) {
       if (s.status === 'closed') return { error: 'already_closed' };
 
       // 검수된 팔렛의 확정 수량을 ORDER NO(=구매 ref_no) × product 로 집계
+      // ⚠ 실측 기준(2026-08-17): 예상(pi.qty)이 아니라 실제 스캔된 카톤 × 라인 소입수.
+      //   부족 검수는 적게, 초과 검수는 많게 그대로 반영된다. 카톤 0 라인(낱개·혼적)은
+      //   스캔 대상이 아니므로 팔렛이 검수되면 예상 수량 그대로 인정한다.
       const recv = (await q(
-        `SELECT pl.order_no, pi.product_id, SUM(pi.qty) AS qty
+        `SELECT pl.order_no, pi.product_id,
+                SUM(CASE WHEN pi.cartons > 0
+                         THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons
+                         ELSE pi.qty END) AS qty
            FROM inbound_pallets pl
            JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
           WHERE pl.shipment_id=$1 AND pl.status IN ('checked','done') AND pi.product_id IS NOT NULL

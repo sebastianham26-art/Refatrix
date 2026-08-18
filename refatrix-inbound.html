@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260817q</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260817r</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -198,7 +198,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260817q';
+  var BUILD='20260817r';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -1468,9 +1468,17 @@
     api('/api/inbound/'+SHIP+'/pallets/'+pal.id+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
       .then(function(o){
         if(!o.ok||o.body.error){ sndErr(); toast(L('확정 실패','Error')+': '+(o.body.error||o.status)); return; }
-        sndSaved(); toast('✔ '+L('입고 확정 — 실측 '+fmt(o.body.total_scanned)+'박스 저장','Confirmado — '+fmt(o.body.total_scanned)+' cajas'));
+        sndSaved(); toast('✔ '+L('검수 확정 — 실측 '+fmt(o.body.total_scanned)+'박스 저장','Confirmado — '+fmt(o.body.total_scanned)+' cajas'));
         try{ localStorage.removeItem(qKey()); }catch(e){}
-        clearWorking(); scanReset(); refreshDetail(renderDetail);
+        clearWorking(); scanReset();
+        refreshDetail(function(){
+          renderDetail();
+          // 마지막 팔렛 검수가 끝났으면 바로 입고(마감)로 안내 — 적치를 기다릴 필요 없음(2026-08-17)
+          var all=DETAIL&&DETAIL.pallets.length&&DETAIL.pallets.every(function(p){return p.status==='checked'||p.status==='done';});
+          if(all&&DETAIL.shipment.status!=='closed'){
+            toast('🎉 '+L('모든 팔렛 검수 완료 — [마감] 탭에서 지금 바로 입고할 수 있습니다 (적치는 그 후 계속)','Todo verificado — cierre la recepción en [Cierre]'));
+          }
+        });
       })
       .catch(function(){ sndErr(); toast(L('확정 실패 — 네트워크를 확인하세요','Error de red')); });
   }
@@ -1779,28 +1787,39 @@
     });
   }
 
-  /* ---- 마감 ---- */
+  /* ---- 마감(입고) — 검수만 끝나면 적치 전에 입고 가능(2026-08-17) ----
+     "검수 완료 후 이상 없으면 바로 입고" — 마감은 실측 스캔 수량으로 구매 received_qty 를
+     갱신하고, 적치는 마감 후에도 계속 진행할 수 있다(판매 대응을 적치보다 앞당김). */
+  function lineQtyMeasured(i){ return (i.cartons>0)?Math.round((i.qty||0)/i.cartons)*(i.scanned_cartons||0):(i.qty||0); }
+  function palQtyMeasured(p){ return p.items.reduce(function(a,i){return a+lineQtyMeasured(i);},0); }
   function renderClose(){
     var b=$('stepbody'), s=DETAIL.shipment, st=palStats();
     var ck=DETAIL.pallets.filter(function(p){return p.status==='checked'||p.status==='done';});
-    var qty=ck.reduce(function(a,p){return a+(p.qty_expected||0);},0);
+    var qty=ck.reduce(function(a,p){return a+palQtyMeasured(p);},0);          // 실측 기준(서버 마감 집계와 동일 공식)
+    var qtyExp=ck.reduce(function(a,p){return a+(p.qty_expected||0);},0);
     var closed=(s.status==='closed');
+    var allChecked=(st.N>0&&ck.length===st.N);
     b.innerHTML='<div class="kpis">'
       +'<div class="kpi"><div class="l">'+L('검수 팔렛','Verificados')+'</div><div class="v">'+ck.length+' <small>/ '+st.N+'</small></div></div>'
-      +'<div class="kpi"><div class="l">'+L('확정 수량','Cantidad')+'</div><div class="v">'+fmt(qty)+' <small>EA</small></div></div>'
-      +'<div class="kpi"><div class="l">'+L('차이','Diferencia')+'</div><div class="v" style="color:'+(st.N-ck.length?'var(--red)':'var(--green)')+'">'+(st.N-ck.length?L('미검수 ','Sin verif. ')+(st.N-ck.length):'0')+'</div></div></div>'
+      +'<div class="kpi"><div class="l">'+L('입고 수량 (실측)','Cantidad real')+'</div><div class="v">'+fmt(qty)+' <small>EA</small></div></div>'
+      +'<div class="kpi"><div class="l">'+L('패킹리스트 대비','vs Lista')+'</div><div class="v" style="color:'+(qty===qtyExp?'var(--green)':'var(--gold)')+'">'+(qty===qtyExp?'✓':(qty>qtyExp?'+':'')+fmt(qty-qtyExp))+'</div></div>'
+      +'<div class="kpi"><div class="l">'+L('미검수 팔렛','Sin verificar')+'</div><div class="v" style="color:'+(st.N-ck.length?'var(--red)':'var(--green)')+'">'+(st.N-ck.length||0)+'</div></div></div>'
       +'<div style="max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:11px;margin-top:11px">'
-      +'<table><thead><tr><th>ORDER NO</th><th class="num">PL</th><th class="num">'+L('예상','Esp.')+'</th><th class="num">'+L('검수','Verif.')+'</th><th>'+L('상태','Estado')+'</th></tr></thead><tbody>'
+      +'<table><thead><tr><th>ORDER NO</th><th class="num">PL</th><th class="num">'+L('예상','Esp.')+'</th><th class="num">'+L('검수','Verif.')+'</th><th class="num">'+L('실측 EA','EA real')+'</th><th>'+L('상태','Estado')+'</th></tr></thead><tbody>'
       +DETAIL.pallets.map(function(p){ var ok=(p.status==='checked'||p.status==='done');
         var sc=p.items.reduce(function(a,i){return a+(i.scanned_cartons||0);},0);
         return '<tr><td>'+poHtmlSm(p.order_no)+'</td><td class="num">'+p.pl_no+'</td><td class="num">'+p.cartons_expected+'</td><td class="num">'+sc+'</td>'
-          +'<td>'+(ok?'<span class="tag g">'+L('일치','OK')+'</span>':(sc?'<span class="tag o">'+L('검수중','En proc.')+'</span>':'<span class="tag r">'+L('미검수','Sin verif.')+'</span>'))+'</td></tr>'; }).join('')
+          +'<td class="num">'+(ok?fmt(palQtyMeasured(p)):'—')+'</td>'
+          +'<td>'+(ok?'<span class="tag g">'+L('검수 완료','Verificado')+'</span>':(sc?'<span class="tag o">'+L('검수중','En proc.')+'</span>':'<span class="tag r">'+L('미검수','Sin verif.')+'</span>'))+'</td></tr>'; }).join('')
       +'</tbody></table></div>';
     if(closed){
-      b.innerHTML+='<div class="note green" style="margin-top:12px">✔ '+L('마감 완료 — 구매 received_qty 갱신됨. 원가는 수입원가 화면에서.','Cerrado — compras actualizado. El costo se ingresa en la pantalla de costos.')+'</div>';
+      b.innerHTML+='<div class="note green" style="margin-top:12px">✔ '+L('입고 완료 — 구매 received_qty 갱신됨. 원가·재고는 수입원가 화면 승인에서 반영. <b>적치는 계속 진행할 수 있습니다</b> (적치 탭).','Cerrado — compras actualizado. <b>El acomodo puede continuar</b>.')+'</div>';
     } else {
-      b.innerHTML+='<div class="note">'+L('마감하면 구매 모듈의 received_qty가 자동 갱신되고 Back Order가 줄어듭니다. 재고·원가는 수입원가 화면 승인에서 반영.','Al cerrar, se actualiza received_qty en compras. Stock/costo se reflejan al aprobar en costos.')+'</div>'
-        +'<div class="row"><input type="password" id="pin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px"><button class="btn o" id="btnClose">🔒 '+L('마감 · 입고 확정','Cerrar recepción')+'</button></div>';
+      b.innerHTML+=(allChecked
+          ?'<div class="note green" style="margin-top:12px">✔ '+L('<b>모든 팔렛 검수 완료 — 지금 바로 입고할 수 있습니다.</b> 적치를 기다릴 필요 없습니다: 입고(마감) 후 구매·재고 라인이 열려 판매 대응이 가능해지고, 적치는 그대로 계속하면 됩니다.','<b>Todo verificado — puede cerrar la recepción ahora.</b> El acomodo continúa después.')+'</div>'
+          :'<div class="note" style="margin-top:12px">⚠ '+L('미검수 팔렛 '+(st.N-ck.length)+'개는 이번 입고에서 <b>제외</b>됩니다(검수된 팔렛만 실측 수량으로 반영). 마감 후 검수한 수량은 구매에 반영되지 않으니, 가급적 검수를 마치고 입고하세요.','Los pallets sin verificar quedan <b>fuera</b> de este cierre.')+'</div>')
+        +'<div class="note">'+L('입고(마감)하면 구매 모듈의 received_qty가 <b>실측 스캔 수량</b>으로 갱신되고 Back Order가 줄어듭니다. 재고·원가는 수입원가 화면 승인에서 반영. 적치는 마감과 무관하게 계속 가능합니다.','Al cerrar, received_qty se actualiza con lo <b>realmente escaneado</b>. El acomodo no se bloquea.')+'</div>'
+        +'<div class="row"><input type="password" id="pin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px"><button class="btn o" id="btnClose">🔒 '+L('입고 확정 (마감)','Cerrar recepción')+'</button></div>';
       $('btnClose').addEventListener('click',function(){
         if(!$('pin').value){ toast(L('디렉터 PIN을 입력하세요','Ingrese el PIN del director')); return; }
         $('btnClose').disabled=true;
