@@ -105,10 +105,16 @@ export default async function importRoutes(app) {
          JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
          JOIN products pr ON pr.id = pi.product_id
          LEFT JOIN LATERAL (
+           -- 단가 제안: ① 제품 연결된 발주 라인 우선 ② 미매칭 라인(product_id NULL)은 제품코드로 발견
+           --   (발주 업로드 당시 제품 미매칭이면 단가가 0으로 비던 문제 보완 — 2026-08-18)
            SELECT l.unit_cost_usd, p.ref_no
              FROM purchase_order_lines l JOIN purchase_orders p ON p.id = l.po_id
-            WHERE l.product_id = pi.product_id AND p.deleted_at IS NULL AND p.status <> 'cancelled'
-            ORDER BY p.order_date DESC, l.id DESC LIMIT 1
+            WHERE (l.product_id = pi.product_id
+                   OR (l.product_id IS NULL
+                       AND UPPER(REGEXP_REPLACE(l.input_code,'[^A-Za-z0-9]','','g'))
+                         = UPPER(REGEXP_REPLACE(pr.code,'[^A-Za-z0-9]','','g'))))
+              AND p.deleted_at IS NULL AND p.status <> 'cancelled'
+            ORDER BY (l.product_id IS NOT NULL) DESC, p.order_date DESC, l.id DESC LIMIT 1
          ) po ON true
         WHERE pl.shipment_id=$1 AND pl.received_at IS NOT NULL AND pi.product_id IS NOT NULL
         GROUP BY pi.product_id, pr.code, pr.name, po.unit_cost_usd, po.ref_no

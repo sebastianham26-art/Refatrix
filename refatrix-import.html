@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수입 입고 · build imp-0818b</title>
+<title>Refatrix ERP · 수입 입고 · build imp-0818e</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -40,6 +40,9 @@
   .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:11px 14px}
   .sb .v{font-size:20px;font-weight:800;color:var(--brand,#143D34)}.sb .l{font-size:11px;color:var(--muted,#6F6A60);margin-top:2px}
   .linehead{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+  /* 라인이 수백 개일 때 화면이 끝없이 길어지지 않게 — 목록 자체 스크롤(2026-08-18) */
+  #lines{max-height:55vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px;background:#fff}
+  #previewTable{max-height:60vh;overflow-y:auto}
   .lrow{display:flex;gap:8px;margin-top:8px;align-items:flex-end}
   .lrow>div{flex:1}.lrow .x{flex:0 0 auto}
   .suggest{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid var(--line);
@@ -112,7 +115,18 @@
       <div><label>환율 (USD→MXN)</label><input id="fx" type="number" step="0.0001" value="17.40"></div>
     </div>
 
-    <div class="linehead"><label style="margin:0">입고 라인 (SKU별) — 코드·이름·바코드로 검색</label><button class="btn ghost sm" id="addLine">+ 줄 추가</button></div>
+    <div class="linehead"><label style="margin:0">입고 라인 (SKU별) — 코드·이름·바코드로 검색</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn ghost sm" id="invPriceBtn">📄 인보이스 단가 읽기</button>
+        <input type="file" id="invPriceFile" accept=".xlsx,.xls" class="hidden">
+        <button class="btn ghost sm" id="addLine">+ 줄 추가</button>
+      </div></div>
+    <div id="lineTools" style="display:flex;gap:12px;align-items:center;margin:6px 0;flex-wrap:wrap">
+      <input id="lineFilter" type="text" placeholder="코드로 필터…" style="width:170px;padding:6px 9px" autocomplete="off">
+      <label style="display:flex;gap:5px;align-items:center;font-size:12px;font-weight:600;margin:0"><input id="onlyZero" type="checkbox" style="width:auto"> 단가 미입력만 보기</label>
+      <span class="hint" id="lineCount" style="margin:0"></span>
+    </div>
+    <div id="invDiffBox"></div>
     <div id="lines"></div>
 
     <div class="linehead cost-only" style="margin-top:14px"><label style="margin:0">부대비용 (명목 · 금액 · 통화 · 인보이스)</label><button class="btn ghost sm" id="addOh">+ 줄 추가</button></div>
@@ -215,6 +229,7 @@
             search.value=p.code+' · '+(p.name||'');
             search.classList.add('picked');
             row.dataset.pid=p.id;
+            row.dataset.code=p.code;
             box.classList.add('hidden');box.innerHTML='';
             renderState();
           };
@@ -229,6 +244,8 @@
       search.value=preset.code+' · '+(preset.name||'');
       search.classList.add('picked');
       row.dataset.pid=preset.id;
+      row.dataset.code=preset.code;                                        // 인보이스 매칭·필터용
+      if(preset.po_price!=null&&Number(preset.po_price)>0) row.dataset.poPrice=preset.po_price;   // 발주단가(차이 비교 기준)
       row.querySelector('.l-qty').value=preset.qty;
       row.querySelector('.l-price').value=preset.price;
       row.querySelector('.l-cur').value=(preset.currency==='MXN'?'MXN':'USD');
@@ -467,17 +484,144 @@
       let added=0, noPrice=0;
       for(const l of lines){
         const f=found[l.code]||{id:l.product_id,code:l.code,name:l.name};
-        addLine({id:f.id,code:f.code,name:f.name,qty:l.qty,price:l.po_price!=null?l.po_price:'',currency:'USD',invoice_no:d.shipment.invoice_no||''});
+        addLine({id:f.id,code:f.code,name:f.name,qty:l.qty,price:l.po_price!=null?l.po_price:'',po_price:l.po_price,currency:'USD',invoice_no:d.shipment.invoice_no||''});
         if(l.po_price==null) noPrice++;
         added++;
       }
       linkedShipment=d.shipment;
       renderState&&renderState();
-      m.className='msg ok';
+      const zrows=markZeroPrices();   // 단가 빈 칸을 즉시 붉게 표시 — 입력해야 다음 단계 진행 가능
+      m.className=zrows.length?'msg err':'msg ok';
       m.innerHTML='<b>'+(d.shipment.invoice_no||('선적#'+d.shipment.id))+'</b> 실측 '+added+'개 SKU 를 분배 대상으로 불러왔습니다.'
-        +(noPrice?' <b style="color:#B23B2E">단가 미확인 '+noPrice+'건</b> — 구매 발주가 없어 비어 있으니 직접 입력하세요.':'')
-        +' 부대비용(운임 등)을 입력하고 ①작성+미리보기를 누르세요. 승인 시 <b>원가만</b> 반영됩니다(수량은 마감 때 이미 재고 반영).';
+        +(zrows.length?'<br>⚠ <b>수입단가 미입력 '+zrows.length+'건</b>(붉게 표시) — <b>모두 입력해야</b> 다음 단계로 넘어갑니다. 발주에 단가가 있다면 창고 마감 탭 [🔧 구매 재매칭] 후 다시 [불러오기].':'')
+        +'<br>부대비용(운임 등)을 입력하고 ①작성+미리보기를 누르세요. 승인 시 <b>원가만</b> 반영됩니다(수량은 마감 때 이미 재고 반영).';
+      if(zrows.length){ zrows[0].scrollIntoView({behavior:'smooth',block:'center'}); }
     }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+  }
+
+  // ---- 단가 필수 입력 절차(2026-08-18) — 단가가 비면 다음 단계로 못 넘어간다 ----
+  function zeroPriceRows(){
+    return [...document.querySelectorAll('#lines .lrow')].filter(r=>{
+      const pid=r.dataset.pid; const qty=Number(r.querySelector('.l-qty').value);
+      const price=Number(r.querySelector('.l-price').value);
+      return pid && qty>0 && !(price>0);
+    });
+  }
+  function markZeroPrices(){
+    // 미입력(붉은) 표시만 관리 — 인보이스 차이(노란) 표시는 건드리지 않는다
+    document.querySelectorAll('#lines .l-price').forEach(inp=>{
+      if(inp.dataset.zeroMark){ inp.style.border=''; inp.style.background=''; delete inp.dataset.zeroMark; }
+    });
+    const rows=zeroPriceRows();
+    rows.forEach(r=>{
+      const inp=r.querySelector('.l-price');
+      inp.dataset.zeroMark='1';
+      inp.style.border='2px solid #B23B2E'; inp.style.background='#FDF0EE';
+      if(!inp.dataset.zeroWired){
+        inp.dataset.zeroWired='1';
+        inp.addEventListener('input',()=>{ if(Number(inp.value)>0){ inp.style.border=''; inp.style.background=''; delete inp.dataset.zeroMark; refreshLineTools(); } });
+      }
+    });
+    refreshLineTools();
+    return rows;
+  }
+
+  // ---- 라인 목록 필터·카운트(2026-08-18) — 수백 라인 대응 ----
+  function refreshLineTools(){
+    const fEl=$('lineFilter'), zEl=$('onlyZero'), lc=$('lineCount');
+    const q=(fEl?fEl.value:'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const oz=!!(zEl&&zEl.checked);
+    const rows=[...document.querySelectorAll('#lines .lrow')];
+    let vis=0, zero=0;
+    rows.forEach(r=>{
+      const code=String(r.dataset.code||r.querySelector('.l-search').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+      const isZero=!!(r.dataset.pid&&Number(r.querySelector('.l-qty').value)>0&&!(Number(r.querySelector('.l-price').value)>0));
+      if(isZero) zero++;
+      const show=(!q||code.indexOf(q)>=0)&&(!oz||isZero);
+      r.style.display=show?'':'none';
+      if(show) vis++;
+    });
+    if(lc) lc.textContent='표시 '+vis+' / 전체 '+rows.length+'라인'+(zero?(' · 단가 미입력 '+zero+'건'):'');
+  }
+
+  // ---- 구매 인보이스 단가 읽기(2026-08-18) ----
+  //   디렉터 절차: 공급사 인보이스(엑셀)를 올리면 코드·단가를 읽어 라인에 자동 입력.
+  //   발주단가(구매 등록가)와 다르면 노란 표시 + 차이 표(금액·%)로 보여준다.
+  const bareC=(s)=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  async function readInvoicePrices(file){
+    const m=$('formMsg'); m.className='msg';
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const CODE_KEYS=['CTR','CODE','CLAVE','ITEM','PART','제품코드','코드','MODELO','MODEL'];
+      const PRICE_KEYS=['PRICE','PRECIO','UNIT','P.U','P/U','단가','U$','USD'];
+      const QTY_KEYS=['QTY',"Q'TY",'QUANTITY','CANTIDAD','수량','PCS'];
+      let best=null;
+      for(const sn of wb.SheetNames){
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
+        for(let i=0;i<Math.min(rows.length,25);i++){
+          const cells=(rows[i]||[]).map(c=>String(c).toUpperCase());
+          const ci=cells.findIndex(c=>c&&CODE_KEYS.some(k=>c.includes(k)));
+          const pi2=cells.findIndex(c=>c&&PRICE_KEYS.some(k=>c.includes(k)));
+          if(ci>=0&&pi2>=0&&ci!==pi2){
+            const qi=cells.findIndex(c=>c&&QTY_KEYS.some(k=>c.includes(k)));
+            best={rows,hi:i,ci,pi:pi2,qi}; break;
+          }
+        }
+        if(best) break;
+      }
+      if(!best){ m.className='msg err'; m.textContent='인보이스에서 코드/단가 열을 찾지 못했습니다 — 헤더에 코드(CTR NO 등)·단가(UNIT PRICE 등) 열이 있어야 합니다.'; return; }
+      const inv={}; let nRead=0;
+      for(let i=best.hi+1;i<best.rows.length;i++){
+        const r=best.rows[i]||[]; const code=bareC(r[best.ci]); const price=Number(r[best.pi]);
+        if(!code||!(price>0)) continue;
+        inv[code]={price:price,qty:best.qi>=0?Number(r[best.qi]):null}; nRead++;
+      }
+      if(!nRead){ m.className='msg err'; m.textContent='인보이스에서 단가가 있는 데이터 행을 읽지 못했습니다.'; return; }
+      let applied=0; const diffs=[], noInv=[], qtyWarn=[];
+      document.querySelectorAll('#lines .lrow').forEach(r=>{
+        if(!r.dataset.pid) return;
+        const code=bareC(r.dataset.code||String(r.querySelector('.l-search').value).split('·')[0]);
+        const hit=inv[code];
+        const inp=r.querySelector('.l-price');
+        if(!hit){ noInv.push(code); return; }
+        inp.value=hit.price; applied++;
+        delete inp.dataset.zeroMark;
+        const base=Number(r.dataset.poPrice);
+        if(base>0&&Math.abs(hit.price-base)>0.005){
+          diffs.push({code:code,base:base,inv:hit.price});
+          inp.style.border='2px solid #C9A24B'; inp.style.background='#FDF6E5';
+          inp.title='발주단가 '+base+' → 인보이스 '+hit.price;
+        } else { inp.style.border=''; inp.style.background=''; inp.title=''; }
+        const q=Number(r.querySelector('.l-qty').value);
+        if(hit.qty!=null&&hit.qty>0&&Math.abs(hit.qty-q)>0.001) qtyWarn.push({code:code,line:q,inv:hit.qty});
+      });
+      const lineCodes=new Set([...document.querySelectorAll('#lines .lrow')].filter(r=>r.dataset.pid)
+        .map(r=>bareC(r.dataset.code||String(r.querySelector('.l-search').value).split('·')[0])));
+      const extra=Object.keys(inv).filter(c=>!lineCodes.has(c));
+      renderInvDiff(diffs,qtyWarn,noInv,extra);
+      markZeroPrices();
+      m.className=noInv.length?'msg err':'msg ok';
+      m.innerHTML='📄 인보이스 단가 적용 <b>'+applied+'건</b>'
+        +(diffs.length?' · <b style="color:#8A6300">발주단가와 차이 '+diffs.length+'건</b>(노란 표시 — 아래 표 확인)':'')
+        +(noInv.length?' · <b style="color:#B23B2E">인보이스에 없음 '+noInv.length+'건</b>(단가 직접 입력 필요)':'')
+        +(extra.length?' · 라인에 없는 인보이스 코드 '+extra.length+'건':'');
+    }catch(e){ m.className='msg err'; m.textContent='인보이스를 읽지 못했습니다: '+e.message; }
+  }
+  function renderInvDiff(diffs,qtyWarn,noInv,extra){
+    const box=$('invDiffBox'); if(!box) return;
+    if(!diffs.length&&!qtyWarn.length&&!noInv.length&&!extra.length){ box.innerHTML=''; return; }
+    let h='';
+    if(diffs.length){
+      h+='<div style="border:1.5px solid #C9A24B;background:#FDF8EE;border-radius:10px;padding:10px 12px;margin:6px 0"><b>⚠ 등록된 구매단가와 인보이스 단가가 다른 품목 '+diffs.length+'건</b> — 인보이스 단가가 입력되었습니다. 맞는지 확인하세요.'
+        +'<div style="max-height:220px;overflow-y:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="color:var(--muted)"><th style="text-align:left;padding:2px 6px">코드</th><th style="text-align:right;padding:2px 6px">발주단가</th><th style="text-align:right;padding:2px 6px">인보이스</th><th style="text-align:right;padding:2px 6px">차이</th><th style="text-align:right;padding:2px 6px">%</th></tr>'
+        +diffs.map(d=>{ const df=d.inv-d.base; const pc=d.base?df/d.base*100:0; const col=df>0?'#B23B2E':'#2E7D46';
+          return '<tr><td style="padding:2px 6px">'+d.code+'</td><td style="text-align:right;padding:2px 6px">'+d.base.toFixed(4)+'</td><td style="text-align:right;padding:2px 6px;font-weight:700">'+d.inv.toFixed(4)+'</td><td style="text-align:right;padding:2px 6px;color:'+col+'">'+(df>0?'+':'')+df.toFixed(4)+'</td><td style="text-align:right;padding:2px 6px;color:'+col+'">'+(pc>0?'+':'')+pc.toFixed(1)+'%</td></tr>'; }).join('')
+        +'</table></div></div>';
+    }
+    if(qtyWarn.length){ h+='<div class="hint" style="margin:4px 0">📐 수량 차이: '+qtyWarn.slice(0,10).map(x=>x.code+' (라인 '+x.line+' / 인보이스 '+x.inv+')').join(', ')+(qtyWarn.length>10?' 외 '+(qtyWarn.length-10)+'건':'')+'</div>'; }
+    if(noInv.length){ h+='<div class="hint" style="margin:4px 0;color:#B23B2E">인보이스에 없어 단가 미적용: '+noInv.slice(0,15).join(', ')+(noInv.length>15?' 외 '+(noInv.length-15)+'건':'')+'</div>'; }
+    if(extra.length){ h+='<div class="hint" style="margin:4px 0">인보이스에는 있으나 입고 라인에 없는 코드: '+extra.slice(0,15).join(', ')+(extra.length>15?' 외':'')+'</div>'; }
+    box.innerHTML=h;
   }
 
   // ---- 작성 + 미리보기 ----
@@ -486,6 +630,18 @@
     const {lines,missing}=gatherLines();
     if(missing.length){m.className='msg err';m.textContent=missing.length+'번째 줄: 검색 후 목록에서 제품을 선택하세요(타이핑만으로는 안 됩니다).';return;}
     if(!lines.length){m.className='msg err';m.textContent='입고 라인을 1개 이상 입력하세요.';return;}
+    // 단가 필수(2026-08-18 절차 강제) — 미입력 라인이 있으면 진행 차단, 해당 칸을 붉게 표시하고 첫 칸으로 이동
+    const zr=markZeroPrices();
+    if(zr.length){
+      const codes=zr.slice(0,8).map(r=>String(r.querySelector('.l-search').value).split('·')[0].trim()).filter(Boolean);
+      m.className='msg err';
+      m.innerHTML='⚠ <b>수입단가 미입력 '+zr.length+'건</b> — 붉게 표시된 단가를 <b>모두 입력해야</b> 다음 단계(작성+미리보기)로 넘어갑니다.'
+        +(codes.length?(' <span class="hint">('+codes.join(', ')+(zr.length>codes.length?' 외':'')+')</span>'):'')
+        +'<br><span class="hint">구매 발주에 단가가 있는 품목이라면: 창고 마감 탭 [🔧 구매 재매칭] 실행 → 여기서 다시 [불러오기] 하면 자동으로 채워집니다. 발주에 없는 품목은 직접 입력하세요.</span>';
+      const first=zr[0].querySelector('.l-price');
+      first.focus(); zr[0].scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
     const body={import_date:$('idate').value,currency:$('cur').value,fx_rate:Number($('fx').value),lines,overheads:gatherOhs(),
       batch_no:linkedShipment?String(linkedShipment.invoice_no||('SHIP-'+linkedShipment.id)):('TEST-'+Date.now()),
       inbound_shipment_id:linkedShipment?linkedShipment.id:null};
@@ -547,6 +703,10 @@
   $('reloadPend').addEventListener('click',loadPending);
   $('fromShipLoad').addEventListener('click',pickFromInbound);
   $('fromShipRefresh').addEventListener('click',loadFromInbound);
+  $('invPriceBtn').addEventListener('click',()=>$('invPriceFile').click());
+  $('invPriceFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) readInvoicePrices(f); e.target.value=''; });
+  $('lineFilter').addEventListener('input',refreshLineTools);
+  $('onlyZero').addEventListener('change',refreshLineTools);
   $('approve').addEventListener('click',approve);
   $('dlTpl').addEventListener('click',downloadTemplate);
   $('upBtn').addEventListener('click',()=>$('upFile').click());
