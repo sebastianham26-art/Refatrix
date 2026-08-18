@@ -1,3 +1,4 @@
+// build 20260818b — 고객수정 승인요청에 구매결정권자(buyer_name/buyer_phone)·지점수 포함 (재배포 트리거용 마커)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
