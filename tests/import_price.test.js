@@ -87,6 +87,29 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   doc.getElementById('lineFilter').value='';
   doc.getElementById('lineFilter').dispatchEvent(new w.Event('input',{bubbles:true})); await sleep(5);
 
+  console.log('\n⑤ 실제 인보이스 파일(D26-81319563) — 병합 헤더·ITEM NO 함정');
+  {
+    // 실제 SheetJS + 실제 업로드 파일
+    w.XLSX = require('/tmp/nodemod/node_modules/xlsx');
+    const buf = fs.readFileSync('/root/.claude/uploads/9241e5bf-e452-5ff0-aa11-b14da7e1bd09/b4245002-invoice_D2681319563.xlsx');
+    // 라인 재구성: 실파일에 있는 코드 3개(발주단가 하나는 다르게)
+    w.__t.dollar('lines').innerHTML='';
+    w.__t.addLine({id:11,code:'CQ0402R',name:'CONTROL ARM',qty:4,price:'',po_price:17.44,currency:'USD',invoice_no:'D26-81319563'});
+    w.__t.addLine({id:12,code:'GV0946',name:'BUSH',qty:10,price:'',po_price:2.00,currency:'USD',invoice_no:'D26-81319563'});
+    w.__t.addLine({id:13,code:'CL0842',name:'STAB LINK',qty:6,price:'',currency:'USD',invoice_no:'D26-81319563'});
+    await sleep(10);
+    const rws=doc.querySelectorAll('#lines .lrow');
+    w.__t.readInvoicePrices({arrayBuffer:async()=>buf}); await sleep(200);
+    const msg=doc.getElementById('formMsg').textContent;
+    ok('오류 없이 읽음(적용 3건)', /적용 3건/.test(msg), msg.slice(0,140));
+    ok('CQ0402R = 17.44 (M열)', rws[0].querySelector('.l-price').value==='17.44', rws[0].querySelector('.l-price').value);
+    ok('GV0946 = 2.62', rws[1].querySelector('.l-price').value==='2.62', rws[1].querySelector('.l-price').value);
+    ok('CL0842 = 4.5', rws[2].querySelector('.l-price').value==='4.5', rws[2].querySelector('.l-price').value);
+    ok('발주단가 2.00 vs 인보이스 2.62 차이 표시', /GV0946/.test(doc.getElementById('invDiffBox').textContent)&&/2\.62/.test(doc.getElementById('invDiffBox').textContent), doc.getElementById('invDiffBox').textContent.slice(0,200));
+    ok('일치 품목(17.44)은 차이 표에 없음', !/CQ0402R/.test(doc.getElementById('invDiffBox').textContent.split('수량 차이')[0]));
+    ok('통화 USD 반영', rws[0].querySelector('.l-cur').value==='USD');
+  }
+
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('테스트 실행 오류:', e); process.exit(2); });

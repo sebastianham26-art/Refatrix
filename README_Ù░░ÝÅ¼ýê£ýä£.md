@@ -28,7 +28,7 @@
    - `refatrix-inbound.html` (build 20260818b)
    - `refatrix-inbound2.html` (같은 내용 — 캐시 우회용 주소)
    - `refatrix-purchase.html` (build pur-0818a — [입고]·[미입고] 열 추가)
-   - `refatrix-import.html` (build imp-0818e — 인보이스 단가 자동 읽기 + 차이 비교 + 목록 스크롤)
+   - `refatrix-import.html` (build imp-0818f — 인보이스 단가 자동 읽기: 실파일 병합헤더 대응)
    - `refatrix-importcost.html` (build ic-0818b — 분배 대상에 없는 선적 안내)
 2. 배포 후 접속. 캐시가 의심되면 `.../refatrix-inbound2.html` 주소 사용
 3. F12 콘솔에서 `[refatrix-inbound] build 20260818b` 확인
@@ -200,3 +200,14 @@ ic-0818a 부터는 분배 대상 위에 "입고됐지만 아직 분배 대상에
 미리보기 표도 스크롤 적용.
 
 테스트: tests/import_price.test.js 17/17 (필수 차단 + 인보이스 적용·차이표·표기차 매칭·필터)
+
+## 2026-08-18j — 실제 인보이스(D26-81319563)로 파서 보정 (imp-0818f)
+
+실파일 검증에서 두 가지 함정을 잡아 수정:
+1. **병합 헤더**: "PRICE" 라벨은 L열, 실제 숫자는 M열(라벨 열엔 'USD' 문자만) →
+   데이터 40행을 훑어 숫자가 확실히 더 많은 인접 열을 단가 열로 자동 선택
+2. **ITEM NO/HS CODE 함정**: 코드 열 후보를 여럿 모아(CTR 계열 우선, HS CODE 제외)
+   **우리 입고 라인 코드와 가장 많이 일치하는 열**을 코드 열로 선택
++ 인보이스 행의 통화(USD/MXN)도 각 라인 통화에 반영.
+검증: 실제 업로드 파일로 테스트 — CQ0402R=17.44, GV0946=2.62, CL0842=4.5 정확,
+발주가와 다른 품목만 차이표 표시. tests/import_price.test.js 24/24.

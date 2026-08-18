@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 수입 입고 · build imp-0818e</title>
+<title>Refatrix ERP · 수입 입고 · build imp-0818f</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -552,30 +552,65 @@
     const m=$('formMsg'); m.className='msg';
     try{
       const wb=XLSX.read(await file.arrayBuffer());
-      const CODE_KEYS=['CTR','CODE','CLAVE','ITEM','PART','제품코드','코드','MODELO','MODEL'];
-      const PRICE_KEYS=['PRICE','PRECIO','UNIT','P.U','P/U','단가','U$','USD'];
+      // 코드 열 후보: CTR 계열을 우선하되(ITEM NO=순번, HS CODE 함정 회피),
+      // 후보가 여럿이면 아래에서 "우리 라인 코드와 가장 많이 일치하는 열"을 고른다.
+      const CODE_KEYS_1=['CTR NO','CTR','CLAVE','제품코드'];
+      const CODE_KEYS_2=['CODE','ITEM','PART','MODELO','MODEL','코드'];
+      const PRICE_KEYS=['PRICE','PRECIO','UNIT','P.U','P/U','단가','U$'];
       const QTY_KEYS=['QTY',"Q'TY",'QUANTITY','CANTIDAD','수량','PCS'];
       let best=null;
       for(const sn of wb.SheetNames){
         const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
         for(let i=0;i<Math.min(rows.length,25);i++){
           const cells=(rows[i]||[]).map(c=>String(c).toUpperCase());
-          const ci=cells.findIndex(c=>c&&CODE_KEYS.some(k=>c.includes(k)));
+          const cands=[];
+          cells.forEach((c,idx)=>{ if(c&&CODE_KEYS_1.some(k=>c.includes(k))) cands.push(idx); });
+          cells.forEach((c,idx)=>{ if(c&&!c.includes('HS')&&CODE_KEYS_2.some(k=>c.includes(k))&&cands.indexOf(idx)<0) cands.push(idx); });
           const pi2=cells.findIndex(c=>c&&PRICE_KEYS.some(k=>c.includes(k)));
-          if(ci>=0&&pi2>=0&&ci!==pi2){
+          const codeCands=cands.filter(x=>x!==pi2);
+          if(codeCands.length&&pi2>=0){
             const qi=cells.findIndex(c=>c&&QTY_KEYS.some(k=>c.includes(k)));
-            best={rows,hi:i,ci,pi:pi2,qi}; break;
+            best={rows,hi:i,ci:codeCands[0],codeCands:codeCands,pi:pi2,qi}; break;
           }
         }
         if(best) break;
       }
       if(!best){ m.className='msg err'; m.textContent='인보이스에서 코드/단가 열을 찾지 못했습니다 — 헤더에 코드(CTR NO 등)·단가(UNIT PRICE 등) 열이 있어야 합니다.'; return; }
-      const inv={}; let nRead=0;
-      for(let i=best.hi+1;i<best.rows.length;i++){
-        const r=best.rows[i]||[]; const code=bareC(r[best.ci]); const price=Number(r[best.pi]);
-        if(!code||!(price>0)) continue;
-        inv[code]={price:price,qty:best.qi>=0?Number(r[best.qi]):null}; nRead++;
+      // 헤더 셀 병합 보정(2026-08-18, D26-81319563 실파일): "PRICE" 라벨이 L열에 있어도
+      // 실제 숫자는 옆(M)열에 있는 경우가 있다(라벨 열엔 'USD' 통화 문자만).
+      // 데이터 40행을 훑어 숫자가 확실히 더 많은 인접 열로 단가/수량 열을 옮긴다.
+      const numCnt=(col)=>{ let n=0; for(let i=best.hi+1;i<Math.min(best.rows.length,best.hi+41);i++){ if(Number((best.rows[i]||[])[col])>0) n++; } return n; };
+      let priceCol=best.pi, pN=numCnt(priceCol);
+      for(const cand of [best.pi+1,best.pi+2,best.pi-1]){
+        if(cand<0||cand===best.ci) continue;
+        const n=numCnt(cand);
+        if(n>pN*1.5+1){ priceCol=cand; pN=n; }
       }
+      let qtyCol=best.qi;
+      if(qtyCol>=0&&numCnt(qtyCol)===0){
+        for(const cand of [qtyCol+1,qtyCol-1]){ if(cand>=0&&cand!==best.ci&&numCnt(cand)>0){ qtyCol=cand; break; } }
+      }
+      // 행별 통화(있으면): 단가 열 주변에서 USD/MXN 문자를 찾는다
+      const curAt=(r)=>{ for(const c of [priceCol-1,best.pi]){ const t=String((r||[])[c]||'').toUpperCase().trim(); if(t==='USD'||t==='MXN') return t; } return null; };
+      // 코드 열 확정: 후보 열들 중 "현재 입고 라인 코드와 가장 많이 일치"하는 열 선택
+      const lineCodeSet=new Set([...document.querySelectorAll('#lines .lrow')].filter(rw=>rw.dataset.pid)
+        .map(rw=>bareC(rw.dataset.code||String(rw.querySelector('.l-search').value).split('·')[0])));
+      const parseWith=(codeCol)=>{
+        const o={}; let n=0, hitN=0;
+        for(let i=best.hi+1;i<best.rows.length;i++){
+          const r=best.rows[i]||[]; const code=bareC(r[codeCol]); const price=Number(r[priceCol]);
+          if(!code||!(price>0)) continue;
+          o[code]={price:price,qty:qtyCol>=0?Number(r[qtyCol]):null,cur:curAt(best.rows[i])}; n++;
+          if(lineCodeSet.has(code)) hitN++;
+        }
+        return {inv:o,n:n,hit:hitN};
+      };
+      let chosen=null;
+      for(const cc of (best.codeCands||[best.ci])){
+        const p=parseWith(cc);
+        if(!chosen||p.hit>chosen.hit||(p.hit===chosen.hit&&p.n>chosen.n)) chosen=p;
+      }
+      const inv=chosen.inv, nRead=chosen.n;
       if(!nRead){ m.className='msg err'; m.textContent='인보이스에서 단가가 있는 데이터 행을 읽지 못했습니다.'; return; }
       let applied=0; const diffs=[], noInv=[], qtyWarn=[];
       document.querySelectorAll('#lines .lrow').forEach(r=>{
@@ -586,6 +621,7 @@
         if(!hit){ noInv.push(code); return; }
         inp.value=hit.price; applied++;
         delete inp.dataset.zeroMark;
+        if(hit.cur){ const cs=r.querySelector('.l-cur'); if(cs) cs.value=hit.cur; }   // 인보이스 행의 통화(USD/MXN) 반영
         const base=Number(r.dataset.poPrice);
         if(base>0&&Math.abs(hit.price-base)>0.005){
           diffs.push({code:code,base:base,inv:hit.price});
