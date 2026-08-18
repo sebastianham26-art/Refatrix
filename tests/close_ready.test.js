@@ -16,15 +16,15 @@ function fixture(bStatus) {
   return {
     shipment: { id: 1, invoice_no: 'D26-3', status: 'receiving' },
     pallets: [
-      { id: 11, pl_no: 7, order_no: '26B2C', status: 'checked', cartons_expected: 23, qty_expected: 366,
-        checked_at: '2026-08-17T20:00:00Z', working: false, scans: [],
+      { id: 11, pl_no: 7, order_no: '26B2C', status: 'checking', cartons_expected: 23, qty_expected: 366,   // 적치 진행 중 — 검수는 확정됨
+        checked_at: '2026-08-17T20:00:00Z', received_at: null, working: false, scans: [],
         items: [
           { id: 1, code: 'CE0796', name: 'T', cartons: 20, qty: 320, scanned_cartons: 18, put_cartons: 0, rack: 'A-01', zone: 1, registered: true },
           { id: 2, code: 'CE0796', name: 'T', cartons: 3,  qty: 36,  scanned_cartons: 4,  put_cartons: 0, rack: 'A-01', zone: 1, registered: true },
           { id: 3, code: 'CE0796', name: 'T', cartons: 0,  qty: 10,  scanned_cartons: 0,  put_cartons: 0, rack: 'A-01', zone: 1, registered: true },
         ] },
       { id: 12, pl_no: 8, order_no: '26B2C', status: bStatus, cartons_expected: 2, qty_expected: 32,
-        checked_at: bStatus === 'checked' ? '2026-08-17T21:00:00Z' : null, working: false, scans: [],
+        checked_at: bStatus === 'checked' ? '2026-08-17T21:00:00Z' : null, received_at: null, working: false, scans: [],
         items: [{ id: 4, code: 'CB0318', name: 'R', cartons: 2, qty: 32, scanned_cartons: bStatus === 'checked' ? 2 : 0, put_cartons: 0, rack: 'B-01', zone: 2, registered: true }] },
     ],
     files: [],
@@ -47,7 +47,17 @@ async function boot(SHIP) {
       res = { ok: true, dry: !!body.dry, lines: [], extras: {}, unknown: {}, total_expected: 2, total_scanned: 2 };
       if (!body.dry) { SHIP.pallets[1].status = 'checked'; SHIP.pallets[1].checked_at = 'x'; SHIP.pallets[1].items[0].scanned_cartons = 2; }
     }
-    else if (/close$/.test(u)) { res = { ok: true, po_lines_updated: 1, orders: {} }; SHIP.shipment.status = 'closed'; }
+    else if (/close$/.test(u)) {
+      const pend = SHIP.pallets.filter(p => (p.checked_at || ['checked','done'].includes(p.status)) && !p.received_at);
+      if (!pend.length) res = { error: SHIP.shipment.status === 'closed' ? 'nothing_new' : 'no_checked' };
+      else {
+        pend.forEach(p => { p.received_at = 'now'; });
+        const first = SHIP.shipment.status !== 'closed';
+        SHIP.shipment.status = 'closed';
+        res = { ok: true, first, po_lines_updated: 1, orders: {}, pallets_received: pend.length,
+          stock_applied: 346, unmatched: [{ order_no: '26B2C', code: 'CB0318', reason: 'no_po_line' }], unregistered: [] };
+      }
+    }
     else if (/\/files(\?|$)/.test(u)) res = { items: [] };
     else if (/\/api\/inbound\/1(\?|$)/.test(u)) res = SHIP;
     else if (/\/api\/inbound(\?|$)/.test(u)) res = { items: [SHIP.shipment] };
@@ -118,6 +128,32 @@ async function boot(SHIP) {
     t.doConfirm(); await sleep(40);
     ok('모든 팔렛 검수 완료 안내', w.__toasts.some(m => /모든 팔렛 검수 완료/.test(String(m))), w.__toasts);
     ok('[마감] 탭 안내 포함', w.__toasts.some(m => /마감/.test(String(m)) && /입고/.test(String(m))));
+  }
+
+  console.log('\n⑤ 적치중 팔렛 = 검수 유효(버그 수정) + 재마감(추가 입고 반영)');
+  {
+    const { t, doc, SHIP, calls } = await boot(fixture('unloaded'));
+    t.openShip(1); await sleep(30);
+    t.setStep('close'); t.renderClose(); await sleep(10);
+    let body = doc.getElementById('stepbody').textContent;
+    ok('적치 진행 중(checking+checked_at) 팔렛이 검수완료·적치중으로 표시', /검수완료·적치중/.test(body), body.slice(0, 250));
+    // 1차 마감: 팔렛 A만 반영
+    doc.getElementById('pin').value = '1234';
+    doc.getElementById('btnClose').click(); await sleep(40);
+    body = doc.getElementById('stepbody').textContent;
+    ok('마감 후 입고됨 표시', /입고됨/.test(body), body.slice(0, 250));
+    ok('미반영 경고 표시(구매 미매칭 SKU)', /입고에서 빠진 항목/.test(body) && /CB0318/.test(body));
+    // 나중에 팔렛 B 검수 완료 → 재마감 버튼
+    SHIP.pallets[1].status = 'checked'; SHIP.pallets[1].checked_at = 'y'; SHIP.pallets[1].items[0].scanned_cartons = 2;
+    t.renderClose(); await sleep(5);
+    const btn = doc.getElementById('btnClose');
+    ok('마감된 선적에도 [추가 입고 반영] 버튼', !!btn && /추가 입고 반영/.test(btn.textContent), btn && btn.textContent);
+    doc.getElementById('pin').value = '1234';
+    btn.click(); await sleep(40);
+    const closeCalls = calls.filter(c => /close$/.test(c.u));
+    ok('재마감 호출 — 새 팔렛만 추가 반영', closeCalls.length === 2 && SHIP.pallets[1].received_at === 'now');
+    t.renderClose(); await sleep(5);
+    ok('전부 반영되면 버튼 사라짐', !doc.getElementById('btnClose'));
   }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);

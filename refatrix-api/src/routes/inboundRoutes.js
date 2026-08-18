@@ -275,7 +275,7 @@ export default async function inboundRoutes(app) {
     const s = (await query(`SELECT * FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!s) return { error: 'not_found' };
     const pals = (await query(
-      `SELECT pl.id, pl.order_no, pl.pl_no, pl.status, pl.cartons_expected, pl.qty_expected, pl.checked_at,
+      `SELECT pl.id, pl.order_no, pl.pl_no, pl.status, pl.cartons_expected, pl.qty_expected, pl.checked_at, pl.received_at,
               pl.working_by, pl.working_step, pl.working_at,
               (pl.working_at IS NOT NULL AND pl.working_at > now() - ($2 || ' seconds')::interval) AS working,
               u.name AS working_by_name
@@ -332,6 +332,7 @@ export default async function inboundRoutes(app) {
         id: Number(p.id), order_no: p.order_no, pl_no: p.pl_no, status: p.status,
         cartons_expected: p.cartons_expected, qty_expected: num(p.qty_expected),
         checked_at: p.checked_at,   // 적치 목표(검수된 카톤) 판정용 — 프런트가 같은 기준을 쓴다
+        received_at: p.received_at, // 마감(입고) 반영 시각(0176) — NULL = 아직 입고 미반영
         // 점유 표시(소프트 락) — 최근 하트비트가 있는 동안만 working=true
         working: !!p.working, working_step: p.working ? (p.working_step || null) : null,
         working_by: p.working ? Number(p.working_by) : null,
@@ -659,39 +660,58 @@ export default async function inboundRoutes(app) {
     return out;
   });
 
-  // 마감 — 디렉터 PIN → 구매 received_qty 연동 -----------------------
+  // 마감(입고) — 디렉터 PIN → 구매 received_qty + 실재고 즉시 반영 (2026-08-18 개편)
+  //   · 검수 확정 판정 = checked_at (적치가 status 를 'checking' 으로 되돌려도 검수는 유효 —
+  //     예전엔 status IN ('checked','done') 만 봐서 적치 중 팔렛이 마감에서 빠지는 버그가 있었다)
+  //   · 팔렛별 received_at 마킹(0176) — 이미 반영한 팔렛은 다시 계산하지 않는다.
+  //     마감 후 새로 검수된 팔렛이 생기면 같은 엔드포인트로 "추가 입고 반영(재마감)" 가능.
+  //   · 실재고: products.stock_qty 에 실측 수량을 즉시 더한다(디렉터 결정 — 판매 대응 우선).
+  //     inbound_prestock 에 선반영 잔량을 기록해 두고, 수입원가 배치 승인 때 그만큼
+  //     수량 반영을 건너뛴다(이중 증가 방지). 원가·평균원가·재고원장은 승인 시점 그대로.
   app.post('/api/inbound/:id/close', g, async (req) => {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id);
     const pinRow = (await query(`SELECT pin_hash FROM users WHERE id=$1`, [uid])).rows[0];
     if (!verifyPin(String(req.body?.pin || ''), pinRow?.pin_hash)) return { error: 'bad_pin' };
 
-    return await withTx(async (c) => {
+    const out = await withTx(async (c) => {
       const q = c.query.bind(c);
       const s = (await q(`SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
       if (!s) return { error: 'not_found' };
-      if (s.status === 'closed') return { error: 'already_closed' };
+      if (s.status === 'cancelled') return { error: 'bad_state' };
 
-      // 검수된 팔렛의 확정 수량을 ORDER NO(=구매 ref_no) × product 로 집계
-      // ⚠ 실측 기준(2026-08-17): 예상(pi.qty)이 아니라 실제 스캔된 카톤 × 라인 소입수.
-      //   부족 검수는 적게, 초과 검수는 많게 그대로 반영된다. 카톤 0 라인(낱개·혼적)은
-      //   스캔 대상이 아니므로 팔렛이 검수되면 예상 수량 그대로 인정한다.
+      // 이번에 반영할 팔렛: 검수 확정(checked_at 또는 checked/done) + 아직 미반영(received_at NULL)
+      const pals = (await q(
+        `SELECT id FROM inbound_pallets
+          WHERE shipment_id=$1 AND received_at IS NULL
+            AND (checked_at IS NOT NULL OR status IN ('checked','done'))
+          FOR UPDATE`, [id])).rows;
+      if (!pals.length) return { error: s.status === 'closed' ? 'nothing_new' : 'no_checked' };
+      const palIds = pals.map((p) => Number(p.id));
+
+      // 실측 집계: 스캔 카톤 × 라인 소입수(카톤 0 라인은 예상 수량 그대로)
       const recv = (await q(
-        `SELECT pl.order_no, pi.product_id,
+        `SELECT pl.order_no, pi.product_id, MIN(pi.input_code) AS code,
                 SUM(CASE WHEN pi.cartons > 0
                          THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons
                          ELSE pi.qty END) AS qty
            FROM inbound_pallets pl
            JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
-          WHERE pl.shipment_id=$1 AND pl.status IN ('checked','done') AND pi.product_id IS NOT NULL
-          GROUP BY pl.order_no, pi.product_id`, [id])).rows;
+          WHERE pl.id = ANY($1) AND pi.product_id IS NOT NULL
+          GROUP BY pl.order_no, pi.product_id`, [palIds])).rows;
+      // 미등록 SKU(제품 매칭 실패) — 재고·구매 어디에도 못 들어가므로 경고로 보고
+      const unregistered = (await q(
+        `SELECT DISTINCT pi.input_code FROM inbound_pallet_items pi
+          WHERE pi.pallet_id = ANY($1) AND pi.product_id IS NULL`, [palIds])).rows.map((r) => r.input_code);
 
-      let updated = 0;
-      const perOrder = {};
+      let updated = 0, stockApplied = 0;
+      const perOrder = {}, unmatched = [], stockByProduct = {};
       for (const r of recv) {
         const qty = num(r.qty);
+        if (qty <= 0) { unmatched.push({ order_no: r.order_no, code: r.code, reason: 'zero_scanned' }); continue; }
         perOrder[r.order_no] = (perOrder[r.order_no] || 0) + qty;
-        // 해당 ORDER NO(ref_no) 발주의 그 product 라인에 입고 반영(잔량 한도)
+        stockByProduct[r.product_id] = (stockByProduct[r.product_id] || 0) + qty;
+        // 구매 라인 반영(ORDER NO = ref_no, 잔량 한도)
         const line = (await q(
           `SELECT l.id, l.qty, l.received_qty
              FROM purchase_order_lines l
@@ -706,12 +726,33 @@ export default async function inboundRoutes(app) {
             await q(`UPDATE purchase_order_lines SET received_qty = received_qty + $1 WHERE id=$2`, [add, line.id]);
             updated += 1;
           }
+        } else {
+          unmatched.push({ order_no: r.order_no, code: r.code, reason: 'no_po_line' });
         }
       }
-      await q(`UPDATE inbound_shipments SET status='closed', closed_by=$1, closed_at=now() WHERE id=$2`, [uid, id]);
-      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'inbound_close', target: 'inbound:' + id, detail: { po_lines_updated: updated } });
-      return { ok: true, po_lines_updated: updated, orders: perOrder };
+      // 실재고 즉시 반영 + 선반영 풀 기록(수입원가 승인 시 차감)
+      for (const [pidKey, qv] of Object.entries(stockByProduct)) {
+        await q(`UPDATE products SET stock_qty = stock_qty + $1, updated_by=$2 WHERE id=$3`, [qv, uid, Number(pidKey)]);
+        await q(
+          `INSERT INTO inbound_prestock (product_id, qty) VALUES ($1,$2)
+           ON CONFLICT (product_id) DO UPDATE SET qty = inbound_prestock.qty + $2, updated_at = now()`,
+          [Number(pidKey), qv]);
+        stockApplied += qv;
+      }
+      await q(`UPDATE inbound_pallets SET received_at = now() WHERE id = ANY($1)`, [palIds]);
+      const first = s.status !== 'closed';
+      if (first) await q(`UPDATE inbound_shipments SET status='closed', closed_by=$1, closed_at=now() WHERE id=$2`, [uid, id]);
+      return { ok: true, first, po_lines_updated: updated, orders: perOrder,
+               pallets_received: palIds.length, stock_applied: stockApplied,
+               unmatched, unregistered };
     });
+    if (out && out.ok) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { close: true, first: out.first, po_lines_updated: out.po_lines_updated,
+                  pallets_received: out.pallets_received, stock_applied: out.stock_applied,
+                  unmatched: out.unmatched.length, unregistered: out.unregistered.length } });
+    }
+    return out;
   });
 
   // 패킹리스트 파일 추가 첨부(기존 선적) — 업로드 때 못 넣은 파일을 나중에 첨부

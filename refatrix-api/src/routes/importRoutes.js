@@ -94,6 +94,18 @@ export default async function importRoutes(app) {
            VALUES ($1,'in',$2,$3,$4,$5,$6,$7,$8)`,
           [cl.product_id, cl.qty, cl.unit_cost_mxn, invByProduct[cl.product_id] || refFallback, id, evNo, batch.import_date, userId]);
       }
+      // 창고 마감 선반영분 차감(0176, 2026-08-18) — 창고 마감이 이미 stock_qty 에 올린 수량은
+      //   여기서 다시 더하지 않는다(재고 이중 증가 방지). 원가/평균원가/원장은 그대로 기록.
+      const preOff = {};
+      for (const cl of computedLines) {
+        const pre = (await c.query(`SELECT qty FROM inbound_prestock WHERE product_id=$1 FOR UPDATE`, [cl.product_id])).rows[0];
+        const avail = pre ? Number(pre.qty) : 0;
+        const off = Math.min(avail, Math.abs(Number(cl.qty) || 0));
+        if (off > 0) {
+          preOff[Number(cl.product_id)] = (preOff[Number(cl.product_id)] || 0) + off;
+          await c.query(`UPDATE inbound_prestock SET qty = qty - $1, updated_at = now() WHERE product_id=$2`, [off, cl.product_id]);
+        }
+      }
       // 제품 재고·평균원가 갱신
       //   기본(단순가중평균 모드): 평균원가 = 현재 살아있는 배치들의 Σ(수량×입고단가)÷Σ수량.
       //   이동평균 모드(MOVING_AVG_COST=1): 기존 newState.avg_cost(이동평균) 사용.
@@ -103,9 +115,10 @@ export default async function importRoutes(app) {
       }
       for (const [pid, st] of Object.entries(newState)) {
         const avg = (flatAvg[Number(pid)] != null) ? flatAvg[Number(pid)] : st.avg_cost;
+        const stockFinal = Number(st.stock_qty) - (preOff[Number(pid)] || 0);   // 선반영분 제외
         await c.query(
           `UPDATE products SET stock_qty=$1, avg_cost=$2, updated_by=$3 WHERE id=$4`,
-          [st.stock_qty, avg, userId, pid]);
+          [stockFinal, avg, userId, pid]);
       }
       // 발주(backorder) 소진 — 입고(재고 등재)된 수량만큼 해당 SKU의 열린 구매라인
       //   received_qty 를 선입선출로 채움 → v_backorder 잔량이 실입고와 연동돼 줄어듦.
@@ -113,7 +126,10 @@ export default async function importRoutes(app) {
       const cqb = c.query.bind(c);
       let boConsumed = 0;
       for (const cl of computedLines) {
-        const bo = await consumeBackorder(cqb, Number(cl.product_id), Math.abs(Number(cl.qty) || 0));
+        // 선반영분(창고 마감)은 이미 그 발주의 received_qty 를 채웠으므로 그만큼 빼고 소진(0176)
+        const boQty = Math.max(0, Math.abs(Number(cl.qty) || 0) - (preOff[Number(cl.product_id)] || 0));
+        if (!boQty) continue;
+        const bo = await consumeBackorder(cqb, Number(cl.product_id), boQty);
         boConsumed += bo.consumed;
       }
       await c.query(

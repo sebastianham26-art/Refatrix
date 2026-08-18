@@ -19,7 +19,13 @@ function fixture() {
         { id: 101, code: 'CE0796', name: 'TERMINAL', cartons: 5, qty: 80, scanned_cartons: 5, put_cartons: 3, rack: 'A-01-01', zone: 1, zone_name: 'Zona 1', registered: true },
         { id: 102, code: 'CB0318', name: 'ROTULA',   cartons: 3, qty: 48, scanned_cartons: 3, put_cartons: 0, rack: 'B-02-01', zone: 2, zone_name: 'Zona 2', registered: true },
       ],
-    }],
+    },
+    { id: 21, pl_no: 14, order_no: '26B2C', status: 'checked', cartons_expected: 2, qty_expected: 32,
+      checked_at: '2026-08-17T21:00:00Z', received_at: null, working: false, scans: [],
+      items: [{ id: 201, code: 'CQ0271L-02', name: 'H', cartons: 2, qty: 32, scanned_cartons: 2, put_cartons: 0, rack: 'C-01-01', zone: 3, zone_name: 'Zona 3', registered: true }] },
+    { id: 22, pl_no: 15, order_no: '26B2C', status: 'wait', cartons_expected: 1, qty_expected: 16,
+      checked_at: null, received_at: null, working: false, scans: [],
+      items: [{ id: 202, code: 'CE0152', name: 'T2', cartons: 1, qty: 16, scanned_cartons: 0, put_cartons: 0, rack: null, zone: null, registered: true }] }],
     files: [],
   };
 }
@@ -57,7 +63,8 @@ async function boot() {
   w.eval(script.replace(/\}\)\(\);\s*$/,
     'window.__t={openShip:openShip,setStep:function(s){STEP=s;},renderPut:renderPut,'
     + 'setPutPal:function(i){putPal=i;},getPutAdd:function(){return putAdd;},getPutSaveRack:function(){return putSaveRack;},'
-    + 'putFlush:putFlush,getDetail:function(){return DETAIL;}};\n})();'));
+    + 'putFlush:putFlush,getDetail:function(){return DETAIL;},'
+    + 'putListScan:putListScan,palByScan:palByScan,putScan:putScan,getPutPal:function(){return putPal;},renderPutList:renderPutList,setTiming:function(d,g){DUP_MS=d;GRACE_MS=g;}};\n})();'));
   await sleep(40);
   return { w, t: w.__t, calls, doc: w.document, SHIP };
 }
@@ -114,6 +121,30 @@ const openEdit = (doc, id) => { if (!doc.getElementById('peRack') || !doc.queryS
   rk2.value = 'E-05-05';
   rk2.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await sleep(5);
   ok('Enter → 적용', t.getPutSaveRack()['101'] === 'E-05-05', t.getPutSaveRack());
+
+  console.log('\n⑥ 팔렛 바코드 스캔 → 드릴다운(2026-08-18)');
+  {
+    const b6 = await boot();
+    b6.t.setTiming(0, 0);
+    b6.t.openShip(1); await sleep(30);
+    b6.t.setStep('put'); b6.t.renderPut(); await sleep(10);
+    ok('팔렛 매칭: 26B2C-14', b6.t.palByScan('26B2C-14') && b6.t.palByScan('26B2C-14').id === 21);
+    ok("자판 따옴표 보정: 26B2C'14", b6.t.palByScan(String("26B2C'14").replace(/'/g,'-')) !== null);
+    ok('구분자 없이: 26B2C14', b6.t.palByScan('26B2C14') && b6.t.palByScan('26B2C14').id === 21);
+    ok('팔렛 번호 단독(유일): 15', b6.t.palByScan('15') && b6.t.palByScan('15').id === 22);
+    ok('없는 팔렛은 null', b6.t.palByScan('26B2C-99') === null);
+    // 목록에서 팔렛 라벨 스캔 → 그 팔렛 작업 화면으로
+    b6.t.putListScan('26B2C-14'); await sleep(10);
+    ok('팔렛 라벨 스캔 → 드릴다운', b6.t.getPutPal() === 21, b6.t.getPutPal());
+    ok('작업 화면 열림(SKU 목록)', /CQ0271L-02/.test(b6.doc.getElementById('putsku').textContent));
+    // 작업 화면에서 다른 팔렛 라벨 스캔 → 저장 후 전환
+    b6.t.putScan('26B2C-11'); await sleep(20);   // 팔렛 11? pl_no=4 → '26B2C4'
+    b6.t.putScan('26B2C-4'); await sleep(20);
+    ok('작업 중 팔렛 전환', b6.t.getPutPal() === 11, b6.t.getPutPal());
+    // 미검수 팔렛은 경고만
+    b6.t.putListScan('26B2C-15'); await sleep(10);
+    ok('검수 전 팔렛은 진입 차단(경고)', b6.t.getPutPal() === 11);
+  }
 
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

@@ -179,6 +179,7 @@ async function main() {
   const mClose = SRC.match(/`(SELECT pl\.order_no, pi\.product_id,[\s\S]*?GROUP BY pl\.order_no, pi\.product_id)`/);
   ok(!!mClose, '마감 집계 SQL 추출(실측 CASE 포함)', !!mClose);
   ok(/CASE WHEN pi\.cartons > 0/.test(mClose[1]) && /scanned_cartons/.test(mClose[1]), '집계가 scanned_cartons 실측 기준');
+  ok(/pl\.id = ANY\(\$1\)/.test(mClose[1]), '집계는 이번에 반영할 팔렛 목록 기준(received_at 연동)');
   // 픽스처: 검수된 팔렛 — 20ct×320(16/box) 중 18카톤 실측, 3ct×36(12/box) 초과 4카톤, 낱개 qty 10
   const prod = (await q(`INSERT INTO products (code, name) VALUES ('CE0796','TERMINAL') RETURNING id`)).rows[0].id;
   const sid3 = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('D26-3','receiving') RETURNING id`)).rows[0].id;
@@ -190,10 +191,58 @@ async function main() {
            VALUES ($1,$2,$3,'CE0796',20,320,18), ($1,$2,$3,'CE0796',3,36,4), ($1,$2,$3,'CE0796',0,10,0)`, [pal3, sid3, prod]);
   await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
            VALUES ($1,$2,$3,'CE0796',2,32,0)`, [palU, sid3, prod]);   // 미검수 팔렛 — 집계 제외
-  const agg = (await q(mClose[1], [sid3])).rows;
+  const conf3 = (await q(
+    `SELECT id FROM inbound_pallets
+      WHERE shipment_id=$1 AND received_at IS NULL
+        AND (checked_at IS NOT NULL OR status IN ('checked','done'))`, [sid3])).rows.map((r) => Number(r.id));
+  ok(conf3.length === 1 && conf3[0] === Number(pal3), '마감 대상 팔렛 선별(검수만)', conf3);
+  const agg = (await q(mClose[1], [conf3])).rows;
   ok(agg.length === 1, '검수된 팔렛만 집계(미검수 제외)', agg);
   // 18×16 + 4×12 + 10(낱개) = 288 + 48 + 10 = 346 (부족·초과·낱개 모두 실측대로)
   ok(Number(agg[0].qty) === 346, '실측 수량 346 (부족 288 + 초과 48 + 낱개 10)', agg[0]);
+
+  console.log('\n⑨ 마감 개편(0176) — 적치중 팔렛 포함·received_at·즉시 재고·승인 이중 방지');
+  ok(/checked_at IS NOT NULL OR status IN \('checked','done'\)/.test(SRC), '마감 대상 = checked_at 기준(적치중 포함)');
+  ok(/received_at IS NULL/.test(SRC) && /SET received_at = now\(\)/.test(SRC), 'received_at 마킹(재마감 이중 방지)');
+  ok(/inbound_prestock/.test(SRC), '선반영 풀 기록');
+  const SRC_IMP = fs2.readFileSync(new URL('../src/routes/importRoutes.js', import.meta.url), 'utf8');
+  ok(/inbound_prestock/.test(SRC_IMP) && /preOff/.test(SRC_IMP), '수입원가 승인이 선반영분을 차감');
+  // DB 의미: 적치중(checking+checked_at) 팔렛 포함, received_at 마킹, 재실행 시 제외, 재고/풀 증가
+  const prod9 = (await q(`INSERT INTO products (code, name, stock_qty) VALUES ('CE9990','T',100) RETURNING id`)).rows[0].id;
+  const sid9 = (await q(`INSERT INTO inbound_shipments (invoice_no, status) VALUES ('D26-9','receiving') RETURNING id`)).rows[0].id;
+  // 팔렛 A: 적치가 진행돼 status='checking' 이지만 checked_at 있음(예전 버그: 마감에서 제외되던 케이스)
+  const palA9 = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected, checked_at)
+                          VALUES ($1,'26B2C',1,'checking',2,32,now()) RETURNING id`, [sid9])).rows[0].id;
+  const palB9 = (await q(`INSERT INTO inbound_pallets (shipment_id, order_no, pl_no, status, cartons_expected, qty_expected)
+                          VALUES ($1,'26B2C',2,'unloaded',2,32) RETURNING id`, [sid9])).rows[0].id;
+  await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
+           VALUES ($1,$2,$3,'CE9990',2,32,2)`, [palA9, sid9, prod9]);
+  await q(`INSERT INTO inbound_pallet_items (pallet_id, shipment_id, product_id, input_code, cartons, qty, scanned_cartons)
+           VALUES ($1,$2,$3,'CE9990',2,32,0)`, [palB9, sid9, prod9]);
+  const confirmedSql = `SELECT id FROM inbound_pallets
+          WHERE shipment_id=$1 AND received_at IS NULL
+            AND (checked_at IS NOT NULL OR status IN ('checked','done'))`;
+  let sel9 = (await q(confirmedSql, [sid9])).rows;
+  ok(sel9.length === 1 && Number(sel9[0].id) === Number(palA9), '적치중(checking+checked_at) 팔렛이 마감 대상에 포함, 미검수는 제외', sel9);
+  // 마감 처리 재현: 실측 32EA → 재고 +32, 풀 +32, received_at 마킹
+  await q(`UPDATE products SET stock_qty = stock_qty + 32 WHERE id=$1`, [prod9]);
+  await q(`INSERT INTO inbound_prestock (product_id, qty) VALUES ($1,32)
+           ON CONFLICT (product_id) DO UPDATE SET qty = inbound_prestock.qty + 32`, [prod9]);
+  await q(`UPDATE inbound_pallets SET received_at=now() WHERE id=$1`, [palA9]);
+  sel9 = (await q(confirmedSql, [sid9])).rows;
+  ok(sel9.length === 0, '재마감 시 이미 반영된 팔렛은 제외(이중 반영 없음)');
+  let st9 = (await q(`SELECT stock_qty FROM products WHERE id=$1`, [prod9])).rows[0];
+  ok(Number(st9.stock_qty) === 132, '마감 즉시 실재고 +32 (100→132)', st9);
+  // 수입원가 승인 재현: 배치 라인 32EA → 선반영 32 차감 → 재고 그대로, 풀 0
+  const pre9 = (await q(`SELECT qty FROM inbound_prestock WHERE product_id=$1 FOR UPDATE`, [prod9])).rows[0];
+  const off9 = Math.min(Number(pre9.qty), 32);
+  await q(`UPDATE inbound_prestock SET qty = qty - $1 WHERE product_id=$2`, [off9, prod9]);
+  const newStock9 = 132 + 32 - off9;   // computeImportCosting 의 (기존+배치수량) − 선반영
+  await q(`UPDATE products SET stock_qty=$1 WHERE id=$2`, [newStock9, prod9]);
+  st9 = (await q(`SELECT stock_qty FROM products WHERE id=$1`, [prod9])).rows[0];
+  ok(Number(st9.stock_qty) === 132 && off9 === 32, '승인 시 선반영분 차감 — 재고 이중 증가 없음(132 유지)', { stock: st9.stock_qty, off: off9 });
+  const pool9 = (await q(`SELECT qty FROM inbound_prestock WHERE product_id=$1`, [prod9])).rows[0];
+  ok(Number(pool9.qty) === 0, '선반영 풀 소진', pool9);
 
   await q('ROLLBACK');
   console.log('\n' + (fail ? '❌' : '✅') + ` 결과: ${pass} passed, ${fail} failed`);
