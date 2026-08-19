@@ -5,6 +5,7 @@ import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
 import { visibleTeamIds } from '../teams.js';
 import { sweepDevRequestMatches } from '../devMatchSweep.js';
+import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -136,6 +137,12 @@ export default async function productRoutes(app) {
     } else if (['0', 'false', 'no', 'off', 'exclude'].includes(proRaw)) {
       where += " AND COALESCE(p.code,'') NOT ILIKE 'PRO%'";
     }
+    // 활성/비활성 필터(0179). 기본(파라미터 없음)은 종전과 동일하게 전부 노출 —
+    // 비활성은 "신규 사용 차단"일 뿐 목록에서 숨기지 않는다(과거 내역 확인 필요).
+    //   active=1 → 활성만 / active=0 → 비활성만
+    const activeRaw = String(req.query.active || '').trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on', 'active'].includes(activeRaw)) where += ' AND p.is_active';
+    else if (['0', 'false', 'no', 'off', 'inactive'].includes(activeRaw)) where += ' AND NOT p.is_active';
     // 전체 건수용 파라미터(검색 조건만) — 팀/limit/offset 추가 전에 스냅샷.
     const countParams = params.slice();
     // 누적 판매수량을 영업팀 가시성으로 제한 — 담당 외 고객 판매수량이 합산되지 않도록.
@@ -153,6 +160,7 @@ export default async function productRoutes(app) {
     const rows = (await query(
       `SELECT p.id, p.code, p.scode, p.app, p.ean, p.name, p.list_price, p.discount, p.iva_rate,
               p.stock_qty, p.avg_cost, p.rack_location, p.material,
+              p.is_active, p.inactive_reason,
               COALESCE(bo.backorder_qty, 0) AS backorder_qty,
               COALESCE(inc.incoming_qty, 0) AS incoming_qty,
               inc.incoming_eta::text AS incoming_eta,
@@ -225,7 +233,9 @@ export default async function productRoutes(app) {
     const { perm } = req.ctx;
     const id = Number(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_product' });
-    const prod = (await query(`SELECT id, code, name, stock_qty, avg_cost FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const prod = (await query(`SELECT id, code, name, stock_qty, avg_cost, is_active, inactive_reason,
+                                      status_changed_at
+                                 FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!prod) return reply.code(404).send({ error: 'not_found' });
 
     // ① 판매 고객별 수량 + (권한 시) 매출·매출원가(게시된 인보이스 기준)
@@ -250,8 +260,15 @@ export default async function productRoutes(app) {
     const totalSold = sales.reduce((s, r) => s + r.qty, 0);
 
     const out = {
-      product: { id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty || 0) },
+      product: {
+        id: Number(prod.id), code: prod.code, name: prod.name, stock_qty: Number(prod.stock_qty || 0),
+        // 0179 — 활성/비활성. 비활성이어도 아래 판매·원가 내역은 그대로 내려간다(과거 P&L 보존).
+        is_active: prod.is_active !== false,
+        inactive_reason: prod.inactive_reason || null,
+        status_changed_at: prod.status_changed_at || null,
+      },
       sales, total_sold: totalSold, customer_count: sales.length,
+      can_manage_status: perm.role === 'director',
     };
 
     // ②-매출총이익 — unit_cost 권한 있을 때만(원가가 노출되므로). 매출원가는 판매 시점 스냅샷(applied_unit_cost) 기준.
@@ -1069,5 +1086,255 @@ export default async function productRoutes(app) {
       list_price_syd: row.list_price_syd != null ? Number(row.list_price_syd) : null,
     };
   });
+
+  // ===================================================================
+  // 0179 · 제품 활성/비활성 (디렉터 전용)
+  //
+  //   비활성 = 신규 사용 차단(견적 라인 추가·오퍼시트 생성). 과거 기록은 불변 —
+  //   매출·매출총이익·원가 내역은 비활성 이후에도 그대로 조회된다.
+  //   전환 자체는 막지 않고, 걸려 있는 항목을 업체별로 정리해 보여준 뒤 진행한다.
+  // ===================================================================
+
+  // 이 SKU 가 지금 걸려 있는 미결 항목(업체별) — 전환 전 확인용.
+  app.get('/api/products/:id/pipeline', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_product' });
+    const res = await productOpenItems(id);
+    if (!res) return reply.code(404).send({ error: 'not_found' });
+    return res;
+  });
+
+  // 활성/비활성 전환. body: { active: boolean, reason?: string, check_id?: number }
+  //   미결 항목이 있어도 막지 않는다(경고 후 진행) — 전환 시점의 요약을 이력에 남긴다.
+  app.patch('/api/products/:id/active', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_product' });
+    const active = req.body?.active === true || String(req.body?.active) === 'true';
+    const reason = String(req.body?.reason || '').trim() || null;
+    const checkId = Number(req.body?.check_id) || null;
+
+    const cur = (await query(
+      `SELECT id, code, is_active FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!cur) return reply.code(404).send({ error: 'not_found' });
+    if ((cur.is_active !== false) === active) {
+      return { ok: true, unchanged: true, id, is_active: active };
+    }
+    const snap = await productOpenItems(id);
+    await withTx(async (client) => {
+      const exec = (t, p) => client.query(t, p);
+      await exec(
+        `UPDATE products
+            SET is_active=$2, inactive_reason=$3, status_changed_at=now(), status_changed_by=$4,
+                updated_at=now(), updated_by=$4
+          WHERE id=$1`, [id, active, active ? null : reason, perm.userId]);
+      await exec(
+        `INSERT INTO product_status_log (product_id, code, action, reason, check_id, open_summary, changed_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [id, cur.code, active ? 'activate' : 'deactivate', reason, checkId,
+          snap ? JSON.stringify({ open_total: snap.open_total, summary: snap.summary }) : null, perm.userId]);
+      if (checkId) {
+        await exec(
+          `UPDATE product_status_check_items SET applied_at=now(), applied_by=$3
+            WHERE check_id=$1 AND product_id=$2`, [checkId, id, perm.userId]);
+      }
+      await logProductChange(exec, {
+        productId: id, code: cur.code, action: 'update', source: 'status',
+        changes: { is_active: { from: cur.is_active !== false, to: active }, reason }, userId: perm.userId,
+      });
+    });
+    // audit_log.action 의 CHECK 목록에 'deactivate' 가 없어 'update' 로 기록한다.
+    await logEvent({
+      userId: perm.userId, action: 'update', target: 'product_active',
+      detail: { id, code: cur.code, to: active ? 'active' : 'inactive', reason, open_total: snap ? snap.open_total : null },
+    });
+    return { ok: true, id, is_active: active, open_total: snap ? snap.open_total : 0 };
+  });
+
+  // 여러 SKU 일괄 점검 → 배치로 저장(이력에서 재열람).
+  // body: { ids:[productId...], title?, note?, mode? }  mode 미지정 시 현재 상태로 자동 판정
+  //   (활성 SKU → 비활성 검토 / 비활성 SKU → 활성화(판매재개) 검토)
+  app.post('/api/products/status-check', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+      .map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))];
+    if (!ids.length) return reply.code(400).send({ error: 'no_products' });
+    if (ids.length > 300) return reply.code(400).send({ error: 'too_many', max: 300 });
+
+    const results = [];
+    for (const pid of ids) {
+      const r = await productOpenItems(pid);
+      if (!r) continue;
+      results.push(r);
+    }
+    if (!results.length) return reply.code(404).send({ error: 'not_found' });
+
+    const anyActive = results.some((r) => r.product.is_active);
+    const anyInactive = results.some((r) => !r.product.is_active);
+    const mode = ['deactivate', 'activate', 'mixed'].includes(req.body?.mode)
+      ? req.body.mode
+      : (anyActive && anyInactive ? 'mixed' : (anyActive ? 'deactivate' : 'activate'));
+    const openCount = results.filter((r) => r.open_total > 0).length;
+    const title = String(req.body?.title || '').trim()
+      || `${results.length}개 SKU 점검 (${mode === 'activate' ? '판매재개' : mode === 'deactivate' ? '판매중단' : '혼합'})`;
+    const note = String(req.body?.note || '').trim() || null;
+
+    let checkId = null;
+    await withTx(async (client) => {
+      checkId = Number((await client.query(
+        `INSERT INTO product_status_checks (title, mode, sku_count, open_count, note, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [title, mode, results.length, openCount, note, perm.userId])).rows[0].id);
+      for (const r of results) {
+        await client.query(
+          `INSERT INTO product_status_check_items
+             (check_id, product_id, code, name, was_active, target_active, open_total, summary, detail)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [checkId, r.product.id, r.product.code, r.product.name, r.product.is_active,
+            !r.product.is_active, r.open_total,
+            JSON.stringify(r.summary), JSON.stringify({ parties: r.parties })]);
+      }
+    });
+    await logEvent({
+      userId: perm.userId, action: 'read', target: 'product_status_check',
+      detail: { check_id: checkId, skus: results.length, open: openCount, mode },
+    });
+    return { ok: true, check: { id: checkId, title, mode, sku_count: results.length, open_count: openCount, note },
+      items: results.map((r) => ({
+        product: r.product, open_total: r.open_total, summary: r.summary,
+        parties: r.parties, target_active: !r.product.is_active,
+      })),
+      buckets: STATUS_BUCKETS };
+  });
+
+  // 점검 이력 목록
+  app.get('/api/products/status-checks', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const rows = (await query(
+      `SELECT c.id, c.title, c.mode, c.sku_count, c.open_count, c.note, c.created_at,
+              u.name AS created_by_name,
+              (SELECT COUNT(*)::int FROM product_status_check_items i
+                WHERE i.check_id=c.id AND i.applied_at IS NOT NULL) AS applied_count,
+              (SELECT COUNT(*)::int FROM product_status_check_notes nt
+                WHERE nt.check_id=c.id AND nt.state='done') AS done_notes
+         FROM product_status_checks c
+         LEFT JOIN users u ON u.id = c.created_by
+        WHERE c.deleted_at IS NULL
+        ORDER BY c.created_at DESC
+        LIMIT $1`, [limit])).rows;
+    return { items: rows.map((r) => ({ ...r, id: Number(r.id) })) };
+  });
+
+  // 점검 배치 상세(저장 당시 스냅샷 + 업체별 메모)
+  app.get('/api/products/status-checks/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_check' });
+    const chk = (await query(
+      `SELECT c.*, u.name AS created_by_name FROM product_status_checks c
+         LEFT JOIN users u ON u.id=c.created_by
+        WHERE c.id=$1 AND c.deleted_at IS NULL`, [id])).rows[0];
+    if (!chk) return reply.code(404).send({ error: 'not_found' });
+    const items = (await query(
+      `SELECT i.*, p.is_active AS current_active
+         FROM product_status_check_items i
+         JOIN products p ON p.id = i.product_id
+        WHERE i.check_id=$1
+        ORDER BY i.open_total DESC, i.code`, [id])).rows;
+    const notes = (await query(
+      `SELECT n.*, u.name AS updated_by_name FROM product_status_check_notes n
+         LEFT JOIN users u ON u.id=n.updated_by
+        WHERE n.check_id=$1`, [id])).rows;
+    return {
+      check: { ...chk, id: Number(chk.id) },
+      items: items.map((i) => ({
+        id: Number(i.id), product_id: Number(i.product_id), code: i.code, name: i.name,
+        was_active: i.was_active, target_active: i.target_active, current_active: i.current_active,
+        open_total: Number(i.open_total || 0), summary: i.summary,
+        parties: (i.detail && i.detail.parties) || [],
+        applied_at: i.applied_at,
+      })),
+      notes: notes.map((nt) => ({
+        product_id: Number(nt.product_id), party: nt.party, state: nt.state, memo: nt.memo,
+        updated_at: nt.updated_at, updated_by_name: nt.updated_by_name,
+      })),
+      buckets: STATUS_BUCKETS,
+    };
+  });
+
+  // 업체별 처리결과 메모 저장(업서트). body: { product_id, party, state, memo }
+  app.post('/api/products/status-checks/:id/note', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const checkId = Number(req.params.id);
+    const productId = Number(req.body?.product_id);
+    if (!checkId || !productId) return reply.code(400).send({ error: 'bad_request' });
+    const party = String(req.body?.party ?? '').trim();
+    const state = ['todo', 'doing', 'done'].includes(req.body?.state) ? req.body.state : 'todo';
+    const memo = String(req.body?.memo || '').trim() || null;
+    const exists = (await query(
+      `SELECT 1 FROM product_status_check_items WHERE check_id=$1 AND product_id=$2`, [checkId, productId])).rows[0];
+    if (!exists) return reply.code(404).send({ error: 'not_in_check' });
+    await query(
+      `INSERT INTO product_status_check_notes (check_id, product_id, party, state, memo, updated_by, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,now())
+       ON CONFLICT (check_id, product_id, party)
+       DO UPDATE SET state=EXCLUDED.state, memo=EXCLUDED.memo,
+                     updated_by=EXCLUDED.updated_by, updated_at=now()`,
+      [checkId, productId, party, state, memo, perm.userId]);
+    return { ok: true };
+  });
+
+  // 점검 배치에서 선택한 SKU 를 실제로 전환. body: { product_ids?: [], reason? }
+  //   product_ids 미지정 시 배치의 전 SKU 를 target_active 대로 전환.
+  app.post('/api/products/status-checks/:id/apply', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const checkId = Number(req.params.id);
+    if (!checkId) return reply.code(400).send({ error: 'bad_check' });
+    const only = Array.isArray(req.body?.product_ids)
+      ? new Set(req.body.product_ids.map((x) => Number(x))) : null;
+    const reason = String(req.body?.reason || '').trim() || null;
+    const items = (await query(
+      `SELECT i.product_id, i.code, i.target_active, p.is_active
+         FROM product_status_check_items i
+         JOIN products p ON p.id=i.product_id AND p.deleted_at IS NULL
+        WHERE i.check_id=$1`, [checkId])).rows
+      .filter((r) => !only || only.has(Number(r.product_id)));
+    if (!items.length) return reply.code(400).send({ error: 'no_targets' });
+
+    let changed = 0;
+    await withTx(async (client) => {
+      for (const r of items) {
+        const target = r.target_active === true;
+        if ((r.is_active !== false) === target) continue;
+        await client.query(
+          `UPDATE products SET is_active=$2, inactive_reason=$3, status_changed_at=now(),
+                               status_changed_by=$4, updated_at=now(), updated_by=$4
+            WHERE id=$1`, [r.product_id, target, target ? null : reason, perm.userId]);
+        await client.query(
+          `INSERT INTO product_status_log (product_id, code, action, reason, check_id, changed_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [r.product_id, r.code, target ? 'activate' : 'deactivate', reason, checkId, perm.userId]);
+        await client.query(
+          `UPDATE product_status_check_items SET applied_at=now(), applied_by=$3
+            WHERE check_id=$1 AND product_id=$2`, [checkId, r.product_id, perm.userId]);
+        changed += 1;
+      }
+    });
+    await logEvent({
+      userId: perm.userId, action: 'update', target: 'product_status_check_apply',
+      detail: { check_id: checkId, targets: items.length, changed, reason },
+    });
+    return { ok: true, changed, targets: items.length };
+  });
+
+  // 점검 이력 삭제(소프트)
+  app.delete('/api/products/status-checks/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const id = Number(req.params.id);
+    if (!id) return reply.code(400).send({ error: 'bad_check' });
+    await query(`UPDATE product_status_checks SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, [id]);
+    await logEvent({ userId: perm.userId, action: 'delete', target: 'product_status_check', detail: { id } });
+    return { ok: true };
+  });
+
 }
 
