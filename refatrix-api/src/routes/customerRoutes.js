@@ -6,6 +6,10 @@ import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
+import { assembleVisitHistory } from '../customerVisits.js';
+
+const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
+const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
@@ -488,6 +492,72 @@ export default async function customerRoutes(app) {
       reason: r.reason, conditions: r.conditions, changed_at: r.changed_at,
       changed_by_name: r.changed_by_name, approved_by_name: r.approved_by_name,
     })) };
+  });
+
+  // 상담·방문 이력 — 현장방문 + 수기 미팅 통합, 최신순.
+  //   열람 범위(디렉터 확정 2026-08-19): **디렉터는 전체 · 그 외는 본인이 기록한 것만**.
+  //   영업활동(pipeline) 화면의 ownerCond 와 동일한 규칙 — 고객 화면을 통해 남의 상담
+  //   내용이 새어나가지 않게 한다. 팀 가시성(canViewTeam)은 그 위에 추가로 건다.
+  //   방문 목적 컬럼이 없으므로 카테고리는 visitTags 가 텍스트에서 자동 추출한다.
+  app.get('/api/customers/:id/visits', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const c = (await query(`SELECT team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+
+    const isDir = perm.role === 'director';
+    const ownerId = isDir ? null : Number(perm.userId);
+
+    const vParams = [id, VISIT_TZ, VISIT_HIST_LIMIT];
+    let vOwner = '';
+    if (!isDir) { vParams.push(ownerId); vOwner = ` AND v.created_by = $${vParams.length}`; }
+    const visits = (await query(
+      `SELECT v.id,
+              to_char(v.visit_date,'YYYY-MM-DD') AS visit_date,
+              to_char(v.visited_at AT TIME ZONE $2,'HH24:MI') AS visit_time,
+              v.met_person, v.talk_note, v.insight_note, u.name AS by_name
+         FROM sales_visits v
+         LEFT JOIN users u ON u.id = v.created_by
+        WHERE v.customer_id = $1 AND v.deleted_at IS NULL${vOwner}
+        ORDER BY v.visit_date DESC, v.visited_at DESC, v.id DESC
+        LIMIT $3`, vParams)).rows;
+
+    const vids = visits.map((v) => Number(v.id));
+    let pendings = []; let recordings = [];
+    if (vids.length) {
+      pendings = (await query(
+        `SELECT id, visit_id, content, due_date, done FROM sales_visit_pendings
+          WHERE visit_id = ANY($1) ORDER BY done ASC, (due_date IS NULL) ASC, due_date ASC, id ASC`,
+        [vids])).rows;
+      try {
+        recordings = (await query(
+          `SELECT id, visit_id, status, summary_json FROM sales_visit_recordings
+            WHERE visit_id = ANY($1) ORDER BY id ASC`, [vids])).rows;
+      } catch (_) { recordings = []; }   // 0165 이전 DB 호환
+    }
+
+    // 수기 미팅(자동 생성된 '[현장방문]' 미팅은 방문 줄과 중복되므로 제외)
+    const mParams = [id, VISIT_HIST_LIMIT];
+    let mOwner = '';
+    if (!isDir) { mParams.push(ownerId); mOwner = ` AND m.created_by = $${mParams.length}`; }
+    const meetings = (await query(
+      `SELECT m.id, to_char(m.meeting_date,'YYYY-MM-DD') AS meeting_date, m.note,
+              u.name AS by_name, sb.name AS stage_before_name, sa.name AS stage_after_name
+         FROM customer_meetings m
+         LEFT JOIN users  u  ON u.id  = m.created_by
+         LEFT JOIN stages sb ON sb.id = m.stage_before
+         LEFT JOIN stages sa ON sa.id = m.stage_after
+        WHERE m.customer_id = $1 AND COALESCE(m.note,'') NOT LIKE '[현장방문]%'${mOwner}
+        ORDER BY m.meeting_date DESC, m.id DESC
+        LIMIT $2`, mParams)).rows;
+
+    // 상한에 걸렸으면 총계·최초방문일이 '담긴 범위' 기준임을 화면에 알린다.
+    const truncated = visits.length >= VISIT_HIST_LIMIT || meetings.length >= VISIT_HIST_LIMIT;
+    const mxToday = mxTodayStr(new Date());
+    return { mx_today: mxToday, limit: VISIT_HIST_LIMIT, scope: isDir ? 'all' : 'own',
+      ...assembleVisitHistory({ visits, meetings, pendings, recordings, mxToday, truncated }) };
   });
 
   // 고객 등록: 코드 서버 자동생성(고정), 팀 지정 필수.
