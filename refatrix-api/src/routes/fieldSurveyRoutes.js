@@ -500,4 +500,266 @@ export default async function fieldSurveyRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `field_survey:${survey.id}`, detail: { quoted: qid } });
     return { ok: true };
   });
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  소진분석 (2026-08-19 추가) — 「전체 구매한 것 − 남아 있는 것 = 팔린 것」
+  //   · 누적구매(A) = 이 고객에게 게시·미삭제 인보이스로 나간 전체 누적 수량 (기간 제한 없음)
+  //   · 현장잔량(B) = 기준 조사에서 계수된 관측수량 (제품 매칭 줄만, product_id 기준 합산)
+  //   · 소진량      = A − B  = 고객 창고에서 빠져나가 팔린 수량 → 재구매 오퍼 대상
+  //   · 기준 조사   = 고객별 최신 조사 자동(취소·삭제 제외). survey_id 지정 시 그 조사.
+  //   · 조사에 없는 구매 SKU 는 잔량 0(전량 소진)으로 잡되 counted=false 로 구분 표시.
+  // ═══════════════════════════════════════════════════════════════════
+
+  // 조사 접근 범위 SQL 조각(디렉터=전체 / 그 외=본인 생성분)
+  function scopeCond(perm, params, alias = 's') {
+    if (perm.role === 'director') return '';
+    params.push(perm.userId);
+    return ` AND ${alias}.created_by = $${params.length}`;
+  }
+
+  // 이 고객을 볼 수 있나(팀 가시성) — 조사 소유권과 별개로 고객 매출을 여는 방어선
+  async function assertCustomerVisible(perm, customerId) {
+    if (!customerId) return true;
+    const vis = visibleTeamIds(perm);
+    if (vis === null) return true;                       // 디렉터·영업지원
+    const c = (await query(`SELECT team_id FROM customers WHERE id = $1 AND deleted_at IS NULL`, [Number(customerId)])).rows[0];
+    if (!c) return false;
+    return c.team_id != null && vis.map(Number).includes(Number(c.team_id));
+  }
+
+  // 소진 상태 판정(순수 로직) — customerSold.sellThrough 와 같은 정의를 쓰되
+  // 「구매이력 없음(창고엔 있는데 우리한테 산 적 없음)」 상태를 하나 더 둔다.
+  function consumeStatus(purchased, onhand, counted) {
+    const a = Number(purchased) || 0;
+    const b = Number(onhand) || 0;
+    if (a <= 0) return b > 0 ? 'no_purchase' : 'kept';
+    if (b > a) return 'anomaly';                          // 타 경로 구매 또는 계수 오차
+    if (b === a) return 'kept';
+    return b === 0 ? (counted ? 'gone' : 'gone_uncounted') : 'partial';
+  }
+
+  // ── 조사 이력 목록(날짜·고객·담당·계수 요약) ──
+  //   ?from=YYYY-MM-DD &to= &customer_id= &q= &limit=
+  app.get('/api/field-surveys/history', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const params = []; const conds = ['s.deleted_at IS NULL'];
+    conds.push(scopeCond(perm, params).replace(/^ AND /, '') || '1=1');
+    if (req.query.customer_id) { params.push(Number(req.query.customer_id)); conds.push(`s.customer_id = $${params.length}`); }
+    if (req.query.from) { params.push(String(req.query.from)); conds.push(`s.survey_date >= $${params.length}::date`); }
+    if (req.query.to)   { params.push(String(req.query.to));   conds.push(`s.survey_date <= $${params.length}::date`); }
+    const q = String(req.query.q || '').trim();
+    if (q) { params.push(`%${q}%`); conds.push(`(s.customer_name ILIKE $${params.length} OR u.name ILIKE $${params.length})`); }
+    const lim = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+    params.push(lim);
+
+    const rows = (await query(
+      `SELECT s.id, s.customer_id, s.customer_name, s.survey_date, s.status, s.completed_at,
+              s.quote_id, s.geo_lat, s.geo_lng, s.created_at,
+              u.name AS creator_name, qq.quote_no,
+              (SELECT COUNT(*) FROM field_survey_lines l WHERE l.survey_id = s.id) AS line_count,
+              (SELECT COUNT(DISTINCT l.product_id) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.product_id IS NOT NULL) AS sku_count,
+              (SELECT COALESCE(SUM(l.observed_qty),0) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.product_id IS NOT NULL) AS obs_qty,
+              (SELECT COUNT(*) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.classification = 'imm' AND COALESCE(l.origin,'code') <> 'history') AS n_imm,
+              (SELECT COUNT(*) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.classification = 'short' AND COALESCE(l.origin,'code') <> 'history') AS n_short,
+              (SELECT COUNT(*) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.classification = 'dev' AND COALESCE(l.origin,'code') <> 'history') AS n_dev
+         FROM field_surveys s
+         LEFT JOIN users  u  ON u.id  = s.created_by
+         LEFT JOIN quotes qq ON qq.id = s.quote_id
+        WHERE ${conds.join(' AND ')}
+        ORDER BY s.survey_date DESC, s.id DESC
+        LIMIT $${params.length}`, params)).rows;
+
+    return { items: rows.map((r) => ({
+      id: Number(r.id),
+      customer_id: r.customer_id != null ? Number(r.customer_id) : null,
+      customer_name: r.customer_name, survey_date: d10(r.survey_date), status: r.status,
+      completed_at: r.completed_at, creator_name: r.creator_name || '',
+      quote_id: r.quote_id != null ? Number(r.quote_id) : null, quote_no: r.quote_no || null,
+      has_geo: r.geo_lat != null && r.geo_lng != null,
+      geo_lat: r.geo_lat != null ? Number(r.geo_lat) : null,
+      geo_lng: r.geo_lng != null ? Number(r.geo_lng) : null,
+      line_count: Number(r.line_count) || 0,
+      sku_count: Number(r.sku_count) || 0,
+      obs_qty: Number(r.obs_qty) || 0,
+      counts: { imm: Number(r.n_imm) || 0, short: Number(r.n_short) || 0, dev: Number(r.n_dev) || 0 },
+    })) };
+  });
+
+  // ── 소진분석: 누적구매 − 현장잔량 ──
+  //   ?customer_id= (필수, survey_id 로 대체 가능) &survey_id= (선택 — 기준 조사 고정)
+  app.get('/api/field-surveys/consumption', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    let survey = null;
+
+    if (req.query.survey_id) {
+      const r = await loadSurvey(req.query.survey_id, perm);
+      if (r.err) return reply.code(r.err === 'forbidden' ? 403 : 404).send({ error: r.err });
+      survey = r.survey;
+    } else {
+      const cid = Number(req.query.customer_id);
+      if (!cid) return reply.code(400).send({ error: 'customer_required' });
+      const params = [cid];
+      const scope = scopeCond(perm, params);
+      // 고객별 최신 조사 자동 — 취소 제외, 완료/견적전환분 우선, 없으면 진행중이라도 사용
+      survey = (await query(
+        `SELECT * FROM field_surveys s
+          WHERE s.deleted_at IS NULL AND s.customer_id = $1 AND s.status <> 'cancelled'${scope}
+          ORDER BY (CASE WHEN s.status IN ('completed','quoted') THEN 0 ELSE 1 END),
+                   s.survey_date DESC, s.id DESC
+          LIMIT 1`, params)).rows[0] || null;
+      if (!survey) return reply.code(404).send({ error: 'no_survey' });
+    }
+
+    if (!survey.customer_id) {
+      return reply.code(400).send({ error: 'guest_customer', message: '미등록 고객 조사는 누적 구매이력이 없어 소진분석을 할 수 없습니다.' });
+    }
+    if (!(await assertCustomerVisible(perm, survey.customer_id))) {
+      return reply.code(403).send({ error: 'forbidden' });
+    }
+
+    const cust = (await query(
+      `SELECT id, code, name, discount FROM customers WHERE id = $1`, [survey.customer_id])).rows[0] || {};
+    const creator = (await query(`SELECT name FROM users WHERE id = $1`, [survey.created_by])).rows[0];
+
+    // 누적구매(A) FULL OUTER JOIN 현장잔량(B) — 어느 한쪽에만 있는 SKU 도 빠짐없이 잡는다.
+    const rows = (await query(
+      `WITH purch AS (
+         SELECT sil.product_id,
+                SUM(sil.qty)                 AS purchased_qty,
+                MIN(si.inv_date)             AS first_purchase_at,
+                MAX(si.inv_date)             AS last_purchase_at,
+                COUNT(DISTINCT si.inv_date)  AS order_days
+           FROM sales_invoice_lines sil
+           JOIN sales_invoices si ON si.id = sil.invoice_id
+          WHERE si.customer_id = $1 AND si.status = 'posted' AND si.deleted_at IS NULL
+          GROUP BY sil.product_id
+       ), onhand AS (
+         SELECT l.product_id,
+                SUM(l.observed_qty) AS onhand_qty,
+                MAX(l.updated_at)   AS counted_at
+           FROM field_survey_lines l
+          WHERE l.survey_id = $2 AND l.product_id IS NOT NULL
+          GROUP BY l.product_id
+       )
+       SELECT p.id AS product_id, p.code AS ctr_code, p.scode, p.name, p.app,
+              p.stock_qty, p.list_price, COALESCE(p.is_active, TRUE) AS is_active,
+              COALESCE(pu.purchased_qty, 0) AS purchased_qty,
+              pu.first_purchase_at, pu.last_purchase_at, COALESCE(pu.order_days,0) AS order_days,
+              oh.onhand_qty, oh.counted_at,
+              (oh.product_id IS NOT NULL) AS counted,
+              COALESCE((SELECT SUM(ql.reserved_qty)
+                          FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+                         WHERE ql.product_id = p.id
+                           AND q.status IN ('draft','confirmed')
+                           AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
+                           AND q.deleted_at IS NULL), 0) AS reserved
+         FROM purch pu
+         FULL OUTER JOIN onhand oh ON oh.product_id = pu.product_id
+         JOIN products p ON p.id = COALESCE(pu.product_id, oh.product_id) AND p.deleted_at IS NULL`,
+      [survey.customer_id, survey.id])).rows;
+
+    const disc = Number(cust.discount) || 0;
+    const items = rows.map((r) => {
+      const purchased = Number(r.purchased_qty) || 0;
+      const counted = !!r.counted;
+      const onhand = counted ? (Number(r.onhand_qty) || 0) : 0;
+      const status = consumeStatus(purchased, onhand, counted);
+      const consumed = Math.max(0, purchased - onhand);
+      const pct = purchased > 0 ? Math.round((consumed / purchased) * 1000) / 10 : null;
+      const phys = Number(r.stock_qty) || 0;
+      const avail = Math.max(0, phys - (Number(r.reserved) || 0));
+      const list = Number(r.list_price) || 0;
+      return {
+        product_id: Number(r.product_id), ctr_code: r.ctr_code, scode: r.scode || null,
+        name: r.name || null, app: r.app || null, is_active: !!r.is_active,
+        purchased_qty: purchased,
+        first_purchase_at: d10(r.first_purchase_at), last_purchase_at: d10(r.last_purchase_at),
+        order_days: Number(r.order_days) || 0,
+        counted, onhand_qty: onhand, counted_at: r.counted_at || null,
+        consumed_qty: consumed, consumed_pct: pct, status,
+        stock_qty: phys, avail_stock: avail,
+        list_price: list,
+        // 참고 오퍼 금액(ex-IVA) = 소진수량 × 정가 × (1 − 고객 할인율). 실제 금액은 견적 생성 시 재계산.
+        offer_amount: Math.round(consumed * list * (1 - disc / 100) * 100) / 100,
+      };
+    });
+
+    // 정렬: 소진수량 ▼ → 소진율 ▼ → CTR
+    items.sort((a, b) => (b.consumed_qty - a.consumed_qty)
+      || ((b.consumed_pct == null ? -1 : b.consumed_pct) - (a.consumed_pct == null ? -1 : a.consumed_pct))
+      || String(a.ctr_code || '').localeCompare(String(b.ctr_code || '')));
+
+    // 경쟁사(미매칭) 코드 — 구매이력이 없으니 소진 계산 대상 아님. 대체 기회로 따로 보여준다.
+    const unmatched = (await query(
+      `SELECT id, input_code, observed_qty, dev_request_id, note
+         FROM field_survey_lines
+        WHERE survey_id = $1 AND product_id IS NULL
+        ORDER BY input_code`, [survey.id])).rows.map((r) => ({
+      line_id: Number(r.id), input_code: r.input_code,
+      observed_qty: num(r.observed_qty),
+      dev_request_id: r.dev_request_id != null ? Number(r.dev_request_id) : null,
+      note: r.note || null,
+    }));
+
+    const purchasedRows = items.filter((i) => i.purchased_qty > 0);
+    const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+    const purchased_qty = sum(purchasedRows, 'purchased_qty');
+    const onhand_qty = sum(items, 'onhand_qty');
+    const consumed_qty = sum(purchasedRows, 'consumed_qty');
+
+    const totals = {
+      purchased_sku: purchasedRows.length,
+      purchased_qty,
+      onhand_sku: items.filter((i) => i.onhand_qty > 0).length,
+      onhand_qty,
+      consumed_sku: purchasedRows.filter((i) => i.consumed_qty > 0).length,
+      consumed_qty,
+      // 소진율 = 소진수량 ÷ 누적구매수량
+      consumed_pct: purchased_qty > 0 ? Math.round((consumed_qty / purchased_qty) * 1000) / 10 : null,
+      counted_sku: purchasedRows.filter((i) => i.counted).length,
+      uncounted_sku: purchasedRows.filter((i) => !i.counted).length,
+      gone: items.filter((i) => i.status === 'gone').length,
+      gone_uncounted: items.filter((i) => i.status === 'gone_uncounted').length,
+      partial: items.filter((i) => i.status === 'partial').length,
+      kept: items.filter((i) => i.status === 'kept' && i.purchased_qty > 0).length,
+      anomaly: items.filter((i) => i.status === 'anomaly').length,
+      no_purchase: items.filter((i) => i.status === 'no_purchase').length,
+      unmatched: unmatched.length,
+      unmatched_qty: unmatched.reduce((s, u) => s + (Number(u.observed_qty) || 0), 0),
+      offer_amount: Math.round(sum(purchasedRows, 'offer_amount') * 100) / 100,
+      inactive_sku: purchasedRows.filter((i) => i.consumed_qty > 0 && !i.is_active).length,
+    };
+
+    // 이 고객의 조사 이력(화면 상단 표 — 기준 조사 전환용)
+    const hp = [survey.customer_id];
+    const hscope = scopeCond(perm, hp);
+    const hist = (await query(
+      `SELECT s.id, s.survey_date, s.status, s.completed_at, u.name AS creator_name,
+              (SELECT COUNT(DISTINCT l.product_id) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.product_id IS NOT NULL) AS sku_count,
+              (SELECT COALESCE(SUM(l.observed_qty),0) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.product_id IS NOT NULL) AS obs_qty,
+              (SELECT COUNT(*) FROM field_survey_lines l
+                WHERE l.survey_id = s.id AND l.product_id IS NULL) AS unmatched_cnt
+         FROM field_surveys s LEFT JOIN users u ON u.id = s.created_by
+        WHERE s.deleted_at IS NULL AND s.customer_id = $1 AND s.status <> 'cancelled'${hscope}
+        ORDER BY s.survey_date DESC, s.id DESC LIMIT 60`, hp)).rows.map((r) => ({
+      id: Number(r.id), survey_date: d10(r.survey_date), status: r.status,
+      completed_at: r.completed_at, creator_name: r.creator_name || '',
+      sku_count: Number(r.sku_count) || 0, obs_qty: Number(r.obs_qty) || 0,
+      unmatched_cnt: Number(r.unmatched_cnt) || 0,
+    }));
+
+    return {
+      survey: surveyRow(survey, creator && creator.name),
+      customer: { id: Number(cust.id), code: cust.code || null, name: cust.name || survey.customer_name, discount: disc },
+      basis: '전체 누적 (게시·미삭제 인보이스 전량)',
+      items, unmatched, totals, surveys: hist,
+    };
+  });
 }
