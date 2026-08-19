@@ -61,12 +61,12 @@ export default async function quoteRoutes(app) {
     if (!c) return { matches: [], source: 'none' };
     // 1) CTR 정확매칭
     const ctr = (await query(
-      `SELECT id, code, name, app, list_price FROM products WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
+      `SELECT id, code, name, app, list_price, is_active FROM products WHERE deleted_at IS NULL AND code=$1`, [c])).rows;
     let rows = ctr, source = 'ctr';
     if (!rows.length) {
       // 2) SYD 역검색
       rows = (await query(
-        `SELECT p.id, p.code, p.name, p.app, p.list_price
+        `SELECT p.id, p.code, p.name, p.app, p.list_price, p.is_active
            FROM product_syd_codes s JOIN products p ON p.id=s.product_id AND p.deleted_at IS NULL
           WHERE s.syd_code=$1`, [c])).rows;
       source = rows.length ? 'syd' : 'none';
@@ -81,8 +81,32 @@ export default async function quoteRoutes(app) {
       matches: rows.map((r) => ({
         product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
         list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
+        // 0179 — 비활성(판매중단) SKU 는 화면에 표시는 하되 신규 라인 저장에서 막는다.
+        is_active: r.is_active !== false,
       })),
     };
+  }
+
+  // 0179 · 저장하려는 라인 중 「비활성 SKU」를 골라낸다(신규 사용 차단).
+  //   allowedIds = 이미 그 견적에 들어 있던 product_id 집합 —
+  //   비활성 전에 만들어진 기존 견적을 계속 수정·정리할 수 있어야 하므로 예외로 둔다.
+  async function inactiveTargets(inputLines, allowedIds = null) {
+    const hits = [];
+    for (const ln of (Array.isArray(inputLines) ? inputLines : [])) {
+      let pid = Number(ln.product_id) || null;
+      if (!pid) {
+        const res = await resolveCode(ln.code);
+        if (res.matches.length === 1) pid = res.matches[0].product_id;
+      }
+      if (!pid) continue;
+      if (allowedIds && allowedIds.has(Number(pid))) continue;
+      const p = (await query(
+        `SELECT id, code, name FROM products WHERE id=$1 AND deleted_at IS NULL AND NOT is_active`, [pid])).rows[0];
+      if (p && !hits.some((h) => h.product_id === Number(p.id))) {
+        hits.push({ product_id: Number(p.id), code: p.code, name: p.name });
+      }
+    }
+    return hits;
   }
 
   // 단건 코드 조회 (화면에서 SYD 다중매칭 후보 표시용)
@@ -105,7 +129,7 @@ export default async function quoteRoutes(app) {
     }
     // CTR(code/name) 일치 + SYD 일치를 합쳐 제품 id 수집
     const rows = (await query(
-      `SELECT DISTINCT p.id, p.code, p.name, p.app, p.list_price
+      `SELECT DISTINCT p.id, p.code, p.name, p.app, p.list_price, p.is_active
          FROM products p
          LEFT JOIN product_syd_codes s ON s.product_id = p.id
         WHERE p.deleted_at IS NULL
@@ -121,6 +145,7 @@ export default async function quoteRoutes(app) {
       items: rows.map((r) => ({
         product_id: r.id, ctr_code: r.code, name: r.name, app: r.app,
         list_price: Number(r.list_price) || 0, syd_codes: sydByPid[r.id] || [],
+        is_active: r.is_active !== false,   // 0179 — 자동완성에 「비활성」 배지 표시용
       })),
     };
   });
@@ -142,7 +167,7 @@ export default async function quoteRoutes(app) {
       let prod = null;
       if (ln.product_id) {
         const r = (await query(
-          `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty,
+          `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty, p.is_active,
                   COALESCE(inc.incoming_qty,0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta,
                   COALESCE(bo.backorder_qty,0) AS backorder_qty
              FROM products p
@@ -155,7 +180,7 @@ export default async function quoteRoutes(app) {
         if (res.matches.length === 1) {
           const m = res.matches[0];
           const r = (await query(
-            `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty,
+            `SELECT p.id, p.code, p.name, p.app, p.list_price, p.stock_qty, p.is_active,
                     COALESCE(inc.incoming_qty,0) AS incoming_qty, inc.incoming_eta::text AS incoming_eta,
                     COALESCE(bo.backorder_qty,0) AS backorder_qty
                FROM products p
@@ -181,6 +206,8 @@ export default async function quoteRoutes(app) {
         incoming_qty: Number(prod.incoming_qty) || 0,
         incoming_eta: prod.incoming_eta || null,
         backorder_qty: Number(prod.backorder_qty) || 0,
+        // 0179 — 비활성(판매중단) SKU: 미리보기에는 보이되 저장 시 차단된다.
+        is_active: prod.is_active !== false,
       });
     }
     const totals = computeQuoteTotals(out.filter((l) => l.matched).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
@@ -356,6 +383,9 @@ export default async function quoteRoutes(app) {
       discountRate = Number(cust.discount) || 0;
     }
     const ivaRate = 16;
+    // 0179 — 비활성(판매중단) SKU 는 새 견적에 담을 수 없다. 저장 전에 걸러 사유를 알려준다.
+    const blocked = await inactiveTargets(b.lines);
+    if (blocked.length) return reply.code(409).send({ error: 'inactive_product', items: blocked });
     const result = await withTx(async (c) => {
       const year = (b.quote_date ? String(b.quote_date).slice(0, 4) : String(new Date().getFullYear()));
       const quoteNo = await nextQuoteNo(c, year);
@@ -399,6 +429,13 @@ export default async function quoteRoutes(app) {
     const cust = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0];
     const discountRate = cust ? Number(cust.discount) || 0 : 0;
     const ivaRate = 16;
+    // 0179 — 이미 이 견적에 들어 있던 SKU 는 비활성이어도 그대로 수정·정리할 수 있게 허용하고,
+    //        새로 추가하는 비활성 SKU 만 막는다.
+    const existingIds = new Set((await query(
+      `SELECT DISTINCT product_id FROM quote_lines WHERE quote_id=$1 AND product_id IS NOT NULL`, [id]))
+      .rows.map((r) => Number(r.product_id)));
+    const blockedEdit = await inactiveTargets(b.lines, existingIds);
+    if (blockedEdit.length) return reply.code(409).send({ error: 'inactive_product', items: blockedEdit });
     await withTx(async (c) => {
       const lines = await buildLines(discountRate, ivaRate, Array.isArray(b.lines) ? b.lines : []);
       const totals = computeQuoteTotals(lines.filter((l) => l.product_id).map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
@@ -1064,6 +1101,9 @@ export default async function quoteRoutes(app) {
     const inputLines = srcLines.map((l) => (l.product_id
       ? { product_id: l.product_id, qty: Number(l.qty) }
       : { code: l.input_code, qty: Number(l.qty) }));
+    // 0179 — 복제는 "새 견적"이므로 비활성 SKU 가 섞여 있으면 막고 어느 품목인지 알려준다.
+    const blockedDup = await inactiveTargets(inputLines);
+    if (blockedDup.length) return reply.code(409).send({ error: 'inactive_product', items: blockedDup });
     const result = await withTx(async (c) => {
       const year = String(new Date().getFullYear());
       const quoteNo = await nextQuoteNo(c, year);

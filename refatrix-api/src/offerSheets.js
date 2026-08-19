@@ -47,6 +47,8 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
   const pidCond = (col) => (pids ? `AND ${col} IN (${pids.map((_, i) => `$${i + 1}`).join(',')})` : '');
   const pidArgs = pids || [];
 
+  // 0179 — 비활성(판매중단) SKU 는 오퍼시트 대상에서 제외한다(신규 판매 제안 차단).
+  //        다시 활성화하면 그 시점의 부족분·견적 부족라인이 자동으로 다시 대상이 된다.
   // ① 부족 기록(전환확정·매출등록·만료) — 살아있는 시트에 없는 것만
   const shortRows = (await q(
     `SELECT sh.id AS shortage_id, sh.customer_id, sh.product_id,
@@ -56,7 +58,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
             p.list_price, p.iva_rate, p.stock_qty,
             c.discount AS cust_discount
        FROM stock_shortages sh
-       JOIN products  p ON p.id = sh.product_id AND p.deleted_at IS NULL
+       JOIN products  p ON p.id = sh.product_id AND p.deleted_at IS NULL AND p.is_active
        JOIN customers c ON c.id = sh.customer_id AND c.deleted_at IS NULL
        LEFT JOIN (SELECT DISTINCT oi.shortage_id
                     FROM offer_sheet_items oi
@@ -96,7 +98,7 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
             c.discount AS cust_discount
        FROM quote_lines ql
        JOIN quotes qt ON qt.id = ql.quote_id
-       JOIN products  p ON p.id = ql.product_id AND p.deleted_at IS NULL
+       JOIN products  p ON p.id = ql.product_id AND p.deleted_at IS NULL AND p.is_active
        JOIN customers c ON c.id = qt.customer_id AND c.deleted_at IS NULL
        LEFT JOIN (SELECT DISTINCT oi.quote_line_id
                     FROM offer_sheet_items oi

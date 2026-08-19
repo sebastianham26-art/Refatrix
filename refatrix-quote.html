@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt0806vs9</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt0819act1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -66,6 +66,11 @@
   .acitem .c{font-weight:700;color:var(--brand);font-size:13px}
   .acitem .s{font-size:11px;color:var(--muted)}
   .acitem .lp{font-size:12px;color:var(--ink);white-space:nowrap}
+  /* 0179 — 비활성(판매중단) 제품 표시 */
+  .acitem.inact{background:#fdf6f5;opacity:.75}
+  .cand.inact{background:#fdf6f5;opacity:.75}
+  .inactbadge{display:inline-block;padding:0 6px;border-radius:9px;background:#fbe9e7;color:#b23a2e;
+    font-size:10px;font-weight:800;line-height:16px;vertical-align:middle}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -269,8 +274,9 @@
   function renderAc(){
     if(!acItems.length){ hideAc(); return; }
     $('acBox').innerHTML=acItems.map((it,i)=>
-      '<div class="acitem'+(i===acSel?' sel':'')+'" onmousedown="event.preventDefault()" onclick="pickAc('+i+')">'
+      '<div class="acitem'+(i===acSel?' sel':'')+(it.is_active===false?' inact':'')+'" onmousedown="event.preventDefault()" onclick="pickAc('+i+')">'
       +'<div><span class="c">'+esc(it.ctr_code)+'</span>'
+      +(it.is_active===false?' <span class="inactbadge">비활성</span>':'')
       +(it.syd_codes&&it.syd_codes.length?' <span class="s">· SYD '+esc(it.syd_codes.join(' / '))+'</span>':'')
       +'<div class="s">'+esc(it.name||'')+(it.app?' · '+esc(it.app):'')+'</div></div>'
       +'<div class="lp">List '+fmt(it.list_price)+'</div></div>'
@@ -280,6 +286,12 @@
   function hideAc(){ $('acBox').classList.add('hidden'); acItems=[]; acSel=-1; }
   function pickAc(i){
     const it=acItems[i]; if(!it)return;
+    // 0179 — 비활성(판매중단) SKU 는 새 견적에 담을 수 없다(서버에서도 차단됨).
+    if(it.is_active===false){
+      const m=$('lineMsg'); if(m){ m.className='msg err';
+        m.textContent=it.ctr_code+' 은(는) 비활성(판매중단) 제품이라 새 견적에 담을 수 없습니다. 제품/마케팅 > 제품검색에서 활성화 후 사용하세요.'; }
+      hideAc(); return;
+    }
     pickedProduct=it;                       // 선택만 해두고 추가는 '추가' 버튼에서
     $('inCode').value=it.ctr_code;
     hideAc();
@@ -1024,6 +1036,11 @@
       if(!matches.length){
         lines.push({code,qty}); // 미매칭(not_found) 줄로 추가됨
       } else if(matches.length===1){
+        if(matches[0].is_active===false){
+          m.className='msg err';
+          m.textContent=matches[0].ctr_code+' 은(는) 비활성(판매중단) 제품이라 새 견적에 담을 수 없습니다.';
+          return;
+        }
         lines.push({code,product_id:matches[0].product_id,qty});
       } else {
         openCand(code,qty,matches); return; // 후보 선택 후 push
@@ -1037,13 +1054,15 @@
     pendingCand={code,qty};
     $('candFor').textContent='— "'+code+'" 에 해당하는 CTR 제품을 고르세요';
     $('candBody').innerHTML=candidates.map(c=>
-      '<div class="cand" onclick="pickCand('+c.product_id+')">'
-      +'<div><b>'+esc(c.ctr_code)+'</b><div class="hint" style="margin:0">'+esc(c.name||'')+(c.app?' · '+esc(c.app):'')+'</div></div>'
+      '<div class="cand'+(c.is_active===false?' inact':'')+'" onclick="pickCand('+c.product_id+','+(c.is_active===false?'1':'0')+')">'
+      +'<div><b>'+esc(c.ctr_code)+'</b>'+(c.is_active===false?' <span class="inactbadge">비활성</span>':'')
+      +'<div class="hint" style="margin:0">'+esc(c.name||'')+(c.app?' · '+esc(c.app):'')+'</div></div>'
       +'<div style="text-align:right;white-space:nowrap"><div>List '+fmt(c.list_price)+'</div></div></div>'
     ).join('');
     $('candModal').style.display='flex';
   }
-  function pickCand(pid){
+  function pickCand(pid, inactive){
+    if(inactive){ alert('비활성(판매중단) 제품이라 새 견적에 담을 수 없습니다.'); return; }
     if(pendingCand){ lines.push({code:pendingCand.code,product_id:pid,qty:pendingCand.qty}); pendingCand=null; }
     closeCand();$('inCode').value='';$('inQty').value='1';$('inCode').focus();recalc();
   }
@@ -1189,7 +1208,14 @@
         : {customer_id:Number(cid),quote_date:$('qDate').value||null,lines};
       const res=await fetch(session.api+'/api/quotes',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.textContent='저장 실패: '+(d.error||res.status);return;}
+      if(!res.ok||d.error){
+        m.className='msg err';
+        if(d.error==='inactive_product'){
+          m.textContent='저장 실패 — 비활성(판매중단) 제품이 포함되어 있습니다: '
+            +(d.items||[]).map(x=>x.code).join(', ')+' · 해당 줄을 빼거나 제품검색에서 활성화 후 저장하세요.';
+        } else { m.textContent='저장 실패: '+(d.error||res.status); }
+        return;
+      }
       const LP=(lastPreview&&lastPreview.lines)||[];
       const matched=LP.filter(l=>l.matched).length;
       const unmatched=LP.length-matched;
@@ -1204,6 +1230,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260817z"></script>
+<script src="refatrix-nav.js?v=20260819pa"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 매출 등록</title>
+<title>Refatrix ERP · 매출 등록 · sl0819act1</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -287,9 +287,11 @@
       timer=setTimeout(async()=>{
         let items=[];try{items=await searchProducts(q);}catch(e){}
         if(!items.length){box.innerHTML='<div class="meta">일치하는 제품이 없습니다</div>';box.classList.remove('hidden');return;}
-        box.innerHTML=items.map(p=>`<div data-id="${p.id}"><span class="code">${p.code}</span> · ${p.name||''}<div class="meta">정가 ${fmt(p.list_price)} · 재고 ${Number(p.stock_qty).toLocaleString()}</div></div>`).join('');
+        // 0179 — 비활성(판매중단) SKU 는 고를 수 없다(서버에서도 차단). 목록에는 사유가 보이도록 표시만.
+        box.innerHTML=items.map(p=>`<div data-id="${p.id}"${p.is_active===false?' data-inact="1" style="opacity:.6;background:#fdf6f5"':''}><span class="code">${p.code}</span>${p.is_active===false?' <span style="display:inline-block;padding:0 6px;border-radius:9px;background:#fbe9e7;color:#b23a2e;font-size:10px;font-weight:800">비활성</span>':''} · ${p.name||''}<div class="meta">정가 ${fmt(p.list_price)} · 재고 ${Number(p.stock_qty).toLocaleString()}</div></div>`).join('');
         box.classList.remove('hidden');
         [...box.children].forEach(el=>{if(!el.dataset.id)return;el.onclick=()=>{
+          if(el.dataset.inact){ alert('비활성(판매중단) 제품이라 새 매출에 담을 수 없습니다.\n제품/마케팅 > 제품검색에서 활성화 후 사용하세요.'); return; }
           const p=items.find(x=>String(x.id)===el.dataset.id);
           prodCache[p.id]={id:p.id,code:p.code,name:p.name,list_price:p.list_price,stock_qty:p.stock_qty};
           search.value=p.code+' · '+(p.name||'');search.classList.add('picked');
@@ -439,6 +441,10 @@
       if(!res.ok||d.error){
         const map={customer_not_found:'고객을 찾을 수 없습니다.',customer_date_lines_required:'고객·일자·품목을 확인하세요.'};
         let msg=map[d.error]||d.error||('등록 실패: '+res.status);
+        if(d.error==='inactive_product'){
+          msg='비활성(판매중단) 제품이 포함되어 있습니다: '+(d.items||[]).map(x=>x.code).join(', ')
+            +' — 해당 줄을 빼거나 제품검색에서 활성화 후 등록하세요.';
+        }
         if(String(d.error).startsWith('product_not_found'))msg='제품을 찾을 수 없습니다.';
         m.className='msg err';m.textContent=msg;return;
       }
@@ -915,6 +921,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260817z"></script>
+<script src="refatrix-nav.js?v=20260819pa"></script>
 </body>
 </html>

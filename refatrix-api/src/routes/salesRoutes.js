@@ -19,6 +19,21 @@ export default async function salesRoutes(app) {
       return reply.code(400).send({ error: 'customer_date_lines_required' });
     }
     const userId = req.ctx.perm.userId;
+    // 0179 — 비활성(판매중단) SKU 는 새 매출 등록에 담을 수 없다.
+    //   견적 → 매출 전환(/api/quotes/:id/convert)은 이 경로를 타지 않으므로,
+    //   비활성 전에 확정된 기존 오더는 그대로 인보이스 발행된다.
+    const chkIds = [...new Set(lines.map((l) => Number(l.product_id)).filter(Boolean))];
+    if (chkIds.length) {
+      const bad = (await query(
+        `SELECT id, code, name FROM products
+          WHERE id = ANY($1) AND deleted_at IS NULL AND NOT is_active`, [chkIds])).rows;
+      if (bad.length) {
+        return reply.code(409).send({
+          error: 'inactive_product',
+          items: bad.map((p) => ({ product_id: Number(p.id), code: p.code, name: p.name })),
+        });
+      }
+    }
     const out = await withTx(async (c) => {
       const cust = (await c.query(`SELECT id, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customer_id])).rows[0];
       if (!cust) return { error: 'customer_not_found' };
