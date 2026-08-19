@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260817z loaded (zone map)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260819c loaded (consult)'); }catch(e){}
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -30,6 +30,7 @@
     shortage:{file:'refatrix-shortage.html',name:'부족분',desc:'발주 근거'},
     devrequest:{file:'refatrix-devrequest.html',name:'개발 요청',desc:'경쟁사코드 대응'},
     pipeline:{file:'refatrix-pipeline.html',name:'영업활동',desc:'칸반·미팅'},
+    consult:{file:'refatrix-consult.html',name:'고객상담',desc:'상담 등록·미팅 녹음 AI 요약·종합표·인사이트'},
     customers:{file:'refatrix-customers.html',name:'고객 등록 및 목록',desc:'고객·외상·서류',tab:'list'},
     custTeam:{file:'refatrix-customers.html',name:'고객 팀권한',desc:'팀 가시성',tab:'team'},
     custApprove:{file:'refatrix-customers.html',name:'고객 수정 승인',desc:'수정 승인',tab:'approve'},
@@ -77,7 +78,7 @@
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
-    pipeline:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
+    pipeline:'pipeline', consult:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
     boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
@@ -90,7 +91,7 @@
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
     {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','dashboard','rnr','coverage','devmap']},
-    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','fieldsurvey','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
+    {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','fieldsurvey','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},

@@ -49,6 +49,7 @@ import inboundRoutes from './routes/inboundRoutes.js';
 import zoneRoutes from './routes/zoneRoutes.js';
 import visitRoutes from './routes/visitRoutes.js';
 import visitRecRoutes from './routes/visitRecRoutes.js';
+import consultRoutes from './routes/consultRoutes.js';
 import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
 import { installPerfMonitor } from './perfMonitor.js';
@@ -119,6 +120,7 @@ export function buildApp() {
   app.register(purchaseRoutes);
   app.register(visitRoutes);
   app.register(visitRecRoutes);
+  app.register(consultRoutes);
   app.register(offerSheetRoutes);
   app.register(dailySummaryRoutes);
 
