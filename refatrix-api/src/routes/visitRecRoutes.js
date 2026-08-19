@@ -33,6 +33,7 @@ import { mxTodayStr, MX_OFFSET_MIN } from '../workingHours.js';
 import { sendWaTo, waApiReady, normalizeWaNumber } from '../waSend.js';
 import {
   clip, buildSummaryPrompt, parseSummaryJson, summaryToNotes, mergeNote,
+  buildTranslatePrompt, parseTranslationJson,
   buildBriefingText, briefingHeadline, esDateLabel,
 } from '../visitAi.js';
 
@@ -436,7 +437,7 @@ export async function buildVisitReview(perm, opts = {}) {
     }
   }
   // 녹음 AI 요약(완료건 최신) + 진행 상태
-  const sjByVisit = {}; const recStByVisit = {};
+  const sjByVisit = {}; const recStByVisit = {}; const recIdByVisit = {};
   if (ids.length) {
     try {
       const recs = (await query(
@@ -445,7 +446,7 @@ export async function buildVisitReview(perm, opts = {}) {
       for (const r of recs) {
         const vid = Number(r.visit_id);
         recStByVisit[vid] = r.status;                                  // 마지막(최신) 상태
-        if (r.status === 'done' && r.summary_json) sjByVisit[vid] = r.summary_json;
+        if (r.status === 'done' && r.summary_json) { sjByVisit[vid] = r.summary_json; recIdByVisit[vid] = Number(r.id); }
       }
     } catch (_) { /* 0165 미적용 */ }
   }
@@ -474,6 +475,7 @@ export async function buildVisitReview(perm, opts = {}) {
       name: r.customer_name || r.place_name, is_customer: r.customer_id != null,
       by_name: r.by_name || null, met_person: r.met_person || null,
       headline, has_ai: !!summary, rec_status: recStByVisit[vid] || null,
+      rec_id: recIdByVisit[vid] != null ? recIdByVisit[vid] : null,   // 한국어 번역 토글용
       plan, summary,
       insight: (summary && summary.insights) || clip(r.insight_note, 500) || null,
       pend_total: total, pend_done: done, pend_overdue: overdue,
@@ -571,6 +573,36 @@ export default async function visitRecRoutes(app) {
     await query(`UPDATE sales_visit_recordings SET status='queued', error=NULL WHERE id=$1`, [id]);
     setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
     return { ok: true, id, status: 'queued' };
+  });
+
+  // ── AI 요약 한국어 번역(화면 [🇰🇷 한국어] 토글) — 최초 1회만 Claude 호출, 이후 캐시 ──
+  //    권한: 열람 권한(pipeline)만 있으면 가능(본인 방문 · 디렉터 전체).
+  app.post('/api/visits/recordings/:id/translate', { preHandler: [authGuard, requirePage('pipeline')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const params = [id];
+    let cond = 'r.id=$1';
+    if (perm.role !== 'director') { params.push(perm.userId); cond += ` AND v.created_by = $${params.length}`; }
+    const row = (await query(
+      `SELECT r.id, r.status, r.summary_json FROM sales_visit_recordings r JOIN sales_visits v ON v.id=r.visit_id
+        WHERE ${cond} AND v.deleted_at IS NULL`, params)).rows[0];
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    let summary = null;
+    if (row.summary_json) { try { summary = typeof row.summary_json === 'string' ? JSON.parse(row.summary_json) : row.summary_json; } catch (_) {} }
+    if (!summary || !summary.resumen) return reply.code(409).send({ error: 'no_summary', status: row.status });
+    const force = !!(req.body && req.body.force);
+    if (summary.ko && !force) return { id, ko: summary.ko, cached: true };
+    if (!aiReady()) return reply.code(503).send({ error: 'no_anthropic_key' });
+    const tr = await ai.summarize(buildTranslatePrompt(summary));
+    if (!tr.ok) return reply.code(502).send({ error: tr.error || 'ai_error' });
+    const ko = parseTranslationJson(tr.text, summary);
+    if (!ko) return reply.code(502).send({ error: 'ai_parse' });
+    // 원문(summary)은 그대로 두고 ko 키만 추가/교체 — 마이그레이션 불필요.
+    await query(`UPDATE sales_visit_recordings SET summary_json=$2 WHERE id=$1`,
+      [id, JSON.stringify({ ...summary, ko })]);
+    await logEvent({ userId: perm.userId, action: 'update', target: `visit_recording:${id}`, detail: { translate: 'ko' } });
+    return { id, ko, cached: false };
   });
 
   // ── 방문 리뷰(날짜별 표 + 드릴다운 데이터 일체) — 영업사원 본인 · 디렉터 전체(+user_id 필터) ──

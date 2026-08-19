@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 · 방문리뷰 (b20260813rec1)</title>
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 · 방문리뷰 (b20260819ko1)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -798,7 +798,7 @@
     }catch(e){ $('vl-list').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
   }
 
-  // ===== 상담 녹음 · AI 요약 (build vr-20260813rec1) =====
+  // ===== 상담 녹음 · AI 요약 (build vr-20260819ko1 · 요약 한국어 토글) =====
   //  화면 꺼짐/앱 전환에도 녹음 유지: ① Wake Lock(화면 자동꺼짐 방지)
   //  ② 1초 단위 청크 수집(끊겨도 그때까지 보존) ③ 중단 감지 → 자동 이어녹음(구간 분할)
   //  ⏹ 종료 버튼을 누르기 전까지는 녹음 상태를 유지한다.
@@ -1011,27 +1011,82 @@
     },5000);
   }
   const VL_REC_ST={queued:'⏳ 대기',transcribing:'🎧 전사 중',summarizing:'🤖 요약 중',done:'✅ 완료',failed:'❌ 실패'};
+  // ── 요약 언어 토글(스페인어 원문 ↔ 🇰🇷 한국어 번역) ──
+  //    번역은 서버가 최초 1회만 Claude 로 만들고 summary_json.ko 에 캐시 → 이후 즉시 표시.
+  const vlRecLang={};          // 녹음 id → 'es' | 'ko'
+  let vlRecItems=[];
+  function vlRecKoBtn(id,lang,cls){
+    return '<button type="button" class="btn ghost sm '+cls+'" data-id="'+id+'" style="margin-left:6px">'
+      +(lang==='ko'?'🇲🇽 원문(스페인어)':'🇰🇷 한국어')+'</button>';
+  }
+  // ko 값이 빈 항목은 원문을 그대로 남긴다(번역 누락 시 정보 소실 방지)
+  function vlKoMerge(es,ko){
+    const o=Object.assign({},es||{}); const k=ko||{};
+    ['resumen','insights','next_step'].forEach(f=>{ if(k[f]) o[f]=k[f]; });
+    if(k.action_items&&k.action_items.length) o.action_items=k.action_items;
+    if(k.products&&k.products.length) o.products=k.products;
+    return o;
+  }
+  function vlRecCardHtml(r){
+    const es=r.summary||{};
+    const hasKo=!!(es.ko&&(es.ko.resumen||es.ko.insights));
+    const lang=(vlRecLang[r.id]==='ko'&&hasKo)?'ko':'es';
+    const s=lang==='ko'?vlKoMerge(es,es.ko):es;
+    const acts=(s.action_items||[]).map(a=>'· '+vlEsc(a.content)+(a.due_date?(' <b>('+a.due_date+')</b>'):'')).join('<br>');
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px">
+      <div><b>${VL_REC_ST[r.status]||vlEsc(r.status)}</b> · ${r.mode==='full'?'상담 전체':'음성 메모'}${r.duration_sec?(' · '+vlRecFmt(r.duration_sec)):''}
+        ${r.status==='failed'?('<span style="color:var(--expense)"> — '+vlEsc(r.error||'오류')+'</span> <button type="button" class="btn ghost sm vl-recRetry" data-id="'+r.id+'">↻ 재시도</button>'):''}
+        ${es.resumen?vlRecKoBtn(r.id,lang,'vl-recKo'):''}</div>
+      ${lang==='ko'?'<div class="hint" style="margin:4px 0 0">🇰🇷 AI 한국어 번역본 — 원문은 [🇲🇽 원문(스페인어)]</div>':''}
+      ${s.resumen?('<div style="margin-top:6px"><b>요약:</b> '+vlEsc(s.resumen)+'</div>'):''}
+      ${s.insights?('<div style="margin-top:4px"><b>파악:</b> '+vlEsc(s.insights)+'</div>'):''}
+      ${acts?('<div style="margin-top:4px"><b>해야 할 일 (펜딩 자동 등록됨):</b><br>'+acts+'</div>'):''}
+      ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
+      ${s.next_step?('<div style="margin-top:4px"><b>다음:</b> '+vlEsc(s.next_step)+'</div>'):''}
+      ${r.transcript&&r.status==='done'?('<details style="margin-top:6px"><summary class="hint" style="margin:0;cursor:pointer">전사 원문 보기</summary><div style="white-space:pre-wrap;font-size:12px;margin-top:4px">'+vlEsc(r.transcript)+'</div></details>'):''}
+    </div>`;
+  }
+  function vlRecRender(){
+    const box=$('vl-recList'); if(!box) return;
+    box.innerHTML=vlRecItems.map(vlRecCardHtml).join('');
+    box.querySelectorAll('.vl-recRetry').forEach(b=>b.onclick=async()=>{ b.disabled=true;
+      try{ await fetch(session.api+'/api/visits/recordings/'+b.dataset.id+'/retry',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'}); vlLoadRecs(true); vlRecStartPoll(); }catch(e){} });
+    box.querySelectorAll('.vl-recKo').forEach(b=>b.onclick=()=>vlRecToggleKo(b));
+  }
+  // 공통: 요약 한국어 번역 요청(캐시 있으면 서버가 즉시 반환)
+  async function vlTranslateKo(recId){
+    const res=await fetch(session.api+'/api/visits/recordings/'+recId+'/translate',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok||d.error){
+      const e=d&&d.error;
+      throw new Error(e==='no_anthropic_key'?'ANTHROPIC_API_KEY 미설정 — 번역을 사용할 수 없습니다.'
+        :e==='no_summary'?'아직 AI 요약이 없습니다.'
+        :e==='ai_parse'?'번역 응답을 읽지 못했습니다. 다시 시도해 주세요.'
+        :(e||('HTTP '+res.status)));
+    }
+    return d.ko;
+  }
+  async function vlRecToggleKo(btn){
+    const id=Number(btn.dataset.id);
+    const r=vlRecItems.find(x=>Number(x.id)===id); if(!r) return;
+    if(vlRecLang[id]==='ko'){ vlRecLang[id]='es'; vlRecRender(); return; }
+    const es=r.summary||{};
+    if(es.ko&&es.ko.resumen){ vlRecLang[id]='ko'; vlRecRender(); return; }
+    btn.disabled=true; btn.textContent='🔄 번역 중…';
+    try{
+      const ko=await vlTranslateKo(id);
+      r.summary=Object.assign({},es,{ko}); vlRecLang[id]='ko'; vlRecRender();
+    }catch(e){ alert('한국어 번역 실패: '+(e&&e.message||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
+  }
   async function vlLoadRecs(showEmpty){
     if(!vlRecVisit) return false;
     try{
       const d=await fetch(session.api+'/api/visits/'+vlRecVisit.id+'/recordings',{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
-      if(!items.length){ if(showEmpty)$('vl-recList').innerHTML='<div class="hint">이 방문에 아직 녹음이 없습니다.</div>'; return false; }
-      $('vl-recList').innerHTML=items.map(r=>{
-        const s=r.summary||{};
-        const acts=(s.action_items||[]).map(a=>'· '+vlEsc(a.content)+(a.due_date?(' <b>('+a.due_date+')</b>'):'')).join('<br>');
-        return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px">
-          <div><b>${VL_REC_ST[r.status]||vlEsc(r.status)}</b> · ${r.mode==='full'?'상담 전체':'음성 메모'}${r.duration_sec?(' · '+vlRecFmt(r.duration_sec)):''}
-            ${r.status==='failed'?('<span style="color:var(--expense)"> — '+vlEsc(r.error||'오류')+'</span> <button type="button" class="btn ghost sm vl-recRetry" data-id="'+r.id+'">↻ 재시도</button>'):''}</div>
-          ${s.resumen?('<div style="margin-top:6px"><b>요약:</b> '+vlEsc(s.resumen)+'</div>'):''}
-          ${s.insights?('<div style="margin-top:4px"><b>파악:</b> '+vlEsc(s.insights)+'</div>'):''}
-          ${acts?('<div style="margin-top:4px"><b>해야 할 일 (펜딩 자동 등록됨):</b><br>'+acts+'</div>'):''}
-          ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
-          ${s.next_step?('<div style="margin-top:4px"><b>다음:</b> '+vlEsc(s.next_step)+'</div>'):''}
-          ${r.transcript&&r.status==='done'?('<details style="margin-top:6px"><summary class="hint" style="margin:0;cursor:pointer">전사 원문 보기</summary><div style="white-space:pre-wrap;font-size:12px;margin-top:4px">'+vlEsc(r.transcript)+'</div></details>'):''}
-        </div>`; }).join('');
-      $('vl-recList').querySelectorAll('.vl-recRetry').forEach(b=>b.onclick=async()=>{ b.disabled=true;
-        try{ await fetch(session.api+'/api/visits/recordings/'+b.dataset.id+'/retry',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'}); vlLoadRecs(true); vlRecStartPoll(); }catch(e){} });
+      if(!items.length){ vlRecItems=[]; if(showEmpty)$('vl-recList').innerHTML='<div class="hint">이 방문에 아직 녹음이 없습니다.</div>'; return false; }
+      vlRecItems=items;
+      vlRecRender();
       return items.some(r=>r.status==='queued'||r.status==='transcribing'||r.status==='summarizing');
     }catch(e){ return false; }
   }
@@ -1091,22 +1146,52 @@
   }
   function rvFind(id){ const d=window.__rvData||{days:[]};
     for(const day of (d.days||[])){ const v=day.visits.find(x=>Number(x.id)===Number(id)); if(v) return {v,date:day.date}; } return null; }
-  function rvToggle(id){
-    const det=document.querySelector('.rv-detail[data-for="'+id+'"]'); if(!det)return;
-    const open=!det.classList.contains('hidden');
-    if(open){ det.classList.add('hidden'); rvOpen.delete(id); return; }
+  const rvLang={};   // 방문 id → 'es' | 'ko' (AI 요약 표시 언어)
+  function rvRenderDet(id){
     const hit=rvFind(id); if(!hit)return;
-    const v=hit.v, s=v.summary||{};
+    const v=hit.v, es=v.summary||{};
+    const hasKo=!!(es.ko&&(es.ko.resumen||es.ko.insights));
+    const lang=(rvLang[id]==='ko'&&hasKo)?'ko':'es';
+    const s=lang==='ko'?vlKoMerge(es,es.ko):es;
+    // 파악한 내용: AI 요약이 있으면 언어에 맞춰, 없으면 수기 기록 그대로.
+    const insight=(es.insights?s.insights:v.insight)||'';
+    const koBtn=(es.resumen&&v.rec_id)
+      ? ('<button type="button" class="btn ghost sm rv-koBtn" data-id="'+id+'" style="margin-left:6px">'+(lang==='ko'?'🇲🇽 원문(스페인어)':'🇰🇷 한국어')+'</button>')
+      : '';
     const pendRows=(v.pendings||[]).map(p=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;cursor:pointer">
         <input type="checkbox" ${p.done?'checked':''} onchange="rvTogglePend(${p.id},this.checked)" style="margin-top:3px">
         <span style="${p.done?'text-decoration:line-through;color:#888':''}">${vlEsc(p.content)}${p.due_date?(' <b>('+p.due_date+')</b>'):''}${p.overdue?(' <b style="color:#B23A2E">⚠ '+p.overdue+'일 초과</b>'):''}</span></label>`).join('');
     $('rv-det-'+id).innerHTML=`
       ${v.plan?('<div><b>사전 계획(할 이야기):</b> '+vlEsc(v.plan)+'</div>'):''}
-      ${s.resumen?('<div style="margin-top:6px"><b>🎙 미팅 요약(AI):</b> '+vlEsc(s.resumen)+'</div>'):'<div style="margin-top:6px" class="hint">녹음 AI 요약이 없습니다'+(v.rec_status&&v.rec_status!=='done'?(' (녹음 상태: '+vlEsc(v.rec_status)+')'):' — 수기 기록만')+'</div>'}
-      ${v.insight?('<div style="margin-top:4px"><b>파악한 내용:</b> '+vlEsc(v.insight)+'</div>'):''}
+      ${s.resumen?('<div style="margin-top:6px"><b>🎙 미팅 요약(AI):</b> '+vlEsc(s.resumen)+koBtn
+          +(lang==='ko'?'<div class="hint" style="margin:2px 0 0">🇰🇷 AI 한국어 번역본</div>':'')+'</div>')
+        :'<div style="margin-top:6px" class="hint">녹음 AI 요약이 없습니다'+(v.rec_status&&v.rec_status!=='done'?(' (녹음 상태: '+vlEsc(v.rec_status)+')'):' — 수기 기록만')+'</div>'}
+      ${insight?('<div style="margin-top:4px"><b>파악한 내용:</b> '+vlEsc(insight)+'</div>'):''}
       ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
       ${s.next_step?('<div style="margin-top:4px"><b>다음 계획:</b> '+vlEsc(s.next_step)+'</div>'):''}
+      ${(lang==='ko'&&(s.action_items&&s.action_items.length))?('<div style="margin-top:4px"><b>해야 할 일(요약):</b><br>'+s.action_items.map(a=>'· '+vlEsc(a.content)+(a.due_date?(' <b>('+a.due_date+')</b>'):'')).join('<br>')+'</div>'):''}
       <div style="margin-top:8px"><b>📌 후속조치 (F/UP ${v.pend_done}/${v.pend_total})</b>${v.pend_total?'':' <span class="hint" style="margin:0">— 등록된 펜딩 없음</span>'}</div>${pendRows}`;
+    const kb=$('rv-det-'+id).querySelector('.rv-koBtn');
+    if(kb) kb.onclick=(ev)=>{ ev.stopPropagation(); rvToggleKo(id,kb); };
+  }
+  async function rvToggleKo(id,btn){
+    const hit=rvFind(id); if(!hit)return;
+    const v=hit.v, es=v.summary||{};
+    if(rvLang[id]==='ko'){ rvLang[id]='es'; rvRenderDet(id); return; }
+    if(es.ko&&es.ko.resumen){ rvLang[id]='ko'; rvRenderDet(id); return; }
+    if(!v.rec_id){ alert('번역할 녹음 요약을 찾지 못했습니다.'); return; }
+    btn.disabled=true; btn.textContent='🔄 번역 중…';
+    try{
+      const ko=await vlTranslateKo(v.rec_id);
+      v.summary=Object.assign({},es,{ko}); rvLang[id]='ko'; rvRenderDet(id);
+    }catch(e){ alert('한국어 번역 실패: '+(e&&e.message||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
+  }
+  function rvToggle(id){
+    const det=document.querySelector('.rv-detail[data-for="'+id+'"]'); if(!det)return;
+    const open=!det.classList.contains('hidden');
+    if(open){ det.classList.add('hidden'); rvOpen.delete(id); return; }
+    if(!rvFind(id))return;
+    rvRenderDet(id);
     det.classList.remove('hidden'); rvOpen.add(id);
   }
   async function rvTogglePend(id,done){

@@ -324,3 +324,105 @@ test('단일 구간(중단 없음): 기존 방식 그대로 data_url 단일 필�
   assert.ok(String(body.data_url).startsWith('data:audio/webm'), '단일 구간은 data_url');
   assert.equal(body.data_urls, undefined);
 });
+
+// ── AI 요약 한국어 토글(2026-08-19) ───────────────────────────────────
+const KO = {
+  resumen: '브레이크 패드와 가격을 이야기함.', insights: '고객은 경쟁사 X에서 구매 중.',
+  action_items: [{ content: '견적 발송', due_date: '2026-08-05' }],
+  products: ['CL0001'], next_step: '월요일 방문',
+};
+function seedRecWithSummary(summary) {
+  route('GET', '/api/visits/100/recordings', {
+    items: [{ id: 2, mode: 'memo', status: 'done', duration_sec: 65, transcript: 'texto', summary }],
+  });
+}
+const ES_SUM = {
+  resumen: 'Habló de balatas y precios.', insights: 'Cliente compra a competidor X.',
+  products: ['CL0001'], next_step: 'Visitar lunes',
+  action_items: [{ content: 'Enviar cotización', due_date: '2026-08-05' }],
+};
+
+test('녹음 카드: [🇰🇷 한국어] 클릭 → 번역 POST → 한국어 렌더 → 다시 누르면 원문', async () => {
+  seedRecWithSummary(ES_SUM);
+  route('POST', '/api/visits/recordings/2/translate', { id: 2, ko: KO, cached: false });
+  win.vlShowRec(100, 'Aguila');
+  await tick(30);
+  const btn = $('vl-recList').querySelector('.vl-recKo');
+  assert.ok(btn, '한국어 토글 버튼 표시');
+  assert.ok($('vl-recList').innerHTML.includes('Habló de balatas'), '기본은 스페인어 원문');
+  btn.click();
+  await tick(40);
+  const post = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/recordings/2/translate'));
+  assert.ok(post, '번역 POST 발생');
+  const koHtml = $('vl-recList').innerHTML;
+  assert.ok(koHtml.includes('브레이크 패드와 가격'), '한국어 요약 표시');
+  assert.ok(koHtml.includes('견적 발송') && koHtml.includes('2026-08-05'), '할 일도 한국어 + 기한 유지');
+  assert.ok(koHtml.includes('CL0001'), '제품 코드 유지');
+  assert.ok(koHtml.includes('AI 한국어 번역본'), '번역본 안내');
+  assert.ok(!koHtml.includes('Habló de balatas'), '원문은 감춤');
+  // 되돌리기
+  $('vl-recList').querySelector('.vl-recKo').click();
+  await tick(20);
+  assert.ok($('vl-recList').innerHTML.includes('Habló de balatas'), '원문 복귀');
+  assert.equal(fetchLog.filter((f) => f.url.includes('/translate')).length, 1, '재번역 호출 없음');
+});
+
+test('녹음 카드: 이미 번역 캐시(ko)가 있으면 서버 호출 없이 즉시 전환', async () => {
+  seedRecWithSummary({ ...ES_SUM, ko: KO });
+  win.vlShowRec(100, 'Aguila');
+  await tick(30);
+  $('vl-recList').querySelector('.vl-recKo').click();
+  await tick(20);
+  assert.ok($('vl-recList').innerHTML.includes('브레이크 패드와 가격'));
+  assert.equal(fetchLog.filter((f) => f.url.includes('/translate')).length, 0, '캐시 사용 — POST 없음');
+});
+
+test('녹음 카드: 번역 실패(키 미설정)면 원문 유지 + 버튼 복구', async () => {
+  seedRecWithSummary(ES_SUM);
+  route('POST', '/api/visits/recordings/2/translate', { error: 'no_anthropic_key' }, 503);
+  let alerted = '';
+  win.alert = (m) => { alerted = String(m); };
+  win.vlShowRec(100, 'Aguila');
+  await tick(30);
+  $('vl-recList').querySelector('.vl-recKo').click();
+  await tick(40);
+  assert.ok(alerted.includes('번역 실패') && alerted.includes('ANTHROPIC_API_KEY'));
+  assert.ok($('vl-recList').innerHTML.includes('Habló de balatas'), '원문 유지');
+  const btn = $('vl-recList').querySelector('.vl-recKo');
+  assert.ok(btn && !btn.disabled && btn.textContent.includes('한국어'), '버튼 복구');
+});
+
+test('방문 리뷰 드릴다운: 한국어 토글(번역 POST · 요약/파악/다음 계획 전환)', async () => {
+  seedReviewRoutes();
+  route('POST', '/api/visits/recordings/7/translate', { id: 7, ko: KO, cached: false });
+  win.document.getElementById('vt-review').click();
+  await tick(40);
+  // 리뷰 응답에 rec_id 주입(서버가 반환하는 값)
+  win.eval(`window.__rvData.days[0].visits[0].rec_id = 7;`);
+  $('rv-table').querySelector('.rv-row[data-id="100"]').click();
+  let det = $('rv-det-100');
+  const btn = det.querySelector('.rv-koBtn');
+  assert.ok(btn, '리뷰 상세에도 한국어 토글');
+  btn.click();
+  await tick(40);
+  assert.ok(fetchLog.some((f) => f.method === 'POST' && f.url.includes('/recordings/7/translate')));
+  det = $('rv-det-100');
+  assert.ok(det.innerHTML.includes('브레이크 패드와 가격'), '요약 한국어');
+  assert.ok(det.innerHTML.includes('경쟁사 X'), '파악한 내용 한국어');
+  assert.ok(det.innerHTML.includes('월요일 방문'), '다음 계획 한국어');
+  assert.ok(det.innerHTML.includes('F/UP 1/2'), '펜딩 체크리스트 유지');
+  assert.ok(det.innerHTML.includes('사전 계획 텍스트'), '사전 계획(수기)은 그대로');
+  // 되돌리기
+  det.querySelector('.rv-koBtn').click();
+  await tick(20);
+  assert.ok($('rv-det-100').innerHTML.includes('Habló de balatas'), '원문 복귀');
+});
+
+test('방문 리뷰: AI 요약 없는 방문에는 한국어 토글이 없다', async () => {
+  seedReviewRoutes();
+  win.document.getElementById('vt-review').click();
+  await tick(40);
+  $('rv-table').querySelector('.rv-row[data-id="101"]').click();
+  assert.ok(!$('rv-det-101').querySelector('.rv-koBtn'));
+  assert.ok($('rv-det-101').innerHTML.includes('녹음 AI 요약이 없습니다'));
+});

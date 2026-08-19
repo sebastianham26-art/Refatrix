@@ -440,3 +440,71 @@ test('buildVisitReview: 기간 검증(31일 캡·역순 보정·기본 7일)', a
   const r3 = await buildVisitReview({ userId: 1, role: 'director' }, {});
   assert.equal(r3.to, (await import('../src/workingHours.js')).mxTodayStr(new Date()), '기본 to=오늘');
 });
+
+// ── ⑦ AI 요약 한국어 번역 토글(2026-08-19) ───────────────────────────
+test('buildTranslatePrompt: 원문 값 전달 + 코드 보존·개수 유지 규칙 포함', async () => {
+  const { buildTranslatePrompt } = await import('../src/visitAi.js');
+  const p = buildTranslatePrompt(SUMMARY);
+  assert.ok(p.includes('스페인어→한국어'));
+  assert.ok(p.includes('Habló de balatas y precios.'), '요약 원문 포함');
+  assert.ok(p.includes('Enviar cotización de balatas'), 'action_items 원문 포함');
+  assert.ok(p.includes('CL0001'));
+  assert.ok(p.includes('제품 코드') && p.includes('순서와 개수'));
+  assert.ok(!p.includes('due_date'), '날짜는 번역 대상 아님(서버가 원본 유지)');
+});
+
+test('parseTranslationJson: 마크다운 감싸기·개수 불일치·due_date 원본 유지', async () => {
+  const { parseTranslationJson } = await import('../src/visitAi.js');
+  const ko = parseTranslationJson(
+    '```json\n{"resumen":"브레이크 패드와 가격을 논의함.","insights":"고객은 경쟁사 X에서 구매 중.",' +
+    '"action_items":["브레이크 패드 견적 발송"],"products":["CL0001"],"next_step":"다음 주 월요일 방문"}\n```',
+    SUMMARY);
+  assert.equal(ko.resumen, '브레이크 패드와 가격을 논의함.');
+  assert.equal(ko.action_items.length, 2, '원문 건수(2)로 맞춤');
+  assert.equal(ko.action_items[0].content, '브레이크 패드 견적 발송');
+  assert.equal(ko.action_items[0].due_date, '2026-08-05', 'due_date 는 원문 유지');
+  assert.equal(ko.action_items[1].content, 'Confirmar stock CL0001', '번역 누락분은 원문 폴백');
+  assert.equal(ko.action_items[1].due_date, null);
+  assert.deepEqual(ko.products, ['CL0001'], '제품 코드 보존');
+  assert.equal(parseTranslationJson('설명만 있고 JSON 없음', SUMMARY), null);
+  assert.equal(parseTranslationJson('{"resumen":"","insights":"","action_items":[],"products":[],"next_step":""}',
+    { action_items: [], products: [] }), null, '빈 번역은 null');
+});
+
+test('번역 결과 저장: summary_json 에 ko 만 추가되고 원문은 불변', async () => {
+  seedBase();
+  const { parseTranslationJson } = await import('../src/visitAi.js');
+  const { query } = await import('../src/db.js');
+  const recId = Number(pub.many(
+    `INSERT INTO sales_visit_recordings (visit_id, mode, status, summary_json, created_by)
+     VALUES (100,'memo','done','${JSON.stringify(SUMMARY).replace(/'/g, "''")}',2) RETURNING id`)[0].id);
+  const row = (await query(`SELECT summary_json FROM sales_visit_recordings WHERE id=$1`, [recId])).rows[0];
+  const summary = typeof row.summary_json === 'string' ? JSON.parse(row.summary_json) : row.summary_json;
+  const ko = parseTranslationJson('{"resumen":"브레이크 패드 이야기","insights":"경쟁사 X","action_items":["견적 발송","재고 확인"],"products":["CL0001"],"next_step":"월요일 방문"}', summary);
+  await query(`UPDATE sales_visit_recordings SET summary_json=$2 WHERE id=$1`, [recId, JSON.stringify({ ...summary, ko })]);
+  const after = (await query(`SELECT status, summary_json FROM sales_visit_recordings WHERE id=$1`, [recId])).rows[0];
+  const sj = typeof after.summary_json === 'string' ? JSON.parse(after.summary_json) : after.summary_json;
+  assert.equal(after.status, 'done', '상태 불변');
+  assert.equal(sj.resumen, SUMMARY.resumen, '스페인어 원문 불변');
+  assert.equal(sj.action_items.length, 2);
+  assert.equal(sj.ko.resumen, '브레이크 패드 이야기');
+  assert.equal(sj.ko.action_items[1].due_date, null);
+  assert.equal(sj.ko.action_items[0].due_date, '2026-08-05');
+});
+
+test('buildVisitReview: 요약 있는 방문에 rec_id(번역 토글용) 포함', async () => {
+  const { buildVisitReview } = await import('../src/routes/visitRecRoutes.js');
+  seedBase();
+  const { mxTodayStr } = await import('../src/workingHours.js');
+  const mxToday = mxTodayStr(new Date());
+  pub.none(`UPDATE sales_visits SET visit_date='${mxToday}' WHERE id=100`);
+  const recId = Number(pub.many(
+    `INSERT INTO sales_visit_recordings (visit_id, mode, status, summary_json, created_by)
+     VALUES (100,'memo','done','${JSON.stringify({ ...SUMMARY, ko: { resumen: '한국어 요약', insights: '', action_items: [], products: [], next_step: '' } }).replace(/'/g, "''")}',2) RETURNING id`)[0].id);
+  const dir = await buildVisitReview({ userId: 1, role: 'director' }, {});
+  const v100 = dir.days.find((d) => d.date === mxToday).visits.find((v) => v.id === 100);
+  assert.equal(v100.rec_id, recId, '녹음 id 반환');
+  assert.equal(v100.summary.ko.resumen, '한국어 요약', '캐시된 번역이 리뷰에도 전달');
+  const v101 = dir.days.find((d) => d.date === mxToday).visits.find((v) => v.id !== 100);
+  if (v101) assert.equal(v101.rec_id, null, '녹음 없는 방문은 null');
+});

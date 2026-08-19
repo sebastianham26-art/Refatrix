@@ -72,6 +72,70 @@ export function parseSummaryJson(text) {
   };
 }
 
+// ── ②-B 요약 한국어 번역(화면 토글용) ─────────────────────────────────
+//   현장 전사문이 스페인어라 요약도 스페인어로 저장된다. 디렉터가 한글로 읽을 수
+//   있도록 요약 객체만 통째로 번역해 summary_json.ko 에 캐시한다(원문은 불변).
+export function buildTranslatePrompt(summary) {
+  const s = summary || {};
+  const src = {
+    resumen: String(s.resumen || ''),
+    insights: String(s.insights || ''),
+    action_items: (s.action_items || []).map((a) => String((a && a.content) || '')),
+    products: (s.products || []).map((p) => String(p || '')),
+    next_step: String(s.next_step || ''),
+  };
+  return [
+    '너는 스페인어→한국어 번역가다. 아래 JSON 값들을 자연스러운 한국어로 번역해 같은 구조의 JSON 하나만 출력하라.',
+    '',
+    '[번역 규칙]',
+    '- 내용을 추가·삭제·요약하지 마라. 문장 수와 정보량을 그대로 유지한다.',
+    '- 제품 코드·품번·회사명·사람 이름·지명은 번역하지 말고 원문 그대로 둔다.',
+    '- 자동차부품 유통 업무 용어로 자연스럽게(예: cotización=견적, pedido=주문, balatas=브레이크 패드, factura=송장, entrega=납품).',
+    '- action_items 는 문자열 배열이며 순서와 개수를 원문과 똑같이 유지한다.',
+    '- 이미 한국어인 값은 그대로 둔다. 빈 문자열은 빈 문자열로.',
+    '- 설명·마크다운 없이 JSON 객체 하나만 출력.',
+    '',
+    '[원문 JSON]',
+    JSON.stringify(src),
+    '',
+    '[출력 형식]',
+    '{"resumen":"…","insights":"…","action_items":["…"],"products":["…"],"next_step":"…"}',
+  ].join('\n');
+}
+
+// Claude 응답 → 한국어 요약 객체. base(원문 요약)로 개수·due_date 를 보정한다.
+export function parseTranslationJson(text, base) {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  let obj;
+  try { obj = JSON.parse(raw.slice(start, end + 1)); } catch (_) { return null; }
+  if (!obj || typeof obj !== 'object') return null;
+  const b = base || {};
+  const baseItems = Array.isArray(b.action_items) ? b.action_items : [];
+  const tItems = Array.isArray(obj.action_items) ? obj.action_items : [];
+  const action_items = baseItems.map((it, i) => {
+    const t = tItems[i];
+    const content = clip(typeof t === 'string' ? t : (t && t.content), 300) || clip(it && it.content, 300);
+    return { content, due_date: (it && it.due_date) || null };
+  });
+  const baseProducts = Array.isArray(b.products) ? b.products : [];
+  const tProducts = (Array.isArray(obj.products) ? obj.products : []).map((p) => clip(p, 80)).filter(Boolean);
+  const products = baseProducts.length
+    ? baseProducts.map((p, i) => tProducts[i] || clip(p, 80))
+    : tProducts.slice(0, 30);
+  const ko = {
+    resumen: clip(obj.resumen, 4000) || clip(b.resumen, 4000),
+    insights: clip(obj.insights, 2000),
+    action_items,
+    products,
+    next_step: clip(obj.next_step, 300),
+  };
+  if (!ko.resumen && !ko.insights && !ko.action_items.length && !ko.next_step) return null;
+  return ko;
+}
+
 // ── ③ 요약 → 방문 노트 병합(기존 수기 입력 보존, [AI요약] 블록 추가) ──
 export const AI_MARK = '[AI요약]';
 export function mergeNote(existing, aiText) {
