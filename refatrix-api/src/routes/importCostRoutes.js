@@ -266,6 +266,7 @@ export default async function importCostRoutes(app) {
               il.product_id, p.code, p.name, il.qty, il.unit_cost_mxn
          FROM import_lines il
          JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
+              AND b.status NOT IN ('pending','rejected')   -- 원가 반영(승인)된 배치만 정정 대상(2026-08-19)
          JOIN products p ON p.id=il.product_id
         ORDER BY b.import_date, b.id, p.code`)).rows;
     // 배치별 적용환율
@@ -313,7 +314,8 @@ export default async function importCostRoutes(app) {
       `SELECT il.batch_id, il.product_id, il.qty, il.unit_cost_mxn,
               b.currency, to_char(b.import_date,'YYYY-MM-DD') AS import_date
          FROM import_lines il JOIN import_batches b ON b.id=il.batch_id AND b.deleted_at IS NULL
-        WHERE il.product_id = ANY($1) AND b.exclude_from_cost IS NOT TRUE`, [productIds])).rows;
+        WHERE il.product_id = ANY($1) AND b.exclude_from_cost IS NOT TRUE
+          AND b.status NOT IN ('pending','rejected')   -- 승인 반영된 배치만(2026-08-19)`, [productIds])).rows;
     // 배치별 적용환율
     const metaMap = new Map();
     for (const r of ilRows) { const bid = Number(r.batch_id); if (!metaMap.has(bid)) metaMap.set(bid, { batch_id: bid, currency: r.currency, import_date: r.import_date }); }
@@ -766,6 +768,7 @@ export default async function importCostRoutes(app) {
                   FROM import_lines il
                   JOIN import_batches b ON b.id = il.batch_id
                  WHERE b.deleted_at IS NULL AND b.exclude_from_cost IS NOT TRUE
+                   AND b.status NOT IN ('pending','rejected') AND il.unit_cost_mxn IS NOT NULL  -- 승인 반영분만(2026-08-19)
                  GROUP BY il.product_id ) fa ON fa.product_id = p.id
         WHERE p.deleted_at IS NULL AND fa.qty > 0${codeCond}
         ORDER BY p.code`, params)).rows;

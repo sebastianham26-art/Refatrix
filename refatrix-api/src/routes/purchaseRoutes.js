@@ -42,11 +42,9 @@ async function matchProducts(codes) {
   const lc = [...new Set(codes.map((c) => c.toLowerCase()))];
   if (!lc.length) return new Map();
   const r = await query(
-    `SELECT id, code, is_active FROM products WHERE lower(code) = ANY($1) AND deleted_at IS NULL`, [lc]);
+    `SELECT id, code FROM products WHERE lower(code) = ANY($1) AND deleted_at IS NULL`, [lc]);
   const m = new Map();
-  // 0179 — 비활성(판매중단) SKU 도 매칭은 그대로 한다(발주·입고·backorder 체계를 깨지 않기 위해).
-  //        대신 is_active 를 같이 실어 보내 미리보기에서 「비활성」 경고를 띄운다.
-  for (const row of r.rows) m.set(String(row.code).toLowerCase(), { id: Number(row.id), code: row.code, is_active: row.is_active !== false });
+  for (const row of r.rows) m.set(String(row.code).toLowerCase(), { id: Number(row.id), code: row.code });
   return m;
 }
 
@@ -62,7 +60,7 @@ export default async function purchaseRoutes(app) {
     const matched = await matchProducts(valid.map((v) => v.code));
     const lines = valid.map((v) => {
       const p = matched.get(v.code.toLowerCase());
-      const base = { ...v, product_id: p ? p.id : null, matched: !!p, inactive: !!(p && !p.is_active) };
+      const base = { ...v, product_id: p ? p.id : null, matched: !!p };
       if (!seeCost) { base.cost = null; base.amount = null; }   // 구매단가 비공개
       return base;
     });

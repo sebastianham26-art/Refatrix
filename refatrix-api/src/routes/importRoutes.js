@@ -31,8 +31,10 @@ export default async function importRoutes(app) {
         [batch_no, import_date, currency, fx_rate, userId, note, shipId])).rows[0];
       for (const l of lines) {
         await c.query(
-          `INSERT INTO import_lines (batch_id, product_id, qty, import_price, currency, invoice_no)
-           VALUES ($1,$2,$3,$4,$5,$6)`, [b.id, l.product_id, l.qty, l.import_price, l.currency || currency, l.invoice_no || null]);
+          `INSERT INTO import_lines (batch_id, product_id, qty, import_price, currency, invoice_no, po_ref)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [b.id, l.product_id, l.qty, l.import_price, l.currency || currency, l.invoice_no || null,
+           l.po_ref ? String(l.po_ref).trim() : null]);   // 구매 참조번호(오더번호, 0179)
       }
       for (const o of overheads) {
         await c.query(
@@ -97,36 +99,46 @@ export default async function importRoutes(app) {
     const sid = Number(req.params.sid);
     const s = (await query(`SELECT id, invoice_no FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [sid])).rows[0];
     if (!s) return reply.code(404).send({ error: 'not_found' });
+    // (오더번호 × SKU) 단위 라인(0179, 2026-08-19):
+    //   같은 SKU가 여러 발주(참조번호)에 걸쳐 있으면 합치지 않고 오더별로 분리한다.
+    //   단가 제안도 "그 오더(ref_no = 팔렛 order_no)의 발주 라인" 우선 → 없으면 다른 발주 폴백.
+    //   (기존: SKU만 맞으면 최근 발주 아무거나 → CE0536L 사례처럼 엉뚱한 단가가 붙던 문제)
     const rows = (await query(
-      `SELECT pi.product_id, pr.code, pr.name,
+      `SELECT pi.product_id, pr.code, pr.name, pl.order_no,
               SUM(CASE WHEN pi.cartons > 0 THEN ROUND(pi.qty / pi.cartons) * pi.scanned_cartons ELSE pi.qty END) AS qty,
-              po.unit_cost_usd AS po_price, po.ref_no AS po_ref
+              po.unit_cost_usd AS po_price, po.ref_no AS po_ref, po.ref_match
          FROM inbound_pallets pl
          JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
          JOIN products pr ON pr.id = pi.product_id
          LEFT JOIN LATERAL (
-           -- 단가 제안: ① 제품 연결된 발주 라인 우선 ② 미매칭 라인(product_id NULL)은 제품코드로 발견
-           --   (발주 업로드 당시 제품 미매칭이면 단가가 0으로 비던 문제 보완 — 2026-08-18)
-           SELECT l.unit_cost_usd, p.ref_no
+           -- 단가 제안 우선순위: ① 참조번호(ref_no)=이 팔렛의 order_no 인 발주의 라인
+           --                    ② 제품 연결된 발주 라인 ③ 미매칭 라인(product_id NULL)은 제품코드로
+           SELECT l.unit_cost_usd, p.ref_no,
+                  (UPPER(REGEXP_REPLACE(p.ref_no,'[^A-Za-z0-9]','','g'))
+                     = UPPER(REGEXP_REPLACE(pl.order_no,'[^A-Za-z0-9]','','g'))) AS ref_match
              FROM purchase_order_lines l JOIN purchase_orders p ON p.id = l.po_id
             WHERE (l.product_id = pi.product_id
                    OR (l.product_id IS NULL
                        AND UPPER(REGEXP_REPLACE(l.input_code,'[^A-Za-z0-9]','','g'))
                          = UPPER(REGEXP_REPLACE(pr.code,'[^A-Za-z0-9]','','g'))))
               AND p.deleted_at IS NULL AND p.status <> 'cancelled'
-            ORDER BY (l.product_id IS NOT NULL) DESC, p.order_date DESC, l.id DESC LIMIT 1
+            ORDER BY (UPPER(REGEXP_REPLACE(p.ref_no,'[^A-Za-z0-9]','','g'))
+                        = UPPER(REGEXP_REPLACE(pl.order_no,'[^A-Za-z0-9]','','g'))) DESC,
+                     (l.product_id IS NOT NULL) DESC, p.order_date DESC, l.id DESC LIMIT 1
          ) po ON true
         WHERE pl.shipment_id=$1 AND pl.received_at IS NOT NULL AND pi.product_id IS NOT NULL
-        GROUP BY pi.product_id, pr.code, pr.name, po.unit_cost_usd, po.ref_no
-        ORDER BY pr.code`, [sid])).rows;
+        GROUP BY pi.product_id, pr.code, pr.name, pl.order_no, po.unit_cost_usd, po.ref_no, po.ref_match
+        ORDER BY pr.code, pl.order_no`, [sid])).rows;
     const seeCost = fieldVisible(req.ctx.perm, 'unit_cost');
     return {
       shipment: { id: Number(s.id), invoice_no: s.invoice_no },
       lines: rows.filter((r) => Number(r.qty) > 0).map((r) => ({
         product_id: Number(r.product_id), code: r.code, name: r.name,
         qty: Number(r.qty),
+        order_no: r.order_no || null,                                          // 이 라인의 참조번호(오더번호)
         po_price: seeCost && r.po_price != null ? Number(r.po_price) : null,   // 제안가(수정 가능)
         po_ref: r.po_ref || null,
+        po_ref_match: r.ref_match === true,                                    // 제안가가 같은 참조번호 발주에서 왔는지
       })),
     };
   });
@@ -136,7 +148,7 @@ export default async function importRoutes(app) {
     const r = await computeBatch(Number(req.params.id));
     // 원가 권한 없는 직원에겐 단위원가/부대비용/평균원가 필드를 제거(데이터 자체를 안 보냄)
     if (r && Array.isArray(r.preview) && !fieldVisible(req.ctx.perm, 'unit_cost')) {
-      r.preview = r.preview.map((cl) => ({ product_id: cl.product_id, qty: cl.qty }));
+      r.preview = r.preview.map((cl) => ({ product_id: cl.product_id, qty: cl.qty, po_ref: cl.po_ref || null }));
     }
     return r;
   });
@@ -171,10 +183,17 @@ export default async function importRoutes(app) {
       for (const l of lines) { if (l.invoice_no && String(l.invoice_no).trim()) invByProduct[l.product_id] = String(l.invoice_no).trim(); }
       const refFallback = (batch.batch_no && String(batch.batch_no).trim()) ? String(batch.batch_no).trim() : `batch:${id}`;
       for (const cl of computedLines) {
-        await c.query(
-          `UPDATE import_lines SET alloc_overhead=$1, unit_cost_mxn=$2, avg_cost_after=$3
-             WHERE batch_id=$4 AND product_id=$5`,
-          [cl.alloc_overhead, cl.unit_cost_mxn, cl.avg_cost_after, id, cl.product_id]);
+        // 같은 제품이 여러 라인(오더번호별, 0179)일 수 있으므로 라인 id 로 정확히 갱신
+        if (cl.line_id != null) {
+          await c.query(
+            `UPDATE import_lines SET alloc_overhead=$1, unit_cost_mxn=$2, avg_cost_after=$3 WHERE id=$4`,
+            [cl.alloc_overhead, cl.unit_cost_mxn, cl.avg_cost_after, cl.line_id]);
+        } else {
+          await c.query(
+            `UPDATE import_lines SET alloc_overhead=$1, unit_cost_mxn=$2, avg_cost_after=$3
+               WHERE batch_id=$4 AND product_id=$5`,
+            [cl.alloc_overhead, cl.unit_cost_mxn, cl.avg_cost_after, id, cl.product_id]);
+        }
         // 입출고 원장(입고) — 배치 전체가 하나의 이벤트. 날짜는 지정한 import_date(재고 등재일), 참조는 인보이스 번호.
         await c.query(
           `INSERT INTO stock_movements (product_id, move_type, qty, unit_cost_mxn, ref, batch_id, event_no, moved_at, created_by)
@@ -193,12 +212,18 @@ export default async function importRoutes(app) {
           await c.query(`UPDATE inbound_prestock SET qty = qty - $1, updated_at = now() WHERE product_id=$2`, [off, cl.product_id]);
         }
       }
+      // 승인 확정을 평균원가 계산보다 먼저 기록(2026-08-19):
+      //   flatAvgCost 가 이제 status='approved' 배치만 집계하므로, 이 배치를 포함시키려면
+      //   같은 트랜잭션 안에서 먼저 approved 로 바꿔야 한다.
+      await c.query(
+        `UPDATE import_batches SET status='approved', approved_by=$1, approved_at=now() WHERE id=$2`,
+        [userId, id]);
       // 제품 재고·평균원가 갱신
-      //   기본(단순가중평균 모드): 평균원가 = 현재 살아있는 배치들의 Σ(수량×입고단가)÷Σ수량.
+      //   기본(단순가중평균 모드): 평균원가 = 승인 반영된 배치들의 Σ(수량×입고단가)÷Σ수량.
       //   이동평균 모드(MOVING_AVG_COST=1): 기존 newState.avg_cost(이동평균) 사용.
       let flatAvg = {};
       if (flatAvgCostEnabled()) {
-        flatAvg = await flatAvgCost(c, pids);  // 방금 승인한 배치의 라인이 포함됨(deleted_at NULL·exclude false)
+        flatAvg = await flatAvgCost(c, pids);  // 방금 승인한 배치의 라인이 포함됨(위에서 approved 처리)
       }
       for (const [pid, st] of Object.entries(newState)) {
         const avg = (flatAvg[Number(pid)] != null) ? flatAvg[Number(pid)] : st.avg_cost;
@@ -219,9 +244,6 @@ export default async function importRoutes(app) {
         const bo = await consumeBackorder(cqb, Number(cl.product_id), boQty);
         boConsumed += bo.consumed;
       }
-      await c.query(
-        `UPDATE import_batches SET status='approved', approved_by=$1, approved_at=now() WHERE id=$2`,
-        [userId, id]);
       return { ok: true, lines: computedLines, backorder_consumed: Math.round(boConsumed * 1000) / 1000 };
     });
 

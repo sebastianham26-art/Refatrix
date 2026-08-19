@@ -42,6 +42,8 @@ export function computeImportCosting({ lines, overheads = [], fxRate, productSta
     state[pid] = { stock_qty: newQty, avg_cost: newAvg };
     return {
       product_id: pid,
+      line_id: l.id != null ? Number(l.id) : null,   // DB 라인이면 id 전달(0179: 같은 제품 여러 라인 구분)
+      po_ref: l.po_ref || null,
       qty,
       unit_cost_mxn: unitCost,
       alloc_overhead: round2(overheadPerUnit * qty),

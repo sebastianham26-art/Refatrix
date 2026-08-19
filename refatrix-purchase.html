@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 구매 내역 · build pur-0819act1</title>
+<title>Refatrix ERP · 구매 내역 · build pur-0818a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
@@ -372,11 +372,6 @@
     if(s.error_rows>0){ w+='<div class="msg warn">오류 '+s.error_rows+'행은 기록에서 제외됩니다: '+
       d.errors.slice(0,8).map(e=>'#'+e.i+' '+esc(e.code||'')+' ('+esc(e.reason)+')').join(', ')+(d.errors.length>8?' 외':'')+'</div>'; }
     if(s.unmatched>0){ w+='<div class="msg warn">미매칭 코드는 기록은 보존되나 제품 연결(재고·COGS)이 안 됩니다. 제품 마스터 등록 후 재매칭 예정.</div>'; }
-    // 0179 — 비활성(판매중단) SKU 발주 경고(차단은 하지 않음: 재고 소진·A/S 목적 구매가 있을 수 있음)
-    var inact=(d.lines||[]).filter(function(l){return l.inactive;});
-    if(inact.length){ w+='<div class="msg warn">⛔ 비활성(판매중단) SKU '+inact.length+'건이 포함되어 있습니다: '
-      +inact.slice(0,10).map(function(l){return esc(l.code);}).join(', ')+(inact.length>10?' …':'')
-      +' — 정말 구매할지 확인하세요.</div>'; }
     if(d.existing_refs&&d.existing_refs.length){ w+='<div class="msg warn">이미 기록된 참조번호: '+
       d.existing_refs.map(x=>esc(x.ref)+'('+x.n+'건)').join(', ')+' — 그대로 기록하면 별도 건으로 추가됩니다.</div>'; }
     $('prevWarn').innerHTML=w;
@@ -386,7 +381,7 @@
     for(const l of d.lines){
       const cv=canCost?('<td class="num">'+usd(l.cost)+'</td><td class="num">'+usd(l.amount)+'</td>'):'';
       h+='<tr><td>'+ (l._row||'') +'</td><td>'+esc(l.code)+'</td><td>'+
-        (l.matched?('<span class="pill ok">매칭</span>'+(l.inactive?' <span class="pill no" title="판매 비활성(판매중단) SKU 입니다. 발주 자체는 가능하지만 정말 구매할지 확인하세요.">비활성 SKU</span>':'')):'<span class="pill no">미매칭</span>')+'</td>'+
+        (l.matched?'<span class="pill ok">매칭</span>':'<span class="pill no">미매칭</span>')+'</td>'+
         '<td class="num">'+num(l.qty)+'</td>'+cv+'<td>'+esc(l.ref)+'</td></tr>';
     }
     $('prevTable').innerHTML=h;
@@ -681,6 +676,6 @@
     onLoggedIn(ps.user||{});
   } }catch(e){ console.error('auto-login',e); } })();
 </script>
-<script src="refatrix-nav.js?v=20260819pa"></script>
+<script src="refatrix-nav.js?v=20260817z"></script>
 </body>
 </html>
