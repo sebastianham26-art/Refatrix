@@ -593,8 +593,12 @@
     if(!dtData||!dtData.quote){ return; }
     if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침(Ctrl+Shift+R) 후 다시 시도하세요.'); return; }
     const q=dtData.quote;
-    const rows=(dtData.lines||[]).filter(l=> (Number(liveAvail(l))||0)>0);
-    if(!rows.length){ alert('현재 재고가 있는 항목이 없습니다.'); return; }
+    // 전환(매출됨) 견적: "재고분" = 확보되어 출고된 분량. 현재고 기준으로 거르면
+    // 이미 판매된 라인이 전부 빠져 보이는 문제(2026-08-20) → 확보수량 기준으로 전환.
+    const xConv=(q.status==='converted');
+    const xAvail=(l)=> xConv ? (Number(l.reserved_qty)||0) : (Number(liveAvail(l))||0);
+    const rows=(dtData.lines||[]).filter(l=> xAvail(l)>0);
+    if(!rows.length){ alert(xConv?'출고(확보)된 항목이 없습니다.':'현재 재고가 있는 항목이 없습니다.'); return; }
 
     // ----- 스타일 -----
     const bd={style:'thin',color:{rgb:'C9C2B4'}}; const border={top:bd,bottom:bd,left:bd,right:bd};
@@ -645,7 +649,7 @@
     set('A2','Cliente: '+(q.party_name||''),cMeta);
     set('A3','Fecha: '+(q.quote_date||'')+'    No.: '+(q.quote_no||''),cMeta);
     const noteParts=['Cantidad = cantidad cotizada (editable). El Importe, IVA y Total se recalculan automáticamente.'];
-    if(showExist)   noteParts.push('Existencia = stock disponible.');
+    if(showExist)   noteParts.push(xConv?'Existencia = cantidad surtida (venta confirmada).':'Existencia = stock disponible.');
     if(showTransit) noteParts.push('En tránsito = cantidad en camino.');
     if(showBack)    noteParts.push('Backorder = pedido pendiente por embarcar (sin incluir lo que ya está en tránsito).');
     set('A4',noteParts.join(' '),cNote);
@@ -663,7 +667,7 @@
       set(L.syd+r,  cp.syd||'', cL);
       set(L.prod+r, l.product_name||'', cL);
       set(L.app+r,  l.app_text||'', cL);
-      if(showExist)   set(L.exist+r, Number(liveAvail(l))||0, cExist);        // 가용재고(라이브: 현재고−타예약)
+      if(showExist)   set(L.exist+r, xAvail(l), cExist);                      // 가용재고 (전환 견적은 확보=출고 수량)
       if(showTransit){ if(tq>0) set(L.transit+r, tq, cTransit); else set(L.transit+r, '', cTransitEmpty); }  // 운송중(입고예정)
       if(showBack){ if(bo>0) set(L.back+r, bo, cBack); else set(L.back+r, '', cBackEmpty); }                 // 순수 발주잔량(운송중 제외)
       set(L.price+r, Number(l.final_price)||0, cMoney);                       // 단가(할인 반영, IVA 미포함)
@@ -749,6 +753,7 @@
         +'<th class="r" style="cursor:pointer;user-select:none" onclick="dtSetSort(\'qty\')" title="수량순 정렬">수량'+(dtSort.key==='qty'?(dtSort.dir==='asc'?' ▲':' ▼'):' ⇅')+'</th>'
         +'<th class="r" style="cursor:pointer;user-select:none" onclick="dtSetSort(\'price\')" title="단가순 정렬">단가'+(dtSort.key==='price'?(dtSort.dir==='asc'?' ▲':' ▼'):' ⇅')+'</th>'
         +'<th class="r">할인%</th><th class="r">라인합계</th><th>재고</th></tr></thead><tbody>';
+    const dtConv=(q.status==='converted');   // 매출전환됨 — 재고 열은 출고(확보) 기준으로(2026-08-20)
     lines.forEach(l=>{
       const cp=codePair(l);
       table+='<tr style="vertical-align:top">'
@@ -759,7 +764,17 @@
         +'<td class="r">'+fmt(l.list_price)+'</td>'
         +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
         +'<td class="r">'+fmt(l.line_total)+'</td>'
-        +'<td style="word-break:break-word">'+(flagLbl[l.live_flag||l.stock_flag]||flagLbl[l.stock_flag]||l.stock_flag||'')+(l.cur_stock!=null?'<br><span class="hint" style="font-size:10px">재고 '+fmtq(l.cur_stock)+(l.reserved_qty!=null?(' · 확보 '+fmtq(l.reserved_qty)):'')+'</span>':'')+'</td>'
+        +'<td style="word-break:break-word">'+(function(){
+            // 전환된 견적: "즉시/재고 0" 상충 표시 대신 출고(확보) 결과를 보여준다(2026-08-20 디렉터 보고)
+            if(dtConv&&l.product_name){
+              const rq=Number(l.reserved_qty)||0, qn=Number(l.qty)||0;
+              const tag=(rq>=qn)?'<span style="color:var(--income);font-weight:700">✔ 매출됨</span>'
+                :'<span style="color:#9a6512;font-weight:700">부분 '+fmtq(rq)+'/'+fmtq(qn)+'</span>';
+              return tag+'<br><span class="hint" style="font-size:10px">출고 '+fmtq(rq)+(l.cur_stock!=null?(' · 현재고 '+fmtq(l.cur_stock)):'')+'</span>';
+            }
+            return (flagLbl[l.live_flag||l.stock_flag]||flagLbl[l.stock_flag]||l.stock_flag||'')
+              +(l.cur_stock!=null?'<br><span class="hint" style="font-size:10px">재고 '+fmtq(l.cur_stock)+(l.reserved_qty!=null?(' · 확보 '+fmtq(l.reserved_qty)):'')+'</span>':'');
+          })()+'</td>'
         +'</tr>';
     });
     table+='</tbody></table></div>';
@@ -1179,6 +1194,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="refatrix-nav.js?v=20260819fsa"></script>
+<script src="refatrix-nav.js?v=20260819c"></script>
 </body>
 </html>
