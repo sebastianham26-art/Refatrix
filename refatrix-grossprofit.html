@@ -37,6 +37,15 @@
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg button{border:none;background:#fff;padding:6px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
   .seg button.on{background:var(--brand);color:#fff}
+  .seg button+button{border-left:1px solid var(--line)}
+  /* 기간 선택 바 (연도 다중토글 · 월 다중토글 · 달력 직접선택) */
+  .perbar{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:8px}
+  .perrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .perlab{font-size:11.5px;font-weight:700;color:var(--muted);min-width:34px;letter-spacing:.02em}
+  .seg.multi button{padding:5px 9px;font-size:11.5px}
+  .perbar input[type=date]{font-family:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:inherit}
+  .persum{font-size:11.5px;color:var(--muted)}
+  .persum b{color:var(--brand)}
   /* 4단계 카드 */
   .tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:6px}
   @media(max-width:760px){.tiers{grid-template-columns:repeat(2,1fr)}}
@@ -157,7 +166,26 @@
             <button data-view="month">월별</button>
           </span>
           <span class="hint" id="viewHint" style="margin:0">제품(SKU) 단위 매출총이익</span>
-          <span style="margin-left:auto"><span class="seg" id="yearSeg"></span></span>
+        </div>
+
+        <!-- 기간 선택: 연도(다중) · 월(다중) · 달력 직접선택 — 셋은 AND로 조합됨 -->
+        <div class="perbar">
+          <div class="perrow">
+            <span class="perlab">연도</span>
+            <span class="seg multi" id="yearSeg"></span>
+          </div>
+          <div class="perrow">
+            <span class="perlab">월</span>
+            <span class="seg multi" id="monthSeg"></span>
+          </div>
+          <div class="perrow">
+            <span class="perlab">기간</span>
+            <input type="date" id="perFrom"><span class="hint" style="margin:0">~</span><input type="date" id="perTo">
+            <button class="btn sm" id="perApply">적용</button>
+            <button class="btn ghost sm" id="perClear">기간 해제</button>
+            <button class="btn ghost sm" id="perReset">전체 초기화</button>
+          </div>
+          <div class="persum" id="perSum"></div>
         </div>
       </div>
 
@@ -176,9 +204,9 @@
         <div class="card-h">자재내역 (전체 SKU)
           <span style="margin-left:auto"><button class="btn ghost sm" id="toggleList">▸ 펼치기</button></span>
         </div>
-        <!-- 판매된 자재 매출총이익 요약 (전체 기간 누적) -->
+        <!-- 판매된 자재 매출총이익 요약 (선택 기간 기준) -->
         <div class="gpcards" id="gpCards">
-          <div class="gpc rev"><div class="lab">총매출액 <span class="note">(IVA 불포함)</span></div><div class="val" id="gpcRev">—</div><div class="sub">전체 기간 누적 · 판매된 자재</div></div>
+          <div class="gpc rev"><div class="lab">총매출액 <span class="note">(IVA 불포함)</span></div><div class="val" id="gpcRev">—</div><div class="sub" id="gpcSub">전체 기간 · 판매된 자재</div></div>
           <div class="gpc cogs"><div class="lab">총매출원가</div><div class="val" id="gpcCogs">—</div><div class="sub">판매 시점 동결 COGS 합계</div></div>
           <div class="gpc mgn"><div class="lab">매출총이익률</div><div class="val" id="gpcMgn">—</div><div class="sub">(총매출액 − 총매출원가) ÷ 총매출액</div></div>
         </div>
@@ -277,10 +305,13 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let year='';                 // ''=전체, 'YYYY'=해당 연도
+  // 기간 상태 — 연도(다중) · 월(다중) · 달력 직접선택(from~to). 셋 다 비면 전체 기간.
+  // 세 조건은 서로 AND. 예) years=[2025,2026] & months=[1,2] → 2025·2026년의 1월·2월만.
+  let PER={years:[],months:[],from:'',to:''};
   let isDirector=false;
   let DATA=null;               // 서버 응답 캐시 (기간 토글 반영)
-  let TOTALS_ALL=null;         // 전체 기간 누적 합계 (자재내역 상단 3카드용 · 토글 무관)
+  // (2026-08-21) 자재내역 상단 3카드는 '전체 기간 누적' → '선택 기간' 기준으로 변경.
+  //   별도 요청(loadAllTime) 없이 DATA.totals(= 기간 반영된 응답)를 그대로 사용한다.
   let listOpen=false, listSort='margin', listDir='desc', listQ='';
   let openDrill=new Set(), drillCache={};   // 자재내역 행 드릴다운(고객별 내역) 상태
   let chartScope='all', chartTier=null;
@@ -368,16 +399,50 @@
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
+  // ── 기간: 쿼리스트링 / 라벨 ──────────────────────────────────────────
+  function periodQS(){
+    const q=[];
+    if(PER.from) q.push('from='+PER.from);
+    if(PER.to)   q.push('to='+PER.to);
+    if(PER.years.length)  q.push('years='+PER.years.join(','));
+    if(PER.months.length) q.push('months='+PER.months.join(','));
+    return q.length?('?'+q.join('&')):'';
+  }
+  function periodLabel(){
+    const p=[];
+    if(PER.years.length)  p.push(PER.years.join('·')+'년');
+    if(PER.months.length) p.push(PER.months.join('·')+'월');
+    if(PER.from||PER.to)  p.push((PER.from||'처음')+' ~ '+(PER.to||'현재'));
+    return p.length?p.join(' · '):'전체 기간';
+  }
+  const periodSuffix=()=>' · '+periodLabel();
+
+  // ── 기간: 토글 렌더 ────────────────────────────────────────────────
+  const YEAR_SPAN=5;           // 최근 5개 연도를 버튼으로 노출
   function renderYearSeg(){
     const cur=new Date().getFullYear();
-    const years=[cur-2,cur-1,cur];
+    const years=[]; for(let i=YEAR_SPAN-1;i>=0;i--) years.push(cur-i);
+    // 선택했다가 목록에서 빠진 과거 연도(달력/이전 선택)도 버튼으로 유지
+    PER.years.forEach(y=>{ if(!years.includes(y)) years.push(y); });
+    years.sort((a,b)=>a-b);
     $('yearSeg').innerHTML=
-      '<button class="'+(year===''?'on':'')+'" onclick="pickYear(\'\')">전체</button>'
-      +years.map(y=>'<button class="'+(String(y)===year?'on':'')+'" onclick="pickYear(\''+y+'\')">'+y+'</button>').join('');
+      '<button class="'+(PER.years.length===0?'on':'')+'" data-y="all">전체</button>'
+      +years.map(y=>'<button class="'+(PER.years.includes(y)?'on':'')+'" data-y="'+y+'">'+y+'</button>').join('');
   }
-  function pickYear(y){
-    year=String(y); renderYearSeg();
-    // 기간이 바뀌면 모든 뷰 캐시를 무효화하고, 활성 뷰만 즉시 재로딩(다른 뷰는 전환 시 로딩).
+  function renderMonthSeg(){
+    let h='<button class="'+(PER.months.length===0?'on':'')+'" data-m="all">전체</button>';
+    for(let m=1;m<=12;m++) h+='<button class="'+(PER.months.includes(m)?'on':'')+'" data-m="'+m+'">'+m+'</button>';
+    $('monthSeg').innerHTML=h;
+  }
+  function renderPerSum(){
+    $('perSum').innerHTML='선택 기간: <b>'+esc(periodLabel())+'</b>'
+      +(PER.years.length&&PER.months.length?' <span style="opacity:.8">(선택 연도들의 선택 월만 합산)</span>':'');
+  }
+  function renderPeriodBar(){ renderYearSeg(); renderMonthSeg(); renderPerSum(); }
+
+  // ── 기간: 변경 적용 (캐시 무효화 + 활성 뷰 재로딩) ────────────────────
+  function applyPeriod(){
+    renderPeriodBar();
     DATA=null; openDrill.clear(); drillCache={};
     CUST=null; custOpen.clear(); custCache={};
     TEAM=null; MONTH=null;
@@ -386,7 +451,35 @@
     else if(curView==='month') loadMonth();
     else load();
   }
-  window.pickYear=pickYear;
+  function toggleIn(arr,v){ const i=arr.indexOf(v); if(i<0) arr.push(v); else arr.splice(i,1); arr.sort((a,b)=>a-b); return arr; }
+  function bindPeriodBar(){
+    $('yearSeg').addEventListener('click',(e)=>{
+      const b=e.target.closest('button'); if(!b) return;
+      const v=b.getAttribute('data-y');
+      if(v==='all') PER.years=[]; else toggleIn(PER.years,Number(v));
+      applyPeriod();
+    });
+    $('monthSeg').addEventListener('click',(e)=>{
+      const b=e.target.closest('button'); if(!b) return;
+      const v=b.getAttribute('data-m');
+      if(v==='all') PER.months=[]; else toggleIn(PER.months,Number(v));
+      applyPeriod();
+    });
+    $('perApply').addEventListener('click',()=>{
+      const f=$('perFrom').value||'', t=$('perTo').value||'';
+      if(f&&t&&f>t){ const err=$('errMsg'); err.className='msg err'; err.textContent='기간 오류: 시작일이 종료일보다 늦습니다.'; return; }
+      $('errMsg').className='msg';
+      PER.from=f; PER.to=t; applyPeriod();
+    });
+    $('perClear').addEventListener('click',()=>{
+      $('perFrom').value=''; $('perTo').value=''; PER.from=''; PER.to=''; applyPeriod();
+    });
+    $('perReset').addEventListener('click',()=>{
+      $('perFrom').value=''; $('perTo').value='';
+      PER={years:[],months:[],from:'',to:''};
+      applyPeriod();
+    });
+  }
 
   const VIEW_HINTS={sku:'제품(SKU) 단위 매출총이익',cust:'고객(거래처) 단위 손익 — 공헌이익까지',team:'영업팀 단위 손익 — 공헌이익까지',month:'월별 손익 추이 — 공헌이익까지'};
   function pickView(v){
@@ -407,20 +500,19 @@
   async function initApp(){
     // 접근 제어는 백엔드 requirePage('grossprofit')가 담당. 권한 없으면 load()에서 403 → 차단 카드.
     $('denyCard').classList.add('hidden'); $('gpSection').classList.remove('hidden');
-    renderYearSeg(); load(); loadAllTime();
+    renderPeriodBar(); bindPeriodBar(); load();
   }
 
   async function load(){
     const err=$('errMsg'); err.className='msg';
     try{
-      let qs='';
-      if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const qs=periodQS();
       const d=await fetch(session.api+'/api/gross-profit'+qs,{headers:auth()}).then(r=>r.json());
       if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
       if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
       DATA=d;
       openDrill.clear(); drillCache={};   // 기간이 바뀌면 드릴다운 캐시 무효화
-      renderTiers(); renderTotals(); if(listOpen) renderList();
+      renderTiers(); renderTotals(); renderGpCards(); if(listOpen) renderList();
     }catch(e){ err.className='msg err'; err.textContent='서버에 연결할 수 없습니다.'; }
   }
 
@@ -456,15 +548,10 @@
     $('totLine').innerHTML=h;
   }
 
-  // ── 판매된 자재 매출총이익 3카드 (전체 기간 누적 · 기간 토글과 무관) ──
-  async function loadAllTime(){
-    try{
-      const d=await fetch(session.api+'/api/gross-profit',{headers:auth()}).then(r=>r.json());
-      if(d&&!d.error){ TOTALS_ALL=d.totals||{}; renderGpCards(); }
-    }catch(e){ /* 무시: 카드는 — 로 둠 */ }
-  }
+  // ── 판매된 자재 매출총이익 3카드 (선택 기간 기준 · 아래 요약 줄과 항상 일치) ──
   function renderGpCards(){
-    const t=TOTALS_ALL||{};
+    const t=(DATA&&DATA.totals)||{};
+    if($('gpcSub')) $('gpcSub').textContent=periodLabel()+' · 판매된 자재';
     if($('gpcRev'))  $('gpcRev').innerHTML ='<span class="cur">MX$</span>'+fmt(t.revenue);
     if($('gpcCogs')) $('gpcCogs').innerHTML='<span class="cur">MX$</span>'+fmt(t.cogs);
     if($('gpcMgn'))  $('gpcMgn').textContent=pct(t.margin_pct);
@@ -474,7 +561,7 @@
   async function loadCust(){
     const err=$('errMsg'); err.className='msg';
     try{
-      let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const qs=periodQS();
       const d=await fetch(session.api+'/api/gross-profit/by-customer'+qs,{headers:auth()}).then(r=>r.json());
       if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
       if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
@@ -510,7 +597,7 @@
         +(pr.share_pct!=null&&pr.share_pct>100?' (손실 고객이 있어 100% 초과)':'')+'.</span>';
     }
     $('custTotLine').innerHTML=h;
-    $('custPeriodLbl').textContent=year?(year+'년'):'전체 기간';
+    $('custPeriodLbl').textContent=periodLabel();
   }
   function renderCustCards(){
     const t=CUST.totals||{};
@@ -587,7 +674,7 @@
     else if(d.__err){ body+='<div class="nores">불러오기 실패: '+esc(d.__err)+'</div>'; }
     else {
       const bs=d.by_sku||[];
-      body+='<div class="drill-sub">구매 SKU별 매출총이익'+(year?(' · '+year+'년'):' · 전체 기간')+'</div>';
+      body+='<div class="drill-sub">구매 SKU별 매출총이익'+periodSuffix()+'</div>';
       if(!bs.length){ body+='<div class="nores">이 기간에 구매 기록이 없습니다.</div>'; }
       else{
         body+='<table class="drilltbl"><thead><tr>'
@@ -627,7 +714,7 @@
     custOpen.add(id); renderCustList();
     if(!custCache[id]){
       try{
-        let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+        const qs=periodQS();
         const d=await fetch(session.api+'/api/gross-profit/customer/'+id+qs,{headers:auth()}).then(r=>r.json());
         custCache[id]= d && !d.error ? d : {__err:(d&&d.error)||'불러오기 실패'};
       }catch(e){ custCache[id]={__err:'서버에 연결할 수 없습니다.'}; }
@@ -639,7 +726,7 @@
   async function loadTeam(){
     const err=$('errMsg'); err.className='msg';
     try{
-      let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const qs=periodQS();
       const d=await fetch(session.api+'/api/gross-profit/by-team'+qs,{headers:auth()}).then(r=>r.json());
       if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
       if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
@@ -662,7 +749,7 @@
     $('teamSellV').innerHTML='<span class="cur">MX$</span>'+fmt((t.commission||0)+(t.freight||0));
     $('teamSellSub').textContent='커미션 MX$'+fmt(t.commission)+' · 운반비 MX$'+fmt(t.freight);
     $('teamCtbV').textContent=pct(t.contrib_pct);
-    $('teamPeriodLbl').textContent=(year?(year+'년'):'전체 기간');
+    $('teamPeriodLbl').textContent=periodLabel();
     const items=TEAM.items||[];
     let h='<table><thead><tr><th class="l">팀</th><th class="n">거래처</th><th class="n">거래건수</th>'
       +'<th class="n">매출(ex-IVA)</th><th class="n">매출원가</th><th class="n">매출총이익</th><th class="n">이익률</th>'
@@ -682,7 +769,7 @@
   async function loadMonth(){
     const err=$('errMsg'); err.className='msg';
     try{
-      let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+      const qs=periodQS();
       const d=await fetch(session.api+'/api/gross-profit/by-month'+qs,{headers:auth()}).then(r=>r.json());
       if(d.error==='forbidden'){ $('denyCard').classList.remove('hidden'); $('gpSection').classList.add('hidden'); return; }
       if(d.error){ err.className='msg err'; err.textContent='불러오기 실패: '+d.error; return; }
@@ -694,7 +781,7 @@
     $('monRevV').innerHTML='<span class="cur">MX$</span>'+fmt(t.revenue);
     $('monSellV').innerHTML='<span class="cur">MX$</span>'+fmt((t.commission||0)+(t.freight||0));
     $('monCtbV').textContent=pct(t.contrib_pct);
-    $('monPeriodLbl').textContent=(year?(year+'년'):'전체 기간');
+    $('monPeriodLbl').textContent=periodLabel();
     const items=(MONTH.items||[]).slice().reverse();   // 최신 월이 위
     let h='<table><thead><tr><th class="l">월</th><th class="n">거래건수</th>'
       +'<th class="n">매출(ex-IVA)</th><th class="n">매출원가</th><th class="n">매출총이익</th><th class="n">이익률</th>'
@@ -786,7 +873,7 @@
     else if(d.__err){ body+='<div class="nores">불러오기 실패: '+esc(d.__err)+'</div>'; }
     else {
       const bc=d.by_customer||[];
-      body+='<div class="drill-sub">판매처(고객)별 내역'+(year?(' · '+year+'년'):' · 전체 기간')+'</div>';
+      body+='<div class="drill-sub">판매처(고객)별 내역'+periodSuffix()+'</div>';
       if(!bc.length){ body+='<div class="nores">이 기간에 판매 기록이 없습니다.</div>'; }
       else{
         body+='<table class="drilltbl"><thead><tr>'
@@ -820,7 +907,7 @@
     openDrill.add(id); renderList();      // 우선 "불러오는 중" 표시
     if(!drillCache[id]){
       try{
-        let qs=''; if(year){ qs='?from='+year+'-01-01&to='+year+'-12-31'; }
+        const qs=periodQS();
         const d=await fetch(session.api+'/api/gross-profit/sku/'+id+qs,{headers:auth()}).then(r=>r.json());
         drillCache[id]= d && !d.error ? d : {__err:(d&&d.error)||'불러오기 실패'};
       }catch(e){ drillCache[id]={__err:'서버에 연결할 수 없습니다.'}; }
@@ -994,7 +1081,10 @@
       highlightPoint, hideChartTip, getPts:()=>chartPts,
       setCust:(d)=>{CUST=d;}, renderCustTiers, renderCustTotals, renderCustCards, renderCustList,
       sortedCust, setCustSort:(k,d)=>{custSort=k;custDir=d;}, setCustQ:(q)=>{custQ=q;}, pickView,
-      setTeam:(d)=>{TEAM=d;}, renderTeam, setMonth:(d)=>{MONTH=d;}, renderMonth };
+      setTeam:(d)=>{TEAM=d;}, renderTeam, setMonth:(d)=>{MONTH=d;}, renderMonth,
+      // 기간 선택(연도 다중 · 월 다중 · 달력 직접선택)
+      setPer:(p)=>{PER=Object.assign({years:[],months:[],from:'',to:''},p);}, getPer:()=>PER,
+      periodQS, periodLabel, renderPeriodBar, bindPeriodBar, renderGpCards };
   }
 </script>
 <script src="refatrix-nav.js?v=20260819fsa"></script>

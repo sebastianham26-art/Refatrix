@@ -71,12 +71,46 @@ export function computePareto(soldItems, totalProfit) {
 //   · 공헌이익 = 매출총이익 − 커미션 − 운반비.
 const FREIGHT_OUT_CODE = '6160';
 
+// ══════════ 기간 필터 (2026-08-21 확장) ══════════
+// 3가지를 서로 AND로 조합한다.
+//   · from/to    : 달력에서 직접 고른 시작일~종료일 (YYYY-MM-DD)
+//   · years=..   : 다중 연도 토글 (예: years=2025,2026)
+//   · months=..  : 다중 월 토글  (예: months=1,2,12 → 매년 1·2·12월만)
+// years/months 는 중복 선택 가능하며, 둘 다 주면 "선택 연도들 × 선택 월들" 교집합이 된다.
+
+// 순수: "1,2,12" 같은 CSV를 검증된 정수 배열(중복 제거·오름차순)로. 범위 밖/비정수는 버린다.
+export function parseIntList(raw, min, max) {
+  const out = [];
+  for (const s of String(raw == null ? '' : raw).split(',')) {
+    const t = s.trim();
+    if (!/^\d{1,4}$/.test(t)) continue;
+    const n = Number(t);
+    if (n < min || n > max) continue;
+    if (!out.includes(n)) out.push(n);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+// 순수: 검증된 정수 배열 → to_char 비교 조건 조각. 값은 이미 정수로 검증돼 인젝션 위험 없음.
+export function ymConds(col, p) {
+  const c = [];
+  if (p.years && p.years.length) {
+    c.push(`EXTRACT(YEAR FROM ${col}) IN (${p.years.map((y) => String(Number(y))).join(',')})`);
+  }
+  if (p.months && p.months.length) {
+    c.push(`EXTRACT(MONTH FROM ${col}) IN (${p.months.map((m) => String(Number(m))).join(',')})`);
+  }
+  return c;
+}
+
 function dateRange(req) {
   const from = (req.query.from || '').trim();
   const to = (req.query.to || '').trim();
   return {
     from: /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
     to: /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : null,
+    years: parseIntList(req.query.years, 1900, 2999),
+    months: parseIntList(req.query.months, 1, 12),
   };
 }
 
@@ -87,6 +121,7 @@ async function commissionRows(range) {
   let where = '';
   if (range.from) { params.push(range.from); where += ` AND i.inv_date >= $${params.length}`; }
   if (range.to)   { params.push(range.to);   where += ` AND i.inv_date <= $${params.length}`; }
+  for (const c of ymConds('i.inv_date', range)) where += ` AND ${c}`;
   const rows = (await query(
     `SELECT i.customer_id, to_char(i.inv_date,'YYYY-MM') AS ym, i.subtotal_mxn,
             per.rate AS period_rate, ccr.rate AS cust_rate,
@@ -118,6 +153,7 @@ async function freightRows(range) {
   let where = '';
   if (range.from) { params.push(range.from); where += ` AND t.txn_date >= $${params.length}`; }
   if (range.to)   { params.push(range.to);   where += ` AND t.txn_date <= $${params.length}`; }
+  for (const c of ymConds('t.txn_date', range)) where += ` AND ${c}`;
   const base = `t.deleted_at IS NULL AND t.status = 'actual' AND t.direction = 'out'
         AND t.approved = true AND t.category_code = $1${where}`;
   const rows = (await query(
@@ -180,19 +216,19 @@ export function pnlTotals(items, pn) {
   return { commission, freight };
 }
 
-// 요청의 from/to(YYYY-MM-DD)를 파라미터 배열에 이어 붙여 WHERE 절 조각을 만든다.
+// 요청의 from/to(YYYY-MM-DD) + years/months 를 파라미터 배열에 이어 붙여 WHERE 절 조각을 만든다.
 function buildDateWhere(req, params) {
-  const from = (req.query.from || '').trim();
-  const to = (req.query.to || '').trim();
+  const p = dateRange(req);
   const conds = [];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { params.push(from); conds.push(`si.inv_date >= $${params.length}`); }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(to))   { params.push(to);   conds.push(`si.inv_date <= $${params.length}`); }
+  if (p.from) { params.push(p.from); conds.push(`si.inv_date >= $${params.length}`); }
+  if (p.to)   { params.push(p.to);   conds.push(`si.inv_date <= $${params.length}`); }
+  for (const c of ymConds('si.inv_date', p)) conds.push(c);
   return conds.length ? ' AND ' + conds.join(' AND ') : '';
 }
 
 export default async function grossProfitRoutes(app) {
   // ── SKU별 매출총이익 전체(자재내역) + 4단계 요약 + (정렬된) 곡선 데이터 ─────────────────────────
-  // 옵션: ?from=YYYY-MM-DD&to=YYYY-MM-DD (inv_date 기준 기간 한정). 미지정 시 전체 기간.
+  // 옵션: ?from=YYYY-MM-DD&to=YYYY-MM-DD&years=2025,2026&months=1,2 (inv_date 기준). 미지정 시 전체 기간.
   app.get('/api/gross-profit', { preHandler: [authGuard, requirePage('grossprofit')] }, async (req) => {
     const { perm } = req.ctx;
     const params = [];

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { newDb } from 'pg-mem';
-import { GP_TIERS, tierOf, summarizeTiers } from '../src/routes/grossProfitRoutes.js';
+import { GP_TIERS, tierOf, summarizeTiers, parseIntList, ymConds } from '../src/routes/grossProfitRoutes.js';
 
 test('GP_TIERS: 4단계가 빈틈/중복 없이 연속(−∞..+∞)을 덮는다', () => {
   assert.equal(GP_TIERS.length, 4);
@@ -135,4 +135,43 @@ test('파레토 상위 20%: 개수 = ceil(판매SKU수 × 0.2), 이익 금액 �
   assert.deepEqual(imp.map((x) => x.id), [1, 2]);
   const share = imp.reduce((s, x) => s + x.profit, 0) / sold.reduce((s, x) => s + x.profit, 0) * 100;
   assert.equal(Math.round(share * 10) / 10, 34.5);
+});
+
+// ── 기간 필터 확장 (2026-08-21): 연도 다중 · 월 다중 · 달력 직접선택 ─────────────────
+test('parseIntList: CSV → 검증된 정수 배열(중복제거·정렬), 범위 밖/비정수는 버린다', () => {
+  assert.deepEqual(parseIntList('2025,2026', 1900, 2999), [2025, 2026]);
+  assert.deepEqual(parseIntList('2026, 2025 ,2025', 1900, 2999), [2025, 2026]);
+  assert.deepEqual(parseIntList('1,2,12', 1, 12), [1, 2, 12]);
+  assert.deepEqual(parseIntList('12,1,2', 1, 12), [1, 2, 12]);
+  // 범위 밖 · 비정수 · 인젝션 시도는 전부 제거 → 빈 배열
+  assert.deepEqual(parseIntList("0,13,abc,-1,'; DROP TABLE products;--", 1, 12), []);
+  assert.deepEqual(parseIntList(undefined, 1, 12), []);
+  assert.deepEqual(parseIntList('', 1, 12), []);
+});
+
+test('ymConds: 연/월 조건 SQL 조각(선택 없으면 조건 없음)', () => {
+  assert.deepEqual(ymConds('si.inv_date', { years: [], months: [] }), []);
+  assert.deepEqual(ymConds('si.inv_date', { years: [2025, 2026], months: [] }),
+    ['EXTRACT(YEAR FROM si.inv_date) IN (2025,2026)']);
+  assert.deepEqual(ymConds('t.txn_date', { years: [], months: [1, 12] }),
+    ['EXTRACT(MONTH FROM t.txn_date) IN (1,12)']);
+  assert.deepEqual(ymConds('i.inv_date', { years: [2026], months: [3] }),
+    ['EXTRACT(YEAR FROM i.inv_date) IN (2026)', 'EXTRACT(MONTH FROM i.inv_date) IN (3)']);
+});
+
+test('pg-mem: 연도 다중 · 월 다중 · 기간(from~to) 조건이 AND로 조합된다', () => {
+  const db = newDb();
+  db.public.none(`CREATE TABLE si(id int, inv_date date, status text, deleted_at date);
+    INSERT INTO si VALUES (1,'2024-01-09','posted',null),(2,'2025-01-15','posted',null),
+                          (3,'2025-07-02','posted',null),(4,'2026-01-20','posted',null),
+                          (5,'2026-03-05','posted',null);`);
+  const cnt = (w) => db.public.many(
+    `SELECT count(*)::int c FROM si WHERE si.status='posted' AND si.deleted_at IS NULL ${w}`)[0].c;
+  const Y = (ys) => ' AND ' + ymConds('si.inv_date', { years: ys, months: [] })[0];
+  const M = (ms) => ' AND ' + ymConds('si.inv_date', { years: [], months: ms })[0];
+  assert.equal(cnt(''), 5);                                   // 전체
+  assert.equal(cnt(Y([2025, 2026])), 4);                      // 연도 2개 중복선택
+  assert.equal(cnt(M([1])), 3);                               // 매년 1월만
+  assert.equal(cnt(Y([2025, 2026]) + M([1])), 2);             // 2025·2026년의 1월
+  assert.equal(cnt(` AND si.inv_date >= '2025-01-01' AND si.inv_date <= '2026-12-31'` + M([1, 3])), 3);
 });
