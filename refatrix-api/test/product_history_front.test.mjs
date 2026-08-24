@@ -1,5 +1,5 @@
 // =====================================================================
-// 제품 이력 탭 (refatrix-products.html, build ph-0824a) — jsdom
+// 제품 이력 탭 (refatrix-products.html, build ph-0824b) — jsdom
 //   운영 HTML 을 그대로 로드하고 fetch 만 스텁해서
 //   탭 노출 · 6열 표 · Estado 칩 · 가격 마스킹 · 드릴다운(movement) 을 검증한다.
 // =====================================================================
@@ -69,6 +69,12 @@ const MOVES = {
     { id: 3, move_type: 'adjust', qty: -15, signed_qty: -15, moved_at: '2026-06-01T10:00:00.000Z', ref: '재고조정', note: '실사', event_no: 7, origin: '수동', customer_name: null, sat_no: null, created_by_name: '디렉터' },
   ],
   capped: false,
+  basis: '판매·견적은 매출일(inv_date)·견적일(quote_date) 기준 · 발행(posted) 인보이스만',
+  lifetime: {
+    sales_count: 3, sales_qty: 57, sales_amount: 5700,
+    first_sale_date: '2026-02-01', last_sale_date: '2026-04-05',
+    quote_count: 3, quote_qty: 19, pending_count: 0, pending_qty: 0,
+  },
   sales: [{ id: 5, sat_no: 'A-1', inv_date: '2026-04-01', created_at: '2026-04-01T10:00:00.000Z', status: 'posted', customer_name: '내팀고객', qty: 20, unit_price: 100, amount_mxn: 2000 }],
   quotes: [{ id: 8, quote_no: 'PHT-Q1', quote_date: '2026-04-10', created_at: '2026-04-10T10:00:00.000Z', status: 'draft', customer_name: '내팀고객', qty: 12, unit_price: 90, amount_mxn: 1080 }],
 };
@@ -105,6 +111,19 @@ async function boot(opts = {}) {
         }
         if (u.includes('/movements')) {
           if (opts.movesError) return json({ error: opts.movesError }, false);
+          if (u.includes('all=1')) {
+            return json(Object.assign({}, MOVES, {
+              all: true,
+              totals: Object.assign({}, MOVES.totals, { sales_count: 3, sales_qty: 57, quote_count: 3, quote_qty: 19 }),
+            }));
+          }
+          if (opts.zeroWindow) {
+            return json(Object.assign({}, MOVES, {
+              stock: [], sales: [], quotes: [],
+              totals: { move_count: 0, in_qty: 0, out_qty: 0, adjust_qty: 0, sales_count: 0, sales_qty: 0, sales_amount: 0, quote_count: 0, quote_qty: 0, quote_amount: 0 },
+              lifetime: Object.assign({}, MOVES.lifetime, { sales_count: 1, sales_qty: 5, sales_amount: 500, first_sale_date: '2026-01-20', last_sale_date: '2026-01-20', pending_count: opts.pending ? 2 : 0, pending_qty: opts.pending ? 9 : 0 }),
+            }));
+          }
           if (u.includes('until=')) {
             return json(Object.assign({}, MOVES, {
               stock: MOVES.stock.slice(0, 2), quotes: [],
@@ -218,18 +237,60 @@ test('제품 이력 탭 — jsdom', { skip: SKIP }, async (t) => {
     assert.equal(opened.length, 1, '한 번에 하나만');
   });
 
-  await t.test('⑩ 「다음 변경 전까지만」 토글 → until 전달', async () => {
+  await t.test('⑩ 「다음 변경 전까지」 버튼 → until 전달', async () => {
     const { w, d, calls } = await boot();
     // 2026-02-10 행 → 다음 변경은 2026-03-15
     const row = [...$(d, 'phBox').querySelectorAll('tr.ph-row')][1];
     row.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
-    const btn = $(d, 'phBox').querySelector('.ph-range');
-    assert.ok(btn, '구간 토글 버튼 존재');
+    const btn = [...$(d, 'phBox').querySelectorAll('.ph-mode')].find((b) => b.getAttribute('data-mode') === 'ranged');
+    assert.ok(btn, '구간 버튼 존재');
     assert.match(btn.textContent, /2026-03-15/);
     btn.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
     const ranged = calls.filter((c) => c.url.includes('until=')).pop();
     assert.ok(ranged, 'until 로 재조회');
     assert.match(ranged.url, /until=2026-03-15T10%3A00%3A00.000Z/);
+  });
+
+  await t.test('⑩-2 전체 기간 버튼 → all=1 전달', async () => {
+    const { w, d, calls } = await boot();
+    const row = $(d, 'phBox').querySelector('tr.ph-row');
+    row.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
+    const btn = [...$(d, 'phBox').querySelectorAll('.ph-mode')].find((b) => b.getAttribute('data-mode') === 'all');
+    assert.ok(btn, '전체 기간 버튼 존재');
+    btn.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
+    assert.ok(calls.some((c) => c.url.includes('all=1')), 'all=1 로 재조회');
+    assert.match($(d, 'phBox').querySelector('tr.ph-det').textContent, /전체 기간/);
+  });
+
+  await t.test('⑩-3 전체 누적 판매를 항상 같이 보여준다 (CE0536R 혼동 방지)', async () => {
+    const { w, d } = await boot();
+    const row = $(d, 'phBox').querySelector('tr.ph-row');
+    row.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
+    const txt = $(d, 'phBox').querySelector('tr.ph-det').textContent;
+    assert.match(txt, /전체 누적 판매/);
+    assert.match(txt, /57/);
+    assert.match(txt, /2026-02-01 ~ 2026-04-05/);
+    assert.match(txt, /매출일\(inv_date\)/, '기준 안내 문구');
+  });
+
+  await t.test('⑩-4 「변경 이후 0 · 전체 5」면 그 이유를 명시한다', async () => {
+    const { w, d } = await boot({ zeroWindow: true });
+    const row = $(d, 'phBox').querySelector('tr.ph-row');
+    row.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
+    const txt = $(d, 'phBox').querySelector('tr.ph-det').textContent;
+    assert.match(txt, /이 변경 이후에는 판매가 없습니다/);
+    assert.match(txt, /누적 5개는 전부/);
+    assert.match(txt, /2026-01-20/);
+    assert.match(txt, /전체 기간/);
+  });
+
+  await t.test('⑩-5 승인 대기 인보이스가 있으면 경고를 띄운다', async () => {
+    const { w, d } = await boot({ zeroWindow: true, pending: true });
+    const row = $(d, 'phBox').querySelector('tr.ph-row');
+    row.dispatchEvent(new w.Event('click', { bubbles: true })); await tick(60);
+    const txt = $(d, 'phBox').querySelector('tr.ph-det').textContent;
+    assert.match(txt, /승인 대기/);
+    assert.match(txt, /매출로 집계되지 않아/);
   });
 
   await t.test('⑪ 필터 파라미터가 그대로 전달된다', async () => {

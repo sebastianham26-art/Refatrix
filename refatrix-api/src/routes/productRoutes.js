@@ -708,19 +708,31 @@ export default async function productRoutes(app) {
     };
   });
 
-  // 이력 행 드릴다운 — 그 변경 **이후**의 movement.
-  //   ?since=ISO(필수) · ?until=ISO(선택, 다음 변경 시각까지만 보고 싶을 때) · ?limit
+  // 이력 행 드릴다운 — 그 변경 **이후**의 movement (+ 전체 기간 대조).
+  //   ?since=ISO(필수) · ?until=ISO(선택, 다음 변경 시각까지) · ?all=1(전체 기간) · ?limit
   //   ① 재고 입출고 원장(stock_movements) ② 판매 인보이스 라인 ③ 견적 라인
   //   판매·견적은 제품 드릴다운과 **같은 팀 가시성 규칙**을 쓴다(담당 고객만).
   //   금액은 sale_price 권한자에게만. 수량·건수는 항상.
+  //
+  // ⚠ 2026-08-24 수정 — 두 가지를 고쳤다.
+  //   (1) **판매/견적의 기준 날짜**: `created_at`(= ERP 에 입력한 시각)이 아니라
+  //       **`inv_date` / `quote_date`(= 실제 매출일·견적일)** 로 자른다.
+  //       과거 인보이스를 나중에 입력하면 created_at 이 미래라 「변경 이후」에 잘못 끼고,
+  //       반대로 마감 후 입력하면 빠진다. 매출총이익·누적판매 등 다른 화면이 전부
+  //       inv_date 기준이므로 여기서도 맞춘다.
+  //   (2) **상태 조건을 `status='posted'` 로 통일**. 기존엔 `<> 'deleted'` 라
+  //       승인 대기(edit_pending) 건이 여기서만 판매로 잡혀 매출총이익과 숫자가 어긋났다.
+  //   또한 「변경 이후 0건」이 데이터 문제인지 그냥 그 전에 팔린 것인지 화면에서 바로
+  //   구분되도록 **전체 기간 누계(lifetime)** 를 항상 함께 내려준다.
   app.get('/api/products/:id/movements', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
     const { perm } = req.ctx;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
     const since = String(req.query.since || '').trim();
     if (!since || Number.isNaN(Date.parse(since))) return reply.code(400).send({ error: 'since_required' });
+    const all = req.query.all === '1' || req.query.all === 'true';
     const until = String(req.query.until || '').trim();
-    const hasUntil = !!until && !Number.isNaN(Date.parse(until));
+    const hasUntil = !all && !!until && !Number.isNaN(Date.parse(until));
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
     const canPrice = fieldVisible(perm, 'sale_price');
 
@@ -729,6 +741,7 @@ export default async function productRoutes(app) {
     if (!prod) return reply.code(404).send({ error: 'not_found' });
 
     // ① 재고 입출고 — 변경 이후 전부(재고 역산에 쓰므로 until 로 자르지 않는다).
+    //    all=1 이면 원장 전체.
     const moves = (await query(
       `SELECT m.id, m.move_type, m.qty, m.ref, m.note, m.source, m.moved_at,
               m.sales_invoice_id, m.batch_id, m.event_no,
@@ -737,43 +750,80 @@ export default async function productRoutes(app) {
          LEFT JOIN users u ON u.id=m.created_by
          LEFT JOIN sales_invoices si ON si.id=m.sales_invoice_id
          LEFT JOIN customers cu ON cu.id=si.customer_id
-        WHERE m.product_id=$1 AND m.moved_at >= $2::timestamptz
-        ORDER BY m.moved_at ASC, m.id ASC`, [id, since])).rows;
+        WHERE m.product_id=$1 ${all ? '' : 'AND m.moved_at >= $2::timestamptz'}
+        ORDER BY m.moved_at ASC, m.id ASC`, all ? [id] : [id, since])).rows;
+    // 재고 역산은 항상 「변경 시점 이후」 원장으로 한다(all 모드여도 기준은 그 변경).
+    const movesSince = all ? moves.filter((r) => new Date(r.moved_at) >= new Date(since)) : moves;
 
     const vis = visibleTeamIds(perm);
-    const sArgs = [id, since];
+    // 판매 — 매출총이익·누적판매와 같은 조건(posted, 미삭제) + 같은 팀 가시성.
+    const sArgs = [id];
     let teamCond = '';
     if (vis !== null) { sArgs.push(vis.length ? vis : [-1]); teamCond = ` AND cu.team_id = ANY($${sArgs.length})`; }
+    let sinceCondS = '';
+    if (!all) { sArgs.push(since); sinceCondS = ` AND si.inv_date >= ($${sArgs.length}::timestamptz)::date`; }
     let untilCondS = '';
-    if (hasUntil) { sArgs.push(until); untilCondS = ` AND si.created_at < $${sArgs.length}::timestamptz`; }
+    if (hasUntil) { sArgs.push(until); untilCondS = ` AND si.inv_date <= ($${sArgs.length}::timestamptz)::date`; }
     const salesRows = (await query(
       `SELECT si.id, si.sat_no, to_char(si.inv_date,'YYYY-MM-DD') AS inv_date, si.created_at, si.status,
               cu.name AS customer_name, sil.qty, sil.unit_price, sil.line_amount_mxn
          FROM sales_invoice_lines sil
          JOIN sales_invoices si ON si.id=sil.invoice_id
          JOIN customers cu ON cu.id=si.customer_id
-        WHERE sil.product_id=$1 AND si.deleted_at IS NULL AND si.status <> 'deleted'
-          AND si.created_at >= $2::timestamptz${teamCond}${untilCondS}
-        ORDER BY si.created_at ASC, si.id ASC
+        WHERE sil.product_id=$1 AND si.deleted_at IS NULL AND si.status='posted'
+          ${teamCond}${sinceCondS}${untilCondS}
+        ORDER BY si.inv_date ASC, si.id ASC
         LIMIT ${limit}`, sArgs)).rows;
 
-    const qArgs = [id, since];
+    const qArgs = [id];
     let teamCondQ = '';
     if (vis !== null) { qArgs.push(vis.length ? vis : [-1]); teamCondQ = ` AND cu.team_id = ANY($${qArgs.length})`; }
+    let sinceCondQ = '';
+    if (!all) { qArgs.push(since); sinceCondQ = ` AND q.quote_date >= ($${qArgs.length}::timestamptz)::date`; }
     let untilCondQ = '';
-    if (hasUntil) { qArgs.push(until); untilCondQ = ` AND q.created_at < $${qArgs.length}::timestamptz`; }
+    if (hasUntil) { qArgs.push(until); untilCondQ = ` AND q.quote_date <= ($${qArgs.length}::timestamptz)::date`; }
     const quoteRows = (await query(
       `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS quote_date, q.created_at, q.status,
               cu.name AS customer_name, ql.qty, ql.final_price, ql.line_subtotal
          FROM quote_lines ql
          JOIN quotes q ON q.id=ql.quote_id
          JOIN customers cu ON cu.id=q.customer_id
-        WHERE ql.product_id=$1 AND q.deleted_at IS NULL
-          AND q.created_at >= $2::timestamptz${teamCondQ}${untilCondQ}
-        ORDER BY q.created_at ASC, q.id ASC
+        WHERE ql.product_id=$1 AND q.deleted_at IS NULL${teamCondQ}${sinceCondQ}${untilCondQ}
+        ORDER BY q.quote_date ASC, q.id ASC
         LIMIT ${limit}`, qArgs)).rows;
 
-    const movesAll = moves.map((r) => ({ move_type: r.move_type, qty: Number(r.qty) }));
+    // 전체 기간 누계 — 「변경 이후 0건」이 이상한 건지 아닌지 화면에서 바로 판단하도록.
+    //   조건은 제품 드릴다운 매출총이익과 **완전히 동일**해서 두 화면 숫자가 반드시 맞는다.
+    const lArgs = [id];
+    let teamCondL = '';
+    if (vis !== null) { lArgs.push(vis.length ? vis : [-1]); teamCondL = ` AND cu.team_id = ANY($${lArgs.length})`; }
+    const life = (await query(
+      `SELECT COUNT(DISTINCT si.id)::int AS cnt, COALESCE(SUM(sil.qty),0) AS qty,
+              COALESCE(SUM(sil.line_amount_mxn),0) AS amount,
+              to_char(MIN(si.inv_date),'YYYY-MM-DD') AS first_date,
+              to_char(MAX(si.inv_date),'YYYY-MM-DD') AS last_date
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id=sil.invoice_id
+         JOIN customers cu ON cu.id=si.customer_id
+        WHERE sil.product_id=$1 AND si.deleted_at IS NULL AND si.status='posted'${teamCondL}`,
+      lArgs)).rows[0];
+    const lifeQ = (await query(
+      `SELECT COUNT(DISTINCT q.id)::int AS cnt, COALESCE(SUM(ql.qty),0) AS qty
+         FROM quote_lines ql
+         JOIN quotes q ON q.id=ql.quote_id
+         JOIN customers cu ON cu.id=q.customer_id
+        WHERE ql.product_id=$1 AND q.deleted_at IS NULL${teamCondL}`, lArgs)).rows[0];
+    // 승인 대기(edit_pending/delete_pending)로 집계에서 빠진 건이 있으면 화면에 알려준다
+    // — 「팔았는데 0으로 보인다」의 흔한 원인이라 숨기지 않는다.
+    const pend = (await query(
+      `SELECT COUNT(DISTINCT si.id)::int AS cnt, COALESCE(SUM(sil.qty),0) AS qty
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id=sil.invoice_id
+         JOIN customers cu ON cu.id=si.customer_id
+        WHERE sil.product_id=$1 AND si.deleted_at IS NULL
+          AND si.status IN ('edit_pending','delete_pending')${teamCondL}`, lArgs)).rows[0];
+
+    const movesAll = movesSince.map((r) => ({ move_type: r.move_type, qty: Number(r.qty) }));
     const stockBefore = stockAtChange(prod.stock_qty, movesAll);
     const shown = hasUntil ? moves.filter((r) => new Date(r.moved_at) < new Date(until)) : moves;
     const capped = shown.length > limit;
@@ -796,9 +846,23 @@ export default async function productRoutes(app) {
         id: Number(prod.id), code: prod.code, name: prod.name, scode: prod.scode || null,
         stock_qty: Number(prod.stock_qty) || 0, is_active: prod.is_active !== false,
       },
-      since, until: hasUntil ? until : null, can_price: canPrice,
+      since, until: hasUntil ? until : null, all, can_price: canPrice,
       // 변경 시점 재고 → 현재 재고 (원장이 재고의 유일한 변동원이므로 역산이 성립)
       stock_before: stockBefore, stock_now: Number(prod.stock_qty) || 0,
+      // 전체 기간 누계 — 제품 드릴다운 「매출총이익」과 같은 조건이라 두 화면 숫자가 항상 일치.
+      lifetime: {
+        sales_count: Number(life.cnt) || 0,
+        sales_qty: r3(Number(life.qty) || 0),
+        sales_amount: canPrice ? r2(Number(life.amount) || 0) : null,
+        first_sale_date: life.first_date || null,
+        last_sale_date: life.last_date || null,
+        quote_count: Number(lifeQ.cnt) || 0,
+        quote_qty: r3(Number(lifeQ.qty) || 0),
+        // 승인 대기라 매출 집계에 아직 안 잡히는 건(있으면 화면에 안내)
+        pending_count: Number(pend.cnt) || 0,
+        pending_qty: r3(Number(pend.qty) || 0),
+      },
+      basis: '판매·견적은 매출일(inv_date)·견적일(quote_date) 기준 · 발행(posted) 인보이스만 — 제품 드릴다운 매출총이익과 동일',
       totals: {
         move_count: shown.length, in_qty: r3(inQty), out_qty: r3(outQty), adjust_qty: r3(adjQty),
         sales_count: salesRows.length,

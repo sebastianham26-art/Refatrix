@@ -110,18 +110,24 @@ async function boot() {
   await mv(ID.p1, 'adjust', -15, '2026-06-01T10:00:00Z', '재고조정', 'manual');    // 변경 후(음수 조정)
   // 재고 역산: 현재 70 − (−20 +5 −15) = 70 − (−30) = 100 ← 변경 시점 재고
 
-  const inv = async (cust, date, qty, createdAt) => {
+  const inv = async (cust, date, qty, createdAt, pid = ID.p1, status = 'posted') => {
     const i = (await query(
       `INSERT INTO sales_invoices (customer_id, inv_date, status, memo, created_at)
-       VALUES ($1,$2,'posted','PHTEST',$3) RETURNING id`, [cust, date, createdAt])).rows[0];
+       VALUES ($1,$2,$4,'PHTEST',$3) RETURNING id`, [cust, date, createdAt, status])).rows[0];
     await query(
       `INSERT INTO sales_invoice_lines (invoice_id, product_id, qty, list_price, discount_rate, unit_price, line_amount_mxn)
-       VALUES ($1,$2,$3,100,0,100,$4)`, [i.id, ID.p1, qty, 100 * qty]);
+       VALUES ($1,$2,$3,100,0,100,$4)`, [i.id, pid, qty, 100 * qty]);
     return Number(i.id);
   };
   ID.invBefore = await inv(ID.custA, '2026-02-01', 7, '2026-02-01T10:00:00Z');   // 변경 전
   ID.invAfterA = await inv(ID.custA, '2026-04-01', 20, '2026-04-01T10:00:00Z');  // 변경 후 · 내 팀
   ID.invAfterB = await inv(ID.custB, '2026-04-05', 30, '2026-04-05T10:00:00Z');  // 변경 후 · 타 팀
+  // 매출일은 과거인데 ERP 입력은 나중 — created_at 으로 자르면 「변경 이후」에 잘못 끼던 케이스
+  ID.invLateEntry = await inv(ID.custA, '2026-01-15', 4, '2026-06-20T10:00:00Z');
+  // 승인 대기 — 매출 집계에서 빠지되 안내는 떠야 함
+  ID.invPending = await inv(ID.custA, '2026-04-02', 9, '2026-04-02T10:00:00Z', ID.p1, 'edit_pending');
+  // CE0536R 재현: 판매가 전부 「변경 이전」인 제품 — 구간 0 · 전체 5
+  ID.invP2 = await inv(ID.custA, '2026-01-20', 5, '2026-01-20T10:00:00Z', ID.p2);
 
   const quo = async (cust, no, qty, createdAt) => {
     const q = (await query(
@@ -308,14 +314,60 @@ test('제품 이력 — 실 Postgres 종단', { skip: SKIP }, async (t) => {
     assert.equal((await get('/api/products/99999999/movements?since=2026-03-15T10:00:00Z')).code, 404);
   });
 
-  await t.test('⑮ 회귀 — 기존 /changelog 는 그대로(마스터 로그 전량, status 포함)', async () => {
+  await t.test('⑮ 판매 기준일 = 매출일(inv_date) — 입력시각(created_at) 아님', async () => {
+    const { body } = await get(`/api/products/${ID.p1}/movements?since=2026-03-15T10:00:00Z`);
+    // 2026-01-15 매출인데 06-20 에 입력한 건: created_at 기준이면 잘못 끼고, inv_date 기준이면 빠진다
+    assert.ok(!body.sales.some((s) => s.id === ID.invLateEntry), '늦게 입력한 과거 매출은 「변경 이후」가 아니다');
+    assert.ok(body.sales.every((s) => s.inv_date >= '2026-03-15'), '모든 행이 매출일 기준 이후');
+  });
+
+  await t.test('⑯ 승인 대기 인보이스는 판매로 세지 않되 안내는 내려준다', async () => {
+    const { body } = await get(`/api/products/${ID.p1}/movements?since=2026-03-15T10:00:00Z`);
+    assert.ok(!body.sales.some((s) => s.id === ID.invPending), 'edit_pending 은 목록에서 제외');
+    assert.equal(body.lifetime.pending_count, 1);
+    assert.equal(body.lifetime.pending_qty, 9);
+  });
+
+  await t.test('⑰ 전체 기간 누계(lifetime) — 제품 드릴다운 매출총이익과 같은 기준', async () => {
+    const { body } = await get(`/api/products/${ID.p1}/movements?since=2026-03-15T10:00:00Z`);
+    assert.equal(body.lifetime.sales_count, 4, 'posted 인보이스 4건 (pending 제외)');
+    assert.equal(body.lifetime.sales_qty, 7 + 20 + 30 + 4);
+    assert.equal(body.lifetime.sales_amount, 6100);
+    assert.equal(body.lifetime.first_sale_date, '2026-01-15');
+    assert.equal(body.lifetime.last_sale_date, '2026-04-05');
+    // 같은 기준의 제품 드릴다운과 숫자가 맞는지 교차 확인
+    const dd = await get(`/api/products/${ID.p1}/drilldown`);
+    assert.equal(dd.body.total_sold, body.lifetime.sales_qty, '드릴다운 총 판매수량과 일치');
+  });
+
+  await t.test('⑱ CE0536R 재현 — 변경 이후 0 인데 전체는 5개', async () => {
+    // PHT-B: 판매는 2026-01-20(5개) 하나뿐, 마스터 변경은 2026-02-01
+    const { body } = await get(`/api/products/${ID.p2}/movements?since=2026-02-01T10:00:00Z`);
+    assert.equal(body.totals.sales_count, 0, '변경 이후 판매 없음 — 이건 정상');
+    assert.equal(body.lifetime.sales_count, 1, '전체로는 1건');
+    assert.equal(body.lifetime.sales_qty, 5, '전체 5개 — 화면이 이 숫자를 같이 보여준다');
+    assert.equal(body.lifetime.last_sale_date, '2026-01-20');
+  });
+
+  await t.test('⑲ all=1 — 전체 기간 조회', async () => {
+    const { body } = await get(`/api/products/${ID.p2}/movements?since=2026-02-01T10:00:00Z&all=1`);
+    assert.equal(body.all, true);
+    assert.equal(body.totals.sales_count, 1, '전체 기간이면 변경 이전 판매도 나온다');
+    assert.equal(body.totals.sales_qty, 5);
+    const p1 = (await get(`/api/products/${ID.p1}/movements?since=2026-03-15T10:00:00Z&all=1`)).body;
+    assert.equal(p1.totals.sales_count, 4, 'p1 은 posted 4건 전부');
+    assert.equal(p1.stock_before, 100, 'all 모드에서도 재고 역산 기준은 그 변경 시점');
+    assert.equal(p1.stock.length, 4, '변경 전 입고 100 도 원장에 포함');
+  });
+
+  await t.test('⑳ 회귀 — 기존 /changelog 는 그대로(마스터 로그 전량, status 포함)', async () => {
     const { code, body } = await get(`/api/products/changelog?product_id=${ID.p1}&limit=50`);
     assert.equal(code, 200);
     assert.equal(body.items.length, 5, '기존 엔드포인트는 중복제거 없이 5건 그대로');
     assert.ok(body.items.some((r) => r.source === 'status'));
   });
 
-  await t.test('⑯ 권한 — 제품 페이지 권한 없으면 차단', async () => {
+  await t.test('㉑ 권한 — 제품 페이지 권한 없으면 차단', async () => {
     await query(`UPDATE user_page_access SET device_req='blocked' WHERE user_id=$1 AND page_key='products'`, [ID.sal]);
     const r = await get(`/api/products/history?product_id=${ID.p1}`, 'sal');
     assert.ok(r.code === 403 || r.code === 401, `차단되어야 함 — got ${r.code}`);
