@@ -34,7 +34,12 @@ export default async function dashboardRoutes(app) {
       if (perm.pages && perm.pages[k] != null) access[k] = (perm.pageAccess && perm.pageAccess[k]) || 'edit';
       else access[k] = 'none';
     }
-    return { role: perm.role, isDirector: perm.role === 'director', access };
+    // cross_team_request: 타팀 고객 「수정 요청」 허용 여부(디렉터 승인 전제).
+    //   화면이 「다른 팀 고객 수정 요청」 카드를 보여줄지 판단하는 데 사용.
+    return {
+      role: perm.role, isDirector: perm.role === 'director', access,
+      cross_team_request: perm.crossTeamRequest === true,
+    };
   });
 
   // 위젯 카탈로그(레지스트리) — 구성 화면이 사용

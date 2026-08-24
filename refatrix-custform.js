@@ -8,6 +8,9 @@
 (function(){
   var cfg={api:'',token:'',isDirector:false,onSaved:null};
   var teams=[], stages=[], owners=[], editingId=null, hostEl=null, origTerms=null;
+  // 타팀 고객 수정요청 모드 — 열람 범위를 넓히지 않고 "요청"만 넣는 경로.
+  //   배송지 즉시저장은 승인 우회가 되므로 이 모드에선 잠근다.
+  var crossTeam=false;
   function auth(){ return {'Authorization':'Bearer '+cfg.token}; }
   function api(p){ return (cfg.api||'').replace(/\/+$/,'')+p; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -16,6 +19,11 @@
   function formHTML(){
     return ''
     +'<div class="rcf-form">'
+    +'<div id="rcf-crossbox" style="display:none;border:1px solid #9ab8d8;background:#eef4fb;border-radius:9px;padding:10px 12px">'
+      +'<div style="font-size:12.5px;font-weight:700;color:#20486f">🔁 다른 팀 고객 수정 요청 <span id="rcf-crosswho" style="font-weight:600"></span></div>'
+      +'<div style="font-size:12px;color:#3c5f85;margin-top:3px">이 고객은 다른 팀 소속입니다. 저장하면 <b>바로 반영되지 않고 디렉터 승인 대기</b>로 넘어갑니다. 본인 담당으로 가져오려면 <b>담당자</b>를 본인으로, <b>팀</b>을 본인 팀으로 바꿔서 요청하세요.</div>'
+      +'<div id="rcf-crosspend" style="font-size:12px;color:#9a6512;margin-top:4px"></div>'
+    +'</div>'
     +'<div class="rcf-row">'
       +'<div class="rcf-f"><label>고객코드</label><input id="rcf-code" type="text" placeholder="자동"></div>'
       +'<div class="rcf-f rcf-grow"><label>고객명 *</label><input id="rcf-name" type="text"></div>'
@@ -125,7 +133,7 @@
   }
 
   async function fillNew(){
-    editingId=null;
+    editingId=null; crossTeam=false; applyCrossTeamUI(null,null);
     $('rcf-code').value='자동…'; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     try{ var d=await fetch(api('/api/customers/next-code'),{headers:auth()}).then(r=>r.json()); $('rcf-code').value=d.code||''; }catch(e){ $('rcf-code').value=''; }
     ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-buyername','rcf-buyerphone','rcf-memo','rcf-constancia','rcf-ship'].forEach(function(id){ if($(id))$(id).value=''; });
@@ -140,7 +148,28 @@
     if($('rcf-cancel')) $('rcf-cancel').style.display='none';
     setMsg('','');
   }
-  function fillEdit(c){
+  // 담당자 드롭다운은 /api/sales-users(팀 스코프) 기준이라, 타팀 고객의 현재 담당자가
+  // 목록에 없을 수 있다. 그대로 두면 선택이 비어 "담당자 → 미지정" 을 실수로 요청하게 되므로
+  // 현재 담당자를 옵션으로 한 번 끼워 넣는다(표시 전용).
+  function ensureOwnerOption(id,name){
+    var o=$('rcf-owner'); if(!o||!id) return;
+    if(o.querySelector('option[value="'+String(id)+'"]')) return;
+    var op=document.createElement('option');
+    op.value=String(id); op.textContent=(name||('사용자 #'+id))+' (타팀)';
+    o.appendChild(op);
+  }
+  function applyCrossTeamUI(c,pending){
+    var box=$('rcf-crossbox'); if(box) box.style.display=crossTeam?'':'none';
+    var who=$('rcf-crosswho');
+    if(who) who.textContent=crossTeam?('— 현재 소속: '+((c&&c.team_name)||'미지정')+' / 현재 담당: '+((c&&c.owner_name)||'미지정')):'';
+    var pd=$('rcf-crosspend');
+    if(pd) pd.textContent=(crossTeam&&pending)?('⚠ 이미 승인 대기중인 요청이 있습니다('+(pending.requested_by_name||'-')+'). 저장하면 그 요청을 덮어씁니다.'):'';
+    // 배송지: 타팀 요청 모드에서는 즉시저장 경로를 막는다(승인 우회 방지)
+    var shipWrap=$('rcf-ship'); if(shipWrap) shipWrap.disabled=crossTeam;
+    var sb=$('rcf-shipsave'); if(sb) sb.style.display=crossTeam?'none':'';
+    setShipMsg('', crossTeam?'배송지는 담당 팀에서 수정합니다.':'');
+  }
+  function fillEdit(c,pending){
     editingId=c.id;
     $('rcf-code').value=c.code||''; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     $('rcf-name').value=c.name||''; $('rcf-rfc').value=c.rfc||''; $('rcf-contact').value=c.contact||'';
@@ -151,14 +180,16 @@
     if($('rcf-shipsave')) $('rcf-shipsave').style.display='';
     setShipMsg('','');
     if($('rcf-team')) $('rcf-team').value=c.team_id||''; if($('rcf-type')) $('rcf-type').value=c.customer_type||'';
+    ensureOwnerOption(c.owner_id,c.owner_name);
     if($('rcf-owner')) $('rcf-owner').value=c.owner_id||''; if($('rcf-stage')) $('rcf-stage').value=c.stage_id||'';
     if($('rcf-discount')) $('rcf-discount').value=(c.discount!=null?c.discount:0);
     if($('rcf-credit')) $('rcf-credit').value=(c.credit_days!=null?c.credit_days:0);
     if($('rcf-branches')) $('rcf-branches').value=(c.branch_count!=null?c.branch_count:'');
     origTerms={discount:Number(c.discount)||0, credit:Number(c.credit_days)||0};
     clearTermsInputs();
-    $('rcf-save').textContent=cfg.isDirector?'수정 저장':'수정 요청(디렉터 승인)';
+    $('rcf-save').textContent=crossTeam?'타팀 고객 수정 요청(디렉터 승인)':(cfg.isDirector?'수정 저장':'수정 요청(디렉터 승인)');
     if($('rcf-cancel')) $('rcf-cancel').style.display='';
+    applyCrossTeamUI(c,pending);
     setMsg('','');
   }
 
@@ -195,19 +226,22 @@
     $('rcf-save').disabled=true;
     try{
       // 수정 모드: 배송지는 승인 대기 없이 즉시 저장(전용 엔드포인트) — 나머지 필드는 기존 흐름 유지.
-      if(editingId) await saveShipAddress();
+      //   단, 타팀 수정요청 모드에서는 이 즉시저장 경로를 타지 않는다(디렉터 승인 우회 방지).
+      if(editingId&&!crossTeam) await saveShipAddress();
       var url=editingId?api('/api/customers/'+editingId):api('/api/customers');
       var method=editingId?'PATCH':'POST';
       var res=await fetch(url,{method:method,headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(b)});
       var d=await res.json();
       if(!res.ok||d.error){
         var msg=d.error==='code_exists'||d.error==='code_taken'?'이미 있는 고객코드입니다.'
-          :d.error==='forbidden_team'?'그 팀의 고객을 만들/수정할 권한이 없습니다.'
+          :d.error==='forbidden_team'?'그 팀의 고객을 만들/수정할 권한이 없습니다. (타팀 고객 수정요청 권한이 필요하면 디렉터에게 요청하세요)'
+          :d.error==='forbidden_team_move'?'그 팀으로 옮길 권한이 없습니다.'
+          :d.error==='cross_team_request_denied'?'타팀 고객 수정요청 권한이 없습니다. 디렉터에게 요청하세요.'
           :d.error==='terms_reason_required'?(d.note||'기본할인·외상일 변경 시 수정이유와 제공 조건을 반드시 입력해야 합니다.')
           :('실패: '+(d.detail||d.error||res.status));
         setMsg('err',msg); $('rcf-save').disabled=false; return;
       }
-      if(d.pending){ setMsg('pend', td?'수정 요청을 보냈습니다. 할인·외상일 변경은 디렉터 승인 후 반영·이력 기록됩니다.':'수정 요청을 보냈습니다. 디렉터 승인 후 반영됩니다.'); }
+      if(d.pending){ setMsg('pend', (d.cross_team?'타팀 고객 수정 요청을 보냈습니다. ':'수정 요청을 보냈습니다. ')+(td?'할인·외상일 변경은 디렉터 승인 후 반영·이력 기록됩니다.':'디렉터 승인 후 반영됩니다.')); }
       else { setMsg('ok', editingId?(td?'수정되었습니다. 할인·외상일 변경이 이력에 기록되었습니다.':'수정되었습니다.'):('등록되었습니다: '+(d.code||b.code||'')+' · '+b.name)); }
       $('rcf-save').disabled=false;
       if(typeof cfg.onSaved==='function') cfg.onSaved(d, editingId, !!d.pending);
@@ -230,8 +264,10 @@
       await fillNew();
     },
     newCustomer:function(){ return fillNew(); },
-    editCustomer:function(c){ fillEdit(c); },
+    // opts: { crossTeam:true, pending:{requested_by_name} } — 타팀 고객 수정요청 모드
+    editCustomer:function(c,opts){ crossTeam=!!(opts&&opts.crossTeam); fillEdit(c, opts&&opts.pending); },
+    isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260723b loaded (이메일 주소 + 할인·외상일 이유/조건 필수)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260824 loaded (타팀 고객 수정요청 모드 추가)'); }catch(e){}
 })();

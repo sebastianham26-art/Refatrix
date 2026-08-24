@@ -2,10 +2,36 @@ import { query } from './db.js';
 import { hashDeviceKey } from './auth.js';
 import { buildAccountAccess } from './accountScope.js';
 
+// ── 반쪽 배포 안전장치 ────────────────────────────────────────────────
+// users.cross_team_request 는 마이그레이션 0181 에서 추가된다.
+// 백엔드가 먼저 뜨고 migrate 가 아직 안 돌았다면 이 컬럼이 없는데,
+// SELECT 에 그냥 넣어두면 loadPerm 이 42703 으로 터지고 → authGuard 가 500 →
+// 로그인 이후 "모든 화면·모든 저장"이 죽는다(고객 수정 포함).
+// 그래서 컬럼 존재 여부를 확인해서 없으면 그 항목만 빼고 읽는다(권한은 false 취급).
+// 결과는 캐시하되, "없음"일 때는 60초마다 다시 확인해서 migrate 직후 자동 복구되게 한다.
+let crossCol = { known: false, exists: false, checkedAt: 0 };
+export async function hasCrossTeamRequestColumn() {
+  if (crossCol.known && crossCol.exists) return true;                  // 있으면 영구 캐시
+  if (crossCol.known && Date.now() - crossCol.checkedAt < 60000) return false; // 없으면 60초 후 재확인
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='users' AND column_name='cross_team_request' LIMIT 1`);
+    crossCol = { known: true, exists: r.rows.length > 0, checkedAt: Date.now() };
+  } catch {
+    crossCol = { known: true, exists: false, checkedAt: Date.now() };
+  }
+  return crossCol.exists;
+}
+// 테스트/운영 점검용 — 캐시 초기화
+export function resetCrossTeamColumnCache() { crossCol = { known: false, exists: false, checkedAt: 0 }; }
+
 // 사용자 권한 묶음을 DB에서 읽어 perm 객체로 구성
 export async function loadPerm(userId) {
+  const hasCross = await hasCrossTeamRequestColumn();
   const u = (await query(
     `SELECT id, name, dept, role, lang, scope, cur_scope, see_balance, see_process_map, team_id, dash_drilldown, restrict_cash_detail
+            ${hasCross ? ', cross_team_request' : ''}
        FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId])).rows[0];
   if (!u) return null;
 
@@ -47,6 +73,8 @@ export async function loadPerm(userId) {
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
     teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
     dashDrilldown: u.dash_drilldown !== false,
+    // 타팀 고객 수정요청 권한(디렉터 승인 전제). 마이그레이션 0181 이전 DB에서는 undefined → false 취급.
+    crossTeamRequest: u.cross_team_request === true,
     pages, pageAccess, fields, items, accountAccess,
   };
 }

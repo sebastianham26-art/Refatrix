@@ -1,8 +1,9 @@
-// build 20260818b — 고객수정 승인요청에 구매결정권자(buyer_name/buyer_phone)·지점수 포함 (재배포 트리거용 마커)
+// build 20260824 — 타팀 고객 수정요청(디렉터 승인) + 0181 반쪽배포 안전장치 (재배포 트리거용 마커)
 import { query, withTx } from '../db.js';
+import { hasCrossTeamRequestColumn } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
+import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
@@ -597,6 +598,86 @@ export default async function customerRoutes(app) {
   });
 
   // 고객 수정
+  // ===== 타팀 고객 수정요청(디렉터 승인 전제) =====
+  //  배경: 영업이 다른 팀 고객을 "본인 담당으로 이관" 하려면 그 고객을 수정해야 하는데,
+  //        고객 목록·상세는 팀 스코프라 아예 접근이 막혀 있었다(403 forbidden_team).
+  //  방침: 열람 범위는 넓히지 않는다. 대신 users.cross_team_request 권한이 켜진 사용자에게만
+  //        ① 상호/코드/RFC 로 고객을 "찾고"(최소 신원정보만),
+  //        ② 그 고객의 "수정 요청 폼에 필요한 기본 항목"만 읽고,
+  //        ③ PATCH 로 수정 요청을 넣는 경로를 연다. 실제 반영은 디렉터 승인 시에만.
+  //  ⚠ 매출·미수·인보이스·증빙서류·방문이력 등 민감 데이터는 이 경로로 절대 나가지 않는다.
+
+  // 고객 찾기(타팀 포함) — 수정요청용 최소 신원정보만 반환
+  app.get('/api/customers/lookup', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (perm.role !== 'director' && !canRequestCrossTeam(perm)) {
+      return reply.code(403).send({ error: 'cross_team_request_denied' });
+    }
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return { items: [], note: 'min_2_chars' };
+    const vis = visibleTeamIds(perm);
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name, c.rfc, c.team_id, t.name AS team_name, c.owner_id, u.name AS owner_name,
+              (EXISTS (SELECT 1 FROM customer_change_requests r WHERE r.customer_id=c.id AND r.status='pending')) AS has_pending
+         FROM customers c
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN users u ON u.id=c.owner_id
+        WHERE c.deleted_at IS NULL
+          AND (c.name ILIKE $1 OR c.code ILIKE $1 OR c.rfc ILIKE $1)
+        ORDER BY c.name LIMIT 30`, [`%${q}%`])).rows;
+    return {
+      items: rows.map((c) => ({
+        id: Number(c.id), code: c.code, name: c.name, rfc: c.rfc,
+        team_id: c.team_id == null ? null : Number(c.team_id), team_name: c.team_name,
+        owner_id: c.owner_id == null ? null : Number(c.owner_id), owner_name: c.owner_name,
+        // in_scope=true 면 원래 내 팀 고객(목록에서 그냥 열면 됨), false 면 타팀 → 수정요청 대상
+        in_scope: vis === null ? true : (c.team_id != null && vis.includes(Number(c.team_id))),
+        pending_change: !!c.has_pending,
+      })),
+    };
+  });
+
+  // 수정요청 폼용 기본 항목만 조회(타팀 고객 허용) — 금액·이력·서류는 포함하지 않는다
+  app.get('/api/customers/:id/edit-basic', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const c = (await query(
+      `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone,
+              c.discount, c.credit_days, c.branch_count, c.customer_type, c.memo, c.constancia_fiscal,
+              c.ship_address, c.team_id, c.stage_id, c.owner_id,
+              t.name AS team_name, s.name AS stage_name, u.name AS owner_name
+         FROM customers c
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN stages s ON s.id=c.stage_id
+         LEFT JOIN users u ON u.id=c.owner_id
+        WHERE c.id=$1 AND c.deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    const inScope = canViewTeam(perm, c.team_id);
+    if (!inScope && !canRequestCrossTeam(perm)) return reply.code(403).send({ error: 'forbidden_team' });
+    const pend = (await query(
+      `SELECT r.id, r.requested_by, u.name AS requested_by_name, r.created_at
+         FROM customer_change_requests r LEFT JOIN users u ON u.id=r.requested_by
+        WHERE r.customer_id=$1 AND r.status='pending' LIMIT 1`, [id])).rows[0] || null;
+    return {
+      item: {
+        id: Number(c.id), code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
+        buyer_name: c.buyer_name, buyer_phone: c.buyer_phone,
+        discount: c.discount == null ? 0 : Number(c.discount),
+        credit_days: c.credit_days == null ? 0 : Number(c.credit_days),
+        branch_count: c.branch_count == null ? null : Number(c.branch_count),
+        customer_type: c.customer_type, memo: c.memo, constancia_fiscal: c.constancia_fiscal,
+        // 배송지는 타팀 요청 화면에서 수정 대상이 아니다(즉시 저장 경로라 승인 우회가 되므로).
+        ship_address: inScope ? (c.ship_address || null) : null,
+        team_id: c.team_id == null ? null : Number(c.team_id), team_name: c.team_name,
+        stage_id: c.stage_id == null ? null : Number(c.stage_id), stage_name: c.stage_name,
+        owner_id: c.owner_id == null ? null : Number(c.owner_id), owner_name: c.owner_name,
+      },
+      in_scope: inScope,
+      cross_team: !inScope,
+      pending: pend ? { id: Number(pend.id), requested_by_name: pend.requested_by_name, created_at: pend.created_at } : null,
+    };
+  });
+
   // 고객 수정에 적용할 필드를 customers에 반영(헬퍼) — 승인 시 재사용
   async function applyCustomerUpdate(id, c, b, userId) {
     // 빈문자열/무효값이 숫자·FK 컬럼(owner_id, stage_id, team_id, credit_days 등)에 들어가
@@ -638,10 +719,14 @@ export default async function customerRoutes(app) {
     const perm = req.ctx.perm;
     const c = (await query(`SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
-    if (!canEditTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+    // 타팀 고객: cross_team_request 권한이 있으면 "수정 요청"만 허용(즉시 반영 경로로는 절대 못 감).
+    const crossTeam = !canEditTeam(perm, c.team_id);
+    if (crossTeam && !canRequestCrossTeam(perm)) return reply.code(403).send({ error: 'forbidden_team' });
     const b = req.body || {};
-    // 팀 이동 권한 체크(디렉터/양팀 편집권)
-    if (b.team_id != null && Number(b.team_id) !== c.team_id) {
+    // 팀 이동 권한 체크(디렉터/양팀 편집권).
+    //   타팀 수정요청은 "이관 요청" 그 자체이므로 목적지 팀 편집권을 요구하지 않는다
+    //   — 어차피 제안일 뿐이고 디렉터 승인에서 최종 판단한다.
+    if (!crossTeam && b.team_id != null && Number(b.team_id) !== c.team_id) {
       if (!canEditTeam(perm, Number(b.team_id))) return reply.code(403).send({ error: 'forbidden_team_move' });
     }
     // 기본할인(%)·외상일 변경은 수정이유 + 제공 조건 작성이 필수(디렉터 포함)
@@ -653,7 +738,8 @@ export default async function customerRoutes(app) {
         note: '기본할인(%)·외상일을 변경할 때는 수정이유와 제공 조건을 반드시 입력해야 합니다.' });
     }
     // 디렉터: 즉시 반영(+이력 기록) / 그 외: 디렉터 승인 대기로 보관
-    if (perm.role === 'director') {
+    // (crossTeam 은 디렉터에게 항상 false — 방어적으로 한 번 더 명시)
+    if (perm.role === 'director' && !crossTeam) {
       await applyCustomerUpdate(id, c, b, perm.userId);
       if (termsChanges.length) {
         await logTermsHistory(id, termsChanges, { reason: termsReason, conditions: termsConditions, changedBy: perm.userId, approvedBy: perm.userId });
@@ -680,8 +766,8 @@ export default async function customerRoutes(app) {
       await query(`INSERT INTO customer_change_requests (customer_id, proposed, requested_by, reason, conditions) VALUES ($1,$2,$3,$4,$5)`,
         [id, JSON.stringify(proposed), perm.userId, termsReason || null, termsConditions || null]);
     }
-    await safeLog({ userId: perm.userId, action: 'change_request', target: `customer:${id}` });
-    return { ok: true, pending: true };
+    await safeLog({ userId: perm.userId, action: 'change_request', target: `customer:${id}`, detail: { cross_team: crossTeam } });
+    return { ok: true, pending: true, cross_team: crossTeam };
   });
 
   // 배송지(ship_address) 즉시 저장 — 승인 플로우 없이 언제든 입력/수정 가능.
@@ -749,10 +835,13 @@ export default async function customerRoutes(app) {
               c.discount AS cur_discount, c.credit_days AS cur_credit_days, c.branch_count AS cur_branch_count,
               c.team_id AS cur_team_id, c.stage_id AS cur_stage_id, c.owner_id AS cur_owner_id,
               c.customer_type AS cur_customer_type, c.memo AS cur_memo, c.constancia_fiscal AS cur_constancia_fiscal,
-              u.name AS requested_by_name
+              u.name AS requested_by_name, u.team_id AS requester_team_id, rt.name AS requester_team_name,
+              ct.name AS cur_team_name
          FROM customer_change_requests r
          JOIN customers c ON c.id=r.customer_id
          LEFT JOIN users u ON u.id=r.requested_by
+         LEFT JOIN sales_teams rt ON rt.id=u.team_id
+         LEFT JOIN sales_teams ct ON ct.id=c.team_id
         WHERE r.status=$1 AND ($2::bigint IS NULL OR r.customer_id=$2) ORDER BY r.created_at DESC`, [status, cid])).rows;
 
     // 팀/단계/담당자 id → 이름 매핑(현재값·제안값 모두 모아서 한 번에 조회)
@@ -811,6 +900,11 @@ export default async function customerRoutes(app) {
         id: r.id, customer_id: r.customer_id, customer_code: r.customer_code, customer_name: r.customer_name,
         proposed: r.proposed, status: r.status, reason: r.reason, conditions: r.conditions,
         requested_by_name: r.requested_by_name, created_at: r.created_at, changes,
+        // 요청자 소속팀 ≠ 고객 소속팀 → 「타팀 요청」. 디렉터가 승인 화면에서 바로 알아볼 수 있게 표시.
+        requester_team_name: r.requester_team_name || null,
+        customer_team_name: r.cur_team_name || null,
+        cross_team: r.requester_team_id != null && r.cur_team_id != null
+          && Number(r.requester_team_id) !== Number(r.cur_team_id),
       };
     });
     return { items };
@@ -860,8 +954,11 @@ export default async function customerRoutes(app) {
   // ===== 디렉터: 팀 배정 · 상대팀 열람 권한 =====
   // 사용자 목록(팀·권한 보기용)
   app.get('/api/team-admin/users', { preHandler: [authGuard, requireDirector] }, async () => {
+    // 0181 미적용(반쪽 배포) 환경에서도 이 화면이 죽지 않도록 컬럼 유무를 확인해서 읽는다.
+    const hasCross = await hasCrossTeamRequestColumn();
     const users = (await query(
       `SELECT u.id, u.name, u.role, u.team_id, t.name AS team_name
+              ${hasCross ? ', u.cross_team_request' : ''}
          FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
         WHERE u.deleted_at IS NULL ORDER BY u.name`)).rows;
     const grants = (await query(
@@ -875,9 +972,30 @@ export default async function customerRoutes(app) {
         id: Number(u.id), name: u.name, role: u.role,
         team_id: u.team_id == null ? null : Number(u.team_id),
         team_name: u.team_name,
+        cross_team_request: u.cross_team_request === true,
         grants: grantsByUser[String(u.id)] || [],
       })),
     };
+  });
+
+  // 타팀 고객 수정요청 허용/차단(디렉터)
+  //   ⚠ 이 스위치는 "열람 권한"이 아니다. 켜도 고객 목록·매출·미수는 종전대로 자기 팀만 보인다.
+  //      켜진 사용자는 타팀 고객을 상호/코드로 찾아 「수정 요청」만 넣을 수 있고, 반영은 디렉터 승인 시.
+  app.patch('/api/team-admin/users/:id/cross-team-request', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const on = req.body?.enabled === true;
+    if (!(await hasCrossTeamRequestColumn())) {
+      // 0181 미적용 — 500 대신 무엇을 해야 하는지 알려준다.
+      return reply.code(503).send({ error: 'migration_required',
+        note: '마이그레이션 0181(users.cross_team_request)이 아직 적용되지 않았습니다. 서버에서 npm run migrate 를 실행하세요.' });
+    }
+    const up = await query(
+      `UPDATE users SET cross_team_request=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`,
+      [on, req.ctx.perm.userId, id]);
+    if (up.rowCount === 0) return reply.code(404).send({ error: 'user_not_found' });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'permission_change',
+      target: `user_cross_team_request:${id}`, detail: { enabled: on } });
+    return { ok: true, enabled: on };
   });
 
   // 사용자 소속팀 지정(디렉터)

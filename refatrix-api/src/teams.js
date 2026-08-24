@@ -26,6 +26,16 @@ export function canViewTeam(perm, teamId) {
   return teamId != null && vis.includes(Number(teamId));
 }
 
+// 타팀 고객에 대해 "수정 요청"(디렉터 승인 대기)을 넣을 수 있나.
+//   디렉터가 사용자별로 켜는 users.cross_team_request 권한.
+//   ⚠ 이 권한은 즉시 수정 권한이 아니다. 요청만 생성되고 반드시 디렉터 승인을 거친다.
+//   ⚠ 열람 범위도 넓히지 않는다(고객 목록·매출·미수는 종전대로 팀 스코프).
+export function canRequestCrossTeam(perm) {
+  if (!perm) return false;
+  if (perm.role === 'director') return false;   // 디렉터는 즉시 수정 — 요청 경로 자체가 필요 없음
+  return perm.crossTeamRequest === true;
+}
+
 // 특정 팀을 편집할 수 있나(소속팀은 편집 가능, 상대팀은 can_edit 부여 시)
 export function canEditTeam(perm, teamId) {
   if (!perm) return false;

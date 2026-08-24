@@ -1,8 +1,47 @@
 # REFATRIX 인수인계 — 타팀 고객 수정요청(디렉터 승인) 신설 (2026-08-24)
 
-**마이그레이션: 0181 (있음)** · 백엔드 4파일 · 프런트 2파일 · 테스트 2파일
-산출물 zip: `refatrix_crossteam_request_20260824.zip`
-베이스: GitHub `main` 라이브 (clone 시점 2026-08-24)
+**마이그레이션: 0181 (있음)** · 백엔드 4파일 · 프런트 2파일 · 테스트 3파일
+산출물 zip: `refatrix_crossteam_20260824.zip`
+베이스: GitHub `main` 라이브 (clone 시점 2026-08-24) · **rev.2 (반쪽배포 안전장치 포함)**
+
+---
+
+## 🚨 0. "고객정보가 수정이 안 된다" 증상이 나면 — 먼저 이것부터
+
+**원인은 거의 100% `npm run migrate` 미실행입니다.**
+
+`users.cross_team_request` 컬럼(0181)이 없는 상태에서 새 백엔드가 뜨면 `loadPerm()`이
+`column "cross_team_request" does not exist` (SQL 42703)로 터지고 → `authGuard`가 **500** →
+**로그인 이후 모든 화면·모든 저장이 죽습니다.** 고객 수정만이 아니라 전부입니다.
+
+### 즉시 조치
+```bash
+# Railway 콘솔(또는 서버)에서
+npm run migrate
+# 확인
+psql "$DATABASE_URL" -c '\d users' | grep cross_team_request
+#  → cross_team_request | boolean | not null | false   ← 이 줄이 나오면 정상
+```
+
+### 증상 자가진단
+| 확인 | 정상 | 0181 미적용 |
+|---|---|---|
+| 로그인 | 200 | 200 (로그인 자체는 됨) |
+| 아무 화면이나 열기 (`/api/customers`) | 200 | **500** |
+| 저장/수정 (`PATCH /api/customers/:id`) | 200 | **500** |
+| 브라우저 콘솔 | 조용함 | `500 Internal Server Error` 도배 |
+
+> 로그인만 되고 그 다음부터 전부 안 되면 이 케이스입니다.
+
+### rev.2에서 아예 못 터지게 막았습니다
+`permLoader.js`가 **컬럼 존재 여부를 먼저 확인**하고, 없으면 그 항목만 빼고 읽습니다
+(권한은 `false` 취급). 그래서 **0181을 아직 안 돌렸어도 기존 기능은 전부 정상 동작**하고,
+새 기능(타팀 수정요청)만 잠깁니다. 「타팀 수정요청」 스위치를 누르면 500 대신
+**`503 migration_required` + "npm run migrate 를 실행하세요"** 안내가 뜹니다.
+migrate를 돌리면 **재시작 없이 60초 안에 자동으로 살아납니다**(캐시 재확인 주기).
+
+**rev.1을 이미 배포하셨다면 rev.2 `permLoader.js`·`customerRoutes.js`로 덮어쓰거나,
+그냥 `npm run migrate`만 돌리셔도 즉시 정상화됩니다.**
 
 ---
 
@@ -65,13 +104,14 @@
 |---|---|---|
 | 마이그레이션 | `refatrix-api/migrations/0181_customer_cross_team_request.sql` | **신규** · `users.cross_team_request` 추가 |
 | 백엔드 | `refatrix-api/src/teams.js` | `canRequestCrossTeam(perm)` 순수함수 추가 (디렉터는 항상 false — 즉시 수정 경로를 쓰므로) |
-| 백엔드 | `refatrix-api/src/permLoader.js` | `crossTeamRequest` 로드 (0181 이전 DB면 undefined → false) |
+| 백엔드 | `refatrix-api/src/permLoader.js` | `crossTeamRequest` 로드 + **`hasCrossTeamRequestColumn()` 안전장치**(0181 미적용이면 컬럼을 SELECT에서 빼고 읽음 · 60초마다 재확인해 migrate 후 자동 복구) |
 | 백엔드 | `refatrix-api/src/routes/dashboardRoutes.js` | `/api/me/access` 응답에 `cross_team_request` 추가 (화면 노출 판단용) |
 | 백엔드 | `refatrix-api/src/routes/customerRoutes.js` | `GET /api/customers/lookup` 신규 · `GET /api/customers/:id/edit-basic` 신규 · `PATCH /api/customers/:id` 팀 가드 완화(요청 경로 강제) · `PATCH /api/team-admin/users/:id/cross-team-request` 신규 · `team-admin/users` 응답에 플래그 · 승인목록에 `cross_team`·요청자팀·고객팀 |
 | 프런트 | `refatrix-customers.html` | 「다른 팀 고객 수정 요청」 카드 · 팀권한 탭 「타팀 수정요청」 열 · 승인화면 「타팀 요청」 배지 · custform 캐시버스터 `?v=20260824ct` |
 | 프런트 | `refatrix-custform.js` | `crossTeam` 모드(배너·버튼문구·배송지 잠금·현재담당자 옵션 보존) · 버전 `v20260824` |
 | 테스트 | `refatrix-api/test/teams.test.js` | 권한 순수함수 4건 추가 |
 | 테스트 | `refatrix-api/test/cross_team_request_front.test.mjs` | **신규** · jsdom 프런트 5건 |
+| 테스트 | `refatrix-api/test/customers_page_edit.test.mjs` | **신규** · `refatrix-customers.html` 전체를 jsdom 으로 띄워 **로그인 → 목록 → 열기 → 수정 → 저장(PATCH)** 실동작 재현 5건 |
 
 > `refatrix-nav.js` 변경 없음 → **다른 화면 31개의 `?v=` bump 불필요**.
 
@@ -104,10 +144,10 @@
 
 1. zip 압축 해제 → 로컬 repo에 **같은 경로로 덮어쓰기**.
 2. GitHub Desktop **Commit → Push** → Railway 자동 재배포 → Deployments **Success** 확인.
-3. **`npm run migrate` 실행 (필수)** — 0181이 적용되어야 합니다.
-   - ⚠ 마이그레이션 전에 백엔드가 먼저 뜨면 `/api/team-admin/users`와 로그인(permLoader)이
-     `cross_team_request` 컬럼을 찾지 못해 500이 납니다. **푸시 후 바로 migrate 하세요.**
-     (Railway 배포 파이프라인에 migrate가 붙어 있으면 자동입니다.)
+3. **`npm run migrate` 실행 (필수)** — 0181이 적용되어야 새 기능이 켜집니다.
+   - rev.2 안전장치 덕분에 migrate가 늦어도 **기존 기능은 안 죽습니다**(0장 참고).
+     다만 「타팀 수정요청」 스위치는 migrate 전까지 `503 migration_required` 로 잠깁니다.
+   - migrate 후에는 **재시작 없이 60초 안에 자동 활성화**됩니다.
 4. GitHub Pages 반영 1~2분 후 화면에서 **Ctrl+Shift+R** (하드 리프레시).
 
 ---
@@ -148,14 +188,25 @@
 - 권한 회수 → 즉시 다시 차단
 - 우회 시도: 배송지 즉시저장 403 · 할인 변경 시 이유/조건 없으면 400 · 고객 삭제 `director_only`
 
+**0181 미적용(반쪽 배포) 재현 시험 — rev.2**
+- 컬럼을 실제로 DROP 하고 서버 기동 → **rev.1: 고객목록·고객수정 전부 HTTP 500** (증상 재현 성공)
+- rev.2 적용 후 같은 상태에서: 고객목록 **200** · 디렉터 고객수정 **200(즉시반영)** ·
+  영업 고객수정 **200(승인대기)** · 팀권한목록 **200** · me/access **200** ·
+  권한스위치만 **503 migration_required**(안내문 포함)
+- `npm run migrate` 실행 후 **서버 재시작 없이 65초 뒤** 권한스위치 200 · lookup 정상 ·
+  `me/access.cross_team_request=true` 로 **자동 복구 확인**
+
 **단위/프런트 테스트**
 - `teams.test.js` 9/9 PASS (신규 4건: 기본 OFF · 켜도 열람 불변 · 디렉터 예외 · 비정상값 방어)
 - `cross_team_request_front.test.mjs` 5/5 PASS (배너·버튼문구·배송지 잠금·담당자 옵션 보존·
   ship-address 미호출·자기팀 모드 회귀·신규등록 시 모드 해제)
+- `customers_page_edit.test.mjs` 5/5 PASS — **화면 전체 실동작**: 페이지 로드 시 JS 오류 0 ·
+  디렉터 로그인→목록→열기→수정→`PATCH /api/customers/7` 발송·"수정되었습니다" 표시 ·
+  영업 자기팀 수정→승인요청 PATCH · 권한 OFF면 타팀 카드 숨김 · 권한 ON이면 찾기→요청 폼
 
 **회귀 스위트**
-- 변경 전 baseline **248 pass / 21 fail**, 변경 후 **257 pass / 21 fail** →
-  **실패 건수 동일(21건은 기존부터 실패하던 항목)**, 신규 9건만 증가. **회귀 0**.
+- 변경 전 baseline **248 pass / 21 fail**, 변경 후 **262 pass / 21 fail** →
+  **실패 건수 동일(21건은 기존부터 실패하던 항목)**, 신규 14건만 증가. **회귀 0**.
 
 **문법 검사**: `node --check` (백엔드 4 · custform) OK, `refatrix-customers.html` 인라인 스크립트 추출 검사 OK.
 
