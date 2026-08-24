@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록</title>
+<title>Refatrix ERP · 고객 등록 (cv-0824a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -133,6 +133,7 @@
         </div>
         <div id="d-info"></div>
         <div id="d-approval"></div>
+        <div id="d-visits"></div>
         <div id="d-termshist"></div>
         <div style="font-weight:700;margin-top:14px">증빙서류 (Constancia·세무증명 등 · PDF/JPEG/PNG, 5MB 이하)</div>
         <div id="d-docs"><div class="hint">불러오는 중…</div></div>
@@ -715,7 +716,7 @@
   }
 
   async function openCustomer(id){
-    $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';
+    $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';$('d-visits').innerHTML='';
     if($('detailCard').scrollIntoView)$('detailCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     try{
       const d=await fetch(session.api+'/api/customers/'+id,{headers:auth()}).then(r=>r.json());
@@ -748,6 +749,7 @@
       </table>`;
       loadDocs(c.id);
       loadDetailApproval(c.id);
+      loadCustVisits(c.id);
       loadTermsHistory(c.id);
       if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
       $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
@@ -758,6 +760,162 @@
           <td>${i.overdue?'<span class="pill" style="background:#fbe9e7;color:var(--expense)">연체</span>':(i.outstanding>0?'<span class="pill" style="background:#fff7e0;color:#9a6512">미수</span>':'<span class="pill" style="background:#e7f3ee;color:var(--income)">완납</span>')}</td>
         </tr>`).join('')}</tbody></table>`;
     }catch(e){$('d-info').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ============================================================
+  // 상담·방문 이력 (고객 상세)  — build cv-0819a
+  //   GET /api/customers/:id/visits → 현장방문 + 수기미팅을 날짜 최신순 한 표로.
+  //   카테고리는 서버(visitTags)가 대화·AI요약 텍스트에서 자동 추출한 단어.
+  //   AI 요약은 스페인어 원문 그대로 보여주고 [🇰🇷 한국어] 토글로 번역본 전환(번역 캐시).
+  // ============================================================
+  let cvData=null, cvCust=null;
+  const cvLang={};              // 행 key → 'es' | 'ko'
+  const cvOpen=new Set();
+  const CV_FUP={ done:['✅ 완료','#0F6E56','#e6f3ee'], overdue:['⚠ 연체','#B23A2E','#f8dcdc'],
+                 open:['⏳ 진행 중','#9a6512','#fdf3e0'], none:['—','#888','#eef0f2'] };
+  function cvDayLabel(d){
+    const p=String(d||'').split('-').map(Number);
+    if(p.length!==3||!p[0]) return String(d||'');
+    const w=['일','월','화','수','목','금','토'][new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay()];
+    return String(d)+' ('+w+')';
+  }
+  function cvChip(c){
+    return '<span style="display:inline-block;background:'+esc(c.color)+'18;color:'+esc(c.color)+
+      ';border:1px solid '+esc(c.color)+'55;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;margin:1px 3px 1px 0">'+esc(c.label)+'</span>';
+  }
+  function cvKoMerge(es,ko){
+    const o=Object.assign({},es||{}); const k=ko||{};
+    ['resumen','insights','next_step'].forEach(f=>{ if(k[f]) o[f]=k[f]; });
+    if(k.action_items&&k.action_items.length) o.action_items=k.action_items;
+    if(k.products&&k.products.length) o.products=k.products;
+    return o;
+  }
+  function cvFind(key){ return ((cvData&&cvData.items)||[]).find(x=>x.key===key)||null; }
+
+  async function loadCustVisits(custId){
+    const box=$('d-visits'); if(!box) return;
+    cvCust=custId; cvData=null; cvOpen.clear();
+    box.innerHTML='<div class="hint" style="margin-top:12px">상담·방문 이력 불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customers/'+custId+'/visits',{headers:auth()}).then(r=>r.json());
+      if(cvCust!==custId) return;   // 그 사이 다른 고객을 열었으면 이 응답은 버린다(엉뚱한 고객 이력 표시 방지)
+      if(d.error){ box.innerHTML='<div class="hint" style="margin-top:12px">상담·방문 이력을 불러오지 못했습니다'+(d.error==='forbidden_team'?' (다른 팀 고객)':'')+'.</div>'; return; }
+      cvData=d; cvRender();
+    }catch(e){ if(cvCust===custId) box.innerHTML='<div class="hint" style="margin-top:12px">상담·방문 이력: 서버 연결 실패</div>'; }
+  }
+
+  function cvRender(){
+    const box=$('d-visits'); if(!box||!cvData) return;
+    const items=cvData.items||[];
+    const head=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer" id="cv-head">
+        <span class="cvArrow" style="color:#0f6b53">▾</span>
+        <b style="color:#0f6b53">🗣 상담·방문 이력</b>
+        <span class="hint" style="margin:0">${items.length?('총 '+items.length+'건 · 방문 '+cvData.visit_cnt+' · 미팅 '+cvData.meeting_cnt+' · 최근 '+esc(cvData.last_date||'—')+(cvData.open_pendings?(' · <b style="color:#B23A2E">미완 후속 '+cvData.open_pendings+'건</b>'):'')):'기록 없음'}</span>
+        ${cvData.scope==='own'?'<span class="pill" style="background:#eef0f2;color:#5b6b73">내 기록만</span>':''}
+      </div>`;
+    if(!items.length){
+      box.innerHTML=`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">
+        ${head}<div class="hint" style="margin-top:6px">${cvData.scope==='own'
+          ?'내가 기록한 방문·상담이 없습니다. (다른 담당자의 기록은 디렉터만 볼 수 있습니다)'
+          :'아직 등록된 방문·상담 기록이 없습니다. (영업 &gt; 영업활동에서 방문 체크인 시 자동으로 쌓입니다)'}</div></div>`;
+      $('cv-head').onclick=null; return;
+    }
+    const tagSum=(cvData.tag_summary||[]).slice(0,8)
+      .map(c=>cvChip({label:c.label+' '+c.cnt,color:c.color})).join('');
+    let rows='';
+    items.forEach((v,i)=>{
+      const f=CV_FUP[v.fup]||CV_FUP.none;
+      const tags=((v.tag_chips||[]).map(cvChip).join('')
+        +(v.tag_more?('<span class="hint" style="margin:0">+'+v.tag_more+'</span>'):''))
+        ||'<span class="hint" style="margin:0">—</span>';
+      const kind=v.source==='visit'
+        ? '<span class="pill" style="background:#e2f3ef;color:#0f7a5f">🧭 방문</span>'
+        : '<span class="pill" style="background:#eef4fb;color:#2f6db5">📝 미팅</span>';
+      rows+=`<tr class="cv-row" data-key="${esc(v.key)}" style="cursor:pointer">
+        <td style="white-space:nowrap">${i+1}</td>
+        <td style="white-space:nowrap"><b>${esc(cvDayLabel(v.date))}</b>${v.time?('<br><span class="hint" style="margin:0">'+esc(v.time)+'</span>'):''}</td>
+        <td style="white-space:nowrap">${kind}</td>
+        <td style="white-space:nowrap">${esc(v.by_name||'—')}${v.met_person?('<br><span class="hint" style="margin:0">👤 '+esc(v.met_person)+'</span>'):''}</td>
+        <td style="min-width:130px">${tags}</td>
+        <td>${v.headline?esc(v.headline):'<span class="hint" style="margin:0">기록 없음</span>'}${v.has_ai?' <span title="녹음 AI 요약">🎙</span>':''}${v.stage_move?('<br><span class="hint" style="margin:0">단계: '+esc(v.stage_move)+'</span>'):''}</td>
+        <td style="white-space:nowrap"><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;color:${f[1]};background:${f[2]}">${f[0]}</span>${v.pend_total?('<br><span class="hint" style="margin:0">'+v.pend_done+'/'+v.pend_total+'</span>'):''}</td>
+      </tr>
+      <tr class="cv-detail hidden" data-for="${esc(v.key)}"><td colspan="7" style="background:#fbfcfb;padding:10px 14px" id="cv-det-${esc(v.key)}"></td></tr>`;
+    });
+    box.innerHTML=`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">
+      ${head}
+      <div id="cvBody" style="margin-top:8px">
+        ${tagSum?('<div style="margin-bottom:6px">'+tagSum+'</div>'):''}
+        <div style="overflow-x:auto"><table style="font-size:12.5px;width:100%">
+          <thead><tr><th style="width:34px">#</th><th>날짜</th><th>구분</th><th>담당</th><th>카테고리</th><th>내용 요약</th><th>후속</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <div class="hint" style="margin-top:6px">행을 클릭하면 그날 무엇을 했는지 상세(사전계획 · AI 요약 · 파악한 내용 · 후속조치)가 열립니다.${cvData.truncated?(' <b style="color:#9a6512">· 최근 '+(cvData.limit||300)+'건까지만 표시 — 위 합계·최초일은 이 범위 기준입니다.</b>'):''}</div>
+      </div></div>`;
+    $('cv-head').onclick=function(){
+      const t=$('cvBody'); t.style.display=t.style.display==='none'?'':'none';
+      this.querySelector('.cvArrow').textContent=t.style.display==='none'?'▸':'▾';
+    };
+    box.querySelectorAll('.cv-row').forEach(tr=>tr.onclick=()=>cvToggle(tr.dataset.key));
+    cvOpen.forEach(k=>{ const det=box.querySelector('.cv-detail[data-for="'+k+'"]'); if(det){ cvRenderDet(k); det.classList.remove('hidden'); } });
+  }
+
+  function cvRenderDet(key){
+    const v=cvFind(key); if(!v) return;
+    const cell=$('cv-det-'+key); if(!cell) return;
+    const es=v.summary||{};
+    const hasKo=!!(es.ko&&(es.ko.resumen||es.ko.insights));
+    const lang=(cvLang[key]==='ko'&&hasKo)?'ko':'es';
+    const s=lang==='ko'?cvKoMerge(es,es.ko):es;
+    const insight=(es.insights?s.insights:v.insight)||'';
+    const koBtn=(es.resumen&&v.rec_id)
+      ? ('<button type="button" class="btn ghost sm cv-koBtn" data-key="'+esc(key)+'" style="margin-left:6px">'+(lang==='ko'?'🇲🇽 원문(스페인어)':'🇰🇷 한국어')+'</button>')
+      : '';
+    const acts=(lang==='ko'&&s.action_items&&s.action_items.length)
+      ? s.action_items.map(a=>'· '+esc(a.content)+(a.due_date?(' <b>('+esc(a.due_date)+')</b>'):'')).join('<br>') : '';
+    const pendRows=(v.pendings||[]).map(p=>`<div style="margin:3px 0">${p.done?'✅':'⬜'} <span style="${p.done?'text-decoration:line-through;color:#888':''}">${esc(p.content)}</span>${p.due_date?(' <b>('+esc(p.due_date)+')</b>'):''}${p.overdue?' <b style="color:#B23A2E">⚠ 연체</b>':''}</div>`).join('');
+    cell.innerHTML=`
+      ${v.plan?('<div><b>'+(v.source==='visit'?'사전 계획(할 이야기)':'미팅 기록')+':</b> '+esc(v.plan)+'</div>'):''}
+      ${s.resumen?('<div style="margin-top:6px"><b>🎙 미팅 요약(AI):</b> '+esc(s.resumen)+koBtn
+          +(lang==='ko'?'<div class="hint" style="margin:2px 0 0">🇰🇷 AI 한국어 번역본</div>':'')+'</div>')
+        :(v.source==='visit'?('<div style="margin-top:6px" class="hint">녹음 AI 요약이 없습니다'+(v.rec_status&&v.rec_status!=='done'?(' (녹음 상태: '+esc(v.rec_status)+')'):' — 수기 기록만')+'</div>'):'')}
+      ${insight?('<div style="margin-top:4px"><b>파악한 내용:</b> '+esc(insight)+'</div>'):''}
+      ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+esc(s.products.join(', '))+'</div>'):''}
+      ${s.next_step?('<div style="margin-top:4px"><b>다음 계획:</b> '+esc(s.next_step)+'</div>'):''}
+      ${acts?('<div style="margin-top:4px"><b>해야 할 일(요약):</b><br>'+acts+'</div>'):''}
+      ${v.stage_move?('<div style="margin-top:4px"><b>단계 이동:</b> '+esc(v.stage_move)+'</div>'):''}
+      ${v.pend_total?('<div style="margin-top:8px"><b>📌 후속조치 ('+v.pend_done+'/'+v.pend_total+')</b></div>'+pendRows
+        +'<div class="hint" style="margin-top:2px">체크 변경은 영업 &gt; 영업활동 화면에서</div>'):''}`;
+    const kb=cell.querySelector('.cv-koBtn');
+    if(kb) kb.onclick=(ev)=>{ ev.stopPropagation(); cvToggleKo(key,kb); };
+  }
+
+  function cvToggle(key){
+    const det=document.querySelector('.cv-detail[data-for="'+key+'"]'); if(!det) return;
+    if(!det.classList.contains('hidden')){ det.classList.add('hidden'); cvOpen.delete(key); return; }
+    if(!cvFind(key)) return;
+    cvRenderDet(key); det.classList.remove('hidden'); cvOpen.add(key);
+  }
+
+  async function cvToggleKo(key,btn){
+    const v=cvFind(key); if(!v) return;
+    const es=v.summary||{};
+    if(cvLang[key]==='ko'){ cvLang[key]='es'; cvRenderDet(key); return; }
+    if(es.ko&&es.ko.resumen){ cvLang[key]='ko'; cvRenderDet(key); return; }
+    if(!v.rec_id){ alert('번역할 녹음 요약을 찾지 못했습니다.'); return; }
+    btn.disabled=true; btn.textContent='🔄 번역 중…';
+    try{
+      const res=await fetch(session.api+'/api/visits/recordings/'+v.rec_id+'/translate',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){
+        const e=d&&d.error;
+        throw new Error(e==='no_anthropic_key'?'ANTHROPIC_API_KEY 미설정 — 번역을 사용할 수 없습니다.'
+          :e==='no_summary'?'아직 AI 요약이 없습니다.'
+          :e==='ai_parse'?'번역 응답을 읽지 못했습니다. 다시 시도해 주세요.'
+          :(e||('HTTP '+res.status)));
+      }
+      v.summary=Object.assign({},es,{ko:d.ko}); cvLang[key]='ko'; cvRenderDet(key);
+    }catch(e){ alert('한국어 번역 실패: '+((e&&e.message)||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
   }
 
   // ===== 팀 권한 관리(디렉터) =====
