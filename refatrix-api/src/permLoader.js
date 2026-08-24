@@ -14,14 +14,30 @@ export async function hasCrossTeamRequestColumn() {
   if (crossCol.known && crossCol.exists) return true;                  // 있으면 영구 캐시
   if (crossCol.known && Date.now() - crossCol.checkedAt < 60000) return false; // 없으면 60초 후 재확인
   try {
+    // ⚠ information_schema + table_schema='public' 하드코딩은 쓰지 않는다.
+    //   스키마가 public 이 아니거나 search_path 가 다르면 컬럼이 실제로 있는데도 "없음"으로 오판한다.
+    //   to_regclass('users') 는 이 연결의 search_path 로 해석되므로 앱의 다른 쿼리와 정확히 같은 테이블을 본다.
     const r = await query(
-      `SELECT 1 FROM information_schema.columns
-        WHERE table_schema='public' AND table_name='users' AND column_name='cross_team_request' LIMIT 1`);
+      `SELECT 1 FROM pg_attribute
+        WHERE attrelid = to_regclass('users')
+          AND attname = 'cross_team_request'
+          AND attnum > 0 AND NOT attisdropped
+        LIMIT 1`);
     crossCol = { known: true, exists: r.rows.length > 0, checkedAt: Date.now() };
   } catch {
     crossCol = { known: true, exists: false, checkedAt: Date.now() };
   }
   return crossCol.exists;
+}
+
+// 이 연결이 실제로 붙어 있는 DB 정보 — "migrate 는 돌았는데 왜 안 되지?" 진단용.
+//   migrate 를 다른 DB/다른 컨테이너에서 돌린 경우를 눈으로 확인할 수 있게 한다.
+export async function dbIdentity() {
+  try {
+    const r = await query(
+      `SELECT current_database() AS db, current_schema() AS schema, current_user AS usr`);
+    return r.rows[0] || {};
+  } catch { return {}; }
 }
 // 테스트/운영 점검용 — 캐시 초기화
 export function resetCrossTeamColumnCache() { crossCol = { known: false, exists: false, checkedAt: 0 }; }

@@ -1,6 +1,6 @@
 // build 20260824 — 타팀 고객 수정요청(디렉터 승인) + 0181 반쪽배포 안전장치 (재배포 트리거용 마커)
 import { query, withTx } from '../db.js';
-import { hasCrossTeamRequestColumn } from '../permLoader.js';
+import { hasCrossTeamRequestColumn, dbIdentity, resetCrossTeamColumnCache } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
@@ -988,15 +988,29 @@ export default async function customerRoutes(app) {
   app.patch('/api/team-admin/users/:id/cross-team-request', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const on = req.body?.enabled === true;
-    if (!(await hasCrossTeamRequestColumn())) {
-      // 0181 미적용 — 500 대신 무엇을 해야 하는지 알려준다.
-      return reply.code(503).send({ error: 'migration_required',
-        note: '마이그레이션 0181(users.cross_team_request)이 아직 적용되지 않았습니다. 서버에서 npm run migrate 를 실행하세요.' });
+    // 사전 점검(캐시)에 의존하지 말고 실제로 써 본다.
+    //   캐시가 낡았거나 스키마 판정이 어긋나도, 진짜 컬럼이 있으면 그냥 성공해야 한다.
+    //   정말 없을 때만(42703) 안내하고, 그때 이 API 가 붙어 있는 DB 이름을 함께 알려준다
+    //   — migrate 를 다른 DB에서 돌린 경우를 바로 구분할 수 있게.
+    let up;
+    try {
+      up = await query(
+        `UPDATE users SET cross_team_request=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`,
+        [on, req.ctx.perm.userId, id]);
+    } catch (e) {
+      if (e && e.code === '42703') {
+        const who = await dbIdentity();
+        return reply.code(503).send({ error: 'migration_required',
+          database: who.db || null, schema: who.schema || null,
+          note: `마이그레이션 0181(users.cross_team_request)이 이 API가 쓰는 DB에 없습니다. `
+              + `이 API가 붙어 있는 DB: ${who.db || '?'} / 스키마: ${who.schema || '?'}. `
+              + `migrate 를 다른 DB에서 돌리지 않았는지 확인하세요.` });
+      }
+      throw e;
     }
-    const up = await query(
-      `UPDATE users SET cross_team_request=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`,
-      [on, req.ctx.perm.userId, id]);
     if (up.rowCount === 0) return reply.code(404).send({ error: 'user_not_found' });
+    // 성공 = 컬럼이 존재한다. loadPerm 이 60초 캐시를 기다리지 않고 바로 반영하도록 캐시를 비운다.
+    resetCrossTeamColumnCache();
     await safeLog({ userId: req.ctx.perm.userId, action: 'permission_change',
       target: `user_cross_team_request:${id}`, detail: { enabled: on } });
     return { ok: true, enabled: on };

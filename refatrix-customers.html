@@ -1047,7 +1047,8 @@
     try{
       const res=await fetch(url,opt);
       let d=null; try{d=await res.json();}catch(e){}
-      if(!res.ok||(d&&d.error))return {ok:false,msg:(d&&(d.error||d.message))||('HTTP '+res.status)};
+      // 서버가 note 로 원인·조치를 한국어로 알려주면 그걸 그대로 보여준다(오류코드만 뜨면 진단이 안 됨).
+      if(!res.ok||(d&&d.error))return {ok:false,msg:(d&&(d.note||d.error||d.message))||('HTTP '+res.status),data:d};
       return {ok:true,d};
     }catch(e){return {ok:false,msg:'서버 연결 실패'};}
   }
