@@ -652,7 +652,8 @@ export default async function customerRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
         WHERE c.id=$1 AND c.deleted_at IS NULL`, [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
-    const inScope = canViewTeam(perm, c.team_id);
+    const inScope = canViewTeam(perm, c.team_id);        // 볼 수 있나 (금액 등 노출 판단)
+    const canEdit = canEditTeam(perm, c.team_id);        // 바로 고칠 수 있나 (승인 없이)
     if (!inScope && !canRequestCrossTeam(perm)) return reply.code(403).send({ error: 'forbidden_team' });
     const pend = (await query(
       `SELECT r.id, r.requested_by, u.name AS requested_by_name, r.created_at
@@ -673,7 +674,10 @@ export default async function customerRoutes(app) {
         owner_id: c.owner_id == null ? null : Number(c.owner_id), owner_name: c.owner_name,
       },
       in_scope: inScope,
-      cross_team: !inScope,
+      // ⚠ cross_team 은 "볼 수 있나"가 아니라 "바로 고칠 수 있나" 기준이다.
+      //   상대팀 열람만 부여받은 사용자는 고객이 목록에 보여서 일반 수정 화면으로 들어오는데,
+      //   그때도 배송지 즉시저장은 막히고 저장은 승인 대기로 가야 하므로 PATCH 와 같은 기준을 쓴다.
+      cross_team: !canEdit,
       pending: pend ? { id: Number(pend.id), requested_by_name: pend.requested_by_name, created_at: pend.created_at } : null,
     };
   });

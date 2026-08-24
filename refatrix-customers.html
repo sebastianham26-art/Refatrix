@@ -683,6 +683,18 @@
       await showForm(d.item,{crossTeam:!!d.cross_team, pending:d.pending});
     }catch(e){ alert('서버에 연결할 수 없습니다.'); }
   }
+  // 일반 목록 → 상세 → 「수정」 경로도 같은 판정을 쓴다.
+  //   상대팀 열람만 받은 사용자는 고객이 목록에 보이지만 바로 고칠 수는 없다.
+  //   그 경우 서버가 cross_team=true 로 알려주므로 배송지 즉시저장을 잠그고 안내 배너를 띄운다.
+  //   (예전에는 그대로 열려서 배송지가 403 빨간 오류로 떨어졌다 — 2026-08-24 수정)
+  async function editCurrentCustomer(){
+    if(!curCustomer) return;
+    try{
+      const d=await fetch(session.api+'/api/customers/'+curCustomer.id+'/edit-basic',{headers:auth()}).then(r=>r.json());
+      if(!d.error&&d.item){ await showForm(d.item,{crossTeam:!!d.cross_team, pending:d.pending}); return; }
+    }catch(e){}
+    await showForm(curCustomer);   // 구버전 백엔드·읽기전용 등 → 기존 동작 유지
+  }
 
   // ===== 고객 수정 승인 대기(디렉터) =====
   async function loadApproveBadge(){
@@ -1193,14 +1205,14 @@
   $('crossBtn').addEventListener('click',crossSearch);
   $('crossQ').addEventListener('keydown',(e)=>{if(e.key==='Enter')crossSearch();});
   $('newCustBtn').addEventListener('click',()=>showForm(null));
-  $('editBtn').addEventListener('click',()=>{if(curCustomer)showForm(curCustomer);});
+  $('editBtn').addEventListener('click',editCurrentCustomer);
   $('delBtn').addEventListener('click',deleteCustomer);
   $('d-back').addEventListener('click',()=>$('detailCard').classList.add('hidden'));
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260824ct"></script>
+<script src="refatrix-custform.js?v=20260824d"></script>
 <script src="refatrix-nav.js?v=20260824ph"></script>
 </body>
 </html>

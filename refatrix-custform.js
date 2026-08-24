@@ -126,6 +126,14 @@
     try{
       var res=await fetch(api('/api/customers/'+editingId+'/ship-address'),{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ship_address:v||null})});
       var d=await res.json();
+      // 담당 팀이 아니면 배송지 즉시저장은 원래 막혀 있다(승인 우회 방지).
+      //   이건 "실패"가 아니라 설계된 제약이므로 빨간 오류 대신 안내로 표시하고,
+      //   나머지 항목의 수정 요청 흐름은 그대로 진행시킨다(2026-08-24: 타팀 고객을
+      //   일반 목록에서 열어 수정할 때 빨간 forbidden_team 문구가 뜨던 문제).
+      if(res.status===403&&(d.error==='forbidden_team'||d.error==='forbidden')){
+        setShipMsg('pend','배송지는 담당 팀에서 수정합니다 — 나머지 변경은 그대로 요청됩니다.');
+        if(btn)btn.disabled=false; return true;
+      }
       if(!res.ok||d.error){ setShipMsg('err','배송지 저장 실패: '+(d.error||res.status)); if(btn)btn.disabled=false; return false; }
       setShipMsg('ok', v?'배송지 저장됨 (라벨에 인쇄됩니다)':'배송지 비움');
       if(btn)btn.disabled=false; return true;
@@ -269,5 +277,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260824 loaded (타팀 고객 수정요청 모드 추가)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260824d loaded (타팀 고객 수정요청 모드 + 배송지 403 안내 처리)'); }catch(e){}
 })();
