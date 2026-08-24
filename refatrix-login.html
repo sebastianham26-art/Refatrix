@@ -38,12 +38,19 @@
   .who{margin-top:14px;font-size:13px;line-height:1.6}
   .who b{color:var(--brand)}
   .foot{padding:0 24px 18px;font-size:11px;color:var(--muted)}
+  /* ===== QA 테스트베드(서버 주소가 refatrix-qa) — 헤더 CTR 레드 #E2231A ===== */
+  .qabadge{display:none;align-items:center;gap:5px;margin-top:9px;padding:4px 10px;border-radius:999px;
+    background:#fff;color:#B01810;font-size:11px;font-weight:800;letter-spacing:.02em}
+  html[data-refatrix-env="qa"] .head{background:linear-gradient(180deg,#E2231A,#B01810)!important}
+  html[data-refatrix-env="qa"] .head p{color:#FFD9D5!important}
+  html[data-refatrix-env="qa"] .qabadge{display:inline-flex}
+  html[data-refatrix-env="qa"] .card{box-shadow:0 8px 30px rgba(176,24,16,.18)}
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
   <div class="card">
-    <div class="head"><h1>Refatrix ERP</h1><p>로그인 (아이디 + PIN)</p></div>
+    <div class="head"><h1>Refatrix ERP</h1><p>로그인 (아이디 + PIN)</p><span class="qabadge" id="qaBadge">🧪 QA 테스트 서버</span></div>
     <div class="body">
       <label for="lid">아이디</label>
       <input id="lid" type="text" autocomplete="username" placeholder="예: admin" value="admin">
@@ -107,6 +114,25 @@
 
   $('go').addEventListener('click', login);
   $('pin').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+
+  /* QA 테스트베드 판별 — ⓐ 서버 주소(API)에 refatrix-qa ⓑ 프런트 호스트명이 QA 전용 */
+  (function(){
+    var QA_API=/refatrix-qa/i, QA_HOST=/refatrix-qa|(^|[.\-])qa([.\-]|$)/i;
+    function isQa(){
+      try{ if(QA_HOST.test(location.hostname||'')) return true; }catch(e){}
+      var el=document.getElementById('api');
+      return !!(el && QA_API.test(el.value||''));
+    }
+    function apply(){
+      try{
+        var r=document.documentElement;
+        if(isQa()) r.setAttribute('data-refatrix-env','qa'); else r.removeAttribute('data-refatrix-env');
+      }catch(e){}
+    }
+    var el=document.getElementById('api');
+    if(el){ el.addEventListener('input',apply); el.addEventListener('change',apply); }
+    apply();
+  })();
 </script>
 </body>
 </html>

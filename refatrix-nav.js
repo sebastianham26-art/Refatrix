@@ -2,7 +2,80 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260819fsa loaded (fsanalysis)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260824qa loaded (QA 레드헤더)'); }catch(e){}
+
+  /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
+     판별 기준(둘 중 하나라도 걸리면 QA):
+       ⓐ 서버 주소(API)에 'refatrix-qa' 가 들어감 — 세션 / 주소 해시 / 로그인·포털 화면의 입력칸
+       ⓑ 화면(프런트) 호스트명이 QA 전용 — 예: refatrix-qa.*, qa.refatrix.*, refatrix-qa.up.railway.app
+     결과는 <html data-refatrix-env="qa"> 속성으로 표시하고, CSS 는 그 속성에만 반응한다. */
+  var QA_API_RE=/refatrix-qa/i;
+  var QA_HOST_RE=/refatrix-qa|(^|[.\-])qa([.\-]|$)/i;
+  function qaText(t){ return !!(t && QA_API_RE.test(String(t))); }
+  function isQaEnv(){
+    try{ if(QA_HOST_RE.test(location.hostname||'')) return true; }catch(e){}
+    try{ var raw=sessionStorage.getItem('refatrix_session')||localStorage.getItem('refatrix_session');
+         if(raw){ var o=JSON.parse(raw); if(o&&qaText(o.api)) return true; } }catch(e){}
+    try{ var p=new URLSearchParams(location.hash.slice(1)); if(qaText(p.get('api'))) return true; }catch(e){}
+    try{ var ids=['api','apiInput'];
+         for(var i=0;i<ids.length;i++){ var el=document.getElementById(ids[i]); if(el&&qaText(el.value)) return true; } }catch(e){}
+    return false;
+  }
+  function applyEnvFlag(){
+    var qa=false; try{ qa=isQaEnv(); }catch(e){}
+    try{
+      var r=document.documentElement;
+      if(qa){ if(r.getAttribute('data-refatrix-env')!=='qa') r.setAttribute('data-refatrix-env','qa'); }
+      else if(r.getAttribute('data-refatrix-env')) r.removeAttribute('data-refatrix-env');
+    }catch(e){}
+    return qa;
+  }
+  window.__rnavIsQA=isQaEnv;
+  // 로그인 전 「서버 주소(API)」 를 QA 로 바꿔 입력하는 순간 바로 반영
+  try{
+    document.addEventListener('input', function(e){
+      var t=e&&e.target; if(t&&(t.id==='api'||t.id==='apiInput')) applyEnvFlag();
+    }, true);
+    document.addEventListener('change', function(e){
+      var t=e&&e.target; if(t&&(t.id==='api'||t.id==='apiInput')) applyEnvFlag();
+    }, true);
+    window.addEventListener('storage', function(){ applyEnvFlag(); });
+    window.addEventListener('hashchange', function(){ applyEnvFlag(); });
+  }catch(e){}
+  applyEnvFlag();
+
+  /* CTR 브랜드 레드 — ctr.co.kr 로고 이미지 실측값 #E2231A (사이트 포인트 #E1251B) */
+  var CTR_RED='#E2231A', CTR_RED_D='#B01810', CTR_RED_DD='#8E120C';
+  var QA_BADGE='<span class="rqa" id="rQaBadge" title="테스트 서버(QA)입니다 — 실제 운영 데이터가 아닙니다">🧪 QA 테스트 서버</span>';
+  var Q='html[data-refatrix-env="qa"] ';
+  var QA_CSS=''+
+    Q+'#rnav{background:linear-gradient(180deg,'+CTR_RED+' 0%,'+CTR_RED_D+' 100%)!important;border-bottom:2px solid #7C0F08!important;box-shadow:0 6px 22px -10px rgba(120,10,5,.75)!important}'+
+    Q+'#rnav .rlogo{color:#fff!important}'+
+    Q+'#rnav .rlogo .dot{background:#fff!important;box-shadow:0 0 8px rgba(255,255,255,.85)!important}'+
+    Q+'#rnav .rhome{color:#fff!important;background:rgba(255,255,255,.16)!important;border-color:rgba(255,255,255,.45)!important}'+
+    Q+'#rnav .rhome:hover{background:rgba(255,255,255,.3)!important;color:#fff!important}'+
+    Q+'#rnav .rg{color:#FFD5D0!important}'+
+    Q+'#rnav .rg:hover,'+Q+'#rnav .rg.on{color:#fff!important}'+
+    Q+'#rnav .rg.on:after{background:#fff!important;box-shadow:0 0 10px rgba(255,255,255,.9)!important}'+
+    Q+'#rnav .rsub{background:linear-gradient(180deg,'+CTR_RED_D+','+CTR_RED_DD+')!important;border-top-color:rgba(255,255,255,.18)!important}'+
+    Q+'#rnav .rs{color:#FFE3E0!important;background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.18)!important}'+
+    Q+'#rnav .rs:hover{background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.5)!important;color:#fff!important}'+
+    Q+'#rnav .rs.cur{background:linear-gradient(180deg,#fff,#FFE7E4)!important;color:#A5140B!important;border-color:transparent!important;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)!important}'+
+    Q+'#rnav .rwho{color:#FFC9C3!important}'+
+    Q+'#rnav .rwho b{color:#fff!important}'+
+    Q+'#rnav .rlogout{border-color:rgba(255,255,255,.55)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    Q+'#rnav .rlogout:hover{background:rgba(255,255,255,.32)!important;color:#fff!important}'+
+    Q+'#rnav .rpres{border-color:rgba(255,255,255,.5)!important;background:rgba(255,255,255,.16)!important;color:#fff!important}'+
+    Q+'#rnav .rpres:hover{background:rgba(255,255,255,.28)!important;color:#fff!important}'+
+    /* QA 배지 */
+    Q+'#rnav .rqa{display:inline-flex!important;align-items:center;gap:5px;flex:0 0 auto;margin-right:12px;padding:4px 10px;border-radius:999px;background:#fff;color:'+CTR_RED_D+';font-size:11px;font-weight:800;letter-spacing:.02em;white-space:nowrap;box-shadow:0 2px 8px -2px rgba(0,0,0,.45)}'+
+    /* 화면별 상단 제목줄이 보이는 화면(창고·입고·KPI 등)도 붉은 강조 */
+    Q+'.wrap>.topbar,'+Q+'.wrap>.ptop,'+Q+'.wrap>.top,'+Q+'.wrap>header{border-bottom:3px solid '+CTR_RED+'!important}'+
+    Q+'.wrap>.ptop h1,'+Q+'.wrap>.top h1,'+Q+'.wrap>header h1{color:#C21A10!important}'+
+    /* .topbar 를 되살려 쓰는 화면이면 배경까지 CTR 레드 */
+    Q+'.wrap>.topbar{background:linear-gradient(180deg,'+CTR_RED+','+CTR_RED_D+')!important;color:#fff!important}'+
+    Q+'.wrap>.topbar h1{color:#fff!important}'+
+    Q+'.wrap>.topbar .sub,'+Q+'.wrap>.topbar .who{color:#FFD9D5!important}';
 
   // 화면 정의 (파일/이름/설명)
   var SCREENS={
@@ -240,7 +313,10 @@
     '#rnav .rlogout{flex:0 0 auto;margin-left:12px;padding:5px 12px;border-radius:8px;border:1px solid rgba(208,140,110,.45);background:rgba(208,140,110,.12);color:#e3b6a3;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit}'+
     '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}'+
     '#rnav .rpres{flex:0 0 auto;margin-left:12px;padding:5px 11px;border-radius:999px;border:1px solid rgba(25,169,116,.45);background:rgba(25,169,116,.14);color:#7fe0bd;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit;display:none;align-items:center;gap:5px}'+
-    '#rnav .rpres:hover{background:rgba(25,169,116,.26);color:#d6fff0}';
+    '#rnav .rpres:hover{background:rgba(25,169,116,.26);color:#d6fff0}'+
+    /* QA 배지 — 기본은 숨김, QA 환경에서만 노출 */
+    '#rnav .rqa{display:none}'+
+    QA_CSS;
     var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   }
   // 제한 역할(예: treasury)이 허용되지 않은 화면에 있으면 재무/계좌로 되돌림(직접 URL 접근 차단).
@@ -297,7 +373,8 @@
       if(hintG && vis.some(function(v){return v.key===hintG;})) openGroup=hintG;
       else if(vis[0]) openGroup=vis[0].key;
     }
-    var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>';
+    applyEnvFlag();
+    var bar='<div class="rbar"><div class="rbarscroll"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE;
     vis.forEach(function(g){ bar+='<button type="button" class="rg'+(g.key===openGroup?' on':'')+'" style="--ac:'+g.color+'" onclick="__rnavGroup(\''+g.key+'\')">'+g.title+'</button>'; });
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
     bar+='</div><div class="rbarright"><span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
@@ -376,11 +453,13 @@
 
   function boot(){
     var nv=document.getElementById('rnav'); if(!nv) return;
+    applyEnvFlag();
     sess=getSession();
     if(!sess||!sess.token){
-      nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">로그인 필요</span></div>'; syncOffset();
+      nv.innerHTML='<div class="rbar"><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE+'<span class="rwho">로그인 필요</span></div>'; syncOffset();
       if(!window.__rnavWatch){
         window.__rnavWatch=setInterval(function(){
+          applyEnvFlag();                       // 로그인 전 서버주소 변경/세션 생성 즉시 반영
           var s=getSession();
           if(s&&s.token){ clearInterval(window.__rnavWatch); window.__rnavWatch=null; boot(); }
         }, 400);
@@ -396,7 +475,7 @@
         authFailed=true;
         try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
         var nv2=document.getElementById('rnav');
-        if(nv2) nv2.innerHTML='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span><span class="rwho">세션 만료 — 새로고침 후 다시 로그인하세요</span></div>';
+        if(nv2) nv2.innerHTML='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE+'<span class="rwho">세션 만료 — 새로고침 후 다시 로그인하세요</span></div>';
         syncOffset();
         throw new Error('unauthorized');
       }
