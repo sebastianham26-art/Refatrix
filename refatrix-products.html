@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 제품 조회 · pj0819act3</title>
+<title>Refatrix ERP · 제품 조회 · ph-0824a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -73,6 +73,10 @@
   .pvcard .k{font-size:11px;color:var(--muted)}.pvcard .v{font-size:18px;font-weight:800}
   .pvcard.new .v{color:var(--income)}.pvcard.upd .v{color:var(--gold)}.pvcard.err .v{color:var(--expense)}
   .chg{font-size:11px;color:var(--muted)}
+  /* 📜 제품 이력(ph-0824a) */
+  #histCard select,#histCard input[type=date]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  #histCard tr.ph-row:hover td{background:#f7f4ec}
+  #histCard tr.ph-det td{border-bottom:2px solid var(--line)}
   .chg b{color:var(--ink)}
   .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#faf8f3}
   .drop:hover{border-color:var(--brand);color:var(--brand)}
@@ -315,6 +319,30 @@
     </div>
   </div>
 
+  <!-- 📜 제품 이력 (ph-0824a) — 마스터 변경 + 판매 활성/비활성 전환 통합 -->
+  <div class="card hidden" id="histCard">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">📜 제품 이력</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn ghost sm" id="phXlsx" type="button">⬇ 엑셀</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:6px">제품 마스터 변경(생성·수정·엑셀 업로드·소재 지정)과 <b>판매 활성/비활성 전환</b>을 한 표에 시간순으로 모았습니다.
+      행을 클릭하면 <b>그 변경 이후에 일어난 movement</b>(재고 입출고 · 판매 · 견적)가 열립니다.</div>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:2"><label>검색 (CTR 코드 · 제품명 · SyD 코드)</label><input id="phQ" type="text" placeholder="예: CL0001 / SYD-1234"></div>
+      <div><label>구분</label><select id="phKind"><option value="">전체</option><option value="master">마스터 변경</option><option value="status">판매상태 전환</option></select></div>
+      <div><label>Estado</label><select id="phEstado"><option value="">전체</option><option value="1">Activo</option><option value="0">Inactivo</option></select></div>
+      <div><label>시작일</label><input id="phFrom" type="date"></div>
+      <div><label>종료일</label><input id="phTo" type="date"></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="phGo" type="button">조회</button></div>
+    </div>
+    <div id="phSum" class="hint" style="margin-top:8px"></div>
+    <div id="phBox" style="margin-top:6px"></div>
+    <div style="margin-top:8px"><button class="btn ghost sm hidden" id="phMore" type="button">더 보기</button></div>
+    <div class="msg" id="phMsg"></div>
+  </div>
+
 
   <!-- 제품 마스터 업로드 (디렉터) -->
   
@@ -371,20 +399,22 @@
     finally{$('go').disabled=false;$('go').textContent='로그인';}
   }
 
-  // 탭: 제품 찾기(검색+경쟁사코드+차종) / 제품 마스터 업로드
+  // 탭: 제품 찾기(검색+경쟁사코드+차종) / 제품 마스터 업로드 / 📜 제품 이력
   function showTab(which){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
-    var isFind = which!=='upload';
+    var isDir = session && session.user && session.user.role==='director';
+    var isUp = (which==='upload' && isDir);
+    var isHist = (which==='history');
+    var isFind = !isUp && !isHist;
     $('searchCard').classList.toggle('hidden',!isFind);
     $('vehCard').classList.toggle('hidden',!isFind);
-    var isDir = session && session.user && session.user.role==='director';
-    $('upCard').classList.toggle('hidden', !(which==='upload' && isDir));
-    if(which==='upload' && !isDir){ // 권한 없으면 찾기로
-      $('searchCard').classList.remove('hidden');$('vehCard').classList.remove('hidden');
-    }
+    $('upCard').classList.toggle('hidden', !isUp);
+    if($('histCard')) $('histCard').classList.toggle('hidden', !isHist);
+    // 제품 이력은 제품 화면 열람자 전체 — 첫 진입에서 한 번만 자동 조회.
+    if(isHist && !phLoaded) phLoad(true);
   }
   function applyHashTab(){
     var t='find', q0=''; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'find'; q0=p.get('q')||''; }catch(e){}
-    showTab(t==='upload'?'upload':'find');
+    showTab(t==='upload'?'upload':(t==='history'?'history':'find'));
     // 딥링크 검색(q=코드) — 개발요청 화면 「카탈로그 보기」 등에서 진입 시 해당 자재 즉시 조회
     if(q0 && $('q')){ $('q').value=q0; doSearch(); }
   }
@@ -1637,7 +1667,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build pj0819act3 (제품 활성/비활성)'); }catch(e){}
+  try{ console.log('[refatrix-products] build ph-0824a (제품 변경이력 탭)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
@@ -1657,9 +1687,189 @@
   if($('qCn')) $('qCn').addEventListener('change',onCnToggle);
   if($('qPro')) $('qPro').addEventListener('change',doSearch);
 
+  // ===== 📜 제품 이력 (ph-0824a) =====================================
+  // 마스터 변경(product_change_log) + 판매 활성/비활성 전환(product_status_log)을
+  // 서버가 통합·중복제거해 내려준다(GET /api/products/history).
+  // 행 클릭 → GET /api/products/:id/movements?since=… 로 그 변경 이후의 movement.
+  const PH_SRC={manual:'화면 입력',import:'엑셀 업로드',material:'소재 지정',material_bulk:'소재 일괄지정',status:'판매상태',status_check:'일괄 점검'};
+  const PH_ACT={create:'생성',update:'수정',activate:'판매재개',deactivate:'판매중단'};
+  let phOffset=0, phTotal=0, phItems=[], phLoaded=false, phOpenKey=null, phCanPrice=true;
+
+  function phDate(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString('sv-SE').slice(0,16); }catch(e){ return String(s).slice(0,16); } }
+  function phEstadoChip(active){
+    return active
+      ? '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#e6f2ee;color:var(--income);font-size:11px;font-weight:700">Activo</span>'
+      : '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#fbe9e7;color:var(--expense);font-size:11px;font-weight:700">Inactivo</span>';
+  }
+  // 변경내역 셀 — 항목별 「이전 → 이후」. 상태 전환은 사유를 함께.
+  function phDescHtml(it){
+    const head='<span style="font-weight:700;font-size:11.5px;color:'+(it.kind==='status'?(it.action==='activate'?'var(--income)':'var(--expense)'):'var(--gold)')+'">'
+      +escP(PH_ACT[it.action]||it.action)+'</span> <span style="font-size:10.5px;color:#6f6a60">'+escP(PH_SRC[it.source]||it.source||'')+'</span>';
+    if(it.kind==='status'){
+      return head+(it.reason?'<div class="chg">사유: '+escP(it.reason)+'</div>':'')
+        +(it.check_id?'<div class="chg" style="color:#6f6a60">일괄 점검 #'+it.check_id+'</div>':'');
+    }
+    const parts=(it.parts||[]).map(p=>'<div class="chg">'+escP(p.label)+': <span style="color:var(--expense)">'+escP(fmtv(Array.isArray(p.from)?p.from.join(' // '):p.from))+'</span> → <b>'+escP(fmtv(Array.isArray(p.to)?p.to.join(' // '):p.to))+'</b></div>');
+    if(it.hidden_price) parts.push('<div class="chg" style="color:#6f6a60">가격 항목 '+it.hidden_price+'건 — 열람 권한 없음</div>');
+    return head+(parts.length?parts.join(''):'<div class="chg">'+escP(it.desc||'—')+'</div>');
+  }
+
+  function phRender(){
+    const box=$('phBox');
+    if(!phItems.length){ box.innerHTML='<span class="hint">기록된 변경 이력이 없습니다.</span>'; $('phSum').textContent=''; return; }
+    box.innerHTML='<table><thead><tr>'
+      +'<th class="nowrap">변경기록 날짜</th><th class="nowrap">CTR Code</th><th>변경내역</th>'
+      +'<th class="nowrap">SYD Code</th><th class="nowrap">Estado</th><th class="nowrap">변경자</th>'
+      +'</tr></thead><tbody>'
+      +phItems.map(it=>{
+        const syd=String(it.syd_codes||'').replace(/\s*\/\/\s*/g,' · ');
+        return '<tr class="ph-row" data-key="'+escP(it.key)+'" style="cursor:pointer">'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(phDate(it.changed_at))+'</td>'
+          +'<td class="code nowrap">'+escP(it.code||'—')+(it.product_deleted?' <span style="font-size:10px;color:var(--expense)">삭제됨</span>':'')
+            +'<div style="font-size:10.5px;color:#6f6a60;font-family:inherit">'+escP((it.product_name||'').slice(0,40))+'</div></td>'
+          +'<td>'+phDescHtml(it)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px;color:#6f6a60">'+escP(syd.slice(0,44)||'—')+'</td>'
+          +'<td class="nowrap">'+phEstadoChip(it.estado_active)+'</td>'
+          +'<td class="nowrap" style="font-size:12px">'+escP(it.changed_by_name||'—')+'</td></tr>'
+          +'<tr class="ph-det hidden" data-for="'+escP(it.key)+'"><td colspan="6" style="background:#faf8f3"><span class="hint">불러오는 중…</span></td></tr>';
+      }).join('')+'</tbody></table>';
+    box.querySelectorAll('.ph-row').forEach(tr=>tr.addEventListener('click',()=>phToggle(tr.getAttribute('data-key'))));
+    $('phSum').innerHTML='총 <b>'+phTotal+'</b>건 중 '+phItems.length+'건 표시 · 행을 클릭하면 그 변경 이후의 movement 가 열립니다.';
+    $('phMore').classList.toggle('hidden', phItems.length>=phTotal);
+  }
+
+  async function phLoad(reset){
+    const m=$('phMsg'); m.className='msg'; m.style.display='none';
+    if(reset){ phOffset=0; phItems=[]; phOpenKey=null; $('phBox').innerHTML='<span class="hint">불러오는 중…</span>'; }
+    const p=new URLSearchParams();
+    p.set('limit','50'); p.set('offset',String(phOffset));
+    const q=$('phQ').value.trim(); if(q) p.set('q',q);
+    if($('phKind').value) p.set('kind',$('phKind').value);
+    if($('phEstado').value) p.set('estado',$('phEstado').value);
+    if($('phFrom').value) p.set('from',$('phFrom').value);
+    if($('phTo').value) p.set('to',$('phTo').value);
+    try{
+      const res=await fetch(session.api+'/api/products/history?'+p.toString(),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='이력 조회 실패: '+(d.error||res.status); return; }
+      phCanPrice=d.can_price!==false;
+      phItems=phItems.concat(d.items||[]);
+      phTotal=Number(d.total||0);
+      phOffset=phItems.length;
+      phLoaded=true;
+      phRender();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+
+  // 같은 제품의 「바로 다음 변경」 시각 — 있으면 구간(그 변경 ~ 다음 변경)으로도 볼 수 있게.
+  function phNextTs(it){
+    let best=null;
+    phItems.forEach(o=>{
+      if(o.product_id!==it.product_id || o.key===it.key) return;
+      if(new Date(o.changed_at)<=new Date(it.changed_at)) return;
+      if(!best || new Date(o.changed_at)<new Date(best)) best=o.changed_at;
+    });
+    return best;
+  }
+
+  function phToggle(key){
+    const det=$('phBox').querySelector('.ph-det[data-for="'+CSS.escape(key)+'"]');
+    if(!det) return;
+    if(phOpenKey===key){ det.classList.add('hidden'); phOpenKey=null; return; }
+    $('phBox').querySelectorAll('.ph-det').forEach(d=>d.classList.add('hidden'));
+    det.classList.remove('hidden'); phOpenKey=key;
+    phLoadMoves(key,false);
+  }
+
+  async function phLoadMoves(key, ranged){
+    const it=phItems.find(x=>x.key===key); if(!it) return;
+    const det=$('phBox').querySelector('.ph-det[data-for="'+CSS.escape(key)+'"]');
+    if(!det) return;
+    const cell=det.querySelector('td');
+    if(it.product_id==null){ cell.innerHTML='<span class="hint">제품이 삭제되어 movement 를 조회할 수 없습니다.</span>'; return; }
+    cell.innerHTML='<span class="hint">불러오는 중…</span>';
+    const nextTs=phNextTs(it);
+    const p=new URLSearchParams(); p.set('since',new Date(it.changed_at).toISOString());
+    if(ranged&&nextTs) p.set('until',new Date(nextTs).toISOString());
+    try{
+      const res=await fetch(session.api+'/api/products/'+it.product_id+'/movements?'+p.toString(),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ cell.innerHTML='<span class="hint">movement 조회 실패: '+escP(d.error||String(res.status))+'</span>'; return; }
+      cell.innerHTML=phMovesHtml(it,d,ranged,nextTs);
+      const tg=cell.querySelector('.ph-range');
+      if(tg) tg.addEventListener('click',(e)=>{ e.stopPropagation(); phLoadMoves(key,!ranged); });
+    }catch(e){ cell.innerHTML='<span class="hint">서버 연결 실패</span>'; }
+  }
+
+  function phMovesHtml(it,d,ranged,nextTs){
+    const t=d.totals||{};
+    const money=(n)=> n==null?'<span style="color:#bbb">권한 없음</span>':fmt(n);
+    const head='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<div style="font-weight:700;font-size:12.5px">'+escP(phDate(it.changed_at))+' 변경 이후의 movement</div>'
+      +(nextTs?('<button class="btn ghost sm ph-range" type="button">'+(ranged?'전체 기간으로':'다음 변경('+escP(phDate(nextTs))+') 전까지만')+'</button>'):'')
+      +'</div>';
+    const stockLine='<div class="hint" style="margin-top:4px">변경 시점 재고 <b>'+qty(d.stock_before)+'</b> → 현재 재고 <b>'+qty(d.stock_now)+'</b>'
+      +' · 입고 <b style="color:var(--income)">+'+qty(t.in_qty)+'</b> · 출고 <b style="color:var(--expense)">−'+qty(t.out_qty)+'</b> · 조정 <b>'+qty(t.adjust_qty)+'</b>'
+      +' · 판매 <b>'+(t.sales_count||0)+'</b>건 '+qty(t.sales_qty)+'개 · 견적 <b>'+(t.quote_count||0)+'</b>건 '+qty(t.quote_qty)+'개</div>';
+    const none='<div class="hint" style="margin-top:6px">이 변경 이후 기록된 movement 가 없습니다.</div>';
+    let body='';
+    if((d.stock||[]).length){
+      body+='<div style="font-weight:700;font-size:12px;margin-top:10px">📦 재고 입출고</div>'
+        +'<table><thead><tr><th class="nowrap">일시</th><th class="nowrap">구분</th><th class="num">수량</th><th class="nowrap">출처</th><th>근거·메모</th><th class="nowrap">고객/SAT</th><th class="nowrap">처리자</th></tr></thead><tbody>'
+        +d.stock.map(m=>'<tr><td class="nowrap" style="font-size:11.5px">'+escP(phDate(m.moved_at))+'</td>'
+          +'<td class="nowrap" style="font-size:12px">'+(m.move_type==='in'?'<span style="color:var(--income);font-weight:700">입고</span>':m.move_type==='out'?'<span style="color:var(--expense);font-weight:700">출고</span>':'<span style="color:var(--gold);font-weight:700">조정</span>')+'</td>'
+          +'<td class="num">'+qty(m.signed_qty)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(m.origin||'—')+'</td>'
+          +'<td style="font-size:11.5px">'+escP([m.ref,m.note].filter(Boolean).join(' · ')||'—')+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP([m.customer_name,m.sat_no].filter(Boolean).join(' · ')||'—')+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(m.created_by_name||'—')+'</td></tr>').join('')
+        +'</tbody></table>'+(d.capped?'<div class="hint">표시 상한에 걸려 일부만 보입니다.</div>':'');
+    }
+    if((d.sales||[]).length){
+      body+='<div style="font-weight:700;font-size:12px;margin-top:10px">🧾 판매(인보이스)</div>'
+        +'<table><thead><tr><th class="nowrap">일자</th><th class="nowrap">SAT</th><th>고객</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th class="nowrap">상태</th></tr></thead><tbody>'
+        +d.sales.map(s=>'<tr><td class="nowrap" style="font-size:11.5px">'+escP(s.inv_date||'—')+'</td>'
+          +'<td class="nowrap code">'+escP(s.sat_no||'—')+'</td><td style="font-size:12px">'+escP(s.customer_name||'—')+'</td>'
+          +'<td class="num">'+qty(s.qty)+'</td><td class="num">'+money(s.unit_price)+'</td><td class="num">'+money(s.amount_mxn)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(s.status||'')+'</td></tr>').join('')
+        +'</tbody></table>';
+    }
+    if((d.quotes||[]).length){
+      body+='<div style="font-weight:700;font-size:12px;margin-top:10px">📝 견적</div>'
+        +'<table><thead><tr><th class="nowrap">일자</th><th class="nowrap">견적번호</th><th>고객</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th class="nowrap">상태</th></tr></thead><tbody>'
+        +d.quotes.map(q=>'<tr><td class="nowrap" style="font-size:11.5px">'+escP(q.quote_date||'—')+'</td>'
+          +'<td class="nowrap code">'+escP(q.quote_no||'—')+'</td><td style="font-size:12px">'+escP(q.customer_name||'—')+'</td>'
+          +'<td class="num">'+qty(q.qty)+'</td><td class="num">'+money(q.unit_price)+'</td><td class="num">'+money(q.amount_mxn)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(q.status||'')+'</td></tr>').join('')
+        +'</tbody></table>';
+    }
+    return head+stockLine+(body||none);
+  }
+
+  // 화면에 불러온 이력을 그대로 엑셀로(요청 열 순서 그대로).
+  function phXlsx(){
+    if(!phItems.length){ alert('먼저 이력을 조회하세요.'); return; }
+    const aoa=[['변경기록 날짜','CTR Code','변경내역','SYD Code','Estado','변경자','구분','출처','제품명']];
+    phItems.forEach(it=>aoa.push([
+      phDate(it.changed_at), it.code||'', it.desc||'', String(it.syd_codes||''),
+      it.estado_active?'Activo':'Inactivo', it.changed_by_name||'',
+      it.kind==='status'?'판매상태 전환':'마스터 변경', PH_SRC[it.source]||it.source||'', it.product_name||'',
+    ]));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '제품이력');
+    XLSX.writeFile(wb, 'refatrix_product_history_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }
+
+  if($('phGo')) $('phGo').addEventListener('click',()=>phLoad(true));
+  if($('phMore')) $('phMore').addEventListener('click',()=>phLoad(false));
+  if($('phQ')) $('phQ').addEventListener('keydown',e=>{ if(e.key==='Enter') phLoad(true); });
+  if($('phKind')) $('phKind').addEventListener('change',()=>phLoad(true));
+  if($('phEstado')) $('phEstado').addEventListener('change',()=>phLoad(true));
+  if($('phXlsx')) $('phXlsx').addEventListener('click',phXlsx);
+
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260824qa"></script>
+<script src="refatrix-nav.js?v=20260824ph"></script>
 </body>
 </html>

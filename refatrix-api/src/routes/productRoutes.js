@@ -6,6 +6,7 @@ import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS
 import { visibleTeamIds } from '../teams.js';
 import { sweepDevRequestMatches } from '../devMatchSweep.js';
 import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
+import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '../productHistory.js';
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -566,6 +567,260 @@ export default async function productRoutes(app) {
         changed_by_name: r.changed_by_name || null, created_at: r.created_at,
       })),
       total, limit, offset,
+    };
+  });
+
+  // ===== 제품 이력(2026-08-24) — 마스터 변경 + 판매상태 전환 통합 =====
+  // 제품 화면 「📜 제품 이력」 탭. 기존 /changelog(디렉터 전용, 마스터 변경만)는 그대로 두고,
+  // 화면용으로 두 피드를 합친 새 엔드포인트를 추가한다(기존 호출부 무영향).
+  //   열: 변경기록 날짜 · CTR Code · 변경내역 · SYD Code · Estado · 변경자
+  //   권한: 제품 페이지 열람자 전체. 단 가격류 변경 항목은 sale_price 권한자에게만 보인다.
+  //   필터: q(코드·제품명 부분일치) · product_id · kind(all|master|status) · action
+  //         · estado(''|1|0 — 그 변경 직후 상태) · from/to(날짜) · source
+  app.get('/api/products/history', { preHandler: [authGuard, requirePage('products')] }, async (req) => {
+    const { perm } = req.ctx;
+    const canPrice = fieldVisible(perm, 'sale_price');
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    const conds = []; const args = [];
+    const kind = ['master', 'status'].includes(String(req.query.kind)) ? String(req.query.kind) : '';
+    if (kind) { args.push(kind); conds.push(`f.kind = $${args.length}`); }
+    if (req.query.product_id && Number.isFinite(Number(req.query.product_id))) {
+      args.push(Number(req.query.product_id)); conds.push(`f.product_id = $${args.length}`);
+    }
+    const q = String(req.query.q || '').trim();
+    if (q) {
+      args.push('%' + q + '%');
+      // 코드는 이력 스냅샷(f.code)과 현재 마스터(p.code) 양쪽으로 — 코드가 바뀐 제품도 찾히게.
+      conds.push(`(f.code ILIKE $${args.length} OR p.code ILIKE $${args.length} OR p.name ILIKE $${args.length} OR p.scode ILIKE $${args.length})`);
+    }
+    const act = String(req.query.action || '');
+    if (['create', 'update', 'activate', 'deactivate'].includes(act)) { args.push(act); conds.push(`f.action = $${args.length}`); }
+    const src = String(req.query.source || '');
+    if (src && /^[a-z_]{1,20}$/.test(src)) { args.push(src); conds.push(`f.source = $${args.length}`); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || ''))) { args.push(req.query.from); conds.push(`f.ts >= $${args.length}::date`); }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || ''))) { args.push(req.query.to); conds.push(`f.ts < ($${args.length}::date + 1)`); }
+    const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+
+    // estado(그 변경 직후의 판매상태)는 계산값이라 바깥에서 거른다.
+    let estadoCond = '';
+    if (req.query.estado === '1' || req.query.estado === '0') estadoCond = req.query.estado === '1' ? 'TRUE' : 'FALSE';
+
+    // 두 피드를 UNION → 제품 조인/필터(joined) → 그 시점 상태를 LATERAL 로 산출.
+    //  · status 행 자신은 action 이 곧 결과 상태.
+    //  · master 행은 그 시각 이전(같은 시각 포함)의 마지막 상태 전환을 따르고, 없으면 활성(기본값 TRUE).
+    // ⚡ product_change_log 는 엑셀 업로드가 SKU 당 1행을 남겨 수만 행까지 자란다.
+    //    Estado 필터가 없을 때는 **정렬·페이징을 먼저** 끝내고 그 페이지(≤200행)에만
+    //    LATERAL 을 태운다 — 전체 행에 상태 조회를 도는 것을 피한다.
+    const base = `
+      WITH feed AS (
+        SELECT 'master'::text AS kind, l.id AS src_id, l.product_id, l.code, l.action,
+               COALESCE(l.source,'manual') AS source, l.changes, NULL::text AS reason,
+               NULL::bigint AS check_id, l.changed_by, l.created_at AS ts
+          FROM product_change_log l
+         -- ⚠ 한 건씩 전환(PATCH /:id/active)은 product_status_log 와 product_change_log 에
+         --   **양쪽 모두** 기록한다(source='status'). 그대로 UNION 하면 같은 전환이 두 줄로 보이므로
+         --   여기서 제외하고, 상태 전환은 아래 product_status_log 한 곳에서만 가져온다.
+         --   (일괄 점검 적용은 애초에 product_status_log 에만 기록 — 두 경로가 이걸로 통일된다)
+         WHERE COALESCE(l.source,'manual') <> 'status'
+        UNION ALL
+        SELECT 'status'::text, s.id, s.product_id, s.code, s.action,
+               CASE WHEN s.check_id IS NULL THEN 'status' ELSE 'status_check' END,
+               NULL::jsonb, s.reason, s.check_id, s.changed_by, s.changed_at
+          FROM product_status_log s
+      ),
+      joined AS (
+        SELECT f.kind, f.src_id, f.product_id, f.code, f.action, f.source, f.changes, f.reason,
+               f.check_id, f.changed_by, f.ts,
+               p.code AS cur_code, p.name AS product_name, p.scode AS cur_scode,
+               p.is_active AS cur_active, p.deleted_at AS prod_deleted_at
+          FROM feed f
+          LEFT JOIN products p ON p.id = f.product_id
+        ${where}
+      )`;
+    const ESTADO = `CASE WHEN j.kind = 'status' THEN (j.action = 'activate')
+                         ELSE COALESCE(st.action = 'activate', TRUE) END AS estado_active`;
+    const LATERAL = `
+          LEFT JOIN users u ON u.id = j.changed_by
+          LEFT JOIN LATERAL (
+            SELECT s2.action
+              FROM product_status_log s2
+             WHERE s2.product_id = j.product_id AND s2.changed_at <= j.ts
+             ORDER BY s2.changed_at DESC, s2.id DESC
+             LIMIT 1
+          ) st ON TRUE`;
+
+    let rows; let total;
+    if (!estadoCond) {
+      rows = (await query(
+        `${base}, page AS (
+           SELECT * FROM joined ORDER BY ts DESC, src_id DESC
+            LIMIT $${args.length + 1} OFFSET $${args.length + 2}
+         )
+         SELECT j.*, u.name AS changed_by_name, ${ESTADO}
+           FROM page j ${LATERAL}
+          ORDER BY j.ts DESC, j.src_id DESC`,
+        args.concat([limit, offset]))).rows;
+      total = Number((await query(`${base} SELECT COUNT(*)::int AS n FROM joined`, args)).rows[0].n);
+    } else {
+      const enriched = `${base}, enriched AS (
+        SELECT j.*, u.name AS changed_by_name, ${ESTADO} FROM joined j ${LATERAL}
+      )`;
+      rows = (await query(
+        `${enriched}
+         SELECT * FROM enriched WHERE estado_active = ${estadoCond}
+          ORDER BY ts DESC, src_id DESC
+          LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+        args.concat([limit, offset]))).rows;
+      total = Number((await query(
+        `${enriched} SELECT COUNT(*)::int AS n FROM enriched WHERE estado_active = ${estadoCond}`,
+        args)).rows[0].n);
+    }
+
+    return {
+      can_price: canPrice,
+      items: rows.map((r) => {
+        const changes = typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes;
+        const { parts, hidden_price: hiddenPrice } = changeParts(changes, canPrice);
+        return {
+          key: `${r.kind}:${r.src_id}`,
+          kind: r.kind, id: Number(r.src_id),
+          product_id: r.product_id != null ? Number(r.product_id) : null,
+          changed_at: r.ts,
+          // CTR Code — 이력 스냅샷 우선(코드가 바뀐 뒤에도 그때 코드를 보여줌), 없으면 현재 마스터.
+          code: r.code || r.cur_code || null,
+          current_code: r.cur_code || null,
+          product_name: r.product_name || null,
+          syd_codes: sydForRow(changes, r.cur_scode),
+          action: r.action, source: r.source,
+          desc: describeRow({ kind: r.kind, action: r.action, source: r.source, changes, reason: r.reason, canPrice }),
+          parts, hidden_price: hiddenPrice,
+          reason: r.reason || null,
+          check_id: r.check_id != null ? Number(r.check_id) : null,
+          estado_active: r.estado_active !== false,
+          current_active: r.cur_active !== false,
+          product_deleted: !!r.prod_deleted_at,
+          changed_by_name: r.changed_by_name || null,
+        };
+      }),
+      total, limit, offset,
+    };
+  });
+
+  // 이력 행 드릴다운 — 그 변경 **이후**의 movement.
+  //   ?since=ISO(필수) · ?until=ISO(선택, 다음 변경 시각까지만 보고 싶을 때) · ?limit
+  //   ① 재고 입출고 원장(stock_movements) ② 판매 인보이스 라인 ③ 견적 라인
+  //   판매·견적은 제품 드릴다운과 **같은 팀 가시성 규칙**을 쓴다(담당 고객만).
+  //   금액은 sale_price 권한자에게만. 수량·건수는 항상.
+  app.get('/api/products/:id/movements', { preHandler: [authGuard, requirePage('products')] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'bad_id' });
+    const since = String(req.query.since || '').trim();
+    if (!since || Number.isNaN(Date.parse(since))) return reply.code(400).send({ error: 'since_required' });
+    const until = String(req.query.until || '').trim();
+    const hasUntil = !!until && !Number.isNaN(Date.parse(until));
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+    const canPrice = fieldVisible(perm, 'sale_price');
+
+    const prod = (await query(
+      `SELECT id, code, name, scode, stock_qty, is_active FROM products WHERE id=$1`, [id])).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'not_found' });
+
+    // ① 재고 입출고 — 변경 이후 전부(재고 역산에 쓰므로 until 로 자르지 않는다).
+    const moves = (await query(
+      `SELECT m.id, m.move_type, m.qty, m.ref, m.note, m.source, m.moved_at,
+              m.sales_invoice_id, m.batch_id, m.event_no,
+              u.name AS created_by_name, cu.name AS customer_name, si.sat_no
+         FROM stock_movements m
+         LEFT JOIN users u ON u.id=m.created_by
+         LEFT JOIN sales_invoices si ON si.id=m.sales_invoice_id
+         LEFT JOIN customers cu ON cu.id=si.customer_id
+        WHERE m.product_id=$1 AND m.moved_at >= $2::timestamptz
+        ORDER BY m.moved_at ASC, m.id ASC`, [id, since])).rows;
+
+    const vis = visibleTeamIds(perm);
+    const sArgs = [id, since];
+    let teamCond = '';
+    if (vis !== null) { sArgs.push(vis.length ? vis : [-1]); teamCond = ` AND cu.team_id = ANY($${sArgs.length})`; }
+    let untilCondS = '';
+    if (hasUntil) { sArgs.push(until); untilCondS = ` AND si.created_at < $${sArgs.length}::timestamptz`; }
+    const salesRows = (await query(
+      `SELECT si.id, si.sat_no, to_char(si.inv_date,'YYYY-MM-DD') AS inv_date, si.created_at, si.status,
+              cu.name AS customer_name, sil.qty, sil.unit_price, sil.line_amount_mxn
+         FROM sales_invoice_lines sil
+         JOIN sales_invoices si ON si.id=sil.invoice_id
+         JOIN customers cu ON cu.id=si.customer_id
+        WHERE sil.product_id=$1 AND si.deleted_at IS NULL AND si.status <> 'deleted'
+          AND si.created_at >= $2::timestamptz${teamCond}${untilCondS}
+        ORDER BY si.created_at ASC, si.id ASC
+        LIMIT ${limit}`, sArgs)).rows;
+
+    const qArgs = [id, since];
+    let teamCondQ = '';
+    if (vis !== null) { qArgs.push(vis.length ? vis : [-1]); teamCondQ = ` AND cu.team_id = ANY($${qArgs.length})`; }
+    let untilCondQ = '';
+    if (hasUntil) { qArgs.push(until); untilCondQ = ` AND q.created_at < $${qArgs.length}::timestamptz`; }
+    const quoteRows = (await query(
+      `SELECT q.id, q.quote_no, to_char(q.quote_date,'YYYY-MM-DD') AS quote_date, q.created_at, q.status,
+              cu.name AS customer_name, ql.qty, ql.final_price, ql.line_subtotal
+         FROM quote_lines ql
+         JOIN quotes q ON q.id=ql.quote_id
+         JOIN customers cu ON cu.id=q.customer_id
+        WHERE ql.product_id=$1 AND q.deleted_at IS NULL
+          AND q.created_at >= $2::timestamptz${teamCondQ}${untilCondQ}
+        ORDER BY q.created_at ASC, q.id ASC
+        LIMIT ${limit}`, qArgs)).rows;
+
+    const movesAll = moves.map((r) => ({ move_type: r.move_type, qty: Number(r.qty) }));
+    const stockBefore = stockAtChange(prod.stock_qty, movesAll);
+    const shown = hasUntil ? moves.filter((r) => new Date(r.moved_at) < new Date(until)) : moves;
+    const capped = shown.length > limit;
+    const stockItems = shown.slice(0, limit).map((r) => ({
+      id: Number(r.id), move_type: r.move_type, qty: Number(r.qty),
+      signed_qty: signedQty(r.move_type, r.qty), moved_at: r.moved_at,
+      ref: r.ref || null, note: r.note || null, event_no: r.event_no == null ? null : Number(r.event_no),
+      origin: r.sales_invoice_id ? '매출' : (r.batch_id ? '수입' : (r.source === 'manual' ? '수동' : '기타')),
+      customer_name: r.customer_name || null, sat_no: r.sat_no || null,
+      created_by_name: r.created_by_name || null,
+    }));
+    const inQty = shown.reduce((s, r) => s + (r.move_type === 'in' ? Number(r.qty) : 0), 0);
+    const outQty = shown.reduce((s, r) => s + (r.move_type === 'out' ? Number(r.qty) : 0), 0);
+    const adjQty = shown.reduce((s, r) => s + (r.move_type === 'adjust' ? Number(r.qty) : 0), 0);
+    const r3 = (n) => Math.round(n * 1000) / 1000;
+    const r2 = (n) => Math.round(n * 100) / 100;
+
+    return {
+      product: {
+        id: Number(prod.id), code: prod.code, name: prod.name, scode: prod.scode || null,
+        stock_qty: Number(prod.stock_qty) || 0, is_active: prod.is_active !== false,
+      },
+      since, until: hasUntil ? until : null, can_price: canPrice,
+      // 변경 시점 재고 → 현재 재고 (원장이 재고의 유일한 변동원이므로 역산이 성립)
+      stock_before: stockBefore, stock_now: Number(prod.stock_qty) || 0,
+      totals: {
+        move_count: shown.length, in_qty: r3(inQty), out_qty: r3(outQty), adjust_qty: r3(adjQty),
+        sales_count: salesRows.length,
+        sales_qty: r3(salesRows.reduce((s, r) => s + Number(r.qty), 0)),
+        sales_amount: canPrice ? r2(salesRows.reduce((s, r) => s + Number(r.line_amount_mxn || 0), 0)) : null,
+        quote_count: quoteRows.length,
+        quote_qty: r3(quoteRows.reduce((s, r) => s + Number(r.qty), 0)),
+        quote_amount: canPrice ? r2(quoteRows.reduce((s, r) => s + Number(r.line_subtotal || 0), 0)) : null,
+      },
+      stock: stockItems, capped,
+      sales: salesRows.map((r) => ({
+        id: Number(r.id), sat_no: r.sat_no || null, inv_date: r.inv_date, created_at: r.created_at,
+        status: r.status, customer_name: r.customer_name, qty: Number(r.qty),
+        unit_price: canPrice && r.unit_price != null ? Number(r.unit_price) : null,
+        amount_mxn: canPrice && r.line_amount_mxn != null ? Number(r.line_amount_mxn) : null,
+      })),
+      quotes: quoteRows.map((r) => ({
+        id: Number(r.id), quote_no: r.quote_no || null, quote_date: r.quote_date, created_at: r.created_at,
+        status: r.status, customer_name: r.customer_name, qty: Number(r.qty),
+        unit_price: canPrice && r.final_price != null ? Number(r.final_price) : null,
+        amount_mxn: canPrice && r.line_subtotal != null ? Number(r.line_subtotal) : null,
+      })),
     };
   });
 
