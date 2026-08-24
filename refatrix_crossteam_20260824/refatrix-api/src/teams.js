@@ -1,0 +1,50 @@
+// 영업팀 가시성 규칙(순수 함수)
+// 디렉터는 전체. 그 외는 소속팀 + 디렉터가 부여한 상대팀까지.
+
+// 사용자가 볼 수 있는 팀 id 목록. null = 전체(제한 없음, 디렉터).
+export function visibleTeamIds(perm) {
+  if (!perm) return [];
+  if (perm.role === 'director') return null;        // 전체
+  if (perm.role === 'sales_support') return null;   // 영업지원: 전 영업팀 지원 → 전체 가시
+  const ids = new Set();
+  if (perm.teamId != null) ids.add(perm.teamId);    // 소속팀
+  for (const t of (perm.teamAccess || [])) ids.add(t.teamId); // 부여받은 상대팀
+  return [...ids];
+}
+
+// 견적/매출 쿼리 팀 필터용: null = 전체(필터 없음, 디렉터·영업지원),
+// 배열 = 그 팀들만. 가시 팀이 없으면 [-1](아무 팀도 매칭 안 됨).
+export function teamArr(perm) {
+  const vis = visibleTeamIds(perm);
+  return vis === null ? null : (vis.length ? vis : [-1]);
+}
+
+// 특정 팀을 볼 수 있나
+export function canViewTeam(perm, teamId) {
+  const vis = visibleTeamIds(perm);
+  if (vis === null) return true;
+  return teamId != null && vis.includes(Number(teamId));
+}
+
+// 타팀 고객에 대해 "수정 요청"(디렉터 승인 대기)을 넣을 수 있나.
+//   디렉터가 사용자별로 켜는 users.cross_team_request 권한.
+//   ⚠ 이 권한은 즉시 수정 권한이 아니다. 요청만 생성되고 반드시 디렉터 승인을 거친다.
+//   ⚠ 열람 범위도 넓히지 않는다(고객 목록·매출·미수는 종전대로 팀 스코프).
+export function canRequestCrossTeam(perm) {
+  if (!perm) return false;
+  if (perm.role === 'director') return false;   // 디렉터는 즉시 수정 — 요청 경로 자체가 필요 없음
+  return perm.crossTeamRequest === true;
+}
+
+// 특정 팀을 편집할 수 있나(소속팀은 편집 가능, 상대팀은 can_edit 부여 시)
+export function canEditTeam(perm, teamId) {
+  if (!perm) return false;
+  if (perm.role === 'director') return true;
+  // 영업지원: 전 영업팀 지원 역할 → 팀 제한 없이 편집 허용.
+  //   실제 편집 가능 범위는 페이지 권한(requirePageEdit)으로 제한됨(고객=편집, 목표/파이프라인=조회전용).
+  if (perm.role === 'sales_support') return true;
+  if (teamId == null) return false;
+  if (perm.teamId === Number(teamId)) return true;
+  const g = (perm.teamAccess || []).find((t) => t.teamId === Number(teamId));
+  return !!(g && g.canEdit);
+}
