@@ -96,6 +96,9 @@
   .chip.td{background:#e6f1fb;color:#0c447c}
   .chip .tm{font-weight:700;color:var(--gold)}
   .cgmore{font-size:11px;color:var(--muted)}
+  /* 나의 기록(일지) — 본인에게만 보이는 날짜 칸 표식 */
+  .jrdot{margin-left:4px;font-size:10.5px;line-height:1;vertical-align:1px;opacity:.9}
+  .jrbox textarea{min-height:150px;line-height:1.6;font-size:13.5px}
   .daymodal{position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
   .daymodal .box{background:#fff;border-radius:14px;max-width:520px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
   .daymodal .hd{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
@@ -376,6 +379,8 @@
   let calDays=7;     // 7=일~토, 5=평일(월~금)
   let calScope='all'; // 'all'=모두 / 'company'=회사전체 / 'shared'=개인별공유 / 'personal'=내개인
   let calUser=null;   // 디렉터 전용 직원 필터: null=전체 / userId=그 직원 관련 일정만
+  let jrDates=new Set(); // 나의 기록(일지)이 있는 날짜 — 본인 것만, 달력 표식용
+  let jrBase='';         // 모달에 불러온 시점의 기록 원문(미저장 변경 감지용)
   const DOW=['일','월','화','수','목','금','토'];
   // 유저별 고정 배색(작성자 식별). id 기반 결정적 → 같은 사람은 항상 같은 색.
   const USERPAL=[
@@ -468,6 +473,7 @@
       const [cal,td]=await Promise.all([
         fetch(session.api+'/api/calendar?from='+cYmd(cAddDays(from,-1))+'&to='+cYmd(cAddDays(to,1)),{headers:auth()}).then(r=>r.json()).catch(()=>({})),
         fetch(session.api+'/api/todos?status=all',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+        loadJournalRange(from,to),   // 나의 기록 표식(디렉터 본인만 · 실패해도 달력은 정상)
       ]);
       calEvents=cal.items||[];
       // 할 일: 직원 필터 중이면 그 직원에게 배정된 것만 / '모두'면 전체 / 그 외 필터면 내게 배정된 것만
@@ -478,6 +484,84 @@
       renderCal(from,to);
     }catch(e){$('calGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
+  // ===== 나의 기록(일지) — 관리자(디렉터) 본인만 작성·수정·열람 =====
+  // 서버가 항상 "내 user_id" 로만 읽고 쓰므로 다른 계정에는 절대 노출되지 않는다.
+  async function loadJournalRange(from,to){
+    if(!isDirector){ jrDates=new Set(); return; }
+    try{
+      const r=await fetch(session.api+'/api/journal?from='+cYmd(from)+'&to='+cYmd(to),{headers:auth()});
+      if(!r.ok){ return; }                       // 미배포·마이그레이션 전이면 표식만 생략
+      const j=await r.json();
+      jrDates=new Set(Array.isArray(j.dates)?j.dates:[]);
+    }catch(e){ /* 달력 본체에는 영향 없음 */ }
+  }
+  function jrMark(key){ return (isDirector&&jrDates.has(key))?'<span class="jrdot" title="나의 기록 있음">📝</span>':''; }
+  function jrRefreshGrid(){ try{ const {from,to}=calRange(); renderCal(from,to); }catch(e){} }
+
+  // 날짜 상세 모달의 기록 칸 내용 로드
+  async function loadJournal(key){
+    const ta=$('jr-content'); if(!ta) return;
+    ta.value=''; ta.disabled=true;
+    if($('jr-stamp')) $('jr-stamp').textContent='불러오는 중…';
+    try{
+      const res=await fetch(session.api+'/api/journal/'+key,{headers:auth()});
+      const j=await res.json().catch(()=>({}));
+      if(dmDate!==key) return;                   // 그 사이 다른 날짜를 열었으면 무시
+      ta.disabled=false;
+      if(!res.ok){ if($('jr-stamp')) $('jr-stamp').textContent=(j&&j.message)||'불러오지 못했습니다'; return; }
+      ta.value=j.content||''; jrBase=ta.value;
+      jrStamp(j);
+      if($('jr-delBtn')) $('jr-delBtn').style.display=j.exists?'':'none';
+      if(j.exists) jrDates.add(key); else jrDates.delete(key);
+    }catch(e){ ta.disabled=false; if($('jr-stamp')) $('jr-stamp').textContent='불러오지 못했습니다'; }
+  }
+  function jrStamp(j){
+    const s=$('jr-stamp'); if(!s) return;
+    if(j&&j.exists&&j.updated_at){ let t=''; try{ t=new Date(j.updated_at).toLocaleString(); }catch(e){ t=j.updated_at; } s.textContent='마지막 저장 '+t; }
+    else s.textContent='아직 기록 없음';
+  }
+  async function saveJournal(){
+    const key=dmDate, ta=$('jr-content'); if(!ta) return;
+    const m=$('jr-msg'), btn=$('jr-saveBtn');
+    if(m){ m.className='msg'; m.textContent=''; }
+    if(btn) btn.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/journal/'+key,{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({content:ta.value})});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok){ if(m){m.className='msg err';m.textContent=(j&&j.message)||'저장하지 못했습니다.';} return; }
+      jrBase=ta.value;
+      if(j.deleted){
+        jrDates.delete(key);
+        if($('jr-delBtn')) $('jr-delBtn').style.display='none';
+        jrStamp({exists:false});
+        if(m){m.className='msg ok';m.textContent='내용이 비어 있어 이 날 기록을 삭제했습니다.';}
+      }else{
+        jrDates.add(key);
+        if($('jr-delBtn')) $('jr-delBtn').style.display='';
+        jrStamp({exists:true,updated_at:j.updated_at});
+        if(m){m.className='msg ok';m.textContent='저장했습니다.';}
+      }
+      jrRefreshGrid();
+    }catch(e){ if(m){m.className='msg err';m.textContent='저장하지 못했습니다.';} }
+    finally{ if(btn) btn.disabled=false; }
+  }
+  async function delJournal(){
+    const key=dmDate; if(!key) return;
+    if(!confirm(key+' 기록을 삭제할까요? 되돌릴 수 없습니다.')) return;
+    const m=$('jr-msg');
+    try{
+      const res=await fetch(session.api+'/api/journal/'+key,{method:'DELETE',headers:auth()});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok){ if(m){m.className='msg err';m.textContent=(j&&j.message)||'삭제하지 못했습니다.';} return; }
+      jrDates.delete(key);
+      if($('jr-content')) $('jr-content').value=''; jrBase='';
+      if($('jr-delBtn')) $('jr-delBtn').style.display='none';
+      jrStamp({exists:false});
+      if(m){m.className='msg ok';m.textContent='삭제했습니다.';}
+      jrRefreshGrid();
+    }catch(e){ if(m){m.className='msg err';m.textContent='삭제하지 못했습니다.';} }
+  }
+
   // scope 필터: all=전부 / company=회사전체 / shared=개인별공유 / personal=내개인
   // (레거시 team 일정은 'all'에서만 표시)
   function scopeOk(e){
@@ -566,7 +650,7 @@
         const amInner=amEvs.length?amEvs.map(evChip).join(''):'<div class="hempty">—</div>';
         const pmInner=pmEvs.length?pmEvs.map(evChip).join(''):'<div class="hempty">—</div>';
         return '<div class="cgcell week'+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
-          +'<div class="cghead"><span class="dn">'+DOW[day.getDay()]+' '+day.getDate()+'</span>'+(cnt?'<span class="cnt">'+cnt+'건</span>':'')+'</div>'
+          +'<div class="cghead"><span class="dn">'+DOW[day.getDay()]+' '+day.getDate()+jrMark(key)+'</span>'+(cnt?'<span class="cnt">'+cnt+'건</span>':'')+'</div>'
           +'<div class="cgbody">'+adband
             +'<div class="half"><div class="hlab am">오전<span class="ln"></span></div>'+amInner+'</div>'
             +'<div class="half"><div class="hlab pm">오후<span class="ln"></span></div>'+pmInner+'</div>'
@@ -581,7 +665,7 @@
       });
       if(all.length>maxChips) chips+='<div class="cgmore">+'+(all.length-maxChips)+' 더</div>';
       return '<div class="cgcell'+(out?' out':'')+(isToday?' today':'')+'" onclick="openDay(\''+key+'\')">'
-        +'<div class="dn">'+day.getDate()+'</div>'+chips+'</div>';
+        +'<div class="dn">'+day.getDate()+jrMark(key)+'</div>'+chips+'</div>';
     }).join('');
     $('calGrid').style.gridTemplateColumns='';
     $('calGrid').innerHTML=tzNote()+'<div class="calgrid" style="grid-template-columns:repeat('+dows.length+',1fr)">'+head+cells+'</div>';
@@ -602,7 +686,9 @@
       html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 6px">이 날 마감 할 일</div>';
       html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
     }
-    html+='<div style="margin-top:12px"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button></div>';
+    html+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="openDay(\''+key+'\')">+ 이 날 일정 추가</button>'
+      +(isDirector?'<button class="btn ghost" onclick="openDay(\''+key+'\')">📝 나의 기록 '+(jrDates.has(key)?'보기·수정':'쓰기')+'</button>':'')
+      +'</div>';
     html+='</div>';
     $('calGrid').innerHTML=tzNote()+html;
     evs.forEach(e=>loadEvMemos(e.id,'dv-'));
@@ -629,6 +715,23 @@
     if(tds.length){
       html+='<div style="font-size:13px;font-weight:800;color:#0c447c;margin:12px 0 4px">이 날 마감 할 일</div>';
       html+=tds.map(t=>'<div class="item" style="margin-top:6px"><div class="body"><div class="t">'+esc(t.title)+'</div><div class="meta">담당 '+esc(t.assignee_name||'')+(t.status==='done'?' · 완료':'')+'</div></div></div>').join('');
+    }
+    // 나의 기록(일지) — 디렉터 본인 전용. 제목 없이 날짜 + 내용만.
+    if(isDirector){
+      html+='<div class="jrbox" style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+          +'<span style="font-size:13px;font-weight:800;color:var(--brand)">📝 나의 기록</span>'
+          +'<span style="font-size:11px;color:var(--muted);background:#faf8f3;border:1px solid var(--line);border-radius:999px;padding:2px 8px">나만 보임 · 나만 수정</span>'
+          +'<span id="jr-stamp" style="margin-left:auto;font-size:11.5px;color:var(--muted)"></span>'
+        +'</div>'
+        +'<textarea id="jr-content" placeholder="이 날의 기록을 자유롭게 적으세요. (제목 없이 내용만 · 언제든 다시 열어 수정할 수 있습니다)"></textarea>'
+        +'<div style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+          +'<button class="btn" id="jr-saveBtn" onclick="saveJournal()">기록 저장</button>'
+          +'<button class="btn danger sm" id="jr-delBtn" onclick="delJournal()" style="display:none">삭제</button>'
+        +'</div>'
+        +'<div class="msg" id="jr-msg"></div>'
+        +'<div class="hint" style="margin-top:6px">내용을 모두 지우고 저장하면 그 날 기록이 삭제됩니다.</div>'
+      +'</div>';
     }
     // 일정 추가 폼
     // 대상(scope): 누구나 '내 개인 일정' + '개인별 공유'. 디렉터는 '회사 전체' 추가.
@@ -661,9 +764,15 @@
       +'<div class="hint" style="margin-top:6px">시간을 비우면 종일로 표시됩니다. · 입력 시각은 <b>지금 내 위치(시간대)</b> 기준으로 기록되며, 다른 지역 사용자에게는 <b>같은 순간</b>이 각자 현지시각으로 표시됩니다.</div></div>';
     $('dmBody').innerHTML=html;
     evs.forEach(e=>loadEvMemos(e.id));
+    if(isDirector){ jrBase=''; loadJournal(dmDate); }
     $('dayModal').style.display='flex';
   }
-  function closeDay(){ $('dayModal').style.display='none'; }
+  function closeDay(){
+    // 저장하지 않은 기록이 있으면 확인 (일지는 되돌릴 수 없으므로)
+    const ta=$('jr-content');
+    if(ta && !ta.disabled && ta.value!==jrBase && !confirm('저장하지 않은 기록이 있습니다. 저장하지 않고 닫을까요?')) return;
+    $('dayModal').style.display='none';
+  }
   function dmScopeChange(){
     const sc=$('dm-scope')?$('dm-scope').value:'';
     if($('dm-teamWrap')) $('dm-teamWrap').classList.toggle('hidden',sc!=='team');

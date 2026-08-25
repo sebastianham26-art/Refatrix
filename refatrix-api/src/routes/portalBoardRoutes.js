@@ -331,6 +331,99 @@ export default async function portalBoardRoutes(app) {
     return { ok: true, marked: ids.length };
   });
 
+  // =================== 일지 (Journal · 개인 기록) ===================
+  // 날짜별 노트. 제목 없음 — 날짜 + 내용만. 디렉터만 사용하고, 저장된 글은 **작성자 본인만** 조회·수정한다.
+  // 모든 쿼리가 user_id = 나 로 고정되어 있어, 다른 디렉터 계정이 있어도 서로의 일지는 보이지 않는다.
+  const JOURNAL_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  // 마이그레이션 0182 미적용(테이블 없음, SQL 42P01) 시 500 대신 안내를 준다.
+  async function journalQuery(sql, args, reply) {
+    try {
+      return await query(sql, args);
+    } catch (e) {
+      if (e && e.code === '42P01') {
+        reply.code(503).send({ error: 'migration_required', message: '일지 테이블이 없습니다. 서버에서 npm run migrate 를 실행하세요. (0182_calendar_journal)' });
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  // 기간 목록 — 달력에 「기록 있음」 표시를 찍기 위한 날짜 목록(+미리보기).
+  app.get('/api/journal', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const from = String(req.query.from || '');
+    const to = String(req.query.to || '');
+    const conds = [`user_id=$1`, `content <> ''`];
+    const args = [perm.userId];
+    if (JOURNAL_DATE.test(from)) { args.push(from); conds.push(`entry_date >= $${args.length}`); }
+    if (JOURNAL_DATE.test(to)) { args.push(to); conds.push(`entry_date <= $${args.length}`); }
+    const r = await journalQuery(
+      `SELECT to_char(entry_date,'YYYY-MM-DD') AS d, content, updated_at
+         FROM calendar_journal WHERE ${conds.join(' AND ')} ORDER BY entry_date DESC LIMIT 400`, args, reply);
+    if (!r) return reply;
+    return {
+      items: r.rows.map((x) => ({
+        date: x.d,
+        preview: String(x.content || '').replace(/\s+/g, ' ').slice(0, 60),
+        updated_at: isoTs(x.updated_at),
+      })),
+      dates: r.rows.map((x) => x.d),
+    };
+  });
+
+  // 단건 조회 — 없으면 빈 내용으로 응답(신규 작성 상태).
+  app.get('/api/journal/:date', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const date = String(req.params.date || '');
+    if (!JOURNAL_DATE.test(date)) return reply.code(400).send({ error: 'bad_date' });
+    const r = await journalQuery(
+      `SELECT content, created_at, updated_at FROM calendar_journal WHERE user_id=$1 AND entry_date=$2`,
+      [perm.userId, date], reply);
+    if (!r) return reply;
+    const row = r.rows[0];
+    return {
+      date,
+      content: row ? row.content : '',
+      exists: !!row,
+      created_at: row ? isoTs(row.created_at) : null,
+      updated_at: row ? isoTs(row.updated_at) : null,
+    };
+  });
+
+  // 저장(신규·수정 공통) — 같은 날짜에 다시 저장하면 갱신. 내용을 비우고 저장하면 그 날 기록 삭제.
+  app.put('/api/journal/:date', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const date = String(req.params.date || '');
+    if (!JOURNAL_DATE.test(date)) return reply.code(400).send({ error: 'bad_date' });
+    const content = String((req.body || {}).content || '').trim();
+    if (content.length > 20000) return reply.code(400).send({ error: 'too_long', message: '한 건당 20,000자까지 저장할 수 있습니다.' });
+    if (!content) {
+      const d = await journalQuery(`DELETE FROM calendar_journal WHERE user_id=$1 AND entry_date=$2`, [perm.userId, date], reply);
+      if (!d) return reply;
+      await logEvent({ userId: perm.userId, action: 'delete', target: `journal:${date}` });
+      return { ok: true, deleted: true, date, content: '' };
+    }
+    const r = await journalQuery(
+      `INSERT INTO calendar_journal (user_id, entry_date, content) VALUES ($1,$2,$3)
+         ON CONFLICT (user_id, entry_date)
+         DO UPDATE SET content=EXCLUDED.content, updated_at=now()
+       RETURNING (xmax=0) AS inserted, updated_at`, [perm.userId, date, content], reply);
+    if (!r) return reply;
+    await logEvent({ userId: perm.userId, action: r.rows[0].inserted ? 'create' : 'update', target: `journal:${date}` });
+    return { ok: true, date, content, created: !!r.rows[0].inserted, updated_at: isoTs(r.rows[0].updated_at) };
+  });
+
+  // 삭제 — 본인 것만.
+  app.delete('/api/journal/:date', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const date = String(req.params.date || '');
+    if (!JOURNAL_DATE.test(date)) return reply.code(400).send({ error: 'bad_date' });
+    const r = await journalQuery(`DELETE FROM calendar_journal WHERE user_id=$1 AND entry_date=$2`, [perm.userId, date], reply);
+    if (!r) return reply;
+    await logEvent({ userId: perm.userId, action: 'delete', target: `journal:${date}` });
+    return { ok: true, deleted: r.rowCount > 0 };
+  });
+
   // =================== 공지 (Notice) ===================
   app.get('/api/notices', { preHandler: [authGuard] }, async (req) => {
     const perm = req.ctx.perm;
