@@ -3,6 +3,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { monthsHorizon, currentYm, sumByMonth, shortfallByMonth, companyVsTeams, carryoverByMonth, r2 } from '../salesTarget.js';
+import { stageLabel } from '../stageLabel.js';
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 
@@ -171,7 +172,7 @@ export default async function targetRoutes(app) {
       cust_sum: custSum,
       actual_sum: sumByMonth(actuals.map((a) => ({ ym: a.ym, amount: a.amt }))),   // 월별 실적 합(IVA 제외)
       customers: custs.map((c) => ({
-        id: c.id, code: c.code, name: c.name, customer_type: c.customer_type, stage_name: c.stage_name,
+        id: c.id, code: c.code, name: c.name, customer_type: c.customer_type, stage_name: stageLabel(c.stage_name),
         discount: Number(c.discount), memo: c.memo, outstanding: r2(c.outstanding), overdue: r2(c.overdue),
         alloc: allocByCust[c.id] || {}, actual: actualByCust[c.id] || {},
       })),

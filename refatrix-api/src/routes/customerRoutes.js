@@ -8,6 +8,7 @@ import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
 import { assembleVisitHistory } from '../customerVisits.js';
+import { stageLabel, stripStageLabel } from '../stageLabel.js';
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -140,7 +141,7 @@ export default async function customerRoutes(app) {
          FROM customers c LEFT JOIN sales_teams t ON t.id=c.team_id WHERE c.deleted_at IS NULL`)).rows;
     const teamByName = {}; for (const t of teams) teamByName[t.name.toLowerCase()] = t.id;
     const ownerByName = {}; for (const o of owners) ownerByName[o.name.toLowerCase()] = o.id;
-    const stageByName = {}; for (const s of stages) stageByName[s.name.toLowerCase()] = s.id;
+    const stageByName = {}; for (const s of stages) stageByName[stripStageLabel(s.name).toLowerCase()] = s.id;
     const existingByCode = new Set(existing.map((r) => String(r.code).toLowerCase()));
     const existingByCodeData = {}; for (const r of existing) existingByCodeData[String(r.code).toLowerCase()] = r;
     return { teamByName, ownerByName, stageByName, existingByCode, existingByCodeData };
@@ -172,7 +173,7 @@ export default async function customerRoutes(app) {
       const teamId = resolve.teamByName[p.team.toLowerCase()];
       if (!teamId || !canEditTeam(req.ctx.perm, teamId)) { skipped++; continue; }
       const ownerId = p.owner ? (resolve.ownerByName[p.owner.toLowerCase()] || null) : null;
-      const stageId = p.stage ? (resolve.stageByName[p.stage.toLowerCase()] || null) : null;
+      const stageId = p.stage ? (resolve.stageByName[stripStageLabel(p.stage).toLowerCase()] || null) : null;
       const isUpdate = p.code && resolve.existingByCode.has(p.code.toLowerCase());
       if (isUpdate) {
         // 기본할인·외상일은 엑셀 일괄수정에서 제외 — 반드시 고객 폼(수정이유·제공조건 + 디렉터 승인)으로만 변경
@@ -210,7 +211,7 @@ export default async function customerRoutes(app) {
   // 고객 단계 목록
   app.get('/api/stages', { preHandler: [authGuard, requirePage('customers')] }, async () => {
     const rows = (await query(`SELECT id, name, sort_order FROM stages WHERE deleted_at IS NULL ORDER BY sort_order, id`)).rows;
-    return { items: rows.map((s) => ({ id: s.id, name: s.name })) };
+    return { items: rows.map((s) => ({ id: s.id, name: stageLabel(s.name) })) };
   });
 
   // 영업 담당(사용자) 목록 — 고객 배정용
@@ -315,7 +316,7 @@ export default async function customerRoutes(app) {
       discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
       branch_count: c.branch_count == null ? null : Number(c.branch_count),
       ship_address: c.ship_address || null,
-      team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
+      team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
       sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
@@ -431,7 +432,7 @@ export default async function customerRoutes(app) {
         constancia_fiscal: c.constancia_fiscal || null,
         ship_address: c.ship_address || null,
         branch_count: c.branch_count == null ? null : Number(c.branch_count),
-        team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: c.stage_name,
+        team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
       invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
@@ -670,7 +671,7 @@ export default async function customerRoutes(app) {
         // 배송지는 타팀 요청 화면에서 수정 대상이 아니다(즉시 저장 경로라 승인 우회가 되므로).
         ship_address: inScope ? (c.ship_address || null) : null,
         team_id: c.team_id == null ? null : Number(c.team_id), team_name: c.team_name,
-        stage_id: c.stage_id == null ? null : Number(c.stage_id), stage_name: c.stage_name,
+        stage_id: c.stage_id == null ? null : Number(c.stage_id), stage_name: stageLabel(c.stage_name),
         owner_id: c.owner_id == null ? null : Number(c.owner_id), owner_name: c.owner_name,
       },
       in_scope: inScope,
@@ -871,7 +872,7 @@ export default async function customerRoutes(app) {
     const disp = (field, val) => {
       if (isEmpty(val)) return '(미지정)';
       if (field === 'team_id') return teamNames[Number(val)] || `팀 #${val}`;
-      if (field === 'stage_id') return stageNames[Number(val)] || `단계 #${val}`;
+      if (field === 'stage_id') return stageLabel(stageNames[Number(val)]) || `단계 #${val}`;
       if (field === 'owner_id') return ownerNames[Number(val)] || `사용자 #${val}`;
       if (field === 'discount') return `${val}%`;
       if (field === 'credit_days') return `${val}일`;

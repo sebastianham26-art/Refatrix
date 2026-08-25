@@ -4,6 +4,7 @@ import { visibleTeamIds } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
 import { effectiveTargetFor, aggregateCarryover, monthsInclusive } from '../salesTarget.js';
 import { arInvoiceStatus, bucketByDueMonth, arSummary } from '../ar.js';
+import { stageLabel } from '../stageLabel.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function pearson(xs, ys) {
@@ -326,7 +327,8 @@ export default async function salesPerfRoutes(app) {
     const perm = req.ctx.perm;
     const ta = effectiveTeamArr(perm, req.query.team);
     // 단계(미지정 제외)
-    const stages = (await query(`SELECT id, name, sort_order FROM stages WHERE deleted_at IS NULL AND sort_order > 0 ORDER BY sort_order`)).rows;
+    const stages = (await query(`SELECT id, name, sort_order FROM stages WHERE deleted_at IS NULL AND sort_order > 0 ORDER BY sort_order`)).rows
+      .map((s) => ({ ...s, name: stageLabel(s.name) }));   // 스페인어 병기
     // 고객 + 마지막 활동일(미팅 최신)
     let q = `SELECT c.id, c.name, c.stage_id, c.stage_since,
                     (SELECT MAX(m.meeting_date) FROM customer_meetings m WHERE m.customer_id=c.id) AS last_activity
@@ -406,7 +408,7 @@ export default async function salesPerfRoutes(app) {
     const mktTotal = mkt.reduce((s, m) => s + Number(m.cost), 0);
 
     return {
-      basic: { code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone, discount: Number(c.discount || 0), stage: c.stage_name, team: c.team_name, since: c.stage_since ? (c.stage_since instanceof Date ? c.stage_since.toISOString().slice(0, 10) : String(c.stage_since).slice(0, 10)) : null, memo: c.memo },
+      basic: { code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone, discount: Number(c.discount || 0), stage: stageLabel(c.stage_name), team: c.team_name, since: c.stage_since ? (c.stage_since instanceof Date ? c.stage_since.toISOString().slice(0, 10) : String(c.stage_since).slice(0, 10)) : null, memo: c.memo },
       payment: { credit_days: c.credit_days, outstanding: seeAr ? r2(ar.outstanding) : null, overdue: seeAr ? r2(ar.overdue) : null, locked: !seeAr },
       performance: seeSales ? { year, target: r2(tgt), actual: r2(act), progress, locked: false } : { year, progress, locked: true },
       history: hist.map((h) => ({ date: h.d, subtotal: seeSales ? r2(h.subtotal_mxn) : null, total: seeSales ? r2(h.total_mxn) : null, due: h.due, locked: !seeSales })),

@@ -215,14 +215,16 @@
   let selectedTeam='', summaryData=null, drillIdx=null;
   let listHidden=false, lastCustomers=[];
   // 7단계(0~6) 색상 — 가독성용
+  //   라벨은 한국어 + 스페인어 병기(자동번역에 맡기지 않고 용어를 고정).
+  //   백엔드 stageLabel() 과 같은 용어를 쓴다.
   const STAGE_META=[
-    {key:'unset',  label:'미지정', bg:'#eceff1', fg:'#5b6b73'},
-    {key:'latent', label:'잠재',  bg:'#eef4fb', fg:'#2f6db5'},
-    {key:'contact',label:'접촉',  bg:'#e3effb', fg:'#1f6fc4'},
-    {key:'quote',  label:'견적',  bg:'#e2f3ef', fg:'#0f7a5f'},
-    {key:'nego',   label:'협상',  bg:'#fdf3e0', fg:'#9a6512'},
-    {key:'won',    label:'수주',  bg:'#fbece1', fg:'#b4561f'},
-    {key:'active', label:'거래중', bg:'#f8dcdc', fg:'#9a1f1f'},
+    {key:'unset',  label:'미지정 (Sin definir)', bg:'#eceff1', fg:'#5b6b73'},
+    {key:'latent', label:'잠재 (Potencial)',     bg:'#eef4fb', fg:'#2f6db5'},
+    {key:'contact',label:'접촉 (Contacto)',      bg:'#e3effb', fg:'#1f6fc4'},
+    {key:'quote',  label:'견적 (Cotización)',    bg:'#e2f3ef', fg:'#0f7a5f'},
+    {key:'nego',   label:'협상 (Negociación)',   bg:'#fdf3e0', fg:'#9a6512'},
+    {key:'won',    label:'수주 (Pedido)',        bg:'#fbece1', fg:'#b4561f'},
+    {key:'active', label:'거래중 (En operación)',bg:'#f8dcdc', fg:'#9a1f1f'},
   ];
   function stageIdx(stageName){ const m=String(stageName||'').match(/^(\d+)_/); return m?Math.max(0,Math.min(6,parseInt(m[1],10))):0; }
   function stagePill(stageName){

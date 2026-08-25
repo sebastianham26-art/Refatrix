@@ -3,6 +3,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { monthsHorizon, currentYm, allocSumByMonth, allocByCustomerMonth, budgetVsAlloc, allocCost, r2 } from '../marketingAlloc.js';
+import { stageLabel } from '../stageLabel.js';
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 function isMarketing(perm) { return perm.role === 'director' || perm.role === 'marketing'; }
@@ -215,7 +216,7 @@ export default async function marketingRoutes(app) {
       months,
       customers: custs.map((c) => ({
         id: c.id, code: c.code, name: c.name, customer_type: c.customer_type,
-        team_name: c.team_name, stage_name: c.stage_name,
+        team_name: c.team_name, stage_name: stageLabel(c.stage_name),
         month_cost: byCust[c.id] || {},
       })),
     };

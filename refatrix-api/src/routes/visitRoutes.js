@@ -7,6 +7,7 @@ import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard
 import { visibleTeamIds } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { mxTodayStr } from '../workingHours.js';
+import { stageLabel } from '../stageLabel.js';
 
 const MEET_PREFIX = '[현장방문]';           // 자동 생성 미팅 가드(수기 미팅 보호)
 const PHOTO_MAX = 10;                        // 방문당 사진 최대
@@ -79,7 +80,7 @@ export default async function visitRoutes(app) {
          LEFT JOIN stages s ON s.id = c.stage_id
          LEFT JOIN sales_teams t ON t.id = c.team_id
         WHERE ${conds.join(' AND ')} ORDER BY c.name LIMIT 1000`, params)).rows;
-    return { items: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name, stage_name: r.stage_name, team_name: r.team_name })) };
+    return { items: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name, stage_name: stageLabel(r.stage_name), team_name: r.team_name })) };
   });
 
   // ── 방문 날짜 칩(최근 30일, 날짜별 건수) + 서버 오늘(MX) ──

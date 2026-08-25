@@ -5,6 +5,7 @@ import { visibleTeamIds, canViewTeam, canEditTeam } from '../teams.js';
 import { pipelineByStage, detectBottleneck, stalledCustomers } from '../pipeline.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics } from '../salesCycle.js';
+import { stageLabel } from '../stageLabel.js';
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
@@ -180,7 +181,11 @@ export default async function meetingRoutes(app) {
   app.get('/api/pipeline', { preHandler: [authGuard, requirePage('pipeline')] }, async (req) => {
     const vis = visibleTeamIds(req.ctx.perm);
     const teamFilter = req.query.team_id ? Number(req.query.team_id) : null;
-    const stages = (await query(`SELECT id, name, sort_order FROM stages WHERE deleted_at IS NULL ORDER BY sort_order, id`)).rows;
+    // 단계 이름은 여기서 한 번만 스페인어 병기로 바꾼다.
+    //   이 배열이 응답의 stages 로도 나가고 pipelineByStage 로도 들어가므로
+    //   파이프라인 막대·병목·정체 목록까지 한 번에 병기된다.
+    const stages = (await query(`SELECT id, name, sort_order FROM stages WHERE deleted_at IS NULL ORDER BY sort_order, id`)).rows
+      .map((s) => ({ ...s, name: stageLabel(s.name) }));
     const conds = ['c.deleted_at IS NULL']; const params = [];
     if (vis !== null) { if (!vis.length) return { stages, pipeline: [], bottleneck: null, stalled: [], customers: [] };
       params.push(vis); conds.push(`c.team_id = ANY($${params.length})`); }
@@ -232,7 +237,7 @@ export default async function meetingRoutes(app) {
         }, mxToday);
         return {
           id: c.id, code: c.code, name: c.name, customer_type: c.customer_type,
-          stage_id: c.stage_id, stage_name: c.stage_name, stage_since: c.stage_since,
+          stage_id: c.stage_id, stage_name: stageLabel(c.stage_name), stage_since: c.stage_since,
           team_name: c.team_name, last_meeting: c.last_meeting,
           open_directives: Number(c.open_directives) || 0,
           invoice_count: Number(c.invoice_count) || 0,

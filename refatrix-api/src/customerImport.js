@@ -1,3 +1,4 @@
+import { stripStageLabel } from './stageLabel.js';
 // 고객 엑셀 업로드 파싱·검증(순수 함수)
 // 양식 컬럼(한글+스페인어 이중언어 헤더) → 내부 필드
 // 헤더 표기는 "한글 (Español)" 형식으로 다운로드되며, 업로드 시에는
@@ -101,7 +102,9 @@ export function parseCustRow(row, idx) {
     customer_type: cell(row, idx, 'customer_type') || null,
     rfc: cell(row, idx, 'rfc') || null,
     owner: cell(row, idx, 'owner') || null,
-    stage: cell(row, idx, 'stage') || null,
+    // 화면에 보이는 병기 라벨(`01_잠재 (Potencial)`)을 그대로 붙여넣어도 매칭되도록
+    // 여기서 한 번에 원래 DB 이름으로 정규화한다(검증·저장 양쪽에 동일 적용).
+    stage: stripStageLabel(cell(row, idx, 'stage')) || null,
     contact: cell(row, idx, 'contact') || null,
     phone: cell(row, idx, 'phone') || null,
     discount: cell(row, idx, 'discount') || '',

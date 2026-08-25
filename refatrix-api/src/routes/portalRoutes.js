@@ -3,6 +3,7 @@ import { authGuard } from '../middleware/authGuard.js';
 import { visibleTeamIds } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
 import { monthsHorizon, currentYm } from './../salesTarget.js';
+import { stageLabel } from '../stageLabel.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
@@ -113,7 +114,7 @@ export default async function portalRoutes(app) {
       const params = [];
       if (vis !== null) { params.push(vis.length ? vis : [-1]); q += ` AND c.team_id = ANY($1)`; }
       q += ` WHERE s.deleted_at IS NULL GROUP BY s.id, s.name, s.sort_order ORDER BY s.sort_order`;
-      out.pipeline = (await query(q, params)).rows.map((r) => ({ name: r.name, count: Number(r.n) }));
+      out.pipeline = (await query(q, params)).rows.map((r) => ({ name: stageLabel(r.name), count: Number(r.n) }));
     }
 
     return out;
