@@ -110,6 +110,7 @@
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
   let session={token:null,user:null,api:''};
   let cat='quotes', months=[], FYEAR=new Date().getFullYear();
@@ -123,6 +124,8 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const nf=(n)=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
   const money=(n)=>Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // 표 제목 클릭 정렬(refatrix-tablesort.js) — 본문을 그린 뒤 항상 여기로 통과시킨다.
+  function setBody(h){ $('body').innerHTML=h; try{ if(window.RTSort) RTSort.apply($('body')); }catch(e){} }
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
@@ -184,7 +187,7 @@
     const items=d.items||[];
     if(!items.length){ $('body').innerHTML='<div class="hint" style="margin-top:10px">해당 기간 견적이 없습니다.</div>'; return; }
     let h='<div class="hint" style="margin-top:8px">견적을 클릭하면 SKU별 세부 내역을 펼칩니다. 구성막대: <span class="okv">■</span>즉시 <span class="lowv">■</span>부족 <span class="nfv">■</span>개발 (수량 비중)</div>';
-    h+='<table><thead><tr><th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th>구성</th><th class="r">즉시%</th><th>상태</th></tr></thead><tbody>';
+    h+='<table data-sort="funnel:quotes"><thead><tr><th>견적번호</th><th>견적일</th><th>고객</th><th class="r">SKU</th><th class="r">총수량</th><th data-nosort>구성</th><th class="r">즉시%</th><th>상태</th></tr></thead><tbody>';
     items.forEach(q=>{
       h+='<tr class="click" onclick="toggleQuote('+q.id+')">'
         +'<td><b>'+esc(q.quote_no||'')+'</b></td><td>'+esc(q.qdate||'')+'</td><td>'+esc(q.customer_name||'')+'</td>'
@@ -195,14 +198,14 @@
       if(openRows['q'+q.id]) h+='<tr class="sub" id="qsub'+q.id+'"><td colspan="8">'+(openRows['q'+q.id]==='loading'?'불러오는 중…':openRows['q'+q.id])+'</td></tr>';
     });
     h+='</tbody></table>';
-    $('body').innerHTML=h;
+    setBody(h);
   }
   async function toggleQuote(id){
     if(openRows['q'+id]){ delete openRows['q'+id]; return loadQuotes(); }
     openRows['q'+id]='loading'; await loadQuotes();
     try{ const d=await fetch(session.api+'/api/dashboard/funnel/quote-lines?quote_id='+id,{headers:auth()}).then(r=>r.json());
       const lines=d.items||[];
-      let t='<table style="margin:0"><thead><tr><th>코드</th><th>품명</th><th class="r">수량</th><th class="r">가용재고</th><th>분류</th><th class="r">라인금액</th></tr></thead><tbody>';
+      let t='<table style="margin:0" data-sort="funnel:quotelines"><thead><tr><th>코드</th><th>품명</th><th class="r">수량</th><th class="r">가용재고</th><th>분류</th><th class="r">라인금액</th></tr></thead><tbody>';
       lines.forEach(l=>{ t+='<tr><td>'+esc(l.ctr_code||l.input_code||'')+'</td><td>'+esc(l.product_name||'(미등록)')+'</td><td class="r">'+nf(l.qty)+'</td><td class="r">'+(l.avail_stock==null?'-':nf(l.avail_stock))+'</td><td>'+flagPill(l.stock_flag)+'</td><td class="r">'+money(l.line_total)+'</td></tr>'; });
       t+='</tbody></table>';
       openRows['q'+id]=t; loadQuotes();
@@ -258,7 +261,7 @@
     h+='<div class="grp">인보이스 발행 가능 (재고 충분·미전환 견적)</div>';
     if(!able.length) h+='<div class="hint">발행 가능한 미전환 견적이 없습니다.</div>';
     else{ h+='<div class="hint">견적 후 경과일이 길수록 팔로업이 시급합니다 (오래된 순). <span style="color:var(--expense);font-weight:700">7일↑ 주의 · 14일↑ 위험</span></div>';
-      h+='<table><thead><tr><th>견적번호</th><th>견적일</th><th class="r">경과일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
+      h+='<table data-sort="funnel:able"><thead><tr><th>견적번호</th><th>견적일</th><th class="r">경과일</th><th>고객</th><th class="r">즉시 SKU</th><th class="r">즉시 수량</th></tr></thead><tbody>';
       able.forEach(a=>{
         const age=a.age_days==null?null:Number(a.age_days);
         let ageCell='-';
@@ -268,7 +271,7 @@
       h+='</tbody></table>'; }
     h+='<div class="grp" style="margin-top:16px">이미 발행 (인보이스 생성됨)</div>';
     if(!done.length) h+='<div class="hint">발행된 인보이스가 없습니다.</div>';
-    else{ h+='<div class="hint">인보이스를 클릭하면 SKU 라인이 펼쳐집니다. <b>임시(SAT 미입력) 매출도 표시</b>되며, 행을 클릭해 SAT 번호를 입력하면 정식 확정됩니다.</div><table><thead><tr><th>견적</th><th>인보이스일</th><th>SAT</th><th>고객</th><th>담당</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
+    else{ h+='<div class="hint">인보이스를 클릭하면 SKU 라인이 펼쳐집니다. <b>임시(SAT 미입력) 매출도 표시</b>되며, 행을 클릭해 SAT 번호를 입력하면 정식 확정됩니다. <b>표 제목을 클릭하면 그 열로 정렬</b>됩니다(한 번 더 클릭 = 반대 방향).</div><table data-sort="funnel:done"><thead><tr><th>견적</th><th data-type="date">인보이스일</th><th>SAT</th><th>고객</th><th>담당</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액</th></tr></thead><tbody>';
       done.forEach(o=>{
         const satCell = o.temp_sat
           ? '<span style="background:#fde7c9;color:#9a6512;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:700">임시 · 클릭해 SAT 입력</span>'
@@ -277,7 +280,7 @@
         if(openRows['i'+o.invoice_id]) h+='<tr class="sub"><td colspan="8">'+(openRows['i'+o.invoice_id]==='loading'?'불러오는 중…':openRows['i'+o.invoice_id])+'</td></tr>';
       });
       h+='</tbody></table>'; }
-    $('body').innerHTML=h;
+    setBody(h);
     renderAllInvFiles();   // 열린 인보이스 첨부 목록을 캐시에서 복원(재렌더 대비)
   }
   function setImmFilter(kind,val){
@@ -292,7 +295,7 @@
     try{ const d=await fetch(session.api+'/api/dashboard/funnel/invoice-lines?invoice_id='+id,{headers:auth()}).then(r=>r.json());
       invCache[id]=d;
       const inv=d.invoice||{}; const items=d.items||[]; const IVA=0.16;
-      let t='<div class="inv-scroll"><table style="margin:0;width:100%;table-layout:fixed">'
+      let t='<div class="inv-scroll"><table style="margin:0;width:100%;table-layout:fixed" data-sort="funnel:invlines">'
         +'<colgroup><col style="width:16%"><col style="width:30%"><col style="width:8%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"></colgroup>'
         +'<thead><tr>'
         +'<th>CTR Code / SYD</th><th>품명 / 적용(application)</th><th class="r">수량</th><th class="r">단가</th><th class="r">총계</th><th class="r">IVA</th><th class="r">총계(IVA 포함)</th></tr></thead><tbody>';
@@ -796,19 +799,19 @@
     const items=d.items||[];
     if(!items.length){ $('body').innerHTML='<div class="hint" style="margin-top:10px">해당 기간 부족분이 없습니다.</div>'; return; }
     let h='<div class="hint" style="margin-top:8px">SKU를 클릭하면 어느 고객·매출에서 부족이 발생했는지 펼칩니다. (발주=부족분 해소 처리)</div>';
-    h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">미발주(open)</th><th class="r">발주됨(resolved)</th></tr></thead><tbody>';
+    h+='<table data-sort="funnel:shortage"><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">미발주(open)</th><th class="r">발주됨(resolved)</th></tr></thead><tbody>';
     items.forEach(s=>{
       h+='<tr class="click" onclick="toggleShort('+s.product_id+')"><td><b>'+esc(s.ctr_code||'')+'</b></td><td>'+esc(s.product_name||'')+'</td><td class="r">'+(s.stock_qty==null?'-':nf(s.stock_qty))+'</td><td class="r" style="color:var(--expense);font-weight:700">'+nf(s.open_qty)+'</td><td class="r okv">'+nf(s.ordered_qty)+'</td></tr>';
       if(openRows['s'+s.product_id]) h+='<tr class="sub"><td colspan="5">'+(openRows['s'+s.product_id]==='loading'?'불러오는 중…':openRows['s'+s.product_id])+'</td></tr>';
     });
     h+='</tbody></table>';
-    $('body').innerHTML=h;
+    setBody(h);
   }
   async function toggleShort(pid){
     if(openRows['s'+pid]){ delete openRows['s'+pid]; return loadShortage(); }
     openRows['s'+pid]='loading'; await loadShortage();
     try{ const d=await fetch(session.api+'/api/dashboard/funnel/shortage-detail?product_id='+pid+'&months='+mq(),{headers:auth()}).then(r=>r.json());
-      let t='<table style="margin:0"><thead><tr><th>발생일</th><th>고객</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족</th><th>상태</th></tr></thead><tbody>';
+      let t='<table style="margin:0" data-sort="funnel:shortdetail"><thead><tr><th data-type="date">발생일</th><th>고객</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족</th><th>상태</th></tr></thead><tbody>';
       (d.items||[]).forEach(x=>{ t+='<tr><td>'+esc(x.occurred_at||'')+'</td><td>'+esc(x.customer_name||'(미상)')+'</td><td class="r">'+nf(x.requested_qty)+'</td><td class="r">'+nf(x.fulfilled_qty)+'</td><td class="r" style="color:var(--expense)">'+nf(x.shortage_qty)+'</td><td>'+(x.status==='resolved'?'<span class="pill ok">발주됨</span>':'<span class="pill low">미발주</span>')+'</td></tr>'; });
       t+='</tbody></table>'; openRows['s'+pid]=t; loadShortage();
     }catch(e){ openRows['s'+pid]='불러오지 못했습니다.'; loadShortage(); }
@@ -822,13 +825,13 @@
     const items=d.items||[];
     if(!items.length){ $('body').innerHTML='<div class="hint" style="margin-top:10px">해당 기간 개발필요 항목이 없습니다.</div>'; return; }
     let h='<div class="hint" style="margin-top:8px">항목을 클릭하면 단계별(접수→검토→공장→완료) 진행과 소요일을 펼칩니다.</div>';
-    h+='<table><thead><tr><th>경쟁사코드</th><th>고객</th><th class="r">수량</th><th>상태</th><th>차량(메이커/차종/연식)</th><th>접수일</th><th>완료일</th><th class="r">소요</th></tr></thead><tbody>';
+    h+='<table data-sort="funnel:dev"><thead><tr><th>경쟁사코드</th><th>고객</th><th class="r">수량</th><th>상태</th><th>차량(메이커/차종/연식)</th><th data-type="date">접수일</th><th data-type="date">완료일</th><th class="r">소요</th></tr></thead><tbody>';
     items.forEach(r=>{ const v=splitApp(r.review_app); const veh=[v.maker,v.model,v.year].filter(Boolean).join(' / ');
       h+='<tr class="click" onclick="toggleDev('+r.id+')"><td><b>'+esc(r.input_code||'')+'</b></td><td>'+esc(r.customer_name||'-')+'</td><td class="r">'+(r.requested_qty==null?'-':nf(r.requested_qty))+'</td><td><span class="st '+r.status+'">'+(stLbl[r.status]||r.status)+'</span></td><td>'+esc(veh||'-')+'</td><td>'+esc(r.requested_at||'')+'</td><td>'+esc(r.developed_at||'-')+'</td><td class="r">'+(r.dur_total==null?'–':r.dur_total+'일')+'</td></tr>';
       if(openRows['d'+r.id]) h+='<tr class="sub"><td colspan="8">'+openRows['d'+r.id]+'</td></tr>';
     });
     h+='</tbody></table>';
-    $('body').innerHTML=h;
+    setBody(h);
   }
   function toggleDev(id){
     if(openRows['d'+id]){ delete openRows['d'+id]; return loadDev(); }

@@ -156,6 +156,7 @@
   </div>
 </div>
 
+<script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -379,8 +380,8 @@
   function render(items){
     if(!items.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">해당 조건의 견적이 없습니다.</div>'; return; }
     const stLbl={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'🗑 삭제대기',pricelist:'가용재고 및 견적',expired:'만료'};
-    let html='<table><thead><tr>'
-      +'<th>견적번호</th><th>견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th>매출일 / SAT</th><th>작업</th>'
+    let html='<table data-sort="quotelist:main"><thead><tr>'
+      +'<th>견적번호</th><th data-type="date">견적일</th><th>고객</th><th>작성자</th><th class="r">SKU</th><th class="r">총수량</th><th data-nosort>수주현황</th><th class="r">견적액 / 실매출액</th><th>상태</th><th data-type="date">매출일 / SAT</th><th data-nosort>작업</th>'
       +'</tr></thead><tbody>';
     items.forEach(q=>{
       qRowsById[q.id]=q;
@@ -414,8 +415,9 @@
         +'</tr>';
     });
     html+='</tbody></table>';
-    html+='<div class="hint" style="margin-top:8px">총 '+items.length+'건 · 견적일과 매출일(전환일)을 함께 표시합니다. SAT가 TMP-로 시작하면 임시 번호입니다(나중에 실제 SAT 입력).</div>';
+    html+='<div class="hint" style="margin-top:8px">총 '+items.length+'건 · 견적일과 매출일(전환일)을 함께 표시합니다. SAT가 TMP-로 시작하면 임시 번호입니다(나중에 실제 SAT 입력). <b>표 제목을 클릭하면 그 열로 정렬</b>됩니다(한 번 더 클릭 = 반대 방향).</div>';
     $('listWrap').innerHTML=html;
+    try{ if(window.RTSort) RTSort.apply($('listWrap')); }catch(e){}
   }
 
   // ===== 견적 상세 / 편집 =====
