@@ -2,52 +2,19 @@ import { query } from './db.js';
 import { hashDeviceKey } from './auth.js';
 import { buildAccountAccess } from './accountScope.js';
 
-// ── 반쪽 배포 안전장치 ────────────────────────────────────────────────
-// users.cross_team_request 는 마이그레이션 0181 에서 추가된다.
-// 백엔드가 먼저 뜨고 migrate 가 아직 안 돌았다면 이 컬럼이 없는데,
-// SELECT 에 그냥 넣어두면 loadPerm 이 42703 으로 터지고 → authGuard 가 500 →
-// 로그인 이후 "모든 화면·모든 저장"이 죽는다(고객 수정 포함).
-// 그래서 컬럼 존재 여부를 확인해서 없으면 그 항목만 빼고 읽는다(권한은 false 취급).
-// 결과는 캐시하되, "없음"일 때는 60초마다 다시 확인해서 migrate 직후 자동 복구되게 한다.
-let crossCol = { known: false, exists: false, checkedAt: 0 };
-export async function hasCrossTeamRequestColumn() {
-  if (crossCol.known && crossCol.exists) return true;                  // 있으면 영구 캐시
-  if (crossCol.known && Date.now() - crossCol.checkedAt < 60000) return false; // 없으면 60초 후 재확인
-  try {
-    // ⚠ information_schema + table_schema='public' 하드코딩은 쓰지 않는다.
-    //   스키마가 public 이 아니거나 search_path 가 다르면 컬럼이 실제로 있는데도 "없음"으로 오판한다.
-    //   to_regclass('users') 는 이 연결의 search_path 로 해석되므로 앱의 다른 쿼리와 정확히 같은 테이블을 본다.
-    const r = await query(
-      `SELECT 1 FROM pg_attribute
-        WHERE attrelid = to_regclass('users')
-          AND attname = 'cross_team_request'
-          AND attnum > 0 AND NOT attisdropped
-        LIMIT 1`);
-    crossCol = { known: true, exists: r.rows.length > 0, checkedAt: Date.now() };
-  } catch {
-    crossCol = { known: true, exists: false, checkedAt: Date.now() };
-  }
-  return crossCol.exists;
-}
-
-// 이 연결이 실제로 붙어 있는 DB 정보 — "migrate 는 돌았는데 왜 안 되지?" 진단용.
-//   migrate 를 다른 DB/다른 컨테이너에서 돌린 경우를 눈으로 확인할 수 있게 한다.
-export async function dbIdentity() {
-  try {
-    const r = await query(
-      `SELECT current_database() AS db, current_schema() AS schema, current_user AS usr`);
-    return r.rows[0] || {};
-  } catch { return {}; }
-}
-// 테스트/운영 점검용 — 캐시 초기화
-export function resetCrossTeamColumnCache() { crossCol = { known: false, exists: false, checkedAt: 0 }; }
+// ── 타팀 고객 수정요청 권한 ──────────────────────────────────────────
+// 이 권한은 **새 컬럼을 만들지 않고** 기존 user_page_access 테이블에 한 줄로 저장한다.
+//   이유: 스키마 변경이 없어야 "코드는 배포됐는데 migrate 는 다른 DB에 돌아갔다" 류의
+//   반쪽 배포 사고에서 자유롭다. 파일만 배포하면 어느 DB에서든 바로 동작한다.
+//   user_page_access 는 0002 부터 있던 테이블이고, 쓰기가 전부 키 단위(upsert/delete by key)라
+//   다른 권한을 건드리지 않는다. loadPerm 이 이미 이 테이블을 읽으므로 쿼리도 늘지 않는다.
+// 행이 있으면 허용, 없으면 차단. 값(access/device_req)은 쓰지 않는다.
+export const CROSS_TEAM_PAGE_KEY = 'cust_cross_req';
 
 // 사용자 권한 묶음을 DB에서 읽어 perm 객체로 구성
 export async function loadPerm(userId) {
-  const hasCross = await hasCrossTeamRequestColumn();
   const u = (await query(
     `SELECT id, name, dept, role, lang, scope, cur_scope, see_balance, see_process_map, team_id, dash_drilldown, restrict_cash_detail
-            ${hasCross ? ', cross_team_request' : ''}
        FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId])).rows[0];
   if (!u) return null;
 
@@ -89,8 +56,8 @@ export async function loadPerm(userId) {
     scope: u.scope, curScope: u.cur_scope, seeProcessMap: u.see_process_map,
     teamId: u.team_id != null ? Number(u.team_id) : null, teamAccess,
     dashDrilldown: u.dash_drilldown !== false,
-    // 타팀 고객 수정요청 권한(디렉터 승인 전제). 마이그레이션 0181 이전 DB에서는 undefined → false 취급.
-    crossTeamRequest: u.cross_team_request === true,
+    // 타팀 고객 수정요청 권한(디렉터 승인 전제) — user_page_access 에 행이 있으면 허용.
+    crossTeamRequest: Object.prototype.hasOwnProperty.call(pages, CROSS_TEAM_PAGE_KEY),
     pages, pageAccess, fields, items, accountAccess,
   };
 }

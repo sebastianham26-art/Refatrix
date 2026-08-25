@@ -1,6 +1,6 @@
 // build 20260824 — 타팀 고객 수정요청(디렉터 승인) + 0181 반쪽배포 안전장치 (재배포 트리거용 마커)
 import { query, withTx } from '../db.js';
-import { hasCrossTeamRequestColumn, dbIdentity, resetCrossTeamColumnCache } from '../permLoader.js';
+import { CROSS_TEAM_PAGE_KEY } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
@@ -601,7 +601,7 @@ export default async function customerRoutes(app) {
   // ===== 타팀 고객 수정요청(디렉터 승인 전제) =====
   //  배경: 영업이 다른 팀 고객을 "본인 담당으로 이관" 하려면 그 고객을 수정해야 하는데,
   //        고객 목록·상세는 팀 스코프라 아예 접근이 막혀 있었다(403 forbidden_team).
-  //  방침: 열람 범위는 넓히지 않는다. 대신 users.cross_team_request 권한이 켜진 사용자에게만
+  //  방침: 열람 범위는 넓히지 않는다. 대신 디렉터가 켜 준 「타팀 수정요청」 권한이 있는 사용자에게만
   //        ① 상호/코드/RFC 로 고객을 "찾고"(최소 신원정보만),
   //        ② 그 고객의 "수정 요청 폼에 필요한 기본 항목"만 읽고,
   //        ③ PATCH 로 수정 요청을 넣는 경로를 연다. 실제 반영은 디렉터 승인 시에만.
@@ -958,13 +958,14 @@ export default async function customerRoutes(app) {
   // ===== 디렉터: 팀 배정 · 상대팀 열람 권한 =====
   // 사용자 목록(팀·권한 보기용)
   app.get('/api/team-admin/users', { preHandler: [authGuard, requireDirector] }, async () => {
-    // 0181 미적용(반쪽 배포) 환경에서도 이 화면이 죽지 않도록 컬럼 유무를 확인해서 읽는다.
-    const hasCross = await hasCrossTeamRequestColumn();
     const users = (await query(
       `SELECT u.id, u.name, u.role, u.team_id, t.name AS team_name
-              ${hasCross ? ', u.cross_team_request' : ''}
          FROM users u LEFT JOIN sales_teams t ON t.id=u.team_id
         WHERE u.deleted_at IS NULL ORDER BY u.name`)).rows;
+    // 타팀 수정요청 권한 — 스키마 변경 없이 user_page_access 의 행 유무로 판단
+    const crossOn = new Set((await query(
+      `SELECT user_id FROM user_page_access WHERE page_key=$1`, [CROSS_TEAM_PAGE_KEY]
+    )).rows.map((r) => String(r.user_id)));
     const grants = (await query(
       `SELECT a.user_id, a.team_id, a.can_edit, t.name AS team_name
          FROM user_team_access a JOIN sales_teams t ON t.id=a.team_id`)).rows;
@@ -976,7 +977,7 @@ export default async function customerRoutes(app) {
         id: Number(u.id), name: u.name, role: u.role,
         team_id: u.team_id == null ? null : Number(u.team_id),
         team_name: u.team_name,
-        cross_team_request: u.cross_team_request === true,
+        cross_team_request: crossOn.has(String(u.id)),
         grants: grantsByUser[String(u.id)] || [],
       })),
     };
@@ -988,29 +989,17 @@ export default async function customerRoutes(app) {
   app.patch('/api/team-admin/users/:id/cross-team-request', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const on = req.body?.enabled === true;
-    // 사전 점검(캐시)에 의존하지 말고 실제로 써 본다.
-    //   캐시가 낡았거나 스키마 판정이 어긋나도, 진짜 컬럼이 있으면 그냥 성공해야 한다.
-    //   정말 없을 때만(42703) 안내하고, 그때 이 API 가 붙어 있는 DB 이름을 함께 알려준다
-    //   — migrate 를 다른 DB에서 돌린 경우를 바로 구분할 수 있게.
-    let up;
-    try {
-      up = await query(
-        `UPDATE users SET cross_team_request=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`,
-        [on, req.ctx.perm.userId, id]);
-    } catch (e) {
-      if (e && e.code === '42703') {
-        const who = await dbIdentity();
-        return reply.code(503).send({ error: 'migration_required',
-          database: who.db || null, schema: who.schema || null,
-          note: `마이그레이션 0181(users.cross_team_request)이 이 API가 쓰는 DB에 없습니다. `
-              + `이 API가 붙어 있는 DB: ${who.db || '?'} / 스키마: ${who.schema || '?'}. `
-              + `migrate 를 다른 DB에서 돌리지 않았는지 확인하세요.` });
-      }
-      throw e;
+    // 스키마 변경 없이 기존 권한 테이블에 행을 넣고/빼는 것으로 끝낸다(마이그레이션 불필요).
+    const usr = (await query(`SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!usr) return reply.code(404).send({ error: 'user_not_found' });
+    if (on) {
+      await query(
+        `INSERT INTO user_page_access (user_id, page_key, device_req, access)
+         VALUES ($1,$2,'anywhere','edit')
+         ON CONFLICT (user_id, page_key) DO UPDATE SET access='edit'`, [id, CROSS_TEAM_PAGE_KEY]);
+    } else {
+      await query(`DELETE FROM user_page_access WHERE user_id=$1 AND page_key=$2`, [id, CROSS_TEAM_PAGE_KEY]);
     }
-    if (up.rowCount === 0) return reply.code(404).send({ error: 'user_not_found' });
-    // 성공 = 컬럼이 존재한다. loadPerm 이 60초 캐시를 기다리지 않고 바로 반영하도록 캐시를 비운다.
-    resetCrossTeamColumnCache();
     await safeLog({ userId: req.ctx.perm.userId, action: 'permission_change',
       target: `user_cross_team_request:${id}`, detail: { enabled: on } });
     return { ok: true, enabled: on };
