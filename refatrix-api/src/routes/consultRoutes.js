@@ -41,6 +41,11 @@ const TRANSCRIPT_PROMPT_MAX = 24000;
 const STT_TIMEOUT_MS = 300000;
 const AI_TIMEOUT_MS = 120000;
 const MAX_AUTO_ATTEMPTS = 3;
+const PART_B64_MAX = 6 * 1024 * 1024;       // 분할 업로드 조각 하나(base64 문자) 상한
+const UPLOAD_PARTS_MAX = 200;               // 한 업로드 세션의 조각 수 상한
+const UPLOAD_PART_TTL_H = 6;                // 버려진 조각 청소 기준(시간)
+const SESSION_KEY_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const B64_RE = /^[A-Za-z0-9+/=]+$/;
 const LIST_MAX = 500;
 const INSIGHT_MAX = 60;
 
@@ -227,6 +232,45 @@ export async function processQueueTick(max = 3) {
     }
   } finally { processing = false; }
   return n;
+}
+
+// =====================================================================
+// 분할 업로드 조립 — 조각 행을 원래 base64 로 되돌린다.
+//   · 조각 경계는 브라우저가 3바이트 배수로 잘라 보내므로 base64 를 그대로 이어붙이면 원본과 같다.
+//   · 하나라도 빠지거나 순서가 어긋나면 오디오가 깨지므로 조립하지 않고 오류를 낸다.
+//   rows: [{seg_no, part_no, b64}] · expected: [{parts:n}, …] (선택)
+// =====================================================================
+export function assembleUploadParts(rows, expected) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return { error: 'no_parts' };
+  const bySeg = new Map();
+  for (const r of list) {
+    const s = Number(r.seg_no);
+    if (!bySeg.has(s)) bySeg.set(s, []);
+    bySeg.get(s).push({ part: Number(r.part_no), b64: String(r.b64 || '') });
+  }
+  const segNos = Array.from(bySeg.keys()).sort((a, b) => a - b);
+  const exp = Array.isArray(expected) ? expected : null;
+  if (exp) {
+    if (exp.length !== segNos.length) return { error: 'parts_missing', have: segNos.length, want: exp.length };
+    for (let i = 0; i < segNos.length; i++) {
+      const want = Number(exp[i] && exp[i].parts);
+      const have = bySeg.get(segNos[i]).length;
+      if (!Number.isInteger(want) || want !== have) {
+        return { error: 'parts_missing', seg_no: segNos[i], have, want: Number.isInteger(want) ? want : 0 };
+      }
+    }
+  }
+  const segB64 = [];
+  for (const s of segNos) {
+    const parts = bySeg.get(s).sort((x, y) => x.part - y.part);
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].part !== i) return { error: 'parts_gap', seg_no: s, at: i };
+    }
+    segB64.push(parts.map((x) => x.b64).join(''));
+  }
+  const joined = segB64.join('|');
+  return { joined, segments: segNos.length, totalB64: joined.length - (segB64.length - 1) };
 }
 
 // =====================================================================
@@ -548,6 +592,97 @@ export default async function consultRoutes(app) {
       return { id: Number(r.id), status: 'queued', stt_ready: sttReady(), ai_ready: aiReady() };
     });
 
+  // ── 분할 업로드 ① 조각 받기 ─────────────────────────────────────────
+  //   브라우저가 녹음을 3MB 조각으로 잘라 보낸다. 조각 경계가 3바이트 배수라
+  //   base64 문자열을 순서대로 이어붙이면 원본과 완전히 같아진다.
+  app.post('/api/consults/:id/recordings/parts',
+    { bodyLimit: 8 * 1024 * 1024, preHandler: [authGuard, requirePageEdit(PAGE)] },
+    async (req, reply) => {
+      const perm = req.ctx.perm;
+      if (!consultRecEnabled()) return reply.code(503).send({ error: 'rec_disabled' });
+      const c = await ownConsult(perm, req.params.id);
+      if (!c) return reply.code(404).send({ error: 'not_found' });
+      const b = req.body || {};
+      const key = String(b.session_key || '');
+      if (!SESSION_KEY_RE.test(key)) return reply.code(400).send({ error: 'bad_session' });
+      const seg = Number(b.seg_no); const part = Number(b.part_no);
+      if (!Number.isInteger(seg) || seg < 0 || seg >= AUDIO_PARTS_MAX) return reply.code(400).send({ error: 'bad_seg' });
+      if (!Number.isInteger(part) || part < 0 || part >= UPLOAD_PARTS_MAX) return reply.code(400).send({ error: 'bad_part' });
+      const b64 = String(b.b64 || '');
+      if (!b64 || b64.length > PART_B64_MAX || !B64_RE.test(b64)) return reply.code(400).send({ error: 'bad_chunk' });
+
+      let cnt = 0;
+      try {
+        cnt = Number((await query(
+          `SELECT COUNT(*)::int AS n FROM sales_consult_upload_parts WHERE session_key = $1`, [key])).rows[0].n);
+      } catch (e) {
+        if (e && e.code === '42P01') return reply.code(503).send({ error: 'migration_required', migration: '0185' });
+        throw e;
+      }
+      if (cnt >= UPLOAD_PARTS_MAX) return reply.code(400).send({ error: 'too_many_parts' });
+
+      // 재시도로 같은 조각이 두 번 와도 마지막 것만 남긴다(ON CONFLICT 대신 삭제 후 삽입 — 이식성).
+      try {
+        await query(
+          `DELETE FROM sales_consult_upload_parts WHERE session_key=$1 AND seg_no=$2 AND part_no=$3`, [key, seg, part]);
+        await query(
+          `INSERT INTO sales_consult_upload_parts (session_key, consult_id, seg_no, part_no, b64, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`, [key, Number(c.id), seg, part, b64, perm.userId]);
+      } catch (e) {
+        // 0185 마이그레이션 전이면 화면이 예전 방식으로 되돌아갈 수 있게 알려준다
+        if (e && e.code === '42P01') return reply.code(503).send({ error: 'migration_required', migration: '0185' });
+        throw e;
+      }
+      return { ok: true, seg_no: seg, part_no: part, bytes: b64.length };
+    });
+
+  // ── 분할 업로드 ② 조립해서 녹음 1건으로 확정 ────────────────────────
+  app.post('/api/consults/:id/recordings/commit',
+    { preHandler: [authGuard, requirePageEdit(PAGE)] },
+    async (req, reply) => {
+      const perm = req.ctx.perm;
+      if (!consultRecEnabled()) return reply.code(503).send({ error: 'rec_disabled' });
+      const c = await ownConsult(perm, req.params.id);
+      if (!c) return reply.code(404).send({ error: 'not_found' });
+      const b = req.body || {};
+      const key = String(b.session_key || '');
+      if (!SESSION_KEY_RE.test(key)) return reply.code(400).send({ error: 'bad_session' });
+      const mime = /^(?:audio|video)\/[\w.+-]+$/.test(String(b.mime || '')) ? String(b.mime) : 'audio/webm';
+      const mode = b.mode === 'memo' ? 'memo' : 'full';
+      const dur = Number(b.duration_sec) || null;
+      if (dur && dur > DURATION_MAX) return reply.code(400).send({ error: 'too_long', max_sec: DURATION_MAX });
+
+      const rows = (await query(
+        `SELECT seg_no, part_no, b64 FROM sales_consult_upload_parts
+          WHERE session_key = $1 AND consult_id = $2
+          ORDER BY seg_no ASC, part_no ASC`, [key, Number(c.id)])).rows;
+      const built = assembleUploadParts(rows, Array.isArray(b.segments) ? b.segments : null);
+      if (built.error) return reply.code(409).send(built);
+      const { joined, totalB64 } = built;
+      if (totalB64 > AUDIO_B64_MAX) return reply.code(400).send({ error: 'too_large', max_mb: 25 });
+
+      const r = (await query(
+        `INSERT INTO sales_consult_recordings (consult_id, mode, mime, duration_sec, size_bytes, audio_b64, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [Number(c.id), mode, mime, dur, Math.round(totalB64 * 3 / 4), joined, perm.userId])).rows[0];
+      await query(`DELETE FROM sales_consult_upload_parts WHERE session_key = $1`, [key]);
+      await logEvent({ userId: perm.userId, action: 'create', target: `consult_recording:${r.id}`,
+        detail: { consult_id: Number(c.id), mode, duration_sec: dur, segments: built.segments, chunked: true } });
+      setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
+      return { id: Number(r.id), status: 'queued', stt_ready: sttReady(), ai_ready: aiReady() };
+    });
+
+  // ── 업로드 중 취소(조각 버리기) ─────────────────────────────────────
+  app.delete('/api/consults/:id/recordings/parts', { preHandler: [authGuard, requirePageEdit(PAGE)] },
+    async (req, reply) => {
+      const c = await ownConsult(req.ctx.perm, req.params.id);
+      if (!c) return reply.code(404).send({ error: 'not_found' });
+      const key = String((req.query && req.query.session_key) || '');
+      if (!SESSION_KEY_RE.test(key)) return reply.code(400).send({ error: 'bad_session' });
+      await query(`DELETE FROM sales_consult_upload_parts WHERE session_key=$1 AND consult_id=$2`, [key, Number(c.id)]);
+      return { ok: true };
+    });
+
   // ── 상담의 녹음 목록·상태(폴링용) ──
   app.get('/api/consults/:id/recordings', { preHandler: [authGuard, requirePage(PAGE)] }, async (req, reply) => {
     const c = await ownConsult(req.ctx.perm, req.params.id);
@@ -694,5 +829,10 @@ export default async function consultRoutes(app) {
       try { await query(`UPDATE sales_consult_recordings SET status='queued' WHERE status IN ('transcribing','summarizing')`); } catch (_) {}
       processQueueTick().catch(() => {});
     }, 20000);
+    // 중간에 버려진 분할 업로드 조각 청소(1시간마다). 테이블이 아직 없으면 조용히 넘어간다.
+    globalThis.__refatrixConsultPartSweeper = setInterval(() => {
+      query(`DELETE FROM sales_consult_upload_parts WHERE created_at < now() - INTERVAL '${UPLOAD_PART_TTL_H} hours'`)
+        .catch(() => {});
+    }, 3600000);
   }
 }

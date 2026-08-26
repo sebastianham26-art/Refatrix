@@ -13,6 +13,7 @@ const html = readFileSync(new URL('../../refatrix-consult.html', import.meta.url
 
 let dom, win, fetchLog, fetchRoutes;
 function route(method, urlPart, payload, status = 200) { fetchRoutes.push({ method, urlPart, payload, status }); }
+function routeThrow(method, urlPart) { fetchRoutes.push({ method, urlPart, throwErr: true, payload: {}, status: 0 }); }
 function sent(method, urlPart) {
   const r = [...fetchLog].reverse().find((x) => x.method === method && x.url.includes(urlPart));
   return r ? JSON.parse(r.body || '{}') : null;
@@ -85,6 +86,7 @@ function boot(user) {
         const method = (opts.method || 'GET').toUpperCase();
         fetchLog.push({ url: String(url), method, body: opts.body ? String(opts.body) : null });
         const m = [...fetchRoutes].reverse().find((r) => r.method === method && String(url).includes(r.urlPart));
+        if (m && m.throwErr) throw new TypeError('Failed to fetch');
         const payload = m ? m.payload : {};
         const status = m ? m.status : 200;
         return { ok: status < 400, status, json: async () => payload };
@@ -102,7 +104,7 @@ function boot(user) {
       w.MediaRecorder = FakeRecorder;
       w.navigator.mediaDevices = { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }], getAudioTracks: () => [{ stop() {}, readyState: 'live' }] }) };
       w.FileReader = class { readAsDataURL() { this.result = 'data:audio/webm;base64,QUJD'; if (this.onload) this.onload(); } };
-      w.Blob = class { constructor(parts, o) { this.parts = parts; this.type = (o && o.type) || ''; this.size = 1234; } };
+      w.Blob = class { constructor(parts, o) { this.parts = parts; this.type = (o && o.type) || ''; this.size = 1234; } slice() { return this; } };
     },
   });
   win = dom.window;

@@ -12,6 +12,7 @@ const html = readFileSync(new URL('../../refatrix-consult.html', import.meta.url
 
 let dom, win, fetchLog, fetchRoutes;
 function route(method, urlPart, payload, status = 200) { fetchRoutes.push({ method, urlPart, payload, status }); }
+function routeThrow(method, urlPart) { fetchRoutes.push({ method, urlPart, throwErr: true, payload: {}, status: 0 }); }
 
 const SUMMARY = {
   resumen: 'Se habló de precios de balatas.',
@@ -68,6 +69,7 @@ function boot(user) {
         const method = (opts.method || 'GET').toUpperCase();
         fetchLog.push({ url: String(url), method, body: opts.body ? String(opts.body) : null });
         const m = fetchRoutes.find((r) => r.method === method && String(url).includes(r.urlPart));
+        if (m && m.throwErr) throw new TypeError('Failed to fetch');
         const payload = m ? m.payload : {};
         const status = m ? m.status : 200;
         return { ok: status < 400, status, json: async () => payload };
@@ -85,7 +87,7 @@ function boot(user) {
       w.MediaRecorder = FakeRecorder;
       w.navigator.mediaDevices = { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }], getAudioTracks: () => [{ stop() {}, readyState: 'live' }] }) };
       w.FileReader = class { readAsDataURL() { this.result = 'data:audio/webm;base64,QUJD'; if (this.onload) this.onload(); } };
-      w.Blob = class { constructor(parts, o) { this.parts = parts; this.type = (o && o.type) || ''; this.size = 1234; } };
+      w.Blob = class { constructor(parts, o) { this.parts = parts; this.type = (o && o.type) || ''; this.size = 1234; } slice() { return this; } };
     },
   });
   win = dom.window;
@@ -150,26 +152,120 @@ test('상담 저장: 업체명이 비면 저장하지 않는다', async () => {
   assert.ok(txt('cs-msg').includes('업체명'));
 });
 
-// ── 녹음 → 업로드 ───────────────────────────────────────────────────
-test('녹음: 시작 → 종료 → 업로드에서 data_url·mode·duration 을 보낸다', async () => {
+// ── 녹음 → 자동 분할 업로드 ─────────────────────────────────────────
+async function recordAndStop(sec) {
   route('GET', '/api/consults/77/recordings', { items: [] });
-  route('POST', '/api/consults/77/recordings', { id: 900, status: 'queued', stt_ready: true, ai_ready: true });
   win.csShowRec(77, 'Zeta');
   await tick();
   $('cs-recStart').click();
   await tick(30);
   assert.ok(!$('cs-recStop').classList.contains('hidden'), '종료 버튼이 보여야 함');
+  win.eval('csRecSec = ' + sec + ';');
   $('cs-recStop').click();
   await tick(20);
-  assert.ok(!$('cs-recReady').classList.contains('hidden'), '업로드 영역이 보여야 함');
-  $('cs-recUpload').click();
-  await tick(40);
-  const up = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/recordings'));
-  assert.ok(up, '업로드 POST 없음');
-  const b = JSON.parse(up.body);
-  assert.equal(b.mode, 'full');
+}
+
+test('녹음 종료: 버튼을 누르지 않아도 자동으로 조각을 올리고 commit 까지 간다', async () => {
+  route('POST', '/recordings/parts', { ok: true });
+  route('POST', '/recordings/commit', { id: 900, status: 'queued', stt_ready: true, ai_ready: true });
+  await recordAndStop(30);
+  await tick(600);
+
+  const part = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/recordings/parts'));
+  assert.ok(part, '조각 전송이 자동으로 시작돼야 함');
+  const pb = JSON.parse(part.body);
+  assert.equal(pb.seg_no, 0);
+  assert.equal(pb.part_no, 0);
+  assert.equal(pb.b64, 'QUJD', 'data URL 접두어를 뗀 base64 본문만 보낸다');
+  assert.ok(/^[A-Za-z0-9_-]{8,64}$/.test(pb.session_key));
+
+  const cm = fetchLog.find((f) => f.method === 'POST' && f.url.includes('/recordings/commit'));
+  assert.ok(cm, 'commit 이 뒤따라야 함');
+  const cb = JSON.parse(cm.body);
+  assert.equal(cb.session_key, pb.session_key, '같은 세션 키로 조립한다');
+  assert.equal(cb.mode, 'full');
+  assert.equal(cb.duration_sec, 30);
+  assert.equal(cb.mime, 'audio/webm', 'codecs 파라미터는 떼고 보낸다');
+  assert.deepEqual(cb.segments, [{ parts: 1 }]);
+  assert.ok(txt('cs-recMsg').includes('업로드 완료'));
+  assert.ok($('cs-recReady').classList.contains('hidden'), '성공하면 업로드 영역이 닫힌다');
+});
+
+test('녹음 종료: 5초 미만이면 자동 업로드하지 않고 안내만 한다', async () => {
+  route('POST', '/recordings/parts', { ok: true });
+  await recordAndStop(2);
+  await tick(600);
+  assert.equal(fetchLog.find((f) => f.url.includes('/recordings/parts')), undefined, '실수로 누른 녹음은 안 올린다');
+  assert.ok(txt('cs-recMsg').includes('너무 짧아'));
+  assert.ok(!$('cs-recReady').classList.contains('hidden'), '수동으로 올릴 수 있게 남겨둔다');
+});
+
+test('큰 녹음은 3MB 조각으로 나눠 순서대로 보낸다', async () => {
+  route('POST', '/recordings/parts', { ok: true });
+  route('POST', '/recordings/commit', { id: 901, status: 'queued' });
+  win.eval(`csRecConsult = { id: 77, company: 'Zeta' };
+    csRecSegs = [{ size: 7 * 1024 * 1024, type: 'audio/webm', slice() { return this; } }];
+    csRecSec = 1300; csRecMime = 'audio/webm'; csRecBlob = null;`);
+  win.eval('csRecUpload()');
+  await tick(300);
+  const parts = fetchLog.filter((f) => f.url.includes('/recordings/parts')).map((f) => JSON.parse(f.body));
+  assert.equal(parts.length, 3, '7MB → 3MB 조각 3개');
+  assert.deepEqual(parts.map((p) => p.part_no), [0, 1, 2]);
+  assert.equal(new Set(parts.map((p) => p.session_key)).size, 1);
+  const cb = JSON.parse(fetchLog.find((f) => f.url.includes('/recordings/commit')).body);
+  assert.deepEqual(cb.segments, [{ parts: 3 }]);
+  assert.equal(cb.duration_sec, 1300);
+});
+
+test('전송이 끊기면 몇 조각까지 갔는지 알려주고 녹음은 남겨둔다', async () => {
+  routeThrow('POST', '/recordings/parts');
+  await recordAndStop(30);
+  await tick(3000);
+  assert.ok(txt('cs-recMsg').includes('전송이 끊겼습니다'), txt('cs-recMsg'));
+  assert.ok(txt('cs-recMsg').includes('녹음 내용은 그대로 남아'));
+  assert.ok(!$('cs-recReady').classList.contains('hidden'), '다시 업로드할 수 있어야 한다');
+  assert.equal($('cs-recUpload').textContent, '↻ 다시 업로드');
+  assert.ok(fetchLog.filter((f) => f.url.includes('/recordings/parts')).length >= 2, '자동 재시도를 한다');
+});
+
+test('서버가 거절하면 그 이유를 그대로 보여준다(용량 초과)', async () => {
+  route('POST', '/recordings/parts', { ok: true });
+  route('POST', '/recordings/commit', { error: 'too_large', max_mb: 25 }, 400);
+  await recordAndStop(30);
+  await tick(600);
+  assert.ok(txt('cs-recMsg').includes('서버가 거절했습니다'));
+  assert.ok(txt('cs-recMsg').includes('25MB'));
+});
+
+test('백엔드가 아직 분할 업로드를 모르면(404) 예전 방식으로 되돌아간다', async () => {
+  route('POST', '/recordings/parts', { error: 'Not Found', statusCode: 404 }, 404);
+  route('POST', '/api/consults/77/recordings', { id: 902, status: 'queued', stt_ready: true, ai_ready: true });
+  await recordAndStop(30);
+  await tick(600);
+  const legacy = fetchLog.find((f) => f.method === 'POST' && /\/recordings$/.test(f.url));
+  assert.ok(legacy, '예전 단일 전송으로 폴백해야 함');
+  const b = JSON.parse(legacy.body);
   assert.ok(String(b.data_url).startsWith('data:audio/webm;base64,'));
-  assert.ok(txt('cs-recMsg').includes('업로드됨'));
+  assert.equal(b.mode, 'full');
+  assert.ok(txt('cs-recMsg').includes('업로드 완료'));
+});
+
+test('0185 마이그레이션 전이면(503 migration_required) 예전 방식으로 되돌아간다', async () => {
+  route('POST', '/recordings/parts', { error: 'migration_required', migration: '0185' }, 503);
+  route('POST', '/api/consults/77/recordings', { id: 903, status: 'queued', stt_ready: true, ai_ready: true });
+  await recordAndStop(30);
+  await tick(600);
+  const legacy = fetchLog.find((f) => f.method === 'POST' && /\/recordings$/.test(f.url));
+  assert.ok(legacy, '마이그레이션 전에도 녹음이 올라가야 한다');
+  assert.ok(txt('cs-recMsg').includes('업로드 완료'));
+});
+
+test('상담이 없어서 나는 404(not_found)는 폴백하지 않고 그대로 알린다', async () => {
+  route('POST', '/recordings/parts', { error: 'not_found' }, 404);
+  await recordAndStop(30);
+  await tick(600);
+  assert.equal(fetchLog.find((f) => /\/recordings$/.test(f.url) && f.method === 'POST'), undefined);
+  assert.ok(txt('cs-recMsg').includes('상담을 찾을 수 없습니다'));
 });
 
 // ── 요약 렌더 + 한국어 토글 ─────────────────────────────────────────
