@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 (b20260819cs1)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20260826ex1)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -66,6 +66,198 @@
   .cs-ins h3{margin:0 0 8px;font-size:14px;color:#8a6512}
   .cs-ins ul{margin:4px 0 10px;padding-left:18px;font-size:13px;line-height:1.65}
   @media(max-width:760px){ body{padding:12px} .card{padding:14px} table{font-size:12px} }
+  /* ===================================================================
+     🎪 전시회 미팅 시간표 (b20260826ex1) — 모바일 우선
+     =================================================================== */
+  .ex-hidden{display:none!important}
+  .ex-mono{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+  /* 모드 전환 */
+  .ex-rail{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .ex-modebtn{flex:1 1 160px;min-height:48px;display:flex;align-items:center;justify-content:center;gap:8px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;cursor:pointer;
+    font:inherit;font-size:13.5px;font-weight:700;color:var(--muted)}
+  .ex-modebtn:hover{border-color:var(--brand);color:var(--brand)}
+  .ex-modebtn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .ex-modebtn.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .ex-modebtn .ex-tag{font-weight:500;font-size:11.5px;opacity:.8}
+
+  /* 전시회 헤더 */
+  .ex-strip{background:linear-gradient(100deg,#143D34 0%,#1E5A4C 62%,#26705E 100%);color:#fff;
+    border-radius:14px;padding:14px 16px;margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .ex-strip .ex-name{font-size:17px;font-weight:700}
+  .ex-strip .ex-meta{font-size:12px;color:#cfe0d8;margin-top:2px}
+  .ex-strip .ex-sp{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .ex-strip select{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3);color:#fff;max-width:190px}
+  .ex-strip select option{color:#1A1A1A}
+  .ex-wbtn{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.34);color:#fff;
+    border-radius:9px;padding:8px 12px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;min-height:40px}
+  .ex-wbtn:hover{background:rgba(255,255,255,.24)}
+
+  /* KPI */
+  .ex-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+  .ex-kpi{background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+  .ex-kpi .k{font-size:11px;color:var(--muted);font-weight:700}
+  .ex-kpi .v{font-size:19px;font-weight:700;margin-top:3px;letter-spacing:-.02em}
+  .ex-kpi .s{font-size:11px;color:var(--muted);margin-top:2px}
+  .ex-kpi .bar{height:4px;border-radius:999px;background:#EFEBE2;margin-top:8px;overflow:hidden}
+  .ex-kpi .bar i{display:block;height:100%;border-radius:999px;background:var(--income)}
+  .ex-kpi .bar i.warn{background:var(--gold)} .ex-kpi .bar i.low{background:var(--expense)}
+
+  /* 담당자 범례 */
+  .ex-legend{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+  .ex-lg{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;
+    border-radius:999px;padding:6px 12px 6px 7px;cursor:pointer;font:inherit;font-size:12.5px;font-weight:700;
+    color:var(--ink);min-height:36px}
+  .ex-lg:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .ex-lg .d{width:13px;height:13px;border-radius:5px;flex:none}
+  .ex-lg .n{font-size:11px;color:var(--muted);font-weight:500}
+  .ex-lg.off{opacity:.35} .ex-lg.solo{box-shadow:0 0 0 2px var(--brand)}
+
+  /* 툴바 / 뷰 전환 / 날짜 탭 */
+  .ex-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  .ex-seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+  .ex-seg button{padding:8px 13px;border:none;background:#fff;color:var(--muted);font:inherit;font-weight:700;
+    font-size:12.5px;cursor:pointer;min-height:40px}
+  .ex-seg button.on{background:var(--brand);color:#fff}
+  .ex-daytabs{display:flex;gap:6px;margin-top:10px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+  .ex-daytab{flex:1 0 auto;min-width:104px;border:1px solid var(--line);background:#fff;border-radius:11px;
+    padding:8px 12px;cursor:pointer;font:inherit;text-align:left;min-height:52px}
+  .ex-daytab .o{font-size:12.5px;font-weight:700;color:var(--brand)}
+  .ex-daytab .d{font-size:11px;color:var(--muted)}
+  .ex-daytab .c{font-size:10.5px;color:var(--muted);margin-top:1px}
+  .ex-daytab.on{background:var(--brand);border-color:var(--brand)}
+  .ex-daytab.on .o,.ex-daytab.on .d,.ex-daytab.on .c{color:#fff}
+  .ex-daytab.today{box-shadow:inset 0 0 0 2px #EBD9A6}
+
+  /* 하루씩 보기(모바일 기본) */
+  .ex-day{margin-top:10px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .ex-slot{display:flex;gap:0;border-bottom:1px solid #F1EDE4}
+  .ex-slot:last-child{border-bottom:none}
+  .ex-slot .t{flex:0 0 66px;background:#FAF8F3;border-right:1px solid var(--line);padding:9px 8px;
+    font-size:11px;color:var(--muted);text-align:right}
+  .ex-slot .t b{display:block;font-size:13px;color:var(--ink)}
+  .ex-slot .b{flex:1;min-width:0;padding:6px;display:flex;flex-direction:column;gap:5px;min-height:56px;cursor:pointer}
+  .ex-slot.now .t{background:#FFF8E6;color:var(--gold)} .ex-slot.now .t b{color:var(--gold)}
+  .ex-slot.now .b{background:#FFFDF3}
+  .ex-add{display:flex;align-items:center;justify-content:center;min-height:44px;border:1px dashed #DDD6C8;
+    border-radius:9px;color:var(--muted);font-size:12px;font-weight:600}
+  .ex-slot.now .ex-add{border-color:#EBD9A6;color:var(--gold)}
+
+  /* 전체 보기(3일 그리드) */
+  .ex-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:10px}
+  table.ex-tt{width:100%;min-width:640px;border-collapse:separate;border-spacing:0;background:#fff;
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0}
+  table.ex-tt th,table.ex-tt td{border-bottom:1px solid #F1EDE4;border-right:1px solid #F1EDE4;padding:0;vertical-align:top}
+  table.ex-tt th:last-child,table.ex-tt td:last-child{border-right:none}
+  table.ex-tt thead th{position:sticky;top:0;z-index:3;background:#FAF8F3;padding:9px 10px;text-align:left;
+    border-bottom:1px solid var(--line)}
+  table.ex-tt thead th .o{font-size:12.5px;font-weight:700;color:var(--brand)}
+  table.ex-tt thead th .d{font-size:11px;color:var(--muted)}
+  table.ex-tt thead th.today{background:#EEF5F2;box-shadow:inset 0 -2px 0 var(--brand)}
+  table.ex-tt .hc{width:68px;min-width:68px;background:#FAF8F3;text-align:right;padding:8px 8px 0;
+    font-size:11px;color:var(--muted);position:sticky;left:0;z-index:2;border-right:1px solid var(--line)}
+  table.ex-tt .hc b{display:block;font-size:12.5px;color:var(--ink)}
+  table.ex-tt tr.now .hc{background:#FFF8E6;color:var(--gold)} table.ex-tt tr.now .hc b{color:var(--gold)}
+  .ex-cell{min-height:58px;padding:5px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
+  .ex-cell.now{background:#FFFDF3}
+  .ex-cell:hover{background:#FBFAF6}
+
+  /* 미팅 칩 */
+  .ex-chip{border-radius:9px;padding:7px 9px;cursor:pointer;border:1px solid;text-align:left;font:inherit;
+    width:100%;display:block;min-height:44px}
+  .ex-chip:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+  .ex-chip.sel{box-shadow:0 0 0 2px var(--brand)}
+  .ex-chip .co{font-size:12.5px;font-weight:700;line-height:1.3;display:block;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .ex-chip .ow{font-size:10.5px;font-weight:700;opacity:.85;margin-top:1px;display:flex;gap:4px;
+    align-items:center;flex-wrap:wrap}
+  .ex-chip .am{font-size:10.5px;font-weight:500;opacity:.85;margin-top:2px;
+    font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .ex-chip.cancel{opacity:.45} .ex-chip.cancel .co{text-decoration:line-through}
+  .ex-mk{font-size:9.5px;font-weight:800;border-radius:4px;padding:0 4px;line-height:15px;display:inline-block;
+    background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.07)}
+
+  /* 상세 시트 */
+  .ex-sheet{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:var(--paper)}
+  .ex-sheet.ex-hidden{display:none!important}
+  .ex-sheet .sh{background:var(--brand);color:#fff;padding:12px 14px;display:flex;align-items:flex-start;gap:10px;
+    padding-top:calc(12px + env(safe-area-inset-top))}
+  .ex-sheet .sh .t{font-size:15.5px;font-weight:700;line-height:1.3}
+  .ex-sheet .sh .s{font-size:11.5px;color:#cfe0d8;margin-top:2px}
+  .ex-sheet .sh .x{margin-left:auto;background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:9px;
+    width:40px;height:40px;font-size:18px;cursor:pointer;flex:none}
+  .ex-sheet .sb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;display:flex;
+    flex-direction:column;gap:12px}
+  .ex-sheet .sf{background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;
+    flex-wrap:wrap;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .ex-sheet .sf .btn{flex:1 1 auto;min-height:48px}
+
+  .ex-sec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px}
+  .ex-sec>.st{font-size:12px;font-weight:700;color:var(--brand);margin-bottom:9px;display:flex;
+    align-items:center;gap:6px;flex-wrap:wrap}
+  .ex-sec.goal{background:#FBFDFC;border-color:#D9E8E2}
+  .ex-sec.rec{background:#FFFDF5;border-color:#ECD9A0}
+  .ex-f2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .ex-f2.m2{grid-template-columns:1fr 1fr}
+  .ex-f2>div{min-width:0}
+  .ex-sec input,.ex-sec select,.ex-sec textarea{width:100%}
+  .ex-money{text-align:right;font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .ex-kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0}
+  .ex-kv .k{color:var(--muted)}
+  .ex-kv .v{font-weight:700;font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .ex-kv .v.pos{color:var(--income)} .ex-kv .v.neg{color:var(--expense)}
+  .ex-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  .ex-pill.ok{background:#E4F1EB;color:var(--income)}
+  .ex-pill.part{background:#FBF0D8;color:var(--gold)}
+  .ex-pill.miss{background:#F9E2DF;color:var(--expense)}
+  .ex-pill.plan{background:#EBEFF6;color:#2545A6}
+  .ex-pill.walk{background:#F6ECFB;color:#6D28D9}
+  .ex-pill.cx{background:#EEF0F2;color:#5B6B73}
+  .ex-evid{margin:6px 0 0;padding-left:17px;font-size:12.5px;line-height:1.65}
+  .ex-spin{display:inline-block;width:12px;height:12px;border:2px solid #E2DDD2;border-top-color:var(--brand);
+    border-radius:50%;animation:ex-spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes ex-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.ex-spin{animation:none}}
+
+  .ex-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--brand);color:#fff;
+    padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;z-index:90;opacity:0;
+    pointer-events:none;transition:opacity .2s}
+  .ex-toast.on{opacity:1}
+  .ex-empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:26px 18px;text-align:center;
+    color:var(--muted);font-size:13px;line-height:1.7;margin-top:12px}
+
+  /* ── 모바일 최적화 ── */
+  @media(max-width:760px){
+    body{padding:10px 10px 26px}
+    .card{padding:13px;border-radius:12px}
+    input,select,textarea{font-size:16px;padding:10px 11px}   /* iOS 자동 확대 방지 */
+    .btn{min-height:44px;padding:10px 16px}
+    .btn.sm{min-height:38px}
+    .ex-kpis{grid-template-columns:1fr 1fr}
+    .ex-kpi .v{font-size:17px}
+    .ex-strip{padding:12px 13px}
+    .ex-strip .ex-sp{margin-left:0;width:100%}
+    .ex-strip select{max-width:none;flex:1}
+    .ex-f2{grid-template-columns:1fr}
+    .ex-f2.m2{grid-template-columns:1fr 1fr;gap:7px}
+    .ex-f2.m2 label{font-size:10.5px}
+    .ex-modebtn{flex:1 1 46%;font-size:13px}
+    .ex-modebtn .ex-tag{display:none}
+    .topbar{padding:11px 13px}
+    .topbar h1{font-size:16px}
+  }
+  @media(max-width:480px){
+    .topbar .sub{display:none}
+    .ex-strip .ex-name{font-size:16px}
+  }
+  @media(min-width:1100px){
+    .ex-sheet{position:sticky;inset:auto;top:14px;height:auto;max-height:calc(100vh - 28px);
+      border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+    .ex-sheet .sh{border-radius:0;padding-top:12px}
+    .ex-sheet .sb{background:var(--paper)}
+    .ex-board{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:16px;align-items:start}
+  }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
@@ -89,6 +281,14 @@
   </div>
 
   <div class="hidden" id="app">
+
+    <!-- 모드 전환 — 일반 고객상담 ↔ 🎪 전시회 -->
+    <div class="ex-rail">
+      <button class="ex-modebtn on" type="button" id="modeNormal">🧾 일반 고객상담<span class="ex-tag"> — 등록 · 녹음 · 종합표</span></button>
+      <button class="ex-modebtn" type="button" id="modeExpo"><span id="modeExpoLbl">🎪 전시회</span><span class="ex-tag"> — 미팅 시간표</span></button>
+    </div>
+
+    <div id="normalMode">
 
     <!-- ① 상담 등록 -->
     <div class="card">
@@ -147,6 +347,7 @@
       <div class="msg" id="cs-recMsg"></div>
       <div id="cs-recList" style="margin-top:10px"></div>
     </div>
+    <div id="cs-recHome"></div>
 
     <!-- ③ 상담 종합표 -->
     <div class="card">
@@ -187,11 +388,69 @@
       <div id="cs-insBox"></div>
     </div>
 
+    </div><!-- /normalMode -->
+
+    <!-- ================= 🎪 전시회 미팅 시간표 ================= -->
+    <section id="expoMode" class="ex-hidden">
+
+      <div class="ex-strip">
+        <div style="min-width:0">
+          <div class="ex-name" id="ex-name">전시회</div>
+          <div class="ex-meta" id="ex-meta">—</div>
+        </div>
+        <div class="ex-sp">
+          <select id="ex-pick" aria-label="전시회 선택"></select>
+          <button class="ex-wbtn" type="button" id="ex-setBtn">⚙ 설정</button>
+        </div>
+      </div>
+
+      <div class="ex-kpis" id="ex-kpis"></div>
+
+      <div class="card" style="margin-top:12px">
+        <h2>🎨 미팅 담당자 <span class="hint" style="margin:0">— 이름을 누르면 그 사람 미팅만 강조</span></h2>
+        <div class="ex-legend" id="ex-legend"></div>
+      </div>
+
+      <div class="ex-tools">
+        <button class="btn" type="button" id="ex-newBtn">＋ 미팅 계획</button>
+        <button class="btn gold" type="button" id="ex-nowBtn">⚡ 지금 미팅 기록</button>
+        <div class="ex-seg">
+          <button type="button" id="ex-viewDay" class="on">📅 하루씩</button>
+          <button type="button" id="ex-viewGrid">🗓 전체</button>
+        </div>
+        <button class="btn ghost sm" type="button" id="ex-reload">↻ 새로고침</button>
+      </div>
+
+      <div class="ex-board">
+        <div style="min-width:0">
+          <div class="ex-daytabs" id="ex-daytabs"></div>
+          <div id="ex-boardBox"></div>
+          <p class="hint" style="margin-top:8px">빈 칸을 누르면 <b>그 시간의 미팅</b>을 바로 등록하고, 미팅을 누르면 <b>간단 내용 · 녹음 · 목표 대비 달성</b>이 열립니다.</p>
+
+          <div class="card" style="margin-top:14px">
+            <h2>📊 담당자별 목표 · 달성</h2>
+            <div class="ex-scroll" id="ex-ownerBox"></div>
+          </div>
+        </div>
+
+        <aside class="ex-sheet ex-hidden" id="ex-sheet" role="dialog" aria-modal="true" aria-labelledby="ex-shT">
+          <div class="sh">
+            <div style="min-width:0"><div class="t" id="ex-shT">미팅</div><div class="s" id="ex-shS"></div></div>
+            <button class="x" type="button" id="ex-shX" aria-label="닫기">✕</button>
+          </div>
+          <div class="sb" id="ex-shB"></div>
+          <div class="sf" id="ex-shF"></div>
+        </aside>
+      </div>
+
+      <div class="ex-toast" id="ex-toast" role="status" aria-live="polite"></div>
+    </section>
+
   </div>
 </div>
 
 <script>
-  // ===== 고객상담 (build b20260819cs1) =====
+  // ===== 고객상담 + 🎪 전시회 (build b20260826ex1) =====
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -283,6 +542,14 @@
     }catch(e){}
     csLoadCustOptions();
     csLoadList();
+    try{
+      const e=await fetch(session.api+'/api/exhibitions',{headers:auth()}).then(r=>r.ok?r.json():null);
+      if(e&&Array.isArray(e.items)&&e.items.length){
+        const act=e.items.find(x=>x.is_active)||e.items[0];
+        exExpoList=e.items; exExpoId=act.id;
+        const lbl=$('modeExpoLbl'); if(lbl) lbl.textContent='🎪 '+act.name;
+      }
+    }catch(e){}
   }
 
   async function csLoadCustOptions(){
@@ -967,6 +1234,666 @@
   });
   $('cs-insBtn').addEventListener('click',()=>csInsights(false));
   $('cs-insForce').addEventListener('click',()=>csInsights(true));
+
+  // =====================================================================
+  // 🎪 전시회 미팅 시간표 (b20260826ex1)
+  //   · 가로축 1st/2nd/3rd day × 세로축 1시간 슬롯
+  //   · 모바일은 「하루씩」, 넓은 화면은 「전체」가 기본 — 버튼으로 언제든 전환
+  //   · 미팅 녹음은 기존 고객상담 녹음 카드(#cs-recCard)를 그대로 끌어와 재사용
+  // =====================================================================
+  let exBoard=null, exExpoList=[], exExpoId=null, exSel=null, exFilter=null;
+  let exView=(window.innerWidth<900?'day':'grid'), exDay=1, exMode='normal';
+
+  const exFmt=(n)=>Number(n||0).toLocaleString('en-US');
+  const exCur=()=> (exBoard&&exBoard.exhibition&&exBoard.exhibition.currency)||'MXN';
+  const exMoney=(n)=>'$'+exFmt(n);
+  function exShort(n){ n=Number(n||0); if(!n) return '0';
+    if(n>=1000000) return (n/1000000).toFixed(n>=10000000?0:1)+'M';
+    if(n>=1000) return Math.round(n/1000)+'k'; return String(n); }
+  const exHH=(h)=>String(h).padStart(2,'0')+':00';
+  function exToast(msg){ const t=$('ex-toast'); if(!t) return; t.textContent=msg; t.classList.add('on');
+    clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2200); }
+  function exOwner(id){ const o=(exBoard&&exBoard.owners||[]).find(x=>Number(x.id)===Number(id)); return o||null; }
+  function exColor(id){ const o=exOwner(id); const u=(exBoard&&exBoard.unset_color)||{bg:'#F2F0EA',fg:'#6B6B6B',border:'#DED9CE'};
+    return o?{bg:o.bg,fg:o.fg,border:o.border}:u; }
+  function exMeet(id){ return (exBoard&&exBoard.meetings||[]).find(m=>Number(m.id)===Number(id))||null; }
+  const exCanEdit=()=> !document.body.classList.contains('ro');
+
+  // ── 모드 전환 ───────────────────────────────────────────────────────
+  function exSwitch(mode){
+    exMode=mode;
+    const expo=(mode==='expo');
+    $('modeExpo').classList.toggle('on',expo);
+    $('modeNormal').classList.toggle('on',!expo);
+    $('normalMode').classList.toggle('ex-hidden',expo);
+    $('expoMode').classList.toggle('ex-hidden',!expo);
+    if(expo){ if(!exBoard) exLoadExpos(); }
+    else { exRestoreRecCard(); }
+  }
+
+  // ── 전시회 목록 · 보드 ──────────────────────────────────────────────
+  async function exLoadExpos(){
+    try{
+      const d=await fetch(session.api+'/api/exhibitions',{headers:auth()}).then(r=>r.ok?r.json():{items:[]});
+      exExpoList=d.items||[];
+      const sel=$('ex-pick');
+      sel.innerHTML=exExpoList.map(e=>'<option value="'+e.id+'">'+csEsc(e.name)+' · '+csEsc(e.start_date)+'</option>').join('');
+      const want=exExpoId||d.active_id||(exExpoList[0]&&exExpoList[0].id);
+      if(want){ sel.value=String(want); await exLoadBoard(want); }
+      else exNoExpo();
+    }catch(e){ $('ex-boardBox').innerHTML='<div class="ex-empty">전시회 목록을 불러오지 못했습니다.</div>'; }
+  }
+
+  function exNoExpo(){
+    exBoard=null;
+    $('ex-name').textContent='전시회 없음';
+    $('ex-meta').textContent='먼저 전시회를 등록하세요';
+    $('ex-kpis').innerHTML=''; $('ex-legend').innerHTML=''; $('ex-daytabs').innerHTML=''; $('ex-ownerBox').innerHTML='';
+    $('ex-boardBox').innerHTML='<div class="ex-empty">아직 등록된 전시회가 없습니다.<br>'
+      +(isDirector()?'<b>⚙ 설정</b>에서 RUJAC 전시회를 등록하면 시간표가 만들어집니다.'
+                    :'디렉터가 전시회를 등록하면 여기에 시간표가 나타납니다.')+'</div>';
+  }
+
+  async function exLoadBoard(id){
+    const box=$('ex-boardBox'); box.innerHTML='<div class="ex-empty">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/exhibitions/'+encodeURIComponent(id||'active')+'/board',{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){
+        if(d.error==='no_exhibition'){ exNoExpo(); return; }
+        box.innerHTML='<div class="ex-empty">보드를 불러오지 못했습니다 ('+csEsc(String(d.error||res.status))+')</div>'; return;
+      }
+      exBoard=d; exExpoId=d.exhibition.id;
+      if(d.now&&d.now.day_no) exDay=Number(d.now.day_no);
+      if(exDay>d.days.length||exDay<1) exDay=1;
+      exRenderAll();
+    }catch(e){ box.innerHTML='<div class="ex-empty">서버에 연결하지 못했습니다.</div>'; }
+  }
+
+  function exRenderAll(){ exRenderStrip(); exRenderKpis(); exRenderLegend(); exRenderTabs(); exRenderBoard(); exRenderOwners(); }
+
+  // ── 헤더 ────────────────────────────────────────────────────────────
+  function exRenderStrip(){
+    const e=exBoard.exhibition;
+    $('ex-name').textContent=e.name;
+    $('ex-meta').textContent=[e.venue,exHH(e.start_hour)+'–'+exHH(e.end_hour),'1시간 단위','통화 '+e.currency]
+      .filter(Boolean).join(' · ');
+    $('modeExpoLbl').textContent='🎪 '+e.name;
+  }
+
+  // ── KPI ─────────────────────────────────────────────────────────────
+  function exRenderKpis(){
+    const t=exBoard.totals||{}; const q=t.qual||{achieved:0,partial:0,missed:0};
+    const goalCnt=(exBoard.meetings||[]).filter(m=>m.status!=='cancelled'&&m.goal_note).length;
+    const bar=(r)=>r===null||r===undefined?'':'<div class="bar"><i class="'+(r>=90?'':(r>=50?'warn':'low'))
+      +'" style="width:'+Math.min(Math.max(r,0),100)+'%"></i></div>';
+    const tile=(k,v,s,extra)=>'<div class="ex-kpi"><div class="k">'+k+'</div><div class="v">'+v+'</div>'
+      +'<div class="s">'+(s||'')+'</div>'+(extra||'')+'</div>';
+    $('ex-kpis').innerHTML=[
+      tile('미팅',(t.total||0)+'건','계획 '+(t.planned||0)+' · 완료 '+(t.done||0)+' · 즉석 '+(t.walkin||0)),
+      tile('견적수주 목표',exMoney(t.target_quote),'달성 '+exMoney(t.actual_quote)
+        +(t.rate_quote!==null&&t.rate_quote!==undefined?(' · '+t.rate_quote+'%'):''),bar(t.rate_quote)),
+      tile('수주확정 목표',exMoney(t.target_order),'달성 '+exMoney(t.actual_order)
+        +(t.rate_order!==null&&t.rate_order!==undefined?(' · '+t.rate_order+'%'):''),bar(t.rate_order)),
+      tile('녹음 · AI 요약',(t.recorded||0)+' / '+(t.total||0),'요약 완료 / 전체'),
+      tile('정성목표',(q.achieved||0)+' / '+goalCnt,
+        '<span class="ex-pill ok">달성 '+(q.achieved||0)+'</span> <span class="ex-pill part">부분 '+(q.partial||0)
+        +'</span> <span class="ex-pill miss">미달 '+(q.missed||0)+'</span>')
+    ].join('');
+  }
+
+  // ── 담당자 범례 ─────────────────────────────────────────────────────
+  function exRenderLegend(){
+    const cnt={};
+    (exBoard.meetings||[]).forEach(m=>{ if(m.status==='cancelled')return;
+      const k=m.owner_user_id||0; cnt[k]=(cnt[k]||0)+1; });
+    const shown=(exBoard.owners||[]).filter(o=>cnt[o.id]||exFilter===o.id);
+    $('ex-legend').innerHTML=shown.map(o=>{
+      const cls=exFilter===null?'':(exFilter===o.id?' solo':' off');
+      return '<button type="button" class="ex-lg'+cls+'" data-o="'+o.id+'">'
+        +'<span class="d" style="background:'+o.bg+';border:1px solid '+o.border+'"></span>'
+        +csEsc(o.name)+' <span class="n">'+(cnt[o.id]||0)+'</span></button>';
+    }).join('')||'<span class="hint" style="margin:0">아직 미팅이 없습니다.</span>';
+    $('ex-legend').querySelectorAll('.ex-lg').forEach(b=>b.onclick=()=>{
+      const id=Number(b.dataset.o); exFilter=(exFilter===id)?null:id; exRenderLegend(); exRenderBoard();
+    });
+  }
+
+  // ── 날짜 탭 ─────────────────────────────────────────────────────────
+  function exRenderTabs(){
+    const now=exBoard.now||{};
+    const cnt={};
+    (exBoard.meetings||[]).forEach(m=>{ if(m.status==='cancelled')return; cnt[m.day_no]=(cnt[m.day_no]||0)+1; });
+    $('ex-daytabs').innerHTML=(exBoard.days||[]).map(d=>{
+      const on=(exView==='day'&&Number(exDay)===Number(d.day_no));
+      const today=(Number(now.day_no)===Number(d.day_no));
+      return '<button type="button" class="ex-daytab'+(on?' on':'')+(today?' today':'')+'" data-d="'+d.day_no+'">'
+        +'<div class="o">'+csEsc(d.label)+(today?' · 오늘':'')+'</div>'
+        +'<div class="d">'+csEsc(d.date)+' ('+csEsc(d.weekday)+')</div>'
+        +'<div class="c">미팅 '+(cnt[d.day_no]||0)+'건</div></button>';
+    }).join('');
+    $('ex-daytabs').querySelectorAll('.ex-daytab').forEach(b=>b.onclick=()=>{
+      exDay=Number(b.dataset.d); if(exView!=='day') exSetView('day'); else { exRenderTabs(); exRenderBoard(); }
+    });
+    $('ex-daytabs').classList.toggle('ex-hidden',exView!=='day'&&(exBoard.days||[]).length>0&&false);
+  }
+
+  function exSetView(v){
+    exView=v;
+    $('ex-viewDay').classList.toggle('on',v==='day');
+    $('ex-viewGrid').classList.toggle('on',v==='grid');
+    if(exBoard){ exRenderTabs(); exRenderBoard(); }
+  }
+
+  // ── 미팅 칩 ─────────────────────────────────────────────────────────
+  function exChip(m){
+    const c=exColor(m.owner_user_id);
+    const dim=(exFilter!==null&&Number(m.owner_user_id)!==Number(exFilter));
+    let mk='';
+    if(m.is_walkin) mk+='<span class="ex-mk" style="color:#6D28D9">즉석</span>';
+    if(m.status==='done') mk+='<span class="ex-mk" style="color:#0F6E56">완료</span>';
+    if(m.status==='noshow') mk+='<span class="ex-mk" style="color:#B23A2E">불발</span>';
+    if(m.status==='cancelled') mk+='<span class="ex-mk">취소</span>';
+    if(m.has_ai) mk+='<span class="ex-mk">🎙</span>';
+    else if(m.rec_status&&m.rec_status!=='failed') mk+='<span class="ex-mk">⏳</span>';
+    if(m.qual_result) mk+='<span class="ex-mk" style="color:'+(m.qual_result==='achieved'?'#0F6E56':m.qual_result==='partial'?'#8A6512':'#9A1F1F')+'">'
+      +(m.qual_result==='achieved'?'정성 ✓':m.qual_result==='partial'?'정성 △':'정성 ✕')+'</span>';
+    const amt=(m.target_quote||m.target_order)?('견적 '+exShort(m.target_quote)+' · 수주 '+exShort(m.target_order)):'';
+    return '<button type="button" class="ex-chip'+(m.status==='cancelled'?' cancel':'')+(Number(exSel)===Number(m.id)?' sel':'')+'"'
+      +' data-id="'+m.id+'" style="background:'+c.bg+';color:'+c.fg+';border-color:'+c.border+';'+(dim?'opacity:.3;':'')+'">'
+      +'<span class="co">'+csEsc(m.company_name)+'</span>'
+      +'<span class="ow">'+csEsc(m.owner_name||'담당 미지정')+mk+'</span>'
+      +(amt?'<span class="am">'+amt+'</span>':'')+'</button>';
+  }
+  function exAt(day,hour){
+    return (exBoard.meetings||[]).filter(m=>Number(m.day_no)===Number(day)&&Number(m.slot_hour)===Number(hour));
+  }
+
+  // ── 보드 ────────────────────────────────────────────────────────────
+  function exRenderBoard(){
+    if(!exBoard) return;
+    const box=$('ex-boardBox');
+    const now=exBoard.now||{};
+    const hours=exBoard.hours||[];
+    if(exView==='day'){
+      const d=(exBoard.days||[]).find(x=>Number(x.day_no)===Number(exDay))||(exBoard.days||[])[0];
+      if(!d){ box.innerHTML='<div class="ex-empty">날짜가 없습니다.</div>'; return; }
+      box.innerHTML='<div class="ex-day">'+hours.map(h=>{
+        const isNow=(Number(now.day_no)===Number(d.day_no)&&Number(now.hour)===Number(h.hour));
+        const list=exAt(d.day_no,h.hour);
+        return '<div class="ex-slot'+(isNow?' now':'')+'">'
+          +'<div class="t"><b>'+h.label+'</b>'+exHH(h.hour+1)+'</div>'
+          +'<div class="b" data-d="'+d.day_no+'" data-h="'+h.hour+'">'
+          +(list.length?list.map(exChip).join(''):'<div class="ex-add">'+(isNow?'⚡ 지금 미팅 기록':'＋ 미팅 추가')+'</div>')
+          +'</div></div>';
+      }).join('')+'</div>';
+    } else {
+      const days=exBoard.days||[];
+      box.innerHTML='<div class="ex-scroll"><table class="ex-tt"><thead><tr><th class="hc"></th>'
+        +days.map(d=>'<th class="'+(Number(now.day_no)===Number(d.day_no)?'today':'')+'">'
+          +'<div class="o">'+csEsc(d.label)+'</div><div class="d">'+csEsc(d.date)+' ('+csEsc(d.weekday)+')</div></th>').join('')
+        +'</tr></thead><tbody>'
+        +hours.map(h=>{
+          const nowRow=(now.day_no&&Number(now.hour)===Number(h.hour));
+          return '<tr class="'+(nowRow?'now':'')+'"><td class="hc"><b>'+h.label+'</b>'+exHH(h.hour+1)+'</td>'
+            +days.map(d=>{
+              const isNow=(Number(now.day_no)===Number(d.day_no)&&Number(now.hour)===Number(h.hour));
+              const list=exAt(d.day_no,h.hour);
+              return '<td><div class="ex-cell'+(isNow?' now':'')+'" data-d="'+d.day_no+'" data-h="'+h.hour+'">'
+                +list.map(exChip).join('')+'</div></td>';
+            }).join('')+'</tr>';
+        }).join('')+'</tbody></table></div>';
+    }
+    box.querySelectorAll('[data-d][data-h]').forEach(c=>c.onclick=(e)=>{
+      if(e.target.closest('.ex-chip')) return;
+      exOpenNew(Number(c.dataset.d),Number(c.dataset.h));
+    });
+    box.querySelectorAll('.ex-chip').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); exOpenMeeting(Number(b.dataset.id)); });
+  }
+
+  // ── 담당자별 집계 ───────────────────────────────────────────────────
+  function exRenderOwners(){
+    const rows=(exBoard.owner_totals||[]).map(r=>{
+      const o=exOwner(r.owner_user_id); const c=exColor(r.owner_user_id);
+      const t=Number(r.target_quote)+Number(r.target_order);
+      const a=Number(r.actual_quote)+Number(r.actual_order);
+      const rate=t>0?Math.round(a/t*100):null;
+      const td=(v)=>'<td class="num">'+v+'</td>';
+      return '<tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:4px;background:'+c.bg
+        +';border:1px solid '+c.border+';vertical-align:-1px;margin-right:7px"></span><b>'+csEsc(o?o.name:'담당 미지정')+'</b></td>'
+        +td(r.count+'건')+td(exMoney(r.target_quote))+td(exMoney(r.actual_quote))
+        +td(exMoney(r.target_order))+td(exMoney(r.actual_order))
+        +td(rate===null?'—':'<b style="color:'+(rate>=90?'var(--income)':rate>=50?'var(--gold)':'var(--expense)')+'">'+rate+'%</b>')
+        +'</tr>';
+    }).join('');
+    $('ex-ownerBox').innerHTML=rows
+      ? '<table style="min-width:560px"><thead><tr><th>담당자</th><th class="num">미팅</th><th class="num">견적 목표</th>'
+        +'<th class="num">견적 달성</th><th class="num">수주 목표</th><th class="num">수주 달성</th><th class="num">달성률</th></tr></thead>'
+        +'<tbody>'+rows+'</tbody></table>'
+      : '<div class="hint">아직 미팅이 없습니다.</div>';
+  }
+
+  // =====================================================================
+  // 상세 시트
+  // =====================================================================
+  function exSheetOpen(title,sub){
+    $('ex-shT').textContent=title; $('ex-shS').textContent=sub||'';
+    $('ex-sheet').classList.remove('ex-hidden');
+    $('ex-shB').scrollTop=0;
+    if(window.innerWidth<1100) document.body.style.overflow='hidden';   // 뒤 화면이 같이 밀리지 않게
+  }
+  function exRestoreRecCard(){
+    const card=$('cs-recCard'), home=$('cs-recHome');
+    if(card&&home&&card.parentNode!==home.parentNode) home.parentNode.insertBefore(card,home);
+  }
+  function exCloseSheet(){
+    const wasRec=csRecActive;
+    exRestoreRecCard();
+    $('ex-sheet').classList.add('ex-hidden');
+    document.body.style.overflow='';
+    exSel=null; if(exBoard) exRenderBoard();
+    if(wasRec){ exSwitch('normal'); exToast('녹음이 진행 중이라 녹음 화면으로 이동합니다'); }
+  }
+
+  function exStatusPill(m){
+    if(m.status==='cancelled') return '<span class="ex-pill cx">취소</span>';
+    if(m.status==='noshow') return '<span class="ex-pill miss">불발</span>';
+    if(m.is_walkin) return '<span class="ex-pill walk">즉석</span>';
+    if(m.status==='done') return '<span class="ex-pill ok">완료</span>';
+    return '<span class="ex-pill plan">계획</span>';
+  }
+  function exKv(k,v,rate){
+    const cls=(rate===null||rate===undefined)?'':(rate>=90?' pos':(rate<50?' neg':''));
+    return '<div class="ex-kv"><span class="k">'+k+'</span><span class="v'+cls+'">'+v
+      +((rate===null||rate===undefined)?'':('  ('+rate+'%)'))+'</span></div>';
+  }
+  function exSlotOpts(sel){
+    return (exBoard.days||[]).map(d=>'<option value="'+d.day_no+'"'+(Number(sel)===Number(d.day_no)?' selected':'')+'>'
+      +csEsc(d.label)+' · '+csEsc(d.date)+'</option>').join('');
+  }
+  function exHourOpts(sel){
+    return (exBoard.hours||[]).map(h=>'<option value="'+h.hour+'"'+(Number(sel)===Number(h.hour)?' selected':'')+'>'
+      +csEsc(h.range)+'</option>').join('');
+  }
+  function exOwnerOpts(sel){
+    return '<option value="">— 담당 미지정 —</option>'+(exBoard.owners||[]).map(o=>'<option value="'+o.id+'"'
+      +(Number(sel)===Number(o.id)?' selected':'')+'>'+csEsc(o.name)+'</option>').join('');
+  }
+
+  // ── 기존 미팅 ───────────────────────────────────────────────────────
+  function exOpenMeeting(id){
+    const m=exMeet(id); if(!m) return;
+    exSel=id; exRenderBoard();
+    const d=(exBoard.days||[]).find(x=>Number(x.day_no)===Number(m.day_no))||{};
+    exSheetOpen(m.company_name,(d.label||'')+' · '+(m.meet_date||'')+' · '+exHH(m.slot_hour)+'–'+exHH(m.slot_hour+1));
+    $('ex-shS').innerHTML=$('ex-shS').textContent+' '+exStatusPill(m)
+      +(m.owner_name?(' <span style="opacity:.85">· '+csEsc(m.owner_name)+'</span>'):'');
+    const c=exColor(m.owner_user_id);
+    const rq=m.target_quote>0&&m.actual_quote!=null?Math.round(m.actual_quote/m.target_quote*100):null;
+    const ro=m.target_order>0&&m.actual_order!=null?Math.round(m.actual_order/m.target_order*100):null;
+
+    $('ex-shB').innerHTML=''
+      +'<div class="ex-sec goal">'
+        +'<div class="st">🎯 정량목표 <span class="hint" style="margin:0;font-weight:500">'+exCur()+' · 미팅 중에 보면서 진행</span></div>'
+        +'<div class="ex-f2 m2">'
+          +'<div><label>견적수주 목표금액</label><input class="ex-money" id="ex-fTq" inputmode="numeric" value="'+Number(m.target_quote||0)+'"></div>'
+          +'<div><label>수주확정 목표금액</label><input class="ex-money" id="ex-fTo" inputmode="numeric" value="'+Number(m.target_order||0)+'"></div>'
+        +'</div>'
+        +'<div class="ex-f2 m2" style="margin-top:9px">'
+          +'<div><label>달성 — 견적</label><input class="ex-money" id="ex-fAq" inputmode="numeric" value="'+(m.actual_quote==null?'':m.actual_quote)+'" placeholder="미입력"></div>'
+          +'<div><label>달성 — 수주</label><input class="ex-money" id="ex-fAo" inputmode="numeric" value="'+(m.actual_order==null?'':m.actual_order)+'" placeholder="미입력"></div>'
+        +'</div>'
+        +'<div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">'
+          +exKv('견적 목표 대비',m.actual_quote==null?'—':(exMoney(m.actual_quote)+' / '+exMoney(m.target_quote)),rq)
+          +exKv('수주 목표 대비',m.actual_order==null?'—':(exMoney(m.actual_order)+' / '+exMoney(m.target_order)),ro)
+        +'</div>'
+      +'</div>'
+
+      +'<div class="ex-sec">'
+        +'<div class="st">🧭 정성목표 <span class="hint" style="margin:0;font-weight:500">숫자로 안 잡히는 이번 미팅의 목적</span></div>'
+        +'<textarea id="ex-fGoal" rows="2" placeholder="예: 작년 클레임 마무리하고 재거래 합의 받기">'+csEsc(m.goal_note||'')+'</textarea>'
+        +'<div id="ex-qualBox">'+exQualHtml(m)+'</div>'
+      +'</div>'
+
+      +'<div class="ex-sec rec">'
+        +'<div class="st">📝 미팅 간단 내용 · 🎙 녹음</div>'
+        +'<textarea id="ex-fMemo" rows="3" placeholder="미팅 중/직후에 한두 줄만 적어두세요. 나머지는 녹음 AI가 채웁니다.">'+csEsc(m.memo||'')+'</textarea>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+          +'<button class="btn" type="button" id="ex-recBtn">🎙 '+(m.consult_id?'녹음 · AI 요약 열기':'녹음 시작하기')+'</button>'
+          +(m.has_ai?'<button class="btn ghost" type="button" id="ex-evalBtn">🤖 정성목표 달성 판단</button>':'')
+        +'</div>'
+        +(m.consult_hidden?'<div class="hint" style="margin-top:8px">🔒 이 미팅의 상담 기록은 감춰져 있어 요약을 볼 수 없습니다.</div>':'')
+        +'<div id="ex-recSlot" style="margin-top:10px"></div>'
+      +'</div>'
+      +'<div class="ex-sec">'
+        +'<div class="st">👤 고객 · 담당 '+exStatusPill(m)+'</div>'
+        +'<label>업체명</label><input id="ex-fCompany" value="'+csEsc(m.company_name)+'">'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>만난 사람 · 직책</label><input id="ex-fContact" value="'+csEsc(m.contact_name||'')+'" placeholder="Juan Pérez / 구매"></div>'
+          +'<div><label>WhatsApp</label><input id="ex-fPhone" type="tel" inputmode="tel" value="'+csEsc(m.wa_phone||'')+'" placeholder="81-1234-5678"></div>'
+        +'</div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>미팅 담당자</label><select id="ex-fOwner">'+exOwnerOpts(m.owner_user_id)+'</select></div>'
+          +'<div><label>상태</label><select id="ex-fStatus">'
+            +['planned:계획','done:완료','noshow:불발','cancelled:취소'].map(s=>{const p=s.split(':');
+              return '<option value="'+p[0]+'"'+(m.status===p[0]?' selected':'')+'>'+p[1]+'</option>';}).join('')
+          +'</select></div>'
+        +'</div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>날짜</label><select id="ex-fDay">'+exSlotOpts(m.day_no)+'</select></div>'
+          +'<div><label>시간</label><select id="ex-fHour">'+exHourOpts(m.slot_hour)+'</select></div>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12px;color:'+c.fg+'">'
+          +'<span style="width:13px;height:13px;border-radius:5px;background:'+c.bg+';border:1px solid '+c.border+'"></span>'
+          +'시간표에서 이 색으로 표시됩니다</div>'
+        +(m.wa_phone?('<div style="margin-top:8px"><a class="btn ghost sm" style="text-decoration:none;display:inline-block" href="https://wa.me/'
+          +String(m.wa_phone).replace(/[^0-9]/g,'')+'" target="_blank" rel="noopener">📱 WhatsApp 열기</a></div>'):'')
+      +'</div>';
+
+    $('ex-shF').innerHTML='<button class="btn" type="button" id="ex-saveBtn">저장</button>'
+      +'<button class="btn ghost" type="button" id="ex-doneBtn">'+(m.status==='done'?'계획으로 되돌리기':'✅ 미팅 완료')+'</button>'
+      +((isDirector()||Number(m.created_by)===Number(session.user&&session.user.id))
+        ?'<button class="btn red sm" type="button" id="ex-delBtn">삭제</button>':'');
+
+    $('ex-saveBtn').onclick=()=>exSaveMeeting(m.id);
+    $('ex-doneBtn').onclick=()=>exPatch(m.id,{status:m.status==='done'?'planned':'done'},'상태를 바꿨습니다');
+    const del=$('ex-delBtn'); if(del) del.onclick=()=>exDelete(m.id);
+    $('ex-recBtn').onclick=()=>exOpenRec(m.id);
+    const ev=$('ex-evalBtn'); if(ev) ev.onclick=()=>exEvaluate(m.id);
+    exBindApplyAmt(m.id);
+  }
+
+  // AI 가 대화에서 찾아낸 금액을 달성액 칸에 넣어준다(저장은 사용자가 확인 후)
+  function exBindApplyAmt(id){
+    const ap=$('ex-applyAmt'); if(!ap) return;
+    ap.onclick=()=>{
+      const j=(exMeet(id)||{}).qual_eval_json||{};
+      if(j.quote_amount!=null) $('ex-fAq').value=j.quote_amount;
+      if(j.order_amount!=null) $('ex-fAo').value=j.order_amount;
+      exToast('달성액에 넣었습니다 — [저장]을 눌러주세요');
+    };
+  }
+
+  function exQualHtml(m){
+    if(!m.qual_result&&!m.qual_eval) return '<div class="hint" style="margin-top:8px">녹음 AI 요약이 끝나면 <b>🤖 정성목표 달성 판단</b>을 누를 수 있습니다.</div>';
+    const j=m.qual_eval_json||{};
+    const pill=m.qual_result==='achieved'?'<span class="ex-pill ok">정성목표 달성</span>'
+      :m.qual_result==='partial'?'<span class="ex-pill part">부분 달성</span>'
+      :m.qual_result==='missed'?'<span class="ex-pill miss">미달성</span>':'<span class="ex-pill cx">판단 보류</span>';
+    return '<div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:9px">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:12px">🤖 AI 판단</b>'+pill+'</div>'
+      +(m.qual_eval?('<div style="font-size:12.5px;line-height:1.65;margin-top:6px">'+csEsc(m.qual_eval)+'</div>'):'')
+      +((j.evidence&&j.evidence.length)?('<ul class="ex-evid">'+j.evidence.map(x=>'<li>'+csEsc(x)+'</li>').join('')+'</ul>'):'')
+      +(j.next_step?('<div style="font-size:12.5px;margin-top:7px"><b>다음 조치:</b> '+csEsc(j.next_step)+'</div>'):'')
+      +((j.quote_amount!=null||j.order_amount!=null)
+        ?('<div style="margin-top:9px"><button class="btn ghost sm" type="button" id="ex-applyAmt">💵 대화에서 확인된 금액을 달성액으로 넣기 ('
+          +(j.quote_amount!=null?('견적 '+exMoney(j.quote_amount)):'')
+          +(j.quote_amount!=null&&j.order_amount!=null?' · ':'')
+          +(j.order_amount!=null?('수주 '+exMoney(j.order_amount)):'')+')</button></div>'):'')
+      +'</div>';
+  }
+
+  async function exSaveMeeting(id){
+    const btn=$('ex-saveBtn'); btn.disabled=true; btn.textContent='저장 중…';
+    const body={
+      company_name:$('ex-fCompany').value.trim(),
+      contact_name:$('ex-fContact').value.trim()||null,
+      wa_phone:$('ex-fPhone').value.trim()||null,
+      owner_user_id:$('ex-fOwner').value?Number($('ex-fOwner').value):null,
+      status:$('ex-fStatus').value,
+      day_no:Number($('ex-fDay').value), slot_hour:Number($('ex-fHour').value),
+      target_quote:Number($('ex-fTq').value||0), target_order:Number($('ex-fTo').value||0),
+      actual_quote:$('ex-fAq').value===''?null:Number($('ex-fAq').value),
+      actual_order:$('ex-fAo').value===''?null:Number($('ex-fAo').value),
+      goal_note:$('ex-fGoal').value.trim()||null,
+      memo:$('ex-fMemo').value.trim()||null
+    };
+    if(!body.company_name){ exToast('업체명을 입력하세요'); btn.disabled=false; btn.textContent='저장'; return; }
+    await exPatch(id,body,'저장했습니다');
+    btn.disabled=false; btn.textContent='저장';
+  }
+
+  async function exPatch(id,body,okMsg){
+    try{
+      const res=await fetch(session.api+'/api/exhibitions/meetings/'+id,
+        {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ exToast('실패: '+exErr(d.error||res.status)); return false; }
+      exToast(okMsg||'저장했습니다');
+      await exLoadBoard(exExpoId);
+      if(exSel) exOpenMeeting(exSel);
+      return true;
+    }catch(e){ exToast('서버 연결 실패'); return false; }
+  }
+
+  async function exDelete(id){
+    if(!confirm('이 미팅을 삭제할까요? 되돌릴 수 없습니다.')) return;
+    try{
+      const res=await fetch(session.api+'/api/exhibitions/meetings/'+id,{method:'DELETE',headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ exToast('삭제 실패: '+exErr(d.error||res.status)); return; }
+      exCloseSheet(); await exLoadBoard(exExpoId); exToast('삭제했습니다');
+    }catch(e){ exToast('서버 연결 실패'); }
+  }
+
+  function exErr(e){
+    const M={director_only:'디렉터만 할 수 있습니다',not_owner:'등록한 사람이나 디렉터만 삭제할 수 있습니다',
+      company_required:'업체명을 입력하세요',bad_day:'날짜가 올바르지 않습니다',bad_hour:'시간이 올바르지 않습니다',
+      bad_amount:'금액이 올바르지 않습니다',bad_hours:'종료 시각이 시작 시각보다 늦어야 합니다',
+      no_goal:'정성목표를 먼저 입력하고 저장하세요',no_recording:'먼저 녹음을 하고 AI 요약을 받으세요',
+      no_summary:'AI 요약이 끝난 뒤에 판단할 수 있습니다',no_anthropic_key:'ANTHROPIC_API_KEY 미설정',
+      hidden_by_other:'다른 디렉터가 감춘 상담입니다',read_only:'이 화면의 수정 권한이 없습니다',
+      no_exhibition:'전시회가 없습니다'};
+    return M[e]||String(e);
+  }
+
+  // ── 녹음(기존 고객상담 녹음 카드 재사용) ────────────────────────────
+  async function exOpenRec(id){
+    const m=exMeet(id); if(!m) return;
+    const btn=$('ex-recBtn'); btn.disabled=true; btn.textContent='준비 중…';
+    try{
+      const res=await fetch(session.api+'/api/exhibitions/meetings/'+id+'/consult',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ exToast('녹음 준비 실패: '+exErr(d.error||res.status)); return; }
+      m.consult_id=Number(d.consult_id);
+      const slot=$('ex-recSlot'); const card=$('cs-recCard');
+      if(slot&&card) slot.appendChild(card);
+      csShowRec(m.consult_id,m.company_name);
+      exToast('녹음 준비 완료 — ● 미팅 녹음을 누르세요');
+    }catch(e){ exToast('서버 연결 실패'); }
+    finally{ btn.disabled=false; btn.textContent='🎙 녹음 · AI 요약 열기'; }
+  }
+
+  // ── 정성목표 달성 판단 ──────────────────────────────────────────────
+  async function exEvaluate(id){
+    const btn=$('ex-evalBtn'); if(!btn) return;
+    btn.disabled=true; btn.innerHTML='<span class="ex-spin"></span>판단 중…';
+    try{
+      const res=await fetch(session.api+'/api/exhibitions/meetings/'+id+'/evaluate',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ exToast('판단 실패: '+exErr(d.error||res.status)); return; }
+      await exLoadBoard(exExpoId);
+      exOpenMeeting(id);
+      exToast('정성목표 달성 판단 완료');
+    }catch(e){ exToast('서버 연결 실패'); }
+    finally{ const b=$('ex-evalBtn'); if(b){ b.disabled=false; b.textContent='🤖 정성목표 달성 판단'; } }
+  }
+
+  // ── 새 미팅(계획 / 즉석) ────────────────────────────────────────────
+  function exOpenNew(day,hour){
+    if(!exBoard) return;
+    if(!exCanEdit()){ exToast('이 화면의 수정 권한이 없습니다'); return; }
+    exSel=null; exRenderBoard();
+    const now=exBoard.now||{};
+    const isNow=(Number(now.day_no)===Number(day)&&Number(now.hour)===Number(hour));
+    const d=(exBoard.days||[]).find(x=>Number(x.day_no)===Number(day))||{};
+    exSheetOpen(isNow?'⚡ 지금 미팅 기록':'＋ 미팅 계획 추가',(d.label||'')+' · '+(d.date||'')+' · '+exHH(hour)+'–'+exHH(hour+1));
+
+    $('ex-shB').innerHTML=''
+      +'<div class="ex-sec">'
+        +'<div class="st">👤 고객 · 담당</div>'
+        +'<label>등록된 고객에서 선택</label><select id="ex-nCust"></select>'
+        +'<div style="margin-top:9px"><label>업체명 (미등록 업체면 직접 입력)</label><input id="ex-nCompany" placeholder="Refaccionaria El Águila"></div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>만난 사람 · 직책</label><input id="ex-nContact" placeholder="Juan Pérez / 구매"></div>'
+          +'<div><label>WhatsApp</label><input id="ex-nPhone" type="tel" inputmode="tel" placeholder="81-1234-5678"></div>'
+        +'</div>'
+        +'<div style="margin-top:9px"><label>미팅 담당자</label><select id="ex-nOwner">'
+          +exOwnerOpts(session.user&&session.user.id)+'</select></div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>날짜</label><select id="ex-nDay">'+exSlotOpts(day)+'</select></div>'
+          +'<div><label>시간</label><select id="ex-nHour">'+exHourOpts(hour)+'</select></div>'
+        +'</div>'
+        +'<label style="margin-top:11px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);font-weight:600">'
+          +'<input type="checkbox" id="ex-nWalk" style="width:auto"'+(isNow?' checked':'')+'> 계획 없이 지금 진행된 미팅(즉석)</label>'
+      +'</div>'
+      +'<div class="ex-sec goal">'
+        +'<div class="st">🎯 정량목표 <span class="hint" style="margin:0;font-weight:500">'+exCur()+'</span></div>'
+        +'<div class="ex-f2 m2">'
+          +'<div><label>견적수주 목표금액</label><input class="ex-money" id="ex-nTq" inputmode="numeric" value="0"></div>'
+          +'<div><label>수주확정 목표금액</label><input class="ex-money" id="ex-nTo" inputmode="numeric" value="0"></div>'
+        +'</div>'
+      +'</div>'
+      +'<div class="ex-sec">'
+        +'<div class="st">🧭 정성목표</div>'
+        +'<textarea id="ex-nGoal" rows="2" placeholder="예: 경쟁사 대비 보증 조건 우위를 각인시키고 샘플 테스트 합의"></textarea>'
+      +'</div>'
+      +'<div class="ex-sec rec">'
+        +'<div class="st">📝 미팅 간단 내용</div>'
+        +'<textarea id="ex-nMemo" rows="2" placeholder="즉석 미팅이면 여기에 한두 줄 적고 바로 녹음하세요"></textarea>'
+      +'</div>';
+
+    $('ex-shF').innerHTML='<button class="btn" type="button" id="ex-nSave">'
+      +(isNow?'등록하고 바로 녹음':'미팅 계획 저장')+'</button>'
+      +'<button class="btn ghost" type="button" id="ex-nCancel">닫기</button>';
+
+    // 고객 옵션은 고객상담 화면이 이미 불러온 목록을 그대로 쓴다
+    const src=$('cs-cust');
+    $('ex-nCust').innerHTML=src?src.innerHTML:'<option value="">— 직접 입력 —</option>';
+    $('ex-nCust').value='';
+    $('ex-nCust').onchange=()=>{ const s=$('ex-nCust');
+      if(s.value) $('ex-nCompany').value=s.options[s.selectedIndex].text; };
+    $('ex-nCancel').onclick=exCloseSheet;
+    $('ex-nSave').onclick=()=>exCreate();
+  }
+
+  async function exCreate(){
+    const sel=$('ex-nCust');
+    const company=$('ex-nCompany').value.trim()||(sel.value?sel.options[sel.selectedIndex].text:'');
+    if(!company){ exToast('업체명을 입력하거나 고객을 선택하세요'); $('ex-nCompany').focus(); return; }
+    const walk=$('ex-nWalk').checked;
+    const btn=$('ex-nSave'); btn.disabled=true; btn.textContent='저장 중…';
+    const body={ company_name:company, customer_id:sel.value?Number(sel.value):null,
+      contact_name:$('ex-nContact').value.trim()||null, wa_phone:$('ex-nPhone').value.trim()||null,
+      owner_user_id:$('ex-nOwner').value?Number($('ex-nOwner').value):null,
+      day_no:Number($('ex-nDay').value), slot_hour:Number($('ex-nHour').value),
+      target_quote:Number($('ex-nTq').value||0), target_order:Number($('ex-nTo').value||0),
+      goal_note:$('ex-nGoal').value.trim()||null, memo:$('ex-nMemo').value.trim()||null,
+      is_walkin:walk, status:walk?'done':'planned' };
+    try{
+      const res=await fetch(session.api+'/api/exhibitions/'+exExpoId+'/meetings',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ exToast('저장 실패: '+exErr(d.error||res.status)); return; }
+      await exLoadBoard(exExpoId);
+      exOpenMeeting(Number(d.id));
+      if(walk){ exOpenRec(Number(d.id)); }
+      exToast(walk?'즉석 미팅을 기록했습니다 — 녹음을 시작하세요':'미팅 계획을 저장했습니다');
+    }catch(e){ exToast('서버 연결 실패'); }
+    finally{ btn.disabled=false; btn.textContent='저장'; }
+  }
+
+  // ── 전시회 설정 ─────────────────────────────────────────────────────
+  function exOpenSettings(){
+    const e=(exBoard&&exBoard.exhibition)||null;
+    const isNew=!e;
+    if(!isDirector()){
+      exSheetOpen('⚙ 전시회 설정','디렉터만 전시회를 만들고 바꿀 수 있습니다');
+      $('ex-shB').innerHTML='<div class="ex-sec"><div class="hint">전시회 등록·수정은 디렉터 계정에서만 가능합니다. '
+        +'미팅 계획과 기록은 지금 계정으로 그대로 하실 수 있습니다.</div></div>';
+      $('ex-shF').innerHTML='<button class="btn ghost" type="button" id="ex-sClose">닫기</button>';
+      $('ex-sClose').onclick=exCloseSheet; return;
+    }
+    exSheetOpen(isNew?'⚙ 전시회 등록':'⚙ 전시회 설정',isNew?'RUJAC 전시회를 먼저 만들어 주세요':e.name);
+    const hOpt=(v,lo,hi)=>{let s='';for(let h=lo;h<=hi;h++)s+='<option value="'+h+'"'+(Number(v)===h?' selected':'')+'>'+exHH(h)+'</option>';return s;};
+    $('ex-shB').innerHTML=''
+      +'<div class="ex-sec">'
+        +'<label>전시회 이름</label><input id="ex-sName" value="'+csEsc(isNew?'RUJAC':e.name)+'">'
+        +'<div style="margin-top:9px"><label>장소</label><input id="ex-sVenue" value="'+csEsc(isNew?'':(e.venue||''))+'" placeholder="Expo Guadalajara"></div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>1st day 날짜</label><input type="date" id="ex-sStart" value="'+csEsc(isNew?csMxToday():e.start_date)+'"></div>'
+          +'<div><label>일수</label><select id="ex-sDays">'+[1,2,3,4,5,6,7].map(n=>'<option value="'+n+'"'
+            +((isNew?3:e.day_count)===n?' selected':'')+'>'+n+'일</option>').join('')+'</select></div>'
+        +'</div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>시작 시각</label><select id="ex-sSh">'+hOpt(isNew?8:e.start_hour,6,12)+'</select></div>'
+          +'<div><label>종료 시각</label><select id="ex-sEh">'+hOpt(isNew?18:e.end_hour,13,22)+'</select></div>'
+        +'</div>'
+        +'<div class="ex-f2" style="margin-top:9px">'
+          +'<div><label>통화</label><select id="ex-sCur">'+['MXN','USD'].map(c=>'<option value="'+c+'"'
+            +((isNew?'MXN':e.currency)===c?' selected':'')+'>'+c+'</option>').join('')+'</select></div>'
+          +'<div><label>기본 전시회</label><select id="ex-sAct"><option value="1"'+((isNew||e.is_active)?' selected':'')
+            +'>예 — 🎪 버튼에서 바로 열림</option><option value="0"'+((!isNew&&!e.is_active)?' selected':'')+'>아니오</option></select></div>'
+        +'</div>'
+        +'<div class="hint" style="margin-top:9px">슬롯은 1시간 고정입니다. 시간표 칸 수 = 종료 − 시작.</div>'
+      +'</div>'
+      +(isNew?'':'<div class="ex-sec"><div class="st">＋ 다른 전시회</div>'
+        +'<button class="btn ghost sm" type="button" id="ex-sNew">새 전시회 만들기</button></div>');
+    $('ex-shF').innerHTML='<button class="btn" type="button" id="ex-sSave">'+(isNew?'전시회 만들기':'설정 저장')+'</button>'
+      +'<button class="btn ghost" type="button" id="ex-sClose">닫기</button>';
+    $('ex-sClose').onclick=exCloseSheet;
+    const nb=$('ex-sNew'); if(nb) nb.onclick=()=>{ exBoard=null; exOpenSettings(); };
+    $('ex-sSave').onclick=()=>exSaveExpo(isNew?null:e.id);
+  }
+
+  async function exSaveExpo(id){
+    const body={ name:$('ex-sName').value.trim(), venue:$('ex-sVenue').value.trim()||null,
+      start_date:$('ex-sStart').value, day_count:Number($('ex-sDays').value),
+      start_hour:Number($('ex-sSh').value), end_hour:Number($('ex-sEh').value),
+      currency:$('ex-sCur').value, is_active:$('ex-sAct').value==='1' };
+    if(!body.name){ exToast('전시회 이름을 입력하세요'); return; }
+    if(!body.start_date){ exToast('1st day 날짜를 선택하세요'); return; }
+    if(body.end_hour<=body.start_hour){ exToast('종료 시각이 시작 시각보다 늦어야 합니다'); return; }
+    const btn=$('ex-sSave'); btn.disabled=true; btn.textContent='저장 중…';
+    try{
+      const url=session.api+'/api/exhibitions'+(id?('/'+id):'');
+      const res=await fetch(url,{method:id?'PATCH':'POST',
+        headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ exToast('저장 실패: '+exErr(d.error||res.status)); return; }
+      exExpoId=id||Number(d.id);
+      exCloseSheet(); await exLoadExpos(); exToast('전시회를 저장했습니다');
+    }catch(e){ exToast('서버 연결 실패'); }
+    finally{ btn.disabled=false; btn.textContent=id?'설정 저장':'전시회 만들기'; }
+  }
+
+  // ── 배선 ────────────────────────────────────────────────────────────
+  $('modeNormal').addEventListener('click',()=>exSwitch('normal'));
+  $('modeExpo').addEventListener('click',()=>exSwitch('expo'));
+  $('ex-shX').addEventListener('click',exCloseSheet);
+  $('ex-setBtn').addEventListener('click',exOpenSettings);
+  $('ex-reload').addEventListener('click',()=>{ if(exExpoId) exLoadBoard(exExpoId); else exLoadExpos(); });
+  $('ex-viewDay').addEventListener('click',()=>exSetView('day'));
+  $('ex-viewGrid').addEventListener('click',()=>exSetView('grid'));
+  $('ex-pick').addEventListener('change',()=>{ const v=$('ex-pick').value; if(v){ exExpoId=Number(v); exLoadBoard(v); } });
+  $('ex-newBtn').addEventListener('click',()=>{
+    if(!exBoard){ exOpenSettings(); return; }
+    const h=(exBoard.hours||[])[0]; exOpenNew(exDay,h?h.hour:9);
+  });
+  $('ex-nowBtn').addEventListener('click',()=>{
+    if(!exBoard){ exOpenSettings(); return; }
+    const n=exBoard.now||{}; const hours=exBoard.hours||[];
+    const day=n.day_no||exDay;
+    let hour=n.hour;
+    if(!hours.some(h=>Number(h.hour)===Number(hour))) hour=hours.length?hours[0].hour:9;
+    exDay=day; exRenderTabs(); exRenderBoard(); exOpenNew(day,hour);
+  });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&!$('ex-sheet').classList.contains('ex-hidden')) exCloseSheet();
+  });
+  exSetView(exView);
 
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
