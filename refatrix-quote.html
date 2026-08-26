@@ -226,10 +226,13 @@
   async function loadCustomers(){
     try{
       const d=await fetch(session.api+'/api/customers',{headers:auth()}).then(r=>r.json());
-      customers=d.items||[];
+      // 0185 — 디렉터 등록 승인 전 고객은 견적에 쓸 수 없다(서버도 409로 막음).
+      customers=(d.items||[]).filter(c=>c.approval_status!=='pending');
+      const pendN=(d.items||[]).length-customers.length;
       $('custSel').innerHTML='<option value="">— 고객 선택 —</option>'
-        +'<option value="__guest__">★ Cliente no registrado (entrada directa)</option>'
+        +'<option value="__guest__">★ Cliente ya registrado — buscar por nombre</option>'
         +customers.map(c=>'<option value="'+c.id+'" data-disc="'+(c.discount||0)+'">'+esc(c.name)+'</option>').join('');
+      if(pendN>0) $('custHint').textContent='디렉터 등록 승인 대기 고객 '+pendN+'건은 목록에서 제외됩니다.';
     }catch(e){ $('custHint').textContent='고객 목록을 불러오지 못했습니다.'; }
   }
   let isGuest=false;
@@ -240,7 +243,7 @@
     if(isGuest){
       $('discShow').removeAttribute('readonly'); $('discShow').style.background='#fff'; $('discShow').placeholder='Ej: 12';
       curDisc=Number(($('discShow').value||'').replace('%',''))||0;
-      $('custHint').textContent='Cliente no registrado — escriba el nombre y el descuento (obligatorio). Se registrará automáticamente como cliente.';
+      $('custHint').textContent='Escriba el nombre exacto de un cliente YA registrado. Los clientes nuevos deben darse de alta en «고객 등록» con su CONSTANCIA y aprobación del director.';
     } else {
       $('discShow').setAttribute('readonly','readonly'); $('discShow').style.background='#faf8f3';
       const opt=sel.selectedOptions[0];
@@ -1213,6 +1216,10 @@
         if(d.error==='inactive_product'){
           m.textContent='저장 실패 — 비활성(판매중단) 제품이 포함되어 있습니다: '
             +(d.items||[]).map(x=>x.code).join(', ')+' · 해당 줄을 빼거나 제품검색에서 활성화 후 저장하세요.';
+        } else if(d.error==='customer_not_registered'||d.error==='customer_not_approved'){
+          // 0185 — 고객 자동생성 폐지. 등록·승인 화면으로 안내한다.
+          m.textContent=(d.note||'등록·승인된 고객만 견적을 쓸 수 있습니다.')
+            +' → 「고객 등록」 화면에서 CONSTANCIA 를 첨부해 등록하세요.';
         } else { m.textContent='저장 실패: '+(d.error||res.status); }
         return;
       }
@@ -1220,7 +1227,7 @@
       const matched=LP.filter(l=>l.matched).length;
       const unmatched=LP.length-matched;
       m.className='msg ok';
-      m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · '+(d.auto_customer.created?'고객 자동등록':'기존 고객 연결')+': '+esc(d.auto_customer.name)):'');
+      m.textContent='저장됨: '+d.quote_no+' — 총 '+LP.length+'줄 (매칭 '+matched+(unmatched?(' · 미매칭 '+unmatched+'줄은 제품코드 확인 필요'):'')+')'+(d.auto_customer?(' · 기존 고객 연결: '+esc(d.auto_customer.name)):'');
       if(d.auto_customer){ loadCustomers(); }
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('saveBtn').disabled=false;}

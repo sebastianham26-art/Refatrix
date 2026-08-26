@@ -12,6 +12,16 @@ import { customerSoldItems, SOLD_DEFAULT_LIMIT } from '../customerSold.js';
 
 function d10(d) { if (!d) return null; if (d instanceof Date) return d.toISOString().slice(0, 10); return String(d).slice(0, 10); }
 
+// 0185 — 디렉터 승인 대기 고객은 견적·가격표에 쓸 수 없다.
+//   마이그레이션 전 DB(컬럼 없음)에서는 항상 false → 기존 동작 그대로.
+async function isPendingCustomer(customerId) {
+  try {
+    const r = (await query(
+      `SELECT COALESCE(approval_status,'approved') AS s FROM customers WHERE id=$1`, [customerId])).rows[0];
+    return !!r && r.s === 'pending';
+  } catch (_) { return false; }
+}
+
 export default async function quoteRoutes(app) {
   // ============ 회사 설정 / 로고 ============
   app.get('/api/company', { preHandler: [authGuard] }, async () => {
@@ -365,21 +375,33 @@ export default async function quoteRoutes(app) {
       if (!gname) return reply.code(400).send({ error: 'guest_name_required' });
       if (b.discount_rate == null || b.discount_rate === '') return reply.code(400).send({ error: 'discount_required' });
       discountRate = Number(b.discount_rate) || 0;
-      // 불특정 고객명+할인율 → 고객 자동등록(같은 이름 재사용) 후 견적을 그 고객에 연결
-      const fc = await findOrCreateCustomerByName({ name: gname, discount: discountRate, teamId: req.ctx.perm.teamId, userId: req.ctx.perm.userId });
+      // 0185 — 「★ 미등록 고객(직접 입력)」으로는 더 이상 고객이 만들어지지 않는다.
+      //   이름이 이미 등록된 고객이면 그 고객에 붙이고, 없으면 등록 화면으로 돌려보낸다.
+      //   (CONSTANCIA·선점 검사·디렉터 승인을 우회하는 유일한 구멍이었다)
+      const fc = await findOrCreateCustomerByName({ name: gname });
       if (!fc) return reply.code(500).send({ error: 'customer_autocreate_failed' });
+      if (fc.error === 'customer_not_registered') {
+        return reply.code(409).send({ error: 'customer_not_registered',
+          note: `"${gname}" 은(는) 등록된 고객이 아닙니다. 고객 등록 화면에서 CONSTANCIA 를 첨부해 먼저 등록하고 디렉터 승인을 받으세요.` });
+      }
+      if (fc.approval_status === 'pending') {
+        return reply.code(409).send({ error: 'customer_not_approved',
+          note: `"${gname}" 은(는) 디렉터 승인 대기 중입니다. 승인 후 견적을 작성할 수 있습니다.` });
+      }
       customerId = fc.id;
       guestName = null;                 // 더 이상 불특정 아님 — 고객에 연결
-      autoCustomer = { id: fc.id, name: gname, created: fc.created };
-      if (!fc.created) {                // 기존 고객 재사용 시 등록 할인율 사용(일관성)
-        const cd = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0];
-        if (cd) discountRate = Number(cd.discount) || 0;
-      }
+      autoCustomer = { id: fc.id, name: gname, created: false };
+      const cd = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0];
+      if (cd) discountRate = Number(cd.discount) || 0;   // 등록 할인율 사용(일관성)
     } else {
       customerId = Number(b.customer_id);
       if (!customerId) return reply.code(400).send({ error: 'customer_required' });
       const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
       if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
+      if (await isPendingCustomer(customerId)) {
+        return reply.code(409).send({ error: 'customer_not_approved',
+          note: '디렉터 승인 대기 중인 고객입니다. 승인 후 견적을 작성할 수 있습니다.' });
+      }
       discountRate = Number(cust.discount) || 0;
     }
     const ivaRate = 16;
@@ -477,15 +499,26 @@ export default async function quoteRoutes(app) {
       const gname = String(b.guest_name || '').trim();
       if (!gname) return reply.code(400).send({ error: 'guest_name_required' });
       discountRate = Number(b.discount_rate) || 0;
-      const fc = await findOrCreateCustomerByName({ name: gname, discount: discountRate, teamId: req.ctx.perm.teamId, userId: req.ctx.perm.userId });
+      // 0185 — 가격표(pricelist)도 고객 자동생성 경로였다. 동일하게 차단.
+      const fc = await findOrCreateCustomerByName({ name: gname });
       if (!fc) return reply.code(500).send({ error: 'customer_autocreate_failed' });
+      if (fc.error === 'customer_not_registered') {
+        return reply.code(409).send({ error: 'customer_not_registered',
+          note: `"${gname}" 은(는) 등록된 고객이 아닙니다. 고객 등록 화면에서 먼저 등록하세요.` });
+      }
+      if (fc.approval_status === 'pending') {
+        return reply.code(409).send({ error: 'customer_not_approved', note: '디렉터 승인 대기 중인 고객입니다.' });
+      }
       customerId = fc.id;
-      if (!fc.created) { const cd = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0]; if (cd) discountRate = Number(cd.discount) || 0; }
+      { const cd = (await query(`SELECT discount FROM customers WHERE id=$1`, [customerId])).rows[0]; if (cd) discountRate = Number(cd.discount) || 0; }
     } else {
       customerId = Number(b.customer_id);
       if (!customerId) return reply.code(400).send({ error: 'customer_required' });
       const cust = (await query(`SELECT discount FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customerId])).rows[0];
       if (!cust) return reply.code(404).send({ error: 'customer_not_found' });
+      if (await isPendingCustomer(customerId)) {
+        return reply.code(409).send({ error: 'customer_not_approved', note: '디렉터 승인 대기 중인 고객입니다.' });
+      }
       discountRate = Number(cust.discount) || 0;
     }
     // 전체 가격표 제공 → 파이프라인 단계 접촉(20)으로 자동 전진(전진만) + 이력/미팅 로그

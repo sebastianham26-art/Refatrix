@@ -90,5 +90,20 @@ test('신규 등록으로 돌아가면 타팀 모드가 해제된다', async () 
   await w.RefCustForm.newCustomer();
   assert.equal(w.RefCustForm.isCrossTeam(), false);
   assert.equal(doc.getElementById('rcf-crossbox').style.display, 'none');
-  assert.equal(doc.getElementById('rcf-save').textContent, '고객 등록');
+  // 0185: 신규 등록은 항상 디렉터 승인을 거치므로 버튼 문구가 바뀌었다.
+  assert.equal(doc.getElementById('rcf-save').textContent, '고객 등록 (디렉터 승인)');
+  // 선점·기준품목 박스는 신규 모드에서만 열린다(타팀 수정 모드에서 새면 안 된다)
+  assert.equal(doc.getElementById('rcf-claimbox').style.display, '');
+  assert.equal(doc.getElementById('rcf-basebox').style.display, '');
+});
+
+// 0185 — 타팀 수정 요청 모드에서는 선점·기준품목 박스가 절대 뜨면 안 된다.
+//   (수정 요청에 CONSTANCIA 필수를 걸면 기존 이관 흐름이 막힌다)
+test('타팀 수정 요청 모드에서는 선점·기준품목 박스가 숨겨진다', async () => {
+  const { w, doc } = boot();
+  w.RefCustForm.init({ api:'', token:'t', isDirector:false });
+  await w.RefCustForm.mount('host');
+  w.RefCustForm.editCustomer(CUST_OTHER, { crossTeam:true });
+  assert.equal(doc.getElementById('rcf-claimbox').style.display, 'none');
+  assert.equal(doc.getElementById('rcf-basebox').style.display, 'none');
 });

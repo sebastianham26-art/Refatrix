@@ -1,4 +1,4 @@
-// build 20260824 — 타팀 고객 수정요청(디렉터 승인) + 0181 반쪽배포 안전장치 (재배포 트리거용 마커)
+// build 20260826reg — 고객 등록 디렉터 승인 + CONSTANCIA 선점 + 기준품목 할인율 제안 (0185)
 import { query, withTx } from '../db.js';
 import { CROSS_TEAM_PAGE_KEY } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
@@ -9,12 +9,34 @@ import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
 import { assembleVisitHistory } from '../customerVisits.js';
 import { stageLabel, stripStageLabel } from '../stageLabel.js';
+import { normalizeClaimKey, computeBaselineDiscount, validateChosenDiscount,
+         discountGap, MAX_DISCOUNT_PCT } from '../customerClaim.js';
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
 
+// 0185 · 기준품목 — 고객이 경쟁사(SYD)에서 사는 단가를 물어보는 대표 SKU.
+//   Railway 환경변수 SYD_BASE_CODE 로 바꿀 수 있다(코드 배포 없이 기준 교체).
+const SYD_BASE_CODE = String(process.env.SYD_BASE_CODE || '1516049').trim();
+
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
+
+// 0185 · 등록 승인 상태. 컬럼 추가 전(마이그레이션 미적용) DB 에서도 죽지 않도록
+//   읽기는 전부 COALESCE 로 감싸고, 쓰기는 아래 regColumnsReady() 가 true 일 때만 한다.
+let _regReady = null, _regCheckedAt = 0;
+async function regColumnsReady() {
+  const now = Date.now();
+  if (_regReady !== null && now - _regCheckedAt < 60000) return _regReady;
+  try {
+    const r = (await query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+        WHERE table_name='customers' AND column_name IN ('approval_status','constancia_no','suggested_discount')`)).rows[0];
+    _regReady = Number(r.n) >= 3;
+  } catch (_) { _regReady = false; }
+  _regCheckedAt = now;
+  return _regReady;
+}
 
 export default async function customerRoutes(app) {
   // 팀 목록(고객 배정·필터용 = 영업팀만)
@@ -104,7 +126,12 @@ export default async function customerRoutes(app) {
   });
 
   async function computeNextCode() {
-    const rows = (await query(`SELECT code FROM customers WHERE deleted_at IS NULL`)).rows;
+    // ⚠ 삭제된 고객(soft delete)의 코드도 세어야 한다.
+    //   customers.code 에는 유니크 제약이 걸려 있고 소프트삭제 행은 테이블에 그대로 남으므로,
+    //   deleted_at IS NULL 만 보면 이미 쓰인 번호를 다시 뽑아 INSERT 가 계속 실패한다.
+    //   (0185 등록 반려 직후 같은 고객을 재등록하면 code_generation_failed 로 드러남 —
+    //    디렉터가 고객을 삭제한 뒤에도 같은 증상이 났을 잠재 버그였다)
+    const rows = (await query(`SELECT code FROM customers`)).rows;
     const used = new Set(); let maxn = 0;
     for (const r of rows) { const m = String(r.code || '').match(/^c-?(\d+)$/i); if (m) { const n = parseInt(m[1], 10); used.add(n); if (n > maxn) maxn = n; } }
     let next = maxn + 1; while (used.has(next)) next++;
@@ -167,7 +194,10 @@ export default async function customerRoutes(app) {
     const parsed = all.slice(1).map((r) => parseCustRow(r, idx)).filter(Boolean);
     const resolve = await resolveRefs();
     const userId = req.ctx.perm.userId;
-    let created = 0, updated = 0, skipped = 0;
+    // 0185 · 엑셀 일괄 등록은 CONSTANCIA·승인 흐름을 우회하는 경로다.
+    //   신규 고객 생성은 디렉터만 허용하고, 그 외 사용자는 기존 고객 갱신만 가능하다.
+    const isDir = req.ctx.perm.role === 'director';
+    let created = 0, updated = 0, skipped = 0, blockedNew = 0;
     for (const p of parsed) {
       if (!p.name || !p.team) { skipped++; continue; }
       const teamId = resolve.teamByName[p.team.toLowerCase()];
@@ -184,6 +214,8 @@ export default async function customerRoutes(app) {
            WHERE lower(code)=lower($11) AND deleted_at IS NULL`,
           [p.name, p.rfc, p.contact, p.phone, teamId, stageId, ownerId, p.customer_type, p.memo, userId, p.code]);
         updated++;
+      } else if (!isDir) {
+        blockedNew++;                       // 신규 고객 생성은 디렉터 전용(승인·CONSTANCIA 우회 방지)
       } else {
         let code = p.code, ok = false;
         for (let attempt = 0; attempt < 5 && !ok; attempt++) {
@@ -204,8 +236,9 @@ export default async function customerRoutes(app) {
         if (ok) created++; else skipped++;
       }
     }
-    await safeLog({ userId, action: 'create', target: 'customer_import', detail: { created, updated, skipped } });
-    return { ok: true, created, updated, skipped };
+    await safeLog({ userId, action: 'create', target: 'customer_import', detail: { created, updated, skipped, blockedNew } });
+    return { ok: true, created, updated, skipped, blocked_new: blockedNew,
+      blocked_note: blockedNew ? '신규 고객 생성은 디렉터만 가능합니다(CONSTANCIA·승인 흐름). 고객 등록 화면에서 등록하세요.' : null };
   });
 
   // 고객 단계 목록
@@ -243,9 +276,14 @@ export default async function customerRoutes(app) {
       params.push(teamFilter); conds.push(`c.team_id = $${params.length}`);
     }
     if (q) { params.push(`%${q}%`); conds.push(`(c.name ILIKE $${params.length} OR c.code ILIKE $${params.length} OR c.rfc ILIKE $${params.length})`); }
+    // 0185 · 승인 대기 고객도 목록에는 보인다(등록자가 자기 건 상태를 봐야 하므로).
+    //   실제 사용 차단은 견적·매출 생성 시점에서 한다.
+    const regOn = await regColumnsReady();
+    const apprExpr = regOn ? `COALESCE(c.approval_status,'approved')` : `'approved'`;
     const rows = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone, c.discount, c.credit_days, c.customer_type, c.branch_count,
-              c.ship_address,
+              c.ship_address, ${apprExpr} AS approval_status,
+              ${regOn ? 'c.constancia_no' : 'NULL::text'} AS constancia_no,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
@@ -316,6 +354,7 @@ export default async function customerRoutes(app) {
       discount: Number(c.discount), credit_days: c.credit_days, customer_type: c.customer_type,
       branch_count: c.branch_count == null ? null : Number(c.branch_count),
       ship_address: c.ship_address || null,
+      approval_status: c.approval_status, constancia_no: c.constancia_no || null,
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
@@ -430,6 +469,17 @@ export default async function customerRoutes(app) {
         buyer_name: c.buyer_name || null, buyer_phone: c.buyer_phone || null,
         discount: Number(c.discount), credit_days: c.credit_days, memo: c.memo, customer_type: c.customer_type,
         constancia_fiscal: c.constancia_fiscal || null,
+        // 0185 · 등록 승인 + 선점 + 기준품목 근거 (마이그레이션 전 DB 에서는 undefined → 화면이 알아서 숨김)
+        approval_status: c.approval_status || 'approved',
+        constancia_no: c.constancia_no || null,
+        rejected_reason: c.rejected_reason || null,
+        syd_ref_code: c.syd_ref_code || null,
+        syd_ref_buy_price: c.syd_ref_buy_price == null ? null : Number(c.syd_ref_buy_price),
+        syd_ref_list_price: c.syd_ref_list_price == null ? null : Number(c.syd_ref_list_price),
+        syd_ref_discount: c.syd_ref_discount == null ? null : Number(c.syd_ref_discount),
+        ctr_ref_code: c.ctr_ref_code || null,
+        ctr_ref_list_price: c.ctr_ref_list_price == null ? null : Number(c.ctr_ref_list_price),
+        suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount),
         ship_address: c.ship_address || null,
         branch_count: c.branch_count == null ? null : Number(c.branch_count),
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
@@ -562,40 +612,395 @@ export default async function customerRoutes(app) {
       ...assembleVisitHistory({ visits, meetings, pendings, recordings, mxToday, truncated }) };
   });
 
-  // 고객 등록: 코드 서버 자동생성(고정), 팀 지정 필수.
+  // =====================================================================
+  // 0185 · 고객 선점(claim) 조회
+  //
+  //   100% 커미션 영업사원은 서로의 존재를 모른다. 그래서 "이미 남이 잡은 고객인가"
+  //   만 확인할 수 있어야 하고, 그 이상(매출·상담·연락처·팀·금액)은 절대 보이면 안 된다.
+  //   → 반환 필드는 **상호 · RFC · 담당 영업사원 이름 · 등록일 · 승인상태** 뿐이다.
+  //   팀 스코프를 타지 않는 유일한 고객 조회 경로이므로 SELECT 목록을 함부로 늘리지 말 것.
+  // =====================================================================
+  app.get('/api/customers/claim-check', { preHandler: [authGuard, requirePage('customers')] }, async (req) => {
+    const regOn = await regColumnsReady();
+    const name = String(req.query.name || req.query.q || '').trim();
+    const rfcN = normalizeClaimKey(req.query.rfc);
+    const conN = normalizeClaimKey(req.query.constancia);
+    if (!name && !rfcN && !conN) return { items: [], note: 'empty_query' };
+    if (name && name.length < 2 && !rfcN && !conN) return { items: [], note: 'min_2_chars' };
+
+    const where = [], params = [];
+    if (name && name.length >= 2) { params.push(`%${name}%`); where.push(`c.name ILIKE $${params.length}`); }
+    if (rfcN) {
+      params.push(rfcN);
+      where.push(regOn ? `c.rfc_norm = $${params.length}`
+                       : `upper(regexp_replace(coalesce(c.rfc,''),'[^A-Za-z0-9]','','g')) = $${params.length}`);
+    }
+    if (conN && regOn) { params.push(conN); where.push(`c.constancia_no_norm = $${params.length}`); }
+
+    const statusExpr = regOn ? `COALESCE(c.approval_status,'approved')` : `'approved'`;
+    const rows = (await query(
+      `SELECT c.name, c.rfc, u.name AS owner_name,
+              to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
+              ${statusExpr} AS approval_status,
+              ${regOn ? 'c.constancia_no_norm' : 'NULL::text'} AS con_norm,
+              ${regOn ? 'c.rfc_norm' : `upper(regexp_replace(coalesce(c.rfc,''),'[^A-Za-z0-9]','','g'))`} AS rfc_n
+         FROM customers c
+         LEFT JOIN users u ON u.id=c.owner_id
+        WHERE c.deleted_at IS NULL AND ${statusExpr} <> 'rejected' AND (${where.join(' OR ')})
+        ORDER BY c.created_at LIMIT 30`, params)).rows;
+
+    return {
+      items: rows.map((r) => ({
+        name: r.name, rfc: r.rfc || null,
+        owner_name: r.owner_name || '(담당자 미지정)',
+        registered_at: r.registered_at,
+        approval_status: r.approval_status,
+        // 어떤 키로 걸렸는지 — 화면에서 "이 CONSTANCIA 는 이미 선점됨" 을 정확히 안내하기 위함
+        matched_constancia: !!(conN && r.con_norm && r.con_norm === conN),
+        matched_rfc: !!(rfcN && r.rfc_n && r.rfc_n === rfcN),
+      })),
+      // 이 둘 중 하나라도 true 면 등록이 차단된다
+      blocked_constancia: rows.some((r) => conN && r.con_norm && r.con_norm === conN),
+      blocked_rfc: rows.some((r) => rfcN && r.rfc_n && r.rfc_n === rfcN),
+      migration_required: !regOn,
+    };
+  });
+
+  // =====================================================================
+  // 0185 · 기준품목(SYD) 구매단가 → 할인율 산출 + 제안
+  //
+  //   ① 고객이 SYD 1516049 를 얼마에 사는지 입력  → SYD List Price 대비 할인율
+  //   ② 그 구매가보다 5% 싸게 주는 목표가         → 구매단가 × 0.95
+  //   ③ 목표가를 만드는 CTR 정가 대비 할인율      → **제안 할인율**
+  //   CTR 정가는 1516049 에 매칭된 실제 CTR 제품의 List Price 를 쓴다(상수 마크업 아님).
+  //
+  //   권한: 고객을 등록할 수 있는 사람(requirePageEdit('customers')).
+  //         할인율을 정하려면 정가를 봐야 하므로 sale_price 필드권한과 별도로 연다.
+  // =====================================================================
+  app.get('/api/customers/price-baseline', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req) => {
+    const code = String(req.query.code || SYD_BASE_CODE).trim();
+    const buy = req.query.buy;
+    const out = { base_code: code, found: false, ctr_code: null, product_name: null,
+      syd_list_price: null, ctr_list_price: null, calc: null };
+    if (!code) return out;
+    const esc = code.replace(/([%_\\])/g, '\\$1');
+    // 매칭: product_syd_codes 정확일치 우선 → products.scode 부분일치 폴백 (syd-baseline 과 동일 규칙)
+    let row = (await query(
+      `SELECT p.code, p.name, p.list_price_syd, p.list_price
+         FROM product_syd_codes sc
+         JOIN products p ON p.id = sc.product_id AND p.deleted_at IS NULL
+        WHERE sc.syd_code = $1
+        ORDER BY p.code LIMIT 1`, [code])).rows[0];
+    if (!row) {
+      row = (await query(
+        `SELECT code, name, list_price_syd, list_price
+           FROM products
+          WHERE deleted_at IS NULL AND scode ILIKE $1
+          ORDER BY code LIMIT 1`, ['%' + esc + '%'])).rows[0];
+    }
+    if (!row) return out;
+    out.found = true;
+    out.ctr_code = row.code;
+    out.product_name = row.name;
+    out.syd_list_price = row.list_price_syd != null ? Number(row.list_price_syd) : null;
+    out.ctr_list_price = row.list_price != null ? Number(row.list_price) : null;
+    if (buy != null && buy !== '') {
+      out.calc = computeBaselineDiscount({
+        buy_price: buy, syd_list_price: out.syd_list_price, ctr_list_price: out.ctr_list_price });
+    }
+    return out;
+  });
+
+  // =====================================================================
+  // 고객 등록 (0185 개정)
+  //   · CONSTANCIA 번호 + PDF 스캔본 필수 → 이게 곧 "내 고객" 선점 증빙이다.
+  //   · 같은 CONSTANCIA(정규화) 또는 같은 RFC 가 이미 있으면 **등록 차단**(선점 안내).
+  //   · 기준품목 구매단가 → 산출/제안 할인율을 스냅샷으로 박제.
+  //   · 디렉터가 아니면 approval_status='pending' — 승인 전에는 견적·매출에 못 쓴다.
+  // =====================================================================
   app.post('/api/customers', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const b = req.body || {};
+    const perm = req.ctx.perm;
+    if (!(await regColumnsReady())) {
+      return reply.code(503).send({ error: 'migration_required',
+        note: '고객 등록 고도화(0185) 마이그레이션이 아직 적용되지 않았습니다. 디렉터에게 문의하세요.' });
+    }
     if (!b.name) return reply.code(400).send({ error: 'missing_fields' });
-    const teamId = b.team_id ? Number(b.team_id) : (req.ctx.perm.teamId || null);
+    const teamId = b.team_id ? Number(b.team_id) : (perm.teamId || null);
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
-    if (!canEditTeam(req.ctx.perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
+    if (!canEditTeam(perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
+
+    // ── ① CONSTANCIA 번호 + 스캔본 필수 ────────────────────────────────
+    const conNo = String(b.constancia_no || '').trim();
+    const conNorm = normalizeClaimKey(conNo);
+    if (!conNorm) {
+      return reply.code(400).send({ error: 'constancia_no_required',
+        note: 'CONSTANCIA 번호를 입력해야 고객을 등록할 수 있습니다(선점 증빙).' });
+    }
+    const doc = b.constancia_file || null;
+    const docName = String(doc?.file_name || '').trim();
+    const docMime = String(doc?.mime_type || '').trim();
+    const docB64 = String(doc?.data_base64 || '');
+    if (!docName || !docMime || !docB64) {
+      return reply.code(400).send({ error: 'constancia_file_required',
+        note: 'CONSTANCIA 스캔본(PDF)을 첨부해야 합니다.' });
+    }
+    if (!ALLOWED_DOC_MIME.includes(docMime)) {
+      return reply.code(400).send({ error: 'unsupported_type', note: 'PDF·JPEG·PNG·WEBP만 첨부할 수 있습니다.' });
+    }
+    let docBuf;
+    try { docBuf = Buffer.from(docB64, 'base64'); } catch (_) { return reply.code(400).send({ error: 'bad_base64' }); }
+    if (!docBuf.length) return reply.code(400).send({ error: 'empty_file' });
+    if (docBuf.length > MAX_DOC_BYTES) {
+      return reply.code(400).send({ error: 'too_large', note: '파일은 5MB 이하만 가능합니다.' });
+    }
+
+    // ── ② 선점 검사 (CONSTANCIA · RFC) ────────────────────────────────
+    //   유니크 인덱스가 최종 방어선이지만, 사용자에게는 "누가 선점했는지" 를 알려줘야 하므로
+    //   저장 전에 먼저 조회한다. 동시성 충돌은 아래 INSERT 의 unique 에러로 다시 잡힌다.
+    const rfcNorm = normalizeClaimKey(b.rfc);
+    const dup = (await query(
+      `SELECT c.name, u.name AS owner_name, to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
+              c.constancia_no_norm, c.rfc_norm
+         FROM customers c LEFT JOIN users u ON u.id=c.owner_id
+        WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'
+          AND (c.constancia_no_norm = $1 OR ($2::text IS NOT NULL AND c.rfc_norm = $2))
+        ORDER BY c.created_at LIMIT 1`, [conNorm, rfcNorm])).rows[0];
+    if (dup) {
+      const byCon = dup.constancia_no_norm === conNorm;
+      return reply.code(409).send({
+        error: byCon ? 'constancia_taken' : 'rfc_taken',
+        note: `이미 등록된 고객입니다 — ${dup.name} · 담당 ${dup.owner_name || '(미지정)'} · 등록일 ${dup.registered_at}. `
+            + '같은 고객이 맞다면 디렉터에게 문의하세요.',
+        claimed_by: dup.owner_name || null, claimed_at: dup.registered_at, claimed_name: dup.name,
+      });
+    }
+
+    // ── ③ 기준품목 단가 → 할인율 근거 스냅샷 ──────────────────────────
+    const baseCode = String(b.syd_ref_code || SYD_BASE_CODE).trim();
+    const buyPrice = (b.syd_ref_buy_price == null || b.syd_ref_buy_price === '') ? null : Number(b.syd_ref_buy_price);
+    if (buyPrice == null || !Number.isFinite(buyPrice) || buyPrice <= 0) {
+      return reply.code(400).send({ error: 'syd_ref_price_required',
+        note: `기준품목 ${baseCode} 의 고객 구매단가를 입력해야 합니다.` });
+    }
+    const base = (await query(
+      `SELECT p.code, p.list_price_syd, p.list_price
+         FROM product_syd_codes sc JOIN products p ON p.id=sc.product_id AND p.deleted_at IS NULL
+        WHERE sc.syd_code=$1 ORDER BY p.code LIMIT 1`, [baseCode])).rows[0]
+      || (await query(
+      `SELECT code, list_price_syd, list_price FROM products
+        WHERE deleted_at IS NULL AND scode ILIKE $1 ORDER BY code LIMIT 1`,
+        ['%' + baseCode.replace(/([%_\\])/g, '\\$1') + '%'])).rows[0] || null;
+    const sydLP = base?.list_price_syd != null ? Number(base.list_price_syd) : null;
+    const ctrLP = base?.list_price != null ? Number(base.list_price) : null;
+    const calc = computeBaselineDiscount({ buy_price: buyPrice, syd_list_price: sydLP, ctr_list_price: ctrLP });
+
+    // ── ④ 등록자가 정한 할인율 ────────────────────────────────────────
+    const chosen = validateChosenDiscount(b.discount);
+    if (!chosen.ok) {
+      return reply.code(400).send({ error: chosen.error,
+        note: `기본 할인율을 0~${MAX_DISCOUNT_PCT}% 범위로 입력하세요(제안값: ${calc.suggested_discount ?? '—'}%).` });
+    }
+
+    const isDir = perm.role === 'director';
+    const status = isDir ? 'approved' : 'pending';
+
     // 코드 충돌 시 재시도(동시 생성 대비)
-    let row, lastErr;
+    let row, dupKey = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = await computeNextCode();
       try {
         row = (await query(
-          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id, customer_type, memo, branch_count, ship_address, buyer_name, buyer_phone, stage_since, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14,$15,$16,$17, CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $13) RETURNING id, code`,
-          [code, b.name, b.rfc || null, b.contact || null, b.phone || null, Number(b.discount) || 0,
-           Number(b.credit_days) || 0, teamId, b.stage_id || null, b.owner_id || null, b.customer_type || null, b.memo || null, req.ctx.perm.userId,
+          `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id,
+                                  customer_type, memo, branch_count, ship_address, buyer_name, buyer_phone,
+                                  constancia_fiscal, constancia_no,
+                                  syd_ref_code, syd_ref_buy_price, syd_ref_list_price, syd_ref_discount,
+                                  ctr_ref_code, ctr_ref_list_price, suggested_discount,
+                                  approval_status, submitted_at, approved_by, approved_at,
+                                  stage_since, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+                   $11,$12,$13,$14,$15,$16,
+                   $17,$18,
+                   $19,$20,$21,$22,
+                   $23,$24,$25,
+                   $26, now(), $27, $28,
+                   CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $29)
+           RETURNING id, code`,
+          [code, b.name, b.rfc || null, b.contact || null, b.phone || null, chosen.value,
+           Number(b.credit_days) || 0, teamId, b.stage_id || null,
+           // 담당자 미지정이면 등록한 본인이 담당 = 선점자. 커미션 귀속의 근거가 된다.
+           b.owner_id || perm.userId || null,
+           b.customer_type || null, b.memo || null,
            (b.branch_count === '' || b.branch_count == null) ? null : Number(b.branch_count),
            (b.ship_address == null || String(b.ship_address).trim() === '') ? null : String(b.ship_address).trim(),
            (b.buyer_name == null || String(b.buyer_name).trim() === '') ? null : String(b.buyer_name).trim(),
-           (b.buyer_phone == null || String(b.buyer_phone).trim() === '') ? null : String(b.buyer_phone).trim()])).rows[0];
+           (b.buyer_phone == null || String(b.buyer_phone).trim() === '') ? null : String(b.buyer_phone).trim(),
+           b.constancia_fiscal || null, conNo,
+           baseCode, buyPrice, sydLP, calc.syd_discount,
+           base?.code || null, ctrLP, calc.suggested_discount,
+           status, isDir ? perm.userId : null, isDir ? new Date() : null,
+           perm.userId])).rows[0];
         break;
-      } catch (e) { lastErr = e; if (!String(e.message || '').includes('unique') && !String(e.message || '').includes('duplicate')) throw e; }
+      } catch (e) {
+        const msg = String(e.message || '');
+        if (msg.includes('uq_customers_constancia_no')) { dupKey = 'constancia_taken'; break; }
+        if (!msg.includes('unique') && !msg.includes('duplicate')) throw e;
+      }
+    }
+    if (dupKey) {
+      return reply.code(409).send({ error: dupKey,
+        note: '방금 다른 영업사원이 같은 CONSTANCIA 로 먼저 등록했습니다.' });
     }
     if (!row) return reply.code(409).send({ error: 'code_generation_failed' });
-    // 초기 할인/외상일이 0이 아니면 이력에 "신규 등록 초기값"으로 남김(추후 변경분과 함께 조회)
+
+    // ── ⑤ CONSTANCIA 스캔본 저장 ──────────────────────────────────────
+    //   여기서 실패하면 "번호만 있고 증빙이 없는" 고객이 남으므로 등록을 되돌린다.
+    try {
+      await query(
+        `INSERT INTO customer_documents (customer_id, doc_type, file_name, mime_type, byte_size, content, uploaded_by)
+         VALUES ($1,'constancia',$2,$3,$4,$5,$6)`,
+        [row.id, docName, docMime, docBuf.length, docBuf, perm.userId]);
+    } catch (e) {
+      await query(`UPDATE customers SET deleted_at=now() WHERE id=$1`, [row.id]);
+      return reply.code(500).send({ error: 'constancia_save_failed',
+        note: 'CONSTANCIA 스캔본 저장에 실패해 등록을 취소했습니다. 다시 시도하세요.' });
+    }
+
+    // ── ⑥ 이력 ───────────────────────────────────────────────────────
+    const snapshot = {
+      syd_ref_code: baseCode, syd_ref_buy_price: buyPrice, syd_ref_list_price: sydLP,
+      syd_ref_discount: calc.syd_discount, ctr_ref_code: base?.code || null, ctr_ref_list_price: ctrLP,
+      suggested_discount: calc.suggested_discount, chosen_discount: chosen.value,
+      gap: discountGap(chosen.value, calc.suggested_discount), calc_note: calc.note || null,
+    };
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [row.id, isDir ? 'approve' : 'submit', b.memo || null, JSON.stringify(snapshot), perm.userId]);
+    } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
+
+    // 초기 할인/외상일이 0이 아니면 기존 변경이력에도 남김(승인자는 디렉터 등록일 때만)
     const initTerms = [];
-    if ((Number(b.discount) || 0) !== 0) initTerms.push({ field: 'discount', old: null, nv: Number(b.discount) || 0 });
+    if (chosen.value !== 0) initTerms.push({ field: 'discount', old: null, nv: chosen.value });
     if ((Number(b.credit_days) || 0) !== 0) initTerms.push({ field: 'credit_days', old: null, nv: Number(b.credit_days) || 0 });
     if (initTerms.length) {
-      try { await logTermsHistory(row.id, initTerms, { reason: '신규 등록 초기값', conditions: null, changedBy: req.ctx.perm.userId, approvedBy: null }); } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
+      try {
+        await logTermsHistory(row.id, initTerms, {
+          reason: '신규 등록 초기값 (기준품목 ' + baseCode + ' 구매단가 ' + buyPrice + ' → 제안 ' + (calc.suggested_discount ?? '—') + '%)',
+          conditions: null, changedBy: perm.userId, approvedBy: isDir ? perm.userId : null });
+      } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
     }
-    await safeLog({ userId: req.ctx.perm.userId, action: 'create', target: `customer:${row.id}` });
-    return { ok: true, id: row.id, code: row.code };
+    await safeLog({ userId: perm.userId, action: 'create', target: `customer:${row.id}`, detail: { approval_status: status } });
+    return { ok: true, id: row.id, code: row.code, approval_status: status,
+      pending_approval: status === 'pending', calc, suggested_discount: calc.suggested_discount };
+  });
+
+  // =====================================================================
+  // 0185 · 고객 등록 승인 (디렉터)
+  // =====================================================================
+  app.get('/api/customer-registrations', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    if (!(await regColumnsReady())) return { items: [], migration_required: true };
+    const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name, c.rfc, c.constancia_no, c.discount, c.credit_days,
+              c.suggested_discount, c.syd_ref_code, c.syd_ref_buy_price, c.syd_ref_list_price,
+              c.syd_ref_discount, c.ctr_ref_code, c.ctr_ref_list_price, c.customer_type, c.memo,
+              to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
+              t.name AS team_name, u.name AS owner_name, cu.name AS created_by_name,
+              COALESCE(c.approval_status,'approved') AS approval_status,
+              (SELECT count(*) FROM customer_documents d
+                WHERE d.customer_id=c.id AND d.deleted_at IS NULL AND d.doc_type='constancia') AS constancia_docs
+         FROM customers c
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN users u ON u.id=c.owner_id
+         LEFT JOIN users cu ON cu.id=c.created_by
+        WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved')=$1
+        ORDER BY c.created_at DESC LIMIT 200`, [status])).rows;
+    return {
+      items: rows.map((r) => ({
+        id: Number(r.id), code: r.code, name: r.name, rfc: r.rfc || null,
+        constancia_no: r.constancia_no || null, constancia_docs: Number(r.constancia_docs),
+        discount: r.discount == null ? null : Number(r.discount),
+        credit_days: r.credit_days == null ? null : Number(r.credit_days),
+        suggested_discount: r.suggested_discount == null ? null : Number(r.suggested_discount),
+        discount_gap: discountGap(r.discount, r.suggested_discount),
+        syd_ref_code: r.syd_ref_code, ctr_ref_code: r.ctr_ref_code,
+        syd_ref_buy_price: r.syd_ref_buy_price == null ? null : Number(r.syd_ref_buy_price),
+        syd_ref_list_price: r.syd_ref_list_price == null ? null : Number(r.syd_ref_list_price),
+        syd_ref_discount: r.syd_ref_discount == null ? null : Number(r.syd_ref_discount),
+        ctr_ref_list_price: r.ctr_ref_list_price == null ? null : Number(r.ctr_ref_list_price),
+        customer_type: r.customer_type, memo: r.memo,
+        team_name: r.team_name, owner_name: r.owner_name, created_by_name: r.created_by_name,
+        registered_at: r.registered_at, approval_status: r.approval_status,
+      })),
+    };
+  });
+
+  // 승인: 할인율을 디렉터가 조정해서 승인할 수도 있다(body.discount).
+  app.post('/api/customer-registrations/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const c = (await query(
+      `SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(approval_status,'approved')='pending'`,
+      [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    const docs = (await query(
+      `SELECT count(*)::int AS n FROM customer_documents
+        WHERE customer_id=$1 AND deleted_at IS NULL AND doc_type='constancia'`, [id])).rows[0];
+    if (!Number(docs.n)) {
+      return reply.code(400).send({ error: 'constancia_missing',
+        note: 'CONSTANCIA 스캔본이 없습니다. 승인 전에 첨부되어야 합니다.' });
+    }
+    let discount = c.discount == null ? 0 : Number(c.discount);
+    if (req.body && req.body.discount != null && req.body.discount !== '') {
+      const v = validateChosenDiscount(req.body.discount);
+      if (!v.ok) return reply.code(400).send({ error: v.error });
+      discount = v.value;
+    }
+    await query(
+      `UPDATE customers SET approval_status='approved', approved_by=$1, approved_at=now(),
+              rejected_reason=NULL, discount=$2, updated_by=$1 WHERE id=$3`,
+      [perm.userId, discount, id]);
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,'approve',$2,$3,$4)`,
+        [id, (req.body && req.body.reason) ? String(req.body.reason) : null,
+         JSON.stringify({ approved_discount: discount, requested_discount: c.discount == null ? null : Number(c.discount),
+           suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount) }), perm.userId]);
+    } catch (_) { /* ignore */ }
+    // 디렉터가 할인율을 바꿔 승인했으면 변경이력에 남긴다
+    if (Number(c.discount || 0) !== discount) {
+      try {
+        await logTermsHistory(id, [{ field: 'discount', old: Number(c.discount || 0), nv: discount }], {
+          reason: '등록 승인 시 디렉터 조정', conditions: null, changedBy: c.created_by, approvedBy: perm.userId });
+      } catch (_) { /* ignore */ }
+    }
+    await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}` });
+    return { ok: true, id, discount };
+  });
+
+  // 반려: 선점을 풀어준다(rejected 는 유니크 인덱스 대상에서 빠짐) + 소프트 삭제.
+  app.post('/api/customer-registrations/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    const reason = (req.body && req.body.reason) ? String(req.body.reason).trim() : '';
+    if (!reason) return reply.code(400).send({ error: 'reason_required', note: '반려 사유를 입력하세요.' });
+    const c = (await query(
+      `SELECT id FROM customers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(approval_status,'approved')='pending'`,
+      [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    await query(
+      `UPDATE customers SET approval_status='rejected', rejected_reason=$1, approved_by=$2, approved_at=now(),
+              deleted_at=now(), updated_by=$2 WHERE id=$3`, [reason, perm.userId, id]);
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,'reject',$2,NULL,$3)`, [id, reason, perm.userId]);
+    } catch (_) { /* ignore */ }
+    await safeLog({ userId: perm.userId, action: 'reject_registration', target: `customer:${id}` });
+    return { ok: true, id };
   });
 
   // 고객 수정
@@ -702,21 +1107,31 @@ export default async function customerRoutes(app) {
     const teamId = keepNum(b.team_id, c.team_id);
     const stageId = keepNum(b.stage_id, c.stage_id);
     const stageChanged = Number(stageId) !== Number(c.stage_id);
+    // 0185 · CONSTANCIA 번호(선점 키)는 마이그레이션이 적용된 DB 에서만 건드린다
+    //   (컬럼이 없는 반쪽 배포 상태에서도 기존 고객 수정이 죽지 않게).
+    //   빈 문자열로 지우는 것은 막는다 — 번호가 사라지면 선점이 풀려
+    //   다른 영업사원이 같은 고객을 다시 등록할 수 있게 된다.
+    const conOn = await regColumnsReady();
+    const params = [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
+      b.phone !== undefined ? b.phone : c.phone, keepNum(b.discount, c.discount),
+      keepNum(b.credit_days, c.credit_days), teamId,
+      stageId, nullNum(b.owner_id, c.owner_id),
+      b.customer_type !== undefined ? b.customer_type : c.customer_type,
+      b.memo !== undefined ? b.memo : c.memo, stageChanged, userId, id,
+      b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal,
+      nullNum(b.branch_count, c.branch_count),
+      b.buyer_name !== undefined ? b.buyer_name : c.buyer_name,
+      b.buyer_phone !== undefined ? b.buyer_phone : c.buyer_phone];
+    if (conOn) {
+      params.push((b.constancia_no !== undefined && String(b.constancia_no).trim() !== '')
+        ? String(b.constancia_no).trim() : (c.constancia_no || null));
+    }
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
          team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15, branch_count=$16,
-         buyer_name=$17, buyer_phone=$18,
+         buyer_name=$17, buyer_phone=$18${conOn ? ', constancia_no=$19' : ''},
          stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
-      [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
-       b.phone !== undefined ? b.phone : c.phone, keepNum(b.discount, c.discount),
-       keepNum(b.credit_days, c.credit_days), teamId,
-       stageId, nullNum(b.owner_id, c.owner_id),
-       b.customer_type !== undefined ? b.customer_type : c.customer_type,
-       b.memo !== undefined ? b.memo : c.memo, stageChanged, userId, id,
-       b.constancia_fiscal !== undefined ? b.constancia_fiscal : c.constancia_fiscal,
-       nullNum(b.branch_count, c.branch_count),
-       b.buyer_name !== undefined ? b.buyer_name : c.buyer_name,
-       b.buyer_phone !== undefined ? b.buyer_phone : c.buyer_phone]);
+      params);
   }
 
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
@@ -762,6 +1177,7 @@ export default async function customerRoutes(app) {
       discount: b.discount, credit_days: b.credit_days, branch_count: b.branch_count,
       team_id: b.team_id, stage_id: b.stage_id, owner_id: b.owner_id,
       customer_type: b.customer_type, memo: b.memo, constancia_fiscal: b.constancia_fiscal,
+      constancia_no: b.constancia_no,
     };
     const existing = (await query(`SELECT id FROM customer_change_requests WHERE customer_id=$1 AND status='pending'`, [id])).rows[0];
     if (existing) {
@@ -840,6 +1256,7 @@ export default async function customerRoutes(app) {
               c.discount AS cur_discount, c.credit_days AS cur_credit_days, c.branch_count AS cur_branch_count,
               c.team_id AS cur_team_id, c.stage_id AS cur_stage_id, c.owner_id AS cur_owner_id,
               c.customer_type AS cur_customer_type, c.memo AS cur_memo, c.constancia_fiscal AS cur_constancia_fiscal,
+              c.constancia_no AS cur_constancia_no,
               u.name AS requested_by_name, u.team_id AS requester_team_id, rt.name AS requester_team_name,
               ct.name AS cur_team_name
          FROM customer_change_requests r
@@ -866,7 +1283,7 @@ export default async function customerRoutes(app) {
     const stageNames = await nameMap('stages', stageIds);
     const ownerNames = await nameMap('users', ownerIds);
 
-    const LABELS = { name: '고객명', rfc: 'RFC', contact: '이메일 주소', phone: '전화', buyer_name: '구매결정권자', buyer_phone: '구매결정권자 전화(WhatsApp)', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)' };
+    const LABELS = { name: '고객명', rfc: 'RFC', contact: '이메일 주소', phone: '전화', buyer_name: '구매결정권자', buyer_phone: '구매결정권자 전화(WhatsApp)', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)', constancia_no: 'CONSTANCIA 번호(선점 키)' };
     const NUMERIC = new Set(['discount', 'credit_days', 'branch_count', 'team_id', 'stage_id', 'owner_id']);
     const isEmpty = (v) => v == null || v === '';
     const disp = (field, val) => {
@@ -887,6 +1304,7 @@ export default async function customerRoutes(app) {
         discount: r.cur_discount, credit_days: r.cur_credit_days, branch_count: r.cur_branch_count,
         team_id: r.cur_team_id, stage_id: r.cur_stage_id, owner_id: r.cur_owner_id,
         customer_type: r.cur_customer_type, memo: r.cur_memo, constancia_fiscal: r.cur_constancia_fiscal,
+        constancia_no: r.cur_constancia_no,
       };
       const changes = [];
       for (const f of Object.keys(LABELS)) {

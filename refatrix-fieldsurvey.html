@@ -179,7 +179,7 @@
       <div class="sect-h">고객 특정</div>
       <select id="custSel" class="fsel">
         <option value="">— 고객 선택 —</option>
-        <option value="__guest__">★ 미등록 고객 (직접 입력)</option>
+        <option value="__guest__">★ 목록에 없는 고객 (이름으로 찾기)</option>
       </select>
       <div id="guestWrap" class="hidden">
         <label class="flbl">고객명 (견적·오퍼에 표시)</label>
@@ -188,7 +188,7 @@
       <div class="discRow">
         <div class="col"><label class="flbl">할인율 (%)</label><input id="discInput" inputmode="decimal" placeholder="0" readonly></div>
       </div>
-      <div class="hint" id="custHint">고객을 선택하면 등록 할인율이 적용됩니다. 미등록 고객은 이름과 할인율을 직접 입력합니다.</div>
+      <div class="hint" id="custHint">고객을 선택하면 등록 할인율이 적용됩니다. 목록에 없으면 「고객 등록」에서 먼저 등록·승인받으세요.</div>
       <button class="startBtn" id="startBtn" disabled>새 조사 시작</button>
 
       <div class="sect-h" id="resumeH" style="display:none">진행중 조사 이어쓰기</div>
@@ -323,7 +323,7 @@
   // ── 고객 선택(견적 포맷: 등록 select + 미등록 직접입력 + 할인율) ──
   async function loadCustomers(){
     try{ const d=await api('/api/field-surveys/customer-options',{headers:auth()});
-      $('custSel').innerHTML='<option value="">— 고객 선택 —</option><option value="__guest__">★ 미등록 고객 (직접 입력)</option>'
+      $('custSel').innerHTML='<option value="">— 고객 선택 —</option><option value="__guest__">★ 목록에 없는 고객 (이름으로 찾기)</option>'
         + d.items.map(c=>'<option value="'+c.id+'" data-disc="'+(c.discount||0)+'" data-name="'+esc(c.name)+'">'+esc(c.name)+(c.code?' ('+esc(c.code)+')':'')+'</option>').join('');
     }catch(e){}
   }
@@ -332,11 +332,11 @@
     const guest=(v==='__guest__');
     $('guestWrap').classList.toggle('hidden',!guest);
     if(guest){ disc.readOnly=false; if(disc.value==='') disc.value='0';
-      $('custHint').textContent='미등록 고객 — 고객명과 할인율을 직접 입력하세요. (견적 발송 시 자동으로 고객 등록됩니다)'; state.customer=null;
+      $('custHint').textContent='이미 등록된 고객의 이름을 정확히 입력하세요. 신규 고객은 「고객 등록」에서 CONSTANCIA 첨부 + 디렉터 승인 후에 쓸 수 있습니다.'; state.customer=null;
     } else if(v){ disc.readOnly=true; disc.value=(opt.dataset&&opt.dataset.disc)||'0';
       $('custHint').textContent='할인율 '+disc.value+'% 가 견적에 적용됩니다.'; state.customer={id:Number(v),name:(opt.dataset&&opt.dataset.name)||opt.text};
     } else { disc.readOnly=true; disc.value='';
-      $('custHint').textContent='고객을 선택하면 등록 할인율이 적용됩니다. 미등록 고객은 이름과 할인율을 직접 입력합니다.'; state.customer=null; }
+      $('custHint').textContent='고객을 선택하면 등록 할인율이 적용됩니다. 목록에 없으면 「고객 등록」에서 먼저 등록·승인받으세요.'; state.customer=null; }
     refreshStartBtn();
   }
   function refreshStartBtn(){
@@ -477,7 +477,15 @@
       if(newCid) state.survey.customer_id=newCid;
       toast('견적 '+ (q.quote_no||'') +' 생성됨 ('+matched.length+'개 품목)');
       setTimeout(()=>{ if(confirm('견적 '+(q.quote_no||'')+' 이(가) 생성되었습니다.\n견적 목록 화면으로 이동할까요?')) location.href='refatrix-quotelist.html'; },300);
-    }catch(e){ toast('견적 생성 실패: '+e.message); }
+    }catch(e){
+      // 0185 — 미등록/승인대기 고객은 견적으로 넘어가지 않는다. 등록 화면으로 안내.
+      const msg = e.message==='customer_not_registered'
+        ? '등록되지 않은 고객입니다 — 「고객 등록」에서 CONSTANCIA 를 첨부해 먼저 등록하세요.'
+        : e.message==='customer_not_approved'
+          ? '디렉터 등록 승인 대기 중인 고객입니다 — 승인 후 견적을 만들 수 있습니다.'
+          : ('견적 생성 실패: '+e.message);
+      toast(msg);
+    }
     finally{ $('btnQuote').disabled=false; $('btnQuote').innerHTML='<span class="ico">📄</span>견적으로 발송'; }
   }
 
