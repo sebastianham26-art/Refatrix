@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260818b</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260826pda</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -176,6 +176,61 @@
   .hidden{display:none}
   .note{background:#EFF3F7;border-left:3px solid var(--steel);padding:8px 11px;border-radius:0 9px 9px 0;font-size:12px;color:var(--steel-d);margin:9px 0}
   .note.green{background:#F0F7F3;border-left-color:var(--green);color:#2C5C42}
+
+  /* ===== PDA 컴팩트 모드(2026-08-26) — 현장 스캐너 화면(작은 폭)에서 "리딩 결과"를 항상 보이게 =====
+     문제: 상단 고정 헤더(#rnav 바+하위메뉴, 좁은 폭에서 여러 줄로 접힘)가 body padding-top 을 크게 잡고,
+           그 아래 페이지 헤더·선적 헤더·단계 버튼까지 쌓여서 스캔 결과 박스(#scanres/#putres)가 화면 밖으로 밀림.
+     해결: ① 상단 고정 영역을 한 줄(약 40px)로 축소 ② 페이지/선적 헤더를 압축
+           ③ 스캔 결과 + 입력칸 + 진행줄을 .scanstick 으로 묶어 헤더 바로 아래에 sticky 고정.
+     켜짐 조건: 화면 폭 <=640px 자동, 또는 우하단 토글 버튼(localStorage wh_pda 로 기억). */
+  .scanstick{}                                   /* 일반 모드에서는 아무 효과 없음 */
+  /* 토글은 페이지 헤더 안(🌐 옆) — 화면 위에 떠서 [적치 저장] 같은 버튼을 가리지 않게 한다 */
+  .pdabtn{background:var(--steel);color:#fff;border:0;border-radius:9px;padding:5px 11px;
+    font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;line-height:1.15;white-space:nowrap}
+  .pdabtn:active{filter:brightness(1.12)}
+  body.pda .pdabtn{padding:3px 9px;font-size:11px}
+  /* — 상단 고정 영역 축소 (nav.js 가 주입하는 #rnav 를 덮어쓴다. nav 뒤에 로드되므로 !important 로 확정) — */
+  body.pda #rnav .rsub{display:none!important}
+  body.pda #rnav .rbar{height:40px!important;padding:0 6px!important}
+  body.pda #rnav .rlogo,body.pda #rnav .rwho,body.pda #rnav .rpres{display:none!important}
+  body.pda #rnav .rhome{width:26px!important;height:26px!important;margin-right:3px!important;font-size:13px!important}
+  body.pda #rnav .rg{padding:12px 8px!important;font-size:11.5px!important}
+  body.pda #rnav .rlogout{margin-left:6px!important;padding:4px 9px!important;font-size:10px!important}
+  /* — 페이지·선적 헤더 압축 — */
+  body.pda .wrap{padding:0 8px 44px}
+  body.pda header{padding:4px 0 0}
+  body.pda header h1{font-size:13px}
+  body.pda header .sub{display:none}
+  body.pda .langbtn{padding:3px 8px;font-size:11px}
+  body.pda .card{padding:8px;border-radius:11px;margin-bottom:8px}
+  body.pda .card h2{font-size:13px;margin:0 0 4px}
+  body.pda .dhint{display:none}                  /* 선적 ETA·첨부 줄 — 스캔 중에는 불필요 */
+  body.pda .steps{margin:6px 0 7px;gap:4px}
+  body.pda .step{min-width:0;padding:5px 3px}
+  body.pda .step .t{font-size:11.5px} body.pda .step .m{font-size:9.5px}
+  /* — 스캔 결과·입력칸을 헤더 바로 아래에 고정 — */
+  body.pda .scanstick{position:sticky;top:var(--navh,40px);z-index:40;background:var(--card);
+    margin:0 -8px 7px;padding:6px 8px 8px;border-bottom:1.5px solid var(--line);
+    box-shadow:0 9px 13px -11px rgba(0,0,0,.6);max-height:70vh;overflow:auto}
+  /* 잠금줄은 한 줄로 — [팔렛] [예상] [저장상태] 순, 넘치면 저장상태만 말줄임 */
+  body.pda .locked{padding:4px 9px;margin-bottom:5px;display:flex;gap:9px;align-items:baseline;flex-wrap:nowrap;overflow:hidden}
+  body.pda .locked .a{font-size:10px;order:3;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+  body.pda .locked .b{font-size:13px;white-space:nowrap;order:1}
+  body.pda .locked .c{font-size:10.5px;white-space:nowrap;order:2}
+  body.pda .scanbox{min-height:0;padding:9px 11px;border-radius:11px}
+  body.pda .scanbox .sku{font-size:21px}
+  body.pda .zbig{margin-top:6px;padding:7px 10px;gap:9px}
+  body.pda .zbig .n{min-width:46px;height:40px;font-size:25px}
+  body.pda .zbig .v{font-size:16px}
+  body.pda .racklock{padding:7px 10px;margin-bottom:7px}
+  body.pda .racklock .v{font-size:21px} body.pda .racklock .r2{font-size:11px}
+  body.pda .step2{padding:6px 9px;font-size:11.5px;margin:0 0 7px}
+  body.pda .bigwarn{padding:8px 10px;margin-bottom:7px;font-size:12px}
+  body.pda .scaninput{margin-top:6px}
+  body.pda .scaninput input{padding:8px 10px}
+  body.pda .pbar{margin:6px 0 3px}
+  body.pda .skulist{max-height:none}
+  body.pda .palpick .pchip{padding:6px 10px;font-size:12px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -198,7 +253,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260818b';
+  var BUILD='20260826pda';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -954,7 +1009,7 @@
     var html='<div class="card"><div class="row" style="justify-content:space-between">'
       +'<div><h2 style="margin:0">'+L('선적','Embarque')+' <span class="mono" style="font-weight:400;color:'+(s.invoice_no?'var(--muted)':'var(--red)')+'">'+esc(s.invoice_no||L('인보이스 미입력','sin factura'))+'</span>'
       +(s.status!=='closed'?' <button class="btn ghost sm" id="btnInvEdit" title="'+L('인보이스 번호 입력·수정','Editar factura')+'">✎</button>':'')+'</h2>'
-      +'<div class="hint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span> · <span id="shipFiles">📎 …</span></div></div>'
+      +'<div class="hint dhint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span> · <span id="shipFiles">📎 …</span></div></div>'
       +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
       +'<div class="steps">'
       +stepBtn('unload',L('하차','Descarga'),st.unloaded+'/'+st.N)
@@ -1335,12 +1390,14 @@
         +(avail.length?'':'<div class="scanbox"><div class="idle">'+L('하차된 팔렛이 없습니다 — 먼저 하차하세요','Sin pallets descargados — descargue primero')+'</div></div>');
       renderPalPick(); return;
     }
-    b.innerHTML='<div class="locked"><div class="a">'+L('검수 중','Verificando')+' · <span id="syncst"></span></div>'
+    /* .scanstick = PDA 모드에서 헤더 바로 아래 고정되는 블록(잠금줄·스캔결과·입력칸·진행줄).
+       일반 모드에서는 아무 효과 없는 단순 div 다. */
+    b.innerHTML='<div class="scanstick"><div class="locked"><div class="a">'+L('검수 중','Verificando')+' · <span id="syncst"></span></div>'
       +'<div class="b">'+esc(pal.order_no)+' · '+L('팔렛','Pallet')+' '+pal.pl_no+'</div>'
       +'<div class="c">'+L('예상','Esp.')+' '+fmt(pal.cartons_expected)+L('카톤','cajas')+' · '+fmt(pal.qty_expected)+' EA'+(pal.status==='checked'?' · ✓ '+L('확정됨 — 더 스캔하고 재확정 가능','confirmado'):'')+'</div></div>'
       +'<div class="scanbox" id="scanres"><div class="idle">'+L('카톤을 스캔하세요','Escanee una caja')+'</div></div>'
       +'<div class="scaninput"><input type="text" id="scanIn" placeholder="'+L('카톤 라벨 스캔 (예: CTR-CE0796-16)','Escanee la etiqueta (ej. CTR-CE0796-16)')+'" autocomplete="off"><button class="btn g" id="btnScanGo">'+L('스캔','Escanear')+'</button></div>'
-      +'<div class="pbar"><i id="cbar"></i></div><div class="hint" id="ctxt"></div>'
+      +'<div class="pbar"><i id="cbar"></i></div><div class="hint" id="ctxt" style="margin:0"></div></div>'
       +'<div class="row" style="margin:8px 0">'
       +'<button class="btn" id="btnRecon">📋 '+L('대조','Comparar')+'</button>'
       +'<button class="btn ghost sm" id="btnPalChg">⇄ '+L('팔렛 변경','Cambiar pallet')+'</button>'
@@ -1598,6 +1655,8 @@
       +'<div style="font-size:16px;font-weight:700">'+L('팔렛','Pallet')+' '+p.pl_no+' · '+L('남은 카톤','Cajas rest.')+' '+fmt(s.left)+'</div></div>'
       +'<div class="row" style="gap:7px"><span class="hint" style="margin:0" id="putsave">'+putSaveHint()+'</span>'
       +'<button class="btn ghost sm" id="btnPutBack">← '+L('팔렛 목록','Pallets')+'</button></div></div>';
+    // .scanstick = PDA 모드에서 헤더 바로 아래 고정(작업랙·스캔결과·입력칸·진행줄). 일반 모드에서는 무효과.
+    h+='<div class="scanstick">';
     // 작업 랙 배너
     if(putRack){
       h+='<div class="racklock"><div><div class="k">📍 '+L('작업 랙 — 잠금','Ubicación de trabajo')+'</div><div class="v">'+esc(putRack)+'</div></div>'
@@ -1609,7 +1668,7 @@
     h+='<div id="putres"></div>'
       +'<div class="scaninput"><input type="text" id="putIn" placeholder="'+(putRack?L('다음 박스 스캔… (1박스 = 1스캔)','Siguiente caja… (1 caja = 1 escaneo)'):L('랙 또는 카톤 스캔 후 Enter','Ubicación o caja + Enter'))+'" autocomplete="off"><button class="btn g" id="btnPutGo2">'+L('스캔','Escanear')+'</button></div>'
       +'<div class="pbar"><i style="width:'+(s.cap?Math.round(s.put/s.cap*100):0)+'%"></i></div>'
-      +'<div class="hint">'+L('카톤','Cajas')+' <b>'+s.put+'/'+s.cap+'</b> · SKU '+p.items.filter(function(i){return itemCap(p,i)>0&&itemLeft(p,i)<=0;}).length+'/'+s.skus+'</div>'
+      +'<div class="hint" style="margin:0">'+L('카톤','Cajas')+' <b>'+s.put+'/'+s.cap+'</b> · SKU '+p.items.filter(function(i){return itemCap(p,i)>0&&itemLeft(p,i)<=0;}).length+'/'+s.skus+'</div></div>'
       +'<div class="skulist" id="putsku"></div>'
       +'<div class="row" style="margin-top:9px">'
       +'<button class="btn" id="btnPutSave"'+(putPending()?'':' disabled')+'>✔ '+L('적치 저장','Guardar')+(putPending()?' ('+putPending()+L('건',' cambios')+')':'')+'</button>'
@@ -1973,7 +2032,62 @@
   }
   function startPoll(){ if(pollT) clearInterval(pollT); pollT=setInterval(pollTick,POLL_MS); }
 
+  /* ===== PDA 컴팩트 모드(2026-08-26) — 현장 스캐너 화면에서 리딩 결과가 안 보이던 문제 =====
+     상단 고정 헤더(#rnav)가 좁은 폭에서 여러 줄로 접히며 본문을 크게 밀어내, 스캔 결과 박스가 화면 밖으로 나갔다.
+     · 켜짐: 화면 폭 <=640px 자동, 또는 우하단 토글 버튼(선택은 localStorage 'wh_pda' 에 기억 — 자동보다 우선)
+     · 동작: 상단 고정 영역을 한 줄로 축소 + 페이지/선적 헤더 압축 + .scanstick(스캔결과·입력칸) 을 헤더 아래 고정
+     · --navh: 고정 헤더의 실제 높이. .scanstick 의 sticky top 이 이 값을 쓴다(헤더가 접히면 함께 줄어든다). */
+  var PDA=(function(){ try{ var v=localStorage.getItem('wh_pda'); if(v==='1'||v==='0') return v; }catch(e){} return null; })();
+  var pdaLast=null;
+  function pdaAuto(){ try{ return window.innerWidth<=640; }catch(e){ return false; } }
+  function pdaOn(){ return (PDA==null)?pdaAuto():(PDA==='1'); }
+  function syncNavH(){
+    var el=document.getElementById('rnav');
+    var h=(el&&el.offsetHeight)||40;
+    try{ document.documentElement.style.setProperty('--navh',h+'px'); }catch(e){}
+  }
+  function pdaApply(){
+    var on=pdaOn(), changed=(pdaLast!==on); pdaLast=on;
+    document.body.classList.toggle('pda',on);
+    // 헤더 높이가 바뀌었으므로 nav.js 의 syncOffset(본문 padding-top)을 다시 돌린다.
+    // (changed 일 때만 → 우리 resize 리스너와 무한 루프가 생기지 않는다)
+    if(changed){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }
+    syncNavH(); setTimeout(syncNavH,60); setTimeout(syncNavH,340);   // nav 비동기 재렌더 후 재보정
+    var b=$('pdaBtn');
+    if(b){
+      b.textContent=on?('⤢ '+L('전체보기','Vista completa')):('📱 '+L('스캔모드','Modo escáner'));
+      b.title=on?L('일반 화면으로 — 상단 메뉴를 모두 보이게','Vista normal — mostrar todo el menú')
+                :L('PDA 화면 — 상단을 접고 스캔 결과를 고정','Modo PDA — menú compacto y lectura fija');
+    }
+  }
+  function pdaInit(){
+    var b=document.createElement('button');
+    b.id='pdaBtn'; b.type='button'; b.className='pdabtn';
+    b.addEventListener('click',function(){
+      PDA=pdaOn()?'0':'1';
+      try{ localStorage.setItem('wh_pda',PDA); }catch(e){}
+      pdaApply();
+      var f=$('scanIn')||$('putIn'); if(f) f.focus();   // 스캔 중이면 포커스를 잃지 않는다
+    });
+    var hd=document.querySelector('header');
+    if(hd) hd.appendChild(b); else document.body.appendChild(b);
+    pdaApply();
+    window.addEventListener('resize',pdaApply);
+    window.addEventListener('hashchange',function(){ setTimeout(syncNavH,80); });
+    // 헤더는 로그인·권한 조회 후 비동기로 그려진다 → 실제 높이를 추적
+    try{
+      if(window.ResizeObserver){
+        var t=setInterval(function(){
+          var el=document.getElementById('rnav'); if(!el) return;
+          clearInterval(t); new ResizeObserver(syncNavH).observe(el);
+        },200);
+        setTimeout(function(){ clearInterval(t); },10000);
+      }
+    }catch(e){}
+  }
+
   /* ============ 시작 ============ */
+  pdaInit();
   loadList();
   startPoll();
   try{ window.addEventListener('beforeunload',function(){ clearWorking(); }); }catch(e){}
