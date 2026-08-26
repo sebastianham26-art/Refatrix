@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0813a</title>
+<title>Refatrix ERP · 재무 · build fin-0826a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -313,6 +313,13 @@
           </div>
         </div>
         <div class="hint" style="margin-top:4px">기본은 <b>이번 달 + 경과(미처리)</b>만 표시합니다. 다른 기간은 연·월 필터에서 여러 개 선택할 수 있고, 찾기에 입력하면 <b>필터와 무관하게 전체 예정에서</b> 검색합니다. “실적 처리”를 누르면 실제 날짜·금액으로 전환됩니다.</div>
+        <div id="pp-delbar" class="hidden" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fbfbf7">
+          <span id="pp-selinfo" style="font-size:12.5px;font-weight:700">선택 0건</span>
+          <button class="btn ghost sm" id="pp-sel-visible">표시된 건 전체선택</button>
+          <button class="btn ghost sm" id="pp-sel-clear">선택 해제</button>
+          <button class="btn sm" id="pp-del-sel" style="background:var(--expense);border-color:var(--expense);color:#fff">🗑 선택한 계획 삭제</button>
+          <span class="hint" style="margin:0">계획(예정)만 삭제됩니다 — 이미 처리된 <b>실적</b>과 <b>매출 수금 예정</b>은 대상이 아닙니다. 삭제하면 <b>현금흐름·계획대비실적</b>에서 즉시 빠집니다.</span>
+        </div>
         <div id="ppBody"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
@@ -3538,6 +3545,8 @@
     try{
       const d=await fetch(`${session.api}/api/transactions/pending-plans?all=1`,{headers:auth()}).then(r=>r.json());
       ppItems=d.items||[];
+      // 서버에서 사라진(이미 삭제·실적 처리된) 선택은 정리
+      { const live=new Set(ppItems.map(t=>Number(t.id))); [...ppSel].forEach(id=>{if(!live.has(id))ppSel.delete(id);}); }
       renderPpFilterPanel();
       renderPendingPlans();
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
@@ -3599,9 +3608,10 @@
       const b=$('ppBody');
       const cnt=$('pp-count');
       let items=ppFilteredItems();
+      ppMap={};ppItems.forEach(t=>ppMap[t.id]=t);
       if(cnt) cnt.textContent=ppItems.length?('— '+items.length+'건 표시 / 전체 '+ppItems.length+'건'):'';
-      if(!ppItems.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';return;}
-      if(!items.length){b.innerHTML='<div class="hint">'+(ppQuery.trim()?'검색 결과가 없습니다.':'선택한 연·월에 해당하는 예정이 없습니다. (연·월 필터에서 조정)')+'</div>';return;}
+      if(!ppItems.length){b.innerHTML='<div class="hint">처리할 예정 내역이 없습니다.</div>';ppSyncSelUi();return;}
+      if(!items.length){b.innerHTML='<div class="hint">'+(ppQuery.trim()?'검색 결과가 없습니다.':'선택한 연·월에 해당하는 예정이 없습니다. (연·월 필터에서 조정)')+'</div>';ppSyncSelUi();return;}
       if(ppSort.key){
         const k=ppSort.key,dd=ppSort.dir,isNum=!!PP_NUM[k];
         items=items.slice().sort((a,z)=>{
@@ -3616,11 +3626,17 @@
       const parrow=k=>ppSort.key===k?(ppSort.dir===1?' ▲':' ▼'):'';
       const pth=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-ppsort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${parrow(k)}</th>`;
       const srcLabel=(s)=>s==='sales'?'<span class="badge" style="background:#e6f1fb;color:#0c447c">매출</span>':s==='recurring'?'<span class="badge" style="background:#efeee9;color:#6b6b6b">고정비</span>':s==='marketing'?'<span class="badge" style="background:#f1ebf7;color:#7a4ea0">마케팅</span>':'<span class="badge" style="background:#f0ece4;color:#8a6d1a">수동</span>';
-      b.innerHTML=`<table><thead><tr>${pth('date','예정일')}${pth('cust','고객')}${pth('src','출처')}${pth('cat','계정과목')}${pth('memo','메모')}${pth('amt','계획액','num')}<th></th></tr></thead>
+      const canDel=isDirector();
+      const ppCols=6+1+(canDel?1:0);
+      b.innerHTML=`<table><thead><tr>${canDel?'<th style="width:30px"><input type="checkbox" id="pp-selall" style="width:auto" title="표시된 건 전체선택"></th>':''}${pth('date','예정일')}${pth('cust','고객')}${pth('src','출처')}${pth('cat','계정과목')}${pth('memo','메모')}${pth('amt','계획액','num')}<th></th></tr></thead>
         <tbody>${items.map(t=>{
           if(t.source==='manual' && String(t.memo||'').startsWith('[마케팅]')) t.source='marketing';
           const isSales=t.source==='sales';
+          const delOk=canDel&&!isSales&&t.can_delete!==false;
           return `<tr class="${t.overdue?'pp-over':''}" data-id="${t.id}">
+            ${canDel?`<td>${delOk
+              ? `<input type="checkbox" class="pp-sel" data-id="${t.id}" style="width:auto"${ppSel.has(Number(t.id))?' checked':''}>`
+              : '<span class="hint" style="margin:0" title="매출 수금 예정은 삭제할 수 없습니다">—</span>'}</td>`:''}
             <td>${t.plan_date}${t.overdue?' <span class="badge" style="background:#fde2e0;color:#c0392b">경과</span>':''}</td>
             <td>${t.source==='sales' ? (t.customer_name||'') : ''}</td>
             <td>${srcLabel(t.source)}</td>
@@ -3633,13 +3649,94 @@
                     : '<span style="color:var(--muted)">미발급</span>')
                 : '<span style="color:var(--muted)">'+(t.memo||'').replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'').slice(0,30)+'</span>'}</td>
             <td class="num" style="color:${t.direction==='in'?'var(--income)':'var(--expense)'}">${fmt(t.plan_amount!=null?t.plan_amount:t.amount)} ${t.currency}</td>
-            <td>${isSales?'<span class="hint" style="margin:0">매출(반제)에서 처리</span>':`<button class="btn sm pp-do" data-id="${t.id}">실적 처리</button>`}</td>
-          </tr>${isSales?'':`<tr class="pp-form hidden" data-form="${t.id}"><td colspan="7"></td></tr>`}`;
+            <td style="white-space:nowrap">${isSales?'<span class="hint" style="margin:0">매출(반제)에서 처리</span>':`<button class="btn sm pp-do" data-id="${t.id}">실적 처리</button>${delOk?` <button class="btn ghost sm pp-del" data-id="${t.id}" style="border-color:var(--expense);color:var(--expense)" title="이 계획(예정) 라인을 삭제합니다">🗑 삭제</button>`:''}`}</td>
+          </tr>${isSales?'':`<tr class="pp-form hidden" data-form="${t.id}"><td colspan="${ppCols}"></td></tr>`}`;
         }).join('')}</tbody></table>`;
       // 데이터 보관
       ppMap={};ppItems.forEach(t=>ppMap[t.id]=t);
       [...b.querySelectorAll('.pp-do')].forEach(el=>el.onclick=()=>togglePpForm(Number(el.dataset.id)));
+      [...b.querySelectorAll('.pp-del')].forEach(el=>el.onclick=()=>ppDeletePlans([Number(el.dataset.id)]));
+      [...b.querySelectorAll('.pp-sel')].forEach(el=>el.onchange=()=>{
+        const id=Number(el.dataset.id); if(el.checked)ppSel.add(id); else ppSel.delete(id); ppSyncSelUi();
+      });
+      const selAll=$('pp-selall');
+      if(selAll)selAll.onchange=()=>ppSelectVisible(selAll.checked);
       [...b.querySelectorAll('th[data-ppsort]')].forEach(h=>h.onclick=()=>ppHeadClick(h.dataset.ppsort));
+      ppSyncSelUi();
+  }
+
+  // ---- 예정(계획) 라인 삭제 — 디렉터 전용 (fin-0826a) ----
+  // 원칙: 계획(status='plan')만 지운다. 실적은 대상 아님. 매출 수금 예정은 서버에서도 차단(sales_linked).
+  //  · 고정비: 클릭한 그 회차 1건만 삭제 — 규칙은 그대로라 다음 달 회차는 정상 유지되고,
+  //            지운 회차는 자동전개로도 되살아나지 않는다.
+  //  · 삭제 즉시 현금흐름(그래프·달력·워터폴·계획대비실적)에서 빠진다(소프트 삭제).
+  let ppSel=new Set();
+  function ppDeletableVisible(){
+    if(!isDirector())return [];
+    return ppFilteredItems().filter(t=>{
+      const src=(t.source==='manual'&&String(t.memo||'').startsWith('[마케팅]'))?'marketing':t.source;
+      return src!=='sales'&&t.can_delete!==false;
+    });
+  }
+  function ppSelectVisible(on){
+    const vis=ppDeletableVisible().map(t=>Number(t.id));
+    if(on)vis.forEach(id=>ppSel.add(id)); else vis.forEach(id=>ppSel.delete(id));
+    renderPendingPlans();
+  }
+  function ppSyncSelUi(){
+    const bar=$('pp-delbar'); if(!bar)return;
+    bar.classList.toggle('hidden',!isDirector());
+    if(!isDirector())return;
+    // 화면에서 사라진(필터 변경) 선택은 유지하되, 안내는 실제 선택 수 기준
+    const info=$('pp-selinfo');
+    let sum=0,cur=new Set();
+    ppSel.forEach(id=>{const t=ppMap[id];if(t){sum+=Number(t.plan_amount!=null?t.plan_amount:t.amount)||0;cur.add(t.currency);}});
+    if(info)info.textContent=ppSel.size?('선택 '+ppSel.size+'건'+(cur.size===1?' · '+fmt(sum)+' '+[...cur][0]:'')):'선택 0건';
+    const btn=$('pp-del-sel'); if(btn)btn.disabled=!ppSel.size;
+    const vis=ppDeletableVisible().map(t=>Number(t.id));
+    const all=$('pp-selall');
+    if(all)all.checked=vis.length>0&&vis.every(id=>ppSel.has(id));
+  }
+  async function ppDeletePlans(ids){
+    ids=[...new Set((ids||[]).map(Number).filter(n=>n>0))];
+    if(!ids.length){alert('삭제할 예정을 선택하세요.');return;}
+    const rows=ids.map(id=>ppMap[id]).filter(Boolean);
+    const recurN=rows.filter(t=>t.source==='recurring').length;
+    const mktN=rows.filter(t=>String(t.memo||'').startsWith('[마케팅]')).length;
+    const overN=rows.filter(t=>t.overdue).length;
+    const byCur={};rows.forEach(t=>{const c=t.currency||'MXN';byCur[c]=(byCur[c]||0)+(Number(t.plan_amount!=null?t.plan_amount:t.amount)||0);});
+    const sumTxt=Object.keys(byCur).map(c=>fmt(byCur[c])+' '+c).join(' · ');
+    const preview=rows.slice(0,8).map(t=>' · '+String(t.plan_date||'').slice(0,10)+' '+(t.category_name||t.category_code||'')+' '
+      +fmt(t.plan_amount!=null?t.plan_amount:t.amount)+' '+(t.currency||'')
+      +(t.memo?' — '+String(t.memo).replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'').slice(0,26):'')).join('\n');
+    let msg='예정(계획) '+ids.length+'건을 삭제할까요?\n\n'+preview+(rows.length>8?'\n · … 외 '+(rows.length-8)+'건':'')
+      +'\n\n합계 '+sumTxt+(overN?'  (경과 '+overN+'건 포함)':'')
+      +'\n\n삭제 즉시 현금흐름·계획대비실적에서 빠집니다.';
+    if(recurN)msg+='\n※ 고정비 회차 '+recurN+'건 — 이 회차만 삭제되고 규칙과 다음 달 회차는 그대로 유지됩니다. 지운 회차는 자동전개로도 되살아나지 않습니다.';
+    if(mktN)msg+='\n※ 마케팅 지출계획 '+mktN+'건 — 마케팅 계획의 지급 줄은 남고 자금계획(예정 지출)만 사라집니다.';
+    if(!confirm(msg))return;
+    const reason=prompt('삭제 사유를 입력하세요 (감사기록용, 비워도 됩니다):','');
+    if(reason===null)return;
+    try{
+      const res=await fetch(session.api+'/api/transactions/plans/delete',{method:'POST',
+        headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ids,reason:reason.trim()||null})});
+      if(res.status===404){alert('삭제 기능이 아직 배포되지 않았습니다(백엔드 최신 배포 필요).');return;}
+      const d=await res.json();
+      if(!res.ok||d.error){alert('삭제 실패: '+ppDelErr(d.error||res.status));return;}
+      ids.forEach(id=>ppSel.delete(id));
+      const sk=(d.skipped||[]);
+      if(sk.length)alert('삭제 '+d.deleted+'건 완료.\n제외 '+sk.length+'건: '+sk.slice(0,5).map(s=>'#'+s.id+' '+ppDelErr(s.error)).join(' / '));
+      loadPendingPlans();loadAccounts();
+    }catch(e){alert('서버 연결 실패');}
+  }
+  function ppDelErr(e){
+    return e==='sales_linked'?'매출(반제) 연계 수금 예정은 삭제할 수 없습니다 — 매출/수금에서 처리하세요.'
+      :e==='not_plan'?'이미 실적으로 처리된 거래입니다.'
+      :e==='not_found'?'이미 삭제되었거나 찾을 수 없습니다.'
+      :e==='kind_not_deletable'?'이 유형의 거래는 삭제할 수 없습니다.'
+      :e==='ids_required'?'삭제할 예정을 선택하세요.'
+      :e==='too_many_ids'?'한 번에 200건까지만 삭제할 수 있습니다.'
+      :String(e);
   }
   let ppMap={};
   function togglePpForm(id){
@@ -4084,6 +4181,9 @@
   $('pp-this-month').addEventListener('click',()=>{ppSelYears=new Set([ppCurYear]);ppSelMonths=new Set([ppCurMonth]);renderPpFilterPanel();renderPendingPlans();});
   $('pp-all-months').addEventListener('click',()=>{ppSelMonths=new Set(Array.from({length:12},(_,i)=>i+1));renderPpFilterPanel();renderPendingPlans();});
   $('pp-clear-months').addEventListener('click',()=>{ppSelMonths=new Set();renderPpFilterPanel();renderPendingPlans();});
+  $('pp-sel-visible').addEventListener('click',()=>ppSelectVisible(true));
+  $('pp-sel-clear').addEventListener('click',()=>{ppSel=new Set();renderPendingPlans();});
+  $('pp-del-sel').addEventListener('click',()=>ppDeletePlans([...ppSel]));
   $('pp-filter-panel').addEventListener('click',(e)=>{
     const yb=e.target.closest('button[data-ppyear]'), mb=e.target.closest('button[data-ppmonth]');
     if(yb){const y=Number(yb.getAttribute('data-ppyear'));ppSelYears.has(y)?ppSelYears.delete(y):ppSelYears.add(y);}

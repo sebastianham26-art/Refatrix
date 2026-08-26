@@ -1905,6 +1905,66 @@ export default async function financeRoutes(app) {
     return { ok: true, changed, change_count: newCount };
   });
 
+  // ===== 예정(계획) 라인 삭제 — 디렉터 전용 (2026-08-26) =====
+  // 재무 > 거래등록 > 「예정 내역(실적 처리)」에서 경과된 건·앞으로 예정된 건을 라인 단위로 지운다.
+  //  · **소프트 삭제**(deleted_at) — 데이터는 남고 현금흐름·거래목록·예정 내역·계획대비실적에서만 빠진다.
+  //    (loadCashTxns / /api/transactions / pending-plans 전부 deleted_at IS NULL 기준이라 별도 처리 불필요)
+  //  · **고정비 회차**: recurringProjections 의 기존 회차 조회(exRows)는 deleted_at 을 보지 않으므로
+  //    지운 회차는 자동전개로도 되살아나지 않는다(삭제 의도 보존). 규칙 자체는 그대로 두므로
+  //    다음 달 회차는 정상적으로 생성·전개된다 → "반복되는 고정비 중 이 한 줄만" 삭제가 정확히 성립.
+  //  · **마케팅 라인**: marketing_spend_lines.txn_id 링크는 그대로 두고 거래만 지운다.
+  //    마케팅 계획 저장/승인 로직이 txn_deleted 를 보고 건너뛰므로 재생성되지 않는다.
+  //  · **매출(인보이스) 수금 예정**은 삭제 불가(sales_linked) — 반제·미수금 무결성. 매출에서 처리.
+  //  · 실적(actual)은 절대 대상 아님(not_plan) — 집행 이력은 이 경로로 지울 수 없다.
+  //  · 사유는 plan_memo 에 누적 기록 + 감사로그(action='delete', detail.plan_delete=true).
+  app.post('/api/transactions/plans/delete', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const raw = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+    const ids = [...new Set(raw.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    if (!ids.length) return reply.code(400).send({ error: 'ids_required' });
+    if (ids.length > 200) return reply.code(400).send({ error: 'too_many_ids' });
+    const reason = req.body && req.body.reason ? String(req.body.reason).trim().slice(0, 300) : null;
+
+    const rows = (await query(
+      `SELECT id, status, kind, sales_invoice_id, recurring_rule_id, direction, amount, currency,
+              category_code, memo, plan_memo, account_id,
+              to_char(COALESCE(plan_date, txn_date),'YYYY-MM-DD') AS plan_date
+         FROM transactions
+        WHERE id = ANY($1) AND deleted_at IS NULL`, [ids])).rows;
+    const byId = new Map(rows.map((r) => [Number(r.id), r]));
+
+    const targets = []; const skipped = [];
+    for (const id of ids) {
+      const t = byId.get(id);
+      if (!t) { skipped.push({ id, error: 'not_found' }); continue; }
+      if (t.status !== 'plan') { skipped.push({ id, error: 'not_plan' }); continue; }
+      if (t.sales_invoice_id != null) { skipped.push({ id, error: 'sales_linked' }); continue; }
+      if (t.kind !== 'general') { skipped.push({ id, error: 'kind_not_deletable' }); continue; }
+      targets.push(t);
+    }
+
+    if (targets.length) {
+      const today = new Date().toISOString().slice(0, 10);
+      await withTx(async (c) => {
+        for (const t of targets) {
+          const note = `${today}(계획삭제)${reason ? `: ${reason}` : ''}`;
+          const planMemo = t.plan_memo ? `${t.plan_memo} | ${note}` : note;
+          await c.query(
+            `UPDATE transactions SET deleted_at=now(), plan_memo=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`,
+            [planMemo, req.ctx.perm.userId, t.id]);
+        }
+      });
+      for (const t of targets) {
+        await logEvent({ userId: req.ctx.perm.userId, action: 'delete', target: `transaction:${t.id}`,
+          detail: { plan_delete: true, plan_date: t.plan_date, direction: t.direction,
+            amount: Number(t.amount), currency: t.currency, category_code: t.category_code, memo: t.memo,
+            recurring_rule_id: t.recurring_rule_id == null ? null : Number(t.recurring_rule_id),
+            bulk: ids.length > 1, reason } });
+      }
+    }
+    return { ok: true, deleted: targets.length, deleted_ids: targets.map((t) => Number(t.id)),
+      skipped, requested: ids.length };
+  });
+
   // ===== 잔액 보완 스트림 =====
   // 원칙: "현금흐름의 누적잔고 = 잔액을 볼 수 있는 계좌(viewIds)들의 실제 잔액 합".
   // 세부내역(일자 상세·계획대비실적 항목)은 기존대로 detail 권한 기준이지만,
@@ -2883,12 +2943,14 @@ export default async function financeRoutes(app) {
       `SELECT t.id, t.account_id, a.name AS account_name, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date, t.direction,
               t.amount, t.currency, t.fx_rate, t.amount_mxn, t.category_code, cat.name AS category_name,
               to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_amount, t.memo, t.sales_invoice_id, t.recurring_rule_id,
+              t.kind, rr.name AS rule_name,
               si.sat_no AS sat_no, c.name AS customer_name
          FROM transactions t
          LEFT JOIN accounts a ON a.id=t.account_id
          LEFT JOIN categories cat ON cat.code=t.category_code
          LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
          LEFT JOIN customers c ON c.id=si.customer_id
+         LEFT JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
         WHERE t.status='plan' AND t.deleted_at IS NULL${privTxnCond(req.ctx.perm)}${dateCond}
         ORDER BY COALESCE(t.plan_date,t.txn_date) ASC, t.id ASC`,
       params)).rows;
@@ -2897,7 +2959,9 @@ export default async function financeRoutes(app) {
       const overdue = pdate < today;
       return { ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
         plan_amount: t.plan_amount == null ? null : Number(t.plan_amount), plan_date: pdate, overdue,
-        source: t.sales_invoice_id ? 'sales' : (t.recurring_rule_id ? 'recurring' : 'manual') };
+        source: t.sales_invoice_id ? 'sales' : (t.recurring_rule_id ? 'recurring' : 'manual'),
+        // 계획 삭제 가능 여부(디렉터 전용 UI 판단용) — 매출 연계·특수 kind 는 불가
+        can_delete: t.sales_invoice_id == null && t.kind === 'general' };
     });
     return { month, all: wantAll, today, count: items.length, items };
   });

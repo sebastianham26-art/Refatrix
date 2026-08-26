@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260708a</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260826a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -65,6 +65,7 @@
   .srchItem{padding:8px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #f2efe8}
   .srchItem:hover{background:#f4f7f5}
   .secttl{margin-top:16px;font-weight:800;color:var(--brand);font-size:13px}
+  .delchip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fde2e0;color:#c0392b}
   .paidchip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--income-bg);color:var(--income)}
   .lockrow input,.lockrow select{background:#f4f2ec;color:#7c776c}
 </style>
@@ -229,7 +230,7 @@
       title:d.plan.title,category:d.plan.category,event_date:d.plan.event_date,purpose:d.plan.purpose,
       created_by_name:d.plan.created_by_name,
       items:(d.items||[]).map(it=>({id:it.id,name:it.name||'',memo:it.memo||'',
-        lines:(it.lines||[]).map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount}))})),
+        lines:(it.lines||[]).map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount,txn_deleted:!!l.txn_deleted}))})),
       targets:(d.targets||[]).map(t=>({customer_id:t.customer_id,is_general:t.is_general,code:t.code,name:t.name})),
       files:d.files||[]};
     if(!cur.items.length)cur.items=[blankItem()];
@@ -238,13 +239,13 @@
     cur.revision=null; cur._rev=null; cur._snap='orig';
     if(d.revision&&d.revision.payload){
       cur.revision={by_name:d.revision.by_name,at:d.revision.at};
-      const paidMap=new Map(); (d.lines||[]).forEach(l=>{if(l.id!=null)paidMap.set(Number(l.id),{paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount});});
+      const paidMap=new Map(); (d.lines||[]).forEach(l=>{if(l.id!=null)paidMap.set(Number(l.id),{paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount,txn_deleted:!!l.txn_deleted});});
       const rp=d.revision.payload;
       cur._rev={title:rp.title||'',category:rp.category||'',event_date:rp.event_date||'',purpose:rp.purpose||'',
         items:(rp.items||[]).map(it=>({id:it.id!=null?it.id:null,name:it.name||'',memo:it.memo||'',
           lines:(it.lines||[]).map(l=>{const pd=l.id!=null?paidMap.get(Number(l.id)):null;
             return {id:l.id!=null?l.id:null,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',
-              paid:pd?pd.paid:false,paid_date:pd?pd.paid_date:null,paid_amount:pd?pd.paid_amount:null};})})),
+              paid:pd?pd.paid:false,paid_date:pd?pd.paid_date:null,paid_amount:pd?pd.paid_amount:null,txn_deleted:pd?!!pd.txn_deleted:false};})})),
         targets:(rp.targets||[]).map(t=>({customer_id:t.customer_id,is_general:!!t.is_general,code:t.code,name:t.name}))};
       // 수정 가능한 사용자(담당자·디렉터)에게는 수정안을 기본으로 표시
       if(isDir()||cur.created_by===me()) cur._snap='rev';
@@ -353,7 +354,7 @@
           +'<input type="date" data-f="due_date" value="'+esc(l.due_date)+'" '+(lock?'disabled':'')+'>'
           +'<input type="number" step="0.01" min="0" data-f="amount" value="'+esc(l.amount)+'" style="text-align:right" '+(lock?'disabled':'')+'>'
           +'<input data-f="memo" value="'+esc(l.memo)+'" maxlength="300" placeholder="명목·메모" '+(lock?'disabled':'')+'>'
-          +'<span>'+(l.paid?'<span class="paidchip">지급완료 '+esc(l.paid_date||'')+'</span>':(ed?'<button class="btn warn sm" data-delln="'+i+','+j+'">✕</button>':''))+'</span>'
+          +'<span>'+(l.paid?'<span class="paidchip">지급완료 '+esc(l.paid_date||'')+'</span>':(l.txn_deleted?'<span class="delchip" title="재무 > 거래등록에서 이 예정 지출(자금계획)이 삭제되었습니다. 저장해도 다시 만들어지지 않습니다.">자금계획 삭제됨</span>':(ed?'<button class="btn warn sm" data-delln="'+i+','+j+'">✕</button>':'')))+'</span>'
           +'</div>';
       }).join('');
       return '<div class="itemcard" data-item="'+i+'">'
