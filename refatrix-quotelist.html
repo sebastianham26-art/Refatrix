@@ -158,7 +158,7 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
-  const QL_BUILD='reval-0826a';           // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  const QL_BUILD='rack-0826c';         // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
   try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
@@ -1042,9 +1042,15 @@
     if((pv.shortage||[]).length) h+='<div class="pvseg"><b>② 부족 → 가용분만 매출 + 부족분 기록</b><br>'+pv.shortage.map(x=>esc(x.ctr_code)+' 요청 '+x.qty+' / 출고 '+x.fulfill+' / <span style="color:var(--expense)">부족 '+x.short+'</span>').join('<br>')+'</div>';
     if((pv.new_dev||[]).length) h+='<div class="pvseg"><b>③ 미등록 → 개발요청 생성</b><br>'+pv.new_dev.map(x=>esc(x.input_code||'(코드없음)')+' ×'+x.qty).join('<br>')+'</div>';
     if(!(pv.in_stock||[]).length && !(pv.shortage||[]).length && !(pv.new_dev||[]).length) h+='<div class="hint">전환할 품목이 없습니다.</div>';
+    // 랙 미지정 경고 — 지시서를 뽑기 전에 영업지원이 먼저 알 수 있게(제품마스터에서 랙을 넣으면 사라진다).
+    const noRackList=(pv.in_stock||[]).filter(x=>!String(x.rack_location||'').trim()).map(x=>x.ctr_code||'');
     if((pv.in_stock||[]).length) h+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'
       +'<button class="btn" type="button" onclick="printPickList()">📦 포장작업지시서 출력 (PDF)</button> '
-      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다.</span></div>';
+      +'<span class="hint">① 즉시 매출 '+inSku+'개 SKU의 창고 피킹·포장 지시서를 인쇄/PDF로 만듭니다. (랙 위치 순 정렬)</span>'
+      +(noRackList.length?('<div class="hint" style="color:var(--expense);margin-top:6px">⚠ 랙 위치가 없는 SKU '+noRackList.length+'개 — 지시서에 <b>SIN UBICACIÓN</b> 으로 나갑니다: '
+        +esc(noRackList.slice(0,8).join(', '))+(noRackList.length>8?' 외 '+(noRackList.length-8)+'개':'')
+        +' · 제품 화면에서 랙을 등록하세요.</div>'):'')
+      +'</div>';
     $('cvPreview').innerHTML=h;
   }
   function closeConvert(){ $('cvModal').style.display='none'; cvId=null; cvPreviewData=null; cvPrinted=false; cvHasDoc=false; cvDocMeta=null; }
@@ -1053,7 +1059,18 @@
   async function printPickList(){
     const pv=cvPreviewData;
     if(!pv || !(pv.in_stock||[]).length){ alert('즉시 매출 가능한 SKU가 없습니다.'); return; }
-    const items=(pv.in_stock||[]).slice().sort((a,b)=>String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en',{numeric:true}));
+    // 랙 위치 순 정렬 — 작업자가 창고를 한 방향으로 돌며 피킹하도록.
+    //   자연정렬(A-1-9 < A-1-10 · 존 지정 화면 rackSortKey 와 같은 규칙) · 랙 미지정 SKU 는 맨 뒤 · 같은 랙이면 SKU 코드순.
+    const rackOf=(x)=>String((x&&(x.rack_location||x.rack||x.location))||'').trim();
+    const rackKey=(s)=>s.toUpperCase().replace(/\d+/g,n=>n.padStart(6,'0'));
+    const items=(pv.in_stock||[]).slice().sort((a,b)=>{
+      const ra=rackOf(a), rb=rackOf(b);
+      if(!ra!==!rb) return ra?-1:1;
+      const ka=rackKey(ra), kb=rackKey(rb);
+      if(ka!==kb) return ka<kb?-1:1;
+      return String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en',{numeric:true});
+    });
+    const noRackCount=items.filter(x=>!rackOf(x)).length;   // 랙 미지정 SKU 수 — 상단 경고 카드에 표시
     const row=qRowsById[cvId]||{};
     const co=await getCompany();
 
@@ -1111,6 +1128,7 @@
         +'<div class="pk-cell big accent"><span class="k">No. de SKU</span><span class="v">'+skuCount+'</span></div>'
         +'<div class="pk-cell big accent"><span class="k">Piezas totales</span><span class="v">'+qfmt(totalQty)+'</span></div>'
         +'<div class="pk-cell big" style="background:#fdeee9;border-color:#e0a89a"><span class="k">Límite de empaque (6 h hábiles · 07:30–17:00)</span><span class="v" style="color:#c0392b">'+dueStr+'</span></div>'
+        +(noRackCount?'<div class="pk-cell big" style="background:#fdeee9;border-color:#e0a89a"><span class="k">SKU sin ubicación</span><span class="v" style="color:#c0392b">'+noRackCount+'</span></div>':'')
       +'</div>';
 
     const colHead='<thead><tr>'
@@ -1137,7 +1155,9 @@
       let rows='';
       slice.forEach((x,i)=>{
         const seq=p*PER_PAGE+i+1;
-        const rack=esc(x.rack_location||x.rack||x.location||'');   // 지금은 빈칸 → 제품마스터 추가 시 자동 표시
+        // 랙 위치: 제품마스터(products.rack_location) → convert-preview 가 내려준다. 미지정이면 빨간 경고.
+        const rk=rackOf(x);
+        const rack=rk?esc(rk):'<span class="norack">⚠ SIN UBICACIÓN</span>';
         rows+='<tr>'
           +'<td class="c-no">'+seq+'</td>'
           +'<td class="c-sku">'+esc(x.ctr_code||'—')+'</td>'
@@ -1176,10 +1196,13 @@
       +'.pk-tbl th{background:#143D34;color:#fff;font-weight:600;font-size:11px}'
       +'.pk-tbl .c-no{width:6%;text-align:center}'
       +'.pk-tbl .c-sku{width:16%;text-align:left;word-break:break-word;font-weight:700}'
-      +'.pk-tbl .c-syd{width:16%;text-align:left;word-break:break-word;color:#555}'
+      +'.pk-tbl .c-syd{width:16%;text-align:left;word-break:break-word}'
+      +'.pk-tbl td.c-syd{color:#555}'
       +'.pk-tbl .c-name{width:28%;text-align:left;word-break:break-word}'
       +'.pk-tbl .c-qty{width:10%;text-align:right;font-weight:700}'
-      +'.pk-tbl .c-rack{width:14%;text-align:center;color:#999}'
+      +'.pk-tbl .c-rack{width:14%;text-align:center}'
+      +'.pk-tbl td.c-rack{color:#1c1b19;font-weight:700;letter-spacing:.3px}'
+      +'.pk-tbl td.c-rack .norack{display:inline-block;color:#c0392b;font-weight:700;font-size:9px;letter-spacing:0;line-height:1.2}'
       +'.pk-tbl .c-chk{width:10%;text-align:center}'
       +'.chk{display:inline-block;width:5mm;height:5mm;border:1.5px solid #333;border-radius:1px}'
       +'.pk-foot{margin-top:auto;padding-top:8px;border-top:1.5px solid #143D34}'

@@ -821,13 +821,16 @@ export default async function quoteRoutes(app) {
     for (const l of lines) {
       const qty = Number(l.qty) || 0;
       if (!l.product_id) { newDev.push({ input_code: l.input_code, qty }); continue; }
-      const p = (await query(`SELECT stock_qty FROM products WHERE id=$1`, [l.product_id])).rows[0];
+      // rack_location = 제품마스터의 창고 랙 위치(0070). 포장작업지시서 'Ubicación rack' 열의 원천.
+      //   미지정(NULL/공백)이면 '' 로 내려 프런트가 SIN UBICACIÓN 으로 표시한다.
+      const p = (await query(`SELECT stock_qty, rack_location FROM products WHERE id=$1`, [l.product_id])).rows[0];
       const physical = p && p.stock_qty != null ? Number(p.stock_qty) : 0;
+      const rack = (p && p.rack_location != null ? String(p.rack_location) : '').trim();
       const fulfill = Math.max(0, Math.min(Number(l.reserved_qty) || 0, physical));   // 예약 확보분(현재고로 캡)
       const short = qty - fulfill;
-      if (short <= 0) inStock.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill });
+      if (short <= 0) inStock.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, rack_location: rack });
       else {
-        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short });
+        shortage.push({ ctr_code: l.ctr_code, product_name: l.product_name, qty, avail: fulfill, fulfill, short, rack_location: rack });
       }
     }
     return {
