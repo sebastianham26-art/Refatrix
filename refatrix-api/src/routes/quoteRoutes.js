@@ -1084,6 +1084,67 @@ export default async function quoteRoutes(app) {
     };
   });
 
+  // ============ 재고 재검증 (수동 재예약) ============
+  // 왜 필요한가: `reserved_qty` 는 견적 저장 시점의 스냅샷이다. 이후 다른 견적이 삭제·만료·전환되어
+  // 재고가 풀려도 이 견적은 편집(재저장)·복제 전까지 계속 '재고부족'으로 남는다.
+  // (같은 고객의 옛 견적이 재고를 선점하고 있던 사례 — 2026-08-26 디렉터 보고)
+  // 이 엔드포인트는 **누르는 시점의 가용재고**로 예약을 다시 배분해 즉시/부족 분류를 갱신한다.
+  //  · 저장(PUT)·복제와 **동일한 `assignReservations`** 를 쓰므로 선착순·동시성(FOR UPDATE) 보장이 같다.
+  //  · **만료시각(`reserve_expires_at`)은 건드리지 않는다** — 생성 기준 고정(무한 잠금 방지) 원칙 유지.
+  //  · 가격·수량·라인은 손대지 않는다(재고 배분만). 스냅샷 `stock_flag` 도 보존(오더퍼널 추이 연속성).
+  app.post('/api/quotes/:id/revalidate-stock', { preHandler: [authGuard, requirePageEditAny(['quote', 'sales'])] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const q = (await query(
+      `SELECT id, quote_no, status, reserve_expires_at, packing_printed_at
+         FROM quotes WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!q) return reply.code(404).send({ error: 'not_found' });
+    if (q.status !== 'draft' && q.status !== 'confirmed')
+      return reply.code(409).send({ error: 'not_open', note: '작성중·확정 상태의 견적만 재고를 재검증할 수 있습니다.' });
+    if (q.packing_printed_at)
+      return reply.code(409).send({ error: 'packing_locked', note: '포장작업지시서가 출력되어 재고가 확정된 견적입니다. 재검증 대상이 아닙니다.' });
+    if (q.reserve_expires_at && new Date(q.reserve_expires_at) <= new Date())
+      return reply.code(409).send({ error: 'quote_expired', note: '예약 24시간이 지나 만료된 견적입니다. 「복제해서 새로 진행」을 사용하세요.' });
+
+    const LINE_SQL = `SELECT ql.id, ql.ctr_code, ql.product_name, ql.qty, ql.reserved_qty,
+                             COALESCE(p.stock_qty,0) AS cur_stock
+                        FROM quote_lines ql LEFT JOIN products p ON p.id=ql.product_id
+                       WHERE ql.quote_id=$1 AND ql.product_id IS NOT NULL
+                       ORDER BY ql.line_no, ql.id`;
+    const before = (await query(LINE_SQL, [id])).rows;
+    await withTx(async (c) => { await assignReservations(c, id); });
+    const after = (await query(LINE_SQL, [id])).rows;
+
+    const wasBy = new Map(before.map((l) => [Number(l.id), Number(l.reserved_qty) || 0]));
+    const flagOf = (resv, qty) => (resv >= qty ? 'ok' : 'low_stock');
+    const changes = [];
+    let okLines = 0; let shortLines = 0;
+    for (const l of after) {
+      const qty = Number(l.qty) || 0;
+      const now = Number(l.reserved_qty) || 0;
+      const was = wasBy.has(Number(l.id)) ? wasBy.get(Number(l.id)) : 0;
+      if (now >= qty) okLines++; else shortLines++;
+      if (now === was) continue;
+      changes.push({
+        line_id: Number(l.id), ctr_code: l.ctr_code, product_name: l.product_name,
+        qty, before: was, after: now,
+        before_flag: flagOf(was, qty), after_flag: flagOf(now, qty),
+        cur_stock: Number(l.cur_stock) || 0,
+      });
+    }
+    const upgraded = changes.filter((x) => x.before_flag !== 'ok' && x.after_flag === 'ok').length;
+    const downgraded = changes.filter((x) => x.before_flag === 'ok' && x.after_flag !== 'ok').length;
+    if (changes.length) await query(`UPDATE quotes SET updated_at=now() WHERE id=$1`, [id]);
+    await logEvent({
+      userId: req.ctx.perm.userId, action: 'update', target: `quote:${id}`,
+      detail: { revalidate_stock: true, changed: changes.length, upgraded, downgraded },
+    });
+    return {
+      ok: true, quote_no: q.quote_no,
+      changed: changes.length, upgraded, downgraded,
+      ok_lines: okLines, short_lines: shortLines, changes,
+    };
+  });
+
   // 견적 복제 → 새 draft(현재고 기준 재평가 + 새 24h 예약). 만료 견적 회생용.
   //  · 부족분 정보는 복제 시점 현재고/타 예약으로 재산정(과거 스냅샷 복사 아님).
   app.post('/api/quotes/:id/clone', { preHandler: [authGuard, requirePageEditAny(['quote','sales'])] }, async (req, reply) => {

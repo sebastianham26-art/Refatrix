@@ -158,6 +158,8 @@
 
 <script src="refatrix-tablesort.js?v=ts20260825"></script>
 <script>
+  const QL_BUILD='reval-0826a';           // 배포 확인용 — 콘솔에 찍힌 값으로 최신 여부 판별
+  try{ console.log('[quotelist] build '+QL_BUILD); }catch(e){}
   let session={token:null,user:null,api:''};
   let isDirector=false;
   let filter='all', counts={open:0,guest_pending:0};
@@ -368,6 +370,55 @@
     const txt=h>0?(h+'시간'+(m>0?(' '+m+'분'):'')):(m+'분');
     return '<span class="'+cls+'" title="이 견적의 재고 예약(블럭)이 풀리기까지 남은 시간">⏳ '+txt+'</span>';
   }
+  // ===== 재고 재검증 — 클릭 시점의 가용재고로 예약을 다시 배분해 즉시/부족을 갱신 =====
+  //  · 다른 견적이 삭제·만료·전환되어 재고가 풀렸는데도 이 견적이 계속 '부족'으로 남는 경우를 푼다.
+  //  · 예약 만료시각(24h)은 연장되지 않는다 — 생성 기준 고정(무한 잠금 방지).
+  let dtReval=null;   // 재검증 결과 배너 {ok, html} — 상세를 다시 그려도 유지, 상세를 새로 열면 초기화
+  function revalSummaryHtml(d){
+    const up=d.upgraded||0, down=d.downgraded||0, ch=d.changed||0;
+    let head;
+    if(ch===0) head='🔄 <b>재검증 완료 — 변동 없음</b> <span class="hint">(다른 견적이 여전히 재고를 선점 중이거나 실물재고가 부족합니다)</span>';
+    else if(up>0&&down===0) head='✅ <b>재검증 완료 — 재고부족 '+up+' SKU 가 즉시매출가능으로 회복</b>';
+    else if(down>0&&up===0) head='⚠️ <b>재검증 완료 — 즉시매출가능 '+down+' SKU 가 재고부족으로 하향</b> <span class="hint">(그 사이 재고가 줄었거나 다른 견적이 선점)</span>';
+    else head='🔄 <b>재검증 완료 — '+ch+' SKU 확보량 변경</b>'+(up?(' · 부족→즉시 '+up):'')+(down?(' · 즉시→부족 '+down):'');
+    let rows='';
+    (d.changes||[]).forEach(c=>{
+      const arrow=(c.before_flag===c.after_flag)
+        ? '<span class="hint">확보량 변경</span>'
+        : (flagLbl[c.before_flag]||'')+' → '+(flagLbl[c.after_flag]||'');
+      rows+='<div style="margin-top:3px;font-size:12px"><b>'+esc(c.ctr_code||'')+'</b> '+esc(c.product_name||'')
+        +' <span class="hint">확보 '+fmtq(c.before)+' → '+fmtq(c.after)+' / 요청 '+fmtq(c.qty)+'</span> '+arrow+'</div>';
+    });
+    const bg=(up>0&&down===0)?'#e9f5ef':((down>0)?'#fdf3e6':'#f4f2ec');
+    const bd=(up>0&&down===0)?'#bfe3cd':((down>0)?'#e7cfa6':'var(--line)');
+    return '<div style="background:'+bg+';border:1px solid '+bd+';border-radius:10px;padding:9px 12px;font-size:12.5px">'
+      +head+rows
+      +'<div class="hint" style="margin-top:5px;font-size:11px">※ 예약 만료시각(24시간)은 연장되지 않습니다. 가격·수량은 변경되지 않습니다.</div>'
+      +'</div>';
+  }
+  async function revalidateStock(){
+    if(!dtId) return;
+    const btn=$('revalBtn'); const old=btn?btn.innerHTML:'';
+    if(btn){ btn.disabled=true; btn.innerHTML='재검증 중…'; }
+    const id=dtId;
+    try{
+      const res=await fetch(session.api+'/api/quotes/'+id+'/revalidate-stock',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){
+        dtReval={ok:false,html:'<div style="background:#fdeeea;border:1px solid #e7b6af;border-radius:10px;padding:9px 12px;font-size:12.5px">❌ <b>재검증 실패</b> — '+esc(d.note||d.error||res.status)+'</div>'};
+      }else{
+        dtReval={ok:true,html:revalSummaryHtml(d)};
+      }
+      if(dtId===id){
+        try{ dtData=await fetch(session.api+'/api/quotes/'+id,{headers:auth()}).then(r=>r.json()); }catch(e){}
+        renderDetail();
+      }
+      load().catch(()=>{});    // 목록의 수주현황 컬럼·집계 배너도 갱신
+    }catch(e){
+      dtReval={ok:false,html:'<div style="background:#fdeeea;border:1px solid #e7b6af;border-radius:10px;padding:9px 12px;font-size:12.5px">❌ <b>재검증 실패</b> — 통신 오류</div>'};
+      if(dtId===id) renderDetail(); else if(btn){ btn.disabled=false; btn.innerHTML=old; }
+    }
+  }
   async function cloneQuote(id){
     if(!confirm('이 견적을 복제해 새 견적(24시간 예약)으로 진행할까요?\n· 부족/재고 분류는 현재 재고 기준으로 다시 계산됩니다.')) return;
     try{
@@ -456,7 +507,7 @@
   }
   const stLblFull={draft:'작성중',confirmed:'확정',converted:'매출전환',cancelled:'취소',delete_pending:'삭제 승인대기',pricelist:'가용재고 및 견적',expired:'만료(미확정)'};
   async function openDetail(id){
-    dtId=id; dtEdit=false; dtSort={key:'ctr',dir:'asc'};
+    dtId=id; dtEdit=false; dtSort={key:'ctr',dir:'asc'}; dtReval=null;
     $('dtBody').innerHTML='<div class="hint">불러오는 중…</div>';
     $('dtModal').style.display='flex';
     try{ dtData=await fetch(session.api+'/api/quotes/'+id,{headers:auth()}).then(r=>r.json()); renderDetail(); }
@@ -719,6 +770,10 @@
     actions+='<button class="btn" onclick="printQuotePdf()">🧾 견적서 출력 (PDF)</button>';
     actions+='<button class="btn ghost" onclick="downloadStockExcel()" title="재고분(가용재고>0) 항목을 엑셀로 다운로드 · 선택한 열 포함">📥 엑셀 (재고분)</button>';
     if(editable){
+      // 재고 재검증 — 지금 이 순간의 가용재고로 즉시/부족을 다시 판정(포장지시서 출력분은 재고 확정이라 제외)
+      if(!q.packing_printed_at){
+        actions+='<button class="btn" id="revalBtn" onclick="revalidateStock()" title="다른 견적이 삭제·만료·전환되어 재고가 풀렸는지 지금 다시 확인해 즉시매출가능/재고부족을 갱신합니다. 가격·수량·만료시각은 바뀌지 않습니다.">🔄 재고 재검증</button>';
+      }
       actions+='<button class="btn" onclick="startEdit()">✎ SKU·수량 편집</button>';
       actions+='<button class="btn ghost" style="color:var(--expense);border-color:#e7b6af" onclick="askDelete()">🗑 삭제 요청</button>';
     } else if(q.status==='delete_pending'){
@@ -781,7 +836,8 @@
     });
     table+='</tbody></table></div>';
 
-    $('dtBody').innerHTML = hint + actions + '<div id="delForm" style="margin:0 0 10px"></div>' + summary + table;
+    const revalBox = dtReval ? ('<div id="revalBox" style="margin:0 0 10px">'+dtReval.html+'</div>') : '';
+    $('dtBody').innerHTML = hint + actions + '<div id="delForm" style="margin:0 0 10px"></div>' + revalBox + summary + table;
   }
   function startEdit(){ dtEdit=true; renderDetail(); }
   function renderEdit(){
