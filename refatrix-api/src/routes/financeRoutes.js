@@ -385,10 +385,17 @@ export default async function financeRoutes(app) {
     const q = req.query || {};
     const cond = ['t.deleted_at IS NULL']; const args = [];
     // 비디렉터: 거래내역 열람 권한(can_detail) 있는 계좌의 거래만. "잔액만" 계좌는 거래내역 숨김.
+    // ⚠ 계좌미지정(NULL) 거래 = 회사 공통 예정(마케팅 지출계획 · 매출 수금예정 AR)은 계좌 권한과 무관하게 포함.
+    //   (2026-08-26) 기존엔 `= ANY(allow)` 라 NULL 이 통째로 빠져, 비디렉터 거래목록에서
+    //   **마케팅 지출계획이 아예 안 보이고 고정비만 보이던** 문제가 있었다.
+    //   loadCashTxns(현금흐름)·pending-plans(예정 내역)는 이미 NULL 을 포함하므로 이걸로 세 화면 기준이 일치한다.
     const allow = allowedDetailAccountIds(req.ctx.perm);
     if (allow !== null) {
-      if (allow.length === 0) return { items: [] };
-      args.push(allow); cond.push(`t.account_id = ANY($${args.length})`);
+      if (allow.length === 0) {
+        cond.push('t.account_id IS NULL');
+      } else {
+        args.push(allow); cond.push(`(t.account_id IS NULL OR t.account_id = ANY($${args.length}))`);
+      }
     }
     // 현금·불공제 세부 차단(디렉터 포함): 해당 계좌 거래는 목록에서 숨김.
     const block = blockedDetailAccountIds(req.ctx.perm);
@@ -397,7 +404,9 @@ export default async function financeRoutes(app) {
     if (req.ctx.perm.role !== 'director') cond.push('t.is_private=false');
     if (q.status) { args.push(q.status); cond.push(`t.status=$${args.length}`); }
     if (q.direction) { args.push(q.direction); cond.push(`t.direction=$${args.length}`); }
-    if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
+    // account_id=none → 계좌미지정 거래만(마케팅 지출계획·매출 수금예정 등 회사 공통 예정 보기)
+    if (q.account_id === 'none') cond.push('t.account_id IS NULL');
+    else if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
     if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
     const rows = (await query(
@@ -421,6 +430,10 @@ export default async function financeRoutes(app) {
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       freight_alloc_n: Number(t.freight_alloc_n || 0),
+      // 출처 — 예정 내역(pending-plans)과 같은 기준. 마케팅은 메모 접두사가 규약(0125).
+      source: t.sales_invoice_id ? 'sales'
+        : (t.recurring_rule_id ? 'recurring'
+          : (String(t.memo || '').startsWith('[마케팅]') ? 'marketing' : 'manual')),
       editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
   });
 

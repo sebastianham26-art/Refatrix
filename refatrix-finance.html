@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0826a</title>
+<title>Refatrix ERP · 재무 · build fin-0826b</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -913,7 +913,8 @@
       $('t-acc').innerHTML='<option value="">(미지정)</option>'+accounts.filter(a=>!a.disabled).map(a=>`<option value="${a.id}">${a.name} (${a.currency})</option>`).join('');
       // 거래목록 계좌 필터 드롭다운
       const facc=$('f-acc');const cur=facc.value;
-      facc.innerHTML='<option value="">전체 계좌</option>'+accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})${a.disabled?' — 안씀':''}</option>`).join('');
+      facc.innerHTML='<option value="">전체 계좌</option><option value="none">(계좌 미지정) — 마케팅 지출계획·매출 수금예정</option>'
+        +accounts.map(a=>`<option value="${a.id}">${a.name} (${a.currency})${a.disabled?' — 안씀':''}</option>`).join('');
       facc.value=cur;
       // 계좌 행 클릭 → 그 계좌의 거래내역으로 (단, '잔액만' 계좌는 세부 비공개라 차단)
       [...b.querySelectorAll('.acc-row')].forEach(row=>row.onclick=()=>{
@@ -1304,7 +1305,9 @@
       let pin=0,pout=0,ain=0,aout=0;
       items.forEach(t=>{const mxn=t.currency==='USD'&&t.status==='plan'?t.amount*(fxRate||t.fx_rate):t.amount_mxn;
         if(t.status==='plan'){t.direction==='in'?pin+=mxn:pout+=mxn;}else{t.direction==='in'?ain+=mxn:aout+=mxn;}});
-      const accName=$('f-acc').value?(accounts.find(a=>String(a.id)===$('f-acc').value)||{}).name:'전체 계좌';
+      const accSel=$('f-acc').value;
+      const accName=!accSel?'전체 계좌':(accSel==='none'?'계좌 미지정 (마케팅·수금 계획)'
+        :((accounts.find(a=>String(a.id)===accSel)||{}).name||'선택 계좌'));
       $('txnSummary').innerHTML=`<b>${accName}</b> · 실적 수입 <span style="color:var(--income)">${fmt(ain)}</span> / 지출 <span style="color:var(--expense)">${fmt(aout)}</span> · 예정 수입 <span style="color:var(--income)">${fmt(pin)}</span> / 지출 <span style="color:var(--expense)">${fmt(pout)}</span> (MXN)`;
       if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';return;}
       txnMap={};items.forEach(t=>txnMap[t.id]=t);
@@ -1320,6 +1323,7 @@
       case 'date': return String(t.txn_date).slice(0,10);
       case 'dir': return t.direction==='in'?'수입':'지출';
       case 'acc': return t.account_name||'';
+      case 'src': return txnSrcLabel(t);
       case 'cat': return t.category_code?String(t.category_code):'';
       case 'amt': return Math.abs(t.currency==='USD'&&t.status==='plan'?t.amount*(fxRate||t.fx_rate):t.amount_mxn)||0;
       case 'status': return t.status==='actual'?'실제':'예정';
@@ -1328,6 +1332,27 @@
       case 'rcpt': return t.receipt_no||'';
       default: return '';
     }
+  }
+  // 거래목록 「출처」 — 예정 내역과 같은 기준(백엔드 source, 구백엔드면 메모·링크로 보완).
+  //  고정비만이 아니라 마케팅 지출계획·매출 수금예정·수동 등록분을 한눈에 구분하기 위한 열.
+  function txnSrcOf(t){
+    if(t.source)return t.source;
+    if(t.sales_invoice_id)return 'sales';
+    if(t.recurring_rule_id)return 'recurring';
+    if(String(t.memo||'').startsWith('[마케팅]'))return 'marketing';
+    return 'manual';
+  }
+  const TXN_SRC_TXT={sales:'매출',recurring:'고정비',marketing:'마케팅',manual:'수동'};
+  function txnSrcLabel(t){ return TXN_SRC_TXT[txnSrcOf(t)]||'수동'; }
+  function txnSrcBadge(t){
+    const s=txnSrcOf(t);
+    const st=s==='sales'?'background:#e6f1fb;color:#0c447c'
+      :s==='recurring'?'background:#efeee9;color:#6b6b6b'
+      :s==='marketing'?'background:#f1ebf7;color:#7a4ea0'
+      :'background:#f0ece4;color:#8a6d1a';
+    const tip=s==='marketing'?'마케팅 지출계획에서 온 예정 지출':s==='recurring'?'고정비 규칙에서 생성된 회차'
+      :s==='sales'?'매출 인보이스 수금 예정':'거래등록에서 직접 넣은 건';
+    return '<span class="badge" style="'+st+'" title="'+tip+'">'+(TXN_SRC_TXT[s]||'수동')+'</span>';
   }
   const TXN_NUM_COLS={amt:1}; // 숫자 열: 첫 클릭 내림차순
   function txnHeadClick(key){
@@ -1353,8 +1378,8 @@
     }
     const arrow=k=>txnSort.key===k?(txnSort.dir===1?' ▲':' ▼'):'';
     const th=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-sort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${arrow(k)}</th>`;
-      b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색 · 열 제목 클릭으로 정렬</div>
-        <table><thead><tr>${th('date','일자')}${th('dir','구분')}${th('acc','계좌')}${th('cat','계정과목')}${th('amt','금액 (MXN)','num')}${th('status','상태')}${th('cust','고객명')}${th('sat','SAT 번호')}${th('rcpt','영수증')}</tr></thead>
+      b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색 · 열 제목 클릭으로 정렬. <b>출처</b> 열로 고정비·<b>마케팅 지출계획</b>·매출 수금예정·수동 등록을 구분합니다 — 마케팅·수금 계획은 계좌가 없어(<b>—</b>) 계좌 필터의 <b>(계좌 미지정)</b>으로 모아 볼 수 있습니다.</div>
+        <table><thead><tr>${th('date','일자')}${th('dir','구분')}${th('acc','계좌')}${th('src','출처')}${th('cat','계정과목')}${th('amt','금액 (MXN)','num')}${th('status','상태')}${th('cust','고객명')}${th('sat','SAT 번호')}${th('rcpt','영수증')}</tr></thead>
         <tbody>${items.map(t=>{
           const usd=t.currency==='USD';
           const amtColor=t.direction==='in'?'var(--income)':'var(--expense)';
@@ -1373,7 +1398,8 @@
           return `<tr class="txn-row" data-id="${t.id}" style="cursor:pointer;${bg}">
             <td>${String(t.txn_date).slice(0,10)}</td>
             <td>${t.direction==='in'?'<span class="badge" style="background:#e7f3ee;color:var(--income)">수입</span>':'<span class="badge" style="background:#fde0db;color:var(--expense)">지출</span>'}</td>
-            <td>${t.account_name||'—'}</td>
+            <td>${t.account_name||'<span class="hint" style="margin:0" title="계좌 미지정 — 회사 공통 계획">—</span>'}</td>
+            <td>${txnSrcBadge(t)}</td>
             <td>${t.category_code?t.category_code+' · '+(t.category_name||''):'—'}</td>
             <td class="num">${amtCell}</td>
             <td>${t.status==='actual'?'실제':'예정'}${t.sales_invoice_id?' · <span class="badge" style="background:#e6f1fb;color:#0c447c">매출#'+t.sales_invoice_id+'</span>':''} ${chg} ${editBadge} ${planBadge} ${cashBadge}</td>
@@ -1387,7 +1413,7 @@
                 : (t.memo||'')}</td>
             <td style="font-family:monospace;font-size:12px">${t.receipt_no||''}</td>
           </tr>
-          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="9" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
+          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="10" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
         const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
         if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));appendFreightAlloc(Number(id),det.querySelector('.txn-det-body'));}
