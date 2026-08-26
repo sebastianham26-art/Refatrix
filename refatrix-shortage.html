@@ -45,6 +45,8 @@
   .tabs+.card{margin-top:0;border-top-left-radius:0}
   .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800}
   .pill.ready{background:#fdf3d7;color:#8a6d1a}.pill.sent{background:var(--income-bg);color:var(--income)}.pill.cancelled{background:#eee;color:#888}
+  .pill.off{background:#5b544a;color:#fff}
+  tr.offrow td{opacity:.55}
   .modalBg{position:fixed;inset:0;background:rgba(20,30,25,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;z-index:50;overflow:auto}
   .modal{background:var(--card);border-radius:14px;max-width:860px;width:100%;padding:20px}
   .btn.wa{background:#25D366}
@@ -109,7 +111,9 @@
       <div class="hint">부족분으로 남았던 제품이 <b>입고(수입입고 승인 → 재고 등재)</b>되면 자동으로 고객별 오퍼 시트가 만들어집니다.
         대상: ① 전환확정(인보이스 발행)·매출등록·견적만료 시 기록된 부족분 + ② <b>견적서의 부족 라인(최초 견적 부족분 — 전환 전 견적 및 최근 90일 내 만료 견적 포함)</b>.
         [스캔·생성]은 지금 재고가 있는 대기 수요 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
-        시트를 열어 <b>📲 WhatsApp 자동발송</b>(버튼 한 번, 발송 이력 자동 기록) 또는 <b>PDF 출력 → 💚 수동 전송 → 발송완료 처리</b>로 보내세요.</div>
+        시트를 열어 <b>📲 WhatsApp 자동발송</b>(버튼 한 번, 발송 이력 자동 기록) 또는 <b>PDF 출력 → 💚 수동 전송 → 발송완료 처리</b>로 보내세요.<br>
+        더 이상 내보내지 않을 오퍼는 시트를 열어 <b>🚫 비활성화</b> — 부족 기록은 그대로 남고(발주 근거) 그 오퍼만 <b>다시 생성되지 않습니다</b>(디렉터·Maria, 되돌리기 가능).
+        <b>✖ 취소</b>는 반대로 <b>다시 생성 대상으로 복귀</b>시킵니다.</div>
       <details style="margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#fbfaf6">
         <summary style="cursor:pointer;font-weight:800;font-size:12.5px;color:var(--brand)">📲 WhatsApp 자동발송 설정 방법 (토큰 발급 — 클릭 단위 안내)</summary>
         <div class="hint" style="margin-top:8px;line-height:1.8">
@@ -127,6 +131,7 @@
         <label style="display:inline">상태</label>
         <select id="osFilter" onchange="osRender()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
           <option value="all">전체</option><option value="ready" selected>발송 대기</option><option value="sent">발송 완료</option><option value="cancelled">취소됨</option>
+          <option value="active">활성만</option><option value="disabled">🚫 비활성(중단)</option>
         </select>
         <label style="display:inline;margin-left:10px">회신</label>
         <select id="osReplyFilter" onchange="osRender()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
@@ -367,7 +372,7 @@
   }
 
   // ===================== Offer Sheet (부족분 입고 알림·재오퍼) =====================
-  let osItems=[], osSummary=null, osDetail=null, companyCache=null, osWaCfg={api_ready:false,template:null};
+  let osItems=[], osSummary=null, osDetail=null, companyCache=null, osWaCfg={api_ready:false,template:null}, osPerm={can_disable:false};
   function showTab(t){
     $('tabShort').classList.toggle('hidden',t!=='short'); $('tabCust').classList.toggle('hidden',t!=='cust'); $('tabOffer').classList.toggle('hidden',t!=='offer');
     $('tabBtnShort').classList.toggle('on',t==='short'); $('tabBtnCust').classList.toggle('on',t==='cust'); $('tabBtnOffer').classList.toggle('on',t==='offer');
@@ -382,7 +387,7 @@
   async function osLoad(){
     try{
       const d=await fetch(session.api+'/api/offersheets?status=all',{headers:auth()}).then(r=>r.json());
-      osItems=d.items||[]; osSummary=d.summary||null; osWaCfg=d.wa||{api_ready:false,template:null};
+      osItems=d.items||[]; osSummary=d.summary||null; osWaCfg=d.wa||{api_ready:false,template:null}; osPerm=d.perm||{can_disable:false};
       $('osBadge').textContent=(osSummary&&osSummary.ready>0)?('('+osSummary.ready+')'):'';
       osRender();
     }catch(e){ $('osWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
@@ -406,7 +411,10 @@
     const f=$('osFilter').value;
     const rf=$('osReplyFilter')?$('osReplyFilter').value:'all';
     const list=osItems.filter(x=>{
-      if(!(f==='all'||x.status===f)) return false;
+      // 비활성 시트도 목록에서 숨기지 않는다 — 회색 [🚫 비활성] 로 함께 보인다.
+      if(f==='disabled'){ if(!x.disabled) return false; }
+      else if(f==='active'){ if(x.disabled) return false; }
+      else if(!(f==='all'||x.status===f)) return false;
       if(rf==='replied') return !!x.last_reply_type;
       if(rf==='no_reply') return x.status==='sent'&&!x.last_reply_type;
       if(rf==='ordered') return x.last_reply_type==='ordered'||x.last_reply_type==='partial';
@@ -421,6 +429,7 @@
         +'<div class="sb"><div class="v" style="color:#33495C">'+(osSummary.replied||0)+'</div><div class="l">회신 접수</div></div>'
         +'<div class="sb"><div class="v" style="color:var(--expense)">'+(osSummary.no_reply||0)+'</div><div class="l">미회신 (발송 후)</div></div>'
         +'<div class="sb"><div class="v" style="color:var(--income)">'+(osSummary.ordered||0)+'</div><div class="l">주문 전환</div></div>'
+        +'<div class="sb"><div class="v" style="color:#5b544a">'+(osSummary.disabled||0)+'</div><div class="l">🚫 비활성(중단)</div></div>'
         +'</div>';
     }
     if(!list.length){ $('osWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">해당 조건의 offer sheet가 없습니다. 입고 승인 시 자동 생성되며, [스캔·생성]으로 수동 생성할 수도 있습니다.</div>'; return; }
@@ -430,8 +439,10 @@
         ? osReplyPill(r.last_reply_type)+' <span class="hint">'+d10(r.last_reply_at)+'</span>'
           +(r.last_reply_note?'<div class="hint" style="max-width:220px;white-space:normal">'+esc(r.last_reply_note)+'</div>':'')
         : (r.status==='sent'?'<span class="hint" style="color:var(--expense)">미회신</span>':'<span class="hint">—</span>');
-      html+='<tr style="cursor:pointer" onclick="osOpen('+r.id+')">'
-        +'<td>'+osStatusPill(r.status)+'</td>'
+      html+='<tr class="'+(r.disabled?'offrow':'')+'" style="cursor:pointer" onclick="osOpen('+r.id+')">'
+        +'<td>'+osStatusPill(r.status)
+        +(r.disabled?' <span class="pill off" title="비활성 — 이 오퍼는 중단됨. 담긴 부족분은 다시 오퍼되지 않습니다'
+          +esc(r.disabled_note?(' · '+r.disabled_note):'')+'">🚫 비활성</span>':'')+'</td>'
         +'<td><b>'+esc(r.offer_no||('#'+r.id))+'</b></td>'
         +'<td>'+esc(r.customer_name||'')+(r.customer_phone?'':' <span class="hint">(전화 미등록)</span>')+'</td>'
         +'<td class="r">'+r.item_count+'</td>'
@@ -480,6 +491,7 @@
     const s=osDetail.sheet, lines=osDetail.lines||[];
     let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
       +'<div style="font-size:16px;font-weight:800;color:var(--brand)">'+esc(s.offer_no||('#'+s.id))+'</div>'+osStatusPill(s.status)
+      +(s.disabled?'<span class="pill off">🚫 비활성</span>':'')
       +'<div class="hint">생성 '+d10(s.created_at)+(s.origin==='auto'?' · 입고 자동'+(s.import_batch_no?' (배치 '+esc(s.import_batch_no)+')':''):' · 수동')+'</div>'
       +'<button class="btn ghost sm" style="margin-left:auto" onclick="osClose()">닫기 ✕</button></div>'
       +'<div style="margin-top:8px;font-size:13px"><b>'+esc(s.customer_name||'')+'</b>'
@@ -489,6 +501,19 @@
           ?' <span class="pill" style="background:#e4f0eb;color:#0F6E56">구매결정권자</span>'
           :' <span class="hint">(기본 전화 — 고객관리에 구매결정권자 전화를 등록하면 그 번호로 발송)</span>')
         :' · <span style="color:var(--expense)">전화 미등록 — 고객관리에서 구매결정권자 전화(WhatsApp)를 등록하세요</span>')+'</div>';
+    // ---- 비활성(중단) 시트: 발송 관련 동작을 전부 감추고, 활성화 버튼만 남긴다 ----
+    if(s.disabled){
+      h+='<div style="margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:#f1efe8;border:1px solid var(--line);font-size:12.5px">'
+        +'<b>🚫 비활성(중단)된 오퍼입니다.</b> 발송·PDF 출력·회신 기록이 잠겨 있고, '
+        +'이 시트에 담긴 부족분·견적 부족라인은 <b>다시 오퍼시트로 만들어지지 않습니다</b>. '
+        +'부족 기록 자체는 그대로 남아 있습니다(발주 근거).'
+        +'<div class="hint" style="margin-top:4px">중단: '+d10(s.disabled_at)+(s.disabled_by_name?' · '+esc(s.disabled_by_name):'')
+        +(s.disabled_note?' · '+esc(s.disabled_note):'')+'</div></div>'
+        +'<div style="margin:8px 0 4px;display:flex;gap:8px;flex-wrap:wrap">'
+        +(osPerm.can_disable?'<button class="btn" onclick="osEnable()">↩ 활성화 (다시 오퍼 대상으로)</button>'
+                            :'<span class="hint">활성화는 디렉터 또는 Maria 만 할 수 있습니다.</span>')
+        +'</div>';
+    } else {
     h+='<div style="margin:12px 0 4px;display:flex;gap:8px;flex-wrap:wrap">'
       +'<button class="btn" onclick="osPrintPdf()">🧾 Offer Sheet PDF 출력</button>'
       +(s.customer_phone&&s.status!=='cancelled'
@@ -499,10 +524,14 @@
       +(s.customer_phone?'<button class="btn ghost" onclick="osWhatsapp()">💚 수동으로 열기</button>':'')
       +(s.status==='ready'?'<button class="btn ghost" onclick="osMarkSent()">✅ 발송완료 처리</button>':'')
       +(s.status!=='cancelled'?'<button class="btn danger" onclick="osCancel()">✖ 취소</button>':'')
+      +(osPerm.can_disable?'<button class="btn danger" onclick="osDisable()">🚫 비활성화 (오퍼 중단)</button>':'')
       +'</div>'
       +'<div class="hint">📲 자동발송 = 버튼 한 번으로 고객 번호에 오퍼 문구가 바로 전송되고 발송 이력이 기록됩니다'
       +(osWaCfg.template?' (24시간 창 밖이면 템플릿 '+esc(osWaCfg.template)+' 헤드라인으로 자동 폴백)':' (템플릿 미설정 — 고객이 24시간 내 회신한 적 없으면 도달 안 될 수 있음)')
-      +'. 💚 수동 = 문구가 채워진 채팅창만 열림(PDF 첨부는 수동).</div>';
+      +'. 💚 수동 = 문구가 채워진 채팅창만 열림(PDF 첨부는 수동).</div>'
+      +(osPerm.can_disable?'<div class="hint" style="margin-top:2px">✖ <b>취소</b> = 이 시트만 무효 — 담긴 부족분은 다음 스캔에서 <b>다시 오퍼로 생성</b>됩니다. '
+        +'🚫 <b>비활성화</b> = 오퍼 자체를 중단 — 부족 기록은 남기고 <b>다시 생성되지 않습니다</b>(되돌리기 가능).</div>':'');
+    }
     if(s.wa_sent_at||s.wa_status){
       h+='<div class="hint" style="margin-top:4px">'
         +(s.wa_sent_at?('📲 API 발송: '+d10(s.wa_sent_at)+' · '+(s.wa_status==='sent_template'?'템플릿':'텍스트')+' · '+esc(s.wa_to||'')+(s.wa_message_id?' · id '+esc(String(s.wa_message_id).slice(0,24))+'…':'')):('⚠ API 발송 실패: '+esc(s.wa_error||'')))
@@ -527,7 +556,7 @@
     h+='<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">'
       +'<div style="font-weight:800;color:var(--brand);font-size:13px;margin-bottom:6px">💬 고객 회신 기록'
       +(reps.length?' <span class="hint">('+reps.length+'건)</span>':'')+'</div>';
-    if(s.status!=='cancelled'){
+    if(s.status!=='cancelled'&&!s.disabled){
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
         +'<select id="osReplyType" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">'
         +'<option value="ordered">주문함 ✔</option><option value="partial">일부 주문</option><option value="considering">검토중</option>'
@@ -568,11 +597,44 @@
   }
   async function osCancel(){
     if(!osDetail)return;
-    if(!confirm('이 offer sheet를 취소할까요?\n취소하면 담겨 있던 부족분은 다음 입고·스캔 때 다시 생성 대상이 됩니다.'))return;
+    if(!confirm('이 offer sheet를 취소할까요?\n취소하면 담겨 있던 부족분은 다음 입고·스캔 때 다시 생성 대상이 됩니다.\n\n(다시 만들어지지 않게 하려면 [🚫 비활성화]를 쓰세요 — 부족 기록은 남고 오퍼만 중단됩니다)'))return;
     const res=await fetch(session.api+'/api/offersheets/'+osDetail.sheet.id+'/cancel',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
     const d=await res.json();
     if(!res.ok||d.error){ alert('처리 실패: '+(d.error||res.status)); return; }
     osClose(); osLoad();
+  }
+  // ---- 오퍼 비활성화(중단) / 활성화 — 디렉터·Maria 만 ----
+  //   취소와 다르다: 부족 기록은 그대로 두고, 이 시트의 부족분이 "다시 오퍼시트로 생성되지 않게" 막는다.
+  async function osDisable(){
+    if(!osDetail)return;
+    const s=osDetail.sheet;
+    if(!confirm('이 오퍼("'+(s.offer_no||('#'+s.id))+'" · '+(s.customer_name||'')+')를 비활성화(중단)할까요?\n\n'
+      +'· 부족 기록은 그대로 남습니다(발주 근거).\n'
+      +'· 이 시트에 담긴 부족분·견적 부족라인은 앞으로 오퍼시트가 다시 생성되지 않습니다.\n'
+      +'· 발송·PDF·회신 기록이 잠깁니다.'
+      +(s.status==='sent'?'\n· 이미 발송된 시트라 오퍼 전환 KPI(월간 실적) 집계에서도 빠집니다.':'')
+      +'\n\n나중에 [↩ 활성화]로 되돌릴 수 있습니다.'))return;
+    const note=prompt('중단 사유(선택 — 나중에 목록에서 보입니다)','')||'';
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+s.id+'/disable',{method:'POST',
+        headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify({note:note.trim()||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('처리 실패: '+(d.note||d.error||res.status)); return; }
+      await osLoad(); osOpen(s.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  async function osEnable(){
+    if(!osDetail)return;
+    const s=osDetail.sheet;
+    if(!confirm('이 오퍼를 다시 활성화할까요?\n원래 상태('+({ready:'발송 대기',sent:'발송 완료',cancelled:'취소됨'}[s.status]||s.status)+')로 돌아가고, '
+      +'취소 상태라면 담긴 부족분이 다음 스캔에서 다시 오퍼 대상이 됩니다.'))return;
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+s.id+'/enable',{method:'POST',
+        headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('처리 실패: '+(d.note||d.error||res.status)); return; }
+      await osLoad(); osOpen(s.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
   }
   function osWaDigits(phone){
     let dg=String(phone||'').replace(/\D/g,'');
@@ -655,7 +717,7 @@
     if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
     w.document.open(); w.document.write(html); w.document.close();
   }
-  console.log('[refatrix-shortage] build sh-0803b');
+  console.log('[refatrix-shortage] build sh-0826a');
 
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

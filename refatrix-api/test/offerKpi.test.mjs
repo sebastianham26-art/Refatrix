@@ -65,7 +65,7 @@ function seed() {
     CREATE TABLE users(id INT PRIMARY KEY, name TEXT);
     CREATE TABLE products(id INT PRIMARY KEY, code TEXT, name TEXT);
     CREATE TABLE offer_sheets(id INT PRIMARY KEY, offer_no TEXT, customer_id INT, status TEXT,
-      sent_at TEXT, sent_by INT, deleted_at TIMESTAMPTZ);
+      sent_at TEXT, sent_by INT, deleted_at TIMESTAMPTZ, disabled_at TIMESTAMPTZ);
     CREATE TABLE offer_sheet_items(id INT PRIMARY KEY, offer_sheet_id INT, product_id INT, offer_qty NUMERIC);
     CREATE TABLE invoices(id INT PRIMARY KEY, sat_no TEXT, customer_id INT, product_id INT,
       qty NUMERIC, unit_price NUMERIC, inv_date TEXT, deleted_at TIMESTAMPTZ);

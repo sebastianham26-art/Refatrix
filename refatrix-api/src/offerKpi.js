@@ -115,7 +115,8 @@ export async function loadOfferKpi(q, ym) {
   const ymNext = (m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`) + '-01';
   const sentFrom = addDays(ymStart, -KPI_WINDOW_DAYS); // 이전 달 말 발송분도 창이 이번 달에 걸침
 
-  // 발송된 시트(취소 제외) — 발송일이 [월초−창, 월말] 안이면 후보
+  // 발송된 시트(취소·비활성 제외) — 발송일이 [월초−창, 월말] 안이면 후보
+  //   비활성(0183 disabled_at)은 "없던 오퍼로 친다"는 뜻이라 전환 KPI·프로모에서도 빠진다.
   const sheetRows = (await q(
     `SELECT os.id, os.offer_no, os.customer_id, os.sent_by, os.sent_at::text AS sent_at,
             c.name AS customer_name, us.name AS sent_by_name
@@ -123,6 +124,7 @@ export async function loadOfferKpi(q, ym) {
        JOIN customers c ON c.id = os.customer_id
        LEFT JOIN users us ON us.id = os.sent_by
       WHERE os.deleted_at IS NULL AND os.status <> 'cancelled' AND os.sent_at IS NOT NULL
+        AND os.disabled_at IS NULL
         AND os.sent_at::text >= $1 AND os.sent_at::text < $2`,
     [sentFrom, ymNext])).rows;
   const sheets = [];

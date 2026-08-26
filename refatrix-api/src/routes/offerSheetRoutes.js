@@ -1,14 +1,27 @@
 // =====================================================================
 // Offer Sheet(재입고 오퍼) API
 //   부족분으로 남았던 제품이 입고되면 고객별로 생성되는 오퍼 시트의
-//   목록/상세/수동 생성/발송 기록/취소.
-//   권한: 조회 = shortage·sales 열람, 생성·발송·취소 = shortage·sales 편집.
+//   목록/상세/수동 생성/발송 기록/취소/비활성화.
+//   권한: 조회 = shortage·sales 열람, 생성·발송·취소 = shortage·sales 편집,
+//        비활성화·활성화 = 디렉터 또는 Maria (0183).
+//
+//   ⚠️ 취소(cancel)와 비활성화(disable)는 서로 다른 동작이다:
+//     · 취소   — 이 시트는 무효. 담긴 부족분은 다음 스캔에서 **다시 오퍼 대상**이 된다.
+//     · 비활성 — 이 오퍼는 그만한다. 담긴 부족분·견적라인은 **다시 오퍼되지 않는다**.
+//               부족 기록 자체는 그대로 남는다(발주 근거). [활성화]로 되돌릴 수 있다.
 // =====================================================================
 import { query, withTx } from '../db.js';
 import { authGuard, requirePageAny, requirePageEditAny } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { generateOfferSheets } from '../offerSheets.js';
 import { waApiReady, normalizeWaNumber, sendWaTo } from '../waSend.js';
+
+// 비활성화·활성화 실행 권한: 디렉터 또는 Maria (고객관리 Constancia 알림과 같은 판정 방식).
+function canDisableOffer(perm) {
+  if (!perm) return false;
+  if (perm.role === 'director') return true;
+  return String(perm.name || '').trim().toLowerCase().startsWith('maria');
+}
 
 export default async function offerSheetRoutes(app) {
   // ---- 목록 ----
@@ -20,6 +33,7 @@ export default async function offerSheetRoutes(app) {
               os.subtotal_mxn, os.iva_mxn, os.total_mxn,
               os.created_at, os.sent_at, os.sent_channel,
               os.wa_sent_at, os.wa_status, os.wa_error, os.wa_to,
+              os.disabled_at, os.disabled_note, ud.name AS disabled_by_name,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name,
               COALESCE(NULLIF(TRIM(c.buyer_phone),''), c.phone) AS customer_phone,
               c.buyer_name, (NULLIF(TRIM(c.buyer_phone),'') IS NOT NULL) AS phone_is_buyer,
@@ -32,6 +46,7 @@ export default async function offerSheetRoutes(app) {
          FROM offer_sheets os
          JOIN customers c ON c.id = os.customer_id
          LEFT JOIN users us ON us.id = os.sent_by
+         LEFT JOIN users ud ON ud.id = os.disabled_by
          LEFT JOIN LATERAL (
            SELECT r2.reply_type, r2.created_at, r2.note
              FROM offer_sheet_replies r2
@@ -39,16 +54,21 @@ export default async function offerSheetRoutes(app) {
             ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1
          ) lr ON true
         WHERE os.deleted_at IS NULL
-          AND ($1 = 'all' OR os.status = $1)
+          AND ($1 = 'all'
+               OR ($1 = 'disabled' AND os.disabled_at IS NOT NULL)
+               OR ($1 = 'active'   AND os.disabled_at IS NULL)
+               OR os.status = $1)
         ORDER BY os.created_at DESC, os.id DESC
         LIMIT 300`, [status])).rows;
     // 요약: 발송대기/발송 + 회신 현황(발송된 시트 기준 — 실질 회신(note 제외) 유무·주문 전환)
+    //       비활성(중단) 시트는 진행 중인 일감이 아니므로 요약 수치에서 빼고 따로 센다.
     const summary = (await query(
-      `SELECT COUNT(*) FILTER (WHERE os.status='ready') AS ready,
-              COUNT(*) FILTER (WHERE os.status='sent')  AS sent,
-              COUNT(*) FILTER (WHERE os.status='sent' AND lr.reply_type IS NOT NULL) AS replied,
-              COUNT(*) FILTER (WHERE os.status='sent' AND lr.reply_type IS NULL) AS no_reply,
-              COUNT(*) FILTER (WHERE os.status='sent' AND lr.reply_type IN ('ordered','partial')) AS ordered
+      `SELECT COUNT(*) FILTER (WHERE os.status='ready' AND os.disabled_at IS NULL) AS ready,
+              COUNT(*) FILTER (WHERE os.status='sent'  AND os.disabled_at IS NULL) AS sent,
+              COUNT(*) FILTER (WHERE os.disabled_at IS NOT NULL) AS disabled,
+              COUNT(*) FILTER (WHERE os.status='sent' AND os.disabled_at IS NULL AND lr.reply_type IS NOT NULL) AS replied,
+              COUNT(*) FILTER (WHERE os.status='sent' AND os.disabled_at IS NULL AND lr.reply_type IS NULL) AS no_reply,
+              COUNT(*) FILTER (WHERE os.status='sent' AND os.disabled_at IS NULL AND lr.reply_type IN ('ordered','partial')) AS ordered
          FROM offer_sheets os
          LEFT JOIN LATERAL (
            SELECT r2.reply_type FROM offer_sheet_replies r2
@@ -71,12 +91,16 @@ export default async function offerSheetRoutes(app) {
         last_reply_type: r.last_reply_type || null,
         last_reply_at: r.last_reply_at || null,
         last_reply_note: r.last_reply_note || null,
+        disabled: !!r.disabled_at, disabled_at: r.disabled_at || null,
+        disabled_by_name: r.disabled_by_name || null, disabled_note: r.disabled_note || null,
       })),
       summary: {
         ready: Number(summary.ready) || 0, sent: Number(summary.sent) || 0,
         replied: Number(summary.replied) || 0, no_reply: Number(summary.no_reply) || 0,
-        ordered: Number(summary.ordered) || 0,
+        ordered: Number(summary.ordered) || 0, disabled: Number(summary.disabled) || 0,
       },
+      // 화면에서 [🚫 비활성화]/[↩ 활성화] 버튼 노출 여부(디렉터·Maria)
+      perm: { can_disable: canDisableOffer(req.ctx.perm) },
       wa: { api_ready: waApiReady(), template: process.env.OFFERSHEET_WA_TEMPLATE || process.env.WHATSAPP_TEMPLATE || null },
     };
   });
@@ -89,10 +113,11 @@ export default async function offerSheetRoutes(app) {
               COALESCE(NULLIF(TRIM(c.buyer_phone),''), c.phone) AS customer_phone,
               c.buyer_name, (NULLIF(TRIM(c.buyer_phone),'') IS NOT NULL) AS phone_is_buyer,
               c.contact AS customer_contact, c.rfc AS customer_rfc,
-              us.name AS sent_by_name, ib.batch_no AS import_batch_no
+              us.name AS sent_by_name, ud.name AS disabled_by_name, ib.batch_no AS import_batch_no
          FROM offer_sheets os
          JOIN customers c ON c.id = os.customer_id
          LEFT JOIN users us ON us.id = os.sent_by
+         LEFT JOIN users ud ON ud.id = os.disabled_by
          LEFT JOIN import_batches ib ON ib.id = os.import_batch_id
         WHERE os.id = $1 AND os.deleted_at IS NULL`, [id])).rows[0];
     if (!os) return reply.code(404).send({ error: 'not_found' });
@@ -143,7 +168,10 @@ export default async function offerSheetRoutes(app) {
         customer_id: Number(os.customer_id), customer_code: os.customer_code, customer_name: os.customer_name,
         customer_phone: os.customer_phone, customer_contact: os.customer_contact, customer_rfc: os.customer_rfc,
         buyer_name: os.buyer_name || null, phone_is_buyer: !!os.phone_is_buyer,
+        disabled: !!os.disabled_at, disabled_at: os.disabled_at || null,
+        disabled_by_name: os.disabled_by_name || null, disabled_note: os.disabled_note || null,
       },
+      perm: { can_disable: canDisableOffer(req.ctx.perm) },
       items: items.map((r) => ({
         ...r, product_id: Number(r.product_id),
         shortage_id: r.shortage_id != null ? Number(r.shortage_id) : null,
@@ -175,8 +203,9 @@ export default async function offerSheetRoutes(app) {
     const note = String(req.body?.note || '').trim().slice(0, 2000) || null;
     if (!REPLY_TYPES.includes(type)) return reply.code(400).send({ error: 'bad_reply_type' });
     if (type === 'note' && !note) return reply.code(400).send({ error: 'note_required', note: '메모 유형은 내용이 필요합니다.' });
-    const os = (await query(`SELECT id, status FROM offer_sheets WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const os = (await query(`SELECT id, status, disabled_at FROM offer_sheets WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!os) return reply.code(404).send({ error: 'not_found' });
+    if (os.disabled_at) return reply.code(409).send({ error: 'disabled_sheet', note: '비활성(중단)된 오퍼시트입니다. 회신을 기록하려면 먼저 [↩ 활성화]하세요.' });
     const r = (await query(
       `INSERT INTO offer_sheet_replies (offer_sheet_id, reply_type, note, created_by)
        VALUES ($1,$2,$3,$4) RETURNING id, created_at`, [id, type, note, req.ctx.perm.userId])).rows[0];
@@ -223,6 +252,7 @@ export default async function offerSheetRoutes(app) {
         WHERE os.id = $1 AND os.deleted_at IS NULL`, [id])).rows[0];
     if (!os) return reply.code(404).send({ error: 'not_found' });
     if (os.status === 'cancelled') return reply.code(409).send({ error: 'cancelled_sheet' });
+    if (os.disabled_at) return reply.code(409).send({ error: 'disabled_sheet', note: '비활성(중단)된 오퍼시트는 발송할 수 없습니다. 보내려면 먼저 [↩ 활성화]하세요.' });
     const to = normalizeWaNumber(req.body && req.body.to ? req.body.to : os.customer_phone);
     if (!to) return reply.code(400).send({ error: 'no_phone', note: '고객 전화번호가 없거나 형식이 올바르지 않습니다. 고객관리에서 번호를 확인하세요.' });
 
@@ -269,9 +299,9 @@ export default async function offerSheetRoutes(app) {
     const channel = String(req.body?.channel || 'whatsapp').slice(0, 30);
     const r = await query(
       `UPDATE offer_sheets SET status='sent', sent_at=now(), sent_by=$1, sent_channel=$2
-        WHERE id=$3 AND status='ready' AND deleted_at IS NULL RETURNING id`,
+        WHERE id=$3 AND status='ready' AND deleted_at IS NULL AND disabled_at IS NULL RETURNING id`,
       [req.ctx.perm.userId, channel, id]);
-    if (!r.rows[0]) return reply.code(409).send({ error: 'not_ready', note: '발송 대기(ready) 상태의 시트만 발송 처리할 수 있습니다.' });
+    if (!r.rows[0]) return reply.code(409).send({ error: 'not_ready', note: '발송 대기(ready)이면서 활성 상태인 시트만 발송 처리할 수 있습니다.' });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `offer_sheet:${id}`, detail: { sent: true, channel } });
     return { ok: true, status: 'sent' };
   });
@@ -280,10 +310,45 @@ export default async function offerSheetRoutes(app) {
   app.post('/api/offersheets/:id/cancel', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
     const id = Number(req.params.id);
     const r = await query(
-      `UPDATE offer_sheets SET status='cancelled' WHERE id=$1 AND status IN ('ready','sent') AND deleted_at IS NULL RETURNING id, status`,
+      `UPDATE offer_sheets SET status='cancelled'
+        WHERE id=$1 AND status IN ('ready','sent') AND deleted_at IS NULL AND disabled_at IS NULL RETURNING id, status`,
       [id]);
     if (!r.rows[0]) return reply.code(409).send({ error: 'not_cancellable' });
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `offer_sheet:${id}`, detail: { cancelled: true } });
     return { ok: true, status: 'cancelled' };
+  });
+
+  // ---- 비활성화 (오퍼 중단 — 이 시트의 부족분은 다시 오퍼되지 않음) ----
+  //   · 부족 기록(stock_shortages)은 손대지 않는다 — 발주 근거로 그대로 남는다.
+  //   · 취소와 달리 재생성 대상으로 복귀하지 않는다(취소된 시트도 비활성화 가능).
+  //   · 권한: 디렉터 또는 Maria.
+  app.post('/api/offersheets/:id/disable', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
+    if (!canDisableOffer(req.ctx.perm)) {
+      return reply.code(403).send({ error: 'not_allowed', note: '오퍼 비활성화는 디렉터 또는 Maria 만 할 수 있습니다.' });
+    }
+    const id = Number(req.params.id);
+    const note = String(req.body?.note || '').trim().slice(0, 500) || null;
+    const r = await query(
+      `UPDATE offer_sheets SET disabled_at=now(), disabled_by=$2, disabled_note=$3
+        WHERE id=$1 AND deleted_at IS NULL AND disabled_at IS NULL RETURNING id, status`,
+      [id, req.ctx.perm.userId, note]);
+    if (!r.rows[0]) return reply.code(409).send({ error: 'not_disableable', note: '이미 비활성 상태이거나 없는 시트입니다.' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `offer_sheet:${id}`, detail: { disabled: true, note } });
+    return { ok: true, disabled: true, status: r.rows[0].status };
+  });
+
+  // ---- 활성화 (비활성 해제 — 원래 상태(ready/sent/cancelled) 그대로 복귀) ----
+  app.post('/api/offersheets/:id/enable', { preHandler: [authGuard, requirePageEditAny(['shortage', 'sales'])] }, async (req, reply) => {
+    if (!canDisableOffer(req.ctx.perm)) {
+      return reply.code(403).send({ error: 'not_allowed', note: '오퍼 활성화는 디렉터 또는 Maria 만 할 수 있습니다.' });
+    }
+    const id = Number(req.params.id);
+    const r = await query(
+      `UPDATE offer_sheets SET disabled_at=NULL, disabled_by=NULL, disabled_note=NULL
+        WHERE id=$1 AND deleted_at IS NULL AND disabled_at IS NOT NULL RETURNING id, status`,
+      [id]);
+    if (!r.rows[0]) return reply.code(409).send({ error: 'not_disabled', note: '비활성 상태의 시트만 활성화할 수 있습니다.' });
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `offer_sheet:${id}`, detail: { disabled: false } });
+    return { ok: true, disabled: false, status: r.rows[0].status };
   });
 }

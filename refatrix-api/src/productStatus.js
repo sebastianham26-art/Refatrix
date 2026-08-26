@@ -162,8 +162,9 @@ export async function productOpenItems(productId, exec = query) {
   }
 
   // ⑤ 오퍼시트 — 취소가 아닌 시트(생성됨/발송됨)에 이 SKU 가 담긴 것.
+  //    비활성(중단)된 시트는 이력에서 숨기지 않고 '중단' 으로 표시한다(무슨 일이 있었는지 보이게).
   const q5 = (await exec(
-    `SELECT os.id, os.offer_no, os.status, os.created_at::date::text AS created_at, os.sent_at,
+    `SELECT os.id, os.offer_no, os.status, os.disabled_at, os.created_at::date::text AS created_at, os.sent_at,
             cu.name AS party, SUM(oi.offer_qty) AS qty
        FROM offer_sheet_items oi
        JOIN offer_sheets os ON os.id = oi.offer_sheet_id
@@ -175,7 +176,7 @@ export async function productOpenItems(productId, exec = query) {
     push('offer', r.party, {
       ref: r.offer_no || `OS#${r.id}`,
       ref_id: Number(r.id),
-      stage: r.status === 'sent' ? '발송됨' : '발송 대기',
+      stage: r.disabled_at ? '중단(비활성)' : (r.status === 'sent' ? '발송됨' : '발송 대기'),
       qty: n(r.qty),
       date: r.created_at ? String(r.created_at).slice(0, 10) : null,
       link: 'refatrix-shortage.html',

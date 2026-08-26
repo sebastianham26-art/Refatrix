@@ -20,7 +20,8 @@ function seed() {
     return `${t.getUTCFullYear()}${p(t.getUTCMonth() + 1)}${p(t.getUTCDate())}`;
   } });
   pub.none(`
-    CREATE TABLE products(id INT PRIMARY KEY, code TEXT, list_price NUMERIC, iva_rate NUMERIC, stock_qty NUMERIC, deleted_at TIMESTAMPTZ);
+    CREATE TABLE products(id INT PRIMARY KEY, code TEXT, list_price NUMERIC, iva_rate NUMERIC, stock_qty NUMERIC, deleted_at TIMESTAMPTZ,
+      is_active BOOLEAN DEFAULT true);            -- 0179 판매중단 SKU 제외
     CREATE TABLE customers(id INT PRIMARY KEY, name TEXT, discount NUMERIC, deleted_at TIMESTAMPTZ);
     CREATE TABLE stock_shortages(id INT PRIMARY KEY, customer_id INT, product_id INT,
       shortage_qty NUMERIC, resolved_qty NUMERIC DEFAULT 0, status TEXT, occurred_at TEXT, source_quote_id INT);
@@ -28,7 +29,8 @@ function seed() {
     CREATE TABLE quote_lines(id INT PRIMARY KEY, quote_id INT, product_id INT, qty NUMERIC, reserved_qty NUMERIC);
     CREATE TABLE offer_sheets(id SERIAL PRIMARY KEY, offer_no TEXT, customer_id INT, import_batch_id INT,
       status TEXT, origin TEXT, subtotal_mxn NUMERIC, iva_mxn NUMERIC, total_mxn NUMERIC,
-      created_by INT, created_at TIMESTAMPTZ DEFAULT now(), deleted_at TIMESTAMPTZ);
+      created_by INT, created_at TIMESTAMPTZ DEFAULT now(), deleted_at TIMESTAMPTZ,
+      disabled_at TIMESTAMPTZ, disabled_by INT, disabled_note TEXT);   -- 0183 오퍼 비활성화
     CREATE TABLE offer_sheet_items(id SERIAL PRIMARY KEY, offer_sheet_id INT, shortage_id INT, quote_id INT, quote_line_id INT,
       product_id INT, offer_qty NUMERIC, list_price NUMERIC, discount_rate NUMERIC, unit_price NUMERIC,
       line_subtotal NUMERIC, line_iva NUMERIC, line_total NUMERIC, occurred_at TIMESTAMPTZ);

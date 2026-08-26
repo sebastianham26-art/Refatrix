@@ -19,6 +19,9 @@
 //       같은 재고를 오퍼하고 선착순 판매(오퍼시트 하단 면책문구로 안내).
 //       캡으로 0이 된 기록도 시트에 담아(수량 0) 중복가드를 유지한다 —
 //       시트 취소 후 재스캔하면 그 시점 재고로 다시 계산된다.
+//   · 비활성(0183 `disabled_at`): 화면에서 [🚫 비활성화]한 시트에 담긴 기록은
+//       취소 상태여도 "이미 처리됨"으로 계속 취급 — 다시 오퍼시트가 만들어지지 않는다.
+//       부족 기록 자체는 그대로 남는다(발주 근거). [활성화]로 되돌리면 원래대로.
 //   · 중복 가드(살아있는 시트 기준 — 취소하면 재생성 대상으로 복귀):
 //       - 부족 기록: shortage_id 가 이미 담겨 있으면 제외.
 //         + 그 부족 기록의 (source_quote_id, product_id) 조합이 견적 단계에서
@@ -63,13 +66,15 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
        LEFT JOIN (SELECT DISTINCT oi.shortage_id
                     FROM offer_sheet_items oi
                     JOIN offer_sheets os ON os.id = oi.offer_sheet_id
-                   WHERE os.status <> 'cancelled' AND os.deleted_at IS NULL
+                   WHERE os.deleted_at IS NULL
+                     AND (os.status <> 'cancelled' OR os.disabled_at IS NOT NULL)
                      AND oi.shortage_id IS NOT NULL) used
               ON used.shortage_id = sh.id
        LEFT JOIN (SELECT DISTINCT oi2.quote_id, oi2.product_id
                     FROM offer_sheet_items oi2
                     JOIN offer_sheets os2 ON os2.id = oi2.offer_sheet_id
-                   WHERE os2.status <> 'cancelled' AND os2.deleted_at IS NULL
+                   WHERE os2.deleted_at IS NULL
+                     AND (os2.status <> 'cancelled' OR os2.disabled_at IS NOT NULL)
                      AND oi2.quote_id IS NOT NULL) uq
               ON uq.quote_id = sh.source_quote_id AND uq.product_id = sh.product_id
       WHERE sh.status = 'open'
@@ -103,7 +108,8 @@ export async function generateOfferSheets(q, { productIds = null, importBatchId 
        LEFT JOIN (SELECT DISTINCT oi.quote_line_id
                     FROM offer_sheet_items oi
                     JOIN offer_sheets os ON os.id = oi.offer_sheet_id
-                   WHERE os.status <> 'cancelled' AND os.deleted_at IS NULL
+                   WHERE os.deleted_at IS NULL
+                     AND (os.status <> 'cancelled' OR os.disabled_at IS NOT NULL)
                      AND oi.quote_line_id IS NOT NULL) ub
               ON ub.quote_line_id = ql.id
        LEFT JOIN (SELECT DISTINCT sh2.source_quote_id, sh2.product_id

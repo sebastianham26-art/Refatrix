@@ -218,7 +218,8 @@ export default async function devRequestRoutes(app) {
           `SELECT oi.product_id, COUNT(DISTINCT oi.offer_sheet_id) AS sheets
              FROM offer_sheet_items oi
              JOIN offer_sheets os ON os.id = oi.offer_sheet_id
-            WHERE os.deleted_at IS NULL AND os.status <> 'cancelled' AND oi.product_id IN (${inP})
+            WHERE os.deleted_at IS NULL AND os.status <> 'cancelled' AND os.disabled_at IS NULL
+              AND oi.product_id IN (${inP})
             GROUP BY oi.product_id`)).rows) {
           offerMap[Number(o.product_id)] = Number(o.sheets) || 0;
         }
