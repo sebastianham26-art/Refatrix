@@ -61,9 +61,9 @@ async function boot() {
   // 고정비 규칙 — 매월 15일 10,000 지출
   ID.rule = Number((await query(
     `INSERT INTO recurring_rules (name, category_code, amount, direction, freq, currency, account_id,
-                                  start_date, day_of_month, active, created_by, generated_through)
-     VALUES ($1,'6020',10000,'out','month','MXN',$2,$3,15,true,$4,$5) RETURNING id`,
-    [`${TAG}임차료`, ID.acc, MM1, ID.dir, MP2])).rows[0].id);
+                                  start_date, day_of_month, active, created_by, generated_through, end_month)
+     VALUES ($1,'6020',10000,'out','month','MXN',$2,$3,15,true,$4,$5,$6) RETURNING id`,
+    [`${TAG}임차료`, ID.acc, MM1, ID.dir, MP2, ym(MP1)])).rows[0].id);
 
   const mkTxn = async (o) => Number((await query(
     `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn,

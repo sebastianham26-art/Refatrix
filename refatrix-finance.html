@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0826b</title>
+<title>Refatrix ERP · 재무 · build fin-0826c</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -1394,6 +1394,9 @@
           const editBadge=Number(t.edit_count)>0?`<span class="badge" style="background:#ede4f7;color:#6b3fa0">수정 ${t.edit_count}회</span>`:'';
           const planBadge=Number(t.change_count)>0?`<span class="badge" style="background:#fff0d6;color:#9a6512" title="${(t.plan_memo||'').replace(/"/g,'&quot;')}">계획대비 변경 ${t.change_count}</span>`:'';
           const cashBadge=t.cash_due?(t.cash_due_done_at?'<span class="badge" style="background:#eee;color:#888" title="현금 수령 완료">💰 수령완료</span>':'<span class="badge" style="background:#fdf3d7;color:#8a6410" title="현금받아야함 — 미수령">💰 현금받아야함</span>'):'';
+          // 고정비 회차인데 계좌를 이 회차만 따로 지정한 경우 — 규칙 저장에도 보존됨
+          const accExBadge=(t.plan_account_manual&&t.recurring_rule_id)
+            ?'<span class="badge" style="background:#e8f0e8;color:#3d6b45" title="이 회차만 다른 계좌로 지정 — 고정비 규칙을 저장해도 계좌는 유지됩니다">🏦 계좌 예외</span>':'';
           const bg=t.status==='actual'?'background:#f4f2ec':'background:#fff';
           return `<tr class="txn-row" data-id="${t.id}" style="cursor:pointer;${bg}">
             <td>${String(t.txn_date).slice(0,10)}</td>
@@ -1402,7 +1405,7 @@
             <td>${txnSrcBadge(t)}</td>
             <td>${t.category_code?t.category_code+' · '+(t.category_name||''):'—'}</td>
             <td class="num">${amtCell}</td>
-            <td>${t.status==='actual'?'실제':'예정'}${t.sales_invoice_id?' · <span class="badge" style="background:#e6f1fb;color:#0c447c">매출#'+t.sales_invoice_id+'</span>':''} ${chg} ${editBadge} ${planBadge} ${cashBadge}</td>
+            <td>${t.status==='actual'?'실제':'예정'}${t.sales_invoice_id?' · <span class="badge" style="background:#e6f1fb;color:#0c447c">매출#'+t.sales_invoice_id+'</span>':''} ${chg} ${editBadge} ${planBadge} ${cashBadge} ${accExBadge}</td>
             <td>${t.sales_invoice_id ? (t.customer_name||'') : (t.approved?'':'<span class="badge b-warn">미승인</span>')}</td>
             <td style="font-size:12px">${t.sales_invoice_id
                 ? (t.sat_no
@@ -1578,13 +1581,15 @@
             <button class="btn ghost cf-cancel">닫기</button>
           </div>
           <div class="planedit hidden" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
-            <div class="hint" style="margin-top:0">아직 실제로 전환되지 않은 예정의 <b>계획 금액·날짜</b>를 직접 수정합니다(현금흐름 계획선에 반영). 매출에서 온 수금 계획은 인보이스에 묶여 수정할 수 없습니다.</div>
+            <div class="hint" style="margin-top:0">아직 실제로 전환되지 않은 예정의 <b>계획 금액·날짜·자금출처 계좌</b>를 직접 수정합니다(현금흐름 계획선·은행계좌별 구분에 반영). 매출에서 온 수금 계획은 인보이스에 묶여 수정할 수 없습니다.</div>
             <div class="row" style="margin-top:6px">
               <div><label>계획일</label><input class="pe-date" type="date" value="${(t.plan_date?String(t.plan_date):String(t.txn_date)).slice(0,10)}"></div>
               <div><label>계획 금액</label><input class="pe-amt" type="number" step="0.01" value="${t.plan_amount!=null?t.plan_amount:t.amount}"></div>
               ${t.currency==='USD'?'<div><label>환율(USD)</label><input class="pe-fx" type="number" step="0.0001" placeholder="오늘 환율"></div>':''}
-              <div style="flex:2"><label>수정 사유</label><input class="pe-memo" type="text" placeholder="예: 수금 예정일 연기"></div>
+              <div style="flex:2"><label>자금출처 계좌 <span class="hint" style="margin:0;font-weight:400">— 어느 은행계좌에서 나가는지</span></label><select class="pe-acc">${accOptions(t.account_id)}</select></div>
             </div>
+            <div class="row"><div style="flex:3"><label>수정 사유</label><input class="pe-memo" type="text" placeholder="예: 수금 예정일 연기 / 출금 계좌 변경"></div></div>
+            ${isRecur?`<div class="hint" style="margin-top:6px;color:#8a6410">※ 고정비 회차입니다. 계좌를 여기서 바꾸면 <b>이 회차만 예외로 보존</b>되어, 나중에 고정비 규칙을 저장해도 계좌는 덮어쓰이지 않습니다(금액·계정과목은 규칙을 따릅니다).${t.plan_account_manual?' <b>현재 예외 지정됨.</b>':''}</div>`:''}
             <button class="btn sm pe-save" style="margin-top:8px">계획 저장</button>
           </div>
           <div class="msg cf-msg"></div>
@@ -2177,17 +2182,32 @@
     finally{rxGenerating=false;if(btnEl){btnEl.disabled=false;btnEl.textContent=orig;}}
   }
 
+  // [계획 수정] 오류 한글 매핑 (자금출처 계좌 변경 포함)
+  function peErr(e){
+    return e==='sales_linked'?'매출에서 온 계획은 수정할 수 없습니다.'
+      :e==='not_plan'?'이미 실적으로 처리된 거래입니다.'
+      :e==='account_not_operable'?'이 계좌에 등록(운영) 권한이 없습니다. 다른 계좌를 고르거나 디렉터에게 문의하세요.'
+      :e==='bad_account_id'?'선택한 계좌를 찾을 수 없습니다. 목록을 새로고침한 뒤 다시 시도하세요.'
+      :e==='invalid_amount'?'계획 금액을 확인하세요.'
+      :String(e);
+  }
   async function savePlanEdit(id,box){
     const m=box.querySelector('.cf-msg');m.className='msg cf-msg';m.style.display='none';
     const body={plan_date:box.querySelector('.pe-date').value,amount:Number(box.querySelector('.pe-amt').value)||0};
     const memoEl=box.querySelector('.pe-memo');if(memoEl&&memoEl.value.trim())body.memo=memoEl.value.trim();
     const fxEl=box.querySelector('.pe-fx');if(fxEl&&Number(fxEl.value)>0)body.fx_rate=Number(fxEl.value);
+    // 자금출처 계좌 — 빈 값은 (미지정). 키를 항상 보내되, 구백엔드는 이 키를 무시하므로 안전.
+    const accEl=box.querySelector('.pe-acc');
+    if(accEl)body.account_id=accEl.value?Number(accEl.value):null;
     if(!(body.amount>0)){m.className='msg cf-msg err';m.style.display='block';m.textContent='계획 금액을 입력하세요.';return;}
     try{
       const res=await fetch(session.api+'/api/transactions/'+id+'/plan',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+(d.error==='sales_linked'?'매출에서 온 계획은 수정할 수 없습니다.':(d.error||res.status));return;}
-      alert('계획이 수정되었습니다. 현금흐름 계획선에 반영됩니다.');
+      if(!res.ok||d.error){m.className='msg cf-msg err';m.style.display='block';m.textContent='실패: '+peErr(d.error||res.status);return;}
+      alert(d.account_changed
+        ? '계획이 수정되었습니다. 출금 계좌 변경이 현금흐름 계획선과 은행계좌별 구분에 반영됩니다.'
+          +(txnMap[id]&&txnMap[id].recurring_rule_id?'\n(고정비 회차 — 이 회차의 계좌는 예외로 보존되어 규칙을 다시 저장해도 덮어쓰이지 않습니다.)':'')
+        : '계획이 수정되었습니다. 현금흐름 계획선에 반영됩니다.');
       loadTxns();
     }catch(e){m.className='msg cf-msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }

@@ -412,7 +412,7 @@ export default async function financeRoutes(app) {
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
-              t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id,
+              t.plan_amount, t.plan_date, t.plan_memo, t.change_count, t.recurring_rule_id, t.plan_account_manual,
               t.cash_due, t.cash_due_done_at,
               si.sat_no AS sat_no, c.name AS customer_name,
               t.customer_id, fc.name AS freight_customer_name,
@@ -1495,7 +1495,11 @@ export default async function financeRoutes(app) {
       }
       if (cur.account_id != null) {
         params.push(Number(cur.account_id));
-        sets.push(`account_id=$${params.length}`); diffs.push(`t.account_id IS DISTINCT FROM $${params.length}`);
+        // 2026-08-26: 거래목록 [계획 수정] 에서 **이 회차만** 다른 계좌로 지정한 건(plan_account_manual)은
+        //   규칙을 다시 저장해도 계좌를 덮지 않는다(사람이 정한 예외를 보존).
+        //   금액·계정과목은 종전대로 규칙을 따른다 — 계좌만 예외.
+        sets.push(`account_id = CASE WHEN t.plan_account_manual THEN t.account_id ELSE $${params.length} END`);
+        diffs.push(`(NOT t.plan_account_manual AND t.account_id IS DISTINCT FROM $${params.length})`);
       }
       params.push(req.ctx.perm.userId); const pUser = params.length;
       params.push(id); const pId = params.length;
@@ -1903,7 +1907,31 @@ export default async function financeRoutes(app) {
     let fx = Number(t.fx_rate) || 1;
     if (t.currency === 'USD') fx = Number(b.fx_rate) > 0 ? Number(b.fx_rate) : (await getUsdMxnRate()).rate;
     const amountMxn = r2(newAmount * fx);
-    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date);
+
+    // ===== 자금출처 계좌 변경 (2026-08-26 — 2026-07-29 v3 에서 유실됐던 기능 복구) =====
+    // "어느 은행계좌에서 출금되는지" 를 예정 행에서 직접 고친다.
+    //  · account_id 키가 body 에 없으면 기존 계좌 유지 — 구프런트 하위호환.
+    //  · null 허용 = (계좌 미지정) 으로 되돌리기.
+    //  · 새 계좌도 운영권한(canOperateAccount) 필요 — 거래등록과 같은 원칙.
+    //  · 실제로 바뀌면 plan_account_manual=true → 이후 고정비 규칙을 저장해도 이 회차의 '계좌만' 보존.
+    //    (금액·계정과목은 종전대로 규칙을 따른다)
+    let newAcc = t.account_id == null ? null : Number(t.account_id);
+    if ('account_id' in b) {
+      if (b.account_id == null || b.account_id === '') newAcc = null;
+      else {
+        const cand = Number(b.account_id);
+        if (!Number.isInteger(cand) || cand <= 0) return reply.code(400).send({ error: 'bad_account_id' });
+        const acc = (await query(`SELECT id FROM accounts WHERE id=$1 AND deleted_at IS NULL`, [cand])).rows[0];
+        if (!acc) return reply.code(400).send({ error: 'bad_account_id' });
+        newAcc = cand;
+      }
+      if (newAcc != null && !canOperateAccount(req.ctx.perm, newAcc)) {
+        return reply.code(403).send({ error: 'account_not_operable' });
+      }
+    }
+    const accountChanged = (t.account_id == null ? null : Number(t.account_id)) !== newAcc;
+
+    const changed = Math.abs(newAmount - Number(t.amount)) > 0.001 || newDate !== toYMD(t.txn_date) || accountChanged;
     const memo = b.memo ? String(b.memo).trim() : null;
     const newCount = Number(t.change_count || 0) + (changed ? 1 : 0);
     const planMemo = changed && memo
@@ -1912,10 +1940,14 @@ export default async function financeRoutes(app) {
     // 예정 거래는 계획=현재값이므로 txn_date/amount와 plan_date/plan_amount를 함께 갱신
     await query(
       `UPDATE transactions SET txn_date=$1, amount=$2, fx_rate=$3, amount_mxn=$4, plan_amount=$2, plan_date=$1,
-         change_count=$5, plan_memo=$6, updated_by=$7 WHERE id=$8`,
-      [newDate, newAmount, fx, amountMxn, newCount, planMemo, req.ctx.perm.userId, id]);
-    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`, detail: { plan_edit: true, changed } });
-    return { ok: true, changed, change_count: newCount };
+         change_count=$5, plan_memo=$6, account_id=$7,
+         plan_account_manual = CASE WHEN $8::boolean THEN true ELSE plan_account_manual END,
+         updated_by=$9 WHERE id=$10`,
+      [newDate, newAmount, fx, amountMxn, newCount, planMemo, newAcc, accountChanged, req.ctx.perm.userId, id]);
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `transaction:${id}`,
+      detail: { plan_edit: true, changed, account_changed: accountChanged,
+        account_from: t.account_id == null ? null : Number(t.account_id), account_to: newAcc } });
+    return { ok: true, changed, change_count: newCount, account_changed: accountChanged, account_id: newAcc };
   });
 
   // ===== 예정(계획) 라인 삭제 — 디렉터 전용 (2026-08-26) =====
