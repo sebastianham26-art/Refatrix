@@ -314,18 +314,28 @@ export default async function exhibitionRoutes(app) {
     const kind = normKind(b.kind);
     // 부스 직접 방문은 「고객이 확정한 약속」이라는 개념이 없다.
     const confirmed = kind === 'meeting' && !!b.is_confirmed;
-    const r = (await query(
-      `INSERT INTO exhibition_meetings
-         (exhibition_id, day_no, slot_hour, meet_date, owner_user_id, customer_id, company_name,
-          contact_name, wa_phone, email, goal_note, target_quote, target_order, memo, status, is_walkin,
-          kind, is_confirmed, confirmed_at, confirmed_by, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-               CASE WHEN $18 THEN now() ELSE NULL END, CASE WHEN $18 THEN $19 ELSE NULL END, $19) RETURNING id`,
-      [Number(e.id), dayNo, hour, shiftYmd(d10(e.start_date), dayNo - 1),
-        idOf(b.owner_user_id) || Number(perm.userId), idOf(b.customer_id), company,
-        txt(b.contact_name, 200), txt(b.wa_phone, 40), txt(b.email, 200), txt(b.goal_note, 2000),
-        money(b.target_quote) || 0, money(b.target_order) || 0, txt(b.memo, 4000),
-        status, !!b.is_walkin, kind, confirmed, perm.userId])).rows[0];
+    const confAt = confirmed ? new Date().toISOString() : null;
+    const confBy = confirmed ? Number(perm.userId) : null;
+    let r;
+    try {
+      r = (await query(
+        `INSERT INTO exhibition_meetings
+           (exhibition_id, day_no, slot_hour, meet_date, owner_user_id, customer_id, company_name,
+            contact_name, wa_phone, email, goal_note, target_quote, target_order, memo, status, is_walkin,
+            kind, is_confirmed, confirmed_at, confirmed_by, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`,
+        [Number(e.id), dayNo, hour, shiftYmd(d10(e.start_date), dayNo - 1),
+          idOf(b.owner_user_id) || Number(perm.userId), idOf(b.customer_id), company,
+          txt(b.contact_name, 200), txt(b.wa_phone, 40), txt(b.email, 200), txt(b.goal_note, 2000),
+          money(b.target_quote) || 0, money(b.target_order) || 0, txt(b.memo, 4000),
+          status, !!b.is_walkin, kind, confirmed, confAt, confBy, perm.userId])).rows[0];
+    } catch (err) {
+      // 0186 마이그레이션 전이면 컬럼이 없다 — 500 대신 무엇을 해야 하는지 알려준다
+      if (err && (err.code === '42703' || err.code === '42P01')) {
+        return reply.code(503).send({ error: 'migration_required', migration: '0186' });
+      }
+      throw err;
+    }
     await logEvent({ userId: perm.userId, action: 'create', target: `expo_meeting:${r.id}`,
       detail: { exhibition_id: Number(e.id), day_no: dayNo, slot_hour: hour, company, kind, walkin: !!b.is_walkin } });
     return { id: Number(r.id), day_no: dayNo, slot_hour: hour, company_name: company, kind };
@@ -388,7 +398,14 @@ export default async function exhibitionRoutes(app) {
     }
     if (!sets.length) return { ok: true, id: Number(m.id), unchanged: true };
     sets.push('updated_at = now()');
-    await query(`UPDATE exhibition_meetings SET ${sets.join(', ')} WHERE id = $1`, params);
+    try {
+      await query(`UPDATE exhibition_meetings SET ${sets.join(', ')} WHERE id = $1`, params);
+    } catch (err) {
+      if (err && (err.code === '42703' || err.code === '42P01')) {
+        return reply.code(503).send({ error: 'migration_required', migration: '0186' });
+      }
+      throw err;
+    }
     // 상담이 연결돼 있으면 업체·연락처 스냅샷을 같이 맞춘다(표에서 따로 놀지 않도록)
     if (m.consult_id && (b.company_name !== undefined || b.contact_name !== undefined)) {
       await query(

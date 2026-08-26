@@ -512,3 +512,52 @@ test('XSS: 업체명·요약의 태그가 이스케이프된다', async () => {
   assert.ok(h.includes('&lt;img src=x'));
   assert.equal($('cs-table').querySelectorAll('img').length, 0);
 });
+
+// ── 고객 이름으로 찾기 ──────────────────────────────────────────────
+test('고객 검색: 이름 일부를 치면 드롭다운이 걸러지고 스페인어 강세부호는 무시한다', async () => {
+  route('GET', '/api/visits/customer-options', { items: [
+    { id: 101, name: 'Refaccionaria El Águila' },
+    { id: 102, name: 'Autopartes del Norte' },
+    { id: 103, name: 'Aguilar Refacciones' },
+  ] });
+  await win.csLoadCustOptions();
+  const sel = $('cs-cust');
+  assert.equal(sel.options.length, 4, '안내 1 + 고객 3');
+  assert.ok(txt('cs-custInfo').includes('3개'));
+
+  $('cs-custQ').value = 'agui';
+  $('cs-custQ').dispatchEvent(new win.Event('input'));
+  const names = [...sel.options].slice(1).map((o) => o.textContent);
+  assert.deepEqual(names, ['Refaccionaria El Águila', 'Aguilar Refacciones'], 'Águila 를 agui 로 찾는다');
+});
+
+test('고객 검색: 하나만 남으면 자동으로 선택하고, 없으면 직접 입력을 안내한다', async () => {
+  route('GET', '/api/visits/customer-options', { items: [
+    { id: 101, name: 'Refaccionaria El Águila' },
+    { id: 102, name: 'Autopartes del Norte' },
+    { id: 103, name: 'Aguilar Refacciones' },
+  ] });
+  await win.csLoadCustOptions();
+  $('cs-custQ').value = 'norte';
+  $('cs-custQ').dispatchEvent(new win.Event('input'));
+  assert.equal($('cs-cust').value, '102');
+  assert.ok(txt('cs-custInfo').includes('자동으로 선택'));
+
+  $('cs-custQ').value = '없는이름';
+  $('cs-custQ').dispatchEvent(new win.Event('input'));
+  assert.equal($('cs-cust').options.length, 1);
+  assert.ok(txt('cs-custInfo').includes('직접 입력'));
+});
+
+test('고객 검색: 고른 뒤 검색어를 지워도 선택이 유지된다', async () => {
+  route('GET', '/api/visits/customer-options', { items: [
+    { id: 101, name: 'Refaccionaria El Águila' },
+    { id: 102, name: 'Autopartes del Norte' },
+    { id: 103, name: 'Aguilar Refacciones' },
+  ] });
+  await win.csLoadCustOptions();
+  $('cs-cust').value = '103';
+  $('cs-custQ').value = '';
+  $('cs-custQ').dispatchEvent(new win.Event('input'));
+  assert.equal($('cs-cust').value, '103');
+});

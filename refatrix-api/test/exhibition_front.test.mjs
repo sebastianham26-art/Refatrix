@@ -678,3 +678,36 @@ test('뒷막을 누르면 시트가 닫힌다', async () => {
   assert.ok($('ex-sheet').classList.contains('ex-hidden'));
   assert.ok(!win.document.documentElement.classList.contains('ex-locked'));
 });
+
+// ── 전시회 등록 폼에서도 고객 이름으로 찾기 ─────────────────────────
+test('새 미팅: 고객 이름을 쳐서 찾고 하나만 남으면 업체명까지 채워진다', async () => {
+  route('GET', '/api/visits/customer-options', { items: [
+    { id: 101, name: 'Refaccionaria El Águila' },
+    { id: 102, name: 'Autopartes del Norte' },
+    { id: 103, name: 'Aguilar Refacciones' },
+  ] });
+  await openBoard();
+  await win.csLoadCustOptions();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-slot')[4].querySelector('.b').click(); await tick();
+
+  assert.ok($('ex-nCustQ'), '검색칸이 있어야 함');
+  assert.equal($('ex-nCust').options.length, 4);
+
+  $('ex-nCustQ').value = 'agui';
+  $('ex-nCustQ').dispatchEvent(new win.Event('input'));
+  assert.equal($('ex-nCust').options.length, 3, '안내 1 + 2건');
+
+  $('ex-nCustQ').value = 'norte';
+  $('ex-nCustQ').dispatchEvent(new win.Event('input'));
+  assert.equal($('ex-nCust').value, '102');
+  assert.equal($('ex-nCompany').value, 'Autopartes del Norte', '업체명이 자동으로 채워진다');
+
+  route('POST', '/api/exhibitions/10/meetings', { id: 90 });
+  $('ex-nSave').click();
+  await tick(50);
+  const b = sent('POST', '/api/exhibitions/10/meetings');
+  assert.equal(b.customer_id, 102, '등록 고객으로 연결된다');
+  assert.equal(b.company_name, 'Autopartes del Norte');
+});

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20260826ex3)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20260826ex4)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -321,7 +321,11 @@
       <label>업체명</label>
       <div class="cs-segment"><button type="button" id="cs-segNew" class="on">직접 입력</button><button type="button" id="cs-segCust">기존 고객 선택</button></div>
       <div id="cs-rowNew" style="margin-top:6px"><input id="cs-company" style="width:100%;max-width:460px" placeholder="업체명 (예: Refaccionaria El Águila)"></div>
-      <div id="cs-rowCust" class="hidden" style="margin-top:6px"><select id="cs-cust" style="min-width:300px;max-width:460px"><option value="">고객 검색·선택…</option></select></div>
+      <div id="cs-rowCust" class="hidden" style="margin-top:6px;max-width:460px">
+        <input id="cs-custQ" type="search" placeholder="🔎 고객 이름 일부를 입력해 찾기 (예: agui)" style="width:100%">
+        <select id="cs-cust" style="width:100%;margin-top:6px"><option value="">고객 검색·선택…</option></select>
+        <div class="hint" id="cs-custInfo" style="margin-top:4px"></div>
+      </div>
 
       <div class="cs-row" style="margin-top:6px;max-width:940px">
         <div><label>이름 (담당자 · 직책)</label><input id="cs-contact" placeholder="Juan Pérez / 구매 담당"></div>
@@ -474,7 +478,7 @@
 </div>
 
 <script>
-  // ===== 고객상담 + 🎪 전시회 (build b20260826ex3) =====
+  // ===== 고객상담 + 🎪 전시회 (build b20260826ex4) =====
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -576,10 +580,35 @@
     }catch(e){}
   }
 
+  // 등록된 고객 목록 — 드롭다운 + 이름 검색 공용
+  let csCustList=[];
+  // 스페인어 강세부호를 무시하고 비교한다(Águila ↔ aguila)
+  function csNormTxt(v){ return String(v==null?'':v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+  function csCustMatch(q){
+    const nq=csNormTxt(q).trim();
+    return nq?csCustList.filter(c=>csNormTxt(c.name).includes(nq)):csCustList;
+  }
+  // sel 에 걸러진 목록을 다시 채운다(고르고 있던 값은 목록에 남아 있으면 유지)
+  function csRenderCustOptions(sel,q,placeholder){
+    if(!sel) return [];
+    const list=csCustMatch(q);
+    const cur=sel.value;
+    sel.innerHTML='<option value="">'+csEsc(placeholder||'고객 검색·선택…')+'</option>'
+      +list.slice(0,500).map(c=>'<option value="'+c.id+'">'+csEsc(c.name)+'</option>').join('');
+    if(cur&&list.some(c=>String(c.id)===String(cur))) sel.value=cur;
+    return list;
+  }
+  function csCustInfoText(list,q){
+    if(!csCustList.length) return '';
+    if(!String(q||'').trim()) return '등록 고객 '+csCustList.length+'개';
+    if(!list.length) return '찾는 이름이 없습니다 — 「직접 입력」으로 업체명을 적어주세요.';
+    return list.length+'개 찾음'+(list.length===1?' — 자동으로 선택했습니다':'');
+  }
   async function csLoadCustOptions(){
     try{ const d=await fetch(session.api+'/api/visits/customer-options',{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
-      $('cs-cust').innerHTML='<option value="">고객 검색·선택…</option>'+items.map(c=>'<option value="'+c.id+'">'+csEsc(c.name)+'</option>').join('');
+      csCustList=(d.items||[]).map(c=>({id:c.id,name:c.name}));
+      csRenderCustOptions($('cs-cust'),'','고객 검색·선택…');
+      const inf=$('cs-custInfo'); if(inf) inf.textContent=csCustInfoText(csCustList,'');
     }catch(e){}
   }
 
@@ -1346,6 +1375,12 @@
   // ===== 이벤트 배선 =====
   $('go').addEventListener('click',login);
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('cs-custQ').addEventListener('input',()=>{
+    const q=$('cs-custQ').value;
+    const list=csRenderCustOptions($('cs-cust'),q,'고객 검색·선택…');
+    if(list.length===1) $('cs-cust').value=String(list[0].id);
+    $('cs-custInfo').textContent=csCustInfoText(list,q);
+  });
   $('cs-segNew').addEventListener('click',()=>csSegment(false));
   $('cs-segCust').addEventListener('click',()=>csSegment(true));
   $('cs-geoBtn').addEventListener('click',csRequestGeo);
@@ -1938,7 +1973,10 @@
       +'</div>'
       +'<div class="ex-sec">'
         +'<div class="st">👤 고객 · 담당</div>'
-        +'<label>등록된 고객에서 선택</label><select id="ex-nCust"></select>'
+        +'<label>등록된 고객에서 찾기</label>'
+        +'<input id="ex-nCustQ" type="search" inputmode="search" placeholder="🔎 고객 이름 일부 입력 (예: agui)">'
+        +'<select id="ex-nCust" style="margin-top:6px"></select>'
+        +'<div class="hint" id="ex-nCustInfo" style="margin-top:4px"></div>'
         +'<div style="margin-top:9px"><label>업체명 (미등록 업체면 직접 입력)</label><input id="ex-nCompany" placeholder="Refaccionaria El Águila"></div>'
         +'<div class="ex-f2" style="margin-top:9px">'
           +'<div><label>만난 사람 · 직책</label><input id="ex-nContact" placeholder="Juan Pérez / 구매"></div>'
@@ -1973,10 +2011,16 @@
       +(isNow?'등록하고 바로 녹음':'미팅 계획 저장')+'</button>'
       +'<button class="btn ghost" type="button" id="ex-nCancel">닫기</button>';
 
-    // 고객 옵션은 고객상담 화면이 이미 불러온 목록을 그대로 쓴다
-    const src=$('cs-cust');
-    $('ex-nCust').innerHTML=src?src.innerHTML:'<option value="">— 직접 입력 —</option>';
+    // 고객 목록은 고객상담 화면이 이미 불러온 것을 그대로 쓴다(검색 방식도 동일)
+    csRenderCustOptions($('ex-nCust'),'','— 직접 입력 —');
     $('ex-nCust').value='';
+    $('ex-nCustInfo').textContent=csCustInfoText(csCustList,'');
+    $('ex-nCustQ').addEventListener('input',()=>{
+      const q=$('ex-nCustQ').value;
+      const list=csRenderCustOptions($('ex-nCust'),q,'— 직접 입력 —');
+      if(list.length===1){ $('ex-nCust').value=String(list[0].id); $('ex-nCompany').value=list[0].name; }
+      $('ex-nCustInfo').textContent=csCustInfoText(list,q);
+    });
     function exNKindApply(){
       const booth=exNewKind==='booth';
       $('ex-nKindHint').innerHTML=booth
