@@ -22,7 +22,8 @@ import { mxTodayStr, MX_OFFSET_MIN } from '../workingHours.js';
 import { consultAiApi, aiReady } from './consultRoutes.js';
 import {
   clip, num, dayAxis, hourAxis, ownerColorMap, meetingTotals, ownerTotals,
-  buildQualEvalPrompt, parseQualEvalJson, summaryToText, normQual, OWNER_UNSET,
+  buildQualEvalPrompt, parseQualEvalJson, summaryToText, normQual, normKind,
+  OWNER_UNSET, BOOTH_COLOR,
 } from '../exhibitionAi.js';
 
 const PAGE = 'pipeline';
@@ -143,7 +144,9 @@ export async function buildBoard(perm, e) {
       target_quote: num(r.target_quote), target_order: num(r.target_order),
       actual_quote: r.actual_quote == null ? null : num(r.actual_quote),
       actual_order: r.actual_order == null ? null : num(r.actual_order),
+      kind: normKind(r.kind),
       status: r.status, is_walkin: !!r.is_walkin,
+      is_confirmed: !!r.is_confirmed, confirmed_at: r.confirmed_at || null,
       consult_id: cid, consult_hidden: hidden,
       rec_status: rec.rec_status || null, rec_id: rec.rec_id || null,
       duration_sec: rec.duration_sec != null ? rec.duration_sec : null,
@@ -169,6 +172,7 @@ export async function buildBoard(perm, e) {
     exhibition, days, hours, owners: ownersOut, meetings,
     totals: meetingTotals(meetings), owner_totals: ownerTotals(meetings),
     unset_color: { bg: OWNER_UNSET[0], fg: OWNER_UNSET[1], border: OWNER_UNSET[2] },
+    booth_color: { bg: BOOTH_COLOR[0], fg: BOOTH_COLOR[1], border: BOOTH_COLOR[2] },
     mx_today: mxTodayStr(new Date()), now,
     is_director: perm.role === 'director', me,
     ai_ready: aiReady(),
@@ -307,19 +311,24 @@ export default async function exhibitionRoutes(app) {
     const hour = intIn(b.slot_hour, Number(e.start_hour), Number(e.end_hour) - 1);
     if (hour == null) return reply.code(400).send({ error: 'bad_hour' });
     const status = STATUSES.includes(b.status) ? b.status : (b.is_walkin ? 'done' : 'planned');
+    const kind = normKind(b.kind);
+    // 부스 직접 방문은 「고객이 확정한 약속」이라는 개념이 없다.
+    const confirmed = kind === 'meeting' && !!b.is_confirmed;
     const r = (await query(
       `INSERT INTO exhibition_meetings
          (exhibition_id, day_no, slot_hour, meet_date, owner_user_id, customer_id, company_name,
-          contact_name, wa_phone, email, goal_note, target_quote, target_order, memo, status, is_walkin, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+          contact_name, wa_phone, email, goal_note, target_quote, target_order, memo, status, is_walkin,
+          kind, is_confirmed, confirmed_at, confirmed_by, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+               CASE WHEN $18 THEN now() ELSE NULL END, CASE WHEN $18 THEN $19 ELSE NULL END, $19) RETURNING id`,
       [Number(e.id), dayNo, hour, shiftYmd(d10(e.start_date), dayNo - 1),
         idOf(b.owner_user_id) || Number(perm.userId), idOf(b.customer_id), company,
         txt(b.contact_name, 200), txt(b.wa_phone, 40), txt(b.email, 200), txt(b.goal_note, 2000),
         money(b.target_quote) || 0, money(b.target_order) || 0, txt(b.memo, 4000),
-        status, !!b.is_walkin, perm.userId])).rows[0];
+        status, !!b.is_walkin, kind, confirmed, perm.userId])).rows[0];
     await logEvent({ userId: perm.userId, action: 'create', target: `expo_meeting:${r.id}`,
-      detail: { exhibition_id: Number(e.id), day_no: dayNo, slot_hour: hour, company, walkin: !!b.is_walkin } });
-    return { id: Number(r.id), day_no: dayNo, slot_hour: hour, company_name: company };
+      detail: { exhibition_id: Number(e.id), day_no: dayNo, slot_hour: hour, company, kind, walkin: !!b.is_walkin } });
+    return { id: Number(r.id), day_no: dayNo, slot_hour: hour, company_name: company, kind };
   });
 
   // ── 미팅 수정(칸 이동 · 목표 · 달성 · 간단 내용 · 상태) ──
@@ -340,6 +349,21 @@ export default async function exhibitionRoutes(app) {
     if (b.customer_id !== undefined) put('customer_id', idOf(b.customer_id));
     if (b.owner_user_id !== undefined) put('owner_user_id', idOf(b.owner_user_id));
     if (b.is_walkin !== undefined) put('is_walkin', !!b.is_walkin);
+    if (b.kind !== undefined) {
+      const k = normKind(b.kind);
+      put('kind', k);
+      if (k === 'booth') { put('is_confirmed', false); put('confirmed_at', null); put('confirmed_by', null); }
+    }
+    if (b.is_confirmed !== undefined) {
+      // 부스 방문으로 바꾸는 중이면 위에서 이미 FALSE 로 눕혔으므로 건드리지 않는다.
+      const asBooth = b.kind !== undefined && normKind(b.kind) === 'booth';
+      if (!asBooth) {
+        const v = !!b.is_confirmed;
+        put('is_confirmed', v);
+        put('confirmed_at', v ? new Date().toISOString() : null);
+        put('confirmed_by', v ? Number(perm.userId) : null);
+      }
+    }
     if (b.status !== undefined) {
       if (!STATUSES.includes(b.status)) return reply.code(400).send({ error: 'bad_status' });
       put('status', b.status);

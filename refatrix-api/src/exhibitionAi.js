@@ -80,6 +80,10 @@ export const OWNER_PALETTE = [
   ['#E7EBEE', '#41525C', '#C9D2D8'],   // slate
 ];
 export const OWNER_UNSET = ['#F2F0EA', '#6B6B6B', '#DED9CE'];  // 담당자 미지정
+// 부스 직접 방문 — 담당자와 무관하게 공통 회색(약속 미팅과 한눈에 구분되도록)
+export const BOOTH_COLOR = ['#EDEBE4', '#5B5B57', '#D8D3C6'];
+export const MEETING_KINDS = ['meeting', 'booth'];
+export function normKind(v) { return String(v) === 'booth' ? 'booth' : 'meeting'; }
 
 // 사용자 id 로 결정적 배정(같은 사람 = 항상 같은 색). 충돌하면 다음 빈 색으로.
 export function ownerColorMap(ownerIds) {
@@ -110,8 +114,15 @@ export function meetingTotals(items) {
   const rate = (a, t) => (t > 0 ? Math.round((a / t) * 1000) / 10 : null);
   const q = { achieved: 0, partial: 0, missed: 0 };
   for (const m of live) if (m && q[m.qual_result] !== undefined) q[m.qual_result]++;
+  // 약속 미팅과 부스 직접 방문을 나눠 센다. 확정 여부는 약속 미팅에만 의미가 있다.
+  const appts = live.filter((m) => normKind(m.kind) === 'meeting');
+  const booth = live.filter((m) => normKind(m.kind) === 'booth');
   return {
     total: live.length,
+    meeting: appts.length,
+    booth: booth.length,
+    confirmed: appts.filter((m) => m.is_confirmed).length,
+    unconfirmed: appts.filter((m) => !m.is_confirmed && m.status === 'planned').length,
     planned: live.filter((m) => m.status === 'planned').length,
     done: live.filter((m) => m.status === 'done').length,
     noshow: live.filter((m) => m.status === 'noshow').length,
@@ -131,8 +142,9 @@ export function ownerTotals(items) {
   for (const m of (Array.isArray(items) ? items : [])) {
     if (!m || m.status === 'cancelled') continue;
     const id = Number(m.owner_user_id) || 0;
-    const cur = by.get(id) || { owner_user_id: id || null, count: 0, target_quote: 0, target_order: 0, actual_quote: 0, actual_order: 0 };
+    const cur = by.get(id) || { owner_user_id: id || null, count: 0, booth: 0, target_quote: 0, target_order: 0, actual_quote: 0, actual_order: 0 };
     cur.count++;
+    if (normKind(m.kind) === 'booth') cur.booth++;
     cur.target_quote += num(m.target_quote);
     cur.target_order += num(m.target_order);
     cur.actual_quote += num(m.actual_quote);

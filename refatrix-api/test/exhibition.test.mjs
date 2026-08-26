@@ -13,7 +13,7 @@ import {
 import {
   ordinalDay, dayAxis, hourAxis, weekdayKo, ownerColorMap, OWNER_PALETTE,
   meetingTotals, ownerTotals, normQual, parseQualEvalJson, buildQualEvalPrompt,
-  summaryToText, num, clip,
+  summaryToText, num, clip, normKind, BOOTH_COLOR,
 } from '../src/exhibitionAi.js';
 
 // ── pg-mem 셋업 + pool 몽키패치 ──────────────────────────────────────
@@ -47,7 +47,8 @@ function installDb() {
       meet_date DATE, owner_user_id INT, customer_id INT, company_name TEXT, contact_name TEXT,
       wa_phone TEXT, email TEXT, goal_note TEXT, target_quote NUMERIC DEFAULT 0, target_order NUMERIC DEFAULT 0,
       actual_quote NUMERIC, actual_order NUMERIC, memo TEXT, status TEXT DEFAULT 'planned',
-      is_walkin BOOLEAN DEFAULT FALSE, consult_id INT, qual_result TEXT, qual_eval TEXT,
+      is_walkin BOOLEAN DEFAULT FALSE, kind TEXT DEFAULT 'meeting', is_confirmed BOOLEAN DEFAULT FALSE,
+      confirmed_at TIMESTAMPTZ, confirmed_by INT, consult_id INT, qual_result TEXT, qual_eval TEXT,
       qual_eval_json JSONB, qual_eval_at TIMESTAMPTZ, created_by INT,
       created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ);
     CREATE TABLE audit_log(id SERIAL PRIMARY KEY, user_id INT, device_id INT, action TEXT, target TEXT,
@@ -81,6 +82,10 @@ function seed() {
     INSERT INTO exhibition_meetings (id,exhibition_id,day_no,slot_hour,meet_date,owner_user_id,
       company_name,target_quote,target_order,status,is_walkin,created_by)
       VALUES (3,10,2,12,'2026-09-17',2,'Llantas y Mas (부스)',0,0,'done',TRUE,2);
+    INSERT INTO exhibition_meetings (id,exhibition_id,day_no,slot_hour,meet_date,owner_user_id,
+      company_name,target_quote,target_order,status,kind,is_confirmed,created_by)
+      VALUES (6,10,3,15,'2026-09-18',2,'Frenos del Golfo (부스방문)',0,0,'planned','booth',FALSE,2);
+    UPDATE exhibition_meetings SET is_confirmed = TRUE, confirmed_at = now() WHERE id = 2;
     INSERT INTO exhibition_meetings (id,exhibition_id,day_no,slot_hour,meet_date,owner_user_id,
       company_name,target_quote,target_order,status,created_by)
       VALUES (4,10,3,13,'2026-09-18',1,'Comercial Andrade',150000,0,'cancelled',1);
@@ -325,7 +330,7 @@ test('buildBoard: 축(3일 × 10칸)과 미팅이 칸에 맞게 나온다', asyn
   assert.deepEqual(b.days.map((d) => d.label), ['1st day', '2nd day', '3rd day']);
   assert.equal(b.hours.length, 10);
   assert.equal(b.exhibition.currency, 'MXN');
-  assert.equal(b.meetings.length, 4, '소프트 삭제 미팅은 제외');
+  assert.equal(b.meetings.length, 5, '소프트 삭제 미팅은 제외');
   const m1 = b.meetings.find((m) => m.id === 1);
   assert.equal(m1.day_no, 1);
   assert.equal(m1.slot_hour, 9);
@@ -346,8 +351,8 @@ test('buildBoard: 금액은 전부 숫자로 변환된다(문자열 NUMERIC 방�
 
 test('buildBoard: 합계는 취소 건을 빼고 계산된다', async () => {
   const b = await buildBoard(DIRECTOR, await getExhibition(10));
-  assert.equal(b.totals.total, 3);
-  assert.equal(b.totals.target_quote, 850000 + 420000 + 0);
+  assert.equal(b.totals.total, 4, '취소 1건 제외');
+  assert.equal(b.totals.target_quote, 850000 + 420000 + 0 + 0);
   assert.equal(b.totals.actual_quote, 460000);
   assert.equal(b.totals.walkin, 1);
   assert.equal(b.totals.qual.achieved, 1);
@@ -366,8 +371,8 @@ test('buildBoard: 담당자 색상은 범례·칩이 같은 값을 쓰도록 서
 test('buildBoard: 전시회는 팀 공용 — 영업사원도 남의 미팅을 전부 본다', async () => {
   const forOscar = await buildBoard(OSCAR, await getExhibition(10));
   const forMaria = await buildBoard(MARIA, await getExhibition(10));
-  assert.equal(forOscar.meetings.length, 4);
-  assert.equal(forMaria.meetings.length, 4);
+  assert.equal(forOscar.meetings.length, 5);
+  assert.equal(forMaria.meetings.length, 5);
   assert.ok(forOscar.meetings.some((m) => m.owner_name === 'Maria'));
 });
 
@@ -438,4 +443,70 @@ test('buildBoard: 오늘이 전시 기간이면 now.day_no 가 채워진다', as
   assert.equal(b.now.day_no, 1, '오늘 = 1st day');
   const b2 = await buildBoard(DIRECTOR, e);
   assert.ok(b2.now.day_no === null || typeof b2.now.day_no === 'number');
+});
+
+// =====================================================================
+// ⑥ 약속 확정(컨펌) · 부스 직접 방문
+// =====================================================================
+test('normKind: booth 만 부스로 보고 나머지는 전부 약속 미팅', () => {
+  assert.equal(normKind('booth'), 'booth');
+  assert.equal(normKind('meeting'), 'meeting');
+  assert.equal(normKind(''), 'meeting');
+  assert.equal(normKind(null), 'meeting');
+  assert.equal(normKind('BOOTH'), 'meeting', '정확히 booth 일 때만');
+});
+
+test('부스 공통 색은 담당자 팔레트와 겹치지 않는다', () => {
+  assert.ok(/^#[0-9A-F]{6}$/i.test(BOOTH_COLOR[0]));
+  assert.ok(!OWNER_PALETTE.some((c) => c[0].toLowerCase() === BOOTH_COLOR[0].toLowerCase()));
+});
+
+test('meetingTotals: 약속/부스를 나눠 세고 확정은 약속에만 적용된다', () => {
+  const t = meetingTotals([
+    { status: 'planned', kind: 'meeting', is_confirmed: true },
+    { status: 'planned', kind: 'meeting', is_confirmed: false },
+    { status: 'done', kind: 'meeting', is_confirmed: true },
+    { status: 'planned', kind: 'booth', is_confirmed: false },
+    { status: 'cancelled', kind: 'meeting', is_confirmed: true },
+  ]);
+  assert.equal(t.total, 4);
+  assert.equal(t.meeting, 3);
+  assert.equal(t.booth, 1);
+  assert.equal(t.confirmed, 2, '취소 건은 빠진다');
+  assert.equal(t.unconfirmed, 1, '계획 상태의 미확정 약속만');
+});
+
+test('meetingTotals: kind 가 없는 옛 데이터는 전부 약속 미팅으로 센다', () => {
+  const t = meetingTotals([{ status: 'planned' }, { status: 'done' }]);
+  assert.equal(t.meeting, 2);
+  assert.equal(t.booth, 0);
+});
+
+test('ownerTotals: 담당자별로 부스 방문 건수를 따로 센다', () => {
+  const o = ownerTotals([
+    { status: 'planned', kind: 'booth', owner_user_id: 2 },
+    { status: 'planned', kind: 'meeting', owner_user_id: 2 },
+    { status: 'planned', kind: 'meeting', owner_user_id: 3 },
+  ]);
+  const oscar = o.find((x) => x.owner_user_id === 2);
+  assert.equal(oscar.count, 2);
+  assert.equal(oscar.booth, 1);
+  assert.equal(o.find((x) => x.owner_user_id === 3).booth, 0);
+});
+
+test('buildBoard: kind·확정 상태와 부스 공통색을 함께 내려준다', async () => {
+  const b = await buildBoard(DIRECTOR, await getExhibition(10));
+  const booth = b.meetings.find((m) => m.id === 6);
+  assert.equal(booth.kind, 'booth');
+  assert.equal(booth.is_confirmed, false);
+  assert.equal(booth.owner_name, 'Oscar', '부스 방문도 담당자는 남는다');
+  const appt = b.meetings.find((m) => m.id === 2);
+  assert.equal(appt.kind, 'meeting');
+  assert.equal(appt.is_confirmed, true);
+  assert.ok(appt.confirmed_at);
+  assert.equal(b.meetings.find((m) => m.id === 1).is_confirmed, false);
+  assert.ok(b.booth_color && /^#[0-9A-F]{6}$/i.test(b.booth_color.bg));
+  assert.equal(b.totals.booth, 1);
+  assert.equal(b.totals.meeting, 3);
+  assert.equal(b.totals.confirmed, 1);
 });

@@ -31,6 +31,7 @@ const M1 = {
   actual_quote: null, actual_order: null, status: 'planned', is_walkin: false,
   consult_id: null, consult_hidden: false, rec_status: null, rec_id: null, duration_sec: null,
   has_ai: false, summary: null, qual_result: null, qual_eval: null, qual_eval_json: null, created_by: 2,
+  kind: 'meeting', is_confirmed: false, confirmed_at: null,
 };
 const M2 = {
   id: 2, day_no: 1, slot_hour: 11, meet_date: '2026-09-16', owner_user_id: 3, owner_name: 'Maria',
@@ -41,15 +42,20 @@ const M2 = {
   has_ai: true, summary: { resumen: 'ok' },
   qual_result: 'partial', qual_eval: '합의 없음',
   qual_eval_json: { result: 'partial', evidence: ['근거1'], quote_amount: 460000, order_amount: null, next_step: '재제안' },
-  created_by: 3,
+  created_by: 3, kind: 'meeting', is_confirmed: true, confirmed_at: '2026-09-10T00:00:00Z',
 };
 const M3 = {
   ...M1, id: 3, day_no: 2, slot_hour: 12, meet_date: '2026-09-17', company_name: 'Llantas',
   is_walkin: true, status: 'done', target_quote: 0, target_order: 0, goal_note: null, created_by: 2,
 };
+// 약속 없이 고객 부스를 직접 찾아가는 영업 — 담당자 색이 아니라 공통 회색
+const M4 = {
+  ...M1, id: 4, day_no: 3, slot_hour: 15, meet_date: '2026-09-18', company_name: 'Frenos del Golfo',
+  kind: 'booth', is_confirmed: false, status: 'planned', target_quote: 0, target_order: 0, created_by: 2,
+};
 
 function boardPayload(extra) {
-  const meetings = (extra && extra.meetings) || [M1, M2, M3];
+  const meetings = (extra && extra.meetings) || [M1, M2, M3, M4];
   return {
     exhibition: { id: 10, name: 'RUJAC 2026', venue: 'Expo Guadalajara', start_date: '2026-09-16',
       day_count: 3, start_hour: 8, end_hour: 18, currency: 'MXN', is_active: true },
@@ -63,14 +69,16 @@ function boardPayload(extra) {
       range: String(8 + i).padStart(2, '0') + ':00–' + String(9 + i).padStart(2, '0') + ':00',
     })),
     owners: OWNERS, meetings,
-    totals: { total: 3, planned: 1, done: 2, noshow: 0, walkin: 1, cancelled: 0, recorded: 1,
+    totals: { total: 4, meeting: 3, booth: 1, confirmed: 1, unconfirmed: 2,
+      planned: 2, done: 2, noshow: 0, walkin: 1, cancelled: 0, recorded: 1,
       target_quote: 1270000, target_order: 650000, actual_quote: 460000, actual_order: 250000,
       rate_quote: 36.2, rate_order: 38.5, qual: { achieved: 0, partial: 1, missed: 0 } },
     owner_totals: [
-      { owner_user_id: 2, count: 2, target_quote: 850000, target_order: 400000, actual_quote: 0, actual_order: 0 },
+      { owner_user_id: 2, count: 3, booth: 1, target_quote: 850000, target_order: 400000, actual_quote: 0, actual_order: 0 },
       { owner_user_id: 3, count: 1, target_quote: 420000, target_order: 250000, actual_quote: 460000, actual_order: 250000 },
     ],
     unset_color: { bg: '#F2F0EA', fg: '#6B6B6B', border: '#DED9CE' },
+    booth_color: { bg: '#EDEBE4', fg: '#5B5B57', border: '#D8D3C6' },
     mx_today: '2026-09-17', now: { day_no: 2, hour: 12, date: '2026-09-17' },
     is_director: true, me: 1, ai_ready: true,
   };
@@ -517,4 +525,156 @@ test('영업사원 계정: 전시회 설정은 안내만 나오고 폼이 없다
   await tick();
   assert.equal($('ex-sName'), null);
   assert.ok($('ex-shB').textContent.includes('디렉터'));
+});
+
+// ── 약속 확정 · 부스 직접 방문 ───────────────────────────────────────
+test('확정 안 된 약속은 점선 + 「확정대기」, 확정된 약속은 「확정 ✓」', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  const zeta = qsa('.ex-chip').find((c) => c.textContent.includes('Grupo Zeta'));
+  assert.ok(zeta.classList.contains('wait'), '미확정 계획은 점선(wait)');
+  assert.ok(zeta.textContent.includes('확정대기'));
+  const aguila = qsa('.ex-chip').find((c) => c.textContent.includes('El Aguila'));
+  assert.ok(aguila.textContent.includes('확정 ✓'));
+  assert.ok(!aguila.classList.contains('wait'));
+});
+
+test('부스 직접 방문은 담당자 색이 아니라 공통 회색이고 담당자 이름이 붙는다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[2].click(); await tick();
+  const booth = qsa('.ex-chip').find((c) => c.textContent.includes('Frenos del Golfo'));
+  assert.ok(booth, '3일차에 부스 방문이 보여야 함');
+  const style = booth.getAttribute('style');
+  assert.ok(style.includes('#EDEBE4'), '공통 회색 배경');
+  assert.ok(!style.includes('#FBEEDA'), 'Oscar 색을 쓰지 않는다');
+  assert.ok(booth.textContent.includes('Oscar'), '담당자 이름은 표시한다');
+  assert.ok(booth.textContent.includes('🚶'));
+  assert.ok(!booth.textContent.includes('확정'), '부스 방문에 확정 개념은 없다');
+});
+
+test('범례에 부스 방문 칩이 따로 생기고 누르면 부스만 강조된다', async () => {
+  await openBoard();
+  win.eval("exSetView('grid')");
+  const boothLg = qsa('.ex-lg').find((b) => b.textContent.includes('부스 방문'));
+  assert.ok(boothLg);
+  assert.ok(boothLg.innerHTML.includes('#EDEBE4'));
+  boothLg.click();
+  await tick();
+  const booth = qsa('.ex-chip').find((c) => c.textContent.includes('Frenos del Golfo'));
+  const zeta = qsa('.ex-chip').find((c) => c.textContent.includes('Grupo Zeta'));
+  assert.ok(!booth.getAttribute('style').includes('opacity:.3'));
+  assert.ok(zeta.getAttribute('style').includes('opacity:.3'), '약속 미팅은 흐려진다');
+});
+
+test('KPI 에 약속/부스 구분과 약속 확정 현황이 나온다', async () => {
+  await openBoard();
+  const t = $('ex-kpis').textContent;
+  assert.ok(t.includes('약속 3'));
+  assert.ok(t.includes('부스 1'));
+  assert.ok(t.includes('1 / 3'), '확정 1 / 약속 3');
+  assert.ok(t.includes('확정 대기 2'));
+});
+
+test('상세: [✓ 약속 확정] 을 누르면 is_confirmed 만 PATCH 한다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-chip').find((c) => c.textContent.includes('Grupo Zeta')).click();
+  await tick();
+  assert.equal($('ex-confBtn').textContent, '✓ 약속 확정');
+  route('PATCH', '/api/exhibitions/meetings/1', { ok: true, id: 1 });
+  $('ex-confBtn').click();
+  await tick(40);
+  assert.deepEqual(sent('PATCH', '/api/exhibitions/meetings/1'), { is_confirmed: true });
+});
+
+test('상세: 부스 방문에는 확정 버튼이 없다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[2].click(); await tick();
+  qsa('.ex-chip').find((c) => c.textContent.includes('Frenos del Golfo')).click();
+  await tick();
+  assert.equal($('ex-confBtn'), null);
+  assert.ok($('ex-shS').textContent.includes('부스 방문'));
+  assert.equal($('ex-fKind').querySelector('button.on').dataset.k, 'booth');
+});
+
+test('새 미팅: 부스 방문을 고르면 kind=booth 로 보내고 확정·즉석 칸은 감춘다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-slot')[4].querySelector('.b').click();
+  await tick();
+  assert.ok($('ex-nKind'), '종류 선택이 있어야 함');
+  assert.equal($('ex-nConfirm').closest('label').style.display, '');
+  $('ex-nKind').querySelector('[data-k="booth"]').click();
+  await tick();
+  assert.equal($('ex-nConfirm').closest('label').style.display, 'none');
+  assert.equal($('ex-nWalk').closest('label').style.display, 'none');
+  $('ex-nCompany').value = 'Suspensión Total';
+  route('POST', '/api/exhibitions/10/meetings', { id: 79 });
+  $('ex-nSave').click();
+  await tick(50);
+  const b = sent('POST', '/api/exhibitions/10/meetings');
+  assert.equal(b.kind, 'booth');
+  assert.equal(b.is_confirmed, false);
+  assert.equal(b.is_walkin, false);
+  assert.equal(b.company_name, 'Suspensión Total');
+});
+
+test('새 미팅: 고객 약속에 「확정」을 체크하면 is_confirmed 로 보낸다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-slot')[4].querySelector('.b').click();
+  await tick();
+  $('ex-nKind').querySelector('[data-k="meeting"]').click();
+  $('ex-nCompany').value = 'Autopartes del Norte';
+  $('ex-nConfirm').checked = true;
+  route('POST', '/api/exhibitions/10/meetings', { id: 80 });
+  $('ex-nSave').click();
+  await tick(50);
+  const b = sent('POST', '/api/exhibitions/10/meetings');
+  assert.equal(b.kind, 'meeting');
+  assert.equal(b.is_confirmed, true);
+});
+
+// ── 스크롤 잠금 (화면이 멈춰버리던 버그) ────────────────────────────
+test('시트를 열면 뒤 화면을 잠그고, 닫으면 반드시 푼다', async () => {
+  await openBoard();
+  const html = win.document.documentElement;
+  assert.ok(!html.classList.contains('ex-locked'));
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-chip')[0].click(); await tick();
+  assert.ok(html.classList.contains('ex-locked'), '열면 잠긴다');
+  assert.ok(!$('ex-backdrop').classList.contains('ex-hidden'), '뒷막이 보인다');
+  $('ex-shX').click(); await tick();
+  assert.ok(!html.classList.contains('ex-locked'), '닫으면 풀린다');
+  assert.ok($('ex-backdrop').classList.contains('ex-hidden'));
+});
+
+test('시트를 연 채 일반 고객상담으로 넘어가도 잠금이 풀린다(화면 멈춤 방지)', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-chip')[0].click(); await tick();
+  assert.ok(win.document.documentElement.classList.contains('ex-locked'));
+  $('modeNormal').click();
+  await tick();
+  assert.ok(!win.document.documentElement.classList.contains('ex-locked'), '모드를 바꿔도 반드시 풀린다');
+  assert.equal(win.document.body.style.overflow, '');
+  assert.ok($('ex-sheet').classList.contains('ex-hidden'));
+});
+
+test('뒷막을 누르면 시트가 닫힌다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-chip')[0].click(); await tick();
+  $('ex-backdrop').click(); await tick();
+  assert.ok($('ex-sheet').classList.contains('ex-hidden'));
+  assert.ok(!win.document.documentElement.classList.contains('ex-locked'));
 });
