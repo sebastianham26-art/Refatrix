@@ -437,6 +437,60 @@ export default async function financeRoutes(app) {
       editable: (t.kind === 'general' && !t.sales_invoice_id) })) };
   });
 
+  // ===== 거래목록 엑셀 내보내기 — 디렉터 전용 (2026-08-26) =====
+  // 화면 목록(/api/transactions)은 LIMIT 200 이라 "보이는 것만" 받는다.
+  // 내보내기는 **필터에 걸린 전부**를 줘야 하므로 별도 엔드포인트로 분리한다.
+  //  · 같은 필터(status·direction·account_id[=none]·from·to)를 그대로 받는다.
+  //  · 디렉터 전용(requireDirector) — 계좌 권한·비공개 필터가 필요 없다(디렉터는 전부 열람).
+  //  · 상한 20,000행(초과 시 truncated=true 로 알림) — 브라우저에서 xlsx 를 만들기 때문.
+  app.get('/api/transactions/export', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const q = req.query || {};
+    const cond = ['t.deleted_at IS NULL']; const args = [];
+    if (q.status === 'plan' || q.status === 'actual') { args.push(q.status); cond.push(`t.status=$${args.length}`); }
+    if (q.direction === 'in' || q.direction === 'out') { args.push(q.direction); cond.push(`t.direction=$${args.length}`); }
+    if (q.account_id === 'none') cond.push('t.account_id IS NULL');
+    else if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
+    if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
+    if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
+    const CAP = 20000;
+    const rows = (await query(
+      `SELECT t.id, t.account_id, a.name AS account_name, to_char(t.txn_date,'YYYY-MM-DD') AS txn_date,
+              t.direction, t.amount, t.currency, t.fx_rate, t.amount_mxn,
+              t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status,
+              t.memo, t.receipt_no, t.sales_invoice_id, t.recurring_rule_id, rr.name AS rule_name,
+              t.plan_amount, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.plan_memo, t.change_count,
+              t.plan_account_manual, t.cash_due, t.cash_due_done_at, t.is_private, t.report_excluded,
+              si.sat_no AS sat_no, c.name AS customer_name, fc.name AS freight_customer_name,
+              u.name AS created_by_name, uu.name AS updated_by_name,
+              to_char(t.created_at,'YYYY-MM-DD HH24:MI') AS created_at
+         FROM transactions t
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN sales_invoices si ON si.id=t.sales_invoice_id
+         LEFT JOIN customers c ON c.id=si.customer_id
+         LEFT JOIN customers fc ON fc.id=t.customer_id
+         LEFT JOIN recurring_rules rr ON rr.id=t.recurring_rule_id
+         LEFT JOIN users u ON u.id=t.created_by
+         LEFT JOIN users uu ON uu.id=t.updated_by
+        WHERE ${cond.join(' AND ')}
+        ORDER BY t.txn_date DESC, t.id DESC
+        LIMIT ${CAP + 1}`, args)).rows;
+    const truncated = rows.length > CAP;
+    const items = rows.slice(0, CAP).map((t) => ({
+      ...t,
+      amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+      plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
+      change_count: Number(t.change_count || 0),
+      source: t.sales_invoice_id ? 'sales'
+        : (t.recurring_rule_id ? 'recurring'
+          : (String(t.memo || '').startsWith('[마케팅]') ? 'marketing' : 'manual')),
+    }));
+    await logEvent({ userId: req.ctx.perm.userId, action: 'export', target: 'transactions:export',
+      detail: { count: items.length, truncated, filter: { status: q.status || null, direction: q.direction || null,
+        account_id: q.account_id || null, from: q.from || null, to: q.to || null } } });
+    return { count: items.length, truncated, cap: CAP, generated_at: new Date().toISOString(), items };
+  });
+
   // 운반비 인보이스 배분 내역(거래 드릴다운) — 거래 1건의 균등 배분 결과.
   app.get('/api/transactions/:id/freight-allocations', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0826c</title>
+<title>Refatrix ERP · 재무 · build fin-0826d</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -337,6 +337,7 @@
         <div><label>시작일</label><input id="f-from" type="date"></div>
         <div><label>종료일</label><input id="f-to" type="date"></div>
         <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="f-go">조회</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="txn-xls" style="display:none" title="지금 필터에 걸린 거래 전부를 엑셀로 내려받습니다 (화면의 200건 제한과 무관 · 디렉터 전용)">⬇ 엑셀</button></div>
         <div style="display:flex;align-items:flex-end"><button class="btn sm" id="cashDueBtn" style="display:none;background:#fdf3d7;color:#8a6410;border:1px solid #e8d29a">💰 현금받아야함 <span id="cashDueCnt"></span></button></div>
       </div>
       <div id="cashDueBox" class="hidden" style="border:2px solid #e8d29a;border-radius:10px;background:#fffdf6;padding:14px;margin:0 0 12px"></div>
@@ -1291,6 +1292,7 @@
   let txnSort={key:null,dir:1};         // 정렬 상태: key=null이면 기본순서, dir 1=오름 -1=내림
   async function loadTxns(){
     const b=$('txnBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    if($('txn-xls'))$('txn-xls').style.display=isDirector()?'':'none';   // 엑셀 내보내기 — 디렉터 전용
     if(isDirector()){ $('cashDueBtn').style.display=''; loadCashDue(false);
       $('t-approval-hint').textContent='디렉터 등록은 승인 없이 즉시 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.'; }
     const p=new URLSearchParams();
@@ -1423,6 +1425,137 @@
         else det.classList.add('hidden');
       });
       [...b.querySelectorAll('th[data-sort]')].forEach(h=>h.onclick=()=>txnHeadClick(h.dataset.sort));
+  }
+
+  // ===== 거래목록 엑셀 내보내기 (디렉터 전용) =====
+  // 화면 목록은 LIMIT 200 이지만, 내보내기는 서버의 /api/transactions/export 로
+  // **지금 필터에 걸린 전부**를 받아서 만든다(상한 20,000행).
+  function txnFilterQS(){
+    const p=new URLSearchParams();
+    if($('f-status').value)p.set('status',$('f-status').value);
+    if($('f-dir').value)p.set('direction',$('f-dir').value);
+    if($('f-acc').value)p.set('account_id',$('f-acc').value);
+    if($('f-from').value)p.set('from',$('f-from').value);
+    if($('f-to').value)p.set('to',$('f-to').value);
+    return p;
+  }
+  function txnFilterLabel(){
+    const accSel=$('f-acc').value;
+    const acc=!accSel?'전체 계좌':(accSel==='none'?'계좌 미지정'
+      :((accounts.find(a=>String(a.id)===accSel)||{}).name||('#'+accSel)));
+    const st=$('f-status').value==='actual'?'실제':($('f-status').value==='plan'?'예정':'전체');
+    const dir=$('f-dir').value==='in'?'수입':($('f-dir').value==='out'?'지출':'전체');
+    const from=$('f-from').value||'처음', to=$('f-to').value||'전체';
+    return {acc,st,dir,period:from+' ~ '+to};
+  }
+  async function downloadTxnExcel(){
+    const btn=$('txn-xls'); const old=btn?btn.textContent:'';
+    if(btn){btn.disabled=true;btn.textContent='만드는 중…';}
+    try{
+      const res=await fetch(session.api+'/api/transactions/export?'+txnFilterQS().toString(),{headers:auth()});
+      if(res.status===403){alert('디렉터만 내려받을 수 있습니다.');return;}
+      if(res.status===404){alert('엑셀 내보내기가 아직 배포되지 않았습니다(백엔드 최신 배포 필요).');return;}
+      if(!res.ok){let e={};try{e=await res.json();}catch(_){}alert('내보내기 실패: '+(e.error||res.status));return;}
+      const d=await res.json();
+      const items=d.items||[];
+      if(!items.length){alert('내보낼 거래가 없습니다. 필터를 확인하세요.');return;}
+      await loadExcelJS();
+      const f=txnFilterLabel();
+      const money='#,##0.00', rate='#,##0.0000';
+      const srcTxt={sales:'매출 Venta',recurring:'고정비 Fijo',marketing:'마케팅 Marketing',manual:'수동 Manual'};
+      const wb=new ExcelJS.Workbook();
+      wb.creator='Refatrix ERP';
+      const ws=wb.addWorksheet('거래목록 Transacciones');
+      const cols=[
+        {h:'일자\nFecha',w:12},{h:'구분\nTipo',w:11},{h:'계좌\nCuenta',w:18},{h:'출처\nOrigen',w:14},
+        {h:'계정과목\nCuenta contable',w:24},{h:'통화\nMon.',w:7},{h:'금액\nImporte',w:15},
+        {h:'환율\nT.C.',w:10},{h:'MXN 환산\nConv. MXN',w:16},{h:'상태\nEstado',w:10},
+        {h:'승인\nAprob.',w:9},{h:'고객명\nCliente',w:22},{h:'SAT 번호\nFolio SAT',w:20},
+        {h:'영수증\nComprob.',w:14},{h:'메모\nNota',w:44},
+        {h:'계획일\nFecha plan',w:12},{h:'계획금액\nImporte plan',w:15},{h:'계획변경\nCambios',w:10},
+        {h:'등록자\nRegistró',w:14},{h:'등록일시\nCreado',w:17}];
+      const N=cols.length;
+      ws.mergeCells(1,1,1,N);
+      const t1=ws.getCell(1,1);
+      t1.value='재무 · 거래 목록 / Finanzas · Transacciones';t1.font={bold:true,size:13};
+      ws.getCell(2,1).value='조건 / Filtro';ws.getCell(2,1).font={bold:true};
+      ws.mergeCells(2,2,2,N);
+      ws.getCell(2,2).value='계좌 '+f.acc+'  ·  상태 '+f.st+'  ·  구분 '+f.dir+'  ·  기간 '+f.period;
+      ws.getCell(3,1).value='내려받음 / Generado';ws.getCell(3,1).font={bold:true};
+      ws.mergeCells(3,2,3,N);
+      ws.getCell(3,2).value=new Date().toISOString().slice(0,16).replace('T',' ')+'  ·  '+items.length+'건'
+        +(d.truncated?('  ⚠ 상한 '+d.cap+'행 초과분은 제외됨 — 기간을 좁혀 다시 받으세요'):'');
+      if(d.truncated)ws.getCell(3,2).font={color:{argb:'FFB4231F'},bold:true};
+      const HR=5;
+      cols.forEach((c,i)=>{const cell=ws.getCell(HR,i+1);cell.value=c.h;cell.font={bold:true};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFE7D3'}};
+        cell.border={bottom:{style:'thin'}};cell.alignment={vertical:'middle',horizontal:'center',wrapText:true};});
+      ws.getRow(HR).height=30;
+      cols.forEach((c,i)=>{ws.getColumn(i+1).width=c.w;});
+      ws.views=[{state:'frozen',ySplit:HR,xSplit:1}];
+      ws.autoFilter={from:{row:HR,column:1},to:{row:HR,column:N}};
+      let r=HR+1;
+      const tot={ain:0,aout:0,pin:0,pout:0};
+      items.forEach(t=>{
+        const rr=ws.getRow(r);
+        const isPlan=t.status==='plan';
+        const mxn=Number(t.currency==='USD'&&isPlan?t.amount*(fxRate||t.fx_rate):t.amount_mxn)||0;
+        rr.getCell(1).value=t.txn_date;rr.getCell(1).numFmt='@';   // 날짜는 텍스트 고정(dd/mm 자동변환 방지)
+        rr.getCell(2).value=t.direction==='in'?'수입 Ingreso':'지출 Egreso';
+        rr.getCell(2).font={color:{argb:t.direction==='in'?'FF0F6E56':'FFB4231F'}};
+        rr.getCell(3).value=t.account_name||'(미지정)';
+        rr.getCell(4).value=srcTxt[t.source]||'수동 Manual';
+        rr.getCell(5).value=(t.category_code?t.category_code+' · ':'')+(t.category_name||'');
+        rr.getCell(6).value=t.currency;
+        rr.getCell(7).value=Number(t.amount);rr.getCell(7).numFmt=money;
+        rr.getCell(8).value=t.currency==='USD'?Number(t.fx_rate):null;if(t.currency==='USD')rr.getCell(8).numFmt=rate;
+        rr.getCell(9).value=mxn;rr.getCell(9).numFmt=money;
+        rr.getCell(10).value=isPlan?'예정 Plan':'실제 Real';
+        rr.getCell(11).value=t.approved?'승인 Sí':'미승인 No';
+        rr.getCell(12).value=t.customer_name||t.freight_customer_name||'';
+        rr.getCell(13).value=t.sat_no||'';rr.getCell(13).numFmt='@';
+        rr.getCell(14).value=t.receipt_no||'';rr.getCell(14).numFmt='@';
+        rr.getCell(15).value=t.memo||'';
+        rr.getCell(16).value=t.plan_date||'';rr.getCell(16).numFmt='@';
+        rr.getCell(17).value=t.plan_amount==null?null:Number(t.plan_amount);rr.getCell(17).numFmt=money;
+        rr.getCell(18).value=Number(t.change_count)||0;
+        rr.getCell(19).value=t.created_by_name||'';
+        rr.getCell(20).value=t.created_at||'';rr.getCell(20).numFmt='@';
+        if(isPlan){ // 예정 행은 흰 배경 + 옅은 테두리로 실적과 구분(화면과 같은 규칙)
+          rr.eachCell(c=>{c.border={bottom:{style:'hair',color:{argb:'FFDDDDDD'}}};});
+          if(t.direction==='in')tot.pin+=mxn;else tot.pout+=mxn;
+        }else{
+          rr.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF6F4EE'}};});
+          if(t.direction==='in')tot.ain+=mxn;else tot.aout+=mxn;
+        }
+        r++;
+      });
+      const last=r-1, first=HR+1;
+      // 합계 행 — MXN 환산 열 SUM (필터 결과 전체 기준)
+      const tr=ws.getRow(r);
+      tr.getCell(5).value='합계 / Total (MXN)';
+      tr.getCell(9).value={formula:'SUM(I'+first+':I'+last+')',result:Math.round((tot.ain-0+tot.aout+tot.pin+tot.pout)*100)/100};
+      tr.getCell(9).numFmt=money;
+      tr.eachCell(c=>{c.font={bold:true};c.border={top:{style:'thin'}};});
+      // 요약 블록 (실적/예정 × 수입/지출)
+      const sr=r+2;
+      ws.getCell(sr,5).value='요약 / Resumen (MXN)';ws.getCell(sr,5).font={bold:true};
+      const sum=[['실적 수입 / Ingreso real',tot.ain],['실적 지출 / Egreso real',tot.aout],
+        ['예정 수입 / Ingreso plan',tot.pin],['예정 지출 / Egreso plan',tot.pout]];
+      sum.forEach((s,i)=>{ws.getCell(sr+1+i,5).value=s[0];
+        const c=ws.getCell(sr+1+i,9);c.value=Math.round(s[1]*100)/100;c.numFmt=money;});
+      [7,9,17,18].forEach(ci=>{ws.getColumn(ci).alignment={horizontal:'right'};});
+      ws.getColumn(15).alignment={wrapText:false};
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const stamp=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download='refatrix_transacciones_'+stamp+'.xlsx';
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+      if(d.truncated)alert('상한 '+d.cap+'행까지만 담았습니다. 기간을 좁혀 나눠 받으세요.');
+    }catch(e){alert('엑셀 생성 실패: '+(e&&e.message||e));}
+    finally{if(btn){btn.disabled=false;btn.textContent=old||'⬇ 엑셀';}}
   }
 
   // ===== 💰 현금받아야함 (금고 회수 목록 — 디렉터 전용) =====
@@ -4378,6 +4511,7 @@
   $('bi-check').addEventListener('click',biParse);
   $('bi-submit').addEventListener('click',biSubmit);
   $('f-go').addEventListener('click',loadTxns);
+  $('txn-xls').addEventListener('click',downloadTxnExcel);
   $('f-acc').addEventListener('change',loadTxns);
   $('f-status').addEventListener('change',loadTxns);
   $('f-dir').addEventListener('change',loadTxns);
