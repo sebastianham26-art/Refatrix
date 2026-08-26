@@ -292,18 +292,30 @@ export default async function inboundRoutes(app) {
   });
 
   // 선적 목록 --------------------------------------------------------
+  //  ⚠ 자식 테이블(팔렛·라인)을 같은 부모키(s.id)로 함께 LEFT JOIN 하면 카테시안이 되어
+  //    SUM 이 "팔렛 수"만큼 뻥튀기된다. (2026-08-26 현장 보고: 1,221 카톤·12,104 EA 가
+  //    팔렛 36개 × → 43,956 카톤·435,744 EA 로 표기) — 자식별로 LATERAL 에서 따로 집계한다.
+  //    검수 카운트도 마감 라우트(close)·상세 화면과 같은 판정식으로 통일한다:
+  //    적치가 시작되면 status 는 'checking' 으로 돌아가지만 checked_at 이 있으면 검수는 확정이다.
+  //    회귀 테스트: refatrix-api/test/inbound_list_qty_sql.test.mjs
   app.get('/api/inbound', g, async () => {
     const { rows } = await query(
       `SELECT s.id, s.invoice_no, s.eta, s.status, s.created_at, s.closed_at,
-              COUNT(DISTINCT pl.id)::int AS pallets,
-              COALESCE(SUM(pi.cartons),0)::int AS cartons,
-              COALESCE(SUM(pi.qty),0)      AS qty,
-              COUNT(DISTINCT pl.id) FILTER (WHERE pl.status IN ('checked','done'))::int AS pallets_checked
+              pal.pallets, pal.pallets_checked,
+              it.cartons, it.qty
          FROM inbound_shipments s
-         LEFT JOIN inbound_pallets pl ON pl.shipment_id = s.id
-         LEFT JOIN inbound_pallet_items pi ON pi.shipment_id = s.id
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*)::int AS pallets,
+                  COUNT(*) FILTER (WHERE pl.checked_at IS NOT NULL
+                                      OR pl.status IN ('checked','done'))::int AS pallets_checked
+             FROM inbound_pallets pl
+            WHERE pl.shipment_id = s.id) pal ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(pi.cartons),0)::int AS cartons,
+                  COALESCE(SUM(pi.qty),0)          AS qty
+             FROM inbound_pallet_items pi
+            WHERE pi.shipment_id = s.id) it ON TRUE
         WHERE s.deleted_at IS NULL
-        GROUP BY s.id
         ORDER BY s.created_at DESC
         LIMIT 100`);
     return {
@@ -337,8 +349,15 @@ export default async function inboundRoutes(app) {
               rz.zone AS rack_zone, wz.name AS rack_zone_name
          FROM inbound_pallet_items pi
          LEFT JOIN products p ON p.id = pi.product_id
-         LEFT JOIN rack_zones rz
-                ON UPPER(rz.rack) = UPPER(TRIM(COALESCE(NULLIF(TRIM(pi.rack_saved), ''), p.rack_location)))
+         -- 존 조회는 반드시 1행만. rack_zones.rack 는 PK 지만 대소문자를 구분해 저장되므로
+         -- ('A-01-03' 과 'a-01-03' 이 각각 들어갈 수 있음) UPPER 로 매칭하면 라인이 중복 복제되어
+         -- 검수·적치 화면의 카톤/수량이 부풀 수 있다. LATERAL + LIMIT 1 로 못 박는다. (2026-08-26)
+         LEFT JOIN LATERAL (
+           SELECT rz0.zone
+             FROM rack_zones rz0
+            WHERE UPPER(rz0.rack) = UPPER(TRIM(COALESCE(NULLIF(TRIM(pi.rack_saved), ''), p.rack_location)))
+            ORDER BY rz0.updated_at DESC, rz0.rack
+            LIMIT 1) rz ON TRUE
          LEFT JOIN warehouse_zones wz ON wz.zone = rz.zone
         WHERE pi.shipment_id=$1
         ORDER BY pi.id`, [id])).rows;   // id 순 = 패킹리스트 라인 순(생성 시 파일 순서대로 INSERT)
