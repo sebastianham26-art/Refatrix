@@ -5,7 +5,7 @@
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 창고 포장 · build 0633b</title>
+<title>Refatrix · 창고 포장 · build 0826pda</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
   *{box-sizing:border-box}
@@ -232,12 +232,116 @@
   .sealedbox .sh{display:flex;justify-content:space-between;align-items:center;font-weight:800;color:#4a6a52}
   .sealedbox .un{background:#eef2f5;color:var(--steel-d);border:none;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:800;cursor:pointer}
   .soon{opacity:.6;font-size:13px;color:var(--muted);margin-top:14px;text-align:center}
+
+  /* ===== PDA 컴팩트 모드(2026-08-26) — 수입입고와 같은 처방을 포장작업에 적용 =====
+     문제(360×640 실측): 포장 패널의 상단 고정영역(.ptop)이 667px — 화면(640px)보다 크다.
+       고객명 26px 3줄 + 진행률 카드 + 스캔바가 세로로 접히면서, 정작 리딩 스테이터스(#fb)가
+       화면 맨 아래에서 잘리고 품목표·박스 영역(.pscroll)에는 16px 밖에 안 남았다.
+     해결: ① 상단 고정 헤더(#rnav) 한 줄 축소 ② .ptop 전 구성요소 압축(고객명 2줄 클램프·
+       스캔바 한 줄) ③ #fb 는 줄이되 눈에 띄게 유지 → .pscroll 에 실제 작업 공간을 돌려준다.
+     켜짐: 폭 ≤640px 자동 또는 토글 버튼. 선택은 localStorage 'wh_pda' — 수입입고와 같은 키라
+       한 번 고르면 두 화면이 같이 따라간다. */
+  .pdabtn{background:var(--steel);color:#fff;border:0;border-radius:9px;padding:6px 11px;
+    font-size:12.5px;font-weight:800;font-family:inherit;cursor:pointer;line-height:1.15;white-space:nowrap}
+  .pdabtn:active{filter:brightness(1.12)}
+  .pdarow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+  body.pda .pdabtn{padding:4px 9px;font-size:11px}
+  /* 🌐 언어 토글은 top:10px 라서 고정 헤더(#rnav, z-index 9000) 뒤에 완전히 숨어 있었고,
+     그 자리를 누르면 실제로는 헤더의 [로그아웃]이 눌렸다(hit-test 로 확인).
+     헤더 아래로 내리고, 화면 모드 토글과 한 줄로 묶는다. */
+  .topbtns{position:fixed;top:calc(var(--navh, 92px) + 8px);right:12px;z-index:60;display:flex;gap:6px;align-items:center}
+  .topbtns .langtgl{position:static;top:auto;right:auto}
+  body.pda .topbtns{top:calc(var(--navh, 40px) + 6px);right:8px}
+  body.pda .langtgl{padding:5px 10px;font-size:12px}
+  /* — 상단 고정 헤더 축소 (nav.js 주입분을 덮어쓴다) — */
+  body.pda #rnav .rsub{display:none!important}
+  body.pda #rnav .rbar{height:40px!important;padding:0 6px!important}
+  body.pda #rnav .rlogo,body.pda #rnav .rwho,body.pda #rnav .rpres{display:none!important}
+  body.pda #rnav .rhome{width:26px!important;height:26px!important;margin-right:3px!important;font-size:13px!important}
+  body.pda #rnav .rg{padding:12px 8px!important;font-size:11.5px!important}
+  body.pda #rnav .rlogout{margin-left:6px!important;padding:4px 9px!important;font-size:10px!important}
+  /* — 목록 화면 압축 — */
+  body.pda{padding:8px}
+  /* 목록 화면은 폭이 좁아 우상단 고정 버튼(📱·🌐)이 첫 섹션 제목을 덮는다 → 그만큼 자리를 비운다 */
+  body.pda .wrap{padding-top:32px}
+  body.pda .sec{margin-top:10px}
+  body.pda .sec:first-of-type{margin-top:0}
+  body.pda .sec-t{font-size:14px} body.pda .sec-t .cnt{font-size:13px;padding:1px 10px}
+  body.pda .bznote{font-size:11px;margin:0 4px 7px}
+  body.pda .qcard{padding:10px 12px;margin-bottom:8px;border-radius:12px}
+  body.pda .qcard .no{font-size:19px}
+  body.pda .qcard .cu{font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  body.pda .qcard .meta{gap:3px 12px} body.pda .qcard .meta .lab{font-size:11px} body.pda .qcard .meta .val{font-size:13px}
+  body.pda .qcard .elap .t{font-size:16px}
+  body.pda .qcard .qbox{min-width:72px} body.pda .qcard .qbox .pc{font-size:27px}
+  body.pda .qcard .qbox .pc .of{font-size:13px} body.pda .qcard .qbox .pcl{font-size:11px;margin-top:2px}
+  body.pda .shiptab{padding:5px 12px;font-size:12px}
+  body.pda .soon{display:none}
+  /* — 포장 패널 상단(.ptop) 압축 — 여기가 핵심 — */
+  body.pda .ptop{padding:7px 9px 0}
+  body.pda .pscroll{padding:0 9px 10px}
+  body.pda .back{padding:5px 10px;font-size:12px}
+  body.pda .headrow{gap:6px;margin:7px 0 6px}
+  body.pda .phead{padding:7px 10px;border-radius:11px;gap:2px 10px}
+  body.pda .phead .no{font-size:13px}
+  body.pda .phead .cu{font-size:15px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  body.pda .phead .el{font-size:12px}
+  body.pda .prog{padding:6px 10px;border-radius:11px;flex-basis:100%}
+  body.pda .prog .lab{font-size:12px} body.pda .prog .lab b{font-size:15px}
+  body.pda .prog .bar{height:8px;margin-top:4px}
+  body.pda .scanbar{padding:7px 9px;margin-bottom:6px;border-radius:11px}
+  /* 스캔바는 정확히 2줄로 — 1줄: [담을 박스][＋새 박스] · 2줄: [EAN 입력칸(넓게)][⌨]
+     (한 줄로 밀어넣으면 360px 에서 ＋새 박스가 화면 밖으로 잘린다) */
+  body.pda .scanrow{gap:5px;flex-wrap:wrap}
+  body.pda .scanrow::before{content:"";order:3;flex:1 0 100%;height:0}
+  body.pda .boxpick{order:1;flex:0 0 auto;font-size:11px;white-space:nowrap}
+  body.pda .curbox select,body.pda .boxpick select{font-size:13px;padding:5px 6px;border-radius:8px;max-width:104px;margin-left:3px;border-width:1.5px}
+  body.pda .scanrow .newbox-cta{order:2;margin-left:auto;flex:0 0 auto;padding:6px 10px;font-size:12px;border-radius:9px;box-shadow:none;width:auto}
+  body.pda #eanInput{order:4;flex:1 1 auto;min-width:0;font-size:16px;letter-spacing:0;padding:9px 10px;border-radius:9px}
+  body.pda .scanrow .kbtoggle{order:5;flex:0 0 auto;padding:8px 10px;font-size:15px}
+  /* 스캔 결과는 작업자가 보는 유일한 판정 — 줄이되 존재감은 남긴다 */
+  body.pda .fb{margin-top:6px;font-size:14.5px;min-height:38px;padding:7px 10px;border-radius:9px}
+  /* 스캔 전 안내문(.fb.idle)은 결과가 아니라 힌트다 — 글자만 줄여 자리를 아낀다.
+     (줄 수를 잘라내는 line-clamp 은 쓰지 않는다: 문장이 중간에 끊겨 오히려 읽기 나빴다.
+      실제 판정 문구 .fb.ok/.err/.warn 은 짧으므로 원래 크기 그대로 둔다.) */
+  body.pda .fb.idle{font-size:12.5px;font-weight:700;line-height:1.35;min-height:0}
+  body.pda .ready{padding:8px 11px;margin-bottom:6px;font-size:13px;border-radius:11px}
+  body.pda .items-toggle{padding:7px 10px;font-size:12.5px}
+  body.pda .subt{font-size:12px;margin:8px 0 5px}
+  body.pda .newbox-cta{padding:11px;font-size:15px;margin-bottom:8px}
+  body.pda .sealedbox{padding:7px 10px;font-size:13px}
+  /* 출고 상세 패널도 같은 .ptop 구조 — 버튼 줄만 한 번 더 줄인다 */
+  body.pda #shipPanel .shiptop{gap:5px;margin-bottom:4px}
+  body.pda #shipPanel .shiptop #shipPrintLabels,
+  body.pda #shipPanel .shiptop #shipPrintList{padding:5px 10px;font-size:11.5px}
+  body.pda .scard{padding:9px 11px;margin-bottom:7px}
+  body.pda .scard .no{font-size:14px} body.pda .scard .cu{font-size:12.5px}
+  body.pda .scard .sbtns button{padding:7px 11px;font-size:12.5px}
+  /* 세로가 짧은 PDA(흔한 640·667 포함)는 헤더를 한 번 더 줄인다 — 진행률을 가로 한 줄로 */
+  @media (max-height:700px){
+    body.pda .ptop{padding:5px 8px 0}
+    body.pda .pdarow{margin-bottom:4px}
+    body.pda .headrow{margin:4px 0;gap:4px}
+    body.pda .phead{padding:5px 9px}
+    body.pda .prog{padding:4px 9px;flex-direction:row;align-items:center;gap:8px}
+    body.pda .prog .lab{font-size:11.5px;white-space:nowrap}
+    body.pda .prog .bar{flex:1 1 auto;margin-top:0;height:7px}
+    body.pda .scanbar{padding:5px 8px}
+    body.pda .fb{min-height:34px;font-size:13.5px;padding:6px 9px;margin-top:5px}
+  }
+  /* 더 작은 화면(≈568px 이하)에서만 고객명을 1줄로 — 그 위로는 2줄을 유지해 상호를 끝까지 보여준다 */
+  @media (max-height:620px){
+    body.pda .phead .cu{font-size:14px;-webkit-line-clamp:1}
+  }
 </style>
 <link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
 </head>
 <body>
 <div class="wrap">
-  <button id="langToggle" class="langtgl" type="button">🌐</button>
+  <div class="topbtns">
+    <button class="pdabtn" type="button" data-pda>📱</button>
+    <button id="langToggle" class="langtgl" type="button">🌐</button>
+  </div>
   <div class="sec">
     <div class="sec-t"><span>포장 대기 (포장지시 도착)</span><span class="cnt" id="qCount">—</span></div>
     <div class="bznote">⏱ 경과시간은 <b>업무시간만</b> 계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)</div>
@@ -259,6 +363,7 @@
       <button class="back" id="shipBack">← 출고 목록</button>
       <button id="shipPrintLabels">📦 박스 라벨 출력</button>
       <button id="shipPrintList">📄 패킹리스트 출력</button>
+      <button class="pdabtn" type="button" data-pda style="margin-left:auto">📱</button>
     </div>
     <div class="pHead" id="shipHead"></div>
   </div>
@@ -270,7 +375,10 @@
 <!-- 패킹 패널 -->
 <div class="panel" id="panel">
   <div class="ptop">
-    <button class="back" id="backBtn">← 목록으로</button>
+    <div class="pdarow">
+      <button class="back" id="backBtn">← 목록으로</button>
+      <button class="pdabtn" type="button" data-pda>📱</button>
+    </div>
     <div class="headrow">
       <div class="phead" id="pHead"></div>
       <div class="prog" id="pProg"></div>
@@ -306,7 +414,7 @@
 
 <script>
 (function(){
-  try{ console.log('[refatrix-warehouse] build 0633b — 출고완료/되돌리기 버튼 권한 확대(디렉터 + Maria)'); }catch(e){}
+  try{ console.log('[refatrix-warehouse] build 0826pda — PDA 컴팩트 모드 + 언어토글 위치 수정'); }catch(e){}
   try{ console.log('[refatrix-warehouse] photo lazy-load active'); }catch(e){}  // 재배포용 마커
   function sess(){
     try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
@@ -317,6 +425,15 @@
 
   // ================= 한국어 ↔ 스페인어 (앱 내장 번역) =================
   var I18N=[
+    /* 2026-08-26 — 스페인어 화면에 한국어로 남아 있던 문구 보충(현장은 기본이 es 다).
+       tr() 는 배열 순서대로 누적 치환하므로, 문장 전체 짝은 부분 치환보다 반드시 앞에 둔다. */
+    ['📦 박스 라벨(TD-402S) · 📄 통합 패킹리스트(스페인어) 출력 — 포장완료 + SAT 번호 등록된 건만 표시됩니다.',
+     '📦 Etiquetas de caja (TD-402S) · 📄 Lista de empaque consolidada — solo aparecen los empaques listos con número SAT registrado.'],
+    ['EAN 스캔 또는 CTR 코드를 입력해 “담을 박스”에 담으세요 · 마감 박스는 자동 재오픈',
+     'Escanee el EAN o escriba el código CTR para agregarlo a la caja destino · las cajas cerradas se reabren solas'],
+    ['⚠ SAT 번호를 넣으세요','⚠ Ingrese el número SAT'],
+    ['다 찼음 ✓','Caja llena ✓'],
+    ['경과 ','Transcurrido '],
     ['⚠ 서버 오류 — DB 마이그레이션(npm run migrate)이 적용됐는지 확인하세요','⚠ Error del servidor — verifique la migración de la BD'],
     ['(스캔은 위에서 선택한 박스에 담깁니다 · 카드의 “담을 박스로”로도 선택)','(El escaneo va a la caja seleccionada arriba · también con “Usar esta caja”)'],
     ['계산됩니다 · 월–금 07:30–17:00 (SLA 기준 동일)','se cuenta · Lun–Vie 07:30–17:00 (igual que SLA)'],
@@ -1191,7 +1308,61 @@
   var sbk=$('shipBack'); if(sbk) sbk.addEventListener('click',closeShip);
   var spl=$('shipPrintLabels'); if(spl) spl.addEventListener('click',function(){ if(SHIP) printLabels(SHIP.quote_id); });
   var spk=$('shipPrintList'); if(spk) spk.addEventListener('click',function(){ if(SHIP) printPackingList(SHIP.quote_id); });
-  initLangBtn(); initShipTabs(); startI18n();
+  /* ===== PDA 컴팩트 모드(2026-08-26) — 수입입고와 같은 처방 =====
+     360×640 실측에서 포장 패널 상단(.ptop)이 667px 로 화면보다 커서 리딩 스테이터스(#fb)가
+     잘리고 품목·박스 영역에 16px 밖에 안 남았다. 상단 헤더와 .ptop 을 압축해 작업 공간을 되돌린다.
+     · 켜짐: 폭 ≤640px 자동, 또는 [📱] 토글(목록·포장 패널·출고 패널 어디서나)
+     · 선택은 localStorage 'wh_pda' — 수입입고 화면과 같은 키(한 번 고르면 두 화면이 함께 따라간다)
+     · --navh: 고정 헤더 실측 높이. 🌐/📱 버튼을 헤더 아래로 내리는 데 쓴다(헤더에 가려
+       [로그아웃]이 눌리던 문제 해결) */
+  var PDA=(function(){ try{ var v=localStorage.getItem('wh_pda'); if(v==='1'||v==='0') return v; }catch(e){} return null; })();
+  var pdaLast=null;
+  function pdaAuto(){ try{ return window.innerWidth<=640; }catch(e){ return false; } }
+  function pdaOn(){ return (PDA==null)?pdaAuto():(PDA==='1'); }
+  function syncNavH(){
+    var el=document.getElementById('rnav');
+    var h=(el&&el.offsetHeight)||(pdaOn()?40:92);
+    try{ document.documentElement.style.setProperty('--navh',h+'px'); }catch(e){}
+  }
+  function pdaApply(){
+    var on=pdaOn(), changed=(pdaLast!==on); pdaLast=on;
+    document.body.classList.toggle('pda',on);
+    // 헤더 높이가 바뀌었으니 nav.js 의 syncOffset(본문 padding-top)을 다시 돌린다.
+    // changed 일 때만 → 아래 resize 리스너와 무한 루프가 생기지 않는다.
+    if(changed){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }
+    syncNavH(); setTimeout(syncNavH,60); setTimeout(syncNavH,340);
+    var lbl=on?(LANG==='es'?'⤢ Vista completa':'⤢ 전체보기')
+              :(LANG==='es'?'📱 Modo escáner':'📱 스캔모드');
+    var tip=on?(LANG==='es'?'Vista normal — mostrar todo el menú':'일반 화면으로 — 상단 메뉴를 모두 보이게')
+              :(LANG==='es'?'Modo PDA — pantalla compacta':'PDA 화면 — 상단을 접어 작업 공간 확보');
+    var bs=document.querySelectorAll('.pdabtn[data-pda]');
+    for(var i=0;i<bs.length;i++){ bs[i].textContent=lbl; bs[i].title=tip; }
+  }
+  function pdaInit(){
+    var bs=document.querySelectorAll('.pdabtn[data-pda]');
+    for(var i=0;i<bs.length;i++){
+      bs[i].addEventListener('click',function(){
+        PDA=pdaOn()?'0':'1';
+        try{ localStorage.setItem('wh_pda',PDA); }catch(e){}
+        pdaApply();
+        var p=$('panel'); if(p&&p.classList.contains('on')) focusScan();   // 포장 중이면 스캔칸 포커스 유지
+      });
+    }
+    pdaApply();
+    window.addEventListener('resize',pdaApply);
+    // 헤더는 로그인·권한 조회 후 비동기로 그려진다(nav.js 가 이 스크립트 뒤에 로드됨) → 실제 높이를 추적
+    try{
+      if(window.ResizeObserver){
+        var t=setInterval(function(){
+          var el=document.getElementById('rnav'); if(!el) return;
+          clearInterval(t); new ResizeObserver(syncNavH).observe(el);
+        },200);
+        setTimeout(function(){ clearInterval(t); },10000);
+      }
+    }catch(e){}
+  }
+
+  initLangBtn(); initShipTabs(); pdaInit(); startI18n();
   if(S){ loadQueue(); loadShipQueue(); setInterval(function(){ loadQueue(); loadShipQueue(); },25000); }
 })();
 </script>
