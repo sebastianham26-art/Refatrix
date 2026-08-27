@@ -1,79 +1,92 @@
-# refatrix_inbound_v16 — 수입입고 누적 산출물 (2026-08-27)
+# refatrix_inbound_v17 — 수입입고 누적 산출물 (2026-08-27)
 
-`refatrix-inbound.html` build **20260827whlock**
-v15(2026-08-18) 이후 이 세션의 3건을 **누적**한 배포본입니다. v15 를 대체합니다.
+`refatrix-inbound.html` **20260827rack** · `refatrix-zones.html` **zone-0827a**
+v15(2026-08-18) 이후 4건 누적. **v16 을 대체**합니다.
 
-| # | 내용 | 문서 |
-|---|---|---|
-| 1 | ERP 등재 내역 창 — 🌐 한국어/스페인어 토글 + ⤓ 엑셀 다운로드 | `REFATRIX_handover_2026-08-27_registered_view_lang_excel.md` |
-| 2 | 엑셀 다운로드가 안 되던 문제 수정(팝업 제스처 차단) — `<a download href="blob:">` 방식 + CSV 대체 | 위 문서 |
-| 3 | **창고 종료(잠금)** — 적치 완료 후 창고 수정 차단. 창고 신청 → 디렉터 PIN 승인 | `REFATRIX_handover_2026-08-27b_inbound_warehouse_finish_lock.md` |
+| # | 내용 |
+|---|---|
+| 1 | ERP 등재 내역 창 — 🌐 한국어/스페인어 토글 + ⤓ 엑셀 다운로드 |
+| 2 | 엑셀 다운로드 차단 문제 수정 — `<a download href="blob:">` + CSV 대체 |
+| 3 | **창고 종료(잠금)** — 적치 완료 후 창고 수정 차단 (신청 → 디렉터 PIN 승인) |
+| 4 | **랙 콤마 분리** — `products.rack_location` 한 칸의 여러 랙을 낱개로 |
 
 ---
 
-## ⚠ 배포 순서 — 마이그레이션이 있습니다
+## ④ 랙 콤마 분리 (이번 추가분)
 
-1. `refatrix-api/migrations/0187_inbound_warehouse_finish.sql` → repo 같은 경로에 복사
-2. `refatrix-api/src/routes/inboundRoutes.js` → repo 같은 경로에 덮어쓰기
-3. GitHub Desktop **Commit / Push** → **Railway Success 확인**
-4. Railway APP 콘솔 **`npm run migrate`**
-   → `apply 0187_inbound_warehouse_finish.sql` 확인
-   **안 돌리면 선적 상세 조회가 `wh_locked_at` 컬럼 없음으로 500 입니다.**
-5. `refatrix-inbound.html` → repo **루트**에 덮어쓰기 → Commit / Push
-6. Pages/Cloudflare 1~2분 → 수입입고 화면 **Ctrl+Shift+R**
-   → 콘솔에 `[refatrix-inbound] build 20260827whlock`
+**증상**: 존 지정 화면에서 `A` 그룹에 `aa3-1` 이 들어가 있고, `aa3-2` 와 `b2-2` 가 한 줄에 같이 나온다.
 
-> 3~4번(백엔드+migrate)을 5번(프런트)보다 **먼저** 끝내세요.
-> 프런트가 `wh_check`·`wh_locked_at` 을 기대합니다.
+**원인**: `products.rack_location` 한 칸에 `"A3-1, AA3-1"` 처럼 **콤마로 여러 랙**이 들어 있는데
+시스템이 그 문자열 전체를 **랙 1개**로 취급했다. 그룹은 맨 앞 글자로만 판정하므로
+`"A3-1, AA3-1"` → `A` 그룹, `"AA3-2, B2-2"` → `AA` 그룹으로 들어갔다.
+부작용으로 `rack_zones` 는 정확 일치라 그런 제품은 **검수·적치에서 존이 아예 안 잡혔다**.
+
+**수정**
+- `zoneRoutes.js` — 목록 집계를 `regexp_split_to_table(rack_location,'[,\n\r]+')` 로 쪼개
+  낱개 랙 단위로 센다(제품 수는 `COUNT(DISTINCT p.id)`). 대소문자 통합·자연 정렬은 그대로.
+  JS 쪽 헬퍼 `splitRacks()`/`RACK_SPLIT_RE` 를 export — **SQL 과 같은 구분자**를 쓴다.
+- `inboundRoutes.js` — 존 조회도 같은 규칙으로 쪼개고, **각 랙의 존을 모두** 모은다.
+  응답에 `zones:[{zone,name}]` 추가(`zone`/`zone_name` 은 대표 존으로 하위호환 유지).
+  LATERAL 안에서 집계하므로 **라인이 중복 복제되지 않는다**(카톤·수량 부풀림 회귀 없음).
+- `refatrix-inbound.html` — 존이 여러 개면 색 배너를 **전부** 쌓아 보여주고
+  `⚠ 이 제품의 랙이 n개 존에 걸쳐 있습니다` 안내를 붙인다. SKU 줄의 존 칩도 개수만큼.
+  (디렉터 결정: 여러 존이면 전부 표시)
+
+> **참고**: 예전에 콤마 통짜 문자열(`"A3-1, AA3-1"`)로 저장해 둔 존 매핑이 있으면
+> 존 지정 화면 하단 **"제품마스터에서 사라진 랙"** 목록에 나타납니다. 무해하지만,
+> 이제 낱개 랙에 다시 지정해 주시면 됩니다.
+
+---
+
+## ⚠ 배포 순서 — 마이그레이션이 있습니다(창고 종료 0187)
+
+1. `refatrix-api/migrations/0187_inbound_warehouse_finish.sql`
+2. `refatrix-api/src/routes/inboundRoutes.js` · `zoneRoutes.js`
+3. Commit / Push → **Railway Success 확인** → 콘솔 **`npm run migrate`**
+   → `apply 0187_inbound_warehouse_finish.sql` (안 돌리면 선적 상세가 **500**)
+4. `refatrix-inbound.html` · `refatrix-zones.html` → repo **루트**
+5. Pages 1~2분 → **Ctrl+Shift+R** → 콘솔
+   `[refatrix-inbound] build 20260827rack` / `[refatrix-zones] build zone-0827a`
 
 ### 배포 확인 (`...` = `https://raw.githubusercontent.com/sebastianham26-art/Refatrix`)
-
 ```
-curl -s ".../main/refatrix-api/migrations/0187_inbound_warehouse_finish.sql?nc=$(date +%s)" | grep -c wh_locked_at   # 3+
-curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c "WH_LOCKED"                     # 12+
-curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "20260827whlock"                                   # 2
-curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "wh-finish"                                        # 1+
-curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "createObjectURL"                                  # 1
+curl -s ".../main/refatrix-api/src/routes/zoneRoutes.js?nc=$(date +%s)"  | grep -c regexp_split_to_table   # 1
+curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c regexp_split_to_table # 1
+curl -s ".../main/refatrix-api/src/routes/inboundRoutes.js?nc=$(date +%s)" | grep -c "WH_LOCKED"           # 12+
+curl -s ".../main/refatrix-inbound.html?nc=$(date +%s)" | grep -c "20260827rack"                           # 2
+curl -s ".../main/refatrix-zones.html?nc=$(date +%s)"   | grep -c "zone-0827a"                             # 2
 ```
 
 ---
 
 ## 운영 스모크
 
-**등재 내역 (첨부 줄 `📋 ERP 등재 내역`)**
-1. 창 상단에 버튼 3개(인쇄 · 엑셀 · 🌐).
-2. `🌐 Español` → 제목·머리글·상태가 스페인어. **본문 화면은 그대로 한국어**인지.
-3. `⤓ 엑셀 다운로드` → **실제로 파일이 떨어지는지**. 카톤·수량이 숫자 셀인지, 합계 행이 화면과 같은지.
-   (라벨이 `⤓ CSV 다운로드` 로 보이면 그 PC 에서 cdnjs 가 막힌 것 — CSV 로 정상 저장됩니다.)
+**랙 콤마 분리**
+1. 창고 › 존 지정 → `A` 그룹에 `aa…` 랙이 없는지, 한 줄에 랙이 하나씩만 있는지.
+2. `AA3-1`·`AA3-2`·`AA10-1` 이 각각 별도 줄로 나오는지. 제품 수가 맞는지.
+3. 콤마로 여러 랙을 쓰는 제품을 검수 스캔 → 존 배너가 **여러 개** 뜨고 `⚠ n개 존` 안내가 보이는지.
+4. 하단 "사라진 랙" 목록에 예전 콤마 통짜 매핑이 있으면 낱개 랙으로 다시 지정.
 
-**창고 종료 ([마감] 탭 맨 아래)**
-4. 적치 미완료 선적 → `⚠ 적치 미완료 n팔렛`, 신청 버튼 없음.
-5. 적치는 끝났는데 입고 미반영 → `⚠ 입고 미반영 n팔렛 — 먼저 마감하세요`.
-6. 전부 끝난 선적 → 창고 계정으로 `[🏁 창고 종료 신청]` → ⏳ 대기.
-7. 디렉터 계정 → PIN → `[✔ 승인하고 잠금]` → 상단 🔒 배너, 목록에 🔒 태그.
-8. **잠긴 상태에서** 하차·검수·적치 탭의 버튼/스캔칸이 전부 비활성인지, 팔렛 줄이 안 눌리는지,
-   스캐너로 바코드를 쏴도 반응이 없는지.
-9. 디렉터 `[🔓 잠금 해제]` → 다시 수정 가능 + 신청 상태도 초기화되는지.
-10. 회귀: 잠기지 않은 다른 선적의 하차·검수·적치·마감이 그대로인지.
+**창고 종료**
+5. 적치 미완료 → `⚠ 적치 미완료 n팔렛` / 입고 미반영 → `⚠ 먼저 마감하세요`.
+6. 전부 끝난 선적 → 창고 계정 `[🏁 창고 종료 신청]` → 디렉터 PIN `[✔ 승인하고 잠금]`.
+7. 잠긴 뒤 하차·검수·적치 탭이 전부 읽기 전용인지. 디렉터 `[🔓 잠금 해제]` 로 복구되는지.
+
+**등재 내역**
+8. `📋 ERP 등재 내역` → 🌐 토글 · ⤓ 엑셀 다운로드가 실제로 떨어지는지.
 
 ---
 
-## 테스트 (재현 방법)
+## 테스트
 
 ```
 cd test
 npm i jsdom xlsx@0.18.5
-node inbound_wh_finish.test.mjs          # 40/40 — 창고 종료 UI·권한·applyLock
-node inbound_registered_view.test.mjs    # 45/45 — 등재 내역 언어·엑셀
-bash inbound_wh_finish_sql.sh            # 실 PostgreSQL 16 — 0187·판정 SQL
+node inbound_zone_multi.test.mjs         # 23/23 — 존 여러 개 표시
+node inbound_wh_finish.test.mjs          # 40/40 — 창고 종료
+node inbound_registered_view.test.mjs    # 45/45 — 등재 내역
+bash rack_split_sql.sh                   # 실 PostgreSQL 16 — 콤마 분리 SQL
+bash inbound_wh_finish_sql.sh            # 실 PostgreSQL 16 — 0187·종료 판정
 ```
-테스트는 **운영 파일에서 해당 블록을 그대로 추출해** 실행합니다(복붙 아님).
-경로가 `/home/claude/repo/...` 로 박혀 있으니 각자 repo 경로로 바꿔서 쓰세요.
-
----
-
-## 되돌리기
-
-- 프런트만 되돌리려면 `refatrix-inbound.html` 을 이전 빌드로 교체하면 됩니다.
-- 백엔드를 되돌려도 0187 컬럼은 남아 있어도 무해합니다(아무도 안 읽음).
-  이미 잠근 선적이 있다면 되돌리기 전에 디렉터가 `[🔓 잠금 해제]` 로 풀어 두세요.
+전부 **운영 파일에서 해당 블록·SQL 을 추출해** 실행합니다(복붙 아님).
+경로가 `/home/claude/repo/...` 로 박혀 있으니 각자 repo 경로로 바꿔 쓰세요.

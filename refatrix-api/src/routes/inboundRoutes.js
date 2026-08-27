@@ -384,21 +384,35 @@ export default async function inboundRoutes(app) {
       `SELECT pi.id, pi.pallet_id, pi.product_id, pi.input_code, pi.cartons, pi.qty,
               pi.scanned_cartons, pi.put_cartons, pi.rack_saved, pi.box_from, pi.box_to,
               p.name AS product_name, p.rack_location,
-              rz.zone AS rack_zone, wz.name AS rack_zone_name
+              rz.zones AS rack_zones_arr, rz.names AS rack_zone_names
          FROM inbound_pallet_items pi
          LEFT JOIN products p ON p.id = pi.product_id
-         -- 존 조회는 반드시 1행만. rack_zones.rack 는 PK 지만 대소문자를 구분해 저장되므로
-         -- ('A-01-03' 과 'a-01-03' 이 각각 들어갈 수 있음) UPPER 로 매칭하면 라인이 중복 복제되어
-         -- 검수·적치 화면의 카톤/수량이 부풀 수 있다. LATERAL + LIMIT 1 로 못 박는다. (2026-08-26)
+         -- 존 조회는 반드시 **1행만** 나와야 한다. rack_zones.rack 는 PK 지만 대소문자를 구분해 저장되고
+         -- ('A-01-03' 과 'a-01-03'), 랙 칸에 콤마로 여러 랙이 들어있을 수도 있다. 그대로 JOIN 하면
+         -- 라인이 중복 복제되어 검수·적치 화면의 카톤/수량이 부풀므로, LATERAL 안에서 집계해 못 박는다.
+         --   · 2026-08-26: 대소문자 중복 → LATERAL + LIMIT 1
+         --   · 2026-08-27: 랙 칸의 콤마("A3-1, AA3-1")를 낱개로 쪼개 **각 랙의 존을 모두** 모은다.
+         --     여러 존에 걸치면 전부 안내한다(디렉터 결정) — 예전엔 통짜 문자열이라 매칭 자체가 실패해
+         --     그 제품은 검수·적치에서 존이 아예 안 잡혔다. 구분자는 zoneRoutes.splitRacks 와 동일.
          LEFT JOIN LATERAL (
-           SELECT rz0.zone
-             FROM rack_zones rz0
-            WHERE UPPER(rz0.rack) = UPPER(TRIM(COALESCE(NULLIF(TRIM(pi.rack_saved), ''), p.rack_location)))
-            ORDER BY rz0.updated_at DESC, rz0.rack
-            LIMIT 1) rz ON TRUE
-         LEFT JOIN warehouse_zones wz ON wz.zone = rz.zone
+           SELECT array_agg(z.zone ORDER BY z.zone) AS zones,
+                  array_agg(COALESCE(z.name, '') ORDER BY z.zone) AS names
+             FROM (SELECT DISTINCT rz0.zone, wz0.name
+                     FROM regexp_split_to_table(
+                            COALESCE(NULLIF(TRIM(pi.rack_saved), ''), p.rack_location),
+                            '[,\n\r]+') AS tok
+                     JOIN rack_zones rz0 ON UPPER(rz0.rack) = UPPER(TRIM(tok))
+                     LEFT JOIN warehouse_zones wz0 ON wz0.zone = rz0.zone
+                    WHERE NULLIF(TRIM(tok), '') IS NOT NULL) z) rz ON TRUE
         WHERE pi.shipment_id=$1
         ORDER BY pi.id`, [id])).rows;   // id 순 = 패킹리스트 라인 순(생성 시 파일 순서대로 INSERT)
+    // 랙 칸이 걸친 존 목록 [{zone,name}] — 배열 두 개를 짝지어 준다(존 번호 오름차순)
+    const zoneList = (it) => {
+      const zs = it.rack_zones_arr || [];
+      const ns = it.rack_zone_names || [];
+      return zs.filter((z) => z != null)
+        .map((z, i) => ({ zone: Number(z), name: ns[i] || null }));
+    };
     // 랙이 없는 신규 SKU 는 '__NEW__' 로 지정된 기본 존으로 안내한다(0172)
     const nz = (await query(
       `SELECT rz.zone, wz.name FROM rack_zones rz
@@ -424,9 +438,11 @@ export default async function inboundRoutes(app) {
         scanned_cartons: it.scanned_cartons, put_cartons: it.put_cartons,
         rack: it.rack_saved || it.rack_location || null,
         // 존 이동용 임시 팔렛 번호(0172). 랙에 지정된 존 → 없으면 신규 기본 존 → 그것도 없으면 null
-        zone: it.rack_zone != null ? Number(it.rack_zone) : (nz ? Number(nz.zone) : null),
-        zone_name: it.rack_zone != null ? (it.rack_zone_name || null) : (nz ? nz.name : null),
-        zone_is_default: it.rack_zone == null && !!nz,   // 랙이 아니라 신규 기본값으로 정해진 존
+        // zone/zone_name = 대표(첫) 존 — 기존 화면 하위호환. zones = 이 랙 칸이 걸친 존 전부.
+        zone: zoneList(it)[0] ? zoneList(it)[0].zone : (nz ? Number(nz.zone) : null),
+        zone_name: zoneList(it)[0] ? zoneList(it)[0].name : (nz ? nz.name : null),
+        zones: zoneList(it).length ? zoneList(it) : (nz ? [{ zone: Number(nz.zone), name: nz.name }] : []),
+        zone_is_default: !zoneList(it).length && !!nz,   // 랙이 아니라 신규 기본값으로 정해진 존
         registered: it.product_id != null,
       });
     }

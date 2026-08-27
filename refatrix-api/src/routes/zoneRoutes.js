@@ -24,6 +24,19 @@ export function sortRacks(list) {
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 }
+// 랙 칸 하나에 여러 랙이 들어있는 경우를 낱개로 쪼갠다 (2026-08-27 현장 보고)
+//   products.rack_location 에 "A3-1, AA3-1" 처럼 콤마로 여러 랙을 적어 둔 제품이 있었다.
+//   그동안 문자열 전체를 랙 1개로 취급해서 ① 존 지정 목록에 "A3-1, AA3-1" 이 한 줄로 나오고
+//   (앞글자만 보므로 A 그룹에 AA 랙이 딸려 들어감) ② rack_zones 는 정확 일치라 그 제품은
+//   검수·적치에서 존이 아예 안 잡혔다.
+//   구분자는 콤마와 줄바꿈. **아래 SQL 의 regexp_split_to_table 과 반드시 같은 규칙**이어야 한다.
+export const RACK_SPLIT_RE = /[,\n\r]+/;
+export function splitRacks(v) {
+  return String(v == null ? '' : v)
+    .split(RACK_SPLIT_RE)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 // 랙 앞머리(그룹) — 일괄 지정 단위. 'A-01-03' → 'A', '12-B' → '12'
 export function rackGroup(rack) {
   const s = String(rack || '').trim().toUpperCase();
@@ -40,14 +53,15 @@ export default async function zoneRoutes(app) {
     // 존 조회는 대소문자를 무시하므로 목록도 UPPER 로 묶는다 — 'B-01-01' 과 'b-01-01' 이
     // 두 줄로 나뉘어 디렉터가 같은 랙을 두 번 지정하는 일을 막는다(표기는 최다 사용형을 보여준다).
     const rackRows = (await query(
-      `SELECT (array_agg(TRIM(p.rack_location) ORDER BY cnt DESC, TRIM(p.rack_location)))[1] AS rack,
-              SUM(cnt)::int AS products
-         FROM (SELECT p.rack_location, COUNT(*)::int AS cnt
+      `SELECT (array_agg(r.rack ORDER BY r.cnt DESC, r.rack))[1] AS rack,
+              SUM(r.cnt)::int AS products
+         FROM (SELECT TRIM(tok) AS rack, COUNT(DISTINCT p.id)::int AS cnt
                  FROM products p
+                 CROSS JOIN LATERAL regexp_split_to_table(p.rack_location, '[,\n\r]+') AS tok
                 WHERE p.deleted_at IS NULL
-                  AND NULLIF(TRIM(p.rack_location), '') IS NOT NULL
-                GROUP BY p.rack_location) p
-        GROUP BY UPPER(TRIM(p.rack_location))`
+                  AND NULLIF(TRIM(tok), '') IS NOT NULL
+                GROUP BY TRIM(tok)) r
+        GROUP BY UPPER(r.rack)`
     )).rows;
 
     const mapRows = (await query('SELECT rack, zone FROM rack_zones')).rows;

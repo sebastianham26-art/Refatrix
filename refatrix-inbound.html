@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260827whlock</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260827rack</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -139,6 +139,10 @@
   .zbig.z3{background:#F8F1E3;border-color:#9A6512} .zbig.z3 .n{background:#9A6512}
   .zbig.z4{background:#F0EBF8;border-color:#6B4FB0} .zbig.z4 .n{background:#6B4FB0}
   .zbig.none{background:#FDF3F1;border-color:var(--red)} .zbig.none .n{background:var(--red);font-size:22px}
+  /* 랙 칸이 여러 존에 걸칠 때(2026-08-27) — 배너를 쌓고 아래에 확인 안내 */
+  .zbig+.zbig{margin-top:6px}
+  .zmulti{margin-top:6px;padding:7px 11px;border-radius:10px;background:#F8F1E3;border:1px solid #9A6512;
+    color:#6B4712;font-size:12.5px;font-weight:700}
   .zchip2{display:inline-block;min-width:17px;text-align:center;border-radius:5px;color:#fff;font-size:10.5px;
           font-weight:800;padding:1px 5px;margin-left:4px}
   .zchip2.z1{background:#2E6F9E}.zchip2.z2{background:#0F6E56}.zchip2.z3{background:#9A6512}.zchip2.z4{background:#6B4FB0}
@@ -257,7 +261,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260827whlock';
+  var BUILD='20260827rack';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -471,23 +475,43 @@
      랙이 없는 신규 SKU 는 '신규 기본 존'. 아직 아무것도 지정 안 됐으면 null → "존 미지정" 경고. */
   function zoneNo(i){ return (i && i.zone != null) ? Number(i.zone) : null; }
   function zoneNm(i){ return (i && i.zone_name) ? String(i.zone_name) : ''; }
+  /* 랙 칸이 콤마로 여러 랙을 담고 있으면 존도 여러 개일 수 있다(2026-08-27).
+     디렉터 결정: 그런 경우 **전부** 보여준다. 서버가 zones:[{zone,name}] 로 내려준다.
+     구버전 응답(zones 없음)에서도 동작하도록 zone/zone_name 으로 폴백한다. */
+  function zoneList(i){
+    if(i && Array.isArray(i.zones) && i.zones.length) return i.zones;
+    var z=zoneNo(i);
+    return z ? [{zone:z, name:zoneNm(i)}] : [];
+  }
   // 검수 스캔 결과 상단의 큰 목적지 배너
   function zoneBigHtml(i){
-    var z=zoneNo(i);
-    if(!z){
+    var zs=zoneList(i);
+    if(!zs.length){
       return '<div class="zbig none"><div class="n">?</div><div><div class="t">'+L('옮길 곳','Destino')+'</div>'
         +'<div class="v" style="color:var(--red)">'+L('존 미지정','Sin zona')+'</div>'
         +'<div class="t" style="font-weight:500">'+L('디렉터에게 존 지정을 요청하세요 (창고 › 존 지정)','Pida al director asignar la zona')+'</div></div></div>';
     }
-    var nm=zoneNm(i), dflt=i&&i.zone_is_default;
-    return '<div class="zbig z'+z+'"><div class="n">'+z+'</div><div><div class="t">'+L('이 박스를 옮길 곳','Mover esta caja a')+'</div>'
-      +'<div class="v">'+L('존','Zona')+' '+z+(nm?' · '+esc(nm):'')+'</div>'
-      +'<div class="t" style="font-weight:500">'+(dflt?L('🆕 신규 SKU 기본 존','🆕 zona por defecto (SKU nuevo)'):L('존 이동용 임시 팔렛','Pallet de traslado'))+'</div></div></div>';
+    var dflt=i&&i.zone_is_default;
+    // 존이 하나면 기존 그대로. 여러 존이면 색 배너를 나란히 쌓고 "여러 존" 안내를 붙인다.
+    var one=function(o,multi){
+      var z=Number(o.zone), nm=o.name?String(o.name):'';
+      return '<div class="zbig z'+z+'"><div class="n">'+z+'</div><div>'
+        +'<div class="t">'+(multi?L('옮길 곳 (여러 존)','Destinos (varias zonas)'):L('이 박스를 옮길 곳','Mover esta caja a'))+'</div>'
+        +'<div class="v">'+L('존','Zona')+' '+z+(nm?' · '+esc(nm):'')+'</div>'
+        +'<div class="t" style="font-weight:500">'+(dflt?L('🆕 신규 SKU 기본 존','🆕 zona por defecto (SKU nuevo)'):L('존 이동용 임시 팔렛','Pallet de traslado'))+'</div></div></div>';
+    };
+    if(zs.length===1) return one(zs[0],false);
+    return zs.map(function(o){ return one(o,true); }).join('')
+      +'<div class="zmulti">⚠ '+L('이 제품의 랙이 '+zs.length+'개 존에 걸쳐 있습니다 — 어디로 올릴지 확인하세요',
+                                   'Las ubicaciones de este SKU están en '+zs.length+' zonas — confirme el destino')+'</div>';
   }
-  // SKU 목록·적치 줄에 붙는 작은 존 칩
+  // SKU 목록·적치 줄에 붙는 작은 존 칩 — 여러 존이면 칩을 여러 개
   function zoneChip(i){
-    var z=zoneNo(i);
-    return '<span class="zchip2 '+(z?('z'+z):'none')+'" title="'+L('존 이동용 임시 팔렛','Pallet de traslado')+'">'+(z?z:'?')+'</span>';
+    var zs=zoneList(i);
+    if(!zs.length) return '<span class="zchip2 none" title="'+L('존 이동용 임시 팔렛','Pallet de traslado')+'">?</span>';
+    return zs.map(function(o){
+      return '<span class="zchip2 z'+Number(o.zone)+'" title="'+L('존 이동용 임시 팔렛','Pallet de traslado')+'">'+Number(o.zone)+'</span>';
+    }).join('');
   }
   $('langToggle').textContent=LANG==='es'?'🌐 한국어':'🌐 Español';
   $('langToggle').addEventListener('click',function(){ var n=LANG==='es'?'ko':'es'; try{localStorage.setItem('wh_lang',n);}catch(e){} location.reload(); });
