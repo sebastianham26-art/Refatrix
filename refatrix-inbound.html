@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260827reg</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260827reg2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -253,7 +253,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260827reg';
+  var BUILD='20260827reg2';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -987,7 +987,7 @@
         +' · PO '+groups.length+' · '+T('팔렛','Pallets')+' '+pal+' · '+T('카톤','Cajas')+' '+nf(cart)+' · '+nf(qty)+' EA · SKU '+Object.keys(sku).length
         +' · <span style="color:#C0533B">⚠ = '+T('미등록 SKU','SKU no registrado')+'</span></div>'
         +'<div class="bar"><button id="vPrint">🖨 '+T('인쇄','Imprimir')+'</button>'
-        +'<button id="vXls" class="g">⤓ '+T('엑셀 다운로드','Descargar Excel')+'</button>'
+        +'<a id="vXls" class="g" href="#">⤓ '+T('엑셀 다운로드','Descargar Excel')+'</a>'
         +'<button id="vLang" class="alt">🌐 '+(VL==='es'?'한국어':'Español')+'</button></div>'
         +(body||'<div class="idle">'+T('팔렛이 없습니다','Sin pallets')+'</div>')+'</div>';
       try{ w.document.title=T('ERP 등재 내역','Registro en ERP')+' · '+(s.invoice_no||('#'+SHIP)); }catch(e){}
@@ -999,34 +999,74 @@
         try{ localStorage.setItem('wh_viewlang',VL); }catch(e){}
         render();                                     // 창 내용만 다시 그린다(본문 LANG 불변)
       });
-      var bx=gid('vXls'); if(bx) bx.addEventListener('click',downloadXls);
+      buildXls();                                     // 다운로드 링크에 blob 을 미리 물려둔다
     }
 
-    // 화면과 같은 표 → .xlsx (머리글·상태는 이 창에서 고른 언어를 따른다)
-    function downloadXls(){
-      try{
-        var aoa=[[ 'ORDER NO','PL','CTR NO',T('품명','Descripción'),T('카톤','Cajas'),T('수량','Cant.'),
-                   T('랙','Ubic.'),T('상태','Estado'),T('제품등록','Registrado') ]];
-        groups.forEach(function(G){
-          G.pals.forEach(function(p){
-            p.items.forEach(function(i){
-              aoa.push([ G.key, p.pl_no, i.code, i.name||'', Number(i.cartons||0), Number(i.qty||0),
-                         i.rack||'', stLbl(p.status), i.registered?'O':T('미등록','No') ]);
-            });
+    /* 엑셀 다운로드 — 왜 버튼이 아니라 <a download href="blob:"> 인가
+       XLSX.writeFile 은 **부모 문서**에 <a> 를 만들어 스크립트로 클릭한다. 그 클릭은 이 팝업 창에서
+       일어난 사용자 제스처와 연결되지 않아, 크롬이 "제스처 없는 다운로드"로 보고 조용히 막는다
+       (버튼을 눌러도 아무 일이 없던 원인 — 2026-08-27 현장 보고).
+       → 파일을 미리 만들어 **이 창의 blob URL** 을 진짜 링크에 걸어 둔다. 사람이 링크를 직접 누르는
+         평범한 다운로드가 되므로 팝업/제스처 제한에 걸리지 않는다.
+       XLSX(cdnjs)가 로드되지 않은 현장 PDA 를 위해 실패 시 **CSV(UTF-8 BOM)** 로 자동 대체한다. */
+    var xlsUrl=null;
+    function revokeXls(){ if(xlsUrl){ try{ (w.URL||w.webkitURL).revokeObjectURL(xlsUrl); }catch(e){} xlsUrl=null; } }
+    function rowsAoa(){
+      var aoa=[[ 'ORDER NO','PL','CTR NO',T('품명','Descripción'),T('카톤','Cajas'),T('수량','Cant.'),
+                 T('랙','Ubic.'),T('상태','Estado'),T('제품등록','Registrado') ]];
+      groups.forEach(function(G){
+        G.pals.forEach(function(p){
+          p.items.forEach(function(i){
+            aoa.push([ G.key, p.pl_no, i.code, i.name||'', Number(i.cartons||0), Number(i.qty||0),
+                       i.rack||'', stLbl(p.status), i.registered?'O':T('미등록','No') ]);
           });
         });
-        aoa.push([]);
-        aoa.push([ T('합계','Total'),'','','', cart, qty, '',
-                   T('팔렛','Pallets')+' '+pal, 'SKU '+Object.keys(sku).length ]);
+      });
+      aoa.push([]);
+      aoa.push([ T('합계','Total'),'','','', cart, qty, '',
+                 T('팔렛','Pallets')+' '+pal, 'SKU '+Object.keys(sku).length ]);
+      return aoa;
+    }
+    function baseName(){
+      var inv=String(s.invoice_no||('SHIP'+SHIP)).replace(/[\\\/:*?"<>|\[\]]/g,'_');
+      return T('ERP등재내역_','Registro_ERP_')+inv;
+    }
+    function putBlob(a,parts,mime,fname){
+      var B=w.Blob||window.Blob, U=w.URL||w.webkitURL||window.URL;
+      xlsUrl=U.createObjectURL(new B(parts,{type:mime}));
+      a.href=xlsUrl; a.setAttribute('download',fname);
+    }
+    function buildXls(){
+      revokeXls();
+      var a=w.document.getElementById('vXls'); if(!a) return;
+      var aoa=rowsAoa();
+      try{
+        if(typeof XLSX==='undefined'||!XLSX.utils) throw new Error('XLSX not loaded');
         var ws=XLSX.utils.aoa_to_sheet(aoa);
         ws['!cols']=[{wch:16},{wch:5},{wch:14},{wch:34},{wch:8},{wch:11},{wch:12},{wch:12},{wch:11}];
         var wb=XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb,ws,T('등재내역','Registro'));
-        var inv=String(s.invoice_no||('SHIP'+SHIP)).replace(/[\\\/:*?"<>|\[\]]/g,'_');
-        XLSX.writeFile(wb, T('ERP등재내역_','Registro_ERP_')+inv+'.xlsx');
-        toast('✔ '+L('엑셀 저장됨','Excel guardado'));
-      }catch(e){ toast(L('엑셀 생성 실패','Error al generar Excel')+': '+(e&&e.message||e)); }
+        var buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+        putBlob(a,[buf],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',baseName()+'.xlsx');
+      }catch(e){
+        // 대체: CSV(엑셀에서 바로 열린다). BOM 을 붙여야 한글이 안 깨진다.
+        try{
+          var csv=aoa.map(function(r){
+            return (r||[]).map(function(v){
+              var t=(v==null?'':String(v));
+              return /[",\n;]/.test(t)?('"'+t.replace(/"/g,'""')+'"'):t;
+            }).join(',');
+          }).join('\r\n');
+          putBlob(a,['﻿'+csv],'text/csv;charset=utf-8',baseName()+'.csv');
+          a.textContent='⤓ '+T('CSV 다운로드','Descargar CSV');
+          a.title=T('엑셀 라이브러리를 불러오지 못해 CSV 로 받습니다','Sin librería Excel — se descarga CSV');
+        }catch(e2){
+          a.removeAttribute('href'); a.removeAttribute('download');
+          a.textContent='⚠ '+T('다운로드 생성 실패','Error al generar la descarga');
+        }
+      }
     }
+    try{ w.addEventListener('beforeunload',revokeXls); }catch(e){}
 
     render();
   }
