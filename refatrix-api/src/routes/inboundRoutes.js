@@ -54,6 +54,41 @@ async function matchProducts(q, codes) {
   return map;
 }
 
+// ===== 창고 종료(잠금, 0187) =====
+// 마감(close)은 "입고 수량 반영"이고, 창고 종료는 "이 선적에 대한 창고 작업 끝"이다 — 축이 다르다.
+// 창고 담당자 [종료 신청] → 디렉터 PIN [승인] → wh_locked_at. 그 뒤 창고 변경은 전부 거부한다.
+// 잠금 확인은 **트랜잭션 안에서 FOR UPDATE 로 잠근 행을 보고** 판단하는 게 원칙이지만,
+// 그렇지 않은 라우트에서도 진입 시 1회 확인해 사용자에게 즉시 사유를 돌려준다.
+const WH_LOCKED = { error: 'wh_locked' };   // 모든 창고 변경 라우트의 공통 거부 응답
+async function whLockedAt(q, id) {
+  const r = (await q(`SELECT wh_locked_at FROM inbound_shipments WHERE id=$1`, [id])).rows[0];
+  return r && r.wh_locked_at ? r.wh_locked_at : null;
+}
+
+// 종료 가능 여부 — ① 팔렛이 있고 ② 전 팔렛 적치 완료 ③ 전 팔렛 입고 반영(received_at)
+//   적치 완료 판정은 putaway·프런트와 **같은 식**을 쓴다:
+//   목표 = 검수 확정(checked_at) 팔렛이면 scanned_cartons, 아니면 cartons.
+//   → 미검수·미하차 팔렛은 목표가 cartons 라 자동으로 "적치 미완료"로 잡힌다.
+async function whFinishCheck(q, id) {
+  const r = (await q(
+    `SELECT
+       (SELECT COUNT(*)::int FROM inbound_pallets WHERE shipment_id=$1) AS pallets,
+       (SELECT COUNT(DISTINCT pl.id)::int
+          FROM inbound_pallets pl
+          JOIN inbound_pallet_items pi ON pi.pallet_id = pl.id
+         WHERE pl.shipment_id=$1
+           AND pi.put_cartons < (CASE WHEN pl.checked_at IS NOT NULL
+                                      THEN pi.scanned_cartons ELSE pi.cartons END)) AS put_pending,
+       (SELECT COUNT(*)::int FROM inbound_pallets
+         WHERE shipment_id=$1 AND received_at IS NULL) AS recv_pending`, [id])).rows[0];
+  const out = { pallets: int(r.pallets), put_pending: int(r.put_pending), recv_pending: int(r.recv_pending) };
+  out.reason = !out.pallets ? 'no_pallets'
+             : out.put_pending ? 'put_pending'
+             : out.recv_pending ? 'recv_pending' : null;
+  out.ready = !out.reason;
+  return out;
+}
+
 function summarize(pallets, pmap) {
   const skus = new Set(); let cartons = 0, qty = 0;
   const unmatched = new Set(), norack = new Set();
@@ -277,8 +312,9 @@ export default async function inboundRoutes(app) {
   app.post('/api/inbound/:id/relines', g, async (req) => {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id);
-    const s = (await query(`SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    const s = (await query(`SELECT id, status, wh_locked_at FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!s) return { error: 'not_found' };
+    if (s.wh_locked_at) return WH_LOCKED;                    // 창고 종료됨(0187) — 디렉터가 풀어야 수정 가능
     if (!['incoming', 'receiving'].includes(s.status)) return { error: 'bad_state' };
     const pallets = aggregate(req.body?.rows);
     if (!pallets.length) return { error: 'empty' };
@@ -301,6 +337,7 @@ export default async function inboundRoutes(app) {
   app.get('/api/inbound', g, async () => {
     const { rows } = await query(
       `SELECT s.id, s.invoice_no, s.eta, s.status, s.created_at, s.closed_at,
+              s.wh_req_at, s.wh_locked_at,
               pal.pallets, pal.pallets_checked,
               it.cartons, it.qty
          FROM inbound_shipments s
@@ -324,6 +361,7 @@ export default async function inboundRoutes(app) {
         pallets: r.pallets, pallets_checked: r.pallets_checked,
         cartons: r.cartons, qty: num(r.qty),
         created_at: r.created_at, closed_at: r.closed_at,
+        wh_req_at: r.wh_req_at, wh_locked_at: r.wh_locked_at,   // 창고 종료 신청/잠금(0187)
       })),
     };
   });
@@ -392,8 +430,20 @@ export default async function inboundRoutes(app) {
         registered: it.product_id != null,
       });
     }
+    // 창고 종료(0187) — 잠금 여부·신청자/승인자 이름·남은 조건
+    const whNames = (await query(
+      `SELECT (SELECT name FROM users WHERE id = $1) AS req_name,
+              (SELECT name FROM users WHERE id = $2) AS lock_name`,
+      [s.wh_req_by || null, s.wh_locked_by || null])).rows[0] || {};
+    const whCheck = await whFinishCheck(query, id);
     return {
-      shipment: { id: Number(s.id), invoice_no: s.invoice_no, eta: s.eta, status: s.status },
+      shipment: { id: Number(s.id), invoice_no: s.invoice_no, eta: s.eta, status: s.status,
+        wh_req_at: s.wh_req_at || null, wh_req_by: s.wh_req_by ? Number(s.wh_req_by) : null,
+        wh_req_by_name: whNames.req_name || null,
+        wh_req_is_me: !!(s.wh_req_by && Number(s.wh_req_by) === Number(me)),
+        wh_locked_at: s.wh_locked_at || null, wh_locked_by: s.wh_locked_by ? Number(s.wh_locked_by) : null,
+        wh_locked_by_name: whNames.lock_name || null,
+        wh_check: whCheck },
       pallets: pals.map((p) => ({
         id: Number(p.id), order_no: p.order_no, pl_no: p.pl_no, status: p.status,
         cartons_expected: p.cartons_expected, qty_expected: num(p.qty_expected),
@@ -413,6 +463,7 @@ export default async function inboundRoutes(app) {
   // 하차 ------------------------------------------------------------
   app.post('/api/inbound/:id/pallets/:pid/unload', g, async (req) => {
     const pid = Number(req.params.pid);
+    if (await whLockedAt(query, Number(req.params.id))) return WH_LOCKED;   // 창고 종료됨(0187)
     const r = await query(
       `UPDATE inbound_pallets SET status='unloaded'
         WHERE id=$1 AND shipment_id=$2 AND status='wait' RETURNING id`,
@@ -431,8 +482,9 @@ export default async function inboundRoutes(app) {
     return await withTx(async (c) => {
       const q = c.query.bind(c);
       const s = (await q(
-        `SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+        `SELECT id, status, wh_locked_at FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
       if (!s) return { error: 'not_found' };
+      if (s.wh_locked_at) return WH_LOCKED;                  // 창고 종료됨(0187)
       if (s.status === 'closed') return { error: 'closed' };
       const pal = (await q(
         `SELECT id, status FROM inbound_pallets WHERE id=$1 AND shipment_id=$2 FOR UPDATE`, [pid, id])).rows[0];
@@ -489,6 +541,7 @@ export default async function inboundRoutes(app) {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id), pid = Number(req.params.pid);
     const list = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (await whLockedAt(query, id)) return WH_LOCKED;                       // 창고 종료됨(0187)
     return await withTx(async (c) => {
       const q = c.query.bind(c);
       const pal = (await q(
@@ -530,6 +583,7 @@ export default async function inboundRoutes(app) {
     const id = Number(req.params.id), pid = Number(req.params.pid);
     const list = Array.isArray(req.body?.scans) ? req.body.scans.slice(0, 500) : [];
     const undo = req.body?.undo_code ? String(req.body.undo_code).trim().slice(0, 60) : null;
+    if (await whLockedAt(query, id)) return WH_LOCKED;                       // 창고 종료됨(0187)
     return await withTx(async (c) => {
       const q = c.query.bind(c);
       const pal = (await q(
@@ -580,6 +634,7 @@ export default async function inboundRoutes(app) {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id), pid = Number(req.params.pid);
     const dry = !!(req.body && req.body.dry);
+    if (await whLockedAt(query, id)) return WH_LOCKED;                       // 창고 종료됨(0187)
     const out = await withTx(async (c) => {
       const q = c.query.bind(c);
       const pal = (await q(
@@ -626,8 +681,9 @@ export default async function inboundRoutes(app) {
     const out = await withTx(async (c) => {
       const q = c.query.bind(c);
       const s = (await q(
-        `SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+        `SELECT id, status, wh_locked_at FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
       if (!s) return { error: 'not_found' };
+      if (s.wh_locked_at) return WH_LOCKED;                  // 창고 종료됨(0187)
       if (s.status === 'closed') return { error: 'closed' };
       const pals = (await q(
         `SELECT id, order_no, pl_no, status FROM inbound_pallets
@@ -670,6 +726,7 @@ export default async function inboundRoutes(app) {
     const uid = req.ctx.perm.userId;
     const id = Number(req.params.id), pid = Number(req.params.pid);
     const list = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (await whLockedAt(query, id)) return WH_LOCKED;                       // 창고 종료됨(0187)
     const out = await withTx(async (c) => {
       const q = c.query.bind(c);
       const pal = (await q(
@@ -740,6 +797,7 @@ export default async function inboundRoutes(app) {
     const pinRow = (await query(`SELECT pin_hash FROM users WHERE id=$1`, [uid])).rows[0];
     if (!verifyPin(String(req.body?.pin || ''), pinRow?.pin_hash)) return { error: 'bad_pin' };
 
+    if (await whLockedAt(query, id)) return WH_LOCKED;                       // 창고 종료됨(0187)
     const out = await withTx(async (c) => {
       const q = c.query.bind(c);
       const s = (await q(`SELECT id, status FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
@@ -818,6 +876,110 @@ export default async function inboundRoutes(app) {
         detail: { close: true, first: out.first, po_lines_updated: out.po_lines_updated,
                   pallets_received: out.pallets_received, stock_applied: out.stock_applied,
                   unmatched: out.unmatched.length, unregistered: out.unregistered.length } });
+    }
+    return out;
+  });
+
+  // ===== 창고 종료(0187) — 신청 → 디렉터 PIN 승인 → 잠금 =====
+  //   마감(close)이 "입고 수량 반영"이라면, 창고 종료는 "이 선적에 대한 창고 작업 끝"이다.
+  //   조건(서버가 강제): 전 팔렛 적치 완료 + 전 팔렛 입고 반영. 둘 중 하나라도 남으면 신청·승인 모두 거부.
+
+  // ① 종료 신청 (창고 담당자) — 멱등(이미 신청돼 있으면 already:true)
+  app.post('/api/inbound/:id/wh-finish/request', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id);
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(
+        `SELECT id, wh_req_at, wh_locked_at FROM inbound_shipments
+          WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.wh_locked_at) return { error: 'already_locked' };
+      const check = await whFinishCheck(q, id);
+      if (!check.ready) return { error: check.reason, check };
+      if (s.wh_req_at) return { ok: true, already: true, check };
+      await q(`UPDATE inbound_shipments SET wh_req_by=$1, wh_req_at=now() WHERE id=$2`, [uid, id]);
+      return { ok: true, check };
+    });
+    if (out && out.ok && !out.already) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { wh_finish_request: true } });
+    }
+    return out;
+  });
+
+  // ② 신청 취소 — 신청자 본인 또는 디렉터
+  app.post('/api/inbound/:id/wh-finish/cancel', g, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const isDir = req.ctx.perm.role === 'director';
+    const id = Number(req.params.id);
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(
+        `SELECT id, wh_req_by, wh_req_at, wh_locked_at FROM inbound_shipments
+          WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.wh_locked_at) return { error: 'already_locked' };   // 잠긴 건 취소가 아니라 해제(unlock)
+      if (!s.wh_req_at) return { ok: true, already: true };
+      if (!isDir && Number(s.wh_req_by) !== Number(uid)) return { error: 'not_requester' };
+      await q(`UPDATE inbound_shipments SET wh_req_by=NULL, wh_req_at=NULL WHERE id=$1`, [id]);
+      return { ok: true };
+    });
+    if (out && out.ok && !out.already) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { wh_finish_request_cancel: true } });
+    }
+    return out;
+  });
+
+  // ③ 승인 = 잠금 (디렉터 PIN) — 신청이 있어야 승인할 수 있다(2단계 결재)
+  app.post('/api/inbound/:id/wh-finish/approve', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id);
+    const pinRow = (await query(`SELECT pin_hash FROM users WHERE id=$1`, [uid])).rows[0];
+    if (!verifyPin(String(req.body?.pin || ''), pinRow?.pin_hash)) return { error: 'bad_pin' };
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(
+        `SELECT id, wh_req_at, wh_locked_at FROM inbound_shipments
+          WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (s.wh_locked_at) return { ok: true, already: true };   // 멱등
+      if (!s.wh_req_at) return { error: 'not_requested' };
+      // 신청 이후 상황이 바뀌었을 수 있으므로 승인 시점에 다시 검사한다
+      const check = await whFinishCheck(q, id);
+      if (!check.ready) return { error: check.reason, check };
+      await q(`UPDATE inbound_shipments SET wh_locked_by=$1, wh_locked_at=now() WHERE id=$2`, [uid, id]);
+      return { ok: true, check };
+    });
+    if (out && out.ok && !out.already) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { wh_finish_approve: true } });
+    }
+    return out;
+  });
+
+  // ④ 잠금 해제 (디렉터 PIN) — 신청도 함께 지운다(다시 신청부터 밟게)
+  app.post('/api/inbound/:id/wh-finish/unlock', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const uid = req.ctx.perm.userId;
+    const id = Number(req.params.id);
+    const reason = String(req.body?.reason || '').trim().slice(0, 200) || null;
+    const pinRow = (await query(`SELECT pin_hash FROM users WHERE id=$1`, [uid])).rows[0];
+    if (!verifyPin(String(req.body?.pin || ''), pinRow?.pin_hash)) return { error: 'bad_pin' };
+    const out = await withTx(async (c) => {
+      const q = c.query.bind(c);
+      const s = (await q(
+        `SELECT id, wh_locked_at FROM inbound_shipments WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+      if (!s) return { error: 'not_found' };
+      if (!s.wh_locked_at) return { ok: true, already: true };
+      await q(
+        `UPDATE inbound_shipments SET wh_locked_by=NULL, wh_locked_at=NULL, wh_req_by=NULL, wh_req_at=NULL
+          WHERE id=$1`, [id]);
+      return { ok: true };
+    });
+    if (out && out.ok && !out.already) {
+      await logEvent({ userId: uid, deviceId: req.ctx.deviceId, action: 'update', target: 'inbound:' + id,
+        detail: { wh_finish_unlock: true, reason } });
     }
     return out;
   });
@@ -914,6 +1076,7 @@ export default async function inboundRoutes(app) {
   app.patch('/api/inbound/:id', g, async (req, reply) => {
     const id = Number(req.params.id);
     if (!id) return reply.code(400).send({ error: 'bad_id' });
+    if (await whLockedAt(query, id)) return reply.code(409).send(WH_LOCKED);   // 창고 종료됨(0187)
     const sets = []; const args = [];
     if (req.body && req.body.invoice_no !== undefined) {
       const v = String(req.body.invoice_no || '').trim().slice(0, 60) || null;
@@ -941,6 +1104,7 @@ export default async function inboundRoutes(app) {
     const pinRow = (await query(`SELECT pin_hash, role FROM users WHERE id=$1`, [uid])).rows[0];
     if (pinRow?.role !== 'director') return { error: 'director_only' };
     if (!verifyPin(String(req.body?.pin || ''), pinRow?.pin_hash)) return { error: 'bad_pin' };
+    if (await whLockedAt(query, id)) return WH_LOCKED;                        // 창고 종료됨(0187) — 먼저 해제
     const r = await query(
       `UPDATE inbound_shipments SET status='cancelled', deleted_at=now()
         WHERE id=$1 AND status<>'closed' AND deleted_at IS NULL RETURNING id`, [id]);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260827reg2</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260827whlock</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -176,6 +176,10 @@
   .hidden{display:none}
   .note{background:#EFF3F7;border-left:3px solid var(--steel);padding:8px 11px;border-radius:0 9px 9px 0;font-size:12px;color:var(--steel-d);margin:9px 0}
   .note.green{background:#F0F7F3;border-left-color:var(--green);color:#2C5C42}
+  /* 창고 종료(0187) — 잠금 배너와 읽기 전용 단계 화면 */
+  .note.lockbar{background:#F3F1EC;border-left-color:#6F6A60;color:#3A362F}
+  #stepbody.rolock{opacity:.72}
+  #stepbody.rolock [data-lockok]{opacity:1}
 
   /* ===== PDA 컴팩트 모드(2026-08-26) — 현장 스캐너 화면(작은 폭)에서 "리딩 결과"를 항상 보이게 =====
      문제: 상단 고정 헤더(#rnav 바+하위메뉴, 좁은 폭에서 여러 줄로 접힘)가 body padding-top 을 크게 잡고,
@@ -253,7 +257,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260827reg2';
+  var BUILD='20260827whlock';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -520,8 +524,11 @@
         var cls={incoming:'s',receiving:'o',closed:'g',cancelled:'r'}[s.status]||'';
         return '<div class="ship" data-id="'+s.id+'"><div class="row" style="justify-content:space-between">'
           +'<span class="t mono">'+esc(s.invoice_no||('#'+s.id))+'</span>'
-          +'<span class="row" style="gap:6px;align-items:center"><span class="tag '+cls+'">'+st+'</span>'
-          +((isDir&&s.status!=='closed')?'<button class="btn r sm" data-del="'+s.id+'" title="'+L('삭제','Eliminar')+'">🗑</button>':'')
+          +'<span class="row" style="gap:6px;align-items:center">'
+          +(s.wh_locked_at?'<span class="tag g" title="'+L('창고 종료됨 — 수정 불가','Almacén cerrado')+'">🔒 '+L('창고 종료','Almacén cerrado')+'</span>'
+            :(s.wh_req_at?'<span class="tag o" title="'+L('디렉터 승인 대기','Esperando aprobación')+'">⏳ '+L('종료 승인 대기','Por aprobar')+'</span>':''))
+          +'<span class="tag '+cls+'">'+st+'</span>'
+          +((isDir&&s.status!=='closed'&&!s.wh_locked_at)?'<button class="btn r sm" data-del="'+s.id+'" title="'+L('삭제','Eliminar')+'">🗑</button>':'')
           +'</span></div>'
           +'<div class="d">ETA '+(s.eta||'—')+' · '+L('팔렛','Pallets')+' '+s.pallets_checked+'/'+s.pallets+' · '+L('카톤','Cajas')+' '+fmt(s.cartons)+' · '+fmt(s.qty)+' EA</div>'
           +'<div class="pr"><i style="width:'+pct+'%"></i></div></div>';
@@ -1113,7 +1120,7 @@
     var stName={incoming:L('운송중','En tránsito'),receiving:L('입고중','Recibiendo'),closed:L('마감','Cerrado')}[s.status]||s.status;
     var html='<div class="card"><div class="row" style="justify-content:space-between">'
       +'<div><h2 style="margin:0">'+L('선적','Embarque')+' <span class="mono" style="font-weight:400;color:'+(s.invoice_no?'var(--muted)':'var(--red)')+'">'+esc(s.invoice_no||L('인보이스 미입력','sin factura'))+'</span>'
-      +(s.status!=='closed'?' <button class="btn ghost sm" id="btnInvEdit" title="'+L('인보이스 번호 입력·수정','Editar factura')+'">✎</button>':'')+'</h2>'
+      +((s.status!=='closed'&&!s.wh_locked_at)?' <button class="btn ghost sm" id="btnInvEdit" title="'+L('인보이스 번호 입력·수정','Editar factura')+'">✎</button>':'')+'</h2>'
       +'<div class="hint dhint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span> · <span id="shipFiles">📎 …</span></div></div>'
       +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
       +'<div class="steps">'
@@ -1121,7 +1128,18 @@
       +stepBtn('check',L('검수','Verificar'),st.checked+'/'+st.N)
       +stepBtn('put',L('적치','Acomodo'),st.done+'/'+st.N)
       +stepBtn('close',L('마감','Cierre'),s.status==='closed'?'✓':'')
-      +'</div><div id="stepbody"></div></div>';
+      +'</div>'
+      +(s.wh_locked_at
+        ?'<div class="note lockbar">🔒 <b>'+L('창고 종료됨','Almacén cerrado')+'</b> — '+esc(dt(s.wh_locked_at))
+          +(s.wh_locked_by_name?' · '+L('승인','Aprobó')+' '+esc(s.wh_locked_by_name):'')
+          +'. '+L('하차·검수·적치·마감 수정이 모두 잠겼습니다. 수정하려면 [마감] 탭에서 디렉터가 잠금을 해제하세요.',
+                  'Descarga, verificación, acomodo y cierre están bloqueados. El director puede desbloquear en la pestaña [Cierre].')+'</div>'
+        :(s.wh_req_at
+          ?'<div class="note">⏳ <b>'+L('창고 종료 승인 대기','Cierre de almacén por aprobar')+'</b> — '
+            +esc(s.wh_req_by_name||'')+' '+esc(dt(s.wh_req_at))+' '+L('신청','solicitó')
+            +'. '+L('디렉터가 [마감] 탭에서 승인하면 잠깁니다.','El director aprueba en la pestaña [Cierre].')+'</div>'
+          :''))
+      +'<div id="stepbody"></div></div>';
     $('app').innerHTML=html;
     $('btnBack').addEventListener('click',loadList);
     loadShipFiles();
@@ -1150,6 +1168,7 @@
     else if(STEP==='check') renderCheck();
     else if(STEP==='put') renderPut();
     else renderClose();
+    applyLock();                                  // 창고 종료된 선적은 단계 화면 전체를 읽기 전용으로
   }
   /* ===== 점유 표시(소프트 락) — 지금 누가 이 팔렛을 잡고 있는지 =====
      막지 않는다. 같은 팔렛을 굳이 잡아도 증분 저장으로 합산된다. */
@@ -1173,6 +1192,32 @@
     if(pid) api('/api/inbound/'+SHIP+'/pallets/'+pid+'/working/clear',{method:'POST'});
   }
 
+  /* ===== 창고 종료(0187) — 적치까지 끝난 선적을 잠가 창고 수정을 막는다 =====
+     서버가 진짜 가드다(모든 창고 변경 라우트가 wh_locked 로 거부). 여기서는 화면을 막아
+     작업자가 눌렀다가 거절당하는 일이 없게 한다. */
+  function whLocked(){ return !!(DETAIL&&DETAIL.shipment&&DETAIL.shipment.wh_locked_at); }
+  function whReqAt(){ return (DETAIL&&DETAIL.shipment&&DETAIL.shipment.wh_req_at)||null; }
+  function whCheck(){ return (DETAIL&&DETAIL.shipment&&DETAIL.shipment.wh_check)||{ready:false,reason:'no_pallets',pallets:0,put_pending:0,recv_pending:0}; }
+  function whIsRequester(){ var s=DETAIL&&DETAIL.shipment; return !!(s&&s.wh_req_is_me); }
+  function dt(v){ if(!v) return ''; try{ var d=new Date(v);
+    return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)
+      +' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }catch(e){ return String(v); } }
+  // 서버가 wh_locked 로 거부했을 때의 공통 안내(화면이 낡았을 때만 나온다)
+  function whErrMsg(e){ return e==='wh_locked'
+    ? L('창고 종료된 선적입니다 — 디렉터가 잠금을 해제해야 수정할 수 있습니다','Embarque cerrado en almacén — el director debe desbloquear') : null; }
+  /* 렌더 후 단계 화면 전체를 읽기 전용으로 만든다.
+     [data-lockok] 가 붙은 요소(잠금 해제·조회 버튼)만 살려 둔다. */
+  function applyLock(){
+    var b=$('stepbody'); if(!b) return;
+    var on=whLocked();
+    b.classList.toggle('rolock',on);
+    if(!on) return;
+    b.querySelectorAll('button,input,select,textarea').forEach(function(el){
+      if(el.hasAttribute('data-lockok')) return; el.disabled=true; });
+    b.querySelectorAll('[role="button"]').forEach(function(el){
+      if(el.hasAttribute('data-lockok')) return;
+      el.style.pointerEvents='none'; el.style.opacity='.55'; });
+  }
   var PAL_LBL={wait:['대기','En espera'],unloaded:['하차됨','Descargado'],checking:['적치중','Acomodando'],checked:['검수됨','Verificado'],done:['완료','Listo']};
   function palLbl(s){ var t=PAL_LBL[s]; return t?L(t[0],t[1]):s; }
   /* PO번호 표기 — 고정 접두(예 100RA)는 작게 붙이고, RA 뒤의 실제 PO번호를 크게·자간 넓게.
@@ -1973,7 +2018,10 @@
         return {ok:false,status:0,body:{error:L('네트워크 없음','sin red')}};   // 네트워크 단절 — putSaving 이 잠기지 않게 정상 실패로 변환
       }).then(function(o){
       putSaving=false;
-      if(!o.ok||o.body.error){ sndErr(); toast(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)); putSaveSync(); if(cb)cb(); return; }
+      if(!o.ok||o.body.error){ sndErr();
+        // 창고 종료(0187)로 거부된 경우엔 사유를 그대로 알려준다(화면이 낡아 버튼이 살아 있던 경우)
+        toast(whErrMsg(o.body.error)||(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)));
+        putSaveSync(); if(o.body.error==='wh_locked') refreshDetail(renderDetail); if(cb)cb(); return; }
       sndSaved();
       putAdd={}; putSaveRack={}; putNoMaster={};
       var wasDone=o.body.done;
@@ -2077,6 +2125,93 @@
           :'<div class="note" style="margin-top:12px">⚠ '+L('미검수 팔렛 '+(st.N-ck.length)+'개는 이번 입고에서 <b>제외</b>됩니다. 나중에 검수를 마치면 [추가 입고 반영]으로 이어서 반영할 수 있습니다.','Los pallets sin verificar quedan <b>fuera</b>; podrá recibirlos después.')+'</div>');
       wireCloseBtn('🔒 '+L('입고 확정 (마감)','Cerrar recepción'));
     }
+    renderWhFinish(b);
+  }
+
+  /* ===== 창고 종료(0187) — [마감] 탭 맨 아래 =====
+     마감 = 입고 수량 반영. 창고 종료 = 이 선적에 대한 창고 작업 끝(이후 수정 잠금).
+     절차: 창고 담당자 [종료 신청] → 디렉터 PIN [승인] → 잠금. 해제는 디렉터 PIN. */
+  function renderWhFinish(b){
+    var s=DETAIL.shipment, chk=whCheck(), locked=whLocked(), req=whReqAt();
+    var head='<div class="grpline" style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">'
+      +'<b style="font-size:14px">🏁 '+L('창고 종료','Cierre de almacén')+'</b> '
+      +'<span class="hint" style="margin:0">'+L('적치까지 끝난 선적을 잠가 이후 창고 수정을 막습니다.','Bloquea el embarque tras completar el acomodo.')+'</span></div>';
+
+    if(locked){
+      b.innerHTML+=head
+        +'<div class="note lockbar">🔒 <b>'+L('창고 종료됨','Almacén cerrado')+'</b> — '+esc(dt(s.wh_locked_at))
+        +(s.wh_locked_by_name?' · '+L('승인','Aprobó')+' '+esc(s.wh_locked_by_name):'')
+        +(s.wh_req_by_name?' · '+L('신청','Solicitó')+' '+esc(s.wh_req_by_name):'')+'</div>'
+        +(isDir
+          ?'<div class="row"><input type="password" id="whPin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px" data-lockok>'
+            +'<button class="btn ghost sm" id="btnWhUnlock" data-lockok>🔓 '+L('잠금 해제','Desbloquear')+'</button></div>'
+          :'<div class="hint">'+L('수정이 필요하면 디렉터에게 잠금 해제를 요청하세요.','Pida al director desbloquear.')+'</div>');
+      var bu=$('btnWhUnlock');
+      if(bu) bu.addEventListener('click',function(){
+        if(!$('whPin').value){ toast(L('디렉터 PIN을 입력하세요','Ingrese el PIN del director')); return; }
+        if(!confirm(L('창고 종료를 해제합니다. 창고에서 다시 수정할 수 있게 됩니다.','Se desbloqueará el almacén.'))) return;
+        whPost('unlock',{pin:$('whPin').value},L('잠금 해제됨 — 창고 수정이 다시 가능합니다','Desbloqueado'));
+      });
+      return;
+    }
+
+    if(!chk.ready){
+      var why=chk.reason==='no_pallets'?L('팔렛이 없습니다','Sin pallets')
+             :chk.reason==='put_pending'?L('적치 미완료 '+chk.put_pending+'팔렛 — [적치] 탭에서 마저 끝내세요','Acomodo pendiente: '+chk.put_pending+' pallets')
+             :L('입고 미반영 '+chk.recv_pending+'팔렛 — 위에서 먼저 입고(마감)하세요','Sin recibir: '+chk.recv_pending+' pallets');
+      b.innerHTML+=head+'<div class="note">⚠ '+L('아직 종료할 수 없습니다','Aún no se puede cerrar')+' — '+why+'</div>';
+      return;
+    }
+
+    if(!req){
+      b.innerHTML+=head
+        +'<div class="note green">✔ '+L('전 팔렛 적치·입고 완료 — 종료할 수 있습니다.','Todo acomodado y recibido — puede cerrarse.')+'</div>'
+        +'<div class="row"><button class="btn" id="btnWhReq">🏁 '+L('창고 종료 신청','Solicitar cierre')+'</button>'
+        +'<span class="hint" style="margin:0">'+L('신청 후 디렉터가 PIN으로 승인하면 잠깁니다.','Tras solicitar, el director aprueba con PIN.')+'</span></div>';
+      $('btnWhReq').addEventListener('click',function(){
+        whPost('request',{},L('종료 신청됨 — 디렉터 승인을 기다립니다','Solicitado — esperando al director'));
+      });
+      return;
+    }
+
+    b.innerHTML+=head
+      +'<div class="note">⏳ <b>'+L('디렉터 승인 대기','Por aprobar')+'</b> — '
+      +esc(s.wh_req_by_name||'')+' '+esc(dt(req))+' '+L('신청','solicitó')+'</div>'
+      +(isDir
+        ?'<div class="row"><input type="password" id="whPin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px">'
+          +'<button class="btn o" id="btnWhAppr">✔ '+L('승인하고 잠금','Aprobar y bloquear')+'</button></div>'
+        :'')
+      +((isDir||whIsRequester())
+        ?'<div class="row" style="margin-top:6px"><button class="btn ghost sm" id="btnWhCancel">✖ '+L('신청 취소','Cancelar solicitud')+'</button></div>'
+        :'');
+    var ba=$('btnWhAppr');
+    if(ba) ba.addEventListener('click',function(){
+      if(!$('whPin').value){ toast(L('디렉터 PIN을 입력하세요','Ingrese el PIN del director')); return; }
+      whPost('approve',{pin:$('whPin').value},L('창고 종료됨 — 이후 창고 수정이 잠깁니다','Almacén cerrado'));
+    });
+    var bc=$('btnWhCancel');
+    if(bc) bc.addEventListener('click',function(){ whPost('cancel',{},L('신청이 취소됐습니다','Solicitud cancelada')); });
+  }
+
+  function whPost(act,body,okMsg){
+    api('/api/inbound/'+SHIP+'/wh-finish/'+act,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body||{})}).then(function(o){
+      if(!o.ok||o.body.error){
+        var e=o.body&&o.body.error;
+        var em={bad_pin:L('PIN이 올바르지 않습니다','PIN incorrecto'),
+                director_only:L('디렉터만 가능합니다','Solo director'),
+                not_requested:L('창고 담당자의 종료 신청이 먼저 있어야 합니다','Falta la solicitud de almacén'),
+                not_requester:L('신청자 본인 또는 디렉터만 취소할 수 있습니다','Solo el solicitante o el director'),
+                already_locked:L('이미 창고 종료된 선적입니다','Ya está cerrado'),
+                no_pallets:L('팔렛이 없습니다','Sin pallets'),
+                put_pending:L('적치가 끝나지 않은 팔렛이 있습니다','Acomodo pendiente'),
+                recv_pending:L('입고 반영이 안 된 팔렛이 있습니다 — 먼저 마감하세요','Faltan pallets por recibir')}[e];
+        sndErr(); toast('⚠ '+(em||whErrMsg(e)||(L('처리 실패','Error')+': '+(e||o.status))));
+        refreshDetail(renderDetail); return;                 // 화면을 서버 기준으로 다시 맞춘다
+      }
+      sndSaved(); toast('✔ '+okMsg);
+      refreshDetail(renderDetail);
+    }).catch(function(){ sndErr(); toast(L('처리 실패 — 네트워크를 확인하세요','Error de red')); });
   }
 
   /* ============ 자동 갱신(25초) ============
@@ -2085,7 +2220,8 @@
      · 팔렛을 잡고 있으면 같은 주기로 점유 하트비트를 보낸다. */
   function sigList(items){
     try{ return JSON.stringify((items||[]).map(function(s){
-      return [s.id,s.status,s.pallets,s.pallets_checked,s.cartons,s.qty,s.eta,s.invoice_no]; })); }catch(e){ return ''; }
+      return [s.id,s.status,s.pallets,s.pallets_checked,s.cartons,s.qty,s.eta,s.invoice_no,
+        s.wh_req_at||'',s.wh_locked_at||'']; })); }catch(e){ return ''; }
   }
   function sigDetail(b){
     try{ return JSON.stringify([b.shipment,(b.pallets||[]).map(function(p){
