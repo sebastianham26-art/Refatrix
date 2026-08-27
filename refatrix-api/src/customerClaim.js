@@ -2,7 +2,7 @@
 //
 //   배경: 100% 커미션 영업사원은 서로의 존재를 모르고 회사 소속도 아니다.
 //         "먼저 등록한 사람이 그 고객의 커미션을 가져간다"가 유일한 보호 장치이므로,
-//         선점 키(CONSTANCIA 번호·RFC)의 표기 흔들림으로 중복 등록이 새면 안 된다.
+//         선점 키(0188 이후 RFC · 선택 입력 시 CONSTANCIA 번호)의 표기 흔들림으로 중복 등록이 새면 안 된다.
 //
 //   여기 있는 함수는 DB·HTTP 를 모르는 순수 함수다(단위 테스트 대상).
 
@@ -16,10 +16,58 @@ export function normalizeClaimKey(v) {
 
 // RFC 는 멕시코 세금번호 — 법인 12자리 / 개인 13자리. 형식만 느슨하게 본다
 // (동음이의 지점 표기 등 현장 데이터가 지저분해서 강한 검증은 등록을 막는다).
+//   ⚠ 0188 이후 **신규 등록**은 아래 validateRfc() 로 엄격하게 본다.
+//     looksLikeRfc 는 기존 데이터 조회·회귀용으로만 남긴다.
 export function looksLikeRfc(v) {
   const s = normalizeClaimKey(v);
   return !!s && s.length >= 10 && s.length <= 13;
 }
+
+// ── 0188 · RFC = 선점 키 ──────────────────────────────────────────────
+//
+//   선점 조건을 CONSTANCIA(번호+PDF) → **RFC 입력** 으로 바꿨다.
+//   영업사원이 현장에서 가장 먼저 확보하는 게 RFC 이고, CONSTANCIA 는 뒤따라 온다.
+//   대신 "아무 문자열이나 넣고 선점" 이 되면 선점 장치 자체가 무의미해지므로
+//   RFC 형식을 실제로 검사한다.
+//
+//   표기 정리는 공백·하이픈·점·슬래시만 지운다 — Ñ 와 & 는 RFC 에 실제로 쓰이는 글자다.
+//   (선점 키 normalizeClaimKey 는 0185 DB 생성컬럼과 맞추느라 Ñ·& 까지 지운다.
+//    'PEÑA800101AB1' 과 'PEA800101AB1' 이 같은 선점 키가 되는데,
+//    실무상 충돌 확률이 없고 DB 생성컬럼을 바꾸면 기존 유니크 인덱스를 다시 만들어야 해 그대로 둔다.)
+export function cleanRfc(v) {
+  return String(v == null ? '' : v).toUpperCase().replace(/[\s\-._/]/g, '').trim();
+}
+
+// 법인(persona moral)  : 영문 3자 + YYMMDD + 호모클라베 3자 = 12자리
+// 개인(persona física) : 영문 4자 + YYMMDD + 호모클라베 3자 = 13자리
+const RFC_RE = /^([A-ZÑ&]{3,4})(\d{2})(\d{2})(\d{2})([A-Z\d]{3})$/;
+
+// SAT 범용 RFC — 특정 고객이 아니다. 이걸로 선점되면 그 뒤 모두가 막힌다.
+export const GENERIC_RFC = ['XAXX010101000', 'XEXX010101000'];
+
+/**
+ * 신규 등록용 RFC 검증.
+ * @returns {{ok:true, value:string, kind:'moral'|'fisica'}|{ok:false, error:string}}
+ *   error: rfc_required | rfc_invalid | rfc_invalid_date | rfc_generic
+ */
+export function validateRfc(v) {
+  const s = cleanRfc(v);
+  if (!s) return { ok: false, error: 'rfc_required' };
+  if (GENERIC_RFC.includes(s)) return { ok: false, error: 'rfc_generic' };
+  const m = RFC_RE.exec(s);
+  if (!m) return { ok: false, error: 'rfc_invalid' };
+  const mm = Number(m[3]), dd = Number(m[4]);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return { ok: false, error: 'rfc_invalid_date' };
+  return { ok: true, value: s, kind: m[1].length === 3 ? 'moral' : 'fisica' };
+}
+
+// 화면·API 에 같은 문구를 쓰기 위한 단일 출처.
+export const RFC_ERROR_NOTE = {
+  rfc_required: 'RFC(세금번호)를 입력해야 고객을 등록할 수 있습니다 — RFC 가 곧 선점 키입니다.',
+  rfc_invalid: 'RFC 형식이 올바르지 않습니다. 법인 12자리(영문 3 + YYMMDD + 3) 또는 개인 13자리(영문 4 + YYMMDD + 3)여야 합니다.',
+  rfc_invalid_date: 'RFC 가운데 6자리(YYMMDD)의 월·일이 올바르지 않습니다. 다시 확인하세요.',
+  rfc_generic: '범용 RFC(XAXX010101000 · XEXX010101000)로는 고객을 선점할 수 없습니다. 고객 고유의 RFC 를 입력하세요.',
+};
 
 // ── 기준품목(SYD) 단가 → 할인율 산출 ──────────────────────────────────
 //

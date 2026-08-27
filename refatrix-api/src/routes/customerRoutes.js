@@ -1,4 +1,5 @@
-// build 20260826reg — 고객 등록 디렉터 승인 + CONSTANCIA 선점 + 기준품목 할인율 제안 (0185)
+// build 20260827rfc — 고객 등록 디렉터 승인 + **RFC 선점**(0188) + 기준품목 할인율 제안 (0185)
+//   0188: 선점 조건이 CONSTANCIA → RFC 로 바뀌었다. CONSTANCIA 번호·PDF 는 선택 증빙.
 import { query, withTx } from '../db.js';
 import { CROSS_TEAM_PAGE_KEY } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
@@ -10,7 +11,7 @@ import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
 import { assembleVisitHistory } from '../customerVisits.js';
 import { stageLabel, stripStageLabel } from '../stageLabel.js';
 import { normalizeClaimKey, computeBaselineDiscount, validateChosenDiscount,
-         discountGap, MAX_DISCOUNT_PCT } from '../customerClaim.js';
+         discountGap, MAX_DISCOUNT_PCT, validateRfc, RFC_ERROR_NOTE } from '../customerClaim.js';
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -36,6 +37,23 @@ async function regColumnsReady() {
   } catch (_) { _regReady = false; }
   _regCheckedAt = now;
   return _regReady;
+}
+
+// 0188 · RFC 선점 예외 컬럼(rfc_claim_exempt) + 유니크 인덱스 적용 여부.
+//   미적용이어도 등록은 막지 않는다 — 애플리케이션 사전조회로 선점을 판정하고,
+//   DB 유니크(동시성 최종 방어선)만 없는 상태로 동작한다.
+let _rfcReady = null, _rfcCheckedAt = 0;
+async function rfcClaimReady() {
+  const now = Date.now();
+  if (_rfcReady !== null && now - _rfcCheckedAt < 60000) return _rfcReady;
+  try {
+    const r = (await query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+        WHERE table_name='customers' AND column_name='rfc_claim_exempt'`)).rows[0];
+    _rfcReady = Number(r.n) >= 1;
+  } catch (_) { _rfcReady = false; }
+  _rfcCheckedAt = now;
+  return _rfcReady;
 }
 
 export default async function customerRoutes(app) {
@@ -194,7 +212,7 @@ export default async function customerRoutes(app) {
     const parsed = all.slice(1).map((r) => parseCustRow(r, idx)).filter(Boolean);
     const resolve = await resolveRefs();
     const userId = req.ctx.perm.userId;
-    // 0185 · 엑셀 일괄 등록은 CONSTANCIA·승인 흐름을 우회하는 경로다.
+    // 0185 · 엑셀 일괄 등록은 RFC 선점·승인 흐름을 우회하는 경로다.
     //   신규 고객 생성은 디렉터만 허용하고, 그 외 사용자는 기존 고객 갱신만 가능하다.
     const isDir = req.ctx.perm.role === 'director';
     let created = 0, updated = 0, skipped = 0, blockedNew = 0;
@@ -215,7 +233,7 @@ export default async function customerRoutes(app) {
           [p.name, p.rfc, p.contact, p.phone, teamId, stageId, ownerId, p.customer_type, p.memo, userId, p.code]);
         updated++;
       } else if (!isDir) {
-        blockedNew++;                       // 신규 고객 생성은 디렉터 전용(승인·CONSTANCIA 우회 방지)
+        blockedNew++;                       // 신규 고객 생성은 디렉터 전용(승인·RFC 선점 우회 방지)
       } else {
         let code = p.code, ok = false;
         for (let attempt = 0; attempt < 5 && !ok; attempt++) {
@@ -238,7 +256,7 @@ export default async function customerRoutes(app) {
     }
     await safeLog({ userId, action: 'create', target: 'customer_import', detail: { created, updated, skipped, blockedNew } });
     return { ok: true, created, updated, skipped, blocked_new: blockedNew,
-      blocked_note: blockedNew ? '신규 고객 생성은 디렉터만 가능합니다(CONSTANCIA·승인 흐름). 고객 등록 화면에서 등록하세요.' : null };
+      blocked_note: blockedNew ? '신규 고객 생성은 디렉터만 가능합니다(RFC 선점·승인 흐름). 고객 등록 화면에서 등록하세요.' : null };
   });
 
   // 고객 단계 목록
@@ -472,6 +490,8 @@ export default async function customerRoutes(app) {
         // 0185 · 등록 승인 + 선점 + 기준품목 근거 (마이그레이션 전 DB 에서는 undefined → 화면이 알아서 숨김)
         approval_status: c.approval_status || 'approved',
         constancia_no: c.constancia_no || null,
+        // 0188 · RFC 가 선점 키. exempt = 마이그레이션 시점에 이미 RFC 가 중복이던 레거시 행.
+        rfc_claim_exempt: c.rfc_claim_exempt === true,
         rejected_reason: c.rejected_reason || null,
         syd_ref_code: c.syd_ref_code || null,
         syd_ref_buy_price: c.syd_ref_buy_price == null ? null : Number(c.syd_ref_buy_price),
@@ -613,7 +633,7 @@ export default async function customerRoutes(app) {
   });
 
   // =====================================================================
-  // 0185 · 고객 선점(claim) 조회
+  // 0185 · 고객 선점(claim) 조회  (0188 — 선점 키는 RFC)
   //
   //   100% 커미션 영업사원은 서로의 존재를 모른다. 그래서 "이미 남이 잡은 고객인가"
   //   만 확인할 수 있어야 하고, 그 이상(매출·상담·연락처·팀·금액)은 절대 보이면 안 된다.
@@ -655,14 +675,16 @@ export default async function customerRoutes(app) {
         owner_name: r.owner_name || '(담당자 미지정)',
         registered_at: r.registered_at,
         approval_status: r.approval_status,
-        // 어떤 키로 걸렸는지 — 화면에서 "이 CONSTANCIA 는 이미 선점됨" 을 정확히 안내하기 위함
+        // 어떤 키로 걸렸는지 — 화면에서 "이 RFC 는 이미 선점됨" 을 정확히 안내하기 위함
         matched_constancia: !!(conN && r.con_norm && r.con_norm === conN),
         matched_rfc: !!(rfcN && r.rfc_n && r.rfc_n === rfcN),
       })),
-      // 이 둘 중 하나라도 true 면 등록이 차단된다
+      // 이 둘 중 하나라도 true 면 등록이 차단된다 (0188 · 주 판정은 RFC)
       blocked_constancia: rows.some((r) => conN && r.con_norm && r.con_norm === conN),
       blocked_rfc: rows.some((r) => rfcN && r.rfc_n && r.rfc_n === rfcN),
       migration_required: !regOn,
+      // 0188 마이그레이션 전이면 DB 유니크가 없어 동시 등록 극단 케이스가 뚫릴 수 있다.
+      rfc_db_lock: await rfcClaimReady(),
     };
   });
 
@@ -712,9 +734,10 @@ export default async function customerRoutes(app) {
   });
 
   // =====================================================================
-  // 고객 등록 (0185 개정)
-  //   · CONSTANCIA 번호 + PDF 스캔본 필수 → 이게 곧 "내 고객" 선점 증빙이다.
-  //   · 같은 CONSTANCIA(정규화) 또는 같은 RFC 가 이미 있으면 **등록 차단**(선점 안내).
+  // 고객 등록 (0185 → 0188 개정)
+  //   · **RFC 입력이 곧 선점**이다(0188). 형식 검증을 통과한 RFC 하나면 등록된다.
+  //   · CONSTANCIA 번호·PDF 는 선택 — 넣으면 그 번호도 함께 잠긴다(0185 유니크 유지).
+  //   · 같은 RFC(정규화) 또는 같은 CONSTANCIA 가 이미 있으면 **등록 차단**(선점 안내).
   //   · 기준품목 구매단가 → 산출/제안 할인율을 스냅샷으로 박제.
   //   · 디렉터가 아니면 approval_status='pending' — 승인 전에는 견적·매출에 못 쓴다.
   // =====================================================================
@@ -730,53 +753,64 @@ export default async function customerRoutes(app) {
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
     if (!canEditTeam(perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
 
-    // ── ① CONSTANCIA 번호 + 스캔본 필수 ────────────────────────────────
+    // ── ① RFC 필수 = 선점 조건 (0188) ─────────────────────────────────
+    //   "아무 문자열이나 넣고 선점" 이 되면 선점 장치 자체가 무의미해지므로
+    //   멕시코 RFC 형식(법인 12 / 개인 13)을 실제로 검사한다.
+    const rfcChk = validateRfc(b.rfc);
+    if (!rfcChk.ok) {
+      return reply.code(400).send({ error: rfcChk.error, note: RFC_ERROR_NOTE[rfcChk.error] });
+    }
+    const rfcClean = rfcChk.value;                 // 대문자·구분자 제거본을 저장한다(표기 흔들림 제거)
+    const rfcNorm = normalizeClaimKey(rfcClean);
+
+    // ── ② CONSTANCIA 번호 + 스캔본 (선택) ─────────────────────────────
+    //   넣으면 그 번호도 0185 유니크로 함께 잠긴다. 안 넣어도 등록·선점은 된다.
     const conNo = String(b.constancia_no || '').trim();
     const conNorm = normalizeClaimKey(conNo);
-    if (!conNorm) {
-      return reply.code(400).send({ error: 'constancia_no_required',
-        note: 'CONSTANCIA 번호를 입력해야 고객을 등록할 수 있습니다(선점 증빙).' });
-    }
     const doc = b.constancia_file || null;
     const docName = String(doc?.file_name || '').trim();
     const docMime = String(doc?.mime_type || '').trim();
     const docB64 = String(doc?.data_base64 || '');
-    if (!docName || !docMime || !docB64) {
-      return reply.code(400).send({ error: 'constancia_file_required',
-        note: 'CONSTANCIA 스캔본(PDF)을 첨부해야 합니다.' });
-    }
-    if (!ALLOWED_DOC_MIME.includes(docMime)) {
-      return reply.code(400).send({ error: 'unsupported_type', note: 'PDF·JPEG·PNG·WEBP만 첨부할 수 있습니다.' });
-    }
-    let docBuf;
-    try { docBuf = Buffer.from(docB64, 'base64'); } catch (_) { return reply.code(400).send({ error: 'bad_base64' }); }
-    if (!docBuf.length) return reply.code(400).send({ error: 'empty_file' });
-    if (docBuf.length > MAX_DOC_BYTES) {
-      return reply.code(400).send({ error: 'too_large', note: '파일은 5MB 이하만 가능합니다.' });
+    const hasDoc = !!(docName || docMime || docB64);
+    let docBuf = null;
+    if (hasDoc) {
+      if (!docName || !docMime || !docB64) {
+        return reply.code(400).send({ error: 'constancia_file_incomplete',
+          note: 'CONSTANCIA 첨부가 불완전합니다. 파일을 다시 선택하세요.' });
+      }
+      if (!ALLOWED_DOC_MIME.includes(docMime)) {
+        return reply.code(400).send({ error: 'unsupported_type', note: 'PDF·JPEG·PNG·WEBP만 첨부할 수 있습니다.' });
+      }
+      try { docBuf = Buffer.from(docB64, 'base64'); } catch (_) { return reply.code(400).send({ error: 'bad_base64' }); }
+      if (!docBuf.length) return reply.code(400).send({ error: 'empty_file' });
+      if (docBuf.length > MAX_DOC_BYTES) {
+        return reply.code(400).send({ error: 'too_large', note: '파일은 5MB 이하만 가능합니다.' });
+      }
     }
 
-    // ── ② 선점 검사 (CONSTANCIA · RFC) ────────────────────────────────
+    // ── ③ 선점 검사 (RFC · CONSTANCIA) ────────────────────────────────
     //   유니크 인덱스가 최종 방어선이지만, 사용자에게는 "누가 선점했는지" 를 알려줘야 하므로
     //   저장 전에 먼저 조회한다. 동시성 충돌은 아래 INSERT 의 unique 에러로 다시 잡힌다.
-    const rfcNorm = normalizeClaimKey(b.rfc);
+    //   ⚠ rfc_claim_exempt(레거시 중복) 행도 여기서는 그대로 걸린다 —
+    //     인덱스에서만 빠질 뿐, 남의 고객을 새로 등록해 가져가는 건 막아야 하기 때문.
     const dup = (await query(
       `SELECT c.name, u.name AS owner_name, to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
               c.constancia_no_norm, c.rfc_norm
          FROM customers c LEFT JOIN users u ON u.id=c.owner_id
         WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'
-          AND (c.constancia_no_norm = $1 OR ($2::text IS NOT NULL AND c.rfc_norm = $2))
-        ORDER BY c.created_at LIMIT 1`, [conNorm, rfcNorm])).rows[0];
+          AND (c.rfc_norm = $1 OR ($2::text IS NOT NULL AND c.constancia_no_norm = $2))
+        ORDER BY c.created_at LIMIT 1`, [rfcNorm, conNorm])).rows[0];
     if (dup) {
-      const byCon = dup.constancia_no_norm === conNorm;
+      const byRfc = dup.rfc_norm === rfcNorm;
       return reply.code(409).send({
-        error: byCon ? 'constancia_taken' : 'rfc_taken',
+        error: byRfc ? 'rfc_taken' : 'constancia_taken',
         note: `이미 등록된 고객입니다 — ${dup.name} · 담당 ${dup.owner_name || '(미지정)'} · 등록일 ${dup.registered_at}. `
             + '같은 고객이 맞다면 디렉터에게 문의하세요.',
         claimed_by: dup.owner_name || null, claimed_at: dup.registered_at, claimed_name: dup.name,
       });
     }
 
-    // ── ③ 기준품목 단가 → 할인율 근거 스냅샷 ──────────────────────────
+    // ── ④ 기준품목 단가 → 할인율 근거 스냅샷 ──────────────────────────
     const baseCode = String(b.syd_ref_code || SYD_BASE_CODE).trim();
     const buyPrice = (b.syd_ref_buy_price == null || b.syd_ref_buy_price === '') ? null : Number(b.syd_ref_buy_price);
     if (buyPrice == null || !Number.isFinite(buyPrice) || buyPrice <= 0) {
@@ -795,7 +829,7 @@ export default async function customerRoutes(app) {
     const ctrLP = base?.list_price != null ? Number(base.list_price) : null;
     const calc = computeBaselineDiscount({ buy_price: buyPrice, syd_list_price: sydLP, ctr_list_price: ctrLP });
 
-    // ── ④ 등록자가 정한 할인율 ────────────────────────────────────────
+    // ── ⑤ 등록자가 정한 할인율 ────────────────────────────────────────
     const chosen = validateChosenDiscount(b.discount);
     if (!chosen.ok) {
       return reply.code(400).send({ error: chosen.error,
@@ -826,7 +860,7 @@ export default async function customerRoutes(app) {
                    $26, now(), $27, $28,
                    CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $29)
            RETURNING id, code`,
-          [code, b.name, b.rfc || null, b.contact || null, b.phone || null, chosen.value,
+          [code, b.name, rfcClean, b.contact || null, b.phone || null, chosen.value,
            Number(b.credit_days) || 0, teamId, b.stage_id || null,
            // 담당자 미지정이면 등록한 본인이 담당 = 선점자. 커미션 귀속의 근거가 된다.
            b.owner_id || perm.userId || null,
@@ -835,7 +869,7 @@ export default async function customerRoutes(app) {
            (b.ship_address == null || String(b.ship_address).trim() === '') ? null : String(b.ship_address).trim(),
            (b.buyer_name == null || String(b.buyer_name).trim() === '') ? null : String(b.buyer_name).trim(),
            (b.buyer_phone == null || String(b.buyer_phone).trim() === '') ? null : String(b.buyer_phone).trim(),
-           b.constancia_fiscal || null, conNo,
+           b.constancia_fiscal || null, conNo || null,
            baseCode, buyPrice, sydLP, calc.syd_discount,
            base?.code || null, ctrLP, calc.suggested_discount,
            status, isDir ? perm.userId : null, isDir ? new Date() : null,
@@ -843,30 +877,36 @@ export default async function customerRoutes(app) {
         break;
       } catch (e) {
         const msg = String(e.message || '');
+        if (msg.includes('uq_customers_rfc_claim')) { dupKey = 'rfc_taken'; break; }
         if (msg.includes('uq_customers_constancia_no')) { dupKey = 'constancia_taken'; break; }
         if (!msg.includes('unique') && !msg.includes('duplicate')) throw e;
       }
     }
     if (dupKey) {
       return reply.code(409).send({ error: dupKey,
-        note: '방금 다른 영업사원이 같은 CONSTANCIA 로 먼저 등록했습니다.' });
+        note: dupKey === 'rfc_taken'
+          ? '방금 다른 영업사원이 같은 RFC 로 먼저 등록했습니다.'
+          : '방금 다른 영업사원이 같은 CONSTANCIA 로 먼저 등록했습니다.' });
     }
     if (!row) return reply.code(409).send({ error: 'code_generation_failed' });
 
-    // ── ⑤ CONSTANCIA 스캔본 저장 ──────────────────────────────────────
-    //   여기서 실패하면 "번호만 있고 증빙이 없는" 고객이 남으므로 등록을 되돌린다.
-    try {
-      await query(
-        `INSERT INTO customer_documents (customer_id, doc_type, file_name, mime_type, byte_size, content, uploaded_by)
-         VALUES ($1,'constancia',$2,$3,$4,$5,$6)`,
-        [row.id, docName, docMime, docBuf.length, docBuf, perm.userId]);
-    } catch (e) {
-      await query(`UPDATE customers SET deleted_at=now() WHERE id=$1`, [row.id]);
-      return reply.code(500).send({ error: 'constancia_save_failed',
-        note: 'CONSTANCIA 스캔본 저장에 실패해 등록을 취소했습니다. 다시 시도하세요.' });
+    // ── ⑥ CONSTANCIA 스캔본 저장 (첨부된 경우에만) ────────────────────
+    //   0188 이후 증빙은 선택이다. 저장에 실패해도 **선점(RFC)은 이미 유효**하므로
+    //   등록을 되돌리지 않는다 — 되돌리면 그 사이 남이 같은 RFC 를 가져갈 수 있다.
+    //   대신 경고를 실어 보내 "증빙만 다시 올리세요" 로 유도한다.
+    let docWarning = null;
+    if (docBuf) {
+      try {
+        await query(
+          `INSERT INTO customer_documents (customer_id, doc_type, file_name, mime_type, byte_size, content, uploaded_by)
+           VALUES ($1,'constancia',$2,$3,$4,$5,$6)`,
+          [row.id, docName, docMime, docBuf.length, docBuf, perm.userId]);
+      } catch (e) {
+        docWarning = 'constancia_save_failed';
+      }
     }
 
-    // ── ⑥ 이력 ───────────────────────────────────────────────────────
+    // ── ⑦ 이력 ───────────────────────────────────────────────────────
     const snapshot = {
       syd_ref_code: baseCode, syd_ref_buy_price: buyPrice, syd_ref_list_price: sydLP,
       syd_ref_discount: calc.syd_discount, ctr_ref_code: base?.code || null, ctr_ref_list_price: ctrLP,
@@ -893,7 +933,12 @@ export default async function customerRoutes(app) {
     }
     await safeLog({ userId: perm.userId, action: 'create', target: `customer:${row.id}`, detail: { approval_status: status } });
     return { ok: true, id: row.id, code: row.code, approval_status: status,
-      pending_approval: status === 'pending', calc, suggested_discount: calc.suggested_discount };
+      pending_approval: status === 'pending', calc, suggested_discount: calc.suggested_discount,
+      claimed_by: 'rfc', rfc: rfcClean, constancia_no: conNo || null, constancia_doc: !!docBuf && !docWarning,
+      warning: docWarning,
+      warning_note: docWarning
+        ? 'RFC 로 선점·등록은 완료됐지만 CONSTANCIA 스캔본 저장에 실패했습니다. 고객 상세의 증빙서류에서 다시 올려 주세요.'
+        : null };
   });
 
   // =====================================================================
@@ -945,13 +990,12 @@ export default async function customerRoutes(app) {
       `SELECT * FROM customers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(approval_status,'approved')='pending'`,
       [id])).rows[0];
     if (!c) return reply.code(404).send({ error: 'not_found' });
+    // 0188 · CONSTANCIA 는 선택 증빙이 되었으므로 **승인을 막지 않는다**.
+    //   대신 증빙 유무를 응답에 실어 승인 화면이 "증빙 없이 승인함" 을 남길 수 있게 한다.
     const docs = (await query(
       `SELECT count(*)::int AS n FROM customer_documents
         WHERE customer_id=$1 AND deleted_at IS NULL AND doc_type='constancia'`, [id])).rows[0];
-    if (!Number(docs.n)) {
-      return reply.code(400).send({ error: 'constancia_missing',
-        note: 'CONSTANCIA 스캔본이 없습니다. 승인 전에 첨부되어야 합니다.' });
-    }
+    const hadDoc = Number(docs.n) > 0;
     let discount = c.discount == null ? 0 : Number(c.discount);
     if (req.body && req.body.discount != null && req.body.discount !== '') {
       const v = validateChosenDiscount(req.body.discount);
@@ -968,7 +1012,8 @@ export default async function customerRoutes(app) {
          VALUES ($1,'approve',$2,$3,$4)`,
         [id, (req.body && req.body.reason) ? String(req.body.reason) : null,
          JSON.stringify({ approved_discount: discount, requested_discount: c.discount == null ? null : Number(c.discount),
-           suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount) }), perm.userId]);
+           suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount),
+           constancia_doc: hadDoc }), perm.userId]);
     } catch (_) { /* ignore */ }
     // 디렉터가 할인율을 바꿔 승인했으면 변경이력에 남긴다
     if (Number(c.discount || 0) !== discount) {
@@ -977,11 +1022,13 @@ export default async function customerRoutes(app) {
           reason: '등록 승인 시 디렉터 조정', conditions: null, changedBy: c.created_by, approvedBy: perm.userId });
       } catch (_) { /* ignore */ }
     }
-    await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}` });
-    return { ok: true, id, discount };
+    await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}`, detail: { constancia_doc: hadDoc } });
+    return { ok: true, id, discount, constancia_doc: hadDoc,
+      warning: hadDoc ? null : 'constancia_missing',
+      warning_note: hadDoc ? null : 'CONSTANCIA 스캔본 없이 승인했습니다(0188 이후 선택 항목).' };
   });
 
-  // 반려: 선점을 풀어준다(rejected 는 유니크 인덱스 대상에서 빠짐) + 소프트 삭제.
+  // 반려: 선점을 풀어준다 — rejected 는 RFC·CONSTANCIA 두 유니크 인덱스 모두에서 빠진다 + 소프트 삭제.
   app.post('/api/customer-registrations/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
     const id = Number(req.params.id);
     const perm = req.ctx.perm;
@@ -1107,12 +1154,33 @@ export default async function customerRoutes(app) {
     const teamId = keepNum(b.team_id, c.team_id);
     const stageId = keepNum(b.stage_id, c.stage_id);
     const stageChanged = Number(stageId) !== Number(c.stage_id);
-    // 0185 · CONSTANCIA 번호(선점 키)는 마이그레이션이 적용된 DB 에서만 건드린다
+    // 0188 · RFC 가 선점 키다.
+    //   ① 빈값으로 지우는 것은 막는다 — 지우면 선점이 풀려 남이 같은 고객을 다시 등록할 수 있다.
+    //   ② 값이 바뀌면 형식 검증 + 선점 충돌 검사를 거친다(디렉터 즉시반영·승인 반영 양쪽 공통).
+    //   원래 RFC 가 비어 있던 레거시 고객은 여기서 처음 채우는 것이므로 검증만 통과하면 된다.
+    let rfcVal = (b.rfc !== undefined && String(b.rfc).trim() !== '') ? String(b.rfc).trim() : (c.rfc || null);
+    if (rfcVal && normalizeClaimKey(rfcVal) !== normalizeClaimKey(c.rfc)) {
+      const chk = validateRfc(rfcVal);
+      if (!chk.ok) { const e = new Error(chk.error); e.claimError = chk.error; throw e; }
+      rfcVal = chk.value;
+      const clash = (await query(
+        `SELECT c2.name, u.name AS owner_name, to_char(c2.created_at,'YYYY-MM-DD') AS registered_at
+           FROM customers c2 LEFT JOIN users u ON u.id=c2.owner_id
+          WHERE c2.id <> $2 AND c2.deleted_at IS NULL
+            AND COALESCE(c2.approval_status,'approved') <> 'rejected'
+            AND c2.rfc_norm = $1
+          ORDER BY c2.created_at LIMIT 1`, [normalizeClaimKey(rfcVal), id])).rows[0];
+      if (clash) {
+        const e = new Error('rfc_taken'); e.claimError = 'rfc_taken';
+        e.claimNote = `이미 등록된 RFC 입니다 — ${clash.name} · 담당 ${clash.owner_name || '(미지정)'} · 등록일 ${clash.registered_at}.`;
+        throw e;
+      }
+    }
+    // 0185 · CONSTANCIA 번호는 마이그레이션이 적용된 DB 에서만 건드린다
     //   (컬럼이 없는 반쪽 배포 상태에서도 기존 고객 수정이 죽지 않게).
-    //   빈 문자열로 지우는 것은 막는다 — 번호가 사라지면 선점이 풀려
-    //   다른 영업사원이 같은 고객을 다시 등록할 수 있게 된다.
+    //   0188 이후 선점 키가 아니므로 **빈값으로 지우는 것도 허용**한다.
     const conOn = await regColumnsReady();
-    const params = [b.name || c.name, b.rfc !== undefined ? b.rfc : c.rfc, b.contact !== undefined ? b.contact : c.contact,
+    const params = [b.name || c.name, rfcVal, b.contact !== undefined ? b.contact : c.contact,
       b.phone !== undefined ? b.phone : c.phone, keepNum(b.discount, c.discount),
       keepNum(b.credit_days, c.credit_days), teamId,
       stageId, nullNum(b.owner_id, c.owner_id),
@@ -1123,8 +1191,9 @@ export default async function customerRoutes(app) {
       b.buyer_name !== undefined ? b.buyer_name : c.buyer_name,
       b.buyer_phone !== undefined ? b.buyer_phone : c.buyer_phone];
     if (conOn) {
-      params.push((b.constancia_no !== undefined && String(b.constancia_no).trim() !== '')
-        ? String(b.constancia_no).trim() : (c.constancia_no || null));
+      params.push(b.constancia_no === undefined
+        ? (c.constancia_no || null)
+        : (String(b.constancia_no).trim() || null));
     }
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
@@ -1160,7 +1229,15 @@ export default async function customerRoutes(app) {
     // 디렉터: 즉시 반영(+이력 기록) / 그 외: 디렉터 승인 대기로 보관
     // (crossTeam 은 디렉터에게 항상 false — 방어적으로 한 번 더 명시)
     if (perm.role === 'director' && !crossTeam) {
-      await applyCustomerUpdate(id, c, b, perm.userId);
+      try {
+        await applyCustomerUpdate(id, c, b, perm.userId);
+      } catch (e) {
+        if (e.claimError) {
+          return reply.code(e.claimError === 'rfc_taken' ? 409 : 400)
+            .send({ error: e.claimError, note: e.claimNote || RFC_ERROR_NOTE[e.claimError] || null });
+        }
+        throw e;
+      }
       if (termsChanges.length) {
         await logTermsHistory(id, termsChanges, { reason: termsReason, conditions: termsConditions, changedBy: perm.userId, approvedBy: perm.userId });
       }
@@ -1283,7 +1360,7 @@ export default async function customerRoutes(app) {
     const stageNames = await nameMap('stages', stageIds);
     const ownerNames = await nameMap('users', ownerIds);
 
-    const LABELS = { name: '고객명', rfc: 'RFC', contact: '이메일 주소', phone: '전화', buyer_name: '구매결정권자', buyer_phone: '구매결정권자 전화(WhatsApp)', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)', constancia_no: 'CONSTANCIA 번호(선점 키)' };
+    const LABELS = { name: '고객명', rfc: 'RFC(선점 키)', contact: '이메일 주소', phone: '전화', buyer_name: '구매결정권자', buyer_phone: '구매결정권자 전화(WhatsApp)', discount: '기본할인', credit_days: '외상일', branch_count: '지점 수', team_id: '영업팀', stage_id: '영업단계', owner_id: '담당자', customer_type: '고객유형', memo: '메모', constancia_fiscal: '세무등록(Constancia)', constancia_no: 'CONSTANCIA 번호' };
     const NUMERIC = new Set(['discount', 'credit_days', 'branch_count', 'team_id', 'stage_id', 'owner_id']);
     const isEmpty = (v) => v == null || v === '';
     const disp = (field, val) => {
@@ -1342,7 +1419,17 @@ export default async function customerRoutes(app) {
     if (!c) return reply.code(404).send({ error: 'customer_gone' });
     // 승인 전 현재값 기준으로 할인/외상일 실변경 산출 → 반영 후 이력 기록
     const approvedTerms = detectTermsChanges(c, r.proposed || {});
-    await applyCustomerUpdate(r.customer_id, c, r.proposed, req.ctx.perm.userId);
+    try {
+      await applyCustomerUpdate(r.customer_id, c, r.proposed, req.ctx.perm.userId);
+    } catch (e) {
+      // 0188 · 요청이 올라온 뒤 그 RFC 를 다른 고객이 선점했거나 형식이 잘못된 경우.
+      //   요청은 pending 그대로 두고 디렉터에게 이유를 알린다(반려/수정 판단은 사람이).
+      if (e.claimError) {
+        return reply.code(e.claimError === 'rfc_taken' ? 409 : 400)
+          .send({ error: e.claimError, note: e.claimNote || RFC_ERROR_NOTE[e.claimError] || null });
+      }
+      throw e;
+    }
     if (approvedTerms.length) {
       await logTermsHistory(r.customer_id, approvedTerms, {
         reason: r.reason, conditions: r.conditions,

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (reg-0826a)</title>
+<title>Refatrix ERP · 고객 등록 (rfc-0827a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -190,7 +190,7 @@
     <div id="tab-reg" class="hidden">
       <div class="card">
         <h2 style="margin:0 0 4px">🔒 고객 등록 승인 대기</h2>
-        <div class="hint" style="margin-top:0">영업사원이 CONSTANCIA 를 첨부해 올린 <b>신규 고객 등록</b>입니다. 승인해야 견적·매출에 쓸 수 있습니다. 반려하면 선점이 풀립니다.</div>
+        <div class="hint" style="margin-top:0">영업사원이 <b>RFC 로 선점</b>해 올린 신규 고객 등록입니다. 승인해야 견적·매출에 쓸 수 있습니다. 반려하면 선점이 풀립니다. CONSTANCIA 는 선택 증빙이라 없어도 승인할 수 있습니다.</div>
         <div id="regList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
@@ -716,7 +716,7 @@
       if(n>0){b.textContent=n;b.classList.remove('hidden');}else b.classList.add('hidden');
     }catch(e){}
   }
-  const FIELD_LABELS={name:'고객명',rfc:'RFC',contact:'이메일 주소',phone:'전화',buyer_name:'구매결정권자',buyer_phone:'구매결정권자 전화(WhatsApp)',discount:'할인(%)',credit_days:'외상일',branch_count:'지점 수',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록'};
+  const FIELD_LABELS={name:'고객명',rfc:'RFC(선점 키)',contact:'이메일 주소',phone:'전화',buyer_name:'구매결정권자',buyer_phone:'구매결정권자 전화(WhatsApp)',discount:'할인(%)',credit_days:'외상일',branch_count:'지점 수',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록',constancia_no:'CONSTANCIA 번호'};
   // 변경 요청을 "현재 → 변경" 형태로 친절하게 렌더(서버가 이름까지 풀어서 changes로 내려줌)
   function renderChanges(r){
     const ch=r.changes;
@@ -792,7 +792,7 @@
            : '<span class="pill" style="background:'+(gap>0?'#fdecea':'#eef4fb')+';color:'+(gap>0?'#b3261e':'#20486f')+';font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="제안 할인율 대비 차이">제안 대비 '+(gap>0?'+':'')+gap.toFixed(1)+'%p</span>');
         const docOk = r.constancia_docs>0
           ? '<button class="btn ghost sm" onclick="openCustomer('+r.id+')">📎 CONSTANCIA 보기</button>'
-          : '<span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px">⚠ 스캔본 없음</span>';
+          : '<span class="pill" style="background:#f3f1ec;color:#8a8070;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="0188 이후 CONSTANCIA 는 선택 항목입니다 — 없어도 승인할 수 있습니다">스캔본 없음 (선택)</span>';
         const target = r.syd_ref_buy_price==null?null:Math.round(r.syd_ref_buy_price*0.95*100)/100;
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -801,8 +801,9 @@
             ${gapTxt}
           </div>
           <table style="margin:8px 0;font-size:13px"><tbody>
-            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">RFC / CONSTANCIA</th>
-                <td style="padding:3px 0">${esc(r.rfc||'—')} <span class="hint" style="margin:0">/</span> <b>${esc(r.constancia_no||'—')}</b> &nbsp; ${docOk}</td></tr>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">RFC <span style="color:#1f5540">(선점 키)</span></th>
+                <td style="padding:3px 0"><b>${esc(r.rfc||'—')}</b>
+                  <span class="hint" style="margin:0">· CONSTANCIA ${esc(r.constancia_no||'—')}</span> &nbsp; ${docOk}</td></tr>
             <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">기준품목 ${esc(r.syd_ref_code||'')}</th>
                 <td style="padding:3px 0">고객 구매단가 <b>${mxTxt(r.syd_ref_buy_price)}</b>
                   <span class="hint" style="margin:0">· SYD 정가 ${mxTxt(r.syd_ref_list_price)} → 고객이 받는 할인율 ${pctTxt(r.syd_ref_discount)}</span></td></tr>
@@ -842,7 +843,7 @@
     const reason=prompt('반려 사유(필수) — 영업사원에게 남는 기록입니다:');
     if(reason===null) return;
     if(!reason.trim()){ alert('반려 사유를 입력해야 합니다.'); return; }
-    if(!confirm('반려하면 이 고객의 CONSTANCIA 선점이 풀립니다. 진행할까요?')) return;
+    if(!confirm('반려하면 이 고객의 RFC 선점이 풀립니다(다른 영업사원이 같은 RFC 로 등록할 수 있게 됩니다). 진행할까요?')) return;
     const res=await fetch(session.api+'/api/customer-registrations/'+id+'/reject',
       {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason:reason.trim()})});
     const d=await res.json().catch(()=>({}));
@@ -895,11 +896,17 @@
       const progressRow= target!=null
         ? `<tr><th>목표 달성률</th><td colspan="3"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;background:#eee;border-radius:6px;height:14px;overflow:hidden"><div style="height:100%;width:${Math.min(pct||0,100)}%;background:${(pct||0)>=100?'var(--income)':'var(--gold)'}"></div></div><b>${pct==null?'—':pct+'%'}</b></div></td></tr>`
         : `<tr><th>목표 달성률</th><td colspan="3"><span class="hint" style="margin:0">목표 미설정 (매출 목표 메뉴에서 연결되면 진행률 표시)</span></td></tr>`;
-      // 0185 · 등록 승인 상태 + 선점(CONSTANCIA) + 할인율 산출 근거
+      // 0188 · 등록 승인 상태 + 선점(RFC) + 할인율 산출 근거
       const regBanner = c.approval_status==='pending'
         ? `<div style="border:1px solid #ecd9a0;background:#fffaf0;border-radius:9px;padding:9px 12px;margin-bottom:8px;font-size:12.5px;color:#9a6512">
              🔒 <b>디렉터 등록 승인 대기</b> — 승인 전에는 견적·매출에 사용할 수 없습니다.
-             CONSTANCIA <b>${esc(c.constancia_no||'—')}</b> 로 선점되어 있습니다.</div>` : '';
+             RFC <b>${esc(c.rfc||'—')}</b> 로 선점되어 있습니다.</div>` : '';
+      // 0188 · RFC 가 선점 키. exempt = 마이그레이션 시점에 이미 RFC 가 중복이던 레거시 고객.
+      const rfcCell = c.rfc
+        ? (c.rfc_claim_exempt
+            ? `<b>${esc(c.rfc)}</b> <span style="color:#B23A2E">— RFC 중복(기존 데이터)이라 선점 보호 제외. 디렉터가 정리해야 합니다</span>`
+            : `<b>${esc(c.rfc)}</b> <span class="hint" style="margin:0">— 이 RFC 가 선점(내 고객) 키입니다</span>`)
+        : '<span style="color:#B23A2E">미등록 — 선점 보호를 받지 못합니다</span>';
       const refRow = (c.syd_ref_buy_price!=null)
         ? `<tr><th>할인율 산출 근거</th><td colspan="3">
              기준품목 <b>${esc(c.syd_ref_code||'—')}</b> 고객 구매단가 <b>${mxTxt(c.syd_ref_buy_price)}</b>
@@ -909,8 +916,9 @@
              <span class="hint" style="margin:0">· 제안 ${pctTxt(c.suggested_discount)} / 적용 ${pctTxt(c.discount)}</span></td></tr>` : '';
       $('d-info').innerHTML=regBanner+`<table>
         <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
-        <tr><th>회사 종류</th><td>${c.customer_type||'—'}</td><th>RFC</th><td>${c.rfc||'—'}</td></tr>
-        <tr><th>CONSTANCIA 번호</th><td colspan="3">${c.constancia_no?('<b>'+esc(c.constancia_no)+'</b> <span class="hint" style="margin:0">— 이 번호가 선점(내 고객) 키입니다</span>'):'<span style="color:#B23A2E">미등록 — 선점 보호를 받지 못합니다</span>'}</td></tr>
+        <tr><th>회사 종류</th><td colspan="3">${c.customer_type||'—'}</td></tr>
+        <tr><th>RFC <span style="color:#1f5540">(선점 키)</span></th><td colspan="3">${rfcCell}</td></tr>
+        <tr><th>CONSTANCIA 번호</th><td colspan="3">${c.constancia_no?('<b>'+esc(c.constancia_no)+'</b> <span class="hint" style="margin:0">— 선택 증빙</span>'):'<span class="hint" style="margin:0">미입력 (선택 항목)</span>'}</td></tr>
         ${refRow}
         <tr><th>이메일 주소</th><td>${c.contact||'—'}</td><th>전화</th><td>${c.phone||'—'}</td></tr>
         <tr><th>구매결정권자</th><td>${c.buyer_name||'—'}</td><th>구매결정권자 전화(WhatsApp)</th><td>${c.buyer_phone||'<span style="color:#B23A2E">미등록 — 오퍼시트는 기본 전화로 발송</span>'}</td></tr>
@@ -1327,7 +1335,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260826reg"></script>
+<script src="refatrix-custform.js?v=20260827rfc"></script>
 <script src="refatrix-nav.js?v=20260824ph"></script>
 </body>
 </html>

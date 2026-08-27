@@ -377,12 +377,12 @@ export default async function quoteRoutes(app) {
       discountRate = Number(b.discount_rate) || 0;
       // 0185 — 「★ 미등록 고객(직접 입력)」으로는 더 이상 고객이 만들어지지 않는다.
       //   이름이 이미 등록된 고객이면 그 고객에 붙이고, 없으면 등록 화면으로 돌려보낸다.
-      //   (CONSTANCIA·선점 검사·디렉터 승인을 우회하는 유일한 구멍이었다)
+      //   (RFC 선점 검사·디렉터 승인을 우회하는 유일한 구멍이었다)
       const fc = await findOrCreateCustomerByName({ name: gname });
       if (!fc) return reply.code(500).send({ error: 'customer_autocreate_failed' });
       if (fc.error === 'customer_not_registered') {
         return reply.code(409).send({ error: 'customer_not_registered',
-          note: `"${gname}" 은(는) 등록된 고객이 아닙니다. 고객 등록 화면에서 CONSTANCIA 를 첨부해 먼저 등록하고 디렉터 승인을 받으세요.` });
+          note: `"${gname}" 은(는) 등록된 고객이 아닙니다. 고객 등록 화면에서 RFC 를 입력해 먼저 등록하고 디렉터 승인을 받으세요.` });
       }
       if (fc.approval_status === 'pending') {
         return reply.code(409).send({ error: 'customer_not_approved',

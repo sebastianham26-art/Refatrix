@@ -30,7 +30,7 @@
       +'<div class="rcf-f"><label>팀 *</label><select id="rcf-team"></select></div>'
     +'</div>'
     +'<div class="rcf-row">'
-      +'<div class="rcf-f"><label>RFC(세금번호)</label><input id="rcf-rfc" type="text"></div>'
+      +'<div class="rcf-f"><label>RFC(세금번호) * <span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none">— 선점 키</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
       +'<div class="rcf-f"><label>회사 종류</label><select id="rcf-type"><option value="">미지정</option><option>refraccionaria</option><option>Mayoreo</option><option>Flotia</option><option>taller</option><option>publico</option></select></div>'
       +'<div class="rcf-f"><label>담당자</label><select id="rcf-owner"><option value="">미지정</option></select></div>'
       +'<div class="rcf-f"><label>단계</label><select id="rcf-stage"><option value="">미지정</option></select></div>'
@@ -58,13 +58,13 @@
       +'<div class="rcf-shipbar"><button type="button" class="btn" id="rcf-shipsave" style="display:none">배송지 즉시 저장</button><span class="rcf-msg" id="rcf-shipmsg"></span></div>'
     +'</div></div>'
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>Constancia de Situación Fiscal (세무 등록상태)</label><input id="rcf-constancia" type="text" placeholder="예: RFC · Régimen · 등록상태"></div></div>'
-    // ===== 0185 · 고객 선점(claim) — CONSTANCIA 번호 + 스캔본 =====
+    // ===== 0188 · 고객 선점(claim) — RFC 입력이 곧 선점 =====
     +'<div id="rcf-claimbox" style="display:none;border:1px solid #7a9c8b;background:#f2f8f5;border-radius:9px;padding:11px 12px">'
-      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">🔒 내 고객 선점 — CONSTANCIA 등록 (필수)</div>'
-      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">CONSTANCIA 번호와 PDF 스캔본을 등록해야 이 고객이 <b>내 고객</b>으로 보호됩니다. 같은 번호·같은 RFC 는 먼저 등록한 사람이 가져갑니다.</div>'
+      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">🔒 내 고객 선점 — RFC 등록</div>'
+      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">위의 <b>RFC(세금번호)</b>를 입력해 등록하면 이 고객이 <b>내 고객</b>으로 보호됩니다. 같은 RFC 는 먼저 등록한 사람이 가져갑니다. CONSTANCIA 는 <b>선택</b>이며, 나중에 고객 상세의 증빙서류에서 올려도 됩니다.</div>'
       +'<div class="rcf-row">'
-        +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 번호 *</label><input id="rcf-conno" type="text" placeholder="스캔본에 인쇄된 번호"></div>'
-        +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 스캔본 (PDF) *</label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+        +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 번호 (선택)</label><input id="rcf-conno" type="text" placeholder="스캔본에 인쇄된 번호 — 넣으면 이 번호도 함께 잠깁니다"></div>'
+        +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 스캔본 (선택 · PDF)</label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
         +'<div class="rcf-f" style="flex:0 0 auto;justify-content:flex-end"><button type="button" class="btn ghost" id="rcf-claimbtn" style="padding:8px 12px">선점 확인</button></div>'
       +'</div>'
       +'<div id="rcf-claimres" style="font-size:12px;margin-top:6px"></div>'
@@ -148,7 +148,36 @@
   }
   function clearTermsInputs(){ if($('rcf-treason'))$('rcf-treason').value=''; if($('rcf-tcond'))$('rcf-tcond').value=''; updateTermsBox(); }
 
-  // ===== 0185 · 선점 확인 =====
+  // ===== 0188 · RFC 형식 검증 (서버 src/customerClaim.js validateRfc 와 같은 규칙) =====
+  //   RFC 입력이 곧 선점이므로, 아무 문자열이나 통과하면 선점 장치가 무의미해진다.
+  var RFC_RE=/^([A-ZÑ&]{3,4})(\d{2})(\d{2})(\d{2})([A-Z\d]{3})$/;
+  var GENERIC_RFC=['XAXX010101000','XEXX010101000'];
+  var RFC_NOTE={
+    rfc_required:'RFC(세금번호)를 입력해야 고객을 등록할 수 있습니다 — RFC 가 곧 선점 키입니다.',
+    rfc_invalid:'RFC 형식이 올바르지 않습니다. 법인 12자리(영문 3 + YYMMDD + 3) 또는 개인 13자리(영문 4 + YYMMDD + 3)여야 합니다.',
+    rfc_invalid_date:'RFC 가운데 6자리(YYMMDD)의 월·일이 올바르지 않습니다. 다시 확인하세요.',
+    rfc_generic:'범용 RFC(XAXX010101000 · XEXX010101000)로는 고객을 선점할 수 없습니다. 고객 고유의 RFC 를 입력하세요.',
+    rfc_taken:'이미 다른 영업사원이 선점한 RFC 입니다.'
+  };
+  function cleanRfcLocal(v){ return String(v==null?'':v).toUpperCase().replace(/[\s\-._/]/g,'').trim(); }
+  function validateRfcLocal(v){
+    var t=cleanRfcLocal(v);
+    if(!t) return {ok:false,error:'rfc_required'};
+    if(GENERIC_RFC.indexOf(t)>=0) return {ok:false,error:'rfc_generic'};
+    var m=RFC_RE.exec(t); if(!m) return {ok:false,error:'rfc_invalid'};
+    var mm=Number(m[3]), dd=Number(m[4]);
+    if(mm<1||mm>12||dd<1||dd>31) return {ok:false,error:'rfc_invalid_date'};
+    return {ok:true,value:t,kind:m[1].length===3?'moral':'fisica'};
+  }
+  function showRfcMsg(rv){
+    var el=$('rcf-rfcmsg'); if(!el) return;
+    if(!rv){ el.innerHTML=''; return; }
+    el.innerHTML=rv.ok
+      ? '<span style="color:#1a7f4b">✔ '+(rv.kind==='moral'?'법인 RFC':'개인 RFC')+' 형식 OK</span>'
+      : '<span style="color:#B23A2E">'+esc(RFC_NOTE[rv.error]||'RFC 를 확인하세요.')+'</span>';
+  }
+
+  // ===== 0185/0188 · 선점 확인 =====
   //   자기 고객을 지키는 장치이자, 남의 고객을 모르고 건드리지 않게 하는 장치.
   //   서버는 **상호 · RFC · 담당 영업사원 · 등록일**만 내려준다(매출·상담은 절대 안 나옴).
   var lastClaim=null;
@@ -161,20 +190,21 @@
     var nm=($('rcf-name')&&$('rcf-name').value.trim())||'';
     var rfc=($('rcf-rfc')&&$('rcf-rfc').value.trim())||'';
     var con=($('rcf-conno')&&$('rcf-conno').value.trim())||'';
-    if(!nm&&!rfc&&!con){ box.innerHTML=silent?'':'<span style="color:#B23A2E">고객명·RFC·CONSTANCIA 번호 중 하나는 입력하세요.</span>'; return null; }
+    if(!nm&&!rfc&&!con){ box.innerHTML=silent?'':'<span style="color:#B23A2E">RFC(또는 고객명)를 입력하고 확인하세요.</span>'; return null; }
     box.innerHTML='<span style="color:#6f6a60">확인 중…</span>';
     try{
       var qs='name='+encodeURIComponent(nm)+'&rfc='+encodeURIComponent(rfc)+'&constancia='+encodeURIComponent(con);
       var d=await fetch(api('/api/customers/claim-check?'+qs),{headers:auth()}).then(function(r){return r.json();});
       lastClaim=d;
       var items=(d&&d.items)||[];
-      if(!items.length){ box.innerHTML='<span style="color:#1a7f4b">✔ 겹치는 고객이 없습니다 — 등록하면 내 고객으로 선점됩니다.</span>'; return d; }
+      if(!items.length){ box.innerHTML='<span style="color:#1a7f4b">✔ 겹치는 고객이 없습니다 — 이 RFC 로 등록하면 내 고객으로 선점됩니다.</span>'
+          +(d&&d.rfc_db_lock===false?'<div style="color:#9a6a1a;margin-top:3px">⚠ 서버에 RFC 선점 잠금(0188)이 아직 적용되지 않았습니다. 디렉터에게 알려 주세요.</div>':''); return d; }
       var hard=d.blocked_constancia||d.blocked_rfc;
       box.innerHTML=(hard
           ? '<div style="color:#B23A2E;font-weight:700">⛔ 이미 선점된 고객입니다 — 이대로는 등록할 수 없습니다.</div>'
           : '<div style="color:#9a6a1a;font-weight:700">⚠ 상호가 비슷한 고객이 있습니다. 같은 고객인지 확인하세요.</div>')
         +items.map(function(x){
-          var why=x.matched_constancia?'CONSTANCIA 일치':(x.matched_rfc?'RFC 일치':'상호 유사');
+          var why=x.matched_rfc?'RFC 일치 — 선점됨':(x.matched_constancia?'CONSTANCIA 일치':'상호 유사');
           var st=x.approval_status==='pending'?' · <span style="color:#9a6a1a">승인대기</span>':'';
           return '<div class="rcf-claimrow'+((x.matched_constancia||x.matched_rfc)?' bad':'')+'">'
             +'<b>'+esc(x.name)+'</b> · RFC '+esc(x.rfc||'—')
@@ -301,7 +331,9 @@
       if($('rcf-baseprice')) $('rcf-baseprice').value='';
       if($('rcf-claimres')) $('rcf-claimres').innerHTML='';
       if($('rcf-basepanel')) $('rcf-basepanel').innerHTML='';
+      if($('rcf-rfcmsg')) $('rcf-rfcmsg').innerHTML='';
     }
+    var kb=$('rcf-rfckey'); if(kb) kb.style.display=isNew?'':'none';
     lastClaim=null; lastCalc=null;
   }
   function applyCrossTeamUI(c,pending){
@@ -363,27 +395,34 @@
     if(!b.team_id){ setMsg('err','팀을 선택하세요.'); return; }
     if(b.contact&&!validEmail(b.contact)){ setMsg('err','이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)'); return; }
 
-    // ===== 0185 · 신규 등록 전용 필수값 (CONSTANCIA 선점 + 기준품목 단가) =====
+    // ===== 0188 · 신규 등록 전용 필수값 (RFC 선점 + 기준품목 단가) =====
+    //   CONSTANCIA 번호·PDF 는 선택이다. RFC 하나로 선점이 성립한다.
     if(!editingId){
-      var conNo=($('rcf-conno')&&$('rcf-conno').value.trim())||'';
-      if(!conNo){ setMsg('err','CONSTANCIA 번호를 입력해야 고객을 등록할 수 있습니다 (내 고객 선점 증빙).'); return; }
-      var fi=$('rcf-confile');
-      var file=(fi&&fi.files&&fi.files[0])||null;
-      if(!file){ setMsg('err','CONSTANCIA 스캔본(PDF)을 첨부하세요.'); return; }
-      if(file.size>5*1024*1024){ setMsg('err','CONSTANCIA 파일은 5MB 이하만 첨부할 수 있습니다.'); return; }
+      var rv=validateRfcLocal(b.rfc);
+      if(!rv.ok){ showRfcMsg(rv); setMsg('err',RFC_NOTE[rv.error]||'RFC 를 확인하세요.'); return; }
+      b.rfc=rv.value;
       var bp=($('rcf-baseprice')&&$('rcf-baseprice').value)||'';
       if(!bp||Number(bp)<=0){ setMsg('err','기준품목의 고객 구매단가를 입력하세요 — 할인율 산출 근거입니다.'); return; }
       // 저장 직전 선점 재확인 — 입력 중 다른 사람이 먼저 등록했을 수 있다.
       var cc=await claimCheck(true);
-      if(cc&&(cc.blocked_constancia||cc.blocked_rfc)){
+      if(cc&&(cc.blocked_rfc||cc.blocked_constancia)){
         setMsg('err','이미 선점된 고객입니다 — 위 선점 확인 결과를 보세요.'); return;
       }
-      b.constancia_no=conNo;
+      var conNo=($('rcf-conno')&&$('rcf-conno').value.trim())||'';
+      if(conNo) b.constancia_no=conNo;
       b.syd_ref_code=($('rcf-basecode')&&$('rcf-basecode').value.trim())||'1516049';
       b.syd_ref_buy_price=Number(bp);
-      try{
-        b.constancia_file={ file_name:file.name, mime_type:file.type||'application/pdf', data_base64:await readFileB64(file) };
-      }catch(e){ setMsg('err','CONSTANCIA 파일을 읽지 못했습니다. 다시 선택해 주세요.'); return; }
+      var fi=$('rcf-confile');
+      var file=(fi&&fi.files&&fi.files[0])||null;
+      if(file){
+        if(file.size>5*1024*1024){ setMsg('err','CONSTANCIA 파일은 5MB 이하만 첨부할 수 있습니다.'); return; }
+        try{
+          b.constancia_file={ file_name:file.name, mime_type:file.type||'application/pdf', data_base64:await readFileB64(file) };
+        }catch(e){ setMsg('err','CONSTANCIA 파일을 읽지 못했습니다. 다시 선택하거나 비워 두고 저장하세요.'); return; }
+      }
+    }else{
+      // 수정: RFC 는 선점 키라 빈값으로 지울 수 없다.
+      if(!b.rfc){ setMsg('err','RFC 는 선점 키라 비울 수 없습니다. 값을 바꾸려면 새 RFC 를 입력하세요.'); return; }
     }
     // 기본할인·외상일 변경 → 수정이유·제공조건 필수
     var td=termsDiff();
@@ -408,11 +447,11 @@
           :d.error==='forbidden_team_move'?'그 팀으로 옮길 권한이 없습니다.'
           :d.error==='cross_team_request_denied'?'타팀 고객 수정요청 권한이 없습니다. 디렉터에게 요청하세요.'
           :d.error==='terms_reason_required'?(d.note||'기본할인·외상일 변경 시 수정이유와 제공 조건을 반드시 입력해야 합니다.')
-          // 0185
-          :(d.error==='constancia_taken'||d.error==='rfc_taken')?('⛔ '+(d.note||'이미 등록된 고객입니다.'))
-          :d.error==='constancia_no_required'?(d.note||'CONSTANCIA 번호를 입력하세요.')
-          :d.error==='constancia_file_required'?(d.note||'CONSTANCIA 스캔본(PDF)을 첨부하세요.')
-          :d.error==='constancia_save_failed'?(d.note||'CONSTANCIA 저장 실패 — 다시 시도하세요.')
+          // 0185 / 0188
+          :(d.error==='rfc_taken'||d.error==='constancia_taken')?('⛔ '+(d.note||'이미 등록된 고객입니다.'))
+          :(d.error==='rfc_required'||d.error==='rfc_invalid'||d.error==='rfc_invalid_date'||d.error==='rfc_generic')
+             ?(d.note||RFC_NOTE[d.error]||'RFC 를 확인하세요.')
+          :d.error==='constancia_file_incomplete'?(d.note||'CONSTANCIA 첨부가 불완전합니다. 파일을 다시 선택하거나 비워 두세요.')
           :d.error==='syd_ref_price_required'?(d.note||'기준품목 구매단가를 입력하세요.')
           :(d.error==='discount_required'||d.error==='discount_negative'||d.error==='discount_too_high')?(d.note||'기본 할인율을 다시 확인하세요.')
           :d.error==='unsupported_type'?(d.note||'PDF·JPEG·PNG·WEBP만 첨부할 수 있습니다.')
@@ -424,8 +463,9 @@
       if(d.pending){ setMsg('pend', (d.cross_team?'타팀 고객 수정 요청을 보냈습니다. ':'수정 요청을 보냈습니다. ')+(td?'할인·외상일 변경은 디렉터 승인 후 반영·이력 기록됩니다.':'디렉터 승인 후 반영됩니다.')); }
       else if(!editingId&&d.pending_approval){
         setMsg('pend','등록 요청을 보냈습니다: '+(d.code||'')+' · '+b.name
-          +' — CONSTANCIA 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.'
-          +(d.suggested_discount!=null?(' (제안 '+fmtPct(d.suggested_discount)+' · 신청 '+fmtPct(b.discount)+')'):''));
+          +' — RFC '+(d.rfc||b.rfc||'')+' 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.'
+          +(d.suggested_discount!=null?(' (제안 '+fmtPct(d.suggested_discount)+' · 신청 '+fmtPct(b.discount)+')'):'')
+          +(d.warning_note?(' ⚠ '+d.warning_note):''));
       }
       else { setMsg('ok', editingId?(td?'수정되었습니다. 할인·외상일 변경이 이력에 기록되었습니다.':'수정되었습니다.'):('등록되었습니다: '+(d.code||b.code||'')+' · '+b.name)); }
       $('rcf-save').disabled=false;
@@ -455,7 +495,15 @@
       var bcb=$('rcf-basecalc'); if(bcb) bcb.addEventListener('click', baseCalc);
       var bp=$('rcf-baseprice'); if(bp) bp.addEventListener('change', function(){ if(!editingId) baseCalc(); });
       var cn=$('rcf-conno'); if(cn) cn.addEventListener('change', function(){ if(!editingId) claimCheck(true); });
-      var rf=$('rcf-rfc'); if(rf) rf.addEventListener('change', function(){ if(!editingId) claimCheck(true); });
+      var rf=$('rcf-rfc');
+      if(rf){
+        rf.addEventListener('input', function(){ if(!editingId) showRfcMsg(rf.value.trim()?validateRfcLocal(rf.value):null); });
+        rf.addEventListener('change', function(){
+          if(editingId) return;
+          var rv=validateRfcLocal(rf.value); showRfcMsg(rf.value.trim()?rv:null);
+          if(rv.ok){ rf.value=rv.value; claimCheck(true); }
+        });
+      }
       await loadRefs();
       await fillNew();
     },
@@ -465,5 +513,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260826reg loaded (CONSTANCIA 선점 + 기준품목 할인율 제안 + 등록 디렉터 승인)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260827rfc loaded (RFC 선점(0188) + CONSTANCIA 선택 + 기준품목 할인율 제안 + 등록 디렉터 승인)'); }catch(e){}
 })();

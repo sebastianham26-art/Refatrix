@@ -243,7 +243,7 @@
     if(isGuest){
       $('discShow').removeAttribute('readonly'); $('discShow').style.background='#fff'; $('discShow').placeholder='Ej: 12';
       curDisc=Number(($('discShow').value||'').replace('%',''))||0;
-      $('custHint').textContent='Escriba el nombre exacto de un cliente YA registrado. Los clientes nuevos deben darse de alta en «고객 등록» con su CONSTANCIA y aprobación del director.';
+      $('custHint').textContent='Escriba el nombre exacto de un cliente YA registrado. Los clientes nuevos deben darse de alta en «고객 등록» con su RFC y aprobación del director.';
     } else {
       $('discShow').setAttribute('readonly','readonly'); $('discShow').style.background='#faf8f3';
       const opt=sel.selectedOptions[0];
@@ -1219,7 +1219,7 @@
         } else if(d.error==='customer_not_registered'||d.error==='customer_not_approved'){
           // 0185 — 고객 자동생성 폐지. 등록·승인 화면으로 안내한다.
           m.textContent=(d.note||'등록·승인된 고객만 견적을 쓸 수 있습니다.')
-            +' → 「고객 등록」 화면에서 CONSTANCIA 를 첨부해 등록하세요.';
+            +' → 「고객 등록」 화면에서 RFC 를 입력해 등록하세요.';
         } else { m.textContent='저장 실패: '+(d.error||res.status); }
         return;
       }
