@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Refatrix · 수입 입고 Recepción · build 20260826pda</title>
+<title>Refatrix · 수입 입고 Recepción · build 20260827reg</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -253,7 +253,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='20260826pda';
+  var BUILD='20260827reg';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
   var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
@@ -887,7 +887,9 @@
     +'.sub{color:#6F6A60;font-size:12px;margin-bottom:10px}'
     +'.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}'
     +'.bar a,.bar button{background:#52708A;color:#fff;border:0;border-radius:9px;padding:7px 13px;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}'
-    +'.bar a.g{background:#3E7D5A}'
+    +'.bar a.g,.bar button.g{background:#3E7D5A}'
+    +'.bar button.alt{background:#6F6A60}'
+    +'.bar button:active{filter:brightness(1.15)}'
     +'table{width:100%;border-collapse:collapse;background:#fff;font-size:12px;margin-bottom:6px}'
     +'th,td{border:1px solid #E2DCCF;padding:4px 7px;text-align:left;white-space:nowrap}'
     +'thead th{background:#EFF3F7;font-weight:700;position:sticky;top:0}'
@@ -937,33 +939,96 @@
     });
   }
   // 파일이 없어도 볼 수 있는 ERP 등재 내역(팔렛·SKU) — DB에 실제로 들어간 값
+  //  · 🌐 버튼 = 이 창만 한국어 ↔ Español 전환. 본문 화면 언어(LANG)는 건드리지 않는다
+  //    (한국인 관리자가 창만 스페인어로 바꿔 현장 작업자에게 보여주는 경우가 많다).
+  //    선택은 localStorage 'wh_viewlang' 에 기억 — 다음에 열면 그 언어로 뜬다.
+  //  · ⤓ 엑셀 = 화면과 같은 표를 .xlsx 로 저장. XLSX 라이브러리는 이 부모 창에만 있으므로
+  //    시트 생성·저장은 부모에서 하고, 자식 창에는 스크립트를 심지 않는다(핸들러도 부모에서 부착).
   function viewRegistered(){
     var w=winOpen(L('등재 내역','Registro ERP'));
     if(!w) return;
     var s=DETAIL.shipment, groups=palGroups();
-    var cart=0, qty=0, pal=0, sku={}, body='';
+    var VL=(function(){ try{ var v=localStorage.getItem('wh_viewlang'); if(v==='es'||v==='ko') return v; }catch(e){} return LANG; })();
+    function T(ko,es){ return VL==='es'?es:ko; }
+    function nf(n){ return Number(n||0).toLocaleString(VL==='es'?'es-MX':'ko-KR'); }
+    function stLbl(st){ var t=PAL_LBL[st]; return t?T(t[0],t[1]):st; }
+    function poH(v){                                  // poHtml 과 같은 표기, 언어만 이 창 기준
+      var p=poParts(v);
+      if(!p.po) return '<span class="po plain">'+esc(T('번호 없음','Sin número'))+'</span>';
+      return (p.pfx?'<span class="pfx">'+esc(p.pfx)+'</span>':'')
+        +'<span class="po'+(p.pfx?'':' plain')+'">'+esc(p.po)+'</span>';
+    }
+    // 합계는 언어와 무관 — 한 번만 계산해 재렌더 때 다시 세지 않는다
+    var cart=0, qty=0, pal=0, sku={};
     groups.forEach(function(G){
-      var rows='';
-      G.pals.forEach(function(p){
-        p.items.forEach(function(i,ix){
-          cart+=(i.cartons||0); qty+=(i.qty||0); sku[i.code]=1;
-          rows+='<tr><td>'+(ix===0?p.pl_no:'')+'</td><td>'+esc(i.code)+(i.registered?'':' ⚠')+'</td><td>'+esc(i.name||'—')+'</td>'
-            +'<td class="num">'+(i.cartons||0)+'</td><td class="num">'+fmt(i.qty||0)+'</td>'
-            +'<td>'+esc(i.rack||'—')+'</td><td>'+palLbl(p.status)+'</td></tr>';
-        });
-      });
       pal+=G.N;
-      body+='<div class="grp">'+poHtml(G.key)+' <span style="font-size:12px;color:#6F6A60">— '+L('팔렛','Pallets')+' '+G.N+' · '+L('카톤','Cajas')+' '+fmt(G.cartons)+' · '+fmt(G.qty)+' EA</span></div>'
-        +'<table><thead><tr><th>PL</th><th>CTR NO</th><th>'+L('품명','Descripción')+'</th>'
-        +'<th class="num">'+L('카톤','Cajas')+'</th><th class="num">'+L('수량','Cant.')+'</th>'
-        +'<th>'+L('랙','Ubic.')+'</th><th>'+L('상태','Estado')+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
+      G.pals.forEach(function(p){ p.items.forEach(function(i){
+        cart+=(i.cartons||0); qty+=(i.qty||0); sku[i.code]=1; }); });
     });
-    w.document.body.innerHTML='<div class="vw"><h1>'+L('ERP 등재 내역','Registro en ERP')+'</h1>'
-      +'<div class="sub">'+L('선적','Embarque')+' '+esc(s.invoice_no||('#'+SHIP))+' · ETA '+(s.eta||'—')
-      +' · PO '+groups.length+' · '+L('팔렛','Pallets')+' '+pal+' · '+L('카톤','Cajas')+' '+fmt(cart)+' · '+fmt(qty)+' EA · SKU '+Object.keys(sku).length
-      +' · <span style="color:#C0533B">⚠ = '+L('미등록 SKU','SKU no registrado')+'</span></div>'
-      +'<div class="bar"><button onclick="window.print()">🖨 '+L('인쇄','Imprimir')+'</button></div>'
-      +(body||'<div class="idle">'+L('팔렛이 없습니다','Sin pallets')+'</div>')+'</div>';
+
+    function render(){
+      var body='';
+      groups.forEach(function(G){
+        var rows='';
+        G.pals.forEach(function(p){
+          p.items.forEach(function(i,ix){
+            rows+='<tr><td>'+(ix===0?p.pl_no:'')+'</td><td>'+esc(i.code)+(i.registered?'':' ⚠')+'</td><td>'+esc(i.name||'—')+'</td>'
+              +'<td class="num">'+(i.cartons||0)+'</td><td class="num">'+nf(i.qty||0)+'</td>'
+              +'<td>'+esc(i.rack||'—')+'</td><td>'+stLbl(p.status)+'</td></tr>';
+          });
+        });
+        body+='<div class="grp">'+poH(G.key)+' <span style="font-size:12px;color:#6F6A60">— '+T('팔렛','Pallets')+' '+G.N+' · '+T('카톤','Cajas')+' '+nf(G.cartons)+' · '+nf(G.qty)+' EA</span></div>'
+          +'<table><thead><tr><th>PL</th><th>CTR NO</th><th>'+T('품명','Descripción')+'</th>'
+          +'<th class="num">'+T('카톤','Cajas')+'</th><th class="num">'+T('수량','Cant.')+'</th>'
+          +'<th>'+T('랙','Ubic.')+'</th><th>'+T('상태','Estado')+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
+      });
+      w.document.body.innerHTML='<div class="vw"><h1>'+T('ERP 등재 내역','Registro en ERP')+'</h1>'
+        +'<div class="sub">'+T('선적','Embarque')+' '+esc(s.invoice_no||('#'+SHIP))+' · ETA '+(s.eta||'—')
+        +' · PO '+groups.length+' · '+T('팔렛','Pallets')+' '+pal+' · '+T('카톤','Cajas')+' '+nf(cart)+' · '+nf(qty)+' EA · SKU '+Object.keys(sku).length
+        +' · <span style="color:#C0533B">⚠ = '+T('미등록 SKU','SKU no registrado')+'</span></div>'
+        +'<div class="bar"><button id="vPrint">🖨 '+T('인쇄','Imprimir')+'</button>'
+        +'<button id="vXls" class="g">⤓ '+T('엑셀 다운로드','Descargar Excel')+'</button>'
+        +'<button id="vLang" class="alt">🌐 '+(VL==='es'?'한국어':'Español')+'</button></div>'
+        +(body||'<div class="idle">'+T('팔렛이 없습니다','Sin pallets')+'</div>')+'</div>';
+      try{ w.document.title=T('ERP 등재 내역','Registro en ERP')+' · '+(s.invoice_no||('#'+SHIP)); }catch(e){}
+      try{ w.document.documentElement.lang=(VL==='es'?'es':'ko'); }catch(e){}
+      var gid=function(id){ return w.document.getElementById(id); };
+      var bp=gid('vPrint'); if(bp) bp.addEventListener('click',function(){ try{ w.print(); }catch(e){} });
+      var bl=gid('vLang'); if(bl) bl.addEventListener('click',function(){
+        VL=(VL==='es')?'ko':'es';
+        try{ localStorage.setItem('wh_viewlang',VL); }catch(e){}
+        render();                                     // 창 내용만 다시 그린다(본문 LANG 불변)
+      });
+      var bx=gid('vXls'); if(bx) bx.addEventListener('click',downloadXls);
+    }
+
+    // 화면과 같은 표 → .xlsx (머리글·상태는 이 창에서 고른 언어를 따른다)
+    function downloadXls(){
+      try{
+        var aoa=[[ 'ORDER NO','PL','CTR NO',T('품명','Descripción'),T('카톤','Cajas'),T('수량','Cant.'),
+                   T('랙','Ubic.'),T('상태','Estado'),T('제품등록','Registrado') ]];
+        groups.forEach(function(G){
+          G.pals.forEach(function(p){
+            p.items.forEach(function(i){
+              aoa.push([ G.key, p.pl_no, i.code, i.name||'', Number(i.cartons||0), Number(i.qty||0),
+                         i.rack||'', stLbl(p.status), i.registered?'O':T('미등록','No') ]);
+            });
+          });
+        });
+        aoa.push([]);
+        aoa.push([ T('합계','Total'),'','','', cart, qty, '',
+                   T('팔렛','Pallets')+' '+pal, 'SKU '+Object.keys(sku).length ]);
+        var ws=XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols']=[{wch:16},{wch:5},{wch:14},{wch:34},{wch:8},{wch:11},{wch:12},{wch:12},{wch:11}];
+        var wb=XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb,ws,T('등재내역','Registro'));
+        var inv=String(s.invoice_no||('SHIP'+SHIP)).replace(/[\\\/:*?"<>|\[\]]/g,'_');
+        XLSX.writeFile(wb, T('ERP등재내역_','Registro_ERP_')+inv+'.xlsx');
+        toast('✔ '+L('엑셀 저장됨','Excel guardado'));
+      }catch(e){ toast(L('엑셀 생성 실패','Error al generar Excel')+': '+(e&&e.message||e)); }
+    }
+
+    render();
   }
   function dlShipFile(fid){
     api('/api/inbound/files/'+fid).then(function(o){
