@@ -1,6 +1,6 @@
 // =====================================================================
 // 재무 > 거래목록 「출처」 열 + 계좌미지정 필터 — refatrix-finance.html 인라인 JS 를
-// jsdom 에서 실제로 구동해 검증한다 (build fin-0826d).
+// jsdom 에서 실제로 구동해 검증한다 (build fin-0826e).
 //   요구(디렉터): "거래목록에 고정비 외에도 마케팅과 같은 지출계획도 나와야 한다."
 //   → 마케팅·수금 계획은 계좌가 없어 계좌 열이 '—' 라 눈에 안 띄었다. 출처 배지로 구분하고,
 //     계좌 필터의 「(계좌 미지정)」으로 그 계획들만 모아 볼 수 있게 했다.
@@ -64,38 +64,45 @@ const cellText = (w, id, idx) => {
   const r = rows(w).find((x) => x.dataset.id === String(id));
   return r ? r.cells[idx].textContent.trim() : null;
 };
-const SRC_COL = 3; // 일자·구분·계좌 다음
+// 디렉터에게는 맨 앞에 예정 선택 체크박스 열이 붙는다(계획 삭제용) → 열 위치가 1 밀린다.
+const hasSel = (w) => !!w.document.getElementById('txn-selall');
+const SRC = (w) => (hasSel(w) ? 4 : 3);   // 일자·구분·계좌 다음
+const ACC = (w) => (hasSel(w) ? 3 : 2);
 
-test('① 「출처」 열이 계좌 다음에 생기고, 열 개수가 10 이 된다', async () => {
+test('① 「출처」 열이 계좌 다음에 생긴다 (디렉터는 선택 체크박스 열이 앞에 하나 더)', async () => {
   const { w } = boot(); await w.loadTxns(); await tick();
   const h = headers(w);
-  assert.equal(h.length, 10);
-  assert.equal(h[SRC_COL], '출처');
-  assert.deepEqual(h.slice(0, 3), ['일자', '구분', '계좌']);
+  assert.equal(h.length, 11, '체크박스 + 10열');
+  assert.equal(h[SRC(w)], '출처');
+  assert.deepEqual(h.slice(1, 4), ['일자', '구분', '계좌']);
+
+  const fin = boot({ director: false }); await fin.w.loadTxns(); await tick();
+  assert.equal(headers(fin.w).length, 10, '비디렉터는 체크박스 열 없음');
+  assert.equal(headers(fin.w)[SRC(fin.w)], '출처');
 });
 
 test('② 행마다 출처 배지가 정확하다 — 고정비·마케팅·수동·매출', async () => {
   const { w } = boot(); await w.loadTxns(); await tick();
-  assert.equal(cellText(w, 101, SRC_COL), '고정비');
-  assert.equal(cellText(w, 102, SRC_COL), '마케팅');
-  assert.equal(cellText(w, 103, SRC_COL), '수동');
-  assert.equal(cellText(w, 104, SRC_COL), '매출');
+  assert.equal(cellText(w, 101, SRC(w)), '고정비');
+  assert.equal(cellText(w, 102, SRC(w)), '마케팅');
+  assert.equal(cellText(w, 103, SRC(w)), '수동');
+  assert.equal(cellText(w, 104, SRC(w)), '매출');
 });
 
 test('③ 마케팅 지출계획 행이 실제로 렌더된다(계좌 없음 = —)', async () => {
   const { w } = boot(); await w.loadTxns(); await tick();
   const r = rows(w).find((x) => x.dataset.id === '102');
   assert.ok(r, '마케팅 예정 행 존재');
-  assert.equal(r.cells[2].textContent.trim(), '—', '계좌 열은 —');
+  assert.equal(r.cells[ACC(w)].textContent.trim(), '—', '계좌 열은 —');
   assert.match(r.textContent, /마케팅비/);
   assert.match(r.textContent, /예정/);
 });
 
 test('④ 구백엔드(source 미제공)에서도 메모·링크로 출처를 판별한다', async () => {
   const { w } = boot({ txns: TXNS_LEGACY }); await w.loadTxns(); await tick();
-  assert.equal(cellText(w, 101, SRC_COL), '고정비');
-  assert.equal(cellText(w, 102, SRC_COL), '마케팅', '[마케팅] 메모 접두사로 판별');
-  assert.equal(cellText(w, 104, SRC_COL), '매출');
+  assert.equal(cellText(w, 101, SRC(w)), '고정비');
+  assert.equal(cellText(w, 102, SRC(w)), '마케팅', '[마케팅] 메모 접두사로 판별');
+  assert.equal(cellText(w, 104, SRC(w)), '매출');
 });
 
 test('⑤ 계좌 필터에 「(계좌 미지정)」 옵션이 있고, 고르면 account_id=none 으로 조회한다', async () => {
@@ -114,7 +121,7 @@ test('⑤ 계좌 필터에 「(계좌 미지정)」 옵션이 있고, 고르면 
 test('⑥ 상세(펼침) 행의 colspan 이 열 수와 맞는다', async () => {
   const { w } = boot(); await w.loadTxns(); await tick();
   const det = w.document.querySelector('#txnBody tbody tr.txn-det td');
-  assert.equal(det.getAttribute('colspan'), '10');
+  assert.equal(det.getAttribute('colspan'), '11', '체크박스 열 포함');
 });
 
 test('⑦ 출처 열 제목 클릭으로 정렬된다(3회째 기본순서 복귀)', async () => {
@@ -123,7 +130,7 @@ test('⑦ 출처 열 제목 클릭으로 정렬된다(3회째 기본순서 복�
   const before = rows(w).map((r) => r.dataset.id);
   th().dispatchEvent(new w.MouseEvent('click', { bubbles: true })); await tick();
   const asc = rows(w).map((r) => r.dataset.id);
-  assert.deepEqual(rows(w).map((r) => r.cells[SRC_COL].textContent.trim()), ['고정비', '마케팅', '매출', '수동']);
+  assert.deepEqual(rows(w).map((r) => r.cells[SRC(w)].textContent.trim()), ['고정비', '마케팅', '매출', '수동']);
   th().dispatchEvent(new w.MouseEvent('click', { bubbles: true })); await tick();
   assert.deepEqual(rows(w).map((r) => r.dataset.id), asc.slice().reverse());
   th().dispatchEvent(new w.MouseEvent('click', { bubbles: true })); await tick();
@@ -140,5 +147,5 @@ test('⑧ 마케팅 예정 행을 열면 예정 전용 패널(계획 수정·예
 });
 
 test('⑨ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0826d/);
+  assert.match(HTML, /build fin-0826e/);
 });

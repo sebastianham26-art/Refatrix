@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0826d</title>
+<title>Refatrix ERP · 재무 · build fin-0826e</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -341,6 +341,14 @@
         <div style="display:flex;align-items:flex-end"><button class="btn sm" id="cashDueBtn" style="display:none;background:#fdf3d7;color:#8a6410;border:1px solid #e8d29a">💰 현금받아야함 <span id="cashDueCnt"></span></button></div>
       </div>
       <div id="cashDueBox" class="hidden" style="border:2px solid #e8d29a;border-radius:10px;background:#fffdf6;padding:14px;margin:0 0 12px"></div>
+      <div id="txn-delbar" class="hidden" style="margin:0 0 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fbfbf7">
+        <span id="txn-selinfo" style="font-size:12.5px;font-weight:700">선택 0건</span>
+        <button class="btn ghost sm" id="txn-sel-visible">표시된 예정 전체선택</button>
+        <button class="btn ghost sm" id="txn-sel-overdue">경과된 예정만 선택</button>
+        <button class="btn ghost sm" id="txn-sel-clear">선택 해제</button>
+        <button class="btn sm" id="txn-del-sel" style="background:var(--expense);border-color:var(--expense);color:#fff">🗑 선택한 계획 삭제</button>
+        <span class="hint" style="margin:0"><b>예정(계획)</b>만 삭제됩니다 — 실적과 매출 수금 예정은 대상이 아닙니다. 지난 날짜의 계획도 그대로 지울 수 있고, 삭제하면 <b>현금흐름</b>에서 즉시 빠집니다.</span>
+      </div>
       <div id="txnSummary" class="hint" style="margin:0 0 6px"></div>
       <div id="txnBody"><div class="hint">불러오는 중…</div></div>
     </div>
@@ -1311,9 +1319,10 @@
       const accName=!accSel?'전체 계좌':(accSel==='none'?'계좌 미지정 (마케팅·수금 계획)'
         :((accounts.find(a=>String(a.id)===accSel)||{}).name||'선택 계좌'));
       $('txnSummary').innerHTML=`<b>${accName}</b> · 실적 수입 <span style="color:var(--income)">${fmt(ain)}</span> / 지출 <span style="color:var(--expense)">${fmt(aout)}</span> · 예정 수입 <span style="color:var(--income)">${fmt(pin)}</span> / 지출 <span style="color:var(--expense)">${fmt(pout)}</span> (MXN)`;
-      if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';return;}
+      if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';txnItems=[];txnSyncSelUi();return;}
       txnMap={};items.forEach(t=>txnMap[t.id]=t);
       txnItems=items;
+      { const live=new Set(items.map(t=>Number(t.id))); [...txnSel].forEach(id=>{if(!live.has(id))txnSel.delete(id);}); }
       renderTxnTable();
     }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
@@ -1335,6 +1344,44 @@
       default: return '';
     }
   }
+  // ---- 거래목록에서 계획(예정) 삭제 — 「예정 내역」과 같은 기능을 여기서도 (fin-0826e) ----
+  // 지난 날짜(경과)든 앞으로든 예정 행은 여기서 바로 체크해서 지울 수 있다. 디렉터 전용.
+  let txnSel=new Set();
+  function txnPlanDeletable(t){
+    return isDirector() && t && t.status==='plan' && !t.sales_invoice_id
+      && (t.kind===undefined||t.kind==='general') && t.can_delete!==false;
+  }
+  function txnDeletableVisible(){ return (txnItems||[]).filter(txnPlanDeletable); }
+  function txnSelectVisible(on,onlyOverdue){
+    const today=new Date().toISOString().slice(0,10);
+    const vis=txnDeletableVisible()
+      .filter(t=>!onlyOverdue||String(t.plan_date||t.txn_date||'').slice(0,10)<today)
+      .map(t=>Number(t.id));
+    if(on)vis.forEach(id=>txnSel.add(id)); else vis.forEach(id=>txnSel.delete(id));
+    renderTxnTable();
+  }
+  function txnSyncSelUi(){
+    const bar=$('txn-delbar'); if(!bar)return;
+    const show=isDirector()&&txnDeletableVisible().length>0;
+    bar.classList.toggle('hidden',!show);
+    if(!show){txnSel=new Set();return;}
+    let sum=0,cur=new Set();
+    txnSel.forEach(id=>{const t=txnMap[id];if(t){const i=planRowInfo(t);sum+=i.amount;cur.add(i.currency);}});
+    const info=$('txn-selinfo');
+    if(info)info.textContent=txnSel.size?('선택 '+txnSel.size+'건'+(cur.size===1?' · '+fmt(sum)+' '+[...cur][0]:'')):'선택 0건';
+    const btn=$('txn-del-sel'); if(btn)btn.disabled=!txnSel.size;
+    const vis=txnDeletableVisible().map(t=>Number(t.id));
+    const all=$('txn-selall');
+    if(all)all.checked=vis.length>0&&vis.every(id=>txnSel.has(id));
+  }
+  async function txnDeletePlans(ids){
+    ids=[...new Set((ids||[]).map(Number).filter(n=>n>0))];
+    await planDeleteRun(ids,ids.map(id=>txnMap[id]).filter(Boolean),(done)=>{
+      done.forEach(id=>txnSel.delete(id));
+      loadTxns();loadAccounts();
+    });
+  }
+
   // 거래목록 「출처」 — 예정 내역과 같은 기준(백엔드 source, 구백엔드면 메모·링크로 보완).
   //  고정비만이 아니라 마케팅 지출계획·매출 수금예정·수동 등록분을 한눈에 구분하기 위한 열.
   function txnSrcOf(t){
@@ -1380,8 +1427,10 @@
     }
     const arrow=k=>txnSort.key===k?(txnSort.dir===1?' ▲':' ▼'):'';
     const th=(k,label,cls)=>`<th${cls?' class="'+cls+'"':''} data-sort="${k}" style="cursor:pointer;user-select:none" title="클릭해 정렬 (3회째 기본순서)">${label}${arrow(k)}</th>`;
+    const canSel=isDirector()&&txnDeletableVisible().length>0;   // 예정 행이 하나라도 있어야 열이 생긴다
+    const nCols=9+1+(canSel?1:0);
       b.innerHTML=`<div class="hint" style="margin-bottom:6px">행을 클릭하면 세부·수정이 열립니다. <span style="background:#f0eee8;padding:1px 6px;border-radius:4px">실적</span> 옅은 회색 · <span style="background:#fff;border:1px solid var(--line);padding:1px 6px;border-radius:4px">예정</span> 흰색 · 열 제목 클릭으로 정렬. <b>출처</b> 열로 고정비·<b>마케팅 지출계획</b>·매출 수금예정·수동 등록을 구분합니다 — 마케팅·수금 계획은 계좌가 없어(<b>—</b>) 계좌 필터의 <b>(계좌 미지정)</b>으로 모아 볼 수 있습니다.</div>
-        <table><thead><tr>${th('date','일자')}${th('dir','구분')}${th('acc','계좌')}${th('src','출처')}${th('cat','계정과목')}${th('amt','금액 (MXN)','num')}${th('status','상태')}${th('cust','고객명')}${th('sat','SAT 번호')}${th('rcpt','영수증')}</tr></thead>
+        <table><thead><tr>${canSel?'<th style="width:30px"><input type="checkbox" id="txn-selall" style="width:auto" title="표시된 예정 전체선택"></th>':''}${th('date','일자')}${th('dir','구분')}${th('acc','계좌')}${th('src','출처')}${th('cat','계정과목')}${th('amt','금액 (MXN)','num')}${th('status','상태')}${th('cust','고객명')}${th('sat','SAT 번호')}${th('rcpt','영수증')}</tr></thead>
         <tbody>${items.map(t=>{
           const usd=t.currency==='USD';
           const amtColor=t.direction==='in'?'var(--income)':'var(--expense)';
@@ -1400,7 +1449,11 @@
           const accExBadge=(t.plan_account_manual&&t.recurring_rule_id)
             ?'<span class="badge" style="background:#e8f0e8;color:#3d6b45" title="이 회차만 다른 계좌로 지정 — 고정비 규칙을 저장해도 계좌는 유지됩니다">🏦 계좌 예외</span>':'';
           const bg=t.status==='actual'?'background:#f4f2ec':'background:#fff';
+          const selOk=canSel&&txnPlanDeletable(t);
           return `<tr class="txn-row" data-id="${t.id}" style="cursor:pointer;${bg}">
+            ${canSel?`<td onclick="event.stopPropagation()">${selOk
+              ? `<input type="checkbox" class="txn-sel" data-id="${t.id}" style="width:auto"${txnSel.has(Number(t.id))?' checked':''}>`
+              : '<span class="hint" style="margin:0">·</span>'}</td>`:''}
             <td>${String(t.txn_date).slice(0,10)}</td>
             <td>${t.direction==='in'?'<span class="badge" style="background:#e7f3ee;color:var(--income)">수입</span>':'<span class="badge" style="background:#fde0db;color:var(--expense)">지출</span>'}</td>
             <td>${t.account_name||'<span class="hint" style="margin:0" title="계좌 미지정 — 회사 공통 계획">—</span>'}</td>
@@ -1418,13 +1471,20 @@
                 : (t.memo||'')}</td>
             <td style="font-family:monospace;font-size:12px">${t.receipt_no||''}</td>
           </tr>
-          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="10" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
+          <tr class="txn-det hidden" data-id="${t.id}"><td colspan="${nCols}" style="background:#faf8f3;padding:0"><div class="txn-det-body" data-id="${t.id}" style="padding:14px"></div></td></tr>`;}).join('')}</tbody></table>`;
       [...b.querySelectorAll('.txn-row')].forEach(row=>row.onclick=()=>{
         const id=row.dataset.id;const det=b.querySelector(`.txn-det[data-id="${id}"]`);
         if(det.classList.contains('hidden')){det.classList.remove('hidden');renderTxnDetail(Number(id),det.querySelector('.txn-det-body'));appendFreightAlloc(Number(id),det.querySelector('.txn-det-body'));}
         else det.classList.add('hidden');
       });
       [...b.querySelectorAll('th[data-sort]')].forEach(h=>h.onclick=()=>txnHeadClick(h.dataset.sort));
+      [...b.querySelectorAll('.txn-sel')].forEach(el=>el.onchange=(ev)=>{
+        ev.stopPropagation();
+        const id=Number(el.dataset.id); if(el.checked)txnSel.add(id); else txnSel.delete(id); txnSyncSelUi();
+      });
+      const tAll=$('txn-selall');
+      if(tAll)tAll.onchange=()=>txnSelectVisible(tAll.checked,false);
+      txnSyncSelUi();
   }
 
   // ===== 거래목록 엑셀 내보내기 (디렉터 전용) =====
@@ -1735,7 +1795,7 @@
       box.querySelector('.cf-planedit').onclick=()=>{box.querySelector('.planedit').classList.toggle('hidden');};
       box.querySelector('.pe-save').onclick=()=>savePlanEdit(t.id,box);
       const cfDel=box.querySelector('.cf-del');
-      if(cfDel)cfDel.onclick=()=>deleteTxnDirect(t.id,{plan:true,recurring:isRecur});
+      if(cfDel)cfDel.onclick=()=>txnDeletePlans([Number(t.id)]);
       return;
     }
     if(!t.editable){box.innerHTML='<div class="hint">이 거래는 여기서 수정할 수 없습니다.</div>';return;}
@@ -3876,19 +3936,34 @@
     const all=$('pp-selall');
     if(all)all.checked=vis.length>0&&vis.every(id=>ppSel.has(id));
   }
-  async function ppDeletePlans(ids){
+  // 계획 삭제 공통 코어 — 「예정 내역(거래등록)」과 「거래목록」 양쪽에서 같은 문구·같은 API 를 쓴다.
+  //  · rows: 화면마다 필드가 조금 달라(예정 내역은 plan_date/overdue, 거래목록은 txn_date) 아래에서 정규화한다.
+  function planRowInfo(t){
+    const today=new Date().toISOString().slice(0,10);
+    const date=String(t.plan_date||t.txn_date||'').slice(0,10);
+    const memo=String(t.memo||'');
+    return {
+      date, memo,
+      amount:Number(t.plan_amount!=null?t.plan_amount:t.amount)||0,
+      currency:t.currency||'MXN',
+      cat:t.category_name||t.category_code||'',
+      isRecurring:t.source==='recurring'||!!t.recurring_rule_id||memo.startsWith('[고정비]'),
+      isMarketing:t.source==='marketing'||memo.startsWith('[마케팅]'),
+      overdue:t.overdue!=null?!!t.overdue:(!!date&&date<today),
+    };
+  }
+  async function planDeleteRun(ids,rows,onDone){
     ids=[...new Set((ids||[]).map(Number).filter(n=>n>0))];
     if(!ids.length){alert('삭제할 예정을 선택하세요.');return;}
-    const rows=ids.map(id=>ppMap[id]).filter(Boolean);
-    const recurN=rows.filter(t=>t.source==='recurring').length;
-    const mktN=rows.filter(t=>String(t.memo||'').startsWith('[마케팅]')).length;
-    const overN=rows.filter(t=>t.overdue).length;
-    const byCur={};rows.forEach(t=>{const c=t.currency||'MXN';byCur[c]=(byCur[c]||0)+(Number(t.plan_amount!=null?t.plan_amount:t.amount)||0);});
+    const info=rows.map(planRowInfo);
+    const recurN=info.filter(x=>x.isRecurring).length;
+    const mktN=info.filter(x=>x.isMarketing).length;
+    const overN=info.filter(x=>x.overdue).length;
+    const byCur={};info.forEach(x=>{byCur[x.currency]=(byCur[x.currency]||0)+x.amount;});
     const sumTxt=Object.keys(byCur).map(c=>fmt(byCur[c])+' '+c).join(' · ');
-    const preview=rows.slice(0,8).map(t=>' · '+String(t.plan_date||'').slice(0,10)+' '+(t.category_name||t.category_code||'')+' '
-      +fmt(t.plan_amount!=null?t.plan_amount:t.amount)+' '+(t.currency||'')
-      +(t.memo?' — '+String(t.memo).replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'').slice(0,26):'')).join('\n');
-    let msg='예정(계획) '+ids.length+'건을 삭제할까요?\n\n'+preview+(rows.length>8?'\n · … 외 '+(rows.length-8)+'건':'')
+    const preview=info.slice(0,8).map(x=>' · '+x.date+' '+x.cat+' '+fmt(x.amount)+' '+x.currency
+      +(x.memo?' — '+x.memo.replace(/^\[고정비\]\s*/,'').replace(/^\[마케팅\]\s*/,'').slice(0,26):'')).join('\n');
+    let msg='예정(계획) '+ids.length+'건을 삭제할까요?\n\n'+preview+(info.length>8?'\n · … 외 '+(info.length-8)+'건':'')
       +'\n\n합계 '+sumTxt+(overN?'  (경과 '+overN+'건 포함)':'')
       +'\n\n삭제 즉시 현금흐름·계획대비실적에서 빠집니다.';
     if(recurN)msg+='\n※ 고정비 회차 '+recurN+'건 — 이 회차만 삭제되고 규칙과 다음 달 회차는 그대로 유지됩니다. 지운 회차는 자동전개로도 되살아나지 않습니다.';
@@ -3902,11 +3977,17 @@
       if(res.status===404){alert('삭제 기능이 아직 배포되지 않았습니다(백엔드 최신 배포 필요).');return;}
       const d=await res.json();
       if(!res.ok||d.error){alert('삭제 실패: '+ppDelErr(d.error||res.status));return;}
-      ids.forEach(id=>ppSel.delete(id));
       const sk=(d.skipped||[]);
       if(sk.length)alert('삭제 '+d.deleted+'건 완료.\n제외 '+sk.length+'건: '+sk.slice(0,5).map(s=>'#'+s.id+' '+ppDelErr(s.error)).join(' / '));
-      loadPendingPlans();loadAccounts();
+      if(onDone)onDone(ids,d);
     }catch(e){alert('서버 연결 실패');}
+  }
+  async function ppDeletePlans(ids){
+    ids=[...new Set((ids||[]).map(Number).filter(n=>n>0))];
+    await planDeleteRun(ids,ids.map(id=>ppMap[id]).filter(Boolean),(done)=>{
+      done.forEach(id=>ppSel.delete(id));
+      loadPendingPlans();loadAccounts();
+    });
   }
   function ppDelErr(e){
     return e==='sales_linked'?'매출(반제) 연계 수금 예정은 삭제할 수 없습니다 — 매출/수금에서 처리하세요.'
@@ -4512,6 +4593,10 @@
   $('bi-submit').addEventListener('click',biSubmit);
   $('f-go').addEventListener('click',loadTxns);
   $('txn-xls').addEventListener('click',downloadTxnExcel);
+  $('txn-sel-visible').addEventListener('click',()=>txnSelectVisible(true,false));
+  $('txn-sel-overdue').addEventListener('click',()=>txnSelectVisible(true,true));
+  $('txn-sel-clear').addEventListener('click',()=>{txnSel=new Set();renderTxnTable();});
+  $('txn-del-sel').addEventListener('click',()=>txnDeletePlans([...txnSel]));
   $('f-acc').addEventListener('change',loadTxns);
   $('f-status').addEventListener('change',loadTxns);
   $('f-dir').addEventListener('change',loadTxns);
