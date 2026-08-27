@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 수입 원가 정정</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--gold:#B8893B;--purple:#6B4FB0;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:4px}
+  .step{font-size:12px;font-weight:800;color:#fff;background:var(--brand);border-radius:999px;padding:2px 9px;margin-right:6px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#F6E7E4;color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d5}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.n,th.n{font-variant-numeric:tabular-nums}
+  .ovlist{margin-top:8px}
+  .ovrow{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .pill{font-size:11px;font-weight:700;background:#faf8f3;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .warn{background:#fdf4e3;border:1px solid #e7c98b;color:#8a6512;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-top:10px}
+  .tot{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+  .totbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:170px}
+  .totbox .v{font-size:22px;font-weight:800}.totbox .l{font-size:11px;color:var(--muted);margin-top:2px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260622a">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수입 원가 정정 · 단가 입력 + 부대비용 1/n + 소급 매출원가</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card" id="notDir" style="display:none"><div class="warn">이 화면은 <b>디렉터 전용</b>입니다.</div></div>
+
+    <div id="dirApp" style="display:none">
+      <div class="card">
+        <div class="card-h"><span class="step">1</span>단가 템플릿 다운로드</div>
+        <div class="hint">등록된 모든 수입 라인(배치번호 · SKU · 수량 · <b>통화</b> · 적용환율)을 엑셀로 받습니다. <b>입력단가(원통화)</b> 열에 그 배치 통화 기준 단가를 채워 2단계에서 업로드하세요(USD 배치는 USD로 입력 → 입고일 환율로 자동 MXN 환산). <code>_batch_id · _product_id</code> 열은 매칭용이니 수정하지 마세요.</div>
+        <button class="btn" id="dlBtn" style="margin-top:12px">⬇ 엑셀 다운로드</button>
+        <span class="hint" id="dlInfo" style="margin-left:8px"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><span class="step">2</span>단가 업로드 + 부대비용(배치별 1/n)</div>
+        <div class="hint">단가를 채운 엑셀을 올리고, 필요하면 배치별 부대비용(운임·통관 등)을 입력하세요. <b>USD 배치는 입고일자 환율(재무&gt;환율)로 자동 MXN 환산</b>되며, 부대비용은 그 배치 <b>수량 비율(1/n)</b>로 원가에 얹습니다.</div>
+        <div style="margin-top:12px"><label>① 정정 엑셀 업로드</label>
+          <input id="upFile" type="file" accept=".xlsx,.xls" onchange="onUpload(event)">
+          <span class="hint" id="upInfo"></span>
+        </div>
+        <div style="margin-top:14px"><label>② 배치별 부대비용 (선택)</label>
+          <div class="ovrow">
+            <select id="ovBatch" style="min-width:240px"></select>
+            <input id="ovAmt" type="number" step="0.01" placeholder="금액" style="width:130px">
+            <select id="ovCur" style="width:90px"><option value="USD">USD</option><option value="MXN">MXN</option></select>
+            <button class="btn sm ghost" onclick="addOverhead()">+ 추가</button>
+          </div>
+          <div class="ovlist" id="ovList"></div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="pvBtn" onclick="doPreview()" disabled>미리보기</button>
+          <button class="btn" id="apBtn" onclick="doApply()" disabled style="background:var(--gold)">적용</button>
+        </div>
+        <div class="msg" id="msg"></div>
+      </div>
+
+      <div class="card hidden" id="pvCard">
+        <div class="card-h"><span class="step">3</span>미리보기 — 적용 결과</div>
+        <div class="warn">⚠ <b>적용하면 이미 팔린 분의 매출원가 차액이 이번 달 정산차액(소급 COGS)으로 기장</b>됩니다. 지나간(마감) 달의 손익은 건드리지 않습니다. 되돌리려면 정산차액에서 별도 처리해야 하니 미리보기를 꼭 확인하세요.</div>
+        <div class="tot" id="pvTot"></div>
+        <div style="overflow-x:auto"><div id="pvBody"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">중복 정리 분석 — 같은 SKU·수량 배치 자동 묶기</div>
+        <div class="hint">같은 SKU·수량 구성의 배치를 <b>중복 그룹</b>으로 묶어, 제품별 <b>유령(중복)수량 · 현재고 · 판매 · 음수 없이 제거 가능한 양 · 막힌 유령(실입고 누락 의심)</b>을 보여줍니다. 읽기 전용이라 아무것도 바꾸지 않습니다.</div>
+        <button class="btn" id="dupBtn" style="margin-top:8px">🔍 중복 분석 실행</button>
+        <div id="dupResult" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">배치 정리 — 잘못 등록·테스트 배치 삭제</div>
+        <div class="hint">재고 화면의 "배치 삭제"는 재고만 역산하고 배치 기록은 남아, 위 목록·정정 엑셀에 계속 나타납니다. 여기서 삭제하면 <b>남은 재고를 역산하고 배치 기록까지 완전히 제거</b>합니다(목록·엑셀에서 사라짐). 디렉터 전용 · 되돌릴 수 없습니다.</div>
+        <div id="batchList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+        <div class="msg" id="batchMsg"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">삭제된 배치 복원 — 안전삭제/전체삭제 되돌리기</div>
+        <div class="hint">삭제(soft-delete)된 배치를 되살립니다. 이동기록을 재생성하고 재고를 <b>이동원장 합계로 재계산</b>해 삭제 전 값으로 복원합니다(0이 된 재고도 원래대로).</div>
+        <button class="btn" id="delBtn" style="margin-top:8px">↩ 삭제된 배치 보기</button>
+        <div id="delList" style="margin-top:10px"></div>
+        <div class="msg" id="delMsg"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">평균원가 재설정 — 이동평균/유령배치로 어긋난 평균원가를 단순가중평균으로 교정</div>
+        <div class="hint">현재 살아있는(삭제·원가제외 아님) 배치들의 <b>Σ(수입수량 × 입고단가) ÷ Σ수입수량</b> 으로 제품 평균원가를 다시 맞춥니다. 중간에 삭제된 배치는 무시되고, 판매 타이밍에 영향받지 않습니다(이동평균 아님). <b>과거 매출의 매출원가(COGS)는 그대로</b>이고, 재고평가액·앞으로의 매출원가만 바뀝니다.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <input id="avgCodes" type="text" placeholder="제품코드(쉼표로 여러 개) 예: CL0477" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted)"><input type="checkbox" id="avgAll"> 전체 SKU</label>
+          <button class="btn" id="avgPrevBtn">미리보기</button>
+          <button class="btn" id="avgApplyBtn" disabled>적용</button>
+        </div>
+        <div id="avgResult" style="margin-top:10px"></div>
+        <div class="msg" id="avgMsg"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">매출원가(COGS) 재계산 — 과거 매출의 동결 원가를 현재 평균원가로 보정</div>
+        <div class="hint">평균원가가 ≈0이던 시절에 판 매출은 <b>매출원가가 0으로 박제</b>돼 매출총이익이 비현실적으로 큽니다(이익률 ~100%). 여기서 게시·미삭제 매출 라인의 <b>적용원가 = 현재 평균원가</b>, 매출원가 = 수량×평균원가로 다시 계산합니다. <b>⚠ 과거 매출의 매출원가·매출총이익(과거 손익)이 바뀝니다</b> — 의도된 보정입니다. 보통 <b>평균원가 재설정을 먼저</b> 끝낸 뒤 실행하세요.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <input id="cogsCodes" type="text" placeholder="제품코드(쉼표로 여러 개) 예: CL0477" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted)"><input type="checkbox" id="cogsAll"> 전체 SKU</label>
+          <button class="btn" id="cogsPrevBtn">미리보기</button>
+          <button class="btn" id="cogsApplyBtn" disabled>적용</button>
+        </div>
+        <div id="cogsResult" style="margin-top:10px"></div>
+        <div class="msg" id="cogsMsg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const nf=(n)=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:2});
+  let isDirector=false, uploadedLines=[], overheads=[], batches=[], batchOpen=null, batchLines={}, templateMap={};
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      initApp();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function initApp(){
+    isDirector=(session.user&&session.user.role==='director');
+    if(!isDirector){ try{ const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json()); isDirector=!!(su&&su.isDirector)||((su&&su.role)==='director'); }catch(e){} }
+    if(!isDirector){ $('notDir').style.display=''; return; }
+    $('dirApp').style.display='';
+    loadBatches();
+  }
+
+  async function loadDupAnalysis(){
+    const box=$('dupResult'); box.innerHTML='<div class="hint">분석 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/import-recost/duplicate-analysis',{headers:auth()}).then(r=>r.json());
+      const groups=(d&&d.groups)||[];
+      if(!groups.length){ box.innerHTML='<div class="hint">동일 SKU·수량 구성의 중복 배치가 없습니다.</div>'; return; }
+      let h='<div class="hint" style="margin-bottom:8px"><b>'+groups.length+'개 중복 그룹</b> 발견. <span style="color:var(--income);font-weight:700">안전제거</span>=음수 없이 뺄 수 있는 유령 · <span style="color:var(--expense);font-weight:700">막힌유령</span>=이미 팔려나가 빼면 음수(실입고 누락 의심).</div>';
+      groups.forEach((g,gi)=>{
+        const verdict = g.all_removable
+          ? '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#e7f3ee;color:var(--income)">유령 전부 안전 제거 가능</span>'
+          : '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#fdece9;color:var(--expense)">일부 막힘 — 실입고 누락/판매 확인 필요</span>';
+        const docSignal = g.same_doc
+          ? '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#fff3d6;color:#8a6d00">같은 송장·입고일 → 진짜 중복 의심</span>'
+          : '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#e3effb;color:#1c5a99">다른 송장·입고일 → 정상 재입고 의심(삭제 주의)</span>';
+        const bmeta=(b)=> esc(b.batch_no||('#'+b.batch_id))+' · '+(b.import_date||'-')+' · 송장 '+(b.invoice_nos&&b.invoice_nos.length?esc(b.invoice_nos.join('/')):'(없음)');
+        h+='<div style="border:1px solid var(--line,#E6E1D6);border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+          +'<div><b>그룹 '+(gi+1)+'</b> · 동일 구성 배치 '+g.dup_count+'개</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+docSignal+verdict+'</div></div>'
+          +'<div class="hint" style="margin-bottom:6px">보존 제안: <b>'+bmeta(g.keep_batch)+'</b></div>'
+          +'<div class="hint" style="margin-bottom:6px">유령 후보: '+(g.phantom_batches.map(bmeta).join('<br>')||'-')+'</div>'
+          +'<table style="margin-top:2px"><thead><tr><th>SKU</th><th>품명</th><th class="n">배치당</th><th class="n">유령수량</th><th class="n">현재고</th><th class="n">판매</th><th class="n">안전제거</th><th class="n">막힌유령</th></tr></thead><tbody>';
+        g.products.forEach(p=>{
+          h+='<tr><td><b>'+esc(p.code||'-')+'</b></td><td>'+esc(p.name||'-')+'</td>'
+            +'<td class="n">'+nf(p.per_batch_qty)+'</td><td class="n">'+nf(p.phantom_qty)+'</td>'
+            +'<td class="n">'+nf(p.current_stock)+'</td><td class="n">'+nf(p.sold_qty)+'</td>'
+            +'<td class="n" style="color:var(--income);font-weight:700">'+nf(p.removable_safe)+'</td>'
+            +'<td class="n" style="'+(p.stuck_phantom>0?'color:var(--expense);font-weight:700':'')+'">'+nf(p.stuck_phantom)+'</td></tr>';
+        });
+        h+='</tbody></table></div>';
+      });
+      box.innerHTML=h;
+    }catch(e){ box.innerHTML='<div class="hint">분석을 불러오지 못했습니다.</div>'; }
+  }
+  async function loadDeleted(){
+    const box=$('delList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/import-batches/deleted',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[];
+      if(!items.length){ box.innerHTML='<div class="hint">삭제된 배치가 없습니다.</div>'; return; }
+      let h='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th>삭제시각</th><th class="n">수량</th><th class="n">SKU</th><th>복원</th></tr></thead><tbody>';
+      items.forEach(b=>{
+        h+='<tr><td><b>'+esc(b.batch_no||('#'+b.id))+'</b></td><td>'+esc(b.import_date||'')+'</td>'
+          +'<td>'+esc(b.deleted_at?String(b.deleted_at).slice(0,16).replace('T',' '):'')+'</td>'
+          +'<td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count)+'</td>'
+          +'<td><button type="button" class="brestore btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--income);padding:4px 10px;font-size:11.5px">↩ 복원</button></td></tr>';
+      });
+      h+='</tbody></table></div>';
+      box.innerHTML=h;
+      box.querySelectorAll('.brestore').forEach(btn=>{
+        btn.addEventListener('click', ()=>restoreBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''));
+      });
+    }catch(e){ box.innerHTML='<div class="hint">목록을 불러오지 못했습니다.</div>'; }
+  }
+  async function restoreBatch(id, label){
+    const m=$('delMsg'); m.className='msg';
+    if(!window.confirm('배치 "'+label+'"를 복원합니다.\n이동기록을 재생성하고 재고를 삭제 전 값으로 되돌립니다.\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/restore',{method:'POST',headers:auth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='복원 실패: '+d.error; return; }
+      let msg='복원 완료 · '+esc(d.batch_no||label)+' · 제품 '+nf(d.products?d.products.length:0)+'종 재고 재계산';
+      if(d.products&&d.products.length){
+        const changed=d.products.filter(p=>Number(p.before)!==Number(p.after));
+        if(changed.length){
+          msg+='<div style="margin-top:8px"><b>재고 변경:</b><table style="margin-top:4px"><thead><tr><th>SKU</th><th class="n">전</th><th class="n">후</th></tr></thead><tbody>'
+            +changed.slice(0,60).map(p=>'<tr><td><b>'+esc(p.code)+'</b></td><td class="n">'+nf(p.before)+'</td><td class="n" style="color:var(--income);font-weight:700">'+nf(p.after)+'</td></tr>').join('')
+            +'</tbody></table>'+(changed.length>60?('<div class="hint">외 '+(changed.length-60)+'종</div>'):'')+'</div>';
+        }
+      }
+      m.className='msg ok'; m.innerHTML=msg;
+      loadDeleted(); loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='복원 실패(네트워크).'; }
+  }
+  async function loadBatches(){
+    try{
+      const d=await fetch(session.api+'/api/import-batches?status=approved',{headers:auth()}).then(r=>r.json());
+      batches=((d&&d.items)||[]).map(b=>({...b, id:Number(b.id)}));
+      $('ovBatch').innerHTML='<option value="">배치 선택…</option>'+batches.map(b=>'<option value="'+b.id+'">'+esc(b.batch_no||('#'+b.id))+' · '+esc(b.import_date||'')+' · '+nf(b.total_qty)+'개</option>').join('');
+      renderBatchList();
+    }catch(e){ $('ovBatch').innerHTML='<option value="">(배치 불러오기 실패)</option>'; $('batchList').innerHTML='<div class="hint">배치 목록을 불러오지 못했습니다.</div>'; }
+  }
+  function renderBatchList(){
+    if(!batches.length){ $('batchList').innerHTML='<div class="hint">등록된 배치가 없습니다.</div>'; return; }
+    let h='<div class="hint" style="margin-bottom:6px">배치 행을 클릭하면 SKU·수량과 <b>삭제 안전성</b>(재고/판매)을 봅니다. <span style="color:var(--income);font-weight:700">안전</span>=그 배치 분이 재고에 남아있어 지워도 판매이력에 영향 없음 · <span style="color:var(--expense);font-weight:700">위험</span>=판매로 소진되어 지우면 재고 음수.</div>';
+    h+='<div style="overflow-x:auto"><table><thead><tr><th>배치번호</th><th>입고일</th><th class="n">수량</th><th class="n">SKU</th><th>삭제</th></tr></thead><tbody>';
+    batches.forEach(b=>{
+      const open = Number(batchOpen)===Number(b.id);
+      h+='<tr class="brow" data-bid="'+b.id+'" style="cursor:pointer'+(b.exclude_from_cost?';opacity:.6':'')+'">'
+        +'<td style="color:var(--brand);font-weight:800">'+(open?'▾ ':'▸ ')+esc(b.batch_no||('#'+b.id))+(b.exclude_from_cost?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;background:#eee;color:#777">원가제외</span>':'')+'</td>'
+        +'<td>'+esc(b.import_date||'')+'</td><td class="n">'+nf(b.total_qty)+'</td><td class="n">'+nf(b.sku_count!=null?b.sku_count:'')+'</td>'
+        +'<td><button type="button" class="bexc btn sm" data-bid="'+b.id+'" data-exc="'+(b.exclude_from_cost?1:0)+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:'+(b.exclude_from_cost?'var(--income)':'#8a8a8a')+';padding:4px 10px;font-size:11.5px;margin-right:4px">'+(b.exclude_from_cost?'↺ 원가포함':'⊘ 원가제외')+'</button>'
+        +'<button type="button" class="bsafe btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--brand);padding:4px 10px;font-size:11.5px;margin-right:4px">🧹 안전삭제</button>'
+        +'<button type="button" class="bdel btn sm" data-bid="'+b.id+'" data-label="'+esc(String(b.batch_no||('#'+b.id)))+'" style="background:var(--expense);padding:4px 10px;font-size:11.5px">🗑 전체삭제</button></td></tr>';
+      if(open){ h+='<tr><td colspan="5" style="padding:0;background:#faf8f3">'+batchDetailHtml(b.id)+'</td></tr>'; }
+    });
+    h+='</tbody></table></div>';
+    $('batchList').innerHTML=h;
+    // inline onclick 의존 제거 → 직접 바인딩
+    $('batchList').querySelectorAll('.brow').forEach(tr=>{
+      tr.addEventListener('click', ()=>toggleBatchDetail(null, Number(tr.getAttribute('data-bid'))));
+    });
+    $('batchList').querySelectorAll('.bdel').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''); });
+    });
+    $('batchList').querySelectorAll('.bsafe').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); safeDeleteBatch(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-label')||''); });
+    });
+    $('batchList').querySelectorAll('.bexc').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); toggleExcludeCost(Number(btn.getAttribute('data-bid')), btn.getAttribute('data-exc')==='1', btn.getAttribute('data-label')||''); });
+    });
+  }
+  async function toggleExcludeCost(id, currentlyExcluded, label){
+    const m=$('batchMsg'); m.className='msg';
+    const next=!currentlyExcluded;
+    if(!window.confirm('배치 "'+label+'"를 '+(next?'원가 계산에서 제외':'원가 계산에 다시 포함')+'합니다.\n(재고 수량은 바뀌지 않고, 평균원가·정정·원가근거에만 반영)\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/exclude-cost',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({exclude:next})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='변경 실패: '+d.error; return; }
+      m.className='msg ok'; m.textContent=esc(d.batch_no||label)+' · '+(next?'원가제외 설정됨':'원가포함으로 복귀');
+      loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='변경 실패(네트워크).'; }
+  }
+  async function safeDeleteBatch(id, label){
+    const m=$('batchMsg'); m.className='msg';
+    if(!window.confirm('배치 "'+label+'"를 안전 삭제합니다.\n\n재고를 0에서 멈추도록만 빼므로 음수가 안 됩니다(이미 팔린 만큼은 그대로 둠).\n판매·매출원가 기록은 건드리지 않습니다.\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id+'/safe-delete',{method:'POST',headers:auth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='삭제 실패: '+d.error; return; }
+      let msg='안전 삭제 완료 · '+esc(d.batch_no||label)+' · SKU '+nf(d.sku_count)+'종, 재고에서 '+nf(d.removed_total)+'개 제거';
+      if(d.remaining_total>0){
+        msg+=' · ⚠ 잔여 '+nf(d.remaining_total)+'개(이미 팔려 못 뺌)';
+        if(d.stuck_lines&&d.stuck_lines.length){
+          msg+='<div style="margin-top:8px"><b>잔여 목록(나중에 확인):</b><table style="margin-top:4px"><thead><tr><th>SKU</th><th>품명</th><th class="n">잔여</th></tr></thead><tbody>'
+            +d.stuck_lines.map(l=>'<tr><td><b>'+esc(l.code)+'</b></td><td>'+esc(l.name||'')+'</td><td class="n" style="color:var(--expense);font-weight:700">'+nf(l.remaining)+'</td></tr>').join('')
+            +'</tbody></table></div>';
+        }
+      }
+      m.className='msg ok'; m.innerHTML=msg;
+      batchOpen=null; delete batchLines[id];
+      loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='삭제 실패(네트워크).'; }
+  }
+  function batchDetailHtml(id){
+    const d=batchLines[id];
+    if(!d) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">불러오는 중…</div>';
+    if(d.error) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">내역을 불러오지 못했습니다.</div>';
+    const lines=d.lines||[];
+    if(!lines.length) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">라인이 없습니다.</div>';
+    const verdict = d.safe
+      ? '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#e7f3ee;color:var(--income)">전체 안전 — 삭제해도 판매이력 영향 없음</span>'
+      : '<span style="font-size:11.5px;font-weight:800;padding:2px 10px;border-radius:999px;background:#fdece9;color:var(--expense)">위험 — 일부 SKU 재고가 음수가 됩니다</span>';
+    let h='<div style="padding:8px 12px 12px"><div style="margin:2px 0 6px">'+verdict+'</div>'
+      +'<table style="margin-top:2px"><thead><tr><th>SKU</th><th>품명</th><th class="n">배치수량</th><th class="n">현재재고</th><th class="n">판매수량</th><th>삭제 시</th></tr></thead><tbody>';
+    lines.forEach(l=>{
+      const after=l.current_stock-l.batch_qty;
+      h+='<tr><td><b>'+esc(l.code||'-')+'</b></td><td>'+esc(l.name||'-')+'</td>'
+        +'<td class="n">'+nf(l.batch_qty)+'</td><td class="n">'+nf(l.current_stock)+'</td><td class="n">'+nf(l.sold_qty)+'</td>'
+        +'<td>'+(l.safe
+          ? '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#e7f3ee;color:var(--income)">안전 (재고 '+nf(after)+')</span>'
+          : '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#fdece9;color:var(--expense)">위험 (재고 '+nf(after)+')</span>')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    return h;
+  }
+  async function toggleBatchDetail(ev,id){
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+    if(batchOpen===id){ batchOpen=null; renderBatchList(); return; }
+    batchOpen=id; renderBatchList();
+    if(!batchLines[id]){
+      try{ const d=await fetch(session.api+'/api/import-batches/'+id+'/lines',{headers:auth()}).then(r=>r.json());
+        batchLines[id]=(d&&!d.error)?d:{error:1}; }
+      catch(e){ batchLines[id]={error:1}; }
+      if(batchOpen===id) renderBatchList();
+    }
+  }
+  async function deleteBatch(id, label){
+    const m=$('batchMsg'); m.className='msg';
+    // 안전성 확인(미로딩 시 조회)
+    let det=batchLines[id];
+    if(!det){ try{ det=await fetch(session.api+'/api/import-batches/'+id+'/lines',{headers:auth()}).then(r=>r.json()); batchLines[id]=det; }catch(e){ det=null; } }
+    let warn='배치 "'+label+'"를 완전히 삭제합니다.\n남은 재고를 역산하고 배치 기록까지 제거하며, 되돌릴 수 없습니다.';
+    if(det && det.safe===false){ warn='⚠ 주의: 이 배치는 일부 SKU가 판매로 소진되어, 지우면 재고가 음수가 됩니다(판매이력에는 영향 없지만 재고가 어긋납니다).\n\n'+warn; }
+    if(!window.confirm(warn+'\n\n진행할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/import-batches/'+id,{method:'DELETE',headers:auth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='삭제 실패: '+d.error; return; }
+      m.className='msg ok'; m.textContent='삭제 완료 · '+esc(d.batch_no||label)+(d.movements_reversed?(' (재고이동 '+d.movements_reversed+'건 역산)'):' (역산할 재고이동 없음)');
+      uploadedLines=uploadedLines.filter(l=>l.batch_id!==id); overheads=overheads.filter(o=>o.batch_id!==id);
+      batchOpen=null; delete batchLines[id];
+      renderOverheads(); refreshButtons();
+      loadBatches();
+    }catch(e){ m.className='msg err'; m.textContent='삭제 실패(네트워크).'; }
+  }
+
+  // === 1단계: 템플릿 엑셀 다운로드 ===
+  $('dlBtn')?.addEventListener('click', async ()=>{
+    $('dlInfo').textContent='준비 중…';
+    try{
+      const d=await fetch(session.api+'/api/import-recost/lines',{headers:auth()}).then(r=>r.json());
+      const lines=(d&&d.lines)||[];
+      if(!lines.length){ $('dlInfo').textContent='수입 라인이 없습니다.'; return; }
+      // _batch_id 열이 지워져도 복구할 수 있게 (배치명|SKU)→ID 매핑 저장
+      templateMap={};
+      lines.forEach(l=>{ templateMap[String(l.batch_no).trim()+'|'+String(l.code).trim()]={batch_id:Number(l.batch_id), product_id:Number(l.product_id)}; });
+      const header=['Lote(배치)','SKU','품명','수량','통화','적용환율(USD→MXN)','현재단가(MXN)','입력단가(원통화)','_batch_id','_product_id'];
+      const aoa=[header].concat(lines.map(l=>[l.batch_no, l.code, l.name, l.qty, l.currency, l.fx_rate, l.current_unit_cost, '', l.batch_id, l.product_id]));
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=[{wch:14},{wch:16},{wch:30},{wch:8},{wch:7},{wch:16},{wch:14},{wch:16},{wch:10},{wch:11}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'단가입력');
+      XLSX.writeFile(wb,'refatrix_import_unit_prices.xlsx');
+      $('dlInfo').textContent=lines.length+'개 라인 다운로드 완료.';
+    }catch(e){ $('dlInfo').textContent='다운로드 실패(네트워크).'; }
+  });
+
+  // === 2단계: 업로드 파싱 ===
+  // 헤더 공백·표기 차이에 견고하게: 행 객체에서 조건에 맞는 키의 값을 찾음
+  function pick(row, exact, contains){
+    const keys=Object.keys(row);
+    for(const k of keys){ if(k.trim()===exact) return row[k]; }
+    if(contains){ for(const k of keys){ if(k.replace(/\s/g,'').includes(contains)) return row[k]; } }
+    return undefined;
+  }
+  function num(v){ // 소수점 콤마·통화기호·천단위 콤마 처리
+    if(v==null||v==='') return NaN;
+    if(typeof v==='number') return v;
+    let s=String(v).trim().replace(/[^\d.,-]/g,'');
+    if(s.indexOf(',')>=0 && s.indexOf('.')<0) s=s.replace(',', '.'); // "5,5"→"5.5"
+    else s=s.replace(/,/g,''); // "1,234.5"→"1234.5"
+    return Number(s);
+  }
+  function onUpload(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const wb=XLSX.read(rd.result,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+        const out=[]; let withPrice=0, withId=0, fallbackUsed=0;
+        rows.forEach(r=>{
+          const priceRaw=pick(r,'입력단가(원통화)','입력단가');
+          const v=num(priceRaw);
+          const hasPrice=(priceRaw!==''&&priceRaw!=null&&!isNaN(v)&&v>=0);
+          if(hasPrice) withPrice++;
+          let bid=Number(pick(r,'_batch_id'));
+          let pid=Number(pick(r,'_product_id'));
+          if((!bid||!pid)){ // ID 열이 비었으면 배치명+SKU로 복구
+            const lote=String(pick(r,'Lote(배치)','Lote')||'').trim();
+            const sku=String(pick(r,'SKU','SKU')||'').trim();
+            const m=templateMap[lote+'|'+sku];
+            if(m){ bid=bid||m.batch_id; pid=pid||m.product_id; fallbackUsed++; }
+          }
+          if(bid&&pid) withId++;
+          if(!bid||!pid) return;
+          if(!hasPrice) return;
+          out.push({batch_id:bid, product_id:pid, unit_price:v});
+        });
+        uploadedLines=out;
+        if(out.length){
+          $('upInfo').textContent=' 단가 입력 '+out.length+'개 라인 인식됨.'+(fallbackUsed?(' (SKU 매칭 '+fallbackUsed+'건)'):'');
+        }else{
+          // 0개일 때 원인 안내
+          let why;
+          if(!rows.length) why='행을 못 읽었습니다(시트가 비었거나 형식 문제).';
+          else if(withPrice===0) why='입력단가(원통화) 열에 숫자가 없습니다. 그 열에 단가를 입력했는지, 열 제목을 바꾸지 않았는지 확인하세요.';
+          else if(withId===0) why='_batch_id·_product_id 열이 비었고 SKU 매칭도 실패했습니다. 그 열을 지우지 말고, 1단계에서 받은 그대로 업로드하세요(같은 세션에서 다운로드→업로드 권장).';
+          else why='가격과 ID가 같은 행에서 안 맞습니다. 1단계 템플릿 그대로 사용하세요.';
+          $('upInfo').textContent=' 단가 입력 0개 라인 인식됨 — '+why+' (총 '+rows.length+'행, 가격 '+withPrice+'행, ID '+withId+'행)';
+        }
+        refreshButtons();
+      }catch(e){ $('upInfo').textContent=' 엑셀을 읽지 못했습니다.'; }
+    };
+    rd.readAsArrayBuffer(f);
+  }
+
+  function addOverhead(){
+    const bid=Number($('ovBatch').value), amt=Number($('ovAmt').value), cur=$('ovCur').value||'USD';
+    if(!bid){ flash('배치를 선택하세요.'); return; }
+    if(!(amt>0)){ flash('부대비용 금액을 입력하세요.'); return; }
+    const b=batches.find(x=>Number(x.id)===bid);
+    overheads=overheads.filter(o=>o.batch_id!==bid); // 같은 배치는 교체
+    overheads.push({batch_id:bid, amount:amt, currency:cur, label:(b?(b.batch_no||('#'+bid)):('#'+bid))});
+    $('ovAmt').value='';
+    renderOverheads(); refreshButtons();
+  }
+  function removeOverhead(bid){ overheads=overheads.filter(o=>o.batch_id!==bid); renderOverheads(); refreshButtons(); }
+  function renderOverheads(){
+    $('ovList').innerHTML = overheads.length? overheads.map(o=>'<span class="pill">'+esc(o.label)+' · '+esc(o.currency)+' '+nf(o.amount)+' <a href="#" onclick="removeOverhead('+o.batch_id+');return false" style="color:var(--expense);text-decoration:none;font-weight:800">×</a></span>').join(' ') : '<span class="hint">부대비용 없음(선택).</span>';
+  }
+  function refreshButtons(){
+    const has = uploadedLines.length>0 || overheads.length>0;
+    $('pvBtn').disabled=!has; $('apBtn').disabled=true; // 적용은 미리보기 후 활성
+  }
+  function flash(t){ const m=$('msg'); m.className='msg err'; m.textContent=t; }
+
+  // === 미리보기 / 적용 ===
+  async function doPreview(){
+    const m=$('msg'); m.className='msg';
+    try{
+      const d=await fetch(session.api+'/api/import-recost/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({lines:uploadedLines,overheads})}).then(r=>r.json());
+      if(d.error){ flash('미리보기 실패: '+d.error); return; }
+      renderPreview(d);
+      $('pvCard').classList.remove('hidden');
+      $('apBtn').disabled=!(d.items&&d.items.length);
+      $('pvCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    }catch(e){ flash('미리보기 실패(네트워크).'); }
+  }
+  function renderPreview(d){
+    const items=d.items||[];
+    const rates=d.rates||[];
+    $('pvTot').innerHTML=
+      '<div class="totbox"><div class="l">대상 제품</div><div class="v">'+items.length+'개</div></div>'
+      +'<div class="totbox"><div class="l">재고 가산액(재고금액↑)</div><div class="v" style="color:var(--income)">MX$'+nf(d.totalStockAddedMxn)+'</div></div>'
+      +'<div class="totbox"><div class="l">소급 매출원가(이번 달 정산차액)</div><div class="v" style="color:var(--expense)">MX$'+nf(d.totalRetroCogsMxn)+'</div></div>';
+    const rateHtml = rates.length
+      ? '<div class="hint" style="margin-top:10px"><b>적용환율(USD→MXN)</b> · '+rates.map(r=>esc((batches.find(b=>Number(b.id)===r.batch_id)||{}).batch_no||('#'+r.batch_id))+' ('+esc(r.import_date||'')+') = '+nf(r.rate)).join(' · ')+' — 재무&gt;환율 기준일 값</div>'
+      : '<div class="hint" style="margin-top:10px">USD 환산 대상 배치 없음(모두 MXN 입력).</div>';
+    if(!items.length){ $('pvBody').innerHTML=rateHtml+'<div class="hint" style="margin-top:10px">변경될 제품이 없습니다. 단가/부대비용을 확인하세요.</div>'; return; }
+    let h=rateHtml+'<table><thead><tr><th>SKU</th><th>품명</th><th class="n">총수입수량</th><th class="n">판매수량</th><th class="n">재고수량</th><th class="n">기존원가</th><th class="n">새 원가(MXN)</th><th class="n">재고가산</th><th class="n">소급 COGS</th></tr></thead><tbody>';
+    items.forEach(it=>{
+      h+='<tr><td><b>'+esc(it.code||'-')+'</b></td><td>'+esc(it.name||'-')+'</td>'
+        +'<td class="n">'+nf(it.total_qty)+'</td><td class="n">'+nf(it.sold_qty)+'</td><td class="n">'+nf(it.remaining_qty)+'</td>'
+        +'<td class="n">'+nf(it.avg_before)+'</td><td class="n"><b>'+nf(it.new_avg)+'</b></td>'
+        +'<td class="n">'+nf(it.stock_added_mxn)+'</td><td class="n" style="color:var(--expense)">'+nf(it.retro_cogs_mxn)+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    $('pvBody').innerHTML=h;
+  }
+  async function doApply(){
+    const m=$('msg'); m.className='msg';
+    if(!window.confirm('적용하면 제품 평균원가가 갱신되고, 이미 팔린 분의 매출원가 차액이 이번 달 정산차액으로 기장됩니다. 진행할까요?')) return;
+    $('apBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({lines:uploadedLines,overheads})}).then(r=>r.json());
+      if(d.error){ flash('적용 실패: '+d.error); $('apBtn').disabled=false; return; }
+      m.className='msg ok'; m.textContent='적용 완료 · 제품 '+d.products+'개 / 정산차액 '+d.adjustments+'건 · 소급 매출원가 MX$'+nf(d.totalRetroCogsMxn)+' (재고가산 MX$'+nf(d.totalStockAddedMxn)+'). 정산차액은 수금/정산 화면에서 확인하세요.';
+    }catch(e){ flash('적용 실패(네트워크).'); $('apBtn').disabled=false; }
+  }
+
+  // ── 평균원가 재설정(단순가중평균) ──
+  let avgScopeCache=null;
+  function avgScopeBody(){
+    const all=$('avgAll').checked;
+    if(all) return {all:true};
+    const codes=$('avgCodes').value.split(',').map(s=>s.trim()).filter(Boolean);
+    return {codes};
+  }
+  function avgFlash(t,ok){ const m=$('avgMsg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; }
+  function avgCell(n){ return n==null?'<span style="color:#bbb">—</span>':nf(n); }
+  async function avgPreview(){
+    const body=avgScopeBody();
+    if(!body.all && (!body.codes||!body.codes.length)){ avgFlash('제품코드를 입력하거나 "전체 SKU"를 선택하세요.'); return; }
+    $('avgResult').innerHTML='<div class="hint">불러오는 중…</div>'; $('avgMsg').className='msg';
+    $('avgApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/avg-reset/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
+      if(d.error){ avgFlash('미리보기 실패: '+d.error); $('avgResult').innerHTML=''; return; }
+      const items=d.items||[];
+      if(!items.length){ $('avgResult').innerHTML='<div class="hint">대상 제품이 없습니다(살아있는 수입 배치가 있는 코드인지 확인하세요).</div>'; return; }
+      let h='<table><thead><tr>'
+        +'<th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>재고</th><th>현재 평균원가</th><th>재설정 평균원가</th><th>차이</th><th>재고평가(전→후)</th>'
+        +'</tr></thead><tbody>';
+      items.forEach(function(x){
+        const chg=x.changed;
+        h+='<tr style="'+(chg?'':'opacity:.5')+'">'
+          +'<td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td>'
+          +'<td style="text-align:left">'+esc(x.name||'')+'</td>'
+          +'<td>'+nf(x.stock_qty)+'</td>'
+          +'<td>'+avgCell(x.current_avg)+'</td>'
+          +'<td style="font-weight:700">'+avgCell(x.new_avg)+'</td>'
+          +'<td style="color:'+((x.diff||0)>=0?'var(--income)':'var(--expense)')+'">'+(x.diff==null?'—':((x.diff>=0?'+':'')+nf(x.diff)))+'</td>'
+          +'<td>'+avgCell(x.stock_value_before)+' → <b>'+avgCell(x.stock_value_after)+'</b></td>'
+          +'</tr>';
+      });
+      h+='</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)">'
+        +'<td colspan="6" style="text-align:left">재고평가 합계 (대상 '+items.length+'개 · 변경 '+d.changed+'개)</td>'
+        +'<td>'+nf(d.total_stock_value_before)+' → '+nf(d.total_stock_value_after)+'</td></tr></tfoot></table>';
+      h+='<div class="hint" style="margin-top:6px">위 값으로 <b>적용</b>하면 변경 '+d.changed+'개 제품의 평균원가가 재설정됩니다. 과거 매출원가는 바뀌지 않습니다.</div>';
+      $('avgResult').innerHTML=h;
+      avgScopeCache=body;
+      $('avgApplyBtn').disabled=(d.changed||0)===0;
+      if((d.changed||0)===0) avgFlash('이미 모두 단순가중평균과 일치합니다. 바꿀 것이 없습니다.', true);
+    }catch(e){ avgFlash('미리보기 실패(네트워크).'); $('avgResult').innerHTML=''; }
+  }
+  async function avgApply(){
+    if(!avgScopeCache){ avgFlash('먼저 미리보기를 실행하세요.'); return; }
+    if(!confirm('미리보기한 제품들의 평균원가를 단순가중평균으로 재설정합니다. 진행할까요?\n(과거 매출원가는 그대로, 재고평가액·앞으로의 매출원가만 바뀝니다.)')) return;
+    $('avgApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/avg-reset/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(avgScopeCache)}).then(r=>r.json());
+      if(d.error){ avgFlash('적용 실패: '+d.error); $('avgApplyBtn').disabled=false; return; }
+      avgFlash('완료: '+(d.applied||0)+'개 제품 평균원가 재설정됨.', true);
+      // 결과 before→after 표
+      const res=d.results||[];
+      if(res.length){
+        let h='<table><thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>재고</th><th>이전</th><th>이후</th></tr></thead><tbody>'
+          +res.map(x=>'<tr><td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td><td style="text-align:left">'+esc(x.name||'')+'</td><td>'+nf(x.stock_qty)+'</td><td>'+avgCell(x.before)+'</td><td style="font-weight:700">'+avgCell(x.after)+'</td></tr>').join('')
+          +'</tbody></table>';
+        $('avgResult').innerHTML=h;
+      }
+      avgScopeCache=null;
+    }catch(e){ avgFlash('적용 실패(네트워크).'); $('avgApplyBtn').disabled=false; }
+  }
+  $('avgPrevBtn')?.addEventListener('click', avgPreview);
+  $('avgApplyBtn')?.addEventListener('click', avgApply);
+  $('avgCodes')?.addEventListener('keydown', e=>{ if(e.key==='Enter') avgPreview(); });
+  $('avgAll')?.addEventListener('change', ()=>{ $('avgCodes').disabled=$('avgAll').checked; });
+
+  // ── 매출원가(COGS) 재계산 ──
+  let cogsScopeCache=null;
+  function cogsScopeBody(){
+    if($('cogsAll').checked) return {all:true};
+    return {codes:$('cogsCodes').value.split(',').map(s=>s.trim()).filter(Boolean)};
+  }
+  function cogsFlash(t,ok){ const m=$('cogsMsg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; }
+  function cogsCell(n){ return n==null?'<span style="color:#bbb">—</span>':nf(n); }
+  function pctCell(n){ return n==null?'—':(nf(n)+'%'); }
+  async function cogsPreview(){
+    const body=cogsScopeBody();
+    if(!body.all && (!body.codes||!body.codes.length)){ cogsFlash('제품코드를 입력하거나 "전체 SKU"를 선택하세요.'); return; }
+    $('cogsResult').innerHTML='<div class="hint">불러오는 중…</div>'; $('cogsMsg').className='msg'; $('cogsApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/cogs-restate/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)}).then(r=>r.json());
+      if(d.error){ cogsFlash('미리보기 실패: '+d.error); $('cogsResult').innerHTML=''; return; }
+      const items=d.items||[];
+      if(!items.length){ $('cogsResult').innerHTML='<div class="hint">대상이 없습니다(게시된 매출이 있고 평균원가가 설정된 코드인지 확인하세요).</div>'; return; }
+      let h='<table><thead><tr>'
+        +'<th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>판매수량</th><th>매출</th><th>매출원가(전→후)</th><th>이익률(전→후)</th>'
+        +'</tr></thead><tbody>';
+      items.forEach(function(x){
+        const chg=x.changed;
+        h+='<tr style="'+(chg?'':'opacity:.5')+'">'
+          +'<td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td>'
+          +'<td style="text-align:left">'+esc(x.name||'')+'</td>'
+          +'<td>'+nf(x.qty)+'</td>'
+          +'<td>'+cogsCell(x.revenue)+'</td>'
+          +'<td>'+cogsCell(x.cogs_before)+' → <b>'+cogsCell(x.cogs_after)+'</b></td>'
+          +'<td>'+pctCell(x.margin_before)+' → <b>'+pctCell(x.margin_after)+'</b></td>'
+          +'</tr>';
+      });
+      h+='</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)">'
+        +'<td colspan="4" style="text-align:left">합계 (대상 '+items.length+'개 · 변경 '+d.changed+'개)</td>'
+        +'<td>'+nf(d.total_cogs_before)+' → '+nf(d.total_cogs_after)+'</td>'
+        +'<td>이익 '+nf(d.total_profit_before)+' → '+nf(d.total_profit_after)+'</td></tr></tfoot></table>';
+      h+='<div class="hint" style="margin-top:6px">적용하면 변경 '+d.changed+'개 제품의 <b>과거 매출원가·매출총이익이 보정</b>됩니다.</div>';
+      $('cogsResult').innerHTML=h;
+      cogsScopeCache=body;
+      $('cogsApplyBtn').disabled=(d.changed||0)===0;
+      if((d.changed||0)===0) cogsFlash('이미 매출원가가 평균원가와 일치합니다. 바꿀 것이 없습니다.', true);
+    }catch(e){ cogsFlash('미리보기 실패(네트워크).'); $('cogsResult').innerHTML=''; }
+  }
+  async function cogsApply(){
+    if(!cogsScopeCache){ cogsFlash('먼저 미리보기를 실행하세요.'); return; }
+    if(!confirm('과거 매출의 매출원가를 현재 평균원가로 다시 계산합니다.\n과거 매출총이익(손익)이 바뀝니다. 진행할까요?')) return;
+    $('cogsApplyBtn').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/import-recost/cogs-restate/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(cogsScopeCache)}).then(r=>r.json());
+      if(d.error){ cogsFlash('적용 실패: '+d.error); $('cogsApplyBtn').disabled=false; return; }
+      cogsFlash('완료: '+(d.applied||0)+'개 제품 매출원가 보정됨.', true);
+      const res=d.results||[];
+      if(res.length){
+        let h='<table><thead><tr><th style="text-align:left">코드</th><th style="text-align:left">품명</th><th>판매수량</th><th>매출원가(전→후)</th><th>이익률(전→후)</th></tr></thead><tbody>'
+          +res.map(x=>'<tr><td style="text-align:left;font-weight:700;color:var(--brand)">'+esc(x.code)+'</td><td style="text-align:left">'+esc(x.name||'')+'</td><td>'+nf(x.qty)+'</td><td>'+cogsCell(x.cogs_before)+' → <b>'+cogsCell(x.cogs_after)+'</b></td><td>'+pctCell(x.margin_before)+' → <b>'+pctCell(x.margin_after)+'</b></td></tr>').join('')
+          +'</tbody></table>';
+        $('cogsResult').innerHTML=h;
+      }
+      cogsScopeCache=null;
+    }catch(e){ cogsFlash('적용 실패(네트워크).'); $('cogsApplyBtn').disabled=false; }
+  }
+  $('cogsPrevBtn')?.addEventListener('click', cogsPreview);
+  $('cogsApplyBtn')?.addEventListener('click', cogsApply);
+  $('cogsCodes')?.addEventListener('keydown', e=>{ if(e.key==='Enter') cogsPreview(); });
+  $('cogsAll')?.addEventListener('change', ()=>{ $('cogsCodes').disabled=$('cogsAll').checked; });
+
+  $('dupBtn')?.addEventListener('click', loadDupAnalysis);
+  $('delBtn')?.addEventListener('click', loadDeleted);
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ renderOverheads(); const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

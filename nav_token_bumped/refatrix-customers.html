@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 고객 등록 (reg-0826a)</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1040px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:110px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .sumgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+  .sumbox{border-radius:10px;padding:8px 6px;text-align:center}
+  .sumbox .sk{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sumbox .sv{font-size:20px;font-weight:800;margin-top:2px;line-height:1.1}
+  .teamtoggle{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+  .teamtoggle .ttg{padding:6px 16px;border:1px solid var(--line);background:#fff;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .teamtoggle .ttg.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  @media(max-width:760px){.sumgrid{grid-template-columns:repeat(4,1fr)}}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+  .btn.danger{background:var(--expense)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .code{font-weight:700;color:var(--brand)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .team1{background:#e7eef3;color:#2b5a78}.team2{background:#f1ece0;color:#8a6d2a}
+  .over{color:var(--expense);font-weight:700}
+  .tabs{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+  .tab{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  /* 고객 목록: 타이틀 고정 + 항목만 스크롤 */
+  #custList{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:8px;background:#fff;position:relative}
+  #custList table{margin-top:0}
+  #custList thead th{position:sticky;top:0;z-index:3;background:#faf8f3;box-shadow:0 1px 0 var(--line)}
+  #custList .hint{padding:0 9px 8px}
+  .doc-badge{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:#e7f3ee;color:var(--income)}
+  /* 할인률 그래프 모달 */
+  .modal-back{position:fixed;inset:0;background:rgba(20,30,28,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
+  .modal-back.on{display:flex}
+  .modal-card{background:#fff;border-radius:14px;max-width:1120px;width:100%;max-height:92vh;overflow:auto;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:10px}
+  .modal-head h2{margin:0;font-size:16px;color:var(--brand)}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">고객 등록</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs" style="display:none">
+      <div class="tab on" data-tab="list">고객 목록</div>
+      <div class="tab" data-tab="team" id="teamTabBtn">팀 권한 관리</div>
+      <div class="tab" data-tab="approve" id="approveTabBtn">수정 승인 대기<span id="approveBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
+      <div class="tab" data-tab="reg" id="regTabBtn">🔒 등록 승인 대기<span id="regBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
+    </div>
+
+    <!-- 고객 목록 -->
+    <div id="tab-list">
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">고객 등록 · 목록</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn ghost sm" id="discChartBtn">📊 할인률 그래프</button>
+            <button class="btn sm" id="newCustBtn">+ 고객 등록</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div style="flex:3"><label>검색 (이름·코드·RFC)</label><input id="q" type="text" placeholder="비우면 전체"></div>
+          <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="searchBtn">검색</button></div>
+        </div>
+
+        <!-- 새/수정 폼 (공유 모듈) -->
+        <div id="custForm" class="hidden" style="border:1px solid var(--brand);border-radius:10px;padding:14px;margin-top:12px;background:#fbfaf6">
+          <div style="font-weight:700;margin-bottom:8px" id="formTitle">새 고객 등록</div>
+          <div id="custFormHost"></div>
+        </div>
+
+        <div id="stageSummary" style="margin-top:10px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px">
+          <div style="font-weight:700;font-size:13px;color:var(--brand)">고객 목록</div>
+          <button class="btn ghost sm" id="listToggleBtn">고객명 감추기 ▴</button>
+        </div>
+        <div id="custList"><div class="hint">불러오는 중…</div></div>
+        <div id="listHiddenHint" style="display:none;border:1px dashed var(--line);border-radius:10px;margin-top:8px;padding:18px;text-align:center;color:var(--muted);background:#fbfaf6">
+          🙈 고객 목록(이름)을 감춰둔 상태입니다. 위의 <b>‘고객명 보이기’</b> 버튼을 누르면 다시 표시됩니다.
+        </div>
+      </div>
+
+      <!-- 다른 팀 고객 수정 요청 (권한 부여받은 영업만 표시) -->
+      <div class="card hidden" id="crossCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">🔁 다른 팀 고객 수정 요청</h2>
+        </div>
+        <div class="hint" style="margin-top:6px">담당이 다른 팀으로 되어 있는 고객을 <b>상호·고객코드·RFC</b>로 찾아 수정을 요청합니다. 저장하면 바로 바뀌지 않고 <b>디렉터 승인 대기</b>로 넘어갑니다. 본인 담당으로 가져오려면 <b>담당자</b>와 <b>팀</b>을 본인 것으로 바꿔 요청하세요.<br><span style="color:var(--muted)">매출·미수·증빙서류 등은 이 화면에 표시되지 않습니다(담당 팀만 열람).</span></div>
+        <div class="row" style="margin-top:8px">
+          <div style="flex:3"><label>고객 찾기 (상호·코드·RFC · 2글자 이상)</label><input id="crossQ" type="text" placeholder="예: FRENOS / C0123 / RFC"></div>
+          <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="crossBtn">찾기</button></div>
+        </div>
+        <div id="crossList" style="margin-top:10px"></div>
+      </div>
+
+      <!-- 고객 상세 -->
+      <div class="card hidden" id="detailCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0" id="d-name">고객 상세</h2>
+          <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="delBtn" style="display:none;color:var(--expense);border-color:var(--expense)">삭제</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
+        </div>
+        <div id="d-info"></div>
+        <div id="d-approval"></div>
+        <div id="d-visits"></div>
+        <div id="d-termshist"></div>
+        <div style="font-weight:700;margin-top:14px">증빙서류 (Constancia·세무증명 등 · PDF/JPEG/PNG, 5MB 이하)</div>
+        <div id="d-docs"><div class="hint">불러오는 중…</div></div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="docFile" accept="application/pdf,image/jpeg,image/png,image/webp" style="font-size:12px">
+          <select id="docType" style="font-size:12px;padding:6px"><option value="constancia">Constancia Fiscal</option><option value="other">기타</option></select>
+          <button class="btn gold sm" id="docUpload">업로드</button>
+          <span class="msg" id="docMsg" style="margin:0"></span>
+        </div>
+        <div style="font-weight:700;margin-top:14px">미수/연체 인보이스</div>
+        <div id="d-invoices"></div>
+      </div>
+
+      <!-- 엑셀 일괄 등록 (목록 아래로 이동) -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">엑셀로 고객 일괄 등록</h2>
+          <button class="btn ghost sm" id="tmplBtn">양식 다운로드(.xlsx)</button>
+        </div>
+        <div class="hint" style="margin-top:6px">양식을 받아 채운 뒤 올리면, <b>고객코드</b>가 있으면 갱신, 비어 있으면 신규(코드 자동생성)로 반영됩니다. <b>고객명·팀</b>은 필수(팀은 정확한 이름 예: 01_Monterrey). 회사종류: refraccionaria/Mayoreo/Flotia/taller/publico. <b style="color:#9a6512">기존 고객의 할인율·외상일은 엑셀로 수정되지 않습니다</b>(고객 수정 폼에서 수정이유·제공조건 작성 + 디렉터 승인 필요).<br><span style="color:var(--muted)">Descargue la plantilla, llénela y súbala: con <b>Código</b> actualiza, vacío crea (código automático). <b>Nombre</b> y <b>Equipo</b> son obligatorios (nombre exacto del equipo, p. ej. 01_Monterrey).</span></div>
+        <div id="upDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;margin-top:10px;cursor:pointer">
+          <div style="color:var(--muted)">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)</div>
+          <input id="upFile" type="file" accept=".xlsx,.xls" style="display:none">
+        </div>
+        <div id="upPreview"></div>
+        <div class="msg" id="upMsg"></div>
+      </div>
+    </div>
+
+    <!-- 고객 수정 승인 대기(디렉터) -->
+    <div id="tab-approve" class="hidden">
+      <div class="card">
+        <h2 style="margin:0 0 4px">고객 수정 승인 대기</h2>
+        <div class="hint" style="margin-top:0">영업·영업지원이 요청한 고객 정보 수정입니다. 승인하면 반영되고, 반려하면 폐기됩니다.</div>
+        <div id="approveList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
+    <!-- 고객 등록 승인 대기(디렉터) · 0185 -->
+    <div id="tab-reg" class="hidden">
+      <div class="card">
+        <h2 style="margin:0 0 4px">🔒 고객 등록 승인 대기</h2>
+        <div class="hint" style="margin-top:0">영업사원이 CONSTANCIA 를 첨부해 올린 <b>신규 고객 등록</b>입니다. 승인해야 견적·매출에 쓸 수 있습니다. 반려하면 선점이 풀립니다.</div>
+        <div id="regList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
+    <!-- 팀 권한 관리(디렉터) -->
+    <div id="tab-team" class="hidden">
+      <div class="card">
+        <h2>팀 배정 · 상대팀 열람 권한</h2>
+        <div class="hint" style="margin-top:0">각 사용자의 소속 팀을 정하고, 필요한 경우 상대 팀을 볼 수 있는 권한을 부여합니다. 기본적으로 사용자는 자기 팀의 고객만 봅니다.</div>
+        <div id="teamUsers"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 할인률 그래프 모달 -->
+<div class="modal-back" id="chartModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>고객별 할인률 · 재주문 속도 (지점수 ▸ 매출액 순)</h2>
+      <button class="btn ghost sm" onclick="closeChart()">닫기 ✕</button>
+    </div>
+    <div class="hint" style="margin-top:0">왼쪽부터 <b>지점이 많은 순</b>, 같은 지점수면 <b>매출액이 큰 순</b>으로 정렬했습니다. 각 점은 해당 고객의 할인률 위치이며, <b style="color:#B45309">우측축(주황)</b>은 재주문 속도(개/영업일 · 첫 주문 제외)입니다. (현재 목록에 표시된 고객 기준)</div>
+    <div id="chartHost" style="overflow-x:auto;margin-top:10px"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  let teams=[], adminTeams=[], stages=[], owners=[], editingId=null;
+  let selectedTeam='', summaryData=null, drillIdx=null;
+  let listHidden=false, lastCustomers=[];
+  // 7단계(0~6) 색상 — 가독성용
+  //   라벨은 한국어 + 스페인어 병기(자동번역에 맡기지 않고 용어를 고정).
+  //   백엔드 stageLabel() 과 같은 용어를 쓴다.
+  const STAGE_META=[
+    {key:'unset',  label:'미지정 (Sin definir)', bg:'#eceff1', fg:'#5b6b73'},
+    {key:'latent', label:'잠재 (Potencial)',     bg:'#eef4fb', fg:'#2f6db5'},
+    {key:'contact',label:'접촉 (Contacto)',      bg:'#e3effb', fg:'#1f6fc4'},
+    {key:'quote',  label:'견적 (Cotización)',    bg:'#e2f3ef', fg:'#0f7a5f'},
+    {key:'nego',   label:'협상 (Negociación)',   bg:'#fdf3e0', fg:'#9a6512'},
+    {key:'won',    label:'수주 (Pedido)',        bg:'#fbece1', fg:'#b4561f'},
+    {key:'active', label:'거래중 (En operación)',bg:'#f8dcdc', fg:'#9a1f1f'},
+  ];
+  function stageIdx(stageName){ const m=String(stageName||'').match(/^(\d+)_/); return m?Math.max(0,Math.min(6,parseInt(m[1],10))):0; }
+  function stagePill(stageName){
+    const meta=STAGE_META[stageIdx(stageName)];
+    const label=stageName?String(stageName).replace(/^\d+_/,''):'미지정';
+    return '<span style="background:'+meta.bg+';color:'+meta.fg+';padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap">'+esc(label)+'</span>';
+  }
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let curDocCustomer=null;
+  function fmtBytes(n){ n=Number(n||0); return n<1024?n+' B':n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB'; }
+  async function loadDocs(cid){
+    curDocCustomer=cid;
+    try{ const d=await fetch(session.api+'/api/customers/'+cid+'/documents',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ $('d-docs').innerHTML='<div class="hint" style="margin:4px 0">등록된 서류가 없습니다.</div>'; return; }
+      $('d-docs').innerHTML='<table style="margin-top:4px"><thead><tr><th>종류</th><th>파일명</th><th class="num">크기</th><th>업로드일</th><th>등록자</th><th></th></tr></thead><tbody>'+
+        items.map(x=>`<tr><td>${esc(x.doc_type||'—')}</td><td>${esc(x.file_name)}</td><td class="num">${fmtBytes(x.byte_size)}</td><td>${esc(x.uploaded_at||'')}</td><td>${esc(x.uploaded_by_name||'—')}</td>
+          <td style="white-space:nowrap"><button class="btn ghost sm" onclick="viewDoc(${x.id})">보기</button> <button class="btn ghost sm" onclick="delDoc(${x.id})">삭제</button></td></tr>`).join('')+'</tbody></table>';
+    }catch(e){ $('d-docs').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  async function viewDoc(docId){
+    // 인증 헤더로 받아서 새 탭에 표시
+    try{ const res=await fetch(session.api+'/api/customers/'+curDocCustomer+'/documents/'+docId,{headers:auth()});
+      const blob=await res.blob(); const url=URL.createObjectURL(blob); window.open(url,'_blank');
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alert('파일을 열 수 없습니다.'); }
+  }
+  async function delDoc(docId){
+    if(!confirm('이 서류를 삭제할까요?')) return;
+    try{ await fetch(session.api+'/api/customers/'+curDocCustomer+'/documents/'+docId,{method:'DELETE',headers:auth()}); loadDocs(curDocCustomer); }
+    catch(e){ alert('삭제 실패'); }
+  }
+  async function uploadDoc(){
+    const m=$('docMsg'); m.className='msg'; m.style.display='none';
+    const f=$('docFile').files[0];
+    if(!f){ m.className='msg err';m.style.display='block';m.textContent='파일을 선택하세요.'; return; }
+    if(f.size>5*1024*1024){ m.className='msg err';m.style.display='block';m.textContent='5MB 이하만 가능합니다.'; return; }
+    const okTypes=['application/pdf','image/jpeg','image/png','image/webp'];
+    if(!okTypes.includes(f.type)){ m.className='msg err';m.style.display='block';m.textContent='PDF·JPEG·PNG·WEBP만 가능합니다.'; return; }
+    $('docUpload').disabled=true;
+    try{
+      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(f); });
+      const res=await fetch(session.api+'/api/customers/'+curDocCustomer+'/documents',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({doc_type:$('docType').value,file_name:f.name,mime_type:f.type,data_base64:b64})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.note||d.error||res.status); return; }
+      $('docFile').value=''; loadDocs(curDocCustomer);
+    }catch(e){ m.className='msg err';m.style.display='block';m.textContent='업로드 실패'; }
+    finally{ $('docUpload').disabled=false; }
+  }
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const money0=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const compactMoney=(n)=>{ n=Number(n||0); const a=Math.abs(n); if(a>=1e6)return '$'+(n/1e6).toFixed(a>=1e7?0:1)+'M'; if(a>=1e3)return '$'+Math.round(n/1e3)+'K'; return '$'+Math.round(n); };
+  const isDirector=()=> session.user && session.user.role==='director';
+  const teamPill=(name,id)=> name?`<span class="pill ${id%2===1?'team1':'team2'}">${name}</span>`:'<span class="hint" style="margin:0">미지정</span>';
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token, api:o.api||'', user:o.user||{}}; }
+    }catch(e){}
+    try{
+      const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h);
+        const token=p.get('token'); if(token){ const o={token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+          try{ sessionStorage.setItem('refatrix_session', JSON.stringify(o)); }catch(e){}
+          return o; } }
+    }catch(e){}
+    return null;
+  }
+
+
+  let myAccess=null;
+  async function applyAccessLock(pageKey){
+    try{
+      const a=await fetch(session.api+'/api/me/access',{headers:auth()}).then(r=>r.json());
+      myAccess=a;
+      // 타팀 고객 수정요청 권한이 켜진 비디렉터에게만 「다른 팀 고객 수정 요청」 카드를 노출
+      if(a.cross_team_request===true && !isDirector() && (a.access&&a.access[pageKey])!=='view'){
+        const cc=document.getElementById('crossCard'); if(cc) cc.classList.remove('hidden');
+      }
+      const lvl=(a.access&&a.access[pageKey])||'edit';
+      if(lvl==='view'){
+        document.body.classList.add('ro');
+        const st=document.createElement('style');
+        st.textContent="body.ro input[type=text]:not(#api):not(#lid),body.ro input[type=number],body.ro input[type=month],body.ro input[type=date],body.ro textarea{pointer-events:none;background:#f2f0ea;color:#999}body.ro .btn.gold,body.ro .btn.danger{display:none!important}body.ro button.btn:not(.ghost):not(#go):not(#reloadBtn):not(#portalBtn){display:none!important}";
+        document.head.appendChild(st);
+        const ban=document.createElement('div');ban.textContent='읽기 전용 — 이 화면은 보기 권한만 있습니다(수정 불가).';
+        ban.style.cssText='background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;margin-top:12px;font-size:13px;font-weight:700';
+        const ap=document.getElementById('app'); if(ap) ap.insertBefore(ban, ap.firstChild);
+      }
+    }catch(e){}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');applyAccessLock('customers');
+      if(!isDirector()){$('teamTabBtn').classList.add('hidden');$('approveTabBtn').classList.add('hidden');$('regTabBtn').classList.add('hidden');}
+      else { loadApproveBadge(); loadRegBadge(); }
+      await loadRefs();
+      RefCustForm.init({ api:session.api, token:session.token, isDirector:isDirector(), onSaved:function(d,wasEdit){ hideForm(); loadCustomers(); if(wasEdit&&!d.pending&&curCustomer)openCustomer(curCustomer.id); } });
+      await RefCustForm.mount('custFormHost',{ onCancel:hideForm });
+      loadCustomers();
+      applyCustHashTab();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadRefs(){
+    try{teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){teams=[];}
+    try{stages=(await fetch(session.api+'/api/stages',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){stages=[];}
+    try{owners=(await fetch(session.api+'/api/sales-users',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){owners=[];}
+    if(isDirector()){try{adminTeams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){adminTeams=teams;}}
+  }
+
+  // 단계별 고객수 요약(7단계, 색상) + 팀 토글(전체/팀별)
+  async function loadStageSummary(){
+    const box=$('stageSummary'); if(!box) return;
+    try{
+      summaryData=await fetch(session.api+'/api/customers/stage-summary',{headers:auth()}).then(r=>r.json());
+      renderStageSummary();
+    }catch(e){ box.innerHTML=''; }
+  }
+  function renderStageSummary(){
+    const box=$('stageSummary'); if(!box||!summaryData) return;
+    drillIdx=null;
+    const sumTeams=summaryData.teams||[];
+    const scope = selectedTeam==='' ? (summaryData.total||{}) : (sumTeams.find(t=>String(t.team_id)===String(selectedTeam))||{});
+    const totalBox='<div class="sumbox" style="background:var(--brand);color:#fff;cursor:pointer" onclick="drillStage(-1)"><div class="sk">총 고객수</div><div class="sv">'+(scope.total||0)+'</div></div>';
+    const stageBoxes=STAGE_META.map((m,i)=>'<div class="sumbox" style="background:'+m.bg+';color:'+m.fg+';cursor:pointer" onclick="drillStage('+i+')"><div class="sk">'+m.label+'</div><div class="sv">'+(scope[m.key]||0)+'</div></div>').join('');
+    const tgTeams=(teams&&teams.length)?teams:sumTeams.map(t=>({id:t.team_id,name:t.team_name}));
+    const toggle='<div class="teamtoggle">'
+      +'<button class="ttg'+(selectedTeam===''?' on':'')+'" onclick="setTeamScope(\'\')">전체</button>'
+      +tgTeams.map(t=>'<button class="ttg'+(String(selectedTeam)===String(t.id)?' on':'')+'" onclick="setTeamScope(\''+t.id+'\')">'+esc(t.name)+'</button>').join('')
+      +'</div>';
+    box.innerHTML='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfaf6">'
+      +'<div style="font-weight:700;margin-bottom:8px">단계별 고객 현황 <span class="hint" style="margin:0;font-weight:400">— 카드를 누르면 업체 목록이 나옵니다</span></div>'
+      +'<div class="sumgrid">'+totalBox+stageBoxes+'</div>'
+      +'<div id="stageDrill"></div>'
+      +toggle
+      +'</div>';
+  }
+  // 단계 카드 클릭 → 해당 단계 업체명 (견적·협상·수주·거래중은 누적매출 표시). 다시 누르면 닫힘.
+  function drillStage(idx){
+    const host=$('stageDrill'); if(!host)return;
+    if(drillIdx===idx){ drillIdx=null; host.innerHTML=''; return; }
+    drillIdx=idx;
+    // 각 단계 고객만 표시(상호배타·중복 없음). 견적/협상/수주는 인보이스(SAT) 전이라 미전환 견적(주문)액, 거래중만 누적매출.
+    const useQuoteAmt = (idx===3 || idx===4 || idx===5);
+    const showAmt = idx>=3;
+    const amtOf = c => useQuoteAmt ? Number(c.live_quote_mxn||0) : Number(c.sales_total||0);
+    const amtFmt = useQuoteAmt ? fmt : money0;   // 견적기준은 소수점 2자리, 매출은 정수
+    const amtName = idx===3 ? '미전환 견적액' : idx===4 ? '협상 견적액' : idx===5 ? '수주액(견적기준)' : (idx===6 ? '거래후 누적매출' : '누적매출');
+    const stageDesc = idx===3 ? '견적저장 후, 아무것도 진행 안된 상태'
+                    : idx===4 ? '상황 보며 임의(수동) 지정'
+                    : idx===5 ? '견적저장 후 포장작업지시서 발행기준'
+                    : idx===6 ? 'SAT 번호 기록 상태' : '';
+    const list=(lastCustomers||[]).filter(c=> idx<0 ? true : stageIdx(c.stage_name)===idx)
+      .sort((a,b)=> showAmt ? (amtOf(b)-amtOf(a)) : String(a.name||'').localeCompare(String(b.name||'')));
+    const title = idx<0 ? '전체 고객' : (STAGE_META[idx].label+' 단계');
+    const descHtml = stageDesc ? ' <span class="hint" style="margin:0;font-weight:400">· '+stageDesc+'</span>' : '';
+    if(!list.length){ host.innerHTML='<div class="hint" style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;padding:10px">'+title+(stageDesc?' ('+stageDesc+')':'')+': 해당 고객이 없습니다.</div>'; return; }
+    const rows=list.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line)">'
+        +'<span style="cursor:pointer" onclick="openCustomer('+c.id+')">'+esc(c.name)+' <span class="hint" style="margin:0">('+esc(c.code)+')</span></span>'
+        +(showAmt?'<span style="color:#0f7a5f;font-weight:700;white-space:nowrap">'+amtFmt(amtOf(c))+'</span>':'')
+      +'</div>').join('');
+    const totalAmt=showAmt?list.reduce((s,c)=>s+amtOf(c),0):0;
+    host.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px;max-height:260px;overflow:auto">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;background:#fbfaf6;border-bottom:1px solid var(--line);font-weight:700;position:sticky;top:0">'
+        +'<span>'+title+descHtml+' · '+list.length+'개 업체</span>'+(showAmt?'<span style="color:#0f7a5f;white-space:nowrap">합계 '+amtFmt(totalAmt)+' <span class="hint" style="margin:0;color:#0f7a5f;font-weight:400">('+amtName+')</span></span>':'')+'</div>'
+      +rows+'</div>';
+  }
+  function setTeamScope(tid){ selectedTeam=String(tid); renderStageSummary(); loadCustomers(); }
+
+  // 고객 목록(이름) 감추기/보이기 (단계별 현황은 항상 유지). 감출 때 안내문구로 의도 명확화.
+  function toggleList(){
+    listHidden=!listHidden;
+    $('custList').style.display = listHidden?'none':'';
+    const hint=$('listHiddenHint'); if(hint)hint.style.display = listHidden?'':'none';
+    $('listToggleBtn').textContent = listHidden?'고객명 보이기 ▾':'고객명 감추기 ▴';
+  }
+
+  // 할인률 그래프 (X=고객, Y=할인률, 지점수↓ → 매출액↓ 순 정렬, 점 표시)
+  function openChart(){
+    const rows=(lastCustomers||[]).filter(c=>c.discount!=null && !isNaN(Number(c.discount))).slice();
+    rows.sort((a,b)=>{
+      const ba=a.branch_count==null?-1:Number(a.branch_count);
+      const bb=b.branch_count==null?-1:Number(b.branch_count);
+      if(bb!==ba) return bb-ba;                                   // 지점 많은 순(왼쪽부터)
+      return Number(b.sales_total||0)-Number(a.sales_total||0);    // 같은 지점수면 매출액 큰 순
+    });
+    $('chartHost').innerHTML = rows.length ? buildDiscChart(rows)
+      : '<div class="hint">표시할 고객이 없습니다. (목록을 먼저 불러오세요)</div>';
+    $('chartModal').classList.add('on');
+  }
+  function closeChart(){ $('chartModal').classList.remove('on'); }
+  function buildDiscChart(rows){
+    const n=rows.length;
+    const mL=46, mR=60, mT=16, mB=128;          // 마진(아래는 회전 라벨 공간, 우측은 재주문 속도 축)
+    const colW=Math.max(30, Math.min(64, 880/n));
+    const plotW=n*colW, plotH=300;
+    const W=mL+plotW+mR, H=mT+plotH+mB;
+    const maxDRaw=Math.max(10, ...rows.map(r=>Number(r.discount)||0));
+    const maxD=Math.ceil(maxDRaw/5)*5;          // 5% 단위로 올림
+    const yOf=v=>mT+plotH-(v/maxD)*plotH;
+    const xOf=i=>mL+(i+0.5)*colW;
+    // 우측축(② 재주문 속도, 개/영업일) 스케일 — 눈금이 깔끔한 수(0.5/1/2/5/10…)로 올림
+    const vels=rows.map(r=>Number(r.reorder_velocity)||0);
+    const maxVRaw=Math.max(...vels, 0);
+    let vStep=0.5; for(const s of [0.5,1,2,5,10,20,50,100,200,500]){ vStep=s; if(maxVRaw<=s*5) break; }
+    const maxV=Math.max(vStep, Math.ceil((maxVRaw||vStep)/vStep)*vStep);
+    const yOfV=v=>mT+plotH-(v/maxV)*plotH;
+    const vfmt=v=>{const x=Math.round(Number(v)*100)/100; return String(x);};
+    let svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" font-family="inherit" style="max-width:none">';
+    // Y축 그리드 + 라벨(% )
+    const step=maxD<=20?5:(maxD<=50?10:20);
+    for(let v=0; v<=maxD; v+=step){
+      const y=yOf(v);
+      svg+='<line x1="'+mL+'" y1="'+y+'" x2="'+(mL+plotW)+'" y2="'+y+'" stroke="#E2DDD2" stroke-width="1"/>';
+      svg+='<text x="'+(mL-6)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="10" fill="#6B6B6B">'+v+'%</text>';
+    }
+    // 우측 Y축 눈금 라벨(재주문 속도)
+    for(let v=0; v<=maxV+1e-9; v+=vStep){
+      const y=yOfV(v);
+      svg+='<text x="'+(mL+plotW+6)+'" y="'+(y+3.5)+'" text-anchor="start" font-size="10" fill="#B45309" font-weight="700">'+vfmt(v)+'</text>';
+    }
+    // 축선
+    svg+='<line x1="'+mL+'" y1="'+mT+'" x2="'+mL+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
+    svg+='<line x1="'+mL+'" y1="'+(mT+plotH)+'" x2="'+(mL+plotW)+'" y2="'+(mT+plotH)+'" stroke="#143D34" stroke-width="1"/>';
+    svg+='<line x1="'+(mL+plotW)+'" y1="'+mT+'" x2="'+(mL+plotW)+'" y2="'+(mT+plotH)+'" stroke="#B45309" stroke-width="1"/>';
+    // 매출 음영 bar 스케일
+    const maxSales=Math.max(0, ...rows.map(r=>Number(r.sales_total)||0));
+    const maxBarH=plotH*0.55, baseY=mT+plotH, barW=Math.min(34, colW*0.74);
+    // 점 + 매출 bar + 회전 라벨
+    rows.forEach((r,i)=>{
+      const x=xOf(i), d=Number(r.discount)||0, y=yOf(d);
+      const sales=Number(r.sales_total)||0, hasSales=sales>0;
+      const bc=r.branch_count==null?'—':r.branch_count;
+      const st=sales.toLocaleString('es-MX',{maximumFractionDigits:0});
+      const nm=String(r.name||'');
+      const lbl=(nm.length>11?nm.slice(0,10)+'…':nm)+' ('+bc+')';
+      // 매출 음영 bar: 할인률 점에서 아래로, 매출 클수록 크게 (기준선까지 클램프)
+      if(hasSales && maxSales>0){
+        const barH=Math.min(Math.max(4,(sales/maxSales)*maxBarH), baseY-y);
+        if(barH>0){
+          svg+='<rect x="'+(x-barW/2)+'" y="'+y+'" width="'+barW+'" height="'+barH+'" rx="2" '
+             +'fill="#0F6E56" fill-opacity="0.15" stroke="#0F6E56" stroke-opacity="0.30" stroke-width="1"/>';
+          // 누적매출 숫자(작게) — bar 상단 안쪽
+          svg+='<text x="'+x+'" y="'+(y+13)+'" text-anchor="middle" font-size="10" fill="#0b5440" font-weight="800">'+compactMoney(sales)+'</text>';
+        }
+      }
+      // 점: 매출 없으면 회색
+      const ptColor=hasSales?'#0F6E56':'#9AA0A0';
+      svg+='<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+ptColor+'" stroke="#fff" stroke-width="1">'
+         +'<title>'+esc(nm)+'\n할인률 '+d+'%\n지점 '+bc+'개\n매출 $'+st+(hasSales?'':' (매출 없음)')+'</title></circle>';
+      svg+='<text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9.5" fill="'+(hasSales?'#143D34':'#9AA0A0')+'" font-weight="700">'+d+'%</text>';
+      svg+='<text transform="translate('+x+','+(baseY+10)+') rotate(60)" text-anchor="start" font-size="10" fill="#1A1A1A">'+esc(lbl)+'</text>';
+    });
+    // ② 재주문 속도(주황) — 선(전 고객, 원오더=0) + 점(재주문 고객만)
+    if(rows.length){
+      const pts=rows.map((r,i)=>xOf(i)+','+yOfV(Number(r.reorder_velocity)||0)).join(' ');
+      svg+='<polyline points="'+pts+'" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-opacity="0.55"/>';
+      rows.forEach((r,i)=>{
+        const v=Number(r.reorder_velocity)||0;
+        if(!(v>0)) return;                      // 원오더(재주문 없음) 고객은 점 스킵(=0)
+        const x=xOf(i), y=yOfV(v);
+        const cyc=(r.reorder_cycle!=null&&r.reorder_qty!=null)
+          ? ('\n재주문 '+vfmt(r.reorder_cycle)+'영업일마다 '+vfmt(r.reorder_qty)+'개') : '';
+        svg+='<circle cx="'+x+'" cy="'+y+'" r="4" fill="#F59E0B" stroke="#fff" stroke-width="1">'
+           +'<title>'+esc(String(r.name||''))+'\n재주문 속도 '+vfmt(v)+'개/영업일'+cyc+'</title></circle>';
+      });
+    }
+    // 축 제목 + 범례
+    svg+='<text transform="translate(13,'+(mT+plotH/2)+') rotate(-90)" text-anchor="middle" font-size="11" fill="#6B6B6B" font-weight="700">할인률(%)</text>';
+    svg+='<text transform="translate('+(W-8)+','+(mT+plotH/2)+') rotate(90)" text-anchor="middle" font-size="11" fill="#B45309" font-weight="700">재주문 속도(개/영업일)</text>';
+    svg+='</svg>';
+    svg+='<div class="hint" style="margin-top:6px">● 점 = 할인률 위치 · <span style="color:#0F6E56">초록</span>=매출 있음 / <span style="color:#9AA0A0">회색</span>=매출 없음 · 점 아래 음영 bar = 매출 규모(클수록 큼) · 괄호 안 숫자 = 지점수<br>'
+       +'<span style="color:#B45309">● 주황 점/선 = 재주문 속도(개/영업일, 우측축)</span> — 첫 주문(시드) 제외, 원오더 고객은 0(점 없음) · 점에 마우스를 올리면 재주문 주기 표시</div>';
+    return svg;
+  }
+
+  // 상세 드릴다운: 승인 대기 변경내역 + 승인/반려(디렉터)
+  async function loadDetailApproval(custId){
+    const box=$('d-approval'); if(!box) return; box.innerHTML='';
+    if(!isDirector()) return;
+    try{
+      const d=await fetch(session.api+'/api/customer-change-requests?status=pending&customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      const r=(d.items||[])[0]; if(!r){ box.innerHTML=''; return; }
+      const p=r.proposed||{};
+      const rows=renderChanges(r);
+      box.innerHTML=`<div style="border:1px solid var(--gold);border-radius:10px;padding:12px;margin-top:12px;background:#fffaf0">
+        <div style="font-weight:800;color:#9a6512;margin-bottom:6px">⚠ 승인 필요 — 고객 수정 요청${r.requested_by_name?(' ('+esc(r.requested_by_name)+')'):''}</div>
+        <table>${rows||'<tr><td class="hint">변경 내용 없음</td></tr>'}</table>
+        ${r.reason?`<div class="hint" style="margin-top:6px"><b style="color:#9a6512">수정이유:</b> ${esc(r.reason)}</div>`:''}
+        ${r.conditions?`<div class="hint" style="margin-top:2px"><b style="color:#9a6512">제공 조건:</b> ${esc(r.conditions)}</div>`:''}
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn sm" onclick="approveChangeDetail(${r.id},${custId})">승인</button>
+          <button class="btn ghost sm" onclick="rejectChangeDetail(${r.id},${custId})">반려</button>
+        </div></div>`;
+    }catch(e){ box.innerHTML=''; }
+  }
+  // ===== 기본할인·외상일 변경이력 (고객 상세) =====
+  const TERMS_FIELD_LABEL={discount:'기본할인(%)',credit_days:'외상일'};
+  function termsVal(field,v){ if(v==null)return '—'; return field==='discount'?(v+'%'):(v+'일'); }
+  async function loadTermsHistory(custId){
+    const box=$('d-termshist'); if(!box) return; box.innerHTML='';
+    try{
+      const d=await fetch(session.api+'/api/customers/'+custId+'/terms-history',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[]; if(!items.length){ box.innerHTML=''; return; }
+      box.innerHTML=`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#fbfaf6">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer" onclick="const t=$('termsHistBody');t.style.display=t.style.display==='none'?'':'none';this.querySelector('.thArrow').textContent=t.style.display==='none'?'▸':'▾'">
+          <span class="thArrow" style="color:#9a6512">▾</span>
+          <b style="color:#9a6512">📜 기본할인 · 외상일 변경이력</b>
+          <span class="hint" style="margin:0">${items.length}건 — 날짜 · 변경 · 수정이유 · 제공 조건</span>
+        </div>
+        <div id="termsHistBody" style="margin-top:8px;overflow-x:auto">
+          <table style="font-size:12.5px"><thead><tr><th>일시</th><th>항목</th><th>변경</th><th>수정이유</th><th>제공 조건</th><th>수정자</th><th>승인</th></tr></thead>
+          <tbody>${items.map(h=>`<tr>
+            <td style="white-space:nowrap">${esc(h.changed_at||'')}</td>
+            <td style="white-space:nowrap">${TERMS_FIELD_LABEL[h.field]||esc(h.field)}</td>
+            <td style="white-space:nowrap"><span class="hint" style="margin:0">${termsVal(h.field,h.old_value)}</span> <span style="color:#9a6512;font-weight:700">→</span> <b>${termsVal(h.field,h.new_value)}</b></td>
+            <td>${esc(h.reason||'—')}</td>
+            <td>${esc(h.conditions||'—')}</td>
+            <td style="white-space:nowrap">${esc(h.changed_by_name||'—')}</td>
+            <td style="white-space:nowrap">${h.approved_by_name?esc(h.approved_by_name):'<span class="hint" style="margin:0">—</span>'}</td>
+          </tr>`).join('')}</tbody></table>
+        </div></div>`;
+    }catch(e){ box.innerHTML=''; }
+  }
+
+  async function approveChangeDetail(id,custId){
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
+    if(res.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('승인 실패');
+  }
+  async function rejectChangeDetail(id,custId){
+    const reason=prompt('반려 사유(선택):')||null;
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/reject',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+    if(res.ok){ if(typeof loadApproveBadge==='function')loadApproveBadge(); loadCustomers(); openCustomer(custId); } else alert('반려 실패');
+  }
+
+  async function loadCustomers(){
+    loadStageSummary();
+    const b=$('custList');
+    // 데이터 로드 시 목록은 항상 보이게 — 감추기 상태가 남아 이름이 안 보이는 문제 방지
+    listHidden=false; b.style.display=''; const ltb=$('listToggleBtn'); if(ltb)ltb.textContent='고객명 감추기 ▴'; const lhh=$('listHiddenHint'); if(lhh)lhh.style.display='none';
+    b.innerHTML='<div class="hint">불러오는 중…</div>';
+    const params=new URLSearchParams();
+    if($('q').value.trim())params.set('q',$('q').value.trim());
+    if(selectedTeam)params.set('team_id',selectedTeam);
+    try{
+      const d=await fetch(session.api+'/api/customers?'+params.toString(),{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      lastCustomers=items;
+      if(!items.length){b.innerHTML='<div class="hint">고객이 없습니다.</div>';return;}
+      renderCustTable();
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // 목록 정렬 상태 + 컬럼 정의 (타이틀 클릭 정렬)
+  let custSort={key:'name',dir:1};
+  const CUST_COLS=[
+    {key:'code',label:'코드'},
+    {key:'name',label:'고객명'},
+    {key:'customer_type',label:'종류'},
+    {key:'branch_count',label:'지점',num:true},
+    {key:'owner_name',label:'담당'},
+    {key:'stage',label:'단계'},
+    {key:'sales_total',label:'누적매출',num:true},
+    {key:'overdue',label:'연체',num:true},
+  ];
+  function custSortVal(c,key){
+    if(key==='stage')return stageIdx(c.stage_name);
+    if(key==='sales_total')return Number(c.sales_total||0);
+    if(key==='overdue')return Number(c.overdue||0);
+    if(key==='branch_count')return c.branch_count==null?-1:Number(c.branch_count);
+    return String(c[key]==null?'':c[key]).toLowerCase();
+  }
+  function sortCust(key){
+    if(custSort.key===key)custSort.dir*=-1; else {custSort.key=key;custSort.dir=1;}
+    renderCustTable();
+  }
+  function renderCustTable(){
+    const b=$('custList'); const items=(lastCustomers||[]).slice();
+    const k=custSort.key,dir=custSort.dir;
+    items.sort((a,bb)=>{const va=custSortVal(a,k),vb=custSortVal(bb,k); if(va<vb)return -1*dir; if(va>vb)return 1*dir; return 0;});
+    const head=CUST_COLS.map(col=>{
+      const arrow = custSort.key===col.key ? (custSort.dir>0?' ▲':' ▼') : '';
+      return '<th class="'+(col.num?'num ':'')+'" onclick="sortCust(\''+col.key+'\')" style="cursor:pointer;user-select:none" title="클릭하면 정렬">'+col.label+arrow+'</th>';
+    }).join('');
+    b.innerHTML=`<table><thead><tr>${head}<th></th></tr></thead>
+      <tbody>${items.map(c=>{const inactive=(c.days_no_sales!=null&&Number(c.days_no_sales)>30);return `<tr>
+        <td class="code">${c.code}</td>
+        <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.approval_status==='pending'?' <span class="pill" style="background:#fff4e0;color:#9a6512;border:1px solid #ecd9a0;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px" title="디렉터 등록 승인 전 — 견적·매출에 사용할 수 없습니다">🔒 등록 승인대기</span>':''}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
+        <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
+        <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
+        <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
+        <td>${stagePill(c.stage_name)}</td>
+        <td class="num">${money0(c.sales_total)}</td>
+        <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
+        <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
+      </tr>`;}).join('')}</tbody></table>
+      <div class="hint">${items.length}명 표시 · <b>누적매출</b>=거래후 누적 매출액(IVA 포함), 옆은 연체액(빨간색). <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출. 타이틀을 누르면 정렬됩니다.</div>`;
+  }
+
+  async function showForm(cust,opts){
+    editingId=cust?cust.id:null;
+    $('formTitle').textContent=cust?((opts&&opts.crossTeam)?'다른 팀 고객 수정 요청':'고객 수정'):'고객 등록';
+    if(cust) RefCustForm.editCustomer(cust,opts); else await RefCustForm.newCustomer();
+    $('custForm').classList.remove('hidden');
+    if($('custForm').scrollIntoView)$('custForm').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  function hideForm(){ $('custForm').classList.add('hidden'); }
+
+  // ===== 다른 팀 고객 수정 요청 (users.cross_team_request 권한자) =====
+  //   ⚠ 열람 확장이 아니다. lookup 은 신원정보(상호·코드·RFC·팀·담당자)만 내려주고,
+  //      수정폼은 edit-basic 의 기본항목만 채운다. 저장은 무조건 디렉터 승인 대기.
+  async function crossSearch(){
+    const box=$('crossList'); const q=$('crossQ').value.trim();
+    if(q.length<2){ box.innerHTML='<div class="hint">2글자 이상 입력하세요.</div>'; return; }
+    box.innerHTML='<div class="hint">찾는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customers/lookup?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">'+(d.error==='cross_team_request_denied'?'타팀 고객 수정요청 권한이 없습니다.':esc(d.error))+'</div>'; return; }
+      const items=d.items||[];
+      if(!items.length){ box.innerHTML='<div class="hint">일치하는 고객이 없습니다.</div>'; return; }
+      box.innerHTML=`<table><thead><tr><th>고객코드</th><th>상호</th><th>RFC</th><th>소속 팀</th><th>담당자</th><th></th></tr></thead><tbody>
+        ${items.map(c=>`<tr>
+          <td>${esc(c.code||'')}</td>
+          <td><b>${esc(c.name||'')}</b>${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인대기</span>':''}</td>
+          <td>${esc(c.rfc||'—')}</td>
+          <td>${c.team_name?esc(c.team_name):'<span class="hint" style="margin:0">미지정</span>'}</td>
+          <td>${esc(c.owner_name||'—')}</td>
+          <td>${c.in_scope
+            ? '<span class="hint" style="margin:0">내 담당 범위 — 위 목록에서 수정</span>'
+            : `<button class="btn ghost sm" onclick="crossEdit(${c.id})">수정 요청</button>`}</td>
+        </tr>`).join('')}</tbody></table>
+        <div class="hint">${items.length}건 표시(최대 30건). 「수정 요청」을 누르면 수정 폼이 열리고, 저장 시 디렉터 승인 대기로 넘어갑니다.</div>`;
+    }catch(e){ box.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  async function crossEdit(id){
+    try{
+      const d=await fetch(session.api+'/api/customers/'+id+'/edit-basic',{headers:auth()}).then(r=>r.json());
+      if(d.error){ alert(d.error==='forbidden_team'?'이 고객을 수정 요청할 권한이 없습니다.':('열지 못했습니다: '+d.error)); return; }
+      await showForm(d.item,{crossTeam:!!d.cross_team, pending:d.pending});
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  // 일반 목록 → 상세 → 「수정」 경로도 같은 판정을 쓴다.
+  //   상대팀 열람만 받은 사용자는 고객이 목록에 보이지만 바로 고칠 수는 없다.
+  //   그 경우 서버가 cross_team=true 로 알려주므로 배송지 즉시저장을 잠그고 안내 배너를 띄운다.
+  //   (예전에는 그대로 열려서 배송지가 403 빨간 오류로 떨어졌다 — 2026-08-24 수정)
+  async function editCurrentCustomer(){
+    if(!curCustomer) return;
+    try{
+      const d=await fetch(session.api+'/api/customers/'+curCustomer.id+'/edit-basic',{headers:auth()}).then(r=>r.json());
+      if(!d.error&&d.item){ await showForm(d.item,{crossTeam:!!d.cross_team, pending:d.pending}); return; }
+    }catch(e){}
+    await showForm(curCustomer);   // 구버전 백엔드·읽기전용 등 → 기존 동작 유지
+  }
+
+  // ===== 고객 수정 승인 대기(디렉터) =====
+  async function loadApproveBadge(){
+    try{
+      const d=await fetch(session.api+'/api/customer-change-requests?status=pending',{headers:auth()}).then(r=>r.json());
+      const n=(d.items||[]).length; const b=$('approveBadge');
+      if(n>0){b.textContent=n;b.classList.remove('hidden');}else b.classList.add('hidden');
+    }catch(e){}
+  }
+  const FIELD_LABELS={name:'고객명',rfc:'RFC',contact:'이메일 주소',phone:'전화',buyer_name:'구매결정권자',buyer_phone:'구매결정권자 전화(WhatsApp)',discount:'할인(%)',credit_days:'외상일',branch_count:'지점 수',team_id:'팀',stage_id:'단계',owner_id:'담당자',customer_type:'회사종류',memo:'메모',constancia_fiscal:'세무등록'};
+  // 변경 요청을 "현재 → 변경" 형태로 친절하게 렌더(서버가 이름까지 풀어서 changes로 내려줌)
+  function renderChanges(r){
+    const ch=r.changes;
+    if(Array.isArray(ch)){
+      if(!ch.length) return '<tr><td class="hint" style="padding:3px 0">실제로 바뀐 항목이 없습니다.</td></tr>';
+      return ch.map(x=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">${esc(x.label)}</th><td style="padding:3px 0"><span class="hint" style="margin:0">${esc(x.from)}</span> <span style="color:#9a6512;font-weight:700">→</span> <b>${esc(x.to)}</b></td></tr>`).join('');
+    }
+    // 폴백(구버전 서버: changes 미제공)
+    const p=r.proposed||{};
+    return Object.keys(FIELD_LABELS).filter(k=>p[k]!==undefined&&p[k]!==null&&p[k]!=='').map(k=>`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:2px 10px 2px 0">${FIELD_LABELS[k]}</th><td>${esc(String(p[k]))}</td></tr>`).join('')||'<tr><td class="hint">변경 내용 없음</td></tr>';
+  }
+  async function loadApprovals(){
+    const box=$('approveList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customer-change-requests?status=pending',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){box.innerHTML='<div class="hint">승인 대기중인 수정 요청이 없습니다.</div>';return;}
+      box.innerHTML=items.map(r=>{
+        const p=r.proposed||{};
+        const rows=renderChanges(r);
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <b>${esc(r.customer_name)}</b> <span class="hint" style="margin:0">(${esc(r.customer_code)})</span>
+            <span class="hint" style="margin:0">· 요청: ${esc(r.requested_by_name||'-')}${r.requester_team_name?(' / '+esc(r.requester_team_name)):''}</span>
+            ${r.cross_team?`<span class="pill" style="background:#fdf0e2;color:#9a6512;border:1px solid #ecd9a0;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="요청자 소속팀과 고객 소속팀이 다릅니다">타팀 요청${r.customer_team_name?(' · 현재 '+esc(r.customer_team_name)):''}</span>`:''}
+          </div>
+          <table style="margin:8px 0;font-size:13px"><tbody>${rows||'<tr><td class="hint">변경 항목 없음</td></tr>'}</tbody></table>
+          ${r.reason?`<div class="hint" style="margin:0 0 2px"><b style="color:#9a6512">수정이유:</b> ${esc(r.reason)}</div>`:''}
+          ${r.conditions?`<div class="hint" style="margin:0 0 8px"><b style="color:#9a6512">제공 조건:</b> ${esc(r.conditions)}</div>`:''}
+          <div style="display:flex;gap:8px">
+            <button class="btn sm" onclick="approveChange(${r.id})">승인</button>
+            <button class="btn ghost sm" onclick="rejectChange(${r.id})">반려</button>
+          </div>
+        </div>`;
+      }).join('');
+    }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function approveChange(id){
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/approve',{method:'POST',headers:auth()});
+    if(res.ok){ loadApprovals(); loadApproveBadge(); loadCustomers(); }
+    else alert('승인 실패');
+  }
+  async function rejectChange(id){
+    const reason=prompt('반려 사유(선택):')||null;
+    const res=await fetch(session.api+'/api/customer-change-requests/'+id+'/reject',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason})});
+    if(res.ok){ loadApprovals(); loadApproveBadge(); }
+    else alert('반려 실패');
+  }
+
+  // ===== 0185 · 고객 등록 승인 대기(디렉터) =====
+  //   신규 등록은 CONSTANCIA 선점 + 기준품목 할인율 근거를 달고 올라온다.
+  //   디렉터는 ① 증빙이 붙었는지 ② 신청 할인율이 제안값에서 얼마나 벌어졌는지 를 보고 판단한다.
+  function pctTxt(v){ return v==null?'—':(Number(v).toFixed(1)+'%'); }
+  function mxTxt(v){ return v==null?'—':('$'+Number(v).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})); }
+  async function loadRegBadge(){
+    try{
+      const d=await fetch(session.api+'/api/customer-registrations?status=pending',{headers:auth()}).then(r=>r.json());
+      const n=(d.items||[]).length; const b=$('regBadge');
+      if(n>0){b.textContent=n;b.classList.remove('hidden');}else b.classList.add('hidden');
+    }catch(e){}
+  }
+  async function loadRegApprovals(){
+    const box=$('regList'); if(!box)return; box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customer-registrations?status=pending',{headers:auth()}).then(r=>r.json());
+      if(d.migration_required){ box.innerHTML='<div class="hint">서버 마이그레이션(0185)이 아직 적용되지 않았습니다.</div>'; return; }
+      const items=d.items||[];
+      if(!items.length){box.innerHTML='<div class="hint">승인 대기중인 신규 고객 등록이 없습니다.</div>';return;}
+      box.innerHTML=items.map(r=>{
+        const gap=r.discount_gap;
+        const gapTxt = gap==null?'' :
+          (Math.abs(gap)<0.05 ? '<span class="pill" style="background:#eaf5ee;color:#1a7f4b;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px">제안대로</span>'
+           : '<span class="pill" style="background:'+(gap>0?'#fdecea':'#eef4fb')+';color:'+(gap>0?'#b3261e':'#20486f')+';font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="제안 할인율 대비 차이">제안 대비 '+(gap>0?'+':'')+gap.toFixed(1)+'%p</span>');
+        const docOk = r.constancia_docs>0
+          ? '<button class="btn ghost sm" onclick="openCustomer('+r.id+')">📎 CONSTANCIA 보기</button>'
+          : '<span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px">⚠ 스캔본 없음</span>';
+        const target = r.syd_ref_buy_price==null?null:Math.round(r.syd_ref_buy_price*0.95*100)/100;
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <b>${esc(r.name)}</b> <span class="hint" style="margin:0">(${esc(r.code)})</span>
+            <span class="hint" style="margin:0">· 신청: ${esc(r.created_by_name||'-')} / 담당 ${esc(r.owner_name||'-')} / ${esc(r.team_name||'-')} · ${esc(r.registered_at||'')}</span>
+            ${gapTxt}
+          </div>
+          <table style="margin:8px 0;font-size:13px"><tbody>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">RFC / CONSTANCIA</th>
+                <td style="padding:3px 0">${esc(r.rfc||'—')} <span class="hint" style="margin:0">/</span> <b>${esc(r.constancia_no||'—')}</b> &nbsp; ${docOk}</td></tr>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">기준품목 ${esc(r.syd_ref_code||'')}</th>
+                <td style="padding:3px 0">고객 구매단가 <b>${mxTxt(r.syd_ref_buy_price)}</b>
+                  <span class="hint" style="margin:0">· SYD 정가 ${mxTxt(r.syd_ref_list_price)} → 고객이 받는 할인율 ${pctTxt(r.syd_ref_discount)}</span></td></tr>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">우리 제품 (${esc(r.ctr_ref_code||'—')})</th>
+                <td style="padding:3px 0">CTR 정가 ${mxTxt(r.ctr_ref_list_price)}
+                  <span class="hint" style="margin:0">· 5% 우위 목표가 ${mxTxt(target)}</span></td></tr>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">할인율</th>
+                <td style="padding:3px 0">제안 <span class="hint" style="margin:0">${pctTxt(r.suggested_discount)}</span>
+                  <span style="color:#9a6512;font-weight:700">→</span> 신청 <b style="font-size:15px">${pctTxt(r.discount)}</b>
+                  <span class="hint" style="margin:0">· 외상 ${r.credit_days==null?'—':r.credit_days+'일'}</span></td></tr>
+            ${r.memo?`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0">메모</th><td style="padding:3px 0">${esc(r.memo)}</td></tr>`:''}
+          </tbody></table>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn sm" onclick="approveReg(${r.id},null)">승인 (${pctTxt(r.discount)})</button>
+            <button class="btn ghost sm" onclick="approveReg(${r.id},'ask')">할인율 조정 후 승인</button>
+            <button class="btn ghost sm" style="color:var(--expense);border-color:var(--expense)" onclick="rejectReg(${r.id})">반려</button>
+          </div>
+        </div>`;
+      }).join('');
+    }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function approveReg(id,mode){
+    const body={};
+    if(mode==='ask'){
+      const v=prompt('승인할 기본 할인율(%)을 입력하세요:');
+      if(v===null) return;
+      if(!(Number(v)>=0&&Number(v)<=95)){ alert('0~95 사이 숫자를 입력하세요.'); return; }
+      body.discount=Number(v);
+    }
+    const res=await fetch(session.api+'/api/customer-registrations/'+id+'/approve',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+    const d=await res.json().catch(()=>({}));
+    if(res.ok&&!d.error){ loadRegApprovals(); loadRegBadge(); loadCustomers(); }
+    else alert('승인 실패: '+(d.note||d.error||res.status));
+  }
+  async function rejectReg(id){
+    const reason=prompt('반려 사유(필수) — 영업사원에게 남는 기록입니다:');
+    if(reason===null) return;
+    if(!reason.trim()){ alert('반려 사유를 입력해야 합니다.'); return; }
+    if(!confirm('반려하면 이 고객의 CONSTANCIA 선점이 풀립니다. 진행할까요?')) return;
+    const res=await fetch(session.api+'/api/customer-registrations/'+id+'/reject',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason:reason.trim()})});
+    const d=await res.json().catch(()=>({}));
+    if(res.ok&&!d.error){ loadRegApprovals(); loadRegBadge(); loadCustomers(); }
+    else alert('반려 실패: '+(d.note||d.error||res.status));
+  }
+
+  let curCustomer=null;
+  // 디렉터 전용 고객 삭제 (백엔드: DELETE /api/customers/:id, requireDirector 소프트삭제)
+  async function deleteCustomer(){
+    if(!curCustomer||!isDirector())return;
+    if(!confirm(`고객 "${curCustomer.name}" (${curCustomer.code}) 을(를) 삭제합니다.\n삭제는 디렉터만 가능합니다. 계속할까요?`))return;
+    try{
+      const res=await fetch(session.api+'/api/customers/'+curCustomer.id,{method:'DELETE',headers:auth()});
+      if(res.ok){ $('detailCard').classList.add('hidden'); curCustomer=null; loadCustomers(); }
+      else{ const e=await res.json().catch(()=>({})); alert('삭제 실패'+(e.error?(' ('+e.error+')'):'')); }
+    }catch(e){ alert('삭제 실패'); }
+  }
+  // 구매주기(재주문) 박스 — 첫 주문(시드) 제외 지표. ③주기/수량 + (3회+) ④중앙값 + ②속도·누적·기간
+  function renderCycle(rc){
+    if(!rc || !(Number(rc.orders)>0)) return '<span class="hint" style="margin:0">구매 이력 없음</span>';
+    const n1=v=>{const x=Math.round(Number(v)*10)/10; return x.toLocaleString('es-MX',{maximumFractionDigits:1});};
+    const n2=v=>{const x=Math.round(Number(v)*100)/100; return x.toLocaleString('es-MX',{maximumFractionDigits:2});};
+    const orders=Number(rc.orders)||0, total=Number(rc.total_qty)||0;
+    const range=(rc.first_date?rc.first_date:'—')+' ~ '+(rc.last_date?rc.last_date:'—');
+    if(orders<2){
+      return '<b>재주문 없음</b> · 첫 구매 '+n1(rc.first_qty||total)+'개'
+        +'<span class="hint" style="margin-left:8px">주문 1회 · 누적 '+n1(total)+'개 · '+range+'</span>';
+    }
+    const med=(orders>=3 && rc.median_cycle!=null)?' (중앙값 '+n1(rc.median_cycle)+'영업일)':'';
+    return '<b>재주문 '+n1(rc.reorder_cycle)+'영업일마다 '+n1(rc.reorder_qty)+'개</b>'+med
+      +'<span class="hint" style="margin-left:8px">주문 '+orders+'회 · 재주문 속도 '+n2(rc.reorder_velocity)+'개/영업일 · 누적 '+n1(total)+'개 · '+range+'</span>';
+  }
+
+  async function openCustomer(id){
+    $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';$('d-visits').innerHTML='';
+    if($('detailCard').scrollIntoView)$('detailCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    try{
+      const d=await fetch(session.api+'/api/customers/'+id,{headers:auth()}).then(r=>r.json());
+      if(d.error){$('d-info').innerHTML='<div class="hint">'+(d.error==='forbidden_team'?'다른 팀 고객은 볼 수 없습니다.':'불러오지 못했습니다.')+'</div>';return;}
+      curCustomer=d.customer;const c=d.customer;
+      $('delBtn').style.display = isDirector()?'':'none';
+      $('d-name').innerHTML=`${c.name} <span class="hint" style="margin:0">(${c.code})</span> ${teamPill(c.team_name,c.team_id)}`;
+      const totalOut=d.invoices.reduce((s,i)=>s+i.outstanding,0);
+      const totalOver=d.invoices.reduce((s,i)=>s+(i.overdue?i.outstanding:0),0);
+      const sm=d.summary||{};
+      const target=sm.year_target;
+      const actual=sm.ytd_actual||0;
+      const pct=(target!=null&&target>0)?Math.round((actual/target)*100):null;
+      const progressRow= target!=null
+        ? `<tr><th>목표 달성률</th><td colspan="3"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;background:#eee;border-radius:6px;height:14px;overflow:hidden"><div style="height:100%;width:${Math.min(pct||0,100)}%;background:${(pct||0)>=100?'var(--income)':'var(--gold)'}"></div></div><b>${pct==null?'—':pct+'%'}</b></div></td></tr>`
+        : `<tr><th>목표 달성률</th><td colspan="3"><span class="hint" style="margin:0">목표 미설정 (매출 목표 메뉴에서 연결되면 진행률 표시)</span></td></tr>`;
+      // 0185 · 등록 승인 상태 + 선점(CONSTANCIA) + 할인율 산출 근거
+      const regBanner = c.approval_status==='pending'
+        ? `<div style="border:1px solid #ecd9a0;background:#fffaf0;border-radius:9px;padding:9px 12px;margin-bottom:8px;font-size:12.5px;color:#9a6512">
+             🔒 <b>디렉터 등록 승인 대기</b> — 승인 전에는 견적·매출에 사용할 수 없습니다.
+             CONSTANCIA <b>${esc(c.constancia_no||'—')}</b> 로 선점되어 있습니다.</div>` : '';
+      const refRow = (c.syd_ref_buy_price!=null)
+        ? `<tr><th>할인율 산출 근거</th><td colspan="3">
+             기준품목 <b>${esc(c.syd_ref_code||'—')}</b> 고객 구매단가 <b>${mxTxt(c.syd_ref_buy_price)}</b>
+             <span class="hint" style="margin:0">(SYD 정가 ${mxTxt(c.syd_ref_list_price)} → 고객 할인율 ${pctTxt(c.syd_ref_discount)})</span>
+             <span style="color:#9a6512;font-weight:700"> → </span>
+             우리 <b>${esc(c.ctr_ref_code||'—')}</b> 정가 ${mxTxt(c.ctr_ref_list_price)}
+             <span class="hint" style="margin:0">· 제안 ${pctTxt(c.suggested_discount)} / 적용 ${pctTxt(c.discount)}</span></td></tr>` : '';
+      $('d-info').innerHTML=regBanner+`<table>
+        <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
+        <tr><th>회사 종류</th><td>${c.customer_type||'—'}</td><th>RFC</th><td>${c.rfc||'—'}</td></tr>
+        <tr><th>CONSTANCIA 번호</th><td colspan="3">${c.constancia_no?('<b>'+esc(c.constancia_no)+'</b> <span class="hint" style="margin:0">— 이 번호가 선점(내 고객) 키입니다</span>'):'<span style="color:#B23A2E">미등록 — 선점 보호를 받지 못합니다</span>'}</td></tr>
+        ${refRow}
+        <tr><th>이메일 주소</th><td>${c.contact||'—'}</td><th>전화</th><td>${c.phone||'—'}</td></tr>
+        <tr><th>구매결정권자</th><td>${c.buyer_name||'—'}</td><th>구매결정권자 전화(WhatsApp)</th><td>${c.buyer_phone||'<span style="color:#B23A2E">미등록 — 오퍼시트는 기본 전화로 발송</span>'}</td></tr>
+        <tr><th>기본할인 / 외상일</th><td colspan="3">${c.discount}% / ${c.credit_days}일${c.branch_count!=null?(" · 지점 "+c.branch_count):""}</td></tr>
+        <tr><th>미수 합계</th><td><b>${fmt(totalOut)}</b></td><th>연체 합계</th><td class="${totalOver>0?'over':''}">${fmt(totalOver)}</td></tr>
+        <tr><th>${sm.year||''} 누적 실적</th><td><b style="color:var(--income)">${fmt(actual)}</b></td><th>연말 매출목표</th><td>${target!=null?fmt(target):'<span class="hint" style="margin:0">미설정</span>'}</td></tr>
+        ${progressRow}
+        <tr><th>구매주기</th><td colspan="3">${renderCycle(d.reorder_summary)}</td></tr>
+        <tr><th>배송지</th><td colspan="3">${c.ship_address?esc(c.ship_address):'<span class="hint" style="margin:0">미입력 — 수정에서 입력하면 포장 라벨(etiqueta)에 인쇄됩니다</span>'}</td></tr>
+        ${c.constancia_fiscal?`<tr><th>Constancia Fiscal</th><td colspan="3">${esc(c.constancia_fiscal)}</td></tr>`:''}
+        ${c.memo?`<tr><th>메모</th><td colspan="3">${c.memo}</td></tr>`:''}
+      </table>`;
+      loadDocs(c.id);
+      loadDetailApproval(c.id);
+      loadCustVisits(c.id);
+      loadTermsHistory(c.id);
+      if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
+      $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
+        <tbody>${d.invoices.map(i=>`<tr>
+          <td>${i.inv_date}</td><td>${i.due_date||'—'}</td>
+          <td class="num">${fmt(i.total_mxn)}</td><td class="num">${fmt(i.paid)}</td>
+          <td class="num">${fmt(i.outstanding)}</td>
+          <td>${i.overdue?'<span class="pill" style="background:#fbe9e7;color:var(--expense)">연체</span>':(i.outstanding>0?'<span class="pill" style="background:#fff7e0;color:#9a6512">미수</span>':'<span class="pill" style="background:#e7f3ee;color:var(--income)">완납</span>')}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }catch(e){$('d-info').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ============================================================
+  // 상담·방문 이력 (고객 상세)  — build cv-0819a
+  //   GET /api/customers/:id/visits → 현장방문 + 수기미팅을 날짜 최신순 한 표로.
+  //   카테고리는 서버(visitTags)가 대화·AI요약 텍스트에서 자동 추출한 단어.
+  //   AI 요약은 스페인어 원문 그대로 보여주고 [🇰🇷 한국어] 토글로 번역본 전환(번역 캐시).
+  // ============================================================
+  let cvData=null, cvCust=null;
+  const cvLang={};              // 행 key → 'es' | 'ko'
+  const cvOpen=new Set();
+  const CV_FUP={ done:['✅ 완료','#0F6E56','#e6f3ee'], overdue:['⚠ 연체','#B23A2E','#f8dcdc'],
+                 open:['⏳ 진행 중','#9a6512','#fdf3e0'], none:['—','#888','#eef0f2'] };
+  function cvDayLabel(d){
+    const p=String(d||'').split('-').map(Number);
+    if(p.length!==3||!p[0]) return String(d||'');
+    const w=['일','월','화','수','목','금','토'][new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay()];
+    return String(d)+' ('+w+')';
+  }
+  function cvChip(c){
+    return '<span style="display:inline-block;background:'+esc(c.color)+'18;color:'+esc(c.color)+
+      ';border:1px solid '+esc(c.color)+'55;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;margin:1px 3px 1px 0">'+esc(c.label)+'</span>';
+  }
+  function cvKoMerge(es,ko){
+    const o=Object.assign({},es||{}); const k=ko||{};
+    ['resumen','insights','next_step'].forEach(f=>{ if(k[f]) o[f]=k[f]; });
+    if(k.action_items&&k.action_items.length) o.action_items=k.action_items;
+    if(k.products&&k.products.length) o.products=k.products;
+    return o;
+  }
+  function cvFind(key){ return ((cvData&&cvData.items)||[]).find(x=>x.key===key)||null; }
+
+  async function loadCustVisits(custId){
+    const box=$('d-visits'); if(!box) return;
+    cvCust=custId; cvData=null; cvOpen.clear();
+    box.innerHTML='<div class="hint" style="margin-top:12px">상담·방문 이력 불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customers/'+custId+'/visits',{headers:auth()}).then(r=>r.json());
+      if(cvCust!==custId) return;   // 그 사이 다른 고객을 열었으면 이 응답은 버린다(엉뚱한 고객 이력 표시 방지)
+      if(d.error){ box.innerHTML='<div class="hint" style="margin-top:12px">상담·방문 이력을 불러오지 못했습니다'+(d.error==='forbidden_team'?' (다른 팀 고객)':'')+'.</div>'; return; }
+      cvData=d; cvRender();
+    }catch(e){ if(cvCust===custId) box.innerHTML='<div class="hint" style="margin-top:12px">상담·방문 이력: 서버 연결 실패</div>'; }
+  }
+
+  function cvRender(){
+    const box=$('d-visits'); if(!box||!cvData) return;
+    const items=cvData.items||[];
+    const head=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer" id="cv-head">
+        <span class="cvArrow" style="color:#0f6b53">▾</span>
+        <b style="color:#0f6b53">🗣 상담·방문 이력</b>
+        <span class="hint" style="margin:0">${items.length?('총 '+items.length+'건 · 방문 '+cvData.visit_cnt+' · 미팅 '+cvData.meeting_cnt+' · 최근 '+esc(cvData.last_date||'—')+(cvData.open_pendings?(' · <b style="color:#B23A2E">미완 후속 '+cvData.open_pendings+'건</b>'):'')):'기록 없음'}</span>
+        ${cvData.scope==='own'?'<span class="pill" style="background:#eef0f2;color:#5b6b73">내 기록만</span>':''}
+      </div>`;
+    if(!items.length){
+      box.innerHTML=`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">
+        ${head}<div class="hint" style="margin-top:6px">${cvData.scope==='own'
+          ?'내가 기록한 방문·상담이 없습니다. (다른 담당자의 기록은 디렉터만 볼 수 있습니다)'
+          :'아직 등록된 방문·상담 기록이 없습니다. (영업 &gt; 영업활동에서 방문 체크인 시 자동으로 쌓입니다)'}</div></div>`;
+      $('cv-head').onclick=null; return;
+    }
+    const tagSum=(cvData.tag_summary||[]).slice(0,8)
+      .map(c=>cvChip({label:c.label+' '+c.cnt,color:c.color})).join('');
+    let rows='';
+    items.forEach((v,i)=>{
+      const f=CV_FUP[v.fup]||CV_FUP.none;
+      const tags=((v.tag_chips||[]).map(cvChip).join('')
+        +(v.tag_more?('<span class="hint" style="margin:0">+'+v.tag_more+'</span>'):''))
+        ||'<span class="hint" style="margin:0">—</span>';
+      const kind=v.source==='visit'
+        ? '<span class="pill" style="background:#e2f3ef;color:#0f7a5f">🧭 방문</span>'
+        : '<span class="pill" style="background:#eef4fb;color:#2f6db5">📝 미팅</span>';
+      rows+=`<tr class="cv-row" data-key="${esc(v.key)}" style="cursor:pointer">
+        <td style="white-space:nowrap">${i+1}</td>
+        <td style="white-space:nowrap"><b>${esc(cvDayLabel(v.date))}</b>${v.time?('<br><span class="hint" style="margin:0">'+esc(v.time)+'</span>'):''}</td>
+        <td style="white-space:nowrap">${kind}</td>
+        <td style="white-space:nowrap">${esc(v.by_name||'—')}${v.met_person?('<br><span class="hint" style="margin:0">👤 '+esc(v.met_person)+'</span>'):''}</td>
+        <td style="min-width:130px">${tags}</td>
+        <td>${v.headline?esc(v.headline):'<span class="hint" style="margin:0">기록 없음</span>'}${v.has_ai?' <span title="녹음 AI 요약">🎙</span>':''}${v.stage_move?('<br><span class="hint" style="margin:0">단계: '+esc(v.stage_move)+'</span>'):''}</td>
+        <td style="white-space:nowrap"><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;color:${f[1]};background:${f[2]}">${f[0]}</span>${v.pend_total?('<br><span class="hint" style="margin:0">'+v.pend_done+'/'+v.pend_total+'</span>'):''}</td>
+      </tr>
+      <tr class="cv-detail hidden" data-for="${esc(v.key)}"><td colspan="7" style="background:#fbfcfb;padding:10px 14px" id="cv-det-${esc(v.key)}"></td></tr>`;
+    });
+    box.innerHTML=`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">
+      ${head}
+      <div id="cvBody" style="margin-top:8px">
+        ${tagSum?('<div style="margin-bottom:6px">'+tagSum+'</div>'):''}
+        <div style="overflow-x:auto"><table style="font-size:12.5px;width:100%">
+          <thead><tr><th style="width:34px">#</th><th>날짜</th><th>구분</th><th>담당</th><th>카테고리</th><th>내용 요약</th><th>후속</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <div class="hint" style="margin-top:6px">행을 클릭하면 그날 무엇을 했는지 상세(사전계획 · AI 요약 · 파악한 내용 · 후속조치)가 열립니다.${cvData.truncated?(' <b style="color:#9a6512">· 최근 '+(cvData.limit||300)+'건까지만 표시 — 위 합계·최초일은 이 범위 기준입니다.</b>'):''}</div>
+      </div></div>`;
+    $('cv-head').onclick=function(){
+      const t=$('cvBody'); t.style.display=t.style.display==='none'?'':'none';
+      this.querySelector('.cvArrow').textContent=t.style.display==='none'?'▸':'▾';
+    };
+    box.querySelectorAll('.cv-row').forEach(tr=>tr.onclick=()=>cvToggle(tr.dataset.key));
+    cvOpen.forEach(k=>{ const det=box.querySelector('.cv-detail[data-for="'+k+'"]'); if(det){ cvRenderDet(k); det.classList.remove('hidden'); } });
+  }
+
+  function cvRenderDet(key){
+    const v=cvFind(key); if(!v) return;
+    const cell=$('cv-det-'+key); if(!cell) return;
+    const es=v.summary||{};
+    const hasKo=!!(es.ko&&(es.ko.resumen||es.ko.insights));
+    const lang=(cvLang[key]==='ko'&&hasKo)?'ko':'es';
+    const s=lang==='ko'?cvKoMerge(es,es.ko):es;
+    const insight=(es.insights?s.insights:v.insight)||'';
+    const koBtn=(es.resumen&&v.rec_id)
+      ? ('<button type="button" class="btn ghost sm cv-koBtn" data-key="'+esc(key)+'" style="margin-left:6px">'+(lang==='ko'?'🇲🇽 원문(스페인어)':'🇰🇷 한국어')+'</button>')
+      : '';
+    const acts=(lang==='ko'&&s.action_items&&s.action_items.length)
+      ? s.action_items.map(a=>'· '+esc(a.content)+(a.due_date?(' <b>('+esc(a.due_date)+')</b>'):'')).join('<br>') : '';
+    const pendRows=(v.pendings||[]).map(p=>`<div style="margin:3px 0">${p.done?'✅':'⬜'} <span style="${p.done?'text-decoration:line-through;color:#888':''}">${esc(p.content)}</span>${p.due_date?(' <b>('+esc(p.due_date)+')</b>'):''}${p.overdue?' <b style="color:#B23A2E">⚠ 연체</b>':''}</div>`).join('');
+    cell.innerHTML=`
+      ${v.plan?('<div><b>'+(v.source==='visit'?'사전 계획(할 이야기)':'미팅 기록')+':</b> '+esc(v.plan)+'</div>'):''}
+      ${s.resumen?('<div style="margin-top:6px"><b>🎙 미팅 요약(AI):</b> '+esc(s.resumen)+koBtn
+          +(lang==='ko'?'<div class="hint" style="margin:2px 0 0">🇰🇷 AI 한국어 번역본</div>':'')+'</div>')
+        :(v.source==='visit'?('<div style="margin-top:6px" class="hint">녹음 AI 요약이 없습니다'+(v.rec_status&&v.rec_status!=='done'?(' (녹음 상태: '+esc(v.rec_status)+')'):' — 수기 기록만')+'</div>'):'')}
+      ${insight?('<div style="margin-top:4px"><b>파악한 내용:</b> '+esc(insight)+'</div>'):''}
+      ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+esc(s.products.join(', '))+'</div>'):''}
+      ${s.next_step?('<div style="margin-top:4px"><b>다음 계획:</b> '+esc(s.next_step)+'</div>'):''}
+      ${acts?('<div style="margin-top:4px"><b>해야 할 일(요약):</b><br>'+acts+'</div>'):''}
+      ${v.stage_move?('<div style="margin-top:4px"><b>단계 이동:</b> '+esc(v.stage_move)+'</div>'):''}
+      ${v.pend_total?('<div style="margin-top:8px"><b>📌 후속조치 ('+v.pend_done+'/'+v.pend_total+')</b></div>'+pendRows
+        +'<div class="hint" style="margin-top:2px">체크 변경은 영업 &gt; 영업활동 화면에서</div>'):''}`;
+    const kb=cell.querySelector('.cv-koBtn');
+    if(kb) kb.onclick=(ev)=>{ ev.stopPropagation(); cvToggleKo(key,kb); };
+  }
+
+  function cvToggle(key){
+    const det=document.querySelector('.cv-detail[data-for="'+key+'"]'); if(!det) return;
+    if(!det.classList.contains('hidden')){ det.classList.add('hidden'); cvOpen.delete(key); return; }
+    if(!cvFind(key)) return;
+    cvRenderDet(key); det.classList.remove('hidden'); cvOpen.add(key);
+  }
+
+  async function cvToggleKo(key,btn){
+    const v=cvFind(key); if(!v) return;
+    const es=v.summary||{};
+    if(cvLang[key]==='ko'){ cvLang[key]='es'; cvRenderDet(key); return; }
+    if(es.ko&&es.ko.resumen){ cvLang[key]='ko'; cvRenderDet(key); return; }
+    if(!v.rec_id){ alert('번역할 녹음 요약을 찾지 못했습니다.'); return; }
+    btn.disabled=true; btn.textContent='🔄 번역 중…';
+    try{
+      const res=await fetch(session.api+'/api/visits/recordings/'+v.rec_id+'/translate',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){
+        const e=d&&d.error;
+        throw new Error(e==='no_anthropic_key'?'ANTHROPIC_API_KEY 미설정 — 번역을 사용할 수 없습니다.'
+          :e==='no_summary'?'아직 AI 요약이 없습니다.'
+          :e==='ai_parse'?'번역 응답을 읽지 못했습니다. 다시 시도해 주세요.'
+          :(e||('HTTP '+res.status)));
+      }
+      v.summary=Object.assign({},es,{ko:d.ko}); cvLang[key]='ko'; cvRenderDet(key);
+    }catch(e){ alert('한국어 번역 실패: '+((e&&e.message)||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
+  }
+
+  // ===== 팀 권한 관리(디렉터) =====
+  // ★ 개선: 저장 시 화면 전체를 다시 그리지 않고 해당 줄만 그 자리에서 갱신.
+  //   선택한 값이 그대로 고정 표시되고, 「현재」 상태줄 + 「저장됨 ✓ 시각」 배지가 남는다.
+  //   실패하면 이전 값으로 되돌리고 사유를 alert로 표시.
+  //   비교는 전부 Number 정규화(BIGINT가 문자열로 와서 ===가 어긋나던 버그 방지).
+  let taUsers=[];
+  const taNum=(v)=>(v==null||v==='')?null:Number(v);
+  function taTeamName(tid){ const t=adminTeams.find(x=>Number(x.id)===Number(tid)); return t?t.name:null; }
+  function taRowHtml(u,saved){
+    const own=taNum(u.team_id);
+    const ownName=taTeamName(own);
+    const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    const savedBadge=(k)=>saved===k?` · <span style="color:#0F6E56;font-weight:800">저장됨 ✓ ${now}</span>`:'';
+    const grantNames=(u.grants||[]).map(g=>taTeamName(g.team_id)).filter(Boolean);
+    const dis=u._saving?'disabled':'';
+    return `
+      <td><b>${esc(u.name)}</b></td><td>${esc(u.role||'')}</td>
+      <td>
+        <select onchange="setTeam(${u.id},this.value)" ${dis} style="width:auto;padding:5px 8px;border:2px solid ${own!=null?'#0F6E56':'#ccc'};border-radius:6px">
+          <option value="">미지정</option>
+          ${adminTeams.map(t=>`<option value="${t.id}" ${own===Number(t.id)?'selected':''}>${esc(t.name)}</option>`).join('')}
+        </select>
+        <div style="font-size:11px;margin-top:3px;color:${own!=null?'#0F6E56':'#999'}">현재: <b>${ownName?esc(ownName):'미지정'}</b>${u._saving?' · 저장 중…':savedBadge('team')}</div>
+      </td>
+      <td>
+        ${adminTeams.filter(t=>t.is_sales!==false).map(t=>{
+          const tid=Number(t.id);
+          if(own===tid)return `<span class="hint" style="margin:0 8px 0 0">${esc(t.name)}(소속)</span>`;
+          const g=(u.grants||[]).some(x=>Number(x.team_id)===tid);
+          return `<label style="display:inline-block;font-size:12px;margin:2px 8px 2px 0;padding:2px 9px;border-radius:999px;border:1px solid ${g?'#0F6E56':'#ccc'};background:${g?'#e6f3ee':'#fff'};color:${g?'#0F6E56':'#666'};cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:middle" ${g?'checked':''} ${dis} onchange="toggleGrant(${u.id},${tid},this.checked)"> ${esc(t.name)}</label>`;
+        }).join('')}
+        <div style="font-size:11px;margin-top:3px;color:#666">현재 열람 가능: <b>${[ownName?ownName+'(소속)':null].concat(grantNames).filter(Boolean).map(esc).join(', ')||'없음'}</b>${u._saving?' · 저장 중…':savedBadge('grant')}</div>
+      </td>
+      <td>
+        ${u.role==='director'
+          ? '<span class="hint" style="margin:0">디렉터 — 직접 수정</span>'
+          : `<label style="display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid ${u.cross_team_request?'#20486f':'#ccc'};background:${u.cross_team_request?'#eef4fb':'#fff'};color:${u.cross_team_request?'#20486f':'#666'};cursor:pointer"><input type="checkbox" style="width:auto;vertical-align:middle" ${u.cross_team_request?'checked':''} ${dis} onchange="toggleCrossReq(${u.id},this.checked)"> 허용</label>`}
+        <div style="font-size:11px;margin-top:3px;color:#666">${u.role==='director'?'&nbsp;':(u.cross_team_request?'<b style="color:#20486f">타팀 고객 수정요청 가능</b>(승인 필요)':'자기 팀 고객만 수정 요청')}${u._saving?' · 저장 중…':savedBadge('cross')}</div>
+      </td>`;
+  }
+  function taRender(uid,saved){
+    const u=taUsers.find(x=>x.id===Number(uid)); if(!u)return;
+    const tr=document.getElementById('ta-row-'+u.id); if(!tr)return;
+    tr.innerHTML=taRowHtml(u,saved);
+  }
+  async function loadTeamUsers(){
+    const b=$('teamUsers');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/team-admin/users',{headers:auth()}).then(r=>r.json());
+      taUsers=(d.items||[]).map(u=>({...u,id:Number(u.id),team_id:taNum(u.team_id),
+        cross_team_request:u.cross_team_request===true,
+        grants:(u.grants||[]).map(g=>({...g,team_id:Number(g.team_id)}))}));
+      b.innerHTML=`<table><thead><tr><th>이름</th><th>역할</th><th>소속 팀</th><th>상대팀 열람</th><th>타팀 수정요청</th></tr></thead>
+        <tbody>${taUsers.map(u=>`<tr id="ta-row-${u.id}">${taRowHtml(u)}</tr>`).join('')}</tbody></table>
+        <div class="hint">소속 팀을 정하면 그 팀 고객을 봅니다. 상대팀 체크 시 그 팀도 열람할 수 있습니다(디렉터 부여).<br>
+        <b style="color:#20486f">타팀 수정요청</b>을 허용하면 그 사용자는 다른 팀 고객을 상호·코드로 찾아 <b>수정 요청</b>을 넣을 수 있습니다. <b>열람 범위는 넓어지지 않고</b>(매출·미수·서류는 계속 차단), 실제 반영은 <b>「수정 승인 대기」 탭에서 디렉터가 승인할 때</b>만 이루어집니다.<br>
+        변경은 선택 즉시 저장되며, 선택값이 그대로 고정 표시되고 해당 줄에 <b style="color:#0F6E56">저장됨 ✓ 시각</b>이 남습니다. 저장에 실패하면 이전 값으로 되돌리고 사유를 알려줍니다.</div>`;
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function taCall(url,opt){
+    try{
+      const res=await fetch(url,opt);
+      let d=null; try{d=await res.json();}catch(e){}
+      // 서버가 note 로 원인·조치를 한국어로 알려주면 그걸 그대로 보여준다(오류코드만 뜨면 진단이 안 됨).
+      if(!res.ok||(d&&d.error))return {ok:false,msg:(d&&(d.note||d.error||d.message))||('HTTP '+res.status),data:d};
+      return {ok:true,d};
+    }catch(e){return {ok:false,msg:'서버 연결 실패'};}
+  }
+  async function setTeam(userId,teamId){
+    const u=taUsers.find(x=>x.id===Number(userId)); if(!u)return;
+    const next=taNum(teamId);
+    u._saving=true; taRender(u.id);
+    const r=await taCall(session.api+'/api/team-admin/users/'+u.id+'/team',
+      {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:next})});
+    u._saving=false;
+    if(r.ok){ u.team_id=next; taRender(u.id,'team'); }
+    else { taRender(u.id); alert('소속팀 저장 실패: '+r.msg); }
+  }
+  async function toggleGrant(userId,teamId,on){
+    const u=taUsers.find(x=>x.id===Number(userId)); if(!u)return;
+    const tid=Number(teamId);
+    u._saving=true; taRender(u.id);
+    const r=on
+      ?await taCall(session.api+'/api/team-admin/users/'+u.id+'/grant',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:tid})})
+      :await taCall(session.api+'/api/team-admin/users/'+u.id+'/grant/'+tid,{method:'DELETE',headers:auth()});
+    u._saving=false;
+    if(r.ok){
+      u.grants=(u.grants||[]).filter(g=>Number(g.team_id)!==tid);
+      if(on)u.grants.push({team_id:tid,team_name:taTeamName(tid),can_edit:false});
+      taRender(u.id,'grant');
+    } else { taRender(u.id); alert('상대팀 열람 저장 실패: '+r.msg); }
+  }
+  // 타팀 고객 수정요청 허용/차단 — 즉시 저장, 실패 시 이전 값 원복(다른 토글과 동일 UX)
+  async function toggleCrossReq(userId,on){
+    const u=taUsers.find(x=>x.id===Number(userId)); if(!u)return;
+    const prev=u.cross_team_request===true;
+    u._saving=true; taRender(u.id);
+    const r=await taCall(session.api+'/api/team-admin/users/'+u.id+'/cross-team-request',
+      {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({enabled:!!on})});
+    u._saving=false;
+    if(r.ok){ u.cross_team_request=!!on; taRender(u.id,'cross'); }
+    else { u.cross_team_request=prev; taRender(u.id); alert('타팀 수정요청 권한 저장 실패: '+r.msg); }
+  }
+
+  // 탭 전환
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+    const tab=t.dataset.tab;
+    $('tab-list').classList.toggle('hidden',tab!=='list');
+    $('tab-team').classList.toggle('hidden',tab!=='team');
+    $('tab-approve').classList.toggle('hidden',tab!=='approve');
+    $('tab-reg').classList.toggle('hidden',tab!=='reg');
+    if(tab==='team')loadTeamUsers();
+    if(tab==='approve')loadApprovals();
+    if(tab==='reg')loadRegApprovals();
+  }));
+  if(window.__rnavRefresh)window.__rnavRefresh();
+  // 헤더(트리) 딥링크: #tab=list/team/approve
+  function applyCustHashTab(){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
+    let tab='list'; try{ const p=new URLSearchParams(location.hash.slice(1)); tab=p.get('tab')||'list'; }catch(e){}
+    if(['list','team','approve','reg'].indexOf(tab)<0)tab='list';
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));
+    $('tab-list').classList.toggle('hidden',tab!=='list');
+    $('tab-team').classList.toggle('hidden',tab!=='team');
+    $('tab-approve').classList.toggle('hidden',tab!=='approve');
+    $('tab-reg').classList.toggle('hidden',tab!=='reg');
+    if(tab==='team')loadTeamUsers();
+    if(tab==='approve')loadApprovals();
+    if(tab==='reg')loadRegApprovals();
+  }
+  window.addEventListener('hashchange',()=>{ if(!$('app').classList.contains('hidden'))applyCustHashTab(); });
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+
+  // ===== 엑셀 일괄 등록 =====
+  let upRows=null;
+  async function downloadTemplate(){
+    let headers=['고객코드 (Código)','고객명 (Nombre)','팀 (Equipo)','회사종류 (Tipo)','RFC','담당자 (Responsable)','단계 (Etapa)','이메일 주소 (Email)','전화 (Teléfono)','할인율 (Descuento %)','외상일 (Días crédito)','메모 (Nota)'];
+    try{const d=await fetch(session.api+'/api/customers/template',{headers:auth()}).then(r=>r.json());if(d.headers)headers=d.headers;}catch(e){}
+    const teamNames=(teams||[]).map(t=>t.name).join(' / ')||'01_Monterrey / 02_Merida';
+    const ws=XLSX.utils.aoa_to_sheet([headers,
+      ['', '예시고객', (teams[0]?.name||'01_Monterrey'), 'Mayoreo','XAXX010101000','', '01_잠재','ejemplo@correo.com','8112345678','5','30','메모예시']]);
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'고객');
+    XLSX.writeFile(wb,'refatrix_고객양식.xlsx');
+  }
+  function handleFile(file){
+    const m=$('upMsg');m.style.display='none';
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        upRows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''}).filter(r=>r.some(c=>String(c).trim()!==''));
+        if(upRows.length<2){m.className='msg err';m.style.display='block';m.textContent='데이터가 없습니다.';return;}
+        const res=await fetch(session.api+'/api/customers/import/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:upRows})});
+        const d=await res.json();
+        if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='미리보기 실패: '+(d.error==='missing_name_column'?'“고객명” 열이 없습니다(양식을 사용하세요).':(d.error||res.status));return;}
+        renderPreview(d);
+      }catch(err){m.className='msg err';m.style.display='block';m.textContent='파일을 읽지 못했습니다.';}
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  function renderPreview(d){
+    const errs=d.errors||[];
+    const ups=d.update||[];
+    const changedUps=ups.filter(u=>!u.unchanged);
+    const sameUps=ups.filter(u=>u.unchanged);
+    let html=`<div style="margin-top:10px;font-size:13px">총 ${d.total}행 — <b style="color:var(--income)">신규 ${d.create.length}</b> · <b style="color:var(--gold)">갱신 ${changedUps.length}</b> · <span class="hint" style="margin:0">변동없음 ${sameUps.length}</span>${errs.length?` · <b style="color:var(--expense)">오류 ${errs.length}</b>`:''}</div>`;
+    // 신규 목록
+    if(d.create.length){
+      html+='<div style="font-weight:700;margin-top:10px;font-size:13px">신규 등록</div><table><thead><tr><th>고객명</th><th>팀</th><th>종류</th></tr></thead><tbody>'+
+        d.create.map(c=>`<tr><td>${c.name}</td><td>${c.team}</td><td>${c.customer_type||'—'}</td></tr>`).join('')+'</tbody></table>';
+    }
+    // 변경되는 기존 고객(필드별 이전→이후)
+    if(changedUps.length){
+      html+='<div style="font-weight:700;margin-top:10px;font-size:13px">기존 고객 변경 내역</div><table><thead><tr><th>고객(코드)</th><th>변경 항목</th></tr></thead><tbody>'+
+        changedUps.map(u=>`<tr><td>${u.name} <span class="hint" style="margin:0">${u.code}</span></td>
+          <td>${u.changes.map(ch=>`<div><b>${ch.field}</b>: <span style="color:var(--muted)">${ch.from??'(빈값)'}</span> → <b>${ch.to??'(빈값)'}</b></div>`).join('')}${u.terms_skipped?'<div class="hint" style="margin:2px 0 0;color:#9a6512">⚠ 할인율·외상일 값 차이는 반영되지 않습니다(고객 폼 승인 경로 전용)</div>':''}</td></tr>`).join('')+'</tbody></table>';
+    }
+    if(ups.some(u=>u.unchanged&&u.terms_skipped)){
+      html+='<div class="hint" style="color:#9a6512">⚠ 일부 행의 할인율·외상일이 현재값과 다르지만, 엑셀로는 반영되지 않습니다(고객 수정 폼에서 승인 필요).</div>';
+    }
+    if(sameUps.length){
+      html+=`<div class="hint">변동 없는 기존 고객 ${sameUps.length}건은 그대로 둡니다: ${sameUps.map(u=>u.name).join(', ')}</div>`;
+    }
+    if(errs.length){
+      html+='<div style="font-weight:700;margin-top:10px;font-size:13px;color:var(--expense)">오류(반영 제외)</div><table><thead><tr><th>고객명</th><th>코드</th><th>오류</th></tr></thead><tbody>'+
+        errs.map(e=>`<tr><td>${e.name||'—'}</td><td>${e.code||'—'}</td><td class="over">${e.errors.join(', ')}</td></tr>`).join('')+'</tbody></table>';
+    }
+    const willApply=d.create.length+changedUps.length;
+    html+=`<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn gold sm" id="commitBtn" ${willApply?'':'disabled'}>${willApply?`${willApply}건 반영하기`:'반영할 변경 없음'}</button><button class="btn ghost sm" id="cancelUp">취소</button></div>`;
+    $('upPreview').innerHTML=html;
+    if($('commitBtn'))$('commitBtn').onclick=commitUpload;
+    $('cancelUp').onclick=()=>{$('upPreview').innerHTML='';upRows=null;};
+  }
+  async function commitUpload(){
+    const m=$('upMsg');m.className='msg';m.style.display='none';
+    if(!upRows)return;
+    $('commitBtn').disabled=true;$('commitBtn').textContent='반영 중…';
+    try{
+      const res=await fetch(session.api+'/api/customers/import/commit',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:upRows})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='반영 실패: '+(d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=`반영 완료 — 신규 ${d.created} · 갱신 ${d.updated}${d.skipped?` · 건너뜀 ${d.skipped}`:''}.`;
+      $('upPreview').innerHTML='';upRows=null;loadCustomers();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('commitBtn')&&($('commitBtn').disabled=false);}
+  }
+  $('tmplBtn').addEventListener('click',downloadTemplate);
+  $('docUpload').addEventListener('click',uploadDoc);
+  $('upDrop').addEventListener('click',()=>$('upFile').click());
+  $('upFile').addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
+  $('upDrop').addEventListener('dragover',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--brand)';});
+  $('upDrop').addEventListener('dragleave',()=>$('upDrop').style.borderColor='var(--line)');
+  $('upDrop').addEventListener('drop',e=>{e.preventDefault();$('upDrop').style.borderColor='var(--line)';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+  $('searchBtn').addEventListener('click',loadCustomers);
+  $('discChartBtn').addEventListener('click',openChart);
+  $('listToggleBtn').addEventListener('click',toggleList);
+  $('chartModal').addEventListener('click',e=>{ if(e.target===$('chartModal'))closeChart(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeChart(); });
+  $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
+  $('crossBtn').addEventListener('click',crossSearch);
+  $('crossQ').addEventListener('keydown',(e)=>{if(e.key==='Enter')crossSearch();});
+  $('newCustBtn').addEventListener('click',()=>showForm(null));
+  $('editBtn').addEventListener('click',editCurrentCustomer);
+  $('delBtn').addEventListener('click',deleteCustomer);
+  $('d-back').addEventListener('click',()=>$('detailCard').classList.add('hidden'));
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-custform.js?v=20260826reg"></script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

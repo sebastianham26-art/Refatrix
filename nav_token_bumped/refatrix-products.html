@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 제품 조회 · ph-0824b</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:920px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:8px 7px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{padding-left:2px}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.nowrap,td.nowrap{white-space:nowrap}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--brand)}
+  th.sortable .ar{font-size:9px;opacity:.5;margin-left:2px}
+  th.sortable.active{color:var(--brand)}
+  th.sortable.active .ar{opacity:1}
+  .code{font-weight:700;color:var(--brand);white-space:nowrap}
+  .code .tri{display:inline-block;width:13px;color:var(--gold);transition:transform .15s}
+  tr.prow.open .code .tri{transform:rotate(90deg)}
+  .rack{font-size:11px;color:#6f6a60}
+  /* 입고단가 브레이크다운 카드 */
+  .cbk{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 6px}
+  .cbk .card2{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:248px;background:#fff;font-size:12px}
+  .cbk .bh{font-weight:700;color:var(--brand);margin-bottom:5px;font-size:11.5px}
+  .cbk .ln{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
+  .cbk .ln .lk{color:var(--muted)}
+  .cbk .tot{border-top:1px solid var(--line);margin-top:5px;padding-top:5px}
+  /* 드릴다운 2분할(원가분석 | 매출총이익) */
+  .dcols{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .dcol{flex:1 1 320px;min-width:300px}
+  .dh{font-weight:800;color:var(--brand);margin-bottom:6px;font-size:13px;border-bottom:2px solid var(--line);padding-bottom:3px}
+  .pos{color:var(--income)} .neg{color:var(--expense)}
+  .gpf{border:1px solid var(--line);border-radius:10px;background:#fff;padding:8px 12px;margin-top:8px;font-size:12px}
+  .gpf .ln{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
+  .gpf .ln .lk{color:var(--muted)}
+  .gpf .tot{border-top:1px solid var(--line);margin-top:5px;padding-top:5px;font-weight:700}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .lowstock{color:var(--expense);font-weight:700}
+  .bopos{color:#B8893B;font-weight:700}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .pvcards{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .pvcard{border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:90px}
+  .pvcard .k{font-size:11px;color:var(--muted)}.pvcard .v{font-size:18px;font-weight:800}
+  .pvcard.new .v{color:var(--income)}.pvcard.upd .v{color:var(--gold)}.pvcard.err .v{color:var(--expense)}
+  .chg{font-size:11px;color:var(--muted)}
+  /* 📜 제품 이력(ph-0824b) */
+  #histCard select,#histCard input[type=date]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  #histCard tr.ph-row:hover td{background:#f7f4ec}
+  #histCard tr.ph-det td{border-bottom:2px solid var(--line)}
+  .chg b{color:var(--ink)}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#faf8f3}
+  .drop:hover{border-color:var(--brand);color:var(--brand)}
+  .tag{display:inline-block;background:#eef1f5;color:#5a6b7b;border-radius:6px;padding:1px 6px;font-size:11px;margin:1px}
+  /* 드릴다운 적용차종 전체 섹션 */
+  .appsec{margin:0 0 12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
+  .appchips{display:flex;flex-wrap:wrap;gap:4px}
+  .appchips .tag{font-size:12px;padding:3px 9px;background:#f4efe4;color:#6b5f45;border:1px solid #e6ddca}
+  /* 중국차 브랜드 칩(복수선택 토글) */
+  .cnchip{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:14px;
+    font-size:12px;font-weight:600;cursor:pointer;user-select:none;
+    background:#fff;color:#8a1c1c;border:1px solid #e2b8b8;transition:all .12s}
+  .cnchip:hover{background:#fdf2f2}
+  .cnchip.on{background:#c0392b;color:#fff;border-color:#c0392b}
+  .cnchip .cnt{font-size:11px;opacity:.7;font-weight:500}
+  .cnchip.on .cnt{opacity:.85}
+  /* 결과행 중국 브랜드 배지 */
+  .cnbadge{display:inline-block;margin-right:3px;padding:0 6px;border-radius:9px;
+    background:#fbe9e7;color:#b23a2e;font-size:10px;font-weight:700;line-height:16px}
+  /* 제품 사진 아이콘(적용차종 제목 옆) + SYD·CTR 사진 비교 모달 */
+  .photoicon{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:1px 9px;
+    border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--brand);
+    font-size:11px;font-weight:600;cursor:pointer;vertical-align:middle;line-height:16px}
+  .photoicon:hover{background:#eef4f1;border-color:var(--brand)}
+  .pm-ov{position:fixed;inset:0;background:rgba(20,30,28,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:18px}
+  .pm-box{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  .pm-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .pm-head .t{font-weight:800;color:var(--brand);font-size:15px}
+  .pm-x{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px}
+  .pm-x:hover{background:#f4f1ea}
+  .pm-cols{display:flex;gap:14px;flex-wrap:wrap}
+  .pm-col{flex:1 1 300px;min-width:280px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#faf8f3}
+  .pm-col .bh{font-weight:800;font-size:13px;margin-bottom:6px;color:var(--brand)}
+  .pm-col.syd .bh{color:#9A7B16}
+  .pm-stage{position:relative;background:#fff;border:1px solid var(--line);border-radius:10px;height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .pm-stage img{max-width:100%;max-height:100%;object-fit:contain}
+  .pm-nav{position:absolute;top:50%;transform:translateY(-50%);border:none;background:rgba(20,61,52,.75);color:#fff;
+    width:34px;height:34px;border-radius:50%;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2}
+  .pm-nav:hover{background:rgba(20,61,52,.95)}
+  .pm-nav:disabled{opacity:.25;cursor:default}
+  .pm-prev{left:8px}.pm-next{right:8px}
+  .pm-cap{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--muted);margin-top:6px;min-height:16px;gap:8px}
+  .pm-none{color:var(--muted);font-size:12px;text-align:center;padding:20px;line-height:1.6}
+  /* ── 0179 제품 활성/비활성 ─────────────────────────────────────── */
+  .stbadge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:800;line-height:16px;white-space:nowrap}
+  .stbadge.on{background:#e7f3ee;color:#0F6E56;border:1px solid #c2e0d4}
+  .stbadge.off{background:#fbe9e7;color:#B23A2E;border:1px solid #f0c5bf}
+  tr.prow.inact td{background:#fdf6f5}
+  tr.prow.inact .code{color:#B23A2E}
+  td.selc,th.selc{width:26px;padding-left:2px;padding-right:2px;text-align:center}
+  td.selc input,th.selc input{width:auto;margin:0;cursor:pointer}
+  .stbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px;
+    border:1px solid var(--line);border-radius:10px;padding:7px 11px;background:#faf8f3}
+  .stbar .cnt{font-size:12px;color:var(--muted)}
+  .stbar .cnt b{color:var(--brand)}
+  /* 점검 결과 — SKU 카드 / 업체 그룹 */
+  .skucard{border:1px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:10px;background:#fff}
+  .skucard .sh{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:6px}
+  .skucard .sh .c{font-weight:800;color:var(--brand);font-size:14px}
+  .skucard .sh .n{font-size:12px;color:#6f6a60}
+  .skucard.clean{background:#f7fbf9}
+  .party{border:1px solid var(--line);border-radius:10px;margin-top:8px;overflow:hidden}
+  .party .ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#f4f1ea;padding:6px 10px;font-size:12.5px;font-weight:800;color:var(--brand)}
+  .party .ph .np{font-weight:600;color:#6f6a60;font-size:11.5px}
+  .party table{margin:0}
+  .party td,.party th{font-size:11.5px;padding:5px 7px}
+  .party .noterow{display:flex;gap:7px;align-items:center;padding:7px 10px;background:#fbfaf7;border-top:1px solid var(--line);flex-wrap:wrap}
+  .party .noterow input[type=text]{flex:1;min-width:180px;font-size:12px;padding:6px 8px}
+  .party .noterow select{font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .bchip{display:inline-block;padding:0 6px;border-radius:8px;background:#eef1f5;color:#5a6b7b;font-size:10px;font-weight:700;line-height:15px;margin-right:4px}
+  .bchip.info{background:#f4efe4;color:#8a7a52}
+  .stlist td{font-size:12px}
+  .stlist tr{cursor:pointer}
+  .stlist tr:hover td{background:#faf8f3}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">제품 조회 · 재고 · 평균원가</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="vehCard">
+    <h2>차종으로 제품 찾기</h2>
+    <div class="hint" style="margin-top:0">메이커 → 모델 → 연식 순으로 좁혀 적용 가능한 부품을 찾습니다. 단계는 건너뛸 수 있습니다(예: 메이커만 선택). 연식은 “1994-2005”처럼 범위로 적용되며 그 사이 모든 연도가 포함됩니다.</div>
+    <div class="row">
+      <div><label>메이커</label><select id="veh-maker"><option value="">전체</option></select></div>
+      <div style="flex:2"><label>모델</label><select id="veh-model"><option value="">전체</option></select></div>
+      <div><label>연식</label><select id="veh-year"><option value="">전체</option></select></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="vehBtn">찾기</button></div>
+    </div>
+    <div id="vehResult"></div>
+  </div>
+
+<div class="card hidden" id="searchCard">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin-bottom:0">제품 검색 (코드·경쟁사코드·차종 통합)</h2>
+      <button class="btn" id="dlMaster" type="button" style="padding:7px 13px;font-size:12px" title="전체 제품 마스터를 엑셀(.xlsx)로 내려받습니다. 현재 재고·Backorder(미입고 발주잔량) 포함. 업로드와 같은 컬럼 구성이라 수정 후 재업로드할 수 있습니다.">⬇ 제품 마스터 다운로드</button>
+    </div>
+    <div class="row">
+      <div style="flex:3"><label>코드 · 이름 · 바코드 · 경쟁사(SyD)코드 · 적용차종</label><input id="q" type="text" placeholder="타이핑하면 실시간 검색 · 예: CTR-1001 · 48530-3S125 · NISSAN · 브레이크"></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px">
+          <input type="checkbox" id="qAlu" style="width:auto;margin:0"> 알루미늄만
+        </label></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;margin:0;padding-bottom:9px">
+          <input type="checkbox" id="qCn" style="width:auto;margin:0"> 중국차량만
+        </label></div>
+      <div style="flex:0 0 auto" title="제품코드가 PRO로 시작하는 마케팅 머천다이즈(판촉물)를 기준으로 걸러냅니다.">
+        <label>🎁 마케팅 상품(PRO)</label>
+        <select id="qPro" style="min-width:132px">
+          <option value="">전체(포함)</option>
+          <option value="only">🎁 PRO만</option>
+          <option value="exclude">🚫 PRO 제외</option>
+        </select></div>
+      <div style="flex:0 0 auto" title="비활성(판매중단)으로 지정된 SKU 를 기준으로 걸러냅니다. 기본은 전부 표시 — 비활성이어도 과거 매출·원가 내역은 그대로 조회됩니다.">
+        <label>⏻ 판매 상태</label>
+        <select id="qActive" style="min-width:118px">
+          <option value="">전체</option>
+          <option value="1">✅ 활성만</option>
+          <option value="0">⛔ 비활성만</option>
+        </select></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="search">검색</button></div>
+    </div>
+    <div id="cnBrands" class="hidden" style="margin:2px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;color:#6f6a60;white-space:nowrap">중국 브랜드(복수선택):</span>
+      <div id="cnChips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    </div>
+    <div class="stbar hidden" id="stBar">
+      <span style="font-size:12px;font-weight:700;color:var(--brand)">⏻ 판매 활성/비활성</span>
+      <button class="btn ghost sm" id="stCheckBtn" type="button" disabled title="체크한 SKU 들이 지금 견적·수주·포장·인보이스·수금·발주·입고·부족분·오퍼시트·개발요청에 걸려 있는지 한 번에 조회해 업체별로 정리합니다.">🔎 선택 SKU 일괄 점검</button>
+      <button class="btn ghost sm" id="stHistBtn" type="button" title="지난 점검 결과를 다시 열어봅니다(업체별 처리 메모 포함).">🗂 점검 이력</button>
+      <button class="btn ghost sm" id="stClearBtn" type="button">선택 해제</button>
+      <span class="cnt" id="stCnt">선택 <b>0</b>개</span>
+      <span class="cnt" style="margin-left:auto">비활성 = 신규 견적·매출·오퍼시트에서 사용 차단 · 과거 매출/원가 내역은 그대로 조회</span>
+    </div>
+    <div id="result"></div>
+    <div class="hint">경쟁사(SyD) 코드나 적용차종으로도 검색됩니다(중복 매칭 포함). 평균원가(이동평균)는 수입 입고·부대비용 승인 시 갱신되고, <b>매출로는 바뀌지 않습니다</b>. 매출 등록 후 재고만 줄고 평균원가는 그대로면 정상입니다. 역할에 따라 원가·정가가 보이지 않을 수 있습니다(권한 최소화).</div>
+  </div>
+
+<div class="card hidden" id="upCard">
+    <h2>제품 마스터 업로드</h2>
+    <div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 14px;background:#faf8f3">
+      <div style="font-weight:700">화면에서 직접 추가 · 수정</div>
+      <div class="hint" style="margin-top:4px">엑셀 없이 제품 1건을 바로 추가하거나, 기존 제품을 검색해 선택하면 화면에서 수정할 수 있습니다. <b>재고수량·평균원가는 여기서도 절대 바뀌지 않으며</b>, 모든 변경(추가·수정·업로드·소재)은 아래 「제품 변경 이력」에 자동 기록됩니다.</div>
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:0 0 auto"><button class="btn" id="peNewBtn" type="button">➕ 신규 제품 추가</button></div>
+        <div style="flex:2"><label>수정할 제품 검색 (코드 · 이름 · SyD코드)</label><input id="peQ" type="text" placeholder="코드나 이름을 입력하면 아래에 후보가 나타납니다"></div>
+      </div>
+      <div id="peQList" style="margin-top:6px"></div>
+    </div>
+    <div class="hint" style="margin-top:0">엑셀 파일(.xlsx)을 올리면 <b>Clave CTR</b> 기준으로 신규는 추가, 기존은 <b>변경된 항목만</b> 덮어씁니다. <b>재고수량·평균원가는 절대 바뀌지 않습니다.</b> Clave SyD는 ' // '로 여러 경쟁사 코드를 넣을 수 있고, 검색용으로 분해 저장됩니다. 먼저 미리보기로 확인 후 반영하세요.</div>
+    <div class="drop" id="drop" style="margin-top:12px">파일을 선택하거나 여기로 끌어다 놓으세요 (.xlsx)<br><span style="font-size:11px">필수 컬럼: Clave CTR · Nombre del producto</span></div>
+    <input type="file" id="upFile" accept=".xlsx,.xls" class="hidden">
+    <div class="msg" id="upMsg"></div>
+
+    <div id="preview" class="hidden">
+      <div class="pvcards">
+        <div class="pvcard"><div class="k">총 행</div><div class="v" id="pv-total">0</div></div>
+        <div class="pvcard new"><div class="k">신규</div><div class="v" id="pv-new">0</div></div>
+        <div class="pvcard upd"><div class="k">변경</div><div class="v" id="pv-upd">0</div></div>
+        <div class="pvcard"><div class="k">동일</div><div class="v" id="pv-same">0</div></div>
+        <div class="pvcard err"><div class="k">오류</div><div class="v" id="pv-err">0</div></div>
+        <div class="pvcard"><div class="k">중복코드</div><div class="v" id="pv-dup">0</div></div>
+      </div>
+      <div id="pv-detail"></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn gold" id="commitBtn">반영하기</button>
+        <button class="btn ghost" id="cancelBtn">취소</button>
+      </div>
+    </div>
+    <div class="msg" id="commitMsg"></div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div class="hint" style="margin-top:0">이미 올린 제품들의 경쟁사 코드·적용차종 분해 데이터를 다시 만들려면 아래를 누르세요(검색이 비어 나올 때).</div>
+      <button class="btn ghost sm" id="resyncBtn" style="margin-top:6px">분해 데이터 전체 재동기화</button>
+      <div class="msg" id="resyncMsg"></div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div style="font-weight:700">소재 일괄지정 (CTR 코드 목록)</div>
+      <div class="hint" style="margin-top:4px">CTR 코드 목록으로 여러 제품의 소재를 한 번에 지정/해제합니다. 엑셀(.xlsx)을 올리거나 코드를 직접 붙여넣으세요(줄·쉼표·공백 구분). 첫 번째 열의 코드를 읽습니다. <b>재고·원가 등 다른 값은 바뀌지 않습니다.</b></div>
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:0 0 auto"><label>소재</label>
+          <select id="bmMaterial" style="min-width:140px"><option value="aluminio">알루미늄 지정</option><option value="">소재 해제(빈값)</option></select></div>
+        <div style="flex:0 0 auto"><label>엑셀 파일(.xlsx)</label><input type="file" id="bmFile" accept=".xlsx,.xls,.csv" style="font-size:11px"></div>
+      </div>
+      <textarea id="bmCodes" placeholder="여기에 CTR 코드를 붙여넣어도 됩니다 (한 줄에 하나, 또는 쉼표/공백 구분)" style="width:100%;min-height:70px;margin-top:8px;font-family:monospace;font-size:12px;padding:8px;box-sizing:border-box"></textarea>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn gold" id="bmApply">일괄 적용</button>
+        <span class="hint" id="bmCount" style="margin:0"></span>
+      </div>
+      <div class="msg" id="bmMsg"></div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div style="font-weight:700">경쟁사 교차참조 업로드 (BAW · GROB · VASLO · KYB · MOOG 등)</div>
+      <div class="hint" style="margin-top:4px">경쟁사 가격표(예: LISTA GENERAL — CODIGO BAW + REFERENCIA 1~9)를 올리면, 각 행에서 <b>SYD 코드가 기존 CTR↔SYD 매칭과 일치하는 행</b>의 모든 코드(BAW·GROB·VASLO·KYB·MOOG·YOKOMITSU 등)를 해당 CTR 제품의 교차참조로 등록합니다. 이후 <b>현장재고조사에서 그 코드를 입력·업로드만 해도 CTR로 자동 매칭</b>됩니다. 재업로드 안전(중복 없음). PRECIO열이 있으면 기준 브랜드 리스트가격도 함께 저장(제품찾기 가격비교용). <b>재고·CTR 가격 등 다른 값은 바뀌지 않습니다.</b></div>
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div style="flex:0 0 auto"><label>엑셀 파일(.xlsx)</label><input type="file" id="xrFile" accept=".xlsx,.xls" style="font-size:11px"></div>
+        <div style="flex:0 0 auto"><button class="btn ghost sm" id="xrStats" style="margin-bottom:2px">등록 현황 보기</button></div>
+        <div style="flex:0 0 auto"><button class="btn ghost sm" id="xrExport" style="margin-bottom:2px">⬇ 현재 마스터 다운로드</button></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn gold" id="xrApply" disabled>교차참조 등록</button>
+        <span class="hint" id="xrCount" style="margin:0"></span>
+      </div>
+      <div class="msg" id="xrMsg"></div>
+
+      <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-weight:700">백업·복원 (교차참조 스냅샷)</div>
+          <button class="btn ghost sm" id="xrSnapList">백업 목록 불러오기</button>
+          <button class="btn ghost sm" id="xrSnapNow">지금 상태 수동 백업</button>
+        </div>
+        <div class="hint" style="margin-top:4px">업로드·삭제·복원 때마다 <b>직전 상태가 자동 백업</b>됩니다. 목록에서 시점을 선택해 그때로 회귀할 수 있고, 복원 직전 상태도 자동 백업되므로 복원 자체도 되돌릴 수 있습니다. 범위: 경쟁사 교차참조 전체 (제품·재고·CTR 가격 원본은 교차참조 업로드로 변경되지 않음)</div>
+        <div id="xrSnapBox" style="margin-top:8px"></div>
+        <div class="msg" id="xrSnapMsg"></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:700">제품 변경 이력</div>
+        <input id="clCode" type="text" placeholder="코드 필터(선택)" style="width:170px;padding:6px 9px;font-size:12px">
+        <button class="btn ghost sm" id="clLoad" type="button">이력 불러오기</button>
+        <button class="btn ghost sm hidden" id="clMore" type="button">더 보기</button>
+      </div>
+      <div class="hint" style="margin-top:4px">화면 직접 추가/수정 · 엑셀 업로드 · 소재 지정으로 발생한 제품 마스터 변경이 시간순으로 기록됩니다(삭제·수정 불가한 영구 로그).</div>
+      <div id="clBox" style="margin-top:8px"></div>
+      <div class="msg" id="clMsg"></div>
+    </div>
+  </div>
+
+  <!-- 📜 제품 이력 (ph-0824b) — 마스터 변경 + 판매 활성/비활성 전환 통합 -->
+  <div class="card hidden" id="histCard">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">📜 제품 이력</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn ghost sm" id="phXlsx" type="button">⬇ 엑셀</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:6px">제품 마스터 변경(생성·수정·엑셀 업로드·소재 지정)과 <b>판매 활성/비활성 전환</b>을 한 표에 시간순으로 모았습니다.
+      행을 클릭하면 <b>그 변경 이후에 일어난 movement</b>(재고 입출고 · 판매 · 견적)가 열립니다.</div>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:2"><label>검색 (CTR 코드 · 제품명 · SyD 코드)</label><input id="phQ" type="text" placeholder="예: CL0001 / SYD-1234"></div>
+      <div><label>구분</label><select id="phKind"><option value="">전체</option><option value="master">마스터 변경</option><option value="status">판매상태 전환</option></select></div>
+      <div><label>Estado</label><select id="phEstado"><option value="">전체</option><option value="1">Activo</option><option value="0">Inactivo</option></select></div>
+      <div><label>시작일</label><input id="phFrom" type="date"></div>
+      <div><label>종료일</label><input id="phTo" type="date"></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="phGo" type="button">조회</button></div>
+    </div>
+    <div id="phSum" class="hint" style="margin-top:8px"></div>
+    <div id="phBox" style="margin-top:6px"></div>
+    <div style="margin-top:8px"><button class="btn ghost sm hidden" id="phMore" type="button">더 보기</button></div>
+    <div class="msg" id="phMsg"></div>
+  </div>
+
+
+  <!-- 제품 마스터 업로드 (디렉터) -->
+  
+
+  <!-- SyD 역검색 -->
+  
+
+  <!-- 차종 역검색 -->
+  
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'<span style="color:#bbb">—</span>':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const qty=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token, api:o.api||'', user:o.user||{}}; }
+    }catch(e){}
+    try{
+      const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h);
+        const token=p.get('token'); if(token){ const o={token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+          try{ sessionStorage.setItem('refatrix_session', JSON.stringify(o)); }catch(e){}
+          return o; } }
+    }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');
+      loadMakers();
+      applyHashTab();
+      doSearch();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // 탭: 제품 찾기(검색+경쟁사코드+차종) / 제품 마스터 업로드 / 📜 제품 이력
+  function showTab(which){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
+    var isDir = session && session.user && session.user.role==='director';
+    var isUp = (which==='upload' && isDir);
+    var isHist = (which==='history');
+    var isFind = !isUp && !isHist;
+    $('searchCard').classList.toggle('hidden',!isFind);
+    $('vehCard').classList.toggle('hidden',!isFind);
+    $('upCard').classList.toggle('hidden', !isUp);
+    if($('histCard')) $('histCard').classList.toggle('hidden', !isHist);
+    // 제품 이력은 제품 화면 열람자 전체 — 첫 진입에서 한 번만 자동 조회.
+    if(isHist && !phLoaded) phLoad(true);
+  }
+  function applyHashTab(){
+    var t='find', q0=''; try{ var p=new URLSearchParams(location.hash.slice(1)); t=p.get('tab')||'find'; q0=p.get('q')||''; }catch(e){}
+    showTab(t==='upload'?'upload':(t==='history'?'history':'find'));
+    // 딥링크 검색(q=코드) — 개발요청 화면 「카탈로그 보기」 등에서 진입 시 해당 자재 즉시 조회
+    if(q0 && $('q')){ $('q').value=q0; doSearch(); }
+  }
+  window.addEventListener('hashchange',function(){ if($('loginCard').classList.contains('hidden')) applyHashTab(); });
+
+  let prodOffset=0, prodQ='', prodLimit=50, prodTotal=0, prodHasList=false, prodHasCost=false, prodMaterial='';
+  let prodPro='';   // 마케팅 상품(PRO*) 필터: ''=전체 · 'only'=PRO만 · 'exclude'=PRO 제외
+  let prodActive='';         // 0179 판매상태 필터: ''=전체 · '1'=활성만 · '0'=비활성만
+  const stSel=new Map();     // 0179 일괄점검 선택: product_id → {code,name,is_active}
+  let prodSort='', prodDir='desc';  // 헤더 클릭 정렬(서버측 전체 기준). ''=코드순 기본.
+  // 중국차 필터 상태: prodCn=중국차량만 여부, prodCnSel=선택된 브랜드(maker) 배열(복수선택).
+  let prodCn=false, prodCnSel=[], cnMakersCache=null;
+  function matBadge(mat){
+    if(mat==='aluminio') return '<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:#e3eef0;color:#15616d;font-size:11px;font-weight:700">알루미늄</span>';
+    if(mat) return '<span style="font-size:11px;color:#6f6a60">'+escP(mat)+'</span>';
+    return '<span style="color:#bbb">—</span>';
+  }
+  async function setMaterial(pid, code, cur, td){
+    const next = (cur==='aluminio') ? null : 'aluminio';   // 토글: 알루미늄 ↔ 해제
+    const label = next ? '알루미늄으로 지정' : '소재 해제';
+    if(!confirm(code+' 제품을 '+label+'할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/products/'+pid+'/material',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({material:next})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('변경 실패: '+(d.error||res.status)); return; }
+      td.setAttribute('data-mat', d.material||''); td.innerHTML=matBadge(d.material);
+    }catch(e){ alert('변경 실패: '+e.message); }
+  }
+  function escP(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  // ── 중국차 브랜드 칩(복수선택) ──────────────────────────────────────
+  // 결과행 적용차종 앞에 매칭된 중국 브랜드 배지 표시(선택 브랜드만; 미선택 시 매칭된 전부).
+  function cnBadgeHtml(appText){
+    if(!prodCn || !cnMakersCache || !appText) return '';
+    const up=String(appText).toUpperCase();
+    const pool=cnMakersCache.map(x=>x.maker);
+    const sel=prodCnSel.length?prodCnSel:pool;
+    const hit=[];
+    sel.forEach(mk=>{ if(new RegExp('(?<![A-Z])'+mk.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![A-Z])').test(up)){
+      const it=cnMakersCache.find(x=>x.maker===mk); hit.push(it?it.label:mk);
+    }});
+    return hit.map(l=>'<span class="cnbadge">'+escP(l)+'</span>').join('');
+  }
+  // 칩 렌더(선택 상태 반영)
+  function renderCnChips(){
+    const box=$('cnChips'); if(!box) return;
+    if(!cnMakersCache){ box.innerHTML='<span class="hint" style="margin:0">불러오는 중…</span>'; return; }
+    if(!cnMakersCache.length){ box.innerHTML='<span class="hint" style="margin:0">등록된 중국차 브랜드가 없습니다.</span>'; return; }
+    box.innerHTML=cnMakersCache.map(x=>
+      '<span class="cnchip'+(prodCnSel.includes(x.maker)?' on':'')+'" data-mk="'+escP(x.maker)+'">'
+      +escP(x.label)+' <span class="cnt">'+x.count+'</span></span>').join('');
+    box.querySelectorAll('.cnchip').forEach(el=>{ el.addEventListener('click',()=>{
+      const mk=el.getAttribute('data-mk');
+      const i=prodCnSel.indexOf(mk);
+      if(i>=0) prodCnSel.splice(i,1); else prodCnSel.push(mk);
+      el.classList.toggle('on');
+      doSearch();
+    }); });
+  }
+  // 중국차 브랜드 목록 로드(1회 캐시)
+  async function ensureCnMakers(){
+    if(cnMakersCache) return;
+    try{ const d=await fetch(session.api+'/api/products/cn-makers',{headers:auth()}).then(x=>x.json());
+      cnMakersCache=(d.items||[]); }catch(e){ cnMakersCache=[]; }
+    renderCnChips();
+  }
+  // 「중국차량만」 토글
+  async function onCnToggle(){
+    const on=!!($('qCn')&&$('qCn').checked);
+    const wrap=$('cnBrands');
+    if(on){ wrap.classList.remove('hidden'); await ensureCnMakers(); renderCnChips(); }
+    else { wrap.classList.add('hidden'); prodCnSel=[]; }
+    doSearch();
+  }
+  function doSearch(){
+    prodOffset=0; prodQ=$('q').value.trim();
+    prodMaterial=($('qAlu')&&$('qAlu').checked)?'aluminio':'';
+    prodCn=!!($('qCn')&&$('qCn').checked);
+    prodPro=($('qPro')&&$('qPro').value)||'';
+    prodActive=($('qActive')&&$('qActive').value)||'';
+    loadProducts();
+  }
+  async function loadProducts(){
+    const r=$('result'); r.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const matParam=prodMaterial?('&material='+encodeURIComponent(prodMaterial)):'';
+      let cnParam='';
+      if(prodCn){ cnParam='&cn=1'; if(prodCnSel.length) cnParam+='&cnbrand='+encodeURIComponent(prodCnSel.join(',')); }
+      const proParam=prodPro==='only'?'&pro=1':(prodPro==='exclude'?'&pro=0':'');
+      const actParam=prodActive===''?'':('&active='+prodActive);
+      const res=await fetch(session.api+'/api/products?q='+encodeURIComponent(prodQ)+'&limit='+prodLimit+'&offset='+prodOffset+(prodSort?('&sort='+prodSort+'&dir='+prodDir):'')+matParam+cnParam+proParam+actParam,{headers:auth()});
+      const d=await res.json(); const items=d.items||[];
+      prodTotal=Number(d.total||items.length);
+      if(!items.length){ r.innerHTML='<div class="hint">'+(prodPro==='only'?'제품코드가 PRO로 시작하는 마케팅 상품이 없습니다.':(prodPro==='exclude'?'마케팅 상품(PRO)을 제외하면 일치하는 제품이 없습니다.':'일치하는 제품이 없습니다.'))+'</div>'; return; }
+      prodHasList=items.some(p=>'list_price' in p); prodHasCost=items.some(p=>'avg_cost' in p);
+      const isDir=session&&session.user&&session.user.role==='director';
+      // 0179: 「상태」 열 +1, 디렉터는 선택 체크박스 열 +1 (드릴다운 colspan 계산에 반영)
+      const colN=10+(isDir?1:0)+(prodHasList?1:0)+(prodHasCost?2:0);
+      if($('stBar')) $('stBar').classList.toggle('hidden',!isDir);
+      const sh=(key,label,cls)=>'<th class="'+(cls==null?'num ':cls)+'nowrap sortable'+(prodSort===key?' active':'')+'" data-sort="'+key+'">'+label
+        +(prodSort===key?('<span class="ar">'+(prodDir==='asc'?'▲':'▼')+'</span>'):'')+'</th>';
+      let h='<table><thead><tr>'
+        +(isDir?'<th class="selc" title="일괄 점검할 SKU 선택 (현재 페이지 전체)"><input type="checkbox" id="stAll"></th>':'')
+        +'<th class="nowrap">코드</th><th class="nowrap" title="비활성 = 신규 견적·매출·오퍼시트에서 사용 차단. 과거 내역은 그대로 조회됩니다.">상태</th><th>경쟁사(SyD)</th><th>적용차종</th><th class="nowrap">바코드</th>'+sh('rack','랙','')+'<th class="nowrap">소재</th>'
+        +sh('stock','재고')+sh('backorder','Backorder')+sh('sold','누적판매')
+        +(prodHasList?'<th class="num nowrap">List Price</th>':'')
+        +(prodHasCost?sh('avgcost','평균원가'):'')+(prodHasCost?sh('stockval','재고 평가액'):'')
+        +'</tr></thead><tbody>';
+      items.forEach(function(p){
+        var stock=Number(p.stock_qty);
+        var val=('avg_cost' in p)&&p.avg_cost!=null?Number(p.avg_cost)*stock:null;
+        var syd=(p.scode||'').toString().replace(/\s*\/\/\s*/g,' · '); var app=(p.app||'').toString();
+        if(syd.length>40)syd=syd.slice(0,40)+'…'; if(app.length>40)app=app.slice(0,40)+'…';
+        var sold=Number(p.sold_qty||0);
+        var bo=Number(p.backorder_qty||0);
+        var rack=escP(p.rack_location||'');
+        var act=(p.is_active!==false);
+        h+='<tr class="prow'+(act?'':' inact')+'" data-pid="'+p.id+'" data-app="'+escP(p.app||'')+'" data-code="'+escP(p.code)+'" data-syd="'+escP(p.scode||'')+'" data-name="'+escP(p.name||'')+'" data-active="'+(act?'1':'0')+'" style="cursor:pointer">'
+          +(isDir?('<td class="selc"><input type="checkbox" class="stChk" data-pid="'+p.id+'"'+(stSel.has(Number(p.id))?' checked':'')+'></td>'):'')
+          +'<td class="code"><span class="tri">▸</span>'+escP(p.code)+'</td>'
+          +'<td class="nowrap">'+stBadge(act, p.inactive_reason)+'</td>'
+          +'<td style="font-size:11px;color:#6f6a60">'+(syd||'—')+'</td>'
+          +'<td style="font-size:11px;color:#6f6a60">'+cnBadgeHtml(p.app)+(app||'—')+'</td>'
+          +'<td class="nowrap">'+(escP(p.ean)||'—')+'</td>'
+          +'<td class="rack nowrap">'+(rack||'—')+'</td>'
+          +'<td class="nowrap mat-cell" data-pid="'+p.id+'" data-code="'+escP(p.code)+'" data-mat="'+escP(p.material||'')+'"'
+            +(isDir?' title="클릭하면 알루미늄 지정/해제" style="cursor:pointer"':'')+'>'+matBadge(p.material)+'</td>'
+          +'<td class="num '+(stock<=0?'lowstock':'')+'">'+qty(stock)+'</td>'
+          +'<td class="num'+(bo>0?' bopos':'')+'" title="미입고 발주잔량(구매내역 backorder)">'+(bo>0?qty(bo):'—')+'</td>'
+          +'<td class="num">'+qty(sold)+'</td>'
+          +(prodHasList?'<td class="num">'+fmt(p.list_price)+'</td>':'')
+          +(prodHasCost?'<td class="num">'+fmt(p.avg_cost)+'</td>':'')
+          +(prodHasCost?'<td class="num">'+fmt(val)+'</td>':'')
+          +'</tr>';
+      });
+      h+='</tbody></table>';
+      // 페이지네이션 바
+      const from=prodOffset+1, to=prodOffset+items.length;
+      h+='<div class="hint" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">'
+        +'<button class="btn ghost sm" id="prevPg" '+(prodOffset<=0?'disabled':'')+'>← 이전</button>'
+        +'<button class="btn ghost sm" id="nextPg" '+(to>=prodTotal?'disabled':'')+'>다음 →</button>'
+        +'<span><b>'+from+'–'+to+'</b> / 전체 '+prodTotal+'개</span>'
+        +'<span style="color:#6f6a60">행을 클릭하면 판매 고객·수량'+(prodHasCost?' 및 원가 계산 근거':'')+'가 펼쳐집니다.</span></div>';
+      r.innerHTML=h;
+      const np=$('nextPg'), pp=$('prevPg');
+      if(np) np.addEventListener('click',()=>{ if(prodOffset+prodLimit<prodTotal){ prodOffset+=prodLimit; loadProducts(); }});
+      if(pp) pp.addEventListener('click',()=>{ if(prodOffset>0){ prodOffset=Math.max(0,prodOffset-prodLimit); loadProducts(); }});
+      r.querySelectorAll('.prow').forEach(tr=>{ tr.addEventListener('click',()=>toggleDrill(tr, Number(tr.getAttribute('data-pid')), colN)); });
+      // 0179 — 선택 체크박스(행 클릭 드릴다운과 분리)
+      r.querySelectorAll('.stChk').forEach(cb=>{
+        cb.addEventListener('click',e=>e.stopPropagation());
+        cb.addEventListener('change',e=>{
+          const tr=cb.closest('tr'); const pid=Number(cb.getAttribute('data-pid'));
+          if(cb.checked) stSel.set(pid,{code:tr.getAttribute('data-code'),name:tr.getAttribute('data-name'),is_active:tr.getAttribute('data-active')==='1'});
+          else stSel.delete(pid);
+          stRefreshBar();
+        });
+      });
+      const sa=$('stAll');
+      if(sa) sa.addEventListener('change',()=>{ r.querySelectorAll('.stChk').forEach(cb=>{
+        if(cb.checked!==sa.checked){ cb.checked=sa.checked; cb.dispatchEvent(new Event('change')); } }); });
+      stRefreshBar();
+      if(isDir){ r.querySelectorAll('.mat-cell').forEach(td=>{ td.addEventListener('click',(e)=>{ e.stopPropagation();
+        setMaterial(Number(td.getAttribute('data-pid')), td.getAttribute('data-code'), td.getAttribute('data-mat'), td); }); }); }
+      r.querySelectorAll('th.sortable').forEach(th=>{ th.addEventListener('click',()=>{
+        const key=th.getAttribute('data-sort');
+        if(prodSort===key){ prodDir=(prodDir==='asc'?'desc':'asc'); }   // 같은 열 재클릭 → 오름/내림 토글
+        else { prodSort=key; prodDir=(key==='rack'?'asc':'desc'); }     // 새 열 → 많은 순부터(랙은 텍스트라 A→Z부터)
+        prodOffset=0; loadProducts();
+      }); });
+    }catch(e){ r.innerHTML='<div class="hint">조회에 실패했습니다.</div>'; }
+  }
+  async function toggleDrill(tr, pid, colN){
+    const next=tr.nextElementSibling;
+    if(next&&next.classList.contains('pdrill')){ next.remove(); tr.classList.remove('open'); return; }
+    tr.classList.add('open');
+    const dr=document.createElement('tr'); dr.className='pdrill';
+    dr.innerHTML='<td colspan="'+colN+'" style="background:#faf8f3;padding:10px 14px"><div class="hint">불러오는 중…</div></td>';
+    tr.parentNode.insertBefore(dr, tr.nextSibling);
+    try{
+      const appText=tr.getAttribute('data-app')||'';
+      const pCode=tr.getAttribute('data-code')||'';
+      const pSyd=tr.getAttribute('data-syd')||'';
+      const d=await fetch(session.api+'/api/products/'+pid+'/drilldown',{headers:auth()}).then(r=>r.json());
+      dr.firstChild.innerHTML=drillHtml(d, appText, pCode, pSyd, pid);
+      const pic=dr.querySelector('.photoicon[data-code]');
+      if(pic) pic.addEventListener('click',function(e){ e.stopPropagation();
+        openPhotoModal(pic.getAttribute('data-code')||'', pic.getAttribute('data-syd')||''); });
+      const eb=dr.querySelector('.editicon');
+      if(eb) eb.addEventListener('click',function(e){ e.stopPropagation();
+        openProductEditor(Number(eb.getAttribute('data-pid'))); });
+      stBindPanel(dr, pid, d);   // 0179 활성/비활성 패널
+    }catch(e){ dr.firstChild.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>'; }
+  }
+  function drillHtml(d, appText, pCode, pSyd, pid){
+    const fc=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const pct=(n)=> n==null?'—':(Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})+'%');
+
+    // ── 적용차종 전체(드릴다운 상단·잘림 없음) ──
+    // 목록 셀은 40자에서 잘리지만, 여기서는 원문 전체를 ' // ' 단위로 칩처럼 모두 표시한다.
+    function appSection(txt){
+      const list=String(txt||'').split(/\s*\/\/\s*/).map(s=>s.trim()).filter(Boolean);
+      const picBtn='<span class="photoicon" role="button" tabindex="0" data-code="'+escP(pCode||'')+'" data-syd="'+escP(pSyd||'')+'" title="SYD·CTR 제품 사진 보기">📷 사진</span>';
+      const isDirE=session&&session.user&&session.user.role==='director';
+      const editBtn=(isDirE&&pid)?'<span class="photoicon editicon" role="button" tabindex="0" data-pid="'+pid+'" title="이 제품의 마스터 정보를 화면에서 수정합니다 (변경 이력 기록)">✎ 수정</span>':'';
+      let h='<div class="appsec"><div class="dh">적용차종'+(list.length?(' ('+list.length+'종)'):'')+picBtn+editBtn+'</div>';
+      if(!list.length){ h+='<div class="hint" style="margin:2px 0">등록된 적용차종이 없습니다.</div>'; }
+      else{ h+='<div class="appchips">'+list.map(a=>'<span class="tag">'+escP(a)+'</span>').join('')+'</div>'; }
+      return h+'</div>';
+    }
+    const appHtml=appSection(appText)+statusPanel(d, pid);
+
+    // ── 원가 분석 패널(좌) ──
+    function costPanel(c){
+      let h='<div class="hint" style="margin:0 0 6px"><b>'+escP(c.formula)+'</b><br>'+escP(c.note||'')+'</div>';
+      if(c.lines&&c.lines.length){
+        // 원가 반영(승인) 라인만 카드로 표시. 반려·대기 기록은 접힌 감사 기록으로만(2026-08-19 디렉터: "수입금액이 3개나 기록되어 있어")
+        const cardOf=function(l,notCnt){
+          const isUsd=(l.currency==='USD');
+          const stTag=notCnt?('<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:8px;font-size:11px;font-weight:700;'
+            +(l.status==='rejected'?'background:#F3E3E1;color:#8A3B32':'background:#EFEADF;color:#6B6355')+'">원가 미반영 · '
+            +(l.status==='rejected'?'반려됨':(l.status==='pending'?'승인 대기':escP(l.status||'')))+'</span>'):'';
+          let k='<div class="card2"'+(notCnt?' style="opacity:.62"':'')+'><div class="bh">'+escP(l.batch_no||'(배치)')
+            +(l.po_ref?(' · <span title="구매 참조번호(오더번호)">'+escP(l.po_ref)+'</span>'):'')
+            +' · '+escP(l.import_date||'')+' · '+escP(l.currency||'')+stTag+'</div>';
+          k+='<div class="ln"><span class="lk">수입금액</span><span>'+qty(l.qty)+' × '+fc(l.import_price)+' = <b>'+escP(l.currency||'')+' '+fc(l.base_amount_cur)+'</b></span></div>';
+          if(isUsd) k+='<div class="ln"><span class="lk">환율(USD→MXN)</span><span>× '+fc(l.fx_rate)+' → 기본원가 <b>MXN '+fc(l.base_amount_mxn)+'</b></span></div>';
+          else      k+='<div class="ln"><span class="lk">기본원가</span><span><b>MXN '+fc(l.base_amount_mxn)+'</b></span></div>';
+          k+='<div class="ln"><span class="lk">부대비용(1/n 배분)</span><span>+ MXN '+fc(l.overhead_mxn)+'</span></div>';
+          k+='<div class="ln tot"><span class="lk">입고단가</span><span>MXN '+fc(l.line_total_mxn)+' ÷ '+qty(l.qty)+' = <b>MXN '+fc(l.unit_cost_mxn)+'</b></span></div>';
+          return k+'</div>';
+        };
+        const cnt=c.lines.filter(function(l){return l.counted!==false;});
+        const ncnt=c.lines.filter(function(l){return l.counted===false;});
+        h+='<div class="cbk">'+cnt.map(function(l){return cardOf(l,false);}).join('')+'</div>';
+        if(ncnt.length){
+          h+='<details style="margin:4px 0"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">원가 미반영 기록 '
+            +ncnt.length+'건 보기 (반려·승인 대기 — 평균원가·합계에 포함되지 않음)</summary>'
+            +'<div class="cbk" style="margin-top:6px">'+ncnt.map(function(l){return cardOf(l,true);}).join('')+'</div></details>';
+        }
+        h+='<div class="hint" style="margin:2px 0">합계 수입수량 <b>'+qty(c.sum_qty)+'</b> · 합계 금액 <b>MXN '+fmt(c.sum_amount)+'</b>'
+          +((c.excluded_count>0)?(' · <span style="color:#8A6300">원가 미반영(대기·반려) '+c.excluded_count+'건 제외</span>'):'')+'</div>';
+        h+='<div class="hint" style="margin:2px 0">평균원가 = '+fmt(c.sum_amount)+' ÷ '+qty(c.sum_qty)+' = <b>'+fmt(c.computed_avg)+'</b> MXN'
+          +(c.stored_avg_cost!=null&&Math.abs(c.stored_avg_cost-c.computed_avg)>0.01?(' · (현재 저장된 평균원가: '+fmt(c.stored_avg_cost)+')'):'')+'</div>';
+      }else{
+        h+='<div class="hint" style="margin:2px 0">수입 입고 이력이 없어 원가 근거가 없습니다.'+(c.stored_avg_cost!=null?(' 저장된 평균원가: '+fmt(c.stored_avg_cost)):'')+'</div>';
+      }
+      return h;
+    }
+
+    // ── 매출총이익 패널(우) ──
+    function grossPanel(g){
+      const by=(g&&g.by_customer)||[], t=(g&&g.total)||{};
+      let h='';
+      if(!by.length){ return '<div class="hint" style="margin:2px 0">판매 이력이 없습니다.</div>'; }
+      h+='<table style="margin-bottom:8px"><thead><tr><th>고객</th><th class="num">판매수량</th><th class="num">매출</th><th class="num">매출원가</th><th class="num">매출총이익</th><th class="num">이익률</th></tr></thead><tbody>'
+        +by.map(function(x){
+          const cls=(x.profit||0)>=0?'pos':'neg';
+          return '<tr><td>'+escP(x.customer_name)+'</td><td class="num">'+qty(x.qty)+'</td>'
+            +'<td class="num">'+fc(x.revenue)+'</td><td class="num">'+fc(x.cogs)+'</td>'
+            +'<td class="num '+cls+'">'+fc(x.profit)+'</td><td class="num '+cls+'">'+pct(x.margin_pct)+'</td></tr>';
+        }).join('')
+        +'</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)">'
+        +'<td>합계</td><td class="num">'+qty(t.qty)+'</td><td class="num">'+fc(t.revenue)+'</td><td class="num">'+fc(t.cogs)+'</td>'
+        +'<td class="num '+((t.profit||0)>=0?'pos':'neg')+'">'+fc(t.profit)+'</td><td class="num '+((t.profit||0)>=0?'pos':'neg')+'">'+pct(t.margin_pct)+'</td></tr></tfoot></table>';
+      // 총 매출총이익 식 브레이크다운
+      h+='<div class="gpf">'
+        +'<div class="ln"><span class="lk">매출 (ex-IVA)</span><span><b>MXN '+fc(t.revenue)+'</b></span></div>'
+        +'<div class="ln"><span class="lk">− 매출원가 (COGS)</span><span>MXN '+fc(t.cogs)+'</span></div>'
+        +'<div class="ln tot"><span class="lk">= 매출총이익</span><span class="'+((t.profit||0)>=0?'pos':'neg')+'">MXN '+fc(t.profit)+' · 이익률 '+pct(t.margin_pct)+'</span></div>'
+        +'<div class="ln" style="margin-top:4px"><span class="lk">개당 평균</span><span>판매단가 MXN '+fc(t.avg_price)+' · 적용원가 MXN '+fc(t.avg_cost)+'</span></div>'
+        +'</div>';
+      h+='<div class="hint" style="margin:4px 0 0">'+escP(g.note||'')+'</div>';
+      return h;
+    }
+
+    // ── 레이아웃 ──
+    // 권한(원가) 있으면 좌(원가분석)/우(매출총이익) 2분할. 없으면 판매 고객 수량만 단순 표시.
+    if(d&&d.cost){
+      let h=appHtml+'<div style="font-weight:800;color:var(--brand);margin-bottom:8px">판매 고객 '+(d.customer_count||0)+'곳 · 총 판매 '+qty(d.total_sold||0)+'</div>';
+      h+='<div class="dcols">'
+        +'<div class="dcol"><div class="dh">원가 분석</div>'+costPanel(d.cost)+'</div>'
+        +'<div class="dcol"><div class="dh">매출총이익</div>'+grossPanel(d.gross)+'</div>'
+        +'</div>';
+      return h;
+    }
+    // 권한 없음(직원): 판매 고객별 수량만
+    const s=(d&&d.sales)||[];
+    let h=appHtml+'<div style="font-weight:800;color:var(--brand);margin-bottom:4px">판매 고객 ('+(d.customer_count||0)+'곳 · 총 '+qty(d.total_sold||0)+')</div>';
+    if(!s.length){ h+='<div class="hint" style="margin:2px 0 10px">판매 이력이 없습니다.</div>'; }
+    else{
+      h+='<table style="margin-bottom:12px"><thead><tr><th>고객</th><th class="num">판매수량</th><th class="num">건수</th></tr></thead><tbody>'
+        +s.map(x=>'<tr><td>'+escP(x.customer_name)+'</td><td class="num">'+qty(x.qty)+'</td><td class="num">'+x.inv_count+'</td></tr>').join('')
+        +'</tbody></table>';
+    }
+    return h;
+  }
+
+  // ===== 제품 사진 모달 (CTR: R2 · SYD: syd.com.mx 카탈로그) =====
+  // CTR 사진은 R2에 {code}_1.webp ~ {code}_12.webp 로 올라가 있어 존재하는 번호만 프로브로 수집.
+  // SYD는 카탈로그가 {code}.jpg 기본 + 추가장 대비 _2/_3 프로브. scode가 복수(' // ')면 코드별 사진 모두 수집.
+  const PM_R2='https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/';
+  const PM_SYD='https://syd.com.mx/Catalogo/fotos/';
+  const pmCache={};                 // 'ctr:CODE' / 'syd:SCODE' → Promise<[{src,label}]>
+  const pmState={ctr:{list:[],idx:0},syd:{list:[],idx:0}};
+  let pmEsc=null;
+
+  function pmProbe(src){ return new Promise(function(res){ const im=new Image();
+    im.onload=function(){res(true)}; im.onerror=function(){res(false)}; im.src=src; }); }
+
+  function pmCtrCands(code){ const c=String(code||'').trim(); if(!c) return [];
+    const e=encodeURIComponent(c), out=[];
+    for(let n=1;n<=12;n++) out.push({src:PM_R2+e+'/'+e+'_'+n+'.webp', label:c+(n>1?(' · '+n):'')});
+    return out; }
+
+  function pmSydCands(scode){ const codes=String(scode||'').split(/\s*\/\/\s*/).map(s=>s.trim()).filter(Boolean);
+    const out=[];
+    codes.forEach(function(c){ const e=encodeURIComponent(c);
+      out.push({src:PM_SYD+e+'.jpg', label:c});
+      out.push({src:PM_SYD+e+'_2.jpg', label:c+' · 2'});
+      out.push({src:PM_SYD+e+'_3.jpg', label:c+' · 3'}); });
+    return out; }
+
+  async function pmProbeList(cands){ const flags=await Promise.all(cands.map(x=>pmProbe(x.src)));
+    return cands.filter((_,i)=>flags[i]); }
+
+  function pmPanelHtml(side, title){
+    return '<div class="pm-col '+side+'" id="pm_'+side+'">'
+      +'<div class="bh">'+title+'</div>'
+      +'<div class="pm-stage">'
+      +'<button type="button" class="pm-nav pm-prev" data-s="'+side+'" data-d="-1" disabled>‹</button>'
+      +'<div class="pm-none">사진 확인 중…</div>'
+      +'<button type="button" class="pm-nav pm-next" data-s="'+side+'" data-d="1" disabled>›</button>'
+      +'</div><div class="pm-cap"><span class="cl"></span><span class="cr"></span></div></div>';
+  }
+
+  function pmRender(side){
+    const st=pmState[side]; const col=document.getElementById('pm_'+side); if(!col) return;
+    const stage=col.querySelector('.pm-stage'), cl=col.querySelector('.cl'), cr=col.querySelector('.cr');
+    const prev=col.querySelector('.pm-prev'), next=col.querySelector('.pm-next');
+    const n=st.list.length;
+    stage.querySelectorAll('img,.pm-none').forEach(el=>el.remove());
+    if(!n){
+      const dv=document.createElement('div'); dv.className='pm-none';
+      dv.textContent=(st.empty||'등록된 사진이 없습니다.');
+      stage.insertBefore(dv, next);
+      prev.disabled=true; next.disabled=true; cl.textContent=''; cr.textContent='';
+      return;
+    }
+    if(st.idx<0) st.idx=0; if(st.idx>=n) st.idx=n-1;
+    const cur=st.list[st.idx];
+    const img=document.createElement('img'); img.src=cur.src; img.alt=cur.label;
+    stage.insertBefore(img, next);
+    prev.disabled=(st.idx<=0); next.disabled=(st.idx>=n-1);
+    cl.textContent=cur.label; cr.textContent=(st.idx+1)+' / '+n;
+  }
+
+  function closePhotoModal(){ const ov=document.getElementById('pmOv'); if(ov) ov.remove();
+    if(pmEsc){ document.removeEventListener('keydown', pmEsc); pmEsc=null; } }
+
+  function openPhotoModal(code, scode){
+    closePhotoModal();
+    const sydLabel=String(scode||'').replace(/\s*\/\/\s*/g,' · ');
+    const ov=document.createElement('div'); ov.className='pm-ov'; ov.id='pmOv';
+    ov.innerHTML='<div class="pm-box">'
+      +'<div class="pm-head"><span class="t">📷 제품 사진 · '+escP(code||'')+'</span>'
+      +'<button type="button" class="pm-x" id="pmX">✕ 닫기</button></div>'
+      +'<div class="pm-cols">'
+      +pmPanelHtml('ctr','CTR — '+escP(code||'—'))
+      +pmPanelHtml('syd','SYD — '+(sydLabel?escP(sydLabel):'매칭 없음'))
+      +'</div>'
+      +'<div class="hint" style="margin-top:8px">CTR 사진: 사내 이미지 저장소(R2) · SYD 사진: syd.com.mx 공개 카탈로그. 사진이 여러 장이면 ‹ › 로 넘겨보세요.</div>'
+      +'</div>';
+    document.body.appendChild(ov);
+    pmState.ctr={list:[],idx:0}; pmState.syd={list:[],idx:0};
+    // 닫기: ✕ / 배경 클릭 / ESC
+    ov.querySelector('#pmX').addEventListener('click', closePhotoModal);
+    ov.addEventListener('click', function(e){ if(e.target===ov) closePhotoModal(); });
+    pmEsc=function(e){ if(e.key==='Escape') closePhotoModal(); };
+    document.addEventListener('keydown', pmEsc);
+    // ◀▶ 내비게이션
+    ov.querySelectorAll('.pm-nav').forEach(function(b){ b.addEventListener('click', function(){
+      const st=pmState[b.getAttribute('data-s')]; st.idx+=Number(b.getAttribute('data-d')); pmRender(b.getAttribute('data-s')); }); });
+    // 사진 수집(프로브, 캐시)
+    const ck='ctr:'+String(code||'').trim();
+    if(!pmCache[ck]) pmCache[ck]=pmProbeList(pmCtrCands(code));
+    pmCache[ck].then(function(list){ pmState.ctr.list=list; pmState.ctr.empty='등록된 CTR 사진이 없습니다.\u00a0(R2 미등록)'; pmRender('ctr'); });
+    if(!String(scode||'').trim()){
+      pmState.syd.list=[]; pmState.syd.empty='SYD 매칭 코드가 없는 제품입니다.'; pmRender('syd');
+    }else{
+      const sk='syd:'+String(scode).trim();
+      if(!pmCache[sk]) pmCache[sk]=pmProbeList(pmSydCands(scode));
+      pmCache[sk].then(function(list){ pmState.syd.list=list; pmState.syd.empty='SYD 카탈로그에 사진이 없습니다.'; pmRender('syd'); });
+    }
+  }
+
+  // ===== 제품 마스터 업로드 =====
+  // 파일 컬럼 라벨(표시용) — 시스템 필드 → 파일 컬럼명
+  const FIELD_LABEL={scode:'Clave SyD',app:'Aplicacion',name:'Nombre del producto',sat_code:'Clave SAT',origin:'Origen',list_price:'List Price',iva_rate:'IVA',ean:'Barcode',location:'Fast Movement Location',list_price_syd:'List Price de SYD',price_customer_syd:'Precio Cliente de SYD',price_customer_ctr:'Precio Cliente de CTR'};
+  let parsedPayload=null;
+
+  async function handleFile(file){
+    const m=$('upMsg');m.className='msg';m.style.display='none';
+    $('commitMsg').style.display='none';$('preview').classList.add('hidden');
+    if(!file){return;}
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
+      if(!aoa.length){m.className='msg err';m.style.display='block';m.textContent='빈 파일입니다.';return;}
+      const header=(aoa[0]||[]).slice(0,20).map(h=>h==null?'':String(h));
+      const rows=aoa.slice(1).filter(r=>r&&r.some(c=>c!=null&&c!=='')).map(r=>r.slice(0,20));
+      if(!header.includes('Clave CTR')){m.className='msg err';m.style.display='block';m.textContent='“Clave CTR” 컬럼을 찾을 수 없습니다. 헤더 행을 확인하세요.';return;}
+      parsedPayload={header,rows};
+      m.className='msg ok';m.style.display='block';m.textContent=file.name+' — '+rows.length+'행 읽음. 미리보기를 불러옵니다…';
+      await loadPreview();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='파일을 읽지 못했습니다: '+e.message;}
+  }
+
+  async function loadPreview(){
+    const m=$('upMsg');
+    try{
+      const res=await fetch(session.api+'/api/products/import/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(parsedPayload)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='미리보기 실패: '+(d.detail||d.error||res.status);return;}
+      $('pv-total').textContent=d.total;$('pv-new').textContent=d.new_items.length;$('pv-upd').textContent=d.updated.length;
+      $('pv-same').textContent=d.unchanged;$('pv-err').textContent=d.errors.length;$('pv-dup').textContent=d.duplicates.length;
+      let html='';
+      if(d.updated.length){
+        html+='<div style="font-weight:700;margin-top:8px">변경되는 제품 (최대 50개 표시)</div>';
+        html+='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th>변경 내용</th></tr></thead><tbody>'+
+          d.updated.slice(0,50).map(u=>{
+            const parts=Object.keys(u.changes).map(f=>`<div class="chg">${FIELD_LABEL[f]||f}: <span style="color:var(--expense)">${fmtv(u.changes[f].from)}</span> → <b>${fmtv(u.changes[f].to)}</b></div>`);
+            if(u.syd_changed)parts.push(`<div class="chg">Clave SyD: <span style="color:var(--expense)">${(u.syd_from||[]).join(' // ')||'—'}</span> → <b>${(u.syd_to||[]).join(' // ')||'—'}</b></div>`);
+            return `<tr><td class="code">${u.code}</td><td>${u.name||''}</td><td>${parts.join('')}</td></tr>`;
+          }).join('')+'</tbody></table>';
+        if(d.updated.length>50)html+=`<div class="hint">외 ${d.updated.length-50}개 더 변경됩니다.</div>`;
+      }
+      if(d.new_items.length){
+        html+='<div style="font-weight:700;margin-top:8px">신규 제품 (최대 30개 표시)</div>';
+        html+='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th class="num">List Price</th><th>SyD수</th></tr></thead><tbody>'+
+          d.new_items.slice(0,30).map(n=>`<tr><td class="code">${n.code}</td><td>${n.name||''}</td><td class="num">${fmt(n.list_price)}</td><td>${n.syd_count}</td></tr>`).join('')+'</tbody></table>';
+        if(d.new_items.length>30)html+=`<div class="hint">외 ${d.new_items.length-30}개 더 추가됩니다.</div>`;
+      }
+      if(d.errors.length){
+        html+='<div style="font-weight:700;margin-top:8px;color:var(--expense)">오류 (반영되지 않음)</div>';
+        html+='<table><thead><tr><th>Clave CTR</th><th>사유</th></tr></thead><tbody>'+
+          d.errors.map(e=>`<tr><td class="code">${e.code}</td><td>${e.reason==='name_missing'?'제품명(Nombre del producto) 누락':e.reason}</td></tr>`).join('')+'</tbody></table>';
+      }
+      if(d.duplicates.length){html+=`<div class="hint" style="color:var(--expense)">파일 내 중복 코드(첫 항목만 반영): ${d.duplicates.map(c=>'<span class="tag">'+c+'</span>').join('')}</div>`;}
+      $('pv-detail').innerHTML=html;
+      $('preview').classList.remove('hidden');
+      m.style.display='none';
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+  const fmtv=(v)=> v==null||v===''?'—':(typeof v==='number'?Number(v).toLocaleString('es-MX'):String(v));
+
+  async function commit(){
+    const m=$('commitMsg');m.className='msg';m.style.display='none';
+    $('commitBtn').disabled=true;$('commitBtn').textContent='반영 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/import/commit',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(parsedPayload)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='반영 실패: '+(d.detail||d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=`반영 완료 — 신규 ${d.created} · 변경 ${d.updated} · 동일 ${d.unchanged}${d.skipped?' · 건너뜀 '+d.skipped:''}.`;
+      $('preview').classList.add('hidden');parsedPayload=null;
+      doSearch();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('commitBtn').disabled=false;$('commitBtn').textContent='반영하기';}
+  }
+
+  async function sydSearch(){
+    const code=$('sydq').value.trim();const r=$('sydResult');
+    if(!code){r.innerHTML='';return;}
+    r.innerHTML='<div class="hint">찾는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/products/by-syd?code='+encodeURIComponent(code),{headers:auth()}).then(x=>x.json());
+      const items=d.items||[];
+      if(!items.length){r.innerHTML='<div class="hint">해당 SyD 코드에 대응하는 제품이 없습니다.</div>';return;}
+      r.innerHTML='<table><thead><tr><th>매칭 SyD</th><th>Clave CTR</th><th>제품명</th><th>적용차종</th></tr></thead><tbody>'+
+        items.map(p=>`<tr><td class="code">${p.syd_code}</td><td class="code">${p.code}</td><td>${p.name||''}</td><td class="hint" style="margin:0">${appCell(p.app)}</td></tr>`).join('')+'</tbody></table>';
+    }catch(e){r.innerHTML='<div class="hint">검색 실패.</div>';}
+  }
+
+  // 적용차종 원문을 ' // ' 단위로 칩처럼 표시(너무 많으면 일부만)
+  function appCell(app){
+    if(!app)return '—';
+    const parts=String(app).split(/\s*\/\/\s*/).filter(Boolean);
+    const shown=parts.slice(0,6).map(p=>'<span class="tag">'+p+'</span>').join(' ');
+    return shown+(parts.length>6?` <span class="hint" style="margin:0">외 ${parts.length-6}건</span>`:'');
+  }
+
+  // 차종 드롭다운: 메이커→모델→연도 단계 로딩
+  function fillSelect(sel,items,allLabel){
+    sel.innerHTML='<option value="">'+allLabel+'</option>'+items.map(v=>`<option value="${String(v).replace(/"/g,'&quot;')}">${v}</option>`).join('');
+  }
+  async function loadMakers(){
+    try{const d=await fetch(session.api+'/api/products/app-makers',{headers:auth()}).then(x=>x.json());fillSelect($('veh-maker'),d.items||[],'전체');}catch(e){}
+  }
+  async function loadModels(){
+    const maker=$('veh-maker').value;
+    try{const d=await fetch(session.api+'/api/products/app-models?maker='+encodeURIComponent(maker),{headers:auth()}).then(x=>x.json());fillSelect($('veh-model'),d.items||[],'전체 모델');}catch(e){}
+    await loadYears();
+  }
+  async function loadYears(){
+    const maker=$('veh-maker').value,model=$('veh-model').value;
+    try{const d=await fetch(session.api+'/api/products/app-years?maker='+encodeURIComponent(maker)+'&model='+encodeURIComponent(model),{headers:auth()}).then(x=>x.json());fillSelect($('veh-year'),d.items||[],'전체 연식');}catch(e){}
+  }
+
+  async function vehSearch(){
+    const maker=$('veh-maker').value,model=$('veh-model').value,year=$('veh-year').value;
+    const r=$('vehResult');
+    if(!maker&&!model&&!year){r.innerHTML='<div class="hint">메이커·모델·연식 중 하나 이상 선택하세요.</div>';return;}
+    r.innerHTML='<div class="hint">찾는 중…</div>';
+    const params=new URLSearchParams();
+    if(maker)params.set('maker',maker);if(model)params.set('model',model);if(year)params.set('year',year);
+    try{
+      const d=await fetch(session.api+'/api/products/by-vehicle?'+params.toString(),{headers:auth()}).then(x=>x.json());
+      const items=d.items||[];
+      if(!items.length){r.innerHTML='<div class="hint">조건에 맞는 제품이 없습니다.</div>';return;}
+      const byCode={};
+      items.forEach(it=>{(byCode[it.code] ||= {code:it.code,name:it.name,apps:[]}).apps.push(it);});
+      const groups=Object.values(byCode);
+      r.innerHTML='<table><thead><tr><th>Clave CTR</th><th>제품명</th><th>매칭된 적용차종</th></tr></thead><tbody>'+
+        groups.map(g=>`<tr><td class="code">${g.code}</td><td>${g.name||''}</td><td class="hint" style="margin:0">${g.apps.map(a=>'<span class="tag">'+(a.app_text||'')+'</span>').join(' ')}</td></tr>`).join('')+'</tbody></table>'
+        +`<div class="hint">${groups.length}개 제품 매칭${items.length>=300?' (300건 제한, 더 좁혀주세요)':''}.</div>`;
+    }catch(e){r.innerHTML='<div class="hint">검색 실패.</div>';}
+  }
+
+  async function resyncDerived(){
+    const m=$('resyncMsg');m.className='msg';m.style.display='none';
+    if(!confirm('모든 제품의 경쟁사 코드·적용차종 분해 데이터를 다시 생성합니다. 제품 수가 많으면 시간이 걸릴 수 있습니다. 진행할까요?'))return;
+    $('resyncBtn').disabled=true;$('resyncBtn').textContent='재동기화 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/resync-derived',{method:'POST',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.detail||d.error||res.status);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=`${d.products}개 제품의 분해 데이터를 재생성했습니다.`;
+      loadMakers();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+    finally{$('resyncBtn').disabled=false;$('resyncBtn').textContent='분해 데이터 전체 재동기화';}
+  }
+
+  async function sydSearchTail(){}
+
+  // ===== 화면 직접 추가/수정 + 제품 변경 이력 =====
+  const PE_LABEL=Object.assign({},{code:'Clave CTR',material:'Material',rack_location:'Rack 위치'},FIELD_LABEL);
+  const PE_SRC={manual:'화면',import:'엑셀 업로드',material:'소재(인라인)',material_bulk:'소재(일괄)'};
+  let peEsc=null, peEditId=null;
+
+  function peClose(){ const ov=document.getElementById('peOv'); if(ov) ov.remove();
+    if(peEsc){ document.removeEventListener('keydown', peEsc); peEsc=null; } peEditId=null; }
+
+  function peInput(id,label,extra){ return '<div style="'+(extra||'')+'"><label>'+label+'</label><input id="'+id+'" type="text"></div>'; }
+
+  function openProductEditor(pid){
+    peClose(); peEditId=pid||null;
+    const ov=document.createElement('div'); ov.className='pm-ov'; ov.id='peOv';
+    ov.innerHTML='<div class="pm-box" style="max-width:760px">'
+      +'<div class="pm-head"><span class="t">'+(pid?'✎ 제품 수정':'➕ 신규 제품 추가')+'</span>'
+      +'<button type="button" class="pm-x" id="peX">✕ 닫기</button></div>'
+      +'<div class="row">'+peInput('pe_code','제품코드 (Clave CTR) *')+'<div style="flex:2"><label>제품명 (Nombre del producto) *</label><input id="pe_name" type="text"></div></div>'
+      +'<div><label>경쟁사 코드 (Clave SyD — 여러 개면 \' // \' 구분)</label><input id="pe_scode" type="text"></div>'
+      +'<div><label>적용차종 (Aplicacion — 여러 개면 \' // \' 구분)</label><textarea id="pe_app" style="width:100%;min-height:54px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></textarea></div>'
+      +'<div class="row">'+peInput('pe_sat_code','Clave SAT')+peInput('pe_origin','Origen')+peInput('pe_ean','Barcode (EAN13)')+'</div>'
+      +'<div class="row">'+peInput('pe_list_price','List Price')+peInput('pe_iva_rate','IVA (%)')+peInput('pe_list_price_syd','List Price de SYD')+'</div>'
+      +'<div class="row">'+peInput('pe_price_customer_syd','Precio Cliente de SYD')+peInput('pe_price_customer_ctr','Precio Cliente de CTR')
+      +'<div><label>소재 (Material)</label><select id="pe_material" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff"><option value="">미지정</option><option value="aluminio">알루미늄</option></select></div></div>'
+      +'<div class="row">'+peInput('pe_location','Fast Movement Location')+peInput('pe_rack_location','Rack 위치')+'</div>'
+      +'<div class="hint" id="peInfo" style="margin-top:8px"></div>'
+      +'<div style="margin-top:12px;display:flex;gap:8px;align-items:center">'
+      +'<button class="btn gold" id="peSave" type="button">'+(pid?'저장':'추가')+'</button>'
+      +'<button class="btn ghost" id="peCancel" type="button">닫기</button></div>'
+      +'<div class="msg" id="peMsg"></div>'
+      +(pid?'<div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:10px"><div style="font-weight:700;font-size:13px">이 제품의 변경 이력</div><div id="peHist" style="margin-top:6px"><span class="hint">불러오는 중…</span></div></div>':'')
+      +'</div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#peX').addEventListener('click', peClose);
+    ov.querySelector('#peCancel').addEventListener('click', peClose);
+    ov.addEventListener('click', function(e){ if(e.target===ov) peClose(); });
+    peEsc=function(e){ if(e.key==='Escape') peClose(); };
+    document.addEventListener('keydown', peEsc);
+    ov.querySelector('#peSave').addEventListener('click', peSave);
+    $('peInfo').textContent = pid ? '' : '재고수량·평균원가는 0으로 시작하며, 재고는 수입 입고로만 변동됩니다.';
+    if(pid) peLoad(pid);
+  }
+
+  async function peLoad(pid){
+    const m=$('peMsg');
+    try{
+      const res=await fetch(session.api+'/api/products/'+pid+'/master',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='제품 정보를 불러오지 못했습니다: '+(d.error||res.status); return; }
+      const set=(id,v)=>{ const el=$(id); if(el) el.value=(v==null?'':String(v)); };
+      set('pe_code',d.code); set('pe_name',d.name); set('pe_scode',d.scode); set('pe_app',d.app);
+      set('pe_sat_code',d.sat_code); set('pe_origin',d.origin); set('pe_ean',d.ean);
+      set('pe_list_price',d.list_price); set('pe_iva_rate',d.iva_rate); set('pe_list_price_syd',d.list_price_syd);
+      set('pe_price_customer_syd',d.price_customer_syd); set('pe_price_customer_ctr',d.price_customer_ctr);
+      set('pe_location',d.location); set('pe_rack_location',d.rack_location);
+      const ms=$('pe_material');
+      if(d.material && d.material!=='aluminio'){ const op=document.createElement('option'); op.value=d.material; op.textContent=d.material; ms.appendChild(op); }
+      ms.value=d.material||'';
+      $('peInfo').innerHTML='현재 재고 <b>'+qty(d.stock_qty)+'</b> — 재고수량·평균원가는 이 화면에서 변경되지 않습니다.';
+      peHist(pid);
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+
+  async function peHist(pid){
+    const box=$('peHist'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/products/changelog?product_id='+pid+'&limit=15',{headers:auth()}).then(x=>x.json());
+      const items=d.items||[];
+      if(!items.length){ box.innerHTML='<span class="hint">기록된 변경 이력이 없습니다.</span>'; return; }
+      box.innerHTML=clTable(items,false);
+    }catch(e){ box.innerHTML='<span class="hint">이력을 불러오지 못했습니다.</span>'; }
+  }
+
+  function peCollect(){
+    const val=(id)=>{ const el=$(id); return el?el.value:''; };
+    return { code:val('pe_code'), name:val('pe_name'), scode:val('pe_scode'), app:val('pe_app'),
+      sat_code:val('pe_sat_code'), origin:val('pe_origin'), ean:val('pe_ean'),
+      list_price:val('pe_list_price'), iva_rate:val('pe_iva_rate'), list_price_syd:val('pe_list_price_syd'),
+      price_customer_syd:val('pe_price_customer_syd'), price_customer_ctr:val('pe_price_customer_ctr'),
+      material:val('pe_material'), location:val('pe_location'), rack_location:val('pe_rack_location') };
+  }
+
+  async function peSave(){
+    const m=$('peMsg'); m.className='msg'; m.style.display='none';
+    const body=peCollect();
+    if(!String(body.code).trim()){ m.className='msg err'; m.style.display='block'; m.textContent='제품코드(Clave CTR)를 입력하세요.'; return; }
+    if(!String(body.name).trim()){ m.className='msg err'; m.style.display='block'; m.textContent='제품명을 입력하세요.'; return; }
+    const btn=$('peSave'); btn.disabled=true; const old=btn.textContent; btn.textContent='저장 중…';
+    try{
+      const isEdit=!!peEditId;
+      const url=session.api+(isEdit?('/api/products/'+peEditId):'/api/products');
+      const res=await fetch(url,{method:isEdit?'PATCH':'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+(d.detail||d.error||res.status); return; }
+      m.className='msg ok'; m.style.display='block';
+      if(isEdit){
+        m.textContent=d.unchanged?'변경된 내용이 없습니다.':'저장 완료 — 변경 항목: '+(d.changed||[]).map(f=>PE_LABEL[f]||f).join(', ');
+        peHist(peEditId);
+      }else{
+        m.textContent='추가 완료 — '+d.code+' 제품이 등록되었습니다.';
+        peEditId=d.id;                    // 이후 저장은 수정으로 전환(중복 생성 방지)
+        btn.textContent='저장'; const t=document.querySelector('#peOv .pm-head .t'); if(t) t.textContent='✎ 제품 수정';
+      }
+      doSearch(); peQRender([]); $('peQ').value='';
+      if($('clBox')&&$('clBox').innerHTML) clLoadHist(true);
+      return;
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; if(btn.textContent==='저장 중…') btn.textContent=old; }
+  }
+
+  // ── 수정할 제품 검색(업로드 탭) ──
+  let peQTimer=null;
+  function peQRender(items){
+    const box=$('peQList'); if(!box) return;
+    if(!items.length){ box.innerHTML=''; return; }
+    box.innerHTML='<table style="margin-top:4px"><tbody>'+items.map(p=>
+      '<tr><td class="code" style="width:130px">'+escP(p.code)+'</td>'
+      +'<td style="font-size:12px">'+escP(p.name||'—')+'</td>'
+      +'<td style="font-size:11px;color:#6f6a60">'+escP((p.scode||'').replace(/\s*\/\/\s*/g,' · ').slice(0,60))+'</td>'
+      +'<td style="width:70px;text-align:right"><button class="btn ghost sm pe-edit" data-pid="'+p.id+'" type="button">✎ 수정</button></td></tr>').join('')
+      +'</tbody></table>';
+    box.querySelectorAll('.pe-edit').forEach(b=>b.addEventListener('click',()=>openProductEditor(Number(b.getAttribute('data-pid')))));
+  }
+  async function peQSearch(){
+    const q=$('peQ').value.trim();
+    if(q.length<2){ peQRender([]); return; }
+    try{
+      const d=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit=8',{headers:auth()}).then(x=>x.json());
+      peQRender(d.items||[]);
+    }catch(e){ peQRender([]); }
+  }
+
+  // ── 제품 변경 이력(업로드 탭 하단) ──
+  let clOffset=0, clTotal=0;
+  function peChgHtml(chg){
+    if(!chg) return '—';
+    const parts=[];
+    Object.keys(chg).forEach(f=>{
+      const c=chg[f]||{};
+      if(f==='_syd'){ parts.push('<div class="chg">Clave SyD: <span style="color:var(--expense)">'+escP((c.from||[]).join(' // ')||'—')+'</span> → <b>'+escP((c.to||[]).join(' // ')||'—')+'</b></div>'); return; }
+      if(f==='_app'){ parts.push('<div class="chg">적용차종: '+escP(String(c.from))+'종 → <b>'+escP(String(c.to))+'종</b></div>'); return; }
+      parts.push('<div class="chg">'+escP(PE_LABEL[f]||f)+': <span style="color:var(--expense)">'+escP(fmtv(c.from))+'</span> → <b>'+escP(fmtv(c.to))+'</b></div>');
+    });
+    return parts.join('')||'—';
+  }
+  function clTable(items, withCode){
+    return '<table><thead><tr><th class="nowrap">시각</th>'+(withCode?'<th class="nowrap">코드</th>':'')
+      +'<th class="nowrap">작업</th><th>변경 내용</th><th class="nowrap">작업자</th></tr></thead><tbody>'
+      +items.map(r=>{
+        const act=(r.action==='create')?'<span style="color:var(--income);font-weight:700">생성</span>':'<span style="color:var(--gold);font-weight:700">수정</span>';
+        return '<tr><td class="nowrap" style="font-size:11.5px">'+new Date(r.created_at).toLocaleString('sv-SE').slice(0,16)+'</td>'
+          +(withCode?('<td class="code">'+escP(r.code||'—')+'</td>'):'')
+          +'<td class="nowrap" style="font-size:12px">'+act+' <span style="font-size:10.5px;color:#6f6a60">'+escP(PE_SRC[r.source]||r.source||'')+'</span></td>'
+          +'<td>'+peChgHtml(r.changes)+'</td>'
+          +'<td class="nowrap" style="font-size:12px">'+escP(r.changed_by_name||'—')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+  async function clLoadHist(reset){
+    const box=$('clBox'), m=$('clMsg'); m.className='msg'; m.style.display='none';
+    if(reset){ clOffset=0; }
+    if(!clOffset) box.innerHTML='<span class="hint">불러오는 중…</span>';
+    try{
+      const code=$('clCode').value.trim();
+      const d=await fetch(session.api+'/api/products/changelog?limit=50&offset='+clOffset+(code?('&code='+encodeURIComponent(code)):''),{headers:auth()}).then(x=>x.json());
+      const items=d.items||[]; clTotal=Number(d.total||0);
+      if(!items.length&&!clOffset){ box.innerHTML='<span class="hint">기록된 변경 이력이 없습니다.</span>'; $('clMore').classList.add('hidden'); return; }
+      const html=clTable(items,true);
+      if(clOffset){ box.insertAdjacentHTML('beforeend', html); } else { box.innerHTML=html; }
+      clOffset+=items.length;
+      $('clMore').classList.toggle('hidden', clOffset>=clTotal);
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='이력 조회 실패'; }
+  }
+
+  // ===== 제품 마스터 다운로드 (엑셀) =====
+  // 업로드(COLUMN_MAP)와 같은 헤더명으로 시트를 만들어, 내려받아 수정 후 그대로 재업로드 가능.
+  // 가격류 컬럼은 백엔드가 sale_price 권한 없으면 필드를 생략 → 헤더 자체를 뺀다.
+  // Rack·Stock·Backorder는 정보용(업로드는 재고·평균원가를 절대 건드리지 않음 — Backorder 헤더는 업로드 파서가 무시).
+  // Backorder = 미입고 발주잔량(v_backorder) — 목록 화면의 Backorder 열과 동일 기준.
+  function masterSheetRows(items, priceIncluded){
+    const cols=[
+      ['Clave CTR','code'],['Clave SyD','scode'],
+      ['Aplicacion (Maker : Model : Year)','app'],['Nombre del producto','name'],
+      ['Clave SAT','sat_code'],['Origen','origin'],
+    ];
+    if(priceIncluded) cols.push(['List Price','list_price']);
+    cols.push(['IVA','iva_rate'],['Barcode (EAN13)','ean'],['Fast Movement Location','location']);
+    if(priceIncluded) cols.push(['List Price de SYD','list_price_syd'],['Precio Cliente de SYD','price_customer_syd'],['Precio Cliente de CTR','price_customer_ctr']);
+    cols.push(['Material','material'],['Rack','rack_location'],['Stock','stock_qty'],['Backorder','backorder_qty']);
+    const header=cols.map(c=>c[0]);
+    const rows=(items||[]).map(p=>cols.map(c=>{ const v=p[c[1]]; return v==null?'':v; }));
+    return [header].concat(rows);
+  }
+  async function downloadMaster(){
+    const btn=$('dlMaster'); if(!btn||btn.disabled) return;
+    btn.disabled=true; const old=btn.textContent; btn.textContent='내려받는 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/master-export',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('다운로드 실패: '+(d.error||res.status)); return; }
+      const aoa=masterSheetRows(d.items||[], !!d.price_included);
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols']=aoa[0].map(h=>({wch:Math.max(12,Math.min(38,String(h).length+4))}));
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'Plantilla Articulo');
+      const ymd=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      XLSX.writeFile(wb,'Refatrix_ProductMaster_'+ymd+'.xlsx');
+    }catch(e){ alert('다운로드 중 오류가 발생했습니다: '+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+
+  $('go').addEventListener('click',login);
+  $('dlMaster').addEventListener('click',downloadMaster);
+  $('pin').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
+  $('search').addEventListener('click',doSearch);
+  $('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});
+  // 실시간 검색 — 타이핑하면 디바운스(250ms) 후 자동 조회
+  var _qTimer=null;
+  $('q').addEventListener('input',function(){ clearTimeout(_qTimer); _qTimer=setTimeout(doSearch,250); });
+  $('drop').addEventListener('click',()=>$('upFile').click());
+  $('upFile').addEventListener('change',e=>handleFile(e.target.files[0]));
+  $('drop').addEventListener('dragover',e=>{e.preventDefault();$('drop').style.borderColor='var(--brand)';});
+  $('drop').addEventListener('dragleave',()=>$('drop').style.borderColor='');
+  $('drop').addEventListener('drop',e=>{e.preventDefault();$('drop').style.borderColor='';if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+  $('commitBtn').addEventListener('click',commit);
+  $('cancelBtn').addEventListener('click',()=>{$('preview').classList.add('hidden');parsedPayload=null;$('upMsg').style.display='none';});
+  $('vehBtn').addEventListener('click',vehSearch);
+  $('veh-maker').addEventListener('change',loadModels);
+  $('veh-model').addEventListener('change',loadYears);
+  // ===== 소재 일괄지정 =====
+  function parseCodeText(t){
+    return [...new Set(String(t||'').split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
+  }
+  async function bmReadFile(file){
+    try{
+      const wb=XLSX.read(await file.arrayBuffer());
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,blankrows:false});
+      // 첫 번째 열 값 수집. 헤더로 보이는 셀(코드/clave/ctr/code)은 제외.
+      const out=[];
+      aoa.forEach(r=>{ const v=r&&r[0]; if(v==null) return; const s2=String(v).trim(); if(!s2) return;
+        const low=s2.toLowerCase(); if(low==='clave ctr'||low==='ctr'||low==='code'||low==='codigo'||low==='código'||low==='코드') return;
+        out.push(s2); });
+      const codes=[...new Set(out)];
+      const ta=$('bmCodes'); ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+codes.join('\n');
+      bmRefreshCount();
+      const m=$('bmMsg'); m.className='msg ok'; m.style.display='block'; m.textContent=file.name+' — 코드 '+codes.length+'개 읽음. 확인 후 [일괄 적용]을 누르세요.';
+    }catch(e){ const m=$('bmMsg'); m.className='msg err'; m.style.display='block'; m.textContent='파일을 읽지 못했습니다: '+e.message; }
+  }
+  function bmRefreshCount(){ const n=parseCodeText($('bmCodes').value).length; $('bmCount').textContent=n?('코드 '+n+'개'):''; }
+  async function bmApply(){
+    const m=$('bmMsg'); m.className='msg'; m.style.display='none';
+    const codes=parseCodeText($('bmCodes').value);
+    if(!codes.length){ m.className='msg err'; m.style.display='block'; m.textContent='적용할 CTR 코드가 없습니다.'; return; }
+    const material=$('bmMaterial').value;
+    const label=material?'알루미늄으로 지정':'소재 해제';
+    if(!confirm(codes.length+'개 코드를 '+label+'할까요?')) return;
+    $('bmApply').disabled=true; $('bmApply').textContent='적용 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/material/bulk-set',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({codes,material})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+(d.error||res.status); return; }
+      m.className='msg ok'; m.style.display='block';
+      let txt='완료 — 요청 '+d.requested+'개 중 '+d.matched+'개 적용('+label+').';
+      if(d.unmatched&&d.unmatched.length){ txt+=' 미매칭 '+d.unmatched.length+'개: '+d.unmatched.slice(0,30).join(', ')+(d.unmatched.length>30?(' 외 '+(d.unmatched.length-30)+'개'):''); }
+      m.textContent=txt;
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+e.message; }
+    finally{ $('bmApply').disabled=false; $('bmApply').textContent='일괄 적용'; }
+  }
+
+  // ===== 경쟁사 교차참조 업로드 =====
+  //  대상 시트: 헤더 행에 'REFERENCIA'가 있는 시트(예: LISTA GENERAL). 헤더 윗줄이 브랜드 라벨(BAW·SYD1…).
+  //  행 → { codes:[{brand,code}] }. 셀에 '//', 쉼표, 세미콜론으로 여러 코드가 있으면 분리.
+  let xrRows=null, xrFileName='';
+  function xrParseWb(wb){
+    // 후보 시트 전부 스캔 → 코드 열(CODIGO xxx + REFERENCIA n)이 가장 많은 시트 채택 (최소 3열)
+    //  · 안내/할인계산 시트에도 'REFERENCIA' 낱개가 있을 수 있어 열 수 기준이 안전.
+    let best=null;
+    for(const name of wb.SheetNames){
+      const aoa=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,blankrows:false});
+      let hIdx=-1;
+      for(let i=0;i<Math.min(aoa.length,30);i++){
+        const r=aoa[i]||[];
+        if(r.some(c=>c!=null&&/referencia\s*\d/i.test(String(c)))){ hIdx=i; break; }
+      }
+      if(hIdx<0) continue;
+      const head=aoa[hIdx]||[], brandRow=(hIdx>0?aoa[hIdx-1]:[])||[];
+      const cols=[]; let priceCi=-1, anchorCi=-1;
+      head.forEach((h,ci)=>{ if(h==null) return; const s=String(h).trim();
+        if(/^precio/i.test(s)&&priceCi<0){ priceCi=ci; return; }   // Q열 PRECIO(리스트가격) → 기준 브랜드 코드에 저장
+        if(/^codigo\s/i.test(s)||/referencia\s*\d/i.test(s)){
+          const b=brandRow[ci]!=null?String(brandRow[ci]).trim():'';
+          if(/^codigo\s/i.test(s)&&anchorCi<0) anchorCi=ci;        // 첫 CODIGO 열 = 기준 브랜드(가격 귀속)
+          cols.push({ci, brand: b || s.replace(/^codigo\s+/i,'').toUpperCase() || null});
+        }});
+      if(cols.length<3) continue;
+      if(!best || cols.length>best.cols.length) best={name, aoa, hIdx, cols, priceCi, anchorCi};
+    }
+    if(!best) return null;
+    const rows=[];
+    for(let i=best.hIdx+1;i<best.aoa.length;i++){
+      const r=best.aoa[i]||[]; const codes=[];
+      // 행 가격(PRECIO열) — 기준 브랜드(첫 CODIGO 열) 코드에 귀속
+      let price=null;
+      if(best.priceCi>=0 && r[best.priceCi]!=null && r[best.priceCi]!==''){
+        const pn=Number(String(r[best.priceCi]).replace(/[$,\s]/g,'')); if(isFinite(pn)&&pn>0) price=pn;
+      }
+      best.cols.forEach(c=>{ const v=r[c.ci]; if(v==null) return;
+        String(v).split(/\/\/|[,;]/).forEach(part=>{ const p=part.trim(); if(p&&p!=='0') codes.push({brand:c.brand, code:p, price:(c.ci===best.anchorCi?price:null)}); });
+      });
+      if(codes.length) rows.push({codes});
+    }
+    return {sheet:best.name, cols:best.cols.map(c=>c.brand), rows, hasPrice:best.priceCi>=0};
+  }
+  async function xrReadFile(file){
+    const m=$('xrMsg'); m.className='msg'; m.style.display='none'; xrRows=null; $('xrApply').disabled=true; $('xrCount').textContent='';
+    try{
+      const parsed=xrParseWb(XLSX.read(await file.arrayBuffer()));
+      if(!parsed){ m.className='msg err'; m.style.display='block'; m.textContent='교차참조 형식 시트를 찾지 못했습니다 (헤더에 REFERENCIA 1~9가 있어야 합니다).'; return; }
+      xrRows=parsed.rows; xrFileName=file.name||''; $('xrApply').disabled=false;
+      $('xrCount').textContent='['+parsed.sheet+'] '+parsed.rows.length+'행 · 열: '+parsed.cols.join(', ');
+      m.className='msg ok'; m.style.display='block'; m.textContent=file.name+' 읽음. [교차참조 등록]을 누르면 SYD 일치 행의 코드가 CTR에 연결됩니다.';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='파일을 읽지 못했습니다: '+e.message; }
+  }
+  async function xrApply(){
+    if(!xrRows||!xrRows.length) return;
+    if(!confirm(xrRows.length+'행을 등록할까요? (SYD 일치 행만 CTR에 연결되며, 재업로드해도 중복되지 않습니다)')) return;
+    const m=$('xrMsg'); const btn=$('xrApply'); btn.disabled=true;
+    const CH=400; const tot={rows:0,matchedRows:0,inserted:0,unmatchedRows:0,snapId:null}; let sample=[];
+    try{
+      for(let i=0;i<xrRows.length;i+=CH){
+        btn.textContent='등록 중… '+Math.min(i+CH,xrRows.length)+'/'+xrRows.length;
+        const payload={rows:xrRows.slice(i,i+CH)};
+        if(i===0) payload.backup={first:true, filename:xrFileName};   // 첫 청크: 업로드 전 자동백업
+        const res=await fetch(session.api+'/api/products/xref/bulk-upsert',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(payload)});
+        const d=await res.json();
+        if(!res.ok||d.error) throw new Error(d.error||res.status);
+        ['rows','matchedRows','inserted','unmatchedRows'].forEach(k=>tot[k]+=d[k]||0);
+        if(d.snapshot&&d.snapshot.id) tot.snapId=d.snapshot.id;
+        if(sample.length<10&&d.unmatchedSample) sample=sample.concat(d.unmatchedSample).slice(0,10);
+      }
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='완료 — 총 '+tot.rows+'행 중 매칭 '+tot.matchedRows+'행 · 신규 교차참조 '+tot.inserted+'개 등록 · 미매칭 '+tot.unmatchedRows+'행(CTR 미취급 라인)'+(tot.snapId?' · 업로드 전 상태 자동백업 #'+tot.snapId:'');
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='실패: '+e.message+' (완료분까지는 저장됨 — 같은 파일 재업로드 시 이어서 처리됩니다)'; }
+    finally{ btn.disabled=false; btn.textContent='교차참조 등록'; }
+  }
+  async function xrShowStats(){
+    const m=$('xrMsg'); m.className='msg'; m.style.display='none';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/stats',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      m.className='msg ok'; m.style.display='block';
+      m.textContent=d.items.length? '등록 현황 — '+d.items.map(x=>x.brand+': '+x.codes+'개('+x.products+'제품)').join(' · ') : '등록된 교차참조가 없습니다.';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='조회 실패: '+e.message; }
+  }
+
+  // ── 현재 마스터 다운로드 (교차참조 전체 → xlsx) ──
+  async function xrExport(){
+    const m=$('xrMsg'); m.className='msg'; m.style.display='none';
+    const btn=$('xrExport'); btn.disabled=true; btn.textContent='생성 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/export',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(!d.rows.length){ m.className='msg err'; m.style.display='block'; m.textContent='내보낼 교차참조가 없습니다.'; return; }
+      const aoa=[['CTR','MARCA','CODIGO','PRECIO']].concat(d.rows.map(r=>[r.ctr,r.brand||'',r.code,r.price!=null?r.price:'']));
+      const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:12},{wch:12},{wch:22},{wch:10}];
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'xref_master');
+      const dt=new Date().toISOString().slice(0,10).replace(/-/g,'');
+      XLSX.writeFile(wb,'Refatrix_xref_master_'+dt+'.xlsx');
+      m.className='msg ok'; m.style.display='block'; m.textContent='현재 마스터 '+d.count.toLocaleString()+'건 다운로드 완료.';
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='내보내기 실패: '+e.message; }
+    finally{ btn.disabled=false; btn.textContent='⬇ 현재 마스터 다운로드'; }
+  }
+
+  // ── 백업 목록 · 수동 백업 · 복원 ──
+  async function xrSnapList(){
+    const box=$('xrSnapBox'), m=$('xrSnapMsg'); m.className='msg'; m.style.display='none';
+    box.innerHTML='<span class="hint">불러오는 중…</span>';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots',{headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(!d.items.length){ box.innerHTML='<span class="hint">백업이 아직 없습니다. 업로드하면 자동으로 생성됩니다.</span>'; return; }
+      const kindLb={auto:'자동',manual:'수동',pre_restore:'복원전'};
+      box.innerHTML='<table style="min-width:0"><thead><tr><th>#</th><th>시각</th><th>구분</th><th>내용</th><th class="num">행수</th><th>작업자</th><th></th></tr></thead><tbody>'
+        + d.items.map(s=>'<tr><td>'+s.id+'</td><td class="nowrap">'+new Date(s.at).toLocaleString('sv-SE').slice(0,16)+'</td>'
+          +'<td>'+(kindLb[s.kind]||s.kind)+'</td><td>'+(s.label||'—')+'</td><td class="num">'+s.rows.toLocaleString()+'</td><td>'+(s.by||'—')+'</td>'
+          +'<td class="nowrap"><button class="btn ghost sm xr-restore" data-id="'+s.id+'" data-rows="'+s.rows+'">이 시점으로 복원</button> '
+          +'<button class="btn ghost sm xr-snapdel" data-id="'+s.id+'" title="백업 삭제">🗑</button></td></tr>').join('')
+        + '</tbody></table>';
+      box.querySelectorAll('.xr-restore').forEach(b=>b.addEventListener('click',()=>xrRestore(Number(b.dataset.id),Number(b.dataset.rows))));
+      box.querySelectorAll('.xr-snapdel').forEach(b=>b.addEventListener('click',()=>xrSnapDel(Number(b.dataset.id))));
+    }catch(e){ box.innerHTML=''; m.className='msg err'; m.style.display='block'; m.textContent='목록 조회 실패: '+e.message; }
+  }
+  async function xrSnapNow(){
+    const m=$('xrSnapMsg'); m.className='msg'; m.style.display='none';
+    const label=prompt('백업 메모 (예: BAW 6월판 반영 후)','수동 백업');
+    if(label===null) return;
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({label})});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      m.className='msg ok'; m.style.display='block'; m.textContent='백업 #'+d.id+' 생성 ('+d.rows.toLocaleString()+'행).';
+      xrSnapList();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='백업 실패: '+e.message; }
+  }
+  async function xrRestore(sid,rows){
+    if(!confirm('#'+sid+' 시점('+rows.toLocaleString()+'행)으로 교차참조 전체를 되돌립니다.\n현재 상태는 복원 직전에 자동 백업됩니다.\n계속할까요?')) return;
+    if(!confirm('최종 확인 — 현재 교차참조가 #'+sid+' 시점으로 교체됩니다.')) return;
+    const m=$('xrSnapMsg'); m.className='msg'; m.style.display='none';
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots/'+sid+'/restore',{method:'POST',headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='복원 완료 — #'+sid+' 시점 '+d.restored.toLocaleString()+'행 적용. 복원 직전 상태는 백업 #'+d.pre_backup.id+'에 보관됨 (되돌리기 가능).';
+      xrSnapList();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='복원 실패: '+e.message; }
+  }
+  async function xrSnapDel(sid){
+    if(!confirm('백업 #'+sid+'를 삭제할까요? (복원 불가능해집니다)')) return;
+    try{
+      const res=await fetch(session.api+'/api/products/xref/snapshots/'+sid,{method:'DELETE',headers:auth()});
+      const d=await res.json(); if(!res.ok||d.error) throw new Error(d.error||res.status);
+      xrSnapList();
+    }catch(e){ alert('삭제 실패: '+e.message); }
+  }
+
+
+  // ===================================================================
+  // 0179 · 제품(SKU) 판매 활성/비활성
+  //   · 비활성 = 신규 사용 차단(새 견적·새 매출등록·오퍼시트 생성).
+  //     과거 매출·매출총이익·원가 내역은 그대로 조회된다(삭제와 다름).
+  //   · 전환 전에 "지금 이 SKU 가 어디에 걸려 있나"를 업체별로 정리해 보여주고,
+  //     업체별 처리결과를 메모로 남긴다. 여러 SKU 는 한 번에 점검해 이력으로 보관.
+  // ===================================================================
+  function stBadge(active, reason){
+    return active
+      ? '<span class="stbadge on">활성</span>'
+      : '<span class="stbadge off" title="'+escP(reason||'비활성(판매중단)')+'">비활성</span>';
+  }
+  function stRefreshBar(){
+    const c=$('stCnt'), b=$('stCheckBtn');
+    if(c) c.innerHTML='선택 <b>'+stSel.size+'</b>개';
+    if(b) b.disabled = stSel.size===0;
+  }
+  function stClearSel(){ stSel.clear(); document.querySelectorAll('.stChk').forEach(cb=>{cb.checked=false;}); const a=$('stAll'); if(a)a.checked=false; stRefreshBar(); }
+
+  // ── 드릴다운 안의 상태 패널 ─────────────────────────────────────────
+  function statusPanel(d, pid){
+    if(!d || !d.can_manage_status || !pid) return '';
+    const pr=d.product||{};
+    const act=pr.is_active!==false;
+    const when=pr.status_changed_at?('<span class="hint" style="margin:0"> · 변경 '+escP(String(pr.status_changed_at).slice(0,10))+'</span>'):'';
+    const reason=(!act&&pr.inactive_reason)?('<span class="hint" style="margin:0"> · 사유: '+escP(pr.inactive_reason)+'</span>'):'';
+    return '<div class="appsec" id="stp'+pid+'">'
+      +'<div class="dh">판매 상태 '+stBadge(act, pr.inactive_reason)+when+reason+'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 2px">'
+      +'<button class="btn ghost sm stPipe" type="button" data-pid="'+pid+'">🔎 걸려있는 항목 점검</button>'
+      +'<button class="btn '+(act?'ghost':'gold')+' sm stTog" type="button" data-pid="'+pid+'" data-to="'+(act?'0':'1')+'">'
+      +(act?'⛔ 비활성으로 전환(판매중단)':'✅ 활성화(판매재개)')+'</button>'
+      +'<span class="hint" style="margin:0">'+(act
+        ? '비활성으로 바꾸면 새 견적·새 매출등록·오퍼시트에서 이 SKU 를 쓸 수 없습니다. 이미 진행 중인 건과 과거 내역은 그대로 유지됩니다.'
+        : '활성화하면 판매를 재개합니다. 아래에서 대기 중인 부족분·오퍼시트·개발요청을 확인하세요.')+'</span>'
+      +'</div><div class="stbody" id="stb'+pid+'"></div></div>';
+  }
+  function stBindPanel(dr, pid, d){
+    const pipe=dr.querySelector('.stPipe'), tog=dr.querySelector('.stTog');
+    if(pipe) pipe.addEventListener('click',function(e){ e.stopPropagation(); stLoadPipeline(pid); });
+    if(tog) tog.addEventListener('click',function(e){ e.stopPropagation();
+      stToggleOne(pid, (d&&d.product&&d.product.code)||'', tog.getAttribute('data-to')==='1'); });
+  }
+  async function stLoadPipeline(pid){
+    const box=$('stb'+pid); if(!box) return;
+    box.innerHTML='<div class="hint">점검 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/products/'+pid+'/pipeline',{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">점검 실패: '+escP(d.error)+'</div>'; return; }
+      box.innerHTML=stPartiesHtml(d.parties||[], d.open_total||0, null, pid);
+    }catch(e){ box.innerHTML='<div class="hint">점검 실패: '+escP(e.message)+'</div>'; }
+  }
+  async function stToggleOne(pid, code, toActive){
+    const label = toActive ? '활성화(판매재개)' : '비활성(판매중단)';
+    let reason=null;
+    if(!toActive){
+      reason=prompt(code+' 을(를) 비활성으로 전환합니다.\n사유를 적어주세요 (예: 단종, 품질이슈, 전략적 판매중단)','');
+      if(reason===null) return;
+    } else if(!confirm(code+' 을(를) 활성화(판매재개)할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/products/'+pid+'/active',{method:'PATCH',
+        headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({active:toActive, reason:reason||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('전환 실패: '+(d.error||res.status)); return; }
+      alert(code+' → '+label+' 완료.'+(d.open_total?('\n※ 걸려 있는 미결 항목 '+d.open_total+'건이 있습니다 — 업체별 정리 화면에서 처리하세요.'):''));
+      loadProducts();
+    }catch(e){ alert('전환 실패: '+e.message); }
+  }
+
+  // ── 업체별 항목 표 ──────────────────────────────────────────────────
+  //   checkId 가 있으면 업체별 「처리상태 + 메모」 입력줄을 함께 그린다.
+  function stPartiesHtml(parties, openTotal, checkId, pid, notes){
+    if(!parties.length) return '<div class="hint" style="margin:4px 0"><b>걸려 있는 항목이 없습니다.</b> 바로 전환해도 영향받는 진행 건이 없습니다.</div>';
+    const noteOf=(party)=>{
+      if(!notes) return null;
+      return notes.find(x=>Number(x.product_id)===Number(pid) && String(x.party)===String(party)) || null;
+    };
+    let h='<div class="hint" style="margin:4px 0">미결 항목 <b>'+openTotal+'건</b> · 관련 업체 '+parties.length+'곳 — 업체별로 정리해 처리하세요.</div>';
+    parties.forEach(function(pg){
+      const nt=noteOf(pg.party);
+      h+='<div class="party"><div class="ph">'+escP(pg.party)
+        +'<span class="np">'+(pg.n?(pg.n+'건'):'참고')+'</span></div>'
+        +'<table><thead><tr><th>구분</th><th>번호</th><th>단계</th><th class="num">수량</th><th class="num">금액</th><th class="nowrap">일자</th></tr></thead><tbody>'
+        +pg.items.map(function(it){
+          return '<tr><td><span class="bchip'+(it.info?' info':'')+'">'+escP(it.bucket_label||it.bucket)+'</span></td>'
+            +'<td>'+escP(it.ref||'')+'</td><td>'+escP(it.stage||'')+'</td>'
+            +'<td class="num">'+(it.qty?qty(it.qty):'—')+'</td>'
+            +'<td class="num">'+(it.amount!=null?fmt(it.amount):'—')+'</td>'
+            +'<td class="nowrap">'+escP(it.date||'—')+'</td></tr>';
+        }).join('')
+        +'</tbody></table>';
+      if(checkId){
+        const st=(nt&&nt.state)||'todo';
+        h+='<div class="noterow" data-party="'+escP(pg.party)+'" data-pid="'+pid+'">'
+          +'<select class="ntState">'
+          +'<option value="todo"'+(st==='todo'?' selected':'')+'>미처리</option>'
+          +'<option value="doing"'+(st==='doing'?' selected':'')+'>진행중</option>'
+          +'<option value="done"'+(st==='done'?' selected':'')+'>처리완료</option></select>'
+          +'<input type="text" class="ntMemo" placeholder="처리결과 메모 (예: 견적 취소 요청함 / 잔량 대체품 안내 / 미수금 회수 예정 8/30)" value="'+escP((nt&&nt.memo)||'')+'">'
+          +'<button class="btn ghost sm ntSave" type="button">저장</button>'
+          +'<span class="hint ntMsg" style="margin:0">'+(nt&&nt.updated_at?('최근 저장 '+escP(String(nt.updated_at).slice(0,10))):'')+'</span>'
+          +'</div>';
+      }
+      h+='</div>';
+    });
+    return h;
+  }
+
+  // ── 일괄 점검 ───────────────────────────────────────────────────────
+  let stCur=null;   // 현재 모달에 열린 점검 배치 {check, items, notes}
+  function stClose(){ const o=$('stOv'); if(o) o.remove(); if(stEsc){document.removeEventListener('keydown',stEsc); stEsc=null;} }
+  let stEsc=null;
+  function stModal(title, inner, actions){
+    stClose();
+    const ov=document.createElement('div'); ov.className='pm-ov'; ov.id='stOv';
+    ov.innerHTML='<div class="pm-box" style="max-width:1020px">'
+      +'<div class="pm-head"><span class="t">'+title+'</span>'
+      +(actions||'')
+      +'<button type="button" class="pm-x" id="stX">✕ 닫기</button></div>'
+      +'<div id="stBody">'+inner+'</div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#stX').addEventListener('click', stClose);
+    ov.addEventListener('click', function(e){ if(e.target===ov) stClose(); });
+    stEsc=function(e){ if(e.key==='Escape') stClose(); };
+    document.addEventListener('keydown', stEsc);
+    return ov;
+  }
+  async function stRunCheck(){
+    if(!stSel.size) return;
+    const ids=[...stSel.keys()];
+    const anyActive=[...stSel.values()].some(v=>v.is_active);
+    const anyInactive=[...stSel.values()].some(v=>!v.is_active);
+    const kind = anyActive&&anyInactive ? '혼합' : (anyActive?'판매중단 검토':'판매재개 검토');
+    const title=prompt('점검 이름을 정하세요 (이력 목록에 표시됩니다)', ids.length+'개 SKU '+kind+' '+new Date().toISOString().slice(0,10));
+    if(title===null) return;
+    stModal('🔎 일괄 점검', '<div class="hint">'+ids.length+'개 SKU 를 점검하는 중…</div>');
+    try{
+      const res=await fetch(session.api+'/api/products/status-check',{method:'POST',
+        headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({ids, title:title||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('stBody').innerHTML='<div class="hint">점검 실패: '+escP(d.error||res.status)+'</div>'; return; }
+      stCur={ check:d.check, notes:[], items:(d.items||[]).map(x=>({
+        pid:x.product.id, code:x.product.code, name:x.product.name,
+        active_now:x.product.is_active, target_active:x.target_active,
+        open_total:x.open_total, parties:x.parties||[] })) };
+      stRenderCheck();
+    }catch(e){ $('stBody').innerHTML='<div class="hint">점검 실패: '+escP(e.message)+'</div>'; }
+  }
+  function stRenderCheck(){
+    if(!stCur) return;
+    const c=stCur.check;
+    const withOpen=stCur.items.filter(x=>x.open_total>0).length;
+    const acts='<button class="btn gold sm" id="stApply" type="button" style="margin-left:auto">✔ 체크한 SKU 전환 적용</button>'
+      +'<button class="btn ghost sm" id="stXlsx" type="button" style="margin-left:6px">⬇ 엑셀</button>';
+    const ov=stModal('🗂 '+escP(c.title||('점검 #'+c.id)), '<div class="hint">준비 중…</div>', acts);
+    let h='<div class="hint" style="margin-top:0">점검 #'+c.id+' · SKU '+stCur.items.length+'개 · 미결 있는 SKU <b>'+withOpen+'</b>개'
+      +(c.created_at?(' · '+escP(String(c.created_at).slice(0,16).replace('T',' '))):'')+'</div>';
+    stCur.items.forEach(function(it){
+      const tgt=it.target_active;
+      h+='<div class="skucard'+(it.open_total?'':' clean')+'" data-pid="'+it.pid+'">'
+        +'<div class="sh"><label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer">'
+        +'<input type="checkbox" class="stApplyChk" data-pid="'+it.pid+'" style="width:auto;margin:0"'+(it.open_total?'':' checked')+'>'
+        +'<span class="c">'+escP(it.code)+'</span></label>'
+        +'<span class="n">'+escP(it.name||'')+'</span>'
+        +stBadge(it.active_now)
+        +'<span style="font-size:11px;color:#6f6a60">→ 전환 목표</span>'+stBadge(tgt)
+        +'<span style="margin-left:auto;font-size:12px;font-weight:700;color:'+(it.open_total?'#B23A2E':'#0F6E56')+'">'
+        +(it.open_total?('미결 '+it.open_total+'건'):'미결 없음')+'</span></div>'
+        +stPartiesHtml(it.parties, it.open_total, c.id, it.pid, stCur.notes)
+        +'</div>';
+    });
+    $('stBody').innerHTML=h;
+    ov.querySelectorAll('.ntSave').forEach(b=>b.addEventListener('click',()=>stSaveNote(b)));
+    const ap=$('stApply'); if(ap) ap.addEventListener('click',stApplyChecked);
+    const xl=$('stXlsx'); if(xl) xl.addEventListener('click',stExportXlsx);
+  }
+  async function stSaveNote(btn){
+    const row=btn.closest('.noterow'); if(!row||!stCur) return;
+    const pid=Number(row.getAttribute('data-pid'));
+    const party=row.getAttribute('data-party')||'';
+    const state=row.querySelector('.ntState').value;
+    const memo=row.querySelector('.ntMemo').value;
+    const msg=row.querySelector('.ntMsg');
+    msg.textContent='저장 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/status-checks/'+stCur.check.id+'/note',{method:'POST',
+        headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({product_id:pid, party, state, memo})});
+      const d=await res.json();
+      if(!res.ok||d.error){ msg.textContent='저장 실패: '+(d.error||res.status); return; }
+      const i=stCur.notes.findIndex(x=>Number(x.product_id)===pid && String(x.party)===party);
+      const rec={product_id:pid, party, state, memo, updated_at:new Date().toISOString()};
+      if(i>=0) stCur.notes[i]=rec; else stCur.notes.push(rec);
+      msg.textContent='저장됨';
+    }catch(e){ msg.textContent='저장 실패: '+e.message; }
+  }
+  async function stApplyChecked(){
+    if(!stCur) return;
+    const ids=[...document.querySelectorAll('.stApplyChk')].filter(c=>c.checked).map(c=>Number(c.getAttribute('data-pid')));
+    if(!ids.length){ alert('전환할 SKU 를 체크하세요.'); return; }
+    const risky=stCur.items.filter(x=>ids.includes(x.pid)&&x.open_total>0);
+    let warn='';
+    if(risky.length) warn='\n\n⚠ 미결 항목이 남아 있는 SKU '+risky.length+'개가 포함되어 있습니다:\n'
+      +risky.map(x=>'  · '+x.code+' ('+x.open_total+'건)').join('\n')
+      +'\n비활성으로 바꿔도 진행 중인 건은 그대로 유지되지만, 위 항목은 별도로 정리해야 합니다.';
+    const reason=prompt('선택한 '+ids.length+'개 SKU 를 점검 결과대로 전환합니다.'+warn+'\n\n사유를 적어주세요.','');
+    if(reason===null) return;
+    try{
+      const res=await fetch(session.api+'/api/products/status-checks/'+stCur.check.id+'/apply',{method:'POST',
+        headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({product_ids:ids, reason})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('전환 실패: '+(d.error||res.status)); return; }
+      alert('전환 완료 — '+d.changed+'개 변경 (대상 '+d.targets+'개, 이미 같은 상태는 건너뜀).');
+      stClearSel(); loadProducts();
+    }catch(e){ alert('전환 실패: '+e.message); }
+  }
+  function stExportXlsx(){
+    if(!stCur) return;
+    const rows=[['제품코드','제품명','현재상태','전환목표','업체','구분','번호','단계','수량','금액','일자','처리상태','메모']];
+    stCur.items.forEach(function(it){
+      if(!it.parties.length){ rows.push([it.code,it.name||'',it.active_now?'활성':'비활성',it.target_active?'활성':'비활성','','(미결 없음)','','','','','','','']); return; }
+      it.parties.forEach(function(pg){
+        const nt=stCur.notes.find(x=>Number(x.product_id)===Number(it.pid)&&String(x.party)===String(pg.party));
+        pg.items.forEach(function(x){
+          rows.push([it.code, it.name||'', it.active_now?'활성':'비활성', it.target_active?'활성':'비활성',
+            pg.party, x.bucket_label||x.bucket, x.ref||'', x.stage||'', Number(x.qty||0),
+            x.amount!=null?Number(x.amount):'', x.date||'',
+            nt?({todo:'미처리',doing:'진행중',done:'처리완료'}[nt.state]||nt.state):'', nt?(nt.memo||''):'']);
+        });
+      });
+    });
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '점검결과');
+    XLSX.writeFile(wb, 'SKU_점검_'+stCur.check.id+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }
+  async function stOpenHistory(){
+    stModal('🗂 점검 이력', '<div class="hint">불러오는 중…</div>');
+    try{
+      const d=await fetch(session.api+'/api/products/status-checks?limit=100',{headers:auth()}).then(r=>r.json());
+      const it=d.items||[];
+      if(!it.length){ $('stBody').innerHTML='<div class="hint">저장된 점검 이력이 없습니다.</div>'; return; }
+      $('stBody').innerHTML='<table class="stlist"><thead><tr><th>일시</th><th>이름</th><th>구분</th>'
+        +'<th class="num">SKU</th><th class="num">미결 SKU</th><th class="num">전환됨</th><th>작성자</th><th></th></tr></thead><tbody>'
+        +it.map(x=>'<tr data-cid="'+x.id+'"><td class="nowrap">'+escP(String(x.created_at).slice(0,16).replace('T',' '))+'</td>'
+          +'<td>'+escP(x.title||'')+'</td>'
+          +'<td>'+({deactivate:'판매중단',activate:'판매재개',mixed:'혼합'}[x.mode]||x.mode)+'</td>'
+          +'<td class="num">'+x.sku_count+'</td><td class="num">'+x.open_count+'</td><td class="num">'+x.applied_count+'</td>'
+          +'<td>'+escP(x.created_by_name||'')+'</td>'
+          +'<td class="num"><button class="btn ghost sm stDel" data-cid="'+x.id+'" type="button">삭제</button></td></tr>').join('')
+        +'</tbody></table>';
+      document.querySelectorAll('.stlist tr[data-cid]').forEach(tr=>tr.addEventListener('click',e=>{
+        if(e.target.classList.contains('stDel')) return;
+        stOpenCheck(Number(tr.getAttribute('data-cid')));
+      }));
+      document.querySelectorAll('.stDel').forEach(b=>b.addEventListener('click',async e=>{
+        e.stopPropagation();
+        const cid=Number(b.getAttribute('data-cid'));
+        if(!confirm('점검 이력 #'+cid+' 을 삭제할까요? (제품 상태는 바뀌지 않습니다)')) return;
+        await fetch(session.api+'/api/products/status-checks/'+cid,{method:'DELETE',headers:auth()});
+        stOpenHistory();
+      }));
+    }catch(e){ $('stBody').innerHTML='<div class="hint">불러오지 못했습니다: '+escP(e.message)+'</div>'; }
+  }
+  async function stOpenCheck(cid){
+    stModal('🗂 점검 상세', '<div class="hint">불러오는 중…</div>');
+    try{
+      const d=await fetch(session.api+'/api/products/status-checks/'+cid,{headers:auth()}).then(r=>r.json());
+      if(d.error){ $('stBody').innerHTML='<div class="hint">불러오지 못했습니다: '+escP(d.error)+'</div>'; return; }
+      stCur={ check:d.check, notes:d.notes||[], items:(d.items||[]).map(x=>({
+        pid:x.product_id, code:x.code, name:x.name,
+        active_now:x.current_active!==false, target_active:x.target_active,
+        open_total:x.open_total, parties:x.parties||[] })) };
+      stRenderCheck();
+    }catch(e){ $('stBody').innerHTML='<div class="hint">불러오지 못했습니다: '+escP(e.message)+'</div>'; }
+  }
+
+  if($('stCheckBtn')) $('stCheckBtn').addEventListener('click', stRunCheck);
+  if($('stHistBtn'))  $('stHistBtn').addEventListener('click', stOpenHistory);
+  if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
+  if($('qActive'))    $('qActive').addEventListener('change', doSearch);
+
+  try{ console.log('[refatrix-products] build ph-0824b (제품 변경이력 탭)'); }catch(e){}
+  $('resyncBtn').addEventListener('click',resyncDerived);
+  if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
+  if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
+  if($('xrStats')) $('xrStats').addEventListener('click',xrShowStats);
+  if($('xrExport')) $('xrExport').addEventListener('click',xrExport);
+  if($('xrSnapList')) $('xrSnapList').addEventListener('click',xrSnapList);
+  if($('xrSnapNow')) $('xrSnapNow').addEventListener('click',xrSnapNow);
+  if($('bmApply')) $('bmApply').addEventListener('click',bmApply);
+  if($('bmFile')) $('bmFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) bmReadFile(f); e.target.value=''; });
+  if($('bmCodes')) $('bmCodes').addEventListener('input',bmRefreshCount);
+  if($('peNewBtn')) $('peNewBtn').addEventListener('click',()=>openProductEditor(null));
+  if($('peQ')) $('peQ').addEventListener('input',()=>{ clearTimeout(peQTimer); peQTimer=setTimeout(peQSearch,300); });
+  if($('clLoad')) $('clLoad').addEventListener('click',()=>clLoadHist(true));
+  if($('clMore')) $('clMore').addEventListener('click',()=>clLoadHist(false));
+  if($('clCode')) $('clCode').addEventListener('keydown',e=>{ if(e.key==='Enter') clLoadHist(true); });
+  if($('qAlu')) $('qAlu').addEventListener('change',doSearch);
+  if($('qCn')) $('qCn').addEventListener('change',onCnToggle);
+  if($('qPro')) $('qPro').addEventListener('change',doSearch);
+
+  // ===== 📜 제품 이력 (ph-0824b) =====================================
+  // 마스터 변경(product_change_log) + 판매 활성/비활성 전환(product_status_log)을
+  // 서버가 통합·중복제거해 내려준다(GET /api/products/history).
+  // 행 클릭 → GET /api/products/:id/movements?since=… 로 그 변경 이후의 movement.
+  const PH_SRC={manual:'화면 입력',import:'엑셀 업로드',material:'소재 지정',material_bulk:'소재 일괄지정',status:'판매상태',status_check:'일괄 점검'};
+  const PH_ACT={create:'생성',update:'수정',activate:'판매재개',deactivate:'판매중단'};
+  let phOffset=0, phTotal=0, phItems=[], phLoaded=false, phOpenKey=null, phCanPrice=true;
+
+  function phDate(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString('sv-SE').slice(0,16); }catch(e){ return String(s).slice(0,16); } }
+  function phEstadoChip(active){
+    return active
+      ? '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#e6f2ee;color:var(--income);font-size:11px;font-weight:700">Activo</span>'
+      : '<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:#fbe9e7;color:var(--expense);font-size:11px;font-weight:700">Inactivo</span>';
+  }
+  // 변경내역 셀 — 항목별 「이전 → 이후」. 상태 전환은 사유를 함께.
+  function phDescHtml(it){
+    const head='<span style="font-weight:700;font-size:11.5px;color:'+(it.kind==='status'?(it.action==='activate'?'var(--income)':'var(--expense)'):'var(--gold)')+'">'
+      +escP(PH_ACT[it.action]||it.action)+'</span> <span style="font-size:10.5px;color:#6f6a60">'+escP(PH_SRC[it.source]||it.source||'')+'</span>';
+    if(it.kind==='status'){
+      return head+(it.reason?'<div class="chg">사유: '+escP(it.reason)+'</div>':'')
+        +(it.check_id?'<div class="chg" style="color:#6f6a60">일괄 점검 #'+it.check_id+'</div>':'');
+    }
+    const parts=(it.parts||[]).map(p=>'<div class="chg">'+escP(p.label)+': <span style="color:var(--expense)">'+escP(fmtv(Array.isArray(p.from)?p.from.join(' // '):p.from))+'</span> → <b>'+escP(fmtv(Array.isArray(p.to)?p.to.join(' // '):p.to))+'</b></div>');
+    if(it.hidden_price) parts.push('<div class="chg" style="color:#6f6a60">가격 항목 '+it.hidden_price+'건 — 열람 권한 없음</div>');
+    return head+(parts.length?parts.join(''):'<div class="chg">'+escP(it.desc||'—')+'</div>');
+  }
+
+  function phRender(){
+    const box=$('phBox');
+    if(!phItems.length){ box.innerHTML='<span class="hint">기록된 변경 이력이 없습니다.</span>'; $('phSum').textContent=''; return; }
+    box.innerHTML='<table><thead><tr>'
+      +'<th class="nowrap">변경기록 날짜</th><th class="nowrap">CTR Code</th><th>변경내역</th>'
+      +'<th class="nowrap">SYD Code</th><th class="nowrap">Estado</th><th class="nowrap">변경자</th>'
+      +'</tr></thead><tbody>'
+      +phItems.map(it=>{
+        const syd=String(it.syd_codes||'').replace(/\s*\/\/\s*/g,' · ');
+        return '<tr class="ph-row" data-key="'+escP(it.key)+'" style="cursor:pointer">'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(phDate(it.changed_at))+'</td>'
+          +'<td class="code nowrap">'+escP(it.code||'—')+(it.product_deleted?' <span style="font-size:10px;color:var(--expense)">삭제됨</span>':'')
+            +'<div style="font-size:10.5px;color:#6f6a60;font-family:inherit">'+escP((it.product_name||'').slice(0,40))+'</div></td>'
+          +'<td>'+phDescHtml(it)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px;color:#6f6a60">'+escP(syd.slice(0,44)||'—')+'</td>'
+          +'<td class="nowrap">'+phEstadoChip(it.estado_active)+'</td>'
+          +'<td class="nowrap" style="font-size:12px">'+escP(it.changed_by_name||'—')+'</td></tr>'
+          +'<tr class="ph-det hidden" data-for="'+escP(it.key)+'"><td colspan="6" style="background:#faf8f3"><span class="hint">불러오는 중…</span></td></tr>';
+      }).join('')+'</tbody></table>';
+    box.querySelectorAll('.ph-row').forEach(tr=>tr.addEventListener('click',()=>phToggle(tr.getAttribute('data-key'))));
+    $('phSum').innerHTML='총 <b>'+phTotal+'</b>건 중 '+phItems.length+'건 표시 · 행을 클릭하면 그 변경 이후의 movement 가 열립니다.';
+    $('phMore').classList.toggle('hidden', phItems.length>=phTotal);
+  }
+
+  async function phLoad(reset){
+    const m=$('phMsg'); m.className='msg'; m.style.display='none';
+    if(reset){ phOffset=0; phItems=[]; phOpenKey=null; $('phBox').innerHTML='<span class="hint">불러오는 중…</span>'; }
+    const p=new URLSearchParams();
+    p.set('limit','50'); p.set('offset',String(phOffset));
+    const q=$('phQ').value.trim(); if(q) p.set('q',q);
+    if($('phKind').value) p.set('kind',$('phKind').value);
+    if($('phEstado').value) p.set('estado',$('phEstado').value);
+    if($('phFrom').value) p.set('from',$('phFrom').value);
+    if($('phTo').value) p.set('to',$('phTo').value);
+    try{
+      const res=await fetch(session.api+'/api/products/history?'+p.toString(),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='이력 조회 실패: '+(d.error||res.status); return; }
+      phCanPrice=d.can_price!==false;
+      phItems=phItems.concat(d.items||[]);
+      phTotal=Number(d.total||0);
+      phOffset=phItems.length;
+      phLoaded=true;
+      phRender();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+
+  // 같은 제품의 「바로 다음 변경」 시각 — 있으면 구간(그 변경 ~ 다음 변경)으로도 볼 수 있게.
+  function phNextTs(it){
+    let best=null;
+    phItems.forEach(o=>{
+      if(o.product_id!==it.product_id || o.key===it.key) return;
+      if(new Date(o.changed_at)<=new Date(it.changed_at)) return;
+      if(!best || new Date(o.changed_at)<new Date(best)) best=o.changed_at;
+    });
+    return best;
+  }
+
+  function phToggle(key){
+    const det=$('phBox').querySelector('.ph-det[data-for="'+CSS.escape(key)+'"]');
+    if(!det) return;
+    if(phOpenKey===key){ det.classList.add('hidden'); phOpenKey=null; return; }
+    $('phBox').querySelectorAll('.ph-det').forEach(d=>d.classList.add('hidden'));
+    det.classList.remove('hidden'); phOpenKey=key;
+    phLoadMoves(key,'since');
+  }
+
+  // mode: 'since'(변경 이후) · 'ranged'(변경 ~ 다음 변경) · 'all'(전체 기간)
+  async function phLoadMoves(key, mode){
+    const it=phItems.find(x=>x.key===key); if(!it) return;
+    const det=$('phBox').querySelector('.ph-det[data-for="'+CSS.escape(key)+'"]');
+    if(!det) return;
+    const cell=det.querySelector('td');
+    if(it.product_id==null){ cell.innerHTML='<span class="hint">제품이 삭제되어 movement 를 조회할 수 없습니다.</span>'; return; }
+    cell.innerHTML='<span class="hint">불러오는 중…</span>';
+    const nextTs=phNextTs(it);
+    const p=new URLSearchParams(); p.set('since',new Date(it.changed_at).toISOString());
+    if(mode==='ranged'&&nextTs) p.set('until',new Date(nextTs).toISOString());
+    if(mode==='all') p.set('all','1');
+    try{
+      const res=await fetch(session.api+'/api/products/'+it.product_id+'/movements?'+p.toString(),{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ cell.innerHTML='<span class="hint">movement 조회 실패: '+escP(d.error||String(res.status))+'</span>'; return; }
+      cell.innerHTML=phMovesHtml(it,d,mode,nextTs);
+      cell.querySelectorAll('.ph-mode').forEach(b=>b.addEventListener('click',(e)=>{
+        e.stopPropagation(); phLoadMoves(key,b.getAttribute('data-mode'));
+      }));
+    }catch(e){ cell.innerHTML='<span class="hint">서버 연결 실패</span>'; }
+  }
+
+  function phMovesHtml(it,d,mode,nextTs){
+    const t=d.totals||{}, L=d.lifetime||{};
+    const money=(n)=> n==null?'<span style="color:#bbb">권한 없음</span>':fmt(n);
+    const btn=(m,label)=> '<button class="btn '+(mode===m?'':'ghost')+' sm ph-mode" type="button" data-mode="'+m+'">'+label+'</button>';
+    const head='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<div style="font-weight:700;font-size:12.5px;margin-right:4px">'+escP(phDate(it.changed_at))+' 변경 '
+      +(mode==='all'?'· <span style="color:var(--gold)">전체 기간</span>':(mode==='ranged'?'· 다음 변경 전까지':'이후'))+'</div>'
+      +btn('since','변경 이후')
+      +(nextTs?btn('ranged','다음 변경('+escP(phDate(nextTs))+') 전까지'):'')
+      +btn('all','전체 기간')
+      +'</div>';
+    const stockLine='<div class="hint" style="margin-top:4px">변경 시점 재고 <b>'+qty(d.stock_before)+'</b> → 현재 재고 <b>'+qty(d.stock_now)+'</b>'
+      +' · 입고 <b style="color:var(--income)">+'+qty(t.in_qty)+'</b> · 출고 <b style="color:var(--expense)">−'+qty(t.out_qty)+'</b> · 조정 <b>'+qty(t.adjust_qty)+'</b>'
+      +' · 판매 <b>'+(t.sales_count||0)+'</b>건 '+qty(t.sales_qty)+'개 · 견적 <b>'+(t.quote_count||0)+'</b>건 '+qty(t.quote_qty)+'개</div>';
+    // 전체 기간 누계 — 제품검색 드릴다운 「매출총이익」과 같은 기준이라 숫자가 반드시 맞는다.
+    let lifeLine='<div class="hint" style="margin-top:2px">전체 누적 판매 <b>'+qty(L.sales_qty||0)+'</b>개 · <b>'+(L.sales_count||0)+'</b>건'
+      +((L.first_sale_date||L.last_sale_date)?(' ('+escP(L.first_sale_date||'—')+' ~ '+escP(L.last_sale_date||'—')+')'):'')
+      +' · 전체 견적 <b>'+(L.quote_count||0)+'</b>건 '+qty(L.quote_qty||0)+'개</div>';
+    // 「이 변경 이후 0인데 전체는 있음」 — 데이터 문제가 아니라 변경 전에 팔린 것임을 명시.
+    if(mode!=='all' && !(t.sales_count>0) && (L.sales_count>0)){
+      lifeLine+='<div class="hint" style="margin-top:2px;color:#8A6300">ℹ 이 변경 <b>이후</b>에는 판매가 없습니다 — 누적 '
+        +qty(L.sales_qty)+'개는 전부 <b>이 변경 이전</b>('+escP(L.last_sale_date||'')+'까지)에 팔린 건입니다. '
+        +'[전체 기간] 을 누르면 전부 보입니다.</div>';
+    }
+    if(L.pending_count>0){
+      lifeLine+='<div class="hint" style="margin-top:2px;color:var(--expense)">⚠ 승인 대기(수정·삭제 요청) 인보이스 <b>'
+        +L.pending_count+'</b>건 '+qty(L.pending_qty)+'개는 매출로 집계되지 않아 위 숫자에서 빠져 있습니다.</div>';
+    }
+    const none='<div class="hint" style="margin-top:6px">'
+      +(mode==='all'?'이 제품에는 기록된 movement 가 없습니다.':'이 변경 이후 기록된 movement 가 없습니다.')+'</div>';
+    let body='';
+    if((d.stock||[]).length){
+      body+='<div style="font-weight:700;font-size:12px;margin-top:10px">📦 재고 입출고</div>'
+        +'<table><thead><tr><th class="nowrap">일시</th><th class="nowrap">구분</th><th class="num">수량</th><th class="nowrap">출처</th><th>근거·메모</th><th class="nowrap">고객/SAT</th><th class="nowrap">처리자</th></tr></thead><tbody>'
+        +d.stock.map(m=>'<tr><td class="nowrap" style="font-size:11.5px">'+escP(phDate(m.moved_at))+'</td>'
+          +'<td class="nowrap" style="font-size:12px">'+(m.move_type==='in'?'<span style="color:var(--income);font-weight:700">입고</span>':m.move_type==='out'?'<span style="color:var(--expense);font-weight:700">출고</span>':'<span style="color:var(--gold);font-weight:700">조정</span>')+'</td>'
+          +'<td class="num">'+qty(m.signed_qty)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(m.origin||'—')+'</td>'
+          +'<td style="font-size:11.5px">'+escP([m.ref,m.note].filter(Boolean).join(' · ')||'—')+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP([m.customer_name,m.sat_no].filter(Boolean).join(' · ')||'—')+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(m.created_by_name||'—')+'</td></tr>').join('')
+        +'</tbody></table>'+(d.capped?'<div class="hint">표시 상한에 걸려 일부만 보입니다.</div>':'');
+    }
+    if((d.sales||[]).length){
+      body+='<div style="font-weight:700;font-size:12px;margin-top:10px">🧾 판매(인보이스)</div>'
+        +'<table><thead><tr><th class="nowrap">일자</th><th class="nowrap">SAT</th><th>고객</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th class="nowrap">상태</th></tr></thead><tbody>'
+        +d.sales.map(s=>'<tr><td class="nowrap" style="font-size:11.5px">'+escP(s.inv_date||'—')+'</td>'
+          +'<td class="nowrap code">'+escP(s.sat_no||'—')+'</td><td style="font-size:12px">'+escP(s.customer_name||'—')+'</td>'
+          +'<td class="num">'+qty(s.qty)+'</td><td class="num">'+money(s.unit_price)+'</td><td class="num">'+money(s.amount_mxn)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(s.status||'')+'</td></tr>').join('')
+        +'</tbody></table>';
+    }
+    if((d.quotes||[]).length){
+      body+='<div style="font-weight:700;font-size:12px;margin-top:10px">📝 견적</div>'
+        +'<table><thead><tr><th class="nowrap">일자</th><th class="nowrap">견적번호</th><th>고객</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th class="nowrap">상태</th></tr></thead><tbody>'
+        +d.quotes.map(q=>'<tr><td class="nowrap" style="font-size:11.5px">'+escP(q.quote_date||'—')+'</td>'
+          +'<td class="nowrap code">'+escP(q.quote_no||'—')+'</td><td style="font-size:12px">'+escP(q.customer_name||'—')+'</td>'
+          +'<td class="num">'+qty(q.qty)+'</td><td class="num">'+money(q.unit_price)+'</td><td class="num">'+money(q.amount_mxn)+'</td>'
+          +'<td class="nowrap" style="font-size:11.5px">'+escP(q.status||'')+'</td></tr>').join('')
+        +'</tbody></table>';
+    }
+    const basis=d.basis?('<div class="hint" style="margin-top:6px;font-size:10.5px">※ '+escP(d.basis)+'</div>'):'';
+    return head+stockLine+lifeLine+(body||none)+basis;
+  }
+
+  // 화면에 불러온 이력을 그대로 엑셀로(요청 열 순서 그대로).
+  function phXlsx(){
+    if(!phItems.length){ alert('먼저 이력을 조회하세요.'); return; }
+    const aoa=[['변경기록 날짜','CTR Code','변경내역','SYD Code','Estado','변경자','구분','출처','제품명']];
+    phItems.forEach(it=>aoa.push([
+      phDate(it.changed_at), it.code||'', it.desc||'', String(it.syd_codes||''),
+      it.estado_active?'Activo':'Inactivo', it.changed_by_name||'',
+      it.kind==='status'?'판매상태 전환':'마스터 변경', PH_SRC[it.source]||it.source||'', it.product_name||'',
+    ]));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '제품이력');
+    XLSX.writeFile(wb, 'refatrix_product_history_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }
+
+  if($('phGo')) $('phGo').addEventListener('click',()=>phLoad(true));
+  if($('phMore')) $('phMore').addEventListener('click',()=>phLoad(false));
+  if($('phQ')) $('phQ').addEventListener('keydown',e=>{ if(e.key==='Enter') phLoad(true); });
+  if($('phKind')) $('phKind').addEventListener('change',()=>phLoad(true));
+  if($('phEstado')) $('phEstado').addEventListener('change',()=>phLoad(true));
+  if($('phXlsx')) $('phXlsx').addEventListener('click',phXlsx);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

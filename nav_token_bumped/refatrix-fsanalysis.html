@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>현장조사 소진분석 (fsa-0819a) · Refatrix</title>
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<style>
+  :root{
+    --green:#143D34; --green2:#1d5145; --brass:#B8893B;
+    --gone:#C0564F; --gonebg:#fbe9e7; --part:#C58A2E; --partbg:#fbf2e0;
+    --kept:#2f8a5b; --keptbg:#e8f4ed; --info:#4d7ea8; --infobg:#e9f1f7;
+    --ink:#1c1b19; --mut:#7c7a74; --line:#e6e4df; --appbg:#f5f4f2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--appbg);font-family:-apple-system,system-ui,"Malgun Gothic",Arial,sans-serif;color:var(--ink);font-size:14px}
+  .hidden{display:none!important}
+  .topbar{position:sticky;top:0;z-index:30;background:var(--green);color:#fff;padding:11px 16px;display:flex;align-items:center;gap:12px}
+  .topbar h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.3px}
+  .topbar .sub{font-size:11px;color:#bcd2c9;margin-top:2px}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:11px;color:#cfe0d8;text-align:right;line-height:1.3}
+  .wrap{max-width:1280px;margin:0 auto;padding:14px}
+
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin:18px auto;max-width:380px}
+  .card h2{margin:0 0 12px;font-size:16px}
+  .card label{font-size:12px;color:var(--mut);font-weight:700;display:block;margin:10px 0 4px}
+  .card input{width:100%;font-size:15px;padding:11px;border:1.5px solid var(--line);border-radius:10px}
+  .btnP{width:100%;border:0;background:var(--green);color:#fff;font-weight:800;font-size:15px;border-radius:11px;padding:13px;margin-top:14px;cursor:pointer}
+  .msg{font-size:12px;margin-top:8px;min-height:16px}.msg.err{color:#c0564f}
+
+  .panel{background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin-bottom:14px}
+  .panel h3{margin:0 0 10px;font-size:13.5px;font-weight:800;color:var(--green);display:flex;align-items:center;gap:8px}
+  .panel h3 .n{font-size:11px;color:var(--mut);font-weight:700}
+  .panel h3 .rt{margin-left:auto;font-size:11px;color:var(--mut);font-weight:600}
+
+  .bar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .fld{display:flex;flex-direction:column;gap:4px}
+  .fld label{font-size:11px;color:var(--mut);font-weight:700}
+  .fld select,.fld input{font-size:14px;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;background:#fff;min-width:150px}
+  .fld select.big{min-width:280px;border-color:var(--green);border-width:2px;font-weight:700}
+  .btn{border:0;background:var(--green);color:#fff;font-weight:800;font-size:13.5px;border-radius:9px;padding:10px 18px;cursor:pointer}
+  .btn.gh{background:#fff;color:var(--green);border:1.5px solid var(--green)}
+  .btn:disabled{opacity:.45;cursor:default}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+  .kpi .l{font-size:11px;color:var(--mut);font-weight:700}
+  .kpi .v{font-size:23px;font-weight:800;line-height:1.15;margin-top:5px}
+  .kpi .s{font-size:11px;color:var(--mut);margin-top:3px}
+  .kpi.buy .v{color:var(--info)} .kpi.left .v{color:var(--kept)} .kpi.sold .v{color:var(--gone)} .kpi.amt .v{color:var(--brass)}
+
+  .eq{background:#fff;border:1px dashed #cfcbc2;border-radius:12px;padding:12px 14px;margin-bottom:14px;
+      display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:13px}
+  .eq b{font-size:17px;font-weight:800}
+  .eq .op{font-size:18px;color:var(--mut);font-weight:800}
+  .eq .t{font-size:11px;color:var(--mut);font-weight:700;display:block}
+  .eq .res{margin-left:auto;background:var(--gonebg);border:1px solid #f0cdc8;border-radius:10px;padding:8px 14px}
+  .eq .res b{color:var(--gone)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{font-size:11px;color:var(--mut);font-weight:800;background:#faf9f7;position:sticky;top:0;white-space:nowrap;cursor:pointer;user-select:none}
+  th.no{cursor:default}
+  th.r,td.r{text-align:right} th.c,td.c{text-align:center}
+  tbody tr:hover{background:#faf9f6}
+  tr.sel{background:#f2f8f4}
+  .code{font-weight:800;letter-spacing:.3px}
+  .sub2{font-size:11px;color:var(--mut);margin-top:2px}
+  .big{font-weight:800;font-size:14.5px}
+  .soldv{font-weight:800;font-size:15px;color:var(--gone)}
+  .zero{color:var(--mut);font-weight:600}
+  .pill{font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:20px;white-space:nowrap;display:inline-block}
+  .p-gone{background:var(--gonebg);color:var(--gone)}
+  .p-gone_uncounted{background:#f7ece9;color:#a8635c;border:1px dashed #ddb8b2}
+  .p-partial{background:var(--partbg);color:var(--part)}
+  .p-kept{background:var(--keptbg);color:var(--kept)}
+  .p-anomaly{background:#efe9f7;color:#6f52a8}
+  .p-no_purchase{background:var(--infobg);color:var(--info)}
+  .p-off{background:#eee;color:#8a8780}
+  .tblwrap{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:11px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 11px}
+  .chip{border:1.5px solid var(--line);background:#fff;border-radius:20px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--mut);cursor:pointer}
+  .chip.on{border-color:var(--green);background:#eef6f0;color:var(--green)}
+  .note{font-size:12px;color:#6a675f;background:#faf9f7;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:11px;line-height:1.6}
+  .warn{font-size:12px;color:#a4792f;background:#fbf2e0;border:1px solid #ecd9ad;border-radius:10px;padding:9px 12px;margin-bottom:11px;line-height:1.6}
+  .empty{padding:26px;text-align:center;color:var(--mut);font-size:13px}
+
+  .actbar{position:sticky;bottom:0;background:#fff;border-top:2px solid var(--green);padding:12px 16px;
+          display:flex;align-items:center;gap:14px;flex-wrap:wrap;z-index:20;box-shadow:0 -6px 18px rgba(0,0,0,.06)}
+  .actbar .sum{font-size:13px;font-weight:700}
+  .actbar .sum b{font-size:16px;color:var(--gone)}
+  .actbar .right{margin-left:auto;display:flex;gap:9px}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%) translateY(14px);background:#2b2a27;color:#fff;
+         padding:11px 18px;border-radius:11px;font-size:13px;opacity:0;pointer-events:none;transition:.18s;z-index:60}
+  .toast.show{opacity:1;transform:translateX(-50%)}
+  @media(max-width:760px){ .wrap{padding:10px} .fld select.big{min-width:200px} th,td{padding:7px 6px;font-size:12px} }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>현장조사 소진분석</h1>
+    <div class="sub">전체 누적 구매 − 고객창고 잔량 = 팔린 수량 → 재구매 오퍼</div>
+  </div>
+  <a class="portalBtn" href="refatrix-portal.html">← 포털</a>
+  <div class="who" id="who"></div>
+</div>
+
+<!-- 로그인 -->
+<div class="card" id="loginCard">
+  <h2>로그인</h2>
+  <label>API 주소</label><input id="api" value="https://glistening-dream-production.up.railway.app">
+  <label>아이디</label><input id="lid" autocomplete="username">
+  <label>PIN</label><input id="pin" type="password" autocomplete="current-password">
+  <button class="btnP" id="go">로그인</button>
+  <div class="msg" id="loginMsg"></div>
+</div>
+
+<div class="wrap hidden" id="app">
+
+  <!-- 고객 선택 -->
+  <div class="panel">
+    <div class="bar">
+      <div class="fld">
+        <label>고객</label>
+        <select id="custSel" class="big"><option value="">— 고객 선택 —</option></select>
+      </div>
+      <button class="btn" id="btnRun">분석</button>
+      <button class="btn gh" id="btnAll">전체 조사 이력</button>
+      <div class="fld" style="margin-left:auto">
+        <label>기준 조사</label>
+        <select id="surveySel"><option value="">— 최신 조사 자동 —</option></select>
+      </div>
+    </div>
+    <div class="msg" id="runMsg"></div>
+  </div>
+
+  <!-- 조사 이력 -->
+  <div class="panel hidden" id="pHist">
+    <h3>📋 조사 이력 <span class="n" id="histN"></span><span class="rt">행을 클릭하면 그 조사를 기준으로 다시 계산합니다</span></h3>
+    <div class="tblwrap" style="max-height:260px">
+      <table>
+        <thead><tr>
+          <th class="no">조사일</th><th class="no">고객</th><th class="no">담당</th><th class="no">상태</th>
+          <th class="no r">계수 SKU</th><th class="no r">관측수량</th>
+          <th class="no c">🟢 즉시</th><th class="no c">🟡 부족</th><th class="no c">🔴 개발</th>
+          <th class="no">견적</th><th class="no c">위치</th>
+        </tr></thead>
+        <tbody id="histBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 요약 -->
+  <div id="pSum" class="hidden">
+    <div class="eq" id="eqBox"></div>
+    <div class="kpis" id="kpis"></div>
+  </div>
+
+  <!-- 소진 내역 -->
+  <div class="panel hidden" id="pRows">
+    <h3>🧮 소진 내역 <span class="n" id="rowsN"></span><span class="rt" id="rowsBasis"></span></h3>
+    <div id="warnBox"></div>
+    <div class="chips" id="chips"></div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th class="no c"><input type="checkbox" id="chkAll"></th>
+          <th data-s="ctr_code">CTR</th>
+          <th class="no">제품 · 적용차종</th>
+          <th class="r" data-s="purchased_qty">누적 구매</th>
+          <th class="r" data-s="onhand_qty">현장 잔량</th>
+          <th class="r" data-s="consumed_qty">소진(팔림)</th>
+          <th class="r" data-s="consumed_pct">소진율</th>
+          <th class="c" data-s="status">상태</th>
+          <th class="r" data-s="last_purchase_at">최근 구매</th>
+          <th class="r" data-s="avail_stock">우리 가용재고</th>
+          <th class="r" data-s="offer_amount">오퍼 금액</th>
+        </tr></thead>
+        <tbody id="rowsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 경쟁사 코드 -->
+  <div class="panel hidden" id="pUnm">
+    <h3>🔴 경쟁사 코드 (우리 제품 미매칭) <span class="n" id="unmN"></span><span class="rt">구매이력이 없어 소진 계산 대상이 아닙니다 — 대체·개발 기회</span></h3>
+    <div class="tblwrap" style="max-height:240px">
+      <table>
+        <thead><tr><th class="no">입력 코드</th><th class="no r">고객창고 수량</th><th class="no">개발요청</th><th class="no">메모</th></tr></thead>
+        <tbody id="unmBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="actbar hidden" id="actbar">
+  <div class="sum" id="actSum"></div>
+  <div class="right">
+    <button class="btn gh" id="btnPickAll">소진분 전체 선택</button>
+    <button class="btn" id="btnQuote">📄 견적으로 오퍼</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastTxt"></span></div>
+
+<script>
+(function(){
+  let session={token:null,user:null,api:''};
+  const state={ data:null, rows:[], filter:'sold', sort:{k:'consumed_qty',d:-1}, sel:new Set(), custId:null, surveyId:null };
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const jhead=()=>Object.assign({'Content-Type':'application/json'},auth());
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const apiBase=()=> (session.api||$('api').value||'').replace(/\/+$/,'');
+  const nf=(n)=>(n==null?'—':Number(n).toLocaleString('en-US',{maximumFractionDigits:2}));
+  const mf=(n)=>(n==null?'—':'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}));
+  const pf=(n)=>(n==null?'—':Number(n).toFixed(1)+'%');
+
+  const cnt=(n)=>(n==null?'<span class="zero">…</span>':(n||'—'));
+  const ST={ gone:'완전소진', gone_uncounted:'전량소진(미계수)', partial:'부분소진', kept:'미소진',
+             anomaly:'이상(잔량>구매)', no_purchase:'구매이력 없음' };
+
+  function toast(m){ const t=$('toast'); $('toastTxt').textContent=m; t.classList.add('show');
+    clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2200); }
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token');
+      if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')};
+        try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function api(path,opt={}){
+    const res=await fetch(apiBase()+path,opt);
+    let d=null; try{ d=await res.json(); }catch(e){}
+    if(!res.ok || (d&&d.error)){ const err=new Error((d&&d.error)||('http_'+res.status)); err.payload=d; throw err; }
+    return d;
+  }
+
+  // ── 로그인 ──
+  async function login(){
+    const api0=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){ m.className='msg err'; m.textContent='아이디와 PIN을 입력하세요.'; return; }
+    $('go').disabled=true; $('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true}; const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else{ res=await fetch(api0+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})}); d=await res.json(); }
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='로그인 실패: '+(d.error||res.status); return; }
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api0};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      afterLogin();
+    }catch(e){ m.className='msg err'; m.textContent='서버에 연결할 수 없습니다.'; }
+    finally{ $('go').disabled=false; $('go').textContent='로그인'; }
+  }
+  function afterLogin(){
+    $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>'+esc(session.user&&session.user.role||'');
+    $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+    loadCustomers();
+    const p=new URLSearchParams(location.search);
+    if(p.get('survey_id')){ state.surveyId=Number(p.get('survey_id')); run(); }
+    else if(p.get('customer_id')){ state.custId=Number(p.get('customer_id')); $('custSel').value=String(state.custId); run(); }
+    else loadAllHistory();
+  }
+
+  // ── 고객 목록 ──
+  async function loadCustomers(){
+    try{ const d=await api('/api/field-surveys/customer-options',{headers:auth()});
+      $('custSel').innerHTML='<option value="">— 고객 선택 —</option>'
+        + d.items.map(c=>'<option value="'+c.id+'">'+esc(c.name)+(c.code?' ('+esc(c.code)+')':'')+'</option>').join('');
+      if(state.custId) $('custSel').value=String(state.custId);
+    }catch(e){}
+  }
+
+  // ── 전체 조사 이력(고객 미선택 시) ──
+  async function loadAllHistory(){
+    try{
+      const d=await api('/api/field-surveys/history',{headers:auth()});
+      renderHist(d.items,true);
+      $('pHist').classList.remove('hidden');
+      $('pSum').classList.add('hidden'); $('pRows').classList.add('hidden');
+      $('pUnm').classList.add('hidden'); $('actbar').classList.add('hidden');
+      $('runMsg').textContent='';
+      if(!d.items.length) $('histBody').innerHTML='<tr><td colspan="11" class="empty">조사 기록이 없습니다.</td></tr>';
+    }catch(e){ $('runMsg').innerHTML='<span class="msg err">조사 이력을 불러오지 못했습니다: '+esc(e.message)+'</span>'; }
+  }
+
+  // 고객 기준 조사 이력 — /history 우선, 실패하면 소진분석 응답의 축약본으로 폴백
+  async function loadHistFor(cid, fallback, custName){
+    const seq = ++loadHistFor._seq;
+    renderHist((fallback||[]).map(s=>Object.assign({customer_name:custName,
+      counts:{imm:null,short:null,dev:s.unmatched_cnt}, has_geo:false},s)),false);
+    try{
+      const d=await api('/api/field-surveys/history?customer_id='+cid,{headers:auth()});
+      if(seq!==loadHistFor._seq) return;               // 고객을 빠르게 바꿨을 때 늦은 응답 폐기
+      if(d.items&&d.items.length) renderHist(d.items,false);
+    }catch(e){}
+  }
+  loadHistFor._seq=0;
+
+  function renderHist(items,showCust){
+    $('histN').textContent=items.length+'건';
+    $('histBody').innerHTML=items.map(s=>{
+      const cur=(state.data&&state.data.survey&&state.data.survey.id===s.id);
+      return '<tr data-sid="'+s.id+'" class="'+(cur?'sel':'')+'" style="cursor:pointer">'
+        +'<td class="big">'+esc(s.survey_date||'')+(cur?' <span class="pill p-kept">기준</span>':'')+'</td>'
+        +'<td>'+esc(s.customer_name||'(미등록)')+'</td>'
+        +'<td>'+esc(s.creator_name||'')+'</td>'
+        +'<td><span class="pill '+(s.status==='quoted'?'p-kept':s.status==='completed'?'p-no_purchase':'p-off')+'">'
+        + (s.status==='quoted'?'견적전환':s.status==='completed'?'완료':s.status==='open'?'진행중':esc(s.status))+'</span></td>'
+        +'<td class="r big">'+nf(s.sku_count)+'</td><td class="r">'+nf(s.obs_qty)+'</td>'
+        +'<td class="c">'+cnt(s.counts.imm)+'</td><td class="c">'+cnt(s.counts.short)+'</td><td class="c">'+cnt(s.counts.dev)+'</td>'
+        +'<td>'+(s.quote_no?'<a href="refatrix-quotelist.html" style="color:#4d7ea8">'+esc(s.quote_no)+'</a>':'—')+'</td>'
+        +'<td class="c">'+(s.has_geo?'<a href="https://www.google.com/maps?q='+s.geo_lat+','+s.geo_lng+'" target="_blank" rel="noopener">📍</a>':'—')+'</td>'
+        +'</tr>';
+    }).join('');
+    $('histBody').querySelectorAll('tr[data-sid]').forEach(tr=>tr.addEventListener('click',()=>{
+      state.surveyId=Number(tr.dataset.sid); state.custId=null; run();
+    }));
+  }
+
+  // ── 분석 실행 ──
+  async function run(){
+    const q = state.surveyId ? ('survey_id='+state.surveyId) : (state.custId ? ('customer_id='+state.custId) : '');
+    if(!q){ toast('고객을 선택하세요'); return; }
+    $('btnRun').disabled=true; $('runMsg').innerHTML='<span style="color:#7c7a74">불러오는 중…</span>';
+    try{
+      const d=await api('/api/field-surveys/consumption?'+q,{headers:auth()});
+      state.data=d; state.rows=d.items; state.sel=new Set(); state.surveyId=d.survey.id; state.custId=d.customer.id;
+      $('custSel').value=String(d.customer.id);
+      // 기본 선택 = 소진량>0 & 활성 SKU
+      d.items.forEach(r=>{ if(r.consumed_qty>0 && r.is_active && r.purchased_qty>0) state.sel.add(r.product_id); });
+      $('runMsg').textContent='';
+      renderAll();
+    }catch(e){
+      const m = e.message==='guest_customer' ? '미등록(직접입력) 고객 조사입니다 — 누적 구매이력이 없어 소진분석을 할 수 없습니다.'
+             : e.message==='no_survey' ? '이 고객의 현장재고조사 기록이 없습니다. 먼저 「현장재고조사」에서 조사를 진행하세요.'
+             : e.message==='forbidden' ? '열람 권한이 없습니다 (본인 조사 또는 담당팀 고객만 조회 가능).'
+             : '불러오기 실패: '+e.message;
+      $('runMsg').innerHTML='<span class="msg err">'+esc(m)+'</span>';
+      $('pSum').classList.add('hidden'); $('pRows').classList.add('hidden');
+      $('pUnm').classList.add('hidden'); $('actbar').classList.add('hidden');
+    }finally{ $('btnRun').disabled=false; }
+  }
+
+  function renderAll(){
+    const d=state.data, t=d.totals;
+    // 기준 조사 select
+    $('surveySel').innerHTML=d.surveys.map(s=>'<option value="'+s.id+'"'+(s.id===d.survey.id?' selected':'')+'>'
+      +esc(s.survey_date)+' · '+s.sku_count+'SKU · '+esc(s.creator_name||'')+'</option>').join('');
+    // 조사 이력 표는 /history 로 다시 받아 3분류·견적번호·위치까지 채운다(소진분석 응답에는 없는 값).
+    loadHistFor(d.customer.id, d.surveys, d.customer.name);
+    $('pHist').classList.remove('hidden');
+
+    // 등식 박스
+    $('eqBox').innerHTML=
+       '<div><span class="t">전체 누적 구매</span><b style="color:#4d7ea8">'+nf(t.purchased_qty)+'</b> <span class="t">'+t.purchased_sku+' SKU</span></div>'
+      +'<div class="op">−</div>'
+      +'<div><span class="t">고객창고 잔량 ('+esc(d.survey.survey_date||'')+' 조사)</span><b style="color:#2f8a5b">'+nf(t.onhand_qty)+'</b> <span class="t">'+t.onhand_sku+' SKU</span></div>'
+      +'<div class="op">=</div>'
+      +'<div class="res"><span class="t">팔려서 없어진 수량</span><b>'+nf(t.consumed_qty)+'</b> <span class="t">'+t.consumed_sku+' SKU · 소진율 '+pf(t.consumed_pct)+'</span></div>';
+
+    $('kpis').innerHTML=
+       kpi('buy','누적 구매', nf(t.purchased_qty), t.purchased_sku+' SKU · 전체 누적')
+      +kpi('left','고객창고 잔량', nf(t.onhand_qty), t.onhand_sku+' SKU 확인 · 조사 '+esc(d.survey.survey_date||''))
+      +kpi('sold','소진(팔림)', nf(t.consumed_qty), '완전 '+t.gone+' · 부분 '+t.partial+' · 미계수 '+t.gone_uncounted)
+      +kpi('','소진율', pf(t.consumed_pct), '미소진 '+t.kept+' SKU 유지')
+      +kpi('amt','예상 오퍼 금액', mf(t.offer_amount), '정가 × 할인 '+d.customer.discount+'% · IVA 별도')
+      +kpi('','점검 필요', (t.anomaly+t.no_purchase+t.unmatched)+'건', '이상 '+t.anomaly+' · 구매이력없음 '+t.no_purchase+' · 경쟁사 '+t.unmatched);
+    $('pSum').classList.remove('hidden');
+
+    // 경고
+    let w='';
+    if(t.uncounted_sku) w+='<div class="note">📌 누적 구매한 <b>'+t.uncounted_sku+'개 SKU</b>가 이번 조사에 계수되지 않았습니다. 「전량 소진」으로 잡았지만 실제로는 <b>못 본 것</b>일 수 있습니다 — <span class="pill p-gone_uncounted">전량소진(미계수)</span> 표시를 확인하세요.</div>';
+    if(t.inactive_sku) w+='<div class="warn">⚠ 소진분 중 <b>'+t.inactive_sku+'개</b>가 판매중단(비활성) SKU 입니다. 견적에 담기지 않도록 자동 선택 해제했습니다.</div>';
+    if(t.anomaly) w+='<div class="warn">⚠ <b>'+t.anomaly+'개</b> SKU 는 고객창고 잔량이 우리 누적 판매량보다 많습니다(타 경로 구매 또는 계수 오차) — 소진 0 으로 처리.</div>';
+    $('warnBox').innerHTML=w;
+
+    renderChips(); renderRows();
+    $('pRows').classList.remove('hidden');
+    $('rowsBasis').textContent='기준: '+d.basis;
+
+    // 경쟁사 코드
+    $('unmN').textContent=d.unmatched.length+'건';
+    $('unmBody').innerHTML=d.unmatched.length? d.unmatched.map(u=>
+      '<tr><td class="code">'+esc(u.input_code)+'</td><td class="r big">'+nf(u.observed_qty)+'</td>'
+      +'<td>'+(u.dev_request_id?'<span class="pill p-kept">등록됨 #'+u.dev_request_id+'</span>':'<span class="pill p-off">미등록</span>')+'</td>'
+      +'<td class="sub2">'+esc(u.note||'')+'</td></tr>').join('')
+      : '<tr><td colspan="4" class="empty">경쟁사 미매칭 코드가 없습니다.</td></tr>';
+    $('pUnm').classList.remove('hidden');
+
+    $('actbar').classList.remove('hidden');
+    updateActBar();
+  }
+  function kpi(cls,l,v,s){ return '<div class="kpi '+cls+'"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+esc(s)+'</div></div>'; }
+
+  // ── 필터 칩 ──
+  const FILTERS=[
+    {k:'sold', l:'소진분만', f:r=>r.consumed_qty>0},
+    {k:'all',  l:'전체',     f:()=>true},
+    {k:'gone', l:'완전소진', f:r=>r.status==='gone'||r.status==='gone_uncounted'},
+    {k:'partial', l:'부분소진', f:r=>r.status==='partial'},
+    {k:'kept', l:'미소진',   f:r=>r.status==='kept'&&r.purchased_qty>0},
+    {k:'uncounted', l:'조사 미계수', f:r=>r.purchased_qty>0&&!r.counted},
+    {k:'anomaly', l:'이상',  f:r=>r.status==='anomaly'},
+    {k:'no_purchase', l:'구매이력 없음', f:r=>r.status==='no_purchase'},
+  ];
+  function renderChips(){
+    $('chips').innerHTML=FILTERS.map(f=>{
+      const n=state.rows.filter(f.f).length;
+      return '<div class="chip'+(state.filter===f.k?' on':'')+'" data-k="'+f.k+'">'+f.l+' <b>'+n+'</b></div>';
+    }).join('');
+    $('chips').querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{ state.filter=c.dataset.k; renderChips(); renderRows(); }));
+  }
+
+  function visibleRows(){
+    const f=(FILTERS.find(x=>x.k===state.filter)||FILTERS[1]).f;
+    const k=state.sort.k, d=state.sort.d;
+    return state.rows.filter(f).slice().sort((a,b)=>{
+      let x=a[k], y=b[k];
+      if(k==='ctr_code'||k==='status'||k==='last_purchase_at'){ x=String(x==null?'':x); y=String(y==null?'':y); return x<y?-d:x>y?d:0; }
+      x=(x==null?-1:Number(x)); y=(y==null?-1:Number(y));
+      return (x-y)*d || String(a.ctr_code||'').localeCompare(String(b.ctr_code||''));
+    });
+  }
+
+  function renderRows(){
+    const rows=visibleRows();
+    $('rowsN').textContent=rows.length+'개 SKU';
+    if(!rows.length){ $('rowsBody').innerHTML='<tr><td colspan="11" class="empty">해당 조건의 SKU가 없습니다.</td></tr>'; updateActBar(); return; }
+    $('rowsBody').innerHTML=rows.map(r=>{
+      const can=r.consumed_qty>0 && r.purchased_qty>0;
+      const on=state.sel.has(r.product_id);
+      return '<tr class="'+(on?'sel':'')+'" data-pid="'+r.product_id+'">'
+        +'<td class="c">'+(can?'<input type="checkbox" data-pid="'+r.product_id+'"'+(on?' checked':'')+(r.is_active?'':' title="판매중단 SKU"')+'>':'')+'</td>'
+        +'<td><span class="code">'+esc(r.ctr_code||'')+'</span>'+(r.is_active?'':' <span class="pill p-off">판매중단</span>')
+          +(r.scode?'<div class="sub2">SYD '+esc(r.scode)+'</div>':'')+'</td>'
+        +'<td>'+esc(r.name||'')+'<div class="sub2">'+esc(r.app||'')+'</div></td>'
+        +'<td class="r big">'+nf(r.purchased_qty)+(r.order_days?'<div class="sub2">'+r.order_days+'회 주문</div>':'')+'</td>'
+        +'<td class="r '+(r.onhand_qty?'big':'zero')+'">'+(r.counted?nf(r.onhand_qty):'<span class="zero">미계수</span>')+'</td>'
+        +'<td class="r"><span class="'+(r.consumed_qty>0?'soldv':'zero')+'">'+nf(r.consumed_qty)+'</span></td>'
+        +'<td class="r">'+pf(r.consumed_pct)+'</td>'
+        +'<td class="c"><span class="pill p-'+r.status+'">'+(ST[r.status]||r.status)+'</span></td>'
+        +'<td class="r sub2">'+esc(r.last_purchase_at||'—')+'</td>'
+        +'<td class="r '+((r.avail_stock||0)>=r.consumed_qty&&r.consumed_qty>0?'':'zero')+'">'+nf(r.avail_stock)+'</td>'
+        +'<td class="r">'+(r.consumed_qty>0?mf(r.offer_amount):'—')+'</td>'
+        +'</tr>';
+    }).join('');
+    $('rowsBody').querySelectorAll('input[type=checkbox]').forEach(cb=>cb.addEventListener('change',()=>{
+      const pid=Number(cb.dataset.pid);
+      if(cb.checked) state.sel.add(pid); else state.sel.delete(pid);
+      cb.closest('tr').classList.toggle('sel',cb.checked);
+      updateActBar();
+    }));
+    updateActBar();
+  }
+
+  function selectedRows(){ return state.rows.filter(r=>state.sel.has(r.product_id) && r.consumed_qty>0 && r.purchased_qty>0); }
+  function updateActBar(){
+    const sel=selectedRows();
+    const qty=sel.reduce((s,r)=>s+r.consumed_qty,0);
+    const amt=sel.reduce((s,r)=>s+(r.offer_amount||0),0);
+    const bad=sel.filter(r=>!r.is_active).length;
+    $('actSum').innerHTML='선택 <b>'+sel.length+'</b> SKU · 오퍼 수량 <b>'+nf(qty)+'</b> · 예상 '+mf(amt)+' (IVA 별도)'
+      + (bad?' <span class="pill p-off">판매중단 '+bad+'건 포함 — 견적 실패</span>':'');
+    $('btnQuote').disabled=!sel.length;
+  }
+
+  // ── 견적으로 오퍼 ──
+  async function sendToQuote(){
+    const sel=selectedRows();
+    if(!sel.length){ toast('오퍼할 SKU를 선택하세요'); return; }
+    const d=state.data;
+    if(!confirm('선택한 '+sel.length+'개 SKU를 소진수량 그대로 견적(draft)에 담습니다.\n고객: '+d.customer.name+'\n계속할까요?')) return;
+    $('btnQuote').disabled=true; $('btnQuote').innerHTML='<span class="spin"></span> 생성 중…';
+    try{
+      const lines=sel.map(r=>({product_id:r.product_id, qty:r.consumed_qty}));
+      const memo='현장조사 소진분석 오퍼 · 조사 '+(d.survey.survey_date||'')+' (누적구매 − 현장잔량)';
+      const q=await api('/api/quotes',{method:'POST',headers:jhead(),body:JSON.stringify({customer_id:d.customer.id, lines, memo})});
+      // 이 조사가 아직 견적과 연결되지 않았을 때만 연결(기존 연결을 덮어쓰지 않음)
+      if(!d.survey.quote_id){
+        try{ await api('/api/field-surveys/'+d.survey.id+'/mark-quoted',{method:'POST',headers:jhead(),
+          body:JSON.stringify({quote_id:q.id, customer_id:d.customer.id})}); }catch(e){}
+      }
+      toast('견적 '+(q.quote_no||'')+' 생성됨 ('+sel.length+'개 품목)');
+      setTimeout(()=>{ if(confirm('견적 '+(q.quote_no||'')+' 이(가) 생성되었습니다.\n견적 목록으로 이동할까요?')) location.href='refatrix-quotelist.html'; },300);
+    }catch(e){
+      if(e.message==='inactive_product'){
+        const its=(e.payload&&e.payload.items)||[];
+        toast('판매중단 SKU 가 포함되어 있습니다: '+its.map(i=>i.code||i.ctr_code||i.product_id).join(', '));
+      } else if(e.message==='forbidden'||e.message==='read_only'){
+        toast('견적 작성 권한이 없습니다 — 관리자에게 문의하세요.');
+      } else toast('견적 생성 실패: '+e.message);
+    }
+    finally{ $('btnQuote').disabled=false; $('btnQuote').innerHTML='📄 견적으로 오퍼'; updateActBar(); }
+  }
+
+  // ── 이벤트 ──
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  $('custSel').addEventListener('change',()=>{ state.custId=Number($('custSel').value)||null; state.surveyId=null; if(state.custId) run(); });
+  $('btnRun').addEventListener('click',()=>{ state.surveyId=null; state.custId=Number($('custSel').value)||null; run(); });
+  $('btnAll').addEventListener('click',()=>{ state.custId=null; state.surveyId=null; state.data=null; $('custSel').value=''; loadAllHistory(); });
+  $('surveySel').addEventListener('change',()=>{ state.surveyId=Number($('surveySel').value)||null; if(state.surveyId) run(); });
+  $('chkAll').addEventListener('change',()=>{
+    const on=$('chkAll').checked;
+    visibleRows().forEach(r=>{ if(r.consumed_qty>0&&r.purchased_qty>0){ if(on) state.sel.add(r.product_id); else state.sel.delete(r.product_id); } });
+    renderRows();
+  });
+  $('btnQuote').addEventListener('click',sendToQuote);
+  $('btnPickAll').addEventListener('click',()=>{
+    state.sel=new Set(); state.rows.forEach(r=>{ if(r.consumed_qty>0&&r.is_active&&r.purchased_qty>0) state.sel.add(r.product_id); });
+    renderRows(); toast('소진분 '+state.sel.size+'개 SKU 선택');
+  });
+  document.querySelectorAll('th[data-s]').forEach(th=>th.addEventListener('click',()=>{
+    const k=th.dataset.s;
+    state.sort = (state.sort.k===k) ? {k, d:-state.sort.d} : {k, d:(k==='ctr_code'||k==='status')?1:-1};
+    renderRows();
+  }));
+
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||$('api').value}; afterLogin(); } })();
+})();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

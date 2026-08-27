@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 영업 대시보드</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1140px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .card-h .src{font-size:11px;color:var(--muted);font-weight:500}
+  .card-h .lnk{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--brand-soft);text-decoration:none;border:1px solid var(--line);padding:4px 9px;border-radius:7px;cursor:pointer}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .mrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .mrow .ml{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px}
+  .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .mbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;align-items:stretch}
+  @media(max-width:860px){.cards{grid-template-columns:1fr}}
+  .cards .card{display:flex;flex-direction:column}
+  .cardbody{display:flex;flex-direction:column;flex:1}
+  .bigv{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--brand)}
+  .bigv small{font-size:13px;font-weight:500;color:var(--muted)}
+  .mom{font-size:12.5px;font-weight:700;margin-top:4px;min-height:18px}
+  .mom.up{color:var(--income)}.mom.down{color:var(--expense)}.mom.flat{color:var(--muted)}
+  .goal{font-size:12px;color:var(--muted);margin-top:6px}
+  .cardfoot{margin-top:auto;padding-top:8px}
+  .pbar{background:#f0ece2;border-radius:7px;height:9px;overflow:hidden;margin-top:6px}
+  .pbar>div{height:100%;background:var(--income)}
+  .devboxes{display:flex;gap:8px;margin-top:8px}
+  .devbox{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;text-align:center}
+  .devbox .n{font-size:18px;font-weight:800;color:var(--brand)}.devbox .l{font-size:11px;color:var(--muted)}
+  .wfwrap{display:flex;align-items:flex-end;gap:10px;height:240px;margin-top:24px;padding:0 6px;position:relative;border-bottom:2px solid var(--line)}
+  .wfaxis{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+  .axisline{position:absolute;left:0;right:0;border-top:1px dashed #ece6da}
+  .axisline span{position:absolute;left:0;top:-7px;font-size:10px;color:var(--muted);background:var(--paper);padding-right:4px}
+  .goalline{position:absolute;left:0;right:0;border-top:2px solid var(--gold);z-index:3}
+  .goalline span{position:absolute;right:0;top:-15px;font-size:10.5px;font-weight:700;color:var(--gold);background:var(--paper);padding:0 4px}
+  .wfcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;z-index:2;position:relative}
+  .wfseg{width:78%;background:var(--income);border-radius:4px 4px 0 0;position:relative;min-height:1px}
+  .wfseg.zero{background:transparent;border-top:2px dashed #cfc8b8;border-radius:0}
+  .wflabel{font-size:9.5px;font-weight:700;color:var(--brand);position:absolute;top:-15px;width:52px;text-align:center;left:50%;transform:translateX(-50%)}
+  .wffoot{display:flex;gap:10px;margin-top:6px;padding:0 6px}
+  .wffoot .wff{flex:1;text-align:center;font-size:10.5px;color:var(--muted)}
+  .wffoot .wff b{display:block;color:var(--brand);font-size:11px}
+  .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:12px;align-items:center}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+  .wfsum{font-size:12.5px;color:var(--muted);margin-top:10px}.wfsum b{color:var(--brand)}
+  .pipeboard{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;margin-top:10px}
+  .pcol{min-width:0;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:0 0 8px}
+  .pcolh{padding:8px 9px;border-radius:10px 10px 0 0;color:#fff;font-size:12px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:4px}
+  .pcolh .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .pcolh .cnt{background:rgba(255,255,255,.25);border-radius:999px;padding:1px 8px;font-size:11px;flex:none}
+  .pcards{padding:7px;display:flex;flex-direction:column;gap:7px}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 8px;cursor:pointer;border-left:3px solid var(--dot,#ccc)}
+  .pcard:hover{border-color:var(--brand)}
+  .pcard .nm{font-size:12px;font-weight:700;color:var(--ink);overflow-wrap:anywhere;line-height:1.25}
+  .pcard .meta{font-size:10.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap}
+  .pcard .act{font-size:10.5px;font-weight:700;color:var(--dot,#666)}
+  .pempty{font-size:11px;color:#bbb;text-align:center;padding:10px 0}
+  .plegend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:10px;align-items:center;flex-wrap:wrap}
+  .plegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+  /* 좁은 화면(폰): 6단계를 다 욱여넣으면 너무 좁아 → 가로 스와이프 허용 */
+  @media(max-width:640px){
+    .pipeboard{grid-auto-columns:minmax(140px,1fr);overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity}
+    .pcol{scroll-snap-align:start}
+  }
+  .lockbox{background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;font-size:13px}
+  /* 주간 캘린더(일~토) */
+  .calnav{display:flex;align-items:center;gap:8px;margin:14px 0 8px}
+  .calnav button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--brand);font-size:14px}
+  .calnav .clab{font-size:13px;font-weight:700;color:var(--brand)}
+  .calnav .ctoday{margin-left:auto;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 14px;cursor:pointer;color:var(--brand-soft);transition:background .15s}
+  .calnav .ctoday:hover{background:var(--income-bg);border-color:var(--income);color:var(--income)}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .caldow{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding:3px 0}
+  .caldow.sun{color:var(--expense)}.caldow.sat{color:#2f6db2}
+  .calcell{min-height:96px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+  .calcell.out{background:#faf8f3;opacity:.5}
+  .calcell.today{border-color:var(--income);box-shadow:0 0 0 1px var(--income) inset}
+  .calcell .dnum{font-size:11px;font-weight:700;color:var(--muted)}
+  .calcell.today .dnum{color:var(--income)}
+  .calcell .daytot{font-size:10.5px;font-weight:800;color:var(--brand)}
+  .calitem{font-size:10px;line-height:1.3;background:var(--income-bg);border-radius:4px;padding:2px 4px;color:var(--brand)}
+  .calitem .ci-c{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .calitem .ci-a{display:block;color:var(--income);font-weight:700}
+  .calmore{font-size:9.5px;color:var(--brand-soft);font-weight:700;cursor:pointer;text-decoration:underline}
+  .calmore:hover{color:var(--income)}
+  .calcell.clickable{cursor:pointer}.calcell.clickable:hover{border-color:var(--income)}
+  @media(max-width:720px){.calcell{min-height:70px}.calitem{font-size:9px}}
+  /* 팀별 월별 실적·목표 표 */
+  #teamMonthly .tm-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  #teamMonthly table.tm{border-collapse:collapse;width:100%;font-size:12px}
+  #teamMonthly table.tm th,#teamMonthly table.tm td{padding:8px 11px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+  #teamMonthly table.tm .gl{border-left:1px solid var(--line)}
+  #teamMonthly .mhdr th{background:#f4f1ea;color:var(--brand);font-weight:800;text-align:center;padding:8px 11px}
+  #teamMonthly .shdr th{background:#faf8f3;color:var(--muted);font-weight:700;font-size:11px;padding:6px 11px}
+  #teamMonthly .tname{position:sticky;left:0;z-index:2;text-align:left;font-weight:700;background:#fff;border-right:1px solid var(--line)}
+  #teamMonthly thead .tname{z-index:3;background:#f4f1ea;vertical-align:bottom}
+  #teamMonthly tbody td{font-variant-numeric:tabular-nums}
+  #teamMonthly tbody tr:not(.tot):nth-child(even) td{background:#fcfbf8}
+  #teamMonthly tbody tr:hover td{background:#f0f5f2}
+  #teamMonthly td.tg{color:var(--muted)}
+  #teamMonthly td.ach{font-weight:700}
+  #teamMonthly td.ach.good{color:var(--income);background:var(--income-bg)}
+  #teamMonthly td.ach.mid{color:#9a6512;background:#fbf3e3}
+  #teamMonthly td.ach.low{color:var(--expense);background:var(--expense-bg)}
+  #teamMonthly td.ach.na{color:var(--muted)}
+  #teamMonthly tbody tr.tot td{border-top:2px solid var(--brand);font-weight:800;background:#f1ede3}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">영업 대시보드</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card"><div class="mrow"><span class="ml">조회 월 (2026)</span><span id="topMonths"></span></div></div>
+    <div id="teamToggle" style="margin-top:12px"></div>
+    <div class="cards" id="cards"></div>
+    <div class="card" id="teamMonthlyCard" style="display:none"><div class="card-h">팀별 월별 실적·목표 <span class="hint" style="font-weight:500">— 매출 실적(IVA 불포함) · 목표</span></div><div id="teamMonthly"></div></div>
+    <div class="card">
+      <div class="card-h" id="wfTitle">주차별 매출 (워터폴)</div>
+      <div class="mrow" style="margin-bottom:6px"><span class="ml">차트 월</span><span id="wfMonths"></span></div>
+      <div id="wfBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">주간 매출 캘린더 <span class="src">일~토 · 그날 고객·매출</span></div>
+      <div class="calnav">
+        <button id="calPrev">‹</button>
+        <span class="clab" id="calLabel">—</span>
+        <button id="calNext">›</button>
+        <button class="ctoday" id="calToday">이번 주</button>
+      </div>
+      <div id="calBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+    <div class="card">
+      <div class="card-h">고객 파이프라인 (Pipeline) <span class="src" id="pipeCount"></span>
+        <span class="lnk" onclick="document.getElementById('pipeBody').classList.toggle('hidden')">숨기기</span></div>
+      <div id="pipeBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">마케팅 성과 — 비용 ↔ 매출목표 진척 상관 <span class="src">올해 누적</span></div>
+      <div id="corrBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 고객 상세 드릴다운 -->
+<div id="custModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:720px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)">
+      <div id="cmTitle" style="font-size:16px;font-weight:800;color:var(--brand)">고객 상세</div>
+      <button onclick="closeCust()" style="margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;cursor:pointer;font-size:13px">닫기 ✕</button>
+    </div>
+    <div id="cmBody" style="padding:18px 20px"><div class="hint">불러오는 중…</div></div>
+  </div>
+</div>
+
+<!-- 담당고객 오픈 인보이스(수금 상세) 드릴다운 -->
+<style>
+  #arModal .artoggle{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  #arModal .archip{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:#4a5a52;background:#eef2ef;border:1px solid #dde5e0;cursor:pointer;transition:all .12s}
+  #arModal .archip:hover{background:#e2ebe5}
+  #arModal .archip.on{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;border-color:transparent}
+  #arModal .arsum{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#4a5a52}
+  #arModal .arsum .b{font-weight:800;color:var(--brand)}
+  #arModal .armonth{margin:10px 0 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  #arModal .armonth-h{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#f6f3ec;cursor:pointer;font-weight:700;font-size:13px}
+  #arModal .armonth-h:hover{background:#f1ece1}
+  #arModal .artable{width:100%;border-collapse:collapse;font-size:12.5px}
+  #arModal .artable th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  #arModal .artable td{padding:6px 8px;border-bottom:1px solid #f0ece2;vertical-align:top}
+  #arModal .artable tr.inv{cursor:pointer}
+  #arModal .artable tr.inv:hover{background:#faf8f2}
+  #arModal .artable tr.od td{background:#fdf1ec}
+  #arModal .badge-od{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#f3d6cb;color:#b3502f;white-space:nowrap}
+  #arModal .badge-due{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#e6efe9;color:#3e6b54;white-space:nowrap}
+  #arModal .badge-paid{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#e8eef3;color:#46668a;white-space:nowrap}
+  #arModal .alloc td{background:#fbfaf6}
+  #arModal .alloc .ar{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dotted #e6e0d2;font-size:12px;color:#4a5a52}
+  #arModal .alloc .ar:last-child{border-bottom:none}
+</style>
+<div id="arModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,26,.45);z-index:100;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto">
+  <div style="background:#fff;border-radius:14px;max-width:940px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)">
+      <div style="font-size:16px;font-weight:800;color:var(--brand)">담당고객 오픈 인보이스 · 수금 상세</div>
+      <button onclick="closeAR()" style="margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 11px;cursor:pointer;font-size:13px">닫기 ✕</button>
+    </div>
+    <div style="padding:14px 20px 6px">
+      <div id="arCustToggle" class="artoggle"></div>
+      <div id="arPeriodToggle" class="artoggle" style="margin-top:8px"></div>
+      <div id="arSummary" style="margin-top:12px"></div>
+    </div>
+    <div id="arBody" style="padding:4px 20px 20px"><div class="hint">불러오는 중…</div></div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const now=new Date();
+  let topYms=[now.toISOString().slice(0,7)];   // 카드 다중 선택
+  let wfYms=[now.toISOString().slice(0,7)];     // 워터폴 다중 선택
+  let noDrill=false;                            // 대시보드 드릴다운 비활성(사용자별)
+  let selTeam='total';                          // 팀 토글: 'total' 또는 team_id
+  const YEAR=2026;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtK=(n)=>{ n=Number(n||0); if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+'M'; if(n>=1e3)return Math.round(n/1e3)+'K'; return String(Math.round(n)); };
+  const SCREEN={sales:'refatrix-sales.html',finance:'refatrix-finance.html',pipeline:'refatrix-pipeline.html',customers:'refatrix-customers.html'};
+  function go(s){
+    if(!SCREEN[s])return;
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+    const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}));
+    location.href=SCREEN[s]+hash;
+  }
+  function goFunnelImmediate(){
+    try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:session.token,api:session.api,user:session.user||{},ts:Date.now()})); }catch(e){}
+    const hash='#token='+encodeURIComponent(session.token)+'&api='+encodeURIComponent(session.api)+'&user='+encodeURIComponent(JSON.stringify(session.user||{}))+'&tab=immediate';
+    location.href='refatrix-funnel.html'+hash;
+  }
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      renderMonthBtns();loadCards();loadWaterfall();loadPipeline();loadCorrelation();loadCalendar();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function renderMonthBtns(){
+    const top=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
+      return '<button class="mbtn '+(topYms.includes(ym)?'on':'')+'" onclick="pickTop(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    const wf=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=YEAR+'-'+mm;
+      return '<button class="mbtn '+(wfYms.includes(ym)?'on':'')+'" onclick="pickWf(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    $('topMonths').innerHTML=top;
+    $('wfMonths').innerHTML=wf;
+  }
+  function pickTop(ym){
+    // 토글: 이미 선택된 달이면 해제(최소 1개 유지), 아니면 추가
+    if(topYms.includes(ym)){ if(topYms.length>1) topYms=topYms.filter(x=>x!==ym); }
+    else topYms=[...topYms,ym].sort();
+    renderMonthBtns();loadCards();
+  }
+  function pickWf(ym){
+    if(wfYms.includes(ym)){ if(wfYms.length>1) wfYms=wfYms.filter(x=>x!==ym); }
+    else wfYms=[...wfYms,ym].sort();
+    renderMonthBtns();loadWaterfall();
+  }
+  function ymLabel(ym){const p=ym.split('-');return Number(p[1])+'월';}
+  function topLabel(){ return topYms.map(ymLabel).join('·'); }
+  function wfLabel(){ return wfYms.map(ymLabel).join('·'); }
+
+  async function loadCards(){
+    try{const su=await fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(',')+'&carry=1&team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());noDrill=(su.drilldown===false);renderTeamToggle(su);renderCards(su);}
+    catch(e){$('cards').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+    loadTeamMonthly();
+  }
+  function renderTeamToggle(su){
+    const el=$('teamToggle'); if(!el) return;
+    const teams=su.teams||[];
+    if(teams.length<2){ el.innerHTML=''; return; } // 팀이 1개 이하면 토글 불필요
+    const sel=String(su.selectedTeam||'total');
+    let h='<span class="ml" style="margin-right:8px">팀</span>';
+    h+='<button class="mbtn '+(sel==='total'?'on':'')+'" onclick="pickTeam(\'total\')">Total</button> ';
+    h+=teams.map(t=>'<button class="mbtn '+(sel===String(t.id)?'on':'')+'" onclick="pickTeam(\''+t.id+'\')">'+esc(t.name)+'</button>').join(' ');
+    el.innerHTML='<div class="card" style="margin:0;padding:10px 14px"><div class="mrow">'+h+'</div></div>';
+  }
+  function pickTeam(t){ selTeam=String(t); loadCards(); loadWaterfall(); loadPipeline(); loadCalendar(); }
+  async function loadTeamMonthly(){
+    try{
+      const d=await fetch(session.api+'/api/salesperf/team-monthly?ym='+topYms.join(','),{headers:auth()}).then(r=>r.json());
+      if(d.locked || !d.teams || !d.teams.length){ $('teamMonthlyCard').style.display='none'; return; }
+      const months=d.months||[];
+      const achCls=(p)=> p==null?'na':(p>=100?'good':(p>=70?'mid':'low'));
+      let h='<div class="tm-wrap"><table class="tm" style="min-width:'+(180+months.length*150)+'px"><thead>';
+      h+='<tr class="mhdr"><th class="tname" rowspan="2">팀</th>';
+      months.forEach(ym=>{ h+='<th class="gl" colspan="3">'+ymLabel(ym)+'</th>'; });
+      h+='</tr><tr class="shdr">';
+      months.forEach(()=>{ h+='<th class="gl">실적</th><th>목표</th><th>달성</th>'; });
+      h+='</tr></thead><tbody>';
+      const tot={}; months.forEach(ym=>tot[ym]={actual:0,target:0});
+      d.teams.forEach(t=>{
+        h+='<tr><td class="tname">'+esc(t.name)+'</td>';
+        months.forEach(ym=>{ const c=t.byMonth[ym]||{actual:0,target:0}; tot[ym].actual+=c.actual; tot[ym].target+=c.target;
+          const pct=c.target>0?Math.round(c.actual/c.target*100):null;
+          h+='<td class="num gl">'+fmt(c.actual)+'</td><td class="num tg">'+fmt(c.target)+'</td><td class="ach '+achCls(pct)+'">'+(pct==null?'—':pct+'%')+'</td>'; });
+        h+='</tr>';
+      });
+      // 합계 행
+      h+='<tr class="tot"><td class="tname">전체</td>';
+      months.forEach(ym=>{ const a=tot[ym].actual,tg=tot[ym].target; const pct=tg>0?Math.round(a/tg*100):null;
+        h+='<td class="num gl">'+fmt(a)+'</td><td class="num tg">'+fmt(tg)+'</td><td class="ach '+achCls(pct)+'">'+(pct==null?'—':pct+'%')+'</td>'; });
+      h+='</tr></tbody></table></div>';
+      $('teamMonthly').innerHTML=h; $('teamMonthlyCard').style.display='';
+    }catch(e){ $('teamMonthlyCard').style.display='none'; }
+  }
+  function renderCards(su){
+    const s=su.sales||{}, c=su.collection||{}, d=su.pipeline_dev||{};
+    const lbl=topLabel();
+    const selT=String(su.selectedTeam||'total');
+    const teamLbl=selT==='total'?'Total(전 팀 합산)':((su.teams||[]).find(t=>String(t.id)===selT)||{}).name||'팀';
+    let momHtml='';
+    if(su.multi) momHtml='<div class="mom flat">여러 달 합산</div>';
+    else if(s.momPct==null) momHtml='<div class="mom flat">전월 대비 —</div>';
+    else{const up=s.momPct>=0;momHtml='<div class="mom '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(s.momPct)+'% 전월 대비</div>';}
+    // 카드1 매출
+    const c1=s.locked
+      ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(s.progress==null?'—':s.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div></div>'
+      : '<div class="cardbody"><div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
+        +'<div class="goal">목표/계획 MX$'+fmt(s.target)+' · 달성 '+(s.progress==null?'—':s.progress+'%')+'</div>'
+        +'<div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
+        +'<div class="cardfoot hint">'+esc(teamLbl)+' 매출목표(미달분 이월 포함) 대비 실적(IVA 불포함) · '+lbl+'</div></div>';
+    // 카드2 수금 (mom 자리 비워 정렬 맞춤)
+    const c2=c.locked
+      ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div><div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div></div>'
+      : '<div class="cardbody"><div class="bigv">MX$'+fmt(c.actual)+'</div><div class="mom flat"></div>'
+        +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
+        +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
+        +'<div class="cardfoot hint">'+esc(teamLbl)+' 수금목표(만기액+미수금 이월) 대비 실제 수금 · '+lbl+'</div></div>';
+    // 카드3 고객개발 — 당월 견적/협상/수주 + 지난주 변동
+    const dd=d.delta||{};
+    const dchip=(n)=>{ if(n==null||n===0) return '<div class="l" style="color:var(--muted)">±0 (지난주)</div>'; const up=n>0; return '<div class="l" style="color:'+(up?'var(--income)':'var(--expense)')+'">'+(up?'+':'')+n+' (지난주)</div>'; };
+    const devbox=(val,label,so,chip)=>{ const p=STAGE_PAIR_ALL[so]; return '<div class="devbox" style="background:'+p.bg+';border-color:'+p.bg+'"><div class="n" style="color:'+p.fg+'">'+(val||0)+'</div><div class="l" style="color:'+p.fg+';font-weight:700">'+label+'</div>'+chip+'</div>'; };
+    const c3='<div class="cardbody"><div class="bigv">'+((d.total!=null?d.total:((d.quote||0)+(d.negotiation||0)+(d.won||0))))+'<small> 고객</small></div><div class="mom flat"></div>'
+      +'<div class="devboxes">'+devbox(d.quote,'견적',30,dchip(dd.quote))+devbox(d.negotiation,'협상',40,dchip(dd.negotiation))+devbox(d.won,'수주',50,dchip(dd.won))+'</div>'
+      +'<div class="cardfoot hint">현재 단계 기준 · 견적=견적저장 후 / 수주=포장작업지시서 발행 / 거래중=SAT · 작은 숫자는 지난 7일 단계 변동</div></div>';
+    const lnkSales = noDrill ? '' : ' <a class="lnk" onclick="goFunnelImmediate()">매출 확정 목록 보기 →</a>';
+    const lnkFin   = noDrill ? '' : ' <a class="lnk" onclick="openAR()">담당고객 오픈 인보이스 →</a>';
+    const lnkPipe  = noDrill ? '' : ' <a class="lnk" onclick="go(\'pipeline\')">영업 현황 보기 →</a>';
+    $('cards').innerHTML=
+      '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적'+lnkSales+'</div>'+c1+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적'+lnkFin+'</div>'+c2+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 현재 단계(견적·협상·수주)'+lnkPipe+'</div>'+c3+'</div>';
+  }
+
+  async function loadWaterfall(){
+    $('wfTitle').textContent=wfLabel()+' 주차별 매출 (워터폴)';
+    try{const wk=await fetch(session.api+'/api/salesperf/weekly?ym='+wfYms.join(',')+'&carry=1&team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());renderWaterfall(wk);}
+    catch(e){$('wfBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderWaterfall(wk){
+    if(wk.locked){$('wfBody').innerHTML='<div class="lockbox">🔒 금액 표시 권한이 없습니다.</div>';return;}
+    const weeks=wk.weeks||[];
+    const target=wk.monthTarget||0;
+    const scaleMax=Math.max(target, wk.cumActual||0, 1);
+    const ticks=[0,.25,.5,.75,1].map(f=>({f:f,val:scaleMax*f}));
+    const axis=ticks.map(t=>'<div class="axisline" style="bottom:'+(t.f*100)+'%"><span>'+fmtK(t.val)+'</span></div>').join('');
+    const goalPct=scaleMax>0?Math.min(100,target/scaleMax*100):0;
+    const goalLine=target>0?'<div class="goalline" style="bottom:'+goalPct+'%"><span>목표 '+fmtK(target)+'</span></div>':'';
+    let cum=0;
+    const cols=weeks.map(w=>{
+      const a=w.actual||0; const base=cum; cum+=a;
+      const baseH=scaleMax>0?base/scaleMax*100:0;
+      const segH=scaleMax>0?a/scaleMax*100:0;
+      const zero=a<=0;
+      // 워터폴: 막대(seg)가 누적값(base) 높이부터 시작하도록, 아래에 base 높이만큼의 빈 여백을 둠
+      // (flex-end 컬럼이므로 DOM 순서: 막대 → 베이스여백 = 화면상 막대가 위, 여백이 아래)
+      return '<div class="wfcol">'
+        +'<div class="wfseg '+(zero?'zero':'')+'" style="height:'+(zero?0:segH)+'%"><div class="wflabel">'+(zero?'·':fmtK(a))+'</div></div>'
+        +'<div style="height:'+baseH+'%;flex:0 0 auto"></div>'
+        +'</div>';
+    }).join('');
+    const foot=weeks.map(w=>'<div class="wff"><b>'+w.label+'</b>'+w.start.slice(5)+'–'+w.end.slice(5)+'</div>').join('');
+    $('wfBody').innerHTML=
+      '<div class="wfwrap"><div class="wfaxis">'+axis+goalLine+'</div>'+cols+'</div>'
+      +'<div class="wffoot">'+foot+'</div>'
+      +'<div class="legend"><span><i style="background:var(--income)"></i>매출 실적</span><span><i style="background:var(--gold)"></i>월 목표</span></div>'
+      +'<div class="wfsum">누적 실적 <b>MX$'+fmt(wk.cumActual)+'</b> / 목표 <b>MX$'+fmt(target)+'</b> ('+(wk.progress==null?'—':wk.progress+'%')+')</div>';
+  }
+
+  const STAGE_COLOR=['#9CB7AD','#6FA08E','#4C8B76','#2E7259','#1E5247','#143D34'];
+  // 7단계(0~6) 색상 — 고객관리와 100% 동일(연한 배경 + 짙은 글자)
+  const STAGE_PAIR_ALL={0:{bg:'#eceff1',fg:'#5b6b73'},10:{bg:'#eef4fb',fg:'#2f6db5'},20:{bg:'#e3effb',fg:'#1f6fc4'},30:{bg:'#e2f3ef',fg:'#0f7a5f'},40:{bg:'#fdf3e0',fg:'#9a6512'},50:{bg:'#fbece1',fg:'#b4561f'},60:{bg:'#f8dcdc',fg:'#9a1f1f'}};
+  const STAGE_LABEL={10:'잠재발굴',20:'접촉',30:'제안',40:'협상',50:'수주',60:'거래중'};
+  function dayDot(days){ if(days==null)return '#bbb'; if(days<=7)return 'var(--income)'; if(days<=14)return '#C99A2E'; return 'var(--expense)'; }
+  async function loadPipeline(){
+    try{const pp=await fetch(session.api+'/api/salesperf/pipeline?team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());renderPipeline(pp);}
+    catch(e){$('pipeBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderPipeline(pp){
+    $('pipeCount').textContent='· 전체 '+(pp.total||0)+'곳';
+    const stages=(pp.stages||[]).filter(s=>s.sort_order>=10&&s.sort_order<=60);
+    const cols=stages.map((s,i)=>{
+      const pair=STAGE_PAIR_ALL[s.sort_order]||{bg:'#eceff1',fg:'#5b6b73'};
+      const label=STAGE_LABEL[s.sort_order]||s.name.replace(/^\d+_/,'');
+      const cards=(s.customers||[]).map(c=>{
+        const dot=dayDot(c.days_in_stage);
+        const sinceTxt=c.stage_since?('진입 '+c.stage_since.slice(5)+(c.days_in_stage!=null?' · '+c.days_in_stage+'일 경과':'')):'';
+        const actTxt=c.activity_days==null?'활동 없음':('👆 '+c.activity_days+'일');
+        return '<div class="pcard" style="--dot:'+dot+(noDrill?';cursor:default':'')+'"'+(noDrill?'':' onclick="openCust('+c.id+',\''+c.name.replace(/'/g,"")+'\')"')+'><div class="nm">'+c.name+'</div>'
+          +'<div class="meta"><span>'+sinceTxt+'</span><span class="act">'+actTxt+'</span></div></div>';
+      }).join('')||'<div class="pempty">—</div>';
+      return '<div class="pcol"><div class="pcolh" style="background:'+pair.bg+';color:'+pair.fg+'"><span class="lbl">'+label+'</span><span class="cnt" style="background:rgba(0,0,0,.06);color:'+pair.fg+'">'+s.count+'</span></div><div class="pcards">'+cards+'</div></div>';
+    }).join('');
+    $('pipeBody').innerHTML='<div class="pipeboard">'+cols+'</div>'
+      +'<div class="plegend"><span><i style="background:var(--income)"></i>7일 이내</span>'
+      +'<span><i style="background:#C99A2E"></i>8–14일</span>'
+      +'<span><i style="background:var(--expense)"></i>15일 이상</span>'
+      +'<span class="hint">· 카드 클릭 → 고객 화면 · 👆 = 마지막 활동 후 경과일</span></div>';
+  }
+
+  // ===== 고객 상세 드릴다운 =====
+  async function openCust(id,name){
+    if(noDrill) return;   // 드릴다운 비활성 사용자: 고객 상세 열지 않음
+    $('cmTitle').textContent=name||'고객 상세';
+    $('cmBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    $('custModal').style.display='flex';
+    try{const d=await fetch(session.api+'/api/salesperf/customer/'+id,{headers:auth()}).then(r=>r.json());
+      if(d.error){$('cmBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';return;}
+      renderCust(d);
+    }catch(e){$('cmBody').innerHTML='<div class="hint">서버 연결 실패</div>';}
+  }
+  function closeCust(){ $('custModal').style.display='none'; }
+
+  // ===== 담당고객 오픈 인보이스(수금 상세) =====
+  let arPeriod='month';   // 'month'(만기월별) | 'all'(전체기간)
+  let arCust=null;        // null=전체 또는 customer_id
+  let arData=null;
+  let arOpenMonths={};    // 펼친 만기월
+  let arOpenInv={};       // 펼친 인보이스(반제내역)
+  function openAR(){
+    if(noDrill) return;
+    arPeriod='month'; arCust=null; arOpenMonths={}; arOpenInv={};
+    $('arModal').style.display='flex'; loadAR();
+  }
+  function closeAR(){ $('arModal').style.display='none'; }
+  function setArPeriod(p){ arPeriod=p; arOpenMonths={}; arOpenInv={}; loadAR(); }
+  function setArCust(id){ arCust=id; arOpenMonths={}; arOpenInv={}; loadAR(); }
+  function toggleArMonth(ym){ arOpenMonths[ym]=!arOpenMonths[ym]; renderAR(); }
+  function toggleArInv(id){ arOpenInv[id]=!arOpenInv[id]; renderAR(); }
+  async function loadAR(){
+    $('arBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const qs='period='+arPeriod+(arCust?('&customer_id='+arCust):'');
+      const d=await fetch(session.api+'/api/salesperf/open-invoices?'+qs,{headers:auth()}).then(r=>r.json());
+      arData=d; renderAR();
+    }catch(e){ $('arBody').innerHTML='<div class="hint">서버 연결 실패</div>'; }
+  }
+  function arStatusBadge(v){
+    if(v.outstanding!=null && v.outstanding<=0.005) return '<span class="badge-paid">완납</span>';
+    if(v.overdue) return '<span class="badge-od">연체 '+v.overdue_days+'일</span>';
+    if(v.days_to_due!=null) return '<span class="badge-due">'+(v.days_to_due===0?'오늘 만기':'D-'+v.days_to_due)+'</span>';
+    return '—';
+  }
+  function arInvRow(v){
+    const sat = v.temp_sat ? ('<span style="color:#b3792f">임시</span> #'+v.id) : (v.sat_no||('#'+v.id));
+    const custCol = arCust? '' : '<td>'+esc(v.customer_name)+'</td>';
+    const main='<tr class="inv'+(v.overdue?' od':'')+'" onclick="toggleArInv('+v.id+')">'
+      +custCol
+      +'<td>'+(arOpenInv[v.id]?'▾ ':'▸ ')+sat+'</td>'
+      +'<td>'+(v.inv_date||'—')+'</td>'
+      +'<td>'+(v.due_date||'—')+'</td>'
+      +'<td style="text-align:right">'+(v.total==null?'🔒':fmt(v.total))+'</td>'
+      +'<td style="text-align:right">'+(v.paid==null?'—':fmt(v.paid))+'</td>'
+      +'<td style="text-align:right;font-weight:700">'+(v.outstanding==null?'🔒':fmt(v.outstanding))+'</td>'
+      +'<td>'+arStatusBadge(v)+'</td></tr>';
+    let detail='';
+    if(arOpenInv[v.id]){
+      const allocs=v.allocations||[];
+      const inner=allocs.length
+        ? allocs.map(a=>'<div class="ar"><span>📅 수금일 '+a.pay_date+(a.memo?(' · '+esc(a.memo)):'')+'</span><span>MX$'+(a.amount==null?'🔒':fmt(a.amount))+'</span></div>').join('')
+        : '<div class="hint" style="padding:3px 0">아직 반제(수금) 내역이 없습니다.</div>';
+      const cols = arCust?7:8;
+      detail='<tr class="alloc"><td colspan="'+cols+'"><div style="font-weight:700;margin:2px 0 5px;color:var(--brand)">반제내역 — 수금일·금액</div>'+inner+'</div></td></tr>';
+    }
+    return main+detail;
+  }
+  function arInvTable(list){
+    if(!list.length) return '<div class="hint" style="padding:8px 0">표시할 인보이스가 없습니다.</div>';
+    const head='<tr>'+(arCust?'':'<th>고객</th>')+'<th>SAT/번호</th><th>발행일</th><th>만기일</th><th style="text-align:right">청구액</th><th style="text-align:right">입금</th><th style="text-align:right">잔액(미수)</th><th>상태</th></tr>';
+    return '<table class="artable"><thead>'+head+'</thead><tbody>'+list.map(arInvRow).join('')+'</tbody></table>';
+  }
+  function renderAR(){
+    const d=arData||{};
+    // 담당고객 토글
+    const custs=d.customers||[];
+    const ct='<span class="hint" style="margin-right:4px">담당고객</span>'
+      +'<span class="archip'+(arCust==null?' on':'')+'" onclick="setArCust(null)">전체</span>'
+      +custs.map(c=>'<span class="archip'+(String(arCust)===String(c.id)?' on':'')+'" onclick="setArCust('+c.id+')">'+esc(c.name)+'</span>').join('');
+    $('arCustToggle').innerHTML=ct;
+    // 기간 토글
+    $('arPeriodToggle').innerHTML='<span class="hint" style="margin-right:4px">기간</span>'
+      +'<span class="archip'+(arPeriod==='month'?' on':'')+'" onclick="setArPeriod(\'month\')">월별 (만기월)</span>'
+      +'<span class="archip'+(arPeriod==='all'?' on':'')+'" onclick="setArPeriod(\'all\')">전체기간</span>';
+    // 요약(항상 오픈/미수 기준)
+    const s=d.summary||{open_count:0};
+    $('arSummary').innerHTML='<div class="arsum">'
+      +'<span>미수 건수 <span class="b">'+(s.open_count||0)+'</span></span>'
+      +'<span>총 미수 <span class="b">'+(s.outstanding==null?'🔒':'MX$'+fmt(s.outstanding))+'</span></span>'
+      +'<span>연체 <span class="b" style="color:var(--expense)">'+(s.overdue==null?'🔒':'MX$'+fmt(s.overdue))+'</span></span></div>';
+    if(d.locked){ $('arBody').innerHTML='<div class="lockbox">🔒 금액 표시 권한이 없습니다.</div>'; return; }
+    const invs=d.invoices||[];
+    if(arPeriod==='all'){
+      $('arBody').innerHTML='<div style="margin:4px 0 2px" class="hint">발행된 모든 인보이스 · 행을 누르면 반제(수금) 내역이 펼쳐집니다.</div>'+arInvTable(invs);
+      return;
+    }
+    // 월별: 만기월 버킷 → 펼치면 그 달 미수 인보이스
+    const months=d.months||[];
+    if(!months.length){ $('arBody').innerHTML='<div class="hint" style="padding:10px 0">미수(오픈) 인보이스가 없습니다. 🎉</div>'; return; }
+    $('arBody').innerHTML=months.map(m=>{
+      const open=!!arOpenMonths[m.ym];
+      const list=invs.filter(v=>String(v.due_date||'').slice(0,7)===m.ym);
+      const odTxt=m.overdue>0?(' · 연체 <b style="color:var(--expense)">MX$'+fmt(m.overdue)+'</b>'):'';
+      return '<div class="armonth"><div class="armonth-h" onclick="toggleArMonth(\''+m.ym+'\')">'
+        +'<span>'+(open?'▾':'▸')+' '+m.ym+' 만기</span>'
+        +'<span class="hint" style="margin-left:auto">'+m.count+'건 · 미수 MX$'+fmt(m.outstanding)+odTxt+'</span></div>'
+        +(open?('<div style="padding:4px 8px 8px">'+arInvTable(list)+'</div>'):'')+'</div>';
+    }).join('');
+  }
+  function row(k,v){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #f0ece2;font-size:13px"><span style="color:var(--muted)">'+k+'</span><span style="font-weight:600">'+(v==null||v===''?'—':v)+'</span></div>'; }
+  function sec(title){ return '<div style="font-size:13px;font-weight:800;color:var(--brand);margin:16px 0 6px">'+title+'</div>'; }
+  function renderCust(d){
+    const b=d.basic||{}, p=d.payment||{}, pf=d.performance||{}, mk=d.marketing||{};
+    let html='';
+    // 기본정보
+    html+=sec('기본정보')
+      +row('고객번호', b.code)+row('상호', b.name)+row('RFC(세금번호)', b.rfc)
+      +row('담당자', b.contact)+row('전화', b.phone)+row('기본 할인율', (b.discount||0)+'%')
+      +row('단계', b.stage)+row('팀', b.team)+row('단계 진입일', b.since);
+    // 결제정보
+    html+=sec('결제정보');
+    if(p.locked) html+=row('미수 잔액','🔒 권한 없음');
+    else html+=row('외상일(기본)', (p.credit_days||0)+'일')+row('미수 잔액', 'MX$'+fmt(p.outstanding))+row('연체액', 'MX$'+fmt(p.overdue));
+    // 영업성과
+    html+=sec('영업성과 ('+pf.year+')');
+    if(pf.locked) html+=row('달성률', (pf.progress==null?'—':pf.progress+'%'))+'<div class="hint">🔒 금액 권한 없음</div>';
+    else{ const rate=pf.progress==null?0:Math.min(100,pf.progress);
+      html+=row('목표', 'MX$'+fmt(pf.target))+row('실적(ex-IVA)', 'MX$'+fmt(pf.actual))+row('달성률', (pf.progress==null?'—':pf.progress+'%'))
+        +'<div class="pbar"><div style="width:'+rate+'%"></div></div>'; }
+    // 매출이력
+    html+=sec('매출이력 (최근)');
+    if((d.history||[]).length){ html+='<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr><th style="text-align:left;color:var(--muted);padding:5px 4px">일자</th><th style="text-align:right;color:var(--muted)">소계(ex-IVA)</th><th style="text-align:right;color:var(--muted)">총액</th><th style="text-align:right;color:var(--muted)">입금예정</th></tr></thead><tbody>'
+      +d.history.map(h=>'<tr><td style="padding:5px 4px">'+h.date+'</td><td style="text-align:right">'+(h.locked?'🔒':fmt(h.subtotal))+'</td><td style="text-align:right">'+(h.locked?'🔒':fmt(h.total))+'</td><td style="text-align:right;color:var(--muted)">'+(h.due||'—')+'</td></tr>').join('')
+      +'</tbody></table>'; }
+    else html+='<div class="hint">매출 이력이 없습니다.</div>';
+    // 마케팅 활동
+    html+=sec('마케팅 활동 (올해)');
+    if(mk.locked) html+='<div class="hint">🔒 마케팅 금액 권한 없음</div>';
+    else if((mk.items||[]).length){ html+='<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr><th style="text-align:left;color:var(--muted);padding:5px 4px">활동</th><th style="text-align:right;color:var(--muted)">수량</th><th style="text-align:right;color:var(--muted)">비용</th></tr></thead><tbody>'
+      +mk.items.map(m=>'<tr><td style="padding:5px 4px">'+m.activity+'</td><td style="text-align:right">'+m.qty+'</td><td style="text-align:right">'+(m.cost==null?'🔒':'MX$'+fmt(m.cost))+'</td></tr>').join('')
+      +'</tbody></table><div class="hint" style="margin-top:6px">총 마케팅 비용 MX$'+fmt(mk.total)+'</div>'; }
+    else html+='<div class="hint">마케팅 활동이 없습니다.</div>';
+    $('cmBody').innerHTML=html;
+  }
+
+  // ===== 마케팅 성과 상관 =====
+  async function loadCorrelation(){
+    try{const d=await fetch(session.api+'/api/salesperf/marketing-correlation',{headers:auth()}).then(r=>r.json());renderCorrelation(d);}
+    catch(e){$('corrBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function renderCorrelation(d){
+    const pts=d.points||[];
+    if(!pts.length){$('corrBody').innerHTML='<div class="hint">마케팅 비용과 목표가 함께 있는 고객이 없습니다. (마케팅 배분·목표 입력 후 표시됩니다.)</div>';return;}
+    const rTxt=d.correlation==null?'산출 불가(표본 부족 또는 변동 없음)':d.correlation;
+    let interp='';
+    if(d.correlation!=null){ const r=d.correlation;
+      interp = r>=0.6?'강한 양의 상관 — 마케팅 비용이 높은 고객일수록 목표 진척이 높습니다.'
+        : r>=0.3?'약한 양의 상관 — 어느 정도 비용↑ → 진척↑ 경향.'
+        : r>-0.3?'뚜렷한 상관 없음 — 비용과 진척의 직접 관계가 약합니다.'
+        : '음의 상관 — 비용을 써도 진척이 낮은 고객이 있어 점검이 필요합니다.'; }
+    // 산점도(SVG): x=비용, y=진척%
+    const locked=d.locked;
+    let scatter='';
+    if(!locked){
+      const W=560,H=240,pad=40;
+      const maxX=Math.max(1,...pts.map(p=>p.cost)), maxY=Math.max(100,...pts.map(p=>p.progress));
+      const px=v=>pad+(v/maxX)*(W-pad-10), py=v=>H-pad-(v/maxY)*(H-pad-10);
+      const dots=pts.map(p=>'<circle cx="'+px(p.cost).toFixed(1)+'" cy="'+py(p.progress).toFixed(1)+'" r="5" fill="var(--income)"><title>'+p.name+' · 비용 '+fmt(p.cost)+' · 진척 '+p.progress+'%</title></circle>').join('');
+      const gx=[0,.5,1].map(f=>'<text x="'+px(maxX*f)+'" y="'+(H-pad+14)+'" font-size="9" fill="#888" text-anchor="middle">'+fmtK(maxX*f)+'</text>').join('');
+      const gy=[0,.5,1].map(f=>'<text x="'+(pad-6)+'" y="'+(py(maxY*f)+3)+'" font-size="9" fill="#888" text-anchor="end">'+Math.round(maxY*f)+'%</text>').join('');
+      scatter='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;border:1px solid var(--line);border-radius:8px;background:#fff">'
+        +'<line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-10)+'" y2="'+(H-pad)+'" stroke="#ddd"/><line x1="'+pad+'" y1="10" x2="'+pad+'" y2="'+(H-pad)+'" stroke="#ddd"/>'
+        +gx+gy+dots
+        +'<text x="'+(W/2)+'" y="'+(H-6)+'" font-size="10" fill="#888" text-anchor="middle">마케팅 비용 (MXN) →</text>'
+        +'<text x="14" y="'+(H/2)+'" font-size="10" fill="#888" text-anchor="middle" transform="rotate(-90,14,'+(H/2)+')">목표 진척률 →</text>'
+        +'</svg>';
+    }
+    const list='<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px"><thead><tr>'
+      +'<th style="text-align:left;color:var(--muted);padding:5px 4px">고객</th>'+(locked?'':'<th style="text-align:right;color:var(--muted)">마케팅 비용</th>')+'<th style="text-align:right;color:var(--muted)">목표 진척</th></tr></thead><tbody>'
+      +pts.slice().sort((a,b)=>b.progress-a.progress).map(p=>'<tr><td style="padding:5px 4px">'+p.name+'</td>'+(locked?'':'<td style="text-align:right">MX$'+fmt(p.cost)+'</td>')+'<td style="text-align:right;font-weight:700;color:'+(p.progress>=100?'var(--income)':(p.progress<50?'var(--expense)':'var(--ink)'))+'">'+p.progress+'%</td></tr>').join('')
+      +'</tbody></table>';
+    $('corrBody').innerHTML='<div style="font-size:13px;margin-bottom:8px">상관계수(r) = <b style="color:var(--brand)">'+rTxt+'</b> <span class="hint">· 고객 '+d.count+'곳 기준</span></div>'
+      +(interp?'<div class="hint" style="margin-bottom:10px">'+interp+'</div>':'')
+      +scatter+list
+      +(locked?'<div class="hint" style="margin-top:8px">🔒 마케팅 금액 권한이 없어 진척률만 표시됩니다.</div>':'');
+  }
+
+  // ===== 주간 매출 캘린더 (일~토) =====
+  let calWeekStart=null;
+  function sundayOf(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
+  function ymd(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+  function addDaysD(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  async function loadCalendar(){
+    if(!calWeekStart) calWeekStart=sundayOf(new Date());
+    const start=calWeekStart, end=addDaysD(start,6);
+    $('calLabel').textContent=(start.getMonth()+1)+'/'+start.getDate()+' – '+(end.getMonth()+1)+'/'+end.getDate();
+    try{
+      const d=await fetch(session.api+'/api/salesperf/daily?start='+ymd(start)+'&end='+ymd(end)+'&team='+encodeURIComponent(selTeam),{headers:auth()}).then(r=>r.json());
+      renderCalendar(start,d);
+    }catch(e){$('calBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  let calData=null;
+  function renderCalendar(start,d){
+    calData=d;
+    if(d.locked){$('calBody').innerHTML='<div class="lockbox">🔒 매출 금액 표시 권한이 없습니다.</div>';return;}
+    const DOW=['일','월','화','수','목','금','토'];
+    const today=ymd(new Date());
+    const head=DOW.map((w,i)=>'<div class="caldow '+(i===0?'sun':(i===6?'sat':''))+'">'+w+'</div>').join('');
+    let cells='';
+    for(let i=0;i<7;i++){
+      const day=addDaysD(start,i), key=ymd(day);
+      const items=(d.days&&d.days[key])||[];
+      const tot=items.reduce((s,x)=>s+(x.amount||0),0);
+      const isToday=key===today, has=items.length>0;
+      let inner='<div style="display:flex;justify-content:space-between;align-items:baseline"><span class="dnum">'+day.getDate()+'</span>'+(tot>0?'<span class="daytot">'+fmtK(tot)+'</span>':'')+'</div>';
+      inner+=items.slice(0,3).map(x=>'<div class="calitem"><span class="ci-c">'+x.customer+'</span><span class="ci-a">MX$'+fmt(x.amount)+'</span></div>').join('');
+      if(items.length>3) inner+='<div class="calmore" onclick="event.stopPropagation();openDay(\''+key+'\')">+'+(items.length-3)+'건 더 보기</div>';
+      cells+='<div class="calcell '+(isToday?'today':'')+(has?' clickable':'')+'"'+(has?' onclick="openDay(\''+key+'\')"':'')+'>'+inner+'</div>';
+    }
+    $('calBody').innerHTML='<div class="calgrid">'+head+cells+'</div>';
+  }
+  function openDay(key){
+    const items=(calData&&calData.days&&calData.days[key])||[];
+    const [y,m,dd]=key.split('-');
+    const DOW=['일','월','화','수','목','금','토'];
+    const wd=DOW[new Date(key+'T00:00:00').getDay()];
+    $('cmTitle').textContent=Number(m)+'월 '+Number(dd)+'일('+wd+') 매출';
+    const tot=items.reduce((s,x)=>s+(x.amount||0),0);
+    let html='<table style="width:100%;border-collapse:collapse;font-size:13px">'
+      +'<thead><tr><th style="text-align:left;color:var(--muted);padding:6px 4px">고객</th><th style="text-align:right;color:var(--muted)">매출액(ex-IVA)</th></tr></thead><tbody>'
+      +items.map(x=>'<tr><td style="padding:6px 4px;border-bottom:1px solid #f0ece2">'+x.customer+'</td><td style="text-align:right;border-bottom:1px solid #f0ece2;font-weight:600">MX$'+fmt(x.amount)+'</td></tr>').join('')
+      +'</tbody><tfoot><tr><td style="padding:8px 4px;font-weight:800;color:var(--brand)">합계 ('+items.length+'건)</td><td style="text-align:right;font-weight:800;color:var(--brand)">MX$'+fmt(tot)+'</td></tr></tfoot></table>';
+    $('cmBody').innerHTML=html;
+    $('custModal').style.display='flex';
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('calPrev').addEventListener('click',()=>{ calWeekStart=addDaysD(calWeekStart||sundayOf(new Date()),-7); loadCalendar(); });
+  $('calNext').addEventListener('click',()=>{ calWeekStart=addDaysD(calWeekStart||sundayOf(new Date()),7); loadCalendar(); });
+  $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

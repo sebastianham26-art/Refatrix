@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 구매 내역 · build pur-0819act1</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--pur:#8A6D2E;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:16px}
+  .card h2{margin:0 0 4px;font-size:15px;color:var(--brand)}
+  .card .cdesc{font-size:12px;color:var(--muted);margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.pur{background:var(--pur)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .msg.warn{display:block;background:#fdf4e3;color:#8a6d2e;border:1px solid #ecdcae}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.clk{cursor:pointer}tr.clk:hover{background:#f7f5ef}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{color:var(--brand)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
+  .segbtn{padding:7px 15px;font-size:12.5px;font-weight:700;background:#fff;color:var(--muted);border:none;cursor:pointer;font-family:inherit}
+  .segbtn.on{background:var(--brand);color:#fff}
+  .delta{font-weight:700}.delta.pos{color:var(--income)}.delta.neg{color:var(--expense)}.delta.zero{color:var(--muted)}
+  .sbrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:20px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .pill.ok{background:#e7f3ee;color:var(--income)}
+  .pill.no{background:#fdeceb;color:var(--expense)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  .toolbar>div{flex:0 0 auto}
+  .detailbox{background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:10px}
+  /* 입고예정 요약 */
+  .etaTag{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:8px;background:#e4f0eb;color:var(--income)}
+  .etaTag.none{background:#f1efe8;color:var(--muted)}
+  .etaTag.recv{background:#fdf3d7;color:#8a6d1a}
+  tr.incRow{cursor:pointer}tr.incRow:hover{background:#f7f5ef}
+  tr.incDet td{background:#faf8f3;padding:0}
+  .incDetIn{padding:10px 12px}
+  .incDetIn table{margin-top:4px;font-size:12px}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>구매 내역</h1>
+      <div class="sub">발주·구매원가(USD) 엑셀 기록 · 조회 <span style="opacity:.7">(향후: backorder · 입고연동 · COGS)</span></div>
+    </div>
+    <div class="who" id="who"></div>
+  </div>
+
+  <!-- 로그인 -->
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" autocomplete="username"></div>
+      <div><label>PIN</label><input id="pin" type="password" autocomplete="current-password"></div>
+    </div>
+    <div class="api"><label>서버 주소</label><input id="api" value="https://refatrix-production.up.railway.app"></div>
+    <div style="margin-top:12px"><button class="btn" id="go" onclick="login()">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- 업로드 -->
+  <div class="card hidden" id="upCard">
+    <h2>엑셀 업로드</h2>
+    <div class="cdesc">열: <b>제품코드 · 수량 · 구매원가(USD) · 구매참조번호</b> — 헤더 이름은 유연히 인식합니다. 콤마(1,234)·앞뒤공백 허용.</div>
+    <div class="toolbar">
+      <div><button class="btn ghost sm" id="tplBtn" type="button">템플릿 다운로드</button></div>
+      <div><button class="btn gold sm" id="upBtn" type="button">엑셀 파일 선택</button>
+        <input id="upFile" type="file" accept=".xlsx,.xls,.csv" class="hidden"></div>
+      <div style="min-width:150px"><label>발주(기록)일 · 선택</label><input id="odate" type="date"></div>
+      <div style="flex:1;min-width:180px"><label>메모 · 선택</label><input id="pnote" placeholder="예: 7월 3차 발주"></div>
+    </div>
+    <div class="msg" id="upMsg"></div>
+    <div id="previewWrap" class="hidden">
+      <div class="sbrow" id="prevSummary"></div>
+      <div id="prevWarn"></div>
+      <div style="max-height:340px;overflow:auto"><table id="prevTable"></table></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn pur" id="commitBtn" type="button">이대로 기록</button>
+        <button class="btn ghost sm" id="cancelBtn" type="button">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 입고예정 요약 (언제·얼마나 도착) -->
+  <div class="card hidden" id="incCard">
+    <h2>입고예정 — 언제·얼마나 도착 <button class="btn ghost sm" style="float:right" onclick="loadIncoming()">새로고침</button></h2>
+    <div class="cdesc">선적(패킹리스트) 기준 도착 예정일(ETA)별 요약입니다. 행을 누르면 SKU별 세부 리스트가 열립니다. 선적에 아직 안 담긴 발주 잔량은 「발주됨 · 선적 미정」으로 표시됩니다.</div>
+    <div class="sbrow" id="incSummary"></div>
+    <div style="max-height:420px;overflow:auto"><table id="incTable"></table></div>
+  </div>
+
+  <!-- 조회 -->
+  <div class="card hidden" id="listCard">
+    <h2>구매내역 조회</h2>
+    <div class="toolbar">
+      <div style="min-width:200px"><label>검색 (참조번호·제품코드)</label><input id="q" placeholder="예: PO-2607 · CA0032"></div>
+      <div><label>시작일</label><input id="from" type="date"></div>
+      <div><label>종료일</label><input id="to" type="date"></div>
+      <div><button class="btn sm" id="searchBtn" type="button" style="margin-top:22px">조회</button></div>
+    </div>
+    <div class="seg">
+      <button class="segbtn on" id="modePo" type="button">건별 (참조번호)</button>
+      <button class="segbtn" id="modeLine" type="button">전체 라인 (SKU · backorder)</button>
+    </div>
+    <div id="poWrap">
+      <div class="sbrow" id="listSummary" style="margin-top:12px"></div>
+      <div style="max-height:420px;overflow:auto"><table id="listTable"></table></div>
+      <div class="detailbox hidden" id="detailBox"></div>
+    </div>
+    <div id="linesWrap" class="hidden">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:12px">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--muted)"><input type="checkbox" id="boOnly" style="width:auto"> 미입고(backorder&gt;0)만 보기</label>
+        <button class="btn ghost sm" id="linesXlsxBtn" type="button">엑셀 다운로드</button>
+      </div>
+      <div class="sbrow" id="linesSummary" style="margin-top:8px"></div>
+      <div style="max-height:460px;overflow:auto"><table id="linesTable"></table></div>
+      <div class="hint">SKU별로 어느 참조번호에 얼마가 미입고(backorder)인지, 현재고와 <b>예상재고(현재고+추가입고)</b>를 함께 봅니다. 열 제목 클릭으로 정렬.</div>
+    </div>
+    <div class="hint">※ 이 화면은 구매 <b>기록·조회</b> 전용입니다. 기록된 수량은 다음 단계에서 <b>가용재고의 backorder(미입고) 정보</b>로 표시되고, 창고 <b>입고</b>와 연결되면 received_qty가 채워지며, 입고 확정 시 <b>이동평균원가(COGS)</b>에 반영됩니다.</div>
+  </div>
+</div>
+
+<script>
+  let session = { token:null, user:null, api:'' };
+  let isDirector = false;
+  let canCost = false;  // 구매단가(USD) 열람 권한 — 디렉터·소시오만(서버 cost_visible 로 확정)
+  let preview = null;   // 미리보기 결과 캐시
+  let listItems = [];   // 조회 목록 캐시(클라이언트 정렬용)
+  let sortKey = 'order_date', sortDir = 'desc';   // 목록 정렬 상태
+  const $ = (id)=>document.getElementById(id);
+  const auth = ()=>({'Authorization':'Bearer '+session.token});
+  const usd = (n)=> n==null ? '—' : '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const num = (n)=> n==null ? '—' : Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const esc = (s)=> String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // 부호(+/-)·색상 델타 표시
+  const signedNum = (n)=>{
+    if(n==null) return '<span class="delta zero">—</span>';
+    const v=Number(n); const cls=v>0?'pos':(v<0?'neg':'zero'); const sign=v>0?'+':(v<0?'-':'');
+    return '<span class="delta '+cls+'">'+sign+num(Math.abs(v))+'</span>';
+  };
+
+  // 방어적 숫자 파싱(백엔드 parseNum 과 동일 규칙)
+  function numify(v){
+    if(v===null||v===undefined) return null;
+    if(typeof v==='number') return isFinite(v)?v:null;
+    const s=String(v).trim().replace(/,/g,'').replace(/\s+/g,'');
+    if(s==='') return null;
+    const n=Number(s); return isFinite(n)?n:null;
+  }
+  // 헤더에서 키워드로 열 찾기(유연 인식)
+  function pickCol(headers, kws){
+    for(let i=0;i<headers.length;i++){
+      const h=String(headers[i]||'').toLowerCase().replace(/\s|\(|\)|_/g,'');
+      for(const k of kws){ if(h.indexOf(k)>=0) return i; }
+    }
+    return -1;
+  }
+  // 2차원 행렬 → 정규화 행 [{code,qty,cost_usd,ref,_row}]
+  function parseMatrix(rows){
+    if(!rows.length) return [];
+    const headers=rows[0].map(x=>x==null?'':x);
+    const ci=pickCol(headers,['제품코드','코드','code','sku','artículo','articulo','clave']);
+    const qi=pickCol(headers,['수량','qty','quantity','cantidad']);
+    const pi=pickCol(headers,['구매원가','원가','단가','cost','price','usd','precio']);
+    const ri=pickCol(headers,['참조','ref','참조번호','참조','po','참조no','reference']);
+    const out=[];
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r]; if(!row) continue;
+      const code=ci>=0?row[ci]:''; const qty=qi>=0?row[qi]:''; const cost=pi>=0?row[pi]:''; const ref=ri>=0?row[ri]:'';
+      // 완전 빈 행은 조용히 skip
+      if((code==null||String(code).trim()==='')&&(qty==null||String(qty).trim()===''))continue;
+      out.push({code:code==null?'':String(code).trim(), qty, cost_usd:cost, ref:ref==null?'':String(ref).trim(), _row:r+1});
+    }
+    return {rows:out, cols:{ci,qi,pi,ri}};
+  }
+
+  // ---- 로그인 ----
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    const m=$('loginMsg'); m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      const res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      onLoggedIn(d.user);
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+  function onLoggedIn(user){
+    $('who').innerHTML='<b>'+esc(user?.name||'')+'</b><br>역할: '+esc(user?.role||'-');
+    isDirector=(user?.role==='director');
+    canCost=(user?.role==='director'||user?.role==='socio');
+    $('loginCard').classList.add('hidden');
+    $('upCard').classList.remove('hidden'); $('listCard').classList.remove('hidden');
+    $('incCard').classList.remove('hidden');
+    loadIncoming(); loadList();
+  }
+
+  // ---- 입고예정 요약 (언제·얼마나 도착) ----
+  let incData=null, incOpen={};   // incOpen: 'S<id>' | 'UN' → 펼침
+  async function loadIncoming(){
+    try{
+      const res=await fetch(session.api+'/api/purchases/incoming',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('incTable').innerHTML='<tr><td>불러오기 실패: '+esc(d.error||res.status)+'</td></tr>'; return; }
+      incData=d; incOpen={}; renderIncoming();
+    }catch(e){ $('incTable').innerHTML='<tr><td>서버에 연결할 수 없습니다.</td></tr>'; }
+  }
+  function etaTag(s){
+    if(s.status==='receiving') return '<span class="etaTag recv">입고 진행중</span>';
+    if(!s.eta) return '<span class="etaTag none">ETA 미정</span>';
+    const dd=Math.round((new Date(s.eta+'T00:00:00')-new Date(new Date().toISOString().slice(0,10)+'T00:00:00'))/86400000);
+    const rel=dd===0?'오늘':(dd>0?('D-'+dd):('지연 '+Math.abs(dd)+'일'));
+    return '<span class="etaTag">'+esc(s.eta)+' · '+rel+'</span>';
+  }
+  function renderIncoming(){
+    const d=incData; if(!d) return;
+    const s=d.summary||{};
+    $('incSummary').innerHTML=
+      sb(esc(s.next_eta||'—'),'다음 도착 예정일')+
+      sb(num(s.arriving_qty),'선적중 수량(도착 예정)')+
+      sb(s.arriving_sku||0,'선적중 SKU')+
+      sb(s.shipment_count||0,'선적 건')+
+      sb(num(s.unshipped_qty),'발주됨 · 선적 미정')+
+      sb(s.unshipped_sku||0,'미선적 SKU');
+    let h='<tr><th>도착 예정</th><th>선적(패킹리스트 인보이스)</th><th>업로드일</th><th>구분</th><th class="num">SKU</th><th class="num">총 수량</th><th class="num">카톤</th><th>구매참조번호</th></tr>';
+    if(!(d.shipments||[]).length && !(d.unshipped||[]).length){
+      h+='<tr><td colspan="8" style="color:var(--muted)">입고 예정이 없습니다. 창고에서 <b>마감(입고 완료)</b>된 선적과 채워진 발주는 이 목록에서 빠집니다 — 입고된 수량은 아래 <b>구매내역 조회</b>의 [입고] 열과 발주 상세에서 확인하세요.</td></tr>';
+      $('incTable').innerHTML=h; return;
+    }
+    for(const sh of (d.shipments||[])){
+      const key='S'+sh.id;
+      h+='<tr class="incRow" data-k="'+key+'">'
+        +'<td>'+etaTag(sh)+'</td>'
+        +'<td><b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b>'+((sh.files&&sh.files.length)?' 📎':'')+'</td>'
+        +'<td>'+esc(sh.uploaded_at||'—')+'</td>'
+        +'<td>'+(sh.status==='receiving'?'입고중':'선적중')+'</td>'
+        +'<td class="num">'+sh.sku_count+'</td>'
+        +'<td class="num"><b>'+num(sh.total_qty)+'</b></td>'
+        +'<td class="num">'+num(sh.cartons)+'</td>'
+        +'<td>'+esc((sh.refs||[]).join(', '))+'</td></tr>';
+      if(incOpen[key]){
+        let dh='<div style="font-size:12px;color:var(--muted);margin-bottom:2px">패킹리스트 <b>'+esc(sh.invoice_no||('선적 #'+sh.id))+'</b> · 업로드 '+esc(sh.uploaded_at||'—')+' · 총 <b>'+num(sh.total_qty)+'</b>개 · SKU '+sh.sku_count+'종'
+          +((sh.files||[]).map(f=>' · <a href="#" class="pkfile" data-fid="'+f.id+'" style="color:var(--brand);font-weight:700">📎 '+esc(f.file_name||('file#'+f.id))+' 다운로드</a>').join(''))
+          +((sh.files&&sh.files.length)?'':' · <span style="color:#b0ab9e">원본 파일 없음(창고 입고화면에서 첨부 가능)</span>')
+          +'</div>';
+        dh+='<table><tr><th>제품코드</th><th>제품명</th><th class="num">도착 수량</th><th class="num">카톤</th><th class="num">현재고</th><th class="num">입고후 예상</th></tr>';
+        for(const l of (sh.lines||[])){
+          const proj=(l.stock_qty==null)?null:(Math.round((l.stock_qty+l.qty)*1000)/1000);
+          dh+='<tr><td><b>'+esc(l.sku)+'</b>'+(l.matched?'':' <span class="pill no">미매칭</span>')+'</td>'
+            +'<td>'+esc(l.product_name||'—')+'</td>'
+            +'<td class="num"><b>'+num(l.qty)+'</b></td>'
+            +'<td class="num">'+num(l.cartons)+'</td>'
+            +'<td class="num">'+(l.stock_qty==null?'—':num(l.stock_qty))+'</td>'
+            +'<td class="num">'+(proj==null?'—':num(proj))+'</td></tr>';
+        }
+        dh+='</table>';
+        h+='<tr class="incDet"><td colspan="8"><div class="incDetIn">'+dh+'</div></td></tr>';
+      }
+    }
+    if((d.unshipped||[]).length){
+      h+='<tr class="incRow" data-k="UN">'
+        +'<td><span class="etaTag none">일정 미정</span></td>'
+        +'<td><b>발주됨 · 선적 미정</b></td>'
+        +'<td>—</td>'
+        +'<td>발주만</td>'
+        +'<td class="num">'+(d.summary.unshipped_sku||0)+'</td>'
+        +'<td class="num"><b>'+num(d.summary.unshipped_qty)+'</b></td>'
+        +'<td class="num">—</td>'
+        +'<td class="hint">아직 패킹리스트(선적)에 안 담긴 발주 잔량</td></tr>';
+      if(incOpen['UN']){
+        let dh='<table><tr><th>제품코드</th><th>제품명</th><th class="num">발주잔량</th><th class="num">선적중</th><th class="num">미선적</th><th>최초 발주일</th><th>구매참조번호</th></tr>';
+        for(const u of d.unshipped){
+          dh+='<tr><td><b>'+esc(u.sku)+'</b></td><td>'+esc(u.product_name||'—')+'</td>'
+            +'<td class="num">'+num(u.backorder)+'</td>'
+            +'<td class="num">'+num(u.incoming_qty)+'</td>'
+            +'<td class="num"><b>'+num(u.unshipped_qty)+'</b></td>'
+            +'<td>'+esc(u.first_order||'—')+'</td>'
+            +'<td>'+esc((u.refs||[]).join(', '))+'</td></tr>';
+        }
+        dh+='</table>';
+        h+='<tr class="incDet"><td colspan="8"><div class="incDetIn">'+dh+'</div></td></tr>';
+      }
+    }
+    $('incTable').innerHTML=h;
+    $('incTable').querySelectorAll('tr.incRow').forEach(tr=>tr.addEventListener('click',()=>{
+      const k=tr.dataset.k; if(incOpen[k]) delete incOpen[k]; else incOpen[k]=true; renderIncoming();
+    }));
+    $('incTable').querySelectorAll('a.pkfile').forEach(a=>a.addEventListener('click',ev=>{
+      ev.preventDefault(); ev.stopPropagation(); dlPackingFile(a.dataset.fid);
+    }));
+  }
+  // 패킹리스트 원본 다운로드(창고 업로드 파일 — 구매 권한으로 열람)
+  async function dlPackingFile(fid){
+    try{
+      const res=await fetch(session.api+'/api/inbound/files/'+fid,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||!d.file_data){ alert('다운로드 실패: '+(d.error||res.status)); return; }
+      const a=document.createElement('a');
+      a.href=d.file_data; a.download=d.file_name||('packing_'+fid);
+      document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+
+  // ---- 엑셀 파싱 → 미리보기 ----
+  async function readFile(file){
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const mat=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+    return parseMatrix(mat);
+  }
+  async function handleFile(file){
+    const m=$('upMsg'); m.className='msg';
+    try{
+      const parsed=await readFile(file);
+      if(!parsed.rows.length){ m.className='msg err'; m.textContent='읽을 데이터가 없습니다(헤더행 + 데이터행 필요).'; return; }
+      if(parsed.cols.ci<0||parsed.cols.qi<0||parsed.cols.pi<0||parsed.cols.ri<0){
+        m.className='msg err'; m.textContent='열 인식 실패 — 헤더에 제품코드/수량/구매원가/구매참조번호가 필요합니다. 템플릿을 사용하세요.'; return;
+      }
+      const res=await fetch(session.api+'/api/purchases/preview',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rows:parsed.rows})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='미리보기 실패: '+(d.error||res.status); return; }
+      preview=parsed.rows;
+      renderPreview(d);
+    }catch(e){ m.className='msg err'; m.textContent='파일을 읽을 수 없습니다: '+e.message; }
+  }
+  function renderPreview(d){
+    canCost=!!d.cost_visible;
+    $('previewWrap').classList.remove('hidden');
+    const s=d.summary;
+    $('prevSummary').innerHTML=
+      sb(s.total,'총 라인')+sb(s.matched,'매칭')+sb(s.unmatched,'미매칭(코드 미등록)')+sb(s.error_rows,'오류행(제외)');
+    // 경고
+    let w='';
+    if(s.error_rows>0){ w+='<div class="msg warn">오류 '+s.error_rows+'행은 기록에서 제외됩니다: '+
+      d.errors.slice(0,8).map(e=>'#'+e.i+' '+esc(e.code||'')+' ('+esc(e.reason)+')').join(', ')+(d.errors.length>8?' 외':'')+'</div>'; }
+    if(s.unmatched>0){ w+='<div class="msg warn">미매칭 코드는 기록은 보존되나 제품 연결(재고·COGS)이 안 됩니다. 제품 마스터 등록 후 재매칭 예정.</div>'; }
+    // 0179 — 비활성(판매중단) SKU 발주 경고(차단은 하지 않음: 재고 소진·A/S 목적 구매가 있을 수 있음)
+    var inact=(d.lines||[]).filter(function(l){return l.inactive;});
+    if(inact.length){ w+='<div class="msg warn">⛔ 비활성(판매중단) SKU '+inact.length+'건이 포함되어 있습니다: '
+      +inact.slice(0,10).map(function(l){return esc(l.code);}).join(', ')+(inact.length>10?' …':'')
+      +' — 정말 구매할지 확인하세요.</div>'; }
+    if(d.existing_refs&&d.existing_refs.length){ w+='<div class="msg warn">이미 기록된 참조번호: '+
+      d.existing_refs.map(x=>esc(x.ref)+'('+x.n+'건)').join(', ')+' — 그대로 기록하면 별도 건으로 추가됩니다.</div>'; }
+    $('prevWarn').innerHTML=w;
+    // 테이블 (원가 열은 canCost 일 때만)
+    const cc=canCost?'<th class="num">구매원가(USD)</th><th class="num">금액(USD)</th>':'';
+    let h='<tr><th>행</th><th>제품코드</th><th>매칭</th><th class="num">수량</th>'+cc+'<th>참조번호</th></tr>';
+    for(const l of d.lines){
+      const cv=canCost?('<td class="num">'+usd(l.cost)+'</td><td class="num">'+usd(l.amount)+'</td>'):'';
+      h+='<tr><td>'+ (l._row||'') +'</td><td>'+esc(l.code)+'</td><td>'+
+        (l.matched?('<span class="pill ok">매칭</span>'+(l.inactive?' <span class="pill no" title="판매 비활성(판매중단) SKU 입니다. 발주 자체는 가능하지만 정말 구매할지 확인하세요.">비활성 SKU</span>':'')):'<span class="pill no">미매칭</span>')+'</td>'+
+        '<td class="num">'+num(l.qty)+'</td>'+cv+'<td>'+esc(l.ref)+'</td></tr>';
+    }
+    $('prevTable').innerHTML=h;
+    $('upMsg').className='msg';
+  }
+  function sb(v,l){ return '<div class="sb"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+
+  async function commit(){
+    if(!preview){ return; }
+    $('commitBtn').disabled=true; $('commitBtn').textContent='기록 중…';
+    const m=$('upMsg'); m.className='msg';
+    try{
+      const body={rows:preview, note:$('pnote').value.trim()||null, order_date:$('odate').value||null};
+      const res=await fetch(session.api+'/api/purchases',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='기록 실패: '+(d.error||res.status); return; }
+      m.className='msg ok';
+      m.textContent='기록 완료 — 발주 '+d.po_count+'건, 라인 '+d.inserted_lines+'개'+(d.unmatched?(' (미매칭 '+d.unmatched+')'):'')+(d.skipped_rows?(' · 제외 '+d.skipped_rows+'행'):'')+'.';
+      resetPreview(); loadList();
+    }catch(e){ m.className='msg err'; m.textContent='서버 오류: '+e.message; }
+    finally{ $('commitBtn').disabled=false; $('commitBtn').textContent='이대로 기록'; }
+  }
+  function resetPreview(){ preview=null; $('previewWrap').classList.add('hidden'); $('prevTable').innerHTML=''; $('prevWarn').innerHTML=''; }
+
+  // ---- 조회 ----
+  // 목록 열 정의(cost=원가열은 canCost 일 때만)
+  const LIST_COLS=[
+    {k:'order_date',t:'발주일',num:false},
+    {k:'ref_no',t:'참조번호',num:false},
+    {k:'line_count',t:'라인',num:true},
+    {k:'total_qty',t:'수량',num:true},
+    {k:'total_received',t:'입고',num:true},      // 창고 마감이 채운 수량(2026-08-18)
+    {k:'backorder_qty',t:'미입고',num:true},
+    {k:'total_usd',t:'금액(USD)',num:true,cost:true},
+    {k:'matched_cnt',t:'매칭',num:true},
+    {k:'note',t:'메모',num:false},
+    {k:'created_by_name',t:'기록자',num:false},
+  ];
+  async function loadList(){
+    const q=$('q').value.trim(), from=$('from').value, to=$('to').value;
+    const p=new URLSearchParams(); if(q)p.set('q',q); if(from)p.set('from',from); if(to)p.set('to',to);
+    const res=await fetch(session.api+'/api/purchases?'+p.toString(),{headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error){ $('listTable').innerHTML='<tr><td>목록 실패: '+esc(d.error||res.status)+'</td></tr>'; return; }
+    canCost=!!d.cost_visible;
+    listItems=d.items||[];
+    const s=d.summary;
+    const costCard=canCost?sb(usd(s.total_usd),'총 구매액(USD)'):'';
+    $('listSummary').innerHTML=sb(s.po_count,'발주 건')+costCard+sb(num(s.total_qty),'총 수량')+sb(s.unmatched_lines,'미매칭 라인');
+    renderList();
+    $('detailBox').classList.add('hidden');
+  }
+  // ---- 공용 정렬 헬퍼(여러 표 재사용) ----
+  function genSort(arr,key,dir,cols){
+    const col=cols.find(c=>c.k===key)||cols[0];
+    const out=arr.slice();
+    out.sort((a,b)=> (col&&col.num) ? ((Number(a[key])||0)-(Number(b[key])||0)) : String(a[key]==null?'':a[key]).localeCompare(String(b[key]==null?'':b[key]),'es'));
+    if(dir==='desc') out.reverse();
+    return out;
+  }
+  function headTR(cols,key,dir){
+    return '<tr>'+cols.map(c=>{ const ar=key===c.k?(dir==='asc'?' ▲':' ▼'):''; return '<th class="'+(c.num?'num ':'')+'sortable" data-k="'+c.k+'">'+c.t+ar+'</th>'; }).join('')+'</tr>';
+  }
+  function wireSort(tableEl,onSort){ if(!tableEl) return; tableEl.querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>onSort(th.dataset.k))); }
+  function nextDir(curKey,curDir,k,cols){ if(curKey===k) return curDir==='asc'?'desc':'asc'; const col=cols.find(c=>c.k===k); return (col&&col.num)?'desc':'asc'; }
+
+  // 상세(드릴다운) 표 열 정의 + 정렬 상태
+  const DETAIL_COLS=[
+    {k:'sku',t:'제품코드'},{k:'product_name',t:'제품명'},{k:'matched',t:'매칭'},
+    {k:'qty',t:'수량',num:true},
+    {k:'received_qty',t:'입고수량',num:true},
+    {k:'unit_cost_usd',t:'구매원가(USD)',num:true,cost:true},{k:'amount_usd',t:'금액(USD)',num:true,cost:true},
+    {k:'stock_qty',t:'현재고',num:true},{k:'incoming',t:'입고예정(재고↑)',num:true},{k:'projected',t:'입고후 예상재고',num:true},
+  ];
+  let detailData=null, detSortKey='', detSortDir='asc';
+
+  // 전체 라인 뷰 열 정의 + 정렬 상태
+  const LINE_COLS=[
+    {k:'sku',t:'SKU'},{k:'product_name',t:'제품명'},{k:'ref_no',t:'구매참조번호'},
+    {k:'backorder',t:'backorder',num:true},{k:'stock_qty',t:'현재고',num:true},
+    {k:'projected',t:'예상재고(현재+추가)',num:true},
+    {k:'unit_cost_usd',t:'구매원가(USD)',num:true,cost:true},
+  ];
+  let lineItems=[], lineSortKey='backorder', lineSortDir='desc';
+  let viewMode='po';
+
+  function sortItems(items){
+    const col=LIST_COLS.find(c=>c.k===sortKey)||LIST_COLS[0];
+    const arr=items.slice();
+    arr.sort((a,b)=>{
+      if(col.num){ return (Number(a[sortKey])||0)-(Number(b[sortKey])||0); }
+      return String(a[sortKey]==null?'':a[sortKey]).localeCompare(String(b[sortKey]==null?'':b[sortKey]),'es');
+    });
+    if(sortDir==='desc') arr.reverse();
+    return arr;
+  }
+  function renderList(){
+    const cols=LIST_COLS.filter(c=>!c.cost||canCost);
+    let h='<tr>';
+    for(const c of cols){
+      const arrow=sortKey===c.k?(sortDir==='asc'?' ▲':' ▼'):'';
+      h+='<th class="'+(c.num?'num ':'')+'sortable" data-k="'+c.k+'">'+c.t+arrow+'</th>';
+    }
+    h+='</tr>';
+    const items=sortItems(listItems);
+    if(!items.length){ h+='<tr><td colspan="'+cols.length+'" style="color:var(--muted)">기록 없음</td></tr>'; }
+    for(const it of items){
+      h+='<tr class="clk" data-id="'+it.id+'">';
+      for(const c of cols){
+        if(c.k==='ref_no') h+='<td><b>'+esc(it.ref_no)+'</b></td>';
+        else if(c.k==='total_usd') h+='<td class="num">'+usd(it.total_usd)+'</td>';
+        else if(c.k==='total_qty') h+='<td class="num">'+num(it.total_qty)+'</td>';
+        else if(c.k==='total_received'){
+          const done=(it.total_qty>0&&(it.backorder_qty||0)<=0);
+          h+='<td class="num">'+num(it.total_received||0)+(done?' <span class="pill ok">✔ 입고완료</span>':'')+'</td>';
+        }
+        else if(c.k==='backorder_qty') h+='<td class="num"'+((it.backorder_qty||0)>0?' style="color:#B23B2E;font-weight:700"':' style="color:var(--muted)"')+'>'+((it.backorder_qty||0)>0?num(it.backorder_qty):'—')+'</td>';
+        else if(c.k==='line_count') h+='<td class="num">'+it.line_count+'</td>';
+        else if(c.k==='matched_cnt') h+='<td class="num">'+it.matched_cnt+(it.unmatched_cnt?(' <span class="pill no">미'+it.unmatched_cnt+'</span>'):'')+'</td>';
+        else if(c.k==='order_date') h+='<td>'+esc(it.order_date)+'</td>';
+        else if(c.k==='note') h+='<td>'+esc(it.note||'')+'</td>';
+        else if(c.k==='created_by_name') h+='<td>'+esc(it.created_by_name||'')+'</td>';
+      }
+      h+='</tr>';
+    }
+    $('listTable').innerHTML=h;
+    $('listTable').querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+      const k=th.dataset.k;
+      if(sortKey===k){ sortDir=(sortDir==='asc'?'desc':'asc'); }
+      else { sortKey=k; const col=LIST_COLS.find(c=>c.k===k); sortDir=(col&&col.num)?'desc':'asc'; }
+      renderList();
+    }));
+    $('listTable').querySelectorAll('tr.clk').forEach(tr=>tr.addEventListener('click',()=>showDetail(tr.dataset.id)));
+  }
+  async function showDetail(id){
+    const box=$('detailBox'); box.classList.remove('hidden'); box.innerHTML='불러오는 중…';
+    const res=await fetch(session.api+'/api/purchases/'+id,{headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error){ box.innerHTML='상세 실패: '+esc(d.error||res.status); return; }
+    canCost=!!d.cost_visible;
+    d.rows=(d.lines||[]).map(l=>({
+      sku:l.matched?l.matched_code:l.input_code, product_name:l.product_name, matched:l.matched,
+      qty:Number(l.qty), received_qty:Number(l.received_qty)||0, unit_cost_usd:l.unit_cost_usd, amount_usd:l.amount_usd,
+      stock_qty:l.stock_qty==null?null:Number(l.stock_qty),
+      incoming:Number(l.backorder_qty)||0,                                   // 입고되면 재고에 더해질 미입고 수량(qty−received)
+      projected:(l.stock_qty==null)?null:((Number(l.stock_qty)||0)+(Number(l.backorder_qty)||0)), // 입고후 예상재고
+    }));
+    detailData=d; detSortKey=''; detSortDir='asc';
+    renderDetail();
+  }
+  function renderDetail(){
+    const d=detailData; if(!d) return;
+    const box=$('detailBox');
+    const cols=DETAIL_COLS.filter(c=>!c.cost||canCost);
+    const totTxt=canCost?(' · 총 '+usd(d.total_usd)+' / '+num(d.total_qty)+'개'):(' · 총 '+num(d.total_qty)+'개');
+    let h='<div style="display:flex;justify-content:space-between;align-items:center"><b>'+esc(d.header.ref_no)+'</b> · '+esc(d.header.order_date)+
+      totTxt+
+      (isDirector?(' <button class="btn ghost sm" id="delPo" data-id="'+d.header.id+'">삭제</button>'):'')+'</div>';
+    const rows=detSortKey?genSort(d.rows,detSortKey,detSortDir,cols):d.rows;
+    h+='<table>'+headTR(cols,detSortKey,detSortDir);
+    for(const r of rows){
+      h+='<tr>';
+      for(const c of cols){
+        if(c.k==='sku') h+='<td>'+esc(r.sku)+'</td>';
+        else if(c.k==='product_name') h+='<td>'+esc(r.product_name||'—')+'</td>';
+        else if(c.k==='matched') h+='<td>'+(r.matched?'<span class="pill ok">매칭</span>':'<span class="pill no">미매칭</span>')+'</td>';
+        else if(c.k==='qty') h+='<td class="num">'+num(r.qty)+'</td>';
+        else if(c.k==='received_qty') h+='<td class="num"'+((r.received_qty||0)>=r.qty&&r.qty>0?' style="color:#2E7D46;font-weight:700"':'')+'>'+num(r.received_qty||0)+'</td>';
+        else if(c.k==='unit_cost_usd') h+='<td class="num">'+usd(r.unit_cost_usd)+'</td>';
+        else if(c.k==='amount_usd') h+='<td class="num">'+usd(r.amount_usd)+'</td>';
+        else if(c.k==='stock_qty') h+='<td class="num">'+(r.stock_qty==null?'—':num(r.stock_qty))+'</td>';
+        else if(c.k==='incoming') h+='<td class="num">'+signedNum(r.incoming)+'</td>';
+        else if(c.k==='projected') h+='<td class="num">'+(r.projected==null?'—':num(r.projected))+'</td>';
+      }
+      h+='</tr>';
+    }
+    h+='</table>';
+    box.innerHTML=h;
+    wireSort(box.querySelector('table'),k=>{ detSortDir=nextDir(detSortKey,detSortDir,k,DETAIL_COLS); detSortKey=k; renderDetail(); });
+    const del=$('delPo'); if(del) del.addEventListener('click',()=>deletePo(del.dataset.id));
+  }
+  async function deletePo(id){
+    if(!confirm('이 구매 건을 삭제하시겠습니까? (기록만 숨김 처리)')) return;
+    const res=await fetch(session.api+'/api/purchases/'+id,{method:'DELETE',headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+    $('detailBox').classList.add('hidden'); loadList();
+  }
+
+  // ---- 전체 라인 뷰 ----
+  async function loadLines(){
+    const q=$('q').value.trim(), from=$('from').value, to=$('to').value, bo=$('boOnly').checked;
+    const p=new URLSearchParams(); if(q)p.set('q',q); if(from)p.set('from',from); if(to)p.set('to',to); if(bo)p.set('backorder_only','1');
+    const res=await fetch(session.api+'/api/purchases/lines?'+p.toString(),{headers:auth()});
+    const d=await res.json();
+    if(!res.ok||d.error){ $('linesTable').innerHTML='<tr><td>목록 실패: '+esc(d.error||res.status)+'</td></tr>'; return; }
+    canCost=!!d.cost_visible;
+    lineItems=(d.items||[]).map(x=>({ ...x, sku:x.matched?x.matched_code:x.input_code }));
+    const s=d.summary;
+    const costCard=canCost?sb(usd(s.total_usd),'총 구매액(USD)'):'';
+    $('linesSummary').innerHTML=sb(s.line_count,'라인')+sb(num(s.total_backorder),'총 backorder')+sb(s.sku_count,'SKU 수')+costCard;
+    renderLines();
+  }
+  function renderLines(){
+    const cols=LINE_COLS.filter(c=>!c.cost||canCost);
+    const rows=genSort(lineItems,lineSortKey,lineSortDir,cols);
+    let h=headTR(cols,lineSortKey,lineSortDir);
+    if(!rows.length){ h+='<tr><td colspan="'+cols.length+'" style="color:var(--muted)">기록 없음</td></tr>'; }
+    for(const r of rows){
+      h+='<tr>';
+      for(const c of cols){
+        if(c.k==='sku') h+='<td><b>'+esc(r.sku)+'</b></td>';
+        else if(c.k==='product_name') h+='<td>'+esc(r.product_name||'—')+'</td>';
+        else if(c.k==='ref_no') h+='<td>'+esc(r.ref_no)+'</td>';
+        else if(c.k==='backorder') h+='<td class="num">'+num(r.backorder)+'</td>';
+        else if(c.k==='stock_qty') h+='<td class="num">'+(r.stock_qty==null?'—':num(r.stock_qty))+'</td>';
+        else if(c.k==='projected') h+='<td class="num">'+(r.projected==null?'—':num(r.projected))+'</td>';
+        else if(c.k==='unit_cost_usd') h+='<td class="num">'+usd(r.unit_cost_usd)+'</td>';
+      }
+      h+='</tr>';
+    }
+    $('linesTable').innerHTML=h;
+    wireSort($('linesTable'),k=>{ lineSortDir=nextDir(lineSortKey,lineSortDir,k,LINE_COLS); lineSortKey=k; renderLines(); });
+  }
+
+  // ---- 모드 전환(건별 ↔ 전체 라인) ----
+  function setMode(m){
+    viewMode=m;
+    $('modePo').classList.toggle('on',m==='po'); $('modeLine').classList.toggle('on',m==='line');
+    $('poWrap').classList.toggle('hidden',m!=='po'); $('linesWrap').classList.toggle('hidden',m!=='line');
+    loadCurrent();
+  }
+  function loadCurrent(){ if(viewMode==='line') loadLines(); else loadList(); }
+
+  // 전체 라인 뷰를 현재 정렬·필터 그대로 엑셀로 내보내기(원가 열은 권한자만 포함).
+  function exportLinesExcel(){
+    if(!lineItems.length){ alert('내보낼 라인이 없습니다. 먼저 조회하세요.'); return; }
+    const rows=genSort(lineItems,lineSortKey,lineSortDir,LINE_COLS);
+    const data=rows.map(r=>{
+      const o={
+        '발주일': r.order_date?String(r.order_date).slice(0,10):'',
+        '제품코드(SKU)': r.sku||'',
+        '제품명': r.product_name||'',
+        '구매참조번호': r.ref_no||'',
+        '주문수량': Number(r.qty)||0,
+        '입고수량': Number(r.received_qty)||0,
+        'backorder(미입고)': Number(r.backorder)||0,
+        '현재고': r.stock_qty==null?'':Number(r.stock_qty),
+        '예상재고(현재+추가)': r.projected==null?'':Number(r.projected),
+      };
+      if(canCost){
+        o['구매원가(USD)']=r.unit_cost_usd==null?'':Number(r.unit_cost_usd);
+        o['금액(USD)']=(r.unit_cost_usd==null)?'':Math.round((Number(r.qty)||0)*(Number(r.unit_cost_usd)||0)*100)/100;
+      }
+      return o;
+    });
+    const ws=XLSX.utils.json_to_sheet(data);
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매라인');
+    const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,'refatrix_purchase_lines_'+ymd+'.xlsx');
+  }
+
+  // ---- 템플릿 ----
+  function downloadTemplate(){
+    const ws=XLSX.utils.json_to_sheet([{ '제품코드':'CA0032','수량':100,'구매원가(USD)':4.20,'구매참조번호':'PO-2607-01' }]);
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'구매업로드');
+    XLSX.writeFile(wb,'refatrix_purchase_template.xlsx');
+  }
+
+  // ---- 이벤트 ----
+  $('tplBtn').addEventListener('click',downloadTemplate);
+  $('linesXlsxBtn').addEventListener('click',exportLinesExcel);
+  $('upBtn').addEventListener('click',()=>$('upFile').click());
+  $('upFile').addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; });
+  $('commitBtn').addEventListener('click',commit);
+  $('cancelBtn').addEventListener('click',resetPreview);
+  $('searchBtn').addEventListener('click',loadCurrent);
+  $('q').addEventListener('keydown',e=>{ if(e.key==='Enter') loadCurrent(); });
+  $('modePo').addEventListener('click',()=>setMode('po'));
+  $('modeLine').addEventListener('click',()=>setMode('line'));
+  $('boOnly').addEventListener('change',loadLines);
+
+  // ---- 포털 세션 자동 로그인 ----
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  (function(){ try{ const ps=portalSession(); if(ps&&ps.token){
+    const apiEl=$('api');
+    session={token:ps.token,user:ps.user||{},api:(ps.api||(apiEl?apiEl.value:'')||'https://refatrix-production.up.railway.app').replace(/\/+$/,'')};
+    onLoggedIn(ps.user||{});
+  } }catch(e){ console.error('auto-login',e); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

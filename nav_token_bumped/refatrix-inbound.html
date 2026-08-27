@@ -1,0 +1,2202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refatrix · 수입 입고 Recepción · build 20260827reg2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;font-size:15px;line-height:1.5}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 14px 60px}
+  header{padding:16px 0 6px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{font-size:20px;margin:0;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:12.5px}
+  .langbtn{margin-left:auto;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 11px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:15px;margin-bottom:13px}
+  .card h2{font-size:15px;margin:0 0 10px}
+  .hint{color:var(--muted);font-size:12.5px;margin:0 0 9px}
+  .btn{background:var(--steel);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+  .btn:hover{filter:brightness(1.08)} .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.g{background:var(--green)} .btn.o{background:var(--gold)} .btn.r{background:var(--red)}
+  .btn.ghost{background:var(--card);color:var(--steel-d);border:1.5px solid var(--line)}
+  .btn.sm{padding:6px 12px;font-size:12.5px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:7px;background:var(--line);color:var(--steel-d)}
+  .tag.g{background:#DCEDE4;color:var(--green)} .tag.o{background:#F7E9CD;color:#8A6420}
+  .tag.r{background:#F7DED8;color:var(--red)} .tag.s{background:#E1E9F0;color:var(--steel-d)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:9px 11px}
+  .kpi .l{font-size:11px;color:var(--muted)} .kpi .v{font-size:19px;font-weight:700;letter-spacing:-.5px}
+  .kpi .v small{font-size:11px;color:var(--muted);font-weight:500}
+  /* 선적 목록 */
+  .ship{border:1.5px solid var(--line);border-radius:12px;padding:12px 13px;cursor:pointer;transition:.12s;margin-bottom:8px}
+  .ship:hover{border-color:var(--steel)}
+  .ship .t{font-weight:700;font-size:15px} .ship .d{color:var(--muted);font-size:12px;margin-top:1px}
+  .ship .pr{height:6px;background:var(--line);border-radius:4px;margin-top:8px;overflow:hidden}
+  .ship .pr i{display:block;height:100%;background:var(--green);width:0}
+  /* 업로드 */
+  .drop{border:2px dashed var(--line);border-radius:14px;padding:26px 16px;text-align:center;background:var(--paper);cursor:pointer}
+  .drop:hover,.drop.over{border-color:var(--steel);background:#EFF3F7}
+  .drop .ic{font-size:30px} .drop .t{font-weight:700;margin-top:5px}
+  .field{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .field label{font-size:12.5px;font-weight:700;color:var(--steel-d)}
+  input[type=date],input[type=text],input[type=password]{font-family:inherit;padding:9px 11px;border:2px solid var(--gold);border-radius:10px;font-size:14px;background:#fff}
+  .vrow{display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+  .vrow:last-child{border-bottom:0}
+  .vbox{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-top:10px}
+  /* 단계 탭 */
+  .steps{display:flex;gap:5px;margin:12px 0 14px;flex-wrap:wrap}
+  .step{flex:1;min-width:96px;background:var(--card);border:1.5px solid var(--line);border-radius:11px;padding:8px 10px;cursor:pointer;text-align:center;font-family:inherit;color:var(--ink)}
+  .step.on{background:var(--steel);border-color:var(--steel);color:#fff}
+  .step .t{font-weight:700;font-size:13px} .step .m{font-size:10.5px;opacity:.75}
+  /* 팔렛 그리드 */
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(152px,1fr));gap:7px}
+  .pal{border:1.5px solid var(--line);border-radius:11px;padding:8px 9px;background:var(--card);cursor:pointer;text-align:left;font-family:inherit;color:var(--ink)}
+  .pal:hover{border-color:var(--steel)}
+  .pal .o{font-size:11px;color:var(--muted);font-weight:700} .pal .p{font-weight:700;font-size:14px}
+  .pal .d{font-size:10.5px;color:var(--muted);line-height:1.35}
+  .pal .bar{height:4px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden}
+  .pal .bar i{display:block;height:100%;background:var(--green);width:0}
+  .pal.st-wait{opacity:.6} .pal.st-unloaded{border-color:var(--gold);background:#FDF8EE}
+  .pal.st-checking{border-color:var(--steel);background:#EFF3F7} .pal.st-checked{border-color:var(--green);background:#F0F7F3}
+  .pal.st-done{border-color:var(--green);background:var(--green);color:#fff}
+  .pal.st-done .o,.pal.st-done .d{color:rgba(255,255,255,.82)}
+  /* 인보이스(ORDER NO)별 묶음 — 번호는 머리글에 한 번만, 카드에는 팔렛 번호만 */
+  .pgrp{border:1.5px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--card)}
+  .pgrp>.gh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 11px;background:var(--paper);border-bottom:1px solid var(--line)}
+  .pgrp>.gh .gn{font-weight:700;font-size:14px;letter-spacing:-.2px;word-break:break-all;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  /* PO번호 — 고정 접두(100RA)는 작게 붙이고, 그 뒤 실제 PO번호는 크게·자간 넓게 */
+  .gn .pfx{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:0}
+  .gn .po{font-size:29px;font-weight:700;letter-spacing:.16em;line-height:1.05;color:var(--ink);margin-right:-.16em}
+  .gn .po.plain{letter-spacing:.08em;font-size:22px}
+  .pgrp>.gh .gd{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .pgrp>.gh .ga{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .pgrp>.gb{padding:9px}
+  .gsel{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--steel-d);font-weight:700;cursor:pointer;white-space:nowrap}
+  .pal{position:relative}
+  .pal .ptop{display:flex;align-items:center;justify-content:space-between;min-height:20px;margin:-2px -1px 1px}
+  .pal .pn{font-size:23px;font-weight:700;letter-spacing:-1px;line-height:1.1}
+  .pal .pn small{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:0;vertical-align:2px}
+  .pal.st-done .pn small{color:rgba(255,255,255,.8)}
+  .pal .undo{border:1px solid var(--line);background:var(--card);color:var(--steel-d);
+    border-radius:8px;font-size:12px;font-family:inherit;line-height:1;padding:4px 7px;cursor:pointer}
+  .pal .undo:hover{border-color:var(--red);color:var(--red)}
+  .pal .pck{width:17px;height:17px;accent-color:var(--red);cursor:pointer;margin:0}
+  .pal.sel{border-color:var(--red);background:#FDF3F1;box-shadow:0 0 0 2px rgba(192,83,59,.14)}
+  /* 패킹리스트 보기 창 링크 */
+  .flnk{color:var(--steel-d);text-decoration:none;border-bottom:1px dotted var(--line)}
+  .flnk:hover{color:var(--steel)}
+  /* 점유 표시(다른 작업자가 잡고 있는 팔렛) */
+  .wchip{display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;background:#F7E9CD;color:#8A6420;
+    border-radius:7px;padding:2px 6px;white-space:nowrap}
+  /* 적치 — 대기 팔렛 줄 / 작업 랙 배너 */
+  .ppal{border:1.5px solid var(--line);border-radius:12px;background:var(--card);padding:10px 12px;margin-bottom:8px;
+    display:flex;gap:12px;align-items:center;flex-wrap:wrap;cursor:pointer;font-family:inherit;color:var(--ink);text-align:left}
+  .ppal:hover{border-color:var(--steel)}
+  .ppal.done{opacity:.6;border-color:var(--green);background:#F4FAF6;cursor:default}
+  .ppal .who{min-width:140px}
+  .ppal .po{font-size:11px;color:var(--muted);font-weight:700}
+  .ppal .pl{font-size:15px;font-weight:700}
+  .ppal .zs{display:flex;gap:5px;flex-wrap:wrap}
+  .zchip{font-size:12px;font-weight:700;border-radius:8px;padding:3px 9px;background:#E1E9F0;color:var(--steel-d)}
+  .zchip.n{background:#F7E9CD;color:#8A6420}
+  .ppal .num2{font-size:12px;color:var(--muted)} .ppal .num2 b{color:var(--ink);font-size:14px}
+  .ppal .rt{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .ppal .pb{width:96px;height:6px;background:var(--line);border-radius:4px;overflow:hidden}
+  .ppal .pb i{display:block;height:100%;background:var(--green)}
+  .racklock{background:var(--steel);color:#fff;border-radius:12px;padding:10px 13px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .racklock .k{font-size:11px;opacity:.85;font-weight:700}
+  .racklock .v{font-size:26px;font-weight:700;letter-spacing:.08em;line-height:1}
+  .racklock .r2{margin-left:auto;font-size:12.5px;opacity:.95}
+  .rackbig{background:var(--steel);color:#fff;border-radius:11px;padding:7px 15px;font-weight:700;font-size:26px;letter-spacing:.06em}
+  .rackbig.n{background:var(--gold)}
+  .cnt{font-size:30px;font-weight:700;letter-spacing:-1px}
+  .cnt small{font-size:13px;color:var(--muted);font-weight:500}
+  .step2{background:#EFF3F7;border-left:3px solid var(--steel);padding:7px 11px;border-radius:0 9px 9px 0;font-size:12px;color:var(--steel-d);margin:0 0 10px}
+  .bigwarn{background:#FDF3F1;border:1.5px solid var(--red);color:var(--red);border-radius:12px;padding:11px 13px;margin-bottom:10px;font-size:13px}
+  .bigwarn b{font-size:14.5px}
+  /* 스캔 */
+  .scanbox{border:2px solid var(--line);border-radius:14px;padding:14px;min-height:120px;display:flex;flex-direction:column;justify-content:center;background:var(--card)}
+  .scanbox.ok{border-color:var(--green);background:#F3F9F5} .scanbox.warn{border-color:var(--red);background:#FDF3F1}
+  .scanbox .sku{font-size:25px;font-weight:700;letter-spacing:-.8px} .scanbox .nm{color:var(--muted);font-size:12px}
+  .scanbox .z{display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .zone{background:var(--steel);color:#fff;border-radius:10px;padding:6px 13px;font-weight:700;font-size:17px}
+  .zone.new{background:var(--gold)}
+  /* 목적지 존(존 이동용 임시 팔렛) — 작업자가 이 숫자만 보고 박스를 옮긴다 */
+  .zbig{display:flex;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;border-radius:12px;
+        background:#EAF0F6;border:2px solid var(--steel)}
+  .zbig .n{display:flex;align-items:center;justify-content:center;min-width:58px;height:52px;border-radius:11px;
+           background:var(--steel);color:#fff;font-size:30px;font-weight:800;letter-spacing:-1px}
+  .zbig .t{font-size:12px;color:var(--muted);font-weight:700}
+  .zbig .v{font-size:19px;font-weight:800;line-height:1.2}
+  .zbig.z1{background:#EAF1F7;border-color:#2E6F9E} .zbig.z1 .n{background:#2E6F9E}
+  .zbig.z2{background:#E7F1EC;border-color:#0F6E56} .zbig.z2 .n{background:#0F6E56}
+  .zbig.z3{background:#F8F1E3;border-color:#9A6512} .zbig.z3 .n{background:#9A6512}
+  .zbig.z4{background:#F0EBF8;border-color:#6B4FB0} .zbig.z4 .n{background:#6B4FB0}
+  .zbig.none{background:#FDF3F1;border-color:var(--red)} .zbig.none .n{background:var(--red);font-size:22px}
+  .zchip2{display:inline-block;min-width:17px;text-align:center;border-radius:5px;color:#fff;font-size:10.5px;
+          font-weight:800;padding:1px 5px;margin-left:4px}
+  .zchip2.z1{background:#2E6F9E}.zchip2.z2{background:#0F6E56}.zchip2.z3{background:#9A6512}.zchip2.z4{background:#6B4FB0}
+  .zchip2.none{background:#C0533B}
+  .idle{color:var(--muted);text-align:center;font-size:13px}
+  /* 검수 팔렛 선택 칩 — 스캔 대기 없이 탭으로 바로 시작 */
+  .palpick{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 2px}
+  .palpick .pchip{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--line);border-radius:10px;
+    padding:7px 12px;background:var(--card);cursor:pointer;font-size:13px;font-weight:700}
+  .palpick .pchip:hover{border-color:var(--steel)}
+  .palpick .pchip .n{background:var(--steel);color:#fff;border-radius:7px;padding:2px 8px;font-size:14px}
+  .palpick .pchip small{color:var(--muted);font-weight:500}
+  .palpick .pchip.cand{border-color:#8A6300;background:#FDF8EE}
+  .locked{background:var(--green);color:#fff;border-radius:11px;padding:10px 12px;margin-bottom:10px}
+  .locked .a{font-size:11px;opacity:.85;font-weight:700} .locked .b{font-size:16px;font-weight:700}
+  .locked .c{font-size:11.5px;opacity:.9}
+  .scaninput{display:flex;gap:8px;margin-top:10px}
+  .scaninput input{flex:1;border-color:var(--steel)}
+  .pbar{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin:9px 0 5px}
+  .pbar i{display:block;height:100%;background:var(--green);width:0}
+  .skulist{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:11px}
+  .skurow{display:flex;gap:8px;padding:6px 9px;border-bottom:1px solid var(--line);font-size:12px;align-items:center}
+  .skurow:last-child{border-bottom:0} .skurow.done{background:#F2F8F4}
+  .skurow .s{font-weight:700;min-width:60px} .skurow .z2{font-size:10px;font-weight:700;color:var(--steel-d);background:var(--line);border-radius:6px;padding:1px 5px}
+  .skurow .c{margin-left:auto;font-weight:700;white-space:nowrap}.skurow .c.ok{color:var(--green)}
+  .carts{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+  .cart{border:1.5px solid var(--line);border-radius:11px;padding:10px;background:var(--card);cursor:pointer;text-align:left;font-family:inherit;color:var(--ink)}
+  .cart:hover{border-color:var(--steel)} .cart.on{border-color:var(--steel);background:#EFF3F7} .cart.empty{opacity:.4;cursor:default}
+  .cart .zn{font-size:21px;font-weight:700} .cart .cd{font-size:11.5px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)} th{font-size:11px;color:var(--muted);background:var(--paper);position:sticky;top:0}
+  td.num,th.num{text-align:right}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:11px;font-size:13.5px;opacity:0;pointer-events:none;transition:.2s;z-index:60}
+  .toast.on{opacity:1}
+  .hidden{display:none}
+  .note{background:#EFF3F7;border-left:3px solid var(--steel);padding:8px 11px;border-radius:0 9px 9px 0;font-size:12px;color:var(--steel-d);margin:9px 0}
+  .note.green{background:#F0F7F3;border-left-color:var(--green);color:#2C5C42}
+
+  /* ===== PDA 컴팩트 모드(2026-08-26) — 현장 스캐너 화면(작은 폭)에서 "리딩 결과"를 항상 보이게 =====
+     문제: 상단 고정 헤더(#rnav 바+하위메뉴, 좁은 폭에서 여러 줄로 접힘)가 body padding-top 을 크게 잡고,
+           그 아래 페이지 헤더·선적 헤더·단계 버튼까지 쌓여서 스캔 결과 박스(#scanres/#putres)가 화면 밖으로 밀림.
+     해결: ① 상단 고정 영역을 한 줄(약 40px)로 축소 ② 페이지/선적 헤더를 압축
+           ③ 스캔 결과 + 입력칸 + 진행줄을 .scanstick 으로 묶어 헤더 바로 아래에 sticky 고정.
+     켜짐 조건: 화면 폭 <=640px 자동, 또는 우하단 토글 버튼(localStorage wh_pda 로 기억). */
+  .scanstick{}                                   /* 일반 모드에서는 아무 효과 없음 */
+  /* 토글은 페이지 헤더 안(🌐 옆) — 화면 위에 떠서 [적치 저장] 같은 버튼을 가리지 않게 한다 */
+  .pdabtn{background:var(--steel);color:#fff;border:0;border-radius:9px;padding:5px 11px;
+    font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;line-height:1.15;white-space:nowrap}
+  .pdabtn:active{filter:brightness(1.12)}
+  body.pda .pdabtn{padding:3px 9px;font-size:11px}
+  /* — 상단 고정 영역 축소 (nav.js 가 주입하는 #rnav 를 덮어쓴다. nav 뒤에 로드되므로 !important 로 확정) — */
+  body.pda #rnav .rsub{display:none!important}
+  body.pda #rnav .rbar{height:40px!important;padding:0 6px!important}
+  body.pda #rnav .rlogo,body.pda #rnav .rwho,body.pda #rnav .rpres{display:none!important}
+  body.pda #rnav .rhome{width:26px!important;height:26px!important;margin-right:3px!important;font-size:13px!important}
+  body.pda #rnav .rg{padding:12px 8px!important;font-size:11.5px!important}
+  body.pda #rnav .rlogout{margin-left:6px!important;padding:4px 9px!important;font-size:10px!important}
+  /* — 페이지·선적 헤더 압축 — */
+  body.pda .wrap{padding:0 8px 44px}
+  body.pda header{padding:4px 0 0}
+  body.pda header h1{font-size:13px}
+  body.pda header .sub{display:none}
+  body.pda .langbtn{padding:3px 8px;font-size:11px}
+  body.pda .card{padding:8px;border-radius:11px;margin-bottom:8px}
+  body.pda .card h2{font-size:13px;margin:0 0 4px}
+  body.pda .dhint{display:none}                  /* 선적 ETA·첨부 줄 — 스캔 중에는 불필요 */
+  body.pda .steps{margin:6px 0 7px;gap:4px}
+  body.pda .step{min-width:0;padding:5px 3px}
+  body.pda .step .t{font-size:11.5px} body.pda .step .m{font-size:9.5px}
+  /* — 스캔 결과·입력칸을 헤더 바로 아래에 고정 — */
+  body.pda .scanstick{position:sticky;top:var(--navh,40px);z-index:40;background:var(--card);
+    margin:0 -8px 7px;padding:6px 8px 8px;border-bottom:1.5px solid var(--line);
+    box-shadow:0 9px 13px -11px rgba(0,0,0,.6);max-height:70vh;overflow:auto}
+  /* 잠금줄은 한 줄로 — [팔렛] [예상] [저장상태] 순, 넘치면 저장상태만 말줄임 */
+  body.pda .locked{padding:4px 9px;margin-bottom:5px;display:flex;gap:9px;align-items:baseline;flex-wrap:nowrap;overflow:hidden}
+  body.pda .locked .a{font-size:10px;order:3;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+  body.pda .locked .b{font-size:13px;white-space:nowrap;order:1}
+  body.pda .locked .c{font-size:10.5px;white-space:nowrap;order:2}
+  body.pda .scanbox{min-height:0;padding:9px 11px;border-radius:11px}
+  body.pda .scanbox .sku{font-size:21px}
+  body.pda .zbig{margin-top:6px;padding:7px 10px;gap:9px}
+  body.pda .zbig .n{min-width:46px;height:40px;font-size:25px}
+  body.pda .zbig .v{font-size:16px}
+  body.pda .racklock{padding:7px 10px;margin-bottom:7px}
+  body.pda .racklock .v{font-size:21px} body.pda .racklock .r2{font-size:11px}
+  body.pda .step2{padding:6px 9px;font-size:11.5px;margin:0 0 7px}
+  body.pda .bigwarn{padding:8px 10px;margin-bottom:7px;font-size:12px}
+  body.pda .scaninput{margin-top:6px}
+  body.pda .scaninput input{padding:8px 10px}
+  body.pda .pbar{margin:6px 0 3px}
+  body.pda .skulist{max-height:none}
+  body.pda .palpick .pchip{padding:6px 10px;font-size:12px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1 id="ttl">수입 입고 · Recepción</h1>
+  <span class="sub" id="sub">패킹리스트 업로드 → 검수 → 적치 → 마감</span>
+  <button class="langbtn" id="langToggle">🌐 한국어</button>
+</header>
+<div id="app"><div class="card"><div class="idle" id="boot">불러오는 중…</div></div></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="refatrix-nav.js?v=20260827rl"></script>
+<script>
+(function(){
+  function sess(){
+    try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+    return null;
+  }
+  var BUILD='20260827reg2';
+  var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  try{ console.log('[refatrix-inbound] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
+  var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
+  function L(ko,es){ return LANG==='es'?es:ko; }
+  var isDir=(S&&S.user&&S.user.role==='director');
+  var $=function(id){return document.getElementById(id);};
+  var fmt=function(n){return Number(n||0).toLocaleString(LANG==='es'?'es-MX':'ko-KR');};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var toastT; function toast(m){var t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('on');},1900);}
+  /* ===== 스캔 소리 알림(2026-08-17) — 스캐너 자체 삑소리와 별개로, 시스템이 "결과"를 소리로 알린다.
+     ✔ 등록음(2음 상승)  = 스캔이 정상 집계됨 → 바로 다음 박스 스캔 가능
+     ✔ 저장음(3음 상승)  = 서버 저장 완료(검수완료·적치저장)
+     ⚠ 주의음(하강 1음)  = 집계는 됐지만 확인 필요(소입수 불일치·존/랙 미지정·후보 대기)
+     ✖ 오류음(저음 2회)  = 차단됨 — 집계 안 됨(미등록·초과·불일치·저장 실패)
+     · 안내음(단음)      = 위치 안내·랙 잠금 등 정보성 확인 */
+  var AC=null;
+  function tone(freq,dur,delay,type,vol){
+    try{
+      var Ctx=window.AudioContext||window.webkitAudioContext; if(!Ctx) return;
+      if(!AC) AC=new Ctx();
+      if(AC.state==='suspended'&&AC.resume) AC.resume();
+      var t0=AC.currentTime+(delay||0)/1000;
+      var o=AC.createOscillator(), g=AC.createGain();
+      o.type=type||'sine'; o.frequency.value=freq;
+      g.gain.setValueAtTime(vol||0.28,t0);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+dur/1000);
+      o.connect(g); g.connect(AC.destination);
+      o.start(t0); o.stop(t0+dur/1000+0.02);
+    }catch(e){}
+  }
+  function sndOk(){ tone(1175,70,0); tone(1568,90,85); }                       // 삐빅↑ 등록됨
+  function sndSaved(){ tone(784,90,0); tone(988,90,100); tone(1319,140,200); } // 따라란↑ 저장됨
+  function sndWarn(){ tone(660,110,0,'triangle'); tone(440,220,110,'triangle'); } // 뚜-웅↓ 확인 필요
+  function sndErr(){ tone(196,160,0,'square',0.2); tone(196,200,220,'square',0.2); } // 뻑뻑 차단
+  function sndInfo(){ tone(880,80,0); }                                        // 안내
+
+  /* ===== 스캔 위생(2026-08-17) — 스캐너가 한 번에 코드를 2개 이상 읽는 현장 대응 =====
+     · 같은 코드가 DUP_MS 안에 또 들어오면 이중 리딩 → 조용히 무시(카운트 중복 방지)
+     · 정상 집계 직후 GRACE_MS(0.4초) 안에 들어온 "모르는 코드"는 카톤에 같이 붙은 부속 바코드(EAN 등) → 조용히 무시
+     · 그 외 모르는 코드도 GRACE_MS 만큼 기다렸다가 오류 표시 — 그 사이 정상 코드가 오면 취소(순서 뒤바뀜 대응) */
+  var DUP_MS=450, GRACE_MS=400;   // 한 트리거의 다중/재전송 리딩은 보통 50~300ms 간격 — 정상 연속 스캔(다음 박스 조준까지 0.7초+)은 걸리지 않는 선
+  var dupCode='', dupAt=0, lastGoodAt=0;
+  var dupWarned=false;
+  function dupScan(norm){
+    var now=Date.now();
+    if(norm && norm===dupCode && (now-dupAt)<DUP_MS){
+      dupAt=now;                                   // ★ 연쇄 차단: 같은 라벨이 계속 보이는 동안(자동 모드·트리거 유지)
+      if(!dupWarned){ dupWarned=true;              //    몇 번을 다시 읽어도 1회만 집계. 경고는 연쇄당 1번만.
+        sndWarn(); toast('⚠ '+L('중복 리딩 — 집계하지 않았습니다','Lectura duplicada — no contada')); }
+      logScan(norm,L('중복 무시','duplicado'));
+      return true;
+    }
+    dupCode=norm; dupAt=now; dupWarned=false; return false;
+  }
+  /* 스캔 이력(최근 50건) — "수량이 안 맞는" 원인을 현장에서 바로 확인하는 용도 */
+  var scanLog=[];
+  function logScan(code,res){
+    scanLog.unshift({at:new Date(),code:String(code||''),res:res});
+    if(scanLog.length>50) scanLog.pop();
+    var el=$('slogbox'); if(el&&el.style.display!=='none') renderScanLog();
+  }
+  function renderScanLog(){
+    var el=$('slogbox'); if(!el) return;
+    if(!scanLog.length){ el.innerHTML='<div class="idle" style="padding:8px">'+L('아직 스캔 이력이 없습니다','Sin lecturas aún')+'</div>'; return; }
+    el.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:11.5px">'
+      +scanLog.map(function(e){
+        var t=e.at, hh=('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2);
+        var red=/중복|초과|오류|없|duplicado|más|no /.test(e.res);
+        return '<tr><td style="padding:2px 6px;color:var(--muted);white-space:nowrap">'+hh+'</td>'
+          +'<td class="mono" style="padding:2px 6px">'+esc(e.code)+'</td>'
+          +'<td style="padding:2px 6px;font-weight:700;color:'+(red?'var(--red)':'var(--green)')+'">'+esc(e.res)+'</td></tr>';
+      }).join('')+'</table>';
+  }
+  function goodScanMark(){ lastGoodAt=Date.now(); }
+  // 숫자만 8자리 이상 = 상품 EAN 등 부속 바코드로 간주(랙 번호에는 글자가 있음)
+  function looksCompanion(code){ return !/[A-Za-z]/.test(String(code||'')) && /^\d{8,}$/.test(bare(code)); }
+  /* ===== 스캐너 입력 보정 =====
+     스캐너는 US 자판 키코드를 흘려보내는데 현장 PC 자판은 스페인어(라틴아메리카)라
+     바코드의 `-` 가 `'` 로 들어온다. 변종 따옴표(’ ‘ ´ ` ʼ)까지 모두 `-` 로 되돌린다.
+     그래도 남는 자판 불일치(`/` → `-` 등)에 대비해, 최종 매칭은 구분자를 전부 무시하는
+     bare() 비교를 폴백으로 둔다. A'01'03 = A-01-03 = A/01/03 = A0103 모두 같은 코드로 본다. */
+  var QUOTE_RE=/['‘’´`ʼ]/g;
+  function normScan(v){
+    return String(v||'')
+      .replace(/[\u0000-\u001f\u007f]/g,'')   // 스캐너 접미사(CR/LF/TAB) 잔여 제거
+      .replace(QUOTE_RE,'-')                  // ' ’ ‘ ´ ` ʼ → -
+      .replace(/\s+/g,'')                     // 공백 제거(코드에 공백 없음)
+      .toUpperCase();
+  }
+  function bare(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }  // 구분자 무시 비교키
+  function bareEq(a,b){ var x=bare(a); return !!x && x===bare(b); }
+  // 코드에 해당하는 패킹리스트 "라인들" — 같은 SKU 가 여러 라인(카톤 묶음)일 수 있다(2026-08-17 라인별 저장).
+  // 정확히 일치가 하나라도 있으면 그 집합, 없으면 구분자 무시 매칭 집합.
+  function linesFor(items,code){
+    if(!items||!items.length||!code) return [];
+    var ex=items.filter(function(i){return i.code===code;});
+    if(ex.length) return ex;
+    var b=bare(code); if(!b) return [];
+    return items.filter(function(i){return bare(i.code)===b;});
+  }
+  function findItem(items,code){ return linesFor(items,code)[0]||null; }
+  // 스캔 1건을 배정할 라인 고르기 — ① 여유가 있는 라인 중 소입수량(qty÷cartons)이 라벨과 같은 라인
+  //   ② 아니면 여유 있는 첫 라인(파일 순서) ③ 전부 찼으면 첫 라인(초과 경고용, full 표시)
+  function pickLine(items,code,lblQty,roomFn){
+    var ls=linesFor(items,code);
+    if(!ls.length) return null;
+    var open=ls.filter(function(i){return roomFn(i)>0;});
+    if(!open.length) return {it:ls[0],full:true};
+    if(lblQty){ var m=open.filter(function(i){return perCarton(i)===lblQty;})[0]; if(m) return {it:m,full:false}; }
+    return {it:open[0],full:false};
+  }
+  // 라인 표식: 패킹리스트의 카톤 번호 범위(#12–31). 같은 SKU 라인 구분에 쓴다.
+  function lineTag(i){
+    if(i&&i.box_from!=null&&i.box_to!=null) return '#'+i.box_from+(i.box_to!==i.box_from?'–'+i.box_to:'');
+    return '';
+  }
+  /* ===== 카톤 라벨 파서 =====
+     현장 카톤 라벨(Code-128)은 `CTR-<제품번호>-<카톤 소입수량>` 형태다.
+       CTR-CE0796-16  →  제품번호 CE0796 · 소입수량 16 EA
+     라벨 변형(접두어 없음 / 수량 없음 / 제품번호에 하이픈)에 견디도록 후보를 순서대로 만들고,
+     패킹리스트에 실제로 존재하는 제품번호를 고른다. 아무것도 안 맞으면 1순위 해석을 그대로
+     돌려줘서 실패 메시지에 "무엇으로 읽었는지"가 보이게 한다. */
+  var LABEL_PREFIX=/^(CTR|SYD)-?(.+)$/;        // 접두어(항상 CTR-, SYD 는 방어적)
+  var LABEL_QTY=/^(.*[A-Z0-9])-(\d{1,6})$/;    // 뒤쪽 -숫자 = 소입수량
+  function findAnyItem(code){
+    if(!code||!DETAIL||!DETAIL.pallets) return null;
+    for(var i=0;i<DETAIL.pallets.length;i++){ var it=findItem(DETAIL.pallets[i].items,code); if(it) return it; }
+    return null;
+  }
+  function parseLabel(v){
+    var norm=normScan(v), cands=[], m, body=norm, pre='';
+    if(!norm) return {raw:'',norm:'',code:'',qty:0,prefix:'',matched:false};
+    m=norm.match(LABEL_PREFIX); if(m){ pre=m[1]; body=m[2]; }
+    m=body.match(LABEL_QTY); if(m) cands.push({code:m[1],qty:+m[2],prefix:pre});   // ① 접두어 제거 + 수량 분리
+    cands.push({code:body,qty:0,prefix:pre});                                      // ② 접두어만 제거
+    if(pre){
+      m=norm.match(LABEL_QTY); if(m) cands.push({code:m[1],qty:+m[2],prefix:''});   // ③ 접두어를 코드로 취급
+      cands.push({code:norm,qty:0,prefix:''});                                      // ④ 원문 그대로
+    }
+    for(var i=0;i<cands.length;i++){
+      var it=findAnyItem(cands[i].code);
+      if(it){ return {raw:String(v==null?'':v),norm:norm,code:it.code,qty:cands[i].qty,prefix:cands[i].prefix,matched:true}; }
+    }
+    /* 아무것도 안 맞았을 때 무엇으로 읽었다고 보고할지 —
+       CTR- 접두어가 있으면 라벨 포맷을 신뢰해 제품번호/수량으로 분해한 값을,
+       접두어가 없으면(랙 라벨 등) 뒤쪽 숫자를 수량으로 단정하지 않고 원문을 그대로 돌려준다. */
+    var f=pre?(cands[0]||{code:body,qty:0,prefix:pre}):{code:norm,qty:0,prefix:''};
+    return {raw:String(v==null?'':v),norm:norm,code:f.code,qty:f.qty,prefix:f.prefix,matched:false};
+  }
+  function perCarton(i){ return (i&&i.cartons)?Math.round((i.qty||0)/i.cartons):0; }   // 패킹리스트 기준 카톤당 수량
+  // 라벨 소입수량 ↔ 패킹리스트 카톤당 수량 대사(표시용)
+  function qtyMismatch(it,lblQty){
+    var exp=perCarton(it);
+    if(!lblQty||!exp||lblQty===exp) return null;
+    return {exp:exp,got:lblQty};
+  }
+  // 입력칸 실시간 보정 — 스캔/타이핑 중에도 화면에 바로 `-` 로 보이게 한다
+  function liveNorm(el){
+    if(!el) return el;
+    el.addEventListener('input',function(){
+      var v=el.value, n=v.replace(QUOTE_RE,'-').toUpperCase();
+      if(n!==v){ var p=el.selectionStart; el.value=n; try{ el.setSelectionRange(p,p); }catch(e){} }
+    });
+    return el;
+  }
+  var scanRaw='';                              // 직전 스캔의 수신 원문(진단 표시용)
+  /* ===== 스캔 입력 배선(2026-08-17) — Enter 에 의존하지 않는다 =====
+     문제: 입력칸 비우기가 Enter 키 처리에만 걸려 있어, 스캐너 전송 타이밍/IME 간섭으로
+     Enter 가 어긋나면 값이 남아 다음 스캔과 섞였다.
+     해결: ① 처리 직전에 무조건 입력칸을 비운다(처리 중 오류가 나도 잔여값 없음)
+           ② 스캐너는 문자를 기관총처럼(간격<80ms) 쏟으므로, 전송이 140ms 멎으면
+              Enter 없이도 자동 처리 — 접미사 설정·키 이벤트와 무관하게 항상 동작
+           ③ 사람이 손으로 치는 속도(간격>80ms)가 감지되면 자동 처리를 끄고
+              Enter/[스캔] 버튼을 기다린다(타이핑 도중 잘려나가는 사고 방지) */
+  function wireScanInput(inp,fn){
+    liveNorm(inp);
+    var t=null, lastEvt=0, manual=false;
+    function clearT(){ if(t){ clearTimeout(t); t=null; } }
+    function fire(){
+      clearT(); manual=false; lastEvt=0;
+      var v=inp.value; inp.value='';           // ★ 처리보다 먼저 비운다
+      try{ inp.focus(); }catch(e){}
+      if(!v) return;
+      scanRaw=v; fn(v);
+    }
+    inp.addEventListener('input',function(){
+      var now=Date.now();
+      if(inp.value===''){ manual=false; lastEvt=0; clearT(); return; }
+      if(lastEvt && (now-lastEvt)>80) manual=true;     // 손 타이핑 감지
+      lastEvt=now; clearT();
+      if(!manual) t=setTimeout(fire,140);              // 스캐너 전송 종료 → 자동 처리
+    });
+    function onEnter(e){ if(e.key==='Enter'||e.keyCode===13){ e.preventDefault(); fire(); } }
+    inp.addEventListener('keydown',onEnter);
+    inp.addEventListener('keypress',onEnter);          // IME/브라우저별 keydown 누락 대비
+    return fire;                                       // [스캔] 버튼용
+  }
+  /* 라벨을 어떻게 분해했는지 항상 보여준다 — 실패 시 원인이 화면에서 바로 읽힌다 */
+  function labelHint(){
+    var l=scanLbl; if(!l||!l.norm) return '';
+    var bits=[];
+    if(l.norm!==l.code||l.qty) bits.push(L('라벨','Etiqueta')+' <span class="mono">'+esc(l.norm)+'</span>');
+    bits.push(L('제품번호','Clave')+' <b class="mono">'+esc(l.code)+'</b>');
+    if(l.qty) bits.push(L('소입수량','Cant./caja')+' <b>'+fmt(l.qty)+' EA</b>');
+    if(String(scanRaw||'')&&normScan(scanRaw)!==String(scanRaw||'')) bits.push(L('자판 보정됨','Teclado corregido'));
+    return '<div class="z" style="font-size:11px;color:var(--muted);flex-wrap:wrap;gap:6px">'+bits.join(' · ')+'</div>';
+  }
+  function zoneOf(rack){ if(!rack) return 'NEW'; var m=String(rack).match(/^[A-Za-z]+/); return m?m[0].toUpperCase():'NEW'; }
+  /* ===== 존 이동용 임시 팔렛(0172) =====
+     서버가 라인별로 zone(1~4)·zone_name 을 내려준다. 랙에 지정된 존이 1순위,
+     랙이 없는 신규 SKU 는 '신규 기본 존'. 아직 아무것도 지정 안 됐으면 null → "존 미지정" 경고. */
+  function zoneNo(i){ return (i && i.zone != null) ? Number(i.zone) : null; }
+  function zoneNm(i){ return (i && i.zone_name) ? String(i.zone_name) : ''; }
+  // 검수 스캔 결과 상단의 큰 목적지 배너
+  function zoneBigHtml(i){
+    var z=zoneNo(i);
+    if(!z){
+      return '<div class="zbig none"><div class="n">?</div><div><div class="t">'+L('옮길 곳','Destino')+'</div>'
+        +'<div class="v" style="color:var(--red)">'+L('존 미지정','Sin zona')+'</div>'
+        +'<div class="t" style="font-weight:500">'+L('디렉터에게 존 지정을 요청하세요 (창고 › 존 지정)','Pida al director asignar la zona')+'</div></div></div>';
+    }
+    var nm=zoneNm(i), dflt=i&&i.zone_is_default;
+    return '<div class="zbig z'+z+'"><div class="n">'+z+'</div><div><div class="t">'+L('이 박스를 옮길 곳','Mover esta caja a')+'</div>'
+      +'<div class="v">'+L('존','Zona')+' '+z+(nm?' · '+esc(nm):'')+'</div>'
+      +'<div class="t" style="font-weight:500">'+(dflt?L('🆕 신규 SKU 기본 존','🆕 zona por defecto (SKU nuevo)'):L('존 이동용 임시 팔렛','Pallet de traslado'))+'</div></div></div>';
+  }
+  // SKU 목록·적치 줄에 붙는 작은 존 칩
+  function zoneChip(i){
+    var z=zoneNo(i);
+    return '<span class="zchip2 '+(z?('z'+z):'none')+'" title="'+L('존 이동용 임시 팔렛','Pallet de traslado')+'">'+(z?z:'?')+'</span>';
+  }
+  $('langToggle').textContent=LANG==='es'?'🌐 한국어':'🌐 Español';
+  $('langToggle').addEventListener('click',function(){ var n=LANG==='es'?'ko':'es'; try{localStorage.setItem('wh_lang',n);}catch(e){} location.reload(); });
+  $('ttl').textContent=L('수입 입고 · Recepción','Recepción · 수입 입고');
+  $('sub').textContent=L('패킹리스트 업로드 → 검수 → 적치 → 마감','Lista de empaque → Verificación → Acomodo → Cierre');
+
+  function api(path,opt){ opt=opt||{}; opt.headers=Object.assign({},AUTH,opt.headers||{});
+    return fetch(API+path,opt).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j||{}}; }).catch(function(){ return {ok:r.ok,status:r.status,body:{}}; }); }); }
+
+  if(!S){ $('app').innerHTML='<div class="card"><div class="idle">'+L('세션이 없습니다. 포털에서 다시 여세요.','Sin sesión. Abra desde el portal.')+'</div></div>'; return; }
+
+  /* ============ 상태 ============ */
+  var VIEW='list', SHIP=null, DETAIL=null, STEP='unload';
+  var scanLbl=null, parsed=null;   // 마지막 라벨 해석 결과 / 업로드 파싱 결과
+  var putPal=null, putRack=null, putAdd={}, putSaveRack={}, putLast=null, putWarn=null, putSaving=false, putFlushT=null;
+  var putNoMaster={}, putEdit=null;   // 적치 수정(2026-08-17): 마스터 미반영 위치변경 표시 / 열려 있는 ✎ 편집 라인
+  /* 자동 갱신(다수 작업자 동시 작업) — 25초. 스캔·미저장 중엔 건너뛰고, 데이터가 바뀔 때만 다시 그린다. */
+  var POLL_MS=25000, pollT=null, pollSig='', pollBusy=false, WORK_PID=null, WORK_STEP=null;
+  var undoSel={}, CURGROUPS=[];   // 하차 취소 개별 선택 {palletId:true} + 현재 화면 그룹
+
+  /* ============ 목록 ============ */
+  function loadList(){
+    VIEW='list'; SHIP=null; pollSig='';
+    api('/api/inbound').then(function(o){
+      if(!o.ok){ $('app').innerHTML=err(o); return; }
+      var items=o.body.items||[];
+      pollSig=sigList(items);
+      var html='<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">'+L('선적 목록','Embarques')+'</h2>'
+        +'<button class="btn g sm" id="btnNew">＋ '+L('새 선적 (패킹리스트 업로드)','Nuevo (subir lista)')+'</button></div>';
+      if(!items.length) html+='<div class="idle" style="padding:20px">'+L('선적이 없습니다. 패킹리스트를 업로드하세요.','Sin embarques. Suba una lista de empaque.')+'</div>';
+      html+=items.map(function(s){
+        var pct=s.pallets?Math.round(s.pallets_checked/s.pallets*100):0;
+        var st={incoming:L('운송중','En tránsito'),receiving:L('입고중','Recibiendo'),closed:L('마감','Cerrado'),cancelled:L('취소','Cancelado')}[s.status]||s.status;
+        var cls={incoming:'s',receiving:'o',closed:'g',cancelled:'r'}[s.status]||'';
+        return '<div class="ship" data-id="'+s.id+'"><div class="row" style="justify-content:space-between">'
+          +'<span class="t mono">'+esc(s.invoice_no||('#'+s.id))+'</span>'
+          +'<span class="row" style="gap:6px;align-items:center"><span class="tag '+cls+'">'+st+'</span>'
+          +((isDir&&s.status!=='closed')?'<button class="btn r sm" data-del="'+s.id+'" title="'+L('삭제','Eliminar')+'">🗑</button>':'')
+          +'</span></div>'
+          +'<div class="d">ETA '+(s.eta||'—')+' · '+L('팔렛','Pallets')+' '+s.pallets_checked+'/'+s.pallets+' · '+L('카톤','Cajas')+' '+fmt(s.cartons)+' · '+fmt(s.qty)+' EA</div>'
+          +'<div class="pr"><i style="width:'+pct+'%"></i></div></div>';
+      }).join('');
+      html+='</div>';
+      $('app').innerHTML=html;
+      $('btnNew').addEventListener('click',showUpload);
+      document.querySelectorAll('.ship').forEach(function(b){ b.addEventListener('click',function(){ openShip(+b.dataset.id); }); });
+      document.querySelectorAll('[data-del]').forEach(function(b){ b.addEventListener('click',function(ev){ ev.stopPropagation(); askDelete(b); }); });
+    });
+  }
+  function err(o){ return '<div class="card"><div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)">'
+    +(o.status===403?L('접근 권한이 없습니다(창고 권한 필요).','Sin permiso (se requiere almacén).')
+      :L('서버 오류 — 마이그레이션(npm run migrate)이 적용됐는지 확인하세요.','Error del servidor — verifique la migración.'))
+    +' <span class="mono">'+(o.body&&o.body.error||o.status)+'</span></div></div>'; }
+
+  /* ============ 삭제(디렉터 전용) ============ */
+  function askDelete(btn){
+    if(!isDir){ toast(L('디렉터만 삭제할 수 있습니다','Solo el director puede eliminar')); return; }
+    var id=+btn.dataset.del, card=btn.closest('.ship');
+    if(card.querySelector('.delrow')) return;
+    var row=document.createElement('div'); row.className='delrow'; row.style.marginTop='9px';
+    row.innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red);margin:0 0 7px">'
+      +L('이 선적을 삭제합니다. 입고예정 재고에서도 빠집니다.','Se eliminará este embarque y su stock entrante.')+'</div>'
+      +'<div class="row"><input type="password" class="delpin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px">'
+      +'<button class="btn r sm delok">'+L('삭제','Eliminar')+'</button>'
+      +'<button class="btn ghost sm delcancel">'+L('취소','Cancelar')+'</button></div>';
+    card.appendChild(row);
+    row.addEventListener('click',function(e){ e.stopPropagation(); });
+    var pin=row.querySelector('.delpin'); pin.focus();
+    row.querySelector('.delcancel').addEventListener('click',function(){ row.remove(); });
+    function go(){
+      if(!pin.value){ toast(L('디렉터 PIN을 입력하세요','Ingrese el PIN del director')); return; }
+      row.querySelector('.delok').disabled=true;
+      api('/api/inbound/'+id,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin.value})}).then(function(o){
+        if(!o.ok||o.body.error){
+          toast(o.body.error==='bad_pin'?L('PIN이 올바르지 않습니다','PIN incorrecto')
+               :o.body.error==='director_only'?L('디렉터만 가능합니다','Solo director')
+               :o.body.error==='bad_state'?L('마감된 선적은 삭제할 수 없습니다','No se puede eliminar un embarque cerrado')
+               :L('삭제 실패','Error')+': '+(o.body.error||o.status));
+          row.querySelector('.delok').disabled=false; return;
+        }
+        toast(L('✔ 선적을 삭제했습니다','✔ Embarque eliminado')); loadList();
+      });
+    }
+    row.querySelector('.delok').addEventListener('click',go);
+    pin.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+  }
+
+  /* ============ 업로드 ============ */
+  function showUpload(){
+    VIEW='upload';
+    $('app').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">'+L('패킹리스트 업로드','Subir lista de empaque')+'</h2>'
+      +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
+      +'<p class="hint">'+L('공급자 패킹리스트만 올립니다. 인보이스(단가)는 필요 없습니다.','Solo la lista de empaque. La factura (precios) no es necesaria.')+'</p>'
+      +'<div class="drop" id="drop"><div class="ic">📄</div><div class="t">'+L('엑셀을 끌어놓거나 클릭','Arrastre el Excel o haga clic')+'</div>'
+      +'<div class="hint" style="margin:4px 0 0"><span class="mono">packing list_details</span> '+L('시트를 자동으로 찾습니다','se busca automáticamente')+'</div>'
+      +'<input type="file" id="file" accept=".xlsx,.xls" class="hidden"></div>'
+      +'<div class="field"><label>'+L('도착 예정일 (ETA)','Fecha estimada (ETA)')+'</label><input type="date" id="eta"></div>'
+      +'<div id="pout"></div></div>';
+    $('btnBack').addEventListener('click',loadList);
+    var drop=$('drop');
+    drop.addEventListener('click',function(){$('file').click();});
+    ['dragover','dragenter'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.add('over');});});
+    ['dragleave','drop'].forEach(function(e){drop.addEventListener(e,function(ev){ev.preventDefault();drop.classList.remove('over');});});
+    drop.addEventListener('drop',function(ev){ var f=ev.dataTransfer.files[0]; if(f) readFile(f); });
+    $('file').addEventListener('change',function(ev){ var f=ev.target.files[0]; if(f) readFile(f); });
+  }
+  function parseWorkbook(wb){
+    var name=wb.SheetNames.filter(function(n){return /packing/i.test(n)&&/detail/i.test(n);})[0]
+          || wb.SheetNames.filter(function(n){return /packing/i.test(n);})[0];
+    if(!name) throw new Error(L("'packing list_details' 시트를 찾지 못했습니다","No se encontró la hoja 'packing list_details'"));
+    var rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,raw:true});
+    var hi=-1;
+    for(var i=0;i<Math.min(rows.length,15);i++){ var t=(rows[i]||[]).map(function(c){return String(c==null?'':c).replace(/\s+/g,' ').toUpperCase();});
+      if(t.some(function(x){return x.indexOf('ORDER')>=0;})&&t.some(function(x){return x.indexOf('CTR NO')>=0;})){hi=i;break;} }
+    if(hi<0) throw new Error(L('헤더행(ORDER NO / CTR NO)을 찾지 못했습니다','No se encontró el encabezado'));
+    var H=(rows[hi]||[]).map(function(c){return String(c==null?'':c).replace(/\s+/g,' ').trim().toUpperCase();});
+    function col(){ var ns=[].slice.call(arguments); for(var k=0;k<ns.length;k++){var i=H.indexOf(ns[k]);if(i>=0)return i;} for(var k2=0;k2<ns.length;k2++){for(var j=0;j<H.length;j++)if(H[j].indexOf(ns[k2])>=0)return j;} return -1; }
+    var cOrd=col('ORDER NO','ORDER'),cPl=col('PL NO'),cFr=col('FROM'),cTo=col('TO'),cSku=col('CTR NO'),cDesc=col('DESCRIPTION'),cQty=col('TOTAL QTY','QTY');
+    // 카톤 수·소입수 열(2026-08-17 디렉터 확인): CARTON UNIT = 카톤 수, QTY PER C/T = 박스당 수량.
+    //   예) CARTON UNIT 2 · QTY PER C/T 12 → 12개들이 2박스 = 24개. FROM/TO 는 번호 범위일 뿐
+    //   카톤 수와 다를 수 있다(혼적·병합) — CARTON UNIT 이 있으면 그걸 우선한다.
+    var cCU=col('CARTON UNIT','CTN UNIT','CARTON QTY','C/T UNIT','CTNS');
+    var cQPC=col('QTY PER C/T',"Q'TY PER C/T",'QTY PER CTN','QTY/C/T','QTY/CTN','PCS/CTN','PER C/T');
+    if([cOrd,cPl,cFr,cTo,cSku,cQty].some(function(x){return x<0;})) throw new Error(L('필수 열이 없습니다(ORDER NO·PL NO·FROM·TO·CTR NO·QTY)','Faltan columnas requeridas'));
+    // 인보이스 번호 추출(2026-07-31 강화): 같은 셀("INVOICE NO: X") · 오른쪽 셀 · 아랫줄 셀까지 인식.
+    //   라벨 단어(NO/DATE 등)만 있는 셀은 값으로 안 봄. 못 찾으면 미리보기에서 직접 입력.
+    var inv=null;
+    var SEP=/^(?:NO|N[Oº°]\.?|NUM\w*|#|[-:.：]+)$/i;      // 라벨 뒤 구분어("NO" 등) — 건너뜀
+    // 다른 라벨 문구 = 숫자가 없고 라벨 단어를 포함(순수 텍스트) — 숫자가 섞인 값(CTR-2607-88 등)은 라벨로 안 봄
+    function isLbl(t){ return !/\d/.test(t)&&/(?:INVOICE|FACTURA|COMMERCIAL|PACKING|LIST|DATE|FECHA|ORDER|TOTAL|QTY|DESCRIPTION)/i.test(t); }
+    function invVal(s){
+      if(s==null) return null;
+      var t=String(s).trim();
+      if(t===''||SEP.test(t)||isLbl(t)) return null;
+      if(/\s/.test(t)) return null;                       // 공백 포함 문구는 번호로 안 봄
+      if(!/\d/.test(t)&&t.length<4) return null;          // 너무 짧은 비숫자
+      return t.slice(0,60);
+    }
+    outer:
+    for(var r0=0;r0<hi;r0++){ var rr=rows[r0]||[]; var rrN=(r0+1<hi)?(rows[r0+1]||[]):[];
+      for(var j=0;j<rr.length;j++){
+        var cell=String(rr[j]==null?'':rr[j]);
+        if(!/INVOICE|FACTURA|REF(?:ERENCE|ERENCIA)?\b/i.test(cell)) continue;
+        // ① 같은 셀 안: "INVOICE NO: ABC-123" / "COMMERCIAL INVOICE CI2026015" / "REF: D2607001"
+        var same=invVal(cell.replace(/^[\s\S]*?(?:INVOICE|FACTURA|REF(?:ERENCE|ERENCIA)?)\s*(?:NO|N[Oº°]|NUM\w*|#)?\.?\s*[:：\-]?\s*/i,''));
+        if(same){ inv=same; break outer; }
+        // ② 같은 행 오른쪽 셀들 — 구분어("NO")는 건너뛰고, 다른 라벨(DATE 등)을 만나면 중단
+        for(var k=j+1;k<rr.length;k++){
+          var c2=rr[k]; if(c2==null||String(c2).trim()==='') continue;
+          var t2=String(c2).trim();
+          if(SEP.test(t2)) continue;
+          if(isLbl(t2)) break;                             // 다음 라벨 구역 — 그 뒤 값은 남의 값
+          var v=invVal(t2); if(v){ inv=v; break outer; } break;
+        }
+        // ③ 아랫줄 같은 열·오른쪽 열 (헤더행 전까지만)
+        var b1=invVal(rrN[j]), b2=invVal(rrN[j+1]);
+        if(b1||b2){ inv=b1||b2; break outer; }
+      }
+    }
+    // ④ 폴백: 라벨이 아예 없는 양식 — 헤더 위 영역에서 "문서번호처럼 생긴" 단독 토큰을 찾는다.
+    //    영문 1~4자로 시작 + 숫자 총 4자리 이상 (예: D26-81319563 · D2607001 · CI2026015). D+숫자(디스패치 레퍼런스) 우선.
+    if(!inv){
+      var cand=[];
+      for(var rf=0;rf<hi;rf++){ var rrF=rows[rf]||[];
+        for(var jf=0;jf<rrF.length;jf++){
+          var tf=rrF[jf]==null?'':String(rrF[jf]).trim();
+          if(tf===''||/\s/.test(tf)||SEP.test(tf)||isLbl(tf)) continue;
+          if(/^[A-Za-z]{1,4}\d[A-Za-z0-9\-._\/]{3,}$/.test(tf)&&(tf.match(/\d/g)||[]).length>=4) cand.push(tf.slice(0,60));
+        }
+      }
+      inv=null;
+      for(var ci=0;ci<cand.length;ci++){ if(/^D\d/i.test(cand[ci])){ inv=cand[ci]; break; } } // D26… 우선
+      if(!inv&&cand.length===1) inv=cand[0];              // 후보가 하나뿐일 때만 채택(오인 방지)
+    }
+    // ▼ 수량 누락 방지(2026-07-31):
+    //   ① ORDER NO·PL NO 병합셀(빈칸) → 직전 값으로 채움(단, CTR NO·수량이 있는 데이터 행만)
+    //   ② FROM/TO(카톤번호) 없는 행(혼적 카톤 병합셀·낱개 등) → 제외하지 않고 카톤 0 으로 포함
+    //   ③ 파일 수량 합계(fileQty)와 등재 합계를 함께 반환 → 미리보기에서 대사(對査) 표시
+    var out=[]; var noCarton=0, noCartonQ=0, dropped=0, droppedQ=0, fileQty=0, cuMismatch=[];
+    var lastOrd=null, lastPl=null;
+    for(var i2=hi+1;i2<rows.length;i2++){ var r=rows[i2]||[];
+      var code=String(r[cSku]==null?'':r[cSku]).trim();
+      var qty=Number(r[cQty]||0);
+      // 카톤 수·소입수는 TOTAL 판정보다 먼저 읽는다 — TOTAL 열이 빈 양식은 CU×QPC 로 수량을 채워야 하므로
+      var cu=(cCU>=0&&r[cCU]!=null&&String(r[cCU]).trim()!=='')?Math.max(0,Number(r[cCU])||0):null;
+      var qpc=(cQPC>=0&&r[cQPC]!=null&&String(r[cQPC]).trim()!=='')?Math.max(0,Number(r[cQPC])||0):null;
+      if(qty<=0&&cu&&qpc) qty=cu*qpc;                      // TOTAL 빈 양식 — 카톤수×소입수
+      var o=r[cOrd]; var oS=(o==null?'':String(o).trim());
+      var isData=(code!==''&&qty>0);
+      if(oS!==''){ lastOrd=oS; if(r[cPl]!=null&&String(r[cPl]).trim()!=='') lastPl=Number(r[cPl]); }
+      else if(isData&&lastOrd!=null){ oS=lastOrd; } // 병합셀 이어받기
+      if(!isData){ if(qty>0&&oS===''){ /* TOTAL 행 등 — 합계에 미포함 */ } continue; }
+      fileQty+=qty;
+      if(oS===''){ dropped++; droppedQ+=qty; continue; }   // ORDER NO 를 끝내 못 찾은 행
+      var pl=(r[cPl]!=null&&String(r[cPl]).trim()!=='')?Number(r[cPl]):(lastPl||0);
+      var fr=r[cFr],to=r[cTo];
+      // 카톤 수: ① CARTON UNIT 열 → ② FROM/TO 범위 → ③ 0(낱개·병합)
+      var cartons=(cu!=null)?cu:((fr==null||to==null)?0:Math.max(0,Number(to)-Number(fr)+1));
+      if(cartons===0){ noCarton++; noCartonQ+=qty; }       // 카톤 없음 — 수량은 포함, 스캔 대상 아님
+      // 대사: CARTON UNIT×QTY PER C/T 가 TOTAL 과 다르면 그 행을 경고 목록에 (파일 오류 조기 발견)
+      if(cu&&qpc&&qty>0&&Math.abs(cu*qpc-qty)>0.001) cuMismatch.push(code+': '+cu+'×'+qpc+'≠'+qty);
+      out.push({order_no:oS,pl_no:pl,code:code,cartons:cartons,qty:qty,desc:String(r[cDesc]||'').trim(),
+        box_from:(fr==null?null:Number(fr)),box_to:(to==null?null:Number(to))});   // 라인별 저장(합산 안 함) — 카톤 범위 보존
+    }
+    return {rows:out,invoice_no:inv,skipped:noCarton,skipQ:noCartonQ,dropped:dropped,droppedQ:droppedQ,fileQty:fileQty,
+      cartonBasis:(cCU>=0?'CARTON UNIT':'FROM/TO'),cuMismatch:cuMismatch};   // 미리보기 표시용
+  }
+  function bufToB64(buf){ // ArrayBuffer → base64 (청크 처리로 대용량 안전)
+    var u8=new Uint8Array(buf), s='', CH=32768;
+    for(var i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+    return btoa(s);
+  }
+  var FILE_MAX=8*1024*1024; // 원본 8MB 까지 첨부(base64 ≈10.7MB, 서버 한도 12MB)
+  function readFile(f){
+    var r=new FileReader();
+    r.onload=function(e){ try{
+      var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      var res=parseWorkbook(wb);
+      // 원본 파일 보존 → 선적 생성 시 함께 저장(ERP에서 재다운로드용)
+      if(f.size<=FILE_MAX){
+        var mime=f.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        res._file={name:f.name,size:f.size,data:'data:'+mime+';base64,'+bufToB64(e.target.result)};
+      } else { res._file=null; res._fileTooBig=true; }
+      doPreview(res,f.name);
+    }catch(err){ $('pout').innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)"><b>'+L('읽지 못했습니다','No se pudo leer')+'</b> — '+esc(err.message)+'</div>'; } };
+    r.readAsArrayBuffer(f);
+  }
+  function doPreview(res,fname){
+    parsed=res;
+    api('/api/inbound/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:res.rows,invoice_no:res.invoice_no})}).then(function(o){
+      if(!o.ok||o.body.error){ $('pout').innerHTML='<div class="note" style="border-left-color:var(--red);background:#FDF3F1;color:var(--red)">'+L('검증 실패','Error de validación')+': '+(o.body.error||o.status)+'</div>'; return; }
+      var s=o.body.summary;
+      var invGuess=o.body.invoice_no||res.invoice_no||'';
+      $('pout').innerHTML='<div class="note green" style="margin-top:12px">✔ <b>'+esc(fname)+'</b> · '+L('인보이스','Factura')+' '
+          +'<input id="invNo" type="text" class="mono" style="padding:5px 9px;font-size:13px;width:180px" value="'+esc(invGuess)+'" placeholder="'+L('인보이스 번호 입력','Núm. de factura')+'">'
+          +(invGuess?'':' <b style="color:var(--red)">⚠ '+L('파일에서 못 찾음 — 직접 입력하세요','no encontrado — ingrese manualmente')+'</b>')
+          +(res._file?' · 📎 '+L('원본 파일 함께 저장됨','archivo original se guardará'):(res._fileTooBig?' · <span style="color:var(--red)">📎 8MB 초과 — 원본 미저장</span>':''))+'</div>'
+        +'<div class="kpis" style="margin-top:9px">'
+        +'<div class="kpi"><div class="l">'+L('팔렛','Pallets')+'</div><div class="v">'+s.pallets+'</div></div>'
+        +'<div class="kpi"><div class="l">'+L('카톤','Cajas')+'</div><div class="v">'+fmt(s.cartons)+'</div></div>'
+        +'<div class="kpi"><div class="l">SKU</div><div class="v">'+s.skus+'</div></div>'
+        +'<div class="kpi"><div class="l">'+L('수량','Cantidad')+'</div><div class="v">'+fmt(s.qty)+' <small>EA</small></div></div>'
+        +'<div class="kpi"><div class="l">ORDER NO</div><div class="v">'+s.orders.length+'</div></div></div>'
+        +'<div class="vbox">'
+        +'<div class="vrow">✅ <b>ORDER NO '+s.orders.length+'</b> <span class="mono" style="color:var(--muted);font-size:11px">'+esc(s.orders.slice(0,4).join(' · '))+(s.orders.length>4?' …':'')+'</span><span style="margin-left:auto"><span class="tag g">'+L('구매 매칭','Compras')+'</span></span></div>'
+        +((res.fileQty!=null)?('<div class="vrow">'+(Math.abs((res.fileQty||0)-(s.qty||0))<0.001
+            ?('✅ <b>'+L('수량 대사 일치','Cantidad conciliada')+'</b> <span style="color:var(--muted)">'+L('파일 합계','Total archivo')+' '+fmt(res.fileQty)+' EA = '+L('등재','Registrado')+' '+fmt(s.qty)+' EA · '+L('카톤 기준','Cajas por')+' '+esc(res.cartonBasis||'FROM/TO')+'</span>')
+            :('⚠️ <b style="color:var(--red)">'+L('수량 불일치','Cantidad no concilia')+'</b> <span style="color:var(--red)">'+L('파일 합계','Total archivo')+' '+fmt(res.fileQty)+' EA ≠ '+L('등재','Registrado')+' '+fmt(s.qty)+' EA — '+L('제외된 행을 확인하세요','revise filas excluidas')+'</span>'))+'</div>'):'')
+        +(res.skipped?'<div class="vrow">📦 <b>'+L('카톤번호 없음','Sin número de caja')+' '+res.skipped+'</b> <span style="color:var(--muted)">'+fmt(res.skipQ)+' EA — '+L('수량에 포함됨(카톤 스캔 대상 아님)','incluido en cantidad, sin escaneo')+'</span></div>':'')
+        +(res.dropped?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('제외된 행','Filas excluidas')+' '+res.dropped+'</b> <span style="color:var(--red)">'+fmt(res.droppedQ)+' EA — '+L('ORDER NO 를 찾지 못함(파일 확인 필요)','sin ORDER NO')+'</span></div>':'')
+        +((res.cuMismatch&&res.cuMismatch.length)?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('카톤수×소입수 ≠ 총수량 행','CTN×QTY≠TOTAL')+' '+res.cuMismatch.length+'</b> <span class="mono" style="color:var(--muted);font-size:11px">'+esc(res.cuMismatch.slice(0,4).join(' · '))+(res.cuMismatch.length>4?' …':'')+'</span></div>':'')
+        +(s.unmatched.length?'<div class="vrow">⚠️ <b style="color:var(--red)">'+L('미등록 SKU','SKU no registrado')+' '+s.unmatched.length+'</b> <span class="mono" style="color:var(--muted);font-size:11px">'+esc(s.unmatched.slice(0,5).join(' · '))+(s.unmatched.length>5?' …':'')+'</span></div>':'')
+        +(s.norack.length?'<div class="vrow">🆕 <b>'+L('랙 미지정','Sin ubicación')+' '+s.norack.length+'</b> <span style="color:var(--muted)">'+L('도착 전에 자리를 정해두면 적치가 빨라집니다','defina ubicación antes de llegar')+'</span></div>':'')
+        +'</div>'
+        +'<div class="row" style="margin-top:11px"><button class="btn g" id="btnCreate">✔ '+L('선적 생성','Crear embarque')+'</button></div>';
+      $('btnCreate').addEventListener('click',createShip);
+    });
+  }
+  function createShip(){
+    var eta=$('eta').value;
+    if(!eta){ toast(L('도착 예정일(ETA)을 입력하세요','Ingrese la fecha estimada (ETA)')); $('eta').focus(); return; }
+    $('btnCreate').disabled=true;
+    var invEl=$('invNo'); var invNo=(invEl&&invEl.value.trim())||parsed.invoice_no||null;
+    var body={rows:parsed.rows,invoice_no:invNo,eta:eta};
+    if(parsed._file){ body.file_name=parsed._file.name; body.file_data=parsed._file.data; }
+    api('/api/inbound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(o){
+      if(!o.ok||o.body.error){ toast(L('생성 실패','Error')+': '+(o.body.error||o.status)); $('btnCreate').disabled=false; return; }
+      toast(L('✔ 선적 생성 — 입고예정 재고가 판매팀에 반영됩니다','✔ Creado — stock entrante visible para ventas'));
+      openShip(o.body.id);
+    });
+  }
+
+  /* ============ 선적 상세 ============ */
+  function openShip(id){
+    api('/api/inbound/'+id).then(function(o){
+      if(!o.ok||o.body.error){ toast(L('불러오기 실패','Error al cargar')); return; }
+      SHIP=id; DETAIL=o.body; VIEW='detail'; STEP='unload';
+      scanReset(); putReset(); WORK_PID=null; WORK_STEP=null;
+      pollSig=sigDetail(o.body);
+      renderDetail();
+    });
+  }
+
+  /* ---- 패킹리스트 원본 파일 (다운로드·추가 첨부) ---- */
+  function loadShipFiles(){
+    var el=$('shipFiles'); if(!el) return;
+    api('/api/inbound/'+SHIP+'/files').then(function(o){
+      if(!o.ok||!o.body.items){ el.textContent=''; return; }
+      var items=o.body.items;
+      var h=items.map(function(f){
+        var nm=esc(f.file_name||('file#'+f.id));
+        return '<a href="#" class="flnk" data-view="'+f.id+'" data-fn="'+nm+'">📄 '+nm+' '+L('보기','Ver')+'</a>'
+          +' <a href="#" data-fid="'+f.id+'" style="color:var(--muted)" title="'+L('원본 파일 저장','Guardar archivo original')+'">⤓</a>';
+      }).join(' · ');
+      h+=(items.length?' · ':'')+'<a href="#" id="fileReg" class="flnk">📋 '+L('등재 내역','Registro ERP')+'</a>';
+      h+=' · <a href="#" id="fileAttach" style="color:var(--muted)">'+(items.length?'＋':L('📎 패킹리스트 파일 첨부','📎 adjuntar archivo'))+'</a>';
+      if(needRelines()) h+=' · <a href="#" id="fileRelines" style="color:#8A6300;font-weight:700" title="'
+        +L('이 선적은 라인별 저장 이전에 등재되어 같은 SKU 라인이 합산돼 있습니다. 원본 파일을 다시 읽어 라인별로 교체합니다(하차 상태 보존).','Reprocesar el archivo para registrar línea por línea')+'">🔀 '
+        +L('라인 재분할','Re-dividir líneas')+'</a>';
+      if(isDir&&DETAIL&&DETAIL.pallets&&DETAIL.pallets.some(function(p){
+          return p.checked_at||(p.scans||[]).length
+            ||(p.items||[]).some(function(i){return (i.scanned_cartons||0)>0||(i.put_cartons||0)>0;}); }))
+        h+=' · <a href="#" id="fileReset" style="color:var(--red);font-weight:700" title="'
+          +L('검수·적치·스캔 기록을 초기화하고 처음부터 다시 스캔합니다(디렉터 전용, 기록은 감사용으로 보존)','Reiniciar toda la verificación (solo director)')+'">🧹 '
+          +L('검수 리셋','Reiniciar verificación')+'</a>';
+      el.innerHTML=h;
+      el.querySelectorAll('a[data-view]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); viewShipFile(a.dataset.view,a.dataset.fn); }); });
+      el.querySelectorAll('a[data-fid]').forEach(function(a){ a.addEventListener('click',function(ev){ ev.preventDefault(); dlShipFile(a.dataset.fid); }); });
+      var rg=$('fileReg'); if(rg) rg.addEventListener('click',function(ev){ ev.preventDefault(); viewRegistered(); });
+      var at=$('fileAttach'); if(at) at.addEventListener('click',function(ev){ ev.preventDefault(); attachShipFile(); });
+      var rl=$('fileRelines'); if(rl) rl.addEventListener('click',function(ev){ ev.preventDefault(); reSplitLines(items); });
+      var rs=$('fileReset'); if(rs) rs.addEventListener('click',function(ev){ ev.preventDefault(); resetCheck(); });
+    });
+  }
+  /* ===== 라인 재분할(2026-08-17) — 합산 저장된 기존 선적을 원본 파일 기준 라인별로 교체 =====
+     노출 조건: 마감 전 + box 범위가 전무(=라인별 저장 이전 등재) + 검수/적치 스캔 0. 서버도 같은 가드를 강제한다. */
+  function needRelines(){
+    // 스캔이 안 된 팔렛이 하나라도 있으면 재분할 가능(파서 교정 재적용 대비).
+    // 서버가 팔렛별로 검수·적치 진행분은 보호하고 건너뛴다.
+    if(!DETAIL||!DETAIL.pallets||!DETAIL.pallets.length) return false;
+    if(DETAIL.shipment.status==='closed') return false;
+    return DETAIL.pallets.some(function(p){
+      if(p.checked_at) return false;
+      var hasItem=(p.items||[]).length>0, touched=false;
+      (p.items||[]).forEach(function(i){ if((i.scanned_cartons||0)>0||(i.put_cartons||0)>0) touched=true; });
+      return hasItem && !touched;
+    });
+  }
+  function reSplitSend(rows){
+    api('/api/inbound/'+SHIP+'/relines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:rows})}).then(function(o){
+      if(!o.ok||o.body.error){
+        var msg={already_scanned:L('검수·적치가 이미 진행되어 재분할할 수 없습니다','Ya hay escaneos — no se puede re-dividir'),
+                 file_mismatch:L('파일이 이 선적과 다릅니다(팔렛·수량 불일치)','El archivo no coincide con este embarque'),
+                 bad_state:L('마감/취소된 선적입니다','Embarque cerrado/cancelado')}[o.body.error]||o.body.error||o.status;
+        toast('⚠ '+msg); return;
+      }
+      var skip=(o.body.skipped&&o.body.skipped.length)?(' · '+L('건너뜀(검수 진행)','omitidos')+' '+o.body.skipped.length):'';
+      toast('✔ '+L('라인 재분할 완료','Líneas re-divididas')+' — '+o.body.before_lines+' → '+o.body.lines+L('라인',' líneas')+skip);
+      openShip(SHIP);
+    });
+  }
+  /* ===== 검수 리셋(디렉터, 0174) — 잘못 저장된 검수·적치·스캔을 초기화하고 처음부터 =====
+     서버는 스캔 행을 지우지 않고 voided 처리(감사 추적). 리셋 후 [라인 재분할]이 다시 가능해져
+     구파서(FROM/TO)로 등재된 카톤 수를 CARTON UNIT 기준으로 교정할 수 있다. */
+  function resetCheck(){
+    if(!isDir){ toast(L('디렉터만 가능합니다','Solo director')); return; }
+    if(!confirm(L('이 선적의 검수·적치·스캔 기록을 전부 초기화합니다.\n팔렛은 "하차됨" 상태로 돌아가고, 처음부터 다시 스캔합니다.\n(기록은 삭제되지 않고 감사용으로 보존됩니다)\n\n계속할까요?','¿Reiniciar toda la verificación de este embarque?\nLos pallets vuelven a "descargado" y se escanea de nuevo.'))) return;
+    api('/api/inbound/'+SHIP+'/reset-check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(function(o){
+      if(!o.ok||o.body.error){
+        sndErr();
+        toast('⚠ '+L('리셋 실패','Error')+': '+(o.body.error==='director_only'?L('디렉터만 가능합니다','Solo director'):(o.body.error||o.status)));
+        return;
+      }
+      // 이 선적의 미전송 스캔 큐도 비운다 — 리셋 후 옛 스캔이 되살아나지 않게
+      try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf('inb_scanq_'+SHIP+'_')===0) localStorage.removeItem(k); }); }catch(e){}
+      var n=(o.body.reset||[]).length;
+      sndSaved(); toast('🧹 '+L('검수 리셋 완료','Reiniciado')+' — '+n+L('팔렛',' pallets')+' · '+L('이제 [🔀 라인 재분할]을 실행하세요','ahora re-divida las líneas'));
+      scanReset(); openShip(SHIP);
+    });
+  }
+  function reSplitParse(buf){
+    try{
+      var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      var res=parseWorkbook(wb);
+      if(!res.rows||!res.rows.length){ toast('⚠ '+L('파일에서 라인을 읽지 못했습니다','No se pudo leer el archivo')); return; }
+      reSplitSend(res.rows);
+    }catch(err){ toast('⚠ '+L('파일 읽기 실패','Error al leer')+': '+err.message); }
+  }
+  function reSplitLines(files){
+    if(!confirm(L('원본 패킹리스트를 다시 읽어 같은 SKU 라인을 합산 없이 라인별로 다시 등재합니다.\n하차 상태·ETA·파일은 그대로 유지됩니다. 진행할까요?',
+      'Se volverá a leer el packing list para registrar línea por línea. ¿Continuar?'))) return;
+    var xf=(files||[]).filter(function(f){ return /\.xlsx?$/i.test(f.file_name||''); })[0];
+    if(xf){   // 첨부된 원본 엑셀을 서버에서 받아 재파싱
+      api('/api/inbound/files/'+xf.id).then(function(o){
+        if(!o.ok||!o.body.file_data){ toast('⚠ '+L('원본 파일을 받지 못했습니다 — 파일을 직접 선택하세요','No se pudo descargar — elija el archivo')); reSplitPick(); return; }
+        try{
+          var b64=String(o.body.file_data).split(',')[1]||'';
+          var bin=atob(b64), u8=new Uint8Array(bin.length);
+          for(var i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+          reSplitParse(u8.buffer);
+        }catch(e){ toast('⚠ '+L('파일 해석 실패','Error')); }
+      });
+    } else reSplitPick();   // 원본 미보관(8MB 초과 등) → 직접 선택
+  }
+  function reSplitPick(){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls';
+    inp.addEventListener('change',function(){
+      var f=inp.files[0]; if(!f) return;
+      var r=new FileReader();
+      r.onload=function(e){ reSplitParse(e.target.result); };
+      r.readAsArrayBuffer(f);
+    });
+    inp.click();
+  }
+
+  /* ---- 패킹리스트 새 창 보기(다운로드 아님) ---- */
+  var VIEW_CSS='<style>'
+    +'body{margin:0;background:#F4F1EA;color:#1C1B19;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;font-size:13px}'
+    +'.vw{max-width:1240px;margin:0 auto;padding:14px}'
+    +'h1{font-size:17px;margin:0 0 2px;word-break:break-all}'
+    +'.sub{color:#6F6A60;font-size:12px;margin-bottom:10px}'
+    +'.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}'
+    +'.bar a,.bar button{background:#52708A;color:#fff;border:0;border-radius:9px;padding:7px 13px;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}'
+    +'.bar a.g,.bar button.g{background:#3E7D5A}'
+    +'.bar button.alt{background:#6F6A60}'
+    +'.bar button:active{filter:brightness(1.15)}'
+    +'table{width:100%;border-collapse:collapse;background:#fff;font-size:12px;margin-bottom:6px}'
+    +'th,td{border:1px solid #E2DCCF;padding:4px 7px;text-align:left;white-space:nowrap}'
+    +'thead th{background:#EFF3F7;font-weight:700;position:sticky;top:0}'
+    +'.sheet table tr:first-child td{background:#EFF3F7;font-weight:700}'
+    +'td.num,th.num{text-align:right}'
+    +'.grp{margin:16px 0 5px;font-weight:700;font-size:15px;word-break:break-all}'
+    +'.grp .pfx{color:#6F6A60;font-size:12px;font-weight:700;margin-right:6px}'
+    +'.grp .po{font-size:24px;letter-spacing:.14em;margin-right:.14em}'
+    +'.idle{color:#6F6A60;padding:40px;text-align:center}'
+    +'iframe{width:100%;height:78vh;border:1px solid #E2DCCF;background:#fff}'
+    +'@media print{.bar{display:none}}'
+    +'</style>';
+  function winOpen(title){
+    var w=window.open('','_blank');
+    if(!w||!w.document){ toast(L('팝업이 차단됐습니다 — 이 사이트의 팝업을 허용해 주세요','Ventana emergente bloqueada — permita las ventanas emergentes')); return null; }
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(title)+'</title>'+VIEW_CSS+'</head>'
+      +'<body><div class="vw"><div class="idle">'+L('불러오는 중…','Cargando…')+'</div></div></body></html>');
+    w.document.close();
+    return w;
+  }
+  function viewShipFile(fid,fname){
+    var w=winOpen(L('패킹리스트','Lista de empaque')+(fname?' · '+fname:''));
+    if(!w) return;
+    api('/api/inbound/files/'+fid).then(function(o){
+      if(!o.ok||!o.body.file_data){ w.document.body.innerHTML='<div class="vw"><div class="idle">'+L('파일을 불러오지 못했습니다','No se pudo cargar el archivo')+'</div></div>'; return; }
+      var name=o.body.file_name||fname||'packing', data=o.body.file_data;
+      var isSheet=/\.(xlsx|xls|csv)$/i.test(name)||/spreadsheet|excel|ms-excel|csv/i.test(o.body.mime_type||'');
+      var head='<h1>'+esc(name)+'</h1>'
+        +'<div class="sub">'+L('선적','Embarque')+' '+esc(DETAIL.shipment.invoice_no||('#'+SHIP))+' · '+L('업로드 원본 패킹리스트','Lista de empaque original')+'</div>'
+        +'<div class="bar"><button onclick="window.print()">🖨 '+L('인쇄','Imprimir')+'</button>'
+        +'<a class="g" href="'+data+'" download="'+esc(name)+'">⤓ '+L('원본 파일 저장','Guardar archivo')+'</a></div>';
+      if(isSheet){
+        try{
+          var wb=XLSX.read(data.slice(data.indexOf(',')+1),{type:'base64'});
+          var body='';
+          wb.SheetNames.forEach(function(sn){
+            body+='<div class="grp">'+esc(sn)+'</div><div class="sheet">'+XLSX.utils.sheet_to_html(wb.Sheets[sn])+'</div>';
+          });
+          w.document.body.innerHTML='<div class="vw">'+head+(body||'<div class="idle">'+L('시트가 비어 있습니다','Hoja vacía')+'</div>')+'</div>';
+        }catch(e){
+          w.document.body.innerHTML='<div class="vw">'+head+'<div class="idle">'+L('시트를 읽지 못했습니다','No se pudo leer la hoja')+' — '+esc(e.message)+'</div></div>';
+        }
+      } else {
+        w.document.body.innerHTML='<div class="vw">'+head+'<iframe src="'+data+'"></iframe></div>';
+      }
+      try{ w.document.title=name; }catch(e){}
+    });
+  }
+  // 파일이 없어도 볼 수 있는 ERP 등재 내역(팔렛·SKU) — DB에 실제로 들어간 값
+  //  · 🌐 버튼 = 이 창만 한국어 ↔ Español 전환. 본문 화면 언어(LANG)는 건드리지 않는다
+  //    (한국인 관리자가 창만 스페인어로 바꿔 현장 작업자에게 보여주는 경우가 많다).
+  //    선택은 localStorage 'wh_viewlang' 에 기억 — 다음에 열면 그 언어로 뜬다.
+  //  · ⤓ 엑셀 = 화면과 같은 표를 .xlsx 로 저장. XLSX 라이브러리는 이 부모 창에만 있으므로
+  //    시트 생성·저장은 부모에서 하고, 자식 창에는 스크립트를 심지 않는다(핸들러도 부모에서 부착).
+  function viewRegistered(){
+    var w=winOpen(L('등재 내역','Registro ERP'));
+    if(!w) return;
+    var s=DETAIL.shipment, groups=palGroups();
+    var VL=(function(){ try{ var v=localStorage.getItem('wh_viewlang'); if(v==='es'||v==='ko') return v; }catch(e){} return LANG; })();
+    function T(ko,es){ return VL==='es'?es:ko; }
+    function nf(n){ return Number(n||0).toLocaleString(VL==='es'?'es-MX':'ko-KR'); }
+    function stLbl(st){ var t=PAL_LBL[st]; return t?T(t[0],t[1]):st; }
+    function poH(v){                                  // poHtml 과 같은 표기, 언어만 이 창 기준
+      var p=poParts(v);
+      if(!p.po) return '<span class="po plain">'+esc(T('번호 없음','Sin número'))+'</span>';
+      return (p.pfx?'<span class="pfx">'+esc(p.pfx)+'</span>':'')
+        +'<span class="po'+(p.pfx?'':' plain')+'">'+esc(p.po)+'</span>';
+    }
+    // 합계는 언어와 무관 — 한 번만 계산해 재렌더 때 다시 세지 않는다
+    var cart=0, qty=0, pal=0, sku={};
+    groups.forEach(function(G){
+      pal+=G.N;
+      G.pals.forEach(function(p){ p.items.forEach(function(i){
+        cart+=(i.cartons||0); qty+=(i.qty||0); sku[i.code]=1; }); });
+    });
+
+    function render(){
+      var body='';
+      groups.forEach(function(G){
+        var rows='';
+        G.pals.forEach(function(p){
+          p.items.forEach(function(i,ix){
+            rows+='<tr><td>'+(ix===0?p.pl_no:'')+'</td><td>'+esc(i.code)+(i.registered?'':' ⚠')+'</td><td>'+esc(i.name||'—')+'</td>'
+              +'<td class="num">'+(i.cartons||0)+'</td><td class="num">'+nf(i.qty||0)+'</td>'
+              +'<td>'+esc(i.rack||'—')+'</td><td>'+stLbl(p.status)+'</td></tr>';
+          });
+        });
+        body+='<div class="grp">'+poH(G.key)+' <span style="font-size:12px;color:#6F6A60">— '+T('팔렛','Pallets')+' '+G.N+' · '+T('카톤','Cajas')+' '+nf(G.cartons)+' · '+nf(G.qty)+' EA</span></div>'
+          +'<table><thead><tr><th>PL</th><th>CTR NO</th><th>'+T('품명','Descripción')+'</th>'
+          +'<th class="num">'+T('카톤','Cajas')+'</th><th class="num">'+T('수량','Cant.')+'</th>'
+          +'<th>'+T('랙','Ubic.')+'</th><th>'+T('상태','Estado')+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
+      });
+      w.document.body.innerHTML='<div class="vw"><h1>'+T('ERP 등재 내역','Registro en ERP')+'</h1>'
+        +'<div class="sub">'+T('선적','Embarque')+' '+esc(s.invoice_no||('#'+SHIP))+' · ETA '+(s.eta||'—')
+        +' · PO '+groups.length+' · '+T('팔렛','Pallets')+' '+pal+' · '+T('카톤','Cajas')+' '+nf(cart)+' · '+nf(qty)+' EA · SKU '+Object.keys(sku).length
+        +' · <span style="color:#C0533B">⚠ = '+T('미등록 SKU','SKU no registrado')+'</span></div>'
+        +'<div class="bar"><button id="vPrint">🖨 '+T('인쇄','Imprimir')+'</button>'
+        +'<a id="vXls" class="g" href="#">⤓ '+T('엑셀 다운로드','Descargar Excel')+'</a>'
+        +'<button id="vLang" class="alt">🌐 '+(VL==='es'?'한국어':'Español')+'</button></div>'
+        +(body||'<div class="idle">'+T('팔렛이 없습니다','Sin pallets')+'</div>')+'</div>';
+      try{ w.document.title=T('ERP 등재 내역','Registro en ERP')+' · '+(s.invoice_no||('#'+SHIP)); }catch(e){}
+      try{ w.document.documentElement.lang=(VL==='es'?'es':'ko'); }catch(e){}
+      var gid=function(id){ return w.document.getElementById(id); };
+      var bp=gid('vPrint'); if(bp) bp.addEventListener('click',function(){ try{ w.print(); }catch(e){} });
+      var bl=gid('vLang'); if(bl) bl.addEventListener('click',function(){
+        VL=(VL==='es')?'ko':'es';
+        try{ localStorage.setItem('wh_viewlang',VL); }catch(e){}
+        render();                                     // 창 내용만 다시 그린다(본문 LANG 불변)
+      });
+      buildXls();                                     // 다운로드 링크에 blob 을 미리 물려둔다
+    }
+
+    /* 엑셀 다운로드 — 왜 버튼이 아니라 <a download href="blob:"> 인가
+       XLSX.writeFile 은 **부모 문서**에 <a> 를 만들어 스크립트로 클릭한다. 그 클릭은 이 팝업 창에서
+       일어난 사용자 제스처와 연결되지 않아, 크롬이 "제스처 없는 다운로드"로 보고 조용히 막는다
+       (버튼을 눌러도 아무 일이 없던 원인 — 2026-08-27 현장 보고).
+       → 파일을 미리 만들어 **이 창의 blob URL** 을 진짜 링크에 걸어 둔다. 사람이 링크를 직접 누르는
+         평범한 다운로드가 되므로 팝업/제스처 제한에 걸리지 않는다.
+       XLSX(cdnjs)가 로드되지 않은 현장 PDA 를 위해 실패 시 **CSV(UTF-8 BOM)** 로 자동 대체한다. */
+    var xlsUrl=null;
+    function revokeXls(){ if(xlsUrl){ try{ (w.URL||w.webkitURL).revokeObjectURL(xlsUrl); }catch(e){} xlsUrl=null; } }
+    function rowsAoa(){
+      var aoa=[[ 'ORDER NO','PL','CTR NO',T('품명','Descripción'),T('카톤','Cajas'),T('수량','Cant.'),
+                 T('랙','Ubic.'),T('상태','Estado'),T('제품등록','Registrado') ]];
+      groups.forEach(function(G){
+        G.pals.forEach(function(p){
+          p.items.forEach(function(i){
+            aoa.push([ G.key, p.pl_no, i.code, i.name||'', Number(i.cartons||0), Number(i.qty||0),
+                       i.rack||'', stLbl(p.status), i.registered?'O':T('미등록','No') ]);
+          });
+        });
+      });
+      aoa.push([]);
+      aoa.push([ T('합계','Total'),'','','', cart, qty, '',
+                 T('팔렛','Pallets')+' '+pal, 'SKU '+Object.keys(sku).length ]);
+      return aoa;
+    }
+    function baseName(){
+      var inv=String(s.invoice_no||('SHIP'+SHIP)).replace(/[\\\/:*?"<>|\[\]]/g,'_');
+      return T('ERP등재내역_','Registro_ERP_')+inv;
+    }
+    function putBlob(a,parts,mime,fname){
+      var B=w.Blob||window.Blob, U=w.URL||w.webkitURL||window.URL;
+      xlsUrl=U.createObjectURL(new B(parts,{type:mime}));
+      a.href=xlsUrl; a.setAttribute('download',fname);
+    }
+    function buildXls(){
+      revokeXls();
+      var a=w.document.getElementById('vXls'); if(!a) return;
+      var aoa=rowsAoa();
+      try{
+        if(typeof XLSX==='undefined'||!XLSX.utils) throw new Error('XLSX not loaded');
+        var ws=XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols']=[{wch:16},{wch:5},{wch:14},{wch:34},{wch:8},{wch:11},{wch:12},{wch:12},{wch:11}];
+        var wb=XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb,ws,T('등재내역','Registro'));
+        var buf=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+        putBlob(a,[buf],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',baseName()+'.xlsx');
+      }catch(e){
+        // 대체: CSV(엑셀에서 바로 열린다). BOM 을 붙여야 한글이 안 깨진다.
+        try{
+          var csv=aoa.map(function(r){
+            return (r||[]).map(function(v){
+              var t=(v==null?'':String(v));
+              return /[",\n;]/.test(t)?('"'+t.replace(/"/g,'""')+'"'):t;
+            }).join(',');
+          }).join('\r\n');
+          putBlob(a,['﻿'+csv],'text/csv;charset=utf-8',baseName()+'.csv');
+          a.textContent='⤓ '+T('CSV 다운로드','Descargar CSV');
+          a.title=T('엑셀 라이브러리를 불러오지 못해 CSV 로 받습니다','Sin librería Excel — se descarga CSV');
+        }catch(e2){
+          a.removeAttribute('href'); a.removeAttribute('download');
+          a.textContent='⚠ '+T('다운로드 생성 실패','Error al generar la descarga');
+        }
+      }
+    }
+    try{ w.addEventListener('beforeunload',revokeXls); }catch(e){}
+
+    render();
+  }
+  function dlShipFile(fid){
+    api('/api/inbound/files/'+fid).then(function(o){
+      if(!o.ok||!o.body.file_data){ toast(L('다운로드 실패','Error de descarga')); return; }
+      var a=document.createElement('a');
+      a.href=o.body.file_data; a.download=o.body.file_name||('packing_'+fid);
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+  }
+  function attachShipFile(){
+    var inp=document.createElement('input'); inp.type='file'; inp.accept='.xlsx,.xls,.csv,.pdf';
+    inp.addEventListener('change',function(){
+      var f=inp.files[0]; if(!f) return;
+      if(f.size>FILE_MAX){ toast(L('8MB 이하 파일만 첨부됩니다','máx. 8MB')); return; }
+      var r=new FileReader();
+      r.onload=function(e){
+        var mime=f.type||'application/octet-stream';
+        api('/api/inbound/'+SHIP+'/file',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({file_name:f.name,file_data:'data:'+mime+';base64,'+bufToB64(e.target.result)})}).then(function(o){
+          if(!o.ok||o.body.error){ toast(L('첨부 실패','Error')+': '+(o.body.error||o.status)); return; }
+          toast('✔ '+L('파일 첨부됨','Archivo adjuntado')); loadShipFiles();
+        });
+      };
+      r.readAsArrayBuffer(f);
+    });
+    inp.click();
+  }
+  function refreshDetail(cb){ api('/api/inbound/'+SHIP).then(function(o){
+    if(o.ok&&!o.body.error){ DETAIL=o.body; pollSig=sigDetail(o.body); }
+    if(cb)cb(); else renderDetail(); }); }
+  function palStats(){
+    var p=DETAIL.pallets, N=p.length;
+    return { N:N, unloaded:p.filter(function(x){return x.status!=='wait';}).length,
+      checked:p.filter(palConfirmed).length,
+      done:p.filter(function(x){return x.status==='done';}).length };
+  }
+  // 검수 확정 판정(2026-08-18) — 적치가 진행되면 status 는 'checking' 으로 돌아가지만
+  // checked_at 이 있으면 검수는 이미 확정된 팔렛이다("검수중으로 되돌아가 보이던" 버그 수정).
+  function palConfirmed(p){ return !!p.checked_at || p.status==='checked' || p.status==='done'; }
+  function renderDetail(){
+    var s=DETAIL.shipment, st=palStats();
+    var stName={incoming:L('운송중','En tránsito'),receiving:L('입고중','Recibiendo'),closed:L('마감','Cerrado')}[s.status]||s.status;
+    var html='<div class="card"><div class="row" style="justify-content:space-between">'
+      +'<div><h2 style="margin:0">'+L('선적','Embarque')+' <span class="mono" style="font-weight:400;color:'+(s.invoice_no?'var(--muted)':'var(--red)')+'">'+esc(s.invoice_no||L('인보이스 미입력','sin factura'))+'</span>'
+      +(s.status!=='closed'?' <button class="btn ghost sm" id="btnInvEdit" title="'+L('인보이스 번호 입력·수정','Editar factura')+'">✎</button>':'')+'</h2>'
+      +'<div class="hint dhint" style="margin:2px 0 0">ETA '+(s.eta||'—')+' · <span class="tag s">'+stName+'</span> · <span id="shipFiles">📎 …</span></div></div>'
+      +'<button class="btn ghost sm" id="btnBack">← '+L('목록','Lista')+'</button></div>'
+      +'<div class="steps">'
+      +stepBtn('unload',L('하차','Descarga'),st.unloaded+'/'+st.N)
+      +stepBtn('check',L('검수','Verificar'),st.checked+'/'+st.N)
+      +stepBtn('put',L('적치','Acomodo'),st.done+'/'+st.N)
+      +stepBtn('close',L('마감','Cierre'),s.status==='closed'?'✓':'')
+      +'</div><div id="stepbody"></div></div>';
+    $('app').innerHTML=html;
+    $('btnBack').addEventListener('click',loadList);
+    loadShipFiles();
+    var invBtn=$('btnInvEdit');
+    if(invBtn) invBtn.addEventListener('click',function(){
+      var cur=DETAIL.shipment.invoice_no||'';
+      var v=prompt(L('패킹리스트 인보이스 번호','Número de factura del packing list'),cur);
+      if(v==null) return;
+      api('/api/inbound/'+SHIP,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({invoice_no:v.trim()})}).then(function(o){
+        if(!o.ok||o.body.error){ toast(L('저장 실패','Error')+': '+(o.body.error||o.status)); return; }
+        toast('✔ '+L('인보이스 번호 저장됨','Factura guardada'));
+        openShip(SHIP);
+      });
+    });
+    document.querySelectorAll('.step').forEach(function(b){ b.addEventListener('click',function(){
+      var nx=b.dataset.s;
+      if(STEP==='put'&&nx!=='put'&&putPending()){ putFlush(function(){ STEP=nx; clearWorking(); putReset(); renderStep(); }); return; }
+      if(STEP!==nx) clearWorking();
+      STEP=nx; if(STEP==='check')scanReset(); if(STEP==='put')putReset(); renderStep(); }); });
+    renderStep();
+  }
+  function stepBtn(k,t,m){ return '<button class="step'+(STEP===k?' on':'')+'" data-s="'+k+'"><div class="t">'+t+'</div><div class="m">'+m+'</div></button>'; }
+  function renderStep(){
+    document.querySelectorAll('.step').forEach(function(b){ b.classList.toggle('on',b.dataset.s===STEP); });
+    if(STEP==='unload') renderUnload();
+    else if(STEP==='check') renderCheck();
+    else if(STEP==='put') renderPut();
+    else renderClose();
+  }
+  /* ===== 점유 표시(소프트 락) — 지금 누가 이 팔렛을 잡고 있는지 =====
+     막지 않는다. 같은 팔렛을 굳이 잡아도 증분 저장으로 합산된다. */
+  var WORK_STEP_LBL={unload:['하차','Descarga'],check:['검수','Verificación'],put:['적치','Acomodo']};
+  function workChip(p,big){
+    if(!p||!p.working||p.working_is_me) return '';
+    var who=p.working_by_name||L('다른 작업자','otro operador');
+    var st=WORK_STEP_LBL[p.working_step]; st=st?L(st[0],st[1]):'';
+    if(big) return '<div class="bigwarn" style="background:#F7E9CD;border-color:var(--gold);color:#8A6420">🧑 <b>'
+      +esc(who)+'</b> '+L('님이 이 팔렛을','está trabajando en este pallet')+(st?' '+st:'')+L(' 작업 중입니다 — 같이 하면 스캔은 합산됩니다.',' — los escaneos se suman.')+'</div>';
+    return '<span class="wchip">🧑 '+esc(who)+(st?' '+st:'')+'</span>';
+  }
+  function pingWorking(pid,step){
+    if(!pid) return;
+    WORK_PID=pid; WORK_STEP=step||null;
+    api('/api/inbound/'+SHIP+'/pallets/'+pid+'/working',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({step:step||null})});
+  }
+  function clearWorking(){
+    var pid=WORK_PID; WORK_PID=null; WORK_STEP=null;
+    if(pid) api('/api/inbound/'+SHIP+'/pallets/'+pid+'/working/clear',{method:'POST'});
+  }
+
+  var PAL_LBL={wait:['대기','En espera'],unloaded:['하차됨','Descargado'],checking:['적치중','Acomodando'],checked:['검수됨','Verificado'],done:['완료','Listo']};
+  function palLbl(s){ var t=PAL_LBL[s]; return t?L(t[0],t[1]):s; }
+  /* PO번호 표기 — 고정 접두(예 100RA)는 작게 붙이고, RA 뒤의 실제 PO번호를 크게·자간 넓게.
+     예) 100RA1100 → [100RA]작게 + [1100]크게.  패턴이 안 맞으면 전체를 자간만 넓혀 표시. */
+  function poParts(v){
+    var t=String(v==null?'':v).trim();
+    var m=t.match(/^(\d*[A-Za-z]{2,})[\s\-_.]*(\d[\dA-Za-z\-_.\/]*)$/);
+    if(m&&m[2]) return {pfx:m[1],po:m[2]};
+    return {pfx:'',po:t};
+  }
+  function poHtml(v){
+    var p=poParts(v);
+    if(!p.po) return '<span class="po plain">'+esc(L('번호 없음','Sin número'))+'</span>';
+    return (p.pfx?'<span class="pfx">'+esc(p.pfx)+'</span>':'')
+      +'<span class="po'+(p.pfx?'':' plain')+'">'+esc(p.po)+'</span>';
+  }
+  // 표 안(마감 탭)에서 쓰는 축소판 — 같은 규칙, 작은 크기
+  function poHtmlSm(v){
+    var p=poParts(v);
+    if(!p.po) return '<span style="color:var(--muted)">—</span>';
+    return (p.pfx?'<span style="color:var(--muted);font-size:11px">'+esc(p.pfx)+'</span> ':'')
+      +'<b style="font-size:14px;letter-spacing:.1em">'+esc(p.po)+'</b>';
+  }
+  // 하차만 된 팔렛(스캔·적치 기록 없음)만 되돌릴 수 있다 — 서버 판정과 동일 기준
+  function canUndo(p){
+    if(p.status!=='unloaded') return false;
+    return p.items.every(function(i){ return !(i.scanned_cartons||0) && !(i.put_cartons||0); });
+  }
+  // ORDER NO(인보이스 번호)로 팔렛을 묶는다 — 긴 번호는 머리글에 한 번만, 카드에는 팔렛 번호만
+  function palGroups(){
+    var map={}, keys=[];
+    DETAIL.pallets.forEach(function(p){
+      var k=String(p.order_no==null?'':p.order_no);
+      if(!map[k]){ map[k]={key:k,pals:[]}; keys.push(k); }
+      map[k].pals.push(p);
+    });
+    return keys.map(function(k){
+      var G=map[k];
+      G.pals.sort(function(a,b){ return (a.pl_no||0)-(b.pl_no||0); });
+      G.N=G.pals.length;
+      G.unloaded=G.pals.filter(function(p){return p.status!=='wait';}).length;
+      G.cartons=G.pals.reduce(function(a,p){return a+(p.cartons_expected||0);},0);
+      G.qty=G.pals.reduce(function(a,p){return a+(p.qty_expected||0);},0);
+      G.wait=G.pals.filter(function(p){return p.status==='wait';});
+      G.undoable=G.pals.filter(canUndo);
+      return G;
+    });
+  }
+  function palCard(p,withUndo){
+    var done=p.items.reduce(function(a,i){return a+(i.scanned_cartons||0);},0);
+    var u=(withUndo&&canUndo(p));
+    return '<div class="pal st-'+p.status+((u&&undoSel[p.id])?' sel':'')+'" data-pid="'+p.id+'" role="button" tabindex="0">'
+      +(withUndo?('<div class="ptop">'
+        +(u?'<input type="checkbox" class="pck" data-ck="'+p.id+'"'+(undoSel[p.id]?' checked':'')+' title="'+L('취소할 팔렛 선택','Seleccionar para cancelar')+'">':'<span></span>')
+        +(u?'<button class="undo" data-undo="'+p.id+'" title="'+L('이 팔렛만 하차 취소','Cancelar solo este pallet')+'">↩</button>':'<span></span>')
+        +'</div>'):'')
+      +'<div class="o">'+L('팔렛','Pallet')+'</div><div class="pn">'+p.pl_no+'</div>'
+      +'<div class="d">'+palLbl(p.status)+' · '+L('카톤','Cajas')+' '+p.cartons_expected+' · SKU '+p.items.length+'</div>'
+      +(workChip(p)||'')
+      +'<div class="bar"><i style="width:'+(p.cartons_expected?Math.round(done/p.cartons_expected*100):0)+'%"></i></div></div>';
+  }
+  // 팔렛 목록에 POST 를 순차 호출(동시 호출 시 선적 상태 경합 방지)
+  function runSeq(list,mk,done){
+    var i=0, fail=0, lastErr=null;
+    (function next(){
+      if(i>=list.length){ done(fail,lastErr); return; }
+      api(mk(list[i]),{method:'POST'}).then(function(o){
+        if(!o.ok||o.body.error){ fail++; lastErr=o.body.error||o.status; }
+        i++; next();
+      });
+    })();
+  }
+
+  /* ---- 하차 ---- */
+  function selPallets(){ return DETAIL.pallets.filter(function(p){ return undoSel[p.id]&&canUndo(p); }); }
+  function syncSel(){
+    var n=selPallets().length;
+    var b=$('btnUndoSel');
+    if(b){ b.disabled=!n; b.textContent='↩ '+L('선택 취소','Cancelar selección')+' ('+n+')'; }
+    document.querySelectorAll('#pg .pal').forEach(function(el){ el.classList.toggle('sel',!!undoSel[el.dataset.pid]); });
+    document.querySelectorAll('#pg [data-gall]').forEach(function(cb){
+      var G=CURGROUPS[+cb.dataset.gall]; if(!G) return;
+      var t=G.undoable.length, s=G.undoable.filter(function(p){return undoSel[p.id];}).length;
+      cb.checked=(t>0&&s===t); cb.indeterminate=(s>0&&s<t);
+    });
+  }
+  function renderUnload(){
+    var b=$('stepbody'), st=palStats(), groups=palGroups();
+    CURGROUPS=groups;
+    var locked=(DETAIL.shipment.status==='closed');
+    var anyWait=DETAIL.pallets.some(function(p){return p.status==='wait';});
+    var anyUndo=DETAIL.pallets.some(canUndo);
+    // 더 이상 되돌릴 수 없게 된 선택은 정리(검수 시작·이미 취소됨 등)
+    Object.keys(undoSel).forEach(function(k){
+      var p=DETAIL.pallets.filter(function(x){return String(x.id)===String(k);})[0];
+      if(!p||!canUndo(p)) delete undoSel[k];
+    });
+    b.innerHTML='<p class="hint">'+L('컨테이너에서 팔렛만 빠르게 내립니다. 번호·라벨 확인 불필요. 잘못 눌렀으면 ↩ 로 취소하거나, 체크해서 골라 취소하세요.','Solo baje los pallets. Si se equivocó, use ↩ o marque los pallets y cancele los seleccionados.')+'</p>'
+      +'<div class="row" style="margin-bottom:10px">'
+      +((!locked&&anyWait)?'<button class="btn o" id="btnUnAll">'+L('전체 하차','Descargar todo')+'</button>':'')
+      +((!locked&&anyUndo)?'<button class="btn r" id="btnUndoSel" disabled>↩ '+L('선택 취소','Cancelar selección')+' (0)</button>':'')
+      +((!locked&&anyUndo)?'<button class="btn ghost" id="btnUnAllCancel">↩ '+L('전체 하차 취소','Cancelar toda la descarga')+'</button>':'')
+      +'<span class="hint" style="margin:0">'+L('인보이스','Factura')+' '+groups.length+' · '+L('팔렛','Pallets')+' '+st.unloaded+'/'+st.N+' '+L('하차','descargados')+'</span></div>'
+      +'<div id="pg"></div>';
+    $('pg').innerHTML=groups.map(function(G,gi){
+      return '<div class="pgrp">'
+        +'<div class="gh"><div style="min-width:0">'
+        +'<div class="gn">'+poHtml(G.key)+'</div>'
+        +'<div class="gd">'+L('팔렛','Pallets')+' '+G.unloaded+'/'+G.N+' · '+L('카톤','Cajas')+' '+fmt(G.cartons)+' · '+fmt(G.qty)+' EA</div></div>'
+        +'<div class="ga">'
+        +((!locked&&G.undoable.length)?'<label class="gsel"><input type="checkbox" data-gall="'+gi+'">'+L('선택','Sel.')+'</label>':'')
+        +((!locked&&G.wait.length)?'<button class="btn o sm" data-gun="'+gi+'">'+L('하차','Descargar')+' '+G.wait.length+'</button>':'')
+        +((!locked&&G.undoable.length)?'<button class="btn ghost sm" data-gundo="'+gi+'">↩ '+L('취소','Cancelar')+' '+G.undoable.length+'</button>':'')
+        +'</div></div>'
+        +'<div class="gb"><div class="pgrid">'+G.pals.map(function(p){ return palCard(p,!locked); }).join('')+'</div></div></div>';
+    }).join('');
+    document.querySelectorAll('#pg .pal').forEach(function(el){
+      el.addEventListener('click',function(ev){
+        if(ev.target&&ev.target.closest&&(ev.target.closest('.undo')||ev.target.closest('.pck'))) return;
+        unloadOne(+el.dataset.pid);
+      });
+      el.addEventListener('keydown',function(ev){ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); unloadOne(+el.dataset.pid); } });
+    });
+    document.querySelectorAll('#pg [data-undo]').forEach(function(el){
+      el.addEventListener('click',function(ev){ ev.preventDefault(); ev.stopPropagation(); undoOne(+el.dataset.undo); });
+    });
+    document.querySelectorAll('#pg [data-ck]').forEach(function(el){
+      el.addEventListener('click',function(ev){ ev.stopPropagation(); });
+      el.addEventListener('change',function(){ var id=el.dataset.ck; if(el.checked) undoSel[id]=true; else delete undoSel[id]; syncSel(); });
+    });
+    document.querySelectorAll('#pg [data-gall]').forEach(function(el){
+      el.addEventListener('click',function(ev){ ev.stopPropagation(); });
+      el.addEventListener('change',function(){
+        var G=CURGROUPS[+el.dataset.gall]; if(!G) return;
+        G.undoable.forEach(function(p){ if(el.checked) undoSel[p.id]=true; else delete undoSel[p.id]; });
+        document.querySelectorAll('#pg [data-ck]').forEach(function(cb){ cb.checked=!!undoSel[cb.dataset.ck]; });
+        syncSel();
+      });
+    });
+    document.querySelectorAll('#pg [data-gun]').forEach(function(el){
+      el.addEventListener('click',function(){ unloadMany(groups[+el.dataset.gun].wait, groups[+el.dataset.gun].key); });
+    });
+    document.querySelectorAll('#pg [data-gundo]').forEach(function(el){
+      el.addEventListener('click',function(){ undoMany(groups[+el.dataset.gundo].undoable, groups[+el.dataset.gundo].key); });
+    });
+    var ba=$('btnUnAll');
+    if(ba) ba.addEventListener('click',function(){ unloadMany(DETAIL.pallets.filter(function(p){return p.status==='wait';}),null); });
+    var bs=$('btnUndoSel');
+    if(bs) bs.addEventListener('click',function(){ undoMany(selPallets(),L('선택한 팔렛','Pallets seleccionados')); });
+    var bc=$('btnUnAllCancel');
+    if(bc) bc.addEventListener('click',function(){ undoMany(DETAIL.pallets.filter(canUndo),null); });
+    syncSel();
+  }
+  function unloadOne(pid){
+    var p=DETAIL.pallets.filter(function(x){return x.id===pid;})[0];
+    if(p&&p.status!=='wait'){ STEP='check'; scanReset(); renderDetail(); return; }
+    api('/api/inbound/'+SHIP+'/pallets/'+pid+'/unload',{method:'POST'}).then(function(o){ if(o.ok){ toast(L('하차','Descargado')); refreshDetail(); } });
+  }
+  function unloadMany(list,label){
+    if(!list||!list.length){ toast(L('전부 하차됨','Todo descargado')); return; }
+    runSeq(list,function(p){ return '/api/inbound/'+SHIP+'/pallets/'+p.id+'/unload'; },function(fail){
+      refreshDetail();
+      toast(fail?L('하차 '+(list.length-fail)+'/'+list.length,'Descargados '+(list.length-fail)+'/'+list.length)
+                :L('하차 완료','Descarga completa')+(label?' · '+label:''));
+    });
+  }
+  /* ---- 하차 취소 ---- */
+  function undoErr(e){
+    return e==='has_scan'?L('이미 스캔된 팔렛은 취소할 수 없습니다','Ya tiene escaneos — no se puede cancelar')
+      :e==='bad_state'?L('검수·적치가 시작된 팔렛은 취소할 수 없습니다','Ya está en verificación/acomodo — no se puede cancelar')
+      :e==='closed'?L('마감된 선적입니다','El embarque está cerrado')
+      :L('하차 취소 실패','Error al cancelar')+': '+(e||'');
+  }
+  function undoOne(pid){
+    api('/api/inbound/'+SHIP+'/pallets/'+pid+'/unload-cancel',{method:'POST'}).then(function(o){
+      delete undoSel[pid];
+      if(!o.ok||o.body.error){ toast(undoErr(o.body.error)); refreshDetail(); return; }
+      toast('↩ '+L('하차 취소됨 — 대기로 되돌림','Descarga cancelada — en espera')); refreshDetail();
+    });
+  }
+  function undoMany(list,label){
+    if(!list||!list.length){ toast(L('취소할 하차가 없습니다','No hay descargas por cancelar')); return; }
+    if(!confirm(L(list.length+'개 팔렛의 하차를 취소하고 대기로 되돌립니다.','Se cancelará la descarga de '+list.length+' pallets.')+(label?'\n'+label:''))) return;
+    runSeq(list,function(p){ return '/api/inbound/'+SHIP+'/pallets/'+p.id+'/unload-cancel'; },function(fail,err){
+      list.forEach(function(p){ delete undoSel[p.id]; });
+      refreshDetail();
+      toast(fail?undoErr(err)+' ('+(list.length-fail)+'/'+list.length+')'
+                :'↩ '+L('하차 취소 완료','Descarga cancelada')+' '+list.length+(label?' · '+label:''));
+    });
+  }
+
+  /* ---- 검수(개편 2026-08-17m): "스캔은 기록, 판정은 보고서" ----
+     ① 팔렛을 먼저 선택한다(시스템 추측 제거 — 어느 팔렛인지는 작업자가 안다)
+     ② 스캔은 무조건 즉시 서버에 기록(0174 inbound_scans) — 어떤 경우에도 차단하지 않는다
+     ③ [대조] = 서버가 패킹리스트와 비교한 보고서(예상/스캔/차이) — 보여줄 뿐 막지 않는다
+     ④ [입고 확정] = 실제 스캔 수 그대로 저장(클램프 없음), 차이는 기록으로 남는다
+     서버가 유일한 진실 — 새로고침·기기 교체·다중 작업자·브라우저 캐시와 무관하게 이어진다.
+     전송 실패분은 큐(localStorage 보존)에 남아 3초 간격 자동 재시도. */
+  var selPal=null;          // 선택된 팔렛 id — 선택해야 스캔 시작
+  var srvTally=[];          // 서버가 확인해준 누적 [{code,qty,n}]
+  var scanQ=[];             // 미전송 큐 [{code,qty,matched,k} | {undo,qty,k}]
+  /* 스캔 1건의 멱등 키(0175) — 응답 유실로 같은 스캔을 다시 보내도 서버가 1회만 기록.
+     "한 순간에 두 번 집계"되던 이중 기록 버그의 근본 수정. */
+  function scanKey(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10); }
+  var scanBusy=false, scanRetryT=null, reconOn=false, wasOffline=false, lastSendErr='';
+  function scanReset(){ selPal=null; srvTally=[]; scanQ=[]; scanBusy=false; reconOn=false; wasOffline=false; lastSendErr=''; scanLbl=null; clearTimeout(scanRetryT); }
+  function curSelPal(){ return (DETAIL&&DETAIL.pallets.filter(function(p){return p.id===selPal;})[0])||null; }
+  function qKey(){ return 'inb_scanq_'+SHIP+'_'+selPal; }
+  function saveQ(){ try{ if(selPal!=null) localStorage.setItem(qKey(),JSON.stringify(scanQ)); }catch(e){} }
+  function loadQ(){ try{ scanQ=JSON.parse(localStorage.getItem(qKey())||'[]')||[]; }catch(e){ scanQ=[]; } }
+  /* 전송 — 큐 앞쪽의 연속 스캔(또는 취소 1건)을 보내고, 성공하면 서버 tally 로 화면을 맞춘다 */
+  function flushScans(){
+    if(scanBusy||selPal==null||!scanQ.length){ updSync(); return; }
+    var sendScans=[], sendUndo=null;
+    if(scanQ[0].undo){ sendUndo=scanQ[0]; }
+    else{ for(var i=0;i<scanQ.length&&i<200;i++){ if(scanQ[i].undo) break; sendScans.push(scanQ[i]); } }
+    scanBusy=true; updSync();
+    var body={};
+    if(sendScans.length) body.scans=sendScans.map(function(e){ return {code:e.code,qty:e.qty||null,matched:e.matched!==false,k:e.k||null}; });
+    if(sendUndo){ body.undo_code=sendUndo.undo; body.undo_qty=sendUndo.qty||null; body.undo_k=sendUndo.k||null; }
+    api('/api/inbound/'+SHIP+'/pallets/'+selPal+'/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(o){
+        scanBusy=false;
+        if(o.ok&&o.body&&o.body.ok){
+          lastSendErr='';
+          scanQ.splice(0,sendUndo?1:sendScans.length); saveQ();
+          srvTally=o.body.tally||[];
+          if(wasOffline&&!scanQ.length){ wasOffline=false; sndInfo(); toast('✔ '+L('밀린 스캔이 서버에 저장되었습니다','Lecturas pendientes guardadas')); }
+          renderScanState();
+          if(scanQ.length) flushScans(); else updSync();
+        }else{
+          // 서버가 응답은 했지만 거부 — 원인을 화면에 보여준다(마이그레이션 누락·구버전 API 등)
+          lastSendErr=(o.body&&o.body.error)?String(o.body.error):('HTTP '+o.status);
+          if(!wasOffline){ wasOffline=true; sndWarn(); }
+          updSync();
+          clearTimeout(scanRetryT); scanRetryT=setTimeout(flushScans,3000);
+        }
+      })
+      .catch(function(){
+        // 응답 자체가 없음(네트워크 단절·서버 다운) — 재시도 루프가 멈추지 않게 반드시 복구
+        scanBusy=false;
+        lastSendErr=L('네트워크 없음','sin red');
+        if(!wasOffline){ wasOffline=true; sndWarn(); }
+        updSync();
+        clearTimeout(scanRetryT); scanRetryT=setTimeout(flushScans,3000);
+      });
+  }
+  // 전송 실패 원인 → 현장에서 바로 조치할 수 있는 안내문
+  function sendErrHint(){
+    var e=lastSendErr; if(!e) return '';
+    var m;
+    if(/^HTTP 5/.test(e)) m=L('서버 오류 — 백엔드 마이그레이션(npm run migrate) 실행 여부를 확인하세요','error del servidor — verifique la migración del backend');
+    else if(/^HTTP 404/.test(e)) m=L('서버에 새 API 가 없음 — 백엔드(inboundRoutes.js) 배포를 확인하세요','API no encontrada — verifique el despliegue del backend');
+    else if(/^HTTP 401|^HTTP 403/.test(e)) m=L('로그인 만료 — 포털에서 다시 여세요','sesión expirada — vuelva a abrir');
+    else if(/네트워크|sin red/.test(e)) m=L('와이파이/인터넷 연결을 확인하세요','verifique la conexión');
+    else m=e;
+    return ' · <b>'+esc(e)+'</b> — '+m;
+  }
+  function updSync(){
+    var el=$('syncst'); if(!el) return;
+    if(!scanQ.length&&!scanBusy) el.innerHTML='<span style="opacity:.95">● '+L('서버 저장됨','guardado')+'</span>';
+    else if(wasOffline) el.innerHTML='<span style="color:#FFD9CF">● '+L('전송 대기','pendiente')+' '+scanQ.length+L('건','')+' — '+L('자동 재시도 중','reintentando')+sendErrHint()+'</span>';
+    else el.innerHTML='<span style="opacity:.8">● '+L('전송 중','enviando')+'…</span>';
+  }
+  /* 화면 표시용 누적 = 서버 확인분 + 아직 안 보낸 큐(낙관 반영) */
+  function combTally(){
+    var t={}, order=[];
+    function add(code,qty,d){ var k=code+'|'+(qty||0); if(!t[k]){ t[k]={code:code,qty:qty||0,n:0}; order.push(k); } t[k].n+=d; }
+    srvTally.forEach(function(e){ add(e.code,e.qty||0,e.n); });
+    scanQ.forEach(function(e){ if(e.undo) add(e.undo,e.qty||0,-1); else add(e.code,e.qty||0,1); });
+    return order.map(function(k){ return t[k]; }).filter(function(e){ return e.n>0; });
+  }
+  function tallyTotal(){
+    var pal=curSelPal(), n=0, q=0;
+    combTally().forEach(function(e){ n+=e.n;
+      var it=pal?(findItem(pal.items,e.code)||findAnyItem(e.code)):findAnyItem(e.code);
+      q+=e.n*(e.qty||perCarton(it)); });
+    return {n:n,q:q};
+  }
+  /* 팔렛 선택/해제 — 스캔 시작점. 전송 대기분이 있으면 팔렛을 못 바꾼다(기록 유실 방지). */
+  function lockPallet(pid){
+    if(reconOn) return;
+    if(selPal===pid){
+      if(scanQ.length){ sndWarn(); toast(L('전송이 끝나지 않았습니다 — 잠시 후 다시 시도하세요','Aún enviando — espere')); return; }
+      clearWorking(); selPal=null; srvTally=[]; renderCheck(); return;
+    }
+    if(selPal!=null&&scanQ.length){ sndWarn(); toast(L('전송이 끝나지 않았습니다 — 잠시 후 팔렛을 바꾸세요','Aún enviando — espere')); return; }
+    var p=DETAIL.pallets.filter(function(x){return x.id===pid;})[0];
+    if(!p||p.status==='wait'||p.status==='done') return;
+    selPal=pid; srvTally=(p.scans||[]).slice(); loadQ();
+    sndInfo(); pingWorking(pid,'check');
+    renderCheck(); flushScans();
+  }
+  function renderPalPick(){
+    var el=$('palpick'); if(!el) return;
+    var avail=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking'||p.status==='checked';});
+    el.innerHTML=avail.map(function(p){
+      var on=(selPal===p.id);
+      var sc=(p.scans||[]).reduce(function(a,e){return a+e.n;},0);
+      if(on) sc=tallyTotal().n;
+      return '<span class="pchip'+(on?' on':'')+'" data-lp="'+p.id+'" role="button" tabindex="0">'
+        +(on?'✔ ':(p.status==='checked'?'✓ ':''))+'<span class="n">'+esc(String(p.pl_no))+'</span>'
+        +'<span>'+esc(shortPo(p.order_no))+'</span>'
+        +'<small>'+(sc?fmt(sc)+'/':'')+fmt(p.cartons_expected)+L('카톤','cajas')+'</small></span>';
+    }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('[data-lp]'),function(ch){
+      ch.addEventListener('click',function(){ lockPallet(+ch.dataset.lp); });
+      ch.addEventListener('keydown',function(ev){ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); lockPallet(+ch.dataset.lp); } });
+    });
+  }
+  function shortPo(v){ var t=String(v||''); return t.length>10?t.slice(0,10)+'…':t; }
+
+  function renderCheck(){
+    var b=$('stepbody');
+    var avail=DETAIL.pallets.filter(function(p){return p.status==='unloaded'||p.status==='checking'||p.status==='checked';});
+    var pal=curSelPal();
+    if(!pal){
+      b.innerHTML='<p class="hint">'+L('<b>① 팔렛 선택</b> → <b>② 박스 전부 스캔</b>(모든 스캔은 즉시 서버에 기록 — 아무것도 막지 않습니다) → <b>③ [대조]</b>로 패킹리스트와 비교 → <b>④ [입고 확정]</b>. 스캔마다 옮길 <b>존</b>이 표시됩니다.','<b>① Elija el pallet</b> → <b>② escanee todas sus cajas</b> (cada lectura se guarda al instante) → <b>③ [Comparar]</b> → <b>④ [Confirmar]</b>.')+'</p>'
+        +'<div class="palpick" id="palpick"></div>'
+        +(avail.length?'':'<div class="scanbox"><div class="idle">'+L('하차된 팔렛이 없습니다 — 먼저 하차하세요','Sin pallets descargados — descargue primero')+'</div></div>');
+      renderPalPick(); return;
+    }
+    /* .scanstick = PDA 모드에서 헤더 바로 아래 고정되는 블록(잠금줄·스캔결과·입력칸·진행줄).
+       일반 모드에서는 아무 효과 없는 단순 div 다. */
+    b.innerHTML='<div class="scanstick"><div class="locked"><div class="a">'+L('검수 중','Verificando')+' · <span id="syncst"></span></div>'
+      +'<div class="b">'+esc(pal.order_no)+' · '+L('팔렛','Pallet')+' '+pal.pl_no+'</div>'
+      +'<div class="c">'+L('예상','Esp.')+' '+fmt(pal.cartons_expected)+L('카톤','cajas')+' · '+fmt(pal.qty_expected)+' EA'+(pal.status==='checked'?' · ✓ '+L('확정됨 — 더 스캔하고 재확정 가능','confirmado'):'')+'</div></div>'
+      +'<div class="scanbox" id="scanres"><div class="idle">'+L('카톤을 스캔하세요','Escanee una caja')+'</div></div>'
+      +'<div class="scaninput"><input type="text" id="scanIn" placeholder="'+L('카톤 라벨 스캔 (예: CTR-CE0796-16)','Escanee la etiqueta (ej. CTR-CE0796-16)')+'" autocomplete="off"><button class="btn g" id="btnScanGo">'+L('스캔','Escanear')+'</button></div>'
+      +'<div class="pbar"><i id="cbar"></i></div><div class="hint" id="ctxt" style="margin:0"></div></div>'
+      +'<div class="row" style="margin:8px 0">'
+      +'<button class="btn" id="btnRecon">📋 '+L('대조','Comparar')+'</button>'
+      +'<button class="btn ghost sm" id="btnPalChg">⇄ '+L('팔렛 변경','Cambiar pallet')+'</button>'
+      +'<button class="btn ghost sm" id="btnSlog">🕒 '+L('스캔 이력','Historial')+'</button></div>'
+      +'<div id="slogbox" style="display:none;max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:9px;background:#fff;margin-bottom:8px"></div>'
+      +'<div class="skulist" id="sklist"></div>'
+      +'<div class="palpick" id="palpick" style="margin-top:10px"></div>';
+    var inp=$('scanIn');
+    var fire=wireScanInput(inp,doScan);
+    $('btnScanGo').addEventListener('click',fire);
+    $('btnRecon').addEventListener('click',reconShow);
+    $('btnPalChg').addEventListener('click',function(){ lockPallet(selPal); });
+    $('btnSlog').addEventListener('click',function(){ var el=$('slogbox');
+      el.style.display=(el.style.display==='none')?'block':'none'; if(el.style.display!=='none') renderScanLog(); });
+    inp.focus();
+    renderScanState(); updSync();
+  }
+  /* 스캔 = 기록 — 판정·차단 없음. 존 안내 + 누적 + 즉시 서버 전송. */
+  function doScan(input){
+    if(!input) return;
+    if(reconOn) return;                        // 대조 화면에서는 스캔 잠금([← 계속 스캔]으로 복귀)
+    var pal=curSelPal();
+    if(!pal){ sndWarn(); toast(L('팔렛을 먼저 선택하세요','Elija un pallet primero')); return; }
+    var lbl=parseLabel(input); scanLbl=lbl;
+    var code=lbl.code; if(!code) return;
+    if(dupScan(lbl.norm)) return;              // 스캐너 이중/연쇄 리딩만 거른다(경고음은 연쇄당 1번)
+    var inPal=!!findItem(pal.items,code);
+    if(!inPal&&looksCompanion(code)){ logScan(code,L('부속 무시','ignorado')); return; }
+    scanQ.push({code:code,qty:lbl.qty||0,matched:inPal,k:scanKey()}); saveQ();
+    goodScanMark();
+    var it=findItem(pal.items,code)||findAnyItem(code);
+    if(!inPal){
+      sndWarn(); logScan(code,L('라인에 없음(기록됨)','no en lista (anotada)'));
+      showScan(code,'warn',L('이 팔렛의 패킹리스트에 없는 코드 — 기록해 두었습니다. [대조]에서 표시됩니다.','No está en la lista de este pallet — quedó registrado.'));
+    }else{
+      var mm=qtyMismatch(it,lbl.qty);
+      if(mm||zoneNo(it)==null) sndWarn(); else sndOk();
+      logScan(code,L('기록','registrada')+(lbl.qty?' ×'+lbl.qty:''));
+      showScan(code,'ok',null,null,it);
+    }
+    renderScanState(); flushScans();
+  }
+  /* 스캔 결과 표시 — 존 안내가 핵심. 카운트는 "이 코드 누적 n회". */
+  function showScan(code,cls,warn,candN,line){
+    var box=$('scanres'); if(!box) return;
+    box.className='scanbox '+(cls||'');
+    var it=line||findAnyItem(code), nm=it?(it.name||''):'';
+    if(warn){ box.innerHTML='<div class="sku" style="color:var(--red)">⚠ '+esc(code)+'</div><div class="nm">'+esc(nm)+'</div><div class="z"><b style="color:var(--red)">'+esc(warn)+'</b></div>'+labelHint(); return; }
+    var rack=it?it.rack:null, z=zoneOf(rack), isNew=(z==='NEW');
+    var n=0; combTally().forEach(function(e){ if(e.code===(it?it.code:code)) n+=e.n; });
+    var mm=qtyMismatch(it,scanLbl&&scanLbl.qty);
+    box.innerHTML='<div class="sku">'+esc(it?it.code:code)+(scanLbl&&scanLbl.qty?' <span style="font-size:15px;color:var(--muted)">× '+fmt(scanLbl.qty)+' EA</span>':'')+'</div><div class="nm">'+esc(nm)+'</div>'
+      +zoneBigHtml(it)
+      +'<div class="z"><span class="zone '+(isNew?'new':'')+'">'+(isNew?'🆕 '+L('랙 미지정','Sin ubic.'):z+L('존','')) +'</span>'
+      +'<span class="mono" style="color:var(--muted);font-size:12px">'+(isNew?L('적치 때 지정','asignar en acomodo'):esc(rack))+'</span>'
+      +'<span style="margin-left:auto;font-weight:700">'+L('이 코드 누적','Acum.')+' <b style="font-size:16px">'+n+'</b>'+L('회','')+'</span></div>'
+      +(mm?'<div class="z"><b style="color:#C0533B">⚠ '+L('소입수 불일치','Cant./caja distinta')+' — '+L('라벨','etiqueta')+' '+fmt(mm.got)+' EA · '+L('패킹리스트','lista')+' '+fmt(mm.exp)+' EA</b></div>':'')
+      +labelHint();
+  }
+  /* 하단: 누적 집계표 (+ 행별 −1 보정 — 취소도 서버에 기록된다) */
+  function renderScanState(){
+    var pal=curSelPal(); if(!pal){ renderPalPick(); return; }
+    var tt=tallyTotal();
+    var ct=$('ctxt'); if(ct) ct.innerHTML=L('스캔','Lecturas')+' <b>'+fmt(tt.n)+'</b> / '+fmt(pal.cartons_expected)+L('박스','cajas')+' · '+fmt(tt.q)+' EA';
+    var cb=$('cbar'); if(cb) cb.style.width=Math.min(100,pal.cartons_expected?Math.round(tt.n*100/pal.cartons_expected):0)+'%';
+    var br=$('btnRecon'); if(br) br.textContent='📋 '+L('대조','Comparar')+(tt.n?' ('+tt.n+L('박스','cajas')+')':'');
+    var el=$('sklist'); if(!el) return;
+    var rows=combTally().map(function(t){
+      var it=findItem(pal.items,t.code), known=!!it; if(!it) it=findAnyItem(t.code);
+      return '<div class="skurow"><span class="s"'+(known?'':' style="color:var(--red)"')+'>'+(known?'':'⚠ ')+esc(t.code)+(t.qty?' <span class="mono" style="font-size:10.5px;color:var(--muted)">×'+fmt(t.qty)+'</span>':'')+'</span>'
+        +'<span class="z2">'+(it?(zoneOf(it.rack)==='NEW'?'🆕':zoneOf(it.rack)):'')+(it?zoneChip(it):'')+'</span>'
+        +'<button class="btn ghost sm" data-bdel="'+esc(t.code)+'|'+t.qty+'" title="'+L('한 개 빼기(오스캔 보정)','quitar 1')+'" style="padding:1px 8px">−</button>'
+        +'<span class="c"'+(known?'':' style="color:var(--red)"')+'>'+t.n+L('회','')+'</span></div>';
+    });
+    el.innerHTML=rows.join('');
+    Array.prototype.forEach.call(el.querySelectorAll('[data-bdel]'),function(bt){
+      bt.addEventListener('click',function(ev){ ev.stopPropagation();
+        var kv=bt.dataset.bdel.split('|'), c=kv[0], q=+kv[1];
+        scanQ.push({undo:c,qty:q,k:scanKey()}); saveQ();
+        sndInfo(); logScan(c,L('수동 −1','ajuste −1')); renderScanState(); flushScans(); });
+    });
+    renderPalPick();
+  }
+  /* ===== [대조] — 서버 보고서(저장 없음) → [입고 확정] — 실측 저장 ===== */
+  function reconShow(){
+    var pal=curSelPal(); if(!pal) return;
+    if(scanQ.length){ sndWarn(); toast(L('스캔 전송 중 — 잠시 후 다시 누르세요','Enviando lecturas — espere')); flushScans(); return; }
+    api('/api/inbound/'+SHIP+'/pallets/'+pal.id+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry:true})})
+      .then(function(o){
+        if(!o.ok||o.body.error){ sndErr(); toast(L('대조 실패','Error')+': '+(o.body.error||o.status)); return; }
+        reconOn=true; renderRecon(pal,o.body);
+      })
+      .catch(function(){ sndErr(); toast(L('대조 실패 — 네트워크를 확인하세요','Error de red')); });
+  }
+  function renderRecon(pal,rep){
+    var b=$('stepbody');
+    var rows='', diffN=0;
+    (rep.lines||[]).forEach(function(l){
+      var d=l.diff; if(d!==0) diffN++;
+      var pc=(l.cartons>0?Math.round(l.qty/l.cartons):0);
+      rows+='<tr'+(d!==0?' style="background:#FDF3F1"':'')+'>'
+        +'<td class="mono" style="padding:5px 8px">'+esc(l.code)+(pc?' <small style="color:var(--muted)">×'+fmt(pc)+'</small>':'')+'</td>'
+        +'<td style="text-align:right;padding:5px 8px">'+l.cartons+'</td>'
+        +'<td style="text-align:right;padding:5px 8px;font-weight:700">'+l.scanned+'</td>'
+        +'<td style="text-align:right;padding:5px 8px;font-weight:800;color:'+(d===0?'var(--green)':'var(--red)')+'">'+(d===0?'✓':(d>0?'+'+d:d))+'</td></tr>';
+    });
+    var unknown=rep.unknown||{};
+    var unRows=Object.keys(unknown).map(function(c){
+      return '<tr style="background:#FDF8EE"><td class="mono" style="padding:5px 8px">'+esc(c)+' <small style="color:#8A6300">'+L('라인에 없음','no en lista')+'</small></td><td style="text-align:right;padding:5px 8px">—</td><td style="text-align:right;padding:5px 8px">'+unknown[c]+'</td><td style="text-align:right;padding:5px 8px">?</td></tr>'; }).join('');
+    var tt=tallyTotal();
+    var okAll=(diffN===0&&!unRows);
+    b.innerHTML='<div class="locked" style="background:'+(okAll?'var(--green)':'#8A6300')+'"><div class="a">'+L('대조 — 패킹리스트 vs 실제 스캔','Comparación — lista vs leído')+'</div>'
+      +'<div class="b">'+esc(pal.order_no)+' · '+L('팔렛','Pallet')+' '+pal.pl_no+'</div>'
+      +'<div class="c">'+L('스캔','Leído')+' '+fmt(rep.total_scanned)+' / '+fmt(rep.total_expected)+L('박스','cajas')+' · '+fmt(tt.q)+' EA'
+      +(okAll?' · ✓ '+L('전부 일치','todo coincide'):' · ⚠ '+L('차이','dif.')+' '+diffN+L('라인',' líneas'))+'</div></div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:9px;overflow:hidden">'
+      +'<thead><tr style="background:#F0EDE4;font-size:11px;color:var(--muted)"><th style="text-align:left;padding:6px 8px">'+L('라인','Línea')+'</th><th style="text-align:right;padding:6px 8px">'+L('예상','Esp.')+'</th><th style="text-align:right;padding:6px 8px">'+L('스캔','Leído')+'</th><th style="text-align:right;padding:6px 8px">'+L('차이','Dif.')+'</th></tr></thead>'
+      +'<tbody>'+rows+unRows+'</tbody></table>'
+      +'<div class="row" style="margin-top:12px">'
+      +'<button class="btn" id="btnConfirm">✔ '+L('입고 확정 (실측 스캔 기준)','Confirmar recepción')+'</button>'
+      +'<button class="btn ghost" id="btnReconBack">← '+L('계속 스캔','Seguir escaneando')+'</button></div>'
+      +(okAll?'':'<p class="hint" style="margin-top:8px">'+L('차이가 있어도 확정할 수 있습니다 — 실제 스캔한 수가 그대로 저장되고, 차이는 기록으로 남습니다. 부족분은 나중에 더 스캔하고 다시 확정하면 됩니다.','Puede confirmar con diferencias — se guarda lo realmente leído; puede escanear más y reconfirmar.')+'</p>');
+    $('btnReconBack').addEventListener('click',function(){ reconOn=false; renderCheck(); });
+    $('btnConfirm').addEventListener('click',doConfirm);
+  }
+  function doConfirm(){
+    var pal=curSelPal(); if(!pal) return;
+    api('/api/inbound/'+SHIP+'/pallets/'+pal.id+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+      .then(function(o){
+        if(!o.ok||o.body.error){ sndErr(); toast(L('확정 실패','Error')+': '+(o.body.error||o.status)); return; }
+        sndSaved(); toast('✔ '+L('검수 확정 — 실측 '+fmt(o.body.total_scanned)+'박스 저장','Confirmado — '+fmt(o.body.total_scanned)+' cajas'));
+        try{ localStorage.removeItem(qKey()); }catch(e){}
+        clearWorking(); scanReset();
+        refreshDetail(function(){
+          renderDetail();
+          // 마지막 팔렛 검수가 끝났으면 바로 입고(마감)로 안내 — 적치를 기다릴 필요 없음(2026-08-17)
+          var all=DETAIL&&DETAIL.pallets.length&&DETAIL.pallets.every(palConfirmed);
+          if(all&&DETAIL.shipment.status!=='closed'){
+            toast('🎉 '+L('모든 팔렛 검수 완료 — [마감] 탭에서 지금 바로 입고할 수 있습니다 (적치는 그 후 계속)','Todo verificado — cierre la recepción en [Cierre]'));
+          }
+        });
+      })
+      .catch(function(){ sndErr(); toast(L('확정 실패 — 네트워크를 확인하세요','Error de red')); });
+  }
+
+  /* ---- 적치 — 팔렛 목록 → 박스 스캔(위치 안내) → 랙 스캔 잠금 → 박스 1개당 1스캔 ---- */
+  //  적치 목표 카톤 = 검수된 카톤(scanned_cartons). 서버 putaway 와 같은 기준.
+  var CHECKED_ST={checking:1,checked:1,done:1};
+  function palChecked(p){ return !!p.checked_at || !!CHECKED_ST[p.status]; }
+  function itemCap(p,i){ return palChecked(p)?(i.scanned_cartons||0):(i.cartons||0); }
+  function itemPut(i){ return (i.put_cartons||0)+(putAdd[i.id]||0); }
+  function itemLeft(p,i){ return Math.max(0,itemCap(p,i)-itemPut(i)); }
+  function itemRack(i){ return putSaveRack[i.id]||i.rack||null; }   // 이번에 지정/변경한 랙이 우선
+  function palPutStat(p){
+    var cap=0,put=0,left=0,zs={},skus=0;
+    p.items.forEach(function(i){
+      var c=itemCap(p,i); if(c<=0) return;
+      skus++; cap+=c; put+=Math.min(itemPut(i),c); left+=itemLeft(p,i);
+      zs[zoneOf(itemRack(i))]=1;
+    });
+    return {p:p,cap:cap,put:put,left:left,skus:skus,zones:Object.keys(zs).sort()};
+  }
+  function putQueue(){
+    return DETAIL.pallets.filter(palChecked).map(palPutStat).sort(function(a,b){
+      return (a.left?0:1)-(b.left?0:1)
+        || String(a.p.order_no).localeCompare(String(b.p.order_no)) || a.p.pl_no-b.p.pl_no; });
+  }
+  function curPutPal(){ return DETAIL.pallets.filter(function(p){return p.id===putPal;})[0]||null; }
+  function putReset(){ putPal=null; putRack=null; putAdd={}; putSaveRack={}; putLast=null; putWarn=null; putNoMaster={}; putEdit=null; }
+  // 미저장 변경 수 — 빼기(음수)도 저장할 변경이므로 절대값으로 센다(적치 수정 2026-08-17)
+  function putPending(){ var n=0; Object.keys(putAdd).forEach(function(k){ n+=Math.abs(putAdd[k]||0); }); return n+Object.keys(putSaveRack).length; }
+
+  function renderPut(){ if(putPal==null) renderPutList(); else renderPutWork(); }
+
+  function renderPutList(){
+    var b=$('stepbody'), q=putQueue();
+    var waitP=q.filter(function(s){return s.left>0;});
+    var cap=0,put=0,noRack=0;
+    q.forEach(function(s){ cap+=s.cap; put+=s.put;
+      s.p.items.forEach(function(i){ if(!itemRack(i)) noRack+=itemLeft(s.p,i); }); });
+    b.innerHTML='<div class="kpis" style="margin-bottom:12px">'
+      +'<div class="kpi"><div class="l">'+L('적치 대기 팔렛','Pallets por acomodar')+'</div><div class="v">'+waitP.length+' <small>/ '+DETAIL.pallets.length+'</small></div></div>'
+      +'<div class="kpi"><div class="l">'+L('적치 대기 카톤','Cajas por acomodar')+'</div><div class="v">'+fmt(cap-put)+'</div></div>'
+      +'<div class="kpi"><div class="l">'+L('랙 미지정','Sin ubicación')+'</div><div class="v" style="color:'+(noRack?'var(--gold)':'var(--muted)')+'">'+fmt(noRack)+' <small>'+L('카톤','cajas')+'</small></div></div>'
+      +'<div class="kpi"><div class="l">'+L('적치 완료','Acomodado')+'</div><div class="v" style="color:var(--green)">'+fmt(put)+'<small>/'+fmt(cap)+'</small></div></div></div>'
+      +'<p class="hint">'+L('검수가 끝난 팔렛만 나옵니다. 팔렛을 누르거나, 그 팔렛의 카톤을 그냥 스캔해도 열립니다.','Solo pallets verificados. Toque el pallet o escanee una caja suya.')+'</p>'
+      +'<div class="scaninput" style="margin-bottom:10px"><input type="text" id="putListIn" placeholder="'+L('팔렛 라벨 또는 카톤 스캔 → 팔렛 바로 열기','Escanee pallet o caja → abre el pallet')+'" autocomplete="off"><button class="btn g" id="btnPutListGo">'+L('스캔','Escanear')+'</button></div>'
+      +'<div id="pql"></div>';
+    if(!q.length){ $('pql').innerHTML='<div class="idle" style="padding:22px">'+L('적치할 팔렛이 없습니다 — 검수를 먼저 하세요','Nada por acomodar — verifique primero')+'</div>'; }
+    else $('pql').innerHTML=q.map(function(s){
+      var pct=s.cap?Math.round(s.put/s.cap*100):0, done=(s.left<=0);
+      return '<div class="ppal'+(done?' done':'')+'" data-pp="'+s.p.id+'" role="button" tabindex="0">'
+        +'<div class="who"><div class="po">PO '+poHtmlSm(s.p.order_no)+'</div><div class="pl">'+L('팔렛','Pallet')+' '+s.p.pl_no+'</div></div>'
+        +'<div class="zs">'+(s.zones.map(function(z){ return z==='NEW'
+              ?'<span class="zchip n">🆕 '+L('미지정','Sin ubic.')+'</span>'
+              :'<span class="zchip">'+esc(z)+'</span>'; }).join('')||'')+'</div>'
+        +'<div class="num2">'+L('카톤','Cajas')+' <b>'+fmt(s.left)+'</b> '+L('남음','rest.')+' · SKU '+s.skus+'</div>'
+        +(workChip(s.p)||'')
+        +'<div class="rt">'+(done?'<span class="tag g">'+L('적치 완료','Acomodado')+'</span>'
+             :'<div class="pb"><i style="width:'+pct+'%"></i></div><span class="num2">'+s.put+'/'+s.cap+'</span>')+'</div></div>';
+    }).join('');
+    document.querySelectorAll('#pql .ppal').forEach(function(el){
+      el.addEventListener('click',function(){ openPutPal(+el.dataset.pp); });
+      el.addEventListener('keydown',function(ev){ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); openPutPal(+el.dataset.pp); } });
+    });
+    var li=$('putListIn');
+    var fireL=wireScanInput(li,putListScan);
+    $('btnPutListGo').addEventListener('click',fireL);
+    li.focus();
+  }
+  function openPutPal(pid){ putPal=pid; putRack=null; putLast=null; putWarn=null; pingWorking(pid,'put'); renderPutWork(); }
+  // 목록에서 카톤을 스캔 → 그 카톤이 있는 적치 대기 팔렛을 자동 확정(검수와 같은 방식)
+  /* 팔렛 라벨 스캔 매칭(2026-08-18) — 팔렛이 많고 번호가 비슷해 목록에서 찾기 어렵다는
+     현장 요청. "ORDER NO + PL 번호" 형태의 팔렛 바코드를 스캔하면 그 팔렛으로 바로 들어간다.
+     허용 형태: 26B2C-4 · 26B2C/4 · 26B2C 4 · 26B2C4 (구분자·대소문자 무시) · PL 번호 단독(선적 내 유일할 때) */
+  function palByScan(code){
+    var b=bare(code); if(!b) return null;
+    var hits=DETAIL.pallets.filter(function(p){
+      return b===bare(String(p.order_no||'')+String(p.pl_no)); });
+    if(hits.length===1) return hits[0];
+    if(!hits.length&&/^\d{1,4}$/.test(b)){            // 짧은 숫자만 = 팔렛 번호 단독
+      var byNo=DETAIL.pallets.filter(function(p){ return String(p.pl_no)===String(Number(b)); });
+      if(byNo.length===1) return byNo[0];
+    }
+    return null;
+  }
+  function putListScan(input){
+    if(!input) return;
+    var lbl=parseLabel(input); var code=lbl.matched?lbl.code:normScan(input);   // 매칭 안 되면 랙 라벨일 수 있으니 원문 유지
+    if(dupScan(lbl.norm)) return;
+    if(!lbl.matched && looksCompanion(code)) return;   // 부속 바코드 — 무시
+    // ① 팔렛 라벨이면 그 팔렛으로 드릴다운(카톤보다 우선 — 팔렛 특정이 목적)
+    var sw=(!lbl.matched)?palByScan(code):null;
+    if(sw){
+      if(!palChecked(sw)){ sndWarn(); toast('⚠ '+L('아직 검수 전 팔렛입니다','Pallet sin verificar')+' — '+esc(String(sw.order_no))+'/'+sw.pl_no); return; }
+      sndInfo(); toast('📦 '+L('팔렛','Pallet')+' '+esc(String(sw.order_no))+'/'+sw.pl_no);
+      openPutPal(sw.id); return;
+    }
+    // ② 카톤 라벨이면 그 카톤이 실린 팔렛 자동 열기(기존)
+    var cands=putQueue().filter(function(s){
+      return s.left>0 && linesFor(s.p.items,code).some(function(m){ return itemLeft(s.p,m)>0; }); });
+    if(!cands.length){ sndErr(); toast(L('적치 대상 카톤/팔렛이 아닙니다','No es una caja ni un pallet por acomodar')+': '+code); return; }
+    if(cands.length>1){ sndWarn(); toast(L('여러 팔렛에 있는 품목입니다 — 팔렛 라벨을 스캔하거나 목록에서 고르세요','Está en varios pallets — escanee la etiqueta del pallet')+' ('+cands.length+')'); return; }
+    putPal=cands[0].p.id; putRack=null; putLast=null; putWarn=null; pingWorking(putPal,'put');
+    renderPutWork(); putScan(code);
+  }
+
+  function renderPutWork(){
+    var b=$('stepbody'), p=curPutPal();
+    if(!p){ putReset(); renderPutList(); return; }
+    var s=palPutStat(p);
+    var h=(workChip(p,true)||'')
+      +'<div class="row" style="justify-content:space-between;margin-bottom:9px">'
+      +'<div><div class="po" style="font-size:11px;color:var(--muted);font-weight:700">PO '+poHtmlSm(p.order_no)+'</div>'
+      +'<div style="font-size:16px;font-weight:700">'+L('팔렛','Pallet')+' '+p.pl_no+' · '+L('남은 카톤','Cajas rest.')+' '+fmt(s.left)+'</div></div>'
+      +'<div class="row" style="gap:7px"><span class="hint" style="margin:0" id="putsave">'+putSaveHint()+'</span>'
+      +'<button class="btn ghost sm" id="btnPutBack">← '+L('팔렛 목록','Pallets')+'</button></div></div>';
+    // .scanstick = PDA 모드에서 헤더 바로 아래 고정(작업랙·스캔결과·입력칸·진행줄). 일반 모드에서는 무효과.
+    h+='<div class="scanstick">';
+    // 작업 랙 배너
+    if(putRack){
+      h+='<div class="racklock"><div><div class="k">📍 '+L('작업 랙 — 잠금','Ubicación de trabajo')+'</div><div class="v">'+esc(putRack)+'</div></div>'
+        +'<div class="r2">'+L('박스를 1개씩 스캔하세요','Escanee las cajas una por una')+'</div>'
+        +'<button class="btn ghost sm" style="margin-left:12px" id="btnRackClear">↺ '+L('랙 변경','Cambiar')+'</button></div>';
+    } else {
+      h+='<div class="step2">📍 '+L('박스를 스캔하면 갈 곳을 알려줍니다. 그 랙에 도착하면 랙 번호를 1회 스캔해 잠근 뒤, 박스를 1개씩 스캔하세요.','Escanee una caja para ver su ubicación. Al llegar, escanee la ubicación una vez y luego las cajas una por una.')+'</div>';
+    }
+    h+='<div id="putres"></div>'
+      +'<div class="scaninput"><input type="text" id="putIn" placeholder="'+(putRack?L('다음 박스 스캔… (1박스 = 1스캔)','Siguiente caja… (1 caja = 1 escaneo)'):L('랙 또는 카톤 스캔 후 Enter','Ubicación o caja + Enter'))+'" autocomplete="off"><button class="btn g" id="btnPutGo2">'+L('스캔','Escanear')+'</button></div>'
+      +'<div class="pbar"><i style="width:'+(s.cap?Math.round(s.put/s.cap*100):0)+'%"></i></div>'
+      +'<div class="hint" style="margin:0">'+L('카톤','Cajas')+' <b>'+s.put+'/'+s.cap+'</b> · SKU '+p.items.filter(function(i){return itemCap(p,i)>0&&itemLeft(p,i)<=0;}).length+'/'+s.skus+'</div></div>'
+      +'<div class="skulist" id="putsku"></div>'
+      +'<div class="row" style="margin-top:9px">'
+      +'<button class="btn" id="btnPutSave"'+(putPending()?'':' disabled')+'>✔ '+L('적치 저장','Guardar')+(putPending()?' ('+putPending()+L('건',' cambios')+')':'')+'</button>'
+      +'<button class="btn ghost sm" id="btnPutUndo"'+(putPending()?'':' disabled')+'>↺ '+L('이번 스캔 취소','Descartar escaneos')+'</button></div>';
+    b.innerHTML=h;
+    $('btnPutBack').addEventListener('click',function(){ putFlush(function(){ clearWorking(); putReset(); renderPutList(); }); });
+    var rc=$('btnRackClear'); if(rc) rc.addEventListener('click',function(){ putFlush(function(){ putRack=null; putLast=null; putWarn=null; renderPutWork(); }); });
+    var inp=$('putIn');
+    var fireP=wireScanInput(inp,putScan);
+    $('btnPutGo2').addEventListener('click',fireP);
+    $('btnPutSave').addEventListener('click',function(){ putFlush(); });
+    $('btnPutUndo').addEventListener('click',function(){ putAdd={}; putSaveRack={}; putNoMaster={}; putLast=null; putWarn=null; renderPutWork(); });
+    renderPutRes(); renderPutSku();
+    inp.focus();
+  }
+  function putSaveHint(){
+    var n=putPending();
+    return putSaving?L('저장 중…','Guardando…'):(n?'<b style="color:var(--gold)">'+L('미저장','Sin guardar')+' '+n+'</b>':L('저장됨','Guardado'));
+  }
+  function putSaveSync(){ var el=$('putsave'); if(el) el.innerHTML=putSaveHint(); }
+  function renderPutSku(){
+    var p=curPutPal(); if(!p) return;
+    var el=$('putsku'); if(!el) return;
+    el.innerHTML=p.items.filter(function(i){return itemCap(p,i)>0;})
+      .sort(function(a,b){ return itemLeft(p,b)-itemLeft(p,a)||a.code.localeCompare(b.code); })
+      .map(function(i){
+        var cap=itemCap(p,i), put=Math.min(itemPut(i),cap), ok=(put>=cap), r=itemRack(i);
+        var row='<div class="skurow '+(ok?'done':'')+'"><span class="s mono">'+esc(i.code)+'</span>'
+          +'<span class="z2">'+(zoneOf(r)==='NEW'?'🆕':esc(zoneOf(r)))+'</span>'
+          +'<span style="color:var(--muted)">'+esc(i.name||'')+'</span>'
+          +'<span style="font-weight:700;margin-left:6px;color:'+(r?'var(--steel-d)':'var(--gold)')+'">'+(r?'📍 '+esc(r):'🆕 '+L('미지정','Sin ubic.'))+'</span>'
+          +'<button class="btn ghost sm" data-pe="'+i.id+'" title="'+L('적치 수정 — 위치 변경·박스 빼기','Editar acomodo')+'" style="padding:1px 8px">'+(putEdit===i.id?'▲':'✎')+'</button>'
+          +'<span class="c '+(ok?'ok':'')+'">'+put+'/'+cap+'</span></div>';
+        /* ✎ 적치 수정(2026-08-17) — 이미 올린 박스의 위치 변경/빼기. 변경은 자동 저장 대기에 올라간다. */
+        if(putEdit===i.id){
+          row+='<div style="border:1.5px solid var(--gold);background:#FDF8EE;border-radius:9px;padding:10px;margin:2px 0 8px">'
+            +'<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">'
+            +'<b class="mono">'+esc(i.code)+'</b><span>'+L('적치','Acomodado')+' <b>'+put+'</b>/'+cap+'</span>'
+            +'<button class="btn ghost sm" id="peMinus"'+(itemPut(i)>0?'':' disabled')+'>−1 '+L('빼기','quitar')+'</button>'
+            +'<button class="btn ghost sm" id="pePlus"'+(itemLeft(p,i)>0?'':' disabled')+'>+1 '+L('추가','agregar')+'</button></div>'
+            +'<div class="row" style="gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">'
+            +'<span style="font-weight:700">📍 '+L('위치','Ubic.')+'</span>'
+            +'<input type="text" id="peRack" class="mono" value="'+esc(r||'')+'" style="width:130px;padding:6px 9px" placeholder="'+L('새 랙 스캔/입력','Nueva ubicación')+'" autocomplete="off">'
+            +'<label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="peMaster" checked>'+L('제품 기본 위치도 변경','También ubicación maestra')+'</label>'
+            +'<button class="btn sm" id="peApply">'+L('위치 적용','Aplicar')+'</button>'
+            +'<button class="btn ghost sm" id="peClose">'+L('닫기','Cerrar')+'</button></div>'
+            +'<div class="hint" style="margin:6px 0 0">'+L('빼기: 랙에서 내린 박스만큼 누르세요. 위치 적용: 이 선적의 적치 위치가 바뀌고, 체크 시 제품 마스터 위치도 함께 바뀝니다(감사로그 기록).','Quitar: por cada caja bajada. Aplicar: cambia la ubicación de este embarque; con la casilla también la maestra.')+'</div></div>';
+        }
+        return row;
+      }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('[data-pe]'),function(bt){
+      bt.addEventListener('click',function(ev){ ev.stopPropagation();
+        putEdit=(putEdit===+bt.dataset.pe)?null:+bt.dataset.pe; renderPutSku(); });
+    });
+    if(putEdit!=null){
+      var it=null; p.items.forEach(function(x){ if(x.id===putEdit) it=x; });
+      var mi=$('peMinus'), pl2=$('pePlus'), ap=$('peApply'), cl=$('peClose'), rk=$('peRack');
+      if(it&&rk){
+        liveNorm(rk);
+        rk.addEventListener('keydown',function(ev){ if(ev.key==='Enter'||ev.keyCode===13){ ev.preventDefault(); if(ap) ap.click(); } });
+        if(mi) mi.addEventListener('click',function(){
+          if(itemPut(it)<=0) return;
+          putAdd[it.id]=(putAdd[it.id]||0)-1;
+          sndInfo(); logScan(it.code,L('적치 −1 (수정)','acomodo −1'));
+          schedFlush(); renderPutWork();
+        });
+        if(pl2) pl2.addEventListener('click',function(){
+          if(itemLeft(p,it)<=0) return;
+          putAdd[it.id]=(putAdd[it.id]||0)+1;
+          sndOk(); logScan(it.code,L('적치 +1 (수정)','acomodo +1'));
+          schedFlush(); renderPutWork();
+        });
+        if(ap) ap.addEventListener('click',function(){
+          var nr=normScan(rk.value);
+          if(!nr){ sndWarn(); toast(L('랙 번호를 입력하세요','Ingrese la ubicación')); return; }
+          putSaveRack[it.id]=nr;
+          var master=$('peMaster')&&$('peMaster').checked;
+          if(master) delete putNoMaster[it.id]; else putNoMaster[it.id]=true;
+          putEdit=null; sndInfo();
+          toast('📍 '+it.code+' → '+nr+(master?'':' ('+L('이 선적만','solo este embarque')+')'));
+          logScan(it.code,L('위치 변경','ubic. cambiada')+' → '+nr);
+          schedFlush(); renderPutWork();
+        });
+        if(cl) cl.addEventListener('click',function(){ putEdit=null; renderPutSku(); });
+      }
+    }
+  }
+  function renderPutRes(){
+    var el=$('putres'); if(!el) return;
+    var p=curPutPal();
+    if(putWarn){
+      var w=putWarn.item, wr=itemRack(w);
+      el.innerHTML='<div class="bigwarn">⚠ <b>'+L('지정 랙과 다릅니다','La ubicación no coincide')+'</b> — '
+        +L('이 박스의 지정 랙은','la ubicación de esta caja es')+' <b>'+esc(wr)+'</b>, '+L('현재 작업 랙은','y la de trabajo es')+' <b>'+esc(putRack)+'</b>.</div>'
+        +'<div class="scanbox warn"><div class="sku mono">'+esc(w.code)+'</div><div class="nm">'+esc(w.name||'')+'</div>'
+        +'<div class="z"><span class="rackbig" style="background:var(--red)">'+esc(wr)+'</span>'
+        +'<span style="font-weight:700;color:var(--red)">'+L('지정 랙','Asignada')+'</span>'
+        +'<span style="color:var(--muted)">≠ '+L('작업 랙','Trabajo')+' <b>'+esc(putRack)+'</b></span></div>'
+        +'<div class="row" style="margin-top:10px"><button class="btn r" id="btnRackMove">📍 '+L('이 SKU 위치를','Cambiar a')+' '+esc(putRack)+L(' 로 변경','')+'</button>'
+        +'<button class="btn ghost" id="btnRackSkip">'+esc(wr)+L(' 로 가져가기','Llevar allá')+'</button></div>'
+        +'<div class="hint" style="margin:8px 0 0">'+L('변경하면 제품 기본 위치도 함께 갱신되고 감사로그에 남습니다.','Al cambiar se actualiza la ubicación maestra del producto y se registra en auditoría.')+'</div></div>';
+      $('btnRackMove').addEventListener('click',function(){ var it=putWarn.item; putWarn=null;
+        putSaveRack[it.id]=putRack; putAdd[it.id]=(putAdd[it.id]||0)+1;
+        putLast={item:it,ok:true,moved:true}; sndOk(); schedFlush(); renderPutWork(); });
+      $('btnRackSkip').addEventListener('click',function(){ putWarn=null; putLast=null; renderPutWork(); });
+      return;
+    }
+    if(!putLast){
+      el.innerHTML='<div class="scanbox"><div class="idle">'+(putRack
+        ?L('박스를 스캔하세요','Escanee una caja')
+        :L('박스를 스캔하면 갈 랙을 알려줍니다','Escanee una caja para ver su ubicación'))+'</div></div>';
+      return;
+    }
+    var it=putLast.item, r=itemRack(it), cap=itemCap(p,it), put=Math.min(itemPut(it),cap);
+    if(putLast.warn){
+      el.innerHTML='<div class="scanbox warn"><div class="sku mono" style="color:var(--red)">⚠ '+esc(putLast.code||(it&&it.code)||'')+'</div>'
+        +'<div class="z"><b style="color:var(--red)">'+esc(putLast.warn)+'</b></div></div>';
+      return;
+    }
+    if(putLast.need){   // 랙 미지정 — 올릴 자리를 정해서 랙 스캔
+      el.innerHTML='<div class="scanbox" style="border-color:var(--gold);background:#FDF8EE">'
+        +'<div class="sku mono">'+esc(it.code)+'</div><div class="nm">'+esc(it.name||'')+'</div>'
+        +'<div class="z"><span class="rackbig n">🆕 '+L('미지정','Sin ubicación')+'</span>'
+        +'<span style="font-weight:700;color:#8A6420">'+L('올릴 자리를 정해서 랙을 스캔하세요','Elija un lugar y escanee la ubicación')+'</span>'
+        +'<span style="margin-left:auto" class="cnt">'+put+'<small>/'+cap+'</small></span></div></div>';
+      return;
+    }
+    if(putLast.guide){  // 위치 안내(작업 랙 미잠금)
+      el.innerHTML='<div class="scanbox ok"><div class="sku mono">'+esc(it.code)+'</div><div class="nm">'+esc(it.name||'')+'</div>'
+        +'<div class="z"><span class="rackbig">'+esc(r)+'</span>'
+        +'<span style="font-weight:700">'+L('이 랙으로 옮기세요','Lleve a esta ubicación')+'</span>'
+        +'<span style="margin-left:auto" class="cnt">'+put+'<small>/'+cap+'</small></span></div></div>';
+      return;
+    }
+    el.innerHTML='<div class="scanbox ok"><div class="sku mono">'+esc(it.code)+'</div><div class="nm">'+esc(it.name||'')+'</div>'
+      +'<div class="z"><span class="tag g">✔ '+esc(r)+' '+(putLast.assigned?L('지정','Asignada'):(putLast.moved?L('변경','Cambiada'):L('일치','OK')))+'</span>'
+      +'<span style="font-weight:700;color:var(--green)">'+L('적치 +1 기록','Acomodo +1')+'</span>'
+      +'<span class="cnt" style="margin-left:auto;color:var(--green)">'+put+'<small>/'+cap+'</small></span></div></div>';
+  }
+  // 스캔 1건 처리 — 팔렛에 있는 코드면 카톤, 아니면 랙으로 본다
+  function putScan(input){
+    if(!input) return;
+    var p=curPutPal(); if(!p) return;
+    var lbl=parseLabel(input), code=lbl.matched?lbl.code:normScan(input);       // 카톤 라벨이면 제품번호로, 아니면 랙 코드로
+    if(dupScan(lbl.norm)) return;                                               // 이중 리딩 무시
+    // 같은 SKU 여러 라인이면: 남은 카톤이 있는 라인 중 소입수량이 라벨과 같은 라인 우선(라인별 저장 2026-08-17)
+    var pk=pickLine(p.items,code,(lbl.matched&&lbl.qty)||0,function(i){ return itemLeft(p,i); });
+    var it=pk?pk.it:null;
+    if(!it){
+      if(looksCompanion(code)) return;         // 상품 EAN 등 부속 바코드 — 랙으로 오인하지 않음
+      // 팔렛 라벨이면 팔렛 전환(2026-08-18) — 미저장분 먼저 저장 후 이동. 랙으로 오인하지 않게 랙 판정보다 먼저.
+      var sw=palByScan(code);
+      if(sw){
+        if(sw.id===p.id){ sndInfo(); toast(L('이미 이 팔렛입니다','Ya está en este pallet')); return; }
+        if(!palChecked(sw)){ sndWarn(); toast('⚠ '+L('아직 검수 전 팔렛입니다','Pallet sin verificar')+' — '+esc(String(sw.order_no))+'/'+sw.pl_no); return; }
+        putFlush(function(){ sndInfo(); toast('📦 '+L('팔렛 전환','Cambio de pallet')+' → '+esc(String(sw.order_no))+'/'+sw.pl_no); openPutPal(sw.id); });
+        return;
+      }
+      setPutRack(code); return;
+    }
+    if(itemCap(p,it)<=0){ sndErr(); putLast={item:it,warn:L('검수된 카톤이 없는 품목','Sin cajas verificadas'),code:code}; renderPutRes(); return; }
+    if(itemLeft(p,it)<=0){ sndErr(); putLast={item:it,warn:L('이미 다 적치했습니다','Ya está acomodado'),code:code}; renderPutRes(); renderPutSku(); return; }
+    var r=itemRack(it);
+    if(!r){                                    // 랙 미지정
+      if(!putRack){ sndWarn(); putLast={item:it,need:true}; renderPutRes(); return; }
+      putSaveRack[it.id]=putRack;              // 작업 랙을 이 SKU 기본 위치로 저장
+      putAdd[it.id]=(putAdd[it.id]||0)+1; putLast={item:it,assigned:true};
+      goodScanMark(); sndOk(); schedFlush(); renderPutRes(); renderPutSku(); putSaveSync(); return;
+    }
+    if(!putRack){ sndInfo(); putLast={item:it,guide:true}; renderPutRes(); return; }   // 위치만 안내
+    if(!bareEq(putRack,r)){ sndErr(); putWarn={item:it}; renderPutRes(); return; }
+    putAdd[it.id]=(putAdd[it.id]||0)+1; putLast={item:it};
+    goodScanMark(); sndOk(); schedFlush(); renderPutRes(); renderPutSku(); putSaveSync();
+  }
+  function setPutRack(rack){
+    if(!rack) return;
+    if(putRack&&bareEq(putRack,rack)){ sndWarn(); toast(L('이미 이 랙입니다','Ya es esta ubicación')+' '+rack); return; }
+    putFlush(function(){ putRack=rack; putLast=null; putWarn=null; sndInfo(); toast('📍 '+L('작업 랙','Ubicación')+' '+rack); renderPutWork(); });
+  }
+  /* 저장 — 스캔 흐름을 끊지 않도록 유휴 2.5초 뒤 자동 저장 + 버튼/랙변경/이탈 시 즉시 */
+  function schedFlush(){ clearTimeout(putFlushT); putFlushT=setTimeout(function(){ putFlush(); },2500); }
+  function putPayload(){
+    var p=curPutPal(); if(!p) return [];
+    return p.items.filter(function(i){ return (putAdd[i.id]||0)!==0 || putSaveRack[i.id]; }).map(function(i){
+      // 증분(delta) 전송 — 같은 팔렛을 둘이 동시에 적치해도 서버에서 합산된다. 음수 = 적치 빼기(수정).
+      // save_rack: 제품 마스터 위치까지 갱신할지 — 수정 편집기에서 체크 해제하면 이 선적만 바뀐다.
+      return { item_id:i.id, put_delta:(putAdd[i.id]||0), rack:itemRack(i), save_rack:!!putSaveRack[i.id]&&!putNoMaster[i.id] };
+    });
+  }
+  function putFlush(cb){
+    clearTimeout(putFlushT);
+    var p=curPutPal(), items=putPayload();
+    if(!p||!items.length||putSaving){ if(cb)cb(); return; }
+    putSaving=true; putSaveSync();
+    api('/api/inbound/'+SHIP+'/pallets/'+p.id+'/putaway',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items:items})}).catch(function(){
+        return {ok:false,status:0,body:{error:L('네트워크 없음','sin red')}};   // 네트워크 단절 — putSaving 이 잠기지 않게 정상 실패로 변환
+      }).then(function(o){
+      putSaving=false;
+      if(!o.ok||o.body.error){ sndErr(); toast(L('적치 저장 실패','Error al guardar')+': '+(o.body.error||o.status)); putSaveSync(); if(cb)cb(); return; }
+      sndSaved();
+      putAdd={}; putSaveRack={}; putNoMaster={};
+      var wasDone=o.body.done;
+      refreshDetail(function(){
+        if(wasDone) toast('✔ '+L('팔렛 적치 완료','Pallet acomodado'));
+        if(cb) cb(); else { if(putPal!=null&&curPutPal()) renderPutWork(); else { putReset(); renderPut(); } }
+      });
+    });
+  }
+
+  /* ---- 마감(입고) — 검수만 끝나면 적치 전에 입고 가능(2026-08-17) ----
+     "검수 완료 후 이상 없으면 바로 입고" — 마감은 실측 스캔 수량으로 구매 received_qty 를
+     갱신하고, 적치는 마감 후에도 계속 진행할 수 있다(판매 대응을 적치보다 앞당김). */
+  function lineQtyMeasured(i){ return (i.cartons>0)?Math.round((i.qty||0)/i.cartons)*(i.scanned_cartons||0):(i.qty||0); }
+  function palQtyMeasured(p){ return p.items.reduce(function(a,i){return a+lineQtyMeasured(i);},0); }
+  var lastCloseRes=null;   // 마지막 마감 결과(경고 표시용) — 미반영 SKU 가 조용히 사라지지 않게
+  function renderClose(){
+    var b=$('stepbody'), s=DETAIL.shipment, st=palStats();
+    var ck=DETAIL.pallets.filter(palConfirmed);
+    var pend=ck.filter(function(p){return !p.received_at;});                  // 확정됐지만 아직 입고 미반영
+    var qty=ck.reduce(function(a,p){return a+palQtyMeasured(p);},0);          // 실측 기준(서버 마감 집계와 동일 공식)
+    var qtyExp=ck.reduce(function(a,p){return a+(p.qty_expected||0);},0);
+    var closed=(s.status==='closed');
+    var allChecked=(st.N>0&&ck.length===st.N);
+    b.innerHTML='<div class="kpis">'
+      +'<div class="kpi"><div class="l">'+L('검수 팔렛','Verificados')+'</div><div class="v">'+ck.length+' <small>/ '+st.N+'</small></div></div>'
+      +'<div class="kpi"><div class="l">'+L('입고 수량 (실측)','Cantidad real')+'</div><div class="v">'+fmt(qty)+' <small>EA</small></div></div>'
+      +'<div class="kpi"><div class="l">'+L('패킹리스트 대비','vs Lista')+'</div><div class="v" style="color:'+(qty===qtyExp?'var(--green)':'var(--gold)')+'">'+(qty===qtyExp?'✓':(qty>qtyExp?'+':'')+fmt(qty-qtyExp))+'</div></div>'
+      +'<div class="kpi"><div class="l">'+L('입고 대기 팔렛','Por recibir')+'</div><div class="v" style="color:'+(pend.length?'var(--gold)':'var(--green)')+'">'+pend.length+'</div></div></div>'
+      +'<div style="max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:11px;margin-top:11px">'
+      +'<table><thead><tr><th>ORDER NO</th><th class="num">PL</th><th class="num">'+L('예상','Esp.')+'</th><th class="num">'+L('검수','Verif.')+'</th><th class="num">'+L('실측 EA','EA real')+'</th><th>'+L('상태','Estado')+'</th></tr></thead><tbody>'
+      +DETAIL.pallets.map(function(p){ var ok=palConfirmed(p);
+        var sc=p.items.reduce(function(a,i){return a+(i.scanned_cartons||0);},0);
+        var tag;   // 확정 + 적치 진행 = '적치중'(검수는 유효) · received_at = 입고 반영됨
+        if(ok&&p.received_at) tag='<span class="tag g">✔ '+L('입고됨','Recibido')+'</span>';
+        else if(ok&&(p.status==='checking'||p.status==='done')) tag='<span class="tag g">'+L('검수완료·적치중','Verif. · acomodando')+'</span>';
+        else if(ok) tag='<span class="tag g">'+L('검수 완료','Verificado')+'</span>';
+        else if(sc) tag='<span class="tag o">'+L('검수중','En proc.')+'</span>';
+        else tag='<span class="tag r">'+L('미검수','Sin verif.')+'</span>';
+        return '<tr><td>'+poHtmlSm(p.order_no)+'</td><td class="num">'+p.pl_no+'</td><td class="num">'+p.cartons_expected+'</td><td class="num">'+sc+'</td>'
+          +'<td class="num">'+(ok?fmt(palQtyMeasured(p)):'—')+'</td><td>'+tag+'</td></tr>'; }).join('')
+      +'</tbody></table></div>';
+    // 직전 마감의 경고(구매 미매칭·미등록 SKU·실측 0) — 문제가 조용히 넘어가지 않게 화면에 남긴다
+    if(lastCloseRes&&((lastCloseRes.unmatched||[]).length||(lastCloseRes.unregistered||[]).length)){
+      var unm=(lastCloseRes.unmatched||[]);
+      var nPo=unm.filter(function(u){return u.reason==='no_po_line';}).length;
+      var rowsW=unm.slice(0,15).map(function(u){
+        return '· <b class="mono">'+esc(u.code||'')+'</b> ('+esc(u.order_no||'')+') — '
+          +(u.reason==='no_po_line'?L('구매 발주에서 못 찾음','sin línea de compra')
+           :u.reason==='other_po'?L('다른 발주로 반영','otra OC')+': '+esc(u.po_ref||'')
+           :L('실측 스캔 0 — 검수 기록 확인','0 escaneado')); });
+      if(unm.length>15) rowsW.push('… '+L('외','y')+' '+(unm.length-15)+L('건',''));
+      (lastCloseRes.unregistered||[]).forEach(function(c){ rowsW.push('· <b class="mono">'+esc(c)+'</b> — '+L('미등록 SKU(제품 마스터에 없음) — 재고·구매 미반영','SKU no registrado')); });
+      b.innerHTML+='<div class="note" style="margin-top:10px;border-color:var(--red)"><b style="color:var(--red)">⚠ '+L('구매 연동에서 빠진 항목','No aplicado a compras')+' ('+unm.length+L('건','')+')</b>'
+        +' — <span style="color:var(--muted)">'+L('재고는 정상 반영됨. 발주번호 표기 차이/발주 라인 제품 미매칭이 원인일 수 있음','el stock sí se aplicó')+'</span><br>'+rowsW.join('<br>')
+        +(isDir&&nPo?'<div class="row" style="margin-top:8px"><button class="btn o sm" id="btnRematch">🔧 '+L('구매 재매칭 (부족분만 안전 반영)','Reconciliar compras')+'</button></div>':'')+'</div>';
+      var brm=$('btnRematch'); if(brm) brm.addEventListener('click',doPoRematch);
+    } else if(isDir&&DETAIL.pallets.some(function(p){return p.received_at;})){
+      // 마감 이력이 있으면 언제든 재매칭 가능(새로고침으로 경고를 잃어도)
+      b.innerHTML+='<div class="row" style="margin-top:10px"><button class="btn ghost sm" id="btnRematch">🔧 '+L('구매 재매칭 (마감분 구매 연동 점검·복구)','Reconciliar compras')+'</button></div>';
+      var brm2=$('btnRematch'); if(brm2) brm2.addEventListener('click',doPoRematch);
+    }
+    var noteChain='<div class="note">'+L('입고(마감)하면: ① 실재고(stock)가 <b>실측 스캔 수량</b>만큼 즉시 늘어나 판매 대응 가능 ② 구매 received_qty 갱신(Back Order 감소) ③ 원가는 이후 수입원가 승인에서 반영(수량은 이중 반영되지 않음). 적치는 마감과 무관하게 계속 가능합니다.','Al cerrar: stock sube de inmediato con lo escaneado; compras se actualiza; el costo se aprueba después (sin duplicar cantidades).')+'</div>';
+    /* 구매 재매칭(0177) — 마감 때 구매 연동에서 빠진 수량을 부족분만 안전하게 추가 반영 */
+    function doPoRematch(){
+      api('/api/inbound/'+SHIP+'/po-rematch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(function(o){
+        if(!o.ok||o.body.error){ sndErr(); toast('⚠ '+L('재매칭 실패','Error')+': '+(o.body.error==='director_only'?L('디렉터만 가능합니다','Solo director'):(o.body.error||o.status))); return; }
+        var f=o.body.fixed||[], st2=o.body.still_unmatched||[];
+        var q2=f.reduce(function(a,x){return a+(x.qty||0);},0);
+        sndSaved();
+        toast('🔧 '+L('구매 재매칭 완료 — '+f.length+'개 라인 · +'+fmt(q2)+'EA 반영'+(st2.length?' · 미해결 '+st2.length+'건':''),'Reconciliado: '+f.length+' líneas'+(st2.length?' · pendientes '+st2.length:'')));
+        if(st2.length){ sndWarn(); toast('⚠ '+L('미해결 '+st2.length+'건 — 구매 모듈에 해당 발주가 없습니다(발주 업로드 확인)','Sin OC en compras: '+st2.length)); }
+        if(lastCloseRes){ lastCloseRes.unmatched=st2.map(function(u){return {order_no:u.order_no,code:u.code,reason:'no_po_line'};}); }
+        refreshDetail(renderDetail);
+      }).catch(function(){ sndErr(); toast(L('재매칭 실패 — 네트워크를 확인하세요','Error de red')); });
+    }
+    function wireCloseBtn(label){
+      b.innerHTML+=noteChain
+        +'<div class="row"><input type="password" id="pin" placeholder="'+L('디렉터 PIN','PIN director')+'" style="width:130px"><button class="btn o" id="btnClose">'+label+'</button></div>';
+      $('btnClose').addEventListener('click',function(){
+        if(!$('pin').value){ toast(L('디렉터 PIN을 입력하세요','Ingrese el PIN del director')); return; }
+        $('btnClose').disabled=true;
+        api('/api/inbound/'+SHIP+'/close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:$('pin').value})}).then(function(o){
+          if(!o.ok||o.body.error){
+            var em={bad_pin:L('PIN이 올바르지 않습니다','PIN incorrecto'),no_checked:L('검수 확정된 팔렛이 없습니다','Sin pallets verificados'),nothing_new:L('새로 반영할 팔렛이 없습니다','Nada nuevo')}[o.body.error];
+            toast('⚠ '+(em||L('마감 실패','Error')+': '+(o.body.error||o.status))); $('btnClose').disabled=false; return;
+          }
+          lastCloseRes=o.body; sndSaved();
+          toast('✔ '+L('입고 반영 — 팔렛 '+o.body.pallets_received+' · 재고 +'+fmt(o.body.stock_applied)+'EA · 구매 '+o.body.po_lines_updated+'라인','Recibido — stock +'+fmt(o.body.stock_applied)));
+          if((o.body.unmatched||[]).length||(o.body.unregistered||[]).length){ sndWarn(); toast('⚠ '+L('일부 SKU 미반영 — 마감 탭의 경고를 확인하세요','Algunos SKU no aplicados — vea el aviso')); }
+          refreshDetail(renderDetail);
+        }).catch(function(){ sndErr(); toast(L('마감 실패 — 네트워크를 확인하세요','Error de red')); var bc=$('btnClose'); if(bc) bc.disabled=false; });
+      });
+    }
+    if(closed){
+      b.innerHTML+='<div class="note green" style="margin-top:12px">✔ '+L('입고 완료 — 실재고·구매 반영됨. 원가는 수입원가 승인에서(수량 이중 반영 없음). <b>적치는 계속 진행할 수 있습니다</b>.','Cerrado — stock y compras aplicados. <b>El acomodo puede continuar</b>.')+'</div>';
+      if(pend.length) wireCloseBtn('➕ '+L('추가 입고 반영','Recibir adicionales')+' ('+pend.length+L('팔렛',' pallets')+')');
+    } else {
+      b.innerHTML+=(allChecked
+          ?'<div class="note green" style="margin-top:12px">✔ '+L('<b>모든 팔렛 검수 완료 — 지금 바로 입고할 수 있습니다.</b> 적치를 기다릴 필요 없습니다: 입고하면 실재고가 바로 늘어나 판매 대응이 가능하고, 적치는 그대로 계속하면 됩니다.','<b>Todo verificado — puede cerrar ahora.</b> El acomodo continúa después.')+'</div>'
+          :'<div class="note" style="margin-top:12px">⚠ '+L('미검수 팔렛 '+(st.N-ck.length)+'개는 이번 입고에서 <b>제외</b>됩니다. 나중에 검수를 마치면 [추가 입고 반영]으로 이어서 반영할 수 있습니다.','Los pallets sin verificar quedan <b>fuera</b>; podrá recibirlos después.')+'</div>');
+      wireCloseBtn('🔒 '+L('입고 확정 (마감)','Cerrar recepción'));
+    }
+  }
+
+  /* ============ 자동 갱신(25초) ============
+     · 스캔 중(검수 잠금)·적치 미저장·저장 중·탭 비활성·PIN 입력 중이면 건너뛴다.
+     · 데이터 서명이 바뀔 때만 다시 그린다(깜빡임·포커스 유실 방지).
+     · 팔렛을 잡고 있으면 같은 주기로 점유 하트비트를 보낸다. */
+  function sigList(items){
+    try{ return JSON.stringify((items||[]).map(function(s){
+      return [s.id,s.status,s.pallets,s.pallets_checked,s.cartons,s.qty,s.eta,s.invoice_no]; })); }catch(e){ return ''; }
+  }
+  function sigDetail(b){
+    try{ return JSON.stringify([b.shipment,(b.pallets||[]).map(function(p){
+      return [p.id,p.status,p.checked_at?1:0,p.working?1:0,p.working_by||0,p.working_step||'',
+        (p.items||[]).map(function(i){ return [i.id,i.scanned_cartons,i.put_cartons,i.rack||'']; })]; })]); }catch(e){ return ''; }
+  }
+  function pollBlocked(){
+    if(pollBusy) return true;
+    try{ if(document.hidden) return true; }catch(e){}
+    if(document.querySelector('.delrow')) return true;      // 삭제 PIN 입력 중
+    if(VIEW==='upload') return true;                        // 업로드/미리보기 중
+    if(VIEW==='detail'){
+      if(selPal!=null) return true;                         // 검수 진행 중(팔렛 잡고 스캔)
+      if(putSaving||putPending()) return true;              // 적치 미저장분 있음
+      var el=document.activeElement;
+      if(el&&el.tagName==='INPUT'&&el.value) return true;    // 입력 중
+    }
+    return false;
+  }
+  function pollTick(){
+    if(WORK_PID&&VIEW==='detail'&&SHIP) pingWorking(WORK_PID,WORK_STEP);   // 하트비트는 항상
+    if(pollBlocked()) return;
+    pollBusy=true;
+    if(VIEW==='list'){
+      api('/api/inbound').then(function(o){
+        pollBusy=false;
+        if(!o.ok||!o.body.items) return;
+        var sg=sigList(o.body.items);
+        if(sg===pollSig) return;
+        pollSig=sg; if(VIEW==='list'&&!pollBlocked()) loadList();
+      });
+      return;
+    }
+    if(VIEW==='detail'&&SHIP){
+      api('/api/inbound/'+SHIP).then(function(o){
+        pollBusy=false;
+        if(!o.ok||o.body.error) return;
+        var sg=sigDetail(o.body);
+        if(sg===pollSig) return;
+        if(pollBlocked()) return;                            // 그 사이 스캔이 시작됐으면 다음 주기로
+        pollSig=sg; DETAIL=o.body;
+        var keepFocus=(document.activeElement&&document.activeElement.tagName==='INPUT');
+        renderDetail();               // 헤더 단계 카운터까지 반영. STEP·putPal·putRack 은 모듈 변수라 유지된다
+        if(keepFocus){ var f=$('putIn')||$('scanIn')||$('putListIn'); if(f) f.focus(); }
+      });
+      return;
+    }
+    pollBusy=false;
+  }
+  function startPoll(){ if(pollT) clearInterval(pollT); pollT=setInterval(pollTick,POLL_MS); }
+
+  /* ===== PDA 컴팩트 모드(2026-08-26) — 현장 스캐너 화면에서 리딩 결과가 안 보이던 문제 =====
+     상단 고정 헤더(#rnav)가 좁은 폭에서 여러 줄로 접히며 본문을 크게 밀어내, 스캔 결과 박스가 화면 밖으로 나갔다.
+     · 켜짐: 화면 폭 <=640px 자동, 또는 우하단 토글 버튼(선택은 localStorage 'wh_pda' 에 기억 — 자동보다 우선)
+     · 동작: 상단 고정 영역을 한 줄로 축소 + 페이지/선적 헤더 압축 + .scanstick(스캔결과·입력칸) 을 헤더 아래 고정
+     · --navh: 고정 헤더의 실제 높이. .scanstick 의 sticky top 이 이 값을 쓴다(헤더가 접히면 함께 줄어든다). */
+  var PDA=(function(){ try{ var v=localStorage.getItem('wh_pda'); if(v==='1'||v==='0') return v; }catch(e){} return null; })();
+  var pdaLast=null;
+  function pdaAuto(){ try{ return window.innerWidth<=640; }catch(e){ return false; } }
+  function pdaOn(){ return (PDA==null)?pdaAuto():(PDA==='1'); }
+  function syncNavH(){
+    var el=document.getElementById('rnav');
+    var h=(el&&el.offsetHeight)||40;
+    try{ document.documentElement.style.setProperty('--navh',h+'px'); }catch(e){}
+  }
+  function pdaApply(){
+    var on=pdaOn(), changed=(pdaLast!==on); pdaLast=on;
+    document.body.classList.toggle('pda',on);
+    // 헤더 높이가 바뀌었으므로 nav.js 의 syncOffset(본문 padding-top)을 다시 돌린다.
+    // (changed 일 때만 → 우리 resize 리스너와 무한 루프가 생기지 않는다)
+    if(changed){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }
+    syncNavH(); setTimeout(syncNavH,60); setTimeout(syncNavH,340);   // nav 비동기 재렌더 후 재보정
+    var b=$('pdaBtn');
+    if(b){
+      b.textContent=on?('⤢ '+L('전체보기','Vista completa')):('📱 '+L('스캔모드','Modo escáner'));
+      b.title=on?L('일반 화면으로 — 상단 메뉴를 모두 보이게','Vista normal — mostrar todo el menú')
+                :L('PDA 화면 — 상단을 접고 스캔 결과를 고정','Modo PDA — menú compacto y lectura fija');
+    }
+  }
+  function pdaInit(){
+    var b=document.createElement('button');
+    b.id='pdaBtn'; b.type='button'; b.className='pdabtn';
+    b.addEventListener('click',function(){
+      PDA=pdaOn()?'0':'1';
+      try{ localStorage.setItem('wh_pda',PDA); }catch(e){}
+      pdaApply();
+      var f=$('scanIn')||$('putIn'); if(f) f.focus();   // 스캔 중이면 포커스를 잃지 않는다
+    });
+    var hd=document.querySelector('header');
+    if(hd) hd.appendChild(b); else document.body.appendChild(b);
+    pdaApply();
+    window.addEventListener('resize',pdaApply);
+    window.addEventListener('hashchange',function(){ setTimeout(syncNavH,80); });
+    // 헤더는 로그인·권한 조회 후 비동기로 그려진다 → 실제 높이를 추적
+    try{
+      if(window.ResizeObserver){
+        var t=setInterval(function(){
+          var el=document.getElementById('rnav'); if(!el) return;
+          clearInterval(t); new ResizeObserver(syncNavH).observe(el);
+        },200);
+        setTimeout(function(){ clearInterval(t); },10000);
+      }
+    }catch(e){}
+  }
+
+  /* ============ 시작 ============ */
+  pdaInit();
+  loadList();
+  startPoll();
+  try{ window.addEventListener('beforeunload',function(){ clearWorking(); }); }catch(e){}
+})();
+</script>
+</body>
+</html>

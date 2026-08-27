@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 수주 흐름 추이</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--gold:#B8893B;--purple:#6B4FB0;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:4px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#F6E7E4;color:var(--expense)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .kpibar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .kpibox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:150px}
+  .kpibox .v{font-size:26px;font-weight:800;color:var(--income)}.kpibox .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .delta{font-size:12px;font-weight:700}.delta.up{color:var(--income)}.delta.down{color:var(--expense)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}
+  th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700;position:sticky;top:0}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--brand)}
+  th .sind{font-size:9px;opacity:.45;margin-left:3px}
+  th.sortable:hover .sind{opacity:.8}
+  th.acts{color:var(--brand)}
+  th.acts .sind{opacity:1;color:var(--brand)}
+  .barcell{position:relative;min-width:160px}
+  .bar{height:18px;border-radius:4px;background:var(--income);display:inline-block;vertical-align:middle}
+  .bartrack{background:#eee;border-radius:4px;height:18px;width:120px;display:inline-block;vertical-align:middle;overflow:hidden;margin-right:8px}
+  .okpct{font-weight:800;color:var(--income)}
+  .seg{display:inline-flex;height:16px;border-radius:3px;overflow:hidden;width:130px;vertical-align:middle;margin-right:8px;border:1px solid var(--line)}
+  .seg i{display:block;height:100%}
+  .si{background:var(--income)}.ss{background:var(--gold)}.sd{background:var(--purple)}
+  .bamt{font-size:10px;font-weight:700;line-height:1.3;margin-top:3px}
+  .bamt .ao{color:var(--income)}.bamt .as{color:var(--gold)}.bamt .sep{color:#c2c0ba;font-weight:600;margin:0 4px}
+  /* 진행 단계 셀 */
+  .stagecell{display:flex;flex-direction:column;gap:2px;align-items:flex-start;min-width:138px}
+  .sdots{display:flex;gap:3px;margin-bottom:1px}
+  .sdot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .stbadge{font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:#eef3f1;color:var(--brand);white-space:nowrap}
+  .stbadge.warn{background:#fde8e6;color:var(--expense)}
+  .stx{font-size:11px;font-weight:700;white-space:nowrap}
+  .stdl{font-size:10px;color:var(--muted);white-space:nowrap}
+  .stdl.over{color:var(--expense);font-weight:700}
+  .tg{display:inline-flex;align-items:center;gap:4px}
+  .tgl{font-size:11px;font-weight:700;color:var(--muted);margin-right:2px}
+  .tgb{padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .tgb.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .chartbox{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:8px 6px 4px}
+  /* 기간 합계 요약 바 */
+  .sumbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:0 0 10px;padding:9px 12px;background:#faf8f3;border:1px solid var(--line);border-radius:10px}
+  .sumbar .sl{font-size:11px;font-weight:800;color:var(--muted);white-space:nowrap}
+  .sumbar .sbox{display:inline-flex;flex-direction:column;gap:1px;padding:2px 10px;border-left:1px solid var(--line)}
+  .sumbar .sk{font-size:10px;font-style:normal;font-weight:700;color:var(--muted);white-space:nowrap}
+  .sumbar .sv{font-size:14px;font-weight:800;white-space:nowrap}
+  .sumbar .snote{font-size:10px;color:var(--muted);margin-left:auto}
+  tfoot tr.sumrow td{background:#f3efe6;border-top:2px solid var(--line);font-weight:800}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수주 흐름 월별 추이 · 즉시매출 비중 KPI <span style="opacity:.6">build of-0814a</span></div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="card">
+      <div class="card-h">핵심 KPI — 즉시 매출 비중</div>
+      <div class="hint">고객이 요청한 것 중 우리가 <b>바로 팔 수 있는 비중</b>입니다. 이 %가 매월 올라가는 것이 목표입니다(부족·미개발 비중↓ = 매출 기회↑).</div>
+      <div class="kpibar" id="kpibar"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span id="trendTitle">오더(견적)별 추이</span>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <div class="tg"><span class="tgl">보기</span>
+            <button class="tgb" id="byMonth" onclick="setBy('month')">월별</button>
+            <button class="tgb on" id="byOrder" onclick="setBy('order')">오더별</button>
+          </div>
+          <div class="tg" id="periodTg"><span class="tgl">기간</span></div>
+        </div>
+      </div>
+      <div id="chartWrap" style="margin-top:6px"></div>
+      <div class="hint" id="chartCap" style="margin-top:4px;text-align:center">선 = 전체 요청 수량 · <span style="color:var(--income)">음영</span> = 즉시매출 가능 수량. <b>음영(즉시매출)이 점점 두꺼워지는 것이 목표</b>입니다.</div>
+      <div id="trendWrap" style="margin-top:14px"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+      <div class="hint" style="margin-top:10px">막대: <span class="okpct">■</span> 즉시매출 · <span style="color:var(--gold)">■</span> 부족 · <span style="color:var(--purple)">■</span> 개발필요 (수량 비중). SKU·수량과 각 %를 함께 표시합니다. 막대 아래는 <b style="color:var(--income)">즉시 매출가능액</b> · <b style="color:var(--gold)">재고부족분 매출액</b>(IVA 포함).</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const nf=(n)=>Number(n||0).toLocaleString('es-MX');
+  const mf=(n)=>'$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pct=(a,b)=> b>0 ? (Math.round((a/b)*1000)/10) : 0;
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      renderPeriod(); load();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  let viewBy='order';            // 'month' | 'order'  (디폴트: 오더별)
+  let period={month:12, order:20}; // 표시 개월수 / 오더 건수
+  const PERIOD_OPTS={ month:[6,12,24], order:[10,20,50] };
+  let ofOpen=null, ofLines={}, lastRows=[];
+  let sortKey='qdate', sortDir=-1;   // 디폴트: 일자 최신순(내림차순). 헤더 클릭 정렬(테이블 전용)
+
+  function setBy(b){ viewBy=b; ofOpen=null; if(b==='order'){ sortKey='qdate'; sortDir=-1; } else { sortKey=null; sortDir=1; } $('byMonth').classList.toggle('on',b==='month'); $('byOrder').classList.toggle('on',b==='order'); $('trendTitle').textContent=(b==='month'?'월별 추이':'오더(견적)별 추이'); renderPeriod(); load(); }
+  function setPeriod(n){ period[viewBy]=n; renderPeriod(); load(); }
+  function renderPeriod(){
+    const opts=PERIOD_OPTS[viewBy], unit=(viewBy==='month'?'개월':'건');
+    $('periodTg').innerHTML='<span class="tgl">기간</span>'+opts.map(n=>'<button class="tgb'+(period[viewBy]===n?' on':'')+'" onclick="setPeriod('+n+')">'+n+unit+'</button>').join('');
+  }
+
+  async function load(){
+    const n=period[viewBy]; ofOpen=null;
+    try{ const d=await fetch(session.api+'/api/dashboard/order-funnel/trend?by='+viewBy+'&n='+n,{headers:auth()}).then(r=>r.json()); render(d.rows||[]); }
+    catch(e){ $('trendWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; $('chartWrap').innerHTML=''; }
+  }
+
+  // 오더(견적) 클릭 → 아이템 드릴다운(최초 수량 + 매출가능/부족/개발필요)
+  function reRender(){ render(lastRows); }
+  async function toggleOrder(qid){
+    if(ofOpen===qid){ ofOpen=null; reRender(); return; }
+    ofOpen=qid; reRender();
+    if(!ofLines[qid]){
+      try{ const d=await fetch(session.api+'/api/dashboard/funnel/quote-lines?quote_id='+qid,{headers:auth()}).then(r=>r.json());
+        ofLines[qid]=(d&&!d.error)?d:{error:1}; }
+      catch(e){ ofLines[qid]={error:1}; }
+      if(ofOpen===qid) reRender();
+    }
+  }
+  function ofFlag(f){
+    if(f==='ok') return '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#e7f3ee;color:var(--income)">매출가능</span>';
+    if(f==='low_stock') return '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#fdf4e3;color:var(--gold)">부족</span>';
+    return '<span style="font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;background:#f1ecf8;color:var(--purple)">개발필요</span>';
+  }
+  function ofLinesHtml(qid){
+    const d=ofLines[qid];
+    if(!d) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">아이템 불러오는 중…</div>';
+    if(d.error) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">아이템을 불러오지 못했습니다.</div>';
+    const items=d.items||[];
+    if(!items.length) return '<div style="padding:10px 12px;color:var(--muted);font-size:12px">아이템이 없습니다.</div>';
+    let h='<div style="padding:8px 12px 12px"><table style="margin-top:4px"><thead><tr>'
+      +'<th style="text-align:left">제품(SKU)</th><th style="text-align:left">품명</th><th>최초 수량</th><th>가용재고</th><th style="text-align:left">현황</th></tr></thead><tbody>';
+    items.forEach(it=>{
+      h+='<tr><td style="text-align:left"><b>'+esc(it.ctr_code||it.input_code||'-')+'</b></td>'
+        +'<td style="text-align:left">'+esc(it.product_name||'-')+'</td>'
+        +'<td>'+nf(it.qty)+'</td>'
+        +'<td>'+(it.avail_stock==null?'—':nf(it.avail_stock))+'</td>'
+        +'<td style="text-align:left">'+ofFlag(it.stock_flag)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    return h;
+  }
+
+  // 전체 수량 선 + 즉시매출 영역 음영 SVG
+  function drawChart(rows){
+    if(!rows.length){ $('chartWrap').innerHTML=''; return; }
+    window.__chartRows=rows;
+    // 1개만 보면 라인 추이가 무의미 → 도넛(파이)만 표시
+    if(rows.length===1){
+      $('chartWrap').innerHTML='<div id="donutWrap"></div>';
+      const cap=$('chartCap'); if(cap) cap.innerHTML='선택한 '+(viewBy==='month'?'달':'오더')+'의 구성(즉시/부족/개발)을 도넛으로 표시합니다. 가운데 숫자가 <b>즉시매출 비중</b>입니다.';
+      showDonut(0);
+      return;
+    }
+    const cap=$('chartCap'); if(cap) cap.innerHTML='선 = 전체 요청 수량 · <span style="color:var(--income)">음영</span> = 즉시매출 가능 수량. <b>음영(즉시매출)이 점점 두꺼워지는 것이 목표</b>입니다.';
+    const W=Math.max(620, rows.length*Math.max(46, Math.min(90, 700/rows.length))), H=240;
+    const padL=46, padR=14, padT=16, padB=40;
+    const iw=W-padL-padR, ih=H-padT-padB;
+    const maxQ=Math.max(...rows.map(r=>r.req_qty),1);
+    const niceMax=Math.ceil(maxQ/ (maxQ>50?50:10))*(maxQ>50?50:10) || maxQ;
+    const x=(i)=> padL + (rows.length===1? iw/2 : (i*iw/(rows.length-1)));
+    const y=(v)=> padT + ih - (v/niceMax)*ih;
+    const labelOf=(r)=> viewBy==='month' ? (r.ym? r.ym.slice(2).replace('-',''):'') : (r.label||'').replace(/^Q-?/,'').slice(-6);
+    // 영역(즉시매출) path
+    let area='M '+x(0)+' '+y(0);
+    rows.forEach((r,i)=> area+=' L '+x(i)+' '+y(r.ok_qty));
+    area+=' L '+x(rows.length-1)+' '+y(0)+' Z';
+    // 전체 수량 선
+    let line=''; rows.forEach((r,i)=> line+=(i?' L ':'M ')+x(i)+' '+y(r.req_qty));
+    // 즉시매출 선(영역 상단 강조)
+    let okline=''; rows.forEach((r,i)=> okline+=(i?' L ':'M ')+x(i)+' '+y(r.ok_qty));
+    // 격자/축 눈금 (4단계)
+    let grid='';
+    for(let g=0;g<=4;g++){ const v=niceMax*g/4, yy=y(v); grid+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#e6e1d6" stroke-width="1"/>'+'<text x="'+(padL-6)+'" y="'+(yy+3)+'" font-size="9" fill="#9b958a" text-anchor="end">'+nf(Math.round(v))+'</text>'; }
+    // x 라벨 + 포인트 + 클릭 영역(도넛)
+    let xl='', pts='';
+    rows.forEach((r,i)=>{ xl+='<text x="'+x(i)+'" y="'+(H-padB+16)+'" font-size="9" fill="#6F6A60" text-anchor="middle"'+(rows.length>14?(' transform="rotate(40 '+x(i)+' '+(H-padB+16)+')"'):'')+'>'+esc(labelOf(r))+'</text>';
+      pts+='<circle cx="'+x(i)+'" cy="'+y(r.req_qty)+'" r="2.5" fill="#143D34"/>'+'<circle cx="'+x(i)+'" cy="'+y(r.ok_qty)+'" r="2.5" fill="#0F6E56"/>'
+        +'<circle cx="'+x(i)+'" cy="'+y(r.req_qty)+'" r="11" fill="transparent" style="cursor:pointer" onclick="showDonut('+i+')"><title>'+esc(labelOf(r))+' 클릭 → 구성 도넛</title></circle>'; });
+    window.__chartRows=rows;
+    const svg='<div style="overflow-x:auto" class="chartbox"><svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'
+      +'<defs><linearGradient id="okg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0F6E56" stop-opacity="0.45"/><stop offset="1" stop-color="#0F6E56" stop-opacity="0.08"/></linearGradient></defs>'
+      +grid
+      +'<path d="'+area+'" fill="url(#okg)" stroke="none"/>'
+      +'<path d="'+okline+'" fill="none" stroke="#0F6E56" stroke-width="2"/>'
+      +'<path d="'+line+'" fill="none" stroke="#143D34" stroke-width="2" stroke-dasharray="0"/>'
+      +pts+xl
+      +'</svg></div><div class="hint" style="margin-top:4px;text-align:center">그래프의 점을 클릭하면 그 '+(viewBy==='month'?'달':'오더')+'의 구성 도넛이 아래에 나타납니다.</div><div id="donutWrap"></div>';
+    $('chartWrap').innerHTML=svg;
+  }
+
+  // 월/오더 클릭 → 도넛 (즉시/부족/개발 구성, 가운데 즉시%)
+  function showDonut(i){
+    const rows=window.__chartRows||[]; const r=rows[i]; if(!r){ return; }
+    const lab = viewBy==='month' ? (r.ym||r.label) : (r.label||'');
+    const ok=Number(r.ok_qty)||0, ss=Number(r.short_qty)||0, dv=Number(r.dev_qty)||0;
+    const tot=ok+ss+dv;
+    if(tot<=0){ $('donutWrap').innerHTML='<div class="hint" style="text-align:center;margin-top:8px">'+esc(lab)+' : 데이터 없음</div>'; return; }
+    const okPct=Math.round(ok/tot*1000)/10;
+    const cx=110, cy=110, rO=80, rI=50, C=2*Math.PI;
+    const segs=[['#0F6E56',ok,'즉시'],['#B8893B',ss,'부족'],['#6B4FB0',dv,'개발']];
+    const nonZero=segs.filter(([,v])=>v>0);
+    let arcs='';
+    if(nonZero.length===1){
+      // 한 항목이 100% → 360° 호는 시작=끝이라 안 그려짐 → 완전한 링(도넛)으로 그림
+      const col=nonZero[0][0];
+      arcs='<path fill-rule="evenodd" fill="'+col+'" d="'
+        +'M '+(cx+rO)+' '+cy+' A '+rO+' '+rO+' 0 1 1 '+(cx-rO)+' '+cy+' A '+rO+' '+rO+' 0 1 1 '+(cx+rO)+' '+cy+' Z '
+        +'M '+(cx+rI)+' '+cy+' A '+rI+' '+rI+' 0 1 0 '+(cx-rI)+' '+cy+' A '+rI+' '+rI+' 0 1 0 '+(cx+rI)+' '+cy+' Z"/>';
+    } else {
+      let acc=0;
+      segs.forEach(([col,val])=>{ if(val<=0) return; const frac=val/tot; const a0=acc*C-Math.PI/2, a1=(acc+frac)*C-Math.PI/2; acc+=frac;
+        const large=frac>0.5?1:0;
+        const x0=cx+rO*Math.cos(a0), y0=cy+rO*Math.sin(a0), x1=cx+rO*Math.cos(a1), y1=cy+rO*Math.sin(a1);
+        const xi1=cx+rI*Math.cos(a1), yi1=cy+rI*Math.sin(a1), xi0=cx+rI*Math.cos(a0), yi0=cy+rI*Math.sin(a0);
+        arcs+='<path d="M '+x0+' '+y0+' A '+rO+' '+rO+' 0 '+large+' 1 '+x1+' '+y1+' L '+xi1+' '+yi1+' A '+rI+' '+rI+' 0 '+large+' 0 '+xi0+' '+yi0+' Z" fill="'+col+'"/>';
+      });
+    }
+    const legend=segs.map(([col,val,nm])=>'<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px"><span style="width:10px;height:10px;background:'+col+';display:inline-block;border-radius:2px"></span>'+nm+' '+nf(val)+' ('+(tot>0?Math.round(val/tot*1000)/10:0)+'%)</span>').join('');
+    $('donutWrap').innerHTML='<div style="text-align:center;margin-top:10px"><div style="font-weight:800;color:var(--brand);margin-bottom:4px">'+esc(lab)+' 구성</div>'
+      +'<svg width="220" height="220" viewBox="0 0 220 220">'+arcs
+      +'<text x="110" y="104" text-anchor="middle" font-size="26" font-weight="800" fill="#0F6E56">'+okPct+'%</text>'
+      +'<text x="110" y="124" text-anchor="middle" font-size="11" fill="#6F6A60">즉시매출</text></svg>'
+      +'<div style="font-size:12px;margin-top:4px">'+legend+'</div></div>';
+    setTimeout(()=>{ const dw=$('donutWrap'); if(dw) dw.scrollIntoView({behavior:'smooth',block:'nearest'}); },50);
+  }
+
+  // ===== 헤더 클릭 정렬 (테이블만 정렬 · 차트/KPI는 시간순 유지) =====
+  const SORT_NUM={req_sku:1,req_qty:1,ok_qty_pct:1,short_qty_pct:1,dev_qty_pct:1,warn_rank:1};
+  function sortVal(r,key){ return key==='__label' ? (r.label||r.ym||'') : r[key]; }
+  function setSort(key){
+    if(!key) return;
+    if(sortKey===key){ sortDir=-sortDir; } else { sortKey=key; sortDir=SORT_NUM[key]?-1:1; } // 숫자 첫클릭=내림차순, 문자=오름차순
+    reRender();
+  }
+  function applySort(arr){
+    if(!sortKey) return arr;
+    const num=!!SORT_NUM[sortKey];
+    const a=arr.slice();
+    a.sort((x,y)=>{
+      const vx=sortVal(x,sortKey), vy=sortVal(y,sortKey);
+      if(num) return ((Number(vx)||0)-(Number(vy)||0))*sortDir;
+      return String(vx==null?'':vx).localeCompare(String(vy==null?'':vy),'es',{numeric:true})*sortDir;
+    });
+    return a;
+  }
+  function thS(label,key,left){
+    const al=left?' style="text-align:left"':'';
+    if(!key) return '<th'+al+'>'+esc(label)+'</th>';
+    const on=sortKey===key, ind=on?(sortDir>0?'▲':'▼'):'⇅';
+    return '<th class="sortable'+(on?' acts':'')+'"'+al+' onclick="setSort(\''+key+'\')" title="클릭하여 정렬">'+esc(label)+'<span class="sind">'+ind+'</span></th>';
+  }
+  function sortableHead(col1){
+    let s=thS(col1,'__label',true);
+    if(viewBy==='order'){ s+=thS('고객','customer_name',true)+thS('일자','qdate',false)+thS('진행 단계 / 경고','warn_rank',false); }
+    s+=thS('요청 SKU','req_sku',false)+thS('요청 수량','req_qty',false)+thS('구성 (수량 비중)',null,false);
+    s+=thS('즉시 %','ok_qty_pct',false)+thS('부족 %','short_qty_pct',false)+thS('개발 %','dev_qty_pct',false);
+    return s;
+  }
+
+  // MX 로컬(UTC-6) 'MM-DD HH:mm' 포맷
+  function mxFmt(iso){ if(!iso) return '—'; const d=new Date(new Date(iso).getTime()-360*60000); const p=n=>String(n).padStart(2,'0'); return p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes()); }
+
+  // 견적(오더) 현재 진행 단계/상태/경고 셀
+  function stageCell(r){
+    if(!r.stage_key) return '<span class="hint">—</span>';
+    const rank=r.stage_rank||0;
+    let dots='';
+    if(rank>=1&&rank<=6){
+      for(let i=1;i<=6;i++){
+        const on=i<=rank, isCur=i===rank;
+        const col=isCur&&r.warn?'var(--expense)':(on?'var(--income)':'#d8d3c7');
+        dots+='<i class="sdot" style="background:'+col+(isCur?';outline:2px solid '+(r.warn?'var(--expense)':'var(--income)')+';outline-offset:1px':'')+'"></i>';
+      }
+    }
+    let statusBadge='';
+    if(r.status_key==='within') statusBadge=' <span class="stx" style="color:var(--income)">● 외상일중</span>';
+    else if(r.status_key==='overdue') statusBadge=' <span class="stx" style="color:var(--expense)">● 지연중</span>';
+    const badge='<span class="stbadge'+(r.warn?' warn':'')+'">'+(r.warn?'⚠ ':'')+esc(r.stage_label||'')+'</span>'+statusBadge;
+    let dl='';
+    if(r.deadline && (r.stage_key==='created'||r.stage_key==='printing'||r.stage_key==='await_sat')){
+      dl='<div class="stdl'+(r.warn?' over':'')+'">기한 '+mxFmt(r.deadline)+'</div>';
+    } else if(r.stage_key==='await_collect' && r.due_date){
+      dl='<div class="stdl'+(r.warn?' over':'')+'">외상만기 '+esc(r.due_date)+'</div>';
+    }
+    const tl=[
+      '견적작성: '+mxFmt(r.ts_created),
+      r.ts_printed?('포장출력: '+mxFmt(r.ts_printed)+(r.ts_packing_due?(' (완료기한 '+mxFmt(r.ts_packing_due)+')'):'')):null,
+      r.ts_packed?('포장완료: '+mxFmt(r.ts_packed)):null,
+      r.ts_converted?('매출전환: '+mxFmt(r.ts_converted)):null,
+      r.ts_sat?('SAT입력: '+mxFmt(r.ts_sat)):null,
+      r.due_date?('외상만기: '+r.due_date):null,
+      r.warn_label?('⚠ '+r.warn_label):null,
+      r.owner_name?('담당 '+r.owner_name):null,
+    ].filter(Boolean).join('\n');
+    return '<div class="stagecell" title="'+esc(tl)+'"><div class="sdots">'+dots+'</div>'+badge+dl+'</div>';
+  }
+
+  // 선택한 기간(표시 중인 행) 합계 — 백엔드 추가 호출 없이 rows 합산
+  function sumRows(rows){
+    const t={n:rows.length,req_sku:0,req_qty:0,ok_qty:0,short_qty:0,dev_qty:0,ok_amt:0,short_amt:0};
+    rows.forEach(r=>{
+      t.req_sku+=Number(r.req_sku)||0; t.req_qty+=Number(r.req_qty)||0;
+      t.ok_qty+=Number(r.ok_qty)||0; t.short_qty+=Number(r.short_qty)||0; t.dev_qty+=Number(r.dev_qty)||0;
+      t.ok_amt+=Number(r.ok_amt)||0; t.short_amt+=Number(r.short_amt)||0;
+    });
+    t.ok_pct=pct(t.ok_qty,t.req_qty); t.short_pct=pct(t.short_qty,t.req_qty); t.dev_pct=pct(t.dev_qty,t.req_qty);
+    t.tot_amt=t.ok_amt+t.short_amt;
+    t.ok_amt_pct=pct(t.ok_amt,t.tot_amt);
+    return t;
+  }
+  function periodLabel(t){
+    const n=period[viewBy];
+    return viewBy==='month' ? ('최근 '+n+'개월 · 데이터 '+t.n+'개월') : ('최근 '+t.n+'건');
+  }
+  function sumBarHtml(t){
+    if(!t.n) return '';
+    return '<div class="sumbar">'
+      +'<span class="sl">기간 합계<br>'+esc(periodLabel(t))+'</span>'
+      +'<span class="sbox"><i class="sk">즉시 매출가능액</i><b class="sv" style="color:var(--income)">'+mf(t.ok_amt)+'</b></span>'
+      +'<span class="sbox"><i class="sk">재고부족분 매출액</i><b class="sv" style="color:var(--gold)">'+mf(t.short_amt)+'</b></span>'
+      +'<span class="sbox"><i class="sk">합계 (즉시+부족)</i><b class="sv" style="color:var(--brand)">'+mf(t.tot_amt)+'</b></span>'
+      +'<span class="sbox"><i class="sk">즉시 비중 (금액)</i><b class="sv">'+t.ok_amt_pct+'%</b></span>'
+      +'<span class="sbox"><i class="sk">요청 수량</i><b class="sv">'+nf(t.req_qty)+'</b></span>'
+      +'<span class="snote">금액 IVA 포함 · 개발필요는 미등록 제품이라 금액 없음</span>'
+      +'</div>';
+  }
+  function sumFootHtml(t){
+    if(!t.n) return '';
+    const oi=t.ok_pct, ss=t.short_pct, dd=t.dev_pct;
+    return '<tfoot><tr class="sumrow">'
+      +'<td style="text-align:left">합계</td>'
+      +(viewBy==='order'?'<td colspan="3" style="text-align:left;font-weight:700;color:var(--muted)">'+nf(t.n)+'건</td>':'')
+      +'<td>'+nf(t.req_sku)+'</td>'
+      +'<td>'+nf(t.req_qty)+'</td>'
+      +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span>'
+        +'<div class="bamt"><span class="ao" title="기간 합계 — 즉시 매출가능 금액(IVA 포함)">즉시 '+mf(t.ok_amt)+'</span><span class="sep">·</span><span class="as" title="기간 합계 — 재고부족분 금액(IVA 포함)">부족 '+mf(t.short_amt)+'</span></div></td>'
+      +'<td class="okpct">'+oi+'%</td>'
+      +'<td style="color:var(--gold)">'+ss+'%</td>'
+      +'<td style="color:var(--purple)">'+dd+'%</td>'
+      +'</tr></tfoot>';
+  }
+
+  function render(rows){
+    lastRows=rows;
+    const withData=rows.filter(r=>r.req_qty>0);
+    drawChart(withData);
+    // KPI: 최신 즉시매출% + 직전 대비
+    const last=withData[withData.length-1], prev=withData[withData.length-2];
+    const unitLbl=(viewBy==='month'?'월':'오더');
+    let kpi='';
+    if(last){
+      const cur=last.ok_qty_pct;
+      let delta='';
+      if(prev){ const dv=Math.round((cur-prev.ok_qty_pct)*10)/10; delta='<span class="delta '+(dv>=0?'up':'down')+'">'+(dv>=0?'▲ +':'▼ ')+dv+'%p</span>'; }
+      kpi+='<div class="kpibox"><div class="v">'+cur+'%</div><div class="l">최근 '+unitLbl+'('+esc(last.label||last.ym||'')+') 즉시매출 비중(수량) '+delta+'</div></div>';
+      const avg=Math.round(withData.reduce((a,b)=>a+b.ok_qty_pct,0)/withData.length*10)/10;
+      kpi+='<div class="kpibox"><div class="v" style="color:var(--brand)">'+avg+'%</div><div class="l">기간 평균 즉시매출 비중</div></div>';
+      const loss=Math.round((100-cur)*10)/10;
+      kpi+='<div class="kpibox"><div class="v" style="color:var(--expense)">'+loss+'%</div><div class="l">최근 즉시 못판 비중(부족+개발)</div></div>';
+    } else { kpi='<div class="hint">데이터가 아직 없습니다.</div>'; }
+    $('kpibar').innerHTML=kpi;
+
+    if(!withData.length){ $('trendWrap').innerHTML='<div class="hint" style="margin-top:10px">'+(viewBy==='month'?'견적 데이터가 있는 달이 없습니다.':'견적(오더)이 없습니다.')+'</div>'; return; }
+    const col1=(viewBy==='month'?'월':'견적(오더)');
+    const tot=sumRows(withData);
+    let h=sumBarHtml(tot)+'<div style="overflow-x:auto"><table><thead><tr>'+sortableHead(col1)+'</tr></thead><tbody>';
+    applySort(withData).forEach(r=>{
+      const oi=r.ok_qty_pct, ss=r.short_qty_pct, dd=r.dev_qty_pct;
+      const clickable = viewBy==='order' && r.quote_id;
+      const open = clickable && ofOpen===r.quote_id;
+      h+='<tr'+(clickable?' style="cursor:pointer"'+(open?' class="oopen"':'')+' onclick="toggleOrder('+r.quote_id+')"':'')+'>'
+        +'<td style="text-align:left"><b>'+(clickable?(open?'▾ ':'▸ '):'')+esc(r.label||r.ym||'')+'</b></td>'
+        +(viewBy==='order'?'<td style="text-align:left">'+esc(r.customer_name||'-')+'</td><td>'+esc(r.qdate||'')+'</td><td>'+stageCell(r)+'</td>':'')
+        +'<td>'+nf(r.req_sku)+'</td>'
+        +'<td>'+nf(r.req_qty)+'</td>'
+        +'<td class="barcell"><span class="seg"><i class="si" style="width:'+oi+'%"></i><i class="ss" style="width:'+ss+'%"></i><i class="sd" style="width:'+dd+'%"></i></span>'
+          +'<div class="bamt"><span class="ao" title="즉시 매출가능 금액(IVA 포함)">즉시 '+mf(r.ok_amt)+'</span><span class="sep">·</span><span class="as" title="재고부족분 금액(IVA 포함)">부족 '+mf(r.short_amt)+'</span></div></td>'
+        +'<td class="okpct">'+oi+'%</td>'
+        +'<td style="color:var(--gold)">'+ss+'%</td>'
+        +'<td style="color:var(--purple)">'+dd+'%</td>'
+        +'</tr>';
+      if(open){ h+='<tr><td colspan="10" style="padding:0;background:#faf8f3">'+ofLinesHtml(r.quote_id)+'</td></tr>'; }
+    });
+    h+='</tbody>'+sumFootHtml(tot)+'</table></div>';
+    $('trendWrap').innerHTML=h;
+    if(viewBy==='order'){ $('trendWrap').insertAdjacentHTML('afterbegin','<div class="hint" style="margin-bottom:6px">오더(견적) 행을 클릭하면 아이템 목록(최초 수량 · 매출가능/부족/개발필요)을 펼칩니다.</div>'); }
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 차종별 부품 · build vx</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;--accent:#2f6d8f;--accentbg:#e9f1f6;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1120px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:14px;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:16px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  input,button{font-family:inherit}
+  input[type=text],input[type=password]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff}
+  .btn{padding:9px 18px;border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:8px;font-size:14px;cursor:pointer}
+  .btn:disabled{opacity:.6;cursor:default}
+  .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:130px}
+  .msg{margin-top:10px;font-size:13px}.msg.err{color:var(--expense)}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .hidden{display:none}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .searchrow{display:flex;gap:8px;align-items:flex-end}
+  .searchrow>div{flex:1}
+  /* 결과 */
+  .titlerow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 2px 8px}
+  .titlerow .car{font-size:19px;font-weight:800;color:var(--brand)}
+  .titlerow .vio{background:var(--accentbg);color:var(--accent);border:1px solid #cfe0ea;border-radius:20px;padding:3px 12px;font-size:12.5px;font-weight:700}
+  .titlerow .meta{font-size:13px;color:var(--muted);margin-left:auto}
+  /* 행렬(스프레드시트) */
+  .mxwrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  table.mx{border-collapse:collapse;width:100%;min-width:900px;font-size:12.5px}
+  table.mx th,table.mx td{border:1px solid #d6d0c2;padding:6px 9px;text-align:left;vertical-align:middle;white-space:nowrap}
+  table.mx thead th{background:#f6f8fc;color:var(--accent);font-weight:800;position:sticky;top:0}
+  table.mx thead th .ko{display:block;font-weight:600;font-size:10.5px;color:#9aa}
+  .modcell{font-weight:700;text-align:center;background:#fbfbf9;min-width:140px}
+  .modcell .yr{display:block;font-size:11px;color:#a49e90;font-family:ui-monospace,Consolas,monospace;font-weight:600;margin:2px 0 5px}
+  .viocell{text-align:center;background:#f2f7fb}
+  .viocell .rk{display:block;font-weight:800;color:var(--accent);font-size:12.5px}
+  .viocell .un{display:block;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:#5a748a}
+  .viocell.none .rk{color:#b7b1a4}
+  .brand{font-weight:800;text-align:center;letter-spacing:.02em}
+  .brand.ctr{color:var(--accent);background:#f4f9fc}
+  .brand.syd{color:#6f6a60;background:#fafafa}
+  td.code{font-family:ui-monospace,Consolas,monospace}
+  tr.ctrRow td.code{color:var(--accent);font-weight:700}
+  tr.sydRow td.code{color:#6f6a60}
+  td.code .multi{display:block;line-height:1.5}
+  td.empty{background:repeating-linear-gradient(45deg,#fff,#fff 6px,#fcfcfc 6px,#fcfcfc 12px)}
+  .promobtn{margin-top:2px;display:inline-flex;align-items:center;gap:4px;border:1px solid #d9c26a;background:#fff8e6;color:#8a6a2a;
+    border-radius:14px;padding:2px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+  .promobtn:hover{background:#fdefc7}
+  .promobtn.on{background:#e8b923;border-color:#c99a12;color:#3a2e07}
+  tr.promoOn .modcell{box-shadow:inset 3px 0 0 #e8b923}
+  /* A4 프로모션 오버레이 */
+  #promoOverlay{position:fixed;inset:0;background:rgba(20,20,20,.55);z-index:10002;display:none;overflow:auto;padding:18px}
+  #promoOverlay.show{display:flex;flex-direction:column;align-items:center}
+  .promoBar{width:210mm;max-width:100%;display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .promoBar .fill{flex:1}
+  .promoBar button,.promoBar input{font-family:inherit}
+  .promoBar .pbtn{padding:8px 14px;border:1px solid #fff;background:#143D34;color:#fff;border-radius:8px;font-size:13px;cursor:pointer}
+  .promoBar .pbtn.sec{background:#fff;color:#143D34}
+  .promoBar .pbtn.wa{background:#25D366;border-color:#1da851;color:#06371c}
+  .promoBar .fld{background:#fff;border-radius:8px;padding:5px 8px;font-size:12px;display:flex;gap:6px;align-items:center}
+  .promoBar .fld input{border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12px}
+  .sheet{width:210mm;min-height:297mm;background:#fff;box-shadow:0 6px 30px rgba(0,0,0,.4);padding:14mm 14mm 12mm;position:relative}
+  .sheet *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pHead{display:flex;align-items:flex-start;gap:10mm;border-bottom:3px solid #143D34;padding-bottom:6mm}
+  .pHead .brandmark{font-size:15pt;font-weight:900;color:#143D34;letter-spacing:.04em}
+  .pHead .brandmark small{display:block;font-size:8pt;font-weight:700;color:#9A7B16;letter-spacing:.14em}
+  .pHead .promoTag{margin-left:auto;text-align:right}
+  .pHead .promoTag .kick{font-size:10pt;font-weight:800;color:#B23A2E;letter-spacing:.06em}
+  .pHead .promoTag .disc{font-size:30pt;font-weight:900;color:#B23A2E;line-height:1}
+  .pHead .promoTag .disc small{font-size:13pt}
+  .pTitle{font-size:22pt;font-weight:900;color:#143D34;margin:7mm 0 1mm}
+  .pTitle .yrs{font-size:12pt;color:#6B6B6B;font-weight:700}
+  .pSub{font-size:11pt;color:#333;line-height:1.5;margin:0 0 5mm;max-width:150mm}
+  .pVehicle{width:100%;height:78mm;background:#f1efe8;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;margin-bottom:6mm}
+  .pVehicle img{width:100%;height:100%;object-fit:cover}
+  .pVehicle .ph{color:#b7b1a4;font-size:11pt;text-align:center;padding:8mm}
+  .pVio{display:inline-block;background:#e9f1f6;color:#2f6d8f;border:1px solid #cfe0ea;border-radius:20px;padding:2px 12px;font-size:10pt;font-weight:800;margin-bottom:5mm}
+  .pKit{font-size:12pt;font-weight:800;color:#143D34;margin:0 0 3mm}
+  .pGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:4mm}
+  .pItem{border:1px solid #e2ddd2;border-radius:8px;overflow:hidden;background:#fff;text-align:center}
+  .pItem .imgbox{height:26mm;background:#faf8f3;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .pItem .imgbox img{max-width:100%;max-height:100%;object-fit:contain}
+  .pItem .imgbox .noimg{color:#c9c3b6;font-size:9pt}
+  .pItem .cap{padding:3px 4px 5px}
+  .pItem .cap .cd{font-family:ui-monospace,Consolas,monospace;font-size:9.5pt;font-weight:800;color:#2f6d8f}
+  .pItem .cap .cat{font-size:7.5pt;color:#8a8578}
+  .pFoot{position:absolute;left:14mm;right:14mm;bottom:9mm;border-top:1px solid #e2ddd2;padding-top:3mm;
+    display:flex;align-items:center;gap:8px;font-size:8.5pt;color:#6B6B6B}
+  .pFoot b{color:#143D34}
+  @media print{
+    body{background:#fff!important;padding:0!important}
+    body>.wrap{display:none!important}
+    #promoOverlay{position:static!important;background:#fff!important;padding:0!important;overflow:visible!important}
+    .promoBar{display:none!important}
+    #promoOverlay .pClose{display:none!important}
+    .sheet{box-shadow:none!important;width:auto;min-height:auto;margin:0}
+    @page{size:A4;margin:0}
+  }
+  .empty{color:#d6d0c2;font-size:18px;text-align:center;padding:6px 0}
+  #promoOverlay .pClose{position:fixed;top:14px;right:18px;z-index:5;width:40px;height:40px;border-radius:50%;
+    border:none;background:#fff;color:#143D34;font-size:20px;font-weight:800;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35);line-height:1}
+  #promoOverlay .pClose:hover{background:#f1efe8}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>Refatrix ERP</h1><div class="sub">차종별 부품 · 카테고리 정렬 · VIO</div></div>
+    <a href="refatrix-portal.html" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="card hidden" id="searchCard">
+    <h2>차종으로 부품 찾기</h2>
+    <div class="hint" style="margin-bottom:10px">차량 모델명을 입력하면 <b>행렬 표</b>로 보여줍니다. <b>행</b>=차종·연식(세대)이며 각 블록은 <b>CTR / SYD 두 줄</b>, <b>열</b>=카테고리(rótula·terminal·horquilla·…)입니다. 왼쪽에 연식대별 <b>VIO(멕시코 등록대수)</b>. 모델 옆 <b>★ 프로모션</b> 단추를 누르면 <b>A4 세트할인 홍보물</b>(차량 이미지 + 우리 제품 코드·사진 + 스페인어 문구)을 만들어 인쇄/PDF 저장할 수 있습니다. 예: <b>tsuru</b>, <b>versa</b>, <b>jetta</b>, <b>aveo</b>.</div>
+    <div class="searchrow">
+      <div><label>차량 모델</label><input id="q" type="text" placeholder="예: tsuru" autocomplete="off"></div>
+      <div style="flex:0 0 auto"><button class="btn" id="goSearch">검색</button></div>
+    </div>
+    <div id="result"></div>
+  </div>
+</div>
+
+<div id="promoOverlay" style="display:none"></div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const escP=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const num=(n)=> n==null?'—':Number(n).toLocaleString('es-MX');
+  const titleCase=(s)=>String(s||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+
+  function portalSession(){
+    try{const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){const o=JSON.parse(raw);if(o&&o.token)return{token:o.token,api:o.api||'',user:o.user||{}};}}catch(e){}
+    try{const h=location.hash.slice(1);if(h){const p=new URLSearchParams(h);const token=p.get('token');
+      if(token){const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')};
+        try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){}return o;}}}catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent=d.error==='invalid_credentials'?'아이디 또는 PIN이 올바르지 않습니다.':('로그인 실패: '+(d.error||res.status));return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+escP(d.user?.name||login_id)+'</b><br>역할: '+escP(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('searchCard').classList.remove('hidden');
+      loadVio();
+      applyHashQuery();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다. 서버 주소를 확인하세요.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function applyHashQuery(){
+    let q=''; try{const p=new URLSearchParams(location.hash.slice(1));q=p.get('q')||'';}catch(e){}
+    if(q){ $('q').value=q; doSearch(); }
+  }
+
+  async function doSearch(){
+    const q=$('q').value.trim();const r=$('result');
+    if(q.length<2){ r.innerHTML='<div class="hint" style="margin-top:12px">두 글자 이상 입력하세요.</div>'; return; }
+    r.innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    let d;
+    try{ d=await fetch(session.api+'/api/products/by-model?q='+encodeURIComponent(q),{headers:auth()}).then(x=>x.json()); }
+    catch(e){ r.innerHTML='<div class="hint" style="margin-top:12px">조회에 실패했습니다.</div>'; return; }
+    render(d);  // 즉시 렌더(커버리지 VIO 미로딩이면 엔드포인트 VIO로 폴백)
+    // 커버리지 VIO는 비차단으로 로드되면 화면 갱신(1.7MB 다운로드가 검색을 막지 않도록 임계 경로에서 분리)
+    try{ loadVio().then(function(){ if(_last&&_last.d===d) render(d); }).catch(function(){}); }catch(e){}
+  }
+
+  // ── 연식대별 VIO: 공통>커버리지 화면의 데이터(mx_parts_coverage_dashboard.html)를 단일 소스로 사용 ──
+  // 커버리지 HTML의 const DATA={...} 한 줄을 읽어 모델→세대(연식대) VIO 인덱스를 만든다.
+  // units 내림차순으로 전 세대 순위를 파생(ctr_vio_rank의 순위와 동일 규칙). 실패 시 엔드포인트 VIO로 폴백.
+  let VIO=null, _vioReady=null;
+  function normS(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+  function loadVio(){
+    if(_vioReady) return _vioReady;
+    _vioReady=(async()=>{
+      try{
+        let signal=null,to=null;
+        try{ const ctrl=new AbortController(); signal=ctrl.signal; to=setTimeout(function(){try{ctrl.abort();}catch(e){}},8000); }catch(e){}
+        const _dk=new Date().toISOString().slice(0,10); // 일 단위 캐시(재방문 시 브라우저 캐시 사용)
+        const txt=await fetch('mx_parts_coverage_dashboard.html?d='+_dk,signal?{signal:signal}:undefined).then(x=>x.text());
+        if(to) clearTimeout(to);
+        const line=txt.split('\n').find(l=>l.trimStart().startsWith('const DATA='));
+        if(!line) throw new Error('no DATA');
+        const js=line.trim().replace(/^const\s+DATA\s*=\s*/,'').replace(/;\s*$/,'');
+        const D=JSON.parse(js); const vehicles=(D&&D.vehicles)||[];
+        const models=vehicles.map(m=>({
+          marca:(m.marca||'').toString(), modelo:(m.modelo||'').toString(), units:Number(m.units)||0,
+          gens:(m.gens||[]).map(g=>({label:(g.label||'').toString(), ys:Number(g.ys)||null, ye:Number(g.ye)||null, units:Number(g.units)||0}))
+        }));
+        const allG=[]; models.forEach(m=>m.gens.forEach(g=>{ if(g.units>0) allG.push(g); }));
+        allG.sort((a,b)=>b.units-a.units); allG.forEach((g,i)=>{ g.rank=i+1; });
+        const mm=models.filter(m=>m.units>0).slice().sort((a,b)=>b.units-a.units); mm.forEach((m,i)=>{ m.rank=i+1; });
+        VIO={models};
+      }catch(e){ VIO={models:[]}; }
+      return VIO;
+    })();
+    return _vioReady;
+  }
+  function findVioModel(q){
+    if(!VIO||!VIO.models.length) return null;
+    const nq=normS(q); if(!nq) return null;
+    let best=null,bo=-1;
+    VIO.models.forEach(m=>{
+      const nm=normS(m.modelo); let sc=-1;
+      if(nm===nq) sc=100;
+      else if(nm.split(' ').indexOf(nq)>=0) sc=90;
+      else if(nm.indexOf(nq)===0) sc=80;
+      else if(nm.indexOf(nq)>=0) sc=60;
+      else if(nq.indexOf(nm.split(' ')[0])>=0) sc=40;
+      if(sc>bo || (sc===bo && best && m.units>best.units)){ bo=sc; best=m; }
+    });
+    return bo>=40?best:null;
+  }
+  function parseYears(s){ const mm=(''+(s||'')).match(/(\d{4})\s*[-~]?\s*(\d{4})?/); if(!mm) return null; const a=+mm[1], b=mm[2]?+mm[2]:a; return [Math.min(a,b),Math.max(a,b)]; }
+  function vioForColumn(vmodel,vyears,cov){
+    if(!cov||!cov.gens.length) return null;
+    const yr=parseYears(vyears), nvm=normS(vmodel); let best=null,bo=-1e9;
+    cov.gens.forEach(g=>{
+      let ov=-1; if(yr&&g.ys&&g.ye){ ov=Math.min(yr[1],g.ye)-Math.max(yr[0],g.ys); }
+      const ng=normS(g.label); const lab=(ng===nvm)?3:((ng.indexOf(nvm)>=0||nvm.indexOf(ng)>=0)?1:0);
+      const score=ov+lab*0.5;
+      if(score>bo){ bo=score; best=g; }
+    });
+    return (best&&bo>-1e8)?best:null;
+  }
+  function vioChip(vio,small){
+    if(!vio) return small?'<span class="vio none">VIO —</span>':'';
+    const hasRank=(vio.rank!==undefined&&vio.rank!==null);
+    const t=(hasRank&&vio.units>0)?('VIO '+vio.rank+'위 · '+num(vio.units)+'대')
+           :('VIO '+num(vio.units||0)+'대');
+    const cls=(vio.units>0)?'vio':'vio none';
+    return '<span class="'+cls+'">'+t+'</span>';
+  }
+  // 현재 조회 결과 + 프로모션 선택 상태 보관
+  let _last=null;             // {d, cov, colVio}
+  const _promo={};            // vkey -> true(프로모션 대상)
+  function viocellHTML(v){
+    if(!v||!(v.units>0)) return '<td class="viocell none" rowspan="2"><span class="rk">—</span><span class="un">'+num(v?v.units:0)+'대</span></td>';
+    return '<td class="viocell" rowspan="2"><span class="rk">'+v.rank+'위</span><span class="un">'+num(v.units)+'대</span></td>';
+  }
+  function brandCodes(items,which){ // which: 'ctr' | 'syd'
+    const out=[];
+    (items||[]).forEach(function(x){
+      if(which==='ctr'){ if(x.ctr) out.push(x.ctr); }
+      else{ (x.syd||[]).forEach(function(s){ if(s) out.push(s); }); }
+    });
+    return out.filter(function(c,i,a){return a.indexOf(c)===i;});
+  }
+  function codeCell(list){
+    if(!list||!list.length) return '<td class="code empty"></td>';
+    return '<td class="code">'+list.map(function(c){return '<span class="multi">'+escP(c)+'</span>';}).join('')+'</td>';
+  }
+  function render(d){
+    const r=$('result');
+    if(!d||!d.variants||!d.variants.length||!d.categories||!d.categories.length){
+      _last=null; r.innerHTML='<div class="hint" style="margin-top:14px">‘'+escP(d&&d.query||'')+'’에 해당하는 적용차종을 찾지 못했습니다. 철자나 다른 모델명으로 시도해 보세요.</div>';return;
+    }
+    const vars=d.variants;
+    // 연식대별 VIO 소스: 커버리지 데이터(공통>커버리지)에서 이 차종을 찾는다(실패 시 엔드포인트 VIO 폴백)
+    const cov=findVioModel(d.model_label||d.query);
+    const headVio=cov?{rank:cov.rank,units:cov.units}:d.headline_vio;
+    const colVio={};
+    vars.forEach(function(v){ const cv=cov?vioForColumn(v.model,v.years,cov):null; colVio[v.key]=cv?{rank:cv.rank,units:cv.units}:(v.vio||null); });
+    _last={d:d, cov:cov, colVio:colVio};
+    let h='<div class="titlerow"><span class="car">'+escP(d.model_label||d.query)+'</span>'
+      +(headVio?vioChip(headVio,false):'')
+      +'<span class="meta">'+d.categories.length+'개 카테고리 · '+num(d.total)+'개 제품</span></div>';
+    // 행렬: 행=차종·연식(CTR/SYD 2줄), 열=모델·연식/VIO/브랜드/카테고리들
+    h+='<div class="mxwrap"><table class="mx"><thead><tr>'
+      +'<th>모델·연식</th><th>VIO</th><th>브랜드</th>'
+      +d.categories.map(function(c){return '<th>'+escP(c.es)+'<span class="ko">'+escP(c.ko)+'</span></th>';}).join('')
+      +'</tr></thead><tbody>';
+    vars.forEach(function(v){
+      const on=_promo[v.key]?' promoOn':'';
+      const btn='<button class="promobtn'+(_promo[v.key]?' on':'')+'" data-promo="'+escP(v.key)+'">★ 프로모션</button>';
+      // CTR 줄
+      h+='<tr class="ctrRow'+on+'">'
+        +'<td class="modcell" rowspan="2">'+escP(v.model)+'<span class="yr">'+escP(v.years||'')+'</span>'+btn+'</td>'
+        +viocellHTML(colVio[v.key])
+        +'<td class="brand ctr">CTR</td>'
+        +d.categories.map(function(c){return codeCell(brandCodes((c.cells&&c.cells[v.key])||[],'ctr'));}).join('')
+        +'</tr>';
+      // SYD 줄
+      h+='<tr class="sydRow'+on+'">'
+        +'<td class="brand syd">SYD</td>'
+        +d.categories.map(function(c){return codeCell(brandCodes((c.cells&&c.cells[v.key])||[],'syd'));}).join('')
+        +'</tr>';
+    });
+    h+='</tbody></table></div>';
+    r.innerHTML=h;
+  }
+
+  // ── 프로모션(세트할인 A4) ──
+  const R2_IMG='https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/{code}/{code}_1.webp'; // 우리(CTR) 제품 이미지(커버리지 코드 참조)
+  function ctrImg(code){ return R2_IMG.split('{code}').join(encodeURIComponent(code)); }
+  function variantProducts(vkey){
+    if(!_last) return [];
+    const seen={},out=[];
+    _last.d.categories.forEach(function(c){
+      (((c.cells||{})[vkey])||[]).forEach(function(x){ if(x.ctr&&!seen[x.ctr]){ seen[x.ctr]=1; out.push({code:x.ctr,cat:c.es,name:x.name||''}); } });
+    });
+    return out;
+  }
+  function fetchVehicleImage(query){ // 인터넷에서 차량 이미지(위키미디어, CORS 허용)
+    const u='https://es.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=1&gsrsearch='
+      +encodeURIComponent(query)+'&prop=pageimages&piprop=thumbnail&pithumbsize=900';
+    return fetch(u).then(r=>r.json()).then(function(j){
+      const pg=j&&j.query&&j.query.pages; if(!pg) return null;
+      const p=Object.keys(pg).map(k=>pg[k])[0];
+      return (p&&p.thumbnail&&p.thumbnail.source)||null;
+    }).catch(function(){return null;});
+  }
+  let _psheet=null;
+  function togglePromo(vkey){
+    _promo[vkey]=!_promo[vkey];
+    if(_last) render(_last.d);        // 선택 하이라이트 반영
+    if(_promo[vkey]) openPromo(vkey);
+  }
+  function openPromo(vkey){
+    if(!_last) return;
+    const d=_last.d,cov=_last.cov,colVio=_last.colVio;
+    const v=(d.variants||[]).filter(x=>x.key===vkey)[0]; if(!v) return;
+    _psheet={ vkey:vkey, marca:(cov&&cov.marca)||'', modelo:(cov&&cov.modelo)||d.model_label||d.query,
+      model:v.model, years:v.years||'', vio:colVio[vkey], prods:variantProducts(vkey), disc:15, vehImg:'' };
+    const ov0=$('promoOverlay'); ov0.style.display='flex'; ov0.classList.add('show');
+    drawPromo();
+    const q=(_psheet.marca?_psheet.marca+' ':'')+_psheet.modelo;
+    fetchVehicleImage(q).then(function(u){ if(u&&_psheet){ _psheet.vehImg=u; drawPromo(); } });
+  }
+  function closePromo(){ const o=$('promoOverlay'); o.style.display='none'; o.classList.remove('show'); o.innerHTML=''; _psheet=null; }
+  function asciiName(s){ return String(s||'promo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_').replace(/^_+|_+$/g,'')||'promo'; }
+  function fileBase(){ const s=_psheet||{}; return 'promo_'+asciiName(s.modelo)+'_'+asciiName(s.years); }
+  function captureSheet(){
+    const el=document.querySelector('#promoOverlay .sheet');
+    if(!el||!window.html2canvas) return Promise.reject(new Error('no-lib'));
+    return window.html2canvas(el,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
+  }
+  function busy(btn,on,label){ if(!btn) return; if(on){ btn.dataset._t=btn.textContent; btn.textContent=label; btn.disabled=true; } else { btn.textContent=btn.dataset._t||btn.textContent; btn.disabled=false; } }
+  async function downloadPDF(btn){
+    if(!_psheet) return;
+    if(!window.html2canvas||!window.jspdf){ window.print(); return; }
+    busy(btn,true,'PDF 생성 중…');
+    try{
+      const canvas=await captureSheet();
+      const img=canvas.toDataURL('image/jpeg',0.95);
+      const jsPDF=window.jspdf.jsPDF;
+      const pdf=new jsPDF('p','mm','a4');
+      let iw=210, ih=210*canvas.height/canvas.width;
+      if(ih>297){ ih=297; iw=297*canvas.width/canvas.height; }
+      pdf.addImage(img,'JPEG',(210-iw)/2,(297-ih)/2,iw,ih);
+      pdf.save(fileBase()+'.pdf');
+    }catch(e){ alert('PDF 생성 중 문제가 발생했습니다. [🖨 인쇄]에서 “PDF로 저장”을 이용해 주세요.'); }
+    finally{ busy(btn,false); }
+  }
+  async function downloadJPEG(btn){
+    if(!_psheet) return;
+    if(!window.html2canvas){ alert('이미지 생성 라이브러리를 불러오지 못했습니다. 인쇄를 이용해 주세요.'); return; }
+    busy(btn,true,'JPEG 생성 중…');
+    try{
+      const canvas=await captureSheet();
+      const a=document.createElement('a');
+      a.href=canvas.toDataURL('image/jpeg',0.95); a.download=fileBase()+'.jpg';
+      document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){ alert('JPEG 생성 중 문제가 발생했습니다. 인쇄를 이용해 주세요.'); }
+    finally{ busy(btn,false); }
+  }
+  function promoText(){
+    const s=_psheet||{}; const nm=((s.marca?s.marca+' ':'')+(s.modelo||'')).trim();
+    return '¡PROMOCIÓN EN SET! Kit de suspensión y dirección CTR para '+nm+' '+(s.years||'')+' · '+(s.disc||0)+'% de descuento por compra en conjunto. — REFATRIX';
+  }
+  async function shareWhatsApp(btn){
+    if(!_psheet) return;
+    busy(btn,true,'준비 중…');
+    try{
+      // 모바일/지원 브라우저: 생성 이미지 파일을 OS 공유 시트로 → WhatsApp 선택 후 대상 지정해 전송
+      if(window.html2canvas && navigator.canShare){
+        const canvas=await captureSheet();
+        const blob=await new Promise(function(res){ canvas.toBlob(res,'image/jpeg',0.95); });
+        if(blob){
+          const file=new File([blob],fileBase()+'.jpg',{type:'image/jpeg'});
+          if(navigator.canShare({files:[file]})){
+            await navigator.share({files:[file],text:promoText(),title:'Refatrix Promo'});
+            busy(btn,false); return;
+          }
+        }
+      }
+      // 폴백(파일 공유 미지원, 예: 데스크톱): 이미지 다운로드 후 WhatsApp 문구 열기(이미지는 수동 첨부)
+      await downloadJPEG(null);
+      window.open('https://wa.me/?text='+encodeURIComponent(promoText()),'_blank');
+      alert('이 브라우저는 이미지 직접 공유를 지원하지 않아, 이미지를 내려받았습니다. 열린 WhatsApp 창에서 방금 받은 이미지를 첨부해 보내세요.\n(휴대폰에서 열면 이미지가 바로 공유됩니다.)');
+    }catch(e){ /* 사용자가 공유 취소 등 */ }
+    finally{ busy(btn,false); }
+  }
+  function drawPromo(){
+    const s=_psheet; if(!s) return; const ov=$('promoOverlay');
+    const modelTitle=escP((s.marca?s.marca.toUpperCase()+' ':'')+s.modelo);
+    const veh=s.vehImg?'<img id="pVehImg" data-veh="1" src="'+escP(s.vehImg)+'" alt="">'
+      :'<div class="ph">차량 이미지를 자동 검색 중…<br><span style="font-size:9pt">실패 시 위의 URL 칸에 이미지 주소를 붙여넣고 [적용]</span></div>';
+    const vioTxt=(s.vio&&s.vio.units>0)?('VIO '+s.vio.rank+'위 · '+num(s.vio.units)+'대 · registrados en México'):'';
+    const items=s.prods.length?s.prods.map(function(p){
+      return '<div class="pItem"><div class="imgbox"><img data-code="'+escP(p.code)+'" src="'+ctrImg(p.code)+'" alt=""></div>'
+        +'<div class="cap"><div class="cd">'+escP(p.code)+'</div><div class="cat">'+escP(p.cat)+'</div></div></div>';
+    }).join(''):'<div class="pItem"><div class="cap"><div class="cat">이 세대의 CTR 제품 없음</div></div></div>';
+    const bar='<div class="promoBar">'
+      +'<button class="pbtn" data-ppdf="1">⬇ PDF 다운로드</button>'
+      +'<button class="pbtn" data-pjpg="1">⬇ JPEG 다운로드</button>'
+      +'<button class="pbtn wa" data-pwa="1">📱 WhatsApp 공유</button>'
+      +'<button class="pbtn sec" data-pprint="1">🖨 인쇄</button>'
+      +'<div class="fld">할인율 <input id="pDisc" type="text" value="'+escP(''+s.disc)+'">%</div>'
+      +'<div class="fld" style="flex:1;min-width:200px">차량 이미지 URL <input id="pVehUrl" type="text" placeholder="자동 검색 실패 시 붙여넣기"></div>'
+      +'<button class="pbtn sec" data-pveh="1">적용</button><div class="fill"></div>'
+      +'<button class="pbtn sec" data-pclose="1">닫기</button></div>';
+    const sheet='<div class="sheet"><div class="pHead">'
+      +'<div class="brandmark">REFATRIX<small>REFACCIONES · CTR</small></div>'
+      +'<div class="promoTag"><div class="kick">¡OFERTA POR TIEMPO LIMITADO!</div><div class="disc">'+escP(''+s.disc)+'<small>% OFF</small></div></div></div>'
+      +'<div class="pTitle">Kit de Suspensión y Dirección <span class="yrs">· '+modelTitle+' '+escP(s.years)+'</span></div>'
+      +'<p class="pSub">¡Aprovecha nuestra <b>PROMOCIÓN DE COMPRA EN SET</b>! Llévate el juego completo de refacciones CTR para tu '
+        +modelTitle+' ('+escP(s.years)+') y obtén un <b>'+escP(''+s.disc)+'% de descuento</b> al comprar el conjunto. Calidad garantizada a precio de mayoreo.</p>'
+      +'<div class="pVehicle">'+veh+'</div>'
+      +(vioTxt?'<div class="pVio">'+vioTxt+'</div>':'')
+      +'<div class="pKit">Componentes del set ('+s.prods.length+' piezas)</div>'
+      +'<div class="pGrid">'+items+'</div>'
+      +'<div class="pFoot"><b>REFATRIX</b> · Refacciones CTR &nbsp;|&nbsp; Compra en set y ahorra &nbsp;|&nbsp; www.refatrix.com.mx</div>'
+      +'</div>';
+    ov.innerHTML='<button class="pClose" data-pclose="1" title="닫기">✕</button>'+bar+sheet;
+    // 제품 이미지 로드 실패 시 코드 텍스트로 대체
+    Array.prototype.forEach.call(ov.querySelectorAll('.pItem .imgbox img'),function(im){
+      im.onerror=function(){ const box=im.parentNode; box.innerHTML='<span class="noimg">'+escP(im.getAttribute('data-code')||'')+'</span>'; };
+    });
+    const vi=ov.querySelector('#pVehImg'); if(vi){ vi.onerror=function(){ if(_psheet){ _psheet.vehImg=''; drawPromo(); } }; }
+  }
+  $('result').addEventListener('click',function(e){ const b=e.target.closest('.promobtn'); if(b) togglePromo(b.getAttribute('data-promo')); });
+  $('promoOverlay').addEventListener('click',function(e){
+    const t=e.target.closest('[data-pprint],[data-pclose],[data-pveh],[data-ppdf],[data-pjpg],[data-pwa]'); if(!t) return;
+    if(t.hasAttribute('data-pprint')) window.print();
+    else if(t.hasAttribute('data-pclose')) closePromo();
+    else if(t.hasAttribute('data-ppdf')) downloadPDF(t);
+    else if(t.hasAttribute('data-pjpg')) downloadJPEG(t);
+    else if(t.hasAttribute('data-pwa')) shareWhatsApp(t);
+    else if(t.hasAttribute('data-pveh')){ const u=$('pVehUrl'); if(u&&u.value.trim()&&_psheet){ _psheet.vehImg=u.value.trim(); drawPromo(); } }
+  });
+  $('promoOverlay').addEventListener('change',function(e){
+    if(e.target.id==='pDisc'&&_psheet){ const n=parseInt(e.target.value,10); _psheet.disc=isNaN(n)?_psheet.disc:Math.max(0,Math.min(90,n)); drawPromo(); }
+  });
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('goSearch').addEventListener('click',doSearch);
+  $('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
+  window.addEventListener('hashchange',()=>{ if($('loginCard').classList.contains('hidden')) applyHashQuery(); });
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-';$('pin').value='-'; setTimeout(login,30);} })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 수금/정산 · build 0708da</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --brand:#143D34;--brand-soft:#1E5247;--gold:#B8893B;--radius:12px;--radius-sm:8px;
+    --shadow:0 1px 2px rgba(28,27,25,.04),0 8px 24px rgba(28,27,25,.06);}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px;box-shadow:var(--shadow)}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .card-h .src{font-size:11px;color:var(--muted);font-weight:500}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .noteBox{background:#fdf8ec;border:1px solid #ecd9a0;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#8a6512;margin-top:4px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+  @media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px 15px}
+  .stat .k{font-size:11px;color:var(--muted);margin-bottom:5px}
+  .stat .v{font-size:20px;font-weight:800;color:var(--brand)}
+  .stat.tot .v{color:var(--gold)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:11.5px;color:var(--muted);background:#faf8f3;font-weight:700}
+  tfoot td{font-weight:800;background:#faf8f3;border-top:2px solid var(--line)}
+  .badge{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px}
+  .b-edit{background:#e6f1fb;color:#0c447c}.b-del{background:var(--expense-bg);color:var(--expense)}.b-imp{background:#fdf8ec;color:#8a6512}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:6px 12px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--brand);color:#fff}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income);border:1px solid #bfe0d5}
+  tr.ovd td{background:var(--expense-bg)}
+  .chip{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;white-space:nowrap}
+  .chip-paid{background:var(--income-bg);color:var(--income)}
+  .chip-part{background:#fdf8ec;color:#8a6512}
+  .histbox{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:2px 0}
+  .histbox table{margin-top:6px}
+  .histbox th,.histbox td{padding:6px 8px}
+  .lnk{color:#0c447c;cursor:pointer;text-decoration:underline;font-size:12px;background:none;border:none;padding:0;font-family:inherit}
+  .searchbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 2px}
+  .searchbar input{width:300px;max-width:60vw}
+  .nores{font-size:13px;color:var(--muted);padding:8px 2px}
+  .inv-no{font-size:10.5px;color:var(--muted);white-space:normal;word-break:break-all;max-width:168px;line-height:1.3;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.2px}
+  .folio-no{color:var(--brand);font-weight:800;margin-right:5px}
+  td.n,th.n{font-variant-numeric:tabular-nums}
+  /* 스페인어 자동번역 시 버튼(반제/N/C/수금내역)이 길어져 오른쪽으로 넘칠 때
+     항상 보이는 가로 스크롤바를 노출해 외국인 직원이 버튼에 도달할 수 있게 함 */
+  .arscroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+    scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#c8bfa8 #efe9dd}
+  .arscroll::-webkit-scrollbar{height:12px}
+  .arscroll::-webkit-scrollbar-track{background:#efe9dd;border-radius:8px}
+  .arscroll::-webkit-scrollbar-thumb{background:#c8bfa8;border-radius:8px;border:2px solid #efe9dd}
+  .arscroll::-webkit-scrollbar-thumb:hover{background:var(--gold)}
+  /* N/C 등 번역 제외 라벨 */
+  .notranslate{}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">수입원가 정산차액</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+
+    <!-- 미배분 입금 인박스 (재무담당/디렉터가 등록한 은행 매출입금 → 반제 연결) -->
+    <div class="card" id="bdInboxCard" style="display:none">
+      <div class="card-h">미배분 입금 인박스
+        <span id="bdBadge" style="margin-left:8px;display:none;background:#c0392b;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">0</span>
+        <span style="margin-left:auto"><button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="loadBdInbox()">새로고침</button></span>
+      </div>
+      <div class="hint" style="margin-bottom:4px">재무담당/디렉터가 등록한 <b>은행 매출입금</b>입니다. <b>반제는 통지 우선</b> — 각 입금의 <b>[이 입금으로 반제]</b>를 누른 뒤, 아래 미수 목록에서 그 고객 인보이스에 <b>배분을 담고</b> <b>[저장·통지 닫기]</b>로 확정하면 입금이 닫힙니다(고객 영수증 첨부 가능). 계좌·입금일·금액은 통지에서 고정됩니다.</div>
+      <div id="bdInboxBox"></div>
+    </div>
+
+    <!-- 수금 상세 (오픈 인보이스 / AR) — 최상단 -->
+    <div class="card">
+      <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="seg" id="arSeg"></span><button id="arPrintBtn" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="printArList()" title="지금 화면에 보이는 목록(검색·그룹필터·정렬·완납토글 반영)을 인쇄/PDF로 저장">🖨 인쇄</button><button id="arToggle" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleArBody()">감추기</button></span>
+      </div>
+      <div class="stats" id="arStats" style="margin-bottom:4px"></div>
+      <div id="arBody">
+      <div class="hint" style="margin-bottom:4px">고객 수금 활동용 미수금 현황. 토글로 <b>회사 전체 / 팀별 / 영업담당자별 / 고객별</b>로 봅니다. 반제는 <b>통지 우선</b> — 위 <b>미배분 입금 인박스</b>에서 입금을 선택한 뒤 그 고객 인보이스에 배분을 담고 <b>[저장·통지 닫기]</b>로 확정합니다(고객 영수증 첨부 가능). <b>수금내역</b>으로 인보이스별 수금 이력을 봅니다.</div>
+      <div class="searchbar">
+        <input id="arSearchQ" placeholder="SAT 번호 · No. de Folio · 고객명으로 검색" oninput="onArSearchInput()" onkeydown="if(event.key==='Enter')doArSearch()">
+        <button class="btn" onclick="doArSearch()">🔍 검색</button>
+        <button class="btn" id="arSearchClear" style="display:none;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearArSearch()">검색 해제</button>
+        <span id="arSearchInfo" class="hint"></span>
+        <button class="btn" id="arClosedToggle" style="margin-left:auto;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleClosed()" title="100% 반제(완납)되어 마감된 인보이스도 목록·그룹 표에 표시(완납만 있는 고객 포함)">완납(closing) 포함: 끔</button>
+      </div>
+      <div id="bdCtxBanner" class="msg" style="display:none;margin:8px 0;background:#eef6f1;color:var(--brand);border:1px solid var(--line)"></div>
+      <div id="bdCartBox" style="display:none;margin:8px 0"></div>
+      <div id="arGroupBox" style="margin-top:12px"></div>
+      <div id="arListBox" style="margin-top:12px"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="arMsg"></div>
+      </div><!-- /arBody -->
+    </div>
+
+    <!-- Nota de crédito (NC) · 할인 승인 증빙 -->
+    <div class="card">
+      <div class="card-h">Nota de crédito (NC) · 할인 승인 증빙
+        <span style="margin-left:auto"><span class="seg" id="ncSeg"></span></span>
+      </div>
+      <div class="hint" style="margin-bottom:4px">조기입금(pronto pago) 등으로 인보이스 잔액보다 적게 받을 때, 할인분을 <b>비현금 반제</b>로 마감하는 사내 증빙입니다. 발기는 위 <b>오픈 인보이스</b> 행의 <b class="notranslate" translate="no">[N/C]</b> 버튼에서 합니다. 절차: 발기 → <b>인쇄·서명</b> → <b>서명본 업로드</b> → <b>디렉터 승인</b> → <b>적용(비현금 반제)</b>. ※ 현금/수금 총액에는 잡히지 않습니다.</div>
+      <div id="ncListBox"><div class="hint">불러오는 중…</div></div>
+      <div class="msg" id="ncMsg"></div>
+    </div>
+
+    <div id="varSection">
+    <div class="card">
+      <div class="card-h">정산차액 집계 <span class="src">비현금 손익 조정 · 현금흐름과 분리</span>
+        <span style="margin-left:auto"><span class="seg" id="yearSeg"></span></span>
+      </div>
+      <div class="noteBox" id="note">정산차액은 비현금 손익(원가) 조정입니다. 통장 잔액·현금흐름에는 반영되지 않으며, 발생한 달의 손익에 인식됩니다.</div>
+      <div class="stats" id="statBoxes"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">월별 정산차액 (원천별)</div>
+      <div id="monthBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">상세 내역
+        <span style="margin-left:auto"><button id="itemToggle" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;color:var(--brand);border:1px solid var(--line)">감추기</button></span>
+      </div>
+      <div id="itemBody"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    </div><!-- /varSection · 정산차액(재무·디렉터 전용) -->
+  </div>
+</div>
+
+<!-- 명세서 미리보기 모달 -->
+<div id="stmtModal" class="hidden" style="position:fixed;inset:0;background:rgba(20,27,25,.5);z-index:60;align-items:flex-start;justify-content:center;padding:24px;overflow:auto">
+  <div style="background:#fff;max-width:760px;width:100%;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.32);margin:auto">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)">
+      <b style="color:var(--brand);font-size:14px">명세서 미리보기 (Estado de cuenta)</b>
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn" onclick="downloadStatement()">PDF 다운로드</button>
+        <button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="closeStatement()">닫기</button>
+      </span>
+    </div>
+    <div id="stmtBody" style="padding:24px 26px;font-size:13px;color:#1C1B19"></div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let year=String(new Date().getFullYear());
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const r2num=(n)=> Math.round((Number(n)+Number.EPSILON)*100)/100;
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>'+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      initApp();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function renderYearSeg(){
+    const cur=new Date().getFullYear();
+    const years=[cur-1,cur];
+    $('yearSeg').innerHTML=years.map(y=>'<button class="'+(String(y)===year?'on':'')+'" onclick="pickYear(\''+y+'\')">'+y+'</button>').join('')
+      +'<button class="'+(year===''?'on':'')+'" onclick="pickYear(\'\')">전체</button>';
+  }
+  function pickYear(y){ year=String(y);renderYearSeg();load(); }
+
+  // 정산차액(비현금 원가조정)은 재무·디렉터만. 수금 상세(AR)는 이 화면을 보는 모두에게 표시.
+  async function initApp(){
+    let isFin=false;
+    try{
+      const su=await fetch(session.api+'/api/portal/summary',{headers:auth()}).then(r=>r.json());
+      isFin = !!(su&&su.isDirector) || ['director','treasury'].includes((su&&su.role)||'');
+      isDirector = !!(su&&su.isDirector) || ((su&&su.role)==='director');
+    }catch(e){
+      isFin = ['director','treasury'].includes((session.user&&session.user.role)||'');
+      isDirector = ((session.user&&session.user.role)==='director');
+    }
+    if(isFin){ $('varSection').classList.remove('hidden'); renderYearSeg(); load(); }
+    else { $('varSection').classList.add('hidden'); }
+    loadAr(); loadNc();
+    loadBdInbox(); startBdPolling();
+  }
+
+  const SRC_BADGE={sales_edit:'b-edit',sales_delete:'b-del',import_cost:'b-imp',import_recost:'b-imp'};
+
+  async function load(){
+    try{
+      const q=year?('?year='+year):'';
+      const d=await fetch(session.api+'/api/settlement/variances'+q,{headers:auth()}).then(r=>r.json());
+      render(d);
+    }catch(e){$('monthBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  function render(d){
+    $('note').textContent=d.note||'';
+    // 요약 박스: 총합 + 원천별
+    const srcMap={}; (d.bySource||[]).forEach(s=>srcMap[s.source]=s);
+    const box=(k,label)=>'<div class="stat"><div class="k">'+label+'</div><div class="v">MX$'+fmt(srcMap[k]?srcMap[k].amount:0)+'</div></div>';
+    $('statBoxes').innerHTML=
+      '<div class="stat tot"><div class="k">정산차액 합계 ('+(year||'전체')+')</div><div class="v">MX$'+fmt(d.total)+'</div></div>'
+      +box('sales_edit','매출 수정')+box('sales_delete','매출 삭제')+box('import_cost','수입 부대비용')+box('import_recost','수입 단가 정정');
+    // 월별
+    const mrows=(d.byMonth||[]);
+    if(!mrows.length){ $('monthBody').innerHTML='<div class="hint">정산차액이 없습니다. (마감월에 매출 수정·삭제나 수입 부대비용이 발생하면 여기에 집계됩니다.)</div>'; }
+    else $('monthBody').innerHTML='<table><thead><tr><th>월</th><th>매출 수정</th><th>매출 삭제</th><th>수입 부대비용</th><th>수입 단가 정정</th><th>합계</th></tr></thead><tbody>'
+      +mrows.map(m=>'<tr><td>'+m.ym+'</td><td>'+fmt(m.sales_edit||0)+'</td><td>'+fmt(m.sales_delete||0)+'</td><td>'+fmt(m.import_cost||0)+'</td><td>'+fmt(m.import_recost||0)+'</td><td><b>'+fmt(m.total)+'</b></td></tr>').join('')
+      +'</tbody><tfoot><tr><td>합계</td><td>'+fmt(sum(mrows,'sales_edit'))+'</td><td>'+fmt(sum(mrows,'sales_delete'))+'</td><td>'+fmt(sum(mrows,'import_cost'))+'</td><td>'+fmt(sum(mrows,'import_recost'))+'</td><td>'+fmt(d.total)+'</td></tr></tfoot></table>';
+    // 상세
+    const items=(d.items||[]);
+    if(!items.length){ $('itemBody').innerHTML='<div class="hint">상세 내역이 없습니다.</div>'; }
+    else $('itemBody').innerHTML='<table><thead><tr><th>인식일</th><th style="text-align:left">원천</th><th style="text-align:left">참조</th><th style="text-align:left">고객/제품</th><th>금액</th></tr></thead><tbody>'
+      +items.map(it=>'<tr><td>'+it.booked_date+'</td>'
+        +'<td style="text-align:left"><span class="badge '+(SRC_BADGE[it.source]||'')+'">'+it.source_label+'</span></td>'
+        +'<td style="text-align:left">'+(it.ref||'—')+'</td>'
+        +'<td style="text-align:left">'+([it.customer,it.product].filter(Boolean).join(' · ')||'—')+'</td>'
+        +'<td><b>'+fmt(it.amount)+'</b></td></tr>').join('')
+      +'</tbody></table>';
+  }
+  function sum(arr,k){ return arr.reduce((s,x)=>s+(Number(x[k])||0),0); }
+  // 상세 내역 감추기/보기 토글 (재렌더돼도 #itemBody의 display는 유지됨)
+  let itemHidden=false;
+  function toggleItemBody(){
+    itemHidden=!itemHidden;
+    const b=$('itemBody'), t=$('itemToggle');
+    if(b) b.style.display = itemHidden ? 'none' : '';
+    if(t) t.textContent = itemHidden ? '보기' : '감추기';
+  }
+
+  // ===== 수금 상세 (오픈 인보이스 / AR) =====
+  let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
+  let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
+  let arIncludeClosed=false;
+  let arSort=null; // {key, dir:'asc'|'desc'} — null이면 기본 정렬(미수→완납)
+  // NC(할인 승인 증빙) 상태
+  let ncItems=[], ncStatusFilter='all', arOpenNc=null;
+  let isDirector=false;
+  let arEditAlloc=null;
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  async function loadAr(){
+    try{
+      const [d,acc,co]=await Promise.all([
+        fetch(session.api+'/api/ar/open-list'+(arIncludeClosed?'?closed=1':''),{headers:auth()}).then(r=>r.json()),
+        fetch(session.api+'/api/ar/accounts',{headers:auth()}).then(r=>r.json()).catch(()=>({items:[]})),
+        fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
+      ]);
+      arItems=(d&&d.items)||[]; arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
+      arAccounts=(acc&&acc.items)||[]; arCompany=co||{};
+      arHistData={};
+      renderArSeg(); renderAr();
+    }catch(e){ $('arListBox').innerHTML='<div class="hint">미수금 목록을 불러오지 못했습니다.</div>'; }
+  }
+  function renderArSeg(){
+    const opts=[['company','회사 전체'],['team','팀별'],['owner','영업담당자별'],['customer','고객별']];
+    $('arSeg').innerHTML=opts.map(o=>'<button class="'+(arGroup===o[0]?'on':'')+'" onclick="setArGroup(\''+o[0]+'\')">'+o[1]+'</button>').join('');
+  }
+  function setArGroup(g){ arGroup=g; arFilter=null; arOpenRepay=null; renderArSeg(); renderAr(); }
+  function syncClosedToggleBtn(){
+    const b=$('arClosedToggle'); if(!b)return;
+    b.textContent='완납(closing) 포함: '+(arIncludeClosed?'켬':'끔');
+    if(arIncludeClosed){ b.style.background='var(--brand)'; b.style.color='#fff'; b.style.borderColor='var(--brand)'; }
+    else { b.style.background='#fff'; b.style.color='var(--muted)'; b.style.borderColor='var(--line)'; }
+  }
+  function toggleClosed(){ arIncludeClosed=!arIncludeClosed; arFilter=null; arOpenRepay=null; arHistOpen=null; syncClosedToggleBtn(); loadAr(); }
+  // 수금 상세 감추기/보이기
+  let arHidden=false;
+  function toggleArBody(){
+    arHidden=!arHidden;
+    const b=$('arBody'), t=$('arToggle');
+    if(b) b.style.display = arHidden ? 'none' : '';
+    if(t) t.textContent = arHidden ? '보이기' : '감추기';
+  }
+  // ===== 수금 상세 인쇄 (현재 보이는 목록 그대로) =====
+  function arStatusText(it){
+    if(it.paid_full) return '완납';
+    if(it.day_diff==null) return '기일 없음';
+    if(it.day_diff>0) return '연체 '+it.day_diff+'일';
+    if(it.day_diff===0) return '오늘 만기';
+    return 'D-'+(-it.day_diff);
+  }
+  function printArList(){
+    // 화면과 동일한 목록: 검색/그룹필터/헤더정렬/완납토글 전부 반영
+    let list, scopeTxt;
+    if(arSearchMode){
+      list=arSortList(arSearchItems);
+      scopeTxt='검색: "'+((($('arSearchQ')||{}).value)||'')+'"';
+    }else{
+      const filtered=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
+      list = arSort ? arSortList(filtered)
+        : filtered.slice().sort((a,b)=>(a.paid_full?1:0)-(b.paid_full?1:0));
+      let label='회사 전체';
+      if(arFilter){ const hit=filtered[0]; label = hit ? arKeyOf(hit).label : '(비어 있음)'; }
+      else if(arGroup==='team') label='팀별 · 전체';
+      else if(arGroup==='owner') label='영업담당자별 · 전체';
+      else if(arGroup==='customer') label='고객별 · 전체';
+      scopeTxt='범위: '+label;
+    }
+    if(!list.length){ const m=$('arMsg'); if(m){m.className='msg err';m.textContent='인쇄할 항목이 없습니다.';} return; }
+    const open=list.filter(x=>!x.paid_full);
+    const sOut=open.reduce((s,x)=>s+(Number(x.outstanding)||0),0);
+    const sOvd=open.reduce((s,x)=>s+(x.overdue?(Number(x.outstanding)||0):0),0);
+    const tTot=list.reduce((s,x)=>s+(Number(x.total_mxn)||0),0);
+    const tPaid=list.reduce((s,x)=>s+(Number(x.paid)||0),0);
+    const tOut=list.reduce((s,x)=>s+(Number(x.outstanding)||0),0);
+    const co=arCompany||{};
+    const now=new Date(), pad=(n)=>String(n).padStart(2,'0');
+    const dtTxt=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+':'+pad(now.getMinutes());
+    const ymd=String(now.getFullYear()).slice(2)+pad(now.getMonth()+1)+pad(now.getDate());
+    const head=''
+      +(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:52px;max-width:170px;object-fit:contain;display:block;margin-bottom:6px">'):'')
+      +(co.emisor?('<div style="font-weight:800;font-size:15px">'+esc(co.emisor)+'</div>'):'');
+    let rows='';
+    list.forEach((it,i)=>{
+      const st= it.paid_full?'background:#f2f2f2;color:#777':(it.overdue?'background:#fbeae7':'');
+      rows+='<tr style="'+st+'">'
+        +'<td class="c">'+(i+1)+'</td>'
+        +'<td class="c" style="font-weight:800;color:#143D34">'+(it.folio_no?esc(it.folio_no):'<span style="color:#aaa;font-weight:400">—</span>')+'</td>'
+        +'<td><b>'+esc(it.customer_name)+'</b><div class="inv">'+satTwoLine(it.sat_no||('#'+it.id))+'</div></td>'
+        +'<td class="c">'+esc(it.inv_date||'—')+'</td>'
+        +'<td class="c">'+esc(it.due_date||'—')+'</td>'
+        +'<td class="c'+((it.overdue&&!it.paid_full)?' ovd':'')+'">'+esc(arStatusText(it))+'</td>'
+        +'<td class="n">'+fmt(it.total_mxn)+'</td>'
+        +'<td class="n">'+fmt(it.paid)+'</td>'
+        +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td></tr>';
+    });
+    const html='<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Refatrix_AR_'+ymd+'</title>'
+      +'<style>*{box-sizing:border-box}@page{size:A4;margin:12mm}'
+      +'body{font-family:"IBM Plex Sans KR","Malgun Gothic",Arial,sans-serif;color:#1b1b1b;margin:0;padding:26px 30px;font-size:12px}'
+      +'.row{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}'
+      +'.title{font-size:19px;font-weight:800;text-align:right;color:#143D34}.sub{color:#666;font-size:11.5px;text-align:right;margin-top:3px}'
+      +'hr{border:none;border-top:1px solid #ccc;margin:12px 0}'
+      +'.stats{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 2px}'
+      +'.stat{border:1px solid #ddd;border-radius:8px;padding:8px 12px;min-width:118px}'
+      +'.stat .k{font-size:10.5px;color:#777}.stat .v{font-size:15px;font-weight:800;margin-top:2px;color:#143D34}'
+      +'table{width:100%;border-collapse:collapse;margin-top:12px;font-size:11.5px}'
+      +'th,td{padding:5px 7px;border-bottom:1px solid #e3e3e3;text-align:left}'
+      +'th{background:#f3f1ea;font-size:10.5px;color:#555}'
+      +'td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}td.c,th.c{white-space:nowrap}'
+      +'td.ovd{color:#B23A2E;font-weight:700}'
+      +'.inv{font-size:9.5px;color:#888;font-family:ui-monospace,Menlo,monospace;word-break:break-all;max-width:180px;line-height:1.3}'
+      +'tfoot td{font-weight:800;background:#f3f1ea;border-top:2px solid #ccc}'
+      +'thead{display:table-header-group}tr{page-break-inside:avoid}'
+      +'@media print{.noprint{display:none}}</style></head><body>'
+      +'<div class="row"><div>'+head+'</div>'
+        +'<div><div class="title">수금 상세 — 오픈 인보이스(미수금)</div>'
+        +'<div class="sub">'+esc(scopeTxt)+' · 완납 포함: '+(arIncludeClosed?'켬':'끔')+'</div>'
+        +'<div class="sub">인쇄일시: '+esc(dtTxt)+'</div></div></div>'
+      +'<hr>'
+      +'<div class="stats">'
+        +'<div class="stat"><div class="k">총 잔액(미수)</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
+        +'<div class="stat"><div class="k">오픈 인보이스</div><div class="v">'+open.length+'건</div></div>'
+        +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:#B23A2E">MX$'+fmt(sOvd)+'</div></div>'
+        +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+open.filter(x=>x.overdue).length+'건</div></div>'
+        +(arIncludeClosed?('<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:#0F6E56">'+(list.length-open.length)+'건</div></div>'):'')
+      +'</div>'
+      +'<table><thead><tr><th class="c">#</th><th class="c">Folio</th><th>고객 · 인보이스</th><th class="c">발행일</th><th class="c">만기일</th><th class="c">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th></tr></thead>'
+      +'<tbody>'+rows+'</tbody>'
+      +'<tfoot><tr><td colspan="6">합계 ('+list.length+'건)</td><td class="n">'+fmt(tTot)+'</td><td class="n">'+fmt(tPaid)+'</td><td class="n">'+fmt(tOut)+'</td></tr></tfoot></table>'
+      +'<div class="noprint" style="text-align:center;margin-top:26px"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">인쇄</button></div>'
+      +'</body></html>';
+    const w=window.open('','_blank');
+    if(!w){ const m=$('arMsg'); if(m){ m.className='msg err'; m.textContent='팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'; } return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    try{ w.focus(); setTimeout(()=>{ try{w.print();}catch(e){} },350); }catch(e){}
+  }
+  function arKeyOf(it){
+    if(arGroup==='team') return {key:'t'+(it.team_id||0), label: it.team_name||'(팀 미지정)'};
+    if(arGroup==='owner') return {key:'o'+(it.owner_id||0), label: it.owner_name||'(담당자 미지정)'};
+    if(arGroup==='customer') return {key:'c'+it.customer_id, label: it.customer_name+' ('+it.customer_code+')'};
+    return {key:'all', label:'회사 전체'};
+  }
+  function arDueText(it){
+    if(it.day_diff==null) return '<span class="hint">기일 없음</span>';
+    if(it.day_diff>0) return '<b style="color:var(--expense)">연체 '+it.day_diff+'일</b>';
+    if(it.day_diff===0) return '<b style="color:var(--gold)">오늘 만기</b>';
+    return '<span class="hint">D-'+(-it.day_diff)+'</span>';
+  }
+  function arStatusChip(it){
+    if(it.paid_full) return '<span class="chip chip-paid">완납</span>';
+    return arDueText(it);
+  }
+  // ===== 헤더 클릭 정렬 =====
+  // 컬럼 메타: 정렬키 → {타입, 값추출, 첫클릭방향}
+  const AR_COLS={
+    folio:{type:'folio', get:it=>String(it.folio_no||'').trim(), firstDesc:false},
+    customer:{type:'text', get:it=>(it.customer_name||'')+'\u0001'+(it.sat_no||''), firstDesc:false},
+    inv_date:{type:'text', get:it=>it.inv_date||'', firstDesc:true},
+    due_date:{type:'text', get:it=>it.due_date||'', firstDesc:false},
+    day_diff:{type:'num',  get:it=>it.paid_full?-1e9:(it.day_diff==null?-1e8:it.day_diff), firstDesc:true},
+    total_mxn:{type:'num', get:it=>Number(it.total_mxn)||0, firstDesc:true},
+    paid:{type:'num',      get:it=>Number(it.paid)||0, firstDesc:true},
+    outstanding:{type:'num',get:it=>Number(it.outstanding)||0, firstDesc:true},
+  };
+  function arCmp(a,b,type){
+    if(type==='num') return (a-b);
+    const x=(a==null?'':String(a)), y=(b==null?'':String(b));
+    if(x===''&&y!=='')return 1; if(y===''&&x!=='')return -1;
+    return x<y?-1:(x>y?1:0);
+  }
+  function arSortList(list){
+    if(!arSort||!AR_COLS[arSort.key]) return list;
+    const col=AR_COLS[arSort.key], dir=arSort.dir==='desc'?-1:1;
+    if(col.type==='folio'){
+      // Folio: 숫자면 숫자 비교, 아니면 문자열. 빈 값은 정렬 방향과 무관하게 항상 맨 뒤.
+      return list.slice().sort((a,b)=>{
+        const fa=col.get(a), fb=col.get(b);
+        if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
+        const na=Number(fa), nb=Number(fb);
+        if(Number.isFinite(na)&&Number.isFinite(nb)) return dir*(na-nb);
+        return dir*(fa<fb?-1:(fa>fb?1:0));
+      });
+    }
+    return list.slice().sort((a,b)=> dir*arCmp(col.get(a),col.get(b),col.type));
+  }
+  function setArSort(key){
+    const col=AR_COLS[key]; if(!col)return;
+    const first=col.firstDesc?'desc':'asc', second=col.firstDesc?'asc':'desc';
+    if(!arSort||arSort.key!==key) arSort={key,dir:first};
+    else if(arSort.dir===first) arSort.dir=second;
+    else arSort=null; // 3번째 클릭 → 기본 정렬로 복귀
+    renderAr();
+  }
+  function arTh(key,label,kind){
+    const active=arSort&&arSort.key===key;
+    const arrow=active?(arSort.dir==='desc'?'▼':'▲'):'<span style="opacity:.28">⇅</span>';
+    const cls=kind==='n'?' class="n"':'';
+    const align=kind==='left'?'text-align:left;':'';
+    return '<th'+cls+' onclick="setArSort(\''+key+'\')" style="'+align+'cursor:pointer;user-select:none;white-space:nowrap"'
+      +(active?' data-on="1"':'')+' title="클릭하여 정렬(다시 누르면 방향 전환·3번째는 기본)">'+esc(label)+' '+arrow+'</th>';
+  }
+  function arListTableHtml(list){
+    let h='<div class="arscroll"><table><thead><tr>'
+      +arTh('folio','Folio','left')
+      +arTh('customer','고객 · 인보이스','left')
+      +arTh('inv_date','발행일','left')
+      +arTh('due_date','만기일','left')
+      +arTh('day_diff','상태','left')
+      +arTh('total_mxn','청구액','n')
+      +arTh('paid','입금','n')
+      +arTh('outstanding','잔액','n')
+      +'<th></th></tr></thead><tbody>';
+    list.forEach(it=>{
+      h+='<tr'+(it.overdue?' class="ovd"':'')+(it.paid_full?' style="background:#f4f7f4;color:var(--muted)"':'')+'>'
+        +'<td class="notranslate" translate="no" style="text-align:left;white-space:nowrap"><span class="folio-no">'+(it.folio_no?esc(it.folio_no):'<span style="color:var(--muted);font-weight:400">—</span>')+'</span></td>'
+        +'<td><b class="notranslate" translate="no">'+esc(it.customer_name)+'</b><div class="inv-no">'+satTwoLine(it.sat_no||('#'+it.id))+'</div></td>'
+        +'<td style="text-align:left;white-space:nowrap">'+esc(it.inv_date||'—')+'</td>'
+        +'<td style="text-align:left;white-space:nowrap">'+esc(it.due_date||'—')+'</td>'
+        +'<td style="text-align:left;white-space:nowrap">'+arStatusChip(it)+'</td>'
+        +'<td class="n">'+fmt(it.total_mxn)+'</td>'
+        +'<td class="n">'+fmt(it.paid)+'</td>'
+        +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td>'
+        +'<td style="white-space:nowrap">'
+        +(it.paid_full?'':(bdCtx
+            ? '<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="openRepay('+it.id+')">'+(bdCart[it.id]?'배분 수정':'반제')+'</button> '
+            : '<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#eee;color:#999;border:1px solid var(--line)" title="통지 우선 반제: 먼저 미배분 입금을 선택하세요" onclick="openRepay('+it.id+')">🔒 반제</button> '))
+        +(it.paid_full?'':'<button class="btn notranslate" translate="no" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--gold);border:1px solid var(--line)" onclick="toggleNc('+it.id+')" title="할인 승인 증빙(Nota de crédito) 발기">N/C</button> ')
+        +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
+        +'</tr>';
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
+      if(arOpenNc===it.id){ h+='<tr><td colspan="9" style="background:#fbf7ee">'+ncForm(it)+'</td></tr>'; }
+      if(arHistOpen===it.id){ h+='<tr><td colspan="9">'+histInnerHtml(it)+'</td></tr>'; }
+    });
+    h+='</tbody></table></div>';
+    return h;
+  }
+  function renderAr(){
+    $('arSearchClear').style.display = arSearchMode ? '' : 'none';
+    if(arSearchMode){
+      $('arGroupBox').innerHTML='';
+      const list=arSortList(arSearchItems);
+      const sOut=list.reduce((s,x)=>s+x.outstanding,0);
+      $('arStats').innerHTML=
+        '<div class="stat tot"><div class="k">검색 결과</div><div class="v">'+list.length+'건</div></div>'
+        +'<div class="stat"><div class="k">미수 합계</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
+        +'<div class="stat"><div class="k">완납</div><div class="v" style="color:var(--income)">'+list.filter(x=>x.paid_full).length+'건</div></div>'
+        +'<div class="stat"><div class="k">연체</div><div class="v" style="color:var(--expense)">'+list.filter(x=>x.overdue).length+'건</div></div>';
+      $('arListBox').innerHTML = list.length ? arListTableHtml(list) : '<div class="nores">검색 결과가 없습니다.</div>';
+      return;
+    }
+    if(!arItems.length){ $('arStats').innerHTML=''; $('arGroupBox').innerHTML=''; $('arListBox').innerHTML='<div class="hint">미수금(오픈 인보이스)이 없습니다.</div>'; return; }
+    const groups={};
+    // 그룹 집계(건수·잔액·연체)는 미수(오픈) 건만 대상 — 완납 건은 제외.
+    // 단, 「완납 포함」 토글이 켜져 있으면 완납 건도 그룹에 잡아(완납 N건),
+    // 완납만 있는 고객(잔액 0)도 고객별/팀별/담당자별 표에 나타난다.
+    arItems.forEach(it=>{ const cf=it.paid_full; if(cf&&!arIncludeClosed)return; const k=arKeyOf(it); if(!groups[k.key])groups[k.key]={label:k.label,count:0,outstanding:0,overdue:0,closed:0}; const g=groups[k.key]; if(cf){ g.closed++; return; } g.count++; g.outstanding+=it.outstanding; if(it.overdue)g.overdue+=it.outstanding; });
+    // 목록: 그룹 필터 적용 후, 미수 → 완납 순으로 정렬(완납을 아래로).
+    const filtered=arItems.filter(it=> !arFilter || arKeyOf(it).key===arFilter);
+    // 정렬 헤더가 활성화되면 그 기준으로, 아니면 기본(미수→완납).
+    const list = arSort ? arSortList(filtered)
+      : filtered.slice().sort((a,b)=>(a.paid_full?1:0)-(b.paid_full?1:0));
+    const openList=list.filter(x=>!x.paid_full), closedCount=list.length-openList.length;
+    const sCount=openList.length, sOut=openList.reduce((s,x)=>s+x.outstanding,0), sOvd=openList.reduce((s,x)=>s+(x.overdue?x.outstanding:0),0);
+    const scope = arFilter ? (groups[arFilter]?groups[arFilter].label:'') : '전체';
+    $('arStats').innerHTML=
+      '<div class="stat tot"><div class="k">총 잔액 ('+esc(scope)+')</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
+      +'<div class="stat"><div class="k">오픈 인보이스</div><div class="v">'+sCount+'건</div></div>'
+      +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:var(--expense)">MX$'+fmt(sOvd)+'</div></div>'
+      +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+openList.filter(x=>x.overdue).length+'건</div></div>'
+      +(arIncludeClosed?'<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:var(--income)">'+closedCount+'건</div></div>':'');
+    if(arGroup==='company'){ $('arGroupBox').innerHTML=''; }
+    else {
+      const gk=Object.keys(groups).sort((a,b)=>(groups[b].outstanding-groups[a].outstanding)||((groups[b].closed||0)-(groups[a].closed||0))||String(groups[a].label).localeCompare(String(groups[b].label)));
+      const head = arGroup==='team'?'팀':(arGroup==='owner'?'영업담당자':'고객');
+      let hg='<table><thead><tr><th>'+head+'</th><th>건수</th><th>총 잔액</th><th>연체 잔액</th>'+(arIncludeClosed?'<th>완납</th>':'')+'</tr></thead><tbody>';
+      gk.forEach(k=>{ const g=groups[k]; const on=arFilter===k; const paidOnly=(g.count===0&&(g.closed||0)>0);
+        hg+='<tr style="cursor:pointer'+(on?';background:#eef4f1':(paidOnly?';background:#f4f7f4;color:var(--muted)':''))+'" onclick="pickArFilter(\''+k+'\')"><td>'+(on?'▸ ':'')+esc(g.label)+(paidOnly?' <span class="chip chip-paid">완납</span>':'')+'</td><td>'+g.count+'</td><td><b>'+fmt(g.outstanding)+'</b></td><td style="color:var(--expense)">'+fmt(g.overdue)+'</td>'+(arIncludeClosed?'<td style="color:var(--income)">'+(g.closed||0)+'건</td>':'')+'</tr>'; });
+      hg+='</tbody></table><div class="hint" style="margin-top:4px">행을 누르면 아래 목록이 해당 '+head+'(으)로 좁혀집니다.'+(arFilter?' · <a href="#" onclick="pickArFilter(null);return false">전체 보기</a>':'')+'</div>';
+      $('arGroupBox').innerHTML=hg;
+    }
+    $('arListBox').innerHTML=arListTableHtml(list);
+  }
+  function pickArFilter(k){ arFilter=k; arOpenRepay=null; renderAr(); }
+  function repayForm(it){
+    if(!bdCtx) return '<div class="hint">통지 우선 반제: 먼저 위 “미배분 입금 인박스”에서 입금을 선택하세요.</div>';
+    const already=bdCart[it.id]?Number(bdCart[it.id].amount):0;
+    const otherSum=Object.values(bdCart).reduce((s,x)=>s+Number(x.amount),0)-already;
+    const remainDep=Math.max(0, r2num(Number(bdCtx.amount)-otherSum));
+    const defAmt=r2num(Math.min(remainDep, Number(it.outstanding)));
+    return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div><label>이 인보이스 배분 (잔액 MX$'+fmt(it.outstanding)+')</label><input id="rpAmt" type="number" step="0.01" value="'+defAmt+'" style="width:150px"></div>'
+      +'<div><button class="btn" onclick="addToCart('+it.id+')">배분 담기</button></div>'
+      +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="openRepay(null)">닫기</button></div>'
+      +'<div class="hint" style="flex-basis:100%;margin-top:2px">📥 통지 MX$'+fmt(bdCtx.amount)+' 중 배분 가능 잔여 <b>MX$'+fmt(remainDep)+'</b> · 담은 뒤 아래 <b>[저장 · 통지 닫기]</b>로 확정합니다. (계좌·입금일은 통지에서 고정)</div>'
+      +'</div>';
+  }
+  function onReceiptPicked(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    if(f.size>8*1024*1024){ const m=$('arMsg'); m.className='msg err'; m.textContent='입금증 파일이 너무 큽니다(8MB 이하).'; ev.target.value=''; return; }
+    const rd=new FileReader();
+    rd.onload=()=>{ arRepayReceipt=rd.result; arRepayReceiptName=f.name; const el=$('rpFileName'); if(el)el.textContent=f.name; };
+    rd.onerror=()=>{ const m=$('arMsg'); m.className='msg err'; m.textContent='파일을 읽지 못했습니다.'; };
+    rd.readAsDataURL(f);
+  }
+  function openRepay(id){
+    if(id && !bdCtx){
+      const m=$('arMsg'); if(m){ m.className='msg err'; m.textContent='통지 우선 반제: 먼저 위 “미배분 입금 인박스”에서 입금을 선택하세요.'; }
+      try{ document.getElementById('bdInboxCard').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+      return;
+    }
+    arOpenRepay=id; if(id) arHistOpen=null; renderAr();
+  }
+  // ===== 통지 배분 카트 (한 통지 → 여러 인보이스 배분 + 나머지 선수금) =====
+  function addToCart(invId){
+    const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it) return;
+    const m=$('arMsg'); m.className='msg';
+    if(!bdCtx){ m.className='msg err'; m.textContent='통지 우선 반제: 먼저 미배분 입금을 선택하세요.'; return; }
+    const el=$('rpAmt'); const amt=r2num(Number(el?el.value:0));
+    if(!(amt>0)){ m.className='msg err'; m.textContent='배분 금액을 입력하세요(양수).'; return; }
+    if(amt>Number(it.outstanding)+0.01){ m.className='msg err'; m.textContent='배분 금액이 인보이스 잔액보다 큽니다.'; return; }
+    if(bdCtx.customer_id!=null && Number(bdCtx.customer_id)!==Number(it.customer_id)){
+      m.className='msg err'; m.textContent='이 입금의 추정 고객과 다른 고객입니다. 통지 고객의 인보이스에만 배분하세요.'; return; }
+    const first=Object.values(bdCart)[0];
+    if(first && Number(first.customer_id)!==Number(it.customer_id)){
+      m.className='msg err'; m.textContent='한 입금은 한 고객에게만 배분됩니다. 다른 고객이면 [배분 비우기] 후 진행하세요.'; return; }
+    const others=Object.entries(bdCart).filter(function(e){return Number(e[0])!==Number(invId);}).reduce(function(s,e){return s+Number(e[1].amount);},0);
+    if(r2num(others+amt) > Number(bdCtx.amount)+0.01){
+      m.className='msg err'; m.textContent='배분 합계가 통지 금액(MX$'+fmt(bdCtx.amount)+')을 초과합니다.'; return; }
+    bdCart[invId]={invoice_id:invId, customer_id:it.customer_id, customer_name:it.customer_name, sat:(it.sat_no||('#'+it.id)), outstanding:Number(it.outstanding), amount:amt};
+    arOpenRepay=null; renderAr(); renderBdCart();
+    m.className='msg ok'; m.textContent='배분 담김: '+esc(it.customer_name)+' · MX$'+fmt(amt);
+  }
+  function removeFromCart(invId){ delete bdCart[invId]; renderBdCart(); renderAr(); }
+  function clearBdCart(){ bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null; renderBdCart(); renderAr(); }
+  function renderBdCart(){
+    const box=$('bdCartBox'); if(!box) return;
+    const items=Object.values(bdCart);
+    if(!bdCtx || !items.length){ box.style.display='none'; box.innerHTML=''; return; }
+    box.style.display='';
+    const sum=r2num(items.reduce(function(s,x){return s+Number(x.amount);},0));
+    const dep=Number(bdCtx.amount);
+    const advance=r2num(Math.max(0, dep-sum));
+    const over=sum>dep+0.01;
+    const cust=items[0].customer_name;
+    const rows=items.map(function(x){ return '<tr><td class="notranslate" translate="no">'+esc(x.sat)+'</td><td class="n">MX$'+fmt(x.amount)+'</td>'
+      +'<td><button class="btn" style="padding:2px 8px;font-size:11px;background:#fff;color:var(--expense);border:1px solid var(--line)" onclick="removeFromCart('+x.invoice_id+')">빼기</button></td></tr>'; }).join('');
+    box.innerHTML=''
+      +'<div class="card" style="border-color:var(--brand);background:#f4f9f6">'
+      +'<div class="card-h" style="font-size:13px">📥 이 입금 배분 — <span class="notranslate" translate="no">'+esc(cust)+'</span> · 통지 MX$'+fmt(dep)+'</div>'
+      +'<table style="width:auto;min-width:280px"><thead><tr><th style="text-align:left">인보이스(SAT)</th><th class="n">배분</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px">'
+        +'<div>배분 합계 <b'+(over?' style="color:var(--expense)"':'')+'>MX$'+fmt(sum)+'</b> / 통지 <b>MX$'+fmt(dep)+'</b></div>'
+        +'<div>선수금(과입금) <b>MX$'+fmt(advance)+'</b></div>'
+        +(over?'<span class="msg err" style="margin:0;padding:4px 8px">통지 초과 — 배분을 줄이세요</span>':'')
+      +'</div>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
+        +'<input id="rpFile" type="file" accept="image/*,application/pdf" style="display:none" onchange="onReceiptPicked(event)">'
+        +'<button class="btn" style="background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="document.getElementById(\'rpFile\').click()">📎 영수증 첨부</button>'
+        +'<span id="rpFileName" class="hint">'+(arRepayReceipt?esc(arRepayReceiptName||'선택됨'):'미첨부')+'</span>'
+        +'<span style="margin-left:auto"></span>'
+        +'<button class="btn"'+(over?' disabled':'')+' onclick="submitBdAlloc()">저장 · 통지 닫기</button>'
+        +'<button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearBdCart()">배분 비우기</button>'
+      +'</div>'
+      +'<div class="hint" style="margin-top:6px">저장하면 배분만큼 각 인보이스가 반제되고, 남는 금액은 <b>선수금</b>으로 처리되며 이 통지가 닫힙니다. 고객 영수증(이미지·PDF, 8MB↓)은 <b>수금내역</b>에서 다시 볼 수 있습니다.</div>'
+      +'</div>';
+  }
+  async function submitBdAlloc(){
+    if(!bdCtx) return;
+    const items=Object.values(bdCart);
+    const m=$('arMsg'); m.className='msg';
+    if(!items.length){ m.className='msg err'; m.textContent='담은 배분이 없습니다.'; return; }
+    const sum=r2num(items.reduce(function(s,x){return s+Number(x.amount);},0));
+    if(sum > Number(bdCtx.amount)+0.01){ m.className='msg err'; m.textContent='배분 합계가 통지 금액을 초과합니다.'; return; }
+    const body={ customer_id:items[0].customer_id, deposit_id:bdCtx.id, allocations:items.map(function(x){return {invoice_id:x.invoice_id, amount:x.amount};}), memo:'통지 반제' };
+    if(arRepayReceipt){ body.receipt=arRepayReceipt; body.receipt_name=arRepayReceiptName; }
+    try{
+      const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='반제 실패: '+(d.detail?JSON.stringify(d.detail):(d.error||res.status)); return; }
+      m.className='msg ok'; m.textContent='반제 저장 완료 · 통지 닫힘 · MX$'+fmt(Number(bdCtx.amount))+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'')+(d.receipt?' · 영수증 첨부됨':'');
+      bdCtx=null; bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null;
+      renderBdCtxBanner(); renderBdCart(); loadBdInbox();
+      if(arSearchMode){ await doArSearch(); } else { loadAr(); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  // ===== 인보이스별 수금내역 드릴다운 =====
+  async function toggleHist(invId){
+    arEditAlloc=null;
+    if(arHistOpen===invId){ arHistOpen=null; renderAr(); return; }
+    arHistOpen=invId; arOpenRepay=null; renderAr();
+    if(!arHistData[invId]){
+      try{
+        const r=await fetch(session.api+'/api/ar/invoice/'+invId+'/payments',{headers:auth()});
+        const d=await r.json();
+        arHistData[invId]=(d&&!d.error)?d:{error:(d&&d.error)||'load_fail'};
+      }catch(e){ arHistData[invId]={error:'네트워크 오류'}; }
+      if(arHistOpen===invId) renderAr();
+    }
+  }
+  function histInnerHtml(it){
+    const d=arHistData[it.id];
+    if(!d) return '<div class="histbox"><div class="hint">수금내역 불러오는 중…</div></div>';
+    if(d.error) return '<div class="histbox"><div class="hint">수금내역을 불러오지 못했습니다 ('+esc(d.error)+').</div></div>';
+    const inv=d.invoice||{}, pays=d.payments||[];
+    let h='<div class="histbox">';
+    h+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:2px">'
+      +'<b style="color:var(--brand)" class="notranslate" translate="no">수금내역 · '+(it.folio_no?('Folio '+esc(it.folio_no)+' · '):'')+esc(inv.sat_no||('#'+it.id))+'</b>'
+      +(inv.paid_full?'<span class="chip chip-paid">완납(100%)</span>':'<span class="chip chip-part">미수 MX$'+fmt(inv.outstanding)+'</span>')
+      +'<span class="hint">청구 MX$'+fmt(inv.total_mxn)+' · 입금 MX$'+fmt(inv.paid)+' · 잔액 MX$'+fmt(inv.outstanding)+'</span>'
+      +'</div>';
+    if(!pays.length){ h+='<div class="hint">아직 수금(반제) 기록이 없습니다.</div>'; }
+    else{
+      h+='<table><thead><tr><th style="text-align:left">입금일</th><th>금액</th><th style="text-align:left">계좌</th><th style="text-align:left">메모</th><th style="text-align:left">등록자</th><th>입금증</th>'+(isDirector?'<th>관리</th>':'')+'</tr></thead><tbody>';
+      pays.forEach(p=>{
+        h+='<tr><td style="text-align:left">'+esc(p.pay_date||'—')+'</td>'
+          +'<td><b>'+fmt(p.amount)+'</b></td>'
+          +'<td style="text-align:left">'+esc(p.account_name||'—')+'</td>'
+          +'<td style="text-align:left">'+esc(p.memo||'—')+'</td>'
+          +'<td style="text-align:left">'+esc(p.created_by_name||'—')+'</td>'
+          +'<td>'+(p.has_receipt?'<button class="lnk" onclick="viewReceipt('+p.payment_id+')">👁 보기</button>':'<span class="hint">—</span>')+'</td>'
+          +(isDirector?('<td style="white-space:nowrap">'
+              +(p.editable!==false?('<button class="lnk" onclick="startEditAlloc('+p.alloc_id+','+it.id+')">수정</button> '):'')
+              +'<button class="lnk" style="color:var(--expense)" onclick="deleteAlloc('+p.alloc_id+','+it.id+')">삭제</button></td>'):'')
+          +'</tr>';
+        if(isDirector && arEditAlloc===p.alloc_id){
+          const accOpts=arAccounts.map(a=>'<option value="'+a.id+'"'+(Number(a.id)===Number(p.account_id)?' selected':'')+'>'+esc(a.name)+'</option>').join('');
+          h+='<tr><td colspan="7" style="background:#fff7ef">'
+            +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+            +'<div><label>금액</label><input id="edAmt" type="number" step="0.01" value="'+p.amount+'" style="width:120px"></div>'
+            +'<div><label>입금일</label><input id="edDate" type="date" value="'+esc(p.pay_date||'')+'" style="width:150px"></div>'
+            +'<div><label>계좌</label><select id="edAcc" style="width:160px">'+(accOpts||'<option value="">(계좌 없음)</option>')+'</select></div>'
+            +'<div><label>메모</label><input id="edMemo" type="text" value="'+esc(p.memo||'')+'" style="width:180px"></div>'
+            +'<div><button class="btn" onclick="submitEditAlloc('+p.alloc_id+','+it.id+')">저장</button></div>'
+            +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="cancelEditAlloc()">취소</button></div>'
+            +'</div></td></tr>';
+        }
+      });
+      h+='</tbody></table>';
+    }
+    h+='<div style="margin-top:8px"><button class="lnk" onclick="openStatement('+it.customer_id+')">📄 이 고객 전체 미수 명세서(PDF)</button></div>';
+    h+='</div>';
+    return h;
+  }
+  async function viewReceipt(paymentId){
+    const m=$('arMsg'); m.className='msg';
+    try{
+      const r=await fetch(session.api+'/api/ar/payments/'+paymentId+'/receipt/file',{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error||!d.file_data){ m.className='msg err'; m.textContent='입금증을 불러오지 못했습니다.'; return; }
+      const parts=String(d.file_data).split(','); const meta=parts[0]||''; const b64=parts[1]||'';
+      const mime=(meta.match(/data:([^;]+)/)||[])[1]||(d.mime_type||'application/octet-stream');
+      const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([arr],{type:mime}));
+      const w=window.open(url,'_blank'); if(!w){ m.className='msg err'; m.textContent='팝업이 차단되었습니다. 팝업을 허용해 주세요.'; }
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ m.className='msg err'; m.textContent='입금증 보기 실패(네트워크).'; }
+  }
+  // 수금내역 건별 수정/삭제 — 디렉터 전용
+  function startEditAlloc(allocId, invId){ if(!isDirector) return; arEditAlloc=allocId; renderAr(); }
+  function cancelEditAlloc(){ arEditAlloc=null; renderAr(); }
+  async function submitEditAlloc(allocId, invId){
+    const m=$('arMsg'); m.className='msg';
+    const amt=Number($('edAmt').value), date=$('edDate').value, acc=Number($('edAcc').value), memo=$('edMemo').value;
+    if(!(amt>0)){ m.className='msg err'; m.textContent='금액을 입력하세요(양수).'; return; }
+    if(!date){ m.className='msg err'; m.textContent='입금일을 입력하세요.'; return; }
+    if(!acc){ m.className='msg err'; m.textContent='계좌를 선택하세요.'; return; }
+    try{
+      const r=await fetch(session.api+'/api/ar/allocations/'+allocId,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({amount:amt,pay_date:date,account_id:acc,memo})});
+      const d=await r.json();
+      if(!r.ok||d.error){
+        const map={multi_allocation:'여러 인보이스에 배분된 입금이라 건별 수정이 불가합니다. 삭제 후 다시 입력하세요.',amount_exceeds_outstanding:'금액이 인보이스 한도를 초과합니다'+(d.max!=null?(' (최대 MX$'+fmt(d.max)+')'):'')+'.',not_found:'대상을 찾을 수 없습니다.'};
+        m.className='msg err'; m.textContent='수정 실패: '+(map[d.error]||d.error||r.status); return;
+      }
+      m.className='msg ok'; m.textContent='수금 건 수정 완료 · MX$'+fmt(d.amount);
+      arEditAlloc=null; arHistData={};
+      if(arSearchMode){ await doArSearch(); } else { await loadAr(); }
+      await reloadHistIfOpen();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function deleteAlloc(allocId, invId){
+    if(!isDirector) return;
+    if(!window.confirm('이 수금 건을 삭제할까요?\n· 인보이스 미수 잔액이 이 금액만큼 복구됩니다.\n· 통장 입금 거래도 함께 취소됩니다.\n되돌릴 수 없습니다.')) return;
+    const m=$('arMsg'); m.className='msg';
+    try{
+      const r=await fetch(session.api+'/api/ar/allocations/'+allocId,{method:'DELETE',headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ m.className='msg err'; m.textContent='삭제 실패: '+(d.error==='not_found'?'대상을 찾을 수 없음':(d.error||r.status)); return; }
+      m.className='msg ok'; m.textContent='수금 건 삭제 완료 · 미수 복구 MX$'+fmt(d.amount);
+      arEditAlloc=null; arHistData={};
+      if(arSearchMode){ await doArSearch(); } else { await loadAr(); }
+      await reloadHistIfOpen();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function reloadHistIfOpen(){
+    if(arHistOpen==null) return;
+    try{
+      const r=await fetch(session.api+'/api/ar/invoice/'+arHistOpen+'/payments',{headers:auth()});
+      const d=await r.json();
+      arHistData[arHistOpen]=(d&&!d.error)?d:{error:(d&&d.error)||'load_fail'};
+    }catch(e){ arHistData[arHistOpen]={error:'네트워크 오류'}; }
+    renderAr();
+  }
+  // ===== SAT/고객 검색 (완납 포함) =====
+  let arSearchTimer=null;
+  function onArSearchInput(){
+    const q=($('arSearchQ').value||'').trim();
+    clearTimeout(arSearchTimer);
+    if(!q){ if(arSearchMode) clearArSearch(); return; }
+    arSearchTimer=setTimeout(doArSearch, 220);
+  }
+  async function doArSearch(){
+    const q=($('arSearchQ').value||'').trim();
+    if(!q){ clearArSearch(); return; }
+    $('arSearchInfo').textContent='검색 중…';
+    try{
+      const r=await fetch(session.api+'/api/ar/search?q='+encodeURIComponent(q),{headers:auth()});
+      const d=await r.json();
+      arSearchItems=(d&&d.items)||[]; arToday=(d&&d.today)||arToday;
+      arSearchMode=true; arHistOpen=null; arOpenRepay=null; arEditAlloc=null;
+      $('arSearchInfo').textContent='"'+q+'" 결과 '+arSearchItems.length+'건 (완납 포함)';
+      renderAr();
+    }catch(e){ $('arSearchInfo').textContent='검색 실패(네트워크).'; }
+  }
+  function clearArSearch(){
+    arSearchMode=false; arSearchItems=[]; arHistOpen=null; arOpenRepay=null; arEditAlloc=null;
+    $('arSearchQ').value=''; $('arSearchInfo').textContent='';
+    renderAr();
+  }
+  // 명세서: 화면 미리보기 → [PDF 다운로드]
+  let stmtCustomer=null;
+  function stmtDias(r){ return r.day_diff==null?'—':(r.day_diff>0?(r.day_diff+'일 연체'):(r.day_diff===0?'오늘':('D-'+(-r.day_diff)))); }
+  // SAT 번호 2줄 표시(긴 UUID를 절반에서 강제 줄바꿈 → 열 폭 절약)
+  function satTwoLine(v){ v=String(v||''); if(v.length<=20) return esc(v);
+    const cut=Math.ceil(v.length/2); return esc(v.slice(0,cut))+'<br>'+esc(v.slice(cut)); }
+  // Folio: UUID면 마지막 8자리를 굵게 + 전체를 작은 회색으로
+  function isUuidStr(s){ return String(s||'').replace(/[^A-Za-z0-9]/g,'').length>=20; }
+  function folioHtml(s, folio){ s=String(s||''); folio=String(folio||'').trim();
+    // No. de Folio가 있으면 굵은 식별자로 folio를 먼저 보여주고, SAT 전체 UUID는 작은 회색으로 아래에.
+    if(folio){ return '<b style="font-size:12px;letter-spacing:.5px;color:var(--brand)">'+esc(folio)+'</b>'
+      +(isUuidStr(s)?('<div style="font-family:monospace;font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:0">'+esc(s)+'</div>'):(s?('<div style="font-family:monospace;font-size:9px;color:var(--muted);margin-top:1px">'+esc(s)+'</div>'):'')); }
+    if(!isUuidStr(s)) return '<b>'+esc(s)+'</b>';
+    return '<b style="font-size:12px;letter-spacing:.5px">'+esc(s.slice(-12).toUpperCase())+'</b>'
+      +'<div style="font-family:monospace;font-size:9px;color:var(--muted);margin-top:1px;letter-spacing:0">'+esc(s)+'</div>'; }
+  function openStatement(customerId){
+    const rows=arItems.filter(x=>x.customer_id===customerId); if(!rows.length)return;
+    stmtCustomer=customerId;
+    const c=rows[0], co=arCompany||{};
+    const total=rows.reduce((s,r)=>s+r.outstanding,0);
+    let h='';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px">';
+    h+='<div>'
+      +(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:56px;max-width:170px;object-fit:contain;display:block;margin-bottom:8px">'):'')
+      +(co.emisor?('<div style="font-weight:800;font-size:15px;color:var(--brand)">'+esc(co.emisor)+'</div>'):'')
+      +(co.domicilio?('<div style="color:var(--muted);font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
+      +('<div style="color:var(--muted);font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>')
+      +'</div>';
+    h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:19px;font-weight:800">Estado de cuenta</div><div style="color:var(--muted);font-size:12px;margin-top:4px">Fecha: '+esc(arToday)+'</div></div>';
+    h+='</div>';
+    h+='<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">';
+    h+='<div style="font-size:14px"><b>Cliente:</b> '+esc(c.customer_name||('#'+c.customer_id))+(c.customer_code?(' <span style="color:var(--muted);font-weight:600">('+esc(c.customer_code)+')</span>'):'')+'</div>';
+    const cuLine=[c.customer_rfc?('RFC: '+esc(c.customer_rfc)):'',c.customer_phone?('Tel: '+esc(c.customer_phone)):''].filter(Boolean).join(' · ');
+    if(cuLine) h+='<div style="color:var(--muted);font-size:12px;margin-top:2px">'+cuLine+'</div>';
+    h+='<table style="margin-top:14px;font-size:12px"><thead><tr>'
+      +'<th style="text-align:left">Folio</th>'
+      +'<th style="text-align:left">Factura</th>'
+      +'<th style="text-align:left">Emisión<br><span style="font-weight:600;color:var(--muted)">발행일</span></th>'
+      +'<th style="text-align:left">Vencim.<br><span style="font-weight:600;color:var(--muted)">만료일</span></th>'
+      +'<th style="text-align:right">Importe<br><span style="font-weight:600;color:var(--muted)">원금액</span></th>'
+      +'<th style="text-align:right">Pagado<br><span style="font-weight:600;color:var(--muted)">결제</span></th>'
+      +'<th style="text-align:right">Saldo<br><span style="font-weight:600;color:var(--muted)">잔액</span></th>'
+      +'<th style="text-align:right">Días<br><span style="font-weight:600;color:var(--muted)">미수일</span></th>'
+      +'</tr></thead><tbody>';
+    rows.forEach((r,idx)=>{ const pf=(r.paid_full||Number(r.outstanding)<=0.005); const ovd=(!pf&&r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(pf?' style="background:#edf6ed"':(idx%2===1?' style="background:#faf9f6"':'')))+'>'
+      +'<td style="text-align:left;font-weight:800;white-space:nowrap;color:var(--brand)">'+(ovd?'<span style="color:var(--expense)">●</span> ':(pf?'<span style="color:#2e8b4f">●</span> ':''))+(r.folio_no?esc(String(r.folio_no)):'<span style="color:var(--muted);font-weight:400">—</span>')+'</td>'
+      +'<td style="text-align:left;white-space:nowrap;padding-right:14px">'+folioHtml(r.sat_no||('#'+r.id))+'</td>'
+      +'<td style="text-align:left;white-space:nowrap">'+esc(r.inv_date||'—')+'</td>'
+      +'<td style="text-align:left;white-space:nowrap">'+esc(r.due_date||'—')+'</td>'
+      +'<td style="text-align:right">'+fmt(r.total_mxn)+'</td>'
+      +'<td style="text-align:right;color:var(--muted)">'+fmt(r.paid)+'</td>'
+      +'<td style="text-align:right"><b>'+fmt(r.outstanding)+'</b></td>'
+      +'<td style="text-align:right'+(ovd?';color:var(--expense);font-weight:700':(pf?';color:#2e8b4f;font-weight:700':''))+'">'+(pf?'완료 (PAGADA)':esc(stmtDias(r)))+'</td></tr>'; });
+    h+='</tbody><tfoot><tr><td colspan="6" style="text-align:right;font-weight:800">Total adeudado</td><td style="text-align:right;font-weight:800">MX$ '+fmt(total)+'</td><td></td></tr></tfoot></table>';
+    h+='<div class="hint" style="margin-top:8px">빨간 ● 행 / 양수(+N) 미수일 = <b style="color:var(--expense)">연체(VENCIDA)</b> · 음수(D-N) = 만기 전 · 초록 ● 행 = <b style="color:#2e8b4f">완료(PAGADA · 잔액 0)</b>.</div>';
+    h+='<div class="hint" style="margin-top:10px">아래 <b>PDF 다운로드</b>를 누르면 이 명세서가 PDF로 저장됩니다.</div>';
+    $('stmtBody').innerHTML=h;
+    $('stmtModal').classList.remove('hidden'); $('stmtModal').style.display='flex';
+  }
+  function closeStatement(){ $('stmtModal').style.display='none'; }
+  function downloadStatement(){ if(stmtCustomer!=null) buildStatementPdf(stmtCustomer); }
+
+  function buildStatementPdf(customerId){
+    const rows=arItems.filter(x=>x.customer_id===customerId); if(!rows.length)return;
+    const c=rows[0]; const m=$('arMsg');
+    const J=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
+    if(!J){ m.className='msg err'; m.textContent='PDF 모듈을 불러오지 못했습니다(인터넷 연결 확인).'; return; }
+    const co=arCompany||{};
+    const doc=new J({unit:'pt',format:'a4'});
+    let leftY=44;
+    if(co.logo_data){
+      try{
+        const pr=doc.getImageProperties(co.logo_data);
+        const maxW=150, maxH=52, sc=Math.min(maxW/pr.width, maxH/pr.height);
+        const w=pr.width*sc, h=pr.height*sc;
+        const ft=((co.logo_data.match(/^data:image\/(\w+)/)||[])[1]||'png').toUpperCase();
+        doc.addImage(co.logo_data, ft==='JPG'?'JPEG':ft, 40, 36, w, h);
+        leftY=36+h+14;
+      }catch(e){ leftY=44; }
+    }
+    doc.setFontSize(16); doc.setTextColor(20); doc.text('Estado de cuenta', 555, 50, {align:'right'});
+    doc.setFontSize(9); doc.setTextColor(110); doc.text('Fecha: '+arToday, 555, 66, {align:'right'});
+    let y=leftY; doc.setTextColor(20);
+    if(co.emisor){ doc.setFontSize(11); doc.text(String(co.emisor), 40, y); y+=14; }
+    doc.setFontSize(8.5); doc.setTextColor(110);
+    if(co.domicilio){ doc.text(String(co.domicilio).slice(0,90), 40, y); y+=12; }
+    const coLine=[co.rfc?('RFC: '+co.rfc):'', co.phone?('Tel: '+co.phone):'', co.email?String(co.email):''].filter(Boolean).join('   ');
+    if(coLine){ doc.text(coLine, 40, y); y+=12; }
+    y=Math.max(y, 100)+6; doc.setDrawColor(210); doc.line(40,y,555,y); y+=20;
+    doc.setTextColor(20); doc.setFontSize(11); doc.text('Cliente: '+(c.customer_name||('#'+c.customer_id))+(c.customer_code?(' ('+c.customer_code+')'):''), 40, y); y+=15;
+    doc.setFontSize(9); doc.setTextColor(110);
+    const cuLine=[c.customer_rfc?('RFC: '+c.customer_rfc):'', c.customer_phone?('Tel: '+c.customer_phone):''].filter(Boolean).join('   ');
+    if(cuLine){ doc.text(cuLine, 40, y); y+=4; }
+    y+=16;
+    // 컬럼 좌표(A4 pt, 좌40~우555). FOLIO(순번)가 첫 컬럼, FACTURA(SAT)는 '마지막 12자리(굵게)'+전체 UUID(회색).
+    const X={folio:44, fol:86, emi:234, ven:296, imp:400, pag:463, sal:525, dia:555};
+    const isUuid=(s)=>String(s||'').replace(/[^A-Za-z0-9]/g,'').length>=20;
+    const shortRef=(s)=>{ s=String(s||''); return isUuid(s)? s.slice(-12).toUpperCase() : s; };
+    const fit=(t,x,yy,maxW,base)=>{ let s=base; doc.setFontSize(s); while(doc.getTextWidth(String(t))>maxW && s>5){ s-=0.3; doc.setFontSize(s);} doc.text(String(t),x,yy); };
+    function drawHead(yy){ doc.setFillColor(243,241,236); doc.rect(40,yy-12,515,18,'F');
+      doc.setTextColor(95); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+      doc.text('FOLIO',X.folio,yy); doc.text('FACTURA',X.fol,yy); doc.text('EMISIÓN',X.emi,yy); doc.text('VENCIM.',X.ven,yy);
+      doc.text('IMPORTE',X.imp,yy,{align:'right'}); doc.text('PAGADO',X.pag,yy,{align:'right'});
+      doc.text('SALDO',X.sal,yy,{align:'right'}); doc.text('DÍAS',X.dia,yy,{align:'right'});
+      doc.setFont('helvetica','normal'); }
+    const ROWH=24; let total=0;
+    drawHead(y); y+=10;
+    rows.forEach((r,idx)=>{
+      if(y+ROWH>800){ doc.addPage(); y=54; drawHead(y); y+=10; }
+      const top=y, mid=top+9, sub=top+18;
+      const pf=(r.paid_full||Number(r.outstanding)<=0.005);
+      const overdue=(!pf && r.day_diff!=null && Number(r.day_diff)>0);
+      if(overdue){ doc.setFillColor(252,233,233); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(208,46,46); doc.rect(40,top-4,3,ROWH,'F'); }
+      else if(pf){ doc.setFillColor(235,246,235); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(52,150,80); doc.rect(40,top-4,3,ROWH,'F'); }
+      else if(idx%2===1){ doc.setFillColor(249,249,247); doc.rect(40,top-4,515,ROWH,'F'); }
+      const folioTxt=(r.folio_no!=null&&String(r.folio_no).trim())?String(r.folio_no).trim():'';
+      if(folioTxt){ doc.setTextColor(20,61,52); doc.setFont('helvetica','bold'); fit(folioTxt,X.folio,mid,38,9.5); }
+      else { doc.setTextColor(170); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.text('—',X.folio,mid); }
+      const full=String(r.sat_no||('#'+r.id));
+      const sref=shortRef(full);
+      doc.setTextColor(25); doc.setFont('helvetica','bold'); fit(sref,X.fol,mid,132,9.5);
+      if(isUuid(full)){ doc.setFont('courier','normal'); doc.setFontSize(6.5); doc.setTextColor(155); doc.text(full,X.fol,sub); }
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(70);
+      doc.text(String(r.inv_date||'—'),X.emi,mid);
+      doc.text(String(r.due_date||'—'),X.ven,mid);
+      doc.text(fmt(Number(r.total_mxn)||0),X.imp,mid,{align:'right'});
+      doc.setTextColor(135); doc.text(fmt(Number(r.paid)||0),X.pag,mid,{align:'right'});
+      doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.text(fmt(Number(r.outstanding)||0),X.sal,mid,{align:'right'}); doc.setFont('helvetica','normal');
+      const dd=(r.day_diff==null?null:Number(r.day_diff));
+      const dstr=pf?'PAGADA':(dd==null?'—':(dd>0?('+'+dd):(dd===0?'0':String(dd))));
+      if(overdue){ doc.setTextColor(200,40,40); doc.setFont('helvetica','bold'); }
+      else if(pf){ doc.setTextColor(40,140,70); doc.setFont('helvetica','bold'); doc.setFontSize(7); }
+      else { doc.setTextColor(130); }
+      doc.text(dstr,X.dia,mid,{align:'right'});
+      doc.setFontSize(8);
+      doc.setFont('helvetica','normal'); doc.setTextColor(20);
+      y+=ROWH; total+=Number(r.outstanding)||0;
+    });
+    y+=4; doc.setDrawColor(150); doc.line(40,y,555,y); y+=16;
+    doc.setFontSize(11); doc.setTextColor(20);
+    doc.text('Total adeudado:', 380, y);
+    doc.text('MX$ '+fmt(total), 555, y, {align:'right'});
+    y+=18; doc.setFontSize(7.5); doc.setTextColor(150);
+    doc.text('Importe = monto original · Pagado = abonos recibidos · Saldo = pendiente.', 40, y); y+=10;
+    doc.setTextColor(196,30,30);
+    doc.text('Filas en rojo y Días con valor positivo (+N) = facturas VENCIDAS.  Valores negativos = aún por vencer.', 40, y);
+    y+=10; doc.setTextColor(34,130,64);
+    doc.text('Filas en verde = facturas PAGADAS (saldo 0).', 40, y);
+    doc.setTextColor(20);
+    doc.save('estado_cuenta_'+(c.customer_code||c.customer_id)+'.pdf');
+  }
+
+  // ===== NC · 할인 승인 증빙 (Nota de crédito) =====
+  function toggleNc(invId){
+    if(arOpenNc===invId){ arOpenNc=null; renderAr(); return; }
+    arOpenNc=invId; arOpenRepay=null; arHistOpen=null; renderAr();
+  }
+  function ncForm(it){
+    return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div style="flex-basis:100%;font-weight:700;color:var(--brand)">Nota de crédito 발기 (NC) — 잔액 MX$'+fmt(it.outstanding)+'</div>'
+      +'<div style="flex-basis:100%"><label>Concepto (메모 — 인쇄 상단에 크게 표시)</label>'
+        +'<input id="ncConcepto" placeholder="예: pago anticipado en 15 días, 3% descuento" style="width:100%;max-width:560px"></div>'
+      +'<div><label>방식</label><select id="ncMode" onchange="ncRecalc('+it.id+')" style="width:150px"><option value="rate">할인률(%)</option><option value="amount">금액(sin IVA)</option></select></div>'
+      +'<div><label id="ncValLbl">할인률(%)</label><input id="ncVal" type="number" step="0.01" oninput="ncRecalc('+it.id+')" style="width:130px"></div>'
+      +'<div style="min-width:280px"><label>미리보기 (sin IVA 할인 · IVA 미가산)</label><div id="ncPreview" class="hint" style="margin:0">—</div></div>'
+      +'<div><button class="btn" onclick="submitNc('+it.id+')">발기</button></div>'
+      +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="toggleNc(null)">취소</button></div>'
+      +'</div><div class="hint" style="margin-top:6px">할인율은 <b>sin IVA(과세표준)</b> 에 적용해 할인액을 구하고, 그 <b>할인액을 IVA 없이</b> con IVA 총액(잔액)에서 그대로 차감합니다(<b>할인액에 IVA를 더하지 않음</b>). 「할인률(%)」은 과세표준 대비 비율, 「금액(sin IVA)」은 IVA 제외 할인액입니다. 발기 후: ① <b>인쇄</b>하여 서명 받기 → ② 서명본 <b>업로드</b> → ③ 디렉터 <b>승인</b> → ④ <b>적용(비현금 반제)</b>으로 잔액 마감. 아래 <b>NC 목록</b>에서 진행합니다.</div>';
+  }
+  function ncCompute(it){
+    const mode=$('ncMode')?$('ncMode').value:'rate';
+    const v=Number($('ncVal')?$('ncVal').value:0)||0;
+    // 할인은 sin IVA(과세표준) 기준. 인보이스 과세표준(정확값 우선, 없으면 total/1.16 근사).
+    const invBase=(it.subtotal_mxn!=null && Number(it.subtotal_mxn)>0)?Number(it.subtotal_mxn):(Number(it.total_mxn)||0)/1.16;
+    // 금액 모드: 입력값 = 할인액(sin IVA). 할인률 모드: 과세표준 × rate%.
+    let base = mode==='amount' ? v : invBase*v/100;
+    base=Math.round((base+Number.EPSILON)*100)/100;
+    // NC 금액 = 할인액(sin IVA) 그 자체. IVA를 더하지 않음 → con IVA 잔액에서 이 금액만 차감.
+    return {total:base, base:base, iva:0};
+  }
+  function ncRecalc(invId){
+    const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
+    const lbl=$('ncValLbl'); if(lbl) lbl.textContent = ($('ncMode').value==='amount'?'금액(sin IVA)':'할인률(%)');
+    const c=ncCompute(it); const p=$('ncPreview');
+    if(p){ const over = c.total>it.outstanding+0.01; const newBal=Math.round((it.outstanding-c.total+Number.EPSILON)*100)/100;
+      p.innerHTML = c.total>0 ? ('할인(sin IVA) = NC 금액 <b>MX$'+fmt(c.total)+'</b> · IVA 미가산 · 잔액 MX$'+fmt(it.outstanding)+' → <b>MX$'+fmt(newBal>0?newBal:0)+'</b>'+(over?' <b style="color:var(--expense)">· 잔액 초과!</b>':'')) : '—'; }
+  }
+  async function submitNc(invId){
+    const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it)return;
+    const m=$('arMsg'); m.className='msg';
+    const concepto=($('ncConcepto')?$('ncConcepto').value:'').trim();
+    const mode=$('ncMode').value, v=Number($('ncVal').value)||0;
+    if(!concepto){ m.className='msg err'; m.textContent='Concepto(메모)를 입력하세요.'; return; }
+    if(!(v>0)){ m.className='msg err'; m.textContent='할인률 또는 금액을 입력하세요(양수).'; return; }
+    const c=ncCompute(it);
+    if(!(c.total>0)){ m.className='msg err'; m.textContent='할인 금액이 0입니다.'; return; }
+    if(c.total>it.outstanding+0.01){ m.className='msg err'; m.textContent='할인 금액이 잔액(MX$'+fmt(it.outstanding)+')보다 큽니다.'; return; }
+    const body={invoice_id:invId, concepto};
+    if(mode==='amount') body.base_mxn=c.base; else body.rate_pct=v;
+    try{
+      const res=await fetch(session.api+'/api/nc',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='NC 발기 실패: '+(d.error||res.status)+(d.outstanding!=null?(' (잔액 '+fmt(d.outstanding)+')'):''); return; }
+      m.className='msg ok'; m.textContent='NC 발기됨: '+it.customer_name+' · 할인(sin IVA) MX$'+fmt(d.total)+' (IVA 미가산, con IVA 잔액에서 차감). 아래 NC 목록에서 인쇄·업로드·승인·적용을 진행하세요.';
+      arOpenNc=null; renderAr(); loadNc();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
+  // --- NC 목록 ---
+  function renderNcSeg(){
+    const opts=[['all','전체'],['draft','초안'],['approved','승인'],['applied','적용'],['void','취소']];
+    const seg=$('ncSeg'); if(seg) seg.innerHTML=opts.map(o=>'<button class="'+(ncStatusFilter===o[0]?'on':'')+'" onclick="setNcFilter(\''+o[0]+'\')">'+o[1]+'</button>').join('');
+  }
+  function setNcFilter(s){ ncStatusFilter=s; renderNcSeg(); loadNc(); }
+  async function loadNc(){
+    renderNcSeg();
+    try{
+      const d=await fetch(session.api+'/api/nc'+(ncStatusFilter&&ncStatusFilter!=='all'?('?status='+ncStatusFilter):''),{headers:auth()}).then(r=>r.json());
+      ncItems=(d&&d.items)||[]; renderNcList();
+    }catch(e){ const b=$('ncListBox'); if(b)b.innerHTML='<div class="hint">NC 목록을 불러오지 못했습니다.</div>'; }
+  }
+  const NC_ST={draft:['초안','#8a6d3b','#fcf3e3'],approved:['승인','#1f6f43','#e8f5ee'],applied:['적용완료','#2c5fa8','#e9f0fb'],void:['취소','#999','#f0f0f0']};
+  function ncChip(s){ const x=NC_ST[s]||[s,'#555','#eee']; return '<span class="chip" style="background:'+x[2]+';color:'+x[1]+'">'+esc(x[0])+'</span>'; }
+  function renderNcList(){
+    const box=$('ncListBox'); if(!box)return;
+    if(!ncItems.length){ box.innerHTML='<div class="hint">해당 상태의 NC가 없습니다.</div>'; return; }
+    let h='<div class="arscroll"><table><thead><tr>'
+      +'<th style="text-align:left">고객 · 인보이스</th><th style="text-align:left">Concepto</th>'
+      +'<th class="n">총액</th><th class="n">base</th><th class="n">IVA</th>'
+      +'<th>상태</th><th>증빙</th><th></th></tr></thead><tbody>';
+    ncItems.forEach(n=>{
+      h+='<tr><td style="text-align:left"><b>'+esc(n.customer_name)+'</b><div class="inv-no">'+esc(n.sat_no||('#'+n.invoice_id))+'</div></td>'
+        +'<td style="text-align:left;max-width:240px">'+esc(n.concepto)+(n.rate_pct!=null?(' <span class="hint">('+fmt(n.rate_pct)+'%)</span>'):'')+'</td>'
+        +'<td class="n"><b>'+fmt(n.total_mxn)+'</b></td><td class="n">'+fmt(n.base_mxn)+'</td><td class="n">'+fmt(n.iva_mxn)+'</td>'
+        +'<td style="white-space:nowrap">'+ncChip(n.status)+'</td>'
+        +'<td>'+(n.has_doc?'<button class="btn" style="padding:3px 9px;font-size:11px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="viewNcDoc('+n.id+')">👁 보기</button>':'<span class="hint">미첨부</span>')+'</td>'
+        +'<td style="white-space:nowrap">'+ncActions(n)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    box.innerHTML=h;
+  }
+  function ncBtn(label,onclick,style){ return '<button class="btn" style="padding:4px 10px;font-size:11.5px;'+(style||'')+'" onclick="'+onclick+'">'+label+'</button> '; }
+  function ncActions(n){
+    let a='';
+    if(n.status==='draft'){
+      a+=ncBtn('🖨 인쇄','printNc('+n.id+')','background:#fff;color:var(--brand);border:1px solid var(--line)');
+      a+=ncBtn('서명본 업로드','pickNcDoc('+n.id+')','background:#fff;color:var(--gold);border:1px solid var(--line)');
+      if(isDirector) a+=ncBtn('승인','approveNc('+n.id+')', n.has_doc?'':'opacity:.45;pointer-events:none');
+      if(isDirector) a+=ncBtn('취소','voidNc('+n.id+')','background:#fff;color:var(--muted);border:1px solid var(--line)');
+    } else if(n.status==='approved'){
+      a+=ncBtn('🖨 인쇄','printNc('+n.id+')','background:#fff;color:var(--brand);border:1px solid var(--line)');
+      a+=ncBtn('적용(비현금 반제)','applyNc('+n.id+')','');
+      if(isDirector) a+=ncBtn('취소','voidNc('+n.id+')','background:#fff;color:var(--muted);border:1px solid var(--line)');
+    } else if(n.status==='applied'){
+      a+=ncBtn('🖨 인쇄','printNc('+n.id+')','background:#fff;color:var(--brand);border:1px solid var(--line)');
+      if(isDirector) a+=ncBtn('취소(적용 취소)','voidNc('+n.id+')','background:#fff;color:var(--expense);border:1px solid var(--line)');
+    }
+    if(isDirector) a+=ncBtn('🗑 삭제','deleteNc('+n.id+')','background:#fff;color:var(--expense);border:1px solid var(--line)');
+    return a||'<span class="hint">—</span>';
+  }
+  function ncShowMsg(cls,txt){ const m=$('ncMsg'); if(m){ m.className='msg '+(cls||''); m.textContent=txt; } }
+  async function approveNc(id){
+    if(!confirm('이 NC를 승인하시겠습니까? 승인 후 영업지원이 비현금 반제로 적용할 수 있습니다.'))return;
+    try{ const res=await fetch(session.api+'/api/nc/'+id+'/approve',{method:'POST',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ ncShowMsg('err','승인 실패: '+(d.error||res.status)); return; }
+      ncShowMsg('ok','승인 완료.'); loadNc();
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  async function applyNc(id){
+    if(!confirm('이 NC를 비현금 반제로 적용합니다. 인보이스 잔액이 그만큼 줄어듭니다(현금/수금에는 잡히지 않음). 진행할까요?'))return;
+    try{ const res=await fetch(session.api+'/api/nc/'+id+'/apply',{method:'POST',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ ncShowMsg('err','적용 실패: '+(d.error||res.status)+(d.outstanding!=null?(' (잔액 '+fmt(d.outstanding)+')'):'')); return; }
+      ncShowMsg('ok','적용 완료 · 인보이스 잔액 MX$'+fmt(d.invoice_outstanding)+(d.paid_full?' (완납)':'')); loadNc(); loadAr();
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  async function voidNc(id){
+    if(!confirm('이 Nota de crédito를 취소합니다(기록은 남김). 이미 적용된 경우 인보이스 잔액이 원복됩니다. 진행할까요?'))return;
+    try{ const res=await fetch(session.api+'/api/nc/'+id+'/void',{method:'POST',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ ncShowMsg('err','취소 실패: '+(d.error||res.status)); return; }
+      ncShowMsg('ok','취소 완료 · 인보이스 잔액 MX$'+fmt(d.invoice_outstanding)); loadNc(); loadAr();
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  async function deleteNc(id){
+    if(!confirm('이 Nota de crédito를 완전히 삭제합니다(증빙 포함). 이미 적용된 경우 인보이스 잔액이 원복됩니다. 되돌릴 수 없습니다. 진행할까요?'))return;
+    try{ const res=await fetch(session.api+'/api/nc/'+id,{method:'DELETE',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ ncShowMsg('err','삭제 실패: '+(d.error||res.status)); return; }
+      ncShowMsg('ok','삭제 완료 · 인보이스 잔액 MX$'+fmt(d.invoice_outstanding)); loadNc(); loadAr();
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  function pickNcDoc(id){
+    let inp=document.getElementById('ncDocInput');
+    if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.id='ncDocInput'; inp.accept='image/*,application/pdf'; inp.style.display='none'; document.body.appendChild(inp); }
+    inp.onchange=(ev)=>{ const f=ev.target.files&&ev.target.files[0]; ev.target.value=''; if(!f)return;
+      if(f.size>8*1024*1024){ ncShowMsg('err','파일이 너무 큽니다(8MB 이하).'); return; }
+      const rd=new FileReader(); rd.onload=()=>uploadNcDoc(id, rd.result, f.name); rd.onerror=()=>ncShowMsg('err','파일을 읽지 못했습니다.'); rd.readAsDataURL(f); };
+    inp.click();
+  }
+  async function uploadNcDoc(id, dataUrl, name){
+    try{ const res=await fetch(session.api+'/api/nc/'+id+'/doc',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({doc:dataUrl,doc_name:name})}); const d=await res.json();
+      if(!res.ok||d.error){ ncShowMsg('err','업로드 실패: '+(d.detail||d.error||res.status)); return; }
+      ncShowMsg('ok','서명본 업로드 완료. 디렉터 승인을 기다립니다.'); loadNc();
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  async function viewNcDoc(id){
+    try{ const r=await fetch(session.api+'/api/nc/'+id+'/doc/file',{headers:auth()}); const d=await r.json();
+      if(!r.ok||d.error||!d.file_data){ ncShowMsg('err','증빙을 불러오지 못했습니다.'); return; }
+      const parts=String(d.file_data).split(','); const bstr=atob(parts[1]||''); const u8=new Uint8Array(bstr.length); for(let i=0;i<bstr.length;i++)u8[i]=bstr.charCodeAt(i);
+      const blob=new Blob([u8],{type:d.mime_type||'application/octet-stream'}); const url=URL.createObjectURL(blob); window.open(url,'_blank');
+    }catch(e){ ncShowMsg('err','서버 연결 실패'); }
+  }
+  // 인쇄 양식 — 인보이스 머리글 재사용 + Concepto 상단 + 담당자/디렉터 서명란
+  async function printNc(id){
+    let n;
+    try{ n=await fetch(session.api+'/api/nc/'+id,{headers:auth()}).then(r=>r.json()); }catch(e){ ncShowMsg('err','NC 정보를 불러오지 못했습니다.'); return; }
+    if(!n||n.error){ ncShowMsg('err','NC 정보를 불러오지 못했습니다.'); return; }
+    const co=arCompany||{};
+    const userName=(session.user&&session.user.name)||'';
+    const head=''
+      +(co.logo_data?('<img src="'+co.logo_data+'" style="max-height:60px;max-width:180px;object-fit:contain;display:block;margin-bottom:8px">'):'')
+      +(co.emisor?('<div style="font-weight:800;font-size:16px">'+esc(co.emisor)+'</div>'):'')
+      +(co.domicilio?('<div style="color:#555;font-size:12px;margin-top:2px">'+esc(co.domicilio)+'</div>'):'')
+      +('<div style="color:#555;font-size:12px;margin-top:2px">'+[co.rfc?('RFC: '+esc(co.rfc)):'',co.phone?('Tel: '+esc(co.phone)):'',co.email?esc(co.email):''].filter(Boolean).join(' · ')+'</div>');
+    const today=new Date().toISOString().slice(0,10);
+    const html='<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Nota de crédito #'+esc(String(n.id))+'</title>'
+      +'<style>*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1b1b1b;margin:0;padding:34px 40px}'
+      +'.row{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}'
+      +'.title{font-size:22px;font-weight:800;text-align:right}.sub{color:#666;font-size:12px;text-align:right;margin-top:4px}'
+      +'hr{border:none;border-top:1px solid #ccc;margin:16px 0}'
+      +'.concepto{border:2px solid #1b1b1b;border-radius:8px;padding:12px 14px;margin:14px 0}'
+      +'.concepto .lbl{font-size:11px;color:#666;letter-spacing:.04em;text-transform:uppercase}'
+      +'.concepto .val{font-weight:700;font-size:16px;margin-top:3px}'
+      +'table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}td{padding:7px 8px;border-bottom:1px solid #e6e6e6;text-align:left}'
+      +'.amt{text-align:right}.tot{font-weight:800;font-size:15px}'
+      +'.signs{display:flex;gap:48px;margin-top:64px}.sign{flex:1;text-align:center}'
+      +'.sign .line{border-top:1px solid #1b1b1b;margin-bottom:6px}.sign .who{font-weight:700}.sign .role{color:#666;font-size:12px}'
+      +'@media print{.noprint{display:none}}</style></head><body>'
+      +'<div class="row"><div>'+head+'</div>'
+        +'<div><div class="title">NOTA DE CRÉDITO</div><div class="sub">할인 승인 증빙 (사내)</div><div class="sub">Fecha: '+esc(today)+'</div><div class="sub">NC #'+esc(String(n.id))+'</div></div></div>'
+      +'<hr>'
+      +'<div class="concepto"><div class="lbl">Concepto / 메모</div><div class="val">'+esc(n.concepto)+'</div></div>'
+      +'<div style="font-size:13px"><b>Cliente:</b> '+esc(n.customer_name||'')+(n.customer_rfc?(' &nbsp; <span style="color:#666">RFC: '+esc(n.customer_rfc)+'</span>'):'')+'</div>'
+      +'<table><tbody>'
+        +'<tr><td>Factura relacionada / 원 인보이스</td><td class="amt">'+esc(n.sat_no||('#'+n.invoice_id))+'</td></tr>'
+        +'<tr><td>Emisión / 발행일</td><td class="amt">'+esc(n.inv_date||'—')+'</td></tr>'
+        +'<tr><td>Importe factura / 인보이스 총액</td><td class="amt">MX$ '+fmt(n.invoice_total)+'</td></tr>'
+        +(n.rate_pct!=null?('<tr><td>Descuento sobre subtotal (sin IVA) / 할인률(과세표준 기준)</td><td class="amt">'+fmt(n.rate_pct)+' %</td></tr>'):'')
+        +'<tr><td class="tot">Descuento sin IVA (Total nota de crédito) / 할인액</td><td class="amt tot">MX$ '+fmt(n.total_mxn)+'</td></tr>'
+      +'</tbody></table>'
+      +'<div style="font-size:11.5px;color:#666;margin-top:6px">El descuento se calcula sobre el subtotal (sin IVA) y se aplica directamente al total (con IVA) de la factura. No se agrega IVA al importe del descuento. / 할인은 과세표준(sin IVA)에 적용되며, 그 할인액을 인보이스 총액(con IVA)에서 IVA 가산 없이 그대로 차감합니다.</div>'
+      +'<div class="signs">'
+        +'<div class="sign"><div class="line">&nbsp;</div><div class="who">'+esc(userName||'담당자')+'</div><div class="role">Elaboró / 담당자 (서명)</div></div>'
+        +'<div class="sign"><div class="line">&nbsp;</div><div class="who">&nbsp;</div><div class="role">Autorizó / Director (서명)</div></div>'
+      +'</div>'
+      +'<div class="noprint" style="text-align:center;margin-top:30px"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">인쇄</button></div>'
+      +'</body></html>';
+    const w=window.open('','_blank'); if(!w){ ncShowMsg('err','팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    try{ w.focus(); setTimeout(()=>{ try{w.print();}catch(e){} }, 350); }catch(e){}
+  }
+
+
+  // ===== 미배분 입금 인박스 + 폴링 팝업 =====
+  let bdCtx=null, bdCart={}, bdInbox=[], bdPollTimer=null, bdShownIds={};
+  async function loadBdInbox(){
+    const card=$('bdInboxCard'), box=$('bdInboxBox'); if(!box) return;
+    try{
+      const items=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
+      bdInbox=items;
+      if(!items.length){ if(card)card.style.display='none'; return; }
+      if(card)card.style.display='';
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>고객(추정)</th><th>등록자</th><th></th></tr></thead><tbody>'
+        +items.map(d=>'<tr'+(d.read_by_me?'':' style="background:#fffaf0"')+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+esc(d.payer_memo||'—')+'</td><td>'+esc(d.customer_name||'—')+'</td><td>'+esc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="startBdAlloc('+d.id+')">이 입금으로 반제</button></td></tr>').join('')
+        +'</tbody></table>';
+    }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
+  }
+  function startBdAlloc(id){
+    const d=bdInbox.find(x=>x.id===id); if(!d) return;
+    bdCtx=d; bdCart={}; arOpenRepay=null; arRepayReceipt=null; arRepayReceiptName=null; renderBdCtxBanner();
+    const q=$('arSearchQ');
+    if(q){ q.value=d.customer_name||d.payer_memo||''; if(q.value.trim()){ doArSearch(); } else { renderAr(); } }
+    try{ document.getElementById('arStats').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  }
+  function cancelBdCtx(){ bdCtx=null; bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null; renderBdCtxBanner(); renderBdCart(); renderAr(); }
+  function renderBdCtxBanner(){
+    const el=$('bdCtxBanner'); if(!el) return;
+    if(!bdCtx){ el.style.display='none'; el.innerHTML=''; renderBdCart(); return; }
+    el.style.display='';
+    el.innerHTML='반제 대상 입금: <b>MX$'+fmt(bdCtx.amount)+'</b> · '+esc(bdCtx.account_name||'')+' · '+esc(bdCtx.deposit_date)+(bdCtx.payer_memo?(' · '+esc(bdCtx.payer_memo)):'')
+      +' — 아래 미수 목록에서 해당 고객 인보이스의 <b>[반제]</b>로 배분을 담고, <b>[저장·통지 닫기]</b>로 확정하세요. (계좌·입금일 고정)'
+      +'<button class="btn" style="margin-left:8px;padding:2px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="cancelBdCtx()">대상 해제</button>';
+    renderBdCart();
+  }
+  function startBdPolling(){ if(bdPollTimer) return; bdPollOnce(); bdPollTimer=setInterval(bdPollOnce,45000); }
+  async function bdPollOnce(){
+    try{
+      const d=await fetch(session.api+'/api/bank-deposits/unread',{headers:auth()}).then(r=>r.json());
+      const items=(d&&d.items)||[], count=(d&&d.count)||0;
+      const badge=$('bdBadge'); if(badge){ if(count>0){ badge.style.display=''; badge.textContent=count; } else badge.style.display='none'; }
+      const fresh=items.filter(x=>!bdShownIds[x.id]);
+      if(fresh.length){ items.forEach(x=>{ bdShownIds[x.id]=1; }); loadBdInbox(); bdPopupShow(items); }
+    }catch(e){}
+  }
+  function bdPopupShow(items){
+    if(!items||!items.length) return;
+    let ov=document.getElementById('bdPopup');
+    if(!ov){ ov=document.createElement('div'); ov.id='bdPopup'; ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10050;display:flex;align-items:center;justify-content:center'; document.body.appendChild(ov); }
+    const ids=items.map(x=>x.id);
+    ov.innerHTML='<div style="background:#fff;border-radius:12px;max-width:520px;width:92%;padding:18px;box-shadow:0 18px 50px -12px rgba(0,0,0,.5)">'
+      +'<div style="font-size:16px;font-weight:700;margin-bottom:6px">📥 새 미배분 입금 '+items.length+'건</div>'
+      +'<div class="hint" style="margin-top:0">재무담당/디렉터가 등록한 은행 매출입금입니다. 인박스에서 인보이스에 반제하세요.</div>'
+      +'<div style="max-height:220px;overflow:auto;margin:10px 0;border:1px solid var(--line);border-radius:8px"><table style="width:100%"><tbody>'
+      +items.map(x=>'<tr><td style="padding:6px 8px">'+esc(x.deposit_date)+'</td><td style="padding:6px 8px">'+esc(x.account_name||'')+'</td><td style="padding:6px 8px;text-align:right"><b>MX$'+fmt(x.amount)+'</b></td><td style="padding:6px 8px;color:var(--muted)">'+esc(x.payer_memo||'')+'</td></tr>').join('')
+      +'</tbody></table></div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" id="bdPopClose">확인(읽음)</button>'
+      +'<button class="btn" id="bdPopGo">인박스 열기</button></div></div>';
+    const close=async(go)=>{
+      try{ await fetch(session.api+'/api/bank-deposits/read',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({ids})}); }catch(e){}
+      ov.remove(); const badge=$('bdBadge'); if(badge)badge.style.display='none'; loadBdInbox();
+      if(go){ try{ document.getElementById('bdInboxCard').scrollIntoView({behavior:'smooth'}); }catch(e){} }
+    };
+    document.getElementById('bdPopClose').onclick=()=>close(false);
+    document.getElementById('bdPopGo').onclick=()=>close(true);
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  { const _it=$('itemToggle'); if(_it) _it.addEventListener('click',toggleItemBody); }
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

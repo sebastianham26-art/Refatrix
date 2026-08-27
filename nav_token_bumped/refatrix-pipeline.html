@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 영업활동 · 단계관리 · 방문동선 · 방문리뷰 (b20260819ko1)</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1160px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.gold{background:var(--gold)}.btn.sm{padding:6px 11px;font-size:12px}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .code{font-weight:700;color:var(--brand)}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .bottle{background:#fbe9e7;color:var(--expense)}
+  .stale{color:var(--expense);font-weight:700}
+  /* 파이프라인 칸반 */
+  .kanban{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px;padding-bottom:8px;margin-top:10px}
+  .kcol{min-width:0;border:1px solid var(--line);border-radius:12px;background:#faf8f3;display:flex;flex-direction:column}
+  .kcol.bottle{border-color:var(--expense);box-shadow:0 0 0 2px #f6d8d2 inset}
+  .khead{padding:9px 8px;text-align:center;border-bottom:1px solid var(--line);border-radius:12px 12px 0 0}
+  .khead .kname{font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#fff;overflow-wrap:anywhere;line-height:1.25}
+  .khead .kcount{font-size:22px;font-weight:800;color:#fff;line-height:1.1}
+  .kbody{padding:7px;display:flex;flex-direction:column;gap:8px;min-height:40px}
+  .kcard{background:#fff;border:1px solid var(--line);border-left:4px solid var(--c,#bbb);border-radius:8px;padding:8px 9px;cursor:pointer}
+  .kcard:hover{border-color:var(--brand)}
+  .kcard .kc-top{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+  .kcard .kc-name{font-weight:700;font-size:13px;overflow-wrap:anywhere;min-width:0;flex:1 1 auto}
+  .kcard .kc-right{display:flex;align-items:center;gap:5px;flex:0 0 auto;margin-left:auto}
+  .kcard .kc-days{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
+  .kcard .kc-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
+  .dirbadge{display:inline-block;background:var(--expense);color:#fff;font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px;margin-left:4px}
+  /* 거래중 카드: 최초~현재 발행 인보이스(구매) 총 횟수 뱃지 */
+  .kcard .kc-inv{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;line-height:1;padding:2px 7px;border-radius:999px;background:#e8eefc;color:#2545a6;border:1px solid #c8d5f5;white-space:nowrap}
+  .kcard .kc-inv .lbl{font-size:9.5px;font-weight:700;opacity:.85}
+  .kcard .kc-inv.zero{background:#f1f3f5;color:#8a94a0;border-color:#e3e7ec}
+  /* 거래중 카드: 일평균 판매수량(누적수량 / 거래시작 후 영업일) */
+  .kcard .kc-rate{margin-top:3px;font-size:10.5px;color:#2545a6;font-weight:600;line-height:1.35}
+  .kcard .kc-rate b{font-size:12px;font-weight:800}
+  .kcard .kc-rate .mut{color:var(--muted);font-weight:500}
+  .kcard .kc-rate-na{margin-top:3px;font-size:10.5px;color:var(--muted)}
+  .legend{display:flex;gap:14px;justify-content:flex-end;font-size:11px;color:var(--muted);margin-top:8px}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .bottlecard{background:#fff7e0;border:1px solid #ecd9a0;border-radius:10px;padding:12px;margin-top:12px}
+  .teampick{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .teambtn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .teambtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .st-open{background:#fff4d6;color:#8a6512}.st-read{background:#e7eef3;color:#2b5a78}.st-done{background:#e7f3ee;color:var(--income)}
+  /* 미팅 패널 매출 요약 박스 */
+  .msum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:6px}
+  .msum .mcell{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+  .msum .mk{font-size:10.5px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msum .mv{font-size:15px;font-weight:800;color:var(--brand);margin-top:2px;overflow-wrap:anywhere;line-height:1.15}
+  .msum .mv.sm{font-size:13px}
+  @media(max-width:680px){.msum{grid-template-columns:repeat(2,1fr)}}
+  /* 좁은 화면(폰): 단계가 많으면 너무 좁아 → 가로 스와이프 허용 */
+  @media(max-width:640px){
+    .kanban{grid-auto-columns:minmax(170px,1fr);overflow-x:auto;scroll-snap-type:x proximity}
+    .kcol{scroll-snap-align:start}
+  }
+
+  /* 방문·동선 뷰탭 */
+  .vl-tabbar{display:flex;gap:8px;margin-top:16px}
+  .vl-tab{padding:9px 18px;border:1px solid var(--line);border-radius:10px 10px 0 0;background:#efece4;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer}
+  .vl-tab.on{background:#fff;color:var(--brand);border-bottom-color:#fff;border-color:var(--brand)}
+  .vl-geoBox{display:flex;align-items:center;gap:8px;background:#f0f6f3;border:1px solid #cfe4da;border-radius:9px;padding:9px 11px;margin-top:8px;font-size:12.5px;color:var(--brand)}
+  .vl-geoBox.err{background:#fbe9e7;border-color:#f0c5bf;color:var(--expense)}
+  .vl-segment{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:4px}
+  .vl-segment button{padding:7px 16px;border:none;background:#fff;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer}
+  .vl-segment button.on{background:var(--brand);color:#fff}
+  .vl-newflag{font-size:11.5px;color:var(--gold);margin-top:5px;line-height:1.4}
+  .vl-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .vl-thumbs .th{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .vl-thumbs .th img{width:100%;height:100%;object-fit:cover}
+  .vl-thumbs .th .x{position:absolute;top:1px;right:1px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;padding:0 5px}
+  .vl-thumbs .th .kd{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:9px;text-align:center}
+  .vl-pendrow{display:flex;gap:6px;margin-top:6px}.vl-pendrow input[type=text]{flex:1}
+  .vl-pendrow .del{background:#fff;border:1px solid var(--line);border-radius:7px;color:var(--expense);cursor:pointer;padding:0 10px}
+  .vl-chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+  .vl-chip{padding:6px 11px;border:1.5px solid var(--line);border-radius:999px;background:#fff;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted)}
+  .vl-chip.on{color:#fff}
+  .vl-map{height:340px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#eef1ee}
+  .vl-visit{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;cursor:pointer}
+  .vl-visit .vh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .vl-visit .seq{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .vl-visit .tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px}
+  .vl-visit .tag.ex{background:#e8eefc;color:#2545a6}.vl-visit .tag.nw{background:#fdf3e0;color:#9a6512}
+  .vl-visit .body{display:none;margin-top:8px;font-size:12.5px;color:#333;line-height:1.5}
+  .vl-visit.open .body{display:block}
+  .vl-due-over{color:var(--expense);font-weight:700}
+  .vl-place{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-top:7px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">영업활동 · 고객 단계관리 · 병목 분석</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+  <div class="vl-tabbar">
+    <button type="button" id="vt-pipe" class="vl-tab on">단계관리</button>
+    <button type="button" id="vt-visit" class="vl-tab">🧭 방문·동선</button>
+    <button type="button" id="vt-review" class="vl-tab">📋 방문 리뷰</button>
+  </div>
+  <div id="viewPipe">
+    <div class="card">
+      <h2 style="margin:0 0 6px">팀 선택</h2>
+      <div class="teampick" id="teamPick"></div>
+    </div>
+
+    <!-- 파이프라인 칸반 + 병목 -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">고객 개발 현황 (Pipeline)</h2>
+      </div>
+      <div class="hint" style="margin-top:0">단계별로 고객 카드가 쌓입니다. 카드의 경과일 색으로 진행 속도를, 단계 헤더의 인원수로 병목을 봅니다. 카드를 누르면 미팅·지시를 다룹니다.</div>
+      <div id="kanban"></div>
+      <div class="legend"><span><i class="dot" style="background:var(--income)"></i>7일 이하</span><span><i class="dot" style="background:var(--gold)"></i>8–14일</span><span><i class="dot" style="background:var(--expense)"></i>15일 이상</span></div>
+      <div id="bottleneck"></div>
+    </div>
+
+    <!-- 디렉터 지시 현황판 -->
+    <div class="card hidden" id="boardCard">
+      <h2>디렉터 지시 · F/UP 현황</h2>
+      <div id="boardCounts"></div>
+      <div id="board"></div>
+    </div>
+
+    <!-- 미팅 작성 폼(고객 선택 시) -->
+    <div class="card hidden" id="meetCard">
+      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0" id="meetTitle">미팅 기록</h2><button class="btn ghost sm" id="meetClose">닫기</button></div>
+      <div id="m-custname" style="font-size:16px;font-weight:800;color:var(--brand);margin-top:8px"></div>
+      <div id="m-sales" style="margin-top:10px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+        <div><label>미팅 일자</label><input id="m-date" type="date"></div>
+        <div style="flex:1;min-width:220px"><label>미팅 내용</label><textarea id="m-note" rows="2" style="width:100%"></textarea></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+        <div><label><input type="checkbox" id="m-advance" style="width:auto"> 단계 진전</label></div>
+        <div><label>새 단계</label><select id="m-stage" disabled></select></div>
+        <button class="btn gold sm" id="m-save">미팅 저장</button>
+      </div>
+      <div class="msg" id="m-msg"></div>
+      <div style="font-weight:700;margin-top:12px">미팅 이력</div>
+      <div id="m-history"></div>
+
+      <!-- 디렉터 지시 / F/UP -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <div style="font-weight:700">디렉터 지시 · F/UP</div>
+        <div id="dirCompose"></div>
+        <div id="dirList"></div>
+      </div>
+    </div>
+  </div><!-- /viewPipe -->
+  <div id="viewVisit" class="hidden">
+    <div class="card" id="vlUserCard" style="display:none">
+      <label>영업사원 필터 (디렉터)</label>
+      <select id="vl-userFilter"><option value="">전체</option></select>
+    </div>
+
+    <!-- 방문 체크인 -->
+    <div class="card">
+      <h2>📍 방문 체크인</h2>
+      <div class="hint" style="margin-top:0">저장 시점의 GPS 위치와 시각이 방문 1건으로 기록됩니다. <b>기존 고객</b>이면 이 기록이 해당 고객의 <b>미팅기록에도 자동 보존</b>되고, <b>신규 방문처</b>면 방문기록으로만 남았다가 이후 고객 등록 시 함께 연결됩니다.</div>
+      <div class="vl-geoBox" id="vl-geo">위치 확인 중…</div>
+      <label>방문처</label>
+      <div class="vl-segment"><button type="button" id="vl-segCust" class="on">기존 고객</button><button type="button" id="vl-segNew">신규 방문처</button></div>
+      <div id="vl-rowCust" style="margin-top:6px"><select id="vl-cust" style="min-width:280px"><option value="">고객 검색·선택…</option></select></div>
+      <div id="vl-rowNew" class="hidden" style="margin-top:6px">
+        <input id="vl-place" style="width:100%;max-width:420px" placeholder="방문처 이름 (예: Refaccionaria El Águila)">
+        <div class="vl-newflag">★ 미등록 방문처 — 기록만 저장됩니다. 이후 「미등록 방문처 → 고객 등록」에서 연결하면 방문기록이 함께 소급 연결됩니다.</div>
+      </div>
+      <label>만난 사람 (이름 · 직책)</label><input id="vl-who" style="width:100%;max-width:420px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;max-width:420px">
+        <div style="flex:1;min-width:160px"><label>핸드폰 번호</label><input id="vl-phone" type="tel" inputmode="tel" placeholder="81-1234-5678" style="width:100%"></div>
+        <div style="flex:1;min-width:180px"><label>이메일 주소</label><input id="vl-email" type="email" inputmode="email" placeholder="correo@ejemplo.mx" style="width:100%"></div>
+      </div>
+      <label>무슨 이야기를 할 것인가?</label><textarea id="vl-talk" rows="2" style="width:100%" placeholder="방문 목적·논의할 내용을 간단히 (미팅 후 녹음 AI 요약이 자동으로 채워집니다)"></textarea>
+      <label>📷 사진 (명함·가게 등 · 최대 10장 · 자동 1600px 압축)</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="vl-photoKind"><option value="card">명함</option><option value="store">가게</option><option value="other" selected>기타</option></select>
+        <input type="file" id="vl-photoInput" accept="image/*" multiple capture="environment">
+      </div>
+      <div id="vl-thumbs" class="vl-thumbs"></div>
+      <label>펜딩 · 할 일 (후속조치)</label>
+      <div id="vl-pends"></div>
+      <button class="btn ghost sm" type="button" id="vl-addPend" style="margin-top:6px">＋ 항목 추가</button>
+      <div style="margin-top:12px"><button class="btn" id="vl-save">방문 저장 (체크인)</button> <span class="hint" style="margin:0">저장 즉시 동선 지도에 순번이 찍히고, 아래 🎙 상담 녹음을 붙일 수 있습니다</span></div>
+      <div class="msg" id="vl-msg"></div>
+    </div>
+
+    <!-- 상담 녹음 → AI 요약 -->
+    <div class="card hidden" id="vl-recCard">
+      <h2>🎙 상담 녹음 · AI 요약 <span class="hint" style="margin:0" id="vl-recTarget"></span></h2>
+      <div class="hint" style="margin-top:0">녹음이 끝나면 서버가 자동으로 <b>전사 → 분류 요약</b>하여 이 방문의 <b>대화/인사이트</b>를 채우고, <b>해야 할 일은 펜딩에 자동 등록</b>됩니다. 고객에게 "메모 목적으로 녹음하겠다"고 안내하세요. <b>녹음을 시작하면 ⏹ 종료를 누를 때까지 유지됩니다</b> — 화면 자동 꺼짐을 막고, 다른 화면으로 갔다 와서 끊겨도 그때까지 내용은 보존되고 자동으로 이어서 녹음합니다.</div>
+      <div class="vl-segment" style="margin-top:8px"><button type="button" id="vl-recModeMemo" class="on">🗣 음성 메모 (미팅 직후 2~3분 요점)</button><button type="button" id="vl-recModeFull">🎧 상담 전체 녹음</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+        <button class="btn" type="button" id="vl-recStart">● 녹음 시작</button>
+        <button class="btn ghost hidden" type="button" id="vl-recPause">⏸ 일시정지</button>
+        <button class="btn gold hidden" type="button" id="vl-recStop">⏹ 종료</button>
+        <span id="vl-recTimer" style="font-weight:800;font-variant-numeric:tabular-nums"></span>
+      </div>
+      <div id="vl-recReady" class="hidden" style="margin-top:10px">
+        <span id="vl-recInfo" class="hint" style="margin:0"></span>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button class="btn" type="button" id="vl-recUpload">⬆ 업로드 &amp; AI 요약</button>
+          <button class="btn ghost" type="button" id="vl-recDiscard">다시 녹음</button>
+        </div>
+      </div>
+      <div class="msg" id="vl-recMsg"></div>
+      <div id="vl-recList" style="margin-top:10px"></div>
+    </div>
+
+    <!-- 동선 지도 -->
+    <div class="card">
+      <h2>🗺️ 동선 지도 <span class="hint" style="margin:0">(날짜 토글 — 중복 선택 가능)</span></h2>
+      <div class="vl-chips" id="vl-chips"></div>
+      <div id="vl-map" class="vl-map"></div>
+      <div class="hint">날짜별 고정 색상: <b style="color:#0F6E56">오늘=초록</b> · <b style="color:#2563EB">어제=파랑</b> · <b style="color:#B23A2E">그저께=빨강</b> (이후 6색 순환). 마커 숫자 = 그날의 방문 순번, 클릭 시 상세.</div>
+      <div id="vl-list"></div>
+    </div>
+
+    <!-- 후속조치(펜딩) -->
+    <div class="card">
+      <h2>📌 후속조치 (펜딩) <span class="hint" style="margin:0">— 방문에서 남긴 할 일 모아보기 (녹음 AI 요약의 할 일도 자동 등록됨)</span></h2>
+      <div id="vl-pendTable"></div>
+    </div>
+
+    <!-- 아침 브리핑 -->
+    <div class="card">
+      <h2>📲 아침 브리핑 <span class="hint" style="margin:0">— 매일 아침 WhatsApp 으로 오늘 일정·펜딩·어제 상담 요약</span></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn ghost sm" type="button" id="vl-brPreview">👁 내 브리핑 미리보기</button>
+        <span id="vl-brSelfHint" class="hint" style="margin:0"></span>
+      </div>
+      <pre id="vl-brText" class="hidden" style="white-space:pre-wrap;background:var(--bg,#f6f6f4);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13px;margin-top:8px"></pre>
+      <div id="vl-brDir" class="hidden" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+        <div style="font-weight:700">발송 관리 (디렉터)</div>
+        <div id="vl-brStatus" class="hint" style="margin-top:4px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <select id="vl-brUser"><option value="">사원 선택…</option></select>
+          <button class="btn sm" type="button" id="vl-brSend">📲 지금 발송 (테스트)</button>
+          <span class="hint" style="margin:0">수신번호는 사용자·권한 화면의 WhatsApp 번호로 설정</span>
+        </div>
+        <div id="vl-brSends" style="margin-top:8px"></div>
+      </div>
+      <div class="msg" id="vl-brMsg"></div>
+    </div>
+
+    <!-- 미등록 방문처 → 고객 등록/연결 -->
+    <div class="card">
+      <h2>👤 미등록 방문처 → 고객 등록/연결</h2>
+      <div class="hint" style="margin-top:0">아래 미등록 방문처를 선택하면 신규 고객으로 등록하거나 이미 등록된 고객에 연결할 수 있습니다. 연결 시 그 방문처의 방문기록 전건이 고객 미팅기록에 소급 연결됩니다.</div>
+      <div id="vl-places"></div>
+      <div id="vl-regForm" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- 방문 리뷰 (검수) -->
+  <div id="viewReview" class="hidden">
+    <div class="card">
+      <h2>📋 방문 리뷰 <span class="hint" style="margin:0">— 날짜별 방문·미팅 요약·펜딩 F/UP 검수. 행을 클릭하면 상세가 열립니다.</span></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:6px">
+        <div><label>시작일</label><input type="date" id="rv-from"></div>
+        <div><label>종료일</label><input type="date" id="rv-to"></div>
+        <div id="rv-userWrap" class="hidden"><label>영업사원</label><select id="rv-user"><option value="">전체</option></select></div>
+        <button class="btn sm" type="button" id="rv-load">조회</button>
+        <span class="hint" style="margin:0" id="rv-count"></span>
+      </div>
+      <div id="rv-table" style="margin-top:10px"><div class="hint">기간을 선택하고 조회를 누르세요.</div></div>
+    </div>
+  </div>
+
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let teams=[], stages=[], curTeam=null, data=null, curCust=null;
+  // 7단계(0~6) 색상 — 고객관리와 100% 동일(연한 배경 + 짙은 글자)
+  const STAGE_PAL=[
+    {bg:'#eceff1',fg:'#5b6b73'},{bg:'#eef4fb',fg:'#2f6db5'},{bg:'#e3effb',fg:'#1f6fc4'},
+    {bg:'#e2f3ef',fg:'#0f7a5f'},{bg:'#fdf3e0',fg:'#9a6512'},{bg:'#fbece1',fg:'#b4561f'},{bg:'#f8dcdc',fg:'#9a1f1f'}];
+  function stageIdx(name){ const m=String(name||'').match(/^(\d+)_/); return m?Math.max(0,Math.min(6,parseInt(m[1],10))):0; }
+  function stageMeta(name){ return STAGE_PAL[stageIdx(name)]; }
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const isDirector=()=> session.user && session.user.role==='director';
+  const fmt=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
+  const nfq=(n)=>Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const moneyMX=(n)=>'MX$'+Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:0});
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token, api:o.api||'', user:o.user||{}}; }
+    }catch(e){}
+    try{
+      const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h);
+        const token=p.get('token'); if(token){ const o={token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+          try{ sessionStorage.setItem('refatrix_session', JSON.stringify(o)); }catch(e){}
+          return o; } }
+    }catch(e){}
+    return null;
+  }
+
+
+  async function applyAccessLock(pageKey){
+    try{
+      const a=await fetch(session.api+'/api/me/access',{headers:auth()}).then(r=>r.json());
+      const lvl=(a.access&&a.access[pageKey])||'edit';
+      if(lvl==='view'){
+        document.body.classList.add('ro');
+        const st=document.createElement('style');
+        st.textContent="body.ro input[type=text]:not(#api):not(#lid),body.ro input[type=number],body.ro input[type=month],body.ro input[type=date],body.ro textarea{pointer-events:none;background:#f2f0ea;color:#999}body.ro .btn.gold,body.ro .btn.danger{display:none!important}body.ro button.btn:not(.ghost):not(#go):not(#reloadBtn):not(#portalBtn){display:none!important}";
+        document.head.appendChild(st);
+        const ban=document.createElement('div');ban.textContent='읽기 전용 — 이 화면은 보기 권한만 있습니다(수정 불가).';
+        ban.style.cssText='background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;margin-top:12px;font-size:13px;font-weight:700';
+        const ap=document.getElementById('app'); if(ap) ap.insertBefore(ban, ap.firstChild);
+      }
+    }catch(e){}
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api};
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');applyAccessLock('pipeline');
+      $('m-date').value=new Date().toISOString().slice(0,10);
+      await loadTeams(); loadPipeline();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadTeams(){
+    try{teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){teams=[];}
+    $('teamPick').innerHTML=`<div class="teambtn ${curTeam==null?'on':''}" onclick="selectTeam(null)">전체</div>`+
+      teams.map(t=>`<div class="teambtn ${curTeam===t.id?'on':''}" onclick="selectTeam(${t.id})">${t.name}</div>`).join('');
+  }
+  function selectTeam(id){curTeam=id;loadTeams();loadPipeline();}
+
+  async function loadPipeline(){
+    $('kanban').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const url=session.api+'/api/pipeline'+(curTeam?('?team_id='+curTeam):'');
+      data=await fetch(url,{headers:auth()}).then(r=>r.json());
+      stages=data.stages||[];
+      renderKanban();renderBottleneck();
+      if(isDirector())loadBoard();
+    }catch(e){$('kanban').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  function dayColor(d){ if(d==null)return '#bbb'; if(d<=7)return 'var(--income)'; if(d<=14)return 'var(--gold)'; return 'var(--expense)'; }
+  function dayPill(d){ if(d==null)return ''; const bg=d<=7?'#e7f3ee':(d<=14?'#fff7e0':'#fbe9e7'); const col=d<=7?'var(--income)':(d<=14?'#9a6512':'var(--expense)'); return `<span class="kc-days" style="background:${bg};color:${col}">${d}일</span>`; }
+  // 일평균 판매수량 포맷: 10 이상은 소수1자리, 미만은 소수2자리(구매주기 비교용)
+  function fmtAvgQty(n){ if(n==null||isNaN(n))return '—'; n=Number(n); const dec=Math.abs(n)>=1?1:2; return n.toLocaleString('es-MX',{maximumFractionDigits:dec}); }
+  // 거래중 카드용: 재주문 주기 + 재주문 수량(첫 주문 제외, 영업일 기준)
+  function activeRateLine(c){
+    const orders=Number(c.orders)||0;
+    if(orders<2 || c.reorder_cycle==null){
+      const q=Number(c.total_qty)||0;
+      return `<div class="kc-rate-na">재주문 없음${q>0?` · 첫 구매 ${q.toLocaleString('es-MX')}개`:''}</div>`;
+    }
+    return `<div class="kc-rate">재주문 <b>${fmtAvgQty(c.reorder_cycle)}</b>영업일마다 <b>${fmtAvgQty(c.reorder_qty)}</b>개 <span class="mut">· 주문 ${orders}회 · 누적 ${(Number(c.total_qty)||0).toLocaleString('es-MX')}개</span></div>`;
+  }
+
+  function renderKanban(){
+    const pipe=data.pipeline||[];
+    const bottleId=data.bottleneck?String(data.bottleneck.stage_id):null;
+    const byStage={}; (data.customers||[]).forEach(c=>{(byStage[c.stage_id] ||= []).push(c);});
+    $('kanban').innerHTML='<div class="kanban">'+pipe.map(s=>{
+      const isB=String(s.stage_id)===bottleId;
+      const cs=(byStage[s.stage_id]||[]).slice().sort((a,b)=>(b.days_in_stage||0)-(a.days_in_stage||0));
+      const meta=stageMeta(s.name);
+      const isActive=/거래중/.test(String(s.name||''));  // 거래중 단계 카드에만 구매(인보이스) 횟수 뱃지 노출
+      return `<div class="kcol ${isB?'bottle':''}">
+        <div class="khead" style="background:${meta.bg}"><div class="kname" style="color:${meta.fg}">${s.name.replace(/^\d+_/,'')}${isB?' ⚠':''}</div><div class="kcount" style="color:${meta.fg}">${s.count}</div></div>
+        <div class="kbody">${cs.map(c=>`<div class="kcard" style="--c:${dayColor(c.days_in_stage)}" onclick="openMeet(${c.id})">
+          <div class="kc-top"><span class="kc-name">${c.name}${c.open_directives>0?`<span class="dirbadge">지시 ${c.open_directives}</span>`:''}</span><span class="kc-right">${dayPill(c.days_in_stage)}${isActive?`<span class="kc-inv${(Number(c.invoice_count)||0)===0?' zero':''}" title="최초 거래 이후 현재까지 발행된 인보이스(구매) 총 ${Number(c.invoice_count)||0}회"><span class="lbl">구매</span> ${Number(c.invoice_count)||0}</span>`:''}</span></div>
+          <div class="kc-meta">진입 ${c.stage_since?c.stage_since.slice(5):'—'} · ${c.days_in_stage==null?'—':c.days_in_stage+'일 경과'}${c.last_meeting?' · 미팅 '+c.last_meeting.slice(5):''}</div>
+          ${isActive?activeRateLine(c):''}
+        </div>`).join('')||'<div class="hint" style="margin:4px 0 0;text-align:center">—</div>'}</div>
+      </div>`;
+    }).join('')+'</div>';
+  }
+
+  function renderBottleneck(){
+    const b=data.bottleneck;
+    if(!b){$('bottleneck').innerHTML='';return;}
+    $('bottleneck').innerHTML=`<div class="bottlecard"><b>현재 병목 단계: ${b.name}</b> — 고객 ${b.count}명이 평균 ${b.avg_days}일 머물러 있습니다. 이 단계에서 다음으로 넘기는 것이 지금 가장 개선이 필요한 지점입니다. 빨간 경과일 카드를 우선 미팅·지시 대상으로 잡으세요.</div>`;
+  }
+
+  // 디렉터 지시 현황판
+  async function loadBoard(){
+    $('boardCard').classList.remove('hidden');
+    try{
+      const d=await fetch(session.api+'/api/directives/board',{headers:auth()}).then(r=>r.json());
+      const c=d.counts||{};
+      $('boardCounts').innerHTML=`<div style="display:flex;gap:10px;margin-bottom:8px"><span class="pill st-open">미읽음 ${c.open||0}</span><span class="pill st-read">읽음·진행 ${c.read||0}</span><span class="pill st-done">완료 ${c.done||0}</span></div>`;
+      const items=d.items||[];
+      if(!items.length){$('board').innerHTML='<div class="hint">작성한 지시가 없습니다.</div>';return;}
+      $('board').innerHTML='<table><thead><tr><th>고객</th><th>지시 내용</th><th>상태</th><th>읽음</th><th>완료</th></tr></thead><tbody>'+
+        items.map(x=>`<tr>
+          <td><b>${x.customer_name}</b> <span class="hint" style="margin:0">${x.code} · ${x.team_name||''}</span><br><span class="hint" style="margin:0">작성 ${x.created_at}</span></td>
+          <td style="max-width:280px;white-space:normal">${x.note}${x.done_note?`<br><span class="hint" style="margin:0">완료메모: ${x.done_note}</span>`:''}</td>
+          <td><span class="pill st-${x.status}">${ {open:'미읽음',read:'읽음·진행',done:'완료'}[x.status] }</span></td>
+          <td class="hint" style="margin:0">${x.read_at?`${x.read_at}<br>${x.read_name||''}`:'—'}</td>
+          <td class="hint" style="margin:0">${x.done_at?`${x.done_at}<br>${x.done_name||''}`:'—'}</td>
+        </tr>`).join('')+'</tbody></table>';
+    }catch(e){$('board').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function openMeet(custId){
+    const c=(data.customers||[]).find(x=>x.id===custId);curCust=c||{id:custId};
+    $('meetCard').classList.remove('hidden');
+    $('meetTitle').textContent=`미팅 기록 — ${curCust.name||''} (${curCust.code||''}) · 현재 ${curCust.stage_name||'미지정'}`;
+    $('m-custname').textContent=curCust.name?(curCust.name+(curCust.code?(' ('+curCust.code+')'):'')):'';
+    $('m-note').value='';$('m-advance').checked=false;$('m-msg').style.display='none';
+    $('m-stage').innerHTML=stages.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+    $('m-stage').disabled=true;
+    if(curCust.stage_id)$('m-stage').value=curCust.stage_id;
+    if($('meetCard').scrollIntoView)$('meetCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+    loadSalesSummary(custId);
+    loadHistory(custId);
+    loadDirectives(custId);
+  }
+
+  // 지시: 디렉터는 작성 폼, 모두 목록 + 읽음/완료 버튼
+  async function loadDirectives(custId){
+    if(isDirector()){
+      $('dirCompose').innerHTML=`<div style="display:flex;gap:8px;margin-top:6px"><textarea id="d-note" rows="2" style="flex:1" placeholder="이 고객에 대한 지시·피드백을 적으세요"></textarea><button class="btn sm" id="d-send" style="align-self:flex-end">지시 보내기</button></div>`;
+      $('d-send').onclick=()=>sendDirective(custId);
+    } else $('dirCompose').innerHTML='';
+    $('dirList').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/directives?customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){$('dirList').innerHTML='<div class="hint">지시가 없습니다.</div>';return;}
+      $('dirList').innerHTML=items.map(x=>{
+        const stLabel={open:'미읽음',read:'읽음·진행',done:'완료'}[x.status];
+        let actions='';
+        if(!isDirector()){
+          if(x.status==='open')actions=`<button class="btn sm" onclick="readDirective(${x.id})">읽음 확인</button> <button class="btn ghost sm" onclick="doneDirective(${x.id})">완료</button>`;
+          else if(x.status==='read')actions=`<button class="btn gold sm" onclick="doneDirective(${x.id})">F/UP 완료</button>`;
+        }
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="pill st-${x.status}">${stLabel}</span><span class="hint" style="margin:0">${x.by_name||''} · ${x.created_at}</span></div>
+          <div style="margin-top:6px">${x.note}</div>
+          <div class="hint" style="margin-top:6px">${x.read_at?`읽음 ${x.read_at} (${x.read_name||''})`:'아직 안 읽음'}${x.done_at?` · 완료 ${x.done_at} (${x.done_name||''})`:''}${x.done_note?`<br>완료메모: ${x.done_note}`:''}</div>
+          ${actions?`<div style="margin-top:8px">${actions}</div>`:''}
+        </div>`;
+      }).join('');
+    }catch(e){$('dirList').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function sendDirective(custId){
+    const note=$('d-note').value.trim();if(!note){alert('지시 내용을 입력하세요.');return;}
+    try{
+      const res=await fetch(session.api+'/api/directives',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({customer_id:custId,note})});
+      const d=await res.json();
+      if(!res.ok||d.error){alert('실패: '+(d.error||res.status));return;}
+      $('d-note').value='';loadDirectives(custId);loadPipeline();
+    }catch(e){alert('서버 연결 실패');}
+  }
+  async function readDirective(id){
+    try{await fetch(session.api+'/api/directives/'+id+'/read',{method:'POST',headers:auth()});loadDirectives(curCust.id);loadPipeline();}catch(e){alert('실패');}
+  }
+  async function doneDirective(id){
+    const note=prompt('F/UP 완료 메모(선택):')||null;
+    try{await fetch(session.api+'/api/directives/'+id+'/done',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done_note:note})});loadDirectives(curCust.id);loadPipeline();}catch(e){alert('실패');}
+  }
+  async function loadSalesSummary(custId){
+    $('m-sales').innerHTML='<div class="hint" style="margin-top:4px">매출 요약 불러오는 중…</div>';
+    try{
+      const s=await fetch(session.api+'/api/meetings/sales-summary?customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      if(!s||s.error){ $('m-sales').innerHTML=''; return; }
+      if(!s.inv_count){ $('m-sales').innerHTML='<div class="hint" style="margin-top:4px">아직 확정된 매출이 없습니다.</div>'; return; }
+      const cell=(k,v,sm)=>`<div class="mcell"><div class="mk">${k}</div><div class="mv${sm?' sm':''}">${v}</div></div>`;
+      $('m-sales').innerHTML='<div style="font-weight:700;margin-top:6px;color:var(--brand)">매출 요약 (누적)</div>'
+        +'<div class="msum">'
+        + cell('누적 SKU 수', nfq(s.sku)+'종')
+        + cell('총 수량', nfq(s.qty))
+        + cell('총 구매액 (IVA 포함)', moneyMX(s.amount_total))
+        + cell('첫 거래일', s.first_trade||'—', true)
+        + cell('인보이스 수', fmt(s.inv_count)+'건')
+        + cell('오픈 인보이스', fmt(s.open_count)+'건')
+        + cell('오픈 금액', s.open_amount==null?'—':moneyMX(s.open_amount))
+        + cell('누적 수금액', s.collected==null?'—':moneyMX(s.collected))
+        +'</div>';
+    }catch(e){ $('m-sales').innerHTML=''; }
+  }
+  async function loadHistory(custId){
+    $('m-history').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/meetings?customer_id='+custId,{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){$('m-history').innerHTML='<div class="hint">미팅 이력이 없습니다.</div>';return;}
+      $('m-history').innerHTML='<table><thead><tr><th>일자</th><th>내용</th><th>단계 변화</th><th>작성</th></tr></thead><tbody>'+
+        items.map(m=>`<tr><td>${m.meeting_date}</td><td>${m.note||'—'}</td>
+          <td>${m.advanced?`${m.stage_before||'—'} → <b>${m.stage_after||'—'}</b>`:'<span class="hint" style="margin:0">유지</span>'}</td>
+          <td>${m.by_name||'—'}</td></tr>`).join('')+'</tbody></table>';
+    }catch(e){$('m-history').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  async function saveMeet(){
+    const m=$('m-msg');m.className='msg';m.style.display='none';
+    const advance=$('m-advance').checked;
+    const body={customer_id:curCust.id,meeting_date:$('m-date').value,note:$('m-note').value.trim()||null,
+      advance,new_stage_id:advance?Number($('m-stage').value):null};
+    if(!body.meeting_date){m.className='msg err';m.style.display='block';m.textContent='미팅 일자를 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/meetings',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='저장 실패: '+(d.error==='forbidden_team'?'이 팀의 고객을 편집할 권한이 없습니다.':(d.error||res.status));return;}
+      m.className='msg ok';m.style.display='block';m.textContent=d.advanced?'미팅 저장 + 단계가 진전되었습니다.':'미팅을 저장했습니다.';
+      loadHistory(curCust.id);loadPipeline();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('m-advance').addEventListener('change',e=>{$('m-stage').disabled=!e.target.checked;});
+  $('m-save').addEventListener('click',saveMeet);
+  $('meetClose').addEventListener('click',()=>$('meetCard').classList.add('hidden'));
+
+  // ===== 방문·동선 모듈 (build 20260715v-visitlog) =====
+  var vlMxToday = new Date().toISOString().slice(0,10);
+  let vlInited=false, vlGeo=null, vlPhotos=[], vlSel=new Set();
+  var vlMap=null, vlLayer=null, vlMarkerCount=0, vlPolyCount=0;
+  const VL_PAL=['#0F6E56','#2563EB','#B23A2E','#6D28D9','#0E7490','#C2410C']; // 오늘·어제·그저께·보라·청록·주황
+  function vlDaysAgo(d){ const a=String(vlMxToday).split('-').map(Number), b=String(d).split('-').map(Number);
+    return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(b[0],b[1]-1,b[2]))/86400000); }
+  function vlColor(d){ let k=vlDaysAgo(d)%6; if(k<0)k=(k+6)%6; return VL_PAL[k]; }
+  function vlMMDD(d){ const p=String(d).split('-'); return p[1]+'/'+p[2]; }
+  function vlDayLabel(d){ const a=vlDaysAgo(d), md=vlMMDD(d);
+    if(a===0)return '오늘 '+md; if(a===1)return '어제 '+md; if(a===2)return '그저께 '+md; return md; }
+  const vlEsc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  function vlUserQ(){ const el=$('vl-userFilter'); const v=el?el.value:''; return (isDirector()&&v)?('&user_id='+encodeURIComponent(v)):''; }
+
+  // 뷰탭 전환 (단계관리 / 방문·동선 / 방문 리뷰)
+  function showView(which){
+    const views={pipe:'viewPipe',visit:'viewVisit',review:'viewReview'};
+    const tabs={pipe:'vt-pipe',visit:'vt-visit',review:'vt-review'};
+    Object.keys(views).forEach(k=>{ $(views[k]).classList.toggle('hidden',k!==which); const t=$(tabs[k]); if(t)t.classList.toggle('on',k===which); });
+    if(which==='visit') vlInit();
+    if(which==='review') rvInit();
+  }
+
+  async function vlInit(){
+    if(vlInited)return; vlInited=true;
+    if(isDirector()){ $('vlUserCard').style.display='block'; try{
+      const u=(await fetch(session.api+'/api/pipeline/salespeople',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[];
+      $('vl-userFilter').innerHTML='<option value="">전체</option>'+u.map(x=>`<option value="${x.id}">${vlEsc(x.name)}</option>`).join('');
+    }catch(e){} $('vl-userFilter').onchange=()=>{ vlSel.clear(); vlLoadDates(); vlLoadPendings(); vlLoadPlaces(); }; }
+    vlRequestGeo();
+    vlLoadCustOptions();
+    vlAddPendRow();
+    await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
+    vlBrLoadDir();
+  }
+
+  function vlRequestGeo(){
+    const g=$('vl-geo');
+    if(!navigator.geolocation){ g.className='vl-geoBox err'; g.textContent='이 브라우저는 위치를 지원하지 않습니다.'; return; }
+    g.className='vl-geoBox'; g.textContent='위치 확인 중… (권한 허용을 눌러주세요)';
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{ vlGeo={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy,at:Date.now()};
+        const t=new Date().toTimeString().slice(0,5);
+        g.className='vl-geoBox'; g.innerHTML='<b>현재 위치 확보됨</b> · '+vlGeo.lat.toFixed(4)+', '+vlGeo.lng.toFixed(4)+' · 정확도 ±'+Math.round(vlGeo.acc||0)+'m · '+t; },
+      (err)=>{ vlGeo=null; g.className='vl-geoBox err'; g.innerHTML='<b>위치 권한 필요</b> — 방문 저장은 위치가 있어야 합니다. 브라우저/설정에서 위치를 허용해 주세요.'; },
+      {enableHighAccuracy:true,timeout:12000,maximumAge:10000});
+  }
+
+  // ★ 체크인 저장 시마다 새 위치를 강제 확보(캐시 미사용) — 동일 좌표 중복 저장 방지 (b20260716a)
+  function vlFreshGeo(){
+    return new Promise((res,rej)=>{
+      if(!navigator.geolocation) return rej(new Error('unsupported'));
+      navigator.geolocation.getCurrentPosition(
+        (pos)=>{ vlGeo={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:pos.coords.accuracy,at:Date.now()};
+          const g=$('vl-geo'); if(g){ const t=new Date().toTimeString().slice(0,5);
+            g.className='vl-geoBox'; g.innerHTML='<b>현재 위치 확보됨</b> · '+vlGeo.lat.toFixed(4)+', '+vlGeo.lng.toFixed(4)+' · 정확도 ±'+Math.round(vlGeo.acc||0)+'m · '+t; }
+          res(vlGeo); },
+        (err)=>rej(err),
+        {enableHighAccuracy:true,timeout:15000,maximumAge:0});
+    });
+  }
+
+  async function vlLoadCustOptions(){
+    try{ const d=await fetch(session.api+'/api/visits/customer-options',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      $('vl-cust').innerHTML='<option value="">고객 검색·선택…</option>'+items.map(c=>`<option value="${c.id}">${vlEsc(c.name)}${c.stage_name?(' ('+vlEsc(c.stage_name)+')'):''}</option>`).join('');
+    }catch(e){}
+  }
+
+  function vlSegment(mode){
+    const isNew=mode==='new';
+    $('vl-segNew').classList.toggle('on',isNew); $('vl-segCust').classList.toggle('on',!isNew);
+    $('vl-rowNew').classList.toggle('hidden',!isNew); $('vl-rowCust').classList.toggle('hidden',isNew);
+  }
+
+  function vlAddPendRow(content,due){
+    const row=document.createElement('div'); row.className='vl-pendrow';
+    row.innerHTML=`<input type="text" placeholder="후속조치 내용" value="${vlEsc(content||'')}"><input type="date" value="${due||''}"><button type="button" class="del">✕</button>`;
+    row.querySelector('.del').onclick=()=>row.remove();
+    $('vl-pends').appendChild(row);
+  }
+
+  // 사진: 1600px JPEG 압축
+  function vlCompress(file){
+    return new Promise((res)=>{ const fr=new FileReader();
+      fr.onload=()=>{ const img=new Image(); img.onload=()=>{
+        const max=1600; let w=img.width,h=img.height;
+        if(w>max||h>max){ if(w>=h){h=Math.round(h*max/w);w=max;} else {w=Math.round(w*max/h);h=max;} }
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        try{ cv.getContext('2d').drawImage(img,0,0,w,h); res(cv.toDataURL('image/jpeg',0.82)); }
+        catch(e){ res(fr.result); } };
+        img.onerror=()=>res(fr.result); img.src=fr.result; };
+      fr.onerror=()=>res(null); fr.readAsDataURL(file); });
+  }
+  async function vlOnPhoto(e){
+    const kind=$('vl-photoKind').value; const files=[...(e.target.files||[])];
+    for(const f of files){ if(vlPhotos.length>=10){ alert('사진은 방문당 최대 10장입니다.'); break; }
+      const durl=await vlCompress(f); if(durl) vlPhotos.push({kind,file_name:f.name,mime:'image/jpeg',size_bytes:durl.length,data_url:durl}); }
+    e.target.value=''; vlRenderThumbs();
+  }
+  function vlRenderThumbs(){
+    const KD={card:'명함',store:'가게',other:'기타'};
+    $('vl-thumbs').innerHTML=vlPhotos.map((p,i)=>`<div class="th"><img src="${p.data_url}"><button type="button" class="x" data-i="${i}">✕</button><div class="kd">${KD[p.kind]||'기타'}</div></div>`).join('');
+    $('vl-thumbs').querySelectorAll('.x').forEach(b=>b.onclick=()=>{ vlPhotos.splice(Number(b.dataset.i),1); vlRenderThumbs(); });
+  }
+
+  async function vlSave(){
+    const m=$('vl-msg'); m.className='msg'; m.style.display='none';
+    if(!navigator.geolocation){ m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 위치를 지원하지 않습니다.'; return; }
+    const isNew=$('vl-segNew').classList.contains('on');
+    const body={ geo_lat:null, geo_lng:null, geo_accuracy:null,
+      met_person:$('vl-who').value.trim()||null, talk_note:$('vl-talk').value.trim()||null, insight_note:null,
+      contact_phone:$('vl-phone').value.trim()||null, contact_email:$('vl-email').value.trim()||null,
+      pendings:[], photos:vlPhotos };
+    if(isNew){ const pn=$('vl-place').value.trim(); if(!pn){ m.className='msg err'; m.style.display='block'; m.textContent='방문처 이름을 입력하세요.'; return; } body.place_name=pn; }
+    else { const cid=$('vl-cust').value; if(!cid){ m.className='msg err'; m.style.display='block'; m.textContent='고객을 선택하세요.'; return; } body.customer_id=Number(cid); }
+    $('vl-pends').querySelectorAll('.vl-pendrow').forEach(r=>{ const c=r.querySelector('input[type=text]').value.trim(); const d=r.querySelector('input[type=date]').value||null; if(c)body.pendings.push({content:c,due_date:d}); });
+    const btn=$('vl-save'); btn.disabled=true; btn.textContent='현재 위치 확인 중…';
+    let usedPrev=false;
+    try{
+      try{
+        const fix=await vlFreshGeo();
+        body.geo_lat=fix.lat; body.geo_lng=fix.lng; body.geo_accuracy=fix.acc;
+      }catch(ge){
+        if(vlGeo && vlGeo.at && (Date.now()-vlGeo.at)<120000){
+          body.geo_lat=vlGeo.lat; body.geo_lng=vlGeo.lng; body.geo_accuracy=vlGeo.acc; usedPrev=true;
+        }else{
+          m.className='msg err'; m.style.display='block';
+          m.textContent='현재 위치를 가져오지 못했습니다 — GPS를 켜고 위치 권한을 허용한 뒤 다시 시도하세요.';
+          return;
+        }
+      }
+      btn.textContent='저장 중…';
+      const res=await fetch(session.api+'/api/visits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+(d.error==='forbidden_team'?'이 고객을 편집할 권한이 없습니다.':(d.error==='location_required'?'위치가 필요합니다.':(d.error||res.status))); return; }
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='✔ 방문 저장됨'+(d.meeting_saved?' · 고객 미팅기록에도 보존됨':'')+(body.pendings.length?(' · 펜딩 '+body.pendings.length+'건'):'')+(d.photo_ok?(' · 사진 '+d.photo_ok+'장'+(d.photo_fail?(' (실패 '+d.photo_fail+')'):'')):'')+(usedPrev?' · ⚠ 새 위치 확보 실패로 2분 내 직전 위치 사용':'');
+      $('vl-who').value='';$('vl-talk').value='';$('vl-place').value='';$('vl-cust').value='';
+      $('vl-phone').value='';$('vl-email').value='';
+      $('vl-pends').innerHTML=''; vlAddPendRow(); vlPhotos=[]; vlRenderThumbs();
+      vlSel.clear(); await vlLoadDates(); vlLoadPendings(); vlLoadPlaces();
+      vlRequestGeo();
+      if(d.id) vlShowRec(d.id, d.place_name||body.place_name||'');   // 저장 직후 상담 녹음 패널 오픈
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; btn.textContent='방문 저장 (체크인)'; }
+  }
+
+  // 날짜 칩 + 동선
+  async function vlLoadDates(){
+    try{
+      const d=await fetch(session.api+'/api/visits/dates?x=1'+vlUserQ(),{headers:auth()}).then(r=>r.json());
+      vlMxToday=d.mx_today||vlMxToday;
+      const items=d.items||[];
+      if(!items.some(x=>x.d===vlMxToday)) items.unshift({d:vlMxToday,cnt:0});
+      if(!vlSel.size) vlSel.add(vlMxToday);
+      const box=$('vl-chips'); box.innerHTML='';
+      items.forEach(x=>{ const on=vlSel.has(x.d), col=vlColor(x.d);
+        const b=document.createElement('button'); b.type='button'; b.className='vl-chip'+(on?' on':'');
+        b.style.borderColor=col; if(on)b.style.background=col;
+        b.textContent=vlDayLabel(x.d)+(x.cnt?(' · '+x.cnt):'');
+        b.onclick=()=>{ if(vlSel.has(x.d))vlSel.delete(x.d); else vlSel.add(x.d); vlLoadDates(); };
+        box.appendChild(b); });
+      vlLoadVisits();
+    }catch(e){}
+  }
+
+  function vlEnsureMap(){
+    if(typeof L==='undefined') return null;
+    if(!vlMap){ vlMap=L.map('vl-map').setView([25.6714,-100.3095],11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(vlMap); }
+    if(vlLayer){ vlLayer.remove(); } vlLayer=L.layerGroup().addTo(vlMap); return vlLayer;
+  }
+
+  async function vlLoadVisits(){
+    const dates=[...vlSel]; if(!dates.length){ $('vl-list').innerHTML='<div class="hint">날짜를 선택하세요.</div>'; return; }
+    try{
+      const d=await fetch(session.api+'/api/visits?dates='+encodeURIComponent(dates.join(','))+vlUserQ(),{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      // 지도
+      vlMarkerCount=0; vlPolyCount=0;
+      const layer=vlEnsureMap();
+      const byDate={}; items.forEach(v=>{ (byDate[v.visit_date]||=[]).push(v); });
+      const pts=[];
+      Object.keys(byDate).forEach(dt=>{ const col=vlColor(dt); const line=[];
+        byDate[dt].forEach((v,i)=>{ const ll=[v.geo_lat,v.geo_lng]; line.push(ll); pts.push(ll);
+          if(layer){ const mk=L.circleMarker(ll,{radius:11,color:'#fff',weight:2,fillColor:col,fillOpacity:1});
+            mk.bindTooltip(String(i+1),{permanent:true,direction:'center',className:'vl-seq-tt'});
+            mk.bindPopup('<b>'+vlEsc(v.place_name)+'</b><br>'+vlDayLabel(dt)+' · 순번 '+(i+1)); mk.addTo(layer); }
+          vlMarkerCount++; });
+        if(layer && line.length>=2){ L.polyline(line,{color:col,weight:3,opacity:.8}).addTo(layer); }
+        if(line.length>=2) vlPolyCount++; });
+      if(vlMap && pts.length){ try{ vlMap.fitBounds(pts,{padding:[30,30],maxZoom:14}); }catch(e){} }
+      // 리스트
+      const KD={card:'명함',store:'가게',other:'기타'};
+      $('vl-list').innerHTML=items.map(v=>{ const col=vlColor(v.visit_date); const ex=v.customer_id!=null;
+        const idx=(byDate[v.visit_date]||[]).indexOf(v)+1;
+        const pend=(v.pendings||[]).map(p=>'· '+vlEsc(p.content)+(p.due_date?(' ('+p.due_date+')'):'')+(p.done?' ✔':'')).join('<br>');
+        return `<div class="vl-visit" data-id="${v.id}">
+          <div class="vh"><span class="seq" style="background:${col}">${idx}</span>
+            <b>${vlEsc(v.place_name)}</b>
+            <span class="tag ${ex?'ex':'nw'}">${ex?'기존고객':'신규 방문처'}</span>
+            <span class="hint" style="margin:0">${vlDayLabel(v.visit_date)}${v.by_name?(' · '+vlEsc(v.by_name)):''}</span>
+            ${v.photo_cnt?`<button type="button" class="btn ghost sm vl-ph" data-id="${v.id}">📷 명함/사진 ${v.photo_cnt}</button>`:''}
+            ${v.rec_cnt?`<span class="hint" style="margin:0">🎙 ${v.rec_cnt}${v.last_rec_status==='done'?' ✅':(v.last_rec_status==='failed'?' ❌':' ⏳')}</span>`:''}
+            ${(isDirector()||(session.user&&Number(session.user.id)===Number(v.created_by)))?`<button type="button" class="btn ghost sm vl-rec" data-id="${v.id}" data-p="${vlEsc(v.place_name)}">🎙 녹음/요약</button>`:''}
+          </div>
+          <div class="body">
+            ${v.met_person?('만남: '+vlEsc(v.met_person)+'<br>'):''}
+            ${(v.contact_phone||v.contact_email)?('연락처: '+[v.contact_phone?('<a href="tel:'+vlEsc(v.contact_phone)+'">📞 '+vlEsc(v.contact_phone)+'</a>'):null,v.contact_email?('<a href="mailto:'+vlEsc(v.contact_email)+'">✉ '+vlEsc(v.contact_email)+'</a>'):null].filter(Boolean).join(' · ')+'<br>'):''}
+            ${v.talk_note?('대화: '+vlEsc(v.talk_note)+'<br>'):''}
+            ${v.insight_note?('새로배운/파악: '+vlEsc(v.insight_note)+'<br>'):''}
+            ${pend?('<div style="margin-top:6px"><b>펜딩</b><br>'+pend+'</div>'):''}
+            <div class="vl-phbox" id="vl-phbox-${v.id}"></div>
+            <div style="margin-top:8px"><button type="button" class="btn ghost sm vl-del" data-id="${v.id}">방문 삭제</button></div>
+          </div></div>`;
+      }).join('')||'<div class="hint">선택한 날짜에 방문이 없습니다.</div>';
+      $('vl-list').querySelectorAll('.vl-visit').forEach(el=>{ el.onclick=(e)=>{ if(e.target.closest('button'))return; el.classList.toggle('open'); }; });
+      $('vl-list').querySelectorAll('.vl-del').forEach(b=>b.onclick=()=>vlDelete(Number(b.dataset.id)));
+      $('vl-list').querySelectorAll('.vl-ph').forEach(b=>b.onclick=()=>vlLoadPhotos(Number(b.dataset.id)));
+      $('vl-list').querySelectorAll('.vl-rec').forEach(b=>b.onclick=()=>vlShowRec(Number(b.dataset.id),b.dataset.p));
+    }catch(e){ $('vl-list').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  // ===== 상담 녹음 · AI 요약 (build vr-20260819ko1 · 요약 한국어 토글) =====
+  //  화면 꺼짐/앱 전환에도 녹음 유지: ① Wake Lock(화면 자동꺼짐 방지)
+  //  ② 1초 단위 청크 수집(끊겨도 그때까지 보존) ③ 중단 감지 → 자동 이어녹음(구간 분할)
+  //  ⏹ 종료 버튼을 누르기 전까지는 녹음 상태를 유지한다.
+  let vlRecVisit=null;            // {id, place}
+  let vlRecMode='memo';
+  let vlRec=null, vlRecBlob=null, vlRecMime='', vlRecSec=0, vlRecTimerIv=null, vlRecPollIv=null;
+  let vlRecSegs=[];               // 완료된 구간 Blob 목록(중단 시 자동 분할)
+  let vlRecStream=null;           // 현재 마이크 스트림
+  let vlRecActive=false;          // 시작~종료버튼 사이 true (녹음 의도)
+  let vlRecUserStop=false;        // 사용자가 ⏹ 종료를 눌렀는가
+  let vlRecResuming=false;        // 자동 이어녹음 재시도 중 가드
+  let vlWakeLock=null;            // Screen Wake Lock
+
+  async function vlWakeAcquire(){
+    try{
+      if(navigator.wakeLock&&navigator.wakeLock.request&&document.visibilityState!=='hidden'){
+        const wl=await navigator.wakeLock.request('screen');
+        vlWakeLock=wl;
+        try{ wl.addEventListener('release',()=>{ if(vlWakeLock===wl) vlWakeLock=null;
+          if(vlRecActive&&document.visibilityState==='visible') vlWakeAcquire(); }); }catch(e){}
+      }
+    }catch(e){ vlWakeLock=null; }
+  }
+  function vlWakeRelease(){ try{ if(vlWakeLock) vlWakeLock.release(); }catch(e){} vlWakeLock=null; }
+
+  function vlRecFmt(s){ s=Math.max(0,Math.round(s)); const m=Math.floor(s/60), ss=s%60; return String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
+  function vlRecPickMime(){
+    if(typeof MediaRecorder==='undefined') return null;
+    const cands=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];
+    for(const c of cands){ try{ if(MediaRecorder.isTypeSupported(c)) return c; }catch(e){} }
+    return '';                     // 브라우저 기본
+  }
+  function vlRecSetMode(m){ vlRecMode=m;
+    $('vl-recModeMemo').classList.toggle('on',m==='memo'); $('vl-recModeFull').classList.toggle('on',m==='full'); }
+
+  function vlShowRec(visitId,place){
+    if(vlRecActive&&vlRecVisit&&Number(vlRecVisit.id)!==Number(visitId)){
+      if(!confirm('다른 방문의 녹음이 진행 중입니다. 지금 녹음을 버리고 이동할까요?')) return;
+    }
+    vlRecVisit={id:visitId,place:place||''};
+    const card=$('vl-recCard'); card.classList.remove('hidden');
+    $('vl-recTarget').textContent='— '+(place||('방문 #'+visitId));
+    vlRecReset(); vlLoadRecs(true);
+    try{ card.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+  }
+  function vlRecReset(){
+    if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
+    vlRecActive=false; vlRecUserStop=false; vlRecResuming=false; vlWakeRelease();
+    try{ if(vlRec&&vlRec.state!=='inactive') vlRec.stop(); }catch(e){}
+    try{ if(vlRecStream) vlRecStream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} }); }catch(e){}
+    vlRec=null; vlRecStream=null; vlRecSegs=[]; vlRecBlob=null; vlRecSec=0;
+    $('vl-recTimer').textContent=''; $('vl-recReady').classList.add('hidden');
+    $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
+    $('vl-recPause').textContent='⏸ 일시정지';
+    const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+  }
+  // 마이크 열고 레코더 1구간 시작(시작·자동 이어녹음 공용). 실패 시 throw.
+  async function vlRecOpenRecorder(){
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,noiseSuppression:true,echoCancellation:true}});
+    if(!vlRecMime) vlRecMime=vlRecPickMime()||'';
+    const opt=vlRecMime?{mimeType:vlRecMime,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000};
+    const rec=new MediaRecorder(stream,opt);
+    rec._chunks=[]; rec._done=false;
+    rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) rec._chunks.push(e.data); };
+    const close=()=>{ if(rec._done) return; rec._done=true; vlRecSegClose(rec,stream); };
+    rec._close=close;
+    rec.onstop=close;
+    rec.onerror=()=>{ try{ if(rec.state!=='inactive'){ rec.stop(); return; } }catch(e){} close(); };
+    // 마이크 트랙이 죽으면(권한 회수·OS 중단 등) 구간을 닫고 자동 이어녹음
+    try{
+      const trs=(stream.getAudioTracks?stream.getAudioTracks():stream.getTracks())||[];
+      if(trs[0]) trs[0].onended=()=>{ try{ if(rec.state!=='inactive'){ rec.stop(); return; } }catch(e){} close(); };
+    }catch(e){}
+    rec.start(1000);                 // 1초 청크 — 끊겨도 그때까지 데이터 보존
+    vlRec=rec; vlRecStream=stream;
+    return rec;
+  }
+  // 구간 종료 처리: 청크 → Blob 보관 후, 사용자 종료면 마무리 / 아니면 자동 이어녹음
+  function vlRecSegClose(rec,stream){
+    try{ if(stream) stream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} }); }catch(e){}
+    if(rec!==vlRec) return;          // 이미 다음 구간으로 넘어감
+    vlRec=null; vlRecStream=null;
+    if(rec._chunks&&rec._chunks.length){
+      vlRecSegs.push(new Blob(rec._chunks,{type:vlRecMime||(rec._chunks[0]&&rec._chunks[0].type)||'audio/webm'}));
+      rec._chunks=null;
+    }
+    if(vlRecUserStop||!vlRecActive) vlRecFinish(false);
+    else vlRecAutoResume();
+  }
+  // 예기치 못한 중단(절전·앱 전환·마이크 회수) → 새 구간으로 자동 이어녹음
+  async function vlRecAutoResume(){
+    if(vlRecResuming||!vlRecActive) return;
+    vlRecResuming=true;
+    try{
+      const rec=await vlRecOpenRecorder();
+      if(!vlRecActive){ try{ rec.stop(); }catch(e){ if(rec._close) rec._close(); } return; }  // 재개 대기 중 ⏹ 종료됨
+      vlWakeAcquire();
+      const m=$('vl-recMsg'); m.className='msg'; m.style.display='block';
+      m.textContent='⚠ 녹음이 잠시 끊겨 자동으로 이어서 녹음 중입니다 (구간 '+(vlRecSegs.length+1)+'). 그때까지 내용은 보존됐어요.';
+    }catch(e){
+      // 마이크를 다시 못 얻음 — 지금까지 구간은 보존하고 종료 상태로 전환
+      vlRecActive=false;
+      vlRecFinish(true);
+    }finally{ vlRecResuming=false; }
+  }
+  // 녹음 종료 마무리(정상 종료 또는 재개 실패)
+  function vlRecFinish(interrupted){
+    vlRecActive=false; vlRecUserStop=false; vlWakeRelease();
+    if(vlRecTimerIv){ clearInterval(vlRecTimerIv); vlRecTimerIv=null; }
+    $('vl-recStart').classList.remove('hidden'); $('vl-recPause').classList.add('hidden'); $('vl-recStop').classList.add('hidden');
+    $('vl-recPause').textContent='⏸ 일시정지'; $('vl-recTimer').textContent='';
+    const m=$('vl-recMsg');
+    if(!vlRecSegs.length){
+      vlRecBlob=null; $('vl-recReady').classList.add('hidden');
+      m.className='msg err'; m.style.display='block'; m.textContent='녹음된 내용이 없습니다 — 다시 시도해 주세요.'; return;
+    }
+    vlRecBlob=vlRecSegs.length===1?vlRecSegs[0]:null;   // 1구간이면 기존 단일 업로드 경로
+    const total=vlRecSegs.reduce((s,b)=>s+(b.size||0),0), mb=total/1048576;
+    $('vl-recInfo').textContent='녹음 '+vlRecFmt(vlRecSec)+' · '+mb.toFixed(1)+'MB'
+      +(vlRecSegs.length>1?(' · 구간 '+vlRecSegs.length+'개(끊김 구간 자동 보존)'):'')
+      +(mb>24?' — ⚠ 25MB 초과: 업로드가 거부될 수 있습니다':'');
+    $('vl-recReady').classList.remove('hidden');
+    if(interrupted){ m.className='msg err'; m.style.display='block';
+      m.textContent='⚠ 마이크가 끊겨 이어 녹음하지 못했습니다 — 지금까지 녹음된 내용은 보존되어 바로 업로드할 수 있습니다.'; }
+  }
+  async function vlRecStart(){
+    const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+    if(!vlRecVisit){ m.className='msg err'; m.style.display='block'; m.textContent='먼저 방문을 저장(체크인)하거나 목록에서 🎙 버튼으로 방문을 선택하세요.'; return; }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof MediaRecorder==='undefined'){
+      m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 녹음을 지원하지 않습니다. 폰 녹음앱으로 녹음 후 전사 텍스트를 대화 칸에 붙여넣어 주세요.'; return; }
+    try{
+      vlRecSegs=[]; vlRecBlob=null; vlRecSec=0; vlRecMime='';
+      vlRecUserStop=false; vlRecResuming=false;
+      await vlRecOpenRecorder();
+      vlRecActive=true;
+      vlWakeAcquire();               // 화면 자동 꺼짐 방지(지원 브라우저)
+      if(vlRecTimerIv) clearInterval(vlRecTimerIv);
+      vlRecTimerIv=setInterval(()=>{
+        if(!vlRecActive) return;
+        if(vlRec&&vlRec.state==='recording'){
+          vlRecSec++;
+          $('vl-recTimer').textContent='● '+vlRecFmt(vlRecSec)
+            +(vlRecSegs.length?(' · 구간 '+(vlRecSegs.length+1)):'')
+            +(vlWakeLock?' · 화면꺼짐방지 ON':(vlRecMode==='full'?' (화면을 켜두세요)':''));
+        }else if(vlRec&&vlRec.state==='inactive'){ if(vlRec._close) vlRec._close(); }   // 소리 없이 죽은 레코더 감지
+        else if(!vlRec&&!vlRecResuming){ vlRecAutoResume(); }                            // 구간 사이 공백 감시
+      },1000);
+      $('vl-recStart').classList.add('hidden'); $('vl-recPause').classList.remove('hidden'); $('vl-recStop').classList.remove('hidden');
+      $('vl-recReady').classList.add('hidden');
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='마이크 권한이 필요합니다 — 브라우저 설정에서 마이크를 허용해 주세요.'; }
+  }
+  function vlRecPause(){
+    if(!vlRec)return;
+    if(vlRec.state==='recording'){ vlRec.pause(); $('vl-recPause').textContent='▶ 계속'; }
+    else if(vlRec.state==='paused'){ vlRec.resume(); $('vl-recPause').textContent='⏸ 일시정지'; }
+  }
+  function vlRecStop(){
+    vlRecUserStop=true;
+    if(vlRec&&vlRec.state!=='inactive') vlRec.stop();
+    else if(vlRec&&vlRec._close) vlRec._close();
+    else if(vlRecActive) vlRecFinish(false);         // 구간 사이 공백 중 종료 눌림
+  }
+  // 화면 복귀 시: Wake Lock 재획득 + 죽은 트랙/레코더면 즉시 이어녹음
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState!=='visible'||!vlRecActive) return;
+    if(!vlWakeLock) vlWakeAcquire();
+    setTimeout(()=>{ try{
+      if(!vlRecActive) return;
+      if(vlRec&&vlRec.state==='inactive'){ if(vlRec._close) vlRec._close(); return; }
+      if(!vlRec){ if(!vlRecResuming) vlRecAutoResume(); return; }
+      const trs=vlRecStream&&((vlRecStream.getAudioTracks?vlRecStream.getAudioTracks():vlRecStream.getTracks())||[]);
+      const tr=trs&&trs[0];
+      if(tr&&(tr.readyState==='ended'||tr.muted===true)){ try{ vlRec.stop(); }catch(e){ if(vlRec._close) vlRec._close(); } }
+    }catch(e){} },1200);
+  });
+  // 녹음 중 페이지 이탈(새로고침·탭 닫기) 경고
+  window.addEventListener('beforeunload',(e)=>{
+    if(vlRecActive||(vlRecSegs.length&&!$('vl-recReady').classList.contains('hidden'))){ e.preventDefault(); e.returnValue=''; }
+  });
+  async function vlRecUpload(){
+    const m=$('vl-recMsg'); m.className='msg'; m.style.display='none';
+    if(!vlRecVisit) return;
+    if(!vlRecSegs.length){ if(!vlRecBlob) return; vlRecSegs=[vlRecBlob]; }   // 방어(구버전 경로)
+    const btn=$('vl-recUpload'); btn.disabled=true; btn.textContent='업로드 중…';
+    try{
+      const toDurl=(b)=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(b); });
+      const urls=[]; for(const b of vlRecSegs){ urls.push(await toDurl(b)); }
+      const body=urls.length>1
+        ? {data_urls:urls,mode:vlRecMode,duration_sec:vlRecSec}
+        : {data_url:urls[0],mode:vlRecMode,duration_sec:vlRecSec};
+      const res=await fetch(session.api+'/api/visits/'+vlRecVisit.id+'/recordings',{method:'POST',headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block';
+        m.textContent='업로드 실패: '+(d.error==='too_large'?'파일이 25MB를 넘습니다 — 더 짧게 나눠 녹음하세요.':(d.error==='rec_disabled'?'녹음 기능이 꺼져 있습니다.':(d.error||res.status))); return; }
+      m.className='msg ok'; m.style.display='block';
+      m.textContent='✔ 업로드됨 — 전사·요약 처리 중입니다'+(!d.stt_ready?' · ⚠ OPENAI_API_KEY 미설정(전사 불가)':'')+(!d.ai_ready?' · ⚠ ANTHROPIC_API_KEY 미설정':'');
+      $('vl-recReady').classList.add('hidden'); vlRecBlob=null; vlRecSegs=[];
+      vlLoadRecs(true); vlRecStartPoll();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; btn.textContent='⬆ 업로드 & AI 요약'; }
+  }
+  function vlRecStartPoll(){
+    if(vlRecPollIv) clearInterval(vlRecPollIv);
+    let ticks=0;
+    vlRecPollIv=setInterval(async()=>{ ticks++;
+      const busy=await vlLoadRecs(false);
+      if(!busy||ticks>240){ clearInterval(vlRecPollIv); vlRecPollIv=null;
+        if(!busy){ vlLoadDates(); vlLoadPendings(); } }   // 완료 → 노트·펜딩 갱신 반영
+    },5000);
+  }
+  const VL_REC_ST={queued:'⏳ 대기',transcribing:'🎧 전사 중',summarizing:'🤖 요약 중',done:'✅ 완료',failed:'❌ 실패'};
+  // ── 요약 언어 토글(스페인어 원문 ↔ 🇰🇷 한국어 번역) ──
+  //    번역은 서버가 최초 1회만 Claude 로 만들고 summary_json.ko 에 캐시 → 이후 즉시 표시.
+  const vlRecLang={};          // 녹음 id → 'es' | 'ko'
+  let vlRecItems=[];
+  function vlRecKoBtn(id,lang,cls){
+    return '<button type="button" class="btn ghost sm '+cls+'" data-id="'+id+'" style="margin-left:6px">'
+      +(lang==='ko'?'🇲🇽 원문(스페인어)':'🇰🇷 한국어')+'</button>';
+  }
+  // ko 값이 빈 항목은 원문을 그대로 남긴다(번역 누락 시 정보 소실 방지)
+  function vlKoMerge(es,ko){
+    const o=Object.assign({},es||{}); const k=ko||{};
+    ['resumen','insights','next_step'].forEach(f=>{ if(k[f]) o[f]=k[f]; });
+    if(k.action_items&&k.action_items.length) o.action_items=k.action_items;
+    if(k.products&&k.products.length) o.products=k.products;
+    return o;
+  }
+  function vlRecCardHtml(r){
+    const es=r.summary||{};
+    const hasKo=!!(es.ko&&(es.ko.resumen||es.ko.insights));
+    const lang=(vlRecLang[r.id]==='ko'&&hasKo)?'ko':'es';
+    const s=lang==='ko'?vlKoMerge(es,es.ko):es;
+    const acts=(s.action_items||[]).map(a=>'· '+vlEsc(a.content)+(a.due_date?(' <b>('+a.due_date+')</b>'):'')).join('<br>');
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px">
+      <div><b>${VL_REC_ST[r.status]||vlEsc(r.status)}</b> · ${r.mode==='full'?'상담 전체':'음성 메모'}${r.duration_sec?(' · '+vlRecFmt(r.duration_sec)):''}
+        ${r.status==='failed'?('<span style="color:var(--expense)"> — '+vlEsc(r.error||'오류')+'</span> <button type="button" class="btn ghost sm vl-recRetry" data-id="'+r.id+'">↻ 재시도</button>'):''}
+        ${es.resumen?vlRecKoBtn(r.id,lang,'vl-recKo'):''}</div>
+      ${lang==='ko'?'<div class="hint" style="margin:4px 0 0">🇰🇷 AI 한국어 번역본 — 원문은 [🇲🇽 원문(스페인어)]</div>':''}
+      ${s.resumen?('<div style="margin-top:6px"><b>요약:</b> '+vlEsc(s.resumen)+'</div>'):''}
+      ${s.insights?('<div style="margin-top:4px"><b>파악:</b> '+vlEsc(s.insights)+'</div>'):''}
+      ${acts?('<div style="margin-top:4px"><b>해야 할 일 (펜딩 자동 등록됨):</b><br>'+acts+'</div>'):''}
+      ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
+      ${s.next_step?('<div style="margin-top:4px"><b>다음:</b> '+vlEsc(s.next_step)+'</div>'):''}
+      ${r.transcript&&r.status==='done'?('<details style="margin-top:6px"><summary class="hint" style="margin:0;cursor:pointer">전사 원문 보기</summary><div style="white-space:pre-wrap;font-size:12px;margin-top:4px">'+vlEsc(r.transcript)+'</div></details>'):''}
+    </div>`;
+  }
+  function vlRecRender(){
+    const box=$('vl-recList'); if(!box) return;
+    box.innerHTML=vlRecItems.map(vlRecCardHtml).join('');
+    box.querySelectorAll('.vl-recRetry').forEach(b=>b.onclick=async()=>{ b.disabled=true;
+      try{ await fetch(session.api+'/api/visits/recordings/'+b.dataset.id+'/retry',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'}); vlLoadRecs(true); vlRecStartPoll(); }catch(e){} });
+    box.querySelectorAll('.vl-recKo').forEach(b=>b.onclick=()=>vlRecToggleKo(b));
+  }
+  // 공통: 요약 한국어 번역 요청(캐시 있으면 서버가 즉시 반환)
+  async function vlTranslateKo(recId){
+    const res=await fetch(session.api+'/api/visits/recordings/'+recId+'/translate',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok||d.error){
+      const e=d&&d.error;
+      throw new Error(e==='no_anthropic_key'?'ANTHROPIC_API_KEY 미설정 — 번역을 사용할 수 없습니다.'
+        :e==='no_summary'?'아직 AI 요약이 없습니다.'
+        :e==='ai_parse'?'번역 응답을 읽지 못했습니다. 다시 시도해 주세요.'
+        :(e||('HTTP '+res.status)));
+    }
+    return d.ko;
+  }
+  async function vlRecToggleKo(btn){
+    const id=Number(btn.dataset.id);
+    const r=vlRecItems.find(x=>Number(x.id)===id); if(!r) return;
+    if(vlRecLang[id]==='ko'){ vlRecLang[id]='es'; vlRecRender(); return; }
+    const es=r.summary||{};
+    if(es.ko&&es.ko.resumen){ vlRecLang[id]='ko'; vlRecRender(); return; }
+    btn.disabled=true; btn.textContent='🔄 번역 중…';
+    try{
+      const ko=await vlTranslateKo(id);
+      r.summary=Object.assign({},es,{ko}); vlRecLang[id]='ko'; vlRecRender();
+    }catch(e){ alert('한국어 번역 실패: '+(e&&e.message||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
+  }
+  async function vlLoadRecs(showEmpty){
+    if(!vlRecVisit) return false;
+    try{
+      const d=await fetch(session.api+'/api/visits/'+vlRecVisit.id+'/recordings',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ vlRecItems=[]; if(showEmpty)$('vl-recList').innerHTML='<div class="hint">이 방문에 아직 녹음이 없습니다.</div>'; return false; }
+      vlRecItems=items;
+      vlRecRender();
+      return items.some(r=>r.status==='queued'||r.status==='transcribing'||r.status==='summarizing');
+    }catch(e){ return false; }
+  }
+
+  // ===== 방문 리뷰 (검수) =====
+  let rvInited=false, rvOpen=new Set();
+  const RV_FUP={ done:['✅ F/UP 완료','#0F6E56','#e6f3ee'], overdue:['⚠ 연체','#B23A2E','#f8dcdc'],
+                 open:['⏳ 진행 중','#9a6512','#fdf3e0'], none:['— 펜딩 없음','#888','#eef0f2'] };
+  function rvShift(ymd,days){ const p=String(ymd).split('-').map(Number); const t=new Date(Date.UTC(p[0],p[1]-1,p[2])); t.setUTCDate(t.getUTCDate()+days); return t.toISOString().slice(0,10); }
+  async function rvInit(){
+    if(rvInited){ return; } rvInited=true;
+    const today=vlMxToday||new Date().toISOString().slice(0,10);
+    $('rv-to').value=today; $('rv-from').value=rvShift(today,-6);
+    if(isDirector()){ $('rv-userWrap').classList.remove('hidden');
+      try{ const u=(await fetch(session.api+'/api/pipeline/salespeople',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[];
+        $('rv-user').innerHTML='<option value="">전체</option>'+u.map(x=>`<option value="${x.id}">${vlEsc(x.name)}</option>`).join(''); }catch(e){}
+      $('rv-user').onchange=()=>rvLoad(); }
+    $('rv-load').onclick=()=>rvLoad();
+    rvLoad();
+  }
+  function rvDayLabel(d){ const p=String(d).split('-').map(Number);
+    const w=['일','월','화','수','목','금','토'][new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay()];
+    return p[1]+'/'+p[2]+' ('+w+')'; }
+  async function rvLoad(){
+    const box=$('rv-table'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    rvOpen.clear();
+    try{
+      const q=['from='+encodeURIComponent($('rv-from').value),'to='+encodeURIComponent($('rv-to').value)];
+      if(isDirector()&&$('rv-user').value) q.push('user_id='+encodeURIComponent($('rv-user').value));
+      const d=await fetch(session.api+'/api/visits/review?'+q.join('&'),{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">불러오지 못했습니다: '+vlEsc(d.error)+'</div>'; return; }
+      window.__rvData=d;
+      const days=d.days||[];
+      const nAll=days.reduce((s,x)=>s+x.visits.length,0);
+      $('rv-count').textContent=nAll?('방문 '+nAll+'건 · '+days.length+'일'):'';
+      if(!nAll){ box.innerHTML='<div class="hint">이 기간에 방문 기록이 없습니다.</div>'; return; }
+      let html='<table style="width:100%"><thead><tr><th style="width:36px">#</th><th>고객/방문처</th><th>미팅 함축</th><th style="width:200px">펜딩 함축</th><th style="width:110px">F/UP</th></tr></thead><tbody>';
+      for(const day of days){
+        html+=`<tr><td colspan="5" style="background:#f2f4f3;font-weight:800;padding:7px 10px">📅 ${rvDayLabel(day.date)} · 방문 ${day.visits.length}건</td></tr>`;
+        day.visits.forEach((v,i)=>{
+          const f=RV_FUP[v.fup]||RV_FUP.none;
+          const pendTxt=v.pend_total? (v.pend_total+'건 · 완료 '+v.pend_done+(v.pend_overdue?(' · <b style="color:#B23A2E">연체 '+v.pend_overdue+'</b>'):'')+(v.pend_head?('<br><span class="hint" style="margin:0">'+vlEsc(v.pend_head)+(v.pend_total>1?' 외':'')+'</span>'):'')) : '—';
+          html+=`<tr class="rv-row" data-id="${v.id}" style="cursor:pointer">
+            <td>${i+1}</td>
+            <td><b>${vlEsc(v.name)}</b>${v.is_customer?'':' <span class="hint" style="margin:0">(미등록)</span>'}<br><span class="hint" style="margin:0">${vlEsc(v.by_name||'')}${v.met_person?(' · '+vlEsc(v.met_person)):''}</span></td>
+            <td>${v.headline?vlEsc(v.headline):'<span class="hint" style="margin:0">기록 없음</span>'}${v.has_ai?' <span title="녹음 AI 요약">🎙</span>':''}</td>
+            <td>${pendTxt}</td>
+            <td><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;color:${f[1]};background:${f[2]}">${f[0]}</span></td>
+          </tr>
+          <tr class="rv-detail hidden" data-for="${v.id}"><td colspan="5" style="background:#fbfcfb;padding:10px 14px" id="rv-det-${v.id}"></td></tr>`;
+        });
+      }
+      html+='</tbody></table>';
+      box.innerHTML=html;
+      box.querySelectorAll('.rv-row').forEach(tr=>tr.onclick=()=>rvToggle(Number(tr.dataset.id)));
+    }catch(e){ box.innerHTML='<div class="hint">서버 연결 실패</div>'; }
+  }
+  function rvFind(id){ const d=window.__rvData||{days:[]};
+    for(const day of (d.days||[])){ const v=day.visits.find(x=>Number(x.id)===Number(id)); if(v) return {v,date:day.date}; } return null; }
+  const rvLang={};   // 방문 id → 'es' | 'ko' (AI 요약 표시 언어)
+  function rvRenderDet(id){
+    const hit=rvFind(id); if(!hit)return;
+    const v=hit.v, es=v.summary||{};
+    const hasKo=!!(es.ko&&(es.ko.resumen||es.ko.insights));
+    const lang=(rvLang[id]==='ko'&&hasKo)?'ko':'es';
+    const s=lang==='ko'?vlKoMerge(es,es.ko):es;
+    // 파악한 내용: AI 요약이 있으면 언어에 맞춰, 없으면 수기 기록 그대로.
+    const insight=(es.insights?s.insights:v.insight)||'';
+    const koBtn=(es.resumen&&v.rec_id)
+      ? ('<button type="button" class="btn ghost sm rv-koBtn" data-id="'+id+'" style="margin-left:6px">'+(lang==='ko'?'🇲🇽 원문(스페인어)':'🇰🇷 한국어')+'</button>')
+      : '';
+    const pendRows=(v.pendings||[]).map(p=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;cursor:pointer">
+        <input type="checkbox" ${p.done?'checked':''} onchange="rvTogglePend(${p.id},this.checked)" style="margin-top:3px">
+        <span style="${p.done?'text-decoration:line-through;color:#888':''}">${vlEsc(p.content)}${p.due_date?(' <b>('+p.due_date+')</b>'):''}${p.overdue?(' <b style="color:#B23A2E">⚠ '+p.overdue+'일 초과</b>'):''}</span></label>`).join('');
+    $('rv-det-'+id).innerHTML=`
+      ${v.plan?('<div><b>사전 계획(할 이야기):</b> '+vlEsc(v.plan)+'</div>'):''}
+      ${s.resumen?('<div style="margin-top:6px"><b>🎙 미팅 요약(AI):</b> '+vlEsc(s.resumen)+koBtn
+          +(lang==='ko'?'<div class="hint" style="margin:2px 0 0">🇰🇷 AI 한국어 번역본</div>':'')+'</div>')
+        :'<div style="margin-top:6px" class="hint">녹음 AI 요약이 없습니다'+(v.rec_status&&v.rec_status!=='done'?(' (녹음 상태: '+vlEsc(v.rec_status)+')'):' — 수기 기록만')+'</div>'}
+      ${insight?('<div style="margin-top:4px"><b>파악한 내용:</b> '+vlEsc(insight)+'</div>'):''}
+      ${(s.products&&s.products.length)?('<div style="margin-top:4px"><b>언급 제품:</b> '+vlEsc(s.products.join(', '))+'</div>'):''}
+      ${s.next_step?('<div style="margin-top:4px"><b>다음 계획:</b> '+vlEsc(s.next_step)+'</div>'):''}
+      ${(lang==='ko'&&(s.action_items&&s.action_items.length))?('<div style="margin-top:4px"><b>해야 할 일(요약):</b><br>'+s.action_items.map(a=>'· '+vlEsc(a.content)+(a.due_date?(' <b>('+a.due_date+')</b>'):'')).join('<br>')+'</div>'):''}
+      <div style="margin-top:8px"><b>📌 후속조치 (F/UP ${v.pend_done}/${v.pend_total})</b>${v.pend_total?'':' <span class="hint" style="margin:0">— 등록된 펜딩 없음</span>'}</div>${pendRows}`;
+    const kb=$('rv-det-'+id).querySelector('.rv-koBtn');
+    if(kb) kb.onclick=(ev)=>{ ev.stopPropagation(); rvToggleKo(id,kb); };
+  }
+  async function rvToggleKo(id,btn){
+    const hit=rvFind(id); if(!hit)return;
+    const v=hit.v, es=v.summary||{};
+    if(rvLang[id]==='ko'){ rvLang[id]='es'; rvRenderDet(id); return; }
+    if(es.ko&&es.ko.resumen){ rvLang[id]='ko'; rvRenderDet(id); return; }
+    if(!v.rec_id){ alert('번역할 녹음 요약을 찾지 못했습니다.'); return; }
+    btn.disabled=true; btn.textContent='🔄 번역 중…';
+    try{
+      const ko=await vlTranslateKo(v.rec_id);
+      v.summary=Object.assign({},es,{ko}); rvLang[id]='ko'; rvRenderDet(id);
+    }catch(e){ alert('한국어 번역 실패: '+(e&&e.message||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
+  }
+  function rvToggle(id){
+    const det=document.querySelector('.rv-detail[data-for="'+id+'"]'); if(!det)return;
+    const open=!det.classList.contains('hidden');
+    if(open){ det.classList.add('hidden'); rvOpen.delete(id); return; }
+    if(!rvFind(id))return;
+    rvRenderDet(id);
+    det.classList.remove('hidden'); rvOpen.add(id);
+  }
+  async function rvTogglePend(id,done){
+    try{ await fetch(session.api+'/api/visits/pendings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done})});
+      const openIds=[...rvOpen]; await rvLoad(); openIds.forEach(x=>rvToggle(x));
+    }catch(e){ alert('저장 실패'); }
+  }
+
+  // ===== 아침 브리핑 =====
+  async function vlBrPreview(){
+    const m=$('vl-brMsg'); m.className='msg'; m.style.display='none';
+    try{
+      const d=await fetch(session.api+'/api/visits/briefing/preview',{headers:auth()}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.style.display='block'; m.textContent='미리보기 실패: '+d.error; return; }
+      const t=$('vl-brText'); t.classList.remove('hidden'); t.textContent=d.text||'';
+      $('vl-brSelfHint').textContent=(d.wa_phone_set?'✅ 내 WhatsApp 번호 설정됨 · 매일 MX '+String(d.hour).padStart(2,'0')+':00 발송':'⚠ 내 WhatsApp 번호 미설정 — 디렉터에게 등록을 요청하세요')+(d.wa_enabled?'':' · (WhatsApp 발송 미구성)');
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+  async function vlBrLoadDir(){
+    if(!isDirector())return;
+    $('vl-brDir').classList.remove('hidden');
+    try{
+      const d=await fetch(session.api+'/api/visits/briefing/status',{headers:auth()}).then(r=>r.json());
+      $('vl-brStatus').textContent=(d.enabled?('✅ 자동 발송 사용 중 · 매일 MX '+String(d.hour).padStart(2,'0')+':00'):'⚠ 발송 비활성 (WHATSAPP_TOKEN/PHONE_ID 확인)')
+        +' · 수신자 '+(d.recipients||[]).length+'명'
+        +(d.stt_ready?'':' · ⚠ OPENAI_API_KEY 미설정(녹음 전사 불가)');
+      $('vl-brUser').innerHTML='<option value="">사원 선택…</option>'+(d.recipients||[]).map(u=>`<option value="${u.id}">${vlEsc(u.name)} (${u.wa_masked})</option>`).join('');
+      const sends=d.sends||[];
+      $('vl-brSends').innerHTML=sends.length?('<table><thead><tr><th>날짜</th><th>사원</th><th>상태</th><th>시도</th></tr></thead><tbody>'+
+        sends.slice(0,20).map(s=>`<tr><td>${s.brief_date}</td><td>${vlEsc(s.name)}</td><td>${s.status&&s.status.startsWith('sent')?'✅ '+s.status:('❌ '+vlEsc(s.error||'실패'))}</td><td>${s.attempts}</td></tr>`).join('')+'</tbody></table>'):'<div class="hint">최근 7일 발송 이력이 없습니다.</div>';
+    }catch(e){ $('vl-brStatus').textContent='발송 현황을 불러오지 못했습니다.'; }
+  }
+  async function vlBrSend(){
+    const m=$('vl-brMsg'); m.className='msg'; m.style.display='none';
+    const uid=$('vl-brUser').value;
+    if(!uid){ m.className='msg err'; m.style.display='block'; m.textContent='발송할 사원을 선택하세요.'; return; }
+    const btn=$('vl-brSend'); btn.disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/visits/briefing/send',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({user_id:Number(uid)})});
+      const d=await res.json();
+      const r=(d.results||[])[0]||{};
+      if(res.ok&&r.ok){ m.className='msg ok'; m.style.display='block'; m.textContent='✔ 발송됨 ('+(r.mode==='template'?'템플릿 헤드라인':'전체 텍스트')+')'; }
+      else { m.className='msg err'; m.style.display='block'; m.textContent='발송 실패: '+(r.error||d.error||res.status); }
+      vlBrLoadDir();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+    finally{ btn.disabled=false; }
+  }
+
+  async function vlLoadPhotos(id){
+    const box=$('vl-phbox-'+id); if(!box)return; box.innerHTML='<div class="hint">사진 불러오는 중…</div>';
+    try{ const d=await fetch(session.api+'/api/visits/'+id+'/photos',{headers:auth()}).then(r=>r.json());
+      const KD={card:'명함',store:'가게',other:'기타'};
+      box.innerHTML='<div class="vl-thumbs" style="margin-top:8px">'+(d.items||[]).map(p=>`<div class="th"><img src="${p.data_url}"><div class="kd">${KD[p.kind]||'기타'}</div></div>`).join('')+'</div>';
+    }catch(e){ box.innerHTML='<div class="hint">사진 로드 실패</div>'; }
+  }
+
+  async function vlDelete(id){
+    if(!confirm('이 방문을 삭제할까요? (자동 생성된 미팅기록도 함께 삭제됩니다)'))return;
+    try{ const res=await fetch(session.api+'/api/visits/'+id,{method:'DELETE',headers:auth()}); const d=await res.json();
+      if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+      await vlLoadDates(); vlLoadPendings();
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+
+  async function vlLoadPendings(){
+    try{ const d=await fetch(session.api+'/api/visits/pendings'+(vlUserQ()?('?'+vlUserQ().slice(1)):''),{headers:auth()}).then(r=>r.json());
+      vlMxToday=d.mx_today||vlMxToday; const items=d.items||[];
+      if(!items.length){ $('vl-pendTable').innerHTML='<div class="hint">열린 후속조치가 없습니다.</div>'; return; }
+      $('vl-pendTable').innerHTML='<table><thead><tr><th></th><th>내용</th><th>기한</th><th>방문처</th><th>방문일</th></tr></thead><tbody>'+
+        items.map(p=>{ const over=p.overdue>0;
+          return `<tr><td><input type="checkbox" ${p.done?'checked':''} onchange="vlTogglePend(${p.id},this.checked)"></td>
+            <td>${vlEsc(p.content)}</td>
+            <td class="${over?'vl-due-over':''}">${p.due_date||'—'}${over?(' ⚠ '+p.overdue+'일 초과'):''}</td>
+            <td>${vlEsc(p.place_name)}</td><td>${p.visit_date}</td></tr>`; }).join('')+'</tbody></table>';
+    }catch(e){ $('vl-pendTable').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  async function vlTogglePend(id,done){
+    try{ await fetch(session.api+'/api/visits/pendings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({done})}); vlLoadPendings(); }
+    catch(e){ alert('실패'); }
+  }
+
+  async function vlLoadPlaces(){
+    try{ const d=await fetch(session.api+'/api/visits/places'+(vlUserQ()?('?'+vlUserQ().slice(1)):''),{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      if(!items.length){ $('vl-places').innerHTML='<div class="hint">미등록 방문처가 없습니다.</div>'; return; }
+      $('vl-places').innerHTML=items.map(p=>`<div class="vl-place"><div><b>${vlEsc(p.place_name)}</b> <span class="hint" style="margin:0">· 방문 ${p.cnt}회 · 최근 ${p.last_date||'—'}</span></div><button type="button" class="btn sm vl-reg" data-p="${vlEsc(p.place_name)}">고객 등록/연결</button></div>`).join('');
+      $('vl-places').querySelectorAll('.vl-reg').forEach(b=>b.onclick=()=>vlShowReg(b.dataset.p));
+    }catch(e){ $('vl-places').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+
+  async function vlShowReg(place){
+    const f=$('vl-regForm'); f.classList.remove('hidden');
+    let teams=[],stages=[];
+    try{ teams=(await fetch(session.api+'/api/teams',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[]; }catch(e){}
+    try{ stages=(await fetch(session.api+'/api/stages',{headers:auth()}).then(r=>r.ok?r.json():{items:[]})).items||[]; }catch(e){}
+    f.innerHTML=`<div style="border:1px solid var(--brand);border-radius:10px;padding:12px;margin-top:10px">
+      <div style="font-weight:800;color:var(--brand)">「${vlEsc(place)}」 연결</div>
+      <div class="vl-segment" style="margin-top:8px"><button type="button" id="vlreg-new" class="on">신규 고객 등록</button><button type="button" id="vlreg-exist">기존 고객에 연결</button></div>
+      <div id="vlreg-newbox" style="margin-top:8px">
+        <label>고객명</label><input id="vlreg-name" value="${vlEsc(place)}" style="width:100%;max-width:420px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div><label>팀</label><select id="vlreg-team">${teams.map(t=>`<option value="${t.id}">${vlEsc(t.name)}</option>`).join('')}</select></div>
+          <div><label>단계</label><select id="vlreg-stage">${stages.map(s=>`<option value="${s.id}">${vlEsc(s.name)}</option>`).join('')}</select></div>
+        </div>
+      </div>
+      <div id="vlreg-existbox" class="hidden" style="margin-top:8px">
+        <label>연결할 고객</label><select id="vlreg-cust"><option value="">선택…</option></select>
+      </div>
+      <div style="margin-top:12px"><button class="btn" id="vlreg-save">연결 실행</button> <button class="btn ghost" id="vlreg-cancel">취소</button></div>
+      <div class="msg" id="vlreg-msg"></div>
+    </div>`;
+    // 기존 고객 옵션
+    try{ const cu=(await fetch(session.api+'/api/visits/customer-options',{headers:auth()}).then(r=>r.json())).items||[];
+      $('vlreg-cust').innerHTML='<option value="">선택…</option>'+cu.map(c=>`<option value="${c.id}">${vlEsc(c.name)}</option>`).join(''); }catch(e){}
+    $('vlreg-new').onclick=()=>{ $('vlreg-new').classList.add('on');$('vlreg-exist').classList.remove('on');$('vlreg-newbox').classList.remove('hidden');$('vlreg-existbox').classList.add('hidden'); };
+    $('vlreg-exist').onclick=()=>{ $('vlreg-exist').classList.add('on');$('vlreg-new').classList.remove('on');$('vlreg-existbox').classList.remove('hidden');$('vlreg-newbox').classList.add('hidden'); };
+    $('vlreg-cancel').onclick=()=>{ f.classList.add('hidden'); f.innerHTML=''; };
+    $('vlreg-save').onclick=()=>vlDoReg(place);
+  }
+
+  async function vlDoReg(place){
+    const m=$('vlreg-msg'); m.className='msg'; m.style.display='none';
+    const isNew=$('vlreg-new').classList.contains('on');
+    let custId=null;
+    try{
+      if(isNew){
+        const name=$('vlreg-name').value.trim(); if(!name){ m.className='msg err'; m.style.display='block'; m.textContent='고객명을 입력하세요.'; return; }
+        const payload={ name, team_id:Number($('vlreg-team').value)||null, stage_id:Number($('vlreg-stage').value)||null };
+        const r=await fetch(session.api+'/api/customers',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(payload)});
+        const d=await r.json();
+        if(!r.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='고객 등록 실패: '+(d.error==='forbidden'||r.status===403?'고객 편집 권한이 없습니다.':(d.error||r.status)); return; }
+        custId=d.id||d.customer_id||(d.item&&d.item.id);
+      } else {
+        custId=Number($('vlreg-cust').value); if(!custId){ m.className='msg err'; m.style.display='block'; m.textContent='연결할 고객을 선택하세요.'; return; }
+      }
+      const lr=await fetch(session.api+'/api/visits/link-customer',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({place_name:place,customer_id:custId})});
+      const ld=await lr.json();
+      if(!lr.ok||ld.error){ m.className='msg err'; m.style.display='block'; m.textContent='연결 실패: '+(ld.error||lr.status); return; }
+      m.className='msg ok'; m.style.display='block'; m.textContent='✔ 연결됨 · 방문 '+ld.linked+'건이 '+(ld.customer_name||'고객')+' 미팅기록에 소급 연결되었습니다.';
+      $('vl-regForm').classList.add('hidden'); $('vl-regForm').innerHTML='';
+      vlLoadPlaces(); vlLoadDates(); vlLoadCustOptions();
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='서버 연결 실패'; }
+  }
+
+  // 이벤트 바인딩
+  (function vlBind(){
+    const vp=$('vt-pipe'), vv=$('vt-visit'); if(!vp)return;
+    vp.addEventListener('click',()=>showView('pipe'));
+    vv.addEventListener('click',()=>showView('visit'));
+    const vr=$('vt-review'); if(vr)vr.addEventListener('click',()=>showView('review'));
+    $('vl-segCust').addEventListener('click',()=>vlSegment('cust'));
+    $('vl-segNew').addEventListener('click',()=>vlSegment('new'));
+    $('vl-addPend').addEventListener('click',()=>vlAddPendRow());
+    $('vl-photoInput').addEventListener('change',vlOnPhoto);
+    $('vl-save').addEventListener('click',vlSave);
+    // 상담 녹음
+    $('vl-recModeMemo').addEventListener('click',()=>vlRecSetMode('memo'));
+    $('vl-recModeFull').addEventListener('click',()=>vlRecSetMode('full'));
+    $('vl-recStart').addEventListener('click',vlRecStart);
+    $('vl-recPause').addEventListener('click',vlRecPause);
+    $('vl-recStop').addEventListener('click',vlRecStop);
+    $('vl-recUpload').addEventListener('click',vlRecUpload);
+    $('vl-recDiscard').addEventListener('click',vlRecReset);
+    // 아침 브리핑
+    $('vl-brPreview').addEventListener('click',vlBrPreview);
+    $('vl-brSend').addEventListener('click',vlBrSend);
+  })();
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

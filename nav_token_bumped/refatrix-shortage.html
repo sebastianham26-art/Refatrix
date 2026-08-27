@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 부족분 집계</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  input{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.sm{padding:5px 10px;font-size:12px}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;color:var(--muted);background:#faf8f3;font-weight:700}
+  td.r,th.r{text-align:right}
+  .short{font-weight:800;color:var(--expense)}
+  tr.detail td{background:#faf8f3;font-size:11.5px;color:var(--muted)}
+  .sb{flex:1;min-width:130px;background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .sb .v{font-size:22px;font-weight:800;color:var(--brand)}.sb .l{font-size:11px;color:var(--muted);margin-top:2px}
+  .mrow{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+  .mrow .ml{font-size:12px;color:#6f6a60;font-weight:600;margin-right:4px}
+  .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line,#e0dccb);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:#8a8676;cursor:pointer}
+  .mbtn.on{background:var(--brand,#143D34);color:#fff;border-color:var(--brand,#143D34)}
+  .tabs{display:flex;gap:6px;margin-top:16px}
+  .tabbtn{padding:9px 16px;border:1px solid var(--line);border-bottom:none;background:#efece3;border-radius:10px 10px 0 0;font-size:13px;font-weight:800;color:var(--muted);cursor:pointer}
+  .tabbtn.on{background:var(--card);color:var(--brand)}
+  .tabs+.card{margin-top:0;border-top-left-radius:0}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800}
+  .pill.ready{background:#fdf3d7;color:#8a6d1a}.pill.sent{background:var(--income-bg);color:var(--income)}.pill.cancelled{background:#eee;color:#888}
+  .pill.off{background:#5b544a;color:#fff}
+  tr.offrow td{opacity:.55}
+  .modalBg{position:fixed;inset:0;background:rgba(20,30,25,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;z-index:50;overflow:auto}
+  .modal{background:var(--card);border-radius:14px;max-width:860px;width:100%;padding:20px}
+  .btn.wa{background:#25D366}
+  .btn.danger{background:var(--expense)}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">부족분 SKU별 집계 (발주 근거)</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <div class="tabs">
+      <button class="tabbtn on" id="tabBtnShort" onclick="showTab('short')">부족분 집계</button>
+      <button class="tabbtn" id="tabBtnCust" onclick="showTab('cust')">👥 고객별 요약</button>
+      <button class="tabbtn" id="tabBtnOffer" onclick="showTab('offer')">📄 Offer Sheet <span id="osBadge"></span></button>
+    </div>
+    <div id="tabShort">
+    <div class="card">
+      <div class="card-h">미해소 부족분 (open) — SKU별 합계
+        <button class="btn ghost sm" style="float:right" onclick="exportExcel()">엑셀 다운로드</button>
+        <button class="btn ghost sm" style="float:right;margin-right:6px" onclick="load()">새로고침</button>
+      </div>
+      <div class="hint">매출 전환·등록 시 재고가 부족했던 수량이 SKU별로 모입니다. 발주(공장 주문)의 근거 자료입니다. 행을 누르면 누가 요청했는지 보입니다.</div>
+      <div class="mrow" id="months" style="margin:8px 0 4px"></div>
+      <div id="listWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+    </div>
+    <div id="tabCust" class="hidden">
+    <div class="card">
+      <div class="card-h">부족분 — 고객별 · 월별 요약
+        <button class="btn ghost sm" style="float:right" onclick="cmExport()">엑셀 다운로드</button>
+        <button class="btn ghost sm" style="float:right;margin-right:6px" onclick="cmLoad()">새로고침</button>
+        <button class="btn sm hidden" id="scanBtn" style="float:right;margin-right:6px" onclick="cmScan()">🔄 해소 스캔(소급)</button>
+      </div>
+      <div class="hint">발생 월 기준으로 고객별 부족분을 모읍니다. 부족분 발생 이후 <b>같은 고객에게 같은 제품이 판매</b>되면 그만큼 자동 해소되고,
+        원 기록은 유지된 채 해소 내역이 원장으로 남습니다. <b>잔여 = 발생 − 해소</b>. 셀·행을 누르면 세부 기록이 열립니다.</div>
+      <div class="mrow" style="margin:10px 0 4px">
+        <span class="ml">연도</span>
+        <button class="mbtn" onclick="cmYear(-1)">◀</button>
+        <span id="cmYearLbl" style="font-weight:800"></span>
+        <button class="mbtn" onclick="cmYear(1)">▶</button>
+      </div>
+      <div id="cmWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+      <div id="cmDetail"></div>
+    </div>
+    </div>
+    <div id="tabOffer" class="hidden">
+    <div class="card">
+      <div class="card-h">Offer Sheet — 부족분 입고 알림·재오퍼 (고객별)
+        <button class="btn ghost sm" style="float:right" onclick="osLoad()">새로고침</button>
+        <button class="btn sm" style="float:right;margin-right:6px" onclick="osGenerate()">🔄 스캔·생성</button>
+      </div>
+      <div class="hint">부족분으로 남았던 제품이 <b>입고(수입입고 승인 → 재고 등재)</b>되면 자동으로 고객별 오퍼 시트가 만들어집니다.
+        대상: ① 전환확정(인보이스 발행)·매출등록·견적만료 시 기록된 부족분 + ② <b>견적서의 부족 라인(최초 견적 부족분 — 전환 전 견적 및 최근 90일 내 만료 견적 포함)</b>.
+        [스캔·생성]은 지금 재고가 있는 대기 수요 전체를 다시 훑어 누락분을 만듭니다(중복 생성 안 됨).
+        시트를 열어 <b>📲 WhatsApp 자동발송</b>(버튼 한 번, 발송 이력 자동 기록) 또는 <b>PDF 출력 → 💚 수동 전송 → 발송완료 처리</b>로 보내세요.<br>
+        더 이상 내보내지 않을 오퍼는 시트를 열어 <b>🚫 비활성화</b> — 부족 기록은 그대로 남고(발주 근거) 그 오퍼만 <b>다시 생성되지 않습니다</b>(디렉터·Maria, 되돌리기 가능).
+        <b>✖ 취소</b>는 반대로 <b>다시 생성 대상으로 복귀</b>시킵니다.</div>
+      <details style="margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:#fbfaf6">
+        <summary style="cursor:pointer;font-weight:800;font-size:12.5px;color:var(--brand)">📲 WhatsApp 자동발송 설정 방법 (토큰 발급 — 클릭 단위 안내)</summary>
+        <div class="hint" style="margin-top:8px;line-height:1.8">
+          <b>준비물:</b> Facebook 계정 · 회사용 전화번호 1개(기존 WhatsApp 앱에서 <u>사용 중이지 않은</u> 번호 권장)<br>
+          <b>① Meta 개발자 앱 만들기</b> — <b>developers.facebook.com</b> 접속 → 우상단 [My Apps] → [Create App] → 유형 <b>Business</b> 선택 → 앱 이름(예: Refatrix) 입력 → [Create App]<br>
+          <b>② WhatsApp 추가</b> — 앱 대시보드에서 <b>WhatsApp</b> 카드의 [Set up] 클릭 → 비즈니스 포트폴리오 선택(없으면 새로 만들기)<br>
+          <b>③ 발신번호 등록</b> — 좌측 <b>WhatsApp → API Setup</b> → [Add phone number] → 회사 번호 입력·SMS 인증 → 화면의 <b>Phone number ID</b> 를 복사 → Railway 변수 <code>WHATSAPP_PHONE_ID</code><br>
+          <b>④ 영구 토큰 발급</b> — <b>business.facebook.com → 설정(Business Settings) → 사용자 → 시스템 사용자</b> → [추가](이름 예: refatrix-bot, 역할 관리자) → [자산 추가]에서 위 앱 선택(전체 제어) → [토큰 생성] → 앱 선택 → 만료 <b>없음</b> → 권한 <b>whatsapp_business_messaging</b> + <b>whatsapp_business_management</b> 체크 → 생성된 토큰 복사 → Railway 변수 <code>WHATSAPP_TOKEN</code> <span style="color:var(--expense)">(API Setup 화면의 임시 토큰은 24시간만 유효 — 반드시 시스템 사용자 영구 토큰 사용)</span><br>
+          <b>⑤ Railway 등록</b> — Railway → 서비스 → Variables 에 <code>WHATSAPP_TOKEN</code>·<code>WHATSAPP_PHONE_ID</code> 저장 → 자동 재배포 후 이 화면 새로고침 → 📲 버튼 활성<br>
+          <b>⑥ (권장) 템플릿 승인</b> — <b>business.facebook.com → WhatsApp Manager → 메시지 템플릿 → 템플릿 만들기</b> → 카테고리 <b>유틸리티</b> · 언어 스페인어(MEX) · 본문에 <code>{{1}}</code> 하나만 넣고 제출 → 승인(수 분~수 시간) 후 템플릿 이름을 Railway 변수 <code>OFFERSHEET_WA_TEMPLATE</code> 에 저장. 고객이 24시간 내 회신한 적 없어도 헤드라인 요약이 도달합니다.<br>
+          <b>참고:</b> 발신번호 미보유 시 API Setup 의 테스트 번호로 먼저 검증 가능(수신자 5명 제한). 오늘 요약 05시 자동 보고와 같은 토큰을 공유합니다.
+        </div>
+      </details>
+      <div style="margin:8px 0 4px">
+        <label style="display:inline">상태</label>
+        <select id="osFilter" onchange="osRender()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
+          <option value="all">전체</option><option value="ready" selected>발송 대기</option><option value="sent">발송 완료</option><option value="cancelled">취소됨</option>
+          <option value="active">활성만</option><option value="disabled">🚫 비활성(중단)</option>
+        </select>
+        <label style="display:inline;margin-left:10px">회신</label>
+        <select id="osReplyFilter" onchange="osRender()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">
+          <option value="all">전체</option><option value="replied">회신 있음</option><option value="no_reply">미회신(발송 후)</option>
+          <option value="ordered">주문·일부주문</option><option value="declined">거절</option>
+        </select>
+      </div>
+      <div id="osWrap"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<div class="modalBg" id="osModal" onclick="if(event.target===this)osClose()"><div class="modal" id="osModalBody"></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  let session={token:null,user:null,api:''};
+  let rows=[], openDetail={}, summary=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtq=(n)=> n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:3});
+  const fmtm=(n)=> '$'+Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();}
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      renderMonths(); load(); osLoad();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  let shMonths=[], SH_FYEAR=new Date().getFullYear();
+  function renderMonths(){
+    const btns=Array.from({length:12},(_,i)=>{const mm=String(i+1).padStart(2,'0');const ym=SH_FYEAR+'-'+mm;
+      return '<button class="mbtn '+(shMonths.includes(ym)?'on':'')+'" onclick="toggleMonth(\''+ym+'\')">'+(i+1)+'월</button>';}).join(' ');
+    $('months').innerHTML='<span class="ml">발생 월 ('+SH_FYEAR+', 복수 선택 · 전체는 모두 해제)</span>'+btns;
+  }
+  function toggleMonth(ym){ const i=shMonths.indexOf(ym); if(i>=0)shMonths.splice(i,1); else shMonths.push(ym); renderMonths(); load(); }
+
+  async function load(){
+    const qs=shMonths.length?('?months='+encodeURIComponent(shMonths.join(','))):'';
+    try{ const d=await fetch(session.api+'/api/shortages/by-sku'+qs,{headers:auth()}).then(r=>r.json()); rows=d.items||[]; summary=d.summary||null; openDetail={}; render(); }
+    catch(e){ $('listWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function render(){
+    let head='';
+    if(summary){
+      head='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 6px">'
+        +'<div class="sb"><div class="v">'+(rows.length)+'</div><div class="l">부족 SKU 종류</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--expense)">'+fmtq(summary.open_qty)+'</div><div class="l">미발주 부족분 합계</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--income)">'+fmtq(summary.ordered_qty)+'</div><div class="l">해소 누적(판매·수동)</div></div>'
+        +'</div>';
+    }
+    if(!rows.length){ $('listWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">미해소 부족분이 없습니다.</div>'; return; }
+    let html=head+'<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">부족분 합계</th><th class="r">매출 불가 금액</th><th class="r">건수</th><th>최근 발생</th></tr></thead><tbody>';
+    rows.forEach((r,i)=>{
+      html+='<tr style="cursor:pointer" onclick="toggle('+i+','+r.product_id+')">'
+        +'<td><b>'+esc(r.ctr_code||'')+'</b></td>'
+        +'<td>'+esc(r.product_name||'')+'</td>'
+        +'<td class="r">'+fmtq(r.stock_qty)+'</td>'
+        +'<td class="r short">'+fmtq(r.total_shortage)+'</td>'
+        +'<td class="r" style="color:var(--expense);font-weight:700">'+fmtm(r.total_amount_mxn)+'</td>'
+        +'<td class="r">'+r.cnt+'</td>'
+        +'<td>'+esc(r.last_at||'')+'</td>'
+        +'</tr>';
+      if(openDetail[r.product_id]){
+        const dets=openDetail[r.product_id];
+        html+='<tr class="detail"><td colspan="7">'+(dets.length?dets.map(x=>esc(x.customer_name||'(고객미상)')+' — 요청 '+fmtq(x.requested_qty)+', 출고 '+fmtq(x.fulfilled_qty)+', 부족 '+fmtq(x.shortage_qty)+(Number(x.resolved_qty)>0?(', 해소 '+fmtq(x.resolved_qty)+', 잔여 '+fmtq(x.remaining_qty)):'')+' ('+esc(String(x.occurred_at||'').slice(0,10))+')').join('<br>'):'세부 내역 불러오는 중…')+'</td></tr>';
+      }
+    });
+    html+='</tbody></table>';
+    const total=rows.reduce((a,b)=>a+Number(b.total_shortage),0);
+    const totalAmt=rows.reduce((a,b)=>a+Number(b.total_amount_mxn||0),0);
+    html+='<div class="hint" style="margin-top:8px">SKU '+rows.length+'종 · 총 부족 '+fmtq(total)+'개 · 매출 불가 금액 합계 '+fmtm(totalAmt)+'. 행 클릭 시 요청 고객 내역 표시.</div>';
+    $('listWrap').innerHTML=html;
+  }
+  async function toggle(i,pid){
+    if(openDetail[pid]){ delete openDetail[pid]; render(); return; }
+    openDetail[pid]=[]; render();
+    try{ const d=await fetch(session.api+'/api/shortages?status=open',{headers:auth()}).then(r=>r.json());
+      openDetail[pid]=(d.items||[]).filter(x=>x.product_id===pid||x.code===rows[i].ctr_code); render();
+    }catch(e){ openDetail[pid]=[]; render(); }
+  }
+  function exportExcel(){
+    if(!rows.length)return;
+    const aoa=[['Refatrix — 부족분 집계(발주 근거)'],[],['CTR Code','Producto','Existencia','Faltante','Casos','Ultima fecha']];
+    rows.forEach(r=>aoa.push([r.ctr_code,r.product_name,r.stock_qty,r.total_shortage,r.cnt,r.last_at||'']));
+    const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:14},{wch:28},{wch:10},{wch:10},{wch:8},{wch:12}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Faltantes');
+    XLSX.writeFile(wb,'faltantes_por_sku.xlsx');
+  }
+
+  // ===================== 고객별 · 월별 부족분 요약 (발생·해소·잔여) =====================
+  let CM_YEAR=new Date().getFullYear(), cmData=null, cmSel=null, cmRecords=[], cmOpenRes={}, cmResCache={};
+  function cmYear(d){ CM_YEAR+=d; cmSel=null; $('cmDetail').innerHTML=''; cmLoad(); }
+  async function cmLoad(){
+    $('cmYearLbl').textContent=CM_YEAR;
+    if(session.user&&session.user.role==='director') $('scanBtn').classList.remove('hidden');
+    try{
+      const d=await fetch(session.api+'/api/shortages/by-customer-month?year='+CM_YEAR,{headers:auth()}).then(r=>r.json());
+      cmData=d; cmRender();
+    }catch(e){ $('cmWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function cmRender(){
+    const d=cmData; if(!d){return;}
+    const items=d.items||[];
+    const s=d.summary||{};
+    let head='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 6px">'
+      +'<div class="sb"><div class="v">'+fmtq(s.occurred_qty)+'</div><div class="l">발생 합계 ('+esc(String(d.year))+')</div></div>'
+      +'<div class="sb"><div class="v" style="color:var(--income)">'+fmtq(s.resolved_qty)+'</div><div class="l">해소 합계 (판매·수동)</div></div>'
+      +'<div class="sb"><div class="v" style="color:var(--expense)">'+fmtq(s.remaining_qty)+'</div><div class="l">잔여 합계 (미해소)</div></div>'
+      +'</div>';
+    if(!items.length){ $('cmWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">'+esc(String(d.year))+'년 부족분 기록이 없습니다.</div>'; return; }
+    // 고객별 행 구성
+    const custs=new Map();
+    for(const it of items){
+      const k=it.customer_id==null?'null':String(it.customer_id);
+      if(!custs.has(k)) custs.set(k,{id:it.customer_id,name:it.customer_name,cells:{},occ:0,res:0,rem:0});
+      const c=custs.get(k); c.cells[it.ym]=it;
+      c.occ+=it.occurred_qty; c.res+=it.resolved_qty; c.rem+=it.remaining_qty;
+    }
+    const rowsArr=[...custs.values()].sort((a,b)=>b.rem-a.rem||b.occ-a.occ);
+    let html=head+'<div style="overflow:auto"><table><thead><tr><th>고객</th>';
+    for(let m=1;m<=12;m++) html+='<th class="r">'+m+'월</th>';
+    html+='<th class="r">발생</th><th class="r">해소</th><th class="r">잔여</th></tr></thead><tbody>';
+    for(const c of rowsArr){
+      html+='<tr><td><b>'+esc(c.name||'(고객미상)')+'</b></td>';
+      for(let m=1;m<=12;m++){
+        const ym=CM_YEAR+'-'+String(m).padStart(2,'0');
+        const cell=c.cells[ym];
+        if(!cell){ html+='<td class="r" style="color:#cfcabd">—</td>'; continue; }
+        const clk=(c.id!=null)?(' style="cursor:pointer" onclick="cmDrill('+c.id+',\''+ym+'\',\''+esc(String(c.name||'')).replace(/'/g,'&#39;')+'\')"'):'';
+        const remTxt=cell.remaining_qty>0
+          ? '<span class="short">'+fmtq(cell.remaining_qty)+'</span>'
+          : '<span style="color:var(--income);font-weight:800">✓</span>';
+        html+='<td class="r"'+clk+'>'+remTxt+'<div style="font-size:10.5px;color:#9a958a">발생 '+fmtq(cell.occurred_qty)+'</div></td>';
+      }
+      html+='<td class="r">'+fmtq(c.occ)+'</td>'
+        +'<td class="r" style="color:var(--income)">'+fmtq(c.res)+'</td>'
+        +'<td class="r"><b class="short">'+(c.rem>0?fmtq(c.rem):'0')+'</b></td></tr>';
+    }
+    html+='</tbody></table></div>'
+      +'<div class="hint" style="margin-top:8px">셀 = 그 달 발생분의 <b>잔여</b>(✓=전량 해소) · 아래 작은 숫자 = 발생 수량. 셀을 누르면 세부 기록·해소 원장이 열립니다.</div>';
+    $('cmWrap').innerHTML=html;
+  }
+  async function cmDrill(custId,ym,name){
+    cmSel={customer_id:custId,ym,name}; cmOpenRes={}; cmResCache={};
+    $('cmDetail').innerHTML='<div class="hint" style="margin-top:12px">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/shortages?status=all&customer_id='+custId+'&month='+encodeURIComponent(ym)+'&limit=500',{headers:auth()}).then(r=>r.json());
+      cmRecords=d.items||[]; cmRenderDetail();
+    }catch(e){ $('cmDetail').innerHTML='<div class="hint">세부 내역을 불러오지 못했습니다.</div>'; }
+  }
+  function cmStatusPill(r){
+    if(r.status==='cancelled') return '<span class="pill cancelled">취소</span>';
+    if(r.status==='resolved') return '<span class="pill sent">해소완료</span>';
+    if(Number(r.resolved_qty)>0) return '<span class="pill ready">일부해소</span>';
+    return '<span class="pill" style="background:var(--expense-bg);color:var(--expense)">미해소</span>';
+  }
+  function cmRenderDetail(){
+    const sel=cmSel; if(!sel) return;
+    let h='<div style="margin-top:14px;font-weight:800;color:var(--brand)">'+esc(sel.name)+' — '+esc(sel.ym)+' 부족분 세부 기록 '
+      +'<button class="btn ghost sm" onclick="cmSel=null;$(\'cmDetail\').innerHTML=\'\'">닫기 ✕</button></div>';
+    if(!cmRecords.length){ $('cmDetail').innerHTML=h+'<div class="hint">기록이 없습니다.</div>'; return; }
+    h+='<table><thead><tr><th>발생일</th><th>CTR 코드</th><th>제품명</th><th class="r">요청</th><th class="r">출고</th><th class="r">부족(발생)</th><th class="r">해소</th><th class="r">잔여</th><th>상태</th></tr></thead><tbody>';
+    for(const r of cmRecords){
+      h+='<tr style="cursor:pointer" onclick="cmToggleRes('+r.id+')">'
+        +'<td>'+esc(String(r.occurred_at||'').slice(0,10))+'</td>'
+        +'<td><b>'+esc(r.code||'')+'</b></td><td>'+esc(r.name||'')+'</td>'
+        +'<td class="r">'+fmtq(r.requested_qty)+'</td>'
+        +'<td class="r">'+fmtq(r.fulfilled_qty)+'</td>'
+        +'<td class="r short">'+fmtq(r.shortage_qty)+'</td>'
+        +'<td class="r" style="color:var(--income);font-weight:700">'+fmtq(r.resolved_qty)+'</td>'
+        +'<td class="r"><b>'+fmtq(r.remaining_qty)+'</b></td>'
+        +'<td>'+cmStatusPill(r)+'</td></tr>';
+      if(cmOpenRes[r.id]){
+        const list=cmResCache[r.id];
+        let inner;
+        if(!list) inner='해소 원장 불러오는 중…';
+        else if(!list.length) inner='해소 내역 없음 (전량 미해소)';
+        else inner=list.map(x=>{
+          const src=x.source==='manual'?'수동 해소':(x.source==='scan'?'소급 스캔':'판매 해소');
+          const inv=x.sales_invoice_id?(' · 인보이스 '+(x.sat_no?esc(x.sat_no):('#'+x.sales_invoice_id))+(x.inv_date?(' ('+String(x.inv_date).slice(0,10)+')'):'')):'';
+          const who=x.resolved_by_name?(' · '+esc(x.resolved_by_name)):'';
+          return '↳ '+String(x.resolved_at||'').slice(0,10)+' · <b>'+fmtq(x.qty)+'개 해소</b> · '+src+inv+who;
+        }).join('<br>');
+        h+='<tr class="detail"><td colspan="9">'+inner+'</td></tr>';
+      }
+    }
+    h+='</tbody></table>';
+    $('cmDetail').innerHTML=h;
+  }
+  async function cmToggleRes(id){
+    if(cmOpenRes[id]){ delete cmOpenRes[id]; cmRenderDetail(); return; }
+    cmOpenRes[id]=true; cmRenderDetail();
+    if(!cmResCache[id]){
+      try{ const d=await fetch(session.api+'/api/shortages/'+id+'/resolutions',{headers:auth()}).then(r=>r.json());
+        cmResCache[id]=d.items||[]; }
+      catch(e){ cmResCache[id]=[]; }
+      cmRenderDetail();
+    }
+  }
+  async function cmScan(){
+    if(!confirm('과거 판매 이력을 스캔해 부족분을 소급 해소합니다.\n(같은 고객+같은 제품, 부족 발생일 이후 판매분 기준 · 여러 번 실행해도 중복 없음)\n진행할까요?'))return;
+    try{
+      const res=await fetch(session.api+'/api/shortages/resolve-scan',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('스캔 실패: '+(d.error||res.status)); return; }
+      alert('스캔 완료 — 대상 (고객×제품) '+d.pairs+'쌍 · 해소 '+fmtq(d.allocated)+'개 · 원장 '+d.resolutions+'건');
+      cmLoad(); load();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  function cmExport(){
+    if(!cmData||!(cmData.items||[]).length){ alert('내보낼 데이터가 없습니다.'); return; }
+    const aoa=[['Refatrix — 부족분 고객별·월별 ('+CM_YEAR+')'],[],['Cliente','Mes','Ocurrido','Resuelto','Pendiente','Casos']];
+    for(const it of cmData.items) aoa.push([it.customer_name,it.ym,it.occurred_qty,it.resolved_qty,it.remaining_qty,it.cnt]);
+    const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:28},{wch:10},{wch:10},{wch:10},{wch:10},{wch:8}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'FaltantesClientes');
+    XLSX.writeFile(wb,'faltantes_cliente_mes_'+CM_YEAR+'.xlsx');
+  }
+
+  // ===================== Offer Sheet (부족분 입고 알림·재오퍼) =====================
+  let osItems=[], osSummary=null, osDetail=null, companyCache=null, osWaCfg={api_ready:false,template:null}, osPerm={can_disable:false};
+  function showTab(t){
+    $('tabShort').classList.toggle('hidden',t!=='short'); $('tabCust').classList.toggle('hidden',t!=='cust'); $('tabOffer').classList.toggle('hidden',t!=='offer');
+    $('tabBtnShort').classList.toggle('on',t==='short'); $('tabBtnCust').classList.toggle('on',t==='cust'); $('tabBtnOffer').classList.toggle('on',t==='offer');
+    if(t==='offer') osLoad();
+    if(t==='cust') cmLoad();
+  }
+  async function getCompany(){
+    if(companyCache) return companyCache;
+    try{ companyCache=await fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()); }catch(e){ companyCache={}; }
+    return companyCache;
+  }
+  async function osLoad(){
+    try{
+      const d=await fetch(session.api+'/api/offersheets?status=all',{headers:auth()}).then(r=>r.json());
+      osItems=d.items||[]; osSummary=d.summary||null; osWaCfg=d.wa||{api_ready:false,template:null}; osPerm=d.perm||{can_disable:false};
+      $('osBadge').textContent=(osSummary&&osSummary.ready>0)?('('+osSummary.ready+')'):'';
+      osRender();
+    }catch(e){ $('osWrap').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function osStatusPill(s){ const t={ready:'발송 대기',sent:'발송 완료',cancelled:'취소됨'}[s]||s; return '<span class="pill '+esc(s)+'">'+t+'</span>'; }
+  // WhatsApp API 발송 추적 셀: 성공=📲 시각·모드, 실패=⚠ 사유(툴팁)
+  function osWaCell(r){
+    if(r.wa_sent_at){
+      const mode=r.wa_status==='sent_template'?'템플릿':'텍스트';
+      return '<span class="pill sent" title="'+esc(r.wa_to||'')+' · '+mode+'">📲 '+d10(r.wa_sent_at)+'</span>';
+    }
+    if(r.wa_status==='failed') return '<span class="pill cancelled" title="'+esc(r.wa_error||'')+'">⚠ 실패</span>';
+    return '<span class="hint">—</span>';
+  }
+  // 고객 회신 유형: 라벨·색 (note=단순 메모 — "답"으로 안 침)
+  const REPLY_LABELS={ordered:'주문함 ✔',partial:'일부 주문',considering:'검토중',declined:'거절',no_answer:'무응답',note:'메모'};
+  const REPLY_STYLE={ordered:'background:#e4f0eb;color:#0F6E56',partial:'background:#fdf3d7;color:#8a6d1a',considering:'background:#e1e9f0;color:#33495C',declined:'background:#f6e7e4;color:#B23A2E',no_answer:'background:#eee;color:#888',note:'background:#f1efe8;color:#6f6a60'};
+  function osReplyPill(t){ if(!t) return '<span class="hint">—</span>'; return '<span class="pill" style="'+(REPLY_STYLE[t]||'')+'">'+(REPLY_LABELS[t]||t)+'</span>'; }
+  const d10=(s)=> s?String(s).slice(0,10):'—';
+  function osRender(){
+    const f=$('osFilter').value;
+    const rf=$('osReplyFilter')?$('osReplyFilter').value:'all';
+    const list=osItems.filter(x=>{
+      // 비활성 시트도 목록에서 숨기지 않는다 — 회색 [🚫 비활성] 로 함께 보인다.
+      if(f==='disabled'){ if(!x.disabled) return false; }
+      else if(f==='active'){ if(x.disabled) return false; }
+      else if(!(f==='all'||x.status===f)) return false;
+      if(rf==='replied') return !!x.last_reply_type;
+      if(rf==='no_reply') return x.status==='sent'&&!x.last_reply_type;
+      if(rf==='ordered') return x.last_reply_type==='ordered'||x.last_reply_type==='partial';
+      if(rf==='declined') return x.last_reply_type==='declined';
+      return true;
+    });
+    let head='';
+    if(osSummary){
+      head='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 6px">'
+        +'<div class="sb"><div class="v" style="color:#8a6d1a">'+osSummary.ready+'</div><div class="l">발송 대기</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--income)">'+osSummary.sent+'</div><div class="l">발송 완료</div></div>'
+        +'<div class="sb"><div class="v" style="color:#33495C">'+(osSummary.replied||0)+'</div><div class="l">회신 접수</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--expense)">'+(osSummary.no_reply||0)+'</div><div class="l">미회신 (발송 후)</div></div>'
+        +'<div class="sb"><div class="v" style="color:var(--income)">'+(osSummary.ordered||0)+'</div><div class="l">주문 전환</div></div>'
+        +'<div class="sb"><div class="v" style="color:#5b544a">'+(osSummary.disabled||0)+'</div><div class="l">🚫 비활성(중단)</div></div>'
+        +'</div>';
+    }
+    if(!list.length){ $('osWrap').innerHTML=head+'<div class="hint" style="margin-top:10px">해당 조건의 offer sheet가 없습니다. 입고 승인 시 자동 생성되며, [스캔·생성]으로 수동 생성할 수도 있습니다.</div>'; return; }
+    let html=head+'<table><thead><tr><th>상태</th><th>번호</th><th>고객</th><th class="r">SKU</th><th class="r">수량</th><th class="r">총액(IVA포함)</th><th>발송</th><th>📲 WhatsApp</th><th>고객 회신</th><th>구분</th></tr></thead><tbody>';
+    list.forEach(r=>{
+      const reply=r.last_reply_type
+        ? osReplyPill(r.last_reply_type)+' <span class="hint">'+d10(r.last_reply_at)+'</span>'
+          +(r.last_reply_note?'<div class="hint" style="max-width:220px;white-space:normal">'+esc(r.last_reply_note)+'</div>':'')
+        : (r.status==='sent'?'<span class="hint" style="color:var(--expense)">미회신</span>':'<span class="hint">—</span>');
+      html+='<tr class="'+(r.disabled?'offrow':'')+'" style="cursor:pointer" onclick="osOpen('+r.id+')">'
+        +'<td>'+osStatusPill(r.status)
+        +(r.disabled?' <span class="pill off" title="비활성 — 이 오퍼는 중단됨. 담긴 부족분은 다시 오퍼되지 않습니다'
+          +esc(r.disabled_note?(' · '+r.disabled_note):'')+'">🚫 비활성</span>':'')+'</td>'
+        +'<td><b>'+esc(r.offer_no||('#'+r.id))+'</b></td>'
+        +'<td>'+esc(r.customer_name||'')+(r.customer_phone?'':' <span class="hint">(전화 미등록)</span>')+'</td>'
+        +'<td class="r">'+r.item_count+'</td>'
+        +'<td class="r">'+fmtq(r.total_qty)+'</td>'
+        +'<td class="r" style="font-weight:800">'+fmtm(r.total_mxn)+'</td>'
+        +'<td>'+(r.sent_at?d10(r.sent_at)+(r.sent_by_name?' ('+esc(r.sent_by_name)+')':''):'—')+'</td>'
+        +'<td>'+osWaCell(r)+'</td>'
+        +'<td>'+reply+'</td>'
+        +'<td class="hint">'+(r.origin==='auto'?'입고 자동':'수동')+'</td>'
+        +'</tr>';
+    });
+    html+='</tbody></table>';
+    $('osWrap').innerHTML=html;
+  }
+  async function osGenerate(){
+    if(!confirm('지금 재고가 있는 미해소 부족분 전체를 스캔해 고객별 offer sheet를 생성합니다.\n(이미 살아있는 시트에 담긴 부족분은 제외 — 중복 생성 없음)'))return;
+    try{
+      const res=await fetch(session.api+'/api/offersheets/generate',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('생성 실패: '+(d.error||res.status)); return; }
+      alert(d.sheets>0?('offer sheet '+d.sheets+'건(라인 '+d.items+'개) 생성됨'):'새로 생성할 대상이 없습니다.\n(재고 있는 미해소 부족분이 없거나, 이미 전부 시트에 담겨 있습니다)');
+      osLoad();
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  async function osOpen(id){
+    $('osModal').style.display='flex'; $('osModalBody').innerHTML='<div class="hint">불러오는 중…</div>';
+    try{ osDetail=await fetch(session.api+'/api/offersheets/'+id,{headers:auth()}).then(r=>r.json()); }
+    catch(e){ $('osModalBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; return; }
+    if(!osDetail||!osDetail.sheet){ $('osModalBody').innerHTML='<div class="hint">불러오지 못했습니다.</div>'; return; }
+    osRenderDetail();
+  }
+  function osClose(){ $('osModal').style.display='none'; osDetail=null; }
+  async function osSaveReply(){
+    if(!osDetail)return;
+    const type=$('osReplyType').value, note=$('osReplyNote').value.trim();
+    if(type==='note'&&!note){ alert('메모 내용을 입력하세요.'); return; }
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+osDetail.sheet.id+'/replies',{method:'POST',
+        headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify({reply_type:type,note:note||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('저장 실패: '+(d.note||d.error||res.status)); return; }
+      await osLoad(); osOpen(osDetail.sheet.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  function osRenderDetail(){
+    const s=osDetail.sheet, lines=osDetail.lines||[];
+    let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<div style="font-size:16px;font-weight:800;color:var(--brand)">'+esc(s.offer_no||('#'+s.id))+'</div>'+osStatusPill(s.status)
+      +(s.disabled?'<span class="pill off">🚫 비활성</span>':'')
+      +'<div class="hint">생성 '+d10(s.created_at)+(s.origin==='auto'?' · 입고 자동'+(s.import_batch_no?' (배치 '+esc(s.import_batch_no)+')':''):' · 수동')+'</div>'
+      +'<button class="btn ghost sm" style="margin-left:auto" onclick="osClose()">닫기 ✕</button></div>'
+      +'<div style="margin-top:8px;font-size:13px"><b>'+esc(s.customer_name||'')+'</b>'
+      +(s.buyer_name?' · 🛒 구매담당 <b>'+esc(s.buyer_name)+'</b>':(s.customer_contact?' · '+esc(s.customer_contact):''))
+      +(s.customer_phone
+        ?' · 📞 '+esc(s.customer_phone)+(s.phone_is_buyer
+          ?' <span class="pill" style="background:#e4f0eb;color:#0F6E56">구매결정권자</span>'
+          :' <span class="hint">(기본 전화 — 고객관리에 구매결정권자 전화를 등록하면 그 번호로 발송)</span>')
+        :' · <span style="color:var(--expense)">전화 미등록 — 고객관리에서 구매결정권자 전화(WhatsApp)를 등록하세요</span>')+'</div>';
+    // ---- 비활성(중단) 시트: 발송 관련 동작을 전부 감추고, 활성화 버튼만 남긴다 ----
+    if(s.disabled){
+      h+='<div style="margin:12px 0 4px;padding:10px 12px;border-radius:10px;background:#f1efe8;border:1px solid var(--line);font-size:12.5px">'
+        +'<b>🚫 비활성(중단)된 오퍼입니다.</b> 발송·PDF 출력·회신 기록이 잠겨 있고, '
+        +'이 시트에 담긴 부족분·견적 부족라인은 <b>다시 오퍼시트로 만들어지지 않습니다</b>. '
+        +'부족 기록 자체는 그대로 남아 있습니다(발주 근거).'
+        +'<div class="hint" style="margin-top:4px">중단: '+d10(s.disabled_at)+(s.disabled_by_name?' · '+esc(s.disabled_by_name):'')
+        +(s.disabled_note?' · '+esc(s.disabled_note):'')+'</div></div>'
+        +'<div style="margin:8px 0 4px;display:flex;gap:8px;flex-wrap:wrap">'
+        +(osPerm.can_disable?'<button class="btn" onclick="osEnable()">↩ 활성화 (다시 오퍼 대상으로)</button>'
+                            :'<span class="hint">활성화는 디렉터 또는 Maria 만 할 수 있습니다.</span>')
+        +'</div>';
+    } else {
+    h+='<div style="margin:12px 0 4px;display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn" onclick="osPrintPdf()">🧾 Offer Sheet PDF 출력</button>'
+      +(s.customer_phone&&s.status!=='cancelled'
+        ?(osWaCfg.api_ready
+          ?'<button class="btn wa" onclick="osWaSend()">📲 WhatsApp 자동발송</button>'
+          :'<button class="btn wa" disabled title="Railway 환경변수 WHATSAPP_TOKEN·WHATSAPP_PHONE_ID 필요 — 아래 「자동발송 설정 방법」 참고">📲 자동발송(미설정)</button>')
+        :'')
+      +(s.customer_phone?'<button class="btn ghost" onclick="osWhatsapp()">💚 수동으로 열기</button>':'')
+      +(s.status==='ready'?'<button class="btn ghost" onclick="osMarkSent()">✅ 발송완료 처리</button>':'')
+      +(s.status!=='cancelled'?'<button class="btn danger" onclick="osCancel()">✖ 취소</button>':'')
+      +(osPerm.can_disable?'<button class="btn danger" onclick="osDisable()">🚫 비활성화 (오퍼 중단)</button>':'')
+      +'</div>'
+      +'<div class="hint">📲 자동발송 = 버튼 한 번으로 고객 번호에 오퍼 문구가 바로 전송되고 발송 이력이 기록됩니다'
+      +(osWaCfg.template?' (24시간 창 밖이면 템플릿 '+esc(osWaCfg.template)+' 헤드라인으로 자동 폴백)':' (템플릿 미설정 — 고객이 24시간 내 회신한 적 없으면 도달 안 될 수 있음)')
+      +'. 💚 수동 = 문구가 채워진 채팅창만 열림(PDF 첨부는 수동).</div>'
+      +(osPerm.can_disable?'<div class="hint" style="margin-top:2px">✖ <b>취소</b> = 이 시트만 무효 — 담긴 부족분은 다음 스캔에서 <b>다시 오퍼로 생성</b>됩니다. '
+        +'🚫 <b>비활성화</b> = 오퍼 자체를 중단 — 부족 기록은 남기고 <b>다시 생성되지 않습니다</b>(되돌리기 가능).</div>':'');
+    }
+    if(s.wa_sent_at||s.wa_status){
+      h+='<div class="hint" style="margin-top:4px">'
+        +(s.wa_sent_at?('📲 API 발송: '+d10(s.wa_sent_at)+' · '+(s.wa_status==='sent_template'?'템플릿':'텍스트')+' · '+esc(s.wa_to||'')+(s.wa_message_id?' · id '+esc(String(s.wa_message_id).slice(0,24))+'…':'')):('⚠ API 발송 실패: '+esc(s.wa_error||'')))
+        +'</div>';
+    }
+    h+='<table><thead><tr><th>CTR 코드</th><th>제품명</th><th class="r">현재고</th><th class="r">제안 수량</th><th class="r">정가</th><th class="r">할인</th><th class="r">단가</th><th class="r">금액(IVA제외)</th><th>부족 발생 · 출처</th></tr></thead><tbody>';
+    lines.forEach(l=>{
+      h+='<tr><td><b>'+esc(l.ctr_code||'')+'</b></td><td>'+esc(l.product_name||'')+'</td>'
+        +'<td class="r">'+fmtq(l.stock_qty)+'</td>'
+        +'<td class="r" style="font-weight:800">'+fmtq(l.offer_qty)+'</td>'
+        +'<td class="r">'+fmtm(l.list_price)+'</td>'
+        +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
+        +'<td class="r">'+fmtm(l.unit_price)+'</td>'
+        +'<td class="r">'+fmtm(l.line_subtotal)+'</td>'
+        +'<td class="hint">'+d10(l.first_occurred)+((l.sources&&l.sources.length)?' · '+esc(l.sources.join(', ')):'')+'</td></tr>';
+    });
+    h+='</tbody></table>'
+      +'<div style="text-align:right;margin-top:10px;font-size:13.5px">Subtotal '+fmtm(s.subtotal_mxn)+' · IVA '+fmtm(s.iva_mxn)+' · <b style="color:var(--brand)">Total '+fmtm(s.total_mxn)+'</b></div>';
+    if(s.sent_at) h+='<div class="hint" style="margin-top:6px">발송: '+d10(s.sent_at)+' · '+esc(s.sent_channel||'')+(s.sent_by_name?' · '+esc(s.sent_by_name):'')+'</div>';
+    // ---- 고객 회신 기록 (타임라인 + 입력) ----
+    const reps=osDetail.replies||[];
+    h+='<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">'
+      +'<div style="font-weight:800;color:var(--brand);font-size:13px;margin-bottom:6px">💬 고객 회신 기록'
+      +(reps.length?' <span class="hint">('+reps.length+'건)</span>':'')+'</div>';
+    if(s.status!=='cancelled'&&!s.disabled){
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+        +'<select id="osReplyType" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">'
+        +'<option value="ordered">주문함 ✔</option><option value="partial">일부 주문</option><option value="considering">검토중</option>'
+        +'<option value="declined">거절</option><option value="no_answer">무응답</option><option value="note">메모만</option></select>'
+        +'<input id="osReplyNote" type="text" placeholder="고객이 뭐라고 답했는지 메모 (예: 다음 주 100개 주문 예정)" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12.5px">'
+        +'<button class="btn sm" onclick="osSaveReply()">회신 저장</button></div>';
+    }
+    if(reps.length){
+      h+=reps.map(r=>'<div style="padding:6px 2px;border-bottom:1px dashed var(--line);font-size:12.5px">'
+        +osReplyPill(r.reply_type)+' <span class="hint">'+d10(r.created_at)+(r.created_by_name?' · '+esc(r.created_by_name):'')+'</span>'
+        +(r.note?'<div style="margin-top:2px">'+esc(r.note)+'</div>':'')
+        +'</div>').join('');
+    } else {
+      h+='<div class="hint">아직 회신 기록이 없습니다.'+(s.status==='sent'?' 고객 답을 받으면 위에서 기록하세요.':'')+'</div>';
+    }
+    h+='</div>';
+    $('osModalBody').innerHTML=h;
+  }
+  async function osWaSend(){
+    if(!osDetail)return;
+    const s=osDetail.sheet;
+    if(!confirm('고객 '+(s.customer_name||'')+' ('+(s.customer_phone||'')+') 에게 이 오퍼시트를 WhatsApp 으로 바로 발송할까요?\n발송 결과는 자동으로 기록됩니다.'))return;
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+s.id+'/wa-send',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('발송 실패: '+(d.detail||d.note||d.error||res.status)); await osLoad(); osOpen(s.id); return; }
+      alert('✅ 발송 완료 ('+(d.mode==='template'?'템플릿 헤드라인':'전체 텍스트')+' · '+(d.to_masked||'')+')');
+      await osLoad(); osOpen(s.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  async function osMarkSent(){
+    if(!osDetail)return;
+    if(!confirm('이 offer sheet를 발송 완료(WhatsApp)로 기록할까요?'))return;
+    const res=await fetch(session.api+'/api/offersheets/'+osDetail.sheet.id+'/mark-sent',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify({channel:'whatsapp'})});
+    const d=await res.json();
+    if(!res.ok||d.error){ alert('처리 실패: '+(d.note||d.error||res.status)); return; }
+    await osLoad(); osOpen(osDetail.sheet.id);
+  }
+  async function osCancel(){
+    if(!osDetail)return;
+    if(!confirm('이 offer sheet를 취소할까요?\n취소하면 담겨 있던 부족분은 다음 입고·스캔 때 다시 생성 대상이 됩니다.\n\n(다시 만들어지지 않게 하려면 [🚫 비활성화]를 쓰세요 — 부족 기록은 남고 오퍼만 중단됩니다)'))return;
+    const res=await fetch(session.api+'/api/offersheets/'+osDetail.sheet.id+'/cancel',{method:'POST',headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+    const d=await res.json();
+    if(!res.ok||d.error){ alert('처리 실패: '+(d.error||res.status)); return; }
+    osClose(); osLoad();
+  }
+  // ---- 오퍼 비활성화(중단) / 활성화 — 디렉터·Maria 만 ----
+  //   취소와 다르다: 부족 기록은 그대로 두고, 이 시트의 부족분이 "다시 오퍼시트로 생성되지 않게" 막는다.
+  async function osDisable(){
+    if(!osDetail)return;
+    const s=osDetail.sheet;
+    if(!confirm('이 오퍼("'+(s.offer_no||('#'+s.id))+'" · '+(s.customer_name||'')+')를 비활성화(중단)할까요?\n\n'
+      +'· 부족 기록은 그대로 남습니다(발주 근거).\n'
+      +'· 이 시트에 담긴 부족분·견적 부족라인은 앞으로 오퍼시트가 다시 생성되지 않습니다.\n'
+      +'· 발송·PDF·회신 기록이 잠깁니다.'
+      +(s.status==='sent'?'\n· 이미 발송된 시트라 오퍼 전환 KPI(월간 실적) 집계에서도 빠집니다.':'')
+      +'\n\n나중에 [↩ 활성화]로 되돌릴 수 있습니다.'))return;
+    const note=prompt('중단 사유(선택 — 나중에 목록에서 보입니다)','')||'';
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+s.id+'/disable',{method:'POST',
+        headers:{...auth(),'Content-Type':'application/json'},body:JSON.stringify({note:note.trim()||null})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('처리 실패: '+(d.note||d.error||res.status)); return; }
+      await osLoad(); osOpen(s.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  async function osEnable(){
+    if(!osDetail)return;
+    const s=osDetail.sheet;
+    if(!confirm('이 오퍼를 다시 활성화할까요?\n원래 상태('+({ready:'발송 대기',sent:'발송 완료',cancelled:'취소됨'}[s.status]||s.status)+')로 돌아가고, '
+      +'취소 상태라면 담긴 부족분이 다음 스캔에서 다시 오퍼 대상이 됩니다.'))return;
+    try{
+      const res=await fetch(session.api+'/api/offersheets/'+s.id+'/enable',{method:'POST',
+        headers:{...auth(),'Content-Type':'application/json'},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('처리 실패: '+(d.note||d.error||res.status)); return; }
+      await osLoad(); osOpen(s.id);
+    }catch(e){ alert('서버에 연결할 수 없습니다.'); }
+  }
+  function osWaDigits(phone){
+    let dg=String(phone||'').replace(/\D/g,'');
+    if(!dg) return null;
+    if(dg.length===10) dg='52'+dg;             // 멕시코 국번 자동
+    return dg;
+  }
+  function osWhatsapp(){
+    if(!osDetail)return;
+    const s=osDetail.sheet, lines=osDetail.lines||[];
+    const dg=osWaDigits(s.customer_phone);
+    if(!dg){ alert('고객 전화번호가 없습니다.'); return; }
+    const items=lines.map(l=>'• '+(l.ctr_code||'')+' — '+(l.product_name||'')+' × '+fmtq(l.offer_qty)).join('\n');
+    const greet=s.buyer_name||s.customer_contact;
+    const msg='Hola'+(greet?' '+greet:'')+', le saludamos de parte de '+((companyCache&&companyCache.emisor)||'CTR')+'. 🎉\n\n'
+      +'¡Buenas noticias! Los productos que solicitó y que estaban agotados YA ESTÁN DISPONIBLES en nuestro almacén:\n\n'
+      +items+'\n\nTotal con IVA: '+fmtm(s.total_mxn)+' MXN\n\n'
+      +'Le enviamos la oferta en PDF ('+(s.offer_no||'')+'). Sujeto a existencia disponible — le recomendamos confirmar su pedido pronto. ¡Gracias!';
+    getCompany().then(()=>{ window.open('https://wa.me/'+dg+'?text='+encodeURIComponent(msg),'_blank'); });
+  }
+  async function osPrintPdf(){
+    if(!osDetail)return;
+    const s=osDetail.sheet, lines=osDetail.lines||[];
+    const co=await getCompany();
+    const logo=co.logo_data?'<img src="'+co.logo_data+'" style="height:52px">':'';
+    const rowsHtml=lines.map(l=>'<tr>'
+      +'<td>'+esc(l.ctr_code||'')+'</td>'
+      +'<td>'+esc(l.syd_codes||'—')+'</td>'
+      +'<td class="l">'+esc(l.product_name||'')+(l.app_text?'<br><span class="ap">'+esc(l.app_text)+'</span>':'')+'</td>'
+      +'<td class="r">'+fmtq(l.offer_qty)+'</td>'
+      +'<td class="r">'+fmtm(l.list_price)+'</td>'
+      +'<td class="r">'+(Number(l.discount_rate)||0)+'%</td>'
+      +'<td class="r">'+fmtm(l.unit_price)+'</td>'
+      +'<td class="r">'+fmtm(l.line_subtotal)+'</td>'
+      +'</tr>').join('');
+    const bankParts=[];
+    if(co.bank_name)bankParts.push('Banco: '+esc(co.bank_name));
+    if(co.bank_account)bankParts.push('Cuenta: '+esc(co.bank_account));
+    if(co.bank_clabe)bankParts.push('CLABE: '+esc(co.bank_clabe));
+    if(co.bank_holder)bankParts.push('Beneficiario: '+esc(co.bank_holder));
+    const today=new Date().toISOString().slice(0,10);
+    const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(s.offer_no||'Oferta')+'</title><style>'
+      +'body{font-family:Arial,Helvetica,sans-serif;color:#1C1B19;margin:26px;font-size:12px}'
+      +'.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #143D34;padding-bottom:10px}'
+      +'.co{font-size:11px;color:#555;line-height:1.5;text-align:right}'
+      +'h1{font-size:19px;color:#143D34;margin:4px 0 2px}'
+      +'.sub{font-size:12px;color:#0F6E56;font-weight:bold}'
+      +'.meta{margin:12px 0;font-size:12px;line-height:1.6}'
+      +'.banner{background:#E4F0EB;border:1px solid #0F6E56;border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;line-height:1.55}'
+      +'table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}'
+      +'thead{display:table-header-group}'
+      +'th{background:#143D34;color:#fff;padding:6px 7px;text-align:left;font-size:10px}'
+      +'td{padding:6px 7px;border-bottom:1px solid #ddd;vertical-align:top}'
+      +'td.r,th.r{text-align:right}td.l{text-align:left}'
+      +'.ap{color:#777;font-size:10px}'
+      +'tr{page-break-inside:avoid}'
+      +'.totwrap{page-break-inside:avoid;margin-top:12px;display:flex;justify-content:flex-end}'
+      +'.tot{min-width:250px;font-size:12.5px}.tot div{display:flex;justify-content:space-between;padding:3px 0}'
+      +'.tot .g{font-weight:bold;font-size:14.5px;color:#143D34;border-top:2px solid #143D34;padding-top:6px}'
+      +'.ft{margin-top:16px;font-size:10.5px;color:#666;line-height:1.6;border-top:1px solid #ddd;padding-top:8px}'
+      +'@page{margin:14mm}'
+      +'</style></head><body>'
+      +'<div class="hd"><div>'+logo+'<h1>OFERTA — PRODUCTOS YA DISPONIBLES</h1><div class="sub">'+esc(s.offer_no||'')+'</div></div>'
+      +'<div class="co"><b>'+esc(co.emisor||'')+'</b><br>'+esc(co.domicilio||'')+'<br>'+(co.rfc?'RFC: '+esc(co.rfc)+'<br>':'')+(co.phone?'Tel/WhatsApp: '+esc(co.phone)+'<br>':'')+esc(co.homepage||'')+'</div></div>'
+      +'<div class="meta"><b>Cliente:</b> '+esc(s.customer_name||'')+(s.customer_rfc?' · RFC: '+esc(s.customer_rfc):'')+(s.customer_contact?'<br><b>Atención:</b> '+esc(s.customer_contact):'')+'<br><b>Fecha:</b> '+today+'</div>'
+      +'<div class="banner">📦 <b>¡Buenas noticias!</b> Los productos que usted solicitó y que se encontraban <b>agotados ya están disponibles</b> en nuestro almacén. '
+      +'Le presentamos esta oferta con su precio aplicado. <b>Sujeto a existencia disponible</b> — le recomendamos confirmar su pedido a la brevedad.</div>'
+      +'<table><thead><tr><th>Código CTR</th><th>Código SYD</th><th>Producto / Aplicación</th><th class="r">Cantidad</th><th class="r">Precio lista</th><th class="r">Desc.</th><th class="r">Precio</th><th class="r">Importe</th></tr></thead>'
+      +'<tbody>'+rowsHtml+'</tbody></table>'
+      +'<div class="totwrap"><div class="tot">'
+      +'<div><span>Subtotal</span><span>'+fmtm(s.subtotal_mxn)+'</span></div>'
+      +'<div><span>IVA (16%)</span><span>'+fmtm(s.iva_mxn)+'</span></div>'
+      +'<div class="g"><span>TOTAL MXN</span><span>'+fmtm(s.total_mxn)+'</span></div>'
+      +'</div></div>'
+      +'<div class="ft">'+(bankParts.length?bankParts.join(' · ')+'<br>':'')
+      +'Precios en MXN. Oferta informativa generada a partir de sus pedidos pendientes por falta de existencia; no constituye una factura. Sujeto a existencia disponible al momento de confirmar su pedido.</div>'
+      +'<scr'+'ipt>window.onload=function(){window.print();};</scr'+'ipt>'
+      +'</body></html>';
+    const w=window.open('','_blank');
+    if(!w){ alert('팝업이 차단되었습니다. 팝업을 허용하세요.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+  console.log('[refatrix-shortage] build sh-0826a');
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

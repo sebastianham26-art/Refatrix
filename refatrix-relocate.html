@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 위치변경 Cambio de ubicación · build rel-0827a</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
+    --gold:#9A6512;--gold-bg:#FDF8EE;--blue:#2E6F9E;--blue-bg:#E8F1F7;--navh:40px}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px}
+  .wrap{max-width:1080px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:21px;color:var(--brand)}
+  header .sub{font-size:12.5px;color:var(--muted)}
+  header .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  a.portalBtn{color:var(--brand);font-size:12px;text-decoration:none;border:1px solid var(--brand);padding:5px 10px;border-radius:7px}
+  .langbtn,.pdabtn{padding:5px 10px;border:1px solid var(--brand);background:#fff;color:var(--brand);
+    border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  .card h2{font-size:14px;font-weight:800;color:var(--brand);margin:0 0 10px}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.red{background:var(--red)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.45;cursor:default}
+  .idle{color:var(--muted);font-size:13px;text-align:center;padding:22px}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+
+  /* 탭 */
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{padding:7px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:13px;
+    font-weight:700;color:var(--muted);cursor:pointer}
+  .tab.cur{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+  /* 3단계 표시 */
+  .steps{display:flex;gap:6px;margin:0 0 9px}
+  .step{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;padding:7px 8px;background:#fff;text-align:center}
+  .step .t{font-size:12px;font-weight:800;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .step .m{font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .step.cur{border-color:var(--brand);background:#EEF4F2}
+  .step.cur .t{color:var(--brand)}
+  .step.done{border-color:var(--green);background:var(--green-bg)}
+  .step.done .t{color:var(--green)}
+  .step.done .m{color:var(--green);font-weight:700}
+
+  /* 스캔 고정 블록 */
+  .scanstick{background:var(--card)}
+  .scanbox{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-height:74px;background:#fff}
+  .scanbox.ok{border-color:var(--green);background:var(--green-bg)}
+  .scanbox.warn{border-color:var(--gold);background:var(--gold-bg)}
+  .scanbox.err{border-color:var(--red);background:var(--red-bg)}
+  .scanbox .sku{font-size:24px;font-weight:800;letter-spacing:.3px}
+  .scanbox .nm{font-size:12.5px;color:var(--muted);margin-top:1px}
+  .scanbox .z{display:flex;gap:10px;align-items:center;margin-top:7px;flex-wrap:wrap;font-size:13px}
+  .rackbig{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;font-weight:800;font-size:20px}
+  .kchip{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:#EFEDE6;color:var(--muted)}
+  .kchip.fast{background:#E8F1F7;color:var(--blue)}
+  .kchip.carton{background:#EFEDE6;color:#5B564D}
+  .path{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 11px;border:1px solid var(--line);
+    border-radius:10px;background:#FBFAF7;margin-bottom:8px}
+  .path .arrow{font-size:17px;color:var(--muted)}
+  .path .lbl{font-size:10.5px;color:var(--muted);font-weight:700;display:block}
+  .scaninput{display:flex;gap:7px;margin-top:8px}
+  .scaninput input{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;font-size:15px}
+  .qtybox{display:flex;gap:7px;align-items:center;margin-top:7px;flex-wrap:wrap;font-size:12.5px}
+  .qtybox input{width:88px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit}
+  .opts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:9px;font-size:12px;color:var(--muted)}
+  .opts label{display:flex;gap:5px;align-items:center;cursor:pointer}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{position:sticky;top:0;background:#F0EDE4;text-align:left;padding:7px 9px;font-size:11px;
+    color:var(--muted);border-bottom:1px solid var(--line);z-index:1;white-space:nowrap}
+  tbody td{padding:6px 9px;border-bottom:1px solid #F1EDE3;vertical-align:top}
+  tbody tr.gsep td{background:#F7F5EF;font-weight:800;color:var(--brand);font-size:12px}
+  tbody tr.dirty td{background:#FFFCEF}
+  td.num{text-align:right}
+  .tblbox{max-height:58vh;overflow:auto;border:1px solid var(--line);border-radius:9px}
+  select.ksel{padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px;background:#fff;min-width:130px}
+  select.ksel[data-k="fast"]{border-color:var(--blue);color:var(--blue);font-weight:700}
+  .kpis{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px}
+  .kpi{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
+  .kpi .k{font-size:11px;color:var(--muted);font-weight:700}
+  .kpi .v{font-size:19px;font-weight:800;margin-top:2px}
+  .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .filters input,.filters select{padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px;background:#fff}
+  .savebar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
+    padding:11px 0 2px;margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:#EFEDE6;color:var(--muted);font-weight:700}
+  .pill.on{background:#FFF3CD;color:#8A6300}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:#1C1B19;color:#fff;
+    padding:10px 16px;border-radius:9px;font-size:13px;z-index:9999;display:none;max-width:92vw;text-align:center}
+
+  /* ===== PDA 컴팩트 모드 — 수입입고/포장과 같은 처방(2026-08-26) ===== */
+  body.pda{padding:6px 0 0}
+  body.pda .pdabtn,body.pda .langbtn{padding:3px 9px;font-size:11px}
+  body.pda #rnav .rsub{display:none!important}
+  body.pda #rnav .rbar{height:40px!important;padding:0 6px!important}
+  body.pda #rnav .rlogo,body.pda #rnav .rwho,body.pda #rnav .rpres{display:none!important}
+  body.pda #rnav .rhome{width:26px!important;height:26px!important;margin-right:3px!important;font-size:13px!important}
+  body.pda #rnav .rg{padding:12px 8px!important;font-size:11.5px!important}
+  body.pda #rnav .rlogout{margin-left:6px!important;padding:4px 9px!important;font-size:10px!important}
+  body.pda .wrap{padding:0 8px 44px}
+  body.pda header{padding:4px 0 0;gap:7px}
+  body.pda header h1{font-size:13px}
+  body.pda header .sub,body.pda .portalBtn{display:none}
+  body.pda .card{padding:8px;border-radius:11px;margin-bottom:8px}
+  body.pda .card h2{font-size:13px;margin:0 0 5px}
+  body.pda .tabs{gap:4px;margin-bottom:7px}
+  body.pda .tab{padding:5px 10px;font-size:12px}
+  body.pda .scanstick{position:sticky;top:var(--navh,40px);z-index:40;background:var(--card);
+    padding-top:5px;max-height:72vh;overflow:auto;box-shadow:0 6px 10px -8px rgba(0,0,0,.28)}
+  body.pda .steps{gap:4px;margin-bottom:6px}
+  body.pda .step{padding:5px 3px}
+  body.pda .step .t{font-size:11.5px} body.pda .step .m{font-size:9.5px}
+  body.pda .path{padding:6px 9px;margin-bottom:6px;gap:8px}
+  body.pda .scanbox{min-height:0;padding:9px 11px;border-radius:11px}
+  body.pda .scanbox .sku{font-size:21px}
+  body.pda .rackbig{font-size:18px}
+  body.pda .scaninput{margin-top:6px}
+  body.pda .scaninput input{padding:8px 10px}
+  body.pda .hint{font-size:10.5px}
+  body.pda .tblbox{max-height:none}
+  body.pda .kpi{min-width:96px;padding:7px 9px}
+  body.pda .kpi .v{font-size:16px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="ttl">위치변경 · Cambio de ubicación</h1>
+    <span class="sub" id="sub">카톤 라벨 → 기존 위치 → 새 위치 스캔</span>
+    <span class="right">
+      <button type="button" class="langbtn" id="langToggle">🌐 Español</button>
+      <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
+    </span>
+  </header>
+  <div id="app"><div class="card"><div class="idle" id="boot">불러오는 중…</div></div></div>
+</div>
+<div id="toast"></div>
+
+<script src="refatrix-nav.js?v=20260827rl"></script>
+<script>
+(function(){
+  /* =====================================================================
+     Refatrix · 창고 위치변경 (Cambio de ubicación) — build rel-0827a
+     현장: 수입 제품은 카톤박스 단위로 랙에 적재된다. 일부 랙은 fast moving rack 이며
+           개별포장 단위로 운영한다. 카톤 랙 → fast moving rack 으로 박스를 옮길 때
+           "무엇을 · 어디서 → 어디로 · 몇 박스" 를 스캔 3번으로 남긴다.
+     스캔 순서: ① 카톤박스 Code-128 라벨 ② 기존 위치 ③ 새 위치 → 자동 저장
+     재고 총량은 바뀌지 않는다. 바뀌는 것은 위치뿐이다.
+     ===================================================================== */
+  function sess(){
+    try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+    return null;
+  }
+  var BUILD='rel-0827a';
+  var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  try{ console.log('[refatrix-relocate] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
+
+  var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
+  function L(ko,es){ return LANG==='es'?es:ko; }
+  var isDir=(S&&S.user&&S.user.role==='director');
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var fmt=function(n){return Number(n||0).toLocaleString(LANG==='es'?'es-MX':'ko-KR');};
+
+  function api(path,opt){ opt=opt||{}; opt.headers=Object.assign({},AUTH,opt.headers||{});
+    return fetch(API+path,opt).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j||{}}; })
+      .catch(function(){ return {ok:r.ok,status:r.status,body:{}}; }); })
+      .catch(function(){ return {ok:false,status:0,body:{error:'network'}}; }); }
+
+  $('langToggle').textContent=LANG==='es'?'🌐 한국어':'🌐 Español';
+  $('langToggle').addEventListener('click',function(){ var n=LANG==='es'?'ko':'es'; try{localStorage.setItem('wh_lang',n);}catch(e){} location.reload(); });
+  $('ttl').textContent=L('위치변경 · Cambio de ubicación','Cambio de ubicación');
+  $('sub').textContent=L('카톤 라벨 → 기존 위치 → 새 위치 스캔','Etiqueta de caja → ubicación actual → ubicación nueva');
+  (function(){ var a=document.querySelector('a.portalBtn'); if(a) a.textContent=L('← 포털','← Portal'); })();
+
+  if(!S){ $('app').innerHTML='<div class="card"><div class="idle">'+L('세션이 없습니다. 포털에서 다시 여세요.','Sin sesión. Abra desde el portal.')+'</div></div>'; return; }
+
+  /* ===== 소리 — 수입입고와 같은 규칙 ===================================
+     ✔ 등록음(상승 2음)=스캔 인식 · 저장음(3음)=서버 저장 · ⚠ 주의음=확인필요 · ✖ 오류음=차단 */
+  var AC=null;
+  function tone(freq,dur,delay,type,vol){
+    try{
+      var Ctx=window.AudioContext||window.webkitAudioContext; if(!Ctx) return;
+      if(!AC) AC=new Ctx();
+      if(AC.state==='suspended'&&AC.resume) AC.resume();
+      var t0=AC.currentTime+(delay||0)/1000;
+      var o=AC.createOscillator(), g=AC.createGain();
+      o.type=type||'sine'; o.frequency.value=freq;
+      g.gain.setValueAtTime(vol||0.28,t0);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+dur/1000);
+      o.connect(g); g.connect(AC.destination); o.start(t0); o.stop(t0+dur/1000+0.02);
+    }catch(e){}
+  }
+  function sndOk(){ tone(1175,70,0); tone(1568,90,85); }
+  function sndSaved(){ tone(784,90,0); tone(988,90,100); tone(1319,140,200); }
+  function sndWarn(){ tone(660,110,0,'triangle'); tone(440,220,110,'triangle'); }
+  function sndErr(){ tone(196,160,0,'square',0.2); tone(196,200,220,'square',0.2); }
+  function sndInfo(){ tone(880,80,0); }
+
+  var toastT=null;
+  function toast(msg){
+    var el=$('toast'); if(!el) return;
+    el.textContent=msg; el.style.display='block';
+    clearTimeout(toastT); toastT=setTimeout(function(){ el.style.display='none'; },2600);
+  }
+
+  /* ===== 스캐너 입력 보정 — 스페인어 자판에서 `-` 가 `'` 로 들어온다 ===== */
+  var QUOTE_RE=/['‘’´`ʼ]/g;
+  function normScan(v){
+    return String(v||'')
+      .replace(/[\u0000-\u001f\u007f]/g,'')
+      .replace(QUOTE_RE,'-')
+      .replace(/\s+/g,'')
+      .toUpperCase();
+  }
+  function bare(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function bareEq(a,b){ var x=bare(a); return !!x && x===bare(b); }
+  function looksCompanion(code){ return !/[A-Za-z]/.test(String(code||'')) && /^\d{8,}$/.test(bare(code)); }
+
+  /* 카톤 라벨 파서 — `CTR-<제품번호>-<소입수량>` (CTR-CE0796-16 → CE0796 / 16 EA)
+     여기서는 패킹리스트가 없으므로 후보를 만들고 서버 조회로 확정한다. */
+  function parseLabel(v){
+    var norm=normScan(v), body=norm, pre='', m;
+    if(!norm) return {raw:'',norm:'',code:'',qty:0,prefix:''};
+    m=norm.match(/^(CTR|SYD)-?(.+)$/); if(m){ pre=m[1]; body=m[2]; }
+    m=body.match(/^(.*[A-Z0-9])-(\d{1,6})$/);
+    if(m) return {raw:String(v==null?'':v),norm:norm,code:m[1],qty:+m[2],prefix:pre};
+    return {raw:String(v==null?'':v),norm:norm,code:body,qty:0,prefix:pre};
+  }
+
+  /* 이중 리딩 무시 — 같은 값이 450ms 안에 또 들어오면 조용히 버린다 */
+  var DUP_MS=450, dupCode='', dupAt=0, dupWarned=false;
+  function dupScan(norm){
+    var now=Date.now();
+    if(norm && norm===dupCode && (now-dupAt)<DUP_MS){
+      dupAt=now;
+      if(!dupWarned){ dupWarned=true; sndWarn(); toast('⚠ '+L('중복 리딩 — 무시했습니다','Lectura duplicada — ignorada')); }
+      return true;
+    }
+    dupCode=norm; dupAt=now; dupWarned=false; return false;
+  }
+
+  /* 스캔 입력 배선 — Enter 에 의존하지 않는다(수입입고와 동일 처방) */
+  function wireScanInput(inp,fn){
+    inp.addEventListener('input',function(){
+      var v=inp.value, n=v.replace(QUOTE_RE,'-').toUpperCase();
+      if(n!==v){ var p=inp.selectionStart; inp.value=n; try{ inp.setSelectionRange(p,p); }catch(e){} }
+    });
+    var t=null, lastEvt=0, manual=false;
+    function clearT(){ if(t){ clearTimeout(t); t=null; } }
+    function fire(){
+      clearT(); manual=false; lastEvt=0;
+      var v=inp.value; inp.value='';
+      try{ inp.focus(); }catch(e){}
+      if(!v) return;
+      fn(v);
+    }
+    inp.addEventListener('input',function(){
+      var now=Date.now();
+      if(inp.value===''){ manual=false; lastEvt=0; clearT(); return; }
+      if(lastEvt && (now-lastEvt)>80) manual=true;
+      lastEvt=now; clearT();
+      if(!manual) t=setTimeout(fire,140);
+    });
+    function onEnter(e){ if(e.key==='Enter'||e.keyCode===13){ e.preventDefault(); fire(); } }
+    inp.addEventListener('keydown',onEnter);
+    inp.addEventListener('keypress',onEnter);
+    return fire;
+  }
+
+  /* ============ 상태 ============ */
+  var TAB='move';                 // move | log | kinds
+  var RACKS=[], RACKMAP={};       // 랙 목록(유형 포함) — 스캔값이 랙인지 즉시 판정
+  var cur={prod:null,label:null,from:null,to:null,cartons:1,per:0,warn:null,err:null,info:null};
+  var lockPath=true;              // 경로 고정 — 같은 랙→랙 반복 이동에서 카톤 라벨만 스캔
+  var updMaster=true;             // 제품마스터 위치도 갱신(디렉터 정책 기본값)
+  var saving=false, lastMove=null;
+  var MOVES=[], SUMMARY=null;
+  var kindDraft={};               // 랙 유형 편집 초안
+
+  try{ var lp=localStorage.getItem('rel_lockpath'); if(lp==='0') lockPath=false; }catch(e){}
+  try{ var um=localStorage.getItem('rel_updmaster'); if(um==='0') updMaster=false; }catch(e){}
+
+  function rackKey(r){ return String(r==null?'':r).trim().toUpperCase(); }
+  function findRack(v){
+    var k=rackKey(v); if(!k) return null;
+    if(RACKMAP[k]) return RACKMAP[k];
+    // 구분자 표기 흔들림(A'01'03 / A0103) 폴백
+    var b=bare(k);
+    for(var i=0;i<RACKS.length;i++){ if(bare(RACKS[i].rack)===b) return RACKS[i]; }
+    return null;
+  }
+  function kindOf(v){ var r=findRack(v); return r?r.kind:null; }
+  function kindLabel(k){ return k==='fast'?L('개별(fast moving)','Individual (fast moving)'):L('카톤','Caja/carton'); }
+  function kindChip(k,setFlag){
+    if(!k) return '';
+    return '<span class="kchip '+(k==='fast'?'fast':'carton')+'">'+(k==='fast'?'⚡ ':'📦 ')+esc(kindLabel(k))
+      +(setFlag===false?' · '+L('기본값','por defecto'):'')+'</span>';
+  }
+
+  /* ============ 로딩 ============ */
+  function loadRacks(cb){
+    api('/api/warehouse/racks').then(function(o){
+      if(!o.ok){ $('boot')&&($('boot').textContent=L('랙 목록을 불러오지 못했습니다','No se pudo cargar la lista de ubicaciones')); return; }
+      RACKS=(o.body.racks||[]); RACKMAP={};
+      RACKS.forEach(function(r){ RACKMAP[rackKey(r.rack)]=r; });
+      if(cb) cb();
+    });
+  }
+  function loadMoves(cb){
+    var q=[]; var d=$('fDays')?$('fDays').value:'7'; if(d) q.push('days='+encodeURIComponent(d));
+    var rk=$('fRack')?$('fRack').value.trim():''; if(rk) q.push('rack='+encodeURIComponent(rk));
+    var cd=$('fCode')?$('fCode').value.trim():''; if(cd) q.push('code='+encodeURIComponent(cd));
+    q.push('limit=300');
+    api('/api/warehouse/rack-moves?'+q.join('&')).then(function(o){
+      MOVES=(o.ok&&o.body.moves)||[]; if(cb)cb(); else renderLog();
+    });
+  }
+  function loadSummary(cb){
+    api('/api/warehouse/rack-moves/summary?days=90').then(function(o){
+      SUMMARY=(o.ok&&o.body)||{rows:[]}; if(cb)cb();
+    });
+  }
+
+  /* ============ 화면 틀 ============ */
+  function renderTabs(){
+    return '<div class="tabs">'
+      +'<span class="tab'+(TAB==='move'?' cur':'')+'" data-t="move">📍 '+L('위치변경','Cambio de ubicación')+'</span>'
+      +'<span class="tab'+(TAB==='log'?' cur':'')+'" data-t="log">🧾 '+L('이동 기록','Historial')+'</span>'
+      +'<span class="tab'+(TAB==='kinds'?' cur':'')+'" data-t="kinds">🏷 '+L('랙 유형','Tipo de ubicación')+'</span>'
+      +'</div>';
+  }
+  function wireTabs(){
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(el){
+      el.addEventListener('click',function(){ setTab(el.getAttribute('data-t')); });
+    });
+  }
+  function setTab(t){
+    TAB=t; render();
+    if(t==='log'){ loadMoves(); loadSummary(function(){ renderLog(); }); }
+  }
+
+  function render(){
+    var html=renderTabs();
+    if(TAB==='move') html+=moveHtml();
+    else if(TAB==='log') html+=logHtml();
+    else html+=kindsHtml();
+    $('app').innerHTML=html;
+    wireTabs();
+    if(TAB==='move') wireMove();
+    else if(TAB==='log') wireLog();
+    else wireKinds();
+    pdaApply();
+  }
+
+  /* ============ ① 위치변경 화면 ============ */
+  function stepNo(){
+    if(!cur.prod) return 1;
+    if(!cur.from) return 2;
+    if(!cur.to) return 3;
+    return 3;
+  }
+  function stepsHtml(){
+    var n=stepNo();
+    function box(i,t,m,done){
+      return '<div class="step'+(done?' done':(n===i?' cur':''))+'"><div class="t">'+(done?'✔ ':'')+t+'</div><div class="m">'+(m||'—')+'</div></div>';
+    }
+    return '<div class="steps">'
+      +box(1,'① '+L('카톤 라벨','Etiqueta'),cur.prod?esc(cur.prod.code):L('스캔하세요','Escanee'),!!cur.prod)
+      +box(2,'② '+L('기존 위치','Ubic. actual'),cur.from?esc(cur.from):L('스캔하세요','Escanee'),!!cur.from)
+      +box(3,'③ '+L('새 위치','Ubic. nueva'),cur.to?esc(cur.to):L('스캔하세요','Escanee'),!!cur.to)
+      +'</div>';
+  }
+  function pathHtml(){
+    if(!lockPath||(!cur.from&&!cur.to)) return '';
+    return '<div class="path">'
+      +'<div><span class="lbl">'+L('기존 위치','Actual')+'</span><span class="rackbig">'+esc(cur.from||'—')+'</span> '+kindChip(kindOf(cur.from))+'</div>'
+      +'<div class="arrow">→</div>'
+      +'<div><span class="lbl">'+L('새 위치','Nueva')+'</span><span class="rackbig">'+esc(cur.to||'—')+'</span> '+kindChip(kindOf(cur.to))+'</div>'
+      +'<button type="button" class="btn ghost sm" id="btnClearPath" style="margin-left:auto">'+L('경로 지우기','Borrar ruta')+'</button>'
+      +'</div>';
+  }
+  function resHtml(){
+    if(cur.err) return '<div class="scanbox err"><div class="sku mono" style="color:var(--red)">✖ '+esc(cur.err.code||'')+'</div>'
+      +'<div class="z"><b style="color:var(--red)">'+esc(cur.err.msg)+'</b></div></div>';
+    if(!cur.prod) return '<div class="scanbox"><div class="sku mono" style="color:var(--muted)">'+L('카톤 라벨을 스캔하세요','Escanee la etiqueta de la caja')+'</div>'
+      +'<div class="z hint">'+L('예: CTR-CE0796-16 — 제품번호 CE0796 · 소입수량 16 EA','Ej.: CTR-CE0796-16 — clave CE0796 · 16 EA por caja')+'</div></div>';
+    var p=cur.prod, cls=cur.warn?'warn':(cur.to?'ok':'');
+    var h='<div class="scanbox '+cls+'">'
+      +'<div class="sku mono">'+esc(p.code)+'</div><div class="nm">'+esc(p.name||'')+'</div>'
+      +'<div class="z">'
+      +'<span>'+L('마스터 위치','Ubic. maestra')+' <b class="mono">'+esc(p.rack||L('미지정','sin asignar'))+'</b></span>'
+      +kindChip(p.rack?kindOf(p.rack):null)
+      +'<span style="margin-left:auto">'+L('이동 수량','Cantidad')+' <b>'+fmt(cur.cartons*cur.per)+' EA</b>'
+      +' <small style="color:var(--muted)">('+fmt(cur.cartons)+' × '+fmt(cur.per)+')</small></span>'
+      +'</div>';
+    if(cur.warn) h+='<div class="z"><b style="color:var(--gold)">⚠ '+esc(cur.warn)+'</b></div>';
+    if(cur.info) h+='<div class="z"><b style="color:var(--green)">'+esc(cur.info)+'</b></div>';
+    h+='</div>';
+    return h;
+  }
+  function qtyHtml(){
+    if(!cur.prod) return '';
+    var noQty=!cur.per;
+    return '<div class="qtybox">'
+      +'<span'+(noQty?' style="color:var(--red);font-weight:700"':'')+'>'+L('소입수량','Cant./caja')+'</span>'
+      +'<input type="number" id="qPer" min="0" step="1" value="'+(cur.per||'')+'">'
+      +'<span>×</span>'
+      +'<span>'+L('카톤 수','Cajas')+'</span>'
+      +'<input type="number" id="qCar" min="1" step="1" value="'+(cur.cartons||1)+'">'
+      +'<span>= <b>'+fmt(cur.cartons*cur.per)+' EA</b></span>'
+      +(noQty?'<span class="hint" style="color:var(--red)">'+L('라벨에 소입수량이 없습니다 — 직접 넣으세요','La etiqueta no trae cantidad — ingrésela')+'</span>':'')
+      +'</div>';
+  }
+  function moveHtml(){
+    var canSave=!!(cur.prod&&cur.to&&cur.per>0&&!saving);
+    return '<div class="card">'
+      +'<div class="scanstick">'
+      +stepsHtml()
+      +pathHtml()
+      +'<div id="relres">'+resHtml()+'</div>'
+      +qtyHtml()
+      +'<div class="scaninput"><input type="text" id="relIn" autocomplete="off" placeholder="'
+        +L('스캔 (카톤 라벨 또는 랙 번호)','Escanee (etiqueta o ubicación)')+'"><button class="btn" id="btnScan">'+L('스캔','Escanear')+'</button></div>'
+      +'<div class="row" style="margin-top:8px">'
+      +'<button type="button" class="btn" id="btnSave"'+(canSave?'':' disabled')+'>✔ '+L('이동 저장','Guardar movimiento')+'</button>'
+      +'<button type="button" class="btn ghost sm" id="btnReset">'+L('이 박스 취소','Cancelar caja')+'</button>'
+      +(lastMove?'<button type="button" class="btn ghost sm" id="btnUndo">↺ '+L('직전 이동 되돌리기','Deshacer último')+'</button>':'')
+      +'</div>'
+      +'<div class="opts">'
+      +'<label><input type="checkbox" id="optLock"'+(lockPath?' checked':'')+'> '+L('경로 고정(같은 랙끼리 계속 이동)','Fijar ruta (mover varias cajas)')+'</label>'
+      +'<label><input type="checkbox" id="optMaster"'+(updMaster?' checked':'')+'> '+L('제품마스터 위치도 갱신','Actualizar ubicación maestra')+'</label>'
+      +'</div>'
+      +'</div>'
+      +'<div class="hint" style="margin-top:10px">'
+      +L('① 카톤박스의 Code-128 라벨을 스캔하면 제품번호와 소입수량을 읽습니다. ② 그 박스가 지금 있는 랙을 스캔합니다. ③ 옮길 랙(fast moving rack)을 스캔하면 자동 저장됩니다.',
+         '① Escanee la etiqueta Code-128 de la caja: lee la clave y la cantidad por caja. ② Escanee la ubicación donde está la caja. ③ Escanee la ubicación destino (fast moving rack): se guarda automáticamente.')
+      +'<br>'+L('재고 총량은 바뀌지 않습니다 — 위치만 이동합니다.','El stock total no cambia — solo cambia la ubicación.')+'</div>'
+      +'</div>'
+      +sessionHtml();
+  }
+  var sessLog=[];      // 이번 접속에서 저장한 이동(화면 확인용)
+  function sessionHtml(){
+    if(!sessLog.length) return '';
+    return '<div class="card"><h2>'+L('이번 작업에서 저장한 이동','Movimientos guardados en esta sesión')+' · '+sessLog.length+'</h2>'
+      +'<div class="tblbox"><table><thead><tr>'
+      +'<th>'+L('시각','Hora')+'</th><th>'+L('제품','Clave')+'</th><th>'+L('출발','Desde')+'</th><th>'+L('도착','Hacia')+'</th>'
+      +'<th class="num">'+L('카톤','Cajas')+'</th><th class="num">EA</th></tr></thead><tbody>'
+      +sessLog.map(function(m){
+        return '<tr><td>'+esc(m.t)+'</td><td class="mono"><b>'+esc(m.code)+'</b></td>'
+          +'<td class="mono">'+esc(m.from||'—')+'</td><td class="mono">'+esc(m.to)+'</td>'
+          +'<td class="num">'+fmt(m.cartons)+'</td><td class="num">'+fmt(m.qty)+'</td></tr>';
+      }).join('')+'</tbody></table></div></div>';
+  }
+
+  function renderRes(){
+    var el=$('relres'); if(el) el.innerHTML=resHtml();
+    var st=document.querySelector('.steps'); if(st) st.outerHTML=stepsHtml();
+  }
+  function refreshMove(){
+    var f=document.activeElement, wasIn=(f&&f.id==='relIn');
+    $('app').innerHTML=renderTabs()+moveHtml();
+    wireTabs(); wireMove(); pdaApply();
+    if(wasIn){ var i=$('relIn'); if(i) try{ i.focus(); }catch(e){} }
+  }
+
+  function resetBox(){
+    cur.prod=null; cur.label=null; cur.cartons=1; cur.per=0; cur.warn=null; cur.err=null; cur.info=null;
+    if(!lockPath){ cur.from=null; cur.to=null; }
+  }
+  function clearPath(){ cur.from=null; cur.to=null; refreshMove(); }
+
+  function wireMove(){
+    var inp=$('relIn'); if(!inp) return;
+    var fire=wireScanInput(inp,onScan);
+    $('btnScan').addEventListener('click',fire);
+    try{ inp.focus(); }catch(e){}
+    var bs=$('btnSave'); if(bs) bs.addEventListener('click',function(){ saveMove(); });
+    var br=$('btnReset'); if(br) br.addEventListener('click',function(){ resetBox(); refreshMove(); });
+    var bu=$('btnUndo'); if(bu) bu.addEventListener('click',undoLast);
+    var bc=$('btnClearPath'); if(bc) bc.addEventListener('click',clearPath);
+    var qp=$('qPer'); if(qp) qp.addEventListener('change',function(){ cur.per=Math.max(0,Number(qp.value)||0); refreshMove(); });
+    var qc=$('qCar'); if(qc) qc.addEventListener('change',function(){ cur.cartons=Math.max(1,Math.round(Number(qc.value)||1)); refreshMove(); });
+    var ol=$('optLock'); if(ol) ol.addEventListener('change',function(){
+      lockPath=ol.checked; try{ localStorage.setItem('rel_lockpath',lockPath?'1':'0'); }catch(e){}
+      if(!lockPath){ cur.from=null; cur.to=null; } refreshMove(); });
+    var om=$('optMaster'); if(om) om.addEventListener('change',function(){
+      updMaster=om.checked; try{ localStorage.setItem('rel_updmaster',updMaster?'1':'0'); }catch(e){} });
+  }
+
+  /* --- 스캔 1건 처리 ---------------------------------------------------
+     값이 랙 목록에 있으면 "위치", 아니면 카톤 라벨로 본다.
+     제품이 아직 없으면 위치 스캔이 와도 무시하지 않고 경로에 채워둔다(작업자가 순서를 바꿔도 동작). */
+  function onScan(input){
+    if(!input) return;
+    var norm=normScan(input);
+    if(dupScan(norm)) return;
+    cur.err=null;
+
+    var r=findRack(norm);
+    if(r){ onRackScan(r.rack); return; }
+
+    // 랙이 아니면 카톤 라벨 — 서버에서 제품을 확정한다
+    if(looksCompanion(norm)){ sndInfo(); toast(L('부속 바코드로 보입니다 — 무시','Código auxiliar — ignorado')); return; }
+    var lbl=parseLabel(input);
+    api('/api/warehouse/relocate/lookup?q='+encodeURIComponent(input)).then(function(o){
+      if(!o.ok||!o.body.product){
+        // 제품도 랙도 아님 → 새 위치일 수 있다(아직 등록 안 된 fast rack)
+        sndErr();
+        cur.err={code:lbl.code||norm,msg:L('등록되지 않은 코드입니다 — 제품번호도, 랙 번호도 아닙니다','Código no registrado — no es clave ni ubicación')};
+        renderRes();
+        offerNewRack(norm);
+        return;
+      }
+      var p=o.body.product, lb=o.body.label||{};
+      cur.prod={id:p.id,code:p.code,name:p.name,rack:p.rack,stock:p.stock_qty};
+      cur.label=lb.raw||input;
+      cur.per=Number(lb.qty||0)||0;
+      cur.cartons=1;
+      cur.warn=cur.per?null:L('라벨에 소입수량이 없습니다 — 수량을 직접 넣으세요','La etiqueta no trae cantidad — ingrésela');
+      cur.info=null;
+      // 기존 위치가 아직 없으면 마스터 위치를 후보로 채워 보여준다(스캔으로 확정해야 다음 단계)
+      if(cur.per) sndOk(); else sndWarn();
+      maybeAutoSave();
+      refreshMove();
+    });
+  }
+
+  function onRackScan(rack){
+    if(!cur.from){
+      // ② 기존 위치
+      if(cur.prod&&cur.prod.rack&&!bareEq(cur.prod.rack,rack)){
+        cur.warn=L('제품마스터 위치와 다릅니다','Difiere de la ubicación maestra')+' ('+cur.prod.rack+')';
+        sndWarn();
+      } else sndInfo();
+      cur.from=rack; refreshMove(); return;
+    }
+    if(bareEq(cur.from,rack)){ sndWarn(); toast(L('기존 위치와 같은 랙입니다','Es la misma ubicación de origen')); return; }
+    // ③ 새 위치
+    cur.to=rack;
+    var k=kindOf(rack);
+    if(k!=='fast'){
+      cur.info=null;
+      cur.warn=L('도착 랙이 fast moving rack 으로 지정되어 있지 않습니다','La ubicación destino no está marcada como fast moving');
+      sndWarn();
+    } else { cur.warn=null; cur.info=L('fast moving rack 으로 이동','Traslado a fast moving rack'); sndOk(); }
+    maybeAutoSave();
+    refreshMove();
+  }
+
+  // 3단계가 다 찼고 수량이 확정되면 자동 저장(작업자가 버튼을 안 눌러도 됨)
+  function maybeAutoSave(){
+    if(cur.prod&&cur.from&&cur.to&&cur.per>0&&!saving) setTimeout(saveMove,10);
+  }
+
+  function offerNewRack(code){
+    if(!isDir){ toast(L('디렉터에게 랙 등록을 요청하세요 (랙 유형 탭)','Pida al director registrar la ubicación')); return; }
+    toast(L('새 랙이면 [랙 유형] 탭에서 등록하세요','Si es nueva, regístrela en la pestaña Tipo de ubicación')+' · '+code);
+  }
+
+  function saveMove(){
+    if(saving) return;
+    if(!cur.prod||!cur.to){ sndErr(); toast(L('제품과 새 위치가 필요합니다','Faltan la clave y la ubicación nueva')); return; }
+    if(!(cur.per>0)){ sndWarn(); toast(L('이동 수량을 넣으세요','Ingrese la cantidad')); return; }
+    if(cur.from&&bareEq(cur.from,cur.to)){ sndErr(); toast(L('출발과 도착이 같습니다','Origen y destino iguales')); return; }
+    saving=true;
+    var payload={
+      from_rack:cur.from||null, to_rack:cur.to, update_master:updMaster,
+      lines:[{product_id:cur.prod.id, code:cur.prod.code, cartons:cur.cartons, per_carton:cur.per, label:cur.label||null}]
+    };
+    api('/api/warehouse/rack-moves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(function(o){
+        saving=false;
+        if(!o.ok||o.body.error){ sndErr(); toast(L('저장 실패','Error al guardar')+': '+(o.body.error||o.status)); refreshMove(); return; }
+        sndSaved();
+        var m=(o.body.moved&&o.body.moved[0])||{};
+        lastMove=m.id||null;
+        var d=new Date();
+        sessLog.unshift({t:('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2),
+          code:cur.prod.code, from:m.from_rack||cur.from||'', to:cur.to, cartons:cur.cartons, qty:cur.cartons*cur.per});
+        if(sessLog.length>50) sessLog.pop();
+        toast('✔ '+L('이동 저장','Movimiento guardado')+' '+cur.prod.code+' '+(cur.from||'')+' → '+cur.to);
+        // 마스터 위치가 바뀌었으므로 랙 목록의 제품수도 흔들린다 → 가볍게 갱신
+        resetBox(); refreshMove(); loadRacks();
+      });
+  }
+
+  function undoLast(){
+    if(!lastMove) return;
+    api('/api/warehouse/rack-moves/'+lastMove+'/undo',{method:'POST'}).then(function(o){
+      if(!o.ok||o.body.error){ sndErr(); toast(L('되돌리기 실패','Error al deshacer')+': '+(o.body.error||o.status)); return; }
+      sndSaved(); lastMove=null;
+      if(sessLog.length) sessLog.shift();
+      toast('↺ '+L('직전 이동을 되돌렸습니다','Último movimiento deshecho'));
+      refreshMove(); loadRacks();
+    });
+  }
+
+  /* ============ ② 이동 기록 ============ */
+  function logHtml(){
+    var tot=MOVES.reduce(function(s,m){ return {c:s.c+m.cartons, q:s.q+m.qty_ea}; },{c:0,q:0});
+    var h='<div class="card"><h2>'+L('이동 기록','Historial de movimientos')+'</h2>'
+      +'<div class="filters">'
+      +'<span class="hint">'+L('기간','Periodo')+'</span>'
+      +'<select id="fDays"><option value="1">'+L('오늘','Hoy')+'</option><option value="7" selected>'+L('7일','7 días')+'</option>'
+      +'<option value="30">'+L('30일','30 días')+'</option><option value="90">'+L('90일','90 días')+'</option><option value="0">'+L('전체','Todo')+'</option></select>'
+      +'<input type="text" id="fRack" placeholder="'+L('랙','Ubicación')+'" style="width:120px">'
+      +'<input type="text" id="fCode" placeholder="'+L('제품번호','Clave')+'" style="width:120px">'
+      +'<button type="button" class="btn ghost sm" id="btnFilter">'+L('조회','Buscar')+'</button>'
+      +'<button type="button" class="btn ghost sm" id="btnCsv">⤓ CSV</button>'
+      +'</div>'
+      +'<div class="kpis">'
+      +'<div class="kpi"><div class="k">'+L('이동 건수','Movimientos')+'</div><div class="v">'+fmt(MOVES.length)+'</div></div>'
+      +'<div class="kpi"><div class="k">'+L('카톤','Cajas')+'</div><div class="v">'+fmt(tot.c)+'</div></div>'
+      +'<div class="kpi"><div class="k">'+L('수량','Cantidad')+'</div><div class="v">'+fmt(tot.q)+' <small>EA</small></div></div>'
+      +'</div>'
+      +'<div class="tblbox"><table><thead><tr>'
+      +'<th>'+L('시각','Fecha')+'</th><th>'+L('제품','Clave')+'</th><th>'+L('품명','Descripción')+'</th>'
+      +'<th>'+L('출발','Desde')+'</th><th>'+L('도착','Hacia')+'</th>'
+      +'<th class="num">'+L('카톤','Cajas')+'</th><th class="num">EA</th>'
+      +'<th>'+L('작업자','Operador')+'</th><th>'+L('마스터','Maestra')+'</th></tr></thead><tbody>'
+      +(MOVES.length?MOVES.map(function(m){
+        var d=new Date(m.moved_at);
+        var ts=d.toLocaleDateString(LANG==='es'?'es-MX':'ko-KR')+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+        return '<tr><td style="white-space:nowrap;color:var(--muted)">'+esc(ts)+'</td>'
+          +'<td class="mono"><b>'+esc(m.product_code)+'</b></td>'
+          +'<td>'+esc(m.product_name||'')+'</td>'
+          +'<td class="mono">'+esc(m.from_rack||'—')+' '+kindChip(m.from_kind)+'</td>'
+          +'<td class="mono"><b>'+esc(m.to_rack)+'</b> '+kindChip(m.to_kind)+'</td>'
+          +'<td class="num">'+fmt(m.cartons)+'</td><td class="num">'+fmt(m.qty_ea)+'</td>'
+          +'<td>'+esc(m.moved_by_name||'')+'</td>'
+          +'<td>'+(m.master_updated?'<span style="color:var(--green);font-weight:700">✔</span>':'<span style="color:var(--muted)">—</span>')+'</td></tr>';
+      }).join(''):'<tr><td colspan="9"><div class="idle">'+L('기록이 없습니다','Sin movimientos')+'</div></td></tr>')
+      +'</tbody></table></div></div>';
+
+    if(SUMMARY&&SUMMARY.rows&&SUMMARY.rows.length){
+      h+='<div class="card"><h2>'+L('랙별 누적 이동(90일)','Acumulado por ubicación (90 días)')+'</h2>'
+        +'<div class="tblbox"><table><thead><tr>'
+        +'<th>'+L('도착 랙','Ubicación')+'</th><th>'+L('제품','Clave')+'</th><th>'+L('품명','Descripción')+'</th>'
+        +'<th class="num">'+L('카톤','Cajas')+'</th><th class="num">EA</th><th>'+L('최근','Último')+'</th></tr></thead><tbody>'
+        +SUMMARY.rows.map(function(r){
+          var d=new Date(r.last_at);
+          return '<tr><td class="mono"><b>'+esc(r.rack)+'</b> '+kindChip(kindOf(r.rack))+'</td>'
+            +'<td class="mono">'+esc(r.product_code)+'</td><td>'+esc(r.product_name||'')+'</td>'
+            +'<td class="num">'+fmt(r.cartons)+'</td><td class="num">'+fmt(r.qty_ea)+'</td>'
+            +'<td style="color:var(--muted);white-space:nowrap">'+esc(d.toLocaleDateString(LANG==='es'?'es-MX':'ko-KR'))+'</td></tr>';
+        }).join('')+'</tbody></table></div>'
+        +'<div class="hint" style="margin-top:8px">'
+        +L('이동 기록의 합계입니다 — 실물 재고가 아니라 "이 랙으로 몇 박스를 옮겼는가" 입니다.',
+           'Es la suma de los movimientos registrados — no es el stock físico, sino cuántas cajas se trasladaron a esa ubicación.')+'</div></div>';
+    }
+    return h;
+  }
+  function wireLog(){
+    var b=$('btnFilter'); if(b) b.addEventListener('click',function(){ loadMoves(); });
+    var c=$('btnCsv'); if(c) c.addEventListener('click',downloadCsv);
+    ['fRack','fCode'].forEach(function(id){
+      var el=$(id); if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter') loadMoves(); });
+    });
+  }
+  function renderLog(){ if(TAB==='log'){ $('app').innerHTML=renderTabs()+logHtml(); wireTabs(); wireLog(); pdaApply(); } }
+  function downloadCsv(){
+    var head=['fecha','clave','descripcion','desde','hacia','cajas','ea','operador','maestra'];
+    var rows=MOVES.map(function(m){
+      return [new Date(m.moved_at).toISOString(), m.product_code, (m.product_name||'').replace(/[",\n]/g,' '),
+        m.from_rack||'', m.to_rack, m.cartons, m.qty_ea, (m.moved_by_name||'').replace(/[",\n]/g,' '), m.master_updated?'1':'0'];
+    });
+    var csv='﻿'+[head].concat(rows).map(function(r){ return r.map(function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; }).join(','); }).join('\n');
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    a.download='rack_moves_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  /* ============ ③ 랙 유형 ============ */
+  function curKind(r){ var k=kindDraft[rackKey(r.rack)]; return k===undefined?(r.kind_set?r.kind:''):k; }
+  function dirtyCount(){
+    var n=0;
+    RACKS.forEach(function(r){
+      var d=kindDraft[rackKey(r.rack)];
+      if(d===undefined) return;
+      var base=r.kind_set?r.kind:'';
+      if(d!==base) n++;
+    });
+    return n;
+  }
+  function kindsHtml(){
+    var t={fast:0,carton:0,unset:0};
+    RACKS.forEach(function(r){ var k=curKind(r); if(k==='fast')t.fast++; else if(k==='carton')t.carton++; else t.unset++; });
+    var h='<div class="card"><h2>'+L('랙 유형 지정','Tipo de ubicación')+'</h2>'
+      +'<div class="hint" style="margin-bottom:10px">'
+      +L('카톤 = 카톤박스 단위로 적재하는 랙 · 개별(fast moving) = 낱개로 꺼내 쓰는 랙. 지정하지 않은 랙은 카톤으로 봅니다. 위치변경 화면은 이 유형으로 이동 방향을 확인합니다.',
+         'Caja = ubicación con cajas completas · Individual (fast moving) = ubicación de picking unitario. Sin asignar se trata como caja. El cambio de ubicación usa este tipo para validar el destino.')
+      +(isDir?'':'<br><b style="color:var(--gold)">'+L('디렉터만 저장할 수 있습니다 — 읽기 전용','Solo el director puede guardar — solo lectura')+'</b>')+'</div>'
+      +'<div class="kpis">'
+      +'<div class="kpi"><div class="k">'+L('랙','Ubicaciones')+'</div><div class="v">'+fmt(RACKS.length)+'</div></div>'
+      +'<div class="kpi"><div class="k">⚡ fast moving</div><div class="v">'+fmt(t.fast)+'</div></div>'
+      +'<div class="kpi"><div class="k">📦 '+L('카톤','Caja')+'</div><div class="v">'+fmt(t.carton)+'</div></div>'
+      +'<div class="kpi"><div class="k">'+L('미지정','Sin asignar')+'</div><div class="v">'+fmt(t.unset)+'</div></div>'
+      +'</div>'
+      +(isDir?('<div class="filters">'
+        +'<input type="text" id="newRack" placeholder="'+L('새 랙 번호','Nueva ubicación')+'" style="width:150px">'
+        +'<select id="newKind"><option value="fast">⚡ '+L('개별(fast moving)','Individual (fast moving)')+'</option>'
+        +'<option value="carton">📦 '+L('카톤','Caja')+'</option></select>'
+        +'<button type="button" class="btn ghost sm" id="btnAddRack">+ '+L('랙 추가','Agregar')+'</button>'
+        +'<span class="hint">'+L('아직 제품이 없는 fast moving rack 을 미리 등록할 수 있습니다','Puede registrar una ubicación aún sin productos')+'</span>'
+        +'</div>'):'')
+      +'<div class="filters"><input type="text" id="kFind" placeholder="'+L('랙 검색','Buscar ubicación')+'" style="width:150px">'
+      +'<label class="hint"><input type="checkbox" id="kFastOnly"> '+L('fast moving 만','Solo fast moving')+'</label></div>'
+      +'<div class="tblbox"><table><thead><tr>'
+      +'<th>'+L('랙','Ubicación')+'</th><th class="num">'+L('제품수','SKU')+'</th><th>'+L('존','Zona')+'</th><th>'+L('유형','Tipo')+'</th></tr></thead>'
+      +'<tbody id="kbody">'+kindRowsHtml()+'</tbody></table></div>'
+      +'<div class="savebar">'
+      +'<button type="button" class="btn" id="btnSaveKinds"'+(isDir?'':' disabled')+'>'+L('저장','Guardar')+'</button>'
+      +'<span class="pill'+(dirtyCount()?' on':'')+'" id="kDirty">'+L('변경','Cambios')+' '+dirtyCount()+L('건','')+'</span>'
+      +'</div></div>';
+    return h;
+  }
+  function kindRowsHtml(){
+    var find=($('kFind')&&$('kFind').value||'').trim().toUpperCase();
+    var fastOnly=!!($('kFastOnly')&&$('kFastOnly').checked);
+    var list=RACKS.filter(function(r){
+      if(find&&String(r.rack).toUpperCase().indexOf(find)<0) return false;
+      if(fastOnly&&curKind(r)!=='fast') return false;
+      return true;
+    });
+    if(!list.length) return '<tr><td colspan="4"><div class="idle">'+L('랙이 없습니다','Sin ubicaciones')+'</div></td></tr>';
+    var out=[], lastG=null;
+    list.forEach(function(r){
+      if(r.group!==lastG){ lastG=r.group; out.push('<tr class="gsep"><td colspan="4">'+esc(lastG)+'</td></tr>'); }
+      var k=curKind(r), base=r.kind_set?r.kind:'';
+      var dirty=(kindDraft[rackKey(r.rack)]!==undefined&&kindDraft[rackKey(r.rack)]!==base);
+      out.push('<tr'+(dirty?' class="dirty"':'')+'>'
+        +'<td class="mono"><b>'+esc(r.rack)+'</b></td>'
+        +'<td class="num" style="color:var(--muted)">'+fmt(r.products)+'</td>'
+        +'<td style="color:var(--muted)">'+(r.zone?('Z'+r.zone):'—')+'</td>'
+        +'<td><select class="ksel" data-rack="'+esc(r.rack)+'" data-k="'+esc(k)+'"'+(isDir?'':' disabled')+'>'
+        +'<option value=""'+(k===''?' selected':'')+'>— '+L('미지정(카톤)','Sin asignar (caja)')+'</option>'
+        +'<option value="carton"'+(k==='carton'?' selected':'')+'>📦 '+L('카톤','Caja')+'</option>'
+        +'<option value="fast"'+(k==='fast'?' selected':'')+'>⚡ '+L('개별(fast moving)','Individual (fast moving)')+'</option>'
+        +'</select></td></tr>');
+    });
+    return out.join('');
+  }
+  function wireKinds(){
+    function rebind(){
+      $('kbody').innerHTML=kindRowsHtml();
+      var d=$('kDirty'); if(d){ d.textContent=L('변경','Cambios')+' '+dirtyCount()+L('건',''); d.className='pill'+(dirtyCount()?' on':''); }
+      bindSelects();
+    }
+    function bindSelects(){
+      Array.prototype.forEach.call(document.querySelectorAll('select.ksel'),function(sel){
+        sel.addEventListener('change',function(){
+          kindDraft[rackKey(sel.getAttribute('data-rack'))]=sel.value;
+          rebind();
+        });
+      });
+    }
+    bindSelects();
+    var f=$('kFind'); if(f) f.addEventListener('input',rebind);
+    var fo=$('kFastOnly'); if(fo) fo.addEventListener('change',rebind);
+    var ar=$('btnAddRack');
+    if(ar) ar.addEventListener('click',function(){
+      var v=String($('newRack').value||'').trim();
+      if(!v){ toast(L('랙 번호를 넣으세요','Ingrese la ubicación')); return; }
+      if(findRack(v)){ toast(L('이미 있는 랙입니다','Ya existe')); return; }
+      RACKS.push({rack:v,products:0,group:(String(v).toUpperCase().match(/^[A-Z]+|^\d+/)||['?'])[0],
+        kind:$('newKind').value,kind_set:true,note:null,zone:null});
+      RACKS.sort(function(a,b){
+        var ka=String(a.rack).toUpperCase().replace(/\d+/g,function(n){return n.padStart(6,'0');});
+        var kb=String(b.rack).toUpperCase().replace(/\d+/g,function(n){return n.padStart(6,'0');});
+        return ka<kb?-1:ka>kb?1:0;
+      });
+      RACKMAP[rackKey(v)]=RACKS[RACKS.findIndex(function(x){return rackKey(x.rack)===rackKey(v);})];
+      kindDraft[rackKey(v)]=$('newKind').value;
+      $('newRack').value='';
+      render();
+    });
+    var sv=$('btnSaveKinds');
+    if(sv) sv.addEventListener('click',function(){
+      var map=[];
+      RACKS.forEach(function(r){
+        var d=kindDraft[rackKey(r.rack)];
+        if(d===undefined) return;
+        var base=r.kind_set?r.kind:'';
+        if(d===base) return;
+        map.push({rack:r.rack,kind:d||null});
+      });
+      if(!map.length){ toast(L('변경된 것이 없습니다','Sin cambios')); return; }
+      sv.disabled=true;
+      api('/api/warehouse/rack-kinds',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({map:map})})
+        .then(function(o){
+          sv.disabled=false;
+          if(!o.ok||o.body.error){ sndErr(); toast(L('저장 실패','Error al guardar')+': '+(o.body.error||o.status)); return; }
+          sndSaved(); kindDraft={};
+          toast('✔ '+L('랙 유형을 저장했습니다','Tipos guardados')+' ('+map.length+')');
+          loadRacks(function(){ render(); });
+        });
+    });
+  }
+
+  /* ===== PDA 컴팩트 모드 ===== */
+  var PDA=(function(){ try{ var v=localStorage.getItem('wh_pda'); if(v==='1'||v==='0') return v; }catch(e){} return null; })();
+  var pdaLast=null;
+  function pdaAuto(){ try{ return window.innerWidth<=640; }catch(e){ return false; } }
+  function pdaOn(){ return (PDA==null)?pdaAuto():(PDA==='1'); }
+  function syncNavH(){
+    var el=document.getElementById('rnav');
+    var h=(el&&el.offsetHeight)||40;
+    try{ document.documentElement.style.setProperty('--navh',h+'px'); }catch(e){}
+  }
+  function pdaApply(){
+    var on=pdaOn(), changed=(pdaLast!==on); pdaLast=on;
+    document.body.classList.toggle('pda',on);
+    if(changed){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }
+    syncNavH(); setTimeout(syncNavH,60); setTimeout(syncNavH,340);
+    var b=$('pdaBtn');
+    if(b){
+      b.textContent=on?('⤢ '+L('전체보기','Vista completa')):('📱 '+L('스캔모드','Modo escáner'));
+      b.title=on?L('일반 화면으로','Vista normal'):L('PDA 화면 — 상단을 접고 스캔 결과를 고정','Modo PDA');
+    }
+  }
+  function pdaInit(){
+    var b=document.createElement('button');
+    b.id='pdaBtn'; b.type='button'; b.className='pdabtn';
+    b.addEventListener('click',function(){
+      PDA=pdaOn()?'0':'1';
+      try{ localStorage.setItem('wh_pda',PDA); }catch(e){}
+      pdaApply();
+      var f=$('relIn'); if(f) try{ f.focus(); }catch(e){}
+    });
+    var hd=document.querySelector('header .right');
+    if(hd) hd.insertBefore(b,hd.firstChild); else document.body.appendChild(b);
+    pdaApply();
+    window.addEventListener('resize',pdaApply);
+    window.addEventListener('hashchange',function(){ setTimeout(syncNavH,80); });
+    try{
+      if(window.ResizeObserver){
+        var t=setInterval(function(){
+          var el=document.getElementById('rnav'); if(!el) return;
+          clearInterval(t); new ResizeObserver(syncNavH).observe(el);
+        },200);
+        setTimeout(function(){ clearInterval(t); },10000);
+      }
+    }catch(e){}
+  }
+
+  /* ============ 시작 ============ */
+  pdaInit();
+  loadRacks(function(){ render(); });
+
+  // 테스트 훅 — 운영 동작에는 영향 없음(jsdom 에서 내부 함수를 그대로 검증하기 위한 창구)
+  try{
+    window.__REL__={
+      parseLabel:parseLabel, normScan:normScan, bareEq:bareEq, looksCompanion:looksCompanion,
+      kindLabel:kindLabel, findRack:findRack, dupScan:dupScan,
+      state:function(){ return cur; },
+      setRacks:function(list){ RACKS=list||[]; RACKMAP={}; RACKS.forEach(function(r){ RACKMAP[rackKey(r.rack)]=r; }); },
+      onRackScan:onRackScan, stepNo:stepNo, resetBox:resetBox,
+      setLock:function(v){ lockPath=!!v; }, build:BUILD
+    };
+  }catch(e){}
+})();
+</script>
+</body>
+</html>

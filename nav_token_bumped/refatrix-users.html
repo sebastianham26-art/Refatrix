@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 사용자 · 권한 관리 · build u14</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1480px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:12px}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .who{margin-left:auto;font-size:13px;text-align:right}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+  .card h2{margin:0 0 10px;font-size:15px;color:var(--brand)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+  input,select{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}.btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}.btn.gold{background:var(--gold)}.btn.sm{padding:6px 11px;font-size:12px}.btn.danger{background:var(--expense)}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:#fbe9e7;color:var(--expense);border:1px solid #f0c5bf}
+  .msg.ok{display:block;background:#e7f3ee;color:var(--income);border:1px solid #c2e0d4}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .hidden{display:none}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11.5px;font-weight:600;background:#faf8f3}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:120px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .pg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;margin:2px 8px 2px 0}
+  .pinbox{background:#fff7e0;border:1px solid #ecd9a0;border-radius:8px;padding:10px;margin-top:10px;font-size:13px}
+  /* ── 사용자 목록·권한: 넓은 화면 활용 + 격자 정돈 ── */
+  #userList{overflow-x:auto;margin-top:6px}
+  #userList table{font-size:12.5px}
+  #userList thead th{position:sticky;top:0;z-index:2;background:#faf8f3;white-space:nowrap}
+  #userList tbody tr:nth-child(even){background:#fbfaf6}
+  #userList tbody tr:hover{background:#f4f1e8}
+  #userList td{vertical-align:top}
+  .c-id{white-space:nowrap}.uname{font-weight:700}
+  .rolepill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef0f2;color:#555;white-space:nowrap}
+  th.col-perm,td.col-perm{min-width:380px}
+  th.col-acc,td.col-acc{min-width:230px}
+  .permgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:6px 14px}
+  .permgroup .gh{font-size:9.5px;font-weight:800;color:#a0a0a0;letter-spacing:.04em;margin:0 0 3px}
+  .pgline,.accline{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:1px 0 1px 6px;border-left:3px solid #ccc;border-radius:0 5px 5px 0;margin:0 0 2px;cursor:pointer}
+  .pgline .lb,.accline .lb{font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .pgline select,.accline select{padding:2px 4px;font-size:11px;flex:none}
+  .accgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:6px 14px}
+  .accline .lb .cur{color:#9a9a9a;font-size:10px;margin-left:3px}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">사용자 · 권한 관리 (디렉터)</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+
+  <div class="card" id="loginCard">
+    <h2>로그인</h2>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 시계 대시보드 (한국 ↔ 몬테레이) build u14 -->
+    <div class="card" id="clockDash">
+      <style>
+        #clockDash h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+        #clockDash .cd-live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-weight:700}
+        #clockDash .cd-dot{width:8px;height:8px;border-radius:50%;background:#3ea77c;animation:cdPulse 1.6s infinite}
+        @keyframes cdPulse{0%,100%{opacity:1}50%{opacity:.3}}
+        #clockDash .cd-clocks{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        @media(max-width:640px){#clockDash .cd-clocks{grid-template-columns:1fr}}
+        #clockDash .cd-clock{position:relative;border:1px solid var(--line);border-top:4px solid var(--c);
+          border-radius:14px;padding:20px 22px;overflow:hidden;transition:background .5s,color .5s,box-shadow .5s}
+        /* 주간(07~18시): 밝은 음영 */
+        #clockDash .cd-clock.cd-day{background:linear-gradient(160deg,#fffdf5,#fbf7ea);color:var(--ink);
+          box-shadow:inset 0 0 0 1px rgba(255,255,255,.5),0 4px 16px rgba(154,123,22,.10)}
+        /* 야간(그 외): 어두운 음영 */
+        #clockDash .cd-clock.cd-night{background:linear-gradient(160deg,#1d2b31,#131f1b);color:#eef1ec;
+          box-shadow:0 6px 20px rgba(0,0,0,.22)}
+        #clockDash .cd-clock .cd-flag{font-size:26px;line-height:1}
+        #clockDash .cd-clock .cd-nm{font-size:15px;font-weight:800;color:var(--c);margin-top:6px}
+        #clockDash .cd-clock .cd-zone{font-size:11px;font-weight:700;margin-top:1px;opacity:.72}
+        #clockDash .cd-clock .cd-time{font-size:52px;font-weight:800;line-height:1;margin:14px 0 6px;
+          font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+        #clockDash .cd-clock .cd-time .cd-sec{font-size:26px;font-weight:700;opacity:.6}
+        #clockDash .cd-clock .cd-date{font-size:13px;font-weight:600;opacity:.75}
+        #clockDash .cd-clock .cd-dn{position:absolute;top:18px;right:20px;font-size:22px}
+        #clockDash .cd-clock .cd-tag{position:absolute;top:52px;right:20px;font-size:10px;font-weight:800;
+          padding:2px 8px;border-radius:999px;letter-spacing:.03em}
+        #clockDash .cd-clock.cd-day .cd-tag{background:#f3eccf;color:#7a5f0f}
+        #clockDash .cd-clock.cd-night .cd-tag{background:rgba(255,255,255,.14);color:#dfe6df}
+        #clockDash .cd-diff{margin-top:14px;background:#f6f3ec;border:1px solid var(--line);border-left:4px solid var(--brand);
+          border-radius:8px;padding:11px 14px;font-size:13px;line-height:1.6}
+        #clockDash .cd-diff b{color:var(--brand)}
+        #clockDash .cd-conv-h{margin:18px 0 10px;font-size:13px;font-weight:800;color:var(--brand)}
+        #clockDash .cd-seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-bottom:12px}
+        #clockDash .cd-seg button{border:none;background:#fff;padding:8px 14px;font-family:inherit;font-size:12.5px;
+          font-weight:700;color:var(--muted);cursor:pointer}
+        #clockDash .cd-seg button.on{background:var(--brand);color:#fff}
+        #clockDash .cd-conv{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+        #clockDash .cd-fld label{margin:0 0 4px}
+        #clockDash .cd-fld input[type=time]{font-size:15px;padding:9px 10px}
+        #clockDash .cd-arrow{font-size:22px;color:#c9c2b2;padding-bottom:6px}
+        #clockDash .cd-res{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:#faf8f3;min-width:170px}
+        #clockDash .cd-res .cd-rl{font-size:11px;color:var(--muted);font-weight:700}
+        #clockDash .cd-res .cd-rt{font-size:30px;font-weight:800;color:var(--income);line-height:1.1;font-variant-numeric:tabular-nums}
+        #clockDash .cd-res .cd-rd{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px}
+      </style>
+      <h2>🕐 시계 대시보드 <span class="cd-live"><span class="cd-dot"></span>LIVE</span></h2>
+
+      <div class="cd-clocks">
+        <div class="cd-clock" id="cdCardKR" style="--c:#0F6E56">
+          <div class="cd-dn" id="cdDnKR">🌙</div>
+          <div class="cd-tag" id="cdTagKR">야간</div>
+          <div class="cd-flag">🇰🇷</div>
+          <div class="cd-nm">한국 (서울)</div>
+          <div class="cd-zone">KST · UTC+9 · Asia/Seoul</div>
+          <div class="cd-time"><span id="cdKrHM">--:--</span><span class="cd-sec" id="cdKrS">:--</span></div>
+          <div class="cd-date" id="cdKrDate">----년 --월 --일 (-)</div>
+        </div>
+        <div class="cd-clock" id="cdCardMX" style="--c:#B23A2E">
+          <div class="cd-dn" id="cdDnMX">🌙</div>
+          <div class="cd-tag" id="cdTagMX">야간</div>
+          <div class="cd-flag">🇲🇽</div>
+          <div class="cd-nm">몬테레이 (Monterrey)</div>
+          <div class="cd-zone">CST · UTC−6 · America/Monterrey</div>
+          <div class="cd-time"><span id="cdMxHM">--:--</span><span class="cd-sec" id="cdMxS">:--</span></div>
+          <div class="cd-date" id="cdMxDate">----년 --월 --일 (-)</div>
+        </div>
+      </div>
+      <div class="cd-diff" id="cdDiff">시차 계산 중…</div>
+
+      <div class="cd-conv-h">⇄ 시각 변환기</div>
+      <div class="cd-seg" id="cdSeg">
+        <button data-dir="kr2mx" class="on">🇰🇷 한국 → 🇲🇽 몬테레이</button>
+        <button data-dir="mx2kr">🇲🇽 몬테레이 → 🇰🇷 한국</button>
+      </div>
+      <div class="cd-conv">
+        <div class="cd-fld"><label id="cdSrcLabel">한국 시각 입력</label><input type="time" id="cdSrc" value="14:00"></div>
+        <button class="btn ghost sm" id="cdNow" type="button">현재 시각 넣기</button>
+        <div class="cd-arrow">→</div>
+        <div class="cd-res">
+          <div class="cd-rl" id="cdDstLabel">몬테레이 시각</div>
+          <div class="cd-rt" id="cdDst">--:--</div>
+          <div class="cd-rd" id="cdDstDay">&nbsp;</div>
+        </div>
+      </div>
+      <div class="hint">주간(07~18시) 카드는 밝게, 야간은 어둡게 표시됩니다 · 변환기는 날짜가 넘어가면 (전일)/(익일)로 안내합니다.</div>
+    </div>
+    <script>
+    (function(){
+      var KR='Asia/Seoul', MX='America/Monterrey';
+      var WD=['일','월','화','수','목','금','토'];
+      var wdMap={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+      // Intl 포매터는 최초 1회만 생성 후 재사용 (랙 방지)
+      function mkParts(tz){return new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',weekday:'short',hourCycle:'h23'});}
+      var fKR=mkParts(KR), fMX=mkParts(MX);
+      function parts(fmt,d){var o={};fmt.formatToParts(d).forEach(function(p){o[p.type]=p.value;});return o;}
+      function tzOffset(d,fmt){var p=parts(fmt,d);return Math.round((Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-d.getTime())/60000);}
+
+      var $=function(id){return document.getElementById(id);};
+      var el={}; ['cdKrHM','cdKrS','cdKrDate','cdMxHM','cdMxS','cdMxDate','cdDnKR','cdDnMX','cdTagKR','cdTagMX'].forEach(function(k){el[k]=$(k);});
+      var cardKR=$('cdCardKR'), cardMX=$('cdCardMX'), diffEl=$('cdDiff');
+      var last={};
+      function setT(id,v){if(last[id]!==v){el[id].textContent=v;last[id]=v;}}
+
+      function paint(fmt,now,ids,card){
+        var p=parts(fmt,now), h=+p.hour;
+        setT(ids.hm,p.hour+':'+p.minute);
+        setT(ids.s,':'+p.second);
+        setT(ids.date,p.year+'년 '+(+p.month)+'월 '+(+p.day)+'일 ('+WD[wdMap[p.weekday]]+')');
+        var day=(h>=7&&h<18);                 // 주간: 오전 7시 ~ 오후 6시
+        setT(ids.dn, day?'☀️':'🌙');
+        setT(ids.tag, day?'주간':'야간');
+        if(card._day!==day){card.classList.toggle('cd-day',day);card.classList.toggle('cd-night',!day);card._day=day;}
+      }
+
+      var DIFF=900;
+      function tick(){
+        if(document.hidden) return;           // 백그라운드 탭이면 스킵
+        var now=new Date();
+        paint(fKR,now,{hm:'cdKrHM',s:'cdKrS',date:'cdKrDate',dn:'cdDnKR',tag:'cdTagKR'},cardKR);
+        paint(fMX,now,{hm:'cdMxHM',s:'cdMxS',date:'cdMxDate',dn:'cdDnMX',tag:'cdTagMX'},cardMX);
+        DIFF=tzOffset(now,fKR)-tzOffset(now,fMX);
+        var hrs=DIFF/60;
+        diffEl.innerHTML='🇰🇷 <b>한국</b>이 🇲🇽 <b>몬테레이</b>보다 <b>'+hrs+'시간</b> 빠릅니다.';
+        updateConv();
+      }
+
+      var dir='kr2mx', src=$('cdSrc'), srcLabel=$('cdSrcLabel'), dstLabel=$('cdDstLabel'), dst=$('cdDst'), dstDay=$('cdDstDay');
+      function updateConv(){
+        var v=src.value; if(!v){dst.textContent='--:--';dstDay.innerHTML='&nbsp;';return;}
+        var a=v.split(':'), mins=(+a[0])*60+(+a[1]);
+        var out=(dir==='kr2mx')?(mins-DIFF):(mins+DIFF);
+        var off=Math.floor(out/1440); out=((out%1440)+1440)%1440;
+        dst.textContent=String(Math.floor(out/60)).padStart(2,'0')+':'+String(out%60).padStart(2,'0');
+        dstDay.innerHTML= off<0?'(전일)':(off>0?'(익일)':'&nbsp;');
+      }
+      $('cdSeg').addEventListener('click',function(e){
+        var b=e.target.closest('button'); if(!b)return; dir=b.dataset.dir;
+        [].forEach.call(this.children,function(x){x.classList.toggle('on',x===b);});
+        if(dir==='kr2mx'){srcLabel.textContent='한국 시각 입력';dstLabel.textContent='몬테레이 시각';}
+        else{srcLabel.textContent='몬테레이 시각 입력';dstLabel.textContent='한국 시각';}
+        updateConv();
+      });
+      src.addEventListener('input',updateConv);
+      $('cdNow').addEventListener('click',function(){
+        var p=parts(dir==='kr2mx'?fKR:fMX,new Date()); src.value=p.hour+':'+p.minute; updateConv();
+      });
+      document.addEventListener('visibilitychange',function(){if(!document.hidden)tick();});
+
+      tick();
+      setInterval(tick,1000);                 // 단일 인터벌 · 값 변할 때만 DOM 반영
+    })();
+    </script>
+    <!-- 접속 현황 (디렉터 전용) -->
+    <div class="card" id="presenceCard">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">접속 현황 <span id="presSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
+      <div id="presList"><div class="hint">불러오는 중…</div></div>
+      <div style="display:flex;align-items:center;gap:10px;margin:14px 0 6px"><span style="font-size:12px;font-weight:800;color:#666">접속 위치 (IP 추정)</span><button class="btn sm" id="mapFit" type="button" style="padding:3px 10px;font-size:12px">📍 핀에 맞추기</button><button class="btn sm" id="mapBig" type="button" style="padding:3px 10px;font-size:12px">⛶ 크게</button></div>
+      <div id="presMap" style="height:520px;border:1px solid #e3e3e3;border-radius:10px;overflow:hidden;background:#eef1ef"></div>
+      <div id="presMapLegend" class="hint" style="margin-top:5px"></div>
+      <div class="hint" style="margin-top:3px">IP 기반 도시 단위 추정 · 모바일망/VPN은 부정확할 수 있음. 같은 도시는 한 핀에 묶어 표시.</div>
+      <div style="border-top:1px solid #eee;margin:16px 0 12px"></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <b style="font-size:14px">로그인 타임라인</b>
+        <input type="date" id="tlDate" style="padding:5px 8px;border:1px solid #cfd6d2;border-radius:7px;font-size:13px">
+        <button class="btn sm" id="tlToday" style="padding:5px 12px">오늘</button>
+        <span id="tlInfo" class="hint" style="margin:0"></span>
+      </div>
+      <div id="tlWrap" style="overflow-x:auto;border:1px solid #eef1ef;border-radius:8px;padding:6px;background:#fff"><div class="hint">불러오는 중…</div></div>
+      <div class="hint" style="margin-top:6px">막대 = 그 시각에 로그인되어 있던 구간(세로축 0~24시, 가로축 사용자). 길수록 오래 접속 · 막대에 마우스를 올리면 시간 표시.</div>
+    </div>
+    <!-- 새 사용자 -->
+    <div class="card">
+      <h2>새 사용자 만들기</h2>
+      <div class="hint" style="margin-top:0">영업 계정을 만들고 PIN·소속 팀·페이지 권한을 한 번에 부여합니다. 만든 PIN을 사용자에게 알려주면 그 계정으로 로그인합니다.</div>
+      <div class="row">
+        <div><label>이름</label><input id="n-name" type="text"></div>
+        <div><label>로그인 아이디</label><input id="n-login" type="text" placeholder="예: sales1"></div>
+        <div><label>역할</label><select id="n-role"><option value="sales">영업(sales)</option><option value="sales_support">영업지원(sales_support)</option><option value="director">디렉터(director)</option><option value="socio">소시오(socio·파트너)</option><option value="marketing">마케팅</option><option value="treasury">재무</option><option value="ops">운영</option><option value="warehouse">창고(warehouse)</option><option value="viewer">뷰어</option></select></div>
+        <div><label>PIN(4~8자리, 비우면 자동)</label><input id="n-pin" type="text" inputmode="numeric" placeholder="자동"></div>
+        <div><label>소속 팀</label><select id="n-team"></select></div>
+      </div>
+      <div><label>페이지 권한</label><div id="n-pages"></div></div>
+      <button class="btn gold sm" id="createBtn" style="margin-top:10px">사용자 만들기</button>
+      <div class="msg" id="createMsg"></div>
+      <div id="createResult"></div>
+    </div>
+
+    <!-- 기기 접속 관리 (디렉터 전용) -->
+    <div class="card" id="deviceCard">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">기기 접속 관리 <span id="devSummary" class="hint" style="margin:0;font-weight:600"></span></h2>
+      <div class="hint" style="margin-top:0"><b>기기잠금</b>이 켜진 사용자는 <b>승인된 기기에서만</b> 로그인됩니다(아래 사용자 목록의 「기기 제한」 열에서 켜기). 미승인 기기로 로그인하면 PIN이 맞아도 차단되고 여기에 <b>승인 대기</b>로 올라옵니다. 승인 시 <b>전용</b>(그 사용자만) 또는 <b>공용</b>(승인된 기기는 누구나)을 고르세요. <b>디렉터는 기기 제한을 받지 않습니다.</b></div>
+      <div id="devList"><div class="hint">불러오는 중…</div></div>
+    </div>
+
+    <!-- 사용자 목록 -->
+    <div class="card">
+      <h2>사용자 목록 · 권한</h2>
+      <div class="hint" style="margin-top:0">계좌 권한: <b>없음</b>=계좌 안 보임 · <b>잔액만</b>=계좌·잔액만 보이고 거래내역 숨김 · <b>열람(내역)</b>=거래내역까지 · <b>운영(등록)</b>=거래 등록까지. 선택 즉시 저장됩니다.<br><b>디렉터</b>=전체 무제한. <b>소시오</b>=전 계좌 잔액은 보이고, 계좌별로 <b>세부 열람</b>(드릴다운 가능) / <b>잔액만</b>(드릴다운·거래내역·현금흐름 차단)을 지정합니다. 새 계좌는 자동으로 목록에 나타납니다.</div>
+      <div id="userList"><div class="hint">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let teams=[], users=[], accountsList=[];
+  // 부여 가능한 페이지(키 → 표시명). 시스템에 맞춰 핵심만.
+  // 화면 단위 권한 키 (없음/열람/수정). 그룹으로 묶어 표시.
+  const PERM_GROUPS=[
+    ['영업', [['quote','견적(작성·목록)'],['sales','매출 등록'],['devrequest','개발 요청'],['pipeline','영업활동(파이프라인)'],['customers','고객'],['targets','매출목표']]],
+    ['영업지원', [['settlement','수금/정산(AR)'],['stock','재고 이동'],['shortage','부족분'],['inventory','수입원가·입고']]],
+    ['구매', [['purchase','구매 내역']]],
+    ['재무', [['transactions','재무(거래·캐시플로)'],['commission','커미션'],['budget','예산']]],
+    ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
+    ['창고', [['warehouse','창고(입고·피킹·패킹)']]],
+  ];
+  const PAGES=PERM_GROUPS.flatMap(([,arr])=>arr);
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+
+  
+  // 포털에서 전달된 토큰(자동 로그인)
+  function portalSession(){
+    try{
+      const raw=sessionStorage.getItem('refatrix_session');
+      if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token, api:o.api||'', user:o.user||{}}; }
+    }catch(e){}
+    try{
+      const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h);
+        const token=p.get('token'); if(token){ const o={token, api:p.get('api')||'', user:JSON.parse(p.get('user')||'{}')};
+          try{ sessionStorage.setItem('refatrix_session', JSON.stringify(o)); }catch(e){}
+          return o; } }
+    }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,'');const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d, res={ok:true};
+      const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else { res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+        d=await res.json(); }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      if(d.user?.role!=='director'){m.className='msg err';m.textContent='이 화면은 디렉터만 사용할 수 있습니다.';return;}
+      session={token:d.token,user:d.user,api};
+      try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token, api, user:d.user||{}, ts:Date.now()})); }catch(e){}  // nav.js 하트비트(접속현황·위치)용 세션 — 없으면 본인이 접속/위치로 안 잡힘
+      $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: director';
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      await loadTeams(); renderPageChecks(); loadUsers(); startSelfHeartbeat(); startPresencePoll(); startDevicePoll(); initTimeline();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  async function loadTeams(){
+    try{teams=(await fetch(session.api+'/api/team-admin/teams',{headers:auth()}).then(r=>r.json())).items||[];}catch(e){teams=[];}
+    $('n-team').innerHTML='<option value="">미지정</option>'+teams.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  function renderPageChecks(){
+    $('n-pages').innerHTML=PAGES.map(([k,label])=>`<label class="pg"><input type="checkbox" value="${k}" style="width:auto"> ${label}</label>`).join('');
+  }
+
+  async function createUser(){
+    const m=$('createMsg');m.className='msg';m.style.display='none';$('createResult').innerHTML='';
+    const pages=[...document.querySelectorAll('#n-pages input:checked')].map(c=>c.value);
+    const body={name:$('n-name').value.trim(),login_id:$('n-login').value.trim(),role:$('n-role').value,
+      pin:$('n-pin').value.trim()||undefined,team_id:$('n-team').value?Number($('n-team').value):undefined,pages};
+    if(!body.name||!body.login_id){m.className='msg err';m.style.display='block';m.textContent='이름과 로그인 아이디를 입력하세요.';return;}
+    try{
+      const res=await fetch(session.api+'/api/users',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='실패: '+(d.error==='login_id_taken'?'이미 있는 아이디입니다.':(d.error||res.status));return;}
+      $('createResult').innerHTML=`<div class="pinbox"><b>생성 완료</b> — 아이디 <b>${d.login_id}</b> · PIN <b style="font-size:16px">${d.pin}</b><br><span class="hint" style="margin:0">이 PIN을 사용자에게 통보하세요(서버에는 해시만 저장).</span></div>`;
+      $('n-name').value='';$('n-login').value='';$('n-pin').value='';document.querySelectorAll('#n-pages input').forEach(c=>c.checked=false);
+      loadUsers();
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
+  }
+
+  // ===== 접속 현황 (디렉터 전용) =====
+  let presenceTimer=null;
+  const PRESENCE_GROUPS=[['socio','소시오'],['sales','영업'],['sales_support','영업지원'],['treasury','재무']];
+  const PAGE_NAMES={
+    'refatrix-dashboard.html':'대시보드','refatrix-portal.html':'포털','refatrix-quote.html':'견적작성','refatrix-quotelist.html':'견적목록',
+    'refatrix-sales.html':'영업','refatrix-salesperf.html':'영업실적','refatrix-finance.html':'재무','refatrix-settlement.html':'정산/반제',
+    'refatrix-commission.html':'커미션','refatrix-customers.html':'고객','refatrix-products.html':'제품','refatrix-stock.html':'재고',
+    'refatrix-stock-test.html':'재고(테스트)','refatrix-import.html':'수입','refatrix-importcost.html':'수입원가','refatrix-purchase.html':'구매','refatrix-purchasereview.html':'구매검토','refatrix-recost.html':'원가재계산',
+    'refatrix-grossprofit.html':'매출총이익','refatrix-budget.html':'예산','refatrix-targets.html':'목표','refatrix-pipeline.html':'파이프라인',
+    'refatrix-funnel.html':'퍼널','refatrix-orderfunnel.html':'수주퍼널','refatrix-marketing.html':'마케팅','refatrix-board.html':'게시판',
+    'refatrix-wbr.html':'WBR','refatrix-company.html':'회사','refatrix-users.html':'사용자관리','refatrix-shortage.html':'재고부족',
+    'refatrix-devrequest.html':'개발요청','refatrix-rnr.html':'R&R','refatrix-rnr-roles.html':'R&R역할','refatrix-login.html':'로그인'
+  };
+  function pageName(pp){ if(!pp)return''; pp=String(pp).toLowerCase().split('/').pop(); return PAGE_NAMES[pp]||pp.replace(/^refatrix-/,'').replace(/\.html$/,''); }
+  function presEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+  function presRel(sec){ if(sec==null)return''; sec=Math.max(0,Math.floor(sec));
+    if(sec<60)return'방금'; if(sec<3600)return Math.floor(sec/60)+'분 전';
+    if(sec<86400)return Math.floor(sec/3600)+'시간 전'; return Math.floor(sec/86400)+'일 전'; }
+  function presWhen(iso,sec){ if(!iso)return'접속 기록 없음'; const d=new Date(iso);
+    const when=(d.getMonth()+1)+'월 '+d.getDate()+'일 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    const rel=presRel(sec); return when+(rel?' ('+rel+')':''); }
+  // 유저 고유색 (ID 기반 고정 — 카드·타임라인·지도 통일)
+  function userColor(id){ const h=Math.round(((Number(id)||0)*137.508)%360); return {fill:'hsl('+h+',62%,52%)', stroke:'hsl('+h+',62%,32%)'}; }
+  async function loadPresence(){
+    const box=$('presList'); if(!box)return;
+    try{
+      const r=await fetch(session.api+'/api/presence',{headers:auth()});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok || (d&&d.error)){
+        box.innerHTML='<div class="hint" style="color:#c0392b">접속 현황 서버 오류 ('+presEsc(String(r.status))+'): '+presEsc(String(d&&(d.message||d.error)||''))+'<br>DB 마이그레이션(0091_presence_geo) 실행 여부를 확인하세요.</div>';
+        return;
+      }
+      const items=(d&&d.items)||[];
+      const online=items.filter(x=>x.online).length;
+      const sm=$('presSummary'); if(sm)sm.textContent='접속 중 '+online+'명 / 전체 '+items.length+'명 · 자동 갱신';
+      const groups={}; PRESENCE_GROUPS.forEach(([k])=>groups[k]=[]); groups.__etc=[];
+      items.forEach(u=>{ (groups[u.role]!==undefined?groups[u.role]:groups.__etc).push(u); });
+      const order=[...PRESENCE_GROUPS,['__etc','기타']];
+      const sortFn=(a,b)=>{ if(a.online!==b.online)return a.online?-1:1;
+        const sa=a.seconds_ago==null?Infinity:a.seconds_ago, sb=b.seconds_ago==null?Infinity:b.seconds_ago; return sa-sb; };
+      // 역할 순서대로 평탄화(그룹 헤더 없이 한 그리드) → 전체 인원이 2줄에 들어오도록 열 수 = 올림(N/2)
+      const all=[];
+      order.forEach(([k])=>{ (groups[k]||[]).slice().sort(sortFn).forEach(u=>all.push(u)); });
+      const cols=Math.max(1, Math.ceil(all.length/2));
+      const html='<div style="display:grid;grid-template-columns:repeat('+cols+',minmax(0,1fr));gap:8px">'+all.map(u=>{
+          const meta=[u.role,u.team_name,u.login_id].filter(Boolean).map(presEsc).join(' · ');
+          const status=u.online
+            ? '<span style="color:#0F6E56;font-weight:700"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19a974;margin-right:5px;vertical-align:middle"></span>접속 중</span>'
+            : '<span style="color:#888">'+presEsc(presWhen(u.last_seen,u.seconds_ago))+'</span>';
+          const srcTag=u.geo_src==='gps' ? ' · GPS'+(u.geo_acc?(' \u00B1'+u.geo_acc+'m'):'') : (u.geo_src==='ip'?' · IP 추정':'');
+          const locTxt=[u.geo_city,u.geo_region,u.geo_country].filter(Boolean).map(presEsc).join(', ');
+          const locShown = locTxt || (u.geo_src==='gps'?'GPS 위치':'');
+          const loc=locShown?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCCD '+locShown+srcTag+'</div>':'';
+          const pg=pageName(u.last_path);
+          const pageLine=pg?'<div class="hint" style="margin:0 0 4px">\uD83D\uDCC4 '+(u.online?'현재':'마지막')+': '+presEsc(pg)+'</div>':'';
+          return '<div style="border:1px solid #e3e3e3;border-radius:10px;padding:8px 10px;background:'+(u.online?'#f3fbf7':'#fff')+'">'
+            +'<div style="font-weight:700;font-size:13px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+userColor(u.id).fill+';border:1px solid '+userColor(u.id).stroke+';margin-right:6px;vertical-align:middle"></span>'+presEsc(u.name||'-')+'</div>'
+            +'<div class="hint" style="margin:2px 0 4px">'+meta+'</div>'
+            +loc
+            +pageLine
+            +'<div style="font-size:12px">'+status+'</div></div>';
+        }).join('')+'</div>';
+      box.innerHTML=all.length?html:'<div class="hint">표시할 사용자가 없습니다.</div>';
+      renderPresenceMap(items);
+    }catch(e){ box.innerHTML='<div class="hint">접속 현황을 불러오지 못했습니다.</div>'; }
+  }
+  function startPresencePoll(){ loadPresence(); if(presenceTimer)clearInterval(presenceTimer); presenceTimer=setInterval(loadPresence,25000); }
+  // 관리화면 자체 하트비트 — nav.js 의존 없이 본인 접속/위치를 직접 기록.
+  let selfHbTimer=null;
+  function startSelfHeartbeat(){
+    if(selfHbTimer) return;
+    const ping=()=>{ if(!session||!session.token) return;
+      fetch(session.api+'/api/presence/ping',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),
+        body:JSON.stringify({path:'refatrix-users.html'}), keepalive:true}).catch(()=>{}); };
+    ping();                              // 진입 즉시 1회
+    selfHbTimer=setInterval(ping,45000); // 45초마다
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') ping(); });
+  }
+  // 접속 위치 지도 (Leaflet, 같은 도시는 한 핀으로 묶음)
+  function renderPresenceMap(items){
+    const el=$('presMap'); if(!el) return;
+    const lg=$('presMapLegend');
+    if(typeof L==='undefined'){ el.innerHTML='<div class="hint" style="padding:12px">지도 라이브러리를 불러오지 못했습니다.</div>'; if(lg)lg.textContent=''; return; }
+    if(!window.__presMap){
+      window.__presMap=L.map(el,{scrollWheelZoom:false,zoomControl:true}).setView([23.6,-102.5],5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(window.__presMap);
+      window.__presLayer=L.layerGroup().addTo(window.__presMap);
+      // 사용자가 직접 줌/이동하면 자동 맞춤을 영구 중지(프로그램 맞춤은 __presProgrammatic 로 제외)
+      window.__presMap.on('zoomstart movestart', function(){ if(!window.__presProgrammatic) window.__presUserZoom=true; });
+    }
+    const map=window.__presMap, lyr=window.__presLayer; lyr.clearLayers();
+    const geo=(items||[]).filter(u=>u.geo_lat!=null&&u.geo_lng!=null);
+    if(!geo.length){
+      if(lg) lg.innerHTML='\uD83D\uDCCD 아직 표시할 위치가 없습니다 — 로그인 사용자의 IP가 잡히면(최대 45초) 핀이 나타납니다.';
+      setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60); return;
+    }
+    // 같은 도시는 중심 좌표로 묶되, 사용자별 고유색 핀을 도시 중심 주변에 링으로 배치
+    const groups={};
+    geo.forEach(u=>{ const k=(u.geo_city||u.geo_region||u.geo_country||((+u.geo_lat).toFixed(2)+','+(+u.geo_lng).toFixed(2)));
+      const gp=(groups[k]=groups[k]||{latSum:0,lngSum:0,users:[]}); gp.latSum+=(+u.geo_lat); gp.lngSum+=(+u.geo_lng); gp.users.push(u); });
+    const bounds=[]; let pins=0; const R=0.045;
+    Object.keys(groups).forEach(k=>{
+      const gp=groups[k]; gp.lat=gp.latSum/gp.users.length; gp.lng=gp.lngSum/gp.users.length;
+      const n=gp.users.length;
+      gp.users.forEach((u,idx)=>{
+        const ang=(2*Math.PI*idx)/Math.max(1,n);
+        const lat=gp.lat+(n>1?R*Math.cos(ang):0), lng=gp.lng+(n>1?R*Math.sin(ang):0);
+        const c=userColor(u.id);
+        const isGps=(u.geo_src==='gps');
+        const cityNm=presEsc(u.geo_city||u.geo_region||u.geo_country||(isGps?'GPS 위치':'위치'));
+        const srcTag=isGps?('GPS'+(u.geo_acc?(' \u00B1'+u.geo_acc+'m'):'')):'IP 추정';
+        const m=L.circleMarker([lat,lng],{radius:u.online?9:7,weight:u.online?3:1.5,
+          color:u.online?'#19a974':c.stroke, fillColor:c.fill, fillOpacity:u.online?0.95:0.5,
+          dashArray:isGps?null:'4 3'});
+        m.bindPopup('<b>'+presEsc(u.name||u.login_id||'')+'</b><br>'+cityNm+' · '+(u.online?'\uD83D\uDFE2 접속 중':'\u26AA 오프라인')+'<br><span style="color:#888">'+srcTag+'</span>');
+        m.bindTooltip(presEsc(u.name||u.login_id||''),{permanent:true,direction:'top',offset:[0,-6],className:'presTip'});
+        lyr.addLayer(m); bounds.push([lat,lng]); pins++;
+      });
+    });
+    if(lg) lg.innerHTML='핀 색 = 사용자 고유색 · 실선=GPS, 점선=IP추정 · 초록 테두리=접속중 · 클릭=상세 · 표시 '+pins+'명';
+    window.__presBounds=bounds;
+    // 최초 1회(또는 사용자가 아직 줌/이동하지 않았을 때)만 자동 맞춤 — 이후 25초 폴링 갱신은 줌·위치 유지
+    if(!window.__presFitted && !window.__presUserZoom){ presFit(false); window.__presFitted=true; }
+    setTimeout(()=>{try{map.invalidateSize();}catch(e){}},60);
+  }
+  // 핀 범위로 맞춤. force=true(버튼)면 사용자 줌 여부와 무관하게 강제. 프로그램 맞춤은 자동중지 플래그에서 제외.
+  function presFit(force){
+    const map=window.__presMap, b=window.__presBounds;
+    if(!map || !b || !b.length) return;
+    window.__presProgrammatic=true;
+    try{ map.fitBounds(b,{padding:[30,30],maxZoom:11}); }catch(e){}
+    if(force){ window.__presUserZoom=false; }   // 버튼으로 재정렬하면 다시 손대기 전까지 기준 리셋
+    setTimeout(()=>{ window.__presProgrammatic=false; },400);
+  }
+  // 지도 크게 보기 토글 (전체화면 오버레이) — 야외/모바일에서 보기 편하게
+  let __mapBig=false;
+  function toggleMapBig(){
+    const el=$('presMap'), btn=$('mapBig'); if(!el) return;
+    __mapBig=!__mapBig;
+    if(__mapBig){
+      el.style.position='fixed'; el.style.top='8px'; el.style.left='8px'; el.style.right='8px'; el.style.bottom='8px';
+      el.style.height='auto'; el.style.width='auto'; el.style.zIndex='10000'; el.style.boxShadow='0 0 0 9999px rgba(0,0,0,.45)';
+      if(btn){ btn.textContent='\u2715 닫기'; btn.style.position='fixed'; btn.style.top='16px'; btn.style.right='16px'; btn.style.zIndex='10001'; }
+      if(window.__presMap) window.__presMap.scrollWheelZoom.enable();
+    }else{
+      el.style.position=''; el.style.top=el.style.left=el.style.right=el.style.bottom=''; el.style.width=''; el.style.zIndex=''; el.style.boxShadow=''; el.style.height='520px';
+      if(btn){ btn.textContent='\u26F6 크게'; btn.style.position=''; btn.style.top=btn.style.right=''; btn.style.zIndex=''; }
+      if(window.__presMap) window.__presMap.scrollWheelZoom.disable();
+    }
+    setTimeout(()=>{ try{ if(window.__presMap){ window.__presMap.invalidateSize(); } }catch(e){} },220);
+  }
+
+  // ===== 로그인 타임라인 (일자별) =====
+  let tlBound=false, tlTimer=null;
+  // 역할 표시 순서: 관리자 → socio → 영업 → 영업지원 → 재무 → 그외
+  const TL_ROLE_ORDER={director:0,socio:1,sales:2,sales_support:3,treasury:4,warehouse:5};
+  function tlRank(r){ return TL_ROLE_ORDER[r]!==undefined?TL_ROLE_ORDER[r]:5; }
+  function tlTodayStr(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+  function tlHHMM(min){ min=Math.max(0,Math.min(1440,Math.round(min))); return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
+  function tlDur(min){ min=Math.round(min); const h=Math.floor(min/60),m=min%60; return (h?h+'시간 ':'')+m+'분'; }
+  // 지정 타임존(멕시코시티) 기준 현재 날짜/분 — 브라우저 TZ와 무관하게 계산
+  function tlNowInTz(tz){
+    try{
+      const ps=new Intl.DateTimeFormat('en-CA',{timeZone:tz,hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date());
+      const m={}; ps.forEach(x=>m[x.type]=x.value);
+      let hh=parseInt(m.hour,10); if(hh===24)hh=0;
+      return { dateStr:m.year+'-'+m.month+'-'+m.day, minutes:hh*60+parseInt(m.minute,10)+parseInt(m.second,10)/60 };
+    }catch(e){ const d=new Date(); return { dateStr:tlTodayStr(), minutes:d.getHours()*60+d.getMinutes() }; }
+  }
+  async function loadTimeline(){
+    const wrap=$('tlWrap'); if(!wrap)return;
+    const date=($('tlDate')&&$('tlDate').value)||tlTodayStr();
+    wrap.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/presence/timeline?date='+encodeURIComponent(date),{headers:auth()}).then(r=>r.json());
+      renderTimeline(d);
+    }catch(e){ wrap.innerHTML='<div class="hint">타임라인을 불러오지 못했습니다.</div>'; }
+    // 오늘을 보고 있으면 1분마다 갱신(현재시각 줄 이동 + 막대 자람). 과거 날짜면 멈춤.
+    if(tlTimer){ clearInterval(tlTimer); tlTimer=null; }
+    const tz='America/Mexico_City';
+    if(date===tlNowInTz(tz).dateStr){ tlTimer=setInterval(loadTimeline,60000); }
+  }
+  function renderTimeline(d){
+    const wrap=$('tlWrap');
+    const tz=(d&&d.tz)||'America/Mexico_City';
+    const allUsers=(d&&d.users)||[], segs=(d&&d.segments)||[];
+    const byUser={}; segs.forEach(s=>{ (byUser[s.user_id]=byUser[s.user_id]||[]).push(s); });
+    // 전체 유저 고정 컬럼 — 지정 순서(역할 rank → 이름)
+    const cols=allUsers.slice().sort((a,b)=>{
+      const ra=tlRank(a.role), rb=tlRank(b.role);
+      if(ra!==rb) return ra-rb;
+      return String(a.name||a.login_id||'').localeCompare(String(b.name||b.login_id||''),'ko');
+    });
+    const activeCnt=cols.filter(u=>byUser[u.id]&&byUser[u.id].length).length;
+    const dateStr=(d&&d.date)||tlTodayStr();
+    const wd=['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00').getDay()];
+    const info=$('tlInfo'); if(info) info.textContent=dateStr+' ('+wd+') · 접속 '+activeCnt+' / 전체 '+cols.length+'명';
+    // 막대 색: 유저 고유색 (socio 는 점선 테두리로 구분)
+    const legend='<div style="display:flex;gap:14px;align-items:center;font-size:11px;color:#666;margin:0 0 6px;flex-wrap:wrap">'
+      +'<span>막대 색 = 사용자 고유색</span>'
+      +'<span><span style="display:inline-block;width:11px;height:11px;background:#cfd6d2;border:1.4px dashed #555;border-radius:2px;vertical-align:middle;margin-right:4px"></span>socio</span>'
+      +'<span><span style="display:inline-block;width:16px;border-top:2px dashed #e23744;vertical-align:middle;margin-right:4px"></span>현재 시각</span></div>';
+    if(!cols.length){ wrap.innerHTML='<div class="hint">표시할 사용자가 없습니다.</div>'; return; }
+    const gutter=46, colW=78, plotH=480, top=12, nameH=48;
+    const W=gutter+cols.length*colW+12, H=top+plotH+nameH;
+    const y=min=> top+(min/1440)*plotH;
+    const trunc=(str,n)=>{ str=String(str||''); return str.length>n? str.slice(0,n-1)+'…' : str; };
+    const cityOf=u=>[u.geo_city,u.geo_region].filter(Boolean)[0] || (u.geo_country||'');
+    let svg='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,Segoe UI,Roboto,sans-serif">';
+    // 시간 격자
+    for(let h=0;h<=24;h++){
+      const yy=y(h*60), major=(h%3===0);
+      svg+='<line x1="'+gutter+'" y1="'+yy.toFixed(1)+'" x2="'+(W-12)+'" y2="'+yy.toFixed(1)+'" stroke="'+(major?'#dfe5e2':'#f2f5f3')+'" stroke-width="1"/>';
+      if(major) svg+='<text x="'+(gutter-6)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" font-size="10" fill="#888">'+String(h).padStart(2,'0')+':00</text>';
+    }
+    // 컬럼 + 막대
+    cols.forEach((u,i)=>{
+      const x0=gutter+i*colW, bx=x0+7, bw=colW-14;
+      const isSocio=(u.role==='socio'), col=userColor(u.id);
+      svg+='<rect x="'+x0+'" y="'+top+'" width="'+colW+'" height="'+plotH+'" fill="'+(i%2?'#fbfdfc':'#ffffff')+'"/>';
+      (byUser[u.id]||[]).forEach(s=>{
+        const yy=y(s.start_min), hh=Math.max(2,y(s.end_min)-y(s.start_min));
+        svg+='<rect x="'+bx+'" y="'+yy.toFixed(1)+'" width="'+bw+'" height="'+hh.toFixed(1)+'" rx="3" fill="'+col.fill+'" fill-opacity="0.9" stroke="'+col.stroke+'" stroke-width="'+(isSocio?1.4:0.6)+'"'+(isSocio?' stroke-dasharray="3 2"':'')+'>'
+            +'<title>'+presEsc(u.name||u.login_id||'')+' · '+tlHHMM(s.start_min)+'–'+tlHHMM(s.end_min)+' ('+tlDur(s.end_min-s.start_min)+')</title></rect>';
+      });
+      // 가로 2줄 라벨: 이름 + 위치
+      const lx=x0+colW/2, fullName=String(u.name||u.login_id||''), city=cityOf(u);
+      const fullLoc=[u.geo_city,u.geo_region,u.geo_country].filter(Boolean).join(', ');
+      svg+='<text x="'+lx+'" y="'+(top+plotH+16)+'" text-anchor="middle" font-size="11" font-weight="600" fill="#333">'
+          +'<title>'+presEsc(fullName)+(fullLoc?(' · '+presEsc(fullLoc)):'')+'</title>'+presEsc(trunc(fullName,12))+'</text>';
+      if(city) svg+='<text x="'+lx+'" y="'+(top+plotH+30)+'" text-anchor="middle" font-size="9" fill="#999">'+presEsc(trunc(city,14))+'</text>';
+    });
+    // 현재 시각 가로줄 (오늘을 볼 때만)
+    const now=tlNowInTz(tz);
+    if(dateStr===now.dateStr){
+      const ny=y(now.minutes);
+      svg+='<line x1="'+gutter+'" y1="'+ny.toFixed(1)+'" x2="'+(W-12)+'" y2="'+ny.toFixed(1)+'" stroke="#e23744" stroke-width="1.5" stroke-dasharray="5 3"/>';
+      svg+='<text x="'+(W-14)+'" y="'+(ny-4).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="700" fill="#e23744">현재 '+tlHHMM(now.minutes)+'</text>';
+    }
+    svg+='</svg>';
+    const note = activeCnt? '' : '<div class="hint" style="margin:0 0 4px">이 날짜 로그인 기록 없음 (타임라인은 기능 배포 이후부터 쌓입니다).</div>';
+    wrap.innerHTML=note+legend+svg;
+  }
+  function initTimeline(){
+    const mb=$('mapBig'); if(mb&&!mb.__bound){ mb.__bound=1; mb.addEventListener('click', toggleMapBig); }
+    const mf=$('mapFit'); if(mf&&!mf.__bound){ mf.__bound=1; mf.addEventListener('click', ()=>presFit(true)); }
+    const di=$('tlDate'); if(di&&!di.value) di.value=tlTodayStr();
+    if(!tlBound){
+      if(di) di.addEventListener('change', loadTimeline);
+      const tb=$('tlToday'); if(tb) tb.addEventListener('click', ()=>{ if($('tlDate'))$('tlDate').value=tlTodayStr(); loadTimeline(); });
+      tlBound=true;
+    }
+    loadTimeline();
+  }
+
+  async function loadUsers(){
+    const b=$('userList');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/users',{headers:auth()}).then(r=>r.json());
+      users=d.items||[];
+      accountsList=d.accounts||[];
+      b.innerHTML='<table><thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>소속 팀</th><th>추가 팀 (교차 접근)</th><th class="col-perm">페이지 권한</th><th class="col-acc">계좌 권한</th><th>판매가</th><th>기기 제한</th><th title="아침 브리핑 WhatsApp 수신번호 (멕시코 10자리 또는 521+10자리)">📲 WhatsApp</th><th>PIN</th><th>관리</th></tr></thead><tbody>'+
+        users.map(u=>`<tr>
+          <td class="c-id"><b class="uname">${u.name}</b></td>
+          <td class="c-id">${u.login_id||'—'}</td>
+          <td class="c-id"><span class="rolepill">${u.role}</span></td>
+          <td class="c-id"><select onchange="setTeam(${u.id},this.value)" style="padding:5px 7px">
+            <option value="">미지정</option>${teams.map(t=>`<option value="${t.id}" ${Number(u.team_id)===Number(t.id)?'selected':''}>${t.name}</option>`).join('')}</select></td>
+          <td style="white-space:normal;max-width:200px">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':teams.map(t=>{
+            const granted=(u.team_access||[]).map(Number).includes(Number(t.id)); const own=Number(u.team_id)===Number(t.id);
+            if(own) return `<span class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;background:#eef0f2;color:#888">${t.name} (소속)</span>`;
+            return `<label class="chip" style="display:inline-block;margin:2px;padding:2px 8px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${granted?'#0F6E56':'#ccc'};background:${granted?'#e6f3ee':'#fff'};color:${granted?'#0F6E56':'#666'}"><input type="checkbox" ${granted?'checked':''} onchange="toggleTeamAccess(${u.id},${t.id},this.checked)" style="vertical-align:middle;margin-right:3px">${t.name}</label>`;
+          }).join('')}</td>
+          <td class="col-perm">${u.role==='director'?'<span class="hint" style="margin:0">디렉터는 전체 접근</span>':'<div class="permgrid">'+PERM_GROUPS.map(([gname,arr])=>
+            `<div class="permgroup"><div class="gh">${gname}</div>`+arr.map(([k,label])=>{
+              const cur=u.pages.includes(k)?((u.page_access&&u.page_access[k])||'edit'):'none';
+              const col=cur==='edit'?'#0F6E56':cur==='view'?'#B8893B':'#ccc';
+              return `<label class="pgline" style="border-left-color:${col}"><span class="lb">${label}</span><select data-uid="${u.id}" data-page="${k}" onchange="setPageAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="edit" ${cur==='edit'?'selected':''}>수정</option></select></label>`;
+            }).join('')+`</div>`).join('')+'</div>'}</td>
+          <td class="col-acc">${u.role==='director'?'<span class="hint" style="margin:0">전체 접근(무제한)</span>':u.role==='socio'?(accountsList.length?'<div class="accgrid">'+accountsList.map(a=>{
+            const cur=(u.account_access&&u.account_access[a.id])==='balance'?'balance':'view';
+            const col=cur==='balance'?'#6b8cae':'#B8893B';
+            return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="view" ${cur==='view'?'selected':''}>세부 열람</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>'):(accountsList.length?'<div class="accgrid">'+accountsList.map(a=>{
+            const cur=(u.account_access&&u.account_access[a.id])||'none';
+            const col=cur==='operate'?'#0F6E56':cur==='view'?'#B8893B':cur==='balance'?'#6b8cae':'#ccc';
+            return `<label class="accline" style="border-left-color:${col}"><span class="lb">${a.name}<span class="cur">${a.currency||''}</span></span><select data-uid="${u.id}" data-acc="${a.id}" onchange="setAccAccess(this)"><option value="none" ${cur==='none'?'selected':''}>없음</option><option value="balance" ${cur==='balance'?'selected':''}>잔액만</option><option value="view" ${cur==='view'?'selected':''}>열람</option><option value="operate" ${cur==='operate'?'selected':''}>운영</option></select></label>`;}).join('')+'</div>':'<span class="hint" style="margin:0">계좌 없음</span>')}</td>
+          <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">전체</span>':`<label class="chip" title="체크 = 이 사용자가 판매가(List Price·할인·구매/할인단가)를 볼 수 있음" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${(u.fields||[]).includes('sale_price')?'#B23A2E':'#ccc'};background:${(u.fields||[]).includes('sale_price')?'#f6e7e4':'#fff'};color:${(u.fields||[]).includes('sale_price')?'#B23A2E':'#777'}"><input type="checkbox" ${(u.fields||[]).includes('sale_price')?'checked':''} onchange="setFieldAccess(${u.id},'sale_price',this.checked)" style="vertical-align:middle">💲 판매가</label>`}</td>
+          <td style="white-space:nowrap">${u.role==='director'?'<span class="hint" style="margin:0">제한 없음</span>':`<label class="chip" title="체크 = 기기 제한 켜짐(승인된 기기에서만 로그인) · 비움 = 제한 해제" style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11px;cursor:pointer;border:1px solid ${u.device_locked?'#0F6E56':'#ccc'};background:${u.device_locked?'#e6f3ee':'#fff'};color:${u.device_locked?'#0F6E56':'#777'}"><input type="checkbox" ${u.device_locked?'checked':''} onchange="setDeviceLock(${u.id},this.checked)" style="vertical-align:middle">🔒 기기 제한</label>`}</td>
+          <td style="white-space:nowrap"><input type="tel" value="${u.wa_phone||''}" placeholder="8112345678" style="width:120px;padding:5px 7px" onchange="setWaPhone(${u.id},this)" title="아침 브리핑 수신번호 — 비우면 발송 제외"></td>
+          <td><button class="btn ghost sm" onclick="resetPin(${u.id})">재설정</button></td>
+          <td style="white-space:nowrap"><button class="btn ghost sm" onclick="cloneUser(${u.id})">복제</button> <button class="btn danger sm" onclick="deleteUser(${u.id})">삭제</button></td>
+        </tr>`).join('')+'</tbody></table>';
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+
+  // ===== 기기 접속 관리 =====
+  let devTimer=null;
+  function devWhen(iso){ if(!iso) return '기록 없음'; const d=new Date(iso); if(isNaN(d.getTime())) return '기록 없음';
+    const when=(d.getMonth()+1)+'월 '+d.getDate()+'일 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    const sec=Math.floor((Date.now()-d.getTime())/1000); const rel=presRel(sec); return when+(rel?' ('+rel+')':''); }
+  function devBadge(st,shared){
+    if(st==='pending')  return '<span style="display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:800;background:#fff3d6;color:#9a6b00">승인 대기</span>';
+    if(st==='approved') return '<span style="display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:800;background:#e6f3ee;color:#0F6E56">승인됨'+(shared?' · 공용':' · 전용')+'</span>';
+    if(st==='revoked')  return '<span style="display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:800;background:#fde8e6;color:#b23a2e">해지됨</span>';
+    return presEsc(st);
+  }
+  async function loadDevices(){
+    const b=$('devList'); if(!b) return;
+    try{
+      const d=await fetch(session.api+'/api/devices',{headers:auth()}).then(r=>r.json());
+      const items=d.items||[];
+      const pend=items.filter(x=>x.status==='pending');
+      const appr=items.filter(x=>x.status==='approved');
+      const revk=items.filter(x=>x.status==='revoked');
+      $('devSummary').textContent='승인 대기 '+pend.length+' · 승인 '+appr.length+' · 해지 '+revk.length;
+      const row=(x)=>{
+        const who='<b>'+presEsc(x.name)+'</b> <span class="hint" style="margin:0">('+presEsc(x.login_id||'-')+(x.dept?' · '+presEsc(x.dept):'')+')</span>'+(x.device_locked?'':' <span class="hint" style="margin:0;color:#b23a2e">⚠ 기기잠금 꺼짐</span>');
+        const lab=x.label?presEsc(x.label):'<span class="hint" style="margin:0">이름 없음</span>';
+        let act='';
+        if(x.status==='pending'){
+          act='<button class="btn gold sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',false)">승인·전용</button> '
+             +'<button class="btn ghost sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',true)">승인·공용</button> '
+             +'<button class="btn danger sm" style="padding:3px 10px" onclick="deleteDevice('+x.id+')">삭제</button>';
+        }else if(x.status==='approved'){
+          act='<button class="btn ghost sm" style="padding:3px 10px" onclick="approveDevice('+x.id+','+(x.shared?'false':'true')+')">'+(x.shared?'전용으로':'공용으로')+'</button> '
+             +'<button class="btn ghost sm" style="padding:3px 10px" onclick="renameDevice('+x.id+',\''+(x.label?encodeURIComponent(x.label):'')+'\')">이름변경</button> '
+             +'<button class="btn danger sm" style="padding:3px 10px" onclick="revokeDevice('+x.id+')">해지</button>';
+        }else{
+          act='<button class="btn gold sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',false)">재승인·전용</button> '
+             +'<button class="btn ghost sm" style="padding:3px 10px" onclick="approveDevice('+x.id+',true)">재승인·공용</button> '
+             +'<button class="btn danger sm" style="padding:3px 10px" onclick="deleteDevice('+x.id+')">삭제</button>';
+        }
+        return '<tr><td style="white-space:normal">'+who+'</td><td>'+lab+'</td><td>'+devBadge(x.status,x.shared)+'</td>'
+              +'<td class="hint" style="margin:0;white-space:nowrap">'+devWhen(x.last_seen||x.created_at)+'</td>'
+              +'<td style="white-space:nowrap">'+act+'</td></tr>';
+      };
+      const sect=(title,arr)=> arr.length? ('<div style="font-size:12px;font-weight:800;color:#666;margin:12px 0 4px">'+title+' ('+arr.length+')</div>'
+        +'<table><thead><tr><th>사용자</th><th>기기 이름</th><th>상태</th><th>마지막 시도</th><th>관리</th></tr></thead><tbody>'+arr.map(row).join('')+'</tbody></table>') : '';
+      const html=sect('승인 대기',pend)+sect('승인됨',appr)+sect('해지됨',revk);
+      b.innerHTML=html||'<div class="hint">기기 접속 요청 기록이 없습니다. (기기잠금을 켠 사용자가 미승인 기기로 로그인하면 여기에 표시됩니다.)</div>';
+    }catch(e){ b.innerHTML='<div class="hint">불러오지 못했습니다.</div>'; }
+  }
+  function startDevicePoll(){ loadDevices(); if(devTimer)clearInterval(devTimer); devTimer=setInterval(loadDevices,25000); }
+  async function setDeviceLock(userId,locked){
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/device-lock',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({value:!!locked})},15000);
+    if(!r.ok){ alert('기기잠금 변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); loadUsers(); return; }
+    const u=users.find(x=>Number(x.id)===Number(userId)); if(u) u.device_locked=!!locked;
+    loadDevices();
+  }
+  // WhatsApp 수신번호(아침 브리핑) — 즉시 저장 (빈 값 = 발송 제외)
+  async function setWaPhone(userId,inp){
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/wa-phone',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({wa_phone:inp.value.trim()})},15000);
+    if(!r.ok){ alert('WhatsApp 번호 저장 실패: '+((r.data&&(r.data.error==='bad_phone'?'번호 형식이 올바르지 않습니다 (10자리 또는 521+10자리)':r.data.error))||r.err||('HTTP '+r.status))); loadUsers(); return; }
+    inp.value=(r.data&&r.data.wa_phone)||'';
+    const u=users.find(x=>Number(x.id)===Number(userId)); if(u) u.wa_phone=inp.value||null;
+  }
+  // 판매가(sale_price) 열람 권한 토글 — 즉시 저장
+  async function setFieldAccess(userId,fieldKey,visible){
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/field-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({field_key:fieldKey,visible:!!visible})},15000);
+    if(!r.ok){ alert('판매가 권한 변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); loadUsers(); return; }
+    const u=users.find(x=>Number(x.id)===Number(userId));
+    if(u){ u.fields=u.fields||[]; if(visible){ if(!u.fields.includes(fieldKey)) u.fields.push(fieldKey); } else { u.fields=u.fields.filter(f=>f!==fieldKey); } }
+  }
+  async function approveDevice(id,shared){
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({shared:!!shared})},15000);
+    if(!r.ok){ alert('승인 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+  async function revokeDevice(id){
+    if(!confirm('이 기기의 접속을 차단(해지)하시겠습니까?\n해당 기기에서는 더 이상 로그인할 수 없습니다.')) return;
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id+'/revoke',{method:'POST',headers:auth()},15000);
+    if(!r.ok){ alert('해지 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+  async function deleteDevice(id){
+    if(!confirm('이 기기 기록을 삭제하시겠습니까?\n같은 기기로 다시 로그인하면 승인 대기로 재등록됩니다.')) return;
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id,{method:'DELETE',headers:auth()},15000);
+    if(!r.ok){ alert('삭제 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+  async function renameDevice(id,curEnc){
+    const cur=curEnc?decodeURIComponent(curEnc):'';
+    const label=prompt('기기 이름(예: 사무실 PC / 마리아 노트북):',cur); if(label===null) return;
+    const r=await fetchJsonHard(session.api+'/api/devices/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({label:label.trim()})},15000);
+    if(!r.ok){ alert('이름변경 실패: '+(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status))); return; }
+    loadDevices();
+  }
+
+  async function setTeam(userId,teamId){
+    try{await fetch(session.api+'/api/team-admin/users/'+userId+'/team',{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId?Number(teamId):null})});loadUsers();}catch(e){alert('실패');}
+  }
+  async function toggleTeamAccess(userId,teamId,grant){
+    try{
+      if(grant){ await fetch(session.api+'/api/team-admin/users/'+userId+'/grant',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:teamId,can_edit:false})}); }
+      else { await fetch(session.api+'/api/team-admin/users/'+userId+'/grant/'+teamId,{method:'DELETE',headers:auth()}); }
+      loadUsers();
+    }catch(e){alert('실패');loadUsers();}
+  }
+  // 페이지 권한 저장 — 계좌 권한과 동일하게 '그 자리에서' 갱신(전체 재렌더 안 함 → 스크롤 안 튐)
+  async function setPageAccess(el){
+    const uid=Number(el.dataset.uid), pageKey=el.dataset.page, level=el.value;
+    if(!Number.isInteger(uid)||!pageKey){ alert('사용자/페이지 식별 오류(uid='+el.dataset.uid+', page='+el.dataset.page+')'); return; }
+    const lab=el.closest('label'); el.disabled=true;
+    let r;
+    if(level==='none'){
+      r=await fetchJsonHard(session.api+'/api/users/'+uid+'/page-access?page_key='+encodeURIComponent(pageKey),{method:'DELETE',headers:auth()},15000);
+    }else{
+      r=await fetchJsonHard(session.api+'/api/users/'+uid+'/page-access',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({page_key:pageKey,device_req:'anywhere',access:level})},15000);
+    }
+    el.disabled=false;
+    if(!r.ok){
+      const detail=r.err?r.err:((r.data&&(r.data.message||r.data.error))||('HTTP '+r.status));
+      alert('페이지 권한 저장 실패: '+detail);
+      return;
+    }
+    // 로컬 상태 갱신(재렌더 없이)
+    const u=users.find(x=>Number(x.id)===uid);
+    if(u){
+      u.pages=u.pages||[]; u.page_access=u.page_access||{};
+      if(level==='none'){ u.pages=u.pages.filter(p=>p!==pageKey); delete u.page_access[pageKey]; }
+      else{ if(u.pages.indexOf(pageKey)<0) u.pages.push(pageKey); u.page_access[pageKey]=level; }
+    }
+    // 색상 갱신(저장 성공 표시)
+    if(lab) lab.style.borderLeftColor = level==='edit'?'#0F6E56':level==='view'?'#B8893B':'#bbb';
+  }
+
+  // ===== 계좌 권한 (인라인) =====
+  // 절대 멈추지 않는 fetch: 타임아웃 + 상태/본문 노출
+  async function fetchJsonHard(url,opts,timeoutMs){
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),timeoutMs||15000);
+    try{
+      const res=await fetch(url,{...(opts||{}),signal:ctrl.signal});
+      const txt=await res.text();
+      let data=null; try{ data=txt?JSON.parse(txt):{}; }catch(_){ data={__raw:txt}; }
+      return {ok:res.ok,status:res.status,data,raw:txt};
+    }catch(e){
+      return {ok:false,status:0,data:null,raw:'',err:(e&&e.name==='AbortError')?'시간 초과(timeout)':(e&&e.message)||'network'};
+    }finally{ clearTimeout(tid); }
+  }
+  // 인라인 드롭다운: 한 사용자×한 계좌의 권한 레벨(없음/열람/운영) 저장
+  async function setAccAccess(el){
+    const uid=Number(el.dataset.uid), acc=Number(el.dataset.acc), level=el.value;
+    if(!Number.isInteger(uid)||!Number.isInteger(acc)){alert('사용자/계좌 식별 오류(uid='+el.dataset.uid+', acc='+el.dataset.acc+')');return;}
+    const lab=el.closest('label'); const prevColor=lab?lab.style.borderLeftColor:'';
+    el.disabled=true;
+    const r=await fetchJsonHard(session.api+'/api/users/'+uid+'/account-access',
+      {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,level})},15000);
+    el.disabled=false;
+    if(!r.ok){
+      const detail=r.err?r.err:((r.data&&(r.data.message||r.data.error))||('HTTP '+r.status));
+      alert('계좌 권한 저장 실패: '+detail);
+      return;
+    }
+    // 색상 갱신(저장 성공 표시)
+    if(lab) lab.style.borderLeftColor=level==='operate'?'#0F6E56':level==='view'?'#B8893B':level==='balance'?'#6b8cae':'#bbb';
+    // 로컬 상태도 갱신(재렌더 없이)
+    const u=users.find(x=>Number(x.id)===uid); if(u){ u.account_access=u.account_access||{}; if(level==='none') delete u.account_access[acc]; else u.account_access[acc]=level; }
+  }
+
+  async function resetPin(userId){
+    const pin=prompt('새 PIN(4~8자리, 비우면 자동 생성):');
+    if(pin===null)return;
+    try{
+      const res=await fetch(session.api+'/api/users/'+userId+'/reset-pin',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({pin:pin.trim()||undefined})});
+      const d=await res.json();
+      alert('새 PIN: '+d.pin+'\n사용자에게 통보하세요.');
+    }catch(e){alert('실패');}
+  }
+
+  // 계정 복제 — 권한 동일한 새 계정 생성(새 로그인 아이디·PIN).
+  async function cloneUser(userId){
+    const u=users.find(x=>Number(x.id)===Number(userId)); if(!u){alert('사용자를 찾을 수 없습니다.');return;}
+    const login_id=prompt('복제할 새 로그인 아이디:'); if(login_id===null)return;
+    if(!login_id.trim()){alert('로그인 아이디를 입력하세요.');return;}
+    const name=prompt('새 사용자 이름:', u.name+' (복제)'); if(name===null)return;
+    if(!name.trim()){alert('이름을 입력하세요.');return;}
+    const pin=prompt('새 PIN(4~8자리, 비우면 자동 생성):'); if(pin===null)return;
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId+'/clone',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},
+       body:JSON.stringify({name:name.trim(),login_id:login_id.trim(),pin:pin.trim()||undefined})},20000);
+    if(!r.ok){
+      const e=r.data&&r.data.error;
+      const msg=e==='login_id_taken'?'이미 있는 아이디입니다.':e==='source_not_found'?'원본 계정을 찾을 수 없습니다.':(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status));
+      alert('복제 실패: '+msg); return;
+    }
+    alert('복제 완료 — 아이디 '+r.data.login_id+' · PIN '+r.data.pin+'\n권한이 원본과 동일하게 복사되었습니다. PIN을 통보하세요.');
+    loadUsers();
+  }
+
+  // 계정 삭제(소프트). 같은 로그인 아이디는 이후 재사용 가능.
+  async function deleteUser(userId){
+    const u=users.find(x=>Number(x.id)===Number(userId)); if(!u){alert('사용자를 찾을 수 없습니다.');return;}
+    if(!confirm('정말 삭제하시겠습니까?\n\n'+u.name+' ('+(u.login_id||'-')+')\n\n삭제 후 이 사용자는 로그인할 수 없고 목록에서 사라집니다. 같은 아이디는 다시 만들 수 있습니다.'))return;
+    const r=await fetchJsonHard(session.api+'/api/users/'+userId,{method:'DELETE',headers:auth()},15000);
+    if(!r.ok){
+      const e=r.data&&r.data.error;
+      const msg=e==='cannot_delete_self'?'본인 계정은 삭제할 수 없습니다.':e==='cannot_delete_last_director'?'마지막 디렉터는 삭제할 수 없습니다.':(r.err||(r.data&&(r.data.message||r.data.error))||('HTTP '+r.status));
+      alert('삭제 실패: '+msg); return;
+    }
+    alert('삭제되었습니다.'); loadUsers();
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('createBtn').addEventListener('click',createUser);
+
+  // 포털 자동 로그인
+  (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
+</script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
+</body>
+</html>

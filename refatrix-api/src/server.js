@@ -47,6 +47,7 @@ import stockCountRoutes from './routes/stockCountRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
 import inboundRoutes from './routes/inboundRoutes.js';
 import zoneRoutes from './routes/zoneRoutes.js';
+import rackMoveRoutes from './routes/rackMoveRoutes.js';
 import visitRoutes from './routes/visitRoutes.js';
 import visitRecRoutes from './routes/visitRecRoutes.js';
 import consultRoutes from './routes/consultRoutes.js';
@@ -101,6 +102,7 @@ export function buildApp() {
   app.register(stockRoutes);
   app.register(inboundRoutes);
   app.register(zoneRoutes);
+  app.register(rackMoveRoutes);
   app.register(devRequestRoutes);
   app.register(userRoutes);
   app.register(commissionRoutes);

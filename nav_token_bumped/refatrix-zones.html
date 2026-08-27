@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix · 존 지정 Zonas · build zone-0817a</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
+    --z1:#2E6F9E;--z2:#0F6E56;--z3:#9A6512;--z4:#6B4FB0;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:20px}
+  .wrap{max-width:1080px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:21px;color:var(--brand)}
+  header .sub{font-size:12.5px;color:var(--muted)}
+  header .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  a.portalBtn{color:var(--brand);font-size:12px;text-decoration:none;border:1px solid var(--brand);padding:5px 10px;border-radius:7px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.6}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.45;cursor:default}
+  .msg{margin-top:10px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--red-bg);color:var(--red)}
+  .msg.ok{display:block;background:var(--green-bg);color:var(--green)}
+  .idle{color:var(--muted);font-size:13px;text-align:center;padding:22px}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+
+  /* 존 4칸 */
+  .zgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:820px){.zgrid{grid-template-columns:repeat(2,1fr)}}
+  .zbox{border:1px solid var(--line);border-radius:10px;padding:11px;background:#fbfaf7}
+  .zbox .zn{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 8px;
+    border-radius:7px;color:#fff;font-weight:800;font-size:13px}
+  .z1 .zn{background:var(--z1)}.z2 .zn{background:var(--z2)}.z3 .zn{background:var(--z3)}.z4 .zn{background:var(--z4)}
+  .zbox input{width:100%;margin-top:8px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px}
+  .zbox .cnt{font-size:11.5px;color:var(--muted);margin-top:7px}
+  .zbox .cnt b{color:var(--ink)}
+
+  /* KPI */
+  .kpis{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px}
+  .kpi{flex:1;min-width:130px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
+  .kpi .k{font-size:11px;color:var(--muted);font-weight:700}
+  .kpi .v{font-size:19px;font-weight:800;margin-top:2px}
+  .kpi.warn .v{color:var(--red)}
+
+  /* 일괄지정 바 */
+  .bulk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;border:1px dashed var(--line);
+    border-radius:9px;background:#fbfaf7;margin-bottom:11px}
+  .bulk select,.bulk input{padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px;background:#fff}
+
+  /* 랙 표 */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{position:sticky;top:0;background:#F0EDE4;text-align:left;padding:8px 10px;font-size:11.5px;
+    color:var(--muted);border-bottom:1px solid var(--line);z-index:1}
+  tbody td{padding:6px 10px;border-bottom:1px solid #F1EDE3}
+  tbody tr.gsep td{background:#F7F5EF;font-weight:800;color:var(--brand);font-size:12px}
+  tbody tr.dirty td{background:#FFFCEF}
+  tbody tr.unmapped td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+  td.rack{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;font-weight:700}
+  td.num{text-align:right;color:var(--muted)}
+  select.zsel{padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px;background:#fff;min-width:120px}
+  select.zsel.set{font-weight:700}
+  select.zsel[data-z="1"]{border-color:var(--z1);color:var(--z1)}
+  select.zsel[data-z="2"]{border-color:var(--z2);color:var(--z2)}
+  select.zsel[data-z="3"]{border-color:var(--z3);color:var(--z3)}
+  select.zsel[data-z="4"]{border-color:var(--z4);color:var(--z4)}
+  .tblbox{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:9px}
+  .savebar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);
+    padding:11px 0 2px;margin-top:12px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:#EFEDE6;color:var(--muted);font-weight:700}
+  .pill.on{background:#FFF3CD;color:#8A6300}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="ttl">존 지정 · Zonas</h1>
+    <span class="sub" id="sub">랙 번호를 존 이동용 임시 팔렛(1~4)에 배정합니다</span>
+    <span class="right"><a href="refatrix-portal.html" class="portalBtn">← 포털</a></span>
+  </header>
+  <div id="app"><div class="card"><div class="idle" id="boot">불러오는 중…</div></div></div>
+</div>
+
+<script src="refatrix-nav.js?v=20260827rl"></script>
+<script>
+(function(){
+  function sess(){
+    try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+    return null;
+  }
+  var BUILD='zone-0817a';
+  var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  try{ console.log('[refatrix-zones] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
+
+  var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return (S&&S.user&&S.user.role==='warehouse')?'es':'ko'; })();
+  function L(ko,es){ return LANG==='es'?es:ko; }
+  var isDir=(S&&S.user&&S.user.role==='director');
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var fmt=function(n){return Number(n||0).toLocaleString(LANG==='es'?'es-MX':'ko-KR');};
+
+  function api(path,opt){ opt=opt||{}; opt.headers=Object.assign({},AUTH,opt.headers||{});
+    return fetch(API+path,opt).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,status:r.status,body:j||{}}; })
+      .catch(function(){ return {ok:r.ok,status:r.status,body:{}}; }); }); }
+
+  $('ttl').textContent=L('존 지정 · Zonas','Zonas · 존 지정');
+  $('sub').textContent=L('랙 번호를 존 이동용 임시 팔렛(1~4)에 배정합니다','Asigne cada ubicación a un pallet de traslado (1~4)');
+
+  if(!S){ $('app').innerHTML='<div class="card"><div class="idle">'+L('세션이 없습니다. 포털에서 다시 여세요.','Sin sesión. Abra desde el portal.')+'</div></div>'; return; }
+
+  /* ===== 상태 ===== */
+  var DATA=null;          // GET /api/warehouse/zones 응답
+  var edits={};           // rack → zone(1~4) | null   (변경분만)
+  var newEdit;            // 신규 SKU 기본 존 변경분(undefined = 변경 없음)
+  var zoneNames={};       // zone → 편집 중인 이름
+  var filter='';          // 랙 검색어
+  var onlyUnmapped=false;
+
+  function zoneOfRack(rack){ return (rack in edits) ? edits[rack] : (rackZone(rack)); }
+  function rackZone(rack){
+    var r=(DATA&&DATA.racks||[]).filter(function(x){return x.rack===rack;})[0];
+    return r?r.zone:null;
+  }
+  function curNewZone(){ return newEdit===undefined ? (DATA&&DATA.new_zone)||null : newEdit; }
+  function dirtyCount(){
+    var n=Object.keys(edits).length + (newEdit===undefined?0:1);
+    Object.keys(zoneNames).forEach(function(z){
+      var orig=((DATA&&DATA.zones||[]).filter(function(x){return String(x.zone)===String(z);})[0]||{}).name||'';
+      if(String(zoneNames[z])!==String(orig)) n++;
+    });
+    return n;
+  }
+  function zoneLabel(z){
+    if(!z) return L('미지정','Sin asignar');
+    var nm=(zoneNames[z]!==undefined)?zoneNames[z]:(((DATA&&DATA.zones||[]).filter(function(x){return Number(x.zone)===Number(z);})[0]||{}).name||('Zona '+z));
+    return z+' · '+nm;
+  }
+  // 존별 랙 수(편집분 반영)
+  function zoneStats(){
+    var c={1:0,2:0,3:0,4:0}, unmapped=0;
+    (DATA&&DATA.racks||[]).forEach(function(r){
+      var z=zoneOfRack(r.rack);
+      if(z) c[z]=(c[z]||0)+1; else unmapped++;
+    });
+    return {c:c,unmapped:unmapped};
+  }
+
+  /* ===== 렌더 ===== */
+  function render(){
+    if(!DATA){ return; }
+    var st=zoneStats();
+    var h='';
+
+    /* 존 4칸 — 이름 편집 */
+    h+='<div class="card"><div class="card-h">'+L('존 4개 — 이름을 바꿀 수 있습니다','Cuatro zonas — puede renombrar')
+      +'<span class="hint" style="font-weight:500">'+L('현장 임시 팔렛에 붙일 이름(예: A동 앞, 2층 좌측)','Nombre para el pallet de traslado')+'</span></div>'
+      +'<div class="zgrid">';
+    [1,2,3,4].forEach(function(z){
+      var nm=(zoneNames[z]!==undefined)?zoneNames[z]:(((DATA.zones||[]).filter(function(x){return Number(x.zone)===z;})[0]||{}).name||('Zona '+z));
+      h+='<div class="zbox z'+z+'"><span class="zn">'+L('존','Z')+' '+z+'</span>'
+        +'<input type="text" id="zn'+z+'" value="'+esc(nm)+'" maxlength="60"'+(isDir?'':' disabled')+'>'
+        +'<div class="cnt">'+L('배정된 랙','Ubicaciones')+' <b>'+fmt(st.c[z]||0)+'</b></div></div>';
+    });
+    h+='</div></div>';
+
+    /* KPI */
+    h+='<div class="card"><div class="kpis">'
+      +'<div class="kpi"><div class="k">'+L('등록된 랙','Ubicaciones')+'</div><div class="v">'+fmt(DATA.racks.length)+'</div></div>'
+      +'<div class="kpi"><div class="k">'+L('존 배정 완료','Asignadas')+'</div><div class="v">'+fmt(DATA.racks.length-st.unmapped)+'</div></div>'
+      +'<div class="kpi'+(st.unmapped?' warn':'')+'"><div class="k">'+L('존 미지정','Sin asignar')+'</div><div class="v">'+fmt(st.unmapped)+'</div></div>'
+      +'<div class="kpi"><div class="k">'+L('랙 없는 신규 SKU','SKU sin ubicación')+'</div><div class="v">'+fmt(DATA.no_rack_products)+'</div></div>'
+      +'</div>';
+
+    /* 신규 SKU 기본 존 */
+    h+='<div class="bulk"><b style="font-size:12.5px">🆕 '+L('랙이 없는 신규 SKU 는','Los SKU sin ubicación van a')+'</b>'
+      +'<select class="zsel" id="newZone"'+(isDir?'':' disabled')+'>'+optHtml(curNewZone())+'</select>'
+      +'<span class="hint">'+L('여기서 정한 존으로 안내합니다. 비워두면 검수 화면에 "존 미지정"으로 표시됩니다(임의 배치 방지).','Se guiará a esta zona. Si lo deja vacío, la verificación mostrará "sin zona".')+'</span></div>';
+
+    /* 일괄지정 + 검색 */
+    h+='<div class="bulk">'
+      +'<b style="font-size:12.5px">'+L('앞글자 일괄지정','Asignar por prefijo')+'</b>'
+      +'<select id="bulkG">'+groupOptHtml()+'</select>'
+      +'<span>→</span>'
+      +'<select class="zsel" id="bulkZ">'+optHtml(null)+'</select>'
+      +'<button class="btn sm" id="btnBulk"'+(isDir?'':' disabled')+'>'+L('적용','Aplicar')+'</button>'
+      +'<span style="margin-left:auto"></span>'
+      +'<input type="text" id="q" placeholder="'+L('랙 검색','Buscar ubicación')+'" value="'+esc(filter)+'" style="width:150px">'
+      +'<label class="hint" style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="onlyU"'+(onlyUnmapped?' checked':'')+' style="width:auto"> '+L('미지정만','Solo sin asignar')+'</label>'
+      +'</div>';
+
+    /* 랙 표 */
+    var rows=DATA.racks.filter(function(r){
+      if(onlyUnmapped && zoneOfRack(r.rack)) return false;
+      if(filter && r.rack.toUpperCase().indexOf(filter.toUpperCase())<0) return false;
+      return true;
+    });
+    h+='<div class="tblbox"><table><thead><tr>'
+      +'<th style="width:34%">'+L('랙 번호','Ubicación')+'</th>'
+      +'<th style="width:16%;text-align:right">'+L('제품 수','SKU')+'</th>'
+      +'<th style="width:50%">'+L('존 이동용 임시 팔렛','Pallet de traslado')+'</th>'
+      +'</tr></thead><tbody>';
+    if(!rows.length){
+      h+='<tr><td colspan="3"><div class="idle">'+(DATA.racks.length
+        ? L('조건에 맞는 랙이 없습니다.','Sin resultados.')
+        : L('제품마스터에 지정된 랙이 없습니다. 제품 화면에서 랙을 먼저 입력하세요.','No hay ubicaciones en el catálogo.'))+'</div></td></tr>';
+    }
+    var lastG=null;
+    rows.forEach(function(r){
+      if(r.group!==lastG){ lastG=r.group;
+        h+='<tr class="gsep"><td colspan="3">'+esc(r.group)+' '+L('그룹','grupo')+'</td></tr>'; }
+      var z=zoneOfRack(r.rack), dirty=(r.rack in edits);
+      h+='<tr class="'+(dirty?'dirty ':'')+(z?'':'unmapped')+'">'
+        +'<td class="rack">'+esc(r.rack)+'</td>'
+        +'<td class="num">'+fmt(r.products)+'</td>'
+        +'<td><select class="zsel'+(z?' set':'')+'" data-rack="'+esc(r.rack)+'" data-z="'+(z||'')+'"'+(isDir?'':' disabled')+'>'+optHtml(z)+'</select></td>'
+        +'</tr>';
+    });
+    h+='</tbody></table></div>';
+
+    /* 사라진 랙(참고) */
+    if((DATA.orphans||[]).length){
+      h+='<div class="hint" style="margin-top:10px">⚠ '+L('제품마스터에서 사라진 랙인데 배정만 남아있는 것','Asignaciones de ubicaciones que ya no existen')+': '
+        +DATA.orphans.slice(0,12).map(function(o){return '<span class="mono">'+esc(o.rack)+'</span>('+o.zone+')';}).join(' · ')
+        +((DATA.orphans.length>12)?' …':'')+' — '+L('그냥 둬도 무해합니다.','No causa problemas.')+'</div>';
+    }
+
+    /* 저장바 */
+    h+='<div class="savebar">'
+      +'<button class="btn" id="btnSave"'+(isDir&&dirtyCount()?'':' disabled')+'>✔ '+L('저장','Guardar')+'</button>'
+      +'<button class="btn ghost sm" id="btnReset"'+(dirtyCount()?'':' disabled')+'>↺ '+L('변경 취소','Descartar')+'</button>'
+      +'<span class="pill'+(dirtyCount()?' on':'')+'" id="dirty">'+(dirtyCount()?L('변경 ','Cambios ')+dirtyCount()+L('건','')  :L('변경 없음','Sin cambios'))+'</span>'
+      +(isDir?'':'<span class="hint">'+L('디렉터만 저장할 수 있습니다(보기 전용).','Solo el director puede guardar.')+'</span>')
+      +'</div>'
+      +'<div class="msg" id="msg"></div>'
+      +'<div class="hint" style="margin-top:10px">'+L(
+        '저장하면 창고 &gt; 수입입고 &gt; 검수에서 카톤을 스캔할 때마다 "→ 존 N" 이 크게 표시됩니다. 작업자는 그 존의 이동용 팔렛에 박스를 올립니다.',
+        'Al guardar, la verificación de recepción mostrará "→ Zona N" en cada escaneo.')+'</div>'
+      +'</div>';
+
+    $('app').innerHTML=h;
+    wire();
+  }
+
+  function optHtml(sel){
+    var h='<option value="">'+L('— 미지정 —','— Sin asignar —')+'</option>';
+    [1,2,3,4].forEach(function(z){
+      h+='<option value="'+z+'"'+(Number(sel)===z?' selected':'')+'>'+esc(zoneLabel(z))+'</option>';
+    });
+    return h;
+  }
+  function groupOptHtml(){
+    var gs=[];
+    (DATA.racks||[]).forEach(function(r){ if(gs.indexOf(r.group)<0) gs.push(r.group); });
+    return gs.map(function(g){
+      var n=(DATA.racks||[]).filter(function(r){return r.group===g;}).length;
+      return '<option value="'+esc(g)+'">'+esc(g)+' ('+n+')</option>';
+    }).join('');
+  }
+
+  function wire(){
+    Array.prototype.forEach.call(document.querySelectorAll('select.zsel[data-rack]'),function(sel){
+      sel.addEventListener('change',function(){
+        var rack=sel.getAttribute('data-rack');
+        var v=sel.value?Number(sel.value):null;
+        if(v===rackZone(rack)) delete edits[rack]; else edits[rack]=v;   // 원래 값으로 되돌리면 변경분에서 뺀다
+        render();
+      });
+    });
+    var nz=$('newZone'); if(nz) nz.addEventListener('change',function(){
+      var v=nz.value?Number(nz.value):null;
+      if(v===((DATA.new_zone)||null)) newEdit=undefined; else newEdit=v;
+      render();
+    });
+    [1,2,3,4].forEach(function(z){
+      var el=$('zn'+z); if(!el) return;
+      el.addEventListener('input',function(){ zoneNames[z]=el.value; updateDirtyPill(); });
+    });
+    var bb=$('btnBulk'); if(bb) bb.addEventListener('click',function(){
+      var g=$('bulkG').value, v=$('bulkZ').value?Number($('bulkZ').value):null;
+      (DATA.racks||[]).forEach(function(r){
+        if(r.group!==g) return;
+        if(v===r.zone) delete edits[r.rack]; else edits[r.rack]=v;
+      });
+      render();
+    });
+    var q=$('q'); if(q) q.addEventListener('input',function(){ filter=q.value; var p=q.selectionStart; render(); var n=$('q'); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(e){} } });
+    var ou=$('onlyU'); if(ou) ou.addEventListener('change',function(){ onlyUnmapped=ou.checked; render(); });
+    var bs=$('btnSave'); if(bs) bs.addEventListener('click',save);
+    var br=$('btnReset'); if(br) br.addEventListener('click',function(){ edits={}; newEdit=undefined; zoneNames={}; render(); });
+  }
+  function updateDirtyPill(){
+    var el=$('dirty'); if(!el) return;
+    var n=dirtyCount();
+    el.className='pill'+(n?' on':''); el.textContent=n?(L('변경 ','Cambios ')+n+L('건','')):L('변경 없음','Sin cambios');
+    var bs=$('btnSave'); if(bs) bs.disabled=!(isDir&&n);
+    var br=$('btnReset'); if(br) br.disabled=!n;
+  }
+
+  /* ===== 저장 ===== */
+  function save(){
+    var m=$('msg'); m.className='msg';
+    var body={ zones:[1,2,3,4].map(function(z){
+        var el=$('zn'+z);
+        return { zone:z, name: el?el.value:undefined };
+      }).filter(function(x){return x.name!==undefined;}),
+      map:Object.keys(edits).map(function(rack){ return {rack:rack, zone:edits[rack]}; }) };
+    if(newEdit!==undefined) body.new_zone=newEdit;
+    $('btnSave').disabled=true;
+    api('/api/warehouse/zones',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(o){
+        if(!o.ok||o.body.error){
+          m.className='msg err';
+          m.textContent=L('저장 실패','Error')+': '+(o.body.error==='director_only'?L('디렉터 전용입니다','Solo director'):(o.body.error||o.status));
+          $('btnSave').disabled=false; return;
+        }
+        edits={}; newEdit=undefined; zoneNames={};
+        load(function(){
+          var mm=$('msg'); if(mm){ mm.className='msg ok';
+            mm.textContent=L('저장되었습니다. 검수 화면에서 바로 반영됩니다.','Guardado. La verificación ya lo usa.'); }
+        });
+      });
+  }
+
+  /* ===== 로드 ===== */
+  function load(cb){
+    api('/api/warehouse/zones').then(function(o){
+      if(!o.ok||o.body.error){
+        $('app').innerHTML='<div class="card"><div class="idle">'+L('불러오지 못했습니다','No se pudo cargar')+' — '
+          +esc(o.body.error||o.status)+'</div></div>';
+        return;
+      }
+      DATA=o.body; render(); if(cb) cb();
+    });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
