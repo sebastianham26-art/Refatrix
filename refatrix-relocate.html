@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix · 위치변경 Cambio de ubicación · build rel-0827a</title>
+<title>Refatrix · 위치변경 Cambio de ubicación · build rel-0827b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --green:#0F6E56;--green-bg:#E4F0EB;--red:#B23A2E;--red-bg:#F6E7E4;--brand:#143D34;--radius:12px;
@@ -165,7 +165,7 @@
     try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
     return null;
   }
-  var BUILD='rel-0827a';
+  var BUILD='rel-0827b';
   var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
   try{ console.log('[refatrix-relocate] build '+BUILD+' user="'+((S&&S.user&&S.user.name)||'')+'" role='+((S&&S.user&&S.user.role)||'')); }catch(e){}
 
@@ -296,12 +296,22 @@
   try{ var um=localStorage.getItem('rel_updmaster'); if(um==='0') updMaster=false; }catch(e){}
 
   function rackKey(r){ return String(r==null?'':r).trim().toUpperCase(); }
+  // 마스터 랙 칸에 콤마로 여러 랙이 들어있는 제품이 있다("AA3-2, B2-2").
+  // 서버 랙 목록은 낱개 랙이므로, 통짜 문자열이면 **첫 랙**으로 찾는다. (2026-08-27)
+  function firstRack(v){
+    var t=String(v==null?'':v).split(/[,\n\r]+/)[0];
+    return t?t.trim():'';
+  }
   function findRack(v){
     var k=rackKey(v); if(!k) return null;
     if(RACKMAP[k]) return RACKMAP[k];
+    var f=rackKey(firstRack(v));
+    if(f&&f!==k&&RACKMAP[f]) return RACKMAP[f];
     // 구분자 표기 흔들림(A'01'03 / A0103) 폴백
     var b=bare(k);
     for(var i=0;i<RACKS.length;i++){ if(bare(RACKS[i].rack)===b) return RACKS[i]; }
+    var bf=bare(f);
+    if(bf) for(var j=0;j<RACKS.length;j++){ if(bare(RACKS[j].rack)===bf) return RACKS[j]; }
     return null;
   }
   function kindOf(v){ var r=findRack(v); return r?r.kind:null; }

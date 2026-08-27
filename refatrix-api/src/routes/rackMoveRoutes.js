@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { sortRacks, rackGroup } from './zoneRoutes.js';
+import { sortRacks, rackGroup, splitRacks } from './zoneRoutes.js';
 
 // build 20260827a-relocate
 // 창고 위치변경(Cambio de ubicación) — 카톤 랙 → fast moving rack 박스 이동 기록 (0187)
@@ -23,6 +23,21 @@ export function sameRack(a, b) {
   return !!x && x === y;
 }
 // 제품번호 비교키 — 스캐너가 하이픈·공백을 다르게 흘려도 같은 제품으로 붙게 한다.
+/* 마스터 랙 칸이 "AA3-2, B2-2" 처럼 여러 랙일 때, **옮긴 랙 하나만** 갈아끼운다.
+   예전 코드는 rack_location 을 도착 랙으로 통째로 덮어써서 나머지 랙이 조용히 사라졌다.
+     replaceRackToken('AA3-2, B2-2', 'AA3-2', 'F1-1') → 'F1-1, B2-2'
+   일치하는 랙이 없으면 null 을 돌려주고, 호출부는 **마스터를 건드리지 않는다**(추측 금지). */
+export function replaceRackToken(master, from, to) {
+  const list = splitRacks(master);
+  if (!list.length) return null;
+  const i = list.findIndex((r) => sameRack(r, from));
+  if (i < 0) return null;
+  const next = list.slice();
+  next[i] = to;
+  const out = [];                                  // 같은 랙이 두 번 들어가지 않게(대소문자 무시)
+  for (const r of next) if (!out.some((x) => sameRack(x, r))) out.push(r);
+  return out.join(', ');
+}
 export function normCode(v) {
   return String(v == null ? '' : v).trim().toUpperCase().replace(/[\s‐-―'’`]/g, '');
 }
@@ -52,14 +67,18 @@ export default async function rackMoveRoutes(app) {
      목록 = 제품마스터에 쓰이는 랙 ∪ 유형이 지정된 랙(아직 제품이 없는 신규 fast rack 포함). */
   app.get('/api/warehouse/racks', g, async () => {
     const rackRows = (await query(
-      `SELECT (array_agg(TRIM(p.rack_location) ORDER BY cnt DESC, TRIM(p.rack_location)))[1] AS rack,
-              SUM(cnt)::int AS products
-         FROM (SELECT p.rack_location, COUNT(*)::int AS cnt
+      // ⚠ products.rack_location 한 칸에 "AA3-2, B2-2" 처럼 콤마로 여러 랙이 적힌 제품이 있다.
+      //   통짜로 묶으면 랙 목록에 그 문자열이 랙 1개로 뜨고(앞글자만 보므로 AA 그룹에 B2 가 딸려 들어감)
+      //   스캔값 판정·유형 지정도 안 된다. 존 지정(zoneRoutes)과 **같은 구분자**로 쪼갠다. (2026-08-27)
+      `SELECT (array_agg(r.rack ORDER BY r.cnt DESC, r.rack))[1] AS rack,
+              SUM(r.cnt)::int AS products
+         FROM (SELECT TRIM(tok) AS rack, COUNT(DISTINCT p.id)::int AS cnt
                  FROM products p
+                 CROSS JOIN LATERAL regexp_split_to_table(p.rack_location, '[,\n\r]+') AS tok
                 WHERE p.deleted_at IS NULL
-                  AND NULLIF(TRIM(p.rack_location), '') IS NOT NULL
-                GROUP BY p.rack_location) p
-        GROUP BY UPPER(TRIM(p.rack_location))`
+                  AND NULLIF(TRIM(tok), '') IS NOT NULL
+                GROUP BY TRIM(tok)) r
+        GROUP BY UPPER(r.rack)`
     )).rows;
 
     const kindRows = (await query('SELECT rack, kind, note FROM rack_kinds')).rows;
@@ -203,11 +222,13 @@ export default async function rackMoveRoutes(app) {
     if (!row) return reply.code(404).send({ error: 'product_not_found', read: parsed.code, raw });
 
     const rack = row.rack_location ? String(row.rack_location).trim() : null;
-    const kind = rack ? await kindOf(rack) : null;
+    // 마스터에 랙이 여러 개면(콤마) 유형은 **첫 랙** 기준으로 본다 — 통짜 문자열로는 매칭이 안 됐다.
+    const rackList = splitRacks(rack);
+    const kind = rackList.length ? await kindOf(rackList[0]) : null;
     return {
       product: {
         id: Number(row.id), code: row.code, name: row.name || null,
-        rack: rack || null, rack_kind: kind, stock_qty: Number(row.stock_qty || 0),
+        rack: rack || null, racks: rackList, rack_kind: kind, stock_qty: Number(row.stock_qty || 0),
       },
       label: { raw, code: parsed.code, qty: parsed.qty || 0, prefix: parsed.prefix || '' },
     };
@@ -274,9 +295,19 @@ export default async function rackMoveRoutes(app) {
           const e = new Error('same_rack'); e.code4 = { error: 'same_rack', line: l }; throw e;
         }
 
-        const willUpdate = updateMaster && !sameRack(masterFrom, toRack);
+        // 마스터 갱신 — 랙이 여러 개면 **옮긴 랙만** 갈아끼운다(나머지 보존, 2026-08-27).
+        //   · 랙 1개(기존 동작): 도착 랙으로 교체
+        //   · 랙 여러 개 + 출발 랙이 그 안에 있음: 그 자리만 교체
+        //   · 랙 여러 개인데 출발 랙이 목록에 없음: 어느 걸 바꿔야 할지 알 수 없으므로 건드리지 않는다
+        let masterTo = null;
+        if (updateMaster) {
+          const list = splitRacks(masterFrom);
+          if (list.length > 1) masterTo = replaceRackToken(masterFrom, fromRack, toRack);
+          else if (!sameRack(masterFrom, toRack)) masterTo = toRack;
+        }
+        const willUpdate = !!masterTo;
         if (willUpdate) {
-          await c.query('UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3', [toRack, uid, prod.id]);
+          await c.query('UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3', [masterTo, uid, prod.id]);
         }
 
         const ins = (await c.query(
@@ -399,9 +430,16 @@ export default async function rackMoveRoutes(app) {
         'SELECT id, code, rack_location FROM products WHERE id=$1 AND deleted_at IS NULL', [m.product_id]
       )).rows[0];
       const masterFrom = prod && prod.rack_location ? String(prod.rack_location).trim() : null;
-      const willUpdate = !!(prod && m.master_updated && sameRack(masterFrom, m.to_rack));
+      // 되돌리기도 같은 규칙 — 여러 랙이면 도착 랙 자리만 출발 랙으로 되돌린다(2026-08-27)
+      let masterTo = null;
+      if (prod && m.master_updated) {
+        const list = splitRacks(masterFrom);
+        if (list.length > 1) masterTo = replaceRackToken(masterFrom, m.to_rack, m.from_rack);
+        else if (sameRack(masterFrom, m.to_rack)) masterTo = m.from_rack;
+      }
+      const willUpdate = !!masterTo;
       if (willUpdate) {
-        await c.query('UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3', [m.from_rack, uid, prod.id]);
+        await c.query('UPDATE products SET rack_location=$1, updated_by=$2 WHERE id=$3', [masterTo, uid, prod.id]);
       }
       const ins = (await c.query(
         `INSERT INTO rack_moves
