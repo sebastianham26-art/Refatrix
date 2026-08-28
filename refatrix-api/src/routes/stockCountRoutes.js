@@ -1,4 +1,4 @@
-// stockCountRoutes.js · rev 20260827spot (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260827spot2 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
@@ -25,13 +25,103 @@ import { splitRacks } from './zoneRoutes.js';
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260827spot"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260827spot2"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
 
+  // ---- Code-128 카톤 라벨 파서 ----------------------------------------
+  //   창고 라벨은 `CTR-<제품번호>-<소입수량>` 이다 (CTR-CE0796-16 → CE0796 · 16 EA).
+  //   스캐너는 이 한 줄을 통째로 흘려보내므로, **가운데 제품번호만** 뽑아야 매칭이 된다.
+  //
+  //   방식은 수입입고 화면(refatrix-inbound.html parseLabel)에서 검증된 것을 그대로 쓴다:
+  //   후보를 순서대로 만들고 DB 에 하나씩 물어보고 **첫 히트**를 쓴다. 라벨 변종
+  //   (접두어 없음 / 수량 없음 / 제품번호 자체에 하이픈)에 견딘다.
+  //
+  //   ⚠ 핵심 안전장치: **접두어(CTR|SYD)가 없으면 뒤쪽 -숫자를 수량으로 단정하지 않는다.**
+  //      랙 라벨 `A-01-03` 이나 사내 코드 `ABC-12` 를 제멋대로 잘라 엉뚱한 제품에
+  //      붙이는 사고를 막는다(수입입고와 같은 규칙).
+  const LABEL_PREFIX = /^(CTR|SYD)-?(.+)$/;
+  const LABEL_QTY = /^(.*[A-Z0-9])-(\d{1,6})$/;
+  // 스캐너 자판 보정('→-) · 공백 제거 · 대문자. 프런트도 같은 일을 하지만 서버가 최종 방어선이다.
+  const normScanCode = (v) => String(v == null ? '' : v)
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/['´`‘’′ʼ]/g, '-')
+    .replace(/\s+/g, '')
+    .toUpperCase();
+  const bareOf = (v) => normScanCode(v).replace(/[^A-Z0-9]/g, '');
+
+  // 스캔 원문 → 시도할 코드 후보 목록(순서 = 우선순위). 첫 항목은 항상 원문이라
+  // 기존 동작(정확매칭)이 먼저 걸린다 — 이 파서는 **덧붙이는 폴백**이다.
+  function labelCandidates(raw) {
+    const norm = normScanCode(raw);
+    const out = [{ code: norm, qty: 0, prefix: '', from_label: false }];
+    if (!norm) return out;
+    const mp = norm.match(LABEL_PREFIX);
+    const pre = mp ? mp[1] : '';
+    const body = mp ? mp[2] : norm;
+    if (pre) {
+      const mq = body.match(LABEL_QTY);
+      if (mq) out.push({ code: mq[1], qty: Number(mq[2]), prefix: pre, from_label: true }); // ① 접두어 제거 + 수량 분리
+      out.push({ code: body, qty: 0, prefix: pre, from_label: true });                      // ② 접두어만 제거
+      const mq2 = norm.match(LABEL_QTY);
+      if (mq2) out.push({ code: mq2[1], qty: Number(mq2[2]), prefix: '', from_label: true });// ③ 접두어를 코드로 취급
+    }
+    // 중복 제거(같은 후보를 두 번 조회하지 않게)
+    const seen = new Set();
+    return out.filter((c) => c.code && !seen.has(c.code) && seen.add(c.code));
+  }
+
   // ---- 코드 해석: CTR → EAN → SYD → 프로모(코드/바코드) → 미등록 --------
+  //   codeRaw 가 카톤 라벨이면 위 후보를 순서대로 시도한다. 반환에 라벨 정보를 덧붙인다:
+  //   from_label(라벨에서 뽑은 코드로 붙었는지) · label_qty(라벨의 소입수량) · scanned(정규화된 원문)
   async function resolveCode(codeRaw, exec = query) {
+    const cands = labelCandidates(codeRaw);
+    if (!cands.length || !cands[0].code) return { item_kind: 'unknown', source: 'none' };
+    for (const cand of cands) {
+      const r = await resolveExact(cand.code, exec);
+      if (r.item_kind !== 'unknown') {
+        return { ...r, from_label: !!cand.from_label, label_qty: cand.qty || 0, scanned: cands[0].code };
+      }
+    }
+    // 마지막 폴백 — **구분자가 사라진 라벨** (스캐너 자판 미설정 / ALT 모드 → `CTRCE079616`).
+    //   접두어(CTR|SYD)가 있을 때만, 몸통 뒤 1~6자리를 소입수량으로 떼어 본다.
+    //   어디까지가 제품번호인지 원리적으로 알 수 없으므로(CE0796+16 / CE07961+6 …)
+    //   **후보 중 정확히 한 제품에만 걸릴 때** 채택한다. 둘 이상이면 추측하지 않는다.
+    const mp = cands[0].code.match(LABEL_PREFIX);
+    if (mp) {
+      const body = bareOf(mp[2]);
+      const tries = new Map();                          // 벗긴 코드 → 떼어낸 수량
+      if (body.length >= 4) tries.set(body, 0);
+      for (let n = 1; n <= 6; n += 1) {
+        const m2 = body.match(new RegExp(`^(.*[A-Z0-9])(\\d{${n}})$`));
+        if (m2 && m2[1].length >= 4) tries.set(m2[1], Number(m2[2]));
+      }
+      if (tries.size) {
+        const rows = (await exec(
+          `SELECT id, code, name, app,
+                  REGEXP_REPLACE(UPPER(code), '[^A-Z0-9]', '', 'g') AS barecode
+             FROM products
+            WHERE deleted_at IS NULL
+              AND REGEXP_REPLACE(UPPER(code), '[^A-Z0-9]', '', 'g') = ANY($1::text[])
+            ORDER BY code`, [[...tries.keys()]])).rows;
+        const uniq = [...new Map(rows.map((x) => [String(x.id), x])).values()];
+        if (uniq.length === 1) {
+          return { item_kind: 'part', source: 'ctr', product: uniq[0],
+            from_label: true, label_qty: tries.get(uniq[0].barecode) || 0, scanned: cands[0].code };
+        }
+        if (uniq.length > 1) {
+          // 여러 제품에 걸린다 — 조용히 하나를 고르지 않고, 왜 못 정했는지 알려 준다.
+          return { item_kind: 'unknown', source: 'none', scanned: cands[0].code,
+            ambiguous: uniq.map((x) => x.code) };
+        }
+      }
+    }
+    return { item_kind: 'unknown', source: 'none', scanned: cands[0].code };
+  }
+
+  // 정확매칭 4단계(기존 로직 그대로 — 순서·의미 불변)
+  async function resolveExact(codeRaw, exec = query) {
     const c = String(codeRaw || '').trim();
     if (!c) return { item_kind: 'unknown', source: 'none' };
 
@@ -198,6 +288,9 @@ export default async function stockCountRoutes(app) {
   // 코드 해석(입력 즉시 미리보기) — 저장은 별도
   app.get('/api/stock-counts/resolve', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const r = await resolveCode(req.query.code);
+    // 카톤 라벨로 붙었는지(from_label)와 라벨의 소입수량(label_qty)을 함께 알려 준다 —
+    // 화면이 "라벨 소입수 16 EA"를 안내해, 작업자가 총 재고와 헷갈리지 않게 하려는 것.
+    const lbl = { from_label: !!r.from_label, label_qty: num(r.label_qty), scanned: r.scanned || '' };
     if (r.item_kind === 'part') {
       const avail = await availFor(r.product.id);
       const sys = (await query(`SELECT stock_qty, rack_location FROM products WHERE id=$1`, [r.product.id])).rows[0];
@@ -205,6 +298,7 @@ export default async function stockCountRoutes(app) {
         item_kind: 'part', source: r.source, product_id: Number(r.product.id),
         matched_code: r.product.code, name: r.product.name || '', app: r.product.app || '',
         system_qty: num(sys && sys.stock_qty), avail_qty: avail, rack_location: (sys && sys.rack_location) || '',
+        ...lbl,
       };
     }
     if (r.item_kind === 'promo') {
@@ -213,9 +307,11 @@ export default async function stockCountRoutes(app) {
         item_kind: 'promo', source: 'promo', promo_item_id: Number(r.promo.id),
         matched_code: r.promo.code, name: r.promo.name || '',
         system_qty: num(p && p.stock_qty), avail_qty: null, rack_location: (p && p.rack_location) || '',
+        ...lbl,
       };
     }
-    return { item_kind: 'unknown', source: 'none' };
+    return { item_kind: 'unknown', source: 'none', scanned: r.scanned || '',
+      from_label: false, label_qty: 0, ...(r.ambiguous ? { ambiguous: r.ambiguous } : {}) };
   });
 
   // 라인 기록(건별 자동저장). body: { raw_code, rack_scanned, counted_qty }
@@ -508,7 +604,13 @@ export default async function stockCountRoutes(app) {
     if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft', note: '완료된 점검에는 추가할 수 없습니다.' });
 
     const r = await resolveCode(raw);
-    if (r.item_kind === 'unknown') return reply.code(404).send({ error: 'unknown_code', note: '등록되지 않은 코드입니다.' });
+    if (r.item_kind === 'unknown') {
+      if (r.ambiguous) {
+        return reply.code(409).send({ error: 'ambiguous_code', ambiguous: r.ambiguous,
+          note: '라벨을 여러 제품으로 읽을 수 있습니다 (' + r.ambiguous.join(' / ') + ') — 제품번호를 직접 입력하세요.' });
+      }
+      return reply.code(404).send({ error: 'unknown_code', note: '등록되지 않은 코드입니다.' });
+    }
     const snap = await spotSnapshot(r);
     const rackMatch = rack ? rackInMaster(rack, snap.master_rack) : null;
 

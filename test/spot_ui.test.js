@@ -17,12 +17,17 @@ function lastScript(html) {
   return html.match(/<script>[\s\S]*?<\/script>/g).pop().replace(/^<script>/, '').replace(/<\/script>$/, '');
 }
 
-/* 서버가 아는 코드들 — resolve 응답 */
+/* 서버가 아는 코드들 — resolve 응답.
+   ★ Code-128 카톤 라벨(CTR-CE0796-16)의 해석은 **서버**가 한다. 이 목 데이터도 서버처럼
+     라벨을 풀어 같은 제품을 돌려준다(from_label/label_qty 포함). */
+const P5 = { item_kind: 'part', source: 'ctr', product_id: 5, matched_code: 'CE0796', name: 'TERMINAL EXTERIOR', app: '', system_qty: 480, avail_qty: 470, rack_location: 'B-01-01' };
 const RESOLVE = {
-  CE0796: { item_kind: 'part', source: 'ctr', product_id: 5, matched_code: 'CE0796', name: 'TERMINAL EXTERIOR', app: '', system_qty: 480, avail_qty: 470, rack_location: 'B-01-01' },
-  '7501234500019': { item_kind: 'part', source: 'ean', product_id: 5, matched_code: 'CE0796', name: 'TERMINAL EXTERIOR', app: '', system_qty: 480, avail_qty: 470, rack_location: 'B-01-01' },
-  CQ0445: { item_kind: 'part', source: 'ctr', product_id: 6, matched_code: 'CQ0445', name: 'BOMBA AGUA', app: '', system_qty: 36, avail_qty: 36, rack_location: 'AA3-2, B2-2' },
-  CL0211: { item_kind: 'part', source: 'ctr', product_id: 7, matched_code: 'CL0211', name: 'SENSOR', app: '', system_qty: 12, avail_qty: 12, rack_location: '' },
+  CE0796: { ...P5, from_label: false, label_qty: 0 },
+  'CTR-CE0796-16': { ...P5, from_label: true, label_qty: 16 },
+  'CTR-CE0796': { ...P5, from_label: true, label_qty: 0 },
+  '7501234500019': { item_kind: 'part', source: 'ean', product_id: 5, matched_code: 'CE0796', name: 'TERMINAL EXTERIOR', app: '', system_qty: 480, avail_qty: 470, rack_location: 'B-01-01', from_label: false, label_qty: 0 },
+  CQ0445: { item_kind: 'part', source: 'ctr', product_id: 6, matched_code: 'CQ0445', name: 'BOMBA AGUA', app: '', system_qty: 36, avail_qty: 36, rack_location: 'AA3-2, B2-2', from_label: false, label_qty: 0 },
+  CL0211: { item_kind: 'part', source: 'ctr', product_id: 7, matched_code: 'CL0211', name: 'SENSOR', app: '', system_qty: 12, avail_qty: 12, rack_location: '', from_label: false, label_qty: 0 },
 };
 
 function mkDom({ role = 'warehouse', lang = 'ko', width = 1280, pda = null,
@@ -122,7 +127,7 @@ const viewText = (doc, id) => doc.getElementById(id).textContent.replace(/\s+/g,
   {
     const { w, doc } = mkDom();
     await sleep(30);
-    ok('build 태그 sc0827spot', /build sc0827spot/.test(fs.readFileSync(FILE, 'utf8')));
+    ok('build 태그 sc0827spot2', /build sc0827spot2/.test(fs.readFileSync(FILE, 'utf8')));
     ok('스팟점검 화면이 있다', !!doc.getElementById('spotView'));
     ok('점검 이력 화면이 있다', !!doc.getElementById('spotHistView'));
     ok('새 실사 모달에 방식 선택 2개', !!doc.getElementById('modeFull') && !!doc.getElementById('modeSpot'));
@@ -268,6 +273,57 @@ const viewText = (doc, id) => doc.getElementById(id).textContent.replace(/\s+/g,
     await sleep(260);                          // 140ms 무입력 → 자동 처리 + 서버 왕복
     ok('Enter 없이도 자동 처리(140ms)', /CE0796/.test(boxText(doc)), boxText(doc));
     ok('입력칸은 즉시 비워진다', doc.getElementById('spInput').value === '');
+    w.close();
+  }
+
+  /* ---------- ⑥-2 Code-128 카톤 라벨 ---------- */
+  console.log('\n⑥-2 Code-128 카톤 라벨 (CTR-CE0796-16)');
+  {
+    const { w, doc, sent } = mkDom();
+    await sleep(20); await w.openCount(31); await sleep(40);
+    scan(w, 'CTR-CE0796-16'); await sleep(50);
+    const bt = boxText(doc);
+    ok('★ 라벨을 스캔하면 가운데 제품번호로 붙는다', /CE0796/.test(bt) && !/CTR-CE0796-16/.test(bt), bt);
+    ok('★ 시스템 수량은 SKU 총 재고(480)', /480/.test(bt));
+    ok('위치도 뜬다', /B-01-01/.test(bt));
+    ok('라벨 소입수를 이름 붙여 안내한다(총 재고와 혼동 방지)', /라벨 소입수 16/.test(bt), bt);
+    ok('점검 대상이 SKU 총 재고임을 명시', /총 재고/.test(bt));
+    scan(w, 'B-01-01'); await sleep(60);
+    const post = sent.find((s) => /\/spot-checks$/.test(s.url) && s.method === 'POST');
+    ok('서버로는 스캔 원문을 그대로 보낸다(원장 보존)', post && post.body.raw_code === 'CTR-CE0796-16', post && post.body);
+    ok('맞음으로 저장', post && post.body.result === 'ok' && post.body.rack_scanned === 'B-01-01');
+    w.close();
+  }
+  {   // 수량 없는 변종 — 안내 줄만 안 뜨고 나머지는 동일
+    const { w, doc } = mkDom();
+    await sleep(20); await w.openCount(31); await sleep(40);
+    scan(w, 'CTR-CE0796'); await sleep(50);
+    ok('수량 없는 라벨도 제품으로 붙는다', /CE0796/.test(boxText(doc)));
+    ok('소입수가 없으면 안내 줄을 띄우지 않는다', !/라벨 소입수/.test(boxText(doc)));
+    w.close();
+  }
+  {   // ★ 미등록 SKU 의 라벨이 '랙 스캔'으로 오인되지 않아야 한다
+    const { w, doc, sent } = mkDom();
+    await sleep(20); await w.openCount(31); await sleep(40);
+    scan(w, 'CE0796'); await sleep(40);                 // 품목 대기 상태 만들기
+    scan(w, 'CTR-XX9999-8'); await sleep(50);           // 미등록 SKU 의 카톤 라벨
+    ok('★ 라벨은 랙 바코드로 넘어가지 않는다', !sent.some((s) => /\/spot-checks$/.test(s.url)), sent);
+    ok('등록되지 않은 제품 코드라고 알린다', /등록되지 않은 제품 코드/.test(msgText(doc)), msgText(doc));
+    ok('무엇으로 읽었는지 보여준다(XX9999)', /XX9999/.test(msgText(doc)), msgText(doc));
+    ok('대기 품목은 그대로 유지된다', /CE0796/.test(boxText(doc)));
+    scan(w, 'B-01-01'); await sleep(60);
+    ok('이어서 진짜 랙을 스캔하면 정상 저장', sent.some((s) => /\/spot-checks$/.test(s.url) && s.body.rack_scanned === 'B-01-01'));
+    w.close();
+  }
+  {   // 라벨 판정 헬퍼 자체
+    const { w } = mkDom();
+    await sleep(20);
+    ok('isLabelCode: CTR- 접두어 인식', w.isLabelCode('CTR-CE0796-16') === true);
+    ok('isLabelCode: SYD- 도 인식', w.isLabelCode('SYD-CE0796-16') === true);
+    ok('isLabelCode: 랙 라벨은 라벨이 아니다', w.isLabelCode('B-01-01') === false);
+    ok('labelMid: 가운데만 뽑는다', w.labelMid('CTR-CE0796-16') === 'CE0796');
+    ok('labelMid: 수량 없으면 몸통 그대로', w.labelMid('CTR-CE0796') === 'CE0796');
+    ok('labelMid: 제품번호에 하이픈이 있어도', w.labelMid('CTR-CE-0796-16') === 'CE-0796');
     w.close();
   }
 

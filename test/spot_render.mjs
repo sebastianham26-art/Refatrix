@@ -21,8 +21,11 @@ const EXE = process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium';
 if (!fs.existsSync(EXE)) { console.log('Chromium 없음(' + EXE + ') → skip'); process.exit(0); }
 
 const SESSION = { id: 31, code: 'SP-2026-0001', mode: 'spot', status: 'draft', scope_note: '', started_at: '2026-08-27T10:00:00Z', lines: [] };
+// 현장 라벨은 Code-128 `CTR-<제품번호>-<소입수량>`. 서버가 가운데 제품번호로 풀어 준다.
+const P5 = { item_kind: 'part', source: 'ctr', product_id: 5, matched_code: 'CE0796', name: 'TERMINAL EXTERIOR IZQ. UNIVERSAL', system_qty: 480, avail_qty: 470, rack_location: 'B-01-01' };
 const RESOLVE = {
-  CE0796: { item_kind: 'part', source: 'ctr', product_id: 5, matched_code: 'CE0796', name: 'TERMINAL EXTERIOR IZQ. UNIVERSAL', system_qty: 480, avail_qty: 470, rack_location: 'B-01-01' },
+  CE0796: { ...P5, from_label: false, label_qty: 0 },
+  'CTR-CE0796-16': { ...P5, from_label: true, label_qty: 16 },
 };
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -82,7 +85,7 @@ const box = (page, sel) => page.$eval(sel, (e) => { const r = e.getBoundingClien
 console.log('\n① PDA 360×640 (ES) — 제품 스캔 직후');
 {
   const { ctx, page } = await open({ w: 360, h: 640, lang: 'es', pda: '1' });
-  await scan(page, 'CE0796');
+  await scan(page, 'CTR-CE0796-16');
   const b = await box(page, '#spBox');
   const qty = await box(page, '.spfact.qty');
   const rack = await box(page, '.spfact.rack');
@@ -110,7 +113,7 @@ console.log('\n① PDA 360×640 (ES) — 제품 스캔 직후');
 console.log('\n② PDA 320×568 (가장 좁은 경우)');
 {
   const { ctx, page } = await open({ w: 320, h: 568, lang: 'es', pda: '1' });
-  await scan(page, 'CE0796');
+  await scan(page, 'CTR-CE0796-16');
   const qty = await box(page, '.spfact.qty');
   const acts = await box(page, '#spActs');
   ok('320px 에서도 시스템 수량이 화면 안', qty && qty.top >= 0 && qty.bottom <= 568, qty);
@@ -125,7 +128,7 @@ console.log('\n② PDA 320×568 (가장 좁은 경우)');
 console.log('\n③ 스크롤해도 스캔 블록 고정(.scanstick)');
 {
   const { ctx, page } = await open({ w: 360, h: 640, lang: 'es', pda: '1' });
-  await scan(page, 'CE0796');
+  await scan(page, 'CTR-CE0796-16');
   await page.evaluate(() => window.scrollTo(0, 600));
   await page.waitForTimeout(150);
   const b = await box(page, '#spBox');
@@ -140,7 +143,7 @@ console.log('\n④ 데스크톱 1280×900 (회귀)');
   const { ctx, page } = await open({ w: 1280, h: 900, lang: 'ko', pda: null });
   const isPda = await page.evaluate(() => document.body.classList.contains('pda'));
   ok('데스크톱에서는 컴팩트가 아니다', isPda === false);
-  await scan(page, 'CE0796');
+  await scan(page, 'CTR-CE0796-16');
   const t = await page.textContent('#spBox');
   ok('한국어 라벨', /시스템 수량/.test(t));
   ok('기존 화면 요소 그대로(회귀)', await page.$('#rackInput') !== null && await page.$('#rcTable') !== null);

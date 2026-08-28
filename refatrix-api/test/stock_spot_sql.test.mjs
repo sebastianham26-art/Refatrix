@@ -18,7 +18,7 @@ const ok = (n, c, x) => {
 /* ---------- ① 정적 가드 (DB 없이도 항상 돈다) ---------- */
 const SRC = fs.readFileSync(path.join(API, 'src/routes/stockCountRoutes.js'), 'utf8');
 console.log('\n① 정적 가드 — 스팟점검은 재고를 바꾸지 않는다');
-ok('rev 마커 갱신', /loaded rev 20260827spot/.test(SRC));
+ok('rev 마커 갱신', /loaded rev 20260827spot2/.test(SRC));
 ok('세션 모드 2종만 허용', /const MODES = \['full', 'spot'\]/.test(SRC));
 ok('스팟 세션 코드 접두사 SP', /mode === 'spot' \? 'SP' : 'SC'/.test(SRC));
 // 재고를 바꾸는 문장은 기존 apply 경로에만 있어야 한다(스팟 추가로 늘어나지 않았는지)
@@ -50,7 +50,7 @@ ok('part/promo 짝 CHECK 존재', /scsc_item_chk/.test(MIG));
 ok('재실행 안전(IF NOT EXISTS/DO 가드)', /ADD COLUMN IF NOT EXISTS/.test(MIG) && /CREATE TABLE IF NOT EXISTS/.test(MIG));
 
 const FRONT = fs.readFileSync(path.resolve(API, '..', 'refatrix-stockcount.html'), 'utf8');
-ok('프런트 build 태그 갱신', /build sc0827spot/.test(FRONT));
+ok('프런트 build 태그 갱신', /build sc0827spot2/.test(FRONT));
 
 /* ---------- ③ 실 DB 파트 ---------- */
 const URL = process.env.TEST_PG_URL || process.env.DATABASE_URL;
@@ -181,6 +181,64 @@ ok('빈 코드 400', (await post({ raw_code: '  ', result: 'ok' })).code === 400
 ok('result 값이 이상하면 400', (await post({ raw_code: 'SPTCE0796', result: 'maybe' })).code === 400);
 ok('수량을 보내도 무시(수량 컬럼 자체가 없음)',
   (await post({ raw_code: 'SPTCE0796', result: 'ok', counted_qty: 999, rack_scanned: 'B-01-01' })).code === 200);
+
+console.log('\n③-2 Code-128 카톤 라벨 — 가운데 제품번호만 읽는다');
+// 현장 라벨: CTR-<제품번호>-<소입수량>
+r = await post({ raw_code: 'CTR-SPTCE0796-16', result: 'ok', rack_scanned: 'B-01-01' });
+ok('★ CTR-SPTCE0796-16 → SPTCE0796 으로 붙는다', r.code === 200 && r.body.check.product_id === P.a, r.body);
+ok('스캔 원문은 그대로 보존된다', r.body.check.raw_code === 'CTR-SPTCE0796-16');
+ok('매칭된 코드는 제품번호', r.body.check.matched_code === 'SPTCE0796');
+ok('시스템 수량은 SKU 총 재고(카톤 16 이 아님)', r.body.check.system_qty === 480, r.body.check.system_qty);
+ok('랙 판정도 정상', r.body.check.rack_match === true);
+
+// 라벨 변종
+ok('수량 없는 라벨(CTR-SPTCE0796)', (await post({ raw_code: 'CTR-SPTCE0796', result: 'ok' })).body.check.product_id === P.a);
+ok('접두어 붙임(CTRSPTCE0796-16)', (await post({ raw_code: 'CTRSPTCE0796-16', result: 'ok' })).body.check.product_id === P.a);
+ok('SYD 접두어 라벨도 방어', (await post({ raw_code: 'SYD-SPTCE0796-16', result: 'ok' })).body.check.product_id === P.a);
+// 스캐너 자판 미설정(하이픈이 아포스트로피로) — 서버가 보정
+ok("자판 미보정 라벨(CTR'SPTCE0796'16)", (await post({ raw_code: "CTR'SPTCE0796'16", result: 'ok' })).body.check.product_id === P.a);
+// 구분자가 아예 없는 경우 — 유일할 때만 붙는다
+ok('구분자 없는 라벨(CTRSPTCE079616)', (await post({ raw_code: 'CTRSPTCE079616', result: 'ok' })).body.check.product_id === P.a);
+// 라벨 소입수량을 응답에 실어 화면이 안내할 수 있게
+const rv = (await call('GET /api/stock-counts/resolve', { query: { code: 'CTR-SPTCE0796-16' } })).body;
+ok('resolve 가 라벨 소입수량을 알려준다', rv.label_qty === 16 && rv.from_label === true, rv);
+ok('resolve 의 system_qty 는 총 재고', rv.system_qty === 480);
+ok('일반 코드는 from_label 이 아니다', (await call('GET /api/stock-counts/resolve', { query: { code: 'SPTCE0796' } })).body.from_label === false);
+ok('미등록 라벨은 그대로 404', (await post({ raw_code: 'CTR-NOSUCH-16', result: 'ok' })).code === 404);
+
+console.log('\n③-3 ★ 접두어가 없으면 뒤 숫자를 수량으로 단정하지 않는다 (오매칭 방지)');
+// 랙 라벨을 제품으로 오인하면 안 된다
+ok('랙 라벨 B-01-01 은 제품이 아니다', (await call('GET /api/stock-counts/resolve', { query: { code: 'B-01-01' } })).body.item_kind === 'unknown');
+// 'SPTCE0796-16' 처럼 접두어 없이 뒤에 -숫자가 붙은 코드는 자르지 않는다
+ok('접두어 없는 SPTCE0796-16 은 미등록으로 남는다',
+  (await call('GET /api/stock-counts/resolve', { query: { code: 'SPTCE0796-16' } })).body.item_kind === 'unknown');
+// 기존 정확매칭 우선순위는 그대로
+ok('정확매칭이 라벨 파싱보다 먼저', (await call('GET /api/stock-counts/resolve', { query: { code: 'SPTCE0796' } })).body.matched_code === 'SPTCE0796');
+ok('EAN 은 여전히 EAN 으로', (await call('GET /api/stock-counts/resolve', { query: { code: '7501234500019' } })).body.source === 'ean');
+
+// 구분자 없는 라벨이 두 제품에 걸리면 — 조용히 하나를 고르지 않는다
+const twin = Number((await query(
+  `INSERT INTO products (code, name, stock_qty) VALUES ('SPTCE07961','TWIN',5) RETURNING id`)).rows[0].id);
+const amb = await call('GET /api/stock-counts/resolve', { query: { code: 'CTRSPTCE079616' } });
+ok('★ 두 제품에 걸리면 미등록 + ambiguous 로 보고', amb.body.item_kind === 'unknown'
+  && Array.isArray(amb.body.ambiguous) && amb.body.ambiguous.length === 2, amb.body);
+ok('기록 시도는 409 로 거부(추측 저장 안 함)',
+  (await post({ raw_code: 'CTRSPTCE079616', result: 'ok' })).body.error === 'ambiguous_code');
+ok('구분자가 있으면 모호하지 않다',
+  (await call('GET /api/stock-counts/resolve', { query: { code: 'CTR-SPTCE0796-16' } })).body.matched_code === 'SPTCE0796');
+await query(`DELETE FROM stock_count_spot_checks WHERE product_id=$1`, [twin]);
+await query(`DELETE FROM products WHERE id=$1`, [twin]);
+
+console.log('\n③-4 전체 재고실사도 라벨을 읽는다 (resolveCode 공용 — 의도된 개선)');
+{
+  // 전에는 카톤 라벨이 item_kind='unknown'(미등록 코드) 으로 기록됐다. 이제 제품으로 붙는다.
+  const line = await call('POST /api/stock-counts/:id/lines',
+    { params: { id: full.id }, body: { raw_code: 'CTR-SPTCE0796-16', counted_qty: 16, rack_scanned: 'B-01-01' } });
+  ok('전체실사 라인도 라벨 → 제품으로 기록', line.code === 200 && line.body.item_kind === 'part'
+    && line.body.matched_code === 'SPTCE0796', line.body);
+  ok('수량은 여전히 사용자가 넣은 값(자동 계산 아님)', line.body.counted_qty === 16);
+  ok('전체실사 대조는 그대로 동작', (await call('GET /api/stock-counts/:id/reconcile', { as: 'dir', params: { id: full.id } })).code === 200);
+}
 
 console.log('\n④ ★ 재고·위치 불변 (스팟점검은 기록 전용)');
 const after = (await query(`SELECT code, stock_qty, rack_location FROM products WHERE code LIKE 'SPT%' ORDER BY code`)).rows;

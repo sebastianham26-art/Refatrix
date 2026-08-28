@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0827spot</title>
+<title>재고실사 · Refatrix · build sc0827spot2</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -84,7 +84,7 @@
   .rackchip.on{background:var(--green);color:#fff;border-color:var(--green)}
   .rackchip b{font-weight:800}
 
-  /* ===== SKU 스팟점검 (sc0827spot) =====================================
+  /* ===== SKU 스팟점검 (sc0827spot2) =====================================
      현장 흐름: 제품 스캔 → 시스템 수량·위치를 크게 → 랙 스캔(맞음) / [틀림] */
   .modepill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:800;margin-left:6px}
   .m-full{background:#eef3f7;color:#3a6ea5} .m-spot{background:#fdf3e3;color:#9A6512}
@@ -991,7 +991,7 @@ async function deletePromo(){
 }
 
 /* =====================================================================
-   SKU 스팟점검 (build sc0827spot)
+   SKU 스팟점검 (build sc0827spot2)
    현장 흐름 — 디렉터 지시 2026-08-27:
      ① 제품 바코드 스캔 → 시스템 수량·위치가 화면에 크게 뜬다
      ② 실물을 세어 맞으면 **랙 바코드를 스캔** → 맞음 확정
@@ -1090,6 +1090,17 @@ async function loadSpotChecks(){
 /* ---- 스캔 배선 — Enter 에 의존하지 않는다(스캐너가 접미사를 안 보내도 동작) ---- */
 var SPQUOTE=/['´`‘’′ʼ]/g;
 function spNorm(v){ return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').replace(SPQUOTE,'-').replace(/\s+/g,'').toUpperCase(); }
+/* Code-128 카톤 라벨 — `CTR-<제품번호>-<소입수량>` (CTR-CE0796-16 → CE0796 · 16 EA).
+   실제 매칭은 서버가 한다(후보 순서대로 DB 조회). 프런트는 두 가지에만 쓴다:
+     ① 라벨인데 제품을 못 찾았을 때 **랙 바코드로 넘기지 않기**
+     ② 실패 메시지에 "무엇으로 읽었는지" 보여주기 */
+var SPLBL_PRE=/^(CTR|SYD)-?(.+)$/, SPLBL_QTY=/^(.*[A-Z0-9])-(\d{1,6})$/;
+function isLabelCode(c){ return SPLBL_PRE.test(String(c||'')); }
+function labelMid(c){                       // 가운데 제품번호만
+  var m=String(c||'').match(SPLBL_PRE); if(!m) return String(c||'');
+  var body=m[2], q=body.match(SPLBL_QTY);
+  return q?q[1]:body;
+}
 var spDupCode='', spDupAt=0;
 function spDup(n){ var t=Date.now(); if(n&&n===spDupCode&&(t-spDupAt)<450){ spDupAt=t; return true; } spDupCode=n; spDupAt=t; return false; }
 function spotWireInput(){
@@ -1130,10 +1141,18 @@ async function spotScan(raw){
       }
       SP.pending={ raw_code:code, item_kind:r.item_kind, matched_code:r.matched_code||code,
         name:r.name||'', system_qty:r.system_qty, rack_location:r.rack_location||'',
-        source:r.source||'', warn:'' };
+        source:r.source||'', from_label:!!r.from_label, label_qty:Number(r.label_qty||0), warn:'' };
       SP.last=null;
       sndRead(); setMsg('spMsg','','');
       renderSpotBox();
+      return;
+    }
+    // ⚠ 카톤 라벨(CTR-…)인데 제품을 못 찾았으면 **랙으로 넘기지 않는다.**
+    //    안 그러면 미등록 SKU 의 라벨이 조용히 "랙 바코드"로 기록된다.
+    if(isLabelCode(code)){
+      sndErr();
+      setMsg('spMsg','✖ '+L('등록되지 않은 제품 코드입니다','Código de producto no registrado')
+        +' — '+spEsc(labelMid(code))+' ('+L('라벨','etiqueta')+' '+spEsc(code)+')','err');
       return;
     }
     // 제품이 아니다 — 대기 품목이 있으면 랙 바코드로 본다(= 맞음 확정)
@@ -1222,6 +1241,11 @@ function renderSpotBox(){
     +'</div>'
     +'<div class="spask">'+L('실물을 확인하세요 — 맞으면 랙 바코드를 스캔, 다르면 [✖ 틀림]',
                              'Verifique el físico — si coincide escanee la ubicación, si no [✖ NO COINCIDE]')+'</div>'
+    // 라벨의 소입수량은 '카톤 1박스 수량'이다. 시스템 수량(총 재고)과 다른 숫자라 작업자가
+    // 헷갈리기 쉬워, 무엇인지 이름을 붙여 작게 보여준다. 점검 대상은 어디까지나 SKU 총 재고다.
+    +(p.from_label&&p.label_qty?('<div class="mut" style="margin-top:4px">'
+        +L('라벨 소입수','Etiqueta: piezas por caja')+' '+spNum(p.label_qty)+' EA · '
+        +L('점검 대상은 이 SKU 의 총 재고입니다','se verifica el total del SKU')+'</div>'):'')
     +(p.rack_location?'':'<div class="spwarn">⚠ '+L('제품마스터에 위치가 없습니다','Sin ubicación en el maestro')+'</div>');
   acts.innerHTML='<button class="btn red big" onclick="spotMismatch()">✖ '+L('틀림','NO COINCIDE')+'</button>'
     +'<button class="btn ghost sm" onclick="spotOkNoRack()">✔ '+L('맞음(랙 스캔 생략)','OK (sin ubicación)')+'</button>'
@@ -1338,7 +1362,7 @@ function spotHistXlsx(){
 
 // ================= 부트스트랩 =================
 (function(){
-  try{ console.log('[refatrix-stockcount] build sc0827spot'); }catch(e){}
+  try{ console.log('[refatrix-stockcount] build sc0827spot2'); }catch(e){}
   const ps=portalSession();
   if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||'https://refatrix-production.up.railway.app'}; afterLogin(); }
   else { show('loginView'); }

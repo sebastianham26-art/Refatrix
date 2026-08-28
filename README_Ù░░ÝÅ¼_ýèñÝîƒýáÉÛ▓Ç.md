@@ -1,4 +1,4 @@
-# REFATRIX 배포 — SKU 스팟점검 (build `sc0827spot` / rev `20260827spot`)
+# REFATRIX 배포 — SKU 스팟점검 (build `sc0827spot2` / rev `20260827spot2`)
 
 **⚠ 마이그레이션 `0188` 신규 — `npm run migrate` 필수**
 백엔드 1 + 마이그레이션 1 + 프런트 1 (+ 테스트 3). **nav.js 무변경.**
@@ -34,7 +34,7 @@ npm run migrate
 | `refatrix-stockcount.html` | 저장소 **최상위** |
 
 → Push → Pages 1~2분 → 재고실사 화면에서 **Ctrl+Shift+R**
-→ 콘솔에 `[refatrix-stockcount] build sc0827spot` 확인
+→ 콘솔에 `[refatrix-stockcount] build sc0827spot2` 확인
 
 ---
 
@@ -55,10 +55,10 @@ npm run migrate
 ## 배포 확인 (raw)
 
 ```
-curl -s ".../main/refatrix-api/migrations/0188_stock_count_spot.sql?nc=$(date +%s)" | grep -c stock_count_spot_checks   # 5+
-curl -s ".../main/refatrix-api/src/routes/stockCountRoutes.js?nc=$(date +%s)" | grep -c "20260827spot"                 # 2
-curl -s ".../main/refatrix-stockcount.html?nc=$(date +%s)" | grep -c "sc0827spot"                                       # 3
-curl -s ".../main/refatrix-stockcount.html?nc=$(date +%s)" | grep -c "spot-checks"                                      # 4+
+curl -s ".../main/refatrix-api/migrations/0188_stock_count_spot.sql?nc=$(date +%s)" | grep -c stock_count_spot_checks   # 10
+curl -s ".../main/refatrix-api/src/routes/stockCountRoutes.js?nc=$(date +%s)" | grep -c "20260827spot2"                 # 2
+curl -s ".../main/refatrix-stockcount.html?nc=$(date +%s)" | grep -c "sc0827spot2"                                      # 4
+curl -s ".../main/refatrix-stockcount.html?nc=$(date +%s)" | grep -c "spot-checks"                                      # 3
 ```
 
 ---
