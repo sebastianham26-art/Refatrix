@@ -2,6 +2,8 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
+// 성과급(Bono) — 목표 달성률 기반. 커미션과 분리된 축(0190).
+import { registerBonusRoutes, snapshotBonusForMonth, payableBonus, markBonusPaid } from './commissionBonus.js';
 
 // 반제(완납) 다음 달 15일
 function nextMonth15(ym) {
@@ -211,6 +213,9 @@ async function confirmedMonthLines() {
 }
 
 export default async function commissionRoutes(app) {
+  // 성과급(Bono) 라우트 등록 — /api/commission/bonus/*, /progress, /performance, /my-bonus
+  registerBonusRoutes(app);
+
   // ── 커미션 대상 영업사원 + 기본률 목록 (디렉터·재무·소시오 열람 / sales 차단) ──
   app.get('/api/commission/agents', { preHandler: [authGuard, requirePage('commission')] }, async (req, reply) => {
     if (!canSeeAll(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
@@ -490,8 +495,14 @@ export default async function commissionRoutes(app) {
     const settleYm = (/^\d{4}-\d{2}$/.test(req.query.settle_ym || '')) ? req.query.settle_ym : null;
     try { lines = await payableLines(agentId, settleYm); }
     catch (e) { if (e && e.code === '42P01') return { agent_id: agentId, not_migrated: true, lines: [], total: 0 }; throw e; }
-    const total = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0));
-    return { agent_id: agentId, settle_ym: settleYm, can_pay: PAY_ROLES.includes(perm.role), lines, total };
+    const commissionTotal = round2(lines.reduce((s, l) => s + Number(l.expected || 0), 0));
+    // 확정·미지급 성과급(월 1건)도 같은 전표로 지급된다. 커미션 라인 충당 후 남는 금액으로 충당.
+    const bonus = settleYm ? await payableBonus(agentId, settleYm) : null;
+    const total = round2(commissionTotal + (bonus ? bonus.amount : 0));
+    return {
+      agent_id: agentId, settle_ym: settleYm, can_pay: PAY_ROLES.includes(perm.role),
+      lines, commission_total: commissionTotal, bonus, total,
+    };
   });
 
   // ── 지급 전표 등록 + 반제(FIFO) + 증빙 (디렉터·재무) ──
@@ -520,10 +531,17 @@ export default async function commissionRoutes(app) {
     let lines;
     try { lines = await payableLines(agentId, settleYm); }
     catch (e) { if (e && e.code === '42P01') return reply.code(503).send({ error: 'commission_not_migrated', note: 'npm run migrate(0086~0088)을 실행하세요.' }); throw e; }
-    if (!lines.length) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션이 없습니다.' });
+    // 확정·미지급 성과급(월 1건). 커미션 라인이 없어도 성과급만으로 지급할 수 있다.
+    const bonus = await payableBonus(agentId, settleYm);
+    if (!lines.length && !bonus) return reply.code(409).send({ error: 'nothing_payable', note: '그 달, 이 영업사원의 확정·미지급 커미션·성과급이 없습니다.' });
 
     const { allocs, settled, leftover } = allocateFifo(lines, amt);
-    if (!allocs.length) return reply.code(409).send({ error: 'amount_too_small', note: `가장 오래된 미지급 커미션(${round2(lines[0].expected)})보다 지급액이 적습니다. 인보이스 단위로 충당됩니다.` });
+    // 성과급은 커미션 라인을 FIFO 로 충당하고 남은 금액으로 충당(부분충당 없음).
+    const bonusPaid = (bonus && leftover + 0.001 >= bonus.amount) ? bonus : null;
+    if (!allocs.length && !bonusPaid) {
+      const smallest = lines.length ? round2(lines[0].expected) : (bonus ? bonus.amount : 0);
+      return reply.code(409).send({ error: 'amount_too_small', note: `충당할 수 있는 가장 작은 단위(${smallest})보다 지급액이 적습니다. 커미션은 인보이스 단위, 성과급은 월 단위로 충당됩니다.` });
+    }
 
     const result = await withTx(async (cx) => {
       const pay = (await cx.query(
@@ -541,11 +559,18 @@ export default async function commissionRoutes(app) {
            ON CONFLICT (invoice_id) DO UPDATE SET amount=$3, settle_ym=$4, due_date=$5, paid=true, paid_date=$6, payment_id=$7, updated_by=$8, updated_at=now()`,
           [a.invoice_id, agentId, a.amount, a.settle_ym, a.settle_ym ? nextMonth15(a.settle_ym) : null, payDate, paymentId, uid]);
       }
+      if (bonusPaid) await markBonusPaid(cx, bonusPaid.id, payDate, paymentId, uid);
       return { paymentId };
     });
 
-    await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled, count: allocs.length } });
-    return { ok: true, payment_id: result.paymentId, settled_count: allocs.length, settled, leftover, total_paid_amount: amt };
+    const bonusAmt = bonusPaid ? bonusPaid.amount : 0;
+    const settledAll = round2(settled + bonusAmt);
+    await logEvent({ userId: uid, action: 'create', target: `commission_payment:${result.paymentId}`, detail: { agent_id: agentId, amount: amt, settled: settledAll, count: allocs.length, bonus: bonusAmt } });
+    return {
+      ok: true, payment_id: result.paymentId, settled_count: allocs.length,
+      settled: settledAll, commission_settled: settled, bonus_settled: bonusAmt,
+      leftover: round2(leftover - bonusAmt), total_paid_amount: amt,
+    };
   });
 
   // ── 지급 전표 목록 (전체열람자 or 본인) — 증빙 데이터 제외 ──
@@ -557,7 +582,8 @@ export default async function commissionRoutes(app) {
     let rows;
     try {
       rows = (await query(
-        `SELECT p.id, p.agent_id, ag.name AS agent_name, p.amount, p.settled, p.paid_date, p.note,
+        `SELECT p.id, p.agent_id, ag.name AS agent_name, p.amount, p.settled,
+                to_char(p.paid_date,'YYYY-MM-DD') AS paid_date, p.note,
                 p.evi_name, p.evi_mime, p.created_at,
                 (SELECT COUNT(*) FROM commission_payment_allocations a WHERE a.payment_id=p.id) AS alloc_count
            FROM commission_payments p JOIN users ag ON ag.id=p.agent_id
@@ -596,7 +622,8 @@ export default async function commissionRoutes(app) {
     let months, batches;
     try {
       months = summarizeByMonth(await confirmedMonthLines());
-      batches = (await query(`SELECT settle_ym, status, pay_date, total_amount, agent_count, confirmed_at, handed_at, handed_note FROM commission_batches`)).rows;
+      // pay_date 는 DATE — node-pg 가 Date 객체로 주면 화면에서 "Sat Aug 15" 로 깨지므로 문자열로 고정.
+      batches = (await query(`SELECT settle_ym, status, to_char(pay_date,'YYYY-MM-DD') AS pay_date, total_amount, agent_count, confirmed_at, handed_at, handed_note FROM commission_batches`)).rows;
     } catch (e) {
       if (e && e.code === '42P01') return { items: [], not_migrated: true };
       throw e;
@@ -634,8 +661,11 @@ export default async function commissionRoutes(app) {
       `INSERT INTO commission_batches (settle_ym, status, pay_date, total_amount, agent_count, confirmed_by, confirmed_at)
        VALUES ($1,'confirmed',$2,$3,$4,$5,now())`,
       [ym, nextMonth15(ym), m.confirmed, m.agent_count, uid]);
-    await logEvent({ userId: uid, action: 'confirm', target: `commission_batch:${ym}`, detail: { total: m.confirmed, agents: m.agent_count } });
-    return { ok: true, settle_ym: ym, total_amount: m.confirmed, agent_count: m.agent_count, pay_date: nextMonth15(ym) };
+    // 같은 시점에 그 달의 성과급도 스냅샷으로 동결(목표·실적·달성률·금액). 테이블 없으면 건너뜀.
+    let bonusSnap = { skipped: true, count: 0 };
+    try { bonusSnap = await snapshotBonusForMonth(ym, uid); } catch (e) { if (app.log && app.log.warn) app.log.warn({ err: e }, 'bonus snapshot failed'); }
+    await logEvent({ userId: uid, action: 'confirm', target: `commission_batch:${ym}`, detail: { total: m.confirmed, agents: m.agent_count, bonus_snapshots: bonusSnap.count } });
+    return { ok: true, settle_ym: ym, total_amount: m.confirmed, agent_count: m.agent_count, pay_date: nextMonth15(ym), bonus_snapshots: bonusSnap.count };
   });
 
   // ── 인사 전달 기록 (재무·디렉터) — 넘긴 시점 + 로그 ──
