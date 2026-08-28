@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>재고실사 · Refatrix · build sc0703l</title>
+<title>재고실사 · Refatrix · build sc0827spot</title>
 <!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
 <style>
   :root{
@@ -83,13 +83,77 @@
   .rackchip{border:1.5px solid var(--line);background:#fff;border-radius:16px;padding:7px 13px;font-size:13px;cursor:pointer;font-weight:700;color:var(--ink)}
   .rackchip.on{background:var(--green);color:#fff;border-color:var(--green)}
   .rackchip b{font-weight:800}
+
+  /* ===== SKU 스팟점검 (sc0827spot) =====================================
+     현장 흐름: 제품 스캔 → 시스템 수량·위치를 크게 → 랙 스캔(맞음) / [틀림] */
+  .modepill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:800;margin-left:6px}
+  .m-full{background:#eef3f7;color:#3a6ea5} .m-spot{background:#fdf3e3;color:#9A6512}
+  .spbox{border:2px solid var(--line);border-radius:14px;padding:14px;background:#fff;min-height:96px}
+  .spbox.ok{border-color:var(--match);background:var(--matchbg)}
+  .spbox.bad{border-color:var(--short);background:var(--shortbg)}
+  .spbox.warn{border-color:var(--over);background:var(--overbg)}
+  .spbox.idle{border-style:dashed;color:var(--mut);display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px}
+  .spbox .spcode{font-size:22px;font-weight:900;letter-spacing:.5px;font-variant-numeric:tabular-nums}
+  .spbox .spname{font-size:13px;color:var(--mut);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .spfacts{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .spfact{flex:1;min-width:132px;border:1px solid var(--line);border-radius:11px;padding:8px 10px;background:#fff}
+  .spfact .k{font-size:10.5px;color:var(--mut);font-weight:800;letter-spacing:.3px}
+  .spfact .v{font-size:26px;font-weight:900;line-height:1.15;font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .spfact.qty .v{color:var(--green)} .spfact.rack .v{color:var(--brass2);font-size:22px}
+  .spask{margin-top:9px;font-size:12.5px;font-weight:800;color:var(--green)}
+  .spwarn{margin-top:6px;font-size:12px;font-weight:800;color:var(--over)}
+  .spacts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .spacts .btn{flex:1;min-width:120px}
+  .btn.big{padding:15px 16px;font-size:16px;border-radius:12px}
+  .spkpi{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+  .spkpi .k{flex:1;min-width:74px;border:1px solid var(--line);border-radius:11px;padding:7px 9px;background:#fff;text-align:center}
+  .spkpi .k .n{font-size:19px;font-weight:900;display:block;line-height:1.2}
+  .spkpi .k .t{font-size:10.5px;color:var(--mut);font-weight:700}
+  .spkpi .k.ok .n{color:var(--match)} .spkpi .k.bad .n{color:var(--short)} .spkpi .k.rk .n{color:var(--over)}
+  .rpill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:800}
+  .r-ok{background:var(--matchbg);color:var(--match)} .r-bad{background:var(--shortbg);color:var(--short)}
+  .topbtns{display:flex;gap:6px;margin-left:auto;align-items:center}
+  .minibtn{background:transparent;color:#cfe0d8;font-size:12px;border:1px solid #2f5d50;padding:5px 10px;
+    border-radius:7px;cursor:pointer;font-weight:700;white-space:nowrap}
+
+  /* PDA 컴팩트 모드 — 수입입고·포장·위치변경과 같은 처방(폭 ≤640px 자동 · localStorage 'wh_pda' 공유) */
+  body.pda #rnav .rsub{display:none!important}
+  body.pda #rnav .rbar{height:40px!important;padding:0 6px!important}
+  body.pda #rnav .rlogo,body.pda #rnav .rwho,body.pda #rnav .rpres{display:none!important}
+  body.pda #rnav .rg{padding:12px 8px!important;font-size:11.5px!important}
+  body.pda #rnav .rlogout{margin-left:6px!important;padding:4px 9px!important;font-size:10px!important}
+  body.pda .topbar{padding:6px 9px;flex-wrap:wrap;gap:6px}
+  body.pda .topbar h1{font-size:13px}
+  body.pda .topbar .sub{display:none}
+  /* PDA 에서는 포털 링크를 숨긴다 — 상단 nav 로 이동할 수 있고, 360px 에서 줄을 넘겨 가로 스크롤을 만든다 */
+  body.pda .portalBtn{display:none}
+  body.pda .minibtn{padding:4px 8px;font-size:11px}
+  body.pda .wrap{padding:6px 8px 40px;max-width:none}
+  body.pda .card{padding:9px;border-radius:11px;margin:8px 0}
+  body.pda .card h2{font-size:13px;margin:0 0 6px}
+  body.pda .scanstick{position:sticky;top:var(--navh,40px);z-index:30;max-height:74vh;overflow:auto;
+    box-shadow:0 6px 14px rgba(0,0,0,.07)}
+  body.pda .spbox{padding:10px;min-height:0}
+  body.pda .spbox .spcode{font-size:19px}
+  body.pda .spfact{min-width:110px;padding:6px 8px}
+  body.pda .spfact .v{font-size:23px} body.pda .spfact.rack .v{font-size:19px}
+  body.pda .btn.big{padding:13px 12px;font-size:15px}
+  body.pda .spkpi .k{min-width:64px;padding:5px 7px}
+  body.pda .spkpi .k .n{font-size:16px}
+  body.pda .tbl-wrap{max-height:none}
+  body.pda input,body.pda select{padding:9px;font-size:15px}
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div><h1>재고실사 <span id="scCode" style="font-weight:800;color:#cfe0d8"></span></h1><div class="sub" id="scSub">실물 재고조사 · 시스템 대조</div></div>
-  <a class="portalBtn" href="refatrix-portal.html">← 포털</a>
+  <div><h1><span id="scTtl">재고실사</span> <span id="scCode" style="font-weight:800;color:#cfe0d8"></span></h1><div class="sub" id="scSub">실물 재고조사 · 시스템 대조</div></div>
+  <div class="topbtns">
+    <button class="minibtn" id="pdaBtn" type="button" onclick="pdaToggle()">📱 스캔모드</button>
+    <button class="minibtn" id="langBtn" type="button" onclick="langToggle()">🌐 Español</button>
+    <a class="portalBtn" id="portalBtn" style="margin-left:0;white-space:nowrap" href="refatrix-portal.html">← 포털</a>
+  </div>
 </div>
 
 <!-- 로그인(포털 세션 없을 때만) -->
@@ -111,12 +175,68 @@
       <h2 style="margin:0">재고실사 세션</h2>
       <div class="row">
         <button class="btn ghost sm" onclick="openHelp()">📖 사용방법</button>
+        <button class="btn ghost sm" onclick="showSpotHist()">🎯 점검 이력</button>
         <button class="btn ghost sm" onclick="showPromo()">🎁 프로모션 품목 관리</button>
         <button class="btn brass sm" onclick="openStart()">＋ 새 실사 시작</button>
       </div>
     </div>
     <div id="activeBox"></div>
     <div id="sesList" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- SKU 스팟점검 (mode='spot') -->
+<div id="spotView" class="wrap hidden">
+  <div class="card scanstick" id="spotScanCard">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0" id="spTitle">🎯 SKU 점검</h2>
+      <div class="row">
+        <button class="btn brass sm" id="spFinishBtn" onclick="spotFinish()">✔ 점검 완료</button>
+        <button class="btn ghost sm" id="spBackBtn" onclick="backHome()">← 목록</button>
+      </div>
+    </div>
+    <div class="spbox idle" id="spBox">제품 바코드를 스캔하세요</div>
+    <div class="spacts" id="spActs"></div>
+    <input id="spInput" class="scan" style="margin-top:10px" placeholder="제품 바코드 스캔" autocomplete="off" inputmode="text">
+    <div class="msg" id="spMsg"></div>
+    <div class="spkpi" id="spKpi"></div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0" id="spListTtl">점검 내역</h2>
+      <button class="btn ghost sm" id="spXlsBtn" onclick="spotXlsx()">⬇ 엑셀</button>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr id="spHead"></tr></thead><tbody id="spBody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- 스팟점검 이력(세션 전체) -->
+<div id="spotHistView" class="wrap hidden">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0" id="shTitle">🎯 SKU 점검 이력</h2>
+      <div class="row">
+        <button class="btn ghost sm" id="shXlsBtn" onclick="spotHistXlsx()">⬇ 엑셀</button>
+        <button class="btn ghost sm" id="shBackBtn" onclick="backHome()">← 목록</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <div style="flex:1;min-width:120px"><label id="shLbDays">기간</label>
+        <select id="shDays" onchange="loadSpotHist()"><option value="7">7</option><option value="30" selected>30</option><option value="90">90</option><option value="365">365</option></select></div>
+      <div style="flex:1;min-width:120px"><label id="shLbCode">제품번호</label><input id="shCode" placeholder="CE0796"></div>
+      <div style="flex:1;min-width:120px"><label id="shLbRes">결과</label>
+        <select id="shRes"><option value="">—</option><option value="ok">OK</option><option value="mismatch">✖</option></select></div>
+      <div><label>&nbsp;</label><button class="btn sm" onclick="loadSpotHist()" id="shGo">조회</button></div>
+    </div>
+    <div class="spkpi" id="shKpi" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <h2 id="shSkuTtl">SKU별 최근 점검</h2>
+    <div class="tbl-wrap" style="max-height:34vh"><table><thead><tr id="shSkuHead"></tr></thead><tbody id="shSkuBody"></tbody></table></div>
+  </div>
+  <div class="card">
+    <h2 id="shLogTtl">점검 기록</h2>
+    <div class="tbl-wrap"><table><thead><tr id="shHead"></tr></thead><tbody id="shBody"></tbody></table></div>
   </div>
 </div>
 
@@ -217,6 +337,19 @@
 <!-- 새 실사 모달 -->
 <div class="modal" id="startModal"><div class="box">
   <h2 style="margin:0 0 10px">새 재고실사</h2>
+  <label>방식</label>
+  <div class="row" style="gap:8px;margin-bottom:2px">
+    <label style="flex:1;min-width:210px;margin:0;display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--line);border-radius:11px;padding:10px;cursor:pointer" id="modeFullBox">
+      <input type="radio" name="scmode" id="modeFull" value="full" checked style="width:auto;margin-top:2px">
+      <span><b style="color:var(--ink);font-size:13px">📋 전체 재고실사</b><br>
+      <span style="font-weight:400;color:var(--mut);font-size:11.5px">랙을 돌며 전부 센다. 세지 않은 SKU는 「미실사」로 잡히고, 디렉터 승인으로 재고를 맞춘다.</span></span>
+    </label>
+    <label style="flex:1;min-width:210px;margin:0;display:flex;gap:8px;align-items:flex-start;border:1.5px solid var(--line);border-radius:11px;padding:10px;cursor:pointer" id="modeSpotBox">
+      <input type="radio" name="scmode" id="modeSpot" value="spot" style="width:auto;margin-top:2px">
+      <span><b style="color:var(--ink);font-size:13px">🎯 SKU 스팟점검</b><br>
+      <span style="font-weight:400;color:var(--mut);font-size:11.5px">고른 제품만 확인한다. 스캔 → 수량·위치 확인 → 맞으면 랙 스캔, 다르면 [틀림]. <b>기록만 남고 재고는 바뀌지 않는다.</b></span></span>
+    </label>
+  </div>
   <label>범위 메모 (선택)</label><input id="scopeInput" placeholder="예: A동 랙 전체 / 프로모션 창고">
   <div class="row" style="margin-top:14px;justify-content:flex-end">
     <button class="btn ghost sm" onclick="closeModal('startModal')">취소</button>
@@ -330,7 +463,7 @@ async function api(path,opt){
   return {ok:res.ok,status:res.status,...body,_raw:body};
 }
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),1600); }
-function show(v){ ['loginView','homeView','recordView','reconView','promoView'].forEach(x=>$(x).classList.add('hidden')); $(v).classList.remove('hidden'); }
+function show(v){ ['loginView','homeView','recordView','reconView','promoView','spotView','spotHistView'].forEach(x=>$(x).classList.add('hidden')); $(v).classList.remove('hidden'); if(typeof pdaApply==='function') pdaApply(); }
 function closeModal(id){ $(id).classList.remove('on'); }
 function openHelp(){ $('helpModal').classList.add('on'); }
 
@@ -367,12 +500,19 @@ function sessActions(s){
   }
   return '<button class="btn ghost sm" onclick="event.stopPropagation();reqDelSession('+s.id+')" style="color:#C0564F;border-color:#e3b5b1">🗑 삭제요청</button>';
 }
+function modePill(m){ return m==='spot'
+  ? '<span class="modepill m-spot">🎯 SKU 점검</span>'
+  : '<span class="modepill m-full">📋 전체실사</span>'; }
 function sesRowHtml(s,resume){
-  const go = resume?'<span class="badge b-draft">이어쓰기 ▸</span>':(s.status==='submitted'?'<span class="badge b-sub">대조 ▸</span>':'<span class="badge b-rec">보기 ▸</span>');
+  const spot = (s.mode==='spot');
+  const go = resume?'<span class="badge b-draft">'+(spot?'점검 계속 ▸':'이어쓰기 ▸')+'</span>'
+    :(spot?'<span class="badge b-sub">기록 보기 ▸</span>'
+      :(s.status==='submitted'?'<span class="badge b-sub">대조 ▸</span>':'<span class="badge b-rec">보기 ▸</span>'));
   const canDel = (s.status==='draft'||s.status==='submitted');
   const act = canDel ? sessActions(s) : '';
+  const n = spot ? (s.checks+'건 점검') : (s.lines+'건');
   return '<div class="sesrow" onclick="openCount('+s.id+')">'
-    +'<div><span class="c">'+s.code+'</span> '+badge(s.status)+'<div class="s">'+(s.scope_note||'')+' · '+(s.started_by_name||'')+' · '+new Date(s.started_at).toLocaleString('ko-KR')+' · '+s.lines+'건</div></div>'
+    +'<div><span class="c">'+s.code+'</span> '+badge(s.status)+modePill(s.mode)+'<div class="s">'+(s.scope_note||'')+' · '+(s.started_by_name||'')+' · '+new Date(s.started_at).toLocaleString('ko-KR')+' · '+n+'</div></div>'
     +'<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'+act+' '+go+'</div></div>';
 }
 async function reqDelSession(id){
@@ -389,17 +529,20 @@ async function rejectDelSession(id){
   const r=await api('/api/stock-counts/'+id+'/delete-reject',{method:'POST'});
   if(r.ok){ toast('요청 반려'); loadHome(); } else toast((r&&r.note)||'반려 실패');
 }
-function openStart(){ $('scopeInput').value=''; $('startModal').classList.add('on'); }
+function openStart(){ $('scopeInput').value=''; $('modeFull').checked=true; $('modeSpot').checked=false; $('startModal').classList.add('on'); }
 async function createCount(){
   const scope=$('scopeInput').value.trim();
-  const r=await api('/api/stock-counts',{method:'POST',body:JSON.stringify({scope_note:scope})});
+  const mode=$('modeSpot').checked?'spot':'full';
+  const r=await api('/api/stock-counts',{method:'POST',body:JSON.stringify({scope_note:scope,mode})});
   if(!r.ok){ toast('생성 실패'); return; }
   closeModal('startModal'); openCount(r.id);
 }
 async function openCount(id){
   const r=await api('/api/stock-counts/'+id); if(!r.ok){ toast('불러오기 실패'); return; }
-  CUR={id:r.id,code:r.code,status:r.status};
+  CUR={id:r.id,code:r.code,status:r.status,mode:r.mode||'full'};
   $('scCode').textContent=r.code;
+  // 스팟점검 세션은 상태와 무관하게 점검 화면으로(완료된 건 읽기 전용 리포트)
+  if(CUR.mode==='spot'){ enterSpot(); return; }
   if(r.status==='draft'){ curRack=''; $('curRackLbl').textContent='(미지정)'; $('rackInput').value=''; enterRecord(r); }
   else { openReconcile(id); }
 }
@@ -847,11 +990,359 @@ async function deletePromo(){
   if(r.ok){ closeModal('promoModal'); loadPromo(); } else toast('삭제 실패');
 }
 
+/* =====================================================================
+   SKU 스팟점검 (build sc0827spot)
+   현장 흐름 — 디렉터 지시 2026-08-27:
+     ① 제품 바코드 스캔 → 시스템 수량·위치가 화면에 크게 뜬다
+     ② 실물을 세어 맞으면 **랙 바코드를 스캔** → 맞음 확정
+     ③ 다르면 화면의 [✖ 틀림] 버튼 → 틀림 기록 (수량은 받지 않는다)
+   기록 전용이다. 이 화면은 재고도 마스터 위치도 바꾸지 않는다.
+
+   스캔값 판정: 랙 목록을 따로 들고 오지 않는다(랙 유형 마이그레이션 의존 회피).
+     · 제품/프로모로 해석되면 → 점검할 품목
+     · 해석 안 되고 **대기 중인 품목이 있으면** → 랙 바코드로 본다(= 맞음 확정)
+     · 해석 안 되고 대기 품목도 없으면 → 등록되지 않은 코드(오류음)
+   ===================================================================== */
+var LANG=(function(){ try{ var l=localStorage.getItem('wh_lang'); if(l==='es'||l==='ko') return l; }catch(e){} return null; })();
+function langNow(){ if(LANG) return LANG; return (session.user&&session.user.role==='warehouse')?'es':'ko'; }
+function L(ko,es){ return langNow()==='es'?es:ko; }
+function langToggle(){ var n=langNow()==='es'?'ko':'es'; LANG=n; try{localStorage.setItem('wh_lang',n);}catch(e){} location.reload(); }
+function langInit(){
+  var b=$('langBtn'); if(b) b.textContent=langNow()==='es'?'🌐 한국어':'🌐 Español';
+  // 상단 바만 두 언어를 따른다(세션 목록·대조 화면은 사무·디렉터용이라 한국어 그대로).
+  var t=$('scTtl'); if(t) t.textContent=L('재고실사','Conteo de inventario');
+  var s=$('scSub'); if(s) s.textContent=L('실물 재고조사 · 시스템 대조','Conteo físico · cotejo con el sistema');
+  var p=$('portalBtn'); if(p) p.textContent=L('← 포털','← Portal');
+}
+
+/* ---- PDA 컴팩트 모드 — 수입입고·포장·위치변경과 같은 처방(localStorage 'wh_pda' 공유) ---- */
+var PDA=(function(){ try{ var v=localStorage.getItem('wh_pda'); if(v==='1'||v==='0') return v; }catch(e){} return null; })();
+var pdaLast=null;
+function pdaAuto(){ try{ return window.innerWidth<=640; }catch(e){ return false; } }
+function pdaOn(){ return (PDA==null)?pdaAuto():(PDA==='1'); }
+function syncNavH(){ var el=document.getElementById('rnav'); var h=(el&&el.offsetHeight)||40;
+  try{ document.documentElement.style.setProperty('--navh',h+'px'); }catch(e){} }
+function pdaApply(){
+  var on=pdaOn(); pdaLast=on;
+  document.body.classList.toggle('pda',on);
+  syncNavH(); setTimeout(syncNavH,60); setTimeout(syncNavH,340);
+  var b=$('pdaBtn');
+  if(b) b.textContent=on?('⤢ '+L('전체보기','Vista completa')):('📱 '+L('스캔모드','Modo escáner'));
+}
+function pdaToggle(){ PDA=pdaOn()?'0':'1'; try{localStorage.setItem('wh_pda',PDA);}catch(e){} pdaApply();
+  var f=$('spInput'); if(f&&!$('spotView').classList.contains('hidden')) try{ f.focus(); }catch(e){} }
+function pdaInit(){ pdaApply(); window.addEventListener('resize',pdaApply);
+  try{ if(window.ResizeObserver){ var t=setInterval(function(){ var el=document.getElementById('rnav'); if(!el) return;
+    clearInterval(t); new ResizeObserver(syncNavH).observe(el); },200); setTimeout(function(){clearInterval(t);},10000); } }catch(e){} }
+
+/* ---- 소리 — 수입입고·위치변경과 같은 규칙 ---- */
+var SPAC=null;
+function tone(freq,dur,delay,type,vol){
+  try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return;
+    if(!SPAC) SPAC=new C(); if(SPAC.state==='suspended'&&SPAC.resume) SPAC.resume();
+    var t0=SPAC.currentTime+(delay||0)/1000, o=SPAC.createOscillator(), g=SPAC.createGain();
+    o.type=type||'sine'; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol||0.28,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+dur/1000);
+    o.connect(g); g.connect(SPAC.destination); o.start(t0); o.stop(t0+dur/1000+0.02);
+  }catch(e){}
+}
+function sndRead(){ tone(1175,70,0); tone(1568,90,85); }                       // 스캔 인식
+function sndSaved(){ tone(784,90,0); tone(988,90,100); tone(1319,140,200); }   // 맞음 저장
+function sndWarn(){ tone(660,110,0,'triangle'); tone(440,220,110,'triangle'); }// 확인 필요
+function sndErr(){ tone(196,160,0,'square',0.2); tone(196,200,220,'square',0.2); } // 차단·틀림
+
+/* ---- 상태 ---- */
+// last = 방금 기록한 결과. 저장 후에도 큰 박스에 남겨 둔다 — 수입입고·포장 화면에서 얻은 교훈:
+//        PDA 에서 리딩 스테이터스가 사라지면 작업자가 결과를 못 본다.
+var SP={checks:[],summary:null,pending:null,last:null,busy:false,readonly:false,wired:false};
+var SPHIST={checks:[],by_sku:[],summary:null};
+
+function spNum(n){ return Number(n||0).toLocaleString(langNow()==='es'?'es-MX':'ko-KR',{maximumFractionDigits:2}); }
+function spEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function spTime(t){ var d=new Date(t); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+function spDate(t){ var d=new Date(t); return d.toLocaleDateString(langNow()==='es'?'es-MX':'ko-KR')+' '+spTime(t); }
+
+/* ---- 진입 ---- */
+async function enterSpot(){
+  show('spotView');
+  $('spTitle').textContent='🎯 '+L('SKU 점검','Conteo puntual');
+  $('spListTtl').textContent=L('점검 내역','Registros');
+  $('spBackBtn').textContent=L('← 목록','← Lista');
+  $('spFinishBtn').textContent='✔ '+L('점검 완료','Cerrar conteo');
+  $('spXlsBtn').textContent='⬇ '+L('엑셀','Excel');
+  $('spInput').placeholder=L('제품 바코드 스캔','Escanee el código del producto');
+  spotWireInput();
+  SP.pending=null; SP.busy=false;
+  await loadSpotChecks();
+  if(!SP.readonly) setTimeout(function(){ try{ $('spInput').focus(); }catch(e){} },120);
+}
+async function loadSpotChecks(){
+  var r=await api('/api/stock-counts/'+CUR.id+'/spot-checks');
+  if(!r.ok){ toast(r.note||L('불러오기 실패','Error al cargar')); return; }
+  SP.checks=r.checks||[]; SP.summary=r.summary||{};
+  SP.readonly=(r.count_status!=='draft');
+  CUR.status=r.count_status||CUR.status;
+  $('spFinishBtn').style.display=SP.readonly?'none':'';
+  $('spInput').style.display=SP.readonly?'none':'';
+  renderSpotBox(); renderSpotKpi(); renderSpotList();
+}
+
+/* ---- 스캔 배선 — Enter 에 의존하지 않는다(스캐너가 접미사를 안 보내도 동작) ---- */
+var SPQUOTE=/['´`‘’′ʼ]/g;
+function spNorm(v){ return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').replace(SPQUOTE,'-').replace(/\s+/g,'').toUpperCase(); }
+var spDupCode='', spDupAt=0;
+function spDup(n){ var t=Date.now(); if(n&&n===spDupCode&&(t-spDupAt)<450){ spDupAt=t; return true; } spDupCode=n; spDupAt=t; return false; }
+function spotWireInput(){
+  if(SP.wired) return; SP.wired=true;
+  var inp=$('spInput'); if(!inp) return;
+  inp.addEventListener('input',function(){
+    var v=inp.value, n=v.replace(SPQUOTE,'-').toUpperCase();
+    if(n!==v){ var p=inp.selectionStart; inp.value=n; try{ inp.setSelectionRange(p,p); }catch(e){} }
+  });
+  var t=null,lastEvt=0,manual=false;
+  function fire(){ if(t){clearTimeout(t);t=null;} manual=false; lastEvt=0;
+    var v=inp.value; inp.value=''; try{inp.focus();}catch(e){} if(v) spotScan(v); }
+  inp.addEventListener('input',function(){
+    var now=Date.now();
+    if(inp.value===''){ manual=false; lastEvt=0; if(t){clearTimeout(t);t=null;} return; }
+    if(lastEvt&&(now-lastEvt)>80) manual=true;        // 사람 타이핑 속도면 자동처리 끔
+    lastEvt=now; if(t){clearTimeout(t);t=null;}
+    if(!manual) t=setTimeout(fire,140);
+  });
+  function onEnter(e){ if(e.key==='Enter'||e.keyCode===13){ e.preventDefault(); fire(); } }
+  inp.addEventListener('keydown',onEnter);
+  inp.addEventListener('keypress',onEnter);
+}
+
+/* ---- 스캔 ---- */
+async function spotScan(raw){
+  if(SP.readonly){ sndErr(); setMsg('spMsg',L('완료된 점검입니다.','Conteo cerrado.'),'err'); return; }
+  var code=spNorm(raw); if(!code) return;
+  if(SP.busy) return;
+  if(spDup(code)){ sndWarn(); toast('⚠ '+L('중복 리딩 — 무시했습니다','Lectura duplicada — ignorada')); return; }
+  SP.busy=true;
+  try{
+    var r=await api('/api/stock-counts/resolve?code='+encodeURIComponent(code));
+    if(r.ok && (r.item_kind==='part'||r.item_kind==='promo')){
+      // 제품 스캔 — 대기 중이던 품목이 있으면 그건 기록되지 않았음을 알린다(조용히 잃지 않게)
+      if(SP.pending && spNorm(SP.pending.matched_code)!==spNorm(r.matched_code)){
+        toast('⚠ '+spEsc(SP.pending.matched_code)+' '+L('은(는) 기록되지 않았습니다','no se registró'));
+      }
+      SP.pending={ raw_code:code, item_kind:r.item_kind, matched_code:r.matched_code||code,
+        name:r.name||'', system_qty:r.system_qty, rack_location:r.rack_location||'',
+        source:r.source||'', warn:'' };
+      SP.last=null;
+      sndRead(); setMsg('spMsg','','');
+      renderSpotBox();
+      return;
+    }
+    // 제품이 아니다 — 대기 품목이 있으면 랙 바코드로 본다(= 맞음 확정)
+    if(SP.pending){ await spotMark('ok',code); return; }
+    sndErr(); setMsg('spMsg','✖ '+L('등록되지 않은 코드입니다','Código no registrado')+' — '+spEsc(code),'err');
+  } finally { SP.busy=false; }
+}
+
+/* ---- 기록 ---- */
+async function spotMark(result,rack){
+  if(!SP.pending){ sndErr(); return; }
+  var p=SP.pending;
+  var body={raw_code:p.raw_code,result:result};
+  if(rack) body.rack_scanned=rack;
+  var r=await api('/api/stock-counts/'+CUR.id+'/spot-checks',{method:'POST',body:JSON.stringify(body)});
+  if(!r.ok){ sndErr(); setMsg('spMsg','✖ '+(r.note||r.error||L('저장 실패','Error al guardar')),'err'); return; }
+  var c=r.check||{};
+  SP.pending=null; SP.last=c;
+  if(result==='ok'){
+    if(c.rack_match===false){ sndWarn();
+      setMsg('spMsg','⚠ '+L('맞음으로 기록 — 다만 스캔한 위치가 제품마스터와 다릅니다','Registrado OK — la ubicación escaneada no coincide con el maestro')
+        +' ('+spEsc(c.master_rack||'—')+')','warn'); }
+    else { sndSaved(); setMsg('spMsg','✔ '+spEsc(c.matched_code)+' '+L('맞음으로 기록','Registrado OK'),'ok'); }
+  } else { sndErr(); setMsg('spMsg','✖ '+spEsc(c.matched_code)+' '+L('틀림으로 기록','Registrado NO COINCIDE'),'err'); }
+  await loadSpotChecks();
+  try{ $('spInput').focus(); }catch(e){}
+}
+function spotOkNoRack(){
+  if(!SP.pending) return;
+  if(!confirm(L('랙 바코드 스캔 없이 맞음으로 기록할까요?','¿Registrar OK sin escanear la ubicación?'))) return;
+  spotMark('ok',null);
+}
+function spotMismatch(){ spotMark('mismatch',null); }
+function spotCancelPending(){ SP.pending=null; setMsg('spMsg','',''); renderSpotBox(); try{ $('spInput').focus(); }catch(e){} }
+async function spotUndo(id){
+  if(!confirm(L('이 점검 기록을 취소할까요?','¿Cancelar este registro?'))) return;
+  var r=await api('/api/stock-counts/'+CUR.id+'/spot-checks/'+id,{method:'DELETE'});
+  if(!r.ok){ toast(r.note||L('취소 실패','No se pudo cancelar')); return; }
+  if(SP.last&&Number(SP.last.id)===Number(id)) SP.last=null;
+  sndWarn(); toast(L('취소됨','Cancelado')); loadSpotChecks();
+}
+async function spotFinish(){
+  if(!confirm(L('점검을 완료할까요? 완료하면 기록을 추가할 수 없습니다.','¿Cerrar el conteo? No podrá agregar más registros.'))) return;
+  var r=await api('/api/stock-counts/'+CUR.id+'/submit',{method:'POST'});
+  if(!r.ok){ toast(r.note||L('완료 실패','Error')); return; }
+  toast('✔ '+L('점검 완료','Conteo cerrado')); loadSpotChecks();
+}
+
+/* ---- 렌더 ---- */
+function renderSpotBox(){
+  var box=$('spBox'), acts=$('spActs');
+  if(SP.readonly){
+    box.className='spbox idle';
+    box.textContent='🔒 '+L('완료된 점검입니다 — 기록 보기 전용','Conteo cerrado — solo lectura');
+    acts.innerHTML=''; return;
+  }
+  var p=SP.pending;
+  if(!p){
+    var c=SP.last;
+    if(c){   // 방금 기록한 결과를 남겨 둔다 — 다음 제품을 스캔하면 지워진다
+      var okr=(c.result==='ok');
+      box.className='spbox '+(okr?(c.rack_match===false?'warn':'ok'):'bad');
+      box.innerHTML='<div class="spcode">'+(okr?'✔ ':'✖ ')+spEsc(c.matched_code)+'</div>'
+        +'<div class="spname">'+spEsc(c.item_name||'')+'</div>'
+        +'<div class="spask">'+(okr?L('맞음으로 기록했습니다','Registrado OK')
+                                   :L('틀림으로 기록했습니다','Registrado NO COINCIDE'))
+        +' · '+L('시스템','Sistema')+' '+spNum(c.system_qty)
+        +(c.rack_scanned?(' · '+spEsc(c.rack_scanned)):'')+'</div>'
+        +(c.rack_match===false?'<div class="spwarn">⚠ '+L('마스터 위치와 다릅니다','Ubicación distinta al maestro')
+            +' ('+spEsc(c.master_rack||'—')+')</div>':'')
+        +'<div class="spask" style="color:var(--mut);font-weight:700">'
+        +L('다음 제품 바코드를 스캔하세요','Escanee el siguiente producto')+'</div>';
+      acts.innerHTML='<button class="btn gray sm" onclick="spotUndo('+c.id+')">↺ '+L('직전 기록 취소','Deshacer')+'</button>';
+      return;
+    }
+    box.className='spbox idle';
+    box.textContent=L('제품 바코드를 스캔하세요','Escanee el código del producto');
+    acts.innerHTML=''; return;
+  }
+  box.className='spbox warn';
+  box.innerHTML='<div class="spcode">'+spEsc(p.matched_code)+'</div>'
+    +'<div class="spname">'+spEsc(p.name||'—')+'</div>'
+    +'<div class="spfacts">'
+    +'<div class="spfact qty"><div class="k">'+L('시스템 수량','CANTIDAD SISTEMA')+'</div><div class="v">'+spNum(p.system_qty)+'</div></div>'
+    +'<div class="spfact rack"><div class="k">'+L('위치','UBICACIÓN')+'</div><div class="v">'+spEsc(p.rack_location||'—')+'</div></div>'
+    +'</div>'
+    +'<div class="spask">'+L('실물을 확인하세요 — 맞으면 랙 바코드를 스캔, 다르면 [✖ 틀림]',
+                             'Verifique el físico — si coincide escanee la ubicación, si no [✖ NO COINCIDE]')+'</div>'
+    +(p.rack_location?'':'<div class="spwarn">⚠ '+L('제품마스터에 위치가 없습니다','Sin ubicación en el maestro')+'</div>');
+  acts.innerHTML='<button class="btn red big" onclick="spotMismatch()">✖ '+L('틀림','NO COINCIDE')+'</button>'
+    +'<button class="btn ghost sm" onclick="spotOkNoRack()">✔ '+L('맞음(랙 스캔 생략)','OK (sin ubicación)')+'</button>'
+    +'<button class="btn gray sm" onclick="spotCancelPending()">'+L('취소','Cancelar')+'</button>';
+}
+function renderSpotKpi(){
+  var s=SP.summary||{};
+  $('spKpi').innerHTML=
+     '<div class="k"><span class="n">'+spNum(s.skus||0)+'</span><span class="t">'+L('점검 SKU','SKU')+'</span></div>'
+    +'<div class="k ok"><span class="n">'+spNum(s.ok||0)+'</span><span class="t">'+L('맞음','OK')+'</span></div>'
+    +'<div class="k bad"><span class="n">'+spNum(s.mismatch||0)+'</span><span class="t">'+L('틀림','No coincide')+'</span></div>'
+    +'<div class="k rk"><span class="n">'+spNum(s.rack_diff||0)+'</span><span class="t">'+L('위치 불일치','Ubic. distinta')+'</span></div>';
+}
+function spResultPill(c){
+  return c.result==='ok' ? '<span class="rpill r-ok">✔ '+L('맞음','OK')+'</span>'
+                         : '<span class="rpill r-bad">✖ '+L('틀림','NO')+'</span>';
+}
+function renderSpotList(){
+  $('spHead').innerHTML='<th>'+L('시각','Hora')+'</th><th>'+L('코드','Código')+'</th><th class="num">'+L('시스템','Sistema')+'</th>'
+    +'<th>'+L('결과','Resultado')+'</th><th>'+L('스캔 위치','Ubic. escaneada')+'</th><th>'+L('마스터 위치','Ubic. maestro')+'</th>'
+    +'<th>'+L('작업자','Usuario')+'</th><th></th>';
+  var rows=SP.checks||[];
+  if(!rows.length){ $('spBody').innerHTML='<tr><td colspan="8" class="mut" style="text-align:center;padding:14px">'
+    +L('아직 점검 기록이 없습니다.','Aún no hay registros.')+'</td></tr>'; return; }
+  $('spBody').innerHTML=rows.map(function(c){
+    var rackCell = c.rack_scanned
+      ? (c.rack_match===false ? '<span class="pill p-over">'+spEsc(c.rack_scanned)+' ⚠</span>' : spEsc(c.rack_scanned))
+      : '<span class="mut">—</span>';
+    return '<tr><td class="mut">'+spTime(c.checked_at)+'</td>'
+      +'<td><b>'+spEsc(c.matched_code)+'</b><div class="mut">'+spEsc(c.item_name||'')+'</div></td>'
+      +'<td class="num">'+spNum(c.system_qty)+'</td>'
+      +'<td>'+spResultPill(c)+'</td>'
+      +'<td>'+rackCell+'</td>'
+      +'<td class="mut">'+spEsc(c.master_rack||'—')+'</td>'
+      +'<td class="mut">'+spEsc(c.checked_by_name||'')+'</td>'
+      +'<td>'+(SP.readonly?'':'<button class="btn gray sm" onclick="spotUndo('+c.id+')">↺</button>')+'</td></tr>';
+  }).join('');
+}
+function spotXlsx(){
+  if(!window.XLSX){ toast('엑셀 모듈 로딩중'); return; }
+  var head=['Fecha/일시','Código/코드','Nombre/품명','Sistema/시스템수량','Resultado/결과','Ubic. escaneada/스캔위치','Ubic. maestro/마스터위치','Coincide/위치일치','Usuario/작업자'];
+  var data=[head].concat((SP.checks||[]).map(function(c){
+    return [spDate(c.checked_at),c.matched_code,c.item_name||'',Number(c.system_qty),
+      c.result==='ok'?'OK':'NO COINCIDE',c.rack_scanned||'',c.master_rack||'',
+      c.rack_match==null?'':(c.rack_match?'OK':'NO'),c.checked_by_name||''];
+  }));
+  var ws=XLSX.utils.aoa_to_sheet(data), wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'SpotCheck');
+  XLSX.writeFile(wb,'spotcheck_'+(CUR&&CUR.code?CUR.code:'')+'.xlsx');
+}
+
+/* ---- 점검 이력(세션 전체) ---- */
+function showSpotHist(){
+  show('spotHistView');
+  $('shTitle').textContent='🎯 '+L('SKU 점검 이력','Historial de conteo puntual');
+  $('shLbDays').textContent=L('기간(일)','Días'); $('shLbCode').textContent=L('제품번호','Código');
+  $('shLbRes').textContent=L('결과','Resultado'); $('shGo').textContent=L('조회','Buscar');
+  $('shSkuTtl').textContent=L('SKU별 최근 점검','Último conteo por SKU');
+  $('shLogTtl').textContent=L('점검 기록','Registros');
+  $('shXlsBtn').textContent='⬇ '+L('엑셀','Excel');
+  $('shBackBtn').textContent=L('← 목록','← Lista');
+  loadSpotHist();
+}
+async function loadSpotHist(){
+  var q=['days='+encodeURIComponent($('shDays').value||'30'),'limit=1000'];
+  var c=$('shCode').value.trim(); if(c) q.push('code='+encodeURIComponent(c));
+  var rs=$('shRes').value; if(rs) q.push('result='+encodeURIComponent(rs));
+  var r=await api('/api/stock-counts/spot/history?'+q.join('&'));
+  if(!r.ok){ toast(r.note||L('불러오기 실패','Error al cargar')); return; }
+  SPHIST={checks:r.checks||[],by_sku:r.by_sku||[],summary:r.summary||{}};
+  renderSpotHist();
+}
+function renderSpotHist(){
+  var s=SPHIST.summary||{};
+  $('shKpi').innerHTML=
+     '<div class="k"><span class="n">'+spNum(s.checks||0)+'</span><span class="t">'+L('점검 건수','Registros')+'</span></div>'
+    +'<div class="k"><span class="n">'+spNum(s.skus||0)+'</span><span class="t">'+L('점검 SKU','SKU')+'</span></div>'
+    +'<div class="k ok"><span class="n">'+spNum(s.ok||0)+'</span><span class="t">'+L('맞음','OK')+'</span></div>'
+    +'<div class="k bad"><span class="n">'+spNum(s.mismatch||0)+'</span><span class="t">'+L('틀림','No coincide')+'</span></div>'
+    +'<div class="k rk"><span class="n">'+spNum(s.rack_diff||0)+'</span><span class="t">'+L('위치 불일치','Ubic. distinta')+'</span></div>';
+
+  $('shSkuHead').innerHTML='<th>'+L('코드','Código')+'</th><th>'+L('품명','Nombre')+'</th><th>'+L('최근 점검','Último')+'</th>'
+    +'<th>'+L('최근 결과','Resultado')+'</th><th class="num">'+L('점검 횟수','Veces')+'</th><th class="num">'+L('틀림','No coincide')+'</th>';
+  var sk=SPHIST.by_sku||[];
+  $('shSkuBody').innerHTML=sk.length?sk.map(function(x){
+    return '<tr><td><b>'+spEsc(x.code)+'</b></td><td class="mut">'+spEsc(x.name||'')+'</td>'
+      +'<td class="mut">'+spDate(x.last_at)+'</td>'
+      +'<td>'+(x.last_result==='ok'?'<span class="rpill r-ok">✔</span>':'<span class="rpill r-bad">✖</span>')+'</td>'
+      +'<td class="num">'+spNum(x.checks)+'</td><td class="num">'+spNum(x.mismatch)+'</td></tr>';
+  }).join(''):'<tr><td colspan="6" class="mut" style="text-align:center;padding:14px">'+L('기록이 없습니다.','Sin registros.')+'</td></tr>';
+
+  $('shHead').innerHTML='<th>'+L('일시','Fecha')+'</th><th>'+L('세션','Sesión')+'</th><th>'+L('코드','Código')+'</th>'
+    +'<th class="num">'+L('시스템','Sistema')+'</th><th>'+L('결과','Resultado')+'</th><th>'+L('스캔 위치','Ubic. escaneada')+'</th><th>'+L('작업자','Usuario')+'</th>';
+  var rows=SPHIST.checks||[];
+  $('shBody').innerHTML=rows.length?rows.map(function(c){
+    var rackCell=c.rack_scanned?(c.rack_match===false?'<span class="pill p-over">'+spEsc(c.rack_scanned)+' ⚠</span>':spEsc(c.rack_scanned)):'<span class="mut">—</span>';
+    return '<tr><td class="mut">'+spDate(c.checked_at)+'</td><td class="mut">'+spEsc(c.count_code)+'</td>'
+      +'<td><b>'+spEsc(c.matched_code)+'</b><div class="mut">'+spEsc(c.item_name||'')+'</div></td>'
+      +'<td class="num">'+spNum(c.system_qty)+'</td><td>'+spResultPill(c)+'</td>'
+      +'<td>'+rackCell+'</td><td class="mut">'+spEsc(c.checked_by_name||'')+'</td></tr>';
+  }).join(''):'<tr><td colspan="7" class="mut" style="text-align:center;padding:14px">'+L('기록이 없습니다.','Sin registros.')+'</td></tr>';
+}
+function spotHistXlsx(){
+  if(!window.XLSX){ toast('엑셀 모듈 로딩중'); return; }
+  var head=['Fecha/일시','Sesión/세션','Código/코드','Nombre/품명','Sistema/시스템수량','Resultado/결과','Ubic. escaneada/스캔위치','Ubic. maestro/마스터위치','Usuario/작업자'];
+  var data=[head].concat((SPHIST.checks||[]).map(function(c){
+    return [spDate(c.checked_at),c.count_code,c.matched_code,c.item_name||'',Number(c.system_qty),
+      c.result==='ok'?'OK':'NO COINCIDE',c.rack_scanned||'',c.master_rack||'',c.checked_by_name||''];
+  }));
+  var ws=XLSX.utils.aoa_to_sheet(data), wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'History');
+  XLSX.writeFile(wb,'spotcheck_history.xlsx');
+}
+
 // ================= 부트스트랩 =================
 (function(){
+  try{ console.log('[refatrix-stockcount] build sc0827spot'); }catch(e){}
   const ps=portalSession();
   if(ps&&ps.token){ session={token:ps.token,user:ps.user||{},api:ps.api||'https://refatrix-production.up.railway.app'}; afterLogin(); }
   else { show('loginView'); }
+  langInit(); pdaInit();
 })();
 </script>
 <div class="modal" id="codeDetailModal"><div class="box" style="max-width:640px">
@@ -893,6 +1384,6 @@ async function deletePromo(){
   <div id="adjBody" style="margin-top:10px"></div>
 </div></div>
 
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260827rl"></script>
 </body>
 </html>

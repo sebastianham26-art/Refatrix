@@ -1,9 +1,10 @@
-// stockCountRoutes.js · rev 20260705r8 (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
+// stockCountRoutes.js · rev 20260827spot (redeploy marker — 기동 성공 시 아래 로그가 찍힘)
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requirePageEdit } from '../middleware/authGuard.js';
 import { fieldVisible, round2 } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { verifyPin } from '../auth.js';
+import { splitRacks } from './zoneRoutes.js';
 
 // =====================================================================
 // Refatrix ERP · stockCountRoutes.js  (재고실사 / Inventory Count)
@@ -13,10 +14,18 @@ import { verifyPin } from '../auth.js';
 //   · 감사 전용: 실사 기록은 재고를 바꾸지 않음.
 //     디렉터 "실물로 맞추기"(apply) 시에만 stock_movements(adjust) + stock_qty 갱신.
 //   · 금액 영향(원가/정가 환산)은 unit_cost 권한자(또는 디렉터)에게만 반환.
+//
+//   세션 모드 2종 (0188) --------------------------------------------
+//   · mode='full' — 기존 전체 재고실사. SC-YYYY-NNNN. 라인 기록 → 대조 →
+//                   디렉터 PIN 검토·반영(stock_qty 조정). 동작 완전 불변.
+//   · mode='spot' — SKU 스팟점검. SP-YYYY-NNNN. 제품 스캔 → 시스템 수량·위치
+//                   확인 → 랙 스캔(맞음) / [틀림]. **기록 전용 — 재고를 절대
+//                   바꾸지 않는다.** 그래서 라인·대조·반영 경로는 spot 세션을
+//                   서버에서 거부한다(아래 assertMode / spotBlocked).
 // =====================================================================
 
 export default async function stockCountRoutes(app) {
-  try { console.log("[stockCountRoutes] loaded rev 20260705r8"); } catch (e) {}
+  try { console.log("[stockCountRoutes] loaded rev 20260827spot"); } catch (e) {}
   const isDirector = (req) => req.ctx.perm.role === 'director';
   const canSeeValue = (req) => isDirector(req) || fieldVisible(req.ctx.perm, 'unit_cost');
   const num = (v) => (v == null ? 0 : Number(v));
@@ -73,20 +82,36 @@ export default async function stockCountRoutes(app) {
     return Math.max(0, num(r.stock_qty) - num(r.reserved));
   }
 
-  async function nextCode(exec = query) {
+  // 세션 모드 — 'full'(전체 재고실사) | 'spot'(SKU 스팟점검). 알 수 없는 값은 full 로.
+  const MODES = ['full', 'spot'];
+  const normMode = (v) => (MODES.includes(String(v || '').trim()) ? String(v).trim() : 'full');
+  const codePrefix = (mode) => (mode === 'spot' ? 'SP' : 'SC');
+
+  async function nextCode(exec = query, mode = 'full') {
     // exec 은 query(함수) 또는 withTx 클라이언트(.query) 둘 다 올 수 있음 → 정규화
     const run = typeof exec === 'function' ? exec : (s, p) => exec.query(s, p);
     const year = new Date().getFullYear();
-    const r = (await run(`SELECT COUNT(*)::int AS n FROM stock_counts WHERE code LIKE $1`, [`SC-${year}-%`])).rows[0];
-    return `SC-${year}-${String((r.n || 0) + 1).padStart(4, '0')}`;
+    const pre = codePrefix(mode);
+    const r = (await run(`SELECT COUNT(*)::int AS n FROM stock_counts WHERE code LIKE $1`, [`${pre}-${year}-%`])).rows[0];
+    return `${pre}-${year}-${String((r.n || 0) + 1).padStart(4, '0')}`;
   }
+
+  // 세션 모드 확인 — 전체실사 전용 경로가 스팟 세션에 잘못 쓰이는 것을 서버에서 막는다.
+  // 반환: { row } 또는 { err:{code,body} }
+  async function loadSession(id, exec = query) {
+    const run = typeof exec === 'function' ? exec : (s, p) => exec.query(s, p);
+    return (await run(`SELECT id, code, status, mode FROM stock_counts WHERE id=$1`, [id])).rows[0] || null;
+  }
+  const SPOT_ONLY = { error: 'spot_only', note: 'SKU 스팟점검 세션에서는 쓸 수 없는 기능입니다.' };
+  const FULL_ONLY = { error: 'full_only', note: '전체 재고실사 세션에서만 쓸 수 있는 기능입니다.' };
 
   function sessRow(r) {
     return {
-      id: Number(r.id), code: r.code, status: r.status, scope_note: r.scope_note || '',
+      id: Number(r.id), code: r.code, status: r.status, mode: normMode(r.mode), scope_note: r.scope_note || '',
       started_by: r.started_by != null ? Number(r.started_by) : null, started_by_name: r.started_by_name || '',
       started_at: r.started_at, submitted_at: r.submitted_at, reconciled_at: r.reconciled_at,
       lines: r.lines != null ? Number(r.lines) : 0,
+      checks: r.checks != null ? Number(r.checks) : 0,      // 스팟점검 건수(mode='spot')
       del_requested_at: r.del_requested_at || null,
       del_requested_by: r.del_requested_by != null ? Number(r.del_requested_by) : null,
       del_requested_by_name: r.del_requested_by_name || '',
@@ -98,14 +123,18 @@ export default async function stockCountRoutes(app) {
   // 목록(최근 순). 창고담당은 전부 볼 수 있게(협업). 디렉터도 전체.
   app.get('/api/stock-counts', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
+    // mode 필터(선택) — 없으면 전부. 화면의 「전체실사 / 스팟점검」 탭이 쓴다.
+    const mode = MODES.includes(String(req.query.mode || '')) ? String(req.query.mode) : null;
     const rows = (await query(
       `SELECT sc.*, u.name AS started_by_name, du.name AS del_requested_by_name,
-              (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = sc.id) AS lines
+              (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = sc.id) AS lines,
+              (SELECT COUNT(*) FROM stock_count_spot_checks k WHERE k.count_id = sc.id) AS checks
          FROM stock_counts sc
          LEFT JOIN users u ON u.id = sc.started_by
          LEFT JOIN users du ON du.id = sc.del_requested_by
         WHERE sc.status <> 'canceled'
-        ORDER BY sc.started_at DESC LIMIT $1`, [limit])).rows;
+          AND ($2::text IS NULL OR sc.mode = $2)
+        ORDER BY sc.started_at DESC LIMIT $1`, [limit, mode])).rows;
     return { items: rows.map(sessRow) };
   });
 
@@ -113,24 +142,26 @@ export default async function stockCountRoutes(app) {
   app.get('/api/stock-counts/active', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
     const rows = (await query(
       `SELECT sc.*, u.name AS started_by_name,
-              (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = sc.id) AS lines
+              (SELECT COUNT(*) FROM stock_count_lines l WHERE l.count_id = sc.id) AS lines,
+              (SELECT COUNT(*) FROM stock_count_spot_checks k WHERE k.count_id = sc.id) AS checks
          FROM stock_counts sc LEFT JOIN users u ON u.id = sc.started_by
         WHERE sc.status = 'draft'
         ORDER BY sc.started_at DESC`, [])).rows;
     return { items: rows.map(sessRow) };
   });
 
-  // 새 실사 세션
+  // 새 실사 세션. body.mode = 'full'(기본) | 'spot'
   app.post('/api/stock-counts', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req) => {
     const scope = String((req.body && req.body.scope_note) || '').trim().slice(0, 300) || null;
+    const mode = normMode(req.body && req.body.mode);
     const uid = req.ctx.perm.userId;
     const row = await withTx(async (c) => {
-      const code = await nextCode(c);
+      const code = await nextCode(c, mode);
       return (await c.query(
-        `INSERT INTO stock_counts (code, status, scope_note, started_by)
-         VALUES ($1,'draft',$2,$3) RETURNING *`, [code, scope, uid])).rows[0];
+        `INSERT INTO stock_counts (code, status, scope_note, started_by, mode)
+         VALUES ($1,'draft',$2,$3,$4) RETURNING *`, [code, scope, uid, mode])).rows[0];
     });
-    await logEvent({ userId: uid, action: 'create', target: `stock_count:${row.id}`, detail: { code: row.code } });
+    await logEvent({ userId: uid, action: 'create', target: `stock_count:${row.id}`, detail: { code: row.code, mode } });
     return sessRow(row);
   });
 
@@ -198,8 +229,9 @@ export default async function stockCountRoutes(app) {
     if (qty < 0) return reply.code(400).send({ error: 'bad_qty' });
     const rack = String(b.rack_scanned || '').trim().slice(0, 120) || null;
 
-    const sc = (await query(`SELECT id, status FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    const sc = await loadSession(id);
     if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(sc.mode) === 'spot') return reply.code(409).send(FULL_ONLY);
     if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft' });
 
     const r = await resolveCode(raw);
@@ -363,6 +395,187 @@ export default async function stockCountRoutes(app) {
     return { ok: true };
   });
 
+  // =====================================================================
+  // SKU 스팟점검 (mode='spot') — 0188
+  //   현장 흐름:  ① 제품 바코드 스캔 → 시스템 수량·위치를 화면에 크게 표시
+  //              ② 실물이 맞으면 랙 바코드 스캔        → result='ok'
+  //              ③ 다르면 화면의 [✖ 틀림] 버튼        → result='mismatch'
+  //   기록 전용이다. 여기서는 products/promo_items 를 **읽기만** 한다.
+  //   수량도 위치도 이 경로로는 바뀌지 않는다(디렉터 결정 2026-08-27).
+  // =====================================================================
+
+  // 랙 비교 — 위치변경(rackMoveRoutes)과 같은 규칙: 대소문자·공백 무시,
+  // 구분자 표기가 흔들리면(A'01'03 / A0103) 영숫자만 남겨 한 번 더 본다.
+  const normRack = (v) => String(v == null ? '' : v).trim().toUpperCase();
+  const bareRack = (v) => normRack(v).replace(/[^A-Z0-9]/g, '');
+  function rackInMaster(scanned, master) {
+    const list = splitRacks(master);
+    if (!list.length) return null;                       // 마스터 위치가 비어 있으면 판정 불가
+    const s = normRack(scanned), b = bareRack(scanned);
+    if (!s) return null;
+    return list.some((x) => normRack(x) === s || (bareRack(x) && bareRack(x) === b));
+  }
+
+  // 점검 시점 스냅샷(품명·시스템수량·마스터위치)을 읽어온다.
+  async function spotSnapshot(r) {
+    if (r.item_kind === 'part') {
+      const p = (await query(`SELECT code, name, stock_qty, rack_location FROM products WHERE id=$1`, [r.product.id])).rows[0] || {};
+      return { kind: 'part', product_id: Number(r.product.id), promo_item_id: null,
+        code: p.code || r.product.code, name: p.name || '', system_qty: num(p.stock_qty), master_rack: p.rack_location || '' };
+    }
+    const p = (await query(`SELECT code, name, stock_qty, rack_location FROM promo_items WHERE id=$1`, [r.promo.id])).rows[0] || {};
+    return { kind: 'promo', product_id: null, promo_item_id: Number(r.promo.id),
+      code: p.code || r.promo.code, name: p.name || '', system_qty: num(p.stock_qty), master_rack: p.rack_location || '' };
+  }
+
+  function checkRow(k) {
+    return {
+      id: Number(k.id), count_id: Number(k.count_id), count_code: k.count_code || '',
+      item_kind: k.item_kind,
+      product_id: k.product_id != null ? Number(k.product_id) : null,
+      promo_item_id: k.promo_item_id != null ? Number(k.promo_item_id) : null,
+      raw_code: k.raw_code, matched_code: k.matched_code || '', match_source: k.match_source || '',
+      item_name: k.item_name || k.cur_name || '',
+      system_qty: num(k.system_qty), master_rack: k.master_rack || '',
+      result: k.result, rack_scanned: k.rack_scanned || '',
+      rack_match: k.rack_match == null ? null : !!k.rack_match,
+      note: k.note || '',
+      current_qty: k.cur_qty == null ? null : num(k.cur_qty),      // 지금 시스템 수량(점검 후 움직였는지)
+      current_rack: k.cur_rack || '',
+      checked_by: k.checked_by != null ? Number(k.checked_by) : null,
+      checked_by_name: k.checked_by_name || '',
+      checked_at: k.checked_at,
+    };
+  }
+
+  // 요약 — 같은 SKU 를 여러 번 점검했으면 **가장 최근 결과**가 그 SKU 의 결과다.
+  function spotSummary(rows) {
+    const latest = new Map();
+    for (const r of rows) {                                   // rows 는 최신순(id DESC)
+      const key = r.item_kind + ':' + (r.product_id != null ? r.product_id : r.promo_item_id);
+      if (!latest.has(key)) latest.set(key, r);
+    }
+    const last = [...latest.values()];
+    return {
+      checks: rows.length,
+      skus: last.length,
+      ok: last.filter((r) => r.result === 'ok').length,
+      mismatch: last.filter((r) => r.result === 'mismatch').length,
+      rack_diff: last.filter((r) => r.rack_match === false).length,
+      no_rack_scan: last.filter((r) => r.result === 'ok' && !r.rack_scanned).length,
+    };
+  }
+
+  const SPOT_SELECT = `
+      k.*, sc.code AS count_code,
+      COALESCE(p.name, pi.name)          AS cur_name,
+      COALESCE(p.stock_qty, pi.stock_qty) AS cur_qty,
+      COALESCE(p.rack_location, pi.rack_location) AS cur_rack,
+      u.name AS checked_by_name
+    FROM stock_count_spot_checks k
+    JOIN stock_counts sc ON sc.id = k.count_id
+    LEFT JOIN products p    ON p.id  = k.product_id
+    LEFT JOIN promo_items pi ON pi.id = k.promo_item_id
+    LEFT JOIN users u       ON u.id  = k.checked_by`;
+
+  // 세션의 점검 내역 + 요약
+  app.get('/api/stock-counts/:id/spot-checks', { preHandler: [authGuard, requirePage('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const sc = await loadSession(id);
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(sc.mode) !== 'spot') return reply.code(409).send(SPOT_ONLY);
+    const rows = (await query(`SELECT ${SPOT_SELECT} WHERE k.count_id=$1 ORDER BY k.id DESC`, [id])).rows.map(checkRow);
+    // 필드명 status 는 쓰지 않는다 — 프런트 api() 가 HTTP status 와 한 객체에 펼쳐 담아 덮어쓴다.
+    return { count_id: id, code: sc.code, count_status: sc.status, summary: spotSummary(rows), checks: rows };
+  });
+
+  // 점검 1건 기록. body: { raw_code, result:'ok'|'mismatch', rack_scanned?, note? }
+  //   · 수량은 받지 않는다(디렉터 결정) — 현장은 맞음/틀림만 남기고, 정확한 수량은 전체 재고실사에서 센다.
+  //   · system_qty·master_rack 은 **서버가 지금 다시 읽어** 스냅샷으로 저장한다(프런트 값을 믿지 않는다).
+  app.post('/api/stock-counts/:id/spot-checks', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const b = req.body || {};
+    const raw = String(b.raw_code || '').trim();
+    if (!raw) return reply.code(400).send({ error: 'empty_code' });
+    const result = (b.result === 'ok' || b.result === 'mismatch') ? b.result : null;
+    if (!result) return reply.code(400).send({ error: 'bad_result', note: "result 는 'ok' 또는 'mismatch' 여야 합니다." });
+    const rack = String(b.rack_scanned || '').trim().slice(0, 120) || null;
+    const note = String(b.note || '').trim().slice(0, 300) || null;
+
+    const sc = await loadSession(id);
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(sc.mode) !== 'spot') return reply.code(409).send(SPOT_ONLY);
+    if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft', note: '완료된 점검에는 추가할 수 없습니다.' });
+
+    const r = await resolveCode(raw);
+    if (r.item_kind === 'unknown') return reply.code(404).send({ error: 'unknown_code', note: '등록되지 않은 코드입니다.' });
+    const snap = await spotSnapshot(r);
+    const rackMatch = rack ? rackInMaster(rack, snap.master_rack) : null;
+
+    const ins = (await query(
+      `INSERT INTO stock_count_spot_checks
+         (count_id, item_kind, product_id, promo_item_id, raw_code, matched_code, match_source,
+          item_name, system_qty, master_rack, result, rack_scanned, rack_match, note, checked_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+      [id, snap.kind, snap.product_id, snap.promo_item_id, raw, snap.code, r.source,
+       snap.name, snap.system_qty, snap.master_rack || null, result, rack, rackMatch, note, req.ctx.perm.userId])).rows[0];
+
+    const row = (await query(`SELECT ${SPOT_SELECT} WHERE k.id=$1`, [Number(ins.id)])).rows[0];
+    return { ok: true, check: checkRow(row) };
+  });
+
+  // 점검 1건 취소(오스캔 정정) — 진행중 세션에서 본인 기록, 디렉터는 전부.
+  app.delete('/api/stock-counts/:id/spot-checks/:checkId', { preHandler: [authGuard, requirePageEdit('warehouse')] }, async (req, reply) => {
+    const id = Number(req.params.id); const cid = Number(req.params.checkId);
+    const sc = await loadSession(id);
+    if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(sc.mode) !== 'spot') return reply.code(409).send(SPOT_ONLY);
+    if (sc.status !== 'draft') return reply.code(409).send({ error: 'not_draft', note: '완료된 점검은 수정할 수 없습니다.' });
+    const k = (await query(`SELECT id, checked_by FROM stock_count_spot_checks WHERE id=$1 AND count_id=$2`, [cid, id])).rows[0];
+    if (!k) return reply.code(404).send({ error: 'check_not_found' });
+    if (!isDirector(req) && Number(k.checked_by) !== Number(req.ctx.perm.userId)) {
+      return reply.code(403).send({ error: 'not_owner', note: '본인이 기록한 점검만 취소할 수 있습니다.' });
+    }
+    await query(`DELETE FROM stock_count_spot_checks WHERE id=$1 AND count_id=$2`, [cid, id]);
+    return { ok: true };
+  });
+
+  // 세션을 넘나드는 점검 이력 — "이 SKU 를 마지막으로 언제 확인했나"
+  //   필터: days(기본 30) 또는 from/to · code(제품번호 부분일치) · result · rack · 세션
+  app.get('/api/stock-counts/spot/history', { preHandler: [authGuard, requirePage('warehouse')] }, async (req) => {
+    const q = req.query || {};
+    const limit = Math.min(Number(q.limit) || 300, 2000);
+    const args = [];
+    const where = [`sc.mode='spot'`, `sc.status <> 'canceled'`];
+    if (q.from) { args.push(String(q.from)); where.push(`k.checked_at >= $${args.length}::date`); }
+    if (q.to) { args.push(String(q.to)); where.push(`k.checked_at < ($${args.length}::date + 1)`); }
+    if (!q.from && !q.to) {
+      const days = Math.min(Math.max(Number(q.days) || 30, 1), 730);
+      where.push(`k.checked_at >= now() - INTERVAL '${days} days'`);
+    }
+    if (q.code) { args.push('%' + String(q.code).trim().toUpperCase() + '%'); where.push(`UPPER(COALESCE(k.matched_code,k.raw_code)) LIKE $${args.length}`); }
+    if (q.result === 'ok' || q.result === 'mismatch') { args.push(q.result); where.push(`k.result = $${args.length}`); }
+    if (q.rack) { args.push(String(q.rack).trim().toUpperCase()); where.push(`(UPPER(COALESCE(k.rack_scanned,'')) = $${args.length} OR UPPER(COALESCE(k.master_rack,'')) LIKE '%'||$${args.length}||'%')`); }
+    if (q.count_id) { args.push(Number(q.count_id)); where.push(`k.count_id = $${args.length}`); }
+    args.push(limit);
+
+    const rows = (await query(
+      `SELECT ${SPOT_SELECT} WHERE ${where.join(' AND ')} ORDER BY k.checked_at DESC, k.id DESC LIMIT $${args.length}`,
+      args)).rows.map(checkRow);
+
+    // SKU별 최근 점검(이력 화면의 두 번째 표) — 위 필터 결과 안에서 집계
+    const bySku = new Map();
+    for (const r of rows) {                                   // 최신순이므로 첫 등장 = 최근 점검
+      const key = r.item_kind + ':' + (r.product_id != null ? r.product_id : r.promo_item_id);
+      const cur = bySku.get(key);
+      if (!cur) bySku.set(key, { code: r.matched_code || r.raw_code, name: r.item_name, item_kind: r.item_kind,
+        product_id: r.product_id, promo_item_id: r.promo_item_id, last_at: r.checked_at, last_result: r.result,
+        last_rack: r.rack_scanned || r.master_rack, checks: 1, mismatch: r.result === 'mismatch' ? 1 : 0 });
+      else { cur.checks += 1; if (r.result === 'mismatch') cur.mismatch += 1; }
+    }
+    return { summary: spotSummary(rows), checks: rows, by_sku: [...bySku.values()], truncated: rows.length >= limit };
+  });
+
   // ================= 대조(reconcile) =================
   // 세션 내 항목별 실사합계 vs 시스템 재고. 5분류.
   //   match / short(실물<시스템) / over(실물>시스템) / uncounted(재고有·미실사) / unknown(미등록)
@@ -373,6 +586,8 @@ export default async function stockCountRoutes(app) {
       `SELECT sc.*, u.name AS started_by_name FROM stock_counts sc
          LEFT JOIN users u ON u.id=sc.started_by WHERE sc.id=$1`, [id])).rows[0];
     if (!sc) return reply.code(404).send({ error: 'not_found' });
+    // 스팟점검 세션은 대조 대상이 아니다 — 센 적 없는 SKU 를 전부 「미실사」로 잡아 무의미하다.
+    if (normMode(sc.mode) === 'spot') return reply.code(409).send(FULL_ONLY);
 
     // 실사한 부품(집계) + 시스템 재고
     const parts = (await query(
@@ -581,8 +796,9 @@ export default async function stockCountRoutes(app) {
   app.post('/api/stock-counts/:id/apply/preview', { preHandler: [authGuard] }, async (req, reply) => {
     if (!isDirector(req)) return reply.code(403).send({ error: 'director_only', note: '디렉터 승인이 필요합니다.' });
     const id = Number(req.params.id);
-    const sc = (await query(`SELECT status FROM stock_counts WHERE id=$1`, [id])).rows[0];
+    const sc = await loadSession(id);
     if (!sc) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(sc.mode) === 'spot') return reply.code(409).send(FULL_ONLY);
     if (sc.status !== 'submitted') return reply.code(409).send({ error: 'not_submitted', note: '제출된 실사만 적용할 수 있습니다.' });
     const items = await buildReviewList(id);
     const plan = await buildAdjustPlan(id);            // 하위호환(레거시 필드 유지)
@@ -597,6 +813,10 @@ export default async function stockCountRoutes(app) {
     const id = Number(req.params.id);
     const uid = req.ctx.perm.userId;
     const body = req.body || {};
+    // 모드 확인이 PIN보다 먼저 — 스팟 세션이면 "PIN 틀림"이 아니라 이유를 정확히 돌려준다.
+    const scMode = await loadSession(id);
+    if (!scMode) return reply.code(404).send({ error: 'not_found' });
+    if (normMode(scMode.mode) === 'spot') return reply.code(409).send(FULL_ONLY);
     // 디렉터 PIN 확인 — 반영은 되돌릴 수 없으므로 본인 재인증
     const pin = String(body.pin || '');
     if (!pin) return reply.code(400).send({ error: 'pin_required', note: 'PIN을 입력하세요.' });
@@ -613,8 +833,10 @@ export default async function stockCountRoutes(app) {
       }
     }
     const result = await withTx(async (c) => {
-      const sc = (await c.query(`SELECT id, code, status FROM stock_counts WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+      const sc = (await c.query(`SELECT id, code, status, mode FROM stock_counts WHERE id=$1 FOR UPDATE`, [id])).rows[0];
       if (!sc) return { error: 'not_found' };
+      // 스팟점검은 기록 전용 — 재고를 바꾸는 경로에 절대 들어오지 못한다(디렉터 결정).
+      if (normMode(sc.mode) === 'spot') return { error: 'full_only' };
       if (sc.status !== 'submitted') return { error: 'not_submitted' };
       const review = await buildReviewList(id, c);
       const eventNo = Number((await c.query(`SELECT nextval('stock_event_seq') AS n`)).rows[0].n);
@@ -677,7 +899,8 @@ export default async function stockCountRoutes(app) {
       return { ok: true, applied, rack_saved: rackSaved, reviewed: review.length, event_no: eventNo, code: sc.code };
     });
     if (result.error) {
-      const codeMap = { not_found: 404, not_submitted: 409, would_go_negative: 400 };
+      const codeMap = { not_found: 404, not_submitted: 409, full_only: 409, would_go_negative: 400 };
+      if (result.error === 'full_only') return reply.code(409).send(FULL_ONLY);
       return reply.code(codeMap[result.error] || 400).send(result);
     }
     await logEvent({ userId: uid, action: 'update', target: `stock_count:${id}`, detail: { step: 'apply', applied: result.applied, rack_saved: result.rack_saved, event_no: result.event_no } });
