@@ -9,6 +9,18 @@
 //   PUT    /api/daily-summary/:date/memo 날짜별 자유 메모 저장 (디렉터)
 //   DELETE /api/daily-summary/:date      삭제 (디렉터)
 //
+//   ── 기간 묶음(주간) 요약 — 여러 날짜를 하나의 스토리로 (0189) ──
+//   POST   /api/period-summary/generate  {dates:[…], title?} 일자별 요약을 2차 요약 (디렉터)
+//   GET    /api/period-summary/list      묶음 보관함 목록 (디렉터)
+//   GET    /api/period-summary/:id       1건 전체 (디렉터)
+//   PUT    /api/period-summary/:id/memo  메모 (디렉터)
+//   DELETE /api/period-summary/:id       삭제 (디렉터)
+//
+//   ── 「📝 나의 기록」(calendar_journal, 0182) 반영 ──
+//   · 일자 수집에 그날의 일지 원문을 포함해 ERP 자동 기록과 함께 요약한다.
+//   · 일지는 본래 작성자 본인만 열람하는 자료 → 디렉터 단일 운영 전제.
+//     끄려면 DAILY_SUMMARY_JOURNAL=0.
+//
 //   ── 안전·격리 원칙(wbrMbrRoutes 와 동일) ──
 //   · 100% 읽기 전용 수집(다른 테이블에 영향 없음) + daily_summaries 만 기록.
 //   · ANTHROPIC_API_KEY 필요(없으면 503 no_api_key). 끄려면 DAILY_SUMMARY_ENABLED=0.
@@ -19,12 +31,14 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { MX_OFFSET_MIN } from '../workingHours.js';
-import { buildDailyPrompt, digestStats, extractText, clip, krDate } from '../dayDigest.js';
+import { buildDailyPrompt, buildPeriodPrompt, periodLabel, digestStats, extractText, clip, krDate } from '../dayDigest.js';
 import { waEnabled, waConfig, sendDailySummaryWa } from '../waSend.js';
 
 const MODEL = process.env.DAILY_SUMMARY_MODEL || 'claude-sonnet-4-5-20250929';
 const MAX_DATES = 7;               // 한 번에 생성할 최대 날짜 수(순차 처리)
+const MAX_PERIOD_DATES = 31;       // 묶음 요약 한 건에 넣을 최대 날짜 수
 const MAX_OUTPUT_TOKENS = 2500;
+const MAX_PERIOD_OUTPUT_TOKENS = 4000;
 const API_TIMEOUT_MS = 120000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -32,6 +46,8 @@ function aiEnabled() {
   if (process.env.DAILY_SUMMARY_ENABLED === '0') return false;
   return !!process.env.ANTHROPIC_API_KEY;
 }
+// 「나의 기록」(개인 일지) 스캔 여부 — 끄려면 DAILY_SUMMARY_JOURNAL=0
+function journalEnabled() { return process.env.DAILY_SUMMARY_JOURNAL !== '0'; }
 
 // ── 날짜 헬퍼 (MX 현지 하루 = UTC 로는 [D 00:00−offset, 다음날 00:00−offset)) ──
 function shiftYmd(ymd, days) {
@@ -74,6 +90,25 @@ export async function collectDayDigest(dateStr) {
     try { return await fn(); }
     catch (e) { dg.errors.push(key); return null; }
   }
+
+  // ⓪ 「📝 나의 기록」(calendar_journal) — 일정 화면에서 디렉터가 직접 쓴 그날의 일지.
+  //    · 일지는 원래 작성자 본인만 읽는 자료다. 요약에 넣으면 daily_summaries 를 통해
+  //      다른 디렉터 계정도 읽을 수 있게 되므로, 디렉터 단일 운영 전제에서만 켠다.
+  //      끄려면 Railway 환경변수 DAILY_SUMMARY_JOURNAL=0.
+  //    · 0182 미적용(테이블 없음)이면 조용히 건너뛴다.
+  dg.journal = (journalEnabled() ? (await safe('journal', async () => {
+    const rows = (await query(
+      `SELECT j.content, j.updated_at, u.name AS author
+         FROM calendar_journal j
+         LEFT JOIN users u ON u.id = j.user_id
+        WHERE j.entry_date = $1 AND COALESCE(j.content,'') <> ''
+        ORDER BY j.user_id`, [dateStr])).rows;
+    return rows.map((r) => ({
+      author: r.author || null,
+      content: String(r.content || '').slice(0, 20000),
+      updated_at: r.updated_at || null,
+    }));
+  })) : []) || [];
 
   // ① 일정 — 전 직원·전 scope(개인 포함). 타임드는 event_at 의 MX 날짜로 판정(±1일 조회 후 필터).
   dg.schedule = (await safe('schedule', async () => {
@@ -346,7 +381,7 @@ export async function collectDayDigest(dateStr) {
 }
 
 // ── Anthropic 호출(wbrMbrRoutes 와 동일 패턴) ──
-async function callAnthropic(prompt) {
+async function callAnthropic(prompt, maxTokens = MAX_OUTPUT_TOKENS) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
   try {
@@ -359,7 +394,7 @@ async function callAnthropic(prompt) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: MAX_OUTPUT_TOKENS,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: ctrl.signal,
@@ -450,6 +485,34 @@ async function upsertSummary(dateStr, content, digest, uid) {
        VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at, updated_at`,
     [dateStr, content, dj, MODEL, uid])).rows[0];
   return { id: Number(ins.id), regenerated: false, updated_at: ins.updated_at };
+}
+
+// 일자별 헤드라인 수치를 기간 합계로 누적
+function sumStats(list) {
+  const out = { journal: 0, schedule: 0, todos: 0, quotes: 0, invoices: 0, txn_in: 0, txn_out: 0, activity: 0 };
+  for (const s of (Array.isArray(list) ? list : [])) {
+    for (const k of Object.keys(out)) out[k] += n((s || {})[k]);
+  }
+  return out;
+}
+
+// 같은 날짜 조합 = 1건 유지 (pg-mem 호환 위해 ON CONFLICT 미사용)
+async function upsertPeriod({ dates, title, content, stats, uid }) {
+  const key = dates.join(',');
+  const sj = JSON.stringify(stats || {});
+  const upd = (await query(
+    `UPDATE period_summaries
+        SET title=$2, content_md=$3, stats=$4, model=$5, created_by=$6,
+            date_from=$7, date_to=$8, day_count=$9, updated_at=now()
+      WHERE dates_key=$1
+      RETURNING id`,
+    [key, title, content, sj, MODEL, uid, dates[0], dates[dates.length - 1], dates.length])).rows[0];
+  if (upd) return { id: Number(upd.id), regenerated: true };
+  const ins = (await query(
+    `INSERT INTO period_summaries (title, date_from, date_to, day_count, dates_key, content_md, stats, model, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [title, dates[0], dates[dates.length - 1], dates.length, key, content, sj, MODEL, uid])).rows[0];
+  return { id: Number(ins.id), regenerated: false };
 }
 
 export default async function dailySummaryRoutes(app) {
@@ -569,6 +632,132 @@ export default async function dailySummaryRoutes(app) {
     return { ok: true, id: Number(r.id) };
   });
 
+  // ═══════════════════════════════════════════════════════════════════
+  // 기간 묶음(주간) 요약 — 여러 날짜를 하나의 스토리로
+  //   재료 = 이미 저장된 일자별 요약 본문 + 그날의 「나의 기록」 원문(digest 에서).
+  //   일자별 요약이 없는 날짜가 섞여 있으면 400 missing_dates 로 알려주고,
+  //   프런트가 기존 일자별 생성 경로로 먼저 만든 뒤 다시 호출한다(비용·시간 예측 가능).
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ── 생성/재생성 — 디렉터 전용 ──
+  app.post('/api/period-summary/generate', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    if (!aiEnabled()) {
+      return reply.code(503).send({ error: 'no_api_key', note: 'Railway 환경변수 ANTHROPIC_API_KEY 를 설정해야 AI 요약을 사용할 수 있습니다.' });
+    }
+    const b = req.body || {};
+    const dates = Array.isArray(b.dates)
+      ? [...new Set(b.dates.map((s) => String(s || '').trim()).filter((s) => DATE_RE.test(s)))].sort()
+      : [];
+    if (dates.length < 2) return reply.code(400).send({ error: 'need_two_dates' });
+    if (dates.length > MAX_PERIOD_DATES) return reply.code(400).send({ error: 'too_many_dates', max: MAX_PERIOD_DATES });
+    let title = typeof b.title === 'string' ? b.title.trim().slice(0, 200) : '';
+
+    // 저장된 일자별 요약 로드(순서 = 날짜 오름차순 = 스토리 순서)
+    const ph = dates.map((_, i) => '$' + (i + 1)).join(',');
+    const rows = (await query(
+      `SELECT summary_date, content_md, digest FROM daily_summaries
+        WHERE summary_date IN (${ph}) ORDER BY summary_date`, dates)).rows;
+    const byDate = {};
+    for (const r of rows) byDate[d10(r.summary_date)] = r;
+    const missing = dates.filter((d) => !byDate[d] || !String(byDate[d].content_md || '').trim());
+    if (missing.length) return reply.code(400).send({ error: 'missing_dates', missing });
+
+    const parts = dates.map((d) => {
+      const r = byDate[d];
+      const dg = typeof r.digest === 'string' ? safeParse(r.digest) : (r.digest || {});
+      return { date: d, content_md: r.content_md, journal: Array.isArray(dg.journal) ? dg.journal : [], stats: digestStats(dg) };
+    });
+
+    const ai = await callAnthropic(buildPeriodPrompt(dates, parts), MAX_PERIOD_OUTPUT_TOKENS);
+    if (!ai.ok) return reply.code(502).send({ error: 'ai_failed', detail: ai.error });
+    const content = (ai.text || '').trim();
+    if (!content) return reply.code(502).send({ error: 'ai_empty' });
+
+    if (!title) title = periodLabel(dates);
+    const stats = sumStats(parts.map((p) => p.stats));
+    const uid = req.ctx.perm.userId;
+    const saved = await upsertPeriod({ dates, title, content, stats, uid });
+    logEvent({
+      userId: uid, deviceId: req.ctx.deviceId,
+      action: 'create', target: `period_summary:${dates[0]}_${dates[dates.length - 1]}`,
+      detail: { days: dates.length, regenerated: saved.regenerated },
+    });
+    return { ok: true, id: saved.id, regenerated: saved.regenerated, title, label: periodLabel(dates), model: MODEL, stats };
+  });
+
+  // ── 보관함 목록 — 디렉터 전용 ──
+  app.get('/api/period-summary/list', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 300);
+    let rows = [];
+    try {
+      rows = (await query(
+        `SELECT p.id, p.title, p.date_from, p.date_to, p.day_count, p.dates_key, p.stats, p.model, p.memo,
+                p.created_at, p.updated_at, u.name AS created_by_name
+           FROM period_summaries p
+           LEFT JOIN users u ON u.id = p.created_by
+          ORDER BY p.date_to DESC, p.date_from DESC, p.id DESC
+          LIMIT ${limit}`)).rows;
+    } catch (e) {
+      return { ai_enabled: aiEnabled(), migration_required: true, items: [] };
+    }
+    return {
+      ai_enabled: aiEnabled(),
+      items: rows.map((r) => ({
+        id: Number(r.id), title: r.title || '', label: periodLabel(splitKey(r.dates_key)),
+        date_from: d10(r.date_from), date_to: d10(r.date_to), day_count: Number(r.day_count) || 0,
+        dates: splitKey(r.dates_key), model: r.model,
+        has_memo: !!(r.memo && String(r.memo).trim()),
+        stats: typeof r.stats === 'string' ? safeParse(r.stats) : (r.stats || {}),
+        created_by_name: r.created_by_name || null,
+        created_at: r.created_at, updated_at: r.updated_at,
+      })),
+    };
+  });
+
+  // ── 1건 전체 — 디렉터 전용 ──
+  app.get('/api/period-summary/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(
+      `SELECT p.id, p.title, p.date_from, p.date_to, p.day_count, p.dates_key, p.content_md, p.stats,
+              p.model, p.memo, p.created_at, p.updated_at, u.name AS created_by_name
+         FROM period_summaries p LEFT JOIN users u ON u.id = p.created_by
+        WHERE p.id = $1`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return {
+      id: Number(r.id), title: r.title || '', label: periodLabel(splitKey(r.dates_key)),
+      date_from: d10(r.date_from), date_to: d10(r.date_to), day_count: Number(r.day_count) || 0,
+      dates: splitKey(r.dates_key), content_md: r.content_md, model: r.model, memo: r.memo || '',
+      stats: typeof r.stats === 'string' ? safeParse(r.stats) : (r.stats || {}),
+      created_by_name: r.created_by_name || null,
+      created_at: r.created_at, updated_at: r.updated_at,
+    };
+  });
+
+  // ── 메모 저장 — 디렉터 전용 ──
+  app.put('/api/period-summary/:id/memo', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const memo = (req.body || {}).memo;
+    if (memo != null && typeof memo !== 'string') return reply.code(400).send({ error: 'bad_memo' });
+    if (memo != null && memo.length > 20000) return reply.code(413).send({ error: 'memo_too_large' });
+    const r = (await query(
+      `UPDATE period_summaries SET memo=$2, updated_at=now() WHERE id=$1 RETURNING id`,
+      [id, (memo && memo.trim()) ? memo : null])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true, id: Number(r.id) };
+  });
+
+  // ── 삭제 — 디렉터 전용 ──
+  app.delete('/api/period-summary/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const r = (await query(`DELETE FROM period_summaries WHERE id=$1 RETURNING id, date_from, date_to`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found' });
+    logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'delete', target: `period_summary:${d10(r.date_from)}_${d10(r.date_to)}` });
+    return { ok: true, id: Number(r.id) };
+  });
+
   // ── 매일 MX 05:00 전일 요약 → WhatsApp 자동 발송 스케줄러 (5분 주기 체크) ──
   //   · 05:00 이후 첫 체크에서 발송(서버 재시작으로 놓쳐도 그날 안에 따라잡음).
   //   · 발송 성공(wa_sent_at) 시 하루 1회 가드 · 실패는 5분 간격 재시도(최대 5회).
@@ -585,3 +774,4 @@ export default async function dailySummaryRoutes(app) {
 }
 
 function safeParse(s) { try { return JSON.parse(s); } catch (_) { return {}; } }
+function splitKey(k) { return String(k || '').split(',').map((s) => s.trim()).filter((s) => DATE_RE.test(s)); }

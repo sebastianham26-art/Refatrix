@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 오늘 요약 · build daily-0801b</title>
+<title>Refatrix ERP · 오늘 요약 · build daily-0828a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -143,7 +143,24 @@
         <span class="hint" id="genHint"></span>
       </div>
       <div class="hint hidden" id="noKey" style="margin-top:6px;color:var(--expense)">⚠ 서버에 ANTHROPIC_API_KEY 가 설정되지 않아 AI 요약을 사용할 수 없습니다. (Railway → Variables 에 키 등록)</div>
-      <div class="hint" style="margin-top:6px">같은 날짜를 다시 생성하면 그날의 요약이 <b>최신 기록으로 갱신</b>됩니다(날짜당 1건 보관). 한 번에 여러 날짜 선택 시 순서대로 생성됩니다(날짜당 30초~2분).</div>
+      <div class="hint" style="margin-top:6px">같은 날짜를 다시 생성하면 그날의 요약이 <b>최신 기록으로 갱신</b>됩니다(날짜당 1건 보관). 한 번에 여러 날짜 선택 시 순서대로 생성됩니다(날짜당 30초~2분).<br>
+        일정 화면의 <b>📝 나의 기록</b>(그날 직접 쓴 일지)도 함께 스캔해 ERP 기록과 묶어 요약합니다.</div>
+    </div>
+
+    <!-- 기간 묶음(주간) 요약 -->
+    <div class="card no-print">
+      <div class="card-h">🧩 기간 묶음 요약 <span class="src">위에서 고른 날짜들을 <b>하나의 스토리</b>로 — 주간·기간 리뷰용</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:240px"><label>제목 (비우면 기간이 제목이 됩니다)</label><input id="perTitle" type="text" style="width:100%" placeholder="예) 8월 4주차 주간 요약"></div>
+      </div>
+      <div class="genrow">
+        <button class="btn gold" id="perBtn">🧩 선택 날짜를 하나의 스토리로 묶기</button>
+        <span class="hint" id="perHint"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">
+        날짜를 <b>2개 이상</b> 선택하세요(최대 31일). 일자별 요약이 아직 없는 날짜는 <b>먼저 자동으로 일자별 요약을 만든 뒤</b> 묶습니다.
+        묶음은 이미 만든 일자별 요약을 이어 붙여 다시 요약하므로 토큰 비용이 적게 듭니다. 같은 날짜 조합을 다시 묶으면 기존 건이 갱신됩니다.
+      </div>
     </div>
 
     <!-- WhatsApp 자동 발송 -->
@@ -161,6 +178,13 @@
       </div>
     </div>
 
+    <!-- 기간 묶음 보관함 -->
+    <div class="card">
+      <div class="card-h">🧩 기간 묶음 보관함 <span class="src">여러 날짜를 하나로 엮은 요약 · 같은 날짜 조합은 1건</span></div>
+      <div id="perList"><div class="hint">불러오는 중…</div></div>
+      <div id="perView" class="hidden sumview"></div>
+    </div>
+
     <!-- 일자별 보관함 -->
     <div class="card">
       <div class="card-h">📚 일자별 보관함 <span class="src">누적 기록 · 날짜당 1건 · 재생성 시 갱신</span></div>
@@ -171,13 +195,15 @@
 </div>
 
 <script>
-  console.log('[daily] build daily-0801b (WhatsApp 05:00 자동 발송)');
+  console.log('[daily] build daily-0828a (나의 기록 반영 + 기간 묶음 요약)');
   let session={token:null,user:null,api:''};
   let isDirector=false, aiEnabled=false;
   let selDates=new Set();            // 선택된 날짜(YYYY-MM-DD, 월 이동해도 유지)
   let sumMap={};                     // 날짜 → 보관함 메타
   let items=[];                      // 보관함 목록
   let curView=null;                  // 열람 중 1건
+  let perItems=[];                   // 기간 묶음 보관함 목록
+  let curPer=null;                   // 열람 중 묶음 1건
   let curMonth=(function(){const d=new Date();return {y:d.getFullYear(),m:d.getMonth()};})();
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -217,6 +243,7 @@
       $('app').classList.remove('hidden');
       renderCal();
       await loadList();
+      loadPeriodList();
       loadWaStatus();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -268,34 +295,197 @@
 
   // ===== 생성 (서버는 호출당 최대 7일 → 초과분은 순차 분할) =====
   $('genBtn').addEventListener('click',generate);
+
+  // 일자별 요약 생성 공용 루틴 — 묶음 요약에서도 재사용.
+  // 성공 시 results 배열, API 키/치명 오류는 throw.
+  async function runDailyGenerate(dates,onProgress){
+    const CHUNK=7; const all=[];
+    for(let i=0;i<dates.length;i+=CHUNK){
+      const part=dates.slice(i,i+CHUNK);
+      if(onProgress) onProgress(Math.min(i+part.length,dates.length),dates.length,part);
+      const res=await fetch(session.api+'/api/daily-summary/generate',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({dates:part})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        const e=new Error(d.error==='no_api_key'?'API 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)':('생성 실패: '+(d.error||res.status)));
+        e.fatal=true; throw e;
+      }
+      all.push(...(d.results||[]));
+    }
+    return all;
+  }
+
   async function generate(){
     const dates=[...selDates].sort();
     if(!dates.length) return;
     const hint=$('genHint'); const btn=$('genBtn'); const prev=btn.textContent;
     btn.disabled=true; hint.style.color='var(--muted)';
-    const CHUNK=7; const all=[];
     try{
-      for(let i=0;i<dates.length;i+=CHUNK){
-        const part=dates.slice(i,i+CHUNK);
-        btn.textContent='🤖 생성 중… ('+Math.min(i+part.length,dates.length)+'/'+dates.length+')';
+      const all=await runDailyGenerate(dates,(done,total,part)=>{
+        btn.textContent='🤖 생성 중… ('+done+'/'+total+')';
         hint.textContent=part.join(', ')+' 요약을 생성하고 있습니다. 날짜당 30초~2분 걸립니다.';
-        const res=await fetch(session.api+'/api/daily-summary/generate',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({dates:part})});
-        const d=await res.json();
-        if(!res.ok||d.error){
-          hint.style.color='var(--expense)';
-          hint.textContent= d.error==='no_api_key' ? 'API 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)' : '생성 실패: '+(d.error||res.status);
-          return;
-        }
-        all.push(...(d.results||[]));
-      }
+      });
       const ok=all.filter(r=>r.ok), bad=all.filter(r=>!r.ok);
       hint.style.color=bad.length?'var(--expense)':'var(--income)';
       hint.textContent=ok.length+'개 날짜 요약 저장'+(bad.length?(' · 실패 '+bad.length+'건: '+bad.map(r=>r.date+'('+(r.detail||r.error)+')').join(', ')):'');
       selDates.clear();
       await loadList();
       if(ok.length===1) openSum(ok[0].date);
-    }catch(e){ hint.style.color='var(--expense)'; hint.textContent='서버에 연결할 수 없습니다.'; }
+    }catch(e){ hint.style.color='var(--expense)'; hint.textContent=e&&e.fatal?e.message:'서버에 연결할 수 없습니다.'; }
     finally{ btn.textContent=prev; updateSelInfo(); }
+  }
+
+  // ===== 기간 묶음(주간) 요약 =====
+  const PER_MAX=31;
+  $('perBtn').addEventListener('click',genPeriod);
+  async function genPeriod(){
+    const dates=[...selDates].sort();
+    const hint=$('perHint'); const btn=$('perBtn'); const prev=btn.textContent;
+    hint.style.color='var(--expense)';
+    if(dates.length<2){ hint.textContent='날짜를 2개 이상 선택하세요. (위 달력에서 여러 날짜를 클릭)'; return; }
+    if(dates.length>PER_MAX){ hint.textContent='한 번에 묶을 수 있는 날짜는 최대 '+PER_MAX+'일입니다. (현재 '+dates.length+'일)'; return; }
+    btn.disabled=true; hint.style.color='var(--muted)';
+    try{
+      // ① 일자별 요약이 없는 날짜 먼저 생성(묶음의 재료)
+      const missing=dates.filter(d=>!sumMap[d]);
+      if(missing.length){
+        btn.textContent='🤖 일자별 요약 준비 중…';
+        const all=await runDailyGenerate(missing,(done,total,part)=>{
+          btn.textContent='🤖 일자별 준비… ('+done+'/'+total+')';
+          hint.textContent='묶음의 재료가 되는 일자별 요약을 먼저 만들고 있습니다: '+part.join(', ');
+        });
+        await loadList();
+        const bad=all.filter(r=>!r.ok);
+        if(bad.length){ hint.style.color='var(--expense)'; hint.textContent='일자별 요약 실패 '+bad.length+'건: '+bad.map(r=>r.date+'('+(r.detail||r.error)+')').join(', '); return; }
+      }
+      // ② 묶음 2차 요약
+      btn.textContent='🧩 스토리로 묶는 중…';
+      hint.style.color='var(--muted)';
+      hint.textContent=dates.length+'일치를 하나의 스토리로 정리하고 있습니다 (30초~2분).';
+      const res=await fetch(session.api+'/api/period-summary/generate',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),
+        body:JSON.stringify({dates,title:$('perTitle').value.trim()})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        hint.style.color='var(--expense)';
+        hint.textContent = d.error==='missing_dates' ? ('일자별 요약이 없는 날짜가 있습니다: '+(d.missing||[]).join(', '))
+          : d.error==='no_api_key' ? 'API 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)'
+          : d.error==='need_two_dates' ? '날짜를 2개 이상 선택하세요.'
+          : d.error==='too_many_dates' ? ('최대 '+(d.max||PER_MAX)+'일까지 묶을 수 있습니다.')
+          : ('묶음 요약 실패: '+(d.detail||d.error||res.status));
+        return;
+      }
+      hint.style.color='var(--income)';
+      hint.textContent='✅ '+(d.regenerated?'기존 묶음 요약을 갱신했습니다':'묶음 요약을 만들었습니다')+' — '+(d.label||'');
+      selDates.clear(); renderCal(); updateSelInfo();
+      await loadPeriodList();
+      openPeriod(d.id);
+    }catch(e){ hint.style.color='var(--expense)'; hint.textContent=e&&e.fatal?e.message:'서버에 연결할 수 없습니다.'; }
+    finally{ btn.textContent=prev; btn.disabled=false; }
+  }
+
+  async function loadPeriodList(){
+    try{
+      const res=await fetch(session.api+'/api/period-summary/list',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(d.migration_required){ $('perList').innerHTML='<div class="hint" style="color:var(--expense)">⚠ 기간 묶음 표가 아직 없습니다. 서버에서 <code>npm run migrate</code> 를 실행하세요. (0189_period_summaries)</div>'; perItems=[]; return; }
+      perItems=d.items||[];
+      renderPerList();
+    }catch(e){ $('perList').innerHTML='<div class="hint">기간 묶음 보관함을 불러오지 못했습니다.</div>'; }
+  }
+  function renderPerList(){
+    if(!perItems.length){ $('perList').innerHTML='<div class="hint">아직 묶음 요약이 없습니다. 달력에서 날짜를 2개 이상 고른 뒤 <b>🧩 하나의 스토리로 묶기</b>를 눌러보세요.</div>'; return; }
+    let h='<table class="arch"><thead><tr><th>제목 / 기간</th><th>합계 기록</th><th>생성</th><th style="width:120px"></th></tr></thead><tbody>';
+    for(const it of perItems){
+      h+='<tr><td class="t">'+esc(it.title||it.label)+(it.has_memo?'<span class="mchip">메모</span>':'')
+        +'<br><span class="st" style="font-weight:500">'+esc(it.label||'')+'</span></td>'
+        +'<td><span class="st">'+esc(statLine(it.stats))+'</span></td>'
+        +'<td><span class="st">'+fmtDateTime(it.updated_at||it.created_at)+(it.created_by_name?'<br>'+esc(it.created_by_name):'')+'</span></td>'
+        +'<td style="white-space:nowrap"><button class="btn sm per-open" data-i="'+it.id+'">열람</button> '
+        +'<button class="btn sm per-del no-print" data-i="'+it.id+'" style="background:#b4561f">🗑</button></td></tr>';
+    }
+    h+='</tbody></table>';
+    $('perList').innerHTML=h;
+    $('perList').querySelectorAll('.per-open').forEach(b=>b.addEventListener('click',()=>openPeriod(b.getAttribute('data-i'))));
+    $('perList').querySelectorAll('.per-del').forEach(b=>b.addEventListener('click',()=>delPeriod(b.getAttribute('data-i'))));
+  }
+  async function openPeriod(id){
+    const v=$('perView'); v.classList.remove('hidden'); v.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const res=await fetch(session.api+'/api/period-summary/'+id,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      renderPerView(d);
+    }catch(e){ v.innerHTML='<div class="hint">묶음 요약을 불러오지 못했습니다.</div>'; }
+  }
+  function renderPerView(d){
+    curPer=d;
+    const v=$('perView'); v.classList.remove('hidden');
+    v.innerHTML='<div class="svhead"><b>🧩 '+esc(d.title||d.label)+'</b>'
+      +'<span class="meta">'+esc(d.label||'')+' · 생성 '+fmtDateTime(d.updated_at||d.created_at)+(d.created_by_name?' · '+esc(d.created_by_name):'')+(d.model?' · '+esc(d.model):'')+'</span>'
+      +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap" class="no-print">'
+        +'<span class="saveind" id="perMemoInd"></span>'
+        +'<button class="btn sm gold" id="perPdfBtn">🧾 PDF/인쇄</button>'
+        +'<button class="btn sm" id="perCopyBtn" style="background:var(--brand-soft)">📋 복사</button>'
+        +'<button class="btn sm" id="perCloseBtn" style="background:#8b8577">닫기</button>'
+      +'</span></div>'
+      +'<div class="hint" style="margin-bottom:6px">묶은 날짜: '+esc((d.dates||[]).join(' · '))+'</div>'
+      +'<div class="mdbody" id="perBody">'+mdToHtml(d.content_md||'')+'</div>'
+      +'<div class="summemo"><div class="mmh">📝 메모 <span class="hint" style="display:inline;margin:0">— 자유 기록 · 자동 저장</span></div>'
+      +'<div id="perMemo" contenteditable="true" data-ph="이 기간에 대한 메모를 남겨보세요…"></div></div>';
+    $('perMemo').textContent=d.memo||'';
+    $('perMemo').addEventListener('input',schedulePerMemoSave);
+    $('perPdfBtn').addEventListener('click',printPeriod);
+    $('perCopyBtn').addEventListener('click',copyPeriod);
+    $('perCloseBtn').addEventListener('click',()=>{ $('perView').classList.add('hidden'); $('perView').innerHTML=''; curPer=null; });
+    try{ if(v.scrollIntoView) v.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
+  }
+  async function delPeriod(id){
+    const it=perItems.find(x=>String(x.id)===String(id));
+    if(!confirm('「'+((it&&(it.title||it.label))||'묶음 요약')+'」 을 삭제할까요?')) return;
+    try{
+      const res=await fetch(session.api+'/api/period-summary/'+id,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error) throw new Error(d.error||res.status);
+      if(curPer&&String(curPer.id)===String(id)){ $('perView').classList.add('hidden'); $('perView').innerHTML=''; curPer=null; }
+      await loadPeriodList();
+    }catch(e){ alert('삭제 실패: '+e.message); }
+  }
+  let perMemoTimer=null;
+  function schedulePerMemoSave(){
+    if(!curPer) return;
+    const ind=$('perMemoInd'); if(ind){ ind.className='saveind'; ind.textContent='메모 저장 중…'; }
+    clearTimeout(perMemoTimer);
+    perMemoTimer=setTimeout(async()=>{
+      const el=$('perMemo'); if(!el||!curPer) return;
+      const memo=(el.innerText!=null?el.innerText:el.textContent)||'';
+      try{
+        const res=await fetch(session.api+'/api/period-summary/'+curPer.id+'/memo',{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify({memo})});
+        const d=await res.json();
+        if(!res.ok||d.error) throw new Error(d.error||res.status);
+        curPer.memo=memo;
+        const it=perItems.find(x=>String(x.id)===String(curPer.id)); if(it) it.has_memo=!!memo.trim();
+        if(ind){ ind.className='saveind ok'; ind.textContent='메모 저장됨'; setTimeout(()=>{ if(ind&&ind.textContent==='메모 저장됨') ind.textContent=''; },2000); }
+      }catch(e){ if(ind){ ind.className='saveind'; ind.style.color='var(--expense)'; ind.textContent='메모 저장 실패'; } }
+    },800);
+  }
+  function copyPeriod(){
+    if(!curPer) return;
+    const memo=(curPer.memo||'').trim();
+    const txt='['+(curPer.title||curPer.label)+']\n'+(curPer.label||'')+'\n\n'+(curPer.content_md||'')+(memo?('\n\n[메모]\n'+memo):'');
+    (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(
+      ()=>{ const b=$('perCopyBtn'); if(b){ const p=b.textContent; b.textContent='✅ 복사됨'; setTimeout(()=>{b.textContent=p;},1500); } },
+      ()=>{ alert('복사에 실패했습니다.'); });
+  }
+  function printPeriod(){
+    if(!curPer) return;
+    const memoEl=$('perMemo');
+    const memoTxt=(memoEl?((memoEl.innerText!=null?memoEl.innerText:memoEl.textContent)||''):(curPer.memo||'')).trim();
+    printDoc({
+      name:'Refatrix_PeriodSummary_'+String(curPer.date_from||'').replace(/-/g,'')+'_'+String(curPer.date_to||'').replace(/-/g,''),
+      h1:'🧩 '+(curPer.title||curPer.label),
+      meta:'Refatrix ERP · 디렉터 전용 기간 묶음 요약 · '+(curPer.label||'')+' · 생성 '+fmtDateTime(curPer.updated_at||curPer.created_at)+(curPer.created_by_name?' · '+curPer.created_by_name:''),
+      md:curPer.content_md||'', memo:memoTxt, raw:'',
+    });
   }
 
   // ===== 보관함 =====
@@ -315,6 +505,7 @@
   function statLine(st){
     st=st||{};
     const p=[];
+    if(st.journal) p.push('📝기록 '+st.journal);
     if(st.schedule) p.push('일정 '+st.schedule);
     if(st.todos) p.push('할일 '+st.todos);
     if(st.quotes) p.push('견적 '+st.quotes);
@@ -384,7 +575,7 @@
     $('pdfBtn').addEventListener('click',printSum);
     $('copyBtn').addEventListener('click',copySum);
     $('closeBtn').addEventListener('click',closeSum);
-    v.scrollIntoView({behavior:'smooth',block:'start'});
+    try{ if(v.scrollIntoView) v.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
   }
   function closeSum(){ $('sumView').classList.add('hidden'); $('sumView').innerHTML=''; curView=null; }
   function toggleRaw(){
@@ -407,6 +598,9 @@
   function rlist(arr){ return arr.length?('<ul class="rawlist">'+arr.map(x=>'<li>'+x+'</li>').join('')+'</ul>'):''; }
   function renderDigest(dg){
     dg=dg||{}; const out=[];
+    const jr=dg.journal||[];
+    out.push(rsec('📝 나의 기록 ('+jr.length+'건 · 일정 화면에서 직접 쓴 일지)',
+      rlist(jr.map(j=>'<b>'+esc(j.author||'디렉터')+'</b><br><span style="white-space:pre-wrap">'+esc(j.content||'')+'</span>'))));
     const sch=dg.schedule||[];
     out.push(rsec('📅 일정 ('+sch.length+'건)', rtable(['시간','구분','내용','작성','공유대상','메모'],
       sch.map(e=>[esc(e.time||'종일'),scopePill(e.scope)+(e.team?esc(e.team):''),esc(e.content||''),
@@ -482,10 +676,19 @@
   }
   function printSum(){
     if(!curView) return;
-    const name='Refatrix_DailySummary_'+curView.summary_date.replace(/-/g,'');
     const memoEl=$('sumMemo');
-    const memoTxt=(memoEl?((memoEl.innerText!=null?memoEl.innerText:memoEl.textContent)||''):(curView.memo||'')).trim();
-    const rawHtml=rawOpen?$('rawBody').innerHTML:'';
+    printDoc({
+      name:'Refatrix_DailySummary_'+curView.summary_date.replace(/-/g,''),
+      h1:'📋 '+krDate(curView.summary_date)+' 오늘 요약',
+      meta:'Refatrix ERP · 디렉터 전용 일일 요약 · 생성 '+fmtDateTime(curView.updated_at||curView.created_at)+(curView.created_by_name?' · '+curView.created_by_name:''),
+      md:curView.content_md||'',
+      memo:(memoEl?((memoEl.innerText!=null?memoEl.innerText:memoEl.textContent)||''):(curView.memo||'')).trim(),
+      raw:rawOpen?$('rawBody').innerHTML:'',
+    });
+  }
+  // 일일·묶음 요약 공용 인쇄(새 창)
+  function printDoc(o){
+    const name=o.name, memoTxt=o.memo||'', rawHtml=o.raw||'';
     const w=window.open('','_blank');
     if(!w){ alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해주세요.'); return; }
     w.document.write('<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>'+esc(name)+'</title>'
@@ -507,10 +710,9 @@
       +'.memo .mh{font-size:12.5px;font-weight:800;color:#1E5247;margin-bottom:4px}'
       +'.memo .mb{background:#fffef4;border:1px solid #E6E1D6;border-radius:8px;padding:10px 12px;white-space:pre-wrap;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
       +'@page{margin:14mm}</style></head><body>'
-      +'<h1>📋 '+esc(krDate(curView.summary_date))+' 오늘 요약</h1>'
-      +'<div class="meta">Refatrix ERP · 디렉터 전용 일일 요약 · 생성 '+fmtDateTime(curView.updated_at||curView.created_at)
-      +(curView.created_by_name?' · '+esc(curView.created_by_name):'')+'</div>'
-      +'<div class="md">'+mdToHtml(curView.content_md||'')+'</div>'
+      +'<h1>'+esc(o.h1||'')+'</h1>'
+      +'<div class="meta">'+esc(o.meta||'')+'</div>'
+      +'<div class="md">'+mdToHtml(o.md||'')+'</div>'
       +(memoTxt?('<div class="memo"><div class="mh">📝 메모</div><div class="mb">'+esc(memoTxt)+'</div></div>'):'')
       +(rawHtml?('<h3 style="margin-top:22px">📄 원본 기록</h3>'+rawHtml):'')
       +'</body></html>');
