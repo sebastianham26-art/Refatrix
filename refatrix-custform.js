@@ -30,7 +30,7 @@
       +'<div class="rcf-f"><label>팀 *</label><select id="rcf-team"></select></div>'
     +'</div>'
     +'<div class="rcf-row">'
-      +'<div class="rcf-f"><label>RFC(세금번호) * <span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none">— 선점 키</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
+      +'<div class="rcf-f"><label>RFC(세금번호)<span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none"> * — 선점 키</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
       +'<div class="rcf-f"><label>회사 종류</label><select id="rcf-type"><option value="">미지정</option><option>refraccionaria</option><option>Mayoreo</option><option>Flotia</option><option>taller</option><option>publico</option></select></div>'
       +'<div class="rcf-f"><label>담당자</label><select id="rcf-owner"><option value="">미지정</option></select></div>'
       +'<div class="rcf-f"><label>단계</label><select id="rcf-stage"><option value="">미지정</option></select></div>'
@@ -334,6 +334,7 @@
       if($('rcf-rfcmsg')) $('rcf-rfcmsg').innerHTML='';
     }
     var kb=$('rcf-rfckey'); if(kb) kb.style.display=isNew?'':'none';
+    if(!isNew&&$('rcf-rfcmsg')) $('rcf-rfcmsg').innerHTML='';   // 수정에서는 RFC 형식 안내를 띄우지 않는다
     lastClaim=null; lastCalc=null;
   }
   function applyCrossTeamUI(c,pending){
@@ -420,10 +421,10 @@
           b.constancia_file={ file_name:file.name, mime_type:file.type||'application/pdf', data_base64:await readFileB64(file) };
         }catch(e){ setMsg('err','CONSTANCIA 파일을 읽지 못했습니다. 다시 선택하거나 비워 두고 저장하세요.'); return; }
       }
-    }else{
-      // 수정: RFC 는 선점 키라 빈값으로 지울 수 없다.
-      if(!b.rfc){ setMsg('err','RFC 는 선점 키라 비울 수 없습니다. 값을 바꾸려면 새 RFC 를 입력하세요.'); return; }
     }
+    // ⚠ 수정(editingId) 에서는 RFC 를 요구하지 않는다.
+    //   전화·배송지·구매결정권자만 고치려는 사람에게 RFC 형식까지 요구하면 일상 업무가 막힌다.
+    //   비워 두면 서버가 기존 RFC 를 그대로 유지한다(선점은 안 풀린다).
     // 기본할인·외상일 변경 → 수정이유·제공조건 필수
     var td=termsDiff();
     if(td){

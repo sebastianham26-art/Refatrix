@@ -1154,15 +1154,15 @@ export default async function customerRoutes(app) {
     const teamId = keepNum(b.team_id, c.team_id);
     const stageId = keepNum(b.stage_id, c.stage_id);
     const stageChanged = Number(stageId) !== Number(c.stage_id);
-    // 0188 · RFC 가 선점 키다.
-    //   ① 빈값으로 지우는 것은 막는다 — 지우면 선점이 풀려 남이 같은 고객을 다시 등록할 수 있다.
-    //   ② 값이 바뀌면 형식 검증 + 선점 충돌 검사를 거친다(디렉터 즉시반영·승인 반영 양쪽 공통).
-    //   원래 RFC 가 비어 있던 레거시 고객은 여기서 처음 채우는 것이므로 검증만 통과하면 된다.
-    let rfcVal = (b.rfc !== undefined && String(b.rfc).trim() !== '') ? String(b.rfc).trim() : (c.rfc || null);
+    // 0188 · RFC 가 선점 키이지만, **수정 화면에서는 RFC 를 강요하지 않는다.**
+    //   전화·배송지·구매결정권자만 고치려는 사람에게 RFC 형식까지 요구하면 일상 업무가 막힌다.
+    //   RFC 가 없거나 형식이 지저분한 레거시 고객이 실제로 많다.
+    //   ① 빈값이면 **그냥 현재값을 유지**한다(오류 아님). 지워서 선점이 풀리는 일만 막으면 된다.
+    //   ② 형식 검증은 **하지 않는다** — 신규 등록(=선점이 생기는 순간)에서만 본다.
+    //   ③ 남의 선점을 뺏는 것만 막는다. 이건 어차피 DB 유니크가 던지므로,
+    //      500 대신 "누가 갖고 있는지" 를 알려 주려고 미리 조회한다.
+    const rfcVal = (b.rfc !== undefined && String(b.rfc).trim() !== '') ? String(b.rfc).trim() : (c.rfc || null);
     if (rfcVal && normalizeClaimKey(rfcVal) !== normalizeClaimKey(c.rfc)) {
-      const chk = validateRfc(rfcVal);
-      if (!chk.ok) { const e = new Error(chk.error); e.claimError = chk.error; throw e; }
-      rfcVal = chk.value;
       const clash = (await query(
         `SELECT c2.name, u.name AS owner_name, to_char(c2.created_at,'YYYY-MM-DD') AS registered_at
            FROM customers c2 LEFT JOIN users u ON u.id=c2.owner_id

@@ -317,10 +317,22 @@ test('D9e. 애플리케이션 사전조회는 예외 행도 선점자로 본다(
   assert.ok(/AND \(c\.rfc_norm = \$1 OR/.test(m[0]), 'RFC 가 1순위 선점 키여야 한다');
 });
 
-test('D9f. RFC 는 수정에서도 지울 수 없고, 바뀌면 다시 선점 검사를 받는다', () => {
-  assert.ok(/rfcVal = \(b\.rfc !== undefined && String\(b\.rfc\)\.trim\(\) !== ''\)/.test(custRoutes),
-    '빈값으로 덮으면 선점이 풀린다');
-  assert.ok(/claimError = 'rfc_taken'/.test(custRoutes), '수정으로 남의 RFC 를 뺏을 수 없어야 한다');
+test('D9f. 수정은 RFC 를 요구하지 않는다 — 빈값이면 기존값 유지(오류 아님)', () => {
+  // 전화·배송지만 고치려는 사람에게 RFC 를 강요하면 일상 업무가 막힌다.
+  assert.ok(/rfcVal = \(b\.rfc !== undefined && String\(b\.rfc\)\.trim\(\) !== ''\) \? String\(b\.rfc\)\.trim\(\) : \(c\.rfc \|\| null\)/
+    .test(custRoutes), '빈값이면 현재값 유지 — 지워서 선점이 풀리는 일만 막으면 된다');
+  const apply = custRoutes.match(/async function applyCustomerUpdate[\s\S]*?\n  \}/)[0];
+  assert.ok(!apply.includes('validateRfc'),
+    '수정 경로에 RFC 형식 검증이 들어가면 레거시 고객(RFC 없음·형식 지저분)을 못 고친다');
+  for (const k of ['rfc_required', 'rfc_invalid', 'rfc_invalid_date', 'rfc_generic']) {
+    assert.ok(!apply.includes(k), `수정 경로가 ${k} 로 막으면 안 된다`);
+  }
+});
+
+test('D9g. 수정으로 남의 선점을 뺏는 것만 막는다', () => {
+  const apply = custRoutes.match(/async function applyCustomerUpdate[\s\S]*?\n  \}/)[0];
+  assert.ok(/claimError = 'rfc_taken'/.test(apply), 'DB 유니크가 500 을 던지기 전에 누가 갖고 있는지 알려 준다');
+  assert.ok(/c2\.rfc_norm = \$1/.test(apply));
   // 반대로 CONSTANCIA 번호는 이제 지울 수 있다(선점 키가 아니므로)
   assert.ok(/b\.constancia_no === undefined[\s\S]{0,140}String\(b\.constancia_no\)\.trim\(\) \|\| null/.test(custRoutes));
 });
@@ -356,6 +368,17 @@ test('D12. 제안 할인율은 상수 마크업이 아니라 실제 CTR List Pri
 // ── E. 프런트 계약 ───────────────────────────────────────────────────
 const custform = read(join(REPO, 'refatrix-custform.js'));
 const custHtml = read(join(REPO, 'refatrix-customers.html'));
+
+test('E0. 수정 화면은 RFC 를 요구하지 않는다(일상 업무 방해 금지)', () => {
+  const save = custform.match(/async function save\(\)[\s\S]*?\n  \}/)[0];
+  assert.ok(/if\(!editingId\)\{[\s\S]*var rv=validateRfcLocal/.test(save),
+    'RFC 검증은 신규 등록 블록 안에만 있어야 한다');
+  assert.ok(!save.includes('RFC 는 선점 키라 비울 수 없습니다'),
+    '수정에서 RFC 를 막으면 전화·배송지만 고치려는 사람이 저장을 못 한다');
+  // 필수 표시(*)·「선점 키」 배지도 신규 등록에서만
+  assert.ok(custform.includes(`id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none"> * — 선점 키`));
+  assert.ok(/kb\.style\.display=isNew\?'':'none'/.test(custform));
+});
 
 test('E1. 신규 등록 폼은 RFC 를 막고 CONSTANCIA 는 막지 않는다 (0188)', () => {
   const save = custform.match(/async function save\(\)[\s\S]*?\n  \}/);
