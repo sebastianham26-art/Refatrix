@@ -18,6 +18,7 @@ export function splitEqual(total, n) {
   return parts;
 }
 import { validateReceiptDataUrl } from '../ar.js';
+import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
 import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
@@ -541,6 +542,60 @@ export default async function financeRoutes(app) {
       detail: { count: items.length, truncated, filter: { status: q.status || null, direction: q.direction || null,
         account_id: q.account_id || null, from: q.from || null, to: q.to || null } } });
     return { count: items.length, truncated, cap: CAP, generated_at: new Date().toISOString(), items };
+  });
+
+  // ===== 영수증 번호 「다음 번호」 제안 (2026-08-31) =====
+  // 거래등록에서 영수증 번호를 넣을 때마다 지난 번호를 찾아야 하던 수고를 없앤다.
+  //  · 기준(디렉터 확인 2026-08-31): **가장 최근에 등록된**(created_at DESC, id DESC) 영수증 번호 1건.
+  //    → 그 번호의 맨 뒤 숫자 덩어리 +1 = 제안값(`nextReceiptNo`, 순수 함수라 테스트로 고정).
+  //  · 번호 자체는 **전체 거래 기준**이다. 사내 연번이라 계좌 권한으로 모수를 끊으면 번호가 어긋난다.
+  //    다만 그 거래의 **맥락(계좌·계정과목·메모·등록자)** 은 거래목록과 같은 가시성 규칙을 적용해
+  //    볼 권한이 없으면 내려주지 않는다(`visible:false` → 화면은 번호만 보여준다).
+  //  · 숫자가 없는 번호(예: `FACTURA`)는 건너뛰고 다음 후보를 본다(최근 30건까지 훑음).
+  //  · 제안일 뿐이다 — 저장은 화면에서 사람이 확인·수정한 값으로 한다. 중복 검사는 하지 않는다
+  //    (공급처 팩투라 번호가 섞여 들어오는 자유 텍스트 필드라 유일성을 강제할 수 없다).
+  app.get('/api/transactions/receipt-next', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const rows = (await query(
+      `SELECT t.id, t.receipt_no, t.txn_date, t.created_at, t.account_id, t.is_private,
+              a.name AS account_name, cat.name AS category_name, t.memo, u.name AS created_by_name
+         FROM transactions t
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN users u ON u.id=t.created_by
+        WHERE t.deleted_at IS NULL AND t.receipt_no IS NOT NULL AND btrim(t.receipt_no) <> ''
+        ORDER BY t.created_at DESC, t.id DESC LIMIT 30`)).rows;
+
+    // 숫자를 못 찾는 번호는 건너뛴다 — 그런 값 하나 때문에 제안이 멈추면 안 된다.
+    let last = null, suggest = null;
+    for (const r of rows) {
+      const s = nextReceiptNo(r.receipt_no);
+      if (s) { last = r; suggest = s; break; }
+    }
+    if (!last) return { suggest: null, last: null, skipped: rows.length };
+
+    // 맥락 노출 여부 — /api/transactions 목록과 같은 규칙(계좌 열람권한·세부차단·비공개).
+    const allow = allowedDetailAccountIds(req.ctx.perm);
+    const block = blockedDetailAccountIds(req.ctx.perm);
+    const accId = last.account_id == null ? null : Number(last.account_id);
+    const visible =
+      (accId == null || allow === null || allow.includes(accId)) &&
+      (accId == null || !block.includes(accId)) &&
+      (req.ctx.perm.role === 'director' || !last.is_private);
+
+    return {
+      suggest,
+      last: {
+        receipt_no: last.receipt_no,
+        txn_date: last.txn_date,
+        created_at: last.created_at,
+        visible,
+        account_name: visible ? (last.account_name || null) : null,
+        category_name: visible ? (last.category_name || null) : null,
+        memo: visible ? (last.memo || null) : null,
+        created_by_name: visible ? (last.created_by_name || null) : null,
+      },
+      skipped: rows.indexOf(last),   // 숫자가 없어 건너뛴 최근 건수(참고용)
+    };
   });
 
   // 운반비 인보이스 배분 내역(거래 드릴다운) — 거래 1건의 균등 배분 결과.

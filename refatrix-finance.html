@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0826e</title>
+<title>Refatrix ERP · 재무 · build fin-0831a</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -200,6 +200,8 @@
       </div>
       <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div>
         <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
+      <!-- 영수증 번호 제안 근거 (fin-0831a) — 직전 번호 +1 을 위 칸에 미리 채우고 그 근거를 여기 보여준다 -->
+      <div class="hint" id="t-rcpt-hint" style="margin-top:2px"></div>
       <div id="t-custRow" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
         <style>
           #t-custRow .fi-selbox{border:1.5px solid var(--brand);border-radius:8px;background:#f7faf8;padding:9px 12px;margin:10px 0}
@@ -1094,6 +1096,45 @@
     }
   }
 
+  // ===== 영수증 번호 「다음 번호」 자동 제안 (fin-0831a) =====
+  // 거래등록 탭을 열 때와 등록 직후에, 서버가 알려준 「가장 최근 영수증 번호 +1」을 칸에 미리 채운다.
+  // 원칙: **사람이 손댄 값은 절대 덮어쓰지 않는다.** 우리가 채운 값(rcptAuto)과 같을 때만 갱신한다.
+  //       칸을 비워두거나 다른 번호로 고치면 그 값 그대로 등록된다(제안은 강제가 아니다).
+  let rcptAuto=null;                       // 우리가 자동으로 채워 넣은 값
+  let rcptLast=null;                       // 서버가 알려준 직전 영수증 정보(근거 표시용)
+  function rcptHintHtml(mode){
+    const L=rcptLast||{};
+    const re=' <a href="#" id="t-rcpt-re" style="color:var(--brand)">↻ 다시 제안</a>';
+    if(mode==='manual')return '<span style="color:var(--muted)">직접 입력한 번호로 등록됩니다.</span>'+re;
+    if(mode==='empty')return '<span style="color:var(--muted)">영수증 번호 없이 등록됩니다.</span>'+re;
+    if(mode==='none')return '<span style="color:var(--muted)">직전 영수증 번호를 찾지 못해 제안하지 않았습니다. 직접 입력하세요.</span>'+re;
+    const d=L.txn_date?String(L.txn_date).slice(5,10).replace('-','/'):'';
+    const ctx=[L.category_name,L.memo].filter(Boolean).join(' · ').slice(0,40);
+    const src=L.visible===false?' <span style="color:var(--muted)">(권한 밖 계좌의 거래라 내용은 표시하지 않습니다)</span>':'';
+    return `직전 <b>${escH(L.receipt_no||'')}</b>${d?` <span style="color:var(--muted)">(${d}${ctx?' · '+escH(ctx):''})</span>`:''}${src} 다음 번호를 넣어 뒀습니다 — <b>그대로 두면 이 번호로 등록</b>됩니다. 고치거나 지워도 됩니다.`+re;
+  }
+  function paintRcptHint(mode){
+    const hint=$('t-rcpt-hint'); if(!hint)return;
+    hint.innerHTML=rcptHintHtml(mode);
+    const a=$('t-rcpt-re');
+    if(a)a.addEventListener('click',e=>{e.preventDefault();$('t-receipt').value='';rcptAuto=null;loadRcptSuggest();});
+  }
+  async function loadRcptSuggest(){
+    const inp=$('t-receipt'),hint=$('t-rcpt-hint'); if(!inp||!hint)return;
+    const cur=inp.value.trim();
+    if(cur&&cur!==rcptAuto){paintRcptHint('manual');return;}   // 사람이 쓴 값 — 건드리지 않는다
+    try{
+      const res=await fetch(session.api+'/api/transactions/receipt-next',{headers:auth()});
+      if(!res.ok){hint.innerHTML='';return;}                   // 404(백엔드 미배포)·403 → 조용히 숨김
+      const d=await res.json();
+      const now=inp.value.trim();
+      if(now&&now!==rcptAuto){paintRcptHint('manual');return;}  // 응답 기다리는 사이 타이핑했으면 양보
+      if(!d||!d.suggest){rcptLast=null;rcptAuto=null;paintRcptHint('none');return;}
+      inp.value=d.suggest;rcptAuto=d.suggest;rcptLast=d.last||{};
+      paintRcptHint('ok');
+    }catch(e){hint.innerHTML='';}
+  }
+
   async function saveTxn(){
     const m=$('newMsg');m.className='msg';
     const amt=Number($('t-amt').value)||0;
@@ -1117,6 +1158,7 @@
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
       $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';$('t-cashdue').checked=false;
       $('t-cust').value='';resetTxInv();previewTxn();
+      rcptAuto=null;loadRcptSuggest();      // 방금 등록한 번호 기준으로 다음 번호를 다시 채운다 (fin-0831a)
       await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
@@ -4423,7 +4465,7 @@
     $('fxCard').classList.toggle('hidden',w!=='fx');
     $('reportCard').classList.toggle('hidden',w!=='report');
     $('apprCard').classList.toggle('hidden',w!=='approve');
-    if(w==='new'){loadPendingPlans();loadBdp();}
+    if(w==='new'){loadPendingPlans();loadBdp();loadRcptSuggest();}
     if(w==='txn')loadTxns();
     if(w==='pay'){loadArView();}
     if(w==='fixed'){loadFixed();loadFixedMonthly();loadVariance();}
@@ -4447,6 +4489,10 @@
   $('txnBackAcc').addEventListener('click',()=>{ $('f-acc').value=''; $('f-status').value=''; $('f-dir').value=''; showTab('acc'); });
   $('cashDueBtn').addEventListener('click',()=>{ const box=$('cashDueBox'); if(box.classList.contains('hidden'))loadCashDue(true); else box.classList.add('hidden'); });
   $('t-dir').addEventListener('change',()=>{ $('t-cashdue-row').style.display = $('t-dir').value==='out' ? '' : 'none'; if($('t-dir').value!=='out')$('t-cashdue').checked=false; });
+  // 영수증 번호를 사람이 고치는 순간 "제안" 안내를 "직접 입력"으로 바꾼다 (fin-0831a)
+  $('t-receipt').addEventListener('input',()=>{ const v=$('t-receipt').value.trim();
+    if(v===rcptAuto&&rcptLast){paintRcptHint('ok');return;}
+    paintRcptHint(v?'manual':'empty'); });
   $('pp-filter-toggle').addEventListener('click',()=>{
     const p=$('pp-filter-panel'); p.classList.toggle('hidden');
     $('pp-filter-toggle').textContent='연·월 필터 '+(p.classList.contains('hidden')?'▾':'▴');
@@ -4626,6 +4672,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260831bd"></script>
+<script src="refatrix-nav.js?v=20260831rc"></script>
 </body>
 </html>

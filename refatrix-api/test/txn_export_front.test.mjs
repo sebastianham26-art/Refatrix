@@ -1,5 +1,5 @@
 // =====================================================================
-// 거래목록 「⬇ 엑셀」 버튼 — refatrix-finance.html 을 jsdom 에서 구동해 검증 (build fin-0826e).
+// 거래목록 「⬇ 엑셀」 버튼 — refatrix-finance.html 을 jsdom 에서 구동해 검증 (build fin-0831a).
 //   요구(디렉터): 거래목록을 엑셀로 받게. 나만 받으면 된다.
 //   ExcelJS 는 CDN 이라 jsdom 에서 못 받으므로, 워크북 스텁을 window.ExcelJS 로 심어
 //   **실제로 어떤 셀에 무엇을 쓰는지**를 그대로 캡처해 검증한다.
@@ -261,5 +261,5 @@ test('⑫ 만드는 동안 버튼이 잠겼다가 원래대로 돌아온다', as
 });
 
 test('⑬ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0826e/);
+  assert.match(HTML, /build fin-0831a/);
 });
