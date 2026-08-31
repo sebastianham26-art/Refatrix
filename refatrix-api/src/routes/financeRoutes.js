@@ -24,6 +24,43 @@ import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
 
+// 미배분 입금(통지) 잔여 허용치 — 이 금액 미만이 남으면 "잔여 없음"으로 보고 통지를 닫는다.
+// 화면 금액이 정수 페소로 반올림 표시되므로 0.5 미만(=화면상 0)은 잔여로 남기지 않는다.
+// (인보이스 완납 판정의 AR_PAID_EPS 와 같은 취지·같은 값)
+export const BD_REMAIN_EPS = 0.5;
+
+// 통지 소진액 되돌리기 — 반제(또는 배분 1건)를 삭제할 때 통지를 그만큼 열어준다.
+//   amount 만큼 allocated_amount 를 줄이고 status 를 pending 으로 되돌린다.
+//   removeLink=true 면 링크행 삭제(반제 헤더 자체가 사라질 때), false 면 링크 금액만 차감.
+//   0191 이전에 만들어진 레거시 반제(링크행 없음)는 payment_id 로 찾아 통째로 되돌린다.
+async function bdReleaseAmount(c, paymentId, amount, removeLink) {
+  const link = (await c.query(
+    `SELECT deposit_id, amount FROM bank_deposit_payments WHERE payment_id=$1`, [paymentId])).rows[0];
+  if (!link) {
+    const r = await c.query(
+      `UPDATE bank_deposits_pending
+          SET status='pending', allocated_amount=0, payment_id=NULL, allocated_by=NULL, allocated_at=NULL
+        WHERE payment_id=$1 AND status='allocated' RETURNING id`, [paymentId]);
+    return r.rows.length > 0;
+  }
+  const dec = Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
+  await c.query(
+    `UPDATE bank_deposits_pending
+        SET allocated_amount = GREATEST(0, COALESCE(allocated_amount,0) - $2::numeric),
+            status = 'pending',
+            payment_id = CASE WHEN payment_id = $3 THEN NULL ELSE payment_id END,
+            allocated_by = NULL, allocated_at = NULL
+      WHERE id = $1`, [link.deposit_id, dec, paymentId]);
+  if (removeLink) {
+    await c.query(`DELETE FROM bank_deposit_payments WHERE payment_id=$1`, [paymentId]);
+  } else {
+    await c.query(
+      `UPDATE bank_deposit_payments SET amount = GREATEST(0, amount - $2::numeric) WHERE payment_id=$1`,
+      [paymentId, dec]);
+  }
+  return true;
+}
+
 function addMonthsUTC(dateStr, months) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1 + months, d));
@@ -797,12 +834,18 @@ export default async function financeRoutes(app) {
     return { items: rows };
   });
 
-  // 입금(반제) 생성
-  // body: { customer_id, pay_date, account_id, amount, allocations:[{invoice_id, amount}], memo }
+  // 입금(반제) 생성 — 통지(미배분 입금) **부분 배분** 지원
+  // body: { customer_id, deposit_id, allocations:[{invoice_id, amount}], close_deposit?, receipt?, memo }
+  //  - 기본(close_deposit 미지정): 배분한 만큼만 통지에서 소진하고, 잔여가 남으면 통지는 pending 유지.
+  //    → 인박스에 "부분배분 · 잔여 MX$X" 로 계속 보이고 다른 인보이스에 이어서 반제할 수 있다.
+  //  - close_deposit=true: 남은 잔여를 선수금(과입금)으로 확정하고 통지를 닫는다.
+  //    (allocations 를 비우고 close_deposit=true 만 보내면 "잔여 전액 선수금 처리")
+  //  - 잔여가 BD_REMAIN_EPS(0.5) 미만인 센타보 먼지는 자동으로 선수금 처리되며 통지가 닫힌다.
   app.post('/api/ar/payments', { preHandler: [authGuard, requirePage('settlement')] }, async (req, reply) => {
     const b = req.body || {};
     const customerId = Number(b.customer_id);
     const depositId = Number(b.deposit_id);
+    const wantClose = b.close_deposit === true || b.close_deposit === 'true' || b.close_deposit === 1;
     const allocations = Array.isArray(b.allocations) ? b.allocations.filter((a) => Number(a.amount) > 0).map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(a.amount) })) : [];
     if (!customerId) return reply.code(400).send({ error: 'missing_fields' });
     // 통지 우선 강제: 반제는 반드시 미배분 입금(통지)에 연결. 계좌·입금일·금액은 통지에서 확정(클라이언트 값 무시).
@@ -816,9 +859,10 @@ export default async function financeRoutes(app) {
     }
     const userId = req.ctx.perm.userId;
     const out = await withTx(async (c) => {
-      // 통지 잠금 + 상태 확인. 계좌·입금일·금액은 통지에서 확정.
+      // 통지 잠금 + 상태 확인. 계좌·입금일은 통지에서 확정. 금액 상한은 통지 **잔여**.
       const dep = (await c.query(
-        `SELECT id, account_id, deposit_date, amount, status FROM bank_deposits_pending WHERE id=$1 FOR UPDATE`, [depositId])).rows[0];
+        `SELECT id, account_id, deposit_date, amount, COALESCE(allocated_amount,0) AS allocated_amount, status
+           FROM bank_deposits_pending WHERE id=$1 FOR UPDATE`, [depositId])).rows[0];
       if (!dep) return { error: 'deposit_not_found' };
       if (dep.status !== 'pending') return { error: 'deposit_not_pending', status: dep.status };
       const accountId = Number(dep.account_id);
@@ -826,7 +870,10 @@ export default async function financeRoutes(app) {
       // pay_date INSERT가 invalid input syntax로 터짐(반제 500의 원인). toYMD로 안전 변환.
       const payDate = toYMD(dep.deposit_date);
       if (!payDate) return { error: 'bad_deposit_date' };
-      const amount = r2(Number(dep.amount));
+      const depTotal = r2(Number(dep.amount));
+      const depUsed = r2(Number(dep.allocated_amount));
+      const depRemain = r2(depTotal - depUsed);           // 이번에 쓸 수 있는 한도
+      if (!(depRemain > 0.001)) return { error: 'deposit_exhausted', deposit: depTotal, used: depUsed };
       // 현재 미수금 맵(검증용) — 이 고객 인보이스만
       const inv = (await c.query(
         `SELECT s.id, s.total_mxn - COALESCE(pa.paid,0) AS outstanding
@@ -837,9 +884,16 @@ export default async function financeRoutes(app) {
       // 배분 대상 인보이스는 반드시 이 고객 소속(통지 고객)이어야 함
       for (const a of allocations) { if (outMap[a.invoice_id] == null) return { error: 'invalid_allocations', detail: [{ invoice_id: a.invoice_id, error: 'not_customer_invoice' }] }; }
       const sumAlloc = r2(allocations.reduce((s, a) => s + a.amount, 0));
-      // 통지 금액 상한: 배분 합계는 통지 금액을 초과할 수 없음(남는 금액 = 선수금)
-      if (sumAlloc - amount > 0.001) return { error: 'allocations_exceed_deposit', deposit: amount, sum: sumAlloc };
-      const advance = r2(amount - sumAlloc);
+      // 통지 잔여 상한: 배분 합계는 통지의 **남은 금액**을 초과할 수 없다.
+      if (sumAlloc - depRemain > 0.001) return { error: 'allocations_exceed_deposit', deposit: depRemain, sum: sumAlloc };
+      // 이번 반제 후 통지에 남는 금액.
+      const remainAfter = r2(depRemain - sumAlloc);
+      // 닫기 요청이거나 잔여가 센타보 먼지(0.5 미만)면 → 잔여를 선수금으로 확정하고 통지를 닫는다.
+      const closing = wantClose || remainAfter < BD_REMAIN_EPS;
+      const advance = closing ? remainAfter : 0;
+      // 이번 입금 헤더 금액 = 배분합 + (닫을 때만) 잔여 선수금. 부분 배분이면 배분합 그대로.
+      const amount = r2(sumAlloc + advance);
+      if (!(amount > 0.001)) return { error: 'nothing_to_allocate' };
       const v = validateAllocations(amount, allocations, outMap, advance);
       if (!v.ok) return { error: 'invalid_allocations', detail: v.errors };
       // 헤더
@@ -870,20 +924,38 @@ export default async function financeRoutes(app) {
            VALUES ($1,$2,$3,$4,$5)`,
           [pay.id, receipt.name, receipt.mime, receipt.data, userId]);
       }
-      // 통지 닫기: pending→allocated (FOR UPDATE로 잠갔으므로 경합 없음). 통지 → 실거래 1회만 = 이중계상 불가.
-      const depClose = (await c.query(
-        `UPDATE bank_deposits_pending SET status='allocated', payment_id=$1, allocated_by=$2, allocated_at=now()
-          WHERE id=$3 AND status='pending' RETURNING id`,
-        [pay.id, userId, depositId])).rows[0];
-      if (!depClose) return { error: 'deposit_not_pending' };
-      return { id: pay.id, amount, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: true };
+      // 통지 ↔ 반제 링크(한 통지 : 여러 반제). 부분 배분을 몇 번 하든 이력이 남는다.
+      await c.query(
+        `INSERT INTO bank_deposit_payments (deposit_id, payment_id, amount, created_by)
+         VALUES ($1,$2,$3,$4) ON CONFLICT (deposit_id, payment_id) DO NOTHING`,
+        [depositId, pay.id, amount, userId]);
+      // 통지 소진액 갱신. 잔여가 남으면 pending 유지(→ 인박스에 "부분배분 · 잔여"로 계속 표시),
+      // 다 소진했으면 allocated 로 닫는다. FOR UPDATE 로 잠갔으므로 경합 없음.
+      //   ※ 통지 → 실거래는 배분한 금액만큼만 생성되므로 이중계상은 여전히 구조적으로 불가.
+      const depUpd = (await c.query(
+        `UPDATE bank_deposits_pending
+            SET allocated_amount = COALESCE(allocated_amount,0) + $1::numeric,
+                payment_id   = $2,
+                status       = CASE WHEN $3::boolean THEN 'allocated' ELSE 'pending' END,
+                allocated_by = CASE WHEN $3::boolean THEN $4::bigint ELSE allocated_by END,
+                allocated_at = CASE WHEN $3::boolean THEN now() ELSE allocated_at END
+          WHERE id=$5 AND status='pending' RETURNING id`,
+        [amount, pay.id, closing, userId, depositId])).rows[0];
+      if (!depUpd) return { error: 'deposit_not_pending' };
+      return {
+        id: pay.id, amount, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: true,
+        deposit_closed: closing,
+        deposit_total: depTotal,
+        deposit_used: r2(depUsed + amount),
+        deposit_remaining: closing ? 0 : r2(depTotal - depUsed - amount),
+      };
     });
     if (out.error) {
       const code = (out.error === 'invalid_allocations' || out.error === 'deposit_not_pending') ? 409
         : (out.error === 'deposit_not_found') ? 404 : 400;
       return reply.code(code).send(out);
     }
-    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount: out.amount, advance: out.advance, receipt: out.receipt, deposit_id: depositId } });
+    await logEvent({ userId, action: 'create', target: `sales_payment:${out.id}`, detail: { amount: out.amount, advance: out.advance, receipt: out.receipt, deposit_id: depositId, deposit_closed: out.deposit_closed, deposit_remaining: out.deposit_remaining } });
     return out;
   });
 
@@ -926,25 +998,42 @@ export default async function financeRoutes(app) {
     if (!allowed) return { items: [] };
     const status = String((req.query && req.query.status) || 'pending').toLowerCase();
     const where = status === 'all' ? '' : `WHERE d.status='pending'`;
+    // ap: 이 통지에 이미 붙은 반제(부분 배분)에서 실제 배분된 고객 — 잔여를 이어서 반제할 때 쓴다.
     const rows = (await query(
       `SELECT d.id, d.deposit_date, d.account_id, a.name AS account_name, d.amount, d.payer_memo,
+              COALESCE(d.allocated_amount,0) AS allocated_amount,
+              d.amount - COALESCE(d.allocated_amount,0) AS remaining,
               d.customer_id, c.name AS customer_name, d.status, d.created_by, u.name AS created_by_name,
               (rd.user_id IS NOT NULL) AS read_by_me,
-              (fd.deposit_id IS NOT NULL) AS has_file
+              (fd.deposit_id IS NOT NULL) AS has_file,
+              ap.customer_id AS alloc_customer_id, ac.name AS alloc_customer_name
          FROM bank_deposits_pending d
          LEFT JOIN accounts a ON a.id=d.account_id
          LEFT JOIN customers c ON c.id=d.customer_id
          LEFT JOIN users u ON u.id=d.created_by
          LEFT JOIN bank_deposit_reads rd ON rd.deposit_id=d.id AND rd.user_id=$1
          LEFT JOIN bank_deposit_docs fd ON fd.deposit_id=d.id
+         LEFT JOIN LATERAL (
+           SELECT p.customer_id FROM bank_deposit_payments bp
+             JOIN sales_payments p ON p.id=bp.payment_id
+            WHERE bp.deposit_id=d.id ORDER BY bp.created_at DESC LIMIT 1
+         ) ap ON true
+         LEFT JOIN customers ac ON ac.id=ap.customer_id
          ${where}
         ORDER BY d.created_at DESC`, [perm.userId])).rows;
     return {
-      items: rows.map((x) => ({
-        ...x, id: Number(x.id), account_id: Number(x.account_id), amount: Number(x.amount),
-        customer_id: x.customer_id != null ? Number(x.customer_id) : null, read_by_me: x.read_by_me === true,
-        has_file: x.has_file === true,
-      })),
+      items: rows.map((x) => {
+        const amount = Number(x.amount);
+        const used = Number(x.allocated_amount || 0);
+        const remaining = Number(x.remaining);
+        return {
+          ...x, id: Number(x.id), account_id: Number(x.account_id), amount,
+          allocated_amount: used, remaining, partial: used > 0.001 && remaining > 0.001,
+          customer_id: x.customer_id != null ? Number(x.customer_id) : null,
+          alloc_customer_id: x.alloc_customer_id != null ? Number(x.alloc_customer_id) : null,
+          read_by_me: x.read_by_me === true, has_file: x.has_file === true,
+        };
+      }),
     };
   });
 
@@ -958,6 +1047,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN accounts a ON a.id=d.account_id
          LEFT JOIN bank_deposit_reads rd ON rd.deposit_id=d.id AND rd.user_id=$1
         WHERE d.status='pending' AND rd.user_id IS NULL AND COALESCE(d.created_by,0) <> $1
+          AND COALESCE(d.allocated_amount,0) <= 0.001
         ORDER BY d.created_at DESC`, [perm.userId])).rows;
     const items = rows.map((x) => ({ ...x, id: Number(x.id), amount: Number(x.amount) }));
     return { count: items.length, items };
@@ -981,12 +1071,14 @@ export default async function financeRoutes(app) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
     const userId = req.ctx.perm.userId;
+    // 부분 배분된 통지는 이미 실거래(반제)가 있으므로 취소 불가 — 반제를 먼저 되돌려야 한다.
     const r = await query(
       `UPDATE bank_deposits_pending SET status='void', voided_by=$1, voided_at=now()
-        WHERE id=$2 AND status='pending' RETURNING id`, [userId, id]);
+        WHERE id=$2 AND status='pending' AND COALESCE(allocated_amount,0) <= 0.001 RETURNING id`, [userId, id]);
     if (!r.rows[0]) {
-      const cur = (await query(`SELECT status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+      const cur = (await query(`SELECT status, COALESCE(allocated_amount,0) AS used FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
       if (!cur) return reply.code(404).send({ error: 'not_found' });
+      if (cur.status === 'pending') return reply.code(409).send({ error: 'has_allocation', allocated_amount: Number(cur.used) });
       return reply.code(409).send({ error: 'not_pending', status: cur.status });
     }
     await logEvent({ userId, action: 'update', target: `bank_deposit:${id}`, detail: { voided: true } });
@@ -1011,9 +1103,11 @@ export default async function financeRoutes(app) {
     if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
-    const cur = (await query(`SELECT status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+    const cur = (await query(`SELECT status, COALESCE(allocated_amount,0) AS used FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
     if (!cur) return reply.code(404).send({ error: 'not_found' });
     if (cur.status !== 'pending') return reply.code(409).send({ error: 'not_pending', status: cur.status });
+    // 부분 배분된 통지는 금액·계좌·일자 수정 불가(이미 만들어진 반제 거래와 어긋난다).
+    if (Number(cur.used) > 0.001) return reply.code(409).send({ error: 'has_allocation', allocated_amount: Number(cur.used) });
     const b = req.body || {};
     const accountId = Number(b.account_id), amount = r2(b.amount);
     if (!accountId || !b.deposit_date || !(amount > 0)) return reply.code(400).send({ error: 'missing_fields' });
@@ -1053,11 +1147,13 @@ export default async function financeRoutes(app) {
     if (!_bdCanRegister(req.ctx.perm)) return reply.code(403).send({ error: 'forbidden' });
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
-    const cur = (await query(`SELECT status FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
+    const cur = (await query(`SELECT status, COALESCE(allocated_amount,0) AS used FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
     if (!cur) return reply.code(404).send({ error: 'not_found' });
     if (cur.status !== 'pending' && cur.status !== 'void') {
       return reply.code(409).send({ error: 'has_transaction', status: cur.status });
     }
+    // 부분 배분(반제 거래 존재) 중인 통지는 삭제 불가 — 반제를 먼저 되돌려야 한다.
+    if (Number(cur.used) > 0.001) return reply.code(409).send({ error: 'has_allocation', allocated_amount: Number(cur.used) });
     const userId = req.ctx.perm.userId;
     await query(`DELETE FROM bank_deposits_pending WHERE id=$1`, [id]); // bank_deposit_reads 는 ON DELETE CASCADE
     await logEvent({ userId, action: 'delete', target: `bank_deposit:${id}`, detail: { hard: true, prevStatus: cur.status } });
@@ -1071,10 +1167,12 @@ export default async function financeRoutes(app) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'bad_id' });
     const dep = (await query(
-      `SELECT id, account_id, deposit_date, amount, payer_memo, status
+      `SELECT id, account_id, deposit_date, amount, payer_memo, status, COALESCE(allocated_amount,0) AS used
          FROM bank_deposits_pending WHERE id=$1`, [id])).rows[0];
     if (!dep) return reply.code(404).send({ error: 'not_found' });
     if (dep.status !== 'pending') return reply.code(409).send({ error: 'not_pending', status: dep.status });
+    // 부분 배분된 통지는 수입 전환 불가(반제 거래와 이중계상). 반제를 먼저 되돌려야 한다.
+    if (Number(dep.used) > 0.001) return reply.code(409).send({ error: 'has_allocation', allocated_amount: Number(dep.used) });
     const b = req.body || {};
     // 기본값은 입금 정보. 디렉터가 계좌·일자·금액·적요·계정과목을 덮어쓸 수 있음.
     const accountId = Number(b.account_id || dep.account_id);
@@ -1259,18 +1357,16 @@ export default async function financeRoutes(app) {
       if (pay.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, pay.advance_txn_id]);
       await c.query(`DELETE FROM sales_payment_allocations WHERE payment_id=$1`, [pid]);
       await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [pid]);
-      // 통지 연동 반제면 통지를 다시 pending으로 복귀 — bank_deposits_pending.payment_id FK가
-      // sales_payments를 참조하므로 먼저 끊지 않으면 헤더 DELETE가 FK 위반(삭제 500의 원인).
-      // 복귀된 통지는 미배분 입금함에 다시 나타나 재반제 가능(입금 자체는 사라지지 않음).
-      const reopened = (await c.query(
-        `UPDATE bank_deposits_pending
-            SET status='pending', payment_id=NULL, allocated_by=NULL, allocated_at=NULL
-          WHERE payment_id=$1 AND status='allocated' RETURNING id`, [pid])).rows;
+      // 통지 연동 반제면 이 반제가 통지에서 소진한 금액만큼 통지를 다시 열어준다(부분 배분 지원).
+      // bank_deposits_pending.payment_id FK가 sales_payments를 참조하므로 먼저 끊지 않으면
+      // 헤더 DELETE가 FK 위반(삭제 500의 원인) → bdReleaseAmount 가 payment_id 도 함께 정리한다.
+      // 복귀된 통지는 미배분 입금함에 (잔여가 늘어난 채) 다시 나타나 재반제 가능.
+      const reopened = await bdReleaseAmount(c, pid, r2(Number(pay.amount)), true);
       await c.query(`DELETE FROM sales_payments WHERE id=$1`, [pid]);
       return {
         ok: true, customer_id: Number(pay.customer_id), amount: r2(Number(pay.amount)),
         advance: r2(Number(pay.advance_amount || 0)),
-        deposit_reopened: reopened.length > 0,
+        deposit_reopened: reopened,
         restored: allocs.map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(Number(a.amount)) })),
       };
     });
@@ -1301,17 +1397,14 @@ export default async function financeRoutes(app) {
       if (remain === 0 && r2(Number(al.advance_amount || 0)) === 0) {
         if (al.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, al.advance_txn_id]);
         await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [al.payment_id]);
-        // 통지 연동 반제면 통지를 다시 pending으로 복귀 — bank_deposits_pending.payment_id FK가
-        // sales_payments를 참조하므로 먼저 끊지 않으면 헤더 DELETE가 FK 위반(삭제 500의 원인).
-        const reopened = (await c.query(
-          `UPDATE bank_deposits_pending
-              SET status='pending', payment_id=NULL, allocated_by=NULL, allocated_at=NULL
-            WHERE payment_id=$1 AND status='allocated' RETURNING id`, [al.payment_id])).rows;
-        deposit_reopened = reopened.length > 0;
+        // 통지 연동 반제면 소진액만큼 통지를 되돌린다(부분 배분 지원). payment_id FK 도 함께 정리.
+        deposit_reopened = await bdReleaseAmount(c, al.payment_id, r2(Number(al.amount)), true);
         await c.query(`DELETE FROM sales_payments WHERE id=$1`, [al.payment_id]);
         payment_deleted = true;
       } else {
         await c.query(`UPDATE sales_payments SET amount = amount - $1 WHERE id=$2`, [r2(Number(al.amount)), al.payment_id]);
+        // 이 배분만큼 통지 잔여를 되돌린다(반제 헤더는 남아 있으므로 링크 금액만 차감).
+        deposit_reopened = await bdReleaseAmount(c, al.payment_id, r2(Number(al.amount)), false);
       }
       return { ok: true, invoice_id: Number(al.invoice_id), amount: r2(Number(al.amount)), payment_deleted, deposit_reopened };
     });

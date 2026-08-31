@@ -562,13 +562,13 @@
     if(!bdCtx) return '<div class="hint">통지 우선 반제: 먼저 위 “미배분 입금 인박스”에서 입금을 선택하세요.</div>';
     const already=bdCart[it.id]?Number(bdCart[it.id].amount):0;
     const otherSum=Object.values(bdCart).reduce((s,x)=>s+Number(x.amount),0)-already;
-    const remainDep=Math.max(0, r2num(Number(bdCtx.amount)-otherSum));
+    const remainDep=Math.max(0, r2num(bdRemain()-otherSum));
     const defAmt=r2num(Math.min(remainDep, Number(it.outstanding)));
     return '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
       +'<div><label>이 인보이스 배분 (잔액 MX$'+fmt(it.outstanding)+')</label><input id="rpAmt" type="number" step="0.01" value="'+defAmt+'" style="width:150px"></div>'
       +'<div><button class="btn" onclick="addToCart('+it.id+')">배분 담기</button></div>'
       +'<div><button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="openRepay(null)">닫기</button></div>'
-      +'<div class="hint" style="flex-basis:100%;margin-top:2px">📥 통지 MX$'+fmt(bdCtx.amount)+' 중 배분 가능 잔여 <b>MX$'+fmt(remainDep)+'</b> · 담은 뒤 아래 <b>[저장 · 통지 닫기]</b>로 확정합니다. (계좌·입금일은 통지에서 고정)</div>'
+      +'<div class="hint" style="flex-basis:100%;margin-top:2px">📥 통지 MX$'+fmt(bdCtx.amount)+(bdUsed()>0.001?(' (기배분 MX$'+fmt(bdUsed())+')'):'')+' 중 배분 가능 잔여 <b>MX$'+fmt(remainDep)+'</b> · 담은 뒤 아래 <b>[저장]</b>으로 확정합니다. 다 배분하지 않아도 <b>남은 금액은 통지에 잔여로 남아</b> 나중에 이어서 반제할 수 있습니다. (계좌·입금일은 통지에서 고정)</div>'
       +'</div>';
   }
   function onReceiptPicked(ev){
@@ -587,7 +587,18 @@
     }
     arOpenRepay=id; if(id) arHistOpen=null; renderAr();
   }
-  // ===== 통지 배분 카트 (한 통지 → 여러 인보이스 배분 + 나머지 선수금) =====
+  // ===== 통지 배분 카트 (한 통지 → 여러 인보이스 배분, 남으면 통지에 잔여로 유지) =====
+  // 통지 잔여 허용치 — 이 금액 미만이 남으면 서버가 자동으로 선수금 처리하고 통지를 닫는다.
+  // 백엔드 financeRoutes.js 의 BD_REMAIN_EPS 와 같은 값(인라인 스크립트라 값 공유 불가).
+  const BD_REMAIN_EPS=0.5;
+  // 선택한 통지에서 이미 소진된 금액 / 지금 배분할 수 있는 잔여.
+  // (서버가 remaining 을 주지만, 백엔드 배포 전이면 amount 로 폴백해 화면이 깨지지 않는다)
+  function bdUsed(){ return bdCtx?r2num(Number(bdCtx.allocated_amount||0)):0; }
+  function bdRemain(){
+    if(!bdCtx) return 0;
+    const r=(bdCtx.remaining!=null)?Number(bdCtx.remaining):(Number(bdCtx.amount)-bdUsed());
+    return Math.max(0, r2num(r));
+  }
   function addToCart(invId){
     const it=(arSearchMode?arSearchItems:arItems).find(x=>x.id===invId); if(!it) return;
     const m=$('arMsg'); m.className='msg';
@@ -601,8 +612,8 @@
     if(first && Number(first.customer_id)!==Number(it.customer_id)){
       m.className='msg err'; m.textContent='한 입금은 한 고객에게만 배분됩니다. 다른 고객이면 [배분 비우기] 후 진행하세요.'; return; }
     const others=Object.entries(bdCart).filter(function(e){return Number(e[0])!==Number(invId);}).reduce(function(s,e){return s+Number(e[1].amount);},0);
-    if(r2num(others+amt) > Number(bdCtx.amount)+0.01){
-      m.className='msg err'; m.textContent='배분 합계가 통지 금액(MX$'+fmt(bdCtx.amount)+')을 초과합니다.'; return; }
+    if(r2num(others+amt) > bdRemain()+0.01){
+      m.className='msg err'; m.textContent='배분 합계가 통지 잔여(MX$'+fmt(bdRemain())+')를 초과합니다.'; return; }
     bdCart[invId]={invoice_id:invId, customer_id:it.customer_id, customer_name:it.customer_name, sat:(it.sat_no||('#'+it.id)), outstanding:Number(it.outstanding), amount:amt};
     arOpenRepay=null; renderAr(); renderBdCart();
     m.className='msg ok'; m.textContent='배분 담김: '+esc(it.customer_name)+' · MX$'+fmt(amt);
@@ -616,47 +627,88 @@
     box.style.display='';
     const sum=r2num(items.reduce(function(s,x){return s+Number(x.amount);},0));
     const dep=Number(bdCtx.amount);
-    const advance=r2num(Math.max(0, dep-sum));
-    const over=sum>dep+0.01;
+    const used=bdUsed();
+    const avail=bdRemain();                        // 지금 배분 가능한 통지 잔여
+    const leftover=r2num(Math.max(0, avail-sum));  // 저장 후 통지에 남을 잔여
+    const willClose=leftover<BD_REMAIN_EPS;        // 잔여가 먼지 수준이면 서버가 자동으로 닫는다
+    const over=sum>avail+0.01;
     const cust=items[0].customer_name;
     const rows=items.map(function(x){ return '<tr><td class="notranslate" translate="no">'+esc(x.sat)+'</td><td class="n">MX$'+fmt(x.amount)+'</td>'
       +'<td><button class="btn" style="padding:2px 8px;font-size:11px;background:#fff;color:var(--expense);border:1px solid var(--line)" onclick="removeFromCart('+x.invoice_id+')">빼기</button></td></tr>'; }).join('');
     box.innerHTML=''
       +'<div class="card" style="border-color:var(--brand);background:#f4f9f6">'
-      +'<div class="card-h" style="font-size:13px">📥 이 입금 배분 — <span class="notranslate" translate="no">'+esc(cust)+'</span> · 통지 MX$'+fmt(dep)+'</div>'
+      +'<div class="card-h" style="font-size:13px">📥 이 입금 배분 — <span class="notranslate" translate="no">'+esc(cust)+'</span> · 통지 MX$'+fmt(dep)+(used>0.001?(' · 기배분 MX$'+fmt(used)):'')+'</div>'
       +'<table style="width:auto;min-width:280px"><thead><tr><th style="text-align:left">인보이스(SAT)</th><th class="n">배분</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
       +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px">'
-        +'<div>배분 합계 <b'+(over?' style="color:var(--expense)"':'')+'>MX$'+fmt(sum)+'</b> / 통지 <b>MX$'+fmt(dep)+'</b></div>'
-        +'<div>선수금(과입금) <b>MX$'+fmt(advance)+'</b></div>'
-        +(over?'<span class="msg err" style="margin:0;padding:4px 8px">통지 초과 — 배분을 줄이세요</span>':'')
+        +'<div>이번 배분 <b'+(over?' style="color:var(--expense)"':'')+'>MX$'+fmt(sum)+'</b> / 배분 가능 잔여 <b>MX$'+fmt(avail)+'</b></div>'
+        +'<div>저장 후 통지 잔여 <b'+(leftover>=BD_REMAIN_EPS?' style="color:var(--brand)"':'')+'>MX$'+fmt(leftover)+'</b></div>'
+        +(over?'<span class="msg err" style="margin:0;padding:4px 8px">통지 잔여 초과 — 배분을 줄이세요</span>':'')
       +'</div>'
       +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
         +'<input id="rpFile" type="file" accept="image/*,application/pdf" style="display:none" onchange="onReceiptPicked(event)">'
         +'<button class="btn" style="background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="document.getElementById(\'rpFile\').click()">📎 영수증 첨부</button>'
         +'<span id="rpFileName" class="hint">'+(arRepayReceipt?esc(arRepayReceiptName||'선택됨'):'미첨부')+'</span>'
         +'<span style="margin-left:auto"></span>'
-        +'<button class="btn"'+(over?' disabled':'')+' onclick="submitBdAlloc()">저장 · 통지 닫기</button>'
+        +'<button class="btn"'+(over?' disabled':'')+' onclick="submitBdAlloc(false)">'+(willClose?'저장 · 통지 닫기':'저장 · 잔여 MX$'+fmt(leftover)+' 남기기')+'</button>'
+        +(willClose?'':'<button class="btn"'+(over?' disabled':'')+' style="background:#fff;color:var(--brand);border:1px solid var(--brand)" onclick="submitBdAlloc(true)">저장 · 잔여를 선수금 처리하고 닫기</button>')
         +'<button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="clearBdCart()">배분 비우기</button>'
       +'</div>'
-      +'<div class="hint" style="margin-top:6px">저장하면 배분만큼 각 인보이스가 반제되고, 남는 금액은 <b>선수금</b>으로 처리되며 이 통지가 닫힙니다. 고객 영수증(이미지·PDF, 8MB↓)은 <b>수금내역</b>에서 다시 볼 수 있습니다.</div>'
+      +'<div class="hint" style="margin-top:6px">'
+        +(willClose
+          ? '저장하면 배분만큼 각 인보이스가 반제되고 이 통지가 <b>닫힙니다</b>.'
+          : '기본 <b>[저장]</b>은 배분한 만큼만 반제하고 <b>남은 MX$'+fmt(leftover)+'는 통지에 잔여로 남깁니다</b> — 인박스에 「부분배분」으로 계속 표시되어 다른 인보이스에 이어서 반제할 수 있습니다. 더 반제할 인보이스가 없다면 <b>[잔여를 선수금 처리하고 닫기]</b>를 쓰세요.')
+        +' 고객 영수증(이미지·PDF, 8MB↓)은 <b>수금내역</b>에서 다시 볼 수 있습니다.</div>'
       +'</div>';
   }
-  async function submitBdAlloc(){
+  // close=true 면 남은 잔여를 선수금(과입금)으로 확정하고 통지를 닫는다.
+  // close=false(기본) 면 배분한 만큼만 소진 — 잔여는 통지에 남아 인박스에서 이어서 반제 가능.
+  async function submitBdAlloc(close){
     if(!bdCtx) return;
     const items=Object.values(bdCart);
     const m=$('arMsg'); m.className='msg';
     if(!items.length){ m.className='msg err'; m.textContent='담은 배분이 없습니다.'; return; }
     const sum=r2num(items.reduce(function(s,x){return s+Number(x.amount);},0));
-    if(sum > Number(bdCtx.amount)+0.01){ m.className='msg err'; m.textContent='배분 합계가 통지 금액을 초과합니다.'; return; }
+    if(sum > bdRemain()+0.01){ m.className='msg err'; m.textContent='배분 합계가 통지 잔여를 초과합니다.'; return; }
     const body={ customer_id:items[0].customer_id, deposit_id:bdCtx.id, allocations:items.map(function(x){return {invoice_id:x.invoice_id, amount:x.amount};}), memo:'통지 반제' };
+    if(close===true) body.close_deposit=true;
     if(arRepayReceipt){ body.receipt=arRepayReceipt; body.receipt_name=arRepayReceiptName; }
+    await postBdPayment(body, m);
+  }
+  // 잔여 전액을 선수금으로 확정하고 통지를 닫는다(더 반제할 인보이스가 없을 때, 인박스에서 바로).
+  async function closeBdRemaining(id){
+    const d=bdInbox.find(x=>x.id===id); if(!d) return;
+    const cust=(d.alloc_customer_id!=null?d.alloc_customer_id:d.customer_id);
+    const m=$('arMsg'); m.className='msg';
+    if(cust==null){ m.className='msg err'; m.textContent='이 통지는 고객이 정해지지 않아 선수금 처리를 할 수 없습니다. 인보이스에 먼저 배분하거나 재무담당에게 고객 지정을 요청하세요.'; return; }
+    const rem=(d.remaining!=null?Number(d.remaining):Number(d.amount));
+    if(!confirm('남은 MX$'+fmt(rem)+' 을 선수금(과입금)으로 처리하고 이 통지를 닫습니다. 진행할까요?')) return;
+    await postBdPayment({ customer_id:cust, deposit_id:id, allocations:[], close_deposit:true, memo:'통지 잔여 선수금' }, m);
+  }
+  // /api/ar/payments 공통 호출 — 성공하면 잔여 여부에 따라 컨텍스트를 유지하거나 해제한다.
+  async function postBdPayment(body, m){
     try{
       const res=await fetch(session.api+'/api/ar/payments',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){ m.className='msg err'; m.textContent='반제 실패: '+(d.detail?JSON.stringify(d.detail):(d.error||res.status)); return; }
-      m.className='msg ok'; m.textContent='반제 저장 완료 · 통지 닫힘 · MX$'+fmt(Number(bdCtx.amount))+(d.advance>0?(' (선수금 MX$'+fmt(d.advance)+')'):'')+(d.receipt?' · 영수증 첨부됨':'');
-      bdCtx=null; bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null;
-      renderBdCtxBanner(); renderBdCart(); loadBdInbox();
+      if(!res.ok||d.error){
+        m.className='msg err';
+        m.textContent='반제 실패: '+(d.error==='deposit_exhausted'?'이 통지는 이미 전액 소진되었습니다.'
+          :(d.error==='allocations_exceed_deposit'?('배분 합계(MX$'+fmt(d.sum)+')가 통지 잔여(MX$'+fmt(d.deposit)+')를 초과합니다.')
+          :(d.detail?JSON.stringify(d.detail):(d.error||res.status))));
+        return;
+      }
+      const rem=Number(d.deposit_remaining||0);
+      m.className='msg ok';
+      m.textContent='반제 저장 완료 · MX$'+fmt(Number(d.allocated||0))+' 배분'
+        +(d.advance>0?(' · 선수금 MX$'+fmt(d.advance)):'')
+        +(d.deposit_closed?' · 통지 닫힘':(' · 통지 잔여 MX$'+fmt(rem)+' — 인박스에서 이어서 반제하세요'))
+        +(d.receipt?' · 영수증 첨부됨':'');
+      bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null;
+      const keepId=(!d.deposit_closed && d.deposit_remaining>0.001)?bdCtx&&bdCtx.id:null;
+      bdCtx=null;
+      renderBdCtxBanner(); renderBdCart();
+      await loadBdInbox();
+      // 잔여가 남았으면 같은 통지를 계속 선택 상태로 유지 → 바로 다음 인보이스에 이어서 배분.
+      if(keepId){ const nx=bdInbox.find(x=>x.id===keepId); if(nx){ bdCtx=nx; renderBdCtxBanner(); } }
       if(arSearchMode){ await doArSearch(); } else { loadAr(); }
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
@@ -1173,16 +1225,34 @@
       bdInbox=items;
       if(!items.length){ if(card)card.style.display='none'; return; }
       if(card)card.style.display='';
-      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>고객(추정)</th><th>등록자</th><th></th></tr></thead><tbody>'
-        +items.map(d=>'<tr'+(d.read_by_me?'':' style="background:#fffaf0"')+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+esc(d.payer_memo||'—')+'</td><td>'+esc(d.customer_name||'—')+'</td><td>'+esc(d.created_by_name||'—')+'</td><td><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="startBdAlloc('+d.id+')">이 입금으로 반제</button></td></tr>').join('')
-        +'</tbody></table>';
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th class="num">배분됨</th><th class="num">잔여</th><th>송금인/적요</th><th>고객(추정)</th><th>등록자</th><th></th></tr></thead><tbody>'
+        +items.map(function(d){
+          const used=Number(d.allocated_amount||0);
+          const rem=(d.remaining!=null?Number(d.remaining):Number(d.amount));
+          const part=used>0.001&&rem>0.001;                 // 부분배분 상태
+          const cust=d.customer_name||d.alloc_customer_name||'—';
+          // 부분배분 = 이미 일부 반제된 통지. 파란 배경으로 새 통지(노란 배경)와 구분한다.
+          const bg=part?' style="background:#eef4fb"':(d.read_by_me?'':' style="background:#fffaf0"');
+          return '<tr'+bg+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td>'
+            +'<td class="num"><b>'+fmt(d.amount)+'</b></td>'
+            +'<td class="num" style="color:var(--muted)">'+(used>0.001?fmt(used):'—')+'</td>'
+            +'<td class="num"><b'+(part?' style="color:var(--brand)"':'')+'>'+fmt(rem)+'</b>'
+              +(part?' <span style="font-size:10.5px;background:var(--brand);color:#fff;border-radius:8px;padding:1px 6px;vertical-align:middle">부분배분</span>':'')+'</td>'
+            +'<td>'+esc(d.payer_memo||'—')+'</td><td>'+esc(cust)+'</td><td>'+esc(d.created_by_name||'—')+'</td>'
+            +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="startBdAlloc('+d.id+')">'+(part?'잔여로 이어서 반제':'이 입금으로 반제')+'</button>'
+            +(part?' <button class="btn" style="padding:4px 8px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="closeBdRemaining('+d.id+')">잔여 선수금 처리</button>':'')
+            +'</td></tr>';
+        }).join('')
+        +'</tbody></table>'
+        +'<div class="hint" style="margin-top:6px">한 입금으로 인보이스 여러 건을 반제할 수 있습니다. 한 번에 다 하지 않아도 <b>남은 금액은 「잔여」로 남아</b> 나중에 이어서 반제할 수 있습니다.</div>';
     }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
   }
   function startBdAlloc(id){
     const d=bdInbox.find(x=>x.id===id); if(!d) return;
     bdCtx=d; bdCart={}; arOpenRepay=null; arRepayReceipt=null; arRepayReceiptName=null; renderBdCtxBanner();
     const q=$('arSearchQ');
-    if(q){ q.value=d.customer_name||d.payer_memo||''; if(q.value.trim()){ doArSearch(); } else { renderAr(); } }
+    // 부분배분 통지는 이미 배분된 고객으로 바로 좁혀준다(이어서 반제하는 경우가 대부분).
+    if(q){ q.value=d.alloc_customer_name||d.customer_name||d.payer_memo||''; if(q.value.trim()){ doArSearch(); } else { renderAr(); } }
     try{ document.getElementById('arStats').scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
   }
   function cancelBdCtx(){ bdCtx=null; bdCart={}; arRepayReceipt=null; arRepayReceiptName=null; arOpenRepay=null; renderBdCtxBanner(); renderBdCart(); renderAr(); }
@@ -1190,8 +1260,10 @@
     const el=$('bdCtxBanner'); if(!el) return;
     if(!bdCtx){ el.style.display='none'; el.innerHTML=''; renderBdCart(); return; }
     el.style.display='';
+    const used=bdUsed(), avail=bdRemain();
     el.innerHTML='반제 대상 입금: <b>MX$'+fmt(bdCtx.amount)+'</b> · '+esc(bdCtx.account_name||'')+' · '+esc(bdCtx.deposit_date)+(bdCtx.payer_memo?(' · '+esc(bdCtx.payer_memo)):'')
-      +' — 아래 미수 목록에서 해당 고객 인보이스의 <b>[반제]</b>로 배분을 담고, <b>[저장·통지 닫기]</b>로 확정하세요. (계좌·입금일 고정)'
+      +(used>0.001?(' — <b>부분배분</b> 기배분 MX$'+fmt(used)+' · <b>배분 가능 잔여 MX$'+fmt(avail)+'</b>'):'')
+      +' — 아래 미수 목록에서 해당 고객 인보이스의 <b>[반제]</b>로 배분을 담고 <b>[저장]</b>하세요. 다 배분하지 않아도 남은 금액은 통지에 잔여로 남습니다. (계좌·입금일 고정)'
       +'<button class="btn" style="margin-left:8px;padding:2px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="cancelBdCtx()">대상 해제</button>';
     renderBdCart();
   }
@@ -1234,6 +1306,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260831bd"></script>
 </body>
 </html>

@@ -4060,6 +4060,13 @@
 
   // ===== 은행 매출입금 등록(미배분 입금함) — 재무담당/디렉터 → 영업지원 통지 =====
   function bdEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  // 미배분 입금 오류 문구 — has_allocation 은 "영업지원이 이미 일부 반제함"(0191 부분배분)
+  function bdErrText(d,fallback){
+    if(!d) return fallback;
+    if(d.error==='has_allocation') return '영업지원이 이 입금으로 이미 일부 반제했습니다(배분 MX$'+fmt(Number(d.allocated_amount||0))+'). 수금/정산에서 해당 반제를 먼저 되돌려야 합니다.';
+    if(d.error==='not_pending') return '이미 처리된 입금입니다(상태: '+(d.status||'')+').';
+    return (d.note||d.detail||d.error||fallback);
+  }
   let bdItems=[];
   function bdFind(id){ return bdItems.find(x=>String(x.id)===String(id)); }
   function bdClosePanel(){ const p=$('bd-panel'); if(p) p.innerHTML=''; }
@@ -4101,15 +4108,23 @@
       bdItems=(await fetch(session.api+'/api/bank-deposits?status=pending',{headers:auth()}).then(r=>r.json())).items||[];
       if(!bdItems.length){ box.innerHTML='<div class="hint" style="margin:0">대기 중인 미배분 입금이 없습니다.</div>'; return; }
       const dir=isDirector();
-      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th>송금인/적요</th><th>캡처</th><th>등록자</th><th></th></tr></thead><tbody>'
+      box.innerHTML='<table><thead><tr><th>입금일</th><th>계좌</th><th class="num">금액(MXN)</th><th class="num">잔여</th><th>송금인/적요</th><th>캡처</th><th>등록자</th><th></th></tr></thead><tbody>'
         +bdItems.map(d=>{
-          const acts=(dir?'<button class="btn gold" style="padding:4px 10px;font-size:11.5px" data-bd="book" data-id="'+d.id+'">수입 전환</button> ':'')
-            +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="edit" data-id="'+d.id+'">수정</button> '
-            +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" data-bd="del" data-id="'+d.id+'">삭제</button>';
+          // 부분배분(영업지원이 일부만 반제) 건은 이미 실거래가 있어 수입전환·수정·삭제 불가.
+          const used=Number(d.allocated_amount||0);
+          const rem=(d.remaining!=null?Number(d.remaining):Number(d.amount));
+          const part=used>0.001&&rem>0.001;
+          const acts=part
+            ?'<span class="hint" style="margin:0">영업지원이 일부 반제 중 — 수정·삭제 불가</span>'
+            :((dir?'<button class="btn gold" style="padding:4px 10px;font-size:11.5px" data-bd="book" data-id="'+d.id+'">수입 전환</button> ':'')
+              +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="edit" data-id="'+d.id+'">수정</button> '
+              +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" data-bd="del" data-id="'+d.id+'">삭제</button>');
           const fcell=d.has_file
             ?'<button class="btn" style="padding:3px 9px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" data-bd="file" data-id="'+d.id+'">👁 보기</button>'
             :'<span style="color:var(--expense);font-size:11.5px;font-weight:600">없음</span>';
-          return '<tr><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td><td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+fcell+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
+          return '<tr'+(part?' style="background:#eef4fb"':'')+'><td>'+bdEsc(bdDateStr(d.deposit_date))+'</td><td>'+bdEsc(d.account_name||'—')+'</td><td class="num"><b>'+fmt(d.amount)+'</b></td>'
+            +'<td class="num">'+(part?('<b>'+fmt(rem)+'</b> <span style="font-size:10.5px;background:var(--brand);color:#fff;border-radius:8px;padding:1px 6px">부분배분</span>'):'—')+'</td>'
+            +'<td>'+bdEsc(d.payer_memo||'—')+'</td><td>'+fcell+'</td><td>'+bdEsc(d.created_by_name||'—')+'</td><td style="white-space:nowrap">'+acts+'</td></tr>';
         }).join('')
         +'</tbody></table>';
     }catch(e){ box.innerHTML='<div class="hint">미배분 입금을 불러오지 못했습니다.</div>'; }
@@ -4148,7 +4163,7 @@
     try{
       const res=await fetch(session.api+'/api/bank-deposits/'+id+'/book-income',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='전환 실패: '+(d.error||res.status);} return; }
+      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='전환 실패: '+bdErrText(d,res.status);} return; }
       const bm=$('bd-msg'); if(bm){bm.className='msg ok';bm.textContent='수입 거래로 전환됨 (거래 #'+d.txn_id+' · '+fmt(d.amount_mxn)+' MXN). 거래목록·잔액에 반영됨.';}
       bdClosePanel(); loadBdp();
     }catch(e){ if(m){m.className='msg err';m.textContent='서버 연결 실패';} }
@@ -4200,7 +4215,7 @@
       if(f){ const fo=await bdReadFile(fEl); body.file=fo.data; body.file_name=fo.name; }
       const res=await fetch(session.api+'/api/bank-deposits/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
-      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='수정 실패: '+(d.note||d.detail||d.error||res.status);} return; }
+      if(!res.ok||d.error){ if(m){m.className='msg err';m.textContent='수정 실패: '+bdErrText(d,res.status);} return; }
       bdClosePanel(); loadBdp();
     }catch(e){ if(m){m.className='msg err';m.textContent='서버 연결 실패';} }
     finally{ if($('ed-go'))$('ed-go').disabled=false; }
@@ -4211,7 +4226,7 @@
     try{
       const res=await fetch(session.api+'/api/bank-deposits/'+id,{method:'DELETE',headers:auth()});
       const d=await res.json();
-      if(!res.ok||d.error){ alert('삭제 실패: '+(d.error||res.status)); return; }
+      if(!res.ok||d.error){ alert('삭제 실패: '+bdErrText(d,res.status)); return; }
       bdClosePanel(); loadBdp();
     }catch(e){ alert('서버 연결 실패'); }
   }
@@ -4611,6 +4626,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260831bd"></script>
 </body>
 </html>
