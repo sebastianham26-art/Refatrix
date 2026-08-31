@@ -367,6 +367,8 @@
         +'<td class="c">'+esc(it.inv_date||'—')+'</td>'
         +'<td class="c">'+esc(it.due_date||'—')+'</td>'
         +'<td class="c'+((it.overdue&&!it.paid_full)?' ovd':'')+'">'+esc(arStatusText(it))+'</td>'
+        +'<td class="c">'+esc(arSettledDate(it)||'—')+(it.settled_has_nc&&arSettledDate(it)?' <span style="color:#8a6d1f">(NC)</span>':'')+'</td>'
+        +'<td class="c'+((arSettledDelay(it)||0)>0?' ovd':'')+'">'+esc(arDelayText(it))+'</td>'
         +'<td class="n">'+fmt(it.total_mxn)+'</td>'
         +'<td class="n">'+fmt(it.paid)+'</td>'
         +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td></tr>';
@@ -400,10 +402,12 @@
         +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:#B23A2E">MX$'+fmt(sOvd)+'</div></div>'
         +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+open.filter(x=>x.overdue).length+'건</div></div>'
         +(arIncludeClosed?('<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:#0F6E56">'+(list.length-open.length)+'건</div></div>'):'')
+        +(function(){ const st=arSettledStats(list); return st?('<div class="stat"><div class="k">평균 지연 (완납 '+st.n+'건)</div><div class="v"'+(st.avg>0?' style="color:#B23A2E"':'')+'>'+(st.avg>0?'+':'')+st.avg+'일</div></div>'
+            +'<div class="stat"><div class="k">정시납</div><div class="v" style="color:#0F6E56">'+st.onTimePct+'%</div></div>'):''; })()
       +'</div>'
-      +'<table><thead><tr><th class="c">#</th><th class="c">Folio</th><th>고객 · 인보이스</th><th class="c">발행일</th><th class="c">만기일</th><th class="c">상태</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th></tr></thead>'
+      +'<table><thead><tr><th class="c">#</th><th class="c">Folio</th><th>고객 · 인보이스</th><th class="c">발행일</th><th class="c">만기일</th><th class="c">상태</th><th class="c">완납일</th><th class="c">지연</th><th class="n">청구액</th><th class="n">입금</th><th class="n">잔액</th></tr></thead>'
       +'<tbody>'+rows+'</tbody>'
-      +'<tfoot><tr><td colspan="6">합계 ('+list.length+'건)</td><td class="n">'+fmt(tTot)+'</td><td class="n">'+fmt(tPaid)+'</td><td class="n">'+fmt(tOut)+'</td></tr></tfoot></table>'
+      +'<tfoot><tr><td colspan="8">합계 ('+list.length+'건)</td><td class="n">'+fmt(tTot)+'</td><td class="n">'+fmt(tPaid)+'</td><td class="n">'+fmt(tOut)+'</td></tr></tfoot></table>'
       +'<div class="noprint" style="text-align:center;margin-top:26px"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">인쇄</button></div>'
       +'</body></html>';
     const w=window.open('','_blank');
@@ -427,6 +431,43 @@
     if(it.paid_full) return '<span class="chip chip-paid">완납</span>';
     return arDueText(it);
   }
+  // ===== 완납일(실제 수금 100% 채워진 날) · 만기 대비 지연 =====
+  // settled_date = 마지막 반제일(현금 + NC). settled_delay = 완납일 − 만기일 (+지연 / 0 정시 / −조기).
+  // 미수 인보이스에도 서버가 값을 주지만(마지막 부분수금일) 화면에는 **완납 건에만** 표시한다.
+  function arSettledDate(it){ return (it&&it.paid_full&&it.settled_date)?it.settled_date:null; }
+  function arSettledDelay(it){
+    if(!it||!it.paid_full) return null;
+    return (it.settled_delay==null)?null:Number(it.settled_delay);
+  }
+  // 완납일 셀 — NC(비현금 반제)가 섞였으면 칩으로 드러낸다(현금 100%가 아님).
+  function arSettledDateCell(it){
+    const d=arSettledDate(it);
+    if(!d) return '<span class="hint">—</span>';
+    return '<span style="white-space:nowrap">'+esc(d)
+      +(it.settled_has_nc?' <span class="chip" style="background:#fdf3e0;color:var(--gold);border:1px solid #eadcc0" title="일부가 N/C(비현금 반제)로 마감된 건입니다 — 현금 100%가 아닙니다">NC</span>':'')
+      +'</span>';
+  }
+  // 지연 셀 — 지연은 빨강, 정시는 초록, 조기는 회색.
+  function arDelayCell(it){
+    const n=arSettledDelay(it);
+    if(n==null) return '<span class="hint">—</span>';
+    if(n>0)  return '<b style="color:var(--expense);white-space:nowrap">+'+n+'일 지연</b>';
+    if(n===0) return '<b style="color:var(--brand);white-space:nowrap">정시</b>';
+    return '<span class="hint" style="white-space:nowrap">'+n+'일 조기</span>';
+  }
+  function arDelayText(it){   // 인쇄·텍스트용(마크업 없음)
+    const n=arSettledDelay(it);
+    if(n==null) return '—';
+    return n>0?('+'+n+'일 지연'):(n===0?'정시':(n+'일 조기'));
+  }
+  // 완납 건들의 수금 성과 요약 — 평균 지연(일) · 정시납(만기일 이내) 비율.
+  function arSettledStats(list){
+    const arr=list.filter(it=>arSettledDelay(it)!=null).map(it=>arSettledDelay(it));
+    if(!arr.length) return null;
+    const sum=arr.reduce((s,n)=>s+n,0);
+    const onTime=arr.filter(n=>n<=0).length;
+    return { n:arr.length, avg:Math.round(sum/arr.length*10)/10, onTimePct:Math.round(onTime/arr.length*100) };
+  }
   // ===== 헤더 클릭 정렬 =====
   // 컬럼 메타: 정렬키 → {타입, 값추출, 첫클릭방향}
   const AR_COLS={
@@ -435,6 +476,10 @@
     inv_date:{type:'text', get:it=>it.inv_date||'', firstDesc:true},
     due_date:{type:'text', get:it=>it.due_date||'', firstDesc:false},
     day_diff:{type:'num',  get:it=>it.paid_full?-1e9:(it.day_diff==null?-1e8:it.day_diff), firstDesc:true},
+    // 완납일: 미수 건(값 없음)은 빈 문자열 → arCmp 가 항상 뒤로 보낸다.
+    settled_date:{type:'text', get:it=>arSettledDate(it)||'', firstDesc:true},
+    // 지연: 큰 지연부터 보고 싶은 게 보통 → 첫 클릭 내림차순. 값 없으면 맨 아래로.
+    settled_delay:{type:'num', get:it=>{ const n=arSettledDelay(it); return n==null?-1e9:n; }, firstDesc:true},
     total_mxn:{type:'num', get:it=>Number(it.total_mxn)||0, firstDesc:true},
     paid:{type:'num',      get:it=>Number(it.paid)||0, firstDesc:true},
     outstanding:{type:'num',get:it=>Number(it.outstanding)||0, firstDesc:true},
@@ -483,6 +528,8 @@
       +arTh('inv_date','발행일','left')
       +arTh('due_date','만기일','left')
       +arTh('day_diff','상태','left')
+      +arTh('settled_date','완납일','left')
+      +arTh('settled_delay','지연','left')
       +arTh('total_mxn','청구액','n')
       +arTh('paid','입금','n')
       +arTh('outstanding','잔액','n')
@@ -494,6 +541,8 @@
         +'<td style="text-align:left;white-space:nowrap">'+esc(it.inv_date||'—')+'</td>'
         +'<td style="text-align:left;white-space:nowrap">'+esc(it.due_date||'—')+'</td>'
         +'<td style="text-align:left;white-space:nowrap">'+arStatusChip(it)+'</td>'
+        +'<td style="text-align:left;white-space:nowrap">'+arSettledDateCell(it)+'</td>'
+        +'<td style="text-align:left;white-space:nowrap">'+arDelayCell(it)+'</td>'
         +'<td class="n">'+fmt(it.total_mxn)+'</td>'
         +'<td class="n">'+fmt(it.paid)+'</td>'
         +'<td class="n"><b>'+fmt(it.outstanding)+'</b></td>'
@@ -504,12 +553,19 @@
         +(it.paid_full?'':'<button class="btn notranslate" translate="no" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--gold);border:1px solid var(--line)" onclick="toggleNc('+it.id+')" title="할인 승인 증빙(Nota de crédito) 발기">N/C</button> ')
         +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--brand);border:1px solid var(--line)" onclick="toggleHist('+it.id+')">'+(arHistOpen===it.id?'▴ 닫기':'수금내역')+'</button></td>'
         +'</tr>';
-      if(arOpenRepay===it.id){ h+='<tr><td colspan="9" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
-      if(arOpenNc===it.id){ h+='<tr><td colspan="9" style="background:#fbf7ee">'+ncForm(it)+'</td></tr>'; }
-      if(arHistOpen===it.id){ h+='<tr><td colspan="9">'+histInnerHtml(it)+'</td></tr>'; }
+      if(arOpenRepay===it.id){ h+='<tr><td colspan="11" style="background:#faf8f3">'+repayForm(it)+'</td></tr>'; }
+      if(arOpenNc===it.id){ h+='<tr><td colspan="11" style="background:#fbf7ee">'+ncForm(it)+'</td></tr>'; }
+      if(arHistOpen===it.id){ h+='<tr><td colspan="11">'+histInnerHtml(it)+'</td></tr>'; }
     });
     h+='</tbody></table></div>';
     return h;
+  }
+  // 화면 통계 칩(평균 지연 · 정시납) — 완납 건이 목록에 있을 때만 붙는다.
+  function arSettledStatHtml(list){
+    const st=arSettledStats(list); if(!st) return '';
+    return '<div class="stat"><div class="k">평균 지연 (완납 '+st.n+'건)</div>'
+      +'<div class="v" style="color:'+(st.avg>0?'var(--expense)':'var(--income)')+'">'+(st.avg>0?'+':'')+st.avg+'일</div></div>'
+      +'<div class="stat"><div class="k">정시납 (만기 내)</div><div class="v" style="color:var(--income)">'+st.onTimePct+'%</div></div>';
   }
   function renderAr(){
     $('arSearchClear').style.display = arSearchMode ? '' : 'none';
@@ -521,7 +577,8 @@
         '<div class="stat tot"><div class="k">검색 결과</div><div class="v">'+list.length+'건</div></div>'
         +'<div class="stat"><div class="k">미수 합계</div><div class="v">MX$'+fmt(sOut)+'</div></div>'
         +'<div class="stat"><div class="k">완납</div><div class="v" style="color:var(--income)">'+list.filter(x=>x.paid_full).length+'건</div></div>'
-        +'<div class="stat"><div class="k">연체</div><div class="v" style="color:var(--expense)">'+list.filter(x=>x.overdue).length+'건</div></div>';
+        +'<div class="stat"><div class="k">연체</div><div class="v" style="color:var(--expense)">'+list.filter(x=>x.overdue).length+'건</div></div>'
+        +arSettledStatHtml(list);
       $('arListBox').innerHTML = list.length ? arListTableHtml(list) : '<div class="nores">검색 결과가 없습니다.</div>';
       return;
     }
@@ -544,7 +601,8 @@
       +'<div class="stat"><div class="k">오픈 인보이스</div><div class="v">'+sCount+'건</div></div>'
       +'<div class="stat"><div class="k">연체 잔액</div><div class="v" style="color:var(--expense)">MX$'+fmt(sOvd)+'</div></div>'
       +'<div class="stat"><div class="k">연체 건수</div><div class="v">'+openList.filter(x=>x.overdue).length+'건</div></div>'
-      +(arIncludeClosed?'<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:var(--income)">'+closedCount+'건</div></div>':'');
+      +(arIncludeClosed?'<div class="stat"><div class="k">완납(closing)</div><div class="v" style="color:var(--income)">'+closedCount+'건</div></div>':'')
+      +arSettledStatHtml(list);
     if(arGroup==='company'){ $('arGroupBox').innerHTML=''; }
     else {
       const gk=Object.keys(groups).sort((a,b)=>(groups[b].outstanding-groups[a].outstanding)||((groups[b].closed||0)-(groups[a].closed||0))||String(groups[a].label).localeCompare(String(groups[b].label)));
@@ -735,6 +793,12 @@
     h+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:2px">'
       +'<b style="color:var(--brand)" class="notranslate" translate="no">수금내역 · '+(it.folio_no?('Folio '+esc(it.folio_no)+' · '):'')+esc(inv.sat_no||('#'+it.id))+'</b>'
       +(inv.paid_full?'<span class="chip chip-paid">완납(100%)</span>':'<span class="chip chip-part">미수 MX$'+fmt(inv.outstanding)+'</span>')
+      +((inv.paid_full&&inv.settled_date)
+        ? ('<span class="hint">완납일 <b>'+esc(inv.settled_date)+'</b>'
+            +(inv.settled_has_nc?' <span class="chip" style="background:#fdf3e0;color:var(--gold);border:1px solid #eadcc0" title="일부가 N/C(비현금 반제)로 마감된 건입니다 — 현금 100%가 아닙니다">NC</span>':'')
+            +((inv.due_date&&inv.settled_delay!=null)?(' · 만기 '+esc(inv.due_date)+' 대비 '+arDelayCell(inv)):'')
+            +'</span>')
+        : '')
       +'<span class="hint">청구 MX$'+fmt(inv.total_mxn)+' · 입금 MX$'+fmt(inv.paid)+' · 잔액 MX$'+fmt(inv.outstanding)+'</span>'
       +'</div>';
     if(!pays.length){ h+='<div class="hint">아직 수금(반제) 기록이 없습니다.</div>'; }

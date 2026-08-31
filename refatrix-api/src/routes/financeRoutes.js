@@ -24,6 +24,21 @@ import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
 
+// 인보이스 「완납일」(= 실제 수금이 100% 채워진 날) 계산용 조인.
+//   잔액이 0이 된 날 = 마지막 반제일 이므로 배분들의 MAX(반제일)을 쓴다.
+//   반제일: 현금 반제 → sales_payments.pay_date / NC(비현금) 반제 → notas_credito 적용·승인·작성일 순.
+//   has_nc: NC 반제가 섞여 있으면 true — 화면에서 「NC」 칩으로 드러내 현금 100%와 구분한다.
+//   ※ 미수 인보이스에도 값이 들어오지만(마지막 부분수금일) 화면은 완납 건에만 표시한다.
+const AR_SETTLED_SQL = `LEFT JOIN (
+           SELECT al.invoice_id,
+                  MAX(COALESCE(p.pay_date, nc.applied_at::date, nc.approved_at::date, nc.created_at::date)) AS settled_dt,
+                  BOOL_OR(al.kind = 'nota_credito') AS has_nc
+             FROM sales_payment_allocations al
+             LEFT JOIN sales_payments p ON p.id = al.payment_id
+             LEFT JOIN notas_credito nc ON nc.id = al.nc_id
+            GROUP BY al.invoice_id
+         )`;
+
 // 미배분 입금(통지) 잔여 허용치 — 이 금액 미만이 남으면 "잔여 없음"으로 보고 통지를 닫는다.
 // 화면 금액이 정수 페소로 반올림 표시되므로 0.5 미만(=화면상 0)은 잔여로 남기지 않는다.
 // (인보이스 완납 판정의 AR_PAID_EPS 와 같은 취지·같은 값)
@@ -1241,6 +1256,10 @@ export default async function financeRoutes(app) {
               (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
               (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
               CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
+              to_char(sd.settled_dt,'YYYY-MM-DD') AS settled_date,
+              CASE WHEN s.due_date IS NOT NULL AND sd.settled_dt IS NOT NULL
+                   THEN (sd.settled_dt - s.due_date) ELSE NULL END AS settled_delay,
+              COALESCE(sd.has_nc,false) AS settled_has_nc,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
               c.team_id, t.name AS team_name,
               c.owner_id, u.name AS owner_name
@@ -1249,6 +1268,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+         ${AR_SETTLED_SQL} sd ON sd.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'${oTeam}
           ${includeClosed ? '' : 'AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01'}
         ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) <= 0.005), s.due_date NULLS LAST, s.inv_date, s.id`, oargs)).rows;
@@ -1259,6 +1279,9 @@ export default async function financeRoutes(app) {
         total_mxn: r2(Number(r.total_mxn)), paid: r2(Number(r.paid)), outstanding: r2(Number(r.outstanding)),
         paid_full: r2(Number(r.outstanding)) <= 0.005,
         overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
+        settled_date: r.settled_date || null,
+        settled_delay: r.settled_delay == null ? null : Number(r.settled_delay),
+        settled_has_nc: r.settled_has_nc === true,
         customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,
         customer_rfc: r.customer_rfc || null, customer_phone: r.customer_phone || null,
         team_id: r.team_id == null ? null : Number(r.team_id), team_name: r.team_name || null,
@@ -1275,10 +1298,15 @@ export default async function financeRoutes(app) {
     const inv = (await query(
       `SELECT s.id, s.sat_no, to_char(s.inv_date,'YYYY-MM-DD') AS inv_date, to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               s.total_mxn, COALESCE(pa.paid,0) AS paid,
+              to_char(sd.settled_dt,'YYYY-MM-DD') AS settled_date,
+              CASE WHEN s.due_date IS NOT NULL AND sd.settled_dt IS NOT NULL
+                   THEN (sd.settled_dt - s.due_date) ELSE NULL END AS settled_delay,
+              COALESCE(sd.has_nc,false) AS settled_has_nc,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.team_id AS customer_team_id
          FROM sales_invoices s
          JOIN customers c ON c.id=s.customer_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+         ${AR_SETTLED_SQL} sd ON sd.invoice_id=s.id
         WHERE s.id=$1 AND s.deleted_at IS NULL`, [invId])).rows[0];
     if (!inv) return reply.code(404).send({ error: 'not_found' });
     if (!canViewTeam(req.ctx.perm, inv.customer_team_id)) return reply.code(403).send({ error: 'forbidden_team' });
@@ -1301,6 +1329,9 @@ export default async function financeRoutes(app) {
       invoice: {
         id: Number(inv.id), sat_no: inv.sat_no, inv_date: inv.inv_date, due_date: inv.due_date,
         total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
+        settled_date: inv.settled_date || null,
+        settled_delay: inv.settled_delay == null ? null : Number(inv.settled_delay),
+        settled_has_nc: inv.settled_has_nc === true,
         customer_id: Number(inv.customer_id), customer_code: inv.customer_code, customer_name: inv.customer_name,
       },
       payments: rows.map((r) => ({
@@ -1477,6 +1508,10 @@ export default async function financeRoutes(app) {
               (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
               (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
               CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
+              to_char(sd.settled_dt,'YYYY-MM-DD') AS settled_date,
+              CASE WHEN s.due_date IS NOT NULL AND sd.settled_dt IS NOT NULL
+                   THEN (sd.settled_dt - s.due_date) ELSE NULL END AS settled_delay,
+              COALESCE(sd.has_nc,false) AS settled_has_nc,
               c.id AS customer_id, c.code AS customer_code, c.name AS customer_name, c.rfc AS customer_rfc, c.phone AS customer_phone,
               c.team_id, t.name AS team_name, c.owner_id, u.name AS owner_name
          FROM sales_invoices s
@@ -1484,6 +1519,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN sales_teams t ON t.id=c.team_id
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+         ${AR_SETTLED_SQL} sd ON sd.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'${sTeam}
           AND (s.sat_no ILIKE $1 ESCAPE '\\' OR s.folio_no ILIKE $1 ESCAPE '\\' OR c.name ILIKE $1 ESCAPE '\\')
         ORDER BY s.inv_date DESC, s.id DESC
@@ -1496,6 +1532,9 @@ export default async function financeRoutes(app) {
           id: Number(r.id), sat_no: r.sat_no, folio_no: r.folio_no || null, inv_date: r.inv_date, due_date: r.due_date,
           total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
           overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
+          settled_date: r.settled_date || null,
+          settled_delay: r.settled_delay == null ? null : Number(r.settled_delay),
+          settled_has_nc: r.settled_has_nc === true,
           customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,
           customer_rfc: r.customer_rfc || null, customer_phone: r.customer_phone || null,
           team_id: r.team_id == null ? null : Number(r.team_id), team_name: r.team_name || null,
