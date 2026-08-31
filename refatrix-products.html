@@ -107,6 +107,14 @@
   .pm-head .t{font-weight:800;color:var(--brand);font-size:15px}
   .pm-x{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px}
   .pm-x:hover{background:#f4f1ea}
+  /* 참조 코드로 신규 등록(2026-08-31) */
+  .pe-ref{border:1px dashed var(--gold);border-radius:10px;padding:9px 11px;margin:0 0 10px;background:#FCF9F0}
+  .pe-ref .rt{font-weight:800;font-size:13px;color:#9A7B16}
+  .pe-ref table{margin-top:4px}
+  .pe-ref td{padding:3px 6px}
+  .pe-refinfo{margin-top:6px;font-size:12px;color:#6f6a60}
+  .pe-refinfo b{color:#9A7B16}
+  input.reffill,textarea.reffill,select.reffill{background:#FCF9F0;border-color:var(--gold)}
   .pm-cols{display:flex;gap:14px;flex-wrap:wrap}
   .pm-col{flex:1 1 300px;min-width:280px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#faf8f3}
   .pm-col .bh{font-weight:800;font-size:13px;margin-bottom:6px;color:var(--brand)}
@@ -233,7 +241,7 @@
     <h2>제품 마스터 업로드</h2>
     <div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 14px;background:#faf8f3">
       <div style="font-weight:700">화면에서 직접 추가 · 수정</div>
-      <div class="hint" style="margin-top:4px">엑셀 없이 제품 1건을 바로 추가하거나, 기존 제품을 검색해 선택하면 화면에서 수정할 수 있습니다. <b>재고수량·평균원가는 여기서도 절대 바뀌지 않으며</b>, 모든 변경(추가·수정·업로드·소재)은 아래 「제품 변경 이력」에 자동 기록됩니다.</div>
+      <div class="hint" style="margin-top:4px">엑셀 없이 제품 1건을 바로 추가하거나, 기존 제품을 검색해 선택하면 화면에서 수정할 수 있습니다. 신규 추가 시 <b>📄 참조 코드</b>로 비슷한 기존 제품을 지정하면 그 내용이 그대로 채워지고, 새 코드와 달라지는 항목만 고치면 됩니다(제품코드·Barcode·Rack 위치는 복사하지 않습니다). <b>재고수량·평균원가는 여기서도 절대 바뀌지 않으며</b>, 모든 변경(추가·수정·업로드·소재)은 아래 「제품 변경 이력」에 자동 기록됩니다.</div>
       <div class="row" style="margin-top:8px;align-items:flex-end">
         <div style="flex:0 0 auto"><button class="btn" id="peNewBtn" type="button">➕ 신규 제품 추가</button></div>
         <div style="flex:2"><label>수정할 제품 검색 (코드 · 이름 · SyD코드)</label><input id="peQ" type="text" placeholder="코드나 이름을 입력하면 아래에 후보가 나타납니다"></div>
@@ -605,6 +613,9 @@
       const eb=dr.querySelector('.editicon');
       if(eb) eb.addEventListener('click',function(e){ e.stopPropagation();
         openProductEditor(Number(eb.getAttribute('data-pid'))); });
+      const nb=dr.querySelector('.refnewicon');
+      if(nb) nb.addEventListener('click',function(e){ e.stopPropagation();
+        openProductEditor(null, Number(nb.getAttribute('data-pid'))); });
       stBindPanel(dr, pid, d);   // 0179 활성/비활성 패널
     }catch(e){ dr.firstChild.innerHTML='<div class="hint">상세를 불러오지 못했습니다.</div>'; }
   }
@@ -619,7 +630,8 @@
       const picBtn='<span class="photoicon" role="button" tabindex="0" data-code="'+escP(pCode||'')+'" data-syd="'+escP(pSyd||'')+'" title="SYD·CTR 제품 사진 보기">📷 사진</span>';
       const isDirE=session&&session.user&&session.user.role==='director';
       const editBtn=(isDirE&&pid)?'<span class="photoicon editicon" role="button" tabindex="0" data-pid="'+pid+'" title="이 제품의 마스터 정보를 화면에서 수정합니다 (변경 이력 기록)">✎ 수정</span>':'';
-      let h='<div class="appsec"><div class="dh">적용차종'+(list.length?(' ('+list.length+'종)'):'')+picBtn+editBtn+'</div>';
+      const newBtn=(isDirE&&pid)?'<span class="photoicon refnewicon" role="button" tabindex="0" data-pid="'+pid+'" title="이 제품의 내용을 그대로 불러와 새 코드로 등록합니다 (코드·바코드·랙 위치는 비워둡니다)">📄 이 코드로 신규</span>':'';
+      let h='<div class="appsec"><div class="dh">적용차종'+(list.length?(' ('+list.length+'종)'):'')+picBtn+editBtn+newBtn+'</div>';
       if(!list.length){ h+='<div class="hint" style="margin:2px 0">등록된 적용차종이 없습니다.</div>'; }
       else{ h+='<div class="appchips">'+list.map(a=>'<span class="tag">'+escP(a)+'</span>').join('')+'</div>'; }
       return h+'</div>';
@@ -963,18 +975,141 @@
   const PE_LABEL=Object.assign({},{code:'Clave CTR',material:'Material',rack_location:'Rack 위치'},FIELD_LABEL);
   const PE_SRC={manual:'화면',import:'엑셀 업로드',material:'소재(인라인)',material_bulk:'소재(일괄)'};
   let peEsc=null, peEditId=null;
+  // 모달 세대 번호 — 모달을 열 때마다 +1. 늦게 도착한 응답이 「지금 열려 있는 다른 모달」에
+  //   값을 쏟아붓는 사고를 막는다(느린 회선에서 참조 불러오기 중 다른 제품을 여는 경우).
+  //   peRefSeq 는 같은 모달 안에서 참조를 연달아 고른 경우 — 마지막에 고른 것만 반영한다.
+  let peGen=0, peRefSeq=0, peRefTimer=null, peRefFrom=null;
 
   function peClose(){ const ov=document.getElementById('peOv'); if(ov) ov.remove();
-    if(peEsc){ document.removeEventListener('keydown', peEsc); peEsc=null; } peEditId=null; }
+    if(peEsc){ document.removeEventListener('keydown', peEsc); peEsc=null; }
+    clearTimeout(peRefTimer); peGen++; peRefFrom=null; peEditId=null; }
 
   function peInput(id,label,extra){ return '<div style="'+(extra||'')+'"><label>'+label+'</label><input id="'+id+'" type="text"></div>'; }
 
-  function openProductEditor(pid){
-    peClose(); peEditId=pid||null;
+  // ── 참조 코드로 신규 등록 ──
+  //   기존 제품 1건을 골라 그 마스터 정보를 신규 입력폼에 채워 넣는다.
+  //   비우는 항목(PE_REF_SKIP): 그 SKU 고유의 식별·물류 정보라 복사하면 안 되는 것들.
+  //     code  — 새 코드를 직접 지정해야 함 (복사하면 곧바로 중복 409)
+  //     ean   — 바코드는 SKU 마다 고유. 복사하면 코드검색·PDA 스캔이 두 제품을 잡는다
+  //     location / rack_location — 실물 재고가 들어와야 정해지는 자리. 신규는 재고 0
+  const PE_REF_SKIP=['code','ean','location','rack_location'];
+  const PE_REF_FIELDS=['name','scode','app','sat_code','origin','list_price','iva_rate',
+    'list_price_syd','price_customer_syd','price_customer_ctr','material'];
+  const PE_REF_HINT='제품코드 · Barcode(EAN) · Rack 위치 · Fast Movement Location 은 <b>복사하지 않습니다</b>'
+    +' (SKU 마다 고유한 값 — 이미 입력해 두셨다면 그대로 남습니다).'
+    +' <b>Clave SyD 는 복사됩니다</b> — 경쟁사 코드가 다르면 반드시 고쳐 주세요(같은 코드가 두 제품에 걸리면 역검색이 엉킵니다).';
+  const PE_REF_CLEAR_BTN='<button class="btn ghost sm" id="peRefClear" type="button" style="margin-left:6px">↺ 전부 비우기</button>';
+
+  function peRefBarHtml(){
+    return '<div class="pe-ref" id="peRefBar">'
+      +'<div class="rt">📄 참조 코드로 시작하기 <span style="font-weight:400;color:#6f6a60">— 비슷한 기존 제품을 골라 내용을 불러온 뒤, 새 코드만 지정하고 필요한 곳만 고치세요.</span></div>'
+      +'<div style="margin-top:6px"><label for="pe_ref">참조할 제품 검색 (코드 · 이름 · SyD코드)</label>'
+      +'<input id="pe_ref" type="text" placeholder="코드나 이름을 2자 이상 입력하면 아래에 후보가 나타납니다"></div>'
+      +'<div id="peRefList"></div>'
+      +'<div class="pe-refinfo" id="peRefInfo">'+PE_REF_HINT+'</div>'
+      +'</div>';
+  }
+  function peRefRender(items){
+    const box=$('peRefList'); if(!box) return;
+    if(!items || !items.length){ box.innerHTML=''; return; }
+    box.innerHTML='<table style="margin-top:4px"><tbody>'+items.map(p=>
+      '<tr><td class="code" style="width:130px">'+escP(p.code)+'</td>'
+      +'<td style="font-size:12px">'+escP(p.name||'—')+'</td>'
+      +'<td style="font-size:11px;color:#6f6a60">'+escP((p.scode||'').replace(/\s*\/\/\s*/g,' · ').slice(0,50))+'</td>'
+      +'<td style="width:84px;text-align:right"><button class="btn ghost sm pe-ref-pick" data-pid="'+p.id+'" type="button">불러오기</button></td></tr>').join('')
+      +'</tbody></table>';
+    box.querySelectorAll('.pe-ref-pick').forEach(b=>b.addEventListener('click',()=>peApplyRef(Number(b.getAttribute('data-pid')))));
+  }
+  async function peRefSearch(){
+    const el=$('pe_ref'); if(!el) return;
+    const q=el.value.trim();
+    if(q.length<2){ peRefRender([]); return; }
+    const gen=peGen;
+    try{
+      const d=await fetch(session.api+'/api/products?q='+encodeURIComponent(q)+'&limit=8',{headers:auth()}).then(x=>x.json());
+      if(gen!==peGen) return;                       // 그 사이 모달이 닫혔거나 다시 열렸다 — 버린다
+      peRefRender(d.items||[]);
+    }catch(e){ if(gen===peGen) peRefRender([]); }
+  }
+  function peRefMark(id){ const el=$(id); if(el) el.classList.add('reffill'); }
+  function peRefUnmarkAll(){
+    const ov=document.getElementById('peOv'); if(!ov) return;
+    ov.querySelectorAll('.reffill').forEach(el=>el.classList.remove('reffill'));
+  }
+  // 사용자가 직접 입력한(= 참조에서 온 노란 칸이 아닌) 값이 폼에 있는지
+  function peUserTyped(){
+    return PE_REF_FIELDS.concat(PE_REF_SKIP).some(f=>{
+      const el=$('pe_'+f);
+      return !!(el && String(el.value||'').trim()!=='' && !el.classList.contains('reffill'));
+    });
+  }
+  // 참조 불러오기 — 신규 모드에서만 동작. 편집 중인 제품을 덮어쓰는 사고를 구조적으로 막는다.
+  //   가드가 두 겹인 이유: peEditId 는 동기 검사라 fetch 가 도는 동안 다른 모달이 열리면 무력하다.
+  //   그래서 응답을 받은 뒤 세대 번호(peGen)로 「내가 시작된 그 모달이 아직 그대로인지」를 다시 본다.
+  async function peApplyRef(refId){
+    if(peEditId) return;
+    const gen=peGen, seq=++peRefSeq;
+    const info=$('peRefInfo'), m=$('peMsg');
+    if(info) info.innerHTML='불러오는 중…';
+    try{
+      const res=await fetch(session.api+'/api/products/'+refId+'/master',{headers:auth()});
+      const d=await res.json();
+      if(gen!==peGen || seq!==peRefSeq || peEditId) return;   // 늦게 온 응답 — 지금 화면을 건드리지 않는다
+      const info2=$('peRefInfo');
+      if(!res.ok||d.error){ if(info2) info2.innerHTML='<span style="color:var(--expense)">참조 제품을 불러오지 못했습니다: '+escP(String(d.error||res.status))+'</span>'; return; }
+      // 이미 손으로 입력한 내용이 있으면 덮어쓰기 전에 확인 — 조용히 날리지 않는다.
+      if(peUserTyped() && !confirm('이미 입력한 내용이 있습니다.\n'+(d.code||'')+' 의 내용으로 덮어쓸까요?\n\n(제품코드 · Barcode · Rack 위치 · Fast Movement Location 에 입력한 값은 그대로 남습니다.)')){
+        if(info2) info2.innerHTML=peRefFrom?('<b>'+escP(peRefFrom.code)+'</b> 에서 불러온 상태 그대로입니다. '+PE_REF_CLEAR_BTN):PE_REF_HINT;
+        peRefBindClear();
+        return;
+      }
+      const ms=$('pe_material');
+      if(ms){
+        // 참조를 여러 번 바꿔 불러도 옵션이 쌓이지 않게 — 이전에 넣은 임시 옵션은 먼저 제거
+        ms.querySelectorAll('option[data-ref="1"]').forEach(o=>o.remove());
+        if(d.material && !Array.from(ms.options).some(o=>o.value===d.material)){
+          const op=document.createElement('option'); op.value=d.material; op.textContent=d.material;
+          op.setAttribute('data-ref','1'); ms.appendChild(op);
+        }
+      }
+      peRefUnmarkAll();
+      // 복사 항목: 참조값이 비어 있어도 「참조 기준 비어 있음」을 뜻하므로 똑같이 표시한다.
+      PE_REF_FIELDS.forEach(f=>{
+        const el=$('pe_'+f); if(!el) return;
+        const v=d[f]; el.value=(v==null?'':String(v));
+        peRefMark('pe_'+f);
+      });
+      // PE_REF_SKIP 은 채우지 않을 뿐, 사용자가 먼저 입력해 둔 값(예: 새 코드)은 건드리지 않는다.
+      peRefFrom={id:Number(d.id), code:d.code};
+      if(info2) info2.innerHTML='<b>'+escP(d.code)+'</b> 의 내용을 불러왔습니다 (노란 칸 = 아직 참조 그대로). '
+        +'<b>제품코드</b>를 새로 입력하고 달라지는 항목만 고치세요. '
+        +'복사하지 않은 항목: Barcode(EAN) · Rack 위치 · Fast Movement Location. '
+        +'<b>Clave SyD 는 복사되었으니</b> 경쟁사 코드가 다르면 꼭 고쳐 주세요. '+PE_REF_CLEAR_BTN;
+      peRefBindClear();
+      peRefRender([]);
+      const rq=$('pe_ref'); if(rq) rq.value='';
+      if(m){ m.className='msg'; m.style.display='none'; }
+      const code=$('pe_code'); if(code && !String(code.value||'').trim()) code.focus();
+    }catch(e){ if(gen===peGen && seq===peRefSeq){ const i2=$('peRefInfo'); if(i2) i2.innerHTML='<span style="color:var(--expense)">서버 연결 실패</span>'; } }
+  }
+  function peRefBindClear(){ const cb=$('peRefClear'); if(cb) cb.addEventListener('click', peRefReset); }
+  function peRefReset(){
+    if(peEditId) return;
+    if(peUserTyped() && !confirm('입력한 내용을 전부 비웁니다. 계속할까요?')) return;
+    PE_REF_FIELDS.concat(PE_REF_SKIP).forEach(f=>{ const el=$('pe_'+f); if(el) el.value=''; });
+    const ms=$('pe_material'); if(ms) ms.querySelectorAll('option[data-ref="1"]').forEach(o=>o.remove());
+    peRefUnmarkAll(); peRefFrom=null;
+    const info=$('peRefInfo');
+    if(info) info.innerHTML=PE_REF_HINT;
+  }
+
+  function openProductEditor(pid, refId){
+    peClose(); peGen++; peEditId=pid||null; peRefFrom=null;
     const ov=document.createElement('div'); ov.className='pm-ov'; ov.id='peOv';
     ov.innerHTML='<div class="pm-box" style="max-width:760px">'
       +'<div class="pm-head"><span class="t">'+(pid?'✎ 제품 수정':'➕ 신규 제품 추가')+'</span>'
       +'<button type="button" class="pm-x" id="peX">✕ 닫기</button></div>'
+      +(pid?'':peRefBarHtml())
       +'<div class="row">'+peInput('pe_code','제품코드 (Clave CTR) *')+'<div style="flex:2"><label>제품명 (Nombre del producto) *</label><input id="pe_name" type="text"></div></div>'
       +'<div><label>경쟁사 코드 (Clave SyD — 여러 개면 \' // \' 구분)</label><input id="pe_scode" type="text"></div>'
       +'<div><label>적용차종 (Aplicacion — 여러 개면 \' // \' 구분)</label><textarea id="pe_app" style="width:100%;min-height:54px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box"></textarea></div>'
@@ -997,15 +1132,27 @@
     peEsc=function(e){ if(e.key==='Escape') peClose(); };
     document.addEventListener('keydown', peEsc);
     ov.querySelector('#peSave').addEventListener('click', peSave);
+    // 사용자가 직접 고친 칸은 「참조에서 온 값」 표시를 지운다 — 노란 칸 = 아직 참조 그대로.
+    ov.querySelectorAll('input,textarea,select').forEach(el=>{
+      el.addEventListener('input',function(){ el.classList.remove('reffill'); });
+      el.addEventListener('change',function(){ el.classList.remove('reffill'); });
+    });
     $('peInfo').textContent = pid ? '' : '재고수량·평균원가는 0으로 시작하며, 재고는 수입 입고로만 변동됩니다.';
-    if(pid) peLoad(pid);
+    if(pid){ peLoad(pid); }
+    else{
+      const rq=$('pe_ref');
+      if(rq) rq.addEventListener('input',function(){ clearTimeout(peRefTimer); peRefTimer=setTimeout(peRefSearch,300); });
+      if(refId) peApplyRef(Number(refId));
+    }
   }
 
   async function peLoad(pid){
+    const gen=peGen;
     const m=$('peMsg');
     try{
       const res=await fetch(session.api+'/api/products/'+pid+'/master',{headers:auth()});
       const d=await res.json();
+      if(gen!==peGen) return;      // 그 사이 다른 모달이 열렸다 — 늦게 온 응답을 쏟아붓지 않는다
       if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='제품 정보를 불러오지 못했습니다: '+(d.error||res.status); return; }
       const set=(id,v)=>{ const el=$(id); if(el) el.value=(v==null?'':String(v)); };
       set('pe_code',d.code); set('pe_name',d.name); set('pe_scode',d.scode); set('pe_app',d.app);
@@ -1046,19 +1193,26 @@
     if(!String(body.code).trim()){ m.className='msg err'; m.style.display='block'; m.textContent='제품코드(Clave CTR)를 입력하세요.'; return; }
     if(!String(body.name).trim()){ m.className='msg err'; m.style.display='block'; m.textContent='제품명을 입력하세요.'; return; }
     const btn=$('peSave'); btn.disabled=true; const old=btn.textContent; btn.textContent='저장 중…';
+    const gen=peGen;
     try{
       const isEdit=!!peEditId;
       const url=session.api+(isEdit?('/api/products/'+peEditId):'/api/products');
       const res=await fetch(url,{method:isEdit?'PATCH':'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
       const d=await res.json();
+      // 저장 중에 모달이 닫히거나 다른 제품 모달이 열렸다면 여기서 멈춘다.
+      //   (특히 신규 저장 성공 시 peEditId 를 새 id 로 바꾸는데, 그 사이 열린 다른 신규 모달이
+      //    그 id 를 물려받으면 다음 저장이 방금 만든 제품을 덮어쓰는 PATCH 가 된다.)
+      if(gen!==peGen){ if(res.ok&&!d.error){ doSearch(); if($('clBox')&&$('clBox').innerHTML) clLoadHist(true); } return; }
       if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='저장 실패: '+(d.detail||d.error||res.status); return; }
       m.className='msg ok'; m.style.display='block';
       if(isEdit){
         m.textContent=d.unchanged?'변경된 내용이 없습니다.':'저장 완료 — 변경 항목: '+(d.changed||[]).map(f=>PE_LABEL[f]||f).join(', ');
         peHist(peEditId);
       }else{
-        m.textContent='추가 완료 — '+d.code+' 제품이 등록되었습니다.';
+        m.textContent='추가 완료 — '+d.code+' 제품이 등록되었습니다.'+(peRefFrom?(' (참조: '+peRefFrom.code+')'):'');
         peEditId=d.id;                    // 이후 저장은 수정으로 전환(중복 생성 방지)
+        // 이제 이 모달은 「수정」이다 — 참조 바를 남겨두면 방금 만든 제품을 다른 제품 내용으로 덮어쓸 수 있다.
+        const rb=$('peRefBar'); if(rb) rb.remove(); peRefFrom=null; peRefUnmarkAll();
         btn.textContent='저장'; const t=document.querySelector('#peOv .pm-head .t'); if(t) t.textContent='✎ 제품 수정';
       }
       doSearch(); peQRender([]); $('peQ').value='';
@@ -1077,9 +1231,13 @@
       '<tr><td class="code" style="width:130px">'+escP(p.code)+'</td>'
       +'<td style="font-size:12px">'+escP(p.name||'—')+'</td>'
       +'<td style="font-size:11px;color:#6f6a60">'+escP((p.scode||'').replace(/\s*\/\/\s*/g,' · ').slice(0,60))+'</td>'
-      +'<td style="width:70px;text-align:right"><button class="btn ghost sm pe-edit" data-pid="'+p.id+'" type="button">✎ 수정</button></td></tr>').join('')
+      +'<td style="width:180px;text-align:right;white-space:nowrap">'
+      +'<button class="btn ghost sm pe-edit" data-pid="'+p.id+'" type="button">✎ 수정</button> '
+      +'<button class="btn ghost sm pe-ref-new" data-pid="'+p.id+'" type="button" title="이 제품의 내용을 그대로 불러와 새 코드로 등록합니다">📄 이 코드로 신규</button>'
+      +'</td></tr>').join('')
       +'</tbody></table>';
     box.querySelectorAll('.pe-edit').forEach(b=>b.addEventListener('click',()=>openProductEditor(Number(b.getAttribute('data-pid')))));
+    box.querySelectorAll('.pe-ref-new').forEach(b=>b.addEventListener('click',()=>openProductEditor(null, Number(b.getAttribute('data-pid')))));
   }
   async function peQSearch(){
     const q=$('peQ').value.trim();
@@ -1667,7 +1825,7 @@
   if($('stClearBtn')) $('stClearBtn').addEventListener('click', stClearSel);
   if($('qActive'))    $('qActive').addEventListener('change', doSearch);
 
-  try{ console.log('[refatrix-products] build ph-0824b (제품 변경이력 탭)'); }catch(e){}
+  try{ console.log('[refatrix-products] build pr-0831b (참조 코드로 신규 등록)'); }catch(e){}
   $('resyncBtn').addEventListener('click',resyncDerived);
   if($('xrFile')) $('xrFile').addEventListener('change',(e)=>{ const f=e.target.files&&e.target.files[0]; if(f) xrReadFile(f); e.target.value=''; });
   if($('xrApply')) $('xrApply').addEventListener('click',xrApply);
@@ -1893,6 +2051,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260831pr"></script>
 </body>
 </html>
