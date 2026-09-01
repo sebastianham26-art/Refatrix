@@ -439,7 +439,9 @@
         m.className='msg';$('submit').disabled=false;$('submit').textContent='매출 등록 (즉시 반영)';return;
       }
       if(!res.ok||d.error){
-        const map={customer_not_found:'고객을 찾을 수 없습니다.',customer_date_lines_required:'고객·일자·품목을 확인하세요.'};
+        // 0193 · RFC 없는 고객은 매출을 확정할 수 없다(견적까지는 가능). note 를 그대로 보여 준다.
+        const map={customer_not_found:'고객을 찾을 수 없습니다.',customer_date_lines_required:'고객·일자·품목을 확인하세요.',
+          customer_rfc_required:(d.note||'RFC 가 없는 고객에게는 매출을 확정할 수 없습니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.')};
         let msg=map[d.error]||d.error||('등록 실패: '+res.status);
         if(d.error==='inactive_product'){
           msg='비활성(판매중단) 제품이 포함되어 있습니다: '+(d.items||[]).map(x=>x.code).join(', ')

@@ -30,7 +30,7 @@
       +'<div class="rcf-f"><label>팀 *</label><select id="rcf-team"></select></div>'
     +'</div>'
     +'<div class="rcf-row">'
-      +'<div class="rcf-f"><label>RFC(세금번호)<span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none"> * — 선점 키</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
+      +'<div class="rcf-f"><label>RFC(세금번호)<span id="rcf-rfckey" style="color:#1f5540;font-weight:700;display:none"> — 선택 · 입력하면 그 순간 선점</span></label><input id="rcf-rfc" type="text" placeholder="예: ABC010203XY1"><div id="rcf-rfcmsg" style="font-size:11px;margin-top:3px"></div></div>'
       +'<div class="rcf-f"><label>회사 종류</label><select id="rcf-type"><option value="">미지정</option><option>refraccionaria</option><option>Mayoreo</option><option>Flotia</option><option>taller</option><option>publico</option></select></div>'
       +'<div class="rcf-f"><label>담당자</label><select id="rcf-owner"><option value="">미지정</option></select></div>'
       +'<div class="rcf-f"><label>단계</label><select id="rcf-stage"><option value="">미지정</option></select></div>'
@@ -60,8 +60,8 @@
     +'<div class="rcf-row"><div class="rcf-f rcf-grow"><label>Constancia de Situación Fiscal (세무 등록상태)</label><input id="rcf-constancia" type="text" placeholder="예: RFC · Régimen · 등록상태"></div></div>'
     // ===== 0188 · 고객 선점(claim) — RFC 입력이 곧 선점 =====
     +'<div id="rcf-claimbox" style="display:none;border:1px solid #7a9c8b;background:#f2f8f5;border-radius:9px;padding:11px 12px">'
-      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">🔒 내 고객 선점 — RFC 등록</div>'
-      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">위의 <b>RFC(세금번호)</b>를 입력해 등록하면 이 고객이 <b>내 고객</b>으로 보호됩니다. 같은 RFC 는 먼저 등록한 사람이 가져갑니다. CONSTANCIA 는 <b>선택</b>이며, 나중에 고객 상세의 증빙서류에서 올려도 됩니다.</div>'
+      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">🔒 내 고객 선점 — RFC 입력 시점이 우선권</div>'
+      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">RFC 는 <b>선택</b>입니다 — 없어도 등록됩니다. 다만 <b>RFC 를 넣는 순간 그 고객이 내 고객으로 잠깁니다.</b> RFC 없이 등록하면 선점이 없고, 나중에 <b>다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 그 사람에게 우선권</b>이 갑니다. CONSTANCIA 는 선택이며 나중에 고객 상세의 증빙서류에서 올려도 됩니다.</div>'
       +'<div class="rcf-row">'
         +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 번호 (선택)</label><input id="rcf-conno" type="text" placeholder="스캔본에 인쇄된 번호 — 넣으면 이 번호도 함께 잠깁니다"></div>'
         +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 스캔본 (선택 · PDF)</label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
@@ -101,7 +101,7 @@
     +'.rcf-shipbar .btn{padding:5px 10px;font-size:12px}'
     +'.rcf-actions{display:flex;align-items:center;gap:10px;margin-top:4px}'
     +'.rcf-msg{font-size:12px}'
-    +'.rcf-msg.ok{color:#1a7f4b}.rcf-msg.err{color:#B23A2E}.rcf-msg.pend{color:#9a6a1a}'
+    +'.rcf-msg.ok{color:#1a7f4b}.rcf-msg.err{color:#B23A2E}.rcf-msg.pend{color:#9a6a1a}.rcf-msg.warn{color:#9a6a1a;font-weight:700}'
     +'.rcf-pp{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch}'
     +'.rcf-pp .c{flex:1;min-width:132px;border:1px solid #e6dfc9;border-radius:8px;background:#fff;padding:8px 10px}'
     +'.rcf-pp .c .t{font-size:10.5px;color:#8a7f6a;font-weight:700;letter-spacing:.2px}'
@@ -153,11 +153,13 @@
   var RFC_RE=/^([A-ZÑ&]{3,4})(\d{2})(\d{2})(\d{2})([A-Z\d]{3})$/;
   var GENERIC_RFC=['XAXX010101000','XEXX010101000'];
   var RFC_NOTE={
-    rfc_required:'RFC(세금번호)를 입력해야 고객을 등록할 수 있습니다 — RFC 가 곧 선점 키입니다.',
+    rfc_required:'RFC(세금번호)를 입력하세요 — RFC 가 곧 선점 키입니다.',
     rfc_invalid:'RFC 형식이 올바르지 않습니다. 법인 12자리(영문 3 + YYMMDD + 3) 또는 개인 13자리(영문 4 + YYMMDD + 3)여야 합니다.',
     rfc_invalid_date:'RFC 가운데 6자리(YYMMDD)의 월·일이 올바르지 않습니다. 다시 확인하세요.',
     rfc_generic:'범용 RFC(XAXX010101000 · XEXX010101000)로는 고객을 선점할 수 없습니다. 고객 고유의 RFC 를 입력하세요.',
-    rfc_taken:'이미 다른 영업사원이 선점한 RFC 입니다.'
+    rfc_taken:'이미 다른 영업사원이 선점한 RFC 입니다.',
+    rfc_claim_pending:'이 RFC 로는 이미 다른 영업사원의 선점 요청이 디렉터 승인 대기 중입니다 — 먼저 입력한 사람에게 우선권이 있습니다.',
+    rfc_already_set:'이 고객에는 이미 RFC 가 등록되어 있습니다(=선점 완료).'
   };
   function cleanRfcLocal(v){ return String(v==null?'':v).toUpperCase().replace(/[\s\-._/]/g,'').trim(); }
   function validateRfcLocal(v){
@@ -171,6 +173,8 @@
   }
   function showRfcMsg(rv){
     var el=$('rcf-rfcmsg'); if(!el) return;
+    // 0193 · 비어 있으면 오류가 아니라 「선점 없음」 경고다(등록은 된다).
+    if(rv==='empty'){ el.innerHTML='<span style="color:#9a6a1a">⚠ RFC 없이 등록됩니다 — 아직 선점되지 않습니다.</span>'; return; }
     if(!rv){ el.innerHTML=''; return; }
     el.innerHTML=rv.ok
       ? '<span style="color:#1a7f4b">✔ '+(rv.kind==='moral'?'법인 RFC':'개인 RFC')+' 형식 OK</span>'
@@ -197,22 +201,62 @@
       var d=await fetch(api('/api/customers/claim-check?'+qs),{headers:auth()}).then(function(r){return r.json();});
       lastClaim=d;
       var items=(d&&d.items)||[];
-      if(!items.length){ box.innerHTML='<span style="color:#1a7f4b">✔ 겹치는 고객이 없습니다 — 이 RFC 로 등록하면 내 고객으로 선점됩니다.</span>'
-          +(d&&d.rfc_db_lock===false?'<div style="color:#9a6a1a;margin-top:3px">⚠ 서버에 RFC 선점 잠금(0188)이 아직 적용되지 않았습니다. 디렉터에게 알려 주세요.</div>':''); return d; }
+      var myRfc=cleanRfcLocal(rfc);
+      if(!items.length){
+        box.innerHTML=(myRfc
+            ? '<span style="color:#1a7f4b">✔ 겹치는 고객이 없습니다 — 이 RFC 로 등록하면 내 고객으로 선점됩니다.</span>'
+            : '<span style="color:#9a6a1a">⚠ 겹치는 고객은 없지만 RFC 가 비어 있어 <b>선점되지 않습니다.</b> RFC 를 받는 대로 입력하세요.</span>')
+          +(d&&d.rfc_db_lock===false?'<div style="color:#9a6a1a;margin-top:3px">⚠ 서버에 RFC 선점 잠금(0188)이 아직 적용되지 않았습니다. 디렉터에게 알려 주세요.</div>':'');
+        return d;
+      }
+      // 0193 · RFC 충돌은 차단, 상호 유사는 경고만.
       var hard=d.blocked_constancia||d.blocked_rfc;
       box.innerHTML=(hard
-          ? '<div style="color:#B23A2E;font-weight:700">⛔ 이미 선점된 고객입니다 — 이대로는 등록할 수 없습니다.</div>'
-          : '<div style="color:#9a6a1a;font-weight:700">⚠ 상호가 비슷한 고객이 있습니다. 같은 고객인지 확인하세요.</div>')
+          ? '<div style="color:#B23A2E;font-weight:700">⛔ '+esc(d.claim_pending?(d.claim_pending_note||RFC_NOTE.rfc_claim_pending):'이미 선점된 고객입니다 — 이대로는 등록할 수 없습니다.')+'</div>'
+          : '<div style="color:#9a6a1a;font-weight:700">⚠ 상호가 비슷한 고객이 있습니다 — 같은 고객인지 확인하세요. (등록은 막지 않습니다)</div>')
         +items.map(function(x){
           var why=x.matched_rfc?'RFC 일치 — 선점됨':(x.matched_constancia?'CONSTANCIA 일치':'상호 유사');
           var st=x.approval_status==='pending'?' · <span style="color:#9a6a1a">승인대기</span>':'';
+          // RFC 가 비어 있는 고객 = 아직 선점 없음 → 내 RFC 로 가져올 수 있다.
+          var take=(!x.has_rfc&&x.customer_id&&myRfc&&d.claim_transfer_on)
+            ? '<button type="button" class="btn ghost rcf-take" data-cid="'+x.customer_id+'" data-nm="'+esc(x.name)+'" style="padding:4px 9px;font-size:11.5px;margin-left:6px">이 고객을 내 RFC 로 선점</button>'
+            : (!x.has_rfc?'<span style="color:#9a6a1a;margin-left:6px">(RFC 없음 — 선점 안 된 고객)</span>':'');
           return '<div class="rcf-claimrow'+((x.matched_constancia||x.matched_rfc)?' bad':'')+'">'
             +'<b>'+esc(x.name)+'</b> · RFC '+esc(x.rfc||'—')
             +' · 담당 <b>'+esc(x.owner_name)+'</b> · 등록 '+esc(x.registered_at||'—')
-            +' <span style="color:#8a8070">('+why+')</span>'+st+'</div>';
+            +' <span style="color:#8a8070">('+why+')</span>'+st+take+'</div>';
         }).join('');
+      bindTakeButtons();
       return d;
     }catch(e){ box.innerHTML='<span style="color:#B23A2E">선점 확인 실패 — 서버에 연결할 수 없습니다.</span>'; return null; }
+  }
+
+  // ===== 0193 · 「이 고객을 내 RFC 로 선점」 =====
+  //   RFC 없이 등록돼 있는 고객에 내 RFC 를 넣는다. 내 고객이면 즉시 확정,
+  //   남의 고객이면 요청 시각이 우선권 근거로 남고 디렉터 승인에서 담당이 이관된다.
+  function bindTakeButtons(){
+    var box=$('rcf-claimres'); if(!box) return;
+    Array.prototype.forEach.call(box.querySelectorAll('.rcf-take'), function(btn){
+      btn.addEventListener('click', async function(){
+        var cid=btn.getAttribute('data-cid'), nm=btn.getAttribute('data-nm')||'';
+        var rv=validateRfcLocal(($('rcf-rfc')&&$('rcf-rfc').value)||'');
+        if(!rv.ok){ showRfcMsg(rv); setMsg('err',RFC_NOTE[rv.error]||'RFC 를 확인하세요.'); return; }
+        if(!window.confirm(nm+' 을(를) RFC '+rv.value+' 로 선점 요청합니다.\n\n· 내가 담당인 고객이면 즉시 확정됩니다.\n· 남이 담당인 고객이면 디렉터 승인 후 담당이 나에게 이관됩니다.\n· 요청 시각이 우선권의 근거가 됩니다.')) return;
+        btn.disabled=true;
+        try{
+          var res=await fetch(api('/api/customers/'+cid+'/rfc-claim'),
+            {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rfc:rv.value})});
+          var d=await res.json();
+          if(!res.ok||d.error){
+            setMsg('err', d.note||RFC_NOTE[d.error]||('선점 요청 실패: '+(d.error||res.status)));
+            btn.disabled=false; return;
+          }
+          setMsg(d.applied?'ok':'pend', d.note||'선점 요청을 보냈습니다.');
+          await claimCheck(true);
+          if(typeof cfg.onSaved==='function') cfg.onSaved(d, Number(cid), !d.applied);
+        }catch(e){ setMsg('err','서버에 연결할 수 없습니다.'); btn.disabled=false; }
+      });
+    });
   }
 
   // ===== 0185 · 기준품목 구매단가 → 할인율 산출/제안 =====
@@ -396,17 +440,30 @@
     if(!b.team_id){ setMsg('err','팀을 선택하세요.'); return; }
     if(b.contact&&!validEmail(b.contact)){ setMsg('err','이메일 주소 형식이 올바르지 않습니다. (예: ejemplo@correo.com)'); return; }
 
-    // ===== 0188 · 신규 등록 전용 필수값 (RFC 선점 + 기준품목 단가) =====
-    //   CONSTANCIA 번호·PDF 는 선택이다. RFC 하나로 선점이 성립한다.
+    // ===== 0193 · 신규 등록 필수값 =====
+    //   RFC 는 **선택**(넣으면 형식은 엄격히 검사 + 그 순간 선점).
+    //   기준품목(SYD) 구매단가는 **필수** — 할인율 산출의 유일한 근거라 비워 두면 진행 불가.
     if(!editingId){
-      var rv=validateRfcLocal(b.rfc);
-      if(!rv.ok){ showRfcMsg(rv); setMsg('err',RFC_NOTE[rv.error]||'RFC 를 확인하세요.'); return; }
-      b.rfc=rv.value;
+      var rawRfc=cleanRfcLocal(b.rfc);
+      if(rawRfc){
+        var rv=validateRfcLocal(rawRfc);
+        if(!rv.ok){ showRfcMsg(rv); setMsg('err',RFC_NOTE[rv.error]||'RFC 를 확인하세요.'); return; }
+        b.rfc=rv.value;
+      }else{
+        // 비워 두면 등록은 되지만 선점이 없다 — 그 결과를 모르고 넘어가지 않게 한 번 확인받는다.
+        b.rfc=null;
+        showRfcMsg('empty');
+        if(!window.confirm('RFC 없이 등록합니다.\n\n⚠ 이 고객은 아직 선점되지 않습니다. 나중에 다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 그 시점·그 담당자에게 우선권이 넘어갑니다.\n또한 RFC 가 없으면 매출(팩투라) 확정이 막힙니다.\n\n이대로 등록할까요?')) return;
+      }
       var bp=($('rcf-baseprice')&&$('rcf-baseprice').value)||'';
-      if(!bp||Number(bp)<=0){ setMsg('err','기준품목의 고객 구매단가를 입력하세요 — 할인율 산출 근거입니다.'); return; }
+      if(!bp||Number(bp)<=0){
+        var bpEl=$('rcf-baseprice'); if(bpEl){ try{ bpEl.focus(); }catch(e){} }
+        setMsg('err','⛔ SYD 기준품목의 고객 구매단가를 입력해야 등록이 진행됩니다 — 할인율 산출의 근거입니다.'); return;
+      }
       // 저장 직전 선점 재확인 — 입력 중 다른 사람이 먼저 등록했을 수 있다.
+      //   RFC 를 넣은 경우에만 차단한다(RFC 없이 등록하는 건 상호 유사 경고만 뜨고 통과).
       var cc=await claimCheck(true);
-      if(cc&&(cc.blocked_rfc||cc.blocked_constancia)){
+      if(rawRfc&&cc&&(cc.blocked_rfc||cc.blocked_constancia)){
         setMsg('err','이미 선점된 고객입니다 — 위 선점 확인 결과를 보세요.'); return;
       }
       var conNo=($('rcf-conno')&&$('rcf-conno').value.trim())||'';
@@ -449,7 +506,7 @@
           :d.error==='cross_team_request_denied'?'타팀 고객 수정요청 권한이 없습니다. 디렉터에게 요청하세요.'
           :d.error==='terms_reason_required'?(d.note||'기본할인·외상일 변경 시 수정이유와 제공 조건을 반드시 입력해야 합니다.')
           // 0185 / 0188
-          :(d.error==='rfc_taken'||d.error==='constancia_taken')?('⛔ '+(d.note||'이미 등록된 고객입니다.'))
+          :(d.error==='rfc_taken'||d.error==='constancia_taken'||d.error==='rfc_claim_pending')?('⛔ '+(d.note||RFC_NOTE[d.error]||'이미 등록된 고객입니다.'))
           :(d.error==='rfc_required'||d.error==='rfc_invalid'||d.error==='rfc_invalid_date'||d.error==='rfc_generic')
              ?(d.note||RFC_NOTE[d.error]||'RFC 를 확인하세요.')
           :d.error==='constancia_file_incomplete'?(d.note||'CONSTANCIA 첨부가 불완전합니다. 파일을 다시 선택하거나 비워 두세요.')
@@ -463,8 +520,9 @@
       }
       if(d.pending){ setMsg('pend', (d.cross_team?'타팀 고객 수정 요청을 보냈습니다. ':'수정 요청을 보냈습니다. ')+(td?'할인·외상일 변경은 디렉터 승인 후 반영·이력 기록됩니다.':'디렉터 승인 후 반영됩니다.')); }
       else if(!editingId&&d.pending_approval){
-        setMsg('pend','등록 요청을 보냈습니다: '+(d.code||'')+' · '+b.name
-          +' — RFC '+(d.rfc||b.rfc||'')+' 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.'
+        // 0193 · 선점 여부에 따라 문구가 갈린다(서버가 note 로 내려 준다).
+        setMsg(d.rfc_claimed?'pend':'warn','등록 요청: '+(d.code||'')+' · '+b.name+' — '
+          +(d.note||'디렉터 승인 후 견적·매출에 쓸 수 있습니다.')
           +(d.suggested_discount!=null?(' (제안 '+fmtPct(d.suggested_discount)+' · 신청 '+fmtPct(b.discount)+')'):'')
           +(d.warning_note?(' ⚠ '+d.warning_note):''));
       }
@@ -498,10 +556,10 @@
       var cn=$('rcf-conno'); if(cn) cn.addEventListener('change', function(){ if(!editingId) claimCheck(true); });
       var rf=$('rcf-rfc');
       if(rf){
-        rf.addEventListener('input', function(){ if(!editingId) showRfcMsg(rf.value.trim()?validateRfcLocal(rf.value):null); });
+        rf.addEventListener('input', function(){ if(!editingId) showRfcMsg(rf.value.trim()?validateRfcLocal(rf.value):'empty'); });
         rf.addEventListener('change', function(){
           if(editingId) return;
-          var rv=validateRfcLocal(rf.value); showRfcMsg(rf.value.trim()?rv:null);
+          var rv=validateRfcLocal(rf.value); showRfcMsg(rf.value.trim()?rv:'empty');
           if(rv.ok){ rf.value=rv.value; claimCheck(true); }
         });
       }
@@ -514,5 +572,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260827rfc loaded (RFC 선점(0188) + CONSTANCIA 선택 + 기준품목 할인율 제안 + 등록 디렉터 승인)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260901claim loaded (0193 · RFC 선택 입력 + RFC 입력시점 선점/이관 + SYD 단가 필수 + 전원 디렉터 승인)'); }catch(e){}
 })();

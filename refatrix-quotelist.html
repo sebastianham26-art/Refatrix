@@ -1250,6 +1250,8 @@
         else if(d.error==='no_valid_lines')msg='전환할 유효한 품목이 없습니다(매칭된 제품 필요).';
         else if(d.error==='already_converted')msg='이미 전환된 견적입니다.';
         else if(d.error==='packing_doc_required')msg='포장작업지시서 서명 스캔본을 먼저 업로드하세요.';
+        // 0193 · 매출 전환도 RFC 가 있어야 한다(견적 단계까지는 RFC 없이 진행 가능).
+        else if(d.error==='customer_rfc_required')msg=(d.note||'RFC 가 없는 고객입니다. 영업>고객등록에서 RFC 를 먼저 입력하세요.')+(d.customer_name?(' ('+d.customer_name+')'):'');
         else if(d.error==='sale_failed')msg='매출 생성 실패: '+JSON.stringify(d.detail||{});
         m.className='msg err';m.textContent='전환 실패: '+msg;return;
       }

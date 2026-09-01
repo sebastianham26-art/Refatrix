@@ -61,13 +61,78 @@ export function validateRfc(v) {
   return { ok: true, value: s, kind: m[1].length === 3 ? 'moral' : 'fisica' };
 }
 
+// ── 0193 · RFC 는 선택 입력 ───────────────────────────────────────────
+//
+//   RFC 를 못 받은 상태에서 상담이 먼저 시작되는 일이 많다. 그때 고객을 ERP 에 못 넣으면
+//   상담·방문 이력이 통째로 유실되므로 **등록 자체는 RFC 없이도 되게** 한다.
+//   대신 RFC 가 채워지는 순간 선점이 성립하고, 그 시점·그 사람에게 우선권이 간다.
+//
+//   ⚠ "비었으면 통과" 와 "넣었으면 0188 과 똑같이 엄격" 을 한 함수로 묶는다.
+//     넣은 값을 느슨하게 봐 주면 「아무 문자열로 선점」 우회가 그대로 살아난다.
+/**
+ * @returns {{ok:true, value:string|null, kind:'moral'|'fisica'|null, empty:boolean}
+ *          |{ok:false, error:string}}
+ */
+export function validateRfcOptional(v) {
+  const s = cleanRfc(v);
+  if (!s) return { ok: true, value: null, kind: null, empty: true };
+  const r = validateRfc(s);
+  return r.ok ? { ...r, empty: false } : r;
+}
+
 // 화면·API 에 같은 문구를 쓰기 위한 단일 출처.
 export const RFC_ERROR_NOTE = {
   rfc_required: 'RFC(세금번호)를 입력해야 고객을 등록할 수 있습니다 — RFC 가 곧 선점 키입니다.',
   rfc_invalid: 'RFC 형식이 올바르지 않습니다. 법인 12자리(영문 3 + YYMMDD + 3) 또는 개인 13자리(영문 4 + YYMMDD + 3)여야 합니다.',
   rfc_invalid_date: 'RFC 가운데 6자리(YYMMDD)의 월·일이 올바르지 않습니다. 다시 확인하세요.',
   rfc_generic: '범용 RFC(XAXX010101000 · XEXX010101000)로는 고객을 선점할 수 없습니다. 고객 고유의 RFC 를 입력하세요.',
+  // 0193 ----------------------------------------------------------------
+  rfc_claim_pending: '이 RFC 로는 이미 다른 영업사원의 선점 요청이 디렉터 승인 대기 중입니다 — 먼저 입력한 사람에게 우선권이 있습니다.',
+  rfc_already_set: '이 고객에는 이미 RFC 가 등록되어 있습니다(=선점 완료). 값을 바꾸려면 고객 수정에서 하세요.',
+  sales_rfc_required: 'RFC 가 없는 고객에게는 매출을 확정할 수 없습니다. 고객 상세에서 RFC 를 먼저 입력하세요 — 입력하는 순간 선점이 확정됩니다.',
 };
+
+// ── 0193 · 상호명 유사 판정 (경고 전용) ───────────────────────────────
+//
+//   RFC 가 없으면 법적 동일성을 판단할 방법이 없다. 그래서 상호명 유사는
+//   **등록을 막지 않고 경고만** 한다 — 지점·법인 분리가 흔해서 차단하면 오탐이 더 비싸다.
+//   판정은 「법인격 표기(S.A. DE C.V. 등)를 걷어낸 뒤 남은 단어의 겹침」으로 본다.
+
+const CORP_TOKENS = new Set([
+  'SA', 'SAPI', 'SAS', 'SC', 'SRL', 'RL', 'SPR', 'AC', 'CV', 'DE', 'DEL', 'LA', 'EL', 'LOS', 'LAS', 'Y',
+  'SOCIEDAD', 'ANONIMA', 'CAPITAL', 'VARIABLE', 'RESPONSABILIDAD', 'LIMITADA', 'PROMOTORA', 'INVERSION',
+]);
+
+/** 악센트·기호·중복공백 제거 + 대문자. 'Refaccionés  Peña, S.A. de C.V.' → 'REFACCIONES PENA SA DE CV' */
+export function normalizeCompanyName(v) {
+  return String(v == null ? '' : v)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+
+/**
+ * 법인격 표기·관사를 걷어낸 의미 단어들.
+ * 한 글자 토큰도 버린다 — 'S.A. de C.V.' 가 'S','A','C','V' 로 쪼개져 남으면
+ * 아무 상관 없는 두 법인이 그 조각들로 겹쳐 유사도가 부풀려진다.
+ */
+export function companyNameTokens(v) {
+  return normalizeCompanyName(v).split(' ').filter((t) => t.length > 1 && !CORP_TOKENS.has(t));
+}
+
+/**
+ * 0~1. 짧은 쪽 기준 겹침 비율이라 「REFACCIONES PENA」 ⊂ 「REFACCIONES PENA MONTERREY」 가 1.0 이 된다
+ * (지점 표기가 붙은 같은 상호를 놓치지 않기 위함 — 어차피 경고일 뿐이라 관대하게 본다).
+ */
+export function nameSimilarity(a, b) {
+  const A = new Set(companyNameTokens(a));
+  const B = new Set(companyNameTokens(b));
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  A.forEach((t) => { if (B.has(t)) inter++; });
+  return Math.round((inter / Math.min(A.size, B.size)) * 100) / 100;
+}
+
+export const NAME_SIMILAR_THRESHOLD = 0.6;   // 이 이상이면 화면에 「유사 고객」 으로 띄운다
 
 // ── 기준품목(SYD) 단가 → 할인율 산출 ──────────────────────────────────
 //

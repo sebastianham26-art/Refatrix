@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (rfc-0827a)</title>
+<title>Refatrix ERP · 고객 등록 (claim-0901a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -91,6 +91,7 @@
       <div class="tab" data-tab="team" id="teamTabBtn">팀 권한 관리</div>
       <div class="tab" data-tab="approve" id="approveTabBtn">수정 승인 대기<span id="approveBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
       <div class="tab" data-tab="reg" id="regTabBtn">🔒 등록 승인 대기<span id="regBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
+      <div class="tab" data-tab="claim" id="claimTabBtn">🔑 RFC 선점 이관<span id="claimBadge" class="hidden" style="background:#B23A2E;color:#fff;border-radius:999px;padding:0 6px;margin-left:5px;font-size:10px"></span></div>
     </div>
 
     <!-- 고객 목록 -->
@@ -190,8 +191,19 @@
     <div id="tab-reg" class="hidden">
       <div class="card">
         <h2 style="margin:0 0 4px">🔒 고객 등록 승인 대기</h2>
-        <div class="hint" style="margin-top:0">영업사원이 <b>RFC 로 선점</b>해 올린 신규 고객 등록입니다. 승인해야 견적·매출에 쓸 수 있습니다. 반려하면 선점이 풀립니다. CONSTANCIA 는 선택 증빙이라 없어도 승인할 수 있습니다.</div>
+        <div class="hint" style="margin-top:0"><b>모든 신규 고객 등록</b>이 여기를 거칩니다(디렉터가 직접 등록한 건도 포함). 승인해야 견적·매출에 쓸 수 있고, 반려하면 선점이 풀립니다.<br>
+        RFC 와 CONSTANCIA 는 <b>선택</b>이라 없어도 승인할 수 있습니다 — 다만 <b style="color:#B23A2E">RFC 가 없는 고객은 선점되지 않은 상태</b>라 다른 영업사원이 RFC 를 먼저 넣으면 우선권이 넘어가고, 매출 확정도 막힙니다.</div>
         <div id="regList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
+      </div>
+    </div>
+
+    <!-- RFC 선점 이관 승인(디렉터) · 0193 -->
+    <div id="tab-claim" class="hidden">
+      <div class="card">
+        <h2 style="margin:0 0 4px">🔑 RFC 선점 이관 대기</h2>
+        <div class="hint" style="margin-top:0">RFC 없이 등록된 고객에 <b>다른 영업사원이 RFC 를 입력</b>해 선점을 요청한 건입니다.
+        <b>요청 시각이 우선권의 근거</b>이고(목록은 빠른 순), 승인하면 그 고객의 <b>RFC 가 확정되고 담당이 요청자에게 이관</b>됩니다 — 선점 시점은 승인 시각이 아니라 <b>요청 시각</b>으로 기록됩니다.</div>
+        <div id="claimList" style="margin-top:10px"><div class="hint">불러오는 중…</div></div>
       </div>
     </div>
 
@@ -346,8 +358,8 @@
       session={token:d.token,user:d.user,api};
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');applyAccessLock('customers');
-      if(!isDirector()){$('teamTabBtn').classList.add('hidden');$('approveTabBtn').classList.add('hidden');$('regTabBtn').classList.add('hidden');}
-      else { loadApproveBadge(); loadRegBadge(); }
+      if(!isDirector()){$('teamTabBtn').classList.add('hidden');$('approveTabBtn').classList.add('hidden');$('regTabBtn').classList.add('hidden');$('claimTabBtn').classList.add('hidden');}
+      else { loadApproveBadge(); loadRegBadge(); loadClaimBadge(); }
       await loadRefs();
       RefCustForm.init({ api:session.api, token:session.token, isDirector:isDirector(), onSaved:function(d,wasEdit){ hideForm(); loadCustomers(); if(wasEdit&&!d.pending&&curCustomer)openCustomer(curCustomer.id); } });
       await RefCustForm.mount('custFormHost',{ onCancel:hideForm });
@@ -794,6 +806,12 @@
           ? '<button class="btn ghost sm" onclick="openCustomer('+r.id+')">📎 CONSTANCIA 보기</button>'
           : '<span class="pill" style="background:#f3f1ec;color:#8a8070;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="0188 이후 CONSTANCIA 는 선택 항목입니다 — 없어도 승인할 수 있습니다">스캔본 없음 (선택)</span>';
         const target = r.syd_ref_buy_price==null?null:Math.round(r.syd_ref_buy_price*0.95*100)/100;
+        // 0193 · 등록 시점에 박제한 유사 고객 — 중복 등록인지 사람이 판단할 재료.
+        const sim=Array.isArray(r.similar)?r.similar:[];
+        const simRow = sim.length
+          ? `<tr><th style="text-align:left;color:#b3261e;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">⚠ 유사 상호</th>
+               <td style="padding:3px 0">${sim.map(x=>`<div class="hint" style="margin:0">${esc(x.name)} · RFC ${esc(x.rfc||'—')} · 담당 ${esc(x.owner_name||'—')} <span style="color:#b3261e">(유사도 ${Math.round((x.score||0)*100)}%)</span></div>`).join('')}</td></tr>`
+          : '';
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <b>${esc(r.name)}</b> <span class="hint" style="margin:0">(${esc(r.code)})</span>
@@ -802,8 +820,11 @@
           </div>
           <table style="margin:8px 0;font-size:13px"><tbody>
             <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">RFC <span style="color:#1f5540">(선점 키)</span></th>
-                <td style="padding:3px 0"><b>${esc(r.rfc||'—')}</b>
+                <td style="padding:3px 0">${r.rfc_claimed
+                    ? `<b>${esc(r.rfc||'—')}</b>${r.rfc_claimed_at?`<span class="hint" style="margin:0"> · 선점 ${esc(r.rfc_claimed_at)}</span>`:''}`
+                    : `<span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:11px;padding:2px 8px;border-radius:6px" title="RFC 가 없으면 이 고객은 선점되지 않은 상태입니다">RFC 없음 — 선점 안 됨</span>`}
                   <span class="hint" style="margin:0">· CONSTANCIA ${esc(r.constancia_no||'—')}</span> &nbsp; ${docOk}</td></tr>
+            ${simRow}
             <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">기준품목 ${esc(r.syd_ref_code||'')}</th>
                 <td style="padding:3px 0">고객 구매단가 <b>${mxTxt(r.syd_ref_buy_price)}</b>
                   <span class="hint" style="margin:0">· SYD 정가 ${mxTxt(r.syd_ref_list_price)} → 고객이 받는 할인율 ${pctTxt(r.syd_ref_discount)}</span></td></tr>
@@ -848,6 +869,89 @@
       {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason:reason.trim()})});
     const d=await res.json().catch(()=>({}));
     if(res.ok&&!d.error){ loadRegApprovals(); loadRegBadge(); loadCustomers(); }
+    else alert('반려 실패: '+(d.note||d.error||res.status));
+  }
+
+  // 0193 · 고객 상세에서 RFC 를 바로 넣어 선점을 확정한다.
+  //   내가 담당인 고객이면 즉시 확정, 남의 고객이면 요청이 걸리고 디렉터 승인에서 이관된다.
+  async function claimRfcNow(cid){
+    const v=prompt('이 고객의 RFC 를 입력하세요 — 입력하는 순간 선점이 확정됩니다.\n(법인 12자리 / 개인 13자리, 예: ABC010203XY1)');
+    if(v===null) return;
+    if(!v.trim()){ alert('RFC 를 입력해야 합니다.'); return; }
+    const res=await fetch(session.api+'/api/customers/'+cid+'/rfc-claim',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({rfc:v.trim()})});
+    const d=await res.json().catch(()=>({}));
+    if(res.ok&&!d.error){ alert(d.note||'처리되었습니다.'); openCustomer(cid); loadCustomers(); if(isDirector())loadClaimBadge(); }
+    else alert('실패: '+(d.note||d.error||res.status));
+  }
+
+  // ===== 0193 · RFC 선점 이관 승인(디렉터) =====
+  //   RFC 없이 등록된 고객에 다른 영업사원이 RFC 를 넣어 선점을 요청한 건.
+  //   목록은 requested_at 오름차순 = 우선권 순서이고, 1순위에 배지를 단다.
+  async function loadClaimBadge(){
+    try{
+      const d=await fetch(session.api+'/api/customer-rfc-claims?status=pending',{headers:auth()}).then(r=>r.json());
+      const n=(d.items||[]).length; const b=$('claimBadge');
+      if(n>0){b.textContent=n;b.classList.remove('hidden');}else b.classList.add('hidden');
+    }catch(e){}
+  }
+  async function loadClaimApprovals(){
+    const box=$('claimList'); if(!box)return; box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customer-rfc-claims?status=pending',{headers:auth()}).then(r=>r.json());
+      if(d.migration_required){ box.innerHTML='<div class="hint">서버 마이그레이션(0193)이 아직 적용되지 않았습니다.</div>'; return; }
+      const items=d.items||[];
+      if(!items.length){box.innerHTML='<div class="hint">대기중인 선점 이관 요청이 없습니다.</div>';return;}
+      // 같은 고객에 여러 요청이 붙었는지 — 붙었다면 먼저 넣은 쪽이 우선이라는 걸 표시한다.
+      const cnt={}; items.forEach(x=>{cnt[x.customer_id]=(cnt[x.customer_id]||0)+1;});
+      const seen={};
+      box.innerHTML=items.map(r=>{
+        seen[r.customer_id]=(seen[r.customer_id]||0)+1;
+        const first=seen[r.customer_id]===1;
+        const race=cnt[r.customer_id]>1
+          ? `<span class="pill" style="background:${first?'#eaf5ee':'#f3f1ec'};color:${first?'#1a7f4b':'#8a8070'};font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px">${first?'1순위 (가장 먼저 입력)':seen[r.customer_id]+'순위'}</span>`
+          : '';
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <b>${esc(r.customer_name)}</b> <span class="hint" style="margin:0">(${esc(r.customer_code||'')})</span>
+            ${race}
+            ${r.approval_status==='pending'?'<span class="pill" style="background:#fdf6e6;color:#9a6a1a;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px">등록 승인도 대기중</span>':''}
+          </div>
+          <table style="margin:8px 0;font-size:13px"><tbody>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">요청 RFC</th>
+                <td style="padding:3px 0"><b>${esc(r.rfc)}</b>
+                  <span class="hint" style="margin:0">· 입력 시각 <b>${esc(r.requested_at)}</b> ← 우선권의 근거</span></td></tr>
+            <tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0;white-space:nowrap">담당 이관</th>
+                <td style="padding:3px 0">현재 <b>${esc(r.current_owner)}</b>${r.team_name?` <span class="hint" style="margin:0">(${esc(r.team_name)})</span>`:''}
+                  <span style="color:#9a6512;font-weight:700"> → </span> <b>${esc(r.requested_by)}</b>
+                  <span class="hint" style="margin:0">· 고객 등록일 ${esc(r.registered_at||'—')}</span></td></tr>
+            ${r.note?`<tr><th style="text-align:left;color:#6f6a60;font-weight:600;padding:3px 12px 3px 0">사유</th><td style="padding:3px 0">${esc(r.note)}</td></tr>`:''}
+          </tbody></table>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn sm" onclick="approveClaim(${r.id},'${esc(r.customer_name).replace(/'/g,"\\'")}','${esc(r.requested_by).replace(/'/g,"\\'")}')">승인 — RFC 확정 + 담당 이관</button>
+            <button class="btn ghost sm" onclick="openCustomer(${r.customer_id})">고객 상세</button>
+            <button class="btn ghost sm" style="color:var(--expense);border-color:var(--expense)" onclick="rejectClaim(${r.id})">반려</button>
+          </div>
+        </div>`;
+      }).join('');
+    }catch(e){box.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
+  }
+  async function approveClaim(id,name,who){
+    if(!confirm(`"${name}" 의 선점을 ${who} 님에게 이관합니다.\n\n· RFC 가 확정되어 이후 다른 영업사원은 이 고객을 가져갈 수 없습니다.\n· 선점 시점은 승인 시각이 아니라 **RFC 를 입력한 시각**으로 기록됩니다.\n· 같은 고객에 걸린 다른 요청은 무효 처리됩니다.\n\n진행할까요?`)) return;
+    const res=await fetch(session.api+'/api/customer-rfc-claims/'+id+'/approve',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({})});
+    const d=await res.json().catch(()=>({}));
+    if(res.ok&&!d.error){ if(d.note)alert(d.note); loadClaimApprovals(); loadClaimBadge(); loadCustomers(); }
+    else alert('이관 실패: '+(d.note||d.error||res.status));
+  }
+  async function rejectClaim(id){
+    const reason=prompt('반려 사유(필수) — 요청한 영업사원에게 남는 기록입니다:');
+    if(reason===null) return;
+    if(!reason.trim()){ alert('반려 사유를 입력해야 합니다.'); return; }
+    const res=await fetch(session.api+'/api/customer-rfc-claims/'+id+'/reject',
+      {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({reason:reason.trim()})});
+    const d=await res.json().catch(()=>({}));
+    if(res.ok&&!d.error){ loadClaimApprovals(); loadClaimBadge(); }
     else alert('반려 실패: '+(d.note||d.error||res.status));
   }
 
@@ -900,13 +1004,20 @@
       const regBanner = c.approval_status==='pending'
         ? `<div style="border:1px solid #ecd9a0;background:#fffaf0;border-radius:9px;padding:9px 12px;margin-bottom:8px;font-size:12.5px;color:#9a6512">
              🔒 <b>디렉터 등록 승인 대기</b> — 승인 전에는 견적·매출에 사용할 수 없습니다.
-             RFC <b>${esc(c.rfc||'—')}</b> 로 선점되어 있습니다.</div>` : '';
+             ${c.rfc?`RFC <b>${esc(c.rfc)}</b> 로 선점되어 있습니다.`:'RFC 가 없어 <b>아직 선점되지 않았습니다.</b>'}</div>` : '';
+      // 0193 · RFC 가 없으면 선점이 없다 — 그 자리에서 바로 채울 수 있게 버튼을 붙인다.
+      //   (수정 폼의 PATCH 는 영업사원 기준 승인 대기로 가므로, 선점 확정은 전용 경로로 즉시 처리한다.)
+      const claimBanner = !c.rfc
+        ? `<div style="border:1px solid #f0c4bf;background:#fdf3f2;border-radius:9px;padding:9px 12px;margin-bottom:8px;font-size:12.5px;color:#b3261e">
+             ⚠ <b>RFC 없음 — 이 고객은 선점되지 않았습니다.</b>
+             다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 <b>그 시점·그 담당자에게 우선권</b>이 넘어갑니다. 매출(팩투라) 확정도 막힙니다.
+             <button class="btn sm" style="margin-left:8px" onclick="claimRfcNow(${c.id})">RFC 입력해 선점 확정</button></div>` : '';
       // 0188 · RFC 가 선점 키. exempt = 마이그레이션 시점에 이미 RFC 가 중복이던 레거시 고객.
       const rfcCell = c.rfc
         ? (c.rfc_claim_exempt
             ? `<b>${esc(c.rfc)}</b> <span style="color:#B23A2E">— RFC 중복(기존 데이터)이라 선점 보호 제외. 디렉터가 정리해야 합니다</span>`
             : `<b>${esc(c.rfc)}</b> <span class="hint" style="margin:0">— 이 RFC 가 선점(내 고객) 키입니다</span>`)
-        : '<span style="color:#B23A2E">미등록 — 선점 보호를 받지 못합니다</span>';
+        : '<span style="color:#B23A2E">미등록 — 선점 보호를 받지 못합니다 (먼저 RFC 를 넣는 사람이 이 고객을 가져갑니다)</span>';
       const refRow = (c.syd_ref_buy_price!=null)
         ? `<tr><th>할인율 산출 근거</th><td colspan="3">
              기준품목 <b>${esc(c.syd_ref_code||'—')}</b> 고객 구매단가 <b>${mxTxt(c.syd_ref_buy_price)}</b>
@@ -914,7 +1025,7 @@
              <span style="color:#9a6512;font-weight:700"> → </span>
              우리 <b>${esc(c.ctr_ref_code||'—')}</b> 정가 ${mxTxt(c.ctr_ref_list_price)}
              <span class="hint" style="margin:0">· 제안 ${pctTxt(c.suggested_discount)} / 적용 ${pctTxt(c.discount)}</span></td></tr>` : '';
-      $('d-info').innerHTML=regBanner+`<table>
+      $('d-info').innerHTML=regBanner+claimBanner+`<table>
         <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
         <tr><th>회사 종류</th><td colspan="3">${c.customer_type||'—'}</td></tr>
         <tr><th>RFC <span style="color:#1f5540">(선점 키)</span></th><td colspan="3">${rfcCell}</td></tr>
@@ -1215,23 +1326,27 @@
     $('tab-team').classList.toggle('hidden',tab!=='team');
     $('tab-approve').classList.toggle('hidden',tab!=='approve');
     $('tab-reg').classList.toggle('hidden',tab!=='reg');
+    $('tab-claim').classList.toggle('hidden',tab!=='claim');
     if(tab==='team')loadTeamUsers();
     if(tab==='approve')loadApprovals();
     if(tab==='reg')loadRegApprovals();
+    if(tab==='claim')loadClaimApprovals();
   }));
   if(window.__rnavRefresh)window.__rnavRefresh();
   // 헤더(트리) 딥링크: #tab=list/team/approve
   function applyCustHashTab(){ if(window.__rnavRefresh)setTimeout(window.__rnavRefresh,0);
     let tab='list'; try{ const p=new URLSearchParams(location.hash.slice(1)); tab=p.get('tab')||'list'; }catch(e){}
-    if(['list','team','approve','reg'].indexOf(tab)<0)tab='list';
+    if(['list','team','approve','reg','claim'].indexOf(tab)<0)tab='list';
     document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));
     $('tab-list').classList.toggle('hidden',tab!=='list');
     $('tab-team').classList.toggle('hidden',tab!=='team');
     $('tab-approve').classList.toggle('hidden',tab!=='approve');
     $('tab-reg').classList.toggle('hidden',tab!=='reg');
+    $('tab-claim').classList.toggle('hidden',tab!=='claim');
     if(tab==='team')loadTeamUsers();
     if(tab==='approve')loadApprovals();
     if(tab==='reg')loadRegApprovals();
+    if(tab==='claim')loadClaimApprovals();
   }
   window.addEventListener('hashchange',()=>{ if(!$('app').classList.contains('hidden'))applyCustHashTab(); });
 
@@ -1335,7 +1450,7 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-custform.js?v=20260827rfc"></script>
+<script src="refatrix-custform.js?v=20260901claim"></script>
 <script src="refatrix-nav.js?v=20260824ph"></script>
 </body>
 </html>

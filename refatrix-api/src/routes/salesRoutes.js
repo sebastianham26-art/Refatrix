@@ -7,6 +7,7 @@ import { round2, allowPastMonthSalesEdit } from '../permissions.js';
 import { logEvent } from '../audit.js';
 import { autoStage } from '../stageAuto.js';
 import { allocateShortagesOnSale, reverseInvoiceResolutions, scanResolveShortages } from '../shortageResolve.js';
+import { normalizeClaimKey, RFC_ERROR_NOTE } from '../customerClaim.js';
 
 export default async function salesRoutes(app) {
   // 고객 CRUD는 customerRoutes로 일원화됨(팀 가시성 적용).
@@ -35,8 +36,18 @@ export default async function salesRoutes(app) {
       }
     }
     const out = await withTx(async (c) => {
-      const cust = (await c.query(`SELECT id, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customer_id])).rows[0];
+      const cust = (await c.query(`SELECT id, name, rfc, discount, credit_days FROM customers WHERE id=$1 AND deleted_at IS NULL`, [customer_id])).rows[0];
       if (!cust) return { error: 'customer_not_found' };
+
+      // 0193 · **매출은 RFC 없이 확정할 수 없다.**
+      //   등록·견적까지는 RFC 없이 진행할 수 있게 열어 뒀지만(초기 접촉 단계라 RFC 가 아직 없다),
+      //   청구 단계에서는 팩투라 발행에 RFC 가 반드시 필요하고, 무엇보다
+      //   **선점 없는 고객에게 매출이 꽂히면 커미션 귀속이 무주공산이 된다.**
+      //   → 여기서 한 번 막아 주면 RFC 입력이 자연스럽게 강제된다(입력 순간 선점 확정).
+      if (!normalizeClaimKey(cust.rfc)) {
+        return { error: 'customer_rfc_required', note: RFC_ERROR_NOTE.sales_rfc_required,
+          customer_name: cust.name, code: 409 };
+      }
 
       const custDiscount = Number(cust.discount) || 0;
       const baseCreditDays = Number(cust.credit_days) || 0;
@@ -146,6 +157,10 @@ export default async function salesRoutes(app) {
     });
 
     if (out.error === 'stock_short') return reply.code(409).send({ error: 'stock_short', shortages: out.shortages });
+    // 0193 · RFC 미입력 고객은 note 를 그대로 실어 보낸다("어디서 채우면 되는지" 를 화면에 띄우려고).
+    if (out.error === 'customer_rfc_required') {
+      return reply.code(409).send({ error: out.error, note: out.note, customer_name: out.customer_name });
+    }
     if (out.error) return reply.code(out.error.startsWith('insufficient') ? 409 : 400).send({ error: out.error });
     await logEvent({ userId, deviceId: req.ctx.deviceId, action: 'create', target: `sales_invoice:${out.id || 'none'}`, detail: { exception: out.exception, shortages: out.shortages?.length || 0 } });
     if (out.invoiced && out.id) {

@@ -1,5 +1,8 @@
-// build 20260827rfc — 고객 등록 디렉터 승인 + **RFC 선점**(0188) + 기준품목 할인율 제안 (0185)
+// build 20260901claim — 고객 등록 디렉터 승인 + **RFC 선점**(0188) + 기준품목 할인율 제안 (0185)
 //   0188: 선점 조건이 CONSTANCIA → RFC 로 바뀌었다. CONSTANCIA 번호·PDF 는 선택 증빙.
+//   0193: **RFC 도 선택 입력**이 되었다. 대신 RFC 가 채워지는 순간 선점이 성립하고,
+//         남의 RFC-없는 고객에 내 RFC 를 넣어 가져오는 「선점 이관」은 디렉터 승인을 탄다.
+//         등록은 디렉터 본인이 해도 승인 대기(pending)로 간다 — 예외 없는 단일 경로.
 import { query, withTx } from '../db.js';
 import { CROSS_TEAM_PAGE_KEY } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
@@ -11,7 +14,8 @@ import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
 import { assembleVisitHistory } from '../customerVisits.js';
 import { stageLabel, stripStageLabel } from '../stageLabel.js';
 import { normalizeClaimKey, computeBaselineDiscount, validateChosenDiscount,
-         discountGap, MAX_DISCOUNT_PCT, validateRfc, RFC_ERROR_NOTE } from '../customerClaim.js';
+         discountGap, MAX_DISCOUNT_PCT, validateRfc, validateRfcOptional, RFC_ERROR_NOTE,
+         nameSimilarity, NAME_SIMILAR_THRESHOLD } from '../customerClaim.js';
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -54,6 +58,102 @@ async function rfcClaimReady() {
   } catch (_) { _rfcReady = false; }
   _rfcCheckedAt = now;
   return _rfcReady;
+}
+
+// 0193 · RFC 선택 입력 + 선점 이관(customer_rfc_claims) 적용 여부.
+//   미적용이어도 서비스는 죽지 않는다 — 이관 요청 경로만 503 으로 막고
+//   등록은 「RFC 선택」 규칙 그대로 동작한다(선점 시각 기록만 생략).
+let _claimReady = null, _claimCheckedAt = 0;
+async function claimTableReady() {
+  const now = Date.now();
+  if (_claimReady !== null && now - _claimCheckedAt < 60000) return _claimReady;
+  try {
+    const r = (await query(
+      `SELECT (SELECT count(*)::int FROM information_schema.tables
+                WHERE table_name='customer_rfc_claims') AS t,
+              (SELECT count(*)::int FROM information_schema.columns
+                WHERE table_name='customers' AND column_name='rfc_claimed_at') AS c`)).rows[0];
+    _claimReady = Number(r.t) >= 1 && Number(r.c) >= 1;
+  } catch (_) { _claimReady = false; }
+  _claimCheckedAt = now;
+  return _claimReady;
+}
+
+// 0193 · 이 RFC 를 지금 잡을 수 있는가 — 확정 선점(customers) + 대기 선점(claims) 둘 다 본다.
+//   returns null(비어 있음) | { kind:'customer'|'claim', ... }
+//   ⚠ rfc_claim_exempt(레거시 중복) 행도 여기서는 선점자로 본다(0188 결정 ④ 유지).
+async function findRfcHolder(rfcNorm, { excludeCustomerId = null, claimsOn = true } = {}) {
+  if (!rfcNorm) return null;
+  const cur = (await query(
+    `SELECT c.id, c.name, u.name AS owner_name, c.owner_id,
+            to_char(COALESCE(c.rfc_claimed_at, c.created_at),'YYYY-MM-DD') AS claimed_at
+       FROM customers c LEFT JOIN users u ON u.id=c.owner_id
+      WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'
+        AND c.rfc_norm = $1 AND ($2::bigint IS NULL OR c.id <> $2)
+      ORDER BY c.created_at LIMIT 1`, [rfcNorm, excludeCustomerId])).rows[0];
+  if (cur) {
+    return { kind: 'customer', customer_id: Number(cur.id), name: cur.name,
+      owner_name: cur.owner_name || null, owner_id: cur.owner_id == null ? null : Number(cur.owner_id),
+      claimed_at: cur.claimed_at };
+  }
+  if (!claimsOn || !(await claimTableReady())) return null;
+  const pend = (await query(
+    `SELECT k.id, k.customer_id, c.name, u.name AS requested_by_name, k.requested_by,
+            to_char(k.requested_at,'YYYY-MM-DD HH24:MI') AS requested_at
+       FROM customer_rfc_claims k
+       LEFT JOIN customers c ON c.id=k.customer_id
+       LEFT JOIN users u ON u.id=k.requested_by
+      WHERE k.status='pending' AND k.rfc_norm=$1
+      ORDER BY k.requested_at LIMIT 1`, [rfcNorm])).rows[0];
+  if (!pend) return null;
+  return { kind: 'claim', claim_id: Number(pend.id), customer_id: Number(pend.customer_id),
+    name: pend.name, owner_name: pend.requested_by_name || null,
+    owner_id: pend.requested_by == null ? null : Number(pend.requested_by),
+    claimed_at: pend.requested_at };
+}
+
+// 0193 · 상호명이 비슷한 기존 고객 (경고 전용 — 등록·저장을 막지 않는다).
+//   1차로 「의미 단어 하나라도 겹치는 후보」를 DB 에서 넓게 긁고,
+//   2차로 nameSimilarity 로 점수를 매겨 임계값 이상만 남긴다.
+//   ⚠ 반환 필드는 claim-check 과 같은 최소 신원정보뿐이다(매출·연락처 절대 금지).
+async function findSimilarCustomers(name, { excludeId = null, limit = 5 } = {}) {
+  const raw = String(name || '').trim();
+  if (raw.length < 2) return [];
+  // 후보 긁기: 상호에서 가장 긴 두 단어로 ILIKE (인덱스는 못 타지만 고객 테이블 규모가 작다)
+  const words = raw.replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ')
+    .filter((w) => w.length >= 3).sort((a, b) => b.length - a.length).slice(0, 2);
+  if (!words.length) return [];
+  const params = [excludeId];
+  const likes = words.map((w) => { params.push(`%${w.replace(/([%_\\])/g, '\\$1')}%`); return `c.name ILIKE $${params.length}`; });
+  const rows = (await query(
+    `SELECT c.id, c.name, c.rfc, c.rfc_norm, u.name AS owner_name,
+            to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
+            COALESCE(c.approval_status,'approved') AS approval_status
+       FROM customers c LEFT JOIN users u ON u.id=c.owner_id
+      WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'
+        AND ($1::bigint IS NULL OR c.id <> $1)
+        AND (${likes.join(' OR ')})
+      ORDER BY c.created_at LIMIT 40`, params)).rows;
+  return rows
+    .map((r) => ({ ...r, score: nameSimilarity(raw, r.name) }))
+    .filter((r) => r.score >= NAME_SIMILAR_THRESHOLD)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((r) => ({
+      customer_id: Number(r.id), name: r.name, rfc: r.rfc || null,
+      has_rfc: !!r.rfc_norm,                  // false = 선점 미성립 → 내 RFC 로 가져올 수 있는 대상
+      owner_name: r.owner_name || '(담당자 미지정)',
+      registered_at: r.registered_at, approval_status: r.approval_status, score: r.score,
+    }));
+}
+
+function rfcHolderNote(h) {
+  if (!h) return null;
+  return h.kind === 'claim'
+    ? `이 RFC 는 ${h.owner_name || '(미지정)'} 님이 ${h.claimed_at} 에 먼저 선점 요청했습니다(디렉터 승인 대기)`
+      + ' — 먼저 입력한 사람에게 우선권이 있습니다.'
+    : `이미 등록된 고객입니다 — ${h.name} · 담당 ${h.owner_name || '(미지정)'} · 선점일 ${h.claimed_at}. `
+      + '같은 고객이 맞다면 디렉터에게 문의하세요.';
 }
 
 export default async function customerRoutes(app) {
@@ -492,6 +592,9 @@ export default async function customerRoutes(app) {
         constancia_no: c.constancia_no || null,
         // 0188 · RFC 가 선점 키. exempt = 마이그레이션 시점에 이미 RFC 가 중복이던 레거시 행.
         rfc_claim_exempt: c.rfc_claim_exempt === true,
+        // 0193 · RFC 가 비어 있으면 **선점이 없는 고객**이다 — 화면에 빨간 안내 + 매출 차단.
+        rfc_claimed: !!normalizeClaimKey(c.rfc),
+        rfc_claimed_at: c.rfc_claimed_at || null,
         rejected_reason: c.rejected_reason || null,
         syd_ref_code: c.syd_ref_code || null,
         syd_ref_buy_price: c.syd_ref_buy_price == null ? null : Number(c.syd_ref_buy_price),
@@ -659,7 +762,7 @@ export default async function customerRoutes(app) {
 
     const statusExpr = regOn ? `COALESCE(c.approval_status,'approved')` : `'approved'`;
     const rows = (await query(
-      `SELECT c.name, c.rfc, u.name AS owner_name,
+      `SELECT c.id, c.name, c.rfc, u.name AS owner_name,
               to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
               ${statusExpr} AS approval_status,
               ${regOn ? 'c.constancia_no_norm' : 'NULL::text'} AS con_norm,
@@ -669,22 +772,36 @@ export default async function customerRoutes(app) {
         WHERE c.deleted_at IS NULL AND ${statusExpr} <> 'rejected' AND (${where.join(' OR ')})
         ORDER BY c.created_at LIMIT 30`, params)).rows;
 
+    // 0193 · 내가 넣으려는 RFC 로 대기 중인 선점 요청이 있으면 그것도 「선점됨」이다.
+    const pendingClaim = rfcN ? await findRfcHolder(rfcN, { excludeCustomerId: null }) : null;
+    const claimPending = !!(pendingClaim && pendingClaim.kind === 'claim');
+
     return {
       items: rows.map((r) => ({
+        // 0193 · id 는 「RFC 없는 고객에 선점 요청」을 걸기 위해 필요하다.
+        //   RFC 가 이미 있는(=선점된) 고객은 요청 대상이 아니므로 id 를 내보내지 않는다.
+        customer_id: r.rfc_n ? null : Number(r.id),
         name: r.name, rfc: r.rfc || null,
+        has_rfc: !!r.rfc_n,                    // false = 선점 미성립 → 내가 RFC 를 넣어 가져올 수 있다
         owner_name: r.owner_name || '(담당자 미지정)',
         registered_at: r.registered_at,
         approval_status: r.approval_status,
         // 어떤 키로 걸렸는지 — 화면에서 "이 RFC 는 이미 선점됨" 을 정확히 안내하기 위함
         matched_constancia: !!(conN && r.con_norm && r.con_norm === conN),
         matched_rfc: !!(rfcN && r.rfc_n && r.rfc_n === rfcN),
+        // 상호만으로 걸린 후보의 유사도(경고 강약 표시용)
+        name_score: name && name.length >= 2 ? nameSimilarity(name, r.name) : null,
       })),
       // 이 둘 중 하나라도 true 면 등록이 차단된다 (0188 · 주 판정은 RFC)
       blocked_constancia: rows.some((r) => conN && r.con_norm && r.con_norm === conN),
-      blocked_rfc: rows.some((r) => rfcN && r.rfc_n && r.rfc_n === rfcN),
+      blocked_rfc: rows.some((r) => rfcN && r.rfc_n && r.rfc_n === rfcN) || claimPending,
+      // 0193 · 「남이 먼저 요청했지만 아직 승인 안 됨」 은 별도로 알려 준다(문구가 달라야 한다).
+      claim_pending: claimPending,
+      claim_pending_note: claimPending ? rfcHolderNote(pendingClaim) : null,
       migration_required: !regOn,
       // 0188 마이그레이션 전이면 DB 유니크가 없어 동시 등록 극단 케이스가 뚫릴 수 있다.
       rfc_db_lock: await rfcClaimReady(),
+      claim_transfer_on: await claimTableReady(),
     };
   });
 
@@ -734,12 +851,17 @@ export default async function customerRoutes(app) {
   });
 
   // =====================================================================
-  // 고객 등록 (0185 → 0188 개정)
-  //   · **RFC 입력이 곧 선점**이다(0188). 형식 검증을 통과한 RFC 하나면 등록된다.
+  // 고객 등록 (0185 → 0188 → **0193** 개정)
+  //   · **RFC 는 선택 입력**이다(0193). 없어도 등록된다 — 상담·방문 이력을 먼저 쌓기 위함.
+  //     넣으면 0188 과 똑같이 엄격하게 검증하고, 그 시점에 선점이 성립한다(rfc_claimed_at).
+  //   · RFC 를 비운 등록은 **선점이 없다.** 나중에 다른 영업사원이 같은 고객에 RFC 를 먼저
+  //     넣으면 그 사람에게 우선권이 간다(→ POST /api/customers/:id/rfc-claim).
+  //   · 상호명이 비슷한 기존 고객이 있으면 **경고만** 한다(차단하지 않음) — RFC 없이는
+  //     법적 동일성을 판단할 수 없고, 지점·법인 분리가 흔해 차단은 오탐이 더 비싸다.
   //   · CONSTANCIA 번호·PDF 는 선택 — 넣으면 그 번호도 함께 잠긴다(0185 유니크 유지).
-  //   · 같은 RFC(정규화) 또는 같은 CONSTANCIA 가 이미 있으면 **등록 차단**(선점 안내).
-  //   · 기준품목 구매단가 → 산출/제안 할인율을 스냅샷으로 박제.
-  //   · 디렉터가 아니면 approval_status='pending' — 승인 전에는 견적·매출에 못 쓴다.
+  //   · 기준품목(SYD) 구매단가는 **여전히 필수** — 할인율 산출의 유일한 근거다.
+  //   · 0193: **디렉터가 등록해도 approval_status='pending'.** 모든 신규 고객이 예외 없이
+  //     승인 대기 탭을 한 번 거친다(승인 경로가 하나여야 이력·커미션 귀속이 흔들리지 않는다).
   // =====================================================================
   app.post('/api/customers', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
     const b = req.body || {};
@@ -753,15 +875,15 @@ export default async function customerRoutes(app) {
     if (!teamId) return reply.code(400).send({ error: 'team_required' });
     if (!canEditTeam(perm, teamId)) return reply.code(403).send({ error: 'forbidden_team' });
 
-    // ── ① RFC 필수 = 선점 조건 (0188) ─────────────────────────────────
-    //   "아무 문자열이나 넣고 선점" 이 되면 선점 장치 자체가 무의미해지므로
-    //   멕시코 RFC 형식(법인 12 / 개인 13)을 실제로 검사한다.
-    const rfcChk = validateRfc(b.rfc);
+    // ── ① RFC 선택 입력 (0193) ────────────────────────────────────────
+    //   비우면 통과한다 — 다만 **선점은 성립하지 않는다**.
+    //   넣으면 0188 과 동일하게 엄격히 본다(느슨하게 봐 주면 「아무 문자열로 선점」 우회가 살아난다).
+    const rfcChk = validateRfcOptional(b.rfc);
     if (!rfcChk.ok) {
       return reply.code(400).send({ error: rfcChk.error, note: RFC_ERROR_NOTE[rfcChk.error] });
     }
-    const rfcClean = rfcChk.value;                 // 대문자·구분자 제거본을 저장한다(표기 흔들림 제거)
-    const rfcNorm = normalizeClaimKey(rfcClean);
+    const rfcClean = rfcChk.value;                 // null 가능. 대문자·구분자 제거본을 저장한다
+    const rfcNorm = normalizeClaimKey(rfcClean);   // null 가능
 
     // ── ② CONSTANCIA 번호 + 스캔본 (선택) ─────────────────────────────
     //   넣으면 그 번호도 0185 유니크로 함께 잠긴다. 안 넣어도 등록·선점은 된다.
@@ -793,22 +915,37 @@ export default async function customerRoutes(app) {
     //   저장 전에 먼저 조회한다. 동시성 충돌은 아래 INSERT 의 unique 에러로 다시 잡힌다.
     //   ⚠ rfc_claim_exempt(레거시 중복) 행도 여기서는 그대로 걸린다 —
     //     인덱스에서만 빠질 뿐, 남의 고객을 새로 등록해 가져가는 건 막아야 하기 때문.
-    const dup = (await query(
-      `SELECT c.name, u.name AS owner_name, to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
-              c.constancia_no_norm, c.rfc_norm
-         FROM customers c LEFT JOIN users u ON u.id=c.owner_id
-        WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'
-          AND (c.rfc_norm = $1 OR ($2::text IS NOT NULL AND c.constancia_no_norm = $2))
-        ORDER BY c.created_at LIMIT 1`, [rfcNorm, conNorm])).rows[0];
-    if (dup) {
-      const byRfc = dup.rfc_norm === rfcNorm;
-      return reply.code(409).send({
-        error: byRfc ? 'rfc_taken' : 'constancia_taken',
-        note: `이미 등록된 고객입니다 — ${dup.name} · 담당 ${dup.owner_name || '(미지정)'} · 등록일 ${dup.registered_at}. `
-            + '같은 고객이 맞다면 디렉터에게 문의하세요.',
-        claimed_by: dup.owner_name || null, claimed_at: dup.registered_at, claimed_name: dup.name,
-      });
+    //   0193: RFC 를 넣었을 때만 선점 충돌을 본다. **대기 중인 선점 요청도 선점자로 본다**
+    //     — 먼저 RFC 를 입력한 사람의 우선권이 승인 대기 중에 새 등록으로 뚫리면 안 된다.
+    if (rfcNorm) {
+      const holder = await findRfcHolder(rfcNorm);
+      if (holder) {
+        return reply.code(409).send({
+          error: holder.kind === 'claim' ? 'rfc_claim_pending' : 'rfc_taken',
+          note: rfcHolderNote(holder),
+          claimed_by: holder.owner_name, claimed_at: holder.claimed_at, claimed_name: holder.name,
+        });
+      }
     }
+    if (conNorm) {
+      const dupCon = (await query(
+        `SELECT c.name, u.name AS owner_name, to_char(c.created_at,'YYYY-MM-DD') AS registered_at
+           FROM customers c LEFT JOIN users u ON u.id=c.owner_id
+          WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved') <> 'rejected'
+            AND c.constancia_no_norm = $1
+          ORDER BY c.created_at LIMIT 1`, [conNorm])).rows[0];
+      if (dupCon) {
+        return reply.code(409).send({ error: 'constancia_taken',
+          note: `이미 등록된 고객입니다 — ${dupCon.name} · 담당 ${dupCon.owner_name || '(미지정)'} · 등록일 ${dupCon.registered_at}. `
+              + '같은 고객이 맞다면 디렉터에게 문의하세요.',
+          claimed_by: dupCon.owner_name || null, claimed_at: dupCon.registered_at, claimed_name: dupCon.name });
+      }
+    }
+
+    // ── ③-b 상호명 유사 (0193 · 경고 전용, 차단하지 않음) ─────────────
+    //   RFC 없이 등록하는 경우가 중복 등록의 주 경로다. 막지는 않되, 등록 응답과
+    //   디렉터 승인 카드에 「유사 고객」 을 실어 보내 사람이 판단할 재료를 남긴다.
+    const similar = await findSimilarCustomers(b.name, { excludeId: null });
 
     // ── ④ 기준품목 단가 → 할인율 근거 스냅샷 ──────────────────────────
     const baseCode = String(b.syd_ref_code || SYD_BASE_CODE).trim();
@@ -836,8 +973,12 @@ export default async function customerRoutes(app) {
         note: `기본 할인율을 0~${MAX_DISCOUNT_PCT}% 범위로 입력하세요(제안값: ${calc.suggested_discount ?? '—'}%).` });
     }
 
+    // 0193 · **예외 없이 승인 대기.** 디렉터가 직접 등록해도 pending 이다.
+    //   승인 경로가 하나여야 등록 이력·커미션 귀속·유사고객 검토가 한 군데서 끝난다.
+    //   (디렉터는 승인 대기 탭에서 자기 건을 바로 승인하면 되므로 실무 비용은 클릭 한 번이다.)
     const isDir = perm.role === 'director';
-    const status = isDir ? 'approved' : 'pending';
+    const status = 'pending';
+    const claimOn = await claimTableReady();
 
     // 코드 충돌 시 재시도(동시 생성 대비)
     let row, dupKey = null;
@@ -851,14 +992,15 @@ export default async function customerRoutes(app) {
                                   syd_ref_code, syd_ref_buy_price, syd_ref_list_price, syd_ref_discount,
                                   ctr_ref_code, ctr_ref_list_price, suggested_discount,
                                   approval_status, submitted_at, approved_by, approved_at,
-                                  stage_since, created_by)
+                                  stage_since, created_by${claimOn ? ', rfc_claimed_at, rfc_claimed_by' : ''})
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                    $11,$12,$13,$14,$15,$16,
                    $17,$18,
                    $19,$20,$21,$22,
                    $23,$24,$25,
                    $26, now(), $27, $28,
-                   CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $29)
+                   CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $29
+                   ${claimOn ? ', CASE WHEN $3::text IS NOT NULL THEN now() END, CASE WHEN $3::text IS NOT NULL THEN $10::bigint END' : ''})
            RETURNING id, code`,
           [code, b.name, rfcClean, b.contact || null, b.phone || null, chosen.value,
            Number(b.credit_days) || 0, teamId, b.stage_id || null,
@@ -872,7 +1014,8 @@ export default async function customerRoutes(app) {
            b.constancia_fiscal || null, conNo || null,
            baseCode, buyPrice, sydLP, calc.syd_discount,
            base?.code || null, ctrLP, calc.suggested_discount,
-           status, isDir ? perm.userId : null, isDir ? new Date() : null,
+           // 0193 · 항상 pending 이므로 승인자·승인시각은 비운다(디렉터 등록도 예외 없음).
+           status, null, null,
            perm.userId])).rows[0];
         break;
       } catch (e) {
@@ -912,12 +1055,15 @@ export default async function customerRoutes(app) {
       syd_ref_discount: calc.syd_discount, ctr_ref_code: base?.code || null, ctr_ref_list_price: ctrLP,
       suggested_discount: calc.suggested_discount, chosen_discount: chosen.value,
       gap: discountGap(chosen.value, calc.suggested_discount), calc_note: calc.note || null,
+      // 0193 — 승인 화면이 「RFC 없이 들어온 건」·「유사 고객」 을 바로 볼 수 있게 박제한다.
+      rfc: rfcClean, rfc_claimed: !!rfcClean, registered_by_director: isDir,
+      similar: similar.map((s) => ({ name: s.name, rfc: s.rfc, owner_name: s.owner_name, score: s.score })),
     };
     try {
       await query(
         `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [row.id, isDir ? 'approve' : 'submit', b.memo || null, JSON.stringify(snapshot), perm.userId]);
+         VALUES ($1,'submit',$2,$3,$4)`,
+        [row.id, b.memo || null, JSON.stringify(snapshot), perm.userId]);
     } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
 
     // 초기 할인/외상일이 0이 아니면 기존 변경이력에도 남김(승인자는 디렉터 등록일 때만)
@@ -928,17 +1074,251 @@ export default async function customerRoutes(app) {
       try {
         await logTermsHistory(row.id, initTerms, {
           reason: '신규 등록 초기값 (기준품목 ' + baseCode + ' 구매단가 ' + buyPrice + ' → 제안 ' + (calc.suggested_discount ?? '—') + '%)',
-          conditions: null, changedBy: perm.userId, approvedBy: isDir ? perm.userId : null });
+          // 0193 · 등록은 전부 pending 이라 이 시점의 승인자는 없다(승인 시 이력이 따로 남는다).
+          conditions: null, changedBy: perm.userId, approvedBy: null });
       } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
     }
-    await safeLog({ userId: perm.userId, action: 'create', target: `customer:${row.id}`, detail: { approval_status: status } });
+    await safeLog({ userId: perm.userId, action: 'create', target: `customer:${row.id}`,
+      detail: { approval_status: status, rfc_claimed: !!rfcClean } });
     return { ok: true, id: row.id, code: row.code, approval_status: status,
-      pending_approval: status === 'pending', calc, suggested_discount: calc.suggested_discount,
-      claimed_by: 'rfc', rfc: rfcClean, constancia_no: conNo || null, constancia_doc: !!docBuf && !docWarning,
+      pending_approval: true, calc, suggested_discount: calc.suggested_discount,
+      // 0193 · RFC 를 넣었으면 그 순간 선점됐고, 안 넣었으면 선점이 없다(나중에 남이 가져갈 수 있다).
+      claimed_by: rfcClean ? 'rfc' : null, rfc_claimed: !!rfcClean,
+      rfc: rfcClean, constancia_no: conNo || null, constancia_doc: !!docBuf && !docWarning,
+      similar,
+      note: rfcClean
+        ? `등록 요청을 보냈습니다 — RFC ${rfcClean} 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.`
+        : '등록 요청을 보냈습니다 — ⚠ RFC 가 비어 있어 **아직 선점되지 않았습니다.** '
+          + '다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 그 사람에게 우선권이 갑니다. RFC 를 받는 대로 입력하세요.',
       warning: docWarning,
       warning_note: docWarning
-        ? 'RFC 로 선점·등록은 완료됐지만 CONSTANCIA 스캔본 저장에 실패했습니다. 고객 상세의 증빙서류에서 다시 올려 주세요.'
+        ? '등록은 완료됐지만 CONSTANCIA 스캔본 저장에 실패했습니다. 고객 상세의 증빙서류에서 다시 올려 주세요.'
         : null };
+  });
+
+  // =====================================================================
+  // 0193 · RFC 선점 이관
+  //
+  //   RFC 없이 등록된 고객은 **선점이 없다.** 그 고객에 RFC 를 먼저 입력한 사람이
+  //   우선권을 갖는다 — 요청 시각(requested_at)이 그 근거이고, 확정은 디렉터 승인이다.
+  //
+  //   두 갈래:
+  //     ① 내가 이미 담당인 고객에 RFC 를 채우는 경우 → **즉시 적용**(뺏을 게 없다).
+  //     ② 남이 담당인 고객에 내 RFC 를 넣는 경우     → 대기 요청 + 디렉터 승인 시 담당 이관.
+  //   같은 RFC 로는 대기 요청이 하나만 존재할 수 있다(uq_rfc_claims_pending_rfc).
+  //
+  //   ⚠ 이 경로는 팀 스코프를 타지 않는다(claim-check 과 같은 이유). 그래서
+  //     응답에 상호·담당자·시각 외의 정보는 절대 싣지 않는다.
+  // =====================================================================
+  app.post('/api/customers/:id/rfc-claim', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    if (!(await claimTableReady())) {
+      return reply.code(503).send({ error: 'migration_required',
+        note: 'RFC 선점 이관(0193) 마이그레이션이 아직 적용되지 않았습니다. 디렉터에게 문의하세요.' });
+    }
+    const chk = validateRfc(req.body?.rfc);        // 이관은 RFC 가 본질이므로 여기서는 필수 + 엄격
+    if (!chk.ok) return reply.code(400).send({ error: chk.error, note: RFC_ERROR_NOTE[chk.error] });
+    const rfcClean = chk.value;
+    const rfcNorm = normalizeClaimKey(rfcClean);
+
+    const c = (await query(
+      `SELECT c.id, c.name, c.rfc, c.rfc_norm, c.owner_id, c.team_id, u.name AS owner_name
+         FROM customers c LEFT JOIN users u ON u.id=c.owner_id
+        WHERE c.id=$1 AND c.deleted_at IS NULL
+          AND COALESCE(c.approval_status,'approved') <> 'rejected'`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    // 이미 RFC 가 있으면 선점이 끝난 고객이다 — 이 경로로는 못 바꾼다(수정 화면으로 보낸다).
+    if (c.rfc_norm) {
+      return reply.code(409).send({ error: 'rfc_already_set', note: RFC_ERROR_NOTE.rfc_already_set,
+        claimed_by: c.owner_name || null });
+    }
+    // 그 RFC 를 이미 누가 갖고 있으면(확정이든 대기든) 여기서 멈춘다.
+    const holder = await findRfcHolder(rfcNorm, { excludeCustomerId: id });
+    if (holder) {
+      return reply.code(409).send({
+        error: holder.kind === 'claim' ? 'rfc_claim_pending' : 'rfc_taken',
+        note: rfcHolderNote(holder),
+        claimed_by: holder.owner_name, claimed_at: holder.claimed_at, claimed_name: holder.name });
+    }
+
+    // ① 내 고객이면 즉시 적용 — 남에게서 뺏는 게 아니므로 승인을 기다릴 이유가 없고,
+    //    기다리는 사이 다른 영업사원이 같은 RFC 를 채가는 게 더 큰 손해다.
+    const mine = c.owner_id != null && Number(c.owner_id) === Number(perm.userId);
+    if (mine) {
+      try {
+        await query(
+          `UPDATE customers SET rfc=$1, rfc_claimed_at=now(), rfc_claimed_by=$2, updated_by=$2 WHERE id=$3`,
+          [rfcClean, perm.userId, id]);
+      } catch (e) {
+        if (String(e.message || '').includes('uq_customers_rfc_claim')) {
+          return reply.code(409).send({ error: 'rfc_taken', note: '방금 다른 영업사원이 같은 RFC 를 먼저 선점했습니다.' });
+        }
+        throw e;
+      }
+      try {
+        await query(
+          `INSERT INTO customer_rfc_claims (customer_id, rfc, requested_by, status, transfer_owner, note, decided_by, decided_at)
+           VALUES ($1,$2,$3,'approved',false,$4,$3,now())`,
+          [id, rfcClean, perm.userId, req.body?.note ? String(req.body.note) : null]);
+        await query(
+          `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+           VALUES ($1,'rfc_claim_self',$2,$3,$4)`,
+          [id, req.body?.note ? String(req.body.note) : null,
+           JSON.stringify({ rfc: rfcClean, transfer_owner: false }), perm.userId]);
+      } catch (_) { /* 이력 실패가 선점을 막지 않음 */ }
+      await safeLog({ userId: perm.userId, action: 'rfc_claim_self', target: `customer:${id}` });
+      return { ok: true, applied: true, customer_id: id, rfc: rfcClean,
+        note: `RFC ${rfcClean} 로 선점이 확정되었습니다 — 이 시점부터 다른 영업사원은 이 고객을 가져갈 수 없습니다.` };
+    }
+
+    // ② 남의 고객 → 대기 요청. 확정은 디렉터 승인.
+    let claim;
+    try {
+      claim = (await query(
+        `INSERT INTO customer_rfc_claims (customer_id, rfc, requested_by, note)
+         VALUES ($1,$2,$3,$4) RETURNING id, to_char(requested_at,'YYYY-MM-DD HH24:MI') AS requested_at`,
+        [id, rfcClean, perm.userId, req.body?.note ? String(req.body.note) : null])).rows[0];
+    } catch (e) {
+      if (String(e.message || '').includes('uq_rfc_claims_pending_rfc')) {
+        const h = await findRfcHolder(rfcNorm, { excludeCustomerId: id });
+        return reply.code(409).send({ error: 'rfc_claim_pending',
+          note: rfcHolderNote(h) || RFC_ERROR_NOTE.rfc_claim_pending });
+      }
+      throw e;
+    }
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,'rfc_claim_request',$2,$3,$4)`,
+        [id, req.body?.note ? String(req.body.note) : null,
+         JSON.stringify({ rfc: rfcClean, claim_id: Number(claim.id),
+           previous_owner: c.owner_name || null }), perm.userId]);
+    } catch (_) { /* ignore */ }
+    await safeLog({ userId: perm.userId, action: 'rfc_claim_request', target: `customer:${id}` });
+    return { ok: true, applied: false, pending_approval: true,
+      claim_id: Number(claim.id), customer_id: id, rfc: rfcClean, requested_at: claim.requested_at,
+      note: `RFC ${rfcClean} 로 선점을 요청했습니다(${claim.requested_at}). `
+          + '이 시각이 우선권의 근거이고, 디렉터가 승인하면 담당이 본인으로 이관됩니다.' };
+  });
+
+  // 선점 이관 대기 목록 (디렉터) — requested_at 오름차순 = 우선순위 순
+  app.get('/api/customer-rfc-claims', { preHandler: [authGuard, requireDirector] }, async (req) => {
+    if (!(await claimTableReady())) return { items: [], migration_required: true };
+    const status = ['pending', 'approved', 'rejected', 'superseded'].includes(req.query.status)
+      ? req.query.status : 'pending';
+    const rows = (await query(
+      `SELECT k.id, k.customer_id, k.rfc, k.status, k.note,
+              to_char(k.requested_at,'YYYY-MM-DD HH24:MI') AS requested_at,
+              to_char(k.decided_at,'YYYY-MM-DD HH24:MI')   AS decided_at,
+              k.decided_reason,
+              ru.name AS requested_by_name, du.name AS decided_by_name,
+              c.name AS customer_name, c.code AS customer_code, c.rfc AS customer_rfc,
+              COALESCE(c.approval_status,'approved') AS approval_status,
+              ou.name AS owner_name, t.name AS team_name,
+              to_char(c.created_at,'YYYY-MM-DD') AS registered_at
+         FROM customer_rfc_claims k
+         JOIN customers c ON c.id=k.customer_id
+         LEFT JOIN users ru ON ru.id=k.requested_by
+         LEFT JOIN users du ON du.id=k.decided_by
+         LEFT JOIN users ou ON ou.id=c.owner_id
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+        WHERE k.status=$1 AND c.deleted_at IS NULL
+        ORDER BY k.requested_at, k.id
+        LIMIT 200`, [status])).rows;
+    return {
+      items: rows.map((r, i) => ({
+        id: Number(r.id), customer_id: Number(r.customer_id),
+        customer_name: r.customer_name, customer_code: r.customer_code,
+        customer_rfc: r.customer_rfc || null, approval_status: r.approval_status,
+        current_owner: r.owner_name || '(담당자 미지정)', team_name: r.team_name || null,
+        registered_at: r.registered_at,
+        rfc: r.rfc, requested_by: r.requested_by_name || '(알 수 없음)', requested_at: r.requested_at,
+        note: r.note || null, status: r.status,
+        decided_by: r.decided_by_name || null, decided_at: r.decided_at, decided_reason: r.decided_reason || null,
+        // 같은 고객에 요청이 여러 건이면 시각이 빠른 쪽이 우선 — 목록이 이미 그 순서다.
+        priority: i + 1,
+      })),
+    };
+  });
+
+  // 선점 이관 승인 — RFC 확정 + 담당 이관.
+  //   ★ rfc_claimed_at 은 **승인 시각이 아니라 요청 시각**을 박는다.
+  //     우선권의 근거는 "RFC 를 언제 입력했는가" 이지 "디렉터가 언제 눌렀는가" 가 아니다.
+  app.post('/api/customer-rfc-claims/:id/approve', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const cid = Number(req.params.id);
+    const perm = req.ctx.perm;
+    if (!(await claimTableReady())) return reply.code(503).send({ error: 'migration_required' });
+    const k = (await query(
+      `SELECT k.*, to_char(k.requested_at,'YYYY-MM-DD HH24:MI') AS requested_at_txt,
+              c.owner_id, c.team_id, c.rfc_norm AS cur_rfc_norm, c.name AS customer_name
+         FROM customer_rfc_claims k JOIN customers c ON c.id=k.customer_id
+        WHERE k.id=$1 AND k.status='pending' AND c.deleted_at IS NULL`, [cid])).rows[0];
+    if (!k) return reply.code(404).send({ error: 'not_found' });
+    if (k.cur_rfc_norm) {
+      return reply.code(409).send({ error: 'rfc_already_set', note: RFC_ERROR_NOTE.rfc_already_set });
+    }
+    const holder = await findRfcHolder(k.rfc_norm, { excludeCustomerId: Number(k.customer_id), claimsOn: false });
+    if (holder) {
+      return reply.code(409).send({ error: 'rfc_taken', note: rfcHolderNote(holder) });
+    }
+    // 이관 대상 영업사원의 팀으로 고객을 옮긴다(커미션·매출 집계가 팀 기준이라 같이 가야 한다).
+    const reqUser = (await query(`SELECT id, team_id, name FROM users WHERE id=$1`, [k.requested_by])).rows[0];
+    const newTeam = reqUser?.team_id || k.team_id;
+    const prevOwner = k.owner_id;
+    await withTx(async (c) => {
+      await c.query(
+        `UPDATE customers
+            SET rfc=$1, rfc_claimed_at=$2, rfc_claimed_by=$3, owner_id=$3, team_id=$4, updated_by=$5
+          WHERE id=$6`,
+        [k.rfc, k.requested_at, k.requested_by, newTeam, perm.userId, k.customer_id]);
+      await c.query(
+        `UPDATE customer_rfc_claims SET status='approved', decided_by=$1, decided_at=now(), decided_reason=$2
+          WHERE id=$3`, [perm.userId, req.body?.reason ? String(req.body.reason) : null, cid]);
+      // 같은 고객에 걸린 나머지 대기 요청은 무효가 된다(우선권이 이미 결정됐다).
+      await c.query(
+        `UPDATE customer_rfc_claims SET status='superseded', decided_by=$1, decided_at=now()
+          WHERE customer_id=$2 AND status='pending' AND id<>$3`, [perm.userId, k.customer_id, cid]);
+    });
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,'rfc_claim_approve',$2,$3,$4)`,
+        [k.customer_id, req.body?.reason ? String(req.body.reason) : null,
+         JSON.stringify({ claim_id: cid, rfc: k.rfc, requested_at: k.requested_at_txt,
+           previous_owner_id: prevOwner == null ? null : Number(prevOwner),
+           new_owner_id: Number(k.requested_by), new_team_id: newTeam == null ? null : Number(newTeam) }),
+         perm.userId]);
+    } catch (_) { /* ignore */ }
+    await safeLog({ userId: perm.userId, action: 'approve_rfc_claim', target: `customer:${k.customer_id}`,
+      detail: { claim_id: cid, new_owner_id: Number(k.requested_by) } });
+    return { ok: true, id: cid, customer_id: Number(k.customer_id), rfc: k.rfc,
+      new_owner: reqUser?.name || null,
+      // ★ 화면에 보여 주는 선점 시점도 요청 시각이다(승인 시각이 아니다).
+      note: `${k.customer_name} 의 선점이 ${reqUser?.name || '요청자'} 님에게 이관되었습니다(선점 시점 ${k.requested_at_txt}).` };
+  });
+
+  // 선점 이관 반려 — 사유 필수. RFC 는 다시 비어 있는 상태로 남고, 다음 요청이 들어올 수 있다.
+  app.post('/api/customer-rfc-claims/:id/reject', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const cid = Number(req.params.id);
+    const perm = req.ctx.perm;
+    if (!(await claimTableReady())) return reply.code(503).send({ error: 'migration_required' });
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return reply.code(400).send({ error: 'reason_required', note: '반려 사유를 입력하세요.' });
+    const k = (await query(
+      `SELECT * FROM customer_rfc_claims WHERE id=$1 AND status='pending'`, [cid])).rows[0];
+    if (!k) return reply.code(404).send({ error: 'not_found' });
+    await query(
+      `UPDATE customer_rfc_claims SET status='rejected', decided_by=$1, decided_at=now(), decided_reason=$2
+        WHERE id=$3`, [perm.userId, reason, cid]);
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,'rfc_claim_reject',$2,$3,$4)`,
+        [k.customer_id, reason, JSON.stringify({ claim_id: cid, rfc: k.rfc }), perm.userId]);
+    } catch (_) { /* ignore */ }
+    await safeLog({ userId: perm.userId, action: 'reject_rfc_claim', target: `customer:${k.customer_id}` });
+    return { ok: true, id: cid };
   });
 
   // =====================================================================
@@ -947,6 +1327,7 @@ export default async function customerRoutes(app) {
   app.get('/api/customer-registrations', { preHandler: [authGuard, requireDirector] }, async (req) => {
     if (!(await regColumnsReady())) return { items: [], migration_required: true };
     const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
+    const claimsOn = await claimTableReady();
     const rows = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.constancia_no, c.discount, c.credit_days,
               c.suggested_discount, c.syd_ref_code, c.syd_ref_buy_price, c.syd_ref_list_price,
@@ -954,6 +1335,10 @@ export default async function customerRoutes(app) {
               to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
               t.name AS team_name, u.name AS owner_name, cu.name AS created_by_name,
               COALESCE(c.approval_status,'approved') AS approval_status,
+              ${claimsOn ? `to_char(c.rfc_claimed_at,'YYYY-MM-DD HH24:MI') AS rfc_claimed_at,` : `NULL::text AS rfc_claimed_at,`}
+              (SELECT e.snapshot FROM customer_registration_events e
+                WHERE e.customer_id=c.id AND e.action='submit'
+                ORDER BY e.acted_at LIMIT 1) AS submit_snapshot,
               (SELECT count(*) FROM customer_documents d
                 WHERE d.customer_id=c.id AND d.deleted_at IS NULL AND d.doc_type='constancia') AS constancia_docs
          FROM customers c
@@ -978,7 +1363,12 @@ export default async function customerRoutes(app) {
         customer_type: r.customer_type, memo: r.memo,
         team_name: r.team_name, owner_name: r.owner_name, created_by_name: r.created_by_name,
         registered_at: r.registered_at, approval_status: r.approval_status,
+        // 0193 · RFC 없이 올라온 건은 **선점이 없는 상태**다. 승인 화면에서 눈에 띄어야 한다.
+        rfc_claimed: !!r.rfc, rfc_claimed_at: r.rfc_claimed_at || null,
+        // 등록 시점에 박제한 유사 고객(경고). 디렉터가 중복인지 판단할 재료.
+        similar: (r.submit_snapshot && Array.isArray(r.submit_snapshot.similar)) ? r.submit_snapshot.similar : [],
       })),
+      claim_transfer_on: claimsOn,
     };
   });
 
@@ -1022,10 +1412,22 @@ export default async function customerRoutes(app) {
           reason: '등록 승인 시 디렉터 조정', conditions: null, changedBy: c.created_by, approvedBy: perm.userId });
       } catch (_) { /* ignore */ }
     }
-    await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}`, detail: { constancia_doc: hadDoc } });
-    return { ok: true, id, discount, constancia_doc: hadDoc,
-      warning: hadDoc ? null : 'constancia_missing',
-      warning_note: hadDoc ? null : 'CONSTANCIA 스캔본 없이 승인했습니다(0188 이후 선택 항목).' };
+    // 0193 · RFC 가 없어도 승인은 된다(견적까지는 쓸 수 있어야 한다). 다만 **선점이 없는 고객**이므로
+    //   경고를 실어 보낸다 — 매출 확정은 salesRoutes 에서 RFC 를 요구해 따로 막는다.
+    const hasRfc = !!normalizeClaimKey(c.rfc);
+    const warns = [];
+    if (!hadDoc) warns.push('constancia_missing');
+    if (!hasRfc) warns.push('rfc_missing');
+    await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}`,
+      detail: { constancia_doc: hadDoc, rfc_claimed: hasRfc } });
+    return { ok: true, id, discount, constancia_doc: hadDoc, rfc_claimed: hasRfc,
+      warning: warns[0] || null, warnings: warns,
+      warning_note: warns.length
+        ? [
+            hadDoc ? null : 'CONSTANCIA 스캔본 없이 승인했습니다(0188 이후 선택 항목).',
+            hasRfc ? null : 'RFC 없이 승인했습니다 — 이 고객은 아직 선점되지 않았고, 다른 영업사원이 RFC 를 먼저 입력하면 우선권이 넘어갑니다. 매출 확정도 RFC 입력 전에는 막힙니다.',
+          ].filter(Boolean).join(' ')
+        : null };
   });
 
   // 반려: 선점을 풀어준다 — rejected 는 RFC·CONSTANCIA 두 유니크 인덱스 모두에서 빠진다 + 소프트 삭제.
@@ -1162,20 +1564,22 @@ export default async function customerRoutes(app) {
     //   ③ 남의 선점을 뺏는 것만 막는다. 이건 어차피 DB 유니크가 던지므로,
     //      500 대신 "누가 갖고 있는지" 를 알려 주려고 미리 조회한다.
     const rfcVal = (b.rfc !== undefined && String(b.rfc).trim() !== '') ? String(b.rfc).trim() : (c.rfc || null);
-    if (rfcVal && normalizeClaimKey(rfcVal) !== normalizeClaimKey(c.rfc)) {
-      const clash = (await query(
-        `SELECT c2.name, u.name AS owner_name, to_char(c2.created_at,'YYYY-MM-DD') AS registered_at
-           FROM customers c2 LEFT JOIN users u ON u.id=c2.owner_id
-          WHERE c2.id <> $2 AND c2.deleted_at IS NULL
-            AND COALESCE(c2.approval_status,'approved') <> 'rejected'
-            AND c2.rfc_norm = $1
-          ORDER BY c2.created_at LIMIT 1`, [normalizeClaimKey(rfcVal), id])).rows[0];
+    const rfcChanged = !!rfcVal && normalizeClaimKey(rfcVal) !== normalizeClaimKey(c.rfc);
+    if (rfcChanged) {
+      // 0193 · 확정 선점뿐 아니라 **대기 중인 선점 요청**도 막는다.
+      //   먼저 RFC 를 넣은 사람의 우선권이 남의 수정으로 뚫리면 선점 장치가 무의미해진다.
+      const clash = await findRfcHolder(normalizeClaimKey(rfcVal), { excludeCustomerId: id });
       if (clash) {
-        const e = new Error('rfc_taken'); e.claimError = 'rfc_taken';
-        e.claimNote = `이미 등록된 RFC 입니다 — ${clash.name} · 담당 ${clash.owner_name || '(미지정)'} · 등록일 ${clash.registered_at}.`;
+        const err = clash.kind === 'claim' ? 'rfc_claim_pending' : 'rfc_taken';
+        const e = new Error(err); e.claimError = err;
+        e.claimNote = rfcHolderNote(clash);
         throw e;
       }
     }
+    // 0193 · 비어 있던 RFC 가 채워지는 순간이 곧 선점 시점이다(이 값이 커미션 귀속의 근거).
+    //   이미 RFC 가 있던 고객의 표기 정정은 선점 시점을 다시 찍지 않는다 — 새로 잡은 게 아니다.
+    const claimsOn = await claimTableReady();
+    const newlyClaimed = claimsOn && rfcChanged && !normalizeClaimKey(c.rfc);
     // 0185 · CONSTANCIA 번호는 마이그레이션이 적용된 DB 에서만 건드린다
     //   (컬럼이 없는 반쪽 배포 상태에서도 기존 고객 수정이 죽지 않게).
     //   0188 이후 선점 키가 아니므로 **빈값으로 지우는 것도 허용**한다.
@@ -1198,9 +1602,19 @@ export default async function customerRoutes(app) {
     await query(
       `UPDATE customers SET name=$1, rfc=$2, contact=$3, phone=$4, discount=$5, credit_days=$6,
          team_id=$7, stage_id=$8, owner_id=$9, customer_type=$10, memo=$11, constancia_fiscal=$15, branch_count=$16,
-         buyer_name=$17, buyer_phone=$18${conOn ? ', constancia_no=$19' : ''},
+         buyer_name=$17, buyer_phone=$18${conOn ? ', constancia_no=$19' : ''}
+         ${newlyClaimed ? ', rfc_claimed_at=now(), rfc_claimed_by=COALESCE($9::bigint,$13::bigint)' : ''},
          stage_since=CASE WHEN $12 THEN CURRENT_DATE ELSE stage_since END, updated_by=$13 WHERE id=$14`,
       params);
+    // 선점이 방금 성립했다면 이력에 남긴다 — 나중에 "언제부터 이 사람 고객인가" 를 여기서 읽는다.
+    if (newlyClaimed) {
+      try {
+        await query(
+          `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+           VALUES ($1,'rfc_claim_self','고객 수정에서 RFC 입력',$2,$3)`,
+          [id, JSON.stringify({ rfc: rfcVal, via: 'customer_edit' }), userId]);
+      } catch (_) { /* 이력 실패가 저장을 막지 않음 */ }
+    }
   }
 
   app.patch('/api/customers/:id', { preHandler: [authGuard, requirePageEdit('customers')] }, async (req, reply) => {
@@ -1233,7 +1647,7 @@ export default async function customerRoutes(app) {
         await applyCustomerUpdate(id, c, b, perm.userId);
       } catch (e) {
         if (e.claimError) {
-          return reply.code(e.claimError === 'rfc_taken' ? 409 : 400)
+          return reply.code((e.claimError === 'rfc_taken' || e.claimError === 'rfc_claim_pending') ? 409 : 400)
             .send({ error: e.claimError, note: e.claimNote || RFC_ERROR_NOTE[e.claimError] || null });
         }
         throw e;
@@ -1425,7 +1839,7 @@ export default async function customerRoutes(app) {
       // 0188 · 요청이 올라온 뒤 그 RFC 를 다른 고객이 선점했거나 형식이 잘못된 경우.
       //   요청은 pending 그대로 두고 디렉터에게 이유를 알린다(반려/수정 판단은 사람이).
       if (e.claimError) {
-        return reply.code(e.claimError === 'rfc_taken' ? 409 : 400)
+        return reply.code((e.claimError === 'rfc_taken' || e.claimError === 'rfc_claim_pending') ? 409 : 400)
           .send({ error: e.claimError, note: e.claimNote || RFC_ERROR_NOTE[e.claimError] || null });
       }
       throw e;
