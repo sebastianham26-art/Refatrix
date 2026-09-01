@@ -885,6 +885,20 @@ export default async function quoteRoutes(app) {
     //   동순위(같은 대표차종)는 재고 많은 순 → 코드 순. top 미지정이면 종전대로 전체 SKU(코드순).
     // all=1: 전체 SKU(재고·VIO매칭 무관)를 LEFT JOIN으로 VIO 정보 붙여 반환 — Top500과 동일 양식의 "전체 견적"용.
     //   VIO 미매칭 SKU는 vio_* = null (프런트 정렬에서 맨 뒤 그룹).
+    // 재고·보충 수량의 정의(회사 전 화면 공통) --------------------------------
+    //   Existencia   = p.stock_qty                     — 창고 실물 현재고(다운로드 시점 라이브)
+    //   Disponible   = 현재고 − 타 미결·미만료 견적 예약분(reserved_qty)  — 견적화면·현장재고조사와 동일
+    //   En tránsito  = v_incoming_stock                — 아직 마감 안 된 선적(운송중, 실제 배에 실린 물량)
+    //   En producción= v_backorder − v_incoming_stock  — 발주는 했으나 아직 선적 안 된 물량(공장 생산중)
+    //   ※ v_backorder 는 '발주 후 미입고 전체'라 운송중을 포함한다. 예전 엑셀은 이 값을 그대로
+    //     En tránsito 로 썼기 때문에 실제 운송중보다 크게 나왔다(CE0536L 등). 두 열로 분리해 바로잡음.
+    const RESERVED_SQL = `SELECT ql.product_id, SUM(ql.reserved_qty) AS reserved_qty
+                            FROM quote_lines ql JOIN quotes q ON q.id = ql.quote_id
+                           WHERE ql.product_id IS NOT NULL
+                             AND q.status IN ('draft','confirmed')
+                             AND (q.reserve_expires_at > now() OR q.packing_printed_at IS NOT NULL)
+                             AND q.deleted_at IS NULL
+                           GROUP BY ql.product_id`;
     const topN = Math.min(Math.max(Number(req.query.top) || 0, 0), 1000);
     const wantAll = String(req.query.all || '') === '1';
     let prods;
@@ -892,9 +906,13 @@ export default async function quoteRoutes(app) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 COALESCE(bo.backorder_qty,0) AS backorder_qty,
+                COALESCE(inc.incoming_qty,0) AS incoming_qty,
+                COALESCE(rv.reserved_qty,0)  AS reserved_qty,
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           LEFT JOIN v_incoming_stock inc ON inc.product_id = p.id
+           LEFT JOIN (${RESERVED_SQL}) rv ON rv.product_id = p.id
            LEFT JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code`)).rows;
@@ -902,9 +920,13 @@ export default async function quoteRoutes(app) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 COALESCE(bo.backorder_qty,0) AS backorder_qty,
+                COALESCE(inc.incoming_qty,0) AS incoming_qty,
+                COALESCE(rv.reserved_qty,0)  AS reserved_qty,
                 v.vio_units, v.vio_model, v.vio_year
            FROM products p
            LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           LEFT JOIN v_incoming_stock inc ON inc.product_id = p.id
+           LEFT JOIN (${RESERVED_SQL}) rv ON rv.product_id = p.id
            JOIN ctr_vio_rank v ON UPPER(TRIM(p.code)) = UPPER(v.ctr_code)
           WHERE p.deleted_at IS NULL
           ORDER BY v.vio_units DESC NULLS LAST, p.stock_qty DESC, p.code
@@ -913,28 +935,42 @@ export default async function quoteRoutes(app) {
       prods = (await query(
         `SELECT p.id, p.code, p.name, p.scode, p.app, p.list_price, p.stock_qty, p.material,
                 COALESCE(bo.backorder_qty,0) AS backorder_qty,
+                COALESCE(inc.incoming_qty,0) AS incoming_qty,
+                COALESCE(rv.reserved_qty,0)  AS reserved_qty,
                 NULL::bigint AS vio_units, NULL::text AS vio_model, NULL::text AS vio_year
            FROM products p
            LEFT JOIN v_backorder bo ON bo.product_id = p.id
+           LEFT JOIN v_incoming_stock inc ON inc.product_id = p.id
+           LEFT JOIN (${RESERVED_SQL}) rv ON rv.product_id = p.id
           WHERE p.deleted_at IS NULL ORDER BY p.code`)).rows;
     }
     const ids = prods.map((p) => p.id);
     const sydRows = ids.length ? (await query(`SELECT product_id, syd_code FROM product_syd_codes WHERE product_id = ANY($1)`, [ids])).rows : [];
     const sydByPid = {};
     for (const s of sydRows) (sydByPid[s.product_id] ||= []).push(s.syd_code);
-    const items = prods.map((p) => ({
+    const items = prods.map((p) => {
+      const stock = p.stock_qty != null ? Number(p.stock_qty) : null;
+      const reserved = Number(p.reserved_qty) || 0;
+      const backorder = Number(p.backorder_qty) || 0;
+      const incoming = Number(p.incoming_qty) || 0;
+      return {
       ctr_code: p.code,
       name: p.name || '',
       syd_codes: p.scode || (sydByPid[p.id] || []).join(' / '),
       app: p.app || '',
       list_price: Number(p.list_price) || 0,
-      stock_qty: p.stock_qty != null ? Number(p.stock_qty) : null,
-      backorder_qty: Number(p.backorder_qty) || 0,
+      stock_qty: stock,
+      avail_qty: stock != null ? Math.max(0, stock - reserved) : null,   // Disponible(가용재고)
+      reserved_qty: reserved,
+      incoming_qty: incoming,                                           // En tránsito(운송중 — 선적됨)
+      production_qty: Math.max(0, backorder - incoming),                // En producción(생산중 — 발주됐으나 미선적)
+      backorder_qty: backorder,                                         // 발주 미입고 전체(=운송중+생산중)
       material: p.material || null,
       vio_units: p.vio_units != null ? Number(p.vio_units) : null,
       vio_model: p.vio_model || null,
       vio_year: p.vio_year || null,
-    }));
+      };
+    });
     return { discountRate, top: topN || null, all: wantAll || undefined, count: items.length, items };
   });
 

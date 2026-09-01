@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt0901veh1</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt0901veh2</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -114,8 +114,8 @@
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
-            <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — A열에 SKU별 적용차종 표시(차종 그룹 → 부품 고정순서). 여러 차종에 쓰이는 코드는 차종마다 중복 기입(빨간 글씨)하고 대표 차종 1행만 파란 음영 + Subtotal 합산 · Existencia·할인·수량 입력칸 포함">⭐ Top 500 견적</button>
-            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — 모든 SKU의 적용차종(Aplicación)을 파싱해 A열에 차종을 표시. 차종 그룹(VIO순) → 부품 고정순서, 여러 차종에 쓰이는 코드는 중복 기입(빨강)·대표 차종 1행 파란 음영만 Subtotal 합산(총액 불변) · 적용차종 없는 SKU는 맨 아래 Sin aplicación">📚 전체 견적</button>
+            <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — A열에 SKU별 적용차종 표시(차종 그룹 → 부품 고정순서). 여러 차종에 쓰이는 코드는 차종마다 중복 기입(빨간 글씨)하고 대표 차종 1행만 파란 음영 + Subtotal 합산 · Existencia(현재고)·Disponible(가용)·En tránsito(운송중)·En producción(생산중) 4개 수량열">⭐ Top 500 견적</button>
+            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — 모든 SKU의 적용차종(Aplicación)을 파싱해 A열에 차종을 표시. 차종 그룹(VIO순) → 부품 고정순서, 여러 차종에 쓰이는 코드는 중복 기입(빨강)·대표 차종 1행 파란 음영만 Subtotal 합산(총액 불변) · 수량열 4종: Existencia(현재고)·Disponible(현재고−타견적 예약)·En tránsito(선적됨)·En producción(발주 미선적) · 적용차종 없는 SKU는 맨 아래 Sin aplicación">📚 전체 견적</button>
             <button class="btn ghost sm hidden" id="btnVsSyd" onclick="downloadVsSyd()" title="CTR vs SYD 커버리지 비교 — A열 차종 라벨을 「전체 견적」과 동일 규칙으로 통일(그룹사명+모델+연식). 차종·세대 × 6대 품군의 CTR·SYD 코드와 정가(MXN). SYD만 있고 CTR이 없는 칸은 빨강 · 대표·소시오 전용">🆚 CTR vs SYD</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
@@ -491,7 +491,7 @@
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
-  // ===== 차종(적용차종) 그룹 엔진 — 견적 엑셀 · CTR vs SYD 공용 단일 소스 (qt0901veh1) =====
+  // ===== 차종(적용차종) 그룹 엔진 — 견적 엑셀 · CTR vs SYD 공용 단일 소스 (qt0901veh2) =====
   // 목적: 모든 SKU가 A열에 「적용차종」을 갖도록 한다. Aplicación(F) 원문을 파싱해
   //   「그룹사명 + 모델 + 연식」 차종 라벨을 만들고, 기존 VIO 차종명과 1:1로 맞춘다.
   // 규칙 출처: 인수인계 「CTR 코티사시온 차종별 재편성」(build_cotizacion.py) — 파이썬판을 그대로 포팅.
@@ -817,9 +817,12 @@
       const sRefL={font:{color:{rgb:GREY},italic:true,sz:10},alignment:{horizontal:'right',vertical:'center'}};
       const sRefV={font:{color:{rgb:GREY},italic:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00'};
       const sPrin={font:{color:{rgb:GREY},sz:9},alignment:{horizontal:'center',vertical:'center'},numFmt:'0',border:bAll};
-      const sExi={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sExi0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 품절(0) — 연빨강
-      const sTra={fill:{fgColor:{rgb:'DDEBF7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 운송중(발주 미입고)
+      const sExi={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};        // Existencia 현재고
+      const sExi0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};      // 품절(0) — 연빨강
+      const sDisp={fill:{fgColor:{rgb:'D3E9DE'}},font:{color:{rgb:'0B5A46'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // Disponible 가용재고(고객 제시용)
+      const sDisp0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
+      const sTra={fill:{fgColor:{rgb:'DDEBF7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};  // En tránsito 운송중(선적됨)
+      const sProd={fill:{fgColor:{rgb:'FDF0DC'}},font:{color:{rgb:'9A5B00'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // En producción 생산중(미선적)
       // ---- 레터헤드 + 헤더(aoa) ----
       const rows=[];
       rows.push(['REFATRIX']);                                                                 // r1
@@ -828,40 +831,48 @@
       rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
-      rows.push(['Rojo = código que aplica a varios vehículos (línea repetida)   ·   Azul = vehículo principal del código (única línea que suma en el Subtotal)']); // r7 범례
-      rows.push(['Vehículo (aplicación)','Registro (VIO)','Código CTR','Código SYD','Producto','Aplicación','Existencia','En tránsito','Cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)','Principal (1=suma)']); // r8
+      rows.push(['Rojo = código que aplica a varios vehículos (línea repetida)   ·   Azul = vehículo principal del código (única línea que suma en el Subtotal)   ·   Existencia = en almacén hoy   ·   Disponible = Existencia − apartado por otras cotizaciones   ·   En tránsito = ya embarcado   ·   En producción = pedido a fábrica, aún sin embarcar']); // r7 범례
+      rows.push(['Vehículo (aplicación)','Registro (VIO)','Código CTR','Código SYD','Producto','Aplicación','Existencia','Disponible','En tránsito','En producción','Cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)','Principal (1=suma)']); // r8
       const headerRow=rows.length, firstData=headerRow+1;
       P.forEach(p=>{
         const it=p.it;
+        // 수량 4종: 현재고 · 가용(현재고−예약) · 운송중(선적됨) · 생산중(발주 미선적)
+        // 백엔드가 avail_qty/incoming_qty/production_qty 를 안 주는 구버전이면 안전하게 폴백한다.
+        const stk=it.stock_qty!=null?Number(it.stock_qty):null;
+        const avl=it.avail_qty!=null?Number(it.avail_qty):stk;
+        const tra=(it.incoming_qty!=null)?Number(it.incoming_qty):0;
+        const pro=(it.production_qty!=null)?Number(it.production_qty)
+                 :Math.max(0,(Number(it.backorder_qty)||0)-tra);
         rows.push([ p.label||'—', p.vio!=null?Number(p.vio):'',
           it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
-          it.stock_qty!=null?Number(it.stock_qty):'',
-          (Number(it.backorder_qty)||0)>0?Number(it.backorder_qty):'', 1,
+          stk!=null?stk:'', avl!=null?avl:'',
+          tra>0?tra:'', pro>0?pro:'', 1,
           Number(it.list_price)||0, null, null, p.isRep?1:0 ]);
       });
       const lastData=rows.length;
       rows.push([]);
-      rows.push(['','','','','','','','','','','Subtotal (sin IVA)', null]); const subRow=rows.length;
-      rows.push(['','','','','','','','','','','IVA 16%', null]); const ivaRow=rows.length;
-      rows.push(['','','','','','','','','','','Total (con IVA)', null]); const totRow=rows.length;
-      rows.push(['','','','','','','','','','','Total de todas las líneas (incluye repetidos)', null]); const refRow=rows.length;
+      const pad12=['','','','','','','','','','','',''];
+      rows.push(pad12.concat(['Subtotal (sin IVA)', null])); const subRow=rows.length;
+      rows.push(pad12.concat(['IVA 16%', null])); const ivaRow=rows.length;
+      rows.push(pad12.concat(['Total (con IVA)', null])); const totRow=rows.length;
+      rows.push(pad12.concat(['Total de todas las líneas (incluye repetidos)', null])); const refRow=rows.length;
       const ws=XLSX.utils.aoa_to_sheet(rows);
       // 할인율 셀
       ws['G6']={t:'n',v:rateFrac,z:'0%',s:sRate};
       // 라인 수식: c/Desc = Lista×(1−tasa) · Importe = c/Desc×cantidad(I열)
       for(let r=firstData;r<=lastData;r++){
-        ws['K'+r]={t:'n',z:'$#,##0.00',f:'J'+r+'*(1-$G$6)'};
-        ws['L'+r]={t:'n',z:'$#,##0.00',f:'K'+r+'*I'+r};
+        ws['M'+r]={t:'n',z:'$#,##0.00',f:'L'+r+'*(1-$G$6)'};   // Precio c/Desc. = Precio Lista × (1−tasa)
+        ws['N'+r]={t:'n',z:'$#,##0.00',f:'M'+r+'*K'+r};        // Importe = c/Desc × Cantidad(K)
       }
       // 합계 — 대표행(M=1)만 합산해 원본 총액과 일치시킨다. 맨 아래는 전체 라인 참고합계.
-      ws['L'+subRow]={t:'n',z:'$#,##0.00',f:'SUMPRODUCT($L$'+firstData+':$L$'+lastData+',$M$'+firstData+':$M$'+lastData+')'};
-      ws['L'+ivaRow]={t:'n',z:'$#,##0.00',f:'L'+subRow+'*0.16'};
-      ws['L'+totRow]={t:'n',z:'$#,##0.00',f:'L'+subRow+'+L'+ivaRow};
-      ws['L'+refRow]={t:'n',z:'$#,##0.00',f:'SUM(L'+firstData+':L'+lastData+')'};
+      ws['N'+subRow]={t:'n',z:'$#,##0.00',f:'SUMPRODUCT($N$'+firstData+':$N$'+lastData+',$O$'+firstData+':$O$'+lastData+')'};
+      ws['N'+ivaRow]={t:'n',z:'$#,##0.00',f:'N'+subRow+'*0.16'};
+      ws['N'+totRow]={t:'n',z:'$#,##0.00',f:'N'+subRow+'+N'+ivaRow};
+      ws['N'+refRow]={t:'n',z:'$#,##0.00',f:'SUM(N'+firstData+':N'+lastData+')'};
       // ---- 스타일 적용 ----
       if(ws['A1'])ws['A1'].s=sLogo; if(ws['A2'])ws['A2'].s=sSub; if(ws['A3'])ws['A3'].s=sTitle; if(ws['A4'])ws['A4'].s=sMeta;
       if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl; if(ws['A7'])ws['A7'].s=sLeg;
-      ['A','B','C','D','E','F','G','H','I','J','K','L','M'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
+      ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
       for(let i=0;i<P.length;i++){
         const r=firstData+i, p=P[i], rep=p.isRep&&p.isDup;
         if(ws['A'+r])ws['A'+r].s=mk(sVeh,rep); if(ws['B'+r])ws['B'+r].s=mk(sVio,rep);
@@ -869,16 +880,18 @@
         if(ws['D'+r])ws['D'+r].s=p.isDup?mk(sSydDup,rep):mk(sTxt,rep);
         if(ws['E'+r])ws['E'+r].s=mk(sTxt,rep); if(ws['F'+r])ws['F'+r].s=mk(sTxt,rep);
         if(ws['G'+r])ws['G'+r].s=rep?mk(sExi,rep):(Number(ws['G'+r].v)>0?sExi:sExi0);
-        if(ws['H'+r])ws['H'+r].s=mk(sTra,rep); if(ws['I'+r])ws['I'+r].s=mk(sQty,rep); if(ws['J'+r])ws['J'+r].s=mk(sLista,rep);
-        if(ws['K'+r])ws['K'+r].s=mk(sDesc,rep); if(ws['L'+r])ws['L'+r].s=mk(sImp,rep);
-        if(ws['M'+r])ws['M'+r].s=mk(sPrin,rep);
+        if(ws['H'+r])ws['H'+r].s=rep?mk(sDisp,rep):(Number(ws['H'+r].v)>0?sDisp:sDisp0);
+        if(ws['I'+r])ws['I'+r].s=mk(sTra,rep); if(ws['J'+r])ws['J'+r].s=mk(sProd,rep);
+        if(ws['K'+r])ws['K'+r].s=mk(sQty,rep); if(ws['L'+r])ws['L'+r].s=mk(sLista,rep);
+        if(ws['M'+r])ws['M'+r].s=mk(sDesc,rep); if(ws['N'+r])ws['N'+r].s=mk(sImp,rep);
+        if(ws['O'+r])ws['O'+r].s=mk(sPrin,rep);
       }
-      [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['K'+rr])ws['K'+rr].s=sSumL; if(ws['L'+rr])ws['L'+rr].s=sSumV; });
-      if(ws['K'+refRow])ws['K'+refRow].s=sRefL; if(ws['L'+refRow])ws['L'+refRow].s=sRefV;
+      [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['M'+rr])ws['M'+rr].s=sSumL; if(ws['N'+rr])ws['N'+rr].s=sSumV; });
+      if(ws['M'+refRow])ws['M'+refRow].s=sRefL; if(ws['N'+refRow])ws['N'+refRow].s=sRefV;
       // 레터헤드 병합만 (필터 유지 위해 차량 셀은 병합하지 않고 그룹 정렬로 표현)
-      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:11}},{s:{r:3,c:0},e:{r:3,c:11}},{s:{r:6,c:0},e:{r:6,c:11}}];
-      ws['!autofilter']={ref:'A'+headerRow+':L'+lastData};
-      ws['!cols']=[{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}];
+      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:13}},{s:{r:3,c:0},e:{r:3,c:13}},{s:{r:6,c:0},e:{r:6,c:13}}];
+      ws['!autofilter']={ref:'A'+headerRow+':N'+lastData};
+      ws['!cols']=[{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:11},{wch:12},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}];
       ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:14},{hpt:30}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,all?'Completo':'Top500');
