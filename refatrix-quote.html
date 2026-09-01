@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 견적 (수주관리) · qt0819act1</title>
+<title>Refatrix ERP · 견적 (수주관리) · qt0901veh1</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -114,9 +114,9 @@
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
-            <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — 차량 모델(VIO순)·부품 고정순서(rótula→horquilla L/R→tornillo→terminal int/ext→buje) 정렬 · Existencia(재고, 품절 포함·0은 빨강)·할인·수량 입력칸 포함">⭐ Top 500 견적</button>
-            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — Top 500과 동일 양식·정렬(차량 VIO순·부품 고정순서), VIO 미매칭 SKU는 맨 뒤 그룹 · 품절 포함(0은 빨강)">📚 전체 견적</button>
-            <button class="btn ghost sm hidden" id="btnVsSyd" onclick="downloadVsSyd()" title="CTR vs SYD 커버리지 비교 — 차종·세대(연식별 VIO) × 6대 품군의 CTR·SYD 코드와 정가(MXN). SYD만 있고 CTR이 없는 칸은 빨강 표시 · 대표·소시오 전용">🆚 CTR vs SYD</button>
+            <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — A열에 SKU별 적용차종 표시(차종 그룹 → 부품 고정순서). 여러 차종에 쓰이는 코드는 차종마다 중복 기입(빨간 글씨)하고 대표 차종 1행만 파란 음영 + Subtotal 합산 · Existencia·할인·수량 입력칸 포함">⭐ Top 500 견적</button>
+            <button class="btn ghost sm" onclick="downloadAllQuote()" title="전체 SKU 견적 — 모든 SKU의 적용차종(Aplicación)을 파싱해 A열에 차종을 표시. 차종 그룹(VIO순) → 부품 고정순서, 여러 차종에 쓰이는 코드는 중복 기입(빨강)·대표 차종 1행 파란 음영만 Subtotal 합산(총액 불변) · 적용차종 없는 SKU는 맨 아래 Sin aplicación">📚 전체 견적</button>
+            <button class="btn ghost sm hidden" id="btnVsSyd" onclick="downloadVsSyd()" title="CTR vs SYD 커버리지 비교 — A열 차종 라벨을 「전체 견적」과 동일 규칙으로 통일(그룹사명+모델+연식). 차종·세대 × 6대 품군의 CTR·SYD 코드와 정가(MXN). SYD만 있고 CTR이 없는 칸은 빨강 · 대표·소시오 전용">🆚 CTR vs SYD</button>
             <input id="xlsx" type="file" accept=".xlsx,.xls,.csv" onchange="onXlsx(event)" style="font-size:11px">
           </div>
         </div>
@@ -491,6 +491,270 @@
     }catch(e){ m.className='msg err';m.textContent='가격표 다운로드 실패'; }
   }
 
+  // ===== 차종(적용차종) 그룹 엔진 — 견적 엑셀 · CTR vs SYD 공용 단일 소스 (qt0901veh1) =====
+  // 목적: 모든 SKU가 A열에 「적용차종」을 갖도록 한다. Aplicación(F) 원문을 파싱해
+  //   「그룹사명 + 모델 + 연식」 차종 라벨을 만들고, 기존 VIO 차종명과 1:1로 맞춘다.
+  // 규칙 출처: 인수인계 「CTR 코티사시온 차종별 재편성」(build_cotizacion.py) — 파이썬판을 그대로 포팅.
+  //   · 브랜드 사전(긴 이름 우선) → 끝의 YYYY-YYYY(또는 YYYY) → 중간이 모델
+  //   · 모델 정규화: 괄호·4X2/4X4·쉼표 제거, 끝의 로마숫자 세대 표기 제거(Aveo I → Aveo)
+  //   · 그룹사 매핑: General Motors / Chrysler / Ford Motor (ACURA·INFINITI·LEXUS·AUDI는 묶지 않음)
+  //   · 연식 범위는 병합하지 않는다(Aveo 2008-2018 / 2018-2023 별개 유지)
+  const VEH=(function(){
+    const BRANDS=["CHEVROLET, GMC","DODGE, CHRYSLER","FORD, MERCURY","MERCEDES BENZ","ALFA ROMEO","LAND ROVER","ACURA","AUDI","BMW","BUICK","CADILLAC","CHIREY","CUPRA","EAGLE","FIAT","GEO","HONDA","HYUNDAI","INFINITI","ISUZU","JAC","JAGUAR","JEEP","KIA","LEXUS","LINCOLN","MAZDA","MINI","MITSUBISHI","NISSAN","OLDSMOBILE","PEUGEOT","PLYMOUTH","PONTIAC","PORSCHE","RAM","RENAULT","SAAB","SATURN","SEAT","SMART","SUBARU","SUZUKI","TOYOTA","VOLKSWAGEN","VOLVO","CHRYSLER","DODGE","FORD","CHEVROLET","GMC","MERCURY"].slice().sort(function(a,b){return b.length-a.length;});
+    const GRP={};
+    ["CHEVROLET, GMC","BUICK","CADILLAC","OLDSMOBILE","PONTIAC","SATURN","GEO","SAAB","CHEVROLET","GMC"].forEach(function(b){GRP[b]='General Motors';});
+    ["DODGE, CHRYSLER","JEEP","PLYMOUTH","EAGLE","RAM","CHRYSLER","DODGE"].forEach(function(b){GRP[b]='Chrysler';});
+    ["FORD, MERCURY","LINCOLN","FORD","MERCURY"].forEach(function(b){GRP[b]='Ford Motor';});
+    const SPECIAL={'BMW':'BMW','SEAT':'SEAT','KIA':'KIA','JAC':'JAC','MERCEDES BENZ':'Mercedes Benz','ALFA ROMEO':'Alfa Romeo','LAND ROVER':'Land Rover'};
+    const ROMAN={'I':1,'II':1,'III':1,'IV':1,'V':1,'VI':1,'VII':1,'VIII':1,'IX':1};
+    function titleCase(s){ return String(s||'').toLowerCase().replace(/(^|[\s\-\/,])([a-záéíóúüñ])/g,function(_,a,b){return a+b.toUpperCase();}); }
+    // 브랜드 표기: 3글자 이하 전부 대문자 토큰(MG·BMW·JAC·KIA·RAM·GMC)은 대문자 유지
+    function brandCase(s){
+      return String(s||'').split(/\s+/).filter(Boolean).map(function(w){
+        return (w.length<=3&&w===w.toUpperCase()&&/^[A-Z]+$/.test(w))?w:titleCase(w);
+      }).join(' ');
+    }
+    function dispBrand(b){ return GRP[b]||SPECIAL[b]||titleCase(b); }
+    function cleanModel(m){
+      let s=String(m||'').replace(/\(.*?\)/g,'').replace(/\b4X2\b|\b4X4\b/ig,'');
+      s=s.replace(/,/g,' ').replace(/\s+/g,' ').replace(/^[\s\-]+|[\s\-]+$/g,'');
+      const t=s.split(' ').filter(Boolean);
+      while(t.length>1 && ROMAN[t[t.length-1].toUpperCase()]) t.pop();
+      return t.join(' ');
+    }
+    function glabel(b,m,y1,y2){
+      if(y1==null) return b+' '+m+' (todos los años)';
+      return (y1===y2)?(b+' '+m+' '+y1):(b+' '+m+' '+y1+'-'+y2);
+    }
+    // 「BRAND Model Año1-Año2 [메모]」 1건 → 차종 라벨. 파싱 실패 시 null.
+    function parseApp(one){
+      const p=String(one||'').replace(/\[[\s\S]*$/,'').trim();
+      const up=p.toUpperCase();
+      let b=null;
+      for(let i=0;i<BRANDS.length;i++){ if(up.indexOf(BRANDS[i]+' ')===0){ b=BRANDS[i]; break; } }
+      if(!b) return null;
+      let rest=p.slice(b.length).trim(), y1=null,y2=null,model=rest;
+      let mm=rest.match(/(\d{4})\s*-\s*(\d{4})\s*$/);
+      if(mm){ y1=Number(mm[1]); y2=Number(mm[2]); model=rest.slice(0,mm.index).trim(); }
+      else{
+        mm=rest.match(/(\d{4})\s*$/);
+        if(mm){ y1=y2=Number(mm[1]); model=rest.slice(0,mm.index).trim(); }
+        else{ model=rest.replace(/\bTODOS\b/ig,'').trim(); }
+      }
+      model=cleanModel(model);
+      return model?glabel(dispBrand(b),model,y1,y2):null;
+    }
+    // Aplicación 전체 문자열(「 // 」 연결) → 차종 라벨 배열(중복 제거, 원문 순서)
+    function appGroups(app){
+      const out=[], seen={};
+      String(app||'').split('//').forEach(function(x){
+        const t=x.trim(); if(!t) return;
+        const g=parseApp(t);
+        if(g&&!seen[g]){ seen[g]=1; out.push(g); }
+      });
+      return out;
+    }
+    // ---- 기존 VIO 차종명 ↔ 생성 그룹 1:1 매칭 (토큰 Jaccard ≥ 0.5 + 연식 겹침) ----
+    const STOP={'4':1,'ptas':1,'pts':1,'sedan':1,'suv':1,'panel':1,'pickup':1,'crew':1,'cab':1,'doble':1,'cabina':1,'regular':1,'dc':1,'p':1,'l4':1,'notch':1,'hatchback':1,'minivan':1,'van':1,'kia':1,'sportwagon':1};
+    function norm(s){ return String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+    function toks(s){
+      let x=String(s||'').replace(/\s*\d{4}(\s*-\s*\d{4})?$/,'');
+      x=norm(x).replace(/\//g,' ');
+      const out=new Set();
+      x.split(/[^0-9a-z\-]+/).forEach(function(w){
+        if(!w) return;
+        const joined=w.replace(/-/g,'');
+        const list=[joined].concat(w.indexOf('-')>=0?w.split('-'):[]);
+        list.forEach(function(t){ if(t&&!STOP[t]) out.add(t); });
+      });
+      return out;
+    }
+    function yrs(s){
+      let m=String(s||'').match(/(\d{4})\s*-\s*(\d{4})$/);
+      if(m) return [Number(m[1]),Number(m[2])];
+      m=String(s||'').match(/(\d{4})$/);
+      return m?[Number(m[1]),Number(m[1])]:[0,9999];
+    }
+    // 두 차종 라벨이 같은 차를 가리키는가 (토큰 Jaccard ≥ 0.5 + 연식 겹침) — 매칭·라벨 검증 공용
+    function similar(a,b){
+      const ta=toks(a), tb=toks(b); let inter=0;
+      ta.forEach(function(t){ if(tb.has(t)) inter++; });
+      if(!inter) return false;
+      if(inter/(ta.size+tb.size-inter)<0.5) return false;
+      const ya=yrs(a), yb=yrs(b);
+      return (Math.min(ya[1],yb[1])-Math.max(ya[0],yb[0]))>=0;
+    }
+    function matchCurated(gLabels,curated,curVio){
+      const gi=gLabels.map(function(g){ return {g:g,t:toks(g),y:yrs(g)}; });
+      const cands=[];
+      curated.forEach(function(c){
+        const ct=toks(c), cy=yrs(c);
+        for(let i=0;i<gi.length;i++){
+          const G=gi[i]; let inter=0;
+          ct.forEach(function(t){ if(G.t.has(t)) inter++; });
+          if(!inter) continue;
+          const jac=inter/(ct.size+G.t.size-inter);
+          if(jac<0.5) continue;
+          const ov=Math.min(cy[1],G.y[1])-Math.max(cy[0],G.y[0]);
+          if(ov<0) continue;
+          cands.push([(cy[0]===G.y[0]&&cy[1]===G.y[1])?1:0,jac,ov,c,G.g]);
+        }
+      });
+      cands.sort(function(a,b){ return (b[0]-a[0])||(b[1]-a[1])||(b[2]-a[2])||(a[3]<b[3]?1:(a[3]>b[3]?-1:0))||(a[4]<b[4]?1:(a[4]>b[4]?-1:0)); });
+      const assign={}, used={};
+      cands.forEach(function(x){ const c=x[3],g=x[4]; if(used[c]||assign[g]) return; assign[g]={label:c,vio:Number(curVio[c])||0}; used[c]=1; });
+      return {assign:assign,matched:Object.keys(used).length};
+    }
+    // ---- 그룹 내부 품명 고정순서 (인수인계 4-4) ----
+    const ORDER=['RÓTULA','HORQUILLA','BRAZO AUXILIAR','VARILLA LATERAL','TORNILLO ESTABILIZADOR con buje','TORNILLO ESTABILIZADOR sin buje','TORNILLO ESTABILIZADOR','STABILIZER LINK','TERMINAL INTERIOR','TERMINAL EXTERIOR','BUJE','AMORTIGUADOR','BASE DE AMORTIGUADOR','ENGINE MOUNTING'];
+    const OIDX={}; ORDER.forEach(function(k,i){ OIDX[k]=i; });
+    // 판정 순서는 실데이터 오분류 방지용(문서 4-4의 표시 순서와 무관):
+    //   GOMA→BUJE, TORNILLO/ESTABILIZADOR(=GOMA 아님)→토르니요, HORQUILLA→ROTULA 순
+    function partKind(name,code){
+      const n=norm(name).toUpperCase();
+      const c=String(code||'').trim().toUpperCase();
+      if(n.indexOf('GOMA')>=0) return 'BUJE';
+      if(n.indexOf('BASE')>=0&&n.indexOf('AMORTIGUADOR')>=0) return 'BASE DE AMORTIGUADOR';
+      if(n.indexOf('TORNILLO')>=0||n.indexOf('ESTABILIZADOR')>=0){
+        if(n.indexOf('CON BUJE')>=0) return 'TORNILLO ESTABILIZADOR con buje';
+        if(n.indexOf('SIN BUJE')>=0) return 'TORNILLO ESTABILIZADOR sin buje';
+        return 'TORNILLO ESTABILIZADOR';
+      }
+      if(n.indexOf('STABILIZER')>=0) return 'STABILIZER LINK';
+      if(n.indexOf('HORQUILLA')>=0) return 'HORQUILLA';
+      if(n.indexOf('BRAZO')>=0&&n.indexOf('AUXILIAR')>=0) return 'BRAZO AUXILIAR';
+      if(n.indexOf('VARILLA')>=0) return 'VARILLA LATERAL';
+      if(n.indexOf('ROTULA')>=0) return 'RÓTULA';
+      if(n.indexOf('TERMINAL')>=0) return (n.indexOf('INTERIOR')>=0)?'TERMINAL INTERIOR':'TERMINAL EXTERIOR';
+      if(n.indexOf('BUJE')>=0) return 'BUJE';
+      if(n.indexOf('AMORTIGUADOR')>=0) return 'AMORTIGUADOR';
+      if(n.indexOf('SOPORTE')>=0&&n.indexOf('MOTOR')>=0) return 'ENGINE MOUNTING';
+      const p=c.slice(0,2);
+      if(p==='CB') return 'RÓTULA';
+      if(p==='CQ') return 'HORQUILLA';
+      if(p==='CL') return 'TORNILLO ESTABILIZADOR';
+      if(p==='CR') return 'TERMINAL INTERIOR';
+      if(p==='CE') return 'TERMINAL EXTERIOR';
+      if(p==='GV') return 'BUJE';
+      return '';
+    }
+    function partRank(name,code){ const k=partKind(name,code); return (k in OIDX)?OIDX[k]:ORDER.length; }
+    // ---- 견적 엑셀용 재편성 플랜 ----
+    // items: /api/quotes/price-list 의 items (ctr_code·name·syd_codes·app·vio_model·vio_year·vio_units …)
+    // 반환 rows: {label, vio, it, isRep, isDup} — 한 SKU가 여러 차종에 쓰이면 차종마다 1행(중복 기입)
+    function buildQuotePlan(items){
+      const curVio={}, origLabel={};
+      items.forEach(function(it){
+        const lb=((it.vio_model||'')+' '+(it.vio_year||'')).trim();
+        if(!lb) return;
+        origLabel[String(it.ctr_code||'').trim().toUpperCase()]=lb;
+        const v=Number(it.vio_units)||0;
+        if(!(lb in curVio)||v>curVio[lb]) curVio[lb]=v;
+      });
+      const curated=Object.keys(curVio);
+      const groups=new Map(), noapp=[];
+      items.forEach(function(it){
+        const ls=appGroups(it.app);
+        if(!ls.length){ noapp.push(it); return; }
+        ls.forEach(function(g){ if(!groups.has(g)) groups.set(g,[]); groups.get(g).push(it); });
+      });
+      const gLabels=Array.from(groups.keys());
+      const mc=matchCurated(gLabels,curated,curVio), assign=mc.assign;
+      const vioOf={}; gLabels.forEach(function(g){ vioOf[g]=assign[g]?assign[g].vio:0; });
+      // 코드 → 등장 그룹 목록 / 대표 차종(파랑) 1개 선정
+      const code2g={}, dupCnt={};
+      groups.forEach(function(rows,g){
+        const seen={};
+        rows.forEach(function(it){
+          const c=String(it.ctr_code||'').trim().toUpperCase();
+          if(seen[c]) return; seen[c]=1;
+          (code2g[c]=code2g[c]||[]).push(g);
+          dupCnt[c]=(dupCnt[c]||0)+1;
+        });
+      });
+      const rep={};
+      Object.keys(code2g).forEach(function(c){
+        const gs=code2g[c], ol=origLabel[c]; let pick=null;
+        if(ol){ for(let i=0;i<gs.length;i++){ if(assign[gs[i]]&&assign[gs[i]].label===ol){ pick=gs[i]; break; } } }
+        if(pick===null){
+          pick=gs[0];
+          for(let i=1;i<gs.length;i++){
+            const a=gs[i], b=pick;
+            if(vioOf[a]>vioOf[b]||(vioOf[a]===vioOf[b]&&(groups.get(a).length>groups.get(b).length||(groups.get(a).length===groups.get(b).length&&a>b)))) pick=a;
+          }
+        }
+        rep[c]=pick;
+      });
+      // 그룹 정렬: ① VIO 매칭 그룹 VIO 내림차순(원본 순서 재현) ② 나머지 라벨 알파벳순
+      const ordered=gLabels.slice().sort(function(a,b){
+        const A=assign[a]&&assign[a].vio, B=assign[b]&&assign[b].vio;
+        if(A&&B) return (B-A)||assign[a].label.localeCompare(assign[b].label,'es');
+        if(A) return -1;
+        if(B) return 1;
+        return a.localeCompare(b,'es');
+      });
+      const out=[];
+      ordered.forEach(function(g){
+        const a=assign[g], label=a?a.label:g, vio=(a&&a.vio)?a.vio:null; // VIO 0 = 정렬상 미매칭과 동급 → B열 공란
+        const seen={}, uq=[];
+        groups.get(g).forEach(function(it){
+          const c=String(it.ctr_code||'').trim().toUpperCase();
+          if(seen[c]) return; seen[c]=1; uq.push(it);
+        });
+        uq.sort(function(x,y){
+          return (partRank(x.name,x.ctr_code)-partRank(y.name,y.ctr_code))
+            || String(x.ctr_code||'').localeCompare(String(y.ctr_code||''),'en');
+        });
+        uq.forEach(function(it){
+          const c=String(it.ctr_code||'').trim().toUpperCase();
+          out.push({label:label,vio:vio||null,it:it,isRep:rep[c]===g,isDup:dupCnt[c]>1});
+        });
+      });
+      noapp.sort(function(x,y){
+        return (partRank(x.name,x.ctr_code)-partRank(y.name,y.ctr_code))
+          || String(x.ctr_code||'').localeCompare(String(y.ctr_code||''),'en');
+      });
+      noapp.forEach(function(it){ out.push({label:'Sin aplicación especificada',vio:null,it:it,isRep:true,isDup:false}); });
+      return {rows:out,stats:{groups:ordered.length,curated:curated.length,matched:mc.matched,
+        dup:out.filter(function(r){return r.isDup;}).length,
+        reps:Object.keys(rep).filter(function(c){return dupCnt[c]>1;}).length,
+        noapp:noapp.length,sku:items.length}};
+    }
+    // ---- CTR vs SYD 커버리지(마르카/모델/세대) → 같은 규칙의 차종 라벨 ----
+    // 차체형식 서술어(4 PTAS · Sedán · SUV …) 제거 — ctr_vio_rank 의 vio_model 표기와 맞추기 위함
+    function stripDesc(m){
+      let x=String(m||'');
+      x=x.replace(/\b4\s*(PTAS|PTS|P)\b/ig,' ');
+      x=x.replace(/\b(PTAS|PTS|SEDAN|SEDAN|SUV|PANEL|PICK\s*UP|PICKUP|HATCHBACK|HATCH|MINIVAN|VAN|NOTCHBACK|NOTCH|SPORTWAGON|SPORT\s*WAGON|WAGON|DOBLE\s+CABINA|CREW\s+CAB|CABINA\s+REGULAR|CABINA|CHASIS|LARGO|CORTO|NUEVO|NUEVA)\b/ig,' ');
+      return x.replace(/\s+/g,' ').trim();
+    }
+    // 커버리지(마르카/모델/세대) → 견적 A열과 **같은 형태**의 차종 라벨 「그룹사명 + 모델 + 연식」.
+    // 모델은 ctr_vio_rank.vio_model 표기(General Motors Aveo / Nissan Versa …)에 맞춰 서술어를 떼고 쓴다.
+    // 세대 라벨(Tsuru III · Versa-Note)은 라벨에 넣지 않는다 — 엑셀의 「Generación · Años」 열에 그대로 남는다.
+    function unifiedLabel(marca,modelo,gen,ys,ye){
+      const bKey=String(marca||'').trim().toUpperCase();
+      let brand=GRP[bKey]||SPECIAL[bKey]||null;
+      if(!brand){ for(let i=0;i<BRANDS.length;i++){ if(bKey===BRANDS[i]||bKey.indexOf(BRANDS[i]+' ')===0){ brand=dispBrand(BRANDS[i]); break; } } }
+      if(!brand) brand=brandCase(marca);
+      // 모델 앞에 브랜드가 다시 붙은 표기(KIA K3 · Nissan Versa) → 브랜드 토큰 제거, 잔여 구두점 정리
+      let model=cleanModel(stripDesc(modelo));
+      const bTok=norm(brand).split(/[\s\/]+/).concat(norm(marca).split(/[\s\/]+/)).filter(Boolean);
+      let mt=model.split(' ').filter(Boolean);
+      while(mt.length>1&&bTok.indexOf(norm(mt[0]))>=0) mt.shift();
+      model=mt.join(' ').replace(/[\s.,;·-]+$/,'').replace(/^[\s.,;·-]+/,'').trim();
+      if(!model){
+        let g=String(gen||'').replace(/\s*·\s*\d{4}\s*-\s*\d{4}\s*$/,'').trim();
+        if(/sin catálogo/i.test(g)) g='';
+        model=cleanModel(stripDesc(g))||String(modelo||'').trim()||'—';
+      }
+      const y1=Number(ys)||null, y2=Number(ye)||null;
+      if(!y1||!y2) return brand+' '+model+' (todos los años)';
+      return glabel(brand,model,y1,y2);
+    }
+    return {appGroups:appGroups,parseApp:parseApp,buildQuotePlan:buildQuotePlan,
+      unifiedLabel:unifiedLabel,similar:similar,partRank:partRank,partKind:partKind,cleanModel:cleanModel,stripDesc:stripDesc,dispBrand:dispBrand};
+  })();
+
   // ===== Top 500 / 전체 견적 (VIO 등록대수 기준 · Oferta 양식) =====
   // all=false: VIO 상위 500 SKU. all=true: 전체 SKU(VIO 미매칭 포함 — 미매칭은 맨 뒤 그룹).
   async function downloadTop500(){ return downloadVioQuote(false); }
@@ -509,50 +773,23 @@
       const d=await fetch(url,{headers:auth()}).then(r=>r.json());
       const items=d.items||[];
       if(!items.length){ m.className='msg err';m.textContent=all?'다운로드할 SKU가 없습니다.':'VIO가 매칭된 SKU가 없습니다.';return; }
-      // 선정은 백엔드에서 VIO(등록대수) 상위 500.
-      // 표시 순서: ① 차량 모델 그룹(VIO 등록대수 내림차순) → ② 모델 안에서 부품 고정순서
-      //   1 rótula → 2 horquilla izq(L) → 3 horquilla der(R) → 4 tornillo estabilizador
-      //   → 5 terminal interior → 6 terminal exterior → 7 buje → 8 기타 → ③ CTR 코드순
-      function partCat(name,code){
-        const n=String(name||'').toUpperCase();
-        const c=String(code||'').toUpperCase();
-        const side = /"L"|\(L\)|\bIZQ|IZQUIERD/.test(n) ? 'L'
-                   : (/"R"|\(R\)|\bDERECH|\bDER\b/.test(n) ? 'R'
-                   : (/L$/.test(c)?'L':(/R$/.test(c)?'R':'')));
-        // 검사 순서 중요(실데이터 오분류 방지): ① BUJE·GOMA 먼저 — "GOMA VARILLA ESTABILIZADORA"(GV 19건)가
-        //   ESTABILIZADOR에 걸리지 않게. ② HORQUILLA를 ROTULA보다 먼저 — "HORQUILLA … SIN ROTULA"(CQ 3건) 대응.
-        if(n.indexOf('BUJE')>=0||n.indexOf('GOMA')>=0) return 7;
-        if(n.indexOf('HORQUILLA')>=0) return side==='R'?3:2;
-        if(n.indexOf('ROTULA')>=0||n.indexOf('RÓTULA')>=0) return 1;
-        if(n.indexOf('ESTABILIZADOR')>=0||n.indexOf('TORNILLO')>=0) return 4;
-        if(n.indexOf('TERMINAL')>=0) return n.indexOf('INTERIOR')>=0?5:6;
-        // 제품명이 비어 있으면 CTR 코드 접두어 폴백
-        const p=c.slice(0,2);
-        if(p==='CB')return 1; if(p==='CQ')return side==='R'?3:2; if(p==='CL')return 4;
-        if(p==='CR')return 5; if(p==='CE')return 6; if(p==='GV')return 7;
-        return 8;
-      }
-      const grpKey=it=>((it.vio_model||'')+' '+(it.vio_year||'')).trim();
-      const grpVio={}; // 모델 그룹 대표 VIO = 그룹 내 최대값
-      items.forEach(it=>{ const k=grpKey(it); const v=Number(it.vio_units)||0; if(!(k in grpVio)||v>grpVio[k]) grpVio[k]=v; });
-      items.forEach(it=>{ it._cat=partCat(it.name,it.ctr_code); });
-      items.sort((a,b)=>{
-        const ka=grpKey(a), kb=grpKey(b);
-        if((!ka)!==(!kb)) return ka?-1:1;                                  // 모델 미상은 맨 뒤
-        const dv=(grpVio[kb]||0)-(grpVio[ka]||0); if(dv) return dv;        // 모델 VIO 내림차순
-        const dm=ka.localeCompare(kb,'es'); if(dm) return dm;              // 동VIO는 모델명순
-        const dc=a._cat-b._cat; if(dc) return dc;                          // 부품 고정순서
-        return String(a.ctr_code||'').localeCompare(String(b.ctr_code||''),'en');
-      });
-      // 엑셀 생성이 잠깐 메인스레드를 점유 → 상태 메시지를 먼저 그리도록 양보(체감 멈춤 방지)
-      m.className='msg ok';m.textContent=LBL+' 견적 엑셀 생성 중… ('+items.length+'개)';
+      // ---- 차종별 재편성 ----
+      // A열 = 적용차종. Aplicación(F) 원문을 파싱해 「그룹사명 + 모델 + 연식」 그룹을 만들고,
+      // 기존 VIO 차종명과 1:1 매칭된 그룹은 기존 차종명·VIO 숫자를 그대로 쓴다.
+      // 한 부품이 여러 차종에 쓰이면 차종마다 중복 기입(SKU 1개 = 여러 행) —
+      // 중복 코드는 빨간 글씨, 그 코드의 대표 차종 1행만 파란 음영 + M열 1 → Subtotal은 대표행만 합산(총액 불변).
+      m.className='msg ok';m.textContent=LBL+' 견적 차종별 재편성 중… ('+items.length.toLocaleString('en-US')+' SKU)';
+      await new Promise(r=>setTimeout(r,20));
+      const plan=VEH.buildQuotePlan(items);
+      const P=plan.rows;
+      m.className='msg ok';m.textContent=LBL+' 견적 엑셀 생성 중… ('+P.length.toLocaleString('en-US')+'행 · 차종 '+plan.stats.groups.toLocaleString('en-US')+'그룹)';
       await new Promise(r=>setTimeout(r,20));
       const disc = guest ? (Number(($('discShow').value||'').replace('%',''))||curDisc||0) : (d.discountRate==null?0:d.discountRate);
       const rateFrac = (Number(disc)||0)/100;            // 할인율 셀(편집형, 0.49 = 49%)
       const today=new Date(); const pad=n=>String(n).padStart(2,'0');
       const fechaStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
       // ---- 색/스타일 (CTR 브랜드 레드) ----
-      const RED='D81E25', INK='1C1B19', GREY='6F6A60';
+      const RED='D81E25', INK='1C1B19', GREY='6F6A60', DUPRED='C00000', REPBLUE='D6E4F7';
       const thin={style:'thin',color:{rgb:'E3D6D6'}};
       const bAll={top:thin,bottom:thin,left:thin,right:thin};
       const sLogo={font:{color:{rgb:RED},bold:true,sz:18}};
@@ -561,79 +798,96 @@
       const sMeta={font:{color:{rgb:GREY},sz:10}};
       const sLbl={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'}};
       const sCli={font:{color:{rgb:INK},bold:true,sz:11}};
+      const sLeg={font:{color:{rgb:GREY},italic:true,sz:9}};
       const sRate={fill:{fgColor:{rgb:'FFF2CC'}},font:{color:{rgb:RED},bold:true,sz:12},alignment:{horizontal:'center',vertical:'center'},numFmt:'0%',border:bAll};
       const sHead={fill:{fgColor:{rgb:RED}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
-      const sVeh={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'left',vertical:'center'},border:bAll};
+      const mk=(base,repFill)=>repFill?Object.assign({},base,{fill:{fgColor:{rgb:REPBLUE}}}):base;
+      const sVeh={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'left',vertical:'center',wrapText:true},border:bAll};
       const sVio={font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
       const sTxt={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'center'},border:bAll};
       const sCtr={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
+      const sCtrDup={font:{color:{rgb:DUPRED},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},border:bAll};
+      const sSydDup={font:{color:{rgb:DUPRED},bold:true,sz:9.5},alignment:{vertical:'center'},border:bAll};
       const sQty={fill:{fgColor:{rgb:'FFF2CC'}},font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center'},numFmt:'#,##0',border:bAll};
       const sLista={font:{color:{rgb:GREY},sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
       const sDesc={font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
       const sImp={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00',border:bAll};
       const sSumL={font:{color:{rgb:RED},bold:true,sz:11},alignment:{horizontal:'right',vertical:'center'}};
       const sSumV={font:{color:{rgb:RED},bold:true,sz:11},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00'};
+      const sRefL={font:{color:{rgb:GREY},italic:true,sz:10},alignment:{horizontal:'right',vertical:'center'}};
+      const sRefV={font:{color:{rgb:GREY},italic:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'$#,##0.00'};
+      const sPrin={font:{color:{rgb:GREY},sz:9},alignment:{horizontal:'center',vertical:'center'},numFmt:'0',border:bAll};
+      const sExi={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
+      const sExi0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 품절(0) — 연빨강
+      const sTra={fill:{fgColor:{rgb:'DDEBF7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 운송중(발주 미입고)
       // ---- 레터헤드 + 헤더(aoa) ----
       const rows=[];
       rows.push(['REFATRIX']);                                                                 // r1
       rows.push(['Distribuidor oficial CTR en México']);                                       // r2
-      rows.push(['COTIZACIÓN — '+(all?'Catálogo completo CTR (todos los SKU · incluye sin existencia)':'Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia)')+' · ordenado por vehículo (VIO) y tipo de pieza']); // r3
+      rows.push(['COTIZACIÓN — '+(all?'Catálogo completo CTR (todos los SKU · incluye sin existencia)':'Top 500 SKU CTR (selección por registro VIO · incluye SKU sin existencia)')+' · agrupado por VEHÍCULO (aplicación) y tipo de pieza']); // r3
       rows.push(['Fecha: '+fechaStr+'   ·   Moneda: MXN   ·   Precios SIN IVA']);              // r4
       rows.push([]);                                                                           // r5
       rows.push(['Cliente:', custName||'(no seleccionado)','','','Tasa de descuento sobre Precio Lista CTR:','', rateFrac]); // r6 (rate=G6)
-      rows.push([]);                                                                           // r7
-      rows.push(['Vehículo (Modelo / Año)','Registro (VIO)','Código CTR','Código SYD','Producto','Aplicación','Existencia','En tránsito','Cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)']); // r8
+      rows.push(['Rojo = código que aplica a varios vehículos (línea repetida)   ·   Azul = vehículo principal del código (única línea que suma en el Subtotal)']); // r7 범례
+      rows.push(['Vehículo (aplicación)','Registro (VIO)','Código CTR','Código SYD','Producto','Aplicación','Existencia','En tránsito','Cantidad a pedir','Precio Lista CTR','Precio c/Desc.','Importe (MXN)','Principal (1=suma)']); // r8
       const headerRow=rows.length, firstData=headerRow+1;
-      items.forEach((it)=>{
-        rows.push([ grpKey(it)||'—', it.vio_units!=null?Number(it.vio_units):'',
+      P.forEach(p=>{
+        const it=p.it;
+        rows.push([ p.label||'—', p.vio!=null?Number(p.vio):'',
           it.ctr_code||'', it.syd_codes||'', it.name||'', it.app||'',
           it.stock_qty!=null?Number(it.stock_qty):'',
           (Number(it.backorder_qty)||0)>0?Number(it.backorder_qty):'', 1,
-          Number(it.list_price)||0, null, null ]);
+          Number(it.list_price)||0, null, null, p.isRep?1:0 ]);
       });
       const lastData=rows.length;
       rows.push([]);
       rows.push(['','','','','','','','','','','Subtotal (sin IVA)', null]); const subRow=rows.length;
       rows.push(['','','','','','','','','','','IVA 16%', null]); const ivaRow=rows.length;
       rows.push(['','','','','','','','','','','Total (con IVA)', null]); const totRow=rows.length;
+      rows.push(['','','','','','','','','','','Total de todas las líneas (incluye repetidos)', null]); const refRow=rows.length;
       const ws=XLSX.utils.aoa_to_sheet(rows);
       // 할인율 셀
       ws['G6']={t:'n',v:rateFrac,z:'0%',s:sRate};
-      // 라인 수식: c/Desc = Lista×(1−tasa) · Importe = c/Desc×cantidad(G열)
+      // 라인 수식: c/Desc = Lista×(1−tasa) · Importe = c/Desc×cantidad(I열)
       for(let r=firstData;r<=lastData;r++){
         ws['K'+r]={t:'n',z:'$#,##0.00',f:'J'+r+'*(1-$G$6)'};
         ws['L'+r]={t:'n',z:'$#,##0.00',f:'K'+r+'*I'+r};
       }
-      // 합계
-      ws['L'+subRow]={t:'n',z:'$#,##0.00',f:'SUM(L'+firstData+':L'+lastData+')'};
+      // 합계 — 대표행(M=1)만 합산해 원본 총액과 일치시킨다. 맨 아래는 전체 라인 참고합계.
+      ws['L'+subRow]={t:'n',z:'$#,##0.00',f:'SUMPRODUCT($L$'+firstData+':$L$'+lastData+',$M$'+firstData+':$M$'+lastData+')'};
       ws['L'+ivaRow]={t:'n',z:'$#,##0.00',f:'L'+subRow+'*0.16'};
       ws['L'+totRow]={t:'n',z:'$#,##0.00',f:'L'+subRow+'+L'+ivaRow};
+      ws['L'+refRow]={t:'n',z:'$#,##0.00',f:'SUM(L'+firstData+':L'+lastData+')'};
       // ---- 스타일 적용 ----
       if(ws['A1'])ws['A1'].s=sLogo; if(ws['A2'])ws['A2'].s=sSub; if(ws['A3'])ws['A3'].s=sTitle; if(ws['A4'])ws['A4'].s=sMeta;
-      if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl;
-      ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
-      const sExi={fill:{fgColor:{rgb:'E4F0EB'}},font:{color:{rgb:'0F6E56'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll};
-      const sExi0={fill:{fgColor:{rgb:'FDEBEB'}},font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 품절(0) — 연빨강
-      const sTra={fill:{fgColor:{rgb:'DDEBF7'}},font:{color:{rgb:'1F4E79'},bold:true,sz:10},alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0',border:bAll}; // 운송중(발주 미입고)
-      for(let r=firstData;r<=lastData;r++){
-        if(ws['A'+r])ws['A'+r].s=sVeh; if(ws['B'+r])ws['B'+r].s=sVio;
-        if(ws['C'+r])ws['C'+r].s=sCtr; if(ws['D'+r])ws['D'+r].s=sTxt; if(ws['E'+r])ws['E'+r].s=sTxt; if(ws['F'+r])ws['F'+r].s=sTxt;
-        if(ws['G'+r])ws['G'+r].s=(Number(ws['G'+r].v)>0?sExi:sExi0);
-        if(ws['H'+r])ws['H'+r].s=sTra; if(ws['I'+r])ws['I'+r].s=sQty; if(ws['J'+r])ws['J'+r].s=sLista;
-        if(ws['K'+r])ws['K'+r].s=sDesc; if(ws['L'+r])ws['L'+r].s=sImp;
+      if(ws['A6'])ws['A6'].s=sLbl; if(ws['B6'])ws['B6'].s=sCli; if(ws['E6'])ws['E6'].s=sLbl; if(ws['A7'])ws['A7'].s=sLeg;
+      ['A','B','C','D','E','F','G','H','I','J','K','L','M'].forEach(c=>{ if(ws[c+headerRow])ws[c+headerRow].s=sHead; });
+      for(let i=0;i<P.length;i++){
+        const r=firstData+i, p=P[i], rep=p.isRep&&p.isDup;
+        if(ws['A'+r])ws['A'+r].s=mk(sVeh,rep); if(ws['B'+r])ws['B'+r].s=mk(sVio,rep);
+        if(ws['C'+r])ws['C'+r].s=p.isDup?mk(sCtrDup,rep):mk(sCtr,rep);
+        if(ws['D'+r])ws['D'+r].s=p.isDup?mk(sSydDup,rep):mk(sTxt,rep);
+        if(ws['E'+r])ws['E'+r].s=mk(sTxt,rep); if(ws['F'+r])ws['F'+r].s=mk(sTxt,rep);
+        if(ws['G'+r])ws['G'+r].s=rep?mk(sExi,rep):(Number(ws['G'+r].v)>0?sExi:sExi0);
+        if(ws['H'+r])ws['H'+r].s=mk(sTra,rep); if(ws['I'+r])ws['I'+r].s=mk(sQty,rep); if(ws['J'+r])ws['J'+r].s=mk(sLista,rep);
+        if(ws['K'+r])ws['K'+r].s=mk(sDesc,rep); if(ws['L'+r])ws['L'+r].s=mk(sImp,rep);
+        if(ws['M'+r])ws['M'+r].s=mk(sPrin,rep);
       }
       [subRow,ivaRow,totRow].forEach(rr=>{ if(ws['K'+rr])ws['K'+rr].s=sSumL; if(ws['L'+rr])ws['L'+rr].s=sSumV; });
+      if(ws['K'+refRow])ws['K'+refRow].s=sRefL; if(ws['L'+refRow])ws['L'+refRow].s=sRefV;
       // 레터헤드 병합만 (필터 유지 위해 차량 셀은 병합하지 않고 그룹 정렬로 표현)
-      const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:11}},{s:{r:3,c:0},e:{r:3,c:11}}];
-      ws['!merges']=merges;
+      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:2,c:0},e:{r:2,c:11}},{s:{r:3,c:0},e:{r:3,c:11}},{s:{r:6,c:0},e:{r:6,c:11}}];
       ws['!autofilter']={ref:'A'+headerRow+':L'+lastData};
-      ws['!cols']=[{wch:30},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:12},{wch:15},{wch:14},{wch:15}];
-      ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:6},{hpt:30}];
+      ws['!cols']=[{wch:34},{wch:14},{wch:13},{wch:16},{wch:26},{wch:40},{wch:11},{wch:11},{wch:12},{wch:15},{wch:14},{wch:15},{wch:10,hidden:true}];
+      ws['!rows']=[{hpt:24},{hpt:15},{hpt:28},{hpt:15},{hpt:6},{hpt:20},{hpt:14},{hpt:30}];
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,all?'Completo':'Top500');
       const safe=(custName||'general').replace(/[^\w가-힣]+/g,'_').slice(0,30);
       XLSX.writeFile(wb,(all?'cotizacion_completa_':'cotizacion_top500_')+safe+'.xlsx');
-      m.className='msg ok';m.textContent=LBL+' 견적 다운로드 완료 — '+items.length+'개 SKU · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함, 셀에서 할인율·수량 편집 가능).';
+      m.className='msg ok';m.textContent=LBL+' 견적 다운로드 완료 — '+plan.stats.sku.toLocaleString('en-US')+'개 SKU를 차종 '+plan.stats.groups.toLocaleString('en-US')+'그룹으로 재편성('+P.length.toLocaleString('en-US')+'행, 중복 '+plan.stats.dup.toLocaleString('en-US')+'행·대표 '+plan.stats.reps.toLocaleString('en-US')+'행)'
+        +' · 기존 VIO 차종명 매칭 '+plan.stats.matched+'/'+plan.stats.curated
+        +(plan.stats.noapp?(' · 적용차종 없음 '+plan.stats.noapp+'건은 맨 아래 Sin aplicación'):'')
+        +' · '+(disc?('할인 '+disc+'%'):'정가')+' (IVA 미포함 · Subtotal은 파란 대표행만 합산).';
     }catch(e){ m.className='msg err';m.textContent=LBL+' 견적 다운로드 실패: '+(e&&e.message||e); }
   }
 
@@ -671,7 +925,9 @@
     return _covReady;
   }
   // 순수 빌더(테스트 가능): DATA → {wb, stats}
-  function buildVsSydWb(D){
+  // CUR = { CTR코드: 「기존 VIO 차종명 + 연식」 } — 견적 「전체 견적」 A열과 **글자까지 동일한** 라벨을 쓰기 위한 맵.
+  //       (ctr_vio_rank 기반. 없으면 VEH.unifiedLabel 로 같은 규칙의 라벨을 생성해 대체한다.)
+  function buildVsSydWb(D,CUR){
     const meta=(D&&D.meta)||{};
     const CATS=(meta.cats&&meta.cats.length)?meta.cats
       :[['ball_joint','Ball Joint','볼조인트'],['term_ext','Terminal Exterior','타이로드엔드 외측'],['term_int','Terminal Interior','타이로드엔드 내측'],['stab_link','Stabilizer Link','스태빌라이저 링크'],['control_arm','Control Arm','컨트롤암'],['bush','Bush','부싱']];
@@ -696,7 +952,7 @@
         // 커버리지 카탈로그(세대·부품) 정보가 없는 차종 — VIO만 있는 시장 공백(양사 모두 라인업 없음)
         let ys=null,ye=null;
         (v.years||[]).forEach(y=>{ if((Number(y.u)||0)>0){ const yy=Number(y.y)||null; if(yy){ ys=(ys==null?yy:Math.min(ys,yy)); ye=(ye==null?yy:Math.max(ye,yy)); } } });
-        drows.push({marca:v.marca||'',modelo:v.modelo||'',gen:((ys&&ye)?(ys+'-'+ye+' · '):'')+'sin catálogo (ni SYD ni CTR)',units:Number(v.units)||0,
+        drows.push({marca:v.marca||'',modelo:v.modelo||'',gl:'',ys:ys,ye:ye,codes:[],gen:((ys&&ye)?(ys+'-'+ye+' · '):'')+'sin catálogo (ni SYD ni CTR)',units:Number(v.units)||0,
           cats:CATS.map(()=>({L:newSide(),R:newSide(),C:newSide()})),base:0,nCtr:0,nSyd:0});
         return;
       }
@@ -721,12 +977,14 @@
       });
       order.forEach(k=>{
         const g=byLabel[k];
+        const gcodes=[];
         const cats=CATS.map(cm=>{
           const parts=(g.cats[cm[0]]||{}).parts||[];
           const L=newSide(), R=newSide(), C=newSide();
           parts.forEach(p=>{
             const cpn=String(p.cpn||'').trim(), spn=String(p.spn||'').trim();
             if(!cpn&&!spn) return;
+            if(cpn) gcodes.push(cpn.toUpperCase());
             totParts++;
             if(spn&&!cpn) totMiss++;
             const s=sideOf(p);
@@ -747,7 +1005,7 @@
           else { base+=c.L.n+c.R.n; nCtr+=c.L.nCtr+c.R.nCtr; nSyd+=c.L.nSyd+c.R.nSyd; }
         });
         totBase+=base; totCtrCov+=nCtr; totSydCov+=nSyd;
-        drows.push({marca:v.marca||'',modelo:v.modelo||'',gen:(g.label||'')+((g.ys&&g.ye)?(' · '+g.ys+'-'+g.ye):''),units:Number(g.units)||0,
+        drows.push({marca:v.marca||'',modelo:v.modelo||'',gl:g.label||'',ys:g.ys||null,ye:g.ye||null,codes:gcodes,gen:(g.label||'')+((g.ys&&g.ye)?(' · '+g.ys+'-'+g.ye):''),units:Number(g.units)||0,
           cats:cats,base:base,nCtr:nCtr,nSyd:nSyd});
       });
     });
@@ -755,7 +1013,25 @@
     drows.sort((a,b)=>((Number(b.units)||0)-(Number(a.units)||0))
       || (a.marca+' '+a.modelo).localeCompare(b.marca+' '+b.modelo,'es')
       || a.gen.localeCompare(b.gen,'es'));
-    drows.forEach((dr,i)=>{ dr.rank=i+1; }); // VIO 순위 — 메이커·모델·제네레이션(=1행) 단위 연속 번호
+    // A열 차종 라벨 = 견적 「전체 견적」 A열과 동일. ① 이 행의 CTR 코드들이 가리키는 기존 VIO 차종명 중
+    //   이 차와 실제로 같은 차인 것(VEH.similar: 토큰 Jaccard ≥ 0.5 + 연식 겹침)을 최다 득표로 채택 →
+    //   견적 파일과 **글자까지 동일**. ② 없으면 같은 규칙으로 생성한 라벨(VEH.unifiedLabel).
+    function grpLabel(dr){
+      const own=VEH.unifiedLabel(dr.marca,dr.modelo,dr.gl,dr.ys,dr.ye);
+      if(CUR){
+        const cnt={}; let best=null,bestN=0;
+        (dr.codes||[]).forEach(c=>{
+          const l=CUR[c]; if(!l) return;
+          if(cnt[l]===undefined){ if(!VEH.similar(l,own)){ cnt[l]=-1; return; } cnt[l]=0; }
+          if(cnt[l]<0) return;
+          cnt[l]++;
+          if(cnt[l]>bestN||(cnt[l]===bestN&&best!==null&&l<best)){ bestN=cnt[l]; best=l; }
+        });
+        if(best) return best;
+      }
+      return own;
+    }
+    drows.forEach((dr,i)=>{ dr.rank=i+1; dr.grp=grpLabel(dr); }); // VIO 순위 — 메이커·모델·제네레이션(=1행) 단위 연속 번호
     // ---- aoa ----
     const today=new Date(); const pad=n=>String(n).padStart(2,'0');
     const fechaStr=pad(today.getDate())+'/'+pad(today.getMonth()+1)+'/'+today.getFullYear();
@@ -764,9 +1040,9 @@
     rows.push(['REFATRIX']);
     rows.push(['CTR vs SYD — Cobertura por vehículo (VIO) y precios de lista']);
     rows.push(['Generado: '+fechaStr+' · '+vehicles.length+' vehículos · '+drows.length+' renglones (marca·modelo·generación) · Piezas '+totParts.toLocaleString('en-US')+' (base cobertura '+totBase.toLocaleString('en-US')+') — cobertura global CTR '+pctAll+'% / SYD '+pctSydAll+'% · Precios de lista MXN (sin IVA) · Solo dirección y socios']);
-    rows.push(['Un renglón = un vehículo (bandas de años de la misma generación consolidadas: VIO sumado, años min-max, piezas unificadas), ordenado por VIO. Cada familia se divide en Izq./Der./Común: piezas con lado (L/R en código o nombre) van a su lado; sin lado van a Común, una sola vez. ROJO = SYD tiene y CTR no · AZUL = CTR tiene y SYD no · "—" = sin código. Cobertura por FÓRMULA: base = piezas comunes de la familia si existen (una común cubre L y R; las L/R no cuentan en la base), si no, las piezas L/R; % = n.º con código ÷ base.']);
+    rows.push(['Un renglón = un vehículo (bandas de años de la misma generación consolidadas: VIO sumado, años min-max, piezas unificadas), ordenado por VIO. Cada familia se divide en Izq./Der./Común: piezas con lado (L/R en código o nombre) van a su lado; sin lado van a Común, una sola vez. ROJO = SYD tiene y CTR no · AZUL = CTR tiene y SYD no · "—" = sin código. Cobertura por FÓRMULA: base = piezas comunes de la familia si existen (una común cubre L y R; las L/R no cuentan en la base), si no, las piezas L/R; % = n.º con código ÷ base. · Columna A «Vehículo (grupo · aplicación)» = MISMA etiqueta y misma regla que la columna A de la cotización «Catálogo completo» (grupo corporativo + modelo + años) — permite cruzar los dos archivos con filtro o BUSCARV.']);
     rows.push([]);
-    const h1=['','','','','']; const h2=['','','','','']; const h3=['Rango','Marca','Modelo','Generación · Años','VIO (unid.)'];
+    const h1=['','','','','','']; const h2=['','','','','','']; const h3=['Vehículo (grupo · aplicación)','Rango','Marca','Modelo','Generación · Años','VIO (unid.)'];
     CATS.forEach(cm=>{
       h1.push(String(cm[1]||cm[0])+(cm[2]?(' · '+cm[2]):'')); for(let i=0;i<11;i++) h1.push('');
       h2.push('Izq. (L)'); for(let i=0;i<3;i++) h2.push('');
@@ -779,7 +1055,7 @@
     h3.push('Piezas base'); h3.push('CTR n.º'); h3.push('SYD n.º'); h3.push('CTR %'); h3.push('SYD %');
     rows.push(h1); rows.push(h2); rows.push(h3); // 엑셀 6·7·8행
     drows.forEach(dr=>{
-      const r=[dr.rank,dr.marca,dr.modelo,dr.gen,dr.units];
+      const r=[dr.grp,dr.rank,dr.marca,dr.modelo,dr.gen,dr.units];
       dr.cats.forEach(c=>{ [c.L,c.R,c.C].forEach(s=>{ r.push(s.ctrC.join('\n')); r.push(s.ctrP.join('\n')); r.push(s.sydC.join('\n')); r.push(s.sydP.join('\n')); }); });
       r.push(dr.base||0); r.push(dr.nCtr||0); r.push(dr.nSyd||0);
       r.push(dr.base?(dr.nCtr/dr.base):''); r.push(dr.base?(dr.nSyd/dr.base):'');
@@ -794,7 +1070,7 @@
     if(ws['A3'])ws['A3'].s={font:{color:{rgb:GREY},sz:10}};
     if(ws['A4'])ws['A4'].s={font:{color:{rgb:'B42318'},bold:true,sz:10}};
     const nCats=CATS.length;
-    const nCols=5+nCats*12+5; // 82 (A~CD) — A열 = VIO 순위(Rango)
+    const nCols=6+nCats*12+5; // 83 (A~CE) — A열 = 차종 그룹(견적 A열과 동일 라벨) · B열 = VIO 순위(Rango)
     const col=i=>XLSX.utils.encode_col(i);
     const sCatH={fill:{fgColor:{rgb:INK}},font:{color:{rgb:'FFFFFF'},bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
     const sSideH={fill:{fgColor:{rgb:'E8E1D5'}},font:{color:{rgb:INK},bold:true,sz:9.5},alignment:{horizontal:'center',vertical:'center'},border:bAll};
@@ -803,15 +1079,16 @@
     const sHdSyd={fill:{fgColor:{rgb:BLUE}},font:{color:{rgb:'FFFFFF'},bold:true,sz:9.5},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:bAll};
     for(let c=0;c<nCols;c++){
       for(const rr of [6,7,8]){ const a=col(c)+rr; if(!ws[a]) ws[a]={t:'s',v:''}; }
-      ws[col(c)+'6'].s=(c>=5)?sCatH:sHdA;
-      ws[col(c)+'7'].s=(c>=5&&c<5+nCats*12)?sSideH:sHdA;
-      ws[col(c)+'8'].s=(c<5)?sHdA:((c>=nCols-5)?((c===nCols-2)?sHdCtr:(c===nCols-1?sHdSyd:sHdA)):((((c-5)%4)<2)?sHdCtr:sHdSyd));
+      ws[col(c)+'6'].s=(c>=6)?sCatH:sHdA;
+      ws[col(c)+'7'].s=(c>=6&&c<6+nCats*12)?sSideH:sHdA;
+      ws[col(c)+'8'].s=(c<6)?sHdA:((c>=nCols-5)?((c===nCols-2)?sHdCtr:(c===nCols-1?sHdSyd:sHdA)):((((c-6)%4)<2)?sHdCtr:sHdSyd));
     }
     const sMar={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'top'},border:bAll};
     const sMod={font:{color:{rgb:INK},bold:true,sz:10},alignment:{vertical:'top'},border:bAll};
     const sGen={font:{color:{rgb:INK},sz:9.5},alignment:{vertical:'top',wrapText:true},border:bAll};
     const sVioC={font:{color:{rgb:RED},bold:true,sz:10},alignment:{horizontal:'right',vertical:'top'},numFmt:'#,##0',border:bAll};
     const sRank={font:{color:{rgb:INK},bold:true,sz:10},alignment:{horizontal:'center',vertical:'top'},numFmt:'#,##0',border:bAll};
+    const sGrp={font:{color:{rgb:INK},bold:true,sz:9.5},alignment:{vertical:'top',wrapText:true},border:bAll};
     const A_L={vertical:'top',wrapText:true}, A_R={horizontal:'right',vertical:'top',wrapText:true};
     const sCtrC={font:{color:{rgb:INK},sz:9},alignment:A_L,border:bAll};
     const sSydC={font:{color:{rgb:BLUE},sz:9},alignment:A_L,border:bAll};
@@ -832,14 +1109,14 @@
     const rowHts=[{hpt:24},{hpt:18},{hpt:14},{hpt:26},{hpt:6},{hpt:20},{hpt:14},{hpt:24}];
     drows.forEach((dr,i)=>{
       const r=firstData+i;
-      if(ws['A'+r])ws['A'+r].s=sRank;
-      if(ws['B'+r])ws['B'+r].s=sMar; if(ws['C'+r])ws['C'+r].s=sMod;
-      if(ws['D'+r])ws['D'+r].s=sGen; if(ws['E'+r])ws['E'+r].s=sVioC;
+      if(ws['A'+r])ws['A'+r].s=sGrp; if(ws['B'+r])ws['B'+r].s=sRank;
+      if(ws['C'+r])ws['C'+r].s=sMar; if(ws['D'+r])ws['D'+r].s=sMod;
+      if(ws['E'+r])ws['E'+r].s=sGen; if(ws['F'+r])ws['F'+r].s=sVioC;
       let lines=1;
       dr.cats.forEach((c,j)=>{
         [c.L,c.R,c.C].forEach((s,si)=>{
           lines=Math.max(lines,s.ctrC.length);
-          const base=5+j*12+si*4;
+          const base=6+j*12+si*4;
           const aC=col(base)+r, aP=col(base+1)+r, aS=col(base+2)+r, aQ=col(base+3)+r;
           if(ws[aC]) ws[aC].s=(s.miss>0)?(s.ctrHas?sCtrMiss:sCtrHueco):sCtrC;
           if(ws[aP]) ws[aP].s=(s.miss>0)?(s.ctrHas?sCtrMissP:sCtrHuecoP):sCtrP;
@@ -861,15 +1138,15 @@
     ws['!rows']=rowHts;
     const merges=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:nCols-1}},{s:{r:2,c:0},e:{r:2,c:nCols-1}},{s:{r:3,c:0},e:{r:3,c:nCols-1}}];
     for(let j=0;j<nCats;j++){
-      merges.push({s:{r:5,c:5+j*12},e:{r:5,c:16+j*12}});
-      merges.push({s:{r:6,c:5+j*12},e:{r:6,c:8+j*12}});
-      merges.push({s:{r:6,c:9+j*12},e:{r:6,c:12+j*12}});
-      merges.push({s:{r:6,c:13+j*12},e:{r:6,c:16+j*12}});
+      merges.push({s:{r:5,c:6+j*12},e:{r:5,c:17+j*12}});
+      merges.push({s:{r:6,c:6+j*12},e:{r:6,c:9+j*12}});
+      merges.push({s:{r:6,c:10+j*12},e:{r:6,c:13+j*12}});
+      merges.push({s:{r:6,c:14+j*12},e:{r:6,c:17+j*12}});
     }
     merges.push({s:{r:5,c:nCols-5},e:{r:6,c:nCols-1}});
     ws['!merges']=merges;
     ws['!autofilter']={ref:'A8:'+col(nCols-1)+lastData};
-    const cols=[{wch:7},{wch:13},{wch:16},{wch:24},{wch:11}];
+    const cols=[{wch:34},{wch:7},{wch:13},{wch:16},{wch:24},{wch:11}];
     for(let j=0;j<nCats*3;j++){ cols.push({wch:13.5}); cols.push({wch:8.5}); cols.push({wch:13.5}); cols.push({wch:8.5}); }
     cols.push({wch:9}); cols.push({wch:8}); cols.push({wch:8}); cols.push({wch:9.5}); cols.push({wch:9.5});
     ws['!cols']=cols;
@@ -878,9 +1155,9 @@
     rows2.push(['REFATRIX']);
     rows2.push(['CTR vs SYD — por familia y lado (vertical) · misma base y reglas que la hoja "CTR vs SYD"']);
     rows2.push([rows[2][0]]);
-    rows2.push(['Un renglón = vehículo × familia × lado (Izq./Der./Común — solo lados con piezas). «En base» = Sí → cuenta en la cobertura (regla: si la familia tiene piezas comunes, los renglones L/R quedan FUERA de la base). CTR %/SYD % por FÓRMULA (=n.º ÷ Piezas), solo en renglones En base=Sí. ROJO = SYD tiene y CTR no · AZUL = CTR tiene y SYD no.']);
+    rows2.push(['Un renglón = vehículo × familia × lado (Izq./Der./Común — solo lados con piezas). «En base» = Sí → cuenta en la cobertura (regla: si la familia tiene piezas comunes, los renglones L/R quedan FUERA de la base). CTR %/SYD % por FÓRMULA (=n.º ÷ Piezas), solo en renglones En base=Sí. ROJO = SYD tiene y CTR no · AZUL = CTR tiene y SYD no. · Columna A «Vehículo (grupo · aplicación)» = misma etiqueta que la cotización «Catálogo completo».']);
     rows2.push([]);
-    rows2.push(['Rango','Marca','Modelo','Generación · Años','VIO (unid.)','Familia','Lado','Código CTR','$ CTR','Código SYD','$ SYD','Piezas','CTR n.º','SYD n.º','En base','CTR %','SYD %']); // 6행 헤더
+    rows2.push(['Vehículo (grupo · aplicación)','Rango','Marca','Modelo','Generación · Años','VIO (unid.)','Familia','Lado','Código CTR','$ CTR','Código SYD','$ SYD','Piezas','CTR n.º','SYD n.º','En base','CTR %','SYD %']); // 6행 헤더
     const meta2=[];
     const SIDES=[['L','Izq. (L)'],['R','Der. (R)'],['C','Común (L/R)']];
     drows.forEach(dr=>{
@@ -891,7 +1168,7 @@
           if(!s.n) return;
           any=true;
           const inBase=(sd[0]==='C')?true:(c.C.n===0); // 모수 규칙: 공용품 있으면 L/R 제외
-          rows2.push([dr.rank,dr.marca,dr.modelo,dr.gen,dr.units,
+          rows2.push([dr.grp,dr.rank,dr.marca,dr.modelo,dr.gen,dr.units,
             String(CATS[j][1]||CATS[j][0])+(CATS[j][2]?(' · '+CATS[j][2]):''),sd[1],
             s.ctrC.join('\n'),s.ctrP.join('\n'),s.sydC.join('\n'),s.sydP.join('\n'),
             s.n,s.nCtr,s.nSyd,(inBase?'Sí':'No'),
@@ -900,19 +1177,19 @@
         });
       });
       if(!any){
-        rows2.push([dr.rank,dr.marca,dr.modelo,dr.gen,dr.units,'(sin catálogo)','','','','','',0,0,0,'','','']);
+        rows2.push([dr.grp,dr.rank,dr.marca,dr.modelo,dr.gen,dr.units,'(sin catálogo)','','','','','',0,0,0,'','','']);
         meta2.push({s:null,inBase:false});
       }
     });
     const ws2=XLSX.utils.aoa_to_sheet(rows2);
-    const nCols2=17; // A~Q — A열 = VIO 순위(Rango)
+    const nCols2=18; // A~R — A열 = 차종 그룹(견적 A열과 동일 라벨) · B열 = VIO 순위(Rango)
     if(ws2['A1'])ws2['A1'].s={font:{color:{rgb:RED},bold:true,sz:18}};
     if(ws2['A2'])ws2['A2'].s={font:{color:{rgb:RED},bold:true,sz:13}};
     if(ws2['A3'])ws2['A3'].s={font:{color:{rgb:GREY},sz:10}};
     if(ws2['A4'])ws2['A4'].s={font:{color:{rgb:'B42318'},bold:true,sz:10}};
     for(let c=0;c<nCols2;c++){
       const a=col(c)+'6'; if(!ws2[a]) ws2[a]={t:'s',v:''};
-      ws2[a].s=(c>=7&&c<11)?((((c-7)%4)<2)?sHdCtr:sHdSyd):((c===15)?sHdCtr:(c===16?sHdSyd:sHdA));
+      ws2[a].s=(c>=8&&c<12)?((((c-8)%4)<2)?sHdCtr:sHdSyd):((c===16)?sHdCtr:(c===17?sHdSyd:sHdA));
     }
     const sFam={font:{color:{rgb:INK},bold:true,sz:9.5},alignment:{vertical:'top',wrapText:true},border:bAll};
     const sLado={font:{color:{rgb:INK},sz:9.5},alignment:{horizontal:'center',vertical:'top'},border:bAll};
@@ -923,33 +1200,33 @@
     const first2=7;
     meta2.forEach((m,i)=>{
       const r=first2+i;
-      if(ws2['A'+r])ws2['A'+r].s=sRank;
-      if(ws2['B'+r])ws2['B'+r].s=sMar; if(ws2['C'+r])ws2['C'+r].s=sMod;
-      if(ws2['D'+r])ws2['D'+r].s=sGen; if(ws2['E'+r])ws2['E'+r].s=sVioC;
-      if(ws2['F'+r])ws2['F'+r].s=sFam; if(ws2['G'+r])ws2['G'+r].s=sLado;
+      if(ws2['A'+r])ws2['A'+r].s=sGrp; if(ws2['B'+r])ws2['B'+r].s=sRank;
+      if(ws2['C'+r])ws2['C'+r].s=sMar; if(ws2['D'+r])ws2['D'+r].s=sMod;
+      if(ws2['E'+r])ws2['E'+r].s=sGen; if(ws2['F'+r])ws2['F'+r].s=sVioC;
+      if(ws2['G'+r])ws2['G'+r].s=sFam; if(ws2['H'+r])ws2['H'+r].s=sLado;
       let lines=1;
       const s=m.s;
       if(s){
         lines=Math.max(lines,s.ctrC.length);
-        if(ws2['H'+r]) ws2['H'+r].s=(s.miss>0)?(s.ctrHas?sCtrMiss:sCtrHueco):sCtrC;
-        if(ws2['I'+r]) ws2['I'+r].s=(s.miss>0)?(s.ctrHas?sCtrMissP:sCtrHuecoP):sCtrP;
-        if(ws2['J'+r]) ws2['J'+r].s=(s.sydMiss>0)?sSydMiss:sSydC;
-        if(ws2['K'+r]) ws2['K'+r].s=(s.sydMiss>0)?sSydMissP:sSydP;
-      } else { ['H','I','J','K'].forEach(cl=>{ if(ws2[cl+r]) ws2[cl+r].s=sCtrC; }); }
-      ['L','M','N'].forEach(cl=>{ if(ws2[cl+r]) ws2[cl+r].s=sNum2; });
-      if(ws2['O'+r]) ws2['O'+r].s=(String(ws2['O'+r].v)==='Sí')?sSi:sNo;
+        if(ws2['I'+r]) ws2['I'+r].s=(s.miss>0)?(s.ctrHas?sCtrMiss:sCtrHueco):sCtrC;
+        if(ws2['J'+r]) ws2['J'+r].s=(s.miss>0)?(s.ctrHas?sCtrMissP:sCtrHuecoP):sCtrP;
+        if(ws2['K'+r]) ws2['K'+r].s=(s.sydMiss>0)?sSydMiss:sSydC;
+        if(ws2['L'+r]) ws2['L'+r].s=(s.sydMiss>0)?sSydMissP:sSydP;
+      } else { ['I','J','K','L'].forEach(cl=>{ if(ws2[cl+r]) ws2[cl+r].s=sCtrC; }); }
+      ['M','N','O'].forEach(cl=>{ if(ws2[cl+r]) ws2[cl+r].s=sNum2; });
+      if(ws2['P'+r]) ws2['P'+r].s=(String(ws2['P'+r].v)==='Sí')?sSi:sNo;
       const ok=m.inBase&&s&&s.n>0;
       const fc=ok?(s.nCtr/s.n):null, fsd=ok?(s.nSyd/s.n):null;
-      if(ws2['P'+r]){ ws2['P'+r].s=(fc==null)?sEmpty:((fsd!=null&&fc<fsd)?sCovCtrBad:sCovCtr);
-        if(ok){ ws2['P'+r].t='n'; ws2['P'+r].v=fc; ws2['P'+r].f='M'+r+'/L'+r; } }
-      if(ws2['Q'+r]){ ws2['Q'+r].s=(fsd==null)?sEmpty:((fc!=null&&fsd<fc)?sCovSydBad:sCovSyd);
-        if(ok){ ws2['Q'+r].t='n'; ws2['Q'+r].v=fsd; ws2['Q'+r].f='N'+r+'/L'+r; } }
+      if(ws2['Q'+r]){ ws2['Q'+r].s=(fc==null)?sEmpty:((fsd!=null&&fc<fsd)?sCovCtrBad:sCovCtr);
+        if(ok){ ws2['Q'+r].t='n'; ws2['Q'+r].v=fc; ws2['Q'+r].f='N'+r+'/M'+r; } }
+      if(ws2['R'+r]){ ws2['R'+r].s=(fsd==null)?sEmpty:((fc!=null&&fsd<fc)?sCovSydBad:sCovSyd);
+        if(ok){ ws2['R'+r].t='n'; ws2['R'+r].v=fsd; ws2['R'+r].f='O'+r+'/M'+r; } }
       rowHts2.push({hpt:Math.min(200,Math.max(14,lines*10.5+4))});
     });
     ws2['!rows']=rowHts2;
     ws2['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:nCols2-1}},{s:{r:2,c:0},e:{r:2,c:nCols2-1}},{s:{r:3,c:0},e:{r:3,c:nCols2-1}}];
-    ws2['!autofilter']={ref:'A6:Q'+(6+meta2.length)};
-    ws2['!cols']=[{wch:7},{wch:13},{wch:16},{wch:24},{wch:11},{wch:22},{wch:11},{wch:13.5},{wch:8.5},{wch:13.5},{wch:8.5},{wch:7.5},{wch:7.5},{wch:7.5},{wch:8},{wch:9.5},{wch:9.5}];
+    ws2['!autofilter']={ref:'A6:R'+(6+meta2.length)};
+    ws2['!cols']=[{wch:34},{wch:7},{wch:13},{wch:16},{wch:24},{wch:11},{wch:22},{wch:11},{wch:13.5},{wch:8.5},{wch:13.5},{wch:8.5},{wch:7.5},{wch:7.5},{wch:7.5},{wch:8},{wch:9.5},{wch:9.5}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'CTR vs SYD');
     XLSX.utils.book_append_sheet(wb,ws2,'Por familia');
@@ -961,12 +1238,25 @@
     try{
       m.className='msg ok'; m.textContent='CTR vs SYD 커버리지 데이터를 불러오는 중…';
       const D=await loadCoverage();
+      // 견적 「전체 견적」과 A열 차종 라벨을 글자까지 맞추기 위해 기존 VIO 차종명(ctr_vio_rank) 맵을 함께 불러온다.
+      // 실패해도 다운로드는 계속(같은 규칙으로 생성한 라벨로 대체).
+      m.textContent='차종 라벨(견적과 동일 기준) 불러오는 중…';
+      let CUR=null;
+      try{
+        const pl=await fetch(session.api+'/api/quotes/price-list?all=1',{headers:auth()}).then(r=>r.json());
+        CUR={};
+        (pl.items||[]).forEach(it=>{
+          const lb=((it.vio_model||'')+' '+(it.vio_year||'')).trim();
+          if(lb) CUR[String(it.ctr_code||'').trim().toUpperCase()]=lb;
+        });
+        if(!Object.keys(CUR).length) CUR=null;
+      }catch(e){ CUR=null; }
       m.textContent='CTR vs SYD 엑셀 생성 중…';
       await new Promise(r=>setTimeout(r,20)); // 상태 메시지 렌더 양보
-      const b=buildVsSydWb(D);
+      const b=buildVsSydWb(D,CUR);
       const t=new Date(); const pad=n=>String(n).padStart(2,'0');
       XLSX.writeFile(b.wb,'ctr_vs_syd_cobertura_'+t.getFullYear()+pad(t.getMonth()+1)+pad(t.getDate())+'.xlsx');
-      m.className='msg ok'; m.textContent='CTR vs SYD 다운로드 완료 — 시트1 차종 '+b.stats.rows+'행 · 시트2(품군 세로) '+b.stats.rows2+'행 · 부품 '+b.stats.parts.toLocaleString('en-US')+'개 · 전체 커버리지 CTR '+b.stats.covCtr+'% / SYD '+b.stats.covSyd+'% · SYD만 있고 CTR 없는 부품 '+b.stats.miss.toLocaleString('en-US')+'개(빨간 칸).';
+      m.className='msg ok'; m.textContent='CTR vs SYD 다운로드 완료 — 시트1 차종 '+b.stats.rows+'행 · 시트2(품군 세로) '+b.stats.rows2+'행 · 부품 '+b.stats.parts.toLocaleString('en-US')+'개 · 전체 커버리지 CTR '+b.stats.covCtr+'% / SYD '+b.stats.covSyd+'% · SYD만 있고 CTR 없는 부품 '+b.stats.miss.toLocaleString('en-US')+'개(빨간 칸) · A열 차종 라벨은 「전체 견적」과 동일 기준'+(CUR?'(기존 VIO 차종명 사용)':'(생성 라벨)')+'.';
     }catch(e){ m.className='msg err'; m.textContent='CTR vs SYD 다운로드 실패: '+((e&&e.message)||e); }
   }
 
