@@ -18,7 +18,6 @@ export function splitEqual(total, n) {
   return parts;
 }
 import { validateReceiptDataUrl } from '../ar.js';
-import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
 import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
@@ -544,60 +543,6 @@ export default async function financeRoutes(app) {
     return { count: items.length, truncated, cap: CAP, generated_at: new Date().toISOString(), items };
   });
 
-  // ===== 영수증 번호 「다음 번호」 제안 (2026-08-31) =====
-  // 거래등록에서 영수증 번호를 넣을 때마다 지난 번호를 찾아야 하던 수고를 없앤다.
-  //  · 기준(디렉터 확인 2026-08-31): **가장 최근에 등록된**(created_at DESC, id DESC) 영수증 번호 1건.
-  //    → 그 번호의 맨 뒤 숫자 덩어리 +1 = 제안값(`nextReceiptNo`, 순수 함수라 테스트로 고정).
-  //  · 번호 자체는 **전체 거래 기준**이다. 사내 연번이라 계좌 권한으로 모수를 끊으면 번호가 어긋난다.
-  //    다만 그 거래의 **맥락(계좌·계정과목·메모·등록자)** 은 거래목록과 같은 가시성 규칙을 적용해
-  //    볼 권한이 없으면 내려주지 않는다(`visible:false` → 화면은 번호만 보여준다).
-  //  · 숫자가 없는 번호(예: `FACTURA`)는 건너뛰고 다음 후보를 본다(최근 30건까지 훑음).
-  //  · 제안일 뿐이다 — 저장은 화면에서 사람이 확인·수정한 값으로 한다. 중복 검사는 하지 않는다
-  //    (공급처 팩투라 번호가 섞여 들어오는 자유 텍스트 필드라 유일성을 강제할 수 없다).
-  app.get('/api/transactions/receipt-next', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
-    const rows = (await query(
-      `SELECT t.id, t.receipt_no, t.txn_date, t.created_at, t.account_id, t.is_private,
-              a.name AS account_name, cat.name AS category_name, t.memo, u.name AS created_by_name
-         FROM transactions t
-         LEFT JOIN accounts a ON a.id=t.account_id
-         LEFT JOIN categories cat ON cat.code=t.category_code
-         LEFT JOIN users u ON u.id=t.created_by
-        WHERE t.deleted_at IS NULL AND t.receipt_no IS NOT NULL AND btrim(t.receipt_no) <> ''
-        ORDER BY t.created_at DESC, t.id DESC LIMIT 30`)).rows;
-
-    // 숫자를 못 찾는 번호는 건너뛴다 — 그런 값 하나 때문에 제안이 멈추면 안 된다.
-    let last = null, suggest = null;
-    for (const r of rows) {
-      const s = nextReceiptNo(r.receipt_no);
-      if (s) { last = r; suggest = s; break; }
-    }
-    if (!last) return { suggest: null, last: null, skipped: rows.length };
-
-    // 맥락 노출 여부 — /api/transactions 목록과 같은 규칙(계좌 열람권한·세부차단·비공개).
-    const allow = allowedDetailAccountIds(req.ctx.perm);
-    const block = blockedDetailAccountIds(req.ctx.perm);
-    const accId = last.account_id == null ? null : Number(last.account_id);
-    const visible =
-      (accId == null || allow === null || allow.includes(accId)) &&
-      (accId == null || !block.includes(accId)) &&
-      (req.ctx.perm.role === 'director' || !last.is_private);
-
-    return {
-      suggest,
-      last: {
-        receipt_no: last.receipt_no,
-        txn_date: last.txn_date,
-        created_at: last.created_at,
-        visible,
-        account_name: visible ? (last.account_name || null) : null,
-        category_name: visible ? (last.category_name || null) : null,
-        memo: visible ? (last.memo || null) : null,
-        created_by_name: visible ? (last.created_by_name || null) : null,
-      },
-      skipped: rows.indexOf(last),   // 숫자가 없어 건너뛴 최근 건수(참고용)
-    };
-  });
-
   // 운반비 인보이스 배분 내역(거래 드릴다운) — 거래 1건의 균등 배분 결과.
   app.get('/api/transactions/:id/freight-allocations', { preHandler: [authGuard, requirePage('transactions')] }, async (req, reply) => {
     const id = Number(req.params.id);
@@ -1013,7 +958,7 @@ export default async function financeRoutes(app) {
         [amount, pay.id, closing, userId, depositId])).rows[0];
       if (!depUpd) return { error: 'deposit_not_pending' };
       return {
-        id: pay.id, amount, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: true,
+        id: Number(pay.id), amount, advance, allocated: sumAlloc, receipt: !!receipt, deposit_linked: true,
         deposit_closed: closing,
         deposit_total: depTotal,
         deposit_used: r2(depUsed + amount),
@@ -1293,6 +1238,124 @@ export default async function financeRoutes(app) {
          ${where}
         ORDER BY p.pay_date DESC, p.id DESC LIMIT 100`, args)).rows;
     return { items: rows.map((r) => ({ ...r, amount: Number(r.amount), advance_amount: Number(r.advance_amount) })) };
+  });
+
+  // ===== 선수금(과입금) 관리 =====
+  // 배경: 통지 잔여를 선수금으로 확정했거나, 배분을 지웠는데 선수금이 남아 헤더만 남은 입금건은
+  //   배분(allocation)이 0건이라 인보이스 수금내역 드릴다운 어디에도 나타나지 않는다
+  //   ("반제가 사라지고 선수금으로만 보인다"의 정체). 이 화면이 그 유일한 진입점이다.
+  // 의미: sales_payments.advance_amount = **아직 인보이스에 배분되지 않고 남은 선수금**.
+  //   배분하면 그만큼 줄고, 0이 되면 목록에서 사라진다.
+
+  // 선수금이 남아 있는 입금건 목록 (settlement 열람권 · 팀 범위 적용)
+  app.get('/api/ar/advances', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
+    const args = []; const cond = [`p.advance_amount > 0.005`];
+    if (req.query.customer_id) { args.push(Number(req.query.customer_id)); cond.push(`p.customer_id=$${args.length}`); }
+    const vis = visibleTeamIds(req.ctx.perm);
+    if (vis !== null) { args.push(vis); cond.push(`c.team_id = ANY($${args.length})`); }
+    const rows = (await query(
+      `SELECT p.id, to_char(p.pay_date,'YYYY-MM-DD') AS pay_date, p.amount, p.advance_amount, p.memo,
+              p.customer_id, c.code AS customer_code, c.name AS customer_name,
+              p.account_id, a.name AS account_name, u.name AS created_by_name,
+              COALESCE(al.cnt,0) AS alloc_count, COALESCE(al.sum_amount,0) AS allocated,
+              bp.deposit_id
+         FROM sales_payments p
+         JOIN customers c ON c.id=p.customer_id
+         LEFT JOIN accounts a ON a.id=p.account_id
+         LEFT JOIN users u ON u.id=p.created_by
+         LEFT JOIN (SELECT payment_id, COUNT(*) AS cnt, SUM(amount) AS sum_amount
+                      FROM sales_payment_allocations GROUP BY payment_id) al ON al.payment_id=p.id
+         LEFT JOIN bank_deposit_payments bp ON bp.payment_id=p.id
+        WHERE ${cond.join(' AND ')}
+        ORDER BY p.pay_date DESC, p.id DESC
+        LIMIT 200`, args)).rows;
+    return {
+      items: rows.map((r) => ({
+        id: Number(r.id), pay_date: r.pay_date, amount: r2(Number(r.amount)),
+        advance_amount: r2(Number(r.advance_amount)), allocated: r2(Number(r.allocated)),
+        alloc_count: Number(r.alloc_count), memo: r.memo || null,
+        customer_id: Number(r.customer_id), customer_code: r.customer_code, customer_name: r.customer_name,
+        account_id: r.account_id == null ? null : Number(r.account_id), account_name: r.account_name || null,
+        created_by_name: r.created_by_name || null,
+        deposit_id: r.deposit_id == null ? null : Number(r.deposit_id),
+      })),
+    };
+  });
+
+  // 선수금을 인보이스에 배분(적용) — 디렉터 전용.
+  //   현금은 이미 계좌에 들어와 있다(선수금 2030 거래로 기표됨). 따라서 **새 현금을 만들지 않고**
+  //   선수금 거래(2030 부채)를 배분액만큼 줄이고, 같은 금액의 매출수금 거래(4010)를 만든다.
+  //   → 계좌 잔액은 그대로, 돈만 "선수금 → 매출수금"으로 이동. 이중계상 없음.
+  //   body: { allocations:[{invoice_id, amount}] }
+  app.post('/api/ar/advances/:id/apply', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const pid = Number(req.params.id);
+    if (!pid) return reply.code(400).send({ error: 'bad_id' });
+    const b = req.body || {};
+    const allocations = Array.isArray(b.allocations)
+      ? b.allocations.filter((a) => Number(a.amount) > 0).map((a) => ({ invoice_id: Number(a.invoice_id), amount: r2(a.amount) }))
+      : [];
+    if (!allocations.length) return reply.code(400).send({ error: 'no_allocations' });
+    const userId = req.ctx.perm.userId;
+    const out = await withTx(async (c) => {
+      const pay = (await c.query(
+        `SELECT id, customer_id, account_id, to_char(pay_date,'YYYY-MM-DD') AS pay_date,
+                advance_amount, advance_txn_id
+           FROM sales_payments WHERE id=$1 FOR UPDATE`, [pid])).rows[0];
+      if (!pay) return { error: 'not_found' };
+      const advance = r2(Number(pay.advance_amount || 0));
+      if (!(advance > 0.005)) return { error: 'no_advance' };
+      const sum = r2(allocations.reduce((s, a) => s + a.amount, 0));
+      if (sum - advance > 0.001) return { error: 'exceeds_advance', advance, sum };
+
+      // 대상 인보이스는 같은 고객 · 발행(posted) · 미수 범위 안이어야 한다.
+      const inv = (await c.query(
+        `SELECT s.id, s.total_mxn - COALESCE(pa.paid,0) AS outstanding
+           FROM sales_invoices s
+           LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
+          WHERE s.customer_id=$1 AND s.deleted_at IS NULL AND s.status='posted'`, [pay.customer_id])).rows;
+      const outMap = {}; inv.forEach((r) => { outMap[r.id] = r2(Number(r.outstanding)); });
+      for (const a of allocations) {
+        if (outMap[a.invoice_id] == null) return { error: 'invalid_allocations', detail: [{ invoice_id: a.invoice_id, error: 'not_customer_invoice' }] };
+        if (a.amount - outMap[a.invoice_id] > 0.001) return { error: 'invalid_allocations', detail: [{ invoice_id: a.invoice_id, error: 'over_outstanding', outstanding: outMap[a.invoice_id] }] };
+      }
+
+      const accountId = Number(pay.account_id);
+      const payDate = pay.pay_date;
+      for (const a of allocations) {
+        const txn = (await c.query(
+          `INSERT INTO transactions (account_id, txn_date, direction, amount, currency, fx_rate, amount_mxn, category_code, status, kind, approved, owner_id, sales_invoice_id, memo, created_by)
+           VALUES ($1,$2,'in',$3,'MXN',1,$3,'4010','actual','payment',true,$4,$5,$6,$4) RETURNING id`,
+          [accountId, payDate, a.amount, userId, a.invoice_id, `선수금 배분 (인보이스 #${a.invoice_id})`])).rows[0];
+        await c.query(
+          `INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount, txn_id, kind) VALUES ($1,$2,$3,$4,'cash')`,
+          [pid, a.invoice_id, a.amount, txn.id]);
+      }
+
+      // 선수금 잔여 갱신 + 2030 선수금 거래를 배분액만큼 축소(0 이면 소프트 삭제).
+      const left = r2(advance - sum);
+      if (pay.advance_txn_id) {
+        if (left > 0.005) {
+          await c.query(
+            `UPDATE transactions SET amount=$1, amount_mxn=$1, updated_by=$2 WHERE id=$3 AND deleted_at IS NULL`,
+            [left, userId, pay.advance_txn_id]);
+        } else {
+          await c.query(
+            `UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`,
+            [userId, pay.advance_txn_id]);
+        }
+      }
+      await c.query(
+        `UPDATE sales_payments SET advance_amount=$1, advance_txn_id=$2 WHERE id=$3`,
+        [left, left > 0.005 ? pay.advance_txn_id : null, pid]);
+      return { ok: true, applied: sum, advance_left: left, customer_id: Number(pay.customer_id) };
+    });
+    if (out.error) {
+      const code = (out.error === 'not_found') ? 404
+        : (out.error === 'invalid_allocations') ? 409 : 400;
+      return reply.code(code).send(out);
+    }
+    await logEvent({ userId, action: 'update', target: `sales_payment:${pid}`, detail: { advance_applied: out.applied, advance_left: out.advance_left, allocations } });
+    return out;
   });
 
   // 수금 상세: 오픈 인보이스 전체 목록(회사/팀/영업담당자/고객 토글은 프런트에서 그룹·필터)

@@ -100,6 +100,17 @@
       <div id="bdInboxBox"></div>
     </div>
 
+    <!-- 선수금(과입금) 관리 — 배분이 0건이라 인보이스 드릴다운에 안 잡히는 입금건의 유일한 진입점 -->
+    <div class="card" id="advCard" style="display:none">
+      <div class="card-h">선수금(과입금)
+        <span id="advBadge" style="margin-left:8px;background:var(--gold);color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">0</span>
+        <span style="margin-left:auto"><button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="loadAdvances()">새로고침</button></span>
+      </div>
+      <div class="hint" style="margin-bottom:4px">인보이스에 배분되지 않고 <b>남아 있는 입금</b>입니다. 통지 잔여를 선수금으로 확정했거나, 반제(배분)를 지웠는데 선수금이 남은 건이 여기에 모입니다 — 이 건들은 배분이 없어 <b>인보이스 수금내역에는 나타나지 않습니다</b>. 진짜 과입금이면 <b>[인보이스에 배분]</b>으로 미수에 넘기고, 잘못 생긴 건이면 <b>[입금 취소]</b>로 되돌린 뒤 통지 인박스에서 다시 반제하세요.</div>
+      <div id="advBox"></div>
+      <div class="msg" id="advMsg"></div>
+    </div>
+
     <!-- 수금 상세 (오픈 인보이스 / AR) — 최상단 -->
     <div class="card">
       <div class="card-h">수금 상세 — 오픈 인보이스(미수금)
@@ -227,7 +238,7 @@
     if(isFin){ $('varSection').classList.remove('hidden'); renderYearSeg(); load(); }
     else { $('varSection').classList.add('hidden'); }
     loadAr(); loadNc();
-    loadBdInbox(); startBdPolling();
+    loadBdInbox(); startBdPolling(); loadAdvances();
   }
 
   const SRC_BADGE={sales_edit:'b-edit',sales_delete:'b-del',import_cost:'b-imp',import_recost:'b-imp'};
@@ -764,7 +775,7 @@
       const keepId=(!d.deposit_closed && d.deposit_remaining>0.001)?bdCtx&&bdCtx.id:null;
       bdCtx=null;
       renderBdCtxBanner(); renderBdCart();
-      await loadBdInbox();
+      await loadBdInbox(); loadAdvances();
       // 잔여가 남았으면 같은 통지를 계속 선택 상태로 유지 → 바로 다음 인보이스에 이어서 배분.
       if(keepId){ const nx=bdInbox.find(x=>x.id===keepId); if(nx){ bdCtx=nx; renderBdCtxBanner(); } }
       if(arSearchMode){ await doArSearch(); } else { loadAr(); }
@@ -878,10 +889,12 @@
       const r=await fetch(session.api+'/api/ar/allocations/'+allocId,{method:'DELETE',headers:auth()});
       const d=await r.json();
       if(!r.ok||d.error){ m.className='msg err'; m.textContent='삭제 실패: '+(d.error==='not_found'?'대상을 찾을 수 없음':(d.error||r.status)); return; }
-      m.className='msg ok'; m.textContent='수금 건 삭제 완료 · 미수 복구 MX$'+fmt(d.amount);
+      m.className='msg ok'; m.textContent='수금 건 삭제 완료 · 미수 복구 MX$'+fmt(d.amount)
+        +(d.payment_deleted?'':' · 이 입금건에 선수금이 남아 있으면 위 「선수금(과입금)」 카드에서 처리하세요')
+        +(d.deposit_reopened?' · 입금통지가 인박스로 복귀했습니다':'');
       arEditAlloc=null; arHistData={};
       if(arSearchMode){ await doArSearch(); } else { await loadAr(); }
-      await reloadHistIfOpen();
+      await reloadHistIfOpen(); loadBdInbox(); loadAdvances();
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
   async function reloadHistIfOpen(){
@@ -1279,6 +1292,151 @@
     try{ w.focus(); setTimeout(()=>{ try{w.print();}catch(e){} }, 350); }catch(e){}
   }
 
+
+  // ===== 선수금(과입금) 관리 =====
+  // 선수금만 남은 입금건은 배분(allocation)이 0건이라 인보이스 수금내역 드릴다운에 안 뜬다.
+  // 이 카드가 그 건들에 손댈 수 있는 유일한 화면이다.
+  //   [인보이스에 배분] — 진짜 과입금을 미수 인보이스로 넘긴다(현금은 이미 계좌에 있으므로
+  //                       서버가 선수금 2030 거래를 줄이고 매출수금 4010 거래를 만든다 → 잔액 불변).
+  //   [입금 취소]      — 잘못 생긴 건을 통째로 되돌린다(통지가 인박스로 복귀 → 처음부터 재반제).
+  let advItems=[], advOpen=null, advPick={}, advInv={};
+  async function loadAdvances(){
+    const card=$('advCard'), box=$('advBox'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/ar/advances',{headers:auth()}).then(r=>r.json());
+      advItems=(d&&d.items)||[];
+      const badge=$('advBadge'); if(badge) badge.textContent=advItems.length;
+      if(!advItems.length){ if(card)card.style.display='none'; box.innerHTML=''; return; }
+      if(card)card.style.display='';
+      renderAdvances();
+    }catch(e){ if(card)card.style.display=''; box.innerHTML='<div class="hint">선수금 목록을 불러오지 못했습니다.</div>'; }
+  }
+  function renderAdvances(){
+    const box=$('advBox'); if(!box) return;
+    const total=advItems.reduce((s,x)=>s+Number(x.advance_amount||0),0);
+    let h='<table><thead><tr><th>입금일</th><th>고객</th><th>계좌</th><th class="num">입금 총액</th><th class="num">배분됨</th><th class="num">선수금 잔여</th><th>메모</th><th>등록자</th><th></th></tr></thead><tbody>';
+    advItems.forEach(function(x){
+      h+='<tr'+(advOpen===x.id?' style="background:#fdf8ee"':'')+'>'
+        +'<td style="white-space:nowrap">'+esc(x.pay_date||'—')+'</td>'
+        +'<td><b class="notranslate" translate="no">'+esc(x.customer_name||'—')+'</b></td>'
+        +'<td>'+esc(x.account_name||'—')+'</td>'
+        +'<td class="num">'+fmt(x.amount)+'</td>'
+        +'<td class="num" style="color:var(--muted)">'+(x.allocated>0.005?(fmt(x.allocated)+' <span class="hint">('+x.alloc_count+'건)</span>'):'—')+'</td>'
+        +'<td class="num"><b style="color:var(--gold)">'+fmt(x.advance_amount)+'</b></td>'
+        +'<td>'+esc(x.memo||'—')+'</td>'
+        +'<td>'+esc(x.created_by_name||'—')+'</td>'
+        +'<td style="white-space:nowrap">'
+        +(isDirector
+          ? ('<button class="btn" style="padding:4px 10px;font-size:11.5px" onclick="toggleAdvApply('+x.id+')">'+(advOpen===x.id?'닫기':'인보이스에 배분')+'</button> '
+             +'<button class="btn" style="padding:4px 10px;font-size:11.5px;background:#fff;color:var(--expense);border:1px solid var(--line)" onclick="cancelAdvPayment('+x.id+')">입금 취소</button>')
+          : '<span class="hint">디렉터만 처리 가능</span>')
+        +'</td></tr>';
+      if(advOpen===x.id){ h+='<tr><td colspan="9" style="background:#fdf8ee">'+advApplyHtml(x)+'</td></tr>'; }
+    });
+    h+='</tbody><tfoot><tr><td colspan="5" style="text-align:right;font-weight:800">선수금 잔여 합계</td><td class="num"><b style="color:var(--gold)">'+fmt(total)+'</b></td><td colspan="3"></td></tr></tfoot></table>';
+    box.innerHTML=h;
+  }
+  function advApplyHtml(x){
+    const inv=advInv[x.id];
+    if(!inv) return '<div class="hint">이 고객의 미수 인보이스를 불러오는 중…</div>';
+    if(inv.error) return '<div class="hint">미수 인보이스를 불러오지 못했습니다 ('+esc(inv.error)+').</div>';
+    if(!inv.items.length) return '<div class="hint">이 고객은 배분할 미수 인보이스가 없습니다. 잘못 생긴 선수금이면 <b>[입금 취소]</b>로 되돌리세요.</div>';
+    const picked=advPick[x.id]||{};
+    const sum=Object.keys(picked).reduce(function(s,k){return s+Number(picked[k]||0);},0);
+    const left=r2num(Number(x.advance_amount)-sum);
+    const over=sum>Number(x.advance_amount)+0.01;
+    let h='<div style="font-weight:700;margin-bottom:6px">선수금 MX$'+fmt(x.advance_amount)+' 을 <span class="notranslate" translate="no">'+esc(x.customer_name)+'</span> 의 미수 인보이스에 배분</div>'
+      +'<table style="width:auto;min-width:520px"><thead><tr><th style="text-align:left">인보이스(SAT)</th><th>발행일</th><th>만기일</th><th class="num">잔액</th><th class="num">배분액</th></tr></thead><tbody>';
+    inv.items.forEach(function(iv){
+      h+='<tr><td class="notranslate" translate="no" style="text-align:left">'+esc(iv.sat_no||('#'+iv.id))+'</td>'
+        +'<td>'+esc(iv.inv_date||'—')+'</td><td>'+esc(iv.due_date||'—')+'</td>'
+        +'<td class="num">'+fmt(iv.outstanding)+'</td>'
+        +'<td class="num"><input type="number" step="0.01" min="0" style="width:120px;text-align:right" value="'+(picked[iv.id]!=null?picked[iv.id]:'')+'" oninput="setAdvPick('+x.id+','+iv.id+',this.value,'+iv.outstanding+')"></td></tr>';
+    });
+    h+='</tbody></table>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px">'
+        +'<div>배분 합계 <b'+(over?' style="color:var(--expense)"':'')+'>MX$'+fmt(sum)+'</b> / 선수금 <b>MX$'+fmt(x.advance_amount)+'</b></div>'
+        +'<div>배분 후 남는 선수금 <b>MX$'+fmt(Math.max(0,left))+'</b></div>'
+        +(over?'<span class="msg err" style="margin:0;padding:4px 8px">선수금 초과 — 배분을 줄이세요</span>':'')
+        +'<span style="margin-left:auto"></span>'
+        +'<button class="btn"'+((over||sum<=0.005)?' disabled':'')+' onclick="applyAdvance('+x.id+')">배분 저장</button>'
+        +'<button class="btn" style="background:#fff;color:var(--muted);border:1px solid var(--line)" onclick="fillAdvOldest('+x.id+')">오래된 순 자동 채움</button>'
+      +'</div>'
+      +'<div class="hint" style="margin-top:6px">저장하면 인보이스 미수가 그만큼 줄고, 선수금(2030 부채) 거래가 같은 금액만큼 <b>매출수금(4010)</b> 으로 옮겨집니다. <b>계좌 잔액은 변하지 않습니다</b>(이미 들어온 돈이므로).</div>';
+    return h;
+  }
+  async function toggleAdvApply(pid){
+    if(advOpen===pid){ advOpen=null; renderAdvances(); return; }
+    advOpen=pid; renderAdvances();
+    const x=advItems.find(function(v){return v.id===pid;}); if(!x) return;
+    if(!advInv[pid]){
+      try{
+        const d=await fetch(session.api+'/api/ar/open-invoices?customer_id='+x.customer_id,{headers:auth()}).then(r=>r.json());
+        advInv[pid]=(d&&!d.error)?{items:(d.items||[])}:{error:(d&&d.error)||'load_fail'};
+      }catch(e){ advInv[pid]={error:'네트워크 오류'}; }
+      if(advOpen===pid) renderAdvances();
+    }
+  }
+  function setAdvPick(pid,invId,val,outstanding){
+    const n=r2num(Number(val)||0);
+    if(!advPick[pid]) advPick[pid]={};
+    if(n<=0) delete advPick[pid][invId];
+    else advPick[pid][invId]=Math.min(n, r2num(Number(outstanding)));
+    // 입력 중 재렌더하면 포커스가 튀므로 합계 영역만 갱신되도록 전체 재렌더는 다음 tick 에.
+    clearTimeout(window.__advT); window.__advT=setTimeout(renderAdvances,400);
+  }
+  // 오래된 인보이스부터 선수금을 소진시켜 자동으로 채운다(수금 실무 기본값).
+  function fillAdvOldest(pid){
+    const x=advItems.find(function(v){return v.id===pid;}); const inv=advInv[pid];
+    if(!x||!inv||!inv.items) return;
+    let left=r2num(Number(x.advance_amount)); const pick={};
+    inv.items.slice().sort(function(a,b){return String(a.inv_date||'').localeCompare(String(b.inv_date||''));}).forEach(function(iv){
+      if(left<=0.005) return;
+      const take=r2num(Math.min(left, Number(iv.outstanding)));
+      if(take>0.005){ pick[iv.id]=take; left=r2num(left-take); }
+    });
+    advPick[pid]=pick; renderAdvances();
+  }
+  async function applyAdvance(pid){
+    const m=$('advMsg'); m.className='msg';
+    const picked=advPick[pid]||{};
+    const allocations=Object.keys(picked).map(function(k){return {invoice_id:Number(k), amount:Number(picked[k])};}).filter(function(a){return a.amount>0;});
+    if(!allocations.length){ m.className='msg err'; m.textContent='배분할 금액을 입력하세요.'; return; }
+    try{
+      const res=await fetch(session.api+'/api/ar/advances/'+pid+'/apply',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({allocations:allocations})});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        m.className='msg err';
+        m.textContent='배분 실패: '+(d.error==='exceeds_advance'?('배분 합계(MX$'+fmt(d.sum)+')가 선수금(MX$'+fmt(d.advance)+')을 초과합니다.')
+          :(d.error==='no_advance'?'이 입금건에는 남은 선수금이 없습니다.'
+          :(d.detail?JSON.stringify(d.detail):(d.error||res.status))));
+        return;
+      }
+      m.className='msg ok'; m.textContent='선수금 배분 완료 · MX$'+fmt(d.applied)+(d.advance_left>0.005?(' · 남은 선수금 MX$'+fmt(d.advance_left)):' · 선수금 전액 소진');
+      advOpen=null; advPick[pid]={}; delete advInv[pid];
+      await loadAdvances();
+      if(arSearchMode){ await doArSearch(); } else { loadAr(); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+  async function cancelAdvPayment(pid){
+    const x=advItems.find(function(v){return v.id===pid;}); if(!x) return;
+    const m=$('advMsg'); m.className='msg';
+    const warn='이 입금건을 취소합니다.\n\n· 고객: '+(x.customer_name||'')+'\n· 입금 총액: MX$'+fmt(x.amount)
+      +(x.alloc_count>0?('\n· 함께 지워지는 반제: '+x.alloc_count+'건 (MX$'+fmt(x.allocated)+') → 해당 인보이스 미수가 복구됩니다'):'')
+      +'\n· 선수금 MX$'+fmt(x.advance_amount)+' 이 사라집니다'
+      +(x.deposit_id?'\n· 연결된 입금통지는 미배분 인박스로 되돌아갑니다 → 다시 반제하세요':'')
+      +'\n\n진행할까요?';
+    if(!confirm(warn)) return;
+    try{
+      const res=await fetch(session.api+'/api/ar/payments/'+pid,{method:'DELETE',headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='취소 실패: '+(d.error||res.status); return; }
+      m.className='msg ok'; m.textContent='입금 취소 완료 · MX$'+fmt(d.amount)+(d.deposit_reopened?' · 입금통지가 인박스로 복귀했습니다':'');
+      advOpen=null; delete advInv[pid];
+      await loadAdvances(); await loadBdInbox();
+      if(arSearchMode){ await doArSearch(); } else { loadAr(); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
 
   // ===== 미배분 입금 인박스 + 폴링 팝업 =====
   let bdCtx=null, bdCart={}, bdInbox=[], bdPollTimer=null, bdShownIds={};
