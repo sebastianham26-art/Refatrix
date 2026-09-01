@@ -44,6 +44,47 @@ const AR_SETTLED_SQL = `LEFT JOIN (
 // (인보이스 완납 판정의 AR_PAID_EPS 와 같은 취지·같은 값)
 export const BD_REMAIN_EPS = 0.5;
 
+// 인보이스 「매출 입금예정」(AR plan 거래) 을 현재 미수 잔액에 맞춘다.
+//   인보이스 발행 시 총액으로 만들어지는 plan 거래(kind='invoice', status='plan', 계좌 미지정)는
+//   지금까지 반제해도 줄지 않아, **완납된 인보이스의 수금예정이 거래목록에 그대로 남아 있었다**
+//   (예: RECAR folio 31 완납인데 24,004.53 예정이 계속 표시 — 디렉터 보고 2026-09-01).
+//   /api/cashflow 는 조회 시점에 보정했지만(2026-08-06) 거래목록·예정 내역은 원본을 보여주므로
+//   "완납인데 돈이 떠 있는" 것처럼 읽혔다. 이제 반제/취소 때마다 원본을 맞춘다.
+//
+//   · 잔액 < AR_PLAN_EPS  → 예정을 **소프트 삭제**(deleted_at). 반제를 되돌리면 다시 살아난다.
+//   · 잔액이 남으면       → 예정 금액을 **잔액으로** 갱신(삭제됐던 건 되살림).
+//   ※ 소프트 삭제라 sales_invoices.txn_id FK 는 그대로. plan_amount 는 건드리지 않는다
+//     (AR 예정은 애초에 plan_amount 가 NULL 이라 계획대비실적 계획선에 잡히지 않는다 — 영향 없음).
+const AR_PLAN_EPS = 0.5;   // 완납 판정과 같은 취지의 허용치(화면 표시 반올림 기준)
+export async function syncArPlanTxn(c, invoiceId) {
+  const invId = Number(invoiceId);
+  if (!Number.isInteger(invId) || invId <= 0) return null;
+  const inv = (await c.query(
+    `SELECT si.id, si.total_mxn, si.status, si.deleted_at, COALESCE(pa.paid,0) AS paid
+       FROM sales_invoices si
+       LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations WHERE invoice_id=$1 GROUP BY invoice_id) pa
+              ON pa.invoice_id=si.id
+      WHERE si.id=$1`, [invId])).rows[0];
+  if (!inv) return null;
+  const live = inv.status === 'posted' && inv.deleted_at == null;
+  const outstanding = live ? r2(Number(inv.total_mxn) - Number(inv.paid)) : 0;
+  const plan = (await c.query(
+    `SELECT id, deleted_at FROM transactions
+      WHERE sales_invoice_id=$1 AND status='plan' AND kind='invoice'
+      ORDER BY id LIMIT 1`, [invId])).rows[0];
+  if (!plan) return null;
+  if (outstanding < AR_PLAN_EPS) {
+    if (plan.deleted_at == null) {
+      await c.query(`UPDATE transactions SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, [plan.id]);
+      return { invoice_id: invId, plan_id: Number(plan.id), action: 'closed', outstanding };
+    }
+    return { invoice_id: invId, plan_id: Number(plan.id), action: 'already_closed', outstanding };
+  }
+  await c.query(
+    `UPDATE transactions SET amount=$1, amount_mxn=$1, deleted_at=NULL WHERE id=$2`, [outstanding, plan.id]);
+  return { invoice_id: invId, plan_id: Number(plan.id), action: plan.deleted_at ? 'reopened' : 'reduced', outstanding };
+}
+
 // 통지 소진액 되돌리기 — 반제(또는 배분 1건)를 삭제할 때 통지를 그만큼 열어준다.
 //   amount 만큼 allocated_amount 를 줄이고 status 를 pending 으로 되돌린다.
 //   removeLink=true 면 링크행 삭제(반제 헤더 자체가 사라질 때), false 면 링크 금액만 차감.
@@ -939,6 +980,8 @@ export default async function financeRoutes(app) {
            VALUES ($1,$2,$3,$4,$5)`,
           [pay.id, receipt.name, receipt.mime, receipt.data, userId]);
       }
+      // 배분한 인보이스의 「매출 입금예정」을 잔액에 맞춘다(완납이면 예정 소멸).
+      for (const a of allocations) await syncArPlanTxn(c, a.invoice_id);
       // 통지 ↔ 반제 링크(한 통지 : 여러 반제). 부분 배분을 몇 번 하든 이력이 남는다.
       await c.query(
         `INSERT INTO bank_deposit_payments (deposit_id, payment_id, amount, created_by)
@@ -1331,6 +1374,7 @@ export default async function financeRoutes(app) {
           [pid, a.invoice_id, a.amount, txn.id]);
       }
 
+      for (const a of allocations) await syncArPlanTxn(c, a.invoice_id);
       // 선수금 잔여 갱신 + 2030 선수금 거래를 배분액만큼 축소(0 이면 소프트 삭제).
       const left = r2(advance - sum);
       if (pay.advance_txn_id) {
@@ -1506,6 +1550,8 @@ export default async function financeRoutes(app) {
       if (pay.advance_txn_id) await c.query(`UPDATE transactions SET deleted_at=now(), updated_by=$1 WHERE id=$2 AND deleted_at IS NULL`, [userId, pay.advance_txn_id]);
       await c.query(`DELETE FROM sales_payment_allocations WHERE payment_id=$1`, [pid]);
       await c.query(`DELETE FROM sales_payment_docs WHERE payment_id=$1`, [pid]);
+      // 되살아난 미수만큼 「매출 입금예정」도 복구한다(완납으로 지워졌던 예정이 다시 선다).
+      for (const a of allocs) await syncArPlanTxn(c, a.invoice_id);
       // 통지 연동 반제면 이 반제가 통지에서 소진한 금액만큼 통지를 다시 열어준다(부분 배분 지원).
       // bank_deposits_pending.payment_id FK가 sales_payments를 참조하므로 먼저 끊지 않으면
       // 헤더 DELETE가 FK 위반(삭제 500의 원인) → bdReleaseAmount 가 payment_id 도 함께 정리한다.
@@ -1555,6 +1601,7 @@ export default async function financeRoutes(app) {
         // 이 배분만큼 통지 잔여를 되돌린다(반제 헤더는 남아 있으므로 링크 금액만 차감).
         deposit_reopened = await bdReleaseAmount(c, al.payment_id, r2(Number(al.amount)), false);
       }
+      await syncArPlanTxn(c, al.invoice_id);
       return { ok: true, invoice_id: Number(al.invoice_id), amount: r2(Number(al.amount)), payment_deleted, deposit_reopened };
     });
     if (out.error) return reply.code(out.error === 'not_found' ? 404 : 400).send(out);
@@ -1598,6 +1645,7 @@ export default async function financeRoutes(app) {
       await c.query(`UPDATE sales_payment_allocations SET amount=$1 WHERE id=$2`, [newAmount, aid]);
       if (al.txn_id) await c.query(`UPDATE transactions SET amount=$1, amount_mxn=$1, txn_date=$2, account_id=$3, updated_by=$4 WHERE id=$5`, [newAmount, newDate, newAcc, userId, al.txn_id]);
       await c.query(`UPDATE sales_payments SET amount=$1, pay_date=$2, account_id=$3, memo=$4 WHERE id=$5`, [newAmount, newDate, newAcc, newMemo, al.payment_id]);
+      await syncArPlanTxn(c, al.invoice_id);
       return { ok: true, invoice_id: Number(al.invoice_id), amount: newAmount };
     });
     if (out.error) {

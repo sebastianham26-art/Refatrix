@@ -2,6 +2,7 @@ import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { validateReceiptDataUrl } from '../ar.js';
+import { syncArPlanTxn } from './financeRoutes.js';
 
 const IVA = 0.16;
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
@@ -194,6 +195,7 @@ export default async function notaCreditoRoutes(app) {
          VALUES (NULL,$1,$2,NULL,'nota_credito',$3)`,
         [Number(nc.invoice_id), total, id]);
       await c.query(`UPDATE notas_credito SET status='applied', applied_at=now() WHERE id=$1`, [id]);
+      await syncArPlanTxn(c, Number(nc.invoice_id));   // NC 로 완납되면 매출 입금예정도 정리
       const after = await outstandingOf(c, Number(nc.invoice_id));
       return { id, applied: total, invoice_outstanding: after.outstanding, paid_full: after.outstanding <= 0.005 };
     });
@@ -213,6 +215,7 @@ export default async function notaCreditoRoutes(app) {
       // 적용된 경우: 비현금 배분 제거 → 잔액 복원(완납이었으면 다시 미수로)
       await c.query(`DELETE FROM sales_payment_allocations WHERE nc_id=$1`, [id]);
       await c.query(`UPDATE notas_credito SET status='void', voided_by=$2, voided_at=now() WHERE id=$1`, [id, userId]);
+      await syncArPlanTxn(c, Number(nc.invoice_id));   // 잔액이 되살아나면 예정도 복구
       const after = await outstandingOf(c, Number(nc.invoice_id));
       return { id, invoice_outstanding: after.outstanding };
     });
@@ -232,6 +235,7 @@ export default async function notaCreditoRoutes(app) {
       await c.query(`DELETE FROM sales_payment_allocations WHERE nc_id=$1`, [id]);
       // 증빙 문서(nota_credito_docs는 ON DELETE CASCADE) + NC 헤더 삭제
       await c.query(`DELETE FROM notas_credito WHERE id=$1`, [id]);
+      await syncArPlanTxn(c, Number(nc.invoice_id));   // 잔액이 되살아나면 예정도 복구
       const after = await outstandingOf(c, Number(nc.invoice_id));
       return { id, invoice_outstanding: after.outstanding };
     });
