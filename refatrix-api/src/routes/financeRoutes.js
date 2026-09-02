@@ -6,6 +6,7 @@ import { visibleTeamIds, canViewTeam } from '../teams.js';
 import { logEvent } from '../audit.js';
 import { getUsdMxnRate, getUsdKrwRate, getFxHistory, getRateForDate, getFxRange } from '../fx.js';
 import { allocateOldestFirst, validateAllocations } from '../settlement.js';
+import { nextReceiptNo } from '../receiptNo.js';   // 영수증 번호 다음번호 제안(순수 함수)
 
 // 운반비 인보이스 균등 분할(순수) — n등분하되 마지막 항이 반올림 잔액을 흡수해 합계 = total 보장.
 //   예: splitEqual(100, 3) → [33.33, 33.33, 33.34]
@@ -525,18 +526,6 @@ export default async function financeRoutes(app) {
     else if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
     if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
-    // ===== 페이지네이션 (2026-09-02) =====
-    // 예전엔 LIMIT 200 고정이라, 건수가 많은 조건(예: 전체 계좌)에서 최신 200건에 밀려
-    // 과거 거래(6월분 등)가 **화면에서 통째로 사라진 것처럼** 보였다. 프런트의 [더 보기]가
-    // offset 을 올려 이어받도록 limit/offset 을 받는다.
-    //  · 파라미터를 안 주면 기존과 100% 동일(첫 200건) — 하위호환.
-    //  · has_more 는 limit+1 건을 떠서 판정한 뒤 잘라낸다(별도 COUNT 쿼리 없이).
-    //  · ORDER BY (txn_date DESC, id DESC) 가 유일키를 포함하므로 offset 페이징이 안정적이다.
-    const TXN_PAGE_MAX = 500;
-    const limit = Math.min(Math.max(parseInt(q.limit, 10) || 200, 1), TXN_PAGE_MAX);
-    const offset = Math.max(parseInt(q.offset, 10) || 0, 0);
-    args.push(limit + 1); const pLimit = args.length;
-    args.push(offset); const pOffset = args.length;
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
@@ -553,11 +542,8 @@ export default async function financeRoutes(app) {
          LEFT JOIN customers c ON c.id=si.customer_id
          LEFT JOIN customers fc ON fc.id=t.customer_id
         WHERE ${cond.join(' AND ')}
-        ORDER BY t.txn_date DESC, t.id DESC LIMIT $${pLimit} OFFSET $${pOffset}`, args)).rows;
-    const hasMore = rows.length > limit;
-    if (hasMore) rows.length = limit;
-    return { limit, offset, has_more: hasMore,
-      items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+        ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
+    return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       freight_alloc_n: Number(t.freight_alloc_n || 0),
@@ -569,7 +555,7 @@ export default async function financeRoutes(app) {
   });
 
   // ===== 거래목록 엑셀 내보내기 — 디렉터 전용 (2026-08-26) =====
-  // 화면 목록(/api/transactions)은 200건씩 페이징이라 "지금까지 불러온 것만" 받는다.
+  // 화면 목록(/api/transactions)은 LIMIT 200 이라 "보이는 것만" 받는다.
   // 내보내기는 **필터에 걸린 전부**를 줘야 하므로 별도 엔드포인트로 분리한다.
   //  · 같은 필터(status·direction·account_id[=none]·from·to)를 그대로 받는다.
   //  · 디렉터 전용(requireDirector) — 계좌 권한·비공개 필터가 필요 없다(디렉터는 전부 열람).
@@ -620,6 +606,60 @@ export default async function financeRoutes(app) {
       detail: { count: items.length, truncated, filter: { status: q.status || null, direction: q.direction || null,
         account_id: q.account_id || null, from: q.from || null, to: q.to || null } } });
     return { count: items.length, truncated, cap: CAP, generated_at: new Date().toISOString(), items };
+  });
+
+  // ===== 영수증 번호 「다음 번호」 제안 (2026-08-31) =====
+  // 거래등록에서 영수증 번호를 넣을 때마다 지난 번호를 찾아야 하던 수고를 없앤다.
+  //  · 기준(디렉터 확인 2026-08-31): **가장 최근에 등록된**(created_at DESC, id DESC) 영수증 번호 1건.
+  //    → 그 번호의 맨 뒤 숫자 덩어리 +1 = 제안값(`nextReceiptNo`, 순수 함수라 테스트로 고정).
+  //  · 번호 자체는 **전체 거래 기준**이다. 사내 연번이라 계좌 권한으로 모수를 끊으면 번호가 어긋난다.
+  //    다만 그 거래의 **맥락(계좌·계정과목·메모·등록자)** 은 거래목록과 같은 가시성 규칙을 적용해
+  //    볼 권한이 없으면 내려주지 않는다(`visible:false` → 화면은 번호만 보여준다).
+  //  · 숫자가 없는 번호(예: `FACTURA`)는 건너뛰고 다음 후보를 본다(최근 30건까지 훑음).
+  //  · 제안일 뿐이다 — 저장은 화면에서 사람이 확인·수정한 값으로 한다. 중복 검사는 하지 않는다
+  //    (공급처 팩투라 번호가 섞여 들어오는 자유 텍스트 필드라 유일성을 강제할 수 없다).
+  app.get('/api/transactions/receipt-next', { preHandler: [authGuard, requirePage('transactions')] }, async (req) => {
+    const rows = (await query(
+      `SELECT t.id, t.receipt_no, t.txn_date, t.created_at, t.account_id, t.is_private,
+              a.name AS account_name, cat.name AS category_name, t.memo, u.name AS created_by_name
+         FROM transactions t
+         LEFT JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN categories cat ON cat.code=t.category_code
+         LEFT JOIN users u ON u.id=t.created_by
+        WHERE t.deleted_at IS NULL AND t.receipt_no IS NOT NULL AND btrim(t.receipt_no) <> ''
+        ORDER BY t.created_at DESC, t.id DESC LIMIT 30`)).rows;
+
+    // 숫자를 못 찾는 번호는 건너뛴다 — 그런 값 하나 때문에 제안이 멈추면 안 된다.
+    let last = null, suggest = null;
+    for (const r of rows) {
+      const s = nextReceiptNo(r.receipt_no);
+      if (s) { last = r; suggest = s; break; }
+    }
+    if (!last) return { suggest: null, last: null, skipped: rows.length };
+
+    // 맥락 노출 여부 — /api/transactions 목록과 같은 규칙(계좌 열람권한·세부차단·비공개).
+    const allow = allowedDetailAccountIds(req.ctx.perm);
+    const block = blockedDetailAccountIds(req.ctx.perm);
+    const accId = last.account_id == null ? null : Number(last.account_id);
+    const visible =
+      (accId == null || allow === null || allow.includes(accId)) &&
+      (accId == null || !block.includes(accId)) &&
+      (req.ctx.perm.role === 'director' || !last.is_private);
+
+    return {
+      suggest,
+      last: {
+        receipt_no: last.receipt_no,
+        txn_date: last.txn_date,
+        created_at: last.created_at,
+        visible,
+        account_name: visible ? (last.account_name || null) : null,
+        category_name: visible ? (last.category_name || null) : null,
+        memo: visible ? (last.memo || null) : null,
+        created_by_name: visible ? (last.created_by_name || null) : null,
+      },
+      skipped: rows.indexOf(last),   // 숫자가 없어 건너뛴 최근 건수(참고용)
+    };
   });
 
   // 운반비 인보이스 배분 내역(거래 드릴다운) — 거래 1건의 균등 배분 결과.

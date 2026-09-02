@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 재무 · build fin-0902a</title>
+<title>Refatrix ERP · 재무 · build fin-0902r</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -200,6 +200,8 @@
       </div>
       <div class="row"><div style="flex:3"><label>메모</label><input id="t-memo" type="text"></div>
         <div style="flex:2"><label>영수증 번호</label><input id="t-receipt" type="text" placeholder="예: A-12345 / Factura 번호"></div></div>
+      <!-- 영수증 번호 제안 근거 (fin-0831a) — 직전 번호 +1 을 위 칸에 미리 채우고 그 근거를 여기 보여준다 -->
+      <div class="hint" id="t-rcpt-hint" style="margin-top:2px"></div>
       <div id="t-custRow" style="display:none;margin-top:2px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfaf6">
         <style>
           #t-custRow .fi-selbox{border:1.5px solid var(--brand);border-radius:8px;background:#f7faf8;padding:9px 12px;margin:10px 0}
@@ -337,7 +339,7 @@
         <div><label>시작일</label><input id="f-from" type="date"></div>
         <div><label>종료일</label><input id="f-to" type="date"></div>
         <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="f-go">조회</button></div>
-        <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="txn-xls" style="display:none" title="지금 필터에 걸린 거래 전부를 엑셀로 내려받습니다 (화면은 200건씩 나눠 보여 주지만 엑셀은 한 번에 전부 · 디렉터 전용)">⬇ 엑셀</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn ghost sm" id="txn-xls" style="display:none" title="지금 필터에 걸린 거래 전부를 엑셀로 내려받습니다 (화면의 200건 제한과 무관 · 디렉터 전용)">⬇ 엑셀</button></div>
         <div style="display:flex;align-items:flex-end"><button class="btn sm" id="cashDueBtn" style="display:none;background:#fdf3d7;color:#8a6410;border:1px solid #e8d29a">💰 현금받아야함 <span id="cashDueCnt"></span></button></div>
       </div>
       <div id="cashDueBox" class="hidden" style="border:2px solid #e8d29a;border-radius:10px;background:#fffdf6;padding:14px;margin:0 0 12px"></div>
@@ -351,7 +353,6 @@
       </div>
       <div id="txnSummary" class="hint" style="margin:0 0 6px"></div>
       <div id="txnBody"><div class="hint">불러오는 중…</div></div>
-      <div id="txnMore" style="margin:10px 0 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
     </div>
 
     <!-- 반제(입금) -->
@@ -1095,6 +1096,45 @@
     }
   }
 
+  // ===== 영수증 번호 「다음 번호」 자동 제안 (fin-0831a) =====
+  // 거래등록 탭을 열 때와 등록 직후에, 서버가 알려준 「가장 최근 영수증 번호 +1」을 칸에 미리 채운다.
+  // 원칙: **사람이 손댄 값은 절대 덮어쓰지 않는다.** 우리가 채운 값(rcptAuto)과 같을 때만 갱신한다.
+  //       칸을 비워두거나 다른 번호로 고치면 그 값 그대로 등록된다(제안은 강제가 아니다).
+  let rcptAuto=null;                       // 우리가 자동으로 채워 넣은 값
+  let rcptLast=null;                       // 서버가 알려준 직전 영수증 정보(근거 표시용)
+  function rcptHintHtml(mode){
+    const L=rcptLast||{};
+    const re=' <a href="#" id="t-rcpt-re" style="color:var(--brand)">↻ 다시 제안</a>';
+    if(mode==='manual')return '<span style="color:var(--muted)">직접 입력한 번호로 등록됩니다.</span>'+re;
+    if(mode==='empty')return '<span style="color:var(--muted)">영수증 번호 없이 등록됩니다.</span>'+re;
+    if(mode==='none')return '<span style="color:var(--muted)">직전 영수증 번호를 찾지 못해 제안하지 않았습니다. 직접 입력하세요.</span>'+re;
+    const d=L.txn_date?String(L.txn_date).slice(5,10).replace('-','/'):'';
+    const ctx=[L.category_name,L.memo].filter(Boolean).join(' · ').slice(0,40);
+    const src=L.visible===false?' <span style="color:var(--muted)">(권한 밖 계좌의 거래라 내용은 표시하지 않습니다)</span>':'';
+    return `직전 <b>${escH(L.receipt_no||'')}</b>${d?` <span style="color:var(--muted)">(${d}${ctx?' · '+escH(ctx):''})</span>`:''}${src} 다음 번호를 넣어 뒀습니다 — <b>그대로 두면 이 번호로 등록</b>됩니다. 고치거나 지워도 됩니다.`+re;
+  }
+  function paintRcptHint(mode){
+    const hint=$('t-rcpt-hint'); if(!hint)return;
+    hint.innerHTML=rcptHintHtml(mode);
+    const a=$('t-rcpt-re');
+    if(a)a.addEventListener('click',e=>{e.preventDefault();$('t-receipt').value='';rcptAuto=null;loadRcptSuggest();});
+  }
+  async function loadRcptSuggest(){
+    const inp=$('t-receipt'),hint=$('t-rcpt-hint'); if(!inp||!hint)return;
+    const cur=inp.value.trim();
+    if(cur&&cur!==rcptAuto){paintRcptHint('manual');return;}   // 사람이 쓴 값 — 건드리지 않는다
+    try{
+      const res=await fetch(session.api+'/api/transactions/receipt-next',{headers:auth()});
+      if(!res.ok){hint.innerHTML='';return;}                   // 404(백엔드 미배포)·403 → 조용히 숨김
+      const d=await res.json();
+      const now=inp.value.trim();
+      if(now&&now!==rcptAuto){paintRcptHint('manual');return;}  // 응답 기다리는 사이 타이핑했으면 양보
+      if(!d||!d.suggest){rcptLast=null;rcptAuto=null;paintRcptHint('none');return;}
+      inp.value=d.suggest;rcptAuto=d.suggest;rcptLast=d.last||{};
+      paintRcptHint('ok');
+    }catch(e){hint.innerHTML='';}
+  }
+
   async function saveTxn(){
     const m=$('newMsg');m.className='msg';
     const amt=Number($('t-amt').value)||0;
@@ -1118,6 +1158,7 @@
       m.textContent=d.approved?('거래 등록 완료 (반영됨). MXN '+fmt(d.amount_mxn)):('거래 등록됨 — 디렉터 승인 후 잔액에 반영됩니다. MXN '+fmt(d.amount_mxn));
       $('t-amt').value='';$('t-memo').value='';$('t-receipt').value='';$('t-fx').value='';$('t-cashdue').checked=false;
       $('t-cust').value='';resetTxInv();previewTxn();
+      rcptAuto=null;loadRcptSuggest();      // 방금 등록한 번호 기준으로 다음 번호를 다시 채운다 (fin-0831a)
       await loadAccounts();
     }catch(e){m.className='msg err';m.textContent='서버 연결 실패';}
     finally{$('t-save').disabled=false;$('t-save').textContent='거래 등록';}
@@ -1299,74 +1340,33 @@
   let txnMap={};
   let txnItems=[];                      // 거래목록 원본(백엔드 순서 보존)
   let txnSort={key:null,dir:1};         // 정렬 상태: key=null이면 기본순서, dir 1=오름 -1=내림
-  // ===== 거래목록 페이지네이션 (fin-0902a) =====
-  // 예전엔 서버가 LIMIT 200 고정이라, 전체 계좌처럼 건수가 많은 조건에서 최신 200건에 밀려
-  // 과거 거래(예: 6월분)가 **아예 없는 것처럼** 보였다(계좌를 좁히면 보이던 이유).
-  // 이제 [더 보기]로 offset 을 올려 200건씩 이어붙인다.
-  const TXN_PAGE=200;
-  let txnPage={offset:0,hasMore:false,loading:false,legacy:false,tot:{pin:0,pout:0,ain:0,aout:0}};
-
-  function txnResetPage(){ txnPage={offset:0,hasMore:false,loading:false,legacy:false,tot:{pin:0,pout:0,ain:0,aout:0}}; }
-
-  // 요약줄 — 합계·건수는 **지금까지 불러온 범위** 기준.
-  function txnRenderSummary(){
-    const t=txnPage.tot;
-    const accSel=$('f-acc').value;
-    const accName=!accSel?'전체 계좌':(accSel==='none'?'계좌 미지정 (마케팅·수금 계획)'
-      :((accounts.find(a=>String(a.id)===accSel)||{}).name||'선택 계좌'));
-    const more=txnPage.hasMore
-      ? ` · <span style="color:var(--expense)"><b>${txnItems.length}건</b> 표시 — 더 있습니다(아래 [더 보기])</span>`
-      : ` · <b>${txnItems.length}건</b> 전부 표시`;
-    $('txnSummary').innerHTML=`<b>${accName}</b> · 실적 수입 <span style="color:var(--income)">${fmt(t.ain)}</span> / 지출 <span style="color:var(--expense)">${fmt(t.aout)}</span> · 예정 수입 <span style="color:var(--income)">${fmt(t.pin)}</span> / 지출 <span style="color:var(--expense)">${fmt(t.pout)}</span> (MXN)${more}`;
-  }
-
-  function txnRenderMore(){
-    const box=$('txnMore'); if(!box)return;
-    if(txnPage.loading&&txnPage.offset>0){ box.innerHTML='<span class="hint" style="margin:0">더 불러오는 중…</span>'; return; }
-    if(txnPage.legacy){ box.innerHTML='<span class="hint" style="margin:0">이 목록은 최신 200건까지만 보여 줍니다(백엔드 미배포). 과거 거래는 <b>기간</b> 필터로 조회하세요.</span>'; return; }
-    if(!txnPage.hasMore){ box.innerHTML=''; return; }
-    box.innerHTML='<button class="btn ghost sm" id="txn-more">▼ 더 보기 (다음 '+TXN_PAGE+'건)</button>'
-      +'<span class="hint" style="margin:0">현재 '+txnItems.length+'건 · 정렬·합계·전체선택은 <b>불러온 범위</b> 기준입니다. 특정 기간만 볼 땐 위 기간 필터가 빠릅니다.</span>';
-    $('txn-more').onclick=()=>loadTxns(true);
-  }
-
-  async function loadTxns(append){
-    const b=$('txnBody');
-    if(txnPage.loading)return;
-    if(!append){
-      txnResetPage(); txnItems=[]; txnMap={};
-      b.innerHTML='<div class="hint">불러오는 중…</div>';
-      if($('txn-xls'))$('txn-xls').style.display=isDirector()?'':'none';   // 엑셀 내보내기 — 디렉터 전용
-      if(isDirector()){ $('cashDueBtn').style.display=''; loadCashDue(false);
-        $('t-approval-hint').textContent='디렉터 등록은 승인 없이 즉시 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.'; }
-    }
-    txnPage.loading=true; txnRenderMore();
-    const p=txnFilterQS();
-    p.set('limit',String(TXN_PAGE));
-    p.set('offset',String(txnPage.offset));
+  async function loadTxns(){
+    const b=$('txnBody');b.innerHTML='<div class="hint">불러오는 중…</div>';
+    if($('txn-xls'))$('txn-xls').style.display=isDirector()?'':'none';   // 엑셀 내보내기 — 디렉터 전용
+    if(isDirector()){ $('cashDueBtn').style.display=''; loadCashDue(false);
+      $('t-approval-hint').textContent='디렉터 등록은 승인 없이 즉시 반영됩니다. USD 거래는 ‘예정’이면 오늘 환율로 예상 MXN을, ‘실제’면 입력 환율로 확정 MXN을 기록합니다.'; }
+    const p=new URLSearchParams();
+    if($('f-status').value)p.set('status',$('f-status').value);
+    if($('f-dir').value)p.set('direction',$('f-dir').value);
+    if($('f-acc').value)p.set('account_id',$('f-acc').value);
+    if($('f-from').value)p.set('from',$('f-from').value);
+    if($('f-to').value)p.set('to',$('f-to').value);
     try{
-      const d=await fetch(session.api+'/api/transactions?'+p.toString(),{headers:auth()}).then(r=>r.json());
-      const items=d.items||[];
-      // 구백엔드 폴백: limit/offset·has_more 를 모르는 버전이면 offset 을 무시하고 같은 200건을 다시 준다.
-      // → 더보기를 끄고 기간 필터를 안내한다(무한 중복 방지).
-      txnPage.legacy=(d.has_more===undefined);
-      // 요약: 예정/실적 × 수입/지출 합계(MXN) — 페이지마다 누적
-      const tt=txnPage.tot;
+      const items=(await fetch(session.api+'/api/transactions?'+p.toString(),{headers:auth()}).then(r=>r.json())).items||[];
+      // 요약: 예정/실적 × 수입/지출 합계(MXN)
+      let pin=0,pout=0,ain=0,aout=0;
       items.forEach(t=>{const mxn=t.currency==='USD'&&t.status==='plan'?t.amount*(fxRate||t.fx_rate):t.amount_mxn;
-        if(t.status==='plan'){t.direction==='in'?tt.pin+=mxn:tt.pout+=mxn;}else{t.direction==='in'?tt.ain+=mxn:tt.aout+=mxn;}});
-      items.forEach(t=>{txnMap[t.id]=t;});
-      txnItems=append?txnItems.concat(items):items;
-      txnPage.offset+=items.length;
-      txnPage.hasMore=txnPage.legacy?false:!!d.has_more;
-      txnRenderSummary();
-      if(!txnItems.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';txnSyncSelUi();return;}
-      { const live=new Set(txnItems.map(t=>Number(t.id))); [...txnSel].forEach(id=>{if(!live.has(id))txnSel.delete(id);}); }
+        if(t.status==='plan'){t.direction==='in'?pin+=mxn:pout+=mxn;}else{t.direction==='in'?ain+=mxn:aout+=mxn;}});
+      const accSel=$('f-acc').value;
+      const accName=!accSel?'전체 계좌':(accSel==='none'?'계좌 미지정 (마케팅·수금 계획)'
+        :((accounts.find(a=>String(a.id)===accSel)||{}).name||'선택 계좌'));
+      $('txnSummary').innerHTML=`<b>${accName}</b> · 실적 수입 <span style="color:var(--income)">${fmt(ain)}</span> / 지출 <span style="color:var(--expense)">${fmt(aout)}</span> · 예정 수입 <span style="color:var(--income)">${fmt(pin)}</span> / 지출 <span style="color:var(--expense)">${fmt(pout)}</span> (MXN)`;
+      if(!items.length){b.innerHTML='<div class="hint">거래가 없습니다.</div>';txnItems=[];txnSyncSelUi();return;}
+      txnMap={};items.forEach(t=>txnMap[t.id]=t);
+      txnItems=items;
+      { const live=new Set(items.map(t=>Number(t.id))); [...txnSel].forEach(id=>{if(!live.has(id))txnSel.delete(id);}); }
       renderTxnTable();
-    }catch(e){
-      if(append)alert('추가 조회에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-      else b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';
-    }
-    finally{ txnPage.loading=false; txnRenderMore(); }
+    }catch(e){b.innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
 
   // ===== 거래목록 정렬 =====
@@ -1530,7 +1530,7 @@
   }
 
   // ===== 거래목록 엑셀 내보내기 (디렉터 전용) =====
-  // 화면 목록은 200건씩 나눠 받지만([더 보기]), 내보내기는 서버의 /api/transactions/export 로
+  // 화면 목록은 LIMIT 200 이지만, 내보내기는 서버의 /api/transactions/export 로
   // **지금 필터에 걸린 전부**를 받아서 만든다(상한 20,000행).
   function txnFilterQS(){
     const p=new URLSearchParams();
@@ -4475,7 +4475,7 @@
     $('fxCard').classList.toggle('hidden',w!=='fx');
     $('reportCard').classList.toggle('hidden',w!=='report');
     $('apprCard').classList.toggle('hidden',w!=='approve');
-    if(w==='new'){loadPendingPlans();loadBdp();}
+    if(w==='new'){loadPendingPlans();loadBdp();loadRcptSuggest();}
     if(w==='txn')loadTxns();
     if(w==='pay'){loadArView();}
     if(w==='fixed'){loadFixed();loadFixedMonthly();loadVariance();}
@@ -4499,6 +4499,10 @@
   $('txnBackAcc').addEventListener('click',()=>{ $('f-acc').value=''; $('f-status').value=''; $('f-dir').value=''; showTab('acc'); });
   $('cashDueBtn').addEventListener('click',()=>{ const box=$('cashDueBox'); if(box.classList.contains('hidden'))loadCashDue(true); else box.classList.add('hidden'); });
   $('t-dir').addEventListener('change',()=>{ $('t-cashdue-row').style.display = $('t-dir').value==='out' ? '' : 'none'; if($('t-dir').value!=='out')$('t-cashdue').checked=false; });
+  // 영수증 번호를 사람이 고치는 순간 "제안" 안내를 "직접 입력"으로 바꾼다 (fin-0831a)
+  $('t-receipt').addEventListener('input',()=>{ const v=$('t-receipt').value.trim();
+    if(v===rcptAuto&&rcptLast){paintRcptHint('ok');return;}
+    paintRcptHint(v?'manual':'empty'); });
   $('pp-filter-toggle').addEventListener('click',()=>{
     const p=$('pp-filter-panel'); p.classList.toggle('hidden');
     $('pp-filter-toggle').textContent='연·월 필터 '+(p.classList.contains('hidden')?'▾':'▴');
@@ -4658,16 +4662,15 @@
   $('bi-tpl').addEventListener('click',biTemplate);
   $('bi-check').addEventListener('click',biParse);
   $('bi-submit').addEventListener('click',biSubmit);
-  // ⚠ 이벤트 객체가 loadTxns(append) 로 넘어가면 '이어붙이기'로 오작동한다 — 반드시 인자 없이 호출.
-  $('f-go').addEventListener('click',()=>loadTxns());
+  $('f-go').addEventListener('click',loadTxns);
   $('txn-xls').addEventListener('click',downloadTxnExcel);
   $('txn-sel-visible').addEventListener('click',()=>txnSelectVisible(true,false));
   $('txn-sel-overdue').addEventListener('click',()=>txnSelectVisible(true,true));
   $('txn-sel-clear').addEventListener('click',()=>{txnSel=new Set();renderTxnTable();});
   $('txn-del-sel').addEventListener('click',()=>txnDeletePlans([...txnSel]));
-  $('f-acc').addEventListener('change',()=>loadTxns());
-  $('f-status').addEventListener('change',()=>loadTxns());
-  $('f-dir').addEventListener('change',()=>loadTxns());
+  $('f-acc').addEventListener('change',loadTxns);
+  $('f-status').addEventListener('change',loadTxns);
+  $('f-dir').addEventListener('change',loadTxns);
   ['t-cur','t-amt','t-fx','t-status'].forEach(id=>$(id).addEventListener('input',previewTxn));
   $('t-dir').addEventListener('change',refreshCatOptions);
   $('t-cat').addEventListener('change',updateTxCustRow);
