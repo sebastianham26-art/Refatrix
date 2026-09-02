@@ -572,5 +572,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260901claim loaded (0193 · RFC 선택 입력 + RFC 입력시점 선점/이관 + SYD 단가 필수 + 전원 디렉터 승인)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260901claimb loaded (0193 · RFC 선택 입력 + RFC 입력시점 선점/이관 + SYD 단가 필수 + 전원 디렉터 승인)'); }catch(e){}
 })();

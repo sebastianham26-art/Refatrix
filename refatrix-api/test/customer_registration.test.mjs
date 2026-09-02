@@ -454,9 +454,9 @@ test('E7. 견적·현장조사에서 "자동 등록" 안내 문구가 사라졌�
 });
 
 test('E8. 빌드 마커가 올라갔다(하드 리프레시 확인용)', () => {
-  assert.ok(custform.includes('v20260901claim'));
-  assert.ok(custHtml.includes('refatrix-custform.js?v=20260901claim'), 'custform 캐시버스터 동기화');
-  assert.ok(custHtml.includes('claim-0901a'));
+  assert.ok(custform.includes('v20260901claimb'));
+  assert.ok(custHtml.includes('refatrix-custform.js?v=20260901claimb'), 'custform 캐시버스터 동기화');
+  assert.ok(custHtml.includes('claim-0901b'));
 });
 
 test('E9. 화면 문구가 "RFC 로 선점" 으로 바뀌었다', () => {
@@ -606,4 +606,58 @@ test('F13. 등록 폼에서 「이 고객을 내 RFC 로 선점」 경로가 살
   assert.ok(/\/rfc-claim/.test(custform));
   assert.ok(custform.includes('has_rfc'), 'RFC 없는 고객만 요청 대상이다');
   assert.ok(custform.includes('요청 시각이 우선권의 근거가 됩니다'));
+});
+
+// =====================================================================
+// G. 0194 · 철 지난 선점 예외(rfc_claim_exempt) 정리
+//
+//   0188 의 예외 플래그는 「마이그레이션이 돌던 순간」의 스냅샷이다.
+//   상대 고객이 그 뒤 삭제·반려되거나 RFC 가 정정되면 중복은 사라졌는데 플래그만 남고,
+//   그 고객은 **실제로 DB 유니크 보호를 못 받는 상태**로 방치된다(표시만 이상한 게 아니다).
+// =====================================================================
+
+test('G1. 마이그레이션 0194 — 중복이 해소된 행만 예외를 푼다', () => {
+  const sql = read(join(API, 'migrations', '0194_rfc_claim_exempt_cleanup.sql'));
+  assert.ok(/SET rfc_claim_exempt = false/.test(sql));
+  // ★ 핵심: "같은 RFC 를 쓰는 살아있는 고객이 없다" 일 때만
+  assert.ok(/NOT EXISTS \([\s\S]*?o\.rfc_norm = c\.rfc_norm[\s\S]*?o\.deleted_at IS NULL/.test(sql),
+    '진짜 중복 그룹까지 풀면 uq_customers_rfc_claim 이 깨진다');
+  assert.ok(/o\.id <> c\.id/.test(sql), '자기 자신을 중복으로 세면 아무것도 풀리지 않는다');
+  assert.ok(/COALESCE\(o\.approval_status, ?'approved'\) <> 'rejected'/.test(sql),
+    '반려 행은 유니크 대상이 아니므로 중복으로 세면 안 된다');
+  // 데이터는 건드리지 않는다(플래그만)
+  assert.ok(!/DELETE FROM customers|SET rfc *=|deleted_at *= *now\(\)/.test(sql));
+});
+
+test('G2. 상세는 「진짜 중복」과 「철 지난 표시」를 구분해 말한다', () => {
+  assert.ok(/rfc_dup_count: rfcDup \? rfcDup\.count : null/.test(custRoutes),
+    '지금 기준 중복 건수를 세지 않으면 화면이 옛날 플래그를 그대로 읊는다');
+  assert.ok(/c\.rfc_dup_count===0/.test(custHtml), '0건이면 「철 지난 표시」로 안내해야 한다');
+  assert.ok(custHtml.includes('이 RFC 를 쓰는 다른 고객은 지금 없습니다'));
+  assert.ok(custHtml.includes('선점 보호 복구'), '디렉터에게는 복구 버튼이 있어야 한다');
+  // 팀 스코프를 넘는 조회라 금액·연락처가 새면 안 된다
+  const dupq = custRoutes.match(/let rfcDup = null;[\s\S]*?\n    \}/)[0];
+  assert.ok(!/discount|credit_days|phone|contact|rfc\b.*AS/.test(dupq.replace(/rfc_norm/g, '')),
+    '중복 조회에 거래조건·연락처가 실리면 안 된다');
+});
+
+test('G3. 해제 API — 진짜 중복은 막고, 해소된 건만 푼다', () => {
+  const rel = custRoutes.match(/app\.post\('\/api\/customers\/:id\/rfc-exempt-release'[\s\S]*?\n  \}\);/)[0];
+  assert.ok(/rfc_still_duplicated/.test(rel), '아직 중복이면 이유를 말하고 막아야 한다');
+  assert.ok(/uq_customers_rfc_claim/.test(rel), '경합은 DB 유니크로 최종 판정해야 한다');
+  assert.ok(/rfc_required/.test(rel), 'RFC 가 빈 행은 해제 대상이 아니다');
+  const scan = custRoutes.match(/app\.post\('\/api\/customers\/rfc-exempt-rescan'[\s\S]*?\n  \}\);/)[0];
+  assert.ok(/NOT EXISTS \([\s\S]*?o\.rfc_norm = c\.rfc_norm/.test(scan),
+    '재검사는 마이그레이션 0194 와 같은 규칙이어야 한다');
+  assert.ok(/rfc_exempt_release/.test(scan), '복구도 이력에 남아야 한다');
+});
+
+test('G4. 예외 목록·정리는 디렉터 전용', () => {
+  for (const p of ["'/api/customers/rfc-exempt'", "'/api/customers/rfc-exempt-rescan'",
+                   "'/api/customers/:id/rfc-exempt-release'"]) {
+    const m = custRoutes.match(new RegExp(`app\\.(get|post)\\(${p.replace(/[/]/g, '\\/')}, \\{ preHandler: \\[authGuard, requireDirector\\]`));
+    assert.ok(m, `${p} 는 requireDirector 여야 한다 — 영업사원이 남의 선점을 풀면 안 된다`);
+  }
+  assert.ok(custHtml.includes('선점 예외 정리'), '디렉터 화면에 정리 카드가 있어야 한다');
+  assert.ok(custHtml.includes('rescanRfcExempt') && custHtml.includes('releaseRfcExempt'));
 });

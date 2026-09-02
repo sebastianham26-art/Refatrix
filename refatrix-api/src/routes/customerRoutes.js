@@ -581,6 +581,25 @@ export default async function customerRoutes(app) {
       last_date: r.last_date, is_pareto: r.is_pareto, is_repeat: r.is_repeat,
       applications: appMap[r.product_id] || [],
     }));
+
+    // 0194 · rfc_claim_exempt 는 **0188 이 돌던 시점의 스냅샷**이라 철이 지날 수 있다.
+    //   상대 고객이 그 뒤 삭제·반려·RFC 정정되면 중복은 사라졌는데 플래그만 남는다.
+    //   → 화면이 "진짜 중복" 과 "철 지난 표시" 를 구분해 말할 수 있도록 지금 상태를 같이 센다.
+    //   ⚠ 팀 스코프를 넘는 정보라 **건수와 담당자 이름만** 내보낸다(금액·연락처 금지).
+    let rfcDup = null;
+    if (c.rfc_claim_exempt === true && normalizeClaimKey(c.rfc)) {
+      const others = (await query(
+        `SELECT o.name, u.name AS owner_name, to_char(o.created_at,'YYYY-MM-DD') AS registered_at
+           FROM customers o LEFT JOIN users u ON u.id=o.owner_id
+          WHERE o.id <> $1 AND o.rfc_norm = $2 AND o.deleted_at IS NULL
+            AND COALESCE(o.approval_status,'approved') <> 'rejected'
+          ORDER BY o.created_at LIMIT 5`, [id, normalizeClaimKey(c.rfc)])).rows;
+      rfcDup = {
+        count: others.length,           // 0 = 중복이 이미 해소됨(플래그만 철 지난 상태)
+        others: others.map((o) => ({ name: o.name, owner_name: o.owner_name || '(담당자 미지정)',
+          registered_at: o.registered_at })),
+      };
+    }
     return {
       customer: {
         id: c.id, code: c.code, name: c.name, rfc: c.rfc, contact: c.contact, phone: c.phone,
@@ -592,6 +611,10 @@ export default async function customerRoutes(app) {
         constancia_no: c.constancia_no || null,
         // 0188 · RFC 가 선점 키. exempt = 마이그레이션 시점에 이미 RFC 가 중복이던 레거시 행.
         rfc_claim_exempt: c.rfc_claim_exempt === true,
+        // 0194 · 그 예외가 **지금도 유효한지**. dup_count=0 이면 중복은 이미 사라졌고
+        //   플래그만 남은 것이라 디렉터가 「선점 보호 복구」 한 번으로 정리할 수 있다.
+        rfc_dup_count: rfcDup ? rfcDup.count : null,
+        rfc_dup_others: rfcDup ? rfcDup.others : null,
         // 0193 · RFC 가 비어 있으면 **선점이 없는 고객**이다 — 화면에 빨간 안내 + 매출 차단.
         rfc_claimed: !!normalizeClaimKey(c.rfc),
         rfc_claimed_at: c.rfc_claimed_at || null,
@@ -1200,6 +1223,134 @@ export default async function customerRoutes(app) {
       claim_id: Number(claim.id), customer_id: id, rfc: rfcClean, requested_at: claim.requested_at,
       note: `RFC ${rfcClean} 로 선점을 요청했습니다(${claim.requested_at}). `
           + '이 시각이 우선권의 근거이고, 디렉터가 승인하면 담당이 본인으로 이관됩니다.' };
+  });
+
+  // =====================================================================
+  // 0194 · RFC 선점 예외(rfc_claim_exempt) 정리 — 디렉터
+  //
+  //   0188 은 유니크를 걸기 위해, 그때 중복이던 그룹의 2번째 이후 행에 예외를 찍었다.
+  //   그 플래그는 **스냅샷**이라 상대 고객이 삭제·반려·RFC 정정되면 철이 지난다.
+  //   철 지난 예외는 표시만 이상한 게 아니라, 그 고객이 **실제로 DB 유니크 보호를 못 받는** 상태다.
+  //   → 여기서 지금 상태를 다시 세고, 중복이 사라진 건은 예외를 해제해 보호를 되찾아 준다.
+  //
+  //   해제 규칙은 마이그레이션 0194 와 동일하다: **그 RFC 를 쓰는 살아있는 고객이 자기 하나뿐일 때만.**
+  //   진짜 중복 그룹은 손대지 않는다 — 어느 쪽이 진짜인지는 사람이 판단할 일이고,
+  //   둘 다 해제하면 유니크 인덱스가 깨진다.
+  // =====================================================================
+
+  // 예외 목록 + 지금 기준 중복 건수(= 해제 가능 여부)
+  app.get('/api/customers/rfc-exempt', { preHandler: [authGuard, requireDirector] }, async () => {
+    if (!(await rfcClaimReady())) return { items: [], migration_required: true };
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name, c.rfc, c.rfc_norm,
+              u.name AS owner_name, t.name AS team_name,
+              to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
+              COALESCE(c.approval_status,'approved') AS approval_status,
+              (SELECT count(*)::int FROM customers o
+                WHERE o.id <> c.id AND o.rfc_norm = c.rfc_norm AND o.deleted_at IS NULL
+                  AND COALESCE(o.approval_status,'approved') <> 'rejected') AS dup_count,
+              (SELECT string_agg(x.name, ' · ' ORDER BY x.created_at)
+                 FROM (SELECT o.name, o.created_at FROM customers o
+                        WHERE o.id <> c.id AND o.rfc_norm = c.rfc_norm AND o.deleted_at IS NULL
+                          AND COALESCE(o.approval_status,'approved') <> 'rejected'
+                        ORDER BY o.created_at LIMIT 5) x) AS dup_names
+         FROM customers c
+         LEFT JOIN users u ON u.id=c.owner_id
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+        WHERE c.rfc_claim_exempt = true AND c.deleted_at IS NULL
+          AND COALESCE(c.approval_status,'approved') <> 'rejected'
+        ORDER BY c.rfc_norm, c.created_at
+        LIMIT 300`)).rows;
+    return {
+      items: rows.map((r) => ({
+        id: Number(r.id), code: r.code, name: r.name, rfc: r.rfc || null,
+        owner_name: r.owner_name || '(담당자 미지정)', team_name: r.team_name || null,
+        registered_at: r.registered_at, approval_status: r.approval_status,
+        dup_count: Number(r.dup_count), dup_names: r.dup_names || null,
+        // dup_count 0 = 중복이 이미 해소된 「철 지난 예외」 → 버튼 한 번으로 해제 가능
+        releasable: Number(r.dup_count) === 0,
+      })),
+      // 화면 상단 요약 — "몇 건이 그냥 정리되는지" 를 먼저 보여 준다
+      stale: rows.filter((r) => Number(r.dup_count) === 0).length,
+      real: rows.filter((r) => Number(r.dup_count) > 0).length,
+    };
+  });
+
+  // 철 지난 예외 일괄 해제(재검사) — 마이그레이션 0194 와 같은 규칙을 운영 중에 다시 돌린다.
+  app.post('/api/customers/rfc-exempt-rescan', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    if (!(await rfcClaimReady())) return reply.code(503).send({ error: 'migration_required' });
+    const rows = (await query(
+      `UPDATE customers c SET rfc_claim_exempt = false
+        WHERE c.rfc_claim_exempt = true AND c.rfc_norm IS NOT NULL AND c.deleted_at IS NULL
+          AND COALESCE(c.approval_status,'approved') <> 'rejected'
+          AND NOT EXISTS (
+            SELECT 1 FROM customers o
+             WHERE o.id <> c.id AND o.rfc_norm = c.rfc_norm AND o.deleted_at IS NULL
+               AND COALESCE(o.approval_status,'approved') <> 'rejected')
+        RETURNING c.id, c.code, c.name`)).rows;
+    for (const r of rows) {
+      try {
+        await query(
+          `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+           VALUES ($1,'rfc_exempt_release','재검사 — 중복이 해소되어 선점 보호 복구',$2,$3)`,
+          [r.id, JSON.stringify({ via: 'rescan' }), perm.userId]);
+      } catch (_) { /* 이력 실패가 정리를 막지 않음 */ }
+    }
+    await safeLog({ userId: perm.userId, action: 'rfc_exempt_rescan', target: 'customers',
+      detail: { released: rows.length } });
+    return { ok: true, released: rows.length,
+      items: rows.map((r) => ({ id: Number(r.id), code: r.code, name: r.name })),
+      note: rows.length
+        ? `${rows.length}건의 선점 보호를 복구했습니다 — 중복이 이미 해소된 고객들입니다.`
+        : '해제할 수 있는 건이 없습니다. 남아 있는 예외는 실제로 RFC 가 중복인 그룹입니다.' };
+  });
+
+  // 개별 해제 — 같은 규칙을 한 건에만 적용한다(유니크 위반은 여기서 잡아 안내로 바꾼다).
+  app.post('/api/customers/:id/rfc-exempt-release', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    const perm = req.ctx.perm;
+    if (!(await rfcClaimReady())) return reply.code(503).send({ error: 'migration_required' });
+    const c = (await query(
+      `SELECT id, name, rfc, rfc_norm, rfc_claim_exempt FROM customers
+        WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (c.rfc_claim_exempt !== true) return { ok: true, already: true, note: '이미 선점 보호를 받고 있는 고객입니다.' };
+    if (!c.rfc_norm) {
+      return reply.code(400).send({ error: 'rfc_required',
+        note: 'RFC 가 비어 있어 해제할 수 없습니다. RFC 를 먼저 입력하세요.' });
+    }
+    const others = (await query(
+      `SELECT o.name, u.name AS owner_name FROM customers o LEFT JOIN users u ON u.id=o.owner_id
+        WHERE o.id <> $1 AND o.rfc_norm = $2 AND o.deleted_at IS NULL
+          AND COALESCE(o.approval_status,'approved') <> 'rejected'
+        ORDER BY o.created_at LIMIT 3`, [id, c.rfc_norm])).rows;
+    if (others.length) {
+      // 아직 진짜 중복이다 — 해제하면 유니크가 깨진다. 어느 쪽이 진짜인지는 사람이 정해야 한다.
+      return reply.code(409).send({ error: 'rfc_still_duplicated',
+        note: `같은 RFC 를 쓰는 고객이 아직 ${others.length}건 있습니다 — `
+            + others.map((o) => `${o.name}(담당 ${o.owner_name || '미지정'})`).join(' · ')
+            + '. 한쪽의 RFC 를 정정하거나 고객을 통합한 뒤 다시 시도하세요.',
+        others: others.map((o) => ({ name: o.name, owner_name: o.owner_name || null })) });
+    }
+    try {
+      await query(`UPDATE customers SET rfc_claim_exempt=false, updated_by=$1 WHERE id=$2`, [perm.userId, id]);
+    } catch (e) {
+      if (String(e.message || '').includes('uq_customers_rfc_claim')) {
+        return reply.code(409).send({ error: 'rfc_still_duplicated',
+          note: '방금 다른 고객이 같은 RFC 로 선점을 가져갔습니다. 목록을 새로고침해 확인하세요.' });
+      }
+      throw e;
+    }
+    try {
+      await query(
+        `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+         VALUES ($1,'rfc_exempt_release','디렉터 개별 해제 — 선점 보호 복구',$2,$3)`,
+        [id, JSON.stringify({ rfc: c.rfc, via: 'manual' }), perm.userId]);
+    } catch (_) { /* ignore */ }
+    await safeLog({ userId: perm.userId, action: 'rfc_exempt_release', target: `customer:${id}` });
+    return { ok: true, id, rfc: c.rfc,
+      note: `${c.name} 의 선점 보호를 복구했습니다 — 이제 RFC ${c.rfc} 는 DB 유니크로 잠깁니다.` };
   });
 
   // 선점 이관 대기 목록 (디렉터) — requested_at 오름차순 = 우선순위 순
