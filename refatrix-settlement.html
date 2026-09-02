@@ -286,6 +286,24 @@
   }
 
   // ===== 수금 상세 (오픈 인보이스 / AR) =====
+  // ── 완납 판정 공통 허용치 — 백엔드 refatrix-api/src/ar.js 의 AR_PAID_EPS 와 같은 값 ──
+  // 화면 금액은 정수 페소로 반올림 표시하므로 잔액 0.5 미만은 「화면상 0」 = 완납으로 본다
+  // (IVA 16% 센타보 반올림 잔여). 서버 플래그(paid_full)를 우선하되 화면에서도 방어하므로
+  // 백엔드 배포 전에 화면만 올라가도 배지·연체 표시가 모순되지 않는다.
+  const AR_PAID_EPS=0.5;
+  function arNorm(list){
+    (list||[]).forEach(it=>{
+      const pf = !!it.paid_full || Number(it.outstanding||0) < AR_PAID_EPS;
+      it.paid_full = pf;
+      if(pf) it.overdue = false;          // 완납은 만기가 지났어도 연체가 아니다
+    });
+    return list||[];
+  }
+  // 완납인데 센타보가 남아 있으면 숨기지 않고 툴팁으로 알려준다
+  function arPaidTip(it){
+    const o=Number((it&&it.outstanding)||0);
+    return (it&&it.paid_full&&o>0.005) ? ' title="반제 완료 · 반올림 잔여 MX$'+o.toFixed(2)+'"' : '';
+  }
   let arItems=[], arAccounts=[], arGroup='company', arFilter=null, arToday=null, arOpenRepay=null, arCompany={};
   let arSearchMode=false, arSearchItems=[], arHistOpen=null, arHistData={}, arRepayReceipt=null, arRepayReceiptName=null;
   let arIncludeClosed=false;
@@ -303,7 +321,7 @@
         fetch(session.api+'/api/ar/accounts',{headers:auth()}).then(r=>r.json()).catch(()=>({items:[]})),
         fetch(session.api+'/api/company',{headers:auth()}).then(r=>r.json()).catch(()=>({})),
       ]);
-      arItems=(d&&d.items)||[]; arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
+      arItems=arNorm((d&&d.items)||[]); arToday=(d&&d.today)||new Date().toISOString().slice(0,10);
       arAccounts=(acc&&acc.items)||[]; arCompany=co||{};
       arHistData={};
       renderArSeg(); renderAr();
@@ -439,7 +457,7 @@
     return '<span class="hint">D-'+(-it.day_diff)+'</span>';
   }
   function arStatusChip(it){
-    if(it.paid_full) return '<span class="chip chip-paid">완납</span>';
+    if(it.paid_full) return '<span class="chip chip-paid"'+arPaidTip(it)+'>완납</span>';
     return arDueText(it);
   }
   // ===== 완납일(실제 수금 100% 채워진 날) · 만기 대비 지연 =====
@@ -921,7 +939,7 @@
     try{
       const r=await fetch(session.api+'/api/ar/search?q='+encodeURIComponent(q),{headers:auth()});
       const d=await r.json();
-      arSearchItems=(d&&d.items)||[]; arToday=(d&&d.today)||arToday;
+      arSearchItems=arNorm((d&&d.items)||[]); arToday=(d&&d.today)||arToday;
       arSearchMode=true; arHistOpen=null; arOpenRepay=null; arEditAlloc=null;
       $('arSearchInfo').textContent='"'+q+'" 결과 '+arSearchItems.length+'건 (완납 포함)';
       renderAr();
@@ -976,7 +994,7 @@
       +'<th style="text-align:right">Saldo<br><span style="font-weight:600;color:var(--muted)">잔액</span></th>'
       +'<th style="text-align:right">Días<br><span style="font-weight:600;color:var(--muted)">미수일</span></th>'
       +'</tr></thead><tbody>';
-    rows.forEach((r,idx)=>{ const pf=(r.paid_full||Number(r.outstanding)<=0.005); const ovd=(!pf&&r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(pf?' style="background:#edf6ed"':(idx%2===1?' style="background:#faf9f6"':'')))+'>'
+    rows.forEach((r,idx)=>{ const pf=(r.paid_full||Number(r.outstanding)<AR_PAID_EPS); const ovd=(!pf&&r.day_diff!=null&&r.day_diff>0); h+='<tr'+(ovd?' class="ovd"':(pf?' style="background:#edf6ed"':(idx%2===1?' style="background:#faf9f6"':'')))+'>'
       +'<td style="text-align:left;font-weight:800;white-space:nowrap;color:var(--brand)">'+(ovd?'<span style="color:var(--expense)">●</span> ':(pf?'<span style="color:#2e8b4f">●</span> ':''))+(r.folio_no?esc(String(r.folio_no)):'<span style="color:var(--muted);font-weight:400">—</span>')+'</td>'
       +'<td style="text-align:left;white-space:nowrap;padding-right:14px">'+folioHtml(r.sat_no||('#'+r.id))+'</td>'
       +'<td style="text-align:left;white-space:nowrap">'+esc(r.inv_date||'—')+'</td>'
@@ -1042,7 +1060,7 @@
     rows.forEach((r,idx)=>{
       if(y+ROWH>800){ doc.addPage(); y=54; drawHead(y); y+=10; }
       const top=y, mid=top+9, sub=top+18;
-      const pf=(r.paid_full||Number(r.outstanding)<=0.005);
+      const pf=(r.paid_full||Number(r.outstanding)<AR_PAID_EPS);
       const overdue=(!pf && r.day_diff!=null && Number(r.day_diff)>0);
       if(overdue){ doc.setFillColor(252,233,233); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(208,46,46); doc.rect(40,top-4,3,ROWH,'F'); }
       else if(pf){ doc.setFillColor(235,246,235); doc.rect(40,top-4,515,ROWH,'F'); doc.setFillColor(52,150,80); doc.rect(40,top-4,3,ROWH,'F'); }
@@ -1528,6 +1546,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="refatrix-nav.js?v=20260831bd"></script>
+<script src="refatrix-nav.js?v=20260902eps"></script>
 </body>
 </html>

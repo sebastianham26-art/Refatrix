@@ -489,7 +489,7 @@
     }catch(e){ $('arBody').innerHTML='<div class="hint">서버 연결 실패</div>'; }
   }
   function arStatusBadge(v){
-    if(v.outstanding!=null && v.outstanding<=0.005) return '<span class="badge-paid">완납</span>';
+    if(v.open===false || (v.outstanding!=null && Number(v.outstanding)<0.5)) return '<span class="badge-paid">완납</span>';   // 0.5 = 백엔드 AR_PAID_EPS
     if(v.overdue) return '<span class="badge-od">연체 '+v.overdue_days+'일</span>';
     if(v.days_to_due!=null) return '<span class="badge-due">'+(v.days_to_due===0?'오늘 만기':'D-'+v.days_to_due)+'</span>';
     return '—';
@@ -695,6 +695,6 @@
   $('calToday').addEventListener('click',()=>{ calWeekStart=sundayOf(new Date()); loadCalendar(); });
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260902eps"></script>
 </body>
 </html>

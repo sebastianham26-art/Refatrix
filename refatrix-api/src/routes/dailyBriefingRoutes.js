@@ -342,7 +342,7 @@ async function sectionFinance(mxToday) {
         WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
           AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
           AND si.due_date IS NOT NULL AND si.due_date >= $1 AND si.due_date <= $2
-          AND COALESCE(p.paid,0) < si.total_mxn - 0.005`, [mxToday, to7])).rows[0];
+          AND COALESCE(p.paid,0) < si.total_mxn - 0.5`, [mxToday, to7])).rows[0];
     arDue = Math.round(n(arRow && arRow.amt)); arCnt = n(arRow && arRow.cnt);
   } catch (_) { /* 스키마 차이 시 안전 무시 */ }
 

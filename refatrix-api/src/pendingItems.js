@@ -84,7 +84,7 @@ export async function collectPending(mxToday, quoteDelayDays = 3) {
         WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
           AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
           AND si.due_date IS NOT NULL AND si.due_date <= $1
-          AND COALESCE(p.paid,0) < si.total_mxn - 0.005`, [mxToday])).rows;
+          AND COALESCE(p.paid,0) < si.total_mxn - 0.5`, [mxToday])).rows;
     for (const r of rows) {
       push({ type: 'ar', item_key: `ar:${r.id}`, ref_id: Number(r.id),
         title: `미수금 — ${party(r.customer_id, null, r.customer_name)}`,

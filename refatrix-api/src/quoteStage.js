@@ -1,3 +1,4 @@
+import { arIsPaid, arIsOpen } from './ar.js';   // 완납 판정 공통 허용치(AR_PAID_EPS)
 // =====================================================================
 // Refatrix ERP · quoteStage.js
 //   견적(오더)별 현재 진행 단계/상태/경고 판정 (순수 함수).
@@ -42,11 +43,11 @@ export function computeQuoteStage(o, now) {
   if (o.status === 'expired') return pack('expired');
   if (o.status === 'pricelist') return pack('pricelist');
 
-  if (hasInvoice && outstanding != null && outstanding <= 0.005) return pack('collected');
+  if (hasInvoice && outstanding != null && arIsPaid(outstanding)) return pack('collected');
 
   if (hasInvoice && realSat) {
     const dl = o.due_date ? new Date(o.due_date) : null;
-    if (due && due < todayMx && (outstanding == null || outstanding > 0.005)) {
+    if (due && due < todayMx && (outstanding == null || arIsOpen(outstanding))) {
       return pack('await_collect', dl, true, 'overdue', '외상 지연(연체)');
     }
     return pack('await_collect', dl, false, 'within', '');

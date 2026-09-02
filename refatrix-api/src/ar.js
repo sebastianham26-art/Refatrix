@@ -3,6 +3,15 @@
 
 export function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 
+// ── 완납(반제 완료) 판정 공통 허용치 ──────────────────────────────────────────
+// 화면 금액은 toLocaleString(maximumFractionDigits:0) 으로 **정수 페소 반올림**해 보여준다.
+// 그래서 판정 기준도 같은 눈금(0.5 페소 미만 = 화면상 0)에 맞춘다.
+// 이 값보다 작게 남은 잔액은 IVA 16% 센타보 반올림 잔여이지 미수가 아니다.
+// (2026-08-27 세션 결정 · 2026-09-02 현재 main 에 재적용)
+export const AR_PAID_EPS = 0.5;
+export function arIsPaid(outstanding) { return Number(outstanding || 0) < AR_PAID_EPS; }
+export function arIsOpen(outstanding) { return !arIsPaid(outstanding); }
+
 function d10(v) { if (!v) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v).slice(0, 10); }
 
 // 한 인보이스의 미수/연체 상태.
@@ -12,7 +21,7 @@ export function arInvoiceStatus(inv, todayStr) {
   const total = r2(Number(inv.total) || 0);
   const paid = r2(Number(inv.paid) || 0);
   const outstanding = r2(total - paid);
-  const open = outstanding > 0.005;
+  const open = arIsOpen(outstanding);
   const due = d10(inv.due_date);
   let overdue = false, overdue_days = null, days_to_due = null;
   if (due && todayStr) {

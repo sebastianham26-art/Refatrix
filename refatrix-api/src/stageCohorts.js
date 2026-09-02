@@ -61,7 +61,7 @@ export async function buildStageCohorts(perm, reqTeam, opts = {}) {
       WHERE si.deleted_at IS NULL AND si.status <> 'deleted'
         AND si.sat_no IS NOT NULL AND si.sat_no <> '' AND si.sat_no NOT LIKE 'TMP-%'
         AND si.due_date IS NOT NULL
-        AND COALESCE(p.paid,0) < si.total_mxn - 0.005${tcl}`, a)).rows;
+        AND COALESCE(p.paid,0) < si.total_mxn - 0.5${tcl}`, a)).rows;
 
   return cohorts;
 }

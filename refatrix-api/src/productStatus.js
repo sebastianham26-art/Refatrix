@@ -127,7 +127,7 @@ export async function productOpenItems(productId, exec = query) {
               ON pa.invoice_id = si.id
       WHERE sil.product_id = $1
         AND si.deleted_at IS NULL AND si.status <> 'deleted'
-        AND COALESCE(pa.paid,0) < si.total_mxn - 0.005
+        AND COALESCE(pa.paid,0) < si.total_mxn - 0.5
       GROUP BY si.id, cu.name, pa.paid
       ORDER BY si.due_date ASC NULLS LAST, si.id`, [id])).rows;
   for (const r of q3) {

@@ -84,7 +84,7 @@ export default async function meetingRoutes(app) {
            FROM sales_invoices i
            LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
           WHERE i.customer_id=$1 AND i.status='posted' AND i.deleted_at IS NULL
-       ) t WHERE outstanding > 0.005`, [customerId])).rows[0];
+       ) t WHERE outstanding >= 0.5`, [customerId])).rows[0];
     return {
       sku: ln.sku || 0, qty: Number(ln.qty) || 0, amount_total: Number(hdr.amount_total) || 0,
       inv_count: hdr.inv_count || 0, first_trade: hdr.first_trade || null,

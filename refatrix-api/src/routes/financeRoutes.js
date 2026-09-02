@@ -17,7 +17,7 @@ export function splitEqual(total, n) {
   parts[n - 1] = Math.round((t - per * (n - 1)) * 100) / 100;
   return parts;
 }
-import { validateReceiptDataUrl } from '../ar.js';
+import { validateReceiptDataUrl, AR_PAID_EPS, arIsPaid, arIsOpen } from '../ar.js';
 import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
@@ -42,7 +42,7 @@ const AR_SETTLED_SQL = `LEFT JOIN (
 // 미배분 입금(통지) 잔여 허용치 — 이 금액 미만이 남으면 "잔여 없음"으로 보고 통지를 닫는다.
 // 화면 금액이 정수 페소로 반올림 표시되므로 0.5 미만(=화면상 0)은 잔여로 남기지 않는다.
 // (인보이스 완납 판정의 AR_PAID_EPS 와 같은 취지·같은 값)
-export const BD_REMAIN_EPS = 0.5;
+export const BD_REMAIN_EPS = AR_PAID_EPS;
 
 // 인보이스 「매출 입금예정」(AR plan 거래) 을 현재 미수 잔액에 맞춘다.
 //   인보이스 발행 시 총액으로 만들어지는 plan 거래(kind='invoice', status='plan', 계좌 미지정)는
@@ -55,7 +55,7 @@ export const BD_REMAIN_EPS = 0.5;
 //   · 잔액이 남으면       → 예정 금액을 **잔액으로** 갱신(삭제됐던 건 되살림).
 //   ※ 소프트 삭제라 sales_invoices.txn_id FK 는 그대로. plan_amount 는 건드리지 않는다
 //     (AR 예정은 애초에 plan_amount 가 NULL 이라 계획대비실적 계획선에 잡히지 않는다 — 영향 없음).
-const AR_PLAN_EPS = 0.5;   // 완납 판정과 같은 취지의 허용치(화면 표시 반올림 기준)
+const AR_PLAN_EPS = AR_PAID_EPS;   // 완납 판정과 **같은 상수**(화면 표시 반올림 기준)
 export async function syncArPlanTxn(c, invoiceId) {
   const invId = Number(invoiceId);
   if (!Number.isInteger(invId) || invId <= 0) return null;
@@ -851,7 +851,7 @@ export default async function financeRoutes(app) {
          LEFT JOIN (SELECT customer_id, SUM(advance_amount) AS advance FROM sales_payments GROUP BY customer_id) adv ON adv.customer_id=c.id
         WHERE c.deleted_at IS NULL${cTeam}
         GROUP BY c.id, c.code, c.name, adv.advance
-       HAVING COALESCE(SUM(s.total_mxn),0) - COALESCE(SUM(pa.paid),0) > 0.01
+       HAVING COALESCE(SUM(s.total_mxn),0) - COALESCE(SUM(pa.paid),0) >= 0.5
         ORDER BY outstanding DESC`, cargs)).rows;
     return { items: rows.map((r) => ({ ...r, outstanding: Number(r.outstanding), advance: Number(r.advance) })) };
   });
@@ -872,7 +872,7 @@ export default async function financeRoutes(app) {
          FROM sales_invoices s
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
         WHERE s.customer_id=$1 AND s.deleted_at IS NULL AND s.status='posted'
-          AND s.total_mxn - COALESCE(pa.paid,0) > 0.01
+          AND s.total_mxn - COALESCE(pa.paid,0) >= 0.5
         ORDER BY s.inv_date, s.id`, [customerId])).rows;
     const adv = (await query(`SELECT COALESCE(SUM(advance_amount),0) AS a FROM sales_payments WHERE customer_id=$1`, [customerId])).rows[0];
     return {
@@ -1292,7 +1292,7 @@ export default async function financeRoutes(app) {
 
   // 선수금이 남아 있는 입금건 목록 (settlement 열람권 · 팀 범위 적용)
   app.get('/api/ar/advances', { preHandler: [authGuard, requirePage('settlement')] }, async (req) => {
-    const args = []; const cond = [`p.advance_amount > 0.005`];
+    const args = []; const cond = [`p.advance_amount >= 0.5`];
     if (req.query.customer_id) { args.push(Number(req.query.customer_id)); cond.push(`p.customer_id=$${args.length}`); }
     const vis = visibleTeamIds(req.ctx.perm);
     if (vis !== null) { args.push(vis); cond.push(`c.team_id = ANY($${args.length})`); }
@@ -1416,7 +1416,7 @@ export default async function financeRoutes(app) {
               s.total_mxn,
               COALESCE(pa.paid,0) AS paid,
               (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
-              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
+              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) >= 0.5) AS is_overdue,
               CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
               to_char(sd.settled_dt,'YYYY-MM-DD') AS settled_date,
               CASE WHEN s.due_date IS NOT NULL AND sd.settled_dt IS NOT NULL
@@ -1432,14 +1432,14 @@ export default async function financeRoutes(app) {
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=s.id
          ${AR_SETTLED_SQL} sd ON sd.invoice_id=s.id
         WHERE s.deleted_at IS NULL AND s.status='posted'${oTeam}
-          ${includeClosed ? '' : 'AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01'}
-        ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) <= 0.005), s.due_date NULLS LAST, s.inv_date, s.id`, oargs)).rows;
+          ${includeClosed ? '' : 'AND (s.total_mxn - COALESCE(pa.paid,0)) >= 0.5'}
+        ORDER BY ((s.total_mxn - COALESCE(pa.paid,0)) < 0.5), s.due_date NULLS LAST, s.inv_date, s.id`, oargs)).rows;
     return {
       today: new Date().toISOString().slice(0, 10),
       items: rows.map((r) => ({
         id: Number(r.id), sat_no: r.sat_no, folio_no: r.folio_no || null, inv_date: r.inv_date, due_date: r.due_date,
         total_mxn: r2(Number(r.total_mxn)), paid: r2(Number(r.paid)), outstanding: r2(Number(r.outstanding)),
-        paid_full: r2(Number(r.outstanding)) <= 0.005,
+        paid_full: arIsPaid(r2(Number(r.outstanding))),
         overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
         settled_date: r.settled_date || null,
         settled_delay: r.settled_delay == null ? null : Number(r.settled_delay),
@@ -1490,7 +1490,7 @@ export default async function financeRoutes(app) {
     return {
       invoice: {
         id: Number(inv.id), sat_no: inv.sat_no, inv_date: inv.inv_date, due_date: inv.due_date,
-        total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
+        total_mxn: total, paid, outstanding, paid_full: arIsPaid(outstanding),
         settled_date: inv.settled_date || null,
         settled_delay: inv.settled_delay == null ? null : Number(inv.settled_delay),
         settled_has_nc: inv.settled_has_nc === true,
@@ -1672,7 +1672,7 @@ export default async function financeRoutes(app) {
               to_char(s.due_date,'YYYY-MM-DD') AS due_date,
               s.total_mxn, COALESCE(pa.paid,0) AS paid,
               (s.total_mxn - COALESCE(pa.paid,0)) AS outstanding,
-              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) > 0.01) AS is_overdue,
+              (s.due_date IS NOT NULL AND s.due_date < CURRENT_DATE AND (s.total_mxn - COALESCE(pa.paid,0)) >= 0.5) AS is_overdue,
               CASE WHEN s.due_date IS NOT NULL THEN (CURRENT_DATE - s.due_date) ELSE NULL END AS day_diff,
               to_char(sd.settled_dt,'YYYY-MM-DD') AS settled_date,
               CASE WHEN s.due_date IS NOT NULL AND sd.settled_dt IS NOT NULL
@@ -1696,7 +1696,7 @@ export default async function financeRoutes(app) {
         const total = r2(Number(r.total_mxn)), paid = r2(Number(r.paid)), outstanding = r2(Number(r.outstanding));
         return {
           id: Number(r.id), sat_no: r.sat_no, folio_no: r.folio_no || null, inv_date: r.inv_date, due_date: r.due_date,
-          total_mxn: total, paid, outstanding, paid_full: outstanding <= 0.005,
+          total_mxn: total, paid, outstanding, paid_full: arIsPaid(outstanding),
           overdue: !!r.is_overdue, day_diff: r.day_diff == null ? null : Number(r.day_diff),
           settled_date: r.settled_date || null,
           settled_delay: r.settled_delay == null ? null : Number(r.settled_delay),
@@ -1725,7 +1725,7 @@ export default async function financeRoutes(app) {
     let open = 0, outstanding = 0, overdue = 0;
     for (const r of rows) {
       const o = Number(r.outstanding);
-      if (o > 0.005) { open += 1; outstanding += o; if (r.due_date < today) overdue += o; }
+      if (arIsOpen(o)) { open += 1; outstanding += o; if (r.due_date < today) overdue += o; }
     }
     return { today, open_count: open, outstanding: r2(outstanding), overdue: r2(overdue) };
   });
@@ -2529,7 +2529,7 @@ export default async function financeRoutes(app) {
       const invId = Number(t.sales_invoice_id);
       const rem = (!seenInv.has(invId) && osMap.has(invId)) ? osMap.get(invId) : 0;
       seenInv.add(invId);
-      if (rem > 0.005) t.amount_mxn = r2(rem);
+      if (rem >= AR_PAID_EPS) t.amount_mxn = r2(rem);
       else txnsAll.splice(i, 1);
     }
   }

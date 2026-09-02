@@ -83,7 +83,7 @@ export default async function portalRoutes(app) {
                  FROM sales_invoices i
                  JOIN customers c ON c.id=i.customer_id
                  LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
-                WHERE i.status='posted' AND i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01 AND c.deleted_at IS NULL`;
+                WHERE i.status='posted' AND i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) >= 0.5 AND c.deleted_at IS NULL`;
       const params = [];
       if (vis !== null) { params.push(vis.length ? vis : [-1]); q += ` AND c.team_id = ANY($1)`; }
       out.badges.overdue_customers = Number((await query(q, params)).rows[0].n);

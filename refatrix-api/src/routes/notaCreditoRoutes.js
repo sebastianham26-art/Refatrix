@@ -1,7 +1,7 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { validateReceiptDataUrl } from '../ar.js';
+import { validateReceiptDataUrl, arIsPaid } from '../ar.js';
 import { syncArPlanTxn } from './financeRoutes.js';
 
 const IVA = 0.16;
@@ -197,7 +197,7 @@ export default async function notaCreditoRoutes(app) {
       await c.query(`UPDATE notas_credito SET status='applied', applied_at=now() WHERE id=$1`, [id]);
       await syncArPlanTxn(c, Number(nc.invoice_id));   // NC 로 완납되면 매출 입금예정도 정리
       const after = await outstandingOf(c, Number(nc.invoice_id));
-      return { id, applied: total, invoice_outstanding: after.outstanding, paid_full: after.outstanding <= 0.005 };
+      return { id, applied: total, invoice_outstanding: after.outstanding, paid_full: arIsPaid(after.outstanding) };
     });
     if (out.error) return reply.code(out.error === 'not_found' ? 404 : 409).send(out);
     await logEvent({ userId, action: 'apply', target: `nota_credito:${id}`, detail: { applied: out.applied } });

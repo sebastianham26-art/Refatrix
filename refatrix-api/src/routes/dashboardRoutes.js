@@ -156,7 +156,7 @@ export default async function dashboardRoutes(app) {
     // 고객 현황: 고객 수 / 연체 고객 수 / 총 미수금(민감)
     {
       let q = `SELECT COUNT(DISTINCT c.id) AS cust_n,
-                      COUNT(DISTINCT CASE WHEN i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01 THEN c.id END) AS overdue_n,
+                      COUNT(DISTINCT CASE WHEN i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) >= 0.5 THEN c.id END) AS overdue_n,
                       COALESCE(SUM(CASE WHEN i.status='posted' THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END),0) AS outstanding
                  FROM customers c
                  LEFT JOIN sales_invoices i ON i.customer_id=c.id AND i.status='posted'
@@ -244,7 +244,7 @@ export default async function dashboardRoutes(app) {
         `SELECT COUNT(*) AS n, COALESCE(SUM(i.total_mxn - COALESCE(p.paid,0)),0) AS overdue
            FROM sales_invoices i
            LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
-          WHERE i.status='posted' AND i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0.01`)).rows[0];
+          WHERE i.status='posted' AND i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) >= 0.5`)).rows[0];
       out.ar_overdue = { count: Number(r.n), total: seeAr ? r2(r.overdue) : null, locked: !seeAr };
     }
     // 승인 대기 거래 수 — 비민감
