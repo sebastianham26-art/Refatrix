@@ -85,35 +85,58 @@ export async function syncArPlanTxn(c, invoiceId) {
   return { invoice_id: invId, plan_id: Number(plan.id), action: plan.deleted_at ? 'reopened' : 'reduced', outstanding };
 }
 
+// 통지 소진액 재계산 — **원천은 링크행(bank_deposit_payments) 합계 하나뿐**이다.
+//   allocated_amount 는 파생값이므로 증감으로 관리하지 않고 매번 원천에서 다시 계산한다.
+//   (2026-09-02: 증감 방식이 한 번 어긋나자 배분이 0건인데 소진액만 남는 «유령 부분배분»이
+//    영구 고착되어 통지를 지울 수도, 이어서 반제할 수도 없게 됐다 — LUEMI 통지 #12·#13.)
+//   sales_payments 를 JOIN 하므로 반제가 사라진 링크는 자동으로 빠진다 = 스스로 치유된다.
+async function bdRecalcDeposit(c, depositId) {
+  if (!depositId) return false;
+  const r = await c.query(
+    `UPDATE bank_deposits_pending d
+        SET allocated_amount = u.used,
+            status = CASE WHEN u.used > 0.001 AND (d.amount - u.used) < $2::numeric
+                          THEN 'allocated' ELSE 'pending' END,
+            payment_id   = CASE WHEN u.used > 0.001 THEN d.payment_id ELSE NULL END,
+            allocated_by = CASE WHEN u.used > 0.001 AND (d.amount - u.used) < $2::numeric
+                                THEN d.allocated_by ELSE NULL END,
+            allocated_at = CASE WHEN u.used > 0.001 AND (d.amount - u.used) < $2::numeric
+                                THEN d.allocated_at ELSE NULL END
+       FROM (SELECT COALESCE(SUM(l.amount),0) AS used
+               FROM bank_deposit_payments l
+               JOIN sales_payments p ON p.id = l.payment_id
+              WHERE l.deposit_id = $1) u
+      WHERE d.id = $1 AND d.status IN ('pending','allocated')
+      RETURNING d.id`, [depositId, BD_REMAIN_EPS]);
+  return r.rows.length > 0;
+}
+
 // 통지 소진액 되돌리기 — 반제(또는 배분 1건)를 삭제할 때 통지를 그만큼 열어준다.
-//   amount 만큼 allocated_amount 를 줄이고 status 를 pending 으로 되돌린다.
 //   removeLink=true 면 링크행 삭제(반제 헤더 자체가 사라질 때), false 면 링크 금액만 차감.
-//   0191 이전에 만들어진 레거시 반제(링크행 없음)는 payment_id 로 찾아 통째로 되돌린다.
+//   그 뒤 소진액은 bdRecalcDeposit 이 링크 합계에서 **다시 계산**한다.
+//   링크행이 없는 레거시 반제(0191 이전)는 payment_id 포인터로 통지를 찾는다.
 async function bdReleaseAmount(c, paymentId, amount, removeLink) {
   const link = (await c.query(
     `SELECT deposit_id, amount FROM bank_deposit_payments WHERE payment_id=$1`, [paymentId])).rows[0];
-  if (!link) {
-    const r = await c.query(
-      `UPDATE bank_deposits_pending
-          SET status='pending', allocated_amount=0, payment_id=NULL, allocated_by=NULL, allocated_at=NULL
-        WHERE payment_id=$1 AND status='allocated' RETURNING id`, [paymentId]);
-    return r.rows.length > 0;
+  // 레거시(링크 없음)는 포인터로 찾는다. status 조건을 두지 않는다 — 부분배분(pending) 통지도
+  // 되돌릴 수 있어야 한다(예전 `AND status='allocated'` 가 유령 소진액의 원인이었다).
+  const legacy = link ? null : (await c.query(
+    `SELECT id FROM bank_deposits_pending WHERE payment_id=$1`, [paymentId])).rows[0];
+  const depId = link ? Number(link.deposit_id) : (legacy ? Number(legacy.id) : null);
+  if (!depId) return false;
+  // sales_payments FK 포인터를 먼저 끊는다(반제 헤더 DELETE 가 FK 위반으로 터지지 않도록).
+  await c.query(`UPDATE bank_deposits_pending SET payment_id=NULL WHERE payment_id=$1`, [paymentId]);
+  if (link) {
+    if (removeLink) {
+      await c.query(`DELETE FROM bank_deposit_payments WHERE payment_id=$1`, [paymentId]);
+    } else {
+      const dec = Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
+      await c.query(
+        `UPDATE bank_deposit_payments SET amount = GREATEST(0, amount - $2::numeric) WHERE payment_id=$1`,
+        [paymentId, dec]);
+    }
   }
-  const dec = Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
-  await c.query(
-    `UPDATE bank_deposits_pending
-        SET allocated_amount = GREATEST(0, COALESCE(allocated_amount,0) - $2::numeric),
-            status = 'pending',
-            payment_id = CASE WHEN payment_id = $3 THEN NULL ELSE payment_id END,
-            allocated_by = NULL, allocated_at = NULL
-      WHERE id = $1`, [link.deposit_id, dec, paymentId]);
-  if (removeLink) {
-    await c.query(`DELETE FROM bank_deposit_payments WHERE payment_id=$1`, [paymentId]);
-  } else {
-    await c.query(
-      `UPDATE bank_deposit_payments SET amount = GREATEST(0, amount - $2::numeric) WHERE payment_id=$1`,
-      [paymentId, dec]);
-  }
+  await bdRecalcDeposit(c, depId);
   return true;
 }
 
@@ -1033,6 +1056,24 @@ export default async function financeRoutes(app) {
     const fv = validateReceiptDataUrl(b.file);
     if (!fv.ok) return reply.code(400).send({ error: 'invalid_file', detail: fv.error });
     const userId = req.ctx.perm.userId;
+    // 중복 등록 방지 — 같은 계좌·같은 입금일·같은 금액의 통지가 이미 있으면 되묻는다.
+    //   (2026-09-02: LUEMI 7,280.57 한 건이 통지 3건으로 등록돼, 각 통지에 반쪽씩 반제가 걸리는
+    //    바람에 어느 쪽도 닫히지 않고 인박스에 유령으로 남았다. 통장에 한 번 들어온 돈은 통지도 한 건이다.)
+    //   의도적인 같은 금액 2회 입금이면 화면에서 confirm_duplicate=true 로 다시 보낸다.
+    if (!b.confirm_duplicate) {
+      const dup = (await query(
+        `SELECT id, status, COALESCE(allocated_amount,0) AS allocated_amount
+           FROM bank_deposits_pending
+          WHERE account_id=$1 AND deposit_date=$2 AND amount=$3::numeric AND status <> 'void'
+          ORDER BY id`, [accountId, b.deposit_date, amount])).rows;
+      if (dup.length) {
+        return reply.code(409).send({
+          error: 'duplicate_suspect',
+          count: dup.length,
+          existing: dup.map((x) => ({ id: Number(x.id), status: x.status, allocated_amount: Number(x.allocated_amount) })),
+        });
+      }
+    }
     const out = await withTx(async (c) => {
       const r = await c.query(
         `INSERT INTO bank_deposits_pending (account_id, deposit_date, amount, payer_memo, customer_id, note, created_by)
@@ -1064,6 +1105,9 @@ export default async function financeRoutes(app) {
               d.customer_id, c.name AS customer_name, d.status, d.created_by, u.name AS created_by_name,
               (rd.user_id IS NOT NULL) AS read_by_me,
               (fd.deposit_id IS NOT NULL) AS has_file,
+              (SELECT COUNT(*) FROM bank_deposits_pending x
+                WHERE x.account_id=d.account_id AND x.deposit_date=d.deposit_date
+                  AND x.amount=d.amount AND x.status <> 'void') AS dup_count,
               ap.customer_id AS alloc_customer_id, ac.name AS alloc_customer_name
          FROM bank_deposits_pending d
          LEFT JOIN accounts a ON a.id=d.account_id
@@ -1087,6 +1131,7 @@ export default async function financeRoutes(app) {
         return {
           ...x, id: Number(x.id), account_id: Number(x.account_id), amount,
           allocated_amount: used, remaining, partial: used > 0.001 && remaining > 0.001,
+          dup_count: Number(x.dup_count || 1),
           customer_id: x.customer_id != null ? Number(x.customer_id) : null,
           alloc_customer_id: x.alloc_customer_id != null ? Number(x.alloc_customer_id) : null,
           read_by_me: x.read_by_me === true, has_file: x.has_file === true,

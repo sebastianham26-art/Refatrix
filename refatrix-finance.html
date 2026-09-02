@@ -4242,9 +4242,19 @@
     $('bd-save').disabled=true;
     try{
       const fileObj=await bdReadFile(fEl);
-      const res=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null,file:fileObj.data,file_name:fileObj.name})});
-      const d=await res.json();
-      if(!res.ok||d.error){ m.className='msg err'; m.textContent='등록 실패: '+(d.note||d.detail||d.error||res.status); return; }
+      const post=async(confirmDup)=>{
+        const r=await fetch(session.api+'/api/bank-deposits',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({account_id:acc,deposit_date:date,amount:amt,payer_memo:memo||null,file:fileObj.data,file_name:fileObj.name,confirm_duplicate:!!confirmDup})});
+        return {r, d:await r.json()};
+      };
+      let {r:res,d}=await post(false);
+      // 같은 계좌·같은 날·같은 금액의 통지가 이미 있으면 되묻는다(중복 등록 방지).
+      // 통장에 한 번 들어온 돈은 통지도 한 건이어야 한다 — 중복이면 어느 통지도 닫히지 않는다.
+      if(res.status===409 && d && d.error==='duplicate_suspect'){
+        const ok=confirm('같은 계좌·같은 입금일·같은 금액('+fmt(amt)+')의 입금 통지가 이미 '+(d.count||1)+'건 있습니다.\n\n같은 돈을 두 번 등록하면 반제가 통지마다 쪼개져 어느 쪽도 닫히지 않습니다.\n\n정말 별개의 입금이라면 [확인] 을 누르세요.');
+        if(!ok){ m.className='msg'; m.textContent='등록을 취소했습니다(중복 의심).'; return; }
+        ({r:res,d}=await post(true));
+      }
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='등록 실패: '+bdErrText(d,res.status); return; }
       m.className='msg ok'; m.textContent='입금 통지 등록됨 — 영업지원에게 알림이 갑니다. (거래·잔액은 반제 시 반영)';
       $('bd-amt').value=''; $('bd-memo').value=''; if(fEl) fEl.value='';
       loadBdp();
@@ -4626,6 +4636,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260831bd"></script>
+<script src="refatrix-nav.js?v=20260902eps"></script>
 </body>
 </html>

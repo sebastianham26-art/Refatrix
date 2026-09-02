@@ -1474,7 +1474,9 @@
           // 부분배분 = 이미 일부 반제된 통지. 파란 배경으로 새 통지(노란 배경)와 구분한다.
           const bg=part?' style="background:#eef4fb"':(d.read_by_me?'':' style="background:#fffaf0"');
           return '<tr'+bg+'><td>'+esc(d.deposit_date)+'</td><td>'+esc(d.account_name||'—')+'</td>'
-            +'<td class="num"><b>'+fmt(d.amount)+'</b></td>'
+            +'<td class="num"><b>'+fmt(d.amount)+'</b>'
+              +((Number(d.dup_count||1)>1)?' <span style="font-size:10.5px;background:#fbe9e7;color:var(--expense);border-radius:8px;padding:1px 6px;white-space:nowrap" title="같은 계좌·같은 입금일·같은 금액의 통지가 '+Number(d.dup_count)+'건 있습니다. 통장 입금이 한 번이면 통지도 한 건이어야 합니다 — 재무 화면에서 중복을 삭제하세요.">중복 의심 '+Number(d.dup_count)+'건</span>':'')
+              +'</td>'
             +'<td class="num" style="color:var(--muted)">'+(used>0.001?fmt(used):'—')+'</td>'
             +'<td class="num"><b'+(part?' style="color:var(--brand)"':'')+'>'+fmt(rem)+'</b>'
               +(part?' <span style="font-size:10.5px;background:var(--brand);color:#fff;border-radius:8px;padding:1px 6px;vertical-align:middle">부분배분</span>':'')+'</td>'
