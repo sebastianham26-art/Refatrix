@@ -179,5 +179,5 @@ test('⑩ 삭제 후 목록을 다시 불러온다(현금흐름 화면은 탭 �
 });
 
 test('⑪ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0831a/);
+  assert.match(HTML, /build fin-0902a/);
 });

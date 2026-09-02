@@ -181,5 +181,5 @@ test('⑨ 실적 행에는 계획 수정 패널이 아니라 기존 거래 수�
 });
 
 test('⑩ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0831a/);
+  assert.match(HTML, /build fin-0902a/);
 });

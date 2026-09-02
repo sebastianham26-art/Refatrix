@@ -525,6 +525,18 @@ export default async function financeRoutes(app) {
     else if (q.account_id) { args.push(Number(q.account_id)); cond.push(`t.account_id=$${args.length}`); }
     if (q.from) { args.push(q.from); cond.push(`t.txn_date>=$${args.length}`); }
     if (q.to) { args.push(q.to); cond.push(`t.txn_date<=$${args.length}`); }
+    // ===== 페이지네이션 (2026-09-02) =====
+    // 예전엔 LIMIT 200 고정이라, 건수가 많은 조건(예: 전체 계좌)에서 최신 200건에 밀려
+    // 과거 거래(6월분 등)가 **화면에서 통째로 사라진 것처럼** 보였다. 프런트의 [더 보기]가
+    // offset 을 올려 이어받도록 limit/offset 을 받는다.
+    //  · 파라미터를 안 주면 기존과 100% 동일(첫 200건) — 하위호환.
+    //  · has_more 는 limit+1 건을 떠서 판정한 뒤 잘라낸다(별도 COUNT 쿼리 없이).
+    //  · ORDER BY (txn_date DESC, id DESC) 가 유일키를 포함하므로 offset 페이징이 안정적이다.
+    const TXN_PAGE_MAX = 500;
+    const limit = Math.min(Math.max(parseInt(q.limit, 10) || 200, 1), TXN_PAGE_MAX);
+    const offset = Math.max(parseInt(q.offset, 10) || 0, 0);
+    args.push(limit + 1); const pLimit = args.length;
+    args.push(offset); const pOffset = args.length;
     const rows = (await query(
       `SELECT t.id, t.account_id, a.name AS account_name, t.txn_date, t.direction, t.amount, t.currency, t.fx_rate,
               t.amount_mxn, t.category_code, cat.name AS category_name, t.status, t.kind, t.approved, t.change_status, t.memo, t.receipt_no, t.sales_invoice_id,
@@ -541,8 +553,11 @@ export default async function financeRoutes(app) {
          LEFT JOIN customers c ON c.id=si.customer_id
          LEFT JOIN customers fc ON fc.id=t.customer_id
         WHERE ${cond.join(' AND ')}
-        ORDER BY t.txn_date DESC, t.id DESC LIMIT 200`, args)).rows;
-    return { items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
+        ORDER BY t.txn_date DESC, t.id DESC LIMIT $${pLimit} OFFSET $${pOffset}`, args)).rows;
+    const hasMore = rows.length > limit;
+    if (hasMore) rows.length = limit;
+    return { limit, offset, has_more: hasMore,
+      items: rows.map((t) => ({ ...t, amount: Number(t.amount), amount_mxn: Number(t.amount_mxn), fx_rate: Number(t.fx_rate),
       plan_amount: t.plan_amount == null ? null : Number(t.plan_amount),
       edit_count: Number(t.edit_count), change_count: Number(t.change_count || 0),
       freight_alloc_n: Number(t.freight_alloc_n || 0),
@@ -554,7 +569,7 @@ export default async function financeRoutes(app) {
   });
 
   // ===== 거래목록 엑셀 내보내기 — 디렉터 전용 (2026-08-26) =====
-  // 화면 목록(/api/transactions)은 LIMIT 200 이라 "보이는 것만" 받는다.
+  // 화면 목록(/api/transactions)은 200건씩 페이징이라 "지금까지 불러온 것만" 받는다.
   // 내보내기는 **필터에 걸린 전부**를 줘야 하므로 별도 엔드포인트로 분리한다.
   //  · 같은 필터(status·direction·account_id[=none]·from·to)를 그대로 받는다.
   //  · 디렉터 전용(requireDirector) — 계좌 권한·비공개 필터가 필요 없다(디렉터는 전부 열람).

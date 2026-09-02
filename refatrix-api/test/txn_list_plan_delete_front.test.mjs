@@ -209,5 +209,5 @@ test('⑫ 서버가 일부를 건너뛰면 사유를 사람 말로 알려준다'
 });
 
 test('⑬ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0831a/);
+  assert.match(HTML, /build fin-0902a/);
 });

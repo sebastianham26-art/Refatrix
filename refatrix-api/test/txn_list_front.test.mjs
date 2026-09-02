@@ -147,5 +147,5 @@ test('⑧ 마케팅 예정 행을 열면 예정 전용 패널(계획 수정·예
 });
 
 test('⑨ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0831a/);
+  assert.match(HTML, /build fin-0902a/);
 });

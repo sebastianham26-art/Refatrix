@@ -261,5 +261,5 @@ test('⑫ 만드는 동안 버튼이 잠겼다가 원래대로 돌아온다', as
 });
 
 test('⑬ 빌드 마커', () => {
-  assert.match(HTML, /build fin-0831a/);
+  assert.match(HTML, /build fin-0902a/);
 });
