@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (claim-0901b)</title>
+<title>Refatrix ERP · 고객 등록 (merge-0903)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -144,7 +144,7 @@
       <div class="card hidden" id="detailCard">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h2 style="margin:0" id="d-name">고객 상세</h2>
-          <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="delBtn" style="display:none;color:var(--expense);border-color:var(--expense)">삭제</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
+          <div style="display:flex;gap:8px"><button class="btn ghost sm" id="editBtn">수정</button><button class="btn ghost sm" id="mergeBtn" style="display:none" title="같은 회사인데 고객번호가 나뉜 경우 — 상담·방문 기록을 한쪽으로 모읍니다">🔗 병합</button><button class="btn ghost sm" id="delBtn" style="display:none;color:var(--expense);border-color:var(--expense)">삭제</button><button class="btn ghost sm" id="d-back">← 목록</button></div>
         </div>
         <div id="d-info"></div>
         <div id="d-approval"></div>
@@ -236,6 +236,60 @@
     </div>
     <div class="hint" style="margin-top:0">왼쪽부터 <b>지점이 많은 순</b>, 같은 지점수면 <b>매출액이 큰 순</b>으로 정렬했습니다. 각 점은 해당 고객의 할인률 위치이며, <b style="color:#B45309">우측축(주황)</b>은 재주문 속도(개/영업일 · 첫 주문 제외)입니다. (현재 목록에 표시된 고객 기준)</div>
     <div id="chartHost" style="overflow-x:auto;margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- 🔗 고객 병합 모달 (디렉터) · merge-0903 -->
+<div class="modal-back" id="mergeModal">
+  <div class="modal-card" style="max-width:840px">
+    <div class="modal-head">
+      <h2>🔗 고객 병합 — 상담·방문 기록을 한쪽으로 모읍니다</h2>
+      <button class="btn ghost sm" onclick="closeMerge()">닫기 ✕</button>
+    </div>
+    <div class="hint" style="margin-top:0">같은 회사인데 <b>RFC 는 하나인데 고객번호가 나뉘어</b> 등록된 경우에 씁니다.
+      <b>복사가 아니라 이관</b>입니다 — 기록의 소속 고객만 바뀌고 사본은 생기지 않습니다(녹음·후속조치가 두 번 뜨지 않습니다).<br>
+      옮기는 것은 <b>현장 방문 · 수기 미팅 · 고객상담</b> 세 가지입니다.
+      <b style="color:#B23A2E">견적·매출·미수는 옮기지 않습니다</b> — 아래 「남는 것」에 세어 보여 드리니 보고 판단하세요.</div>
+
+    <div style="display:flex;gap:10px;align-items:stretch;margin-top:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:230px;border:1px solid #f0c4bf;background:#fdf3f2;border-radius:10px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:#b3261e">옮길 고객 — 기록이 빠져나갑니다</div>
+        <div id="mgFrom" style="margin-top:4px"><span class="hint" style="margin:0">—</span></div>
+      </div>
+      <div style="flex:0 0 auto;display:flex;align-items:center">
+        <button class="btn ghost sm" id="mgSwapBtn" title="방향 바꾸기">⇄</button>
+      </div>
+      <div style="flex:1;min-width:230px;border:1px solid #bfe0d2;background:#f2faf6;border-radius:10px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:#1f5540">남길 고객 — 기록이 모입니다</div>
+        <div id="mgInto" style="margin-top:4px"><span class="hint" style="margin:0">아래에서 찾아 고르세요</span></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div style="flex:3"><label>남길 고객 찾기 (상호·코드·RFC · 2글자 이상)</label><input id="mgQ" type="text" placeholder="예: C-0052 / FRENOS / RFC"></div>
+      <div style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn" id="mgSearchBtn">찾기</button></div>
+    </div>
+    <div id="mgResults"></div>
+
+    <div id="mgPreview" style="margin-top:12px"></div>
+
+    <div id="mgExec" class="hidden" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+      <label>병합 사유 (필수 — 왜 합치는지 기록으로 남습니다)</label>
+      <input id="mgReason" type="text" placeholder="예: RFC 동일 · 같은 회사가 지점별로 두 번 등록됨">
+      <label style="display:flex;align-items:center;gap:7px;margin-top:9px;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" id="mgClose" checked style="width:auto;margin:0">
+        옮긴 뒤 <b>옮길 고객을 종료</b>합니다 (목록에서 사라집니다 — 합치는 게 목적이면 켜 두세요)
+      </label>
+      <label id="mgAckWrap" class="hidden" style="display:flex;align-items:flex-start;gap:7px;margin-top:7px;font-size:12.5px;color:#B23A2E;cursor:pointer">
+        <input type="checkbox" id="mgAck" style="width:auto;margin:3px 0 0">
+        <span id="mgAckText"></span>
+      </label>
+      <div style="margin-top:11px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="mgRunBtn" style="background:#B23A2E;border-color:#B23A2E">🔗 병합 실행</button>
+        <span class="hint" style="margin:0">되돌리려면 반대 방향으로 다시 병합해야 합니다 — 실행 전에 미리보기를 확인하세요.</span>
+      </div>
+      <div class="msg" id="mgMsg"></div>
+    </div>
   </div>
 </div>
 
@@ -900,7 +954,8 @@
             ? '<span style="color:#9a6a1a">✔ 이 RFC 를 쓰는 다른 고객이 지금은 없습니다 — 복구하면 다시 잠깁니다.</span>'
             : '<span style="color:#B23A2E">같은 RFC 사용 '+r.dup_count+'건: '+esc(r.dup_names||'')+' — 한쪽을 정정·통합해야 복구됩니다.</span>'}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-            ${r.releasable?`<button class="btn sm" onclick="releaseRfcExempt(${r.id})">선점 보호 복구</button>`:''}
+            ${r.releasable?`<button class="btn sm" onclick="releaseRfcExempt(${r.id})">선점 보호 복구</button>`
+                          :`<button class="btn sm" onclick="openMerge({id:${r.id},code:${JSON.stringify(r.code)},name:${JSON.stringify(r.name)},rfc:${JSON.stringify(r.rfc||null)},owner_name:${JSON.stringify(r.owner_name||null)},team_name:${JSON.stringify(r.team_name||null)},approval_status:${JSON.stringify(r.approval_status||'approved')}})">🔗 병합</button>`}
             <button class="btn ghost sm" onclick="openCustomer(${r.id})">고객 상세</button>
           </div>
         </div>`).join('');
@@ -917,6 +972,133 @@
     const d=await res.json().catch(()=>({}));
     if(res.ok&&!d.error){ alert(d.note||'복구했습니다.'); loadRfcExempt(); if(curCustomer&&curCustomer.id===id)openCustomer(id); loadCustomers(); }
     else alert('복구 실패: '+(d.note||d.error||res.status));
+  }
+
+  // ===== 🔗 고객 병합 (디렉터) · merge-0903 =====
+  //   RFC 는 하나인데 고객번호가 나뉜 건을 하나로 모은다.
+  //   복사가 아니라 이관 — customer_id 만 바뀐다. 견적·매출은 옮기지 않고 「남는 것」으로 보여만 준다.
+  let mgFrom=null, mgInto=null, mgPrev=null;
+  function mgBrief(c){
+    if(!c) return '<span class="hint" style="margin:0">—</span>';
+    return `<b>${esc(c.name)}</b> <span class="hint" style="margin:0">(${esc(c.code)})</span>`
+      +`<div class="hint" style="margin:3px 0 0">RFC ${c.rfc?('<b>'+esc(c.rfc)+'</b>'):'<span style="color:#B23A2E">없음</span>'}`
+      +`${c.owner_name?(' · 담당 '+esc(c.owner_name)):''}${c.team_name?(' / '+esc(c.team_name)):''}`
+      +`${c.approval_status&&c.approval_status!=='approved'?(' · <b style="color:#9a6512">'+esc(c.approval_status)+'</b>'):''}</div>`;
+  }
+  function openMerge(from){
+    if(!isDirector()){ alert('고객 병합은 디렉터만 할 수 있습니다.'); return; }
+    mgFrom=from||null; mgInto=null; mgPrev=null;
+    $('mgFrom').innerHTML=mgBrief(mgFrom);
+    $('mgInto').innerHTML='<span class="hint" style="margin:0">아래에서 찾아 고르세요</span>';
+    $('mgResults').innerHTML=''; $('mgPreview').innerHTML=''; $('mgExec').classList.add('hidden');
+    $('mgQ').value=''; $('mgReason').value=''; $('mgAck').checked=false; $('mgClose').checked=true;
+    const m=$('mgMsg'); m.style.display='none'; m.textContent='';
+    $('mergeModal').classList.add('on');
+    setTimeout(()=>{try{$('mgQ').focus();}catch(e){}},50);
+  }
+  function closeMerge(){ $('mergeModal').classList.remove('on'); }
+  function mgSwap(){
+    if(!mgInto){ alert('먼저 남길 고객을 고르세요.'); return; }
+    const t=mgFrom; mgFrom=mgInto; mgInto=t;
+    $('mgFrom').innerHTML=mgBrief(mgFrom); $('mgInto').innerHTML=mgBrief(mgInto);
+    mgLoadPreview();
+  }
+  async function mgSearch(){
+    const q=$('mgQ').value.trim();
+    if(q.length<2){ $('mgResults').innerHTML='<div class="hint">2글자 이상 입력하세요.</div>'; return; }
+    $('mgResults').innerHTML='<div class="hint">찾는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/customers?q='+encodeURIComponent(q),{headers:auth()}).then(r=>r.json());
+      const items=(d.items||[]).filter(x=>!mgFrom||Number(x.id)!==Number(mgFrom.id)).slice(0,20);
+      if(!items.length){ $('mgResults').innerHTML='<div class="hint">찾는 고객이 없습니다.</div>'; return; }
+      $('mgResults').innerHTML='<div style="max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px">'
+        +items.map(x=>`<div style="padding:7px 10px;border-bottom:1px solid #f0efe9;display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div><b>${esc(x.name)}</b> <span class="hint" style="margin:0">(${esc(x.code)}) · RFC ${esc(x.rfc||'—')} · 담당 ${esc(x.owner_name||'미지정')}</span></div>
+          <button class="btn ghost sm" onclick="mgPick(${x.id})">이 고객으로</button>
+        </div>`).join('')+'</div>';
+      window.__mgCandidates=items;
+    }catch(e){ $('mgResults').innerHTML='<div class="hint">찾지 못했습니다.</div>'; }
+  }
+  function mgPick(id){
+    const c=(window.__mgCandidates||[]).find(x=>Number(x.id)===Number(id));
+    if(!c) return;
+    mgInto={id:Number(c.id),code:c.code,name:c.name,rfc:c.rfc,owner_name:c.owner_name,team_name:c.team_name,approval_status:c.approval_status};
+    $('mgInto').innerHTML=mgBrief(mgInto);
+    $('mgResults').innerHTML='';
+    mgLoadPreview();
+  }
+  async function mgLoadPreview(){
+    if(!mgFrom||!mgInto) return;
+    $('mgPreview').innerHTML='<div class="hint">미리보기를 계산하는 중…</div>';
+    $('mgExec').classList.add('hidden');
+    try{
+      const res=await fetch(session.api+'/api/customers/'+mgFrom.id+'/merge-preview?into='+mgInto.id,{headers:auth()});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ $('mgPreview').innerHTML='<div class="hint" style="color:#B23A2E">미리보기 실패: '+esc(d.note||d.error||res.status)+'</div>'; return; }
+      mgPrev=d;
+      // 서버가 돌려준 정본으로 양쪽 카드를 다시 그린다(목록 캐시보다 정확하다).
+      mgFrom=Object.assign({},mgFrom,d.from); mgInto=Object.assign({},mgInto,d.into);
+      $('mgFrom').innerHTML=mgBrief(mgFrom); $('mgInto').innerHTML=mgBrief(mgInto);
+
+      const movesHtml=(d.moves||[]).map(m=>{
+        const kids=(m.children||[]).map(c=>esc(c.label)+' '+c.cnt).join(' · ');
+        const gone=m.deleted>0?` <span class="hint" style="margin:0">(+ 삭제된 ${m.deleted}건도 함께)</span>`:'';
+        return `<tr><td>${esc(m.label)}</td><td class="num"><b>${m.cnt}</b>건${gone}</td><td>${kids?'<span class="hint" style="margin:0">따라옴: '+kids+'</span>':'<span class="hint" style="margin:0">—</span>'}</td></tr>`;
+      }).join('');
+      const resHtml=(d.residual||[]).length
+        ? '<table style="margin-top:4px"><tbody>'+d.residual.map(r=>
+            `<tr><td>${esc(r.label)}</td><td class="num">${r.cnt}${r.capped?'+':''}건</td><td><span class="hint" style="margin:0">${esc(r.table)}</span></td></tr>`).join('')+'</tbody></table>'
+        : '<div class="hint" style="margin:4px 0 0">남는 데이터가 없습니다 — 상담·방문만 붙어 있던 고객입니다.</div>';
+      const warnHtml=(d.warnings||[]).length
+        ? '<div style="border:1px solid #ecd9a0;background:#fffaf0;border-radius:9px;padding:9px 12px;margin-top:10px;font-size:12.5px;color:#9a6512">'
+          +d.warnings.map(w=>'⚠ '+esc(w.note)).join('<br>')+'</div>' : '';
+      const blockHtml=(d.blockers||[]).length
+        ? '<div style="border:1px solid #f0c4bf;background:#fdf3f2;border-radius:9px;padding:9px 12px;margin-top:10px;font-size:12.5px;color:#b3261e">'
+          +d.blockers.map(b=>'⛔ '+esc(b.note)).join('<br>')+'</div>' : '';
+      const rfcHtml=d.same_rfc
+        ? '<div class="hint" style="margin:8px 0 0;color:#1f5540">✔ 두 고객의 RFC 가 같습니다 — 합치는 것이 맞는 건입니다.</div>'
+        : '';
+
+      $('mgPreview').innerHTML=rfcHtml
+        +`<div style="font-weight:700;margin-top:10px">옮겨지는 기록 — 합계 <b style="color:#1f5540">${d.move_total}건</b></div>`
+        +`<table style="margin-top:4px"><tbody>${movesHtml}</tbody></table>`
+        +`<div style="font-weight:700;margin-top:12px">남는 것 — <b style="color:#B23A2E">${d.residual_total}${(d.residual||[]).some(r=>r.capped)?'+':''}건</b> <span class="hint" style="margin:0">(이 화면은 옮기지 않습니다)</span></div>`
+        +resHtml+warnHtml+blockHtml;
+
+      if(d.can_merge){
+        $('mgExec').classList.remove('hidden');
+        const need=$('mgClose').checked && d.residual_total>0;
+        $('mgAckWrap').classList.toggle('hidden',!need);
+        $('mgAckText').textContent='옮길 고객에 견적·매출 등 '+d.residual_total+'건이 남아 있는 것을 확인했고, 그래도 이 고객을 종료합니다.';
+      }
+    }catch(e){ $('mgPreview').innerHTML='<div class="hint">미리보기를 불러오지 못했습니다.</div>'; }
+  }
+  async function mgRun(){
+    if(!mgFrom||!mgInto||!mgPrev) return;
+    const m=$('mgMsg'); m.className='msg'; m.style.display='none';
+    const reason=$('mgReason').value.trim();
+    if(!reason){ m.className='msg err'; m.style.display='block'; m.textContent='병합 사유를 적어야 합니다.'; return; }
+    const closeSrc=$('mgClose').checked;
+    if(closeSrc && mgPrev.residual_total>0 && !$('mgAck').checked){
+      m.className='msg err'; m.style.display='block'; m.textContent='남는 데이터가 있습니다 — 확인란을 체크해야 종료할 수 있습니다.'; return;
+    }
+    if(!confirm(`${mgFrom.name}(${mgFrom.code}) 의 상담·방문 기록 ${mgPrev.move_total}건을\n${mgInto.name}(${mgInto.code}) 로 옮깁니다.`
+      +(closeSrc?`\n\n그리고 ${mgFrom.name} 은(는) 종료되어 목록에서 사라집니다.`:'')+'\n\n진행할까요?')) return;
+    $('mgRunBtn').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/customers/merge',{method:'POST',
+        headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({from_id:mgFrom.id,into_id:mgInto.id,close_source:closeSrc,
+                             ack_residual:$('mgAck').checked,reason})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok||d.error){ m.className='msg err'; m.style.display='block'; m.textContent='병합 실패: '+(d.note||d.error||res.status); return; }
+      alert(d.note||'병합했습니다.');
+      closeMerge();
+      loadCustomers();
+      if(isDirector()){ loadRfcExempt(); loadClaimBadge&&loadClaimBadge(); }
+      openCustomer(mgInto.id);
+    }catch(e){ m.className='msg err'; m.style.display='block'; m.textContent='병합 실패(네트워크).'; }
+    finally{ $('mgRunBtn').disabled=false; }
   }
 
   // 0193 · 고객 상세에서 RFC 를 바로 넣어 선점을 확정한다.
@@ -1037,6 +1219,7 @@
       if(d.error){$('d-info').innerHTML='<div class="hint">'+(d.error==='forbidden_team'?'다른 팀 고객은 볼 수 없습니다.':'불러오지 못했습니다.')+'</div>';return;}
       curCustomer=d.customer;const c=d.customer;
       $('delBtn').style.display = isDirector()?'':'none';
+      $('mergeBtn').style.display = isDirector()?'':'none';   // merge-0903 · 병합은 디렉터만
       $('d-name').innerHTML=`${c.name} <span class="hint" style="margin:0">(${c.code})</span> ${teamPill(c.team_name,c.team_id)}`;
       const totalOut=d.invoices.reduce((s,i)=>s+i.outstanding,0);
       const totalOver=d.invoices.reduce((s,i)=>s+(i.overdue?i.outstanding:0),0);
@@ -1077,7 +1260,8 @@
         const who=(c.rfc_dup_others||[]).map(o=>`${esc(o.name)}(담당 ${esc(o.owner_name)})`).join(' · ');
         rfcCell=`<b>${esc(c.rfc)}</b> <span style="color:#B23A2E">— RFC 중복이라 선점 보호 제외.
           같은 RFC 를 쓰는 고객이 ${c.rfc_dup_count}건 더 있습니다${who?': '+who:''}.
-          한쪽 RFC 를 정정하거나 고객을 통합한 뒤 「선점 예외 정리」에서 복구하세요.</span>`;
+          한쪽 RFC 를 정정하거나 고객을 통합한 뒤 「선점 예외 정리」에서 복구하세요.</span>`
+          +(isDirector()?` <button class="btn sm" style="margin-left:6px" onclick="openMerge({id:${c.id},code:${JSON.stringify(c.code)},name:${JSON.stringify(c.name)},rfc:${JSON.stringify(c.rfc||null)},owner_name:${JSON.stringify(c.owner_name||null)},team_name:${JSON.stringify(c.team_name||null)},approval_status:${JSON.stringify(c.approval_status||'approved')}})">🔗 병합</button>`:'');
       }
       const refRow = (c.syd_ref_buy_price!=null)
         ? `<tr><th>할인율 산출 근거</th><td colspan="3">
@@ -1499,7 +1683,24 @@
   $('discChartBtn').addEventListener('click',openChart);
   $('listToggleBtn').addEventListener('click',toggleList);
   $('chartModal').addEventListener('click',e=>{ if(e.target===$('chartModal'))closeChart(); });
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeChart(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){closeChart();closeMerge();} });
+  // 🔗 고객 병합 (디렉터) · merge-0903
+  $('mergeModal').addEventListener('click',e=>{ if(e.target===$('mergeModal'))closeMerge(); });
+  $('mgSearchBtn').addEventListener('click',mgSearch);
+  $('mgQ').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();mgSearch();} });
+  $('mgSwapBtn').addEventListener('click',mgSwap);
+  $('mgRunBtn').addEventListener('click',mgRun);
+  // 원본을 종료하지 않으면 남는 데이터 확인란도 필요 없다.
+  $('mgClose').addEventListener('change',()=>{
+    const need=$('mgClose').checked && mgPrev && mgPrev.residual_total>0;
+    $('mgAckWrap').classList.toggle('hidden',!need);
+  });
+  $('mergeBtn').addEventListener('click',()=>{
+    if(!curCustomer) return;
+    openMerge({id:curCustomer.id,code:curCustomer.code,name:curCustomer.name,rfc:curCustomer.rfc,
+               owner_name:curCustomer.owner_name,team_name:curCustomer.team_name,
+               approval_status:curCustomer.approval_status});
+  });
   $('q').addEventListener('keydown',e=>{if(e.key==='Enter')loadCustomers();});
   $('crossBtn').addEventListener('click',crossSearch);
   $('crossQ').addEventListener('keydown',(e)=>{if(e.key==='Enter')crossSearch();});

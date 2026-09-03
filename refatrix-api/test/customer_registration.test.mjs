@@ -456,7 +456,8 @@ test('E7. 견적·현장조사에서 "자동 등록" 안내 문구가 사라졌�
 test('E8. 빌드 마커가 올라갔다(하드 리프레시 확인용)', () => {
   assert.ok(custform.includes('v20260901claimb'));
   assert.ok(custHtml.includes('refatrix-custform.js?v=20260901claimb'), 'custform 캐시버스터 동기화');
-  assert.ok(custHtml.includes('claim-0901b'));
+  // 탭 제목 마커는 화면이 바뀔 때마다 올라간다(merge-0903 = 🔗 고객 병합 추가).
+  assert.ok(custHtml.includes('merge-0903'));
 });
 
 test('E9. 화면 문구가 "RFC 로 선점" 으로 바뀌었다', () => {

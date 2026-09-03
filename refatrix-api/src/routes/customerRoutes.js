@@ -16,6 +16,8 @@ import { stageLabel, stripStageLabel } from '../stageLabel.js';
 import { normalizeClaimKey, computeBaselineDiscount, validateChosenDiscount,
          discountGap, MAX_DISCOUNT_PCT, validateRfc, validateRfcOptional, RFC_ERROR_NOTE,
          nameSimilarity, NAME_SIMILAR_THRESHOLD } from '../customerClaim.js';
+import { MERGE_MOVES, MOVED_TABLES, safeIdent, residualLabel,
+         checkMerge, moveTotal, mergeNote } from '../customerMerge.js';
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -1351,6 +1353,226 @@ export default async function customerRoutes(app) {
     await safeLog({ userId: perm.userId, action: 'rfc_exempt_release', target: `customer:${id}` });
     return { ok: true, id, rfc: c.rfc,
       note: `${c.name} 의 선점 보호를 복구했습니다 — 이제 RFC ${c.rfc} 는 DB 유니크로 잠깁니다.` };
+  });
+
+  // ===================================================================
+  // 🔗 고객 병합 (디렉터) — 0188 인수인계 ⑨ 「RFC 중복 정리 — 병합」 구현
+  //   같은 RFC 인데 고객번호가 나뉜 건을 하나로 모은다.
+  //   **복사가 아니라 이관**이다 — customer_id 만 바꾼다(사본을 만들면 후속조치가 두 번 뜬다).
+  //   옮기는 것은 상담·방문 3종뿐이고, 견적·매출 등은 「남는 것」으로 세어 보여만 준다.
+  // ===================================================================
+
+  // 병합 판정에 필요한 최소 필드만 — 미리보기·실행 양쪽이 같은 것을 본다.
+  async function mergeCustBrief(id, client = null) {
+    const q = client ? ((sql, p) => client.query(sql, p)) : query;
+    const regOn = await regColumnsReady();
+    const rfcOn = await rfcClaimReady();
+    const rows = (await q(
+      `SELECT c.id, c.code, c.name, c.rfc, c.rfc_norm, c.deleted_at, c.team_id, c.owner_id,
+              ${regOn ? `COALESCE(c.approval_status,'approved')` : `'approved'`} AS approval_status,
+              ${rfcOn ? 'c.rfc_claim_exempt' : 'false'} AS rfc_claim_exempt,
+              u.name AS owner_name, t.name AS team_name
+         FROM customers c
+         LEFT JOIN users u ON u.id = c.owner_id
+         LEFT JOIN sales_teams t ON t.id = c.team_id
+        WHERE c.id = $1`, [Number(id)])).rows;
+    return rows[0] || null;
+  }
+
+  // 이관 대상 건수(부모 + 따라오는 자식). 미리보기 전용 — 실행은 UPDATE 의 rowCount 를 쓴다.
+  async function mergeMoveCounts(customerId) {
+    const out = [];
+    for (const m of MERGE_MOVES) {
+      const soft = m.table === 'sales_visits' || m.table === 'sales_consults';
+      const row = (await query(
+        `SELECT count(*) FILTER (WHERE ${soft ? 'deleted_at IS NULL' : 'true'})::int AS live,
+                count(*) FILTER (WHERE ${soft ? 'deleted_at IS NOT NULL' : 'false'})::int AS gone
+           FROM ${m.table} WHERE ${m.col} = $1`, [customerId])).rows[0];
+      const cnt = Number(row.live); const gone = Number(row.gone);
+      const kids = [];
+      for (const c of m.children) {
+        const n = Number((await query(
+          `SELECT count(*)::int AS n FROM ${c.table} ch
+            WHERE ch.${c.fk} IN (SELECT id FROM ${m.table} WHERE ${m.col} = $1${soft ? ' AND deleted_at IS NULL' : ''})`,
+          [customerId])).rows[0].n);
+        if (n > 0) kids.push({ label: c.label, cnt: n });
+      }
+      // gone = 소프트삭제된 기록. 화면에는 안 보이지만 옮겨는 간다(원본에 매달아 두면 미아가 된다).
+      out.push({ key: m.key, label: m.label, cnt, deleted: gone, children: kids });
+    }
+    return out;
+  }
+
+  // 남는 것 — customers 를 참조하는 모든 단일컬럼 FK 를 카탈로그에서 읽어 센다.
+  //   테이블 목록을 코드에 박아 두면 새 모듈이 생길 때마다 조용히 빠뜨린다.
+  //   501 에서 끊고 「500+」로 표시 — 큰 테이블에서 count(*) 로 끌지 않기 위해서.
+  async function mergeResidual(customerId) {
+    let refs = [];
+    try {
+      refs = (await query(
+        `SELECT cl.relname AS tbl, a.attname AS col
+           FROM pg_constraint c
+           JOIN pg_class cl ON cl.oid = c.conrelid
+           JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+           JOIN unnest(c.conkey) WITH ORDINALITY k(attnum, ord) ON true
+           JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+          WHERE c.contype = 'f'
+            AND c.confrelid = 'customers'::regclass
+            AND array_length(c.conkey, 1) = 1
+            AND ns.nspname = 'public'
+            AND cl.relname <> 'customers'
+          ORDER BY cl.relname`)).rows;
+    } catch (_) { return { items: [], total: 0, unavailable: true }; }
+    const items = [];
+    for (const r of refs) {
+      if (MOVED_TABLES.has(r.tbl)) continue;                 // 이번에 옮기는 것
+      if (!safeIdent(r.tbl) || !safeIdent(r.col)) continue;   // 동적 식별자 방어
+      let n = 0;
+      try {
+        n = Number((await query(
+          `SELECT count(*)::int AS n FROM (SELECT 1 FROM ${r.tbl} WHERE ${r.col} = $1 LIMIT 501) x`,
+          [customerId])).rows[0].n);
+      } catch (_) { continue; }
+      if (n > 0) items.push({ table: r.tbl, column: r.col, label: residualLabel(r.tbl), cnt: n, capped: n > 500 });
+    }
+    items.sort((a, b) => b.cnt - a.cnt || a.table.localeCompare(b.table));
+    return { items, total: items.reduce((s, x) => s + x.cnt, 0), unavailable: false };
+  }
+
+  // 미리보기 — 실행 전에 「무엇이 옮겨지고 무엇이 남는가」를 전부 보여 준다.
+  app.get('/api/customers/:id/merge-preview', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const fromId = Number(req.params.id);
+    const intoId = Number(req.query.into || 0);
+    if (!Number.isFinite(intoId) || intoId <= 0) {
+      return reply.code(400).send({ error: 'into_required', note: '합칠 대상(남길 고객)을 지정하세요.' });
+    }
+    const from = await mergeCustBrief(fromId);
+    const into = await mergeCustBrief(intoId);
+    const { blockers, warnings } = checkMerge(from, into);
+    if (blockers.some((b) => b.code === 'from_not_found' || b.code === 'into_not_found')) {
+      return reply.code(404).send({ error: 'not_found', blockers });
+    }
+    const moves = await mergeMoveCounts(fromId);
+    const residual = await mergeResidual(fromId);
+    const brief = (c) => ({
+      id: Number(c.id), code: c.code, name: c.name, rfc: c.rfc || null,
+      owner_name: c.owner_name || null, team_name: c.team_name || null,
+      approval_status: c.approval_status, rfc_claim_exempt: c.rfc_claim_exempt === true,
+    });
+    return {
+      from: brief(from), into: brief(into),
+      same_rfc: !!(from.rfc_norm && into.rfc_norm && from.rfc_norm === into.rfc_norm),
+      moves, move_total: moveTotal(moves),
+      residual: residual.items, residual_total: residual.total, residual_unavailable: residual.unavailable,
+      warnings, blockers,
+      can_merge: blockers.length === 0,
+    };
+  });
+
+  // 실행 — 단일 트랜잭션. 옮기고, (선택) 원본을 종료하고, 풀린 RFC 선점을 복구한다.
+  app.post('/api/customers/merge', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const fromId = Number(req.body?.from_id);
+    const intoId = Number(req.body?.into_id);
+    const closeSource = req.body?.close_source !== false;      // 기본 = 원본 종료(합치는 게 목적이므로)
+    const ackResidual = req.body?.ack_residual === true;
+    const reason = String(req.body?.reason || '').trim();
+    if (!Number.isFinite(fromId) || !Number.isFinite(intoId)) {
+      return reply.code(400).send({ error: 'bad_request', note: '고객을 지정하세요.' });
+    }
+    if (!reason) {
+      return reply.code(400).send({ error: 'reason_required',
+        note: '병합 사유를 적어야 합니다 — 나중에 왜 합쳤는지 추적할 수 있어야 합니다.' });
+    }
+
+    // 남는 거래 데이터가 있는데 원본을 닫으려 하면, 디렉터가 그것을 보고 확인해야 통과한다.
+    const residual = await mergeResidual(fromId);
+    if (closeSource && residual.total > 0 && !ackResidual) {
+      const fc = await mergeCustBrief(fromId);
+      const who = fc ? `${fc.name}(${fc.code})` : `${fromId} 번 고객`;
+      return reply.code(409).send({ error: 'residual_not_acknowledged',
+        residual: residual.items, residual_total: residual.total,
+        note: `${who} 에는 견적·매출 등 ${residual.total}건이 남아 있습니다. `
+            + '이 화면은 상담·방문만 옮깁니다 — 그래도 원본을 종료할지 확인해 주세요.' });
+    }
+
+    const result = await withTx(async (client) => {
+      // 교착 방지: 항상 작은 id 부터 잠근다.
+      const ids = [fromId, intoId].sort((a, b) => a - b);
+      await client.query(`SELECT id FROM customers WHERE id = ANY($1) ORDER BY id FOR UPDATE`, [ids]);
+      const from = await mergeCustBrief(fromId, client);
+      const into = await mergeCustBrief(intoId, client);
+      const { blockers, warnings } = checkMerge(from, into);
+      if (blockers.length) return { blocked: blockers };
+
+      // 소프트삭제된 기록도 함께 옮긴다(원본에 남기면 종료된 고객에 매달린 미아가 된다).
+      // 다만 안내 문구의 건수는 **화면에 보이는 살아있는 기록** 기준이어야 한다 — 둘을 따로 센다.
+      const counts = {}; const countsAll = {};
+      for (const m of MERGE_MOVES) {
+        const soft = m.table === 'sales_visits' || m.table === 'sales_consults';
+        const r = await client.query(
+          `UPDATE ${m.table} SET ${m.col} = $2 WHERE ${m.col} = $1
+           RETURNING ${soft ? 'deleted_at' : 'NULL::timestamptz AS deleted_at'}`, [fromId, intoId]);
+        countsAll[m.key] = r.rowCount || 0;
+        counts[m.key] = r.rows.filter((x) => x.deleted_at == null).length;
+      }
+
+      let closed = false;
+      if (closeSource) {
+        await client.query(`UPDATE customers SET deleted_at = now(), updated_by = $1 WHERE id = $2`,
+          [perm.userId, fromId]);
+        closed = true;
+      }
+
+      // 원본이 빠지면서 남길 고객의 RFC 중복이 해소될 수 있다 →
+      // 0194 재검사와 **같은 규칙**으로 그 자리에서 선점 보호를 복구한다.
+      let exemptReleased = false;
+      if (closed && (await rfcClaimReady())) {
+        const rel = await client.query(
+          `UPDATE customers c SET rfc_claim_exempt = false
+            WHERE c.id = $1 AND c.rfc_claim_exempt = true AND c.rfc_norm IS NOT NULL
+              AND c.deleted_at IS NULL
+              AND COALESCE(c.approval_status,'approved') <> 'rejected'
+              AND NOT EXISTS (
+                SELECT 1 FROM customers o
+                 WHERE o.id <> c.id AND o.rfc_norm = c.rfc_norm AND o.deleted_at IS NULL
+                   AND COALESCE(o.approval_status,'approved') <> 'rejected')`, [intoId]);
+        exemptReleased = (rel.rowCount || 0) > 0;
+      }
+
+      // 이력 — 양쪽 고객 상세에서 각각 읽히도록 두 줄로 남긴다.
+      const snap = JSON.stringify({ from_id: fromId, from_code: from.code, from_name: from.name,
+        into_id: intoId, into_code: into.code, into_name: into.name,
+        counts, counts_all: countsAll, closed, exempt_released: exemptReleased,
+        residual_total: residual.total, warnings: warnings.map((w) => w.code) });
+      for (const [cid, action] of [[fromId, 'merge_out'], [intoId, 'merge_in']]) {
+        try {
+          await client.query(
+            `INSERT INTO customer_registration_events (customer_id, action, reason, snapshot, acted_by)
+             VALUES ($1,$2,$3,$4,$5)`, [cid, action, reason, snap, perm.userId]);
+        } catch (_) { /* 이력 실패가 병합을 되돌리지는 않는다 */ }
+      }
+      return { counts, countsAll, closed, exemptReleased, from, into, warnings };
+    });
+
+    if (result.blocked) {
+      return reply.code(409).send({ error: 'merge_blocked', blockers: result.blocked,
+        note: result.blocked.map((b) => b.note).join(' ') });
+    }
+    await safeLog({ userId: perm.userId, action: 'customer_merge', target: `customer:${intoId}`,
+      detail: { from: fromId, into: intoId, counts: result.counts, closed: result.closed, reason } });
+    return {
+      ok: true, from_id: fromId, into_id: intoId,
+      counts: result.counts, counts_all: result.countsAll,
+      moved_total: moveTotal(MERGE_MOVES.map((m) => ({ cnt: result.counts[m.key] }))),
+      closed: result.closed, exempt_released: result.exemptReleased,
+      residual_total: residual.total,
+      note: mergeNote(result.counts, {
+        fromName: `${result.from.name}(${result.from.code})`,
+        intoName: `${result.into.name}(${result.into.code})`,
+        closed: result.closed, residualTotal: residual.total,
+      }) + (result.exemptReleased ? ' 중복이 해소되어 남길 고객의 RFC 선점 보호도 복구했습니다.' : ''),
+    };
   });
 
   // 선점 이관 대기 목록 (디렉터) — requested_at 오름차순 = 우선순위 순
