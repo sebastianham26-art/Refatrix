@@ -661,7 +661,7 @@ export default async function devRequestRoutes(app) {
     // 디렉터용 필터 옵션(팀·담당자)
     let filterOpts = null;
     if (isDirector) {
-      const teams = (await query(`SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true ORDER BY sort_order, id`)).rows;
+      const teams = (await query(`SELECT id, name FROM sales_teams WHERE deleted_at IS NULL AND COALESCE(is_sales,true)=true ORDER BY sort_order, id`)).rows;
       const owners = (await query(
         `SELECT DISTINCT u.id, u.name
            FROM users u JOIN customers c ON c.owner_id=u.id

@@ -66,7 +66,7 @@ async function monthTargetOf(perm, ym) {
       ),0) AS a
        FROM sales_teams t
        LEFT JOIN target_team_months tt ON tt.team_id=t.id AND tt.ym=$1
-      WHERE COALESCE(t.is_sales,true)=true${teamFilter}`, args);
+      WHERE t.deleted_at IS NULL AND COALESCE(t.is_sales,true)=true${teamFilter}`, args);
   return Number(r.rows[0].a);
 }
 // 월 매출 실적(ex-IVA 소계, posted)
@@ -83,7 +83,7 @@ async function monthSalesActual(perm, ym) {
 // team 파라미터('total'/'all'/'' = 가시 전체, 또는 특정 team_id) → 가시성 내 포함할 팀 목록/범위
 async function resolveTeamScope(perm, teamParam) {
   const vis = visibleTeamIds(perm); // null = 전체
-  let q = `SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true`;
+  let q = `SELECT id, name FROM sales_teams WHERE deleted_at IS NULL AND COALESCE(is_sales,true)=true`;
   const args = [];
   if (vis !== null) { args.push(vis.length ? vis : [-1]); q += ` AND id = ANY($1)`; }
   q += ` ORDER BY sort_order, id`;
@@ -153,7 +153,7 @@ export default async function salesPerfRoutes(app) {
     const yms = String(req.query.ym || new Date().toISOString().slice(0, 7)).split(',').map((s) => s.trim()).filter(Boolean);
     if (!fieldVisible(perm, 'sales_amount')) return { months: yms, teams: [], locked: true };
     const vis = visibleTeamIds(perm); // null = 전체
-    let teamsQ = `SELECT id, name FROM sales_teams WHERE COALESCE(is_sales,true)=true`;
+    let teamsQ = `SELECT id, name FROM sales_teams WHERE deleted_at IS NULL AND COALESCE(is_sales,true)=true`;
     const teamsArgs = [];
     if (vis !== null) { teamsArgs.push(vis.length ? vis : [-1]); teamsQ += ` AND id = ANY($1)`; }
     teamsQ += ` ORDER BY sort_order, id`;

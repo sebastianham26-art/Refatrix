@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0904a</title>
+<title>Refatrix ERP · WBR · build wbr-0904b</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -101,6 +101,30 @@
   .plightbox img{max-width:94vw;max-height:84vh;border-radius:8px;box-shadow:0 20px 60px -10px rgba(0,0,0,.7)}
   .plightbox .pclose{position:absolute;top:16px;right:20px;width:38px;height:38px;border:none;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:20px;cursor:pointer}
   .plightbox .pcap{color:#fff;font-size:13px;max-width:80vw;text-align:center}
+  /* ===== 나의 기록 초안 검토 패널 ===== */
+  .jdov{position:fixed;inset:0;background:rgba(20,18,14,.55);z-index:10070;display:flex;align-items:center;justify-content:center;padding:24px}
+  .jdbox{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 24px 70px -12px rgba(0,0,0,.4);
+    width:min(920px,96vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden}
+  .jdh{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);font-weight:800;color:var(--brand);font-size:14px}
+  .jdh .meta{font-size:11.5px;font-weight:500;color:var(--muted)}
+  .jdh .x{margin-left:auto;border:none;background:none;font-size:18px;color:var(--muted);cursor:pointer;line-height:1}
+  .jdguide{padding:10px 18px;background:#FBF8F1;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.6}
+  .jdguide b{color:var(--brand-soft)}
+  .jdtools{display:flex;align-items:center;gap:8px;padding:8px 18px;border-bottom:1px solid var(--line);font-size:12px}
+  .jdtools .lnk2{font-size:11.5px;font-weight:700;color:var(--brand-soft);border:1px solid var(--line);padding:4px 9px;border-radius:7px;cursor:pointer;background:#fff}
+  .jdlist{overflow:auto;padding:6px 18px 14px}
+  .jdrow{display:grid;grid-template-columns:26px 1fr 132px 96px;gap:8px;align-items:start;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .jdrow.off{opacity:.42}
+  .jdrow input[type=checkbox]{width:16px;height:16px;margin-top:9px}
+  .jdrow textarea{width:100%;min-height:44px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;
+    line-height:1.5;resize:vertical;background:#fff;color:var(--ink)}
+  .jdrow select{width:100%;padding:7px 6px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
+  .jdrow select.changed{border-color:var(--gold);background:#FDF8EC;font-weight:700}
+  .jdsug{grid-column:2 / -1;font-size:11px;color:var(--muted);margin-top:-2px}
+  .jdsug .was{color:var(--gold);font-weight:700}
+  .jdf{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line);background:#FBF8F1}
+  .jdf .cnt{font-size:12px;color:var(--muted);margin-right:auto}
+  @media(max-width:720px){ .jdrow{grid-template-columns:24px 1fr;grid-auto-rows:auto} .jdrow select{grid-column:2} }
   @media print{ .paddbtn,.pthumb .pdel{display:none!important} }
   .bempty{font-size:11.5px;color:#bbb;padding:3px 2px}
   .addrow{display:flex;gap:6px;margin-top:7px}
@@ -352,7 +376,7 @@
     <div class="card">
       <div class="card-h">팀별 주요 이슈 <span class="src">이번주 / 다음주 · 작성 내용은 직접 지울 때까지 유지</span>
         <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
-          <button class="btn gold no-print hidden" id="jdraftBtn" style="padding:6px 12px;font-size:12.5px" title="이번 주(월~금) 「📝 나의 기록」을 스캔해 조직별 이슈 초안을 채웁니다">🤖 나의 기록으로 초안 채우기</button>
+          <button class="btn gold no-print hidden" id="jdraftBtn" style="padding:6px 12px;font-size:12.5px" title="이번 주(월~금) 「📝 나의 기록」을 스캔해 조직별 이슈 초안을 제안합니다 — 검토 후 [적용]">🤖 나의 기록으로 초안 만들기</button>
           <span class="saveind no-print" id="issueSave"></span>
         </span></div>
       <div class="hint no-print hidden" id="jdraftHint" style="margin:-2px 0 8px"></div>
@@ -425,8 +449,31 @@
   </div>
 </div>
 
+<!-- 나의 기록 초안 검토 패널 (적용 전까지 보드에 아무것도 쓰지 않음) -->
+<div class="jdov hidden no-print" id="jdOverlay">
+  <div class="jdbox">
+    <div class="jdh">🤖 기록 초안 검토 <span class="meta" id="jdMeta"></span>
+      <button class="x" id="jdClose" title="닫기">✕</button></div>
+    <div class="jdguide">
+      각 문장의 <b>카테고리(조직)</b>와 <b>이번주/다음주</b>를 확인하고 고치세요. AI 제안이 미리 선택돼 있고, 바꾸면 노란색으로 표시됩니다.<br>
+      체크를 풀면 넣지 않습니다. 문장 자체도 여기서 바로 고칠 수 있습니다. <b>[적용]</b> 을 눌러야 보드에 들어갑니다.
+    </div>
+    <div class="jdtools">
+      <button type="button" class="lnk2" id="jdAll">모두 선택</button>
+      <button type="button" class="lnk2" id="jdNone">모두 해제</button>
+      <span class="jdsug" style="grid-column:auto;margin:0">제안 그대로 두려면 그냥 [적용] 을 누르세요.</span>
+    </div>
+    <div class="jdlist" id="jdList"></div>
+    <div class="jdf">
+      <span class="cnt" id="jdCount"></span>
+      <button class="btn" id="jdCancel" style="background:#8b8577;padding:8px 14px">취소</button>
+      <button class="btn gold" id="jdApply" style="padding:8px 16px">보드에 적용</button>
+    </div>
+  </div>
+</div>
+
 <script>
-  console.log('[wbr] build wbr-0904a');
+  console.log('[wbr] build wbr-0904b');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -1347,7 +1394,7 @@
     const btn=$('jdraftBtn'); if(!btn) return;
     const show = jdraftAllowed && canEdit && !viewMode;   // 저장본 열람 중에는 숨김
     btn.classList.toggle('hidden', !show);
-    if(!show) $('jdraftHint').classList.add('hidden');
+    if(!show){ $('jdraftHint').classList.add('hidden'); closeJdPanel(); }   // 저장본 열람 진입 시 검토 패널도 닫는다
   }
   function jdHint(msg,color){
     const el=$('jdraftHint'); el.classList.remove('hidden');
@@ -1356,13 +1403,6 @@
   async function runJournalDraft(){
     if(jdraftBusy || !canEdit || viewMode || !jdraftAllowed) return;
     const rg=weekMonFri();
-    const has=ORG.reduce((n,t)=>n+board.issues[t.key].this.length+board.issues[t.key].next.length,0);
-    if(!confirm(
-      '이번 주 '+mdLabel(rg.from)+'~'+mdLabel(rg.to)+' 의 「📝 나의 기록」을 스캔해\n'
-      +'조직별 「이번주 / 다음주」 초안을 채웁니다.\n\n'
-      +(has?'기존 항목 '+has+'개는 그대로 두고 뒤에 추가됩니다.\n\n':'')
-      +'계속할까요? (30초~1분 소요)')) return;
-
     const btn=$('jdraftBtn'), prev=btn.textContent;
     jdraftBusy=true; btn.disabled=true; btn.textContent='🤖 기록 스캔 중…';
     jdHint('기록을 읽고 카테고리별로 정리하는 중입니다… 30초~1분 정도 걸립니다.');
@@ -1378,23 +1418,96 @@
           : '초안 생성 실패: '+(d.error||res.status);
         jdHint(m,'var(--expense)'); return;
       }
-      let added=0, dup=0;
-      ORG.forEach(t=>{
-        const src=(d.draft&&d.draft[t.key])||{};
-        ['this','next'].forEach(wk=>{
-          (Array.isArray(src[wk])?src[wk]:[]).forEach(txt=>{
-            const s=String(txt==null?'':txt).trim(); if(!s) return;
-            if(board.issues[t.key][wk].indexOf(s)>=0){ dup++; return; }   // 같은 문장 중복 방지
-            board.issues[t.key][wk].push(s); added++;
-          });
-        });
-      });
-      if(!added){ jdHint('새로 추가할 항목이 없습니다(이미 같은 내용이 들어 있습니다).','var(--expense)'); return; }
-      renderIssues(); saveBoard('issue');
-      jdHint('✅ '+mdLabel(d.from)+'~'+mdLabel(d.to)+' 기록 '+d.entry_count+'일치에서 '+added+'개 항목을 채웠습니다'
-        +(dup?' (중복 '+dup+'개 제외)':'')+'. 내용을 확인하고 ✕ 로 지우거나 직접 고쳐 주세요.','var(--income)');
+      // 보드에 바로 쓰지 않는다 — 검토 패널을 열어 문장별로 카테고리를 고르게 한다.
+      openJdPanel(d);
     }catch(e){ jdHint('서버에 연결할 수 없습니다.','var(--expense)'); }
     finally{ jdraftBusy=false; btn.disabled=false; btn.textContent=prev; }
+  }
+
+  // ===== 초안 검토 패널 — 문장별로 카테고리(조직)·이번주/다음주를 고르고 [적용] =====
+  let jdItems=[];      // [{text, org, week, sugOrg, sugWeek, on}]
+  let jdMetaTxt='';
+
+  function openJdPanel(d){
+    jdItems=[];
+    ORG.forEach(t=>{
+      const src=(d.draft&&d.draft[t.key])||{};
+      ['this','next'].forEach(wk=>{
+        (Array.isArray(src[wk])?src[wk]:[]).forEach(txt=>{
+          const s=String(txt==null?'':txt).trim(); if(!s) return;
+          jdItems.push({text:s, org:t.key, week:wk, sugOrg:t.key, sugWeek:wk, on:true});
+        });
+      });
+    });
+    if(!jdItems.length){ jdHint('기록에서 이슈로 정리할 내용을 찾지 못했습니다.','var(--expense)'); return; }
+    jdMetaTxt=mdLabel(d.from)+'~'+mdLabel(d.to)+' · 기록 '+(d.entry_count||0)+'일치 · 제안 '+jdItems.length+'개';
+    $('jdMeta').textContent=jdMetaTxt;
+    $('jdraftHint').classList.add('hidden');
+    renderJdList();
+    $('jdOverlay').classList.remove('hidden');
+  }
+  function closeJdPanel(){ $('jdOverlay').classList.add('hidden'); jdItems=[]; }
+
+  function renderJdList(){
+    const orgOpts=(sel)=>ORG.map(t=>'<option value="'+t.key+'"'+(t.key===sel?' selected':'')+'>'+esc(t.name)+'</option>').join('');
+    const wkOpts=(sel)=>['this','next'].map(w=>'<option value="'+w+'"'+(w===sel?' selected':'')+'>'+(w==='this'?'이번주':'다음주')+'</option>').join('');
+    const nameOf=(k)=>{ const t=ORG.find(x=>x.key===k); return t?t.name:k; };
+    $('jdList').innerHTML=jdItems.map((it,i)=>{
+      const moved=(it.org!==it.sugOrg)||(it.week!==it.sugWeek);
+      return '<div class="jdrow'+(it.on?'':' off')+'" data-row="'+i+'">'
+        +'<input type="checkbox" data-ck="'+i+'"'+(it.on?' checked':'')+'>'
+        +'<textarea data-tx="'+i+'" rows="2">'+esc(it.text)+'</textarea>'
+        +'<select data-org="'+i+'"'+(it.org!==it.sugOrg?' class="changed"':'')+'>'+orgOpts(it.org)+'</select>'
+        +'<select data-wk="'+i+'"'+(it.week!==it.sugWeek?' class="changed"':'')+'>'+wkOpts(it.week)+'</select>'
+        +'<div class="jdsug">'+(moved
+            ? 'AI 제안: <span class="was">'+esc(nameOf(it.sugOrg))+' · '+(it.sugWeek==='this'?'이번주':'다음주')+'</span> → 바꿈'
+            : 'AI 제안: '+esc(nameOf(it.sugOrg))+' · '+(it.sugWeek==='this'?'이번주':'다음주'))
+        +'</div></div>';
+    }).join('');
+    $('jdList').querySelectorAll('[data-ck]').forEach(el=>el.addEventListener('change',()=>{
+      jdItems[Number(el.dataset.ck)].on=el.checked; renderJdList();
+    }));
+    $('jdList').querySelectorAll('[data-tx]').forEach(el=>el.addEventListener('input',()=>{
+      jdItems[Number(el.dataset.tx)].text=el.value;      // 재렌더 없이 값만(입력 커서 유지)
+    }));
+    $('jdList').querySelectorAll('[data-org]').forEach(el=>el.addEventListener('change',()=>{
+      jdItems[Number(el.dataset.org)].org=el.value; renderJdList();
+    }));
+    $('jdList').querySelectorAll('[data-wk]').forEach(el=>el.addEventListener('change',()=>{
+      jdItems[Number(el.dataset.wk)].week=el.value; renderJdList();
+    }));
+    updateJdCount();
+  }
+  function updateJdCount(){
+    const on=jdItems.filter(x=>x.on).length;
+    const moved=jdItems.filter(x=>x.on&&(x.org!==x.sugOrg||x.week!==x.sugWeek)).length;
+    $('jdCount').textContent='선택 '+on+' / 제안 '+jdItems.length+'개'+(moved?' · 카테고리 바꾼 항목 '+moved+'개':'');
+    $('jdApply').textContent='보드에 적용 ('+on+')';
+    $('jdApply').disabled=(on===0);
+  }
+  function jdSetAll(on){ jdItems.forEach(x=>{ x.on=on; }); renderJdList(); }
+
+  function applyJdSelection(){
+    if(!canEdit || viewMode) { closeJdPanel(); return; }
+    let added=0, dup=0, empty=0;
+    jdItems.forEach(it=>{
+      if(!it.on) return;
+      const s=String(it.text||'').replace(/\s+/g,' ').trim();
+      if(!s){ empty++; return; }
+      const bucket=board.issues[it.org] && board.issues[it.org][it.week];
+      if(!bucket) return;
+      if(bucket.indexOf(s)>=0){ dup++; return; }        // 같은 문장 중복 방지
+      bucket.push(s); added++;
+    });
+    closeJdPanel();
+    if(!added){
+      jdHint('보드에 추가된 항목이 없습니다'+(dup?' (중복 '+dup+'개 제외)':'')+'.','var(--expense)');
+      return;
+    }
+    renderIssues(); saveBoard('issue');
+    jdHint('✅ '+jdMetaTxt+' → '+added+'개 항목을 보드에 넣었습니다'
+      +(dup?' (중복 '+dup+'개 제외)':'')+(empty?' (빈 문장 '+empty+'개 제외)':'')
+      +'. 보드에서 ✕ 로 지우거나 더 고칠 수 있습니다.','var(--income)');
   }
 
   let saveTimer=null;
@@ -2023,6 +2136,13 @@
   $('mbrToggle').addEventListener('click',()=>{ mbrOpen=!mbrOpen; applyToggle(mbrOpen,'mbrCollapse','mbrToggle'); });
   $('mbrGenBtn').addEventListener('click',generateMbr);
   $('jdraftBtn').addEventListener('click',runJournalDraft);
+  $('jdApply').addEventListener('click',applyJdSelection);
+  $('jdCancel').addEventListener('click',closeJdPanel);
+  $('jdClose').addEventListener('click',closeJdPanel);
+  $('jdAll').addEventListener('click',()=>jdSetAll(true));
+  $('jdNone').addEventListener('click',()=>jdSetAll(false));
+  $('jdOverlay').addEventListener('click',(e)=>{ if(e.target===$('jdOverlay')) closeJdPanel(); });
+  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && !$('jdOverlay').classList.contains('hidden')) closeJdPanel(); });
   $('waRepToggle').addEventListener('click',()=>{ waRepOpen=!waRepOpen; applyToggle(waRepOpen,'waRepCollapse','waRepToggle'); });
   $('waRepGenBtn').addEventListener('click',generateWaReport);
   $('waSendKo').addEventListener('click',()=>waSend('waRepKo'));
