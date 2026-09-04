@@ -187,10 +187,14 @@
             <div><label>정렬 순서</label><input id="fSort" placeholder="100"></div>
           </div>
 
-          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <button class="btn" id="btnSaveCfg">설정 저장</button>
             <button class="btn ghost" id="btnTest">연결 테스트</button>
+            <input id="tCustomer" placeholder="테스트할 고객 (코드·상호·RFC · 비우면 자동)" style="width:auto;min-width:260px">
             <span class="hint" id="cfgMeta" style="margin-left:auto;align-self:center"></span>
+          </div>
+          <div class="hint" style="margin-top:6px">
+            고객 연동은 비워 두면 <b>RFC 가 있는 최근 승인 고객</b>으로 시험합니다. 제품처럼 고객이 없는 연동은 계약서 탭의 「요청 예시」를 씁니다.
           </div>
           <div class="msg" id="cfgMsg"></div>
           <div id="testOut"></div>
@@ -224,6 +228,7 @@
 
           <div style="margin-top:14px;display:flex;gap:8px">
             <button class="btn" id="btnSaveContract">계약서 저장</button>
+            <button class="btn ghost" id="btnGenSample">필드표로 예시 만들기</button>
             <button class="btn ghost" id="btnCopyMd">Markdown 복사</button>
           </div>
           <div class="msg" id="contractMsg"></div>
@@ -410,11 +415,13 @@
     const out=$('testOut'); out.innerHTML='<div class="hint" style="margin-top:10px">전송 중…</div>';
     $('btnTest').disabled=true;
     try{
-      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/test',{method:'POST',headers:jauth(),body:JSON.stringify({op:'upsert'})});
+      const cq=$('tCustomer').value.trim();
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/test',{method:'POST',headers:jauth(),body:JSON.stringify(cq?{op:'upsert',customer_query:cq}:{op:'upsert'})});
       const d=await res.json();
       if(!res.ok||d.error){ out.innerHTML='<div class="msg err" style="display:block">테스트 불가: '+esc(d.note||d.error||res.status)+'</div>'; return; }
       const rq=d.request||{}, rs=d.response||{};
-      out.innerHTML='<div class="msg '+(d.ok?'ok':'err')+'" style="display:block">'+esc(d.verdict)+'</div>'
+      const who=rq.customer?('<div class="hint" style="margin-top:6px">시험 대상 고객: <b>'+esc(rq.customer.code||'')+' '+esc(rq.customer.name||'')+'</b></div>'):'';
+      out.innerHTML='<div class="msg '+(d.ok?'ok':'err')+'" style="display:block">'+esc(d.verdict)+'</div>'+who
         +'<div class="row2" style="margin-top:8px">'
         +'<div><label>보낸 요청</label><pre class="out">'+esc(rq.method+' '+rq.url+'\n'+(rq.auth?'(인증 헤더 포함)\n':'(인증 없음)\n')+JSON.stringify(rq.payload,null,2))+'</pre></div>'
         +'<div><label>받은 응답'+(rs.ms!=null?(' · '+rs.ms+'ms'):'')+'</label><pre class="out">'
@@ -599,6 +606,27 @@
   $('btnTest').addEventListener('click',testConn);
   $('btnSaveContract').addEventListener('click',saveContract);
   $('btnAddField').addEventListener('click',function(){ FIELDS.push({name:'',type:'',required:false,es:'',ko:''}); renderFields(); });
+  // 필드표 → 요청 예시 JSON. 타입·이름으로 그럴듯한 기본값을 넣어 준다(그대로 보내도 되는 값).
+  function sampleValue(f){
+    const t=String(f.type||'').toLowerCase(), n=String(f.name||'').toLowerCase();
+    if(n==='rfc') return 'FEL990715AB1';
+    if(n.indexOf('user')>=0) return 'admin';
+    if(t.indexOf('bool')>=0) return true;
+    if(t.indexOf('int')>=0) return 0;
+    if(t.indexOf('number')>=0||t.indexOf('decimal')>=0||t.indexOf('float')>=0) return 0;
+    if(t.indexOf('array')>=0||t.indexOf('[]')>=0) return [];
+    if(t.indexOf('object')>=0||t.indexOf('json')>=0) return {};
+    return '';
+  }
+  $('btnGenSample').addEventListener('click',function(){
+    const rows=FIELDS.filter(f=>String(f.name||'').trim());
+    const m=$('contractMsg');
+    if(!rows.length){ m.className='msg err'; m.textContent='먼저 전송 필드를 입력하세요.'; return; }
+    const o={}; rows.forEach(f=>{ o[f.name.trim()]=sampleValue(f); });
+    $('cSampleReq').value=JSON.stringify(o,null,2);
+    m.className='msg ok'; m.textContent='필드표로 예시를 만들었습니다. 값을 다듬은 뒤 「계약서 저장」을 누르세요.';
+  });
+
   $('btnCopyMd').addEventListener('click',async function(){
     try{ await navigator.clipboard.writeText(contractMd()); $('contractMsg').className='msg ok'; $('contractMsg').textContent='Markdown 을 복사했습니다.'; }
     catch(e){ $('contractMsg').className='msg err'; $('contractMsg').textContent='복사할 수 없습니다.'; }
