@@ -54,6 +54,9 @@ import consultRoutes from './routes/consultRoutes.js';
 import exhibitionRoutes from './routes/exhibitionRoutes.js';
 import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
+import crmSyncRoutes from './routes/crmSyncRoutes.js';
+import integrationRoutes from './routes/integrationRoutes.js';
+import { startCrmSyncWorker } from './crmSync.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
 export function buildApp() {
@@ -127,6 +130,11 @@ export function buildApp() {
   app.register(exhibitionRoutes);
   app.register(offerSheetRoutes);
   app.register(dailySummaryRoutes);
+  app.register(crmSyncRoutes);
+  app.register(integrationRoutes);
+
+  // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
+  startCrmSyncWorker(app);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {

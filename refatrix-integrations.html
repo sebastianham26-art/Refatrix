@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 연동 관리</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --warn:#8A5A00;--warn-bg:#F6EEDD;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:22px}
+  .wrap{max-width:1280px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .cols{display:grid;grid-template-columns:290px 1fr;gap:16px;margin-top:16px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .card-h .sp{margin-left:auto;font-weight:600;font-size:12px;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px;font-weight:700}
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink)}
+  textarea{resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6}
+  input[type=checkbox]{width:auto}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn.danger{background:#fff;color:var(--expense);border:1px solid #e7b6af}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .msg.warn{display:block;background:var(--warn-bg);color:var(--warn)}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap}
+  .p-on{background:var(--income-bg);color:var(--income)}
+  .p-off{background:#EFEDE7;color:var(--muted)}
+  .p-test{background:var(--warn-bg);color:var(--warn)}
+  .p-prod{background:var(--expense-bg);color:var(--expense)}
+  .p-pending{background:var(--warn-bg);color:var(--warn)}
+  .p-sent{background:var(--income-bg);color:var(--income)}
+  .p-failed{background:var(--expense-bg);color:var(--expense)}
+  .p-skipped{background:#EFEDE7;color:var(--muted)}
+  .eplist{display:flex;flex-direction:column;gap:8px}
+  .ep{border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer;background:#fff}
+  .ep:hover{background:#faf8f3}
+  .ep.sel{border-color:var(--brand);box-shadow:inset 3px 0 0 var(--brand)}
+  .ep .t{font-size:13.5px;font-weight:800}
+  .ep .m{font-size:11px;color:var(--muted);margin-top:3px;word-break:break-all}
+  .ep .b{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:4px}
+  .tab{padding:9px 14px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.on{color:var(--brand);border-bottom-color:var(--brand)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:11px;color:var(--muted);font-weight:700;padding:7px 9px;border-bottom:1px solid var(--line);background:#faf8f3;white-space:nowrap}
+  td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tblwrap{overflow-x:auto}
+  .fieldtbl input{padding:5px 7px;font-size:12.5px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .kpi .n{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:11.5px;color:var(--muted)}
+  .kpi.pending .n{color:var(--warn)}.kpi.failed .n{color:var(--expense)}.kpi.sent .n{color:var(--income)}
+  pre.out{background:#faf8f3;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;max-height:260px;margin:6px 0 0;white-space:pre-wrap;word-break:break-all}
+  .detail td{background:#faf8f3}
+  .empty{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+  .banner{border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.6;margin-bottom:12px}
+  .banner.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #e6d5ae}
+  .banner.err{background:var(--expense-bg);color:var(--expense);border:1px solid #e7b6af}
+  @media(max-width:900px){ .cols{grid-template-columns:1fr} .row2,.row3{grid-template-columns:1fr} body{padding:14px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <h1>연동 관리</h1>
+      <div class="sub">ERP → 외부 시스템(CRM · 웹 카달록) 전송 주소 · 계약서 · 이력</div>
+    </div>
+    <a class="portalBtn" href="refatrix-portal.html">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card hidden" id="loginCard">
+    <div class="card-h">로그인</div>
+    <label>API 주소</label>
+    <input id="api" value="https://refatrix-production.up.railway.app">
+    <label>아이디</label><input id="lid">
+    <label>PIN</label><input id="pin" type="password">
+    <div style="margin-top:12px"><button class="btn" id="go">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <div id="app" class="hidden">
+    <div id="globalBanner"></div>
+    <div class="cols">
+
+      <!-- 좌: 연동 목록 -->
+      <div class="card">
+        <div class="card-h">연동 목록<span class="sp" id="epCount"></span></div>
+        <div class="eplist" id="epList"></div>
+        <div style="margin-top:12px;display:flex;gap:6px">
+          <button class="btn ghost sm" id="btnNew">+ 새 연동</button>
+          <button class="btn ghost sm" id="btnReloadAll">새로고침</button>
+        </div>
+        <div class="hint" style="margin-top:10px">
+          연동 1건 = 계약서 1개. 고객정보·제품정보처럼 보내는 대상이 다르면 연동을 나눠 등록합니다.
+        </div>
+      </div>
+
+      <!-- 우: 상세 -->
+      <div class="card">
+        <div class="card-h" id="epTitle">연동을 선택하세요</div>
+        <div class="tabs">
+          <div class="tab on" data-tab="cfg">연결 설정</div>
+          <div class="tab" data-tab="contract">계약서</div>
+          <div class="tab" data-tab="log">전송 이력</div>
+        </div>
+
+        <!-- ① 연결 설정 -->
+        <div id="paneCfg">
+          <div class="row2">
+            <div>
+              <label>이름</label><input id="fLabel">
+            </div>
+            <div>
+              <label>분류</label>
+              <select id="fCategory">
+                <option value="customer">고객</option>
+                <option value="product">제품</option>
+                <option value="other">기타</option>
+              </select>
+            </div>
+          </div>
+          <label>설명</label><input id="fDesc">
+
+          <div class="row2">
+            <div>
+              <label>사용 여부</label>
+              <div style="display:flex;align-items:center;gap:8px;padding-top:5px">
+                <input type="checkbox" id="fEnabled"><span class="hint" id="enabledHint">끄면 전송 건이 대기함에 쌓이기만 합니다.</span>
+              </div>
+            </div>
+            <div>
+              <label>사용 중인 서버</label>
+              <select id="fEnv">
+                <option value="test">테스트 서버</option>
+                <option value="prod">운영 서버</option>
+              </select>
+            </div>
+          </div>
+
+          <label>테스트 서버 URL</label><input id="fUrlTest" placeholder="http://…">
+          <label>운영 서버 URL</label><input id="fUrlProd" placeholder="https://… (운영 전환 전 반드시 입력)">
+
+          <div class="row3">
+            <div><label>등록·수정 메서드</label>
+              <select id="fMethodUpsert"><option>POST</option><option>PUT</option><option>PATCH</option><option>GET</option></select></div>
+            <div><label>삭제 메서드</label>
+              <select id="fMethodDelete"><option>DELETE</option><option>POST</option><option>PUT</option><option>PATCH</option></select></div>
+            <div><label>성공 codigoError</label><input id="fOkCode" placeholder="0"></div>
+          </div>
+
+          <div class="row3">
+            <div><label>인증 헤더 이름</label><input id="fAuthHeader" placeholder="Authorization"></div>
+            <div><label>인증 값 (토큰)</label><input id="fAuthToken" placeholder="변경할 때만 입력"></div>
+            <div><label>타임아웃 (ms)</label><input id="fTimeout" placeholder="10000"></div>
+          </div>
+
+          <div class="row2">
+            <div><label>transactionUser 로 보낼 값</label>
+              <select id="fUserField">
+                <option value="login_id">ERP 로그인 아이디 (login_id)</option>
+                <option value="name">이름 (name)</option>
+                <option value="role">역할 (role · admin·marketing 등)</option>
+              </select></div>
+            <div><label>정렬 순서</label><input id="fSort" placeholder="100"></div>
+          </div>
+
+          <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" id="btnSaveCfg">설정 저장</button>
+            <button class="btn ghost" id="btnTest">연결 테스트</button>
+            <span class="hint" id="cfgMeta" style="margin-left:auto;align-self:center"></span>
+          </div>
+          <div class="msg" id="cfgMsg"></div>
+          <div id="testOut"></div>
+
+          <div style="margin-top:18px">
+            <div class="card-h" style="font-size:13px">설정 변경 이력</div>
+            <div class="tblwrap"><table><tbody id="chgRows"><tr><td class="empty">–</td></tr></tbody></table></div>
+          </div>
+        </div>
+
+        <!-- ② 계약서 -->
+        <div id="paneContract" class="hidden">
+          <div class="hint" style="margin-bottom:8px">
+            개발자와 합의한 규격을 여기에 보관합니다. 저장하면 이 화면이 곧 계약서 원본이 됩니다.
+          </div>
+          <div class="card-h" style="font-size:13px">전송 필드</div>
+          <div class="tblwrap"><table class="fieldtbl">
+            <thead><tr><th style="width:170px">필드</th><th style="width:110px">타입</th><th style="width:60px">필수</th><th>Descripción (ES)</th><th>설명 (KO)</th><th style="width:34px"></th></tr></thead>
+            <tbody id="fieldRows"></tbody>
+          </table></div>
+          <div style="margin-top:8px"><button class="btn ghost sm" id="btnAddField">+ 필드 추가</button></div>
+
+          <div class="row2" style="margin-top:14px">
+            <div><label>요청 예시 (JSON)</label><textarea id="cSampleReq" rows="8"></textarea></div>
+            <div><label>응답 예시 (JSON)</label><textarea id="cSampleRes" rows="8"></textarea></div>
+          </div>
+          <label>개발자가 보낸 계약서 원문</label>
+          <textarea id="cRaw" rows="8" placeholder="받은 문서를 그대로 붙여넣으세요."></textarea>
+          <label>비고 · 확정할 항목</label>
+          <textarea id="cNotes" rows="4"></textarea>
+
+          <div style="margin-top:14px;display:flex;gap:8px">
+            <button class="btn" id="btnSaveContract">계약서 저장</button>
+            <button class="btn ghost" id="btnCopyMd">Markdown 복사</button>
+          </div>
+          <div class="msg" id="contractMsg"></div>
+        </div>
+
+        <!-- ③ 전송 이력 -->
+        <div id="paneLog" class="hidden">
+          <div class="kpis">
+            <div class="kpi pending"><div class="n" id="kPending">–</div><div class="l">대기</div></div>
+            <div class="kpi failed"><div class="n" id="kFailed">–</div><div class="l">실패</div></div>
+            <div class="kpi sent"><div class="n" id="kSent">–</div><div class="l">전송 완료</div></div>
+            <div class="kpi"><div class="n" id="kSkipped">–</div><div class="l">건너뜀</div></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="fStatus" style="width:auto">
+              <option value="open">대기 + 실패</option>
+              <option value="pending">대기</option>
+              <option value="failed">실패</option>
+              <option value="sent">전송 완료</option>
+              <option value="skipped">건너뜀</option>
+              <option value="all">전체</option>
+            </select>
+            <input id="fQ" placeholder="고객코드 · 상호 · RFC" style="width:auto;min-width:200px">
+            <button class="btn ghost sm" id="btnLogReload">조회</button>
+            <button class="btn sm" id="btnDrain">대기분 지금 전송</button>
+            <span class="hint" id="logMeta" style="margin-left:auto"></span>
+          </div>
+          <div class="msg" id="logMsg"></div>
+          <div class="tblwrap" style="margin-top:10px"><table>
+            <thead><tr>
+              <th style="width:120px">시각</th><th style="width:180px">대상</th><th style="width:104px">작업</th>
+              <th style="width:86px">상태</th><th style="width:52px">시도</th><th style="width:104px">응답</th>
+              <th>오류 / 메시지</th><th style="width:130px"></th>
+            </tr></thead>
+            <tbody id="logRows"><tr><td colspan="8" class="empty">연동을 선택하고 조회하세요.</td></tr></tbody>
+          </table></div>
+          <div class="hint" style="margin-top:10px">
+            승인 즉시 1회 전송하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도합니다.
+            6회 실패하면 <b>실패</b>로 남고 멈춥니다 — 원인을 고친 뒤 <b>재전송</b>을 누르세요.
+            연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기 상태로 남습니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let EPS=[], CUR=null, TAB='cfg', DETAIL=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const jauth=()=>({'Content-Type':'application/json',...auth()});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
+    customer_delete:'고객 삭제',manual_resend:'수동 재전송',manual:'수동'};
+  const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
+  const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
+  const CAT_LABEL={customer:'고객',product:'제품',other:'기타'};
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''),login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';$('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{
+        if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+        res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();
+      }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      await loadEndpoints();
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  // ===== 연동 목록 =====
+  async function loadEndpoints(keepKey){
+    try{
+      const res=await fetch(session.api+'/api/integrations',{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        $('globalBanner').innerHTML='<div class="banner err">'+esc(d.note||d.error||res.status)+'</div>';
+        return;
+      }
+      EPS=d.items||[];
+      $('epCount').textContent=EPS.length+'건';
+      const eng=d.engine||{};
+      $('globalBanner').innerHTML = d.migrated===false
+        ? '<div class="banner warn"><b>마이그레이션 대기</b> — Railway 콘솔에서 <span class="mono">npm run migrate</span> 로 0201 을 적용해야 이 화면에서 설정을 저장할 수 있습니다.</div>'
+        : (eng.kill_switch ? '<div class="banner err"><b>전체 정지</b> — 환경변수 CRM_SYNC_DISABLE_ALL=1 이 켜져 있어 어떤 연동도 전송되지 않습니다.</div>' : '');
+      renderEpList();
+      const key=keepKey||(CUR&&CUR.key)||(EPS[0]&&EPS[0].key);
+      if(key) selectEp(key);
+    }catch(e){ $('globalBanner').innerHTML='<div class="banner err">서버 연결 실패</div>'; }
+  }
+
+  function renderEpList(){
+    $('epList').innerHTML=EPS.map(function(e){
+      const c=e.counts||{};
+      const badges='<span class="pill '+(e.enabled?'p-on':'p-off')+'">'+(e.enabled?'전송 켜짐':'꺼짐')+'</span>'
+        +'<span class="pill '+(e.env==='prod'?'p-prod':'p-test')+'">'+(e.env==='prod'?'운영':'테스트')+'</span>'
+        +(c.pending?'<span class="pill p-pending">대기 '+c.pending+'</span>':'')
+        +(c.failed?'<span class="pill p-failed">실패 '+c.failed+'</span>':'');
+      return '<div class="ep'+(CUR&&CUR.key===e.key?' sel':'')+'" onclick="selectEp(\''+e.key+'\')">'
+        +'<div class="t">'+esc(e.label)+' <span class="hint">· '+esc(CAT_LABEL[e.category]||e.category)+'</span></div>'
+        +'<div class="m mono">'+esc(e.active_url||'(주소 미설정)')+'</div>'
+        +'<div class="b">'+badges+'</div></div>';
+    }).join('');
+  }
+
+  async function selectEp(key){
+    try{
+      const d=await fetch(session.api+'/api/integrations/'+encodeURIComponent(key),{headers:auth()}).then(r=>r.json());
+      if(d.error){ return; }
+      CUR=d.endpoint; CUR.changes=d.changes||[];
+      $('epTitle').textContent=CUR.label+' ('+CUR.key+')';
+      renderEpList(); fillCfg(); fillContract(); renderChanges();
+      if(TAB==='log') loadLog();
+    }catch(e){}
+  }
+
+  // ===== ① 연결 설정 =====
+  function fillCfg(){
+    const e=CUR;
+    $('fLabel').value=e.label||''; $('fCategory').value=e.category||'other'; $('fDesc').value=e.description||'';
+    $('fEnabled').checked=!!e.enabled; $('fEnv').value=e.env||'test';
+    $('fUrlTest').value=e.url_test||''; $('fUrlProd').value=e.url_prod||'';
+    $('fMethodUpsert').value=e.method_upsert||'POST'; $('fMethodDelete').value=e.method_delete||'DELETE';
+    $('fOkCode').value=e.ok_code||'0'; $('fAuthHeader').value=e.auth_header||'Authorization';
+    $('fAuthToken').value=''; $('fAuthToken').placeholder=e.has_token?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
+    $('fTimeout').value=e.timeout_ms||10000; $('fUserField').value=e.user_field||'login_id';
+    $('fSort').value=e.sort_order==null?100:e.sort_order;
+    const warn=[];
+    if(e.active_url&&!e.secure) warn.push('지금 주소는 HTTP(평문)입니다 — 고객 RFC·할인율이 암호화 없이 전송됩니다.');
+    if(e.env==='prod'&&!e.url_prod) warn.push('운영으로 지정됐지만 운영 URL 이 비어 있습니다.');
+    if(!e.has_token) warn.push('인증 없이 호출합니다.');
+    $('cfgMeta').innerHTML=e.updated_at?('마지막 수정 '+new Date(e.updated_at).toLocaleString('ko-KR')):'';
+    const m=$('cfgMsg');
+    if(warn.length){ m.className='msg warn'; m.innerHTML=warn.map(esc).join('<br>'); } else { m.className='msg'; m.textContent=''; }
+    $('testOut').innerHTML='';
+  }
+
+  function cfgPatch(){
+    const p={label:$('fLabel').value.trim(),category:$('fCategory').value,description:$('fDesc').value.trim(),
+      enabled:$('fEnabled').checked,env:$('fEnv').value,
+      url_test:$('fUrlTest').value.trim(),url_prod:$('fUrlProd').value.trim(),
+      method_upsert:$('fMethodUpsert').value,method_delete:$('fMethodDelete').value,
+      ok_code:$('fOkCode').value.trim()||'0',auth_header:$('fAuthHeader').value.trim()||'Authorization',
+      timeout_ms:Number($('fTimeout').value||10000),user_field:$('fUserField').value,
+      sort_order:Number($('fSort').value||100)};
+    const tok=$('fAuthToken').value;
+    if(tok!=='') p.auth_token=tok;   // 빈칸이면 기존 토큰 유지
+    return p;
+  }
+
+  async function saveCfg(){
+    const m=$('cfgMsg'); m.className='msg'; $('btnSaveCfg').disabled=true;
+    const p=cfgPatch();
+    if(p.enabled&&p.env==='prod'&&!p.url_prod){ m.className='msg err'; m.textContent='운영 URL 을 먼저 입력하세요.'; $('btnSaveCfg').disabled=false; return; }
+    if(p.enabled&&p.env==='prod'&&!confirm('운영 서버로 실제 전송을 시작합니다. 계속할까요?')){ $('btnSaveCfg').disabled=false; return; }
+    try{
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key),{method:'PUT',headers:jauth(),body:JSON.stringify(p)});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      m.className='msg ok'; m.textContent=d.unchanged?'변경된 내용이 없습니다.':'저장되었습니다.';
+      await loadEndpoints(CUR.key);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnSaveCfg').disabled=false; }
+  }
+
+  async function testConn(){
+    const out=$('testOut'); out.innerHTML='<div class="hint" style="margin-top:10px">전송 중…</div>';
+    $('btnTest').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/test',{method:'POST',headers:jauth(),body:JSON.stringify({op:'upsert'})});
+      const d=await res.json();
+      if(!res.ok||d.error){ out.innerHTML='<div class="msg err" style="display:block">테스트 불가: '+esc(d.note||d.error||res.status)+'</div>'; return; }
+      const rq=d.request||{}, rs=d.response||{};
+      out.innerHTML='<div class="msg '+(d.ok?'ok':'err')+'" style="display:block">'+esc(d.verdict)+'</div>'
+        +'<div class="row2" style="margin-top:8px">'
+        +'<div><label>보낸 요청</label><pre class="out">'+esc(rq.method+' '+rq.url+'\n'+(rq.auth?'(인증 헤더 포함)\n':'(인증 없음)\n')+JSON.stringify(rq.payload,null,2))+'</pre></div>'
+        +'<div><label>받은 응답'+(rs.ms!=null?(' · '+rs.ms+'ms'):'')+'</label><pre class="out">'
+          +esc(rs.error?('오류: '+rs.error):('HTTP '+rs.http_status+'\n'+JSON.stringify(rs.body,null,2)))+'</pre></div></div>';
+    }catch(e){ out.innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
+    finally{ $('btnTest').disabled=false; }
+  }
+
+  function renderChanges(){
+    const rows=(CUR&&CUR.changes)||[];
+    if(!rows.length){ $('chgRows').innerHTML='<tr><td class="empty">변경 이력이 없습니다.</td></tr>'; return; }
+    $('chgRows').innerHTML=rows.map(function(c){
+      const ch=c.changes||{};
+      const list=Object.keys(ch).map(k=>'<span class="mono">'+esc(k)+'</span>: '+esc(ch[k].old==null?'(없음)':ch[k].old)+' → <b>'+esc(ch[k].new==null?'(없음)':ch[k].new)+'</b>').join('<br>');
+      return '<tr><td class="num" style="width:150px">'+esc(new Date(c.changed_at).toLocaleString('ko-KR'))
+        +'<div class="hint">'+esc(c.changed_by_name||'')+'</div></td><td>'+list+'</td></tr>';
+    }).join('');
+  }
+
+  // ===== ② 계약서 =====
+  function fillContract(){
+    const c=(CUR&&CUR.contract)||{};
+    $('cSampleReq').value=c.sample_request||''; $('cSampleRes').value=c.sample_response||'';
+    $('cRaw').value=c.raw||''; $('cNotes').value=c.notes||'';
+    renderFields(Array.isArray(c.fields)?c.fields:[]);
+    $('contractMsg').className='msg';
+  }
+  let FIELDS=[];
+  function renderFields(list){
+    if(list) FIELDS=list.map(f=>({name:f.name||'',type:f.type||'',required:!!f.required,es:f.es||'',ko:f.ko||''}));
+    $('fieldRows').innerHTML=FIELDS.map(function(f,i){
+      return '<tr>'
+        +'<td><input value="'+esc(f.name)+'" oninput="setF('+i+',\'name\',this.value)" placeholder="rfc"></td>'
+        +'<td><input value="'+esc(f.type)+'" oninput="setF('+i+',\'type\',this.value)" placeholder="string"></td>'
+        +'<td style="text-align:center"><input type="checkbox" '+(f.required?'checked':'')+' onchange="setF('+i+',\'required\',this.checked)"></td>'
+        +'<td><input value="'+esc(f.es)+'" oninput="setF('+i+',\'es\',this.value)"></td>'
+        +'<td><input value="'+esc(f.ko)+'" oninput="setF('+i+',\'ko\',this.value)"></td>'
+        +'<td><button class="btn ghost sm" onclick="rmF('+i+')">✕</button></td></tr>';
+    }).join('') || '<tr><td colspan="6" class="empty">필드가 없습니다. 아래에서 추가하세요.</td></tr>';
+  }
+  function setF(i,k,v){ FIELDS[i][k]=v; }
+  function rmF(i){ FIELDS.splice(i,1); renderFields(); }
+
+  async function saveContract(){
+    const m=$('contractMsg'); m.className='msg'; $('btnSaveContract').disabled=true;
+    for(const k of [['cSampleReq','요청 예시'],['cSampleRes','응답 예시']]){
+      const v=$(k[0]).value.trim();
+      if(v){ try{ JSON.parse(v); }catch(e){ m.className='msg err'; m.textContent=k[1]+'가 올바른 JSON 이 아닙니다: '+e.message; $('btnSaveContract').disabled=false; return; } }
+    }
+    const contract={fields:FIELDS.filter(f=>f.name.trim()),sample_request:$('cSampleReq').value,
+      sample_response:$('cSampleRes').value,raw:$('cRaw').value,notes:$('cNotes').value};
+    try{
+      const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key),{method:'PUT',headers:jauth(),body:JSON.stringify({contract})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      m.className='msg ok'; m.textContent='계약서를 저장했습니다.';
+      await loadEndpoints(CUR.key);
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnSaveContract').disabled=false; }
+  }
+
+  function contractMd(){
+    const e=CUR,c=e.contract||{};
+    const L=['# '+e.label+' ('+e.key+')','',
+      '- 분류: '+(CAT_LABEL[e.category]||e.category),
+      '- 사용 중인 서버: '+(e.env==='prod'?'운영':'테스트'),
+      '- 테스트 URL: '+(e.url_test||'-'),
+      '- 운영 URL: '+(e.url_prod||'-'),
+      '- 메서드: 등록·수정 '+e.method_upsert+' / 삭제 '+e.method_delete,
+      '- 인증: '+(e.has_token?(e.auth_header+' 헤더 사용'):'없음'),
+      '- 성공 codigoError: '+e.ok_code,'','## 전송 필드','',
+      '| 필드 | 타입 | 필수 | Descripción | 설명 |','|---|---|---|---|---|'];
+    (c.fields||[]).forEach(f=>L.push('| `'+f.name+'` | '+(f.type||'')+' | '+(f.required?'Sí':'No')+' | '+(f.es||'')+' | '+(f.ko||'')+' |'));
+    L.push('','## 요청 예시','','```json',c.sample_request||'','```','','## 응답 예시','','```json',c.sample_response||'','```');
+    if((c.raw||'').trim()) L.push('','## 개발자 원문','','```',c.raw,'```');
+    if((c.notes||'').trim()) L.push('','## 비고','',c.notes);
+    return L.join('\n');
+  }
+
+  // ===== ③ 전송 이력 =====
+  async function loadLog(){
+    if(!CUR) return;
+    try{
+      const s=await fetch(session.api+'/api/crm-sync/summary',{headers:auth()}).then(r=>r.json());
+      const c=(s.by_endpoint&&s.by_endpoint[CUR.key])||{};
+      $('kPending').textContent=c.pending||0; $('kFailed').textContent=c.failed||0;
+      $('kSent').textContent=c.sent||0; $('kSkipped').textContent=c.skipped||0;
+    }catch(e){}
+    const st=$('fStatus').value,q=$('fQ').value.trim();
+    const url=session.api+'/api/crm-sync?status='+encodeURIComponent(st)+'&endpoint='+encodeURIComponent(CUR.key)+(q?'&q='+encodeURIComponent(q):'');
+    try{
+      const res=await fetch(url,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('logRows').innerHTML='<tr><td colspan="8" class="empty">'+esc(d.note||d.error||res.status)+'</td></tr>'; return; }
+      const items=d.items||[];
+      LOG=items;
+      $('logRows').innerHTML=items.length?items.map(logRow).join(''):'<tr><td colspan="8" class="empty">해당 조건의 전송 건이 없습니다.</td></tr>';
+      $('logMeta').textContent='조회 '+new Date().toLocaleTimeString('ko-KR');
+    }catch(e){ $('logRows').innerHTML='<tr><td colspan="8" class="empty">서버 연결 실패</td></tr>'; }
+  }
+  let LOG=[];
+
+  function logRow(r){
+    const when=new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const resp=[r.http_status?('HTTP '+r.http_status):'',r.codigo_error!=null?('code '+esc(r.codigo_error)):''].filter(Boolean).join('<br>')||'<span class="hint">–</span>';
+    let note=r.last_error||''; if(NOTE_LABEL[note]) note=NOTE_LABEL[note];
+    const next=(r.status==='pending'&&r.attempts>0&&r.next_attempt_at)?'<div class="hint">다음 '+new Date(r.next_attempt_at).toLocaleTimeString('ko-KR')+'</div>':'';
+    const canRetry=r.status!=='sent';
+    const main='<tr>'
+      +'<td class="num">'+esc(when)+'</td>'
+      +'<td><b>'+esc(r.customer_name||('#'+(r.entity_id||'')))+'</b><div class="hint mono">'+esc(r.customer_code||r.rfc||'')+'</div></td>'
+      +'<td>'+esc(ORIGIN_LABEL[r.origin]||r.origin)+'<div class="hint">'+(r.op==='delete'?'삭제':'등록/수정')+(r.env?(' · '+(r.env==='prod'?'운영':'테스트')):'')+'</div></td>'
+      +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span>'+next+'</td>'
+      +'<td class="num">'+esc(r.attempts)+'</td>'
+      +'<td class="num mono">'+resp+'</td>'
+      +'<td style="color:var(--expense);word-break:break-word">'+esc(note)+'</td>'
+      +'<td><button class="btn ghost sm" onclick="toggleDetail('+r.id+')">원문</button> '
+        +(canRetry?'<button class="btn ghost sm" onclick="retry('+r.id+')">재전송</button>':'')+'</td></tr>';
+    const det=DETAIL===r.id
+      ? '<tr class="detail"><td colspan="8"><div class="row2">'
+        +'<div><label>보낸 본문'+(r.request_method?(' · '+esc(r.request_method)):'')+'</label><pre class="out">'+esc(JSON.stringify(r.payload,null,2))+(r.url?('\n\n→ '+r.url):'')+'</pre></div>'
+        +'<div><label>받은 응답</label><pre class="out">'+esc(r.response?JSON.stringify(r.response,null,2):'(없음)')+'</pre></div>'
+        +'</div></td></tr>' : '';
+    return main+det;
+  }
+  function toggleDetail(id){ DETAIL=(DETAIL===id?null:id); $('logRows').innerHTML=LOG.map(logRow).join(''); }
+
+  async function retry(id){
+    const m=$('logMsg'); m.className='msg';
+    try{
+      const res=await fetch(session.api+'/api/crm-sync/'+id+'/retry',{method:'POST',headers:jauth(),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='재전송 실패: '+(d.note||d.error||res.status); }
+      else if(d.result&&d.result.status==='sent'){ m.className='msg ok'; m.textContent='전송되었습니다.'; }
+      else{ m.className='msg err'; m.textContent='아직 전송되지 않았습니다: '+esc((d.result&&d.result.last_error)||(d.drain&&d.drain.held?'연동이 꺼져 있습니다':'')); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    loadLog();
+  }
+
+  async function drain(){
+    const m=$('logMsg'); m.className='msg'; $('btnDrain').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/crm-sync/drain',{method:'POST',headers:jauth(),body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='실행 실패: '+(d.note||d.error||res.status); }
+      else if(d.disabled){ m.className='msg err'; m.textContent='전체 정지 상태입니다 (CRM_SYNC_DISABLE_ALL=1).'; }
+      else{ m.className='msg ok'; m.textContent='처리 '+(d.drained||0)+'건 · 성공 '+(d.sent||0)+' · 실패 '+(d.failed||0)+(d.held?' · 대기(연동 꺼짐) '+d.held:''); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnDrain').disabled=false; loadLog(); }
+  }
+
+  // ===== 새 연동 =====
+  async function newEndpoint(){
+    const key=prompt('연동 키(영문 소문자·숫자·밑줄). 예: product_price');
+    if(!key) return;
+    const label=prompt('이름. 예: 제품 가격정보')||key;
+    try{
+      const res=await fetch(session.api+'/api/integrations',{method:'POST',headers:jauth(),
+        body:JSON.stringify({key:key.trim(),label:label.trim(),category:'other',
+          contract:{fields:[],sample_request:'',sample_response:'{\n  "codigoError": "0",\n  "mensaje": ""\n}',raw:'',notes:''}})});
+      const d=await res.json();
+      if(!res.ok||d.error){ alert('등록 실패: '+(d.note||d.error||res.status)); return; }
+      await loadEndpoints(d.endpoint.key);
+    }catch(e){ alert('서버 연결 실패'); }
+  }
+
+  // ===== 탭 =====
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click',function(){
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on'); TAB=t.dataset.tab;
+      $('paneCfg').classList.toggle('hidden',TAB!=='cfg');
+      $('paneContract').classList.toggle('hidden',TAB!=='contract');
+      $('paneLog').classList.toggle('hidden',TAB!=='log');
+      if(TAB==='log') loadLog();
+    });
+  });
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('btnSaveCfg').addEventListener('click',saveCfg);
+  $('btnTest').addEventListener('click',testConn);
+  $('btnSaveContract').addEventListener('click',saveContract);
+  $('btnAddField').addEventListener('click',function(){ FIELDS.push({name:'',type:'',required:false,es:'',ko:''}); renderFields(); });
+  $('btnCopyMd').addEventListener('click',async function(){
+    try{ await navigator.clipboard.writeText(contractMd()); $('contractMsg').className='msg ok'; $('contractMsg').textContent='Markdown 을 복사했습니다.'; }
+    catch(e){ $('contractMsg').className='msg err'; $('contractMsg').textContent='복사할 수 없습니다.'; }
+  });
+  $('btnLogReload').addEventListener('click',loadLog);
+  $('btnDrain').addEventListener('click',drain);
+  $('fStatus').addEventListener('change',loadLog);
+  $('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')loadLog();});
+  $('btnNew').addEventListener('click',newEndpoint);
+  $('btnReloadAll').addEventListener('click',()=>loadEndpoints(CUR&&CUR.key));
+
+  window.selectEp=selectEp; window.setF=setF; window.rmF=rmF; window.retry=retry; window.toggleDetail=toggleDetail;
+
+  (function(){
+    const ps=portalSession();
+    if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(()=>login(),30); }
+    else{ $('loginCard').classList.remove('hidden'); }
+  })();
+</script>
+<script src="refatrix-nav.js?v=20260904creg"></script>
+</body>
+</html>
