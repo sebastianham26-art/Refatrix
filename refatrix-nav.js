@@ -213,6 +213,38 @@
     grab();                              // 로그인 직후 1회(동의 팝업 트리거)
     setInterval(grab, 300000);           // 5분마다 갱신(허용된 경우 조용히)
   }
+  // ── 토큰 슬라이딩 갱신 (2026-09-04) ────────────────────────────────
+  //   화면을 열어 두고 쓰는 동안 토큰(6h)이 만료돼 하던 작업이 401 로 끊기는 일을 막는다.
+  //   · 25분마다 아직 살아 있는 토큰으로 새 토큰을 받아 저장소를 갱신한다(만료 뒤에는 못 받는다 = 재로그인).
+  //   · 각 화면은 자기 메모리에 토큰 사본을 들고 있으므로 'refatrix-token' 이벤트로 알려준다.
+  //   · 탭이 숨겨져 있으면 갱신하지 않는다 — 안 쓰는 세션까지 무한정 살려두지 않기 위해서다.
+  function startTokenRenew(api){
+    if(window.__rnavTokenIv) return;
+    function renew(){
+      try{
+        if(document.visibilityState==='hidden') return;
+        var s=getSession(); if(!s||!s.token) return;
+        var a=(s.api||api||'').replace(/\/+$/,'');
+        fetch(a+'/api/auth/refresh',{method:'POST',headers:{'Authorization':'Bearer '+s.token}})
+          .then(function(r){ return r.ok?r.json():null; })
+          .then(function(d){
+            if(!d||!d.token) return;
+            var ns={token:d.token,user:d.user||s.user,api:s.api};
+            try{ var v=JSON.stringify(ns);
+              sessionStorage.setItem('refatrix_session',v); localStorage.setItem('refatrix_session',v); }catch(e){}
+            try{ window.dispatchEvent(new CustomEvent('refatrix-token',{detail:{token:d.token}})); }catch(e){}
+          }).catch(function(){});
+      }catch(e){}
+    }
+    window.__rnavTokenIv=setInterval(renew, 25*60*1000);
+    document.addEventListener('visibilitychange',function(){
+      if(document.visibilityState==='visible'){
+        var last=window.__rnavTokenAt||0;
+        if(Date.now()-last>25*60*1000){ window.__rnavTokenAt=Date.now(); renew(); }
+      }
+    });
+  }
+
   function startHeartbeat(api){
     if(window.__rnavHeartbeat) return;                 // 중복 가동 방지
     function ping(){
@@ -231,6 +263,7 @@
     }
     startGeo();                                        // GPS 동의/수집 시작
     ping();                                            // 진입 즉시 1회
+    startTokenRenew(api);                              // 쓰고 있는 동안 세션 만료 방지
     window.__rnavHeartbeat=setInterval(ping, 45000);   // 45초마다(탭이 열려있는 동안 = 접속 중)
     document.addEventListener('visibilitychange',function(){
       if(document.visibilityState==='visible') ping(); // 다시 보일 때 즉시 갱신
@@ -607,7 +640,12 @@
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
       if(r.status===401||r.status===403){
         authFailed=true;
-        try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
+        // 녹음·업로드처럼 "지금 날리면 안 되는 작업"이 걸려 있으면 세션 저장소를 지우지 않는다.
+        //   지우면 다음 새로고침에 로그인 화면으로 떨어지고, 메모리에 있던 녹음이 사라진다
+        //   (2026-09-04 dante 미팅 녹음 사고). 화면이 자체적으로 재로그인을 안내한다.
+        if(!window.__refatrixKeepSession){
+          try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
+        }
         var nv2=document.getElementById('rnav');
         if(nv2) nv2.innerHTML='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE+'<span class="rwho">세션 만료 — 새로고침 후 다시 로그인하세요</span></div>';
         syncOffset();

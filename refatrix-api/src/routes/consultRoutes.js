@@ -47,7 +47,11 @@ const AI_TIMEOUT_MS = 120000;
 const MAX_AUTO_ATTEMPTS = 3;
 const PART_B64_MAX = 6 * 1024 * 1024;       // 분할 업로드 조각 하나(base64 문자) 상한
 const UPLOAD_PARTS_MAX = 200;               // 한 업로드 세션의 조각 수 상한
-const UPLOAD_PART_TTL_H = 6;                // 버려진 조각 청소 기준(시간)
+const UPLOAD_PART_TTL_H = Number(process.env.CONSULT_PART_TTL_H || 72);
+//   버려진 조각 청소 기준(시간). 6h 였다가 2026-09-04 에 **72h** 로 늘렸다 —
+//   업로드가 세션 만료(401)로 끊기면 조각은 서버에 남는데, 6시간이면 사람이 알아채기 전에
+//   청소가 지워버려서 복구할 길이 없었다(dante 미팅 녹음 사고). 이제 사흘 안에 이어서 올릴 수 있다.
+const CONSULT_TZ = 'America/Mexico_City';   // 조각 시각 표시 기준(현지)
 const SESSION_KEY_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const B64_RE = /^[A-Za-z0-9+/=]+$/;
 const LIST_MAX = 500;
@@ -712,6 +716,51 @@ export default async function consultRoutes(app) {
         detail: { consult_id: Number(c.id), mode, duration_sec: dur, segments: built.segments, chunked: true } });
       setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
       return { id: Number(r.id), status: 'queued', stt_ready: sttReady(), ai_ready: aiReady() };
+    });
+
+  // ── 끊긴 업로드 복구 ① 서버에 남아 있는 조각 세션 목록 (2026-09-04) ──
+  //   업로드가 도중에 끊기면(세션 만료·통신 끊김·창 닫힘) 조각은 서버에 그대로 남는다.
+  //   지금까지는 그걸 볼 방법이 없어 그냥 버려졌다 — 이제 화면에서 「이어서 요약」 할 수 있다.
+  //   자기가 올린 것만 보인다(created_by). 조각 본문(b64)은 절대 내보내지 않는다.
+  app.get('/api/consults/recordings/pending-uploads',
+    { preHandler: [authGuard, requirePage(PAGE)] }, async (req) => {
+      let rows = [];
+      try {
+        rows = (await query(
+          `SELECT p.session_key, p.consult_id,
+                  COUNT(*)::int AS parts,
+                  COUNT(DISTINCT p.seg_no)::int AS segments,
+                  SUM(length(p.b64))::bigint AS b64_len,
+                  to_char(MIN(p.created_at) AT TIME ZONE $2,'YYYY-MM-DD HH24:MI') AS first_at,
+                  to_char(MAX(p.created_at) AT TIME ZONE $2,'YYYY-MM-DD HH24:MI') AS last_at,
+                  EXTRACT(EPOCH FROM (now() - MAX(p.created_at)))/3600 AS age_h,
+                  c.company_name, to_char(c.consult_date,'YYYY-MM-DD') AS consult_date
+             FROM sales_consult_upload_parts p
+             JOIN sales_consults c ON c.id = p.consult_id
+            WHERE p.created_by = $1 AND c.deleted_at IS NULL
+            GROUP BY p.session_key, p.consult_id, c.company_name, c.consult_date
+            ORDER BY MAX(p.created_at) DESC
+            LIMIT 20`, [req.ctx.perm.userId, CONSULT_TZ])).rows;
+      } catch (e) {
+        if (e && e.code === '42P01') return { items: [], ttl_hours: UPLOAD_PART_TTL_H };  // 0185 이전 DB
+        throw e;
+      }
+      return {
+        ttl_hours: UPLOAD_PART_TTL_H,
+        items: rows.map((r) => ({
+          session_key: r.session_key,
+          consult_id: Number(r.consult_id),
+          company_name: r.company_name,
+          consult_date: r.consult_date,
+          parts: Number(r.parts),
+          segments: Number(r.segments),
+          size_bytes: Math.round(Number(r.b64_len) * 3 / 4),
+          first_at: r.first_at,
+          last_at: r.last_at,
+          // 남은 보관 시간(시간). 0 이하면 다음 청소 때 지워진다.
+          hours_left: Math.max(0, Math.round((UPLOAD_PART_TTL_H - Number(r.age_h)) * 10) / 10),
+        })),
+      };
     });
 
   // ── 업로드 중 취소(조각 버리기) ─────────────────────────────────────

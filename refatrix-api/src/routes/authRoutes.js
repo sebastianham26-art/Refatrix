@@ -1,9 +1,25 @@
 import { query } from '../db.js';
 import { verifyPin, hashDeviceKey } from '../auth.js';
 import { logEvent } from '../audit.js';
+import { authGuard } from '../middleware/authGuard.js';
 
 export default async function authRoutes(app) {
   // 로그인: 아이디 + PIN (+ device_key: 기기 식별 키, 브라우저 localStorage 보관)
+  // ── 토큰 슬라이딩 갱신 (2026-09-04) ────────────────────────────────
+  //   화면을 쓰고 있는 동안에는 세션이 만료되지 않게 새 토큰을 발급한다.
+  //   · **아직 살아 있는 토큰**으로만 호출된다(authGuard). 만료된 뒤에는 갱신 불가 = 재로그인.
+  //   · 기기 게이트·PIN 을 다시 보지 않으므로 발급 조건은 로그인 때 이미 통과한 것과 같다.
+  //   배경: 2시간짜리 미팅 녹음을 브라우저에 들고 있는 동안 6시간 토큰이 만료돼
+  //         업로드가 401 로 거절되고 녹음이 통째로 사라진 사고(2026-09-04, dante).
+  app.post('/api/auth/refresh', { preHandler: [authGuard] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const u = (await query(
+      `SELECT id, name, role FROM users WHERE id=$1 AND deleted_at IS NULL`, [perm.userId])).rows[0];
+    if (!u) return reply.code(401).send({ error: 'unknown_user' });
+    const token = await reply.jwtSign({ sub: u.id, role: u.role });
+    return { token, user: { id: Number(u.id), name: u.name, role: u.role } };
+  });
+
   app.post('/api/login', async (req, reply) => {
     const { login_id, pin, device_key } = req.body || {};
     if (!login_id || !pin) return reply.code(400).send({ error: 'login_id_and_pin_required' });
