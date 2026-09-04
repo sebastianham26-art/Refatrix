@@ -14,9 +14,11 @@
 //   ③ 연동이 꺼져 있으면 **시도 횟수를 쓰지 않고** 대기로 둔다. 나중에 켜면 밀린 건이 그대로 나간다.
 import { query } from './db.js';
 import { config } from './config.js';
-import { getEndpoint, activeUrl, CUSTOMER_KEY } from './integrations.js';
+import { getEndpoint, activeUrl, activeToken, CUSTOMER_KEY } from './integrations.js';
 
-let tableReady = null;   // null=미확인, true/false=확인됨
+let tableReady = false;  // 긍정만 영구 캐시(서버 기동 후 migrate 해도 반영되게)
+let lastProbe = 0;
+const PROBE_MS = 30000;
 let draining = false;    // 동시 드레인 방지
 let timer = null;
 
@@ -34,7 +36,9 @@ export function globallyDisabled() {
 }
 
 export async function crmTableReady() {
-  if (tableReady !== null) return tableReady;
+  if (tableReady) return true;
+  if (Date.now() - lastProbe < PROBE_MS) return false;
+  lastProbe = Date.now();
   try {
     const r = await query(`SELECT to_regclass('public.crm_customer_outbox') AS t`);
     tableReady = !!(r.rows[0] && r.rows[0].t);
@@ -127,9 +131,12 @@ export async function enqueueCustomerSync(customerId, op, { origin, actorUserId,
   }
 }
 
-let epColsReady = null;
+let epColsReady = false;
+let epColsProbe = 0;
 async function outboxHasEndpointCols() {
-  if (epColsReady !== null) return epColsReady;
+  if (epColsReady) return true;
+  if (Date.now() - epColsProbe < PROBE_MS) return false;
+  epColsProbe = Date.now();
   try {
     const r = await query(
       `SELECT 1 FROM information_schema.columns
@@ -158,7 +165,8 @@ export async function sendPayload(ep, op, payload) {
     ? url + (url.includes('?') ? '&' : '?') + 'rfc=' + encodeURIComponent(payload.rfc)
     : url;
   const headers = { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' };
-  if (ep.auth_token) headers[ep.auth_header || 'Authorization'] = ep.auth_token;
+  const token = activeToken(ep);   // 테스트/운영 각자의 키
+  if (token) headers[ep.auth_header || 'Authorization'] = token;
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), Number(ep.timeout_ms) || 10000);

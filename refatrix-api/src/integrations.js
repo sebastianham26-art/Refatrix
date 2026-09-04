@@ -8,15 +8,23 @@ import { config } from './config.js';
 
 export const CUSTOMER_KEY = 'customer_commercial';
 
-let tableReady = null;
+// ⚠ 준비 여부는 **긍정만 영구 캐시**한다. 예전에는 처음 한 번 확인하고 끝이라,
+//   서버가 뜬 뒤에 `npm run migrate` 를 돌리면(=Railway 콘솔에서 하는 방식) 프로세스가
+//   재시작될 때까지 계속 "마이그레이션 필요"로 답했다. 이제 없을 때만 30초마다 다시 본다.
+let tableReady = false;
+let lastProbe = 0;
+const PROBE_MS = 30000;
 const cache = new Map();          // key → { at, ep }
 const CACHE_MS = 15000;           // 화면에서 고친 값이 15초 안에 반영된다
 
 export async function endpointsReady() {
-  if (tableReady !== null) return tableReady;
+  if (tableReady) return true;
+  if (Date.now() - lastProbe < PROBE_MS) return false;
+  lastProbe = Date.now();
   try {
     const r = await query(`SELECT to_regclass('public.integration_endpoints') AS t`);
     tableReady = !!(r.rows[0] && r.rows[0].t);
+    if (tableReady) cache.clear();   // 이제 막 생겼다면 환경변수 폴백 캐시를 버린다
   } catch (_) { tableReady = false; }
   return tableReady;
 }
@@ -42,6 +50,29 @@ function fallbackEndpoint(key) {
 export function activeUrl(ep) {
   if (!ep) return '';
   return String((ep.env === 'prod' ? ep.url_prod : ep.url_test) || '').trim();
+}
+
+/** 지금 환경의 인증 키. 환경별 키가 비어 있으면 예전 단일 키(auth_token)로 되돌아간다. */
+export function activeToken(ep) {
+  if (!ep) return '';
+  const envTok = ep.env === 'prod' ? ep.auth_token_prod : ep.auth_token_test;
+  return String((envTok != null && String(envTok) !== '' ? envTok : ep.auth_token) || '');
+}
+
+// 0202 적용 여부(반쪽 배포에서도 저장이 죽지 않게). 긍정만 영구 캐시.
+let envTokCols = false;
+let envTokProbe = 0;
+export async function envTokenColsReady() {
+  if (envTokCols) return true;
+  if (Date.now() - envTokProbe < PROBE_MS) return false;
+  envTokProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='integration_endpoints' AND column_name='auth_token_test' LIMIT 1`);
+    envTokCols = r.rows.length > 0;
+  } catch (_) { envTokCols = false; }
+  return envTokCols;
 }
 
 /** 전송에 쓸 설정. 못 찾으면 null. */
@@ -82,7 +113,10 @@ export function publicEndpoint(ep) {
     active_host: url ? url.replace(/^https?:\/\//, '').split('/')[0] : null,
     secure: /^https:/i.test(url),
     method_upsert: ep.method_upsert, method_delete: ep.method_delete,
-    auth_header: ep.auth_header, has_token: !!ep.auth_token,
+    auth_header: ep.auth_header,
+    has_token: !!activeToken(ep),                       // 지금 환경에서 실제로 쓰이는 키가 있는가
+    has_token_test: !!(ep.auth_token_test || ep.auth_token),
+    has_token_prod: !!ep.auth_token_prod,
     ok_code: ep.ok_code, user_field: ep.user_field, timeout_ms: Number(ep.timeout_ms),
     contract: ep.contract || {},
     sort_order: ep.sort_order == null ? 100 : Number(ep.sort_order),
@@ -145,11 +179,18 @@ export async function saveEndpoint(key, patch, userId) {
       ? { old: '(계약서)', new: '(계약서 수정됨)' }
       : { old: cur[f] === null ? null : String(cur[f]), new: v === null ? null : String(v) };
   }
-  if (patch.auth_token !== undefined) {
-    const t = String(patch.auth_token);
+  // 인증 키 — 값은 이력에 남기지 않는다('(변경됨)' 만).
+  //   undefined = 그대로 · '' = 지움 · 값 = 교체
+  const envCols = await envTokenColsReady();
+  const tokenFields = envCols
+    ? ['auth_token', 'auth_token_test', 'auth_token_prod']
+    : ['auth_token'];
+  for (const f of tokenFields) {
+    if (patch[f] === undefined) continue;
+    const t = String(patch[f]);
     params.push(t === '' ? null : t);
-    sets.push(`auth_token=$${params.length}`);
-    changes.auth_token = { old: cur.auth_token ? '(설정됨)' : null, new: t === '' ? null : '(변경됨)' };
+    sets.push(`${f}=$${params.length}`);
+    changes[f] = { old: cur[f] ? '(설정됨)' : null, new: t === '' ? null : '(변경됨)' };
   }
   if (!sets.length) return { ok: true, unchanged: true };
 

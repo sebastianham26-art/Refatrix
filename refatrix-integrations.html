@@ -172,19 +172,27 @@
           </div>
 
           <div class="row3">
-            <div><label>인증 헤더 이름</label><input id="fAuthHeader" placeholder="Authorization"></div>
-            <div><label>인증 값 (토큰)</label><input id="fAuthToken" placeholder="변경할 때만 입력"></div>
+            <div><label>인증 헤더 이름</label><input id="fAuthHeader" placeholder="Authorization · x-api-key 등"></div>
+            <div><label>테스트 서버 API 키</label><input id="fTokenTest" placeholder="변경할 때만 입력"></div>
+            <div><label>운영 서버 API 키</label><input id="fTokenProd" placeholder="변경할 때만 입력"></div>
+          </div>
+          <div class="hint" style="margin-top:-2px">
+            키는 서버마다 다릅니다. 여기 넣어 두면 <b>「사용 중인 서버」를 바꿀 때 키도 같이 바뀝니다</b> — 전환할 때마다 다시 넣지 않아도 됩니다.
+            헤더 이름이 <span class="mono">Authorization</span> 이고 개발자가 <span class="mono">Bearer</span> 방식이라고 하면 값에 <span class="mono">Bearer 키값</span> 처럼 접두어까지 넣으세요.
+            저장된 키는 화면에 다시 표시되지 않습니다(칸을 비워 두면 그대로 유지, 지우려면 <span class="mono">-</span> 한 글자를 넣고 저장).
+          </div>
+          <div class="row2">
             <div><label>타임아웃 (ms)</label><input id="fTimeout" placeholder="10000"></div>
+            <div><label>정렬 순서</label><input id="fSort" placeholder="100"></div>
           </div>
 
-          <div class="row2">
-            <div><label>transactionUser 로 보낼 값</label>
-              <select id="fUserField">
-                <option value="login_id">ERP 로그인 아이디 (login_id)</option>
-                <option value="name">이름 (name)</option>
-                <option value="role">역할 (role · admin·marketing 등)</option>
-              </select></div>
-            <div><label>정렬 순서</label><input id="fSort" placeholder="100"></div>
+          <div>
+            <label>transactionUser 로 보낼 값</label>
+            <select id="fUserField">
+              <option value="login_id">ERP 로그인 아이디 (login_id)</option>
+              <option value="name">이름 (name)</option>
+              <option value="role">역할 (role · admin·marketing 등)</option>
+            </select>
           </div>
 
           <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -370,13 +378,14 @@
     $('fUrlTest').value=e.url_test||''; $('fUrlProd').value=e.url_prod||'';
     $('fMethodUpsert').value=e.method_upsert||'POST'; $('fMethodDelete').value=e.method_delete||'DELETE';
     $('fOkCode').value=e.ok_code||'0'; $('fAuthHeader').value=e.auth_header||'Authorization';
-    $('fAuthToken').value=''; $('fAuthToken').placeholder=e.has_token?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
+    $('fTokenTest').value=''; $('fTokenTest').placeholder=e.has_token_test?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
+    $('fTokenProd').value=''; $('fTokenProd').placeholder=e.has_token_prod?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
     $('fTimeout').value=e.timeout_ms||10000; $('fUserField').value=e.user_field||'login_id';
     $('fSort').value=e.sort_order==null?100:e.sort_order;
     const warn=[];
     if(e.active_url&&!e.secure) warn.push('지금 주소는 HTTP(평문)입니다 — 고객 RFC·할인율이 암호화 없이 전송됩니다.');
     if(e.env==='prod'&&!e.url_prod) warn.push('운영으로 지정됐지만 운영 URL 이 비어 있습니다.');
-    if(!e.has_token) warn.push('인증 없이 호출합니다.');
+    if(!e.has_token) warn.push((e.env==='prod'?'운영':'테스트')+' 서버 API 키가 비어 있어 인증 없이 호출합니다.');
     $('cfgMeta').innerHTML=e.updated_at?('마지막 수정 '+new Date(e.updated_at).toLocaleString('ko-KR')):'';
     const m=$('cfgMsg');
     if(warn.length){ m.className='msg warn'; m.innerHTML=warn.map(esc).join('<br>'); } else { m.className='msg'; m.textContent=''; }
@@ -391,8 +400,9 @@
       ok_code:$('fOkCode').value.trim()||'0',auth_header:$('fAuthHeader').value.trim()||'Authorization',
       timeout_ms:Number($('fTimeout').value||10000),user_field:$('fUserField').value,
       sort_order:Number($('fSort').value||100)};
-    const tok=$('fAuthToken').value;
-    if(tok!=='') p.auth_token=tok;   // 빈칸이면 기존 토큰 유지
+    const tt=$('fTokenTest').value, tp=$('fTokenProd').value;   // 빈칸이면 기존 키 유지
+    if(tt!=='') p.auth_token_test = (tt==='-'?'':tt);
+    if(tp!=='') p.auth_token_prod = (tp==='-'?'':tp);
     return p;
   }
 
@@ -491,7 +501,7 @@
       '- 테스트 URL: '+(e.url_test||'-'),
       '- 운영 URL: '+(e.url_prod||'-'),
       '- 메서드: 등록·수정 '+e.method_upsert+' / 삭제 '+e.method_delete,
-      '- 인증: '+(e.has_token?(e.auth_header+' 헤더 사용'):'없음'),
+      '- 인증: '+(e.has_token?(e.auth_header+' 헤더 사용 (테스트키 '+(e.has_token_test?'있음':'없음')+' · 운영키 '+(e.has_token_prod?'있음':'없음')+')'):'없음'),
       '- 성공 codigoError: '+e.ok_code,'','## 전송 필드','',
       '| 필드 | 타입 | 필수 | Descripción | 설명 |','|---|---|---|---|---|'];
     (c.fields||[]).forEach(f=>L.push('| `'+f.name+'` | '+(f.type||'')+' | '+(f.required?'Sí':'No')+' | '+(f.es||'')+' | '+(f.ko||'')+' |'));

@@ -5,10 +5,14 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { crmTableReady, drainOutbox, enqueueCustomerSync, crmStatus, MAX_ATTEMPTS } from '../crmSync.js';
 
-// 0201 이전 DB(엔드포인트 컬럼 없음)에서도 조회가 죽지 않게 한 번만 확인한다.
-let hasEpCols = null;
+// 0201 이전 DB(엔드포인트 컬럼 없음)에서도 조회가 죽지 않게 확인한다.
+//   없을 때만 30초마다 다시 본다 — 서버 기동 후 migrate 해도 재시작 없이 반영되도록.
+let hasEpCols = false;
+let epProbe = 0;
 async function epCols() {
-  if (hasEpCols !== null) return hasEpCols;
+  if (hasEpCols) return true;
+  if (Date.now() - epProbe < 30000) return false;
+  epProbe = Date.now();
   try {
     const r = await query(
       `SELECT 1 FROM information_schema.columns

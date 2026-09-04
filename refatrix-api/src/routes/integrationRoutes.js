@@ -5,6 +5,7 @@ import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import {
   endpointsReady, listEndpoints, getEndpoint, publicEndpoint,
   saveEndpoint, createEndpoint, activeUrl, invalidateEndpointCache,
+  activeToken,
 } from '../integrations.js';
 import { sendPayload, isSuccess, crmStatus } from '../crmSync.js';
 
@@ -150,7 +151,7 @@ export default async function integrationRoutes(app) {
     const ok = !r.error && isSuccess(r.httpStatus, r.body, ep.ok_code);
     return {
       ok,
-      request: { method: r.method, url: r.url, env: ep.env, payload, auth: !!ep.auth_token, customer: usedCustomer },
+      request: { method: r.method, url: r.url, env: ep.env, payload, auth: !!activeToken(ep), customer: usedCustomer },
       response: r.error ? { error: r.error } : { http_status: r.httpStatus, body: r.body, ms: r.ms },
       verdict: ok ? 'CRM 이 성공(codigoError=' + (ep.ok_code) + ')으로 응답했습니다.'
         : (r.error ? '연결하지 못했습니다: ' + r.error
