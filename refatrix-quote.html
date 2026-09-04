@@ -110,8 +110,8 @@
         </div>
         <div style="min-width:90px"><label>수량</label><input id="inQty" type="number" min="0" step="1" value="1" style="width:90px" onkeydown="if(event.key==='Enter')addLine()"></div>
         <div><button class="btn" onclick="addLine()">＋ 추가</button></div>
-        <div style="margin-left:auto"><label>엑셀</label>
-          <div style="display:flex;gap:6px;align-items:center">
+        <div style="margin-left:auto;min-width:0;max-width:100%"><label>엑셀</label>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <button class="btn ghost sm" onclick="downloadTemplate()">양식 다운로드</button>
             <button class="btn ghost sm" onclick="downloadPriceList()">전체 가격표</button>
             <button class="btn ghost sm" onclick="downloadTop500()" title="VIO(멕시코 등록대수) 상위 500 SKU 견적 — A열에 SKU별 적용차종 표시(차종 그룹 → 부품 고정순서). 여러 차종에 쓰이는 코드는 차종마다 중복 기입(빨간 글씨)하고 대표 차종 1행만 파란 음영 + Subtotal 합산 · Existencia(현재고)·Disponible(가용)·En tránsito(운송중)·En producción(생산중) 4개 수량열">⭐ Top 500 견적</button>
@@ -1540,6 +1540,6 @@
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
   (function(){ const ps=portalSession(); if(ps&&ps.token){ $('api').value=ps.api||$('api').value; $('lid').value='-';$('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260903m"></script>
 </body>
 </html>

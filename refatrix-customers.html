@@ -35,6 +35,8 @@
   .teamtoggle .ttg{padding:6px 16px;border:1px solid var(--line);background:#fff;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
   .teamtoggle .ttg.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   @media(max-width:760px){.sumgrid{grid-template-columns:repeat(4,1fr)}}
+  @media(max-width:480px){.sumgrid{grid-template-columns:repeat(2,1fr)}}
+  .sumbox{min-width:0}   /* grid item 기본 min-width:auto 때문에 라벨이 길면 화면 밖으로 나갔다 */
   .btn.gold{background:var(--gold)}
   .btn.sm{padding:6px 10px;font-size:12px}
   .btn.danger{background:var(--expense)}
@@ -1713,6 +1715,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260901claimb"></script>
-<script src="refatrix-nav.js?v=20260824ph"></script>
+<script src="refatrix-nav.js?v=20260903m"></script>
 </body>
 </html>

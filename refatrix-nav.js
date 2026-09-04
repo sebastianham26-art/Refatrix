@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260827rl loaded (창고 위치변경 화면)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260903m loaded (모바일 셸 1단계)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -316,6 +316,48 @@
     '#rnav .rlogout:hover{background:rgba(208,140,110,.28);color:#fff}'+
     '#rnav .rpres{flex:0 0 auto;margin-left:12px;padding:5px 11px;border-radius:999px;border:1px solid rgba(25,169,116,.45);background:rgba(25,169,116,.14);color:#7fe0bd;font-size:11px;font-weight:700;cursor:pointer;transition:all .14s;font-family:inherit;display:none;align-items:center;gap:5px}'+
     '#rnav .rpres:hover{background:rgba(25,169,116,.26);color:#d6fff0}'+
+    /* ===== 모바일 모드 (html.rfxm) — 데스크톱은 이 블록에 걸리지 않는다 ===== */
+    'html.rfxm #rnav .rbar{height:44px;padding:0 6px}'+
+    'html.rfxm #rnav .rlogo,html.rfxm #rnav .rwho,html.rfxm #rnav .rpres{display:none!important}'+
+    'html.rfxm #rnav .rhome{width:34px;height:34px;margin-right:4px}'+
+    'html.rfxm #rnav .rg{padding:13px 11px;font-size:12.5px}'+
+    'html.rfxm #rnav .rg.on:after{left:11px;right:11px}'+
+    'html.rfxm #rnav .rlogout{margin-left:6px;padding:7px 10px}'+
+    /* 하위메뉴 칩: 줄바꿈(6줄=202px) → 가로 스크롤 한 줄(38px) */
+    'html.rfxm #rnav .rsub{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;padding:5px 8px;gap:6px;-webkit-overflow-scrolling:touch;scrollbar-width:none}'+
+    'html.rfxm #rnav .rsub::-webkit-scrollbar{display:none}'+
+    'html.rfxm #rnav .rs{flex:0 0 auto;padding:8px 13px;font-size:12.5px;min-height:34px;display:inline-flex;align-items:center}'+
+    /* 모바일 토글 버튼 (상단 우측) */
+    'html.rfxnarrow #rnav .rmtgl{display:inline-block;flex:0 0 auto;margin-left:6px;padding:7px 9px;border-radius:8px;border:1px solid rgba(201,167,92,.4);background:rgba(201,167,92,.12);color:#e6d9b8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}'+
+    '#rnav .rmtgl{display:none}'+
+    /* 하단 탭바 */
+    '#rmtab{display:none}'+
+    'html.rfxm #rmtab{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:9001;background:linear-gradient(180deg,#12221d,#0b1613);border-top:1px solid rgba(201,167,92,.26);box-shadow:0 -6px 22px -12px rgba(0,0,0,.7);padding-bottom:env(safe-area-inset-bottom)}'+
+    'html.rfxm #rmtab .mt{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:56px;border:none;background:transparent;color:#8fa39b;font-family:inherit;font-size:10.5px;font-weight:600;cursor:pointer;padding:0 2px;-webkit-tap-highlight-color:transparent}'+
+    'html.rfxm #rmtab .mt .i{font-size:17px;line-height:1}'+
+    'html.rfxm #rmtab .mt .l{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+    'html.rfxm #rmtab .mt.on{color:#E6C87E}'+
+    'html.rfxm #rmtab .mt.on .i{filter:drop-shadow(0 0 6px rgba(201,167,92,.55))}'+
+    /* 전체메뉴 시트 */
+    '#rmdrawer{display:none}'+
+    'html.rfxm #rmdrawer.show{display:block;position:fixed;inset:0;z-index:10002;background:rgba(8,16,13,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}'+
+    'html.rfxm #rmdrawer .sheet{position:absolute;left:0;right:0;bottom:0;max-height:86vh;max-height:86dvh;overflow:auto;background:#101d19;border-top-left-radius:16px;border-top-right-radius:16px;border-top:1px solid rgba(201,167,92,.3);padding:10px 14px calc(18px + env(safe-area-inset-bottom))}'+
+    'html.rfxm #rmdrawer .grab{width:42px;height:4px;border-radius:99px;background:rgba(255,255,255,.22);margin:2px auto 12px}'+
+    'html.rfxm #rmdrawer .dhead{display:flex;align-items:center;justify-content:space-between;color:#dfe8e3;font-size:14px;font-weight:800;padding:0 2px 4px}'+
+    'html.rfxm #rmdrawer .dx{width:40px;height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#dfe8e3;font-size:15px;cursor:pointer;font-family:inherit}'+
+    'html.rfxm #rmdrawer .grab{cursor:pointer}'+
+    'html.rfxm #rmdrawer .gt{color:#C9A75C;font-size:11.5px;font-weight:800;letter-spacing:.06em;margin:14px 0 8px;text-transform:uppercase}'+
+    'html.rfxm #rmdrawer .gitems{display:grid;grid-template-columns:1fr 1fr;gap:8px}'+
+    'html.rfxm #rmdrawer .di{display:flex;align-items:center;min-height:46px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#dfe8e3;font-size:13px;font-weight:600;font-family:inherit;text-align:left;cursor:pointer}'+
+    'html.rfxm #rmdrawer .di.cur{background:linear-gradient(180deg,#D9BE7E,#C9A75C);color:#1a1410;font-weight:800;border-color:transparent}'+
+    'html.rfxm #rmdrawer .dfoot{display:flex;gap:8px;margin:18px 0 4px}'+
+    'html.rfxm #rmdrawer .dfoot button{flex:1 1 0;min-height:46px;border-radius:10px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#dfe8e3}'+
+    'html.rfxm #rmdrawer .dfoot .out{border-color:rgba(208,140,110,.45);background:rgba(208,140,110,.14);color:#e8b6a2}'+
+    /* 손가락 조작 기본기 */
+    'html.rfxm input,html.rfxm select,html.rfxm textarea{font-size:16px!important;max-width:100%}'+   /* iOS 포커스 자동확대 차단 */
+    'html.rfxm button,html.rfxm .btn,html.rfxm a[role="button"]{touch-action:manipulation;min-height:36px}'+
+    'html.rfxm body{overflow-x:hidden}'+
+    'html.rfxm table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}'+
     /* QA 배지 — 기본은 숨김, QA 환경에서만 노출 */
     '#rnav .rqa{display:none}'+
     QA_CSS;
@@ -381,6 +423,7 @@
     var who=(sess&&sess.user&&sess.user.name)?sess.user.name:'';
     bar+='</div><div class="rbarright"><span class="rwho">'+(who?'<b>'+who+'</b> · ':'')+(sum?(sum.role||''):'')+'</span>';
     bar+='<span class="rpres" id="rPresBadge" title="접속 현황 보기" onclick="__rnavPresence()">\uD83D\uDFE2 <span id="rPresN">0</span>명 접속</span>';
+    bar+='<button type="button" class="rmtgl" id="rmTgl" title="모바일/전체보기 전환" onclick="__rnavMobile(!__rnavMobileOn())">\uD83D\uDCF1</button>';
     bar+='<button type="button" class="rlogout" title="로그아웃" onclick="__rnavLogout()">로그아웃</button></div></div>';
     // 하위 화면
     var g=vis.find(function(x){return x.key===openGroup;});
@@ -392,7 +435,7 @@
     }
     var el=document.getElementById('rnav');
     el.innerHTML=bar+sub;
-    syncOffset();
+    mApply();
     applyPresBadge();
   }
   // 고정 헤더(바+하위메뉴)의 실제 높이만큼 본문을 내려 가림 방지
@@ -420,12 +463,101 @@
     render();
   };
 
+  /* ===== 모바일 모드 — 1단계 공통 셸 (2026-09-03) =====
+     자동감지(폭 ≤768 또는 coarse pointer) + 수동 토글(localStorage 'rfx_m' 이 자동감지보다 우선).
+     데스크톱은 html.rfxm 이 안 붙으므로 규칙이 하나도 적용되지 않는다(회귀 0). */
+  var MKEY='rfx_m', MBP=768;
+  var MTAB_PREF={
+    sales:['portal','customers','pipeline','quotelist'],
+    sales_support:['portal','customers','quotelist','stock'],
+    warehouse:['whHome','inbound','stockcount','relocate'],
+    treasury:['portal','finance','settlement','budget']
+  };
+  var MTAB_DEFAULT=['portal','salesperf','customers','board'];
+  var MTAB_FALLBACK=['portal','salesperf','customers','pipeline','quotelist','quote','fieldsurvey','board','finance','products','whHome','dashboard'];
+  var MTAB_ICON={portal:'⌂',salesperf:'📈',customers:'🏢',pipeline:'🧭',consult:'💬',quotelist:'🧾',quote:'✎',fieldsurvey:'📋',fsanalysis:'🧮',board:'🗓',finance:'💳',settlement:'⚖',budget:'💰',products:'📦',stock:'📦',whHome:'🏬',inbound:'🚚',stockcount:'🔢',relocate:'↔',dashboard:'📊',targets:'🎯',commission:'💵'};
+
+  function mNarrow(){
+    try{ if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return true; }catch(e){}
+    return (window.innerWidth||9999)<=MBP;
+  }
+  function mPref(){ try{ return localStorage.getItem(MKEY); }catch(e){ return null; } }
+  function mOn(){ var p=mPref(); if(p==='on') return true; if(p==='off') return false; return mNarrow(); }
+  var MTAB_LABEL={portal:'홈',customers:'고객',pipeline:'영업활동',consult:'상담',quotelist:'견적',quote:'견적작성',
+    fieldsurvey:'현장조사',fsanalysis:'소진분석',board:'일정',salesperf:'실적',commission:'커미션',targets:'목표',
+    finance:'재무',settlement:'정산',budget:'예산',products:'제품',stock:'재고',dashboard:'현황',
+    whHome:'창고',inbound:'입고',stockcount:'실사',relocate:'위치'};
+  function mShort(k){ var n=MTAB_LABEL[k]; if(n) return n;
+    var s=String((SCREENS[k]&&SCREENS[k].name)||'').replace(/\s*[··].*$/,''); return s.length>4?(s.slice(0,4)+'…'):s; }
+  function mTabKeys(){
+    var pref=(sum&&MTAB_PREF[sum.role])||MTAB_DEFAULT;
+    var out=[];
+    var push=function(k){ if(out.length<4 && out.indexOf(k)<0 && SCREENS[k] && canSee(k)) out.push(k); };
+    pref.forEach(push); MTAB_FALLBACK.forEach(push);
+    return out;
+  }
+  function renderMTab(){
+    var on=document.documentElement.classList.contains('rfxm');
+    var el=document.getElementById('rmtab');
+    if(!on){ if(el&&el.parentNode) el.parentNode.removeChild(el); document.body.style.paddingBottom=window.__rnavBasePB||''; return; }
+    if(!el){ el=document.createElement('nav'); el.id='rmtab'; document.body.appendChild(el); }
+    var cur=curScreen(), keys=mTabKeys();
+    var h=keys.map(function(k){
+      return '<button type="button" class="mt'+(k===cur?' on':'')+'" onclick="__rnav(\''+k+'\')">'
+           + '<span class="i">'+(MTAB_ICON[k]||'•')+'</span><span class="l">'+mShort(k)+'</span></button>';
+    }).join('');
+    h+='<button type="button" class="mt mmore" onclick="__rnavDrawer(1)"><span class="i">☰</span><span class="l">전체</span></button>';
+    el.innerHTML=h;
+    document.body.style.paddingBottom='calc(58px + env(safe-area-inset-bottom))';
+  }
+  function renderDrawer(){
+    var d=document.getElementById('rmdrawer');
+    if(!d){ d=document.createElement('div'); d.id='rmdrawer'; d.onclick=function(e){ if(e.target===d) __rnavDrawer(0); }; document.body.appendChild(d); }
+    var cur=curScreen(), vis=GROUPS.filter(groupVisible);
+    var h='<div class="sheet"><div class="grab" onclick="__rnavDrawer(0)"></div>'
+      + '<div class="dhead"><span>전체 메뉴 · Menú</span><button type="button" class="dx" onclick="__rnavDrawer(0)">✕</button></div>';
+    vis.forEach(function(g){
+      var seen={}, scr=g.screens.filter(function(k){ if(seen[k]||!SCREENS[k]||!canSee(k)) return false; seen[k]=1; return true; });
+      if(!scr.length) return;
+      h+='<div class="gt" style="color:'+g.color+'">'+g.title+'</div><div class="gitems">';
+      scr.forEach(function(k){ h+='<button type="button" class="di'+(k===cur?' cur':'')+'" onclick="__rnavDrawer(0);__rnav(\''+k+'\',\''+g.key+'\')">'+SCREENS[k].name+'</button>'; });
+      h+='</div>';
+    });
+    h+='<div class="dfoot"><button type="button" onclick="__rnavMobile(0)">⤢ 전체보기(PC 화면)</button>'
+     + '<button type="button" class="out" onclick="__rnavLogout()">로그아웃</button></div></div>';
+    d.innerHTML=h;
+  }
+  window.__rnavDrawer=function(open){
+    var d=document.getElementById('rmdrawer');
+    if(open){ renderDrawer(); d=document.getElementById('rmdrawer'); d.classList.add('show'); }
+    else if(d){ d.classList.remove('show'); }
+  };
+  window.__rnavMobile=function(on){
+    try{ localStorage.setItem(MKEY, on?'on':'off'); }catch(e){}
+    window.__rnavDrawer(0); mApply();
+  };
+  function mApply(){
+    var de=document.documentElement;
+    de.classList.toggle('rfxnarrow', mNarrow());
+    de.classList.toggle('rfxm', mOn());
+    renderMTab();
+    var t=document.getElementById('rmTgl');
+    if(t) t.textContent = de.classList.contains('rfxm') ? '⤢' : '📱';
+    syncOffset();
+  }
+  window.__rnavMobileOn=mOn;
+  var mRT=null;
+  window.addEventListener('resize', function(){ clearTimeout(mRT); mRT=setTimeout(mApply,120); });
+  window.addEventListener('orientationchange', function(){ setTimeout(mApply,240); });
+
   function mount(){
     styles();
     // 헤더 삽입 전, 화면 고유의 본문 상단 여백을 저장(가림 방지 + 원래 여백 유지)
     try{ window.__rnavBaseTop=parseInt(getComputedStyle(document.body).paddingTop,10)||0; }catch(e){ window.__rnavBaseTop=0; }
+    try{ window.__rnavBasePB=getComputedStyle(document.body).paddingBottom||''; }catch(e){ window.__rnavBasePB=''; }
     var nv=document.createElement('div'); nv.id='rnav';
     document.body.insertBefore(nv, document.body.firstChild);
+    mApply();
     boot();
   }
   // 세션을 읽어 헤더를 그린다. 세션이 없으면 잠시 후 로그인되는지 감시(포털 첫 로그인 대응).
