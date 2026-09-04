@@ -8,6 +8,7 @@ import { CROSS_TEAM_PAGE_KEY } from '../permLoader.js';
 import { authGuard, requirePage, requirePageEdit, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
+import { fieldVisible } from '../permissions.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
@@ -758,6 +759,173 @@ export default async function customerRoutes(app) {
     const mxToday = mxTodayStr(new Date());
     return { mx_today: mxToday, limit: VISIT_HIST_LIMIT, scope: isDir ? 'all' : 'own',
       ...assembleVisitHistory({ visits, meetings, pendings, recordings, mxToday, truncated }) };
+  });
+
+  // =====================================================================
+  // 📈 월별 거래 요약 — 견적 · 매출 · 수금 (2026-09-04)
+  //
+  //   고객 하나를 놓고 "이 고객에게 얼마를 견적했고, 얼마가 매출이 됐고, 얼마가 들어왔나"
+  //   를 월 단위 한 표로 본다. 금액 기준은 다른 화면(영업 대시보드·커미션)과 맞춘다:
+  //     · 견적 = quotes.subtotal_mxn (ex-IVA 스냅샷) · quote_date 월
+  //         취소(cancelled)·삭제 제외. **가격표(pricelist)는 견적이 아니므로 제외**
+  //         (금액 0 으로 기록되지만 건수를 부풀린다).
+  //     · 매출 = sales_invoices.subtotal_mxn (ex-IVA) · inv_date 월 · status='posted'
+  //     · 수금 = sales_payment_allocations 중 **현금 배분(kind='cash')** · 입금일(pay_date) 월
+  //         실입금액은 IVA 포함이므로 ex-IVA 환산액(배분액 ÷ (1+그 인보이스 IVA율))을 함께 준다.
+  //         nota de crédito 비현금 반제(kind='nota_credito')는 수금이 아니므로 따로 뺀다.
+  //     · 선수금(advance) 은 인보이스에 배분되기 전이라 수금 칸에 안 들어간다 — 따로 준다.
+  //   금액 가시성은 영업 대시보드와 동일한 sales_amount 필드 권한을 탄다(없으면 locked).
+  // =====================================================================
+  app.get('/api/customers/:id/monthly-summary', { preHandler: [authGuard, requirePage('customers')] }, async (req, reply) => {
+    const perm = req.ctx.perm;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const c = (await query(
+      `SELECT id, code, name, team_id FROM customers WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!c) return reply.code(404).send({ error: 'not_found' });
+    if (!canViewTeam(perm, c.team_id)) return reply.code(403).send({ error: 'forbidden_team' });
+
+    // 거래가 있는 연도(연도 ◀▶ 이동 범위). 셋 중 하나라도 있으면 그 해를 넣는다.
+    const yearRows = (await query(
+      `SELECT DISTINCT y FROM (
+          SELECT to_char(quote_date,'YYYY') AS y FROM quotes
+           WHERE customer_id=$1 AND deleted_at IS NULL AND status NOT IN ('cancelled','pricelist')
+          UNION ALL
+          SELECT to_char(inv_date,'YYYY') FROM sales_invoices
+           WHERE customer_id=$1 AND status='posted'
+          UNION ALL
+          SELECT to_char(sp.pay_date,'YYYY') FROM sales_payments sp
+           WHERE sp.customer_id=$1
+        ) t WHERE y IS NOT NULL ORDER BY y DESC`, [id])).rows;
+    const years = yearRows.map((r) => Number(r.y));
+    const thisYear = Number(mxTodayStr(new Date()).slice(0, 4));
+    if (!years.includes(thisYear)) years.unshift(thisYear);
+    years.sort((a, b) => b - a);
+
+    const year = req.query.year === undefined || req.query.year === '' ? thisYear : Number(req.query.year);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) return reply.code(400).send({ error: 'bad_year' });
+    const ys = String(year);
+
+    const customer = { id: Number(c.id), code: c.code, name: c.name };
+    const seeSales = fieldVisible(perm, 'sales_amount');
+    if (!seeSales) return { customer, year, years, locked: true, months: [], totals: null };
+
+    const qRows = (await query(
+      `SELECT to_char(quote_date,'MM') AS m,
+              COUNT(*)::int AS cnt,
+              COALESCE(SUM(subtotal_mxn),0) AS amt,
+              COUNT(*) FILTER (WHERE status='converted')::int AS conv_cnt,
+              COALESCE(SUM(subtotal_mxn) FILTER (WHERE status='converted'),0) AS conv_amt
+         FROM quotes
+        WHERE customer_id=$1 AND deleted_at IS NULL
+          AND status NOT IN ('cancelled','pricelist')
+          AND to_char(quote_date,'YYYY')=$2
+        GROUP BY 1`, [id, ys])).rows;
+
+    const sRows = (await query(
+      `SELECT to_char(inv_date,'MM') AS m,
+              COUNT(*)::int AS cnt,
+              COALESCE(SUM(subtotal_mxn),0) AS amt,
+              COALESCE(SUM(total_mxn),0)    AS amt_incl
+         FROM sales_invoices
+        WHERE customer_id=$1 AND status='posted' AND to_char(inv_date,'YYYY')=$2
+        GROUP BY 1`, [id, ys])).rows;
+
+    // 수금 — 현금 배분만. kind 컬럼(0085) 이전 DB 호환: COALESCE(kind,'cash')
+    const pRows = (await query(
+      `SELECT to_char(sp.pay_date,'MM') AS m,
+              COUNT(DISTINCT sp.id)::int AS cnt,
+              COALESCE(SUM(a.amount),0) AS amt_incl,
+              COALESCE(SUM(a.amount / (1 + COALESCE(i.iva_rate,16)/100.0)),0) AS amt_ex
+         FROM sales_payment_allocations a
+         JOIN sales_payments sp ON sp.id = a.payment_id
+         JOIN sales_invoices  i  ON i.id = a.invoice_id
+        WHERE sp.customer_id=$1 AND COALESCE(a.kind,'cash')='cash'
+          AND i.status <> 'deleted'
+          AND to_char(sp.pay_date,'YYYY')=$2
+        GROUP BY 1`, [id, ys])).rows;
+
+    // 비현금 반제(nota de crédito) — 수금은 아니지만 인보이스 잔액을 줄이므로 따로 보여준다.
+    let ncRows = [];
+    try {
+      ncRows = (await query(
+        `SELECT to_char(nc.applied_at AT TIME ZONE $3,'MM') AS m,
+                COALESCE(SUM(nc.base_mxn),0)  AS amt_ex,
+                COALESCE(SUM(nc.total_mxn),0) AS amt_incl
+           FROM notas_credito nc
+          WHERE nc.customer_id=$1 AND nc.status='applied' AND nc.applied_at IS NOT NULL
+            AND to_char(nc.applied_at AT TIME ZONE $3,'YYYY')=$2
+          GROUP BY 1`, [id, ys, VISIT_TZ])).rows;
+    } catch (_) { ncRows = []; }   // 0085 이전 DB 호환
+
+    // 선수금(미배분 입금) — 그 달 입금 총액 − 그 달 배분액. 음수는 0으로 절사.
+    let advRows = [];
+    try {
+      advRows = (await query(
+        `SELECT to_char(pay_date,'MM') AS m, COALESCE(SUM(advance_amount),0) AS amt_incl
+           FROM sales_payments
+          WHERE customer_id=$1 AND to_char(pay_date,'YYYY')=$2
+          GROUP BY 1`, [id, ys])).rows;
+    } catch (_) { advRows = []; }
+
+    const pick = (rows, m) => rows.find((r) => r.m === m) || {};
+    const months = [];
+    for (let i = 1; i <= 12; i++) {
+      const m = String(i).padStart(2, '0');
+      const q = pick(qRows, m), s = pick(sRows, m), p = pick(pRows, m);
+      const nc = pick(ncRows, m), ad = pick(advRows, m);
+      months.push({
+        month: i,
+        ym: `${ys}-${m}`,
+        quote_count: Number(q.cnt || 0),
+        quote_amount: r2(q.amt || 0),                 // ex-IVA
+        quote_converted_count: Number(q.conv_cnt || 0),
+        quote_converted_amount: r2(q.conv_amt || 0),  // ex-IVA
+        sales_count: Number(s.cnt || 0),
+        sales_amount: r2(s.amt || 0),                 // ex-IVA
+        sales_amount_incl: r2(s.amt_incl || 0),       // IVA 포함(참고)
+        collect_count: Number(p.cnt || 0),
+        collect_amount: r2(p.amt_ex || 0),            // ex-IVA 환산
+        collect_amount_incl: r2(p.amt_incl || 0),     // 실입금액(IVA 포함)
+        nc_amount: r2(nc.amt_ex || 0),                // 비현금 반제 ex-IVA
+        nc_amount_incl: r2(nc.amt_incl || 0),
+        advance_amount_incl: r2(ad.amt_incl || 0),    // 선수금(미배분)
+      });
+    }
+    const sum = (k) => r2(months.reduce((a, x) => a + Number(x[k] || 0), 0));
+    const totals = {
+      quote_count: months.reduce((a, x) => a + x.quote_count, 0),
+      quote_amount: sum('quote_amount'),
+      quote_converted_count: months.reduce((a, x) => a + x.quote_converted_count, 0),
+      quote_converted_amount: sum('quote_converted_amount'),
+      sales_count: months.reduce((a, x) => a + x.sales_count, 0),
+      sales_amount: sum('sales_amount'),
+      sales_amount_incl: sum('sales_amount_incl'),
+      collect_count: months.reduce((a, x) => a + x.collect_count, 0),
+      collect_amount: sum('collect_amount'),
+      collect_amount_incl: sum('collect_amount_incl'),
+      nc_amount: sum('nc_amount'),
+      nc_amount_incl: sum('nc_amount_incl'),
+      advance_amount_incl: sum('advance_amount_incl'),
+    };
+    totals.conversion_pct = totals.quote_amount > 0
+      ? Math.round(totals.quote_converted_amount / totals.quote_amount * 1000) / 10 : null;
+
+    // 미수 잔액(연도 무관 — 현재 시점 기준) · 표 아래 한 줄로 보여준다.
+    const ar = (await query(
+      `SELECT COALESCE(SUM(i.total_mxn - COALESCE(p.paid,0)),0) AS outstanding,
+              COALESCE(SUM(CASE WHEN i.due_date < CURRENT_DATE
+                                THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END),0) AS overdue
+         FROM sales_invoices i
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid
+                      FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
+        WHERE i.customer_id=$1 AND i.status='posted'`, [id])).rows[0];
+
+    return {
+      customer, year, years, locked: false, months, totals,
+      ar: { outstanding: r2(ar.outstanding), overdue: r2(ar.overdue) },
+      note: '금액은 IVA 제외(ex-IVA) 기준 · 수금은 실입금액을 그 인보이스 IVA율로 환산',
+    };
   });
 
   // =====================================================================

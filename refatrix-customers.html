@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (merge-0903)</title>
+<title>Refatrix ERP · 고객 등록 (build tx-0904a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -151,6 +151,7 @@
         <div id="d-info"></div>
         <div id="d-approval"></div>
         <div id="d-visits"></div>
+        <div id="d-txn"></div>
         <div id="d-termshist"></div>
         <div style="font-weight:700;margin-top:14px">증빙서류 (Constancia·세무증명 등 · PDF/JPEG/PNG, 5MB 이하)</div>
         <div id="d-docs"><div class="hint">불러오는 중…</div></div>
@@ -238,6 +239,17 @@
     </div>
     <div class="hint" style="margin-top:0">왼쪽부터 <b>지점이 많은 순</b>, 같은 지점수면 <b>매출액이 큰 순</b>으로 정렬했습니다. 각 점은 해당 고객의 할인률 위치이며, <b style="color:#B45309">우측축(주황)</b>은 재주문 속도(개/영업일 · 첫 주문 제외)입니다. (현재 목록에 표시된 고객 기준)</div>
     <div id="chartHost" style="overflow-x:auto;margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- 📈 월별 거래(견적·매출·수금) 모달 · tx-0904a -->
+<div class="modal-back" id="txnModal">
+  <div class="modal-card" style="max-width:1000px">
+    <div class="modal-head">
+      <h2 id="txnModalTitle">📈 월별 견적 · 매출 · 수금</h2>
+      <button class="btn ghost sm" onclick="closeTxnModal()">닫기 ✕</button>
+    </div>
+    <div id="txnModalHost"><div class="hint">불러오는 중…</div></div>
   </div>
 </div>
 
@@ -725,7 +737,7 @@
         <td>${stagePill(c.stage_name)}</td>
         <td class="num">${money0(c.sales_total)}</td>
         <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
-        <td><button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
+        <td style="white-space:nowrap"><button class="btn ghost sm" onclick="openTxnModal(${c.id})" title="월별 견적·매출·수금 (IVA 제외)">📈 거래</button> <button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
       </tr>`;}).join('')}</tbody></table>
       <div class="hint">${items.length}명 표시 · <b>누적매출</b>=거래후 누적 매출액(IVA 포함), 옆은 연체액(빨간색). <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출. 타이틀을 누르면 정렬됩니다.</div>`;
   }
@@ -1214,7 +1226,7 @@
   }
 
   async function openCustomer(id){
-    $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';$('d-visits').innerHTML='';
+    $('detailCard').classList.remove('hidden');$('d-info').innerHTML='<div class="hint">불러오는 중…</div>';$('d-invoices').innerHTML='';$('d-visits').innerHTML='';$('d-txn').innerHTML='';
     if($('detailCard').scrollIntoView)$('detailCard').scrollIntoView({behavior:'smooth',block:'nearest'});
     try{
       const d=await fetch(session.api+'/api/customers/'+id,{headers:auth()}).then(r=>r.json());
@@ -1292,6 +1304,7 @@
       loadDocs(c.id);
       loadDetailApproval(c.id);
       loadCustVisits(c.id);
+      txLoad('card',c.id,null);
       loadTermsHistory(c.id);
       if(!d.invoices.length){$('d-invoices').innerHTML='<div class="hint">미수 인보이스가 없습니다.</div>';return;}
       $('d-invoices').innerHTML=`<table><thead><tr><th>인보이스일</th><th>입금예정일</th><th class="num">총액</th><th class="num">입금</th><th class="num">미수</th><th>상태</th></tr></thead>
@@ -1459,6 +1472,144 @@
       v.summary=Object.assign({},es,{ko:d.ko}); cvLang[key]='ko'; cvRenderDet(key);
     }catch(e){ alert('한국어 번역 실패: '+((e&&e.message)||'서버 연결 실패')); btn.disabled=false; btn.textContent='🇰🇷 한국어'; }
   }
+
+  // ============================================================
+  // 📈 월별 거래 요약 — 견적 · 매출 · 수금   (build tx-0904a)
+  //   GET /api/customers/:id/monthly-summary?year=YYYY
+  //   · 금액은 전부 IVA 제외(ex-IVA). 수금만 「실입금(IVA 포함)」 칸을 하나 더 둔다.
+  //   · 같은 렌더러를 두 곳에서 쓴다 — 목록 행의 [📈 거래] 모달(key='modal')과
+  //     고객 상세의 카드(key='card'). 각자 자기 고객·연도·경합 가드를 들고 있다.
+  // ============================================================
+  const txViews={
+    card:  { host:'d-txn',        boxed:true,  cust:null, year:null, data:null, seq:0, open:true },
+    modal: { host:'txnModalHost', boxed:false, cust:null, year:null, data:null, seq:0, open:true }
+  };
+  const txN=(n)=> Number(n||0);
+  const txMoney=(n)=> txN(n)===0 ? '<span class="hint" style="margin:0">—</span>' : fmt(n);
+  function txErrText(e){
+    return e==='forbidden_team' ? '다른 팀 고객은 볼 수 없습니다.'
+         : e==='not_found'      ? '고객을 찾을 수 없습니다.'
+         : '거래 요약을 불러오지 못했습니다.';
+  }
+  async function txLoad(key,custId,year){
+    const v=txViews[key]; if(!v) return;
+    const host=$(v.host); if(!host) return;
+    v.cust=Number(custId); v.year=(year==null||year==='')?null:Number(year); v.data=null;
+    const my=++v.seq;
+    host.innerHTML='<div class="hint" style="margin-top:12px">월별 거래 불러오는 중…</div>';
+    try{
+      const url=session.api+'/api/customers/'+custId+'/monthly-summary'+(v.year?('?year='+v.year):'');
+      const d=await fetch(url,{headers:auth()}).then(r=>r.json());
+      if(v.seq!==my || v.cust!==Number(custId)) return;   // 그 사이 다른 고객·연도를 열었으면 버린다
+      if(d.error){ host.innerHTML='<div class="hint" style="margin-top:12px">'+txErrText(d.error)+'</div>'; return; }
+      v.data=d; v.year=d.year; txRender(key);
+    }catch(e){
+      if(v.seq===my) host.innerHTML='<div class="hint" style="margin-top:12px">월별 거래: 서버 연결 실패</div>';
+    }
+  }
+  function txYearMove(key,delta){
+    const v=txViews[key]; if(!v||!v.data) return;
+    const ys=(v.data.years||[]).map(Number);
+    const now=Number(new Date().getFullYear());
+    const lo=ys.length?Math.min.apply(null,ys):now, hi=Math.max(now, ys.length?Math.max.apply(null,ys):now);
+    const y=Number(v.year)+Number(delta);
+    if(y<lo||y>hi) return;
+    txLoad(key,v.cust,y);
+  }
+  function txToggle(key){ const v=txViews[key]; if(!v)return; v.open=!v.open; txRender(key); }
+  function txRender(key){
+    const v=txViews[key]; const host=$(v.host); const d=v.data; if(!host||!d) return;
+    const cName=(d.customer&&d.customer.name)||'';
+    const ys=d.years||[];
+    const now=Number(new Date().getFullYear());
+    const lo=ys.length?Math.min.apply(null,ys.map(Number)):now, hi=Math.max(now, ys.length?Math.max.apply(null,ys.map(Number)):now);
+    const yearNav='<span style="display:inline-flex;align-items:center;gap:6px">'
+      +'<button class="btn ghost sm" onclick="txYearMove(\''+key+'\',-1)"'+(Number(d.year)<=lo?' disabled':'')+'>◀</button>'
+      +'<b style="font-size:14px">'+d.year+'</b>'
+      +'<button class="btn ghost sm" onclick="txYearMove(\''+key+'\',1)"'+(Number(d.year)>=hi?' disabled':'')+'>▶</button></span>';
+
+    if(d.locked){
+      host.innerHTML=(v.boxed?'<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">':'')
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="color:#0f6b53">📈 월별 견적 · 매출 · 수금</b>'+yearNav+'</div>'
+        +'<div class="hint" style="margin-top:6px">🔒 금액을 볼 권한이 없습니다.</div>'+(v.boxed?'</div>':'');
+      return;
+    }
+    const t=d.totals||{};
+    const mxNow=new Date();
+    const curYm=(mxNow.getFullYear()===Number(d.year))?(mxNow.getMonth()+1):0;
+    const rows=(d.months||[]).map(m=>{
+      const hl=(m.month===curYm)?' style="background:#fdf8ea"':'';
+      return '<tr'+hl+'>'
+        +'<td'+(m.month===curYm?' style="font-weight:800"':'')+'>'+m.month+'월'+(m.month===curYm?' <span class="hint" style="margin:0">이번달</span>':'')+'</td>'
+        +'<td class="num">'+(m.quote_count?m.quote_count:'<span class="hint" style="margin:0">—</span>')+'</td>'
+        +'<td class="num">'+txMoney(m.quote_amount)+'</td>'
+        +'<td class="num">'+(m.sales_count?m.sales_count:'<span class="hint" style="margin:0">—</span>')+'</td>'
+        +'<td class="num"'+(txN(m.sales_amount)>0?' style="font-weight:700;color:#0F6E56"':'')+'>'+txMoney(m.sales_amount)+'</td>'
+        +'<td class="num"'+(txN(m.collect_amount)>0?' style="font-weight:700;color:#2f6db5"':'')+'>'+txMoney(m.collect_amount)+'</td>'
+        +'<td class="num"><span class="hint" style="margin:0">'+(txN(m.collect_amount_incl)===0?'—':fmt(m.collect_amount_incl))+'</span></td>'
+        +'</tr>';
+    }).join('');
+    const foot='<tr style="background:#f3f6f4;font-weight:800;border-top:2px solid var(--brand)">'
+      +'<td>합계</td>'
+      +'<td class="num">'+(t.quote_count||0)+'</td><td class="num">'+fmt(t.quote_amount)+'</td>'
+      +'<td class="num">'+(t.sales_count||0)+'</td><td class="num" style="color:#0F6E56">'+fmt(t.sales_amount)+'</td>'
+      +'<td class="num" style="color:#2f6db5">'+fmt(t.collect_amount)+'</td>'
+      +'<td class="num">'+fmt(t.collect_amount_incl)+'</td></tr>';
+
+    const extras=[];
+    extras.push('견적 → 매출 전환 <b>'+fmt(t.quote_converted_amount)+'</b>'
+      +(t.conversion_pct==null?'':' <span class="hint" style="margin:0">(견적금액의 '+t.conversion_pct+'%)</span>'));
+    if(txN(t.nc_amount_incl)>0) extras.push('NC 비현금 반제 <b>'+fmt(t.nc_amount)+'</b> <span class="hint" style="margin:0">(IVA 포함 '+fmt(t.nc_amount_incl)+' · 수금 아님)</span>');
+    if(txN(t.advance_amount_incl)>0) extras.push('선수금(미배분 입금) <b>'+fmt(t.advance_amount_incl)+'</b> <span class="hint" style="margin:0">(IVA 포함 · 수금 칸에 미포함)</span>');
+    const ar=d.ar||{};
+    if(txN(ar.outstanding)>0) extras.push('현재 미수 <b>'+fmt(ar.outstanding)+'</b>'
+      +(txN(ar.overdue)>0?' <span style="color:#B23A2E;font-weight:800">연체 '+fmt(ar.overdue)+'</span>':'')
+      +' <span class="hint" style="margin:0">(연도 무관·IVA 포함)</span>');
+
+    const head='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +(v.boxed?'<span style="cursor:pointer;color:#0f6b53" onclick="txToggle(\''+key+'\')">'+(v.open?'▾':'▸')+'</span>'
+                +'<b style="color:#0f6b53">📈 월별 견적 · 매출 · 수금</b>':'')
+      +yearNav
+      +'<span class="hint" style="margin:0">금액은 <b>IVA 제외</b> 기준</span>'
+      +'<span style="margin-left:auto"><button class="btn ghost sm" onclick="txExcel(\''+key+'\')">엑셀 다운로드</button></span>'
+      +'</div>';
+
+    const body=(!v.open&&v.boxed)?'' : (
+      '<div style="overflow-x:auto;margin-top:8px"><table><thead><tr>'
+      +'<th>월</th><th class="num">견적 건</th><th class="num">견적 (ex-IVA)</th>'
+      +'<th class="num">매출 건</th><th class="num">매출 (ex-IVA)</th>'
+      +'<th class="num">수금 (ex-IVA)</th><th class="num">수금 (실입금·IVA 포함)</th>'
+      +'</tr></thead><tbody>'+rows+foot+'</tbody></table></div>'
+      +'<div class="hint" style="margin-top:6px">'+extras.join(' · ')+'</div>'
+      +'<div class="hint" style="margin-top:4px">견적=취소·가격표 제외한 그달 발행 견적(소계 ex-IVA) · 매출=확정 인보이스 소계(ex-IVA, 인보이스일 기준) · '
+      +'수금=그달 입금된 현금 배분액을 그 인보이스 IVA율로 나눈 ex-IVA 환산액(오른쪽이 통장에 들어온 실제 금액)</div>');
+
+    host.innerHTML=(v.boxed?'<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">':'')
+      +head+body+(v.boxed?'</div>':'');
+    if(key==='modal'&&$('txnModalTitle')) $('txnModalTitle').textContent='📈 '+cName+' — 월별 견적 · 매출 · 수금';
+  }
+  function txExcel(key){
+    const v=txViews[key]; const d=v&&v.data; if(!d||d.locked) return;
+    const cName=(d.customer&&d.customer.name)||'', cCode=(d.customer&&d.customer.code)||'';
+    const aoa=[['고객',cName,'코드',cCode,'연도',d.year],
+      [],
+      ['월','견적 건','견적 (ex-IVA)','견적 전환 (ex-IVA)','매출 건','매출 (ex-IVA)','수금 (ex-IVA)','수금 (실입금·IVA 포함)']];
+    (d.months||[]).forEach(m=>aoa.push([m.month+'월',m.quote_count,m.quote_amount,m.quote_converted_amount,
+      m.sales_count,m.sales_amount,m.collect_amount,m.collect_amount_incl]));
+    const t=d.totals||{};
+    aoa.push(['합계',t.quote_count,t.quote_amount,t.quote_converted_amount,t.sales_count,t.sales_amount,t.collect_amount,t.collect_amount_incl]);
+    aoa.push([]);
+    aoa.push(['※ 금액은 IVA 제외(ex-IVA) 기준. 수금 ex-IVA 는 실입금액을 그 인보이스 IVA율로 나눈 환산액.']);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,String(d.year));
+    XLSX.writeFile(wb,'refatrix_'+(cCode||'cliente')+'_'+d.year+'_월별거래.xlsx');
+  }
+  function openTxnModal(custId){
+    $('txnModal').classList.add('on');
+    if($('txnModalTitle')) $('txnModalTitle').textContent='📈 월별 견적 · 매출 · 수금';
+    txLoad('modal',custId,null);
+  }
+  function closeTxnModal(){ $('txnModal').classList.remove('on'); }
 
   // ===== 팀 권한 관리(디렉터) =====
   // ★ 개선: 저장 시 화면 전체를 다시 그리지 않고 해당 줄만 그 자리에서 갱신.
