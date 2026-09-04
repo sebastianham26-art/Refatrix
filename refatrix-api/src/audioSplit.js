@@ -28,10 +28,15 @@ const ID_CLUSTER = 0x1f43b675;
 const ID_CUES = 0x1c53bb6b;
 const ID_TIMESTAMP = 0xe7;              // 클러스터의 첫 자식(Timecode/Timestamp)
 const ID_DURATION = 0x4489;             // Info 안의 Duration(부동소수)
+const ID_TIMECODESCALE = 0x2ad7b1;      // Info 안의 TimecodeScale(ns · 보통 1,000,000 = 1ms)
 const ID_VOID = 0xec;
 
 // 조각 하나의 목표 상한(바이트). Whisper 25MB 한도에 여유를 둔다.
 export const SPLIT_MAX_BYTES = 18 * 1024 * 1024;
+// 조각 하나의 목표 길이(밀리초). 용량이 남아도 이보다 길면 나눈다 —
+// Whisper 호출 하나가 길수록 실패·시간초과 확률이 급격히 올라가기 때문.
+// (2026-09-04: 75분짜리 구간이 5분 제한에 걸려 6번 재시도한 사례)
+export const SPLIT_MAX_MS = 20 * 60 * 1000;
 
 export function isWebm(buf) {
   return Buffer.isBuffer(buf) && buf.length >= 4
@@ -90,6 +95,25 @@ function findNextCluster(buf, from) {
   return buf.length;
 }
 
+// Info 안의 TimecodeScale(ns). 클러스터 타임스탬프의 단위 — 보통 1ms.
+function findTimecodeScale(buf, from, to) {
+  let pos = from;
+  while (pos < to) {
+    const el = readId(buf, pos);
+    if (!el) return null;
+    const sz = readSize(buf, pos + el.len);
+    if (!sz || sz.size == null) return null;
+    const payload = pos + el.len + sz.len;
+    if (el.id === ID_TIMECODESCALE && sz.size >= 1 && sz.size <= 8) {
+      let v = 0;
+      for (let i = 0; i < sz.size; i++) v = (v * 256) + buf[payload + i];
+      return v || null;
+    }
+    pos = payload + sz.size;
+  }
+  return null;
+}
+
 // Info 안의 Duration(4/8바이트 부동소수) 위치를 찾는다 — 조각마다 다시 써 준다.
 // 못 찾으면 null(그대로 두어도 소리는 정상, 표시상의 길이만 원본 값으로 남는다).
 function findDuration(buf, from, to) {
@@ -125,6 +149,7 @@ export function scanWebm(buf) {
   pos += seg.len + segSize.len;
 
   const clusters = [];
+  let timecodeScale = 1000000;             // ns — 기본 1ms
   while (pos < buf.length) {
     const el = readId(buf, pos);
     if (!el) break;
@@ -156,6 +181,8 @@ export function scanWebm(buf) {
       if (el.id === ID_INFO) {
         const d = findDuration(buf, payload, end);
         if (d) { part.durPos = d.pos; part.durLen = d.len; }
+        const ts = findTimecodeScale(buf, payload, end);
+        if (ts) timecodeScale = ts;
       }
       headerParts.push(part);
     }
@@ -163,18 +190,22 @@ export function scanWebm(buf) {
     pos = end;
   }
   if (!clusters.length) return { error: 'no_clusters' };
-  return { headerParts, clusters };
+  // 클러스터 타임스탬프 → 밀리초 환산 계수
+  return { headerParts, clusters, msPerTick: timecodeScale / 1000000 };
 }
 
 // ── 자르기 ───────────────────────────────────────────────────────────
 //   maxBytes 이하가 되도록 클러스터 경계에서 자른다.
 //   자를 필요가 없으면 [원본] 하나를 그대로 돌려준다.
 //   { parts:[Buffer] } | { error:'unsupported_format'|'cluster_too_big'|… }
-export function splitWebm(buf, maxBytes = SPLIT_MAX_BYTES) {
+export function splitWebm(buf, maxBytes = SPLIT_MAX_BYTES, maxMs = SPLIT_MAX_MS) {
   if (!Buffer.isBuffer(buf)) return { error: 'unsupported_format' };
-  if (buf.length <= maxBytes) return { parts: [buf] };
   const scan = scanWebm(buf);
-  if (scan.error) return { error: scan.error };
+  if (scan.error) return buf.length <= maxBytes ? { parts: [buf], kept: true } : { error: scan.error };
+  // 용량도 길이도 상한 안이면 그대로 둔다(불필요한 재조립·비용 없음)
+  const spanMs = ((scan.clusters[scan.clusters.length - 1].timestamp || 0)
+                - (scan.clusters[0].timestamp || 0)) * scan.msPerTick;
+  if (buf.length <= maxBytes && spanMs <= maxMs) return { parts: [buf], kept: true };
 
   const header = Buffer.concat(scan.headerParts.map((h) => buf.subarray(h.start, h.end)));
   // 조각의 Segment 크기는 '알 수 없음'으로 — 원본 크기를 그대로 두면 거짓이 된다
@@ -189,10 +220,16 @@ export function splitWebm(buf, maxBytes = SPLIT_MAX_BYTES) {
   const groups = [];
   let cur = [];
   let curBytes = 0;
+  let curBase = 0;
   for (const cl of scan.clusters) {
     const size = cl.end - cl.start;
     if (size > room) return { error: 'cluster_too_big' };
-    if (curBytes + size > room && cur.length) { groups.push(cur); cur = []; curBytes = 0; }
+    const overTime = cur.length && maxMs > 0
+      && (((cl.timestamp || 0) - curBase) * scan.msPerTick) >= maxMs;
+    if ((curBytes + size > room || overTime) && cur.length) {
+      groups.push(cur); cur = []; curBytes = 0;
+    }
+    if (!cur.length) curBase = cl.timestamp || 0;
     cur.push(cl); curBytes += size;
   }
   if (cur.length) groups.push(cur);
@@ -235,10 +272,12 @@ export function splitWebm(buf, maxBytes = SPLIT_MAX_BYTES) {
 
 // base64 구간 하나를 받아, 25MB 한도를 넘으면 여러 base64 구간으로 나눈다.
 //   { segments:[b64] } | { error }
-export function splitB64Segment(b64, maxBytes = SPLIT_MAX_BYTES) {
+export function splitB64Segment(b64, maxBytes = SPLIT_MAX_BYTES, maxMs = SPLIT_MAX_MS) {
   const buf = Buffer.from(String(b64 || ''), 'base64');
   if (!buf.length) return { error: 'empty' };
-  const out = splitWebm(buf, maxBytes);
+  const out = splitWebm(buf, maxBytes, maxMs);
   if (out.error) return { error: out.error };
+  // 손대지 않은 경우 원래 문자열을 그대로 돌려준다(재인코딩 없이)
+  if (out.kept) return { segments: [String(b64)], kept: true };
   return { segments: out.parts.map((p) => p.toString('base64')) };
 }

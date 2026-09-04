@@ -20,7 +20,7 @@ const SKIP = !PG;
 if (SKIP) console.log('[skip] TEST_PG_URL 없음 — 검증 생략');
 if (PG) process.env.DATABASE_URL = PG;
 
-let query, pool, consultRoutes, authRoutes, Fastify, jwt, app;
+let query, pool, consultRoutes, authRoutes, Fastify, jwt, app, requeueStuck;
 const tok = {};
 const ID = {};
 const TAG = 'CSREC';
@@ -30,6 +30,7 @@ const B64 = 'QUJD'.repeat(64);
 async function boot() {
   ({ query, pool } = await import('../src/db.js'));
   consultRoutes = (await import('../src/routes/consultRoutes.js')).default;
+  ({ requeueStuck } = await import('../src/routes/consultRoutes.js'));
   authRoutes = (await import('../src/routes/authRoutes.js')).default;
   Fastify = (await import('fastify')).default;
   jwt = (await import('@fastify/jwt')).default;
@@ -246,6 +247,28 @@ test('⑪ 나눌 수 없는 형식(mp4)이 25MB를 넘으면 이유와 함께 �
   assert.equal(c.json().error, 'segment_too_large');
   assert.equal(c.json().reason, 'unsupported_format');
   await del('dir', `/api/consults/${ID.consult}/recordings/parts?session_key=${key}`);
+});
+
+test('⑫ 처리 도중 서버가 재시작돼 멈춘 건은 자동으로 대기열에 되돌아온다', { skip: SKIP }, async () => {
+  // 2시간 전에 시작해 transcribing 에서 멈춘 건 + 방금 시작해 정상 처리 중인 건
+  const stuck = Number((await query(
+    `INSERT INTO sales_consult_recordings (consult_id, mode, mime, audio_b64, status, attempts, created_by, created_at)
+     VALUES ($1,'full','audio/webm','QUJD','transcribing',1,$2, now() - INTERVAL '3 hours') RETURNING id`,
+    [ID.consult, ID.dir])).rows[0].id);
+  const fresh = Number((await query(
+    `INSERT INTO sales_consult_recordings (consult_id, mode, mime, audio_b64, status, attempts, created_by)
+     VALUES ($1,'full','audio/webm','QUJD','transcribing',1,$2) RETURNING id`,
+    [ID.consult, ID.dir])).rows[0].id);
+
+  const n = await requeueStuck();
+  assert.ok(n >= 1);
+  const rows = (await query(
+    `SELECT id, status, error FROM sales_consult_recordings WHERE id = ANY($1)`, [[stuck, fresh]])).rows;
+  const byId = Object.fromEntries(rows.map((r) => [Number(r.id), r]));
+  assert.equal(byId[stuck].status, 'queued', '오래 멈춘 건은 되살린다');
+  assert.match(byId[stuck].error, /stalled/);
+  assert.equal(byId[fresh].status, 'transcribing', '정상 처리 중인 건은 건드리지 않는다');
+  await query(`DELETE FROM sales_consult_recordings WHERE id = ANY($1)`, [[stuck, fresh]]);
 });
 
 // 라우트를 등록하면 상담 녹음 큐 스케줄러(setInterval)가 돈다 — 테스트가 끝나도 프로세스가 안 죽으므로 정리한다.

@@ -97,12 +97,31 @@ test('splitOversizeSegments: 25MB 이하 구간은 손대지 않는다(기존 �
   assert.equal(r.didSplit, false);
 });
 
-test('splitOversizeSegments: 25MB 를 넘는 구간만 나눈다', () => {
-  // 34MB(base64) 를 넘는 큰 구간을 흉내내기 위해 상한을 낮춰 확인한다
-  const big = NORMAL_WEBM_B64;
-  const r = splitOversizeSegments([big], 6 * 1024);
-  // 상한(SEG_B64_MAX)보다 작으므로 기본값에서는 그대로 통과한다
-  assert.deepEqual(r.segments, [big]);
+test('splitOversizeSegments: 기본값에서는 짧은 녹음을 손대지 않는다', () => {
+  const r = splitOversizeSegments([NORMAL_WEBM_B64]);
+  assert.deepEqual(r.segments, [NORMAL_WEBM_B64], '재인코딩 없이 원래 문자열 그대로');
+  assert.equal(r.didSplit, false);
+});
+
+test('splitOversizeSegments: 상한(용량·길이)을 넘으면 구간을 고르게 나눈다', () => {
+  const r = splitOversizeSegments([NORMAL_WEBM_B64], 6 * 1024);
+  assert.ok(r.segments.length > 2, '상한에 맞춰 여러 구간이 된다');
+  assert.equal(r.didSplit, true);
+  for (const b64 of r.segments) assert.ok(isWebm(Buffer.from(b64, 'base64')));
+});
+
+test('splitOversizeSegments: 시간이 길면 용량이 남아도 나눈다(Whisper 호출을 짧게)', () => {
+  // 4초짜리 표본을 1초 상한으로 나누면 시간 기준으로 갈라져야 한다
+  const r = splitOversizeSegments([NORMAL_WEBM_B64], 100 * 1024 * 1024, 1000);
+  assert.ok(r.segments.length >= 3, '용량이 남아도 시간으로 나뉜다');
+  assert.equal(r.didSplit, true);
+});
+
+test('splitOversizeSegments: 나눌 수 없어도 25MB 안이면 그대로 보낸다(mp4 짧은 녹음)', () => {
+  const smallMp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'),
+    Buffer.alloc(1000)]).toString('base64');
+  const r = splitOversizeSegments([smallMp4]);
+  assert.deepEqual(r.segments, [smallMp4], '한도 안이면 오류가 아니다');
 });
 
 test('splitOversizeSegments: 자를 수 없는 형식이면 segment_too_large + 이유를 준다', () => {

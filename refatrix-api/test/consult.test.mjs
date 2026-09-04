@@ -8,6 +8,7 @@ import { newDb } from 'pg-mem';
 import { pool } from '../src/db.js';
 import {
   processOne, processQueueTick, buildConsultList, visibilityCond, consultAiApi,
+  partialTag, stripPartial, partialDone,
 } from '../src/routes/consultRoutes.js';
 import {
   parseConsultSummaryJson, parseConsultTranslationJson, parseInsightJson,
@@ -353,6 +354,53 @@ test('processOne: 여러 구간 오디오는 구간마다 전사해 이어붙인
   assert.equal(seen.length, 3, '구간마다 Whisper 를 부른다(파일 하나가 25MB를 넘지 않게)');
   assert.equal(r.transcript, 'parte 1\nparte 2\nparte 3');
   assert.equal(r.status, 'done');
+});
+
+// ── 긴 녹음: 전사 이어받기 · 멈춘 건 되살리기 (2026-09-04) ──────────
+test('전사 진행 표식: 붙였다 떼면 원문 그대로 · 진행 수를 읽는다', () => {
+  const t = 'parte 1\nparte 2' + partialTag(2, 5);
+  assert.deepEqual(partialDone(t), { done: 2, total: 5 });
+  assert.equal(stripPartial(t), 'parte 1\nparte 2');
+  assert.equal(partialDone('완성된 전사문'), null);
+  assert.equal(stripPartial('완성된 전사문'), '완성된 전사문');
+});
+
+test('processOne: 구간 전사 중 실패해도 여기까지 받아쓴 것은 남는다', async () => {
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, audio_b64, created_by)
+            VALUES (130, 10, 'full', 'audio/webm', '${B64}|${B64}|${B64}', 2)`);
+  let n = 0;
+  consultAiApi.transcribe = async () => {
+    n++;
+    return n <= 2 ? { ok: true, text: 'parte ' + n } : { ok: false, error: 'stt: timeout', transient: true };
+  };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=130`)[0]);
+  const r = pub.many(`SELECT status, transcript FROM sales_consult_recordings WHERE id=130`)[0];
+  assert.equal(r.status, 'queued', '일시 오류라 자동 재큐');
+  assert.deepEqual(partialDone(r.transcript), { done: 2, total: 3 }, '2구간까지 끝났다고 기록');
+  assert.equal(stripPartial(r.transcript), 'parte 1\nparte 2', '받아쓴 내용 보존');
+});
+
+test('processOne: 재시도는 남은 구간부터 — 이미 전사한 구간을 다시 결제하지 않는다', async () => {
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, audio_b64, transcript, created_by)
+            VALUES (131, 10, 'full', 'audio/webm', '${B64}|${B64}|${B64}',
+                    ${"'parte 1\nparte 2" + '\n[[PARTIAL 2/3]]' + "'"}, 2)`);
+  let calls = 0;
+  consultAiApi.transcribe = async () => { calls++; return { ok: true, text: 'parte 3' }; };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=131`)[0]);
+  const r = pub.many(`SELECT status, transcript FROM sales_consult_recordings WHERE id=131`)[0];
+  assert.equal(calls, 1, '남은 1구간만 Whisper 를 부른다');
+  assert.equal(r.status, 'done');
+  assert.equal(r.transcript, 'parte 1\nparte 2\nparte 3', '이어붙어 완성되고 표식은 사라진다');
+});
+
+test('processOne: 전사문이 완성돼 있으면(표식 없음) 전사를 건너뛴다(기존 동작)', async () => {
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, audio_b64, transcript, created_by)
+            VALUES (132, 10, 'full', 'audio/webm', '${B64}', 'transcripción completa', 2)`);
+  let calls = 0;
+  consultAiApi.transcribe = async () => { calls++; return { ok: true, text: 'x' }; };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=132`)[0]);
+  assert.equal(calls, 0, '요약만 다시 한다');
+  assert.equal(pub.many(`SELECT status FROM sales_consult_recordings WHERE id=132`)[0].status, 'done');
 });
 
 // ── 목록·가시성(감추기) ─────────────────────────────────────────────

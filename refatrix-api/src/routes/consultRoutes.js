@@ -29,7 +29,7 @@ import {
   buildInsightPrompt, parseInsightJson, scopeKeyOf, normCat, CONSULT_CATS,
   splitTranscript, buildConsultMergePrompt, mergeConsultSummaries, TRANSCRIPT_CHUNK_MAX,
 } from '../consultAi.js';
-import { splitB64Segment, SPLIT_MAX_BYTES } from '../audioSplit.js';
+import { splitB64Segment, SPLIT_MAX_BYTES, SPLIT_MAX_MS } from '../audioSplit.js';
 
 const PAGE = 'pipeline';                    // 화면 권한키 — 영업활동 권한을 재사용
 const STT_MODEL = () => process.env.VISIT_STT_MODEL || 'whisper-1';
@@ -43,9 +43,10 @@ const AUDIO_B64_MAX = 78 * 1024 * 1024;     // 녹음 1건 총합 ≈ 58MB 바�
 const AUDIO_TOTAL_MB = Math.floor(AUDIO_B64_MAX * 3 / 4 / (1024 * 1024));
 const AUDIO_PARTS_MAX = 40;
 const DURATION_MAX = 4 * 3600;              // 4시간
-const STT_TIMEOUT_MS = 300000;
+// Whisper 호출 하나의 제한. 구간을 20분으로 나누므로 넉넉하다(예전 5분은 긴 구간에서 걸렸다).
+const STT_TIMEOUT_MS = Number(process.env.CONSULT_STT_TIMEOUT_MS) || 600000;
 const AI_TIMEOUT_MS = 120000;
-const MAX_AUTO_ATTEMPTS = 3;
+const MAX_AUTO_ATTEMPTS = 5;              // 일시 오류(네트워크·과부하) 자동 재시도 횟수
 const PART_B64_MAX = 6 * 1024 * 1024;       // 분할 업로드 조각 하나(base64 문자) 상한
 const UPLOAD_PARTS_MAX = 200;               // 한 업로드 세션의 조각 수 상한
 const UPLOAD_PART_TTL_H = Number(process.env.CONSULT_PART_TTL_H || 72);
@@ -160,6 +161,15 @@ async function markFailed(id, error, transient, attempts) {
     [id, requeue ? 'queued' : 'failed', String(error || 'error').slice(0, 400)]);
 }
 
+// 전사 진행 표식 — 구간별로 이어받기 위해 전사문 끝에 잠깐 붙여 둔다(완료되면 사라진다)
+const PARTIAL_RE = /\n?\[\[PARTIAL (\d+)\/(\d+)\]\]\s*$/;
+export function partialTag(done, total) { return `\n[[PARTIAL ${done}/${total}]]`; }
+export function stripPartial(t) { return String(t || '').replace(PARTIAL_RE, '').trim(); }
+export function partialDone(t) {
+  const m = PARTIAL_RE.exec(String(t || ''));
+  return m ? { done: Number(m[1]), total: Number(m[2]) } : null;
+}
+
 export async function processOne(row) {
   const recId = Number(row.id);
   if (!aiReady()) return markFailed(recId, 'no_anthropic_key', false, row.attempts);
@@ -170,17 +180,33 @@ export async function processOne(row) {
   if (!c) return markFailed(recId, 'consult_not_found', false, row.attempts);
 
   // ① 전사(이미 있으면 건너뜀 — 요약 재시도 시 STT 비용 없음). 다중 구간은 '|' 구분.
-  let transcript = String(row.transcript || '').trim();
-  if (!transcript) {
+  //    긴 녹음은 구간이 여러 개다. 중간에 실패해도 **여기까지 받아쓴 것은 남겨** 두고,
+  //    재시도할 때 남은 구간부터 이어서 한다(같은 구간을 두 번 결제하지 않기 위해).
+  let transcript = stripPartial(row.transcript);
+  const donePart = partialDone(row.transcript);
+  if (!transcript || donePart) {
     if (!sttReady()) return markFailed(recId, 'no_openai_key', false, row.attempts);
     if (!row.audio_b64) return markFailed(recId, 'no_audio', false, row.attempts);
     const partList = String(row.audio_b64).split('|').filter(Boolean);
     row.audio_b64 = null;               // 긴 녹음(수십 MB)을 두 번 들고 있지 않도록 즉시 해제
-    const texts = [];
-    for (const p of partList) {
-      const st = await consultAiApi.transcribe({ b64: p, mime: row.mime });
-      if (!st.ok) return markFailed(recId, st.error, st.transient, row.attempts);
+    const from = donePart && donePart.total === partList.length ? donePart.done : 0;
+    const texts = from && transcript ? [transcript] : [];
+    for (let i = from; i < partList.length; i++) {
+      const st = await consultAiApi.transcribe({ b64: partList[i], mime: row.mime });
+      if (!st.ok) {
+        // 여기까지 받아쓴 것을 표식과 함께 저장해 둔다 — 다음 시도는 이 다음 구간부터
+        if (texts.length && i > from) {
+          await query(`UPDATE sales_consult_recordings SET transcript=$2 WHERE id=$1`,
+            [recId, texts.join('\n').trim() + partialTag(i, partList.length)]).catch(() => {});
+        }
+        return markFailed(recId, st.error, st.transient, row.attempts);
+      }
       if (st.text) texts.push(st.text);
+      if (i + 1 < partList.length) {
+        // 구간 하나가 끝날 때마다 진행분 저장(중간에 서버가 죽어도 잃지 않는다)
+        await query(`UPDATE sales_consult_recordings SET transcript=$2 WHERE id=$1`,
+          [recId, texts.join('\n').trim() + partialTag(i + 1, partList.length)]).catch(() => {});
+      }
     }
     transcript = texts.join('\n').trim();
     if (!transcript) return markFailed(recId, 'empty_transcript', false, row.attempts);
@@ -247,11 +273,26 @@ export async function processOne(row) {
   return true;
 }
 
+// 처리 중(transcribing/summarizing)에 서버가 재시작되면 그 행은 아무도 다시 집지 않는다.
+// 큐는 'queued' 만 집기 때문 — 그래서 오래 멈춰 있는 건을 되살린다.
+// (오래 걸리는 정상 처리를 가로채지 않도록 기준을 넉넉히 잡는다)
+export async function requeueStuck(olderThan = '2 hours') {
+  const rows = (await query(
+    `UPDATE sales_consult_recordings
+        SET status='queued', error='stalled: 처리 도중 멈춰 다시 대기열에 넣었습니다'
+      WHERE status IN ('transcribing','summarizing')
+        AND created_at < now() - INTERVAL '${olderThan}'
+        AND attempts < ${MAX_AUTO_ATTEMPTS + 3}
+      RETURNING id`)).rows;
+  return rows.length;
+}
+
 export async function processQueueTick(max = 3) {
   if (processing) return 0;
   processing = true;
   let n = 0;
   try {
+    try { await requeueStuck(); } catch (_) {}     // 멈춘 건이 있으면 먼저 되살린다
     for (let i = 0; i < max; i++) {
       const row = await claimNext();
       if (!row) break;
@@ -314,15 +355,20 @@ export function assembleUploadParts(rows, expected) {
 //   기기·서버에 남아 있던 긴 녹음은 구간 하나가 통째로 25MB 를 넘는다 —
 //   그 경우에도 [이어서 요약]·[업로드해 요약]이 그냥 되도록 서버가 대신 나눈다.
 //   자를 수 없는 형식(mp4 등)이면 그대로 오류를 돌려준다.
-export function splitOversizeSegments(segB64List, maxBytes = SPLIT_MAX_BYTES) {
+export function splitOversizeSegments(segB64List, maxBytes = SPLIT_MAX_BYTES, maxMs = SPLIT_MAX_MS) {
   const list = Array.isArray(segB64List) ? segB64List : [];
   const out = [];
   let didSplit = false;
   for (const b64 of list) {
     if (!b64) continue;
-    if (b64.length <= SEG_B64_MAX) { out.push(b64); continue; }
-    const r = splitB64Segment(b64, maxBytes);
-    if (r.error) return { error: 'segment_too_large', reason: r.error, max_mb: 25 };
+    const overHardLimit = b64.length > SEG_B64_MAX;      // 25MB — 이건 반드시 나눠야 한다
+    const r = splitB64Segment(b64, maxBytes, maxMs);
+    if (r.error) {
+      // 나눌 수 없는 형식(mp4 등). 한도 안이면 그대로 보내고, 한도를 넘으면 알린다.
+      if (overHardLimit) return { error: 'segment_too_large', reason: r.error, max_mb: 25 };
+      out.push(b64);
+      continue;
+    }
     if (r.segments.length > 1) didSplit = true;
     out.push(...r.segments);
   }
@@ -818,7 +864,7 @@ export default async function consultRoutes(app) {
         return {
           id: Number(r.id), mode: r.mode, duration_sec: r.duration_sec != null ? Number(r.duration_sec) : null,
           status: r.status, error: r.error, attempts: Number(r.attempts),
-          transcript: clip(r.transcript, 8000) || null, summary,
+          transcript: clip(stripPartial(r.transcript), 8000) || null, summary,
           created_at: r.created_at, processed_at: r.processed_at,
         };
       }),
