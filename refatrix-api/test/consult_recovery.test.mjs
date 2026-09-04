@@ -12,6 +12,8 @@
 // =====================================================================
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { scanWebm } from '../src/audioSplit.js';
+import { NORMAL_WEBM_B64 } from './fixtures/consult_webm.mjs';
 
 const PG = process.env.TEST_PG_URL;
 const SKIP = !PG;
@@ -185,6 +187,65 @@ test('⑨ 회귀 — 기존 조각 업로드·잘못된 session_key 검사는 �
   const nf = await post('dir', `/api/consults/99999999/recordings/parts`,
     { session_key: 'sess_ok_0009', seg_no: 0, part_no: 0, b64: B64 });
   assert.equal(nf.statusCode, 404);
+});
+
+// ── ③ 25MB 를 넘는 구간도 [이어서 요약] 이 된다 (2026-09-04 dante 사례) ──
+//   화면이 구간을 나누기 전에 녹음된 긴 파일은 **구간 하나가 통째로 25MB 초과**다.
+//   서버가 클러스터 경계로 나눠 담아야 Whisper 가 받는다.
+function bigWebm(minBytes) {
+  const src = Buffer.from(NORMAL_WEBM_B64, 'base64');
+  const s = scanWebm(src);
+  const head = src.subarray(0, s.clusters[0].start);
+  const body = src.subarray(s.clusters[0].start);
+  const n = Math.ceil(minBytes / body.length);
+  return Buffer.concat([head, ...new Array(n).fill(body)]);
+}
+
+test('⑩ 구간 하나가 25MB를 넘는 녹음도 commit 되고, 서버가 25MB 이하 구간들로 나눠 담는다', { skip: SKIP }, async () => {
+  const key = 'sess_dante_big1';
+  const buf = bigWebm(26 * 1024 * 1024);
+  assert.ok(buf.length > 25 * 1024 * 1024, '25MB 초과 상황을 실제로 만든다');
+  // 브라우저와 같은 방식으로 3바이트 배수 조각으로 잘라 올린다
+  const CHUNK = 3 * 1024 * 1024;
+  let part = 0;
+  for (let off = 0; off < buf.length; off += CHUNK, part++) {
+    const r = await putPart('dir', key, 0, part, buf.subarray(off, Math.min(buf.length, off + CHUNK)).toString('base64'));
+    assert.equal(r.statusCode, 200, r.body);
+  }
+  const c = await post('dir', `/api/consults/${ID.consult}/recordings/commit`,
+    { session_key: key, mime: 'audio/webm', mode: 'full' });
+  assert.equal(c.statusCode, 200, c.body);
+
+  const rec = (await query(
+    `SELECT id, size_bytes,
+            array_length(string_to_array(audio_b64,'|'),1) AS segs,
+            (SELECT max(length(x)) FROM unnest(string_to_array(audio_b64,'|')) x) AS max_seg,
+            (SELECT bool_and(left(x,4)='GkXf') FROM unnest(string_to_array(audio_b64,'|')) x) AS all_webm
+       FROM sales_consult_recordings WHERE consult_id=$1 ORDER BY id DESC LIMIT 1`, [ID.consult])).rows[0];
+  assert.ok(Number(rec.segs) >= 2, '여러 구간으로 나뉘어 저장된다');
+  assert.ok(Number(rec.max_seg) <= 34 * 1024 * 1024, '구간마다 Whisper 한도(25MB) 이하');
+  assert.equal(rec.all_webm, true, '구간마다 온전한 webm 으로 시작한다(EBML 매직)');
+  assert.ok(Number(rec.size_bytes) > 25 * 1024 * 1024, '오디오는 그대로 다 들어 있다');
+
+  const after = (await get('dir', '/api/consults/recordings/pending-uploads')).json();
+  assert.ok(!after.items.some((x) => x.session_key === key), '이어붙인 세션은 목록에서 빠진다');
+});
+
+test('⑪ 나눌 수 없는 형식(mp4)이 25MB를 넘으면 이유와 함께 거절한다', { skip: SKIP }, async () => {
+  const key = 'sess_dante_big2';
+  const buf = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'),
+    Buffer.alloc(26 * 1024 * 1024, 7)]);
+  const CHUNK = 3 * 1024 * 1024;
+  let part = 0;
+  for (let off = 0; off < buf.length; off += CHUNK, part++) {
+    await putPart('dir', key, 0, part, buf.subarray(off, Math.min(buf.length, off + CHUNK)).toString('base64'));
+  }
+  const c = await post('dir', `/api/consults/${ID.consult}/recordings/commit`,
+    { session_key: key, mime: 'audio/mp4', mode: 'full' });
+  assert.equal(c.statusCode, 400);
+  assert.equal(c.json().error, 'segment_too_large');
+  assert.equal(c.json().reason, 'unsupported_format');
+  await del('dir', `/api/consults/${ID.consult}/recordings/parts?session_key=${key}`);
 });
 
 // 라우트를 등록하면 상담 녹음 큐 스케줄러(setInterval)가 돈다 — 테스트가 끝나도 프로세스가 안 죽으므로 정리한다.

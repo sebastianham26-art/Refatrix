@@ -29,6 +29,7 @@ import {
   buildInsightPrompt, parseInsightJson, scopeKeyOf, normCat, CONSULT_CATS,
   splitTranscript, buildConsultMergePrompt, mergeConsultSummaries, TRANSCRIPT_CHUNK_MAX,
 } from '../consultAi.js';
+import { splitB64Segment, SPLIT_MAX_BYTES } from '../audioSplit.js';
 
 const PAGE = 'pipeline';                    // 화면 권한키 — 영업활동 권한을 재사용
 const STT_MODEL = () => process.env.VISIT_STT_MODEL || 'whisper-1';
@@ -308,6 +309,27 @@ export function assembleUploadParts(rows, expected) {
 //   25MB 는 구간별로 보고, 총량은 따로(훨씬 크게) 본다 → 긴 상담도 올라간다.
 //   문제 없으면 null, 있으면 그대로 응답할 오류 객체를 돌려준다.
 // =====================================================================
+// 구간 하나가 Whisper 한도(25MB)를 넘으면 **클러스터 경계로 잘라** 여러 구간으로 만든다.
+//   화면은 녹음 중에 6MB 마다 구간을 나누지만(2026-09-04c), 그 전에 녹음됐거나
+//   기기·서버에 남아 있던 긴 녹음은 구간 하나가 통째로 25MB 를 넘는다 —
+//   그 경우에도 [이어서 요약]·[업로드해 요약]이 그냥 되도록 서버가 대신 나눈다.
+//   자를 수 없는 형식(mp4 등)이면 그대로 오류를 돌려준다.
+export function splitOversizeSegments(segB64List, maxBytes = SPLIT_MAX_BYTES) {
+  const list = Array.isArray(segB64List) ? segB64List : [];
+  const out = [];
+  let didSplit = false;
+  for (const b64 of list) {
+    if (!b64) continue;
+    if (b64.length <= SEG_B64_MAX) { out.push(b64); continue; }
+    const r = splitB64Segment(b64, maxBytes);
+    if (r.error) return { error: 'segment_too_large', reason: r.error, max_mb: 25 };
+    if (r.segments.length > 1) didSplit = true;
+    out.push(...r.segments);
+  }
+  if (!out.length) return { error: 'bad_audio' };
+  return { segments: out, didSplit };
+}
+
 export function checkAudioLimits(segB64Lens) {
   const lens = (Array.isArray(segB64Lens) ? segB64Lens : []).map((n) => Number(n) || 0);
   const big = lens.findIndex((n) => n > SEG_B64_MAX);
@@ -622,7 +644,9 @@ export default async function consultRoutes(app) {
         if (!mime) mime = m[1];
         parts.push(m[2]); totalB64 += m[2].length;
       }
-      const bad = checkAudioLimits(parts.map((p) => p.length));
+      const fixed = splitOversizeSegments(parts);
+      if (fixed.error) return reply.code(400).send(fixed);
+      const bad = checkAudioLimits(fixed.segments.map((p) => p.length));
       if (bad) return reply.code(400).send(bad);
       const dur = Number(b.duration_sec) || null;
       if (dur && dur > DURATION_MAX) return reply.code(400).send({ error: 'too_long', max_sec: DURATION_MAX });
@@ -630,7 +654,7 @@ export default async function consultRoutes(app) {
       const r = (await query(
         `INSERT INTO sales_consult_recordings (consult_id, mode, mime, duration_sec, size_bytes, audio_b64, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [Number(c.id), mode, mime, dur, Math.round(totalB64 * 3 / 4), parts.join('|'), perm.userId])).rows[0];
+        [Number(c.id), mode, mime, dur, Math.round(totalB64 * 3 / 4), fixed.segments.join('|'), perm.userId])).rows[0];
       await logEvent({ userId: perm.userId, action: 'create', target: `consult_recording:${r.id}`,
         detail: { consult_id: Number(c.id), mode, duration_sec: dur, parts: parts.length } });
       setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
@@ -704,16 +728,21 @@ export default async function consultRoutes(app) {
       const built = assembleUploadParts(rows, Array.isArray(b.segments) ? b.segments : null);
       if (built.error) return reply.code(409).send(built);
       const { joined, totalB64 } = built;
-      const bad = checkAudioLimits(joined.split('|').map((p) => p.length));
+      // 25MB 를 넘는 구간은 서버가 클러스터 경계로 나눠 준다(긴 녹음·복구 업로드)
+      const fixed = splitOversizeSegments(joined.split('|'));
+      if (fixed.error) return reply.code(400).send(fixed);
+      const audioB64 = fixed.segments.join('|');
+      const bad = checkAudioLimits(fixed.segments.map((p) => p.length));
       if (bad) return reply.code(400).send(bad);
 
       const r = (await query(
         `INSERT INTO sales_consult_recordings (consult_id, mode, mime, duration_sec, size_bytes, audio_b64, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [Number(c.id), mode, mime, dur, Math.round(totalB64 * 3 / 4), joined, perm.userId])).rows[0];
+        [Number(c.id), mode, mime, dur, Math.round(totalB64 * 3 / 4), audioB64, perm.userId])).rows[0];
       await query(`DELETE FROM sales_consult_upload_parts WHERE session_key = $1`, [key]);
       await logEvent({ userId: perm.userId, action: 'create', target: `consult_recording:${r.id}`,
-        detail: { consult_id: Number(c.id), mode, duration_sec: dur, segments: built.segments, chunked: true } });
+        detail: { consult_id: Number(c.id), mode, duration_sec: dur, segments: fixed.segments.length,
+                  chunked: true, server_split: !!fixed.didSplit } });
       setTimeout(() => { processQueueTick().catch(() => {}); }, 100);
       return { id: Number(r.id), status: 'queued', stt_ready: sttReady(), ai_ready: aiReady() };
     });

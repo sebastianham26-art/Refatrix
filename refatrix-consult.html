@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20260904rec1)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20260904rec3)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -353,6 +353,14 @@
       <div class="msg" id="cs-msg"></div>
     </div>
 
+    <!-- ②-0 녹음 복구 — 업로드되지 않은 녹음이 있으면 여기부터 보인다 (rec2) -->
+    <div class="card hidden" id="cs-restoreCard" style="border:2px solid var(--gold);background:#fffdf4">
+      <h2 style="margin:0">🛟 업로드되지 않은 녹음이 있습니다</h2>
+      <div class="hint" style="margin-top:4px">브라우저를 닫거나 세션이 끊겨도 <b>녹음은 이 기기에 저장</b>돼 있습니다. 아래에서 <b>업로드해 요약</b>하거나, <b>파일로 저장</b>해 두세요.</div>
+      <div id="cs-restoreList" style="margin-top:8px"></div>
+      <div class="msg" id="cs-restoreMsg"></div>
+    </div>
+
     <!-- ② 미팅 녹음 -->
     <div class="card hidden" id="cs-recCard">
       <h2>🎙 미팅 녹음 · AI 요약 <span class="hint" style="margin:0" id="cs-recTarget"></span></h2>
@@ -368,6 +376,7 @@
         <span id="cs-recInfo" class="hint" style="margin:0"></span>
         <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
           <button class="btn" type="button" id="cs-recUpload">↻ 다시 업로드</button>
+          <button class="btn ghost" type="button" id="cs-recSave" title="이 기기에 오디오 파일로 내려받습니다 — 업로드가 안 되더라도 녹음을 잃지 않습니다">⬇ 녹음파일 저장</button>
           <button class="btn ghost" type="button" id="cs-recDiscard">버리고 다시 녹음</button>
         </div>
       </div>
@@ -478,7 +487,7 @@
 </div>
 
 <script>
-  // ===== 고객상담 + 🎪 전시회 (build b20260904rec1) =====
+  // ===== 고객상담 + 🎪 전시회 (build b20260904rec3) =====
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -570,6 +579,7 @@
     }catch(e){}
     csLoadCustOptions();
     csLoadList();
+    csIdbPurgeOld().then(csRestoreScan).catch(()=>{ csRestoreScan(); });
     try{
       const e=await fetch(session.api+'/api/exhibitions',{headers:auth()}).then(r=>r.ok?r.json():null);
       if(e&&Array.isArray(e.items)&&e.items.length){
@@ -688,6 +698,290 @@
   }
 
   // =====================================================================
+  // 녹음 영속 저장 (IndexedDB) — build b20260904rec3 · 2026-09-04
+  //
+  //   사고: 2시간짜리 미팅 녹음(dante)을 브라우저에 들고 있는 동안 로그인 토큰(6h)이 만료됐고,
+  //         업로드가 401 로 거절되자 화면이 로그인으로 떨어지면서 **녹음이 통째로 사라졌다.**
+  //         녹음이 자바스크립트 메모리(csRecSegs)에만 있었기 때문이다.
+  //   대책: 녹음 조각을 **받는 즉시 IndexedDB 에 적는다.** 새로고침·브라우저 종료·세션 만료 —
+  //         무엇이 일어나도 다음에 화면을 열면 「업로드되지 않은 녹음」으로 되살아난다.
+  //   · chunks: 조각 하나하나(그대로 Blob 저장 — base64 변환 없음, 메모리·용량 모두 절약)
+  //   · meta  : 녹음 1건의 정보(상담·시간·용량·상태). 업로드가 끝나면 둘 다 지운다.
+  //   · 저장 실패(용량 초과·사생활 보호 모드)는 **녹음을 막지 않는다** — 조용히 넘어가고
+  //     화면에 「이 기기에 임시 저장하지 못했습니다」만 알린다.
+  // =====================================================================
+  const CS_IDB_DB='refatrix_rec', CS_IDB_VER=1, CS_IDB_CHUNKS='chunks', CS_IDB_META='meta';
+  const CS_IDB_KEEP_DAYS=7;             // 이보다 오래된 미업로드 녹음은 자동 정리
+  let csIdbFailed=false;                // 저장이 불가능한 환경(사생활 보호 모드 등)
+  let csRecKey=null, csRecSeq=0, csRecSegIdx=0, csRecKeyAt=0;
+
+  function csIdbOpen(){
+    return new Promise((res,rej)=>{
+      if(csIdbFailed||typeof indexedDB==='undefined'){ rej(new Error('no_idb')); return; }
+      let rq; try{ rq=indexedDB.open(CS_IDB_DB,CS_IDB_VER); }catch(e){ rej(e); return; }
+      rq.onupgradeneeded=()=>{
+        const db=rq.result;
+        if(!db.objectStoreNames.contains(CS_IDB_CHUNKS)){
+          const st=db.createObjectStore(CS_IDB_CHUNKS,{keyPath:'id',autoIncrement:true});
+          st.createIndex('key','key',{unique:false});
+        }
+        if(!db.objectStoreNames.contains(CS_IDB_META)) db.createObjectStore(CS_IDB_META,{keyPath:'key'});
+      };
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>rej(rq.error||new Error('idb'));
+      rq.onblocked=()=>rej(new Error('blocked'));
+    });
+  }
+  function csIdbTx(db,stores,mode){ return db.transaction(stores,mode); }
+  function csIdbDone(tx){ return new Promise((res,rej)=>{ tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error); }); }
+  function csIdbReq(r){ return new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+
+  async function csIdbPutChunk(key,seg,seq,blob){
+    if(!key||csIdbFailed) return;
+    try{
+      const db=await csIdbOpen();
+      const tx=csIdbTx(db,[CS_IDB_CHUNKS],'readwrite');
+      tx.objectStore(CS_IDB_CHUNKS).add({key,seg,seq,blob});
+      await csIdbDone(tx); db.close();
+    }catch(e){ csIdbNote(e); }
+  }
+  async function csIdbPutMeta(meta){
+    if(!meta||!meta.key||csIdbFailed) return;
+    try{
+      const db=await csIdbOpen();
+      const tx=csIdbTx(db,[CS_IDB_META],'readwrite');
+      tx.objectStore(CS_IDB_META).put(meta);
+      await csIdbDone(tx); db.close();
+    }catch(e){ csIdbNote(e); }
+  }
+  async function csIdbGetMeta(key){
+    try{ const db=await csIdbOpen(); const v=await csIdbReq(csIdbTx(db,[CS_IDB_META],'readonly').objectStore(CS_IDB_META).get(key)); db.close(); return v||null; }
+    catch(e){ return null; }
+  }
+  async function csIdbListMeta(){
+    try{
+      const db=await csIdbOpen();
+      const all=await csIdbReq(csIdbTx(db,[CS_IDB_META],'readonly').objectStore(CS_IDB_META).getAll());
+      db.close();
+      return (all||[]).sort((a,b)=>(b.created_at||0)-(a.created_at||0));
+    }catch(e){ return []; }
+  }
+  async function csIdbLoadSegs(key){
+    const db=await csIdbOpen();
+    const idx=csIdbTx(db,[CS_IDB_CHUNKS],'readonly').objectStore(CS_IDB_CHUNKS).index('key');
+    const rows=await csIdbReq(idx.getAll(IDBKeyRange.only(key)));
+    db.close();
+    const bySeg=new Map();
+    (rows||[]).sort((a,b)=>(a.seg-b.seg)||(a.seq-b.seq)).forEach(r=>{
+      if(!bySeg.has(r.seg)) bySeg.set(r.seg,[]);
+      bySeg.get(r.seg).push(r.blob);
+    });
+    return [...bySeg.keys()].sort((a,b)=>a-b).map(k=>bySeg.get(k));
+  }
+  async function csIdbDrop(key){
+    if(!key) return;
+    try{
+      const db=await csIdbOpen();
+      const tx=csIdbTx(db,[CS_IDB_CHUNKS,CS_IDB_META],'readwrite');
+      const idx=tx.objectStore(CS_IDB_CHUNKS).index('key');
+      const cur=idx.openCursor(IDBKeyRange.only(key));
+      cur.onsuccess=()=>{ const c=cur.result; if(c){ c.delete(); c.continue(); } };
+      tx.objectStore(CS_IDB_META).delete(key);
+      await csIdbDone(tx); db.close();
+    }catch(e){ csIdbNote(e); }
+  }
+  async function csIdbPurgeOld(){
+    const cut=Date.now()-CS_IDB_KEEP_DAYS*86400000;
+    const list=await csIdbListMeta();
+    for(const m of list){ if((m.created_at||0)<cut) await csIdbDrop(m.key); }
+  }
+  function csIdbNote(e){
+    // QuotaExceeded·사생활 보호 모드 등 — 저장은 포기하되 녹음은 계속한다.
+    csIdbFailed=true;
+    const el=$('cs-recMsg');
+    if(el&&$('cs-recCard')&&!$('cs-recCard').classList.contains('hidden')&&el.style.display!=='block'){
+      csRecMsgSet('', '⚠ 이 브라우저에 녹음을 임시 저장하지 못했습니다 — 녹음은 계속되지만 <b>새로고침하면 사라집니다.</b> 종료 후 바로 업로드하거나 [⬇ 녹음파일 저장]을 눌러 두세요.');
+    }
+  }
+
+  // ── 세션 보호 · 토큰 갱신 ────────────────────────────────────────
+  //   녹음/업로드가 걸려 있는 동안에는 nav.js 가 401 을 보고 세션 저장소를 지우지 못하게 막는다.
+  //   (지워지면 새로고침 순간 로그인 화면으로 떨어지고, 메모리에 있던 녹음이 사라진다 — 2026-09-04 사고)
+  function csHoldSession(on){ try{ window.__refatrixKeepSession = !!on; }catch(e){} }
+  function csSaveSession(){
+    try{
+      const v=JSON.stringify({token:session.token,user:session.user,api:session.api});
+      sessionStorage.setItem('refatrix_session',v); localStorage.setItem('refatrix_session',v);
+    }catch(e){}
+  }
+  // nav.js 가 토큰을 갱신하면(슬라이딩) 이 화면의 토큰도 같이 바꾼다
+  window.addEventListener('refatrix-token',(ev)=>{
+    try{ if(ev&&ev.detail&&ev.detail.token&&session) session.token=ev.detail.token; }catch(e){}
+  });
+
+  // ── 파일로 저장(최후 보루) ────────────────────────────────────────
+  function csRecExt(mime){
+    const m=String(mime||'').toLowerCase();
+    if(m.indexOf('mp4')>=0||m.indexOf('m4a')>=0||m.indexOf('aac')>=0) return 'm4a';
+    if(m.indexOf('ogg')>=0) return 'ogg';
+    if(m.indexOf('mpeg')>=0||m.indexOf('mp3')>=0) return 'mp3';
+    return 'webm';
+  }
+  function csRecFileName(meta,i,n){
+    const t=new Date(meta.created_at||Date.now());
+    const p=(x)=>String(x).padStart(2,'0');
+    const stamp=t.getFullYear()+p(t.getMonth()+1)+p(t.getDate())+'_'+p(t.getHours())+p(t.getMinutes());
+    const co=String(meta.company||'상담').replace(/[\\/:*?"<>|]/g,'').slice(0,30);
+    return 'refatrix_'+co+'_'+stamp+(n>1?('_구간'+(i+1)):'')+'.'+csRecExt(meta.mime);
+  }
+  function csDownloadBlobs(segs,meta){
+    segs.forEach((b,i)=>{
+      try{
+        const url=URL.createObjectURL(b);
+        const a=document.createElement('a');
+        a.href=url; a.download=csRecFileName(meta,i,segs.length);
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 60000);
+      }catch(e){}
+    });
+  }
+  function csRecSaveLocal(){
+    if(!csRecSegs.length){ csRecMsgSet('err','저장할 녹음이 없습니다.'); return; }
+    csDownloadBlobs(csRecSegs,{company:(csRecConsult&&csRecConsult.company)||'상담',mime:csRecMime,created_at:Date.now()});
+    csRecMsgSet('ok','⬇ 녹음 파일을 내려받았습니다 — 업로드가 안 되더라도 이 파일은 남습니다.');
+  }
+
+  // =====================================================================
+  // 🛟 녹음 복구 — ① 이 기기에 남은 녹음(IndexedDB) ② 서버에 남은 업로드 조각
+  //   화면을 열 때마다 한 번 훑어서, 업로드가 끝나지 않은 녹음이 있으면 맨 위에 보여준다.
+  // =====================================================================
+  let csRestoreLocal=[], csRestoreServer=[], csRestoreBusy=false;
+  const csMB=(b)=>((Number(b)||0)/1048576).toFixed(1)+'MB';
+
+  async function csRestoreScan(){
+    csRestoreLocal=(await csIdbListMeta()).filter(m=>m&&m.key&&(m.bytes>0||m.status==='recording'));
+    try{
+      const d=await fetch(session.api+'/api/consults/recordings/pending-uploads',{headers:auth()})
+        .then(r=>r.ok?r.json():null);
+      csRestoreServer=(d&&Array.isArray(d.items))?d.items:[];
+    }catch(e){ csRestoreServer=[]; }
+    csRestoreRender();
+  }
+  function csRestoreRender(){
+    const card=$('cs-restoreCard'), box=$('cs-restoreList');
+    if(!card||!box) return;
+    if(!csRestoreLocal.length&&!csRestoreServer.length){ card.classList.add('hidden'); box.innerHTML=''; return; }
+    let h='';
+    if(csRestoreLocal.length){
+      h+='<div style="font-weight:800;font-size:12px;color:var(--brand);margin-top:4px">📱 이 기기에 저장된 녹음</div>'
+        +'<table style="margin-top:4px"><thead><tr><th>업체</th><th>녹음</th><th class="num">길이</th><th class="num">용량</th><th></th></tr></thead><tbody>'
+        +csRestoreLocal.map(m=>{
+          const t=new Date(m.created_at||Date.now());
+          const when=t.toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+          const recording=m.status==='recording';
+          return '<tr><td><b>'+csEsc(m.company||'(업체명 없음)')+'</b>'
+            +(recording?' <span class="hint" style="margin:0">⚠ 저장 중 끊김</span>':'')+'</td>'
+            +'<td>'+csEsc(when)+(m.segs>1?(' <span class="hint" style="margin:0">구간 '+m.segs+'</span>'):'')+'</td>'
+            +'<td class="num">'+csRecFmt(m.sec||0)+'</td>'
+            +'<td class="num">'+csMB(m.bytes)+'</td>'
+            +'<td style="white-space:nowrap">'
+            +'<button class="btn sm" type="button" data-ru="'+csEsc(m.key)+'">↻ 업로드해 요약</button> '
+            +'<button class="btn ghost sm" type="button" data-rd="'+csEsc(m.key)+'">⬇ 파일로 저장</button> '
+            +'<button class="btn ghost sm" type="button" data-rx="'+csEsc(m.key)+'">🗑</button></td></tr>';
+        }).join('')+'</tbody></table>';
+    }
+    if(csRestoreServer.length){
+      h+='<div style="font-weight:800;font-size:12px;color:var(--brand);margin-top:10px">☁ 서버에 올라가다 끊긴 조각</div>'
+        +'<div class="hint" style="margin-top:2px">여기까지는 서버에 도착했습니다 — [이어서 요약]을 누르면 그대로 이어붙여 요약합니다.</div>'
+        +'<table style="margin-top:4px"><thead><tr><th>업체</th><th>마지막 조각</th><th class="num">조각</th><th class="num">용량</th><th class="num">보관</th><th></th></tr></thead><tbody>'
+        +csRestoreServer.map(it=>'<tr><td><b>'+csEsc(it.company_name||'')+'</b> <span class="hint" style="margin:0">'+csEsc(it.consult_date||'')+'</span></td>'
+          +'<td>'+csEsc(it.last_at||'')+'</td>'
+          +'<td class="num">'+it.parts+(it.segments>1?(' <span class="hint" style="margin:0">/구간 '+it.segments+'</span>'):'')+'</td>'
+          +'<td class="num">'+csMB(it.size_bytes)+'</td>'
+          +'<td class="num"'+(it.hours_left<12?' style="color:#B23A2E;font-weight:800"':'')+'>'+it.hours_left+'h</td>'
+          +'<td style="white-space:nowrap"><button class="btn sm" type="button" data-rs="'+csEsc(it.session_key)+'" data-rc="'+it.consult_id+'">이어서 요약</button> '
+          +'<button class="btn ghost sm" type="button" data-rsx="'+csEsc(it.session_key)+'" data-rc="'+it.consult_id+'">🗑</button></td></tr>').join('')
+        +'</tbody></table>';
+    }
+    box.innerHTML=h;
+    card.classList.remove('hidden');
+    box.querySelectorAll('[data-ru]').forEach(b=>b.onclick=()=>csRestoreUpload(b.getAttribute('data-ru')));
+    box.querySelectorAll('[data-rd]').forEach(b=>b.onclick=()=>csRestoreDownload(b.getAttribute('data-rd')));
+    box.querySelectorAll('[data-rx]').forEach(b=>b.onclick=()=>csRestoreDelete(b.getAttribute('data-rx')));
+    box.querySelectorAll('[data-rs]').forEach(b=>b.onclick=()=>csRestoreCommit(b.getAttribute('data-rs'),Number(b.getAttribute('data-rc'))));
+    box.querySelectorAll('[data-rsx]').forEach(b=>b.onclick=()=>csRestoreDropParts(b.getAttribute('data-rsx'),Number(b.getAttribute('data-rc'))));
+  }
+  function csRestoreMsg(cls,html){
+    const m=$('cs-restoreMsg'); if(!m) return;
+    m.className='msg'+(cls?(' '+cls):''); m.style.display=html?'block':'none'; m.innerHTML=html||'';
+  }
+  async function csRestoreMeta(key){ return (csRestoreLocal.find(m=>m.key===key))||(await csIdbGetMeta(key)); }
+
+  async function csRestoreDownload(key){
+    const meta=await csRestoreMeta(key); if(!meta) return;
+    try{
+      const segs=(await csIdbLoadSegs(key)).map(list=>new Blob(list,{type:meta.mime||'audio/webm'}));
+      if(!segs.length){ csRestoreMsg('err','저장된 조각을 찾지 못했습니다.'); return; }
+      csDownloadBlobs(segs,meta);
+      csRestoreMsg('ok','⬇ 파일로 저장했습니다.');
+    }catch(e){ csRestoreMsg('err','파일로 저장하지 못했습니다.'); }
+  }
+  async function csRestoreDelete(key){
+    const meta=await csRestoreMeta(key);
+    if(!confirm('이 녹음을 이 기기에서 지웁니다. 되돌릴 수 없습니다.\n\n'+((meta&&meta.company)||'')+' · '+csRecFmt((meta&&meta.sec)||0))) return;
+    await csIdbDrop(key); await csRestoreScan(); csRestoreMsg('','지웠습니다.');
+  }
+  async function csRestoreUpload(key){
+    if(csRestoreBusy||csUpBusy){ csRestoreMsg('err','다른 업로드가 진행 중입니다.'); return; }
+    const meta=await csRestoreMeta(key); if(!meta) return;
+    if(csRecActive){ csRestoreMsg('err','지금 녹음 중입니다 — 녹음을 끝낸 뒤에 올려주세요.'); return; }
+    csRestoreBusy=true;
+    try{
+      const segs=(await csIdbLoadSegs(key)).map(list=>new Blob(list,{type:meta.mime||'audio/webm'}));
+      if(!segs.length){ csRestoreMsg('err','저장된 조각을 찾지 못했습니다.'); return; }
+      // 녹음 카드를 그 상담으로 맞춘 뒤, 평소 업로드 경로를 그대로 탄다
+      csShowRec(Number(meta.consult_id), meta.company||'');
+      csRecSegs=segs; csRecBlob=segs.length===1?segs[0]:null;
+      csRecMime=meta.mime||'audio/webm'; csRecSec=Number(meta.sec)||0; csRecMode=meta.mode==='memo'?'memo':'full';
+      csRecKey=key; csRecKeyAt=meta.created_at||Date.now();
+      $('cs-recInfo').textContent='복구한 녹음 '+csRecFmt(csRecSec)+' · '+csMB(meta.bytes)
+        +(segs.length>1?(' · 구간 '+segs.length+'개'):'');
+      $('cs-recReady').classList.remove('hidden');
+      csRestoreMsg('','⬆ 복구한 녹음을 올리는 중입니다 — 아래 녹음 카드에서 진행률을 보세요.');
+      if($('cs-recCard').scrollIntoView) $('cs-recCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+      await csRecUpload();
+    } finally { csRestoreBusy=false; }
+  }
+  async function csRestoreCommit(sessionKey,consultId){
+    if(csRestoreBusy){ return; }
+    csRestoreBusy=true;
+    csRestoreMsg('','서버에 남은 조각을 이어붙이는 중…');
+    try{
+      const r=await csPostAuth(session.api+'/api/consults/'+consultId+'/recordings/commit',
+        {session_key:sessionKey, mime:'audio/webm', mode:'full'});
+      if(!r.ok){
+        // 조각이 빠진 경우에만 「이 기기 원본으로 올리라」고 안내한다(용량 문제와 뒤섞이지 않게)
+        const gap=(r.error==='parts_gap'||r.error==='parts_missing'||r.error==='no_parts');
+        csRestoreMsg('err','이어붙이지 못했습니다 — '+(CS_UP_ERR[r.error]||csEsc(String(r.error||'오류')))
+          +(gap?' <span class="hint" style="margin:0">조각이 일부만 도착한 경우입니다. 이 기기에 녹음이 남아 있으면 위쪽 [↻ 업로드해 요약]을 쓰세요.</span>':''));
+        return;
+      }
+      csRestoreMsg('ok','✔ 이어붙였습니다 — 전사·요약을 처리하고 있습니다 (보통 1~3분)');
+      await csRestoreScan();
+      csShowRec(Number(consultId),'');
+      csLoadRecs(true); csRecStartPoll();
+    } finally { csRestoreBusy=false; }
+  }
+  async function csRestoreDropParts(sessionKey,consultId){
+    if(!confirm('서버에 남은 조각을 버립니다. 되돌릴 수 없습니다.')) return;
+    try{
+      await fetch(session.api+'/api/consults/'+consultId+'/recordings/parts?session_key='+encodeURIComponent(sessionKey),
+        {method:'DELETE',headers:auth()});
+    }catch(e){}
+    await csRestoreScan();
+  }
+
+  // =====================================================================
   // 미팅 녹음 (화면 꺼짐/앱 전환에도 유지 — 방문 녹음과 동일 방식)
   // =====================================================================
   let csRecConsult=null;          // {id, company}
@@ -695,7 +989,7 @@
   let csRec=null, csRecBlob=null, csRecMime='', csRecSec=0, csRecTimerIv=null, csRecPollIv=null;
   let csRecSegs=[], csRecStream=null, csRecActive=false, csRecUserStop=false, csRecResuming=false;
   let csWakeLock=null;
-  // ── 긴 녹음 대응 (b20260904rec1) ───────────────────────────────────
+  // ── 긴 녹음 대응 (b20260904rec3) ───────────────────────────────────
   //   Whisper 는 파일 하나가 25MB 를 넘으면 받지 않는다. 그래서 한 구간이 CS_SEG_MAX 에
   //   닿으면 그 자리에서 구간을 끊고 곧바로 이어 녹음한다(사용자는 계속 녹음만 하면 된다).
   //   서버가 구간별로 전사한 뒤 이어붙여 요약하므로 몇 시간짜리 상담도 요약된다.
@@ -773,6 +1067,7 @@
     rec.ondataavailable=(e)=>{
       if(!(e.data&&e.data.size)) return;
       rec._chunks.push(e.data); rec._bytes+=e.data.size;
+      csIdbPutChunk(csRecKey, csRecSegIdx, csRecSeq++, e.data);   // ★ 받는 즉시 이 기기에 저장
       if(rec!==csRec||!csRecActive||csRecUserStop) return;
       if(csRecTotalBytes()>=CS_TOTAL_MAX){ csRecAutoStop(); return; }   // 총량 상한 → 자동 종료
       if(rec._bytes>=CS_SEG_MAX) csRecRotate();                        // 25MB 한도 전에 구간 자르기
@@ -795,6 +1090,7 @@
     csRec=null; csRecStream=null;
     if(rec._chunks&&rec._chunks.length){
       csRecSegs.push(new Blob(rec._chunks,{type:csRecMime||(rec._chunks[0]&&rec._chunks[0].type)||'audio/webm'}));
+      csRecSegIdx++;                                              // IndexedDB 의 구간 번호도 함께 넘긴다
       rec._chunks=null;
     }
     if(csRecUserStop||!csRecActive) csRecFinish(false);
@@ -821,11 +1117,16 @@
     $('cs-recPause').textContent='⏸ 일시정지'; $('cs-recTimer').textContent='';
     const m=$('cs-recMsg');
     if(!csRecSegs.length){
-      csRecBlob=null; $('cs-recReady').classList.add('hidden');
+      csRecBlob=null; $('cs-recReady').classList.add('hidden'); csIdbDrop(csRecKey); csRecKey=null; csHoldSession(false);
       m.className='msg err'; m.style.display='block'; m.textContent='녹음된 내용이 없습니다 — 다시 시도해 주세요.'; return;
     }
     csRecBlob=csRecSegs.length===1?csRecSegs[0]:null;
     const total=csRecSegs.reduce((s,b)=>s+(b.size||0),0), mb=total/1048576;
+    csIdbPutMeta({key:csRecKey, consult_id:Number((csRecConsult&&csRecConsult.id)||0),
+      company:(csRecConsult&&csRecConsult.company)||'', mode:csRecMode,
+      mime:csRecMime||(csRecSegs[0]&&csRecSegs[0].type)||'audio/webm',
+      sec:csRecSec, bytes:total, segs:csRecSegs.length, status:'ready',
+      created_at:(csRecKeyAt||Date.now()), updated_at:Date.now()});
     const autoEnded=csRecAutoEnded; csRecAutoEnded=false;
     $('cs-recInfo').textContent='녹음 '+csRecFmt(csRecSec)+' · '+mb.toFixed(1)+'MB'
       +(csRecSegs.length>1?(' · 구간 '+csRecSegs.length+'개(자동 분할 — 전체가 하나로 요약됩니다)'):'')
@@ -844,6 +1145,13 @@
     try{
       csRecSegs=[]; csRecBlob=null; csRecSec=0; csRecMime='';
       csRecUserStop=false; csRecResuming=false; csRecRotating=false; csRecAutoEnded=false;
+      // ★ 이 녹음의 저장 키 — 조각을 받는 즉시 이 키로 IndexedDB 에 쌓인다
+      csRecKey='rec'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      csRecKeyAt=Date.now(); csRecSeq=0; csRecSegIdx=0; csIdbFailed=false;
+      csIdbPutMeta({key:csRecKey, consult_id:Number(csRecConsult.id), company:csRecConsult.company||'',
+        mode:csRecMode, mime:'', sec:0, bytes:0, segs:0, status:'recording',
+        created_at:Date.now(), updated_at:Date.now()});
+      csHoldSession(true);
       await csRecOpenRecorder();
       csRecActive=true;
       csWakeAcquire();
@@ -928,6 +1236,7 @@
         const d=await res.json().catch(()=>({}));
         if(res.ok&&!d.error) return {ok:true,data:d,http:res.status};
         if(d&&d.error==='migration_required') return {ok:false,http:res.status,error:'migration_required'};
+        if(res.status===401) return {ok:false,http:401,error:'unauthorized'};   // 세션 만료 — 재로그인 후 이어서
         if(res.status>=400&&res.status<500&&res.status!==429) return {ok:false,http:res.status,error:d.error||('HTTP '+res.status)};
         last={ok:false,http:res.status,error:d.error||('HTTP '+res.status)};
       }catch(e){ last={ok:false,net:true,error:(e&&e.message)||'network'}; }
@@ -936,12 +1245,68 @@
     return last||{ok:false,net:true,error:'network'};
   }
 
+  // ── 세션이 만료됐을 때: 화면을 날리지 않고 그 자리에서 다시 로그인 ────────
+  //   업로드 중 401 이 나면 여기서 아이디·PIN 만 다시 받아 토큰을 바꾸고 **하던 업로드를 이어서** 한다.
+  //   이미 서버에 올라간 조각은 같은 session_key 로 그대로 남아 있으므로 처음부터 다시 보내지 않는다.
+  let csReauthPending=null;
+  function csReauth(){
+    if(csReauthPending) return csReauthPending;
+    csReauthPending=new Promise((resolve)=>{
+      const lid=(session&&session.user&&session.user.login_id)||'';
+      csRecMsgSet('err',
+        '<b>로그인 세션이 만료됐습니다.</b> 녹음은 그대로 있습니다 — 아래에 다시 로그인하면 <b>업로드를 이어서</b> 합니다.'
+        +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:8px">'
+        +'<div><label style="font-size:11px">아이디</label><input id="cs-raId" type="text" value="'+csEsc(lid)+'" style="padding:6px;font-size:13px"></div>'
+        +'<div><label style="font-size:11px">PIN</label><input id="cs-raPin" type="password" inputmode="numeric" placeholder="••••" style="padding:6px;font-size:13px"></div>'
+        +'<button class="btn sm" type="button" id="cs-raGo">다시 로그인</button>'
+        +'<button class="btn ghost sm" type="button" id="cs-raSave">⬇ 대신 파일로 저장</button>'
+        +'<span id="cs-raMsg" class="hint" style="margin:0"></span></div>');
+      const go=$('cs-raGo'), sv=$('cs-raSave');
+      const done=(ok)=>{ csReauthPending=null; resolve(ok); };
+      if(sv) sv.onclick=()=>{ csRecSaveLocal(); };
+      const submit=async()=>{
+        const id=($('cs-raId')&&$('cs-raId').value||'').trim();
+        const pin=($('cs-raPin')&&$('cs-raPin').value||'').trim();
+        const msg=$('cs-raMsg');
+        if(!id||!pin){ if(msg) msg.textContent='아이디와 PIN을 입력하세요.'; return; }
+        go.disabled=true; go.textContent='확인 중…';
+        try{
+          const res=await fetch(session.api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({login_id:id,pin,device_key:csDeviceKey()})});
+          const d=await res.json().catch(()=>({}));
+          if(!res.ok||d.error||!d.token){ if(msg) msg.textContent='로그인 실패: '+(d.error||res.status); go.disabled=false; go.textContent='다시 로그인'; return; }
+          session.token=d.token; if(d.user) session.user=Object.assign({login_id:id},d.user);
+          csSaveSession();
+          try{ if(window.__rnavReload) window.__rnavReload(); }catch(e){}
+          done(true);
+        }catch(e){ if(msg) msg.textContent='서버에 연결할 수 없습니다.'; go.disabled=false; go.textContent='다시 로그인'; }
+      };
+      if(go) go.onclick=submit;
+      const pinEl=$('cs-raPin');
+      if(pinEl){ pinEl.onkeydown=(e)=>{ if(e.key==='Enter') submit(); }; setTimeout(()=>{ try{ pinEl.focus(); }catch(e){} },50); }
+    });
+    return csReauthPending;
+  }
+  function csDeviceKey(){ try{ return localStorage.getItem('refatrix_device_key')||''; }catch(e){ return ''; } }
+
+  // 401 이면 그 자리에서 재로그인 → 같은 요청을 한 번 더 (업로드가 끊기지 않는다)
+  async function csPostAuth(url, body, tries){
+    let r=await csPostRetry(url, body, tries);
+    if(r&&!r.ok&&r.http===401){
+      const ok=await csReauth();
+      if(!ok) return r;
+      r=await csPostRetry(url, body, tries);
+    }
+    return r;
+  }
+
   const CS_UP_ERR={ rec_disabled:'녹음 기능이 꺼져 있습니다.',
     too_large:'녹음 1건이 담을 수 있는 최대 길이를 넘었습니다 — 나눠서 녹음해 주세요.',
-    segment_too_large:'구간 하나가 25MB를 넘습니다 — 화면을 새로고침(Ctrl+Shift+R)한 뒤 다시 녹음해 주세요.',
+    segment_too_large:'구간 하나가 25MB를 넘는데 자동으로 나눌 수 없는 형식입니다 — 녹음은 그대로 있으니 [⬇ 파일로 저장]으로 내려받아 보관해 주세요.',
     too_long:'녹음이 너무 깁니다.', not_found:'상담을 찾을 수 없습니다.', read_only:'이 화면의 수정 권한이 없습니다.',
     no_parts:'서버에 도착한 조각이 없습니다.', parts_missing:'조각이 일부 누락됐습니다.', parts_gap:'조각 순서가 어긋났습니다.',
-    bad_chunk:'조각이 손상됐습니다.', too_many_parts:'조각이 너무 많습니다 — 더 짧게 나눠 녹음해 주세요.' };
+    bad_chunk:'조각이 손상됐습니다.', too_many_parts:'조각이 너무 많습니다 — 더 짧게 나눠 녹음해 주세요.',
+    unauthorized:'로그인 세션이 만료됐습니다 — 다시 로그인하면 이어서 올립니다.' };
 
   function csUpFail(stage, info){
     $('cs-recReady').classList.remove('hidden');
@@ -979,8 +1344,9 @@
           let b64;
           try{ b64=await csSliceB64(segs[si], pi*CS_CHUNK, Math.min(segs[si].size,(pi+1)*CS_CHUNK)); }
           catch(e){ csUpFail('convert',{}); return; }
-          const r=await csPostRetry(session.api+'/api/consults/'+csRecConsult.id+'/recordings/parts',
+          const r=await csPostAuth(session.api+'/api/consults/'+csRecConsult.id+'/recordings/parts',
             {session_key:key, seg_no:si, part_no:pi, b64});
+          if(r.ok) prog();   // 재로그인으로 안내문이 바뀌었을 수 있으니 진행률을 다시 그린다
           if(!r.ok){
             // 백엔드가 아직 옛 버전이면(라우트 없음) 예전 한 번에 보내기로 되돌아간다
             // 백엔드가 아직 옛 버전이거나(라우트 없음) 0185 마이그레이션 전이면 예전 방식으로
@@ -993,13 +1359,14 @@
       }
       csRecMsgSet('', '⬆ 전송 완료 — 서버가 이어붙이는 중…');
       const mime=String(csRecMime||(segs[0]&&segs[0].type)||'audio/webm').split(';')[0];
-      const cm=await csPostRetry(session.api+'/api/consults/'+csRecConsult.id+'/recordings/commit',
+      const cm=await csPostAuth(session.api+'/api/consults/'+csRecConsult.id+'/recordings/commit',
         {session_key:key, mime, mode:csRecMode, duration_sec:csRecSec, segments:plan.map(n=>({parts:n}))});
       if(!cm.ok){ csUpFail('commit',{...cm,done,total}); return; }
       csRecMsgSet('ok', '✔ 업로드 완료 — 전사·요약을 처리하고 있습니다 (보통 1~3분)'
         +(cm.data&&!cm.data.stt_ready?' · ⚠ OPENAI_API_KEY 미설정':'')
         +(cm.data&&!cm.data.ai_ready?' · ⚠ ANTHROPIC_API_KEY 미설정':''));
       $('cs-recReady').classList.add('hidden'); csRecBlob=null; csRecSegs=[]; csUpKey=null;
+      csIdbDrop(csRecKey); csRecKey=null; csHoldSession(false); csRestoreScan();
       csLoadRecs(true); csRecStartPoll();
     } finally { csUpBusy=false; btn.disabled=false; btn.textContent='↻ 다시 업로드'; }
   }
@@ -1020,6 +1387,7 @@
       if(!r.ok){ csUpFail('send',{...r,done:0,total:1}); return; }
       csRecMsgSet('ok','✔ 업로드 완료 — 전사·요약을 처리하고 있습니다 (보통 1~3분)');
       $('cs-recReady').classList.add('hidden'); csRecBlob=null; csRecSegs=[];
+      csIdbDrop(csRecKey); csRecKey=null; csHoldSession(false); csRestoreScan();
       csLoadRecs(true); csRecStartPoll();
     } finally { csUpBusy=false; btn.disabled=false; btn.textContent='↻ 다시 업로드'; }
   }
@@ -1428,10 +1796,13 @@
   $('cs-recPause').addEventListener('click',csRecPause);
   $('cs-recStop').addEventListener('click',csRecStop);
   $('cs-recUpload').addEventListener('click',csRecUpload);
+  $('cs-recSave').addEventListener('click',csRecSaveLocal);
   $('cs-recDiscard').addEventListener('click',()=>{
     if(csUpBusy){ alert('업로드가 진행 중입니다 — 끝난 뒤에 다시 눌러주세요.'); return; }
-    if(csRecSegs.length&&!confirm('지금까지 녹음한 내용을 버리고 다시 녹음할까요?')) return;
+    if(csRecSegs.length&&!confirm('지금까지 녹음한 내용을 버리고 다시 녹음할까요?\n\n(이 기기에 저장된 사본도 함께 지웁니다)')) return;
+    const k=csRecKey; csRecKey=null; csHoldSession(false);
     csRecReset();
+    if(k) csIdbDrop(k).then(csRestoreScan);
   });
   $('cs-load').addEventListener('click',csLoadList);
   $('cs-q').addEventListener('keydown',e=>{if(e.key==='Enter')csLoadList();});
@@ -2207,6 +2578,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260904creg"></script>
+<script src="refatrix-nav.js?v=20260904rec"></script>
 </body>
 </html>
