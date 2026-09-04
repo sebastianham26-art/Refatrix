@@ -415,7 +415,11 @@
       const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key),{method:'PUT',headers:jauth(),body:JSON.stringify(p)});
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
-      m.className='msg ok'; m.textContent=d.unchanged?'변경된 내용이 없습니다.':'저장되었습니다.';
+      m.className='msg ok';
+      m.textContent = d.unchanged ? '변경된 내용이 없습니다.'
+        : (d.token_fallback
+            ? '저장되었습니다. (서버가 아직 환경별 키 컬럼을 인식하지 못해, 지금 환경의 키만 저장했습니다 — 0202 마이그레이션 후 서버를 재시작하면 두 키가 각각 보관됩니다)'
+            : '저장되었습니다.');
       await loadEndpoints(CUR.key);
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ $('btnSaveCfg').disabled=false; }
@@ -552,7 +556,9 @@
         +(canRetry?'<button class="btn ghost sm" onclick="retry('+r.id+')">재전송</button>':'')+'</td></tr>';
     const det=DETAIL===r.id
       ? '<tr class="detail"><td colspan="8"><div class="row2">'
-        +'<div><label>보낸 본문'+(r.request_method?(' · '+esc(r.request_method)):'')+'</label><pre class="out">'+esc(JSON.stringify(r.payload,null,2))+(r.url?('\n\n→ '+r.url):'')+'</pre></div>'
+        +'<div><label>보낸 본문'+(r.request_method?(' · '+esc(r.request_method)):'')+'</label><pre class="out">'
+          +esc(JSON.stringify(r.payload,null,2))+(r.url?('\n\n→ '+r.url):'')
+          +(r.auth_sent==null?'':('\n'+(r.auth_sent?('인증 헤더 '+(r.auth_header||'')+' 포함'):'⚠ 인증 없음 — API 키가 저장돼 있지 않습니다')))+'</pre></div>'
         +'<div><label>받은 응답</label><pre class="out">'+esc(r.response?JSON.stringify(r.response,null,2):'(없음)')+'</pre></div>'
         +'</div></td></tr>' : '';
     return main+det;

@@ -182,12 +182,21 @@ export async function saveEndpoint(key, patch, userId) {
   // 인증 키 — 값은 이력에 남기지 않는다('(변경됨)' 만).
   //   undefined = 그대로 · '' = 지움 · 값 = 교체
   const envCols = await envTokenColsReady();
+  const tokenPatch = { ...patch };
+  let tokenFallback = false;
+  if (!envCols && (patch.auth_token_test !== undefined || patch.auth_token_prod !== undefined)) {
+    // 0203/0202 미적용 상태(또는 아직 인식 전) — 환경별 컬럼이 없다.
+    //   예전에는 이 값을 **조용히 버렸다**: 화면은 "저장되었습니다" 인데 키는 안 들어가서
+    //   인증 없이 전송되어 401/403 이 났다. 지금 환경에 해당하는 키를 단일 컬럼에 넣어 준다.
+    const envKey = String(patch.env || cur.env) === 'prod' ? 'auth_token_prod' : 'auth_token_test';
+    if (patch[envKey] !== undefined) { tokenPatch.auth_token = patch[envKey]; tokenFallback = true; }
+  }
   const tokenFields = envCols
     ? ['auth_token', 'auth_token_test', 'auth_token_prod']
     : ['auth_token'];
   for (const f of tokenFields) {
-    if (patch[f] === undefined) continue;
-    const t = String(patch[f]);
+    if (tokenPatch[f] === undefined) continue;
+    const t = String(tokenPatch[f]);
     params.push(t === '' ? null : t);
     sets.push(`${f}=$${params.length}`);
     changes[f] = { old: cur[f] ? '(설정됨)' : null, new: t === '' ? null : '(변경됨)' };
@@ -205,7 +214,7 @@ export async function saveEndpoint(key, patch, userId) {
       [cur.id, userId || null, JSON.stringify(changes)]);
   } catch (_) { /* 이력 실패가 저장을 되돌리지는 않는다 */ }
   invalidateEndpointCache(key);
-  return { ok: true, changes };
+  return { ok: true, changes, token_fallback: tokenFallback };
 }
 
 export async function createEndpoint(body, userId) {

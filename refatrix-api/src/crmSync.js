@@ -146,6 +146,21 @@ async function outboxHasEndpointCols() {
   return epColsReady;
 }
 
+let authColsReady = false;
+let authColsProbe = 0;
+async function outboxHasAuthCols() {
+  if (authColsReady) return true;
+  if (Date.now() - authColsProbe < PROBE_MS) return false;
+  authColsProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='crm_customer_outbox' AND column_name='auth_sent' LIMIT 1`);
+    authColsReady = r.rows.length > 0;
+  } catch (_) { authColsReady = false; }
+  return authColsReady;
+}
+
 /** 응답 직후 비동기로 한 번 밀어 준다(요청 처리를 붙잡지 않는다). */
 export function scheduleDrain(app) {
   if (globallyDisabled()) return;
@@ -166,7 +181,9 @@ export async function sendPayload(ep, op, payload) {
     : url;
   const headers = { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' };
   const token = activeToken(ep);   // 테스트/운영 각자의 키
-  if (token) headers[ep.auth_header || 'Authorization'] = token;
+  const authHeader = ep.auth_header || 'Authorization';
+  if (token) headers[authHeader] = token;
+  const authInfo = { auth_sent: !!token, auth_header: token ? authHeader : null };
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), Number(ep.timeout_ms) || 10000);
@@ -180,11 +197,11 @@ export async function sendPayload(ep, op, payload) {
     const text = await res.text();
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch (_) { body = { raw: String(text).slice(0, 1000) }; }
-    return { httpStatus: res.status, body, url: target, method, ms: Date.now() - startedAt };
+    return { httpStatus: res.status, body, url: target, method, ms: Date.now() - startedAt, ...authInfo };
   } catch (e) {
     return {
       error: (e && e.name === 'AbortError') ? 'timeout' : String((e && e.message) || e).slice(0, 300),
-      url: target, method, ms: Date.now() - startedAt,
+      url: target, method, ms: Date.now() - startedAt, ...authInfo,
     };
   } finally { clearTimeout(t); }
 }
@@ -244,6 +261,10 @@ export async function drainOutbox({ limit = 20, app } = {}) {
         put('env=$?', ep.env || null);
         put('url=$?', r.url || null);
         put('request_method=$?', r.method || null);
+      }
+      if (await outboxHasAuthCols()) {
+        put('auth_sent=$?', !!r.auth_sent);
+        put('auth_header=$?', r.auth_header || null);
       }
       params.push(row.id);
       await query(`UPDATE crm_customer_outbox SET ${sets.join(', ')} WHERE id=$${params.length}`, params);

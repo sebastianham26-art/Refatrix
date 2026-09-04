@@ -5,6 +5,22 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { crmTableReady, drainOutbox, enqueueCustomerSync, crmStatus, MAX_ATTEMPTS } from '../crmSync.js';
 
+// 0203 인증 추적 컬럼(있을 때만 조회에 싣는다)
+let hasAuthCols = false;
+let authProbe = 0;
+async function authCols() {
+  if (hasAuthCols) return true;
+  if (Date.now() - authProbe < 30000) return false;
+  authProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='crm_customer_outbox' AND column_name='auth_sent' LIMIT 1`);
+    hasAuthCols = r.rows.length > 0;
+  } catch (_) { hasAuthCols = false; }
+  return hasAuthCols;
+}
+
 // 0201 이전 DB(엔드포인트 컬럼 없음)에서도 조회가 죽지 않게 확인한다.
 //   없을 때만 30초마다 다시 본다 — 서버 기동 후 migrate 해도 재시작 없이 반영되도록.
 let hasEpCols = false;
@@ -55,6 +71,7 @@ export default async function crmSyncRoutes(app) {
   app.get('/api/crm-sync', guard, async (req, reply) => {
     if (!(await ready(reply))) return;
     const ep = await epCols();
+    const au = await authCols();
     const st = String(req.query.status || 'open');
     const key = String(req.query.endpoint || '').trim();
     const q = String(req.query.q || '').trim();
@@ -70,12 +87,13 @@ export default async function crmSyncRoutes(app) {
       where.push(`(c.code ILIKE $${i} OR c.name ILIKE $${i} OR o.rfc ILIKE $${i}${ep ? ` OR o.entity_label ILIKE $${i}` : ''})`);
     }
     params.push(limit);
+    const authSel = au ? `o.auth_sent, o.auth_header,` : `NULL::boolean AS auth_sent, NULL::text AS auth_header,`;
     const extra = ep
       ? `COALESCE(o.endpoint_key,'customer_commercial') AS endpoint_key, o.entity, o.entity_id, o.entity_label, o.env, o.url, o.request_method,`
       : `'customer_commercial' AS endpoint_key, 'customer' AS entity, o.customer_id AS entity_id,
          NULL::text AS entity_label, NULL::text AS env, NULL::text AS url, NULL::text AS request_method,`;
     const rows = (await query(
-      `SELECT o.id, o.customer_id, ${extra}
+      `SELECT o.id, o.customer_id, ${extra} ${authSel}
               o.op, o.origin, o.rfc, o.payload, o.status, o.attempts,
               o.next_attempt_at, o.http_status, o.codigo_error, o.last_error, o.response,
               o.created_at, o.sent_at,
@@ -100,6 +118,7 @@ export default async function crmSyncRoutes(app) {
         http_status: r.http_status == null ? null : Number(r.http_status),
         codigo_error: r.codigo_error, last_error: r.last_error, response: r.response,
         env: r.env, url: r.url, request_method: r.request_method,
+        auth_sent: r.auth_sent, auth_header: r.auth_header,
         created_at: r.created_at, sent_at: r.sent_at, acted_by_name: r.acted_by_name,
       })),
     };
