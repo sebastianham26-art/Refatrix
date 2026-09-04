@@ -61,13 +61,16 @@ export function catLabel(key) {
 // ── ① 상담 녹음 요약 프롬프트 ────────────────────────────────────────
 //   전사문은 대부분 스페인어(멕시코 현장). resumen/insights/bullets 는 대화 언어
 //   그대로 두고, 분류 구조(JSON 키 · category 키)는 고정한다.
-export function buildConsultSummaryPrompt({ transcript, companyName, contactName, consultDate, placeLabel, mode }) {
+export function buildConsultSummaryPrompt({ transcript, companyName, contactName, consultDate, placeLabel, mode, part, partTotal }) {
   const ctx = [];
   ctx.push(`- 상담일: ${consultDate}`);
   ctx.push(`- 업체명: ${companyName || '미상'}`);
   if (contactName) ctx.push(`- 만난 사람: ${contactName}`);
   if (placeLabel) ctx.push(`- 장소: ${placeLabel}`);
   ctx.push(`- 녹음 종류: ${mode === 'memo' ? '미팅 직후 음성 메모' : '미팅 전체 녹음'}`);
+  // 긴 상담은 전사문을 여러 구간으로 나눠 각각 요약한 뒤 합친다(아래 buildConsultMergePrompt).
+  const isPart = Number(partTotal) > 1;
+  if (isPart) ctx.push(`- 이 전사문은 긴 상담을 나눈 ${part}/${partTotal} 번째 구간이다(앞뒤 구간은 따로 요약된다)`);
   const cats = CONSULT_CATS.map((c) => `  · ${c.key} = ${c.ko} (${c.es})`).join('\n');
   return [
     '너는 자동차부품 유통회사(멕시코) 고객상담 기록 비서다.',
@@ -91,10 +94,133 @@ export function buildConsultSummaryPrompt({ transcript, companyName, contactName
     ' "products":["언급된 제품 코드/품명(없으면 빈 배열)"],',
     ' "next_step":"다음 상담/연락 계획 한 줄(없으면 빈 문자열)"}',
     '- 전사문에 없는 내용을 지어내지 마라. 불확실하면 비워라.',
+    ...(isPart ? ['- 이 구간에 실제로 담긴 내용만 다뤄라. 앞뒤 구간을 추측하지 말고, 문장이 중간에서 끊겨도 그대로 두어라.'] : []),
     `- 상대 날짜("mañana", "다음 주" 등)는 상담일 ${consultDate} 기준으로 YYYY-MM-DD 로 환산하고, 날짜 언급이 없으면 null.`,
     '- bullets 는 최대 12건, action_items 는 최대 10건. 잡담·인사말은 제외.',
     '- category 는 반드시 위 key 문자열 그대로 쓴다(한글 라벨 금지).',
   ].join('\n');
+}
+
+// ── ①-b 긴 전사문: 구간 분할 요약 → 병합 (2026-09-04) ────────────────
+//   2~3시간 상담의 전사문은 한 번에 프롬프트에 넣을 수 없다(모델 입력·품질 한계).
+//   그래서 전사문을 문장 경계에서 잘라 구간별로 요약하고, 그 요약들을 다시
+//   하나로 합친다. 요약이 잘리는 대신 전체를 훑게 된다.
+export const TRANSCRIPT_CHUNK_MAX = 18000;   // 구간 하나에 넣는 전사문 길이(문자)
+export const TRANSCRIPT_CHUNK_LIMIT = 16;    // 구간 수 상한 — 넘으면 구간을 키워서 맞춘다
+
+// 전사문을 문장/줄 경계에서 잘라 배열로. 짧으면 [원문] 그대로(기존 동작 불변).
+export function splitTranscript(text, max = TRANSCRIPT_CHUNK_MAX, limit = TRANSCRIPT_CHUNK_LIMIT) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return [];
+  const base = Math.max(1000, Number(max) || TRANSCRIPT_CHUNK_MAX);
+  if (t.length <= base) return [t];
+  const lim = Math.max(2, Number(limit) || TRANSCRIPT_CHUNK_LIMIT);
+  // 상한을 넘길 만큼 길면 구간 크기를 키워 담는다 — 뒷부분을 버리지 않기 위해.
+  const size = Math.max(base, Math.ceil(t.length / lim));
+  const out = [];
+  let i = 0;
+  while (i < t.length) {
+    let end = Math.min(t.length, i + size);
+    if (end < t.length) {
+      const win = t.slice(i, end);
+      const cut = Math.max(win.lastIndexOf('\n'), win.lastIndexOf('. '), win.lastIndexOf('? '), win.lastIndexOf('! '));
+      if (cut > size * 0.5) end = i + cut + 1;
+    }
+    const piece = t.slice(i, end).trim();
+    if (piece) out.push(piece);
+    i = end;
+  }
+  return out;
+}
+
+// 구간 요약들을 사람이 읽는 텍스트로(병합 프롬프트 입력용)
+function partialToText(s, idx) {
+  const lines = [`[구간 ${idx + 1}]`];
+  if (s.resumen) lines.push(`요약: ${s.resumen}`);
+  for (const b of (s.bullets || [])) lines.push(`- (${b.category}) ${b.text}`);
+  if (s.insights) lines.push(`파악: ${s.insights}`);
+  for (const a of (s.action_items || [])) lines.push(`* 할일 (${a.category}) ${a.content}${a.due_date ? ` [기한 ${a.due_date}]` : ''}`);
+  if ((s.products || []).length) lines.push(`제품: ${(s.products || []).join(', ')}`);
+  if (s.next_step) lines.push(`다음: ${s.next_step}`);
+  return lines.join('\n');
+}
+
+// 구간 요약 여러 개 → 최종 요약 하나(같은 JSON 형태)
+export function buildConsultMergePrompt({ partials, companyName, contactName, consultDate, placeLabel, mode }) {
+  const list = Array.isArray(partials) ? partials : [];
+  const ctx = [];
+  ctx.push(`- 상담일: ${consultDate}`);
+  ctx.push(`- 업체명: ${companyName || '미상'}`);
+  if (contactName) ctx.push(`- 만난 사람: ${contactName}`);
+  if (placeLabel) ctx.push(`- 장소: ${placeLabel}`);
+  ctx.push(`- 녹음 종류: ${mode === 'memo' ? '미팅 직후 음성 메모' : '미팅 전체 녹음'}`);
+  ctx.push(`- 상담이 길어 ${list.length}개 구간으로 나눠 요약했다`);
+  const cats = CONSULT_CATS.map((c) => `  · ${c.key} = ${c.ko} (${c.es})`).join('\n');
+  return [
+    '너는 자동차부품 유통회사(멕시코) 고객상담 기록 비서다.',
+    '아래는 하나의 긴 상담을 시간 순서대로 나눠 요약한 구간별 메모다. 이를 하나의 상담 요약으로 합쳐 JSON 하나로만 답하라.',
+    '',
+    '[상담 정보]',
+    ctx.join('\n'),
+    '',
+    '[구간별 요약 — 시간 순서]',
+    list.map(partialToText).join('\n\n'),
+    '',
+    '[카테고리 — 반드시 아래 key 중 하나만 사용]',
+    cats,
+    '',
+    '[출력 규칙]',
+    '- 반드시 아래 형태의 JSON 객체 하나만 출력(설명·마크다운 금지):',
+    '{"resumen":"상담 전체를 관통하는 요약(대화 언어 그대로, 6문장 이내)",',
+    ' "bullets":[{"category":"위 key 중 하나","text":"핵심 내용 한 줄(대화 언어 그대로)"}],',
+    ' "insights":"새로 파악한 내용(없으면 빈 문자열)",',
+    ' "action_items":[{"content":"펜딩·후속 조치 한 건","category":"위 key 중 하나","due_date":"YYYY-MM-DD 또는 null"}],',
+    ' "products":["언급된 제품 코드/품명(없으면 빈 배열)"],',
+    ' "next_step":"다음 상담/연락 계획 한 줄(없으면 빈 문자열)"}',
+    '- 구간 메모에 없는 내용을 지어내지 마라.',
+    '- 같은 내용이 여러 구간에 나오면 하나로 합치고, 뒤 구간에서 번복·확정된 내용이 있으면 뒤를 따른다.',
+    '- 뒤 구간에서 이미 처리된 할 일은 넣지 마라.',
+    `- 상대 날짜는 상담일 ${consultDate} 기준 YYYY-MM-DD 로 환산하고, 없으면 null.`,
+    '- bullets 는 최대 12건, action_items 는 최대 10건. category 는 key 문자열 그대로.',
+  ].join('\n');
+}
+
+// 병합 호출이 실패해도 요약을 잃지 않기 위한 기계적 병합(폴백)
+export function mergeConsultSummaries(partials) {
+  const list = (Array.isArray(partials) ? partials : []).filter(Boolean);
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  const seen = new Set();
+  const bullets = [];
+  const actions = [];
+  const products = [];
+  const resumen = [];
+  const insights = [];
+  for (const s of list) {
+    if (s.resumen) resumen.push(String(s.resumen).trim());
+    if (s.insights) insights.push(String(s.insights).trim());
+    for (const b of (s.bullets || [])) {
+      const k = 'b|' + b.category + '|' + String(b.text).toLowerCase();
+      if (seen.has(k)) continue; seen.add(k); bullets.push(b);
+    }
+    for (const a of (s.action_items || [])) {
+      const k = 'a|' + String(a.content).toLowerCase();
+      if (seen.has(k)) continue; seen.add(k); actions.push(a);
+    }
+    for (const p of (s.products || [])) {
+      const k = 'p|' + String(p).toLowerCase();
+      if (seen.has(k)) continue; seen.add(k); products.push(p);
+    }
+  }
+  const last = list[list.length - 1];
+  return {
+    resumen: clip(resumen.join(' '), 4000),
+    bullets: bullets.slice(0, 12),
+    insights: clip(insights.join(' '), 2000),
+    action_items: actions.slice(0, 10),
+    products: products.slice(0, 30),
+    next_step: clip(last.next_step || '', 300),
+  };
 }
 
 // ── ② Claude 응답 → 요약 객체(방어적 파싱) ───────────────────────────

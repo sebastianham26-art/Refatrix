@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { assembleUploadParts } from '../src/routes/consultRoutes.js';
+import { assembleUploadParts, checkAudioLimits } from '../src/routes/consultRoutes.js';
 
 const CHUNK = 3 * 1024 * 1024;   // 프런트(refatrix-consult.html)의 CS_CHUNK 와 같은 값
 
@@ -103,4 +103,29 @@ test('한 시간짜리 미팅(≈19MB base64)도 조각 5개로 정확히 복원
   assert.equal(parts.length, 5);
   const out = assembleUploadParts(rows([parts]), [{ parts: parts.length }]);
   assert.ok(Buffer.from(out.joined, 'base64').equals(buf));
+});
+
+// ── 용량 규칙 (2026-09-04) — 25MB 는 "구간별", 총량은 따로 ────────────
+const MB = 1024 * 1024;
+test('용량: 구간 하나가 25MB(base64 34MB)를 넘으면 그 구간을 지목해 거절한다', () => {
+  const bad = checkAudioLimits([10 * MB, 35 * MB]);
+  assert.equal(bad.error, 'segment_too_large');
+  assert.equal(bad.seg_no, 1);
+  assert.equal(bad.max_mb, 25);
+});
+
+test('용량: 구간이 여러 개면 합이 25MB를 넘어도 통과한다(긴 상담 지원)', () => {
+  // 2시간 40분 ≈ 구간 6개 × 8MB base64 = 48MB — 예전 규칙이면 거절되던 크기
+  assert.equal(checkAudioLimits(new Array(6).fill(8 * MB)), null);
+});
+
+test('용량: 녹음 1건 총량 상한(≈4시간)을 넘으면 too_large 로 거절한다', () => {
+  const bad = checkAudioLimits(new Array(10).fill(8 * MB));   // 80MB base64
+  assert.equal(bad.error, 'too_large');
+  assert.ok(bad.max_mb >= 50, '안내에 쓸 총량(MB)을 함께 준다');
+});
+
+test('용량: 조각이 없으면 통과(다른 검사에서 거른다)', () => {
+  assert.equal(checkAudioLimits([]), null);
+  assert.equal(checkAudioLimits(null), null);
 });

@@ -27,6 +27,7 @@ import {
   clip, buildConsultSummaryPrompt, parseConsultSummaryJson,
   buildConsultTranslatePrompt, parseConsultTranslationJson,
   buildInsightPrompt, parseInsightJson, scopeKeyOf, normCat, CONSULT_CATS,
+  splitTranscript, buildConsultMergePrompt, mergeConsultSummaries, TRANSCRIPT_CHUNK_MAX,
 } from '../consultAi.js';
 
 const PAGE = 'pipeline';                    // 화면 권한키 — 영업활동 권한을 재사용
@@ -34,10 +35,13 @@ const STT_MODEL = () => process.env.VISIT_STT_MODEL || 'whisper-1';
 const AI_MODEL = () => process.env.VISIT_AI_MODEL || 'claude-sonnet-4-5-20250929';
 const KEEP_AUDIO = () => process.env.CONSULT_KEEP_AUDIO === '1';
 
-const AUDIO_B64_MAX = 34 * 1024 * 1024;     // ≈ 25MB 바이너리(Whisper 한도)
+// 구간(segment) 하나 = Whisper 에 파일 하나로 올라간다 → 25MB 한도는 구간별로 본다.
+// 전체 녹음은 구간 여러 개를 이어붙인 것이므로 총량은 따로(더 크게) 본다 — 긴 상담 지원.
+const SEG_B64_MAX = 34 * 1024 * 1024;       // 구간 1개 ≈ 25MB 바이너리(Whisper 한도)
+const AUDIO_B64_MAX = 78 * 1024 * 1024;     // 녹음 1건 총합 ≈ 58MB 바이너리(≈4시간 @32kbps)
+const AUDIO_TOTAL_MB = Math.floor(AUDIO_B64_MAX * 3 / 4 / (1024 * 1024));
 const AUDIO_PARTS_MAX = 40;
 const DURATION_MAX = 4 * 3600;              // 4시간
-const TRANSCRIPT_PROMPT_MAX = 24000;
 const STT_TIMEOUT_MS = 300000;
 const AI_TIMEOUT_MS = 120000;
 const MAX_AUTO_ATTEMPTS = 3;
@@ -166,6 +170,7 @@ export async function processOne(row) {
     if (!sttReady()) return markFailed(recId, 'no_openai_key', false, row.attempts);
     if (!row.audio_b64) return markFailed(recId, 'no_audio', false, row.attempts);
     const partList = String(row.audio_b64).split('|').filter(Boolean);
+    row.audio_b64 = null;               // 긴 녹음(수십 MB)을 두 번 들고 있지 않도록 즉시 해제
     const texts = [];
     for (const p of partList) {
       const st = await consultAiApi.transcribe({ b64: p, mime: row.mime });
@@ -184,14 +189,34 @@ export async function processOne(row) {
   }
 
   // ② Claude 카테고리 분류 요약
-  const prompt = buildConsultSummaryPrompt({
-    transcript: clip(transcript, TRANSCRIPT_PROMPT_MAX),
+  //    긴 상담(2~3시간)은 전사문을 구간으로 나눠 각각 요약한 뒤 하나로 합친다 —
+  //    예전처럼 앞부분만 잘라 쓰면 뒤 내용이 통째로 빠지기 때문.
+  const ctxFor = {
     companyName: c.company_name, contactName: c.contact_name,
     placeLabel: c.place_label, consultDate: d10(c.consult_date), mode: row.mode,
-  });
-  const sm = await consultAiApi.summarize(prompt);
-  if (!sm.ok) return markFailed(recId, sm.error, sm.transient, row.attempts);
-  const summary = parseConsultSummaryJson(sm.text);
+  };
+  const chunks = splitTranscript(transcript, TRANSCRIPT_CHUNK_MAX);
+  let summary = null;
+  if (chunks.length <= 1) {
+    const sm = await consultAiApi.summarize(buildConsultSummaryPrompt({ ...ctxFor, transcript: chunks[0] || transcript }));
+    if (!sm.ok) return markFailed(recId, sm.error, sm.transient, row.attempts);
+    summary = parseConsultSummaryJson(sm.text);
+  } else {
+    const partials = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const sm = await consultAiApi.summarize(buildConsultSummaryPrompt({
+        ...ctxFor, transcript: chunks[i], part: i + 1, partTotal: chunks.length,
+      }));
+      if (!sm.ok) return markFailed(recId, sm.error, sm.transient, row.attempts);
+      const p = parseConsultSummaryJson(sm.text);
+      if (p) partials.push(p);
+    }
+    if (!partials.length) return markFailed(recId, 'ai_parse', false, row.attempts);
+    const mg = await consultAiApi.summarize(buildConsultMergePrompt({ ...ctxFor, partials }), 2500);
+    if (mg.ok) summary = parseConsultSummaryJson(mg.text);
+    // 병합 호출·파싱이 실패해도 구간 요약을 기계적으로 합쳐 요약을 남긴다
+    if (!summary) summary = mergeConsultSummaries(partials);
+  }
   if (!summary) return markFailed(recId, 'ai_parse', false, row.attempts);
 
   // ③ 반영: 요약 저장 + 펜딩 자동 등록(카테고리 포함)
@@ -271,6 +296,21 @@ export function assembleUploadParts(rows, expected) {
   }
   const joined = segB64.join('|');
   return { joined, segments: segNos.length, totalB64: joined.length - (segB64.length - 1) };
+}
+
+// =====================================================================
+// 용량 규칙 — Whisper 는 "파일 하나"가 25MB 를 넘으면 받지 않는다.
+//   녹음은 구간(segment) 여러 개로 이뤄지고 구간마다 따로 전사하므로
+//   25MB 는 구간별로 보고, 총량은 따로(훨씬 크게) 본다 → 긴 상담도 올라간다.
+//   문제 없으면 null, 있으면 그대로 응답할 오류 객체를 돌려준다.
+// =====================================================================
+export function checkAudioLimits(segB64Lens) {
+  const lens = (Array.isArray(segB64Lens) ? segB64Lens : []).map((n) => Number(n) || 0);
+  const big = lens.findIndex((n) => n > SEG_B64_MAX);
+  if (big >= 0) return { error: 'segment_too_large', seg_no: big, max_mb: 25 };
+  const total = lens.reduce((a, b) => a + b, 0);
+  if (total > AUDIO_B64_MAX) return { error: 'too_large', max_mb: AUDIO_TOTAL_MB };
+  return null;
 }
 
 // =====================================================================
@@ -561,7 +601,7 @@ export default async function consultRoutes(app) {
 
   // ── 미팅 녹음 업로드 → 큐 등록 ──
   app.post('/api/consults/:id/recordings',
-    { bodyLimit: 48 * 1024 * 1024, preHandler: [authGuard, requirePageEdit(PAGE)] },
+    { bodyLimit: 96 * 1024 * 1024, preHandler: [authGuard, requirePageEdit(PAGE)] },
     async (req, reply) => {
       const perm = req.ctx.perm;
       if (!consultRecEnabled()) return reply.code(503).send({ error: 'rec_disabled' });
@@ -578,7 +618,8 @@ export default async function consultRoutes(app) {
         if (!mime) mime = m[1];
         parts.push(m[2]); totalB64 += m[2].length;
       }
-      if (totalB64 > AUDIO_B64_MAX) return reply.code(400).send({ error: 'too_large', max_mb: 25 });
+      const bad = checkAudioLimits(parts.map((p) => p.length));
+      if (bad) return reply.code(400).send(bad);
       const dur = Number(b.duration_sec) || null;
       if (dur && dur > DURATION_MAX) return reply.code(400).send({ error: 'too_long', max_sec: DURATION_MAX });
       const mode = b.mode === 'memo' ? 'memo' : 'full';
@@ -659,7 +700,8 @@ export default async function consultRoutes(app) {
       const built = assembleUploadParts(rows, Array.isArray(b.segments) ? b.segments : null);
       if (built.error) return reply.code(409).send(built);
       const { joined, totalB64 } = built;
-      if (totalB64 > AUDIO_B64_MAX) return reply.code(400).send({ error: 'too_large', max_mb: 25 });
+      const bad = checkAudioLimits(joined.split('|').map((p) => p.length));
+      if (bad) return reply.code(400).send(bad);
 
       const r = (await query(
         `INSERT INTO sales_consult_recordings (consult_id, mode, mime, duration_sec, size_bytes, audio_b64, created_by)

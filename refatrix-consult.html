@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20260826ex4)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20260904rec1)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -356,7 +356,7 @@
     <!-- ② 미팅 녹음 -->
     <div class="card hidden" id="cs-recCard">
       <h2>🎙 미팅 녹음 · AI 요약 <span class="hint" style="margin:0" id="cs-recTarget"></span></h2>
-      <div class="hint" style="margin-top:0">미팅을 시작할 때 <b>● 미팅 녹음</b>을, 미팅이 끝나면 <b>⏹ 녹음 종료</b>를 누르세요. <b>종료를 누르면 자동으로 업로드되고</b> 서버가 <b>전사 → 카테고리 분류 요약</b>까지 이어서 합니다. <b>후속 조치는 펜딩에 자동 등록</b>됩니다. 고객에게 "메모 목적으로 녹음하겠다"고 안내하세요. 화면 자동 꺼짐을 막고, 중간에 끊겨도 그때까지 내용은 보존하며 자동으로 이어 녹음합니다.</div>
+      <div class="hint" style="margin-top:0">미팅을 시작할 때 <b>● 미팅 녹음</b>을, 미팅이 끝나면 <b>⏹ 녹음 종료</b>를 누르세요. <b>종료를 누르면 자동으로 업로드되고</b> 서버가 <b>전사 → 카테고리 분류 요약</b>까지 이어서 합니다. <b>후속 조치는 펜딩에 자동 등록</b>됩니다. 고객에게 "메모 목적으로 녹음하겠다"고 안내하세요. 화면 자동 꺼짐을 막고, 중간에 끊겨도 그때까지 내용은 보존하며 자동으로 이어 녹음합니다. <b>장시간(2~3시간) 상담도 그대로 녹음하세요</b> — 긴 녹음은 자동으로 구간을 나눠 올리고 <b>전체 내용을 하나로 요약</b>합니다.</div>
       <div class="cs-segment" style="margin-top:8px"><button type="button" id="cs-recModeFull" class="on">🎧 미팅 전체 녹음</button><button type="button" id="cs-recModeMemo">🗣 음성 메모 (직후 2~3분 요점)</button></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
         <button class="btn" type="button" id="cs-recStart">● 미팅 녹음</button>
@@ -478,7 +478,7 @@
 </div>
 
 <script>
-  // ===== 고객상담 + 🎪 전시회 (build b20260826ex4) =====
+  // ===== 고객상담 + 🎪 전시회 (build b20260904rec1) =====
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -695,6 +695,31 @@
   let csRec=null, csRecBlob=null, csRecMime='', csRecSec=0, csRecTimerIv=null, csRecPollIv=null;
   let csRecSegs=[], csRecStream=null, csRecActive=false, csRecUserStop=false, csRecResuming=false;
   let csWakeLock=null;
+  // ── 긴 녹음 대응 (b20260904rec1) ───────────────────────────────────
+  //   Whisper 는 파일 하나가 25MB 를 넘으면 받지 않는다. 그래서 한 구간이 CS_SEG_MAX 에
+  //   닿으면 그 자리에서 구간을 끊고 곧바로 이어 녹음한다(사용자는 계속 녹음만 하면 된다).
+  //   서버가 구간별로 전사한 뒤 이어붙여 요약하므로 몇 시간짜리 상담도 요약된다.
+  //   총량이 CS_TOTAL_MAX 에 닿으면 잃지 않도록 자동으로 종료·업로드한다.
+  const CS_SEG_MAX   =  6 * 1024 * 1024;   // 구간 1개 ≈ 25분(32kbps) — 25MB 한도 대비 여유
+  const CS_TOTAL_MAX = 56 * 1024 * 1024;   // 녹음 1건 총량 ≈ 4시간(32kbps)
+  let csRecRotating=false, csRecAutoEnded=false;
+  function csRecTotalBytes(){
+    let n=csRecSegs.reduce((s,b)=>s+(b.size||0),0);
+    if(csRec&&csRec._bytes) n+=csRec._bytes;
+    return n;
+  }
+  // 구간 자르기 — 지금 레코더를 멈추면 onstop 이 구간을 보관하고 자동으로 이어 녹음한다
+  function csRecRotate(){
+    if(!csRecActive||csRecUserStop||csRecRotating||!csRec) return;
+    csRecRotating=true;
+    try{ if(csRec.state!=='inactive'){ csRec.stop(); return; } }catch(e){}
+    if(csRec&&csRec._close) csRec._close();
+  }
+  // 총량 상한 — 여기까지 오면 녹음을 자동 종료해 업로드한다(내용 보존 우선)
+  function csRecAutoStop(){
+    if(!csRecActive||csRecUserStop) return;
+    csRecAutoEnded=true; csRecStop();
+  }
 
   async function csWakeAcquire(){
     try{
@@ -730,7 +755,7 @@
   }
   function csRecReset(){
     if(csRecTimerIv){ clearInterval(csRecTimerIv); csRecTimerIv=null; }
-    csRecActive=false; csRecUserStop=false; csRecResuming=false; csWakeRelease();
+    csRecActive=false; csRecUserStop=false; csRecResuming=false; csRecRotating=false; csRecAutoEnded=false; csWakeRelease();
     try{ if(csRec&&csRec.state!=='inactive') csRec.stop(); }catch(e){}
     try{ if(csRecStream) csRecStream.getTracks().forEach(t=>{ try{t.stop();}catch(e){} }); }catch(e){}
     csRec=null; csRecStream=null; csRecSegs=[]; csRecBlob=null; csRecSec=0;
@@ -744,8 +769,14 @@
     if(!csRecMime) csRecMime=csRecPickMime()||'';
     const opt=csRecMime?{mimeType:csRecMime,audioBitsPerSecond:32000}:{audioBitsPerSecond:32000};
     const rec=new MediaRecorder(stream,opt);
-    rec._chunks=[]; rec._done=false;
-    rec.ondataavailable=(e)=>{ if(e.data&&e.data.size) rec._chunks.push(e.data); };
+    rec._chunks=[]; rec._done=false; rec._bytes=0;
+    rec.ondataavailable=(e)=>{
+      if(!(e.data&&e.data.size)) return;
+      rec._chunks.push(e.data); rec._bytes+=e.data.size;
+      if(rec!==csRec||!csRecActive||csRecUserStop) return;
+      if(csRecTotalBytes()>=CS_TOTAL_MAX){ csRecAutoStop(); return; }   // 총량 상한 → 자동 종료
+      if(rec._bytes>=CS_SEG_MAX) csRecRotate();                        // 25MB 한도 전에 구간 자르기
+    };
     const close=()=>{ if(rec._done) return; rec._done=true; csRecSegClose(rec,stream); };
     rec._close=close;
     rec.onstop=close;
@@ -777,9 +808,11 @@
       if(!csRecActive){ try{ rec.stop(); }catch(e){ if(rec._close) rec._close(); } return; }
       csWakeAcquire();
       const m=$('cs-recMsg'); m.className='msg'; m.style.display='block';
-      m.textContent='⚠ 녹음이 잠시 끊겨 자동으로 이어서 녹음 중입니다 (구간 '+(csRecSegs.length+1)+'). 그때까지 내용은 보존됐어요.';
+      m.textContent=csRecRotating
+        ? ('🔄 녹음이 길어져 구간 '+(csRecSegs.length+1)+'로 자동으로 나눠 이어서 녹음 중입니다 — 그대로 두시면 됩니다. 요약은 전체 내용으로 만들어집니다.')
+        : ('⚠ 녹음이 잠시 끊겨 자동으로 이어서 녹음 중입니다 (구간 '+(csRecSegs.length+1)+'). 그때까지 내용은 보존됐어요.');
     }catch(e){ csRecActive=false; csRecFinish(true); }
-    finally{ csRecResuming=false; }
+    finally{ csRecResuming=false; csRecRotating=false; }
   }
   function csRecFinish(interrupted){
     csRecActive=false; csRecUserStop=false; csWakeRelease();
@@ -793,10 +826,11 @@
     }
     csRecBlob=csRecSegs.length===1?csRecSegs[0]:null;
     const total=csRecSegs.reduce((s,b)=>s+(b.size||0),0), mb=total/1048576;
+    const autoEnded=csRecAutoEnded; csRecAutoEnded=false;
     $('cs-recInfo').textContent='녹음 '+csRecFmt(csRecSec)+' · '+mb.toFixed(1)+'MB'
-      +(csRecSegs.length>1?(' · 구간 '+csRecSegs.length+'개(끊김 구간 자동 보존)'):'')
+      +(csRecSegs.length>1?(' · 구간 '+csRecSegs.length+'개(자동 분할 — 전체가 하나로 요약됩니다)'):'')
       +(interrupted?' · ⚠ 마이크가 끊겨 그때까지 내용만 저장됩니다':'')
-      +(mb>24?' — ⚠ 25MB 초과: 업로드가 거부될 수 있습니다':'');
+      +(autoEnded?' · ⚠ 최대 길이에 도달해 자동 종료했습니다 — 계속하시려면 업로드 후 다시 [● 미팅 녹음]':'');
     $('cs-recReady').classList.remove('hidden');
     // 종료하면 바로 자동 업로드 → AI 요약까지 이어진다(실수로 누른 아주 짧은 녹음만 제외)
     if(csRecSec>=CS_AUTO_MIN_SEC){ setTimeout(()=>{ csRecUpload(); }, 300); }
@@ -809,7 +843,7 @@
       m.className='msg err'; m.style.display='block'; m.textContent='이 브라우저는 녹음을 지원하지 않습니다. 폰 녹음앱으로 녹음 후 내용을 상담 메모에 붙여넣어 주세요.'; return; }
     try{
       csRecSegs=[]; csRecBlob=null; csRecSec=0; csRecMime='';
-      csRecUserStop=false; csRecResuming=false;
+      csRecUserStop=false; csRecResuming=false; csRecRotating=false; csRecAutoEnded=false;
       await csRecOpenRecorder();
       csRecActive=true;
       csWakeAcquire();
@@ -902,7 +936,9 @@
     return last||{ok:false,net:true,error:'network'};
   }
 
-  const CS_UP_ERR={ rec_disabled:'녹음 기능이 꺼져 있습니다.', too_large:'녹음이 25MB를 넘습니다 — 더 짧게 나눠 녹음해 주세요.',
+  const CS_UP_ERR={ rec_disabled:'녹음 기능이 꺼져 있습니다.',
+    too_large:'녹음 1건이 담을 수 있는 최대 길이를 넘었습니다 — 나눠서 녹음해 주세요.',
+    segment_too_large:'구간 하나가 25MB를 넘습니다 — 화면을 새로고침(Ctrl+Shift+R)한 뒤 다시 녹음해 주세요.',
     too_long:'녹음이 너무 깁니다.', not_found:'상담을 찾을 수 없습니다.', read_only:'이 화면의 수정 권한이 없습니다.',
     no_parts:'서버에 도착한 조각이 없습니다.', parts_missing:'조각이 일부 누락됐습니다.', parts_gap:'조각 순서가 어긋났습니다.',
     bad_chunk:'조각이 손상됐습니다.', too_many_parts:'조각이 너무 많습니다 — 더 짧게 나눠 녹음해 주세요.' };

@@ -228,13 +228,55 @@ test('전송이 끊기면 몇 조각까지 갔는지 알려주고 녹음은 남�
   assert.ok(fetchLog.filter((f) => f.url.includes('/recordings/parts')).length >= 2, '자동 재시도를 한다');
 });
 
-test('서버가 거절하면 그 이유를 그대로 보여준다(용량 초과)', async () => {
+test('서버가 거절하면 그 이유를 그대로 보여준다(총량 초과)', async () => {
   route('POST', '/recordings/parts', { ok: true });
-  route('POST', '/recordings/commit', { error: 'too_large', max_mb: 25 }, 400);
+  route('POST', '/recordings/commit', { error: 'too_large', max_mb: 58 }, 400);
+  await recordAndStop(30);
+  await tick(600);
+  assert.ok(txt('cs-recMsg').includes('서버가 거절했습니다'));
+  assert.ok(txt('cs-recMsg').includes('최대 길이'));
+});
+
+test('서버가 거절하면 그 이유를 그대로 보여준다(구간 하나가 25MB 초과)', async () => {
+  route('POST', '/recordings/parts', { ok: true });
+  route('POST', '/recordings/commit', { error: 'segment_too_large', seg_no: 0, max_mb: 25 }, 400);
   await recordAndStop(30);
   await tick(600);
   assert.ok(txt('cs-recMsg').includes('서버가 거절했습니다'));
   assert.ok(txt('cs-recMsg').includes('25MB'));
+});
+
+// ── 긴 녹음: 구간 자동 분할 (2026-09-04) ────────────────────────────
+test('구간이 6MB에 닿으면 자동으로 끊고 이어서 녹음한다(녹음은 계속)', async () => {
+  route('GET', '/api/consults/77/recordings', { items: [] });
+  win.csShowRec(77, 'Zeta');
+  await tick();
+  $('cs-recStart').click();
+  await tick(30);
+  const first = win.__lastRec;
+  first.ondataavailable({ data: { size: 7 * 1024 * 1024, type: 'audio/webm' } });   // 구간 상한 초과
+  await tick(40);
+  assert.equal(win.eval('csRecSegs.length'), 1, '앞 구간이 보관돼야 함');
+  assert.equal(win.eval('csRecActive'), true, '녹음은 계속돼야 함');
+  assert.notEqual(win.__lastRec, first, '새 레코더로 이어 녹음');
+  assert.ok(txt('cs-recMsg').includes('구간 2'));
+  assert.ok(!fetchLog.some((f) => f.url.includes('/recordings/parts')), '중간 구간에서 업로드하지 않는다');
+  win.eval('csRecReset();');     // 타이머 정리(테스트 종료용)
+});
+
+test('총량 상한에 닿으면 자동으로 종료하고 업로드한다', async () => {
+  route('GET', '/api/consults/77/recordings', { items: [] });
+  route('POST', '/recordings/parts', { ok: true });
+  route('POST', '/recordings/commit', { id: 901, status: 'queued', stt_ready: true, ai_ready: true });
+  win.csShowRec(77, 'Zeta');
+  await tick();
+  $('cs-recStart').click();
+  await tick(30);
+  win.eval('csRecSec = 30;');
+  win.__lastRec.ondataavailable({ data: { size: 57 * 1024 * 1024, type: 'audio/webm' } });
+  await tick(600);
+  assert.equal(win.eval('csRecActive'), false, '자동 종료돼야 함');
+  assert.ok(fetchLog.some((f) => f.url.includes('/recordings/commit')), '자동 업로드까지 이어진다');
 });
 
 test('백엔드가 아직 분할 업로드를 모르면(404) 예전 방식으로 되돌아간다', async () => {

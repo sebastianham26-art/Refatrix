@@ -13,6 +13,7 @@ import {
   parseConsultSummaryJson, parseConsultTranslationJson, parseInsightJson,
   buildConsultSummaryPrompt, buildConsultTranslatePrompt, buildInsightPrompt,
   normCat, scopeKeyOf, groupByCategory, CAT_KEYS,
+  splitTranscript, mergeConsultSummaries, buildConsultMergePrompt, TRANSCRIPT_CHUNK_MAX,
 } from '../src/consultAi.js';
 
 // ── pg-mem 셋업 + pool 몽키패치 ──────────────────────────────────────
@@ -248,6 +249,110 @@ test('processQueueTick: queued 건을 집어 done 으로 만든다', async () =>
   const n = await processQueueTick();
   assert.equal(n, 1);
   assert.equal(pub.many(`SELECT status FROM sales_consult_recordings WHERE id=102`)[0].status, 'done');
+});
+
+// ── 긴 녹음: 전사문 분할 요약 (2026-09-04) ──────────────────────────
+test('splitTranscript: 짧으면 그대로 1조각, 길면 문장 경계로 나누고 내용을 버리지 않는다', () => {
+  assert.deepEqual(splitTranscript('hola'), ['hola']);
+  assert.equal(splitTranscript('').length, 0);
+  const sentence = 'El cliente pidió una cotización de balatas para el viernes. ';
+  const long = sentence.repeat(2000);                       // ≈ 118k 자
+  const parts = splitTranscript(long);
+  assert.ok(parts.length > 1, '여러 조각으로 나뉘어야 함');
+  assert.ok(parts.every((p) => p.length <= TRANSCRIPT_CHUNK_MAX * 1.2));
+  const joined = parts.join(' ').replace(/\s+/g, ' ').trim();
+  assert.equal(joined, long.replace(/\s+/g, ' ').trim(), '나눈 뒤 이어붙이면 원문과 같다');
+});
+
+test('splitTranscript: 아주 긴 전사문도 조각 수 상한 안에서 전부 담는다', () => {
+  const huge = 'palabra '.repeat(120000);                    // ≈ 960k 자
+  const parts = splitTranscript(huge);
+  assert.ok(parts.length <= 16, '조각 수 상한을 지킨다');
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  assert.ok(total > huge.trim().length * 0.99, '뒷부분을 버리지 않는다');
+});
+
+test('mergeConsultSummaries: 구간 요약을 중복 없이 합치고 next_step 은 마지막 구간을 쓴다', () => {
+  const a = parseConsultSummaryJson(GOOD_SUMMARY);
+  const b = parseConsultSummaryJson(JSON.stringify({
+    resumen: 'Segunda parte: pago.',
+    bullets: [{ category: 'pago', text: 'Pide 30 días de crédito' },
+      { category: 'precio', text: 'Pide 8% de descuento en balatas CL0001.' }],
+    insights: '',
+    action_items: [{ content: 'Enviar cotización CL0001', category: 'precio', due_date: null },
+      { content: 'Revisar crédito', category: 'pago', due_date: null }],
+    products: ['CL0001', 'CL0003'], next_step: 'Llamar el martes',
+  }));
+  const m = mergeConsultSummaries([a, b]);
+  assert.equal(m.bullets.length, 3);                        // 같은 불릿은 한 번만
+  assert.equal(m.action_items.length, 3);                   // 같은 할 일은 한 번만
+  assert.deepEqual(m.products, ['CL0001', 'CL0002', 'CL0003']);
+  assert.equal(m.next_step, 'Llamar el martes');
+  assert.ok(m.resumen.includes('balatas') && m.resumen.includes('Segunda parte'));
+  assert.equal(mergeConsultSummaries([]), null);
+});
+
+test('병합 프롬프트: 구간별 메모와 카테고리 키가 들어간다', () => {
+  const p = buildConsultMergePrompt({
+    partials: [parseConsultSummaryJson(GOOD_SUMMARY)],
+    companyName: 'Zeta', consultDate: '2026-09-04', mode: 'full',
+  });
+  assert.ok(p.includes('[구간 1]'));
+  assert.ok(p.includes('precio'));
+  assert.ok(p.includes('2026-09-04'));
+});
+
+test('processOne: 긴 전사문(2~3시간)은 구간별로 요약한 뒤 하나로 합친다', async () => {
+  const long = 'El cliente habló de precios y entrega. '.repeat(4000);   // ≈ 152k 자
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, transcript, created_by)
+            VALUES (120, 10, 'full', 'audio/webm', '${long}', 2)`);
+  const prompts = [];
+  consultAiApi.summarize = async (prompt) => { prompts.push(prompt); return { ok: true, text: GOOD_SUMMARY }; };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=120`)[0]);
+  const r = pub.many(`SELECT status, summary_json FROM sales_consult_recordings WHERE id=120`)[0];
+  assert.equal(r.status, 'done');
+  assert.ok(prompts.length >= 3, '구간 요약 여러 번 + 병합 1번');
+  assert.ok(prompts.slice(0, -1).every((p) => p.includes('번째 구간')), '구간 프롬프트에 위치를 알려준다');
+  assert.ok(prompts[prompts.length - 1].includes('[구간별 요약'), '마지막은 병합 프롬프트');
+  const s = typeof r.summary_json === 'string' ? JSON.parse(r.summary_json) : r.summary_json;
+  assert.equal(s.bullets.length, 2);
+  const pends = pub.many(`SELECT content FROM sales_consult_pendings WHERE consult_id=10`);
+  assert.equal(pends.length, 2);
+});
+
+test('processOne: 병합 응답이 깨져도 구간 요약을 합쳐 요약을 남긴다', async () => {
+  const long = 'Hablamos del pago y del crédito. '.repeat(4000);
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, transcript, created_by)
+            VALUES (121, 10, 'full', 'audio/webm', '${long}', 2)`);
+  let n = 0;
+  consultAiApi.summarize = async () => { n++; return n <= 2 ? { ok: true, text: GOOD_SUMMARY } : { ok: true, text: '설명만' }; };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=121`)[0]);
+  const r = pub.many(`SELECT status, summary_json FROM sales_consult_recordings WHERE id=121`)[0];
+  assert.equal(r.status, 'done', '병합이 실패해도 요약은 남는다');
+  const s = typeof r.summary_json === 'string' ? JSON.parse(r.summary_json) : r.summary_json;
+  assert.ok(s.bullets.length >= 2);
+});
+
+test('processOne: 짧은 전사문은 예전처럼 한 번만 요약한다(비용 증가 없음)', async () => {
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, audio_b64, created_by)
+            VALUES (122, 10, 'full', 'audio/webm', '${B64}', 2)`);
+  let calls = 0;
+  consultAiApi.summarize = async () => { calls++; return { ok: true, text: GOOD_SUMMARY }; };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=122`)[0]);
+  assert.equal(calls, 1);
+  assert.equal(pub.many(`SELECT status FROM sales_consult_recordings WHERE id=122`)[0].status, 'done');
+});
+
+test('processOne: 여러 구간 오디오는 구간마다 전사해 이어붙인다(긴 녹음 경로)', async () => {
+  pub.none(`INSERT INTO sales_consult_recordings (id, consult_id, mode, mime, audio_b64, created_by)
+            VALUES (123, 10, 'full', 'audio/webm', '${B64}|${B64}|${B64}', 2)`);
+  const seen = [];
+  consultAiApi.transcribe = async ({ b64 }) => { seen.push(b64); return { ok: true, text: 'parte ' + seen.length }; };
+  await processOne(pub.many(`SELECT * FROM sales_consult_recordings WHERE id=123`)[0]);
+  const r = pub.many(`SELECT status, transcript FROM sales_consult_recordings WHERE id=123`)[0];
+  assert.equal(seen.length, 3, '구간마다 Whisper 를 부른다(파일 하나가 25MB를 넘지 않게)');
+  assert.equal(r.transcript, 'parte 1\nparte 2\nparte 3');
+  assert.equal(r.status, 'done');
 });
 
 // ── 목록·가시성(감추기) ─────────────────────────────────────────────
