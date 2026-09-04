@@ -5,6 +5,50 @@ import { logEvent } from '../audit.js';
 import { pageAllowed } from '../permissions.js';
 import { summarizeSla } from '../stageSla.js';
 import { buildStageCohorts, getSlaKpi } from '../stageCohorts.js';
+import { extractText } from '../mbrSummary.js';
+import {
+  buildDraftPrompt, parseDraft, draftIsEmpty, condenseEntries,
+  isDateStr, daysBetween, MAX_RANGE_DAYS,
+} from '../wbrJournalDraft.js';
+
+// ── 「📝 나의 기록」 → 이슈 초안용 Anthropic 호출(wbrMbrRoutes 와 같은 방식) ──
+const DRAFT_MODEL = process.env.WBR_DRAFT_MODEL || 'claude-sonnet-4-5-20250929';
+const DRAFT_MAX_OUTPUT_TOKENS = 3000;
+const DRAFT_TIMEOUT_MS = 120000;
+
+function journalDraftEnabled() {
+  if (process.env.WBR_DRAFT_ENABLED === '0') return false;
+  return !!process.env.ANTHROPIC_API_KEY;
+}
+
+async function callDraftAi(prompt) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DRAFT_TIMEOUT_MS);
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: DRAFT_MODEL,
+        max_tokens: DRAFT_MAX_OUTPUT_TOKENS,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: ctrl.signal,
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      const msg = (data && data.error && data.error.message) || ('http_' + resp.status);
+      return { ok: false, error: msg };
+    }
+    return { ok: true, text: extractText(data) };
+  } catch (e) {
+    return { ok: false, error: e && e.name === 'AbortError' ? 'timeout' : 'network' };
+  } finally { clearTimeout(timer); }
+}
 
 // buildStageCohorts / getSlaKpi 는 stageCohorts.js 공용 모듈로 이동(wbr·portal·창고 단일 기준).
 
@@ -30,7 +74,13 @@ export default async function wbrRoutes(app) {
     const perm = req.ctx.perm;
     const canEdit = perm.role === 'director'
       || ((perm.pageAccess && perm.pageAccess['wbr']) === 'edit');
-    return { data: (r && r.data) || {}, updated_at: r ? r.updated_at : null, can_edit: canEdit };
+    return {
+      data: (r && r.data) || {},
+      updated_at: r ? r.updated_at : null,
+      can_edit: canEdit,
+      // 「📝 나의 기록 → 이슈 초안」 버튼 노출 판단용(디렉터 + 서버 API 키가 있을 때만)
+      journal_draft: perm.role === 'director' && journalDraftEnabled(),
+    };
   });
 
   // 보드 저장(전체 덮어쓰기) — 'wbr' 수정 권한 필요. 프런트가 { data:{ issues, memo } } 전체 상태를 보냄
@@ -235,5 +285,68 @@ export default async function wbrRoutes(app) {
     if (!r) return reply.code(404).send({ error: 'not_found' });
     logEvent({ userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId, action: 'wbr_snapshot_del', target: `wbr_snapshot:${id}` });
     return { ok: true, id };
+  });
+
+  // ===================================================================
+  // 「📝 나의 기록」 → 팀별 주요 이슈 초안 (디렉터 전용)
+  //   POST /api/wbr/journal-draft  { from:'YYYY-MM-DD', to:'YYYY-MM-DD' }
+  //   · 본인이 쓴 calendar_journal 만 읽는다(읽기 전용, 저장 없음).
+  //   · 응답 draft 는 프런트가 보드에 붙여 넣는다 — 서버는 wbr_board 를 건드리지 않는다.
+  // ===================================================================
+  app.post('/api/wbr/journal-draft', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    if (!journalDraftEnabled()) {
+      return reply.code(503).send({
+        error: 'no_api_key',
+        note: 'Railway 환경변수 ANTHROPIC_API_KEY 를 설정해야 AI 초안을 만들 수 있습니다.',
+      });
+    }
+    const b = req.body || {};
+    const from = String(b.from || '');
+    const to = String(b.to || '');
+    if (!isDateStr(from) || !isDateStr(to)) return reply.code(400).send({ error: 'bad_range' });
+    const span = daysBetween(from, to);
+    if (span < 1 || span > MAX_RANGE_DAYS) {
+      return reply.code(400).send({ error: 'bad_range', max_days: MAX_RANGE_DAYS });
+    }
+
+    // 0182 미적용(테이블 없음)이면 500 대신 안내를 준다.
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT entry_date, content
+           FROM calendar_journal
+          WHERE user_id = $1 AND entry_date BETWEEN $2 AND $3 AND COALESCE(content,'') <> ''
+          ORDER BY entry_date`,
+        [req.ctx.perm.userId, from, to]
+      )).rows;
+    } catch (e) {
+      return reply.code(503).send({ error: 'migration_required', note: 'npm run migrate 를 실행하세요(0182).' });
+    }
+    if (!rows.length) return reply.code(404).send({ error: 'no_journal', from, to });
+
+    const entries = condenseEntries(rows.map((r) => ({
+      date: (r.entry_date instanceof Date)
+        ? r.entry_date.toISOString().slice(0, 10)
+        : String(r.entry_date).slice(0, 10),
+      content: r.content,
+    })));
+
+    const ai = await callDraftAi(buildDraftPrompt(entries, from, to));
+    if (!ai.ok) return reply.code(502).send({ error: 'ai_failed', detail: ai.error });
+    const draft = parseDraft(ai.text);
+    if (!draft || draftIsEmpty(draft)) return reply.code(502).send({ error: 'ai_empty' });
+
+    // audit_log.action 은 CHECK 로 표준 액션만 허용 → 'create' + target 으로 구분한다.
+    // (본문은 남기지 않는다 — 일지 원문은 감사로그에 들어가지 않는다.)
+    logEvent({
+      userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId,
+      action: 'create', target: `wbr_journal_draft:${from}~${to}`,
+    });
+    return {
+      ok: true, from, to, model: DRAFT_MODEL,
+      days: entries.map((e) => ({ date: e.date, chars: e.content.length })),
+      entry_count: entries.length,
+      draft,
+    };
   });
 }

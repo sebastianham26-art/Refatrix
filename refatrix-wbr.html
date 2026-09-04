@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0806g</title>
+<title>Refatrix ERP · WBR · build wbr-0904a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -351,7 +351,11 @@
     <!-- 팀별 주요 이슈 -->
     <div class="card">
       <div class="card-h">팀별 주요 이슈 <span class="src">이번주 / 다음주 · 작성 내용은 직접 지울 때까지 유지</span>
-        <span class="saveind no-print" id="issueSave" style="margin-left:auto"></span></div>
+        <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <button class="btn gold no-print hidden" id="jdraftBtn" style="padding:6px 12px;font-size:12.5px" title="이번 주(월~금) 「📝 나의 기록」을 스캔해 조직별 이슈 초안을 채웁니다">🤖 나의 기록으로 초안 채우기</button>
+          <span class="saveind no-print" id="issueSave"></span>
+        </span></div>
+      <div class="hint no-print hidden" id="jdraftHint" style="margin:-2px 0 8px"></div>
       <div class="issuegrid" id="issueGrid"><div class="hint">불러오는 중…</div></div>
       <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
     </div>
@@ -422,7 +426,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0806g');
+  console.log('[wbr] build wbr-0904a');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -1182,6 +1186,7 @@
       const d=await fetch(session.api+'/api/wbr/board',{headers:auth()}).then(r=>r.json());
       board=normalizeBoard(d&&d.data);
       canEdit=(d&&d.can_edit!==false);          // 서버가 내려준 수정 권한(없으면 보수적으로 열람 전용)
+      jdraftAllowed=!!(d&&d.journal_draft);     // 「나의 기록 → 초안」 가능 여부(디렉터 + 서버 AI 키)
     }catch(e){ board=normalizeBoard({}); }
     applyReadOnly();
     renderIssues();
@@ -1191,6 +1196,7 @@
   function applyReadOnly(){
     const memo=$('memo'); if(memo){ memo.setAttribute('contenteditable', canEdit?'true':'false'); }
     [$('issueSave'),$('memoSave')].forEach(el=>{ if(el && !canEdit){ el.className='saveind'; el.style.color='var(--muted)'; el.textContent='열람 전용'; }});
+    updateJdraftBtn();     // 라이브 + 수정권한일 때만 「나의 기록으로 초안」 버튼 노출
   }
   function renderIssues(){
     const wkcol=(tk,wk,title,pillN)=>{
@@ -1314,6 +1320,81 @@
   function delBullet(tk,wk,i){
     board.issues[tk][wk].splice(i,1);
     renderIssues(); saveBoard('issue');
+  }
+
+  // ===== 「📝 나의 기록」 → 팀별 이슈 초안 (디렉터 전용 · 라이브 상태에서만) =====
+  //  일정 화면에서 디렉터가 직접 쓴 이번 주(월~금) 기록을 서버가 읽어 조직별 초안을 만들고,
+  //  프런트가 그 결과를 「이번주 / 다음주」 칸에 **추가**한다(기존 항목은 지우지 않음).
+  let jdraftAllowed=false;   // 서버 판단(디렉터 + ANTHROPIC_API_KEY)
+  let jdraftBusy=false;
+  const DOWK=['일','월','화','수','목','금','토'];
+
+  // 오늘이 속한 주의 월요일~금요일(로컬 기준). 토·일에 눌러도 그 주의 월~금.
+  function weekMonFri(){
+    const d=new Date(), dow=d.getDay();                    // 0=일 … 6=토
+    const back=(dow===0?6:dow-1);                          // 일요일이면 6일 전이 월요일
+    const mon=new Date(d.getFullYear(),d.getMonth(),d.getDate()-back);
+    const fri=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+4);
+    const s=(x)=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+    return {from:s(mon), to:s(fri)};
+  }
+  function mdLabel(ds){
+    const p=String(ds||'').split('-'); if(p.length!==3) return String(ds||'');
+    const dt=new Date(Number(p[0]),Number(p[1])-1,Number(p[2]));
+    return Number(p[1])+'/'+Number(p[2])+'('+DOWK[dt.getDay()]+')';
+  }
+  function updateJdraftBtn(){
+    const btn=$('jdraftBtn'); if(!btn) return;
+    const show = jdraftAllowed && canEdit && !viewMode;   // 저장본 열람 중에는 숨김
+    btn.classList.toggle('hidden', !show);
+    if(!show) $('jdraftHint').classList.add('hidden');
+  }
+  function jdHint(msg,color){
+    const el=$('jdraftHint'); el.classList.remove('hidden');
+    el.style.color=color||''; el.textContent=msg;
+  }
+  async function runJournalDraft(){
+    if(jdraftBusy || !canEdit || viewMode || !jdraftAllowed) return;
+    const rg=weekMonFri();
+    const has=ORG.reduce((n,t)=>n+board.issues[t.key].this.length+board.issues[t.key].next.length,0);
+    if(!confirm(
+      '이번 주 '+mdLabel(rg.from)+'~'+mdLabel(rg.to)+' 의 「📝 나의 기록」을 스캔해\n'
+      +'조직별 「이번주 / 다음주」 초안을 채웁니다.\n\n'
+      +(has?'기존 항목 '+has+'개는 그대로 두고 뒤에 추가됩니다.\n\n':'')
+      +'계속할까요? (30초~1분 소요)')) return;
+
+    const btn=$('jdraftBtn'), prev=btn.textContent;
+    jdraftBusy=true; btn.disabled=true; btn.textContent='🤖 기록 스캔 중…';
+    jdHint('기록을 읽고 카테고리별로 정리하는 중입니다… 30초~1분 정도 걸립니다.');
+    try{
+      const res=await fetch(session.api+'/api/wbr/journal-draft',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},auth()),body:JSON.stringify(rg)});
+      const d=await res.json();
+      if(!res.ok||d.error){
+        const m = d.error==='no_journal' ? '이번 주('+mdLabel(rg.from)+'~'+mdLabel(rg.to)+')에 작성된 「📝 나의 기록」이 없습니다. 일정 화면에서 먼저 기록을 남겨 주세요.'
+          : d.error==='no_api_key' ? 'AI 키가 설정되지 않았습니다. (Railway 환경변수 ANTHROPIC_API_KEY)'
+          : d.error==='migration_required' ? '서버 마이그레이션이 필요합니다(npm run migrate).'
+          : d.error==='ai_empty' ? '기록에서 이슈로 정리할 내용을 찾지 못했습니다. 기록을 조금 더 구체적으로 남겨 주세요.'
+          : d.error==='ai_failed' ? 'AI 호출 실패: '+(d.detail||'')
+          : '초안 생성 실패: '+(d.error||res.status);
+        jdHint(m,'var(--expense)'); return;
+      }
+      let added=0, dup=0;
+      ORG.forEach(t=>{
+        const src=(d.draft&&d.draft[t.key])||{};
+        ['this','next'].forEach(wk=>{
+          (Array.isArray(src[wk])?src[wk]:[]).forEach(txt=>{
+            const s=String(txt==null?'':txt).trim(); if(!s) return;
+            if(board.issues[t.key][wk].indexOf(s)>=0){ dup++; return; }   // 같은 문장 중복 방지
+            board.issues[t.key][wk].push(s); added++;
+          });
+        });
+      });
+      if(!added){ jdHint('새로 추가할 항목이 없습니다(이미 같은 내용이 들어 있습니다).','var(--expense)'); return; }
+      renderIssues(); saveBoard('issue');
+      jdHint('✅ '+mdLabel(d.from)+'~'+mdLabel(d.to)+' 기록 '+d.entry_count+'일치에서 '+added+'개 항목을 채웠습니다'
+        +(dup?' (중복 '+dup+'개 제외)':'')+'. 내용을 확인하고 ✕ 로 지우거나 직접 고쳐 주세요.','var(--income)');
+    }catch(e){ jdHint('서버에 연결할 수 없습니다.','var(--expense)'); }
+    finally{ jdraftBusy=false; btn.disabled=false; btn.textContent=prev; }
   }
 
   let saveTimer=null;
@@ -1941,6 +2022,7 @@
   $('slaToggle').addEventListener('click',()=>{ slaOpen=!slaOpen; applyToggle(slaOpen,'slaBody','slaToggle'); });
   $('mbrToggle').addEventListener('click',()=>{ mbrOpen=!mbrOpen; applyToggle(mbrOpen,'mbrCollapse','mbrToggle'); });
   $('mbrGenBtn').addEventListener('click',generateMbr);
+  $('jdraftBtn').addEventListener('click',runJournalDraft);
   $('waRepToggle').addEventListener('click',()=>{ waRepOpen=!waRepOpen; applyToggle(waRepOpen,'waRepCollapse','waRepToggle'); });
   $('waRepGenBtn').addEventListener('click',generateWaReport);
   $('waSendKo').addEventListener('click',()=>waSend('waRepKo'));
