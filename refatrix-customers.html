@@ -1486,6 +1486,39 @@
   };
   const txN=(n)=> Number(n||0);
   const txMoney=(n)=> txN(n)===0 ? '<span class="hint" style="margin:0">—</span>' : fmt(n);
+  const txDash='<span class="hint" style="margin:0">—</span>';
+  // 지연 = 완납일 − 만기일. 양수 지연(빨강) · 0 정시(초록) · 음수 조기(초록).
+  function txDelayText(d,strong){
+    if(d==null) return txDash;
+    const r=Math.round(Number(d)*10)/10;
+    const w=strong?'800':'700';
+    if(r>0)  return '<b style="color:#B23A2E;font-weight:'+w+'">+'+r+'일</b>';
+    if(r===0)return '<b style="color:#0F6E56;font-weight:'+w+'">정시</b>';
+    return '<b style="color:#0F6E56;font-weight:'+w+'">'+Math.abs(r)+'일 조기</b>';
+  }
+  function txDelayCell(m){
+    if(!m.settled_count) return txDash;
+    return txDelayText(m.delay_avg)+' <span class="hint" style="margin:0">('+m.settled_count+'건)</span>';
+  }
+  function txVerdict(dl){
+    if(!dl||!dl.settled_count) return '<span class="hint" style="margin:0">완납된 건이 없어 지연을 잴 수 없습니다</span>';
+    const a=Number(dl.avg_delay);
+    const v = a>7   ? ['🐢','평균 '+a+'일 늦게 결제','#B23A2E','#fdecea']
+            : a>0   ? ['⏳','평균 '+a+'일 늦게 결제','#9a6512','#fdf3e0']
+            : a===0 ? ['✅','정시 결제','#0F6E56','#e6f3ee']
+            :         ['⚡','평균 '+Math.abs(a)+'일 일찍 결제','#0F6E56','#e6f3ee'];
+    return '<span style="display:inline-block;background:'+v[3]+';color:'+v[2]+';border:1px solid '+v[2]+
+      '44;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800">'+v[0]+' '+v[1]+
+      ' <span style="opacity:.7;font-weight:700">· 완납 '+dl.settled_count+'건</span></span>';
+  }
+  function txBucketChips(b){
+    if(!b) return '';
+    const defs=[['조기·정시',b.early_ontime,'#0F6E56'],['1~7일',b.d1_7,'#9a6512'],
+                ['8~30일',b.d8_30,'#B45309'],['30일+',b.d30plus,'#B23A2E']];
+    return defs.map(x=>'<span style="display:inline-block;background:'+x[2]+'14;color:'+x[2]+
+      ';border:1px solid '+x[2]+'44;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:800;margin:1px 4px 1px 0">'
+      +x[0]+' '+(x[1]||0)+'</span>').join('');
+  }
   function txErrText(e){
     return e==='forbidden_team' ? '다른 팀 고객은 볼 수 없습니다.'
          : e==='not_found'      ? '고객을 찾을 수 없습니다.'
@@ -1535,6 +1568,7 @@
       return;
     }
     const t=d.totals||{};
+    const dl=d.delay||{};
     const mxNow=new Date();
     const curYm=(mxNow.getFullYear()===Number(d.year))?(mxNow.getMonth()+1):0;
     const rows=(d.months||[]).map(m=>{
@@ -1547,6 +1581,7 @@
         +'<td class="num"'+(txN(m.sales_amount)>0?' style="font-weight:700;color:#0F6E56"':'')+'>'+txMoney(m.sales_amount)+'</td>'
         +'<td class="num"'+(txN(m.collect_amount)>0?' style="font-weight:700;color:#2f6db5"':'')+'>'+txMoney(m.collect_amount)+'</td>'
         +'<td class="num"><span class="hint" style="margin:0">'+(txN(m.collect_amount_incl)===0?'—':fmt(m.collect_amount_incl))+'</span></td>'
+        +'<td class="num">'+txDelayCell(m)+'</td>'
         +'</tr>';
     }).join('');
     const foot='<tr style="background:#f3f6f4;font-weight:800;border-top:2px solid var(--brand)">'
@@ -1554,7 +1589,8 @@
       +'<td class="num">'+(t.quote_count||0)+'</td><td class="num">'+fmt(t.quote_amount)+'</td>'
       +'<td class="num">'+(t.sales_count||0)+'</td><td class="num" style="color:#0F6E56">'+fmt(t.sales_amount)+'</td>'
       +'<td class="num" style="color:#2f6db5">'+fmt(t.collect_amount)+'</td>'
-      +'<td class="num">'+fmt(t.collect_amount_incl)+'</td></tr>';
+      +'<td class="num">'+fmt(t.collect_amount_incl)+'</td>'
+      +'<td class="num">'+(dl.settled_count?txDelayText(dl.avg_delay,true):txDash)+'</td></tr>';
 
     const extras=[];
     extras.push('견적 → 매출 전환 <b>'+fmt(t.quote_converted_amount)+'</b>'
@@ -1565,6 +1601,29 @@
     if(txN(ar.outstanding)>0) extras.push('현재 미수 <b>'+fmt(ar.outstanding)+'</b>'
       +(txN(ar.overdue)>0?' <span style="color:#B23A2E;font-weight:800">연체 '+fmt(ar.overdue)+'</span>':'')
       +' <span class="hint" style="margin:0">(연도 무관·IVA 포함)</span>');
+
+    // ── 결제 지연 요약 ────────────────────────────────────────────────
+    const dEx=[];
+    if(dl.settled_count){
+      if(dl.median_delay!=null) dEx.push('중앙값 '+txDelayText(dl.median_delay));
+      dEx.push('정시 이상 <b>'+dl.on_time_count+'건</b>'+(dl.on_time_pct==null?'':' ('+dl.on_time_pct+'%)'));
+      if(dl.worst) dEx.push('최장 '+txDelayText(dl.worst.delay)
+        +' <span class="hint" style="margin:0">('+esc(dl.worst.sat_no||'—')+' · 만기 '+esc(dl.worst.due_date||'—')
+        +' → 완납 '+esc(dl.worst.settled_date||'—')+')</span>');
+      if(dl.avg_actual_days!=null) dEx.push('실제 결제일수 평균 <b>'+dl.avg_actual_days+'일</b>'
+        +(dl.avg_credit_days!=null?' <span class="hint" style="margin:0">(약정 외상 '+dl.avg_credit_days+'일)</span>':''));
+    }
+    const delayRow='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;'
+      +'border-top:1px dashed var(--line);padding-top:8px">'
+      +txVerdict(dl)
+      +(dl.settled_count?('<span>'+txBucketChips(dl.buckets)+'</span>'):'')
+      +'</div>'
+      +(dEx.length?('<div class="hint" style="margin-top:4px">'+dEx.join(' · ')+'</div>'):'');
+    const openWarn=(dl.open_overdue&&dl.open_overdue.count)
+      ? '<div style="margin-top:6px;background:#fdecea;border:1px solid #f0c4bf;border-radius:8px;padding:6px 10px;font-size:12px;color:#B23A2E">'
+        +'⚠ <b>아직 안 낸 연체 '+dl.open_overdue.count+'건</b> · 최장 <b>'+dl.open_overdue.max_days+'일 경과</b> · '
+        +fmt(dl.open_overdue.amount)+' <span style="opacity:.75">(평균 지연에는 안 들어갑니다 — 완납된 건만 셉니다)</span></div>'
+      : '';
 
     const head='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +(v.boxed?'<span style="cursor:pointer;color:#0f6b53" onclick="txToggle(\''+key+'\')">'+(v.open?'▾':'▸')+'</span>'
@@ -1579,10 +1638,13 @@
       +'<th>월</th><th class="num">견적 건</th><th class="num">견적 (ex-IVA)</th>'
       +'<th class="num">매출 건</th><th class="num">매출 (ex-IVA)</th>'
       +'<th class="num">수금 (ex-IVA)</th><th class="num">수금 (실입금·IVA 포함)</th>'
+      +'<th class="num" title="그달 완납된 인보이스의 (완납일 − 만기일) 평균 · 완납 건만">결제 지연</th>'
       +'</tr></thead><tbody>'+rows+foot+'</tbody></table></div>'
       +'<div class="hint" style="margin-top:6px">'+extras.join(' · ')+'</div>'
-      +'<div class="hint" style="margin-top:4px">견적=취소·가격표 제외한 그달 발행 견적(소계 ex-IVA) · 매출=확정 인보이스 소계(ex-IVA, 인보이스일 기준) · '
-      +'수금=그달 입금된 현금 배분액을 그 인보이스 IVA율로 나눈 ex-IVA 환산액(오른쪽이 통장에 들어온 실제 금액)</div>');
+      +delayRow+openWarn
+      +'<div class="hint" style="margin-top:6px">견적=취소·가격표 제외한 그달 발행 견적(소계 ex-IVA) · 매출=확정 인보이스 소계(ex-IVA, 인보이스일 기준) · '
+      +'수금=그달 입금된 현금 배분액을 그 인보이스 IVA율로 나눈 ex-IVA 환산액(오른쪽이 통장에 들어온 실제 금액)<br>'
+      +'결제 지연=<b>완납일 − 만기일</b>(양수 지연·음수 조기) · 완납일=마지막 반제일 · <b>완납된 달</b>의 행에 붙고 건수 단순평균 · 미완납 건은 제외</div>');
 
     host.innerHTML=(v.boxed?'<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:#f7fbf9">':'')
       +head+body+(v.boxed?'</div>':'');
@@ -1593,13 +1655,26 @@
     const cName=(d.customer&&d.customer.name)||'', cCode=(d.customer&&d.customer.code)||'';
     const aoa=[['고객',cName,'코드',cCode,'연도',d.year],
       [],
-      ['월','견적 건','견적 (ex-IVA)','견적 전환 (ex-IVA)','매출 건','매출 (ex-IVA)','수금 (ex-IVA)','수금 (실입금·IVA 포함)']];
+      ['월','견적 건','견적 (ex-IVA)','견적 전환 (ex-IVA)','매출 건','매출 (ex-IVA)','수금 (ex-IVA)','수금 (실입금·IVA 포함)','완납 건','평균 지연(일)']];
     (d.months||[]).forEach(m=>aoa.push([m.month+'월',m.quote_count,m.quote_amount,m.quote_converted_amount,
-      m.sales_count,m.sales_amount,m.collect_amount,m.collect_amount_incl]));
-    const t=d.totals||{};
-    aoa.push(['합계',t.quote_count,t.quote_amount,t.quote_converted_amount,t.sales_count,t.sales_amount,t.collect_amount,t.collect_amount_incl]);
+      m.sales_count,m.sales_amount,m.collect_amount,m.collect_amount_incl,
+      m.settled_count||0,m.delay_avg==null?'':m.delay_avg]));
+    const t=d.totals||{}, dl=d.delay||{};
+    aoa.push(['합계',t.quote_count,t.quote_amount,t.quote_converted_amount,t.sales_count,t.sales_amount,t.collect_amount,t.collect_amount_incl,
+      dl.settled_count||0,dl.avg_delay==null?'':dl.avg_delay]);
     aoa.push([]);
     aoa.push(['※ 금액은 IVA 제외(ex-IVA) 기준. 수금 ex-IVA 는 실입금액을 그 인보이스 IVA율로 나눈 환산액.']);
+    aoa.push(['※ 지연 = 완납일 − 만기일 (양수=지연, 음수=조기). 완납된 달 기준 · 건수 단순평균 · 미완납 건 제외.']);
+    if(dl.settled_count){
+      aoa.push([]);
+      aoa.push(['결제 지연 요약','완납 건',dl.settled_count,'평균(일)',dl.avg_delay,'중앙값(일)',dl.median_delay,
+        '정시 이상',dl.on_time_count,'정시율(%)',dl.on_time_pct]);
+      const b=dl.buckets||{};
+      aoa.push(['지연 분포(건)','조기·정시',b.early_ontime||0,'1~7일',b.d1_7||0,'8~30일',b.d8_30||0,'30일+',b.d30plus||0]);
+      if(dl.worst) aoa.push(['최장 지연',dl.worst.delay,dl.worst.sat_no||'','만기',dl.worst.due_date||'','완납',dl.worst.settled_date||'']);
+      aoa.push(['실제 결제일수 평균(일)',dl.avg_actual_days,'약정 외상일 평균(일)',dl.avg_credit_days]);
+      if(dl.open_overdue&&dl.open_overdue.count) aoa.push(['아직 안 낸 연체(건)',dl.open_overdue.count,'최장 경과(일)',dl.open_overdue.max_days,'금액',dl.open_overdue.amount]);
+    }
     const ws=XLSX.utils.aoa_to_sheet(aoa);
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,String(d.year));
     XLSX.writeFile(wb,'refatrix_'+(cCode||'cliente')+'_'+d.year+'_월별거래.xlsx');

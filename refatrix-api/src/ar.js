@@ -12,6 +12,23 @@ export const AR_PAID_EPS = 0.5;
 export function arIsPaid(outstanding) { return Number(outstanding || 0) < AR_PAID_EPS; }
 export function arIsOpen(outstanding) { return !arIsPaid(outstanding); }
 
+// ── 인보이스 「완납일」 조인 (2026-08-31 정의 · 2026-09-04 이 파일로 이동) ─────
+//   잔액이 0이 된 날 = 마지막 반제일 이므로 배분들의 MAX(반제일)을 쓴다.
+//   반제일: 현금 반제 → sales_payments.pay_date / NC(비현금) → notas_credito 적용·승인·작성일 순.
+//   has_nc: NC 반제가 섞였으면 true — 현금 100%가 아님을 화면에서 「NC」 칩으로 드러내기 위함.
+//   ※ 미수 인보이스에도 값이 들어온다(마지막 부분수금일). 완납 판정(AR_PAID_EPS)을 반드시 함께 볼 것.
+//   원래 financeRoutes.js 에 있던 상수. 수금/정산 화면과 고객 화면이 **같은 정의**를 쓰도록
+//   여기로 옮기고 양쪽에서 import 한다(정의가 갈라지면 두 화면 숫자가 어긋난다).
+export const AR_SETTLED_SQL = `LEFT JOIN (
+           SELECT al.invoice_id,
+                  MAX(COALESCE(p.pay_date, nc.applied_at::date, nc.approved_at::date, nc.created_at::date)) AS settled_dt,
+                  BOOL_OR(al.kind = 'nota_credito') AS has_nc
+             FROM sales_payment_allocations al
+             LEFT JOIN sales_payments p ON p.id = al.payment_id
+             LEFT JOIN notas_credito nc ON nc.id = al.nc_id
+            GROUP BY al.invoice_id
+         )`;
+
 function d10(v) { if (!v) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v).slice(0, 10); }
 
 // 한 인보이스의 미수/연체 상태.

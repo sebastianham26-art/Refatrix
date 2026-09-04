@@ -9,6 +9,8 @@
 //              실입금액을 **그 인보이스 IVA율**로 나눈 ex-IVA 환산액(8% 국경지대 포함)
 //     · 선수금(advance)은 수금 칸에 들어가지 않고 따로 나온다
 //     · 연도 목록 · 합계 · 전환율 · 미수/연체 · 팀 권한(403) · 잘못된 연도(400)
+//     · 결제 지연 = 완납일 − 만기일 · **완납된 달**의 행에 · 건수 단순평균 · 미완납 제외
+//       (평균·중앙값·정시율·최장·분포·실제 결제일수 vs 약정 외상일·아직 안 낸 연체)
 //
 //   실행: TEST_PG_URL=postgres://... node --test test/customer_monthly_summary.test.mjs
 // =====================================================================
@@ -129,6 +131,33 @@ async function boot() {
   const p4 = await mkPay('2026-08-05', 500);             // 비현금 반제 — 수금에서 빠져야 한다
   await alloc(p4, ID.inv1, 500, 'nota_credito');
 
+  // ── 결제 지연 전용 고객 C (기존 고객 A 의 기대값을 건드리지 않으려고 분리) ─────
+  ID.cust3 = Number((await query(
+    `INSERT INTO customers (name, code, credit_days, team_id, owner_id, created_by)
+     VALUES ($1,$2,30,$3,$4,$4) RETURNING id`,
+    [`${TAG}고객C`, `${TAG}-C`, ID.t1, ID.dir])).rows[0].id);
+  const mkInvC = async (sat, date, due, sub) => Number((await query(
+    `INSERT INTO sales_invoices (sat_no, customer_id, inv_date, credit_days, due_date, iva_rate,
+                                 subtotal_mxn, iva_mxn, total_mxn, status, owner_id, memo, created_by)
+     VALUES ($1,$2,$3,30,$4,16,$5,$6,$7,'posted',$8,$9,$8) RETURNING id`,
+    [sat, ID.cust3, date, due, sub, r2(sub * 0.16), r2(sub * 1.16), ID.dir, `${TAG} ${sat}`])).rows[0].id);
+  const payC = async (date, amount, invId) => {
+    const pid = Number((await query(
+      `INSERT INTO sales_payments (customer_id, pay_date, account_id, amount, advance_amount, memo, created_by)
+       VALUES ($1,$2,$3,$4,0,$5,$6) RETURNING id`,
+      [ID.cust3, date, ID.acc, amount, `${TAG} pago`, ID.dir])).rows[0].id);
+    await query(`INSERT INTO sales_payment_allocations (payment_id, invoice_id, amount, kind)
+                 VALUES ($1,$2,$3,'cash')`, [pid, invId, amount]);
+  };
+  //  지연 +20 (3월 완납) · 정시 0 (3월) · 조기 −12 (5월) · +76 (6월) · 조기 −12 (7월) · 미완납 연체 1건
+  ID.c1 = await mkInvC(`${TAG}-C1`, '2026-01-10', '2026-02-09', 1000); await payC('2026-03-01', 1160, ID.c1);
+  ID.c2 = await mkInvC(`${TAG}-C2`, '2026-02-01', '2026-03-03', 2000); await payC('2026-03-03', 2320, ID.c2);
+  ID.c3 = await mkInvC(`${TAG}-C3`, '2026-05-02', '2026-06-01', 1000); await payC('2026-05-20', 1160, ID.c3);
+  ID.c4 = await mkInvC(`${TAG}-C4`, '2026-03-01', '2026-03-31',  500); await payC('2026-06-15',  580, ID.c4);
+  ID.c5 = await mkInvC(`${TAG}-C5`, '2026-07-01', '2026-08-01', 1000); await payC('2026-07-20', 1160, ID.c5);
+  ID.c6 = await mkInvC(`${TAG}-C6`, '2026-04-01', '2026-05-01', 1000);   // 미완납 — 평균에서 빠져야 한다
+
+
   app = Fastify();
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'CHANGE_ME_dev_secret' });
   await app.register(customerRoutes);
@@ -233,7 +262,64 @@ test('⑨ 잘못된 입력 — 연도·아이디', { skip: SKIP }, async () => {
   assert.equal((await get('dir', `/api/customers/99999999/monthly-summary`)).statusCode, 404);
 });
 
-test('⑩ 회귀 — 기존 고객 상세(/api/customers/:id)가 그대로 동작', { skip: SKIP }, async () => {
+// ── 결제 지연 (2026-09-04 추가) ───────────────────────────────────────────
+test('⑩ 지연 — 완납된 달의 행에 붙고, 그 달 완납 건의 단순평균', { skip: SKIP }, async () => {
+  const d = (await get('dir', `/api/customers/${ID.cust3}/monthly-summary?year=2026`)).json();
+  assert.equal(M(d, 3).settled_count, 2, '3월에 두 건 완납(+20, 정시)');
+  assert.equal(M(d, 3).delay_avg, 10, '(20 + 0) / 2');
+  assert.equal(M(d, 5).settled_count, 1);
+  assert.equal(M(d, 5).delay_avg, -12, '만기 12일 전에 냄 = 조기(음수)');
+  assert.equal(M(d, 6).delay_avg, 76);
+  assert.equal(M(d, 7).delay_avg, -12);
+  assert.equal(M(d, 1).settled_count, 0, '1월은 발행만 있고 완납은 3월 — 발행월이 아니라 완납월에 붙는다');
+  assert.equal(M(d, 1).delay_avg, null);
+});
+
+test('⑪ 지연 요약 — 평균·중앙값·정시율·최장·분포', { skip: SKIP }, async () => {
+  const dl = (await get('dir', `/api/customers/${ID.cust3}/monthly-summary?year=2026`)).json().delay;
+  assert.equal(dl.settled_count, 5, '미완납 1건은 빠진다');
+  assert.equal(dl.avg_delay, 14.4, '(-12 -12 +0 +20 +76) / 5');
+  assert.equal(dl.median_delay, 0, '평균은 76 하나에 끌려가지만 중앙값은 정시');
+  assert.equal(dl.on_time_count, 3);
+  assert.equal(dl.on_time_pct, 60);
+  assert.equal(dl.worst.delay, 76);
+  assert.equal(dl.worst.sat_no, `${TAG}-C4`);
+  assert.equal(dl.worst.due_date, '2026-03-31');
+  assert.equal(dl.worst.settled_date, '2026-06-15');
+  assert.deepEqual(dl.buckets, { early_ontime: 3, d1_7: 0, d8_30: 1, d30plus: 1 });
+});
+
+test('⑫ 지연 — 실제 결제일수 평균과 약정 외상일', { skip: SKIP }, async () => {
+  const dl = (await get('dir', `/api/customers/${ID.cust3}/monthly-summary?year=2026`)).json().delay;
+  // 인보이스일 → 완납일: 50, 30, 18, 106, 19 일
+  assert.equal(dl.avg_actual_days, 44.6);
+  assert.equal(dl.avg_credit_days, 30, '약정 30일인데 실제로는 평균 44.6일 걸렸다는 뜻');
+});
+
+test('⑬ 지연 — 미완납은 평균에서 빠지고 「아직 안 낸 연체」로 따로 나온다', { skip: SKIP }, async () => {
+  const dl = (await get('dir', `/api/customers/${ID.cust3}/monthly-summary?year=2026`)).json().delay;
+  assert.equal(dl.open_overdue.count, 1, 'C6(만기 2026-05-01, 미완납)');
+  assert.ok(dl.open_overdue.max_days > 0, '오늘 기준 경과일');
+  assert.equal(dl.open_overdue.amount, 1160);
+
+  // 고객 A: 부분수금 + NC 로 남은 I1 이 연체로 잡히고, 완납된 두 건만 평균에 들어간다
+  const a = (await get('dir', `/api/customers/${ID.cust}/monthly-summary?year=2026`)).json().delay;
+  assert.equal(a.settled_count, 2, 'I2 · I3 만 완납');
+  assert.equal(a.avg_delay, -12);
+  assert.equal(a.open_overdue.count, 1);
+  assert.equal(a.open_overdue.amount, 1240);
+});
+
+test('⑭ 지연 — 거래가 없는 해는 빈 값(0으로 착각할 값이 안 나온다)', { skip: SKIP }, async () => {
+  const dl = (await get('dir', `/api/customers/${ID.cust3}/monthly-summary?year=2024`)).json().delay;
+  assert.equal(dl.settled_count, 0);
+  assert.equal(dl.avg_delay, null);
+  assert.equal(dl.median_delay, null);
+  assert.equal(dl.worst, null);
+  assert.equal(dl.on_time_pct, null);
+});
+
+test('⑮ 회귀 — 기존 고객 상세(/api/customers/:id)가 그대로 동작', { skip: SKIP }, async () => {
   const r = await get('dir', `/api/customers/${ID.cust}`);
   assert.equal(r.statusCode, 200, r.body);
   assert.ok(r.json().customer);

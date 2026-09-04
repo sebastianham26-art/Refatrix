@@ -18,27 +18,15 @@ export function splitEqual(total, n) {
   parts[n - 1] = Math.round((t - per * (n - 1)) * 100) / 100;
   return parts;
 }
-import { validateReceiptDataUrl, AR_PAID_EPS, arIsPaid, arIsOpen } from '../ar.js';
+import { validateReceiptDataUrl, AR_PAID_EPS, arIsPaid, arIsOpen, AR_SETTLED_SQL } from '../ar.js';
 import { expandRule, expandBetween, occurrenceExists, occurrenceDuplicated, sigKey } from '../recurring.js';
 import { aggregateCashflow, planVsActual, planVsActualByCategory, computeOverdue, latePaymentHistory, monthBreakdown, calendarArApByDay, bucketKey, planNetBefore, monthForecastByCategory, accountFundingPlan } from '../cashflow.js';
 
 const RECUR_HORIZON_MONTHS = 12;     // 최초 생성 기본 개월수
 const RECUR_MAX_MONTHS = 24;         // 오늘 기준 생성 가능한 최대 미래(상한)
 
-// 인보이스 「완납일」(= 실제 수금이 100% 채워진 날) 계산용 조인.
-//   잔액이 0이 된 날 = 마지막 반제일 이므로 배분들의 MAX(반제일)을 쓴다.
-//   반제일: 현금 반제 → sales_payments.pay_date / NC(비현금) 반제 → notas_credito 적용·승인·작성일 순.
-//   has_nc: NC 반제가 섞여 있으면 true — 화면에서 「NC」 칩으로 드러내 현금 100%와 구분한다.
-//   ※ 미수 인보이스에도 값이 들어오지만(마지막 부분수금일) 화면은 완납 건에만 표시한다.
-const AR_SETTLED_SQL = `LEFT JOIN (
-           SELECT al.invoice_id,
-                  MAX(COALESCE(p.pay_date, nc.applied_at::date, nc.approved_at::date, nc.created_at::date)) AS settled_dt,
-                  BOOL_OR(al.kind = 'nota_credito') AS has_nc
-             FROM sales_payment_allocations al
-             LEFT JOIN sales_payments p ON p.id = al.payment_id
-             LEFT JOIN notas_credito nc ON nc.id = al.nc_id
-            GROUP BY al.invoice_id
-         )`;
+// 인보이스 「완납일」 조인(AR_SETTLED_SQL)은 2026-09-04 부터 src/ar.js 로 옮겨 공용한다.
+//   고객 화면의 월별 거래 요약도 같은 정의를 쓰기 위함 — 정의는 ar.js 주석 참조.
 
 // 미배분 입금(통지) 잔여 허용치 — 이 금액 미만이 남으면 "잔여 없음"으로 보고 통지를 닫는다.
 // 화면 금액이 정수 페소로 반올림 표시되므로 0.5 미만(=화면상 0)은 잔여로 남기지 않는다.

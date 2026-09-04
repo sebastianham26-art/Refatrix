@@ -9,6 +9,7 @@ import { authGuard, requirePage, requirePageEdit, requireDirector } from '../mid
 import { logEvent } from '../audit.js';
 import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
+import { AR_PAID_EPS, AR_SETTLED_SQL } from '../ar.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
@@ -868,6 +869,90 @@ export default async function customerRoutes(app) {
           GROUP BY 1`, [id, ys])).rows;
     } catch (_) { advRows = []; }
 
+    // ── 결제 지연 (2026-09-04) ────────────────────────────────────────────
+    //   완납일·지연 정의는 수금/정산 화면과 **같은 것**(ar.js AR_SETTLED_SQL + AR_PAID_EPS).
+    //     지연 = 완납일 − 만기일   (양수 지연 · 0 정시 · 음수 조기)
+    //     실제 결제일수 = 완납일 − 인보이스일 (약정 외상일 credit_days 와 비교용)
+    //   디렉터 확정 2026-09-04: **수금월(완납된 달) 기준**으로 그 달 행에 붙이고,
+    //     평균은 **건수 단순평균**, **미완납 건은 평균에서 제외**하고 따로 경고로 보여준다.
+    const invRows = (await query(
+      `SELECT i.id, i.sat_no, i.credit_days,
+              to_char(i.inv_date,'YYYY-MM-DD') AS inv_date,
+              to_char(i.due_date,'YYYY-MM-DD') AS due_date,
+              i.total_mxn, i.subtotal_mxn,
+              COALESCE(pa.paid,0) AS paid,
+              to_char(sd.settled_dt,'YYYY-MM-DD') AS settled_date,
+              (sd.settled_dt - i.due_date) AS delay_days,
+              (sd.settled_dt - i.inv_date) AS actual_days,
+              COALESCE(sd.has_nc,false) AS has_nc
+         FROM sales_invoices i
+         LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid
+                      FROM sales_payment_allocations GROUP BY invoice_id) pa ON pa.invoice_id=i.id
+         ${AR_SETTLED_SQL} sd ON sd.invoice_id=i.id
+        WHERE i.customer_id=$1 AND i.status='posted'`, [id])).rows;
+
+    const today = mxTodayStr(new Date());
+    const dayDiff = (a, b) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000);
+    const settled = [], openInv = [];
+    for (const r of invRows) {
+      const outstanding = r2(Number(r.total_mxn) - Number(r.paid));
+      const paidFull = outstanding < AR_PAID_EPS;
+      if (paidFull && r.settled_date && r.due_date) {
+        settled.push({
+          sat_no: r.sat_no, inv_date: r.inv_date, due_date: r.due_date, settled_date: r.settled_date,
+          amount: r2(r.total_mxn), credit_days: r.credit_days == null ? null : Number(r.credit_days),
+          delay: Number(r.delay_days), actual_days: r.actual_days == null ? null : Number(r.actual_days),
+          has_nc: r.has_nc === true,
+          ym: String(r.settled_date).slice(0, 7),
+        });
+      } else if (!paidFull) {
+        const od = r.due_date ? dayDiff(today, r.due_date) : null;
+        openInv.push({ sat_no: r.sat_no, due_date: r.due_date, outstanding, overdue_days: od != null && od > 0 ? od : 0 });
+      }
+    }
+    const avg = (arr) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 : null);
+    const median = (arr) => {
+      if (!arr.length) return null;
+      const s = [...arr].sort((a, b) => a - b); const h = Math.floor(s.length / 2);
+      return s.length % 2 ? s[h] : Math.round((s[h - 1] + s[h]) / 2 * 10) / 10;
+    };
+    const yearSettled = settled.filter((s) => s.ym.startsWith(ys));
+    const dly = yearSettled.map((s) => s.delay);
+    const onTime = yearSettled.filter((s) => s.delay <= 0).length;
+    const worst = yearSettled.reduce((w, s) => (w == null || s.delay > w.delay ? s : w), null);
+    const actualDays = yearSettled.filter((s) => s.actual_days != null).map((s) => s.actual_days);
+    const creditDays = yearSettled.filter((s) => s.credit_days != null).map((s) => s.credit_days);
+    const overdueOpen = openInv.filter((o) => o.overdue_days > 0);
+    const delay = {
+      settled_count: yearSettled.length,
+      avg_delay: avg(dly),
+      median_delay: median(dly),
+      on_time_count: onTime,
+      on_time_pct: yearSettled.length ? Math.round(onTime / yearSettled.length * 1000) / 10 : null,
+      worst: worst ? { delay: worst.delay, sat_no: worst.sat_no, due_date: worst.due_date,
+        settled_date: worst.settled_date, amount: worst.amount } : null,
+      buckets: {
+        early_ontime: yearSettled.filter((s) => s.delay <= 0).length,
+        d1_7: yearSettled.filter((s) => s.delay >= 1 && s.delay <= 7).length,
+        d8_30: yearSettled.filter((s) => s.delay >= 8 && s.delay <= 30).length,
+        d30plus: yearSettled.filter((s) => s.delay > 30).length,
+      },
+      avg_actual_days: avg(actualDays),        // 인보이스일 → 완납일 실제 소요
+      avg_credit_days: avg(creditDays),        // 그 건들의 약정 외상일 평균
+      open_overdue: {                          // 아직 안 낸 연체 건(평균에서 제외 · 연도 무관)
+        count: overdueOpen.length,
+        amount: r2(overdueOpen.reduce((a, o) => a + o.outstanding, 0)),
+        max_days: overdueOpen.reduce((m, o) => Math.max(m, o.overdue_days), 0) || null,
+      },
+      open_not_due: openInv.length - overdueOpen.length,   // 만기 전 미수 건
+    };
+    // 월(완납월)별 지연 — 단순평균
+    const delayByMonth = {};
+    for (const s of yearSettled) {
+      const m = s.ym.slice(5, 7);
+      (delayByMonth[m] = delayByMonth[m] || []).push(s.delay);
+    }
+
     const pick = (rows, m) => rows.find((r) => r.m === m) || {};
     const months = [];
     for (let i = 1; i <= 12; i++) {
@@ -890,6 +975,8 @@ export default async function customerRoutes(app) {
         nc_amount: r2(nc.amt_ex || 0),                // 비현금 반제 ex-IVA
         nc_amount_incl: r2(nc.amt_incl || 0),
         advance_amount_incl: r2(ad.amt_incl || 0),    // 선수금(미배분)
+        settled_count: (delayByMonth[m] || []).length,          // 그 달에 완납된 인보이스 건수
+        delay_avg: avg(delayByMonth[m] || []),                  // 그 건들의 지연 단순평균(일)
       });
     }
     const sum = (k) => r2(months.reduce((a, x) => a + Number(x[k] || 0), 0));
@@ -922,9 +1009,10 @@ export default async function customerRoutes(app) {
         WHERE i.customer_id=$1 AND i.status='posted'`, [id])).rows[0];
 
     return {
-      customer, year, years, locked: false, months, totals,
+      customer, year, years, locked: false, months, totals, delay,
       ar: { outstanding: r2(ar.outstanding), overdue: r2(ar.overdue) },
-      note: '금액은 IVA 제외(ex-IVA) 기준 · 수금은 실입금액을 그 인보이스 IVA율로 환산',
+      note: '금액은 IVA 제외(ex-IVA) 기준 · 수금은 실입금액을 그 인보이스 IVA율로 환산 · '
+          + '지연 = 완납일 − 만기일(완납 건만, 건수 단순평균)',
     };
   });
 
