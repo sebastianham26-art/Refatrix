@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260904creg loaded (고객 등록 승인 메뉴 복구 + 전역 승인 팝업)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260904intg loaded (고객 등록 승인 메뉴 + 전역 승인 팝업 + 연동 관리)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -140,6 +140,7 @@
     coverage:{file:'mx_parts_coverage_dashboard.html',name:'Coverage',desc:'부품 커버리지 대시보드'},
     devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
+    integrations:{file:'refatrix-integrations.html',name:'연동 관리',desc:'CRM 전송 주소·계약서·전송이력'},
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
@@ -163,7 +164,7 @@
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', marketing:'marketing', mktspend:'marketing',
-    users:'__director__', company:'__director__', processKpi:'__director__',
+    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
@@ -176,7 +177,7 @@
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','prodFind','prodUpload','prodHistory']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','processKpi']}
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','integrations','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.

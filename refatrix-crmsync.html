@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · CRM 전송현황</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
+    --warn:#8A5A00;--warn-bg:#F6EEDD;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+  input,select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .banner{border-radius:var(--radius);padding:12px 15px;font-size:13px;margin-top:16px;line-height:1.6}
+  .banner.off{background:var(--warn-bg);color:var(--warn);border:1px solid #e6d5ae}
+  .banner.on{background:var(--income-bg);color:var(--income);border:1px solid #bcd9cf}
+  .banner b{font-weight:800}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .kpi .n{font-size:26px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .kpi.pending .n{color:var(--warn)}.kpi.failed .n{color:var(--expense)}.kpi.sent .n{color:var(--income)}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .tblwrap{overflow-x:auto;margin-top:10px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:960px}
+  th{text-align:left;font-size:11px;color:var(--muted);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:#faf8f3}
+  td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr:hover td{background:#faf8f3}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap}
+  .p-pending{background:var(--warn-bg);color:var(--warn)}
+  .p-sent{background:var(--income-bg);color:var(--income)}
+  .p-failed{background:var(--expense-bg);color:var(--expense)}
+  .p-skipped{background:#EFEDE7;color:var(--muted)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+  .err-cell{max-width:280px;color:var(--expense);word-break:break-word}
+  .empty{padding:28px 10px;text-align:center;color:var(--muted);font-size:13px}
+  @media(max-width:720px){ .kpis{grid-template-columns:repeat(2,1fr)} body{padding:14px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <h1>CRM 전송현황</h1>
+      <div class="sub">ERP 승인 → 웹 카달록(CRM) 고객 상거래정보 동기화</div>
+    </div>
+    <a class="portalBtn" href="refatrix-portal.html">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <!-- 로그인(포털에서 넘어오면 자동) -->
+  <div class="card hidden" id="loginCard">
+    <div class="card-h">로그인</div>
+    <label>API 주소</label>
+    <input id="api" value="https://refatrix-production.up.railway.app" style="width:100%">
+    <label>아이디</label><input id="lid" style="width:100%">
+    <label>PIN</label><input id="pin" type="password" style="width:100%">
+    <div style="margin-top:12px"><button class="btn" id="go">로그인</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <div id="app" class="hidden">
+
+    <div class="banner off" id="cfgBanner">설정 확인 중…</div>
+
+    <div class="kpis">
+      <div class="kpi pending"><div class="n" id="kPending">–</div><div class="l">전송 대기</div></div>
+      <div class="kpi failed"><div class="n" id="kFailed">–</div><div class="l">전송 실패 (재전송 필요)</div></div>
+      <div class="kpi sent"><div class="n" id="kSent">–</div><div class="l">전송 완료</div></div>
+      <div class="kpi"><div class="n" id="kSkipped">–</div><div class="l">건너뜀 (RFC 없음 등)</div></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <select id="fStatus">
+          <option value="open">대기 + 실패</option>
+          <option value="pending">대기</option>
+          <option value="failed">실패</option>
+          <option value="sent">전송 완료</option>
+          <option value="skipped">건너뜀</option>
+          <option value="all">전체</option>
+        </select>
+        <input id="fQ" placeholder="고객코드 · 상호 · RFC 검색" style="min-width:220px">
+        <button class="btn ghost sm" id="btnReload">새로고침</button>
+        <button class="btn sm" id="btnDrain">대기분 지금 전송</button>
+        <span class="hint" id="lastLoad" style="margin-left:auto"></span>
+      </div>
+      <div class="msg" id="actMsg"></div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:132px">시각</th>
+            <th style="width:190px">고객</th>
+            <th style="width:110px">작업</th>
+            <th style="width:130px">RFC</th>
+            <th style="width:120px">보낸 값</th>
+            <th style="width:92px">상태</th>
+            <th style="width:60px">시도</th>
+            <th style="width:110px">응답</th>
+            <th>오류 / 메시지</th>
+            <th style="width:80px"></th>
+          </tr></thead>
+          <tbody id="rows"><tr><td colspan="10" class="empty">불러오는 중…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="hint" style="margin-top:10px">
+        전송은 승인 즉시 1회 시도하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 다시 시도합니다.
+        6회까지 실패하면 <b>실패</b>로 남고 자동 재시도를 멈춥니다 — 이 화면에서 원인을 고친 뒤 <b>재전송</b>을 누르세요.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let timer=null;
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
+    customer_delete:'고객 삭제',manual_resend:'수동 재전송',manual:'수동'};
+  const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
+  const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''),login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    const m=$('loginMsg');m.className='msg';
+    $('go').disabled=true;$('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true};const ps=portalSession();
+      if(ps&&ps.token){d={token:ps.token,user:ps.user};}
+      else{
+        if(!login_id||!pin){m.className='msg err';m.textContent='아이디와 PIN을 입력하세요.';return;}
+        res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});d=await res.json();
+      }
+      if(!res.ok||d.error){m.className='msg err';m.textContent='로그인 실패: '+(d.error||res.status);return;}
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');
+      await refresh();
+      if(timer) clearInterval(timer);
+      timer=setInterval(()=>{ if(!document.hidden) refresh(); },30000);
+    }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
+    finally{$('go').disabled=false;$('go').textContent='로그인';}
+  }
+
+  function renderConfig(s){
+    const c=(s&&s.config)||{}, b=$('cfgBanner');
+    if(!s || s.migrated===false){
+      b.className='banner off';
+      b.innerHTML='<b>마이그레이션 대기</b> — Railway 콘솔에서 <span class="mono">npm run migrate</span> 를 실행해 0200 을 적용해야 전송이 시작됩니다.';
+      return;
+    }
+    const bits=[];
+    bits.push('전송 주소 <span class="mono">'+esc(c.host||'(미설정)')+'</span>');
+    bits.push(c.secure?'HTTPS':'<b>HTTP (평문)</b>');
+    bits.push(c.auth?'인증 헤더 있음':'<b>인증 없음</b>');
+    bits.push('<span class="mono">'+esc(c.method_upsert||'')+'</span> / <span class="mono">'+esc(c.method_delete||'')+'</span>');
+    if(c.enabled){
+      b.className='banner on';
+      b.innerHTML='<b>전송 켜짐</b> · '+bits.join(' · ')+' · 워커 '+esc(c.worker_sec)+'초 주기';
+    }else{
+      b.className='banner off';
+      b.innerHTML='<b>전송 꺼짐</b> (CRM_SYNC_ENABLED=0) — 승인 건은 대기함에 쌓이고 있으며, 계약·인증이 확정돼 변수를 켜면 밀린 건이 순서대로 나갑니다.<br>'+bits.join(' · ');
+    }
+  }
+
+  async function refresh(){
+    try{
+      const s=await fetch(session.api+'/api/crm-sync/summary',{headers:auth()}).then(r=>r.json());
+      renderConfig(s);
+      const c=s.counts||{};
+      $('kPending').textContent=c.pending??0; $('kFailed').textContent=c.failed??0;
+      $('kSent').textContent=c.sent??0; $('kSkipped').textContent=c.skipped??0;
+    }catch(e){}
+    await loadList();
+    $('lastLoad').textContent='마지막 조회 '+new Date().toLocaleTimeString('ko-KR');
+  }
+
+  async function loadList(){
+    const st=$('fStatus').value, q=$('fQ').value.trim();
+    const url=session.api+'/api/crm-sync?status='+encodeURIComponent(st)+(q?'&q='+encodeURIComponent(q):'');
+    try{
+      const res=await fetch(url,{headers:auth()});
+      const d=await res.json();
+      if(!res.ok||d.error){ $('rows').innerHTML='<tr><td colspan="10" class="empty">'+esc(d.note||d.error||res.status)+'</td></tr>'; return; }
+      const items=d.items||[];
+      if(!items.length){ $('rows').innerHTML='<tr><td colspan="10" class="empty">해당 조건의 전송 건이 없습니다.</td></tr>'; return; }
+      $('rows').innerHTML=items.map(rowHtml).join('');
+    }catch(e){ $('rows').innerHTML='<tr><td colspan="10" class="empty">서버 연결 실패</td></tr>'; }
+  }
+
+  function rowHtml(r){
+    const p=r.payload||{};
+    const when=new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const vals=r.op==='delete' ? '<span class="hint">삭제(baja)</span>'
+      : '할인 '+(p.discountPercent??'–')+'%<br>외상 '+(p.paymentDays??'–')+'일';
+    const resp=[r.http_status?('HTTP '+r.http_status):'', r.codigo_error!=null?('codigoError '+esc(r.codigo_error)):'']
+      .filter(Boolean).join('<br>') || '<span class="hint">–</span>';
+    let note=r.last_error||'';
+    if(NOTE_LABEL[note]) note=NOTE_LABEL[note];
+    const nextTry=(r.status==='pending'&&r.attempts>0&&r.next_attempt_at)
+      ? '<div class="hint">다음 시도 '+new Date(r.next_attempt_at).toLocaleTimeString('ko-KR')+'</div>' : '';
+    const canRetry=r.status==='failed'||r.status==='skipped'||r.status==='pending';
+    return '<tr>'
+      +'<td class="num">'+esc(when)+'</td>'
+      +'<td><b>'+esc(r.customer_name||'–')+'</b><div class="hint mono">'+esc(r.customer_code||'')+'</div></td>'
+      +'<td>'+esc(ORIGIN_LABEL[r.origin]||r.origin)+'<div class="hint">'+(r.op==='delete'?'삭제':'등록/수정')+'</div></td>'
+      +'<td class="mono">'+esc(r.rfc||'–')+'</td>'
+      +'<td class="num">'+vals+'</td>'
+      +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span>'+nextTry+'</td>'
+      +'<td class="num">'+esc(r.attempts)+'</td>'
+      +'<td class="num mono">'+resp+'</td>'
+      +'<td class="err-cell">'+esc(note)+'</td>'
+      +'<td>'+(canRetry?'<button class="btn ghost sm" onclick="retry('+r.id+')">재전송</button>':'')+'</td>'
+      +'</tr>';
+  }
+
+  async function retry(id){
+    const m=$('actMsg'); m.className='msg';
+    try{
+      const res=await fetch(session.api+'/api/crm-sync/'+id+'/retry',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='재전송 실패: '+(d.note||d.error||res.status); return; }
+      const st=d.result&&d.result.status;
+      if(st==='sent'){ m.className='msg ok'; m.textContent='전송되었습니다.'; }
+      else{ m.className='msg err'; m.textContent='아직 전송되지 않았습니다: '+esc((d.result&&d.result.last_error)||st||''); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    refresh();
+  }
+
+  async function drain(){
+    const m=$('actMsg'); m.className='msg'; $('btnDrain').disabled=true;
+    try{
+      const res=await fetch(session.api+'/api/crm-sync/drain',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:'{}'});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='실행 실패: '+(d.note||d.error||res.status); }
+      else if(d.disabled){ m.className='msg err'; m.textContent='전송이 꺼져 있습니다 (CRM_SYNC_ENABLED=0).'; }
+      else{ m.className='msg ok'; m.textContent='처리 '+(d.drained||0)+'건 · 성공 '+(d.sent||0)+' · 실패 '+(d.failed||0); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnDrain').disabled=false; refresh(); }
+  }
+
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+  $('btnReload').addEventListener('click',refresh);
+  $('btnDrain').addEventListener('click',drain);
+  $('fStatus').addEventListener('change',loadList);
+  $('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')loadList();});
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&session.token) refresh(); });
+
+  (function(){
+    const ps=portalSession();
+    if(ps&&ps.token){ $('api').value=ps.api||$('api').value; setTimeout(()=>login(),30); }
+    else{ $('loginCard').classList.remove('hidden'); }
+  })();
+</script>
+<script src="refatrix-nav.js?v=20260904intg"></script>
+</body>
+</html>
