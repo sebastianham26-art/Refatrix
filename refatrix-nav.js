@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260903m loaded (모바일 셸 1단계)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260904creg loaded (고객 등록 승인 메뉴 복구 + 전역 승인 팝업)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -108,6 +108,8 @@
     customers:{file:'refatrix-customers.html',name:'고객 등록 및 목록',desc:'고객·외상·서류',tab:'list'},
     custTeam:{file:'refatrix-customers.html',name:'고객 팀권한',desc:'팀 가시성',tab:'team'},
     custApprove:{file:'refatrix-customers.html',name:'고객 수정 승인',desc:'수정 승인',tab:'approve'},
+    custReg:{file:'refatrix-customers.html',name:'고객 등록 승인',desc:'신규 등록 승인·반려',tab:'reg'},
+    custClaim:{file:'refatrix-customers.html',name:'RFC 선점 이관',desc:'선점 요청 승인·반려',tab:'claim'},
     targets:{file:'refatrix-targets.html',name:'매출목표',desc:'목표·달성'},
     finance:{file:'refatrix-finance.html',name:'재무 · 계좌',desc:'계좌·잔액',tab:'acc'},
     finNew:{file:'refatrix-finance.html',name:'거래 등록',desc:'수입·지출',tab:'new'},
@@ -154,7 +156,7 @@
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
-    pipeline:'pipeline', consult:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', targets:'targets',
+    pipeline:'pipeline', consult:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
     boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
@@ -174,7 +176,7 @@
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','prodFind','prodUpload','prodHistory']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','processKpi']}
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
@@ -213,38 +215,6 @@
     grab();                              // 로그인 직후 1회(동의 팝업 트리거)
     setInterval(grab, 300000);           // 5분마다 갱신(허용된 경우 조용히)
   }
-  // ── 토큰 슬라이딩 갱신 (2026-09-04) ────────────────────────────────
-  //   화면을 열어 두고 쓰는 동안 토큰(6h)이 만료돼 하던 작업이 401 로 끊기는 일을 막는다.
-  //   · 25분마다 아직 살아 있는 토큰으로 새 토큰을 받아 저장소를 갱신한다(만료 뒤에는 못 받는다 = 재로그인).
-  //   · 각 화면은 자기 메모리에 토큰 사본을 들고 있으므로 'refatrix-token' 이벤트로 알려준다.
-  //   · 탭이 숨겨져 있으면 갱신하지 않는다 — 안 쓰는 세션까지 무한정 살려두지 않기 위해서다.
-  function startTokenRenew(api){
-    if(window.__rnavTokenIv) return;
-    function renew(){
-      try{
-        if(document.visibilityState==='hidden') return;
-        var s=getSession(); if(!s||!s.token) return;
-        var a=(s.api||api||'').replace(/\/+$/,'');
-        fetch(a+'/api/auth/refresh',{method:'POST',headers:{'Authorization':'Bearer '+s.token}})
-          .then(function(r){ return r.ok?r.json():null; })
-          .then(function(d){
-            if(!d||!d.token) return;
-            var ns={token:d.token,user:d.user||s.user,api:s.api};
-            try{ var v=JSON.stringify(ns);
-              sessionStorage.setItem('refatrix_session',v); localStorage.setItem('refatrix_session',v); }catch(e){}
-            try{ window.dispatchEvent(new CustomEvent('refatrix-token',{detail:{token:d.token}})); }catch(e){}
-          }).catch(function(){});
-      }catch(e){}
-    }
-    window.__rnavTokenIv=setInterval(renew, 25*60*1000);
-    document.addEventListener('visibilitychange',function(){
-      if(document.visibilityState==='visible'){
-        var last=window.__rnavTokenAt||0;
-        if(Date.now()-last>25*60*1000){ window.__rnavTokenAt=Date.now(); renew(); }
-      }
-    });
-  }
-
   function startHeartbeat(api){
     if(window.__rnavHeartbeat) return;                 // 중복 가동 방지
     function ping(){
@@ -263,7 +233,6 @@
     }
     startGeo();                                        // GPS 동의/수집 시작
     ping();                                            // 진입 즉시 1회
-    startTokenRenew(api);                              // 쓰고 있는 동안 세션 만료 방지
     window.__rnavHeartbeat=setInterval(ping, 45000);   // 45초마다(탭이 열려있는 동안 = 접속 중)
     document.addEventListener('visibilitychange',function(){
       if(document.visibilityState==='visible') ping(); // 다시 보일 때 즉시 갱신
@@ -618,6 +587,139 @@
   }
   window.__rnavPresence=function(){ try{ location.href='refatrix-users.html'; }catch(e){} };
 
+  // =====================================================================
+  // 🔒 신규 고객 등록 승인 대기 — 전역 팝업 알림 (디렉터 전용 · 모든 화면 · 60초)
+  //
+  //   왜 nav.js 인가: 09-03 모바일 셸에서 고객화면의 탭바가 숨겨지면서
+  //   「등록 승인 대기」가 눈에 띄지 않게 됐다. 포털에만 팝업을 두면 다른 화면에서
+  //   작업 중인 디렉터는 승인 요청을 못 본다. nav.js 는 모든 화면에 주입되므로
+  //   여기 한 곳에 두면 화면과 무관하게 알림이 뜬다(팝업 소유자는 여기 하나뿐 —
+  //   포털 통합 폴러에는 일부러 넣지 않았다. 넣으면 포털에서 두 번 뜬다).
+  //
+  //   동작 규칙
+  //     · 새 건(처음 보는 customer id)이 생기면 → 강제 팝업 + 알림음 (임시닫기 무시)
+  //     · 이미 본 건만 남아 있으면 → 임시닫기 상태를 존중(다시 안 띄움)
+  //     · 대기 0건이 되면 → 팝업 닫고 임시닫기·본 목록 초기화(다음 건에 다시 울림)
+  //     · 탭이 백그라운드면 요청 자체를 건너뜀 / 승인 화면(custReg)에 있는 동안은 안 띄움
+  // =====================================================================
+  var CREG_SEEN_KEY='refatrix_custreg_seen', CREG_DIS_KEY='refatrix_custreg_dismissed';
+  var __cregTimer=null, __cregAudioCtx=null, __cregItems=[];
+  function cregEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function cregSeen(){ try{ return JSON.parse(sessionStorage.getItem(CREG_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
+  function cregSaveSeen(a){ try{ sessionStorage.setItem(CREG_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
+  function cregDismissed(){ try{ return sessionStorage.getItem(CREG_DIS_KEY)==='1'; }catch(e){ return false; } }
+  function cregChime(){
+    try{
+      if(!__cregAudioCtx){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; __cregAudioCtx=new AC(); }
+      if(__cregAudioCtx.state==='suspended') __cregAudioCtx.resume();
+      var ctx=__cregAudioCtx, t0=ctx.currentTime;
+      [[880,0],[1175,0.18]].forEach(function(p){
+        var o=ctx.createOscillator(), g=ctx.createGain();
+        o.type='sine'; o.frequency.value=p[0];
+        g.gain.setValueAtTime(0.0001,t0+p[1]);
+        g.gain.exponentialRampToValueAtTime(0.18,t0+p[1]+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t0+p[1]+0.17);
+        o.connect(g); g.connect(ctx.destination); o.start(t0+p[1]); o.stop(t0+p[1]+0.2);
+      });
+    }catch(e){}
+  }
+  function cregEnsureModal(){
+    var m=document.getElementById('rnavCregModal');
+    if(m) return m;
+    m=document.createElement('div');
+    m.id='rnavCregModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:64px 16px;overflow:auto';
+    m.innerHTML=''
+      +'<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#B23A2E">🔒 신규 고객 등록 — 승인 요청</div></div>'
+      +'<div style="padding:14px 20px">'
+      +'<div id="rnavCregMsg" style="font-size:13.5px;color:#20302a;line-height:1.6;margin-bottom:10px"></div>'
+      +'<div id="rnavCregList" style="max-height:46vh;overflow:auto;border:1px solid #e6e1d6;border-radius:10px"></div></div>'
+      +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end">'
+      +'<button type="button" onclick="__rnavCregDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
+      +'<button type="button" onclick="__rnavCregGo()" style="border:none;background:#B23A2E;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">등록 승인 화면으로 →</button>'
+      +'</div></div>';
+    (document.body||document.documentElement).appendChild(m);
+    return m;
+  }
+  window.__rnavCregDismiss=function(){
+    try{ sessionStorage.setItem(CREG_DIS_KEY,'1'); }catch(e){}
+    var m=document.getElementById('rnavCregModal'); if(m) m.style.display='none';
+  };
+  window.__rnavCregGo=function(){
+    var m=document.getElementById('rnavCregModal'); if(m) m.style.display='none';
+    try{ nav('custReg'); }catch(e){}
+  };
+  function cregRender(items){
+    var msg=document.getElementById('rnavCregMsg'), list=document.getElementById('rnavCregList');
+    if(!msg||!list) return;
+    msg.innerHTML='승인 대기 중인 <b>신규 고객 등록</b>이 <b>'+items.length+'건</b> 있습니다. 승인 전에는 견적·매출에 쓸 수 없습니다.';
+    list.innerHTML=items.map(function(r){
+      var who=[r.owner_name,r.team_name].filter(Boolean).join(' · ');
+      return '<div style="padding:11px 13px;border-bottom:1px solid #f0ece2;font-size:13px">'
+        +'<div><b>'+cregEsc(r.name)+'</b> <span style="color:#8a8577;font-size:11.5px">'+cregEsc(r.code||'')+'</span></div>'
+        +'<div style="color:#8a8577;font-size:11.5px;margin-top:2px">'
+        +(r.rfc?('RFC '+cregEsc(r.rfc)):'<span style="color:#B23A2E">RFC 없음 — 선점 안 됨</span>')
+        +(r.discount==null?'':' · 신청 할인율 '+cregEsc(r.discount)+'%')
+        +'</div>'
+        +(who||r.registered_at
+          ? '<div style="color:#8a8577;font-size:11.5px;margin-top:1px">'+cregEsc(who)+(r.registered_at?(who?' · ':'')+cregEsc(r.registered_at):'')+'</div>'
+          : '')
+        +'</div>';
+    }).join('');
+  }
+  function checkCustReg(opts){
+    var silent=!!(opts&&opts.silent);
+    if(!(sum&&sum.isDirector)) return;
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/portal/customer-reg-alert',{headers:{'Authorization':'Bearer '+s.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[]; __cregItems=items;
+        var m=cregEnsureModal();
+        if(!items.length){
+          m.style.display='none';
+          try{ sessionStorage.removeItem(CREG_DIS_KEY); }catch(e){}
+          cregSaveSeen([]);
+          return;
+        }
+        cregRender(items);
+        var seen=cregSeen();
+        var fresh=items.filter(function(x){ return seen.indexOf(Number(x.id))<0; });
+        // 승인 화면을 보고 있는 동안은 방해하지 않는다(목록은 그 화면에 이미 떠 있다).
+        if(curScreen()==='custReg'){
+          cregSaveSeen(items.map(function(x){ return Number(x.id); }));
+          m.style.display='none';
+          return;
+        }
+        if(fresh.length){
+          cregSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
+          try{ sessionStorage.removeItem(CREG_DIS_KEY); }catch(e){}
+          m.style.display='flex';
+          if(!silent) cregChime();
+        }else{
+          m.style.display = cregDismissed() ? 'none' : 'flex';
+        }
+      }).catch(function(){});
+  }
+  function startCustRegAlert(){
+    if(!(sum&&sum.isDirector)) return;
+    if(__cregTimer) return;
+    checkCustReg({silent:true});                 // 첫 진입은 조용히(화면 진입 때마다 소리나면 피로)
+    __cregTimer=setInterval(function(){
+      if(document.hidden) return;                // 백그라운드 탭은 건너뜀
+      checkCustReg({silent:false});
+    }, 60000);                                   // 60초
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible') checkCustReg({silent:false});
+      });
+    }catch(e){}
+  }
+  window.__rnavCregCheck=function(){ checkCustReg({silent:true}); };
+
   function boot(){
     var nv=document.getElementById('rnav'); if(!nv) return;
     applyEnvFlag();
@@ -640,12 +742,7 @@
     fetch(api+'/api/portal/summary',{headers:{'Authorization':'Bearer '+sess.token}}).then(function(r){
       if(r.status===401||r.status===403){
         authFailed=true;
-        // 녹음·업로드처럼 "지금 날리면 안 되는 작업"이 걸려 있으면 세션 저장소를 지우지 않는다.
-        //   지우면 다음 새로고침에 로그인 화면으로 떨어지고, 메모리에 있던 녹음이 사라진다
-        //   (2026-09-04 dante 미팅 녹음 사고). 화면이 자체적으로 재로그인을 안내한다.
-        if(!window.__refatrixKeepSession){
-          try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
-        }
+        try{ sessionStorage.removeItem('refatrix_session'); localStorage.removeItem('refatrix_session'); }catch(e){}
         var nv2=document.getElementById('rnav');
         if(nv2) nv2.innerHTML='<div class="rbar"><button type="button" class="rhome" title="포털 홈" onclick="__rnav(\'portal\')">⌂</button><span class="rlogo"><span class="dot"></span>Refatrix</span>'+QA_BADGE+'<span class="rwho">세션 만료 — 새로고침 후 다시 로그인하세요</span></div>';
         syncOffset();
@@ -658,6 +755,7 @@
       render();
       updatePresenceBadge();
       if(!window.__rnavPresTimer) window.__rnavPresTimer=setInterval(updatePresenceBadge, 30000);
+      startCustRegAlert();   // 🔒 신규 고객 등록 승인 대기 전역 팝업(디렉터·60초)
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   window.__rnavReload=boot;

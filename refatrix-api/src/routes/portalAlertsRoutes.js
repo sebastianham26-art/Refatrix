@@ -139,6 +139,33 @@ async function mktRevisionItems() {
   } catch (_) { return []; } // 0124 미적용 또는 테이블 미생성
 }
 
+// ── 신규 고객 등록 승인 대기 (원본: customerRoutes.js /api/customer-registrations?status=pending) ──
+//    전역 팝업(nav.js)이 60초마다 조회하므로, 무거운 서브쿼리(등록이력 스냅샷·증빙 개수)는 빼고
+//    "누가·언제·무엇을 올렸나"만 뽑는 경량 미러로 둔다. 상세·승인은 기존 엔드포인트가 담당.
+//    0185 미적용(approval_status 컬럼 없음) 배포 순서에도 안전하도록 전체를 try 로 감쌈.
+async function customerRegPendingItems() {
+  try {
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name, c.rfc, c.discount,
+              to_char(c.created_at,'YYYY-MM-DD HH24:MI') AS registered_at,
+              t.name AS team_name, u.name AS owner_name, cu.name AS created_by_name
+         FROM customers c
+         LEFT JOIN sales_teams t ON t.id=c.team_id
+         LEFT JOIN users u ON u.id=c.owner_id
+         LEFT JOIN users cu ON cu.id=c.created_by
+        WHERE c.deleted_at IS NULL AND COALESCE(c.approval_status,'approved')='pending'
+        ORDER BY c.created_at DESC LIMIT 50`)).rows;
+    return rows.map((r) => ({
+      id: Number(r.id), code: r.code, name: r.name, rfc: r.rfc || null,
+      discount: r.discount == null ? null : Number(r.discount),
+      registered_at: r.registered_at,
+      team_name: r.team_name || null,
+      owner_name: r.owner_name || null,
+      created_by_name: r.created_by_name || null,
+    }));
+  } catch (_) { return []; } // 0185 미적용 또는 컬럼 미생성
+}
+
 export default async function portalAlertsRoutes(app) {
   // 통합 폴링: 포털 홈에서 120초마다 1회. 역할에 따라 필요한 것만 조회.
   app.get('/api/portal/alerts', { preHandler: [authGuard] }, async (req) => {
@@ -160,5 +187,14 @@ export default async function portalAlertsRoutes(app) {
       out.packing.items = await packingReadyItems();
     }
     return out;
+  });
+
+  // 전역(모든 화면) 신규 고객 등록 승인 알림 — refatrix-nav.js 가 60초마다 조회.
+  //   포털 통합 폴러(/api/portal/alerts)에 섞지 않은 이유: 포털에서도 nav.js 가 같이 돌기 때문에
+  //   양쪽에 넣으면 같은 건으로 팝업이 두 번 뜬다. 이 알림의 소유자는 nav.js 하나뿐이다.
+  app.get('/api/portal/customer-reg-alert', { preHandler: [authGuard] }, async (req) => {
+    if (req.ctx.perm.role !== 'director') return { items: [], count: 0 };
+    const items = await customerRegPendingItems();
+    return { items, count: items.length };
   });
 }
