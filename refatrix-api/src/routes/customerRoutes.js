@@ -17,7 +17,8 @@ import { assembleVisitHistory } from '../customerVisits.js';
 import { stageLabel, stripStageLabel } from '../stageLabel.js';
 import { normalizeClaimKey, computeBaselineDiscount, validateChosenDiscount,
          discountGap, MAX_DISCOUNT_PCT, validateRfc, validateRfcOptional, RFC_ERROR_NOTE,
-         nameSimilarity, NAME_SIMILAR_THRESHOLD } from '../customerClaim.js';
+         nameSimilarity, NAME_SIMILAR_THRESHOLD,
+         claimKeyIfValidRfc, hasClaimKey } from '../customerClaim.js';
 import { MERGE_MOVES, MOVED_TABLES, safeIdent, residualLabel,
          checkMerge, moveTotal, mergeNote } from '../customerMerge.js';
 
@@ -590,8 +591,11 @@ export default async function customerRoutes(app) {
     //   상대 고객이 그 뒤 삭제·반려·RFC 정정되면 중복은 사라졌는데 플래그만 남는다.
     //   → 화면이 "진짜 중복" 과 "철 지난 표시" 를 구분해 말할 수 있도록 지금 상태를 같이 센다.
     //   ⚠ 팀 스코프를 넘는 정보라 **건수와 담당자 이름만** 내보낸다(금액·연락처 금지).
+    //   ⚠ 0200 · 선점 키가 없는 값(`.` · `-` · 빈칸)은 애초에 중복 대상이 아니다.
+    //     이 조건이 없으면 rfc_dup_count 가 null 로 내려가고, 화면이 그걸 「중복 N건」
+    //     분기로 읽어 RFC 도 없는 고객에게 중복 경고를 띄운다.
     let rfcDup = null;
-    if (c.rfc_claim_exempt === true && normalizeClaimKey(c.rfc)) {
+    if (c.rfc_claim_exempt === true && hasClaimKey(c.rfc)) {
       const others = (await query(
         `SELECT o.name, u.name AS owner_name, to_char(o.created_at,'YYYY-MM-DD') AS registered_at
            FROM customers o LEFT JOIN users u ON u.id=o.owner_id
@@ -614,13 +618,17 @@ export default async function customerRoutes(app) {
         approval_status: c.approval_status || 'approved',
         constancia_no: c.constancia_no || null,
         // 0188 · RFC 가 선점 키. exempt = 마이그레이션 시점에 이미 RFC 가 중복이던 레거시 행.
-        rfc_claim_exempt: c.rfc_claim_exempt === true,
+        //   0200 · 선점 키가 없는 값(`.` 등)에는 예외 플래그가 의미가 없다 — 유니크 인덱스
+        //   대상 자체가 아니므로 화면이 중복 분기를 타지 않게 여기서 false 로 접는다.
+        rfc_claim_exempt: c.rfc_claim_exempt === true && hasClaimKey(c.rfc),
         // 0194 · 그 예외가 **지금도 유효한지**. dup_count=0 이면 중복은 이미 사라졌고
         //   플래그만 남은 것이라 디렉터가 「선점 보호 복구」 한 번으로 정리할 수 있다.
         rfc_dup_count: rfcDup ? rfcDup.count : null,
         rfc_dup_others: rfcDup ? rfcDup.others : null,
         // 0193 · RFC 가 비어 있으면 **선점이 없는 고객**이다 — 화면에 빨간 안내 + 매출 차단.
-        rfc_claimed: !!normalizeClaimKey(c.rfc),
+        //   0200 · `.` 처럼 영숫자가 없는 값도 여기서 false 다. 화면은 c.rfc 문자열이 아니라
+        //   **이 값**으로 「RFC 있음/없음」을 갈라야 한다.
+        rfc_claimed: hasClaimKey(c.rfc),
         rfc_claimed_at: c.rfc_claimed_at || null,
         rejected_reason: c.rejected_reason || null,
         syd_ref_code: c.syd_ref_code || null,
@@ -1027,10 +1035,21 @@ export default async function customerRoutes(app) {
   app.get('/api/customers/claim-check', { preHandler: [authGuard, requirePage('customers')] }, async (req) => {
     const regOn = await regColumnsReady();
     const name = String(req.query.name || req.query.q || '').trim();
-    const rfcN = normalizeClaimKey(req.query.rfc);
+    // ── 0200 · **정상 형식의 RFC 일 때만** 중복(선점)을 조회한다 ────────
+    //   예전에는 normalizeClaimKey 만 통과하면 조회 키로 썼다. 그래서 `1` · `NA` 같은
+    //   값이 그대로 키가 되어 엉뚱한 고객이 「선점됨」으로 걸렸고, RFC 를 비우거나 `.` 만
+    //   찍은 경우에도 화면이 「중복」으로 읽히는 결과를 냈다.
+    //   RFC 가 없거나 형식이 아니면 **중복 판정을 아예 하지 않는다** —
+    //   그 값으로는 어차피 등록이 되지 않고(rfc_invalid), 선점도 성립하지 않는다.
+    const rfcRaw = String(req.query.rfc || '').trim();
+    const rfcChk = validateRfcOptional(rfcRaw);
+    const rfcN = claimKeyIfValidRfc(rfcRaw);
+    const rfcQueryError = rfcChk.ok ? null : rfcChk.error;   // 안내용(차단이 아니다)
     const conN = normalizeClaimKey(req.query.constancia);
-    if (!name && !rfcN && !conN) return { items: [], note: 'empty_query' };
-    if (name && name.length < 2 && !rfcN && !conN) return { items: [], note: 'min_2_chars' };
+    // 형식 안내는 조회 결과와 무관하게 항상 실어 보낸다(화면이 이유를 말할 수 있어야 한다).
+    const rfcMeta = { rfc_provided: !!rfcRaw, rfc_checked: !!rfcN, rfc_query_error: rfcQueryError };
+    if (!name && !rfcN && !conN) return { items: [], note: 'empty_query', ...rfcMeta };
+    if (name && name.length < 2 && !rfcN && !conN) return { items: [], note: 'min_2_chars', ...rfcMeta };
 
     const where = [], params = [];
     if (name && name.length >= 2) { params.push(`%${name}%`); where.push(`c.name ILIKE $${params.length}`); }
@@ -1062,7 +1081,10 @@ export default async function customerRoutes(app) {
         // 0193 · id 는 「RFC 없는 고객에 선점 요청」을 걸기 위해 필요하다.
         //   RFC 가 이미 있는(=선점된) 고객은 요청 대상이 아니므로 id 를 내보내지 않는다.
         customer_id: r.rfc_n ? null : Number(r.id),
-        name: r.name, rfc: r.rfc || null,
+        name: r.name,
+        // 0200 · `.` 처럼 영숫자가 없는 값은 RFC 가 아니다 — 화면에 그대로 띄우면
+        //   「RFC 가 있는 고객」 처럼 보여 중복으로 오해된다. 선점 키가 없으면 비워 보낸다.
+        rfc: r.rfc_n ? (r.rfc || null) : null,
         has_rfc: !!r.rfc_n,                    // false = 선점 미성립 → 내가 RFC 를 넣어 가져올 수 있다
         owner_name: r.owner_name || '(담당자 미지정)',
         registered_at: r.registered_at,
@@ -1079,6 +1101,9 @@ export default async function customerRoutes(app) {
       // 0193 · 「남이 먼저 요청했지만 아직 승인 안 됨」 은 별도로 알려 준다(문구가 달라야 한다).
       claim_pending: claimPending,
       claim_pending_note: claimPending ? rfcHolderNote(pendingClaim) : null,
+      // 0200 · RFC 중복 검사를 실제로 돌렸는지 + 안 돌렸다면 이유. 화면이 「중복 아님」과
+      //   「검사 안 함」을 구분해 말할 수 있어야 한다(RFC 없이 등록하는 정상 경로가 많다).
+      ...rfcMeta,
       migration_required: !regOn,
       // 0188 마이그레이션 전이면 DB 유니크가 없어 동시 등록 극단 케이스가 뚫릴 수 있다.
       rfc_db_lock: await rfcClaimReady(),
@@ -1517,6 +1542,10 @@ export default async function customerRoutes(app) {
          LEFT JOIN sales_teams t ON t.id=c.team_id
         WHERE c.rfc_claim_exempt = true AND c.deleted_at IS NULL
           AND COALESCE(c.approval_status,'approved') <> 'rejected'
+          -- 0200 · 선점 키가 없는 행(점 하나 등)은 애초에 유니크 인덱스 대상이 아니라
+          --   「예외」라는 말 자체가 성립하지 않는다. 목록에 섞이면 디렉터가
+          --   해제할 수 없는(= 해제할 것도 없는) 건을 계속 보게 된다. 0200 이 플래그를 정리한다.
+          AND c.rfc_norm IS NOT NULL
         ORDER BY c.rfc_norm, c.created_at
         LIMIT 300`)).rows;
     return {
@@ -2192,7 +2221,12 @@ export default async function customerRoutes(app) {
     //   ② 형식 검증은 **하지 않는다** — 신규 등록(=선점이 생기는 순간)에서만 본다.
     //   ③ 남의 선점을 뺏는 것만 막는다. 이건 어차피 DB 유니크가 던지므로,
     //      500 대신 "누가 갖고 있는지" 를 알려 주려고 미리 조회한다.
-    const rfcVal = (b.rfc !== undefined && String(b.rfc).trim() !== '') ? String(b.rfc).trim() : (c.rfc || null);
+    //   ④ 0200 · `.` · `-` 처럼 **영숫자가 하나도 없는 값은 RFC 가 아니라 빈칸이다.**
+    //      그대로 저장하면 rfc_norm 은 NULL(=선점 없음)인데 화면에는 값이 보여
+    //      「RFC 있음」 분기를 타고 중복 안내까지 뜬다. 빈칸과 똑같이 다뤄
+    //      기존값을 유지하고, 기존값 자체가 그런 값이면 NULL 로 접어 정리한다.
+    const rfcIn = (b.rfc !== undefined && hasClaimKey(b.rfc)) ? String(b.rfc).trim() : null;
+    const rfcVal = rfcIn || (hasClaimKey(c.rfc) ? c.rfc : null);
     const rfcChanged = !!rfcVal && normalizeClaimKey(rfcVal) !== normalizeClaimKey(c.rfc);
     if (rfcChanged) {
       // 0193 · 확정 선점뿐 아니라 **대기 중인 선점 요청**도 막는다.

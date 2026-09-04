@@ -26,6 +26,8 @@ import {
   validateRfc, cleanRfc, GENERIC_RFC,
   // 0193
   validateRfcOptional, normalizeCompanyName, companyNameTokens, nameSimilarity, NAME_SIMILAR_THRESHOLD,
+  // 0200
+  claimKeyIfValidRfc, hasClaimKey,
 } from '../src/customerClaim.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -331,7 +333,11 @@ test('D9e. 애플리케이션 사전조회는 예외 행도 선점자로 본다(
 
 test('D9f. 수정은 RFC 를 요구하지 않는다 — 빈값이면 기존값 유지(오류 아님)', () => {
   // 전화·배송지만 고치려는 사람에게 RFC 를 강요하면 일상 업무가 막힌다.
-  assert.ok(/rfcVal = \(b\.rfc !== undefined && String\(b\.rfc\)\.trim\(\) !== ''\) \? String\(b\.rfc\)\.trim\(\) : \(c\.rfc \|\| null\)/
+  // 0200 · 빈값 판정을 「문자열이 비었나」 → 「선점 키가 있나」로 바꿨다.
+  //   `.` · `-` 도 빈값과 똑같이 현재값 유지로 접힌다(그대로 저장하면 중복 안내가 뜬다).
+  assert.ok(/const rfcIn = \(b\.rfc !== undefined && hasClaimKey\(b\.rfc\)\) \? String\(b\.rfc\)\.trim\(\) : null;/
+    .test(custRoutes), '입력값이 `.` 이면 새 RFC 로 받아들이면 안 된다');
+  assert.ok(/const rfcVal = rfcIn \|\| \(hasClaimKey\(c\.rfc\) \? c\.rfc : null\);/
     .test(custRoutes), '빈값이면 현재값 유지 — 지워서 선점이 풀리는 일만 막으면 된다');
   const apply = custRoutes.match(/async function applyCustomerUpdate[\s\S]*?\n  \}/)[0];
   assert.ok(!apply.includes('validateRfc'),
@@ -454,10 +460,10 @@ test('E7. 견적·현장조사에서 "자동 등록" 안내 문구가 사라졌�
 });
 
 test('E8. 빌드 마커가 올라갔다(하드 리프레시 확인용)', () => {
-  assert.ok(custform.includes('v20260901claimb'));
-  assert.ok(custHtml.includes('refatrix-custform.js?v=20260901claimb'), 'custform 캐시버스터 동기화');
-  // 탭 제목 마커는 화면이 바뀔 때마다 올라간다(merge-0903 = 🔗 고객 병합 추가).
-  assert.ok(custHtml.includes('merge-0903'));
+  assert.ok(custform.includes('v20260904rfcdup'));
+  assert.ok(custHtml.includes('refatrix-custform.js?v=20260904rfcdup'), 'custform 캐시버스터 동기화');
+  // 탭 제목 마커는 화면이 바뀔 때마다 올라간다(rfcdup-0904a = RFC 없음/`.` 중복 오탐 수정).
+  assert.ok(custHtml.includes('rfcdup-0904a'));
 });
 
 test('E9. 화면 문구가 "RFC 로 선점" 으로 바뀌었다', () => {
@@ -633,7 +639,8 @@ test('G1. 마이그레이션 0194 — 중복이 해소된 행만 예외를 푼�
 test('G2. 상세는 「진짜 중복」과 「철 지난 표시」를 구분해 말한다', () => {
   assert.ok(/rfc_dup_count: rfcDup \? rfcDup\.count : null/.test(custRoutes),
     '지금 기준 중복 건수를 세지 않으면 화면이 옛날 플래그를 그대로 읊는다');
-  assert.ok(/c\.rfc_dup_count===0/.test(custHtml), '0건이면 「철 지난 표시」로 안내해야 한다');
+  // 0200 · null(선점 키가 없어 아예 세지 않은 경우)도 「중복 아님」으로 읽어야 한다.
+  assert.ok(/!\(c\.rfc_dup_count>0\)/.test(custHtml), '0건·미조회면 「철 지난 표시」로 안내해야 한다');
   assert.ok(custHtml.includes('이 RFC 를 쓰는 다른 고객은 지금 없습니다'));
   assert.ok(custHtml.includes('선점 보호 복구'), '디렉터에게는 복구 버튼이 있어야 한다');
   // 팀 스코프를 넘는 조회라 금액·연락처가 새면 안 된다
@@ -661,4 +668,90 @@ test('G4. 예외 목록·정리는 디렉터 전용', () => {
   }
   assert.ok(custHtml.includes('선점 예외 정리'), '디렉터 화면에 정리 카드가 있어야 한다');
   assert.ok(custHtml.includes('rescanRfcExempt') && custHtml.includes('releaseRfcExempt'));
+});
+
+// ── H. 0200 · RFC 가 없거나 `.` 일 때 중복으로 잡히지 않는다 ─────────
+//
+//   증상(디렉터 보고 2026-09-04): 고객등록에서 RFC 를 비우거나 `.` 을 찍으면
+//   RFC 가 없는(또는 `.` 인) 다른 고객들이 「중복/선점됨」으로 표시됐다.
+//   방침: **정상 형식의 RFC 일 때만** 중복을 조회한다. 없거나 형식이 아니면 조회 자체를 안 한다.
+const migrationBlank = read(join(API, 'migrations/0200_rfc_blank_normalize.sql'));
+
+test('H1. claimKeyIfValidRfc — 정상 RFC 만 조회 키가 된다', () => {
+  // 조회 키가 되는 것: 정상 형식뿐
+  assert.equal(claimKeyIfValidRfc('FEL990715AB1'), 'FEL990715AB1');
+  assert.equal(claimKeyIfValidRfc('fel-990715-ab1'), 'FEL990715AB1', '표기 변형은 같은 키로 접힌다');
+  // 키가 되지 않는 것: 빈값·기호·형식 아님·범용 RFC
+  for (const v of ['', '   ', null, undefined, '.', '..', '-', '/', '내고객임시', '1', 'NA',
+                   'ABC011303XY1', 'XAXX010101000']) {
+    assert.equal(claimKeyIfValidRfc(v), null,
+      `"${v}" 로 중복을 조회하면 RFC 가 없는 고객끼리 서로 중복으로 잡힌다`);
+  }
+});
+
+test('H2. hasClaimKey — 저장된 값이 선점 키로 인정되는가', () => {
+  assert.equal(hasClaimKey('.'), false, '`.` 은 RFC 가 아니라 빈칸이다');
+  assert.equal(hasClaimKey('  -- '), false);
+  assert.equal(hasClaimKey(null), false);
+  assert.equal(hasClaimKey('FEL990715AB1'), true);
+  // 지저분한 레거시 값은 여전히 선점 키다 — rfc_norm 이 살아 있으므로 건드리면 안 된다.
+  assert.equal(hasClaimKey('RFC 123 SUCURSAL-B'), true);
+});
+
+test('H3. claim-check 는 정상 RFC 일 때만 중복을 조회한다', () => {
+  const cc = custRoutes.match(/app\.get\('\/api\/customers\/claim-check'[\s\S]*?\n  \}\);/)[0];
+  assert.ok(/claimKeyIfValidRfc\(rfcRaw\)/.test(cc),
+    'normalizeClaimKey 로 키를 만들면 `1` · `NA` 같은 값도 조회 키가 된다');
+  assert.ok(!/const rfcN = normalizeClaimKey\(req\.query\.rfc\)/.test(cc),
+    '옛 경로가 남아 있으면 회귀한다');
+  assert.ok(/rfc_checked/.test(cc) && /rfc_query_error/.test(cc),
+    '검사를 돌렸는지 · 안 돌렸다면 이유를 화면에 알려야 「중복 아님」과 「검사 안 함」을 구분한다');
+  assert.ok(/rfc: r\.rfc_n \? \(r\.rfc \|\| null\) : null/.test(cc),
+    '선점 키가 없는 고객의 RFC 문자열(`.`)을 그대로 내보내면 화면이 「RFC 있는 고객」으로 보여 준다');
+});
+
+test('H4. 고객 상세 — 선점 키가 없으면 중복 대상이 아니다', () => {
+  assert.ok(/c\.rfc_claim_exempt === true && hasClaimKey\(c\.rfc\)/.test(custRoutes),
+    'RFC 가 없는 행까지 중복을 세면 rfc_dup_count 가 엉뚱하게 내려간다');
+  assert.ok(/rfc_claim_exempt: c\.rfc_claim_exempt === true && hasClaimKey\(c\.rfc\)/.test(custRoutes),
+    '선점 키가 없는 행의 예외 플래그는 의미가 없다(유니크 인덱스 대상이 아니다)');
+  assert.ok(/rfc_claimed: hasClaimKey\(c\.rfc\)/.test(custRoutes));
+});
+
+test('H5. 상세 화면은 c.rfc 문자열이 아니라 rfc_claimed 로 갈라야 한다', () => {
+  assert.ok(/const claimBanner = !c\.rfc_claimed/.test(custHtml),
+    '`.` 이 찍힌 고객은 c.rfc 가 truthy 라 「RFC 있음」 분기로 새어 들어간다');
+  assert.ok(/if\(!c\.rfc_claimed\)\{/.test(custHtml), 'RFC 칸도 같은 기준이어야 한다');
+  assert.ok(!/if\(!c\.rfc\)\{/.test(custHtml), '옛 판정이 남아 있으면 회귀한다');
+  assert.ok(/\$\{c\.rfc_claimed\?`RFC <b>/.test(custHtml), '승인 대기 배너도 같은 기준이어야 한다');
+});
+
+test('H6. 수정 저장에서 `.` 은 빈칸과 똑같이 다뤄진다', () => {
+  const upd = custRoutes.match(/const rfcIn = [\s\S]{0,400}/)[0];
+  assert.ok(/hasClaimKey\(b\.rfc\)/.test(upd), '입력값이 `.` 이면 새 RFC 로 받아들이면 안 된다');
+  assert.ok(/hasClaimKey\(c\.rfc\) \? c\.rfc : null/.test(upd),
+    '기존값이 `.` 이면 저장할 때 NULL 로 접어 정리한다');
+  assert.ok(!/String\(b\.rfc\)\.trim\(\) !== ''/.test(custRoutes),
+    '옛 판정(빈 문자열만 거름)이 남아 있으면 `.` 이 다시 저장된다');
+});
+
+test('H7. 등록 폼은 「중복 아님」과 「검사 안 함」을 구분해 말한다', () => {
+  assert.ok(/d\.rfc_checked/.test(custform), '서버가 검사를 돌렸는지를 봐야 한다');
+  assert.ok(custform.includes('RFC 중복(선점) 검사는 하지 않았습니다'),
+    'RFC 없이 등록하는 정상 경로에서 「중복」이라는 말이 나오면 안 된다');
+  assert.ok(custform.includes('상호 비슷(참고)') && !custform.includes("'상호 유사'"),
+    '상호 유사는 참고 문구로만 남긴다(0193 의 경고 기능 자체는 유지)');
+  assert.ok(/참고 — 상호가 비슷한 고객이 있습니다/.test(custform));
+  assert.ok(custform.includes('v20260904rfcdup'), '캐시버스터를 올려야 브라우저가 새 파일을 받는다');
+  assert.ok(custHtml.includes('refatrix-custform.js?v=20260904rfcdup'));
+});
+
+test('H8. 마이그레이션 0200 — 껍데기 RFC 만 정리하고 정상 RFC 는 건드리지 않는다', () => {
+  assert.ok(/SET rfc = NULL/.test(migrationBlank));
+  assert.ok(/NULLIF\(upper\(regexp_replace\(rfc, '\[\^A-Za-z0-9\]', '', 'g'\)\), ''\) IS NULL/.test(migrationBlank),
+    '0185 의 rfc_norm 과 **같은 규칙**이어야 정상 RFC 를 지우지 않는다');
+  assert.ok(/SET rfc_claim_exempt = false[\s\S]*?rfc_norm IS NULL/.test(migrationBlank),
+    '선점 키가 없는 행의 예외 플래그도 같이 푼다');
+  assert.ok(!/DELETE FROM customers|DROP |deleted_at/.test(migrationBlank),
+    '데이터를 지우거나 고객을 닫으면 안 된다');
 });

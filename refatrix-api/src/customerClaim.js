@@ -80,6 +80,30 @@ export function validateRfcOptional(v) {
   return r.ok ? { ...r, empty: false } : r;
 }
 
+// ── 0200 · 「중복(선점) 검사에 쓸 수 있는 RFC 인가」 ────────────────────
+//
+//   증상: 고객등록에서 RFC 를 비워 두거나 `.` 만 찍으면, RFC 가 없는(또는 `.` 인)
+//         다른 고객들이 「중복/선점됨」 으로 잡혔다.
+//   원인: 중복 조회 키를 normalizeClaimKey 로만 만들었다. 이건 **영숫자만 남기는** 함수라
+//         `.` → NULL 은 걸러 주지만 `1` · `NA` · `내고객` 같은 값은 그대로 조회 키가 된다.
+//         게다가 값이 NULL 이어도 화면 쪽에서 「RFC 가 있다」로 분기하면 중복 안내까지 떴다.
+//   방침: **정상 형식의 RFC 일 때만** 중복을 조회한다. RFC 가 없거나 형식이 아니면
+//         조회 자체를 하지 않는다 — 어차피 그 값으로는 등록도 안 된다(rfc_invalid).
+//
+/**
+ * @returns {string|null} 조회에 쓸 정규화 키. RFC 가 비었거나 형식이 아니면 null.
+ */
+export function claimKeyIfValidRfc(v) {
+  const r = validateRfcOptional(v);
+  if (!r.ok || r.empty) return null;
+  return normalizeClaimKey(r.value);
+}
+
+/** 저장된 값이 「선점 키로 인정되는가」 — 빈값·`.`·`-` 등 영숫자 없는 값은 RFC 가 아니다. */
+export function hasClaimKey(v) {
+  return !!normalizeClaimKey(v);
+}
+
 // 화면·API 에 같은 문구를 쓰기 위한 단일 출처.
 export const RFC_ERROR_NOTE = {
   rfc_required: 'RFC(세금번호)를 입력해야 고객을 등록할 수 있습니다 — RFC 가 곧 선점 키입니다.',

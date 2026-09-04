@@ -202,20 +202,32 @@
       lastClaim=d;
       var items=(d&&d.items)||[];
       var myRfc=cleanRfcLocal(rfc);
+      // 0200 · 서버가 **정상 형식의 RFC 일 때만** 중복(선점)을 조회한다.
+      //   RFC 를 비웠거나 `.` 만 찍은 경우 중복 검사는 아예 돌지 않는다 —
+      //   그 사실을 화면이 분명히 말해 줘야 「RFC 없는 고객끼리 중복」으로 오해하지 않는다.
+      var rfcChecked=!!(d&&d.rfc_checked);
+      var rfcNote=rfcChecked ? ''
+        : '<div class="hint" style="margin:3px 0 0;color:#8a8070">RFC 가 '
+          +((d&&d.rfc_query_error)?'정상 형식이 아니어서':'없어서')
+          +' <b>RFC 중복(선점) 검사는 하지 않았습니다.</b> 아래는 상호가 비슷한 고객일 뿐 중복이 아닐 수 있습니다.</div>';
       if(!items.length){
-        box.innerHTML=(myRfc
+        box.innerHTML=(rfcChecked
             ? '<span style="color:#1a7f4b">✔ 겹치는 고객이 없습니다 — 이 RFC 로 등록하면 내 고객으로 선점됩니다.</span>'
-            : '<span style="color:#9a6a1a">⚠ 겹치는 고객은 없지만 RFC 가 비어 있어 <b>선점되지 않습니다.</b> RFC 를 받는 대로 입력하세요.</span>')
+            : (myRfc
+                ? '<span style="color:#B23A2E">⚠ RFC 형식이 올바르지 않아 선점 검사를 하지 못했습니다 — 형식을 확인하세요.</span>'
+                : '<span style="color:#9a6a1a">⚠ 겹치는 고객은 없지만 RFC 가 비어 있어 <b>선점되지 않습니다.</b> RFC 를 받는 대로 입력하세요.</span>'))
           +(d&&d.rfc_db_lock===false?'<div style="color:#9a6a1a;margin-top:3px">⚠ 서버에 RFC 선점 잠금(0188)이 아직 적용되지 않았습니다. 디렉터에게 알려 주세요.</div>':'');
         return d;
       }
       // 0193 · RFC 충돌은 차단, 상호 유사는 경고만.
+      //   0200 · RFC 를 검사하지 않은 경우에는 「중복·선점」이라는 말을 쓰지 않는다(참고 목록).
       var hard=d.blocked_constancia||d.blocked_rfc;
       box.innerHTML=(hard
           ? '<div style="color:#B23A2E;font-weight:700">⛔ '+esc(d.claim_pending?(d.claim_pending_note||RFC_NOTE.rfc_claim_pending):'이미 선점된 고객입니다 — 이대로는 등록할 수 없습니다.')+'</div>'
-          : '<div style="color:#9a6a1a;font-weight:700">⚠ 상호가 비슷한 고객이 있습니다 — 같은 고객인지 확인하세요. (등록은 막지 않습니다)</div>')
+          : '<div style="color:#9a6a1a;font-weight:700">📋 참고 — 상호가 비슷한 고객이 있습니다. 같은 고객인지만 확인하세요. (중복 판정이 아니며 등록은 그대로 진행됩니다)</div>')
+        +(hard?'':rfcNote)
         +items.map(function(x){
-          var why=x.matched_rfc?'RFC 일치 — 선점됨':(x.matched_constancia?'CONSTANCIA 일치':'상호 유사');
+          var why=x.matched_rfc?'RFC 일치 — 선점됨':(x.matched_constancia?'CONSTANCIA 일치':'상호 비슷(참고)');
           var st=x.approval_status==='pending'?' · <span style="color:#9a6a1a">승인대기</span>':'';
           // RFC 가 비어 있는 고객 = 아직 선점 없음 → 내 RFC 로 가져올 수 있다.
           var take=(!x.has_rfc&&x.customer_id&&myRfc&&d.claim_transfer_on)
@@ -572,5 +584,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260901claimb loaded (0193 · RFC 선택 입력 + RFC 입력시점 선점/이관 + SYD 단가 필수 + 전원 디렉터 승인)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260904rfcdup loaded (0200 · 정상 RFC 일 때만 중복 검사 — RFC 없음/`.` 은 중복으로 표시하지 않음)'); }catch(e){}
 })();
