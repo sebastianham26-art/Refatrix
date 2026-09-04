@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260826a</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260903a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -48,8 +48,65 @@
   .itemhead{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .itemhead .nm{flex:1;min-width:180px}
   .itemsub{display:flex;justify-content:flex-end;gap:14px;font-size:12.5px;margin-top:8px;font-weight:700}
-  .payline{display:grid;grid-template-columns:104px 128px 128px 1fr 84px;gap:8px;align-items:center;margin-top:8px}
+  .payline{display:grid;grid-template-columns:96px 118px 118px 1fr 196px 74px;gap:8px;align-items:center;margin-top:8px}
   .payline input,.payline select{width:100%}
+  /* --- 집행 처리(0195) --- */
+  .execchip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e8f0fb;color:#2b5a78}
+  .partchip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fdf3e3;color:#9a6512}
+  .nonechip{font-size:10.5px;font-weight:600;color:var(--muted)}
+  .execcell{display:flex;align-items:center;gap:6px;row-gap:3px;flex-wrap:wrap;font-size:11.5px}
+  /* 전역 input 규칙(padding 8px)이 체크박스에도 먹어 칸을 밀어내므로 여기서 되돌린다 */
+  .execcell input[type=checkbox]{padding:0;margin:0;width:15px;height:15px;flex:0 0 auto;border-radius:3px;accent-color:#2b5a78;cursor:pointer}
+  .execbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eef4fb;border:1px solid #cfe0f2;
+    border-radius:9px;padding:8px 12px;margin-top:10px;font-size:12.5px}
+  .execpanel{border:1.5px solid #2b5a78;border-radius:10px;padding:12px 14px;margin-top:10px;background:#f7fbff}
+  .execpanel table{margin-top:6px}
+  .execrow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
+  .exhist{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.6}
+  /* --- 대사 패널 --- */
+  .reconbox{background:#fbfaf6;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12.5px}
+  .recongrid{display:flex;gap:26px;flex-wrap:wrap;margin-top:8px}
+  .recongrid b{font-size:15px}
+  .recongap{border-radius:8px;padding:8px 12px;margin-top:10px;font-size:12.5px;line-height:1.6}
+  .recongap.ok{background:var(--income-bg);color:var(--income)}
+  .recongap.bad{background:var(--expense-bg);color:var(--expense)}
+  /* --- 변경표시(diff) --- */
+  .diffbox{background:#fffdf5;border:1px solid #ecd9a0;border-radius:10px;padding:10px 14px;margin-top:12px;font-size:12.5px;line-height:1.8}
+  .dgbadge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px}
+  .dgbadge.add{background:#e4f0eb;color:#0F6E56}
+  .dgbadge.chg{background:#fdf3e3;color:#9a6512}
+  .dgbadge.del{background:#f6e7e4;color:#B23A2E}
+  .itemcard.dg-add{border-left-color:#0F6E56;background:#f4fbf8}
+  .itemcard.dg-chg{border-left-color:#d8a33c;background:#fffdf4}
+  .itemcard.dg-del{border-left-color:#B23A2E;background:#fbf4f3;opacity:.75}
+  .itemcard.dg-del input{text-decoration:line-through}
+  .payline.dg-add{background:#f2faf7;border-radius:8px}
+  .payline.dg-del{background:#fbf1ef;border-radius:8px;opacity:.75}
+  .payline.dg-del input,.payline.dg-del select{text-decoration:line-through}
+  .dgw{position:relative;display:block;min-width:0}
+  .dgw input,.dgw select{width:100%}
+  .dgw.on input,.dgw.on select{background:#fff6dc;border-color:#e0c073}
+  .dgp{display:none;font-size:10px;color:#9a6512;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dgw.on .dgp{display:block}
+  .dgsect{margin-top:14px;font-size:12px;font-weight:800;color:var(--expense)}
+  /* --- 항목별 증빙(0197) --- */
+  .evbox{border-top:1px dashed var(--line);margin-top:10px;padding-top:8px}
+  .evhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px}
+  .evbadge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px}
+  .evbadge.ok{background:var(--income-bg);color:var(--income)}
+  .evbadge.miss{background:#eef0f2;color:#777}
+  .evbadge.need{background:var(--expense-bg);color:var(--expense)}
+  .evlist{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .evchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 8px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;max-width:290px}
+  .evchip b{font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:4px;flex:0 0 auto}
+  .evchip.q b{background:#eaf1f7;color:#2b5a78}
+  .evchip.r b{background:var(--income-bg);color:var(--income)}
+  .evchip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .evchip a{color:var(--brand);cursor:pointer;text-decoration:none;font-weight:700;flex:0 0 auto}
+  .evchip a.del{color:var(--expense)}
+  .evsum{background:#fff7e8;border:1px solid #ecd9a0;border-radius:9px;padding:8px 12px;margin-top:10px;font-size:12px;line-height:1.7}
+  .evsum.ok{background:var(--income-bg);border-color:#bfe0d3;color:var(--income)}
   .filebox{border:1.5px dashed var(--line);border-radius:10px;padding:10px 12px;margin-top:12px;background:#fbfaf6}
   .filerow{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;flex-wrap:wrap}
   .filerow .nm{font-weight:600;max-width:340px;overflow:hidden;text-overflow:ellipsis}
@@ -92,6 +149,17 @@
       </div>
       <div class="msg" id="listMsg"></div>
       <div id="listWrap" style="overflow-x:auto"><div class="hint" style="margin-top:10px">불러오는 중…</div></div>
+
+      <!-- 마케팅 집행 ↔ 재무 대사 (재무·디렉터) -->
+      <div class="reconbox hidden" id="reconBox">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-weight:800;color:var(--brand)">🧮 마케팅 집행 ↔ 재무 대사</div>
+          <input type="month" id="reconYm" style="width:150px">
+          <button class="btn ghost sm" id="btnRecon">조회</button>
+          <span class="hint" style="margin-left:auto">집행 처리는 실지급 거래와 링크하지 않습니다 — 이 대사가 오차를 잡는 유일한 수단입니다. <b>월 마감 때 반드시 확인하세요.</b></span>
+        </div>
+        <div id="reconOut"></div>
+      </div>
     </div>
 
     <!-- ============ 작성 / 검토 ============ -->
@@ -103,6 +171,7 @@
       </div>
       <div id="rejBox" class="rejbox hidden"></div>
       <div id="revBox" class="revbox hidden"></div>
+      <div id="diffBox" class="diffbox hidden"></div>
 
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
         <div style="flex:1;min-width:220px"><label>활동·행사명 *</label><input id="fTitle" style="width:100%" maxlength="200"></div>
@@ -122,14 +191,17 @@
       <div id="tgWrap" style="overflow-x:auto"></div>
       <div class="hint" style="margin-top:6px">매출목표 = 매출목표 화면의 <b>고객별 연간(올해) 목표 합</b> · 누적 매출 = <b>올해 1/1 ~ 오늘 확정 매출(IVA 불포함)</b>, 조회 시점 자동 집계.</div>
 
-      <div class="secttl">💸 집행 항목 <span class="hint" style="font-weight:500">— 장소·케이터링·판촉물처럼 집행별로 나누고, 각 항목마다 선지급·중도금·잔금 일정을 계획</span></div>
+      <div class="secttl">💸 집행 항목 <span class="hint" style="font-weight:500">— 장소·케이터링·판촉물처럼 집행별로 나누고, 각 항목마다 선지급·중도금·잔금 일정을 계획. 항목마다 <b>견적서(계획 근거)</b>와 <b>영수증(집행 근거)</b>을 붙입니다</span></div>
+      <div class="evsum hidden" id="evSum"></div>
+      <div class="execbar hidden" id="execBar"></div>
+      <div class="execpanel hidden" id="execPanel"></div>
       <div id="itWrap"></div>
       <button class="btn ghost sm" id="btnAddItem" style="margin-top:10px">＋ 집행 항목 추가</button>
 
       <div class="flowbox ratio" id="ratioBox"></div>
 
       <div class="filebox" id="fileBox">
-        <div style="font-weight:700;font-size:12.5px">📎 증빙자료 <span class="hint" style="font-weight:500">— 견적서·계약서·인보이스 등 (PDF/이미지/Excel 등, 파일당 8MB)</span></div>
+        <div style="font-weight:700;font-size:12.5px">📎 계획 공통 증빙 <span class="hint" style="font-weight:500">— 특정 집행 항목에 속하지 않는 문서(전체 계약서·기안 근거 등). <b>항목별 견적서·영수증은 위의 각 집행 항목 카드에서</b> 첨부하세요 (파일당 8MB)</span></div>
         <div id="fileList"></div>
         <button class="btn ghost sm" id="btnAddFile" style="margin-top:6px">＋ 파일 추가</button>
         <span class="hint" id="fileHint" style="margin-left:8px"></span>
@@ -152,12 +224,118 @@
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
   const fmt=(n)=>n==null?'—':Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // 좁은 칸(집행 배지)용 축약 표기 — 소수점 없이. 정확한 금액은 금액칸·집행 패널에서 본다.
+  const fmt0=(n)=>n==null?'—':Number(n).toLocaleString('es-MX',{maximumFractionDigits:0});
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const KIND_LABEL={adv:'선지급금',mid:'중도금',fin:'잔금',one:'일시불'};
   const ST_LABEL={draft:'작성중',submitted:'승인대기',approved:'승인됨',rejected:'반려'};
   const isDir=()=>session.user&&session.user.role==='director';
   const me=()=>Number(session.user&&session.user.id);
   const planNo=(id)=>'MK-'+String(id).padStart(3,'0');
+  const REV_LABEL={submitted:'제출본',approved:'승인본',rejected:'반려본',director_edit:'디렉터 수정본',backfill:'승인본'};
+  const EXEC_LABEL={paid:'지급완료',closed:'집행완료',partial:'부분집행',none:'미집행'};
+  const canExec=()=>{const r=session.user&&session.user.role;return r==='director'||r==='treasury';};
+
+  // ==== MSDIFF-CORE-START ====
+  //  계획 스냅샷 비교 — "직전 마일스톤 대비 지금"을 한눈에 보여주기 위한 순수 함수.
+  //  백엔드 marketing_spend_revisions.snapshot 과 화면 편집 상태가 같은 형태를 쓰므로 한 함수로 처리한다.
+  //  짝짓기는 id → (구분+날짜+금액) → 구분 순으로 시도한다. 초안 저장은 라인 id 가 매번
+  //  새로 생기므로(백엔드가 전체 교체) id 가 없을 때도 의미 있는 비교가 되도록 한 것.
+  //  ⚠ 이 블록은 테스트(test/mktspend_diff.test.mjs)가 마커로 잘라내 그대로 실행한다.
+  (function(g){
+    function nz(v){ return (v==null||v==='')?null:String(v); }
+    function nAmt(v){ var n=Number(v); return isFinite(n)?Math.round(n*100)/100:0; }
+    function normLine(l){ l=l||{}; return {id:(l.id!=null)?Number(l.id):null,kind:l.kind||'one',
+      due_date:nz(l.due_date),amount:nAmt(l.amount),memo:nz(l.memo)}; }
+    function normItem(it){ it=it||{}; return {id:(it.id!=null)?Number(it.id):null,name:nz(it.name)||'',
+      memo:nz(it.memo),lines:(it.lines||[]).map(normLine)}; }
+    function normSnap(s){ s=s||{}; return {title:nz(s.title)||'',category:nz(s.category),
+      event_date:nz(s.event_date),purpose:nz(s.purpose),items:(s.items||[]).map(normItem),
+      targets:(s.targets||[]).map(function(t){t=t||{};return {customer_id:(t.customer_id!=null)?Number(t.customer_id):null,is_general:!!t.is_general};})}; }
+
+    // 여러 키 함수를 순서대로 적용해 base ↔ head 를 짝짓는다(앞선 키가 우선).
+    function pairUp(baseArr,headArr,keyFns){
+      var pairs={},usedB={},usedH={};
+      keyFns.forEach(function(kf){
+        var bucket={};
+        baseArr.forEach(function(b,bi){ if(usedB[bi])return; var k=kf(b); if(k==null)return;
+          if(!bucket[k])bucket[k]=[]; bucket[k].push(bi); });
+        headArr.forEach(function(h,hi){ if(usedH[hi])return; var k=kf(h); if(k==null)return;
+          var arr=bucket[k]; if(!arr||!arr.length)return;
+          var bi=arr.shift(); pairs[hi]=bi; usedB[bi]=1; usedH[hi]=1; });
+      });
+      return {pairs:pairs,usedB:usedB};
+    }
+    var ITEM_KEYS=[function(x){return x.id!=null?('#'+x.id):null;},function(x){return x.name?('n:'+x.name):null;}];
+    var LINE_KEYS=[function(x){return x.id!=null?('#'+x.id):null;},
+                   function(x){return 'v:'+x.kind+'|'+x.due_date+'|'+x.amount;},
+                   function(x){return 'k:'+x.kind;}];
+    var LINE_FIELDS=['kind','due_date','amount','memo'];
+
+    function msDiff(baseSnap,headSnap){
+      var base=normSnap(baseSnap),head=normSnap(headSnap);
+      var S={items_added:0,items_removed:0,items_changed:0,lines_added:0,lines_removed:0,lines_changed:0,
+             fields_changed:0,total_before:0,total_after:0,total_delta:0,targets_added:0,targets_removed:0};
+      var out={has_base:!!baseSnap,changed:false,plan:{},byItem:{},removedItems:[],summary:S};
+      ['title','category','event_date','purpose'].forEach(function(f){
+        if(base[f]!==head[f]){ out.plan[f]={before:base[f],after:head[f]}; S.fields_changed++; } });
+      base.items.forEach(function(it){ it.lines.forEach(function(l){ S.total_before+=l.amount; }); });
+      head.items.forEach(function(it){ it.lines.forEach(function(l){ S.total_after+=l.amount; }); });
+      S.total_before=Math.round(S.total_before*100)/100;
+      S.total_after=Math.round(S.total_after*100)/100;
+      S.total_delta=Math.round((S.total_after-S.total_before)*100)/100;
+
+      var m=pairUp(base.items,head.items,ITEM_KEYS);
+      head.items.forEach(function(h,hi){
+        var bi=m.pairs[hi], b=(bi!=null)?base.items[bi]:null;
+        var rec={state:b?'same':'added',fields:{},lines:{},removedLines:[],base:b||null};
+        if(b){ ['name','memo'].forEach(function(f){
+                 if(b[f]!==h[f]){ rec.fields[f]={before:b[f],after:h[f]}; S.fields_changed++; } }); }
+        else { S.items_added++; }
+        var baseLines=b?b.lines:[];
+        var lm=pairUp(baseLines,h.lines,LINE_KEYS);
+        h.lines.forEach(function(hl,li){
+          var lbi=lm.pairs[li], bl=(lbi!=null)?baseLines[lbi]:null;
+          var lr={state:bl?'same':'added',fields:{},base:bl||null};
+          if(bl){
+            var nf=0;
+            LINE_FIELDS.forEach(function(f){ if(bl[f]!==hl[f]){ lr.fields[f]={before:bl[f],after:hl[f]}; nf++; } });
+            if(nf){ lr.state='changed'; S.lines_changed++; S.fields_changed+=nf; }
+          } else { S.lines_added++; }
+          rec.lines[li]=lr;
+        });
+        baseLines.forEach(function(bl,bli){ if(!lm.usedB[bli]){ rec.removedLines.push(bl); S.lines_removed++; } });
+        if(b){
+          var ch=Object.keys(rec.fields).length>0||rec.removedLines.length>0;
+          Object.keys(rec.lines).forEach(function(k){ if(rec.lines[k].state!=='same')ch=true; });
+          if(ch){ rec.state='changed'; S.items_changed++; }
+        }
+        out.byItem[hi]=rec;
+      });
+      base.items.forEach(function(b,bi){
+        if(!m.usedB[bi]){ out.removedItems.push(b); S.items_removed++; S.lines_removed+=b.lines.length; } });
+
+      var bt={},ht={};
+      base.targets.forEach(function(t){ bt[t.is_general?'G':('C'+t.customer_id)]=1; });
+      head.targets.forEach(function(t){ ht[t.is_general?'G':('C'+t.customer_id)]=1; });
+      Object.keys(ht).forEach(function(k){ if(!bt[k])S.targets_added++; });
+      Object.keys(bt).forEach(function(k){ if(!ht[k])S.targets_removed++; });
+
+      out.changed=!!(S.items_added||S.items_removed||S.items_changed||S.lines_added||S.lines_removed
+        ||S.lines_changed||S.targets_added||S.targets_removed||Object.keys(out.plan).length);
+      return out;
+    }
+
+    // 집행 상태 — 서버(execStateOf)와 같은 규칙. 화면이 서버 응답 없이도 즉시 갱신할 수 있게.
+    function msExecState(planAmount,execTotal,execClosed,paid){
+      if(paid)return 'paid';
+      if(execClosed)return 'closed';
+      if(Number(execTotal)>0)return 'partial';
+      return 'none';
+    }
+    g.msDiff=msDiff; g.msNormSnap=normSnap; g.msExecState=msExecState;
+  })(typeof window!=='undefined'?window:globalThis);
+  // ==== MSDIFF-CORE-END ====
 
   function portalSession(){
     try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token,api:o.api||'',user:o.user||{}}; } }catch(e){}
@@ -191,6 +369,10 @@
     $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>역할: '+esc(session.user&&session.user.role||'');
     $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
     renderStChips(); loadList();
+    if(canExec()){                       // 재무·디렉터에게만 대사 패널
+      $('reconBox').classList.remove('hidden');
+      const d=new Date(); $('reconYm').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    }
     // 포털 알림 팝업 딥링크: #...&plan=ID → 해당 계획 즉시 열기(수정 요청 검토 동선)
     try{ const hp=new URLSearchParams(location.hash.slice(1)); const pid=Number(hp.get('plan')); if(pid>0) openPlan(pid); }catch(e){}
   }
@@ -216,7 +398,18 @@
   }
 
   // ================= 작성/검토 폼 =================
-  function blankLine(){ return {id:null,kind:'one',due_date:'',amount:'',memo:'',paid:false}; }
+  // 서버 라인 응답에서 지급·집행 상태만 뽑아낸다(계획 내용과 분리 — diff 는 계획 내용만 본다).
+  function execOf(l){
+    l=l||{};
+    return {paid:!!l.paid,paid_date:l.paid_date||null,paid_amount:l.paid_amount==null?null:l.paid_amount,
+      txn_deleted:!!l.txn_deleted,
+      executions:l.executions||[],exec_total:Number(l.exec_total||0),
+      exec_balance:l.exec_balance==null?null:Number(l.exec_balance),
+      exec_diff:Number(l.exec_diff||0),exec_closed:!!l.exec_closed,
+      exec_state:l.exec_state||window.msExecState(l.amount,l.exec_total,l.exec_closed,l.paid),
+      exec_last_date:l.exec_last_date||null};
+  }
+  function blankLine(){ return Object.assign({id:null,kind:'one',due_date:'',amount:'',memo:''},execOf({})); }
   function blankItem(){ return {id:null,name:'',memo:'',lines:[blankLine()]}; }
   function newPlan(){
     cur={id:null,status:'draft',created_by:me(),items:[blankItem()],targets:[],files:[]};
@@ -230,22 +423,25 @@
       title:d.plan.title,category:d.plan.category,event_date:d.plan.event_date,purpose:d.plan.purpose,
       created_by_name:d.plan.created_by_name,
       items:(d.items||[]).map(it=>({id:it.id,name:it.name||'',memo:it.memo||'',
-        lines:(it.lines||[]).map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount,txn_deleted:!!l.txn_deleted}))})),
+        lines:(it.lines||[]).map(l=>Object.assign({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||''},execOf(l)))})),
       targets:(d.targets||[]).map(t=>({customer_id:t.customer_id,is_general:t.is_general,code:t.code,name:t.name})),
-      files:d.files||[]};
+      files:d.files||[],
+      can_execute:!!d.can_execute,
+      can_attach:d.can_attach||{quote:false,receipt:false}};
+    cur._revs=(d.revisions_recent||[]);
     if(!cur.items.length)cur.items=[blankItem()];
     // ---- 담당자 수정 요청(0124): 원본/수정안 스냅샷 ----
     cur._orig=deep({title:cur.title,category:cur.category,event_date:cur.event_date,purpose:cur.purpose,items:cur.items,targets:cur.targets});
     cur.revision=null; cur._rev=null; cur._snap='orig';
     if(d.revision&&d.revision.payload){
       cur.revision={by_name:d.revision.by_name,at:d.revision.at};
-      const paidMap=new Map(); (d.lines||[]).forEach(l=>{if(l.id!=null)paidMap.set(Number(l.id),{paid:l.paid,paid_date:l.paid_date,paid_amount:l.paid_amount,txn_deleted:!!l.txn_deleted});});
+      const paidMap=new Map(); (d.lines||[]).forEach(l=>{if(l.id!=null)paidMap.set(Number(l.id),execOf(l));});
       const rp=d.revision.payload;
       cur._rev={title:rp.title||'',category:rp.category||'',event_date:rp.event_date||'',purpose:rp.purpose||'',
         items:(rp.items||[]).map(it=>({id:it.id!=null?it.id:null,name:it.name||'',memo:it.memo||'',
           lines:(it.lines||[]).map(l=>{const pd=l.id!=null?paidMap.get(Number(l.id)):null;
-            return {id:l.id!=null?l.id:null,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||'',
-              paid:pd?pd.paid:false,paid_date:pd?pd.paid_date:null,paid_amount:pd?pd.paid_amount:null,txn_deleted:pd?!!pd.txn_deleted:false};})})),
+            return Object.assign({id:l.id!=null?l.id:null,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo||''},
+              pd||execOf({}));})})),
         targets:(rp.targets||[]).map(t=>({customer_id:t.customer_id,is_general:!!t.is_general,code:t.code,name:t.name}))};
       // 수정 가능한 사용자(담당자·디렉터)에게는 수정안을 기본으로 표시
       if(isDir()||cur.created_by===me()) cur._snap='rev';
@@ -297,7 +493,8 @@
     ['fTitle','fCategory','fEventDate','fPurpose'].forEach(id=>$(id).disabled=!ed);
     $('tgTools').style.display=ed?'':'none';
     $('btnAddItem').style.display=ed?'':'none';
-    renderTargets(); renderItems(); renderRatio(); renderFiles(); renderButtons();
+    closeExecPanel();
+    renderTargets(); renderDiff(); renderItems(); renderRatio(); renderFiles(); renderButtons();
   }
 
   // ---- 대상 ----
@@ -340,36 +537,204 @@
     cur.targets.push({customer_id:null,is_general:true}); renderTargets();
   }
 
+  // ================= 변경표시(diff) =================
+  //  head = 지금 화면 상태, base = "직전 마일스톤".
+  //  base 고르는 규칙:
+  //   ① 담당자 수정 요청을 보는 중이면 → 현재 승인본(_orig)  ← 디렉터 검토의 핵심
+  //   ② 아니면 최근 개정 스냅샷 중 "현재와 다른" 첫 번째 → 직전 제출본/승인본/반려본
+  //      (가장 최근 스냅샷이 곧 현재 상태이면 그 다음 것을 본다 → 항상 "이번에 뭐가 바뀌었나")
+  //   ③ 그래도 없으면 로드 시점(_orig) → 저장 전 "내가 지금 무엇을 고쳤나"
+  function curSnap(){
+    if(!cur)return null;
+    const hdr=$('fTitle')?{title:$('fTitle').value,category:$('fCategory').value||null,
+      event_date:$('fEventDate').value||null,purpose:$('fPurpose').value||null}
+      :{title:cur.title,category:cur.category,event_date:cur.event_date,purpose:cur.purpose};
+    return Object.assign(hdr,{
+      items:cur.items.map(it=>({id:it.id,name:it.name,memo:it.memo,
+        lines:it.lines.map(l=>({id:l.id,kind:l.kind,due_date:l.due_date,amount:l.amount,memo:l.memo}))})),
+      targets:cur.targets.map(t=>({customer_id:t.customer_id,is_general:t.is_general}))});
+  }
+  function diffBase(){
+    if(!cur)return null;
+    if(cur._rev&&cur._snap==='rev'&&cur._orig) return {snap:cur._orig,label:'현재 승인본',at:null};
+    const hd=curSnap();
+    const rr=cur._revs||[];
+    for(let i=0;i<rr.length;i++){
+      if(!rr[i]||!rr[i].snapshot)continue;
+      if(window.msDiff(rr[i].snapshot,hd).changed){
+        return {snap:rr[i].snapshot,label:'직전 '+(REV_LABEL[rr[i].event]||rr[i].event),
+          at:rr[i].created_at,rev_no:rr[i].rev_no,by:rr[i].created_by_name};
+      }
+    }
+    if(cur._orig) return {snap:cur._orig,label:'저장된 내용',at:null,live:true};
+    return null;
+  }
+  function renderDiff(){
+    const box=$('diffBox'); cur._diff=null; cur._diffBase=null;
+    if(!box)return;
+    const b=diffBase();
+    if(!b||!b.snap||!cur.id){ box.classList.add('hidden'); return; }
+    const d=window.msDiff(b.snap,curSnap());
+    cur._diff=d; cur._diffBase=b;
+    box.classList.remove('hidden');
+    const when=b.at?(' · '+fmtDT(b.at)):'';
+    if(!d.changed){
+      box.innerHTML='<span class="hint">✔ <b>'+esc(b.label)+'</b>'+when+' 이후 변경된 내용이 없습니다.</span>';
+      return;
+    }
+    const S=d.summary, bits=[];
+    if(S.items_added)bits.push('집행항목 +'+S.items_added);
+    if(S.items_removed)bits.push('집행항목 −'+S.items_removed);
+    if(S.lines_added)bits.push('지급줄 +'+S.lines_added);
+    if(S.lines_removed)bits.push('지급줄 −'+S.lines_removed);
+    if(S.lines_changed)bits.push('금액·일정 변경 '+S.lines_changed+'건');
+    if(Object.keys(d.plan).length)bits.push('기본정보 '+Object.keys(d.plan).length+'건');
+    if(S.targets_added||S.targets_removed)bits.push('대상 '+(S.targets_added?'+'+S.targets_added:'')+(S.targets_removed?' −'+S.targets_removed:''));
+    const dlt=S.total_delta, sign=dlt>0?'+':'';
+    const pctTxt=S.total_before>0?(' · '+sign+(Math.round(dlt/S.total_before*1000)/10).toFixed(1)+'%'):'';
+    const PL={title:'활동·행사명',category:'분류',event_date:'행사일',purpose:'목적·내용'};
+    let ph='';
+    Object.keys(d.plan).forEach(f=>{
+      const c=d.plan[f];
+      ph+='<div class="hint" style="margin-left:14px">· <b>'+PL[f]+'</b> — <span style="text-decoration:line-through">'+esc(c.before==null?'(없음)':String(c.before).slice(0,60))+'</span> → <b style="color:#9a6512">'+esc(c.after==null?'(없음)':String(c.after).slice(0,60))+'</b></div>';
+    });
+    box.innerHTML='📝 <b>'+esc(b.label)+'</b>'+when+(b.by?' · '+esc(b.by):'')+' <b>대비 변경</b>'
+      +'<button class="btn ghost sm" data-act="diffonly" style="margin-left:10px">'+(cur._diffOnly?'전체 보기':'변경분만 보기')+'</button>'
+      +'<br>'+esc(bits.join(' · '))
+      +'<br>총액 <b>'+fmt(S.total_before)+'</b> → <b style="color:var(--expense)">'+fmt(S.total_after)+'</b> ('+sign+fmt(dlt)+pctTxt+')'
+      +ph
+      +'<div class="hint" style="margin-top:4px"><span class="dgbadge add">신규</span> 추가 · <span class="dgbadge chg">수정</span> 변경(노란 칸이 바뀐 값) · <span class="dgbadge del">삭제</span> 없어진 항목·줄</div>';
+  }
+  // 편집 중에는 화면을 다시 그리지 않고(포커스 유지) 배너와 그 칸만 갱신한다.
+  function liveDiffTouch(el,i,j,f){
+    renderDiff();
+    const d=cur._diff; const w=el.closest('.dgw'); if(!w)return;
+    const lr=d&&d.byItem&&d.byItem[i]&&d.byItem[i].lines&&d.byItem[i].lines[j];
+    const ch=lr&&lr.fields&&lr.fields[f];
+    const p=w.querySelector('.dgp');
+    if(ch){ w.classList.add('on'); if(p)p.textContent='이전: '+prevText(f,ch.before); }
+    else { w.classList.remove('on'); if(p)p.textContent=''; }
+  }
+  function prevText(f,v){
+    if(v==null||v==='')return '(없음)';
+    if(f==='amount')return fmt(v);
+    if(f==='kind')return KIND_LABEL[v]||v;
+    return String(v).slice(0,40);
+  }
+
   // ---- 집행 항목 + 지급 라인 ----
   function itemTotal(it){ return it.lines.reduce((s,l)=>s+(Number(l.amount)>0?Number(l.amount):0),0); }
+  function itemExecTotal(it){ return it.lines.reduce((s,l)=>s+(Number(l.exec_total)||0),0); }
   function planTotal(){ return cur.items.reduce((s,it)=>s+itemTotal(it),0); }
-  function itemHasPaid(it){ return it.lines.some(l=>l.paid); }
+  // 잠긴 줄 = 재무 실적처리(지급완료) 또는 마케팅 집행 완결 — 서버 규칙과 동일
+  function lineLocked(l){ return !!(l.paid||l.exec_closed); }
+  function itemHasPaid(it){ return it.lines.some(lineLocked); }
+  function execTotals(){
+    let plan=0,exec=0,bal=0;
+    cur.items.forEach(it=>it.lines.forEach(l=>{
+      plan+=Number(l.amount)||0; exec+=Number(l.exec_total)||0;
+      if(!lineLocked(l))bal+=Math.max(0,(Number(l.amount)||0)-(Number(l.exec_total)||0));
+    }));
+    return {plan,exec,bal};
+  }
+  // 변경표시 래퍼 — 바뀐 칸은 노란 배경 + 아래에 "이전: …"
+  function dgw(inner,ch,f){
+    return '<span class="dgw'+(ch?' on':'')+'">'+inner
+      +'<span class="dgp">'+(ch?esc('이전: '+prevText(f,ch.before)):'')+'</span></span>';
+  }
+  function execCell(l){
+    const st=l.exec_state||'none';
+    const can=canExec()&&cur.status==='approved'&&l.id!=null;
+    const lastEx=(l.executions||[]).length?l.executions[l.executions.length-1]:null;
+    let h='';
+    if(st==='paid'){
+      h='<span class="paidchip" title="재무 실적처리 '+esc(l.paid_date||'')+'">지급완료 '+esc((l.paid_date||'').slice(5))+'</span>';
+    }else if(st==='closed'){
+      h='<span class="execchip" title="집행 '+fmt(l.exec_total)+' MXN">집행완료 '+esc((l.exec_last_date||'').slice(5))+' · '+fmt0(l.exec_total)+'</span>';
+      if(Math.abs(Number(l.exec_diff)||0)>0.005)
+        h+='<span class="hint" title="계획대비 차이 '+fmt(l.exec_diff)+' MXN">('+((l.exec_diff>0?'+':'')+fmt0(l.exec_diff))+')</span>';
+      if(can&&lastEx)h+='<button class="btn ghost sm" data-exrev="'+lastEx.id+'">되돌리기</button>';
+    }else if(st==='partial'){
+      if(can)h+='<input type="checkbox" class="exsel" data-ln="'+l.id+'" title="집행 처리 대상으로 선택">';
+      h+='<span class="partchip" title="집행 '+fmt(l.exec_total)+' · 잔액 '+fmt(l.exec_balance)+' MXN">부분 '+fmt0(l.exec_total)+' · 잔 '+fmt0(l.exec_balance)+'</span>';
+      if(can&&lastEx)h+='<button class="btn ghost sm" data-exrev="'+lastEx.id+'">되돌리기</button>';
+    }else{
+      if(l.txn_deleted)h='<span class="delchip" title="재무 > 거래등록에서 이 예정 지출(자금계획)이 삭제되었습니다. 저장해도 다시 만들어지지 않습니다.">자금계획 삭제됨</span>';
+      else if(can)h='<input type="checkbox" class="exsel" data-ln="'+l.id+'" title="집행 처리 대상으로 선택"><span class="nonechip">미집행</span>';
+      else h='<span class="nonechip">'+(cur.status==='approved'?'미집행':'—')+'</span>';
+    }
+    return '<span class="execcell">'+h+'</span>';
+  }
+  // 삭제된(기준본에만 있던) 줄 — 읽기 전용 유령 행. 없어진 것을 보여줘야 검토가 된다.
+  function ghostLine(l){
+    return '<div class="payline dg-del">'
+      +'<span><input value="'+esc(KIND_LABEL[l.kind]||l.kind)+'" disabled></span>'
+      +'<span><input value="'+esc(l.due_date||'')+'" disabled></span>'
+      +'<span><input value="'+esc(fmt(l.amount))+'" style="text-align:right" disabled></span>'
+      +'<span><input value="'+esc(l.memo||'')+'" disabled></span>'
+      +'<span class="execcell"><span class="dgbadge del">삭제</span></span><span></span></div>';
+  }
   function renderItems(){
     const ed=editable();
-    $('itWrap').innerHTML=cur.items.map((it,i)=>{
+    const D=cur._diff;
+    const only=!!cur._diffOnly&&!!D&&D.changed;
+    let hidden=0;
+    let html=cur.items.map((it,i)=>{
+      const dItem=D&&D.byItem?D.byItem[i]:null;
+      const st=dItem?dItem.state:'same';
+      if(only&&st==='same'){ hidden++; return ''; }
+      const cls=st==='added'?' dg-add':(st==='changed'?' dg-chg':'');
+      const badge=st==='added'?'<span class="dgbadge add">신규</span>'
+        :(st==='changed'?'<span class="dgbadge chg">수정</span>':'');
       const linesHtml=it.lines.map((l,j)=>{
-        const lock=!ed||l.paid;
-        return '<div class="payline'+(l.paid?' lockrow':'')+'" data-it="'+i+'" data-ln="'+j+'">'
-          +'<select data-f="kind" '+(lock?'disabled':'')+'>'+Object.keys(KIND_LABEL).map(k=>'<option value="'+k+'"'+(l.kind===k?' selected':'')+'>'+KIND_LABEL[k]+'</option>').join('')+'</select>'
-          +'<input type="date" data-f="due_date" value="'+esc(l.due_date)+'" '+(lock?'disabled':'')+'>'
-          +'<input type="number" step="0.01" min="0" data-f="amount" value="'+esc(l.amount)+'" style="text-align:right" '+(lock?'disabled':'')+'>'
-          +'<input data-f="memo" value="'+esc(l.memo)+'" maxlength="300" placeholder="명목·메모" '+(lock?'disabled':'')+'>'
-          +'<span>'+(l.paid?'<span class="paidchip">지급완료 '+esc(l.paid_date||'')+'</span>':(l.txn_deleted?'<span class="delchip" title="재무 > 거래등록에서 이 예정 지출(자금계획)이 삭제되었습니다. 저장해도 다시 만들어지지 않습니다.">자금계획 삭제됨</span>':(ed?'<button class="btn warn sm" data-delln="'+i+','+j+'">✕</button>':'')))+'</span>'
+        const lock=!ed||lineLocked(l);
+        const dl=dItem&&dItem.lines?dItem.lines[j]:null;
+        const F=(dl&&dl.fields)||{};
+        const lst=dl?dl.state:'same';
+        const lcls=lst==='added'?' dg-add':'';
+        return '<div class="payline'+(lineLocked(l)?' lockrow':'')+lcls+'" data-it="'+i+'" data-ln="'+j+'">'
+          +dgw('<select data-f="kind" '+(lock?'disabled':'')+'>'+Object.keys(KIND_LABEL).map(k=>'<option value="'+k+'"'+(l.kind===k?' selected':'')+'>'+KIND_LABEL[k]+'</option>').join('')+'</select>',F.kind,'kind')
+          +dgw('<input type="date" data-f="due_date" value="'+esc(l.due_date)+'" '+(lock?'disabled':'')+'>',F.due_date,'due_date')
+          +dgw('<input type="number" step="0.01" min="0" data-f="amount" value="'+esc(l.amount)+'" style="text-align:right" '+(lock?'disabled':'')+'>',F.amount,'amount')
+          +dgw('<input data-f="memo" value="'+esc(l.memo)+'" maxlength="300" placeholder="명목·메모" '+(lock?'disabled':'')+'>',F.memo,'memo')
+          +execCell(l)
+          +'<span>'+(lst==='added'?'<span class="dgbadge add">신규</span>':'')
+            +((ed&&!lineLocked(l))?'<button class="btn warn sm" data-delln="'+i+','+j+'">✕</button>':'')+'</span>'
           +'</div>';
-      }).join('');
-      return '<div class="itemcard" data-item="'+i+'">'
+      }).join('')
+      +((dItem&&dItem.removedLines||[]).map(ghostLine).join(''));
+      const nameCh=dItem&&dItem.fields?dItem.fields.name:null;
+      const memoCh=dItem&&dItem.fields?dItem.fields.memo:null;
+      return '<div class="itemcard'+cls+'" data-item="'+i+'">'
         +'<div class="itemhead">'
-        +'<div class="nm"><label>집행 항목명 * <span class="hint" style="font-weight:500">(예: 장소 대관, 케이터링, 판촉물 제작)</span></label>'
-        +'<input data-itf="name" data-it="'+i+'" value="'+esc(it.name)+'" maxlength="120" style="width:100%" '+(ed?'':'disabled')+'></div>'
-        +'<div style="flex:1;min-width:160px"><label>업체·비고</label><input data-itf="memo" data-it="'+i+'" value="'+esc(it.memo)+'" maxlength="300" style="width:100%" '+(ed?'':'disabled')+'></div>'
+        +'<div class="nm"><label>집행 항목명 * '+badge+' <span class="hint" style="font-weight:500">(예: 장소 대관, 케이터링, 판촉물 제작)</span></label>'
+        +dgw('<input data-itf="name" data-it="'+i+'" value="'+esc(it.name)+'" maxlength="120" '+(ed?'':'disabled')+'>',nameCh,'name')+'</div>'
+        +'<div style="flex:1;min-width:160px"><label>업체·비고</label>'
+        +dgw('<input data-itf="memo" data-it="'+i+'" value="'+esc(it.memo)+'" maxlength="300" '+(ed?'':'disabled')+'>',memoCh,'memo')+'</div>'
         +(ed?'<button class="btn warn sm" data-delitem="'+i+'" style="margin-bottom:1px">항목 삭제 ✕</button>':'')
         +'</div>'
-        +'<div class="payline hint" style="font-weight:700;margin-top:10px"><span>구분</span><span>지급 예정일</span><span>금액 (MXN)</span><span>명목·메모</span><span></span></div>'
+        +'<div class="payline hint" style="font-weight:700;margin-top:10px"><span>구분</span><span>지급 예정일</span><span>금액 (MXN)</span><span>명목·메모</span><span>집행</span><span></span></div>'
         +linesHtml
         +(ed?'<button class="btn ghost sm" data-addln="'+i+'" style="margin-top:8px">＋ 지급 줄 추가</button>':'')
-        +'<div class="itemsub"><span class="hint" style="font-weight:600">지급 '+it.lines.length+'건</span><span>항목 소계 <b style="color:var(--expense)">MX$ '+fmt(itemTotal(it))+'</b></span></div>'
+        +'<div class="itemsub"><span class="hint" style="font-weight:600">지급 '+it.lines.length+'건</span>'
+        +(itemExecTotal(it)>0?'<span class="hint">집행 '+fmt(itemExecTotal(it))+'</span>':'')
+        +'<span>항목 소계 <b style="color:var(--expense)">MX$ '+fmt(itemTotal(it))+'</b></span></div>'
+        +evStrip(it)
         +'</div>';
-    }).join('')||'<div class="hint" style="margin-top:8px">집행 항목이 없습니다. [＋ 집행 항목 추가]를 누르세요.</div>';
+    }).join('');
+    // 기준본에만 있던(삭제된) 집행 항목 — 유령 카드로 남겨 무엇이 없어졌는지 보이게 한다
+    if(D&&(D.removedItems||[]).length){
+      html+='<div class="dgsect">✕ 삭제된 집행 항목 '+D.removedItems.length+'건 <span class="hint" style="font-weight:500">(기준본에는 있었으나 지금은 없음 — 참고용)</span></div>'
+        +D.removedItems.map(b=>'<div class="itemcard dg-del">'
+          +'<div class="itemhead"><div class="nm"><label>집행 항목명 <span class="dgbadge del">삭제</span></label>'
+          +'<input value="'+esc(b.name)+'" disabled style="width:100%"></div>'
+          +'<div style="flex:1;min-width:160px"><label>업체·비고</label><input value="'+esc(b.memo||'')+'" disabled style="width:100%"></div></div>'
+          +b.lines.map(ghostLine).join('')
+          +'<div class="itemsub"><span>항목 소계 <b>MX$ '+fmt(b.lines.reduce((s,l)=>s+(Number(l.amount)||0),0))+'</b></span></div></div>').join('');
+    }
+    if(only&&hidden)html+='<div class="hint" style="margin-top:10px">변경 없는 집행 항목 '+hidden+'건은 숨겼습니다 — [전체 보기]로 되돌릴 수 있습니다.</div>';
+    $('itWrap').innerHTML=html||'<div class="hint" style="margin-top:8px">집행 항목이 없습니다. [＋ 집행 항목 추가]를 누르세요.</div>';
+    renderExecBar();
   }
   function renderRatio(){
     const budget=planTotal();
@@ -384,24 +749,211 @@
       +(!custN?'<div class="hint" style="align-self:center">고객 대상을 추가하면 비율이 계산됩니다</div>':'');
   }
 
+  // ================= 집행 처리(0195) =================
+  const EXEC_ERR={exec_forbidden:'집행 처리는 재무·디렉터만 할 수 있습니다.',
+    migration_required:'서버 마이그레이션(0195)이 아직 적용되지 않았습니다. 디렉터에게 알려주세요.',
+    already_paid:'재무에서 이미 실적 처리된 줄이 포함되어 있습니다. 목록을 새로고침하세요.',
+    already_closed:'이미 집행 완결된 줄이 포함되어 있습니다. 목록을 새로고침하세요.',
+    not_approved:'승인된 계획에서만 집행 처리할 수 있습니다.',
+    line_not_in_plan:'이 계획에 속하지 않은 줄이 있습니다.',
+    finance_actual:'재무에서 이미 실적 처리되어 되돌릴 수 없습니다.',
+    already_reverted:'이미 되돌린 집행입니다.'};
+  function findLine(lineId){
+    for(const it of cur.items)for(const l of it.lines)if(l.id!=null&&Number(l.id)===Number(lineId))return {it,l};
+    return null;
+  }
+  function lineBalance(l){ return Math.max(0,(Number(l.amount)||0)-(Number(l.exec_total)||0)); }
+  function renderExecBar(){
+    const bar=$('execBar'); if(!bar)return;
+    if(!(cur&&cur.status==='approved'&&canExec())){bar.classList.add('hidden');bar.innerHTML='';return;}
+    const boxes=[...document.querySelectorAll('.exsel')];
+    const on=boxes.filter(b=>b.checked);
+    let sum=0; on.forEach(b=>{const f=findLine(b.dataset.ln); if(f)sum+=lineBalance(f.l);});
+    const T=execTotals();
+    bar.classList.remove('hidden');
+    bar.innerHTML='💸 <b>집행 처리</b> <span class="hint">— 실제 송금한 줄을 골라 계획을 소진합니다. <b>재무 등록은 별도</b>로 진행하세요.</span>'
+      +'<span style="margin-left:auto">계획 '+fmt(T.plan)+' · 집행 '+fmt(T.exec)+' · 미집행 잔액 <b style="color:var(--expense)">'+fmt(T.bal)+'</b></span>'
+      +'<div style="flex-basis:100%;height:0"></div>'
+      +'<span>선택 <b>'+on.length+'건</b> · 합계 <b>MX$ '+fmt(sum)+'</b></span>'
+      +'<button class="btn sm" data-act="execopen"'+(on.length?'':' disabled')+'>선택한 줄 집행 처리 →</button>'
+      +'<button class="btn ghost sm" data-act="execnone"'+(on.length?'':' disabled')+'>선택 해제</button>'
+      +(boxes.length?'':'<span class="hint">집행 가능한 줄이 없습니다 — 모두 완료되었거나 재무에서 실적 처리되었습니다.</span>');
+  }
+  function closeExecPanel(){ $('execPanel').classList.add('hidden'); $('execPanel').innerHTML=''; }
+  function openExecPanel(){
+    const on=[...document.querySelectorAll('.exsel')].filter(b=>b.checked);
+    if(!on.length)return;
+    const today=new Date().toISOString().slice(0,10);
+    const rows=on.map(b=>{
+      const f=findLine(b.dataset.ln); if(!f)return '';
+      const bal=lineBalance(f.l);
+      return '<tr><td style="white-space:normal">'+esc(f.it.name)+' · <span class="pk '+f.l.kind+'">'+KIND_LABEL[f.l.kind]+'</span> <span class="hint">'+esc(f.l.due_date||'')+'</span></td>'
+        +'<td class="r">'+fmt(f.l.amount)+'</td><td class="r">'+fmt(bal)+'</td>'
+        +'<td><input type="number" step="0.01" min="0" class="exam" data-ln="'+f.l.id+'" value="'+bal+'" style="width:120px;text-align:right"></td></tr>';
+    }).join('');
+    $('execPanel').innerHTML='<div style="font-weight:800;color:#2b5a78">💸 집행 처리 — '+on.length+'건</div>'
+      +'<table><tr><th>대상 줄</th><th class="r">계획액</th><th class="r">잔액</th><th>실지급액 (MXN)</th></tr>'+rows+'</table>'
+      +'<div class="execrow">'
+      +'<div><label>집행일(실제 송금일) *</label><input type="date" id="exDate" value="'+today+'"></div>'
+      +'<div style="flex:1;min-width:200px"><label>비고 — 송금 참조번호 등</label><input id="exNote" maxlength="300" style="width:100%"></div>'
+      +'<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-bottom:9px;color:var(--ink)">'
+      +'<input type="checkbox" id="exClose" checked> 이 줄들은 <b>완결</b> — 더 나갈 돈 없음</label>'
+      +'</div>'
+      +'<div class="hint" style="margin-top:6px">완결하면 재무 &gt; 거래등록의 <b>예정 내역에서 사라지고 현금흐름에서 제외</b>됩니다. 완결을 끄면 <b>잔액만큼 예정이 남습니다</b>.<br>'
+      +'계획액과 실지급액이 다르면 계획액은 그대로 두고 <b>계획대비 차이</b>로 기록됩니다.<br>'
+      +'⚠️ 실제 송금 등록(재무 &gt; 거래등록)은 <b>별도로</b> 진행하세요 — 이 화면은 계획만 소진합니다. 누락은 위 「집행 ↔ 재무 대사」에서 잡힙니다.</div>'
+      +'<div style="display:flex;gap:10px;margin-top:12px"><button class="btn" data-act="execgo">집행 처리</button><button class="btn ghost" data-act="execcancel">취소</button></div>';
+    $('execPanel').classList.remove('hidden');
+    try{$('execPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){}
+  }
+  async function submitExec(){
+    const date=$('exDate')?$('exDate').value:'';
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){say('cpMsg',false,'집행일을 입력하세요.');return;}
+    const close=$('exClose')?$('exClose').checked:true;
+    const note=$('exNote')?$('exNote').value.trim():'';
+    const lines=[...document.querySelectorAll('.exam')].map(el=>({line_id:Number(el.dataset.ln),amount:Number(el.value)}));
+    if(!lines.length){say('cpMsg',false,'대상 줄이 없습니다.');return;}
+    for(const l of lines)if(!(l.amount>0)){say('cpMsg',false,'실지급액을 모두 입력하세요(0보다 커야 합니다).');return;}
+    const sum=lines.reduce((s,l)=>s+l.amount,0);
+    if(!confirm('집행 처리할까요?\n'+lines.length+'건 · 합계 MX$ '+fmt(sum)+' · 집행일 '+date
+      +(close?'\n\n[완결] 재무 예정 내역에서 사라지고 현금흐름에서 제외됩니다.':'\n\n[부분 집행] 잔액만큼 예정이 남습니다.')
+      +'\n\n실제 송금 등록(재무 > 거래등록)은 별도로 진행해야 합니다.'))return;
+    const d=await api('/api/mktspend/plans/'+cur.id+'/executions',
+      {method:'POST',body:JSON.stringify({exec_date:date,note:note||null,close,lines})});
+    if(!d.ok){say('cpMsg',false,EXEC_ERR[d.error]||('집행 처리 실패: '+(d.error||d.status)));return;}
+    closeExecPanel();
+    say('cpMsg',true,'집행 처리 완료 — '+lines.length+'건 · MX$ '+fmt(sum)+(close?' · 예정에서 제외되었습니다.':' · 잔액은 예정으로 남습니다.'));
+    loadList(); openPlan(cur.id);
+  }
+  async function revertExec(execId){
+    const reason=prompt('이 집행을 되돌립니다.\n예정 지출이 복원되고 현금흐름에 다시 잡힙니다.\n\n사유(선택):','');
+    if(reason===null)return;
+    const d=await api('/api/mktspend/executions/'+execId+'/revert',{method:'POST',body:JSON.stringify({reason:reason||null})});
+    if(!d.ok){say('cpMsg',false,EXEC_ERR[d.error]||('되돌리기 실패: '+(d.error||d.status)));return;}
+    say('cpMsg',true,'집행을 되돌렸습니다 — 예정 지출이 복원되었습니다.');
+    loadList(); openPlan(cur.id);
+  }
+
+  // ================= 집행 ↔ 재무 대사 =================
+  async function loadRecon(){
+    const ym=$('reconYm').value;
+    if(!/^\d{4}-\d{2}$/.test(ym)){say('listMsg',false,'조회할 달을 고르세요.');return;}
+    $('reconOut').innerHTML='<div class="hint" style="margin-top:8px">조회 중…</div>';
+    const d=await api('/api/mktspend/reconcile?ym='+ym);
+    if(!d.ok){$('reconOut').innerHTML='<div class="hint" style="margin-top:8px">조회하지 못했습니다: '+esc(d.error||String(d.status))+'</div>';return;}
+    const gap=Number(d.gap)||0, okGap=Math.abs(gap)<0.01;
+    let h='<div class="recongrid">'
+      +'<div><div class="hint" style="font-weight:700">① 재무 실적처리 <span style="font-weight:500">(계획 ↔ 원장 연결됨)</span></div><b>'+fmt(d.finance_linked.amount)+'</b> <span class="hint">'+d.finance_linked.count+'건</span></div>'
+      +'<div><div class="hint" style="font-weight:700">② 마케팅 집행 처리</div><b>'+fmt(d.marketing_exec.amount)+'</b> <span class="hint">'+d.marketing_exec.count+'건</span></div>'
+      +'<div><div class="hint" style="font-weight:700">③ 원장 [마케팅] 지출 실적</div><b>'+fmt(d.ledger_total.amount)+'</b> <span class="hint">'+d.ledger_total.count+'건</span></div>'
+      +'<div><div class="hint" style="font-weight:700">③−① 계획 미연결 원장</div><b>'+fmt(d.unlinked_ledger.amount)+'</b> <span class="hint">'+d.unlinked_ledger.count+'건</span></div>'
+      +'</div>';
+    h+='<div class="recongap '+(okGap?'ok':'bad')+'">'
+      +(okGap?'✔ 차이 없음 — 마케팅 집행 처리(②)와 계획에 연결되지 않은 원장 지출(③−①)이 일치합니다.'
+        :('⚠️ 차이 <b>'+fmt(gap)+'</b> (② − (③−①)) — '+(gap>0
+          ?'마케팅에서 집행 처리한 만큼 원장에 지출이 없습니다. <b>재무 등록이 누락됐는지</b> 확인하세요.'
+          :'원장의 [마케팅] 지출이 계획에서 소진되지 않았습니다. <b>집행 처리가 누락됐는지</b> 확인하세요.')))
+      +'</div>';
+    const ei=d.exec_items||[], ui=d.unlinked_items||[];
+    if(ei.length)h+='<div class="hint" style="margin-top:10px;font-weight:700">② 마케팅 집행 처리 내역</div>'
+      +'<table><tr><th>집행일</th><th>계획 · 항목 · 구분</th><th class="r">실지급액</th><th>비고</th></tr>'
+      +ei.slice(0,30).map(x=>'<tr><td>'+esc(x.exec_date)+'</td><td style="white-space:normal">'+esc(x.title)+' · '+esc(x.item_name)+' · '+esc(x.kind_label)+'</td>'
+        +'<td class="r">'+fmt(x.amount)+'</td><td style="white-space:normal">'+esc(x.note||'')+'</td></tr>').join('')+'</table>'
+      +(ei.length>30?'<div class="hint">… 외 '+(ei.length-30)+'건</div>':'');
+    if(ui.length)h+='<div class="hint" style="margin-top:10px;font-weight:700">③−① 계획에 연결되지 않은 원장 [마케팅] 지출</div>'
+      +'<table><tr><th>거래일</th><th>메모</th><th class="r">금액</th></tr>'
+      +ui.slice(0,30).map(x=>'<tr><td>'+esc(x.txn_date)+'</td><td style="white-space:normal">'+esc((x.memo||'').slice(0,90))+'</td><td class="r">'+fmt(x.amount)+'</td></tr>').join('')+'</table>'
+      +(ui.length>30?'<div class="hint">… 외 '+(ui.length-30)+'건</div>':'');
+    $('reconOut').innerHTML=h;
+  }
+
   // ---- 증빙 파일 ----
   //  증빙은 계획 편집 가능 여부와 "무관" — 저장된 계획이면 상태(승인대기·승인됨 포함)·작성자에
   //  관계없이 마케팅·디렉터가 첨부/삭제할 수 있다(서버 requirePageEdit가 최종 검증, 보기전용은 403 안내).
   //  인보이스 첨부(0091)와 동일 방침: 증빙(견적서·계약서·인보이스)은 제출 후·승인 후에 도착하는 경우가 많다.
   function fmtBytes(n){ if(n==null)return''; if(n>1048576)return (n/1048576).toFixed(1)+'MB'; if(n>1024)return Math.round(n/1024)+'KB'; return n+'B'; }
+  // ---- 항목별 증빙(0197) ----
+  //  견적서 = 계획의 근거 / 영수증 = 집행의 근거. 항목 카드 안에서 나란히 본다.
+  const DOC_LABEL={quote:'견적서',receipt:'영수증',other:'계획 공통'};
+  function filesOf(itemId,kind){
+    const want=itemId==null?null:Number(itemId);
+    return (cur.files||[]).filter(f=>{
+      const fi=f.item_id==null?null:Number(f.item_id);
+      return fi===want&&(f.doc_kind||'other')===kind;
+    });
+  }
+  function itemExecuted(it){ return it.lines.some(l=>l.paid||l.exec_closed||Number(l.exec_total)>0); }
+  function evChip(f){
+    const q=(f.doc_kind||'other')==='quote';
+    const canDel=(cur.can_attach||{})[f.doc_kind==='receipt'?'receipt':'quote'];
+    return '<span class="evchip '+(q?'q':'r')+'" title="'+esc(f.file_name)+(f.uploaded_by_name?' · '+esc(f.uploaded_by_name):'')+'">'
+      +'<b>'+(q?'견':'영')+'</b><span class="nm">'+esc(f.file_name)+'</span>'
+      +'<span class="hint">'+fmtBytes(f.file_size)+'</span>'
+      +'<a data-viewf="'+f.id+'">보기</a>'
+      +(canDel?'<a class="del" data-delf="'+f.id+'">✕</a>':'')+'</span>';
+  }
+  function evStrip(it){
+    if(!cur.id) return '<div class="evbox"><span class="hint">📎 계획을 저장하면 항목별 증빙을 첨부할 수 있습니다.</span></div>';
+    if(it.id==null) return '<div class="evbox"><span class="hint">📎 이 항목을 저장한 뒤 견적서·영수증을 첨부할 수 있습니다.</span></div>';
+    const q=filesOf(it.id,'quote'), r=filesOf(it.id,'receipt');
+    const ex=itemExecuted(it);
+    const ca=cur.can_attach||{};
+    const qb=q.length?'<span class="evbadge ok">견적서 '+q.length+'</span>':'<span class="evbadge miss">견적서 없음</span>';
+    const rb=r.length?'<span class="evbadge ok">영수증 '+r.length+'</span>'
+      :(ex?'<span class="evbadge need">영수증 필요</span>':'<span class="evbadge miss">영수증 —</span>');
+    return '<div class="evbox"><div class="evhead"><b>📎 증빙</b>'+qb+rb
+      +(ca.quote?'<button class="btn ghost sm" data-evadd="'+it.id+',quote">＋ 견적서</button>':'')
+      +(ca.receipt?'<button class="btn ghost sm" data-evadd="'+it.id+',receipt">＋ 영수증</button>':'')
+      +(ex&&!r.length?'<span class="hint" style="color:var(--expense)">집행했는데 영수증이 없습니다</span>':'')
+      +'</div>'
+      +((q.length||r.length)?('<div class="evlist">'+q.map(evChip).join('')+r.map(evChip).join('')+'</div>')
+        :'<div class="hint" style="margin-top:4px">첨부된 증빙이 없습니다.</div>')
+      +'</div>';
+  }
+  function renderEvSummary(){
+    const box=$('evSum'); if(!box)return;
+    if(!cur.id){box.classList.add('hidden');return;}
+    let noQuote=0, needRcpt=0, nItems=0;
+    cur.items.forEach(it=>{
+      if(it.id==null)return; nItems++;
+      if(!filesOf(it.id,'quote').length)noQuote++;
+      if(itemExecuted(it)&&!filesOf(it.id,'receipt').length)needRcpt++;
+    });
+    if(!nItems){box.classList.add('hidden');return;}
+    box.classList.remove('hidden');
+    if(!noQuote&&!needRcpt){
+      box.className='evsum ok';
+      box.innerHTML='✔ 증빙 완비 — 집행 항목 '+nItems+'건 모두 견적서가 있고, 집행한 항목에는 영수증이 있습니다.';
+      return;
+    }
+    box.className='evsum';
+    const bits=[];
+    if(noQuote)bits.push('<b>견적서 없는 항목 '+noQuote+'건</b>');
+    if(needRcpt)bits.push('<b style="color:var(--expense)">집행했는데 영수증 없는 항목 '+needRcpt+'건</b>');
+    box.innerHTML='📎 증빙 점검 — '+bits.join(' · ')
+      +'<span class="hint"> (집행 항목 '+nItems+'건 기준 · 각 항목 카드 하단에서 첨부)</span>';
+  }
   function renderFiles(){
     $('btnAddFile').disabled=!cur.id;
     $('fileHint').textContent=cur.id?'':'임시 저장 후 파일을 첨부할 수 있습니다.';
-    $('fileList').innerHTML=(cur.files||[]).map(f=>'<div class="filerow"><span class="nm">'+esc(f.file_name)+'</span><span class="hint">'+fmtBytes(f.file_size)+(f.uploaded_by_name?' · '+esc(f.uploaded_by_name):'')+'</span>'
+    const common=(cur.files||[]).filter(f=>f.item_id==null);
+    $('fileList').innerHTML=common.map(f=>'<div class="filerow"><span class="nm">'+esc(f.file_name)+'</span>'
+      +'<span class="hint">'+esc(DOC_LABEL[f.doc_kind]||'계획 공통')+' · '+fmtBytes(f.file_size)+(f.uploaded_by_name?' · '+esc(f.uploaded_by_name):'')+'</span>'
       +'<button class="btn ghost sm" data-viewf="'+f.id+'">보기</button><button class="btn warn sm" data-delf="'+f.id+'">삭제</button></div>').join('')
-      ||'<div class="hint" style="margin-top:6px">첨부된 증빙이 없습니다.</div>';
+      ||'<div class="hint" style="margin-top:6px">계획 공통 증빙이 없습니다.</div>';
+    renderEvSummary();
   }
   async function reloadFiles(){
     if(!cur.id)return;
     const d=await api('/api/mktspend/plans/'+cur.id+'/files');
-    if(d.ok){cur.files=d.items||[];renderFiles();}
+    if(d.ok){cur.files=d.items||[];renderFiles();renderItems();}   // 항목 카드의 증빙 칩도 같이 갱신
   }
-  function pickFiles(){ $('filePick').value=''; $('filePick').click(); }
+  // 어느 항목의 어떤 증빙으로 올릴지 — 파일 선택창을 열기 직전에 정해둔다
+  let pendingUpload={item_id:null,doc_kind:'other'};
+  function pickFiles(itemId,kind){
+    pendingUpload={item_id:itemId==null?null:Number(itemId),doc_kind:kind||'other'};
+    $('filePick').value=''; $('filePick').click();
+  }
   function fixDataUrl(u){ // 확장자 미인식 파일: FileReader가 mime 없이 'data:;base64,'를 만들면 서버 검증(bad_format)에 걸림 → octet-stream으로 보정
     return String(u||'').replace(/^data:;base64,/,'data:application/octet-stream;base64,').replace(/^data:base64,/,'data:application/octet-stream;base64,');
   }
@@ -414,12 +966,16 @@
       let dataUrl;
       try{ dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('read'));r.readAsDataURL(f);}); }
       catch(e){failN++;lastErr=esc(f.name)+' — 읽기 실패';continue;}
-      const d=await api('/api/mktspend/plans/'+cur.id+'/files',{method:'POST',body:JSON.stringify({file_name:f.name,data:fixDataUrl(dataUrl)})});
+      const d=await api('/api/mktspend/plans/'+cur.id+'/files',{method:'POST',body:JSON.stringify(
+        {file_name:f.name,data:fixDataUrl(dataUrl),item_id:pendingUpload.item_id,doc_kind:pendingUpload.doc_kind})});
       if(d.ok)okN++;
-      else{failN++;lastErr=d.status===403?'권한 없음 — 이 화면이 보기 전용입니다. 디렉터에게 편집 권한을 요청하세요.'
-        :(d.note==='bad_mime'?esc(f.name)+' — 지원하지 않는 형식':d.note==='too_large'?esc(f.name)+' — 8MB 초과':(d.error||('오류 '+d.status)));}
+      else{failN++;lastErr=d.status===403?'권한 없음 — 이 종류의 증빙을 올릴 권한이 없습니다.'
+        :(d.error==='item_not_in_plan'?'이 계획의 항목이 아닙니다. 화면을 새로고침하세요.'
+        :(d.note==='bad_mime'?esc(f.name)+' — 지원하지 않는 형식':d.note==='too_large'?esc(f.name)+' — 8MB 초과':(d.error||('오류 '+d.status))));}
     }
-    say('cpMsg',failN===0,'업로드 완료 '+okN+'건'+(failN?' · 실패 '+failN+'건 ('+lastErr+')':''));
+    const what=DOC_LABEL[pendingUpload.doc_kind]||'증빙';
+    say('cpMsg',failN===0,what+' 업로드 완료 '+okN+'건'+(failN?' · 실패 '+failN+'건 ('+lastErr+')':''));
+    pendingUpload={item_id:null,doc_kind:'other'};
     reloadFiles();
   }
   async function viewFile(fid){
@@ -464,7 +1020,9 @@
     if(cur.id)d=await api('/api/mktspend/plans/'+cur.id,{method:'PATCH',body:JSON.stringify(p)});
     else d=await api('/api/mktspend/plans',{method:'POST',body:JSON.stringify(p)});
     if(!d.ok){
-      if(d.error==='line_locked')say('cpMsg',false,'이미 지급완료된 줄은 수정·삭제할 수 없습니다.');
+      if(d.error==='line_locked')say('cpMsg',false,d.reason==='executed'
+        ?'집행 완결된 줄은 수정·삭제할 수 없습니다. 먼저 [되돌리기]로 집행을 취소하세요.'
+        :'이미 지급완료된 줄은 수정·삭제할 수 없습니다.');
       else say('cpMsg',false,'저장 실패: '+(d.error||d.status));
       return false;
     }
@@ -517,6 +1075,7 @@
     const d=await api('/api/mktspend/plans/'+cur.id,{method:'DELETE'});
     if(!d.ok){
       if(d.error==='has_paid_lines')say('cpMsg',false,'지급완료된 줄이 있어 삭제할 수 없습니다.');
+      else if(d.error==='has_executed_lines')say('cpMsg',false,'집행 기록이 있어 삭제할 수 없습니다. 집행을 모두 되돌린 뒤 삭제하세요.');
       else say('cpMsg',false,'삭제 실패: '+(d.error||d.status));
       return;
     }
@@ -570,21 +1129,26 @@
 
   // ================= 이벤트 (위임) =================
   document.addEventListener('click',function(ev){
-    const t=ev.target.closest('[data-open],[data-st],[data-deltg],[data-delitem],[data-addln],[data-delln],[data-viewf],[data-delf],[data-act],.srchItem');
+    if(ev.target.classList&&ev.target.classList.contains('exsel')){renderExecBar();return;}
+    const t=ev.target.closest('[data-open],[data-st],[data-deltg],[data-delitem],[data-addln],[data-delln],[data-viewf],[data-delf],[data-exrev],[data-evadd],[data-act],.srchItem');
     if(!t)return;
+    if(t.dataset.evadd!=null){
+      const [iid,kind]=t.dataset.evadd.split(',');
+      pickFiles(Number(iid),kind);return;}
+    if(t.dataset.exrev!=null){revertExec(Number(t.dataset.exrev));return;}
     if(t.dataset.open!=null){openPlan(Number(t.dataset.open));return;}
     if(t.dataset.st!=null){listFilter=t.dataset.st;renderStChips();loadList();return;}
     if(t.dataset.deltg!=null){cur.targets.splice(Number(t.dataset.deltg),1);renderTargets();refreshStats();return;}
     if(t.dataset.delitem!=null){
       const i=Number(t.dataset.delitem);
-      if(itemHasPaid(cur.items[i])){say('cpMsg',false,'지급완료된 줄이 있는 항목은 삭제할 수 없습니다.');return;}
-      cur.items.splice(i,1);renderItems();renderRatio();return;}
+      if(itemHasPaid(cur.items[i])){say('cpMsg',false,'지급완료·집행완료된 줄이 있는 항목은 삭제할 수 없습니다.');return;}
+      cur.items.splice(i,1);renderDiff();renderItems();renderRatio();return;}
     if(t.dataset.addln!=null){
-      cur.items[Number(t.dataset.addln)].lines.push(blankLine());renderItems();renderRatio();return;}
+      cur.items[Number(t.dataset.addln)].lines.push(blankLine());renderDiff();renderItems();renderRatio();return;}
     if(t.dataset.delln!=null){
       const [i,j]=t.dataset.delln.split(',').map(Number);
-      if(cur.items[i].lines[j]&&cur.items[i].lines[j].paid){say('cpMsg',false,'지급완료된 줄은 삭제할 수 없습니다.');return;}
-      cur.items[i].lines.splice(j,1);renderItems();renderRatio();return;}
+      if(cur.items[i].lines[j]&&lineLocked(cur.items[i].lines[j])){say('cpMsg',false,'지급완료·집행완료된 줄은 삭제할 수 없습니다. 집행을 되돌린 뒤 삭제하세요.');return;}
+      cur.items[i].lines.splice(j,1);renderDiff();renderItems();renderRatio();return;}
     if(t.dataset.viewf!=null){viewFile(Number(t.dataset.viewf));return;}
     if(t.dataset.delf!=null){delFile(Number(t.dataset.delf));return;}
     if(t.classList.contains('srchItem')&&t.dataset.cid){
@@ -600,6 +1164,11 @@
       else if(a==='del')deletePlan();
       else if(a==='discard')discardRevision();
       else if(a==='snap')loadSnap(cur._snap==='rev'?'orig':'rev');
+      else if(a==='diffonly'){cur._diffOnly=!cur._diffOnly;renderDiff();renderItems();}
+      else if(a==='execopen')openExecPanel();
+      else if(a==='execgo')submitExec();
+      else if(a==='execcancel')closeExecPanel();
+      else if(a==='execnone'){[...document.querySelectorAll('.exsel')].forEach(b=>{b.checked=false;});renderExecBar();}
       return;
     }
   });
@@ -609,14 +1178,23 @@
       const i=Number(row.dataset.it), j=Number(row.dataset.ln), f=ev.target.dataset.f;
       if(cur&&cur.items[i]&&cur.items[i].lines[j]){cur.items[i].lines[j][f]=ev.target.value;
         if(f==='amount'){renderRatio();const card=ev.target.closest('.itemcard');
-          if(card){const sub=card.querySelector('.itemsub');if(sub)sub.innerHTML='<span class="hint" style="font-weight:600">지급 '+cur.items[i].lines.length+'건</span><span>항목 소계 <b style="color:var(--expense)">MX$ '+fmt(itemTotal(cur.items[i]))+'</b></span>';}}}
+          if(card){const sub=card.querySelector('.itemsub');if(sub)sub.innerHTML='<span class="hint" style="font-weight:600">지급 '+cur.items[i].lines.length+'건</span><span>항목 소계 <b style="color:var(--expense)">MX$ '+fmt(itemTotal(cur.items[i]))+'</b></span>';}}
+        // 편집 중 변경표시: 화면을 다시 그리지 않고(포커스 유지) 배너와 이 칸만 갱신
+        liveDiffTouch(ev.target,i,j,f);}
       return;
     }
     if(ev.target.dataset.itf){
       const i=Number(ev.target.dataset.it);
-      if(cur&&cur.items[i])cur.items[i][ev.target.dataset.itf]=ev.target.value;
+      if(cur&&cur.items[i]){cur.items[i][ev.target.dataset.itf]=ev.target.value;
+        const w=ev.target.closest('.dgw'); renderDiff();
+        if(w){const rec=cur._diff&&cur._diff.byItem?cur._diff.byItem[i]:null;
+          const ch=rec&&rec.fields?rec.fields[ev.target.dataset.itf]:null;
+          const p=w.querySelector('.dgp');
+          if(ch){w.classList.add('on');if(p)p.textContent='이전: '+prevText(ev.target.dataset.itf,ch.before);}
+          else{w.classList.remove('on');if(p)p.textContent='';}}}
       return;
     }
+    if(['fTitle','fCategory','fEventDate','fPurpose'].includes(ev.target.id)){ if(cur&&cur.id)renderDiff(); return; }
     if(ev.target.id==='tgSearch'){clearTimeout(srchT);srchT=setTimeout(doSearch,250);}
   });
   document.addEventListener('click',function(ev){
@@ -629,9 +1207,10 @@
     $('btnNew').addEventListener('click',newPlan);
     $('btnClose').addEventListener('click',()=>{$('composer').classList.add('hidden');cur=null;});
     $('btnGeneral').addEventListener('click',addGeneral);
-    $('btnAddItem').addEventListener('click',()=>{cur.items.push(blankItem());renderItems();renderRatio();});
-    $('btnAddFile').addEventListener('click',pickFiles);
+    $('btnAddItem').addEventListener('click',()=>{cur.items.push(blankItem());renderDiff();renderItems();renderRatio();});
+    $('btnAddFile').addEventListener('click',()=>pickFiles(null,'other'));
     $('filePick').addEventListener('change',onFilesPicked);
+    $('btnRecon').addEventListener('click',loadRecon);
     const ps=portalSession();
     if(ps&&ps.token){session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')};afterLogin();}
   });

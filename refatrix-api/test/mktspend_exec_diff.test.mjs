@@ -242,6 +242,10 @@ const markers = [
   ['대사 패널', "id=\"reconBox\""],
   ['변경표시 배너', "id=\"diffBox\""],
   ['변경분만 보기', "data-act=\"diffonly\""],
+  ['항목별 증빙 추가 버튼', 'data-evadd='],
+  ['증빙 점검 요약', 'id="evSum"'],
+  ['증빙 종류 전송', 'doc_kind:pendingUpload.doc_kind'],
+  ['계획 공통 증빙 라벨', '계획 공통 증빙'],
   ['빌드 마커', 'build 20260903a'],
 ];
 for (const [name, needle] of markers) {

@@ -313,6 +313,95 @@ test('⑮ 잘못된 입력 방어', { skip: SKIP }, async () => {
   assert.equal((await post('fin', '/api/mktspend/executions/999999999/revert', {})).statusCode, 404);
 });
 
+// =====================================================================
+// 항목별 증빙(0197) — 견적서(계획 근거) / 영수증(집행 근거)
+// =====================================================================
+const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+let P2 = 0, IT = {};
+const up = (who, planId, body) => post(who, `/api/mktspend/plans/${planId}/files`, body);
+
+test('⑯ 항목별 증빙 — 견적서·영수증이 항목에 붙는다', { skip: SKIP }, async () => {
+  const d = await detail('dir', P);
+  IT.venue = d.items[0].id; IT.cater = d.items[1].id;
+  const q = await up('mkt', P, { file_name: 'cotizacion_cintermex.pdf', data: PNG, item_id: IT.venue, doc_kind: 'quote' });
+  assert.equal(q.statusCode, 200, q.body);
+  assert.equal(q.json().item_id, IT.venue);
+  assert.equal(q.json().doc_kind, 'quote');
+  const r = await up('fin', P, { file_name: 'spei_88213.pdf', data: PNG, item_id: IT.venue, doc_kind: 'receipt' });
+  assert.equal(r.statusCode, 200, r.body);
+
+  const files = (await detail('dir', P)).files;
+  const byId = new Map(files.map((f) => [f.id, f]));
+  assert.equal(byId.get(q.json().id).item_id, IT.venue);
+  assert.equal(byId.get(q.json().id).doc_kind, 'quote');
+  assert.equal(byId.get(r.json().id).doc_kind, 'receipt');
+});
+
+test('⑰ 증빙 권한 — 재무는 영수증만, 마케팅 담당은 둘 다', { skip: SKIP }, async () => {
+  const bad = await up('fin', P, { file_name: 'q.pdf', data: PNG, item_id: IT.cater, doc_kind: 'quote' });
+  assert.equal(bad.statusCode, 403, '재무가 견적서를 올릴 수 있으면 안 된다');
+  const ok1 = await up('fin', P, { file_name: 'r.pdf', data: PNG, item_id: IT.cater, doc_kind: 'receipt' });
+  assert.equal(ok1.statusCode, 200, ok1.body);
+  const ok2 = await up('mkt', P, { file_name: 'q2.pdf', data: PNG, item_id: IT.cater, doc_kind: 'quote' });
+  assert.equal(ok2.statusCode, 200, ok2.body);
+  // 재무는 자기가 올린 영수증은 지울 수 있고, 마케팅의 견적서는 못 지운다
+  assert.equal((await del('fin', `/api/mktspend/files/${ok2.json().id}`)).statusCode, 403);
+  assert.equal((await del('fin', `/api/mktspend/files/${ok1.json().id}`)).statusCode, 200);
+});
+
+test('⑱ 잘못된 입력 — 다른 계획의 항목·알 수 없는 종류', { skip: SKIP }, async () => {
+  assert.equal((await up('mkt', P, { file_name: 'x.pdf', data: PNG, item_id: 999999999, doc_kind: 'quote' })).statusCode, 400);
+  assert.equal((await up('mkt', P, { file_name: 'x.pdf', data: PNG, doc_kind: 'nope' })).statusCode, 400);
+  // 하위호환: item_id·doc_kind 없이 올리면 계획 공통
+  const c = await up('mkt', P, { file_name: 'common.pdf', data: PNG });
+  assert.equal(c.statusCode, 200);
+  assert.equal(c.json().item_id, null);
+  assert.equal(c.json().doc_kind, 'other');
+});
+
+test('⑲ 초안을 여러 번 저장해도 항목 id 가 유지된다 (증빙 연결 보존 — 이번 수정의 핵심)', { skip: SKIP }, async () => {
+  const c = await post('mkt', '/api/mktspend/plans', {
+    title: `${TAG} 초안 증빙`, category: '판촉물', event_date: '2026-12-01', purpose: 'x',
+    items: [{ name: '인쇄물', memo: null, lines: [{ kind: 'one', due_date: '2026-11-20', amount: 5000, memo: null }] }],
+    targets: [] });
+  assert.equal(c.statusCode, 200, c.body);
+  P2 = c.json().id;
+  const it1 = (await detail('mkt', P2)).items[0].id;
+  const f = await up('mkt', P2, { file_name: 'quote_print.pdf', data: PNG, item_id: it1, doc_kind: 'quote' });
+  assert.equal(f.statusCode, 200);
+
+  // 초안 저장을 두 번 반복(금액·항목명 수정) — 예전 구현은 여기서 항목을 지우고 다시 만들어
+  // 증빙의 item_id 가 NULL 로 떨어졌다.
+  for (const amt of [6000, 7000]) {
+    const d = await detail('mkt', P2);
+    const r = await patch('mkt', `/api/mktspend/plans/${P2}`, {
+      title: d.plan.title, category: d.plan.category, event_date: d.plan.event_date, purpose: d.plan.purpose,
+      items: d.items.map((it) => ({ id: it.id, name: it.name + '', memo: it.memo,
+        lines: it.lines.map((l) => ({ id: l.id, kind: l.kind, due_date: l.due_date, amount: amt, memo: l.memo })) })),
+      targets: [] });
+    assert.equal(r.statusCode, 200, r.body);
+  }
+  const after = await detail('mkt', P2);
+  assert.equal(after.items[0].id, it1, '항목 id 가 저장 때마다 바뀌면 안 된다');
+  assert.equal(after.files.length, 1);
+  assert.equal(after.files[0].item_id, it1, '증빙이 항목에 계속 붙어 있어야 한다');
+  assert.equal(after.items[0].lines[0].amount, 7000, '내용 수정은 정상 반영');
+});
+
+test('⑳ 항목을 지워도 증빙은 사라지지 않고 "계획 공통" 으로 남는다', { skip: SKIP }, async () => {
+  const d = await detail('mkt', P2);
+  const r = await patch('mkt', `/api/mktspend/plans/${P2}`, {
+    title: d.plan.title, category: d.plan.category, event_date: d.plan.event_date, purpose: d.plan.purpose,
+    items: [{ id: null, name: '다른 항목', memo: null, lines: [{ id: null, kind: 'one', due_date: '2026-11-25', amount: 3000, memo: null }] }],
+    targets: [] });
+  assert.equal(r.statusCode, 200, r.body);
+  const after = await detail('mkt', P2);
+  assert.equal(after.items.length, 1);
+  assert.notEqual(after.items[0].id, d.items[0].id, '항목이 교체됐다');
+  assert.equal(after.files.length, 1, '증빙은 유실되지 않는다');
+  assert.equal(after.files[0].item_id, null, '계획 공통으로 내려앉는다');
+});
+
 test('cleanup', { skip: SKIP }, async () => {
   const { pool } = await import('../src/db.js');
   await pool.end();
