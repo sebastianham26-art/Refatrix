@@ -376,16 +376,21 @@ export default async function marketingSpendRoutes(app) {
   const num = (v) => (v == null ? 0 : Number(v));
 
   // ---- 저장 헬퍼(트랜잭션 내) ------------------------------------------
-  // 집행 항목은 **id 를 유지한 채 upsert** 한다. 항목별 증빙(0197)이 item_id 로 붙어 있어
-  // 예전처럼 DELETE → INSERT 하면 저장할 때마다 증빙 연결이 통째로 끊긴다.
-  // 지급 라인은 증빙이 붙지 않으므로 종전대로 전체 교체한다(호출측에서 먼저 DELETE).
+  // 집행 항목·지급 줄 **둘 다 id 를 유지한 채 upsert** 한다.
+  //   증빙이 item_id(0197)·line_id(0198) 로 붙어 있어, 예전처럼 DELETE → INSERT 하면
+  //   저장할 때마다 증빙 연결이 통째로 끊긴다.
+  //   화면에서 없어진 것만 지우고, 그때도 증빙은 ON DELETE SET NULL 로 한 단계 위
+  //   (줄 → 항목 공통, 항목 → 계획 공통)로 내려앉아 살아남는다.
+  // ⚠️ 호출측에서 미리 `DELETE FROM marketing_spend_lines` 하지 말 것 — 여기서 관리한다.
   async function insertItemsWithLines(run, planId, items) {
     const exItems = (await run(`SELECT id FROM marketing_spend_items WHERE plan_id=$1`, [planId])).rows;
-    const exIds = new Set(exItems.map((e) => Number(e.id)));
-    const keep = new Set();
+    const exLines = (await run(`SELECT id FROM marketing_spend_lines WHERE plan_id=$1`, [planId])).rows;
+    const exItemIds = new Set(exItems.map((e) => Number(e.id)));
+    const exLineIds = new Set(exLines.map((e) => Number(e.id)));
+    const keepItems = new Set(), keepLines = new Set();
     for (const it of items) {
       let itemId;
-      if (it.id != null && exIds.has(Number(it.id))) {
+      if (it.id != null && exItemIds.has(Number(it.id))) {
         await run(`UPDATE marketing_spend_items SET name=$1, memo=$2, sort_order=$3 WHERE id=$4 AND plan_id=$5`,
           [it.name, it.memo, it.sort_order, it.id, planId]);
         itemId = Number(it.id);
@@ -395,18 +400,28 @@ export default async function marketingSpendRoutes(app) {
           [planId, it.name, it.memo, it.sort_order]);
         itemId = Number(r.rows[0].id);
       }
-      keep.add(itemId);
+      keepItems.add(itemId);
       for (const l of it.lines) {
-        await run(
-          `INSERT INTO marketing_spend_lines (plan_id, item_id, kind, due_date, amount, memo, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [planId, itemId, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
+        if (l.id != null && exLineIds.has(Number(l.id))) {
+          await run(
+            `UPDATE marketing_spend_lines SET item_id=$1, kind=$2, due_date=$3, amount=$4, memo=$5, sort_order=$6
+              WHERE id=$7 AND plan_id=$8`,
+            [itemId, l.kind, l.due_date, l.amount, l.memo, l.sort_order, l.id, planId]);
+          keepLines.add(Number(l.id));
+        } else {
+          const r = await run(
+            `INSERT INTO marketing_spend_lines (plan_id, item_id, kind, due_date, amount, memo, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+            [planId, itemId, l.kind, l.due_date, l.amount, l.memo, l.sort_order]);
+          keepLines.add(Number(r.rows[0].id));
+        }
       }
     }
-    // 화면에서 없어진 항목만 삭제 — 그 항목에 붙어 있던 증빙은 ON DELETE SET NULL 로
-    // "계획 공통" 이 되어 살아남는다(증빙은 유실시키지 않는다).
+    for (const e of exLines) {
+      if (!keepLines.has(Number(e.id))) await run(`DELETE FROM marketing_spend_lines WHERE id=$1 AND plan_id=$2`, [e.id, planId]);
+    }
     for (const e of exItems) {
-      if (!keep.has(Number(e.id))) await run(`DELETE FROM marketing_spend_items WHERE id=$1 AND plan_id=$2`, [e.id, planId]);
+      if (!keepItems.has(Number(e.id))) await run(`DELETE FROM marketing_spend_items WHERE id=$1 AND plan_id=$2`, [e.id, planId]);
     }
   }
   async function replaceTargets(run, planId, custIds, general) {
@@ -464,14 +479,24 @@ export default async function marketingSpendRoutes(app) {
     catch (_) { filesReadyCache = false; }
     return filesReadyCache;
   }
+  // 0198 적용 여부(지급 줄 단위 증빙)
+  let lineFilesReadyCache = false;
+  async function lineFilesReady() {
+    if (lineFilesReadyCache) return true;
+    try { await query(`SELECT line_id FROM marketing_spend_files LIMIT 1`); lineFilesReadyCache = true; }
+    catch (_) { lineFilesReadyCache = false; }
+    return lineFilesReadyCache;
+  }
   const mapFile = (f) => ({ id: Number(f.id), file_name: f.file_name, mime_type: f.mime_type,
     file_size: f.file_size == null ? null : Number(f.file_size),
     uploaded_at: f.uploaded_at, uploaded_by_name: f.uploaded_by_name,
     item_id: f.item_id == null ? null : Number(f.item_id),
+    line_id: f.line_id == null ? null : Number(f.line_id),
     doc_kind: f.doc_kind || 'other' });
-  // 0197 미적용 환경에서도 목록이 죽지 않도록 컬럼 유무에 따라 SELECT 를 바꾼다.
+  // 0197·0198 미적용 환경에서도 목록이 죽지 않도록 컬럼 유무에 따라 SELECT 를 바꾼다.
   async function loadFiles(planId) {
-    const extra = (await filesReady()) ? ', f.item_id, f.doc_kind' : '';
+    const extra = ((await filesReady()) ? ', f.item_id, f.doc_kind' : '')
+      + ((await lineFilesReady()) ? ', f.line_id' : '');
     return (await query(
       `SELECT f.id, f.file_name, f.mime_type, f.file_size, f.uploaded_at, u.name AS uploaded_by_name${extra}
          FROM marketing_spend_files f LEFT JOIN users u ON u.id=f.uploaded_by
@@ -802,8 +827,7 @@ export default async function marketingSpendRoutes(app) {
       await replaceTargets(run, id, nt.custIds, nt.general);
 
       if (p.status !== 'approved') {
-        // 아직 거래 미생성 — 라인은 전체 교체, 항목은 id 유지 upsert(항목별 증빙 보존)
-        await run(`DELETE FROM marketing_spend_lines WHERE plan_id=$1`, [id]);
+        // 아직 거래 미생성 — 항목·줄 모두 id 유지 upsert(항목·줄 증빙 연결 보존)
         await insertItemsWithLines(run, id, ni.items);
         return { ok: true };
       }
@@ -991,8 +1015,7 @@ export default async function marketingSpendRoutes(app) {
         await run(`UPDATE marketing_spend_plans SET title=$1, category=$2, event_date=$3, purpose=$4, updated_by=$5 WHERE id=$6`,
           [h.title, h.category, h.eventDate, h.purpose, userId, id]);
         await replaceTargets(run, id, nt.custIds, nt.general);
-        await run(`DELETE FROM marketing_spend_lines WHERE plan_id=$1`, [id]);
-        await insertItemsWithLines(run, id, ni.items);   // 항목 id 유지(증빙 보존)
+        await insertItemsWithLines(run, id, ni.items);   // 항목·줄 id 유지(증빙 보존)
       }
       const lines = (await run(
         `SELECT l.id, l.kind, to_char(l.due_date,'YYYY-MM-DD') AS due_date, l.amount, l.memo,
@@ -1302,8 +1325,18 @@ export default async function marketingSpendRoutes(app) {
     const p = (await query(`SELECT id FROM marketing_spend_plans WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
     if (!p) return reply.code(404).send({ error: 'not_found' });
 
-    let itemId = null;
-    if (ready && b.item_id != null && b.item_id !== '') {
+    // 붙일 위치: line_id(지급 줄) > item_id(집행 항목) > 없음(계획 공통)
+    //   line_id 가 오면 item_id 는 그 줄에서 유도한다 — 화면이 보낸 값과 어긋나지 않게.
+    const lineReady = await lineFilesReady();
+    let itemId = null, lineId = null;
+    if (lineReady && b.line_id != null && b.line_id !== '') {
+      lineId = Number(b.line_id);
+      if (!(lineId > 0)) return reply.code(400).send({ error: 'bad_line_id' });
+      const ln = (await query(
+        `SELECT id, item_id FROM marketing_spend_lines WHERE id=$1 AND plan_id=$2`, [lineId, id])).rows[0];
+      if (!ln) return reply.code(400).send({ error: 'line_not_in_plan' });   // 다른 계획의 줄에 붙이지 못하게
+      itemId = ln.item_id == null ? null : Number(ln.item_id);
+    } else if (ready && b.item_id != null && b.item_id !== '') {
       itemId = Number(b.item_id);
       if (!(itemId > 0)) return reply.code(400).send({ error: 'bad_item_id' });
       const it = (await query(`SELECT id FROM marketing_spend_items WHERE id=$1 AND plan_id=$2`, [itemId, id])).rows[0];
@@ -1312,14 +1345,15 @@ export default async function marketingSpendRoutes(app) {
     const v = validateSpendFileDataUrl(b.data);
     if (!v.ok) return reply.code(400).send({ error: 'invalid_file', note: v.error });
     const name = String(b.file_name || 'archivo').slice(0, 200);
-    const cols = ready ? ', item_id, doc_kind' : '';
-    const vals = ready ? ', $7, $8' : '';
-    const params = [id, name, v.mime, v.data, v.size, req.ctx.perm.userId];
-    if (ready) params.push(itemId, docKind);
+    const cols = []; const params = [id, name, v.mime, v.data, v.size, req.ctx.perm.userId];
+    if (ready) { cols.push('item_id', 'doc_kind'); params.push(itemId, docKind); }
+    if (lineReady) { cols.push('line_id'); params.push(lineId); }
+    const colSql = cols.length ? ', ' + cols.join(', ') : '';
+    const valSql = cols.map((_, i) => `, $${7 + i}`).join('');
     const r = (await query(
-      `INSERT INTO marketing_spend_files (plan_id, file_name, mime_type, file_data, file_size, uploaded_by${cols})
-       VALUES ($1,$2,$3,$4,$5,$6${vals}) RETURNING id, uploaded_at`, params)).rows[0];
-    return { ok: true, id: Number(r.id), uploaded_at: r.uploaded_at, item_id: itemId, doc_kind: docKind };
+      `INSERT INTO marketing_spend_files (plan_id, file_name, mime_type, file_data, file_size, uploaded_by${colSql})
+       VALUES ($1,$2,$3,$4,$5,$6${valSql}) RETURNING id, uploaded_at`, params)).rows[0];
+    return { ok: true, id: Number(r.id), uploaded_at: r.uploaded_at, item_id: itemId, line_id: lineId, doc_kind: docKind };
   });
 
   app.get('/api/mktspend/files/:fileId', { preHandler: [authGuard, requirePageAny(['marketing', 'finance'])] }, async (req, reply) => {

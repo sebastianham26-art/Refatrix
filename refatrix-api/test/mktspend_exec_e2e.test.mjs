@@ -402,6 +402,89 @@ test('⑳ 항목을 지워도 증빙은 사라지지 않고 "계획 공통" 으�
   assert.equal(after.files[0].item_id, null, '계획 공통으로 내려앉는다');
 });
 
+// =====================================================================
+// 지급 줄별 증빙(0198) — 선지급금·중도금·잔금마다 각각 견적서·영수증
+// =====================================================================
+test('㉑ 줄별 증빙 — 같은 항목의 두 줄에 각각 붙고 서로 섞이지 않는다', { skip: SKIP }, async () => {
+  const d = await detail('dir', P);
+  const venue = d.items.find((it) => it.lines.some((l) => l.id === L.adv));
+  const advLine = venue.lines.find((l) => l.id === L.adv);   // 선지급금
+  const finLine = venue.lines.find((l) => l.id === L.fin);   // 잔금
+
+  const a = await up('fin', P, { file_name: 'recibo_anticipo.pdf', data: PNG, line_id: advLine.id, doc_kind: 'receipt' });
+  assert.equal(a.statusCode, 200, a.body);
+  assert.equal(a.json().line_id, advLine.id);
+  assert.equal(a.json().item_id, venue.id, 'line_id 를 주면 item_id 는 서버가 그 줄에서 유도한다');
+
+  const b = await up('fin', P, { file_name: 'recibo_saldo.pdf', data: PNG, line_id: finLine.id, doc_kind: 'receipt' });
+  assert.equal(b.statusCode, 200, b.body);
+  const c = await up('mkt', P, { file_name: 'cotiz_saldo.pdf', data: PNG, line_id: finLine.id, doc_kind: 'quote' });
+  assert.equal(c.statusCode, 200, c.body);
+
+  const files = (await detail('dir', P)).files;
+  const onAdv = files.filter((f) => f.line_id === advLine.id);
+  const onFin = files.filter((f) => f.line_id === finLine.id);
+  assert.equal(onAdv.length, 1);
+  assert.equal(onAdv[0].doc_kind, 'receipt');
+  assert.equal(onFin.length, 2, '잔금 줄에는 영수증 + 견적서');
+  assert.deepEqual(onFin.map((f) => f.doc_kind).sort(), ['quote', 'receipt']);
+  // 0197 에서 붙인 항목 공통 증빙은 line_id 가 없어 그대로 항목 단계에 남는다
+  assert.ok(files.some((f) => f.item_id === venue.id && f.line_id == null), '항목 공통 증빙은 그대로');
+});
+
+test('㉒ 줄별 증빙 권한 — 재무는 영수증만, 다른 계획의 줄은 거부', { skip: SKIP }, async () => {
+  const d = await detail('dir', P);
+  const lid = d.items[0].lines[0].id;
+  assert.equal((await up('fin', P, { file_name: 'q.pdf', data: PNG, line_id: lid, doc_kind: 'quote' })).statusCode, 403);
+  assert.equal((await up('mkt', P, { file_name: 'q.pdf', data: PNG, line_id: 999999999, doc_kind: 'quote' })).statusCode, 400);
+  // 다른 계획(P2)의 줄에 붙이려 하면 거부
+  const other = (await detail('mkt', P2)).items[0].lines[0].id;
+  const bad = await up('mkt', P, { file_name: 'q.pdf', data: PNG, line_id: other, doc_kind: 'quote' });
+  assert.equal(bad.statusCode, 400);
+  assert.equal(bad.json().error, 'line_not_in_plan');
+});
+
+test('㉓ 초안을 저장해도 지급 줄 id 가 유지된다 → 줄별 증빙 연결 보존', { skip: SKIP }, async () => {
+  const before = await detail('mkt', P2);
+  const line0 = before.items[0].lines[0];
+  const f = await up('mkt', P2, { file_name: 'cotiz_linea.pdf', data: PNG, line_id: line0.id, doc_kind: 'quote' });
+  assert.equal(f.statusCode, 200, f.body);
+
+  // 금액만 바꿔 두 번 저장 — 예전 구현은 라인을 전부 지우고 다시 넣어 id 가 바뀌었다
+  for (const amt of [4100, 4200]) {
+    const d = await detail('mkt', P2);
+    const r = await patch('mkt', `/api/mktspend/plans/${P2}`, {
+      title: d.plan.title, category: d.plan.category, event_date: d.plan.event_date, purpose: d.plan.purpose,
+      items: d.items.map((it) => ({ id: it.id, name: it.name, memo: it.memo,
+        lines: it.lines.map((l) => ({ id: l.id, kind: l.kind, due_date: l.due_date, amount: amt, memo: l.memo })) })),
+      targets: [] });
+    assert.equal(r.statusCode, 200, r.body);
+  }
+  const after = await detail('mkt', P2);
+  assert.equal(after.items[0].lines[0].id, line0.id, '지급 줄 id 가 저장 때마다 바뀌면 안 된다');
+  assert.equal(after.items[0].lines[0].amount, 4200, '내용 수정은 정상 반영');
+  const kept = after.files.find((x) => x.id === f.json().id);
+  assert.equal(kept.line_id, line0.id, '증빙이 그 줄에 계속 붙어 있어야 한다');
+});
+
+test('㉔ 줄을 지우면 그 줄 증빙은 "항목 공통" 으로 한 단계 내려앉는다', { skip: SKIP }, async () => {
+  const d = await detail('mkt', P2);
+  const it0 = d.items[0], gone = it0.lines[0];
+  const r = await patch('mkt', `/api/mktspend/plans/${P2}`, {
+    title: d.plan.title, category: d.plan.category, event_date: d.plan.event_date, purpose: d.plan.purpose,
+    items: [{ id: it0.id, name: it0.name, memo: it0.memo,
+      lines: [{ id: null, kind: 'fin', due_date: '2026-12-05', amount: 2500, memo: '교체된 줄' }] }],
+    targets: [] });
+  assert.equal(r.statusCode, 200, r.body);
+  const after = await detail('mkt', P2);
+  assert.equal(after.items[0].lines.length, 1);
+  assert.notEqual(after.items[0].lines[0].id, gone.id, '줄이 교체됐다');
+  const f = after.files.find((x) => x.file_name === 'cotiz_linea.pdf');
+  assert.ok(f, '증빙은 유실되지 않는다');
+  assert.equal(f.line_id, null, '줄 연결은 끊기고');
+  assert.equal(f.item_id, it0.id, '항목 공통으로 남는다');
+});
+
 test('cleanup', { skip: SKIP }, async () => {
   const { pool } = await import('../src/db.js');
   await pool.end();
