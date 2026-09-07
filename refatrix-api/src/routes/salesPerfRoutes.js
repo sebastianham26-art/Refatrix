@@ -5,6 +5,7 @@ import { fieldVisible } from '../permissions.js';
 import { effectiveTargetFor, aggregateCarryover, monthsInclusive } from '../salesTarget.js';
 import { arInvoiceStatus, bucketByDueMonth, arSummary } from '../ar.js';
 import { stageLabel } from '../stageLabel.js';
+import { parseRange, prevRange } from '../weekRange.js';
 
 function r2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function pearson(xs, ys) {
@@ -145,6 +146,46 @@ async function collectBaseActual(scopeIds, months) {
   return { base, actual };
 }
 
+// ── 기간(월~금) 실적 — WBR 주간 리뷰용 ────────────────────────────────────────
+// 목표·계획은 월 단위 그대로 두고 **실적만** 이 기간으로 다시 센다(2026-09-05 디렉터 확정).
+// teamArr: 팀 id 배열 또는 null(전체 가시).
+
+// 매출 실적(IVA 제외) — 월 카드(salesBaseActual)와 **같은 정의**로 기간만 바꾼 것.
+//   같은 정의를 써야 「주간 합 ⊆ 월 실적」이 성립한다(조건을 하나라도 달리하면 두 숫자가 어긋난다).
+async function salesActualRange(teamArr, from, to) {
+  const args = [from, to];
+  let q = `SELECT COALESCE(SUM(i.subtotal_mxn),0) AS a
+             FROM sales_invoices i JOIN customers c ON c.id=i.customer_id
+            WHERE i.status='posted' AND c.deleted_at IS NULL
+              AND i.inv_date >= $1 AND i.inv_date <= $2`;
+  if (teamArr) { args.push(teamArr); q += ` AND c.team_id = ANY($3)`; }
+  return Number((await query(q, args)).rows[0].a) || 0;
+}
+
+// 수금 실적 = 그 기간의 **반제(배분) 합계**.
+//   ⚠ 월 카드는 transactions(현금 거래) 기준이라 **NC(비현금) 반제가 통째로 빠진다**
+//      → 수금/정산 화면의 반제내역보다 항상 적게 나온다(디렉터 신고 2026-09-04).
+//   기간 모드에서는 수금/정산·고객 화면과 **같은 정의**(ar.js AR_SETTLED_SQL 의 반제일)를 쓴다:
+//      반제일 = 현금 → sales_payments.pay_date(=통장 입금일) / NC → 적용·승인·작성일 순.
+//   nc 를 따로 돌려줘 화면이 「그중 NC ○○」로 현금과 구분해 보여줄 수 있게 한다.
+async function collectActualRange(teamArr, from, to) {
+  const args = [from, to];
+  let q = `SELECT COALESCE(SUM(al.amount),0) AS total,
+                  COALESCE(SUM(CASE WHEN al.kind='nota_credito' THEN al.amount ELSE 0 END),0) AS nc
+             FROM sales_payment_allocations al
+             JOIN sales_invoices i ON i.id=al.invoice_id
+             JOIN customers c ON c.id=i.customer_id
+             LEFT JOIN sales_payments p ON p.id=al.payment_id
+             LEFT JOIN notas_credito ncd ON ncd.id=al.nc_id
+            WHERE c.deleted_at IS NULL
+              AND COALESCE(p.pay_date, ncd.applied_at::date, ncd.approved_at::date, ncd.created_at::date) >= $1
+              AND COALESCE(p.pay_date, ncd.applied_at::date, ncd.approved_at::date, ncd.created_at::date) <= $2`;
+  if (teamArr) { args.push(teamArr); q += ` AND c.team_id = ANY($3)`; }
+  const r = (await query(q, args)).rows[0] || {};
+  const total = Number(r.total) || 0, nc = Number(r.nc) || 0;
+  return { total, nc, cash: r2(total - nc) };
+}
+
 export default async function salesPerfRoutes(app) {
   // 상단 요약 3카드 (ym는 콤마구분 다중 월 가능: 합산)
   // 팀별 × 월별 실적(ex-IVA)·목표 — 매출목표 카드 아래 표시
@@ -178,13 +219,22 @@ export default async function salesPerfRoutes(app) {
   });
 
   // 팀별 월별 실적·목표 끝
-  app.get('/api/salesperf/summary', { preHandler: [authGuard] }, async (req) => {
+  app.get('/api/salesperf/summary', { preHandler: [authGuard] }, async (req, reply) => {
     const perm = req.ctx.perm;
     const yms = String(req.query.ym || new Date().toISOString().slice(0, 7)).split(',').map((s) => s.trim()).filter(Boolean);
     const ta = teamArrOf(perm);
     const seeSales = fieldVisible(perm, 'sales_amount');
     const seeAr = fieldVisible(perm, 'ar_amount');
     const multi = yms.length > 1;
+
+    // 기간(월~금) 모드 — WBR 이 from/to 를 보낼 때만. 안 보내면 **종전 월 집계 그대로**
+    // (영업 대시보드는 이 파라미터를 보내지 않으므로 동작이 변하지 않는다).
+    let range = null;
+    if (req.query.from || req.query.to) {
+      range = parseRange(req.query.from, req.query.to);
+      if (!range) return reply.code(400).send({ error: 'bad_range' });
+    }
+    const rangePrev = prevRange(range);
 
     // 카드1 매출목표 / 카드2 수금 — carry=1이면 팀 토글 + 미달분 이월 적용, 아니면 종전 동작
     const carryMode = String(req.query.carry || '') === '1';
@@ -236,8 +286,18 @@ export default async function salesPerfRoutes(app) {
         collectActual += Number((await query(cq, cp)).rows[0].a);
       }
     }
+    // ── 기간 모드: 목표/계획은 위에서 구한 월 기준을 그대로 두고 «실적만» 월~금으로 다시 센다 ──
+    let collectNc = 0, collectCash = 0, rangeMulti = multi;
+    if (range) {
+      const rangeTeams = carryMode ? selScopeIds : ta;   // carry=1 이면 선택 팀 스코프, 아니면 가시 팀
+      actual = r2(await salesActualRange(rangeTeams, range.from, range.to));
+      prevActual = r2(await salesActualRange(rangeTeams, rangePrev.from, rangePrev.to)); // 전주 대비
+      const ca = await collectActualRange(rangeTeams, range.from, range.to);
+      collectActual = r2(ca.total); collectNc = r2(ca.nc); collectCash = r2(ca.cash);
+      rangeMulti = false;   // 여러 달을 골라도 실적은 한 기간이므로 «전주 대비»가 성립한다
+    }
     const progress = target > 0 ? r2(actual / target * 100) : null;
-    const momPct = multi ? null : (prevActual > 0 ? r2((actual - prevActual) / prevActual * 100) : (actual > 0 ? null : 0));
+    const momPct = rangeMulti ? null : (prevActual > 0 ? r2((actual - prevActual) / prevActual * 100) : (actual > 0 ? null : 0));
     const collectProgress = collectPlan > 0 ? r2(collectActual / collectPlan * 100) : null;
 
     // 카드3 고객 개발 — 현재 단계별 고객 수 (고객 화면과 동일 법칙)
@@ -273,9 +333,12 @@ export default async function salesPerfRoutes(app) {
     return {
       yms, multi,
       carry: carryMode, teams: teamList, selectedTeam,
+      // 기간 모드일 때만 채워진다. 화면이 「이번주(월~금) 실적 · 목표는 월 기준」을 표기하는 근거.
+      period: range ? { from: range.from, to: range.to, days: range.days, prev_from: rangePrev.from, prev_to: rangePrev.to, basis: 'week' } : null,
       sales: seeSales ? { actual: r2(actual), target: r2(target), progress, prevActual: r2(prevActual), momPct, locked: false }
                       : { progress, momPct, locked: true },
-      collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false }
+      collection: seeAr ? { actual: r2(collectActual), plan: r2(collectPlan), progress: collectProgress, locked: false,
+                            ...(range ? { nc: collectNc, cash: collectCash } : {}) }
                         : { progress: collectProgress, locked: true },
       pipeline_dev: { quote: devQuote, negotiation: devNeg, won: devWon, total: devQuote + devNeg + devWon, delta: { quote: delta[30], negotiation: delta[40], won: delta[50] } },
       drilldown: perm.role === 'director' ? true : (perm.dashDrilldown !== false),

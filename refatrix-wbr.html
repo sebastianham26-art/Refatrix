@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0904c</title>
+<title>Refatrix ERP · WBR · build wbr-0905a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -475,7 +475,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0904c');
+  console.log('[wbr] build wbr-0905a');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통
@@ -703,26 +703,40 @@
   }
 
   // ===== 카드 (영업 대시보드 summary 재사용) =====
+  // WBR 은 «주간» 회의이므로 매출·수금 «실적»은 이번주 월~금으로 집계한다(from/to 전달).
+  // 목표/계획은 월 기준 그대로 — 서버가 ym 으로 계산한 값을 그대로 쓴다(2026-09-05 확정).
+  // 영업 대시보드는 from/to 를 안 보내므로 종전 월 집계 그대로다.
   async function fetchSummary(teamKey){
-    return fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(',')+'&carry=1&team='+encodeURIComponent(teamKey),{headers:auth()}).then(r=>r.json());
+    const wk=weekMonFri();
+    return fetch(session.api+'/api/salesperf/summary?ym='+topYms.join(',')+'&carry=1&team='+encodeURIComponent(teamKey)
+      +'&from='+wk.from+'&to='+wk.to,{headers:auth()}).then(r=>r.json());
   }
+  // '2026-09-01' → '9/1'
+  function mdShort(ds){ const p=String(ds||'').split('-'); return p.length===3?(Number(p[1])+'/'+Number(p[2])):String(ds||''); }
+  function periodLabel(p){ return p?('월~금 '+mdShort(p.from)+'~'+mdShort(p.to)):''; }
   function aggSummaries(list){
     // 여러 팀 합산 → 단일 summary 형태로
-    const out={multi:true, teams:[], selectedTeam:'multi',
-      sales:{actual:0,target:0,momPct:null,progress:null,locked:false},
-      collection:{actual:0,plan:0,progress:null,locked:false},
+    const out={multi:true, teams:[], selectedTeam:'multi', period:null,
+      sales:{actual:0,target:0,prevActual:0,momPct:null,progress:null,locked:false},
+      collection:{actual:0,plan:0,nc:0,cash:0,progress:null,locked:false},
       pipeline_dev:{quote:0,negotiation:0,won:0,delta:{quote:0,negotiation:0,won:0}}};
     list.forEach(su=>{
       out.teams=su.teams||out.teams;
+      out.period=su.period||out.period;
       const s=su.sales||{},c=su.collection||{},d=su.pipeline_dev||{},dd=d.delta||{};
       if(s.locked||c.locked) out.sales.locked=out.collection.locked=true;
-      out.sales.actual+=Number(s.actual||0); out.sales.target+=Number(s.target||0);
+      out.sales.actual+=Number(s.actual||0); out.sales.target+=Number(s.target||0); out.sales.prevActual+=Number(s.prevActual||0);
       out.collection.actual+=Number(c.actual||0); out.collection.plan+=Number(c.plan||0);
+      out.collection.nc+=Number(c.nc||0); out.collection.cash+=Number(c.cash||0);
       out.pipeline_dev.quote+=Number(d.quote||0); out.pipeline_dev.negotiation+=Number(d.negotiation||0); out.pipeline_dev.won+=Number(d.won||0);
       out.pipeline_dev.delta.quote+=Number(dd.quote||0); out.pipeline_dev.delta.negotiation+=Number(dd.negotiation||0); out.pipeline_dev.delta.won+=Number(dd.won||0);
     });
     out.sales.progress = out.sales.target>0?Math.round(out.sales.actual/out.sales.target*100):null;
     out.collection.progress = out.collection.plan>0?Math.round(out.collection.actual/out.collection.plan*100):null;
+    // 기간(주간) 모드면 팀을 합산해도 «전주 대비»가 성립한다 — 합산 실적끼리 비교.
+    if(out.period) out.sales.momPct = out.sales.prevActual>0
+      ? Math.round((out.sales.actual-out.sales.prevActual)/out.sales.prevActual*1000)/10
+      : (out.sales.actual>0?null:0);
     return out;
   }
   async function loadCards(){
@@ -743,22 +757,31 @@
   function renderCards(su){
     const s=su.sales||{}, c=su.collection||{}, d=su.pipeline_dev||{};
     const lbl=monthsLabel(), teamLbl=teamLabel();
+    const pd=su.period||null, wkLbl=periodLabel(pd);          // 주간 모드면 '월~금 9/1~9/5'
+    const cmpLbl=pd?'전주 대비':'전월 대비';                   // 실적 기간이 주간이면 비교도 전주
     let momHtml;
-    if(su.multi) momHtml='<div class="mom flat">여러 달/팀 합산</div>';
-    else if(s.momPct==null) momHtml='<div class="mom flat">전월 대비 —</div>';
-    else{const up=s.momPct>=0;momHtml='<div class="mom '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(s.momPct)+'% 전월 대비</div>';}
+    if(su.multi&&!pd) momHtml='<div class="mom flat">여러 달/팀 합산</div>';
+    else if(s.momPct==null) momHtml='<div class="mom flat">'+cmpLbl+' —</div>';
+    else{const up=s.momPct>=0;momHtml='<div class="mom '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(s.momPct)+'% '+cmpLbl+'</div>';}
     const c1=s.locked
       ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(s.progress==null?'—':s.progress+'%')+'</div></div>'
       : '<div class="cardbody"><div class="bigv">MX$'+fmt(s.actual)+'</div>'+momHtml
         +'<div class="goal">목표/계획 MX$'+fmt(s.target)+' · 달성 '+(s.progress==null?'—':s.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,s.progress||0)+'%"></div></div>'
-        +'<div class="cardfoot hint">'+esc(teamLbl)+' 매출목표(미달분 이월 포함) 대비 실적(IVA 불포함) · '+lbl+'</div></div>';
+        +'<div class="cardfoot hint">'+esc(teamLbl)+(pd
+            ? ' <b>이번주('+esc(wkLbl)+') 매출 실적</b>(IVA 불포함) · 목표는 '+lbl+' 월 기준(미달분 이월 포함)'
+            : ' 매출목표(미달분 이월 포함) 대비 실적(IVA 불포함) · '+lbl)+'</div></div>';
     const c2=c.locked
       ? '<div class="cardbody"><div class="bigv">🔒</div><div class="mom flat"></div><div class="goal">달성률 '+(c.progress==null?'—':c.progress+'%')+'</div></div>'
-      : '<div class="cardbody"><div class="bigv">MX$'+fmt(c.actual)+'</div><div class="mom flat"></div>'
+      : '<div class="cardbody"><div class="bigv">MX$'+fmt(c.actual)+'</div>'
+        +(pd&&Number(c.nc||0)>0.5
+            ? '<div class="mom flat">현금 MX$'+fmt(c.cash)+' · NC MX$'+fmt(c.nc)+'</div>'
+            : '<div class="mom flat"></div>')
         +'<div class="goal">목표/계획 MX$'+fmt(c.plan)+' · 달성 '+(c.progress==null?'—':c.progress+'%')+'</div>'
         +'<div class="pbar"><div style="width:'+Math.min(100,c.progress||0)+'%"></div></div>'
-        +'<div class="cardfoot hint">'+esc(teamLbl)+' 수금목표(만기액+미수금 이월) 대비 실제 수금 · '+lbl+'</div></div>';
+        +'<div class="cardfoot hint">'+esc(teamLbl)+(pd
+            ? ' <b>이번주('+esc(wkLbl)+') 반제 실적</b>(수금/정산 반제내역과 같은 기준 · NC 포함) · 계획은 '+lbl+' 월 기준(만기액+미수금 이월)'
+            : ' 수금목표(만기액+미수금 이월) 대비 실제 수금 · '+lbl)+'</div></div>';
     const dd=d.delta||{};
     const dchip=(n)=>{ if(n==null||n===0) return '<div class="l" style="color:var(--muted)">±0 (지난주)</div>'; const up=n>0; return '<div class="l" style="color:'+(up?'var(--income)':'var(--expense)')+'">'+(up?'+':'')+n+' (지난주)</div>'; };
     const devbox=(val,label,so,chip)=>{ const p=STAGE_PAIR_ALL[so]; return '<div class="devbox" style="background:'+p.bg+';border-color:'+p.bg+'"><div class="n" style="color:'+p.fg+'">'+(val||0)+'</div><div class="l" style="color:'+p.fg+';font-weight:700">'+label+'</div>'+chip+'</div>'; };
@@ -766,8 +789,8 @@
       +'<div class="devboxes">'+devbox(d.quote,'견적',30,dchip(dd.quote))+devbox(d.negotiation,'협상',40,dchip(dd.negotiation))+devbox(d.won,'수주',50,dchip(dd.won))+'</div>'
       +'<div class="cardfoot hint">현재 단계 기준 · 견적=견적저장 후 / 수주=포장작업지시서 발행 / 거래중=SAT · 작은 숫자는 지난 7일 단계 변동</div></div>';
     $('cards').innerHTML=
-      '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적</div>'+c1+'</div>'
-      +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적</div>'+c2+'</div>'
+      '<div class="card" style="margin:0"><div class="card-h">매출목표 대비 실적'+(pd?' <span class="src">실적 '+esc(wkLbl)+'</span>':'')+'</div>'+c1+'</div>'
+      +'<div class="card" style="margin:0"><div class="card-h">수금계획 대비 실적'+(pd?' <span class="src">실적 '+esc(wkLbl)+'</span>':'')+'</div>'+c2+'</div>'
       +'<div class="card" style="margin:0"><div class="card-h">고객 개발 — 현재 단계(견적·협상·수주)</div>'+c3+'</div>';
   }
 
