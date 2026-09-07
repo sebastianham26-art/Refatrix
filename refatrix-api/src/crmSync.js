@@ -56,10 +56,18 @@ export function isSuccess(httpStatus, body, okCode = '0') {
   return code === String(okCode == null ? '0' : okCode);
 }
 
-/** 고객 계약 본문 — 4개 필드만. 여기서 정한 이름이 곧 계약서다. */
-export function buildPayload(op, c, transactionUser) {
+/** 고객 계약 본문 — 여기서 정한 이름이 곧 계약서다. */
+export function buildPayload(op, c, transactionUser, reason) {
   const rfc = String(c.rfc || '').trim();
   if (op === 'delete') return { rfc, transactionUser };
+  // 반려: CRM 의 고객이 "승인 대기" 로 남지 않도록 상태와 사유를 함께 보낸다.
+  if (op === 'reject') {
+    return {
+      rfc, transactionUser,
+      estatus: 'rechazado',
+      motivoRechazo: String(reason || '').trim() || 'Sin motivo especificado',
+    };
+  }
   return {
     rfc,
     discountPercent: c.discount == null ? 0 : Number(c.discount),
@@ -83,7 +91,7 @@ async function actorName(userId, userField) {
  *   op: 'upsert' | 'delete'
  *   절대 throw 하지 않는다 — 이 함수 때문에 승인이 실패하면 안 된다.
  */
-export async function enqueueCustomerSync(customerId, op, { origin, actorUserId, app } = {}) {
+export async function enqueueCustomerSync(customerId, op, { origin, actorUserId, reason, app } = {}) {
   try {
     if (!(await crmTableReady())) return { ok: false, reason: 'migration_required' };
     const c = (await query(
@@ -93,7 +101,7 @@ export async function enqueueCustomerSync(customerId, op, { origin, actorUserId,
 
     const ep = await getEndpoint(CUSTOMER_KEY);
     const user = await actorName(actorUserId, ep && ep.user_field);
-    const payload = buildPayload(op, c, user);
+    const payload = buildPayload(op, c, user, reason);
     let status = 'pending';
     let note = null;
 
@@ -101,13 +109,16 @@ export async function enqueueCustomerSync(customerId, op, { origin, actorUserId,
       // RFC 는 CRM 의 조회 키다. 없으면 보낼 수 없다.
       status = 'skipped'; note = 'rfc_missing';
     } else if (op === 'delete') {
-      // 한 번도 보낸 적 없는 고객의 삭제는 CRM 에 알릴 것이 없다(반려된 신규 등록 등).
+      // 한 번도 보낸 적 없는 고객의 삭제는 CRM 에 알릴 것이 없다.
       const sent = (await query(
         `SELECT 1 FROM crm_customer_outbox WHERE customer_id=$1 AND op='upsert' AND status='sent' LIMIT 1`,
         [customerId])).rows[0];
       if (!sent) { status = 'skipped'; note = 'never_sent'; }
     }
+    // 반려는 **보낸 적 없어도 보낸다** — CRM 에서 등록한 고객은 그쪽에 이미 존재하고,
+    // 알리지 않으면 「승인 대기」 상태로 영원히 남는다.
 
+    const hasReason = await outboxHasReasonCol();
     const hasNewCols = await outboxHasEndpointCols();
     const label = `${c.code || ''} ${c.name || ''}`.trim();
     const row = hasNewCols
@@ -123,6 +134,10 @@ export async function enqueueCustomerSync(customerId, op, { origin, actorUserId,
         [customerId, op, origin || 'manual', payload.rfc || null,
          JSON.stringify(payload), status, note, actorUserId || null])).rows[0];
 
+    if (hasReason && reason) {
+      try { await query(`UPDATE crm_customer_outbox SET reason=$1 WHERE id=$2`, [String(reason).slice(0, 500), row.id]); }
+      catch (_) { /* 사유 기록 실패가 전송을 막지는 않는다 */ }
+    }
     if (status === 'pending') scheduleDrain(app);
     return { ok: true, id: Number(row.id), status, note };
   } catch (e) {
@@ -144,6 +159,21 @@ async function outboxHasEndpointCols() {
     epColsReady = r.rows.length > 0;
   } catch (_) { epColsReady = false; }
   return epColsReady;
+}
+
+let reasonColReady = false;
+let reasonColProbe = 0;
+async function outboxHasReasonCol() {
+  if (reasonColReady) return true;
+  if (Date.now() - reasonColProbe < PROBE_MS) return false;
+  reasonColProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='crm_customer_outbox' AND column_name='reason' LIMIT 1`);
+    reasonColReady = r.rows.length > 0;
+  } catch (_) { reasonColReady = false; }
+  return reasonColReady;
 }
 
 let authColsReady = false;
@@ -174,6 +204,7 @@ export function scheduleDrain(app) {
 export async function sendPayload(ep, op, payload) {
   const url = activeUrl(ep);
   if (!url) return { error: 'url_missing' };
+  // reject 는 "상태 갱신" 이므로 등록·수정과 같은 메서드를 쓴다(삭제가 아니다).
   const method = String(op === 'delete' ? ep.method_delete : ep.method_upsert || 'POST').toUpperCase();
   // DELETE 는 본문을 무시하는 서버가 흔하다 → 쿼리스트링에도 rfc 를 실어 준다.
   const target = (op === 'delete' && payload && payload.rfc)

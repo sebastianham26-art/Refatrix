@@ -299,7 +299,7 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
-    customer_delete:'고객 삭제',manual_resend:'수동 재전송',manual:'수동'};
+    customer_delete:'고객 삭제',registration_reject:'등록 반려',manual_resend:'수동 재전송',manual:'수동'};
   const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
   const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
   const CAT_LABEL={customer:'고객',product:'제품',other:'기타'};
@@ -560,7 +560,7 @@
     const main='<tr>'
       +'<td class="num">'+esc(when)+'</td>'
       +'<td><b>'+esc(r.customer_name||('#'+(r.entity_id||'')))+'</b><div class="hint mono">'+esc(r.customer_code||r.rfc||'')+'</div></td>'
-      +'<td>'+esc(ORIGIN_LABEL[r.origin]||r.origin)+'<div class="hint">'+(r.op==='delete'?'삭제':'등록/수정')+(r.env?(' · '+(r.env==='prod'?'운영':'테스트')):'')+'</div></td>'
+      +'<td>'+esc(ORIGIN_LABEL[r.origin]||r.origin)+'<div class="hint">'+(r.op==='delete'?'삭제':(r.op==='reject'?'반려 통보':'등록/수정'))+(r.env?(' · '+(r.env==='prod'?'운영':'테스트')):'')+'</div></td>'
       +'<td><span class="pill p-'+esc(r.status)+'">'+esc(STATUS_LABEL[r.status]||r.status)+'</span>'+next+'</td>'
       +'<td class="num">'+esc(r.attempts)+'</td>'
       +'<td class="num mono">'+resp+'</td>'

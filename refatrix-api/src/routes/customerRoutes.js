@@ -250,7 +250,22 @@ export default async function customerRoutes(app) {
     return { ok: true };
   });
 
-  async function computeNextCode() {
+  // 0206 · CRM 유입 표시 컬럼 준비 여부(반쪽 배포 안전). 긍정만 영구 캐시.
+  let crmColsReady = false; let crmColsProbe = 0;
+  async function crmOriginColsReady() {
+    if (crmColsReady) return true;
+    if (Date.now() - crmColsProbe < 30000) return false;
+    crmColsProbe = Date.now();
+    try {
+      const r = await query(
+        `SELECT 1 FROM information_schema.columns
+          WHERE table_name='customers' AND column_name='crm_customer_code' LIMIT 1`);
+      crmColsReady = r.rows.length > 0;
+    } catch (_) { crmColsReady = false; }
+    return crmColsReady;
+  }
+
+  async function computeNextCode(prefix = 'C') {
     // ⚠ 삭제된 고객(soft delete)의 코드도 세어야 한다.
     //   customers.code 에는 유니크 제약이 걸려 있고 소프트삭제 행은 테이블에 그대로 남으므로,
     //   deleted_at IS NULL 만 보면 이미 쓰인 번호를 다시 뽑아 INSERT 가 계속 실패한다.
@@ -258,9 +273,11 @@ export default async function customerRoutes(app) {
     //    디렉터가 고객을 삭제한 뒤에도 같은 증상이 났을 잠재 버그였다)
     const rows = (await query(`SELECT code FROM customers`)).rows;
     const used = new Set(); let maxn = 0;
-    for (const r of rows) { const m = String(r.code || '').match(/^c-?(\d+)$/i); if (m) { const n = parseInt(m[1], 10); used.add(n); if (n > maxn) maxn = n; } }
+    // 접두어별로 번호를 따로 센다 — C-####(ERP 등록) 와 P-####(CRM 유입) 는 서로 다른 계열이다.
+    const re = new RegExp('^' + prefix + '-?(\\d+)$', 'i');
+    for (const r of rows) { const m = String(r.code || '').match(re); if (m) { const n = parseInt(m[1], 10); used.add(n); if (n > maxn) maxn = n; } }
     let next = maxn + 1; while (used.has(next)) next++;
-    return 'C-' + String(next).padStart(4, '0');
+    return prefix.toUpperCase() + '-' + String(next).padStart(4, '0');
   }
 
   // 다음 고객코드 자동생성(미리보기). 대소문자 무관, 빈 번호 충돌 회피.
@@ -404,10 +421,12 @@ export default async function customerRoutes(app) {
     // 0185 · 승인 대기 고객도 목록에는 보인다(등록자가 자기 건 상태를 봐야 하므로).
     //   실제 사용 차단은 견적·매출 생성 시점에서 한다.
     const regOn = await regColumnsReady();
+    const crmOn = await crmOriginColsReady();
     const apprExpr = regOn ? `COALESCE(c.approval_status,'approved')` : `'approved'`;
     const rows = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.contact, c.phone, c.buyer_name, c.buyer_phone, c.discount, c.credit_days, c.customer_type, c.branch_count,
               c.ship_address, ${apprExpr} AS approval_status,
+              ${crmOn ? 'c.crm_customer_code' : 'NULL::text'} AS crm_customer_code,
               ${regOn ? 'c.constancia_no' : 'NULL::text'} AS constancia_no,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
@@ -484,6 +503,9 @@ export default async function customerRoutes(app) {
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
       sales_total: r2(c.sales_total), doc_count: Number(c.doc_count),
+      // 카탈로그(CRM)에서 들어온 고객인지 — 목록·상세에 배지로 표시한다
+      crm_customer_code: c.crm_customer_code || null,
+      from_crm: !!(c.crm_customer_code || /^p-/i.test(String(c.code || ''))),
       live_quote_mxn: r2(c.live_quote_mxn),
       total_qty: Number(c.total_qty) || 0,
       orders: c._rc.orders,
@@ -1962,6 +1984,7 @@ export default async function customerRoutes(app) {
     const claimsOn = await claimTableReady();
     const rows = (await query(
       `SELECT c.id, c.code, c.name, c.rfc, c.constancia_no, c.discount, c.credit_days,
+              ${await crmOriginColsReady() ? 'c.crm_customer_code' : 'NULL::text'} AS crm_customer_code,
               c.suggested_discount, c.syd_ref_code, c.syd_ref_buy_price, c.syd_ref_list_price,
               c.syd_ref_discount, c.ctr_ref_code, c.ctr_ref_list_price, c.customer_type, c.memo,
               to_char(c.created_at,'YYYY-MM-DD') AS registered_at,
@@ -1995,6 +2018,8 @@ export default async function customerRoutes(app) {
         customer_type: r.customer_type, memo: r.memo,
         team_name: r.team_name, owner_name: r.owner_name, created_by_name: r.created_by_name,
         registered_at: r.registered_at, approval_status: r.approval_status,
+        crm_customer_code: r.crm_customer_code || null,
+        from_crm: !!(r.crm_customer_code || /^p-/i.test(String(r.code || ''))),
         // 0193 · RFC 없이 올라온 건은 **선점이 없는 상태**다. 승인 화면에서 눈에 띄어야 한다.
         rfc_claimed: !!r.rfc, rfc_claimed_at: r.rfc_claimed_at || null,
         // 등록 시점에 박제한 유사 고객(경고). 디렉터가 중복인지 판단할 재료.
@@ -2083,6 +2108,8 @@ export default async function customerRoutes(app) {
          VALUES ($1,'reject',$2,NULL,$3)`, [id, reason, perm.userId]);
     } catch (_) { /* ignore */ }
     await safeLog({ userId: perm.userId, action: 'reject_registration', target: `customer:${id}` });
+    // → CRM 전송(반려). CRM 에서 올라온 고객이 「승인 대기」 로 남지 않도록 상태와 사유를 보낸다.
+    await enqueueCustomerSync(id, 'reject', { origin: 'registration_reject', actorUserId: perm.userId, reason, app });
     return { ok: true, id };
   });
 

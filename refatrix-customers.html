@@ -730,7 +730,7 @@
     b.innerHTML=`<table><thead><tr>${head}<th></th></tr></thead>
       <tbody>${items.map(c=>{const inactive=(c.days_no_sales!=null&&Number(c.days_no_sales)>30);return `<tr>
         <td class="code">${c.code}</td>
-        <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.approval_status==='pending'?' <span class="pill" style="background:#fff4e0;color:#9a6512;border:1px solid #ecd9a0;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px" title="디렉터 등록 승인 전 — 견적·매출에 사용할 수 없습니다">🔒 등록 승인대기</span>':''}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
+        <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.approval_status==='pending'?' <span class="pill" style="background:#fff4e0;color:#9a6512;border:1px solid #ecd9a0;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px" title="디렉터 등록 승인 전 — 견적·매출에 사용할 수 없습니다">🔒 등록 승인대기</span>':''}${c.from_crm?' <span class="pill" style="background:#eaf1fb;color:#20486f;border:1px solid #c9dcf3;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px" title="웹 카탈로그(CRM)에서 등록된 고객'+(c.crm_customer_code?(' · CRM 코드 '+c.crm_customer_code):'')+'">🌐 CRM 등록</span>':''}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
         <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
         <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
         <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
@@ -892,6 +892,7 @@
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <b>${esc(r.name)}</b> <span class="hint" style="margin:0">(${esc(r.code)})</span>
+            ${r.from_crm?`<span class="pill" style="background:#eaf1fb;color:#20486f;border:1px solid #c9dcf3;font-weight:700;font-size:10.5px;padding:1px 7px;border-radius:6px" title="웹 카탈로그(CRM)에서 고객이 직접 등록한 건입니다${r.crm_customer_code?(' · CRM 코드 '+esc(r.crm_customer_code)):''}">🌐 CRM 등록${r.crm_customer_code?(' · '+esc(r.crm_customer_code)):''}</span>`:''}
             <span class="hint" style="margin:0">· 신청: ${esc(r.created_by_name||'-')} / 담당 ${esc(r.owner_name||'-')} / ${esc(r.team_name||'-')} · ${esc(r.registered_at||'')}</span>
             ${gapTxt}
           </div>
