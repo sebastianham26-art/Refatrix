@@ -114,6 +114,8 @@ export function publicEndpoint(ep) {
     secure: /^https:/i.test(url),
     method_upsert: ep.method_upsert, method_delete: ep.method_delete,
     auth_header: ep.auth_header,
+    auth_in: ep.auth_in || 'header',
+    auth_param: ep.auth_param || 'apiKey',
     has_token: !!activeToken(ep),                       // 지금 환경에서 실제로 쓰이는 키가 있는가
     has_token_test: !!(ep.auth_token_test || ep.auth_token),
     has_token_prod: !!ep.auth_token_prod,
@@ -126,12 +128,15 @@ export function publicEndpoint(ep) {
 }
 
 const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_test', 'url_prod',
-  'method_upsert', 'method_delete', 'auth_header', 'ok_code', 'user_field', 'timeout_ms',
-  'contract', 'sort_order'];
+  'method_upsert', 'method_delete', 'auth_header', 'auth_in', 'auth_param', 'ok_code', 'user_field',
+  'timeout_ms', 'contract', 'sort_order'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 export function validatePatch(p) {
   if (p.env != null && !['test', 'prod'].includes(String(p.env))) return 'env_invalid';
+  // 인증 위치: 헤더 · 쿼리스트링 · 본문 (CRM 마다 다르다)
+  if (p.auth_in != null && !['header', 'query', 'body'].includes(String(p.auth_in))) return 'auth_in_invalid';
+  if (p.auth_param != null && String(p.auth_param).trim() && !/^[A-Za-z0-9_.-]{1,60}$/.test(String(p.auth_param).trim())) return 'auth_param_invalid';
   for (const m of ['method_upsert', 'method_delete']) {
     if (p[m] != null && !METHODS.includes(String(p[m]).toUpperCase())) return 'method_invalid';
   }

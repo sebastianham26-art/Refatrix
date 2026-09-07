@@ -181,23 +181,38 @@ export async function sendPayload(ep, op, payload) {
     : url;
   const headers = { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' };
   const token = activeToken(ep);   // 테스트/운영 각자의 키
+  // 키를 어디에 싣는가 — CRM 마다 다르다(헤더 / 쿼리스트링 / 본문). 0204 이전 설정은 헤더.
+  const where = ['header', 'query', 'body'].includes(ep.auth_in) ? ep.auth_in : 'header';
+  const param = String(ep.auth_param || 'apiKey').trim() || 'apiKey';
   const authHeader = ep.auth_header || 'Authorization';
-  if (token) headers[authHeader] = token;
-  const authInfo = { auth_sent: !!token, auth_header: token ? authHeader : null };
+  let sendUrl = target;
+  let sendBody = payload;
+  if (token) {
+    if (where === 'header') headers[authHeader] = token;
+    else if (where === 'query') sendUrl += (sendUrl.includes('?') ? '&' : '?') + encodeURIComponent(param) + '=' + encodeURIComponent(token);
+    else sendBody = { ...payload, [param]: token };
+  }
+  const authInfo = {
+    auth_sent: !!token,
+    auth_header: token ? (where === 'header' ? authHeader : `${where}:${param}`) : null,
+  };
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), Number(ep.timeout_ms) || 10000);
   const startedAt = Date.now();
   try {
-    const res = await fetch(target, {
+    const res = await fetch(sendUrl, {
       method, headers,
-      body: method === 'GET' ? undefined : JSON.stringify(payload),
+      body: method === 'GET' ? undefined : JSON.stringify(sendBody),
       signal: ac.signal,
     });
     const text = await res.text();
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch (_) { body = { raw: String(text).slice(0, 1000) }; }
-    return { httpStatus: res.status, body, url: target, method, ms: Date.now() - startedAt, ...authInfo };
+    // 이력에 남기는 url 은 키를 지운 형태로(키가 이력에 남으면 안 된다)
+    const safeUrl = token && where === 'query'
+      ? sendUrl.replace(encodeURIComponent(token), '***') : sendUrl;
+    return { httpStatus: res.status, body, url: safeUrl, method, ms: Date.now() - startedAt, ...authInfo };
   } catch (e) {
     return {
       error: (e && e.name === 'AbortError') ? 'timeout' : String((e && e.message) || e).slice(0, 300),
