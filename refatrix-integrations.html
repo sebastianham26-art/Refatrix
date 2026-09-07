@@ -169,6 +169,7 @@
             <div><label>삭제 메서드</label>
               <select id="fMethodDelete"><option>DELETE</option><option>POST</option><option>PUT</option><option>PATCH</option></select></div>
             <div><label>성공 codigoError</label><input id="fOkCode" placeholder="0"></div>
+            <div><label>재시도 안 할 코드 <span class="hint">(쉼표 구분)</span></label><input id="fNoRetry" placeholder="ERR_CUSTOMER_NOT_FOUND"></div>
           </div>
 
           <div class="row3">
@@ -268,6 +269,7 @@
             <input id="fQ" placeholder="고객코드 · 상호 · RFC" style="width:auto;min-width:200px">
             <button class="btn ghost sm" id="btnLogReload">조회</button>
             <button class="btn sm" id="btnDrain">대기분 지금 전송</button>
+            <button class="btn ghost sm" id="btnBulk" title="새 변경이 없어도 현재 ERP 값을 CRM 에 다시 밀어 넣습니다">전체 동기화</button>
             <span class="hint" id="logMeta" style="margin-left:auto"></span>
           </div>
           <div class="msg" id="logMsg"></div>
@@ -299,7 +301,7 @@
   const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   const ORIGIN_LABEL={registration_approve:'등록 승인',change_approve:'수정 승인',director_edit:'디렉터 수정',
-    customer_delete:'고객 삭제',registration_reject:'등록 반려',manual_resend:'수동 재전송',manual:'수동'};
+    customer_delete:'고객 삭제',registration_reject:'등록 반려',bulk_push:'전체 동기화',manual_resend:'수동 재전송',manual:'수동'};
   const STATUS_LABEL={pending:'대기',sent:'전송됨',failed:'실패',skipped:'건너뜀'};
   const NOTE_LABEL={rfc_missing:'RFC 없음 — CRM 조회 키가 없어 보내지 않음',never_sent:'CRM 에 등록된 적 없는 고객'};
   const CAT_LABEL={customer:'고객',product:'제품',other:'기타'};
@@ -384,6 +386,7 @@
     $('fUrlTest').value=e.url_test||''; $('fUrlProd').value=e.url_prod||'';
     $('fMethodUpsert').value=e.method_upsert||'POST'; $('fMethodDelete').value=e.method_delete||'DELETE';
     $('fOkCode').value=e.ok_code||'0';
+    $('fNoRetry').value=e.no_retry_codes||'';
     $('fAuthIn').value=e.auth_in||'header';
     $('fAuthName').value=(e.auth_in==='header'||!e.auth_in)?(e.auth_header||'Authorization'):(e.auth_param||'apiKey');
     $('fTokenTest').value=''; $('fTokenTest').placeholder=e.has_token_test?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
@@ -407,6 +410,7 @@
       url_test:$('fUrlTest').value.trim(),url_prod:$('fUrlProd').value.trim(),
       method_upsert:$('fMethodUpsert').value,method_delete:$('fMethodDelete').value,
       ok_code:$('fOkCode').value.trim()||'0',auth_in:$('fAuthIn').value,
+      no_retry_codes:$('fNoRetry').value.trim(),
       timeout_ms:Number($('fTimeout').value||10000),user_field:$('fUserField').value,
       sort_order:Number($('fSort').value||100)};
     // 이름 칸 하나로 헤더명/파라미터명을 겸한다 — 위치에 따라 알맞은 필드로 보낸다.
@@ -660,6 +664,26 @@
     try{ await navigator.clipboard.writeText(contractMd()); $('contractMsg').className='msg ok'; $('contractMsg').textContent='Markdown 을 복사했습니다.'; }
     catch(e){ $('contractMsg').className='msg err'; $('contractMsg').textContent='복사할 수 없습니다.'; }
   });
+  async function bulkPush(){
+    const m=$('logMsg'); m.className='msg';
+    try{
+      // 먼저 몇 건인지 세어 보고 확인을 받는다 — 눌러 놓고 놀라는 일이 없게.
+      const dry=await fetch(session.api+'/api/crm-sync/bulk-push',{method:'POST',headers:jauth(),body:JSON.stringify({dry_run:true})}).then(r=>r.json());
+      if(dry.error){ m.className='msg err'; m.textContent='실행 불가: '+(dry.note||dry.error); return; }
+      if(!dry.count){ m.className='msg ok'; m.textContent='보낼 대상이 없습니다(대기 중이거나 RFC 없는 고객 제외).'; return; }
+      const ok=confirm('RFC 가 있는 승인 고객 '+dry.count+'건의 현재 값을 CRM 으로 다시 보냅니다.\n\n예: '+(dry.sample||[]).slice(0,3).join(' / ')+'\n\n계속할까요?');
+      if(!ok) return;
+      $('btnBulk').disabled=true; $('btnBulk').textContent='전송 중…';
+      const d=await fetch(session.api+'/api/crm-sync/bulk-push',{method:'POST',headers:jauth(),body:JSON.stringify({})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='실패: '+(d.note||d.error); }
+      else{ m.className='msg ok';
+        m.textContent='적재 '+d.queued+'건'+(d.skipped?(' · 건너뜀 '+d.skipped):'')
+          +' · 즉시 전송 성공 '+((d.drain&&d.drain.sent)||0)+' / 실패 '+((d.drain&&d.drain.failed)||0)
+          +(d.note?(' — '+d.note):''); }
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnBulk').disabled=false; $('btnBulk').textContent='전체 동기화'; loadLog(); }
+  }
+  $('btnBulk').addEventListener('click',bulkPush);
   $('btnLogReload').addEventListener('click',loadLog);
   $('btnDrain').addEventListener('click',drain);
   $('fStatus').addEventListener('change',loadLog);

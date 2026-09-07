@@ -120,6 +120,7 @@ export function publicEndpoint(ep) {
     has_token_test: !!(ep.auth_token_test || ep.auth_token),
     has_token_prod: !!ep.auth_token_prod,
     ok_code: ep.ok_code, user_field: ep.user_field, timeout_ms: Number(ep.timeout_ms),
+    no_retry_codes: ep.no_retry_codes == null ? 'ERR_CUSTOMER_NOT_FOUND' : ep.no_retry_codes,
     contract: ep.contract || {},
     sort_order: ep.sort_order == null ? 100 : Number(ep.sort_order),
     source: ep.source || 'db',
@@ -129,7 +130,7 @@ export function publicEndpoint(ep) {
 
 const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_test', 'url_prod',
   'method_upsert', 'method_delete', 'auth_header', 'auth_in', 'auth_param', 'ok_code', 'user_field',
-  'timeout_ms', 'contract', 'sort_order'];
+  'timeout_ms', 'contract', 'sort_order', 'no_retry_codes'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 export function validatePatch(p) {

@@ -41,6 +41,14 @@ async function epCols() {
 export default async function crmSyncRoutes(app) {
   const guard = { preHandler: [authGuard, requireDirector] };
 
+  // 감사로그는 있으면 남기고 없으면 조용히 지나간다(전송 자체를 막지 않는다).
+  async function safeAudit(req, { action, detail }) {
+    try {
+      await query(`INSERT INTO audit_log (user_id, action, target, detail) VALUES ($1,$2,$3,$4)`,
+        [req.ctx.perm.userId, action, 'crm_sync', JSON.stringify(detail || {})]);
+    } catch (_) { /* ignore */ }
+  }
+
   async function ready(reply) {
     if (await crmTableReady()) return true;
     reply.code(503).send({ error: 'migration_required', note: '0200_crm_customer_outbox 마이그레이션이 필요합니다.' });
@@ -162,6 +170,66 @@ export default async function crmSyncRoutes(app) {
     if (!c) return reply.code(404).send({ error: 'not_found' });
     const r = await enqueueCustomerSync(id, 'upsert', { origin: 'manual_resend', actorUserId: req.ctx.perm.userId, app });
     return { ok: !!r.ok, ...r };
+  });
+
+  /**
+   * 전체 동기화(강제 일괄 전송) — 새 변경이 없어도 지금 ERP 값을 그대로 다시 보낸다.
+   *   "CRM 이 최신인지 확신이 안 설 때" 사람이 눌러서 맞추는 장치다.
+   *   body: { dry_run?: true, scope?: 'approved'|'all', team_id?, only_missing?: true, limit? }
+   *     dry_run       — 몇 건이 대상인지만 세어 본다(적재하지 않는다)
+   *     scope         — approved(기본): 승인된 고객만 · all: 승인 대기 포함
+   *     only_missing  — 아직 한 번도 CRM 에 성공 전송된 적 없는 고객만
+   *   RFC 없는 고객은 애초에 대상이 아니다(CRM 조회 키가 없다).
+   */
+  app.post('/api/crm-sync/bulk-push', guard, async (req, reply) => {
+    if (!(await ready(reply))) return;
+    const b = req.body || {};
+    const scope = b.scope === 'all' ? 'all' : 'approved';
+    const limit = Math.min(Math.max(Number(b.limit || 1000), 1), 5000);
+    const params = [];
+    const conds = [
+      `c.deleted_at IS NULL`,
+      `c.rfc IS NOT NULL AND btrim(c.rfc) <> ''`,
+    ];
+    if (scope === 'approved') conds.push(`COALESCE(c.approval_status,'approved')='approved'`);
+    if (b.team_id) { params.push(Number(b.team_id)); conds.push(`c.team_id=$${params.length}`); }
+    if (b.only_missing) {
+      conds.push(`NOT EXISTS (SELECT 1 FROM crm_customer_outbox o
+                               WHERE o.customer_id=c.id AND o.op='upsert' AND o.status='sent')`);
+    }
+    // 이미 대기 중인 건이 있는 고객은 건너뛴다 — 같은 값을 두 번 줄 세울 이유가 없다.
+    conds.push(`NOT EXISTS (SELECT 1 FROM crm_customer_outbox o
+                             WHERE o.customer_id=c.id AND o.op='upsert' AND o.status='pending')`);
+    params.push(limit);
+    const rows = (await query(
+      `SELECT c.id, c.code, c.name FROM customers c
+        WHERE ${conds.join(' AND ')}
+        ORDER BY c.id LIMIT $${params.length}`, params)).rows;
+
+    if (b.dry_run) {
+      return { ok: true, dry_run: true, count: rows.length,
+               sample: rows.slice(0, 5).map((r) => `${r.code} ${r.name}`) };
+    }
+
+    let queued = 0, skipped = 0;
+    for (const r of rows) {
+      const out = await enqueueCustomerSync(Number(r.id), 'upsert',
+        { origin: 'bulk_push', actorUserId: req.ctx.perm.userId });
+      if (out.ok && out.status === 'pending') queued++; else skipped++;
+    }
+    await safeAudit(req, { action: 'crm_bulk_push', detail: { scope, queued, skipped } });
+    // 첫 묶음은 바로 밀어 준다. 적재 직후 예약된 드레인과 겹치면(busy) 잠깐 기다렸다 다시 —
+    // 그렇지 않으면 "적재는 됐는데 아무것도 안 나간" 것처럼 보인다. 나머지는 워커가 순서대로 처리한다.
+    const drain = { drained: 0, sent: 0, failed: 0, held: 0 };
+    for (let i = 0; i < 5; i++) {
+      const d = await drainOutbox({ app, limit: 50 });
+      if (d.busy) { await new Promise((r) => setTimeout(r, 300)); continue; }
+      drain.drained += d.drained || 0; drain.sent += d.sent || 0;
+      drain.failed += d.failed || 0; drain.held += d.held || 0;
+      if (!d.drained) break;
+    }
+    return { ok: true, queued, skipped, drain,
+             note: queued > 50 ? '나머지는 워커가 순서대로 전송합니다(1분 주기).' : null };
   });
 
   // 대기분 즉시 밀기

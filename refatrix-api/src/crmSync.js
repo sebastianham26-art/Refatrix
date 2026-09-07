@@ -46,6 +46,15 @@ export async function crmTableReady() {
   return tableReady;
 }
 
+/** 재시도해도 소용없는 응답인가 — 연동 설정의 목록(쉼표 구분)과 대조한다. */
+export function isPermanent(body, noRetryCodes) {
+  const list = String(noRetryCodes == null ? 'ERR_CUSTOMER_NOT_FOUND' : noRetryCodes)
+    .split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
+  if (!list.length || !body || typeof body !== 'object') return false;
+  const code = body.codigoError != null ? String(body.codigoError).trim().toUpperCase() : null;
+  return !!code && list.includes(code);
+}
+
 /** 전송 성공 판정 — HTTP 2xx 이면서 codigoError 가 성공코드(기본 "0")이거나 아예 없을 것. */
 export function isSuccess(httpStatus, body, okCode = '0') {
   if (!(httpStatus >= 200 && httpStatus < 300)) return false;
@@ -294,8 +303,10 @@ export async function drainOutbox({ limit = 20, app } = {}) {
       } else {
         failed++;
         const note = r.error || (r.body && (r.body.mensaje || r.body.message)) || ('HTTP ' + r.httpStatus);
-        const done = attempts >= MAX_ATTEMPTS;
-        put('status=$?', done ? 'failed' : 'pending');
+        // 재시도해도 결과가 같은 응답(예: CRM 에 없는 고객)은 즉시 닫는다 — 재시도 큐를 더럽히지 않는다.
+        const permanent = !r.error && isPermanent(r.body, ep.no_retry_codes);
+        const done = permanent || attempts >= MAX_ATTEMPTS;
+        put('status=$?', permanent ? 'skipped' : (done ? 'failed' : 'pending'));
         put('attempts=$?', attempts);
         put('http_status=$?', r.httpStatus || null);
         put('codigo_error=$?', codigo);
