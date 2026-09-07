@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · WBR · build wbr-0904b</title>
+<title>Refatrix ERP · WBR · build wbr-0904c</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -33,7 +33,9 @@
   .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
   .msg.err{display:block;background:var(--expense-bg);color:var(--expense);border:1px solid #f0c5bf}
   .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px;width:100%}
-  .hidden{display:none}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
+  /* ⚠ !important 필수 — 이 아래에 오는 .mrow/.snapbanner/.jdov 의 display 나
+     인라인 style="display:flex" 가 .hidden 을 이겨서 「숨김이 안 먹는」 버그가 반복됐다. */
+  .hidden{display:none!important}.hint{font-size:11.5px;color:var(--muted);line-height:1.5}
   .mrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .mrow .ml{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px}
   .mbtn{min-width:38px;padding:6px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
@@ -473,7 +475,7 @@
 </div>
 
 <script>
-  console.log('[wbr] build wbr-0904b');
+  console.log('[wbr] build wbr-0904c');
   let session={token:null,user:null,api:''};
   const now=new Date();
   let topYms=[now.toISOString().slice(0,7)];   // 조회 월(다중) — 카드+워터폴 공통

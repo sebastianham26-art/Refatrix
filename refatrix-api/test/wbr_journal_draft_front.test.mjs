@@ -62,13 +62,40 @@ const $ = (id) => win.document.getElementById(id);
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 const bullets = (tk, wk) => JSON.parse(win.eval(`JSON.stringify(board.issues['${tk}']['${wk}'])`));
 const rows = () => $('jdList').querySelectorAll('.jdrow');
-const panelOpen = () => !$('jdOverlay').classList.contains('hidden');
+// 클래스가 아니라 **실제로 화면에 보이는지**(계산된 display)로 판정한다.
+// .hidden{display:none} 이 .jdov{display:flex} 보다 앞에 있어, 클래스만 보면 못 잡는 버그가 있었다.
+const panelDisplay = () => win.getComputedStyle($('jdOverlay')).display;
+const panelOpen = () => panelDisplay() !== 'none';
 const fire = (el, type) => el.dispatchEvent(new win.Event(type, { bubbles: true }));
 
 async function openPanel(payload = okDraft()) {
   route('POST', '/api/wbr/journal-draft', payload);
   await win.runJournalDraft(); await tick();
 }
+
+// ── 오버레이 표시/숨김 (CSS 회귀) ────────────────────────────────────
+test('⓪ 검토 패널은 로드 직후 보이지 않고, 닫으면 실제로 사라진다(계산된 display)', async () => {
+  assert.equal(panelDisplay(), 'none', '로그인 화면에서 팝업이 떠 있으면 안 된다');
+  await openPanel();
+  assert.equal(panelDisplay(), 'flex', '열면 보인다');
+  win.closeJdPanel();
+  assert.equal(panelDisplay(), 'none', '닫으면 .hidden 이 이겨서 실제로 사라져야 한다');
+});
+
+test('⓪-2 .hidden 은 이 화면의 모든 토글 대상에서 실제로 먹는다(같은 함정 재발 방지)', () => {
+  // .hidden 뒤에 오는 .mrow/.snapbanner/.jdov 의 display 나 인라인 style="display:flex" 가
+  // .hidden 을 이겨서 「숨김이 안 먹는」 버그가 실제로 4곳에 있었다.
+  const IDS = ['app', 'loginCard', 'snapBanner', 'snapSaveBtn', 'snapDelBtn', 'mbrGen', 'mbrNoKey',
+    'jdraftBtn', 'jdraftHint', 'jdOverlay', 'vcJoin', 'vcLinkWrap', 'vcEditWrap'];
+  const bad = [];
+  for (const id of IDS) {
+    const el = $(id); if (!el) continue;
+    el.classList.add('hidden');
+    const d = win.getComputedStyle(el).display;
+    if (d !== 'none') bad.push(id + ' → ' + d);
+  }
+  assert.deepEqual(bad, [], 'hidden 이 무시되는 요소: ' + bad.join(', '));
+});
 
 // ── 버튼 노출 ────────────────────────────────────────────────────────
 test('① 버튼 — 디렉터 + 수정권한 + 라이브일 때만 보인다', () => {
