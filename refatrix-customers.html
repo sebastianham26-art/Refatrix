@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build tx-0904a)</title>
+<title>Refatrix ERP · 고객 등록 (build ref-0908a)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -705,6 +705,10 @@
     {key:'branch_count',label:'지점',num:true},
     {key:'owner_name',label:'담당'},
     {key:'stage',label:'단계'},
+    // 0185 · 등록 때 박제한 경쟁사(SYD) 근거와 할인. 상세에만 있어서 목록에서 비교가 안 됐다.
+    {key:'syd_ref_buy_price',label:'경쟁사(SYD) 단가',num:true},
+    {key:'suggested_discount',label:'제안할인',num:true},
+    {key:'discount',label:'기본할인',num:true},
     {key:'sales_total',label:'누적매출',num:true},
     {key:'overdue',label:'연체',num:true},
   ];
@@ -713,7 +717,31 @@
     if(key==='sales_total')return Number(c.sales_total||0);
     if(key==='overdue')return Number(c.overdue||0);
     if(key==='branch_count')return c.branch_count==null?-1:Number(c.branch_count);
+    // 값이 없는 고객(CRM 등록 등)은 항상 뒤로 — 정렬로 '—' 가 위를 차지하지 않게.
+    if(key==='syd_ref_buy_price'||key==='suggested_discount')return c[key]==null?-1:Number(c[key]);
+    if(key==='discount')return Number(c.discount||0);
     return String(c[key]==null?'':c[key]).toLowerCase();
+  }
+  // 목록용 — 경쟁사(SYD) 기준품목 셀. 단가 + 그 아래 고객이 받는 할인율.
+  function custSydCell(c){
+    if(c.syd_ref_buy_price==null&&c.syd_ref_discount==null)
+      return '<span class="hint" style="margin:0" title="등록 때 기준품목 구매단가가 기록되지 않았습니다 (웹카달록 등록 건은 안 올 수 있습니다)">—</span>';
+    const tip=['기준품목 '+(c.syd_ref_code||'—'),
+      'SYD 정가 '+mxTxt(c.syd_ref_list_price),
+      '고객이 받는 SYD 할인율 '+pctTxt(c.syd_ref_discount),
+      '우리 '+(c.ctr_ref_code||'—')+' 정가 '+mxTxt(c.ctr_ref_list_price)].join(' · ');
+    const price=c.syd_ref_buy_price==null?'<span class="hint" style="margin:0">단가 미기록</span>':('<b>'+mxTxt(c.syd_ref_buy_price)+'</b>');
+    const disc=c.syd_ref_discount==null?'':('<div class="hint" style="margin:0;font-size:11px">SYD −'+pctTxt(c.syd_ref_discount)+'</div>');
+    return '<span title="'+esc(tip)+'">'+price+disc+'</span>';
+  }
+  // 적용 기본할인 — 제안값보다 후하게 준 만큼(%p)을 같이 보여 준다(승인 카드와 같은 기준).
+  function custDiscCell(c){
+    const d=Number(c.discount||0);
+    const s=(c.suggested_discount==null)?null:Number(c.suggested_discount);
+    const gap=(s==null)?null:Math.round((d-s)*100)/100;
+    const badge=(gap==null||Math.abs(gap)<0.01)?''
+      :('<div class="hint" style="margin:0;font-size:11px;color:'+(gap>0?'#B23A2E':'#0F6E56')+'" title="제안 할인율 '+pctTxt(s)+' 대비">제안 '+(gap>0?'+':'')+gap.toFixed(2)+'%p</div>');
+    return '<b>'+pctTxt(d)+'</b>'+badge;
   }
   function sortCust(key){
     if(custSort.key===key)custSort.dir*=-1; else {custSort.key=key;custSort.dir=1;}
@@ -735,11 +763,16 @@
         <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
         <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
         <td>${stagePill(c.stage_name)}</td>
+        <td class="num">${custSydCell(c)}</td>
+        <td class="num">${c.suggested_discount==null?'<span class="hint" style="margin:0">—</span>':pctTxt(c.suggested_discount)}</td>
+        <td class="num">${custDiscCell(c)}</td>
         <td class="num">${money0(c.sales_total)}</td>
         <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
         <td style="white-space:nowrap"><button class="btn ghost sm" onclick="openTxnModal(${c.id})" title="월별 견적·매출·수금 (IVA 제외)">📈 거래</button> <button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
       </tr>`;}).join('')}</tbody></table>
-      <div class="hint">${items.length}명 표시 · <b>누적매출</b>=거래후 누적 매출액(IVA 포함), 옆은 연체액(빨간색). <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출. 타이틀을 누르면 정렬됩니다.</div>`;
+      <div class="hint">${items.length}명 표시 · <b>경쟁사(SYD) 단가</b>=등록 때 적은 그 고객의 SYD 기준품목 구매단가(아래는 고객이 SYD 에서 받는 할인율) ·
+        <b>제안할인</b>=그 단가보다 5% 싸게 주기 위한 CTR 할인율 · <b>기본할인</b>=실제 적용값(제안과 다르면 격차 %p) ·
+        <b>누적매출</b>=거래후 누적 매출액(IVA 포함), 옆은 연체액(빨간색). <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출. 타이틀을 누르면 정렬됩니다.</div>`;
   }
 
   async function showForm(cust,opts){
@@ -1278,7 +1311,9 @@
           한쪽 RFC 를 정정하거나 고객을 통합한 뒤 「선점 예외 정리」에서 복구하세요.</span>`
           +(isDirector()?` <button class="btn sm" style="margin-left:6px" onclick="openMerge({id:${c.id},code:${JSON.stringify(c.code)},name:${JSON.stringify(c.name)},rfc:${JSON.stringify(c.rfc||null)},owner_name:${JSON.stringify(c.owner_name||null)},team_name:${JSON.stringify(c.team_name||null)},approval_status:${JSON.stringify(c.approval_status||'approved')}})">🔗 병합</button>`:'');
       }
-      const refRow = (c.syd_ref_buy_price!=null)
+      // 0185 · 단가가 안 왔어도(웹카달록 등록) 고객이 받는 할인율만 온 경우가 있다 —
+      //   그때도 근거 줄을 숨기지 않는다. 숨기면 "등록 때 적은 값이 사라졌다" 로 보인다.
+      const refRow = (c.syd_ref_buy_price!=null||c.syd_ref_discount!=null||c.suggested_discount!=null)
         ? `<tr><th>할인율 산출 근거</th><td colspan="3">
              기준품목 <b>${esc(c.syd_ref_code||'—')}</b> 고객 구매단가 <b>${mxTxt(c.syd_ref_buy_price)}</b>
              <span class="hint" style="margin:0">(SYD 정가 ${mxTxt(c.syd_ref_list_price)} → 고객 할인율 ${pctTxt(c.syd_ref_discount)})</span>

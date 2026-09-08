@@ -224,6 +224,13 @@ export default async function crmInboundRoutes(app) {
       // ── ④ 신규 — P-#### 로 채번해 승인 대기함에 넣는다 ──────────────
       const asesor = await findAsesor(m);
       const bl = await baselineFrom(m);
+      // 카달록이 기준품목 **단가** 대신 「고객이 SYD 에서 받는 할인율」만 보내는 경우가 있다.
+      //   단가를 역산해 지어내지는 않는다(정가 기준이 다르면 거짓 근거가 된다).
+      //   대신 온 값 그대로 할인율 칸에 박제해, 목록·상세에서 빈칸으로 사라지지 않게 한다.
+      const sydDiscIn = (m.descuentoSyd != null && Number.isFinite(m.descuentoSyd)
+        && m.descuentoSyd >= 0 && m.descuentoSyd <= 100) ? m.descuentoSyd : null;
+      const refCodeIn = bl?.baseCode || (m.sydRefCode ? String(m.sydRefCode).trim() : null);
+      const sydDiscOut = bl?.calc?.syd_discount ?? sydDiscIn;
       const disc = (m.discountPercent != null && Number.isFinite(m.discountPercent)
         && m.discountPercent >= 0 && m.discountPercent <= MAX_DISCOUNT_PCT) ? m.discountPercent : 0;
       const days = (m.paymentDays != null && Number.isFinite(m.paymentDays) && m.paymentDays >= 0)
@@ -257,7 +264,7 @@ export default async function crmInboundRoutes(app) {
              ['CRM 웹카달록 등록', m.nombreComercial ? `상호명: ${m.nombreComercial}` : null,
               m.crmCode ? `CRM 코드: ${m.crmCode}` : null, m.memo].filter(Boolean).join(' · '),
              addr, conNo,
-             bl?.baseCode || null, bl?.buy ?? null, bl?.sydLP ?? null, bl?.calc?.syd_discount ?? null,
+             refCodeIn || null, bl?.buy ?? null, bl?.sydLP ?? null, sydDiscOut ?? null,
              bl?.ctrCode || null, bl?.ctrLP ?? null, bl?.calc?.suggested_discount ?? null,
              ...(crmCols ? [m.crmCode || null] : [])])).rows[0];
           break;

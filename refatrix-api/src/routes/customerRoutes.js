@@ -417,6 +417,16 @@ export default async function customerRoutes(app) {
               c.ship_address, ${apprExpr} AS approval_status,
               ${crmOn ? 'c.crm_customer_code' : 'NULL::text'} AS crm_customer_code,
               ${regOn ? 'c.constancia_no' : 'NULL::text'} AS constancia_no,
+              -- 0185 · 경쟁사(SYD) 기준품목 근거 + 제안 할인율.
+              --   상세에만 있고 목록에 없어서 "등록 때 적은 경쟁사 단가·할인이 어디 갔나"가 됐다.
+              --   목록에서 고객끼리 비교(누가 싸게 사고 있나)하는 게 이 값의 본래 쓸모다.
+              ${regOn ? 'c.syd_ref_code' : 'NULL::text'} AS syd_ref_code,
+              ${regOn ? 'c.syd_ref_buy_price' : 'NULL::numeric'} AS syd_ref_buy_price,
+              ${regOn ? 'c.syd_ref_list_price' : 'NULL::numeric'} AS syd_ref_list_price,
+              ${regOn ? 'c.syd_ref_discount' : 'NULL::numeric'} AS syd_ref_discount,
+              ${regOn ? 'c.ctr_ref_code' : 'NULL::text'} AS ctr_ref_code,
+              ${regOn ? 'c.ctr_ref_list_price' : 'NULL::numeric'} AS ctr_ref_list_price,
+              ${regOn ? 'c.suggested_discount' : 'NULL::numeric'} AS suggested_discount,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
@@ -488,6 +498,14 @@ export default async function customerRoutes(app) {
       branch_count: c.branch_count == null ? null : Number(c.branch_count),
       ship_address: c.ship_address || null,
       approval_status: c.approval_status, constancia_no: c.constancia_no || null,
+      // 0185 · 등록 때 박제한 경쟁사(SYD) 단가·할인 근거 — 목록에서도 보여 준다(상세와 같은 값).
+      syd_ref_code: c.syd_ref_code || null,
+      syd_ref_buy_price: c.syd_ref_buy_price == null ? null : Number(c.syd_ref_buy_price),
+      syd_ref_list_price: c.syd_ref_list_price == null ? null : Number(c.syd_ref_list_price),
+      syd_ref_discount: c.syd_ref_discount == null ? null : Number(c.syd_ref_discount),
+      ctr_ref_code: c.ctr_ref_code || null,
+      ctr_ref_list_price: c.ctr_ref_list_price == null ? null : Number(c.ctr_ref_list_price),
+      suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount),
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
