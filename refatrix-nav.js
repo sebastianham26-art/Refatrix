@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260908keys loaded (연동 관리 + 외부 서비스 키)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260908lead loaded (고객 등록 승인 + 연동 관리 + 웹 가입 신청 팝업)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -110,6 +110,7 @@
     custApprove:{file:'refatrix-customers.html',name:'고객 수정 승인',desc:'수정 승인',tab:'approve'},
     custReg:{file:'refatrix-customers.html',name:'고객 등록 승인',desc:'신규 등록 승인·반려',tab:'reg'},
     custClaim:{file:'refatrix-customers.html',name:'RFC 선점 이관',desc:'선점 요청 승인·반려',tab:'claim'},
+    custLeads:{file:'refatrix-customers.html',name:'웹 가입 신청',desc:'홈페이지 회원가입 신청 접수·처리',tab:'leads'},
     targets:{file:'refatrix-targets.html',name:'매출목표',desc:'목표·달성'},
     finance:{file:'refatrix-finance.html',name:'재무 · 계좌',desc:'계좌·잔액',tab:'acc'},
     finNew:{file:'refatrix-finance.html',name:'거래 등록',desc:'수입·지출',tab:'new'},
@@ -141,7 +142,6 @@
     devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
     integrations:{file:'refatrix-integrations.html',name:'연동 관리',desc:'CRM 전송 주소·계약서·전송이력'},
-    apikeys:{file:'refatrix-apikeys.html',name:'외부 서비스 키',desc:'AI·전사·WhatsApp API 키 · 연결 테스트'},
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
@@ -158,14 +158,14 @@
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
-    pipeline:'pipeline', consult:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', targets:'targets',
+    pipeline:'pipeline', consult:'pipeline', customers:'customers', custTeam:'__director__', custApprove:'__director__', custReg:'__director__', custClaim:'__director__', custLeads:'customers', targets:'targets',
     finance:'transactions', finNew:'transactions', finTxn:'transactions', finPay:'transactions', finFixed:'transactions', finCash:'transactions', finFx:'transactions', finApprove:'transactions', finReport:'__director__',
     boardNotice:null, boardTodo:null, wbr:'wbr', daily:'__director__',
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', marketing:'marketing', mktspend:'marketing',
-    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', apikeys:'__director__',
+    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
@@ -178,7 +178,7 @@
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','prodFind','prodUpload','prodHistory']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','integrations','apikeys','processKpi']}
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
@@ -722,6 +722,169 @@
   }
   window.__rnavCregCheck=function(){ checkCustReg({silent:true}); };
 
+  // =====================================================================
+  //  0210 · 웹 가입 신청(리드) 전역 팝업
+  //
+  //   고객이 홈페이지에서 회원가입을 누르면 CRM 이 ERP 로 즉시 알린다.
+  //   그 알림을 **어느 화면에 있든** 띄운다 — 아무도 안 보고 며칠 지나는 것이
+  //   이 기능이 막으려는 손실이다.
+  //
+  //   creg 팝업과 다른 점
+  //     · 디렉터 전용이 아니다. **누구에게 띄울지는 서버가 판단한다**
+  //       (대상이 아니면 빈 배열이 온다 — 화면은 그걸 그대로 믿으면 된다).
+  //     · 고객이 입력한 **모든 값**을 카드에 편다. 우리가 모르는 필드도 그대로 보여 준다.
+  //     · 카드마다 「내가 맡겠습니다」 · 「보류·대상 아님」 버튼이 붙는다.
+  // =====================================================================
+  var LEAD_SEEN_KEY='refatrix_weblead_seen', LEAD_DIS_KEY='refatrix_weblead_dismissed';
+  var __leadTimer=null, __leadItems=[];
+  function leadSeen(){ try{ return JSON.parse(sessionStorage.getItem(LEAD_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
+  function leadSaveSeen(a){ try{ sessionStorage.setItem(LEAD_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
+  function leadDismissed(){ try{ return sessionStorage.getItem(LEAD_DIS_KEY)==='1'; }catch(e){ return false; } }
+
+  // 고객이 입력한 값 전부를 보기 좋은 이름으로 편다. 우리가 모르는 키는 키 이름 그대로 보여 준다.
+  var LEAD_LABEL={empresa:'회사명',nombre:'이름',apellido:'성',telefono:'전화',correo:'이메일',rfc:'RFC',
+    ciudad:'도시',estado:'주',direccion:'주소',mensaje:'남긴 말',crmLeadCode:'CRM 코드',customerCode:'CRM 코드',
+    solicitadoEn:'신청 시각',tipo:'유형',nombreComercial:'상호'};
+  function leadFieldRows(r){
+    var p=r.payload||{}, out=[], seen={};
+    function add(k,v){
+      if(v==null) return;
+      if(typeof v==='object'){ try{ v=JSON.stringify(v); }catch(e){ return; } }
+      v=String(v).trim(); if(!v) return;
+      var key=String(k).toLowerCase(); if(seen[key]) return; seen[key]=1;
+      out.push('<tr><td style="padding:4px 8px;color:#8a8577;white-space:nowrap;vertical-align:top">'
+        +cregEsc(LEAD_LABEL[k]||k)+'</td><td style="padding:4px 8px;word-break:break-word">'+cregEsc(v)+'</td></tr>');
+    }
+    // 우리가 아는 순서를 먼저, 그다음 상대가 더 보낸 것들.
+    ['empresa','nombre','apellido','rfc','telefono','correo','ciudad','estado','direccion','mensaje'].forEach(function(k){ add(k,p[k]); });
+    Object.keys(p).forEach(function(k){ add(k,p[k]); });
+    return out.join('');
+  }
+
+  function leadEnsureModal(){
+    var m=document.getElementById('rnavLeadModal');
+    if(m) return m;
+    m=document.createElement('div');
+    m.id='rnavLeadModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:56px 16px;overflow:auto';
+    m.innerHTML=''
+      +'<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#0F6E56">🌐 웹카달록 — 새 회원가입 신청</div>'
+      +'<div id="rnavLeadMsg" style="font-size:12.5px;color:#6F6A60;margin-top:4px"></div></div>'
+      +'<div style="padding:12px 16px"><div id="rnavLeadList" style="max-height:52vh;overflow:auto"></div></div>'
+      +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button type="button" onclick="__rnavLeadDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
+      +'<button type="button" onclick="__rnavLeadGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">고객 등록 화면으로 →</button>'
+      +'</div></div>';
+    (document.body||document.documentElement).appendChild(m);
+    return m;
+  }
+  window.__rnavLeadDismiss=function(){
+    try{ sessionStorage.setItem(LEAD_DIS_KEY,'1'); }catch(e){}
+    var m=document.getElementById('rnavLeadModal'); if(m) m.style.display='none';
+  };
+  window.__rnavLeadGo=function(){
+    var m=document.getElementById('rnavLeadModal'); if(m) m.style.display='none';
+    try{ nav('custLeads'); }catch(e){}
+  };
+  function leadPost(id, path, body){
+    var s=getSession(); if(!s||!s.token) return Promise.reject();
+    var a=(s.api||'').replace(/\/+$/,'');
+    return fetch(a+'/api/crm-leads/'+id+'/'+path,{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
+      body:JSON.stringify(body||{})}).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); });
+  }
+  window.__rnavLeadClaim=function(id){
+    leadPost(id,'claim').then(function(r){
+      if(!r.ok){ alert((r.d&&r.d.note)||'맡기 실패'); }
+      checkWebLead({silent:true});
+    }).catch(function(){});
+  };
+  window.__rnavLeadDrop=function(id){
+    var why=prompt('왜 대상이 아닌지 한 줄 적어 주세요 (같은 고객이 다시 왔을 때 판단 근거가 됩니다).');
+    if(!why||!why.trim()) return;
+    leadPost(id,'dismiss',{reason:why.trim()}).then(function(r){
+      if(!r.ok){ alert((r.d&&r.d.note)||'처리 실패'); }
+      checkWebLead({silent:true});
+    }).catch(function(){});
+  };
+  function leadRender(items){
+    var msg=document.getElementById('rnavLeadMsg'), list=document.getElementById('rnavLeadList');
+    if(!msg||!list) return;
+    msg.innerHTML='홈페이지에서 <b>'+items.length+'건</b>의 가입 신청이 들어왔습니다. '
+      +'담당자가 연락해 상업정보를 파악하고 고객으로 등록해야 <b>가격·재고를 볼 수 있습니다.</b>';
+    list.innerHTML=items.map(function(r){
+      var who=r.claimed_by_name
+        ? '<span style="color:#0F6E56;font-weight:700">담당 '+cregEsc(r.claimed_by_name)+'</span>'
+        : '<span style="color:#B23A2E;font-weight:700">담당 미지정</span>';
+      var dup=r.existing_code
+        ? '<div style="margin-top:6px;background:#F6EEDD;color:#8A5A00;border-radius:8px;padding:6px 9px;font-size:11.5px">'
+          +'⚠ 같은 RFC 의 고객이 이미 ERP 에 있습니다 — <b>'+cregEsc(r.existing_code)+' '+cregEsc(r.existing_name||'')+'</b>. '
+          +'새로 만들지 말고 그 고객을 확인하세요.</div>' : '';
+      return '<div style="border:1px solid #e6e1d6;border-radius:11px;padding:12px 13px;margin-bottom:9px">'
+        +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+          +'<b style="font-size:14px">'+cregEsc(r.empresa||r.nombre||'(회사명 없음)')+'</b>'
+          +'<span style="font-size:11.5px;color:#8a8577">'+cregEsc(r.crm_lead_code||'')+'</span>'
+          +'<span style="margin-left:auto;font-size:11.5px">'+who+'</span>'
+        +'</div>'
+        +dup
+        +'<table style="width:100%;font-size:12.5px;margin-top:7px;border-collapse:collapse">'+leadFieldRows(r)+'</table>'
+        +'<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap">'
+          +(r.claimed_by_name?'':'<button type="button" onclick="__rnavLeadClaim('+r.id+')" style="border:none;background:#0F6E56;color:#fff;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:700">내가 맡겠습니다</button>')
+          +'<button type="button" onclick="__rnavLeadDrop('+r.id+')" style="border:1px solid #e7b6af;background:#fff;color:#B23A2E;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px">보류 · 대상 아님</button>'
+        +'</div></div>';
+    }).join('');
+  }
+  function checkWebLead(opts){
+    var silent=!!(opts&&opts.silent);
+    var s=getSession(); if(!s||!s.token) return;
+    var a=(s.api||'').replace(/\/+$/,'');
+    fetch(a+'/api/portal/web-lead-alert',{headers:{'Authorization':'Bearer '+s.token}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){
+        if(!d) return;
+        var items=(d&&d.items)||[]; __leadItems=items;
+        var m=leadEnsureModal();
+        if(!items.length){
+          m.style.display='none';
+          try{ sessionStorage.removeItem(LEAD_DIS_KEY); }catch(e){}
+          leadSaveSeen([]);
+          return;
+        }
+        leadRender(items);
+        var seen=leadSeen();
+        var fresh=items.filter(function(x){ return seen.indexOf(Number(x.id))<0; });
+        // 웹 가입 신청 화면을 보고 있는 동안은 방해하지 않는다(그 목록이 이미 떠 있다).
+        if(curScreen()==='custLeads'){
+          leadSaveSeen(items.map(function(x){ return Number(x.id); }));
+          m.style.display='none';
+          return;
+        }
+        if(fresh.length){
+          leadSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
+          try{ sessionStorage.removeItem(LEAD_DIS_KEY); }catch(e){}
+          m.style.display='flex';
+          if(!silent) cregChime();
+        }else{
+          m.style.display = leadDismissed() ? 'none' : 'flex';
+        }
+      }).catch(function(){});
+  }
+  function startWebLeadAlert(){
+    if(__leadTimer) return;
+    checkWebLead({silent:true});                 // 첫 진입은 조용히
+    __leadTimer=setInterval(function(){
+      if(document.hidden) return;                // 백그라운드 탭은 건너뜀
+      checkWebLead({silent:false});
+    }, 60000);
+    try{
+      document.addEventListener('visibilitychange',function(){
+        if(document.visibilityState==='visible') checkWebLead({silent:false});
+      });
+    }catch(e){}
+  }
+  window.__rnavLeadCheck=function(){ checkWebLead({silent:true}); };
+
   function boot(){
     var nv=document.getElementById('rnav'); if(!nv) return;
     applyEnvFlag();
@@ -758,6 +921,7 @@
       updatePresenceBadge();
       if(!window.__rnavPresTimer) window.__rnavPresTimer=setInterval(updatePresenceBadge, 30000);
       startCustRegAlert();   // 🔒 신규 고객 등록 승인 대기 전역 팝업(디렉터·60초)
+      startWebLeadAlert();   // 🌐 웹카달록 회원가입 신청 전역 팝업(대상자·60초)
     }).catch(function(){ if(!authFailed && !sum){ sum={pages:[],isDirector:false}; render(); } });
   }
   window.__rnavReload=boot;

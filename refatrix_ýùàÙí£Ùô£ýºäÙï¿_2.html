@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix 업로드 진단</title>
+<style>
+  :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
+    --ok:#0F6E56;--bad:#B23A2E;--gold:#9A7B16}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);padding:18px 14px 40px;
+    font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6}
+  .wrap{max-width:720px;margin:0 auto}
+  .top{background:var(--brand);color:#fff;padding:14px 16px;border-radius:12px}
+  .top h1{margin:0;font-size:17px}
+  .top p{margin:4px 0 0;font-size:12px;color:#cfe0d8}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+  h2{margin:0 0 10px;font-size:14px;color:var(--brand)}
+  label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin:10px 0 4px}
+  input{width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;font-size:16px;font-family:inherit}
+  input:focus{outline:none;border-color:var(--brand)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{width:100%;margin-top:14px;min-height:50px;border:none;border-radius:10px;background:var(--brand);
+    color:#fff;font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.5}
+  #log{margin-top:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+    white-space:pre-wrap;word-break:break-all;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:14px;min-height:80px}
+  .ok{color:var(--ok);font-weight:700}
+  .bad{color:var(--bad);font-weight:700}
+  .warn{color:var(--gold);font-weight:700}
+  .hint{font-size:12px;color:var(--muted)}
+  .verdict{margin-top:14px;padding:14px;border-radius:12px;border:1px solid var(--line);background:#fff;display:none}
+  .verdict.on{display:block}
+  .verdict b{color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Refatrix 업로드 진단</h1>
+    <p>녹음 업로드가 어느 용량에서 끊기는지 정확히 찾아냅니다. 데이터는 만들지 않습니다.</p>
+  </div>
+
+  <div id="fileWarn" class="card" style="display:none;border-color:#ECD9A0;background:#FFFDF5">
+    <h2 style="color:#8A6512">⚠ 이 페이지를 로컬 파일로 열었습니다</h2>
+    <p style="margin:0;font-size:13px">브라우저가 <b>로컬 파일에서 다른 도메인 호출을 막습니다(CORS)</b>.
+    그래서 서버가 멀쩡해도 「Failed to fetch」가 날 수 있습니다.<br><br>
+    <b>정확한 진단을 하려면</b> 이 파일을 저장소 최상위에 올리고 push 한 뒤
+    <code>https://refatrix.pages.dev/refatrix_업로드진단.html</code> 로 열어주세요.
+    ERP와 같은 도메인이라 실제 상황과 똑같이 시험됩니다.<br><br>
+    그대로 진행해도 됩니다 — 실패하면 <b>서버가 죽은 건지 CORS 때문인지 자동으로 구분</b>해 드립니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>① 로그인 정보</h2>
+    <label>서버 주소 (API)</label>
+    <input id="api" value="https://refatrix-production.up.railway.app">
+    <div class="row">
+      <div><label>아이디</label><input id="lid" value="admin" autocapitalize="off" autocorrect="off"></div>
+      <div><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="••••••"></div>
+    </div>
+    <button id="go">진단 시작</button>
+    <p class="hint" style="margin-top:10px">1MB부터 20MB까지 단계별로 보냅니다. 존재하지 않는 상담번호로 보내기 때문에
+    <b>서버에 아무것도 저장되지 않습니다</b>. 모바일 데이터로 쓰신다면 최대 약 60MB가 소모됩니다 — 가능하면 Wi‑Fi에서 하세요.</p>
+  </div>
+
+  <div id="log">대기 중…</div>
+  <div class="verdict" id="verdict"></div>
+</div>
+
+<script>
+const $=(id)=>document.getElementById(id);
+const L=$('log');
+let lines=[];
+function put(html){ lines.push(html); L.innerHTML=lines.join('\n'); window.scrollTo(0,document.body.scrollHeight); }
+function clear(){ lines=[]; L.innerHTML=''; $('verdict').classList.remove('on'); }
+
+// 진단할 크기(base64 문자 기준 MB). 실제 녹음 1분 ≈ 0.32MB 입니다.
+const SIZES=[1,3,6,10,15,20];
+const results=[];
+
+async function timed(fn){ const t0=Date.now(); try{ const r=await fn(); return {...r, ms:Date.now()-t0}; }
+  catch(e){ return {threw:true, msg:(e&&e.message)||String(e), name:(e&&e.name)||'', ms:Date.now()-t0}; } }
+
+async function run(){
+  clear();
+  const api=$('api').value.replace(/\/+$/,'');
+  const login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+  if(!pin){ put('<span class="bad">PIN을 입력하세요.</span>'); return; }
+  $('go').disabled=true; $('go').textContent='진단 중…';
+
+  try{
+    // 0) 서버가 살아있는지
+    put('▶ 서버 확인 (GET /health)');
+    const h=await timed(async()=>{ const r=await fetch(api+'/health'); return {status:r.status, body:(await r.text()).slice(0,80)}; });
+    if(h.threw){
+      put('  <span class="bad">✕ 실패 — '+h.name+': '+h.msg+'</span>');
+      // 서버가 죽은 것인지 CORS 때문인지 가린다.
+      // no-cors 는 응답 내용을 못 읽지만, "요청이 실제로 나갔는지"는 알 수 있다.
+      put('  ▶ 서버가 죽은 건지 CORS 때문인지 확인 중…');
+      const probe=await timed(async()=>{ await fetch(api+'/health',{mode:'no-cors',cache:'no-store'}); return {reached:true}; });
+      lines.pop(); L.innerHTML=lines.join('\n');
+      if(probe.threw){
+        put('  <span class="bad">✕ 요청 자체가 나가지 못했습니다 ('+probe.ms+'ms)</span>');
+        verdict('<b>서버에 정말로 닿지 못합니다.</b> Railway 배포 상태(Deployments·Logs)와 이 기기의 인터넷을 확인해 주세요. '
+          +'다만 같은 기기에서 <b>ERP 다른 화면이 잘 된다면</b> 서버는 살아있는 것이니, 이 페이지를 '
+          +'<code>refatrix.pages.dev</code> 에 올려 같은 도메인에서 다시 돌려주세요.');
+        return;
+      }
+      put('  <span class="ok">✓ 서버에는 닿았습니다 ('+probe.ms+'ms) — 막은 건 CORS 입니다</span>');
+      verdict('<b>서버는 살아있습니다.</b> 이 페이지가 서버와 다른 출처라서 브라우저가 응답 읽기를 막았을 뿐입니다'
+        +(location.protocol==='file:'?' (로컬 파일로 열어서 그렇습니다)':'')+'.<br><br>'
+        +'이 파일을 저장소 최상위에 올리고 push 한 뒤 <code>https://refatrix.pages.dev/refatrix_업로드진단.html</code> 로 '
+        +'다시 열어주세요. 그러면 ERP와 같은 도메인이라 용량 시험까지 정상적으로 진행됩니다.');
+      return;
+    }
+    put('  <span class="ok">✓ '+h.status+'</span> '+h.body+'  ('+h.ms+'ms)');
+
+    // 1) 로그인 → 토큰
+    put('▶ 로그인 (POST /api/login)');
+    const lg=await timed(async()=>{ const r=await fetch(api+'/api/login',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      return {status:r.status, data:await r.json().catch(()=>({}))}; });
+    if(lg.threw||!lg.data||!lg.data.token){
+      put('  <span class="bad">✕ 로그인 실패 — '+(lg.threw?(lg.name+': '+lg.msg):(lg.status+' '+JSON.stringify(lg.data).slice(0,120)))+'</span>');
+      verdict('<b>로그인 단계에서 막힙니다.</b> 아이디·PIN을 확인하시고, 그래도 안 되면 서버 로그를 봐야 합니다.');
+      return;
+    }
+    const token=lg.data.token;
+    put('  <span class="ok">✓ 로그인 성공</span>  ('+lg.ms+'ms)');
+
+    // 2) 작은 POST 가 되는지 (녹음과 같은 경로, 없는 상담번호 → 404 가 정상)
+    put('▶ 작은 POST 확인 (녹음과 같은 경로)');
+    const tiny=await sendSize(api,token,0.01);
+    put('  '+fmt(tiny));
+    if(tiny.threw){
+      verdict('<b>작은 요청조차 실패합니다.</b> 용량 문제가 아니라 이 경로 자체가 막혀 있습니다 — '
+        +'CORS 또는 프록시/차단 프로그램 쪽을 봐야 합니다. 위 오류 문구를 그대로 알려주세요.');
+      return;
+    }
+
+    // 3) 용량 사다리
+    put('▶ 용량 단계별 시험 (1 → 20MB)');
+    let lastOk=0.01, firstFail=null;
+    for(const mb of SIZES){
+      put('  · '+mb+'MB 보내는 중…');
+      const r=await sendSize(api,token,mb);
+      results.push({mb, ...r});
+      lines.pop(); L.innerHTML=lines.join('\n');
+      put('  · '+mb+'MB → '+fmt(r));
+      if(r.threw||r.status>=500||r.status===413){ firstFail=mb; break; }
+      lastOk=mb;
+    }
+    summarize(lastOk, firstFail);
+  } finally { $('go').disabled=false; $('go').textContent='진단 시작'; }
+}
+
+// 존재하지 않는 상담번호(999999999)로 보냄 → 서버가 본문을 다 받은 뒤 404 를 돌려주는 것이 "정상 통과"
+async function sendSize(api, token, mb){
+  const pad='A'.repeat(Math.max(0,Math.round(mb*1024*1024)));
+  const body=JSON.stringify({data_url:'data:audio/webm;base64,'+pad, mode:'full', duration_sec:60});
+  return timed(async()=>{
+    const r=await fetch(api+'/api/consults/999999999/recordings',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body});
+    return {status:r.status, data:(await r.text()).slice(0,110)};
+  });
+}
+
+function fmt(r){
+  if(r.threw) return '<span class="bad">✕ 통신 끊김 — '+r.name+': '+r.msg+'</span>  ('+r.ms+'ms)';
+  if(r.status===404) return '<span class="ok">✓ 서버 도달(404 not_found = 정상)</span>  ('+r.ms+'ms)';
+  if(r.status===413) return '<span class="bad">✕ 413 용량 초과</span>  ('+r.ms+'ms)';
+  if(r.status>=500) return '<span class="bad">✕ '+r.status+' 서버 오류</span> '+r.data+'  ('+r.ms+'ms)';
+  return '<span class="warn">? '+r.status+'</span> '+r.data+'  ('+r.ms+'ms)';
+}
+
+function verdict(html){ const v=$('verdict'); v.innerHTML='<b>진단 결과</b><br>'+html; v.classList.add('on'); }
+
+function summarize(lastOk, firstFail){
+  const min=(mb)=>Math.floor(mb/0.32);
+  if(!firstFail){
+    verdict('20MB까지 <b>전부 통과</b>했습니다. 용량 문제가 아닙니다.<br><br>'
+      +'그렇다면 실제 실패는 <b>업로드 도중 통신이 끊긴 것</b>(전시장 Wi‑Fi·모바일망)일 가능성이 큽니다. '
+      +'같은 자리에서 다시 시도했을 때 되는지 확인해 주시고, 계속 실패하면 이 화면 결과를 그대로 알려주세요.');
+    return;
+  }
+  verdict('<b>'+lastOk+'MB 까지는 통과, '+firstFail+'MB 에서 끊깁니다.</b><br><br>'
+    +'녹음은 1분에 약 0.32MB 이므로 <b>대략 '+min(lastOk)+'분까지는 안전</b>하고, '
+    +'약 '+min(firstFail)+'분을 넘기면 실패합니다.<br><br>'
+    +'<b>당장의 우회</b>: 미팅을 '+Math.max(5,Math.floor(min(lastOk)*0.7))+'분 단위로 끊어 녹음하고 그때그때 업로드하세요. '
+    +'요약은 상담 1건에 여러 녹음으로 붙습니다.<br><br>'
+    +'이 숫자를 알려주시면 업로드를 자동으로 잘게 나눠 보내도록 고쳐드리겠습니다.');
+}
+
+if(location.protocol==='file:') $('fileWarn').style.display='block';
+$('go').addEventListener('click',run);
+</script>
+</body>
+</html>

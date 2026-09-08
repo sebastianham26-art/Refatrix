@@ -89,6 +89,38 @@ export function mapInbound(body) {
   };
 }
 
+/**
+ * 웹 가입 신청(리드) 본문 → ERP 내부 형태. (0210)
+ *   신규고객 등록(mapInbound)과 다른 점: **회사명이 필수**이고 상업정보는 아예 안 본다.
+ *   가입 화면에서 고객이 상업조건을 스스로 정하는 게 아니기 때문이다.
+ */
+export function mapLead(body) {
+  const f = flattenBody(body);
+  return {
+    crmLeadCode: S(pick(f, ['crmLeadCode', 'leadId', 'leadCode', 'crmCustomerCode', 'customerCode',
+      'codigoCliente', 'codigo', 'solicitudId', 'idSolicitud'])),
+    empresa: S(pick(f, ['empresa', 'nombreEmpresa', 'razonSocial', 'compania', 'company',
+      'nombreComercial', 'businessName'])),
+    nombre: S(pick(f, ['nombre', 'name', 'nombreContacto', 'nombreUsuario', 'firstName'])),
+    apellido: S(pick(f, ['apellido', 'apellidos', 'lastName', 'surname', 'apellidoPaterno'])),
+    telefono: S(pick(f, ['telefono', 'phone', 'tel', 'celular', 'telefonoContacto', 'mobile', 'whatsapp'])),
+    correo: S(pick(f, ['correo', 'email', 'correoElectronico', 'mail', 'correoCliente'])),
+    rfc: S(pick(f, ['rfc', 'RFC', 'rfcCliente', 'taxId'])),
+    ciudad: S(pick(f, ['ciudad', 'city', 'municipio'])),
+    estado: S(pick(f, ['estado', 'state', 'provincia'])),
+    direccion: S(pick(f, ['direccion', 'address', 'domicilio', 'calle'])),
+    mensaje: S(pick(f, ['mensaje', 'comentario', 'comentarios', 'nota', 'notas', 'observaciones', 'message'])),
+    solicitadoEn: S(pick(f, ['solicitadoEn', 'fechaRegistro', 'createdAt', 'fecha'])),
+  };
+}
+
+// 가입 신청의 필수값 — 이 다섯이 없으면 영업사원이 연락할 방법도, 회사를 특정할 방법도 없다.
+export const LEAD_REQUIRED = ['empresa', 'nombre', 'telefono', 'correo', 'rfc'];
+
+export function missingLeadFields(m) {
+  return LEAD_REQUIRED.filter((k) => !m[k]);
+}
+
 export const REQUIRED = ['rfc', 'nombre', 'apellido', 'telefono', 'correo'];
 
 /** 필수 5개 검사 — 없으면 어느 필드인지 이름으로 돌려준다(상대가 고치기 쉽게). */

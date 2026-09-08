@@ -229,6 +229,23 @@
               두 키 <b>모두</b> 유효하게 받아 줍니다(어느 쪽으로 들어왔는지는 수신 이력에 남습니다).
             </div>
             <div class="msg" id="inKeyMsg"></div>
+
+            <!-- 0210 · 웹 가입 신청 팝업을 받을 사람 (이 연동에서만 보인다) -->
+            <div id="boxNotify" class="hidden" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+              <div class="card-h" style="font-size:13px">팝업 알림을 받을 사람</div>
+              <div class="hint" style="margin-top:-4px">
+                가입 신청이 들어오면 여기서 고른 사람들의 <b>모든 ERP 화면</b>에 팝업이 뜹니다(60초 이내).
+                <b>디렉터는 설정과 무관하게 항상 받습니다.</b> 아무도 고르지 않으면 디렉터에게만 뜹니다 —
+                현장에서 먼저 전화할 사람을 골라 두세요.
+              </div>
+              <div id="notifyList" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px"></div>
+              <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn sm" id="btnSaveNotify">알림 대상 저장</button>
+                <button class="btn ghost sm" id="btnNotifyNone">모두 해제</button>
+                <span class="hint" id="notifyMeta" style="margin-left:auto"></span>
+              </div>
+              <div class="msg" id="notifyMsg"></div>
+            </div>
           </div>
 
           <div id="boxUrls">
@@ -509,7 +526,51 @@
       $('fInKeyTest').value=''; $('fInKeyTest').placeholder = CUR.has_token_test?'●●●● 발급됨 (값은 다시 볼 수 없음)':'미발급';
       $('fInKeyProd').value=''; $('fInKeyProd').placeholder = CUR.has_token_prod?'●●●● 발급됨 (값은 다시 볼 수 없음)':'미발급';
       $('inKeyMsg').className='msg';
+      // 알림 대상 고르기는 「웹 가입 신청」 연동에서만 뜻이 있다.
+      const wantsNotify = CUR.key==='crm_web_lead';
+      $('boxNotify').classList.toggle('hidden',!wantsNotify);
+      if(wantsNotify) loadNotifyTargets();
     }
+  }
+
+  // ===== 0210 · 팝업 알림 대상 (사람 단위 체크) =====
+  let NOTIFY=[];
+  async function loadNotifyTargets(){
+    const box=$('notifyList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{
+      const d=await fetch(session.api+'/api/crm-leads/notify-targets',{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error)+'</div>'; return; }
+      if(d.migrated===false){ box.innerHTML='<div class="hint">0210 마이그레이션이 아직 적용되지 않았습니다.</div>'; return; }
+      NOTIFY=d.items||[];
+      box.innerHTML=NOTIFY.map(function(u,i){
+        return '<label style="display:flex;gap:7px;align-items:center;border:1px solid var(--line);border-radius:9px;'
+          +'padding:7px 10px;font-size:13px;font-weight:600;cursor:'+(u.always?'default':'pointer')+';'
+          +(u.always?'background:#faf8f3':'')+'">'
+          +'<input type="checkbox" '+(u.selected||u.always?'checked':'')+(u.always?' disabled':'')
+            +' onchange="setNotify('+i+',this.checked)">'
+          +'<span>'+esc(u.name)+'<span class="hint" style="margin:0"> · '+esc(u.role)+(u.always?' (항상 받음)':'')+'</span></span>'
+          +'</label>';
+      }).join('')||'<div class="hint">사용자가 없습니다.</div>';
+      const n=NOTIFY.filter(u=>u.selected&&!u.always).length;
+      $('notifyMeta').textContent='선택 '+n+'명 (디렉터 제외)';
+    }catch(e){ box.innerHTML='<div class="hint">서버 연결 실패</div>'; }
+  }
+  function setNotify(i,on){ if(NOTIFY[i]) NOTIFY[i].selected=!!on;
+    $('notifyMeta').textContent='선택 '+NOTIFY.filter(u=>u.selected&&!u.always).length+'명 (디렉터 제외)'; }
+  async function saveNotifyTargets(){
+    const m=$('notifyMsg'); m.className='msg'; $('btnSaveNotify').disabled=true;
+    try{
+      // 디렉터는 항상 받으므로 목록에 넣지 않는다(넣어도 무해하지만 설정이 헷갈린다).
+      const ids=NOTIFY.filter(u=>u.selected&&!u.always).map(u=>u.id);
+      const res=await fetch(session.api+'/api/crm-leads/notify-targets',
+        {method:'PUT',headers:jauth(),body:JSON.stringify({user_ids:ids})});
+      const d=await res.json();
+      if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
+      m.className=d.count?'msg ok':'msg warn';
+      m.textContent=d.count?(d.count+'명에게 팝업이 뜹니다(디렉터 포함).'):(d.note||'아무도 선택하지 않았습니다.');
+      loadNotifyTargets();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnSaveNotify').disabled=false; }
   }
 
   function fillCfg(){
@@ -927,6 +988,15 @@
   document.querySelectorAll('#boxInbound button[data-env]').forEach(function(b){
     b.addEventListener('click',()=>issueKey(b.dataset.env));
   });
+  $('btnSaveNotify').addEventListener('click',saveNotifyTargets);
+  $('btnNotifyNone').addEventListener('click',function(){
+    NOTIFY.forEach(u=>{ if(!u.always) u.selected=false; });
+    loadNotifyTargets.__skip=1; // 화면만 다시 그린다
+    document.querySelectorAll('#notifyList input[type=checkbox]').forEach(function(c,i){
+      if(NOTIFY[i]&&!NOTIFY[i].always) c.checked=false;
+    });
+    $('notifyMeta').textContent='선택 0명 (디렉터 제외)';
+  });
   $('keyModalCopy').addEventListener('click',()=>copyKeyModal(false));
   $('keyModalCopyAll').addEventListener('click',()=>copyKeyModal(true));
   $('keyModalClose').addEventListener('click',closeKeyModal);
@@ -940,7 +1010,7 @@
   });
 
   window.selectEp=selectEp; window.setF=setF; window.rmF=rmF; window.retry=retry;
-  window.toggleDetail=toggleDetail; window.toggleIn=toggleIn;
+  window.toggleDetail=toggleDetail; window.toggleIn=toggleIn; window.setNotify=setNotify;
 
   (function(){
     const ps=portalSession();
@@ -948,6 +1018,6 @@
     else{ $('loginCard').classList.remove('hidden'); }
   })();
 </script>
-<script src="refatrix-nav.js?v=20260908keys"></script>
+<script src="refatrix-nav.js?v=20260908lead"></script>
 </body>
 </html>
