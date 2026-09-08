@@ -12,7 +12,7 @@ import { logEvent } from '../audit.js';
 import { enqueueCustomerSync } from '../crmSync.js';
 import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
-import { AR_PAID_EPS, AR_SETTLED_SQL, arOpenCondSql, arOpenBalSql } from '../ar.js';
+import { AR_PAID_EPS, AR_SETTLED_SQL } from '../ar.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
@@ -417,16 +417,6 @@ export default async function customerRoutes(app) {
               c.ship_address, ${apprExpr} AS approval_status,
               ${crmOn ? 'c.crm_customer_code' : 'NULL::text'} AS crm_customer_code,
               ${regOn ? 'c.constancia_no' : 'NULL::text'} AS constancia_no,
-              -- 0185 · 경쟁사(SYD) 기준품목 근거 + 제안 할인율.
-              --   상세에만 있고 목록에 없어서 "등록 때 적은 경쟁사 단가·할인이 어디 갔나"가 됐다.
-              --   목록에서 고객끼리 비교(누가 싸게 사고 있나)하는 게 이 값의 본래 쓸모다.
-              ${regOn ? 'c.syd_ref_code' : 'NULL::text'} AS syd_ref_code,
-              ${regOn ? 'c.syd_ref_buy_price' : 'NULL::numeric'} AS syd_ref_buy_price,
-              ${regOn ? 'c.syd_ref_list_price' : 'NULL::numeric'} AS syd_ref_list_price,
-              ${regOn ? 'c.syd_ref_discount' : 'NULL::numeric'} AS syd_ref_discount,
-              ${regOn ? 'c.ctr_ref_code' : 'NULL::text'} AS ctr_ref_code,
-              ${regOn ? 'c.ctr_ref_list_price' : 'NULL::numeric'} AS ctr_ref_list_price,
-              ${regOn ? 'c.suggested_discount' : 'NULL::numeric'} AS suggested_discount,
               c.team_id, t.name AS team_name, c.stage_id, s.name AS stage_name,
               c.owner_id, u.name AS owner_name,
               COALESCE(ar.outstanding,0) AS outstanding,
@@ -448,10 +438,8 @@ export default async function customerRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (
            SELECT i.customer_id,
-                  -- 완납 판정은 AR_PAID_EPS 한 곳에서만 정의한다(ar.js).
-                  --   0.5 페소 미만 잔여는 IVA 센타보 반올림 찌꺼기이지 미수가 아니다.
-                  SUM(${arOpenBalSql('i.total_mxn', 'p.paid')}) AS outstanding,
-                  SUM(CASE WHEN i.due_date < CURRENT_DATE THEN ${arOpenBalSql('i.total_mxn', 'p.paid')} ELSE 0 END) AS overdue,
+                  SUM(i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
+                  SUM(CASE WHEN i.due_date < CURRENT_DATE THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END) AS overdue,
                   SUM(i.total_mxn) AS sales_total,
                   MAX(i.inv_date) AS last_sale_date
              FROM sales_invoices i
@@ -500,14 +488,6 @@ export default async function customerRoutes(app) {
       branch_count: c.branch_count == null ? null : Number(c.branch_count),
       ship_address: c.ship_address || null,
       approval_status: c.approval_status, constancia_no: c.constancia_no || null,
-      // 0185 · 등록 때 박제한 경쟁사(SYD) 단가·할인 근거 — 목록에서도 보여 준다(상세와 같은 값).
-      syd_ref_code: c.syd_ref_code || null,
-      syd_ref_buy_price: c.syd_ref_buy_price == null ? null : Number(c.syd_ref_buy_price),
-      syd_ref_list_price: c.syd_ref_list_price == null ? null : Number(c.syd_ref_list_price),
-      syd_ref_discount: c.syd_ref_discount == null ? null : Number(c.syd_ref_discount),
-      ctr_ref_code: c.ctr_ref_code || null,
-      ctr_ref_list_price: c.ctr_ref_list_price == null ? null : Number(c.ctr_ref_list_price),
-      suggested_discount: c.suggested_discount == null ? null : Number(c.suggested_discount),
       team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
       owner_id: c.owner_id, owner_name: c.owner_name,
       outstanding: r2(c.outstanding), overdue: r2(c.overdue),
@@ -556,10 +536,7 @@ export default async function customerRoutes(app) {
     const invs = (await query(
       `SELECT i.id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.due_date,'YYYY-MM-DD') AS due_date,
               i.total_mxn, COALESCE(p.paid,0) AS paid, (i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
-              -- open=아직 받을 게 남은 건. 수금·정산 화면과 **같은 판정**(AR_PAID_EPS).
-              --   센타보 잔여(0.01 등)는 완납으로 본다 — 여기서 > 0 을 쓰면 수금 화면과 어긋난다.
-              ${arOpenCondSql('i.total_mxn', 'p.paid')} AS "open",
-              (i.due_date < CURRENT_DATE AND ${arOpenCondSql('i.total_mxn', 'p.paid')}) AS overdue
+              (i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0) AS overdue
          FROM sales_invoices i
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
         WHERE i.customer_id=$1 AND i.status='posted'
@@ -672,8 +649,7 @@ export default async function customerRoutes(app) {
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
-      invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid),
-        outstanding: r2(i.outstanding), open: i.open === true, overdue: i.overdue === true })),
+      invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
       important_skus: importantSkus,
       reorder_summary: reorderSummary,
       sku_stats: { distinct: skuRows.length, total_qty: grandQty, important: importantSkus.length },
@@ -1038,9 +1014,9 @@ export default async function customerRoutes(app) {
 
     // 미수 잔액(연도 무관 — 현재 시점 기준) · 표 아래 한 줄로 보여준다.
     const ar = (await query(
-      `SELECT COALESCE(SUM(${arOpenBalSql('i.total_mxn', 'p.paid')}),0) AS outstanding,
+      `SELECT COALESCE(SUM(i.total_mxn - COALESCE(p.paid,0)),0) AS outstanding,
               COALESCE(SUM(CASE WHEN i.due_date < CURRENT_DATE
-                                THEN ${arOpenBalSql('i.total_mxn', 'p.paid')} ELSE 0 END),0) AS overdue
+                                THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END),0) AS overdue
          FROM sales_invoices i
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid
                       FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
@@ -1397,9 +1373,26 @@ export default async function customerRoutes(app) {
           conditions: null, changedBy: perm.userId, approvedBy: null });
       } catch (_) { /* 이력 실패가 등록을 막지 않음 */ }
     }
+    // ── ⑦-b 0210 · 웹 가입 신청(리드)에서 넘어온 등록이면 그 리드를 닫아 준다 ──
+    //   사람이 「고객 등록 완료로 표시」를 따로 눌러야 했는데, 그 한 번을 빠뜨리면
+    //   같은 신청이 팝업에 계속 남아 다른 사람이 또 전화한다. 등록이 곧 처리 완료다.
+    //   ⚠ 리드 연결 실패가 고객 등록을 되돌리지는 않는다(등록이 본질, 연결은 정리).
+    let leadLinked = null;
+    const leadId = Number(b.lead_id || 0);
+    if (leadId > 0) {
+      try {
+        const lk = (await query(
+          `UPDATE crm_web_leads
+              SET status='done', customer_id=$1, closed_by=$2, closed_at=now()
+            WHERE id=$3 AND status IN ('new','claimed')
+            RETURNING id, crm_lead_code`, [row.id, perm.userId, leadId])).rows[0];
+        if (lk) leadLinked = { id: Number(lk.id), crm_lead_code: lk.crm_lead_code || null };
+      } catch (_) { /* 0210 미적용이거나 이미 닫힌 건 — 등록은 그대로 진행 */ }
+    }
+
     await safeLog({ userId: perm.userId, action: 'create', target: `customer:${row.id}`,
-      detail: { approval_status: status, rfc_claimed: !!rfcClean } });
-    return { ok: true, id: row.id, code: row.code, approval_status: status,
+      detail: { approval_status: status, rfc_claimed: !!rfcClean, lead_id: leadLinked ? leadId : null } });
+    return { ok: true, id: row.id, code: row.code, approval_status: status, lead_linked: leadLinked,
       pending_approval: true, calc, suggested_discount: calc.suggested_discount,
       // 0193 · RFC 를 넣었으면 그 순간 선점됐고, 안 넣었으면 선점이 없다(나중에 남이 가져갈 수 있다).
       claimed_by: rfcClean ? 'rfc' : null, rfc_claimed: !!rfcClean,

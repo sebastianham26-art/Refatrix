@@ -16,10 +16,9 @@
 import { query } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
-import { getEndpoint } from '../integrations.js';
+import { getEndpoint, INBOUND_KEY_FALLBACK } from '../integrations.js';
 import { mapLead, missingLeadFields, readInboundKey, verifyInboundKey,
          scrubPayload, errBody } from '../crmInbound.js';
-import { INBOUND_KEY } from './crmInboundRoutes.js';
 
 export const LEAD_KEY = 'crm_web_lead';
 
@@ -92,7 +91,8 @@ export default async function crmLeadRoutes(app) {
     //   상대에게 창구마다 다른 키를 요구하면 연동이 늦어질 뿐 얻는 게 없다.
     let v = verifyInboundKey(ep, token);
     if (!v.ok && v.reason === 'no_key_configured') {
-      const regEp = await getEndpoint(INBOUND_KEY);
+      const fb = INBOUND_KEY_FALLBACK[LEAD_KEY];
+      const regEp = fb ? await getEndpoint(fb) : null;
       if (regEp) v = verifyInboundKey(regEp, token);
     }
     if (!v.ok) {

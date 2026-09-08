@@ -8,6 +8,10 @@
 (function(){
   var cfg={api:'',token:'',isDirector:false,onSaved:null};
   var teams=[], stages=[], owners=[], editingId=null, hostEl=null, origTerms=null;
+  // 0210 · 웹 가입 신청(리드)에서 넘어온 등록이면 그 리드 id 를 들고 간다.
+  //   저장에 성공하면 서버가 그 리드를 「고객 등록 완료」로 닫는다 —
+  //   사람이 따로 한 번 더 누르게 하면 반드시 빠뜨리고, 그러면 같은 신청으로 두 번 전화한다.
+  var leadId=null;
   // 타팀 고객 수정요청 모드 — 열람 범위를 넓히지 않고 "요청"만 넣는 경로.
   //   배송지 즉시저장은 승인 우회가 되므로 이 모드에선 잠근다.
   var crossTeam=false;
@@ -202,32 +206,20 @@
       lastClaim=d;
       var items=(d&&d.items)||[];
       var myRfc=cleanRfcLocal(rfc);
-      // 0200 · 서버가 **정상 형식의 RFC 일 때만** 중복(선점)을 조회한다.
-      //   RFC 를 비웠거나 `.` 만 찍은 경우 중복 검사는 아예 돌지 않는다 —
-      //   그 사실을 화면이 분명히 말해 줘야 「RFC 없는 고객끼리 중복」으로 오해하지 않는다.
-      var rfcChecked=!!(d&&d.rfc_checked);
-      var rfcNote=rfcChecked ? ''
-        : '<div class="hint" style="margin:3px 0 0;color:#8a8070">RFC 가 '
-          +((d&&d.rfc_query_error)?'정상 형식이 아니어서':'없어서')
-          +' <b>RFC 중복(선점) 검사는 하지 않았습니다.</b> 아래는 상호가 비슷한 고객일 뿐 중복이 아닐 수 있습니다.</div>';
       if(!items.length){
-        box.innerHTML=(rfcChecked
+        box.innerHTML=(myRfc
             ? '<span style="color:#1a7f4b">✔ 겹치는 고객이 없습니다 — 이 RFC 로 등록하면 내 고객으로 선점됩니다.</span>'
-            : (myRfc
-                ? '<span style="color:#B23A2E">⚠ RFC 형식이 올바르지 않아 선점 검사를 하지 못했습니다 — 형식을 확인하세요.</span>'
-                : '<span style="color:#9a6a1a">⚠ 겹치는 고객은 없지만 RFC 가 비어 있어 <b>선점되지 않습니다.</b> RFC 를 받는 대로 입력하세요.</span>'))
+            : '<span style="color:#9a6a1a">⚠ 겹치는 고객은 없지만 RFC 가 비어 있어 <b>선점되지 않습니다.</b> RFC 를 받는 대로 입력하세요.</span>')
           +(d&&d.rfc_db_lock===false?'<div style="color:#9a6a1a;margin-top:3px">⚠ 서버에 RFC 선점 잠금(0188)이 아직 적용되지 않았습니다. 디렉터에게 알려 주세요.</div>':'');
         return d;
       }
       // 0193 · RFC 충돌은 차단, 상호 유사는 경고만.
-      //   0200 · RFC 를 검사하지 않은 경우에는 「중복·선점」이라는 말을 쓰지 않는다(참고 목록).
       var hard=d.blocked_constancia||d.blocked_rfc;
       box.innerHTML=(hard
           ? '<div style="color:#B23A2E;font-weight:700">⛔ '+esc(d.claim_pending?(d.claim_pending_note||RFC_NOTE.rfc_claim_pending):'이미 선점된 고객입니다 — 이대로는 등록할 수 없습니다.')+'</div>'
-          : '<div style="color:#9a6a1a;font-weight:700">📋 참고 — 상호가 비슷한 고객이 있습니다. 같은 고객인지만 확인하세요. (중복 판정이 아니며 등록은 그대로 진행됩니다)</div>')
-        +(hard?'':rfcNote)
+          : '<div style="color:#9a6a1a;font-weight:700">⚠ 상호가 비슷한 고객이 있습니다 — 같은 고객인지 확인하세요. (등록은 막지 않습니다)</div>')
         +items.map(function(x){
-          var why=x.matched_rfc?'RFC 일치 — 선점됨':(x.matched_constancia?'CONSTANCIA 일치':'상호 비슷(참고)');
+          var why=x.matched_rfc?'RFC 일치 — 선점됨':(x.matched_constancia?'CONSTANCIA 일치':'상호 유사');
           var st=x.approval_status==='pending'?' · <span style="color:#9a6a1a">승인대기</span>':'';
           // RFC 가 비어 있는 고객 = 아직 선점 없음 → 내 RFC 로 가져올 수 있다.
           var take=(!x.has_rfc&&x.customer_id&&myRfc&&d.claim_transfer_on)
@@ -349,8 +341,9 @@
     }catch(e){ setShipMsg('err','서버에 연결할 수 없습니다.'); if(btn)btn.disabled=false; return false; }
   }
 
-  async function fillNew(){
+  async function fillNew(opts){
     editingId=null; crossTeam=false; applyCrossTeamUI(null,null);
+    leadId=(opts&&Number(opts.lead_id))||null;
     $('rcf-code').value='자동…'; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     try{ var d=await fetch(api('/api/customers/next-code'),{headers:auth()}).then(r=>r.json()); $('rcf-code').value=d.code||''; }catch(e){ $('rcf-code').value=''; }
     ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-buyername','rcf-buyerphone','rcf-memo','rcf-constancia','rcf-ship'].forEach(function(id){ if($(id))$(id).value=''; });
@@ -407,6 +400,7 @@
   function fillEdit(c,pending){
     editingId=c.id;
     setRegBoxes(false);
+    leadId=null;   // 수정은 리드와 무관하다 — 엉뚱한 고객에 붙지 않게 버린다
     $('rcf-code').value=c.code||''; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
     $('rcf-name').value=c.name||''; $('rcf-rfc').value=c.rfc||''; $('rcf-contact').value=c.contact||'';
     $('rcf-phone').value=c.phone||''; $('rcf-memo').value=c.memo||''; $('rcf-constancia').value=c.constancia_fiscal||'';
@@ -480,6 +474,7 @@
       }
       var conNo=($('rcf-conno')&&$('rcf-conno').value.trim())||'';
       if(conNo) b.constancia_no=conNo;
+      if(leadId) b.lead_id=leadId;   // 0210 · 이 등록이 어느 가입 신청에서 왔는지
       b.syd_ref_code=($('rcf-basecode')&&$('rcf-basecode').value.trim())||'1516049';
       b.syd_ref_buy_price=Number(bp);
       var fi=$('rcf-confile');
@@ -578,11 +573,12 @@
       await loadRefs();
       await fillNew();
     },
-    newCustomer:function(){ return fillNew(); },
+    // opts: { lead_id } — 웹 가입 신청에서 넘어온 등록
+    newCustomer:function(opts){ return fillNew(opts); },
     // opts: { crossTeam:true, pending:{requested_by_name} } — 타팀 고객 수정요청 모드
     editCustomer:function(c,opts){ crossTeam=!!(opts&&opts.crossTeam); fillEdit(c, opts&&opts.pending); },
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260904rfcdup loaded (0200 · 정상 RFC 일 때만 중복 검사 — RFC 없음/`.` 은 중복으로 표시하지 않음)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260908lead loaded (0193 · RFC 선택 입력 + 선점/이관 + SYD 단가 필수 + 전원 디렉터 승인 · 0210 리드 연결)'); }catch(e){}
 })();

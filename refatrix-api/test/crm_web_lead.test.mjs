@@ -114,6 +114,34 @@ test('C7. 팝업은 고객이 보낸 값을 전부 편다', () => {
   assert.ok(/Object\.keys\(p\)\.forEach/.test(h));
 });
 
+test('C8. 고객 등록이 리드를 자동으로 닫는다', () => {
+  // 사람이 「이미 등록했음」 을 따로 눌러야 하면 반드시 빠뜨리고, 그러면 같은 신청이
+  // 팝업에 남아 다른 사람이 또 전화한다. 등록이 곧 처리 완료다.
+  const c = read(join(API, 'src/routes/customerRoutes.js'));
+  assert.ok(/b\.lead_id/.test(c), '등록 API 가 lead_id 를 받아야 한다');
+  assert.ok(/UPDATE crm_web_leads[\s\S]{0,200}status='done'/.test(c));
+  assert.ok(/lead_linked/.test(c), '응답으로 알려 줘야 화면이 목록을 맞출 수 있다');
+  const f = read(join(REPO, 'refatrix-custform.js'));
+  assert.ok(/b\.lead_id\s*=\s*leadId/.test(f), '폼이 lead_id 를 실어 보내야 한다');
+  assert.ok(/setRegBoxes\(false\);\s*\n\s*leadId=null/.test(f),
+    '수정 모드에서는 리드 연결을 버려야 엉뚱한 고객에 붙지 않는다');
+  const h = read(join(REPO, 'refatrix-customers.html'));
+  assert.ok(/RefCustForm\.newCustomer\(opts\)/.test(h), 'showForm 이 opts 를 신규 등록에 넘겨야 한다');
+  assert.ok(/showForm\(null,\{lead_id:/.test(h));
+});
+
+test('C9. 폴백 키 규칙은 한 곳에만 있고 화면이 그걸 읽는다', () => {
+  // 서버는 다른 연동의 키를 받아 주는데 화면은 「401 로 거절됩니다」 라고 경고하고 있었다.
+  // 규칙이 두 군데 있으면 반드시 이렇게 엇갈린다.
+  const i = read(join(API, 'src/integrations.js'));
+  assert.ok(/export const INBOUND_KEY_FALLBACK/.test(i));
+  assert.ok(/key_fallback_from/.test(i), '화면이 볼 수 있게 내려 줘야 한다');
+  const l = read(join(API, 'src/routes/crmLeadRoutes.js'));
+  assert.ok(/INBOUND_KEY_FALLBACK\[LEAD_KEY\]/.test(l), '수신부도 같은 표를 봐야 한다');
+  const g = read(join(REPO, 'refatrix-integrations.html'));
+  assert.ok(/key_fallback_from/.test(g), '화면이 폴백을 보고 문구를 갈라야 한다');
+});
+
 // ── D. 실제 수신·처리 (DB) ───────────────────────────────────────────
 const dbTest = PG ? test : test.skip;
 
@@ -204,6 +232,31 @@ dbTest('수신 → 팝업 대상 → 담당 지정 → 보류 (실 DB)', async (
       headers: { 'content-type': 'application/json' },
       payload: { crmLeadCode: code, empresa: 'A', nombre: 'B', telefono: '1', correo: 'c@d.com', rfc: 'X' } });
     assert.equal(q.statusCode, 200);
+  });
+
+  await t.test('전용 키가 없으면 신규고객 등록 수신의 키를 그대로 받는다 (폴백)', async () => {
+    // 상대에게 창구마다 다른 키를 요구하면 연동만 늦어진다. 화면 안내도 이 동작과 같아야 한다.
+    const REG = 'rfx_test_' + 'd'.repeat(48);
+    await query(`UPDATE integration_endpoints SET auth_token_test=NULL, auth_token_prod=NULL
+                  WHERE key='crm_web_lead'`);
+    await query(`UPDATE integration_endpoints SET auth_token_test=$1
+                  WHERE key='crm_customer_registration'`, [REG]);
+    invalidateEndpointCache();
+
+    const ok = await post({ crmLeadCode: code, empresa: 'A', nombre: 'B',
+      telefono: '1', correo: 'c@d.com', rfc: 'X' }, { 'x-api-key': REG });
+    assert.equal(ok.statusCode, 200, '등록 수신용 키로도 받아 줘야 한다');
+
+    const bad = await post({ crmLeadCode: code, empresa: 'A', nombre: 'B',
+      telefono: '1', correo: 'c@d.com', rfc: 'X' }, { 'x-api-key': 'z'.repeat(57) });
+    assert.equal(bad.statusCode, 401, '아무 키나 받으면 안 된다');
+
+    // 전용 키를 발급하면 그때부터는 이 창구만 그 키를 요구한다.
+    await query(`UPDATE integration_endpoints SET auth_token_test=$1 WHERE key='crm_web_lead'`, [KEY]);
+    invalidateEndpointCache();
+    const now = await post({ crmLeadCode: code, empresa: 'A', nombre: 'B',
+      telefono: '1', correo: 'c@d.com', rfc: 'X' }, { 'x-api-key': REG });
+    assert.equal(now.statusCode, 401, '전용 키가 생기면 폴백은 더 이상 쓰이지 않는다');
   });
 
   await t.test('이력에 우리 API 키가 남지 않는다', async () => {

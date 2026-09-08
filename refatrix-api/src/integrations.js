@@ -8,6 +8,17 @@ import { config } from './config.js';
 
 export const CUSTOMER_KEY = 'customer_commercial';
 
+/**
+ * 수신 창구별 **키 폴백** — 전용 키를 발급하지 않았으면 여기 적힌 연동의 키를 받아 준다.
+ *
+ *   상대에게 창구마다 다른 키를 요구하면 연동이 늦어질 뿐 얻는 게 없다.
+ *   ⚠ 규칙은 여기 한 곳에만 둔다 — 수신부(검증)와 관리 화면(안내 문구)이 같은 표를 봐야
+ *     "서버는 받아 주는데 화면은 안 받는다고 경고하는" 엇갈림이 생기지 않는다. 실제로 그랬다.
+ */
+export const INBOUND_KEY_FALLBACK = {
+  crm_web_lead: 'crm_customer_registration',
+};
+
 // ⚠ 준비 여부는 **긍정만 영구 캐시**한다. 예전에는 처음 한 번 확인하고 끝이라,
 //   서버가 뜬 뒤에 `npm run migrate` 를 돌리면(=Railway 콘솔에서 하는 방식) 프로세스가
 //   재시작될 때까지 계속 "마이그레이션 필요"로 답했다. 이제 없을 때만 30초마다 다시 본다.
@@ -113,6 +124,8 @@ export function publicEndpoint(ep) {
     //   auth_token_* 는 우리가 발급해서 상대에게 준 키다(전송 대상이 아니라 수신 검증용).
     direction,
     inbound_path: ep.inbound_path || null,
+    // 전용 키가 없을 때 대신 받아 주는 연동(있으면). 화면의 안내 문구가 이걸 보고 갈린다.
+    key_fallback_from: (direction === 'in' && INBOUND_KEY_FALLBACK[ep.key]) || null,
     url_test: ep.url_test || '', url_prod: ep.url_prod || '',
     active_url: url,
     active_host: url ? url.replace(/^https?:\/\//, '').split('/')[0] : null,
