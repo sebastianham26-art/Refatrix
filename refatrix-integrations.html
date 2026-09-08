@@ -80,6 +80,10 @@
      (키는 이때 딱 한 번만 볼 수 있으므로 화면이 저절로 다시 그려지면 그대로 잃어버린다) */
   .modalBack{position:fixed;inset:0;background:rgba(20,18,15,.55);display:flex;align-items:center;
     justify-content:center;padding:20px;z-index:9999}
+  /* ⚠ .hidden{display:none} 은 이 파일 위쪽(41행)에 있다. 특이도가 같으면 **나중 규칙이 이긴다** —
+     이 줄이 없으면 .modalBack 의 display:flex 가 .hidden 을 눌러서 창이 페이지 로드부터
+     계속 떠 있고(내용은 비어 있고) 「닫기」 를 눌러도 사라지지 않는다. 실제로 그렇게 났다. */
+  .modalBack.hidden{display:none}
   .modalBox{background:var(--card);border-radius:var(--radius);padding:20px;max-width:620px;width:100%;
     box-shadow:0 18px 50px rgba(0,0,0,.28)}
   .modalBox h3{margin:0 0 4px;font-size:16px;color:var(--brand)}

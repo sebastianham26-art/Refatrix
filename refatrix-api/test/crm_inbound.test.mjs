@@ -193,6 +193,20 @@ test('E6. 감사로그 action 은 체크 제약 목록 안의 값만 쓴다', ()
     'audit_log_action_check 에 없는 값이라 조용히 버려진다');
 });
 
+test('E8. 키 창은 .hidden 이 붙었을 때 실제로 숨겨진다', () => {
+  // `.hidden{display:none}` 은 파일 위쪽에 있고 `.modalBack{display:flex}` 는 아래쪽에 있다.
+  // 특이도가 같으면 **나중 규칙이 이긴다** → 이 한 줄이 없으면 창이 페이지 로드부터
+  // 계속 떠 있고(내용은 비어 있고) 「닫기」 를 눌러도 사라지지 않는다. 실제로 그렇게 났다.
+  const h = read(join(REPO, 'refatrix-integrations.html'));
+  assert.ok(/\.modalBack\.hidden\s*\{\s*display\s*:\s*none/.test(h),
+    '.modalBack.hidden{display:none} 이 없으면 창이 숨겨지지 않는다');
+  const hid = h.indexOf('.hidden{display:none}');
+  const back = h.indexOf('.modalBack{');
+  const fix = h.indexOf('.modalBack.hidden{');
+  assert.ok(hid >= 0 && back > hid, '전제: .modalBack 이 .hidden 보다 뒤에 있다');
+  assert.ok(fix > back, '되돌리는 규칙은 .modalBack 뒤에 와야 이긴다');
+});
+
 // ── F. 실제 수신 (DB) ────────────────────────────────────────────────
 const dbTest = PG ? test : test.skip;
 
