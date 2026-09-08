@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 등록 (build ref-0908a)</title>
+<title>Refatrix ERP · 고객 등록 (build ref-0908b)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -62,6 +62,17 @@
   #custList table{margin-top:0}
   #custList thead th{position:sticky;top:0;z-index:3;background:#faf8f3;box-shadow:0 1px 0 var(--line)}
   #custList .hint{padding:0 9px 8px}
+  /* 0185 · 근거 칸(경쟁사 단가·할인)을 넣으면서 가로가 넘치지 않게 —
+     단계 칸을 좁히고(라벨 줄바꿈 허용), 숫자 칸은 붙어 있게 고정한다. */
+  #custList table{table-layout:auto}
+  #custList th,#custList td{padding:7px 8px}
+  #custList th.c-stage,#custList td.c-stage{width:66px;max-width:66px;padding-left:4px;padding-right:4px}
+  #custList td.c-stage span{white-space:normal!important;display:inline-block;line-height:1.25;padding:2px 7px!important;font-size:11px!important}
+  #custList th.c-type,#custList td.c-type{max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #custList th.c-owner,#custList td.c-owner{max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #custList th.c-syd,#custList td.c-syd{white-space:nowrap;width:100px}
+  #custList th.c-disc,#custList td.c-disc{white-space:nowrap;width:58px}
+  #custList td.c-syd,#custList td.c-disc{line-height:1.25}
   .doc-badge{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:#e7f3ee;color:var(--income)}
   /* 할인률 그래프 모달 */
   .modal-back{position:fixed;inset:0;background:rgba(20,30,28,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
@@ -701,14 +712,14 @@
   const CUST_COLS=[
     {key:'code',label:'코드'},
     {key:'name',label:'고객명'},
-    {key:'customer_type',label:'종류'},
+    {key:'customer_type',label:'종류',cls:'c-type'},
     {key:'branch_count',label:'지점',num:true},
-    {key:'owner_name',label:'담당'},
-    {key:'stage',label:'단계'},
+    {key:'owner_name',label:'담당',cls:'c-owner'},
+    {key:'stage',label:'단계',cls:'c-stage'},
     // 0185 · 등록 때 박제한 경쟁사(SYD) 근거와 할인. 상세에만 있어서 목록에서 비교가 안 됐다.
-    {key:'syd_ref_buy_price',label:'경쟁사(SYD) 단가',num:true},
-    {key:'suggested_discount',label:'제안할인',num:true},
-    {key:'discount',label:'기본할인',num:true},
+    {key:'syd_ref_buy_price',label:'SYD 단가',num:true,cls:'c-syd'},
+    {key:'suggested_discount',label:'제안%',num:true,cls:'c-disc'},
+    {key:'discount',label:'기본%',num:true,cls:'c-disc'},
     {key:'sales_total',label:'누적매출',num:true},
     {key:'overdue',label:'연체',num:true},
   ];
@@ -739,8 +750,8 @@
     const d=Number(c.discount||0);
     const s=(c.suggested_discount==null)?null:Number(c.suggested_discount);
     const gap=(s==null)?null:Math.round((d-s)*100)/100;
-    const badge=(gap==null||Math.abs(gap)<0.01)?''
-      :('<div class="hint" style="margin:0;font-size:11px;color:'+(gap>0?'#B23A2E':'#0F6E56')+'" title="제안 할인율 '+pctTxt(s)+' 대비">제안 '+(gap>0?'+':'')+gap.toFixed(2)+'%p</div>');
+    const badge=(gap==null||Math.abs(gap)<0.05)?''
+      :('<div class="hint" style="margin:0;font-size:11px;color:'+(gap>0?'#B23A2E':'#0F6E56')+'" title="제안 할인율 '+pctTxt(s)+' 대비 '+(gap>0?'더 깎아 준':'덜 깎아 준')+' 폭">'+(gap>0?'+':'')+gap.toFixed(1)+'%p</div>');
     return '<b>'+pctTxt(d)+'</b>'+badge;
   }
   function sortCust(key){
@@ -753,25 +764,25 @@
     items.sort((a,bb)=>{const va=custSortVal(a,k),vb=custSortVal(bb,k); if(va<vb)return -1*dir; if(va>vb)return 1*dir; return 0;});
     const head=CUST_COLS.map(col=>{
       const arrow = custSort.key===col.key ? (custSort.dir>0?' ▲':' ▼') : '';
-      return '<th class="'+(col.num?'num ':'')+'" onclick="sortCust(\''+col.key+'\')" style="cursor:pointer;user-select:none" title="클릭하면 정렬">'+col.label+arrow+'</th>';
+      return '<th class="'+(col.num?'num ':'')+(col.cls||'')+'" onclick="sortCust(\''+col.key+'\')" style="cursor:pointer;user-select:none" title="클릭하면 정렬">'+col.label+arrow+'</th>';
     }).join('');
     b.innerHTML=`<table><thead><tr>${head}<th></th></tr></thead>
       <tbody>${items.map(c=>{const inactive=(c.days_no_sales!=null&&Number(c.days_no_sales)>30);return `<tr>
         <td class="code">${c.code}</td>
         <td${inactive?` style="background:#e6e6e6" title="30일+ 무매출 (${c.days_no_sales}일)"`:''}>${c.name}${c.approval_status==='pending'?' <span class="pill" style="background:#fff4e0;color:#9a6512;border:1px solid #ecd9a0;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px" title="디렉터 등록 승인 전 — 견적·매출에 사용할 수 없습니다">🔒 등록 승인대기</span>':''}${c.from_crm?' <span class="pill" style="background:#eaf1fb;color:#20486f;border:1px solid #c9dcf3;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px" title="웹 카탈로그(CRM)에서 등록된 고객'+(c.crm_customer_code?(' · CRM 코드 '+c.crm_customer_code):'')+'">🌐 CRM 등록</span>':''}${c.pending_change?' <span class="pill" style="background:#fdecea;color:#b3261e;font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:6px">승인필요</span>':''}${c.doc_count>0?` <span class="doc-badge" title="첨부파일 ${c.doc_count}건">📎 ${c.doc_count}</span>`:''}</td>
-        <td>${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
+        <td class="c-type" title="${esc(c.customer_type||'')}">${c.customer_type||'<span class="hint" style="margin:0">—</span>'}</td>
         <td class="num">${c.branch_count!=null?c.branch_count:'<span class="hint" style="margin:0">—</span>'}</td>
-        <td>${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
-        <td>${stagePill(c.stage_name)}</td>
-        <td class="num">${custSydCell(c)}</td>
-        <td class="num">${c.suggested_discount==null?'<span class="hint" style="margin:0">—</span>':pctTxt(c.suggested_discount)}</td>
-        <td class="num">${custDiscCell(c)}</td>
+        <td class="c-owner" title="${esc(c.owner_name||'')}">${c.owner_name||'<span class="hint" style="margin:0">—</span>'}</td>
+        <td class="c-stage">${stagePill(c.stage_name)}</td>
+        <td class="num c-syd">${custSydCell(c)}</td>
+        <td class="num c-disc">${c.suggested_discount==null?'<span class="hint" style="margin:0">—</span>':pctTxt(c.suggested_discount)}</td>
+        <td class="num c-disc">${custDiscCell(c)}</td>
         <td class="num">${money0(c.sales_total)}</td>
         <td class="num ${c.overdue>0?'over':''}">${c.overdue>0?fmt(c.overdue):'—'}</td>
         <td style="white-space:nowrap"><button class="btn ghost sm" onclick="openTxnModal(${c.id})" title="월별 견적·매출·수금 (IVA 제외)">📈 거래</button> <button class="btn ghost sm" onclick="openCustomer(${c.id})">열기</button></td>
       </tr>`;}).join('')}</tbody></table>
-      <div class="hint">${items.length}명 표시 · <b>경쟁사(SYD) 단가</b>=등록 때 적은 그 고객의 SYD 기준품목 구매단가(아래는 고객이 SYD 에서 받는 할인율) ·
-        <b>제안할인</b>=그 단가보다 5% 싸게 주기 위한 CTR 할인율 · <b>기본할인</b>=실제 적용값(제안과 다르면 격차 %p) ·
+      <div class="hint">${items.length}명 표시 · <b>SYD 단가</b>=등록 때 적은 그 고객의 경쟁사(SYD) 기준품목 구매단가(아래는 고객이 SYD 에서 받는 할인율) ·
+        <b>제안%</b>=그 단가보다 5% 싸게 주기 위한 CTR 할인율 · <b>기본%</b>=실제 적용 할인율(아래는 제안 대비 격차 %p · 빨강=제안보다 더 깎아 줌) ·
         <b>누적매출</b>=거래후 누적 매출액(IVA 포함), 옆은 연체액(빨간색). <span style="background:#e6e6e6;padding:0 4px;border-radius:3px">회색 음영</span>은 30일+ 무매출. 타이틀을 누르면 정렬됩니다.</div>`;
   }
 
@@ -1311,15 +1322,23 @@
           한쪽 RFC 를 정정하거나 고객을 통합한 뒤 「선점 예외 정리」에서 복구하세요.</span>`
           +(isDirector()?` <button class="btn sm" style="margin-left:6px" onclick="openMerge({id:${c.id},code:${JSON.stringify(c.code)},name:${JSON.stringify(c.name)},rfc:${JSON.stringify(c.rfc||null)},owner_name:${JSON.stringify(c.owner_name||null)},team_name:${JSON.stringify(c.team_name||null)},approval_status:${JSON.stringify(c.approval_status||'approved')}})">🔗 병합</button>`:'');
       }
-      // 0185 · 단가가 안 왔어도(웹카달록 등록) 고객이 받는 할인율만 온 경우가 있다 —
-      //   그때도 근거 줄을 숨기지 않는다. 숨기면 "등록 때 적은 값이 사라졌다" 로 보인다.
-      const refRow = (c.syd_ref_buy_price!=null||c.syd_ref_discount!=null||c.suggested_discount!=null)
-        ? `<tr><th>할인율 산출 근거</th><td colspan="3">
-             기준품목 <b>${esc(c.syd_ref_code||'—')}</b> 고객 구매단가 <b>${mxTxt(c.syd_ref_buy_price)}</b>
-             <span class="hint" style="margin:0">(SYD 정가 ${mxTxt(c.syd_ref_list_price)} → 고객 할인율 ${pctTxt(c.syd_ref_discount)})</span>
-             <span style="color:#9a6512;font-weight:700"> → </span>
-             우리 <b>${esc(c.ctr_ref_code||'—')}</b> 정가 ${mxTxt(c.ctr_ref_list_price)}
-             <span class="hint" style="margin:0">· 제안 ${pctTxt(c.suggested_discount)} / 적용 ${pctTxt(c.discount)}</span></td></tr>` : '';
+      // 0185 · 등록 때 박제한 근거를 상세에서 **두 줄로 나눠** 보여 준다.
+      //   한 줄에 몰아넣으면 무엇이 경쟁사 값이고 무엇이 우리 값인지 안 읽힌다.
+      //   값이 없어도 줄을 숨기지 않는다 — 숨기면 "등록 때 적은 값이 사라졌다" 로 보인다.
+      const refMissing = (c.syd_ref_buy_price==null&&c.syd_ref_discount==null);
+      const dGap = (c.suggested_discount==null)?null:Math.round((Number(c.discount||0)-Number(c.suggested_discount))*100)/100;
+      const dGapTxt = (dGap==null||Math.abs(dGap)<0.01) ? ''
+        : `<span class="pill" style="background:${dGap>0?'#fdecea':'#eef4fb'};color:${dGap>0?'#b3261e':'#20486f'};margin-left:6px" title="제안 할인율 대비 차이 — 빨강은 제안보다 더 깎아 준 것">제안 대비 ${dGap>0?'+':''}${dGap.toFixed(2)}%p</span>`;
+      const refRow = `
+        <tr><th>경쟁사(SYD) 단가</th><td colspan="3">${refMissing
+          ? '<span class="hint" style="margin:0">등록 때 기록되지 않았습니다 — 웹카달록(CRM) 등록 건은 안 올 수 있습니다.</span>'
+          : `기준품목 <b>${esc(c.syd_ref_code||'—')}</b> · 고객 구매단가 <b>${mxTxt(c.syd_ref_buy_price)}</b>
+             <span class="hint" style="margin:0">· SYD 정가 ${mxTxt(c.syd_ref_list_price)} → 고객이 SYD 에서 받는 할인율 <b>${pctTxt(c.syd_ref_discount)}</b></span>`}</td></tr>
+        <tr><th>제안할인 → 적용</th><td colspan="3">
+          제안 <b>${pctTxt(c.suggested_discount)}</b>
+          <span style="color:#9a6512;font-weight:700"> → </span> 적용 <b style="font-size:15px">${pctTxt(c.discount)}</b>${dGapTxt}
+          <span class="hint" style="margin:0">· 우리 <b>${esc(c.ctr_ref_code||'—')}</b> 정가 ${mxTxt(c.ctr_ref_list_price)}${
+            c.syd_ref_buy_price!=null?(' · 5% 우위 목표가 '+mxTxt(Math.round(c.syd_ref_buy_price*0.95*100)/100)):''}</span></td></tr>`;
       $('d-info').innerHTML=regBanner+claimBanner+`<table>
         <tr><th>담당</th><td>${c.owner_name||'—'}</td><th>단계</th><td>${stagePill(c.stage_name)}</td></tr>
         <tr><th>회사 종류</th><td colspan="3">${c.customer_type||'—'}</td></tr>

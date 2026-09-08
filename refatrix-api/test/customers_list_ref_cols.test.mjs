@@ -1,9 +1,10 @@
 // =====================================================================
-// refatrix-customers.html 고객 목록 — 경쟁사(SYD) 단가 · 제안할인 · 기본할인 컬럼
-//   (2026-09-08) 등록 때 박제한 근거가 목록에서 빠져 있던 것을 채운 뒤의 회귀 테스트.
-//   ① 헤더에 세 컬럼이 있고 ② 값이 상세와 같은 표기로 찍히고
+// refatrix-customers.html — 등록 때 박제한 경쟁사(SYD) 근거를 어디서 보는가
+//   (2026-09-08) 목록: SYD 단가 · 제안% · 기본% 세 칸 / 상세(열기): 두 줄로 분리.
+//   ① 목록 헤더에 세 칸이 있고 ② 값이 상세와 같은 표기로 찍히고
 //   ③ 값이 없는 고객(웹카달록 등록)은 '—' 로 안전하게 빠지고
-//   ④ 컬럼 헤더 정렬이 숫자 기준으로 동작하며 값 없는 건이 뒤로 가는지.
+//   ④ 헤더 정렬이 숫자 기준이며 값 없는 건이 뒤로 가고
+//   ⑤ 상세는 값이 없어도 두 줄을 숨기지 않는다(숨기면 '사라졌다' 로 보인다).
 // =====================================================================
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,12 +49,12 @@ beforeEach(() => {
 
 const listHtml = () => win.document.getElementById('custList').innerHTML;
 
-test('헤더에 경쟁사(SYD) 단가·제안할인·기본할인 컬럼이 있다', async () => {
+test('헤더에 SYD 단가·제안%·기본% 컬럼이 있다', async () => {
   await win.loadCustomers();
   const h = listHtml();
-  assert.match(h, /경쟁사\(SYD\) 단가/);
-  assert.match(h, /제안할인/);
-  assert.match(h, /기본할인/);
+  assert.match(h, /SYD 단가/);
+  assert.match(h, /제안%/);
+  assert.match(h, /기본%/);
 });
 
 test('등록 때 박제한 값이 상세와 같은 표기로 찍힌다', async () => {
@@ -63,8 +64,8 @@ test('등록 때 박제한 값이 상세와 같은 표기로 찍힌다', async (
   assert.match(h, /SYD −35\.0%/, '고객이 SYD 에서 받는 할인율');
   assert.match(h, /55\.9%/, '제안 할인율');
   assert.match(h, /52\.0%/, '적용 기본할인');
-  // 제안 55.89 → 적용 52 는 우리에게 유리한 쪽(덜 깎아 줌)이라 −3.89%p
-  assert.match(h, /제안 -3\.89%p/);
+  // 제안 55.89 → 적용 52 는 우리에게 유리한 쪽(덜 깎아 줌)이라 −3.9%p (칸이 좁아 소수 1자리)
+  assert.match(h, /-3\.9%p/);
   // 툴팁에 근거 전체(기준품목·SYD 정가·CTR 정가)가 남아야 한다
   assert.match(h, /기준품목 1516049/);
   assert.match(h, /우리 CB0336 정가/);
@@ -108,6 +109,49 @@ test('상세 — 단가 없이 할인율만 있어도 산출 근거 줄이 남�
   win.eval('loadDocs=async()=>{};loadDetailApproval=async()=>{};loadCustVisits=async()=>{};txLoad=async()=>{};loadTermsHistory=async()=>{};');
   await win.openCustomer(2);
   const info = win.document.getElementById('d-info').innerHTML;
-  assert.match(info, /할인율 산출 근거/);
+  // 상세(열기)는 경쟁사 값과 우리 값을 두 줄로 나눠 보여 준다.
+  assert.match(info, /경쟁사\(SYD\) 단가/);
+  assert.match(info, /제안할인 → 적용/);
   assert.match(info, /28\.0%/);
+  assert.ok(!info.includes('NaN'));
+});
+
+test('상세 — 근거가 아예 없어도 두 줄은 남고 안내가 뜬다', async () => {
+  win.fetch = async (url) => {
+    if (String(url).includes('/api/customers/3')) {
+      return { ok: true, status: 200, json: async () => ({
+        customer: { id: 3, code: 'P-0003', name: 'SIN DATOS', rfc: 'SDA900101AB1',
+          discount: 0, credit_days: 0, approval_status: 'pending', rfc_claimed: true,
+          syd_ref_code: null, syd_ref_buy_price: null, syd_ref_list_price: null,
+          syd_ref_discount: null, ctr_ref_code: null, ctr_ref_list_price: null, suggested_discount: null },
+        invoices: [], important_skus: [], reorder_summary: {}, sku_stats: {}, summary: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ items: [] }) };
+  };
+  win.eval('loadDocs=async()=>{};loadDetailApproval=async()=>{};loadCustVisits=async()=>{};txLoad=async()=>{};loadTermsHistory=async()=>{};');
+  await win.openCustomer(3);
+  const info = win.document.getElementById('d-info').innerHTML;
+  assert.match(info, /경쟁사\(SYD\) 단가/);
+  assert.match(info, /등록 때 기록되지 않았습니다/);
+  assert.match(info, /제안할인 → 적용/);
+});
+
+test('상세 — 제안보다 더 깎아 준 건은 격차 배지가 붙는다', async () => {
+  win.fetch = async (url) => {
+    if (String(url).includes('/api/customers/1')) {
+      return { ok: true, status: 200, json: async () => ({
+        customer: { id: 1, code: 'C-0001', name: 'FRENOS NORTE', rfc: 'FNO900101AB1',
+          discount: 60, credit_days: 30, approval_status: 'approved', rfc_claimed: true,
+          syd_ref_code: '1516049', syd_ref_buy_price: 650, syd_ref_list_price: 1000,
+          syd_ref_discount: 35, ctr_ref_code: 'CB0336', ctr_ref_list_price: 1400, suggested_discount: 55.89 },
+        invoices: [], important_skus: [], reorder_summary: {}, sku_stats: {}, summary: {} }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ items: [] }) };
+  };
+  win.eval('loadDocs=async()=>{};loadDetailApproval=async()=>{};loadCustVisits=async()=>{};txLoad=async()=>{};loadTermsHistory=async()=>{};');
+  await win.openCustomer(1);
+  const info = win.document.getElementById('d-info').innerHTML;
+  assert.match(info, /제안 대비 \+4\.11%p/);
+  assert.match(info, /5% 우위 목표가/);       // $617.50
+  assert.ok(info.includes('$617.50'));
 });
