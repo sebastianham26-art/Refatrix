@@ -12,7 +12,7 @@ import { logEvent } from '../audit.js';
 import { enqueueCustomerSync } from '../crmSync.js';
 import { visibleTeamIds, canViewTeam, canEditTeam, canRequestCrossTeam } from '../teams.js';
 import { fieldVisible } from '../permissions.js';
-import { AR_PAID_EPS, AR_SETTLED_SQL } from '../ar.js';
+import { AR_PAID_EPS, AR_SETTLED_SQL, arOpenCondSql, arOpenBalSql } from '../ar.js';
 import { buildHeaderIndex, parseCustRow, buildCustPreview, CUST_TEMPLATE_HEADERS } from '../customerImport.js';
 import { mxTodayStr } from '../workingHours.js';
 import { reorderMetrics, medianWorkingGap } from '../salesCycle.js';
@@ -448,8 +448,10 @@ export default async function customerRoutes(app) {
          LEFT JOIN users u ON u.id=c.owner_id
          LEFT JOIN (
            SELECT i.customer_id,
-                  SUM(i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
-                  SUM(CASE WHEN i.due_date < CURRENT_DATE THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END) AS overdue,
+                  -- 완납 판정은 AR_PAID_EPS 한 곳에서만 정의한다(ar.js).
+                  --   0.5 페소 미만 잔여는 IVA 센타보 반올림 찌꺼기이지 미수가 아니다.
+                  SUM(${arOpenBalSql('i.total_mxn', 'p.paid')}) AS outstanding,
+                  SUM(CASE WHEN i.due_date < CURRENT_DATE THEN ${arOpenBalSql('i.total_mxn', 'p.paid')} ELSE 0 END) AS overdue,
                   SUM(i.total_mxn) AS sales_total,
                   MAX(i.inv_date) AS last_sale_date
              FROM sales_invoices i
@@ -554,7 +556,10 @@ export default async function customerRoutes(app) {
     const invs = (await query(
       `SELECT i.id, to_char(i.inv_date,'YYYY-MM-DD') AS inv_date, to_char(i.due_date,'YYYY-MM-DD') AS due_date,
               i.total_mxn, COALESCE(p.paid,0) AS paid, (i.total_mxn - COALESCE(p.paid,0)) AS outstanding,
-              (i.due_date < CURRENT_DATE AND (i.total_mxn - COALESCE(p.paid,0)) > 0) AS overdue
+              -- open=아직 받을 게 남은 건. 수금·정산 화면과 **같은 판정**(AR_PAID_EPS).
+              --   센타보 잔여(0.01 등)는 완납으로 본다 — 여기서 > 0 을 쓰면 수금 화면과 어긋난다.
+              ${arOpenCondSql('i.total_mxn', 'p.paid')} AS "open",
+              (i.due_date < CURRENT_DATE AND ${arOpenCondSql('i.total_mxn', 'p.paid')}) AS overdue
          FROM sales_invoices i
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id
         WHERE i.customer_id=$1 AND i.status='posted'
@@ -667,7 +672,8 @@ export default async function customerRoutes(app) {
         team_id: c.team_id, team_name: c.team_name, stage_id: c.stage_id, stage_name: stageLabel(c.stage_name),
         owner_id: c.owner_id, owner_name: c.owner_name, stage_since: c.stage_since_str,
       },
-      invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid), outstanding: r2(i.outstanding) })),
+      invoices: invs.map((i) => ({ ...i, total_mxn: r2(i.total_mxn), paid: r2(i.paid),
+        outstanding: r2(i.outstanding), open: i.open === true, overdue: i.overdue === true })),
       important_skus: importantSkus,
       reorder_summary: reorderSummary,
       sku_stats: { distinct: skuRows.length, total_qty: grandQty, important: importantSkus.length },
@@ -1032,9 +1038,9 @@ export default async function customerRoutes(app) {
 
     // 미수 잔액(연도 무관 — 현재 시점 기준) · 표 아래 한 줄로 보여준다.
     const ar = (await query(
-      `SELECT COALESCE(SUM(i.total_mxn - COALESCE(p.paid,0)),0) AS outstanding,
+      `SELECT COALESCE(SUM(${arOpenBalSql('i.total_mxn', 'p.paid')}),0) AS outstanding,
               COALESCE(SUM(CASE WHEN i.due_date < CURRENT_DATE
-                                THEN (i.total_mxn - COALESCE(p.paid,0)) ELSE 0 END),0) AS overdue
+                                THEN ${arOpenBalSql('i.total_mxn', 'p.paid')} ELSE 0 END),0) AS overdue
          FROM sales_invoices i
          LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid
                       FROM sales_payment_allocations GROUP BY invoice_id) p ON p.invoice_id=i.id

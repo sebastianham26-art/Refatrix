@@ -12,6 +12,18 @@ export const AR_PAID_EPS = 0.5;
 export function arIsPaid(outstanding) { return Number(outstanding || 0) < AR_PAID_EPS; }
 export function arIsOpen(outstanding) { return !arIsPaid(outstanding); }
 
+// ── 같은 판정을 SQL 에서도 쓰기 위한 조각 (2026-09-08) ────────────────────────
+//   JS 는 AR_PAID_EPS 로 완납을 판정하는데 SQL 은 `잔액 > 0` 으로 세던 자리가 남아 있었다.
+//   그래서 수금 화면은 「완납」인 인보이스가 고객 화면에서는 「연체」로 보였다(0.01 잔여).
+//   판정은 한 곳에서만 정의한다 — 아래 두 함수가 그 한 곳이다.
+//   totalExpr/paidExpr 는 **호출부가 넘기는 컬럼식**이다(사용자 입력을 넣지 말 것).
+export function arOpenCondSql(totalExpr, paidExpr) {
+  return `((${totalExpr}) - COALESCE(${paidExpr},0)) >= ${AR_PAID_EPS}`;
+}
+export function arOpenBalSql(totalExpr, paidExpr) {
+  return `CASE WHEN ${arOpenCondSql(totalExpr, paidExpr)} THEN ((${totalExpr}) - COALESCE(${paidExpr},0)) ELSE 0 END`;
+}
+
 // ── 인보이스 「완납일」 조인 (2026-08-31 정의 · 2026-09-04 이 파일로 이동) ─────
 //   잔액이 0이 된 날 = 마지막 반제일 이므로 배분들의 MAX(반제일)을 쓴다.
 //   반제일: 현금 반제 → sales_payments.pay_date / NC(비현금) → notas_credito 적용·승인·작성일 순.
