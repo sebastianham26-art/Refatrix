@@ -16,6 +16,7 @@ import { query } from '../db.js';
 import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { getEndpoint, invalidateEndpointCache, envTokenColsReady } from '../integrations.js';
+import { writeInboundLog, inboundLogReady } from '../crmInboundLog.js';
 import { mapInbound, missingRequired, readInboundKey, verifyInboundKey, scrubPayload,
          errBody } from '../crmInbound.js';
 import { validateRfcOptional, normalizeClaimKey, computeBaselineDiscount,
@@ -37,20 +38,6 @@ const RFC_ES = {
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
 
-// 수신 이력 테이블 준비 여부 — 긍정만 영구 캐시, 없을 때만 30초마다 재확인.
-//   (Railway 는 배포 후 사람이 콘솔에서 migrate 를 돌린다. 재시작 없이 인식돼야 한다)
-let logReady = false; let logProbe = 0;
-async function inboundLogReady() {
-  if (logReady) return true;
-  if (Date.now() - logProbe < 30000) return false;
-  logProbe = Date.now();
-  try {
-    const r = await query(`SELECT to_regclass('public.crm_inbound_log') AS t`);
-    logReady = !!(r.rows[0] && r.rows[0].t);
-  } catch (_) { logReady = false; }
-  return logReady;
-}
-
 // 0206(crm_customer_code·crm_registered_at) 준비 여부 — 없어도 수신은 되어야 한다.
 let crmCols = false; let crmColsProbe = 0;
 async function crmOriginColsReady() {
@@ -66,21 +53,8 @@ async function crmOriginColsReady() {
   return crmCols;
 }
 
-/** 수신 기록. 실패해도 응답을 막지 않는다. */
-async function writeLog(rec) {
-  if (!(await inboundLogReady())) return;
-  try {
-    await query(
-      `INSERT INTO crm_inbound_log
-         (endpoint_key, remote_ip, auth_in, auth_ok, rfc, crm_code, customer_id, erp_code,
-          result, http_status, codigo_error, mensaje, payload)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)`,
-      [rec.endpoint_key || INBOUND_KEY, rec.remote_ip || null, rec.auth_in || null, !!rec.auth_ok,
-       rec.rfc || null, rec.crm_code || null, rec.customer_id || null, rec.erp_code || null,
-       rec.result || null, rec.http_status || null, rec.codigo_error || null, rec.mensaje || null,
-       JSON.stringify(rec.payload || {})]);
-  } catch (_) { /* 이력 실패가 수신을 막지 않는다 */ }
-}
+// 이 창구의 기록임을 매번 명시한다 — 창구가 나뉘어 있으면 기록도 나뉘어야 한다.
+async function writeLog(rec) { return writeInboundLog({ endpoint_key: INBOUND_KEY, ...rec }); }
 
 /** 담당 영업 찾기 — CRM 의 vendedorCorreo 를 ERP login_id·이름과 대조한다. */
 async function findAsesor(m) {
@@ -224,13 +198,6 @@ export default async function crmInboundRoutes(app) {
       // ── ④ 신규 — P-#### 로 채번해 승인 대기함에 넣는다 ──────────────
       const asesor = await findAsesor(m);
       const bl = await baselineFrom(m);
-      // 카달록이 기준품목 **단가** 대신 「고객이 SYD 에서 받는 할인율」만 보내는 경우가 있다.
-      //   단가를 역산해 지어내지는 않는다(정가 기준이 다르면 거짓 근거가 된다).
-      //   대신 온 값 그대로 할인율 칸에 박제해, 목록·상세에서 빈칸으로 사라지지 않게 한다.
-      const sydDiscIn = (m.descuentoSyd != null && Number.isFinite(m.descuentoSyd)
-        && m.descuentoSyd >= 0 && m.descuentoSyd <= 100) ? m.descuentoSyd : null;
-      const refCodeIn = bl?.baseCode || (m.sydRefCode ? String(m.sydRefCode).trim() : null);
-      const sydDiscOut = bl?.calc?.syd_discount ?? sydDiscIn;
       const disc = (m.discountPercent != null && Number.isFinite(m.discountPercent)
         && m.discountPercent >= 0 && m.discountPercent <= MAX_DISCOUNT_PCT) ? m.discountPercent : 0;
       const days = (m.paymentDays != null && Number.isFinite(m.paymentDays) && m.paymentDays >= 0)
@@ -264,7 +231,7 @@ export default async function crmInboundRoutes(app) {
              ['CRM 웹카달록 등록', m.nombreComercial ? `상호명: ${m.nombreComercial}` : null,
               m.crmCode ? `CRM 코드: ${m.crmCode}` : null, m.memo].filter(Boolean).join(' · '),
              addr, conNo,
-             refCodeIn || null, bl?.buy ?? null, bl?.sydLP ?? null, sydDiscOut ?? null,
+             bl?.baseCode || null, bl?.buy ?? null, bl?.sydLP ?? null, bl?.calc?.syd_discount ?? null,
              bl?.ctrCode || null, bl?.ctrLP ?? null, bl?.calc?.suggested_discount ?? null,
              ...(crmCols ? [m.crmCode || null] : [])])).rows[0];
           break;
@@ -347,8 +314,16 @@ export default async function crmInboundRoutes(app) {
     if (!(await inboundLogReady())) return { migrated: false, items: [], summary: {} };
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 50));
     const result = String(req.query?.result || '').trim();
+    // ⚠ 창구(endpoint)로 반드시 가른다. 예전에는 이 필터가 없어서 연동 관리의
+    //   **두 수신 연동이 같은 목록**을 보여 줬다(신규고객 등록 이력이 웹 가입 신청에도 떴다).
+    //   지정이 없으면 예전 그대로 전부 — 옛 화면이 갑자기 빈 목록이 되면 안 되니까.
+    const endpoint = String(req.query?.endpoint || '').trim();
     const params = []; const where = [];
-    if (['created', 'updated', 'rejected'].includes(result)) { params.push(result); where.push(`result=$${params.length}`); }
+    if (endpoint) {
+      params.push(endpoint);
+      where.push(`COALESCE(l.endpoint_key,'crm_customer_registration')=$${params.length}`);
+    }
+    if (['created', 'updated', 'rejected'].includes(result)) { params.push(result); where.push(`l.result=$${params.length}`); }
     params.push(limit);
     const rows = (await query(
       `SELECT l.*, c.name AS customer_name
@@ -356,13 +331,16 @@ export default async function crmInboundRoutes(app) {
         ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY l.id DESC LIMIT $${params.length}`, params)).rows;
     const sum = (await query(
-      `SELECT result, count(*)::int AS n FROM crm_inbound_log GROUP BY 1`)).rows;
+      `SELECT result, count(*)::int AS n FROM crm_inbound_log
+        ${endpoint ? `WHERE COALESCE(endpoint_key,'crm_customer_registration')=$1` : ''}
+        GROUP BY 1`, endpoint ? [endpoint] : [])).rows;
     const summary = { created: 0, updated: 0, rejected: 0 };
     for (const s of sum) if (s.result in summary) summary[s.result] = Number(s.n);
     return {
       migrated: true, summary,
       items: rows.map((r) => ({
         id: Number(r.id), created_at: r.created_at, remote_ip: r.remote_ip,
+        endpoint_key: r.endpoint_key || 'crm_customer_registration',
         auth_in: r.auth_in, auth_ok: !!r.auth_ok,
         rfc: r.rfc, crm_code: r.crm_code, erp_code: r.erp_code,
         customer_id: r.customer_id ? Number(r.customer_id) : null, customer_name: r.customer_name || null,

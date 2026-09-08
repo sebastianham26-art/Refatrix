@@ -17,12 +17,18 @@ import { query } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
 import { getEndpoint, INBOUND_KEY_FALLBACK } from '../integrations.js';
+import { writeInboundLog } from '../crmInboundLog.js';
 import { mapLead, missingLeadFields, readInboundKey, verifyInboundKey,
          scrubPayload, errBody } from '../crmInbound.js';
 
 export const LEAD_KEY = 'crm_web_lead';
 
 async function safeLog(args) { try { await logEvent(args); } catch (_) { /* ignore */ } }
+
+// 수신 이력 — **이 창구의 기록임을 명시**한다. 연동 관리의 「수신 이력」은 창구별로 갈린다.
+//   crm_web_leads 에는 접수된 리드만 남는다(거절은 안 남는다). 401·400 처럼 문 앞에서
+//   막힌 건까지 보이려면 이 공용 기록이 필요하다 — 상대와 갈릴 때 근거가 되는 게 이것뿐이다.
+async function writeLog(rec) { return writeInboundLog({ endpoint_key: LEAD_KEY, ...rec }); }
 
 // 0210 준비 여부 — 긍정만 영구 캐시, 없을 때만 30초마다 재확인
 //   (Railway 는 배포 뒤 사람이 콘솔에서 migrate 를 돌린다. 재시작 없이 인식돼야 한다)
@@ -82,10 +88,14 @@ export default async function crmLeadRoutes(app) {
     const safe = scrubPayload(raw);           // 이력에 우리 키가 남지 않게
     const { token, where } = readInboundKey(req);
 
+    const base = { remote_ip: ip, auth_in: where, payload: safe };
+
     const ep = await getEndpoint(LEAD_KEY);
     if (!ep) {
-      return reply.code(503).send(errBody('ERR_INTERNAL',
-        'Endpoint de avisos no configurado en el ERP (falta migración 0210).'));
+      const body = errBody('ERR_INTERNAL', 'Endpoint de avisos no configurado en el ERP (falta migración 0210).');
+      await writeLog({ ...base, auth_ok: false, http_status: 503, result: 'rejected',
+        codigo_error: body.codigoError, mensaje: body.mensaje });
+      return reply.code(503).send(body);
     }
     // 키를 따로 발급하지 않았으면 **신규고객 등록 수신과 같은 키**를 받아 준다 —
     //   상대에게 창구마다 다른 키를 요구하면 연동이 늦어질 뿐 얻는 게 없다.
@@ -96,24 +106,34 @@ export default async function crmLeadRoutes(app) {
       if (regEp) v = verifyInboundKey(regEp, token);
     }
     if (!v.ok) {
-      return reply.code(401).send(errBody('ERR_API_KEY', v.reason === 'no_key_configured'
+      const body = errBody('ERR_API_KEY', v.reason === 'no_key_configured'
         ? 'El ERP aún no tiene una API key emitida para esta integración.'
-        : 'API key faltante o inválida.'));
+        : 'API key faltante o inválida.');
+      await writeLog({ ...base, auth_ok: false, http_status: 401, result: 'rejected',
+        codigo_error: body.codigoError, mensaje: body.mensaje });
+      return reply.code(401).send(body);
     }
     if (ep.enabled === false) {
-      return reply.code(503).send(errBody('ERR_INTERNAL',
-        'La recepción de avisos está deshabilitada temporalmente en el ERP.'));
+      const body = errBody('ERR_INTERNAL', 'La recepción de avisos está deshabilitada temporalmente en el ERP.');
+      await writeLog({ ...base, auth_ok: true, http_status: 503, result: 'rejected',
+        codigo_error: body.codigoError, mensaje: body.mensaje });
+      return reply.code(503).send(body);
     }
     if (!(await leadsReady())) {
-      return reply.code(503).send(errBody('ERR_INTERNAL',
-        'El ERP aún no aplicó la migración 0210. Reintentar más tarde.'));
+      const body = errBody('ERR_INTERNAL', 'El ERP aún no aplicó la migración 0210. Reintentar más tarde.');
+      await writeLog({ ...base, auth_ok: true, http_status: 503, result: 'rejected',
+        codigo_error: body.codigoError, mensaje: body.mensaje });
+      return reply.code(503).send(body);
     }
 
     const m = mapLead(raw);
+    const logBase = { ...base, auth_ok: true, rfc: m.rfc || null, crm_code: m.crmLeadCode || null };
     const miss = missingLeadFields(m);
     if (miss.length) {
-      return reply.code(400).send(errBody('ERR_REQUIRED_FIELD',
-        `Falta(n) campo(s) obligatorio(s): ${miss.join(', ')}.`));
+      const body = errBody('ERR_REQUIRED_FIELD', `Falta(n) campo(s) obligatorio(s): ${miss.join(', ')}.`);
+      await writeLog({ ...logBase, http_status: 400, result: 'rejected',
+        codigo_error: body.codigoError, mensaje: body.mensaje });
+      return reply.code(400).send(body);
     }
 
     try {
@@ -130,8 +150,11 @@ export default async function crmLeadRoutes(app) {
               WHERE id=$12`,
             [m.empresa, m.nombre, m.apellido, m.telefono, m.correo, m.rfc,
              m.ciudad, m.estado, m.direccion, m.mensaje, JSON.stringify(safe), dup.id]);
-          return reply.code(200).send(errBody('0',
-            'Solicitud ya recibida anteriormente; datos actualizados.', { leadId: Number(dup.id) }));
+          const body = errBody('0', 'Solicitud ya recibida anteriormente; datos actualizados.',
+            { leadId: Number(dup.id) });
+          await writeLog({ ...logBase, http_status: 200, result: 'updated',
+            erp_code: 'LEAD-' + dup.id, codigo_error: '0', mensaje: body.mensaje });
+          return reply.code(200).send(body);
         }
       }
 
@@ -147,11 +170,16 @@ export default async function crmLeadRoutes(app) {
       await safeLog({ userId: null, action: 'create', target: `web_lead:${row.id}`,
         detail: { origin: 'crm_web_lead', rfc: m.rfc, empresa: m.empresa } });
 
-      return reply.code(200).send(errBody('0',
-        'Solicitud recibida, un asesor lo contactará.', { leadId: Number(row.id) }));
+      const body = errBody('0', 'Solicitud recibida, un asesor lo contactará.', { leadId: Number(row.id) });
+      await writeLog({ ...logBase, http_status: 200, result: 'created',
+        erp_code: 'LEAD-' + row.id, codigo_error: '0', mensaje: body.mensaje });
+      return reply.code(200).send(body);
     } catch (e) {
       req.log?.error({ err: e }, 'crm web lead failed');
-      return reply.code(500).send(errBody('ERR_INTERNAL', 'Error interno del ERP. Reintentar más tarde.'));
+      const body = errBody('ERR_INTERNAL', 'Error interno del ERP. Reintentar más tarde.');
+      await writeLog({ ...logBase, http_status: 500, result: 'rejected',
+        codigo_error: body.codigoError, mensaje: String(e.message || '').slice(0, 400) });
+      return reply.code(500).send(body);
     }
   });
 

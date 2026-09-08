@@ -142,6 +142,22 @@ test('C9. 폴백 키 규칙은 한 곳에만 있고 화면이 그걸 읽는다',
   assert.ok(/key_fallback_from/.test(g), '화면이 폴백을 보고 문구를 갈라야 한다');
 });
 
+test('C10. 수신 이력은 창구별로 갈린다', () => {
+  // 연동 관리의 두 수신 연동이 **같은 목록**을 보여 주고 있었다 — 조회에 창구 필터가 없었고,
+  // 리드 수신은 아예 공용 기록을 남기지 않았다.
+  const log = read(join(API, 'src/crmInboundLog.js'));
+  assert.ok(/if \(!rec \|\| !rec\.endpoint_key\) return;/.test(log), '창구 없는 기록은 남기지 않는다');
+  const lead = read(join(API, 'src/routes/crmLeadRoutes.js'));
+  assert.ok(/writeInboundLog\(\{ endpoint_key: LEAD_KEY/.test(lead), '리드 수신도 공용 기록을 남긴다');
+  assert.ok(/result: 'rejected'/.test(lead), '거절도 남아야 「보냈다/못 받았다」 를 가릴 수 있다');
+  const inb = read(join(API, 'src/routes/crmInboundRoutes.js'));
+  assert.ok(/COALESCE\(l\.endpoint_key,'crm_customer_registration'\)=\$/.test(inb), '조회가 창구로 갈려야 한다');
+  const g = read(join(REPO, 'refatrix-integrations.html'));
+  assert.ok(/endpoint='\+encodeURIComponent\(CUR\.key\)/.test(g), '화면이 창구를 실어 보내야 한다');
+  const ir = read(join(API, 'src/routes/integrationRoutes.js'));
+  assert.ok(/inboundFor\(e\.key\)/.test(ir), '목록 집계도 창구별이어야 한다');
+});
+
 // ── D. 실제 수신·처리 (DB) ───────────────────────────────────────────
 const dbTest = PG ? test : test.skip;
 
@@ -173,6 +189,7 @@ dbTest('수신 → 팝업 대상 → 담당 지정 → 보류 (실 DB)', async (
 
   t.after(async () => {
     await query(`DELETE FROM crm_web_leads WHERE crm_lead_code=$1`, [code]);
+    await query(`DELETE FROM crm_inbound_log WHERE endpoint_key='crm_web_lead'`);
     await pool.end();
   });
 
@@ -257,6 +274,20 @@ dbTest('수신 → 팝업 대상 → 담당 지정 → 보류 (실 DB)', async (
     const now = await post({ crmLeadCode: code, empresa: 'A', nombre: 'B',
       telefono: '1', correo: 'c@d.com', rfc: 'X' }, { 'x-api-key': REG });
     assert.equal(now.statusCode, 401, '전용 키가 생기면 폴백은 더 이상 쓰이지 않는다');
+  });
+
+  await t.test('수신 이력이 이 창구 이름으로만 쌓인다', async () => {
+    const mine = (await query(
+      `SELECT count(*)::int n FROM crm_inbound_log WHERE endpoint_key='crm_web_lead'`)).rows[0].n;
+    assert.ok(mine > 0, '리드 수신이 공용 이력에 남아야 한다');
+    const leaked = (await query(
+      `SELECT count(*)::int n FROM crm_inbound_log
+        WHERE endpoint_key='crm_customer_registration' AND payload->>'empresa' IS NOT NULL`)).rows[0].n;
+    assert.equal(leaked, 0, '리드 수신이 신규고객 등록 이력에 섞이면 두 목록이 같아진다');
+    const rejected = (await query(
+      `SELECT count(*)::int n FROM crm_inbound_log
+        WHERE endpoint_key='crm_web_lead' AND result='rejected'`)).rows[0].n;
+    assert.ok(rejected > 0, '401·400 도 남아야 한다 — crm_web_leads 에는 안 남는 기록이다');
   });
 
   await t.test('이력에 우리 API 키가 남지 않는다', async () => {

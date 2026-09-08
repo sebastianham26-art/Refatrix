@@ -8,6 +8,7 @@ import {
   activeToken,
 } from '../integrations.js';
 import { sendPayload, isSuccess, crmStatus, buildPayload } from '../crmSync.js';
+import { inboundCounts } from '../crmInboundLog.js';
 
 const ERR_NOTE = {
   env_invalid: '환경은 test 또는 prod 만 됩니다.',
@@ -43,19 +44,17 @@ export default async function integrationRoutes(app) {
       }
     } catch (_) { counts = {}; }
     // 수신 연동은 아웃박스가 아니라 수신 이력으로 센다(created·updated=성공, rejected=거절).
-    let inbound = { pending: 0, sent: 0, failed: 0, skipped: 0 };
-    try {
-      const rows = (await query(`SELECT result, count(*)::int AS n FROM crm_inbound_log GROUP BY 1`)).rows;
-      for (const r of rows) {
-        if (r.result === 'rejected') inbound.failed += Number(r.n);
-        else inbound.sent += Number(r.n);
-      }
-    } catch (_) { /* 0208 전 */ }
+    //   ⚠ **창구별로** 센다. 예전에는 전체를 세어 모든 수신 연동에 같은 숫자를 붙였다.
+    const inb = await inboundCounts();
+    const inboundFor = (key) => {
+      const c = inb[key] || { created: 0, updated: 0, rejected: 0 };
+      return { pending: 0, sent: Number(c.created) + Number(c.updated), failed: Number(c.rejected), skipped: 0 };
+    };
     return {
       migrated: await endpointsReady(),
       engine: crmStatus(),
       items: eps.map((e) => ({ ...e,
-        counts: e.direction === 'in' ? inbound
+        counts: e.direction === 'in' ? inboundFor(e.key)
           : (counts[e.key] || { pending: 0, sent: 0, failed: 0, skipped: 0 }) })),
     };
   });
