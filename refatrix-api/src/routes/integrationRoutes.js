@@ -42,10 +42,21 @@ export default async function integrationRoutes(app) {
         counts[r.k][r.status] = Number(r.n);
       }
     } catch (_) { counts = {}; }
+    // 수신 연동은 아웃박스가 아니라 수신 이력으로 센다(created·updated=성공, rejected=거절).
+    let inbound = { pending: 0, sent: 0, failed: 0, skipped: 0 };
+    try {
+      const rows = (await query(`SELECT result, count(*)::int AS n FROM crm_inbound_log GROUP BY 1`)).rows;
+      for (const r of rows) {
+        if (r.result === 'rejected') inbound.failed += Number(r.n);
+        else inbound.sent += Number(r.n);
+      }
+    } catch (_) { /* 0208 전 */ }
     return {
       migrated: await endpointsReady(),
       engine: crmStatus(),
-      items: eps.map((e) => ({ ...e, counts: counts[e.key] || { pending: 0, sent: 0, failed: 0, skipped: 0 } })),
+      items: eps.map((e) => ({ ...e,
+        counts: e.direction === 'in' ? inbound
+          : (counts[e.key] || { pending: 0, sent: 0, failed: 0, skipped: 0 }) })),
     };
   });
 
@@ -91,6 +102,12 @@ export default async function integrationRoutes(app) {
   app.post('/api/integrations/:key/test', guard, async (req, reply) => {
     const ep = await getEndpoint(req.params.key);
     if (!ep) return reply.code(404).send({ error: 'not_found' });
+    // 0208 · 수신 연동은 우리가 쏘는 게 아니라 **상대가 우리에게 쏜다**. 시험 전송할 대상이 없다.
+    if (ep.direction === 'in') {
+      return reply.code(400).send({ error: 'inbound_endpoint',
+        note: '이 연동은 수신용입니다 — 상대(CRM)가 우리 주소로 보냅니다. '
+            + '키를 발급해 상대에게 주고, 결과는 「수신 이력」에서 확인하세요.' });
+    }
     if (!activeUrl(ep)) {
       return reply.code(400).send({ error: 'url_missing', note: (ep.env === 'prod' ? '운영' : '테스트') + ' URL 이 비어 있습니다.' });
     }

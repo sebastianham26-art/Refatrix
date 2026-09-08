@@ -23,6 +23,8 @@ import { normalizeClaimKey, computeBaselineDiscount, validateChosenDiscount,
          nameSimilarity, NAME_SIMILAR_THRESHOLD } from '../customerClaim.js';
 import { MERGE_MOVES, MOVED_TABLES, safeIdent, residualLabel,
          checkMerge, moveTotal, mergeNote } from '../customerMerge.js';
+// 코드 채번은 CRM 수신부(0208)와 **같은 규칙**을 써야 한다 → 공용 모듈로 뺐다.
+import { computeNextCode } from '../customerCode.js';
 
 const VISIT_TZ = 'America/Mexico_City';   // 방문 시각 표시 기준(현지)
 const VISIT_HIST_LIMIT = 300;             // 상담·방문 이력 1회 조회 상한(방문·미팅 각각)
@@ -265,20 +267,7 @@ export default async function customerRoutes(app) {
     return crmColsReady;
   }
 
-  async function computeNextCode(prefix = 'C') {
-    // ⚠ 삭제된 고객(soft delete)의 코드도 세어야 한다.
-    //   customers.code 에는 유니크 제약이 걸려 있고 소프트삭제 행은 테이블에 그대로 남으므로,
-    //   deleted_at IS NULL 만 보면 이미 쓰인 번호를 다시 뽑아 INSERT 가 계속 실패한다.
-    //   (0185 등록 반려 직후 같은 고객을 재등록하면 code_generation_failed 로 드러남 —
-    //    디렉터가 고객을 삭제한 뒤에도 같은 증상이 났을 잠재 버그였다)
-    const rows = (await query(`SELECT code FROM customers`)).rows;
-    const used = new Set(); let maxn = 0;
-    // 접두어별로 번호를 따로 센다 — C-####(ERP 등록) 와 P-####(CRM 유입) 는 서로 다른 계열이다.
-    const re = new RegExp('^' + prefix + '-?(\\d+)$', 'i');
-    for (const r of rows) { const m = String(r.code || '').match(re); if (m) { const n = parseInt(m[1], 10); used.add(n); if (n > maxn) maxn = n; } }
-    let next = maxn + 1; while (used.has(next)) next++;
-    return prefix.toUpperCase() + '-' + String(next).padStart(4, '0');
-  }
+  //   (채번 규칙은 ../customerCode.js — CRM 수신 등록(P-####)과 한 곳에서 관리한다)
 
   // 다음 고객코드 자동생성(미리보기). 대소문자 무관, 빈 번호 충돌 회피.
   app.get('/api/customers/next-code', { preHandler: [authGuard, requirePage('customers')] }, async () => {

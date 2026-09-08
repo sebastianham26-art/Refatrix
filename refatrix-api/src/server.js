@@ -56,6 +56,7 @@ import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
 import crmSyncRoutes from './routes/crmSyncRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
+import crmInboundRoutes from './routes/crmInboundRoutes.js';
 import { startCrmSyncWorker } from './crmSync.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
@@ -132,6 +133,7 @@ export function buildApp() {
   app.register(dailySummaryRoutes);
   app.register(crmSyncRoutes);
   app.register(integrationRoutes);
+  app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
 
   // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
   startCrmSyncWorker(app);

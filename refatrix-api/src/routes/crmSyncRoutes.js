@@ -217,7 +217,10 @@ export default async function crmSyncRoutes(app) {
         { origin: 'bulk_push', actorUserId: req.ctx.perm.userId });
       if (out.ok && out.status === 'pending') queued++; else skipped++;
     }
-    await safeAudit(req, { action: 'crm_bulk_push', detail: { scope, queued, skipped } });
+    // ⚠ audit_log.action 은 체크 제약이 있는 고정 목록이다 — 'crm_bulk_push' 를 그대로 넣으면
+    //   제약 위반으로 조용히 버려진다(safeAudit 이 삼킨다). 목록에 있는 'update' 로 남기고
+    //   무슨 작업이었는지는 detail 에 적는다.
+    await safeAudit(req, { action: 'update', detail: { op: 'crm_bulk_push', scope, queued, skipped } });
     // 첫 묶음은 바로 밀어 준다. 적재 직후 예약된 드레인과 겹치면(busy) 잠깐 기다렸다 다시 —
     // 그렇지 않으면 "적재는 됐는데 아무것도 안 나간" 것처럼 보인다. 나머지는 워커가 순서대로 처리한다.
     const drain = { drained: 0, sent: 0, failed: 0, held: 0 };

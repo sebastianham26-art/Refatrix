@@ -85,7 +85,7 @@
   <div class="topbar">
     <div>
       <h1>연동 관리</h1>
-      <div class="sub">ERP → 외부 시스템(CRM · 웹 카달록) 전송 주소 · 계약서 · 이력</div>
+      <div class="sub">ERP ⇄ 외부 시스템(CRM · 웹 카달록) — 전송·수신 주소 · 계약서 · 이력</div>
     </div>
     <a class="portalBtn" href="refatrix-portal.html">← 포털</a>
     <div class="who" id="who"></div>
@@ -114,7 +114,7 @@
           <button class="btn ghost sm" id="btnReloadAll">새로고침</button>
         </div>
         <div class="hint" style="margin-top:10px">
-          연동 1건 = 계약서 1개. 고객정보·제품정보처럼 보내는 대상이 다르면 연동을 나눠 등록합니다.
+          연동 1건 = 계약서 1개. 「수신 ←」 배지가 붙은 건 <b>상대가 우리에게 보내는</b> 창구입니다(웹카달록 신규고객 등).
         </div>
       </div>
 
@@ -160,10 +160,47 @@
             </div>
           </div>
 
+          <!-- 수신 연동(direction=in) 전용 — 우리가 받는 주소와 우리가 발급한 키 -->
+          <div id="boxInbound" class="hidden">
+            <div class="banner warn" style="margin-top:12px">
+              <b>수신 연동</b> — 이 주소로 <b>상대(CRM)가 우리에게</b> 보냅니다. 우리가 보내는 게 아니므로 상대 URL·메서드 설정이 없습니다.
+              아래 주소와 API 키를 상대 개발자에게 주면 됩니다.
+            </div>
+            <label>우리 수신 주소 (상대에게 알려줄 URL)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="fInboundUrl" readonly class="mono" style="font-size:12.5px">
+              <button class="btn ghost sm" id="btnCopyInUrl" style="white-space:nowrap">복사</button>
+            </div>
+            <div class="hint" style="margin-top:6px">
+              키는 <span class="mono">x-api-key</span> 헤더 · <span class="mono">?apiKey=</span> 쿼리 · 본문 <span class="mono">apiKey</span> 필드
+              <b>어디에 실어도 받습니다</b> — 상대 구현을 기다리느라 수신이 막히지 않게 셋 다 열어 뒀습니다.
+            </div>
+            <div class="row2" style="margin-top:12px">
+              <div>
+                <label>테스트용 수신 키</label>
+                <div style="display:flex;gap:8px"><input id="fInKeyTest" readonly placeholder="미발급">
+                  <button class="btn ghost sm" data-env="test" style="white-space:nowrap">새 키 발급</button></div>
+              </div>
+              <div>
+                <label>운영용 수신 키</label>
+                <div style="display:flex;gap:8px"><input id="fInKeyProd" readonly placeholder="미발급">
+                  <button class="btn ghost sm" data-env="prod" style="white-space:nowrap">새 키 발급</button></div>
+              </div>
+            </div>
+            <div class="hint" style="margin-top:6px">
+              키는 <b>서버가 만들고, 발급 직후 한 번만 화면에 보입니다.</b> 그 자리에서 복사해 상대에게 전달하세요 —
+              다시 볼 수는 없고, 잃어버리면 새로 발급하면 됩니다(그 순간 이전 키는 즉시 막힙니다).
+              두 키 <b>모두</b> 유효하게 받아 줍니다(어느 쪽으로 들어왔는지는 수신 이력에 남습니다).
+            </div>
+            <div class="msg" id="inKeyMsg"></div>
+          </div>
+
+          <div id="boxUrls">
           <label>테스트 서버 URL</label><input id="fUrlTest" placeholder="http://…">
           <label>운영 서버 URL</label><input id="fUrlProd" placeholder="https://… (운영 전환 전 반드시 입력)">
+          </div>
 
-          <div class="row3">
+          <div class="row3" id="boxMethods">
             <div><label>등록·수정 메서드</label>
               <select id="fMethodUpsert"><option>POST</option><option>PUT</option><option>PATCH</option><option>GET</option></select></div>
             <div><label>삭제 메서드</label>
@@ -172,7 +209,7 @@
             <div><label>재시도 안 할 코드 <span class="hint">(쉼표 구분)</span></label><input id="fNoRetry" placeholder="ERR_CUSTOMER_NOT_FOUND"></div>
           </div>
 
-          <div class="row3">
+          <div class="row3" id="boxAuth">
             <div><label>키를 싣는 위치</label>
               <select id="fAuthIn">
                 <option value="header">HTTP 헤더</option>
@@ -182,6 +219,7 @@
             <div><label>이름 (헤더명 · 파라미터명)</label><input id="fAuthName" placeholder="x-api-key · apiKey 등"></div>
             <div><label>타임아웃 (ms)</label><input id="fTimeout" placeholder="10000"></div>
           </div>
+          <div id="boxTokens">
           <div class="row2">
             <div><label>테스트 서버 API 키</label><input id="fTokenTest" placeholder="변경할 때만 입력"></div>
             <div><label>운영 서버 API 키</label><input id="fTokenProd" placeholder="변경할 때만 입력"></div>
@@ -191,9 +229,10 @@
             헤더 이름이 <span class="mono">Authorization</span> 이고 개발자가 <span class="mono">Bearer</span> 방식이라고 하면 값에 <span class="mono">Bearer 키값</span> 처럼 접두어까지 넣으세요.
             저장된 키는 화면에 다시 표시되지 않습니다(칸을 비워 두면 그대로 유지, 지우려면 <span class="mono">-</span> 한 글자를 넣고 저장).
           </div>
+          </div>
           <div><label>정렬 순서</label><input id="fSort" placeholder="100"></div>
 
-          <div>
+          <div id="boxUserField">
             <label>transactionUser 로 보낼 값</label>
             <select id="fUserField">
               <option value="login_id">ERP 로그인 아이디 (login_id)</option>
@@ -249,8 +288,42 @@
           <div class="msg" id="contractMsg"></div>
         </div>
 
-        <!-- ③ 전송 이력 -->
+        <!-- ③ 전송 이력 / 수신 이력 -->
         <div id="paneLog" class="hidden">
+
+          <!-- ③-b 수신 이력 (direction=in) -->
+          <div id="logIn" class="hidden">
+            <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+              <div class="kpi sent"><div class="n" id="iCreated">–</div><div class="l">신규 접수</div></div>
+              <div class="kpi"><div class="n" id="iUpdated">–</div><div class="l">기존 갱신</div></div>
+              <div class="kpi failed"><div class="n" id="iRejected">–</div><div class="l">거절</div></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="iFilter" style="width:auto">
+                <option value="">전체</option>
+                <option value="created">신규 접수</option>
+                <option value="updated">기존 갱신</option>
+                <option value="rejected">거절</option>
+              </select>
+              <button class="btn ghost sm" id="btnInReload">조회</button>
+              <span class="hint" id="inMeta" style="margin-left:auto"></span>
+            </div>
+            <div class="tblwrap" style="margin-top:10px"><table>
+              <thead><tr>
+                <th style="width:120px">시각</th><th style="width:150px">RFC</th><th style="width:150px">고객</th>
+                <th style="width:96px">결과</th><th style="width:104px">응답</th>
+                <th>메시지</th><th style="width:70px"></th>
+              </tr></thead>
+              <tbody id="inRows"><tr><td colspan="7" class="empty">조회하세요.</td></tr></tbody>
+            </table></div>
+            <div class="hint" style="margin-top:10px">
+              접수된 고객은 <b>고객 &gt; 승인 대기</b> 탭에 <span class="mono">P-####</span> 코드와 🌐 CRM 등록 배지로 나타납니다.
+              같은 RFC 를 다시 보내와도 고객이 중복 생성되지 않고 <b>기존 갱신</b>으로 처리됩니다.
+              「원문」을 누르면 상대가 실제로 보낸 JSON 을 그대로 볼 수 있습니다 — 필드 이름이 계약과 다를 때 여기서 확인하세요.
+            </div>
+          </div>
+
+          <div id="logOut">
           <div class="kpis">
             <div class="kpi pending"><div class="n" id="kPending">–</div><div class="l">대기</div></div>
             <div class="kpi failed"><div class="n" id="kFailed">–</div><div class="l">실패</div></div>
@@ -285,6 +358,7 @@
             승인 즉시 1회 전송하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도합니다.
             6회 실패하면 <b>실패</b>로 남고 멈춥니다 — 원인을 고친 뒤 <b>재전송</b>을 누르세요.
             연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기 상태로 남습니다.
+          </div>
           </div>
         </div>
       </div>
@@ -356,13 +430,15 @@
   function renderEpList(){
     $('epList').innerHTML=EPS.map(function(e){
       const c=e.counts||{};
-      const badges='<span class="pill '+(e.enabled?'p-on':'p-off')+'">'+(e.enabled?'전송 켜짐':'꺼짐')+'</span>'
-        +'<span class="pill '+(e.env==='prod'?'p-prod':'p-test')+'">'+(e.env==='prod'?'운영':'테스트')+'</span>'
+      const inb=e.direction==='in';
+      const badges=(inb?'<span class="pill p-skipped">수신 ←</span>':'')
+        +'<span class="pill '+(e.enabled?'p-on':'p-off')+'">'+(e.enabled?(inb?'수신 켜짐':'전송 켜짐'):'꺼짐')+'</span>'
+        +(inb?'':'<span class="pill '+(e.env==='prod'?'p-prod':'p-test')+'">'+(e.env==='prod'?'운영':'테스트')+'</span>')
         +(c.pending?'<span class="pill p-pending">대기 '+c.pending+'</span>':'')
-        +(c.failed?'<span class="pill p-failed">실패 '+c.failed+'</span>':'');
+        +(c.failed?'<span class="pill p-failed">'+(inb?'거절 ':'실패 ')+c.failed+'</span>':'');
       return '<div class="ep'+(CUR&&CUR.key===e.key?' sel':'')+'" onclick="selectEp(\''+e.key+'\')">'
         +'<div class="t">'+esc(e.label)+' <span class="hint">· '+esc(CAT_LABEL[e.category]||e.category)+'</span></div>'
-        +'<div class="m mono">'+esc(e.active_url||'(주소 미설정)')+'</div>'
+        +'<div class="m mono">'+esc(inb?(e.inbound_path||''):(e.active_url||'(주소 미설정)'))+'</div>'
         +'<div class="b">'+badges+'</div></div>';
     }).join('');
   }
@@ -379,6 +455,27 @@
   }
 
   // ===== ① 연결 설정 =====
+  // 0208 · 수신 연동은 화면의 절반이 무의미하다(상대 주소·메서드·전송 키).
+  //   숨기지 않으면 "여기 URL 을 넣어야 하나?" 로 반드시 헷갈린다.
+  function applyDirection(){
+    const inb = CUR && CUR.direction==='in';
+    ['boxUrls','boxMethods','boxAuth','boxTokens','boxUserField'].forEach(id=>$(id).classList.toggle('hidden',!!inb));
+    $('boxInbound').classList.toggle('hidden',!inb);
+    $('btnTest').classList.toggle('hidden',!!inb);
+    $('tCustomer').classList.toggle('hidden',!!inb);
+    $('enabledHint').textContent = inb ? '끄면 CRM 이 보내와도 받지 않고 거절합니다.' : '끄면 전송 건이 대기함에 쌓이기만 합니다.';
+    document.querySelector('.tab[data-tab="log"]').textContent = inb ? '수신 이력' : '전송 이력';
+    $('logIn').classList.toggle('hidden',!inb);
+    $('logOut').classList.toggle('hidden',!!inb);
+    if(inb){
+      const base=(session.api||'').replace(/\/+$/,'');
+      $('fInboundUrl').value = base + (CUR.inbound_path||'/api/integrations/crm/customer-registration');
+      $('fInKeyTest').value=''; $('fInKeyTest').placeholder = CUR.has_token_test?'●●●● 발급됨 (값은 다시 볼 수 없음)':'미발급';
+      $('fInKeyProd').value=''; $('fInKeyProd').placeholder = CUR.has_token_prod?'●●●● 발급됨 (값은 다시 볼 수 없음)':'미발급';
+      $('inKeyMsg').className='msg';
+    }
+  }
+
   function fillCfg(){
     const e=CUR;
     $('fLabel').value=e.label||''; $('fCategory').value=e.category||'other'; $('fDesc').value=e.description||'';
@@ -393,11 +490,17 @@
     $('fTokenProd').value=''; $('fTokenProd').placeholder=e.has_token_prod?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
     $('fTimeout').value=e.timeout_ms||10000; $('fUserField').value=e.user_field||'login_id';
     $('fSort').value=e.sort_order==null?100:e.sort_order;
+    applyDirection();
     const warn=[];
+    if(e.direction==='in'){
+      if(!e.has_token_test&&!e.has_token_prod) warn.push('수신 키가 아직 없습니다 — 키를 발급해 CRM 개발자에게 주기 전까지 모든 수신이 401 로 거절됩니다.');
+      if(!e.enabled) warn.push('수신이 꺼져 있습니다 — CRM 이 보내와도 받지 않습니다.');
+    } else {
     if(e.active_url&&!e.secure) warn.push('지금 주소는 HTTP(평문)입니다 — 고객 RFC·할인율이 암호화 없이 전송됩니다.');
     if(e.env==='prod'&&!e.url_prod) warn.push('운영으로 지정됐지만 운영 URL 이 비어 있습니다.');
     if(!e.has_token) warn.push((e.env==='prod'?'운영':'테스트')+' 서버 API 키가 비어 있어 인증 없이 호출합니다.');
     if(e.has_token) warn.push('키 전달 방식: '+(e.auth_in==='query'?('주소 뒤 ?'+(e.auth_param||'apiKey')+'='):(e.auth_in==='body'?('본문 필드 '+(e.auth_param||'apiKey')):('헤더 '+(e.auth_header||'Authorization')))));
+    }
     $('cfgMeta').innerHTML=e.updated_at?('마지막 수정 '+new Date(e.updated_at).toLocaleString('ko-KR')):'';
     const m=$('cfgMsg');
     if(warn.length){ m.className='msg warn'; m.innerHTML=warn.map(esc).join('<br>'); } else { m.className='msg'; m.textContent=''; }
@@ -426,8 +529,9 @@
   async function saveCfg(){
     const m=$('cfgMsg'); m.className='msg'; $('btnSaveCfg').disabled=true;
     const p=cfgPatch();
-    if(p.enabled&&p.env==='prod'&&!p.url_prod){ m.className='msg err'; m.textContent='운영 URL 을 먼저 입력하세요.'; $('btnSaveCfg').disabled=false; return; }
-    if(p.enabled&&p.env==='prod'&&!confirm('운영 서버로 실제 전송을 시작합니다. 계속할까요?')){ $('btnSaveCfg').disabled=false; return; }
+    const inb = CUR && CUR.direction==='in';   // 수신 연동은 상대 URL 자체가 없다
+    if(!inb&&p.enabled&&p.env==='prod'&&!p.url_prod){ m.className='msg err'; m.textContent='운영 URL 을 먼저 입력하세요.'; $('btnSaveCfg').disabled=false; return; }
+    if(!inb&&p.enabled&&p.env==='prod'&&!confirm('운영 서버로 실제 전송을 시작합니다. 계속할까요?')){ $('btnSaveCfg').disabled=false; return; }
     try{
       const res=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key),{method:'PUT',headers:jauth(),body:JSON.stringify(p)});
       const d=await res.json();
@@ -532,9 +636,59 @@
     return L.join('\n');
   }
 
+  // ===== ③-b 수신 이력 (direction=in) =====
+  let INLOG=[], INDETAIL=null;
+  const IN_RESULT={created:'신규 접수',updated:'기존 갱신',rejected:'거절'};
+  async function loadInbound(){
+    const f=$('iFilter').value;
+    try{
+      const d=await fetch(session.api+'/api/crm-inbound/history'+(f?('?result='+f):''),{headers:auth()}).then(r=>r.json());
+      if(d.migrated===false){ $('inRows').innerHTML='<tr><td colspan="7" class="empty">0208 마이그레이션이 아직 적용되지 않았습니다.</td></tr>'; return; }
+      const s=d.summary||{};
+      $('iCreated').textContent=s.created||0; $('iUpdated').textContent=s.updated||0; $('iRejected').textContent=s.rejected||0;
+      INLOG=d.items||[];
+      $('inRows').innerHTML=INLOG.length?INLOG.map(inRow).join(''):'<tr><td colspan="7" class="empty">아직 수신 건이 없습니다.</td></tr>';
+      $('inMeta').textContent='조회 '+new Date().toLocaleTimeString('ko-KR');
+    }catch(e){ $('inRows').innerHTML='<tr><td colspan="7" class="empty">서버 연결 실패</td></tr>'; }
+  }
+  function inRow(r){
+    const when=new Date(r.created_at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const pill=r.result==='rejected'?'p-failed':(r.result==='created'?'p-sent':'p-skipped');
+    const main='<tr>'
+      +'<td class="num">'+esc(when)+'<div class="hint">'+esc(r.remote_ip||'')+'</div></td>'
+      +'<td class="mono">'+esc(r.rfc||'–')+'<div class="hint">'+esc(r.crm_code?('CRM '+r.crm_code):'')+'</div></td>'
+      +'<td>'+esc(r.customer_name||'–')+'<div class="hint mono">'+esc(r.erp_code||'')+'</div></td>'
+      +'<td><span class="pill '+pill+'">'+esc(IN_RESULT[r.result]||r.result||'–')+'</span></td>'
+      +'<td class="num mono">HTTP '+esc(r.http_status||'')+'<div class="hint">'+esc(r.codigo_error||'')+'</div></td>'
+      +'<td style="word-break:break-word'+(r.result==='rejected'?';color:var(--expense)':'')+'">'+esc(r.mensaje||'')
+        +'<div class="hint">키 위치: '+esc(r.auth_in||'없음')+(r.auth_ok?'':' · 인증 실패')+'</div></td>'
+      +'<td><button class="btn ghost sm" onclick="toggleIn('+r.id+')">원문</button></td></tr>';
+    const det=INDETAIL===r.id
+      ? '<tr class="detail"><td colspan="7"><label>CRM 이 보낸 원문</label><pre class="out">'
+        +esc(JSON.stringify(r.payload,null,2))+'</pre></td></tr>' : '';
+    return main+det;
+  }
+  function toggleIn(id){ INDETAIL=(INDETAIL===id?null:id); $('inRows').innerHTML=INLOG.map(inRow).join(''); }
+
+  async function issueKey(env){
+    const m=$('inKeyMsg'); m.className='msg';
+    if(!confirm((env==='prod'?'운영':'테스트')+'용 수신 키를 새로 발급합니다.\n\n지금 쓰고 있는 키가 있다면 그 즉시 막힙니다 — 새 키를 CRM 개발자에게 전달해야 수신이 다시 됩니다.\n\n계속할까요?')) return;
+    try{
+      const d=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/inbound-key',
+        {method:'POST',headers:jauth(),body:JSON.stringify({env})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent='발급 실패: '+(d.note||d.error); return; }
+      await loadEndpoints(CUR.key);
+      // ⚠ 목록 새로고침이 화면을 다시 그려 칸을 비운다 — 그 **뒤에** 값을 넣어야 남는다.
+      $(env==='prod'?'fInKeyProd':'fInKeyTest').value=d.token;
+      m.className='msg ok';
+      m.innerHTML='새 키를 발급했습니다. <b>지금 복사해 CRM 개발자에게 전달하세요</b> — 화면을 나가면 다시 볼 수 없습니다.';
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
   // ===== ③ 전송 이력 =====
   async function loadLog(){
     if(!CUR) return;
+    if(CUR.direction==='in') return loadInbound();
     try{
       const s=await fetch(session.api+'/api/crm-sync/summary',{headers:auth()}).then(r=>r.json());
       const c=(s.by_endpoint&&s.by_endpoint[CUR.key])||{};
@@ -691,7 +845,19 @@
   $('btnNew').addEventListener('click',newEndpoint);
   $('btnReloadAll').addEventListener('click',()=>loadEndpoints(CUR&&CUR.key));
 
-  window.selectEp=selectEp; window.setF=setF; window.rmF=rmF; window.retry=retry; window.toggleDetail=toggleDetail;
+  $('btnInReload').addEventListener('click',loadInbound);
+  $('iFilter').addEventListener('change',loadInbound);
+  document.querySelectorAll('#boxInbound button[data-env]').forEach(function(b){
+    b.addEventListener('click',()=>issueKey(b.dataset.env));
+  });
+  $('btnCopyInUrl').addEventListener('click',async function(){
+    try{ await navigator.clipboard.writeText($('fInboundUrl').value);
+      $('inKeyMsg').className='msg ok'; $('inKeyMsg').textContent='수신 주소를 복사했습니다.'; }
+    catch(e){ $('fInboundUrl').select(); }
+  });
+
+  window.selectEp=selectEp; window.setF=setF; window.rmF=rmF; window.retry=retry;
+  window.toggleDetail=toggleDetail; window.toggleIn=toggleIn;
 
   (function(){
     const ps=portalSession();

@@ -105,9 +105,14 @@ export async function listEndpoints() {
 export function publicEndpoint(ep) {
   if (!ep) return null;
   const url = activeUrl(ep);
+  const direction = ep.direction === 'in' ? 'in' : 'out';
   return {
     key: ep.key, category: ep.category, label: ep.label, description: ep.description,
     enabled: !!ep.enabled, env: ep.env,
+    // 0208 · 방향. 'in' 은 **상대가 우리에게 보낸다** — url_* 대신 inbound_path 가 우리 주소이고,
+    //   auth_token_* 는 우리가 발급해서 상대에게 준 키다(전송 대상이 아니라 수신 검증용).
+    direction,
+    inbound_path: ep.inbound_path || null,
     url_test: ep.url_test || '', url_prod: ep.url_prod || '',
     active_url: url,
     active_host: url ? url.replace(/^https?:\/\//, '').split('/')[0] : null,
@@ -133,7 +138,9 @@ const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_tes
   'timeout_ms', 'contract', 'sort_order', 'no_retry_codes'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
-export function validatePatch(p) {
+export function validatePatch(p, cur = null) {
+  // 수신(direction='in')은 상대 주소가 없다 — 운영 URL 을 요구하면 저장 자체가 막힌다.
+  const inbound = String(p.direction || cur?.direction || 'out') === 'in';
   if (p.env != null && !['test', 'prod'].includes(String(p.env))) return 'env_invalid';
   // 인증 위치: 헤더 · 쿼리스트링 · 본문 (CRM 마다 다르다)
   if (p.auth_in != null && !['header', 'query', 'body'].includes(String(p.auth_in))) return 'auth_in_invalid';
@@ -151,7 +158,7 @@ export function validatePatch(p) {
     if (v && !/^https?:\/\//i.test(v)) return 'url_invalid';
   }
   // 운영으로 전환하려면 운영 URL 이 있어야 한다. 빈 주소로 켜 두면 전송이 조용히 멈춘다.
-  if (String(p.env) === 'prod' && p.url_prod != null && !String(p.url_prod).trim()) return 'url_prod_required';
+  if (!inbound && String(p.env) === 'prod' && p.url_prod != null && !String(p.url_prod).trim()) return 'url_prod_required';
   return null;
 }
 
@@ -162,7 +169,7 @@ export function validatePatch(p) {
 export async function saveEndpoint(key, patch, userId) {
   const cur = (await query(`SELECT * FROM integration_endpoints WHERE key=$1`, [key])).rows[0];
   if (!cur) return { error: 'not_found' };
-  const bad = validatePatch(patch);
+  const bad = validatePatch(patch, cur);
   if (bad) return { error: bad };
 
   const sets = [];
