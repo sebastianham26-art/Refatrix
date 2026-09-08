@@ -82,7 +82,21 @@ export function buildPayload(op, c, transactionUser, reason) {
     discountPercent: c.discount == null ? 0 : Number(c.discount),
     paymentDays: c.credit_days == null ? 0 : Number(c.credit_days),
     transactionUser,
+    // 승인 상태를 **같이 보낸다.** 이게 없으면 ERP 에서 승인을 끝내도 CRM 쪽 고객은
+    //   「Aprobación pendiente」 로 영원히 남는다(P-0001 에서 실제로 그렇게 됐다).
+    //   반려(reject)는 이미 estatus 를 보내고 있었으니 이제 양쪽이 대칭이다.
+    //   ⚠ 'aprobado' 를 박아 넣지 않는다 — 전체 동기화(scope=all)로 승인 대기 고객이
+    //     섞여 나갈 수 있고, 그때 승인됐다고 알리면 CRM 이 잘못된 상태를 갖게 된다.
+    estatus: crmEstatus(c.approval_status),
   };
+}
+
+/** ERP 승인 상태 → CRM 이 쓰는 스페인어 상태값. */
+export function crmEstatus(approvalStatus) {
+  const s = String(approvalStatus == null || approvalStatus === '' ? 'approved' : approvalStatus);
+  if (s === 'pending') return 'pendiente';
+  if (s === 'rejected') return 'rechazado';
+  return 'aprobado';   // approved · 그리고 approval_status 컬럼이 없던 시절의 레거시 행
 }
 
 async function actorName(userId, userField) {

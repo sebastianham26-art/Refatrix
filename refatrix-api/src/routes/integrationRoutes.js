@@ -7,7 +7,7 @@ import {
   saveEndpoint, createEndpoint, activeUrl, invalidateEndpointCache,
   activeToken,
 } from '../integrations.js';
-import { sendPayload, isSuccess, crmStatus } from '../crmSync.js';
+import { sendPayload, isSuccess, crmStatus, buildPayload } from '../crmSync.js';
 
 const ERR_NOTE = {
   env_invalid: '환경은 test 또는 prod 만 됩니다.',
@@ -123,18 +123,24 @@ export default async function integrationRoutes(app) {
       let c = null;
       if (b.customer_id) {
         c = (await query(
-          `SELECT id, code, name, rfc, discount, credit_days FROM customers WHERE id=$1`, [Number(b.customer_id)])).rows[0];
+          `SELECT id, code, name, rfc, discount, credit_days,
+                  COALESCE(approval_status,'approved') AS approval_status
+             FROM customers WHERE id=$1`, [Number(b.customer_id)])).rows[0];
         if (!c) return reply.code(404).send({ error: 'customer_not_found' });
       } else if (String(b.customer_query || '').trim()) {
         const q = `%${String(b.customer_query).trim()}%`;
         c = (await query(
-          `SELECT id, code, name, rfc, discount, credit_days FROM customers
+          `SELECT id, code, name, rfc, discount, credit_days,
+                  COALESCE(approval_status,'approved') AS approval_status
+             FROM customers
             WHERE deleted_at IS NULL AND (code ILIKE $1 OR name ILIKE $1 OR rfc ILIKE $1)
             ORDER BY (rfc IS NULL), id DESC LIMIT 1`, [q])).rows[0];
         if (!c) return reply.code(404).send({ error: 'customer_not_found', note: '그 조건으로 고객을 찾지 못했습니다.' });
       } else {
         c = (await query(
-          `SELECT id, code, name, rfc, discount, credit_days FROM customers
+          `SELECT id, code, name, rfc, discount, credit_days,
+                  COALESCE(approval_status,'approved') AS approval_status
+             FROM customers
             WHERE deleted_at IS NULL AND rfc IS NOT NULL AND btrim(rfc) <> ''
               AND COALESCE(approval_status,'approved')='approved'
             ORDER BY id DESC LIMIT 1`)).rows[0];
@@ -145,9 +151,10 @@ export default async function integrationRoutes(app) {
         }
         const u = (await query(`SELECT login_id, name, role FROM users WHERE id=$1`, [req.ctx.perm.userId])).rows[0] || {};
         const f = ['login_id', 'name', 'role'].includes(ep.user_field) ? ep.user_field : 'login_id';
-        payload = op === 'delete'
-          ? { rfc: String(c.rfc).trim(), transactionUser: String(u[f] || 'erp') }
-          : { rfc: String(c.rfc).trim(), discountPercent: Number(c.discount || 0), paymentDays: Number(c.credit_days || 0), transactionUser: String(u[f] || 'erp') };
+        // ⚠ 본문은 **실제 전송과 같은 함수**로 만든다. 예전에는 여기서 따로 조립했는데,
+        //   그러면 계약이 바뀔 때(예: estatus 추가) 시험 전송만 옛 본문을 보내
+        //   "테스트는 되는데 실전은 안 되는" 상황이 생긴다.
+        payload = buildPayload(op, c, String(u[f] || 'erp'));
         usedCustomer = { id: Number(c.id), code: c.code, name: c.name };
       }
     }

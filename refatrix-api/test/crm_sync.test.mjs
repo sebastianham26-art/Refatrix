@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 
 const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
@@ -31,14 +32,52 @@ const crm = http.createServer((req, res) => {
 await new Promise((r) => crm.listen(0, '127.0.0.1', r));
 process.env.CRM_SYNC_URL = `http://127.0.0.1:${crm.address().port}/api/integrations/erp/customer-commercial`;
 
-const { buildPayload, isSuccess, nextDelaySec, MAX_ATTEMPTS } = await import('../src/crmSync.js');
+const { buildPayload, isSuccess, nextDelaySec, MAX_ATTEMPTS, crmEstatus } = await import('../src/crmSync.js');
 const { validatePatch, publicEndpoint, activeUrl } = await import('../src/integrations.js');
 
 // ── ① 순수 로직 ────────────────────────────────────────────────
-test('본문은 계약의 4개 필드만 담는다', () => {
-  const p = buildPayload('upsert', { rfc: ' FEL990715AB1 ', discount: '12.50', credit_days: 30 }, 'admin');
-  assert.deepEqual(p, { rfc: 'FEL990715AB1', discountPercent: 12.5, paymentDays: 30, transactionUser: 'admin' });
-  assert.deepEqual(Object.keys(p).sort(), ['discountPercent', 'paymentDays', 'rfc', 'transactionUser']);
+test('본문은 계약의 5개 필드만 담는다(estatus 포함)', () => {
+  const p = buildPayload('upsert',
+    { rfc: ' FEL990715AB1 ', discount: '12.50', credit_days: 30, approval_status: 'approved' }, 'admin');
+  assert.deepEqual(p, { rfc: 'FEL990715AB1', discountPercent: 12.5, paymentDays: 30,
+    transactionUser: 'admin', estatus: 'aprobado' });
+  assert.deepEqual(Object.keys(p).sort(),
+    ['discountPercent', 'estatus', 'paymentDays', 'rfc', 'transactionUser']);
+});
+
+// 승인 상태를 안 보내면 ERP 에서 승인을 끝내도 CRM 고객이 「Aprobación pendiente」 로
+//   영원히 남는다 — P-0001 에서 실제로 그렇게 됐다.
+test('승인 전송은 estatus=aprobado 를 함께 보낸다', () => {
+  const p = buildPayload('upsert', { rfc: 'X', discount: 30, credit_days: 45, approval_status: 'approved' }, 'admin');
+  assert.equal(p.estatus, 'aprobado');
+});
+
+test('승인 대기 고객을 밀어도 aprobado 라고 하지 않는다', () => {
+  // 전체 동기화(scope=all)에는 승인 대기 고객이 섞일 수 있다. 그때 승인됐다고 알리면
+  // CRM 이 잘못된 상태를 갖게 되고, 그건 상태를 안 보내는 것보다 나쁘다.
+  assert.equal(buildPayload('upsert', { rfc: 'X', approval_status: 'pending' }, 'admin').estatus, 'pendiente');
+  assert.equal(crmEstatus('rejected'), 'rechazado');
+});
+
+test('approval_status 가 없던 레거시 행은 aprobado 로 본다', () => {
+  // 0185 이전 고객에는 이 컬럼 값이 없다. 그 고객들은 이미 거래 중이므로 승인된 것으로 본다.
+  assert.equal(buildPayload('upsert', { rfc: 'X' }, 'admin').estatus, 'aprobado');
+  assert.equal(crmEstatus(null), 'aprobado');
+  assert.equal(crmEstatus(''), 'aprobado');
+});
+
+test('삭제·반려 본문에는 상태가 섞이지 않는다', () => {
+  const del = buildPayload('delete', { rfc: 'X', approval_status: 'approved' }, 'admin');
+  assert.equal('estatus' in del, false, '삭제는 상태를 말할 자리가 아니다');
+  assert.equal(buildPayload('reject', { rfc: 'X', approval_status: 'rejected' }, 'admin', '사유').estatus, 'rechazado');
+});
+
+test('시험 전송도 실전과 같은 본문 조립기를 쓴다', () => {
+  // 예전에는 integrationRoutes 가 본문을 따로 만들었다 — 계약이 바뀌면
+  // 「테스트는 되는데 실전은 안 되는」 상태가 된다.
+  const src = readFileSync(new URL('../src/routes/integrationRoutes.js', import.meta.url), 'utf8');
+  assert.ok(/buildPayload\(op, c,/.test(src), '연결 테스트가 buildPayload 를 써야 한다');
+  assert.equal(/discountPercent:\s*Number\(c\.discount/.test(src), false, '본문을 따로 조립하면 안 된다');
 });
 
 test('삭제 본문은 rfc + transactionUser 만 보낸다', () => {
@@ -140,8 +179,10 @@ dbTest('적재 → 전송 → 재시도 → 삭제 (실 DB)', async (t) => {
     assert.equal(Number(row.http_status), 200);
     assert.ok(row.sent_at);
     assert.equal(received[0].method, 'POST');
+    // CRM 이 실제로 받는 본문 — 승인 상태까지 포함해 그대로 못 박는다.
     assert.deepEqual(received[0].body,
-      { rfc: 'FEL990715AB1', discountPercent: 15, paymentDays: 45, transactionUser: 'dir_test' });
+      { rfc: 'FEL990715AB1', discountPercent: 15, paymentDays: 45,
+        transactionUser: 'dir_test', estatus: 'aprobado' });
   });
 
   await t.test('RFC 가 없으면 보내지 않고 skipped 로 남는다', async () => {
