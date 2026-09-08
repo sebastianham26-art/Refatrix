@@ -76,6 +76,15 @@
   .banner{border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.6;margin-bottom:12px}
   .banner.warn{background:var(--warn-bg);color:var(--warn);border:1px solid #e6d5ae}
   .banner.err{background:var(--expense-bg);color:var(--expense);border:1px solid #e7b6af}
+  /* 발급된 키를 보여 주는 창 — 「닫기」 를 누르기 전까지 절대 사라지지 않는다.
+     (키는 이때 딱 한 번만 볼 수 있으므로 화면이 저절로 다시 그려지면 그대로 잃어버린다) */
+  .modalBack{position:fixed;inset:0;background:rgba(20,18,15,.55);display:flex;align-items:center;
+    justify-content:center;padding:20px;z-index:9999}
+  .modalBox{background:var(--card);border-radius:var(--radius);padding:20px;max-width:620px;width:100%;
+    box-shadow:0 18px 50px rgba(0,0,0,.28)}
+  .modalBox h3{margin:0 0 4px;font-size:16px;color:var(--brand)}
+  .keyOut{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+    padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#faf8f3;word-break:break-all}
   @media(max-width:900px){ .cols{grid-template-columns:1fr} .row2,.row3{grid-template-columns:1fr} body{padding:14px} }
 </style>
 </head>
@@ -99,6 +108,28 @@
     <label>PIN</label><input id="pin" type="password">
     <div style="margin-top:12px"><button class="btn" id="go">로그인</button></div>
     <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- 발급된 수신 키 — 「닫기」 를 누를 때까지 유지된다(바깥 클릭·ESC 로 닫히지 않는다) -->
+  <div id="keyModal" class="modalBack hidden">
+    <div class="modalBox">
+      <h3>수신 API 키가 발급되었습니다</h3>
+      <div class="hint" id="keyModalEnv"></div>
+      <div style="margin-top:12px"><textarea id="keyModalVal" class="keyOut" rows="2" readonly></textarea></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" id="keyModalCopy">키 복사</button>
+        <button class="btn ghost" id="keyModalCopyAll">주소 + 키 함께 복사</button>
+        <span class="hint" id="keyModalNote"></span>
+      </div>
+      <div class="banner warn" style="margin-top:14px">
+        이 키는 <b>지금만 볼 수 있습니다.</b> 닫고 나면 어디에서도 다시 확인할 수 없습니다 —
+        CRM 개발자에게 전달할 곳(메일·메신저)에 <b>먼저 붙여 넣은 뒤</b> 닫으세요.
+        잃어버려도 새로 발급하면 되지만, 그 순간 지금 쓰던 키는 막힙니다.
+      </div>
+      <div style="margin-top:14px;text-align:right">
+        <button class="btn" id="keyModalClose">닫기</button>
+      </div>
+    </div>
   </div>
 
   <div id="app" class="hidden">
@@ -188,8 +219,9 @@
               </div>
             </div>
             <div class="hint" style="margin-top:6px">
-              키는 <b>서버가 만들고, 발급 직후 한 번만 화면에 보입니다.</b> 그 자리에서 복사해 상대에게 전달하세요 —
-              다시 볼 수는 없고, 잃어버리면 새로 발급하면 됩니다(그 순간 이전 키는 즉시 막힙니다).
+              키는 <b>서버가 만들고, 발급 직후 창이 하나 뜹니다.</b> 그 창은 <b>「닫기」를 누르기 전까지 사라지지 않으니</b>
+              천천히 복사해 상대에게 전달하세요 — 닫고 나면 다시 볼 수 없고,
+              잃어버리면 새로 발급하면 됩니다(그 순간 이전 키는 즉시 막힙니다).
               두 키 <b>모두</b> 유효하게 받아 줍니다(어느 쪽으로 들어왔는지는 수신 이력에 남습니다).
             </div>
             <div class="msg" id="inKeyMsg"></div>
@@ -670,6 +702,50 @@
   }
   function toggleIn(id){ INDETAIL=(INDETAIL===id?null:id); $('inRows').innerHTML=INLOG.map(inRow).join(''); }
 
+  // ── 발급된 키 창 ───────────────────────────────────────────────────
+  //   ⚠ 예전에는 발급 직후 목록을 새로고침했는데, 그 새로고침이 화면을 다시 그리면서
+  //     방금 넣은 키를 지워 버렸다(loadEndpoints 안의 selectEp 가 await 되지 않아
+  //     내가 값을 넣은 **뒤에** 늦게 도착해 덮어썼다). 키는 그 순간이 지나면
+  //     어디에서도 다시 볼 수 없으므로, 저절로 사라지는 화면은 그 자체가 사고다.
+  //     이제 키는 **모달**에 담고, 새로고침은 사람이 「닫기」 를 누른 뒤에만 한다.
+  let KEY_MODAL = null;    // { env, token, copied }
+
+  function openKeyModal(env, token){
+    KEY_MODAL = { env, token, copied: false };
+    $('keyModalEnv').textContent = (env==='prod'?'운영':'테스트') + '용 수신 키 · 연동 ' + (CUR?CUR.label:'');
+    $('keyModalVal').value = token;
+    $('keyModalNote').textContent = '';
+    $('keyModal').classList.remove('hidden');
+    setTimeout(function(){ try{ $('keyModalVal').focus(); $('keyModalVal').select(); }catch(e){} }, 40);
+  }
+
+  async function copyKeyModal(withUrl){
+    if(!KEY_MODAL) return;
+    const text = withUrl ? ($('fInboundUrl').value + '\n' + KEY_MODAL.token) : KEY_MODAL.token;
+    try{
+      await navigator.clipboard.writeText(text);
+      KEY_MODAL.copied = true;
+      $('keyModalNote').textContent = withUrl ? '주소와 키를 복사했습니다.' : '키를 복사했습니다.';
+    }catch(e){
+      // 클립보드 권한이 없는 환경(구형 브라우저·비 HTTPS) — 직접 선택해서 복사하게 한다.
+      $('keyModalVal').focus(); $('keyModalVal').select();
+      KEY_MODAL.copied = true;   // 손으로 복사할 수 있게 골라 줬으니 닫기를 막지 않는다
+      $('keyModalNote').textContent = '자동 복사가 막혀 있습니다 — 선택해 뒀으니 Ctrl+C 로 복사하세요.';
+    }
+  }
+
+  function closeKeyModal(){
+    if(KEY_MODAL && !KEY_MODAL.copied
+       && !confirm('아직 복사하지 않았습니다.\n\n닫으면 이 키는 다시 볼 수 없습니다. 정말 닫을까요?')) return;
+    $('keyModal').classList.add('hidden');
+    $('keyModalVal').value='';
+    const env = KEY_MODAL && KEY_MODAL.env;
+    KEY_MODAL = null;
+    const m=$('inKeyMsg'); m.className='msg ok';
+    m.textContent = (env==='prod'?'운영':'테스트')+'용 수신 키를 새로 발급했습니다. 이제 CRM 개발자가 이 키로 호출하면 수신됩니다.';
+    if(CUR) loadEndpoints(CUR.key);   // 화면 갱신은 창을 닫은 뒤에만
+  }
+
   async function issueKey(env){
     const m=$('inKeyMsg'); m.className='msg';
     if(!confirm((env==='prod'?'운영':'테스트')+'용 수신 키를 새로 발급합니다.\n\n지금 쓰고 있는 키가 있다면 그 즉시 막힙니다 — 새 키를 CRM 개발자에게 전달해야 수신이 다시 됩니다.\n\n계속할까요?')) return;
@@ -677,11 +753,8 @@
       const d=await fetch(session.api+'/api/integrations/'+encodeURIComponent(CUR.key)+'/inbound-key',
         {method:'POST',headers:jauth(),body:JSON.stringify({env})}).then(r=>r.json());
       if(d.error){ m.className='msg err'; m.textContent='발급 실패: '+(d.note||d.error); return; }
-      await loadEndpoints(CUR.key);
-      // ⚠ 목록 새로고침이 화면을 다시 그려 칸을 비운다 — 그 **뒤에** 값을 넣어야 남는다.
-      $(env==='prod'?'fInKeyProd':'fInKeyTest').value=d.token;
-      m.className='msg ok';
-      m.innerHTML='새 키를 발급했습니다. <b>지금 복사해 CRM 개발자에게 전달하세요</b> — 화면을 나가면 다시 볼 수 없습니다.';
+      if(!d.token){ m.className='msg err'; m.textContent='발급은 됐지만 키를 받지 못했습니다. 다시 시도하세요.'; return; }
+      openKeyModal(env, d.token);
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
   }
 
@@ -850,6 +923,12 @@
   document.querySelectorAll('#boxInbound button[data-env]').forEach(function(b){
     b.addEventListener('click',()=>issueKey(b.dataset.env));
   });
+  $('keyModalCopy').addEventListener('click',()=>copyKeyModal(false));
+  $('keyModalCopyAll').addEventListener('click',()=>copyKeyModal(true));
+  $('keyModalClose').addEventListener('click',closeKeyModal);
+  // 바깥을 눌러도, ESC 를 눌러도 닫히지 않는다 — 실수로 키를 잃는 경로를 만들지 않는다.
+  $('keyModal').addEventListener('click',function(e){ e.stopPropagation(); });
+
   $('btnCopyInUrl').addEventListener('click',async function(){
     try{ await navigator.clipboard.writeText($('fInboundUrl').value);
       $('inKeyMsg').className='msg ok'; $('inKeyMsg').textContent='수신 주소를 복사했습니다.'; }

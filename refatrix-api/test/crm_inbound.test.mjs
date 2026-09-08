@@ -171,6 +171,22 @@ test('E5. 화면이 수신 연동을 전송 연동과 다르게 그린다', () =
   assert.ok(h.includes('inbound-key'), '키 발급 버튼이 있어야 개발자에게 줄 키를 만들 수 있다');
 });
 
+test('E7. 발급된 키는 사람이 닫기 전까지 화면에 남는다', () => {
+  // 처음 구현은 발급 직후 loadEndpoints() 로 목록을 새로고침했고, 그 안의 selectEp 가
+  // await 되지 않아 **키를 넣은 뒤에** 늦게 도착해 칸을 비웠다 → 복사할 틈도 없이 사라졌다.
+  // 키는 그 순간이 지나면 어디에서도 다시 볼 수 없으므로, 저절로 사라지는 화면은 사고다.
+  const h = read(join(REPO, 'refatrix-integrations.html'));
+  assert.ok(h.includes('openKeyModal') && h.includes('closeKeyModal'),
+    '키는 스스로 사라지지 않는 창에 담겨야 한다');
+  const issue = h.slice(h.indexOf('async function issueKey'), h.indexOf('async function issueKey') + 900);
+  assert.equal(/loadEndpoints/.test(issue), false,
+    '발급 직후 목록을 새로고침하면 그 렌더가 키를 지운다 — 새로고침은 창을 닫은 뒤에');
+  assert.ok(/function closeKeyModal[\s\S]{0,900}loadEndpoints/.test(h),
+    '창을 닫은 뒤에는 화면을 갱신해 「발급됨」 표시가 맞아야 한다');
+  assert.ok(/copied[\s\S]{0,200}confirm\(/.test(h),
+    '복사하지 않고 닫으려 하면 한 번 물어봐야 한다 — 닫으면 키는 영영 못 본다');
+});
+
 test('E6. 감사로그 action 은 체크 제약 목록 안의 값만 쓴다', () => {
   const s = read(join(API, 'src/routes/crmSyncRoutes.js'));
   assert.equal(s.includes("action: 'crm_bulk_push'"), false,
