@@ -57,6 +57,8 @@ import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
 import crmSyncRoutes from './routes/crmSyncRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
 import crmInboundRoutes from './routes/crmInboundRoutes.js';
+import secretRoutes from './routes/secretRoutes.js';
+import { startSecretRefresh } from './secrets.js';
 import { startCrmSyncWorker } from './crmSync.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
@@ -134,6 +136,11 @@ export function buildApp() {
   app.register(crmSyncRoutes);
   app.register(integrationRoutes);
   app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
+  app.register(secretRoutes);       // 외부 서비스 API 키 관리(디렉터 전용)
+
+  // 외부 서비스 키를 DB 에서 읽어 process.env 에 심는다(60초마다 갱신).
+  //   DB 에 값이 없으면 기동 시점의 환경변수 그대로 — 마이그레이션 전에도 동작이 바뀌지 않는다.
+  startSecretRefresh(app);
 
   // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
   startCrmSyncWorker(app);
