@@ -215,10 +215,48 @@ export function validatePatch(p, cur = null) {
   for (const f of ['url_test', 'url_prod']) {
     const v = p[f] == null ? '' : String(p[f]).trim();
     if (v && !/^https?:\/\//i.test(v)) return 'url_invalid';
+    // 주소 안에 공백이 있으면 붙여넣을 때 **뒷줄이 딸려온** 것이다.
+    //   실제로 그랬다: url_prod 에 「… Content-Type: application/json」 이 붙어 저장돼 있었다.
+    //   http 로 시작하기만 하면 통과시키던 검사가 그걸 놓쳤다.
+    if (v && /\s/.test(v)) return 'url_space';
   }
   // 운영으로 전환하려면 운영 URL 이 있어야 한다. 빈 주소로 켜 두면 전송이 조용히 멈춘다.
   if (!inbound && String(p.env) === 'prod' && p.url_prod != null && !String(p.url_prod).trim()) return 'url_prod_required';
   return null;
+}
+
+/**
+ * 붙여넣기 사고를 걸러 낸다 — 키 칸에는 **키만** 들어가야 한다.
+ *
+ *   개발자가 준 안내문을 그대로 복사하면 이런 게 딸려온다:
+ *     `x-api-key: abc123`  ·  `"abc123"`  ·  `abc123 ` (뒤 공백)
+ *   그대로 저장하면 헤더 값이 「x-api-key: abc123」 이 되어 상대는 키를 못 읽는다.
+ *   화면은 「키 있음」인데 상대는 401 — 원인을 눈으로 찾을 수 없는 종류의 사고다.
+ *
+ *   names 에는 이 창구가 쓰는 헤더명·파라미터명을 넘긴다(그 이름으로 시작할 때만 떼어낸다.
+ *   키 자체에 콜론이 들어갈 수도 있으므로 아무 콜론이나 자르지 않는다).
+ */
+export function cleanSecret(raw, names = []) {
+  let v = String(raw == null ? '' : raw).trim();
+  const notes = [];
+  const q = v.match(/^(["'`])([\s\S]*)\1$/);
+  if (q) { v = q[2].trim(); notes.push('quoted'); }
+  for (const n of names) {
+    const nm = String(n || '').trim();
+    if (!nm) continue;
+    const re = new RegExp('^' + nm.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&') + '\\s*[:=]\\s*', 'i');
+    if (re.test(v)) { v = v.replace(re, '').trim(); notes.push('name_prefix'); }
+  }
+  if (/\s/.test(v)) notes.push('has_space');   // 남은 공백은 거의 확실히 사고다 — 경고만 한다
+  return { value: v, notes };
+}
+
+/** 키를 화면에 **보여 줘도 되는 형태**로. 앞뒤 4글자만 — 개발자가 준 값과 대조하기엔 충분하다. */
+export function maskSecret(t) {
+  const s = String(t == null ? '' : t);
+  if (!s) return null;
+  if (s.length <= 8) return '•'.repeat(s.length) + ` (${s.length}자)`;
+  return s.slice(0, 4) + '…' + s.slice(-4) + ` (${s.length}자)`;
 }
 
 /**
@@ -241,6 +279,7 @@ export async function saveEndpoint(key, patch, userId) {
     else if (f === 'timeout_ms' || f === 'sort_order') v = Number(v);
     else if (f === 'method_upsert' || f === 'method_delete') v = String(v).toUpperCase();
     else if (f === 'contract') v = typeof v === 'string' ? v : JSON.stringify(v);
+    else if (f === 'url_test' || f === 'url_prod') v = String(v == null ? '' : v).trim();
     else if (v != null) v = String(v);
     const before = f === 'contract' ? JSON.stringify(cur[f] || {}) : cur[f];
     const after = f === 'contract' ? v : v;
@@ -266,9 +305,15 @@ export async function saveEndpoint(key, patch, userId) {
   const tokenFields = envCols
     ? ['auth_token', 'auth_token_test', 'auth_token_prod']
     : ['auth_token'];
+  // 붙여넣기 사고를 저장 **전에** 걸러 낸다(이름·따옴표·앞뒤 공백).
+  const authNames = [patch.auth_header ?? cur.auth_header, patch.auth_param ?? cur.auth_param,
+    'apikey', 'api-key', 'x-api-key', 'authorization'];
+  const secretNotes = new Set();
   for (const f of tokenFields) {
     if (tokenPatch[f] === undefined) continue;
-    const t = String(tokenPatch[f]);
+    const c = cleanSecret(tokenPatch[f], authNames);
+    const t = c.value;
+    for (const n of c.notes) secretNotes.add(n);
     params.push(t === '' ? null : t);
     sets.push(`${f}=$${params.length}`);
     changes[f] = { old: cur[f] ? '(설정됨)' : null, new: t === '' ? null : '(변경됨)' };
@@ -286,7 +331,7 @@ export async function saveEndpoint(key, patch, userId) {
       [cur.id, userId || null, JSON.stringify(changes)]);
   } catch (_) { /* 이력 실패가 저장을 되돌리지는 않는다 */ }
   invalidateEndpointCache(key);
-  return { ok: true, changes, token_fallback: tokenFallback };
+  return { ok: true, changes, token_fallback: tokenFallback, secret_notes: [...secretNotes] };
 }
 
 export async function createEndpoint(body, userId) {

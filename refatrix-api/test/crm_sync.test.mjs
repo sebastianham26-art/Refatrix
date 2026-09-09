@@ -33,7 +33,7 @@ await new Promise((r) => crm.listen(0, '127.0.0.1', r));
 process.env.CRM_SYNC_URL = `http://127.0.0.1:${crm.address().port}/api/integrations/erp/customer-commercial`;
 
 const { buildPayload, isSuccess, nextDelaySec, MAX_ATTEMPTS, crmEstatus } = await import('../src/crmSync.js');
-const { validatePatch, publicEndpoint, activeUrl } = await import('../src/integrations.js');
+const { validatePatch, publicEndpoint, activeUrl, cleanSecret, maskSecret } = await import('../src/integrations.js');
 
 // ── ① 순수 로직 ────────────────────────────────────────────────
 test('본문은 계약의 5개 필드만 담는다(estatus 포함)', () => {
@@ -112,6 +112,44 @@ test('폴백 규칙은 등록부(데이터)에 있고 코드에 박히지 않는
     '대상 창구가 준비 안 됐으면 조용히 예전대로 닫혀야 한다');
   const g = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
   assert.ok(/fFallbackKey/.test(g), '화면에서 대체 창구를 고를 수 있어야 한다');
+});
+
+// ── 붙여넣기 사고 — 키 칸에 키만 남게 한다 ──────────────────────
+test('키에 딸려온 이름·따옴표·공백을 떼어낸다', () => {
+  // 개발자 안내문을 그대로 복사하면 이런 게 들어온다. 그대로 저장하면
+  // 헤더 값이 「x-api-key: abc123」 이 되어 상대는 키를 못 읽는다 → 401.
+  assert.equal(cleanSecret('x-api-key: abc123', ['x-api-key']).value, 'abc123');
+  assert.equal(cleanSecret('  abc123\t', []).value, 'abc123');
+  assert.equal(cleanSecret('"abc123"', []).value, 'abc123');
+  assert.equal(cleanSecret('apiKey=abc123', ['apiKey']).value, 'abc123');
+  // 이름으로 시작할 때만 자른다 — 키 자체에 콜론이 있을 수 있다.
+  assert.equal(cleanSecret('abc:123', ['x-api-key']).value, 'abc:123');
+  // Bearer 는 상대가 요구하는 값일 수 있으므로 건드리지 않는다.
+  assert.equal(cleanSecret('Bearer abc123', ['Authorization']).value, 'Bearer abc123');
+  assert.deepEqual(cleanSecret('ab c', []).notes, ['has_space'], '남은 공백은 경고로 알린다');
+});
+
+test('주소에 뒷줄이 딸려오면 저장을 막는다', () => {
+  // 실제로 이렇게 저장돼 있었다: url_prod = "https://…/customer-commercial Content-Type: application/json"
+  // 「http 로 시작하는가」만 보던 검사는 이걸 통과시켰다.
+  assert.equal(validatePatch({ url_prod: 'https://crm/x Content-Type: application/json' }), 'url_space');
+  assert.equal(validatePatch({ url_prod: 'https://crm/x' }), null);
+});
+
+test('키는 값이 아니라 앞뒤 4글자만 보여 준다', () => {
+  assert.equal(maskSecret('abcdefghijkl'), 'abcd…ijkl (12자)');
+  assert.equal(maskSecret(''), null);
+  assert.equal(maskSecret('abc'), '••• (3자)');
+});
+
+test('연결 테스트는 어디에·무슨 이름으로·어떤 값을 실었는지 돌려준다', () => {
+  // 「(인증 헤더 포함)」 만 보여 주면 상대가 401 을 줄 때 원인을 볼 방법이 없다.
+  const src = readFileSync(new URL('../src/routes/integrationRoutes.js', import.meta.url), 'utf8');
+  assert.ok(/hint: maskSecret\(tok\)/.test(src), '값은 가려서 보여 준다');
+  assert.ok(/name: where === 'header'/.test(src), '자리와 이름을 알려 준다');
+  assert.equal(/auth: !!activeToken/.test(src), false, '참·거짓 하나로는 진단이 안 된다');
+  const g = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
+  assert.ok(/function authLine/.test(g) && /a\.hint/.test(g), '화면이 그걸 그려야 한다');
 });
 
 // ── 0214 · API 키를 다른 창구에서 물려받는다 ────────────────────

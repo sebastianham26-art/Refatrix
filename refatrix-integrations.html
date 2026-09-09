@@ -717,13 +717,36 @@
       const d=await res.json();
       if(!res.ok||d.error){ m.className='msg err'; m.textContent='저장 실패: '+(d.note||d.error||res.status); return; }
       m.className='msg ok';
+      // 붙여넣기 사고를 서버가 걸러 냈으면 **말해 준다** — 조용히 고치면 다음에 또 그런다.
+      const sn=(d.secret_notes||[]).map(function(n){
+        return n==='name_prefix'?'앞의 이름(예: x-api-key:)':n==='quoted'?'따옴표':'남은 공백';
+      });
       m.textContent = d.unchanged ? '변경된 내용이 없습니다.'
         : (d.token_fallback
             ? '저장되었습니다. (서버가 아직 환경별 키 컬럼을 인식하지 못해, 지금 환경의 키만 저장했습니다 — 0202 마이그레이션 후 서버를 재시작하면 두 키가 각각 보관됩니다)'
-            : '저장되었습니다.');
+            : (sn.length ? ('저장되었습니다. 키에서 '+sn.join('·')+'을(를) 떼어냈습니다 — 붙여넣을 때 딸려온 것입니다.')
+                         : '저장되었습니다.'));
       await loadEndpoints(CUR.key);
     }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
     finally{ $('btnSaveCfg').disabled=false; }
+  }
+
+  // 무엇을 실어 보냈는지 **눈으로 대조할 수 있게** 적는다.
+  //   「(인증 헤더 포함)」 만으로는 상대가 「API key es requerida」 라고 답할 때
+  //   이름이 틀린 건지, 자리가 틀린 건지, 값이 틀린 건지 알 수가 없었다.
+  //   값은 앞뒤 4글자만 — 개발자가 준 값과 맞춰 보기엔 충분하고, 새어도 쓸 수 없다.
+  function authLine(a){
+    if(!a) return '(인증 없음)';
+    if(typeof a!=='object') return a?'(인증 포함)':'(인증 없음)';
+    if(!a.sent) return '(인증 없음 — 키가 비어 있습니다)';
+    const place=a.where==='query'?('주소 뒤 ?'+a.name+'='):(a.where==='body'?('본문 필드 '+a.name):('헤더 '+a.name));
+    let s='인증: '+place+' = '+(a.hint||'');
+    if(a.borrowed_from) s+='  ← 「'+a.borrowed_from+'」 의 키';
+    const bad=(a.suspect||[]);
+    if(bad.length) s+='\n⚠ 키에 '+bad.map(function(n){
+      return n==='name_prefix'?'이름(예: x-api-key:)':n==='quoted'?'따옴표':'공백';
+    }).join('·')+'이 섞여 있습니다 — 키만 남기고 다시 저장하세요.';
+    return s;
   }
 
   async function testConn(){
@@ -738,7 +761,7 @@
       const who=rq.customer?('<div class="hint" style="margin-top:6px">시험 대상 고객: <b>'+esc(rq.customer.code||'')+' '+esc(rq.customer.name||'')+'</b></div>'):'';
       out.innerHTML='<div class="msg '+(d.ok?'ok':'err')+'" style="display:block">'+esc(d.verdict)+'</div>'+who
         +'<div class="row2" style="margin-top:8px">'
-        +'<div><label>보낸 요청</label><pre class="out">'+esc(rq.method+' '+rq.url+'\n'+(rq.auth?'(인증 헤더 포함)\n':'(인증 없음)\n')+JSON.stringify(rq.payload,null,2))+'</pre></div>'
+        +'<div><label>보낸 요청</label><pre class="out">'+esc(rq.method+' '+rq.url+'\n'+authLine(rq.auth)+'\n'+JSON.stringify(rq.payload,null,2))+'</pre></div>'
         +'<div><label>받은 응답'+(rs.ms!=null?(' · '+rs.ms+'ms'):'')+'</label><pre class="out">'
           +esc(rs.error?('오류: '+rs.error):('HTTP '+rs.http_status+'\n'+JSON.stringify(rs.body,null,2)))+'</pre></div></div>';
     }catch(e){ out.innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }

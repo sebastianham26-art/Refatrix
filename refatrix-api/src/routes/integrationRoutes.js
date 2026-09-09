@@ -5,7 +5,7 @@ import { authGuard, requireDirector } from '../middleware/authGuard.js';
 import {
   endpointsReady, listEndpoints, getEndpoint, publicEndpoint,
   saveEndpoint, createEndpoint, activeUrl, invalidateEndpointCache,
-  activeToken,
+  activeToken, maskSecret, cleanSecret,
 } from '../integrations.js';
 import { sendPayload, isSuccess, crmStatus, buildPayload } from '../crmSync.js';
 import { inboundCounts } from '../crmInboundLog.js';
@@ -17,6 +17,7 @@ const ERR_NOTE = {
   timeout_invalid: '타임아웃은 1000~60000ms 범위여야 합니다.',
   url_invalid: 'URL 은 http:// 또는 https:// 로 시작해야 합니다.',
   url_prod_required: '운영으로 전환하려면 운영 URL 을 먼저 입력하세요.',
+  url_space: '주소에 공백이 섞여 있습니다 — 붙여넣을 때 뒷줄(예: Content-Type: …)이 같이 딸려온 것 같습니다. 주소만 남기세요.',
   key_invalid: '연동 키는 영문 소문자·숫자·밑줄 3~40자입니다.',
   key_taken: '이미 같은 키의 연동이 있습니다.',
   fallback_self: '자기 자신을 대체 창구로 지정할 수 없습니다 — 같은 실패가 끝없이 반복됩니다.',
@@ -174,9 +175,23 @@ export default async function integrationRoutes(app) {
 
     const r = await sendPayload(ep, op, payload);
     const ok = !r.error && isSuccess(r.httpStatus, r.body, ep.ok_code);
+    // ⚠ 「인증 헤더 포함」 이라고만 하면 401 이 났을 때 **아무것도 알 수 없다.**
+    //   상대가 「API key es requerida」 라고 답하는데 화면은 「키 있음」 이면
+    //   어디가 틀렸는지 볼 방법이 없다. 그래서 **실제로 실어 보낸 것**을 그대로 보여 준다:
+    //   어디에(헤더/쿼리/본문) · 무슨 이름으로 · 어떤 값인지(앞뒤 4글자만).
+    const tok = activeToken(ep);
+    const where = ['header', 'query', 'body'].includes(ep.auth_in) ? ep.auth_in : 'header';
+    const auth = {
+      sent: !!tok,
+      where,
+      name: where === 'header' ? (ep.auth_header || 'Authorization') : (ep.auth_param || 'apiKey'),
+      hint: maskSecret(tok),
+      borrowed_from: ep.token_borrowed_label || ep.token_borrowed_from || null,
+      suspect: tok ? cleanSecret(tok, [ep.auth_header, ep.auth_param]).notes : [],
+    };
     return {
       ok,
-      request: { method: r.method, url: r.url, env: ep.env, payload, auth: !!activeToken(ep), customer: usedCustomer },
+      request: { method: r.method, url: r.url, env: ep.env, payload, auth, customer: usedCustomer },
       response: r.error ? { error: r.error } : { http_status: r.httpStatus, body: r.body, ms: r.ms },
       verdict: ok ? 'CRM 이 성공(codigoError=' + (ep.ok_code) + ')으로 응답했습니다.'
         : (r.error ? '연결하지 못했습니다: ' + r.error
