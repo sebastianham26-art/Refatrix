@@ -68,10 +68,20 @@
       +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">RFC 는 <b>선택</b>입니다 — 없어도 등록됩니다. 다만 <b>RFC 를 넣는 순간 그 고객이 내 고객으로 잠깁니다.</b> RFC 없이 등록하면 선점이 없고, 나중에 <b>다른 영업사원이 이 고객에 RFC 를 먼저 입력하면 그 사람에게 우선권</b>이 갑니다. CONSTANCIA 는 선택이며 나중에 고객 상세의 증빙서류에서 올려도 됩니다.</div>'
       +'<div class="rcf-row">'
         +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 번호 (선택)</label><input id="rcf-conno" type="text" placeholder="스캔본에 인쇄된 번호 — 넣으면 이 번호도 함께 잠깁니다"></div>'
-        +'<div class="rcf-f rcf-grow"><label>CONSTANCIA 스캔본 (선택 · PDF)</label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
         +'<div class="rcf-f" style="flex:0 0 auto;justify-content:flex-end"><button type="button" class="btn ghost" id="rcf-claimbtn" style="padding:8px 12px">선점 확인</button></div>'
       +'</div>'
       +'<div id="rcf-claimres" style="font-size:12px;margin-top:6px"></div>'
+    +'</div>'
+    // ===== 서류 3종 → 독점 + 외상 30일 (등록 화면에서 바로 첨부) =====
+    +'<div id="rcf-docsbox" style="display:none;border:1px solid #7a9c8b;background:#f4f9f6;border-radius:9px;padding:11px 12px">'
+      +'<div style="font-size:12.5px;font-weight:700;color:#1f5540;margin-bottom:2px">📎 서류 3종 → <b>독점 + 외상 30일</b></div>'
+      +'<div style="font-size:11.5px;color:#3f6b58;margin-bottom:8px">세 가지가 <b>모두</b> 올라오면 이 고객은 담당자 독점 대상이 되고 <b>외상 30일</b> 조건으로 승인 검토됩니다. 하나라도 빠지면 영업은 시작할 수 있지만 <b>독점도, 외상 30일도 적용되지 않습니다</b>(선결제 조건). 지금 없으면 비워 두고 나중에 고객 상세 → 증빙서류에서 올려도 됩니다.</div>'
+      +'<div class="rcf-row">'
+        +'<div class="rcf-f rcf-grow"><label>① Constancia de Situación Fiscal</label><input id="rcf-confile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+        +'<div class="rcf-f rcf-grow"><label>② Comprobante de domicilio (주소 증명)</label><input id="rcf-domfile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+        +'<div class="rcf-f rcf-grow"><label>③ Factura de compra de suspensión</label><input id="rcf-facfile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" style="padding:6px 4px"></div>'
+      +'</div>'
+      +'<div id="rcf-docsres" style="font-size:12px;margin-top:6px;color:#3f6b58">3종 중 <b>0</b>종 첨부 — 아직 독점·외상 30일 조건이 아닙니다.</div>'
     +'</div>'
     // ===== 0185 · 기준품목 구매단가 → 할인율 제안 =====
     +'<div id="rcf-basebox" style="display:none;border:1px solid #c9a227;background:#fffdf4;border-radius:9px;padding:11px 12px">'
@@ -376,17 +386,48 @@
     op.value=String(id); op.textContent=(name||('사용자 #'+id))+' (타팀)';
     o.appendChild(op);
   }
+
+  // ===== 서류 3종 상태 =====
+  //   3종이 모두 붙으면 그 자리에서 외상일을 30 으로 채운다 —
+  //   담당자가 직접 외상일을 건드린 뒤에는 덮어쓰지 않는다(creditTouched).
+  var DOC_SLOTS=[['rcf-confile','constancia'],['rcf-domfile','domicilio'],['rcf-facfile','factura_compra']];
+  var creditTouched=false;
+  function pickedDocs(){
+    var out=[];
+    for(var i=0;i<DOC_SLOTS.length;i++){
+      var el=$(DOC_SLOTS[i][0]);
+      var f=(el&&el.files&&el.files[0])||null;
+      if(f) out.push({el:el,file:f,doc_type:DOC_SLOTS[i][1]});
+    }
+    return out;
+  }
+  function refreshDocs(){
+    var box=$('rcf-docsres'); if(!box) return;
+    var n=pickedDocs().length;
+    if(n===3){
+      box.innerHTML='<b style="color:#1f5540">✔ 3종 모두 첨부 — 독점 + 외상 30일 조건으로 올라갑니다.</b>';
+      var cd=$('rcf-credit');
+      if(cd&&!editingId&&!creditTouched&&Number(cd.value||0)!==30){ cd.value=30; try{ cd.dispatchEvent(new Event('change')); }catch(e){} }
+    }else{
+      box.innerHTML='3종 중 <b>'+n+'</b>종 첨부 — 아직 독점·외상 30일 조건이 아닙니다.';
+    }
+  }
   // 신규 등록에서만 선점·기준품목 박스를 띄운다.
   function setRegBoxes(isNew){
     var cb=$('rcf-claimbox'); if(cb) cb.style.display=isNew?'':'none';
     var bb=$('rcf-basebox'); if(bb) bb.style.display=isNew?'':'none';
+    var db=$('rcf-docsbox'); if(db) db.style.display=isNew?'':'none';
     if(isNew){
       if($('rcf-conno')) $('rcf-conno').value='';
       if($('rcf-confile')) $('rcf-confile').value='';
+      if($('rcf-domfile')) $('rcf-domfile').value='';
+      if($('rcf-facfile')) $('rcf-facfile').value='';
       if($('rcf-baseprice')) $('rcf-baseprice').value='';
       if($('rcf-claimres')) $('rcf-claimres').innerHTML='';
       if($('rcf-basepanel')) $('rcf-basepanel').innerHTML='';
       if($('rcf-rfcmsg')) $('rcf-rfcmsg').innerHTML='';
+      creditTouched=false;
+      refreshDocs();
     }
     var kb=$('rcf-rfckey'); if(kb) kb.style.display=isNew?'':'none';
     if(!isNew&&$('rcf-rfcmsg')) $('rcf-rfcmsg').innerHTML='';   // 수정에서는 RFC 형식 안내를 띄우지 않는다
@@ -483,14 +524,20 @@
       if(leadId) b.lead_id=leadId;   // 0210 · 이 등록이 어느 가입 신청에서 왔는지
       b.syd_ref_code=($('rcf-basecode')&&$('rcf-basecode').value.trim())||'1516049';
       b.syd_ref_buy_price=Number(bp);
-      var fi=$('rcf-confile');
-      var file=(fi&&fi.files&&fi.files[0])||null;
-      if(file){
-        if(file.size>5*1024*1024){ setMsg('err','CONSTANCIA 파일은 5MB 이하만 첨부할 수 있습니다.'); return; }
+      // 서류 3종 — constancia 는 기존 경로(constancia_file), 나머지는 docs[] 로 함께 올린다.
+      var picked=pickedDocs();
+      b.docs=[];
+      for(var di=0; di<picked.length; di++){
+        var pf=picked[di];
+        if(pf.file.size>5*1024*1024){ setMsg('err','서류 파일은 5MB 이하만 첨부할 수 있습니다. ('+pf.file.name+')'); return; }
+        var payload;
         try{
-          b.constancia_file={ file_name:file.name, mime_type:file.type||'application/pdf', data_base64:await readFileB64(file) };
-        }catch(e){ setMsg('err','CONSTANCIA 파일을 읽지 못했습니다. 다시 선택하거나 비워 두고 저장하세요.'); return; }
+          payload={ file_name:pf.file.name, mime_type:pf.file.type||'application/pdf', data_base64:await readFileB64(pf.file) };
+        }catch(e){ setMsg('err','서류 파일을 읽지 못했습니다: '+pf.file.name+'. 다시 선택하거나 비워 두고 저장하세요.'); return; }
+        if(pf.doc_type==='constancia') b.constancia_file=payload;
+        else b.docs.push(Object.assign({doc_type:pf.doc_type}, payload));
       }
+      if(!b.docs.length) delete b.docs;
     }
     // ⚠ 수정(editingId) 에서는 RFC 를 요구하지 않는다.
     //   전화·배송지·구매결정권자만 고치려는 사람에게 RFC 형식까지 요구하면 일상 업무가 막힌다.
@@ -537,6 +584,7 @@
         setMsg(d.rfc_claimed?'pend':'warn','등록 요청: '+(d.code||'')+' · '+b.name+' — '
           +(d.note||'디렉터 승인 후 견적·매출에 쓸 수 있습니다.')
           +(d.suggested_discount!=null?(' (제안 '+fmtPct(d.suggested_discount)+' · 신청 '+fmtPct(b.discount)+')'):'')
+          +(d.docs_note?(' · '+d.docs_note):'')
           +(d.warning_note?(' ⚠ '+d.warning_note):''));
       }
       else { setMsg('ok', editingId?(td?'수정되었습니다. 할인·외상일 변경이 이력에 기록되었습니다.':'수정되었습니다.'):('등록되었습니다: '+(d.code||b.code||'')+' · '+b.name)); }
@@ -567,6 +615,12 @@
       var bcb=$('rcf-basecalc'); if(bcb) bcb.addEventListener('click', baseCalc);
       var bp=$('rcf-baseprice'); if(bp) bp.addEventListener('change', function(){ if(!editingId) baseCalc(); });
       var cn=$('rcf-conno'); if(cn) cn.addEventListener('change', function(){ if(!editingId) claimCheck(true); });
+      // 서류 3종: 고르는 즉시 상태 갱신(3종이면 외상 30일 자동 반영).
+      for(var si=0; si<DOC_SLOTS.length; si++){
+        (function(id){ var e=$(id); if(e) e.addEventListener('change', refreshDocs); })(DOC_SLOTS[si][0]);
+      }
+      // 담당자가 외상일을 직접 만지면 그 뒤로는 자동으로 덮어쓰지 않는다.
+      var cdEl=$('rcf-credit'); if(cdEl) cdEl.addEventListener('input', function(){ creditTouched=true; });
       var rf=$('rcf-rfc');
       if(rf){
         rf.addEventListener('input', function(){ if(!editingId) showRfcMsg(rf.value.trim()?validateRfcLocal(rf.value):'empty'); });
@@ -586,5 +640,5 @@
     isCrossTeam:function(){ return crossTeam; },
     reloadRefs:loadRefs,
   };
-  try{ console.log('[refatrix-custform] v20260908lead loaded (0193 · RFC 선택 입력 + 선점/이관 + SYD 단가 필수 + 전원 디렉터 승인 · 0210 리드 연결)'); }catch(e){}
+  try{ console.log('[refatrix-custform] v20260909docs3 loaded (+ 서류 3종 등록화면 업로드 → 독점 + 외상 30일)'); }catch(e){}
 })();

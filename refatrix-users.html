@@ -309,6 +309,7 @@
     ['재무', [['transactions','재무(거래·캐시플로)'],['commission','커미션'],['budget','예산']]],
     ['제품·마케팅', [['products','제품'],['marketing','마케팅']]],
     ['창고', [['warehouse','창고(입고·피킹·패킹)']]],
+    ['안내 문서', [['guiacom','커미셔너 안내서 (Guía del Comisionista)']]],
   ];
   const PAGES=PERM_GROUPS.flatMap(([,arr])=>arr);
   const $=(id)=>document.getElementById(id);
@@ -958,6 +959,6 @@
   // 포털 자동 로그인
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
-<script src="refatrix-nav.js?v=20260908assign"></script>
+<script src="refatrix-nav.js?v=20260909guia"></script>
 </body>
 </html>

@@ -457,8 +457,8 @@ test('E7. 견적·현장조사에서 "자동 등록" 안내 문구가 사라졌�
 });
 
 test('E8. 빌드 마커가 올라갔다(하드 리프레시 확인용)', () => {
-  assert.ok(custform.includes('v20260908lead'));
-  assert.ok(custHtml.includes('refatrix-custform.js?v=20260908lead'), 'custform 캐시버스터 동기화');
+  assert.ok(custform.includes('v20260909docs3'));
+  assert.ok(custHtml.includes('refatrix-custform.js?v=20260909docs3'), 'custform 캐시버스터 동기화');
   // 탭 제목 마커는 화면이 바뀔 때마다 올라간다(merge-0903 = 🔗 고객 병합 추가).
   assert.ok(custHtml.includes('merge-0903'));
 });
@@ -664,4 +664,72 @@ test('G4. 예외 목록·정리는 디렉터 전용', () => {
   }
   assert.ok(custHtml.includes('선점 예외 정리'), '디렉터 화면에 정리 카드가 있어야 한다');
   assert.ok(custHtml.includes('rescanRfcExempt') && custHtml.includes('releaseRfcExempt'));
+});
+
+// =====================================================================
+// H. 서류 3종 → 독점 + 외상 30일 (2026-09-09)
+//
+//   정책: constancia · comprobante de domicilio · factura de compra de suspensión
+//   세 가지가 **모두** 올라온 고객만 독점 대상이고 외상 30일이 적용된다.
+//   업로드는 고객 **등록 화면에서 바로** 한다(등록 후 상세로 다시 들어가지 않는다).
+//   여기서 못 박는 것은 "세 종류가 실제로 코드에서 한 세트로 다뤄지는가" 다 —
+//   한 종류라도 이름이 어긋나면 완비 판정이 조용히 false 로 굳는다.
+// =====================================================================
+
+const DOC3 = ['constancia', 'domicilio', 'factura_compra'];
+
+test('H1. 등록 라우트가 docs[] 를 받아 종류별로 저장한다', () => {
+  assert.ok(custRoutes.includes('const rawDocs = Array.isArray(b.docs)'), 'docs[] 수신');
+  assert.ok(custRoutes.includes('EXTRA_DOC_TYPES'), '허용 종류 화이트리스트');
+  for (const t of DOC3) {
+    assert.ok(custRoutes.includes(`'${t}'`), `백엔드가 ${t} 종류를 안다`);
+  }
+  assert.ok(/INSERT INTO customer_documents[\s\S]{0,200}\$2,\$3,\$4,\$5,\$6,\$7/.test(custRoutes),
+    'doc_type 을 파라미터로 넣는 INSERT 가 있어야 한다(하드코딩 constancia 말고)');
+});
+
+test('H2. 첨부 검증은 단건 경로와 같은 상한을 쓴다(우회 금지)', () => {
+  const seg = custRoutes.slice(custRoutes.indexOf('const rawDocs'), custRoutes.indexOf('const rawDocs') + 1800);
+  assert.ok(seg.includes('ALLOWED_DOC_MIME'), 'MIME 화이트리스트');
+  assert.ok(seg.includes('MAX_DOC_BYTES'), '5MB 상한');
+  assert.ok(seg.includes('doc_file_incomplete'), '반쪽 첨부 거절');
+});
+
+test('H3. 완비 판정은 세 종류가 다 있을 때만 참이다', () => {
+  assert.ok(custRoutes.includes("['constancia', 'domicilio', 'factura_compra'].every"),
+    '백엔드 완비 판정');
+  assert.ok(custRoutes.includes('docs_complete'), '응답에 완비 여부를 실어 준다');
+  // 판정 로직 자체를 재현해 경계를 확인한다.
+  const complete = (have) => DOC3.every((t) => have.includes(t));
+  assert.equal(complete(DOC3), true);
+  assert.equal(complete(['constancia', 'domicilio']), false, '2종은 완비가 아니다');
+  assert.equal(complete(['constancia', 'domicilio', 'other']), false, '기타로는 못 채운다');
+});
+
+test('H4. 등록 화면에 서류 3칸이 있고 신규 등록에서만 뜬다', () => {
+  for (const id of ['rcf-confile', 'rcf-domfile', 'rcf-facfile']) {
+    assert.ok(custform.includes(id), `${id} 입력칸`);
+  }
+  assert.ok(custform.includes("var db=$('rcf-docsbox'); if(db) db.style.display=isNew?'':'none';"),
+    '수정 화면에는 서류함이 뜨지 않는다');
+});
+
+test('H5. 3종이 다 붙으면 외상일이 30 으로 채워지되, 사람이 만진 값은 덮지 않는다', () => {
+  assert.ok(custform.includes('creditTouched'), '수동 편집 감지 플래그');
+  assert.ok(/if\(n===3\)/.test(custform), '3종 완비 분기');
+  assert.ok(/cd\.value=30/.test(custform), '외상 30일 자동 반영');
+  assert.ok(/!creditTouched/.test(custform), '사람이 만졌으면 덮어쓰지 않는다');
+});
+
+test('H6. 저장 시 constancia 는 기존 경로, 나머지는 docs[] 로 나간다', () => {
+  assert.ok(custform.includes("if(pf.doc_type==='constancia') b.constancia_file=payload;"),
+    '기존 constancia_file 경로 보존(회귀 방지)');
+  assert.ok(custform.includes('b.docs.push(Object.assign({doc_type:pf.doc_type}, payload));'));
+  assert.ok(custform.includes("if(!b.docs.length) delete b.docs;"), '빈 배열은 아예 안 보낸다');
+});
+
+test('H7. 고객 상세에서도 3종을 올리고 완비 여부를 본다', () => {
+  for (const t of DOC3) assert.ok(custHtml.includes(`value="${t}"`), `상세 업로드 종류 ${t}`);
+  assert.ok(custHtml.includes("['constancia','domicilio','factura_compra'].every"), '상세 완비 배너');
+  assert.ok(custHtml.includes('DOC_TYPE_LABEL'), '종류 라벨');
 });

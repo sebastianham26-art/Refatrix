@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260908assign loaded (고객 등록 승인 + 연동 관리 + 웹 가입 신청 담당 지정 팝업)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260909guia loaded (+ 커미셔너 안내서 Guía del Comisionista)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -145,6 +145,7 @@
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
+    guiaCom:{file:'refatrix-guia-comisionista.html',name:'Guía del Comisionista',desc:'커미셔너 안내서(스페인어) — 고객등록·독점·커미션'},
     whHome:{file:'refatrix-warehouse.html',name:'창고 홈',desc:'입고·피킹·패킹'},
     stockcount:{file:'refatrix-stockcount.html',name:'재고실사',desc:'실물 재고조사·대조·실물맞추기'},
     inbound:{file:'refatrix-inbound.html',name:'수입 입고',desc:'패킹리스트·검수·적치·마감'},
@@ -155,6 +156,7 @@
   var PAGEKEY={
     salesperf:null, dashboard:null, board:null, portal:null, rnr:null, coverage:null, devmap:null, fieldsurvey:null, fsanalysis:null,
     commission:'commission',
+    guiaCom:'guiacom',   // 권한 부여한 사용자에게만 노출(사용자·권한 화면에서 켬/끔). 디렉터는 항상 보임.
     quote:['quote','sales'], quotelist:['quote','sales'], orderfunnel:['quote','sales','products','marketing'], funnel:['quote','sales','products','marketing'],
     sales:'sales', saleslist:['sales','quote'], salesshort:['shortage','sales'], salesapprove:'sales',
     stock:['stock','sales'], shortage:['shortage','sales'], devrequest:['devrequest','quote','sales','products','marketing'],
@@ -170,7 +172,7 @@
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
   var GROUPS=[
-    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','dashboard','rnr','coverage','devmap']},
+    {key:'common', title:'공통', color:'#C9A75C', screens:['portal','salesperf','commission','guiaCom','dashboard','rnr','coverage','devmap']},
     {key:'sales', title:'영업', color:'#6FA3C7', screens:['customers','targets','pipeline','consult','fieldsurvey','fsanalysis','quote','quotelist','funnel','orderfunnel','shortage','funnelImm','funnelDev','devrequest']},
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},

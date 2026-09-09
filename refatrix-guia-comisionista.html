@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guía del Comisionista Refatrix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --paper:#F1F4F5;
+  --surface:#FFFFFF;
+  --surface-2:#E6EBEE;
+  --ink:#15191C;
+  --ink-2:#4A545C;
+  --ink-3:#76838D;
+  --line:#CDD6DB;
+  --line-2:#B6C2C9;
+  --accent:#C4331A;
+  --accent-soft:#FAE8E4;
+  --steel:#1C5B82;
+  --steel-soft:#E1EDF5;
+  --ok:#1D6A4B;
+  --ok-soft:#DFF0E8;
+  --warn:#8F5C0C;
+  --warn-soft:#F8EDD9;
+  --shadow:0 1px 2px rgba(21,25,28,.06), 0 8px 24px -16px rgba(21,25,28,.35);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#11151A;
+    --surface:#181E24;
+    --surface-2:#212A32;
+    --ink:#ECF1F4;
+    --ink-2:#ADBAC3;
+    --ink-3:#7C8B96;
+    --line:#2C3640;
+    --line-2:#3C4954;
+    --accent:#FF6E50;
+    --accent-soft:#3A1E17;
+    --steel:#6DB5E4;
+    --steel-soft:#132838;
+    --ok:#5CC79B;
+    --ok-soft:#0F2820;
+    --warn:#E0A648;
+    --warn-soft:#2B2213;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11151A;
+  --surface:#181E24;
+  --surface-2:#212A32;
+  --ink:#ECF1F4;
+  --ink-2:#ADBAC3;
+  --ink-3:#7C8B96;
+  --line:#2C3640;
+  --line-2:#3C4954;
+  --accent:#FF6E50;
+  --accent-soft:#3A1E17;
+  --steel:#6DB5E4;
+  --steel-soft:#132838;
+  --ok:#5CC79B;
+  --ok-soft:#0F2820;
+  --warn:#E0A648;
+  --warn-soft:#2B2213;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  font-size:16.5px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:60rem;margin:0 auto;padding:0 1.5rem 5rem}
+
+/* ---------- typography ---------- */
+h1,h2,h3,.disp{
+  font-family:"Barlow Condensed","IBM Plex Sans",Arial,sans-serif;
+  font-weight:700;
+  letter-spacing:.005em;
+  text-wrap:balance;
+  margin:0;
+}
+h1{font-size:clamp(2.6rem,7vw,4.1rem);line-height:1.02;text-transform:uppercase}
+h2{font-size:clamp(1.75rem,3.6vw,2.35rem);line-height:1.08;text-transform:uppercase}
+h3{font-size:1.28rem;line-height:1.2;letter-spacing:.01em}
+p{margin:0}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:.72rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+.lead{font-size:1.12rem;color:var(--ink-2);max-width:36em}
+.num{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+strong{font-weight:600}
+a{color:var(--accent)}
+
+/* ---------- header ---------- */
+header.top{
+  border-bottom:2px solid var(--ink);
+  background:var(--surface);
+}
+.top-inner{max-width:60rem;margin:0 auto;padding:2.6rem 1.5rem 2.2rem;display:flex;flex-direction:column;gap:1.1rem}
+.brandline{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+.brandline .mark{
+  display:inline-flex;align-items:center;gap:.45rem;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:1.15rem;
+  text-transform:uppercase;letter-spacing:.06em;
+}
+.mark .dot{width:.62rem;height:.62rem;background:var(--accent);border-radius:2px;display:inline-block}
+
+/* spec sheet */
+.ficha{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));
+  border-top:1px solid var(--line);border-left:1px solid var(--line);
+  margin-top:.4rem;
+}
+.ficha div{
+  border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+  padding:.8rem .95rem;display:flex;flex-direction:column;gap:.15rem;
+}
+.ficha dt{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin:0}
+.ficha dd{margin:0;font-family:"Barlow Condensed",sans-serif;font-size:1.5rem;font-weight:600;line-height:1.05;font-variant-numeric:tabular-nums}
+.ficha dd small{font-family:"IBM Plex Sans",sans-serif;font-size:.78rem;font-weight:400;color:var(--ink-2);display:block;letter-spacing:0}
+
+/* ---------- sections ---------- */
+section{margin-top:3.4rem}
+.rule{display:flex;align-items:baseline;gap:.9rem;border-bottom:2px solid var(--ink);padding-bottom:.5rem;margin-bottom:1.4rem}
+.rule h2{flex:1}
+.stack{display:flex;flex-direction:column;gap:1rem}
+
+/* numbered steps */
+.paso{display:grid;grid-template-columns:3.4rem 1fr;gap:1.25rem;padding-top:2.4rem}
+.paso + .paso{border-top:1px solid var(--line)}
+.paso-n{
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:2.5rem;line-height:.9;
+  color:var(--accent);border-top:3px solid var(--accent);padding-top:.35rem;
+  font-variant-numeric:tabular-nums;
+}
+.paso-body{display:flex;flex-direction:column;gap:.95rem;min-width:0}
+.paso h3{margin-bottom:-.2rem}
+
+/* callouts */
+.nota{
+  border-left:3px solid var(--steel);background:var(--steel-soft);
+  padding:.85rem 1.05rem;display:flex;flex-direction:column;gap:.4rem;
+}
+.nota.alerta{border-left-color:var(--accent);background:var(--accent-soft)}
+.nota.bien{border-left-color:var(--ok);background:var(--ok-soft)}
+.nota.ojo{border-left-color:var(--warn);background:var(--warn-soft)}
+.nota .t{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.nota.alerta .t{color:var(--accent)} .nota.bien .t{color:var(--ok)} .nota.ojo .t{color:var(--warn)} .nota .t{color:var(--steel)}
+
+ul.lista{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.35rem}
+ul.lista li::marker{color:var(--ink-3)}
+ol.lista{margin:0;padding-left:1.3rem;display:flex;flex-direction:column;gap:.45rem}
+
+/* documents grid */
+.docs{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.9rem}
+.doc{
+  background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--ok);
+  padding:.95rem 1rem;display:flex;flex-direction:column;gap:.35rem;box-shadow:var(--shadow);
+}
+.doc .k{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.12em;color:var(--ok);font-weight:600}
+.doc .n{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:1.22rem;line-height:1.12}
+.doc .d{font-size:.92rem;color:var(--ink-2)}
+
+/* figures */
+figure{margin:.4rem 0;background:var(--surface);border:1px solid var(--line);padding:1.1rem 1.1rem .85rem}
+.scroll{overflow-x:auto}
+figure svg{display:block;min-width:44rem;width:100%;height:auto}
+figcaption{margin-top:.7rem;font-size:.9rem;color:var(--ink-2);border-top:1px solid var(--line);padding-top:.6rem}
+figcaption b{color:var(--ink);font-weight:600}
+
+/* svg diagram tokens */
+.dgm{color:var(--ink)}
+.dgm .box{fill:var(--surface-2);stroke:var(--line-2);stroke-width:1.25}
+.dgm .box-ok{fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.5}
+.dgm .box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.5}
+.dgm .box-acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.dgm .box-steel{fill:var(--steel-soft);stroke:var(--steel);stroke-width:1.5}
+.dgm .flow{stroke:var(--ink-3);stroke-width:1.6;fill:none}
+.dgm .flow-ok{stroke:var(--ok);stroke-width:1.8;fill:none}
+.dgm .flow-warn{stroke:var(--warn);stroke-width:1.8;fill:none}
+.dgm text{font-family:"IBM Plex Sans",sans-serif;font-size:12.5px;fill:var(--ink)}
+.dgm .ttl{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;fill:var(--ink)}
+.dgm .lbl{font-family:"IBM Plex Mono",monospace;font-size:10.5px;fill:var(--ink-3);letter-spacing:.03em}
+.dgm .mono{font-family:"IBM Plex Mono",monospace;font-size:13px;fill:var(--ink);font-variant-numeric:tabular-nums}
+.dgm .big{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:22px;fill:var(--ink);font-variant-numeric:tabular-nums}
+.dgm .ok-t{fill:var(--ok)} .dgm .warn-t{fill:var(--warn)} .dgm .acc-t{fill:var(--accent)} .dgm .steel-t{fill:var(--steel)}
+.dgm .arrow-h{fill:var(--ink-3)}
+.dgm .arrow-ok{fill:var(--ok)} .dgm .arrow-warn{fill:var(--warn)}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:30rem;font-size:.95rem}
+th,td{text-align:left;padding:.62rem .85rem;border-bottom:1px solid var(--line)}
+th{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:600;background:var(--surface-2)}
+td.n{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;text-align:right}
+tbody tr:last-child td{border-bottom:none}
+
+/* faq */
+.faq{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{
+  cursor:pointer;padding:.85rem 0;list-style:none;display:flex;gap:.8rem;align-items:baseline;
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:1.15rem;
+}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::before{content:"+";color:var(--accent);font-family:"IBM Plex Mono",monospace;font-size:1rem}
+.faq details[open] summary::before{content:"−"}
+.faq summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.faq .a{padding:0 0 1rem 1.8rem;color:var(--ink-2);font-size:.97rem}
+
+/* glossary */
+.glo{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:0;border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.glo div{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:.75rem .9rem}
+.glo dt{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:1.1rem;margin:0}
+.glo dd{margin:.1rem 0 0;font-size:.9rem;color:var(--ink-2)}
+
+/* action buttons */
+.acciones{display:flex;flex-wrap:wrap;gap:.5rem}
+.btn{
+  display:inline-flex;align-items:center;gap:.5rem;
+  padding:.4rem .85rem;border:1px solid var(--accent);color:var(--accent);background:transparent;
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:1.05rem;letter-spacing:.02em;
+  text-decoration:none;cursor:pointer;line-height:1.5;
+}
+.btn:hover,.btn:focus-visible{background:var(--accent);color:var(--paper)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn .ext{font-family:"IBM Plex Mono",monospace;font-size:.8rem}
+.btn.is-off{border-color:var(--line-2);color:var(--ink-3);background:var(--surface-2);cursor:default}
+.btn.is-off:hover{background:var(--surface-2);color:var(--ink-3)}
+.btn.ghost{border-color:var(--line-2);color:var(--ink-2)}
+.btn.ghost:hover,.btn.ghost:focus-visible{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* quick access strip */
+.rapidos{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.9rem 1rem;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent)}
+.rapidos .lbl{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-right:.3rem}
+
+/* accesos panel */
+.llenar{border:1px solid var(--line);background:var(--surface);padding:1.15rem 1.25rem;display:flex;flex-direction:column;gap:1rem}
+.llenar .row{display:grid;grid-template-columns:1fr;gap:.25rem;border-bottom:1px solid var(--line);padding-bottom:.75rem}
+.llenar .row:last-of-type{border-bottom:none;padding-bottom:0}
+.llenar .k{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.llenar .hint{font-size:.8rem;color:var(--ink-3)}
+.llenar .v{word-break:break-word}
+.llenar .v.vacio{color:var(--ink-3);font-style:italic}
+.llenar input{
+  width:100%;padding:.45rem .6rem;background:var(--paper);color:var(--ink);
+  border:1px solid var(--line-2);font-family:"IBM Plex Sans",sans-serif;font-size:.95rem;
+}
+.llenar input:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.llenar .barra{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:.9rem}
+.llenar .estado{font-size:.85rem;color:var(--ink-3)}
+.llenar .estado.err{color:var(--accent)}
+.llenar .estado.ok{color:var(--ok)}
+
+footer{margin-top:4rem;border-top:2px solid var(--ink);padding-top:1.1rem;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;font-size:.85rem;color:var(--ink-3)}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  .paso{grid-template-columns:1fr;gap:.5rem}
+  .paso-n{border-top:none;font-size:1.6rem;padding-top:0}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brandline">
+      <span class="mark"><span class="dot"></span>Refatrix</span>
+      <span class="eyebrow">CTR · Suspensión y dirección · México</span>
+    </div>
+    <h1>Guía del<br>Comisionista</h1>
+    <p class="lead">Cómo registrar a tus clientes, cómo hacerlos <strong>exclusivamente tuyos con 30 días de crédito</strong>, y cómo se calcula y se paga tu comisión. Léela una vez completa; después úsala como consulta.</p>
+    <dl class="ficha">
+      <div><dt>Meta de venta</dt><dd class="num">$3,000,000<small>MXN sin IVA, sumando todos tus clientes</small></dd></div>
+      <div><dt>Horizonte</dt><dd>Dic 2027<small>Plan mes por mes hasta esa fecha</small></dd></div>
+      <div><dt>Exclusividad</dt><dd>12 meses<small>Al subir los 3 documentos</small></dd></div>
+      <div><dt>Crédito</dt><dd>30 días<small>También sale de los 3 documentos</small></dd></div>
+      <div><dt>Pago de comisión</dt><dd>Día 15<small>Del mes siguiente al cobro</small></dd></div>
+    </dl>
+  </div>
+</header>
+
+<main class="wrap">
+
+<div class="rapidos" style="margin-top:1.6rem">
+  <span class="lbl">Accesos rápidos</span>
+  <a class="btn is-off" data-erp="customers">Mis clientes <span class="ext">↗</span></a>
+  <a class="btn is-off" data-erp="targets">Mis metas <span class="ext">↗</span></a>
+  <a class="btn is-off" data-link="catalogo" target="_blank" rel="noopener noreferrer">Catálogo web <span class="ext">↗</span></a>
+  <a class="btn is-off" data-erp="quotelist">Pedidos por confirmar <span class="ext">↗</span></a>
+  <a class="btn is-off" data-erp="commission">Mis comisiones <span class="ext">↗</span></a>
+</div>
+
+<section>
+  <div class="rule"><h2>El camino completo</h2><span class="eyebrow">9 pasos</span></div>
+  <p class="lead" style="margin-bottom:1.1rem">Todo el proceso, de principio a fin. Si entiendes este dibujo, entiendes el trabajo.</p>
+
+  <figure class="scroll">
+    <svg class="dgm" viewBox="0 0 1040 350" role="img" aria-label="Ruta completa del comisionista: listar clientes y metas, subir los tres documentos, alta en el ERP, entrega de ID y PIN, el cliente arma su carrito, tú confirmas la compra, se envía y se factura, se cobra al 100 por ciento, y la comisión se paga el día 15 del mes siguiente.">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-h"/>
+        </marker>
+      </defs>
+
+      <text x="20" y="22" class="lbl">FASE A · PREPARAR Y DAR DE ALTA</text>
+
+      <rect x="20"  y="34" width="220" height="80" rx="3" class="box"/>
+      <text x="130" y="64"  class="ttl" text-anchor="middle">1 · Tu lista</text>
+      <text x="130" y="84"  text-anchor="middle">Clientes objetivo y</text>
+      <text x="130" y="100" text-anchor="middle">meta de cada mes</text>
+
+      <rect x="280" y="34" width="220" height="80" rx="3" class="box"/>
+      <text x="390" y="64"  class="ttl" text-anchor="middle">2 · Documentos</text>
+      <text x="390" y="84"  text-anchor="middle">Subes los 3 en la misma</text>
+      <text x="390" y="100" text-anchor="middle">pantalla de registro</text>
+
+      <rect x="540" y="34" width="220" height="80" rx="3" class="box-steel"/>
+      <text x="650" y="64"  class="ttl" text-anchor="middle">3 · Alta en el ERP</text>
+      <text x="650" y="84"  text-anchor="middle">Refatrix registra al</text>
+      <text x="650" y="100" text-anchor="middle">cliente con su RFC</text>
+
+      <rect x="800" y="34" width="220" height="80" rx="3" class="box"/>
+      <text x="910" y="64"  class="ttl" text-anchor="middle">4 · ID y PIN</text>
+      <text x="910" y="84"  text-anchor="middle">El cliente ya puede</text>
+      <text x="910" y="100" text-anchor="middle">entrar al catálogo web</text>
+
+      <line x1="240" y1="74" x2="272" y2="74" class="flow" marker-end="url(#ah)"/>
+      <line x1="500" y1="74" x2="532" y2="74" class="flow" marker-end="url(#ah)"/>
+      <line x1="760" y1="74" x2="792" y2="74" class="flow" marker-end="url(#ah)"/>
+
+      <path d="M 910 114 L 910 148 L 112 148 L 112 186" class="flow" marker-end="url(#ah)"/>
+      <text x="520" y="141" class="lbl" text-anchor="middle">CLIENTE LISTO PARA COMPRAR</text>
+
+      <text x="20" y="182" class="lbl">FASE B · VENDER Y COBRAR</text>
+
+      <rect x="20"  y="196" width="184" height="86" rx="3" class="box"/>
+      <text x="112" y="224" class="ttl" text-anchor="middle">5 · Carrito</text>
+      <text x="112" y="244" text-anchor="middle">Ve inventario</text>
+      <text x="112" y="260" text-anchor="middle">y su precio, y</text>
+      <text x="112" y="276" text-anchor="middle">arma su pedido</text>
+
+      <rect x="224" y="196" width="184" height="86" rx="3" class="box-acc"/>
+      <text x="316" y="224" class="ttl" text-anchor="middle">6 · Confirmas</text>
+      <text x="316" y="244" text-anchor="middle">Te preguntamos</text>
+      <text x="316" y="260" text-anchor="middle">si el pedido</text>
+      <text x="316" y="276" text-anchor="middle">se cierra</text>
+
+      <rect x="428" y="196" width="184" height="86" rx="3" class="box"/>
+      <text x="520" y="224" class="ttl" text-anchor="middle">7 · Envío</text>
+      <text x="520" y="244" text-anchor="middle">Empacamos,</text>
+      <text x="520" y="260" text-anchor="middle">enviamos y</text>
+      <text x="520" y="276" text-anchor="middle">facturamos</text>
+
+      <rect x="632" y="196" width="184" height="86" rx="3" class="box-warn"/>
+      <text x="724" y="224" class="ttl" text-anchor="middle">8 · Cobranza</text>
+      <text x="724" y="244" text-anchor="middle">La factura debe</text>
+      <text x="724" y="260" text-anchor="middle">quedar pagada</text>
+      <text x="724" y="276" text-anchor="middle" class="mono warn-t">al 100%</text>
+
+      <rect x="836" y="196" width="184" height="86" rx="3" class="box-ok"/>
+      <text x="928" y="224" class="ttl" text-anchor="middle">9 · Te pagamos</text>
+      <text x="928" y="244" text-anchor="middle">Emites tu factura</text>
+      <text x="928" y="260" text-anchor="middle">de comisión y</text>
+      <text x="928" y="276" text-anchor="middle">cobras el día 15</text>
+
+      <line x1="204" y1="239" x2="216" y2="239" class="flow" marker-end="url(#ah)"/>
+      <line x1="408" y1="239" x2="420" y2="239" class="flow" marker-end="url(#ah)"/>
+      <line x1="612" y1="239" x2="624" y2="239" class="flow" marker-end="url(#ah)"/>
+      <line x1="816" y1="239" x2="828" y2="239" class="flow" marker-end="url(#ah)"/>
+
+      <text x="20" y="318" class="lbl">EN PARALELO AL PASO 3</text>
+      <rect x="20" y="326" width="1000" height="1" class="box" stroke="none" fill="var(--line)"/>
+      <text x="20" y="346" class="acc-t" style="font-weight:600">Los 3 documentos son los que dan las dos cosas: exclusividad por 12 meses y crédito a 30 días.</text>
+    </svg>
+    <figcaption><b>La ruta completa.</b> Los pasos 1 a 4 solo se hacen una vez por cliente. Los pasos 5 a 9 se repiten en cada pedido, para siempre.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="rule"><h2>Paso a paso</h2><span class="eyebrow">Detalle</span></div>
+
+  <div class="paso">
+    <div class="paso-n">1</div>
+    <div class="paso-body">
+      <h3>Arma tu lista de clientes objetivo</h3>
+      <p>Antes de vender, decides <strong>a quién le vas a vender</strong>. Registras en el ERP a cada cliente que quieres trabajar, con datos muy simples: nombre del negocio, RFC, ciudad, teléfono y persona de contacto.</p>
+      <p>No necesitas todo el expediente para empezar la lista. Con esos datos basta para apartar tu lugar.</p>
+      <div class="nota">
+        <span class="t">Por qué importa</span>
+        <p>La lista es tu plan de trabajo. Sin lista, vendes al azar; con lista, sabes cada mañana a quién llamar.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-erp="customers">Abrir mis clientes objetivo <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">2</div>
+    <div class="paso-body">
+      <h3>Pon una meta de venta a cada mes, hasta diciembre de 2027</h3>
+      <p>Para cada cliente de tu lista, capturas <strong>cuánto crees que te va a comprar cada mes</strong>, mes por mes, hasta diciembre de 2027. Son montos <strong>sin IVA</strong>.</p>
+      <p>La suma de todos tus clientes y de todos los meses debe llegar a <strong class="num">$3,000,000 MXN sin IVA</strong>.</p>
+
+      <figure class="scroll">
+        <svg class="dgm" viewBox="0 0 900 190" role="img" aria-label="La meta de tres millones de pesos sin IVA se reparte entre los quince meses que van de octubre de 2026 a diciembre de 2027, lo que da un promedio de doscientos mil pesos por mes.">
+          <text x="10" y="20" class="lbl">HORIZONTE DEL PLAN</text>
+          <g>
+            <rect x="10" y="34" width="880" height="46" rx="3" class="box"/>
+            <line x1="68.7" y1="34" x2="68.7" y2="80" stroke="var(--line-2)"/>
+            <line x1="127.3" y1="34" x2="127.3" y2="80" stroke="var(--line-2)"/>
+            <line x1="186" y1="34" x2="186" y2="80" stroke="var(--line-2)"/>
+            <line x1="244.7" y1="34" x2="244.7" y2="80" stroke="var(--line-2)"/>
+            <line x1="303.3" y1="34" x2="303.3" y2="80" stroke="var(--line-2)"/>
+            <line x1="362" y1="34" x2="362" y2="80" stroke="var(--line-2)"/>
+            <line x1="420.7" y1="34" x2="420.7" y2="80" stroke="var(--line-2)"/>
+            <line x1="479.3" y1="34" x2="479.3" y2="80" stroke="var(--line-2)"/>
+            <line x1="538" y1="34" x2="538" y2="80" stroke="var(--line-2)"/>
+            <line x1="596.7" y1="34" x2="596.7" y2="80" stroke="var(--line-2)"/>
+            <line x1="655.3" y1="34" x2="655.3" y2="80" stroke="var(--line-2)"/>
+            <line x1="714" y1="34" x2="714" y2="80" stroke="var(--line-2)"/>
+            <line x1="772.7" y1="34" x2="772.7" y2="80" stroke="var(--line-2)"/>
+            <line x1="831.3" y1="34" x2="831.3" y2="80" stroke="var(--line-2)"/>
+          </g>
+          <text x="14" y="62" class="mono">OCT 26</text>
+          <text x="886" y="62" class="mono" text-anchor="end">DIC 27</text>
+          <text x="450" y="62" class="lbl" text-anchor="middle">15 MESES</text>
+
+          <text x="10" y="112" class="lbl">SUMA QUE DEBE DAR TU PLAN</text>
+          <text x="10" y="142" class="big acc-t">$3,000,000</text>
+          <text x="196" y="142" class="mono">MXN sin IVA</text>
+
+          <text x="480" y="112" class="lbl">REFERENCIA POR MES (SI FUERA PAREJO)</text>
+          <text x="480" y="142" class="big">$200,000</text>
+          <text x="640" y="142" class="mono">MXN sin IVA / mes</text>
+          <text x="10" y="176" class="lbl">NO TIENE QUE SER PAREJO — PUEDES ARRANCAR BAJO Y SUBIR</text>
+        </svg>
+        <figcaption><b>De dónde sale el número por mes.</b> Tres millones repartidos en los meses que te quedan hasta diciembre de 2027. Si empiezas más tarde, el promedio mensual sube.</figcaption>
+      </figure>
+
+      <div class="nota ojo">
+        <span class="t">Sé realista</span>
+        <p>Un plan inflado no te ayuda: se compara contra tu venta real. Es mejor un plan que sí puedes cumplir y superar.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-erp="targets">Capturar mis metas mensuales <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">3</div>
+    <div class="paso-body">
+      <h3>Nosotros damos de alta al cliente en el ERP</h3>
+      <p>Con tu lista en la mano, Refatrix registra al cliente en el sistema. El registro se guarda con el <strong>RFC</strong> del cliente: ese es el número que identifica a cada empresa ante el SAT, y es la llave de todo.</p>
+      <p>En ese momento se define también <strong>qué descuento</strong> tendrá ese cliente. Los <strong>días de crédito</strong> no se discuten: salen de los documentos — ver el paso 4.</p>
+      <div class="nota">
+        <span class="t">Cómo se decide el descuento</span>
+        <p>Revisamos <strong>a qué precio le compra hoy a SYD</strong> (nuestro competidor directo) y ponemos un descuento que sea competitivo frente a ese precio. Por eso te pediremos ese dato: sin él, el descuento es una adivinanza.</p>
+      </div>
+      <div class="nota bien">
+        <span class="t">Con quién negocias el descuento</span>
+        <p>Al principio, <strong>directamente con el Director</strong>. Cuando ya domines el trabajo, lo verás con el <strong>Jefe de Ventas</strong>.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-erp="customers">Ver el estado de mis clientes <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">4</div>
+    <div class="paso-body">
+      <h3>Sube 3 documentos → exclusividad y 30 días de crédito</h3>
+      <p>Aquí está la parte más importante de toda la guía. Tres documentos te dan <strong>dos cosas a la vez</strong>: el cliente queda <strong>apartado a tu nombre</strong> y se le otorga <strong>crédito a 30 días</strong>.</p>
+      <p>No los mandas por correo ni se los pides a nadie: los <strong>subes tú mismo</strong>, en la misma pantalla donde registras al cliente. Hay tres casillas, una por documento.</p>
+
+      <div class="docs">
+        <div class="doc"><span class="k">DOC 01</span><span class="n">Constancia de situación fiscal</span><span class="d">La que emite el SAT. De ahí sale el RFC correcto. Casilla ① de la pantalla de registro.</span></div>
+        <div class="doc"><span class="k">DOC 02</span><span class="n">Comprobante de domicilio</span><span class="d">Recibo de luz, agua o predial del negocio. Casilla ② de la pantalla de registro.</span></div>
+        <div class="doc"><span class="k">DOC 03</span><span class="n">Factura de compra de suspensión</span><span class="d">Copia de una factura donde el cliente compró suspensión. Demuestra que sí es del giro. Casilla ③ de la pantalla de registro.</span></div>
+      </div>
+
+      <div class="nota bien">
+        <span class="t">Cómo se suben</span>
+        <p>En el ERP entra a <strong>Clientes → + Registrar cliente</strong>. Debajo de los datos verás el recuadro <strong>«Documentos → exclusividad + 30 días»</strong> con las tres casillas. Elige los archivos (PDF o foto, máximo 5 MB cada uno) y guarda. El recuadro te va diciendo cuántos llevas: <span class="num">1 de 3</span>, <span class="num">2 de 3</span>… y cuando marca <strong>3 de 3</strong>, el campo de días de crédito se pone en <strong class="num">30</strong> solo.</p>
+        <p>¿Todavía no tienes alguno? Registra al cliente igual y súbelo después en <strong>Clientes → el cliente → Documentos</strong>. Ahí también verás si ya están los tres.</p>
+      </div>
+      <p>Con los tres documentos, el cliente queda registrado como <strong>tuyo</strong>, con <strong>30 días de crédito</strong>, y te garantizamos la comisión de sus compras <strong>durante 12 meses</strong>.</p>
+
+      <figure class="scroll">
+        <svg class="dgm" viewBox="0 0 900 400" role="img" aria-label="Con los tres documentos el cliente queda exclusivo, recibe treinta días de crédito y la comisión está garantizada doce meses. Sin documentos también puedes vender, pero el cliente paga por adelantado y cualquier otro vendedor puede registrar ese RFC antes que tú y quedarse con la comisión.">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrow-h"/></marker>
+            <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrow-ok"/></marker>
+            <marker id="ah-wa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrow-warn"/></marker>
+          </defs>
+
+          <rect x="330" y="14" width="240" height="54" rx="3" class="box"/>
+          <text x="450" y="38" class="ttl" text-anchor="middle">Cliente en tu lista</text>
+          <text x="450" y="57" text-anchor="middle">Ya lo puedes trabajar</text>
+
+          <path d="M 450 68 L 450 92" class="flow"/>
+          <path d="M 450 92 L 210 92 L 210 122" class="flow-ok" marker-end="url(#ah-ok)"/>
+          <path d="M 450 92 L 690 92 L 690 122" class="flow-warn" marker-end="url(#ah-wa)"/>
+          <text x="240" y="86" class="lbl ok-t">SÍ SUBES LOS 3 DOCUMENTOS</text>
+          <text x="660" y="86" class="lbl warn-t" text-anchor="end">FALTA ALGUNO</text>
+
+          <rect x="60" y="128" width="300" height="66" rx="3" class="box-ok"/>
+          <text x="210" y="152" class="ttl ok-t" text-anchor="middle">EXCLUSIVO tuyo + 30 días</text>
+          <text x="210" y="173" text-anchor="middle">Nadie más lo puede registrar</text>
+          <text x="210" y="188" text-anchor="middle" class="mono ok-t">crédito 30 días</text>
+
+          <rect x="540" y="128" width="300" height="66" rx="3" class="box-warn"/>
+          <text x="690" y="152" class="ttl warn-t" text-anchor="middle">Vendes, pero sin nada más</text>
+          <text x="690" y="173" text-anchor="middle">No está apartado</text>
+          <text x="690" y="188" text-anchor="middle" class="mono warn-t">sin crédito — paga por adelantado</text>
+
+          <line x1="210" y1="194" x2="210" y2="222" class="flow-ok" marker-end="url(#ah-ok)"/>
+          <line x1="690" y1="194" x2="690" y2="222" class="flow-warn" marker-end="url(#ah-wa)"/>
+
+          <rect x="60" y="228" width="300" height="76" rx="3" class="box"/>
+          <text x="210" y="252" class="ttl" text-anchor="middle">Comisión garantizada</text>
+          <text x="210" y="273" text-anchor="middle">Toda venta a ese cliente</text>
+          <text x="210" y="290" text-anchor="middle" class="mono ok-t">durante 12 meses</text>
+
+          <rect x="540" y="228" width="300" height="76" rx="3" class="box"/>
+          <text x="690" y="252" class="ttl warn-t" text-anchor="middle">Riesgo real</text>
+          <text x="690" y="273" text-anchor="middle">Otro vendedor registra ese</text>
+          <text x="690" y="290" text-anchor="middle">RFC antes que tú</text>
+
+          <line x1="690" y1="304" x2="690" y2="330" class="flow-warn" marker-end="url(#ah-wa)"/>
+          <rect x="500" y="336" width="380" height="50" rx="3" class="box-acc"/>
+          <text x="690" y="358" class="ttl acc-t" text-anchor="middle">El cliente pasa a ser de esa persona</text>
+          <text x="690" y="377" text-anchor="middle">Tú ya no cobras comisión por sus compras</text>
+
+          <text x="20" y="330" class="lbl">EL RFC ES LA LLAVE:</text>
+          <text x="20" y="348" class="lbl">SOLO PUEDE ESTAR</text>
+          <text x="20" y="366" class="lbl">REGISTRADO UNA VEZ,</text>
+          <text x="20" y="384" class="lbl">A NOMBRE DE UNA PERSONA.</text>
+        </svg>
+        <figcaption><b>Los documentos no son burocracia: son tu seguro y el crédito de tu cliente.</b> El RFC solo se puede registrar una vez, y quien lo registre primero se queda con la comisión. Sin los tres documentos tu cliente además tendría que pagar por adelantado — un argumento de venta que pierdes.</figcaption>
+      </figure>
+
+      <div class="nota alerta">
+        <span class="t">Regla de oro</span>
+        <p>Si un cliente te interesa de verdad, <strong>pide los tres documentos desde la primera visita</strong> y súbelos ese mismo día. No esperes al primer pedido: para entonces alguien más pudo haber registrado su RFC — y tu cliente no tendrá los 30 días.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-erp="customers">Registrar cliente y subir documentos <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">5</div>
+    <div class="paso-body">
+      <h3>El cliente recibe su ID y su PIN</h3>
+      <p>Cuando el cliente ya está registrado en el ERP, Refatrix le entrega un <strong>ID</strong> y un <strong>PIN</strong> personales. Con ellos entra al catálogo web de <strong>refatrix.com.mx</strong> y puede:</p>
+      <ul class="lista">
+        <li>Ver el <strong>inventario disponible</strong> en tiempo real.</li>
+        <li>Ver <strong>su precio de compra</strong>, ya con el descuento acordado.</li>
+        <li>Poner en el <strong>carrito</strong> los productos que quiere cotizar o comprar.</li>
+      </ul>
+      <div class="nota">
+        <span class="t">Tu trabajo aquí</span>
+        <p>Enséñale a usarlo la primera vez. Un cliente que sabe entrar al catálogo compra más seguido y te quita llamadas de encima.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-link="catalogo" target="_blank" rel="noopener noreferrer">Abrir el catálogo web <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">6</div>
+    <div class="paso-body">
+      <h3>El carrito llega al ERP y tú confirmas</h3>
+      <p>Todo lo que el cliente pone en su carrito lo vemos nosotros en el ERP. Entonces te buscamos y te hacemos una sola pregunta: <strong>¿esta cotización se convierte en compra?</strong></p>
+      <ol class="lista">
+        <li>El cliente arma su carrito en el catálogo.</li>
+        <li>Refatrix te pregunta si el pedido se confirma.</li>
+        <li>Tú confirmas con el cliente y nos respondes.</li>
+        <li>Confirmado el pedido, empacamos y enviamos.</li>
+      </ol>
+      <div class="nota ojo">
+        <span class="t">Responde rápido</span>
+        <p>Mientras no confirmes, el pedido no se surte y el material sigue disponible para otro cliente. La demora se paga con inventario perdido.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-erp="quotelist">Ver pedidos por confirmar <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">7</div>
+    <div class="paso-body">
+      <h3>Se cobra la factura, y ahí nace tu comisión</h3>
+      <p>Enviamos la mercancía y facturamos. <strong>Tu comisión no se genera con la venta: se genera con el cobro.</strong> Y se calcula <strong>factura por factura</strong>.</p>
+
+      <figure class="scroll">
+        <svg class="dgm" viewBox="0 0 880 300" role="img" aria-label="Comparación de dos facturas de cien pesos: la que se cobró completa genera comisión; la que se quedó en noventa y nueve pesos no genera ninguna comisión, aunque falte solo un peso.">
+          <text x="20" y="22" class="lbl">FACTURA A</text>
+          <rect x="20" y="34" width="390" height="220" rx="3" class="box-ok"/>
+          <text x="44" y="70" class="ttl">Valor de la factura</text>
+          <text x="386" y="70" class="big" text-anchor="end">$100</text>
+          <text x="44" y="102" class="ttl">Cobrado</text>
+          <text x="386" y="102" class="big ok-t" text-anchor="end">$100</text>
+          <rect x="44" y="118" width="342" height="20" rx="2" fill="var(--surface-2)" stroke="var(--line-2)"/>
+          <rect x="44" y="118" width="342" height="20" rx="2" fill="var(--ok)" opacity="0.85"/>
+          <text x="215" y="133" text-anchor="middle" style="fill:var(--surface);font-weight:600">100% COBRADO</text>
+          <text x="44" y="172" class="ttl">Falta por cobrar</text>
+          <text x="386" y="172" class="mono ok-t" text-anchor="end">$0</text>
+          <line x1="44" y1="188" x2="386" y2="188" stroke="var(--ok)"/>
+          <text x="215" y="222" class="ttl ok-t" text-anchor="middle" style="font-size:20px">SÍ SE PAGA COMISIÓN</text>
+          <text x="215" y="242" text-anchor="middle">Esta factura ya cuenta para tu pago</text>
+
+          <text x="470" y="22" class="lbl">FACTURA B</text>
+          <rect x="470" y="34" width="390" height="220" rx="3" class="box-warn"/>
+          <text x="494" y="70" class="ttl">Valor de la factura</text>
+          <text x="836" y="70" class="big" text-anchor="end">$100</text>
+          <text x="494" y="102" class="ttl">Cobrado</text>
+          <text x="836" y="102" class="big warn-t" text-anchor="end">$99</text>
+          <rect x="494" y="118" width="342" height="20" rx="2" fill="var(--surface-2)" stroke="var(--line-2)"/>
+          <rect x="494" y="118" width="338" height="20" rx="2" fill="var(--warn)" opacity="0.85"/>
+          <text x="663" y="133" text-anchor="middle" style="fill:var(--surface);font-weight:600">99% COBRADO</text>
+          <text x="494" y="172" class="ttl">Falta por cobrar</text>
+          <text x="836" y="172" class="mono acc-t" text-anchor="end">$1</text>
+          <line x1="494" y1="188" x2="836" y2="188" stroke="var(--warn)"/>
+          <text x="665" y="222" class="ttl acc-t" text-anchor="middle" style="font-size:20px">NO SE PAGA COMISIÓN</text>
+          <text x="665" y="242" text-anchor="middle">Por $1 que falta, la factura entera queda fuera</text>
+
+          <text x="440" y="286" class="lbl" text-anchor="middle">CADA FACTURA SE PAGA O NO SE PAGA — NO HAY MEDIAS COMISIONES</text>
+        </svg>
+        <figcaption><b>La regla del 100%.</b> Se paga comisión únicamente por facturas cobradas por completo. Un peso pendiente deja fuera toda la factura, hasta que se cobre.</figcaption>
+      </figure>
+
+      <div class="nota alerta">
+        <span class="t">Qué significa para ti</span>
+        <p>Cobrar es parte de tu trabajo, no solo del área de crédito. Una factura con $1 pendiente es una comisión detenida. Cuando ese peso entra, la factura se libera y esa comisión se te paga.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-erp="commission">Ver mis facturas y su cobranza <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">8</div>
+    <div class="paso-body">
+      <h3>Emites tu factura de comisión</h3>
+      <p>Refatrix <strong>no puede pagarte sin una factura tuya</strong>. Tú nos emites una factura por el monto de comisión de las facturas ya cobradas al 100%.</p>
+      <div class="nota">
+        <span class="t">Orden correcto</span>
+        <p>Primero se cobra la factura del cliente → luego confirmamos el monto de tu comisión → luego emites tu factura → luego se paga. No al revés.</p>
+      </div>
+      <p class="acciones"><a class="btn is-off" data-link="correoFactura" target="_blank" rel="noopener noreferrer">Enviar mi factura de comisión <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+
+  <div class="paso">
+    <div class="paso-n">9</div>
+    <div class="paso-body">
+      <h3>Cobras el día 15 del mes siguiente</h3>
+      <p>La comisión de una factura se paga <strong>el día 15 del mes siguiente al mes en que se completó su cobro</strong>.</p>
+
+      <figure class="scroll">
+        <svg class="dgm" viewBox="0 0 880 210" role="img" aria-label="Línea de tiempo: una factura cobrada al cien por ciento en octubre se paga como comisión el quince de noviembre, siempre que exista la factura de comisión del comisionista.">
+          <defs>
+            <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="arrow-h"/></marker>
+          </defs>
+          <text x="20" y="22" class="lbl">EJEMPLO</text>
+
+          <rect x="20" y="34" width="250" height="58" rx="3" class="box"/>
+          <text x="145" y="58" class="ttl" text-anchor="middle">20 de octubre</text>
+          <text x="145" y="79" text-anchor="middle">La factura queda cobrada al 100%</text>
+
+          <line x1="270" y1="63" x2="330" y2="63" class="flow" marker-end="url(#ah3)"/>
+
+          <rect x="336" y="34" width="230" height="58" rx="3" class="box-steel"/>
+          <text x="451" y="58" class="ttl steel-t" text-anchor="middle">Requisito</text>
+          <text x="451" y="79" text-anchor="middle">Emites tu factura de comisión</text>
+
+          <line x1="566" y1="63" x2="626" y2="63" class="flow" marker-end="url(#ah3)"/>
+
+          <rect x="632" y="34" width="228" height="58" rx="3" class="box-ok"/>
+          <text x="746" y="58" class="ttl ok-t" text-anchor="middle">15 de noviembre</text>
+          <text x="746" y="79" text-anchor="middle">Refatrix te paga la comisión</text>
+
+          <line x1="20" y1="126" x2="860" y2="126" stroke="var(--line-2)"/>
+          <circle cx="145" cy="126" r="5" fill="var(--ink-3)"/>
+          <circle cx="746" cy="126" r="6" fill="var(--ok)"/>
+          <text x="145" y="150" class="lbl" text-anchor="middle">MES DE COBRO</text>
+          <text x="746" y="150" class="lbl ok-t" text-anchor="middle">MES SIGUIENTE, DÍA 15</text>
+
+          <text x="20" y="190" class="lbl">SI EL COBRO SE COMPLETA EL 2 DE NOVIEMBRE, LA COMISIÓN SE PAGA EL 15 DE DICIEMBRE — MANDA LA FECHA DEL ÚLTIMO PESO COBRADO.</text>
+        </svg>
+        <figcaption><b>Cuándo entra el dinero.</b> Manda la fecha en que la factura terminó de cobrarse, no la fecha en que se vendió.</figcaption>
+      </figure>
+      <p class="acciones"><a class="btn is-off" data-erp="commission">Ver mi comisión del próximo día 15 <span class="ext">↗</span></a></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rule"><h2>Las 5 reglas que no se negocian</h2><span class="eyebrow">Memorízalas</span></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Regla</th><th>Consecuencia si no se cumple</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td>Sin los 3 documentos no hay exclusividad ni crédito.</td><td>Otro puede registrar el RFC y quedarse con tu cliente, y tu cliente paga por adelantado.</td></tr>
+        <tr><td class="n">2</td><td>El RFC solo se registra una vez, y gana el primero.</td><td>Llegar tarde con un cliente equivale a perderlo.</td></tr>
+        <tr><td class="n">3</td><td>La comisión se paga por factura cobrada al 100%.</td><td>Con $1 pendiente, esa factura no paga nada.</td></tr>
+        <tr><td class="n">4</td><td>Sin tu factura de comisión no hay pago.</td><td>El monto queda esperando hasta que la emitas.</td></tr>
+        <tr><td class="n">5</td><td>El descuento lo define Refatrix; los 30 días salen de los documentos.</td><td>Ofrecer condiciones por tu cuenta no obliga a la empresa.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="rule"><h2>Preguntas frecuentes</h2><span class="eyebrow">Dudas típicas</span></div>
+  <div class="faq">
+    <details open>
+      <summary>¿Puedo empezar a vender sin subir los documentos?</summary>
+      <div class="a">Sí. Puedes visitar al cliente, cotizarle y venderle. Pierdes dos cosas: la exclusividad — cualquier otro vendedor o comisionista puede registrar ese RFC antes que tú y quedarse con la comisión — y los 30 días de crédito, así que ese cliente tendría que pagar por adelantado.</div>
+    </details>
+    <details>
+      <summary>¿Qué pasa si otro ya registró el RFC de mi cliente?</summary>
+      <div class="a">Ese cliente ya tiene dueño en el sistema. Puedes seguir en contacto con él, pero la comisión de sus compras es de quien lo registró. Por eso conviene entregar los documentos cuanto antes.</div>
+    </details>
+    <details>
+      <summary>Los 12 meses de garantía, ¿desde cuándo cuentan?</summary>
+      <div class="a">Desde que el cliente queda registrado como exclusivamente tuyo, es decir, cuando están los tres documentos y lo damos de alta con esa condición.</div>
+    </details>
+    <details>
+      <summary>Mi cliente pagó una factura completa y dos a medias. ¿Cuánto cobro?</summary>
+      <div class="a">Cobras la comisión de la factura que quedó pagada al 100%. Las otras dos no pagan nada todavía; cuando cada una se termine de cobrar, entra en el pago del día 15 del mes siguiente a su cobro.</div>
+    </details>
+    <details>
+      <summary>Subí solo dos documentos. ¿Qué pasa?</summary>
+      <div class="a">Nada malo, pero todavía no cuentan. La exclusividad y los 30 días se activan con los tres completos — no hay medias condiciones. Sube el que falta en Clientes → el cliente → Documentos, y ahí mismo verás cuando ya estén los tres.</div>
+    </details>
+    <details>
+      <summary>Mi cliente ya está registrado desde antes, sin documentos. ¿Puedo arreglarlo?</summary>
+      <div class="a">Sí, si nadie más registró su RFC. Entra a Clientes → el cliente → Documentos y sube los tres. Cuando estén completos, pide al Director que ajuste el crédito a 30 días.</div>
+    </details>
+    <details>
+      <summary>¿Puedo cambiar el descuento de un cliente después?</summary>
+      <div class="a">Se puede revisar, pero no lo decides tú solo. Al principio lo tratas con el Director; más adelante, con el Jefe de Ventas. Para revisarlo necesitamos el dato de a qué precio le compra hoy a SYD.</div>
+    </details>
+    <details>
+      <summary>¿Puedo cambiar mi plan de metas mensuales?</summary>
+      <div class="a">Sí. El plan es una herramienta de trabajo, no un castigo. Lo importante es que la suma siga apuntando a los $3,000,000 sin IVA hasta diciembre de 2027 y que refleje lo que de verdad esperas vender.</div>
+    </details>
+  </div>
+</section>
+
+<section>
+  <div class="rule"><h2>Glosario</h2><span class="eyebrow">Palabras que usamos todos los días</span></div>
+  <dl class="glo">
+    <div><dt>RFC</dt><dd>El número con el que el SAT identifica a cada empresa. Es la llave del registro: uno por cliente, y solo se registra una vez.</dd></div>
+    <div><dt>Constancia de situación fiscal</dt><dd>Documento oficial del SAT con los datos fiscales del cliente.</dd></div>
+    <div><dt>Sin IVA</dt><dd>El monto antes de impuestos. Todas las metas y comisiones se hablan en montos sin IVA.</dd></div>
+    <div><dt>ERP</dt><dd>El sistema interno de Refatrix. Ahí viven los clientes, los pedidos, las facturas y las comisiones.</dd></div>
+    <div><dt>Catálogo web</dt><dd>refatrix.com.mx. Donde el cliente ve inventario y su precio, y arma su carrito.</dd></div>
+    <div><dt>Días de crédito</dt><dd>Los días que el cliente tiene para pagar después de la factura. Con los 3 documentos son 30 días; sin ellos, pago por adelantado.</dd></div>
+    <div><dt>Cobranza al 100%</dt><dd>Que la factura quedó pagada por completo, sin un solo peso pendiente.</dd></div>
+    <div><dt>SYD</dt><dd>Marca competidora. Su precio de compra es la referencia para calcular tu descuento.</dd></div>
+  </dl>
+</section>
+
+<section>
+  <div class="rule"><h2>Tus accesos</h2><span class="eyebrow" id="acc-eyebrow">Lo llena Refatrix</span></div>
+  <div class="llenar" id="accesos">
+    <div class="row"><span class="k">Catálogo web del cliente</span><span class="v vacio">— pendiente de llenar —</span></div>
+    <div class="row"><span class="k">Correo para enviar mi factura de comisión</span><span class="v vacio">— pendiente de llenar —</span></div>
+    <div class="row"><span class="k">Datos fiscales de Refatrix para facturar</span><span class="v vacio">— pendiente de llenar —</span></div>
+    <div class="row"><span class="k">A quién le pregunto si algo no está claro</span><span class="v vacio">— pendiente de llenar —</span></div>
+  </div>
+  <p style="margin-top:.7rem;font-size:.85rem;color:var(--ink-3)">Las pantallas del ERP (clientes, metas, pedidos, comisiones) y la subida de los 3 documentos se abren con los botones de cada paso — no necesitan liga. Tu PIN no se guarda aquí: Refatrix te lo entrega por separado.</p>
+</section>
+
+<footer>
+  <span>Refatrix · Distribución de suspensión y dirección CTR · Monterrey y Mérida</span>
+  <span class="num">Guía del Comisionista · v1 · 2026</span>
+</footer>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  /* =====================================================================
+     CONFIGURACIÓN — Refatrix edita estos valores y vuelve a publicar.
+     (Dentro del ERP estos son los únicos datos que se escriben a mano;
+      las pantallas del ERP se abren solas con la sesión del usuario.)
+     ===================================================================== */
+  var CONFIG = {
+    catalogo:      "https://refatrix.com.mx",
+    correoFactura: "",   // ej. "facturas@refatrix.com.mx"
+    datosFactura:  "",   // RFC y razón social de Refatrix para la factura de comisión
+    contacto:      ""    // nombre y teléfono de quien resuelve dudas
+  };
+
+  var FIELDS = [
+    {k:"catalogo",      kind:"url",   label:"Catálogo web del cliente",                   hint:"Paso 5"},
+    {k:"correoFactura", kind:"email", label:"Correo para enviar mi factura de comisión",  hint:"Paso 8"},
+    {k:"datosFactura",  kind:"text",  label:"Datos fiscales de Refatrix para facturar",   hint:"Paso 8"},
+    {k:"contacto",      kind:"text",  label:"A quién le pregunto si algo no está claro",  hint:""}
+  ];
+  var BY_KEY = {};
+  FIELDS.forEach(function(f){ BY_KEY[f.k] = f; });
+
+  /* Pantallas del ERP a las que llevan los botones de cada paso. */
+  var ERP_FILE = {
+    customers:  {file:"refatrix-customers.html", tab:"list"},
+    targets:    {file:"refatrix-targets.html",   tab:""},
+    quotelist:  {file:"refatrix-quotelist.html", tab:""},
+    commission: {file:"refatrix-commission.html",tab:""}
+  };
+
+  var DOC_PATH = "config/accesos";
+  var panel = document.getElementById("accesos");
+  var eyebrow = document.getElementById("acc-eyebrow");
+  var data = Object.assign({}, CONFIG);
+  var canEdit = false, editing = false, dbRef = null;
+  var estado = "", estadoTipo = "";
+
+  /* ---- sesión del ERP (si la guía se abre dentro del ERP) ---- */
+  function getSession(){
+    try{
+      var raw = sessionStorage.getItem("refatrix_session");
+      if(!raw){ raw = localStorage.getItem("refatrix_session"); }
+      if(raw){ var o = JSON.parse(raw); if(o && o.token) return o; }
+    }catch(e){}
+    try{
+      var h = location.hash.slice(1);
+      if(h){ var p = new URLSearchParams(h); var tk = p.get("token");
+             if(tk) return {token:tk, api:p.get("api")||"", user:{}}; }
+    }catch(e){}
+    return null;
+  }
+  var sess = getSession();
+
+  function erpUrl(key){
+    var s = ERP_FILE[key];
+    if(!s || !sess) return null;
+    var u = s.file + "#token=" + encodeURIComponent(sess.token) +
+            "&api=" + encodeURIComponent(sess.api || "") +
+            "&user=" + encodeURIComponent(JSON.stringify(sess.user || {}));
+    if(s.tab) u += "&tab=" + encodeURIComponent(s.tab);
+    return u;
+  }
+
+  function hrefFor(f, v){
+    if(!v) return null;
+    if(f.kind === "email") return "mailto:" + v;
+    if(f.kind === "url") return /^https?:\/\//i.test(v) ? v : "https://" + v;
+    return null;
+  }
+
+  /* ---- botones: pasos + accesos rápidos ---- */
+  function paintLinks(){
+    var nodes = document.querySelectorAll("a[data-link],a[data-erp]");
+    Array.prototype.forEach.call(nodes, function(a){
+      var href = null, motivo = "";
+      var erpKey = a.getAttribute("data-erp");
+      if(erpKey){
+        href = erpUrl(erpKey);
+        motivo = "Entra al ERP para abrir esta pantalla";
+      } else {
+        var f = BY_KEY[a.getAttribute("data-link")];
+        href = f ? hrefFor(f, String(data[f.k] || "").trim()) : null;
+        motivo = "Refatrix todavía no ha capturado este dato";
+      }
+      if(href){
+        a.setAttribute("href", href);
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer");
+        a.classList.remove("is-off");
+        a.removeAttribute("aria-disabled");
+        a.removeAttribute("title");
+      } else {
+        a.removeAttribute("href");
+        a.classList.add("is-off");
+        a.setAttribute("aria-disabled", "true");
+        a.setAttribute("title", motivo);
+      }
+    });
+  }
+
+  /* ---- panel de accesos ---- */
+  function el(tag, cls, text){
+    var n = document.createElement(tag);
+    if(cls) n.className = cls;
+    if(text != null) n.textContent = text;
+    return n;
+  }
+
+  function renderPanel(){
+    if(!panel) return;
+    panel.textContent = "";
+
+    var quien = "";
+    if(sess && sess.user){ quien = sess.user.name || sess.user.login_id || ""; }
+    if(quien){
+      var rowU = el("div", "row");
+      rowU.appendChild(el("span", "k", "Mi usuario de acceso"));
+      rowU.appendChild(el("span", "v", quien));
+      rowU.appendChild(el("span", "hint", "Es la sesión con la que entraste al ERP"));
+      panel.appendChild(rowU);
+    }
+
+    FIELDS.forEach(function(f){
+      var row = el("div", "row");
+      row.appendChild(el("span", "k", f.label));
+      if(editing){
+        var inp = el("input");
+        inp.type = f.kind === "email" ? "email" : "text";
+        inp.value = data[f.k] || "";
+        inp.setAttribute("data-field", f.k);
+        inp.setAttribute("aria-label", f.label);
+        inp.placeholder = f.kind === "url" ? "https://…" : (f.kind === "email" ? "nombre@refatrix.com.mx" : "");
+        row.appendChild(inp);
+      } else {
+        var v = String(data[f.k] || "").trim();
+        if(v){
+          var href = hrefFor(f, v);
+          if(href){
+            var a = el("a", "v", v);
+            a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
+            row.appendChild(a);
+          } else { row.appendChild(el("span", "v", v)); }
+        } else {
+          row.appendChild(el("span", "v vacio", "— pendiente de llenar —"));
+        }
+      }
+      if(f.hint) row.appendChild(el("span", "hint", f.hint));
+      panel.appendChild(row);
+    });
+
+    var barra = el("div", "barra");
+    if(canEdit && !editing){
+      var bEdit = el("button", "btn ghost", "Editar accesos");
+      bEdit.type = "button";
+      bEdit.addEventListener("click", function(){ editing = true; estado = ""; renderPanel(); });
+      barra.appendChild(bEdit);
+    }
+    if(canEdit && editing){
+      var bSave = el("button", "btn", "Guardar");
+      bSave.type = "button";
+      bSave.addEventListener("click", save);
+      var bCancel = el("button", "btn ghost", "Cancelar");
+      bCancel.type = "button";
+      bCancel.addEventListener("click", function(){ editing = false; estado = ""; renderPanel(); });
+      barra.appendChild(bSave); barra.appendChild(bCancel);
+    }
+    if(estado) barra.appendChild(el("span", "estado " + estadoTipo, estado));
+    if(barra.childNodes.length) panel.appendChild(barra);
+
+    if(eyebrow) eyebrow.textContent = canEdit ? "Editable por Refatrix" : "Lo llena Refatrix";
+  }
+
+  function save(){
+    if(!dbRef) return;
+    var next = {};
+    FIELDS.forEach(function(f){
+      var inp = panel.querySelector('input[data-field="' + f.k + '"]');
+      var v = inp ? inp.value.trim() : String(data[f.k] || "");
+      if(v) next[f.k] = v;
+    });
+    estado = "Guardando…"; estadoTipo = ""; renderPanel();
+    dbRef.doc(DOC_PATH).set(next).then(function(){
+      data = Object.assign({}, CONFIG, next);
+      editing = false;
+      estado = "Guardado. Todos los que abran la guía lo verán.";
+      estadoTipo = "ok";
+      paintLinks(); renderPanel();
+    })["catch"](function(){
+      estado = "No se pudo guardar. Solo Refatrix puede editar esta sección.";
+      estadoTipo = "err";
+      renderPanel();
+    });
+  }
+
+  /* ---- arranque ---- */
+  paintLinks();
+  renderPanel();
+
+  if(!window.claude || typeof window.claude.use !== "function") return;
+
+  window.claude.use("db").then(function(db){
+    if(!db) return;
+    dbRef = db;
+    db.doc(DOC_PATH).onSnapshot(function(snap){
+      if(editing) return;
+      var got = (snap && snap.exists) ? snap.data() : {};
+      data = Object.assign({}, CONFIG, got);
+      paintLinks(); renderPanel();
+    }, function(){ /* sin conexión: la guía sigue legible */ });
+
+    db.doc("config/_probe").set({ t: Date.now() }).then(function(){
+      canEdit = true; renderPanel();
+    })["catch"](function(){ /* solo lectura */ });
+  })["catch"](function(){ /* la guía funciona sin capacidades */ });
+})();
+</script>
+<script src="refatrix-nav.js?v=20260909guia"></script>
+</body>
+</html>

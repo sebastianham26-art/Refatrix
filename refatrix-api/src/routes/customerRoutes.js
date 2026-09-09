@@ -1217,6 +1217,36 @@ export default async function customerRoutes(app) {
       }
     }
 
+    // ── ②-b 서류 3종 (등록 화면에서 바로 첨부) ────────────────────────
+    //   커미셔너 정책: constancia · 주소증명 · 서스펜션 구매 팩투라 3종이 모두 붙으면
+    //   그 고객은 독점 대상이고 외상 30일 조건이 적용된다(디렉터 승인 시 확정).
+    //   여기서는 **파일을 받아 보관**만 한다 — 조건 적용 여부는 승인 화면의 판단이다.
+    //   `constancia_file`(단건 · 기존 경로)은 그대로 살려 두고, 추가분만 docs[] 로 받는다.
+    const EXTRA_DOC_TYPES = ['constancia', 'domicilio', 'factura_compra', 'other'];
+    const rawDocs = Array.isArray(b.docs) ? b.docs.slice(0, 6) : [];
+    const extraDocs = [];
+    for (const d of rawDocs) {
+      const nm = String(d?.file_name || '').trim();
+      const mm = String(d?.mime_type || '').trim();
+      const bb = String(d?.data_base64 || '');
+      if (!nm && !mm && !bb) continue;                     // 빈 슬롯은 건너뛴다
+      if (!nm || !mm || !bb) {
+        return reply.code(400).send({ error: 'doc_file_incomplete',
+          note: '첨부가 불완전한 서류가 있습니다. 파일을 다시 선택하거나 비워 두세요.' });
+      }
+      if (!ALLOWED_DOC_MIME.includes(mm)) {
+        return reply.code(400).send({ error: 'unsupported_type', note: 'PDF·JPEG·PNG·WEBP만 첨부할 수 있습니다.' });
+      }
+      let buf;
+      try { buf = Buffer.from(bb, 'base64'); } catch (_) { return reply.code(400).send({ error: 'bad_base64' }); }
+      if (!buf.length) return reply.code(400).send({ error: 'empty_file' });
+      if (buf.length > MAX_DOC_BYTES) {
+        return reply.code(400).send({ error: 'too_large', note: '파일은 5MB 이하만 가능합니다.' });
+      }
+      const dt = EXTRA_DOC_TYPES.includes(String(d?.doc_type || '')) ? String(d.doc_type) : 'other';
+      extraDocs.push({ doc_type: dt, file_name: nm, mime_type: mm, buf });
+    }
+
     // ── ③ 선점 검사 (RFC · CONSTANCIA) ────────────────────────────────
     //   유니크 인덱스가 최종 방어선이지만, 사용자에게는 "누가 선점했는지" 를 알려줘야 하므로
     //   저장 전에 먼저 조회한다. 동시성 충돌은 아래 INSERT 의 unique 에러로 다시 잡힌다.
@@ -1378,6 +1408,24 @@ export default async function customerRoutes(app) {
       }
     }
 
+    // 등록 화면에서 함께 올라온 나머지 서류 — 하나가 실패해도 등록을 되돌리지 않는다(위와 같은 이유).
+    let docsSaved = docBuf && !docWarning ? 1 : 0;
+    const docTypesSaved = docBuf && !docWarning ? ['constancia'] : [];
+    for (const ed of extraDocs) {
+      try {
+        await query(
+          `INSERT INTO customer_documents (customer_id, doc_type, file_name, mime_type, byte_size, content, uploaded_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [row.id, ed.doc_type, ed.file_name, ed.mime_type, ed.buf.length, ed.buf, perm.userId]);
+        docsSaved += 1;
+        if (!docTypesSaved.includes(ed.doc_type)) docTypesSaved.push(ed.doc_type);
+      } catch (e) {
+        docWarning = docWarning || 'doc_save_failed';
+      }
+    }
+    // 3종(constancia · 주소증명 · 구매 팩투라)이 모두 붙었는지 — 승인 화면·안내 문구용 신호.
+    const docsComplete = ['constancia', 'domicilio', 'factura_compra'].every((t) => docTypesSaved.includes(t));
+
     // ── ⑦ 이력 ───────────────────────────────────────────────────────
     const snapshot = {
       syd_ref_code: baseCode, syd_ref_buy_price: buyPrice, syd_ref_list_price: sydLP,
@@ -1434,6 +1482,10 @@ export default async function customerRoutes(app) {
       // 0193 · RFC 를 넣었으면 그 순간 선점됐고, 안 넣었으면 선점이 없다(나중에 남이 가져갈 수 있다).
       claimed_by: rfcClean ? 'rfc' : null, rfc_claimed: !!rfcClean,
       rfc: rfcClean, constancia_no: conNo || null, constancia_doc: !!docBuf && !docWarning,
+      docs_saved: docsSaved, docs_types: docTypesSaved, docs_complete: docsComplete,
+      docs_note: docsComplete
+        ? '서류 3종이 모두 접수됐습니다 — 독점 + 외상 30일 조건으로 승인 검토됩니다.'
+        : '서류 3종(constancia · 주소증명 · 서스펜션 구매 팩투라)이 모두 있어야 독점 + 외상 30일 조건이 적용됩니다.',
       similar,
       note: rfcClean
         ? `등록 요청을 보냈습니다 — RFC ${rfcClean} 로 선점되었고, 디렉터 승인 후 견적·매출에 쓸 수 있습니다.`
