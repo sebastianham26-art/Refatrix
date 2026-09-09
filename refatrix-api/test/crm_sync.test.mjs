@@ -114,6 +114,41 @@ test('폴백 규칙은 등록부(데이터)에 있고 코드에 박히지 않는
   assert.ok(/fFallbackKey/.test(g), '화면에서 대체 창구를 고를 수 있어야 한다');
 });
 
+// ── 0214 · API 키를 다른 창구에서 물려받는다 ────────────────────
+test('키를 자기 자신에게서 물려받을 수는 없다', () => {
+  assert.equal(validatePatch({ auth_from: 'customer_create' },
+    { key: 'customer_create', direction: 'out' }), 'auth_from_self');
+  assert.equal(validatePatch({ auth_from: 'customer_commercial' },
+    { key: 'customer_create', direction: 'out' }), null);
+  assert.equal(validatePatch({ auth_from: '' }, { key: 'customer_create', direction: 'out' }), null,
+    '빈 값(물려받지 않음)은 언제나 허용된다');
+});
+
+test('물려받은 키도 값으로는 내려가지 않는다 — 출처만 알려 준다', () => {
+  // 화면은 「어디 키를 쓰는지」만 알면 된다. 값이 한 번이라도 응답에 실리면
+  // 브라우저 개발자도구·로그·캡처 어디로든 샌다.
+  const pub = publicEndpoint({ key: 'customer_create', category: 'customer', label: '신규 등록',
+    env: 'test', url_test: 'https://crm/x', auth_from: 'customer_commercial',
+    auth_token_test: 'borrowed-secret', token_borrowed_from: 'customer_commercial',
+    token_borrowed_label: '고객 상거래정보', timeout_ms: 10000 });
+  assert.equal(pub.has_token, true);
+  assert.equal(pub.auth_from, 'customer_commercial');
+  assert.equal(pub.token_borrowed_from, 'customer_commercial');
+  assert.equal(JSON.stringify(pub).includes('borrowed-secret'), false, '키 값이 응답에 실리면 안 된다');
+});
+
+test('키 물려받기 규칙도 한 곳(등록부)에 있고 화면이 그걸 읽는다', () => {
+  // 이 프로젝트에서 두 번 사고가 났다 — 규칙이 코드와 화면에 따로 있으면 반드시 엇갈린다.
+  const src = readFileSync(new URL('../src/integrations.js', import.meta.url), 'utf8');
+  assert.ok(/_depth < 3/.test(src), '사슬이 꼬여도 멈춰야 한다');
+  assert.ok(/String\(ep\.auth_from\) !== String\(key\)/.test(src), '자기 자신에게서 물려받으면 안 된다');
+  assert.ok(/&& !activeToken\(ep\)/.test(src), '자기 키가 있으면 그걸 써야 한다');
+  const g = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
+  assert.ok(/fAuthFrom/.test(g), '화면에서 물려받을 창구를 고를 수 있어야 한다');
+  assert.ok(/token_borrowed_label|token_borrowed_from/.test(g),
+    '화면은 서버가 준 사실을 보여줘야 한다 — 스스로 추측하면 어긋난다');
+});
+
 test('시험 전송도 실전과 같은 본문 조립기를 쓴다', () => {
   // 예전에는 integrationRoutes 가 본문을 따로 만들었다 — 계약이 바뀌면
   // 「테스트는 되는데 실전은 안 되는」 상태가 된다.
@@ -332,6 +367,69 @@ dbTest('적재 → 전송 → 재시도 → 삭제 (실 DB)', async (t) => {
   await query(`DELETE FROM crm_customer_outbox WHERE customer_id IN ($1,$2,$3)`, [c1, c2, c3]);
   await query(`DELETE FROM customers WHERE id IN ($1,$2,$3)`, [c1, c2, c3]);
   await query(`DELETE FROM users WHERE id=$1`, [uid]);
+});
+
+// ── 0214-b · 실제로 키가 물려져 나가는가 (실 DB) ────────────────
+dbTest('자기 키가 없으면 물려받고, 발급하면 자기 것을 쓴다 (실 DB)', async (t) => {
+  const { query } = await import('../src/db.js');
+  const { getEndpoint, listEndpoints, publicEndpoint, invalidateEndpointCache } =
+    await import('../src/integrations.js');
+
+  const SRC = 'customer_commercial';
+  const DST = 'customer_create';
+  const before = (await query(
+    `SELECT key, auth_token_test, auth_from FROM integration_endpoints WHERE key IN ($1,$2)`,
+    [SRC, DST])).rows;
+  const orig = Object.fromEntries(before.map((r) => [r.key, r]));
+
+  const restore = async () => {
+    for (const r of before) {
+      await query(`UPDATE integration_endpoints SET auth_token_test=$2, auth_from=$3 WHERE key=$1`,
+        [r.key, r.auth_token_test, r.auth_from]);
+    }
+    invalidateEndpointCache();
+  };
+  t.after(restore);
+
+  await query(`UPDATE integration_endpoints SET env='test', auth_token_test=$2 WHERE key=$1`,
+    [SRC, 'src-key-0214']);
+  await query(`UPDATE integration_endpoints SET env='test', auth_token_test=NULL, auth_token=NULL,
+                      auth_from=$2 WHERE key=$1`, [DST, SRC]);
+  invalidateEndpointCache();
+
+  await t.test('자기 키가 없으면 지정한 창구의 키를 쓴다', async () => {
+    const ep = await getEndpoint(DST);
+    assert.equal(ep.auth_token_test, 'src-key-0214');
+    assert.equal(ep.token_borrowed_from, SRC);
+    const pub = publicEndpoint(ep);
+    assert.equal(pub.has_token, true);
+    assert.equal(JSON.stringify(pub).includes('src-key-0214'), false);
+  });
+
+  await t.test('목록과 상세가 같은 말을 한다', async () => {
+    // 목록은 「키 있음」인데 상세는 「없음」이면 디렉터는 어느 쪽을 믿어야 할지 알 수 없다.
+    const inList = (await listEndpoints()).find((e) => e.key === DST);
+    assert.equal(publicEndpoint(inList).has_token, true);
+    assert.equal(publicEndpoint(inList).token_borrowed_from, SRC);
+  });
+
+  await t.test('자기 키를 발급하면 물려받기가 멈춘다', async () => {
+    await query(`UPDATE integration_endpoints SET auth_token_test=$2 WHERE key=$1`, [DST, 'own-key-0214']);
+    invalidateEndpointCache();
+    const ep = await getEndpoint(DST);
+    assert.equal(ep.auth_token_test, 'own-key-0214', '분리하고 싶으면 발급만 하면 된다');
+    assert.equal(ep.token_borrowed_from, undefined);
+  });
+
+  await t.test('출처 창구의 키가 비면 물려받을 것이 없다(조용히 인증 없이 나가지 않게 화면이 알린다)', async () => {
+    await query(`UPDATE integration_endpoints SET auth_token_test=NULL WHERE key IN ($1,$2)`, [SRC, DST]);
+    invalidateEndpointCache();
+    const pub = publicEndpoint(await getEndpoint(DST));
+    assert.equal(pub.has_token, false);
+    assert.equal(pub.auth_from, SRC, '지정은 남아 있어야 키를 채우면 바로 돈다');
+  });
+
+  assert.ok(orig[DST], 'customer_create 창구가 0213 으로 등록돼 있어야 한다');
 });
 
 test.after(() => { crm.close(); });

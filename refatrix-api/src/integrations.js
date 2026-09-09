@@ -86,8 +86,15 @@ export async function envTokenColsReady() {
   return envTokCols;
 }
 
-/** 전송에 쓸 설정. 못 찾으면 null. */
-export async function getEndpoint(key) {
+/**
+ * 전송에 쓸 설정. 못 찾으면 null.
+ *
+ *   0214 · 자기 키가 없고 `auth_from` 이 있으면 **그 창구의 키를 물려받는다.**
+ *   키를 두 행에 각각 저장하면 나중에 바꿀 때 한쪽만 고치고 잊는다 — 그날부터 한 창구가
+ *   조용히 401 을 맞는다. 키는 한 곳에만 두고, 나머지는 어디서 가져올지만 가리킨다.
+ *   (자기 키를 발급하는 순간 물려받기는 멈춘다 — 분리하고 싶으면 그냥 발급하면 된다)
+ */
+export async function getEndpoint(key, _depth = 0) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.ep;
   let ep = null;
@@ -98,6 +105,19 @@ export async function getEndpoint(key) {
     } catch (_) { /* 조회 실패 시 환경변수로 */ }
   }
   if (!ep) ep = fallbackEndpoint(key);
+  // 키 물려받기 — 사슬이 꼬여도 멈추게 깊이를 제한한다(자기 자신·순환 방지).
+  if (ep && ep.auth_from && String(ep.auth_from) !== String(key) && _depth < 3
+      && !activeToken(ep)) {
+    try {
+      const src = await getEndpoint(String(ep.auth_from), _depth + 1);
+      if (src && activeToken(src)) {
+        ep = { ...ep,
+          auth_token: src.auth_token, auth_token_test: src.auth_token_test,
+          auth_token_prod: src.auth_token_prod,
+          token_borrowed_from: src.key, token_borrowed_label: src.label || src.key };
+      }
+    } catch (_) { /* 물려받기 실패는 인증 없이 보내는 것과 같다 — 화면이 경고한다 */ }
+  }
   cache.set(key, { at: Date.now(), ep });
   return ep;
 }
@@ -109,7 +129,19 @@ export async function listEndpoints() {
   }
   const rows = (await query(
     `SELECT * FROM integration_endpoints ORDER BY sort_order, id`)).rows;
-  return rows.map((r) => ({ ...r, timeout_ms: Number(r.timeout_ms), source: 'db' }));
+  const list = rows.map((r) => ({ ...r, timeout_ms: Number(r.timeout_ms), source: 'db' }));
+  // 0214 · 목록에서도 물려받은 키를 반영한다 — 목록은 「키 있음」인데 상세는 「없음」이면
+  //   어느 쪽을 믿어야 할지 알 수 없다. (추가 조회 없이 같은 목록 안에서 찾는다)
+  const byKey = new Map(list.map((e) => [e.key, e]));
+  return list.map((e) => {
+    if (!e.auth_from || activeToken(e)) return e;
+    const src = byKey.get(String(e.auth_from));
+    if (!src || !activeToken(src)) return e;
+    return { ...e,
+      auth_token: src.auth_token, auth_token_test: src.auth_token_test,
+      auth_token_prod: src.auth_token_prod,
+      token_borrowed_from: src.key, token_borrowed_label: src.label || src.key };
+  });
 }
 
 /** 화면으로 내려보낼 형태 — 토큰은 절대 값으로 내리지 않는다. */
@@ -135,6 +167,10 @@ export function publicEndpoint(ep) {
     auth_in: ep.auth_in || 'header',
     auth_param: ep.auth_param || 'apiKey',
     has_token: !!activeToken(ep),                       // 지금 환경에서 실제로 쓰이는 키가 있는가
+    // 0214 · 자기 키가 없어 다른 창구의 키를 쓰고 있으면 어디서 왔는지 알려 준다.
+    auth_from: ep.auth_from || '',
+    token_borrowed_from: ep.token_borrowed_from || null,
+    token_borrowed_label: ep.token_borrowed_label || null,
     has_token_test: !!(ep.auth_token_test || ep.auth_token),
     has_token_prod: !!ep.auth_token_prod,
     ok_code: ep.ok_code, user_field: ep.user_field, timeout_ms: Number(ep.timeout_ms),
@@ -151,7 +187,8 @@ export function publicEndpoint(ep) {
 
 const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_test', 'url_prod',
   'method_upsert', 'method_delete', 'auth_header', 'auth_in', 'auth_param', 'ok_code', 'user_field',
-  'timeout_ms', 'contract', 'sort_order', 'no_retry_codes', 'fallback_key', 'fallback_codes'];
+  'timeout_ms', 'contract', 'sort_order', 'no_retry_codes', 'fallback_key', 'fallback_codes',
+  'auth_from'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 export function validatePatch(p, cur = null) {
@@ -168,6 +205,9 @@ export function validatePatch(p, cur = null) {
   // 폴백은 **자기 자신을 가리킬 수 없다** — 그러면 같은 실패로 무한히 새 전송이 쌓인다.
   if (p.fallback_key != null && String(p.fallback_key).trim()
       && cur && String(p.fallback_key).trim() === String(cur.key)) return 'fallback_self';
+  // 키를 자기 자신에게서 물려받을 수는 없다.
+  if (p.auth_from != null && String(p.auth_from).trim()
+      && cur && String(p.auth_from).trim() === String(cur.key)) return 'auth_from_self';
   if (p.timeout_ms != null) {
     const n = Number(p.timeout_ms);
     if (!Number.isFinite(n) || n < 1000 || n > 60000) return 'timeout_invalid';
