@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refatrix · 랙별 재고 현황 · build 20260721a</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E2DCCF;--steel:#52708A;--steel-d:#33495C;--gold:#B8893B;--red:#C0533B;--green:#3E7D5A;--radius:16px;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;font-size:15px;line-height:1.5}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .wrap{max-width:1000px;margin:0 auto;padding:14px 14px 60px}
+  header{padding:6px 0 10px}
+  h1{font-size:20px;margin:0}
+  .sub{color:var(--muted);font-size:12.5px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:13px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:9px}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+  .kpi .l{font-size:11.5px;color:var(--muted)} .kpi .v{font-size:21px;font-weight:700;letter-spacing:-.5px}
+  .kpi .v small{font-size:11px;color:var(--muted);font-weight:500}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px}
+  input[type=text]{font-family:inherit;padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;background:#fff;min-width:180px}
+  .btn{background:var(--steel);color:#fff;border:0;border-radius:10px;padding:9px 15px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+  .btn:hover{filter:brightness(1.08)} .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.g{background:var(--green)} .btn.ghost{background:var(--card);color:var(--steel-d);border:1.5px solid var(--line)}
+  .btn.sm{padding:6px 11px;font-size:12.5px}
+  label.chk{font-size:12.5px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:var(--steel-d);font-weight:600}
+  .seg{display:inline-flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{background:var(--card);border:0;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted)}
+  .seg button.on{background:var(--steel);color:#fff}
+  .rack{border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden}
+  .rhead{display:flex;gap:10px;align-items:center;padding:10px 13px;background:var(--paper);cursor:pointer}
+  .rhead .rn{font-weight:700;font-size:15px;letter-spacing:-.2px}
+  .rhead .rn.none{color:var(--red)}
+  .rhead .meta{margin-left:auto;font-size:12.5px;color:var(--muted)}
+  .rhead .meta b{color:var(--ink)}
+  .rbody{display:none}
+  .rack.open .rbody{display:block}
+  .rhead .caret{color:var(--muted);transition:transform .15s}
+  .rack.open .caret{transform:rotate(90deg)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 13px;border-top:1px solid var(--line)}
+  th{font-size:11px;color:var(--muted);background:#fbfaf6}
+  td.num,th.num{text-align:right}
+  td.qty{font-weight:700}
+  td.qty.zero{color:var(--red)}
+  .idle{color:var(--muted);text-align:center;padding:26px}
+  .prog{height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin-top:8px}
+  .prog i{display:block;height:100%;background:var(--steel);width:0;transition:width .2s}
+  .note{background:#EFF3F7;border-left:3px solid var(--steel);padding:9px 12px;border-radius:0 9px 9px 0;font-size:12.5px;color:var(--steel-d);margin:0 0 12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>랙별 재고 현황 · Existencia por ubicación</h1>
+  <div class="sub" id="sub">불러오는 중…</div>
+</header>
+<div id="app"><div class="card"><div class="idle" id="boot">제품을 불러오는 중…<div class="prog"><i id="progBar"></i></div></div></div></div>
+</div>
+
+<script>
+(function(){
+  function sess(){
+    try{ var r=sessionStorage.getItem('refatrix_session'); if(r){ var o=JSON.parse(r); if(o&&o.token) return o; } }catch(e){}
+    try{ var h=location.hash.slice(1); if(h){ var p=new URLSearchParams(h); var t=p.get('token'); if(t) return {token:t,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; } }catch(e){}
+    return null;
+  }
+  var S=sess(); var API=(S&&S.api)||''; var AUTH=S?{Authorization:'Bearer '+S.token}:{};
+  var $=function(id){return document.getElementById(id);};
+  var fmt=function(n){return Number(n||0).toLocaleString('ko-KR',{maximumFractionDigits:3});};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var NONE='(미지정)';
+  function rackNorm(r){ r=(r==null?'':String(r)).trim(); return r||NONE; }
+
+  if(!S){ $('app').innerHTML='<div class="card"><div class="idle">세션이 없습니다. 포털에 로그인한 뒤 이 페이지를 여세요.</div></div>'; $('sub').textContent=''; return; }
+
+  var ALL=[], hideZero=false, sortMode='rack', kw='';
+
+  // 전 제품 페이징 로드
+  function load(){
+    ALL=[]; var offset=0, limit=200, total=null;
+    (function next(){
+      fetch(API+'/api/products?limit='+limit+'&offset='+offset,{headers:AUTH})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          var items=(d&&d.items)||[]; total=(d&&d.total)||items.length;
+          items.forEach(function(p){ ALL.push({code:p.code,name:p.name||'',rack:rackNorm(p.rack_location),qty:Number(p.stock_qty)||0}); });
+          offset+=items.length;
+          if($('progBar')) $('progBar').style.width=Math.min(100,Math.round(offset/Math.max(1,total)*100))+'%';
+          if(items.length>=limit && offset<total){ next(); } else { render(); }
+        })
+        .catch(function(){ $('app').innerHTML='<div class="card"><div class="idle">불러오지 못했습니다. 로그인 상태를 확인하세요.</div></div>'; });
+    })();
+  }
+
+  function groups(){
+    var g={};
+    ALL.forEach(function(p){
+      if(hideZero && p.qty===0) return;
+      if(kw){ var s=(p.code+' '+p.name+' '+p.rack).toLowerCase(); if(s.indexOf(kw)<0) return; }
+      (g[p.rack]=g[p.rack]||{rack:p.rack,items:[],qty:0}).items.push(p);
+      g[p.rack].qty+=p.qty;
+    });
+    var arr=Object.keys(g).map(function(k){return g[k];});
+    arr.forEach(function(x){ x.items.sort(function(a,b){return a.code.localeCompare(b.code);}); });
+    if(sortMode==='qty') arr.sort(function(a,b){return b.qty-a.qty;});
+    else if(sortMode==='sku') arr.sort(function(a,b){return b.items.length-a.items.length;});
+    else arr.sort(function(a,b){ if(a.rack===NONE)return 1; if(b.rack===NONE)return -1; return a.rack.localeCompare(b.rack,undefined,{numeric:true}); });
+    return arr;
+  }
+
+  function render(){
+    var arr=groups();
+    var totSku=0,totQty=0; ALL.forEach(function(p){ totSku++; totQty+=p.qty; });
+    var noneG=ALL.filter(function(p){return p.rack===NONE;});
+    $('sub').textContent='제품 '+fmt(ALL.length)+'종 · 랙 '+fmt(Object.keys(ALL.reduce(function(a,p){a[p.rack]=1;return a;},{})).length)+'곳';
+    var html='<div class="card"><div class="kpis">'
+      +'<div class="kpi"><div class="l">제품(SKU)</div><div class="v">'+fmt(totSku)+'</div></div>'
+      +'<div class="kpi"><div class="l">랙 위치</div><div class="v">'+fmt(Object.keys(ALL.reduce(function(a,p){if(p.rack!==NONE)a[p.rack]=1;return a;},{})).length)+'</div></div>'
+      +'<div class="kpi"><div class="l">총 재고수량</div><div class="v">'+fmt(totQty)+' <small>EA</small></div></div>'
+      +'<div class="kpi"><div class="l">랙 미지정</div><div class="v" style="color:'+(noneG.length?'var(--red)':'var(--green)')+'">'+fmt(noneG.length)+' <small>SKU</small></div></div>'
+      +'</div></div>';
+    html+='<div class="card"><div class="note">랙을 눌러 그 위치의 제품·수량을 펼쳐 보세요. <b>엑셀 다운로드</b>로 창고 대조용 표를 받을 수 있습니다(랙별 상세 + 요약 2개 시트).</div>'
+      +'<div class="bar">'
+      +'<input type="text" id="kw" placeholder="🔍 코드·품명·랙 검색" value="'+esc(kw)+'">'
+      +'<span class="seg"><button data-s="rack" class="'+(sortMode==='rack'?'on':'')+'">랙순</button>'
+      +'<button data-s="qty" class="'+(sortMode==='qty'?'on':'')+'">수량순</button>'
+      +'<button data-s="sku" class="'+(sortMode==='sku'?'on':'')+'">SKU순</button></span>'
+      +'<label class="chk"><input type="checkbox" id="hz" '+(hideZero?'checked':'')+'> 재고 0 숨기기</label>'
+      +'<button class="btn ghost sm" id="expand">모두 펼치기</button>'
+      +'<button class="btn g" id="xls" style="margin-left:auto">⬇ 엑셀 다운로드</button>'
+      +'</div>';
+    if(!arr.length){ html+='<div class="idle">표시할 항목이 없습니다.</div>'; }
+    else html+=arr.map(function(g,i){
+      var isNone=(g.rack===NONE);
+      return '<div class="rack" data-i="'+i+'"><div class="rhead"><span class="caret">▶</span>'
+        +'<span class="rn'+(isNone?' none':'')+'">'+(isNone?'🆕 랙 미지정':esc(g.rack))+'</span>'
+        +'<span class="meta">SKU <b>'+fmt(g.items.length)+'</b> · 수량 <b>'+fmt(g.qty)+'</b></span></div>'
+        +'<div class="rbody"><table><thead><tr><th>코드</th><th>품명</th><th class="num">수량</th></tr></thead><tbody>'
+        +g.items.map(function(p){ return '<tr><td class="mono">'+esc(p.code)+'</td><td>'+esc(p.name)+'</td><td class="num qty'+(p.qty===0?' zero':'')+'">'+fmt(p.qty)+'</td></tr>'; }).join('')
+        +'</tbody></table></div></div>';
+    }).join('');
+    html+='</div>';
+    $('app').innerHTML=html;
+
+    var kwEl=$('kw'); kwEl.addEventListener('input',function(){ kw=kwEl.value.trim().toLowerCase(); var pos=kwEl.selectionStart; render(); var n=$('kw'); if(n){ n.focus(); try{n.selectionStart=n.selectionEnd=pos;}catch(e){} } });
+    document.querySelectorAll('.seg button').forEach(function(b){ b.addEventListener('click',function(){ sortMode=b.dataset.s; render(); }); });
+    $('hz').addEventListener('change',function(){ hideZero=$('hz').checked; render(); });
+    var allOpen=false;
+    $('expand').addEventListener('click',function(){ allOpen=!allOpen; document.querySelectorAll('.rack').forEach(function(r){ r.classList.toggle('open',allOpen); }); $('expand').textContent=allOpen?'모두 접기':'모두 펼치기'; });
+    document.querySelectorAll('.rhead').forEach(function(h){ h.addEventListener('click',function(){ h.parentNode.classList.toggle('open'); }); });
+    $('xls').addEventListener('click',exportXls);
+  }
+
+  function exportXls(){
+    if(typeof XLSX==='undefined'){ alert('엑셀 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.'); return; }
+    var arr=groups();
+    // 시트1: 랙별 상세 (랙 · 코드 · 품명 · 수량)
+    var d1=[['랙위치','제품코드','품명','재고수량']];
+    arr.forEach(function(g){ g.items.forEach(function(p){ d1.push([g.rack===NONE?'(미지정)':g.rack, p.code, p.name, p.qty]); }); });
+    // 시트2: 랙별 요약 (랙 · SKU수 · 총수량)
+    var d2=[['랙위치','SKU수','총수량']];
+    arr.forEach(function(g){ d2.push([g.rack===NONE?'(미지정)':g.rack, g.items.length, g.qty]); });
+    var wb=XLSX.utils.book_new();
+    var ws1=XLSX.utils.aoa_to_sheet(d1); ws1['!cols']=[{wch:12},{wch:14},{wch:34},{wch:10}];
+    var ws2=XLSX.utils.aoa_to_sheet(d2); ws2['!cols']=[{wch:14},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,ws1,'랙별상세');
+    XLSX.utils.book_append_sheet(wb,ws2,'랙별요약');
+    var dt=new Date(); var ymd=dt.getFullYear()+String(dt.getMonth()+1).padStart(2,'0')+String(dt.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,'refatrix_rackstock_'+ymd+'.xlsx');
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>
