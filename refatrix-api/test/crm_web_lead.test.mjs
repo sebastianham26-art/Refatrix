@@ -182,6 +182,20 @@ test('C10. 수신 이력은 창구별로 갈린다', () => {
   assert.ok(/inboundFor\(e\.key\)/.test(ir), '목록 집계도 창구별이어야 한다');
 });
 
+test('C11. 웹에서 들어온 고객은 P-#### 로 채번된다', () => {
+  // 원칙: 유입 경로가 코드 계열로 한눈에 보여야 한다(C=ERP 등록, P=웹 유입).
+  // 예전에는 CRM 직접 수신만 P 를 받고, 웹 가입 신청 → 고객 등록 경로는 기본값 C 를 받았다.
+  const c = read(join(API, 'src/routes/customerRoutes.js'));
+  assert.ok(/const codePrefix = leadSrc \? 'P' : 'C'/.test(c), '리드에서 온 등록이면 P 계열');
+  assert.ok(/computeNextCode\(codePrefix\)/.test(c), '채번에 그 계열을 써야 한다');
+  assert.ok(/next-code[\s\S]{0,900}prefix = 'P'/.test(c),
+    '미리보기도 같은 계열이어야 화면과 저장 결과가 어긋나지 않는다');
+  const f = read(join(REPO, 'refatrix-custform.js'));
+  assert.ok(/next-code'\+\(leadId\?\('\?lead_id='/.test(f), '폼이 리드 id 를 실어 미리보기를 받아야 한다');
+  const inb = read(join(API, 'src/routes/crmInboundRoutes.js'));
+  assert.ok(/computeNextCode\('P'\)/.test(inb), 'CRM 직접 수신도 P 계열 그대로');
+});
+
 // ── D. 실제 수신·처리 (DB) ───────────────────────────────────────────
 const dbTest = PG ? test : test.skip;
 

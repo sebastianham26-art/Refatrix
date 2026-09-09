@@ -270,8 +270,20 @@ export default async function customerRoutes(app) {
   //   (채번 규칙은 ../customerCode.js — CRM 수신 등록(P-####)과 한 곳에서 관리한다)
 
   // 다음 고객코드 자동생성(미리보기). 대소문자 무관, 빈 번호 충돌 회피.
-  app.get('/api/customers/next-code', { preHandler: [authGuard, requirePage('customers')] }, async () => {
-    return { code: await computeNextCode() };
+  //   ⚠ 미리보기와 실제 채번이 **같은 계열**이어야 한다. 화면엔 C-0123 이 떠 있는데
+  //     저장하면 P-0007 이 나오면, 코드를 받아 적어 둔 사람이 엉뚱한 번호를 들고 있게 된다.
+  //     그래서 웹 가입 신청에서 넘어온 등록이면 여기서도 P 로 미리 보여 준다.
+  app.get('/api/customers/next-code', { preHandler: [authGuard, requirePage('customers')] }, async (req) => {
+    let prefix = 'C';
+    const leadId = Number(req.query?.lead_id || 0);
+    if (leadId > 0) {
+      try {
+        const l = (await query(
+          `SELECT 1 FROM crm_web_leads WHERE id=$1 AND status IN ('new','assigned')`, [leadId])).rows[0];
+        if (l) prefix = 'P';
+      } catch (_) { /* 0210 미적용 — C 그대로 */ }
+    }
+    return { code: await computeNextCode(prefix), prefix };
   });
 
   // Constancia(세무등록) 미입력 고객 알림 — 이름이 Maria인 사용자에게만 nag.
@@ -1275,10 +1287,29 @@ export default async function customerRoutes(app) {
     const status = 'pending';
     const claimOn = await claimTableReady();
 
+    // ── 0212 · 웹에서 들어온 고객은 **P-####** 다 ──────────────────────
+    //   원칙: 유입 경로가 코드 계열로 한눈에 보여야 한다.
+    //     C-#### = ERP 에서 영업사원·디렉터가 등록한 고객
+    //     P-#### = 웹카달록에서 들어온 고객(CRM 직접 등록 · 웹 가입 신청 모두)
+    //   ⚠ 예전에는 가입 신청에서 넘어온 등록도 기본값 C 로 채번했다. CRM 이 직접 보낸
+    //     신규고객만 P 를 받고, 웹 가입 신청 → 고객 등록 경로는 C 를 받아 원칙이 반쪽이었다.
+    //   리드를 여기서 미리 읽는다(채번 전에 알아야 하므로). 아래 ⑦-b 의 연결도 이 값을 쓴다.
+    const leadIdIn = Number(b.lead_id || 0);
+    let leadSrc = null;
+    if (leadIdIn > 0) {
+      try {
+        leadSrc = (await query(
+          `SELECT id, crm_lead_code, received_at FROM crm_web_leads
+            WHERE id=$1 AND status IN ('new','assigned')`, [leadIdIn])).rows[0] || null;
+      } catch (_) { leadSrc = null; }   // 0210 미적용 — 등록은 그대로 진행(코드는 C)
+    }
+    const codePrefix = leadSrc ? 'P' : 'C';
+    const crmColsOn = leadSrc ? await crmOriginColsReady() : false;
+
     // 코드 충돌 시 재시도(동시 생성 대비)
     let row, dupKey = null;
     for (let attempt = 0; attempt < 5; attempt++) {
-      const code = await computeNextCode();
+      const code = await computeNextCode(codePrefix);
       try {
         row = (await query(
           `INSERT INTO customers (code, name, rfc, contact, phone, discount, credit_days, team_id, stage_id, owner_id,
@@ -1287,7 +1318,8 @@ export default async function customerRoutes(app) {
                                   syd_ref_code, syd_ref_buy_price, syd_ref_list_price, syd_ref_discount,
                                   ctr_ref_code, ctr_ref_list_price, suggested_discount,
                                   approval_status, submitted_at, approved_by, approved_at,
-                                  stage_since, created_by${claimOn ? ', rfc_claimed_at, rfc_claimed_by' : ''})
+                                  stage_since, created_by${claimOn ? ', rfc_claimed_at, rfc_claimed_by' : ''}
+                                  ${crmColsOn ? ', crm_customer_code, crm_registered_at' : ''})
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                    $11,$12,$13,$14,$15,$16,
                    $17,$18,
@@ -1295,7 +1327,8 @@ export default async function customerRoutes(app) {
                    $23,$24,$25,
                    $26, now(), $27, $28,
                    CASE WHEN $9::bigint IS NOT NULL THEN CURRENT_DATE END, $29
-                   ${claimOn ? ', CASE WHEN $3::text IS NOT NULL THEN now() END, CASE WHEN $3::text IS NOT NULL THEN $10::bigint END' : ''})
+                   ${claimOn ? ', CASE WHEN $3::text IS NOT NULL THEN now() END, CASE WHEN $3::text IS NOT NULL THEN $10::bigint END' : ''}
+                   ${crmColsOn ? ', $30, $31' : ''})
            RETURNING id, code`,
           [code, b.name, rfcClean, b.contact || null, b.phone || null, chosen.value,
            Number(b.credit_days) || 0, teamId, b.stage_id || null,
@@ -1311,7 +1344,8 @@ export default async function customerRoutes(app) {
            base?.code || null, ctrLP, calc.suggested_discount,
            // 0193 · 항상 pending 이므로 승인자·승인시각은 비운다(디렉터 등록도 예외 없음).
            status, null, null,
-           perm.userId])).rows[0];
+           perm.userId,
+           ...(crmColsOn ? [leadSrc.crm_lead_code || null, leadSrc.received_at] : [])])).rows[0];
         break;
       } catch (e) {
         const msg = String(e.message || '');
@@ -1378,7 +1412,7 @@ export default async function customerRoutes(app) {
     //   같은 신청이 팝업에 계속 남아 다른 사람이 또 전화한다. 등록이 곧 처리 완료다.
     //   ⚠ 리드 연결 실패가 고객 등록을 되돌리지는 않는다(등록이 본질, 연결은 정리).
     let leadLinked = null;
-    const leadId = Number(b.lead_id || 0);
+    const leadId = leadSrc ? Number(leadSrc.id) : 0;
     if (leadId > 0) {
       try {
         // 0211 · 등록은 **완결이 아니다.** 디렉터 승인이 나야 끝이고, 그때까지 담당자

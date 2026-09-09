@@ -345,7 +345,13 @@
     editingId=null; crossTeam=false; applyCrossTeamUI(null,null);
     leadId=(opts&&Number(opts.lead_id))||null;
     $('rcf-code').value='자동…'; $('rcf-code').readOnly=true; $('rcf-code').style.background='#f2efe8';
-    try{ var d=await fetch(api('/api/customers/next-code'),{headers:auth()}).then(r=>r.json()); $('rcf-code').value=d.code||''; }catch(e){ $('rcf-code').value=''; }
+    // 0212 · 웹 가입 신청에서 넘어온 등록이면 서버가 P-#### 로 채번한다 —
+    //   미리보기도 같은 계열로 받아야 화면과 저장 결과가 어긋나지 않는다.
+    try{
+      var d=await fetch(api('/api/customers/next-code'+(leadId?('?lead_id='+encodeURIComponent(leadId)):'')),
+        {headers:auth()}).then(r=>r.json());
+      $('rcf-code').value=d.code||'';
+    }catch(e){ $('rcf-code').value=''; }
     ['rcf-name','rcf-rfc','rcf-contact','rcf-phone','rcf-buyername','rcf-buyerphone','rcf-memo','rcf-constancia','rcf-ship'].forEach(function(id){ if($(id))$(id).value=''; });
     if($('rcf-shipsave')) $('rcf-shipsave').style.display='none';
     setShipMsg('','');
