@@ -19,6 +19,7 @@ const ERR_NOTE = {
   url_prod_required: '운영으로 전환하려면 운영 URL 을 먼저 입력하세요.',
   key_invalid: '연동 키는 영문 소문자·숫자·밑줄 3~40자입니다.',
   key_taken: '이미 같은 키의 연동이 있습니다.',
+  fallback_self: '자기 자신을 대체 창구로 지정할 수 없습니다 — 같은 실패가 끝없이 반복됩니다.',
 };
 
 export default async function integrationRoutes(app) {

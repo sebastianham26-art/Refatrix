@@ -65,6 +65,11 @@ export function isSuccess(httpStatus, body, okCode = '0') {
   return code === String(okCode == null ? '0' : okCode);
 }
 
+// 전송 본문을 만들 때 필요한 고객 값 — create 는 신원(상호·연락처·배송지)까지 쓴다.
+const CUSTOMER_COLS = `SELECT id, code, name, rfc, contact, phone, ship_address,
+         discount, credit_days, approval_status, deleted_at
+    FROM customers`;
+
 /** 고객 계약 본문 — 여기서 정한 이름이 곧 계약서다. */
 export function buildPayload(op, c, transactionUser, reason) {
   const rfc = String(c.rfc || '').trim();
@@ -76,6 +81,26 @@ export function buildPayload(op, c, transactionUser, reason) {
       estatus: 'rechazado',
       motivoRechazo: String(reason || '').trim() || 'Sin motivo especificado',
     };
+  }
+  // 0213 · CRM 에 **없는** 고객을 새로 만드는 창구. 상거래정보만으로는 만들 수 없으니
+  //   신원(상호·연락처·ERP 코드)을 같이 보낸다. 어떤 이름을 요구하는지는 상대 개발자가
+  //   확정해야 한다 — 계약서 탭의 「비고」에 확인할 항목을 적어 뒀다.
+  if (op === 'create') {
+    const out = {
+      rfc,
+      nombre: String(c.name || '').trim(),
+      erpCustomerCode: String(c.code || '').trim() || undefined,
+      telefono: String(c.phone || '').trim() || undefined,
+      correo: String(c.contact || '').trim() || undefined,
+      direccion: String(c.ship_address || '').trim() || undefined,
+      discountPercent: c.discount == null ? 0 : Number(c.discount),
+      paymentDays: c.credit_days == null ? 0 : Number(c.credit_days),
+      estatus: crmEstatus(c.approval_status),
+      transactionUser,
+    };
+    // 값이 없는 선택 항목은 아예 빼고 보낸다 — null 을 보내면 상대가 그 값으로 덮어쓸 수 있다.
+    for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
+    return out;
   }
   return {
     rfc,
@@ -118,8 +143,7 @@ export async function enqueueCustomerSync(customerId, op, { origin, actorUserId,
   try {
     if (!(await crmTableReady())) return { ok: false, reason: 'migration_required' };
     const c = (await query(
-      `SELECT id, code, name, rfc, discount, credit_days, approval_status, deleted_at
-         FROM customers WHERE id=$1`, [customerId])).rows[0];
+      `${CUSTOMER_COLS} WHERE id=$1`, [customerId])).rows[0];
     if (!c) return { ok: false, reason: 'customer_not_found' };
 
     const ep = await getEndpoint(CUSTOMER_KEY);
@@ -276,6 +300,69 @@ export async function sendPayload(ep, op, payload) {
 }
 
 /** 대기 건을 순서대로 전송. 워커·수동 재전송·적재 직후 즉시전송이 모두 이 함수를 탄다. */
+// 0213 폴백 컬럼 준비 여부 — 긍정만 영구 캐시(반쪽 배포에서도 전송이 죽지 않게).
+let fbCols = false; let fbProbe = 0;
+async function outboxHasFallbackCol() {
+  if (fbCols) return true;
+  if (Date.now() - fbProbe < PROBE_MS) return false;
+  fbProbe = Date.now();
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name='crm_customer_outbox' AND column_name='fallback_of' LIMIT 1`);
+    fbCols = r.rows.length > 0;
+  } catch (_) { fbCols = false; }
+  return fbCols;
+}
+
+/**
+ * 0213 · 「CRM 에 없는 고객」 → 등록 창구로 넘긴다.
+ *
+ *   상거래정보 창구(customer_commercial)는 RFC 로 **찾아서 고치는** 창구다.
+ *   CRM 에 없으면 ERR_CUSTOMER_NOT_FOUND 가 오고, 예전에는 그걸 skipped 로 닫아
+ *   그 고객은 영영 CRM 에 안 들어갔다. 이제 그 응답을 신호로 삼아 등록 창구로 다시 보낸다.
+ *
+ *   ⚠ 폴백 대상 창구가 없거나·꺼져 있거나·주소가 비어 있으면 아무 일도 하지 않는다
+ *     (예전과 똑같이 skipped 로 닫힌다). 설정을 안 한 상태에서 조용히 엉뚱한 데로 쏘지 않는다.
+ *   @returns {number|null} 새로 만든 전송 건 id
+ */
+async function enqueueFallback(row, ep, body) {
+  try {
+    if (!ep.fallback_key) return null;
+    if (row.op !== 'upsert') return null;                      // 삭제·반려는 폴백 대상이 아니다
+    if (row.fallback_of) return null;                          // 폴백의 폴백은 없다(무한 연쇄 방지)
+    if (!isPermanent(body, ep.fallback_codes)) return null;    // 그 오류코드일 때만
+    const target = await getEndpoint(ep.fallback_key);
+    if (!target || !target.enabled || !activeUrl(target)) return null;
+
+    const c = (await query(`${CUSTOMER_COLS} WHERE id=$1`, [row.customer_id])).rows[0];
+    if (!c) return null;
+    const user = await actorName(row.acted_by, target.user_field);
+    const payload = buildPayload('create', c, user);
+    if (!payload.rfc) return null;
+
+    const hasCols = await outboxHasEndpointCols();
+    const label = `${c.code || ''} ${c.name || ''}`.trim();
+    const ins = hasCols
+      ? (await query(
+        `INSERT INTO crm_customer_outbox
+           (customer_id, entity, entity_id, entity_label, endpoint_key, op, origin, rfc, payload,
+            status, acted_by, fallback_of)
+         VALUES ($1,'customer',$1,$2,$3,'upsert',$4,$5,$6,'pending',$7,$8) RETURNING id`,
+        [row.customer_id, label || null, target.key, 'crm_not_found', payload.rfc,
+         JSON.stringify(payload), row.acted_by || null, row.id])).rows[0]
+      : (await query(
+        `INSERT INTO crm_customer_outbox (customer_id, op, origin, rfc, payload, status, acted_by, fallback_of)
+         VALUES ($1,'upsert',$2,$3,$4,'pending',$5,$6) RETURNING id`,
+        [row.customer_id, 'crm_not_found', payload.rfc, JSON.stringify(payload),
+         row.acted_by || null, row.id])).rows[0];
+    return ins ? Number(ins.id) : null;
+  } catch (e) {
+    try { console.error('[crmSync] 폴백 적재 실패', e && e.message); } catch (_) {}
+    return null;   // 폴백 실패가 원래 전송의 마무리를 막지 않는다
+  }
+}
+
 export async function drainOutbox({ limit = 20, app } = {}) {
   if (draining) return { drained: 0, busy: true };
   if (globallyDisabled()) return { drained: 0, disabled: true, reason: 'kill_switch' };
@@ -319,13 +406,18 @@ export async function drainOutbox({ limit = 20, app } = {}) {
         const note = r.error || (r.body && (r.body.mensaje || r.body.message)) || ('HTTP ' + r.httpStatus);
         // 재시도해도 결과가 같은 응답(예: CRM 에 없는 고객)은 즉시 닫는다 — 재시도 큐를 더럽히지 않는다.
         const permanent = !r.error && isPermanent(r.body, ep.no_retry_codes);
+        // 0213 · 「CRM 에 없는 고객」이면 등록 창구로 넘긴다. 넘겼으면 이 건은 그것으로 끝이다.
+        const fbId = (!r.error && await outboxHasFallbackCol())
+          ? await enqueueFallback(row, ep, r.body) : null;
         const done = permanent || attempts >= MAX_ATTEMPTS;
         put('status=$?', permanent ? 'skipped' : (done ? 'failed' : 'pending'));
         put('attempts=$?', attempts);
         put('http_status=$?', r.httpStatus || null);
         put('codigo_error=$?', codigo);
         put('response=$?', JSON.stringify(r.body));
-        put('last_error=$?', String(note).slice(0, 500));
+        put('last_error=$?', fbId
+          ? `CRM 에 없는 고객 — 등록 창구로 넘겼습니다 (전송 #${fbId})`
+          : String(note).slice(0, 500));
         put(`next_attempt_at = now() + ($? || ' seconds')::interval`, String(nextDelaySec(attempts)));
       }
       if (newCols) {

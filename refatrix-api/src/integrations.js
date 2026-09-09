@@ -139,6 +139,9 @@ export function publicEndpoint(ep) {
     has_token_prod: !!ep.auth_token_prod,
     ok_code: ep.ok_code, user_field: ep.user_field, timeout_ms: Number(ep.timeout_ms),
     no_retry_codes: ep.no_retry_codes == null ? 'ERR_CUSTOMER_NOT_FOUND' : ep.no_retry_codes,
+    // 0213 · 이 창구가 아래 코드로 답하면 fallback_key 창구로 다시 보낸다(자동).
+    fallback_key: ep.fallback_key || '',
+    fallback_codes: ep.fallback_codes == null ? 'ERR_CUSTOMER_NOT_FOUND' : ep.fallback_codes,
     contract: ep.contract || {},
     sort_order: ep.sort_order == null ? 100 : Number(ep.sort_order),
     source: ep.source || 'db',
@@ -148,7 +151,7 @@ export function publicEndpoint(ep) {
 
 const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_test', 'url_prod',
   'method_upsert', 'method_delete', 'auth_header', 'auth_in', 'auth_param', 'ok_code', 'user_field',
-  'timeout_ms', 'contract', 'sort_order', 'no_retry_codes'];
+  'timeout_ms', 'contract', 'sort_order', 'no_retry_codes', 'fallback_key', 'fallback_codes'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 export function validatePatch(p, cur = null) {
@@ -162,6 +165,9 @@ export function validatePatch(p, cur = null) {
     if (p[m] != null && !METHODS.includes(String(p[m]).toUpperCase())) return 'method_invalid';
   }
   if (p.user_field != null && !['login_id', 'name', 'role'].includes(String(p.user_field))) return 'user_field_invalid';
+  // 폴백은 **자기 자신을 가리킬 수 없다** — 그러면 같은 실패로 무한히 새 전송이 쌓인다.
+  if (p.fallback_key != null && String(p.fallback_key).trim()
+      && cur && String(p.fallback_key).trim() === String(cur.key)) return 'fallback_self';
   if (p.timeout_ms != null) {
     const n = Number(p.timeout_ms);
     if (!Number.isFinite(n) || n < 1000 || n > 60000) return 'timeout_invalid';

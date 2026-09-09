@@ -100,8 +100,16 @@ export default async function crmSyncRoutes(app) {
       ? `COALESCE(o.endpoint_key,'customer_commercial') AS endpoint_key, o.entity, o.entity_id, o.entity_label, o.env, o.url, o.request_method,`
       : `'customer_commercial' AS endpoint_key, 'customer' AS entity, o.customer_id AS entity_id,
          NULL::text AS entity_label, NULL::text AS env, NULL::text AS url, NULL::text AS request_method,`;
+    // 0213 · 폴백으로 이어진 건인지. 컬럼이 없을 수도 있다(마이그레이션 전).
+    let fbSel = `NULL::bigint AS fallback_of,`;
+    try {
+      const f = (await query(
+        `SELECT 1 FROM information_schema.columns
+          WHERE table_name='crm_customer_outbox' AND column_name='fallback_of' LIMIT 1`)).rows[0];
+      if (f) fbSel = `o.fallback_of,`;
+    } catch (_) { /* 없으면 NULL */ }
     const rows = (await query(
-      `SELECT o.id, o.customer_id, ${extra} ${authSel}
+      `SELECT o.id, o.customer_id, ${extra} ${authSel} ${fbSel}
               o.op, o.origin, o.rfc, o.payload, o.status, o.attempts,
               o.next_attempt_at, o.http_status, o.codigo_error, o.last_error, o.response,
               o.created_at, o.sent_at,
@@ -127,6 +135,7 @@ export default async function crmSyncRoutes(app) {
         codigo_error: r.codigo_error, last_error: r.last_error, response: r.response,
         env: r.env, url: r.url, request_method: r.request_method,
         auth_sent: r.auth_sent, auth_header: r.auth_header,
+        fallback_of: r.fallback_of == null ? null : Number(r.fallback_of),
         created_at: r.created_at, sent_at: r.sent_at, acted_by_name: r.acted_by_name,
       })),
     };

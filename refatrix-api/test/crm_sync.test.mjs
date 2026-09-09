@@ -72,6 +72,48 @@ test('삭제·반려 본문에는 상태가 섞이지 않는다', () => {
   assert.equal(buildPayload('reject', { rfc: 'X', approval_status: 'rejected' }, 'admin', '사유').estatus, 'rechazado');
 });
 
+// ── 0213 · CRM 에 없는 고객 → 등록 창구로 폴백 ─────────────────
+test('create 본문에는 신원(상호·연락처·ERP 코드)이 들어간다', () => {
+  // 상거래정보만으로는 CRM 에 고객을 만들 수 없다.
+  const p = buildPayload('create', { rfc: 'ABC010203XY1', code: 'C-0042', name: 'ACME SA',
+    contact: 'a@b.com', phone: '81', ship_address: 'Monterrey',
+    discount: 15, credit_days: 45, approval_status: 'approved' }, 'admin');
+  assert.equal(p.rfc, 'ABC010203XY1');
+  assert.equal(p.nombre, 'ACME SA');
+  assert.equal(p.erpCustomerCode, 'C-0042');
+  assert.equal(p.discountPercent, 15);
+  assert.equal(p.estatus, 'aprobado');
+});
+
+test('create 본문은 빈 선택 항목을 아예 빼고 보낸다', () => {
+  // null 을 보내면 상대가 그 값으로 덮어쓸 수 있다 — 없는 것과 "비우라"는 다른 말이다.
+  const p = buildPayload('create', { rfc: 'X', name: 'N', discount: 0, credit_days: 0 }, 'admin');
+  assert.equal('telefono' in p, false);
+  assert.equal('correo' in p, false);
+  assert.equal('direccion' in p, false);
+  assert.equal('erpCustomerCode' in p, false);
+});
+
+test('폴백은 자기 자신을 가리킬 수 없다', () => {
+  // 그러면 같은 실패로 끝없이 새 전송이 쌓인다.
+  assert.equal(validatePatch({ fallback_key: 'customer_commercial' },
+    { key: 'customer_commercial', direction: 'out' }), 'fallback_self');
+  assert.equal(validatePatch({ fallback_key: 'customer_create' },
+    { key: 'customer_commercial', direction: 'out' }), null);
+});
+
+test('폴백 규칙은 등록부(데이터)에 있고 코드에 박히지 않는다', () => {
+  // 상대가 오류코드를 바꾸거나 창구를 합치면 화면에서 고칠 수 있어야 한다.
+  const src = readFileSync(new URL('../src/crmSync.js', import.meta.url), 'utf8');
+  assert.ok(/ep\.fallback_key/.test(src) && /ep\.fallback_codes/.test(src));
+  assert.ok(/if \(row\.fallback_of\) return null;/.test(src), '폴백의 폴백은 없어야 무한 연쇄가 안 생긴다');
+  assert.ok(/if \(row\.op !== 'upsert'\) return null;/.test(src), '삭제·반려는 폴백 대상이 아니다');
+  assert.ok(/!target \|\| !target\.enabled \|\| !activeUrl\(target\)/.test(src),
+    '대상 창구가 준비 안 됐으면 조용히 예전대로 닫혀야 한다');
+  const g = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
+  assert.ok(/fFallbackKey/.test(g), '화면에서 대체 창구를 고를 수 있어야 한다');
+});
+
 test('시험 전송도 실전과 같은 본문 조립기를 쓴다', () => {
   // 예전에는 integrationRoutes 가 본문을 따로 만들었다 — 계약이 바뀌면
   // 「테스트는 되는데 실전은 안 되는」 상태가 된다.
