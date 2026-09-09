@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260908lead loaded (고객 등록 승인 + 연동 관리 + 웹 가입 신청 팝업)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260908assign loaded (고객 등록 승인 + 연동 관리 + 웹 가입 신청 담당 지정 팝업)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -736,10 +736,16 @@
   //     · 카드마다 「내가 맡겠습니다」 · 「보류·대상 아님」 버튼이 붙는다.
   // =====================================================================
   var LEAD_SEEN_KEY='refatrix_weblead_seen', LEAD_DIS_KEY='refatrix_weblead_dismissed';
-  var __leadTimer=null, __leadItems=[];
+  var __leadTimer=null, __leadItems=[], __leadCanAssign=false, __leadAssignees=[];
   function leadSeen(){ try{ return JSON.parse(sessionStorage.getItem(LEAD_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
   function leadSaveSeen(a){ try{ sessionStorage.setItem(LEAD_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
-  function leadDismissed(){ try{ return sessionStorage.getItem(LEAD_DIS_KEY)==='1'; }catch(e){ return false; } }
+  var LEAD_SNOOZE_MS=30*60*1000;   // 임시로 닫아도 30분 뒤엔 다시 뜬다
+  function leadDismissed(){
+    try{
+      var t=Number(sessionStorage.getItem(LEAD_DIS_KEY)||0);
+      return !!t && (Date.now()-t) < LEAD_SNOOZE_MS;
+    }catch(e){ return false; }
+  }
 
   // 고객이 입력한 값 전부를 보기 좋은 이름으로 편다. 우리가 모르는 키는 키 이름 그대로 보여 준다.
   var LEAD_LABEL={empresa:'회사명',nombre:'이름',apellido:'성',telefono:'전화',correo:'이메일',rfc:'RFC',
@@ -769,18 +775,20 @@
     m.style.cssText='display:none;position:fixed;inset:0;background:rgba(20,30,26,.5);z-index:10050;align-items:flex-start;justify-content:center;padding:56px 16px;overflow:auto';
     m.innerHTML=''
       +'<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;box-shadow:0 16px 48px rgba(0,0,0,.34);font-family:inherit">'
-      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#0F6E56">🌐 웹카달록 — 새 회원가입 신청</div>'
+      +'<div style="padding:16px 20px;border-bottom:1px solid #e6e1d6"><div style="font-size:16px;font-weight:800;color:#0F6E56">🌐 웹카달록 — 가입 신청</div>'
       +'<div id="rnavLeadMsg" style="font-size:12.5px;color:#6F6A60;margin-top:4px"></div></div>'
       +'<div style="padding:12px 16px"><div id="rnavLeadList" style="max-height:52vh;overflow:auto"></div></div>'
       +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
       +'<button type="button" onclick="__rnavLeadDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
-      +'<button type="button" onclick="__rnavLeadGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">고객 등록 화면으로 →</button>'
+      +'<button type="button" onclick="__rnavLeadGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">가입 신청 목록으로 →</button>'
       +'</div></div>';
     (document.body||document.documentElement).appendChild(m);
     return m;
   }
   window.__rnavLeadDismiss=function(){
-    try{ sessionStorage.setItem(LEAD_DIS_KEY,'1'); }catch(e){}
+    // ⚠ 영구히 끄지 않는다. 지정받은 건은 **디렉터 승인까지** 계속 상기시켜야 한다.
+    //   같은 세션 안에서도 30분 뒤 다시 뜬다(그 사이엔 조용하다).
+    try{ sessionStorage.setItem(LEAD_DIS_KEY, String(Date.now())); }catch(e){}
     var m=document.getElementById('rnavLeadModal'); if(m) m.style.display='none';
   };
   window.__rnavLeadGo=function(){
@@ -794,9 +802,14 @@
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
       body:JSON.stringify(body||{})}).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); });
   }
-  window.__rnavLeadClaim=function(id){
-    leadPost(id,'claim').then(function(r){
-      if(!r.ok){ alert((r.d&&r.d.note)||'맡기 실패'); }
+  window.__rnavLeadAssign=function(id){
+    var sel=document.getElementById('rnavLeadSel'+id);
+    var uid=sel?sel.value:'';
+    if(!uid){ alert('담당할 직원을 고르세요.'); return; }
+    leadPost(id,'assign',{user_id:Number(uid)}).then(function(r){
+      if(!r.ok){ alert((r.d&&r.d.note)||'지정 실패'); return; }
+      alert(((r.d&&r.d.assigned_to_name)||'담당자')+' 님에게 지정했습니다.\n\n'
+        +'그분 화면에 이 건이 뜨기 시작하고, 디렉터 승인이 날 때까지 계속 상기됩니다.');
       checkWebLead({silent:true});
     }).catch(function(){});
   };
@@ -808,31 +821,49 @@
       checkWebLead({silent:true});
     }).catch(function(){});
   };
+  var LEAD_STEP={new:['미배정','#F6E7E4','#B23A2E'],assigned:['담당 지정됨','#F6EEDD','#8A5A00'],
+    registered:['등록됨 · 디렉터 승인 대기','#F6EEDD','#8A5A00']};
   function leadRender(items){
     var msg=document.getElementById('rnavLeadMsg'), list=document.getElementById('rnavLeadList');
     if(!msg||!list) return;
-    msg.innerHTML='홈페이지에서 <b>'+items.length+'건</b>의 가입 신청이 들어왔습니다. '
-      +'담당자가 연락해 상업정보를 파악하고 고객으로 등록해야 <b>가격·재고를 볼 수 있습니다.</b>';
+    msg.innerHTML = __leadCanAssign
+      ? '처리 중인 가입 신청 <b>'+items.length+'건</b>. <b>담당 직원을 지정</b>하면 그 직원 화면에 이 건이 뜹니다 — '
+        +'담당자가 할인율·외상일을 정해 등록하고 <b>디렉터가 승인해야</b> 고객이 가격·재고를 봅니다.'
+      : '나에게 지정된 가입 신청 <b>'+items.length+'건</b>. 고객에게 연락해 상업정보를 파악하고 '
+        +'<b>할인율·외상일을 정해 고객으로 등록</b>하세요. <b>디렉터 승인이 날 때까지</b> 이 알림은 계속 뜹니다.';
+    var opts=__leadAssignees.map(function(u){
+      return '<option value="'+u.id+'">'+cregEsc(u.name)+' · '+cregEsc(u.role)+'</option>'; }).join('');
     list.innerHTML=items.map(function(r){
-      var who=r.claimed_by_name
-        ? '<span style="color:#0F6E56;font-weight:700">담당 '+cregEsc(r.claimed_by_name)+'</span>'
+      var st=LEAD_STEP[r.status]||LEAD_STEP.new;
+      var who=r.assigned_to_name
+        ? '<span style="color:#0F6E56;font-weight:700">담당 '+cregEsc(r.assigned_to_name)+'</span>'
         : '<span style="color:#B23A2E;font-weight:700">담당 미지정</span>';
       var dup=r.existing_code
         ? '<div style="margin-top:6px;background:#F6EEDD;color:#8A5A00;border-radius:8px;padding:6px 9px;font-size:11.5px">'
-          +'⚠ 같은 RFC 의 고객이 이미 ERP 에 있습니다 — <b>'+cregEsc(r.existing_code)+' '+cregEsc(r.existing_name||'')+'</b>. '
-          +'새로 만들지 말고 그 고객을 확인하세요.</div>' : '';
+          +'⚠ 같은 RFC 의 고객이 이미 ERP 에 있습니다 — <b>'+cregEsc(r.existing_code)+' '+cregEsc(r.existing_name||'')+'</b>.</div>' : '';
+      var reg=r.status==='registered'
+        ? '<div style="margin-top:6px;background:#F6EEDD;color:#8A5A00;border-radius:8px;padding:6px 9px;font-size:11.5px">'
+          +'고객 <b>'+cregEsc(r.customer_code||'')+'</b> 로 등록됐습니다 — <b>아직 디렉터 승인 전</b>입니다. '
+          +'승인이 나야 고객이 홈페이지에서 가격을 봅니다.</div>' : '';
+      var act='';
+      if(__leadCanAssign){
+        act='<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+          +'<select id="rnavLeadSel'+r.id+'" style="padding:6px 8px;border:1px solid #e6e1d6;border-radius:7px;font-size:12px;font-family:inherit">'
+          +'<option value="">담당 직원 선택…</option>'+opts+'</select>'
+          +'<button type="button" onclick="__rnavLeadAssign('+r.id+')" style="border:none;background:#0F6E56;color:#fff;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:700">'
+          +(r.assigned_to_name?'담당 변경':'담당 지정')+'</button>'
+          +'<button type="button" onclick="__rnavLeadDrop('+r.id+')" style="border:1px solid #e7b6af;background:#fff;color:#B23A2E;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px">보류 · 대상 아님</button>'
+          +'</div>';
+      }
       return '<div style="border:1px solid #e6e1d6;border-radius:11px;padding:12px 13px;margin-bottom:9px">'
         +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
           +'<b style="font-size:14px">'+cregEsc(r.empresa||r.nombre||'(회사명 없음)')+'</b>'
-          +'<span style="font-size:11.5px;color:#8a8577">'+cregEsc(r.crm_lead_code||'')+'</span>'
+          +'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:'+st[1]+';color:'+st[2]+'">'+st[0]+'</span>'
           +'<span style="margin-left:auto;font-size:11.5px">'+who+'</span>'
         +'</div>'
-        +dup
+        +dup+reg
         +'<table style="width:100%;font-size:12.5px;margin-top:7px;border-collapse:collapse">'+leadFieldRows(r)+'</table>'
-        +'<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap">'
-          +(r.claimed_by_name?'':'<button type="button" onclick="__rnavLeadClaim('+r.id+')" style="border:none;background:#0F6E56;color:#fff;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:700">내가 맡겠습니다</button>')
-          +'<button type="button" onclick="__rnavLeadDrop('+r.id+')" style="border:1px solid #e7b6af;background:#fff;color:#B23A2E;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px">보류 · 대상 아님</button>'
-        +'</div></div>';
+        +act+'</div>';
     }).join('');
   }
   function checkWebLead(opts){
@@ -844,6 +875,7 @@
       .then(function(d){
         if(!d) return;
         var items=(d&&d.items)||[]; __leadItems=items;
+        __leadCanAssign=!!(d&&d.can_assign); __leadAssignees=(d&&d.assignees)||[];
         var m=leadEnsureModal();
         if(!items.length){
           m.style.display='none';
@@ -862,10 +894,11 @@
         }
         if(fresh.length){
           leadSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
-          try{ sessionStorage.removeItem(LEAD_DIS_KEY); }catch(e){}
+          try{ sessionStorage.removeItem(LEAD_DIS_KEY); }catch(e){}  // 새 건은 스누즈를 무시하고 뜬다
           m.style.display='flex';
           if(!silent) cregChime();
         }else{
+          // 본 건만 남았어도 **닫아 둔 30분이 지나면 다시 뜬다** — 승인까지 상기시키는 게 목적이다.
           m.style.display = leadDismissed() ? 'none' : 'flex';
         }
       }).catch(function(){});

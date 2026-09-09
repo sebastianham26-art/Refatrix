@@ -225,17 +225,18 @@
       <div class="card">
         <h2 style="margin:0 0 4px">🌐 웹카달록 가입 신청</h2>
         <div class="hint" style="margin-top:0">
-          고객이 홈페이지에서 <b>회원가입</b>을 누르면 그 즉시 여기로 들어옵니다. <b>아직 고객이 아닙니다</b> —
-          담당자가 연락해 상업정보(할인·신용일수·기준단가)를 파악하고 <b>고객으로 등록</b>해야
-          그 고객이 홈페이지에서 <b>가격과 재고를 볼 수 있습니다.</b><br>
-          기록은 지워지지 않습니다. 처리 상태만 바뀝니다.
+          고객이 홈페이지에서 <b>회원가입</b>을 누르면 그 즉시 여기로 들어옵니다. <b>아직 고객이 아닙니다.</b><br>
+          <b>미배정</b> → 디렉터가 <b>담당 지정</b> → 담당자가 연락해 <b>할인율·외상일을 정해 고객 등록</b>
+          → <b>디렉터 승인</b>이 나야 <b>완결</b>이고, 그때부터 고객이 홈페이지에서 가격·재고를 봅니다.<br>
+          완결 전까지는 담당자 화면에 이 건이 계속 팝업으로 뜹니다. 기록은 지워지지 않고 상태만 바뀝니다.
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
           <select id="leadStatus" style="width:auto">
-            <option value="open">처리 대기 (신규 + 담당 지정됨)</option>
-            <option value="new">신규 — 담당 미지정</option>
-            <option value="claimed">담당 지정됨</option>
-            <option value="done">고객 등록 완료</option>
+            <option value="open">처리 중 (승인 전 전부)</option>
+            <option value="unassigned">담당 미지정</option>
+            <option value="assigned">담당 지정됨</option>
+            <option value="registered">등록됨 · 디렉터 승인 대기</option>
+            <option value="done">완결 (승인됨)</option>
             <option value="dismissed">보류 · 대상 아님</option>
             <option value="">전체</option>
           </select>
@@ -1826,13 +1827,16 @@
   // ===== 🌐 웹카달록 가입 신청 (0210) =====
   //   여기 들어온 건 **아직 고객이 아니다.** 담당자가 연락해 상업정보를 채우고
   //   고객으로 등록해야 그 고객이 홈페이지에서 가격·재고를 본다.
-  let LEADS=[];
-  const LEAD_STATUS={new:'신규 — 담당 미지정',claimed:'담당 지정됨',done:'고객 등록 완료',dismissed:'보류 · 대상 아님'};
+  let LEADS=[], LEAD_ASSIGNEES=[], LEAD_OPEN=null;
+  const LEAD_STATUS={new:'미배정',assigned:'담당 지정됨',registered:'등록됨 · 승인 대기',
+    done:'완결 (승인됨)',dismissed:'보류 · 대상 아님'};
+  const LEAD_PILL={new:['#F6E7E4','#B23A2E'],assigned:['#F6EEDD','#8A5A00'],
+    registered:['#F6EEDD','#8A5A00'],done:['#E4F0EB','#0F6E56'],dismissed:['#EFEDE7','#6F6A60']};
   const LEAD_LBL={empresa:'회사명',nombre:'이름',apellido:'성',telefono:'전화',correo:'이메일',rfc:'RFC',
     ciudad:'도시',estado:'주',direccion:'주소',mensaje:'남긴 말',crmLeadCode:'CRM 코드',customerCode:'CRM 코드',
     solicitadoEn:'신청 시각',tipo:'유형',nombreComercial:'상호'};
 
-  // 고객이 입력한 값 **전부**를 편다. 우리가 모르는 필드도 키 이름 그대로 보여 준다 —
+  // 고객이 입력한 값 **전부**를 편다(자세히 열었을 때만). 우리가 모르는 필드도 키 이름 그대로 —
   //   CRM 이 가입 폼에 항목을 더해도 여기서 잃어버리지 않는다.
   function leadFields(r){
     const p=r.payload||{}, seen={}, rows=[];
@@ -1841,7 +1845,7 @@
       if(typeof v==='object'){ try{ v=JSON.stringify(v); }catch(e){ return; } }
       v=String(v).trim(); if(!v) return;
       const key=String(k).toLowerCase(); if(seen[key]) return; seen[key]=1;
-      rows.push(`<tr><td style="color:var(--muted);white-space:nowrap;vertical-align:top;padding:3px 8px 3px 0">${esc(LEAD_LBL[k]||k)}</td>`
+      rows.push(`<tr><td style="color:var(--muted);white-space:nowrap;vertical-align:top;padding:3px 10px 3px 0">${esc(LEAD_LBL[k]||k)}</td>`
         +`<td style="padding:3px 0;word-break:break-word">${esc(v)}</td></tr>`);
     };
     ['empresa','nombre','apellido','rfc','telefono','correo','ciudad','estado','direccion','mensaje'].forEach(k=>add(k,p[k]));
@@ -1852,59 +1856,67 @@
   async function loadLeads(){
     const box=$('leadList'); box.innerHTML='<div class="hint">불러오는 중…</div>';
     const st=$('leadStatus').value, q=$('leadQ').value.trim();
+    if(isDirector()&&!LEAD_ASSIGNEES.length){
+      try{ LEAD_ASSIGNEES=(await fetch(session.api+'/api/crm-leads/assignees',{headers:auth()}).then(r=>r.json())).items||[]; }
+      catch(e){ LEAD_ASSIGNEES=[]; }
+    }
     try{
       const url=session.api+'/api/crm-leads?status='+encodeURIComponent(st)+(q?'&q='+encodeURIComponent(q):'');
       const res=await fetch(url,{headers:auth()});
       const d=await res.json();
-      if(!res.ok||d.error){
-        box.innerHTML='<div class="hint">'+esc(d.note||d.error||res.status)+'</div>'; return;
-      }
+      if(!res.ok||d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error||res.status)+'</div>'; return; }
       LEADS=d.items||[];
       const s=d.summary||{};
-      $('leadMeta').textContent='신규 '+(s.new||0)+' · 담당 지정 '+(s.claimed||0)+' · 등록 완료 '+(s.done||0)+' · 보류 '+(s.dismissed||0);
-      const open=(s.new||0)+(s.claimed||0);
+      $('leadMeta').textContent='미배정 '+(s.new||0)+' · 담당 '+(s.assigned||0)+' · 승인대기 '+(s.registered||0)
+        +' · 완결 '+(s.done||0)+' · 보류 '+(s.dismissed||0);
+      const open=(s.new||0)+(s.assigned||0)+(s.registered||0);
       $('leadsBadge').textContent=open; $('leadsBadge').classList.toggle('hidden',!open);
-      box.innerHTML=LEADS.length?LEADS.map(leadCard).join(''):'<div class="hint">해당 조건의 가입 신청이 없습니다.</div>';
+      box.innerHTML=LEADS.length?leadTable():'<div class="hint">해당 조건의 가입 신청이 없습니다.</div>';
     }catch(e){ box.innerHTML='<div class="hint">서버 연결 실패</div>'; }
   }
 
-  function leadCard(r){
-    const when=new Date(r.received_at).toLocaleString('ko-KR');
-    const pill=(t,bg,fg)=>`<span class="pill" style="background:${bg};color:${fg};font-weight:700;font-size:10.5px;padding:2px 8px;border-radius:999px">${esc(t)}</span>`;
-    const st=r.status==='new'?pill('신규','#F6E7E4','#B23A2E')
-      :r.status==='claimed'?pill('담당 '+(r.claimed_by_name||''),'#E4F0EB','#0F6E56')
-      :r.status==='done'?pill('고객 등록 완료','#E4F0EB','#0F6E56')
-      :pill('보류 · 대상 아님','#EFEDE7','#6F6A60');
-    const dup=r.existing_code
-      ? `<div style="margin-top:7px;background:#F6EEDD;color:#8A5A00;border-radius:8px;padding:7px 10px;font-size:12px">
-           ⚠ 같은 RFC 의 고객이 이미 ERP 에 있습니다 — <b>${esc(r.existing_code)} ${esc(r.existing_name||'')}</b>.
-           새로 만들지 말고 그 고객을 확인하세요.</div>` : '';
-    const closed=(r.status==='dismissed'&&r.close_reason)
-      ? `<div class="hint" style="margin-top:6px">사유: ${esc(r.close_reason)}${r.closed_by_name?(' · '+esc(r.closed_by_name)):''}</div>` : '';
+  // 요약 한 줄 = 한 건. 자세한 내용은 「자세히」로 펼친다 —
+  //   목록에서 전부 펼쳐 놓으면 몇 건만 있어도 화면이 끝없이 길어진다.
+  function leadTable(){
+    return '<div class="tblwrap"><table><thead><tr>'
+      +'<th style="width:104px">접수</th><th>회사 · 신청자</th><th style="width:132px">RFC</th>'
+      +'<th style="width:126px">담당</th><th style="width:150px">상태</th><th style="width:190px"></th>'
+      +'</tr></thead><tbody>'+LEADS.map(leadRowHtml).join('')+'</tbody></table></div>';
+  }
+
+  function leadRowHtml(r){
+    const when=new Date(r.received_at).toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'});
+    const pill=LEAD_PILL[r.status]||LEAD_PILL.new;
+    const statusTxt=r.status==='registered'&&r.customer_code
+      ? '등록됨 '+r.customer_code+' · 승인 대기' : (LEAD_STATUS[r.status]||r.status);
     const acts=[];
-    if(r.status==='new') acts.push(`<button class="btn sm" onclick="leadClaim(${r.id})">내가 맡겠습니다</button>`);
-    if(r.status==='new'||r.status==='claimed'){
-      acts.push(`<button class="btn sm" onclick="leadToCustomer(${r.id})">이 정보로 고객 등록 →</button>`);
-      // 「이 정보로 고객 등록 →」 으로 등록하면 저장하는 순간 자동으로 닫힌다.
-      //   이 버튼은 그 경로를 안 타고 따로 등록했을 때를 위한 예외 처리다.
-      acts.push(`<button class="btn ghost sm" title="이 경로로 등록하지 않고 따로 등록했을 때만 누르세요" onclick="leadDone(${r.id})">이미 등록했음</button>`);
-      acts.push(`<button class="btn ghost sm" style="color:var(--expense);border-color:#e7b6af" onclick="leadDrop(${r.id})">보류 · 대상 아님</button>`);
+    if(['new','assigned','registered'].includes(r.status)){
+      if(isDirector()) acts.push(`<button class="btn ghost sm" onclick="leadAssignPrompt(${r.id})">${r.assigned_to_name?'담당 변경':'담당 지정'}</button>`);
+      if(r.status!=='registered') acts.push(`<button class="btn sm" onclick="leadToCustomer(${r.id})">고객 등록 →</button>`);
+      if(isDirector()) acts.push(`<button class="btn ghost sm" style="color:var(--expense);border-color:#e7b6af" onclick="leadDrop(${r.id})">보류</button>`);
     }
     if((r.status==='done'||r.status==='dismissed')&&isDirector())
       acts.push(`<button class="btn ghost sm" onclick="leadReopen(${r.id})">되돌리기</button>`);
-    return `<div class="card" style="margin-top:8px;padding:13px 14px">
-      <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap">
-        <b style="font-size:15px">${esc(r.empresa||r.nombre||'(회사명 없음)')}</b>
-        <span class="hint" style="margin:0">${esc(r.crm_lead_code||'')}</span>
-        <span style="margin-left:auto">${st}</span>
-      </div>
-      <div class="hint" style="margin-top:2px">접수 ${esc(when)}</div>
-      ${dup}
-      <table style="width:100%;font-size:12.5px;margin-top:8px;border-collapse:collapse">${leadFields(r)}</table>
-      ${closed}
-      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${acts.join('')}</div>
-    </div>`;
+    const main=`<tr>
+      <td class="num">${esc(when)}</td>
+      <td><b>${esc(r.empresa||'(회사명 없음)')}</b>
+        <div class="hint" style="margin:0">${esc([r.nombre,r.apellido].filter(Boolean).join(' '))}${r.telefono?(' · '+esc(r.telefono)):''}</div></td>
+      <td class="mono" style="font-size:11.5px">${esc(r.rfc||'—')}
+        ${r.existing_code?`<div class="hint" style="margin:0;color:var(--warn)">⚠ 기존 ${esc(r.existing_code)}</div>`:''}</td>
+      <td>${r.assigned_to_name?esc(r.assigned_to_name):'<span class="hint" style="margin:0">미지정</span>'}</td>
+      <td><span class="pill" style="background:${pill[0]};color:${pill[1]};font-weight:700;font-size:10.5px;padding:2px 8px;border-radius:999px">${esc(statusTxt)}</span></td>
+      <td><button class="btn ghost sm" onclick="leadDetail(${r.id})">${LEAD_OPEN===r.id?'접기':'자세히'}</button> ${acts.join(' ')}</td>
+    </tr>`;
+    const det=LEAD_OPEN===r.id
+      ? `<tr><td colspan="6" style="background:#faf8f3">
+          <div class="hint" style="margin:0 0 6px">고객이 홈페이지에서 입력한 내용 전부</div>
+          <table style="font-size:12.5px;border-collapse:collapse">${leadFields(r)}</table>
+          ${r.close_reason?`<div class="hint" style="margin-top:6px">보류 사유: ${esc(r.close_reason)}${r.closed_by_name?(' · '+esc(r.closed_by_name)):''}</div>`:''}
+          ${r.assigned_by_name?`<div class="hint" style="margin-top:4px">지정: ${esc(r.assigned_by_name)} → ${esc(r.assigned_to_name||'')}</div>`:''}
+        </td></tr>` : '';
+    return main+det;
   }
+  function leadDetail(id){ LEAD_OPEN=(LEAD_OPEN===id?null:id); $('leadList').innerHTML=leadTable(); }
 
   async function leadAct(id,path,body){
     try{
@@ -1912,21 +1924,20 @@
         {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body||{})});
       const d=await res.json();
       if(!res.ok||d.error){ alert(d.note||d.error||('실패: '+res.status)); }
+      return d;
     }catch(e){ alert('서버 연결 실패'); }
-    loadLeads();
+    finally{ loadLeads(); }
   }
-  function leadClaim(id){ leadAct(id,'claim'); }
-  function leadDone(id){ if(confirm('이 신청을 「고객 등록 완료」로 표시합니다. 계속할까요?')) leadAct(id,'done'); }
   function leadReopen(id){ if(confirm('이 신청을 다시 처리 대기로 되돌립니다. 계속할까요?')) leadAct(id,'reopen'); }
   function leadDrop(id){
     const why=prompt('왜 대상이 아닌지 한 줄 적어 주세요 (같은 고객이 다시 왔을 때 판단 근거가 됩니다).');
     if(!why||!why.trim()) return;
     leadAct(id,'dismiss',{reason:why.trim()});
   }
+  /** 담당 지정 — 디렉터만. 지정받은 직원 화면에 이 건이 뜨기 시작한다. */
   /** 가입 신청 내용을 들고 고객 등록 폼으로. 상업정보는 담당자가 통화로 채운다.
-   *   0210 · 이 등록에는 **리드 id 가 따라간다** — 저장에 성공하면 서버가 그 신청을
-   *   「고객 등록 완료」로 닫는다. 사람이 따로 한 번 더 눌러야 하면 반드시 빠뜨리고,
-   *   그러면 같은 신청이 팝업에 남아 다른 사람이 또 전화한다. */
+   *   리드 id 가 따라가므로, 저장에 성공하면 서버가 그 신청을 「등록됨 · 승인 대기」로 옮긴다.
+   *   ⚠ 완결은 **디렉터 승인**이다 — 그때까지 담당자 화면에 알림이 계속 뜬다. */
   async function leadToCustomer(id){
     const r=LEADS.find(x=>Number(x.id)===Number(id)); if(!r) return;
     document.querySelector('.tab[data-tab="list"]').click();
@@ -1940,10 +1951,22 @@
     set('rcf-memo', '웹카달록 가입 신청'+(r.crm_lead_code?(' · '+r.crm_lead_code):'')
       +(r.nombre?(' · 담당자 '+[r.nombre,r.apellido].filter(Boolean).join(' ')):'')
       +(r.mensaje?(' · '+r.mensaje):''));
-    alert('가입 신청 내용을 채웠습니다.\n\n기준품목 구매단가와 할인·신용일수는 고객과 통화해 확인한 뒤 입력하세요.\n\n저장하면 이 가입 신청은 자동으로 「고객 등록 완료」로 닫힙니다 — 따로 누를 것이 없습니다.');
+    alert('가입 신청 내용을 채웠습니다.\n\n기준품목 구매단가와 할인율·외상일은 고객과 통화해 확인한 뒤 입력하세요.\n\n저장하면 이 가입 신청은 「등록됨 · 승인 대기」로 바뀝니다.\n\n⚠ 아직 끝이 아닙니다 — 디렉터 승인이 나야 완결이고, 그때까지 알림은 계속 뜹니다.');
   }
-  window.loadLeads=loadLeads; window.leadClaim=leadClaim; window.leadDone=leadDone;
-  window.leadDrop=leadDrop; window.leadReopen=leadReopen; window.leadToCustomer=leadToCustomer;
+
+  function leadAssignPrompt(id){
+    const r=LEADS.find(x=>Number(x.id)===Number(id)); if(!r) return;
+    if(!LEAD_ASSIGNEES.length){ alert('지정할 수 있는 직원 목록을 불러오지 못했습니다.'); return; }
+    const list=LEAD_ASSIGNEES.map((u,i)=>(i+1)+'. '+u.name+' ('+u.role+')').join('\n');
+    const pick=prompt('「'+(r.empresa||'')+'」 담당 직원 번호를 입력하세요.\n\n'+list
+      +'\n\n지정하면 그 직원 화면에 이 건이 뜨고, 디렉터 승인이 날 때까지 계속 상기됩니다.');
+    if(!pick) return;
+    const u=LEAD_ASSIGNEES[Number(pick)-1];
+    if(!u){ alert('목록에 없는 번호입니다.'); return; }
+    leadAct(id,'assign',{user_id:u.id});
+  }
+  window.loadLeads=loadLeads; window.leadDrop=leadDrop; window.leadReopen=leadReopen;
+  window.leadToCustomer=leadToCustomer; window.leadDetail=leadDetail; window.leadAssignPrompt=leadAssignPrompt;
 
   // 탭 전환
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
@@ -2099,6 +2122,6 @@
   (function(){ const ps=portalSession(); if(ps&&ps.token){ if(ps.api)$('api').value=ps.api; $('lid').value='-'; $('pin').value='-'; setTimeout(()=>login(),30); } })();
 </script>
 <script src="refatrix-custform.js?v=20260908lead"></script>
-<script src="refatrix-nav.js?v=20260908lead"></script>
+<script src="refatrix-nav.js?v=20260908assign"></script>
 </body>
 </html>

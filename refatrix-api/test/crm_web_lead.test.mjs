@@ -82,21 +82,45 @@ test('C3. 전 화면 팝업이 nav 에 있고 폴러가 켜진다', () => {
   assert.ok(n.includes("custLeads:{file:'refatrix-customers.html'"), '네비에 없으면 입구 없는 탭이 된다');
 });
 
-test('C4. 팝업 버튼 네 가지가 다 있다', () => {
+test('C4. 팝업은 「지정」이지 「선점」이 아니다', () => {
+  // 0211 · 누가 어떤 고객을 맡을지는 디렉터가 정한다. 먼저 누른 사람이 가져가는 방식은 없앴다.
   const n = read(join(REPO, 'refatrix-nav.js'));
-  assert.ok(n.includes('__rnavLeadClaim'), '내가 맡겠습니다');
-  assert.ok(n.includes('__rnavLeadDrop'), '보류 · 대상 아님');
-  assert.ok(n.includes('__rnavLeadGo'), '고객 등록 화면으로');
-  assert.ok(n.includes('__rnavLeadDismiss'), '임시로 닫기');
+  assert.equal(n.includes('__rnavLeadClaim'), false, '「내가 맡겠습니다」는 사라져야 한다');
+  assert.ok(n.includes('__rnavLeadAssign'), '디렉터가 담당을 지정한다');
+  assert.ok(n.includes('__rnavLeadDrop') && n.includes('__rnavLeadGo') && n.includes('__rnavLeadDismiss'));
+  assert.ok(/can_assign/.test(n), '지정 UI 는 디렉터에게만 보여야 한다 — 서버 판정을 따른다');
 });
 
-test('C5. 고객 화면에 누적 이력 탭이 있다', () => {
+test('C4-b. 임시로 닫아도 승인 전까지는 다시 뜬다', () => {
+  // 「디렉터 승인까지 계속 팝업」이 요구사항이다. 영구히 꺼지면 그 요구가 무너진다.
+  const n = read(join(REPO, 'refatrix-nav.js'));
+  assert.ok(/LEAD_SNOOZE_MS/.test(n), '임시 닫기는 스누즈여야 한다');
+  assert.equal(/sessionStorage\.getItem\(LEAD_DIS_KEY\)==='1'/.test(n), false,
+    '영구 닫기 플래그가 남아 있으면 안 된다');
+});
+
+test('C4-c. 등록만으로 끝나지 않는다 — 승인이 완결이다', () => {
+  const c = read(join(API, 'src/routes/customerRoutes.js'));
+  assert.ok(/SET status='registered'/.test(c), '고객 등록은 registered 까지만');
+  assert.ok(/SET status='done'[\s\S]{0,160}WHERE customer_id=/.test(c), '승인이 done 으로 닫는다');
+  const l = read(join(API, 'src/routes/crmLeadRoutes.js'));
+  assert.ok(/OPEN_WHERE/.test(l) && /COALESCE\(lc\.approval_status,'approved'\)='approved'/.test(l),
+    '승인된 건은 상태와 무관하게 팝업에서 빠져야 한다(훅이 못 돌았을 때의 안전장치)');
+});
+
+test('C5. 고객 화면의 목록은 요약 표이고 자세히는 접혀 있다', () => {
+  // 카드마다 전 항목을 펼치면 몇 건만 있어도 화면이 끝없이 길어진다(디렉터 지적).
   const h = read(join(REPO, 'refatrix-customers.html'));
   assert.ok(h.includes('data-tab="leads"'));
-  assert.ok(h.includes("id=\"tab-leads\""));
+  assert.ok(h.includes('id="tab-leads"'));
   assert.ok(h.includes('/api/crm-leads'));
   assert.ok(h.includes("'leads'"), '해시 딥링크 목록에 leads 가 있어야 한다');
   assert.ok(h.includes('leadToCustomer'), '가입 정보를 들고 고객 등록으로 넘어갈 수 있어야 한다');
+  assert.ok(/function leadTable\(\)/.test(h) && /<thead>/.test(h.slice(h.indexOf('function leadTable'))),
+    '요약은 표로 — 한 건이 한 줄이어야 한다');
+  assert.ok(/function leadDetail\(id\)/.test(h), '자세히는 눌러서 펼친다');
+  assert.ok(/leadAssignPrompt/.test(h), '디렉터는 목록에서도 담당을 지정할 수 있어야 한다');
+  assert.ok(/완결 \(승인됨\)/.test(h), '완결 상태를 목록에서 볼 수 있어야 한다');
 });
 
 test('C6. 알림 대상은 관리 화면에서 사람 단위로 고른다', () => {
@@ -114,12 +138,12 @@ test('C7. 팝업은 고객이 보낸 값을 전부 편다', () => {
   assert.ok(/Object\.keys\(p\)\.forEach/.test(h));
 });
 
-test('C8. 고객 등록이 리드를 자동으로 닫는다', () => {
-  // 사람이 「이미 등록했음」 을 따로 눌러야 하면 반드시 빠뜨리고, 그러면 같은 신청이
-  // 팝업에 남아 다른 사람이 또 전화한다. 등록이 곧 처리 완료다.
+test('C8. 고객 등록이 리드를 자동으로 진행시킨다', () => {
+  // 사람이 상태를 따로 눌러 옮겨야 하면 반드시 빠뜨린다. 등록하면 자동으로 「등록됨」이 되고,
+  // 승인하면 자동으로 「완결」이 된다.
   const c = read(join(API, 'src/routes/customerRoutes.js'));
   assert.ok(/b\.lead_id/.test(c), '등록 API 가 lead_id 를 받아야 한다');
-  assert.ok(/UPDATE crm_web_leads[\s\S]{0,200}status='done'/.test(c));
+  assert.ok(/UPDATE crm_web_leads[\s\S]{0,200}status='registered'/.test(c));
   assert.ok(/lead_linked/.test(c), '응답으로 알려 줘야 화면이 목록을 맞출 수 있다');
   const f = read(join(REPO, 'refatrix-custform.js'));
   assert.ok(/b\.lead_id\s*=\s*leadId/.test(f), '폼이 lead_id 를 실어 보내야 한다');

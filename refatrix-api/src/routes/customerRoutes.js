@@ -1381,11 +1381,14 @@ export default async function customerRoutes(app) {
     const leadId = Number(b.lead_id || 0);
     if (leadId > 0) {
       try {
+        // 0211 · 등록은 **완결이 아니다.** 디렉터 승인이 나야 끝이고, 그때까지 담당자
+        //   화면에는 이 건이 계속 팝업으로 뜬다(등록만 하고 승인을 안 챙기면 고객은
+        //   여전히 홈페이지에서 가격을 못 본다).
         const lk = (await query(
           `UPDATE crm_web_leads
-              SET status='done', customer_id=$1, closed_by=$2, closed_at=now()
-            WHERE id=$3 AND status IN ('new','claimed')
-            RETURNING id, crm_lead_code`, [row.id, perm.userId, leadId])).rows[0];
+              SET status='registered', customer_id=$1, registered_at=now()
+            WHERE id=$2 AND status IN ('new','assigned')
+            RETURNING id, crm_lead_code`, [row.id, leadId])).rows[0];
         if (lk) leadLinked = { id: Number(lk.id), crm_lead_code: lk.crm_lead_code || null };
       } catch (_) { /* 0210 미적용이거나 이미 닫힌 건 — 등록은 그대로 진행 */ }
     }
@@ -2083,6 +2086,15 @@ export default async function customerRoutes(app) {
     if (!hasRfc) warns.push('rfc_missing');
     await safeLog({ userId: perm.userId, action: 'approve_registration', target: `customer:${id}`,
       detail: { constancia_doc: hadDoc, rfc_claimed: hasRfc } });
+    // 0211 · 이 고객이 웹 가입 신청에서 온 건이면 **여기서 비로소 완결**이다.
+    //   담당자 화면의 팝업이 멈추는 지점이 바로 이 순간이다.
+    //   ⚠ 실패해도 승인을 되돌리지 않는다(승인이 본질, 리드 정리는 뒤처리).
+    try {
+      await query(
+        `UPDATE crm_web_leads SET status='done', closed_by=$1, closed_at=now()
+          WHERE customer_id=$2 AND status IN ('new','assigned','registered')`, [perm.userId, id]);
+    } catch (_) { /* 0210/0211 미적용 — 승인은 그대로 진행 */ }
+
     // → CRM 전송(신규 고객). RFC 가 없으면 skipped 로 남는다(CRM 조회 키가 RFC 이므로).
     await enqueueCustomerSync(id, 'upsert', { origin: 'registration_approve', actorUserId: perm.userId, app });
     return { ok: true, id, discount, constancia_doc: hadDoc, rfc_claimed: hasRfc,

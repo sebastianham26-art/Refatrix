@@ -12,7 +12,10 @@
 //        잃어버리지 않고 팝업에 그대로 보여 준다.
 //     3) 알림 대상은 **사람 단위**로 디렉터가 고른다. 디렉터는 설정과 무관하게 항상 받는다
 //        (설정을 비워 두면 아무도 못 받는 상태가 되는데, 그건 이 기능이 없는 것과 같다).
-//     4) 기록은 지우지 않는다. 상태만 바뀐다(new → claimed → done, 또는 dismissed).
+//     4) 기록은 지우지 않는다. 상태만 바뀐다(new → assigned → registered → done, 또는 dismissed).
+//     5) **담당은 디렉터가 지정한다**(0211). 「먼저 잡는 사람」 방식은 없앴다 —
+//        누가 어떤 고객을 맡을지는 디렉터가 정할 일이고, 지정받은 사람은 승인이 날 때까지
+//        팝업으로 계속 상기받는다. 등록만 하고 승인을 안 챙기면 고객은 여전히 가격을 못 본다.
 import { query } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { logEvent } from '../audit.js';
@@ -56,11 +59,17 @@ function leadRow(r) {
     mensaje: r.mensaje || null,
     payload: r.payload || {},
     status: r.status, received_at: r.received_at,
-    claimed_by: r.claimed_by ? Number(r.claimed_by) : null,
-    claimed_by_name: r.claimed_by_name || null, claimed_at: r.claimed_at,
+    assigned_to: r.assigned_to ? Number(r.assigned_to) : null,
+    assigned_to_name: r.assigned_to_name || null, assigned_at: r.assigned_at,
+    assigned_by_name: r.assigned_by_name || null,
+    registered_at: r.registered_at || null,
     closed_by_name: r.closed_by_name || null, closed_at: r.closed_at,
     close_reason: r.close_reason || null,
     customer_id: r.customer_id ? Number(r.customer_id) : null,
+    // 등록된 고객의 승인 상태 — 「등록됨」과 「완결」은 다른 상태다.
+    //   담당자 팝업은 **승인까지** 떠 있어야 한다. 등록에서 끝내면 승인은 아무도 안 챙긴다.
+    customer_code: r.customer_code || null,
+    customer_approval: r.customer_approval || null,
     // 같은 RFC 로 이미 ERP 에 고객이 있는가 — 있으면 새로 만들 게 아니라 그 고객을 손봐야 한다.
     existing_code: r.existing_code || null,
     existing_name: r.existing_name || null,
@@ -68,15 +77,37 @@ function leadRow(r) {
 }
 
 const SELECT_LEAD = `
-  SELECT l.*, u.name AS claimed_by_name, cu.name AS closed_by_name,
-         c.code AS existing_code, c.name AS existing_name
+  SELECT l.*, u.name AS assigned_to_name, ab.name AS assigned_by_name, cu.name AS closed_by_name,
+         c.code AS existing_code, c.name AS existing_name,
+         lc.code AS customer_code,
+         COALESCE(lc.approval_status,'approved') AS customer_approval
     FROM crm_web_leads l
-    LEFT JOIN users u  ON u.id = l.claimed_by
+    LEFT JOIN users u  ON u.id = l.assigned_to
+    LEFT JOIN users ab ON ab.id = l.assigned_by
     LEFT JOIN users cu ON cu.id = l.closed_by
+    LEFT JOIN customers lc ON lc.id = l.customer_id AND lc.deleted_at IS NULL
     LEFT JOIN LATERAL (
       SELECT code, name FROM customers
        WHERE deleted_at IS NULL AND rfc_norm IS NOT NULL AND rfc_norm = l.rfc_norm
        ORDER BY id LIMIT 1) c ON true`;
+
+// 팝업에 뜨는 건 = 아직 안 끝난 건.
+//   ⚠ 상태만 믿지 않고 **등록된 고객의 승인 상태도 본다.** 승인 훅이 어떤 이유로 못 돌아도
+//     승인된 건이 계속 팝업에 남지 않게 하는 안전장치다(반대로 상태가 done 인데 승인이
+//     취소된 경우도 여기서 걸린다).
+const OPEN_WHERE = `l.status IN ('new','assigned','registered')
+  AND NOT (l.customer_id IS NOT NULL AND COALESCE(lc.approval_status,'approved')='approved')`;
+
+/** 담당으로 지정할 수 있는 사람 — 고객에게 전화하고 등록까지 할 수 있는 역할만. */
+async function assignableUsers() {
+  try {
+    return (await query(
+      `SELECT id, name, role FROM users
+        WHERE deleted_at IS NULL AND role IN ('sales','ops','marketing','director')
+        ORDER BY (role='sales') DESC, name`)).rows
+      .map((u) => ({ id: Number(u.id), name: u.name, role: u.role }));
+  } catch (_) { return []; }
+}
 
 export default async function crmLeadRoutes(app) {
   // ════════════════════════════════════════════════════════════════════
@@ -188,19 +219,31 @@ export default async function crmLeadRoutes(app) {
   // ════════════════════════════════════════════════════════════════════
   //   대상이 아닌 사람에게는 **빈 배열**을 준다(403 이 아니라). 화면마다 오류를 띄울 일이 아니다.
   app.get('/api/portal/web-lead-alert', { preHandler: [authGuard] }, async (req) => {
-    const empty = { count: 0, items: [] };
+    const empty = { count: 0, items: [], can_assign: false, assignees: [] };
     if (!(await leadsReady())) return empty;
     const perm = req.ctx.perm;
     try {
-      if (perm.role !== 'director') {
-        const t = (await query(
+      const isDir = perm.role === 'director';
+      let where;
+      const params = [];
+      if (isDir) {
+        // 디렉터는 **전부** 본다 — 지정하는 사람이 못 보면 아무 일도 시작되지 않는다.
+        where = OPEN_WHERE;
+      } else {
+        // 직원은 ① 자기에게 지정된 건과 ② (알림 대상으로 뽑혔다면) 아직 아무에게도 안 간 신규 건.
+        //   남에게 지정된 건은 보이지 않는다 — 두 사람이 같은 고객에게 전화하는 걸 막는 게 목적이다.
+        const target = (await query(
           `SELECT 1 FROM crm_lead_notify_targets WHERE user_id=$1`, [perm.userId])).rows[0];
-        if (!t) return empty;
+        params.push(perm.userId);
+        where = target
+          ? `${OPEN_WHERE} AND (l.assigned_to=$1 OR l.assigned_to IS NULL)`
+          : `${OPEN_WHERE} AND l.assigned_to=$1`;
       }
       const rows = (await query(
-        `${SELECT_LEAD} WHERE l.status IN ('new','claimed')
-          ORDER BY l.received_at DESC LIMIT 30`)).rows;
-      return { count: rows.length, items: rows.map(leadRow) };
+        `${SELECT_LEAD} WHERE ${where} ORDER BY l.received_at DESC LIMIT 30`, params)).rows;
+      let assignees = [];
+      if (isDir) assignees = await assignableUsers();
+      return { count: rows.length, items: rows.map(leadRow), can_assign: isDir, assignees };
     } catch (_) { return empty; }
   });
 
@@ -208,6 +251,7 @@ export default async function crmLeadRoutes(app) {
   //  ③ 누적 이력 + 처리 (고객 화면의 「웹 가입 신청」 탭)
   // ════════════════════════════════════════════════════════════════════
   const canSee = { preHandler: [authGuard, requirePage('customers')] };
+  const dirOnly = { preHandler: [authGuard, requireDirector] };
 
   app.get('/api/crm-leads', canSee, async (req, reply) => {
     if (!(await leadsReady())) {
@@ -218,8 +262,9 @@ export default async function crmLeadRoutes(app) {
     const q = String(req.query?.q || '').trim();
     const limit = Math.min(300, Math.max(1, Number(req.query?.limit) || 100));
     const where = []; const params = [];
-    if (status === 'open') where.push(`l.status IN ('new','claimed')`);
-    else if (['new', 'claimed', 'done', 'dismissed'].includes(status)) {
+    if (status === 'open') where.push(OPEN_WHERE);                    // 아직 안 끝난 건
+    else if (status === 'unassigned') where.push(`${OPEN_WHERE} AND l.assigned_to IS NULL`);
+    else if (['new', 'assigned', 'registered', 'done', 'dismissed'].includes(status)) {
       params.push(status); where.push(`l.status=$${params.length}`);
     }
     if (q) {
@@ -233,7 +278,7 @@ export default async function crmLeadRoutes(app) {
       `${SELECT_LEAD} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY l.received_at DESC LIMIT $${params.length}`, params)).rows;
     const sum = (await query(`SELECT status, count(*)::int AS n FROM crm_web_leads GROUP BY 1`)).rows;
-    const summary = { new: 0, claimed: 0, done: 0, dismissed: 0 };
+    const summary = { new: 0, assigned: 0, registered: 0, done: 0, dismissed: 0 };
     for (const s of sum) if (s.status in summary) summary[s.status] = Number(s.n);
     return { migrated: true, summary, items: rows.map(leadRow) };
   });
@@ -242,25 +287,45 @@ export default async function crmLeadRoutes(app) {
     return (await query(`${SELECT_LEAD} WHERE l.id=$1`, [Number(id)])).rows[0] || null;
   }
 
-  /** 「내가 맡겠습니다」 — 먼저 누른 사람이 담당이 된다. */
-  app.post('/api/crm-leads/:id/claim', canSee, async (req, reply) => {
+  /** 담당자 지정 — **디렉터만.** 지정받은 사람 화면에 그 건이 팝업으로 뜨기 시작한다. */
+  app.post('/api/crm-leads/:id/assign', dirOnly, async (req, reply) => {
     if (!(await leadsReady())) return reply.code(503).send({ error: 'migration_required' });
     const id = Number(req.params.id);
-    const perm = req.ctx.perm;
-    // 이미 다른 사람이 잡았으면 뺏지 않는다 — 두 사람이 같은 고객에게 전화하는 걸 막는 게 목적이다.
-    const r = (await query(
-      `UPDATE crm_web_leads SET status='claimed', claimed_by=$1, claimed_at=now()
-        WHERE id=$2 AND status='new' RETURNING id`, [perm.userId, id])).rows[0];
-    if (!r) {
-      const cur = await loadLead(id);
-      if (!cur) return reply.code(404).send({ error: 'not_found' });
-      if (String(cur.claimed_by) === String(perm.userId)) return { ok: true, already_mine: true, lead: leadRow(cur) };
-      return reply.code(409).send({ error: 'already_claimed', note: (cur.claimed_by_name || '다른 사용자') + ' 님이 이미 맡았습니다.',
-        lead: leadRow(cur) });
+    const uid = Number(req.body?.user_id || 0);
+    if (!uid) {
+      return reply.code(400).send({ error: 'user_required', note: '담당할 직원을 고르세요.' });
     }
-    await safeLog({ userId: perm.userId, action: 'update', target: `web_lead:${id}`, detail: { op: 'claim' } });
+    const u = (await query(
+      `SELECT id, name FROM users WHERE id=$1 AND deleted_at IS NULL`, [uid])).rows[0];
+    if (!u) return reply.code(404).send({ error: 'user_not_found' });
+    // 이미 고객 등록까지 간 건의 담당을 바꿔도 상태는 되돌리지 않는다 — 진행을 되감으면 안 된다.
+    const r = (await query(
+      `UPDATE crm_web_leads
+          SET assigned_to=$1, assigned_by=$2, assigned_at=now(),
+              status = CASE WHEN status='new' THEN 'assigned' ELSE status END
+        WHERE id=$3 AND status IN ('new','assigned','registered') RETURNING id`,
+      [uid, req.ctx.perm.userId, id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `web_lead:${id}`,
+      detail: { op: 'assign', to: uid } });
+    return { ok: true, assigned_to_name: u.name, lead: leadRow(await loadLead(id)) };
+  });
+
+  /** 담당 해제 — 다시 미배정으로. 지정을 잘못했을 때. */
+  app.post('/api/crm-leads/:id/unassign', dirOnly, async (req, reply) => {
+    if (!(await leadsReady())) return reply.code(503).send({ error: 'migration_required' });
+    const id = Number(req.params.id);
+    const r = (await query(
+      `UPDATE crm_web_leads SET assigned_to=NULL, assigned_by=NULL, assigned_at=NULL,
+              status = CASE WHEN status='assigned' THEN 'new' ELSE status END
+        WHERE id=$1 AND status IN ('new','assigned') RETURNING id`, [id])).rows[0];
+    if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
+    await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `web_lead:${id}`, detail: { op: 'unassign' } });
     return { ok: true, lead: leadRow(await loadLead(id)) };
   });
+
+  /** 지정 가능한 직원 목록(디렉터 화면의 드롭다운). */
+  app.get('/api/crm-leads/assignees', dirOnly, async () => ({ items: await assignableUsers() }));
 
   /** 「보류 · 대상 아님」 — 기록은 남기고 목록에서 닫는다. */
   app.post('/api/crm-leads/:id/dismiss', canSee, async (req, reply) => {
@@ -273,7 +338,7 @@ export default async function crmLeadRoutes(app) {
     }
     const r = (await query(
       `UPDATE crm_web_leads SET status='dismissed', close_reason=$1, closed_by=$2, closed_at=now()
-        WHERE id=$3 AND status IN ('new','claimed') RETURNING id`,
+        WHERE id=$3 AND status IN ('new','assigned','registered') RETURNING id`,
       [reason.slice(0, 500), req.ctx.perm.userId, id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `web_lead:${id}`,
@@ -281,19 +346,20 @@ export default async function crmLeadRoutes(app) {
     return { ok: true, lead: leadRow(await loadLead(id)) };
   });
 
-  /** 「고객 등록 완료」 — 고객으로 옮겨졌음을 표시(고객 id 를 주면 연결한다). */
-  app.post('/api/crm-leads/:id/done', canSee, async (req, reply) => {
+  /** 「이미 등록했음」 — 이 경로를 안 타고 따로 등록했을 때의 예외 처리.
+   *   ⚠ 여기서 끝내지 않는다. **디렉터 승인이 나야 완결(done)** 이다 —
+   *     등록에서 끊으면 담당자는 손을 떼고 승인은 아무도 안 챙긴다. 그동안 고객은 가격을 못 본다. */
+  app.post('/api/crm-leads/:id/registered', canSee, async (req, reply) => {
     if (!(await leadsReady())) return reply.code(503).send({ error: 'migration_required' });
     const id = Number(req.params.id);
     const cid = req.body?.customer_id ? Number(req.body.customer_id) : null;
     const r = (await query(
-      `UPDATE crm_web_leads SET status='done', customer_id=COALESCE($1, customer_id),
-              closed_by=$2, closed_at=now()
-        WHERE id=$3 AND status IN ('new','claimed') RETURNING id`,
-      [cid, req.ctx.perm.userId, id])).rows[0];
+      `UPDATE crm_web_leads SET status='registered', customer_id=COALESCE($1, customer_id),
+              registered_at=now()
+        WHERE id=$2 AND status IN ('new','assigned') RETURNING id`, [cid, id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found_or_closed' });
     await safeLog({ userId: req.ctx.perm.userId, action: 'update', target: `web_lead:${id}`,
-      detail: { op: 'done', customer_id: cid } });
+      detail: { op: 'registered', customer_id: cid } });
     return { ok: true, lead: leadRow(await loadLead(id)) };
   });
 
@@ -302,7 +368,7 @@ export default async function crmLeadRoutes(app) {
     if (!(await leadsReady())) return reply.code(503).send({ error: 'migration_required' });
     const id = Number(req.params.id);
     const r = (await query(
-      `UPDATE crm_web_leads SET status='new', claimed_by=NULL, claimed_at=NULL,
+      `UPDATE crm_web_leads SET status='new', assigned_to=NULL, assigned_by=NULL, assigned_at=NULL,
               closed_by=NULL, closed_at=NULL, close_reason=NULL
         WHERE id=$1 RETURNING id`, [id])).rows[0];
     if (!r) return reply.code(404).send({ error: 'not_found' });
@@ -313,8 +379,6 @@ export default async function crmLeadRoutes(app) {
   // ════════════════════════════════════════════════════════════════════
   //  ④ 알림 대상 설정 (디렉터 전용 — 연동 관리 화면)
   // ════════════════════════════════════════════════════════════════════
-  const dirOnly = { preHandler: [authGuard, requireDirector] };
-
   app.get('/api/crm-leads/notify-targets', dirOnly, async () => {
     const users = (await query(
       `SELECT id, name, role, login_id FROM users
