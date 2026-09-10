@@ -25,6 +25,24 @@
   input:focus,select:focus{outline:none;border-color:var(--brand)}
   .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
   .btn:disabled{opacity:.5;cursor:default}
+  /* 계약 총목표 진척 */
+  .gcard{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#FBFAF6}
+  .gcard.mine{border-color:#bcdbcf;background:#F3F9F6}
+  .gcard h3{margin:0 0 10px;font-size:14px;color:var(--brand)}
+  .gkpis{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end}
+  .gk{min-width:120px}
+  .gk .k{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.03em}
+  .gk .v{font-size:22px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+  .gk .v.ok{color:var(--income)} .gk .v.bad{color:var(--expense)} .gk .v.mut{color:var(--muted)}
+  .gbar{margin-top:11px;height:15px;border-radius:8px;background:#E9E4D8;border:1px solid var(--line);overflow:hidden;position:relative}
+  .gbar>i{display:block;height:100%;background:var(--gold)}
+  .gbar>i.done{background:var(--income)}
+  .gbar>u{position:absolute;top:0;height:100%;border-right:2px solid var(--brand);opacity:.55}
+  .gnote{margin-top:7px;font-size:12px;color:var(--muted)}
+  table.aprog{border-collapse:collapse;font-size:12.5px;margin-top:8px;width:100%}
+  table.aprog th,table.aprog td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right;white-space:nowrap}
+  table.aprog th:first-child,table.aprog td:first-child{text-align:left}
+  table.aprog th{color:var(--muted);font-size:11px;font-weight:700}
   .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
   .btn.gold{background:var(--gold)}.btn.danger{background:var(--expense)}
   .btn.sm{padding:6px 11px;font-size:12px}
@@ -61,7 +79,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출 목표 · 전체 → 팀 → 고객 (미래 12개월)</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">매출 목표 · 전체 → 팀 → 고객 (시작 월 ~ 끝 월)</div></div><a href="refatrix-portal.html" id="portalBtn" style="color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto">← 포털</a><div class="who" id="who" style="margin-left:14px"></div></div>
 
   <div class="card" id="loginCard">
     <h2>로그인</h2>
@@ -80,6 +98,7 @@
         <h2 style="margin:0">기간</h2>
         <div style="display:flex;align-items:center;gap:8px">
           <label style="margin:0">시작 월</label><input id="startYm" type="month">
+          <label style="margin:0">끝 월</label><input id="endYm" type="month" title="이 달까지 입력칸이 생깁니다 (최대 24개월)">
           <button class="btn sm ghost" id="reloadBtn">불러오기</button>
         </div>
       </div>
@@ -112,6 +131,8 @@
       <h2 style="margin:0 0 6px">② 고객별 목표 배분 <span class="smallnote">· 실적 = 게시 인보이스 IVA 제외(subtotal), 인보이스 날짜 기준</span></h2>
       <div class="teampick" id="teamPick"></div>
       <div id="teamStatusBar" style="margin-top:10px"></div>
+      <div id="myGoal" style="margin-top:12px"></div>
+      <div id="agentsProg" style="margin-top:12px"></div>
       <div class="scroll" style="margin-top:10px"><div id="custGrid"><div class="hint">팀을 선택하세요.</div></div></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="custActions"></div>
       <div class="msg" id="custMsg"></div>
@@ -121,7 +142,8 @@
 
 <script>
   let session={token:null,user:null,api:''};
-  let startYm='', months=[], overview=null, curTeam=null, teamData=null;
+  let startYm='', endYm='', months=[], overview=null, curTeam=null, teamData=null;
+  const PLAN_END='2027-12';   // 기본 끝 월 — 커미셔너 계약 기간의 마지막 달
   let carrySel='';   // 이월 표 선택: 'total' 또는 team id 문자열
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -156,7 +178,7 @@
         const st=document.createElement('style');
         st.textContent="body.ro input[type=text]:not(#api):not(#lid),body.ro input[type=number],body.ro input[type=month],body.ro input[type=date],body.ro textarea{pointer-events:none;background:#f2f0ea;color:#999}body.ro .btn.gold,body.ro .btn.danger{display:none!important}body.ro button.btn:not(.ghost):not(#go):not(#reloadBtn):not(#portalBtn){display:none!important}";
         document.head.appendChild(st);
-        const ban=document.createElement('div');ban.textContent='읽기 전용 — 이 화면은 보기 권한만 있습니다(수정 불가).';
+        const ban=document.createElement('div');ban.id='roBanner';ban.textContent='읽기 전용 — 이 화면은 보기 권한만 있습니다(수정 불가).';
         ban.style.cssText='background:#fff4d6;color:#8a6512;border:1px solid #ecd9a0;border-radius:8px;padding:9px 12px;margin-top:12px;font-size:13px;font-weight:700';
         const ap=document.getElementById('app'); if(ap) ap.insertBefore(ban, ap.firstChild);
       }
@@ -182,6 +204,9 @@
       else $('dirOnly').textContent='(보기 전용 · 디렉터가 설정)';
       const now=new Date();startYm=now.getUTCFullYear()+'-'+String(now.getUTCMonth()+1).padStart(2,'0');
       $('startYm').value=startYm;
+      // 커미셔너 계약 기간의 마지막 달. 12개월 고정이던 시절에는 여기까지 입력칸이 안 생겼다.
+      endYm=(startYm>PLAN_END)?startYm:PLAN_END;
+      $('endYm').value=endYm;
       loadOverview();
     }catch(e){m.className='msg err';m.textContent='서버에 연결할 수 없습니다.';}
     finally{$('go').disabled=false;$('go').textContent='로그인';}
@@ -189,9 +214,11 @@
 
   async function loadOverview(){
     startYm=$('startYm').value||startYm;
+    endYm=$('endYm').value||endYm;
+    if(endYm&&endYm<startYm){ endYm=startYm; $('endYm').value=endYm; }   // 뒤집히면 한 달짜리로
     $('topGrid').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      overview=await fetch(session.api+'/api/targets/overview?start='+startYm,{headers:auth()}).then(r=>r.json());
+      overview=await fetch(session.api+'/api/targets/overview?start='+startYm+(endYm?('&end='+endYm):''),{headers:auth()}).then(r=>r.json());
       months=overview.months;
       renderTop();
       renderCarry();
@@ -426,13 +453,87 @@
     renderTeamPick();
     $('custGrid').innerHTML='<div class="hint">불러오는 중…</div>';
     try{
-      teamData=await fetch(session.api+'/api/targets/team/'+teamId+'?start='+startYm,{headers:auth()}).then(r=>r.json());
+      teamData=await fetch(session.api+'/api/targets/team/'+teamId+'?start='+startYm+(endYm?('&end='+endYm):''),{headers:auth()}).then(r=>r.json());
       if(teamData.error){$('custGrid').innerHTML='<div class="hint">'+(teamData.error==='forbidden_team'?'이 팀을 볼 권한이 없습니다.':'불러오지 못했습니다.')+'</div>';return;}
       renderCust();
     }catch(e){$('custGrid').innerHTML='<div class="hint">불러오지 못했습니다.</div>';}
   }
 
+  // ── 계약 총목표 진척 ────────────────────────────────────────────────
+  //   커미셔너 계약은 «본인 담당 고객 전체를 합쳐 기한까지 얼마» 다.
+  //   그래서 이 바는 **화면에 보이는 기간이 아니라 계약 기간 전체**를 센다.
+  function renderMyGoal(){
+    const box=$('myGoal'); if(!box) return;
+    const g=teamData.my_progress;
+    if(!g){ box.innerHTML=''; return; }
+    const pct=Math.max(0,Math.min(100,g.pct||0));
+    const actPct=g.goal_amount>0?Math.max(0,Math.min(100,g.actual_total/g.goal_amount*100)):0;
+    box.innerHTML=
+      '<div class="gcard mine"><h3>내 담당 고객 · 계약 목표 진척 <span class="smallnote">· '+g.horizon+' 까지 · IVA 제외</span></h3>'
+      +'<div class="gkpis">'
+        +'<div class="gk"><div class="k">총 매출목표</div><div class="v">'+fmt(g.goal_amount)+'</div></div>'
+        +'<div class="gk"><div class="k">본인고객 전체 매출목표</div><div class="v '+(g.reached?'ok':'')+'">'+fmt(g.plan_total)+'</div></div>'
+        +'<div class="gk"><div class="k">'+(g.reached?'초과':'부족액')+'</div><div class="v '+(g.reached?'ok':'bad')+'">'
+          +fmt(g.reached?(g.plan_total-g.goal_amount):g.remaining)+'</div></div>'
+        +'<div class="gk"><div class="k">달성률(계획)</div><div class="v '+(g.reached?'ok':'')+'">'+(g.pct||0)+'%</div></div>'
+        +'<div class="gk"><div class="k">실적 누계</div><div class="v mut">'+fmt(g.actual_total)+'</div></div>'
+      +'</div>'
+      +'<div class="gbar"><i class="'+(g.reached?'done':'')+'" style="width:'+pct+'%"></i>'
+        +(actPct>0?'<u style="width:'+actPct+'%" title="실적 누계 '+fmt(g.actual_total)+'"></u>':'')+'</div>'
+      +'<div class="gnote">'+(g.reached
+          ? '✔ 계획 합계가 총 매출목표에 도달했습니다.'
+          : '계획을 <b>'+fmt(g.remaining)+'</b> 더 채워야 총 매출목표에 닿습니다 — 고객을 더 넣거나 월 금액을 올리세요.')
+        +' 세로선은 <b>실적 누계</b> 위치입니다.'
+        +(g.goal_stored?'':' <span style="color:#8a6512">(총목표는 기본값 — 디렉터가 사람마다 다르게 정할 수 있습니다.)</span>')
+      +'</div></div>';
+  }
+
+  // 팀 계획자용 — 담당자별 진척 한 표
+  function renderAgentsProg(){
+    const box=$('agentsProg'); if(!box) return;
+    const list=teamData.agents_progress;
+    if(!list||!list.length){ box.innerHTML=''; return; }
+    const dir=isDirector();
+    const rows=list.map(a=>{
+      const btn=dir?('<td><button class="btn ghost sm" data-goal="'+a.user_id+'">목표 설정</button></td>'):'';
+      return '<tr><td>'+esc(a.name)+'</td>'
+        +'<td>'+fmt(a.goal_amount)+'</td>'
+        +'<td'+(a.reached?' style="color:var(--income);font-weight:700"':'')+'>'+fmt(a.plan_total)+'</td>'
+        +'<td>'+(a.pct||0)+'%</td>'
+        +'<td'+(a.reached?'':' style="color:var(--expense)"')+'>'+fmt(a.remaining)+'</td>'
+        +'<td class="smallnote">'+fmt(a.actual_total)+'</td>'
+        +'<td class="smallnote">'+esc(a.horizon)+'</td>'+btn+'</tr>';
+    }).join('');
+    box.innerHTML='<div class="gcard"><h3>담당자별 계약 목표 진척 <span class="smallnote">· 담당 고객 전체 기준(팀 무관) · IVA 제외</span></h3>'
+      +'<table class="aprog"><thead><tr><th>담당자</th><th>총 매출목표</th><th>계획 합계</th><th>달성률</th><th>부족액</th><th>실적 누계</th><th>기한</th>'
+      +(dir?'<th></th>':'')+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+    // onclick 문자열에 이름을 끼워 넣지 않는다 — 따옴표가 든 이름 하나로 화면이 죽는다.
+    box.querySelectorAll('[data-goal]').forEach(b=>{
+      const a=list.find(x=>String(x.user_id)===b.dataset.goal);
+      if(a) b.addEventListener('click',()=>setAgentGoal(a.user_id,a.name,a.goal_amount,a.horizon));
+    });
+  }
+
+  async function setAgentGoal(uid,name,cur,hz){
+    const g=window.prompt(name+' 님의 총 매출목표 (IVA 제외 MXN)', String(cur||3000000));
+    if(g===null) return;
+    const h=window.prompt('기한 (YYYY-MM)', hz||'2027-12');
+    if(h===null) return;
+    const m=$('custMsg');m.className='msg';
+    try{
+      const res=await fetch(session.api+'/api/targets/agent-goal',{method:'PUT',headers:{'Content-Type':'application/json',...auth()},
+        body:JSON.stringify({user_id:uid,goal_amount:Number(g)||0,horizon:h})});
+      const d=await res.json();
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='목표 저장 실패: '+(d.note||d.error);return;}
+      m.className='msg ok';m.style.display='block';m.textContent=name+' 님의 총 매출목표를 저장했습니다.';
+      selectTeam(curTeam);
+    }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버에 연결할 수 없습니다.';}
+  }
+
   function renderCust(){
+    renderMyGoal();
+    renderAgentsProg();
+    // 줄마다 편집권이 다르다 — 팀 계획자는 전부, 커미셔너는 본인 담당 고객만.
     const canEdit=teamData.can_edit;
     const tmon=teamData.team_months||{};
     // 헤더: 고객요약 | 12개월
@@ -442,13 +543,15 @@
     let teamRow='<tr><td class="lbl"><b>팀 목표</b></td>'+months.map(m=>{const v=tmon[m]||0;tsum+=v;return `<td class="num">${fmt(v)}</td>`;}).join('')+`<td class="num"><b>${fmt(tsum)}</b></td></tr>`;
     // 고객 행
     let custRows=(teamData.customers||[]).map(c=>{
-      const meta=`<div class="custmeta">${[c.customer_type||'—',c.stage_name||'—',(c.overdue>0?'연체 '+fmt(c.overdue):(c.outstanding>0?'미수 '+fmt(c.outstanding):'미수 없음')),'할인 '+c.discount+'%'].join(' · ')}${c.memo?'<br>메모: '+c.memo:''}</div>`;
+      const rowEdit=(c.can_edit!==undefined)?!!c.can_edit:canEdit;
+      const who=c.owner_name?('담당 '+c.owner_name):'담당 미지정';
+      const meta=`<div class="custmeta">${[who,c.customer_type||'—',c.stage_name||'—',(c.overdue>0?'연체 '+fmt(c.overdue):(c.outstanding>0?'미수 '+fmt(c.outstanding):'미수 없음')),'할인 '+c.discount+'%'].join(' · ')}${c.memo?'<br>메모: '+c.memo:''}</div>`;
       let rsum=0,asum=0;
       const cells=months.map(m=>{
         const v=(c.alloc&&c.alloc[m])||0;rsum+=v;
         const act=(c.actual&&c.actual[m])||0;asum+=act;
         const actTxt=act?`<div class="smallnote" style="text-align:right">실적 ${fmt(act)}</div>`:'';
-        return canEdit?`<td><input data-cust="${c.id}" data-ym="${m}" type="number" value="${v||''}" oninput="onCustInput()">${actTxt}</td>`:`<td class="num">${fmt(v)}${actTxt}</td>`;
+        return rowEdit?`<td><input data-cust="${c.id}" data-ym="${m}" type="number" value="${v||''}" oninput="onCustInput()">${actTxt}</td>`:`<td class="num">${fmt(v)}${actTxt}</td>`;
       }).join('');
       const actSumTxt=asum?`<div class="smallnote" style="text-align:right">실적 ${fmt(asum)}</div>`:'';
       return `<tr><td class="lbl"><b>${c.name}</b> <span class="smallnote">${c.code}</span>${meta}</td>${cells}<td class="num csum"><span data-custsum="${c.id}">${fmt(rsum)}</span>${actSumTxt}</td></tr>`;
@@ -500,8 +603,18 @@
 
   function renderCustActions(){
     const box=$('custActions');box.innerHTML='';
-    if(teamData.can_edit){
+    // 담당 고객이 있으면(커미셔너) 화면 전체 읽기전용 잠금을 푼다 —
+    //   잠금은 「팀 계획을 못 고친다」는 뜻이지 「내 고객 목표도 못 넣는다」는 뜻이 아니다.
+    //   실제 경계는 줄마다(can_edit)와 서버의 소유권 검사가 지킨다.
+    if(teamData.can_edit_own&&!teamData.can_edit){
+      document.body.classList.remove('ro');
+      const b=document.getElementById('roBanner');
+      if(b) b.textContent='본인이 담당인 고객 줄만 목표를 입력·저장할 수 있습니다. 팀 목표는 디렉터가 정합니다.';
+    }
+    if(teamData.can_edit||teamData.can_edit_own){
       const save=document.createElement('button');save.className='btn gold sm';save.textContent='고객 배분 저장';save.onclick=saveCust;box.appendChild(save);
+    }
+    if(teamData.can_edit){
       const sub=document.createElement('button');sub.className='btn sm';sub.textContent='제출(디렉터 승인 요청)';sub.onclick=submitTeam;box.appendChild(sub);
     }
     if(isDirector()){
@@ -513,12 +626,19 @@
   async function saveCust(){
     const m=$('custMsg');m.className='msg';m.style.display='none';
     const allocations=[];
-    document.querySelectorAll('[data-cust]').forEach(i=>allocations.push({customer_id:Number(i.dataset.cust),ym:i.dataset.ym,amount:n0(i.value)}));
+    // 입력칸이 생긴 줄 = 내가 쓸 수 있는 줄. 읽기 전용 줄은 input 자체가 없다.
+    document.querySelectorAll('input[data-cust]').forEach(i=>allocations.push({customer_id:Number(i.dataset.cust),ym:i.dataset.ym,amount:n0(i.value)}));
     try{
       const res=await fetch(session.api+'/api/targets/customers',{method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({team_id:curTeam,allocations})});
       const d=await res.json();
-      if(!res.ok||d.error){m.className='msg err';m.style.display='block';m.textContent='저장 실패: '+(d.error||res.status);return;}
-      m.className='msg ok';m.style.display='block';m.textContent='고객 배분을 저장했습니다. (상태: 작성중으로 변경 — 제출 필요)';
+      if(!res.ok||d.error){m.className='msg err';m.style.display='block';
+        m.textContent=(d.error==='forbidden_team')?'이 팀에는 본인이 담당인 고객이 없습니다 — 고객의 담당자가 본인으로 지정돼 있어야 목표를 입력할 수 있습니다.'
+          :(d.error==='read_only')?'이 화면에 수정 권한이 없습니다. 담당 고객이 있으면 그 줄만 저장됩니다 — 디렉터에게 담당 지정을 확인하세요.'
+          :'저장 실패: '+(d.error||res.status);
+        return;}
+      m.className='msg ok';m.style.display='block';
+      m.textContent='고객 배분을 저장했습니다.'+(d.saved!=null?(' ('+d.saved+'칸'+(d.skipped?(' · 권한 밖이라 건너뛴 '+d.skipped+'칸'):'')+')'):'')
+        +(teamData.can_edit?' 상태: 작성중으로 변경 — 제출 필요.':'');
       selectTeam(curTeam);loadOverview();
     }catch(e){m.className='msg err';m.style.display='block';m.textContent='서버 연결 실패';}
   }
