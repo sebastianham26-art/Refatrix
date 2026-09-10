@@ -429,6 +429,46 @@ test('buildBoard: 연결된 상담의 녹음 상태·요약이 미팅에 붙는�
   assert.equal(b.totals.recorded, 1);
 });
 
+test('buildBoard: 녹음이 여러 건이면 요약된 것을 전부 recs 로(오래된→최근), 대기 중 건수는 rec_pending', async () => {
+  pub.none(`
+    INSERT INTO sales_consults (id, consult_date, company_name, created_by)
+      VALUES (510,'2026-09-16','El Aguila',3);
+    UPDATE exhibition_meetings SET consult_id = 510, memo = '샘플 요청' WHERE id = 2;
+    INSERT INTO sales_consult_recordings (id, consult_id, mode, status, duration_sec, summary_json, created_by)
+      VALUES (910,510,'full','done',1800,'{"resumen":"primera parte"}',3);
+    INSERT INTO sales_consult_recordings (id, consult_id, mode, status, duration_sec, summary_json, created_by)
+      VALUES (911,510,'memo','done',60,'{"resumen":"nota de voz"}',3);
+    INSERT INTO sales_consult_recordings (id, consult_id, status, created_by) VALUES (912,510,'failed',3);
+    INSERT INTO sales_consult_recordings (id, consult_id, status, created_by) VALUES (913,510,'summarizing',3);
+  `);
+  const m = (await buildBoard(OSCAR, await getExhibition(10))).meetings.find((x) => x.id === 2);
+  assert.deepEqual(m.recs.map((r) => r.id), [910, 911]);
+  assert.equal(m.recs[0].summary.resumen, 'primera parte');
+  assert.equal(m.recs[1].mode, 'memo');
+  assert.equal(m.recs[0].duration_sec, 1800);
+  assert.equal(m.rec_pending, 1, 'summarizing 1건(실패 건은 대기로 치지 않는다)');
+  assert.equal(m.summary.resumen, 'nota de voz', '호환: summary 는 최근 요약');
+  assert.equal(m.rec_id, 911);
+  assert.equal(m.memo, '샘플 요청');
+  const none = (await buildBoard(OSCAR, await getExhibition(10))).meetings.find((x) => x.id === 1);
+  assert.deepEqual(none.recs, []);
+  assert.equal(none.rec_pending, 0);
+});
+
+test('buildBoard: 🔒 감춘 상담이면 recs 도 비어 있다(작성자에게도)', async () => {
+  pub.none(`
+    INSERT INTO sales_consults (id, consult_date, company_name, created_by, private_by)
+      VALUES (511,'2026-09-16','Grupo Zeta',2,1);
+    UPDATE exhibition_meetings SET consult_id = 511 WHERE id = 1;
+    INSERT INTO sales_consult_recordings (id, consult_id, status, summary_json, created_by)
+      VALUES (920,511,'done','{"resumen":"secreto"}',2);
+    INSERT INTO sales_consult_recordings (id, consult_id, status, created_by) VALUES (921,511,'queued',2);
+  `);
+  const m = (await buildBoard(OSCAR, await getExhibition(10))).meetings.find((x) => x.id === 1);
+  assert.deepEqual(m.recs, []);
+  assert.equal(m.rec_pending, 0);
+});
+
 test('buildBoard: 🔒 감춘 상담의 요약은 감춘 디렉터에게만 보인다', async () => {
   pub.none(`
     INSERT INTO sales_consults (id, consult_date, company_name, created_by, private_by)

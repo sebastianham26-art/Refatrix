@@ -4,7 +4,7 @@
 //   모드 전환 → 보드 렌더(하루씩/전체) → 미팅 등록·수정 → 녹음 연결 →
 //   정성목표 판단 → 담당자 색상/필터 를 검증.
 // =====================================================================
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
@@ -85,6 +85,7 @@ function boardPayload(extra) {
 }
 
 function boot(user) {
+  if (dom) { try { dom.window.close(); } catch (_) {} }   // 이전 창의 타이머(보드 재조회 등)를 정리
   fetchLog = []; fetchRoutes = [];
   dom = new JSDOM(html, {
     url: 'https://example.test/refatrix-consult.html',
@@ -131,6 +132,7 @@ async function openBoard(extra) {
 }
 
 beforeEach(() => boot({ id: 1, name: 'Sebastian', role: 'director' }));
+after(() => { if (dom) { try { dom.window.close(); } catch (_) {} } });
 
 // ── 모드 전환 ───────────────────────────────────────────────────────
 test('초기: 모드 버튼 2개가 있고 전시회 섹션은 숨겨져 있다', () => {
@@ -884,4 +886,201 @@ test('녹음 카드 안 조작은 「저장 안 한 변경」 으로 치지 않�
   const inp = win.document.createElement('input'); card.appendChild(inp);
   typeIn(inp, 'x');
   assert.equal(win.eval('exDirty'), false);
+});
+
+// ── 2026-09-10 · 완료 미팅을 진하게 ─────────────────────────────────
+test('완료 미팅: 칩을 담당자 진한 색으로 채우고 흰 글자 + ✅ · 「완료」 배지', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  const ag = qsa('.ex-chip').find((c) => c.textContent.includes('El Aguila'));   // M2: done, Maria(#9A1F1F)
+  const ze = qsa('.ex-chip').find((c) => c.textContent.includes('Grupo Zeta'));  // M1: planned
+  assert.ok(ag.classList.contains('done'));
+  assert.ok(!ze.classList.contains('done'));
+  const st = ag.getAttribute('style').replace(/\s/g, '').toLowerCase();
+  assert.ok(st.includes('background:#9a1f1f') && st.includes('color:#fff'), st);
+  assert.ok(ag.querySelector('.ok') && ag.querySelector('.ok').textContent === '완료');
+  assert.ok(ag.textContent.includes('✅'));
+  assert.ok(ag.textContent.includes('460k/420k'), '완료 칩 금액은 달성/목표');
+  assert.ok(ze.getAttribute('style').replace(/\s/g, '').toLowerCase().includes('background:#fbeeda'), '미완료는 연한 바탕 그대로');
+});
+
+test('완료 미팅: 그 칸의 미팅이 전부 끝났으면 슬롯 자체도 완료 표시(하루씩·전체 둘 다)', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  const slots = qsa('.ex-slot');
+  assert.ok(slots[3].classList.contains('done'), '11:00 — El Aguila 완료');
+  assert.ok(!slots[1].classList.contains('done'), '09:00 — 계획 미팅');
+  assert.ok(!slots[0].classList.contains('done'), '빈 칸은 표시 안 함');
+  win.eval("exSetView('grid')");
+  assert.equal(qsa('.ex-cell.done').length, 2, '1일차 11시 + 2일차 12시(즉석 완료)');
+});
+
+test('완료 미팅: 같은 칸에 아직 안 끝난 미팅이 섞여 있으면 칸은 표시하지 않는다(칩만)', async () => {
+  const P = { ...M1, id: 9, day_no: 1, slot_hour: 11, company_name: 'Pendiente', status: 'planned' };
+  await openBoard({ meetings: [M1, M2, P] });
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  assert.ok(!qsa('.ex-slot')[3].classList.contains('done'));
+  assert.equal(qsa('.ex-slot')[3].querySelectorAll('.ex-chip.done').length, 1);
+});
+
+test('완료 미팅: 취소 건은 완료 판정에서 빼고, 날짜 탭·KPI 에 완료 수가 나온다', async () => {
+  const C = { ...M1, id: 8, day_no: 1, slot_hour: 11, company_name: 'Cancelado', status: 'cancelled' };
+  await openBoard({ meetings: [M1, M2, M3, M4, C] });
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  assert.ok(qsa('.ex-slot')[3].classList.contains('done'), '취소 + 완료 → 완료 칸');
+  assert.ok(qsa('.ex-daytab')[0].textContent.includes('✅ 1'));
+  assert.ok($('ex-kpis').textContent.includes('✅ 완료 2'));
+});
+
+test('완료 미팅: 달성액 입력 전이면 「목표」 로 표기(달성으로 오해 안 하게)', async () => {
+  const D = { ...M1, id: 11, status: 'done', actual_quote: null, actual_order: null };
+  await openBoard({ meetings: [D] });
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  const c = qsa('.ex-chip')[0];
+  assert.ok(c.classList.contains('done'));
+  assert.ok(c.querySelector('.am').textContent.startsWith('목표 견적 850k'));
+});
+
+// ── 2026-09-10 · 📋 미팅 기록 상시보기 ─────────────────────────────
+const SUMA = { resumen: 'Cliente pide 10 muestras de amortiguadores.', insights: 'Precio sensible',
+  bullets: [{ category: 'producto', text: 'Amortiguadores Tsuru' }],
+  action_items: [{ category: 'logistica', content: 'Enviar muestras', due_date: '2026-09-20' }], next_step: 'Cotizar' };
+const SUMB = { resumen: 'Nota de voz: confirmar precio.' };
+function mLog(extra) { return { ...M2, id: 2, memo: '샘플 10종 요청', recs: [
+  { id: 900, mode: 'full', duration_sec: 1122, summary: SUMA },
+  { id: 905, mode: 'memo', duration_sec: 60, summary: SUMB }], rec_pending: 0, summary: SUMB, rec_id: 905, ...extra }; }
+async function openDay1(meetings) {
+  await openBoard({ meetings });
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+}
+
+test('상시보기: 완료+요약 미팅은 칩에 최근 요약 한두 줄이 늘 보인다(누르지 않아도)', async () => {
+  await openDay1([M1, mLog()]);
+  const c = qsa('.ex-chip').find((x) => x.textContent.includes('El Aguila'));
+  const sn = c.querySelector('.sn');
+  assert.ok(sn, '요약 줄');
+  assert.ok(sn.textContent.includes('Nota de voz'), '가장 최근 녹음 요약');
+  assert.ok(!qsa('.ex-chip').find((x) => x.textContent.includes('Grupo Zeta')).querySelector('.sn'), '기록 없는 계획 미팅은 없음');
+});
+
+test('상시보기: 상세를 열면 맨 위 「📋 미팅 기록」 에 메모 + 요약 전부(최근이 위)가 바로 펼쳐져 있다', async () => {
+  await openDay1([M1, mLog()]);
+  win.eval('exOpenMeeting(2)'); await tick();
+  const first = $('ex-shB').firstElementChild;
+  assert.equal(first.id, 'ex-logWrap', '시트 맨 위');
+  const log = first.querySelector('.ex-sec.log');
+  assert.ok(log, '기록 칸');
+  const t = log.textContent;
+  assert.ok(t.includes('샘플 10종 요청'), '현장 메모');
+  assert.ok(t.includes('Cliente pide 10 muestras') && t.includes('Amortiguadores Tsuru') && t.includes('Enviar muestras'), '요약·핵심·펜딩');
+  assert.ok(t.includes('요약 2건'));
+  const sums = log.querySelectorAll('.ex-rsum');
+  assert.equal(sums.length, 2);
+  assert.ok(sums[0].textContent.includes('Nota de voz'), '최근 녹음이 위');
+  assert.ok(sums[1].textContent.includes('18:42'), '녹음 길이');
+  assert.equal(fetchLog.filter((x) => x.url.includes('/recordings')).length, 0, '🎙 를 누르지 않아도(추가 요청 없음)');
+  assert.ok($('ex-recBtn').textContent.includes('추가 녹음'));
+});
+
+test('상시보기: 녹음 없이 완료+메모만 있어도 칩과 기록 칸에 메모가 보인다', async () => {
+  await openDay1([{ ...M2, recs: [], summary: null, has_ai: false, memo: '재방문 약속, 카탈로그 전달' }]);
+  const c = qsa('.ex-chip').find((x) => x.textContent.includes('El Aguila'));
+  assert.ok(c.querySelector('.sn').textContent.includes('📝 재방문 약속'));
+  win.eval('exOpenMeeting(2)'); await tick();
+  assert.ok($('ex-logWrap').textContent.includes('재방문 약속'));
+});
+
+test('상시보기: 계획 단계 메모(사전 메모)만 있으면 칩·기록 칸을 띄우지 않는다', async () => {
+  await openDay1([{ ...M1, memo: '가격표 챙기기' }]);
+  assert.ok(!qsa('.ex-chip')[0].querySelector('.sn'));
+  win.eval('exOpenMeeting(1)'); await tick();
+  assert.equal($('ex-logWrap').innerHTML, '');
+});
+
+test('상시보기: 요약 대기 중이면 「⏳ AI 요약 중」 표시 + 20초 뒤 조용히 다시 읽기 예약', async () => {
+  await openDay1([M1, { ...M2, recs: [], summary: null, has_ai: false, memo: null, rec_pending: 1 }]);
+  const c = qsa('.ex-chip').find((x) => x.textContent.includes('El Aguila'));
+  assert.ok(c.querySelector('.sn.wait').textContent.includes('AI 요약 중'));
+  assert.ok(win.eval('exPollH !== null'), '재조회 예약');
+  win.eval('exOpenMeeting(2)'); await tick();
+  assert.ok($('ex-logWrap').textContent.includes('요약 중'));
+});
+
+test('상시보기: 대기 중인 녹음이 없으면 재조회를 예약하지 않는다', async () => {
+  await openDay1([M1, mLog()]);
+  assert.ok(win.eval('exPollH === null'));
+});
+
+test('상시보기: 조용한 재조회는 보던 날짜를 유지하고, 기록 칸만 갈아 끼운다(입력 중 값 보존)', async () => {
+  await openDay1([M1, { ...M2, recs: [], summary: null, has_ai: false, memo: null, rec_pending: 1 }]);
+  qsa('.ex-daytab')[2].click(); await tick();
+  win.eval('exOpenMeeting(2)'); await tick();
+  typeIn($('ex-fGoal'), '입력 중');
+  route('GET', '/board', boardPayload({ meetings: [M1, mLog({ memo: null })] }));
+  await win.eval('exLoadBoard(10, true)'); await tick(30);
+  assert.equal(win.eval('exDay'), 3, '날짜 탭 유지(오늘로 튀지 않음)');
+  assert.ok($('ex-logWrap').textContent.includes('Cliente pide'), '요약이 새로고침 없이 붙음');
+  assert.equal($('ex-fGoal').value, '입력 중');
+  assert.equal(win.eval('exDirty'), true);
+});
+
+test('상시보기: 🔒 감춘 상담이면 칩·기록 칸에 아무것도 내보이지 않는다', async () => {
+  await openDay1([{ ...mLog(), consult_hidden: true }]);
+  assert.ok(!qsa('.ex-chip')[0].querySelector('.sn'));
+  win.eval('exOpenMeeting(2)'); await tick();
+  assert.equal($('ex-logWrap').innerHTML, '');
+});
+
+test('상시보기: 🇰🇷 요약 한국어 — 번역본 없는 요약만 요청하고 칩·기록 칸이 한국어로', async () => {
+  const withKo = { ...SUMA, ko: { resumen: '고객이 쇼바 샘플 10개 요청' } };
+  await openDay1([M1, mLog({ recs: [{ id: 900, summary: withKo }, { id: 905, summary: SUMB }] })]);
+  route('POST', '/recordings/905/translate', { ko: { resumen: '음성 메모: 가격 확인' } });
+  $('ex-koBtn').click(); await tick(60);
+  const tr = fetchLog.filter((x) => x.method === 'POST' && x.url.includes('/translate'));
+  assert.equal(tr.length, 1, '이미 번역된 900 은 다시 요청하지 않는다');
+  assert.ok(tr[0].url.includes('/recordings/905/translate'));
+  const c = qsa('.ex-chip').find((x) => x.textContent.includes('El Aguila'));
+  assert.ok(c.querySelector('.sn').textContent.includes('음성 메모: 가격 확인'));
+  win.eval('exOpenMeeting(2)'); await tick();
+  assert.ok($('ex-logWrap').textContent.includes('고객이 쇼바 샘플 10개 요청'));
+  assert.ok($('ex-koBtn').textContent.includes('원문'));
+  $('ex-logKo').click(); await tick(20);
+  assert.ok($('ex-logWrap').textContent.includes('Cliente pide'), '원문으로 되돌리기');
+});
+
+test('녹음 카드 보호: 녹음 카드를 연 채 저장해도 카드가 사라지지 않고 시트 안에 다시 붙는다', async () => {
+  await openDay1([M1, M2]);
+  win.eval('exOpenMeeting(1)'); await tick();
+  route('POST', '/meetings/1/consult', { consult_id: 600, created: true });
+  route('GET', '/api/consults/600/recordings', { items: [] });
+  $('ex-recBtn').click(); await tick(50);
+  const card = $('cs-recCard');
+  assert.equal(card.parentElement.id, 'ex-recSlot');
+  typeIn($('ex-fMemo'), '녹음 중 메모');
+  route('PATCH', '/api/exhibitions/meetings/1', { ok: true, id: 1 });
+  $('ex-saveBtn').click(); await tick(60);
+  assert.ok(win.document.contains(card), '카드가 문서에서 떨어져 나가지 않음');
+  assert.equal($('cs-recCard').parentElement.id, 'ex-recSlot', '새로 그린 시트 안에 다시 붙음');
+});
+
+test('녹음 카드 보호: 녹음 중에는 다른 미팅·새 미팅으로 넘어가지 않는다', async () => {
+  await openDay1([M1, M2]);
+  win.eval('exOpenMeeting(1)'); await tick();
+  route('POST', '/meetings/1/consult', { consult_id: 600, created: true });
+  route('GET', '/api/consults/600/recordings', { items: [] });
+  $('ex-recBtn').click(); await tick(50);
+  win.eval('csRecActive = true');
+  win.eval('exOpenMeeting(2)'); await tick();
+  assert.ok($('ex-toast').textContent.includes('녹음 중'));
+  assert.equal(win.eval('exSel'), 1);
+  win.eval('exOpenNew(1, 15)'); await tick();
+  assert.ok(!$('ex-nCompany'), '새 미팅 폼으로 안 넘어감');
+  assert.equal($('cs-recCard').parentElement.id, 'ex-recSlot');
+  win.eval('csRecActive = false');
 });

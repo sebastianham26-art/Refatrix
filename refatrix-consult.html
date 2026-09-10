@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20260910ex4)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20260910ex6)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -175,6 +175,39 @@
   .ex-chip .am{font-size:10.5px;font-weight:500;opacity:.85;margin-top:2px;
     font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
   .ex-chip.cancel{opacity:.45} .ex-chip.cancel .co{text-decoration:line-through}
+  /* ✅ 완료 미팅 — 담당자 색을 「진하게 채운」 칩으로 뒤집는다(연한 바탕 = 아직, 진한 바탕 = 끝남). 2026-09-10 */
+  .ex-chip.done{border-width:2px;box-shadow:0 2px 6px -2px rgba(0,0,0,.35)}
+  .ex-chip.done .co{display:flex;align-items:center;gap:6px}
+  .ex-chip.done .co .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ex-chip.done .ok{flex:none;font-size:10.5px;font-weight:800;letter-spacing:.02em;background:#fff;border-radius:999px;
+    padding:1px 8px;line-height:17px}
+  .ex-chip.done .ow,.ex-chip.done .am{opacity:.95}
+  .ex-chip.done .ex-mk{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.35);color:#fff!important}
+  /* 슬롯(시간 칸) — 그 칸의 미팅이 전부 끝났으면 칸 자체도 표시 */
+  .ex-slot.done .t{background:var(--income);color:#DDEFE7;border-right-color:var(--income)}
+  .ex-slot.done .t b{color:#fff}
+  .ex-slot.done .t::after{content:'✓ 완료';display:block;margin-top:4px;font-size:10.5px;font-weight:800;color:#fff}
+  .ex-slot.done .b{background:#EAF5EF}
+  .ex-cell.done{background:#EAF5EF;box-shadow:inset 4px 0 0 var(--income)}
+  .ex-daytab .c b{color:var(--income)} .ex-daytab.on .c b{color:#fff}
+  /* 📋 미팅 기록 상시보기 — 완료·녹음요약 있으면 칩과 상세 맨 위에 늘 보인다 (b20260910ex6) */
+  .ex-chip .sn{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+    font-size:11.5px;line-height:1.45;font-weight:500;margin-top:5px;padding-top:5px;border-top:1px solid rgba(0,0,0,.08);
+    white-space:normal;word-break:break-word}
+  .ex-chip.done .sn{border-top-color:rgba(255,255,255,.28)}
+  .ex-chip .sn.wait{opacity:.8;font-style:italic}
+  .ex-sec.log{background:#F4FAF7;border-color:#BFDCCF;border-left:4px solid var(--income)}
+  .ex-sec.log>.st{color:var(--income)}
+  .ex-sec.log #ex-logKo{min-height:40px;padding:6px 12px}
+  .ex-sec.log .ex-memo{background:#fff;border:1px solid #DCEBE4;border-radius:9px;padding:9px 11px;font-size:13px;
+    line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .ex-sec.log .ex-memo b{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;white-space:normal}
+  .ex-sec.log .ex-rsum{background:#fff;border:1px solid #DCEBE4;border-radius:9px;padding:9px 11px;margin-top:8px;
+    font-size:13px;line-height:1.6;word-break:break-word}
+  .ex-sec.log .ex-rsum .rh{font-size:11px;font-weight:700;color:var(--muted)}
+  .ex-sec.log .ex-rsum ul{margin:4px 0;padding-left:18px}
+  .ex-keys{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:8px;font-size:11.5px;color:var(--muted)}
+  .ex-keys i{display:inline-block;width:22px;height:13px;border-radius:4px;vertical-align:-2px;margin-right:5px;border:1px solid}
   .ex-mk{font-size:9.5px;font-weight:800;border-radius:4px;padding:0 4px;line-height:15px;display:inline-block;
     background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.07)}
 
@@ -482,12 +515,18 @@
           <button type="button" id="ex-viewGrid">🗓 전체</button>
         </div>
         <button class="btn ghost sm" type="button" id="ex-reload">↻ 새로고침</button>
+        <button class="btn ghost sm" type="button" id="ex-koBtn">🇰🇷 요약 한국어</button>
       </div>
 
       <div class="ex-board">
         <div style="min-width:0">
           <div class="ex-daytabs" id="ex-daytabs"></div>
           <div id="ex-boardBox"></div>
+          <div class="ex-keys" aria-label="칩 모양 설명">
+            <span><i style="background:#FBEEDA;border-color:#EBD5A6;border-style:dashed"></i>확정 대기</span>
+            <span><i style="background:#FBEEDA;border-color:#EBD5A6"></i>약속 확정</span>
+            <span><i style="background:#8A6512;border-color:#8A6512"></i><b style="color:var(--income)">✅ 미팅 완료</b> (진하게 채움 · 금액은 달성/목표)</span>
+          </div>
           <p class="hint" style="margin-top:8px">빈 칸을 누르면 <b>그 시간의 미팅</b>을 바로 등록하고, 미팅을 누르면 <b>간단 내용 · 녹음 · 목표 대비 달성</b>이 열립니다.</p>
 
           <div class="card" style="margin-top:14px">
@@ -514,7 +553,7 @@
 </div>
 
 <script>
-  // ===== 고객상담 + 🎪 전시회 (build b20260910ex4 · 녹음 b20260904rec3) =====
+  // ===== 고객상담 + 🎪 전시회 (build b20260910ex6 · 녹음 b20260904rec3) =====
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -1843,7 +1882,7 @@
   $('cs-insForce').addEventListener('click',()=>csInsights(true));
 
   // =====================================================================
-  // 🎪 전시회 미팅 시간표 (b20260826ex1 → b20260910ex4: 21시까지 · 폰 저장 버튼 · 저장 흐름)
+  // 🎪 전시회 미팅 시간표 (b20260826ex1 → ex4: 21시까지 · 폰 저장 흐름 → ex5: 완료 미팅 진하게 → ex6: 미팅 기록 상시보기)
   //   · 가로축 1st/2nd/3rd day × 세로축 1시간 슬롯
   //   · 모바일은 「하루씩」, 넓은 화면은 「전체」가 기본 — 버튼으로 언제든 전환
   //   · 미팅 녹음은 기존 고객상담 녹음 카드(#cs-recCard)를 그대로 끌어와 재사용
@@ -1852,6 +1891,9 @@
   let exView=(window.innerWidth<900?'day':'grid'), exDay=1, exMode='normal';
   let exNewKind='meeting';                     // 새 미팅 등록 폼의 종류
   let exDirty=false;                           // 시트에 저장 안 한 입력이 있는가
+  let exKo=false;                              // 요약을 한국어 번역본으로 볼지(칩·상세 공통)
+  try{ exKo=localStorage.getItem('ex_ko')==='1'; }catch(e){}
+  let exPollH=null;                            // 요약 대기 중인 녹음이 있으면 보드를 조용히 다시 읽는다
   const EX_DEF_END=21;                         // 새 전시회 기본 종료 시각 — 08:00~21:00 (2026-09-10 18→21시)
   const EX_SIDE_MIN=1100;                      // 이 너비 이상이면 시트가 오른쪽에 붙어 뜬다(모달 아님)
   const exIsModal=()=>window.innerWidth<EX_SIDE_MIN;
@@ -1910,8 +1952,9 @@
                     :'디렉터가 전시회를 등록하면 여기에 시간표가 나타납니다.')+'</div>';
   }
 
-  async function exLoadBoard(id){
-    const box=$('ex-boardBox'); box.innerHTML='<div class="ex-empty">불러오는 중…</div>';
+  async function exLoadBoard(id,quiet){
+    const box=$('ex-boardBox'); if(!quiet) box.innerHTML='<div class="ex-empty">불러오는 중…</div>';
+    const keepDay=exDay;
     try{
       const res=await fetch(session.api+'/api/exhibitions/'+encodeURIComponent(id||'active')+'/board',{headers:auth()});
       const d=await res.json().catch(()=>({}));
@@ -1920,10 +1963,28 @@
         box.innerHTML='<div class="ex-empty">보드를 불러오지 못했습니다 ('+csEsc(String(d.error||res.status))+')</div>'; return;
       }
       exBoard=d; exExpoId=d.exhibition.id;
-      if(d.now&&d.now.day_no) exDay=Number(d.now.day_no);
+      if(quiet) exDay=keepDay; else if(d.now&&d.now.day_no) exDay=Number(d.now.day_no);
       if(exDay>d.days.length||exDay<1) exDay=1;
       exRenderAll();
-    }catch(e){ box.innerHTML='<div class="ex-empty">서버에 연결하지 못했습니다.</div>'; }
+      exRefreshLog();
+      if(exKo) exEnsureKo().then(()=>{ exRenderBoard(); exRefreshLog(); });
+      exSchedulePoll();
+    }catch(e){ if(!quiet) box.innerHTML='<div class="ex-empty">서버에 연결하지 못했습니다.</div>'; }
+  }
+  // 요약을 기다리는 녹음이 있거나, 시트에서 녹음 카드를 열어 둔 동안은 20초마다 조용히 다시 읽는다
+  //   → 요약이 끝나면 칩과 📋 미팅 기록 칸에 새로고침 없이 붙는다.
+  function exSchedulePoll(){
+    clearTimeout(exPollH); exPollH=null;
+    if(exMode!=='expo'||!exBoard) return;
+    const card=$('cs-recCard');
+    const waiting=(exBoard.meetings||[]).some(m=>Number(m.rec_pending||0)>0)
+      || !!(card&&$('ex-shB').contains(card));
+    if(!waiting) return;
+    exPollH=setTimeout(()=>{
+      if(exMode!=='expo') return;
+      if(document.hidden){ exSchedulePoll(); return; }
+      exLoadBoard(exExpoId,true);
+    },20000);
   }
 
   function exRenderAll(){ exRenderStrip(); exRenderKpis(); exRenderLegend(); exRenderTabs(); exRenderBoard(); exRenderOwners(); }
@@ -1946,7 +2007,8 @@
     const tile=(k,v,s,extra)=>'<div class="ex-kpi"><div class="k">'+k+'</div><div class="v">'+v+'</div>'
       +'<div class="s">'+(s||'')+'</div>'+(extra||'')+'</div>';
     $('ex-kpis').innerHTML=[
-      tile('전체 슬롯',(t.total||0)+'건','🤝 약속 '+(t.meeting||0)+' · 🚶 부스 '+(t.booth||0)+' · 즉석 '+(t.walkin||0)),
+      tile('전체 슬롯',(t.total||0)+'건','🤝 약속 '+(t.meeting||0)+' · 🚶 부스 '+(t.booth||0)+' · 즉석 '+(t.walkin||0)
+        +' · <b style="color:var(--income)">✅ 완료 '+(t.done||0)+'</b>'),
       tile('약속 확정',(t.confirmed||0)+' / '+(t.meeting||0),
         (t.unconfirmed||0)?('<span class="ex-pill part">확정 대기 '+t.unconfirmed+'</span>'):'모두 확정됐습니다'),
       tile('견적수주 목표',exMoney(t.target_quote),'달성 '+exMoney(t.actual_quote)
@@ -1990,15 +2052,16 @@
   // ── 날짜 탭 ─────────────────────────────────────────────────────────
   function exRenderTabs(){
     const now=exBoard.now||{};
-    const cnt={};
-    (exBoard.meetings||[]).forEach(m=>{ if(m.status==='cancelled')return; cnt[m.day_no]=(cnt[m.day_no]||0)+1; });
+    const cnt={}, dn={};
+    (exBoard.meetings||[]).forEach(m=>{ if(m.status==='cancelled')return; cnt[m.day_no]=(cnt[m.day_no]||0)+1;
+      if(m.status==='done') dn[m.day_no]=(dn[m.day_no]||0)+1; });
     $('ex-daytabs').innerHTML=(exBoard.days||[]).map(d=>{
       const on=(exView==='day'&&Number(exDay)===Number(d.day_no));
       const today=(Number(now.day_no)===Number(d.day_no));
       return '<button type="button" class="ex-daytab'+(on?' on':'')+(today?' today':'')+'" data-d="'+d.day_no+'">'
         +'<div class="o">'+csEsc(d.label)+(today?' · 오늘':'')+'</div>'
         +'<div class="d">'+csEsc(d.date)+' ('+csEsc(d.weekday)+')</div>'
-        +'<div class="c">미팅 '+(cnt[d.day_no]||0)+'건</div></button>';
+        +'<div class="c">미팅 '+(cnt[d.day_no]||0)+'건'+(dn[d.day_no]?(' · <b>✅ '+dn[d.day_no]+'</b>'):'')+'</div></button>';
     }).join('');
     $('ex-daytabs').querySelectorAll('.ex-daytab').forEach(b=>b.onclick=()=>{
       exDay=Number(b.dataset.d); if(exView!=='day') exSetView('day'); else { exRenderTabs(); exRenderBoard(); }
@@ -2019,6 +2082,29 @@
     if(exFilter==='booth') return m.kind!=='booth';
     return m.kind==='booth'||Number(m.owner_user_id)!==Number(exFilter);
   }
+  // ── 📋 미팅 기록(메모·녹음 요약) ─────────────────────────────────
+  //   요약된 녹음 전부(오래된 → 최근). 옛 서버 응답(summary 1건만)도 받아 준다.
+  function exRecs(m){
+    if(Array.isArray(m.recs)&&m.recs.length) return m.recs;
+    return m.summary?[{id:m.rec_id,duration_sec:m.duration_sec,mode:'full',summary:m.summary}]:[];
+  }
+  function exSumView(s){ return (exKo&&s&&s.ko&&(s.ko.resumen||s.ko.insights))?csKoMerge(s,s.ko):(s||{}); }
+  // 「기록이 있다」 = 요약된 녹음이 있거나, 완료된 미팅에 메모가 있다(요약 대기 중인 녹음도 표시)
+  function exHasLog(m){
+    if(m.consult_hidden) return false;
+    return exRecs(m).length>0 || (m.status==='done'&&!!(m.memo&&m.memo.trim())) || Number(m.rec_pending||0)>0;
+  }
+  // 칩에 늘 보이는 한두 줄 — 최근 녹음 요약 → 없으면 현장 메모
+  function exSnippet(m){
+    if(m.consult_hidden||m.status==='cancelled') return null;
+    const rs=exRecs(m);
+    if(rs.length){ const v=exSumView(rs[rs.length-1].summary); const t=v.resumen||v.insights||v.next_step;
+      if(t) return {cls:'', html:'🎙 '+csEsc(t)}; }
+    if(m.memo&&m.memo.trim()&&(m.status==='done'||rs.length)) return {cls:'', html:'📝 '+csEsc(m.memo.trim())};
+    if(Number(m.rec_pending||0)>0) return {cls:' wait', html:'⏳ AI 요약 중…'};
+    return null;
+  }
+
   function exChip(m){
     const c=exChipColor(m);
     const dim=exChipDim(m);
@@ -2028,23 +2114,42 @@
     else if(m.is_confirmed) mk+='<span class="ex-mk" style="color:#0F6E56">확정 ✓</span>';
     else if(m.status==='planned') mk+='<span class="ex-mk" style="color:#8A6512">확정대기</span>';
     if(m.is_walkin) mk+='<span class="ex-mk" style="color:#6D28D9">즉석</span>';
-    if(m.status==='done') mk+='<span class="ex-mk" style="color:#0F6E56">완료</span>';
+    const done=(m.status==='done');   // 완료는 칩 전체를 뒤집어 표시(아래) — 작은 배지는 따로 안 붙인다
     if(m.status==='noshow') mk+='<span class="ex-mk" style="color:#B23A2E">불발</span>';
     if(m.status==='cancelled') mk+='<span class="ex-mk">취소</span>';
     if(m.has_ai) mk+='<span class="ex-mk">🎙</span>';
     else if(m.rec_status&&m.rec_status!=='failed') mk+='<span class="ex-mk">⏳</span>';
     if(m.qual_result) mk+='<span class="ex-mk" style="color:'+(m.qual_result==='achieved'?'#0F6E56':m.qual_result==='partial'?'#8A6512':'#9A1F1F')+'">'
       +(m.qual_result==='achieved'?'정성 ✓':m.qual_result==='partial'?'정성 △':'정성 ✕')+'</span>';
-    const amt=(m.target_quote||m.target_order)?('견적 '+exShort(m.target_quote)+' · 수주 '+exShort(m.target_order)):'';
-    return '<button type="button" class="ex-chip'+(m.status==='cancelled'?' cancel':'')+(wait?' wait':'')
+    // 금액: 완료된 미팅은 「달성 / 목표」, 아직이면 목표만
+    const hasAct=(m.actual_quote!=null&&m.actual_quote!=='')||(m.actual_order!=null&&m.actual_order!=='');
+    const pair=(a,t)=>(a!=null&&a!=='')?(exShort(a)+'/'+exShort(t)):('—/'+exShort(t));
+    const amt=(m.target_quote||m.target_order||(done&&hasAct))
+      ?((done&&hasAct)?('견적 '+pair(m.actual_quote,m.target_quote)+' · 수주 '+pair(m.actual_order,m.target_order))
+       :((done?'목표 ':'')+'견적 '+exShort(m.target_quote)+' · 수주 '+exShort(m.target_order))):'';
+    // 완료: 배경 = 담당자 진한 색, 글자 = 흰색 (부스는 진한 회색)
+    const st=done
+      ? 'background:'+c.fg+';color:#fff;border-color:'+c.fg+';'
+      : 'background:'+c.bg+';color:'+c.fg+';border-color:'+c.border+';';
+    const nm=(m.kind==='booth'?'🚶 ':'')+csEsc(m.company_name);
+    return '<button type="button" class="ex-chip'+(m.status==='cancelled'?' cancel':'')+(wait?' wait':'')+(done?' done':'')
       +(Number(exSel)===Number(m.id)?' sel':'')+'"'
-      +' data-id="'+m.id+'" style="background:'+c.bg+';color:'+c.fg+';border-color:'+c.border+';'+(dim?'opacity:.3;':'')+'">'
-      +'<span class="co">'+(m.kind==='booth'?'🚶 ':'')+csEsc(m.company_name)+'</span>'
+      +' data-id="'+m.id+'" style="'+st+(dim?'opacity:.3;':'')+'"'+(done?' aria-label="완료된 미팅: '+csEsc(m.company_name)+'"':'')+'>'
+      +(done
+        ? '<span class="co"><span class="nm">✅ '+nm+'</span><span class="ok" style="color:'+c.fg+'">완료</span></span>'
+        : '<span class="co">'+nm+'</span>')
       +'<span class="ow">'+csEsc(m.owner_name||'담당 미지정')+mk+'</span>'
-      +(amt?'<span class="am">'+amt+'</span>':'')+'</button>';
+      +(amt?'<span class="am">'+amt+'</span>':'')
+      +(()=>{ const sn=exSnippet(m); return sn?'<span class="sn'+sn.cls+'">'+sn.html+'</span>':''; })()
+      +'</button>';
   }
   function exAt(day,hour){
     return (exBoard.meetings||[]).filter(m=>Number(m.day_no)===Number(day)&&Number(m.slot_hour)===Number(hour));
+  }
+  // 그 칸의 미팅(취소 제외)이 하나 이상 있고 전부 완료면 칸 자체를 「완료」로 표시
+  function exSlotDone(list){
+    const live=list.filter(m=>m.status!=='cancelled');
+    return live.length>0 && live.every(m=>m.status==='done');
   }
 
   // ── 보드 ────────────────────────────────────────────────────────────
@@ -2059,7 +2164,7 @@
       box.innerHTML='<div class="ex-day">'+hours.map(h=>{
         const isNow=(Number(now.day_no)===Number(d.day_no)&&Number(now.hour)===Number(h.hour));
         const list=exAt(d.day_no,h.hour);
-        return '<div class="ex-slot'+(isNow?' now':'')+'">'
+        return '<div class="ex-slot'+(isNow?' now':'')+(exSlotDone(list)?' done':'')+'">'
           +'<div class="t"><b>'+h.label+'</b>'+exHH(h.hour+1)+'</div>'
           +'<div class="b" data-d="'+d.day_no+'" data-h="'+h.hour+'">'
           +(list.length?list.map(exChip).join(''):'<div class="ex-add">'+(isNow?'⚡ 지금 미팅 기록':'＋ 미팅 추가')+'</div>')
@@ -2077,7 +2182,7 @@
             +days.map(d=>{
               const isNow=(Number(now.day_no)===Number(d.day_no)&&Number(now.hour)===Number(h.hour));
               const list=exAt(d.day_no,h.hour);
-              return '<td><div class="ex-cell'+(isNow?' now':'')+'" data-d="'+d.day_no+'" data-h="'+h.hour+'">'
+              return '<td><div class="ex-cell'+(isNow?' now':'')+(exSlotDone(list)?' done':'')+'" data-d="'+d.day_no+'" data-h="'+h.hour+'">'
                 +list.map(exChip).join('')+'</div></td>';
             }).join('')+'</tr>';
         }).join('')+'</tbody></table></div>';
@@ -2238,6 +2343,12 @@
   // ── 기존 미팅 ───────────────────────────────────────────────────────
   function exOpenMeeting(id,keepScroll){
     const m=exMeet(id); if(!m) return;
+    // 시트 안에 끌어온 녹음 카드(#cs-recCard)는 innerHTML 을 새로 그리면 DOM 에서 떨어져 나가 사라진다
+    //   (저장·완료 직후 녹음/요약 카드가 없어지던 원인). 먼저 제자리로 돌려놓고, 같은 미팅이면 다시 붙인다.
+    const card=$('cs-recCard'), hadRec=!!(card&&$('ex-shB').contains(card));
+    if(hadRec&&Number(exSel)!==Number(id)&&csRecActive){ exToast('녹음 중입니다 — 먼저 ⏹ 녹음 종료를 눌러 주세요'); return; }
+    exRestoreRecCard();
+    const reattach=hadRec&&Number(exSel)===Number(id);
     exSel=id; exRenderBoard();
     const d=(exBoard.days||[]).find(x=>Number(x.day_no)===Number(m.day_no))||{};
     exSheetOpen(m.company_name,(d.label||'')+' · '+(m.meet_date||'')+' · '+exHH(m.slot_hour)+'–'+exHH(m.slot_hour+1),keepScroll);
@@ -2248,6 +2359,8 @@
     const ro=m.target_order>0&&m.actual_order!=null?Math.round(m.actual_order/m.target_order*100):null;
 
     $('ex-shB').innerHTML=''
+      // 📋 미팅 기록 — 완료 메모·녹음 요약이 있으면 맨 위에 늘 펼쳐 둔다(🎙 를 누르지 않아도 보인다)
+      +'<div id="ex-logWrap">'+exLogHtml(m)+'</div>'
       +'<div class="ex-sec goal">'
         +'<div class="st">🎯 정량목표 <span class="hint" style="margin:0;font-weight:500">'+exCur()+' · 미팅 중에 보면서 진행</span></div>'
         +'<div class="ex-f2 m2">'
@@ -2274,7 +2387,7 @@
         +'<div class="st">📝 미팅 간단 내용 · 🎙 녹음</div>'
         +'<textarea id="ex-fMemo" rows="3" placeholder="미팅 중/직후에 한두 줄만 적어두세요. 나머지는 녹음 AI가 채웁니다.">'+csEsc(m.memo||'')+'</textarea>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
-          +'<button class="btn" type="button" id="ex-recBtn">🎙 '+(m.consult_id?'녹음 · AI 요약 열기':'녹음 시작하기')+'</button>'
+          +'<button class="btn" type="button" id="ex-recBtn">🎙 '+(exRecs(m).length?'추가 녹음 · 전사 원문':(m.consult_id?'녹음 · AI 요약 열기':'녹음 시작하기'))+'</button>'
           +(m.has_ai?'<button class="btn ghost" type="button" id="ex-evalBtn">🤖 정성목표 달성 판단</button>':'')
         +'</div>'
         +(m.consult_hidden?'<div class="hint" style="margin-top:8px">🔒 이 미팅의 상담 기록은 감춰져 있어 요약을 볼 수 없습니다.</div>':'')
@@ -2341,6 +2454,65 @@
     $('ex-recBtn').onclick=()=>exOpenRec(m.id);
     const ev=$('ex-evalBtn'); if(ev) ev.onclick=()=>exEvaluate(m.id);
     exBindApplyAmt(m.id);
+    exBindLog(m.id);
+    if(reattach){ const slot=$('ex-recSlot'); if(slot&&card) slot.appendChild(card); }
+  }
+
+  // 📋 미팅 기록 칸 — 현장 메모 + 요약된 녹음 전부(최근 것이 위) · 요약 대기 안내 · 🇰🇷 토글
+  function exLogHtml(m){
+    if(!exHasLog(m)) return '';
+    const rs=exRecs(m).slice().reverse();
+    const anyKo=rs.some(r=>r.summary&&r.summary.ko&&(r.summary.ko.resumen||r.summary.ko.insights));
+    const lang=(exKo&&anyKo)?'ko':'es';
+    const pend=Number(m.rec_pending||0);
+    return '<div class="ex-sec log">'
+      +'<div class="st">📋 미팅 기록'
+        +(m.status==='done'?' <span class="ex-pill ok">✅ 완료</span>':'')
+        +(rs.length?' <span class="ex-pill cx">🎙 요약 '+rs.length+'건</span>':'')
+        +(rs.length?('<button type="button" class="btn ghost sm" id="ex-logKo" style="margin-left:auto">'
+          +(exKo?'🇲🇽 원문':'🇰🇷 한국어')+'</button>'):'')
+      +'</div>'
+      +((m.memo&&m.memo.trim())?('<div class="ex-memo"><b>📝 현장 메모</b>'+csEsc(m.memo.trim())+'</div>'):'')
+      +(pend?('<div class="hint" style="margin-top:8px">⏳ 녹음 '+pend+'건 AI 요약 중 — 끝나면 여기에 자동으로 붙습니다.</div>'):'')
+      +rs.map((r,i)=>'<div class="ex-rsum"><div class="rh">🎙 녹음'+(rs.length>1?(' '+(rs.length-i)):'')
+          +(r.mode==='memo'?' · 음성 메모':'')+(r.duration_sec?(' · '+csRecFmt(r.duration_sec)):'')+'</div>'
+          +csSummaryHtml(lang==='ko'?exSumView(r.summary):(r.summary||{}),lang)+'</div>').join('')
+    +'</div>';
+  }
+  function exBindLog(id){
+    const b=$('ex-logKo'); if(b) b.onclick=()=>exToggleKo();
+  }
+  // 보드를 다시 읽은 뒤 열려 있는 미팅의 기록 칸만 갈아 끼운다(입력 중인 값·녹음 카드는 건드리지 않음)
+  function exRefreshLog(){
+    if(!exSel||$('ex-sheet').classList.contains('ex-hidden')) return;
+    const w=$('ex-logWrap'), m=exMeet(exSel); if(!w||!m) return;
+    w.innerHTML=exLogHtml(m); exBindLog(m.id);
+  }
+
+  // 🇰🇷 요약 한국어 — 칩·상세 공통. 번역본이 없는 요약만 서버에 요청(서버가 캐시)
+  async function exToggleKo(){
+    exKo=!exKo;
+    try{ localStorage.setItem('ex_ko',exKo?'1':'0'); }catch(e){}
+    exRenderKoBtn();
+    if(exKo) await exEnsureKo();
+    exRenderBoard(); exRefreshLog();
+  }
+  function exRenderKoBtn(){ const b=$('ex-koBtn'); if(b) b.textContent=exKo?'🇲🇽 요약 원문':'🇰🇷 요약 한국어'; }
+  async function exEnsureKo(){
+    const todo=[];
+    (exBoard&&exBoard.meetings||[]).forEach(m=>exRecs(m).forEach(r=>{
+      if(r.id&&r.summary&&r.summary.resumen&&!(r.summary.ko&&r.summary.ko.resumen)) todo.push(r); }));
+    if(!todo.length) return;
+    const b=$('ex-koBtn'); if(b){ b.disabled=true; b.textContent='🔄 번역 중… 0/'+todo.length; }
+    let n=0, fail=0;
+    for(const r of todo){
+      try{ const ko=await csTranslateKo(r.id); r.summary=Object.assign({},r.summary,{ko});
+        (exBoard.meetings||[]).forEach(m=>{ if(m.summary&&Number(m.rec_id)===Number(r.id)) m.summary=r.summary; }); }
+      catch(e){ fail++; }
+      n++; if(b) b.textContent='🔄 번역 중… '+n+'/'+todo.length;
+    }
+    if(b){ b.disabled=false; exRenderKoBtn(); }
+    if(fail) exToast('일부 요약을 번역하지 못했습니다('+fail+'건) — 원문으로 표시합니다');
   }
 
   // AI 가 대화에서 찾아낸 금액을 달성액 칸에 넣어준다(저장은 사용자가 확인 후)
@@ -2446,6 +2618,7 @@
       if(slot&&card) slot.appendChild(card);
       csShowRec(m.consult_id,m.company_name);
       exToast('녹음 준비 완료 — ● 미팅 녹음을 누르세요');
+      exSchedulePoll();
     }catch(e){ exToast('서버 연결 실패'); }
     finally{ btn.disabled=false; btn.textContent='🎙 녹음 · AI 요약 열기'; }
   }
@@ -2468,9 +2641,19 @@
   }
 
   // ── 새 미팅(계획 / 즉석) ────────────────────────────────────────────
+  // 시트 내용을 통째로 바꾸기 전에 끌어온 녹음 카드를 지킨다. 녹음 중이면 막는다.
+  function exGuardRecCard(){
+    const card=$('cs-recCard');
+    if(card&&$('ex-shB').contains(card)){
+      if(csRecActive){ exToast('녹음 중입니다 — 먼저 ⏹ 녹음 종료를 눌러 주세요'); return false; }
+      exRestoreRecCard();
+    }
+    return true;
+  }
   function exOpenNew(day,hour){
     if(!exBoard) return;
     if(!exCanEdit()){ exToast('이 화면의 수정 권한이 없습니다'); return; }
+    if(!exGuardRecCard()) return;
     exSel=null; exRenderBoard();
     const now=exBoard.now||{};
     const isNow=(Number(now.day_no)===Number(day)&&Number(now.hour)===Number(hour));
@@ -2603,6 +2786,7 @@
 
   // ── 전시회 설정 ─────────────────────────────────────────────────────
   function exOpenSettings(){
+    if(!exGuardRecCard()) return;
     const e=(exBoard&&exBoard.exhibition)||null;
     const isNew=!e;
     if(!isDirector()){
@@ -2689,6 +2873,8 @@
   });
   $('ex-setBtn').addEventListener('click',exOpenSettings);
   $('ex-reload').addEventListener('click',()=>{ if(exExpoId) exLoadBoard(exExpoId); else exLoadExpos(); });
+  $('ex-koBtn').addEventListener('click',()=>exToggleKo());
+  exRenderKoBtn();
   $('ex-viewDay').addEventListener('click',()=>exSetView('day'));
   $('ex-viewGrid').addEventListener('click',()=>exSetView('grid'));
   $('ex-pick').addEventListener('change',()=>{ const v=$('ex-pick').value; if(v){ exExpoId=Number(v); exLoadBoard(v); } });

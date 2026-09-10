@@ -30,6 +30,7 @@ const PAGE = 'pipeline';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MEET_MAX = 600;                 // 전시회 1건의 미팅 상한(방어)
 const STATUSES = ['planned', 'done', 'cancelled', 'noshow'];
+const REC_PENDING = ['queued', 'transcribing', 'summarizing'];   // 아직 요약이 안 나온 녹음
 
 function d10(v) { if (!v) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); return String(v).slice(0, 10); }
 function txt(v, n) { const s = clip(v, n); return s || null; }
@@ -105,20 +106,30 @@ export async function buildBoard(perm, e) {
       LIMIT ${MEET_MAX}`, [exhibition.id])).rows;
 
   // 연결된 상담의 녹음 상태·요약(감춘 상담은 감춘 사람에게만)
+  //   한 미팅에 녹음이 여러 건일 수 있다(두 번 녹음 · 4시간 초과 자동 분리) → 요약된 것은 전부 recs 로 내린다.
+  //   summary/rec_id 는 예전 화면 호환용(가장 최근 요약 1건).
   const consultIds = rows.map((r) => idOf(r.consult_id)).filter(Boolean);
   const recByConsult = {};
   if (consultIds.length) {
     const recs = (await query(
-      `SELECT consult_id, id, status, duration_sec, summary_json FROM sales_consult_recordings
+      `SELECT consult_id, id, mode, status, duration_sec, summary_json, processed_at FROM sales_consult_recordings
         WHERE consult_id = ANY($1) ORDER BY id ASC`, [consultIds])).rows;
     for (const r of recs) {
       const cid = Number(r.consult_id);
-      const cur = recByConsult[cid] || {};
+      const cur = recByConsult[cid] || { recs: [], pending: 0 };
       cur.rec_status = r.status;
       cur.duration_sec = r.duration_sec != null ? Number(r.duration_sec) : cur.duration_sec;
+      if (REC_PENDING.includes(r.status)) cur.pending++;
       if (r.status === 'done' && r.summary_json) {
-        cur.rec_id = Number(r.id);
-        try { cur.summary = typeof r.summary_json === 'string' ? JSON.parse(r.summary_json) : r.summary_json; } catch (_) {}
+        let sj = null;
+        try { sj = typeof r.summary_json === 'string' ? JSON.parse(r.summary_json) : r.summary_json; } catch (_) {}
+        if (sj) {
+          cur.rec_id = Number(r.id);
+          cur.summary = sj;
+          cur.recs.push({ id: Number(r.id), mode: r.mode || 'full',
+            duration_sec: r.duration_sec != null ? Number(r.duration_sec) : null,
+            processed_at: r.processed_at || null, summary: sj });
+        }
       }
       recByConsult[cid] = cur;
     }
@@ -151,6 +162,7 @@ export async function buildBoard(perm, e) {
       rec_status: rec.rec_status || null, rec_id: rec.rec_id || null,
       duration_sec: rec.duration_sec != null ? rec.duration_sec : null,
       has_ai: !!rec.summary, summary: rec.summary || null,
+      recs: rec.recs || [], rec_pending: rec.pending || 0,
       qual_result: r.qual_result || null, qual_eval: r.qual_eval || null,
       qual_eval_json: qe, qual_eval_at: r.qual_eval_at || null,
       created_by: Number(r.created_by),

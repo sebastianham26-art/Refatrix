@@ -217,6 +217,42 @@ for (const [vl, w, h] of VPS.filter((v) => v[1] <= 768 || v[1] === 1400)) {
   await ctx.close();
 }
 
+// E. 📋 미팅 기록 상시보기 — 완료·요약 미팅은 칩에 두 줄 요약, 상세 맨 위에 기록 칸 (2026-09-10 ex6)
+{
+  const LONG = 'Cliente pide diez muestras de amortiguadores para Tsuru y Versa, además revisar precio contra SYD '
+    + 'y condiciones de crédito a 30 días; AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  for (const [vl, w, h] of [['iPhone', 390, 844], ['소형', 320, 568], ['PC', 1400, 900]]) {
+    const { ctx, p, st } = await open(w, h);
+    st.meetings[0] = { ...M1, status: 'done', memo: '샘플 10종 요청', consult_id: 600, has_ai: true,
+      recs: [{ id: 900, mode: 'full', duration_sec: 1122, summary: { resumen: LONG,
+        bullets: [{ category: 'producto', text: 'Amortiguadores Tsuru' }], next_step: 'Cotizar' } }], rec_pending: 0 };
+    await p.evaluate(() => exLoadBoard(10)); await p.waitForTimeout(300);
+    const c = await p.evaluate(() => { exSetView(innerWidth < 900 ? 'day' : 'grid'); exDay = 1; exRenderBoard();
+      const sn = document.querySelector('.ex-chip .sn'); if (!sn) return null; const r = sn.getBoundingClientRect();
+      return { h: Math.round(r.height), lh: parseFloat(getComputedStyle(sn).lineHeight), txt: sn.textContent,
+        ovf: document.scrollingElement.scrollWidth - innerWidth, chipOvf: sn.scrollWidth - sn.clientWidth }; });
+    ok(c, `${vl} 상시보기: 완료 칩에 요약 줄이 없음`);
+    if (c) {
+      ok(c.txt.includes('Cliente pide'), `${vl} 상시보기: 요약 문구 아님`);
+      ok(c.h <= c.lh * 2 + 12, `${vl} 상시보기: 칩 요약이 두 줄을 넘음(${c.h}px)`);
+      ok(c.ovf <= 0 && c.chipOvf <= 1, `${vl} 상시보기: 긴 요약이 가로로 넘침(${c.ovf}/${c.chipOvf})`);
+    }
+    await p.evaluate(() => exOpenMeeting(1)); await p.waitForTimeout(w >= 1100 ? 900 : 250);
+    const lg = await p.evaluate(() => { const box = document.querySelector('#ex-logWrap .ex-sec.log'); if (!box) return null;
+      const r = box.getBoundingClientRect(), sb = document.getElementById('ex-shB').getBoundingClientRect();
+      return { top: Math.round(r.top), sbTop: Math.round(sb.top), vh: innerHeight, txt: box.textContent,
+        sbOvf: document.getElementById('ex-shB').scrollWidth - document.getElementById('ex-shB').clientWidth }; });
+    ok(lg, `${vl} 상시보기: 상세에 기록 칸 없음`);
+    if (lg) {
+      ok(lg.top >= lg.sbTop - 1 && lg.top < lg.vh - 80, `${vl} 상시보기: 기록 칸이 첫 화면에 안 보임(${lg.top})`);
+      ok(lg.txt.includes('샘플 10종 요청') && lg.txt.includes('Amortiguadores Tsuru'), `${vl} 상시보기: 메모/요약 내용 누락`);
+      ok(lg.sbOvf <= 0, `${vl} 상시보기: 시트 가로 넘침 ${lg.sbOvf}px`);
+    }
+    check(`${vl} 상시보기`, await probe(p, ['ex-logKo', 'ex-saveBtn']));
+    await ctx.close();
+  }
+}
+
 await b.close();
 console.log(`\n${pass}/${pass + fail} 통과`);
 F.forEach((x) => console.log('  ✗ ' + x));
