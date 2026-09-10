@@ -244,6 +244,35 @@ tbody tr:last-child td{border-bottom:none}
 .btn.ghost{border-color:var(--line-2);color:var(--ink-2)}
 .btn.ghost:hover,.btn.ghost:focus-visible{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 
+/* bienvenida + promoción */
+.bienve{
+  border:1px solid var(--line);border-left:4px solid var(--ok);background:var(--surface);
+  padding:1.5rem 1.6rem;display:flex;flex-direction:column;gap:.75rem;box-shadow:var(--shadow);
+}
+.bienve h2{font-size:clamp(1.5rem,3.2vw,2.05rem);text-transform:none;letter-spacing:0}
+.bienve p{max-width:44em;color:var(--ink-2)}
+.bienve p.firma{color:var(--ink);font-weight:600;margin-top:.2rem}
+
+.promo{
+  margin-top:1rem;border:2px solid var(--accent);background:var(--surface);
+  display:grid;grid-template-columns:minmax(9rem,auto) 1fr;box-shadow:var(--shadow);
+}
+.promo .big{
+  background:var(--accent-soft);border-right:2px solid var(--accent);
+  padding:1.3rem 1.4rem;display:flex;flex-direction:column;justify-content:center;gap:.1rem;
+}
+.promo .big .pc{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:clamp(3rem,8vw,4.4rem);line-height:.88;color:var(--accent)}
+.promo .big .pl{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;color:var(--accent)}
+.promo .body{padding:1.25rem 1.4rem;display:flex;flex-direction:column;gap:.7rem;min-width:0}
+.promo h3{font-size:1.35rem}
+.promo ul{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.3rem;color:var(--ink-2)}
+.promo .plazo{
+  display:inline-flex;align-items:center;gap:.5rem;align-self:flex-start;
+  background:var(--accent);color:var(--paper);padding:.28rem .7rem;
+  font-family:"IBM Plex Mono",monospace;font-size:.75rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+}
+@media (max-width:620px){ .promo{grid-template-columns:1fr} .promo .big{border-right:none;border-bottom:2px solid var(--accent)} }
+
 /* quick access strip */
 .rapidos{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.9rem 1rem;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent)}
 .rapidos .lbl{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-right:.3rem}
@@ -295,6 +324,30 @@ footer{margin-top:4rem;border-top:2px solid var(--ink);padding-top:1.1rem;displa
 </header>
 
 <main class="wrap">
+
+<section class="bienve" style="margin-top:1.8rem">
+  <span class="eyebrow">Bienvenida</span>
+  <h2>Bienvenido a Refatrix. Nos da mucho gusto que estés aquí.</h2>
+  <p>Somos un equipo chico y nos tratamos como familia: aquí se pregunta sin pena, se contesta rápido y nadie te deja solo frente a un cliente. Cuenta con eso desde hoy.</p>
+  <p>Y con la misma franqueza: esto es un negocio. Trabajamos con números claros, compromisos que se cumplen y clientes que vuelven. Lo que ganes va a depender de lo que construyas, y esta guía existe para que nada te frene por no saber dónde se hace algo.</p>
+  <p>Léela una vez completa. Después úsala como consulta — y lo que no encuentres aquí, pregúntalo.</p>
+  <p class="firma">Bienvenido. Vamos con todo. — Dirección General, Refatrix</p>
+</section>
+
+<section class="promo">
+  <div class="big"><span class="pl">Descuento</span><span class="pc">60%</span><span class="pl">sobre lista</span></div>
+  <div class="body">
+    <span class="plazo">Solo hasta el 30 de septiembre de 2026</span>
+    <h3>Promoción de bienvenida</h3>
+    <p>Para que arranques con algo fuerte en la mano: <strong>60% de descuento sobre el precio de lista</strong> en los productos de la lista de abajo. Es una promoción de entrada — no es el descuento normal de catálogo.</p>
+    <ul>
+      <li>Aplica <strong>únicamente</strong> a los productos que vienen en el archivo de Excel.</li>
+      <li><strong>Condiciones de pago: crédito a 30 días</strong>, y salen de lo mismo de siempre — el cliente debe tener sus <strong>3 documentos subidos</strong> (paso 4). Sin los documentos, la compra es de contado.</li>
+      <li>El pedido debe quedar <strong>confirmado a más tardar el 30 de septiembre de 2026</strong>.</li>
+    </ul>
+    <p class="acciones"><a class="btn is-off" data-link="promoExcel" target="_blank" rel="noopener noreferrer">Descargar la lista en Excel <span class="ext">↓</span></a></p>
+  </div>
+</section>
 
 <div class="rapidos" style="margin-top:1.6rem">
   <span class="lbl">Accesos rápidos</span>
@@ -412,8 +465,27 @@ footer{margin-top:4rem;border-top:2px solid var(--ink);padding-top:1.1rem;displa
     <div class="paso-n">2</div>
     <div class="paso-body">
       <h3>Pon una meta de venta a cada mes, hasta diciembre de 2027</h3>
-      <p>Para cada cliente de tu lista, capturas <strong>cuánto crees que te va a comprar cada mes</strong>, mes por mes, hasta diciembre de 2027. Son montos <strong>sin IVA</strong>.</p>
-      <p>La suma de todos tus clientes y de todos los meses debe llegar a <strong class="num">$3,000,000 MXN sin IVA</strong>.</p>
+      <p>Las metas se capturan <strong>después</strong> de registrar al cliente: el cliente necesita existir para tener su renglón. La ruta exacta en el ERP es esta.</p>
+
+      <div class="nota">
+        <span class="t">Dónde se capturan las metas</span>
+        <ol class="lista">
+          <li>Menú <strong>매출목표 (Metas de venta)</strong>.</li>
+          <li>Baja a la sección <strong>② 고객별 목표 배분 (Distribución de metas por cliente)</strong>.</li>
+          <li>Haz clic en el botón con <strong>tu nombre</strong> — por ejemplo <strong class="num">04_dante</strong>.</li>
+          <li>Aparecen <strong>los clientes que registraste</strong>, un renglón por cliente.</li>
+          <li>En cada renglón hay <strong>una casilla por mes</strong>. Escribe el monto que esperas venderle ese mes, <strong>sin IVA</strong>.</li>
+          <li>Termina con <strong>고객 배분 저장 (Guardar)</strong>.</li>
+        </ol>
+      </div>
+
+      <p>Solo verás <strong>tus</strong> clientes: los de otros comisionistas no aparecen, y tú no apareces en los de ellos.</p>
+      <p>La suma de todos tus clientes y de todos los meses debe llegar a <strong class="num">$3,000,000 MXN sin IVA</strong>. Arriba de la tabla hay una <strong>barra de avance</strong> que te dice cuánto llevas planeado y cuánto falta; se actualiza sola al guardar.</p>
+      <p>Si el mes de <strong>diciembre 2027</strong> no aparece en la tabla, revisa la casilla <strong>끝 월 (mes final)</strong> arriba: debe decir <strong class="num">2027-12</strong>.</p>
+      <div class="nota ojo">
+        <span class="t">Mientras no termines</span>
+        <p>Cada vez que entres al ERP verás <strong>esta guía primero</strong>, hasta que la suma de tus metas llegue a los $3,000,000. Cuando la barra llegue al 100%, el ERP te llevará directo al portal como a todos.</p>
+      </div>
 
       <figure class="scroll">
         <svg class="dgm" viewBox="0 0 900 190" role="img" aria-label="La meta de tres millones de pesos sin IVA se reparte entre los quince meses que van de octubre de 2026 a diciembre de 2027, lo que da un promedio de doscientos mil pesos por mes.">
@@ -776,6 +848,7 @@ footer{margin-top:4rem;border-top:2px solid var(--ink);padding-top:1.1rem;displa
   <div class="rule"><h2>Tus accesos</h2><span class="eyebrow" id="acc-eyebrow">Lo llena Refatrix</span></div>
   <div class="llenar" id="accesos">
     <div class="row"><span class="k">Catálogo web del cliente</span><span class="v vacio">— pendiente de llenar —</span></div>
+    <div class="row"><span class="k">Lista de la promoción de bienvenida (Excel)</span><span class="v vacio">— pendiente de llenar —</span></div>
     <div class="row"><span class="k">Correo para enviar mi factura de comisión</span><span class="v vacio">— pendiente de llenar —</span></div>
     <div class="row"><span class="k">Datos fiscales de Refatrix para facturar</span><span class="v vacio">— pendiente de llenar —</span></div>
     <div class="row"><span class="k">A quién le pregunto si algo no está claro</span><span class="v vacio">— pendiente de llenar —</span></div>
@@ -801,6 +874,8 @@ footer{margin-top:4rem;border-top:2px solid var(--ink);padding-top:1.1rem;displa
      ===================================================================== */
   var CONFIG = {
     catalogo:      "https://refatrix.com.mx",
+    // 환영 프로모션 엑셀 — 이 경로에 파일을 올리면 버튼이 살아난다.
+    promoExcel:    "https://sebastianham26-art.github.io/Refatrix/promo/PROMO_60_SEPTIEMBRE_2026.xlsx",
     correoFactura: "",   // ej. "facturas@refatrix.com.mx"
     datosFactura:  "",   // RFC y razón social de Refatrix para la factura de comisión
     contacto:      ""    // nombre y teléfono de quien resuelve dudas
@@ -808,6 +883,7 @@ footer{margin-top:4rem;border-top:2px solid var(--ink);padding-top:1.1rem;displa
 
   var FIELDS = [
     {k:"catalogo",      kind:"url",   label:"Catálogo web del cliente",                   hint:"Paso 5"},
+    {k:"promoExcel",    kind:"url",   label:"Lista de la promoción de bienvenida (Excel)", hint:"60% sobre lista · hasta el 30 de septiembre"},
     {k:"correoFactura", kind:"email", label:"Correo para enviar mi factura de comisión",  hint:"Paso 8"},
     {k:"datosFactura",  kind:"text",  label:"Datos fiscales de Refatrix para facturar",   hint:"Paso 8"},
     {k:"contacto",      kind:"text",  label:"A quién le pregunto si algo no está claro",  hint:""}

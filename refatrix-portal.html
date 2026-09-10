@@ -328,6 +328,28 @@
   }
 
   // 재무담당(treasury) 등 제한 역할은 포털 대신 재무/계좌로 즉시 이동(접근 차단 + 첫 화면).
+
+  // ── 커미셔너 온보딩 게이트 ──────────────────────────────────────────
+  //   계약 총목표(예: 300만)를 **고객별로 다 배분하기 전까지**, 로그인하면
+  //   포털 대신 안내서(Guía del Comisionista)로 보낸다.
+  //
+  //   세션당 한 번만 보낸다 — 안내서를 읽고 포털로 돌아온 사람을 계속 튕기면
+  //   일을 못 한다. 플래그는 실제 PIN 로그인에서 지워지므로 «로그인할 때마다» 는 지켜진다.
+  //   판정은 서버가 한다(`needs_guide`): 안내서 권한이 켜진 비디렉터 + 목표 미달.
+  async function guideGateRedirect(){
+    try{ if(sessionStorage.getItem('rfx_guide_gate')==='1') return false; }catch(e){}
+    let d=null;
+    try{ d=await fetch(session.api+'/api/targets/my-plan-status',{headers:auth()}).then(r=>r.json()); }catch(e){ return false; }
+    if(!d||!d.needs_guide) return false;
+    // 이동 전에 표시해 둔다 — 안내서가 안 열려도 무한 반복되지 않게.
+    try{ sessionStorage.setItem('rfx_guide_gate','1'); }catch(e){}
+    const u=session.user||{};
+    location.href='refatrix-guia-comisionista.html#token='+encodeURIComponent(session.token)
+      +'&api='+encodeURIComponent(session.api||'')
+      +'&user='+encodeURIComponent(JSON.stringify(u));
+    return true;
+  }
+
   function roleLandingRedirect(){
     var role=session.user&&session.user.role;
     if(role==='treasury'){
@@ -842,6 +864,8 @@
       ensureAudio(); // 로그인 클릭(사용자 제스처) 시점에 오디오 컨텍스트 활성화 → 이후 알림음 재생 가능
       try{ sessionStorage.setItem('refatrix_session', JSON.stringify({token:d.token,api,user:d.user||{},ts:Date.now()})); }catch(e){}
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
+      try{ sessionStorage.removeItem('rfx_guide_gate'); }catch(e){}   // 실제 로그인 = 게이트 다시 한 번
+      if(await guideGateRedirect()) return;   // 커미셔너 → 안내서 먼저
       $('who').innerHTML='<b>'+(d.user?.name||login_id)+'</b><br>역할: '+(d.user?.role||'-');
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       await loadSummary();
@@ -1311,10 +1335,11 @@
     if(ps&&ps.token){
       session={token:ps.token,user:ps.user||{},api:ps.api||''};
       if(roleLandingRedirect()) return;   // 재무담당 → 재무/계좌로 즉시
+      guideGateRedirect().then(function(sent){ if(sent) return; });   // 커미셔너 → 안내서 먼저(비동기)
       $('who').innerHTML='<b>'+(session.user.name||'')+'</b><br>역할: '+(session.user.role||'-')+' · <a href="#" id="logoutLink">로그아웃</a>';
       $('loginCard').classList.add('hidden');$('app').classList.remove('hidden');$('navFixed').classList.remove('hidden');document.body.classList.add('has-navbar');
       loadSummary();
-      const ll=$('logoutLink'); if(ll) ll.onclick=(e)=>{e.preventDefault();try{sessionStorage.removeItem('refatrix_session');}catch(_){}location.reload();};
+      const ll=$('logoutLink'); if(ll) ll.onclick=(e)=>{e.preventDefault();try{sessionStorage.removeItem('refatrix_session');sessionStorage.removeItem('rfx_guide_gate');}catch(_){}location.reload();};
     }
   })();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login();});

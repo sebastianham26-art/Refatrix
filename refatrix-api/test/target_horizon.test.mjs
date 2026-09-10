@@ -271,7 +271,7 @@ test('E0. 진척 계산이 소스에서 기간 전체를 센다', () => {
 });
 
 dbTest('진척 바 수치와 담당자별 표 · 총목표 설정 (실 DB)', async (t) => {
-  const { query, pool } = await import('../src/db.js');
+  const { query } = await import('../src/db.js');
   const Fastify = (await import('fastify')).default;
   const fastifyJwt = (await import('@fastify/jwt')).default;
   const targetRoutes = (await import('../src/routes/targetRoutes.js')).default;
@@ -305,7 +305,7 @@ dbTest('진척 바 수치와 담당자별 표 · 총목표 설정 (실 DB)', asy
     await query(`DELETE FROM users WHERE id = ANY($1)`, [[com, dir]]);
     await query(`DELETE FROM sales_teams WHERE id=$1`, [team]);
     await app.close();
-    await pool.end().catch(() => {});
+    // pool 은 파일의 마지막 DB 테스트에서만 닫는다.
   });
 
   const hdr = (u) => ({ authorization: 'Bearer ' + app.jwt.sign({ sub: u }) });
@@ -368,4 +368,106 @@ dbTest('진척 바 수치와 담당자별 표 · 총목표 설정 (실 DB)', asy
   assert.ok(dd.agents_progress.some((a) => Number(a.user_id) === com && a.goal_amount === 900000));
   assert.equal((await getTeam(com)).json().agents_progress, null,
     '커미셔너에게 남의 진척이 새면 안 된다');
+});
+
+// ── F. 커미셔너 온보딩 게이트 ────────────────────────────────────────
+//
+//   «300만을 고객별로 다 배분할 때까지, 로그인하면 안내서로 보낸다».
+//   위험한 오작동은 **엉뚱한 사람을 끌고 가는 것**이다 — 디렉터나 목표를 안 쓰는
+//   직원이 매번 안내서로 튕기면 업무가 막힌다. 그래서 대상을 좁히고 그걸 고정한다.
+const portalSrc = read(join(REPO, 'refatrix-portal.html'));
+
+test('F0. 게이트는 포털에서 세션당 한 번만 걸린다', () => {
+  assert.ok(portalSrc.includes('guideGateRedirect'), '게이트 함수');
+  assert.ok(portalSrc.includes("sessionStorage.getItem('rfx_guide_gate')"), '세션당 1회');
+  assert.ok(portalSrc.includes("sessionStorage.removeItem('rfx_guide_gate')"),
+    '실제 로그인에서 플래그를 지워야 «로그인할 때마다» 가 지켜진다');
+  assert.ok(portalSrc.includes('refatrix-guia-comisionista.html#token='),
+    '세션을 들고 이동해야 안내서에서 로그인 화면으로 튕기지 않는다');
+  assert.ok(/setItem\('rfx_guide_gate','1'\);[\s\S]{0,400}location\.href=/.test(portalSrc),
+    '이동 전에 플래그를 세워야 안내서가 안 열려도 무한 반복되지 않는다');
+});
+
+test('F0b. 안내서의 2단계가 실제 화면 경로를 설명하고, 없는 화면을 가리키지 않는다', () => {
+  const guide = read(join(REPO, 'refatrix-guia-comisionista.html'));
+  assert.ok(guide.includes('② 고객별 목표 배분'), '메뉴 경로를 그대로 적는다');
+  assert.ok(guide.includes('04_dante'), '팀 버튼 예시');
+  assert.ok(guide.includes('refatrix-targets.html'), '실제 배포된 화면으로 연결');
+  assert.ok(!guide.includes('refatrix-mytargets.html'), '배포하지 않은 화면을 가리키면 안 된다');
+});
+
+dbTest('게이트 대상 판정 — 커미셔너만, 다 채우면 해제 (실 DB)', async (t) => {
+  const { query, pool } = await import('../src/db.js');
+  const Fastify = (await import('fastify')).default;
+  const fastifyJwt = (await import('@fastify/jwt')).default;
+  const targetRoutes = (await import('../src/routes/targetRoutes.js')).default;
+
+  const app = Fastify({ logger: false });
+  app.register(fastifyJwt, { secret: process.env.JWT_SECRET, sign: { expiresIn: '1h' } });
+  app.register(targetRoutes);
+  await app.ready();
+
+  const TAG = 'GT' + String(Date.now()).slice(-6);
+  const team = Number((await query(
+    `INSERT INTO sales_teams (name, is_sales) VALUES ($1,true) RETURNING id`, ['04_dante' + TAG])).rows[0].id);
+  const mk = async (n, role, tid = null) => Number((await query(
+    `INSERT INTO users (name, role, pin_hash, login_id, team_id) VALUES ($1,$2,'x',$3,$4) RETURNING id`,
+    [n + TAG, role, n.toLowerCase() + TAG, tid])).rows[0].id);
+  const dante = await mk('Dante', 'sales', team);
+  const otroSales = await mk('Otro', 'sales', team);      // 안내서 권한 없음
+  const dir = await mk('Dir', 'director');
+  // 안내서 권한은 dante 에게만 켠다 — 이게 대상 지정 방식이다.
+  await query(`INSERT INTO user_page_access (user_id, page_key, device_req, access)
+               VALUES ($1,'guiacom','anywhere','view')`, [dante]);
+  const c1 = Number((await query(
+    `INSERT INTO customers (code, name, team_id, owner_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+    ['C-' + TAG, 'Cli' + TAG, team, dante])).rows[0].id);
+
+  t.after(async () => {
+    await query(`DELETE FROM target_customer_months WHERE customer_id=$1`, [c1]).catch(() => {});
+    await query(`DELETE FROM customers WHERE id=$1`, [c1]);
+    await query(`DELETE FROM agent_plan_goals WHERE user_id = ANY($1)`, [[dante]]).catch(() => {});
+    await query(`DELETE FROM user_page_access WHERE user_id=$1`, [dante]);
+    await query(`DELETE FROM audit_log WHERE user_id = ANY($1)`, [[dante, dir, otroSales]]).catch(() => {});
+    await query(`DELETE FROM users WHERE id = ANY($1)`, [[dante, otroSales, dir]]);
+    await query(`DELETE FROM sales_teams WHERE id=$1`, [team]);
+    await app.close();
+    await pool.end().catch(() => {});
+  });
+
+  const status = (u) => app.inject({ method: 'GET', url: '/api/targets/my-plan-status',
+    headers: { authorization: 'Bearer ' + app.jwt.sign({ sub: u }) } }).then((r) => r.json());
+
+  // F1. 안내서 권한이 켜진 커미셔너 · 배분 0 → 게이트 ON
+  let d = await status(dante);
+  assert.equal(d.has_guide, true);
+  assert.equal(d.needs_guide, true);
+  assert.equal(d.goal_amount, 3000000);
+
+  // F2. 안내서 권한이 없는 직원은 대상이 아니다 (업무가 막히면 안 된다)
+  d = await status(otroSales);
+  assert.equal(d.has_guide, false);
+  assert.equal(d.needs_guide, false);
+
+  // F3. 디렉터도 대상이 아니다
+  assert.equal((await status(dir)).needs_guide, false);
+
+  // F4. 일부만 배분하면 여전히 ON
+  await query(`INSERT INTO target_customer_months (customer_id, ym, amount) VALUES ($1,'2027-01',1500000)`, [c1]);
+  d = await status(dante);
+  assert.equal(d.plan_total, 1500000);
+  assert.equal(d.needs_guide, true, '절반만 채우면 아직 안내서로 보낸다');
+
+  // F5. 300만을 다 채우면 게이트가 풀린다 ★
+  await query(`INSERT INTO target_customer_months (customer_id, ym, amount) VALUES ($1,'2027-02',1500000)`, [c1]);
+  d = await status(dante);
+  assert.equal(d.plan_total, 3000000);
+  assert.equal(d.reached, true);
+  assert.equal(d.needs_guide, false, '다 배분하면 더 이상 안내서로 보내지 않는다');
+
+  // F6. 디렉터가 목표를 올리면 다시 ON — 판정이 저장된 목표를 따라간다
+  await app.inject({ method: 'PUT', url: '/api/targets/agent-goal',
+    headers: { authorization: 'Bearer ' + app.jwt.sign({ sub: dir }), 'content-type': 'application/json' },
+    payload: { user_id: dante, goal_amount: 5000000, horizon: '2027-12' } });
+  assert.equal((await status(dante)).needs_guide, true);
 });

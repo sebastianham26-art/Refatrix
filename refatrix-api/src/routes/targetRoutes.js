@@ -335,6 +335,24 @@ export default async function targetRoutes(app) {
     return { ok: true, saved, skipped };
   });
 
+  // 커미셔너 온보딩 게이트 — 「안내서를 먼저 봐야 하는 사람인가」.
+  //   계약 총목표를 **고객별로 다 배분하기 전까지** 로그인하면 안내서로 보낸다.
+  //   본인 것만 묻는 조회라 페이지 권한을 요구하지 않는다(authGuard 만).
+  //
+  //   대상은 «안내서 권한(guiacom)이 켜진 비디렉터» 로 좁힌다.
+  //   목표 미달만으로 판정하면 목표를 안 쓰는 직원·디렉터까지 안내서로 끌려간다.
+  app.get('/api/targets/my-plan-status', { preHandler: [authGuard] }, async (req) => {
+    const perm = req.ctx.perm;
+    const pages = perm.pages || {};
+    const hasGuide = Object.prototype.hasOwnProperty.call(pages, 'guiacom');
+    const p = await agentProgress(Number(perm.userId));
+    return {
+      ...p,
+      has_guide: hasGuide,
+      needs_guide: hasGuide && perm.role !== 'director' && !p.reached,
+    };
+  });
+
   // 담당자별 「계획 총목표」 설정 — 디렉터만.
   //   커미셔너마다 계약 금액·기간이 다를 수 있어 사람 단위로 저장한다.
   app.put('/api/targets/agent-goal', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
