@@ -98,6 +98,25 @@ test('0186 은 여러 번 적용해도 안전하다(멱등)', { skip }, async ()
   assert.equal(n, 1);
 });
 
+test('0215: 18시로 등록된 전시회를 21시로 늘리고, 20:00 칸 미팅이 실제로 저장된다', { skip }, async () => {
+  const a = await newExpo();                                   // 18시(예전 기본값)
+  const b = Number((await qp(
+    `INSERT INTO exhibitions (name,start_date,day_count,start_hour,end_hour,currency,is_active,created_by)
+     VALUES ('다른 전시회','2026-10-01',2,9,20,'MXN',FALSE,1) RETURNING id`)).rows[0].id);   // 직접 고른 20시
+  await q(mig('0215_expo_hours_until_21.sql'));
+  const hrs = async (id) => Number((await qp(`SELECT end_hour FROM exhibitions WHERE id=$1`, [id])).rows[0].end_hour);
+  assert.equal(await hrs(a), 21, '18 → 21');
+  assert.equal(await hrs(b), 20, '18 이 아닌 값은 그대로');
+  const def = (await q(`SELECT column_default FROM information_schema.columns
+      WHERE table_schema='${SCHEMA}' AND table_name='exhibitions' AND column_name='end_hour'`)).rows[0].column_default;
+  assert.equal(String(def), '21');
+  await q(mig('0215_expo_hours_until_21.sql'));                // 멱등
+  assert.equal(await hrs(b), 20);
+  const p = meetParams(a); p[2] = 20;                          // slot_hour 20 = 20:00–21:00
+  const id = Number((await qp(INSERT_MEETING, p)).rows[0].id);
+  assert.ok(id > 0);
+});
+
 test('미팅 저장: 약속(미확정)·약속(확정)·부스 세 경우 모두 실제로 INSERT 된다', { skip }, async () => {
   const expo = await newExpo();
   for (const opt of [{ kind: 'meeting', confirmed: false }, { kind: 'meeting', confirmed: true }, { kind: 'booth', confirmed: false }]) {

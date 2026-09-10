@@ -5,6 +5,7 @@
 // =====================================================================
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { newDb } from 'pg-mem';
 import { pool } from '../src/db.js';
 import {
@@ -13,7 +14,7 @@ import {
 import {
   ordinalDay, dayAxis, hourAxis, weekdayKo, ownerColorMap, OWNER_PALETTE,
   meetingTotals, ownerTotals, normQual, parseQualEvalJson, buildQualEvalPrompt,
-  summaryToText, num, clip, normKind, BOOTH_COLOR,
+  summaryToText, num, clip, normKind, BOOTH_COLOR, DEFAULT_START_HOUR, DEFAULT_END_HOUR,
 } from '../src/exhibitionAi.js';
 
 // ── pg-mem 셋업 + pool 몽키패치 ──────────────────────────────────────
@@ -137,6 +138,39 @@ test('hourAxis: 08~18시는 10칸이고 마지막 칸은 17:00–18:00', () => {
   assert.equal(hs[9].range, '17:00–18:00');
   assert.equal(hourAxis(9, 17).length, 8);
   assert.equal(hourAxis(8, 8).length, 1, '종료가 시작 이하면 최소 1칸');
+});
+
+test('hourAxis: 기본 시간대는 08~21시 13칸, 마지막 칸 20:00–21:00 (2026-09-10 18→21시)', () => {
+  assert.equal(DEFAULT_START_HOUR, 8);
+  assert.equal(DEFAULT_END_HOUR, 21);
+  const hs = hourAxis(8, 21);
+  assert.equal(hs.length, 13);
+  assert.equal(hs[12].label, '20:00');
+  assert.equal(hs[12].range, '20:00–21:00');
+  assert.equal(hourAxis(8).length, 13, '종료 시각이 없으면 기본 21시');
+  assert.equal(hourAxis(8, null).length, 13);
+  assert.equal(hourAxis(8, 24).length, 16, '상한 24시');
+});
+
+test('0215 마이그레이션: 18시로 등록된 전시회만 21시로 늘리고 기본값도 21', () => {
+  const sql = readFileSync(new URL('../migrations/0215_expo_hours_until_21.sql', import.meta.url), 'utf8');
+  assert.match(sql, /ALTER COLUMN end_hour SET DEFAULT 21/);
+  assert.match(sql, /SET end_hour = 21/);
+  assert.match(sql, /end_hour = 18/, '직접 고른 19·20·22시 등은 건드리지 않는다');
+  assert.match(sql, /deleted_at IS NULL/);
+  // 실제로 돌려 본다 (별도 pg-mem 인스턴스)
+  const db = newDb();
+  db.public.none(`CREATE TABLE exhibitions (id INT PRIMARY KEY, end_hour INT NOT NULL DEFAULT 18,
+    updated_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ)`);
+  db.public.none(`INSERT INTO exhibitions (id, end_hour, deleted_at) VALUES
+    (1, 18, NULL), (2, 20, NULL), (3, 18, now())`);
+  db.public.none(sql);
+  const rows = db.public.many(`SELECT id, end_hour FROM exhibitions ORDER BY id`);
+  assert.deepEqual(rows.map((r) => r.end_hour), [21, 20, 18], 'RUJAC(18)→21 · 직접 고른 20 유지 · 삭제건 무시');
+  db.public.none(`INSERT INTO exhibitions (id) VALUES (4)`);
+  assert.equal(db.public.one(`SELECT end_hour FROM exhibitions WHERE id=4`).end_hour, 21, '새 기본값 21');
+  db.public.none(sql);   // 멱등
+  assert.equal(db.public.one(`SELECT end_hour FROM exhibitions WHERE id=2`).end_hour, 20);
 });
 
 test('shiftYmd: 월말·연말을 넘어가도 정확하다', () => {

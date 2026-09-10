@@ -711,3 +711,177 @@ test('새 미팅: 고객 이름을 쳐서 찾고 하나만 남으면 업체명�
   assert.equal(b.customer_id, 102, '등록 고객으로 연결된다');
   assert.equal(b.company_name, 'Autopartes del Norte');
 });
+
+// ── 2026-09-10 · 21시까지 · 폰 저장 흐름 ─────────────────────────────
+function board21(extra) {
+  const b = boardPayload(extra);
+  b.exhibition = { ...b.exhibition, end_hour: 21 };
+  b.hours = Array.from({ length: 13 }, (_, i) => ({
+    hour: 8 + i, label: String(8 + i).padStart(2, '0') + ':00',
+    range: String(8 + i).padStart(2, '0') + ':00–' + String(9 + i).padStart(2, '0') + ':00',
+  }));
+  return b;
+}
+async function openMeeting(name) {
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-chip').find((c) => c.textContent.includes(name)).click();
+  await tick();
+}
+const typeIn = (el, v) => { el.value = v; el.dispatchEvent(new win.Event('input', { bubbles: true })); };
+
+test('21시: 08:00~21:00 보드면 하루씩 13칸 · 전체 13행 · 헤더 08:00–21:00', async () => {
+  route('GET', '/api/exhibitions', { items: [{ id: 10, name: 'RUJAC 2026', start_date: '2026-09-16', is_active: true }], active_id: 10 });
+  route('GET', '/board', board21());
+  $('modeExpo').click(); await tick(40);
+  assert.ok($('ex-meta').textContent.includes('08:00–21:00'));
+  win.eval("exSetView('day')");
+  assert.equal(qsa('.ex-slot').length, 13);
+  assert.equal(qsa('.ex-slot .t b').pop().textContent, '20:00');
+  win.eval("exSetView('grid')");
+  assert.equal(qsa('table.ex-tt tbody tr').length, 13);
+});
+
+test('21시: 새 전시회 등록 폼의 종료 시각 기본값은 21:00, 23:00 까지 고를 수 있다', async () => {
+  await openBoard();
+  win.eval('exBoard = null; exOpenSettings();');
+  await tick();
+  assert.equal($('ex-sEh').value, '21');
+  assert.ok([...$('ex-sEh').options].some((o) => o.value === '23'));
+});
+
+test('폰 저장: 시트는 모바일 셸(탭바 9001·헤더 9000)보다 위 z-index', () => {
+  const css = [...win.document.querySelectorAll('style')].map((s) => s.textContent).join('\n');
+  const z = Number((css.match(/\.ex-sheet\{position:fixed;inset:0;z-index:(\d+)/) || [])[1]);
+  assert.ok(z > 9001, 'z-index ' + z);
+  const zb = Number((css.match(/\.ex-backdrop\{[^}]*z-index:(\d+)/) || [])[1]);
+  assert.ok(zb > 9001 && zb < z, '뒷막은 탭바보다 위, 시트보다 아래');
+  assert.ok(!/html\.ex-locked body\{[^}]*touch-action:none/.test(css), 'html/body 에 touch-action:none 금지(iOS 시트 스크롤)');
+});
+
+test('폰 저장: 상세 하단은 [💾 저장] 이 주 버튼이고 확정·완료·삭제는 보조 줄', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  const pri = $('ex-shF').querySelector('.ex-pri');
+  assert.equal(pri && pri.id, 'ex-saveBtn');
+  const sec = $('ex-shF').querySelector('.ex-sfsec');
+  assert.ok(sec.contains($('ex-confBtn')) && sec.contains($('ex-doneBtn')) && sec.contains($('ex-delBtn')));
+});
+
+test('폰 저장: 입력하면 저장 버튼이 「💾 변경 저장」 으로 바뀌고, 저장하면 「✓ 저장됨」', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  assert.ok(!$('ex-saveBtn').classList.contains('dirty'));
+  typeIn($('ex-fMemo'), '샘플 요청');
+  assert.ok($('ex-saveBtn').classList.contains('dirty'));
+  assert.equal($('ex-saveBtn').textContent, '💾 변경 저장');
+  route('PATCH', '/api/exhibitions/meetings/1', { ok: true, id: 1 });
+  $('ex-saveBtn').click(); await tick(50);
+  assert.equal(sent('PATCH', '/api/exhibitions/meetings/1').memo, '샘플 요청');
+  assert.ok(!$('ex-sheet').classList.contains('ex-hidden'), '저장 후에도 상세가 열려 있다');
+  assert.ok($('ex-saveBtn').textContent.includes('저장됨'));
+  assert.equal(win.eval('exDirty'), false);
+});
+
+test('폰 저장: 입력 중에 [✓ 약속 확정] 을 누르면 입력값까지 함께 저장한다', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  typeIn($('ex-fGoal'), '보증 조건 합의');
+  route('PATCH', '/api/exhibitions/meetings/1', { ok: true, id: 1 });
+  $('ex-confBtn').click(); await tick(50);
+  const b = sent('PATCH', '/api/exhibitions/meetings/1');
+  assert.equal(b.is_confirmed, true);
+  assert.equal(b.goal_note, '보증 조건 합의');
+  assert.equal(b.company_name, 'Grupo Zeta <b>');
+});
+
+test('폰 저장: 입력 중에 [✅ 미팅 완료] 도 입력값을 버리지 않는다', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  typeIn($('ex-fMemo'), '재방문 약속');
+  route('PATCH', '/api/exhibitions/meetings/1', { ok: true, id: 1 });
+  $('ex-doneBtn').click(); await tick(50);
+  const b = sent('PATCH', '/api/exhibitions/meetings/1');
+  assert.equal(b.status, 'done');
+  assert.equal(b.memo, '재방문 약속');
+});
+
+test('폰 저장: 저장 안 한 채 ✕ — 확인창에서 취소하면 그대로, 확인하면 닫힌다', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  typeIn($('ex-fMemo'), '미저장');
+  let asked = 0;
+  win.confirm = () => { asked++; return false; };
+  $('ex-shX').click(); await tick();
+  assert.equal(asked, 1);
+  assert.ok(!$('ex-sheet').classList.contains('ex-hidden'), '취소하면 안 닫힌다');
+  assert.equal($('ex-fMemo').value, '미저장');
+  win.confirm = () => true;
+  $('ex-backdrop').click(); await tick();
+  assert.ok($('ex-sheet').classList.contains('ex-hidden'));
+  assert.ok(!win.document.documentElement.classList.contains('ex-sheet-open'));
+});
+
+test('폰 저장: 변경이 없으면 ✕ 는 묻지 않고 닫는다', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  let asked = 0;
+  win.confirm = () => { asked++; return true; };
+  $('ex-shX').click(); await tick();
+  assert.equal(asked, 0);
+  assert.ok($('ex-sheet').classList.contains('ex-hidden'));
+});
+
+test('신규 확정: 확정 체크는 맨 위 「종류 · 확정」 칸에 있고, 저장 버튼 문구가 따라 바뀐다', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-slot')[5].querySelector('.b').click(); await tick();
+  const kindSec = $('ex-nKind').closest('.ex-sec');
+  assert.ok(kindSec.contains($('ex-nConfirm')) && kindSec.contains($('ex-nWalk')));
+  assert.equal($('ex-nSave').textContent, '💾 미팅 계획 저장');
+  $('ex-nConfirm').checked = true; $('ex-nConfirm').dispatchEvent(new win.Event('change', { bubbles: true }));
+  assert.equal($('ex-nSave').textContent, '✓ 확정 미팅으로 저장');
+  $('ex-nKind').querySelector('[data-k="booth"]').click();
+  assert.equal($('ex-nSave').textContent, '🚶 부스 방문 저장');
+  $('ex-nKind').querySelector('[data-k="meeting"]').click();
+  $('ex-nWalk').checked = true; $('ex-nWalk').dispatchEvent(new win.Event('change', { bubbles: true }));
+  assert.ok($('ex-nSave').textContent.includes('바로 녹음'));
+});
+
+test('신규 확정: 저장하면 그 미팅 상세로 넘어가고 「확정 미팅 저장됨」 표시', async () => {
+  await openBoard();
+  win.eval("exSetView('day')");
+  qsa('.ex-daytab')[0].click(); await tick();
+  qsa('.ex-slot')[5].querySelector('.b').click(); await tick();
+  $('ex-nCompany').value = 'Autopartes del Norte';
+  $('ex-nConfirm').checked = true;
+  route('POST', '/api/exhibitions/10/meetings', { id: 1 });   // 보드의 M1 로 넘어가는 것으로 대체
+  $('ex-nSave').click(); await tick(60);
+  assert.equal(sent('POST', '/api/exhibitions/10/meetings').is_confirmed, true);
+  assert.ok($('ex-saveBtn'), '상세 시트로 전환');
+  assert.ok($('ex-saveBtn').textContent.includes('확정 미팅 저장됨'));
+  assert.ok($('ex-toast').textContent.includes('확정 미팅'));
+});
+
+test('정성목표 판단: 저장 안 한 정성목표가 있으면 먼저 저장하고 판단한다', async () => {
+  await openBoard();
+  await openMeeting('El Aguila');
+  typeIn($('ex-fGoal'), '신뢰 회복 + 재주문');
+  route('PATCH', '/api/exhibitions/meetings/2', { ok: true, id: 2 });
+  route('POST', '/meetings/2/evaluate', { ok: true, id: 2, evaluation: { result: 'achieved' } });
+  $('ex-evalBtn').click(); await tick(80);
+  const iP = fetchLog.findIndex((x) => x.method === 'PATCH' && x.url.includes('/meetings/2'));
+  const iE = fetchLog.findIndex((x) => x.method === 'POST' && x.url.includes('/meetings/2/evaluate'));
+  assert.ok(iP >= 0 && iE > iP, '저장 → 판단 순서');
+  assert.equal(JSON.parse(fetchLog[iP].body).goal_note, '신뢰 회복 + 재주문');
+});
+
+test('녹음 카드 안 조작은 「저장 안 한 변경」 으로 치지 않는다', async () => {
+  await openBoard();
+  await openMeeting('Grupo Zeta');
+  const card = $('cs-recCard'); $('ex-recSlot').appendChild(card);
+  const inp = win.document.createElement('input'); card.appendChild(inp);
+  typeIn(inp, 'x');
+  assert.equal(win.eval('exDirty'), false);
+});

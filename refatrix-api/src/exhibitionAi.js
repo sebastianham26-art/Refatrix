@@ -1,6 +1,6 @@
 // =====================================================================
 // Refatrix ERP · exhibitionAi.js — 「영업 > 고객상담 > 🎪 전시회」 순수 함수 모음
-//   · 시간표 축 계산 (1st/2nd/3rd day × 08:00~18:00 1시간 슬롯)
+//   · 시간표 축 계산 (1st/2nd/3rd day × 08:00~21:00 1시간 슬롯 — 2026-09-10 18→21시)
 //   · 미팅 담당자별 색상 배정(자동 · 범례와 셀이 항상 같은 색을 쓰도록 서버에서 계산)
 //   · 목표/달성 금액 집계 (견적수주 · 수주확정)
 //   · 정성목표 달성 판단 프롬프트/파서 (녹음 AI 요약을 근거로)
@@ -55,10 +55,14 @@ export function dayAxis(startDate, dayCount) {
   return out;
 }
 
+// 기본 시간대 — 08:00 ~ 21:00 (디렉터 요청 2026-09-10: 저녁 미팅까지 잡도록 18시 → 21시)
+export const DEFAULT_START_HOUR = 8;
+export const DEFAULT_END_HOUR = 21;
+
 // 세로축 — [{hour:8, label:'08:00', range:'08:00–09:00'}]  (end_hour 는 종료시각이라 칸에 포함하지 않는다)
 export function hourAxis(startHour, endHour) {
   const s = Math.min(Math.max(Number(startHour) === 0 ? 0 : (Number(startHour) || 8), 0), 23);
-  const e = Math.min(Math.max(Number(endHour) || 18, s + 1), 24);
+  const e = Math.min(Math.max(Number(endHour) || DEFAULT_END_HOUR, s + 1), 24);
   const hh = (h) => String(h).padStart(2, '0') + ':00';
   const out = [];
   for (let h = s; h < e; h++) out.push({ hour: h, label: hh(h), range: hh(h) + '–' + hh(h + 1) });

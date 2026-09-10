@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객상담 · 전시회 (b20260904rec3)</title>
+<title>Refatrix ERP · 고객상담 · 전시회 (b20260910ex4)</title>
 <style>
   :root{--paper:#F4F1EA;--brand:#143D34;--ink:#1A1A1A;--muted:#6B6B6B;--line:#E2DDD2;
     --income:#0F6E56;--expense:#B23A2E;--gold:#9A7B16;}
@@ -179,7 +179,9 @@
     background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.07)}
 
   /* 상세 시트 */
-  .ex-sheet{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:var(--paper)}
+  /* z-index: 모바일 셸(refatrix-nav.js)의 상단 바 9000 · 하단 탭바 9001 보다 위.
+     70 이던 시절엔 폰에서 탭바가 [저장]을, 상단 바가 [✕] 를 덮었다(✕ 자리를 누르면 로그아웃이 눌림) — 2026-09-10 */
+  .ex-sheet{position:fixed;inset:0;z-index:10001;display:flex;flex-direction:column;background:var(--paper)}
   .ex-sheet.ex-hidden{display:none!important}
   .ex-sheet .sh{background:var(--brand);color:#fff;padding:12px 14px;display:flex;align-items:flex-start;gap:10px;
     padding-top:calc(12px + env(safe-area-inset-top))}
@@ -189,12 +191,30 @@
     width:40px;height:40px;font-size:18px;cursor:pointer;flex:none}
   .ex-sheet .sb{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;display:flex;
     flex-direction:column;gap:12px}
+  /* 하단 버튼줄 — 1줄: [주 동작(저장)] 크게 · 2줄: 보조 동작(확정·완료·삭제) 작게.
+     폰에서 엄지가 가장 먼저 닿는 자리에 「저장」이 오도록 */
   .ex-sheet .sf{background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;
-    flex-wrap:wrap;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+    flex-wrap:wrap;align-items:stretch;padding-bottom:calc(10px + env(safe-area-inset-bottom));
+    box-shadow:0 -6px 18px -12px rgba(20,45,38,.35)}
   .ex-sheet .sf .btn{flex:1 1 auto;min-height:48px}
+  .ex-sheet .sf .ex-pri{flex:1 1 60%;font-size:15px;font-weight:800;min-height:52px}
+  .ex-sheet .sf .ex-pri.dirty{background:var(--gold);border-color:var(--gold);color:#fff;
+    box-shadow:0 0 0 3px rgba(154,123,22,.25)}
+  .ex-sheet .sf .ex-pri.saved{background:var(--income);border-color:var(--income)}
+  .ex-sheet .sf .ex-sfsec{flex:1 1 100%;display:flex;gap:8px;min-width:0}
+  .ex-sheet .sf .ex-sfsec .btn{flex:1 1 0;min-width:0;min-height:42px;font-size:12.5px;padding:8px 6px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ex-sheet .sf .ex-sfsec .btn.red{flex:0 0 auto;padding:8px 12px}
+  .ex-sheet .sf .ex-close{flex:0 0 auto;min-width:84px}
+  .ex-sheet .sf .ex-dirtyhint{flex:1 1 100%;font-size:11.5px;color:var(--gold);font-weight:700;margin:-2px 0 0}
+  /* 키보드가 올라와 있을 때(화면 높이가 줄었을 때)는 저장 버튼 하나만 남겨 입력칸 자리를 확보 */
+  .ex-sheet.kb .sf .ex-sfsec,.ex-sheet.kb .sf .ex-close,.ex-sheet.kb .sf .ex-dirtyhint{display:none}
+  .ex-sheet.kb .sf{padding-top:8px;padding-bottom:8px}
+  .ex-sheet.kb .sh .s{display:none}
   /* ── 상세 시트를 열었을 때 뒤 화면 잠금 (html·body 둘 다 잠가야 확실히 멈춘다) ── */
-  html.ex-locked, html.ex-locked body{overflow:hidden!important;overscroll-behavior:none;touch-action:none}
-  .ex-backdrop{position:fixed;inset:0;background:rgba(20,45,38,.42);z-index:65}
+  /*   touch-action:none 은 뒷막에만 — html/body 에 걸면 iOS 에서 시트 안 스크롤까지 막힐 수 있다 */
+  html.ex-locked, html.ex-locked body{overflow:hidden!important;overscroll-behavior:none}
+  .ex-backdrop{position:fixed;inset:0;background:rgba(20,45,38,.42);z-index:10000;touch-action:none}
   .ex-backdrop.ex-hidden{display:none!important}
 
   /* ── 종류/확정 표시 ── */
@@ -204,7 +224,9 @@
     font-weight:700;font-size:13px;cursor:pointer;min-height:46px}
   .ex-kindseg button.on{background:var(--brand);color:#fff}
   .ex-check{display:flex;align-items:center;gap:9px;margin-top:11px;font-size:13.5px;font-weight:600;color:var(--ink)}
-  .ex-check input{width:auto;min-width:20px;min-height:20px}
+  .ex-check input,.ex-sec .ex-check input{width:22px;height:22px;min-width:22px;min-height:22px;flex:none;margin:0;
+    accent-color:var(--brand)}   /* .ex-sec input{width:100%} 에 먹혀 체크박스가 반 폭으로 늘어나던 것 */
+  .ex-check{cursor:pointer;min-height:38px;margin-top:6px;text-align:left}
 
 
   .ex-sec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px}
@@ -235,8 +257,12 @@
   @media (prefers-reduced-motion:reduce){.ex-spin{animation:none}}
 
   .ex-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--brand);color:#fff;
-    padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;z-index:90;opacity:0;
-    pointer-events:none;transition:opacity .2s}
+    padding:10px 18px;border-radius:999px;font-size:13px;font-weight:700;z-index:10020;opacity:0;
+    pointer-events:none;transition:opacity .2s;max-width:calc(100vw - 32px);text-align:center}
+  /* 모바일 셸: 하단 탭바(56px) 위로 */
+  html.rfxm .ex-toast{bottom:calc(72px + env(safe-area-inset-bottom))}
+  /* 시트가 열려 있으면 저장 버튼을 가리지 않도록 위쪽(헤더 바로 아래)에 */
+  html.ex-sheet-open .ex-toast{bottom:auto;top:calc(70px + env(safe-area-inset-top))}
   .ex-toast.on{opacity:1}
   .ex-empty{background:#fff;border:1px dashed var(--line);border-radius:12px;padding:26px 18px;text-align:center;
     color:var(--muted);font-size:13px;line-height:1.7;margin-top:12px}
@@ -262,8 +288,6 @@
     .topbar h1{font-size:16px}
   }
   @media(max-width:480px){
-    .ex-sheet .sf{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    .ex-sheet .sf .btn{width:100%;font-size:12.5px;padding:10px 8px}
     .topbar .sub{display:none}
     .ex-strip .ex-name{font-size:16px}
   }
@@ -275,8 +299,11 @@
     .ex-sheet .sh{padding-top:12px}
   }
   @media(min-width:1100px){
-    .ex-sheet{position:sticky;inset:auto;top:14px;height:auto;max-height:calc(100vh - 28px);
+    /* 오른쪽 패널: 고정 헤더(--ex-navh, JS 가 잰다) 바로 아래에 붙는다 — 예전엔 top:14px 라 헤더 밑으로 파고들었다 */
+    .ex-sheet{position:sticky;inset:auto;z-index:1;top:calc(var(--ex-navh,0px) + 14px);height:auto;
+      max-height:calc(100vh - var(--ex-navh,0px) - 28px);
       border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+    html.ex-sheet-open .ex-toast{top:auto;bottom:24px}
     .ex-sheet .sh{border-radius:0;padding-top:12px}
     .ex-sheet .sb{background:var(--paper)}
     .ex-board{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:16px;align-items:start}
@@ -487,7 +514,7 @@
 </div>
 
 <script>
-  // ===== 고객상담 + 🎪 전시회 (build b20260904rec3) =====
+  // ===== 고객상담 + 🎪 전시회 (build b20260910ex4 · 녹음 b20260904rec3) =====
   let session={token:null,user:null,api:''};
   const $=(id)=>document.getElementById(id);
   const auth=()=>({'Authorization':'Bearer '+session.token});
@@ -1816,7 +1843,7 @@
   $('cs-insForce').addEventListener('click',()=>csInsights(true));
 
   // =====================================================================
-  // 🎪 전시회 미팅 시간표 (b20260826ex1)
+  // 🎪 전시회 미팅 시간표 (b20260826ex1 → b20260910ex4: 21시까지 · 폰 저장 버튼 · 저장 흐름)
   //   · 가로축 1st/2nd/3rd day × 세로축 1시간 슬롯
   //   · 모바일은 「하루씩」, 넓은 화면은 「전체」가 기본 — 버튼으로 언제든 전환
   //   · 미팅 녹음은 기존 고객상담 녹음 카드(#cs-recCard)를 그대로 끌어와 재사용
@@ -1824,6 +1851,8 @@
   let exBoard=null, exExpoList=[], exExpoId=null, exSel=null, exFilter=null;
   let exView=(window.innerWidth<900?'day':'grid'), exDay=1, exMode='normal';
   let exNewKind='meeting';                     // 새 미팅 등록 폼의 종류
+  let exDirty=false;                           // 시트에 저장 안 한 입력이 있는가
+  const EX_DEF_END=21;                         // 새 전시회 기본 종료 시각 — 08:00~21:00 (2026-09-10 18→21시)
   const EX_SIDE_MIN=1100;                      // 이 너비 이상이면 시트가 오른쪽에 붙어 뜬다(모달 아님)
   const exIsModal=()=>window.innerWidth<EX_SIDE_MIN;
   const exBooth=()=> (exBoard&&exBoard.booth_color)||{bg:'#EDEBE4',fg:'#5B5B57',border:'#D8D3C6'};
@@ -2091,25 +2120,91 @@
     document.documentElement.classList.toggle('ex-locked', !!on);
     if(!on) document.body.style.overflow='';      // 예전 버전이 남겨둔 인라인 값도 같이 치운다
   }
-  function exSheetOpen(title,sub){
+  // 고정 헤더(#rnav) 높이 — 넓은 화면 오른쪽 패널이 헤더 밑으로 파고들지 않게 CSS 변수로 넘긴다
+  function exNavH(){
+    const n=document.getElementById('rnav');
+    const h=n?Math.round(n.getBoundingClientRect().height||0):0;
+    document.documentElement.style.setProperty('--ex-navh',h+'px');
+  }
+  // keepScroll: 같은 미팅을 저장 후 다시 그릴 때 보던 위치(예: 메모칸) 그대로 — 폰에서 맨 위로 튀지 않게
+  function exSheetOpen(title,sub,keepScroll){
+    const sb=$('ex-shB'); const was=keepScroll?sb.scrollTop:0;
     $('ex-shT').textContent=title; $('ex-shS').textContent=sub||'';
     $('ex-sheet').classList.remove('ex-hidden');
+    document.documentElement.classList.add('ex-sheet-open');
     $('ex-backdrop').classList.toggle('ex-hidden', !exIsModal());
-    $('ex-shB').scrollTop=0;
+    exDirty=false;
+    exNavH();
     exLock(exIsModal());
+    exFitViewport();
+    sb.scrollTop=was;
+    // 넓은 화면(오른쪽 패널): 패널 아래쪽 버튼줄이 화면 밖이면 패널이 헤더 밑에 붙을 만큼만 내려 준다
+    if(!exIsModal()) requestAnimationFrame(()=>{
+      const r=$('ex-sheet').getBoundingClientRect();
+      if(r.bottom>window.innerHeight+1){
+        const navh=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ex-navh'),10)||0;
+        const y=window.scrollY+r.top-navh-14;
+        if(y>window.scrollY+1) window.scrollTo({top:y,behavior:'smooth'});
+      }
+    });
   }
   function exRestoreRecCard(){
     const card=$('cs-recCard'), home=$('cs-recHome');
     if(card&&home&&card.parentNode!==home.parentNode) home.parentNode.insertBefore(card,home);
+  }
+  // 사용자가 닫을 때(✕ · 뒷막 · Esc · [닫기]) — 저장 안 한 변경이 있으면 한 번 묻는다
+  function exTryClose(){
+    if(exDirty && !confirm('저장하지 않은 변경이 있습니다.\n저장하지 않고 닫을까요?')) return false;
+    exCloseSheet();
+    return true;
   }
   function exCloseSheet(quiet){
     const wasRec=csRecActive;
     exRestoreRecCard();
     $('ex-sheet').classList.add('ex-hidden');
     $('ex-backdrop').classList.add('ex-hidden');
+    document.documentElement.classList.remove('ex-sheet-open');
+    exDirty=false;
+    exFitViewport();
     exLock(false);
     exSel=null; if(exBoard) exRenderBoard();
     if(wasRec&&!quiet){ exSwitch('normal'); exToast('녹음이 진행 중이라 녹음 화면으로 이동합니다'); }
+  }
+
+  // ── 저장 안 한 변경 표시 ──────────────────────────────────────────
+  //   입력하면 하단 [저장] 버튼이 금색 「💾 변경 저장」 으로 바뀐다 → 폰에서도 "아직 저장 안 됨"이 한눈에.
+  function exPriBtn(){ return $('ex-shF').querySelector('.ex-pri'); }
+  function exMarkDirty(){
+    if(exDirty) return;
+    exDirty=true;
+    const b=exPriBtn(); if(!b||b.disabled) return;
+    b.classList.remove('saved'); b.classList.add('dirty');
+    if(b.dataset.dirty) b.textContent=b.dataset.dirty;
+  }
+  function exFlashSaved(msg){
+    const b=exPriBtn(); if(!b) return;
+    const label=b.textContent;
+    b.classList.remove('dirty'); b.classList.add('saved'); b.textContent=msg||'✓ 저장됨';
+    clearTimeout(exFlashSaved._h);
+    exFlashSaved._h=setTimeout(()=>{ const x=exPriBtn(); if(x===b&&!exDirty){ b.classList.remove('saved'); b.textContent=label; } },1600);
+  }
+
+  // ── 폰 키보드 대응 ────────────────────────────────────────────────
+  //   키보드가 올라오면 보이는 영역(visualViewport)에 시트를 맞춰 [저장] 이 키보드 위에 남게 한다.
+  //   이때는 보조 버튼을 접어(.kb) 입력칸 자리를 확보. 키보드가 내려가면 원래(CSS inset:0)대로.
+  function exFitViewport(){
+    const sh=$('ex-sheet'); if(!sh) return;
+    const vv=window.visualViewport;
+    const full=!sh.classList.contains('ex-hidden') && window.innerWidth<=760;
+    const kb=!!(full && vv && (window.innerHeight - vv.height) > 120);
+    sh.classList.toggle('kb', kb);
+    if(kb){
+      sh.style.top=Math.max(0,Math.round(vv.offsetTop))+'px';
+      sh.style.height=Math.round(vv.height)+'px';
+      sh.style.bottom='auto';
+      const a=document.activeElement;
+      if(a&&sh.contains(a)&&a.scrollIntoView) setTimeout(()=>{ try{ a.scrollIntoView({block:'nearest'}); }catch(e){} },40);
+    }else{ sh.style.top=''; sh.style.height=''; sh.style.bottom=''; }
   }
 
   function exStatusPill(m){
@@ -2141,11 +2236,11 @@
   }
 
   // ── 기존 미팅 ───────────────────────────────────────────────────────
-  function exOpenMeeting(id){
+  function exOpenMeeting(id,keepScroll){
     const m=exMeet(id); if(!m) return;
     exSel=id; exRenderBoard();
     const d=(exBoard.days||[]).find(x=>Number(x.day_no)===Number(m.day_no))||{};
-    exSheetOpen(m.company_name,(d.label||'')+' · '+(m.meet_date||'')+' · '+exHH(m.slot_hour)+'–'+exHH(m.slot_hour+1));
+    exSheetOpen(m.company_name,(d.label||'')+' · '+(m.meet_date||'')+' · '+exHH(m.slot_hour)+'–'+exHH(m.slot_hour+1),keepScroll);
     $('ex-shS').innerHTML=$('ex-shS').textContent+' '+exStatusPill(m)
       +(m.owner_name?(' <span style="opacity:.85">· '+csEsc(m.owner_name)+'</span>'):'');
     const c=exColor(m.owner_user_id);
@@ -2215,24 +2310,33 @@
           +String(m.wa_phone).replace(/[^0-9]/g,'')+'" target="_blank" rel="noopener">📱 WhatsApp 열기</a></div>'):'')
       +'</div>';
 
-    $('ex-shF').innerHTML='<button class="btn" type="button" id="ex-saveBtn">저장</button>'
-      +((m.kind!=='booth'&&m.status!=='cancelled')
-        ?('<button class="btn '+(m.is_confirmed?'quiet':'gold')+'" type="button" id="ex-confBtn">'
-          +(m.is_confirmed?'확정 취소':'✓ 약속 확정')+'</button>'):'')
-      +'<button class="btn ghost" type="button" id="ex-doneBtn">'+(m.status==='done'?'계획으로 되돌리기':'✅ 미팅 완료')+'</button>'
-      +((isDirector()||Number(m.created_by)===Number(session.user&&session.user.id))
-        ?'<button class="btn red sm" type="button" id="ex-delBtn">삭제</button>':'');
+    // 하단 1줄: [💾 저장] (주 동작) · 2줄: [✓ 약속 확정] [✅ 미팅 완료] [삭제]
+    $('ex-shF').innerHTML='<button class="btn ex-pri" type="button" id="ex-saveBtn" data-dirty="💾 변경 저장">💾 저장</button>'
+      +'<div class="ex-sfsec">'
+        +((m.kind!=='booth'&&m.status!=='cancelled')
+          ?('<button class="btn '+(m.is_confirmed?'ghost':'gold')+'" type="button" id="ex-confBtn">'
+            +(m.is_confirmed?'확정 취소':'✓ 약속 확정')+'</button>'):'')
+        +'<button class="btn ghost" type="button" id="ex-doneBtn">'+(m.status==='done'?'↩ 계획으로':'✅ 미팅 완료')+'</button>'
+        +((isDirector()||Number(m.created_by)===Number(session.user&&session.user.id))
+          ?'<button class="btn red" type="button" id="ex-delBtn">삭제</button>':'')
+      +'</div>';
 
     // 종류 전환(약속 ⇄ 부스) — 저장을 눌러야 반영된다
     $('ex-fKind').querySelectorAll('button').forEach(b=>b.onclick=()=>{
       $('ex-fKind').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
-      b.classList.add('on');
+      b.classList.add('on'); exMarkDirty();
     });
+    // 확정·완료 버튼: 입력하다 만 내용이 있으면 그것까지 함께 저장한다(예전엔 입력값이 사라졌다)
     const cf=$('ex-confBtn');
-    if(cf) cf.onclick=()=>exPatch(m.id,{is_confirmed:!m.is_confirmed},
-      m.is_confirmed?'확정을 취소했습니다':'고객 약속을 확정했습니다');
+    if(cf) cf.onclick=()=>{
+      const x={is_confirmed:!m.is_confirmed}, msg=m.is_confirmed?'확정을 취소했습니다':'고객 약속을 확정했습니다';
+      if(exDirty) exSaveMeeting(m.id,x,msg); else exPatch(m.id,x,msg);
+    };
     $('ex-saveBtn').onclick=()=>exSaveMeeting(m.id);
-    $('ex-doneBtn').onclick=()=>exPatch(m.id,{status:m.status==='done'?'planned':'done'},'상태를 바꿨습니다');
+    $('ex-doneBtn').onclick=()=>{
+      const x={status:m.status==='done'?'planned':'done'};
+      if(exDirty) exSaveMeeting(m.id,x,'저장하고 상태를 바꿨습니다'); else exPatch(m.id,x,'상태를 바꿨습니다');
+    };
     const del=$('ex-delBtn'); if(del) del.onclick=()=>exDelete(m.id);
     $('ex-recBtn').onclick=()=>exOpenRec(m.id);
     const ev=$('ex-evalBtn'); if(ev) ev.onclick=()=>exEvaluate(m.id);
@@ -2269,8 +2373,8 @@
       +'</div>';
   }
 
-  async function exSaveMeeting(id){
-    const btn=$('ex-saveBtn'); btn.disabled=true; btn.textContent='저장 중…';
+  async function exSaveMeeting(id,extra,okMsg){
+    const btn=$('ex-saveBtn'); const label=btn.textContent; btn.disabled=true; btn.textContent='저장 중…';
     const kb=$('ex-fKind').querySelector('button.on');
     const body={
       kind:(kb&&kb.dataset.k)||'meeting',
@@ -2286,9 +2390,12 @@
       goal_note:$('ex-fGoal').value.trim()||null,
       memo:$('ex-fMemo').value.trim()||null
     };
-    if(!body.company_name){ exToast('업체명을 입력하세요'); btn.disabled=false; btn.textContent='저장'; return; }
-    await exPatch(id,body,'저장했습니다');
-    btn.disabled=false; btn.textContent='저장';
+    if(extra) Object.assign(body,extra);
+    if(!body.company_name){ exToast('업체명을 입력하세요'); btn.disabled=false; btn.textContent=label;
+      const f=$('ex-fCompany'); if(f){ f.scrollIntoView&&f.scrollIntoView({block:'center'}); f.focus(); } return false; }
+    const ok=await exPatch(id,body,okMsg||'저장했습니다');
+    if(!ok&&btn.isConnected){ btn.disabled=false; btn.textContent=label; }
+    return ok;
   }
 
   async function exPatch(id,body,okMsg){
@@ -2299,7 +2406,7 @@
       if(!res.ok||d.error){ exToast('실패: '+exErr(d.error||res.status)); return false; }
       exToast(okMsg||'저장했습니다');
       await exLoadBoard(exExpoId);
-      if(exSel) exOpenMeeting(exSel);
+      if(exSel&&!$('ex-sheet').classList.contains('ex-hidden')){ exOpenMeeting(exSel,true); exFlashSaved(); }
       return true;
     }catch(e){ exToast('서버 연결 실패'); return false; }
   }
@@ -2345,6 +2452,7 @@
 
   // ── 정성목표 달성 판단 ──────────────────────────────────────────────
   async function exEvaluate(id){
+    if(exDirty){ const ok=await exSaveMeeting(id); if(!ok) return; }   // 판단은 서버에 저장된 정성목표 기준
     const btn=$('ex-evalBtn'); if(!btn) return;
     btn.disabled=true; btn.innerHTML='<span class="ex-spin"></span>판단 중…';
     try{
@@ -2371,12 +2479,15 @@
 
     $('ex-shB').innerHTML=''
       +'<div class="ex-sec">'
-        +'<div class="st">📌 종류</div>'
+        +'<div class="st">📌 종류 · 확정</div>'
         +'<div class="ex-kindseg" id="ex-nKind">'
           +'<button type="button" data-k="meeting" class="'+(exNewKind==='booth'?'':'on')+'">🤝 고객 약속</button>'
           +'<button type="button" data-k="booth" class="'+(exNewKind==='booth'?'on':'')+'">🚶 부스 방문</button>'
         +'</div>'
         +'<div class="hint" style="margin-top:7px" id="ex-nKindHint"></div>'
+        // 확정·즉석은 「무슨 미팅인가」에 속한다 → 맨 위에서 먼저 정하고, 저장 버튼 문구가 그대로 따라온다
+        +'<label class="ex-check"><input type="checkbox" id="ex-nConfirm"> 고객이 이 약속을 확정했습니다</label>'
+        +'<label class="ex-check"><input type="checkbox" id="ex-nWalk"'+(isNow?' checked':'')+'> 계획 없이 지금 진행된 미팅(즉석)</label>'
       +'</div>'
       +'<div class="ex-sec">'
         +'<div class="st">👤 고객 · 담당</div>'
@@ -2395,8 +2506,6 @@
           +'<div><label>날짜</label><select id="ex-nDay">'+exSlotOpts(day)+'</select></div>'
           +'<div><label>시간</label><select id="ex-nHour">'+exHourOpts(hour)+'</select></div>'
         +'</div>'
-        +'<label class="ex-check"><input type="checkbox" id="ex-nConfirm"> 고객이 이 약속을 확정했습니다</label>'
-        +'<label class="ex-check"><input type="checkbox" id="ex-nWalk"'+(isNow?' checked':'')+'> 계획 없이 지금 진행된 미팅(즉석)</label>'
       +'</div>'
       +'<div class="ex-sec goal">'
         +'<div class="st">🎯 정량목표 <span class="hint" style="margin:0;font-weight:500">'+exCur()+'</span></div>'
@@ -2414,9 +2523,8 @@
         +'<textarea id="ex-nMemo" rows="2" placeholder="즉석 미팅이면 여기에 한두 줄 적고 바로 녹음하세요"></textarea>'
       +'</div>';
 
-    $('ex-shF').innerHTML='<button class="btn" type="button" id="ex-nSave">'
-      +(isNow?'등록하고 바로 녹음':'미팅 계획 저장')+'</button>'
-      +'<button class="btn ghost" type="button" id="ex-nCancel">닫기</button>';
+    $('ex-shF').innerHTML='<button class="btn ex-pri" type="button" id="ex-nSave"></button>'
+      +'<button class="btn ghost ex-close" type="button" id="ex-nCancel">닫기</button>';
 
     // 고객 목록은 고객상담 화면이 이미 불러온 것을 그대로 쓴다(검색 방식도 동일)
     csRenderCustOptions($('ex-nCust'),'','— 직접 입력 —');
@@ -2428,6 +2536,14 @@
       if(list.length===1){ $('ex-nCust').value=String(list[0].id); $('ex-nCompany').value=list[0].name; }
       $('ex-nCustInfo').textContent=csCustInfoText(list,q);
     });
+    // 저장 버튼 문구가 지금 무엇을 저장하는지 말해 준다 — 확정 체크 → 「✓ 확정 미팅으로 저장」
+    function exNSaveLabel(){
+      const booth=exNewKind==='booth';
+      const t=booth?'🚶 부스 방문 저장'
+        :$('ex-nWalk').checked?'🎙 등록하고 바로 녹음'
+        :$('ex-nConfirm').checked?'✓ 확정 미팅으로 저장':'💾 미팅 계획 저장';
+      const b=$('ex-nSave'); if(b&&!b.disabled) b.textContent=t;
+    }
     function exNKindApply(){
       const booth=exNewKind==='booth';
       $('ex-nKindHint').innerHTML=booth
@@ -2437,26 +2553,30 @@
       $('ex-nWalk').closest('label').style.display=booth?'none':'';
       const lab=$('ex-nCompany').previousElementSibling;
       if(lab&&lab.tagName==='LABEL') lab.textContent=booth?'방문한 고객 부스 (직접 입력 가능)':'업체명 (미등록 업체면 직접 입력)';
+      exNSaveLabel();
     }
     $('ex-nKind').querySelectorAll('button').forEach(b=>b.onclick=()=>{
       exNewKind=b.dataset.k;
       $('ex-nKind').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
-      exNKindApply();
+      exNKindApply(); exMarkDirty();
     });
     exNKindApply();
+    $('ex-nConfirm').addEventListener('change',exNSaveLabel);
+    $('ex-nWalk').addEventListener('change',exNSaveLabel);
     $('ex-nCust').onchange=()=>{ const s=$('ex-nCust');
       if(s.value) $('ex-nCompany').value=s.options[s.selectedIndex].text; };
-    $('ex-nCancel').onclick=()=>exCloseSheet();
+    $('ex-nCancel').onclick=()=>exTryClose();
     $('ex-nSave').onclick=()=>exCreate();
   }
 
   async function exCreate(){
     const sel=$('ex-nCust');
     const company=$('ex-nCompany').value.trim()||(sel.value?sel.options[sel.selectedIndex].text:'');
-    if(!company){ exToast('업체명을 입력하거나 고객을 선택하세요'); $('ex-nCompany').focus(); return; }
+    if(!company){ exToast('업체명을 입력하거나 고객을 선택하세요');
+      const f=$('ex-nCompany'); if(f.scrollIntoView) f.scrollIntoView({block:'center'}); f.focus(); return; }
     const booth=exNewKind==='booth';
     const walk=booth?false:$('ex-nWalk').checked;
-    const btn=$('ex-nSave'); btn.disabled=true; btn.textContent='저장 중…';
+    const btn=$('ex-nSave'); const label=btn.textContent; btn.disabled=true; btn.textContent='저장 중…';
     const body={ kind:exNewKind, is_confirmed:booth?false:$('ex-nConfirm').checked,
       company_name:company, customer_id:sel.value?Number(sel.value):null,
       contact_name:$('ex-nContact').value.trim()||null, wa_phone:$('ex-nPhone').value.trim()||null,
@@ -2471,11 +2591,14 @@
       const d=await res.json().catch(()=>({}));
       if(!res.ok||d.error){ exToast('저장 실패: '+exErr(d.error||res.status)); return; }
       await exLoadBoard(exExpoId);
+      // 저장되면 그 미팅 상세로 넘어간다 → 다음 할 일(녹음·확정·완료)이 바로 아래 버튼줄에 있다
       exOpenMeeting(Number(d.id));
+      exFlashSaved(walk?'✓ 등록됨':(body.is_confirmed?'✓ 확정 미팅 저장됨':'✓ 저장됨'));
       if(walk){ exOpenRec(Number(d.id)); }
-      exToast(walk?'즉석 미팅을 기록했습니다 — 녹음을 시작하세요':'미팅 계획을 저장했습니다');
+      exToast(walk?'즉석 미팅을 기록했습니다 — 녹음을 시작하세요'
+        :booth?'부스 방문을 저장했습니다':(body.is_confirmed?'확정 미팅으로 저장했습니다':'미팅 계획을 저장했습니다 — 확정되면 [✓ 약속 확정]'));
     }catch(e){ exToast('서버 연결 실패'); }
-    finally{ btn.disabled=false; btn.textContent='저장'; }
+    finally{ if(btn.isConnected){ btn.disabled=false; btn.textContent=label; } }
   }
 
   // ── 전시회 설정 ─────────────────────────────────────────────────────
@@ -2487,7 +2610,7 @@
       $('ex-shB').innerHTML='<div class="ex-sec"><div class="hint">전시회 등록·수정은 디렉터 계정에서만 가능합니다. '
         +'미팅 계획과 기록은 지금 계정으로 그대로 하실 수 있습니다.</div></div>';
       $('ex-shF').innerHTML='<button class="btn ghost" type="button" id="ex-sClose">닫기</button>';
-      $('ex-sClose').onclick=()=>exCloseSheet(); return;
+      $('ex-sClose').onclick=()=>exTryClose(); return;
     }
     exSheetOpen(isNew?'⚙ 전시회 등록':'⚙ 전시회 설정',isNew?'RUJAC 전시회를 먼저 만들어 주세요':e.name);
     const hOpt=(v,lo,hi)=>{let s='';for(let h=lo;h<=hi;h++)s+='<option value="'+h+'"'+(Number(v)===h?' selected':'')+'>'+exHH(h)+'</option>';return s;};
@@ -2502,7 +2625,7 @@
         +'</div>'
         +'<div class="ex-f2" style="margin-top:9px">'
           +'<div><label>시작 시각</label><select id="ex-sSh">'+hOpt(isNew?8:e.start_hour,6,12)+'</select></div>'
-          +'<div><label>종료 시각</label><select id="ex-sEh">'+hOpt(isNew?18:e.end_hour,13,22)+'</select></div>'
+          +'<div><label>종료 시각</label><select id="ex-sEh">'+hOpt(isNew?EX_DEF_END:e.end_hour,13,23)+'</select></div>'
         +'</div>'
         +'<div class="ex-f2" style="margin-top:9px">'
           +'<div><label>통화</label><select id="ex-sCur">'+['MXN','USD'].map(c=>'<option value="'+c+'"'
@@ -2514,9 +2637,9 @@
       +'</div>'
       +(isNew?'':'<div class="ex-sec"><div class="st">＋ 다른 전시회</div>'
         +'<button class="btn ghost sm" type="button" id="ex-sNew">새 전시회 만들기</button></div>');
-    $('ex-shF').innerHTML='<button class="btn" type="button" id="ex-sSave">'+(isNew?'전시회 만들기':'설정 저장')+'</button>'
-      +'<button class="btn ghost" type="button" id="ex-sClose">닫기</button>';
-    $('ex-sClose').onclick=()=>exCloseSheet();
+    $('ex-shF').innerHTML='<button class="btn ex-pri" type="button" id="ex-sSave" data-dirty="💾 변경 저장">'+(isNew?'전시회 만들기':'설정 저장')+'</button>'
+      +'<button class="btn ghost ex-close" type="button" id="ex-sClose">닫기</button>';
+    $('ex-sClose').onclick=()=>exTryClose();
     const nb=$('ex-sNew'); if(nb) nb.onclick=()=>{ exBoard=null; exOpenSettings(); };
     $('ex-sSave').onclick=()=>exSaveExpo(isNew?null:e.id);
   }
@@ -2529,7 +2652,7 @@
     if(!body.name){ exToast('전시회 이름을 입력하세요'); return; }
     if(!body.start_date){ exToast('1st day 날짜를 선택하세요'); return; }
     if(body.end_hour<=body.start_hour){ exToast('종료 시각이 시작 시각보다 늦어야 합니다'); return; }
-    const btn=$('ex-sSave'); btn.disabled=true; btn.textContent='저장 중…';
+    const btn=$('ex-sSave'); const label=btn.textContent; btn.disabled=true; btn.textContent='저장 중…';
     try{
       const url=session.api+'/api/exhibitions'+(id?('/'+id):'');
       const res=await fetch(url,{method:id?'PATCH':'POST',
@@ -2539,19 +2662,30 @@
       exExpoId=id||Number(d.id);
       exCloseSheet(); await exLoadExpos(); exToast('전시회를 저장했습니다');
     }catch(e){ exToast('서버 연결 실패'); }
-    finally{ btn.disabled=false; btn.textContent=id?'설정 저장':'전시회 만들기'; }
+    finally{ if(btn.isConnected){ btn.disabled=false; btn.textContent=label; } }
   }
 
   // ── 배선 ────────────────────────────────────────────────────────────
   $('modeNormal').addEventListener('click',()=>exSwitch('normal'));
   $('modeExpo').addEventListener('click',()=>exSwitch('expo'));
-  $('ex-shX').addEventListener('click',()=>exCloseSheet());
-  $('ex-backdrop').addEventListener('click',()=>exCloseSheet());
+  $('ex-shX').addEventListener('click',()=>exTryClose());
+  $('ex-backdrop').addEventListener('click',()=>exTryClose());
+  // 시트 안에서 입력이 바뀌면 「저장 안 한 변경」 — 녹음 카드(끌어온 #cs-recCard) 안의 조작은 제외
+  ['input','change'].forEach(ev=>$('ex-shB').addEventListener(ev,(e)=>{
+    const t=e.target; if(!t||!t.matches||!t.matches('input,select,textarea')) return;
+    const rc=$('cs-recCard'); if(rc&&rc.contains(t)) return;
+    exMarkDirty();
+  }));
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',exFitViewport);
+    window.visualViewport.addEventListener('scroll',exFitViewport);
+  }
   // 창 크기가 바뀌면(회전·창 조절) 모달/사이드 여부가 달라지므로 잠금을 다시 계산한다
   window.addEventListener('resize',()=>{
     const open=!$('ex-sheet').classList.contains('ex-hidden');
     $('ex-backdrop').classList.toggle('ex-hidden', !(open&&exIsModal()));
     exLock(open&&exIsModal());
+    exNavH(); exFitViewport();
   });
   $('ex-setBtn').addEventListener('click',exOpenSettings);
   $('ex-reload').addEventListener('click',()=>{ if(exExpoId) exLoadBoard(exExpoId); else exLoadExpos(); });
@@ -2571,7 +2705,7 @@
     exDay=day; exRenderTabs(); exRenderBoard(); exOpenNew(day,hour);
   });
   document.addEventListener('keydown',(e)=>{
-    if(e.key==='Escape'&&!$('ex-sheet').classList.contains('ex-hidden')) exCloseSheet();
+    if(e.key==='Escape'&&!$('ex-sheet').classList.contains('ex-hidden')) exTryClose();
   });
   exSetView(exView);
 

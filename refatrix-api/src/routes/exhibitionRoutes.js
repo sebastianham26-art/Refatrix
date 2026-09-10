@@ -23,7 +23,7 @@ import { consultAiApi, aiReady } from './consultRoutes.js';
 import {
   clip, num, dayAxis, hourAxis, ownerColorMap, meetingTotals, ownerTotals,
   buildQualEvalPrompt, parseQualEvalJson, summaryToText, normQual, normKind,
-  OWNER_UNSET, BOOTH_COLOR,
+  OWNER_UNSET, BOOTH_COLOR, DEFAULT_START_HOUR, DEFAULT_END_HOUR,
 } from '../exhibitionAi.js';
 
 const PAGE = 'pipeline';
@@ -224,8 +224,8 @@ export default async function exhibitionRoutes(app) {
     if (!DATE_RE.test(String(b.start_date))) return reply.code(400).send({ error: 'bad_date' });
     const dayCount = intIn(b.day_count, 1, 10) || 3;
     const sh = intIn(b.start_hour, 0, 23); const eh = intIn(b.end_hour, 1, 24);
-    const startHour = sh == null ? 8 : sh;
-    const endHour = eh == null ? 18 : eh;
+    const startHour = sh == null ? DEFAULT_START_HOUR : sh;
+    const endHour = eh == null ? DEFAULT_END_HOUR : eh;
     if (endHour <= startHour) return reply.code(400).send({ error: 'bad_hours' });
     const active = b.is_active === undefined ? true : !!b.is_active;
     if (active) await query(`UPDATE exhibitions SET is_active = FALSE WHERE is_active = TRUE`);
