@@ -22,6 +22,7 @@ import {
   buildPagePrompt, parsePageJson, normRedNumber, normPrefix, pageFileName, normalizeAnswers,
   buildThemePrompt, parseThemeJson, crossSummaryText, buildInsightPrompt, parseInsightJson, zipStream,
 } from '../surveyAi.js';
+import { normalizeGeo, STATE_NAMES } from '../surveyGeo.js';
 
 const PAGE = 'marketing';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -149,7 +150,7 @@ function pageOut(r, prefix) {
     red_number: r.red_number || null, red_raw: r.red_raw || null, dup_idx: Number(r.dup_idx || 1),
     file_name: pageFileName({ prefix, red_number: r.red_number, dup_idx: r.dup_idx, seq: r.seq, mime: r.mime, status: r.status }),
     status: r.status, error: r.error || null, attempts: Number(r.attempts || 0),
-    answers: r.answers || null, others: r.others || {}, low_conf: r.low_conf || [], edited: r.edited || {},
+    answers: r.answers || null, others: r.others || {}, geo: r.geo || {}, low_conf: r.low_conf || [], edited: r.edited || {},
     notes: r.ai_notes || null, has_view: !!r.has_view, has_thumb: !!r.has_thumb,
     uploaded_by: r.uploaded_by_name || null, created_at: iso(r.created_at), processed_at: iso(r.processed_at),
   };
@@ -183,7 +184,7 @@ export async function processPage(row) {
   if (!s) return markFail(pid, 'survey_deleted', false, row.attempts);
   const questions = qList(s);
   if (!questions.length) return markFail(pid, 'no_questions', false, row.attempts);
-  const bin = (await query(`SELECT mime, file_data, view_data, edited, red_number FROM survey_pages WHERE id=$1`, [pid])).rows[0];
+  const bin = (await query(`SELECT mime, file_data, view_data, edited, red_number, geo FROM survey_pages WHERE id=$1`, [pid])).rows[0];
   if (!bin) return false;
 
   const out = await surveyAiApi.call([mediaBlock(bin), { type: 'text', text: buildPagePrompt(questions, s.number_hint) }], 2500);
@@ -200,9 +201,11 @@ export async function processPage(row) {
   const answers = { ...p.answers };
   let low = p.low_conf.slice();
   const prevAns = (await query(`SELECT answers, others FROM survey_pages WHERE id=$1`, [pid])).rows[0] || {};
+  const geo = { ...(p.geo || {}) };
   for (const k of Object.keys(edited)) {
     if (k === '_no') continue;
     if (prevAns.answers && Object.prototype.hasOwnProperty.call(prevAns.answers, k)) answers[k] = prevAns.answers[k];
+    if (bin.geo && bin.geo[k]) geo[k] = bin.geo[k];          // 사람이 고른 주·도시는 다시 판독해도 지킨다
     low = low.filter((x) => x !== k);
   }
   const keepNo = !!edited._no;
@@ -216,10 +219,10 @@ export async function processPage(row) {
     await q(
       `UPDATE survey_pages
           SET status='done', error=NULL, answers=$2, others=$3, low_conf=$4, red_number=$5, red_raw=$6,
-              dup_idx=$7, ai_notes=$8, ai_model=$9, processed_at=now()
+              dup_idx=$7, ai_notes=$8, ai_model=$9, geo=$10, processed_at=now()
         WHERE id=$1`,
       [pid, JSON.stringify(answers), JSON.stringify(p.others || {}), low, red || null,
-        keepNo ? null : p.red_raw, dup, p.notes || null, AI_MODEL()]);
+        keepNo ? null : p.red_raw, dup, p.notes || null, AI_MODEL(), JSON.stringify(geo)]);
   });
   return true;
 }
@@ -420,7 +423,7 @@ export default async function surveyRoutes(app) {
     if (!s) return reply.code(404).send({ error: 'not_found' });
     const rows = (await query(
       `SELECT p.id, p.seq, p.orig_name, p.mime, p.file_bytes, p.red_number, p.red_raw, p.dup_idx, p.status, p.error,
-              p.attempts, p.answers, p.others, p.low_conf, p.edited, p.ai_notes,
+              p.attempts, p.answers, p.others, p.geo, p.low_conf, p.edited, p.ai_notes,
               (p.view_data IS NOT NULL) AS has_view, (p.thumb_data IS NOT NULL) AS has_thumb,
               p.created_at, p.processed_at, u.name AS uploaded_by_name
          FROM survey_pages p LEFT JOIN users u ON u.id = p.uploaded_by
@@ -433,7 +436,7 @@ export default async function surveyRoutes(app) {
     const pid = idOf(pidRaw);
     if (!pid) return null;
     const r = (await query(
-      `SELECT p.id, p.survey_id, p.seq, p.mime, p.red_number, p.dup_idx, p.status, p.answers, p.low_conf, p.edited,
+      `SELECT p.id, p.survey_id, p.seq, p.mime, p.red_number, p.dup_idx, p.status, p.answers, p.geo, p.low_conf, p.edited,
               s.code_prefix, s.questions
          FROM survey_pages p JOIN surveys s ON s.id = p.survey_id AND s.deleted_at IS NULL
         WHERE p.id = $1`, [pid])).rows[0];
@@ -478,7 +481,24 @@ export default async function surveyRoutes(app) {
     const edited = { ...(p.edited || {}) };
     let low = Array.isArray(p.low_conf) ? p.low_conf.slice() : [];
     const answers = { ...(p.answers || {}) };
+    const geo = { ...(p.geo || {}) };
     let changedKeys = [];
+    // 지역 수정: {geo:{q2:{estado:'Nuevo León', ciudad:'Monterrey'}}} — 주는 32개 목록 안이어야 한다
+    if (b.geo && typeof b.geo === 'object') {
+      for (const q of questions.filter((x) => x.type === 'geo')) {
+        if (!Object.prototype.hasOwnProperty.call(b.geo, q.k)) continue;
+        const g = b.geo[q.k] || {};
+        const est = g.estado == null || g.estado === '' ? null : String(g.estado);
+        if (est && !STATE_NAMES.includes(est)) return reply.code(400).send({ error: 'bad_state', k: q.k });
+        const ciudad = clip(g.ciudad, 80) || null;
+        const prev = (p.geo || {})[q.k] || {};
+        geo[q.k] = { estado: est, ciudad, raw: prev.raw || [ciudad, est].filter(Boolean).join(', ') };
+        answers[q.k] = est;
+        edited[q.k] = true;
+        low = low.filter((x) => x !== q.k);
+        changedKeys.push(q.k);
+      }
+    }
     if (b.answers && typeof b.answers === 'object') {
       const qs = questions.filter((q) => Object.prototype.hasOwnProperty.call(b.answers, q.k));
       if (qs.length) {
@@ -513,8 +533,8 @@ export default async function surveyRoutes(app) {
         red = want; edited._no = true; low = low.filter((x) => x !== '_no');
         changedKeys.push('_no');
       }
-      await q(`UPDATE survey_pages SET answers=$2, red_number=$3, dup_idx=$4, edited=$5, low_conf=$6 WHERE id=$1`,
-        [Number(p.id), JSON.stringify(answers), red, dup, JSON.stringify(edited), low]);
+      await q(`UPDATE survey_pages SET answers=$2, red_number=$3, dup_idx=$4, edited=$5, low_conf=$6, geo=$7 WHERE id=$1`,
+        [Number(p.id), JSON.stringify(answers), red, dup, JSON.stringify(edited), low, JSON.stringify(geo)]);
       return { red, dup };
     });
     if (result.err) return reply.code(409).send({ error: result.err, page_id: result.page_id });
@@ -546,6 +566,48 @@ export default async function surveyRoutes(app) {
     await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey:${s.id}`, detail: { reprocess: scope, n: r.rowCount } });
     setTimeout(() => { pump().catch(() => {}); }, 30);
     return { ok: true, queued: r.rowCount, ai_ready: aiReady() };
+  });
+
+  // ── 지역 다시 정리 (AI 호출 없음) ──
+  //   규칙표(주 별칭·도시)를 고치거나, 지역 문항으로 유형을 바꾼 뒤 이미 읽어 둔 답을 다시 맞춘다.
+  //   사람이 고친 칸은 건드리지 않는다.
+  app.post('/api/surveys/:id/geo-normalize', { preHandler: [authGuard, requirePageEdit(PAGE)] }, async (req, reply) => {
+    const s = await getSurvey(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'not_found' });
+    const geoQs = qList(s).filter((q) => q.type === 'geo');
+    if (!geoQs.length) return reply.code(409).send({ error: 'no_geo_question' });
+    const rows = (await query(
+      `SELECT id, answers, others, geo, edited, low_conf FROM survey_pages WHERE survey_id=$1 AND status='done' ORDER BY seq`,
+      [Number(s.id)])).rows;
+    let changed = 0; let unresolved = 0;
+    for (const r of rows) {
+      const answers = { ...(r.answers || {}) };
+      const geo = { ...(r.geo || {}) };
+      const edited = r.edited || {};
+      const low = new Set(r.low_conf || []);
+      let touched = false;
+      for (const q of geoQs) {
+        if (edited[q.k]) { if (!answers[q.k]) unresolved++; continue; }      // 사람이 고른 것은 그대로
+        const prev = geo[q.k] || {};
+        const src = prev.raw || (r.others || {})[q.k] || answers[q.k] || '';
+        if (!src) continue;
+        const g = normalizeGeo({ estado: prev.estado || src, ciudad: prev.ciudad || '' });
+        const next = { estado: g.estado, ciudad: g.ciudad, raw: prev.raw || String(src).slice(0, 160) };
+        const same = (prev.estado || null) === (next.estado || null) && (prev.ciudad || null) === (next.ciudad || null)
+          && (prev.raw || '') === (next.raw || '') && (answers[q.k] || null) === (g.estado || null);
+        if (!same) touched = true;
+        geo[q.k] = next;
+        answers[q.k] = g.estado;
+        if (g.estado) low.delete(q.k); else { low.add(q.k); unresolved++; }
+      }
+      if (touched) {
+        changed++;
+        await query(`UPDATE survey_pages SET answers=$2, geo=$3, low_conf=$4 WHERE id=$1`,
+          [Number(r.id), JSON.stringify(answers), JSON.stringify(geo), [...low]]);
+      }
+    }
+    await logEvent({ userId: req.ctx.perm.userId, action: 'update', target: `survey:${s.id}`, detail: { geo_normalize: changed } });
+    return { ok: true, scanned: rows.length, changed, unresolved };
   });
 
   // ── 1장 삭제(중복 등) ──

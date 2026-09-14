@@ -32,6 +32,7 @@ process.env.SURVEY_AI_CONCURRENCY = '1';   // 중복 순번(-2, -3)을 결정적
 process.env.SURVEY_AI_PAUSE_MS = '50';
 
 const S = await import('../src/surveyAi.js');
+const G = await import('../src/surveyGeo.js');
 
 const QS = S.normalizeQuestions([
   { text: 'Tipo de negocio', ko: '업종', type: 'single', options: ['Refaccionaria', 'Taller mecánico', 'Distribuidor', 'Otro'], seg: true },
@@ -132,6 +133,46 @@ test('A8. 교차 요약 텍스트에는 비율만 있고 서술형 원문은 없
   assert.ok(!t.includes('secreto'), '서술형 원문을 보내지 않는다');
 });
 
+// ── A-geo. 손으로 적은 지역 → 멕시코 32개 주 ─────────────────────────
+test('A9. 주 표기 흔들림을 한 이름으로 모은다', () => {
+  const st = (e, c) => G.normalizeGeo({ estado: e, ciudad: c }).estado;
+  assert.equal(G.STATE_NAMES.length, 32);
+  for (const v of ['N.L.', 'NL', 'nuevo leon', 'NUEVO LEÓN', 'Nvo. León', 'Mty, N.L.']) assert.equal(st(v, ''), 'Nuevo León', v);
+  for (const v of ['CDMX', 'D.F.', 'Distrito Federal', 'Ciudad de Mexico']) assert.equal(st(v, ''), 'Ciudad de México', v);
+  assert.equal(st('Yuc.', 'Mérida'), 'Yucatán');
+  assert.equal(st('', 'MERIDA'), 'Yucatán', '주가 비어도 도시로 찾는다');
+  assert.equal(st('', 'Cancún'), 'Quintana Roo');
+  assert.equal(st('Coah', 'Torreón'), 'Coahuila');
+  assert.equal(st('Edo. de México', ''), 'Estado de México');
+  assert.equal(st('Q. Roo', ''), 'Quintana Roo');
+});
+
+test('A10. 헷갈리는 도시는 추측하지 않고 「확인 필요」로 둔다', () => {
+  for (const c of ['Guadalupe', 'Juárez', 'Matamoros', 'Santiago']) {
+    const g = G.normalizeGeo({ estado: '', ciudad: c });
+    assert.equal(g.estado, null, c + ' 는 여러 주에 있다');
+    assert.equal(g.ambiguous, true);
+    assert.equal(g.ciudad, c);
+  }
+  assert.equal(G.normalizeGeo({ estado: 'Chihuahua', ciudad: 'Cd Juarez' }).estado, 'Chihuahua', '주가 적혀 있으면 그것이 이긴다');
+  assert.equal(G.normalizeGeo({ estado: 'N.L.', ciudad: 'Guadalupe' }).estado, 'Nuevo León');
+  assert.equal(G.normalizeGeo({ estado: 'México', ciudad: '' }).estado, null, '「México」 한 단어는 나라·주·도시가 섞여 모호하다');
+  assert.equal(G.normalizeGeo({ estado: '', ciudad: '' }).estado, null);
+});
+
+test('A11. 지역 문항 — 보기는 32개 주로 고정, 답은 표준 주 이름으로 저장', () => {
+  const qs = S.normalizeQuestions([{ text: 'Estado', ko: '지역', type: 'geo' }]).questions;
+  assert.equal(qs[0].options.length, 32);
+  assert.equal(qs[0].seg, true, '지역은 기본으로 세그먼트');
+  const p = S.parsePageJson(JSON.stringify({ red_number: '3', answers: { q1: { estado: 'Yuc', ciudad: 'Mérida' } } }), qs);
+  assert.equal(p.answers.q1, 'Yucatán');
+  assert.deepEqual(p.geo.q1, { estado: 'Yucatán', ciudad: 'Mérida', raw: 'Mérida, Yuc' });
+  const bad = S.parsePageJson(JSON.stringify({ red_number: '4', answers: { q1: { estado: '', ciudad: 'Guadalupe' } } }), qs);
+  assert.equal(bad.answers.q1, null);
+  assert.ok(bad.low_conf.includes('q1'), '주를 못 정하면 확인 필요로 표시');
+  assert.equal(bad.geo.q1.ciudad, 'Guadalupe');
+});
+
 // ── B. 소스 계약 ─────────────────────────────────────────────────────
 test('B1. 서버에 등록되고, 권한은 marketing 화면키를 쓴다', () => {
   const server = read(join(API, 'src/server.js'));
@@ -180,6 +221,10 @@ dbTest('C. 업로드 → 판독 큐 → 파일명·중복·번호없음·재시�
     const raw = Buffer.from(media.source.data, 'base64').toString('utf8');
     seen.push({ type: media.type, raw });
     const m = /MK:([^|]*)\|([^|]*)\|([^|]*)\|?([A-Z]*)/.exec(raw) || [];
+    if (text.includes('"type":"geo"')) {      // 지역 설문(D) — 표식 = 번호|주|도시
+      return { ok: true, text: JSON.stringify({ red_number: m[1], red_number_confidence: 'high',
+        answers: { q1: { estado: m[2] || '', ciudad: m[3] || '' }, q2: 'Refaccionaria' }, low_confidence: [] }) };
+    }
     if (m[1] === 'NOTSURVEY') return { ok: true, text: '{"not_survey":true}' };
     if (m[4] === 'RATE' && fail429 > 0) { fail429--; return { ok: false, status: 429, error: 'ai: rate', transient: true }; }
     return { ok: true, text: JSON.stringify({
@@ -206,7 +251,7 @@ dbTest('C. 업로드 → 판독 큐 → 파일명·중복·번호없음·재시�
 
   let sid = null;
   t.after(async () => {
-    if (sid) await query(`DELETE FROM surveys WHERE id=$1`, [sid]).catch(() => {});
+    await query(`DELETE FROM surveys WHERE created_by = ANY($1::bigint[]) OR updated_by = ANY($1::bigint[])`, [[dir, mkt, viewer, sales]]).catch(() => {});
     await query(`DELETE FROM audit_log WHERE user_id = ANY($1::bigint[])`, [[dir, mkt, viewer, sales]]).catch(() => {});
     await query(`DELETE FROM user_page_access WHERE user_id = ANY($1::bigint[])`, [[dir, mkt, viewer, sales]]);
     await query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [[dir, mkt, viewer, sales]]);
@@ -342,6 +387,50 @@ dbTest('C. 업로드 → 판독 큐 → 파일명·중복·번호없음·재시�
   assert.equal(f1.headers['content-type'], 'application/pdf');
   const v1 = await call(viewer, 'GET', `/api/surveys/pages/${ids[5]}/view`);
   assert.equal(v1.headers['content-type'], 'image/jpeg');
+
+  // C13. 지역(주) 문항 — 표기 정리 · 사람 수정 보존 · 다시 정리(무AI)
+  const cr2 = await call(mkt, 'POST', '/api/surveys', { title: 'Geo ' + TAG, code_prefix: 'GEO' + TAG.slice(-3) });
+  const gid = cr2.j.id;
+  const gq = await call(mkt, 'PUT', `/api/surveys/${gid}`, { questions: [
+    { text: 'Estado', ko: '지역', type: 'geo' },
+    { text: 'Giro', type: 'single', options: ['Refaccionaria', 'Taller'] }] });
+  assert.equal(gq.code, 200);
+  assert.equal(gq.j.questions[0].options.length, 32, '지역 문항 보기는 32개 주');
+  assert.equal(gq.j.questions[0].seg, true);
+  const gids = [];
+  for (const mk of ['MK:0001|Mty, N.L.|', 'MK:0002||Guadalupe', 'MK:0003|Yuc|Merida']) {
+    const r = await call(mkt, 'POST', `/api/surveys/${gid}/pages`, { mime: 'image/jpeg', file_b64: fakeJpeg(mk).toString('base64') });
+    assert.equal(r.code, 200); gids.push(r.j.id);
+  }
+  assert.ok(await R.drainForTest(15000));
+  let GL = (await call(viewer, 'GET', `/api/surveys/${gid}/pages`)).j;
+  const gById = (id) => GL.items.find((x) => x.id === id);
+  assert.equal(gById(gids[0]).answers.q1, 'Nuevo León');
+  assert.equal(gById(gids[0]).geo.q1.ciudad, 'Monterrey', 'Mty → Monterrey');
+  assert.equal(gById(gids[1]).answers.q1, null, 'Guadalupe 는 여러 주에 있어 비워 둔다');
+  assert.ok(gById(gids[1]).low_conf.includes('q1'));
+  assert.equal(gById(gids[2]).answers.q1, 'Yucatán');
+  // 사람이 주를 골라 준다
+  const badState = await call(mkt, 'PATCH', `/api/surveys/pages/${gids[1]}`, { geo: { q1: { estado: 'Texas', ciudad: 'Guadalupe' } } });
+  assert.equal(badState.code, 400, '32개 주 밖의 값은 거부');
+  const fix = await call(mkt, 'PATCH', `/api/surveys/pages/${gids[1]}`, { geo: { q1: { estado: 'Nuevo León', ciudad: 'Guadalupe' } } });
+  assert.equal(fix.code, 200);
+  GL = (await call(viewer, 'GET', `/api/surveys/${gid}/pages`)).j;
+  assert.equal(gById(gids[1]).answers.q1, 'Nuevo León');
+  assert.equal(gById(gids[1]).edited.q1, true);
+  assert.ok(!gById(gids[1]).low_conf.includes('q1'));
+  // 다시 정리(AI 호출 없음) — 사람이 고른 것은 그대로
+  const gn = await call(mkt, 'POST', `/api/surveys/${gid}/geo-normalize`, {});
+  assert.equal(gn.code, 200); assert.equal(gn.j.scanned, 3);
+  GL = (await call(viewer, 'GET', `/api/surveys/${gid}/pages`)).j;
+  assert.equal(gById(gids[1]).answers.q1, 'Nuevo León', '사람이 고른 주는 유지');
+  // 다시 판독해도 사람이 고른 지역은 유지
+  await call(mkt, 'POST', `/api/surveys/${gid}/reprocess`, { scope: 'all' });
+  assert.ok(await R.drainForTest(15000));
+  GL = (await call(viewer, 'GET', `/api/surveys/${gid}/pages`)).j;
+  assert.equal(gById(gids[1]).answers.q1, 'Nuevo León');
+  assert.equal(gById(gids[0]).answers.q1, 'Nuevo León');
+  await call(dir, 'DELETE', `/api/surveys/${gid}`);
 
   // C12. 설문 삭제는 디렉터만
   assert.equal((await call(mkt, 'DELETE', `/api/surveys/${sid}`)).code, 403);

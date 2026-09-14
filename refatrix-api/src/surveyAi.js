@@ -11,10 +11,13 @@
 //   네트워크·DB 호출 없음. surveyRoutes.js 가 사용하고, 전부 단위 테스트한다.
 // =====================================================================
 
-export const Q_TYPES = ['single', 'multi', 'scale', 'number', 'text', 'info'];
+import { STATE_NAMES, normalizeGeo } from './surveyGeo.js';
+
+export const Q_TYPES = ['single', 'multi', 'scale', 'number', 'text', 'info', 'geo'];
 export const Q_TYPE_LABEL = {
-  single: '단일선택', multi: '복수선택', scale: '척도', number: '숫자', text: '서술형', info: '기재정보',
+  single: '단일선택', multi: '복수선택', scale: '척도', number: '숫자', text: '서술형', info: '기재정보', geo: '지역(주)',
 };
+export { STATE_NAMES };
 const MAX_Q = 80;
 const MAX_OPTS = 40;
 
@@ -76,6 +79,11 @@ export function normalizeQuestions(list, prevQuestions) {
       if (!item.options_ko.some(Boolean)) item.options_ko = [];
       if (item.options.length < 2) errors.push({ at: i + 1, error: 'few_options' });
       item.seg = type === 'single' && !!q.seg;
+    } else if (type === 'geo') {
+      // 지역 문항: 보기는 멕시코 32개 주로 고정(사람이 못 고친다) · 세그먼트 기본 켜짐
+      item.options = STATE_NAMES.slice();
+      item.options_ko = [];
+      item.seg = q.seg === false ? false : true;
     } else if (type === 'scale') {
       let mn = Number.isInteger(Number(q.min)) ? Number(q.min) : 1;
       let mx = Number.isInteger(Number(q.max)) ? Number(q.max) : 5;
@@ -122,6 +130,7 @@ export function buildTemplatePrompt() {
     '- number: se escribe una cantidad (piezas al mes, empleados, años).',
     '- text: opinión/comentario abierto (se resumirá por temas).',
     '- info: datos de contacto o identificación escritos a mano (nombre, negocio, teléfono, correo, dirección, RFC). No se analizan.',
+    '- geo: pregunta de UBICACIÓN escrita a mano (estado, ciudad, municipio, plaza, "¿de dónde nos visita?"). Úsalo aunque haya una lista impresa de estados. No pongas options; el sistema usa los 32 estados de México.',
     '- Si una opción es "Otro: ____" incluye la opción "Otro" tal cual.',
     '- Si hay una tabla/matriz (p.ej. calificar varias marcas), crea UNA pregunta por fila: "Pregunta — Fila".',
     '- seg=true SOLO para preguntas single de perfil del cliente (giro/tipo de negocio, estado/ciudad, tamaño, antigüedad).',
@@ -142,6 +151,7 @@ export function parseTemplateJson(text) {
 export function schemaForPrompt(questions) {
   return questions.map((q) => {
     const o = { k: q.k, type: q.type, text: q.text };
+    if (q.type === 'geo') return o;                       // 보기(32개 주)는 보내지 않는다 — 적힌 그대로 읽게
     if (q.type === 'single' || q.type === 'multi') o.options = q.options;
     if (q.type === 'scale') { o.min = q.min; o.max = q.max; }
     return o;
@@ -158,11 +168,12 @@ export function buildPagePrompt(questions, numberHint) {
     '',
     'Devuelve SOLO un objeto JSON:',
     '{"red_number":"0137 o null si no hay/ilegible","red_number_confidence":"high|low",',
-    ' "answers":{"q1":"opción exacta","q2":["opción","opción"],"q3":4,"q4":"texto transcrito"},',
+    ' "answers":{"q1":"opción exacta","q2":["opción","opción"],"q3":4,"q4":"texto transcrito","q5":{"estado":"N.L.","ciudad":"Monterrey"}},',
     ' "others":{"q1":"lo escrito en Otro: ____"},"low_confidence":["q2"],"not_survey":false,"notes":""}',
     '',
     'Reglas:',
     '- single: una opción de la lista (texto exacto) o null si no contestó. Si marcó "Otro" y escribió algo, pon "Otro" y el texto en others.',
+    '- geo (ubicación): devuelve un objeto {"estado":"...","ciudad":"..."} copiando EXACTAMENTE lo escrito (abreviaturas incluidas: "Mty", "N.L.", "Yuc."). No corrijas ni completes; si sólo hay una palabra, ponla en el campo que corresponda y deja el otro vacío.',
     '- multi: arreglo con las opciones marcadas (texto exacto); [] si ninguna.',
     '- scale / number: número; null si no contestó.',
     '- text / info: transcribe literalmente lo escrito, en su idioma original, sin corregir ni resumir; "" si está vacío.',
@@ -215,10 +226,15 @@ export function normalizeAnswers(rawAnswers, rawOthers, rawLow, questions) {
   const A = rawAnswers && typeof rawAnswers === 'object' ? rawAnswers : {};
   const O = rawOthers && typeof rawOthers === 'object' ? rawOthers : {};
   const low = new Set((Array.isArray(rawLow) ? rawLow : []).map(String));
-  const answers = {}; const others = {};
+  const answers = {}; const others = {}; const geo = {};
   for (const q of questions) {
     const v = A[q.k];
-    if (q.type === 'single') {
+    if (q.type === 'geo') {
+      const g = normalizeGeo(v && typeof v === 'object' ? v : { estado: v, ciudad: (O[q.k] || '') });
+      answers[q.k] = g.estado;
+      if (g.raw) geo[q.k] = { estado: g.estado, ciudad: g.ciudad, raw: g.raw };
+      if (g.raw && !g.estado) low.add(q.k);     // 주를 못 정하면 「확인 필요」 — 추측하지 않는다
+    } else if (q.type === 'single') {
       let m = null;
       if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) {
         const cand = Array.isArray(v) ? v[0] : v;
@@ -260,7 +276,7 @@ export function normalizeAnswers(rawAnswers, rawOthers, rawLow, questions) {
     }
   }
   const keys = new Set(questions.map((q) => q.k));
-  return { answers, others, low_conf: [...low].filter((k) => keys.has(k)) };
+  return { answers, others, geo, low_conf: [...low].filter((k) => keys.has(k)) };
 }
 
 export function parsePageJson(text, questions) {
@@ -335,7 +351,7 @@ export function parseThemeJson(text, validIds) {
 
 // 세그먼트 교차 요약(프롬프트용 텍스트) — 비율만 보낸다(원문·개인정보는 보내지 않는다)
 export function crossSummaryText(questions, rows) {
-  const cats = questions.filter((q) => q.type === 'single' || q.type === 'multi' || q.type === 'scale');
+  const cats = questions.filter((q) => ['single', 'multi', 'scale', 'geo'].includes(q.type));
   const segs = questions.filter((q) => q.seg);
   const lines = [];
   const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
@@ -352,7 +368,9 @@ export function crossSummaryText(questions, rows) {
       if (q.type === 'multi') { if (Array.isArray(v) && v.length) { n++; v.forEach((x) => { if (x in cnt) cnt[x]++; }); } }
       else if (v != null && v in cnt) { n++; cnt[v]++; }
     }
-    return q.options.map((o) => `${o} ${pct(cnt[o], n)}%`).join(', ') + ` (n=${n})`;
+    let opts = q.options;
+    if (q.type === 'geo') opts = opts.filter((o) => cnt[o] > 0).sort((a, b) => cnt[b] - cnt[a]).slice(0, 8);   // 주는 응답 있는 상위 8개만
+    return opts.map((o) => `${o} ${pct(cnt[o], n)}%`).join(', ') + ` (n=${n})`;
   };
   lines.push(`Total respuestas: ${rows.length}`);
   for (const q of cats) lines.push(`[${q.k}] ${q.text}: ${distLine(q, rows)}`);
