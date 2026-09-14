@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260909guia loaded (+ 커미셔너 안내서 Guía del Comisionista)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260911survey loaded (+ 고객 설문 분석 · 외부 서비스 키 메뉴 복구)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -137,11 +137,13 @@
     prodHistory:{file:'refatrix-products.html',name:'제품 변경이력',desc:'마스터 변경·판매상태 + 이후 movement',tab:'history'},
     marketing:{file:'refatrix-marketing.html',name:'마케팅',desc:'예산·배분'},
     mktspend:{file:'refatrix-mktspend.html',name:'마케팅 지출계획',desc:'행사·활동 지출 기안·승인'},
+    survey:{file:'refatrix-survey.html',name:'고객 설문 분석',desc:'설문지 사진·PDF → AI 판독 → 엑셀·세그먼트 리포트'},
     rnr:{file:'refatrix-rnr.html',name:'업무 프로세스',desc:'R&R 안내'},
     coverage:{file:'mx_parts_coverage_dashboard.html',name:'Coverage',desc:'부품 커버리지 대시보드'},
     devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
     integrations:{file:'refatrix-integrations.html',name:'연동 관리',desc:'CRM 전송 주소·계약서·전송이력'},
+    apikeys:{file:'refatrix-apikeys.html',name:'외부 서비스 키',desc:'Anthropic·OpenAI·WhatsApp 키·모델 설정'},
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
     portal:{file:'refatrix-portal.html',name:'포털 홈',desc:'대시보드'},
@@ -166,8 +168,8 @@
     funnelImm:['quote','sales','products','marketing'], funnelShort:['quote','sales','products','marketing'], funnelDev:['quote','sales','products','marketing'],
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
-    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', marketing:'marketing', mktspend:'marketing',
-    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__',
+    products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', marketing:'marketing', mktspend:'marketing', survey:'marketing',
+    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', apikeys:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
@@ -177,10 +179,10 @@
     {key:'support', title:'영업지원', color:'#7FB5C9', screens:['customers','quote','quotelist','funnel','orderfunnel','funnelImm','shortage','settlement','recost','import','importcost','stock']},
     {key:'purchase', title:'구매', color:'#C7A76F', screens:['purchase','purchasereview']},
     {key:'finance', title:'재무', color:'#D08C6E', screens:['finance','finNew','finTxn','finPay','finFixed','finCash','finReport','finFx','finApprove','settlement','grossprofit','commission','budget']},
-    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','prodFind','prodUpload','prodHistory']},
+    {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','processKpi']}
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','apikeys','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.

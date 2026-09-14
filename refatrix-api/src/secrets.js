@@ -29,6 +29,7 @@ export const SERVICES = [
       { name: 'WBR_MBR_MODEL', label: 'MBR 요약 모델', secret: false },
       { name: 'DAILY_SUMMARY_MODEL', label: '일일요약 모델', secret: false },
       { name: 'AI_SCAN_MODEL', label: 'AI 스캔 모델', secret: false },
+      { name: 'SURVEY_AI_MODEL', label: '고객 설문 판독 모델', secret: false, hint: '비우면 claude-sonnet-4-5' },
     ],
     uses: [
       '고객상담 — AI 요약 · 한국어 번역 · 기간 인사이트',
@@ -36,6 +37,7 @@ export const SERVICES = [
       'WBR 주간보고 초안 · MBR 월간 요약',
       '일일 요약(WhatsApp 발송본)',
       '아침 브리핑 AI · 전시회 분석',
+      '고객 설문 분석 — 설문지 사진 판독 · 서술형 주제 요약',
     ],
   },
   {

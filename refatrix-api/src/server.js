@@ -58,6 +58,9 @@ import crmSyncRoutes from './routes/crmSyncRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
 import crmInboundRoutes from './routes/crmInboundRoutes.js';
 import crmLeadRoutes from './routes/crmLeadRoutes.js';
+import secretRoutes from './routes/secretRoutes.js';    // 외부 서비스 키 화면(0209) — 라이브 server.js 에서 등록이 빠져 있던 것을 복구
+import { startSecretRefresh } from './secrets.js';
+import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
 import { startCrmSyncWorker } from './crmSync.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
@@ -136,6 +139,11 @@ export function buildApp() {
   app.register(integrationRoutes);
   app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
   app.register(crmLeadRoutes);      // CRM → ERP 수신(웹 가입 신청 알림) + 팝업·이력
+  app.register(secretRoutes);       // 관리 → 외부 서비스 키 (Anthropic·OpenAI·WhatsApp)
+  app.register(surveyRoutes);       // 고객 설문 분석 — 양식·응답 판독 큐·AI 주제 요약·원본 zip
+
+  // DB 에 저장된 외부 서비스 키를 process.env 에 심는다(없으면 기존 환경변수 그대로).
+  startSecretRefresh(app);
 
   // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
   startCrmSyncWorker(app);

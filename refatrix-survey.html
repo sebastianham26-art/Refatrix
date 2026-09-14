@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 고객 설문 분석 · build 20260911sv1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;
+    --warn-bg:#FFF4D6;--warn-ink:#8A6100;--radius:12px;
+    --axis:#c3c2b7;--ink2:#52514e;
+    --d1:#e34948;--d2:#f2a3a2;--d3:#d6d4cf;--d4:#86b6ef;--d5:#256abf;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;font-size:13px}
+  .wrap{max-width:1320px;margin:0 auto}
+  .hidden{display:none!important}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius);margin-bottom:12px}
+  .topbar h1{font-size:18px;margin:0}.topbar .sub{font-size:12px;opacity:.75}
+  .portalBtn{margin-left:auto;color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:6px 10px;font-size:12px}
+  .who{font-size:12px;text-align:right}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px}
+  .ttl{font-weight:800;color:var(--brand);font-size:14px;margin:0 0 4px}
+  .sub2{color:var(--muted);font-size:12px;margin:0 0 12px;line-height:1.55}
+  .btn{padding:8px 14px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.gold{background:var(--gold)}
+  .btn.danger{background:#fff;color:var(--expense);border:1px solid #e3b7b0}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .sp{flex:1}
+  label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:4px}
+  input,select,textarea{padding:8px 9px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink);max-width:100%}
+  textarea{resize:vertical}
+  .f{display:flex;flex-direction:column}
+  .msg{font-size:12px;margin-top:8px;min-height:14px}.msg.ok{color:var(--income)}.msg.err{color:var(--expense)}
+  .api{margin-top:14px;font-size:11px;color:var(--muted)}.api input{width:100%;margin-top:4px;font-size:12px}
+  .grid2{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  @media (max-width:900px){ .grid2,.grid3{grid-template-columns:minmax(0,1fr)} body{padding:14px} }
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:#fdfcf9;font-size:12px;margin:2px 3px 2px 0;white-space:nowrap}
+  .chip.warn{background:var(--warn-bg);border-color:#f0d58a;color:var(--warn-ink);font-weight:700}
+  .chip.bad{background:var(--expense-bg);border-color:#e7bdb6;color:var(--expense);font-weight:700}
+  .chip.ok{background:var(--income-bg);border-color:#bcd9cd;color:var(--income);font-weight:700}
+  .chip.run{background:#e8eef9;border-color:#c3d3ee;color:#274b8f;font-weight:700}
+  .chip.click{cursor:pointer}
+  .chip.click.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .warnbar{background:var(--warn-bg);border:1px solid #f0d58a;color:var(--warn-ink);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-weight:700;font-size:12.5px}
+  .tabs{display:flex;gap:6px;margin:2px 0 12px;flex-wrap:wrap}
+  .tab{padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
+  .tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .tab .n{font-weight:500;opacity:.7;margin-left:4px}
+  .tbwrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+  th{background:#faf8f3;color:var(--muted);font-weight:700;font-size:12px;position:sticky;top:0;z-index:1}
+  tbody tr:hover{background:#faf8f3}
+  tr.clk{cursor:pointer}
+  td.num,th.num{font-variant-numeric:tabular-nums;text-align:right}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .rednum{color:#C0282D;font-weight:800;font-variant-numeric:tabular-nums}
+  .q{display:inline-block;min-width:18px;padding:0 5px;border-radius:5px;background:var(--warn-bg);color:var(--warn-ink);font-weight:800;font-size:11px;text-align:center;margin-left:3px}
+  .ed{display:inline-block;padding:0 5px;border-radius:5px;background:var(--income-bg);color:var(--income);font-weight:800;font-size:11px;margin-left:3px}
+  .unc{background:var(--warn-bg)}
+  .cellclip{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  .drop{border:2px dashed #cfc7b5;border-radius:12px;padding:24px;text-align:center;background:#fdfcf9;color:var(--muted);transition:background .15s}
+  .drop.over{background:#eef5f1;border-color:var(--brand)}
+  .drop b{color:var(--brand);font-size:15px}
+  .prog{height:10px;border-radius:999px;background:#ece8de;overflow:hidden;display:flex;gap:2px}
+  .prog i{display:block;height:100%}
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
+  @media (max-width:900px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .kpi .l{font-size:12px;color:var(--muted);font-weight:700}
+  .kpi .v{font-size:28px;font-weight:700;color:var(--ink);margin-top:2px}
+  .kpi .d{font-size:12px;color:var(--ink2);margin-top:2px}
+  .qcard h4{margin:0;font-size:13.5px;color:var(--ink);font-weight:700}
+  .qcard .orig{color:var(--muted);font-size:12px;margin:2px 0 10px}
+  .qhead{display:flex;gap:8px;align-items:flex-start}
+  .qno{flex:0 0 auto;background:var(--brand);color:#fff;border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px;margin-top:1px}
+  .hbar{display:grid;grid-template-columns:minmax(90px,170px) minmax(0,1fr) 92px;align-items:center;gap:8px;margin:5px 0}
+  .hbar .lb{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
+  .hbar .lb small{display:block;color:var(--muted);font-size:11px}
+  .hbar .tr{position:relative;height:18px;border-left:1px solid var(--axis)}
+  .hbar .br{height:18px;background:var(--brand);border-radius:0 4px 4px 0;min-width:2px}
+  .hbar .br:hover{background:#2a6154}
+  .hbar .vl{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums;text-align:right}
+  .hbar .vl b{color:var(--ink)}
+  .stack{display:flex;height:22px;gap:2px}
+  .stack i{display:block;height:100%}
+  .stack i:first-child{border-radius:4px 0 0 4px}
+  .stack i:last-child{border-radius:0 4px 4px 0}
+  .stack i:only-child{border-radius:4px}
+  .srow{display:grid;grid-template-columns:minmax(90px,170px) minmax(0,1fr) 54px;align-items:center;gap:8px;margin:6px 0}
+  .srow .lb{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow .avg{font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-top:8px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .heat td,.heat th{text-align:center;padding:7px 8px}
+  .heat td.h{font-variant-numeric:tabular-nums;font-weight:700;border:2px solid #fff}
+  .heat th.rl,.heat td.rl{text-align:left}
+  .theme{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .theme:last-child{border-bottom:none}
+  .theme .nm{font-weight:700}
+  .theme .qt{color:var(--ink2);font-size:12px;margin-top:4px;line-height:1.5}
+  .theme .qt i{color:var(--muted)}
+  .theme .ct{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+  .minibar{height:6px;background:#ece8de;border-radius:999px;margin-top:6px;overflow:hidden}
+  .minibar i{display:block;height:100%;background:var(--gold);border-radius:999px}
+  .stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:10px}
+  .stats div{background:#faf8f3;border-radius:8px;padding:6px 8px;font-size:11px;color:var(--muted)}
+  .stats b{display:block;font-size:15px;color:var(--ink)}
+  .note{background:#fbf5ea;border:1px solid #ecdcbc;border-radius:10px;padding:10px 12px;color:#6b5220;font-size:12px;line-height:1.6}
+  .note ul{margin:4px 0 0;padding-left:18px}
+  .note li{margin:3px 0}
+  .tip{position:fixed;pointer-events:none;background:#1C1B19;color:#fff;border-radius:8px;padding:7px 10px;font-size:12px;z-index:10030;box-shadow:0 4px 14px rgba(0,0,0,.2);display:none;max-width:280px}
+  .tip b{font-size:14px;display:block}
+  .tip span{color:#cfcac0}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--brand);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;z-index:10020;display:none;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgba(0,0,0,.2)}
+  .toast.err{background:var(--expense)}
+  .dbg{position:fixed;inset:0;background:rgba(20,20,18,.45);z-index:10000;display:none}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(1040px,100%);background:var(--paper);z-index:10001;overflow:auto;padding:18px;display:none;box-shadow:-8px 0 30px rgba(0,0,0,.2)}
+  .drawer.on,.dbg.on{display:block}
+  .dgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px}
+  @media (max-width:820px){ .dgrid{grid-template-columns:minmax(0,1fr)} }
+  .paper{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px;max-width:100%;min-height:200px;display:flex;align-items:flex-start;justify-content:center}
+  .paper img{max-width:100%;height:auto;display:block;border-radius:6px}
+  .paper iframe{width:100%;height:78vh;border:0}
+  .ans{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .ans:last-child{border-bottom:none}
+  .ans .k{font-weight:800;color:var(--brand)}
+  .ans .t{color:var(--muted);font-size:12px}
+  .ans .a{font-weight:700;margin-top:2px;white-space:pre-wrap;word-break:break-word}
+  .ans .a.noans{color:var(--muted);font-weight:500}
+  .ans .oth{color:var(--ink2);font-size:12px;margin-top:2px}
+  .ans .edit{margin-top:6px}
+  .ans .edit label{display:inline-flex;align-items:center;gap:5px;margin:2px 10px 2px 0;font-weight:500;color:var(--ink);font-size:12.5px}
+  .ans .edit label input{margin:0}
+  .qtable td{white-space:normal;vertical-align:top}
+  .qtable textarea{width:100%;min-height:62px;font-size:12.5px;line-height:1.45}
+  .qtable input.w100{width:100%}
+  .qtable .mv{display:flex;flex-direction:column;gap:3px}
+  .qtable .mv button{padding:2px 7px;font-size:11px}
+  .tplimg{max-width:100%;border:1px solid var(--line);border-radius:8px;display:block}
+  .tplph{border:1px dashed #cfc7b5;border-radius:10px;padding:30px 12px;text-align:center;color:var(--muted);background:#fdfcf9}
+  .filters{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .empty{color:var(--muted);padding:16px;text-align:center}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media print{
+    @page{margin:12mm}
+    body{padding:0!important;background:#fff!important}
+    #rnav,.no-print,.tabs,.drawer,.dbg,.toast{display:none!important}
+    .card,.kpi{break-inside:avoid;box-shadow:none}
+    .topbar{display:none!important}
+    .prtonly{display:block!important}
+  }
+  .prtonly{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><div><h1>Refatrix ERP</h1><div class="sub">고객 설문 분석 · 설문지 사진/PDF → AI 판독 → 엑셀·리포트</div></div><a href="refatrix-portal.html" class="portalBtn">← 포털</a><div class="who" id="who"></div></div>
+
+  <div class="card" id="loginCard">
+    <div style="font-weight:800;color:var(--brand);margin-bottom:10px">로그인</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div><label>아이디</label><input id="lid" type="text" style="width:140px"></div><div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div></div>
+    <button class="btn" id="goLogin" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="apiInput" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+    <!-- 설문 선택 바 -->
+    <div class="card no-print" style="padding:12px 16px">
+      <div class="row">
+        <div style="font-weight:800;color:var(--brand);font-size:15px">📝 고객 설문 분석</div>
+        <select id="surveySel" aria-label="설문 선택" style="min-width:260px;flex:1;max-width:520px"></select>
+        <button class="btn ghost sm" id="btnNewSurvey">＋ 새 설문</button>
+        <div class="sp"></div>
+        <span id="sumChips"></span>
+      </div>
+      <div class="hidden" id="newBox" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="row" style="align-items:flex-end">
+          <div class="f" style="flex:1;min-width:220px"><label>설문명</label><input id="nTitle" placeholder="예: Expo Refacciones 2026 고객 설문"></div>
+          <div class="f" style="width:140px"><label>파일명 접두어</label><input id="nPrefix" class="mono" placeholder="EXPO26" maxlength="16"></div>
+          <div class="f" style="width:160px"><label>실시일</label><input id="nDate" type="date"></div>
+          <button class="btn" id="btnCreate">만들기</button>
+          <button class="btn ghost" id="btnCreateCancel">취소</button>
+        </div>
+        <div class="sub2" style="margin:8px 0 0">파일명은 <b class="mono">접두어_붉은번호</b> 로 만들어집니다 — 예: <span class="mono">EXPO26_0137.jpg</span>. 영문·숫자·하이픈만(나중에 바꿔도 파일명이 따라 바뀝니다).</div>
+      </div>
+    </div>
+
+    <div class="warnbar hidden no-print" id="aiWarn">⚠ Anthropic(Claude) 키가 설정되지 않아 AI 판독이 멈춰 있습니다. 올린 설문지는 대기열에 남아 있다가 키를 넣으면 이어서 처리됩니다 — 디렉터: 관리 → 외부 서비스 키.</div>
+
+    <div class="card hidden" id="emptyState">
+      <p class="ttl">아직 설문이 없습니다</p>
+      <p class="sub2">[＋ 새 설문] 으로 설문명과 파일명 접두어를 정한 뒤, ① 빈 설문지 사진으로 문항을 등록하고 ② 작성된 설문지를 올리세요.</p>
+    </div>
+
+    <div class="hidden" id="surveyArea">
+      <div class="prtonly" id="printHead" style="margin-bottom:10px"></div>
+      <div class="tabs no-print" role="tablist">
+        <button class="tab" data-tab="form">① 설문 양식 <span class="n" id="tabQ"></span></button>
+        <button class="tab" data-tab="upload">② 응답 업로드·목록 <span class="n" id="tabP"></span></button>
+        <button class="tab" data-tab="report">③ 분석 리포트</button>
+      </div>
+
+      <!-- ① 설문 양식 -->
+      <section id="v-form" class="hidden">
+        <div class="grid2">
+          <div class="card">
+            <p class="ttl">빈 설문지</p>
+            <p class="sub2">빈 양식(또는 작성된 1장) 사진을 올리고 <b>[🤖 AI로 문항 읽기]</b> 를 누르면 오른쪽 표를 채웁니다. 표를 확인·수정한 뒤 <b>저장</b>하세요.</p>
+            <div id="tplBox"><div class="tplph">양식 사진이 없습니다</div></div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn ghost sm" id="btnTplPick">📷 양식 사진 올리기</button>
+              <button class="btn sm" id="btnTplRead">🤖 AI로 문항 읽기</button>
+            </div>
+            <div class="msg" id="tplMsg"></div>
+          </div>
+          <div class="card">
+            <div class="row" style="margin-bottom:10px;align-items:flex-end">
+              <div class="f" style="flex:1;min-width:200px"><label>설문명</label><input id="fTitle"></div>
+              <div class="f" style="width:130px"><label>파일명 접두어</label><input id="fPrefix" class="mono" maxlength="16"></div>
+              <div class="f" style="width:150px"><label>실시일</label><input id="fDate" type="date"></div>
+            </div>
+            <div class="f" style="margin-bottom:12px"><label>붉은 번호 위치 (AI 판독에 참고)</label><input id="fHint" placeholder="예: esquina superior derecha — 오른쪽 위 붉은 숫자"></div>
+            <div class="row" style="margin-bottom:6px">
+              <p class="ttl" style="margin:0">문항 목록</p>
+              <span class="chip" id="qCountChip"></span>
+              <div class="sp"></div>
+              <button class="btn ghost sm" id="btnAddQ">＋ 문항 추가</button>
+            </div>
+            <p class="sub2">보기는 한 줄에 하나. 한국어를 같이 적으려면 <span class="mono">Refaccionaria | 부품점</span> 처럼 <b>|</b> 뒤에. <b>세그먼트</b>로 켠 단일선택 문항은 리포트에서 교차 분석 기준이 됩니다.</p>
+            <div class="tbwrap">
+              <table class="qtable">
+                <thead><tr><th style="width:36px">#</th><th>문항 (원문 / 한국어)</th><th style="width:120px">유형</th><th style="min-width:220px">보기 / 범위</th><th style="width:70px">세그먼트</th><th style="width:44px"></th></tr></thead>
+                <tbody id="qBody"></tbody>
+              </table>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <span class="sub2" style="margin:0" id="formHint"></span>
+              <div class="sp"></div>
+              <button class="btn" id="btnSaveForm">저장</button>
+            </div>
+            <div class="msg" id="formMsg"></div>
+            <div class="row hidden" id="dangerRow" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+              <span class="sub2" style="margin:0">이 설문을 목록에서 지웁니다(디렉터).</span><div class="sp"></div>
+              <button class="btn danger sm" id="btnDelSurvey">🗑 설문 삭제</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ② 업로드·목록 -->
+      <section id="v-upload" class="hidden">
+        <div class="card no-print" id="upCard">
+          <div class="drop" id="drop">
+            <b>⬆ 설문지 사진 또는 스캔 PDF를 여기에 끌어다 놓기</b>
+            <div style="margin-top:6px">JPG·PNG 여러 장 / PDF 여러 페이지 한꺼번에 — <b style="font-size:13px">PDF는 페이지 1장 = 응답 1건</b>으로 나뉩니다. 같은 파일을 다시 올리면 건너뜁니다.</div>
+            <div style="margin-top:10px"><button class="btn" id="btnPick">파일 선택</button></div>
+          </div>
+          <div class="hidden" id="upLocal" style="margin-top:12px">
+            <div class="row" style="margin-bottom:6px"><b>업로드</b><span id="upText"></span><div class="sp"></div><span class="sub2" style="margin:0" id="upNow"></span></div>
+            <div class="prog"><i id="upBar" style="width:0;background:var(--brand)"></i></div>
+          </div>
+          <div style="margin-top:14px">
+            <div class="row" style="margin-bottom:6px">
+              <b>AI 판독</b>
+              <span class="chip ok">완료 <span id="cDone">0</span></span>
+              <span class="chip run" id="cRunChip">대기·처리 중 <span id="cRun">0</span></span>
+              <span class="chip bad">실패 <span id="cErr">0</span></span>
+              <div class="sp"></div>
+              <button class="btn ghost sm" id="btnRetryErr">↻ 실패 다시 판독</button>
+            </div>
+            <div class="prog" id="prog"></div>
+            <div class="row" style="margin-top:10px">
+              <span class="chip warn">⚠ 번호 인식 실패 <span id="cNoNum">0</span></span>
+              <span class="chip warn">⚠ 번호 중복 <span id="cDup">0</span></span>
+              <span class="chip">AI 확신 낮은 칸 포함 <b id="cLow">0</b>건 <span style="color:var(--muted)">(엑셀에 노란색)</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="margin-bottom:10px">
+            <p class="ttl" style="margin:0">응답 목록</p>
+            <input id="lq" placeholder="번호·답 검색" style="width:170px">
+            <select id="lf"><option value="">전체</option><option value="flag">⚠ 확인 필요(번호·중복·확신 낮음)</option><option value="err">실패</option><option value="run">대기·처리 중</option></select>
+            <select id="ls"><option value="num">번호순</option><option value="seq">업로드순</option></select>
+            <div class="sp"></div>
+            <button class="btn ghost sm" id="btnZipSel" disabled>⬇ 선택 원본 zip</button>
+            <button class="btn ghost sm" id="btnZipAll">🗂 전체 원본 zip</button>
+            <button class="btn sm" id="btnXlsx">📥 엑셀</button>
+          </div>
+          <div class="tbwrap" style="max-height:560px">
+            <table><thead><tr id="lHead"></tr></thead><tbody id="lBody"></tbody></table>
+          </div>
+          <p class="sub2" style="margin:8px 0 0">행을 누르면 원본과 AI가 읽은 답을 나란히 봅니다. <span class="q">?</span> AI 확신 낮음 · <span class="ed">✎</span> 사람이 고친 칸(다시 판독해도 유지).</p>
+        </div>
+      </section>
+
+      <!-- ③ 리포트 -->
+      <section id="v-report" class="hidden">
+        <div class="card no-print">
+          <div class="filters">
+            <div class="f"><label>세그먼트 기준</label><select id="segQ"></select></div>
+            <div><label>대상 좁히기</label><div id="segChips"></div></div>
+            <div class="sp"></div>
+            <button class="btn ghost" id="btnPrint">🧾 PDF 인쇄</button>
+            <button class="btn" id="btnXlsx2">📥 엑셀</button>
+          </div>
+        </div>
+        <div id="rEmpty" class="card hidden"><p class="empty">판독이 끝난 응답이 아직 없습니다. ② 응답 업로드에서 설문지를 올려 주세요.</p></div>
+        <div id="rBody">
+          <div class="kpis" id="kpis"></div>
+          <div class="card" id="aiCard"></div>
+          <div class="card" id="crossCard"></div>
+          <div class="grid3" id="qCards"></div>
+          <div id="textCards"></div>
+          <div class="card hidden" id="infoCard"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="dbg" id="dbg"></div>
+<div class="drawer" id="drawer"></div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="tplInput" accept="image/*,application/pdf" class="hidden">
+<input type="file" id="fileInput" accept="image/*,application/pdf" multiple class="hidden">
+
+<script>
+(function(){
+  'use strict';
+  const BUILD='20260911sv1';
+  try{ console.log('[survey] build '+BUILD); }catch(e){}
+  const $=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const LIB={
+    xlsx:'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+    pdflib:'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
+    pdfjs:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    pdfjsWorker:'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  };
+  const IMG_MAX=2000, IMG_Q=0.85, THUMB_MAX=320, FILE_LIMIT=5.5*1024*1024;
+  const TYPE_LB={single:'단일선택',multi:'복수선택',scale:'척도',number:'숫자',text:'서술형',info:'기재정보'};
+
+  let session={token:null,user:null,api:''};
+  let surveys=[];          // 목록
+  let S=null;              // 현재 설문 상세
+  let pages=[];            // 응답 목록
+  let counts={};
+  let draftQs=[];          // 양식 편집 중 문항
+  let dirty=false;
+  let curTab='report';
+  let segKey='', segFilter='', crossKey='';
+  let pollT=null;
+  let drawerId=null, drawerEdit=false, drawerUrl=null;
+  const sel=new Set();
+
+  // ─────────────── 공통 ───────────────
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  async function api(path,opt){
+    opt=opt||{}; opt.headers=Object.assign({'Content-Type':'application/json'},auth(),opt.headers||{});
+    let res;
+    try{ res=await fetch(session.api+path,opt); }catch(e){ return {ok:false,status:0,error:'network'}; }
+    if(res.status===401){ toast('세션이 만료됐습니다. 다시 로그인하세요.',true); }
+    let body={}; try{ body=await res.json(); }catch(e){}
+    return Object.assign({ok:res.ok,status:res.status},body);
+  }
+  async function apiBlob(path){
+    const res=await fetch(session.api+path,{headers:auth()});
+    if(!res.ok) throw new Error('http_'+res.status);
+    return res.blob();
+  }
+  function toast(m,err){ const t=$('toast'); t.textContent=m; t.className='toast'+(err?' err':''); t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>{t.style.display='none';},err?4200:2600); }
+  function say(id,ok,text){ const m=$(id); if(!m) return; m.className='msg '+(ok?'ok':'err'); m.textContent=text||''; }
+  const scripts={};
+  function loadScript(url){
+    if(scripts[url]) return scripts[url];
+    scripts[url]=new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=url; s.onload=()=>res(); s.onerror=()=>{ delete scripts[url]; rej(new Error('load_fail')); }; document.head.appendChild(s); });
+    return scripts[url];
+  }
+  function blobToB64(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).replace(/^data:[^,]*,/,'')); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); }); }
+  function saveBlob(blob,name){ const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); },1500); }
+  const pct=(a,b)=>b?Math.round(a/b*1000)/10:0;
+  const pctS=(a,b)=>pct(a,b).toFixed(1);
+  const canEdit=()=>!!(S&&S.can_edit);
+  const qName=(q)=>q.ko||q.text;
+  const qById=(k)=>(S&&S.questions||[]).find(q=>q.k===k);
+  function optKo(q,o){ const i=(q.options||[]).indexOf(o); return (q.options_ko&&q.options_ko[i])||''; }
+  function fmtTime(iso){ if(!iso) return ''; try{ return new Date(iso).toLocaleString('ko-KR',{timeZone:'America/Mexico_City',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return iso; } }
+  function kb(n){ if(n==null) return ''; return n>1048576?(n/1048576).toFixed(1)+'MB':Math.round(n/1024)+'KB'; }
+  const ERR_KO={no_title:'설문명을 입력하세요',no_prefix:'파일명 접두어를 입력하세요(영문·숫자)',bad_questions:'문항 표를 확인하세요',no_questions:'문항이 하나도 없습니다',
+    no_anthropic_key:'AI 키가 없습니다(관리 → 외부 서비스 키)',ai_parse:'AI 응답을 해석하지 못했습니다 — 다시 시도하세요',bad_mime:'지원하지 않는 파일 형식',bad_file:'파일 내용이 형식과 다릅니다',
+    too_large:'파일이 너무 큽니다',same_file:'이미 올린 파일',number_taken:'이미 있는 번호',bad_number:'번호에 숫자가 없습니다',bad_answer:'값이 보기/범위와 맞지 않습니다',
+    forbidden:'권한이 없습니다',read_only:'열람 전용 권한입니다',director_only:'디렉터만 할 수 있습니다',no_done_pages:'판독이 끝난 응답이 없습니다',network:'서버에 연결할 수 없습니다'};
+  const errKo=(e)=>ERR_KO[e]||e||'오류';
+
+  // 툴팁(값이 먼저, 이름은 뒤)
+  const tip=$('tip');
+  function bindTips(root){
+    root.querySelectorAll('[data-tv]').forEach(el=>{
+      el.addEventListener('pointermove',e=>{
+        tip.textContent=''; const b=document.createElement('b'); b.textContent=el.dataset.tv; const s=document.createElement('span'); s.textContent=el.dataset.tl||'';
+        tip.appendChild(b); tip.appendChild(s); tip.style.display='block';
+        const x=Math.min(e.clientX+14, window.innerWidth-tip.offsetWidth-8); tip.style.left=Math.max(8,x)+'px'; tip.style.top=(e.clientY+14)+'px';
+      });
+      el.addEventListener('pointerleave',()=>{ tip.style.display='none'; });
+    });
+  }
+
+  // ─────────────── 로그인 ───────────────
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return {token:o.token,api:o.api||'',user:o.user||{}}; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token'); if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')}; try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+  async function login(){
+    const apiBase=$('apiInput').value.replace(/\/+$/,''); const login_id=$('lid').value.trim(),pin=$('pin').value.trim();
+    if(!login_id||!pin){ say('loginMsg',false,'아이디와 PIN을 입력하세요.'); return; }
+    $('goLogin').disabled=true;
+    try{
+      const res=await fetch(apiBase+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id,pin})});
+      const d=await res.json();
+      if(!res.ok||d.error){ say('loginMsg',false,'로그인 실패: '+(d.error||res.status)); return; }
+      session={token:d.token,user:d.user,api:apiBase};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      afterLogin();
+    }catch(e){ say('loginMsg',false,'서버에 연결할 수 없습니다.'); }
+    finally{ $('goLogin').disabled=false; }
+  }
+  async function afterLogin(){
+    $('who').innerHTML='<b>'+esc(session.user&&session.user.name||'')+'</b><br>역할: '+esc(session.user&&session.user.role||'');
+    $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+    let want=null;
+    try{ const hp=new URLSearchParams(location.hash.slice(1)); want=Number(hp.get('survey'))||null; }catch(e){}
+    if(!want){ try{ want=Number(sessionStorage.getItem('rfx_survey_last'))||null; }catch(e){} }
+    await loadSurveys(want);
+  }
+
+  // ─────────────── 설문 목록·선택·생성 ───────────────
+  async function loadSurveys(wantId){
+    const d=await api('/api/surveys');
+    if(!d.ok){ $('emptyState').classList.remove('hidden'); $('emptyState').innerHTML='<p class="ttl">열 수 없습니다</p><p class="sub2">'+esc(errKo(d.error))+' — 마케팅 화면 권한이 필요합니다.</p>'; return; }
+    surveys=d.items||[];
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready);
+    const s=$('surveySel');
+    s.innerHTML=surveys.map(x=>'<option value="'+x.id+'">'+esc(x.code_prefix)+' · '+esc(x.title)+' · 응답 '+x.total+'</option>').join('')||'<option value="">(설문 없음)</option>';
+    if(!surveys.length){ S=null; $('surveyArea').classList.add('hidden'); $('emptyState').classList.remove('hidden'); $('sumChips').innerHTML=''; return; }
+    $('emptyState').classList.add('hidden');
+    const id=(wantId&&surveys.some(x=>x.id===wantId))?wantId:surveys[0].id;
+    s.value=String(id);
+    await openSurvey(id,true);
+  }
+  async function openSurvey(id,pickTab){
+    if(dirty && S && S.id!==id && !confirm('양식에 저장하지 않은 변경이 있습니다. 버리고 이동할까요?')){ $('surveySel').value=String(S.id); return; }
+    const d=await api('/api/surveys/'+id);
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    S=d; dirty=false; sel.clear(); segFilter=''; segKey=''; crossKey='';
+    try{ sessionStorage.setItem('rfx_survey_last',String(id)); }catch(e){}
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready);
+    $('surveyArea').classList.remove('hidden');
+    draftQs=JSON.parse(JSON.stringify(S.questions||[]));
+    fillForm(); renderQs();
+    await loadPages();
+    if(pickTab){ curTab=!S.questions.length?'form':(counts.done?'report':'upload'); }
+    showTab(curTab);
+  }
+  $('surveySel').addEventListener('change',e=>{ const id=Number(e.target.value); if(id) openSurvey(id,true); });
+  $('btnNewSurvey').addEventListener('click',()=>{ $('newBox').classList.toggle('hidden'); if(!$('newBox').classList.contains('hidden')){ $('nTitle').focus(); if(!$('nDate').value){ const t=new Date(); $('nDate').value=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); } } });
+  $('btnCreateCancel').addEventListener('click',()=>$('newBox').classList.add('hidden'));
+  $('nPrefix').addEventListener('input',e=>{ const v=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,''); if(v!==e.target.value) e.target.value=v; });
+  $('fPrefix').addEventListener('input',e=>{ const v=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,''); if(v!==e.target.value) e.target.value=v; markDirty(); });
+  $('btnCreate').addEventListener('click',async()=>{
+    const d=await api('/api/surveys',{method:'POST',body:JSON.stringify({title:$('nTitle').value,code_prefix:$('nPrefix').value,survey_date:$('nDate').value})});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    $('newBox').classList.add('hidden'); $('nTitle').value=''; $('nPrefix').value='';
+    await loadSurveys(d.id); showTab('form');
+    toast('설문을 만들었습니다 — 빈 설문지 사진으로 문항을 등록하세요');
+  });
+
+  function renderSumChips(){
+    const c=counts||{};
+    const run=(c.queued||0)+(c.processing||0);
+    $('sumChips').innerHTML=(S?'<span class="chip">문항 '+(S.questions||[]).length+'</span>':'')+
+      '<span class="chip ok">판독 '+(c.done||0)+'</span>'+
+      (run?'<span class="chip run"><span class="spin"></span> 대기·처리 '+run+'</span>':'')+
+      (c.error?'<span class="chip bad">실패 '+c.error+'</span>':'');
+    $('tabQ').textContent=S?String((S.questions||[]).length):'';
+    if(S){ const it=surveys.find(x=>x.id===S.id); if(it) it.total=c.total||0; const op=$('surveySel').querySelector('option[value="'+S.id+'"]'); if(op) op.textContent=S.code_prefix+' · '+S.title+' · 응답 '+(c.total||0); }
+    $('tabP').textContent=String(c.total||0);
+  }
+
+  // ─────────────── 탭 ───────────────
+  function showTab(t){
+    curTab=t;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
+    ['form','upload','report'].forEach(k=>$('v-'+k).classList.toggle('hidden',k!==t));
+    if(t==='report') renderReport();
+    if(t==='upload') renderList();
+  }
+  document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+
+  // ─────────────── ① 양식 ───────────────
+  function fillForm(){
+    $('fTitle').value=S.title||''; $('fPrefix').value=S.code_prefix||''; $('fDate').value=S.survey_date||''; $('fHint').value=S.number_hint||'';
+    const ro=!canEdit();
+    ['fTitle','fPrefix','fDate','fHint','btnAddQ','btnSaveForm','btnTplPick','btnTplRead'].forEach(id=>{ $(id).disabled=ro; });
+    $('dangerRow').classList.toggle('hidden',!S.is_director);
+    renderTpl();
+  }
+  let tplUrl=null;
+  async function renderTpl(){
+    const box=$('tplBox');
+    if(!S.has_template){ box.innerHTML='<div class="tplph">양식 사진이 없습니다<br><span style="font-size:12px">빈 설문지 1장을 찍어 올리세요</span></div>'; return; }
+    try{ const b=await apiBlob('/api/surveys/'+S.id+'/template'); if(tplUrl) URL.revokeObjectURL(tplUrl); tplUrl=URL.createObjectURL(b); box.innerHTML='<img class="tplimg" alt="설문 양식" src="'+tplUrl+'">'; }
+    catch(e){ box.innerHTML='<div class="tplph">양식 사진을 불러오지 못했습니다</div>'; }
+  }
+  function markDirty(){ dirty=true; $('btnSaveForm').textContent='💾 변경 저장'; $('btnSaveForm').classList.add('gold'); $('formHint').textContent='저장하지 않은 변경이 있습니다'; }
+  function clearDirty(){ dirty=false; $('btnSaveForm').textContent='저장'; $('btnSaveForm').classList.remove('gold'); $('formHint').textContent=''; }
+  ['fTitle','fDate','fHint'].forEach(id=>$(id).addEventListener('input',markDirty));
+
+  function optsText(q){ return (q.options||[]).map((o,i)=>o+((q.options_ko&&q.options_ko[i])?' | '+q.options_ko[i]:'')).join('\n'); }
+  function parseOpts(txt){ const o=[],k=[]; String(txt||'').split('\n').forEach(l=>{ const p=l.split('|'); const v=(p[0]||'').trim(); if(!v) return; o.push(v); k.push((p.slice(1).join('|')||'').trim()); }); return {options:o,options_ko:k.some(Boolean)?k:[]}; }
+  function renderQs(){
+    const ro=!canEdit()?' disabled':'';
+    $('qCountChip').textContent=draftQs.length+'문항';
+    if(!draftQs.length){ $('qBody').innerHTML='<tr><td colspan="6" class="empty">문항이 없습니다 — 왼쪽에서 양식 사진을 올려 AI로 읽거나 [＋ 문항 추가]</td></tr>'; return; }
+    $('qBody').innerHTML=draftQs.map((q,i)=>{
+      const typeSel='<select data-i="'+i+'" data-f="type"'+ro+'>'+Object.keys(TYPE_LB).map(t=>'<option value="'+t+'"'+(t===q.type?' selected':'')+'>'+TYPE_LB[t]+'</option>').join('')+'</select>';
+      let opt='';
+      if(q.type==='single'||q.type==='multi') opt='<textarea data-i="'+i+'" data-f="options" rows="'+Math.min(10,Math.max(3,(q.options||[]).length+1))+'" placeholder="보기 한 줄에 하나"'+ro+'>'+esc(optsText(q))+'</textarea>';
+      else if(q.type==='scale') opt='<div class="row" style="gap:6px"><input type="number" data-i="'+i+'" data-f="min" value="'+esc(q.min!=null?q.min:1)+'" style="width:64px"'+ro+'> ~ <input type="number" data-i="'+i+'" data-f="max" value="'+esc(q.max!=null?q.max:5)+'" style="width:64px"'+ro+'></div>'+
+        '<div class="row" style="gap:6px;margin-top:6px"><input data-i="'+i+'" data-f="min_label" placeholder="낮은 쪽 말(선택)" value="'+esc(q.min_label||'')+'" style="width:48%"'+ro+'><input data-i="'+i+'" data-f="max_label" placeholder="높은 쪽 말(선택)" value="'+esc(q.max_label||'')+'" style="width:48%"'+ro+'></div>';
+      else if(q.type==='text') opt='<span style="color:var(--muted)">자유 기재 → 리포트에서 AI 주제 요약</span>';
+      else if(q.type==='info') opt='<span style="color:var(--muted)">상호·이름·전화 등 — 엑셀에만 (분석 안 함)</span>';
+      else opt='<span style="color:var(--muted)">숫자 기재 → 평균·중앙값·분포</span>';
+      const seg=q.type==='single'?'<label style="display:inline-flex;gap:5px;align-items:center;margin:0;white-space:nowrap"><input type="checkbox" data-i="'+i+'" data-f="seg"'+(q.seg?' checked':'')+ro+'> 사용</label>':'<span style="color:var(--muted)">—</span>';
+      const mv=canEdit()?'<div class="mv"><button class="btn ghost sm" data-mv="up" data-i="'+i+'" title="위로">▲</button><button class="btn ghost sm" data-mv="down" data-i="'+i+'" title="아래로">▼</button><button class="btn danger sm" data-mv="del" data-i="'+i+'" title="삭제">✕</button></div>':'';
+      return '<tr><td><b>'+(i+1)+'</b><div class="mono" style="color:var(--muted);font-size:10.5px">'+esc(q.k||'새')+'</div></td>'+
+        '<td><input class="w100" data-i="'+i+'" data-f="text" value="'+esc(q.text||'')+'" placeholder="원문(스페인어)"'+ro+'><input class="w100" style="margin-top:5px" data-i="'+i+'" data-f="ko" value="'+esc(q.ko||'')+'" placeholder="한국어(선택)"'+ro+'></td>'+
+        '<td>'+typeSel+'</td><td>'+opt+'</td><td>'+seg+'</td><td>'+mv+'</td></tr>';
+    }).join('');
+  }
+  $('qBody').addEventListener('input',e=>{
+    const el=e.target; const i=Number(el.dataset.i); const f=el.dataset.f; if(!f||!draftQs[i]) return;
+    const q=draftQs[i];
+    if(f==='options'){ const p=parseOpts(el.value); q.options=p.options; q.options_ko=p.options_ko; }
+    else if(f==='seg') q.seg=el.checked;
+    else if(f==='min'||f==='max') q[f]=Number(el.value);
+    else if(f!=='type') q[f]=el.value;
+    markDirty();
+  });
+  $('qBody').addEventListener('change',e=>{
+    const el=e.target; const i=Number(el.dataset.i); if(el.dataset.f!=='type'||!draftQs[i]) return;
+    const q=draftQs[i]; q.type=el.value;
+    if((q.type==='single'||q.type==='multi')&&!q.options) q.options=[];
+    if(q.type==='scale'&&q.min==null){ q.min=1; q.max=5; }
+    if(q.type!=='single') q.seg=false;
+    renderQs(); markDirty();
+  });
+  $('qBody').addEventListener('click',e=>{
+    const b=e.target.closest('[data-mv]'); if(!b) return;
+    const i=Number(b.dataset.i);
+    if(b.dataset.mv==='up'&&i>0){ const t=draftQs[i-1]; draftQs[i-1]=draftQs[i]; draftQs[i]=t; }
+    else if(b.dataset.mv==='down'&&i<draftQs.length-1){ const t=draftQs[i+1]; draftQs[i+1]=draftQs[i]; draftQs[i]=t; }
+    else if(b.dataset.mv==='del'){
+      const q=draftQs[i];
+      if(q.k&&counts.done&&!confirm('「'+(q.ko||q.text)+'」 문항을 지웁니다. 이미 읽은 답도 리포트·엑셀에서 빠집니다. 계속할까요?')) return;
+      draftQs.splice(i,1);
+    } else return;
+    renderQs(); markDirty();
+  });
+  $('btnAddQ').addEventListener('click',()=>{ draftQs.push({k:'',text:'',ko:'',type:'single',options:[],options_ko:[],seg:false}); renderQs(); markDirty(); const ins=$('qBody').querySelectorAll('input[data-f="text"]'); if(ins.length) ins[ins.length-1].focus(); });
+  $('btnSaveForm').addEventListener('click',saveForm);
+  async function saveForm(){
+    const body={title:$('fTitle').value,code_prefix:$('fPrefix').value,survey_date:$('fDate').value||null,number_hint:$('fHint').value,questions:draftQs};
+    $('btnSaveForm').disabled=true;
+    const d=await api('/api/surveys/'+S.id,{method:'PUT',body:JSON.stringify(body)});
+    $('btnSaveForm').disabled=false;
+    if(!d.ok){
+      let m=errKo(d.error);
+      if(d.details&&d.details.length) m+=' — '+d.details.map(x=>x.at+'번 '+(x.error==='few_options'?'보기 2개 이상':'문항 내용 없음')).join(', ');
+      say('formMsg',false,m); return;
+    }
+    clearDirty(); say('formMsg',true,'저장했습니다');
+    S.questions=d.questions; S.title=body.title; S.code_prefix=$('fPrefix').value; S.survey_date=body.survey_date; S.number_hint=body.number_hint;
+    draftQs=JSON.parse(JSON.stringify(d.questions)); renderQs();
+    const it=surveys.find(x=>x.id===S.id); if(it){ it.title=S.title; it.code_prefix=S.code_prefix; }
+    const opt=$('surveySel').querySelector('option[value="'+S.id+'"]'); if(opt) opt.textContent=S.code_prefix+' · '+S.title+' · 응답 '+(counts.total||0);
+    renderSumChips();
+    if(d.needs_reprocess){
+      if(confirm('문항 구조(유형·보기)가 바뀌었습니다.\n이미 판독한 '+d.counts.done+'장을 새 문항으로 다시 판독할까요?\n(사람이 고친 칸은 유지 · 1장당 AI 비용 약 2센트)')) reprocess('all');
+    }
+    await loadPages();
+  }
+  $('btnDelSurvey').addEventListener('click',async()=>{
+    if(!confirm('「'+S.title+'」 설문을 삭제합니다. 목록·리포트에서 사라집니다. 계속할까요?')) return;
+    const d=await api('/api/surveys/'+S.id,{method:'DELETE'});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast('삭제했습니다'); S=null; await loadSurveys(null);
+  });
+
+  // 양식 사진 → (PDF 면 첫 페이지를 그림으로) → 저장 + AI 읽기
+  let tplPending=null;
+  $('btnTplPick').addEventListener('click',()=>$('tplInput').click());
+  $('tplInput').addEventListener('change',async e=>{
+    const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f) return;
+    say('tplMsg',true,'사진 준비 중…');
+    try{
+      let blob;
+      if(/pdf/i.test(f.type)||/\.pdf$/i.test(f.name)){ await ensurePdfLibs(); const doc=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise; blob=(await renderPdfPage(doc,1)).view; }
+      else blob=await compressImage(f,IMG_MAX,IMG_Q);
+      tplPending=blob;
+      const d=await api('/api/surveys/'+S.id+'/template',{method:'POST',body:JSON.stringify({mime:'image/jpeg',data_b64:await blobToB64(blob),extract:false})});
+      if(!d.ok){ say('tplMsg',false,errKo(d.error)); return; }
+      S.has_template=true; renderTpl();
+      say('tplMsg',true,'양식 사진을 저장했습니다 — [🤖 AI로 문항 읽기] 를 누르세요');
+    }catch(err){ say('tplMsg',false,'이 파일을 읽지 못했습니다(HEIC 는 JPG 로 바꿔 주세요)'); }
+  });
+  $('btnTplRead').addEventListener('click',async()=>{
+    if(!S.has_template){ $('tplInput').click(); return; }
+    if(draftQs.length && !confirm('AI가 읽은 문항으로 표를 바꿉니다(저장 전까지는 되돌릴 수 있습니다). 계속할까요?')) return;
+    $('btnTplRead').disabled=true; say('tplMsg',true,'AI가 양식을 읽는 중… (10~40초)');
+    try{
+      let b64;
+      if(tplPending) b64=await blobToB64(tplPending);
+      else b64=await blobToB64(await apiBlob('/api/surveys/'+S.id+'/template'));
+      const d=await api('/api/surveys/'+S.id+'/template',{method:'POST',body:JSON.stringify({mime:'image/jpeg',data_b64:b64})});
+      if(!d.ok){ say('tplMsg',false,errKo(d.error)); return; }
+      const p=d.proposal;
+      // 이미 쓰던 key 는 같은 문항(원문 동일)이면 이어받는다 — 답이 key 로 저장되므로
+      const old=(S.questions||[]);
+      draftQs=p.questions.map(q=>{ const m=old.find(o=>o.text.trim().toLowerCase()===String(q.text).trim().toLowerCase()); return Object.assign({},q,{k:m?m.k:''}); });
+      if(p.number_hint && !$('fHint').value) $('fHint').value=p.number_hint;
+      if(p.title && !$('fTitle').value) $('fTitle').value=p.title;
+      renderQs(); markDirty();
+      say('tplMsg',true,'문항 '+p.questions.length+'개를 읽었습니다 — 표를 확인하고 [저장]');
+    } finally { $('btnTplRead').disabled=!canEdit(); }
+  });
+
+  // ─────────────── 이미지·PDF 준비 ───────────────
+  function dims(w,h,max){ if(w<=max&&h<=max) return [w,h]; const s=max/Math.max(w,h); return [Math.round(w*s),Math.round(h*s)]; }
+  function canvasBlob(c,type,q){ return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('encode')),type,q)); }
+  async function decodeImage(file){
+    if(window.createImageBitmap){ try{ return await createImageBitmap(file,{imageOrientation:'from-image'}); }catch(e){} }
+    return await new Promise((res,rej)=>{ const u=URL.createObjectURL(file); const im=new Image(); im.onload=()=>{ URL.revokeObjectURL(u); res(im); }; im.onerror=()=>{ URL.revokeObjectURL(u); rej(new Error('decode')); }; im.src=u; });
+  }
+  async function drawJpeg(src,max,q){
+    const w0=src.width||src.naturalWidth, h0=src.height||src.naturalHeight;
+    const [w,h]=dims(w0,h0,max);
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(src,0,0,w,h);
+    return canvasBlob(c,'image/jpeg',q);
+  }
+  async function compressImage(file,max,q){ const im=await decodeImage(file); return drawJpeg(im,max,q); }
+  async function ensurePdfLibs(){
+    await loadScript(LIB.pdfjs);
+    if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc=LIB.pdfjsWorker;
+    try{ await loadScript(LIB.pdflib); }catch(e){}   // 없어도 된다(그림 JPEG 를 원본으로)
+  }
+  async function renderPdfPage(doc,no){
+    const page=await doc.getPage(no);
+    const v1=page.getViewport({scale:1});
+    const scale=Math.min(IMG_MAX/Math.max(v1.width,v1.height),4);
+    const vp=page.getViewport({scale});
+    const c=document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:ctx,viewport:vp}).promise;
+    const view=await canvasBlob(c,'image/jpeg',IMG_Q);
+    const thumb=await drawJpeg(c,THUMB_MAX,0.7);
+    return {view,thumb};
+  }
+
+  // ─────────────── ② 업로드 ───────────────
+  const upQ=[]; let upBusy=false;
+  const up={files:0,fileNo:0,sent:0,skipped:0,failed:0,pageNo:0,pageTotal:0,now:''};
+  function renderUp(){
+    const box=$('upLocal');
+    if(!upBusy&&!up.sent&&!up.skipped&&!up.failed){ box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    $('upText').innerHTML='<span class="chip ok">올림 '+up.sent+'</span>'+(up.skipped?'<span class="chip">건너뜀(같은 파일) '+up.skipped+'</span>':'')+(up.failed?'<span class="chip bad">실패 '+up.failed+'</span>':'')+
+      (upBusy?'<span class="chip run"><span class="spin"></span> 파일 '+up.fileNo+'/'+up.files+(up.pageTotal>1?' · 페이지 '+up.pageNo+'/'+up.pageTotal:'')+'</span>':'<span class="chip">끝</span>');
+    $('upNow').textContent=up.now||'';
+    const done=up.fileNo-(upBusy?1:0)+(up.pageTotal?up.pageNo/up.pageTotal:0)*(upBusy?1:0);
+    $('upBar').style.width=(up.files?Math.min(100,done/up.files*100):0)+'%';
+  }
+  function addFiles(list){
+    if(!S) return;
+    if(!canEdit()){ toast('열람 전용 권한입니다',true); return; }
+    if(!(S.questions||[]).length){ toast('먼저 ① 설문 양식에서 문항을 저장하세요',true); showTab('form'); return; }
+    const arr=Array.from(list||[]).filter(f=>/^image\//.test(f.type)||/pdf/i.test(f.type)||/\.(jpe?g|png|webp|pdf|heic)$/i.test(f.name));
+    if(!arr.length){ toast('사진(JPG·PNG) 또는 PDF 만 올릴 수 있습니다',true); return; }
+    arr.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+    if(!upBusy){ up.files=0; up.fileNo=0; up.sent=0; up.skipped=0; up.failed=0; }
+    arr.forEach(f=>upQ.push(f)); up.files+=arr.length;
+    pumpUploads();
+  }
+  async function sendPage(payload){
+    for(let attempt=0;attempt<3;attempt++){
+      const d=await api('/api/surveys/'+S.id+'/pages',{method:'POST',body:JSON.stringify(payload)});
+      if(d.ok){ up.sent++; return true; }
+      if(d.status===409&&d.error==='same_file'){ up.skipped++; return true; }
+      if(d.status===0||d.status>=500){ await new Promise(r=>setTimeout(r,1500*(attempt+1))); continue; }
+      up.failed++; up.now=payload.orig_name+' — '+errKo(d.error); return false;
+    }
+    up.failed++; up.now=payload.orig_name+' — 서버 연결 실패'; return false;
+  }
+  async function pumpUploads(){
+    if(upBusy) return; upBusy=true; renderUp();
+    const sid=S.id;
+    try{
+      while(upQ.length){
+        if(!S||S.id!==sid) break;
+        const f=upQ.shift(); up.fileNo++; up.pageNo=0; up.pageTotal=0; up.now=f.name; renderUp();
+        try{
+          if(/pdf/i.test(f.type)||/\.pdf$/i.test(f.name)){
+            await ensurePdfLibs();
+            const bytes=new Uint8Array(await f.arrayBuffer());
+            let src=null; try{ if(window.PDFLib) src=await PDFLib.PDFDocument.load(bytes.slice(),{ignoreEncryption:true}); }catch(e){ src=null; }
+            const doc=await pdfjsLib.getDocument({data:bytes.slice()}).promise;
+            up.pageTotal=doc.numPages;
+            for(let i=1;i<=doc.numPages;i++){
+              up.pageNo=i; up.now=f.name+' · '+i+'쪽'; renderUp();
+              const r=await renderPdfPage(doc,i);
+              let single=null;
+              if(src){ try{ const out=await PDFLib.PDFDocument.create(); const cp=await out.copyPages(src,[i-1]); out.addPage(cp[0]); single=new Blob([await out.save()],{type:'application/pdf'}); }catch(e){ single=null; } }
+              const usePdf=single&&single.size<=FILE_LIMIT;
+              await sendPage({ orig_name:f.name+' p'+i, mime:usePdf?'application/pdf':'image/jpeg',
+                file_b64:await blobToB64(usePdf?single:r.view), view_b64:usePdf?await blobToB64(r.view):undefined, thumb_b64:await blobToB64(r.thumb) });
+              renderUp();
+            }
+            try{ doc.destroy(); }catch(e){}
+          } else {
+            const im=await decodeImage(f);
+            const main=await drawJpeg(im,IMG_MAX,IMG_Q);
+            const thumb=await drawJpeg(im,THUMB_MAX,0.7);
+            try{ if(im.close) im.close(); }catch(e){}
+            await sendPage({orig_name:f.name,mime:'image/jpeg',file_b64:await blobToB64(main),thumb_b64:await blobToB64(thumb)});
+          }
+        }catch(err){ up.failed++; up.now=f.name+' — 파일을 읽지 못했습니다'+(/heic/i.test(f.name)?'(HEIC 는 JPG 로 바꿔 주세요)':''); }
+        renderUp();
+        if(up.sent%5===0) loadPages();
+      }
+    } finally { upBusy=false; renderUp(); loadPages(); }
+    if(up.failed) toast('올리지 못한 파일이 '+up.failed+'개 있습니다',true); else toast('업로드 끝 — AI 판독이 이어서 진행됩니다');
+  }
+  window.addEventListener('beforeunload',e=>{ if(upBusy||dirty){ e.preventDefault(); e.returnValue=''; } });
+  $('btnPick').addEventListener('click',()=>$('fileInput').click());
+  $('fileInput').addEventListener('change',e=>{ addFiles(e.target.files); e.target.value=''; });
+  const drop=$('drop');
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop',e=>addFiles(e.dataTransfer&&e.dataTransfer.files));
+
+  // ─────────────── 응답 목록 ───────────────
+  async function loadPages(){
+    if(!S) return;
+    const sid=S.id;
+    const d=await api('/api/surveys/'+sid+'/pages');
+    if(!S||S.id!==sid) return;
+    if(!d.ok){ if(d.status!==401) toast(errKo(d.error),true); return; }
+    pages=d.items||[]; counts=d.counts||{};
+    $('aiWarn').classList.toggle('hidden',!!d.ai_ready || !((counts.queued||0)+(counts.processing||0)));
+    const live=new Set(pages.map(p=>p.id)); Array.from(sel).forEach(id=>{ if(!live.has(id)) sel.delete(id); });
+    renderSumChips(); renderProgress();
+    if(curTab==='upload') renderList();
+    if(curTab==='report') renderReport();
+    if(drawerId&&!drawerEdit){ const p=pages.find(x=>x.id===drawerId); if(p) renderDrawerBody(p,false); else closeDrawer(); }
+    clearTimeout(pollT);
+    if((counts.queued||0)+(counts.processing||0)>0 || upBusy) pollT=setTimeout(loadPages,4000);
+  }
+  function renderProgress(){
+    const c=counts; const tot=c.total||0; const run=(c.queued||0)+(c.processing||0);
+    $('cDone').textContent=c.done||0; $('cErr').textContent=c.error||0;
+    $('cRunChip').innerHTML=(run?'<span class="spin"></span> ':'')+'대기·처리 중 <span id="cRun">'+run+'</span>';
+    $('cNoNum').textContent=c.nonum||0; $('cDup').textContent=c.dup||0; $('cLow').textContent=c.lowconf||0;
+    $('prog').innerHTML=tot?'<i style="width:'+((c.done||0)/tot*100)+'%;background:var(--income)"></i><i style="width:'+(run/tot*100)+'%;background:#9db6e4"></i><i style="width:'+((c.error||0)/tot*100)+'%;background:var(--expense)"></i>':'';
+    $('btnRetryErr').disabled=!c.error||!canEdit();
+  }
+  function shortVal(p,q){
+    const a=p.answers||{}; const v=a[q.k];
+    let s;
+    if(q.type==='multi') s=(v||[]).join(', ');
+    else if(v==null) s='';
+    else s=String(v);
+    const o=(p.others||{})[q.k]; if(o) s+=' ('+o+')';
+    return s;
+  }
+  const numKey=(p)=>p.red_number?String(p.red_number).padStart(8,'0'):'~';
+  function byNumber(a,b){ const an=numKey(a), bn=numKey(b); return an<bn?-1:an>bn?1:(a.dup_idx-b.dup_idx)||(a.seq-b.seq); }
+  function isFlag(p){ return p.status==='done'&&(!p.red_number||p.dup_idx>1||(p.low_conf||[]).length>0); }
+  function listRows(){
+    const kw=$('lq').value.trim().toLowerCase(), f=$('lf').value, so=$('ls').value;
+    const qs=S.questions||[];
+    let rows=pages.filter(p=>{
+      if(f==='flag'&&!isFlag(p)) return false;
+      if(f==='err'&&p.status!=='error') return false;
+      if(f==='run'&&!(p.status==='queued'||p.status==='processing')) return false;
+      if(kw){ const hay=(p.file_name+' '+(p.red_number||'')+' '+qs.map(q=>shortVal(p,q)).join(' ')).toLowerCase(); if(hay.indexOf(kw)<0) return false; }
+      return true;
+    });
+    if(so==='num') rows=rows.slice().sort(byNumber);
+    return rows;
+  }
+  function stChip(p){
+    if(p.status==='error') return '<span class="chip bad" title="'+esc(p.error||'')+'">✕ 실패</span>';
+    if(p.status==='queued') return '<span class="chip run">대기</span>';
+    if(p.status==='processing') return '<span class="chip run"><span class="spin"></span> 판독 중</span>';
+    if(!p.red_number) return '<span class="chip warn">⚠ 번호 못 읽음</span>';
+    if(p.dup_idx>1) return '<span class="chip warn">⚠ 번호 중복</span>';
+    return '<span class="chip ok">✓ 완료</span>';
+  }
+  function renderList(){
+    if(!S) return;
+    const qs=S.questions||[];
+    $('lHead').innerHTML='<th><input type="checkbox" id="ckAll" aria-label="전체 선택"></th><th>붉은 번호</th><th>파일명</th><th>상태</th>'+
+      qs.map(q=>'<th title="'+esc(q.text)+'">Q'+q.no+' '+esc(qName(q).length>10?qName(q).slice(0,9)+'…':qName(q))+'</th>').join('')+'<th>올린 시각</th><th></th>';
+    const rows=listRows();
+    if(!pages.length){ $('lBody').innerHTML='<tr><td colspan="'+(qs.length+6)+'" class="empty">아직 올린 설문지가 없습니다</td></tr>'; updateSelBtn(); return; }
+    $('lBody').innerHTML=rows.map(p=>{
+      const low=new Set(p.low_conf||[]); const ed=p.edited||{};
+      const cells=qs.map(q=>{
+        if(p.status!=='done') return '<td style="color:var(--muted)">—</td>';
+        const u=low.has(q.k);
+        return '<td class="cellclip'+(u?' unc':'')+'" title="'+esc(shortVal(p,q))+'">'+esc(shortVal(p,q))+(u?'<span class="q">?</span>':'')+(ed[q.k]?'<span class="ed">✎</span>':'')+'</td>';
+      }).join('');
+      const no=p.red_number?esc(p.red_number)+(p.dup_idx>1?'<span style="color:var(--muted);font-weight:500">-'+p.dup_idx+'</span>':''):'<span style="color:var(--muted)">?</span>';
+      return '<tr class="clk" data-id="'+p.id+'"><td><input type="checkbox" class="rowck" data-id="'+p.id+'"'+(sel.has(p.id)?' checked':'')+' aria-label="선택"></td>'+
+        '<td class="rednum">'+no+(low.has('_no')?'<span class="q">?</span>':'')+(ed._no?'<span class="ed">✎</span>':'')+'</td><td class="mono">'+esc(p.file_name)+'</td><td>'+stChip(p)+'</td>'+cells+
+        '<td style="color:var(--muted)">'+esc(fmtTime(p.created_at))+'</td><td><button class="btn ghost sm dl" data-id="'+p.id+'" title="원본 받기">⬇</button></td></tr>';
+    }).join('')||'<tr><td colspan="'+(qs.length+6)+'" class="empty">해당하는 응답이 없습니다</td></tr>';
+    const all=$('ckAll'); if(all){ all.checked=rows.length>0&&rows.every(p=>sel.has(p.id)); all.addEventListener('change',()=>{ rows.forEach(p=>{ if(all.checked) sel.add(p.id); else sel.delete(p.id); }); renderList(); }); }
+    updateSelBtn();
+  }
+  function updateSelBtn(){ const b=$('btnZipSel'); b.disabled=!sel.size; b.textContent='⬇ 선택 원본 zip'+(sel.size?' ('+sel.size+')':''); }
+  $('lq').addEventListener('input',renderList); $('lf').addEventListener('change',renderList); $('ls').addEventListener('change',renderList);
+  $('lBody').addEventListener('click',e=>{
+    const ck=e.target.closest('.rowck');
+    if(ck){ const id=Number(ck.dataset.id); if(ck.checked) sel.add(id); else sel.delete(id); updateSelBtn(); return; }
+    const dl=e.target.closest('.dl'); if(dl){ downloadOne(Number(dl.dataset.id)); return; }
+    const tr=e.target.closest('tr.clk'); if(tr) openDrawer(Number(tr.dataset.id));
+  });
+  $('btnRetryErr').addEventListener('click',()=>reprocess('error'));
+  async function reprocess(scope){
+    const d=await api('/api/surveys/'+S.id+'/reprocess',{method:'POST',body:JSON.stringify({scope})});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast(d.queued+'장을 다시 판독합니다'); loadPages();
+  }
+
+  // ─────────────── 다운로드 ───────────────
+  async function downloadOne(id){
+    const p=pages.find(x=>x.id===id); if(!p) return;
+    try{ saveBlob(await apiBlob('/api/surveys/pages/'+id+'/file'),p.file_name); }catch(e){ toast('받지 못했습니다',true); }
+  }
+  async function downloadZip(ids){
+    toast('zip 만드는 중… ('+(ids?ids.length:counts.total)+'장)');
+    try{ const b=await apiBlob('/api/surveys/'+S.id+'/zip'+(ids?'?ids='+ids.join(','):'')); saveBlob(b,(S.code_prefix||'ENC')+'_originales'+(ids?'_'+ids.length:'')+'.zip'); toast('zip 받기 완료 ('+kb(b.size)+')'); }
+    catch(e){ toast('zip 을 받지 못했습니다',true); }
+  }
+  $('btnZipAll').addEventListener('click',()=>{ if(!counts.total){ toast('올린 설문지가 없습니다',true); return; } downloadZip(null); });
+  $('btnZipSel').addEventListener('click',()=>{ if(sel.size) downloadZip(Array.from(sel)); });
+
+  // ─────────────── 원본·판독 드로어 ───────────────
+  function closeDrawer(){ $('drawer').classList.remove('on'); $('dbg').classList.remove('on'); drawerId=null; drawerEdit=false; if(drawerUrl){ URL.revokeObjectURL(drawerUrl); drawerUrl=null; } }
+  $('dbg').addEventListener('click',()=>{ if(drawerEdit&&!confirm('고친 내용을 저장하지 않고 닫을까요?')) return; closeDrawer(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&drawerId){ if(drawerEdit&&!confirm('고친 내용을 저장하지 않고 닫을까요?')) return; closeDrawer(); } });
+  async function openDrawer(id){
+    const p=pages.find(x=>x.id===id); if(!p) return;
+    drawerId=id; drawerEdit=false;
+    $('drawer').classList.add('on'); $('dbg').classList.add('on');
+    const d=$('drawer');
+    d.innerHTML='<div class="row" style="margin-bottom:12px"><p class="ttl" style="margin:0;font-size:16px" id="dTitle"></p><span class="mono" style="color:var(--muted)" id="dFile"></span><div class="sp"></div>'+
+      '<button class="btn ghost sm" id="dPrev" title="이전">◀</button><button class="btn ghost sm" id="dNext" title="다음">▶</button><button class="btn ghost sm" id="dDl">⬇ 원본</button><button class="btn sm" id="dClose">닫기</button></div>'+
+      '<div id="dFlag"></div><div class="dgrid"><div class="paper" id="dPaper"><span class="empty"><span class="spin"></span> 원본 불러오는 중…</span></div><div class="card" style="margin:0" id="dAns"></div></div>';
+    $('dClose').addEventListener('click',()=>{ if(drawerEdit&&!confirm('고친 내용을 저장하지 않고 닫을까요?')) return; closeDrawer(); });
+    const order=listRows().map(x=>x.id); const i=order.indexOf(id);
+    $('dPrev').disabled=i<=0; $('dNext').disabled=i<0||i>=order.length-1;
+    $('dPrev').addEventListener('click',()=>{ if(i>0) openDrawer(order[i-1]); });
+    $('dNext').addEventListener('click',()=>{ if(i<order.length-1) openDrawer(order[i+1]); });
+    $('dDl').addEventListener('click',()=>downloadOne(id));
+    renderDrawerBody(p,true);
+    try{
+      const b=await apiBlob('/api/surveys/pages/'+id+'/view');
+      if(drawerId!==id) return;
+      if(drawerUrl) URL.revokeObjectURL(drawerUrl);
+      drawerUrl=URL.createObjectURL(b);
+      $('dPaper').innerHTML=/pdf/.test(b.type)?'<iframe title="원본 PDF" src="'+drawerUrl+'"></iframe>':'<img alt="설문지 원본" src="'+drawerUrl+'">';
+    }catch(e){ if(drawerId===id) $('dPaper').innerHTML='<span class="empty">원본을 불러오지 못했습니다</span>'; }
+  }
+  function renderDrawerBody(p,first){
+    if(drawerId!==p.id) return;
+    $('dTitle').innerHTML='응답 <span class="rednum">'+(p.red_number?'Nº '+esc(p.red_number)+(p.dup_idx>1?' (-'+p.dup_idx+')':''):'번호 없음')+'</span>';
+    $('dFile').textContent=p.file_name+(p.file_bytes?' · '+kb(p.file_bytes):'');
+    const ce=canEdit();
+    let flag='';
+    const noBox=ce?'<span class="row" style="margin-top:6px"><input id="dNo" class="mono" placeholder="예: 0089" style="width:110px" value="'+esc(p.red_number||'')+'"><button class="btn sm" id="dNoSave">번호 저장</button>'+(p.dup_idx>1?'<button class="btn danger sm" id="dDel">🗑 이 건 삭제</button>':'')+'</span>':'';
+    if(p.status==='done'&&!p.red_number) flag='<div class="note" style="margin-bottom:10px">⚠ 붉은 번호를 읽지 못해 임시 이름 <b>'+esc(p.file_name)+'</b> 로 저장했습니다. 원본을 보고 번호를 넣으면 파일명이 바뀝니다.'+noBox+'</div>';
+    else if(p.dup_idx>1) flag='<div class="note" style="margin-bottom:10px">⚠ 번호 <b>'+esc(p.red_number)+'</b> 이 이미 있어 <b>'+esc(p.file_name)+'</b> 로 저장했습니다. 같은 설문지를 두 번 올린 거라면 이 건을 삭제하고, 번호를 잘못 읽었다면 고치세요.'+noBox+'</div>';
+    else if(p.status==='error') flag='<div class="note" style="margin-bottom:10px">✕ 판독 실패 — '+esc(p.error||'')+(ce?'<div class="row" style="margin-top:8px"><button class="btn sm" id="dRetry">↻ 다시 판독</button><button class="btn danger sm" id="dDel">🗑 삭제</button></div>':'')+'</div>';
+    else if(p.status!=='done') flag='<div class="note" style="margin-bottom:10px"><span class="spin"></span> AI 판독 '+(p.status==='queued'?'대기 중':'진행 중')+'입니다.</div>';
+    $('dFlag').innerHTML=flag;
+    const qs=S.questions||[]; const low=new Set(p.low_conf||[]); const ed=p.edited||{};
+    let body='<p class="ttl">AI가 읽은 답'+(p.notes?' <span class="chip" title="'+esc(p.notes)+'">AI 메모</span>':'')+'</p>';
+    if(p.status!=='done'){ body+='<p class="empty">판독이 끝나면 여기에 답이 나옵니다.</p>'; }
+    else {
+      body+=qs.map(q=>{
+        const v=(p.answers||{})[q.k]; const o=(p.others||{})[q.k];
+        let shown; if(q.type==='multi') shown=(v||[]).join(', '); else shown=v==null?'':String(v);
+        if(q.type==='multi') shown=(v||[]).map(x=>x+(optKo(q,x)?' ('+optKo(q,x)+')':'')).join(', ');
+        else if(q.type==='single'&&v) shown=v+(optKo(q,v)?' ('+optKo(q,v)+')':'');
+        const empty=!shown;
+        return '<div class="ans"><div class="k">Q'+q.no+'</div><div><div class="t">'+esc(qName(q))+(q.ko?' · '+esc(q.text):'')+' · '+TYPE_LB[q.type]+'</div>'+
+          '<div class="a'+(empty?' noans':'')+'" data-k="'+q.k+'">'+esc(empty?'(무응답)':shown)+(low.has(q.k)?' <span class="q">? 확신 낮음</span>':'')+(ed[q.k]?' <span class="ed">✎ 수정됨</span>':'')+'</div>'+
+          (o?'<div class="oth">기타 기재: '+esc(o)+'</div>':'')+
+          (drawerEdit?'<div class="edit">'+editor(q,v)+'</div>':'')+'</div></div>';
+      }).join('');
+      if(ce) body+='<div class="row" style="margin-top:10px">'+(drawerEdit?'<button class="btn sm" id="dSave">💾 고친 칸 저장</button><button class="btn ghost sm" id="dCancel">취소</button>':'<span class="sub2" style="margin:0">AI 결과를 그대로 씁니다. 틀린 칸이 눈에 띄면 고칠 수 있습니다(필수 아님).</span><div class="sp"></div><button class="btn ghost sm" id="dEdit">✎ 수정</button><button class="btn ghost sm" id="dRetry2">↻ 다시 판독</button><button class="btn danger sm" id="dDel2">🗑</button>')+'</div>';
+    }
+    $('dAns').innerHTML=body;
+    const on=(id,fn)=>{ const el=$(id); if(el) el.addEventListener('click',fn); };
+    on('dNoSave',()=>saveNumber(p,false));
+    on('dDel',()=>deletePage(p)); on('dDel2',()=>deletePage(p));
+    on('dRetry',()=>retryPage(p)); on('dRetry2',()=>retryPage(p));
+    on('dEdit',()=>{ drawerEdit=true; renderDrawerBody(p,false); });
+    on('dCancel',()=>{ drawerEdit=false; renderDrawerBody(p,false); });
+    on('dSave',()=>saveEdits(p));
+  }
+  function editor(q,v){
+    const nm='e_'+q.k;
+    if(q.type==='single') return '<select data-ek="'+q.k+'"><option value="">(무응답)</option>'+q.options.map(o=>'<option'+(o===v?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+    if(q.type==='multi') return q.options.map(o=>'<label><input type="checkbox" data-ek="'+q.k+'" value="'+esc(o)+'"'+((v||[]).indexOf(o)>=0?' checked':'')+'> '+esc(o)+'</label>').join('');
+    if(q.type==='scale'){ let h='<select data-ek="'+q.k+'"><option value="">(무응답)</option>'; for(let x=q.min;x<=q.max;x++) h+='<option'+(x===v?' selected':'')+'>'+x+'</option>'; return h+'</select>'; }
+    if(q.type==='number') return '<input type="number" step="any" data-ek="'+q.k+'" value="'+esc(v==null?'':v)+'" style="width:140px">';
+    return '<textarea data-ek="'+q.k+'" name="'+nm+'" style="width:100%;min-height:54px">'+esc(v||'')+'</textarea>';
+  }
+  async function saveEdits(p){
+    const qs=S.questions||[]; const ans={};
+    qs.forEach(q=>{
+      const els=$('dAns').querySelectorAll('[data-ek="'+q.k+'"]'); if(!els.length) return;
+      let nv;
+      if(q.type==='multi') nv=Array.from(els).filter(x=>x.checked).map(x=>x.value);
+      else { const raw=els[0].value; nv=raw===''?(q.type==='text'||q.type==='info'?'':null):(q.type==='scale'||q.type==='number'?Number(raw):raw); }
+      const ov=(p.answers||{})[q.k];
+      if(JSON.stringify(nv)!==JSON.stringify(ov==null&&q.type==='multi'?[]:(ov===undefined?null:ov))) ans[q.k]=nv;
+    });
+    if(!Object.keys(ans).length){ drawerEdit=false; renderDrawerBody(p,false); return; }
+    const d=await api('/api/surveys/pages/'+p.id,{method:'PATCH',body:JSON.stringify({answers:ans})});
+    if(!d.ok){ toast(errKo(d.error)+(d.k?' ('+d.k+')':''),true); return; }
+    drawerEdit=false; toast(Object.keys(ans).length+'칸을 고쳤습니다'); await loadPages();
+  }
+  async function saveNumber(p,allowDup){
+    const v=$('dNo').value.trim();
+    const d=await api('/api/surveys/pages/'+p.id,{method:'PATCH',body:JSON.stringify({red_number:v,allow_dup:!!allowDup})});
+    if(!d.ok){
+      if(d.error==='number_taken'){ if(confirm('번호 '+v+' 은(는) 이미 있습니다. 그래도 이 번호의 중복(-2)으로 저장할까요?')) return saveNumber(p,true); return; }
+      toast(errKo(d.error),true); return;
+    }
+    toast('파일명: '+d.file_name); await loadPages();
+  }
+  async function deletePage(p){
+    if(!confirm(p.file_name+' 을(를) 삭제합니다. 리포트·엑셀에서도 빠집니다. 계속할까요?')) return;
+    const d=await api('/api/surveys/pages/'+p.id,{method:'DELETE'});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast('삭제했습니다'); closeDrawer(); await loadPages();
+  }
+  async function retryPage(p){
+    const d=await api('/api/surveys/pages/'+p.id+'/retry',{method:'POST',body:'{}'});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    toast('다시 판독합니다 — 사람이 고친 칸은 유지됩니다'); await loadPages();
+  }
+
+  // ─────────────── ③ 리포트 ───────────────
+  const SEQ=['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281'];
+  const heatColor=p=>SEQ[Math.min(SEQ.length-1,Math.floor(p/100*SEQ.length*1.35))];
+  const heatInk=c=>SEQ.indexOf(c)>=6?'#fff':'#0b0b0b';
+  const doneRows=()=>pages.filter(p=>p.status==='done'&&p.answers);
+  function answered(r,q){ const v=r.answers[q.k]; if(q.type==='multi') return Array.isArray(v)&&v.length>0; if(q.type==='text'||q.type==='info') return !!String(v||'').trim(); return v!=null; }
+  function cnt(rows,q){
+    const m=new Map(); const opts=q.type==='scale'?range(q):q.options; opts.forEach(o=>m.set(o,0));
+    let n=0;
+    rows.forEach(r=>{ if(!answered(r,q)) return; n++; const v=r.answers[q.k]; if(q.type==='multi') v.forEach(x=>{ if(m.has(x)) m.set(x,m.get(x)+1); }); else if(m.has(v)) m.set(v,m.get(v)+1); });
+    return {m,n,opts};
+  }
+  function range(q){ const a=[]; for(let v=q.min;v<=q.max;v++) a.push(v); return a; }
+  function barsHTML(rows,q){
+    const {m,n,opts}=cnt(rows,q);
+    if(!n) return '<p class="empty">응답 없음</p>';
+    const ent=opts.map(o=>[o,m.get(o)]).sort((a,b)=>b[1]-a[1]);
+    const max=Math.max(1,...ent.map(e=>e[1]));
+    return ent.map(([o,c])=>{ const ko=optKo(q,o); const p=pctS(c,n);
+      return '<div class="hbar"><div class="lb" title="'+esc(o+(ko?' · '+ko:''))+'">'+esc(o)+(ko?'<small>'+esc(ko)+'</small>':'')+'</div><div class="tr"><div class="br" style="width:'+(c/max*100)+'%" data-tv="'+p+'% · '+c+'명 / '+n+'명" data-tl="'+esc(qName(q)+' — '+o)+'"></div></div><div class="vl"><b>'+p+'%</b> · '+c+'</div></div>';
+    }).join('')+(rows.length>n?'<div class="sub2" style="margin:6px 0 0">무응답 '+(rows.length-n)+'명 제외</div>':'');
+  }
+  function scaleColors(k){ // 5단 기준(빨강↔회색↔파랑). 단계 수가 다르면 양 끝을 맞춰 보간
+    const base=['var(--d1)','var(--d2)','var(--d3)','var(--d4)','var(--d5)'];
+    if(k===5) return base;
+    return Array.from({length:k},(_,i)=>base[Math.round(i*(4/(k-1||1)))]);
+  }
+  function scaleHTML(rows,q,segQ){
+    const vals=range(q); const DC=scaleColors(vals.length);
+    const line=(lb,rs)=>{
+      const {m,n}=cnt(rs,q); if(!n) return '';
+      const avg=(rs.filter(r=>answered(r,q)).reduce((a,r)=>a+Number(r.answers[q.k]),0)/n).toFixed(2);
+      return '<div class="srow"><div class="lb" title="'+esc(lb)+'">'+esc(lb)+' <span style="color:var(--muted)">('+n+')</span></div><div class="stack">'+
+        vals.map((v,i)=>{ const c=m.get(v); return c?'<i style="width:'+pct(c,n)+'%;background:'+DC[i]+'" data-tv="'+pctS(c,n)+'% · '+c+'명" data-tl="'+esc(lb)+' — '+v+'점"></i>':''; }).join('')+'</div><div class="avg">'+avg+'</div></div>';
+    };
+    let h=line('전체',rows);
+    if(segQ) segQ.options.forEach(o=>{ h+=line(o,rows.filter(r=>r.answers[segQ.k]===o)); });
+    h+='<div class="legend">'+vals.map((v,i)=>'<span><i style="background:'+DC[i]+'"></i>'+v+(i===0&&q.min_label?' '+esc(q.min_label):'')+(i===vals.length-1&&q.max_label?' '+esc(q.max_label):'')+'</span>').join('')+'<span style="margin-left:auto">오른쪽 숫자 = 평균</span></div>';
+    return h;
+  }
+  function numberHTML(rows,q){
+    const xs=rows.map(r=>r.answers[q.k]).filter(v=>v!=null&&isFinite(v)).map(Number).sort((a,b)=>a-b);
+    if(!xs.length) return '<p class="empty">응답 없음</p>';
+    const n=xs.length, avg=xs.reduce((a,b)=>a+b,0)/n, med=n%2?xs[(n-1)/2]:(xs[n/2-1]+xs[n/2])/2;
+    const f=(v)=>Number(v).toLocaleString('es-MX',{maximumFractionDigits:1});
+    let h='<div class="stats"><div>응답<b>'+n+'</b></div><div>최소<b>'+f(xs[0])+'</b></div><div>중앙값<b>'+f(med)+'</b></div><div>평균<b>'+f(avg)+'</b></div><div>최대<b>'+f(xs[n-1])+'</b></div></div>';
+    const lo=xs[0], hi=xs[n-1];
+    if(hi>lo){
+      const B=Math.min(6,new Set(xs).size); const w=(hi-lo)/B; const bins=Array.from({length:B},()=>0);
+      xs.forEach(v=>{ let i=Math.floor((v-lo)/w); if(i>=B) i=B-1; bins[i]++; });
+      const max=Math.max(...bins);
+      h+=bins.map((c,i)=>{ const a=lo+i*w, b=i===B-1?hi:lo+(i+1)*w; const lb=f(a)+' – '+f(b);
+        return '<div class="hbar"><div class="lb">'+esc(lb)+'</div><div class="tr"><div class="br" style="width:'+(c/max*100)+'%" data-tv="'+pctS(c,n)+'% · '+c+'명" data-tl="'+esc(qName(q)+' '+lb)+'"></div></div><div class="vl"><b>'+pctS(c,n)+'%</b> · '+c+'</div></div>'; }).join('');
+    }
+    return h;
+  }
+  function renderReport(){
+    if(!S) return;
+    const all=doneRows(); const qs=S.questions||[];
+    $('printHead').innerHTML='<div style="font-size:18px;font-weight:800;color:var(--brand)">'+esc(S.title)+'</div><div style="color:var(--muted);font-size:12px">'+esc(S.code_prefix)+(S.survey_date?' · 실시 '+esc(S.survey_date):'')+' · 응답 '+all.length+'건'+(segFilter&&qById(segKey)?' · 대상: '+esc(qName(qById(segKey)))+' = '+esc(segFilter):'')+' · 출력 '+esc(fmtTime(new Date().toISOString()))+'</div>';
+    $('rEmpty').classList.toggle('hidden',all.length>0); $('rBody').classList.toggle('hidden',!all.length);
+    const segQs=qs.filter(q=>q.seg&&q.type==='single');
+    if(!segQs.some(q=>q.k===segKey)) { segKey=segQs.length?segQs[0].k:''; segFilter=''; }
+    $('segQ').innerHTML=segQs.length?segQs.map(q=>'<option value="'+q.k+'"'+(q.k===segKey?' selected':'')+'>Q'+q.no+' '+esc(qName(q))+'</option>').join(''):'<option value="">(세그먼트 문항 없음)</option>';
+    $('segQ').disabled=!segQs.length;
+    const segQ=qById(segKey);
+    $('segChips').innerHTML=segQ?['',...segQ.options].map(o=>'<span class="chip click'+(o===segFilter?' on':'')+'" data-v="'+esc(o)+'">'+(o?esc(o):'전체')+'</span>').join(''):'<span class="sub2">① 양식에서 업종·지역 같은 단일선택 문항의 「세그먼트」를 켜면 여기서 나눠 볼 수 있습니다.</span>';
+    $('segChips').querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{ segFilter=c.dataset.v; renderReport(); }));
+    if(!all.length) return;
+    const rows=segQ&&segFilter?all.filter(r=>r.answers[segKey]===segFilter):all;
+    const n=rows.length;
+
+    // KPI
+    const lowCells=all.reduce((a,r)=>a+(r.low_conf||[]).filter(k=>k!=='_no').length,0);
+    const textQs=qs.filter(q=>q.type==='text');
+    const textN=rows.filter(r=>textQs.some(q=>answered(r,q))).length;
+    const firstScale=qs.find(q=>q.type==='scale');
+    const scaleAvg=firstScale?(()=>{ const xs=rows.map(r=>r.answers[firstScale.k]).filter(v=>v!=null); return xs.length?(xs.reduce((a,b)=>a+Number(b),0)/xs.length).toFixed(2):'—'; })():null;
+    $('kpis').innerHTML=
+      '<div class="kpi"><div class="l">분석 대상 응답</div><div class="v">'+n+'</div><div class="d">'+(segFilter?esc(qName(segQ))+' = '+esc(segFilter):'올림 '+(counts.total||0)+' · 실패·대기 '+((counts.total||0)-all.length)+' 제외')+'</div></div>'+
+      (firstScale?'<div class="kpi"><div class="l">'+esc(qName(firstScale))+'</div><div class="v">'+scaleAvg+'</div><div class="d">Q'+firstScale.no+' 평균 · '+firstScale.min+'~'+firstScale.max+'점</div></div>':'<div class="kpi"><div class="l">문항</div><div class="v">'+qs.length+'</div><div class="d">세그먼트 '+segQs.length+'개</div></div>')+
+      '<div class="kpi"><div class="l">서술형 응답</div><div class="v">'+textN+'</div><div class="d">'+(textQs.length?'서술형 문항 '+textQs.length+'개':'서술형 문항 없음')+'</div></div>'+
+      '<div class="kpi"><div class="l">AI 확신 낮은 칸</div><div class="v">'+pctS(lowCells,all.length*qs.length)+'%</div><div class="d">'+lowCells+'칸 / '+(all.length*qs.length)+'칸 (전체 기준)</div></div>';
+
+    renderAiCard(all);
+
+    // 교차표
+    const targets=qs.filter(q=>q.k!==segKey&&(q.type==='single'||q.type==='multi'||q.type==='scale'));
+    if(segQ&&targets.length){
+      if(!targets.some(q=>q.k===crossKey)) crossKey=(targets.find(q=>!q.seg&&q.type==='single')||targets.find(q=>!q.seg)||targets[0]).k;
+      const tq=qById(crossKey); const cols=tq.type==='scale'?range(tq):tq.options;
+      let h='<div class="row" style="margin-bottom:8px"><div><p class="ttl" style="margin:0">세그먼트 교차 분석 — '+esc(qName(segQ))+' × <select id="ctSel" class="no-print" style="padding:4px 6px">'+targets.map(q=>'<option value="'+q.k+'"'+(q.k===tq.k?' selected':'')+'>Q'+q.no+' '+esc(qName(q))+'</option>').join('')+'</select><span class="prtonly">'+esc(qName(tq))+'</span></p>'+
+        '<p class="sub2" style="margin:2px 0 0">행 = '+esc(qName(segQ))+', 칸 = 그 세그먼트 안에서의 비율'+(tq.type==='multi'?' (복수선택: 응답자 대비라 합계가 100%를 넘음)':'')+'. 진할수록 높음. 표본 10명 미만은 흐리게.</p></div></div>';
+      h+='<div class="tbwrap"><table class="heat"><thead><tr><th class="rl">'+esc(qName(segQ))+'</th><th>n</th>'+cols.map(o=>'<th title="'+esc(optKo(tq,o))+'">'+esc(o)+'</th>').join('')+(tq.type==='scale'?'<th>평균</th>':'')+'</tr></thead><tbody>';
+      segQ.options.forEach(so=>{
+        const rs=all.filter(r=>r.answers[segKey]===so); const {m,n:nn}=cnt(rs,tq);
+        const faint=nn<10?' style="opacity:.55"':'';
+        h+='<tr'+faint+'><td class="rl"><b>'+esc(so)+'</b></td><td class="num" style="color:var(--muted)">'+nn+'</td>'+cols.map(o=>{ const c=m.get(o)||0; const p=pct(c,nn); const col=heatColor(p); return nn?'<td class="h" style="background:'+col+';color:'+heatInk(col)+'" data-tv="'+pctS(c,nn)+'% · '+c+'명 / '+nn+'명" data-tl="'+esc(so+' — '+o)+'">'+Math.round(p)+'%</td>':'<td>—</td>'; }).join('')+
+          (tq.type==='scale'?'<td class="num"><b>'+(nn?(rs.filter(r=>answered(r,tq)).reduce((a,r)=>a+Number(r.answers[tq.k]),0)/nn).toFixed(2):'—')+'</b></td>':'')+'</tr>';
+      });
+      const t=cnt(all,tq);
+      h+='<tr><td class="rl" style="color:var(--muted)">전체</td><td class="num" style="color:var(--muted)">'+t.n+'</td>'+cols.map(o=>'<td class="num" style="text-align:center;color:var(--ink2)">'+Math.round(pct(t.m.get(o)||0,t.n))+'%</td>').join('')+(tq.type==='scale'?'<td class="num">'+(t.n?(all.filter(r=>answered(r,tq)).reduce((a,r)=>a+Number(r.answers[tq.k]),0)/t.n).toFixed(2):'—')+'</td>':'')+'</tr></tbody></table></div>';
+      $('crossCard').innerHTML=h; $('crossCard').classList.remove('hidden');
+      $('ctSel').addEventListener('change',e=>{ crossKey=e.target.value; renderReport(); });
+    } else {
+      $('crossCard').innerHTML='<p class="ttl">세그먼트 교차 분석</p><p class="sub2" style="margin:0">'+(segQ?'비교할 선택형 문항이 없습니다.':'① 설문 양식에서 업종·지역 같은 단일선택 문항에 「세그먼트」를 켜면 세그먼트끼리 비교하는 표가 나옵니다.')+'</p>';
+    }
+
+    // 문항 카드
+    $('qCards').innerHTML=qs.filter(q=>(q.type==='single'||q.type==='multi'||q.type==='scale'||q.type==='number')&&!(segFilter&&q.k===segKey)).map(q=>{
+      const kind=q.type==='multi'?'복수선택 · 응답자 대비 %':q.type==='scale'?'척도 '+q.min+'~'+q.max+(segQ&&!segFilter?' · 세그먼트별':''):q.type==='number'?'숫자':'단일선택';
+      const body=q.type==='scale'?scaleHTML(rows,q,segFilter?null:segQ):q.type==='number'?numberHTML(rows,q):barsHTML(rows,q);
+      return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div><h4>'+esc(qName(q))+'</h4><div class="orig">'+(q.ko?esc(q.text)+' · ':'')+kind+' · n='+n+'</div></div></div>'+body+'</div>';
+    }).join('');
+
+    // 서술형
+    const cache=S.ai_cache||{}; const themesBy=cache.themes||{};
+    const rowIds=new Set(rows.map(r=>r.id)); const byId=new Map(all.map(r=>[r.id,r]));
+    $('textCards').innerHTML=textQs.map(q=>{
+      const items=rows.filter(r=>answered(r,q));
+      let body;
+      const th=themesBy[q.k];
+      if(th&&th.length){
+        const list=th.map(t=>{ const ids=t.ids.filter(id=>rowIds.has(id)); return Object.assign({},t,{cur:ids}); }).filter(t=>t.cur.length).sort((a,b)=>b.cur.length-a.cur.length);
+        const tot=items.length; const max=Math.max(1,...list.map(t=>t.cur.length));
+        body=list.map(t=>{
+          const quotes=t.cur.map(id=>byId.get(id)).filter(Boolean).map(r=>({no:r.red_number,t:String(r.answers[q.k]||'').trim()})).filter(x=>x.t).sort((a,b)=>Math.abs(a.t.length-70)-Math.abs(b.t.length-70)).filter((x,i,arr)=>arr.findIndex(y=>y.t.toLowerCase()===x.t.toLowerCase())===i).slice(0,2);
+          return '<div class="theme"><div><div class="nm">'+esc(t.ko||t.name)+' <span style="color:var(--muted);font-weight:500">· '+esc(t.name)+'</span></div>'+(t.summary_ko?'<div class="qt">'+esc(t.summary_ko)+'</div>':'')+
+            '<div class="qt">'+quotes.map(x=>'<i>“'+esc(x.t.length>160?x.t.slice(0,158)+'…':x.t)+'”</i>'+(x.no?' <span class="mono" style="color:var(--muted)">#'+esc(x.no)+'</span>':'')).join(' &nbsp; ')+'</div><div class="minibar"><i style="width:'+(t.cur.length/max*100)+'%"></i></div></div>'+
+            '<div class="ct">'+t.cur.length+'건<div style="font-weight:500;color:var(--muted);font-size:12px">'+pctS(t.cur.length,tot)+'%</div></div></div>';
+        }).join('')||'<p class="empty">이 조건의 서술형 응답이 없습니다</p>';
+      } else {
+        body='<p class="sub2">아직 AI 주제 요약 전입니다 — 위 「AI 요약」 카드에서 만들 수 있습니다. 최근 응답:</p>'+items.slice(-12).reverse().map(r=>'<div class="theme"><div class="qt"><i>“'+esc(String(r.answers[q.k]).slice(0,200))+'”</i></div><div class="ct mono" style="font-weight:500;color:var(--muted)">#'+esc(r.red_number||'?')+'</div></div>').join('')||'<p class="empty">응답 없음</p>';
+      }
+      return '<div class="card qcard"><div class="qhead"><span class="qno">Q'+q.no+'</span><div style="flex:1"><h4>'+esc(qName(q))+' — 주제별 묶음</h4><div class="orig">'+(q.ko?esc(q.text)+' · ':'')+'서술형 '+items.length+'건 · 인용은 원문 그대로</div></div></div>'+body+'</div>';
+    }).join('');
+
+    const infoQs=qs.filter(q=>q.type==='info');
+    $('infoCard').classList.toggle('hidden',!infoQs.length);
+    if(infoQs.length) $('infoCard').innerHTML='<p class="ttl">기재 정보 (분석 제외 · 엑셀에 포함)</p><p class="sub2" style="margin:0">'+infoQs.map(q=>'Q'+q.no+' '+esc(qName(q))+' — 기재 '+rows.filter(r=>answered(r,q)).length+'/'+n).join(' · ')+'</p>';
+
+    bindTips($('v-report'));
+  }
+  function renderAiCard(all){
+    const c=S.ai_cache;
+    const stale=c&&c.basis&&(c.basis.done!==counts.done||c.basis.last_processed!==counts.last_processed);
+    let h='<div class="row" style="margin-bottom:6px"><p class="ttl" style="margin:0">🤖 AI 요약</p>'+(c?'<span class="chip">'+esc(fmtTime(c.generated_at))+' · 응답 '+(c.basis&&c.basis.done)+'건 기준</span>':'')+(stale?'<span class="chip warn">응답이 바뀜 — 다시 만들기 권장</span>':'')+'<div class="sp"></div>'+
+      (canEdit()?'<button class="btn '+(c?'ghost ':'')+'sm no-print" id="btnInsight">'+(c?'↻ 다시 만들기':'🤖 AI 요약 만들기')+'</button>':'')+'</div>';
+    if(c&&c.bullets&&c.bullets.length) h+='<div class="note"><ul>'+c.bullets.map(b=>'<li>'+esc(b)+'</li>').join('')+'</ul></div>';
+    else if(c) h+='<p class="sub2" style="margin:0">세그먼트 해석을 만들지 못했습니다'+(c.errors&&c.errors.length?' ('+esc(c.errors.map(e=>e.error).join(', '))+')':'')+'.</p>';
+    else h+='<p class="sub2" style="margin:0">세그먼트 간 차이를 한국어 몇 줄로 요약하고, 서술형 답변을 주제별로 묶습니다. 비율 집계만 AI로 보내며 상호·연락처는 보내지 않습니다. 약 20~60초.</p>';
+    $('aiCard').innerHTML=h;
+    const b=$('btnInsight'); if(b) b.addEventListener('click',makeInsights);
+  }
+  async function makeInsights(){
+    const b=$('btnInsight'); b.disabled=true; b.innerHTML='<span class="spin"></span> 만드는 중… (20~60초)';
+    const d=await api('/api/surveys/'+S.id+'/insights',{method:'POST',body:'{}'});
+    if(!d.ok){ toast(errKo(d.error),true); b.disabled=false; b.textContent='🤖 AI 요약 만들기'; return; }
+    S.ai_cache=d.ai_cache; toast('AI 요약을 만들었습니다'); renderReport();
+  }
+  $('segQ').addEventListener('change',e=>{ segKey=e.target.value; segFilter=''; renderReport(); });
+  $('btnPrint').addEventListener('click',()=>{ showTab('report'); setTimeout(()=>window.print(),120); });
+
+  // ─────────────── 엑셀 ───────────────
+  async function exportXlsx(){
+    if(!S) return;
+    toast('엑셀 만드는 중…');
+    try{ await loadScript(LIB.xlsx); }catch(e){ toast('엑셀 라이브러리를 불러오지 못했습니다',true); return; }
+    const X=window.XLSX; const wb=X.utils.book_new(); const qs=S.questions||[];
+    const HS={font:{bold:true,color:{rgb:'FFFFFF'}},fill:{fgColor:{rgb:'143D34'}},alignment:{vertical:'center',wrapText:true}};
+    const LOW={fill:{fgColor:{rgb:'FFF4D6'}}}; const EDT={fill:{fgColor:{rgb:'E4F0EB'}}};
+    const styleHead=(ws,cols)=>{ for(let c=0;c<cols;c++){ const a=X.utils.encode_cell({r:0,c}); if(ws[a]) ws[a].s=HS; } };
+    const sorted=pages.slice().sort(byNumber);
+    // ① 응답
+    const head=['번호(붉은)','파일명','상태'].concat(qs.map(q=>'Q'+q.no+' '+q.text+(q.ko?' ('+q.ko+')':'')),['AI 확신 낮은 칸','사람이 고친 칸','올린 시각']);
+    const aoa=[head];
+    sorted.forEach(p=>{
+      const st=p.status==='done'?(p.red_number?(p.dup_idx>1?'번호 중복':'완료'):'번호 없음'):(p.status==='error'?'실패: '+(p.error||''):'대기');
+      const row=[p.red_number?p.red_number+(p.dup_idx>1?'-'+p.dup_idx:''):'',p.file_name,st];
+      qs.forEach(q=>{ if(p.status!=='done'){ row.push(''); return; } const v=(p.answers||{})[q.k]; const o=(p.others||{})[q.k];
+        let cell=q.type==='multi'?(v||[]).join('; '):(v==null?'':v); if(o) cell=String(cell)+' ('+o+')'; row.push(cell); });
+      row.push((p.low_conf||[]).map(k=>k==='_no'?'번호':('Q'+((qById(k)||{}).no||k))).join(', '));
+      row.push(Object.keys(p.edited||{}).map(k=>k==='_no'?'번호':('Q'+((qById(k)||{}).no||k))).join(', '));
+      row.push(fmtTime(p.created_at));
+      aoa.push(row);
+    });
+    const ws=X.utils.aoa_to_sheet(aoa); styleHead(ws,head.length);
+    sorted.forEach((p,ri)=>{ const low=new Set(p.low_conf||[]); const ed=p.edited||{};
+      qs.forEach((q,qi)=>{ const a=X.utils.encode_cell({r:ri+1,c:3+qi}); if(!ws[a]) return; if(low.has(q.k)) ws[a].s=LOW; else if(ed[q.k]) ws[a].s=EDT; });
+      if(low.has('_no')){ const a=X.utils.encode_cell({r:ri+1,c:0}); if(ws[a]) ws[a].s=LOW; } });
+    ws['!cols']=[{wch:10},{wch:22},{wch:12}].concat(qs.map(q=>({wch:q.type==='text'?40:q.type==='multi'?26:18})),[{wch:14},{wch:14},{wch:14}]);
+    X.utils.book_append_sheet(wb,ws,'응답');
+    // ② 문항
+    const qa=[['#','키','문항(원문)','한국어','유형','보기','세그먼트']].concat(qs.map(q=>[q.no,q.k,q.text,q.ko||'',TYPE_LB[q.type],q.type==='scale'?q.min+'~'+q.max:(q.options||[]).map((o,i)=>o+((q.options_ko||[])[i]?' ('+q.options_ko[i]+')':'')).join('; '),q.seg?'○':'']));
+    const ws2=X.utils.aoa_to_sheet(qa); styleHead(ws2,7); ws2['!cols']=[{wch:4},{wch:6},{wch:44},{wch:24},{wch:10},{wch:60},{wch:8}];
+    X.utils.book_append_sheet(wb,ws2,'문항');
+    // ③ 집계
+    const all=doneRows(); const sa=[['문항','보기','응답 수','비율(%)','기준 n']];
+    qs.forEach(q=>{
+      if(q.type==='single'||q.type==='multi'||q.type==='scale'){ const {m,n,opts}=cnt(all,q); opts.forEach(o=>sa.push(['Q'+q.no+' '+qName(q),String(o)+(optKo(q,o)?' ('+optKo(q,o)+')':''),m.get(o),pct(m.get(o),n),n]));
+        if(q.type==='scale'&&n) sa.push(['Q'+q.no+' '+qName(q),'평균',Number((all.filter(r=>answered(r,q)).reduce((a,r)=>a+Number(r.answers[q.k]),0)/n).toFixed(2)),'',n]); }
+      else if(q.type==='number'){ const xs=all.map(r=>r.answers[q.k]).filter(v=>v!=null).map(Number).sort((a,b)=>a-b); if(xs.length){ const avg=xs.reduce((a,b)=>a+b,0)/xs.length; sa.push(['Q'+q.no+' '+qName(q),'평균',Number(avg.toFixed(2)),'',xs.length],['Q'+q.no+' '+qName(q),'최소 / 최대',xs[0]+' / '+xs[xs.length-1],'',xs.length]); } }
+    });
+    const ws3=X.utils.aoa_to_sheet(sa); styleHead(ws3,5); ws3['!cols']=[{wch:36},{wch:34},{wch:10},{wch:10},{wch:8}];
+    X.utils.book_append_sheet(wb,ws3,'집계');
+    // ④ 세그먼트 교차
+    const segQs=qs.filter(q=>q.seg&&q.type==='single');
+    if(segQs.length){
+      const ca=[];
+      segQs.forEach(sq=>{ qs.filter(q=>q.k!==sq.k&&(q.type==='single'||q.type==='multi'||q.type==='scale')).forEach(tq=>{
+        const cols=tq.type==='scale'?range(tq):tq.options;
+        ca.push(['['+qName(sq)+' × Q'+tq.no+' '+qName(tq)+']'+(tq.type==='multi'?' 응답자 대비 %':' %')]);
+        ca.push([qName(sq),'n'].concat(cols.map(String)));
+        sq.options.forEach(so=>{ const rs=all.filter(r=>r.answers[sq.k]===so); const {m,n}=cnt(rs,tq); ca.push([so,n].concat(cols.map(o=>n?pct(m.get(o)||0,n):''))); });
+        ca.push([]);
+      }); });
+      const ws4=X.utils.aoa_to_sheet(ca); ws4['!cols']=[{wch:26},{wch:6}].concat(Array.from({length:12},()=>({wch:14})));
+      X.utils.book_append_sheet(wb,ws4,'세그먼트 교차');
+    }
+    // ⑤ 서술형 주제
+    const th=(S.ai_cache&&S.ai_cache.themes)||{};
+    const ta=[['문항','주제(한국어)','주제(원문)','건수','해당 번호']];
+    const byId=new Map(all.map(r=>[r.id,r]));
+    Object.keys(th).forEach(k=>{ const q=qById(k); if(!q) return; th[k].forEach(t=>ta.push(['Q'+q.no+' '+qName(q),t.ko||'',t.name,t.ids.length,t.ids.map(id=>{ const r=byId.get(id); return r?(r.red_number||'#'+r.seq):''; }).filter(Boolean).join(', ')])); });
+    if(ta.length>1){ const ws5=X.utils.aoa_to_sheet(ta); styleHead(ws5,5); ws5['!cols']=[{wch:30},{wch:24},{wch:28},{wch:8},{wch:60}]; X.utils.book_append_sheet(wb,ws5,'서술형 주제'); }
+    const d=new Date(); const ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+    X.writeFile(wb,(S.code_prefix||'ENC')+'_encuesta_'+ymd+'.xlsx');
+    toast('엑셀을 받았습니다');
+  }
+  $('btnXlsx').addEventListener('click',exportXlsx); $('btnXlsx2').addEventListener('click',exportXlsx);
+
+  // ─────────────── 시작 ───────────────
+  $('goLogin').addEventListener('click',login);
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&S&&((counts.queued||0)+(counts.processing||0))>0) loadPages(); });
+  const ps=portalSession();
+  if(ps&&ps.token){ session={token:ps.token,user:ps.user,api:ps.api||$('apiInput').value.replace(/\/+$/,'')}; afterLogin(); }
+  window.__surveyDebug={get S(){return S;},get pages(){return pages;},get counts(){return counts;}};
+})();
+
+</script>
+<script src="refatrix-nav.js?v=20260911survey"></script>
+</body>
+</html>
