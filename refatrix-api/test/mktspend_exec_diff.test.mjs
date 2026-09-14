@@ -250,7 +250,12 @@ const markers = [
   ['증빙 점검 요약', 'id="evSum"'],
   ['증빙 종류 전송', 'doc_kind:pendingUpload.doc_kind'],
   ['계획 공통 증빙 라벨', '계획 공통 증빙'],
-  ['빌드 마커', 'build 20260903a'],
+  ['집행 시트(하단 고정)', "classList.add('sheet')"],
+  ['체크 즉시 시트 열림', 'syncExecPanel()'],
+  ['입력값 보존', 'readExecDraft'],
+  ['0195 경고 배너', 'id="migBox"'],
+  ['0195 플래그 수신', 'exec_ready'],
+  ['빌드 마커', 'build 20260914a'],
 ];
 for (const [name, needle] of markers) {
   t(`${name} (${needle})`, () => { assert.ok(html.includes(needle), '없음'); });

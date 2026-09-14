@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 마케팅 지출계획 · build 20260903a</title>
+<title>Refatrix ERP · 마케팅 지출계획 · build 20260914a</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--gold:#B8893B;--purple:#7a4ea0;--purple-bg:#f1ebf7;--radius:12px;}
@@ -61,6 +61,17 @@
     border-radius:9px;padding:8px 12px;margin-top:10px;font-size:12.5px}
   .execpanel{border:1.5px solid #2b5a78;border-radius:10px;padding:12px 14px;margin-top:10px;background:#f7fbff}
   .execpanel table{margin-top:6px}
+  /* 집행 시트 — 체크하는 즉시 화면 하단에 붙어 뜬다. 목록 어디까지 스크롤했든 항상 보인다.
+     (모달로 덮지 않는 이유: 시트가 떠 있는 동안에도 다른 줄을 계속 체크해 여러 건을 한 번에 처리해야 하기 때문) */
+  .execpanel.sheet{position:fixed;left:0;right:0;bottom:0;z-index:3900;margin:0;max-height:64vh;overflow:auto;
+    border-width:2px 0 0 0;border-radius:14px 14px 0 0;padding:12px 18px 18px;box-shadow:0 -10px 30px rgba(0,0,0,.18)}
+  .execpanel.sheet .exhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:-12px;
+    background:#f7fbff;padding:2px 0 6px;margin:-2px 0 0}
+  .execbar.fixed{position:fixed;left:0;right:0;bottom:0;z-index:3880;margin:0;border-radius:0;border-width:1px 0 0 0;
+    box-shadow:0 -6px 18px rgba(0,0,0,.12)}
+  .migbanner{background:#fdecec;border:1.5px solid #e6a4a4;color:#8f2424;border-radius:10px;padding:10px 14px;
+    margin-top:10px;font-size:12.5px;line-height:1.75;font-weight:600}
+  .migbanner code{background:#fff;border:1px solid #e6a4a4;border-radius:4px;padding:1px 6px;font-weight:700}
   .execrow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:10px}
   .exhist{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.6}
   /* --- 대사 패널 --- */
@@ -203,6 +214,7 @@
 
       <div class="secttl">💸 집행 항목 <span class="hint" style="font-weight:500">— 장소·케이터링·판촉물처럼 집행별로 나누고, 각 항목마다 선지급·중도금·잔금 일정을 계획. 항목마다 <b>견적서(계획 근거)</b>와 <b>영수증(집행 근거)</b>을 붙입니다</span></div>
       <div class="evsum hidden" id="evSum"></div>
+      <div class="migbanner hidden" id="migBox"></div>
       <div class="execbar hidden" id="execBar"></div>
       <div class="execpanel hidden" id="execPanel"></div>
       <div id="itWrap"></div>
@@ -438,6 +450,7 @@
       targets:(d.targets||[]).map(t=>({customer_id:t.customer_id,is_general:t.is_general,code:t.code,name:t.name})),
       files:d.files||[],
       can_execute:!!d.can_execute,
+      exec_ready:(d.exec_ready===false?false:true),   // 서버 0195 적용 여부(구백엔드면 undefined → 경고 안 띄움)
       can_attach:d.can_attach||{quote:false,receipt:false}};
     cur._revs=(d.revisions_recent||[]);
     cur._evOpen={};
@@ -506,6 +519,7 @@
     $('tgTools').style.display=ed?'':'none';
     $('btnAddItem').style.display=ed?'':'none';
     closeExecPanel();
+    renderMigBanner();
     renderTargets(); renderDiff(); renderItems(); renderRatio(); renderFiles(); renderButtons();
   }
 
@@ -667,12 +681,12 @@
         h+='<span class="hint" title="계획대비 차이 '+fmt(l.exec_diff)+' MXN">('+((l.exec_diff>0?'+':'')+fmt0(l.exec_diff))+')</span>';
       if(can&&lastEx)h+='<button class="btn ghost sm" data-exrev="'+lastEx.id+'">되돌리기</button>';
     }else if(st==='partial'){
-      if(can)h+='<input type="checkbox" class="exsel" data-ln="'+l.id+'" title="집행 처리 대상으로 선택">';
+      if(can)h+='<input type="checkbox" class="exsel" data-ln="'+l.id+'" title="체크하면 집행(완결) 처리 창이 화면 아래에 바로 열립니다 — 여러 줄을 함께 체크하면 한 번에 처리됩니다">';
       h+='<span class="partchip" title="집행 '+fmt(l.exec_total)+' · 잔액 '+fmt(l.exec_balance)+' MXN">부분 '+fmt0(l.exec_total)+' · 잔 '+fmt0(l.exec_balance)+'</span>';
       if(can&&lastEx)h+='<button class="btn ghost sm" data-exrev="'+lastEx.id+'">되돌리기</button>';
     }else{
       if(l.txn_deleted)h='<span class="delchip" title="재무 > 거래등록에서 이 예정 지출(자금계획)이 삭제되었습니다. 저장해도 다시 만들어지지 않습니다.">자금계획 삭제됨</span>';
-      else if(can)h='<input type="checkbox" class="exsel" data-ln="'+l.id+'" title="집행 처리 대상으로 선택"><span class="nonechip">미집행</span>';
+      else if(can)h='<input type="checkbox" class="exsel" data-ln="'+l.id+'" title="체크하면 집행(완결) 처리 창이 화면 아래에 바로 열립니다 — 여러 줄을 함께 체크하면 한 번에 처리됩니다"><span class="nonechip">미집행</span>';
       else h='<span class="nonechip">'+(cur.status==='approved'?'미집행':'—')+'</span>';
     }
     return '<span class="execcell">'+h+'</span>';
@@ -764,6 +778,20 @@
       +(!custN?'<div class="hint" style="align-self:center">고객 대상을 추가하면 비율이 계산됩니다</div>':'');
   }
 
+  // ---- 0195 미적용 경고 — "체크해도 아무 일이 없다"의 나머지 절반 원인 ----
+  //   컬럼이 없으면 상세 조회는 폴백으로 멀쩡히 열리지만 집행 API 는 503 으로 거부한다.
+  //   화면이 그 사실을 직접 말해 주지 않으면 원인을 찾을 수 없다.
+  function renderMigBanner(force){
+    const b=$('migBox'); if(!b)return;
+    const bad=!!force||!!(cur&&cur.status==='approved'&&canExec()&&cur.exec_ready===false);
+    if(!bad){b.classList.add('hidden');b.innerHTML='';return;}
+    b.innerHTML='🔴 <b>집행 처리가 아직 동작하지 않습니다</b> — 서버 마이그레이션(0195)이 적용되지 않았습니다.<br>'
+      +'Railway 콘솔에서 <code>npm run migrate</code> 를 한 번 실행하면 바로 됩니다. '
+      +'그전까지는 줄을 체크해도 서버가 거부하고, 지출 예정은 현금흐름에 그대로 남습니다.';
+    b.classList.remove('hidden');
+    if(force){try{b.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}}
+  }
+
   // ================= 집행 처리(0195) =================
   const EXEC_ERR={exec_forbidden:'집행 처리는 재무·디렉터만 할 수 있습니다.',
     migration_required:'서버 마이그레이션(0195)이 아직 적용되지 않았습니다. 디렉터에게 알려주세요.',
@@ -778,15 +806,17 @@
     return null;
   }
   function lineBalance(l){ return Math.max(0,(Number(l.amount)||0)-(Number(l.exec_total)||0)); }
+  function execBoxes(){ return [...document.querySelectorAll('.exsel')]; }
+  function execSelected(){ return execBoxes().filter(b=>b.checked); }
   function renderExecBar(){
     const bar=$('execBar'); if(!bar)return;
     if(!(cur&&cur.status==='approved'&&canExec())){bar.classList.add('hidden');bar.innerHTML='';return;}
-    const boxes=[...document.querySelectorAll('.exsel')];
+    const boxes=execBoxes();
     const on=boxes.filter(b=>b.checked);
     let sum=0; on.forEach(b=>{const f=findLine(b.dataset.ln); if(f)sum+=lineBalance(f.l);});
     const T=execTotals();
     bar.classList.remove('hidden');
-    bar.innerHTML='💸 <b>집행 처리</b> <span class="hint">— 실제 송금한 줄을 골라 계획을 소진합니다. <b>재무 등록은 별도</b>로 진행하세요.</span>'
+    bar.innerHTML='💸 <b>집행 처리</b> <span class="hint">— 실제로 송금이 끝난 줄(영수증이 있는 줄)을 <b>체크하면 화면 아래에 집행 창이 바로 열립니다.</b> 완결하면 계획에서 소진되고 현금흐름에서 빠집니다. <b>재무 등록은 별도</b>로 진행하세요.</span>'
       +'<span style="margin-left:auto">계획 '+fmt(T.plan)+' · 집행 '+fmt(T.exec)+' · 미집행 잔액 <b style="color:var(--expense)">'+fmt(T.bal)+'</b></span>'
       +'<div style="flex-basis:100%;height:0"></div>'
       +'<span>선택 <b>'+on.length+'건</b> · 합계 <b>MX$ '+fmt(sum)+'</b></span>'
@@ -794,32 +824,60 @@
       +'<button class="btn ghost sm" data-act="execnone"'+(on.length?'':' disabled')+'>선택 해제</button>'
       +(boxes.length?'':'<span class="hint">집행 가능한 줄이 없습니다 — 모두 완료되었거나 재무에서 실적 처리되었습니다.</span>');
   }
-  function closeExecPanel(){ $('execPanel').classList.add('hidden'); $('execPanel').innerHTML=''; }
+  // 시트를 다시 그릴 때 이미 입력한 값(실지급액·집행일·비고·완결)을 잃지 않는다
+  function readExecDraft(){
+    const d={amounts:{},date:'',note:'',close:null};
+    document.querySelectorAll('.exam').forEach(el=>{d.amounts[el.dataset.ln]=el.value;});
+    if($('exDate'))d.date=$('exDate').value;
+    if($('exNote'))d.note=$('exNote').value;
+    if($('exClose'))d.close=$('exClose').checked;
+    return d;
+  }
+  function closeExecPanel(){
+    const p=$('execPanel'); if(!p)return;
+    p.classList.add('hidden'); p.classList.remove('sheet'); p.innerHTML='';
+    document.body.style.paddingBottom='';
+  }
+  function cancelExec(){ execBoxes().forEach(b=>{b.checked=false;}); renderExecBar(); closeExecPanel(); }
+  // 체크 상태가 바뀔 때마다 호출 — 하나라도 켜져 있으면 시트가 열려 있고, 다 끄면 닫힌다
+  function syncExecPanel(){ if(execSelected().length)openExecPanel(); else closeExecPanel(); }
   function openExecPanel(){
-    const on=[...document.querySelectorAll('.exsel')].filter(b=>b.checked);
-    if(!on.length)return;
+    const on=execSelected();
+    if(!on.length){closeExecPanel();return;}
+    const draft=readExecDraft();
     const today=new Date().toISOString().slice(0,10);
+    let sum=0;
     const rows=on.map(b=>{
       const f=findLine(b.dataset.ln); if(!f)return '';
       const bal=lineBalance(f.l);
-      return '<tr><td style="white-space:normal">'+esc(f.it.name)+' · <span class="pk '+f.l.kind+'">'+KIND_LABEL[f.l.kind]+'</span> <span class="hint">'+esc(f.l.due_date||'')+'</span></td>'
+      const keep=draft.amounts[String(f.l.id)];
+      const val=(keep!==undefined&&keep!=='')?keep:bal;
+      sum+=Number(val)||0;
+      const rc=receiptCovered(f.it,f.l)
+        ?'<span class="evbadge ok" style="font-size:10px">📎 영수증 있음</span>'
+        :'<span class="hint">📎 영수증 없음</span>';
+      return '<tr><td style="white-space:normal">'+esc(f.it.name)+' · <span class="pk '+f.l.kind+'">'+KIND_LABEL[f.l.kind]+'</span> <span class="hint">'+esc(f.l.due_date||'')+'</span><br>'+rc+'</td>'
         +'<td class="r">'+fmt(f.l.amount)+'</td><td class="r">'+fmt(bal)+'</td>'
-        +'<td><input type="number" step="0.01" min="0" class="exam" data-ln="'+f.l.id+'" value="'+bal+'" style="width:120px;text-align:right"></td></tr>';
+        +'<td><input type="number" step="0.01" min="0" class="exam" data-ln="'+f.l.id+'" value="'+val+'" style="width:120px;text-align:right"></td></tr>';
     }).join('');
-    $('execPanel').innerHTML='<div style="font-weight:800;color:#2b5a78">💸 집행 처리 — '+on.length+'건</div>'
+    $('execPanel').innerHTML='<div class="exhead"><div style="font-weight:800;color:#2b5a78">💸 집행 처리 — '+on.length+'건 · 합계 MX$ '+fmt(sum)+'</div>'
+      +'<span class="hint">다른 줄을 더 체크하면 여기에 함께 담깁니다</span>'
+      +'<button class="btn ghost sm" data-act="execcancel" style="margin-left:auto">닫기 ✕</button></div>'
       +'<table><tr><th>대상 줄</th><th class="r">계획액</th><th class="r">잔액</th><th>실지급액 (MXN)</th></tr>'+rows+'</table>'
       +'<div class="execrow">'
-      +'<div><label>집행일(실제 송금일) *</label><input type="date" id="exDate" value="'+today+'"></div>'
-      +'<div style="flex:1;min-width:200px"><label>비고 — 송금 참조번호 등</label><input id="exNote" maxlength="300" style="width:100%"></div>'
+      +'<div><label>집행일(실제 송금일) *</label><input type="date" id="exDate" value="'+esc(draft.date||today)+'"></div>'
+      +'<div style="flex:1;min-width:200px"><label>비고 — 송금 참조번호 등</label><input id="exNote" maxlength="300" style="width:100%" value="'+esc(draft.note||'')+'"></div>'
       +'<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-bottom:9px;color:var(--ink)">'
-      +'<input type="checkbox" id="exClose" checked> 이 줄들은 <b>완결</b> — 더 나갈 돈 없음</label>'
+      +'<input type="checkbox" id="exClose"'+(draft.close===false?'':' checked')+'> 이 줄들은 <b>완결</b> — 더 나갈 돈 없음</label>'
       +'</div>'
       +'<div class="hint" style="margin-top:6px">완결하면 재무 &gt; 거래등록의 <b>예정 내역에서 사라지고 현금흐름에서 제외</b>됩니다. 완결을 끄면 <b>잔액만큼 예정이 남습니다</b>.<br>'
       +'계획액과 실지급액이 다르면 계획액은 그대로 두고 <b>계획대비 차이</b>로 기록됩니다.<br>'
       +'⚠️ 실제 송금 등록(재무 &gt; 거래등록)은 <b>별도로</b> 진행하세요 — 이 화면은 계획만 소진합니다. 누락은 위 「집행 ↔ 재무 대사」에서 잡힙니다.</div>'
       +'<div style="display:flex;gap:10px;margin-top:12px"><button class="btn" data-act="execgo">집행 처리</button><button class="btn ghost" data-act="execcancel">취소</button></div>';
     $('execPanel').classList.remove('hidden');
-    try{$('execPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){}
+    $('execPanel').classList.add('sheet');
+    // 시트가 목록 마지막 줄을 가리지 않도록 본문 아래 여백 확보
+    try{ document.body.style.paddingBottom=($('execPanel').offsetHeight+16)+'px'; }catch(e){}
   }
   async function submitExec(){
     const date=$('exDate')?$('exDate').value:'';
@@ -835,7 +893,8 @@
       +'\n\n실제 송금 등록(재무 > 거래등록)은 별도로 진행해야 합니다.'))return;
     const d=await api('/api/mktspend/plans/'+cur.id+'/executions',
       {method:'POST',body:JSON.stringify({exec_date:date,note:note||null,close,lines})});
-    if(!d.ok){say('cpMsg',false,EXEC_ERR[d.error]||('집행 처리 실패: '+(d.error||d.status)));return;}
+    if(!d.ok){ if(d.error==='migration_required'){cur.exec_ready=false;renderMigBanner(true);}
+      say('cpMsg',false,EXEC_ERR[d.error]||('집행 처리 실패: '+(d.error||d.status)));return;}
     closeExecPanel();
     say('cpMsg',true,'집행 처리 완료 — '+lines.length+'건 · MX$ '+fmt(sum)+(close?' · 예정에서 제외되었습니다.':' · 잔액은 예정으로 남습니다.'));
     loadList(); openPlan(cur.id);
@@ -1197,7 +1256,7 @@
 
   // ================= 이벤트 (위임) =================
   document.addEventListener('click',function(ev){
-    if(ev.target.classList&&ev.target.classList.contains('exsel')){renderExecBar();return;}
+    if(ev.target.classList&&ev.target.classList.contains('exsel')){renderExecBar();syncExecPanel();return;}
     const t=ev.target.closest('[data-open],[data-st],[data-deltg],[data-delitem],[data-addln],[data-delln],[data-viewf],[data-delf],[data-exrev],[data-evadd],[data-evline],[data-act],.srchItem');
     if(!t)return;
     if(t.dataset.evadd!=null){
@@ -1240,8 +1299,8 @@
       else if(a==='diffonly'){cur._diffOnly=!cur._diffOnly;renderDiff();renderItems();}
       else if(a==='execopen')openExecPanel();
       else if(a==='execgo')submitExec();
-      else if(a==='execcancel')closeExecPanel();
-      else if(a==='execnone'){[...document.querySelectorAll('.exsel')].forEach(b=>{b.checked=false;});renderExecBar();}
+      else if(a==='execcancel')cancelExec();
+      else if(a==='execnone')cancelExec();
       return;
     }
   });

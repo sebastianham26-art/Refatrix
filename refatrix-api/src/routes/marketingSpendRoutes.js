@@ -735,6 +735,9 @@ export default async function marketingSpendRoutes(app) {
       //   곧 현재 상태이면) 그 다음 스냅샷을 기준으로 삼는다 → 항상 "직전 마일스톤 대비"가 된다.
       revisions_recent: recentRevs,
       can_execute: canExecute(req.ctx.perm),
+      // 0195(집행 컬럼) 적용 여부 — 미적용이면 화면이 열자마자 빨간 배너를 띄운다.
+      //   조회는 폴백으로 멀쩡히 열리므로, 이 플래그가 없으면 "체크해도 안 먹힌다"의 원인을 화면에서 알 수 없다.
+      exec_ready: await execReady(),
       can_edit: isDirector(req) || (Number(p.created_by) === Number(req.ctx.perm.userId) && ['draft', 'rejected', 'approved'].includes(p.status)),
       is_director: isDirector(req),
     };
