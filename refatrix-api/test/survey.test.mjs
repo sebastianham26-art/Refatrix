@@ -185,6 +185,13 @@ test('B1. 서버에 등록되고, 권한은 marketing 화면키를 쓴다', () =
 test('B2. 모델 설정이 외부 서비스 키 화면 등록부에 있다', () => {
   assert.match(read(join(API, 'src/secrets.js')), /SURVEY_AI_MODEL/);
 });
+test('B3. 화면 — 지도 내장 · 지역 문항 전환 안내 · 무AI 재정리 버튼이 살아 있다', () => {
+  const h = read(join(REPO, 'refatrix-survey.html'));
+  assert.ok(h.includes('const MX_MAP='), '멕시코 지도 데이터가 파일에 들어 있어야 한다(외부 CDN 금지)');
+  assert.ok(h.includes('btnToGeo'), '지역 문항이 아닐 때 바꿔 주는 안내가 있어야 한다');
+  assert.ok(h.includes('geo-normalize'), 'AI 없이 다시 정리하는 버튼이 있어야 한다');
+  assert.ok(/build 20260914sv\d/.test(h), '빌드 토큰');
+});
 
 // ── C. 실 DB 종단 ────────────────────────────────────────────────────
 const dbTest = PG ? test : test.skip;

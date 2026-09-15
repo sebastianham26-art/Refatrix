@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 고객 설문 분석 · build 20260914sv2</title>
+<title>Refatrix ERP · 고객 설문 분석 · build 20260914sv3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -347,7 +347,7 @@
 <script>
 (function(){
   'use strict';
-  const BUILD='20260914sv2';
+  const BUILD='20260914sv3';
   try{ console.log('[survey] build '+BUILD); }catch(e){}
   const $=(id)=>document.getElementById(id);
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -1104,6 +1104,38 @@
       '<div>'+bars+cityTbl+'</div></div></div>';
   }
 
+  // 지역 문항이 아직 「지역(주)」 유형이 아닐 때 — 후보를 찾아 한 번에 바꿔 준다.
+  //   (9/11 판으로 만든 설문은 지역이 단일선택·기재정보로 잡혀 있어 지도가 안 붙는다)
+  const GEO_WORDS=/estado|ciudad|municipio|ubicaci|localidad|plaza|regi[oó]n|d[oó]nde|지역|도시|소재|주소/i;
+  const ST_SET=new Set(Object.keys(MX_MAP.paths).map(x=>x.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()));
+  const stLike=(v)=>!!v&&ST_SET.has(String(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim());
+  function geoCandidate(qs,all){
+    const cand=qs.filter(q=>['single','text','info','multi'].includes(q.type));
+    let best=null;
+    cand.forEach(q=>{
+      let score=0;
+      if(GEO_WORDS.test(q.text+' '+(q.ko||''))) score+=2;
+      const opts=(q.options||[]).filter(stLike).length;
+      if(opts>=2) score+=2;
+      const vals=all.map(r=>r.answers[q.k]).filter(v=>typeof v==='string'&&v.trim());
+      if(vals.length){ const hit=vals.filter(stLike).length/vals.length; if(hit>=0.4) score+=2; else if(hit>=0.15) score+=1; }
+      if(score>=2&&(!best||score>best.score)) best={q,score};
+    });
+    return best&&best.q;
+  }
+  async function convertToGeo(q){
+    if(!confirm('「'+qName(q)+'」 문항을 「지역(주)」 유형으로 바꿉니다.\n\n· 이미 읽어 둔 답을 멕시코 32개 주로 정리합니다(AI 재판독 없음 · 비용 0).\n· 주를 못 정한 건은 「주 미확인」으로 표시되고, 목록에서 고를 수 있습니다.\n\n계속할까요?')) return;
+    const qs=(S.questions||[]).map(x=>x.k===q.k?Object.assign({},x,{type:'geo',seg:true}):x);
+    const d=await api('/api/surveys/'+S.id,{method:'PUT',body:JSON.stringify({questions:qs})});
+    if(!d.ok){ toast(errKo(d.error),true); return; }
+    S.questions=d.questions; draftQs=JSON.parse(JSON.stringify(d.questions)); renderQs();
+    const g=await api('/api/surveys/'+S.id+'/geo-normalize',{method:'POST',body:'{}'});
+    if(!g.ok){ toast(errKo(g.error),true); await loadPages(); return; }
+    toast('지역 문항으로 바꿨습니다 — '+g.changed+'건 정리'+(g.unresolved?' · 주 미확인 '+g.unresolved+'건':''));
+    segKey=q.k; segFilter='';
+    await loadPages();
+  }
+
   function renderReport(){
     if(!S) return;
     const all=doneRows(); const qs=S.questions||[];
@@ -1168,8 +1200,14 @@
       $('crossCard').innerHTML='<p class="ttl">세그먼트 교차 분석</p><p class="sub2" style="margin:0">'+(segQ?'비교할 선택형 문항이 없습니다.':'① 설문 양식에서 업종·지역 같은 단일선택 문항에 「세그먼트」를 켜면 세그먼트끼리 비교하는 표가 나옵니다.')+'</p>';
     }
 
-    // 지역 카드(지도) — 문항 카드보다 먼저
-    $('geoCards').innerHTML=geoQs.filter(q=>!(segFilter&&q.k===segKey)).map(q=>geoCardHTML(q,rows)).join('');
+    // 지역 카드(지도) — 문항 카드보다 먼저. 지역 문항이 아직 없으면 바꿔 주는 안내를 띄운다.
+    if(!geoQs.length){
+      const cq=geoCandidate(qs,all);
+      $('geoCards').innerHTML=cq?('<div class="card"><div class="row"><div style="flex:1 1 260px;min-width:220px"><p class="ttl" style="margin:0">🗺 지역 분석을 켤 수 있습니다</p>'+
+        '<p class="sub2" style="margin:4px 0 0">「<b>'+esc(qName(cq))+'</b>」 문항을 <b>지역(주)</b> 유형으로 바꾸면 지도·주별 순위·도시 표가 나옵니다. 적힌 표기(Mty · N.L. · CDMX…)는 멕시코 32개 주로 자동 정리되고, <b>AI 재판독은 필요 없습니다(비용 0).</b></p></div>'+
+        (canEdit()?'<button class="btn no-print" id="btnToGeo">지역 문항으로 바꾸기</button>':'<span class="sub2" style="margin:0">수정 권한이 있는 사용자가 바꿀 수 있습니다.</span>')+'</div></div>'):'';
+      const bg=$('btnToGeo'); if(bg) bg.addEventListener('click',()=>convertToGeo(cq));
+    } else $('geoCards').innerHTML=geoQs.filter(q=>!(segFilter&&q.k===segKey)).map(q=>geoCardHTML(q,rows)).join('');
     const gu=$('geoUnres'); if(gu) gu.addEventListener('click',()=>{ showTab('upload'); $('lf').value='flag'; renderList(); });
     const gb=$('btnGeoNorm'); if(gb) gb.addEventListener('click',geoNormalize);
     bindTips($('geoCards'));
