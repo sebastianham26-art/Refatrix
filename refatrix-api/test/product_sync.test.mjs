@@ -29,7 +29,7 @@ const CRM_URL = `http://127.0.0.1:${crm.address().port}/api/integrations/erp/pro
 
 const {
   stockRange, imageUrlFor, buildProduct, buildLote, chunk, mxNowParts,
-  applyMap, PRODUCT_FIELDS,
+  applyMap, PRODUCT_FIELDS, firstSyd,
 } = await import('../src/productSync.js');
 
 // ── ① 순수 로직 ──────────────────────────────────────────────────────
@@ -160,6 +160,62 @@ test('본문 형식 — 묶음 · 제품 배열 · 1건씩', () => {
   assert.equal(renamed.items.length, 2);
   assert.equal(renamed.idEnvio, 'CAT-2026-09-15');
   assert.equal('productos' in renamed, false);
+});
+
+test('상대 규격이 요구하는 다른 모양 — 첫 SYD 코드 · active 문자열 · 코드 두 번 · 작업자', () => {
+  assert.equal(firstSyd('12345 // 67890'), '12345');
+  assert.equal(firstSyd('  1603005  //  1516049 '), '1603005');
+  assert.equal(firstSyd(''), '');
+  assert.equal(firstSyd(null), '');
+
+  const on = buildProduct({ code: 'GV0022', name: 'BRAZO', scode: '12345 // 67890',
+    list_price: 403.9, stock_qty: 5, is_active: true }, '');
+  assert.equal(on.internalSku, 'GV0022', '제품코드를 두 번째 이름으로도 보낼 수 있어야 한다');
+  assert.equal(on.sydCode1, '12345');
+  assert.equal(on.statusCode, 'active', 'true/false 가 아니라 문자열');
+  const off = buildProduct({ code: 'X', name: 'n', list_price: 0, stock_qty: 0, is_active: false }, '');
+  assert.equal(off.statusCode, 'inactive');
+  assert.equal(off.activo, false, '옛 boolean 필드도 남는다(다른 상대를 위해)');
+});
+
+test('개발자 규격(2026-09-15) 그대로 만들어진다 — 1건씩 · 없는 필드는 빠진다', () => {
+  const row = { code: 'GV0022', name: 'BRAZO AUXILIAR', app: 'NISSAN X 2000-2005',
+    scode: '12345 // 67890', list_price: 403.9, stock_qty: 5, is_active: true,
+    sat_code: '25172000', origin: 'KR', iva_rate: 16, ean: '7500000000000',
+    location: 'A1', list_price_syd: 500, price_customer_ctr: 350 };
+  const map = {
+    codigo: 'ctrCode', internalSku: 'internalSku', descripcion: 'descriptionEs',
+    sydCode1: 'sydCode1', sat: 'satClass', ean13: 'ean13', origen: 'originCode',
+    precioLista: 'listPriceMxn', statusCode: 'statusCode', transactionUser: 'transactionUser',
+    // 그 규격에 없는 것들은 뺀다
+    aplicaciones: '', referenciaSyd: '', moneda: '', existencia: '', imagenUrl: '',
+    activo: '', iva: '', ubicacion: '', precioListaComp: '', customerPrice: '',
+  };
+  const body = buildLote(
+    { envioId: 'TEST-1', fechaCorte: '2026-09-15', lote: 1, totalLotes: 1,
+      totalProductos: 1, transactionUser: 'usuario_erp', mode: 'test' },
+    [buildProduct(row, '')], { map, shape: 'item' });
+
+  assert.deepEqual(Object.keys(body).sort(), [
+    'ctrCode', 'descriptionEs', 'ean13', 'internalSku', 'listPriceMxn',
+    'originCode', 'satClass', 'statusCode', 'sydCode1', 'transactionUser'].sort());
+  assert.equal(body.ctrCode, 'GV0022');
+  assert.equal(body.internalSku, 'GV0022');
+  assert.equal(body.descriptionEs, 'BRAZO AUXILIAR');
+  assert.equal(body.sydCode1, '12345', 'SYD 는 첫 번째 하나만');
+  assert.equal(body.listPriceMxn, 403.9);
+  assert.equal(body.statusCode, 'active');
+  assert.equal(body.transactionUser, 'usuario_erp', '봉투가 없으므로 제품 안에 들어간다');
+  assert.equal('aplicaciones' in body, false);
+  assert.equal('codigo' in body, false);
+});
+
+test('봉투 형식에서는 transactionUser 가 제품 안에 중복되지 않는다', () => {
+  const p = buildProduct({ code: 'A', name: 'n', list_price: 1, stock_qty: 1, is_active: true }, '');
+  const lote = buildLote({ envioId: 'C', fechaCorte: '2026-09-15', lote: 1, totalLotes: 1,
+    totalProductos: 1, transactionUser: 'admin', mode: 'full' }, [p], { shape: 'lote' });
+  assert.equal(lote.transactionUser, 'admin');
+  assert.equal('transactionUser' in lote.productos[0], false);
 });
 
 // ── ② 화면(연동 관리) 정적 점검 ──────────────────────────────────────

@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260915fieldmap</title>
+<title>Refatrix ERP · 연동 관리 · build 20260915devspec</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -320,7 +320,7 @@
                     <option value="item">1건씩 — 요청 1건 = 제품 1건</option>
                   </select></div>
                 <div style="display:flex;gap:8px;align-items:end">
-                  <button class="btn ghost sm" id="btnMapPreset" type="button">CRM 열 이름으로 채우기</button>
+                  <button class="btn ghost sm" id="btnMapPreset" type="button">개발자 규격으로 채우기</button>
                   <button class="btn ghost sm" id="btnMapClear" type="button">이름 초기화</button>
                 </div>
               </div>
@@ -771,23 +771,28 @@
 
   // ===== 0219 · 상대 규격 맞추기(필드 이름 · 본문 형식) =====
   // 우리 필드 목록은 서버(productSync.PRODUCT_FIELDS)와 같은 순서·같은 이름이어야 한다.
+  // [우리 필드, 설명, 개발자 규격(2026-09-15)에서 쓰는 이름 · '-' 는 그 규격에 없어서 뺀다]
   const PFIELDS=[
-    ['codigo','제품코드 · Clave CTR','claveCTR'],
-    ['descripcion','제품명 · Producto','producto'],
-    ['aplicaciones','적용차종 · Aplicacion','aplicacion'],
-    ['referenciaSyd','SYD 코드 · Clave SyD','claveSYD'],
-    ['precioLista','정가 · Precio','precio'],
-    ['moneda','통화 (CRM 열에 없음)',''],
-    ['existencia','가용재고 구간 (CRM 열에 없음)',''],
-    ['imagenUrl','사진 URL (CRM 열에 없음)',''],
-    ['activo','판매상태 (CRM 열에 없음)',''],
-    ['sat','SAT 코드 · SAT','sat'],
-    ['origen','원산지 · Origen','origen'],
-    ['iva','IVA % · IVA','iva'],
-    ['ean13','바코드 · EAN13','ean13'],
-    ['ubicacion','위치 · Ubicacion','ubicacion'],
-    ['precioListaComp','경쟁사 정가 · Precio lista comp.','precioListaComp'],
-    ['customerPrice','고객단가 · Customer price','customerPrice'],
+    ['codigo','제품코드 (products.code)','ctrCode'],
+    ['internalSku','제품코드 — 두 번째 이름으로도 요구함','internalSku'],
+    ['descripcion','제품명 (products.name)','descriptionEs'],
+    ['sydCode1','SYD 코드 — 여러 개면 <b>첫 번째만</b>','sydCode1'],
+    ['referenciaSyd','SYD 코드 전체 (// 구분)','-'],
+    ['aplicaciones','적용차종 — <b>상대 규격에 없음</b>','-'],
+    ['precioLista','정가 (list_price)','listPriceMxn'],
+    ['moneda','통화','-'],
+    ['existencia','가용재고 구간 — <b>상대 규격에 없음</b>','-'],
+    ['imagenUrl','사진 URL — <b>상대 규격에 없음</b>','-'],
+    ['activo','판매상태 (true/false)','-'],
+    ['statusCode','판매상태 — <b>active / inactive 문자열</b>','statusCode'],
+    ['sat','SAT 코드','satClass'],
+    ['origen','원산지','originCode'],
+    ['iva','IVA %','-'],
+    ['ean13','바코드','ean13'],
+    ['ubicacion','위치','-'],
+    ['precioListaComp','경쟁사 정가','-'],
+    ['customerPrice','고객단가','-'],
+    ['transactionUser','작업자 — 봉투 없는 형식에서는 제품 안에 들어간다','transactionUser'],
   ];
 
   function renderFieldMap(map){
@@ -1305,11 +1310,16 @@
   });
   $('fBodyShape').addEventListener('change',applyShapeHint);
   $('btnMapPreset').addEventListener('click',function(){
-    const m={}; PFIELDS.forEach(function(f){ if(f[2]) m[f[0]]=f[2]; });
+    // 개발자가 보내온 규격(2026-09-15) 그대로. '-' 인 필드는 그 규격에 없으므로 빼고 보낸다.
+    const m={}; PFIELDS.forEach(function(f){ m[f[0]] = (f[2]==='-') ? '' : f[2]; });
     renderFieldMap(m);
+    $('fBodyShape').value='item';          // 그 규격은 제품 1건 = 요청 1건이다
+    applyShapeHint();
     $('catalogMsg').className='msg warn';
-    $('catalogMsg').innerHTML='CRM 업로드 화면의 열 이름으로 <b>추정해서</b> 채웠습니다 — 철자는 개발자 확인이 필요합니다. '
-      +'재고·사진·판매상태·통화는 그 화면에 열이 없습니다(우리 이름 그대로 나갑니다). 저장 후 <b>시험 전송</b>으로 확인하세요.';
+    $('catalogMsg').innerHTML='개발자 규격(2026-09-15)으로 채웠습니다. 함께 확인하세요 — '
+      +'① 「키를 싣는 위치」를 <b>본문 JSON 필드</b>, 이름 <b>apiKey</b> 로 바꿔야 합니다(그 규격은 키를 본문에 받습니다). '
+      +'② <b>적용차종·재고·사진</b>은 그 규격에 없어 빠집니다. '
+      +'③ 1건씩이라 전체 전송이 <b>제품 수만큼</b>의 요청이 됩니다.';
   });
   $('btnMapClear').addEventListener('click',function(){ renderFieldMap({}); });
   $('btnCatalogSend').addEventListener('click',()=>catalogSend('full'));

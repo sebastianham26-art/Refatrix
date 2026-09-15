@@ -94,6 +94,12 @@ export const PRODUCT_FIELDS = [
   'codigo', 'descripcion', 'aplicaciones', 'referenciaSyd',
   'precioLista', 'moneda', 'existencia', 'imagenUrl', 'activo',
   'sat', 'origen', 'iva', 'ean13', 'ubicacion', 'precioListaComp', 'customerPrice',
+  // 0220 · 상대(CRM) 규격이 요구하는 **다른 모양**의 값들.
+  //   이름만 갈아 끼워서는 안 되는 것들이라 여기서 값까지 만들어 둔다:
+  //   · internalSku  — 제품코드를 두 번째 이름으로도 요구한다(한 값을 두 필드로)
+  //   · sydCode1     — SYD 코드가 여러 개여도 **첫 번째 하나만**
+  //   · statusCode   — true/false 가 아니라 'active' / 'inactive' 문자열
+  'internalSku', 'sydCode1', 'statusCode', 'transactionUser',
 ];
 /** 묶음 봉투의 필드(본문 형식이 'lote' 일 때만 쓰인다). */
 export const LOTE_FIELDS = [
@@ -124,7 +130,20 @@ export function buildProduct(row, imgBase) {
     ubicacion: row.location == null ? null : String(row.location).trim(),
     precioListaComp: row.list_price_syd == null ? null : money(row.list_price_syd),
     customerPrice: row.price_customer_ctr == null ? null : money(row.price_customer_ctr),
+    // 0220 · 상대 규격용 파생값
+    internalSku: String(row.code || '').trim(),
+    sydCode1: firstSyd(row.scode),
+    statusCode: row.is_active === false ? 'inactive' : 'active',
+    // 봉투가 없는 형식(1건씩·배열)에서는 이 값이 **제품 안에** 들어가야 한다.
+    //   buildLote 가 실제 사용자 이름으로 채운다(여기서는 자리만).
+    transactionUser: null,
   };
+}
+
+/** SYD 코드가 ' // ' 로 여러 개일 때 **첫 번째 하나만** — 상대는 sydCode1 하나만 받는다. */
+export function firstSyd(scode) {
+  const first = String(scode == null ? '' : scode).split('//')[0].trim();
+  return first;
 }
 
 /**
@@ -138,6 +157,7 @@ export function applyMap(obj, map, order) {
   const out = {};
   const keys = order && order.length ? order.filter((k) => k in obj) : Object.keys(obj);
   for (const k of keys) {
+    if (obj[k] === undefined) continue;          // 이 형식에서 쓰지 않는 필드
     if (Object.prototype.hasOwnProperty.call(m, k)) {
       const name = String(m[k] == null ? '' : m[k]).trim();
       if (!name) continue;                 // 빈 이름 = 이 필드는 빼고 보낸다
@@ -161,7 +181,11 @@ export function applyMap(obj, map, order) {
 export function buildLote(meta, productos, opt = {}) {
   const map = opt.map || {};
   const shape = BODY_SHAPES.includes(opt.shape) ? opt.shape : 'lote';
-  const items = productos.map((p) => applyMap(p, map, PRODUCT_FIELDS));
+  // 봉투가 없는 형식에서는 transactionUser 가 제품 안에 들어간다(봉투 형식에서는 봉투에만).
+  const withUser = productos.map((p) => (shape === 'lote'
+    ? { ...p, transactionUser: undefined }
+    : { ...p, transactionUser: meta.transactionUser }));
+  const items = withUser.map((p) => applyMap(p, map, PRODUCT_FIELDS));
   if (shape === 'array') return items;
   if (shape === 'item') return items[0] === undefined ? {} : items[0];
   const envelope = {
