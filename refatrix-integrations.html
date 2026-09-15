@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리</title>
+<title>Refatrix ERP · 연동 관리 · build 20260915prodsync</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -285,6 +285,33 @@
             그래서 전체 동기화를 돌려도 <b>CRM 에 없는 고객은 빠져나갑니다.</b><br>
             여기에 <b>「고객 신규 등록」</b> 창구를 지정해 두면, 그 응답을 받은 건을 <b>자동으로 등록 창구로 다시 보냅니다</b>
             (있으면 갱신, 없으면 등록 — 버튼 하나로). 대상 창구가 <b>꺼져 있거나 주소가 비어 있으면 폴백은 일어나지 않습니다.</b>
+          </div>
+
+          <!-- 0218 · 제품 카탈로그 전송 — 제품 창구에서만 보인다 -->
+          <div id="boxProduct" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+            <div style="font-weight:600;margin-bottom:8px">제품 카탈로그 전송 <span class="hint">(계약서 v1.0 · 하루 1회 전체)</span></div>
+            <div class="row3">
+              <div><label>사진 기본주소 <span class="hint">({code} 를 쓰면 그 자리에 제품코드)</span></label>
+                <input id="fImgBase" placeholder="https://.../fotos  →  https://.../fotos/CA0032.jpg"></div>
+              <div><label>묶음 크기 <span class="hint">(한 번에 보낼 제품 수)</span></label><input id="fBatch" placeholder="500"></div>
+              <div><label>자동 전송 시각 <span class="hint">(멕시코 시간, 0~23)</span></label><input id="fSendHour" placeholder="6"></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+              <input type="checkbox" id="fAutoSend"><span class="hint">매일 자동으로 전체 카탈로그를 보냅니다. 꺼 두면 아래 버튼으로만 보냅니다.</span>
+            </label>
+            <div class="hint" style="margin-top:8px">
+              전체 전송의 <b>마지막 묶음</b>에는 마감 신호(<span class="mono">esUltimoLote</span>)가 붙습니다 —
+              이번 전송에 없는 제품을 CRM 이 감추는 신호입니다.
+              <b>시험 전송은 마감하지 않습니다</b>(몇 건만 보낸 뒤 마감하면 카탈로그가 통째로 비어 버립니다).
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+              <button class="btn" id="btnCatalogSend">지금 전체 보내기</button>
+              <button class="btn ghost" id="btnCatalogTest">시험 전송 3건</button>
+              <button class="btn ghost sm" id="btnCatalogPreview">보낼 본문 미리보기</button>
+              <button class="btn ghost sm" id="btnCatalogReload">새로고침</button>
+            </div>
+            <div class="msg" id="catalogMsg"></div>
+            <div id="catalogRuns" style="margin-top:10px"></div>
           </div>
 
           <div id="boxTokens">
@@ -632,6 +659,16 @@
     $('fTokenProd').value=''; $('fTokenProd').placeholder=e.has_token_prod?'●●●● 저장됨 — 바꿀 때만 입력':'없음';
     $('fTimeout').value=e.timeout_ms||10000; $('fUserField').value=e.user_field||'login_id';
     $('fSort').value=e.sort_order==null?100:e.sort_order;
+    // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만)
+    const isProd = e.category==='product' && e.direction!=='in';
+    $('boxProduct').classList.toggle('hidden',!isProd);
+    if(isProd){
+      $('fImgBase').value=e.img_base_url||'';
+      $('fBatch').value=e.batch_size==null?500:e.batch_size;
+      $('fSendHour').value=e.send_hour_mx==null?6:e.send_hour_mx;
+      $('fAutoSend').checked=!!e.auto_send;
+      loadCatalogStatus();
+    }
     applyDirection();
     const warn=[]; const info=[];
     if(e.direction==='in'){
@@ -684,6 +721,67 @@
     $('testOut').innerHTML='';
   }
 
+  // ===== 0218 · 제품 카탈로그 전송 =====
+  async function loadCatalogStatus(){
+    const box=$('catalogRuns'); if(!box) return;
+    try{
+      const d=await fetch(session.api+'/api/product-sync/status',{headers:auth()}).then(r=>r.json());
+      if(d.error){ box.innerHTML='<div class="hint">'+esc(d.note||d.error)+'</div>'; return; }
+      const c=d.products||{}, s=d.settings||{};
+      const head='<div class="hint">제품 '+(c.total||0)+'건 (비활성 '+(c.inactivos||0)+'건) · '
+        +'묶음 '+(d.estimated_lotes||1)+'개 예상 · 멕시코 날짜 '+esc(d.mx_today||'')
+        +(s.auto_send?(' · 자동 전송 '+s.send_hour_mx+'시'+(d.auto_ran_today?' (오늘 완료)':' (오늘 대기)')):' · 자동 전송 꺼짐')+'</div>';
+      const runs=(d.last_runs||[]);
+      const rows=runs.length? runs.map(r=>'<tr><td class="mono">'+esc(r.envio_id)+'</td>'
+        +'<td>'+(r.mode==='test'?'시험':'전체')+' · '+(r.origin==='auto'?'자동':'수동')+'</td>'
+        +'<td>'+r.total_productos+'제품 / '+r.total_lotes+'묶음</td>'
+        +'<td>완료 '+r.sent+' · 대기 '+r.pending+' · 실패 '+r.failed+'</td>'
+        +'<td class="hint">'+new Date(r.created_at).toLocaleString('ko-KR')+'</td></tr>').join('')
+        : '<tr><td colspan="5" class="hint">아직 전송한 적이 없습니다.</td></tr>';
+      box.innerHTML=head+'<table style="width:100%;margin-top:8px"><thead><tr>'
+        +'<th>envioId</th><th>구분</th><th>규모</th><th>상태</th><th>시각</th></tr></thead><tbody>'+rows+'</tbody></table>';
+      if(!d.can_send){
+        const why=d.blocked_reason==='url_missing'?'전송 주소가 비어 있습니다 — 개발자에게 받은 URL 을 위에 넣으세요.'
+          :(d.blocked_reason==='endpoint_disabled'?'연동이 꺼져 있습니다 — 적재는 되지만 전송되지 않고 대기함에 쌓입니다.'
+          :'제품 창구를 찾을 수 없습니다.');
+        $('catalogMsg').className='msg warn'; $('catalogMsg').textContent=why;
+      }
+    }catch(e){ box.innerHTML='<div class="hint">상태를 불러오지 못했습니다.</div>'; }
+  }
+
+  async function catalogSend(mode){
+    const full = mode!=='test';
+    if(full && !confirm('전체 카탈로그를 CRM 으로 보냅니다.\n\n마지막 묶음에 마감 신호가 붙어, 이번 전송에 없는 제품은 CRM 에서 감춰집니다.\n계속할까요?')) return;
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='적재 중…';
+    $('btnCatalogSend').disabled=true; $('btnCatalogTest').disabled=true;
+    try{
+      const d=await fetch(session.api+'/api/product-sync/run',{method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},auth()),
+        body:JSON.stringify(full?{mode:'full'}:{mode:'test',limit:3})}).then(r=>r.json());
+      if(d.error){ m.className='msg err'; m.textContent=(d.note||d.error)+(d.detail?(' — '+d.detail):''); }
+      else{
+        m.className=d.queued_only?'msg warn':'msg ok';
+        m.textContent=(full?'전체':'시험')+' 전송 적재 완료 — '+d.envio_id+' · '
+          +d.total_productos+'제품 / '+d.total_lotes+'묶음'
+          +(d.queued_only?' (연동이 꺼져 있거나 주소가 비어 대기함에 쌓였습니다)':' — 전송 이력 탭에서 결과를 확인하세요.');
+      }
+      loadCatalogStatus();
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+    finally{ $('btnCatalogSend').disabled=false; $('btnCatalogTest').disabled=false; }
+  }
+
+  async function catalogPreview(){
+    const m=$('catalogMsg'); m.className='msg'; m.textContent='불러오는 중…';
+    try{
+      const d=await fetch(session.api+'/api/product-sync/preview',{headers:auth()}).then(r=>r.json());
+      if(!d.found){ m.className='msg warn'; m.textContent='제품이 없습니다.'; return; }
+      m.className='msg ok';
+      m.innerHTML='실제로 보낼 본문입니다 — 개발자에게 준 계약서와 대조하세요.'
+        +'<pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto;margin-top:6px">'
+        +esc(JSON.stringify(d.sample_lote,null,2))+'</pre>';
+    }catch(e){ m.className='msg err'; m.textContent='서버 연결 실패'; }
+  }
+
   function cfgPatch(){
     const p={label:$('fLabel').value.trim(),category:$('fCategory').value,description:$('fDesc').value.trim(),
       enabled:$('fEnabled').checked,env:$('fEnv').value,
@@ -696,6 +794,13 @@
       fallback_codes:$('fFallbackCodes').value.trim()||'ERR_CUSTOMER_NOT_FOUND',
       timeout_ms:Number($('fTimeout').value||10000),user_field:$('fUserField').value,
       sort_order:Number($('fSort').value||100)};
+    // 0218 · 제품 카탈로그 전송 설정 — 그 카드가 보일 때만 보낸다(다른 창구 값을 건드리지 않게).
+    if(!$('boxProduct').classList.contains('hidden')){
+      p.img_base_url=$('fImgBase').value.trim();
+      p.batch_size=Number($('fBatch').value||500);
+      p.send_hour_mx=Number($('fSendHour').value||6);
+      p.auto_send=$('fAutoSend').checked;
+    }
     // 이름 칸 하나로 헤더명/파라미터명을 겸한다 — 위치에 따라 알맞은 필드로 보낸다.
     const nm=$('fAuthName').value.trim();
     if ($('fAuthIn').value==='header') p.auth_header = nm || 'Authorization';
@@ -1099,6 +1204,10 @@
   document.querySelectorAll('#boxInbound button[data-env]').forEach(function(b){
     b.addEventListener('click',()=>issueKey(b.dataset.env));
   });
+  $('btnCatalogSend').addEventListener('click',()=>catalogSend('full'));
+  $('btnCatalogTest').addEventListener('click',()=>catalogSend('test'));
+  $('btnCatalogPreview').addEventListener('click',catalogPreview);
+  $('btnCatalogReload').addEventListener('click',loadCatalogStatus);
   $('btnSaveNotify').addEventListener('click',saveNotifyTargets);
   $('btnNotifyNone').addEventListener('click',function(){
     NOTIFY.forEach(u=>{ if(!u.always) u.selected=false; });

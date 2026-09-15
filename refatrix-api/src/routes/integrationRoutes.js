@@ -22,6 +22,10 @@ const ERR_NOTE = {
   key_taken: '이미 같은 키의 연동이 있습니다.',
   fallback_self: '자기 자신을 대체 창구로 지정할 수 없습니다 — 같은 실패가 끝없이 반복됩니다.',
   auth_from_self: '자기 자신에게서 키를 물려받을 수는 없습니다.',
+  batch_size_invalid: '묶음 크기는 10~2000 사이여야 합니다.',
+  send_hour_invalid: '자동 전송 시각은 0~23 사이여야 합니다.',
+  img_base_invalid: '사진 기본주소는 http:// 또는 https:// 로 시작해야 합니다.',
+  img_base_space: '사진 기본주소에 공백이 섞여 있습니다 — 주소만 남기세요.',
 };
 
 export default async function integrationRoutes(app) {

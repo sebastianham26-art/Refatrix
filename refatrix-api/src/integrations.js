@@ -179,6 +179,11 @@ export function publicEndpoint(ep) {
     fallback_key: ep.fallback_key || '',
     fallback_codes: ep.fallback_codes == null ? 'ERR_CUSTOMER_NOT_FOUND' : ep.fallback_codes,
     contract: ep.contract || {},
+    // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만 화면에 보인다)
+    img_base_url: ep.img_base_url || '',
+    batch_size: ep.batch_size == null ? 500 : Number(ep.batch_size),
+    send_hour_mx: ep.send_hour_mx == null ? 6 : Number(ep.send_hour_mx),
+    auto_send: !!ep.auto_send,
     sort_order: ep.sort_order == null ? 100 : Number(ep.sort_order),
     source: ep.source || 'db',
     updated_at: ep.updated_at || null,
@@ -188,7 +193,9 @@ export function publicEndpoint(ep) {
 const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_test', 'url_prod',
   'method_upsert', 'method_delete', 'auth_header', 'auth_in', 'auth_param', 'ok_code', 'user_field',
   'timeout_ms', 'contract', 'sort_order', 'no_retry_codes', 'fallback_key', 'fallback_codes',
-  'auth_from'];
+  'auth_from',
+  // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만 쓰인다. 다른 창구에서는 값이 있어도 무해).
+  'img_base_url', 'batch_size', 'send_hour_mx', 'auto_send'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 export function validatePatch(p, cur = null) {
@@ -211,6 +218,21 @@ export function validatePatch(p, cur = null) {
   if (p.timeout_ms != null) {
     const n = Number(p.timeout_ms);
     if (!Number.isFinite(n) || n < 1000 || n > 60000) return 'timeout_invalid';
+  }
+  // 0218 · 제품 카탈로그 전송 설정
+  if (p.batch_size != null) {
+    const n = Number(p.batch_size);
+    if (!Number.isFinite(n) || n < 10 || n > 2000) return 'batch_size_invalid';
+  }
+  if (p.send_hour_mx != null) {
+    const n = Number(p.send_hour_mx);
+    if (!Number.isInteger(n) || n < 0 || n > 23) return 'send_hour_invalid';
+  }
+  if (p.img_base_url != null) {
+    const v = String(p.img_base_url).trim();
+    // 사진은 상대 브라우저가 직접 여는 주소다 — 형식이 틀리면 카탈로그 전체에 깨진 사진이 뜬다.
+    if (v && !/^https?:\/\//i.test(v)) return 'img_base_invalid';
+    if (v && /\s/.test(v)) return 'img_base_space';
   }
   for (const f of ['url_test', 'url_prod']) {
     const v = p[f] == null ? '' : String(p[f]).trim();
@@ -275,8 +297,9 @@ export async function saveEndpoint(key, patch, userId) {
   for (const f of EDITABLE) {
     if (patch[f] === undefined) continue;
     let v = patch[f];
-    if (f === 'enabled') v = !!v;
-    else if (f === 'timeout_ms' || f === 'sort_order') v = Number(v);
+    if (f === 'enabled' || f === 'auto_send') v = !!v;
+    else if (f === 'timeout_ms' || f === 'sort_order' || f === 'batch_size' || f === 'send_hour_mx') v = Number(v);
+    else if (f === 'img_base_url') v = String(v == null ? '' : v).trim();
     else if (f === 'method_upsert' || f === 'method_delete') v = String(v).toUpperCase();
     else if (f === 'contract') v = typeof v === 'string' ? v : JSON.stringify(v);
     else if (f === 'url_test' || f === 'url_prod') v = String(v == null ? '' : v).trim();

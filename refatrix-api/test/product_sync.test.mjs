@@ -1,0 +1,259 @@
+// ERP → CRM 제품 카탈로그 전송(계약서 v1.0) — 적재·묶음·마감신호·전송 테스트
+//
+//   순수 로직(구간·사진주소·본문·묶기)은 DB 없이 돌고,
+//   적재·전송·하루1회 잠금은 TEST_PG_URL 이 있을 때만 실제 PostgreSQL + 모의 CRM 으로 돈다.
+//
+//   실행: TEST_PG_URL=postgres://... node --test test/product_sync.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+
+const PG = process.env.TEST_PG_URL || '';
+if (PG) process.env.DATABASE_URL = PG;
+
+// 모의 CRM — 받은 본문을 그대로 모아 둔다.
+let scenario = { status: 200, body: { codigoError: '0', mensaje: 'OK' } };
+const received = [];
+const crm = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (d) => { raw += d; });
+  req.on('end', () => {
+    received.push({ method: req.method, url: req.url, headers: req.headers, body: raw ? JSON.parse(raw) : null });
+    res.writeHead(scenario.status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(scenario.body));
+  });
+});
+await new Promise((r) => crm.listen(0, '127.0.0.1', r));
+const CRM_URL = `http://127.0.0.1:${crm.address().port}/api/integrations/erp/productos`;
+
+const {
+  stockRange, imageUrlFor, buildProduct, buildLote, chunk, mxNowParts,
+} = await import('../src/productSync.js');
+
+// ── ① 순수 로직 ──────────────────────────────────────────────────────
+test('재고 구간은 경계에서 정확히 갈린다', () => {
+  assert.equal(stockRange(0), '0');
+  assert.equal(stockRange(-5), '0');          // 마이너스 재고도 0 으로 보인다
+  assert.equal(stockRange(1), '1-10');
+  assert.equal(stockRange(10), '1-10');
+  assert.equal(stockRange(10.9), '1-10');     // 소수 재고는 내림
+  assert.equal(stockRange(11), '11-20');
+  assert.equal(stockRange(20), '11-20');
+  assert.equal(stockRange(21), '21-30');
+  assert.equal(stockRange(30), '21-30');
+  assert.equal(stockRange(31), '+30');
+  assert.equal(stockRange(5000), '+30');
+  assert.equal(stockRange(null), '0');
+});
+
+test('사진 주소 — 기본주소가 없으면 빈 값, {code} 자리 치환, 없으면 코드.jpg', () => {
+  assert.equal(imageUrlFor('', 'CA0032'), '');
+  assert.equal(imageUrlFor('https://x.mx/fotos', 'CA0032'), 'https://x.mx/fotos/CA0032.jpg');
+  assert.equal(imageUrlFor('https://x.mx/fotos/', 'CA0032'), 'https://x.mx/fotos/CA0032.jpg');
+  assert.equal(imageUrlFor('https://x.mx/img/{code}_1.png', 'CA0032'), 'https://x.mx/img/CA0032_1.png');
+  assert.equal(imageUrlFor('https://x.mx/fotos', ''), '');
+});
+
+test('제품 본문은 계약서의 이름·타입 그대로다', () => {
+  const p = buildProduct({
+    code: 'CE0427', name: 'TERMINAL EXTERIOR',
+    app: 'MITSUBISHI Asx 2013-2015 // MITSUBISHI Lancer 2008-2016',
+    scode: '1115007 // 1115008', list_price: '245.499', stock_qty: '15', is_active: true,
+  }, 'https://x.mx/fotos');
+  assert.deepEqual(Object.keys(p), [
+    'codigo', 'descripcion', 'aplicaciones', 'referenciaSyd',
+    'precioLista', 'moneda', 'existencia', 'imagenUrl', 'activo']);
+  assert.equal(p.codigo, 'CE0427');
+  assert.equal(typeof p.precioLista, 'number');       // NUMERIC 은 문자열로 오므로 숫자로 바꿔야 한다
+  assert.equal(p.precioLista, 245.5);
+  assert.equal(p.moneda, 'MXN');
+  assert.equal(p.existencia, '11-20');
+  assert.equal(p.imagenUrl, 'https://x.mx/fotos/CE0427.jpg');
+  assert.equal(p.activo, true);
+});
+
+test('비활성 제품도 보낸다 — activo:false 로', () => {
+  const p = buildProduct({ code: 'X1', name: 'n', list_price: 0, stock_qty: 0, is_active: false }, '');
+  assert.equal(p.activo, false);
+  assert.equal(p.imagenUrl, '');
+  assert.equal(p.aplicaciones, '');
+  assert.equal(p.referenciaSyd, '');
+});
+
+test('마감 신호는 전체 전송의 마지막 묶음에만 붙는다', () => {
+  const meta = { envioId: 'CAT-2026-09-15', fechaCorte: '2026-09-15', totalLotes: 3, totalProductos: 7, transactionUser: 'admin', mode: 'full' };
+  assert.equal(buildLote({ ...meta, lote: 1 }, []).esUltimoLote, false);
+  assert.equal(buildLote({ ...meta, lote: 2 }, []).esUltimoLote, false);
+  assert.equal(buildLote({ ...meta, lote: 3 }, []).esUltimoLote, true);
+});
+
+test('시험 전송은 절대 마감하지 않는다 (카탈로그가 통째로 감춰지는 사고 방지)', () => {
+  const meta = { envioId: 'TEST-202609151230', fechaCorte: '2026-09-15', totalLotes: 1, totalProductos: 5, transactionUser: 'admin', mode: 'test' };
+  assert.equal(buildLote({ ...meta, lote: 1 }, []).esUltimoLote, false);
+});
+
+test('묶기 — 크기대로 나누고 범위를 벗어난 값은 조정한다', () => {
+  const list = Array.from({ length: 25 }, (_, i) => i);
+  assert.deepEqual(chunk(list, 10).map((c) => c.length), [10, 10, 5]);
+  assert.equal(chunk(list, 0).length, 1);              // 0 → 기본 500
+  assert.equal(chunk(list, 1).length, 3);              // 1 → 최소 10
+  assert.equal(chunk(list, 999999).length, 1);         // 상한 2000
+  assert.deepEqual(chunk([], 10), []);
+});
+
+test('멕시코 날짜는 UTC 가 아니라 현지(UTC-6) 기준이다', () => {
+  // 2026-09-16 03:00 UTC = 멕시코 2026-09-15 21:00
+  const p = mxNowParts(Date.parse('2026-09-16T03:00:00Z'));
+  assert.equal(p.ymd, '2026-09-15');
+  assert.equal(p.hour, 21);
+});
+
+// ── ② 화면(연동 관리) 정적 점검 ──────────────────────────────────────
+test('연동 관리 화면에 제품 전송 카드가 있고, 쓰는 id 가 전부 실제로 있다', async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
+  for (const id of ['boxProduct', 'fImgBase', 'fBatch', 'fSendHour', 'fAutoSend',
+    'btnCatalogSend', 'btnCatalogTest', 'btnCatalogPreview', 'btnCatalogReload',
+    'catalogMsg', 'catalogRuns']) {
+    const n = html.split('id="' + id + '"').length - 1;
+    assert.equal(n, 1, id + ' 는 정확히 한 번 있어야 한다');
+  }
+  // 스크립트가 참조하는 id 는 모두 마크업에 있어야 한다(오타 방지)
+  const script = html.slice(html.indexOf('loadCatalogStatus'), html.indexOf('function cfgPatch'));
+  for (const m of script.matchAll(/\$\('([A-Za-z0-9_]+)'\)/g)) {
+    assert.ok(html.includes('id="' + m[1] + '"'), '화면에 없는 id 를 씁니다: ' + m[1]);
+  }
+  // 인라인 스크립트는 문법이 맞아야 한다
+  const blocks = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)];
+  assert.equal(blocks.length, 2);
+  for (const b of blocks) new Function(b[1]);          // 던지면 테스트 실패
+  // 이 저장소 규약: 인라인 onclick 금지
+  assert.ok(!/onclick=/.test(html.slice(html.indexOf('boxProduct'), html.indexOf('boxTokens'))));
+});
+
+// ── ③ 실 DB + 모의 CRM ───────────────────────────────────────────────
+const dbTest = PG ? test : test.skip;
+
+dbTest('적재 → 전송 → 이력까지 (실 PostgreSQL)', async (t) => {
+  const { query } = await import('../src/db.js');
+  const { invalidateEndpointCache } = await import('../src/integrations.js');
+  const { runCatalogSync, listRuns, autoRanToday, mxNowParts: mx } = await import('../src/productSync.js');
+  const { drainOutbox } = await import('../src/crmSync.js');
+
+  // 깨끗한 상태에서 시작
+  await query(`DELETE FROM crm_customer_outbox WHERE entity='product'`);
+  await query(`DELETE FROM product_sync_runs`);
+  await query(`DELETE FROM products WHERE code LIKE 'T%'`);
+  for (let i = 1; i <= 25; i++) {
+    await query(
+      `INSERT INTO products (code, name, app, scode, list_price, stock_qty, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (code) DO UPDATE SET stock_qty=EXCLUDED.stock_qty`,
+      [`T${String(i).padStart(4, '0')}`, `PIEZA ${i}`, 'NISSAN Frontier 4X2 1998-2004',
+       '1603005 // 1516049', 100 + i, i, i !== 7]);       // 7번은 비활성
+  }
+  await query(
+    `UPDATE integration_endpoints
+        SET enabled=true, env='test', url_test=$1, auth_in='header', auth_header='x-api-key',
+            auth_token_test='llave-de-pruebas', batch_size=10, img_base_url='https://fotos.refatrix.mx/ctr',
+            auto_send=false, send_hour_mx=6, timeout_ms=3000
+      WHERE key='product'`, [CRM_URL]);
+  invalidateEndpointCache();
+
+  // ── 전체 전송 적재
+  const run = await runCatalogSync({ mode: 'full', origin: 'manual', actorUserId: null });
+  assert.equal(run.ok, true, JSON.stringify(run));
+  assert.equal(run.total_productos, 25);
+  assert.equal(run.total_lotes, 3);                       // 10 · 10 · 5
+  assert.match(run.envio_id, /^CAT-\d{4}-\d{2}-\d{2}$/);
+  assert.equal(run.queued_only, false);
+
+  const rows = (await query(
+    `SELECT * FROM crm_customer_outbox WHERE entity='product' AND entity_id=$1 ORDER BY id`,
+    [run.run_id])).rows;
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].customer_id, null, '제품 건은 고객이 없다');
+  assert.equal(rows[0].endpoint_key, 'product');
+  assert.equal(rows[0].status, 'pending');
+
+  const p1 = typeof rows[0].payload === 'string' ? JSON.parse(rows[0].payload) : rows[0].payload;
+  const p3 = typeof rows[2].payload === 'string' ? JSON.parse(rows[2].payload) : rows[2].payload;
+  assert.equal(p1.lote, 1); assert.equal(p1.totalLotes, 3); assert.equal(p1.totalProductos, 25);
+  assert.equal(p1.esUltimoLote, false);
+  assert.equal(p3.esUltimoLote, true, '마지막 묶음에만 마감 신호');
+  assert.equal(p1.productos.length, 10);
+  assert.equal(p3.productos.length, 5);
+  assert.equal(p1.envioId, p3.envioId, '같은 실행의 묶음은 envioId 가 같다');
+  assert.equal(p1.productos[0].imagenUrl, 'https://fotos.refatrix.mx/ctr/T0001.jpg');
+  const inactivo = [...p1.productos, ...p3.productos].find((x) => x.codigo === 'T0007');
+  assert.equal(inactivo.activo, false, '비활성도 보내되 activo:false');
+
+  // ── 실제 전송
+  received.length = 0;
+  const d = await drainOutbox({ limit: 10 });
+  assert.equal(d.sent, 3, JSON.stringify(d));
+  assert.equal(received.length, 3);
+  assert.equal(received[0].method, 'POST');
+  assert.equal(received[0].headers['x-api-key'], 'llave-de-pruebas', '키가 헤더로 실려 나간다');
+  assert.equal(received[2].body.esUltimoLote, true);
+  const after = (await query(
+    `SELECT status, http_status FROM crm_customer_outbox WHERE entity_id=$1 AND entity='product' ORDER BY id`,
+    [run.run_id])).rows;
+  assert.deepEqual(after.map((r) => r.status), ['sent', 'sent', 'sent']);
+
+  // ── 실행 이력 집계
+  const runs = await listRuns({ limit: 5 });
+  assert.equal(runs[0].envio_id, run.envio_id);
+  assert.equal(runs[0].sent, 3);
+  assert.equal(runs[0].total_productos, 25);
+
+  // ── 시험 전송: 몇 건만, TEST- 로 시작, 마감하지 않는다
+  const t2 = await runCatalogSync({ mode: 'test', limit: 3, origin: 'manual' });
+  assert.equal(t2.total_productos, 3);
+  assert.match(t2.envio_id, /^TEST-/);
+  const tp = (await query(
+    `SELECT payload FROM crm_customer_outbox WHERE entity='product' AND entity_id=$1`, [t2.run_id])).rows;
+  for (const r of tp) {
+    const b = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload;
+    assert.equal(b.esUltimoLote, false, '시험 전송에는 마감 신호가 없어야 한다');
+  }
+
+  // ── 같은 날 두 번째 전체 전송은 envioId 가 달라야 한다
+  const run2 = await runCatalogSync({ mode: 'full', origin: 'manual' });
+  assert.notEqual(run2.envio_id, run.envio_id);
+  assert.match(run2.envio_id, /-2$/);
+
+  // ── 자동 전송은 하루 한 번만 (DB 유니크 인덱스가 최종 방어)
+  const { ymd } = mx();
+  assert.equal(await autoRanToday(ymd), false);
+  const auto1 = await runCatalogSync({ mode: 'full', origin: 'auto' });
+  assert.equal(auto1.ok, true);
+  assert.equal(await autoRanToday(ymd), true);
+  const auto2 = await runCatalogSync({ mode: 'full', origin: 'auto' });
+  assert.equal(auto2.ok, undefined, '같은 날 두 번째 자동 전송은 DB 가 막는다');
+  assert.equal(auto2.error, 'enqueue_failed');
+
+  // ── 연동이 꺼져 있으면: 적재는 되고, 전송은 시도 횟수를 쓰지 않고 대기한다
+  await query(`UPDATE integration_endpoints SET enabled=false WHERE key='product'`);
+  invalidateEndpointCache();
+  const off = await runCatalogSync({ mode: 'test', limit: 2, origin: 'manual' });
+  assert.equal(off.queued_only, true);
+  assert.equal(off.note, 'endpoint_disabled');
+  const d2 = await drainOutbox({ limit: 10 });
+  assert.equal(d2.sent, 0);
+  assert.ok(d2.held >= 1, '꺼진 연동은 held — 시도 횟수를 깎지 않는다');
+  const heldRow = (await query(
+    `SELECT attempts, status FROM crm_customer_outbox WHERE entity='product' AND entity_id=$1 LIMIT 1`,
+    [off.run_id])).rows[0];
+  assert.equal(Number(heldRow.attempts), 0);
+  assert.equal(heldRow.status, 'pending');
+
+  // 이 테스트 데이터는 다른 스위트(고객 전송 이력 건수 등)를 흔든다 — 반드시 치운다.
+  await query(`DELETE FROM crm_customer_outbox WHERE entity='product'`);
+  await query(`DELETE FROM product_sync_runs`);
+  await query(`DELETE FROM products WHERE code LIKE 'T%'`);
+
+  t.diagnostic(`묶음 전송 확인 완료 — 실행 ${run.envio_id}, 25제품 / 3묶음`);
+});
+
+test.after(() => { crm.close(); });

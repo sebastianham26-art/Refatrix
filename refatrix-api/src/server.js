@@ -56,12 +56,14 @@ import offerSheetRoutes from './routes/offerSheetRoutes.js';
 import dailySummaryRoutes from './routes/dailySummaryRoutes.js';
 import crmSyncRoutes from './routes/crmSyncRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
+import productSyncRoutes from './routes/productSyncRoutes.js';
 import crmInboundRoutes from './routes/crmInboundRoutes.js';
 import crmLeadRoutes from './routes/crmLeadRoutes.js';
 import secretRoutes from './routes/secretRoutes.js';    // 외부 서비스 키 화면(0209) — 라이브 server.js 에서 등록이 빠져 있던 것을 복구
 import { startSecretRefresh } from './secrets.js';
 import surveyRoutes from './routes/surveyRoutes.js';     // 제품·마케팅 › 고객 설문 분석(사진·PDF → AI 판독)
 import { startCrmSyncWorker } from './crmSync.js';
+import { startProductSyncWorker } from './productSync.js';
 import { installPerfMonitor } from './perfMonitor.js';
 
 export function buildApp() {
@@ -137,6 +139,7 @@ export function buildApp() {
   app.register(dailySummaryRoutes);
   app.register(crmSyncRoutes);
   app.register(integrationRoutes);
+  app.register(productSyncRoutes);
   app.register(crmInboundRoutes);   // CRM → ERP 수신(웹카달록 신규고객)
   app.register(crmLeadRoutes);      // CRM → ERP 수신(웹 가입 신청 알림) + 팝업·이력
   app.register(secretRoutes);       // 관리 → 외부 서비스 키 (Anthropic·OpenAI·WhatsApp)
@@ -147,6 +150,7 @@ export function buildApp() {
 
   // ERP → CRM 고객 동기화 워커. CRM_SYNC_ENABLED=1 일 때만 돈다(꺼져 있으면 아웃박스 적재만).
   startCrmSyncWorker(app);
+  startProductSyncWorker(app);
 
   // 감사 로그 조회(디렉터 전용). 열람만 가능, 수정·삭제 API 없음(무결성).
   app.get('/api/audit', { preHandler: [authGuard, requireDirector] }, async (req) => {
