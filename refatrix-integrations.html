@@ -457,7 +457,7 @@
             </tr></thead>
             <tbody id="logRows"><tr><td colspan="8" class="empty">연동을 선택하고 조회하세요.</td></tr></tbody>
           </table></div>
-          <div class="hint" style="margin-top:10px">
+          <div class="hint" id="logHintOut" style="margin-top:10px">
             승인 즉시 1회 전송하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도합니다.
             6회 실패하면 <b>실패</b>로 남고 멈춥니다 — 원인을 고친 뒤 <b>재전송</b>을 누르세요.
             연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기 상태로 남습니다.
@@ -567,8 +567,29 @@
       .forEach(id=>$(id).classList.toggle('hidden',!!inb));
     $('boxInbound').classList.toggle('hidden',!inb);
     $('btnTest').classList.toggle('hidden',!!inb);
-    $('tCustomer').classList.toggle('hidden',!!inb);
+    // 0218 · 제품 창구에서는 **고객 전용 요소를 숨긴다.**
+    //   「시험 전송할 고객」 칸과 「전체 동기화」(= 고객 전체를 CRM 에 밀어 넣는 버튼)가
+    //   제품 화면에 그대로 보이면, 제품을 보내려고 누른 버튼이 고객을 보낸다.
+    const prod = !inb && CUR && CUR.category==='product';
+    $('tCustomer').classList.toggle('hidden',!!inb||!!prod);
     $('testHint').classList.toggle('hidden',!!inb);   // 시험 전송이 없는데 그 설명만 남으면 헷갈린다
+    $('btnBulk').classList.toggle('hidden',!!prod);
+    if(prod){
+      $('testHint').innerHTML='제품 연동의 <b>연결 테스트</b>는 실제 제품 <b>1건</b>을 보냅니다 — '
+        +'시험이므로 마감 신호(<span class="mono">esUltimoLote</span>)는 실리지 않습니다. '
+        +'전체 카탈로그는 「연결 설정」 아래의 <b>「지금 전체 보내기」</b>로 보냅니다.';
+      $('fQ').placeholder='envioId · 묶음';
+      $('logHintOut').innerHTML='제품 전송은 <b>묶음(lote) 1개 = 이력 1건</b>입니다. '
+        +'실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도하고, 6회 실패하면 <b>실패</b>로 남습니다 — '
+        +'원인을 고친 뒤 <b>재전송</b>을 누르면 같은 envioId 로 다시 나갑니다. '
+        +'연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기합니다.';
+    }else if(!inb){
+      $('testHint').innerHTML='고객 연동은 비워 두면 <b>RFC 가 있는 최근 승인 고객</b>으로 시험합니다. 제품 연동은 실제 제품 1건으로 시험합니다.';
+      $('fQ').placeholder='고객코드 · 상호 · RFC';
+      $('logHintOut').innerHTML='승인 즉시 1회 전송하고, 실패하면 30초 · 2분 · 10분 · 30분 · 2시간 · 6시간 간격으로 재시도합니다. '
+        +'6회 실패하면 <b>실패</b>로 남고 멈춥니다 — 원인을 고친 뒤 <b>재전송</b>을 누르세요. '
+        +'연동이 꺼져 있는 동안에는 시도 횟수를 쓰지 않고 대기 상태로 남습니다.';
+    }
     $('enabledHint').textContent = inb ? '끄면 CRM 이 보내와도 받지 않고 거절합니다.' : '끄면 전송 건이 대기함에 쌓이기만 합니다.';
     document.querySelector('.tab[data-tab="log"]').textContent = inb ? '수신 이력' : '전송 이력';
     $('logIn').classList.toggle('hidden',!inb);

@@ -8,6 +8,7 @@ import {
   activeToken, maskSecret, cleanSecret,
 } from '../integrations.js';
 import { sendPayload, isSuccess, crmStatus, buildPayload } from '../crmSync.js';
+import { fetchProducts, buildProduct, buildLote, mxNowParts } from '../productSync.js';
 import { inboundCounts } from '../crmInboundLog.js';
 
 const ERR_NOTE = {
@@ -26,6 +27,7 @@ const ERR_NOTE = {
   send_hour_invalid: '자동 전송 시각은 0~23 사이여야 합니다.',
   img_base_invalid: '사진 기본주소는 http:// 또는 https:// 로 시작해야 합니다.',
   img_base_space: '사진 기본주소에 공백이 섞여 있습니다 — 주소만 남기세요.',
+  no_products: '보낼 제품이 없습니다 — 제품 마스터를 먼저 확인하세요.',
 };
 
 export default async function integrationRoutes(app) {
@@ -121,6 +123,31 @@ export default async function integrationRoutes(app) {
     const op = b.op === 'delete' ? 'delete' : 'upsert';
     let payload = b.payload;
     let usedCustomer = null;
+    let usedProduct = null;
+
+    // 0218 · 제품 창구는 **고객 본문을 절대 보내지 않는다.**
+    //   예전에는 화면에 「시험 전송할 고객」 칸이 그대로 보였고, 거기에 값이 있으면
+    //   고객 본문(rfc·discountPercent…)이 제품 주소로 나갔다 — 상대는 우리가 무엇을
+    //   보내는지 알 수 없게 된다. 제품 창구는 **진짜 제품 1건**으로 시험한다.
+    //   ⚠ 시험 전송에는 마감 신호를 싣지 않는다(esUltimoLote=false) —
+    //     한 건 보낸 뒤 마감하면 CRM 이 나머지 전 제품을 감춘다.
+    if (!payload && ep.category === 'product') {
+      const code = String(b.code || '').trim();
+      const rows = code ? await fetchProducts({ code }) : await fetchProducts({ limit: 1 });
+      if (!rows.length) {
+        return reply.code(400).send({ error: 'no_products',
+          note: code ? `제품 ${code} 을(를) 찾지 못했습니다.` : '보낼 제품이 없습니다.' });
+      }
+      const u = (await query(`SELECT login_id, name, role FROM users WHERE id=$1`, [req.ctx.perm.userId])).rows[0] || {};
+      const f = ['login_id', 'name', 'role'].includes(ep.user_field) ? ep.user_field : 'login_id';
+      const productos = rows.map((r) => buildProduct(r, ep.img_base_url || ''));
+      const { ymd, stamp } = mxNowParts();
+      payload = buildLote({
+        envioId: `TEST-${stamp}`, fechaCorte: ymd, lote: 1, totalLotes: 1,
+        totalProductos: productos.length, transactionUser: String(u[f] || 'erp'), mode: 'test',
+      }, productos);
+      usedProduct = { codigo: productos[0].codigo, descripcion: productos[0].descripcion };
+    }
 
     // 테스트에 쓸 고객: id 로 지정하거나, 코드·상호·RFC 로 찾는다.
     //   아무것도 안 주면 고객 연동에 한해 **가장 최근 승인된 RFC 보유 고객**을 자동으로 고른다.
@@ -195,7 +222,7 @@ export default async function integrationRoutes(app) {
     };
     return {
       ok,
-      request: { method: r.method, url: r.url, env: ep.env, payload, auth, customer: usedCustomer },
+      request: { method: r.method, url: r.url, env: ep.env, payload, auth, customer: usedCustomer, product: usedProduct },
       response: r.error ? { error: r.error } : { http_status: r.httpStatus, body: r.body, ms: r.ms },
       verdict: ok ? 'CRM 이 성공(codigoError=' + (ep.ok_code) + ')으로 응답했습니다.'
         : (r.error ? '연결하지 못했습니다: ' + r.error

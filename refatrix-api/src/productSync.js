@@ -46,7 +46,8 @@ export function mxNowParts(now = Date.now()) {
   return {
     ymd: m.toISOString().slice(0, 10),
     hour: m.getUTCHours(),
-    stamp: m.toISOString().slice(0, 16).replace(/[-:T]/g, ''),
+    // 초까지 넣는다 — 같은 분에 두 번 시험하면 envioId 가 겹쳐 상대가 두 전송을 구분할 수 없다.
+    stamp: m.toISOString().slice(0, 19).replace(/[-:T]/g, ''),
   };
 }
 

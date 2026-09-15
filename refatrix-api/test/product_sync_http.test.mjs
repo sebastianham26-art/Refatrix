@@ -1,6 +1,7 @@
 // 제품 카탈로그 전송 — 실서버(buildApp) HTTP 스모크
 //   권한(디렉터 전용) · 설정 저장 검증 · 미리보기 · 적재 · 이력 조회까지 실제 라우트를 때린다.
-//   실행: TEST_PG_URL=postgres://... node --test test/product_sync_http.test.mjs
+//   ⚠ 두 제품 스위트는 같은 표를 쓴다 — 반드시 직렬로: --test-concurrency=1
+//   실행: TEST_PG_URL=postgres://... node --test --test-concurrency=1 test/product_sync_http.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -167,6 +168,35 @@ else {
     assert.equal(got[0].headers['x-api-key'], 'k-0218');
   });
 
+  test('제품 창구의 연결 테스트는 제품 1건을 보낸다 — 고객 본문은 절대 나가지 않는다', async () => {
+    received.length = 0;
+    const outboxBefore = (await query(
+      `SELECT COUNT(*)::int AS n FROM crm_customer_outbox WHERE entity='product'`)).rows[0].n;
+    const r = await app.inject({
+      method: 'POST', url: '/api/integrations/product/test', headers: bearer(dirId),
+      // ⚠ 고객을 지정해도 무시해야 한다(예전 화면은 이 칸을 제품 창구에도 보여 줬다)
+      payload: { customer_query: 'QUALI' },
+    });
+    assert.equal(r.statusCode, 200);
+    const d = r.json();
+    assert.equal(d.request.customer, null, '고객으로 시험하지 않는다');
+    assert.ok(d.request.product && d.request.product.codigo, '어느 제품으로 시험했는지 알려 준다');
+    const body = d.request.payload;
+    assert.ok(Array.isArray(body.productos) && body.productos.length === 1);
+    assert.equal(body.productos[0].moneda, 'MXN');
+    assert.equal(body.rfc, undefined, '고객 필드가 섞이면 안 된다');
+    assert.equal(body.discountPercent, undefined);
+    assert.match(body.envioId, /^TEST-/);
+    assert.equal(body.esUltimoLote, false, '연결 테스트는 카탈로그를 마감하지 않는다');
+    // 실제로 상대가 받은 것도 같아야 한다
+    assert.equal(received.length, 1);
+    assert.equal(received[0].body.productos.length, 1);
+    const outboxAfter = (await query(
+      `SELECT COUNT(*)::int AS n FROM crm_customer_outbox WHERE entity='product'`)).rows[0].n;
+    // 연결 테스트는 이력을 더럽히지 않는다(시험 건이 실제 전송 이력에 섞이면 이력을 믿을 수 없다)
+    assert.equal(Number(outboxAfter), Number(outboxBefore), '연결 테스트는 아웃박스에 적재하지 않는다');
+  });
+
   test('전체 전송 — 마지막 묶음에 마감 신호가 실려 나간다', async () => {
     await query(`UPDATE integration_endpoints SET batch_size=10 WHERE key='product'`);
     invalidateEndpointCache();
@@ -188,6 +218,8 @@ else {
     await query(`DELETE FROM crm_customer_outbox WHERE entity='product'`);
     await query(`DELETE FROM product_sync_runs`);
     await query(`DELETE FROM products WHERE code LIKE 'H%'`);
+    // 감사로그가 실제로 남았으므로(FK) 그것부터 치운다 — 남으면 사용자 삭제가 막힌다.
+    await query(`DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE login_id IN ('t_dir_0218','t_sales_0218'))`);
     await query(`DELETE FROM users WHERE login_id IN ('t_dir_0218','t_sales_0218')`);
     await app.close();
     crm.close();

@@ -97,9 +97,14 @@ export default async function productSyncRoutes(app) {
       return reply.code(code).send({ error: r.error, note: ERR_NOTE[r.error] || null, detail: r.detail || null });
     }
     try {
+      // ⚠ audit_log.action 은 체크 제약이 걸린 고정 목록이다 — 'product_sync' 를 그대로 넣으면
+      //   제약 위반으로 기록이 통째로 버려진다(로그에만 남고 조용히 사라진다).
+      //   목록에 있는 'update' 로 남기고, 무슨 작업이었는지는 detail 에 적는다(고객 전체 동기화와 같은 방식).
       logEvent({
         userId: req.ctx.perm.userId, deviceId: req.ctx.deviceId,
-        action: 'product_sync', target: `${r.envio_id}:${r.total_lotes}lotes:${r.total_productos}prod`,
+        action: 'update', target: `product_sync:${r.envio_id}`,
+        detail: { op: 'product_sync', mode: r.mode, envio_id: r.envio_id,
+          lotes: r.total_lotes, productos: r.total_productos },
       });
     } catch (_) { /* 감사로그 실패가 전송을 막지 않는다 */ }
     return r;

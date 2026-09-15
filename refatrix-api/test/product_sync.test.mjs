@@ -3,7 +3,8 @@
 //   순수 로직(구간·사진주소·본문·묶기)은 DB 없이 돌고,
 //   적재·전송·하루1회 잠금은 TEST_PG_URL 이 있을 때만 실제 PostgreSQL + 모의 CRM 으로 돈다.
 //
-//   실행: TEST_PG_URL=postgres://... node --test test/product_sync.test.mjs
+//   ⚠ 두 제품 스위트는 같은 표를 쓴다 — 반드시 직렬로: --test-concurrency=1
+//   실행: TEST_PG_URL=postgres://... node --test --test-concurrency=1 test/product_sync.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -127,6 +128,11 @@ test('연동 관리 화면에 제품 전송 카드가 있고, 쓰는 id 가 전�
   const blocks = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)];
   assert.equal(blocks.length, 2);
   for (const b of blocks) new Function(b[1]);          // 던지면 테스트 실패
+  // 제품 창구에서는 고객 전용 버튼·칸이 숨겨져야 한다(제품 화면의 「전체 동기화」는 고객을 보낸다)
+  const dir = html.slice(html.indexOf('function applyDirection'), html.indexOf('function fillCfg'));
+  assert.ok(/category==='product'/.test(dir), '제품 창구를 구분해야 한다');
+  assert.ok(/\$\('btnBulk'\)\.classList\.toggle\('hidden',!!prod\)/.test(dir), '전체 동기화(고객) 버튼을 숨겨야 한다');
+  assert.ok(/\$\('tCustomer'\)\.classList\.toggle\('hidden',!!inb\|\|!!prod\)/.test(dir), '시험 전송할 고객 칸을 숨겨야 한다');
   // 이 저장소 규약: 인라인 onclick 금지
   assert.ok(!/onclick=/.test(html.slice(html.indexOf('boxProduct'), html.indexOf('boxTokens'))));
 });
