@@ -84,7 +84,25 @@ function money(v) {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
 
-/** 제품 1건 → 계약서 본문. 여기서 정한 이름이 곧 계약서다. */
+/**
+ * 우리 쪽 표준 필드 이름. 상대가 다른 이름을 쓰면 `field_map` 으로 갈아 끼운다
+ * (이름만 바꾼다 — 값의 의미는 여기서 한 번만 정의한다).
+ *   CRM 의 제품 업로드 화면 열과 1:1 로 맞춰 둔 것: Clave CTR · Clave SyD · Aplicacion ·
+ *   Producto · SAT · Origen · Precio · IVA · EAN13 · Ubicacion · Precio lista comp. · Customer price.
+ */
+export const PRODUCT_FIELDS = [
+  'codigo', 'descripcion', 'aplicaciones', 'referenciaSyd',
+  'precioLista', 'moneda', 'existencia', 'imagenUrl', 'activo',
+  'sat', 'origen', 'iva', 'ean13', 'ubicacion', 'precioListaComp', 'customerPrice',
+];
+/** 묶음 봉투의 필드(본문 형식이 'lote' 일 때만 쓰인다). */
+export const LOTE_FIELDS = [
+  'envioId', 'fechaCorte', 'lote', 'totalLotes', 'totalProductos',
+  'esUltimoLote', 'transactionUser', 'productos',
+];
+export const BODY_SHAPES = ['lote', 'array', 'item'];
+
+/** 제품 1건 → 우리 표준 본문(이름 갈아 끼우기 전). */
 export function buildProduct(row, imgBase) {
   return {
     codigo: String(row.code || '').trim(),
@@ -97,12 +115,56 @@ export function buildProduct(row, imgBase) {
     imagenUrl: imageUrlFor(imgBase, row.code),
     // 비활성(단종·판매중단)도 **보낸다** — 빼 버리면 CRM 이 감출 근거가 없다.
     activo: row.is_active !== false,
+    // CRM 화면이 가진 나머지 열 — 값이 없으면 빈 문자열/0 이 아니라 **null** 로 둔다.
+    //   상대가 안 쓰면 매핑에서 빈 이름으로 지정해 빼면 된다.
+    sat: row.sat_code == null ? null : String(row.sat_code).trim(),
+    origen: row.origin == null ? null : String(row.origin).trim(),
+    iva: row.iva_rate == null ? null : Number(row.iva_rate),
+    ean13: row.ean == null ? null : String(row.ean).trim(),
+    ubicacion: row.location == null ? null : String(row.location).trim(),
+    precioListaComp: row.list_price_syd == null ? null : money(row.list_price_syd),
+    customerPrice: row.price_customer_ctr == null ? null : money(row.price_customer_ctr),
   };
 }
 
-/** 묶음 1개의 본문. */
-export function buildLote(meta, productos) {
-  return {
+/**
+ * 이름 갈아 끼우기. `map` 은 {우리이름: 상대이름}.
+ *   · 값이 **빈 문자열**이면 그 필드를 **보내지 않는다**(상대가 모르는 필드를 빼는 방법).
+ *   · 지정이 없으면 우리 이름 그대로 나간다.
+ *   · 순서는 우리 표준 순서를 지킨다 — 이력에서 눈으로 대조하기 쉬우라고.
+ */
+export function applyMap(obj, map, order) {
+  const m = (map && typeof map === 'object') ? map : {};
+  const out = {};
+  const keys = order && order.length ? order.filter((k) => k in obj) : Object.keys(obj);
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(m, k)) {
+      const name = String(m[k] == null ? '' : m[k]).trim();
+      if (!name) continue;                 // 빈 이름 = 이 필드는 빼고 보낸다
+      out[name] = obj[k];
+    } else {
+      out[k] = obj[k];
+    }
+  }
+  return out;
+}
+
+/**
+ * 한 번에 보낼 본문. 형식은 상대가 정한다(연동 설정의 「본문 형식」).
+ *   lote  : 묶음 봉투 + productos[]  ← 우리 계약서 v1.0
+ *   array : 루트가 제품 배열         [ {...}, {...} ]
+ *   item  : 제품 1건 = 요청 1건      { ... }  (봉투 없음 — 마감 신호도 없다)
+ *
+ *   ⚠ array·item 에는 봉투가 없으므로 **마감 신호(esUltimoLote)를 보낼 수 없다.**
+ *     그 형식에서는 「이번 전송에 없는 제품 감추기」를 상대가 다른 방법으로 해야 한다.
+ */
+export function buildLote(meta, productos, opt = {}) {
+  const map = opt.map || {};
+  const shape = BODY_SHAPES.includes(opt.shape) ? opt.shape : 'lote';
+  const items = productos.map((p) => applyMap(p, map, PRODUCT_FIELDS));
+  if (shape === 'array') return items;
+  if (shape === 'item') return items[0] === undefined ? {} : items[0];
+  const envelope = {
     envioId: meta.envioId,
     fechaCorte: meta.fechaCorte,
     lote: meta.lote,
@@ -111,8 +173,9 @@ export function buildLote(meta, productos) {
     // 시험 전송은 절대 마감 신호를 보내지 않는다(원칙 ③).
     esUltimoLote: meta.mode === 'test' ? false : meta.lote === meta.totalLotes,
     transactionUser: meta.transactionUser,
-    productos,
+    productos: items,
   };
+  return applyMap(envelope, map, LOTE_FIELDS);
 }
 
 export function chunk(list, size) {
@@ -122,7 +185,9 @@ export function chunk(list, size) {
   return out;
 }
 
-const PRODUCT_COLS = `SELECT code, name, app, scode, list_price, stock_qty, is_active
+const PRODUCT_COLS = `SELECT code, name, app, scode, list_price, stock_qty, is_active,
+                             sat_code, origin, iva_rate, ean, location,
+                             list_price_syd, price_customer_ctr
                         FROM products
                        WHERE deleted_at IS NULL AND code IS NOT NULL AND code <> ''`;
 
@@ -174,8 +239,13 @@ export async function runCatalogSync({
     if (!rows.length) return { error: 'no_products' };
 
     const imgBase = ep.img_base_url || '';
+    const shape = BODY_SHAPES.includes(ep.body_shape) ? ep.body_shape : 'lote';
+    const map = (ep.field_map && typeof ep.field_map === 'object') ? ep.field_map : {};
     const productos = rows.map((r) => buildProduct(r, imgBase));
-    const lotes = chunk(productos, ep.batch_size);
+    // 「1건씩」 형식이면 요청 1건 = 제품 1건이다(전송 이력도 제품 수만큼 생긴다).
+    const lotes = shape === 'item'
+      ? productos.map((p) => [p])
+      : chunk(productos, ep.batch_size);
     const transactionUser = await actorName(actorUserId, ep.user_field);
     const envioId = await nextEnvioId(ymd, isTest ? 'test' : 'full');
 
@@ -193,8 +263,10 @@ export async function runCatalogSync({
     };
     const ids = [];
     for (let i = 0; i < lotes.length; i++) {
-      const payload = buildLote({ ...meta, lote: i + 1 }, lotes[i]);
-      const label = `${envioId} · ${i + 1}/${lotes.length} (${lotes[i].length}건)`;
+      const payload = buildLote({ ...meta, lote: i + 1 }, lotes[i], { map, shape });
+      const label = shape === 'item'
+        ? `${envioId} · ${i + 1}/${lotes.length} · ${lotes[i][0].codigo}`
+        : `${envioId} · ${i + 1}/${lotes.length} (${lotes[i].length}건)`;
       const ins = (await query(
         `INSERT INTO crm_customer_outbox
            (customer_id, entity, entity_id, entity_label, endpoint_key, op, origin, rfc, payload, status, acted_by)
@@ -217,6 +289,7 @@ export async function runCatalogSync({
       mode: isTest ? 'test' : 'full',
       total_productos: productos.length,
       total_lotes: lotes.length,
+      body_shape: shape,
       outbox_ids: ids,
       queued_only: !ready,
       note: ready ? null

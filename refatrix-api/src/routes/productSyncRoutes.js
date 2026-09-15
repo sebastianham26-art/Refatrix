@@ -48,12 +48,16 @@ export default async function productSyncRoutes(app) {
         batch_size: batch,
         send_hour_mx: Number(ep.send_hour_mx) || 6,
         auto_send: !!ep.auto_send,
+        body_shape: ep.body_shape || 'lote',
+        field_map: ep.field_map || {},
       } : null,
       can_send: !!(ep && ep.enabled && activeUrl(ep)),
       blocked_reason: !ep ? 'endpoint_missing'
         : (!activeUrl(ep) ? 'url_missing' : (!ep.enabled ? 'endpoint_disabled' : null)),
       products: counts,
-      estimated_lotes: Math.max(1, Math.ceil(counts.total / batch)),
+      estimated_lotes: (ep && ep.body_shape === 'item')
+        ? counts.total                               // 1건씩이면 요청 수 = 제품 수
+        : Math.max(1, Math.ceil(counts.total / batch)),
       mx_today: ymd,
       mx_hour: hour,
       auto_ran_today: ready ? await autoRanToday(ymd) : false,
@@ -72,10 +76,12 @@ export default async function productSyncRoutes(app) {
     return {
       found: true,
       productos,
+      body_shape: (ep && ep.body_shape) || 'lote',
+      field_map: (ep && ep.field_map) || {},
       sample_lote: buildLote({
         envioId: `CAT-${ymd}`, fechaCorte: ymd, lote: 1, totalLotes: 1,
         totalProductos: productos.length, transactionUser: 'admin', mode: 'full',
-      }, productos),
+      }, productos, { map: (ep && ep.field_map) || {}, shape: (ep && ep.body_shape) || 'lote' }),
     };
   });
 

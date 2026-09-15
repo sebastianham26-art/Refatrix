@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Refatrix ERP · 연동 관리 · build 20260915prodsync</title>
+<title>Refatrix ERP · 연동 관리 · build 20260915fieldmap</title>
 <style>
   :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
     --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;
@@ -310,6 +310,30 @@
               <button class="btn ghost sm" id="btnCatalogPreview">보낼 본문 미리보기</button>
               <button class="btn ghost sm" id="btnCatalogReload">새로고침</button>
             </div>
+            <div style="margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">
+              <div style="font-weight:600;margin-bottom:6px">상대 규격 맞추기 <span class="hint">(개발자 답을 받으면 여기서 고칩니다 — 배포 불필요)</span></div>
+              <div class="row2" style="align-items:end">
+                <div><label>본문 형식</label>
+                  <select id="fBodyShape">
+                    <option value="lote">묶음 — 봉투 + productos[] (계약서 v1.0)</option>
+                    <option value="array">제품 배열 — 루트가 [ {...}, {...} ]</option>
+                    <option value="item">1건씩 — 요청 1건 = 제품 1건</option>
+                  </select></div>
+                <div style="display:flex;gap:8px;align-items:end">
+                  <button class="btn ghost sm" id="btnMapPreset" type="button">CRM 열 이름으로 채우기</button>
+                  <button class="btn ghost sm" id="btnMapClear" type="button">이름 초기화</button>
+                </div>
+              </div>
+              <div class="hint" id="shapeHint" style="margin-top:6px"></div>
+              <div class="tblwrap" style="margin-top:10px"><table>
+                <thead><tr><th style="width:190px">우리 필드</th><th style="width:230px">보낼 이름</th><th>설명 · CRM 열</th></tr></thead>
+                <tbody id="fieldMapRows"></tbody>
+              </table></div>
+              <div class="hint" style="margin-top:6px">
+                보낼 이름을 <b>비우면 그 필드는 보내지 않습니다.</b> 이름을 바꾸지 않으면 우리 이름 그대로 나갑니다.
+              </div>
+            </div>
+
             <div class="msg" id="catalogMsg"></div>
             <div id="catalogRuns" style="margin-top:10px"></div>
           </div>
@@ -688,6 +712,9 @@
       $('fBatch').value=e.batch_size==null?500:e.batch_size;
       $('fSendHour').value=e.send_hour_mx==null?6:e.send_hour_mx;
       $('fAutoSend').checked=!!e.auto_send;
+      $('fBodyShape').value=e.body_shape||'lote';
+      renderFieldMap(e.field_map||{});
+      applyShapeHint();
       loadCatalogStatus();
     }
     applyDirection();
@@ -740,6 +767,55 @@
                  +(info.length?'<div class="msg ok">'+info.map(esc).join('<br>')+'</div>':'');
     } else { m.className='msg'; m.textContent=''; }
     $('testOut').innerHTML='';
+  }
+
+  // ===== 0219 · 상대 규격 맞추기(필드 이름 · 본문 형식) =====
+  // 우리 필드 목록은 서버(productSync.PRODUCT_FIELDS)와 같은 순서·같은 이름이어야 한다.
+  const PFIELDS=[
+    ['codigo','제품코드 · Clave CTR','claveCTR'],
+    ['descripcion','제품명 · Producto','producto'],
+    ['aplicaciones','적용차종 · Aplicacion','aplicacion'],
+    ['referenciaSyd','SYD 코드 · Clave SyD','claveSYD'],
+    ['precioLista','정가 · Precio','precio'],
+    ['moneda','통화 (CRM 열에 없음)',''],
+    ['existencia','가용재고 구간 (CRM 열에 없음)',''],
+    ['imagenUrl','사진 URL (CRM 열에 없음)',''],
+    ['activo','판매상태 (CRM 열에 없음)',''],
+    ['sat','SAT 코드 · SAT','sat'],
+    ['origen','원산지 · Origen','origen'],
+    ['iva','IVA % · IVA','iva'],
+    ['ean13','바코드 · EAN13','ean13'],
+    ['ubicacion','위치 · Ubicacion','ubicacion'],
+    ['precioListaComp','경쟁사 정가 · Precio lista comp.','precioListaComp'],
+    ['customerPrice','고객단가 · Customer price','customerPrice'],
+  ];
+
+  function renderFieldMap(map){
+    const m=map||{};
+    $('fieldMapRows').innerHTML=PFIELDS.map(function(f){
+      const cur=Object.prototype.hasOwnProperty.call(m,f[0])?String(m[f[0]]==null?'':m[f[0]]):'';
+      return '<tr><td class="mono">'+esc(f[0])+'</td>'
+        +'<td><input data-mapf="'+esc(f[0])+'" value="'+esc(cur)+'" placeholder="'+esc(f[0])+' (그대로)"></td>'
+        +'<td class="hint">'+esc(f[1])+'</td></tr>';
+    }).join('');
+  }
+  function collectFieldMap(){
+    const out={};
+    document.querySelectorAll('#fieldMapRows input[data-mapf]').forEach(function(i){
+      const v=i.value.trim();
+      // 빈 칸이면 「그대로 보낸다」 — 지정하지 않는다. 빼고 싶으면 '-' 한 글자를 넣는다.
+      if(v==='-') out[i.dataset.mapf]='';
+      else if(v) out[i.dataset.mapf]=v;
+    });
+    return out;
+  }
+  function applyShapeHint(){
+    const v=$('fBodyShape').value;
+    $('shapeHint').innerHTML = v==='lote'
+      ? '묶음 봉투(envioId · lote · esUltimoLote)와 함께 제품 배열을 보냅니다. <b>마감 신호를 쓸 수 있는 유일한 형식</b>입니다.'
+      : (v==='array'
+        ? '봉투 없이 제품 배열만 보냅니다. <b>마감 신호(esUltimoLote)가 없으므로</b> 이번 전송에 없는 제품을 감추는 일은 CRM 이 다른 방법으로 해야 합니다.'
+        : '제품 1건마다 요청 1건입니다. 전체 전송 시 <b>전송 이력이 제품 수만큼</b> 생깁니다(약 1,700건) — 시험용으로만 권합니다.');
   }
 
   // ===== 0218 · 제품 카탈로그 전송 =====
@@ -821,6 +897,8 @@
       p.batch_size=Number($('fBatch').value||500);
       p.send_hour_mx=Number($('fSendHour').value||6);
       p.auto_send=$('fAutoSend').checked;
+      p.body_shape=$('fBodyShape').value;
+      p.field_map=collectFieldMap();
     }
     // 이름 칸 하나로 헤더명/파라미터명을 겸한다 — 위치에 따라 알맞은 필드로 보낸다.
     const nm=$('fAuthName').value.trim();
@@ -1225,6 +1303,15 @@
   document.querySelectorAll('#boxInbound button[data-env]').forEach(function(b){
     b.addEventListener('click',()=>issueKey(b.dataset.env));
   });
+  $('fBodyShape').addEventListener('change',applyShapeHint);
+  $('btnMapPreset').addEventListener('click',function(){
+    const m={}; PFIELDS.forEach(function(f){ if(f[2]) m[f[0]]=f[2]; });
+    renderFieldMap(m);
+    $('catalogMsg').className='msg warn';
+    $('catalogMsg').innerHTML='CRM 업로드 화면의 열 이름으로 <b>추정해서</b> 채웠습니다 — 철자는 개발자 확인이 필요합니다. '
+      +'재고·사진·판매상태·통화는 그 화면에 열이 없습니다(우리 이름 그대로 나갑니다). 저장 후 <b>시험 전송</b>으로 확인하세요.';
+  });
+  $('btnMapClear').addEventListener('click',function(){ renderFieldMap({}); });
   $('btnCatalogSend').addEventListener('click',()=>catalogSend('full'));
   $('btnCatalogTest').addEventListener('click',()=>catalogSend('test'));
   $('btnCatalogPreview').addEventListener('click',catalogPreview);

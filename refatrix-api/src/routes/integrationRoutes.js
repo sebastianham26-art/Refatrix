@@ -28,6 +28,9 @@ const ERR_NOTE = {
   img_base_invalid: '사진 기본주소는 http:// 또는 https:// 로 시작해야 합니다.',
   img_base_space: '사진 기본주소에 공백이 섞여 있습니다 — 주소만 남기세요.',
   no_products: '보낼 제품이 없습니다 — 제품 마스터를 먼저 확인하세요.',
+  body_shape_invalid: '본문 형식은 묶음 · 제품 배열 · 1건씩 중 하나여야 합니다.',
+  field_map_invalid: '필드 이름 매핑이 올바른 형태가 아닙니다.',
+  field_map_name_invalid: '보낼 필드 이름에 쓸 수 없는 문자가 있습니다(영문·숫자·_ . - 만).',
 };
 
 export default async function integrationRoutes(app) {
@@ -142,10 +145,12 @@ export default async function integrationRoutes(app) {
       const f = ['login_id', 'name', 'role'].includes(ep.user_field) ? ep.user_field : 'login_id';
       const productos = rows.map((r) => buildProduct(r, ep.img_base_url || ''));
       const { ymd, stamp } = mxNowParts();
+      // ⚠ 실제 전송과 **같은 함수·같은 설정**으로 만든다(매핑·본문 형식 포함) —
+      //   시험만 다른 모양이면 "테스트는 되는데 실전은 안 되는" 상황이 생긴다.
       payload = buildLote({
         envioId: `TEST-${stamp}`, fechaCorte: ymd, lote: 1, totalLotes: 1,
         totalProductos: productos.length, transactionUser: String(u[f] || 'erp'), mode: 'test',
-      }, productos);
+      }, productos, { map: ep.field_map || {}, shape: ep.body_shape || 'lote' });
       usedProduct = { codigo: productos[0].codigo, descripcion: productos[0].descripcion };
     }
 

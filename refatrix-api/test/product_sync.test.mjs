@@ -29,6 +29,7 @@ const CRM_URL = `http://127.0.0.1:${crm.address().port}/api/integrations/erp/pro
 
 const {
   stockRange, imageUrlFor, buildProduct, buildLote, chunk, mxNowParts,
+  applyMap, PRODUCT_FIELDS,
 } = await import('../src/productSync.js');
 
 // ── ① 순수 로직 ──────────────────────────────────────────────────────
@@ -61,9 +62,7 @@ test('제품 본문은 계약서의 이름·타입 그대로다', () => {
     app: 'MITSUBISHI Asx 2013-2015 // MITSUBISHI Lancer 2008-2016',
     scode: '1115007 // 1115008', list_price: '245.499', stock_qty: '15', is_active: true,
   }, 'https://x.mx/fotos');
-  assert.deepEqual(Object.keys(p), [
-    'codigo', 'descripcion', 'aplicaciones', 'referenciaSyd',
-    'precioLista', 'moneda', 'existencia', 'imagenUrl', 'activo']);
+  assert.deepEqual(Object.keys(p), PRODUCT_FIELDS);
   assert.equal(p.codigo, 'CE0427');
   assert.equal(typeof p.precioLista, 'number');       // NUMERIC 은 문자열로 오므로 숫자로 바꿔야 한다
   assert.equal(p.precioLista, 245.5);
@@ -109,13 +108,68 @@ test('멕시코 날짜는 UTC 가 아니라 현지(UTC-6) 기준이다', () => {
   assert.equal(p.hour, 21);
 });
 
+test('CRM 열 이름으로 갈아 끼울 수 있다 — 빈 이름은 그 필드를 뺀다', () => {
+  const p = buildProduct({
+    code: 'CA0032', name: 'BRAZO AUXILIAR', app: 'NISSAN Frontier 4X2 1998-2004',
+    scode: '48530-3S125', list_price: 764, stock_qty: 15, is_active: true,
+    sat_code: '25174200', origin: 'KR', iva_rate: 16, ean: '7501234567890',
+    location: 'A-12', list_price_syd: 800, price_customer_ctr: 433.01,
+  }, '');
+  const map = {
+    codigo: 'claveCTR', descripcion: 'producto', aplicaciones: 'aplicacion',
+    referenciaSyd: 'claveSYD', precioLista: 'precio', sat: 'sat', origen: 'origen',
+    iva: 'iva', ean13: 'ean13', ubicacion: 'ubicacion',
+    precioListaComp: 'precioListaComp', customerPrice: 'customerPrice',
+    moneda: '',                                    // 빈 이름 = 보내지 않는다
+  };
+  const out = applyMap(p, map, PRODUCT_FIELDS);
+  assert.equal(out.claveCTR, 'CA0032');
+  assert.equal(out.producto, 'BRAZO AUXILIAR');
+  assert.equal(out.claveSYD, '48530-3S125');
+  assert.equal(out.precio, 764);
+  assert.equal(out.customerPrice, 433.01);
+  assert.equal(out.ean13, '7501234567890');
+  assert.equal('codigo' in out, false, '옛 이름은 남으면 안 된다');
+  assert.equal('moneda' in out, false, '빈 이름으로 지정한 필드는 빠진다');
+  assert.equal(out.existencia, '11-20', '지정 없는 필드는 우리 이름 그대로');
+});
+
+test('본문 형식 — 묶음 · 제품 배열 · 1건씩', () => {
+  const meta = { envioId: 'CAT-2026-09-15', fechaCorte: '2026-09-15', lote: 1, totalLotes: 1,
+    totalProductos: 2, transactionUser: 'admin', mode: 'full' };
+  const ps = [
+    buildProduct({ code: 'A1', name: 'n1', list_price: 10, stock_qty: 1, is_active: true }, ''),
+    buildProduct({ code: 'A2', name: 'n2', list_price: 20, stock_qty: 2, is_active: true }, ''),
+  ];
+  const lote = buildLote(meta, ps, { shape: 'lote' });
+  assert.equal(lote.productos.length, 2);
+  assert.equal(lote.esUltimoLote, true);
+
+  const arr = buildLote(meta, ps, { shape: 'array' });
+  assert.ok(Array.isArray(arr), '루트가 배열이어야 한다');
+  assert.equal(arr.length, 2);
+  assert.equal(arr[0].codigo, 'A1');
+
+  const item = buildLote(meta, ps, { shape: 'item' });
+  assert.equal(Array.isArray(item), false);
+  assert.equal(item.codigo, 'A1', '1건씩이면 봉투 없이 제품 하나만');
+  assert.equal(item.esUltimoLote, undefined, '봉투가 없으니 마감 신호도 없다');
+
+  // 봉투 이름도 갈아 끼울 수 있다
+  const renamed = buildLote(meta, ps, { shape: 'lote', map: { productos: 'items', envioId: 'idEnvio' } });
+  assert.equal(renamed.items.length, 2);
+  assert.equal(renamed.idEnvio, 'CAT-2026-09-15');
+  assert.equal('productos' in renamed, false);
+});
+
 // ── ② 화면(연동 관리) 정적 점검 ──────────────────────────────────────
 test('연동 관리 화면에 제품 전송 카드가 있고, 쓰는 id 가 전부 실제로 있다', async () => {
   const { readFileSync } = await import('node:fs');
   const html = readFileSync(new URL('../../refatrix-integrations.html', import.meta.url), 'utf8');
   for (const id of ['boxProduct', 'fImgBase', 'fBatch', 'fSendHour', 'fAutoSend',
     'btnCatalogSend', 'btnCatalogTest', 'btnCatalogPreview', 'btnCatalogReload',
-    'catalogMsg', 'catalogRuns']) {
+    'catalogMsg', 'catalogRuns',
+    'fBodyShape', 'fieldMapRows', 'btnMapPreset', 'btnMapClear', 'shapeHint']) {
     const n = html.split('id="' + id + '"').length - 1;
     assert.equal(n, 1, id + ' 는 정확히 한 번 있어야 한다');
   }

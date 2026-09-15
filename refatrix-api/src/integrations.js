@@ -181,6 +181,8 @@ export function publicEndpoint(ep) {
     contract: ep.contract || {},
     // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만 화면에 보인다)
     img_base_url: ep.img_base_url || '',
+    body_shape: ep.body_shape || 'lote',
+    field_map: ep.field_map || {},
     batch_size: ep.batch_size == null ? 500 : Number(ep.batch_size),
     send_hour_mx: ep.send_hour_mx == null ? 6 : Number(ep.send_hour_mx),
     auto_send: !!ep.auto_send,
@@ -195,7 +197,9 @@ const EDITABLE = ['category', 'label', 'description', 'enabled', 'env', 'url_tes
   'timeout_ms', 'contract', 'sort_order', 'no_retry_codes', 'fallback_key', 'fallback_codes',
   'auth_from',
   // 0218 · 제품 카탈로그 전송 설정(제품 창구에서만 쓰인다. 다른 창구에서는 값이 있어도 무해).
-  'img_base_url', 'batch_size', 'send_hour_mx', 'auto_send'];
+  'img_base_url', 'batch_size', 'send_hour_mx', 'auto_send',
+  // 0219 · 상대 규격에 맞추는 두 가지(추측이 틀려도 배포 없이 화면에서 고친다).
+  'body_shape', 'field_map'];
 const METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'GET'];
 
 export function validatePatch(p, cur = null) {
@@ -227,6 +231,19 @@ export function validatePatch(p, cur = null) {
   if (p.send_hour_mx != null) {
     const n = Number(p.send_hour_mx);
     if (!Number.isInteger(n) || n < 0 || n > 23) return 'send_hour_invalid';
+  }
+  if (p.body_shape != null && !['lote', 'array', 'item'].includes(String(p.body_shape))) return 'body_shape_invalid';
+  if (p.field_map != null) {
+    let m = p.field_map;
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (_) { return 'field_map_invalid'; } }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return 'field_map_invalid';
+    const keys = Object.keys(m);
+    if (keys.length > 40) return 'field_map_invalid';
+    for (const k of keys) {
+      const val = m[k] == null ? '' : String(m[k]).trim();
+      // 빈 값은 「이 필드를 빼고 보낸다」는 뜻이라 허용한다. 값이 있으면 JSON 키로 쓸 수 있는 모양이어야 한다.
+      if (val && !/^[A-Za-z0-9_.\-]{1,60}$/.test(val)) return 'field_map_name_invalid';
+    }
   }
   if (p.img_base_url != null) {
     const v = String(p.img_base_url).trim();
@@ -300,17 +317,20 @@ export async function saveEndpoint(key, patch, userId) {
     if (f === 'enabled' || f === 'auto_send') v = !!v;
     else if (f === 'timeout_ms' || f === 'sort_order' || f === 'batch_size' || f === 'send_hour_mx') v = Number(v);
     else if (f === 'img_base_url') v = String(v == null ? '' : v).trim();
+    else if (f === 'field_map') v = typeof v === 'string' ? v : JSON.stringify(v || {});
     else if (f === 'method_upsert' || f === 'method_delete') v = String(v).toUpperCase();
     else if (f === 'contract') v = typeof v === 'string' ? v : JSON.stringify(v);
     else if (f === 'url_test' || f === 'url_prod') v = String(v == null ? '' : v).trim();
     else if (v != null) v = String(v);
-    const before = f === 'contract' ? JSON.stringify(cur[f] || {}) : cur[f];
-    const after = f === 'contract' ? v : v;
+    const jsonCol = (f === 'contract' || f === 'field_map');
+    const before = jsonCol ? JSON.stringify(cur[f] || {}) : cur[f];
+    const after = v;
     if (String(before ?? '') === String(after ?? '')) continue;
     params.push(v);
-    sets.push(`${f}=$${params.length}${f === 'contract' ? '::jsonb' : ''}`);
+    sets.push(`${f}=$${params.length}${jsonCol ? '::jsonb' : ''}`);
     changes[f] = f === 'contract'
       ? { old: '(계약서)', new: '(계약서 수정됨)' }
+      : f === 'field_map' ? { old: String(before).slice(0, 300), new: String(v).slice(0, 300) }
       : { old: cur[f] === null ? null : String(cur[f]), new: v === null ? null : String(v) };
   }
   // 인증 키 — 값은 이력에 남기지 않는다('(변경됨)' 만).
