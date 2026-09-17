@@ -2,7 +2,7 @@
    사용법: 각 화면 <body> 안에 <script src="refatrix-nav.js"></script> 추가 */
 (function(){
   if(window.__refatrixNavLoaded) return; window.__refatrixNavLoaded=true;
-  try{ console.log('[refatrix-nav] v20260917cotiz loaded (+ 웹카달록 견적요청 팝업)'); }catch(e){}
+  try{ console.log('[refatrix-nav] v20260917cotiz2 loaded (+ 견적요청 알림 팝업 · 담당지정 제거)'); }catch(e){}
 
   /* ===== ① QA 테스트베드 식별 → 헤더 CTR 레드 (2026-08-24) =====
      판별 기준(둘 중 하나라도 걸리면 QA):
@@ -143,7 +143,6 @@
     devmap:{file:'mx_parts_development_decision_4.html',name:'Development Map',desc:'개발 의사결정 맵'},
     users:{file:'refatrix-users.html',name:'사용자·권한',desc:'권한 관리'},
     integrations:{file:'refatrix-integrations.html',name:'연동 관리',desc:'CRM 전송 주소·계약서·전송이력'},
-    catalogApi:{file:'refatrix-catalog-api.html',name:'카탈로그 조회 API',desc:'고객사가 우리 카탈로그를 가져가는 창구 — 키 발급·접속창·가격 확인'},
     apikeys:{file:'refatrix-apikeys.html',name:'외부 서비스 키',desc:'Anthropic·OpenAI·WhatsApp 키·모델 설정'},
     company:{file:'refatrix-company.html',name:'회사정보',desc:'로고·계좌'},
     processKpi:{file:'refatrix-process-kpi.html',name:'업무 프로세스 KPI',desc:'단계별 KPI·소요 분석'},
@@ -170,7 +169,7 @@
     settlement:'settlement', grossprofit:'grossprofit', budget:'budget', importcost:'inventory', import:'inventory', purchase:'purchase', purchasereview:'purchase',
     recost:'__director__',
     products:'products', vehicleparts:'products', viofinder:'products', prodFind:'products', prodUpload:'__director__', prodHistory:'products', marketing:'marketing', mktspend:'marketing', survey:'marketing',
-    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', catalogApi:'__director__', apikeys:'__director__',
+    users:'__director__', company:'__director__', processKpi:'__director__', integrations:'__director__', apikeys:'__director__',
     whHome:'warehouse', stockcount:'warehouse', inbound:'warehouse', zones:'warehouse', relocate:'warehouse'
   };
   // 그룹(트리 최상위) — 공통/영업지원/영업/재무/제품·마케팅/일정/관리
@@ -183,7 +182,7 @@
     {key:'pm', title:'제품·마케팅', color:'#A992D6', screens:['products','vehicleparts','viofinder','devrequest','marketing','mktspend','survey','prodFind','prodUpload','prodHistory']},
     {key:'cal', title:'일정', color:'#7FC4A3', screens:['board','boardNotice','boardTodo','wbr','daily']},
     {key:'warehouse', title:'창고', color:'#8C9EAF', screens:['whHome','stockcount','inbound','relocate','zones']},
-    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','catalogApi','apikeys','processKpi']}
+    {key:'admin', title:'관리', color:'#A89A84', screens:['users','company','custTeam','custApprove','custReg','custClaim','custLeads','integrations','apikeys','processKpi']}
   ];
 
   // 역할별 그룹 제한: 지정된 (비디렉터) 역할은 명시한 그룹만 노출. 재무담당(treasury)=재무 그룹만.
@@ -924,22 +923,21 @@
   window.__rnavLeadCheck=function(){ checkWebLead({silent:true}); };
 
   // =====================================================================
-  //  🧾 웹카달록 견적요청 전역 팝업 (0220)
-  //     가입 신청 팝업과 **같은 규칙**이다:
-  //       · 디렉터는 전부 보고 담당자를 지정한다.
-  //       · 직원은 자기에게 지정된 건(+알림 대상이면 미배정 건)만 본다.
-  //       · 임시로 닫아도 30분 뒤 다시 뜨고, **견적을 확정·전환·취소해야** 사라진다.
-  //     ⚠ 알림 대상 표를 가입 신청과 따로 쓴다 — 새 고객을 맞는 사람과 견적을 처리하는
+  //  🧾 웹카달록 견적요청 전역 팝업 (0220 · 2026-09-17 개편)
+  //
+  //     ⚠ 이건 **알림일 뿐이다.** 가입 신청 팝업과 달리 여기서 시킬 일이 없다:
+  //       · 견적은 수신되는 즉시 **자동 저장**된다. 사람이 승인할 것이 없다.
+  //       · 담당 지정 절차를 없앴다 — 그 절차 때문에 일이 끊기고 CRM 과의 교신이 틀어졌다.
+  //       · 디렉터와 **알림 대상으로 지정된 사람**이 같은 목록을 본다.
+  //       · **새로 들어온 건이 있을 때만** 뜬다. 한 번 보면 다시 들이밀지 않는다.
+  //       · 그 견적이 **포장작업으로 넘어가면**(포장지시서 인쇄) 목록에서 빠진다.
+  //     ⚠ 알림 대상 표는 가입 신청과 따로 쓴다 — 새 고객을 맞는 사람과 견적을 처리하는
   //       사람은 같지 않다. 같은 표를 쓰면 언젠가 한쪽이 틀린 사람에게 간다.
   // =====================================================================
-  var CQ_SEEN_KEY='refatrix_crmquote_seen', CQ_DIS_KEY='refatrix_crmquote_dismissed';
-  var __cqTimer=null, __cqCanAssign=false, __cqAssignees=[];
+  var CQ_SEEN_KEY='refatrix_crmquote_seen';
+  var __cqTimer=null;
   function cqSeen(){ try{ return JSON.parse(sessionStorage.getItem(CQ_SEEN_KEY)||'[]').map(Number); }catch(e){ return []; } }
   function cqSaveSeen(a){ try{ sessionStorage.setItem(CQ_SEEN_KEY, JSON.stringify(a)); }catch(e){} }
-  function cqDismissed(){
-    try{ var t=Number(sessionStorage.getItem(CQ_DIS_KEY)||0); return !!t && (Date.now()-t) < LEAD_SNOOZE_MS; }
-    catch(e){ return false; }
-  }
   function cqMoney(n){ try{ return '$'+Number(n||0).toLocaleString('es-MX',{maximumFractionDigits:2}); }catch(e){ return '$'+(n||0); } }
 
   function cqEnsureModal(){
@@ -954,78 +952,48 @@
       +'<div id="rnavQuoteMsg" style="font-size:12.5px;color:#6F6A60;margin-top:4px"></div></div>'
       +'<div style="padding:12px 16px"><div id="rnavQuoteList" style="max-height:52vh;overflow:auto"></div></div>'
       +'<div style="padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
-      +'<button type="button" onclick="__rnavQuoteDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">임시로 닫기</button>'
+      +'<button type="button" onclick="__rnavQuoteDismiss()" style="border:1px solid #e6e1d6;background:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">확인</button>'
       +'<button type="button" onclick="__rnavQuoteGo()" style="border:none;background:#0F6E56;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700">견적 목록으로 →</button>'
       +'</div></div>';
     (document.body||document.documentElement).appendChild(m);
     return m;
   }
+  // 알림은 **한 번 보면 끝난다.** 처리 독촉이 아니라 도착 알림이므로 다시 들이밀지 않는다
+  //   (새 견적이 들어오면 그때 다시 뜬다). 예전에는 30분 뒤 재출현이라 일이 계속 끊겼다.
   window.__rnavQuoteDismiss=function(){
-    try{ sessionStorage.setItem(CQ_DIS_KEY, String(Date.now())); }catch(e){}
     var m=document.getElementById('rnavQuoteModal'); if(m) m.style.display='none';
   };
   window.__rnavQuoteGo=function(){
     var m=document.getElementById('rnavQuoteModal'); if(m) m.style.display='none';
     try{ nav('quotelist'); }catch(e){}
   };
-  window.__rnavQuoteAssign=function(id){
-    var sel=document.getElementById('rnavQuoteSel'+id);
-    var uid=sel?sel.value:'';
-    if(!uid){ alert('담당할 직원을 고르세요.'); return; }
-    var s=getSession(); if(!s||!s.token) return;
-    var a=(s.api||'').replace(/\/+$/,'');
-    fetch(a+'/api/crm-quotes/'+id+'/assign',{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.token},
-      body:JSON.stringify({user_id:Number(uid)})})
-      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
-      .then(function(r){
-        if(!r.ok){ alert((r.d&&r.d.note)||'지정 실패'); return; }
-        alert(((r.d&&r.d.assigned_to_name)||'담당자')+' 님에게 지정했습니다.\n\n'
-          +'그분 화면에 이 견적이 뜨기 시작하고, 견적을 확정할 때까지 계속 상기됩니다.');
-        checkCrmQuote({silent:true});
-      }).catch(function(){});
-  };
   function cqRender(items){
     var msg=document.getElementById('rnavQuoteMsg'), list=document.getElementById('rnavQuoteList');
     if(!msg||!list) return;
-    msg.innerHTML = __cqCanAssign
-      ? '처리 대기 견적 요청 <b>'+items.length+'건</b>. <b>담당 직원을 지정</b>하면 그 직원 화면에 뜹니다 — '
-        +'담당자가 내용을 확인해 <b>견적을 확정</b>하면 이 알림이 사라집니다.'
-      : '나에게 지정된 견적 요청 <b>'+items.length+'건</b>. 내용을 확인하고 <b>견적을 확정</b>하세요 — '
-        +'확정할 때까지 이 알림은 계속 뜹니다.';
-    var opts=__cqAssignees.map(function(u){
-      return '<option value="'+u.id+'">'+cregEsc(u.name)+' · '+cregEsc(u.role)+'</option>'; }).join('');
+    // 이건 **알림**이다. 여기서 시킬 일은 없다 — 견적은 이미 저장돼 있다.
+    msg.innerHTML = '웹카달록에서 들어온 견적 <b>'+items.length+'건</b>이 ERP 에 저장돼 있습니다. '
+      +'견적 화면에서 열어 처리하세요 — <b>포장작업으로 넘어가면</b> 이 알림에서 빠집니다.';
     list.innerHTML=items.map(function(r){
-      var who=r.assigned_to_name
-        ? '<span style="color:#0F6E56;font-weight:700">담당 '+cregEsc(r.assigned_to_name)+'</span>'
-        : '<span style="color:#B23A2E;font-weight:700">담당 미지정</span>';
+      var st=r.status==='confirmed'
+        ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#E7F0EC;color:#0F6E56">확정됨 · 포장 전</span>'
+        : '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#F6EEDD;color:#8A5A00">새 견적</span>';
       // ⚠ 문제 줄은 **가장 먼저** 보여야 한다 — 그게 이 견적을 확정 못 하는 이유다.
       var warn=r.issue_count
         ? '<div style="margin-top:6px;background:#F6E7E4;color:#B23A2E;border-radius:8px;padding:6px 9px;font-size:11.5px">'
           +'⚠ 확인이 필요한 줄 <b>'+r.issue_count+'개</b> — 못 찾은 코드이거나 판매중단 제품입니다. '
           +'고치거나 지우기 전에는 <b>확정되지 않습니다</b>.</div>' : '';
-      var act='';
-      if(__cqCanAssign){
-        act='<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
-          +'<select id="rnavQuoteSel'+r.id+'" style="padding:6px 8px;border:1px solid #e6e1d6;border-radius:7px;font-size:12px;font-family:inherit">'
-          +'<option value="">담당 직원 선택…</option>'+opts+'</select>'
-          +'<button type="button" onclick="__rnavQuoteAssign('+r.id+')" style="border:none;background:#0F6E56;color:#fff;border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px;font-weight:700">'
-          +(r.assigned_to_name?'담당 변경':'담당 지정')+'</button>'
-          +'</div>';
-      }
       return '<div style="border:1px solid #e6e1d6;border-radius:11px;padding:12px 13px;margin-bottom:9px">'
         +'<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
           +'<b style="font-size:14px">'+cregEsc(r.quote_no||'')+'</b>'
           +'<span style="font-size:12.5px">'+cregEsc(r.customer_code||'')+' '+cregEsc(r.customer_name||'')+'</span>'
-          +'<span style="margin-left:auto;font-size:11.5px">'+who+'</span>'
+          +'<span style="margin-left:auto">'+st+'</span>'
         +'</div>'
         +warn
         +'<div style="margin-top:6px;font-size:12.5px;color:#4a4740">'
           +'SKU <b>'+(r.sku_count||0)+'</b> · 수량 <b>'+(r.total_qty||0)+'</b> · 합계 <b>'+cqMoney(r.total_mxn)+'</b>'
-          +(r.external_quote_no?(' · 포털 '+cregEsc(r.external_quote_no)):'')
         +'</div>'
         +(r.memo?('<div style="margin-top:5px;font-size:12px;color:#6F6A60;word-break:break-word">'+cregEsc(r.memo)+'</div>'):'')
-        +act+'</div>';
+        +'</div>';
     }).join('');
   }
   function checkCrmQuote(opts){
@@ -1037,11 +1005,9 @@
       .then(function(d){
         if(!d) return;
         var items=(d&&d.items)||[];
-        __cqCanAssign=!!(d&&d.can_assign); __cqAssignees=(d&&d.assignees)||[];
         var m=cqEnsureModal();
         if(!items.length){
           m.style.display='none';
-          try{ sessionStorage.removeItem(CQ_DIS_KEY); }catch(e){}
           cqSaveSeen([]);
           return;
         }
@@ -1054,13 +1020,13 @@
           m.style.display='none';
           return;
         }
+        // ⚠ **새로 들어온 건이 있을 때만** 뜬다. 이미 본 건으로는 다시 들이밀지 않는다 —
+        //   처리 독촉이 아니라 도착 알림이기 때문이다. 예전에는 30분마다 다시 떠서
+        //   일이 끊기고 CRM 과의 교신이 틀어졌다.
         if(fresh.length){
           cqSaveSeen(seen.concat(fresh.map(function(x){ return Number(x.id); })));
-          try{ sessionStorage.removeItem(CQ_DIS_KEY); }catch(e){}
           m.style.display='flex';
           if(!silent) cregChime();
-        }else{
-          m.style.display = cqDismissed() ? 'none' : 'flex';
         }
       }).catch(function(){});
   }

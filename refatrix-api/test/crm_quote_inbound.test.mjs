@@ -162,6 +162,34 @@ test('수신 창구는 customer_id 를 쓰지 않는다(코드로 잠근다)', (
   assert.ok(/rfc_norm=\$1/.test(cq), 'RFC 로 찾아야 한다');
 });
 
+// ── 팝업은 알림일 뿐이다 (2026-09-17 개편) ─────────────────────
+test('팝업에서 담당을 지정하지 않는다 — 알림만 한다', () => {
+  // 담당 지정 절차 때문에 일이 끊기고 CRM 과의 교신이 틀어졌다.
+  // 견적은 수신 즉시 자동 저장되므로 사람이 팝업에서 할 일은 「들어온 걸 아는 것」뿐이다.
+  const n = readFileSync(new URL('../../refatrix-nav.js', import.meta.url), 'utf8');
+  assert.equal(/__rnavQuoteAssign/.test(n), false, '팝업에 담당 지정이 남아 있으면 안 된다');
+  assert.equal(/rnavQuoteSel/.test(n), false, '담당 직원 드롭다운이 남아 있으면 안 된다');
+  assert.ok(/startCrmQuoteAlert/.test(n), '알림 자체는 살아 있어야 한다');
+  // 가입 신청 팝업의 담당 지정은 **그대로 둔다** — 그건 사람이 판단할 일이 남아 있다.
+  assert.ok(/__rnavLeadAssign/.test(n), '가입 신청 쪽 담당 지정까지 지우면 안 된다');
+});
+
+test('한 번 본 알림은 다시 들이밀지 않는다', () => {
+  const n = readFileSync(new URL('../../refatrix-nav.js', import.meta.url), 'utf8');
+  assert.equal(/CQ_DIS_KEY/.test(n), false, '30분 뒤 재출현(스누즈)은 없어져야 한다');
+  const blk = n.slice(n.indexOf('function checkCrmQuote'), n.indexOf('function startCrmQuoteAlert'));
+  assert.ok(/if\(fresh\.length\)\{/.test(blk), '새 건이 있을 때만 떠야 한다');
+  assert.equal(/cqDismissed/.test(blk), false);
+});
+
+test('포장으로 넘어가면 알림에서 빠진다(조건이 코드에 있다)', () => {
+  const r = readFileSync(new URL('../src/routes/crmQuoteRoutes.js', import.meta.url), 'utf8');
+  assert.ok(/packing_printed_at IS NULL/.test(r), '포장지시서가 나가면 끝이다');
+  assert.ok(/invoice_id IS NULL/.test(r), '매출 전환된 건도 빠진다');
+  assert.ok(/status IN \('draft','confirmed'\)/.test(r),
+    '확정만으로는 끄지 않는다 — 확정해 놓고 포장을 안 건 견적이 조용히 잊히면 안 된다');
+});
+
 // ── ② 실제 DB ──────────────────────────────────────────────────
 const dbTest = PG ? test : test.skip;
 

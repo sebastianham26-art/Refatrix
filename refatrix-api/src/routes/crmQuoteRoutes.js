@@ -117,9 +117,21 @@ const SELECT_Q = `
     LEFT JOIN users ab ON ab.id = q.assigned_by
     LEFT JOIN customers c ON c.id = q.customer_id`;
 
-// 팝업에 뜨는 건 = 아직 손대지 않은 수신 견적.
-//   확정(confirmed)·전환(converted)·취소하면 사라진다 — 「처리했다」의 신호가 상태다.
-const OPEN_WHERE = `q.origin='crm' AND q.status='draft' AND q.deleted_at IS NULL`;
+/**
+ * 팝업·미처리 목록에 들어가는 건 = **아직 포장으로 넘어가지 않은** 수신 견적.
+ *
+ *   디렉터 지시(2026-09-17): 팝업은 **알림일 뿐**이다. 담당을 지정하는 절차가 붙어 있으면
+ *   그 절차 때문에 일이 끊기고 CRM 과의 교신이 틀어진다. 견적은 어차피 자동 저장되므로
+ *   사람이 팝업에서 할 일은 「들어온 걸 아는 것」뿐이다.
+ *
+ *   끝나는 시점은 **포장작업으로 넘어갈 때**로 잡는다. 확정(confirmed)만으로 끄면
+ *   확정해 놓고 포장을 안 건 견적이 조용히 잊힌다 — 포장지시서가 나가면 그때는 확실히
+ *   사람 손을 탄 것이다.
+ */
+const OPEN_WHERE = `q.origin='crm' AND q.deleted_at IS NULL
+  AND q.status IN ('draft','confirmed')
+  AND q.packing_printed_at IS NULL
+  AND q.invoice_id IS NULL`;
 
 function qRow(r) {
   return {
@@ -343,25 +355,23 @@ export default async function crmQuoteRoutes(app) {
   //  ② 팝업 알림 — 60초 폴링 (전 화면 공통 · refatrix-nav.js)
   // ════════════════════════════════════════════════════════════════════
   //   대상이 아닌 사람에게는 **빈 배열**을 준다(403 이 아니라).
+  //
+  //   ⚠ 여기에는 **담당 지정이 없다.** 팝업은 알림일 뿐이고, 견적은 이미 저장돼 있다.
+  //     보는 사람은 「디렉터 + 알림 대상으로 지정된 사람」이고, 모두 **같은 목록**을 본다 —
+  //     누가 처리할지는 사람들이 알아서 정한다. 시스템이 그걸 중재하려다 일이 끊겼다.
   app.get('/api/portal/quote-alert', { preHandler: [authGuard] }, async (req) => {
-    const empty = { count: 0, items: [], can_assign: false, assignees: [] };
+    const empty = { count: 0, items: [] };
     if (!(await quoteColsReady())) return empty;
     const perm = req.ctx.perm;
     try {
-      const isDir = perm.role === 'director';
-      let where = OPEN_WHERE;
-      const params = [];
-      if (!isDir) {
-        // 직원은 ① 자기에게 지정된 건과 ② (알림 대상이면) 아직 아무에게도 안 간 건.
+      if (perm.role !== 'director') {
         const target = (await query(
           `SELECT 1 FROM crm_quote_notify_targets WHERE user_id=$1`, [perm.userId])).rows[0];
-        params.push(perm.userId);
-        where += target ? ` AND (q.assigned_to=$1 OR q.assigned_to IS NULL)` : ` AND q.assigned_to=$1`;
+        if (!target) return empty;          // 알림 대상이 아니면 아무것도 뜨지 않는다
       }
       const rows = (await query(
-        `${SELECT_Q} WHERE ${where} ORDER BY q.created_at DESC LIMIT 30`, params)).rows;
-      return { count: rows.length, items: rows.map(qRow),
-        can_assign: isDir, assignees: isDir ? await assignableUsers() : [] };
+        `${SELECT_Q} WHERE ${OPEN_WHERE} ORDER BY q.created_at DESC LIMIT 30`)).rows;
+      return { count: rows.length, items: rows.map(qRow) };
     } catch (_) { return empty; }
   });
 
