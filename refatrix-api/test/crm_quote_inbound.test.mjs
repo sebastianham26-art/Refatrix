@@ -14,7 +14,91 @@ import { readFileSync } from 'node:fs';
 const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
 
-const { mapQuote, quoteDate, badQuoteLines } = await import('../src/crmInbound.js');
+const { mapQuote, quoteDate, badQuoteLines, folioFromText, folioAsQuoteNo, folioAnywhere } =
+  await import('../src/crmInbound.js');
+
+// ── 0221b · COT 번호는 어디에 있든 잡는다 ──────────────────────
+//   디렉터 지시: CRM 견적번호는 **무조건 COT 로 온다.** 그러니 놓치면 안 된다.
+test('필드 이름을 몰라도 COT 번호를 찾아낸다', () => {
+  // 첫 연동 때도 계약서와 다른 이름으로 왔다. 이름을 못 알아봐서 번호를 통째로 놓치면
+  // 견적번호가 갈리고 중복 방지도 사라진다 — 그게 가장 비싼 실패다.
+  assert.equal(mapQuote({ rfc: 'X', numeroDocumento: 'COT-20260917120000001',
+    lineas: [{ codigo: 'A', cantidad: 1 }] }).crmQuoteNo, 'COT-20260917120000001');
+  assert.equal(mapQuote({ rfc: 'X', portal: { referencia: 'COT-ABC123' },
+    lineas: [{ codigo: 'A', cantidad: 1 }] }).crmQuoteNo, 'COT-ABC123');
+});
+
+test('줄 안의 제품 코드를 견적번호로 오해하지 않는다', () => {
+  // COT 로 시작하는 제품 코드가 있을 수 있다. 그걸 견적번호로 쓰면 견적이 뒤섞인다.
+  assert.equal(folioAnywhere({ lineas: [{ codigo: 'COT-9999', cantidad: 1 }] }), null);
+  assert.equal(folioAnywhere({ lines: [{ code: 'COT-9999', qty: 1 }] }), null);
+  assert.equal(mapQuote({ rfc: 'X', lineas: [{ codigo: 'COT-9999', cantidad: 1 }] }).crmQuoteNo, null);
+});
+
+test('전용 필드가 언제나 이긴다 — 추측은 마지막이다', () => {
+  const m = mapQuote({ rfc: 'X', cotizacionCrm: 'COT-REAL',
+    memo: 'ref COT-DEL-MEMO', otro: 'COT-CUALQUIERA', lineas: [{ codigo: 'A', cantidad: 1 }] });
+  assert.equal(m.crmQuoteNo, 'COT-REAL');
+  // 전용 필드가 없으면 메모가 그다음, 그것도 없으면 아무 데나.
+  assert.equal(mapQuote({ rfc: 'X', memo: 'ref COT-DEL-MEMO', otro: 'COT-CUALQUIERA' }).crmQuoteNo,
+    'COT-DEL-MEMO');
+});
+
+// ── 0221 · 포털 번호를 그대로 견적번호로 쓴다 ──────────────────
+test('포털 번호가 곧 ERP 견적번호다', () => {
+  // 고객이 전화로 「COT-2026…」 이라고 말하면 그 번호로 바로 찾을 수 있어야 한다.
+  assert.equal(folioAsQuoteNo('COT-20260917120000001'), 'COT-20260917120000001');
+  assert.equal(folioAsQuoteNo('COT_2026/0001'), 'COT_2026/0001');
+});
+
+test('번호 칸에 아무 문자열이나 넣지는 않는다', () => {
+  // 번호는 화면·인쇄물·검색에 그대로 나간다. 모양이 이상하면 우리 번호로 되돌아간다
+  // (원문은 external_quote_no 에 남으므로 잃어버리는 것은 없다).
+  assert.equal(folioAsQuoteNo('COT 2026 0001'), null, '공백이 있으면 안 된다');
+  assert.equal(folioAsQuoteNo('A'.repeat(60)), null, '너무 길면 안 된다');
+  assert.equal(folioAsQuoteNo('<script>'), null);
+  assert.equal(folioAsQuoteNo(''), null);
+  assert.equal(folioAsQuoteNo(null), null);
+});
+
+// ── ⓪ 개발자가 제안한 본문 그대로 ──────────────────────────────
+//   2026-09-17 CRM 개발자가 「이 형태로 계약서를 쓰자」며 보낸 본문이다.
+//   이름은 전부 받아 준다(이름은 싸다). 받지 않는 것은 **고객을 정하는 방식** 하나뿐이다.
+const DEV_PAYLOAD = {
+  customer_id: 5,
+  quote_date: '2026-09-17',
+  memo: 'Portal Refatrix COT-20260917120000001',
+  lines: [{ code: 'GV0022', qty: 3 }, { code: 'CB0145', qty: 2 }],
+};
+
+test('개발자 본문: 줄·날짜·메모는 그대로 읽힌다', () => {
+  const m = mapQuote(DEV_PAYLOAD);
+  assert.deepEqual(m.lines, [{ code: 'GV0022', qty: 3 }, { code: 'CB0145', qty: 2 }]);
+  assert.equal(quoteDate(m.fecha), '2026-09-17', 'quote_date 도 알아본다');
+  assert.equal(m.comentario, 'Portal Refatrix COT-20260917120000001', 'memo 도 알아본다');
+  assert.deepEqual(badQuoteLines(m.lines), []);
+});
+
+test('개발자 본문: 메모에 박힌 COT 번호를 주워 멱등을 살린다(차선책)', () => {
+  // 전용 필드가 있는 편이 훨씬 낫다 — 메모 문구가 바뀌면 이 폴백은 조용히 멈춘다.
+  // 그래도 폴백이 있는 쪽이 낫다: 없으면 같은 견적이 두 번 들어와도 막을 방법이 아예 없다.
+  assert.equal(mapQuote(DEV_PAYLOAD).crmQuoteNo, 'COT-20260917120000001');
+  assert.equal(folioFromText('Portal Refatrix COT-20260917120000001'), 'COT-20260917120000001');
+  assert.equal(folioFromText('sin folio'), null);
+  // 전용 필드가 오면 **그쪽이 이긴다**(메모 문구 추측보다 언제나 낫다).
+  assert.equal(mapQuote({ ...DEV_PAYLOAD, cotizacionCrm: 'COT-REAL' }).crmQuoteNo, 'COT-REAL');
+});
+
+test('개발자 본문: 고객만은 받을 수 없다 — RFC 를 더해야 한다', () => {
+  // 이것이 NAJAR 사고의 원인이었다. 숫자 5 는 두 시스템에서 뜻이 다르다.
+  assert.equal(mapQuote(DEV_PAYLOAD).rfc, null);
+  assert.equal(mapQuote(DEV_PAYLOAD).crmCustomerCode, null);
+  // rfc 한 줄만 더하면 나머지는 그대로 통한다.
+  const m = mapQuote({ ...DEV_PAYLOAD, rfc: 'AIAC8310204A0' });
+  assert.equal(m.rfc, 'AIAC8310204A0');
+  assert.equal(m.lines.length, 2);
+  assert.equal(m.crmQuoteNo, 'COT-20260917120000001');
+});
 
 // ── ① 순수 로직 ────────────────────────────────────────────────
 test('고객은 RFC·CRM코드로만 읽는다 — 숫자 id 는 읽지 않는다', () => {
@@ -96,8 +180,9 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
   const rfcOk = 'QIN010203AA1';
   const rfcPend = 'QIN010203BB2';
   // 앞선 실패 실행이 남긴 찌꺼기를 먼저 치운다(시험은 몇 번을 돌려도 같아야 한다).
-  await query(`DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE external_quote_no LIKE 'COT-T-%')`);
-  await query(`DELETE FROM quotes WHERE external_quote_no LIKE 'COT-T-%'`);
+  await query(`DELETE FROM quote_lines WHERE quote_id IN (
+                 SELECT id FROM quotes WHERE external_quote_no LIKE 'COT-T%' OR quote_no LIKE 'COT-T%')`);
+  await query(`DELETE FROM quotes WHERE external_quote_no LIKE 'COT-T%' OR quote_no LIKE 'COT-T%'`);
   await query(`DELETE FROM crm_inbound_log WHERE endpoint_key='crm_quote_request'`);
   await query(`DELETE FROM customers WHERE code IN ('T-Q001','T-Q002')`);
   await query(`DELETE FROM products WHERE code IN ('QTEST01','QTEST02')`);
@@ -168,13 +253,15 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     assert.equal(r.statusCode, 200);
     const b = r.json();
     assert.equal(b.codigoError, '0');
-    assert.match(b.cotizacionErp, /^Q-2026-/);
+    // 0221 — 포털 번호가 곧 ERP 견적번호다.
+    assert.equal(b.cotizacionErp, 'COT-T-0001');
     assert.deepEqual(b.lineasConProblema, []);
     madeQuotes.push(b.quoteId);
 
     const q = (await query(
-      `SELECT customer_id, origin, external_quote_no, quote_date::text, status, memo, total_qty
+      `SELECT customer_id, origin, quote_no, external_quote_no, quote_date::text, status, memo, total_qty
          FROM quotes WHERE id=$1`, [b.quoteId])).rows[0];
+    assert.equal(q.quote_no, 'COT-T-0001', '견적번호 자체가 포털 번호여야 한다');
     assert.equal(Number(q.customer_id), cOk, '고객은 RFC 로 붙어야 한다');
     assert.equal(q.origin, 'crm');
     assert.equal(q.external_quote_no, 'COT-T-0001', 'CRM 번호는 칼럼에 남는다(메모 안이 아니라)');
@@ -267,6 +354,62 @@ dbTest('수신 → 견적 생성 · 멱등 · 문제 줄 · 확정 잠금 (실 D
     await query(`DELETE FROM quote_lines WHERE quote_id=$1 AND issue IS NOT NULL`, [b.quoteId]);
     const ok = await asDirector('POST', `/api/quotes/${b.quoteId}/status`, { status: 'confirmed' });
     assert.equal(ok.statusCode, 200);
+  });
+
+  await t.test('번호가 제대로 들어가면 군더더기 경고를 붙이지 않는다', async () => {
+    const r = await post({ cotizacionCrm: 'COT-T-CLEAN', rfc: rfcOk,
+      lineas: [{ codigo: 'QTEST01', cantidad: 1 }] });
+    const b = r.json();
+    madeQuotes.push(b.quoteId);
+    assert.equal(b.cotizacionErp, 'COT-T-CLEAN');
+    assert.equal(b.avisoFolio, undefined, '정상일 때 경고가 뜨면 진짜 경고가 묻힌다');
+  });
+
+  await t.test('포털 번호가 없으면 우리 번호(Q-####)로 되돌아간다', async () => {
+    // 번호가 없으면 멱등도 없다(중복은 막을 수 없다) — 그래도 접수는 해야 한다.
+    const r = await post({ rfc: rfcOk, lineas: [{ codigo: 'QTEST01', cantidad: 1 }] });
+    assert.equal(r.statusCode, 200);
+    const b = r.json();
+    madeQuotes.push(b.quoteId);
+    assert.match(b.cotizacionErp, /^Q-\d{4}-/, '포털 번호가 없을 때만 우리 번호를 쓴다');
+    const q = (await query(`SELECT external_quote_no FROM quotes WHERE id=$1`, [b.quoteId])).rows[0];
+    assert.equal(q.external_quote_no, null);
+    // ⚠ 번호가 갈렸으면 **조용히 넘어가지 않는다** — 응답과 수신 이력 양쪽에 남는다.
+    assert.ok(b.avisoFolio, '개발자가 바로 알아챌 수 있게 응답에 적어야 한다');
+    assert.match(b.avisoFolio, /cotizacionCrm/);
+    const log = (await query(
+      `SELECT mensaje FROM crm_inbound_log WHERE endpoint_key='crm_quote_request'
+        ORDER BY id DESC LIMIT 1`)).rows[0];
+    assert.match(log.mensaje, /⚠/, '수신 이력에서도 번호가 갈린 건을 찾을 수 있어야 한다');
+  });
+
+  await t.test('모양이 이상한 번호는 견적번호로 쓰지 않는다(원문은 보존)', async () => {
+    const weird = 'COT 20260917 CON ESPACIOS';
+    const r = await post({ cotizacionCrm: weird, rfc: rfcOk,
+      lineas: [{ codigo: 'QTEST01', cantidad: 1 }] });
+    assert.equal(r.statusCode, 200);
+    const b = r.json();
+    madeQuotes.push(b.quoteId);
+    assert.match(b.cotizacionErp, /^Q-\d{4}-/, '번호 칸에 공백 섞인 문자열을 넣지 않는다');
+    const q = (await query(`SELECT external_quote_no FROM quotes WHERE id=$1`, [b.quoteId])).rows[0];
+    assert.equal(q.external_quote_no, weird, '원문은 그대로 남아 대조할 수 있어야 한다');
+    assert.ok(b.avisoFolio, '왜 번호가 갈렸는지 알려 줘야 한다');
+  });
+
+  await t.test('같은 번호가 동시에 들어와도 견적은 하나다', async () => {
+    // 위쪽 멱등 검사는 두 요청이 나란히 달리면 사이를 빠져나갈 수 있다.
+    // 그때는 유니크 제약이 막고, 우리는 그걸 오류가 아니라 「이미 받았다」로 답해야 한다.
+    const body = { cotizacionCrm: 'COT-T-RACE', rfc: rfcOk,
+      lineas: [{ codigo: 'QTEST01', cantidad: 1 }] };
+    const [a, b2] = await Promise.all([post(body), post(body)]);
+    assert.equal(a.statusCode, 200);
+    assert.equal(b2.statusCode, 200);
+    assert.equal(a.json().cotizacionErp, 'COT-T-RACE');
+    assert.equal(b2.json().cotizacionErp, 'COT-T-RACE');
+    madeQuotes.push(a.json().quoteId);
+    const n = (await query(
+      `SELECT count(*)::int AS n FROM quotes WHERE quote_no='COT-T-RACE'`)).rows[0].n;
+    assert.equal(Number(n), 1, '동시에 와도 견적은 하나여야 한다');
   });
 
   await t.test('줄이 없거나 수량이 0 이면 상대에게 어느 줄인지 알려 준다', async () => {

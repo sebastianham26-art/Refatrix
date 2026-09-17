@@ -131,16 +131,85 @@ export function mapQuote(body) {
       qty: N(pick(l, ['cantidad', 'qty', 'quantity', 'cant', 'piezas', 'unidades'])),
     };
   });
+  const comentario = S(pick(f, ['comentario', 'comentarios', 'mensaje', 'memo', 'nota', 'notas', 'observaciones']));
+  // 포털 견적번호 — **반드시 잡아야 한다.** 이 번호가 곧 ERP 견적번호이고 중복 방지 키다.
+  //   디렉터 지시(2026-09-17): CRM 견적번호는 **무조건 COT 로 들어온다.**
+  //   그래서 세 겹으로 찾는다. 뒤로 갈수록 덜 확실하지만, 놓치는 것보다는 낫다.
+  //     ① 전용 필드 (가장 확실 — 개발자에게 이걸 부탁했다)
+  //     ② 메모·비고 문구 안의 COT-…
+  //     ③ 본문 **어디든** 있는 COT-… (필드 이름을 우리가 모르는 경우의 마지막 안전망)
+  const crmQuoteNo = S(pick(f, ['cotizacionCrm', 'cotizacion', 'folio', 'folioCotizacion', 'quoteNo',
+    'numeroCotizacion', 'idCotizacion', 'cotizacionId']))
+    || folioFromText(comentario)
+    || folioAnywhere(body);
   return {
-    crmQuoteNo: S(pick(f, ['cotizacionCrm', 'cotizacion', 'folio', 'folioCotizacion', 'quoteNo',
-      'numeroCotizacion', 'idCotizacion', 'cotizacionId'])),
+    crmQuoteNo,
     rfc: S(pick(f, ['rfc', 'RFC', 'rfcCliente', 'taxId'])),
     crmCustomerCode: S(pick(f, ['clienteCrm', 'crmCustomerCode', 'customerCode', 'codigoCliente', 'clienteCodigo'])),
     fecha: S(pick(f, ['fecha', 'fechaCotizacion', 'quoteDate', 'fechaSolicitud', 'solicitadoEn'])),
-    comentario: S(pick(f, ['comentario', 'comentarios', 'mensaje', 'nota', 'notas', 'observaciones'])),
+    comentario,
     solicitante: S(pick(f, ['solicitante', 'usuario', 'contacto', 'correo', 'email', 'nombre'])),
     lines,
   };
+}
+
+/** 메모 문구에서 포털 견적번호(COT-…)를 뽑아낸다. 전용 필드가 없을 때만 쓰는 차선책. */
+export function folioFromText(s) {
+  // COT 뒤에 **구분자나 숫자**가 와야 한다 — 그래야 「COTA123」 같은 평범한 낱말을
+  //   견적번호로 오해하지 않는다. 틀린 번호를 넣는 것은 못 찾는 것보다 나쁘다
+  //   (못 찾으면 Q-#### 로 가고 화면이 경고한다. 틀리면 아무도 모른다).
+  //   끝은 반드시 영숫자 — 문장 끝의 마침표·쉼표를 번호에 끌고 들어오지 않게.
+  const m = /\b(COT(?:[-_/]|(?=\d))[A-Za-z0-9._/-]{1,35}[A-Za-z0-9])\b/i.exec(String(s || ''));
+  return m ? m[1].toUpperCase() : null;
+}
+
+/**
+ * 본문 **어디에 있든** COT-… 를 찾아낸다 — 마지막 안전망.
+ *
+ *   CRM 견적번호는 무조건 COT 로 온다. 그런데 필드 이름은 우리가 다 알 수 없다
+ *   (첫 연동 때도 계약서와 다른 이름으로 왔다). 이름을 못 알아봐서 번호를 통째로
+ *   놓치면 견적번호가 갈리고 중복 방지도 사라진다 — 그게 가장 비싼 실패다.
+ *
+ *   ⚠ 이건 **추측**이다. 전용 필드가 언제나 이긴다. 그리고 줄(lineas)은 건너뛴다 —
+ *     제품 코드가 우연히 COT 로 시작해도 견적번호로 오해하면 안 된다.
+ */
+export function folioAnywhere(body, _depth = 0) {
+  if (body == null || _depth > 4) return null;
+  if (typeof body === 'string') return folioFromText(body);
+  if (typeof body !== 'object') return null;
+  if (Array.isArray(body)) {
+    for (const v of body.slice(0, 200)) {
+      const hit = folioAnywhere(v, _depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  for (const k of Object.keys(body)) {
+    // 줄 배열 안은 보지 않는다(제품 코드와 헷갈릴 자리다).
+    if (['lineas', 'lines', 'items', 'partidas', 'detalle', 'productos', 'renglones']
+      .includes(String(k).toLowerCase())) continue;
+    const hit = folioAnywhere(body[k], _depth + 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * 포털 견적번호를 **ERP 견적번호로 그대로 쓸 수 있는가** 판정한다 (0221).
+ *
+ *   디렉터 결정: 웹에서 들어온 견적은 ERP 에서도 **같은 번호**로 남긴다.
+ *   고객이 전화로 「COT-2026…」 라고 말하면 영업사원이 그 번호로 바로 찾을 수 있어야 한다.
+ *   번호가 두 개면 통화 중에 대조표를 열어야 하고, 그 순간 실수가 난다.
+ *
+ *   다만 **아무 문자열이나 번호 칸에 넣지는 않는다.** 번호는 화면·인쇄물·검색에 그대로 나가므로
+ *   모양이 이상하면(공백·너무 김·이상한 문자) 포기하고 우리 번호(Q-####)를 쓴다.
+ *   이때도 원문은 external_quote_no 에 그대로 남으니 잃어버리는 것은 없다.
+ */
+export function folioAsQuoteNo(folio) {
+  const s = String(folio == null ? '' : folio).trim();
+  if (!s) return null;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{2,39}$/.test(s)) return null;
+  return s;
 }
 
 /** 견적일자로 쓸 수 있는가 — 아니면 오늘로 둔다(상대 형식 때문에 접수를 막지 않는다). */

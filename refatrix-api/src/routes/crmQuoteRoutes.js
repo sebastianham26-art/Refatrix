@@ -20,7 +20,7 @@ import { authGuard, requirePage, requireDirector } from '../middleware/authGuard
 import { logEvent } from '../audit.js';
 import { getEndpoint, INBOUND_KEY_FALLBACK } from '../integrations.js';
 import { writeInboundLog } from '../crmInboundLog.js';
-import { mapQuote, quoteDate, badQuoteLines, readInboundKey, verifyInboundKey,
+import { mapQuote, quoteDate, badQuoteLines, folioAsQuoteNo, readInboundKey, verifyInboundKey,
          scrubPayload, errBody } from '../crmInbound.js';
 import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
@@ -45,6 +45,26 @@ async function quoteColsReady() {
     ready = r.rows.length > 0;
   } catch (_) { ready = false; }
   return ready;
+}
+
+/**
+ * 견적번호가 **포털 번호대로 들어갔는지** 한 줄로 말해 준다.
+ *
+ *   디렉터 지시: CRM 견적번호는 무조건 COT 로 오고, ERP 에도 그대로 들어가야 한다.
+ *   그래서 **그렇게 되지 않은 경우를 조용히 넘기지 않는다** — 수신 이력과 응답 양쪽에 남긴다.
+ *   번호가 갈린 줄 모르고 지내다가 고객이 전화했을 때 못 찾는 게 최악이다.
+ */
+function folioNote(folio, quoteNo) {
+  if (!folio) {
+    return 'No vino el folio del portal (cotizacionCrm): el ERP asignó ' + quoteNo
+      + '. Los dos sistemas quedan con números distintos y no podemos evitar duplicados.';
+  }
+  if (String(folio) !== String(quoteNo)) {
+    return 'El folio "' + String(folio).slice(0, 60) + '" no se puede usar como número de cotización '
+      + '(espacios, largo o caracteres no permitidos): el ERP asignó ' + quoteNo
+      + '. El folio original queda guardado.';
+  }
+  return null;
 }
 
 const ISSUE_ES = {
@@ -168,7 +188,10 @@ export default async function crmQuoteRoutes(app) {
     //    고객이 버튼을 두 번 누르거나 CRM 이 재시도해도 견적이 둘 생기면 안 된다.
     if (m.crmQuoteNo) {
       const dup = (await query(
-        `SELECT id, quote_no FROM quotes WHERE external_quote_no=$1 AND deleted_at IS NULL`,
+        // 0221 이후로는 포털 번호가 곧 견적번호이므로 두 칸 다 본다
+        //   (0221 전에 들어온 건은 external_quote_no 에만 있다).
+        `SELECT id, quote_no FROM quotes
+          WHERE (external_quote_no=$1 OR quote_no=$1) AND deleted_at IS NULL LIMIT 1`,
         [m.crmQuoteNo])).rows[0];
       if (dup) {
         const body = errBody('0', 'Cotización ya recibida anteriormente.',
@@ -220,6 +243,7 @@ export default async function crmQuoteRoutes(app) {
       return reply.code(400).send(body);
     }
 
+    let numberNote = null;
     try {
       const discountRate = Number(cust.discount) || 0;
       const ivaRate = 16;
@@ -229,7 +253,12 @@ export default async function crmQuoteRoutes(app) {
 
       const result = await withTx(async (c) => {
         const year = qdate ? qdate.slice(0, 4) : String(new Date().getFullYear());
-        const quoteNo = await nextQuoteNo(c, year);
+        // 0221 · 웹에서 온 견적은 **포털 번호를 그대로 견적번호로 쓴다.**
+        //   고객이 전화로 「COT-2026…」 이라고 말하면 그 번호로 바로 찾을 수 있어야 한다.
+        //   번호가 두 개면 통화 중에 대조표를 열어야 하고, 그때 실수가 난다.
+        //   번호를 못 쓰는 경우(모양이 이상하거나 아예 없음)에만 우리 번호로 되돌아간다.
+        const quoteNo = folioAsQuoteNo(m.crmQuoteNo) || await nextQuoteNo(c, year);
+        numberNote = folioNote(m.crmQuoteNo, quoteNo);
         const lines = await buildLines(discountRate, ivaRate, m.lines);
         const totals = computeQuoteTotals(lines.filter((l) => l.product_id)
           .map((l) => ({ lineSubtotal: l.line_subtotal, lineIva: l.line_iva, lineTotal: l.line_total, qty: l.qty })));
@@ -265,15 +294,36 @@ export default async function crmQuoteRoutes(app) {
       await safeLog({ userId: null, action: 'create', target: `quote:${result.q.id}`,
         detail: { origin: 'crm_quote_request', external: m.crmQuoteNo, rfc: m.rfc, customer: cust.code } });
 
+      const extra = { cotizacionErp: result.q.quote_no, quoteId: Number(result.q.id),
+        lineasConProblema: problems };
+      // 번호가 포털 것과 갈렸으면 **응답에도** 적는다 — 개발자가 바로 알아채야 한다.
+      if (numberNote) extra.avisoFolio = numberNote;
       const body = errBody('0',
         problems.length
           ? 'Cotización recibida. Algunas líneas requieren revisión de un asesor.'
-          : 'Cotización recibida.',
-        { cotizacionErp: result.q.quote_no, quoteId: Number(result.q.id), lineasConProblema: problems });
+          : 'Cotización recibida.', extra);
       await writeLog({ ...logBase, customer_id: Number(cust.id), erp_code: result.q.quote_no,
-        http_status: 200, result: 'created', codigo_error: '0', mensaje: body.mensaje });
+        http_status: 200, result: 'created', codigo_error: '0',
+        // 수신 이력에도 남긴다 — 디렉터가 화면에서 번호가 갈린 건을 찾을 수 있게.
+        mensaje: numberNote ? `${body.mensaje} ⚠ ${numberNote}` : body.mensaje });
       return reply.code(200).send(body);
     } catch (e) {
+      // 같은 번호가 **동시에** 두 번 들어오면 유니크 제약이 하나를 막는다.
+      //   그건 오류가 아니라 멱등이 작동한 것이다 — 이미 있는 견적을 돌려준다.
+      //   (위쪽 멱등 검사는 두 요청이 나란히 달릴 때 사이를 빠져나갈 수 있다)
+      if (e && e.code === '23505' && m.crmQuoteNo) {
+        const dup = (await query(
+          `SELECT id, quote_no FROM quotes
+            WHERE (external_quote_no=$1 OR quote_no=$1) AND deleted_at IS NULL LIMIT 1`,
+          [m.crmQuoteNo])).rows[0];
+        if (dup) {
+          const body = errBody('0', 'Cotización ya recibida anteriormente.',
+            { cotizacionErp: dup.quote_no, quoteId: Number(dup.id), lineasConProblema: [] });
+          await writeLog({ ...logBase, customer_id: Number(cust.id), erp_code: dup.quote_no,
+            http_status: 200, result: 'updated', codigo_error: '0', mensaje: body.mensaje });
+          return reply.code(200).send(body);
+        }
+      }
       req.log?.error({ err: e }, 'crm quote inbound failed');
       const body = errBody('ERR_INTERNAL', 'Error interno del ERP. Reintentar más tarde.');
       await writeLog({ ...logBase, customer_id: Number(cust.id), erp_code: cust.code,
