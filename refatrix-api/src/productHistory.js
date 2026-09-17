@@ -26,6 +26,8 @@ export const FIELD_LABELS = {
   price_customer_syd: 'Precio Cliente de SYD', price_customer_ctr: 'Precio Cliente de CTR',
   material: 'Material', rack_location: 'Rack 위치',
   _syd: 'Clave SyD(분해)', _app: '적용차종',
+  // 제품 영구 삭제(2026-09-17) — 삭제된 행은 product_id 가 비고 code 스냅샷만 남는다.
+  _deleted: '삭제된 제품', _removed: '함께 정리된 항목', _reason: '사유',
 };
 
 export const SOURCE_LABELS = {
@@ -69,6 +71,14 @@ export function describeRow({ kind, action, source, changes, reason, canPrice = 
     return reason ? `${head} — ${reason}` : head;
   }
   const { parts, hidden_price: hidden } = changeParts(changes, canPrice);
+  // 제품 영구 삭제(2026-09-17). changes = { _deleted:{from:이름,to:null}, _removed, _reason }
+  if (action === 'delete') {
+    const get = (f) => (changes && changes[f] ? changes[f] : null);
+    const name = get('_deleted') && !isNil(get('_deleted').from) ? String(get('_deleted').from) : null;
+    const why = get('_reason') && !isNil(get('_reason').to) ? String(get('_reason').to) : null;
+    const rm = get('_removed') && !isNil(get('_removed').to) ? String(get('_removed').to) : null;
+    return `제품 삭제(영구)${name ? ` — ${name}` : ''}${why ? ` / 사유: ${why}` : ''}${rm ? ` / 함께 정리: ${rm}` : ''}`;
+  }
   if (action === 'create') {
     const named = parts.filter((p) => !isNil(p.to)).map((p) => p.label);
     const src = SOURCE_LABELS[source] || source || '';

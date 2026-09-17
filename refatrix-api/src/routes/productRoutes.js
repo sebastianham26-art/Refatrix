@@ -1,12 +1,14 @@
 import { query, withTx } from '../db.js';
 import { authGuard, requirePage, requireDirector } from '../middleware/authGuard.js';
 import { minimizeProduct, fieldVisible } from '../permissions.js';
+import { verifyPin } from '../auth.js';
 import { logPageView, logEvent } from '../audit.js';
 import { buildHeaderIndex, parseRow, diffProduct, buildPreview, UPDATABLE_FIELDS, parseApplications, splitSyd, normalizeMaterial } from '../productImport.js';
 import { visibleTeamIds } from '../teams.js';
 import { sweepDevRequestMatches } from '../devMatchSweep.js';
 import { productOpenItems, BUCKETS as STATUS_BUCKETS } from '../productStatus.js';
 import { changeParts, describeRow, sydForRow, signedQty, stockAtChange } from '../productHistory.js';
+import { refColumns, scanReferences, buildDeleteCheck, purgeReferences, describeCleanup } from '../productDelete.js';
 
 // ── 중국 자동차 브랜드 분류 ──────────────────────────────────────────────
 // 필터 기준은 product_applications.maker(적용차종 앞쪽 대문자 토큰, 대문자로 저장).
@@ -40,8 +42,10 @@ async function logProductChange(exec, { productId = null, code = null, action, s
       `INSERT INTO product_change_log (product_id, code, action, source, changes, changed_by)
        VALUES ($1,$2,$3,$4,$5,$6)`,
       [productId, code, action, source, changes ? JSON.stringify(changes) : null, userId]);
+    return true;
   } catch (e) {
     try { console.error('[product_change_log] failed:', action, source, e.message); } catch (_) {}
+    return false;   // 호출부가 대체 기록을 시도할 수 있게 실패를 알린다(제품 삭제 이력).
   }
 }
 
@@ -981,6 +985,97 @@ export default async function productRoutes(app) {
     let devMatch = null;
     try { devMatch = await sweepDevRequestMatches({ userId }); } catch (_) {}
     return { ok: true, created, updated, unchanged, skipped, dev_match: devMatch ? { matched: devMatch.matched } : null };
+  });
+
+  // ===== 제품 영구 삭제 (디렉터 · PIN) =====
+  // 규칙: 한 번이라도 팔렸으면 삭제 불가. 구매(발주·수입)도 판매도 없고, 다른 어떤 기록에도
+  //   쓰이지 않을 때만 디렉터가 PIN 으로 지운다. 판정 근거는 productDelete.js 참조.
+  // ⚠ soft delete 가 아니라 **행을 지운다** — products.code 가 UNIQUE 라 soft delete 면 그 코드를
+  //   다시 쓸 수 없기 때문이다(잘못 등록한 코드를 되살리는 것이 이 기능의 목적).
+  //   삭제 사실은 product_change_log 에 코드와 함께 영구 보존된다.
+
+  // 사전 점검 — 삭제 가능 여부 + 막는 이유 + 함께 정리될 파생 데이터
+  app.get('/api/products/:id/delete-check', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+    const prod = (await query(
+      `SELECT id, code, name, stock_qty FROM products WHERE id=$1 AND deleted_at IS NULL`, [id])).rows[0];
+    if (!prod) return reply.code(404).send({ error: 'not_found' });
+    const cols = await refColumns(query);
+    const refs = await scanReferences(query, id, cols);
+    return buildDeleteCheck(prod, refs);
+  });
+
+  // 실제 삭제. body: { pin, code?(확인용), reason? }
+  app.delete('/api/products/:id', { preHandler: [authGuard, requireDirector] }, async (req, reply) => {
+    const { perm } = req.ctx;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return reply.code(400).send({ error: 'bad_id' });
+
+    // 디렉터 PIN 재확인(입고 마감·창고 잠금과 같은 방식)
+    const pinRow = (await query(`SELECT pin_hash FROM users WHERE id=$1`, [perm.userId])).rows[0];
+    if (!verifyPin(String(req.body?.pin || ''), pinRow?.pin_hash)) return reply.code(403).send({ error: 'bad_pin' });
+
+    const reason = String(req.body?.reason || '').trim().slice(0, 300) || null;
+    const confirmCode = String(req.body?.code || '').trim();
+
+    let out;
+    try {
+      out = await withTx(async (c) => {
+        const exec = (t, p) => c.query(t, p);
+        // 같은 제품을 두 곳에서 동시에 건드리지 못하게 잠그고, **잠근 뒤에** 다시 점검한다
+        // (점검과 삭제 사이에 견적·판매가 들어오는 경합 방지).
+        const prod = (await exec(
+          `SELECT id, code, name, stock_qty FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0];
+        if (!prod) return { error: 'not_found', status: 404 };
+        // 확인창에서 본 코드와 실제 코드가 다르면 멈춘다(다른 제품을 지우는 사고 방지).
+        if (confirmCode && confirmCode.toUpperCase() !== String(prod.code).toUpperCase()) {
+          return { error: 'code_mismatch', status: 409, detail: prod.code };
+        }
+        const cols = await refColumns(exec);
+        const refs = await scanReferences(exec, id, cols);
+        const check = buildDeleteCheck(prod, refs);
+        if (!check.can_delete) return { error: 'has_refs', status: 409, check };
+
+        const { cleaned, nulled } = await purgeReferences(exec, id, refs);
+        const del = await exec(`DELETE FROM products WHERE id=$1`, [id]);
+        if (!del.rowCount) return { error: 'not_found', status: 404 };
+        return { ok: true, product: prod, cleaned, nulled, removed: describeCleanup(cleaned, nulled) };
+      });
+    } catch (e) {
+      // 우리가 못 본 참조가 남아 있으면 Postgres 가 외래키로 막는다 — 500 대신 이유를 돌려준다.
+      if (e && e.code === '23503') {
+        return reply.code(409).send({ error: 'has_refs', detail: e.detail || e.constraint || null });
+      }
+      throw e;
+    }
+    if (out.error) return reply.code(out.status || 400).send(out);
+
+    // 이력 기록은 **커밋 후**에 한다 — 0222 마이그레이션(action 에 'delete' 허용)이 아직 안 돌았을 때
+    //   트랜잭션 안에서 CHECK 위반이 나면 삭제 자체가 통째로 롤백되기 때문이다.
+    //   그런 환경에서도 이력이 비지 않도록 'update' 로 한 번 더 시도한다(내용은 같다).
+    const chg = {
+      _deleted: { from: out.product.name || out.product.code, to: null },
+      ...(out.removed ? { _removed: { from: null, to: out.removed } } : {}),
+      ...(reason ? { _reason: { from: null, to: reason } } : {}),
+    };
+    const logged = await logProductChange(query, {
+      productId: null, code: out.product.code, action: 'delete', source: 'manual', changes: chg, userId: perm.userId,
+    });
+    if (logged === false) {
+      await logProductChange(query, {
+        productId: null, code: out.product.code, action: 'update', source: 'manual', changes: chg, userId: perm.userId,
+      });
+    }
+
+    await logEvent({
+      userId: perm.userId, deviceId: req.ctx.deviceId, action: 'delete', target: 'product:' + id,
+      detail: { code: out.product.code, name: out.product.name || null, reason, cleaned: out.cleaned, nulled: out.nulled },
+    });
+    return {
+      ok: true, id, code: out.product.code, name: out.product.name || null,
+      cleaned: out.cleaned, nulled: out.nulled, removed: out.removed || null,
+    };
   });
 
   // ===== 소재(material) 지정 =====
