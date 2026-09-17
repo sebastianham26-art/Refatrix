@@ -10,7 +10,8 @@ const PG = process.env.TEST_PG_URL || '';
 if (PG) process.env.DATABASE_URL = PG;
 
 const {
-  windowState, purchasePrice, usedDiscount, posicionMontaje, stockValue,
+  windowState, purchasePrice, usedDiscount, posicionMontaje, stockValue, catalogStockRange,
+  excludePrefixes,
   encodeCursor, decodeCursor, pageLimit, normCode, notaOf, buildProducto, mxIso,
 } = await import('../src/catalogPull.js');
 
@@ -73,11 +74,38 @@ test('장착 위치는 제품명에서 알아본다 — 모르면 null', () => {
   assert.equal(posicionMontaje(null), null);
 });
 
-test('재고는 수량이 기본, 설정 한 번으로 구간이 된다', () => {
+test('재고 구간은 경계에서 정확히 갈린다', () => {
+  assert.equal(catalogStockRange(0), '0');
+  assert.equal(catalogStockRange(-3), '0', '마이너스 재고도 0 으로 보인다');
+  assert.equal(catalogStockRange(1), '1-5');
+  assert.equal(catalogStockRange(5), '1-5');
+  assert.equal(catalogStockRange(6), '6-10');
+  assert.equal(catalogStockRange(10), '6-10');
+  assert.equal(catalogStockRange(11), '11-20');
+  assert.equal(catalogStockRange(20), '11-20');
+  assert.equal(catalogStockRange(21), '21-50');
+  assert.equal(catalogStockRange(50), '21-50');
+  assert.equal(catalogStockRange(51), '51-100');
+  assert.equal(catalogStockRange(100), '51-100');
+  assert.equal(catalogStockRange(101), '101+');
+  assert.equal(catalogStockRange(9999), '101+');
+  assert.equal(catalogStockRange('12.7'), '11-20', '소수 재고는 내림');
+});
+
+test('기본은 구간 — 수량은 설정을 바꿔야 나온다', () => {
+  assert.equal(stockValue(24), '21-50', '모드를 안 주면 구간');
+  assert.equal(stockValue(24, 'range'), '21-50');
   assert.equal(stockValue(24, 'qty'), 24);
-  assert.equal(stockValue(-3, 'qty'), 0, '마이너스 재고는 0 으로 보인다');
+  assert.equal(stockValue(-3, 'qty'), 0);
   assert.equal(stockValue('12.7', 'qty'), 12);
-  assert.equal(stockValue(24, 'range'), '21-30');
+});
+
+test('제외 접두어 — 기본은 PRO', () => {
+  assert.deepEqual(excludePrefixes({}), ['PRO'], '칼럼이 없으면 안전한 쪽으로 — PRO 를 막는다');
+  assert.deepEqual(excludePrefixes({ exclude_prefixes: 'PRO' }), ['PRO']);
+  assert.deepEqual(excludePrefixes({ exclude_prefixes: 'pro, kit ' }), ['PRO', 'KIT'], '대문자·공백 정리');
+  assert.deepEqual(excludePrefixes({ exclude_prefixes: '' }), [], '빈 값 = 제외 없음');
+  assert.deepEqual(excludePrefixes({ exclude_prefixes: null }), [], '사람이 지웠으면 전부 내보낸다');
 });
 
 test('적용차종 주석만 뽑아 nota 로 싣는다', () => {
@@ -93,7 +121,7 @@ test('제품 객체는 계약서 6항 모양이다', () => {
     [{ brand: 'SYD', xref_code: '1603005' }, { brand: 'MOOG', xref_code: '' }],
     [{ maker: 'NISSAN', model: 'Frontier 4X2', year_from: 1998, year_to: 2004,
        app_text: 'NISSAN Frontier 4X2 1998-2004 [perno grueso]' }],
-    { discount: 20.7, stockMode: 'qty', imgBase: 'https://fotos/{code}.webp' });
+    { discount: 20.7, stockMode: 'range', imgBase: 'https://fotos/{code}.webp' });
 
   assert.equal(p.codigo, 'CE0427');
   assert.equal(p.activo, true);
@@ -101,7 +129,7 @@ test('제품 객체는 계약서 6항 모양이다', () => {
   assert.equal(p.precio.precioCompra, 605.85);
   assert.equal(p.precio.moneda, 'MXN');
   assert.equal(p.precio.ivaIncluido, false);
-  assert.equal(p.existencia, 24);
+  assert.equal(p.existencia, '21-50', '고객에게는 구간으로 나간다');
   assert.equal(p.caracteristicas.material, 'Acero forjado');
   assert.equal(p.caracteristicas.posicionMontaje, 'Inferior');
   assert.equal(p.referencias.length, 1, '코드가 빈 대응품번은 내보내지 않는다');
@@ -178,6 +206,11 @@ if (!PG) {
     `INSERT INTO customers (code, name, discount) VALUES ($1,'Cliente Multimarca 0221',20) RETURNING id`,
     [CUST])).rows[0].id);
 
+  // PRO 로 시작하는 제품 — 고객에게 나가면 안 된다
+  await query(
+    `INSERT INTO products (code, name, app, list_price, stock_qty, is_active)
+     VALUES ('PRO02210','PRODUCTO INTERNO','NISSAN',500,50,true)`);
+
   for (let i = 1; i <= 6; i++) {
     const pid = Number((await query(
       `INSERT INTO products (code, name, app, list_price, stock_qty, is_active, material)
@@ -241,11 +274,30 @@ if (!PG) {
     assert.ok(p, '방금 넣은 제품이 응답에 있어야 한다');
     assert.equal(p.precio.precioLista, 1000);
     assert.equal(p.precio.precioCompra, 800, '할인율 20% → 800');
-    assert.equal(p.existencia, 7);
+    assert.equal(p.existencia, '6-10', '재고 7 → 구간 6-10');
     assert.equal(p.caracteristicas.posicionMontaje, 'Inferior');
     assert.equal(p.referencias[0].marca, 'SYD');
     assert.equal(p.aplicaciones[0].marca, 'NISSAN');
     assert.equal(d.cursor, null, '한 페이지에 다 들어갔으면 커서는 null');
+    assert.equal(d.productos.some((x) => x.codigo.startsWith('PRO')), false,
+      'PRO 로 시작하는 제품은 고객에게 나가지 않는다');
+  });
+
+  test('★ PRO 제품은 단건 조회로도 안 나온다 — 404', async () => {
+    const r = await app.inject({ method: 'GET', url: '/api/catalog/v1/products/PRO02210',
+      headers: { 'x-api-key': KEY } });
+    assert.equal(r.statusCode, 404, '목록에만 없고 직접 조회는 되면 구멍이다');
+    assert.equal(r.json().codigoError, 'ERR_NOT_FOUND');
+  });
+
+  test('제외 접두어를 비우면 PRO 도 나온다 — 설정으로 되돌릴 수 있다', async () => {
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { exclude_prefixes: '' } });
+    const r = await app.inject({ method: 'GET', url: '/api/catalog/v1/products/PRO02210',
+      headers: { 'x-api-key': KEY } });
+    assert.equal(r.statusCode, 200);
+    await app.inject({ method: 'PATCH', url: `/api/catalog/admin/clients/${clientId}`,
+      headers: bearer(dirId), payload: { exclude_prefixes: 'PRO' } });
   });
 
   test('★ 고객 마스터의 할인율을 바꾸면 다음 호출부터 자동으로 반영된다', async () => {
@@ -360,7 +412,7 @@ if (!PG) {
     await query(`DELETE FROM catalog_api_clients`);
     await query(`DELETE FROM product_applications WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'K02210%')`);
     await query(`DELETE FROM product_xref_codes   WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'K02210%')`);
-    await query(`DELETE FROM products WHERE code LIKE 'K02210%'`);
+    await query(`DELETE FROM products WHERE code LIKE 'K02210%' OR code LIKE 'PRO02210%'`);
     await query(`DELETE FROM customers WHERE code=$1`, [CUST]);
     await query(`DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE login_id IN ('t_dir_0221','t_sales_0221'))`);
     await query(`DELETE FROM users WHERE login_id IN ('t_dir_0221','t_sales_0221')`);

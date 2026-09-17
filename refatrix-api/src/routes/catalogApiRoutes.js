@@ -235,7 +235,8 @@ export default async function catalogApiRoutes(app) {
   // 화면에서 바꿀 수 있는 것만 받는다 — 키는 여기서 못 바꾼다(발급 전용 경로가 따로 있다).
   const EDITABLE = ['label', 'customer_id', 'enabled', 'window_enforced', 'window_dow',
     'window_start_hour', 'window_end_hour', 'syncs_per_period', 'max_calls', 'page_limit',
-    'stock_mode', 'img_base_url', 'brands', 'include_inactive', 'ip_allow', 'note'];
+    'stock_mode', 'img_base_url', 'brands', 'include_inactive', 'ip_allow', 'note',
+    'exclude_prefixes'];
 
   app.patch('/api/catalog/admin/clients/:id', guard, async (req, reply) => {
     if (!(await catalogTablesReady())) return reply.code(503).send({ error: 'migration_required' });
@@ -409,6 +410,11 @@ export function validatePatch(patch) {
   }
   if ('stock_mode' in patch && patch.stock_mode != null
       && !['qty', 'range'].includes(String(patch.stock_mode))) bad.push('stock_mode_invalid');
+  if ('exclude_prefixes' in patch && patch.exclude_prefixes) {
+    const bad2 = String(patch.exclude_prefixes).split(',').map((x) => x.trim())
+      .filter((x) => x && !/^[A-Za-z0-9._-]+$/.test(x));
+    if (bad2.length) bad.push('exclude_prefixes_invalid');
+  }
   if ('img_base_url' in patch && patch.img_base_url) {
     const u = String(patch.img_base_url).trim();
     if (!/^https?:\/\//i.test(u)) bad.push('img_base_invalid');
@@ -442,6 +448,7 @@ export function publicClient(r) {
     stock_mode: r.stock_mode,
     img_base_url: r.img_base_url || '',
     brands: r.brands || '',
+    exclude_prefixes: r.exclude_prefixes == null ? 'PRO' : r.exclude_prefixes,
     include_inactive: r.include_inactive !== false,
     ip_allow: r.ip_allow || '',
     note: r.note || '',

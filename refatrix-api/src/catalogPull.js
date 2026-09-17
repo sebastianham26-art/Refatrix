@@ -13,7 +13,7 @@
 //        키를 모르면 가격도 없다.
 import { query } from './db.js';
 import { getEndpoint } from './integrations.js';
-import { PRODUCT_KEY, imageUrlFor, stockRange } from './productSync.js';
+import { PRODUCT_KEY, imageUrlFor } from './productSync.js';
 
 // 멕시코 중부시간 — 서머타임 폐지(2022) 이후 연중 UTC−6 고정.
 export const MX_OFFSET_MIN = -360;
@@ -115,11 +115,36 @@ export function posicionMontaje(descripcion) {
   return hit.length ? hit.join(' / ') : null;
 }
 
-/** 재고 — 계약은 수량이지만, 화면 설정 한 번으로 구간으로 바꿀 수 있다(계약서 10항). */
+/**
+ * 재고 구간 — 고객에게 **정확한 수량을 주지 않는다**(디렉터 결정 2026-09-17).
+ *   0 · 1-5 · 6-10 · 11-20 · 21-50 · 51-100 · 101+
+ *
+ *   제품전송(CRM)의 stockRange 와 경계가 다르다 — 그쪽은 이미 운영 중인 다른 계약이라
+ *   건드리지 않는다. 같은 함수를 공유했다가 한쪽을 고치면 다른 쪽이 조용히 바뀐다.
+ *   소수 재고는 내림, 음수는 0.
+ */
+export function catalogStockRange(qty) {
+  const n = Math.trunc(Number(qty));
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n <= 5) return '1-5';
+  if (n <= 10) return '6-10';
+  if (n <= 20) return '11-20';
+  if (n <= 50) return '21-50';
+  if (n <= 100) return '51-100';
+  return '101+';
+}
+
+/**
+ * 재고 표기. 기본은 **구간**(계약서 10항).
+ *   'qty' 로 바꾸면 정확한 수량(숫자)이 나간다 — 그때는 필드 타입이 문자열에서 숫자로
+ *   바뀌므로 상대 개발자에게 미리 알려야 한다.
+ */
 export function stockValue(qty, mode) {
-  const n = Number(qty);
-  if (mode === 'range') return stockRange(n);
-  return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+  if (mode === 'qty') {
+    const n = Number(qty);
+    return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+  }
+  return catalogStockRange(qty);
 }
 
 /** 커서 — 상대에게는 불투명한 문자열이다. 안에는 마지막으로 보낸 제품 id 만 들어 있다. */
@@ -240,6 +265,31 @@ export async function imgBaseFor(client) {
   } catch (_) { return ''; }
 }
 
+/**
+ * 내보내지 않을 제품코드 접두어. 기본은 `PRO` (디렉터 결정 2026-09-17).
+ *   고객에게 보내면 안 되는 코드군을 **화면에서** 지정한다. 콤마로 여러 개.
+ *   대소문자는 구분하지 않는다.
+ */
+export function excludePrefixes(client) {
+  const v = client ? client.exclude_prefixes : undefined;
+  // 칼럼이 아직 없는 환경(0223 마이그레이션 전)에서는 **안전한 쪽**으로 — PRO 를 막는다.
+  if (v === undefined) return ['PRO'];
+  // 화면에서 비우면(null·'') 제외 없이 전부 내보낸다. 사람이 일부러 지운 것이다.
+  if (v === null) return [];
+  return String(v).split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
+}
+
+/**
+ * 제외 조건을 SQL 로 만든다. params 배열에 값을 밀어 넣고 조각을 돌려준다.
+ *   호출부가 params 를 공유하므로 $n 번호가 어긋나지 않는다.
+ */
+function excludeSql(client, params) {
+  const list = excludePrefixes(client);
+  if (!list.length) return '';
+  params.push(list.map((x) => `${x}%`));
+  return ` AND upper(p.code) NOT LIKE ALL($${params.length}::text[])`;
+}
+
 function brandFilter(client) {
   const raw = String(client.brands || '').trim();
   if (!raw) return null;
@@ -256,6 +306,7 @@ export async function fetchPage(client, { afterId = null, limit = 500 } = {}) {
   const params = [];
   let sql = PRODUCT_COLS;
   if (!client.include_inactive) sql += ` AND p.is_active IS NOT FALSE`;
+  sql += excludeSql(client, params);
   if (afterId != null) { params.push(afterId); sql += ` AND p.id > $${params.length}`; }
   sql += ` ORDER BY p.id LIMIT ${Math.max(1, Math.min(1000, Number(limit) || 500))}`;
   const rows = (await query(sql, params)).rows;
@@ -269,19 +320,24 @@ export async function fetchPage(client, { afterId = null, limit = 500 } = {}) {
 export async function fetchOne(client, codigo) {
   const code = String(codigo || '').trim();
   if (!code) return null;
+  const params = [code];
   let sql = `${PRODUCT_COLS} AND upper(p.code) = upper($1)`;
   if (!client.include_inactive) sql += ` AND p.is_active IS NOT FALSE`;
-  const rows = (await query(`${sql} LIMIT 1`, [code])).rows;
+  // 제외 접두어에 걸리면 단건 조회로도 못 보게 한다 — 목록에만 없고 직접 조회는 되면 구멍이다.
+  sql += excludeSql(client, params);
+  const rows = (await query(`${sql} LIMIT 1`, params)).rows;
   const list = await decorate(client, rows);
   return list[0] || null;
 }
 
 /** 전체 건수 — 상대가 total 로 진행률을 보여 줄 수 있어야 한다. */
 export async function countProducts(client) {
+  const params = [];
   let sql = `SELECT count(*)::int AS n FROM products p
               WHERE p.deleted_at IS NULL AND p.code IS NOT NULL AND p.code <> ''`;
   if (!client.include_inactive) sql += ` AND p.is_active IS NOT FALSE`;
-  return Number((await query(sql)).rows[0].n) || 0;
+  sql += excludeSql(client, params);
+  return Number((await query(sql, params)).rows[0].n) || 0;
 }
 
 /** 공개 중인 대응품번 브랜드 목록. */

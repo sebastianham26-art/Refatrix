@@ -112,12 +112,21 @@
         테스트 키는 접속창을 적용받지 않는다(개발자가 평일에 붙어 볼 수 있어야 한다).
       </div>
 
+      <div class="hint" style="margin-top:-4px">
+        <b>제외할 코드 접두어</b>에 적은 것으로 시작하는 제품은 <b>목록에도, 단건 조회에도 나오지 않는다</b>
+        (기본 <span class="mono">PRO</span>). 비우면 전부 나간다.<br>
+        <b>재고 표기</b>는 기본이 <b>구간</b>이다(<span class="mono">"existencia": "21-50"</span>).
+        「수량 그대로」로 바꾸면 숫자가 나가는데, 그때 <b>필드 타입이 문자열에서 숫자로 바뀐다</b> —
+        이미 연동 중인 고객사가 있으면 개발자에게 먼저 알려야 한다.
+      </div>
+
       <div class="card-h" style="margin-top:18px">응답 내용</div>
       <div class="grid">
         <div><label>페이지 크기(기본)</label><input id="fPage" type="number" min="10" max="1000"></div>
-        <div><label>재고 표기</label><select id="fStock"><option value="qty">수량 그대로</option><option value="range">구간(0 / 1-10 / …)</option></select></div>
+        <div><label>재고 표기</label><select id="fStock"><option value="range">구간 (0 / 1-5 / 6-10 / 11-20 / 21-50 / 51-100 / 101+)</option><option value="qty">수량 그대로 (숫자)</option></select></div>
         <div><label>단종품 포함</label><select id="fInactive"><option value="1">포함(activo:false 로)</option><option value="0">제외</option></select></div>
         <div><label>공개 브랜드(콤마 · 비우면 전부)</label><input id="fBrands" type="text" placeholder="SYD,MOOG,GROB"></div>
+        <div><label>제외할 코드 접두어(콤마)</label><input id="fExclude" type="text" placeholder="PRO"></div>
         <div><label>사진 주소 규칙(비우면 제품전송 설정 사용)</label><input id="fImg" type="text" placeholder="https://…/{code}_1.webp"></div>
         <div><label>허용 IP(콤마 · 비우면 제한 없음)</label><input id="fIp" type="text"></div>
       </div>
@@ -259,6 +268,7 @@
     $('fMaxCalls').value=c.max_calls; $('fPage').value=c.page_limit;
     $('fStock').value=c.stock_mode; $('fInactive').value=c.include_inactive?'1':'0';
     $('fBrands').value=c.brands||''; $('fImg').value=c.img_base_url||''; $('fIp').value=c.ip_allow||'';
+    $('fExclude').value=c.exclude_prefixes==null?'PRO':c.exclude_prefixes;
     $('fNote').value=c.note||'';
     loadCustomers('');
     renderList();
@@ -274,7 +284,8 @@
     max_calls_invalid:'호출 한도는 1 이상이어야 합니다.',
     stock_mode_invalid:'재고 표기 값이 올바르지 않습니다.',
     img_base_invalid:'사진 주소는 http:// 또는 https:// 로 시작해야 합니다.',
-    img_base_space:'사진 주소에 공백이 들어 있습니다.'
+    img_base_space:'사진 주소에 공백이 들어 있습니다.',
+    exclude_prefixes_invalid:'제외 접두어에는 영문·숫자·. _ - 만 쓸 수 있습니다.'
   };
 
   async function save(){
@@ -293,6 +304,7 @@
       stock_mode:$('fStock').value,
       include_inactive:$('fInactive').value==='1',
       brands:$('fBrands').value.trim(),
+      exclude_prefixes:$('fExclude').value.trim(),
       img_base_url:$('fImg').value.trim(),
       ip_allow:$('fIp').value.trim(),
       note:$('fNote').value.trim()
