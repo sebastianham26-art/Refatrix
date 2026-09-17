@@ -22,6 +22,31 @@ test('전용 키가 공용 키를 막고 있으면 화면이 말해 주고 되�
     '왜 막히는지 화면이 말해 줘야 한다 — 상대는 「같은 키를 쓴다」는데 우리가 거절하는 상황이다');
 });
 
+// ── 실제로 온 것: API 키가 아니라 **로그인 토큰(JWT)** ──────────────
+//   CRM 이 새 주소로 옮기면서 주소만 바꾸고 인증은 예전 그대로 보냈다.
+//   「키가 안 맞는다」고만 하면 상대는 키 값을 계속 확인하며 시간을 쓴다 —
+//   틀린 것은 값이 아니라 **인증 방식**이라고 말해 줘야 한다.
+test('로그인 토큰(JWT)이 오면 그렇다고 말해 준다', async () => {
+  const { looksLikeJwt, keyFailMensaje, keyFailNote } = await import('../src/crmInbound.js');
+  const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImlhdCI6MTc1OH0.sig_gx6g';
+  assert.equal(looksLikeJwt(jwt), true);
+  assert.equal(looksLikeJwt('rfx_prod_abc123def456'), false, '우리 키를 JWT 로 오해하면 안 된다');
+  assert.equal(looksLikeJwt(''), false);
+
+  // 상대(개발자)가 읽는 응답 — 무엇을 고쳐야 하는지가 들어 있어야 한다.
+  const es = keyFailMensaje(jwt);
+  assert.match(es, /JWT/);
+  assert.match(es, /x-api-key/);
+  assert.match(es, /NO usa el login/);
+  assert.equal(keyFailMensaje('rfx_otra_llave'), 'API key faltante o inválida.');
+
+  // 수신 이력 — 디렉터가 보는 쪽.
+  const note = keyFailNote({ reason: 'mismatch', expectHint: 'rfx_…f3ed (57자)' }, jwt,
+    { ownLabel: 'A', fallbackLabel: 'B', mask: (t) => 'x' });
+  assert.match(note, /token de sesión \(JWT\)/);
+  assert.match(note, /rfx_…f3ed/, '기대한 키가 무엇인지도 보여 줘야 대조가 된다');
+});
+
 const dbTest = PG ? test : test.skip;
 
 dbTest('전용 키를 지우면 공용 키로 다시 들어온다 (실 DB)', async (t) => {
@@ -135,6 +160,17 @@ dbTest('전용 키를 지우면 공용 키로 다시 들어온다 (실 DB)', asy
       headers: { authorization: 'Bearer ' + tok } });
     assert.equal(r.statusCode, 400);
     assert.equal(r.json().error, 'not_inbound');
+  });
+
+  await t.test('로그인 토큰을 보내면 응답이 인증 방식을 짚어 준다 (실 DB)', async () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImlhdCI6MTc1OH0.sig_gx6g';
+    const r = await send(jwt);
+    assert.equal(r.statusCode, 401);
+    assert.match(r.json().mensaje, /x-api-key/, '개발자가 무엇을 고쳐야 하는지 응답에 있어야 한다');
+    const log = (await query(
+      `SELECT mensaje FROM crm_inbound_log WHERE endpoint_key='crm_quote_request'
+        ORDER BY id DESC LIMIT 1`)).rows[0];
+    assert.match(log.mensaje, /JWT/, '수신 이력에도 남아야 한다');
   });
 
   await t.test('디렉터가 아니면 지울 수 없다', async () => {

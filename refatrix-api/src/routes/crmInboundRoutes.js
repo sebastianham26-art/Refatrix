@@ -19,7 +19,7 @@ import { getEndpoint, invalidateEndpointCache, envTokenColsReady, maskSecret, ac
          INBOUND_KEY_FALLBACK } from '../integrations.js';
 import { writeInboundLog, inboundLogReady } from '../crmInboundLog.js';
 import { mapInbound, missingRequired, readInboundKey, verifyInboundKey, scrubPayload,
-         errBody, keyFailNote } from '../crmInbound.js';
+         errBody, keyFailNote, keyFailMensaje } from '../crmInbound.js';
 import { validateRfcOptional, normalizeClaimKey, computeBaselineDiscount,
          MAX_DISCOUNT_PCT } from '../customerClaim.js';
 import { computeNextCode } from '../customerCode.js';
@@ -121,7 +121,7 @@ export default async function crmInboundRoutes(app) {
     if (!v.ok) {
       const body = errBody('ERR_API_KEY', v.reason === 'no_key_configured'
         ? 'El ERP aún no tiene una API key emitida para esta integración.'
-        : 'API key faltante o inválida.');
+        : keyFailMensaje(token));   // 인증 방식이 틀렸으면 그걸 짚어 준다(JWT 등)
       // ⚠ 이력에는 **무엇과 대조했는지**까지 남긴다(세 수신 창구가 같은 규칙을 쓴다).
       v.expectHint = maskSecret(activeToken(ep) || ep?.auth_token_prod || ep?.auth_token_test);
       await writeLog({ remote_ip: ip, auth_in: where, auth_ok: false, http_status: 401,

@@ -306,7 +306,33 @@ export function verifyInboundKey(ep, token) {
  *
  *   @param mask  키를 가리는 함수(integrations.maskSecret) — 값이 통째로 남지 않게 한다
  */
+/**
+ * 받은 값이 **ERP 로그인 토큰(JWT)** 처럼 보이는가.
+ *
+ *   실제로 그랬다: CRM 이 새 주소로 옮기면서 **주소만 바꾸고 인증은 예전 그대로**
+ *   (직원 계정으로 로그인해 받은 Bearer 토큰) 보냈다. 그게 바로 이 창구가 없애려던 방식이다.
+ *   「키가 안 맞는다」고만 하면 상대는 키 값을 계속 확인하며 시간을 쓴다 —
+ *   **틀린 것은 값이 아니라 인증 방식**이라고 말해 줘야 한다.
+ */
+export function looksLikeJwt(t) {
+  return /^eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\./.test(String(t || ''));
+}
+
+/** 상대(CRM)가 읽을 거절 사유 — 인증 방식이 틀렸으면 그걸 짚어 준다. */
+export function keyFailMensaje(token) {
+  if (looksLikeJwt(token)) {
+    return 'Recibimos un token de sesión (JWT) en lugar de la API key. Esta integración NO usa el '
+      + 'login de un usuario del ERP: hay que enviar la API key en el encabezado x-api-key '
+      + '(la misma que ya usan para el alta de clientes).';
+  }
+  return 'API key faltante o inválida.';
+}
+
 export function keyFailNote(v, token, { ownLabel, fallbackLabel, mask }) {
+  if (looksLikeJwt(token)) {
+    return 'Llegó un token de sesión (JWT) del ERP, no una API key — el CRM sigue autenticándose '
+      + `con el login de un usuario. Debe enviar la API key (x-api-key), esperada ${v.expectHint || ''}.`;
+  }
   const got = token ? `recibida ${mask(token)}` : 'no llegó ninguna llave';
   if (v.reason === 'missing' || !token) {
     return `No llegó la API key (revisar el encabezado x-api-key). ${got}.`;

@@ -21,7 +21,7 @@ import { logEvent } from '../audit.js';
 import { getEndpoint, INBOUND_KEY_FALLBACK, maskSecret, activeToken } from '../integrations.js';
 import { writeInboundLog } from '../crmInboundLog.js';
 import { mapQuote, quoteDate, badQuoteLines, folioAsQuoteNo, readInboundKey, verifyInboundKey,
-         scrubPayload, errBody, keyFailNote } from '../crmInbound.js';
+         scrubPayload, errBody, keyFailNote, keyFailMensaje } from '../crmInbound.js';
 import { computeQuoteTotals } from '../quotes.js';
 // ⚠ 화면과 **같은 조립기**를 쓴다. 두 벌로 두면 코드 해석 규칙이 갈라진다.
 import { buildLines, nextQuoteNo, assignReservations } from '../quoteBuild.js';
@@ -164,7 +164,7 @@ export default async function crmQuoteRoutes(app) {
     if (!v.ok) {
       const body = errBody('ERR_API_KEY', v.reason === 'no_key_configured'
         ? 'El ERP aún no tiene una API key emitida para esta integración.'
-        : 'API key faltante o inválida.');
+        : keyFailMensaje(token));   // 인증 방식이 틀렸으면 그걸 짚어 준다(JWT 등)
       // ⚠ 이력에는 **무엇과 대조했는지**까지 남긴다. 「키가 틀렸다」만으로는
       //   「우리 전용 키와 다르다」인지 「상대 키 자체가 틀렸다」인지 알 수 없다.
       v.expectHint = maskSecret(activeToken(keyEp) || keyEp?.auth_token_prod || keyEp?.auth_token_test);
