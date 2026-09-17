@@ -1,63 +1,129 @@
-# refatrix_relocate_v2 — 랙 유형 목록의 콤마 분리 (2026-08-27)
+# 카탈로그 조회 API (0221) — 배포 안내
 
-**백엔드 1 + 프런트 1** · 마이그레이션 없음 · `refatrix-relocate.html` **rel-0827a → rel-0827b**
-현재 배포본(`c4a532e 창고 적치변경`) 위에 얹는 패치입니다.
+고객사가 **우리 카탈로그를 가져가는** 창구다. 계약서 `Contrato_API_Catalogo_Multimarca_v1.0` 의 내용을
+그대로 구현한 것이다.
 
-## 무엇이 문제였나
+---
 
-위치변경 › 🏷 **랙 유형** 탭에서 `AA` 그룹 안에 `AA3-2, B2-2` 같은 줄이 있었습니다.
+## 1. 이 묶음에 든 것
 
-`products.rack_location` 한 칸에 **콤마로 여러 랙**이 적힌 제품이 있는데,
-`GET /api/warehouse/racks` 가 그 문자열을 **랙 1개**로 묶고 있었습니다.
-그룹은 맨 앞 글자로만 판정하니 `"AA3-2, B2-2"` 전체가 **AA 그룹 한 줄**로 들어간 것입니다.
-(존 지정 화면은 2026-08-27 에 이미 고쳤는데, 이 라우트가 그 전 코드를 복사해 간 상태였습니다.)
+### 새 파일 — 그대로 복사한다 (기존 파일과 겹치지 않는다)
 
-## 무엇을 고쳤나
-
-**`rackMoveRoutes.js`**
-- 랙 목록 집계를 `regexp_split_to_table(rack_location, '[,\n\r]+')` 로 쪼갭니다 —
-  **`zoneRoutes.splitRacks` 와 같은 구분자**. 제품 수는 `COUNT(DISTINCT p.id)`.
-- **`replaceRackToken()` 신설** — 이동/되돌리기의 마스터 갱신에 적용.
-  > ⚠ 기존에는 `rack_location` 을 도착 랙으로 **통째로 덮어써서**, `"AA3-2, B2-2"` 제품을
-  > `AA3-2` 에서 옮기면 **`B2-2` 가 조용히 사라졌습니다.** 이제 옮긴 랙 자리만 갈아끼우고,
-  > 출발 랙이 목록에 없으면 **마스터를 건드리지 않습니다**(추측 금지).
-- `/scan` 응답에 `racks[]` 추가, 랙 유형은 **첫 랙** 기준(통짜 문자열로는 매칭이 안 됐습니다).
-
-**`refatrix-relocate.html`** — `findRack()` 이 통짜 문자열이면 첫 랙으로 매칭(마스터 위치 유형 칩 복구).
-
-## 배포 (마이그레이션 없음)
-
-1. `refatrix-api/src/routes/rackMoveRoutes.js` → repo 같은 경로에 덮어쓰기
-2. `refatrix-relocate.html` → repo **루트**
-3. Commit / Push → Railway Success → Pages 1~2분 → **Ctrl+Shift+R**
-   → 콘솔 `[refatrix-relocate] build rel-0827b`
-   `npm run migrate` **불필요**
-
-확인:
 ```
-curl -s ".../main/refatrix-api/src/routes/rackMoveRoutes.js?nc=$(date +%s)" | grep -c regexp_split_to_table  # 1
-curl -s ".../main/refatrix-api/src/routes/rackMoveRoutes.js?nc=$(date +%s)" | grep -c replaceRackToken       # 4
-curl -s ".../main/refatrix-relocate.html?nc=$(date +%s)" | grep -c "rel-0827b"                               # 2
+refatrix-api/migrations/0221_catalog_pull_api.sql
+refatrix-api/src/catalogPull.js
+refatrix-api/src/routes/catalogApiRoutes.js
+refatrix-api/test/catalog_pull.test.mjs
+refatrix-catalog-api.html                 ← 관리 화면(신규)
 ```
 
-## 스모크
+### 고쳐 넣는 것 — **덮어쓰지 않는다**
 
-1. 위치변경 › 랙 유형 → `AA` 그룹에 `B2-2`·`C1-2`·`D2-3` 이 **없고**, 각각 `B`·`C`·`D` 그룹에 있는지.
-2. 한 줄에 랙이 **하나씩만** 나오는지(콤마 있는 줄이 없어야 함).
-3. `AA2-1` 제품 수가 3+1=4, `AA3-2` 가 4로 합산되는지.
-4. 콤마로 여러 랙을 쓰는 제품을 스캔 → 유형 칩이 뜨는지.
-5. **그 제품을 이동 → 제품 마스터 위치에 나머지 랙이 남아 있는지**(예: `AA3-2, B2-2` 에서
-   `AA3-2` → `F1-1` 이동 후 `F1-1, B2-2`). 되돌리기하면 원래대로 돌아오는지.
-
-## 테스트
 ```
-cd test
-node rack_kind_split.test.mjs   # 33/33 (npm i pg 필요)
-bash rack_kind_sql.sh           # 실 PostgreSQL 16 — 스크린샷 값 그대로
+refatrix-api/src/server.js     (2줄 추가)
+refatrix-nav.js                (3군데 추가)
 ```
 
-## 참고 — 마이그레이션 번호 중복
+이 두 파일은 「견적요청 (수신)」 같은 다른 작업도 함께 고치는 파일이다.
+통째로 덮으면 그 기능이 **조용히 사라진다.** 그래서 필요한 줄만 끼워 넣는 스크립트를 같이 넣었다.
 
-`0187_inbound_warehouse_finish.sql` 과 `0187_rack_relocate.sql` 이 **둘 다 0187** 입니다.
-`scripts/migrate.js` 가 **파일명 기준**으로 정렬·기록하므로 둘 다 정상 적용됩니다
-(`inbound…` → `rack…` 순). 지금 문제는 없지만, 다음 마이그레이션은 0188 부터 쓰세요.
+---
+
+## 2. 배포 순서
+
+**① 새 파일 복사 + 스크립트 실행** (레포 최상위 = `refatrix-api` 폴더가 보이는 곳)
+
+```bash
+node apply_catalog_api.mjs
+```
+
+스크립트가 하는 일 세 가지:
+
+1. `server.js` 에 라우트 등록 2줄
+2. `refatrix-nav.js` 에 메뉴·권한 3군데
+3. **모든 화면의 메뉴 캐시 토큰**을 `20260917catalog` 로 올린다
+   (토큰을 안 올리면 직원 브라우저가 **예전 메뉴를 계속 써서** 새 메뉴가 안 보인다)
+
+- 무엇을 넣었는지 화면에 찍는다. **두 번 실행해도 안전하다**(이미 있으면 건너뛴다).
+- 자리를 못 찾으면 손으로 넣을 줄을 그대로 알려 준다.
+
+> **견적요청 수신(0220)과 충돌하지 않는다.** 배포된 `origin/main`(견적수신_04) 의 실제 파일로
+> 시험해서 확인했다: `crmQuoteRoutes` 등록과 견적 팝업이 그대로 살아남고, 마이그레이션도
+> `0220_crm_quote_inbound.sql` / `0221_catalog_pull_api.sql` 로 번호가 겹치지 않는다.
+
+**② 커밋 · 푸시** → Railway 자동 배포
+
+**③ 마이그레이션**
+
+```bash
+npm run migrate        # 0221_catalog_pull_api 적용
+```
+
+**④ 프론트 배포** (`refatrix-catalog-api.html`, `refatrix-nav.js`) → **Ctrl+Shift+R**
+
+포털 → 관리 그룹에 **「카탈로그 조회 API」** 가 보이면 성공이다.
+탭 제목 끝에 `build 20260915catalogpull` 이 찍힌다.
+
+> 순서를 바꾸면(프론트 먼저) 화면은 뜨는데 표가 없어 비어 보인다. 백엔드 → 마이그레이션 → 프론트다.
+
+---
+
+## 3. 배포 직후 화면에서 할 일
+
+「카탈로그 조회 API」 → **「+ 고객사 추가」**
+
+| 칸 | 넣을 값 |
+|---|---|
+| 이름 | 예: `Comparador Multimarca` |
+| **연결 고객** | 그 고객사의 ERP 고객 마스터 — 옆에 뜨는 **할인율이 맞는지 확인**. 이 값으로 구매단가가 계산된다 |
+| 접속창 | 요일 `토요일` · 시작 `5` · 종료 `9` (종료는 **미만**) |
+| **사진 주소 규칙** | 아래 값을 **반드시** 넣는다 |
+
+```
+https://pub-d34920cb200c42ce91c5cbda135f16d6.r2.dev/products/{code}/{code}_1.webp
+```
+
+> ⚠ 이 칸을 비워 두면 제품전송 연동의 설정을 물려받는다. 그건 `.jpg` 규칙이라
+> **계약서에 적은 주소와 다른 값이 고객에게 나간다.** 이번 배포에서 유일하게 조용히 틀릴 수 있는 지점이다.
+
+그다음:
+
+1. **「미리보기 — 고객이 받을 값」** → `imagenUrl` 과 `precioCompra` 가 계약서대로 나오는지 눈으로 확인
+2. **테스트 키 발급** → 개발자에게 전달 (테스트 키는 접속창을 받지 않아 평일에도 붙어 볼 수 있다)
+3. 검수 끝나면 **운영 키 발급** → 전달. 키는 **발급 직후 한 번만** 보인다
+
+---
+
+## 4. 가격이 어떻게 나가는가 (확인용)
+
+```
+precioCompra = 반올림2( products.list_price × (1 − customers.discount / 100) )
+```
+
+조회가 들어온 **그 순간** 계산한다. 고객 마스터의 할인율을 바꾸면 **다음 호출부터** 바뀐 가격이
+나간다 — 재배포도 재적재도 필요 없다. 공식은 청구서가 단가를 만드는 공식과 같다.
+
+할인율이 비어 있거나 0이면 0% 로 보고 **정가가 그대로** 나간다.
+고객을 연결하지 않은 고객사는 목록에 「정가만 나갑니다」로 붉게 표시된다.
+
+---
+
+## 5. 시험
+
+```bash
+# 순수 로직만 (DB 없이)
+node --test --test-concurrency=1 test/catalog_pull.test.mjs
+
+# 실 DB 까지 (32개 전부)
+TEST_PG_URL=postgres://... node --test --test-concurrency=1 test/catalog_pull.test.mjs
+```
+
+이 저장소의 HTTP 스위트는 끝난 뒤 프로세스가 스스로 종료되지 않는다(서버 백그라운드 감시자 때문).
+결과는 다 나오므로 `timeout 100 node --test …` 로 감싸면 된다. 기존부터 그랬다.
+
+---
+
+## 6. 되돌리려면
+
+- 화면에서 그 고객사를 **「중지」**로 바꾸거나 **키를 폐기**하면 즉시 막힌다(배포 되돌릴 필요 없음).
+- 표를 지울 필요는 없다. 0221 은 **새 표 3개만 만들고 기존 표는 건드리지 않는다.**

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<!-- __sessbridge --><script>(function(){try{var k="refatrix_session";if(!sessionStorage.getItem(k)){var v=localStorage.getItem(k);if(v)sessionStorage.setItem(k,v);}var _s=sessionStorage.setItem.bind(sessionStorage);sessionStorage.setItem=function(key,val){_s(key,val);if(key===k){try{localStorage.setItem(k,val);}catch(e){}}};}catch(e){}})();</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refatrix ERP · 카탈로그 조회 API (build 20260915catalogpull)</title>
+<style>
+  :root{--paper:#F4F1EA;--card:#FFFFFF;--ink:#1C1B19;--muted:#6F6A60;--line:#E6E1D6;
+    --income:#0F6E56;--income-bg:#E4F0EB;--expense:#B23A2E;--expense-bg:#F6E7E4;--brand:#143D34;--radius:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--brand);color:#fff;padding:14px 18px;border-radius:var(--radius)}
+  .topbar h1{margin:0;font-size:18px}.topbar .sub{font-size:12px;color:#cfe0d8}
+  .portalBtn{color:#cfe0d8;font-size:12px;text-decoration:none;border:1px solid #2f5d50;padding:5px 10px;border-radius:7px;margin-left:auto}
+  .who{font-size:13px;text-align:right;margin-left:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-top:16px}
+  .card-h{font-size:14px;font-weight:800;color:var(--brand);margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:#fff}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--brand);color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  .btn.danger{background:#fff;color:var(--expense);border:1px solid #e7b6af}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:12px;font-size:13px;border-radius:8px;padding:9px 12px;display:none}
+  .msg.err{display:block;background:var(--expense-bg);color:var(--expense)}
+  .msg.ok{display:block;background:var(--income-bg);color:var(--income)}
+  .api{margin-top:12px;font-size:11px;color:var(--muted)}.api input{font-size:12px;padding:6px 8px;margin-top:3px}
+  .hidden{display:none}
+  .hint{font-size:11.5px;color:var(--muted);line-height:1.55;font-weight:500}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+  th{color:var(--muted);font-size:11.5px;font-weight:700;background:#faf8f3}
+  tr.sel td{background:#eef5f2}
+  .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .tag.on{background:var(--income-bg);color:var(--income);border-color:#bfded3}
+  .tag.off{background:var(--expense-bg);color:var(--expense);border-color:#e7b6af}
+  .keybox{margin-top:12px;background:#1C1B19;color:#E8E4DA;border-radius:10px;padding:12px 14px;font-family:Consolas,monospace;font-size:12.5px;word-break:break-all;display:none}
+  .keybox.show{display:block}
+  pre.out{background:#faf8f3;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:11.5px;max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .mono{font-family:Consolas,monospace}
+</style>
+<link rel="stylesheet" href="refatrix-i18n.css?v=20260621j">
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>Refatrix ERP</h1><div class="sub">카탈로그 조회 API — 고객사가 가져가는 창구</div></div>
+    <a href="refatrix-portal.html" class="portalBtn">← 포털</a>
+    <div class="who" id="who"></div>
+  </div>
+
+  <div class="card" id="loginCard">
+    <div class="card-h">로그인</div>
+    <div class="row">
+      <div><label>아이디</label><input id="lid" type="text" value="admin" style="width:140px"></div>
+      <div><label>PIN</label><input id="pin" type="password" placeholder="••••" style="width:120px"></div>
+    </div>
+    <button class="btn" id="go" style="margin-top:14px">로그인</button>
+    <div class="msg" id="loginMsg"></div>
+    <div class="api">서버 주소(API)<input id="api" type="text" value="https://refatrix-production.up.railway.app"></div>
+  </div>
+
+  <div class="hidden" id="app">
+
+    <div class="card">
+      <div class="card-h">고객사 목록
+        <button class="btn sm ghost" id="btnReload">새로고침</button>
+        <button class="btn sm" id="btnNew">+ 고객사 추가</button>
+      </div>
+      <div class="hint">
+        키 1개 = 고객사 1곳 = ERP 고객 마스터 1행. <b>구매단가는 조회가 들어온 그 순간 고객 마스터의 할인율로 계산된다</b> —
+        마스터의 할인율을 바꾸면 다음 호출부터 바뀐 가격이 나간다. 여기에 가격을 따로 저장하지 않는다.
+      </div>
+      <div id="listWrap"></div>
+      <div class="msg" id="listMsg"></div>
+    </div>
+
+    <div class="card hidden" id="editCard">
+      <div class="card-h"><span id="edTitle">고객사 설정</span><span class="tag" id="edTag"></span></div>
+
+      <div class="grid">
+        <div><label>이름(우리가 부르는 이름)</label><input id="fLabel" type="text" placeholder="예: Comparador Multimarca"></div>
+        <div>
+          <label>연결 고객 — 가격의 근거</label>
+          <div class="row"><input id="fCustSearch" type="text" placeholder="고객명·코드로 검색" style="flex:1"></div>
+          <select id="fCustomer" style="margin-top:6px"></select>
+        </div>
+        <div><label>사용</label><select id="fEnabled"><option value="1">사용</option><option value="0">중지</option></select></div>
+      </div>
+
+      <div class="card-h" style="margin-top:18px">접속창</div>
+      <div class="grid">
+        <div><label>접속창 적용</label><select id="fWinOn"><option value="1">적용</option><option value="0">적용 안 함(상시 개방)</option></select></div>
+        <div><label>요일</label><select id="fDow">
+          <option value="">매일</option><option value="0">일요일</option><option value="1">월요일</option>
+          <option value="2">화요일</option><option value="3">수요일</option><option value="4">목요일</option>
+          <option value="5">금요일</option><option value="6">토요일</option></select></div>
+        <div><label>시작 시각(멕시코)</label><input id="fStart" type="number" min="0" max="23"></div>
+        <div><label>종료 시각(멕시코 · 미만)</label><input id="fEnd" type="number" min="1" max="24"></div>
+        <div><label>접속창당 호출 한도</label><input id="fMaxCalls" type="number" min="1" max="100000"></div>
+      </div>
+      <div class="hint" style="margin-top:8px">
+        멕시코 중부시간(UTC−6, 서머타임 없음) 기준이다. 종료 시각은 <b>미만</b>이다 — 09 를 넣으면 08:59:59 까지 열린다.
+        테스트 키는 접속창을 적용받지 않는다(개발자가 평일에 붙어 볼 수 있어야 한다).
+      </div>
+
+      <div class="card-h" style="margin-top:18px">응답 내용</div>
+      <div class="grid">
+        <div><label>페이지 크기(기본)</label><input id="fPage" type="number" min="10" max="1000"></div>
+        <div><label>재고 표기</label><select id="fStock"><option value="qty">수량 그대로</option><option value="range">구간(0 / 1-10 / …)</option></select></div>
+        <div><label>단종품 포함</label><select id="fInactive"><option value="1">포함(activo:false 로)</option><option value="0">제외</option></select></div>
+        <div><label>공개 브랜드(콤마 · 비우면 전부)</label><input id="fBrands" type="text" placeholder="SYD,MOOG,GROB"></div>
+        <div><label>사진 주소 규칙(비우면 제품전송 설정 사용)</label><input id="fImg" type="text" placeholder="https://…/{code}_1.webp"></div>
+        <div><label>허용 IP(콤마 · 비우면 제한 없음)</label><input id="fIp" type="text"></div>
+      </div>
+      <label>메모</label><textarea id="fNote" rows="2"></textarea>
+
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="btnSave">저장</button>
+        <button class="btn ghost sm" id="btnPreview">미리보기 — 고객이 받을 값</button>
+      </div>
+      <div class="msg" id="edMsg"></div>
+
+      <div class="card-h" style="margin-top:20px">키</div>
+      <div class="hint">키는 서버가 만든다. <b>발급 직후 이 화면에 한 번만 보이고 다시는 볼 수 없다.</b> 고객사 기술 담당자에게 안전한 경로로 전달한다.</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" data-key="prod">운영 키 발급</button>
+        <button class="btn sm ghost" data-key="test">테스트 키 발급</button>
+        <button class="btn sm danger" data-revoke="prod">운영 키 폐기</button>
+        <button class="btn sm danger" data-revoke="test">테스트 키 폐기</button>
+      </div>
+      <div class="keybox" id="keyBox"></div>
+
+      <div class="card-h" style="margin-top:20px">미리보기 / 호출 이력</div>
+      <div class="row">
+        <input id="fPvCode" type="text" placeholder="제품코드(비우면 앞 3건)" style="width:220px">
+        <button class="btn sm ghost" id="btnPv2">미리보기</button>
+        <button class="btn sm ghost" id="btnCalls">호출 이력</button>
+      </div>
+      <div id="outWrap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let session={token:null,user:null,api:''};
+  let CUR=null;            // 선택된 고객사
+  let ITEMS=[];
+  const $=(id)=>document.getElementById(id);
+  const auth=()=>({'Authorization':'Bearer '+session.token});
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const DOW=['일','월','화','수','목','금','토'];
+
+  function portalSession(){
+    try{ const raw=sessionStorage.getItem('refatrix_session'); if(raw){ const o=JSON.parse(raw); if(o&&o.token) return o; } }catch(e){}
+    try{ const h=location.hash.slice(1); if(h){ const p=new URLSearchParams(h); const token=p.get('token');
+      if(token){ const o={token,api:p.get('api')||'',user:JSON.parse(p.get('user')||'{}')};
+        try{sessionStorage.setItem('refatrix_session',JSON.stringify(o));}catch(e){} return o; } } }catch(e){}
+    return null;
+  }
+
+  function show(el,kind,text){ const m=$(el); m.className='msg '+kind; m.textContent=text; }
+  function clear(el){ const m=$(el); m.className='msg'; m.textContent=''; }
+
+  async function login(){
+    const api=$('api').value.replace(/\/+$/,''), login_id=$('lid').value.trim(), pin=$('pin').value.trim();
+    clear('loginMsg');
+    if(!login_id||!pin){ show('loginMsg','err','아이디와 PIN을 입력하세요.'); return; }
+    $('go').disabled=true; $('go').textContent='확인 중…';
+    try{
+      let d,res={ok:true}; const ps=portalSession();
+      if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
+      else{ res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({login_id,pin})}); d=await res.json(); }
+      if(!res.ok||d.error){ show('loginMsg','err','로그인 실패: '+(d.error||res.status)); return; }
+      session={token:d.token,user:d.user,api:(ps&&ps.api)||api};
+      try{sessionStorage.setItem('refatrix_session',JSON.stringify({token:session.token,api:session.api,user:session.user||{}}));}catch(e){}
+      $('who').innerHTML='<b>'+esc(d.user?.name||login_id)+'</b><br>'+esc(d.user?.role||'-');
+      $('loginCard').classList.add('hidden'); $('app').classList.remove('hidden');
+      loadList(); loadCustomers('');
+    }catch(e){ show('loginMsg','err','서버에 연결할 수 없습니다.'); }
+    finally{ $('go').disabled=false; $('go').textContent='로그인'; }
+  }
+
+  async function loadList(){
+    clear('listMsg');
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients',{headers:auth()});
+      const d=await r.json();
+      if(d.migrated===false){ show('listMsg','err','0221_catalog_pull_api 마이그레이션이 필요합니다.'); return; }
+      ITEMS=d.items||[];
+      renderList();
+    }catch(e){ show('listMsg','err','목록을 불러오지 못했습니다.'); }
+  }
+
+  function ventanaText(c){
+    if(!c.window_enforced) return '상시 개방';
+    const dia=c.window_dow==null?'매일':DOW[c.window_dow]+'요일';
+    const hh=(h)=>String(h).padStart(2,'0')+':00';
+    return dia+' '+hh(c.window_start_hour)+'~'+hh(c.window_end_hour);
+  }
+  const fecha=(s)=>s?String(s).slice(0,16).replace('T',' '):'—';
+
+  function renderList(){
+    if(!ITEMS.length){ $('listWrap').innerHTML='<div class="hint" style="margin-top:12px">등록된 고객사가 없습니다. 「+ 고객사 추가」로 시작하세요.</div>'; return; }
+    const rows=ITEMS.map(c=>{
+      const pr=c.customer_id
+        ? esc(c.customer_name||'')+' <span class="mono">('+esc(c.customer_code||'')+')</span><br><span class="hint">할인율 '+c.descuento_aplicado+'% 적용</span>'
+        : '<span class="tag off">고객 미연결 — 정가만 나갑니다</span>';
+      return '<tr data-id="'+c.id+'"'+(CUR&&CUR.id===c.id?' class="sel"':'')+'>'
+        +'<td><b>'+esc(c.label)+'</b><br><span class="hint">'+esc(c.note||'')+'</span></td>'
+        +'<td>'+pr+'</td>'
+        +'<td>'+(c.has_prod_key?'<span class="tag on">운영</span> ':'<span class="tag off">운영 없음</span> ')
+              +(c.has_test_key?'<span class="tag on">테스트</span>':'')+'</td>'
+        +'<td>'+esc(ventanaText(c))+'</td>'
+        +'<td>'+(c.stock_mode==='qty'?'수량':'구간')+'</td>'
+        +'<td>'+fecha(c.last_call)+'</td>'
+        +'<td>'+fecha(c.last_sync)+'</td>'
+        +'<td>'+(c.enabled?'<span class="tag on">사용</span>':'<span class="tag off">중지</span>')+'</td>'
+        +'<td><button class="btn sm ghost" data-edit="'+c.id+'">설정</button></td></tr>';
+    }).join('');
+    $('listWrap').innerHTML='<table><thead><tr><th>이름</th><th>연결 고객 · 가격 근거</th><th>키</th><th>접속창</th>'
+      +'<th>재고</th><th>마지막 호출</th><th>마지막 동기화</th><th>상태</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+
+  async function loadCustomers(q){
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/customers?q='+encodeURIComponent(q||''),{headers:auth()});
+      const d=await r.json();
+      const cur=CUR&&CUR.customer_id?String(CUR.customer_id):'';
+      const opts=['<option value="">— 연결 안 함(정가만) —</option>'].concat((d.items||[]).map(c=>
+        '<option value="'+c.id+'"'+(String(c.id)===cur?' selected':'')+'>'+esc(c.name)+' ('+esc(c.code)+') · 할인율 '+c.discount+'%</option>'));
+      if(cur && !(d.items||[]).some(c=>String(c.id)===cur) && CUR)
+        opts.push('<option value="'+cur+'" selected>'+esc(CUR.customer_name||'현재 연결 고객')+'</option>');
+      $('fCustomer').innerHTML=opts.join('');
+    }catch(e){}
+  }
+
+  function openEditor(c){
+    CUR=c; clear('edMsg'); $('keyBox').classList.remove('show'); $('outWrap').innerHTML='';
+    $('editCard').classList.remove('hidden');
+    $('edTitle').textContent=c.label+' — 설정';
+    $('edTag').textContent='ID '+c.id;
+    $('fLabel').value=c.label||'';
+    $('fEnabled').value=c.enabled?'1':'0';
+    $('fWinOn').value=c.window_enforced?'1':'0';
+    $('fDow').value=c.window_dow==null?'':String(c.window_dow);
+    $('fStart').value=c.window_start_hour; $('fEnd').value=c.window_end_hour;
+    $('fMaxCalls').value=c.max_calls; $('fPage').value=c.page_limit;
+    $('fStock').value=c.stock_mode; $('fInactive').value=c.include_inactive?'1':'0';
+    $('fBrands').value=c.brands||''; $('fImg').value=c.img_base_url||''; $('fIp').value=c.ip_allow||'';
+    $('fNote').value=c.note||'';
+    loadCustomers('');
+    renderList();
+    $('editCard').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  const ERRNOTE={
+    window_start_invalid:'시작 시각은 0~23 이어야 합니다.',
+    window_end_invalid:'종료 시각은 1~24 이어야 합니다.',
+    window_range_invalid:'종료 시각이 시작 시각보다 늦어야 합니다.',
+    window_dow_invalid:'요일 값이 올바르지 않습니다.',
+    page_limit_invalid:'페이지 크기는 10~1000 이어야 합니다.',
+    max_calls_invalid:'호출 한도는 1 이상이어야 합니다.',
+    stock_mode_invalid:'재고 표기 값이 올바르지 않습니다.',
+    img_base_invalid:'사진 주소는 http:// 또는 https:// 로 시작해야 합니다.',
+    img_base_space:'사진 주소에 공백이 들어 있습니다.'
+  };
+
+  async function save(){
+    if(!CUR) return;
+    clear('edMsg'); $('btnSave').disabled=true;
+    const body={
+      label:$('fLabel').value.trim(),
+      customer_id:$('fCustomer').value||null,
+      enabled:$('fEnabled').value==='1',
+      window_enforced:$('fWinOn').value==='1',
+      window_dow:$('fDow').value===''?null:Number($('fDow').value),
+      window_start_hour:Number($('fStart').value),
+      window_end_hour:Number($('fEnd').value),
+      max_calls:Number($('fMaxCalls').value),
+      page_limit:Number($('fPage').value),
+      stock_mode:$('fStock').value,
+      include_inactive:$('fInactive').value==='1',
+      brands:$('fBrands').value.trim(),
+      img_base_url:$('fImg').value.trim(),
+      ip_allow:$('fIp').value.trim(),
+      note:$('fNote').value.trim()
+    };
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id,
+        {method:'PATCH',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify(body)});
+      const d=await r.json();
+      if(!r.ok||d.error){
+        const f=(d.fields||[]).map(x=>ERRNOTE[x]||x).join(' / ');
+        show('edMsg','err','저장 실패: '+(f||d.error||r.status)); return;
+      }
+      show('edMsg','ok','저장되었습니다. 가격은 다음 호출부터 이 설정과 고객 마스터 할인율로 계산됩니다.');
+      await loadList();
+      const again=ITEMS.find(x=>x.id===CUR.id); if(again){ CUR=again; $('edTitle').textContent=CUR.label+' — 설정'; renderList(); }
+    }catch(e){ show('edMsg','err','서버 연결 실패'); }
+    finally{ $('btnSave').disabled=false; }
+  }
+
+  async function issueKey(env){
+    if(!CUR) return;
+    if(!confirm((env==='prod'?'운영':'테스트')+' 키를 새로 발급하면 기존 키는 즉시 무효가 됩니다. 계속할까요?')) return;
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/key',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({env})});
+      const d=await r.json();
+      if(!r.ok||d.error){ show('edMsg','err','발급 실패: '+(d.error||r.status)); return; }
+      const box=$('keyBox'); box.classList.add('show');
+      box.innerHTML='<div style="color:#9FD5C2;font-size:11.5px;margin-bottom:6px">'
+        +(env==='prod'?'운영':'테스트')+' 키 — 지금 한 번만 보입니다. 복사해서 전달하세요.</div>'
+        +'<div id="keyVal">'+esc(d.token)+'</div>'
+        +'<button class="btn sm ghost" style="margin-top:10px" id="btnCopy">복사</button>';
+      $('btnCopy').addEventListener('click',()=>{ try{navigator.clipboard.writeText(d.token);}catch(e){} });
+      await loadList();
+    }catch(e){ show('edMsg','err','서버 연결 실패'); }
+  }
+
+  async function revokeKey(env){
+    if(!CUR) return;
+    if(!confirm((env==='prod'?'운영':'테스트')+' 키를 폐기합니다. 고객사의 연동이 즉시 멈춥니다. 계속할까요?')) return;
+    try{
+      await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/revoke',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({env})});
+      show('edMsg','ok','폐기했습니다.');
+      await loadList();
+    }catch(e){ show('edMsg','err','서버 연결 실패'); }
+  }
+
+  async function preview(){
+    if(!CUR) return;
+    const code=$('fPvCode').value.trim();
+    $('outWrap').innerHTML='<div class="hint" style="margin-top:10px">불러오는 중…</div>';
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/preview'
+        +(code?('?codigo='+encodeURIComponent(code)):''),{headers:auth()});
+      const d=await r.json();
+      if(!r.ok||d.error){ $('outWrap').innerHTML='<div class="msg err" style="display:block">미리보기 실패: '+esc(d.error||r.status)+'</div>'; return; }
+      const pb=d.precio_base;
+      const head='<div class="card" style="margin-top:12px;background:#faf8f3">'
+        +'<div class="card-h">가격 근거</div>'
+        +'<div class="hint">연결 고객: <b>'+esc(pb.customer_name||'(연결 안 함)')+'</b> · '
+        +'마스터 할인율: <b>'+(pb.descuento_maestro==null?'없음':pb.descuento_maestro+'%')+'</b> · '
+        +'적용값: <b>'+pb.descuento_aplicado+'%</b><br>'
+        +'예시 — 정가 1,000 → 구매단가 <b>'+pb.ejemplo.precioCompra+'</b><br>'
+        +'접속창: '+(d.ventana.abierta?'<span class="tag on">지금 열려 있음</span>':'<span class="tag off">지금 닫힘</span>')
+        +' · 다음 개방 '+esc(d.ventana.proxima)+' · 전체 '+d.total+'건</div></div>';
+      $('outWrap').innerHTML=head+'<pre class="out">'+esc(JSON.stringify(d.productos,null,2))+'</pre>';
+    }catch(e){ $('outWrap').innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
+  }
+
+  async function calls(){
+    if(!CUR) return;
+    try{
+      const d=await fetch(session.api+'/api/catalog/admin/clients/'+CUR.id+'/calls',{headers:auth()}).then(r=>r.json());
+      const runs=(d.runs||[]).map(r=>'<tr><td>'+esc(r.period_key)+'</td><td>'+esc(r.env)+'</td><td>'+fecha(r.started_at)+'</td>'
+        +'<td>'+(r.closed_at?fecha(r.closed_at):'<span class="tag off">미완료</span>')+'</td><td>'+r.pages+'</td><td>'+r.productos+'</td></tr>').join('');
+      const rows=(d.calls||[]).map(c=>'<tr><td>'+fecha(c.created_at)+'</td><td>'+esc(c.remote_ip||'')+'</td><td>'+esc(c.env||'')+'</td>'
+        +'<td class="mono">'+esc(c.path||'')+'</td><td>'+c.http_status+'</td>'
+        +'<td>'+(c.codigo_error?'<span class="tag off">'+esc(c.codigo_error)+'</span>':'')+'</td>'
+        +'<td>'+(c.items==null?'':c.items)+'</td><td>'+(c.ms==null?'':c.ms+'ms')+'</td></tr>').join('');
+      $('outWrap').innerHTML='<div class="card-h" style="margin-top:14px">동기화 회차</div>'
+        +'<table><thead><tr><th>기간</th><th>환경</th><th>시작</th><th>완료</th><th>페이지</th><th>제품</th></tr></thead><tbody>'
+        +(runs||'<tr><td colspan="6" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>'
+        +'<div class="card-h" style="margin-top:14px">호출 이력</div>'
+        +'<table><thead><tr><th>시각</th><th>IP</th><th>환경</th><th>경로</th><th>HTTP</th><th>오류</th><th>건수</th><th>소요</th></tr></thead><tbody>'
+        +(rows||'<tr><td colspan="8" class="hint">아직 없습니다.</td></tr>')+'</tbody></table>';
+    }catch(e){ $('outWrap').innerHTML='<div class="msg err" style="display:block">서버 연결 실패</div>'; }
+  }
+
+  async function addClient(){
+    const label=prompt('고객사 이름을 입력하세요 (우리가 알아볼 이름)');
+    if(!label||!label.trim()) return;
+    try{
+      const r=await fetch(session.api+'/api/catalog/admin/clients',
+        {method:'POST',headers:{'Content-Type':'application/json',...auth()},body:JSON.stringify({label:label.trim()})});
+      const d=await r.json();
+      if(!r.ok||d.error){ show('listMsg','err','추가 실패: '+(d.error||r.status)); return; }
+      await loadList();
+      const c=ITEMS.find(x=>x.id===d.id); if(c) openEditor(c);
+    }catch(e){ show('listMsg','err','서버 연결 실패'); }
+  }
+
+  // ── 이벤트 ────────────────────────────────────────────────────────
+  $('go').addEventListener('click',login);
+  $('pin').addEventListener('keydown',(e)=>{ if(e.key==='Enter') login(); });
+  $('btnReload').addEventListener('click',loadList);
+  $('btnNew').addEventListener('click',addClient);
+  $('btnSave').addEventListener('click',save);
+  $('btnPreview').addEventListener('click',preview);
+  $('btnPv2').addEventListener('click',preview);
+  $('btnCalls').addEventListener('click',calls);
+  $('fCustSearch').addEventListener('input',(e)=>loadCustomers(e.target.value));
+  document.addEventListener('click',(e)=>{
+    const ed=e.target.closest('[data-edit]');
+    if(ed){ const c=ITEMS.find(x=>String(x.id)===ed.dataset.edit); if(c) openEditor(c); return; }
+    const k=e.target.closest('[data-key]'); if(k){ issueKey(k.dataset.key); return; }
+    const rv=e.target.closest('[data-revoke]'); if(rv){ revokeKey(rv.dataset.revoke); return; }
+  });
+
+  (function boot(){
+    const ps=portalSession();
+    if(ps&&ps.token){ $('api').value=ps.api||$('api').value; login(); }
+  })();
+</script>
+</body>
+</html>
