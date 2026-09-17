@@ -173,10 +173,12 @@
   async function login(){
     const api=$('api').value.replace(/\/+$/,''), login_id=$('lid').value.trim(), pin=$('pin').value.trim();
     clear('loginMsg');
-    if(!login_id||!pin){ show('loginMsg','err','아이디와 PIN을 입력하세요.'); return; }
+    // 포털에서 넘어왔으면 그 세션을 그대로 쓴다 — 아이디·PIN 을 다시 묻지 않는다.
+    const ps=portalSession();
+    if(!(ps&&ps.token) && (!login_id||!pin)){ show('loginMsg','err','아이디와 PIN을 입력하세요.'); return; }
     $('go').disabled=true; $('go').textContent='확인 중…';
     try{
-      let d,res={ok:true}; const ps=portalSession();
+      let d,res={ok:true};
       if(ps&&ps.token){ d={token:ps.token,user:ps.user}; }
       else{ res=await fetch(api+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({login_id,pin})}); d=await res.json(); }
@@ -412,8 +414,13 @@
 
   (function boot(){
     const ps=portalSession();
-    if(ps&&ps.token){ $('api').value=ps.api||$('api').value; login(); }
+    if(ps&&ps.token){
+      $('api').value=ps.api||$('api').value;
+      $('lid').value='-'; $('pin').value='-';     // 다른 화면과 같은 방식(값은 쓰이지 않는다)
+      setTimeout(()=>login(),30);
+    }
   })();
 </script>
+<script src="refatrix-nav.js?v=20260917catalog"></script>
 </body>
 </html>
